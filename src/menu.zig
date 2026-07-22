@@ -20,9 +20,10 @@ const Screen = enum { closed, main, debug, retro };
 const DBG_RETRO = 0;
 const DBG_STATS = 1;
 const DBG_WIREFRAME = 2;
-const DBG_TIMESCALE = 3;
-const DBG_CLOSE = 4;
-const DBG_COUNT = 5;
+const DBG_HITBOX = 3;
+const DBG_TIMESCALE = 4;
+const DBG_CLOSE = 5;
+const DBG_COUNT = 6;
 
 // Retro rows: the filter sliders, then presets, then Reset / All Off / Close.
 const RET_PRESET_PS1 = gfx.RETRO_COUNT + 0;
@@ -41,7 +42,11 @@ const ADJ_COARSE: f32 = 0.10;
 const ADJ_GLIDE_DELAY: f32 = 0.35; // seconds held before the glide kicks in
 const ADJ_GLIDE_RATE: f32 = 0.25; // intensity per second while gliding
 
-const MAIN_COUNT = 3; // Continue / Debug / Quit
+// Main rows — mirrored by mainLabels(); keep the two in lockstep (like DBG_*/RET_*).
+const MAIN_CONTINUE = 0;
+const MAIN_DEBUG = 1;
+const MAIN_QUIT = 2;
+const MAIN_COUNT = 3;
 
 // ── palette (display-space; menus draw over the finished frame) ──
 const VEIL = rgba(6, 6, 9, 150);
@@ -60,6 +65,7 @@ pub const Menu = struct {
     // debug toggles the game loop reads
     stats: bool = false,
     wireframe: bool = false,
+    hitboxes: bool = false, // draw the blade hit capsule during attacks
     timeScale: f32 = 1.0,
     adjHoldT: f32 = 0, // seconds an adjust direction has been held (glide timer)
 
@@ -125,12 +131,13 @@ pub const Menu = struct {
         switch (self.screen) {
             .closed => {},
             .main => switch (self.cursor) {
-                0 => self.screen = .closed, // Continue
-                1 => {
+                MAIN_CONTINUE => self.screen = .closed,
+                MAIN_DEBUG => {
                     self.screen = .debug;
                     self.cursor = 0;
                 },
-                else => return .quit,
+                MAIN_QUIT => return .quit,
+                else => {},
             },
             .debug => switch (self.cursor) {
                 DBG_RETRO => {
@@ -139,6 +146,7 @@ pub const Menu = struct {
                 },
                 DBG_STATS => self.stats = !self.stats,
                 DBG_WIREFRAME => self.wireframe = !self.wireframe,
+                DBG_HITBOX => self.hitboxes = !self.hitboxes,
                 DBG_TIMESCALE => self.cycleTimeScale(),
                 else => {
                     self.screen = .main;
@@ -171,6 +179,7 @@ pub const Menu = struct {
         out[DBG_RETRO] = "Retro Filters >";
         out[DBG_STATS] = if (self.stats) "Stats: On" else "Stats: Off";
         out[DBG_WIREFRAME] = if (self.wireframe) "Wireframe: On" else "Wireframe: Off";
+        out[DBG_HITBOX] = if (self.hitboxes) "Hitboxes: On" else "Hitboxes: Off";
         out[DBG_TIMESCALE] = std.fmt.bufPrintZ(&dbgTimeBuf, "Time Scale: {d:.0}%", .{self.timeScale * 100}) catch "?";
         out[DBG_CLOSE] = "Back";
         return out;
@@ -253,7 +262,7 @@ fn retroLabels(retro: *const gfx.Retro) [RET_COUNT][:0]const u8 {
     var out: [RET_COUNT][:0]const u8 = undefined;
     for (0..gfx.RETRO_COUNT) |i| {
         const v = retro.values[i];
-        if (v <= 0.0005) {
+        if (v <= gfx.RETRO_EPS) {
             out[i] = std.fmt.bufPrintZ(&retroBufs[i], "{s}: Off", .{gfx.RETRO_NAMES[i]}) catch "?";
         } else {
             out[i] = std.fmt.bufPrintZ(&retroBufs[i], "{s}: {d:.1}%", .{ gfx.RETRO_NAMES[i], v * 100 }) catch "?";

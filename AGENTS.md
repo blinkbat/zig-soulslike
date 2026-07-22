@@ -10,12 +10,13 @@ ask. The owner (David) drives the design; implement what's asked and nothing ext
 
 ## What exists (first demo = locomotion + camera)
 
-A convincingly **human** hero that **walks / runs / sprints / dodge-rolls**, under a
-**third-person over-the-shoulder camera**, in a **lit 3D world with cast shadows**: a
-golden-hour plain (warm low sun vs cool slate sky, procedural cloud deck, distance haze,
-vignette) dressed as a fallen kingdom — colonnade avenue, gate arch, walls, dead trees,
-graves, war banners, a statue, an emissive grace ember, and colossal hazed horizon ruins.
-No combat, stamina, enemies, lock-on, or jump yet.
+A convincingly **human** hero that **walks / runs / sprints / dodge-rolls** and **swings a
+sword** (R1 light slash / R2 heavy overhead, kinetic-chain sequenced, blade hit-capsule
+scaffolding), under a **third-person over-the-shoulder camera**, in a **lit 3D world with
+cast shadows**: a golden-hour plain (warm low sun vs cool slate sky, procedural cloud
+deck, distance haze, vignette) dressed as a fallen kingdom — colonnade avenue, gate arch,
+walls, dead trees, graves, war banners, a statue, an emissive grace ember, and colossal
+hazed horizon ruins. No enemies, damage, stamina, lock-on, or jump yet.
 The bar for "human" is anatomy (real segment proportions) + real gaits, not polygon count.
 
 ## Build & verify
@@ -43,7 +44,9 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
                  (15 filters + presets), all driving gfx.Retro / loop toggles. Inspired by
                  ../crawler's pause -> Debug -> Retro Filters tree.
 - `hero.zig`   — THE HERO. Anthropometric FK skeleton + every animation (idle/walk/run/
-                 sprint/roll). Start here for anything about how the character moves.
+                 sprint/roll/attacks) + the blade hit capsule (souls-style: rides the
+                 SWORD bone's dummy points, active only in the strike's TAE-like window,
+                 endpoints swept frame-to-frame). Start here for how the character moves.
 - `camera.zig` — third-person over-the-shoulder orbit rig (yaw + clamped pitch, zoom,
                  shoulder offset, `recenter`), and the camera-relative ground basis.
 - `gfx.zig`    — scene shader (warm hard sun + cast shadows + hemisphere ambient + rim
@@ -95,10 +98,14 @@ There is a full `ANIMATION ART DIRECTION` comment block at the top of the gait s
   "naruto" arms (tried and rejected). Real flight phase via an up-only bounce.
 - **SPRINT** — the run dialled up: even deeper forward tilt (near-diving), lower, longer,
   faster. "Falling forward and catching it."
-- **ROLL** — a committed dodge: crouch into a tight tuck, ONE forward somersault about a low
-  ball centre, ease back to a stand; fast ease-out lunge in the roll direction. No float.
+- **ROLL** — a committed dodge in three beats: dive into a tight tuck, ONE forward somersault
+  over ONE shoulder about a low ball centre (banked, limbs uneven, drifting a touch roll to
+  roll — wabi-sabi, cosmetic only), then a spin-free rise to stance. The lunge is dead
+  straight and the duration/distance/heading are exact every time. No float.
 
-Blends: idle↔walk by a `moving` ease; walk↔run↔sprint by ground SPEED (`runB`/`sprintB`).
+Blends: idle↔walk by a `moving` ease; walk↔run↔sprint by ground SPEED (`runB`/`sprintB`
+chasing a short-eased speed); pose discontinuities (roll start/end) cross-fade ~0.09s and
+the roll heading eases on fast — stances never snap, while mechanics stay instant.
 
 ## Controls (`game.zig`)
 
@@ -109,13 +116,20 @@ Keyboard+mouse OR gamepad; the pad follows **Elden Ring's default layout**.
   normal OS cursor usable elsewhere. Look is gated on `isCursorOnScreen() and
   isWindowFocused()`. This is deliberate — the owner needs the mouse usable outside the
   game; do NOT reintroduce `disableCursor`/pointer-lock.
-- **Move:** WASD / left stick (analog: light tilt walks, full runs), camera-relative; the
-  hero turns to face travel. **Sprint:** hold Shift / hold Circle-B. **Dodge roll:** Space /
-  TAP Circle-B (tap-vs-hold on the same button, like ER). **Camera:** mouse / right stick;
+- **Move:** WASD / left stick, camera-relative; the hero turns to face travel. Movement
+  starts at a WALK and breaks into a RUN after ~0.5s held (`RUN_HOLD`; analog light tilt
+  stays walk). **Sprint:** hold Shift / hold Circle-B (bypasses the run gate). **Dodge roll:** Space /
+  TAP Circle-B (tap-vs-hold on the same button, like ER). **Attacks:** R1/RB or LMB =
+  light slash; R2/RT or Shift+LMB = heavy overhead. Actions are committed (no mid-swing
+  cancels), with an **ER-style input queue**: pressed mid-action, an attack/roll buffers
+  in ONE slot (last press wins; a same-frame roll press outranks attack) and fires at the
+  earliest exit — the attack's chain knot (`AL_CHAIN`/`AH_CHAIN`, so mashed R1s flow) or
+  the roll's end; a queued roll leaves in the direction HELD at fire time, not pressed.
+  **Camera:** mouse / right stick;
   scroll or D-pad zoom; **R3** recenters behind the hero. **Esc** opens/backs out of the
   menu (pad **Start** toggles it); QUITTING is a menu row now, not a key. The menu opens
   at launch; while it's up, gameplay input is held and the world idles.
-- Reserved for later, matching ER: Cross/A = jump, L1/R1/L2/R2 = combat, R3 = lock-on.
+- Reserved for later, matching ER: Cross/A = jump, L1/L2 = guard/skill, R3 = lock-on.
 
 ## Hard invariants & gotchas (break these and it rots)
 
@@ -154,7 +168,12 @@ Keyboard+mouse OR gamepad; the pad follows **Elden Ring's default layout**.
 
 ## Next steps (not yet built)
 
-Stamina, lock-on, attacks (L1/R1/L2/R2), jump (Cross/A), bonfires, real level geometry +
-collision. Current gaps to remember: the roll has **no i-frames or collision** (pure anim +
+Enemies + damage (the blade capsule, active windows, and swept endpoints exist in
+hero.zig — hit RESOLUTION lands when there's something to hit, one hit per swing via a
+hit list cleared on the activation edge), stamina, lock-on, guard/skill (L1/L2), jump
+(Cross/A), distinct combo follow-up anims (ER-style input buffering + chain exits are
+in — see hero.zig `Queued`), bonfires, real level geometry + collision.
+Current gaps to remember: the roll has **no i-frames or collision** (pure anim +
 committed movement); there's **no foot IK** (feet approximate the ground; a run crouch can
-float/clip a touch); one leg-cycle is reused across run and sprint (no separate run mesh).
+float/clip a touch); one leg-cycle is reused across run and sprint (no separate run mesh);
+attacks reuse one anim standing or moving (no separate running attacks).

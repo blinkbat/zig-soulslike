@@ -19,4 +19,6 @@ test {
     _ = @import("hero.zig");
     _ = @import("camera.zig");
     _ = @import("mathx.zig");
+    _ = @import("frog.zig");
+    _ = @import("collision.zig");
 }

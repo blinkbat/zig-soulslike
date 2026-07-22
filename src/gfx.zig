@@ -38,6 +38,9 @@ const SHADOW_CLIP_FAR = 190.0;
 // is authored to the DISPLAYED value of this so the seam disappears. The shader also
 // banks the haze golden toward the sun's quarter (see sceneFS) to match the sky's glow.
 pub const HAZE = v3(0.078, 0.070, 0.056);
+// Haze falloff: 1-exp(-density*dist) — at 0.021, ~63% hazed by ~48 world units, so the
+// horizon giants (|z| ~ 50+) read as silhouettes while the avenue stays clear.
+const HAZE_DENSITY: f32 = 0.021;
 
 // Depth-only pass for the sun's shadow map (zig-diablo's depth shader verbatim).
 const depthVS =
@@ -319,6 +322,10 @@ pub const Vignette = struct {
 // fringe, edge detect) → color crush (posterize, dither, Game Boy, CGA, palette, sepia,
 // mono, amber) → overlays (edges, scanlines, VHS noise, grain, CRT mask).
 pub const RETRO_COUNT = 15;
+// A filter at or below this intensity is treated as OFF everywhere: anyActive() bypasses
+// the whole pass, and the menu shows "Off" — one threshold so the label can't claim a live
+// percentage for a value that renders nothing.
+pub const RETRO_EPS: f32 = 0.001;
 pub const RF_PIXELATE = 0;
 pub const RF_CHROMA = 1;
 pub const RF_POSTERIZE = 2;
@@ -347,12 +354,12 @@ const RETRO_UNIFORMS = [RETRO_COUNT][:0]const u8{
 };
 
 // The launch look (owner-tuned): a light retro grunge — a whisper of pixelate/chroma/
-// VHS/grain over a posterize+dither color crush. "Reset to Default" restores this;
+// grain over a posterize+dither color crush. "Reset to Default" restores this;
 // "All Off" gives the clean render.
 pub const RETRO_DEFAULTS = [RETRO_COUNT]f32{
     0.07, 0.09, 0.24, 0.40, 0.0,
     0.07, 0.07, 0.05, 0.0,  0.0,
-    0.0,  0.0,  0.0,  0.03, 0.04,
+    0.0,  0.0,  0.0,  0.0,  0.04,
 };
 
 // Retro filter PRESETS — the SINGLE source for the menu's Preset rows AND the --shot
@@ -541,7 +548,7 @@ pub const Retro = struct {
     }
 
     pub fn anyActive(self: *const Retro) bool {
-        for (self.values) |v| if (v > 0.001) return true;
+        for (self.values) |v| if (v > RETRO_EPS) return true;
         return false;
     }
 
@@ -627,7 +634,7 @@ pub const Scene = struct {
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "shadowMapResolution"), &res, .int);
         var haze = HAZE;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "hazeColor"), &haze, .vec3);
-        var density: f32 = 0.021;
+        var density: f32 = HAZE_DENSITY;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "hazeDensity"), &density, .float);
         var windOff: f32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "windAmt"), &windOff, .float);
@@ -733,7 +740,10 @@ pub const Builder = struct {
         self.vert(d, n, col);
     }
 
-    // Axis-aligned box centered at `c` with full `size`.
+    // Axis-aligned box centered at `c` with full `size`. Faces wind CCW seen from
+    // OUTSIDE — raylib culls back faces, so inward winding renders boxes hollow (you
+    // see through the near wall into the far interior; the cylinders always wound
+    // correctly, which is why limbs looked solid while heads/torsos looked see-through).
     pub fn addCube(self: *Builder, c: rl.Vector3, size: rl.Vector3, col: rl.Color) void {
         const hx = size.x / 2;
         const hy = size.y / 2;
@@ -741,28 +751,32 @@ pub const Builder = struct {
         const x = c.x;
         const y = c.y;
         const z = c.z;
-        self.quad(v3(x + hx, y - hy, z - hz), v3(x + hx, y - hy, z + hz), v3(x + hx, y + hy, z + hz), v3(x + hx, y + hy, z - hz), v3(1, 0, 0), col);
-        self.quad(v3(x - hx, y - hy, z + hz), v3(x - hx, y - hy, z - hz), v3(x - hx, y + hy, z - hz), v3(x - hx, y + hy, z + hz), v3(-1, 0, 0), col);
-        self.quad(v3(x - hx, y + hy, z - hz), v3(x + hx, y + hy, z - hz), v3(x + hx, y + hy, z + hz), v3(x - hx, y + hy, z + hz), v3(0, 1, 0), col);
-        self.quad(v3(x - hx, y - hy, z + hz), v3(x + hx, y - hy, z + hz), v3(x + hx, y - hy, z - hz), v3(x - hx, y - hy, z - hz), v3(0, -1, 0), col);
-        self.quad(v3(x - hx, y - hy, z + hz), v3(x - hx, y + hy, z + hz), v3(x + hx, y + hy, z + hz), v3(x + hx, y - hy, z + hz), v3(0, 0, 1), col);
-        self.quad(v3(x + hx, y - hy, z - hz), v3(x + hx, y + hy, z - hz), v3(x - hx, y + hy, z - hz), v3(x - hx, y - hy, z - hz), v3(0, 0, -1), col);
+        self.quad(v3(x + hx, y - hy, z - hz), v3(x + hx, y + hy, z - hz), v3(x + hx, y + hy, z + hz), v3(x + hx, y - hy, z + hz), v3(1, 0, 0), col);
+        self.quad(v3(x - hx, y - hy, z + hz), v3(x - hx, y + hy, z + hz), v3(x - hx, y + hy, z - hz), v3(x - hx, y - hy, z - hz), v3(-1, 0, 0), col);
+        self.quad(v3(x - hx, y + hy, z - hz), v3(x - hx, y + hy, z + hz), v3(x + hx, y + hy, z + hz), v3(x + hx, y + hy, z - hz), v3(0, 1, 0), col);
+        self.quad(v3(x - hx, y - hy, z + hz), v3(x - hx, y - hy, z - hz), v3(x + hx, y - hy, z - hz), v3(x + hx, y - hy, z + hz), v3(0, -1, 0), col);
+        self.quad(v3(x - hx, y - hy, z + hz), v3(x + hx, y - hy, z + hz), v3(x + hx, y + hy, z + hz), v3(x - hx, y + hy, z + hz), v3(0, 0, 1), col);
+        self.quad(v3(x + hx, y - hy, z - hz), v3(x - hx, y - hy, z - hz), v3(x - hx, y + hy, z - hz), v3(x + hx, y + hy, z - hz), v3(0, 0, -1), col);
     }
 
     // Parallelepiped from a center and three half-axis vectors — the oriented cousin of
-    // addCube. Face normals are the normalized axes.
-    pub fn addBox(self: *Builder, c: rl.Vector3, ax: rl.Vector3, ay: rl.Vector3, az: rl.Vector3, col: rl.Color) void {
+    // addCube. Face normals are the normalized axes. Winding matches addCube (CCW from
+    // outside); a LEFT-handed axis triple is normalized first so callers can pass axes
+    // in any order without turning the box inside-out.
+    pub fn addBox(self: *Builder, c: rl.Vector3, ax: rl.Vector3, ay: rl.Vector3, azIn: rl.Vector3, col: rl.Color) void {
+        const x = cross(ax, ay);
+        const az = if (x.x * azIn.x + x.y * azIn.y + x.z * azIn.z < 0) neg(azIn) else azIn;
         const corner = struct {
-            fn at(cc: rl.Vector3, x: rl.Vector3, y: rl.Vector3, z: rl.Vector3, sx: f32, sy: f32, sz: f32) rl.Vector3 {
-                return v3(cc.x + x.x * sx + y.x * sy + z.x * sz, cc.y + x.y * sx + y.y * sy + z.y * sz, cc.z + x.z * sx + y.z * sy + z.z * sz);
+            fn at(cc: rl.Vector3, xx: rl.Vector3, y: rl.Vector3, z: rl.Vector3, sx: f32, sy: f32, sz: f32) rl.Vector3 {
+                return v3(cc.x + xx.x * sx + y.x * sy + z.x * sz, cc.y + xx.y * sx + y.y * sy + z.y * sz, cc.z + xx.z * sx + y.z * sy + z.z * sz);
             }
         }.at;
-        self.quad(corner(c, ax, ay, az, 1, -1, -1), corner(c, ax, ay, az, 1, -1, 1), corner(c, ax, ay, az, 1, 1, 1), corner(c, ax, ay, az, 1, 1, -1), norm3(ax), col);
-        self.quad(corner(c, ax, ay, az, -1, -1, 1), corner(c, ax, ay, az, -1, -1, -1), corner(c, ax, ay, az, -1, 1, -1), corner(c, ax, ay, az, -1, 1, 1), norm3(neg(ax)), col);
-        self.quad(corner(c, ax, ay, az, -1, 1, -1), corner(c, ax, ay, az, 1, 1, -1), corner(c, ax, ay, az, 1, 1, 1), corner(c, ax, ay, az, -1, 1, 1), norm3(ay), col);
-        self.quad(corner(c, ax, ay, az, -1, -1, 1), corner(c, ax, ay, az, 1, -1, 1), corner(c, ax, ay, az, 1, -1, -1), corner(c, ax, ay, az, -1, -1, -1), norm3(neg(ay)), col);
-        self.quad(corner(c, ax, ay, az, -1, -1, 1), corner(c, ax, ay, az, -1, 1, 1), corner(c, ax, ay, az, 1, 1, 1), corner(c, ax, ay, az, 1, -1, 1), norm3(az), col);
-        self.quad(corner(c, ax, ay, az, 1, -1, -1), corner(c, ax, ay, az, 1, 1, -1), corner(c, ax, ay, az, -1, 1, -1), corner(c, ax, ay, az, -1, -1, -1), norm3(neg(az)), col);
+        self.quad(corner(c, ax, ay, az, 1, -1, -1), corner(c, ax, ay, az, 1, 1, -1), corner(c, ax, ay, az, 1, 1, 1), corner(c, ax, ay, az, 1, -1, 1), norm3(ax), col);
+        self.quad(corner(c, ax, ay, az, -1, -1, 1), corner(c, ax, ay, az, -1, 1, 1), corner(c, ax, ay, az, -1, 1, -1), corner(c, ax, ay, az, -1, -1, -1), norm3(neg(ax)), col);
+        self.quad(corner(c, ax, ay, az, -1, 1, -1), corner(c, ax, ay, az, -1, 1, 1), corner(c, ax, ay, az, 1, 1, 1), corner(c, ax, ay, az, 1, 1, -1), norm3(ay), col);
+        self.quad(corner(c, ax, ay, az, -1, -1, 1), corner(c, ax, ay, az, -1, -1, -1), corner(c, ax, ay, az, 1, -1, -1), corner(c, ax, ay, az, 1, -1, 1), norm3(neg(ay)), col);
+        self.quad(corner(c, ax, ay, az, -1, -1, 1), corner(c, ax, ay, az, 1, -1, 1), corner(c, ax, ay, az, 1, 1, 1), corner(c, ax, ay, az, -1, 1, 1), norm3(az), col);
+        self.quad(corner(c, ax, ay, az, 1, -1, -1), corner(c, ax, ay, az, -1, -1, -1), corner(c, ax, ay, az, -1, 1, -1), corner(c, ax, ay, az, 1, 1, -1), norm3(neg(az)), col);
     }
 
     // Tapered cylinder (no caps) a(radius ra) -> b(radius rb). Limbs use this for a

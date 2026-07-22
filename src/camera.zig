@@ -14,6 +14,7 @@ const clampF = mathx.clampF;
 pub const MIN_DIST = 2.4;
 pub const MAX_DIST = 9.0;
 const DEFAULT_DIST = 4.6;
+const DEFAULT_PITCH = 0.28; // gentle downward framing; recenter (R3) returns here too
 const ZOOM_STEP = 0.6;
 const LOOK_SENS = 0.0032; // radians per pixel of mouse motion
 const PITCH_MIN = -0.20; // ~ -11 deg (looking up from just below)
@@ -52,7 +53,7 @@ pub const CamRig = struct {
     // Snap the camera back behind the hero (Elden Ring R3 with no lock-on target).
     pub fn recenter(c: *CamRig, heroFacing: f32) void {
         c.yaw = heroFacing;
-        c.pitch = 0.28;
+        c.pitch = DEFAULT_PITCH;
     }
 
     pub fn zoom(c: *CamRig, wheel: f32) void {
@@ -76,6 +77,18 @@ pub const CamRig = struct {
     }
 };
 
+test "ground basis holds the strafe-sign invariant" {
+    // AGENTS.md hard invariant: the camera looks +Z from behind at yaw 0, so screen-right
+    // is world -X. Flipping rightXZ mirrors L/R walking.
+    const rig = CamRig{ .cam = undefined, .yaw = 0, .pitch = 0, .dist = 4 };
+    const f = rig.forwardXZ();
+    const r = rig.rightXZ();
+    try std.testing.expectApproxEqAbs(@as(f32, 0), f.x, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), f.z, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, -1), r.x, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), r.z, 1e-6);
+}
+
 // `yaw0` should match the hero's initial facing so the camera starts BEHIND them
 // (camera-forward aligned with the hero's heading), souls-style.
 pub fn newCamRig(shoulder: rl.Vector3, yaw0: f32) CamRig {
@@ -88,7 +101,7 @@ pub fn newCamRig(shoulder: rl.Vector3, yaw0: f32) CamRig {
             .projection = .perspective,
         },
         .yaw = yaw0,
-        .pitch = 0.28, // a gentle downward framing to start
+        .pitch = DEFAULT_PITCH,
         .dist = DEFAULT_DIST,
     };
     c.follow(shoulder);

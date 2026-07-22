@@ -89,6 +89,16 @@ pub fn perpXZ(f: rl.Vector3) rl.Vector3 {
     return v3(f.z, 0, -f.x);
 }
 
+/// Closest point on segment a-b to p, measured in the XZ plane (returned with Y = 0).
+pub fn closestOnSegXZ(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
+    const abx = b.x - a.x;
+    const abz = b.z - a.z;
+    const denom = abx * abx + abz * abz;
+    if (denom < 1e-10) return v3(a.x, 0, a.z);
+    const t = clampF(((p.x - a.x) * abx + (p.z - a.z) * abz) / denom, 0, 1);
+    return v3(a.x + abx * t, 0, a.z + abz * t);
+}
+
 // ── full 3D vector helpers (FK rig, camera) ───────────────────────────────────────────
 pub fn addV(a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     return v3(a.x + b.x, a.y + b.y, a.z + b.z);
@@ -112,6 +122,12 @@ pub fn lerpV(a: rl.Vector3, b: rl.Vector3, t: f32) rl.Vector3 {
 }
 pub fn lerpF(a: f32, b: f32, t: f32) f32 {
     return a + (b - a) * t;
+}
+
+/// Hermite smoothstep of x across [a, b] → 0..1 (clamped; the GLSL smoothstep).
+pub fn smoothstep(a: f32, b: f32, x: f32) f32 {
+    const t = clampF((x - a) / (b - a), 0, 1);
+    return t * t * (3.0 - 2.0 * t);
 }
 
 /// Ease `cur` toward `target` by a rate-limited step of `rate*dt` (frame-rate independent
@@ -225,4 +241,30 @@ pub fn degrees(rad: f32) f32 {
 pub fn timeSeed() u64 {
     const ns: u128 = @bitCast(std.time.nanoTimestamp());
     return @truncate(ns);
+}
+
+test "clampF pins NaN to lo and clamps both ends" {
+    try std.testing.expectEqual(@as(f32, 1), clampF(std.math.nan(f32), 1, 5));
+    try std.testing.expectEqual(@as(f32, 5), clampF(9, 1, 5));
+    try std.testing.expectEqual(@as(f32, 1), clampF(-2, 1, 5));
+    try std.testing.expectEqual(@as(f32, 3), clampF(3, 1, 5));
+}
+
+test "wrapPi lands in (-pi, pi] and guards non-finite input" {
+    try std.testing.expectApproxEqAbs(@as(f32, 0), wrapPi(std.math.tau), 1e-6);
+    try std.testing.expectEqual(@as(f32, std.math.pi), wrapPi(std.math.pi));
+    try std.testing.expectApproxEqAbs(-std.math.pi + 0.5, wrapPi(std.math.pi + 0.5), 1e-5);
+    try std.testing.expectEqual(@as(f32, 0), wrapPi(std.math.inf(f32)));
+}
+
+test "approachAngle takes the shortest arc across the seam" {
+    // 350 deg -> 10 deg is +20 deg through the seam, never -340 the long way round.
+    const stepped = approachAngle(radians(350), radians(10), radians(5));
+    try std.testing.expectApproxEqAbs(wrapPi(radians(355)), wrapPi(stepped), 1e-5);
+}
+
+test "smoothstep clamps outside [a,b] and passes its midpoint" {
+    try std.testing.expectEqual(@as(f32, 0), smoothstep(0.2, 0.8, 0.0));
+    try std.testing.expectEqual(@as(f32, 1), smoothstep(0.2, 0.8, 1.0));
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), smoothstep(0, 1, 0.5), 1e-6);
 }

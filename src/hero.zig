@@ -34,7 +34,7 @@ pub const H: f32 = 1.8; // stature (world units ≈ metres)
 // (which drives movement + the --shot harness) and with the gait blends below. Elden-Ring
 // analog feel: light left-stick = walk, full = run; hold sprint for the dash.
 pub const WALK_SPEED: f32 = 1.7;
-pub const RUN_SPEED: f32 = 3.0;
+pub const RUN_SPEED: f32 = 3.4;
 pub const SPRINT_SPEED: f32 = 4.6;
 
 // Body-segment lengths as a fraction of stature H (Drillis & Contini 1966; Winter).
@@ -49,7 +49,7 @@ const BREADTH_SHOULDER = 0.259; // biacromial breadth
 const BREADTH_HIP = 0.191; // bi-iliac / bitrochanteric breadth
 
 // Skeleton joints (indices). Every joint owns exactly one drawn bone mesh.
-const N = 17;
+const N = 18;
 const ROOT = 0; // pelvis
 const SPINE = 1; // lumbar / mid-torso pivot
 const CHEST = 2; // thorax / shoulder girdle
@@ -67,8 +67,9 @@ const WRL = 13; // wrist L
 const SHR = 14;
 const ELR = 15;
 const WRR = 16;
+const SWORD = 17; // the drawn blade, parented to the RIGHT wrist — rides every pose
 
-const parent = [N]i32{ -1, ROOT, SPINE, CHEST, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CHEST, SHL, ELL, CHEST, SHR, ELR };
+const parent = [N]i32{ -1, ROOT, SPINE, CHEST, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CHEST, SHL, ELL, CHEST, SHR, ELR, WRR };
 
 // Rest positions in the hero's local standing frame (X = hero's left/+, Y up, Z forward),
 // in world units. Limbs hang straight down so each bone mesh aligns with -Y; the small
@@ -95,6 +96,7 @@ fn restPositions() [N]rl.Vector3 {
     r[SHR] = v3(-sx, 0.818, 0);
     r[ELR] = v3(-sx, 0.630, 0);
     r[WRR] = v3(-sx, 0.485, 0);
+    r[SWORD] = v3(-sx, 0.485, 0); // zero offset from the wrist; the mesh is authored in the wrist frame
     for (&r) |*p| p.* = v3(p.x * H, p.y * H, p.z * H);
     return r;
 }
@@ -136,11 +138,49 @@ const BRASS = rgba(122, 92, 40, 255);
 //           (both feet airborne) via an up-only bounce; big swing-knee flexion.
 //  SPRINT : the run dialled up — even deeper forward tilt (near-diving), lower, longer
 //           stride, faster turnover. "Falling forward and catching it."
-//  ROLL   : a committed dodge — crouch into a tight tuck, ONE full forward somersault about
-//           a low ball centre, ease back out to a stand. Fast ease-out lunge in the roll
-//           direction. Snappy, no float/hang.
-//  Blends : idle↔walk by a `moving` ease; walk↔run↔sprint by ground SPEED (runB/sprintB).
-//           Stride LENGTH scales with speed so one leg-cycle reads at every pace.
+//  ROLL   : a committed dodge in three beats, souls-style — DIVE into a tight tuck (barely
+//           any spin yet), ONE full forward somersault about a low ball centre with the
+//           spin EASED (front-loaded: fast over, slower unroll; the 360° lands BEFORE the
+//           stand-up), then a spin-free RECOVERY: legs extend to plant, the body rises to
+//           stance while the lunge brakes. WABI-SABI, not machined: it goes over ONE
+//           shoulder (picked from the leading leg) — banked into that shoulder, slightly
+//           off-square, squaring up only as he rises — with the guide arm tucked hard
+//           across and the push arm loose, the lead leg balled tighter than the trail,
+//           and the magnitudes drifting a touch roll to roll (no two identical). Travel
+//           stays DEAD-STRAIGHT — the dodge must feel exact; the imperfection lives
+//           entirely in the body. Never a constant-rate spin (a pivoting mannequin), and
+//           still snappy — no float/hang.
+//  CARRY  : the sword is HELD, never splinted to the arm — the hammer grip cants the
+//           blade ~34° forward of the forearm line (tip leading down-forward at rest,
+//           clear of the ground: the souls low-ready). The sword arm is a CARRY, not a
+//           mirror of the free arm: damped swing, a readier elbow, the run pump capped
+//           short of the full fold with the wrist laying the blade back so the tip
+//           trails low instead of skewering ahead.
+//  ATTACK : committed sword cuts, KINETIC-CHAIN sequenced — pelvis rotation, trunk
+//           rotation, trunk flexion, shoulder, elbow extension, wrist, each a beat late,
+//           so the arm WHIPS (never one rigid unit). LIGHT (R1): a BIG diagonal slash —
+//           an EXAGGERATED readable windup (trunk coiled, knees loaded, fist by the ear,
+//           blade lying back over the shoulder), then swept HIGH-right to LOW-left
+//           ACROSS the body (shoulder yaw carries the arc wide; the wrist ROLLS the
+//           cutting edge into the arc; it finishes past the off hip, never buried at
+//           the feet) with a follow-through overshoot that settles. CHAINED lights
+//           ALTERNATE, Elden Ring-style: the buffered follow-up comes BACKHAND out of
+//           where the last cut landed (mirrored, slightly damped). HEAVY (R2): slow
+//           overhead — the EDGE comes down vertical (grip carries edges fore/aft — a
+//           cut, never a flat smack), a big readable
+//           windup past vertical over a STAGGERED load (brace leg up, sword-side leg
+//           sat back), a breathing "gather" at the top of the raise, a violent trunk-
+//           driven drop with a lateral coil whipping past, the blade BURIED low and
+//           BITING (a recoil judder) through the held follow-through, then a slow rise.
+//           Feet planted (the step is root translation); facing locked at commit. Hit
+//           capsule rides the blade, active only inside the strike window (souls
+//           TAE-style), swept frame-to-frame. NOTHING parks dead at an end pose.
+//  Blends : idle↔walk by a `moving` ease; walk↔run↔sprint by ground SPEED — runB/sprintB
+//           chase a short-EASED speed (speedS) so posture never steps when speed does.
+//           Stride LENGTH scales with speed so one leg-cycle reads at every pace. Any
+//           pose DISCONTINUITY (roll start/end) cross-fades over POSE_XFADE, and the roll
+//           heading is eased onto fast (ROLL_YAW_RATE), never teleport-snapped. NOTHING
+//           SNAPS — but movement/mechanics stay instant; only the visible pose smooths.
 //
 // ── gait: normative sagittal joint angles over one stride, sampled every 12.5% (deg) ──
 // phase 0 = heel strike of that leg; stance ≈ 0..0.60, swing ≈ 0.60..1.0.
@@ -170,20 +210,151 @@ const GAZE_AHEAD = 15.0; // running: counter the lean down to ~this chain angle;
 const NECK_EXT_MAX = 34.0; // cap total head+neck extension so lifting the gaze can't hyperextend the neck
 const A_RUN_BOUNCE = 0.05 * H; // vertical airtime lift during flight (up-only, so planted feet don't sink)
 const RUN_SPEED_LO = 2.1; // blend walk→run across this ground-speed band
-const RUN_SPEED_HI = 3.2;
+const RUN_SPEED_HI = RUN_SPEED; // …saturating exactly at run speed (sprintB takes over above)
 const SPRINT_LEAN = 40.0; // near-horizontal forward tilt at full sprint (deg)
 const SPRINT_REF_SPEED = SPRINT_SPEED; // speed the extra sprint lean/crouch saturate at
 
 // ── dodge roll (committed tuck-and-somersault) ────────────────────────────────────
-const ROLL_DUR = 0.60; // seconds, start to finish
-const ROLL_DIST = 2.8; // ground units travelled (ease-out velocity profile)
+// Phased like the FromSoft rolls: dive + somersault up front, then a spin-free recovery
+// (their "recovery frames") — NOT one linear spin/tuck/lunge smeared over the duration.
+// Knots below are normalized time u = rollT / ROLL_DUR.
+const ROLL_DUR = 0.70; // seconds, start to finish (souls medium-roll pacing, recovery included)
+const ROLL_DIST = 3.5; // ground units travelled
 const ROLL_BALL_Y = 0.50; // pelvis/pivot height at mid-roll (the tucked "ball" centre)
+const ROLL_TUCK_IN = 0.16; // dive: crouched + balled by here, spin barely begun
+const ROLL_SPIN_A = 0.05; // somersault sweep, two OVERLAPPED eases so the tumble is
+const ROLL_SPIN_M0 = 0.40; //   front-loaded, not a metronome: the over-the-shoulder
+const ROLL_SPIN_M1 = 0.45; //   tumble (A..M1, ROLL_SPIN_OVER deg) hands off to the
+const ROLL_SPIN_B = 0.80; //   slower unroll (M0..B); the full 360° lands here, BEFORE the stand-up
+const ROLL_SPIN_OVER = 220.0; // degrees covered by the fast tumble segment
+const ROLL_UNTUCK_A = 0.62; // legs extend to plant as the last of the spin lands…
+const ROLL_UNTUCK_B = 0.97; // …spine/arms still settling as the roll hands off — never a parked stand
+const ROLL_RISE_A = 0.70; // recovery: pelvis rises from ball height…
+const ROLL_RISE_B = 1.00; // …back to full stance right at the end
+const ROLL_BRAKE_A = 0.50; // travel: full lunge speed until here…
+const ROLL_BRAKE_B = 0.92; // …then smooth-braked to a stop (ease-out, no float)
 const ROLL_HIP = 95.0; // tuck: thighs to chest (deg)
 const ROLL_KNEE = 115.0; // tuck: heels toward glutes (deg)
 const ROLL_SPINE = 30.0; // forward spine curl per segment (deg)
 const ROLL_HEAD = 32.0; // chin to chest (deg)
 const ROLL_SHOULDER = 45.0; // arms tuck forward (deg)
 const ROLL_ELBOW = 100.0; // elbows tucked (deg)
+// Wabi-sabi: the somersault is imperfect the way a real one is — over ONE shoulder,
+// banked and briefly off-square, limbs uneven, magnitudes drifting a touch from roll to
+// roll. COSMETIC ONLY: none of these touch duration, distance, heading, or timing — the
+// dodge FEELS identical every time.
+const ROLL_LEAN = 8.0; // bank toward the roll-side shoulder while balled (deg)
+const ROLL_SKEW = 7.0; // peak off-square yaw through the recovery, squared up by the end (deg)
+const ROLL_ARM_GUIDE = 1.25; // roll-side arm tucks harder across the body…
+const ROLL_ARM_PUSH = 0.80; // …the other arm stays looser (factors on the arm tuck)
+const ROLL_LEG_LEAD = 1.08; // lead leg balls tighter…
+const ROLL_LEG_TRAIL = 0.92; // …trail leg lags looser (factors on the leg tuck)
+const ROLL_VAR_LO = 0.7; // per-roll drift of the imperfection magnitudes (never of
+const ROLL_VAR_HI = 1.3; //   duration/distance/heading — mechanics stay exact)
+const ROLL_YAW_RATE = 22.0; // rad/s — the body whips onto the roll heading instead of teleport-snapping
+
+// ── sword attacks (committed, one-handed) ───────────────────────────────────────────
+// Anatomy: a cut is a KINETIC CHAIN, released proximal → distal (pelvis rotation → trunk
+// rotation → trunk flexion → shoulder → elbow extension, wrist last — Bunn's summation-
+// of-speed). Each segment's strike span below fires one LAG beat after the segment
+// before it, so the arm WHIPS instead of moving as one rigid unit. Souls pacing: R1 is
+// fast and light (contact ~0.2s in, quick recovery); R2 is a slow committed overhead —
+// a big readable windup, a violent drop, the blade BURIED through a held follow-through.
+const ATK_LIGHT_DUR = 0.60; // R1: diagonal high-right → low-left slash (seconds)
+const ATK_HEAVY_DUR = 1.00; // R2: overhead chop (seconds)
+// light knots (u = atkT / dur)
+const AL_WIND_B = 0.28; // a READABLE windup — long enough to register as anticipation
+const AL_STRIKE_A = 0.28; // pelvis fires; chest/shoulder/elbow/wrist each lag AL_LAG more
+const AL_STRIKE_B = 0.48;
+const AL_LAG = 0.03;
+const AL_RECOV_A = 0.62; // unwind to a stand across the tail
+const AL_HIT_A = 0.32; // TAE-style ACTIVE window — the blade only hits inside it
+const AL_HIT_B = 0.56;
+const AL_LUNGE = 0.35; // ground units stepped into the cut across the strike span
+const AL_CHAIN = 0.80; // u where a BUFFERED action may take over: the swing has visually
+//   resolved (overshoot settled) but the stand-down tail is skippable, so mashed R1s
+//   flow into a continuous combo instead of stuttering through idle each time.
+// heavy knots
+const AH_WIND_B = 0.34; // slow raise to overhead — the R2 anticipation "tell"
+const AH_STRIKE_A = 0.38; // …a beat of hang at the top, then the drop
+const AH_STRIKE_B = 0.52;
+const AH_LAG = 0.025;
+const AH_RECOV_A = 0.72; // impact holds buried 0.52..0.72, then the slow rise
+const AH_HIT_A = 0.40;
+const AH_HIT_B = 0.58;
+const AH_LUNGE = 1.05; // the chop LEAPS forward through the drop — committed reach, ER-style
+const AH_CHAIN = 0.86; // the heavy earns a longer commitment before a buffered exit
+// light amplitudes (deg unless noted)
+const AL_BODY_YAW = 26.0; // trunk winds HARD toward the sword side (the exaggerated tell)…
+const AL_BODY_YAW_THRU = 30.0; // …and releases through WELL past neutral — half the arc's width
+const AL_SH_WIND_X = 40.0; // shoulder: arm hauled well back…
+const AL_SH_WIND_Z = 70.0; // …and raised high on the sword side — fist beside the ear
+const AL_SH_STRIKE_X = 52.0; // whipped forward and held HIGH — the arc rides chest→shoulder height, never dropping to the waist/dirt…
+const AL_SH_STRIKE_Z = 32.0; // …adducted well across the body at contact
+const AL_SH_SWEEP = 26.0; // shoulder yaw carrying the arm HORIZONTALLY across — the other half of the width
+const AL_EDGE_ROLL = 82.0; // wrist rolls the CUTTING EDGE ~flat into the horizontal arc — the edge leads the swipe (never a flat smack)
+const AL_ELBOW_WIND = 96.0; // deep coil
+const AL_ELBOW_STRIKE = 10.0; // near-full extension at contact (elbow fires late)
+const AL_WRIST_COCK = 62.0; // deep cock: the blade lies BACK over the shoulder at the apex (the high-guard tell)
+const AL_WRIST_SNAP = 24.0; // wrist releases last (the grip cant already leads the edge)
+const AL_SPINE_CRUNCH = 7.0; // forward trunk flexion through the cut (per segment)
+const AL_OVER = 7.0; // follow-through overshoot past the end pose, settling through recovery
+const AL_LOAD = 0.016 * H; // the knees coil DOWN under the windup (anticipation you can feel)…
+const AL_DIP = 0.015 * H; // …and a slight settle into the stance on release
+// heavy amplitudes
+const AH_BODY_YAW = 11.0; // an overhead is mostly sagittal — modest wind/release
+const AH_LEAN_BACK = 10.0; // spine extension under the raised blade (per segment)
+const AH_SPINE_CRUNCH = 16.0; // violent trunk flexion driving the chop (per segment)
+const AH_SPINE_TILT = 5.0; // frontal coil toward the sword side under the raise, whipping past on the drop
+const AH_GATHER = 9.0; // the blade settles a touch FURTHER back through the top-of-raise hang (a breath, not a freeze)
+const AH_SH_UP = 158.0; // arm swung up past vertical, blade hanging back over the shoulder
+const AH_SH_DOWN = 38.0; // chop lands with the arm forward-low
+const AH_ELBOW_WIND = 92.0;
+const AH_ELBOW_STRIKE = 10.0;
+const AH_WRIST_COCK = 22.0;
+const AH_WRIST_SNAP = 28.0;
+const AH_RECOIL = 7.0; // impact judder: the buried blade bites, bounces a hair, re-settles
+const AH_LOAD = 0.02 * H; // the staggered stance loads under the windup…
+const AH_DIP = 0.05 * H; // …and the weight drops into the impact
+const AH_PITCH = 9.0; // whole-body forward pitch about the feet through the strike
+// Blade hitbox, souls-style: a capsule riding the SWORD bone's dummy points (guard →
+// tip), ACTIVE only inside the HIT window (the TAE-events equivalent), with last-frame
+// endpoints kept for swept tests so a fast arc can't tunnel through a target between
+// frames. One hit per swing per target: the (future) hit list clears on the activation
+// edge, where the sweep history also resets.
+pub const BLADE_R = 0.055; // capsule radius (world units) — a touch fatter than the mesh
+
+// ── the grip (how the sword is HELD) ────────────────────────────────────────────────
+// A relaxed hammer grip cants the blade GRIP_PITCH forward of the forearm line — a sword
+// is held at an angle to the forearm, never splinted straight along it. Baked into the
+// sword MESH about the fist centre (so the grip stays glued in the glove), and into the
+// capsule dummy points below; every pose and swing inherits the cant for free.
+const GRIP_PITCH = 34.0; // deg the blade leads forward of the forearm line
+const GRIP_OUT = 8.0; // deg the tip eases outward, so the low-ready hangs beside the leg, not across the shin
+const GRIP_CA = @cos(radians(GRIP_PITCH));
+const GRIP_SA = @sin(radians(GRIP_PITCH));
+const OUT_CA = @cos(radians(GRIP_OUT));
+const OUT_SA = @sin(radians(GRIP_OUT));
+const FIST_Y = -0.05 * H; // fist centre in the wrist frame
+const FIST_Z = 0.005 * H;
+// A point t (units of H) down the canted blade axis from the fist centre, wrist frame.
+fn bladeAt(t: f32) rl.Vector3 {
+    return v3(-GRIP_SA * OUT_SA * t * H, FIST_Y - GRIP_CA * t * H, FIST_Z + GRIP_SA * OUT_CA * t * H);
+}
+const BLADE_BASE = bladeAt(0.046); // guard, in the wrist frame
+const BLADE_TIP = bladeAt(0.481); // point
+
+// The sword arm is a CARRY, not a mirror of the free arm (see armChain).
+const CARRY_DAMP = 0.45; // fraction of the gait swing the sword arm gives up
+const CARRY_ELBOW = 14.0; // readier standing/walking elbow on the sword side
+const CARRY_ELBOW_RUN = 62.0; // the carry arm never folds to the full ~90° pump
+const CARRY_WRIST_RUN = 4.0; // a whisper of lay-back at a run — the grip cant keeps the tip riding clear of the ground
+
+// ── short transition blends (nothing snaps between stances) ────────────────────────
+const POSE_XFADE = 0.09; // seconds — cross-fade over any pose discontinuity (roll start/end)
+const SPEED_SMOOTH = 28.0; // units/s² — posture-blend speed chases ground speed, so
+//   walk↔run↔sprint↔stop lean/crouch/arm-pump glide instead of stepping. Movement itself
+//   (and stride phase) stays on the RAW speed — responsiveness is untouched.
 
 const STRIDE = 0.85 * H; // ground distance per full (two-step) cycle at walk pace — ties phase to travel, no foot-skate
 const WALK_REF_SPEED = WALK_SPEED; // reference walk speed the stride is tuned for
@@ -198,6 +369,7 @@ const FOOT_TOEOUT = 6.0; // feet splay slightly outward (Fick angle) — a real 
 const ARM_ABD = 9.0; // constant arm abduction so arms clear the torso (deg)
 const IDLE_KNEE = 4.0;
 const IDLE_ELBOW = 6.0;
+const MOVING_EASE = 4.0; // idle↔walk blend rate (1/s) — the `moving` fade in update()
 
 fn sampleCurve(tbl: [8]f32, phase: f32) f32 {
     const ph = phase - @floor(phase); // 0..1
@@ -228,6 +400,30 @@ fn mul(a: rl.Matrix, b: rl.Matrix) rl.Matrix {
 fn mul3(a: rl.Matrix, b: rl.Matrix, c: rl.Matrix) rl.Matrix {
     return mul(mul(a, b), c);
 }
+// Component-wise matrix blend — fine for the few frames of a POSE_XFADE cross-fade (the
+// tiny mid-blend shear is invisible that briefly, and both endpoints are exact poses).
+fn lerpM(a: rl.Matrix, b: rl.Matrix, t: f32) rl.Matrix {
+    var out: rl.Matrix = undefined;
+    inline for (@typeInfo(rl.Matrix).@"struct".fields) |f| {
+        @field(out, f.name) = mathx.lerpF(@field(a, f.name), @field(b, f.name), t);
+    }
+    return out;
+}
+
+// A smooth 0→1→0 pulse over [a, b] — the overshoot/recoil grace notes that keep a strike
+// from parking dead at its end pose (the wooden-mannequin failure).
+fn bump(u: f32, a: f32, b: f32) f32 {
+    const mid = 0.5 * (a + b);
+    return mathx.smoothstep(a, mid, u) * (1.0 - mathx.smoothstep(mid, b, u));
+}
+
+pub const Attack = enum { light, heavy };
+
+// One buffered action, ER-style: an attack/roll pressed while mid-action QUEUES here —
+// ONE slot, the LAST press wins (a new press replaces the old) — and fires at the
+// current action's earliest legal exit (the attack's chain knot, or the roll's end).
+// Nothing cancels mid-flight: souls commitment, souls leniency.
+pub const Queued = union(enum) { attack: Attack, roll: rl.Vector3 };
 
 pub const Hero = struct {
     mesh: [N]rl.Mesh,
@@ -246,6 +442,24 @@ pub const Hero = struct {
     rolling: bool = false,
     rollT: f32 = 0, // seconds into the current roll
     rollDir: rl.Vector3 = mathx.zero3, // world XZ unit direction of the roll
+    rollYaw: f32 = 0, // committed heading of the roll; the visible yaw eases onto it fast
+    rollSide: f32 = -1, // +1 = over the LEFT shoulder, -1 = the RIGHT (picked from the leading leg)
+    rollVar: f32 = 1, // this roll's imperfection magnitude (ROLL_VAR_LO..HI, cosmetic only)
+    // sword attack
+    attacking: bool = false,
+    atkT: f32 = 0, // seconds into the current swing
+    queued: ?Queued = null, // the ER-style input buffer (see Queued)
+    atkHeavy: bool = false, // which cut: R1 slash (false) or R2 overhead (true)
+    atkAlt: bool = false, // light-combo alternator: false = forehand slash, true = the RETURN backhand
+    bladeA: rl.Vector3 = mathx.zero3, // blade capsule endpoints in WORLD space (guard → tip)
+    bladeB: rl.Vector3 = mathx.zero3,
+    bladeA0: rl.Vector3 = mathx.zero3, // …last frame's endpoints, for swept-capsule hit tests
+    bladeB0: rl.Vector3 = mathx.zero3,
+    hitWasActive: bool = false, // edge detector: sweep history (+ future hit list) resets on activation
+    // transition smoothing
+    speedS: f32 = 0, // short-eased ground speed driving POSTURE blends only
+    blendT: f32 = 1e9, // seconds since the last pose discontinuity (≥ POSE_XFADE = no blend)
+    blendXf: [N]rl.Matrix = undefined, // frozen source pose for the cross-fade
 
     pub fn init(shader: rl.Shader) Hero {
         var mat = rl.loadMaterialDefault() catch @panic("hero material");
@@ -266,8 +480,10 @@ pub const Hero = struct {
     pub fn update(self: *Hero, dt: f32, movedDist: f32, speed: f32) void {
         self.elapsed += dt;
         self.speed = speed;
+        self.speedS = mathx.approach(self.speedS, speed, dt * SPEED_SMOOTH);
+        self.blendT = @min(self.blendT + dt, 1e9);
         const target: f32 = if (speed > 0.05) 1.0 else 0.0;
-        self.moving = mathx.approach(self.moving, target, dt * 4.0);
+        self.moving = mathx.approach(self.moving, target, dt * MOVING_EASE);
         if (movedDist > 0) {
             // Longer strides at higher speed (as people do), so run/sprint reuse this walk
             // cycle at a believable cadence instead of a frantic shuffle.
@@ -287,35 +503,174 @@ pub const Hero = struct {
         self.rolling = true;
         self.rollT = 0;
         self.rollDir = d;
-        self.facing = std.math.atan2(d.x, d.z); // snap to the roll heading
+        self.rollYaw = std.math.atan2(d.x, d.z); // heading committed NOW; the visible yaw whips onto it
+        // Wabi-sabi, cosmetic only: roll over the shoulder of whichever leg is leading
+        // (as a real forward roll does; right by habit from a standstill), and drift the
+        // imperfection magnitudes so no two rolls read identical.
+        const leadL = sampleCurve(HIP_FLEX, self.phase) > sampleCurve(HIP_FLEX, self.phase + 0.5);
+        self.rollSide = if (self.moving > 0.5 and leadL) 1.0 else -1.0;
+        // elapsed in the mix so standstill rolls (frozen phase) still vary roll to roll.
+        const h = (self.phase + self.elapsed * 0.61) * 7.31;
+        self.rollVar = mathx.lerpF(ROLL_VAR_LO, ROLL_VAR_HI, h - @floor(h));
+        self.startXfade(); // last frame's pose cross-fades into the dive — no snap
     }
 
     // Advance an in-progress roll: committed ease-out travel + pose. Call in place of the
     // normal move/update while `rolling` is true; `bounds` clamps position like moveHero.
     pub fn updateRoll(self: *Hero, dt: f32, bounds: f32) void {
         self.elapsed += dt;
+        self.blendT = @min(self.blendT + dt, 1e9);
+        self.facing = mathx.approachAngle(self.facing, self.rollYaw, dt * ROLL_YAW_RATE); // whip, don't teleport
         const u = mathx.clampF(self.rollT / ROLL_DUR, 0, 1);
-        const speed = ROLL_DIST * 2.0 * (1.0 - u) / ROLL_DUR; // ease-out: fast launch, glide to stop
+        // Lunge: full speed through the dive + somersault, smooth-braked through the
+        // recovery. The profile's integral over u is (BRAKE_A+BRAKE_B)/2, so the peak
+        // normalizes to keep total travel = ROLL_DIST.
+        const peak = ROLL_DIST / (ROLL_DUR * 0.5 * (ROLL_BRAKE_A + ROLL_BRAKE_B));
+        const speed = peak * (1.0 - mathx.smoothstep(ROLL_BRAKE_A, ROLL_BRAKE_B, u));
         const moved = speed * dt;
         self.pos.x = mathx.clampF(self.pos.x + self.rollDir.x * moved, -bounds, bounds);
         self.pos.z = mathx.clampF(self.pos.z + self.rollDir.z * moved, -bounds, bounds);
         self.speed = speed;
-        self.moving = 1;
+        self.speedS = mathx.approach(self.speedS, speed, dt * SPEED_SMOOTH);
         self.rollT += dt;
-        if (self.rollT >= ROLL_DUR) self.rolling = false;
+        // Pose BEFORE clearing `rolling`: on the frame the roll completes, poseRoll (with u
+        // clamped to 1 = a fully-risen stand) must still run, else pose() falls to the
+        // walk branch and pops a stale-phase stance for one frame.
         self.pose();
+        if (self.rollT >= ROLL_DUR) {
+            self.rolling = false;
+            // `moving` is deliberately NOT reset: held input keeps trucking straight out
+            // of the rise (update() eases it down naturally if the stick is free).
+            self.startXfade(); // the rise cross-fades into whatever comes next
+            self.fireQueued(); // a buffered attack/roll chains straight off the rise
+        }
+    }
+
+    // ── ER-style input queue ─────────────────────────────────────────────────────────
+    // The public entry for player action input: act NOW if free, else buffer the press
+    // (one slot, last press wins). game.zig routes a same-frame roll press here INSTEAD
+    // of the attack press (rolls win the frame), and steers a queued roll every frame so
+    // it leaves in the direction held when it fires — both Elden Ring behaviors.
+    pub fn requestAttack(self: *Hero, kind: Attack) void {
+        if (self.rolling or self.attacking) {
+            self.queued = .{ .attack = kind };
+        } else self.startAttack(kind);
+    }
+    pub fn requestRoll(self: *Hero, dir: rl.Vector3) void {
+        if (self.rolling or self.attacking) {
+            self.queued = .{ .roll = dir };
+        } else self.startRoll(dir);
+    }
+    pub fn steerQueuedRoll(self: *Hero, dir: rl.Vector3) void {
+        if (self.queued) |*q| switch (q.*) {
+            .roll => |*d| d.* = dir,
+            else => {},
+        };
+    }
+    // Fire whatever is buffered the moment an exit opens. Callers clear their own
+    // action flag first, so start* sees a free hero.
+    fn fireQueued(self: *Hero) void {
+        const q = self.queued orelse return;
+        self.queued = null;
+        switch (q) {
+            .attack => |k| self.startAttack(k),
+            .roll => |d| self.startRoll(d),
+        }
+    }
+
+    // Begin a committed sword attack in the current facing. Ignored while rolling or
+    // already mid-swing (player input goes through requestAttack, which buffers instead).
+    pub fn startAttack(self: *Hero, kind: Attack) void {
+        if (self.rolling or self.attacking) return;
+        self.attacking = true;
+        self.atkHeavy = kind == .heavy;
+        self.atkAlt = false; // a fresh light is always the forehand; chaining flips it (see updateAttack)
+        self.atkT = 0;
+        self.startXfade(); // whatever pose we were in cross-fades into the windup
+    }
+
+    // Advance an in-progress attack: a short committed step into the cut + pose + blade
+    // capsule refresh. Call in place of move/update while `attacking`; `bounds` clamps
+    // like moveHero. Movement input is ignored — cuts are committed, souls-style.
+    pub fn updateAttack(self: *Hero, dt: f32, bounds: f32) void {
+        self.elapsed += dt;
+        self.blendT = @min(self.blendT + dt, 1e9);
+        const dur: f32 = if (self.atkHeavy) ATK_HEAVY_DUR else ATK_LIGHT_DUR;
+        const sa: f32 = if (self.atkHeavy) AH_STRIKE_A else AL_STRIKE_A;
+        const sb: f32 = if (self.atkHeavy) AH_STRIKE_B else AL_STRIKE_B;
+        const lunge: f32 = if (self.atkHeavy) AH_LUNGE else AL_LUNGE;
+        const u = mathx.clampF(self.atkT / dur, 0, 1);
+        // Step into the cut: the lunge is spread evenly across the strike span.
+        const speed: f32 = if (u >= sa and u < sb) lunge / ((sb - sa) * dur) else 0;
+        const moved = speed * dt;
+        self.pos.x = mathx.clampF(self.pos.x + mathx.sinf(self.facing) * moved, -bounds, bounds);
+        self.pos.z = mathx.clampF(self.pos.z + mathx.cosf(self.facing) * moved, -bounds, bounds);
+        self.speed = speed;
+        self.speedS = mathx.approach(self.speedS, speed, dt * SPEED_SMOOTH);
+        self.atkT += dt;
+        // Buffered exit: past the chain knot the stand-down tail is skippable — a queued
+        // action takes over NOW (this is what makes mashed inputs FLOW, souls-style).
+        const chain: f32 = if (self.atkHeavy) AH_CHAIN else AL_CHAIN;
+        const wasLight = !self.atkHeavy;
+        const wasAlt = self.atkAlt;
+        if (self.atkT / dur >= chain and self.queued != null) {
+            self.attacking = false;
+            self.fireQueued(); // start* runs its own cross-fade out of this pose
+            // ER combo naturalism: a light chained off a light ALTERNATES — the return
+            // swipe comes backhand out of where the last one landed.
+            if (self.attacking and !self.atkHeavy and wasLight) self.atkAlt = !wasAlt;
+            self.pose(); // first frame of the new action (windup or dive)
+            self.updateBlade();
+            return;
+        }
+        // Pose BEFORE clearing `attacking` (the same one-frame contract as the roll).
+        self.pose();
+        self.updateBlade();
+        if (self.atkT >= dur) {
+            self.attacking = false;
+            // `moving` is NOT reset — held input walks straight out of the recovery.
+            self.startXfade();
+            self.fireQueued(); // anything still buffered leaves the gate instantly
+            if (self.attacking and !self.atkHeavy and wasLight) self.atkAlt = !wasAlt; // late-buffered lights still alternate
+        }
+    }
+
+    // TAE-events equivalent: the blade only HITS inside the strike's active window.
+    pub fn hitActive(self: *const Hero) bool {
+        if (!self.attacking) return false;
+        const dur: f32 = if (self.atkHeavy) ATK_HEAVY_DUR else ATK_LIGHT_DUR;
+        const u = self.atkT / dur;
+        return if (self.atkHeavy) (u >= AH_HIT_A and u < AH_HIT_B) else (u >= AL_HIT_A and u < AL_HIT_B);
+    }
+
+    // Refresh the blade capsule from the SWORD bone. Keeps last frame's endpoints for
+    // swept tests; the sweep history resets on the activation edge (which is also where
+    // the per-swing hit list will clear once there are targets to record).
+    fn updateBlade(self: *Hero) void {
+        self.bladeA0 = self.bladeA;
+        self.bladeB0 = self.bladeB;
+        self.bladeA = rl.math.vector3Transform(BLADE_BASE, self.xf[SWORD]);
+        self.bladeB = rl.math.vector3Transform(BLADE_TIP, self.xf[SWORD]);
+        const act = self.hitActive();
+        if (act and !self.hitWasActive) {
+            self.bladeA0 = self.bladeA;
+            self.bladeB0 = self.bladeB;
+        }
+        self.hitWasActive = act;
     }
 
     // Compute every bone's world matrix for this frame's pose. Call once before drawing.
     pub fn pose(self: *Hero) void {
         if (self.rolling) return self.poseRoll();
+        if (self.attacking) return self.poseAttack();
         const m = self.moving;
         const ph = self.phase;
         const twoPi = std.math.tau;
-        // Walk→run blend from ground speed; run curves/posture fade in across the band.
-        // sprintB adds extra lean/crouch past full run.
-        const runB = mathx.clampF((self.speed - RUN_SPEED_LO) / (RUN_SPEED_HI - RUN_SPEED_LO), 0, 1);
-        const sprintB = mathx.clampF((self.speed - RUN_SPEED_HI) / (SPRINT_REF_SPEED - RUN_SPEED_HI), 0, 1);
+        // Walk→run blend from the short-EASED ground speed (speedS) so posture (lean,
+        // crouch, arm pump) glides across stance changes instead of stepping the frame
+        // speed does; sprintB adds extra lean/crouch past full run.
+        const runB = mathx.clampF((self.speedS - RUN_SPEED_LO) / (RUN_SPEED_HI - RUN_SPEED_LO), 0, 1);
+        const sprintB = mathx.clampF((self.speedS - RUN_SPEED_HI) / (SPRINT_REF_SPEED - RUN_SPEED_HI), 0, 1);
         const crouch = (RUN_CROUCH * runB + 0.5 * RUN_CROUCH * sprintB) * m; // low centre of gravity
 
         // ── pelvis oscillations (walk bob ↔ run airtime bounce) ──
@@ -361,36 +716,209 @@ pub const Hero = struct {
         const armAmp = mathx.lerpF(ARM_SWING, RUN_ARM_SWING, runB);
         const armL = -armAmp * mathx.cosf(twoPi * ph) * m;
         const armR = armAmp * mathx.cosf(twoPi * ph) * m;
-        armChain(&wx, self.rest, armL, m, runB, 1.0, SHL, ELL, WRL);
-        armChain(&wx, self.rest, armR, m, runB, -1.0, SHR, ELR, WRR);
+        armChain(&wx, self.rest, armL, m, runB, 1.0, 0.0, SHL, ELL, WRL);
+        armChain(&wx, self.rest, armR, m, runB, -1.0, 1.0, SHR, ELR, WRR); // right hand carries the sword
+        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity()); // blade rides the fist
 
+        self.applyXfade(&wx);
         self.xf = wx;
     }
 
-    // Roll pose: the whole tucked body somersaults forward about a pivot at ball height,
-    // easing into a crouch and back out to a stand. After facing, the body's +Z is rollDir,
-    // so a +X-axis rotation is a forward roll along it.
+    // Freeze the current pose as the source of a short cross-fade — call at any pose
+    // DISCONTINUITY (roll start/end). pose()/poseRoll() blend out of it over POSE_XFADE.
+    fn startXfade(self: *Hero) void {
+        self.blendXf = self.xf;
+        self.blendT = 0;
+    }
+
+    fn applyXfade(self: *const Hero, wx: *[N]rl.Matrix) void {
+        if (self.blendT >= POSE_XFADE) return;
+        const k = mathx.smoothstep(0, POSE_XFADE, self.blendT);
+        for (0..N) |i| wx[i] = lerpM(self.blendXf[i], wx[i], k);
+    }
+
+    // Roll pose, three overlapping beats (the knots above): DIVE — crouch + ball up fast
+    // while the spin is barely started; SOMERSAULT — the tucked body tumbles forward about
+    // a pivot at ball height, front-loaded (fast over the shoulder, slower unroll) and
+    // landing the full 360° early; RECOVERY — spin done, legs extend to plant, pelvis
+    // rises back to stance. Wabi-sabi rides on top, all cosmetic: banked into the
+    // roll-side shoulder, a few degrees off-square through the recovery (the eyes finding
+    // the true heading first), guide arm hard / push arm loose, lead leg tighter than
+    // trail, magnitudes drifting per roll (rollVar). After facing, the body's +Z is
+    // rollDir, so a +X-axis rotation is a forward roll along it.
     fn poseRoll(self: *Hero) void {
         const u = mathx.clampF(self.rollT / ROLL_DUR, 0, 1);
-        const tuck = mathx.clampF(@min(u / 0.2, (1.0 - u) / 0.2), 0, 1); // ramp in, hold, ramp out
-        const rollDeg = 360.0 * u; // exactly one forward revolution over the roll
-        const ballY = mathx.lerpF(self.rest[ROOT].y, ROLL_BALL_Y, tuck);
+        const tuckIn = mathx.smoothstep(0, ROLL_TUCK_IN, u);
+        const tuck = tuckIn * (1.0 - mathx.smoothstep(ROLL_UNTUCK_A, ROLL_UNTUCK_B, u));
+        const spin = ROLL_SPIN_OVER * mathx.smoothstep(ROLL_SPIN_A, ROLL_SPIN_M1, u) +
+            (360.0 - ROLL_SPIN_OVER) * mathx.smoothstep(ROLL_SPIN_M0, ROLL_SPIN_B, u);
+        const crouch = tuckIn * (1.0 - mathx.smoothstep(ROLL_RISE_A, ROLL_RISE_B, u));
+        const ballY = mathx.lerpF(self.rest[ROOT].y, ROLL_BALL_Y, crouch);
+        const v = self.rollVar;
+        const lean = ROLL_LEAN * self.rollSide * v * tuck;
+        const skew = ROLL_SKEW * self.rollSide * v *
+            mathx.smoothstep(0.30, 0.75, u) * (1.0 - mathx.smoothstep(0.85, 1.0, u));
         const facingDeg = mathx.degrees(self.facing);
 
         var wx: [N]rl.Matrix = undefined;
         wx[ROOT] = mul3(
-            rx(rollDeg), // somersault about body-right (forward)
-            mul(ry(facingDeg), tr(0, ballY, 0)), // face roll dir, lift to the ball centre
+            mul(rz(lean), rx(spin)), // dip the roll-side shoulder, then somersault forward over it
+            mul(ry(facingDeg + skew), tr(0, ballY, 0)), // face roll dir (off-square fading out), lift to the ball centre
             tr(self.pos.x, 0, self.pos.z), // place in the world
         );
         setLocal(&wx, SPINE, self.rest, rx(ROLL_SPINE * tuck)); // curl forward
         setLocal(&wx, CHEST, self.rest, rx(ROLL_SPINE * tuck));
         setLocal(&wx, NECK, self.rest, rx(ROLL_HEAD * 0.4 * tuck));
-        setLocal(&wx, HEAD, self.rest, rx(ROLL_HEAD * tuck)); // chin to chest
-        rollLeg(&wx, self.rest, tuck, 1.0, HIPL, KNEEL, ANKL);
-        rollLeg(&wx, self.rest, tuck, -1.0, HIPR, KNEER, ANKR);
-        rollArm(&wx, self.rest, tuck, 1.0, SHL, ELL, WRL);
-        rollArm(&wx, self.rest, tuck, -1.0, SHR, ELR, WRR);
+        setLocal(&wx, HEAD, self.rest, mul(rx(mathx.lerpF(HEAD_WALK, ROLL_HEAD, tuck)), ry(-0.5 * skew))); // chin to chest; the eyes lead the body back to square
+        const leadF = 1.0 + (ROLL_LEG_LEAD - 1.0) * v;
+        const trailF = 1.0 + (ROLL_LEG_TRAIL - 1.0) * v;
+        const guideF = 1.0 + (ROLL_ARM_GUIDE - 1.0) * v;
+        const pushF = 1.0 + (ROLL_ARM_PUSH - 1.0) * v;
+        const overL = self.rollSide > 0;
+        rollLeg(&wx, self.rest, tuck, if (overL) leadF else trailF, 1.0, HIPL, KNEEL, ANKL);
+        rollLeg(&wx, self.rest, tuck, if (overL) trailF else leadF, -1.0, HIPR, KNEER, ANKR);
+        rollArm(&wx, self.rest, tuck, if (overL) guideF else pushF, 1.0, SHL, ELL, WRL);
+        rollArm(&wx, self.rest, tuck, if (overL) pushF else guideF, -1.0, SHR, ELR, WRR);
+        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity()); // blade stays in the fist through the tuck
+        self.applyXfade(&wx);
+        self.xf = wx;
+    }
+
+    fn poseAttack(self: *Hero) void {
+        if (self.atkHeavy) return self.poseHeavy();
+        self.poseLight();
+    }
+
+    // R1 — the fast diagonal slash, kinetic-chain sequenced: the trunk winds toward the
+    // sword side, then pelvis → chest → shoulder → elbow → wrist release in that order
+    // (each one AL_LAG late), and the whole load unwinds to a stand through the tail.
+    // Chained lights ALTERNATE (atkAlt): the FOREHAND cuts high-right → low-left, the
+    // RETURN comes backhand out of where it landed — high-left → low-right — by
+    // mirroring the yaw/sweep terms (slightly damped: the body blocks a cross windup).
+    fn poseLight(self: *Hero) void {
+        const u = mathx.clampF(self.atkT / ATK_LIGHT_DUR, 0, 1);
+        const rec = 1.0 - mathx.smoothstep(AL_RECOV_A, 1.0, u); // 1 until recovery, draining to 0
+        const wind = mathx.smoothstep(0, AL_WIND_B, u) * rec;
+        const sPelv = mathx.smoothstep(AL_STRIKE_A, AL_STRIKE_B, u) * rec;
+        const sChest = mathx.smoothstep(AL_STRIKE_A + AL_LAG, AL_STRIKE_B + AL_LAG, u) * rec;
+        const sSh = mathx.smoothstep(AL_STRIKE_A + 2 * AL_LAG, AL_STRIKE_B + 2 * AL_LAG, u) * rec;
+        const sElb = mathx.smoothstep(AL_STRIKE_A + 3 * AL_LAG, AL_STRIKE_B + 3 * AL_LAG, u) * rec;
+        const sWr = mathx.smoothstep(AL_STRIKE_A + 4 * AL_LAG, AL_STRIKE_B + 4 * AL_LAG, u) * rec;
+        const sw: f32 = if (self.atkAlt) -1.0 else 1.0; // swing side: +1 forehand, -1 backhand return
+        const amp: f32 = if (self.atkAlt) 0.8 else 1.0; // the cross-body windup can't coil as deep
+
+        // Trunk: wind toward the swing's origin side, release through past neutral.
+        // `os` is the follow-through overshoot — the swing whips a few degrees PAST the
+        // end pose just as recovery starts pulling home, so it settles instead of parking.
+        const os = AL_OVER * bump(u, AL_STRIKE_B + 2 * AL_LAG, AL_RECOV_A + 0.15);
+        const yawP = sw * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sPelv);
+        const yawC = sw * (1.35 * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sChest) + os);
+        const crunch = AL_SPINE_CRUNCH * sChest;
+        const facingDeg = mathx.degrees(self.facing);
+        const hipY = self.rest[ROOT].y;
+
+        var wx: [N]rl.Matrix = undefined;
+        wx[ROOT] = mul3(
+            ry(yawP),
+            mul(tr(0, hipY - AL_LOAD * wind - AL_DIP * sPelv, 0), mul(rx(4.0 * sChest), ry(facingDeg))), // knees coil under the windup, settle on release
+            tr(self.pos.x, 0, self.pos.z),
+        );
+        setLocal(&wx, SPINE, self.rest, mul(rx(crunch), ry(0.35 * yawC)));
+        setLocal(&wx, CHEST, self.rest, mul(rx(crunch), ry(0.65 * yawC)));
+        setLocal(&wx, NECK, self.rest, ry(-0.4 * (yawP + yawC)));
+        setLocal(&wx, HEAD, self.rest, mul(rx(HEAD_WALK), ry(-0.35 * (yawP + yawC)))); // eyes stay on the target
+        // Stance brace: the leg opposite the swing's LANDING side steps up as the cut releases.
+        const braceL: f32 = if (self.atkAlt) 6.0 else -10.0;
+        const braceR: f32 = if (self.atkAlt) -10.0 else 6.0;
+        const kneeL: f32 = if (self.atkAlt) 5.0 else 8.0;
+        const kneeR: f32 = if (self.atkAlt) 8.0 else 5.0;
+        setLocal(&wx, HIPL, self.rest, mul(rx(braceL * sPelv), rz(-HIP_ADDUCT)));
+        setLocal(&wx, KNEEL, self.rest, rx(IDLE_KNEE + kneeL * sPelv + 6.0 * wind));
+        setLocal(&wx, ANKL, self.rest, ry(FOOT_TOEOUT));
+        setLocal(&wx, HIPR, self.rest, mul(rx(braceR * sPelv), rz(HIP_ADDUCT)));
+        setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + kneeR * sPelv + 6.0 * wind));
+        setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
+        // Left arm counterbalances: drifts forward on the wind, sweeps back through.
+        setLocal(&wx, SHL, self.rest, mul(rx(-10.0 * wind + 24.0 * sChest), rz(ARM_ABD)));
+        setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 12.0 * wind)));
+        setLocal(&wx, WRL, self.rest, rl.math.matrixIdentity());
+        // Sword arm: the whip. Shoulder wound high (fist by the ear — or past the off
+        // shoulder on the return), then slung ACROSS — the ry sweep carries the arc
+        // horizontally wide while rx brings it down only to hip height (a clear
+        // HIGH → LOW diagonal); elbow extends late; wrist cocks and snaps last, ROLLING
+        // the cutting edge into the arc. The overshoot rides the sweep so the blade
+        // whips past and settles.
+        const shX = AL_SH_WIND_X * wind - (AL_SH_STRIKE_X + AL_SH_WIND_X) * sSh;
+        const shY = sw * (AL_SH_SWEEP * sSh + 0.8 * os);
+        const shZ = sw * amp * (-AL_SH_WIND_Z * wind + (AL_SH_WIND_Z + AL_SH_STRIKE_Z) * sSh) - ARM_ABD;
+        setLocal(&wx, SHR, self.rest, mul3(rx(shX), ry(shY), rz(shZ)));
+        const elb = IDLE_ELBOW + (AL_ELBOW_WIND - IDLE_ELBOW) * wind - (AL_ELBOW_WIND - AL_ELBOW_STRIKE) * sElb;
+        setLocal(&wx, ELR, self.rest, rx(-elb));
+        setLocal(&wx, WRR, self.rest, mul(rx(AL_WRIST_COCK * wind - (AL_WRIST_COCK + AL_WRIST_SNAP) * sWr), ry(sw * AL_EDGE_ROLL * sWr)));
+        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        self.applyXfade(&wx);
+        self.xf = wx;
+    }
+
+    // R2 — the overhead chop: a slow raise past vertical (the tell), knees loading,
+    // then trunk flexion drives the drop (chain-sequenced like the light), the weight
+    // falling into a buried impact that HOLDS before the slow rise.
+    fn poseHeavy(self: *Hero) void {
+        const u = mathx.clampF(self.atkT / ATK_HEAVY_DUR, 0, 1);
+        const rec = 1.0 - mathx.smoothstep(AH_RECOV_A, 1.0, u);
+        const wind = mathx.smoothstep(0, AH_WIND_B, u) * rec;
+        const sPelv = mathx.smoothstep(AH_STRIKE_A, AH_STRIKE_B, u) * rec;
+        const sChest = mathx.smoothstep(AH_STRIKE_A + AH_LAG, AH_STRIKE_B + AH_LAG, u) * rec;
+        const sSh = mathx.smoothstep(AH_STRIKE_A + 2 * AH_LAG, AH_STRIKE_B + 2 * AH_LAG, u) * rec;
+        const sElb = mathx.smoothstep(AH_STRIKE_A + 3 * AH_LAG, AH_STRIKE_B + 3 * AH_LAG, u) * rec;
+        const sWr = mathx.smoothstep(AH_STRIKE_A + 4 * AH_LAG, AH_STRIKE_B + 4 * AH_LAG, u) * rec;
+
+        // Grace notes that keep the chop ORGANIC: `gather` drifts the blade a touch
+        // further back through the top-of-raise hang (a breath before the violence, gone
+        // once the shoulder fires); `rcl` is the impact judder inside the buried hold —
+        // the blade bites, the body bounces a hair, and it re-settles.
+        const gather = mathx.smoothstep(AH_WIND_B - 0.05, AH_STRIKE_A + 2 * AH_LAG, u) * (1.0 - sSh) * rec;
+        const rcl = bump(u, AH_STRIKE_B + 2 * AH_LAG, AH_RECOV_A) * rec;
+
+        const yaw = -AH_BODY_YAW * wind + 2.0 * AH_BODY_YAW * sPelv;
+        const spineX = -AH_LEAN_BACK * wind + (AH_LEAN_BACK + AH_SPINE_CRUNCH) * sChest;
+        // Frontal coil: bend toward the sword side under the raise, whip past on the drop.
+        const tilt = -AH_SPINE_TILT * wind + 1.5 * AH_SPINE_TILT * sChest;
+        const dip = AH_LOAD * wind + (AH_DIP - AH_LOAD) * sPelv - 0.008 * H * rcl;
+        const facingDeg = mathx.degrees(self.facing);
+        const hipY = self.rest[ROOT].y;
+
+        var wx: [N]rl.Matrix = undefined;
+        wx[ROOT] = mul3(
+            ry(yaw),
+            mul(tr(0, hipY - dip, 0), mul(rx(AH_PITCH * sPelv), ry(facingDeg))),
+            tr(self.pos.x, 0, self.pos.z),
+        );
+        setLocal(&wx, SPINE, self.rest, mul(rx(0.5 * spineX), rz(0.5 * tilt)));
+        setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * spineX), rz(0.5 * tilt)));
+        setLocal(&wx, NECK, self.rest, rx(-0.3 * spineX)); // head counters the lean-back, tucks on the drop
+        setLocal(&wx, HEAD, self.rest, mul(rx(HEAD_WALK + 4.0 * sChest), ry(-0.4 * yaw)));
+        // Staggered load, not a symmetric squat: the off-side (left) leg steps up to
+        // brace while the sword-side leg sits BACK and loads under the raise.
+        setLocal(&wx, HIPL, self.rest, mul(rx(-14.0 * wind - 8.0 * sPelv), rz(-HIP_ADDUCT)));
+        setLocal(&wx, KNEEL, self.rest, rx(IDLE_KNEE + 8.0 * wind + 6.0 * sPelv));
+        setLocal(&wx, ANKL, self.rest, ry(FOOT_TOEOUT));
+        setLocal(&wx, HIPR, self.rest, mul(rx(2.0 * wind + 5.0 * sPelv), rz(HIP_ADDUCT)));
+        setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 17.0 * wind + 4.0 * sPelv));
+        setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
+        // Left arm rises for balance under the raise, drops with the blow.
+        setLocal(&wx, SHL, self.rest, mul(rx(-22.0 * wind + 30.0 * sChest), rz(ARM_ABD + 6.0 * wind)));
+        setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 16.0 * wind)));
+        setLocal(&wx, WRL, self.rest, rl.math.matrixIdentity());
+        // Sword arm: up past vertical, blade hanging back (sinking further through the
+        // gather) — then the chop, recoiling a few degrees off the bite before settling.
+        const shX = -AH_SH_UP * wind - AH_GATHER * gather + (AH_SH_UP - AH_SH_DOWN) * sSh + AH_RECOIL * rcl;
+        setLocal(&wx, SHR, self.rest, mul(rx(shX), rz(-ARM_ABD - 8.0 * wind)));
+        const elb = IDLE_ELBOW + (AH_ELBOW_WIND - IDLE_ELBOW) * wind + 5.0 * gather - (AH_ELBOW_WIND - AH_ELBOW_STRIKE) * sElb;
+        setLocal(&wx, ELR, self.rest, rx(-elb));
+        setLocal(&wx, WRR, self.rest, rx(AH_WRIST_COCK * wind - (AH_WRIST_COCK + AH_WRIST_SNAP) * sWr + 8.0 * rcl));
+        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        self.applyXfade(&wx);
         self.xf = wx;
     }
 
@@ -425,26 +953,34 @@ fn legChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, ph: f32, m: f32, runB: f32, 
     setLocal(wx, ank, rest, mul(rx(-ankDorsi), ry(side * FOOT_TOEOUT))); // dorsiflex + toe-out splay
 }
 
-fn armChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, swing: f32, m: f32, runB: f32, side: f32, sh: usize, el: usize, wr: usize) void {
+fn armChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, swing: f32, m: f32, runB: f32, side: f32, carry: f32, sh: usize, el: usize, wr: usize) void {
     // Contralateral fore/aft swing; the walking elbow tracks the FORWARD swing only (back
     // arm stays nearly straight — no "zombie arms"), and running bends both to ~90° pumping.
-    const walkElbow = mathx.maxF(6.0, 4.0 + 0.8 * swing);
-    const elbow = mathx.lerpF(IDLE_ELBOW, mathx.lerpF(walkElbow, RUN_ELBOW, runB), m);
-    setLocal(wx, sh, rest, mul(rx(-swing), rz(side * ARM_ABD))); // −rx forward, ±side rz outward
+    // The sword arm (carry=1) CARRIES instead of mirroring: swing damped, a readier elbow
+    // at rest/walk, the run pump capped short of the full fold, and the wrist laying the
+    // blade back toward the forearm line so the tip trails low instead of skewering ahead.
+    const sw = swing * (1.0 - CARRY_DAMP * carry);
+    const walkElbow = mathx.maxF(6.0, 4.0 + 0.8 * sw);
+    const runElbow = mathx.lerpF(RUN_ELBOW, CARRY_ELBOW_RUN, carry);
+    const elbow = mathx.maxF(mathx.lerpF(IDLE_ELBOW, mathx.lerpF(walkElbow, runElbow, runB), m), CARRY_ELBOW * carry);
+    setLocal(wx, sh, rest, mul(rx(-sw), rz(side * ARM_ABD))); // −rx forward, ±side rz outward
     setLocal(wx, el, rest, rx(-elbow)); // −rx = forearm forward (elbow flexes)
-    setLocal(wx, wr, rest, rl.math.matrixIdentity());
+    setLocal(wx, wr, rest, rx(carry * CARRY_WRIST_RUN * runB * m));
 }
 
 // Roll tuck: thighs to chest, heels toward glutes, arms hugged in front — all scaled by
-// `tuck` so the crouch eases in and the stand eases out.
-fn rollLeg(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, tuck: f32, side: f32, hip: usize, knee: usize, ank: usize) void {
-    setLocal(wx, hip, rest, mul(rx(-ROLL_HIP * tuck), rz(-side * HIP_ADDUCT)));
-    setLocal(wx, knee, rest, rx(ROLL_KNEE * tuck));
+// `tuck` so the crouch eases in and the stand eases out, and by a per-limb wabi-sabi
+// factor `f` (lead/trail leg, guide/push arm) so the ball is never mirror-perfect.
+// Knee/elbow blend to their IDLE micro-bends (not dead-straight zero) so the plant/rise
+// flows into the standing pose.
+fn rollLeg(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, tuck: f32, f: f32, side: f32, hip: usize, knee: usize, ank: usize) void {
+    setLocal(wx, hip, rest, mul(rx(-ROLL_HIP * f * tuck), rz(-side * HIP_ADDUCT)));
+    setLocal(wx, knee, rest, rx(mathx.lerpF(IDLE_KNEE, ROLL_KNEE * f, tuck)));
     setLocal(wx, ank, rest, ry(side * FOOT_TOEOUT));
 }
-fn rollArm(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, tuck: f32, side: f32, sh: usize, el: usize, wr: usize) void {
-    setLocal(wx, sh, rest, mul(rx(-ROLL_SHOULDER * tuck), rz(side * ARM_ABD)));
-    setLocal(wx, el, rest, rx(-ROLL_ELBOW * tuck));
+fn rollArm(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, tuck: f32, f: f32, side: f32, sh: usize, el: usize, wr: usize) void {
+    setLocal(wx, sh, rest, mul(rx(-ROLL_SHOULDER * f * tuck), rz(side * ARM_ABD)));
+    setLocal(wx, el, rest, rx(-mathx.lerpF(IDLE_ELBOW, ROLL_ELBOW * f, tuck)));
     setLocal(wx, wr, rest, rl.math.matrixIdentity());
 }
 
@@ -468,7 +1004,35 @@ fn buildMeshes() [N]rl.Mesh {
     mesh[SHR] = upperArmMesh(false);
     mesh[ELR] = forearmMesh();
     mesh[WRR] = handMesh();
+    mesh[SWORD] = swordMesh();
     return mesh;
+}
+
+// The drawn arming sword, authored in the RIGHT-WRIST frame about the fist centre
+// (glove centre (0, FIST_Y, FIST_Z)), with the blade canted GRIP_PITCH forward of the
+// forearm line — a sword is HELD at an angle to the forearm, never straight along it. At
+// rest (arm hanging) the tip leads down-forward, clear of the ground: the souls
+// low-ready. Attacks whip the wrist/arm; the blade just rides. Keep BLADE_BASE/BLADE_TIP
+// (the hit capsule dummy points) matched to this geometry.
+fn swordMesh() rl.Mesh {
+    var b = Builder.init();
+    // EDGE ORIENTATION matters: a hammer grip carries the cutting edges FORWARD/BACK
+    // (knuckles forward), so the wide edge-to-edge plane is the SAGITTAL `n` axis and the
+    // flats face the sides (`s`). An overhead chop then leads with the edge coming down
+    // vertically — never a flat "blade smack" — and the quillons lie along the edge line.
+    const s = v3(0.5 * OUT_CA, 0, 0.5 * OUT_SA); // half-unit flat-side axis of the canted frame
+    const n = v3(-0.5 * GRIP_CA * OUT_SA, 0.5 * GRIP_SA, 0.5 * GRIP_CA * OUT_CA); // half-unit edge-side axis
+    const a = v3(-0.5 * GRIP_SA * OUT_SA, -0.5 * GRIP_CA, 0.5 * GRIP_SA * OUT_CA); // half-unit blade axis
+    b.addCylinder(bladeAt(0.026), bladeAt(-0.05), 0.014 * H, 0.012 * H, 6, BELT); // grip through the fist
+    b.addBox(bladeAt(-0.058), scale(s, 0.028 * H), scale(a, 0.028 * H), scale(n, 0.028 * H), BRASS); // pommel
+    b.addBox(bladeAt(0.036), scale(n, 0.115 * H), scale(a, 0.02 * H), scale(s, 0.03 * H), STEEL); // crossguard, quillons on the edge line
+    b.addBox(bladeAt(0.231), scale(n, 0.048 * H), scale(a, 0.37 * H), scale(s, 0.012 * H), STEEL); // blade, edges fore/aft
+    b.addCylinder(bladeAt(0.416), bladeAt(0.481), 0.020 * H, 0.001, 4, STEEL_DK); // tapering point
+    return b.toMesh();
+}
+
+fn scale(v: rl.Vector3, k: f32) rl.Vector3 {
+    return v3(v.x * k, v.y * k, v.z * k);
 }
 
 fn pelvisMesh() rl.Mesh {
@@ -481,8 +1045,9 @@ fn pelvisMesh() rl.Mesh {
     b.addCube(v3(-0.095 * H, -0.055 * H, 0.05 * H), v3(0.07 * H, 0.085 * H, 0.016 * H), LEATHER);
     b.addCube(v3(-0.115 * H, -0.045 * H, -0.03 * H), v3(0.05 * H, 0.06 * H, 0.045 * H), LEATHER_DK); // pouch
     b.addCube(v3(-0.115 * H, -0.028 * H, -0.03 * H), v3(0.054 * H, 0.02 * H, 0.05 * H), LEATHER); // pouch flap
-    // Sword at the left hip, riding the pelvis bone: scabbard raked down-and-back, hilt
-    // above the belt. d = unit lean of the scabbard; p1/p2 its cross-section axes.
+    // EMPTY scabbard at the left hip, riding the pelvis bone, raked down-and-back — the
+    // sword itself is DRAWN (the SWORD bone in the right fist), so no hilt shows here.
+    // d = unit lean of the scabbard; p1/p2 its cross-section axes.
     const d = v3(0.10, -0.90, -0.42);
     const p1 = v3(0.995, 0.090, 0.042);
     const p2 = v3(0, -0.422, 0.9045);
@@ -490,9 +1055,6 @@ fn pelvisMesh() rl.Mesh {
     const hl = 0.185 * H; // scabbard half-length
     b.addBox(v3(s0.x + d.x * hl, s0.y + d.y * hl, s0.z + d.z * hl), v3(p1.x * 0.020 * H, p1.y * 0.020 * H, p1.z * 0.020 * H), v3(d.x * hl, d.y * hl, d.z * hl), v3(p2.x * 0.010 * H, p2.y * 0.010 * H, p2.z * 0.010 * H), LEATHER_DK);
     b.addBox(v3(s0.x + d.x * 2 * hl, s0.y + d.y * 2 * hl, s0.z + d.z * 2 * hl), v3(p1.x * 0.023 * H, p1.y * 0.023 * H, p1.z * 0.023 * H), v3(d.x * 0.014 * H, d.y * 0.014 * H, d.z * 0.014 * H), v3(p2.x * 0.012 * H, p2.y * 0.012 * H, p2.z * 0.012 * H), STEEL_DK); // chape
-    b.addBox(s0, v3(p1.x * 0.055 * H, p1.y * 0.055 * H, p1.z * 0.055 * H), v3(d.x * 0.009 * H, d.y * 0.009 * H, d.z * 0.009 * H), v3(p2.x * 0.011 * H, p2.y * 0.011 * H, p2.z * 0.011 * H), STEEL); // crossguard
-    b.addCylinder(v3(s0.x - d.x * 0.005 * H, s0.y - d.y * 0.005 * H, s0.z - d.z * 0.005 * H), v3(s0.x - d.x * 0.075 * H, s0.y - d.y * 0.075 * H, s0.z - d.z * 0.075 * H), 0.013 * H, 0.011 * H, 6, BELT); // grip
-    b.addCube(v3(s0.x - d.x * 0.09 * H, s0.y - d.y * 0.09 * H, s0.z - d.z * 0.09 * H), v3(0.028 * H, 0.028 * H, 0.028 * H), BRASS); // pommel
     return b.toMesh();
 }
 
@@ -588,4 +1150,54 @@ fn handMesh() rl.Mesh {
     var b = Builder.init();
     b.addCube(v3(0, -0.05 * H, 0.005 * H), v3(0.05 * H, 0.10 * H, 0.045 * H), BOOT); // glove
     return b.toMesh();
+}
+
+// ── invariants under test (pure math only — meshes/poses need a GPU window) ──────────
+test "roll knots are ordered and the somersault lands exactly 360 before the rise" {
+    comptime {
+        std.debug.assert(0 < ROLL_TUCK_IN and ROLL_TUCK_IN < ROLL_UNTUCK_A);
+        std.debug.assert(ROLL_SPIN_A < ROLL_SPIN_M0 and ROLL_SPIN_M0 < ROLL_SPIN_M1 and ROLL_SPIN_M1 < ROLL_SPIN_B);
+        std.debug.assert(ROLL_SPIN_B < ROLL_UNTUCK_B and ROLL_UNTUCK_A < ROLL_UNTUCK_B);
+        std.debug.assert(ROLL_RISE_A < ROLL_RISE_B and ROLL_RISE_B <= 1.0);
+        std.debug.assert(ROLL_BRAKE_A < ROLL_BRAKE_B and ROLL_BRAKE_B <= 1.0);
+        // Attack chains: every lagged strike span lands before its recovery begins, and
+        // the hit window sits inside the swing.
+        std.debug.assert(AL_WIND_B <= AL_STRIKE_A and AL_STRIKE_B + 4 * AL_LAG <= AL_RECOV_A);
+        std.debug.assert(AH_WIND_B <= AH_STRIKE_A and AH_STRIKE_B + 4 * AH_LAG <= AH_RECOV_A);
+        std.debug.assert(AL_HIT_A >= AL_STRIKE_A and AL_HIT_B <= AL_RECOV_A);
+        std.debug.assert(AH_HIT_A >= AH_STRIKE_A and AH_HIT_B <= AH_RECOV_A);
+        // Buffered-exit chain knots live in the skippable tail: after recovery starts
+        // AND after the overshoot/recoil pulses have died, before the anim ends.
+        std.debug.assert(AL_CHAIN >= AL_RECOV_A + 0.15 and AL_CHAIN < 1.0);
+        std.debug.assert(AH_CHAIN >= AH_RECOV_A and AH_CHAIN < 1.0);
+    }
+    // The two overlapped spin eases must sum to one full revolution at ROLL_SPIN_B and
+    // STAY there — a spin-free stand-up is the roll's core promise.
+    inline for (.{ ROLL_SPIN_B, 0.9, 1.0 }) |u| {
+        const spin = ROLL_SPIN_OVER * mathx.smoothstep(ROLL_SPIN_A, ROLL_SPIN_M1, u) +
+            (360.0 - ROLL_SPIN_OVER) * mathx.smoothstep(ROLL_SPIN_M0, ROLL_SPIN_B, u);
+        try std.testing.expectApproxEqAbs(@as(f32, 360), spin, 1e-4);
+    }
+}
+
+test "roll travel: the brake profile integrates to ROLL_DIST" {
+    // Numeric check of updateRoll's normalization claim (profile integral over u is
+    // (BRAKE_A+BRAKE_B)/2, so peak * integral * DUR == DIST).
+    const peak = ROLL_DIST / (ROLL_DUR * 0.5 * (ROLL_BRAKE_A + ROLL_BRAKE_B));
+    const steps: f32 = 20000;
+    var dist: f64 = 0;
+    var i: f32 = 0.5;
+    while (i < steps) : (i += 1) {
+        const u = i / steps;
+        dist += peak * (1.0 - mathx.smoothstep(ROLL_BRAKE_A, ROLL_BRAKE_B, u)) * (ROLL_DUR / steps);
+    }
+    try std.testing.expectApproxEqAbs(@as(f64, ROLL_DIST), dist, 1e-3);
+}
+
+test "gait curves wrap continuously across the stride seam" {
+    inline for (.{ HIP_FLEX, KNEE_FLEX, ANK_DORSI, RUN_HIP, RUN_KNEE, RUN_ANK }) |tbl| {
+        const nearEnd = sampleCurve(tbl, 0.9999);
+        const start = sampleCurve(tbl, 0.0);
+        try std.testing.expect(@abs(nearEnd - start) < 1.0);
+    }
 }

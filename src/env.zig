@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const gfx = @import("gfx.zig");
 const mathx = @import("mathx.zig");
+const collision = @import("collision.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -163,10 +164,16 @@ const Prop = struct { kind: u8, pos: rl.Vector3, yaw: f32, scale: f32 };
 // prop's base. Deterministic — same seed, same field, every launch.
 const SCATTER = 260;
 
+// Cap on generated footprint colliders (solid props only — plenty of headroom; the arch and
+// far gate each emit two).
+const SOLID_CAP = 160;
+
 pub const Env = struct {
     ground: rl.Model,
     models: [NK]rl.Model,
     props: [layout.len + SCATTER]Prop = undefined,
+    solid_buf: [SOLID_CAP]collision.Solid = undefined,
+    nsolids: usize = 0,
 
     pub fn init(shader: rl.Shader) Env {
         // Index each mesh by its K_* kind so the array and the kind constants can't drift
@@ -200,7 +207,13 @@ pub const Env = struct {
             e.props[i] = .{ .kind = p.kind, .pos = mathx.ground(p.x, p.z), .yaw = p.yaw, .scale = p.s };
         }
         scatterPlants(&e);
+        buildColliders(&e);
         return e;
+    }
+
+    // Footprint colliders for the hero + toads to resolve against (see collision.zig).
+    pub fn solids(self: *const Env) []const collision.Solid {
+        return self.solid_buf[0..self.nsolids];
     }
 
     pub fn setShader(self: *Env, sh: rl.Shader) void {
@@ -446,6 +459,53 @@ fn statueMesh(shader: rl.Shader) rl.Model {
 // don't sparkle — and they SWAY via the scene shader's height-based wind term (gfx.setWind;
 // windAmt gates it to flora only, so gaits/props stay rigid).
 
+fn addSolid(e: *Env, s: collision.Solid) void {
+    if (e.nsolids >= e.solid_buf.len) return;
+    e.solid_buf[e.nsolids] = s;
+    e.nsolids += 1;
+}
+
+// Footprint colliders for the SOLID props: round things → a circle, long things → a capsule
+// down their local X (rotated by the prop yaw; local +X under RotateY(θ) is (cosθ, 0, −sinθ)).
+// Flora, rubble, swords, banners, and the grace ember stay pass-through. The arch + far gate
+// each emit TWO piers so the avenue runs clean between them.
+fn buildColliders(e: *Env) void {
+    for (e.props) |p| {
+        const s = p.scale;
+        const th = mathx.radians(p.yaw);
+        const ux = mathx.cosf(th);
+        const uz = -mathx.sinf(th);
+        const cx = p.pos.x;
+        const cz = p.pos.z;
+        switch (p.kind) {
+            K_PILLAR, K_BROKEN => addSolid(e, collision.circle(cx, cz, 0.80 * s)),
+            K_TREE => addSolid(e, collision.circle(cx, cz, 0.38 * s)),
+            K_STATUE => addSolid(e, collision.circle(cx, cz, 0.90 * s)),
+            K_GRAVES => addSolid(e, collision.circle(cx, cz, 0.80 * s)),
+            K_TOWER => addSolid(e, collision.circle(cx, cz, 3.40 * s)),
+            K_BLOCK => {
+                const hl = 0.35 * s;
+                addSolid(e, collision.capsule(cx - ux * hl, cz - uz * hl, cx + ux * hl, cz + uz * hl, 0.80 * s));
+            },
+            K_WALL => {
+                const hl = 2.8 * s;
+                addSolid(e, collision.capsule(cx - ux * hl, cz - uz * hl, cx + ux * hl, cz + uz * hl, 0.60 * s));
+            },
+            K_ARCH => {
+                const off = 2.7 * s;
+                addSolid(e, collision.circle(cx - ux * off, cz - uz * off, 0.78 * s));
+                addSolid(e, collision.circle(cx + ux * off, cz + uz * off, 0.78 * s));
+            },
+            K_GATE => {
+                const off = 7.5 * s;
+                addSolid(e, collision.circle(cx - ux * off, cz - uz * off, 3.20 * s));
+                addSolid(e, collision.circle(cx + ux * off, cz + uz * off, 3.20 * s));
+            },
+            else => {},
+        }
+    }
+}
+
 // Fill the tail of e.props with the meadow scatter: rejection-sample positions that
 // stay off the worn path (|x| small) and clear of every hand-placed prop's base.
 fn scatterPlants(e: *Env) void {
@@ -539,16 +599,28 @@ fn patchMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// Low dark scrub: tilted foliage masses over a few bare twigs.
+// A low scrub bush: a rounded mound of many small leafy lobes (overlapping fat little
+// tapered cylinders, domed — fuller/taller toward the middle), a couple of bare twigs
+// poking through, grass at the skirt. Reads as a shrub, not a stack of boxes.
 fn shrubMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
-    b.addBox(v3(0, 0.28, 0), v3(0.42, 0.04, 0.06), v3(-0.05, 0.26, 0.04), v3(0.05, 0.03, 0.38), SCRUB);
-    b.addBox(v3(0.3, 0.2, 0.22), v3(0.3, -0.03, 0.05), v3(0.04, 0.18, -0.03), v3(-0.04, 0.02, 0.26), SCRUB_DK);
-    b.addBox(v3(-0.28, 0.18, -0.15), v3(0.26, 0.05, -0.04), v3(-0.03, 0.17, 0.05), v3(0.05, -0.02, 0.24), SCRUB);
-    b.addCylinder(v3(0.1, 0.1, 0.05), v3(0.5, 0.62, 0.2), 0.02, 0.004, 4, BARK_DK);
-    b.addCylinder(v3(-0.05, 0.1, 0), v3(-0.38, 0.55, -0.28), 0.02, 0.004, 4, BARK_DK);
     var rng = mathx.Rng.init(37);
-    tuftInto(&b, &rng, 0.45, -0.35, 0.7); // grass at the skirt
+    var i: i32 = 0;
+    while (i < 14) : (i += 1) {
+        const a = rng.angle();
+        const rr = rng.range(0.0, 0.36);
+        const x = mathx.cosf(a) * rr;
+        const z = mathx.sinf(a) * rr;
+        const base = rng.range(0.02, 0.14);
+        const lobeR = rng.range(0.11, 0.20) * (1.0 - 0.5 * rr / 0.36); // fuller toward the centre
+        const top = base + lobeR * rng.range(1.5, 2.4) * (1.0 - 0.4 * rr / 0.36); // domed profile
+        const col = if (rng.float() < 0.5) SCRUB else SCRUB_DK;
+        // a fat, short, slightly-leaning tapered cylinder = one rounded leafy lobe
+        b.addCylinder(v3(x, base, z), v3(x + rng.signed() * 0.05, top, z + rng.signed() * 0.05), lobeR, lobeR * 0.45, 6, col);
+    }
+    b.addCylinder(v3(0.06, 0.0, 0.03), v3(0.20, 0.54, 0.12), 0.018, 0.004, 4, BARK_DK); // bare twigs poking through
+    b.addCylinder(v3(-0.05, 0.0, -0.02), v3(-0.24, 0.48, -0.20), 0.018, 0.004, 4, BARK_DK);
+    tuftInto(&b, &rng, 0.30, -0.30, 0.7); // grass at the skirt
     return b.toModel(shader);
 }
 

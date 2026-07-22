@@ -1,0 +1,18 @@
+.{
+    .name = .zig_soulslike,
+    .version = "0.0.0",
+    // Distinct identity from the sibling zig-rts/zig-diablo repos.
+    .fingerprint = 0x39022cdd25bf4ccf, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.14.1",
+    .dependencies = .{
+        .raylib_zig = .{
+            .url = "git+https://github.com/Not-Nik/raylib-zig#731884848a1c5480ee58f38d5b787c501925cbe2",
+            .hash = "raylib_zig-5.6.0-dev-KE8REPE1BQChb1aqFIBZFfA6gyqq8mpQQ3it3g5xSGuJ",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

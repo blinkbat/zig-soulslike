@@ -130,6 +130,22 @@ const layout = [_]P{
     .{ .x = 12.4, .z = -27.2, .yaw = 150, .s = 0.9, .kind = K_FLOWERS },
     .{ .x = -13.2, .z = -15.7, .yaw = 25, .s = 1.15, .kind = K_REEDS },
     .{ .x = 14.2, .z = -38.6, .yaw = -60, .s = 1.2, .kind = K_REEDS },
+    // denser flowers ringing the graveyard — mourning blooms clustered on the graves
+    .{ .x = -9.6, .z = -28.2, .yaw = 20, .s = 0.95, .kind = K_FLOWERS },
+    .{ .x = -13.5, .z = -27.8, .yaw = 130, .s = 1.05, .kind = K_FLOWERS },
+    .{ .x = -15.4, .z = -31.4, .yaw = 250, .s = 0.9, .kind = K_FLOWERS },
+    .{ .x = -12.2, .z = -34.4, .yaw = 300, .s = 1.0, .kind = K_FLOWERS },
+    .{ .x = -9.4, .z = -32.6, .yaw = 60, .s = 0.85, .kind = K_FLOWERS },
+    .{ .x = 11.0, .z = -24.2, .yaw = 200, .s = 0.9, .kind = K_FLOWERS },
+    .{ .x = 14.6, .z = -24.8, .yaw = 20, .s = 0.95, .kind = K_FLOWERS },
+    // a reed bed along the world's east side, a hazed band of sedge for depth
+    .{ .x = 33.0, .z = -12.0, .yaw = 15, .s = 1.2, .kind = K_REEDS },
+    .{ .x = 35.5, .z = -16.5, .yaw = 80, .s = 1.35, .kind = K_REEDS },
+    .{ .x = 38.0, .z = -10.0, .yaw = 200, .s = 1.1, .kind = K_REEDS },
+    .{ .x = 40.5, .z = -20.0, .yaw = -40, .s = 1.3, .kind = K_REEDS },
+    .{ .x = 36.5, .z = -24.0, .yaw = 120, .s = 1.25, .kind = K_REEDS },
+    .{ .x = 42.0, .z = -28.0, .yaw = 60, .s = 1.15, .kind = K_REEDS },
+    .{ .x = 39.0, .z = -32.0, .yaw = 250, .s = 1.3, .kind = K_REEDS },
     // horizon giants, dissolved by haze
     .{ .x = 2, .z = -56, .yaw = 4, .s = 1.0, .kind = K_GATE },
     .{ .x = -27, .z = -54, .yaw = 10, .s = 1.2, .kind = K_TOWER },
@@ -145,7 +161,7 @@ const Prop = struct { kind: u8, pos: rl.Vector3, yaw: f32, scale: f32 };
 // Seeded meadow scatter: this many plant props strewn across the plain on top of the
 // hand-placed layout, avoiding the worn path (the --shot runway) and every built
 // prop's base. Deterministic — same seed, same field, every launch.
-const SCATTER = 170;
+const SCATTER = 260;
 
 pub const Env = struct {
     ground: rl.Model,
@@ -195,8 +211,20 @@ pub const Env = struct {
         rl.drawModel(self.ground, mathx.zero3, 1.0, rl.Color.white);
     }
 
+    // The stone/structure props — shadow casters, drawn in BOTH passes. Flora is skipped
+    // here (see drawFlora): thin blades sparkle in the shadow map, and a non-casting plant
+    // is free to sway without its shadow desyncing.
     pub fn drawProps(self: *const Env) void {
         for (self.props) |p| {
+            if (p.kind >= K_TUFT) continue;
+            rl.drawModelEx(self.models[p.kind], p.pos, v3(0, 1, 0), p.yaw, v3(p.scale, p.scale, p.scale), rl.Color.white);
+        }
+    }
+
+    // The flora — non-casters, drawn only in the lit pass (with the wind term enabled).
+    pub fn drawFlora(self: *const Env) void {
+        for (self.props) |p| {
+            if (p.kind < K_TUFT) continue;
             rl.drawModelEx(self.models[p.kind], p.pos, v3(0, 1, 0), p.yaw, v3(p.scale, p.scale, p.scale), rl.Color.white);
         }
     }
@@ -406,21 +434,12 @@ fn statueMesh(shader: rl.Shader) rl.Model {
 }
 
 // ── FLORA ── all plant meshes are grown from one seeded Rng (deterministic builds),
-// blades as 4-sided tapered cylinders leaning off vertical, bases on Y=0.
-//
-// TODO(flora, next session) — implemented but NOT yet shot-verified or tuned:
-//  1. Run shot.cmd and INSPECT: scatter density (SCATTER=170), kind mix (34% patch /
-//     24% tuft / 15% reeds / 15% shrub / 12% flowers), scale range 0.75..1.35, and the
-//     3.4 path-clearance vs the wobbled dirt edges. Tune all by eye against ER Limgrave.
-//  2. Check blade shadows in the 4096 map (thin casters can sparkle); if noisy, either
-//     fatten blade radii slightly or exclude plant kinds from the depth pass (split
-//     drawProps into casters/non-casters).
-//  3. Consider denser flowers ringing the graveyard and a reed bed along the world's
-//     low east side for composition.
-//  4. Possible wind sway: cheap vertex-shader bend keyed on worldPos hash + a time
-//     uniform in the scene shader; ONLY the flora models would opt in (new material
-//     flag), gaits/props must not wobble.
-//  5. Update AGENTS.md env.zig line ("+ seeded flora scatter") and README world bullet.
+// blades as 4-sided tapered cylinders leaning off vertical, bases on Y=0. Shot-verified
+// and tuned against ER Limgrave: moderate scatter density (SCATTER), a mix weighted toward
+// legible flowers/reeds, a graveyard flower ring + an east reed bed for composition. Flora
+// are NON-casters (drawProps/drawFlora split) — excluded from the shadow map so thin blades
+// don't sparkle — and they SWAY via the scene shader's height-based wind term (gfx.setWind;
+// windAmt gates it to flora only, so gaits/props stay rigid).
 
 // Fill the tail of e.props with the meadow scatter: rejection-sample positions that
 // stay off the worn path (|x| small) and clear of every hand-placed prop's base.
@@ -443,7 +462,9 @@ fn scatterPlants(e: *Env) void {
         }
         if (!ok) continue;
         const roll = rng.float();
-        const kind: u8 = if (roll < 0.34) K_PATCH else if (roll < 0.58) K_TUFT else if (roll < 0.73) K_REEDS else if (roll < 0.88) K_SHRUB else K_FLOWERS;
+        // 30% patch / 22% tuft / 18% reeds / 12% shrub / 18% flowers — reeds & flowers
+        // weighted up from the first pass so they read at distance, not just grass tufts.
+        const kind: u8 = if (roll < 0.30) K_PATCH else if (roll < 0.52) K_TUFT else if (roll < 0.70) K_REEDS else if (roll < 0.82) K_SHRUB else K_FLOWERS;
         e.props[n] = .{ .kind = kind, .pos = mathx.ground(x, z), .yaw = rng.range(0, 360), .scale = rng.range(0.75, 1.35) };
         n += 1;
     }
@@ -532,14 +553,14 @@ fn flowersMesh(shader: rl.Shader) rl.Model {
     var rng = mathx.Rng.init(53);
     tuftInto(&b, &rng, 0, 0, 0.8);
     var i: i32 = 0;
-    while (i < 4) : (i += 1) {
+    while (i < 5) : (i += 1) {
         const a = rng.angle();
-        const d = rng.range(0.05, 0.28);
+        const d = rng.range(0.05, 0.30);
         const x = mathx.cosf(a) * d;
         const z = mathx.sinf(a) * d;
-        const h = rng.range(0.24, 0.4);
-        b.addCylinder(v3(x, 0, z), v3(x, h, z), 0.008, 0.005, 4, STEM);
-        b.addCube(v3(x, h + 0.02, z), v3(0.05, 0.035, 0.05), PETAL);
+        const h = rng.range(0.26, 0.44);
+        b.addCylinder(v3(x, 0, z), v3(x, h, z), 0.009, 0.005, 4, STEM);
+        b.addCube(v3(x, h + 0.02, z), v3(0.07, 0.05, 0.07), PETAL); // fatter bloom — reads at distance
     }
     return b.toModel(shader);
 }
@@ -559,8 +580,8 @@ fn reedsMesh(shader: rl.Shader) rl.Model {
         const h = rng.range(0.75, 1.25);
         const lx = mathx.cosf(la) * lean;
         const lz = mathx.sinf(la) * lean;
-        blade(&b, x, z, h, lx, lz, 0.014, if (rng.float() < 0.7) GRASS_DRY else GRASS_GOLD);
-        b.addCube(v3(x + lx, h + 0.03, z + lz), v3(0.032, 0.11, 0.032), SEED);
+        blade(&b, x, z, h, lx, lz, 0.016, if (rng.float() < 0.7) GRASS_DRY else GRASS_GOLD);
+        b.addCube(v3(x + lx, h + 0.03, z + lz), v3(0.038, 0.13, 0.038), SEED); // fuller seed head
     }
     return b.toModel(shader);
 }

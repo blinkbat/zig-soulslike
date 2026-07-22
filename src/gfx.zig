@@ -60,14 +60,28 @@ const sceneVS =
     \\in vec4 vertexColor;
     \\uniform mat4 mvp;
     \\uniform mat4 matModel;
+    \\uniform float windAmt;   // 0 = rigid (terrain / props / hero); 1 = flora opts into sway
+    \\uniform float windTime;  // seconds, drives the sway phase
     \\out vec3 fragPosition;
     \\out vec4 fragColor;
     \\out vec3 fragNormal;
     \\void main() {
-    \\    fragPosition = vec3(matModel*vec4(vertexPosition, 1.0));
+    \\    vec3 p = vertexPosition;
+    \\    if (windAmt > 0.0) {
+    \\        // Flora sway: bend grows with height^2 so bases stay planted while tips lean;
+    \\        // phase keys off the clump's WORLD origin so neighbours move as one gust field.
+    \\        vec3 baseW = vec3(matModel*vec4(0.0, 0.0, 0.0, 1.0));
+    \\        float h = max(p.y, 0.0);
+    \\        float bend = h*h*windAmt*0.10;
+    \\        float phase = windTime*1.5 + baseW.x*0.6 + baseW.z*0.5;
+    \\        float sway = sin(phase) + 0.3*sin(phase*2.7 + 1.3);
+    \\        p.x += bend*sway;
+    \\        p.z += bend*sway*0.4;
+    \\    }
+    \\    fragPosition = vec3(matModel*vec4(p, 1.0));
     \\    fragColor = vertexColor;
     \\    fragNormal = normalize(mat3(matModel)*vertexNormal);
-    \\    gl_Position = mvp*vec4(vertexPosition, 1.0);
+    \\    gl_Position = mvp*vec4(p, 1.0);
     \\}
 ;
 // Lighting model (softness tricks ported from zig-diablo/zig-rts):
@@ -581,6 +595,8 @@ pub const Scene = struct {
     loc_ground: i32,
     loc_lightVP: i32,
     loc_camPos: i32,
+    loc_windAmt: i32,
+    loc_windTime: i32,
     saved_near: @TypeOf(rl.gl.rlGetCullDistanceNear()) = 0,
     saved_far: @TypeOf(rl.gl.rlGetCullDistanceFar()) = 0,
 
@@ -597,6 +613,8 @@ pub const Scene = struct {
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "hazeColor"), &haze, .vec3);
         var density: f32 = 0.021;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "hazeDensity"), &density, .float);
+        var windOff: f32 = 0;
+        rl.setShaderValue(shader, rl.getShaderLocation(shader, "windAmt"), &windOff, .float);
         return .{
             .shader = shader,
             .depthShader = depthShader,
@@ -605,6 +623,8 @@ pub const Scene = struct {
             .loc_ground = rl.getShaderLocation(shader, "groundMode"),
             .loc_lightVP = rl.getShaderLocation(shader, "lightVP"),
             .loc_camPos = rl.getShaderLocation(shader, "camPos"),
+            .loc_windAmt = rl.getShaderLocation(shader, "windAmt"),
+            .loc_windTime = rl.getShaderLocation(shader, "windTime"),
         };
     }
 
@@ -647,11 +667,20 @@ pub const Scene = struct {
         rl.setShaderValueMatrix(self.shader, self.loc_lightVP, self.lightVP);
         var cp = camPos;
         rl.setShaderValue(self.shader, self.loc_camPos, &cp, .vec3);
+        var t: f32 = @floatCast(rl.getTime());
+        rl.setShaderValue(self.shader, self.loc_windTime, &t, .float);
     }
 
     pub fn setGround(self: *Scene, on: bool) void {
         var m: i32 = if (on) 1 else 0;
         rl.setShaderValue(self.shader, self.loc_ground, &m, .int);
+    }
+
+    // Flora opt into vertex-shader sway; everything else (terrain, props, hero) draws rigid.
+    // Toggle ON only around the flora draw, OFF immediately after.
+    pub fn setWind(self: *Scene, on: bool) void {
+        var a: f32 = if (on) 1.0 else 0.0;
+        rl.setShaderValue(self.shader, self.loc_windAmt, &a, .float);
     }
 };
 

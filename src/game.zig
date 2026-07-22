@@ -128,7 +128,8 @@ fn rollDir(g: *Game, mv: Move) rl.Vector3 {
 }
 
 // ── render ───────────────────────────────────────────────────────────────────────
-// Casters = the hero + the stone props (NOT the ground, which only receives). Drawn by
+// Casters = the hero + the stone props (NOT the ground, which only receives; NOT the
+// flora, which is a non-caster drawn only in the lit pass and swayed by wind). Drawn by
 // BOTH the sun depth pass and the lit pass through this one function so transforms match.
 fn drawCasters(g: *Game) void {
     g.env.drawProps();
@@ -162,6 +163,10 @@ fn drawScene(g: *Game) void {
     g.scene.setGround(false);
     if (g.menu.wireframe) rl.gl.rlEnableWireMode();
     drawCasters(g);
+    // Flora last: non-casting, and swayed by the scene shader's wind term (props/hero rigid).
+    g.scene.setWind(true);
+    g.env.drawFlora();
+    g.scene.setWind(false);
     if (g.menu.wireframe) rl.gl.rlDisableWireMode();
     rl.endMode3D();
 

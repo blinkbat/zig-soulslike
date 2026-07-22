@@ -47,15 +47,17 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
 - `camera.zig` — third-person over-the-shoulder orbit rig (yaw + clamped pitch, zoom,
                  shoulder offset, `recenter`), and the camera-relative ground basis.
 - `gfx.zig`    — scene shader (warm hard sun + cast shadows + hemisphere ambient + rim
-                 light on non-terrain + sun-banked distance haze + gamma/dither), the sun
+                 light on non-terrain + sun-banked distance haze + gamma/dither + a flora
+                 wind term gated by `windAmt`/`setWind`), the sun
                  shadow-map depth pass, the mesh `Builder`, the fullscreen `Sky` shader
                  (gradient + sun aureole/disc + fbm cloud deck; ray from gl_FragCoord —
                  fragTexCoord is CONSTANT for drawRectangle), and the `Vignette` overlay.
                  Adapted from zig-rts by REMOVING fog-of-war (a soulslike is fully lit).
 - `env.zig`    — procedural ground plane (extends far past the playable bounds so it
                  dissolves fully into haze) + a hand-placed prop layout: columns, gate
-                 arch, walls, trees, graves, swords, banners, statue, grace ember, and
-                 horizon giants (kind-indexed models, one mesh each).
+                 arch, walls, trees, graves, swords, banners, statue, grace ember,
+                 horizon giants, and a seeded flora scatter (kind-indexed models, one
+                 mesh each).
 - `mathx.zig`  — ground-plane + vector/angle helpers (copied from zig-rts, extended).
 - `hud.zig`    — UI text in Exo (assets/, OFL alongside); the ONLY path to draw/measure text.
 
@@ -130,7 +132,9 @@ Keyboard+mouse OR gamepad; the pad follows **Elden Ring's default layout**.
 - **Shadow pass contract:** every caster draws through `game.drawCasters` (used by BOTH the
   depth pass and the lit pass, so transforms can't drift). drawMesh/drawModel use the
   MATERIAL's shader, so the depth pass swaps caster shaders to `depthShader` and back
-  (`setCasterShaders`); it runs BEFORE `beginDrawing`. Terrain receives but does NOT cast.
+  (`setCasterShaders`); it runs BEFORE `beginDrawing`. Terrain receives but does NOT cast,
+  and FLORA is a non-caster too (`env.drawFlora`, drawn only in the lit pass with the wind
+  term on) so thin swaying blades never sparkle in / desync from the shadow map.
   The ortho box tracks the hero (`focus`), snapped to shadow texels so edges don't crawl.
 - **The hero is per-bone matrices, not `drawModelEx`.** `pose()` once, `draw()` replays.
 - **The scene shader gammas output (`pow 1/2.2`):** author dark colours near-black.

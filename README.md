@@ -21,7 +21,8 @@ pipeline, Exo HUD).
 - A **lit 3D world with cast shadows** (warm golden-hour sun + hemisphere ambient +
   shadow map + distance haze), a shader sky with a cloud deck and sun aureole, and a
   ruined-kingdom set: colonnade avenue, gate arch, walls, dead trees, graves, war
-  banners, a glowing grace ember, and colossal ruin silhouettes on the horizon.
+  banners, a glowing grace ember, colossal ruin silhouettes on the horizon, and a
+  seeded meadow scatter (grass tufts, patches, reeds, shrubs, flowers).
 
 ## Controls
 

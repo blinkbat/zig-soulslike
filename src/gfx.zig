@@ -268,7 +268,7 @@ pub const Sky = struct {
     }
 
     // Fullscreen quad through the sky shader. Call between beginDrawing and beginMode3D;
-    // the per-pixel view ray is rebuilt from the 3D camera's basis so the sky tracks look. Test
+    // the per-pixel view ray is rebuilt from the 3D camera's basis so the sky tracks look.
     pub fn draw(self: *Sky, cam: rl.Camera3D) void {
         const w = rl.getScreenWidth();
         const h = rl.getScreenHeight();
@@ -354,6 +354,15 @@ pub const RETRO_DEFAULTS = [RETRO_COUNT]f32{
     0.07, 0.07, 0.05, 0.0,  0.0,
     0.0,  0.0,  0.0,  0.03, 0.04,
 };
+
+// Retro filter PRESETS — the SINGLE source for the menu's Preset rows AND the --shot
+// verification stacks (which previously re-hardcoded these values). Each is a set of
+// {filter, intensity}; Retro.applyPreset clears everything else first.
+pub const Preset = struct { idx: usize, val: f32 };
+pub const PRESET_PS1 = [_]Preset{ .{ .idx = RF_PIXELATE, .val = 0.35 }, .{ .idx = RF_DITHER, .val = 0.55 }, .{ .idx = RF_POSTERIZE, .val = 0.25 } };
+pub const PRESET_CRT = [_]Preset{ .{ .idx = RF_SCANLINES, .val = 0.6 }, .{ .idx = RF_CHROMA, .val = 0.45 }, .{ .idx = RF_CURVE, .val = 0.55 }, .{ .idx = RF_GRAIN, .val = 0.25 } };
+pub const PRESET_VHS = [_]Preset{ .{ .idx = RF_VHS, .val = 0.65 }, .{ .idx = RF_CHROMA, .val = 0.55 }, .{ .idx = RF_GRAIN, .val = 0.35 }, .{ .idx = RF_SEPIA, .val = 0.15 } };
+pub const PRESET_GB = [_]Preset{ .{ .idx = RF_GAMEBOY, .val = 1.0 }, .{ .idx = RF_PIXELATE, .val = 0.45 }, .{ .idx = RF_DITHER, .val = 0.4 } };
 
 const retroFS =
     \\#version 330
@@ -538,6 +547,13 @@ pub const Retro = struct {
 
     pub fn allOff(self: *Retro) void {
         self.values = [_]f32{0} ** RETRO_COUNT;
+    }
+
+    // Clear all filters, then enable the given preset's filters. Used by the menu's Preset
+    // rows and the --shot harness so both draw from the same PRESET_* tables.
+    pub fn applyPreset(self: *Retro, preset: []const Preset) void {
+        self.allOff();
+        for (preset) |p| self.values[p.idx] = p.val;
     }
 
     // Redirect the frame into the capture RT when any filter is on. true => the caller

@@ -14,9 +14,11 @@ const rgba = mathx.rgba;
 const SCREEN_W = 1280;
 const SCREEN_H = 800;
 
-const WALK_SPEED = 1.7; // world units/sec — keyboard walk / gentle left-stick tilt
-const RUN_SPEED = 3.0; // full left-stick tilt (Elden Ring analog: light=walk, full=run)
-const SPRINT_SPEED = 4.6; // hold Circle/B (or Shift): dash/sprint
+// Locomotion speeds live with the hero rig (single source of truth) — the gait blends are
+// tuned to these same values, so keep them from drifting by referencing them here.
+const WALK_SPEED = heromod.WALK_SPEED; // keyboard walk / gentle left-stick tilt
+const RUN_SPEED = heromod.RUN_SPEED; // full left-stick tilt (Elden Ring analog: light=walk, full=run)
+const SPRINT_SPEED = heromod.SPRINT_SPEED; // hold Circle/B (or Shift): dash/sprint
 const TURN_RATE = 12.0; // rad/sec the hero yaws toward its heading (souls turn briskly)
 const STICK_DEADZONE = 0.16; // left-stick move deadzone
 const LOOK_DEADZONE = 0.12; // right-stick look deadzone
@@ -298,7 +300,7 @@ pub fn run(shot: bool) void {
         var rollReq = rl.isKeyPressed(.space);
         const bDown = rl.isGamepadAvailable(0) and rl.isGamepadButtonDown(0, .right_face_right);
         if (bDown) {
-            bHeldT += dt;
+            bHeldT += rl.getFrameTime(); // REAL time: tap-vs-hold is a wall-clock decision, unaffected by debug time-scale
         } else {
             if (bWasDown and bHeldT < 0.22) rollReq = true;
             bHeldT = 0;
@@ -395,19 +397,13 @@ fn runShots(g: *Game) void {
 
     // Retro filters + menu verification: two filter stacks over the current framing,
     // then the menu cards over the veiled scene. Filters/menu reset when done.
-    g.retro.values[gfx.RF_SCANLINES] = 0.6;
-    g.retro.values[gfx.RF_CHROMA] = 0.45;
-    g.retro.values[gfx.RF_CURVE] = 0.55;
-    g.retro.values[gfx.RF_GRAIN] = 0.25;
+    g.retro.applyPreset(&gfx.PRESET_CRT);
     drawScene(g);
     hud(g);
     rl.endDrawing();
     rl.takeScreenshot("shots/10_retro_crt.png");
 
-    g.retro.allOff();
-    g.retro.values[gfx.RF_PIXELATE] = 0.35;
-    g.retro.values[gfx.RF_DITHER] = 0.55;
-    g.retro.values[gfx.RF_POSTERIZE] = 0.25;
+    g.retro.applyPreset(&gfx.PRESET_PS1);
     drawScene(g);
     hud(g);
     rl.endDrawing();

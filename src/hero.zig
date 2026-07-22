@@ -30,6 +30,13 @@ const radians = mathx.radians;
 
 pub const H: f32 = 1.8; // stature (world units ≈ metres)
 
+// Locomotion speeds (world units/sec) — the SINGLE source of truth, shared with game.zig
+// (which drives movement + the --shot harness) and with the gait blends below. Elden-Ring
+// analog feel: light left-stick = walk, full = run; hold sprint for the dash.
+pub const WALK_SPEED: f32 = 1.7;
+pub const RUN_SPEED: f32 = 3.0;
+pub const SPRINT_SPEED: f32 = 4.6;
+
 // Body-segment lengths as a fraction of stature H (Drillis & Contini 1966; Winter).
 // Reference joint HEIGHTS off the floor these imply, for sanity: ankle .039, knee .285,
 // hip(trochanter) .530, wrist .485, elbow .630, shoulder(acromion) .818, chin .870,
@@ -165,7 +172,7 @@ const A_RUN_BOUNCE = 0.05 * H; // vertical airtime lift during flight (up-only, 
 const RUN_SPEED_LO = 2.1; // blend walk→run across this ground-speed band
 const RUN_SPEED_HI = 3.2;
 const SPRINT_LEAN = 40.0; // near-horizontal forward tilt at full sprint (deg)
-const SPRINT_REF_SPEED = 4.6; // speed the extra sprint lean/crouch saturate at (mirrors game.SPRINT_SPEED)
+const SPRINT_REF_SPEED = SPRINT_SPEED; // speed the extra sprint lean/crouch saturate at
 
 // ── dodge roll (committed tuck-and-somersault) ────────────────────────────────────
 const ROLL_DUR = 0.60; // seconds, start to finish
@@ -179,7 +186,7 @@ const ROLL_SHOULDER = 45.0; // arms tuck forward (deg)
 const ROLL_ELBOW = 100.0; // elbows tucked (deg)
 
 const STRIDE = 0.85 * H; // ground distance per full (two-step) cycle at walk pace — ties phase to travel, no foot-skate
-const WALK_REF_SPEED = 1.7; // reference walk speed the stride is tuned for (mirrors game.WALK_SPEED)
+const WALK_REF_SPEED = WALK_SPEED; // reference walk speed the stride is tuned for
 const ARM_SWING = 9.0; // shoulder flex amplitude (deg) at walk — restrained, contralateral to the legs
 const A_BOB = 0.024 * H; // vertical pelvis travel (peak-to-peak ~ realistic 4-5 cm at H=1.8)
 const A_SWAY = 0.009 * H; // lateral pelvis sway toward the stance foot (subtle — no waddle)

@@ -146,10 +146,10 @@ pub const Menu = struct {
                 },
             },
             .retro => switch (self.cursor) {
-                RET_PRESET_PS1 => applyPreset(retro, &.{ .{ gfx.RF_PIXELATE, 0.35 }, .{ gfx.RF_DITHER, 0.55 }, .{ gfx.RF_POSTERIZE, 0.25 } }),
-                RET_PRESET_CRT => applyPreset(retro, &.{ .{ gfx.RF_SCANLINES, 0.6 }, .{ gfx.RF_CHROMA, 0.45 }, .{ gfx.RF_CURVE, 0.55 }, .{ gfx.RF_GRAIN, 0.25 } }),
-                RET_PRESET_VHS => applyPreset(retro, &.{ .{ gfx.RF_VHS, 0.65 }, .{ gfx.RF_CHROMA, 0.55 }, .{ gfx.RF_GRAIN, 0.35 }, .{ gfx.RF_SEPIA, 0.15 } }),
-                RET_PRESET_GB => applyPreset(retro, &.{ .{ gfx.RF_GAMEBOY, 1.0 }, .{ gfx.RF_PIXELATE, 0.45 }, .{ gfx.RF_DITHER, 0.4 } }),
+                RET_PRESET_PS1 => retro.applyPreset(&gfx.PRESET_PS1),
+                RET_PRESET_CRT => retro.applyPreset(&gfx.PRESET_CRT),
+                RET_PRESET_VHS => retro.applyPreset(&gfx.PRESET_VHS),
+                RET_PRESET_GB => retro.applyPreset(&gfx.PRESET_GB),
                 RET_RESET => retro.values = gfx.RETRO_DEFAULTS,
                 RET_ALL_OFF => retro.allOff(),
                 RET_CLOSE => {
@@ -184,9 +184,9 @@ pub const Menu = struct {
         rl.drawRectangle(0, 0, sw, sh, VEIL);
         switch (self.screen) {
             .closed => {},
-            .main => self.drawCard("SOULSLIKE", &mainLabels(), null, retro),
-            .debug => self.drawCard("DEBUG", &self.debugLabels(), null, retro),
-            .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), retro, retro),
+            .main => self.drawCard("SOULSLIKE", &mainLabels(), null),
+            .debug => self.drawCard("DEBUG", &self.debugLabels(), null),
+            .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), retro),
         }
         const hint: [:0]const u8 = if (rl.isGamepadAvailable(0))
             "D-pad move / adjust (hold glides, LB coarse)   A select   B back   Start close"
@@ -196,8 +196,7 @@ pub const Menu = struct {
         hud.text(hint, @divTrunc(sw - hw, 2), sh - 34, 15, HINT_COL);
     }
 
-    fn drawCard(self: *const Menu, title: [:0]const u8, labels: []const [:0]const u8, sliders: ?*const gfx.Retro, retro: *const gfx.Retro) void {
-        _ = retro;
+    fn drawCard(self: *const Menu, title: [:0]const u8, labels: []const [:0]const u8, sliders: ?*const gfx.Retro) void {
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
         const rowH: i32 = if (labels.len > 8) 26 else 40;
@@ -270,11 +269,6 @@ fn retroLabels(retro: *const gfx.Retro) [RET_COUNT][:0]const u8 {
     return out;
 }
 var retroBufs: [gfx.RETRO_COUNT][48]u8 = undefined;
-
-fn applyPreset(retro: *gfx.Retro, pairs: []const struct { usize, f32 }) void {
-    retro.allOff();
-    for (pairs) |p| retro.values[p[0]] = p[1];
-}
 
 // ── input (keyboard + Elden-Ring-layout pad) ──────────────────────────────────────
 const NavDir = enum { up, down, left, right };

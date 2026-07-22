@@ -169,30 +169,32 @@ pub const Env = struct {
     props: [layout.len + SCATTER]Prop = undefined,
 
     pub fn init(shader: rl.Shader) Env {
+        // Index each mesh by its K_* kind so the array and the kind constants can't drift
+        // out of lockstep (a positional list silently desyncs if either side is reordered).
+        var models: [NK]rl.Model = undefined;
+        models[K_PILLAR] = pillarMesh(shader, false);
+        models[K_BROKEN] = pillarMesh(shader, true);
+        models[K_BLOCK] = blockMesh(shader);
+        models[K_ARCH] = archMesh(shader);
+        models[K_WALL] = wallMesh(shader);
+        models[K_TREE] = treeMesh(shader);
+        models[K_GRAVES] = gravesMesh(shader);
+        models[K_SWORD] = swordMesh(shader);
+        models[K_GRACE] = graceMesh(shader);
+        models[K_TOWER] = towerMesh(shader);
+        models[K_GATE] = gateMesh(shader);
+        models[K_RUBBLE] = rubbleMesh(shader);
+        models[K_BANNER] = bannerMesh(shader);
+        models[K_STATUE] = statueMesh(shader);
+        models[K_TUFT] = tuftMesh(shader);
+        models[K_PATCH] = patchMesh(shader);
+        models[K_SHRUB] = shrubMesh(shader);
+        models[K_FLOWERS] = flowersMesh(shader);
+        models[K_REEDS] = reedsMesh(shader);
+        models[K_GLOW] = glowMesh(shader);
         var e = Env{
             .ground = terrain(shader, GROUND_HALF),
-            .models = .{
-                pillarMesh(shader, false),
-                pillarMesh(shader, true),
-                blockMesh(shader),
-                archMesh(shader),
-                wallMesh(shader),
-                treeMesh(shader),
-                gravesMesh(shader),
-                swordMesh(shader),
-                graceMesh(shader),
-                towerMesh(shader),
-                gateMesh(shader),
-                rubbleMesh(shader),
-                bannerMesh(shader),
-                statueMesh(shader),
-                tuftMesh(shader),
-                patchMesh(shader),
-                shrubMesh(shader),
-                flowersMesh(shader),
-                reedsMesh(shader),
-                glowMesh(shader),
-            },
+            .models = models,
         };
         for (layout, 0..) |p, i| {
             e.props[i] = .{ .kind = p.kind, .pos = mathx.ground(p.x, p.z), .yaw = p.yaw, .scale = p.s };

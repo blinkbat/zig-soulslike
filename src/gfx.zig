@@ -141,7 +141,7 @@ const sceneFS =
     \\  vec4 p = lightVP*vec4(pos, 1.0);
     \\  p.xyz /= p.w;
     \\  p.xyz = p.xyz*0.5 + 0.5;
-    \\  if (p.z > 1.0 || p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) return 0.0;
+    \\  if (p.z > 1.0 || p.z < 0.0 || p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) return 0.0;
     \\  float bias = max(0.0016*(1.0 - ndl), 0.0004);
     \\  float texel = 1.0/float(shadowMapResolution);
     \\  float sc = 0.0;

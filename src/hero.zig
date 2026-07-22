@@ -329,7 +329,7 @@ pub const Hero = struct {
         // Root: place at world pos, at hip height (crouched when running), swayed/bobbed in
         // body frame, PITCHED FORWARD ABOUT THE FEET (so the centre of gravity leads the
         // base — the driving, falling-forward run), then faced.
-        const facingDeg = self.facing * 180.0 / std.math.pi;
+        const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
         const bodyPitch = (BODY_PITCH_RUN * runB + (BODY_PITCH_SPRINT - BODY_PITCH_RUN) * sprintB) * m;
         var wx: [N]rl.Matrix = undefined;
@@ -375,7 +375,7 @@ pub const Hero = struct {
         const tuck = mathx.clampF(@min(u / 0.2, (1.0 - u) / 0.2), 0, 1); // ramp in, hold, ramp out
         const rollDeg = 360.0 * u; // exactly one forward revolution over the roll
         const ballY = mathx.lerpF(self.rest[ROOT].y, ROLL_BALL_Y, tuck);
-        const facingDeg = self.facing * 180.0 / std.math.pi;
+        const facingDeg = mathx.degrees(self.facing);
 
         var wx: [N]rl.Matrix = undefined;
         wx[ROOT] = mul3(

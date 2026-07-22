@@ -124,6 +124,9 @@ pub fn approach(cur: f32, target: f32, maxStep: f32) f32 {
 
 /// Wrap a radian angle into (-pi, pi].
 pub fn wrapPi(a: f32) f32 {
+    // Guard non-finite: +inf/-inf would spin the reduction loops forever (inf±tau==inf),
+    // and there's no meaningful wrapped angle for them (matches clampF's NaN guard).
+    if (!std.math.isFinite(a)) return 0;
     var x = a;
     while (x > std.math.pi) x -= std.math.tau;
     while (x <= -std.math.pi) x += std.math.tau;
@@ -211,6 +214,11 @@ pub const Rng = struct {
 /// Degrees → radians.
 pub fn radians(deg: f32) f32 {
     return deg * std.math.pi / 180.0;
+}
+
+/// Radians → degrees.
+pub fn degrees(rad: f32) f32 {
+    return rad * 180.0 / std.math.pi;
 }
 
 /// A time-based seed (Go's time.Now().UnixNano()).

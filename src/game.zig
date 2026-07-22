@@ -24,6 +24,10 @@ const STICK_DEADZONE = 0.16; // left-stick move deadzone
 const LOOK_DEADZONE = 0.12; // right-stick look deadzone
 const PAD_LOOK_RATE = 2.7; // rad/sec camera orbit at full right-stick deflection
 
+// The hero's movement clamp: the world bounds inset by a margin so travel/rolls can't reach
+// the literal edge. Single source for moveHero, the roll updates, and the --shot harness.
+const PLAY_HALF = envmod.HALF - 2.0;
+
 // Framebuffer clear tone — matches the sky shader's horizon band (displayed gfx.HAZE)
 // so any sliver the sky quad misses stays invisible.
 const CLEAR = rgba(80, 76, 69, 255);
@@ -109,9 +113,8 @@ fn moveHero(g: *Game, dt: f32, mv: Move) void {
         dir = v3(dir.x / l, 0, dir.z / l);
         speed = mv.speed;
         moved = speed * dt;
-        const half = envmod.HALF - 2.0;
-        g.hero.pos.x = mathx.clampF(g.hero.pos.x + dir.x * moved, -half, half);
-        g.hero.pos.z = mathx.clampF(g.hero.pos.z + dir.z * moved, -half, half);
+        g.hero.pos.x = mathx.clampF(g.hero.pos.x + dir.x * moved, -PLAY_HALF, PLAY_HALF);
+        g.hero.pos.z = mathx.clampF(g.hero.pos.z + dir.z * moved, -PLAY_HALF, PLAY_HALF);
         const targetYaw = std.math.atan2(dir.x, dir.z);
         g.hero.facing = mathx.approachAngle(g.hero.facing, targetYaw, TURN_RATE * dt);
     }
@@ -311,7 +314,7 @@ pub fn run(shot: bool) void {
         if (rollReq and !g.hero.rolling) g.hero.startRoll(rollDir(g, mv));
 
         if (g.hero.rolling) {
-            g.hero.updateRoll(dt, envmod.HALF - 2.0); // committed — ignores move input
+            g.hero.updateRoll(dt, PLAY_HALF); // committed — ignores move input
         } else {
             moveHero(g, dt, mv);
         }
@@ -330,8 +333,7 @@ pub fn run(shot: bool) void {
 // a real side/front profile and actually judge the gait. Mirrors the siblings' --shot.
 fn stepWorld(g: *Game, dt: f32, speed: f32) void {
     const moved = speed * dt;
-    const half = envmod.HALF - 2.0;
-    g.hero.pos.z = mathx.clampF(g.hero.pos.z - moved, -half, half); // travel −Z
+    g.hero.pos.z = mathx.clampF(g.hero.pos.z - moved, -PLAY_HALF, PLAY_HALF); // travel −Z
     g.hero.facing = std.math.pi; // face −Z (no turning)
     g.hero.update(dt, moved, speed);
     g.hero.pose();
@@ -386,7 +388,7 @@ fn runShots(g: *Game) void {
     for (rollStages) |st| {
         var k: i32 = 0;
         while (k < st.adv) : (k += 1) {
-            if (g.hero.rolling) g.hero.updateRoll(dt, envmod.HALF - 2.0) else stepWorld(g, dt, WALK_SPEED);
+            if (g.hero.rolling) g.hero.updateRoll(dt, PLAY_HALF) else stepWorld(g, dt, WALK_SPEED);
             g.rig.follow(g.hero.shoulderPoint());
         }
         drawScene(g);

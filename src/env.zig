@@ -213,22 +213,25 @@ pub const Env = struct {
         rl.drawModel(self.ground, mathx.zero3, 1.0, rl.Color.white);
     }
 
-    // The stone/structure props — shadow casters, drawn in BOTH passes. Flora is skipped
-    // here (see drawFlora): thin blades sparkle in the shadow map, and a non-casting plant
-    // is free to sway without its shadow desyncing.
-    pub fn drawProps(self: *const Env) void {
+    // Draw one half of the prop list: flora=false = stone/structure props, flora=true =
+    // plants. The K_TUFT boundary is the single split point both callers share.
+    fn drawSplit(self: *const Env, flora: bool) void {
         for (self.props) |p| {
-            if (p.kind >= K_TUFT) continue;
+            if ((p.kind >= K_TUFT) != flora) continue;
             rl.drawModelEx(self.models[p.kind], p.pos, v3(0, 1, 0), p.yaw, v3(p.scale, p.scale, p.scale), rl.Color.white);
         }
     }
 
+    // The stone/structure props — shadow casters, drawn in BOTH passes. Flora is skipped
+    // here (see drawFlora): thin blades sparkle in the shadow map, and a non-casting plant
+    // is free to sway without its shadow desyncing.
+    pub fn drawProps(self: *const Env) void {
+        self.drawSplit(false);
+    }
+
     // The flora — non-casters, drawn only in the lit pass (with the wind term enabled).
     pub fn drawFlora(self: *const Env) void {
-        for (self.props) |p| {
-            if (p.kind < K_TUFT) continue;
-            rl.drawModelEx(self.models[p.kind], p.pos, v3(0, 1, 0), p.yaw, v3(p.scale, p.scale, p.scale), rl.Color.white);
-        }
+        self.drawSplit(true);
     }
 };
 

@@ -254,7 +254,7 @@ pub const Sky = struct {
     }
 
     // Fullscreen quad through the sky shader. Call between beginDrawing and beginMode3D;
-    // the per-pixel view ray is rebuilt from the 3D camera's basis so the sky tracks look.
+    // the per-pixel view ray is rebuilt from the 3D camera's basis so the sky tracks look. Test
     pub fn draw(self: *Sky, cam: rl.Camera3D) void {
         const w = rl.getScreenWidth();
         const h = rl.getScreenHeight();

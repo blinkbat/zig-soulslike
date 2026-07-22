@@ -322,9 +322,9 @@ pub const RF_VHS = 13;
 pub const RF_GRAIN = 14;
 
 pub const RETRO_NAMES = [RETRO_COUNT][:0]const u8{
-    "Pixelate",   "Chroma Fringe", "Posterize", "Dither",    "Game Boy",
-    "CGA",        "Palette 16",    "Sepia",     "Mono",      "Amber CRT",
-    "Ink Edges",  "Scanlines",     "CRT Curve", "VHS",       "Film Grain",
+    "Pixelate",  "Chroma Fringe", "Posterize", "Dither", "Game Boy",
+    "CGA",       "Palette 16",    "Sepia",     "Mono",   "Amber CRT",
+    "Ink Edges", "Scanlines",     "CRT Curve", "VHS",    "Film Grain",
 };
 const RETRO_UNIFORMS = [RETRO_COUNT][:0]const u8{
     "fPixelate", "fChroma",    "fPosterize", "fDither", "fGameBoy",
@@ -336,7 +336,7 @@ const RETRO_UNIFORMS = [RETRO_COUNT][:0]const u8{
 // VHS/grain over a posterize+dither color crush. "Reset to Default" restores this;
 // "All Off" gives the clean render.
 pub const RETRO_DEFAULTS = [RETRO_COUNT]f32{
-    0.07, 0.09, 0.34, 0.40, 0.0,
+    0.07, 0.09, 0.24, 0.40, 0.0,
     0.07, 0.07, 0.05, 0.0,  0.0,
     0.0,  0.0,  0.0,  0.03, 0.04,
 };

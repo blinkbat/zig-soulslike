@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const gfx = @import("gfx.zig");
 const mathx = @import("mathx.zig");
+const combat = @import("combat.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -74,8 +75,8 @@ const HIDE_DK = rgba(20, 23, 14, 255); // warts, shadow, mottling — near-black
 const HIDE_LT = rgba(52, 55, 34, 255); // ridge / caught-light humps
 const BELLY = rgba(64, 62, 42, 255); // dark, sickly underside
 const SAC = rgba(80, 74, 48, 255); // throat sac — a touch paler so its distend reads
-const MAW = rgba(52, 18, 16, 255); // mouth interior (dark oxblood)
-const TONGUE = rgba(82, 38, 34, 255);
+const MAW = rgba(104, 34, 28, 255); // mouth interior — a sickly oxblood RED, lighter than the hide so the open maw reads as a cavern
+const TONGUE = rgba(126, 56, 48, 255);
 const TOOTH = rgba(166, 156, 126, 255); // pale bone — pops hard against the dark hide
 const TOOTH_DK = rgba(126, 116, 90, 255);
 // The eyes GLOW: a low alpha drives the shader's emissive channel hard, so this bright
@@ -99,14 +100,15 @@ const ARM_R = 8;
 // Rest joint locations in the body frame (origin at the ground seat, +Y up, +Z forward).
 const P_JAW = v3(0, 0.24, 0.02); // jaw hinge, back of the mouth
 const P_SAC = v3(0, 0.12, 0.24); // throat-sac centre, slung under the chin
-const P_HIP = v3(0.30, 0.26, -0.06); // back-leg hip (left; right mirrors x)
-const P_KNEE = v3(0.32, 0.48, -0.08); // back-leg knee — HIGH beside the humped back when folded
+const P_HIP = v3(0.40, 0.24, -0.06); // back-leg hip — OUT on the flank, clear of the body dome
+const P_KNEE = v3(0.47, 0.46, 0.00); // back-leg knee — HIGH and OUT, so the folded haunch bulges in silhouette
 const P_SHOULDER = v3(0.22, 0.26, 0.22); // front-leg shoulder
 
 // ── dimensions / tuning ─────────────────────────────────────────────────────────────
 const BODY_CY = 0.34; // body-centre height (for the camera focus + hurt sphere)
 const HURT_R = 0.46; // hurt-sphere radius (world units, pre per-toad scale)
-const BODY_R = 0.40; // ground-footprint radius for collision (pre per-toad scale)
+const BODY_R = 0.55; // ground-footprint radius for collision (pre per-toad scale) — matches the
+//   broad body + splayed haunches so toads don't interpenetrate (frog-on-frog was too forgiving)
 
 // Global size multiplier for the whole knot (each toad's own `scale` rides on top). Bumped
 // so they read BIG and heavy — broad, roughly waist-high, a real threat rather than a pet.
@@ -156,9 +158,23 @@ pub const Blade = struct {
     b: rl.Vector3 = mathx.zero3,
     a0: rl.Vector3 = mathx.zero3,
     b0: rl.Vector3 = mathx.zero3,
+    hit: combat.Hit = .{}, // HP/poise/stance the swing deals (light vs heavy set by game.zig)
 };
 
-const State = enum { idle, hop, lunge, recover, chomp };
+// ── vitals (LOW poise, per the brief: "frogs have low poise") ──────────────────────────
+const HP_MAX = 46.0;
+const POISE_MAX = 12.0; // low — a couple of hits flinch it
+const STANCE_MAX = 26.0; // low — a few flinches cascade into the heavy stagger
+// What the toad's own attacks do to the HERO (guard→tip data flows the other way; these
+// are handed out when a chomp SNAP / lunge SLAM connects). The lunge is a heavy body-blow.
+const CHOMP_HIT = combat.Hit{ .dmg = 11, .poise = 15 };
+const LUNGE_HIT = combat.Hit{ .dmg = 17, .poise = 26, .stance = 8 };
+const HERO_REACH = 0.55; // hero footprint added to the toad's attack range for the hit test
+const DEATH_DUR = 1.25; // collapse-and-still before the corpse is removed from play
+
+// idle, hop, lunge, recover, chomp are the live behaviours; the last three are REACTIONS
+// (interrupts) — a light flinch, the heavy stance-break stagger, and death.
+const State = enum { idle, hop, lunge, recover, chomp, stunlight, stunheavy, dead };
 
 // What the toad decides to do when it's free to act — a PURE function of range + cooldowns,
 // so the decision logic is unit-testable without a GPU/world.
@@ -220,10 +236,14 @@ pub const Frog = struct {
     jaw: f32 = 0, // lower-jaw open (deg)
     sac: f32 = 1, // throat-sac inflate scale
 
-    // hit tracking (counted only; no consequence yet)
-    hits: u32 = 0,
+    // combat
+    vit: combat.Vitals = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX),
+    hits: u32 = 0, // total blows landed (debug read-out)
     hitLatch: bool = false, // one hit per swing: set on contact, cleared when the blade goes inactive
     flash: f32 = 0, // debug: fades after a registered hit
+    heroHit: ?combat.Hit = null, // this frame's blow ON THE HERO (chomp/lunge connect), read by game.zig
+    heroLatch: bool = false, // one hero-hit per attack action (chomp/lunge)
+    gone: bool = false, // corpse removed from play (death anim finished) — skipped everywhere
 
     xf: [NP]rl.Matrix = undefined,
 
@@ -244,9 +264,26 @@ pub const Frog = struct {
     pub fn bodyR(self: *const Frog) f32 {
         return BODY_R * self.scale;
     }
+    // The point the lock-on reticle rides — the centre of the body mass (not the head), so
+    // the dot sits on the bulk of the toad.
+    pub fn lockPoint(self: *const Frog) rl.Vector3 {
+        return v3(self.pos.x, 0.30 * self.scale + self.lift, self.pos.z);
+    }
     // Airborne mid-hop/lunge — ground collision leaves it be while it's in the air.
     pub fn airborne(self: *const Frog) bool {
         return self.lift > 0.04;
+    }
+    // Top of the domed back in world space — where the floating HP bar rides.
+    pub fn topWorld(self: *const Frog) rl.Vector3 {
+        return v3(self.pos.x, 0.80 * self.scale + self.lift, self.pos.z);
+    }
+    // A live combatant (a corpse whose death anim has finished is skipped everywhere).
+    pub fn alive(self: *const Frog) bool {
+        return !self.gone;
+    }
+    // Reeling from a stagger or dying — the wide-open window / no threat.
+    pub fn staggered(self: *const Frog) bool {
+        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
     }
 
     // ── actions ─────────────────────────────────────────────────────────────────────
@@ -267,15 +304,47 @@ pub const Frog = struct {
         self.hopDur = if (lunge) LUNGE_FLIGHT else HOP_FLIGHT * mathx.clampF(0.5 + reach / HOP_REACH, 0.6, 1.5);
         self.state = if (lunge) .lunge else .hop;
         self.t = 0;
+        self.heroLatch = false; // a fresh action gets one chance to land on the hero
     }
     pub fn startChomp(self: *Frog) void {
         self.state = .chomp;
         self.t = 0;
+        self.heroLatch = false;
+    }
+    fn enterStun(self: *Frog, s: State) void {
+        self.state = s; // the interrupt drops any in-progress attack (nothing lands)
+        self.t = 0;
+        self.heroLatch = false;
+    }
+    fn enterDeath(self: *Frog) void {
+        self.state = .dead;
+        self.t = 0;
+        self.heroLatch = false;
+    }
+    // Screenshot-harness hooks: force a reaction so --shot can frame the poses in isolation.
+    pub fn debugStagger(self: *Frog, heavy: bool) void {
+        self.enterStun(if (heavy) .stunheavy else .stunlight);
+    }
+    pub fn debugKill(self: *Frog) void {
+        self.enterDeath();
+    }
+    // Land the toad's OWN attack on the hero, once per action: if the hero is within reach,
+    // stash the blow in heroHit for game.zig to apply to the hero's vitals.
+    fn tryBite(self: *Frog, hero: rl.Vector3, range: f32, h: combat.Hit) void {
+        if (self.heroLatch) return;
+        if (mathx.distXZ(self.pos, hero) <= range + HERO_REACH) {
+            self.heroHit = h;
+            self.heroLatch = true;
+        }
     }
 
     // ── per-frame update ──────────────────────────────────────────────────────────────
-    // Advance AI + animation for one frame; `hero` drives senses, `blade` the hit test.
-    pub fn update(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32, blade: Blade) void {
+    // Advance AI + animation for one frame; `hero` drives senses, `blade` the hero's swing.
+    // Returns the blow this toad landed on the HERO this frame (null if none / it's a corpse).
+    pub fn update(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32, blade: Blade) ?combat.Hit {
+        if (self.gone) return null;
+        self.heroHit = null;
+        self.vit.tick(dt); // poise/stance regenerate between hits (relent and it recovers)
         self.elapsed += dt;
         self.lungeCd = mathx.maxF(0, self.lungeCd - dt);
         self.chompCd = mathx.maxF(0, self.chompCd - dt);
@@ -291,10 +360,24 @@ pub const Frog = struct {
                 if (self.t >= RECOVER_DUR) self.enterIdle(0.02);
             },
             .chomp => self.updateChomp(dt, hero),
+            // ── reactions (interrupts) ──
+            .stunlight => {
+                self.resolveStunLight();
+                if (self.t >= combat.LIGHT_STUN_DUR) self.enterIdle(0.02);
+            },
+            .stunheavy => {
+                self.resolveStunHeavy();
+                if (self.t >= combat.HEAVY_STUN_DUR) self.enterIdle(0.06);
+            },
+            .dead => {
+                self.resolveDeath();
+                if (self.t >= DEATH_DUR) self.gone = true;
+            },
         }
 
         self.pose();
         self.tryHit(blade);
+        return self.heroHit;
     }
 
     fn enterIdle(self: *Frog, wait: f32) void {
@@ -354,13 +437,19 @@ pub const Frog = struct {
             self.resolveCoil(k, self.isLunge);
         } else if (self.t < coil + flight) {
             const s = (self.t - coil) / flight; // 0..1 across the arc
-            self.pos.x = mathx.lerpF(self.hopFrom.x, self.hopTo.x, s);
-            self.pos.z = mathx.lerpF(self.hopFrom.z, self.hopTo.z, s);
+            // Advance horizontally by an INCREMENT (velocity·dt), NOT an absolute lerp from a
+            // stale hopFrom: this way a collision nudge mid-arc just deflects the leap instead
+            // of the next frame snapping the toad back to its takeoff point (the "warp" bug).
+            const inv = 1.0 / flight;
+            self.pos.x += (self.hopTo.x - self.hopFrom.x) * inv * dt;
+            self.pos.z += (self.hopTo.z - self.hopFrom.z) * inv * dt;
             self.resolveFlight(s);
         } else {
-            self.pos = self.hopTo;
+            // Landed: hold wherever we ended up (collision may still adjust it) and splat —
+            // do NOT re-snap to hopTo, which would clobber a collision push on touchdown.
             const k = mathx.smoothstep(0, land, self.t - coil - flight);
             self.resolveLand(k);
+            if (self.isLunge) self.tryBite(hero, BITE_R + 0.5, LUNGE_HIT); // the body-slam connects
         }
         self.pos.x = mathx.clampF(self.pos.x, -bounds, bounds);
         self.pos.z = mathx.clampF(self.pos.z, -bounds, bounds);
@@ -380,6 +469,7 @@ pub const Frog = struct {
             self.resolveGape(mathx.smoothstep(0, CHOMP_GAPE, self.t));
         } else if (self.t < CHOMP_GAPE + CHOMP_SNAP) {
             self.resolveSnap((self.t - CHOMP_GAPE) / CHOMP_SNAP);
+            self.tryBite(hero, BITE_R, CHOMP_HIT); // jaws slam shut on the hero
         } else {
             self.resolveChompRecover(mathx.smoothstep(0, CHOMP_RECOVER, self.t - CHOMP_GAPE - CHOMP_SNAP));
             if (self.t >= CHOMP_GAPE + CHOMP_SNAP + CHOMP_RECOVER) self.enterIdle(0.1);
@@ -489,8 +579,53 @@ pub const Frog = struct {
         self.arm = 0.2 * (1.0 - k);
     }
 
-    // ── hit tracking (count only; latched one-per-swing) ────────────────────────────────
+    // ── reaction poses (the two-tier stagger + death) ──────────────────────────────────
+    fn resolveStunLight(self: *Frog) void {
+        // A big, unmistakable FLINCH: the toad REARS back and UP off the blow, jaw gaping,
+        // recoiling clear of the ground, then slams back down as it eases home.
+        self.base();
+        const u = mathx.clampF(self.t / combat.LIGHT_STUN_DUR, 0, 1);
+        const j = mathx.sinf(u * std.math.pi); // 0 → 1 → 0 over the flinch
+        self.pitch = -30.0 * j; // whole body thrown back
+        self.sy = 1.0 - 0.22 * j;
+        self.sxz = 1.0 + 0.15 * j;
+        self.jaw = 30.0 * j; // a pained gape
+        self.legExt = mathx.lerpF(REST_EXT, 0.66, j); // rears up on the haunches
+        self.lift = 0.16 * j; // recoils clear off the ground
+        self.sac = 1.0 + 0.14 * j;
+    }
+    fn resolveStunHeavy(self: *Frog) void {
+        // STANCE BROKEN — it CRUMPLES: slams flat and wide, splayed and reeling, jaw lolling,
+        // wide open the whole beat (ER's stance break; the critical/riposte comes later).
+        self.base();
+        const u = mathx.clampF(self.t / combat.HEAVY_STUN_DUR, 0, 1);
+        const down = mathx.smoothstep(0, 0.16, u) * (1.0 - mathx.smoothstep(0.74, 1.0, u)); // slam, gather at the end
+        const reel = mathx.sinf(self.elapsed * 8.0);
+        self.lift = 0;
+        self.sy = mathx.lerpF(1.0, 0.56, down); // flattened
+        self.sxz = mathx.lerpF(1.0, 1.32, down); // sprawled
+        self.legExt = mathx.lerpF(REST_EXT, 0.05, down); // haunches splayed out flat
+        self.pitch = 13.0 * down;
+        self.jaw = 20.0 * down + 4.0 * reel * down; // gulping, dazed
+        self.sac = 1.0 + 0.22 * down;
+        self.arm = 0.7 * down;
+    }
+    fn resolveDeath(self: *Frog) void {
+        // Collapse and go still — flattens right out, jaw agape, no recovery.
+        self.base();
+        const k = mathx.smoothstep(0, 0.4, mathx.clampF(self.t / DEATH_DUR, 0, 1));
+        self.lift = 0;
+        self.sy = mathx.lerpF(1.0, 0.30, k);
+        self.sxz = mathx.lerpF(1.0, 1.40, k);
+        self.legExt = mathx.lerpF(REST_EXT, 0.02, k);
+        self.pitch = 15.0 * k;
+        self.jaw = 15.0 * k;
+        self.sac = mathx.lerpF(1.0, 0.85, k);
+    }
+
+    // ── the hero's blade lands on the toad (latched one-per-swing) ───────────────────────
     fn tryHit(self: *Frog, blade: Blade) void {
+        if (self.state == .dead) return; // no hitting a corpse
         if (!blade.active) {
             self.hitLatch = false; // window closed → the next swing may land again
             return;
@@ -504,6 +639,13 @@ pub const Frog = struct {
             self.hits += 1;
             self.hitLatch = true;
             self.flash = FLASH_DUR;
+            // Damage + the two-tier stagger (poise → light flinch; stance → heavy stagger).
+            switch (self.vit.hit(blade.hit)) {
+                .death => self.enterDeath(),
+                .heavy => self.enterStun(.stunheavy),
+                .light => self.enterStun(.stunlight),
+                .none => {},
+            }
         }
     }
 
@@ -576,15 +718,31 @@ pub const Knot = struct {
     pub fn setShader(self: *Knot, sh: rl.Shader) void {
         self.model.setShader(sh);
     }
-    pub fn update(self: *Knot, dt: f32, hero: rl.Vector3, bounds: f32, blade: Blade) void {
-        for (&self.frogs) |*f| f.update(dt, hero, bounds, blade);
+    // Advance the whole knot; returns the STRONGEST blow any toad landed on the hero this
+    // frame (null if none), for game.zig to apply to the hero's vitals.
+    pub fn update(self: *Knot, dt: f32, hero: rl.Vector3, bounds: f32, blade: Blade) ?combat.Hit {
+        var worst: ?combat.Hit = null;
+        for (&self.frogs) |*f| {
+            if (f.update(dt, hero, bounds, blade)) |h| {
+                if (worst == null or h.dmg > worst.?.dmg) worst = h;
+            }
+        }
+        return worst;
     }
     pub fn draw(self: *const Knot) void {
-        for (&self.frogs) |*f| f.draw(&self.model);
+        for (&self.frogs) |*f| if (f.alive()) f.draw(&self.model);
     }
     pub fn totalHits(self: *const Knot) u32 {
         var n: u32 = 0;
         for (self.frogs) |f| n += f.hits;
+        return n;
+    }
+    // How many toads are still standing (for a debug read-out / future clear-the-knot logic).
+    pub fn aliveCount(self: *const Knot) u32 {
+        var n: u32 = 0;
+        for (self.frogs) |f| {
+            if (f.alive()) n += 1;
+        }
         return n;
     }
 };
@@ -639,13 +797,22 @@ fn bodyMesh() rl.Mesh {
     b.addCube(v3(0.08, 0.40, 0.54), v3(0.035, 0.035, 0.035), HIDE_DK);
     b.addCube(v3(-0.08, 0.40, 0.54), v3(0.035, 0.035, 0.035), HIDE_DK);
 
-    // Upper teeth: a row hanging DOWN from the upper lip rim, big tusks at the corners.
-    const down = v3(0, -1, 0.12);
-    var i: i32 = -3;
-    while (i <= 3) : (i += 1) {
-        const fx = @as(f32, @floatFromInt(i)) * 0.088;
-        const big = @abs(i) == 3;
-        tooth(&b, v3(fx, 0.235, 0.50), down, if (big) 0.17 else 0.10, if (big) 0.036 else 0.022, if (big) TOOTH else TOOTH_DK);
+    // Upper teeth: a RAGGED row hanging from the lip — uneven size / lean / spacing, the odd
+    // gap and snapped-off stub, big tusks near the corners. Wabi-sabi: no two alike (seeded,
+    // so the build stays deterministic).
+    {
+        var trng = mathx.Rng.init(9173);
+        var i: i32 = -4;
+        while (i <= 4) : (i += 1) {
+            if (trng.float() < 0.14) continue; // a missing tooth
+            const fx = @as(f32, @floatFromInt(i)) * 0.072 + trng.range(-0.016, 0.016); // uneven spacing
+            const tusk = @abs(i) >= 3 and trng.float() < 0.8;
+            const broken = trng.float() < 0.15; // a snapped-off stub
+            const len = (if (tusk) @as(f32, 0.21) else 0.13) * (if (broken) trng.range(0.3, 0.5) else trng.range(0.72, 1.25));
+            const rad = (if (tusk) @as(f32, 0.046) else 0.030) * trng.range(0.8, 1.2);
+            const dir = v3(trng.range(-0.13, 0.13), -1, 0.10 + trng.range(-0.05, 0.10)); // each leans its own way
+            tooth(&b, v3(fx, 0.235 + trng.range(-0.008, 0.012), 0.50), dir, len, rad, if (trng.float() < 0.5) TOOTH else TOOTH_DK);
+        }
     }
 
     // Warty humps scattered over the domed back (deterministic seed, like the flora clumps).
@@ -676,13 +843,21 @@ fn lowerJawMesh() rl.Mesh {
     b.addCube(j(0, 0.14, 0.26), v3(0.52, 0.07, 0.42), BELLY); // pale chin underside
     b.addCube(j(0, 0.225, 0.34), v3(0.48, 0.03, 0.30), TONGUE); // fleshy floor / tongue
     b.addCube(j(0, 0.235, 0.49), v3(0.50, 0.05, 0.09), HIDE_DK); // lower lip rim
-    // Lower teeth point UP from the rim; corner tusks bigger (interlock with the uppers).
-    const up = v3(0, 1, 0.10);
-    var i: i32 = -3;
-    while (i <= 3) : (i += 1) {
-        const fx = @as(f32, @floatFromInt(i)) * 0.088;
-        const big = @abs(i) == 3;
-        tooth(&b, j(fx, 0.235, 0.49), up, if (big) 0.15 else 0.09, if (big) 0.032 else 0.020, if (big) TOOTH else TOOTH_DK);
+    // Lower teeth point UP from the rim — the same ragged wabi-sabi treatment, a different
+    // seed so they don't mirror the uppers (they interlock unevenly).
+    {
+        var trng = mathx.Rng.init(6421);
+        var i: i32 = -4;
+        while (i <= 4) : (i += 1) {
+            if (trng.float() < 0.14) continue;
+            const fx = @as(f32, @floatFromInt(i)) * 0.072 + trng.range(-0.016, 0.016);
+            const tusk = @abs(i) >= 3 and trng.float() < 0.8;
+            const broken = trng.float() < 0.15;
+            const len = (if (tusk) @as(f32, 0.19) else 0.115) * (if (broken) trng.range(0.3, 0.5) else trng.range(0.72, 1.25));
+            const rad = (if (tusk) @as(f32, 0.042) else 0.028) * trng.range(0.8, 1.2);
+            const dir = v3(trng.range(-0.13, 0.13), 1, 0.08 + trng.range(-0.05, 0.10));
+            tooth(&b, j(fx, 0.235 + trng.range(-0.008, 0.012), 0.49), dir, len, rad, if (trng.float() < 0.5) TOOTH else TOOTH_DK);
+        }
     }
     return b.toMesh();
 }

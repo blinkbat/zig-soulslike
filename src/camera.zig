@@ -56,6 +56,14 @@ pub const CamRig = struct {
         c.pitch = DEFAULT_PITCH;
     }
 
+    // Ease the orbit toward (yaw, pitch) with exponential smoothing — a quick, SNAP-FREE
+    // transition (used by lock-on to swing onto the foe). Higher `rate` = snappier.
+    pub fn aim(c: *CamRig, targetYaw: f32, targetPitch: f32, dt: f32, rate: f32) void {
+        const k = 1.0 - @exp(-rate * dt);
+        c.yaw = mathx.wrapPi(c.yaw + mathx.wrapPi(targetYaw - c.yaw) * k);
+        c.pitch = clampF(c.pitch + (targetPitch - c.pitch) * k, PITCH_MIN, PITCH_MAX);
+    }
+
     pub fn zoom(c: *CamRig, wheel: f32) void {
         c.dist = clampF(c.dist - wheel * ZOOM_STEP, MIN_DIST, MAX_DIST);
     }

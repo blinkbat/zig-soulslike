@@ -8,6 +8,15 @@ Keep this file lean. Prefer no comments in code; write succinct ones for novel/e
 Reuse existing helpers before adding new code. Don't make ad-hoc product/design decisions —
 ask. The owner (David) drives the design; implement what's asked and nothing extra.
 
+**WABI-SABI is the house style for ALL art.** Nothing organic is machined to uniform
+perfection — gaits, the dodge roll, creatures, teeth, flora, the prop scatter all earn their
+life from deliberate IMPERFECTION: uneven sizes, asymmetry, leans, gaps, the odd broken or
+oversized piece, magnitudes drifting piece to piece. Author the variation IN with a seeded
+`mathx.Rng` (so builds stay deterministic) instead of laying elements out in clean rows or
+mirrored pairs. When a model or anim reads "dumb"/fake, it's almost always too REGULAR — rough
+it up. Wabi-sabi is COSMETIC only: mechanics stay exact (the roll's body is imperfect, but its
+distance/heading/timing are identical every time).
+
 ## What exists (first demo = locomotion + camera)
 
 A convincingly **human** hero that **walks / runs / sprints / dodge-rolls** and **swings a
@@ -16,7 +25,10 @@ scaffolding), under a **third-person over-the-shoulder camera**, in a **lit 3D w
 cast shadows**: a golden-hour plain (warm low sun vs cool slate sky, procedural cloud
 deck, distance haze, vignette) dressed as a fallen kingdom — colonnade avenue, gate arch,
 walls, dead trees, graves, war banners, a statue, an emissive grace ember, and colossal
-hazed horizon ruins. No enemies, damage, stamina, lock-on, or jump yet.
+hazed horizon ruins. A **knot of gaping toads** hunts the hero (hop/lunge/chomp AI), with
+**ER lock-on**, and a full **combat layer**: HP + a two-tier poise/stance stagger (light
+flinch → heavy stance-break) + death, both sides (see `combat.zig` and **`docs/ELDEN_RING.md`**,
+the systems reference). No stamina, i-frames, criticals, guarding, or jump yet.
 The bar for "human" is anatomy (real segment proportions) + real gaits, not polygon count.
 
 ## Build & verify
@@ -30,6 +42,12 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
   angles at each speed. Never claim a visual change works without a shot. `shots\` is
   gitignored. Do NOT launch the interactive window to "check" — use `--shot`; the owner
   launches the real game themselves.
+- **Framing is part of the test.** Before tuning an animation from a shot, confirm the camera
+  actually SHOWS the moving part. A mis-framed angle (e.g. the SWORD arm hidden behind the
+  torso — what yaw 270 did to the light slash) means you're tuning a swing you can't see, and
+  every knob after that is guesswork. If a shot looks off, suspect the CAMERA first
+  (yaw/pitch/dist) and capture the TRUE contact frame, not an arbitrary mid-point; fix the
+  framing, THEN judge the anim. Diagnose bad shots EARLY — don't burn iterations on them.
 - Don't commit, push, or create branches unless explicitly asked.
 
 ## Module map
@@ -61,6 +79,14 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
                  arch, walls, trees, graves, swords, banners, statue, grace ember,
                  horizon giants, and a seeded flora scatter (kind-indexed models, one
                  mesh each).
+- `frog.zig`   — THE GAPING TOAD (first foe) + the `Knot` of them. Squash-&-stretch rig,
+                 hop/lunge/chomp state machine, and the combat reactions (light flinch /
+                 heavy stance-break stagger / death). Its attacks damage the hero; the hero's
+                 swept blade damages it. Homes sit off the avenue so a straight run won't wake them.
+- `combat.zig` — SHARED combat `Vitals`: HP + the two-tier Elden Ring stagger (poise → light
+                 stun, stance → heavy stun) + regen + death. Pure logic, unit-tested; hero and
+                 frog both embed one. THE place to retune damage/poise feel. See `docs/ELDEN_RING.md`.
+- `collision.zig` — 2D XZ capsule/circle footprint collision (push-out); actors + world solids.
 - `mathx.zig`  — ground-plane + vector/angle helpers (copied from zig-rts, extended).
 - `hud.zig`    — UI text in Exo (assets/, OFL alongside); the ONLY path to draw/measure text.
 
@@ -109,7 +135,8 @@ the roll heading eases on fast — stances never snap, while mechanics stay inst
 
 ## Controls (`game.zig`)
 
-Keyboard+mouse OR gamepad; the pad follows **Elden Ring's default layout**.
+Keyboard+mouse OR gamepad; the pad follows **Elden Ring's default layout**. (**ER** = Elden
+Ring, the north-star reference, throughout this file.)
 
 - **Mouse:** HIDDEN while over the window and drives the camera, but NEVER locked/captured
   (`hideCursor` = GLFW_CURSOR_HIDDEN). Push it past the window edge and it reappears as a
@@ -125,11 +152,14 @@ Keyboard+mouse OR gamepad; the pad follows **Elden Ring's default layout**.
   in ONE slot (last press wins; a same-frame roll press outranks attack) and fires at the
   earliest exit — the attack's chain knot (`AL_CHAIN`/`AH_CHAIN`, so mashed R1s flow) or
   the roll's end; a queued roll leaves in the direction HELD at fire time, not pressed.
-  **Camera:** mouse / right stick;
-  scroll or D-pad zoom; **R3** recenters behind the hero. **Esc** opens/backs out of the
+  **Camera:** mouse / right stick; scroll or D-pad zoom. **Esc** opens/backs out of the
   menu (pad **Start** toggles it); QUITTING is a menu row now, not a key. The menu opens
   at launch; while it's up, gameplay input is held and the world idles.
-- Reserved for later, matching ER: Cross/A = jump, L1/L2 = guard/skill, R3 = lock-on.
+- **Lock-on (ER):** **R3** (pad) / **middle-mouse** (kb+m) toggles lock onto the foe nearest
+  screen-centre in range; with none available R3 recenters. While locked the camera swings
+  onto the foe, the hero faces it (strafe/backpedal), a **glowing white dot** marks it, and a
+  right-stick / mouse **flick** cycles targets; the lock drops when the foe leaves range.
+- Reserved for later, matching ER: Cross/A = jump, L1/L2 = guard/skill.
 
 ## Hard invariants & gotchas (break these and it rots)
 
@@ -168,11 +198,15 @@ Keyboard+mouse OR gamepad; the pad follows **Elden Ring's default layout**.
 
 ## Next steps (not yet built)
 
-Enemies + damage (the blade capsule, active windows, and swept endpoints exist in
-hero.zig — hit RESOLUTION lands when there's something to hit, one hit per swing via a
-hit list cleared on the activation edge), stamina, lock-on, guard/skill (L1/L2), jump
-(Cross/A), distinct combo follow-up anims (ER-style input buffering + chain exits are
-in — see hero.zig `Queued`), bonfires, real level geometry + collision.
+Stamina + the stamina economy (roll/attack/sprint costs, regen delay), roll **i-frames**
+(ER medium ~0.43s front-loaded), **criticals** off a stance break (the crumple + riposte —
+the stagger already exists, `combat.zig`), **hyper-armor** windows during the hero's own
+attacks, guarding + **guard counter** (L1/L2), AR × motion-value × defense damage (today it's
+flat per-attack constants), a **status buildup** (bleed reads naturally on a toad bite), jump
+(Cross/A), distinct combo follow-up anims (ER-style input buffering + chain exits are in —
+see hero.zig `Queued`), bonfires, real level geometry. See `docs/ELDEN_RING.md` for the target
+mechanics/numbers behind each. Combat itself (HP, poise/stance stagger, death, foe HP bars,
+damage flash) is IN — `combat.zig` is the retune point.
 Current gaps to remember: the roll has **no i-frames or collision** (pure anim +
 committed movement); there's **no foot IK** (feet approximate the ground; a run crouch can
 float/clip a touch); one leg-cycle is reused across run and sprint (no separate run mesh);

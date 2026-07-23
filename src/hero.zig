@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const gfx = @import("gfx.zig");
 const mathx = @import("mathx.zig");
+const combat = @import("combat.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -289,14 +290,14 @@ const AL_BODY_YAW = 26.0; // trunk winds HARD toward the sword side (the exagger
 const AL_BODY_YAW_THRU = 30.0; // …and releases through WELL past neutral — half the arc's width
 const AL_SH_WIND_X = 40.0; // shoulder: arm hauled well back…
 const AL_SH_WIND_Z = 70.0; // …and raised high on the sword side — fist beside the ear
-const AL_SH_STRIKE_X = 52.0; // whipped forward and held HIGH — the arc rides chest→shoulder height, never dropping to the waist/dirt…
-const AL_SH_STRIKE_Z = 32.0; // …adducted well across the body at contact
+const AL_SH_STRIKE_X = 92.0; // arm swings up to ~horizontal at the peak (shX≈−STRIKE_X) so the arc rides chest→shoulder height, never sweeping the floor…
+const AL_SH_STRIKE_Z = 6.0; // …arm stays reaching OUT to the side (only slightly across), not tucked in across the body
 const AL_SH_SWEEP = 26.0; // shoulder yaw carrying the arm HORIZONTALLY across — the other half of the width
 const AL_EDGE_ROLL = 82.0; // wrist rolls the CUTTING EDGE ~flat into the horizontal arc — the edge leads the swipe (never a flat smack)
 const AL_ELBOW_WIND = 96.0; // deep coil
 const AL_ELBOW_STRIKE = 10.0; // near-full extension at contact (elbow fires late)
-const AL_WRIST_COCK = 62.0; // deep cock: the blade lies BACK over the shoulder at the apex (the high-guard tell)
-const AL_WRIST_SNAP = 24.0; // wrist releases last (the grip cant already leads the edge)
+const AL_WRIST_COCK = 58.0; // cock: blade lies BACK over the shoulder at the windup apex (the high-guard tell) and stays cocked through the early strike (the whip)
+const AL_WRIST_SNAP = 4.0; // wrist barely drops past neutral — the blade stays LEVEL through the cut (edge leading horizontally), not stabbing at the dirt
 const AL_SPINE_CRUNCH = 7.0; // forward trunk flexion through the cut (per segment)
 const AL_OVER = 7.0; // follow-through overshoot past the end pose, settling through recovery
 const AL_LOAD = 0.016 * H; // the knees coil DOWN under the windup (anticipation you can feel)…
@@ -323,6 +324,28 @@ const AH_PITCH = 9.0; // whole-body forward pitch about the feet through the str
 // frames. One hit per swing per target: the (future) hit list clears on the activation
 // edge, where the sweep history also resets.
 pub const BLADE_R = 0.055; // capsule radius (world units) — a touch fatter than the mesh
+
+// ── combat vitals + what the hero's cuts deal (Elden Ring model, see docs/ELDEN_RING.md) ─
+// The hero is sturdier than a toad: mid-weight poise (~ER's Knight-set 51) so a couple of
+// bites shrug off, but sustained pressure still flinches then staggers him.
+pub const HP_MAX = 100.0;
+pub const POISE_MAX = 55.0;
+pub const STANCE_MAX = 90.0;
+// Poise/stance dealt by the cuts (HP damage rides alongside). The R2 is the heavier hit and
+// chips STANCE directly (ER: heavies break stance far faster than lights).
+pub const ATK_LIGHT_HIT = combat.Hit{ .dmg = 13, .poise = 10 };
+pub const ATK_HEAVY_HIT = combat.Hit{ .dmg = 27, .poise = 22, .stance = 14 };
+
+// ── stagger + death anims (the reactions; committed like attacks/rolls) ──────────────────
+// A flinch is a BIG, unmistakable jolt — the whole upper body snaps back, the head whips,
+// the arms fly up, the knees buckle and he stagger-steps back off the blow. Not a lean.
+const HURT_LEAN = 40.0; // light flinch: torso snaps back this far (deg)
+const HURT_HEAD = 52.0; // …head whips back with it
+const HURT_STEP = 0.18 * H; // …and he's knocked a step back off the blow
+const STAG_LEAN = 42.0; // heavy stagger: a deep reeling arch back (deg)
+const STAG_STEP = 0.34 * H; // …and the trailing leg shoots back to catch balance (rx deg via knee)
+const DEATH_SINK = 0.30; // death: pelvis sinks to this fraction of stance height
+const DEATH_DUR = 1.6; // collapse + lie still before the hero respawns
 
 // ── the grip (how the sword is HELD) ────────────────────────────────────────────────
 // A relaxed hammer grip cants the blade GRIP_PITCH forward of the forearm line — a sword
@@ -456,6 +479,16 @@ pub const Hero = struct {
     bladeA0: rl.Vector3 = mathx.zero3, // …last frame's endpoints, for swept-capsule hit tests
     bladeB0: rl.Vector3 = mathx.zero3,
     hitWasActive: bool = false, // edge detector: sweep history (+ future hit list) resets on activation
+    // combat
+    vit: combat.Vitals = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX),
+    stun: combat.StunKind = .none, // .light flinch / .heavy stagger (a committed reaction)
+    stunT: f32 = 0, // seconds into the current stagger
+    hurtFlash: f32 = 0, // 0..1 red damage-flash intensity (set on any hit, decays) — HUD reads it
+    dead: bool = false,
+    deathT: f32 = 0, // seconds into the death collapse (respawns at DEATH_DUR)
+    spawnPos: rl.Vector3 = mathx.zero3, // where a death respawns the hero
+    spawnFacing: f32 = 0,
+
     // transition smoothing
     speedS: f32 = 0, // short-eased ground speed driving POSTURE blends only
     blendT: f32 = 1e9, // seconds since the last pose discontinuity (≥ POSE_XFADE = no blend)
@@ -659,8 +692,112 @@ pub const Hero = struct {
         self.hitWasActive = act;
     }
 
+    // ── taking a hit (HP + the two-tier Elden Ring stagger) ─────────────────────────────
+    // The poise/stance dealt by the hero's own cuts, handed to the toads' hit test.
+    pub fn attackHit(self: *const Hero) combat.Hit {
+        return if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT;
+    }
+    // Remember where a death respawns the hero (called once after init sets his start pose).
+    pub fn setSpawn(self: *Hero, pos: rl.Vector3, facing: f32) void {
+        self.spawnPos = pos;
+        self.spawnFacing = facing;
+    }
+    pub fn staggered(self: *const Hero) bool {
+        return self.stun != .none;
+    }
+
+    // Apply a blow. HP drains; poise/stance drive the flinch/stagger. Any reaction INTERRUPTS
+    // the current action (attack/roll) — souls commitment cuts both ways. Call from game.zig
+    // after the knot resolves its attacks.
+    pub fn takeHit(self: *Hero, h: combat.Hit) void {
+        if (self.dead) return;
+        const r = self.vit.hit(h);
+        // Red damage-flash on ANY blow, punchier the harder the reaction (peripheral feedback).
+        const flash: f32 = switch (r) {
+            .death => 1.0,
+            .heavy => 0.9,
+            .light => 0.6,
+            .none => 0.35,
+        };
+        self.hurtFlash = mathx.maxF(self.hurtFlash, flash);
+        switch (r) {
+            .death => self.enterDeath(),
+            .heavy => self.enterStun(.heavy),
+            .light => {
+                // A light flinch can't override an in-progress HEAVY stagger (don't shorten it).
+                if (self.stun != .heavy) self.enterStun(.light);
+            },
+            .none => {},
+        }
+    }
+    // Decay the damage-flash. Call every frame (independent of which update path runs).
+    pub fn tickFlash(self: *Hero, dt: f32) void {
+        self.hurtFlash = mathx.maxF(0, self.hurtFlash - dt * 2.6);
+    }
+    fn enterStun(self: *Hero, kind: combat.StunKind) void {
+        self.attacking = false; // the reaction drops whatever he was committed to
+        self.rolling = false;
+        self.queued = null;
+        self.stun = kind;
+        self.stunT = 0;
+        self.speed = 0;
+        self.startXfade();
+    }
+    fn enterDeath(self: *Hero) void {
+        self.attacking = false;
+        self.rolling = false;
+        self.stun = .none;
+        self.queued = null;
+        self.dead = true;
+        self.deathT = 0;
+        self.speed = 0;
+        self.startXfade();
+    }
+
+    // Advance a stagger; clears back to normal control when it finishes. Call in place of
+    // move/attack/roll while `staggered()`.
+    pub fn updateStun(self: *Hero, dt: f32) void {
+        self.elapsed += dt;
+        self.blendT = @min(self.blendT + dt, 1e9);
+        self.stunT += dt;
+        self.speed = 0;
+        self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
+        const dur: f32 = if (self.stun == .heavy) combat.HEAVY_STUN_DUR else combat.LIGHT_STUN_DUR;
+        self.pose();
+        if (self.stunT >= dur) {
+            self.stun = .none;
+            self.startXfade(); // ease out of the reel into whatever's next
+        }
+    }
+
+    // Advance the death collapse; respawns the hero at full vitals when it completes.
+    pub fn updateDeath(self: *Hero, dt: f32) void {
+        self.elapsed += dt;
+        self.blendT = @min(self.blendT + dt, 1e9);
+        self.deathT += dt;
+        self.speed = 0;
+        self.speedS = 0;
+        self.pose();
+        if (self.deathT >= DEATH_DUR) self.respawn();
+    }
+    fn respawn(self: *Hero) void {
+        self.dead = false;
+        self.deathT = 0;
+        self.stun = .none;
+        self.hurtFlash = 0;
+        self.vit = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX);
+        self.pos = self.spawnPos;
+        self.facing = self.spawnFacing;
+        self.moving = 0;
+        self.speed = 0;
+        self.speedS = 0;
+        self.startXfade();
+    }
+
     // Compute every bone's world matrix for this frame's pose. Call once before drawing.
     pub fn pose(self: *Hero) void {
+        if (self.dead) return self.poseDeath();
+        if (self.stun != .none) return self.poseStun();
         if (self.rolling) return self.poseRoll();
         if (self.attacking) return self.poseAttack();
         const m = self.moving;
@@ -917,6 +1054,104 @@ pub const Hero = struct {
         const elb = IDLE_ELBOW + (AH_ELBOW_WIND - IDLE_ELBOW) * wind + 5.0 * gather - (AH_ELBOW_WIND - AH_ELBOW_STRIKE) * sElb;
         setLocal(&wx, ELR, self.rest, rx(-elb));
         setLocal(&wx, WRR, self.rest, rx(AH_WRIST_COCK * wind - (AH_WRIST_COCK + AH_WRIST_SNAP) * sWr + 8.0 * rcl));
+        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        self.applyXfade(&wx);
+        self.xf = wx;
+    }
+
+    // Stagger — the reaction when poise (light) or stance (heavy) breaks. The torso RECOILS
+    // back, the head snaps with it, the arms fly out and balance goes; the LIGHT flinch is a
+    // quick sin pulse, the HEAVY stagger a deep sustained reel (trailing leg thrown back to
+    // catch himself) with a wobble — wide open, souls-committed. NOTHING parks: it eases out.
+    fn poseStun(self: *Hero) void {
+        const heavy = self.stun == .heavy;
+        const dur: f32 = if (heavy) combat.HEAVY_STUN_DUR else combat.LIGHT_STUN_DUR;
+        const u = mathx.clampF(self.stunT / dur, 0, 1);
+        const amt = if (heavy)
+            mathx.smoothstep(0, 0.12, u) * (1.0 - mathx.smoothstep(0.68, 1.0, u)) // ramp, hold, release
+        else
+            mathx.sinf(u * std.math.pi); // a single flinch pulse
+        const leanMag: f32 = if (heavy) STAG_LEAN else HURT_LEAN;
+        const lean = leanMag * amt;
+        const wob: f32 = if (heavy) 3.0 * mathx.sinf(self.elapsed * 13.0) * amt else 0;
+        const facingDeg = mathx.degrees(self.facing);
+        const hipY = self.rest[ROOT].y;
+        const sinkMag: f32 = if (heavy) 0.06 else 0.05;
+        const sink = sinkMag * H * amt;
+        // Knocked back off the blow: the body shifts along −facing (the flinch reads as impact,
+        // not a lean). +Z in the pre-facing frame is the facing dir, so a −Z offset = backward.
+        const backMag: f32 = if (heavy) 0.10 * H else HURT_STEP;
+        const back = backMag * amt;
+
+        var wx: [N]rl.Matrix = undefined;
+        wx[ROOT] = mul3(
+            rz(wob),
+            mul(tr(0, hipY - sink, -back), mul(rx(-0.55 * lean), ry(facingDeg))), // whole body snaps back
+            tr(self.pos.x, 0, self.pos.z),
+        );
+        setLocal(&wx, SPINE, self.rest, mul(rx(-0.55 * lean), rz(0.3 * wob))); // arch BACK hard
+        setLocal(&wx, CHEST, self.rest, mul(rx(-0.55 * lean), rz(0.3 * wob)));
+        const headBackMag: f32 = if (heavy) HURT_HEAD * 1.3 else HURT_HEAD;
+        const headBack = headBackMag * amt;
+        setLocal(&wx, NECK, self.rest, rx(-0.4 * headBack));
+        setLocal(&wx, HEAD, self.rest, rx(-headBack)); // thrown back / lolling
+        // Legs: the off leg softens, the sword-side leg shoots back to catch balance (heavy).
+        const braceR: f32 = if (heavy) 26.0 * amt else 6.0 * amt;
+        const kneeRMag: f32 = if (heavy) 30.0 else 12.0;
+        setLocal(&wx, HIPL, self.rest, mul(rx(8.0 * amt), rz(-HIP_ADDUCT)));
+        setLocal(&wx, KNEEL, self.rest, rx(IDLE_KNEE + 16.0 * amt));
+        setLocal(&wx, ANKL, self.rest, ry(FOOT_TOEOUT));
+        setLocal(&wx, HIPR, self.rest, mul(rx(-braceR), rz(HIP_ADDUCT)));
+        setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + kneeRMag * amt));
+        setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
+        // Arms fly out/up as balance goes; the sword hand keeps its grip (flails, doesn't drop).
+        const armUpMag: f32 = if (heavy) 42.0 else 48.0;
+        const armUp = armUpMag * amt;
+        setLocal(&wx, SHL, self.rest, mul(rx(-armUp), rz(ARM_ABD + 0.5 * armUp)));
+        setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 20.0 * amt)));
+        setLocal(&wx, WRL, self.rest, rl.math.matrixIdentity());
+        setLocal(&wx, SHR, self.rest, mul(rx(-0.8 * armUp), rz(-ARM_ABD - 0.4 * armUp)));
+        setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + 16.0 * amt)));
+        setLocal(&wx, WRR, self.rest, rl.math.matrixIdentity());
+        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        self.applyXfade(&wx);
+        self.xf = wx;
+    }
+
+    // Death — a crumple: the pelvis SINKS as the legs buckle under, the trunk folds and
+    // topples forward, the head hangs, arms splay. Holds the heap until respawn.
+    fn poseDeath(self: *Hero) void {
+        const u = mathx.clampF(self.deathT / DEATH_DUR, 0, 1);
+        const k = mathx.smoothstep(0, 0.5, u); // the collapse
+        const settle = mathx.smoothstep(0.5, 0.85, u); // the final slump onto the ground
+        const facingDeg = mathx.degrees(self.facing);
+        const hipY = self.rest[ROOT].y;
+        const y = mathx.lerpF(hipY, DEATH_SINK * hipY, k);
+        const pitch = 22.0 * k + 20.0 * settle; // fold forward as he sinks
+        const twist = 12.0 * k; // slump to one side
+
+        var wx: [N]rl.Matrix = undefined;
+        wx[ROOT] = mul3(
+            rz(twist),
+            mul(tr(0, y, 0), mul(rx(pitch), ry(facingDeg))),
+            tr(self.pos.x, 0, self.pos.z),
+        );
+        setLocal(&wx, SPINE, self.rest, rx(28.0 * k)); // curl down
+        setLocal(&wx, CHEST, self.rest, rx(28.0 * k));
+        setLocal(&wx, NECK, self.rest, rx(20.0 * k));
+        setLocal(&wx, HEAD, self.rest, rx(HEAD_WALK + 26.0 * k)); // head hangs
+        setLocal(&wx, HIPL, self.rest, mul(rx(-70.0 * k), rz(-HIP_ADDUCT - 10.0 * k)));
+        setLocal(&wx, KNEEL, self.rest, rx(IDLE_KNEE + 110.0 * k)); // legs buckle under
+        setLocal(&wx, ANKL, self.rest, ry(FOOT_TOEOUT));
+        setLocal(&wx, HIPR, self.rest, mul(rx(-60.0 * k), rz(HIP_ADDUCT + 8.0 * k)));
+        setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 100.0 * k));
+        setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
+        setLocal(&wx, SHL, self.rest, mul(rx(-14.0 * k), rz(ARM_ABD + 14.0 * k))); // arms splay/drop
+        setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 30.0 * k)));
+        setLocal(&wx, WRL, self.rest, rl.math.matrixIdentity());
+        setLocal(&wx, SHR, self.rest, mul(rx(-10.0 * k), rz(-ARM_ABD - 10.0 * k)));
+        setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + 24.0 * k)));
+        setLocal(&wx, WRR, self.rest, rl.math.matrixIdentity());
         setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
         self.applyXfade(&wx);
         self.xf = wx;

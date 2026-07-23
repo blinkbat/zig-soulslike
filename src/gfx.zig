@@ -166,11 +166,11 @@ const sceneFS =
     \\    base *= 1.0 - gstr + 2.0*gstr*grain;
     \\  }
     \\  float ndl = dot(n, normalize(sunDir));
-    \\  float diff = clamp((ndl + 0.18)/1.18, 0.0, 1.0);
+    \\  float diff = clamp((ndl + 0.12)/1.12, 0.0, 1.0); // tighter wrap = crisper terminator (more contrast)
     \\  float sh = shadowFrac(fragPosition, ndl);
     \\  // Golden-hour split: warm amber key vs cool slate sky ambient + warm dirt bounce.
-    \\  vec3 hemi = mix(vec3(0.100, 0.084, 0.060), vec3(0.165, 0.185, 0.240), n.y*0.5 + 0.5);
-    \\  vec3 lit = base*(hemi*(1.0 - 0.50*sh) + vec3(1.22, 1.02, 0.74)*diff*1.22*(1.0 - sh));
+    \\  vec3 hemi = mix(vec3(0.112, 0.095, 0.068), vec3(0.180, 0.200, 0.256), n.y*0.5 + 0.5); // ambient lifted a touch (brighter overall)
+    \\  vec3 lit = base*(hemi*(1.0 - 0.50*sh) + vec3(1.32, 1.10, 0.80)*diff*1.6*(1.0 - sh)); // brighter warm sun key
     \\  vec3 V = normalize(camPos - fragPosition);
     \\  if (groundMode == 0){
     \\    // Cool sky rim on props/hero — lifts silhouettes off the dark ground (cheap

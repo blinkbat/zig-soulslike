@@ -138,6 +138,19 @@ pub fn approach(cur: f32, target: f32, maxStep: f32) f32 {
     return cur + std.math.sign(d) * maxStep;
 }
 
+/// Move `cur` toward `target` by at most `maxStep` (full 3D). Reaches `target` outright when
+/// it's within a step; otherwise steps straight toward it. Used to EASE large collision
+/// depenetrations over a few frames (a slide) instead of snapping there in one (a choppy warp).
+pub fn approachV(cur: rl.Vector3, target: rl.Vector3, maxStep: f32) rl.Vector3 {
+    const dx = target.x - cur.x;
+    const dy = target.y - cur.y;
+    const dz = target.z - cur.z;
+    const l = @sqrt(dx * dx + dy * dy + dz * dz);
+    if (l <= maxStep or l < 1e-6) return target;
+    const k = maxStep / l;
+    return v3(cur.x + dx * k, cur.y + dy * k, cur.z + dz * k);
+}
+
 /// Wrap a radian angle into (-pi, pi].
 pub fn wrapPi(a: f32) f32 {
     // Guard non-finite: +inf/-inf would spin the reduction loops forever (inf±tau==inf),

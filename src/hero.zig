@@ -404,25 +404,14 @@ fn sampleCurve(tbl: [8]f32, phase: f32) f32 {
     return tbl[a] + (tbl[b] - tbl[a]) * f;
 }
 
-// matrix shorthand — MatrixMultiply(a,b) applies a FIRST then b (raylib TRS convention).
-fn rx(deg: f32) rl.Matrix {
-    return rl.math.matrixRotateX(radians(deg));
-}
-fn ry(deg: f32) rl.Matrix {
-    return rl.math.matrixRotateY(radians(deg));
-}
-fn rz(deg: f32) rl.Matrix {
-    return rl.math.matrixRotateZ(radians(deg));
-}
-fn tr(x: f32, y: f32, z: f32) rl.Matrix {
-    return rl.math.matrixTranslate(x, y, z);
-}
-fn mul(a: rl.Matrix, b: rl.Matrix) rl.Matrix {
-    return rl.math.matrixMultiply(a, b);
-}
-fn mul3(a: rl.Matrix, b: rl.Matrix, c: rl.Matrix) rl.Matrix {
-    return mul(mul(a, b), c);
-}
+// matrix shorthand — the shared raylib TRS helpers (MatrixMultiply(a,b) applies a FIRST
+// then b); defined once in mathx so the convention can't drift between the rigs.
+const rx = mathx.rx;
+const ry = mathx.ry;
+const rz = mathx.rz;
+const tr = mathx.tr;
+const mul = mathx.mul;
+const mul3 = mathx.mul3;
 // Component-wise matrix blend — fine for the few frames of a POSE_XFADE cross-fade (the
 // tiny mid-blend shear is invisible that briefly, and both endpoints are exact poses).
 fn lerpM(a: rl.Matrix, b: rl.Matrix, t: f32) rl.Matrix {
@@ -1259,16 +1248,14 @@ fn swordMesh() rl.Mesh {
     const n = v3(-0.5 * GRIP_CA * OUT_SA, 0.5 * GRIP_SA, 0.5 * GRIP_CA * OUT_CA); // half-unit edge-side axis
     const a = v3(-0.5 * GRIP_SA * OUT_SA, -0.5 * GRIP_CA, 0.5 * GRIP_SA * OUT_CA); // half-unit blade axis
     b.addCylinder(bladeAt(0.026), bladeAt(-0.05), 0.014 * H, 0.012 * H, 6, BELT); // grip through the fist
-    b.addBox(bladeAt(-0.058), scale(s, 0.028 * H), scale(a, 0.028 * H), scale(n, 0.028 * H), BRASS); // pommel
-    b.addBox(bladeAt(0.036), scale(n, 0.115 * H), scale(a, 0.02 * H), scale(s, 0.03 * H), STEEL); // crossguard, quillons on the edge line
-    b.addBox(bladeAt(0.231), scale(n, 0.048 * H), scale(a, 0.37 * H), scale(s, 0.012 * H), STEEL); // blade, edges fore/aft
+    b.addBox(bladeAt(-0.058), scaleV(s, 0.028 * H), scaleV(a, 0.028 * H), scaleV(n, 0.028 * H), BRASS); // pommel
+    b.addBox(bladeAt(0.036), scaleV(n, 0.115 * H), scaleV(a, 0.02 * H), scaleV(s, 0.03 * H), STEEL); // crossguard, quillons on the edge line
+    b.addBox(bladeAt(0.231), scaleV(n, 0.048 * H), scaleV(a, 0.37 * H), scaleV(s, 0.012 * H), STEEL); // blade, edges fore/aft
     b.addCylinder(bladeAt(0.416), bladeAt(0.481), 0.020 * H, 0.001, 4, STEEL_DK); // tapering point
     return b.toMesh();
 }
 
-fn scale(v: rl.Vector3, k: f32) rl.Vector3 {
-    return v3(v.x * k, v.y * k, v.z * k);
-}
+const scaleV = mathx.scaleV; // shared vector scale (was a local re-implementation)
 
 fn pelvisMesh() rl.Mesh {
     var b = Builder.init();

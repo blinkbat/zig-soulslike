@@ -7,7 +7,6 @@ const combat = @import("combat.zig");
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
 const Builder = gfx.Builder;
-const radians = mathx.radians;
 
 // ── THE GAPING TOAD ───────────────────────────────────────────────────────────────────
 // A creative first enemy for the Lands-Between plain: a squat, warty bog-toad about 2/3 the
@@ -39,27 +38,13 @@ const radians = mathx.radians;
 // yet (scope: creature + AI). The hit plumbing is here so combat drops straight in later.
 
 // ── matrix shorthand (raylib TRS: mul(a,b) applies a FIRST then b) ──────────────────────
-fn rx(deg: f32) rl.Matrix {
-    return rl.math.matrixRotateX(radians(deg));
-}
-fn ry(deg: f32) rl.Matrix {
-    return rl.math.matrixRotateY(radians(deg));
-}
-fn rz(deg: f32) rl.Matrix {
-    return rl.math.matrixRotateZ(radians(deg));
-}
-fn tr(x: f32, y: f32, z: f32) rl.Matrix {
-    return rl.math.matrixTranslate(x, y, z);
-}
-fn scaleM(sx: f32, sy: f32, sz: f32) rl.Matrix {
-    return rl.math.matrixScale(sx, sy, sz);
-}
-fn mul(a: rl.Matrix, b: rl.Matrix) rl.Matrix {
-    return rl.math.matrixMultiply(a, b);
-}
-fn mul3(a: rl.Matrix, b: rl.Matrix, c: rl.Matrix) rl.Matrix {
-    return mul(mul(a, b), c);
-}
+// The shared helpers from mathx (single source for the "a-first" convention across rigs).
+const rx = mathx.rx;
+const ry = mathx.ry;
+const tr = mathx.tr;
+const scaleM = mathx.scaleM;
+const mul = mathx.mul;
+const mul3 = mathx.mul3;
 // Place a part authored at its joint origin: rotate/scale (`anim`) about that origin, shift
 // to the joint's rest offset in the parent frame, then into the parent's world. Mirrors the
 // hero's setLocal (world = animRot ∘ translate(offset) ∘ parentWorld).
@@ -734,13 +719,13 @@ pub const Knot = struct {
     }
     pub fn totalHits(self: *const Knot) u32 {
         var n: u32 = 0;
-        for (self.frogs) |f| n += f.hits;
+        for (&self.frogs) |*f| n += f.hits;
         return n;
     }
     // How many toads are still standing (for a debug read-out / future clear-the-knot logic).
     pub fn aliveCount(self: *const Knot) u32 {
         var n: u32 = 0;
-        for (self.frogs) |f| {
+        for (&self.frogs) |*f| {
             if (f.alive()) n += 1;
         }
         return n;
@@ -765,6 +750,37 @@ fn buildMeshes() [NP]rl.Mesh {
 // A conical tooth from `bpos` along `dir` (unit) for `len`, base radius `r`.
 fn tooth(b: *Builder, bpos: rl.Vector3, dir: rl.Vector3, len: f32, r: f32, col: rl.Color) void {
     b.addCylinder(bpos, v3(bpos.x + dir.x * len, bpos.y + dir.y * len, bpos.z + dir.z * len), r, 0.004, 5, col);
+}
+
+// One ragged row of nine teeth — uneven size/lean/spacing, the odd gap and snapped-off stub,
+// bigger tusks at the corners. Seeded so the build stays deterministic. Shared by the upper
+// (body) and lower (jaw) rows, which differ ONLY in these params; `shift` rebases the row
+// into the jaw's local frame (P_JAW) for the lower teeth (zero for the uppers).
+const ToothRow = struct {
+    seed: u64,
+    tuskLen: f32,
+    toothLen: f32,
+    tuskRad: f32,
+    toothRad: f32,
+    dirY: f32, // -1 = hang down (uppers), +1 = point up (lowers)
+    zlean: f32, // base forward lean of each tooth
+    z0: f32, // row's z origin at the lip line
+    shift: rl.Vector3 = mathx.zero3,
+};
+fn toothRow(b: *Builder, cfg: ToothRow) void {
+    var trng = mathx.Rng.init(cfg.seed);
+    var i: i32 = -4;
+    while (i <= 4) : (i += 1) {
+        if (trng.float() < 0.14) continue; // a missing tooth
+        const fx = @as(f32, @floatFromInt(i)) * 0.072 + trng.range(-0.016, 0.016); // uneven spacing
+        const tusk = @abs(i) >= 3 and trng.float() < 0.8;
+        const broken = trng.float() < 0.15; // a snapped-off stub
+        const len = (if (tusk) cfg.tuskLen else cfg.toothLen) * (if (broken) trng.range(0.3, 0.5) else trng.range(0.72, 1.25));
+        const rad = (if (tusk) cfg.tuskRad else cfg.toothRad) * trng.range(0.8, 1.2);
+        const dir = v3(trng.range(-0.13, 0.13), cfg.dirY, cfg.zlean + trng.range(-0.05, 0.10)); // each leans its own way
+        const y = 0.235 + trng.range(-0.008, 0.012);
+        tooth(b, v3(fx - cfg.shift.x, y - cfg.shift.y, cfg.z0 - cfg.shift.z), dir, len, rad, if (trng.float() < 0.5) TOOTH else TOOTH_DK);
+    }
 }
 
 // A squat, hunched toad: a fat vertical dome (belly widening to a humped back) with a broad
@@ -800,20 +816,7 @@ fn bodyMesh() rl.Mesh {
     // Upper teeth: a RAGGED row hanging from the lip — uneven size / lean / spacing, the odd
     // gap and snapped-off stub, big tusks near the corners. Wabi-sabi: no two alike (seeded,
     // so the build stays deterministic).
-    {
-        var trng = mathx.Rng.init(9173);
-        var i: i32 = -4;
-        while (i <= 4) : (i += 1) {
-            if (trng.float() < 0.14) continue; // a missing tooth
-            const fx = @as(f32, @floatFromInt(i)) * 0.072 + trng.range(-0.016, 0.016); // uneven spacing
-            const tusk = @abs(i) >= 3 and trng.float() < 0.8;
-            const broken = trng.float() < 0.15; // a snapped-off stub
-            const len = (if (tusk) @as(f32, 0.21) else 0.13) * (if (broken) trng.range(0.3, 0.5) else trng.range(0.72, 1.25));
-            const rad = (if (tusk) @as(f32, 0.046) else 0.030) * trng.range(0.8, 1.2);
-            const dir = v3(trng.range(-0.13, 0.13), -1, 0.10 + trng.range(-0.05, 0.10)); // each leans its own way
-            tooth(&b, v3(fx, 0.235 + trng.range(-0.008, 0.012), 0.50), dir, len, rad, if (trng.float() < 0.5) TOOTH else TOOTH_DK);
-        }
-    }
+    toothRow(&b, .{ .seed = 9173, .tuskLen = 0.21, .toothLen = 0.13, .tuskRad = 0.046, .toothRad = 0.030, .dirY = -1, .zlean = 0.10, .z0 = 0.50 });
 
     // Warty humps scattered over the domed back (deterministic seed, like the flora clumps).
     var rng = mathx.Rng.init(4207);
@@ -845,20 +848,7 @@ fn lowerJawMesh() rl.Mesh {
     b.addCube(j(0, 0.235, 0.49), v3(0.50, 0.05, 0.09), HIDE_DK); // lower lip rim
     // Lower teeth point UP from the rim — the same ragged wabi-sabi treatment, a different
     // seed so they don't mirror the uppers (they interlock unevenly).
-    {
-        var trng = mathx.Rng.init(6421);
-        var i: i32 = -4;
-        while (i <= 4) : (i += 1) {
-            if (trng.float() < 0.14) continue;
-            const fx = @as(f32, @floatFromInt(i)) * 0.072 + trng.range(-0.016, 0.016);
-            const tusk = @abs(i) >= 3 and trng.float() < 0.8;
-            const broken = trng.float() < 0.15;
-            const len = (if (tusk) @as(f32, 0.19) else 0.115) * (if (broken) trng.range(0.3, 0.5) else trng.range(0.72, 1.25));
-            const rad = (if (tusk) @as(f32, 0.042) else 0.028) * trng.range(0.8, 1.2);
-            const dir = v3(trng.range(-0.13, 0.13), 1, 0.08 + trng.range(-0.05, 0.10));
-            tooth(&b, j(fx, 0.235 + trng.range(-0.008, 0.012), 0.49), dir, len, rad, if (trng.float() < 0.5) TOOTH else TOOTH_DK);
-        }
-    }
+    toothRow(&b, .{ .seed = 6421, .tuskLen = 0.19, .toothLen = 0.115, .tuskRad = 0.042, .toothRad = 0.028, .dirY = 1, .zlean = 0.08, .z0 = 0.49, .shift = P_JAW });
     return b.toMesh();
 }
 

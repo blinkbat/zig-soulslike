@@ -42,7 +42,8 @@ const ADJ_COARSE: f32 = 0.10;
 const ADJ_GLIDE_DELAY: f32 = 0.35; // seconds held before the glide kicks in
 const ADJ_GLIDE_RATE: f32 = 0.25; // intensity per second while gliding
 
-// Main rows — mirrored by mainLabels(); keep the two in lockstep (like DBG_*/RET_*).
+// Main rows — mainLabels() keys each label by its row index (like DBG_*/RET_*), so the
+// labels can't drift out of lockstep with these constants.
 const MAIN_CONTINUE = 0;
 const MAIN_DEBUG = 1;
 const MAIN_QUIT = 2;
@@ -253,7 +254,11 @@ fn drawGauge(x: i32, y: i32, w: i32, h: i32, v: f32, selected: bool) void {
 // ── row labels ── static for main; debug/retro rebuild each frame into fixed buffers
 // (values change live; row counts are comptime-known so no allocation).
 fn mainLabels() [MAIN_COUNT][:0]const u8 {
-    return .{ "Continue", "Debug", "Quit" };
+    var out: [MAIN_COUNT][:0]const u8 = undefined;
+    out[MAIN_CONTINUE] = "Continue";
+    out[MAIN_DEBUG] = "Debug";
+    out[MAIN_QUIT] = "Quit";
+    return out;
 }
 
 var dbgTimeBuf: [48]u8 = undefined;

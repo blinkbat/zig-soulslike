@@ -555,14 +555,19 @@ fn lockValid(g: *const Game, i: usize) bool {
     return f.alive() and mathx.distXZ(g.hero.pos, f.pos) <= MAX_LOCK_R + 2.0;
 }
 
-// Screen-x of a foe's lock point (null if it's behind the camera).
-fn lockScreenX(g: *const Game, i: usize) ?f32 {
-    const lp = g.warren.frogs[i].lockPoint();
-    const cam = g.rig.cam;
-    const to = mathx.subV(lp, cam.position);
+// A world point projected to the screen, or null if it sits at/behind the camera plane —
+// the shared front-of-camera cull for the lock reticle, the foe HP bars, and lock-screen-x.
+fn projectToScreen(cam: rl.Camera3D, p: rl.Vector3) ?rl.Vector2 {
+    const to = mathx.subV(p, cam.position);
     const fwd = mathx.subV(cam.target, cam.position);
     if (to.x * fwd.x + to.y * fwd.y + to.z * fwd.z <= 0) return null; // behind the camera
-    return rl.getWorldToScreen(lp, cam).x;
+    return rl.getWorldToScreen(p, cam);
+}
+
+// Screen-x of a foe's lock point (null if it's behind the camera).
+fn lockScreenX(g: *const Game, i: usize) ?f32 {
+    const s = projectToScreen(g.rig.cam, g.warren.frogs[i].lockPoint()) orelse return null;
+    return s.x;
 }
 
 // The foe nearest screen-centre and in range (Elden Ring locks what you're looking at); null
@@ -621,15 +626,11 @@ fn healthBar(x: f32, y: f32, w: f32, h: f32, frac: f32, border: ?rl.Color) void 
 // damaged or nearby; the bar flashes gold while the toad is staggered (wide-open cue).
 fn drawFrogBars(g: *Game) void {
     const cam = g.rig.cam;
-    const fwd = mathx.subV(cam.target, cam.position);
     for (&g.warren.frogs) |*f| {
         if (!f.alive()) continue;
         const near = mathx.distXZ(g.hero.pos, f.pos) <= 15.0;
         if (f.vit.hpFrac() >= 0.999 and !near) continue; // full + far → no clutter
-        const tp = f.topWorld();
-        const to = mathx.subV(tp, cam.position);
-        if (to.x * fwd.x + to.y * fwd.y + to.z * fwd.z <= 0) continue; // behind the camera
-        const s = rl.getWorldToScreen(tp, cam);
+        const s = projectToScreen(cam, f.topWorld()) orelse continue; // skip if behind the camera
         const w: f32 = 54;
         const border: ?rl.Color = if (f.staggered()) rgba(232, 196, 90, 255) else null;
         healthBar(s.x - w * 0.5, s.y - 16, w, 5, f.vit.hpFrac(), border);
@@ -639,12 +640,7 @@ fn drawFrogBars(g: *Game) void {
 // The glowing white reticle on the locked foe (ER's dot) — 2D + crisp, drawn after the 3D pass.
 fn drawLockDot(g: *Game) void {
     const li = g.lock orelse return;
-    const lp = g.warren.frogs[li].lockPoint();
-    const cam = g.rig.cam;
-    const to = mathx.subV(lp, cam.position);
-    const fwd = mathx.subV(cam.target, cam.position);
-    if (to.x * fwd.x + to.y * fwd.y + to.z * fwd.z <= 0) return; // behind the camera
-    const s = rl.getWorldToScreen(lp, cam);
+    const s = projectToScreen(g.rig.cam, g.warren.frogs[li].lockPoint()) orelse return; // skip if behind the camera
     const x: i32 = @intFromFloat(s.x);
     const y: i32 = @intFromFloat(s.y);
     rl.drawCircle(x, y, 9, rgba(255, 255, 255, 40)); // soft halo

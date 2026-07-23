@@ -124,6 +124,31 @@ pub fn lerpF(a: f32, b: f32, t: f32) f32 {
     return a + (b - a) * t;
 }
 
+// ── raylib TRS matrix shorthand (MatrixMultiply(a,b) applies a FIRST then b) ─────────────
+// The FK rigs (hero, frog) build every bone/part transform from these; centralised here so
+// the "a-first" convention lives in ONE place instead of a duplicated set per rig file.
+pub fn rx(deg: f32) rl.Matrix {
+    return rl.math.matrixRotateX(radians(deg));
+}
+pub fn ry(deg: f32) rl.Matrix {
+    return rl.math.matrixRotateY(radians(deg));
+}
+pub fn rz(deg: f32) rl.Matrix {
+    return rl.math.matrixRotateZ(radians(deg));
+}
+pub fn tr(x: f32, y: f32, z: f32) rl.Matrix {
+    return rl.math.matrixTranslate(x, y, z);
+}
+pub fn scaleM(sx: f32, sy: f32, sz: f32) rl.Matrix {
+    return rl.math.matrixScale(sx, sy, sz);
+}
+pub fn mul(a: rl.Matrix, b: rl.Matrix) rl.Matrix {
+    return rl.math.matrixMultiply(a, b);
+}
+pub fn mul3(a: rl.Matrix, b: rl.Matrix, c: rl.Matrix) rl.Matrix {
+    return mul(mul(a, b), c);
+}
+
 /// Hermite smoothstep of x across [a, b] → 0..1 (clamped; the GLSL smoothstep).
 pub fn smoothstep(a: f32, b: f32, x: f32) f32 {
     const t = clampF((x - a) / (b - a), 0, 1);

@@ -59,6 +59,7 @@ const sceneVS =
     \\#version 330
     \\in vec3 vertexPosition;
     \\in vec2 vertexTexCoord;
+    \\in vec2 vertexTexCoord2;
     \\in vec3 vertexNormal;
     \\in vec4 vertexColor;
     \\uniform mat4 mvp;
@@ -68,6 +69,8 @@ const sceneVS =
     \\out vec3 fragPosition;
     \\out vec4 fragColor;
     \\out vec3 fragNormal;
+    \\out vec2 fragUV;
+    \\out float fragMatF;
     \\void main() {
     \\    vec3 p = vertexPosition;
     \\    if (windAmt > 0.0) {
@@ -84,6 +87,8 @@ const sceneVS =
     \\    fragPosition = vec3(matModel*vec4(p, 1.0));
     \\    fragColor = vertexColor;
     \\    fragNormal = normalize(mat3(matModel)*vertexNormal);
+    \\    fragUV = vertexTexCoord;      // surface-anchored, ~world units (Builder authors these)
+    \\    fragMatF = vertexTexCoord2.x; // material id (gfx.Mat), constant per face
     \\    gl_Position = mvp*vec4(p, 1.0);
     \\}
 ;
@@ -101,11 +106,14 @@ const sceneFS =
     \\in vec3 fragPosition;
     \\in vec4 fragColor;
     \\in vec3 fragNormal;
+    \\in vec2 fragUV;
+    \\in float fragMatF;
     \\uniform vec3 sunDir;      // normalized, surface -> sun
     \\uniform int groundMode;   // 1 = terrain (procedural grain), 0 = props/hero
     \\uniform vec3 camPos;      // for distance haze
     \\uniform vec3 hazeColor;   // sky/haze tint (pre-gamma)
     \\uniform float hazeDensity;
+    \\uniform float hitFlash;   // 0..1 blood-red combat flash on the CURRENT draw (per-actor)
     \\uniform mat4 lightVP;     // sun's ortho view-projection (captured in the depth pass)
     \\uniform sampler2D shadowMap;
     \\uniform int shadowMapResolution;
@@ -138,6 +146,47 @@ const sceneFS =
     \\  c = mix(c, vec3(0.042, 0.055, 0.026)*(0.7 + 0.6*blades), scrub*0.8);
     \\  return c*(0.78 + 0.22*vnoise(p*0.03 + 9.7));
     \\}
+    \\// ---- SURFACE MATERIALS ---- every Builder mesh carries a material id (gfx.Mat, in
+    \\// vertexTexCoord2.x) plus surface-anchored UVs in ~world units, so patterns stick to
+    \\// bones and props instead of swimming through world space when they animate. Patterns
+    \\// are VALUE-only multiplies around 1.0 (the authored hue survives) held inside ~+-20%
+    \\// — weathered surface read, never wallpaper. Keep them QUIET.
+    \\float mottle(vec2 p){ return vnoise(p)*0.6 + vnoise(p*3.7 + 11.3)*0.4; }
+    \\vec3 matAlbedo(int m, vec2 q, vec3 base){
+    \\  if (m == 1){        // STONE: blotch, two-octave grain, soft strata, ROUNDED pits.
+    \\    // All smooth value noise — hard speck/step cells read as square pixels on a
+    \\    // close column face, so weathering must stay soft-edged.
+    \\    float blotch = vnoise(q*2.1);
+    \\    float grain = vnoise(q*6.1 + 4.7)*0.6 + vnoise(q*12.3 + 9.2)*0.4;
+    \\    float strata = vnoise(vec2(q.x*0.4, q.y*3.4) + 23.1);
+    \\    base *= (0.88 + 0.24*blotch)*(0.94 + 0.12*grain)*(0.94 + 0.12*strata);
+    \\    base *= 1.0 - 0.13*smoothstep(0.74, 0.95, vnoise(q*9.0 + 31.7));
+    \\  } else if (m == 2){ // WOOD: long grain streaks along v, slow wander
+    \\    float grain = vnoise(vec2(q.x*9.0, q.y*0.8));
+    \\    base *= (0.82 + 0.30*grain)*(0.94 + 0.12*vnoise(q*2.9 + 5.1));
+    \\  } else if (m == 3){ // CLOTH: soft anisotropic weave + broad wrinkle shading
+    \\    float weave = vnoise(q*vec2(30.0, 3.2))*0.5 + vnoise(q*vec2(3.2, 30.0) + 9.7)*0.5;
+    \\    base *= (0.91 + 0.15*weave)*(0.92 + 0.15*vnoise(q*1.7 + 2.3));
+    \\  } else if (m == 4){ // STEEL: fine brush lines along the length + broad soft tarnish
+    \\    float brush = vnoise(vec2(q.x*46.0, q.y*2.3));
+    \\    base *= (0.94 + 0.11*brush)*(0.95 + 0.10*vnoise(q*0.9 + 7.7));
+    \\  } else if (m == 5){ // LEATHER: pore stipple + crease mottle
+    \\    base *= (0.90 + 0.17*vnoise(q*13.0))*(0.92 + 0.15*vnoise(q*3.1 + 6.3));
+    \\  } else if (m == 6){ // SKIN: faint soft mottle only
+    \\    base *= 0.94 + 0.11*mottle(q*4.6);
+    \\  } else if (m == 7){ // HIDE: amphibian blotch patches + fine wart grain — DARKEN
+    \\    // only (max ~1.0): the bog toad must stay a near-black night thing, its blotches
+    \\    // reading as damp shadow, never pale camo.
+    \\    float patch = smoothstep(0.35, 0.75, vnoise(q*2.4));
+    \\    base *= (0.72 + 0.26*patch)*(0.88 + 0.12*vnoise(q*8.2 + 3.3));
+    \\  } else if (m == 8){ // PLANT: broad value drift so clumps read as many blades
+    \\    base *= 0.87 + 0.22*mottle(q*2.2);
+    \\  } else {            // PLAIN: the old generic grain, now surface-anchored
+    \\    float g = vnoise(q*1.1)*0.45 + vnoise(q*4.3)*0.35 + speck(q, 13.0)*0.20;
+    \\    base *= 0.88 + 0.24*g;
+    \\  }
+    \\  return base;
+    \\}
     \\// Fraction of this fragment in sun shadow (0 lit, 1 shadowed): 3x3 PCF. Outside the
     \\// ortho box counts as lit.
     \\float shadowFrac(vec3 pos, float ndl){
@@ -156,30 +205,30 @@ const sceneFS =
     \\void main(){
     \\  vec3 base = fragColor.rgb;
     \\  vec3 n = normalize(fragNormal);
-    \\  float upMask = smoothstep(0.25, 0.95, n.y);
     \\  vec2 p = fragPosition.xz;
     \\  if (groundMode==1){
     \\    base *= terrainAlbedo(p);
     \\  } else {
-    \\    float grain = vnoise(p*1.1)*0.45 + vnoise(p*4.3)*0.35 + speck(p, 13.0)*0.20;
-    \\    float gstr = mix(0.08, 0.18, upMask);
-    \\    base *= 1.0 - gstr + 2.0*gstr*grain;
+    \\    base = matAlbedo(int(fragMatF + 0.5), fragUV, base);
     \\  }
     \\  float ndl = dot(n, normalize(sunDir));
     \\  float diff = clamp((ndl + 0.12)/1.12, 0.0, 1.0); // tighter wrap = crisper terminator (more contrast)
     \\  float sh = shadowFrac(fragPosition, ndl);
     \\  // Golden-hour split: warm amber key vs cool slate sky ambient + warm dirt bounce.
-    \\  vec3 hemi = mix(vec3(0.112, 0.095, 0.068), vec3(0.180, 0.200, 0.256), n.y*0.5 + 0.5); // ambient lifted a touch (brighter overall)
-    \\  vec3 lit = base*(hemi*(1.0 - 0.50*sh) + vec3(1.32, 1.10, 0.80)*diff*1.6*(1.0 - sh)); // brighter warm sun key
+    \\  // CONTRAST lives here: a low ambient floor + shadows eating deep vs a hot key.
+    \\  vec3 hemi = mix(vec3(0.090, 0.076, 0.054), vec3(0.168, 0.188, 0.244), n.y*0.5 + 0.5); // darker floor — darks go DARKER
+    \\  vec3 lit = base*(hemi*(1.0 - 0.62*sh) + vec3(1.32, 1.10, 0.80)*diff*1.72*(1.0 - sh)); // hotter warm sun key
     \\  vec3 V = normalize(camPos - fragPosition);
     \\  if (groundMode == 0){
     \\    // Cool sky rim on props/hero — lifts silhouettes off the dark ground (cheap
     \\    // atmospheric backlight; NOT on terrain, where grazing angles would sheen it all).
-    \\    float rim = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 3.0);
-    \\    lit += rim*vec3(0.040, 0.048, 0.066)*(0.6 + 0.4*n.y)*(1.0 - 0.5*sh);
+    \\    float rim = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 2.6);
+    \\    lit += rim*vec3(0.082, 0.096, 0.128)*(0.6 + 0.4*n.y)*(1.0 - 0.5*sh);
     \\  }
     \\  float emis = 1.0 - fragColor.a;
     \\  lit = mix(lit, base*1.35, emis);
+    \\  // Combat flash: the struck actor pops blood-red for a beat (per-draw uniform).
+    \\  lit = mix(lit, vec3(0.55, 0.07, 0.05), hitFlash);
     \\  float dist = length(fragPosition - camPos);
     \\  float haze = 1.0 - exp(-hazeDensity*dist);
     \\  // Haze banks golden looking into the sun's quarter (matches the sky shader's bank).
@@ -300,7 +349,7 @@ pub const Vignette = struct {
     tex: rl.Texture2D,
 
     pub fn init() Vignette {
-        const img = rl.genImageGradientRadial(320, 200, 0.42, rl.Color.init(0, 0, 0, 0), rl.Color.init(0, 0, 0, 54));
+        const img = rl.genImageGradientRadial(320, 200, 0.42, rl.Color.init(0, 0, 0, 0), rl.Color.init(0, 0, 0, 76));
         const tex = rl.loadTextureFromImage(img) catch @panic("vignette");
         rl.unloadImage(img);
         rl.setTextureFilter(tex, .bilinear);
@@ -630,6 +679,7 @@ pub const Scene = struct {
     loc_camPos: i32,
     loc_windAmt: i32,
     loc_windTime: i32,
+    loc_flash: i32,
     saved_near: @TypeOf(rl.gl.rlGetCullDistanceNear()) = 0,
     saved_far: @TypeOf(rl.gl.rlGetCullDistanceFar()) = 0,
 
@@ -648,6 +698,8 @@ pub const Scene = struct {
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "hazeDensity"), &density, .float);
         var windOff: f32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "windAmt"), &windOff, .float);
+        var flashOff: f32 = 0;
+        rl.setShaderValue(shader, rl.getShaderLocation(shader, "hitFlash"), &flashOff, .float);
         return .{
             .shader = shader,
             .depthShader = depthShader,
@@ -658,6 +710,7 @@ pub const Scene = struct {
             .loc_camPos = rl.getShaderLocation(shader, "camPos"),
             .loc_windAmt = rl.getShaderLocation(shader, "windAmt"),
             .loc_windTime = rl.getShaderLocation(shader, "windTime"),
+            .loc_flash = rl.getShaderLocation(shader, "hitFlash"),
         };
     }
 
@@ -715,39 +768,87 @@ pub const Scene = struct {
         var a: f32 = if (on) 1.0 else 0.0;
         rl.setShaderValue(self.shader, self.loc_windAmt, &a, .float);
     }
+
+    // The blood-red combat flash on whatever draws NEXT (0 = none). Set per actor around
+    // its draw, reset to 0 after — the struck one pops, the rest of the scene doesn't.
+    pub fn setFlash(self: *Scene, amt: f32) void {
+        var a = mathx.clampF(amt, 0, 1);
+        rl.setShaderValue(self.shader, self.loc_flash, &a, .float);
+    }
 };
+
+// Per-fragment surface material for the scene shader's texturing pass (see matAlbedo).
+// Rides vertexTexCoord2.x; .plain is the generic grain every untagged shape gets.
+pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant };
 
 // Procedural-mesh Builder — trimmed from zig-diablo's scenemesh.Builder (verbatim from
 // zig-rts, plus toMesh for the FK-rigged hero which needs bare Meshes, not Models).
+// Every shape is emitted with SURFACE-ANCHORED UVs in ~world units (planar per quad face,
+// arc-length x axis-length on cylinders) plus the current material id in texcoords2 — the
+// scene shader textures off these, so patterns stay glued to animated bones instead of
+// swimming through world space. setMat() switches material between shapes; a per-shape UV
+// offset decorrelates identical shapes so nothing tiles in sync (wabi-sabi for free).
 pub const Builder = struct {
     pos: std.ArrayList(f32),
     nrm: std.ArrayList(f32),
     uv: std.ArrayList(f32),
+    uv2: std.ArrayList(f32),
     col: std.ArrayList(u8),
+    matf: f32 = 0, // current Mat id, written per vertex into texcoords2.x
+    shapeN: f32 = 0, // per-shape counter driving the UV decorrelation offset
 
     pub fn init() Builder {
         return .{
             .pos = std.ArrayList(f32).init(alloc),
             .nrm = std.ArrayList(f32).init(alloc),
             .uv = std.ArrayList(f32).init(alloc),
+            .uv2 = std.ArrayList(f32).init(alloc),
             .col = std.ArrayList(u8).init(alloc),
         };
     }
 
-    fn vert(self: *Builder, p: rl.Vector3, n: rl.Vector3, c: rl.Color) void {
+    // Material for every shape added AFTER this call (until the next one).
+    pub fn setMat(self: *Builder, m: Mat) void {
+        self.matf = @floatFromInt(@intFromEnum(m));
+    }
+
+    fn shapeOff(self: *Builder) rl.Vector2 {
+        self.shapeN += 1;
+        return .{ .x = self.shapeN * 3.71, .y = self.shapeN * 7.13 };
+    }
+
+    fn vert(self: *Builder, p: rl.Vector3, n: rl.Vector3, c: rl.Color, u: f32, v: f32) void {
         self.pos.appendSlice(&.{ p.x, p.y, p.z }) catch @panic("oom");
         self.nrm.appendSlice(&.{ n.x, n.y, n.z }) catch @panic("oom");
-        self.uv.appendSlice(&.{ 0, 0 }) catch @panic("oom");
+        self.uv.appendSlice(&.{ u, v }) catch @panic("oom");
+        self.uv2.appendSlice(&.{ self.matf, 0 }) catch @panic("oom");
         self.col.appendSlice(&.{ c.r, c.g, c.b, c.a }) catch @panic("oom");
     }
 
+    fn quadUV(self: *Builder, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, n: rl.Vector3, col: rl.Color, ta: rl.Vector2, tb: rl.Vector2, tc: rl.Vector2, td: rl.Vector2) void {
+        self.vert(a, n, col, ta.x, ta.y);
+        self.vert(b, n, col, tb.x, tb.y);
+        self.vert(c, n, col, tc.x, tc.y);
+        self.vert(a, n, col, ta.x, ta.y);
+        self.vert(c, n, col, tc.x, tc.y);
+        self.vert(d, n, col, td.x, td.y);
+    }
+
+    // Planar-mapped quad: UVs are in-plane world-unit coordinates (u along a->b, v across),
+    // shifted by the shape offset — any face textures itself with zero caller effort.
     pub fn quad(self: *Builder, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, n: rl.Vector3, col: rl.Color) void {
-        self.vert(a, n, col);
-        self.vert(b, n, col);
-        self.vert(c, n, col);
-        self.vert(a, n, col);
-        self.vert(c, n, col);
-        self.vert(d, n, col);
+        const ue = norm3(v3(b.x - a.x, b.y - a.y, b.z - a.z));
+        const ve = cross(n, ue);
+        const o = self.shapeOff();
+        const t = struct {
+            fn uv(p: rl.Vector3, aa: rl.Vector3, u: rl.Vector3, v: rl.Vector3, off: rl.Vector2) rl.Vector2 {
+                const dx = p.x - aa.x;
+                const dy = p.y - aa.y;
+                const dz = p.z - aa.z;
+                return .{ .x = dx * u.x + dy * u.y + dz * u.z + off.x, .y = dx * v.x + dy * v.y + dz * v.z + off.y };
+            }
+        }.uv;
+        self.quadUV(a, b, c, d, n, col, t(a, a, ue, ve, o), t(b, a, ue, ve, o), t(c, a, ue, ve, o), t(d, a, ue, ve, o));
     }
 
     // Axis-aligned box centered at `c` with full `size`. Faces wind CCW seen from
@@ -790,12 +891,18 @@ pub const Builder = struct {
     }
 
     // Tapered cylinder (no caps) a(radius ra) -> b(radius rb). Limbs use this for a
-    // rounded, organic read; rb≈0 for spikes.
+    // rounded, organic read; rb≈0 for spikes. UVs: u = arc length around the barrel
+    // (continuous across facets — one shared shape offset), v = distance along the axis,
+    // so wood grain / brushed steel naturally run ALONG the limb (v) and banding wraps it.
     pub fn addCylinder(self: *Builder, a: rl.Vector3, b: rl.Vector3, ra: f32, rb: f32, sides: i32, col: rl.Color) void {
-        const axis = norm3(v3(b.x - a.x, b.y - a.y, b.z - a.z));
+        const axisV = v3(b.x - a.x, b.y - a.y, b.z - a.z);
+        const axis = norm3(axisV);
+        const alen = @sqrt(axisV.x * axisV.x + axisV.y * axisV.y + axisV.z * axisV.z);
         const seed = if (@abs(axis.y) < 0.99) v3(0, 1, 0) else v3(1, 0, 0);
         const u = norm3(cross(axis, seed));
         const w = norm3(cross(axis, u));
+        const rmid = @max(0.5 * (ra + rb), 0.02); // arc-length radius (floor keeps spike UVs sane)
+        const o = self.shapeOff();
         const sf: f32 = @floatFromInt(sides);
         var s: i32 = 0;
         while (s < sides) : (s += 1) {
@@ -808,7 +915,9 @@ pub const Builder = struct {
             const p2 = scaleAdd(b, d1, rb);
             const p3 = scaleAdd(b, d0, rb);
             const nmid = norm3(v3(d0.x + d1.x, d0.y + d1.y, d0.z + d1.z));
-            self.quad(p0, p1, p2, p3, nmid, col);
+            const arc0 = a0 * rmid + o.x;
+            const arc1 = a1 * rmid + o.x;
+            self.quadUV(p0, p1, p2, p3, nmid, col, .{ .x = arc0, .y = o.y }, .{ .x = arc1, .y = o.y }, .{ .x = arc1, .y = o.y + alen }, .{ .x = arc0, .y = o.y + alen });
         }
     }
 
@@ -818,6 +927,7 @@ pub const Builder = struct {
         const pos = self.pos.toOwnedSlice() catch @panic("oom");
         const nrm = self.nrm.toOwnedSlice() catch @panic("oom");
         const uv = self.uv.toOwnedSlice() catch @panic("oom");
+        const uv2 = self.uv2.toOwnedSlice() catch @panic("oom");
         const col = self.col.toOwnedSlice() catch @panic("oom");
         var mesh = std.mem.zeroes(rl.Mesh);
         mesh.vertexCount = @intCast(pos.len / 3);
@@ -825,6 +935,7 @@ pub const Builder = struct {
         mesh.vertices = pos.ptr;
         mesh.normals = nrm.ptr;
         mesh.texcoords = uv.ptr;
+        mesh.texcoords2 = uv2.ptr; // material channel (gfx.Mat per vertex)
         mesh.colors = col.ptr;
         rl.uploadMesh(&mesh, false);
         return mesh;

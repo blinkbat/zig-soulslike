@@ -20,14 +20,26 @@ const SCREEN_H = 800;
 // Locomotion speeds live with the hero rig (single source of truth) — the gait blends are
 // tuned to these same values, so keep them from drifting by referencing them here.
 const WALK_SPEED = heromod.WALK_SPEED; // keyboard walk / gentle left-stick tilt
-const RUN_SPEED = heromod.RUN_SPEED; // full left-stick tilt once RUN_HOLD unlocks the run (light tilt stays walk)
+const RUN_SPEED = heromod.RUN_SPEED; // full left-stick tilt (light tilt scales down toward walk)
 const SPRINT_SPEED = heromod.SPRINT_SPEED; // hold Circle/B (or Shift): dash/sprint
 const TURN_RATE = 12.0; // rad/sec the hero yaws toward its heading (souls turn briskly)
 const STICK_DEADZONE = 0.16; // left-stick move deadzone
 const LOOK_DEADZONE = 0.12; // right-stick look deadzone
 const PAD_LOOK_RATE = 2.7; // rad/sec camera orbit at full right-stick deflection
 const ROLL_TAP_MAX = 0.22; // Circle/B released before this (real seconds) = a dodge tap; longer = a sprint hold
-const RUN_HOLD = 0.5; // seconds of HELD movement before walk breaks into a run (sprint bypasses this)
+// NO run-unlock hold, ever (owner's rule, see AGENTS.md): the stick IS the speed — tilt
+// maps straight to ground speed every frame, and keyboard movement runs immediately.
+
+// Impact shake fed to the camera rig (trauma² response lives in camera.zig). Sized so a
+// landed light reads as a tick and a lunge slam genuinely cracks the frame. NO hitstop —
+// impact weight comes from shake + rumble + the huge reaction anims only.
+const SHAKE_HIT_LIGHT = 0.16;
+const SHAKE_HIT_HEAVY = 0.26;
+const SHAKE_KILL = 0.38;
+const SHAKE_HURT = 0.42;
+const SHAKE_HURT_HEAVY = 0.62;
+const SHAKE_DEATH = 0.85;
+const RESPAWN_FADE = 0.9; // seconds of black → world after a respawn (the YOU DIED tail)
 
 // The hero's movement clamp: the world bounds inset by a margin so travel/rolls can't reach
 // the literal edge. Single source for moveHero, the roll updates, and the --shot harness.
@@ -69,6 +81,7 @@ const Game = struct {
     rig: cameramod.CamRig,
     lock: ?usize = null, // ER lock-on: index into warren.frogs, or null
     rumble: rumblemod.Rumble = .{}, // controller vibration, keyed to combat beats
+    deathFade: f32 = 0, // post-respawn fade-from-black seconds remaining (armed while dead)
 
     fn init() Game {
         const scene = gfx.Scene.init();
@@ -93,9 +106,9 @@ const Game = struct {
 
 // ── input → intent ─────────────────────────────────────────────────────────────────
 // fx = camera-right axis, fz = camera-forward axis (pre-normalization); speed = resolved
-// ground speed this frame (0 = idle). Keyboard is digital; the left stick is analog
-// (tilt → speed), Elden-Ring style. Movement starts at a WALK and breaks into a RUN only
-// once it has been HELD for RUN_HOLD (`runUnlocked`); holding sprint bypasses the gate.
+// ground speed this frame (0 = idle). ZERO input lag (owner's rule): the analog tilt maps
+// STRAIGHT to ground speed every frame — light tilt walks, full tilt runs, NOW — and
+// keyboard movement is an immediate run (hold sprint for the dash). No hold gates.
 const Move = struct { fx: f32 = 0, fz: f32 = 0, speed: f32 = 0 };
 
 // Rescale a raw stick axis past its deadzone into a clean 0..±1.
@@ -105,7 +118,7 @@ fn axisDZ(v: f32, dz: f32) f32 {
     return std.math.sign(v) * (a - dz) / (1.0 - dz);
 }
 
-fn gatherMove(runUnlocked: bool) Move {
+fn gatherMove() Move {
     var sprint = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
     // Gamepad first (analog left stick; Circle/B held = dash/sprint). A pushed stick wins
     // over the keyboard so its analog speed is honoured.
@@ -115,12 +128,11 @@ fn gatherMove(runUnlocked: bool) Move {
         const gz = -axisDZ(rl.getGamepadAxisMovement(0, .left_y), STICK_DEADZONE); // stick up = forward
         const gmag = mathx.minF(@sqrt(gx * gx + gz * gz), 1.0);
         if (gmag > 0.001) {
-            var sp = if (sprint) SPRINT_SPEED else gmag * RUN_SPEED;
-            if (!sprint and !runUnlocked) sp = mathx.minF(sp, WALK_SPEED); // full tilt still walks until held
+            const sp = if (sprint) SPRINT_SPEED else gmag * RUN_SPEED; // tilt IS the speed, this frame
             return .{ .fx = gx, .fz = gz, .speed = sp };
         }
     }
-    // Keyboard (digital: walk, then run once held).
+    // Keyboard (digital → an immediate run; walking is the stick's analog privilege).
     var kx: f32 = 0;
     var kz: f32 = 0;
     if (rl.isKeyDown(.w) or rl.isKeyDown(.up)) kz += 1;
@@ -128,7 +140,7 @@ fn gatherMove(runUnlocked: bool) Move {
     if (rl.isKeyDown(.d) or rl.isKeyDown(.right)) kx += 1;
     if (rl.isKeyDown(.a) or rl.isKeyDown(.left)) kx -= 1;
     if (kx != 0 or kz != 0) {
-        const sp: f32 = if (sprint) SPRINT_SPEED else if (runUnlocked) RUN_SPEED else WALK_SPEED;
+        const sp: f32 = if (sprint) SPRINT_SPEED else RUN_SPEED;
         return .{ .fx = kx, .fz = kz, .speed = sp };
     }
     return .{};
@@ -181,8 +193,13 @@ fn rollDir(g: *Game, mv: Move) rl.Vector3 {
 // depth draws are immaterial.
 fn drawCasters(g: *Game) void {
     g.env.drawProps();
+    // Combat flash rides the scene shader's hitFlash uniform per actor: the hero pops red
+    // on a suffered blow, each struck toad on a landed one. Inert during the depth pass
+    // (the uniform lives on the scene shader, not the swapped-in depth shader).
+    g.scene.setFlash(0.6 * g.hero.hurtFlash);
     g.hero.draw();
-    g.warren.draw();
+    g.scene.setFlash(0);
+    g.warren.draw(&g.scene);
 }
 
 fn setCasterShaders(g: *Game, sh: rl.Shader) void {
@@ -218,8 +235,10 @@ fn drawScene(g: *Game) void {
     g.env.drawFlora();
     g.scene.setWind(false);
     if (g.menu.wireframe) rl.gl.rlDisableWireMode();
-    // Toad telegraph FX (dust / charge / spit) — unlit spheres, over the opaque geometry.
+    // Toad telegraph FX (dust / charge / spit / blood / death motes) — unlit spheres,
+    // over the opaque geometry. The hero's swing trail joins them (same unlit layer).
     g.warren.drawFx();
+    g.hero.drawTrail();
     // Debug: the blade hit capsule (menu > Debug > Hitboxes) — red while ACTIVE, dim
     // through the rest of the swing. Drawn with the default shader, unlit on purpose.
     if (g.menu.hitboxes and g.hero.attacking) {
@@ -241,6 +260,50 @@ fn drawScene(g: *Game) void {
     drawHurtFlash(g); // red screen-edge pulse when the hero is hit (peripheral feedback)
     drawFrogBars(g); // floating foe HP bars, crisp over the finished frame
     drawLockDot(g); // the ER lock-on reticle
+    drawDeathOverlay(g); // the YOU DIED card + respawn fade, over everything
+}
+
+// ── the YOU DIED screen ── Elden Ring's death card: the world dims, a black band slides
+// across mid-screen, and huge blood-red letters fade in wide-spaced, swelling a touch;
+// the tail runs to full black that the respawn hides behind, then g.deathFade lifts the
+// black off the fresh world. All timing rides hero.deathT against heromod.DEATH_DUR.
+fn drawDeathOverlay(g: *Game) void {
+    const w = rl.getScreenWidth();
+    const h = rl.getScreenHeight();
+    const wf: f32 = @floatFromInt(w);
+    const hf: f32 = @floatFromInt(h);
+    if (g.hero.dead) {
+        const u = mathx.clampF(g.hero.deathT / heromod.DEATH_DUR, 0, 1);
+        const dim = mathx.smoothstep(0.03, 0.30, u);
+        rl.drawRectangle(0, 0, w, h, rgba(6, 3, 3, mathx.u8f(120.0 * dim))); // the world falls away
+        const bandK = mathx.smoothstep(0.10, 0.34, u);
+        const bh: i32 = @intFromFloat(0.30 * hf);
+        const by: i32 = @intFromFloat(0.35 * hf);
+        const third = @divTrunc(bh, 3);
+        const bcol = rgba(0, 0, 0, mathx.u8f(170.0 * bandK));
+        const bclear = rgba(0, 0, 0, 0);
+        rl.drawRectangleGradientV(0, by, w, third, bclear, bcol); // feathered band edges
+        rl.drawRectangle(0, by + third, w, bh - 2 * third, bcol);
+        rl.drawRectangleGradientV(0, by + bh - third, w, third, bcol, bclear);
+        const ta = mathx.smoothstep(0.16, 0.48, u) * (1.0 - mathx.smoothstep(0.90, 1.0, u));
+        if (ta > 0.01) {
+            const size = 0.115 * hf * (0.97 + 0.06 * u); // the letters swell, barely
+            const spacing = 0.22 * size; // ER's wide tracking (between glyphs only — measured exactly)
+            const cx = 0.5 * wf;
+            const cy = 0.35 * hf + 0.15 * hf; // band centre
+            const glow = rgba(120, 14, 10, mathx.u8f(44.0 * ta));
+            hud_.bigCentered("YOU DIED", cx - 3, cy, size, spacing, glow);
+            hud_.bigCentered("YOU DIED", cx + 3, cy, size, spacing, glow);
+            hud_.bigCentered("YOU DIED", cx, cy - 3, size, spacing, glow);
+            hud_.bigCentered("YOU DIED", cx, cy + 3, size, spacing, glow);
+            hud_.bigCentered("YOU DIED", cx, cy, size, spacing, rgba(156, 22, 16, mathx.u8f(232.0 * ta)));
+        }
+        const blackK = mathx.smoothstep(0.86, 1.0, u); // swallow the respawn snap
+        if (blackK > 0.001) rl.drawRectangle(0, 0, w, h, rgba(0, 0, 0, mathx.u8f(255.0 * blackK)));
+    } else if (g.deathFade > 0) {
+        const k = mathx.clampF(g.deathFade / RESPAWN_FADE, 0, 1);
+        rl.drawRectangle(0, 0, w, h, rgba(0, 0, 0, mathx.u8f(255.0 * k))); // wake at the grace
+    }
 }
 
 // A red damage flash bleeding in from the screen edges, scaled by hero.hurtFlash — Elden
@@ -266,14 +329,14 @@ fn hud(g: *Game) void {
     hud_.text("zig-soulslike", 16, 12, 24, rgba(232, 222, 198, 255));
     hud_.text("locomotion demo - anatomical rig, walk / run / sprint gait", 16, 40, 16, rgba(164, 154, 134, 255));
 
-    // Hero HP bar (ER puts the player's health top-left). "YOU DIED" while dead.
+    // Hero HP bar (ER puts the player's health top-left). The death card itself is
+    // drawDeathOverlay's — no mini YOU DIED here.
     healthBar(16, 66, 300, 16, g.hero.vit.hpFrac(), rgba(24, 20, 16, 220));
-    if (g.hero.dead) hud_.text("YOU DIED", 20, 90, 22, rgba(150, 24, 20, 255));
     if (!g.menu.isOpen()) {
         const help: [:0]const u8 = if (rl.isGamepadAvailable(0))
-            "L-stick move (hold to run)   R-stick look   R1 slash   R2 heavy   B: sprint / tap roll   R3 recenter   Start menu"
+            "L-stick move (tilt = speed)   R-stick look   R1 slash   R2 heavy   B: sprint / tap roll   R3 recenter   Start menu"
         else
-            "WASD move (hold to run)   mouse look   LMB slash   Shift+LMB heavy   Shift sprint   Space roll   Esc menu";
+            "WASD move   mouse look   LMB slash   Shift+LMB heavy   Shift sprint   Space roll   Esc menu";
         hud_.text(help, 16, rl.getScreenHeight() - 30, 16, rgba(188, 178, 158, 255));
     }
 
@@ -357,7 +420,6 @@ pub fn run(shot: bool) void {
     var wasInside = false;
     var bWasDown = false; // gamepad Circle/B: a TAP rolls, a HOLD sprints
     var bHeldT: f32 = 0;
-    var moveHeldT: f32 = 0; // continuous held-movement time; ≥ RUN_HOLD unlocks the run
     var lockCycleReady = true; // debounce so one flick cycles the lock-on target once
     // Rising-edge trackers for rumble: fire a pulse the frame an action BEGINS (catches
     // queued actions too, since we watch the hero's committed state, not the input press).
@@ -366,7 +428,8 @@ pub fn run(shot: bool) void {
     var wasDead = false;
     defer g.rumble.stop(); // never leave a motor latched after we exit the loop
     while (!rl.windowShouldClose()) {
-        const dt = rl.getFrameTime() * g.menu.timeScale;
+        const rawDt = rl.getFrameTime(); // wall-clock dt: feel systems (shake, rumble, fades, tap windows)
+        const dt = rawDt * g.menu.timeScale;
 
         // Esc backs the menu out one level (opens it when closed); pad Start toggles.
         // Quit lives in the menu now.
@@ -376,19 +439,19 @@ pub fn run(shot: bool) void {
         if (g.menu.isOpen()) {
             // The world holds while the menu is up: no camera/move input, but the hero
             // keeps breathing (idle update with zero travel) so the scene stays alive.
-            if (g.menu.update(&g.retro, rl.getFrameTime()) == .quit) break;
+            if (g.menu.update(&g.retro, rawDt) == .quit) break;
             // Poison the pad-B tap window while the menu is up: B both BACKS OUT of the
             // menu and dodge-rolls, so a zeroed window would turn the release of the very
             // B press that closed the menu into an instant roll. Poisoned, that release
             // reads as a hold (no tap); a fresh press after release taps normally.
             bWasDown = true;
             bHeldT = ROLL_TAP_MAX;
-            moveHeldT = 0;
             wasInside = false; // swallow the mouse delta accumulated while in the menu
-            g.hero.update(rl.getFrameTime(), 0, 0);
+            g.hero.update(rawDt, 0, 0);
             g.hero.pose();
+            g.rig.tickShake(rawDt); // any live shake decays out under the pause
             g.rig.follow(g.hero.shoulderPoint());
-            g.rumble.update(rl.getFrameTime(), false); // motors silent while paused (envelopes still decay)
+            g.rumble.update(rawDt, false); // motors silent while paused (envelopes still decay)
             drawScene(g);
             hud(g);
             g.menu.draw(&g.retro);
@@ -451,7 +514,7 @@ pub fn run(shot: bool) void {
         var rollReq = rl.isKeyPressed(.space);
         const bDown = rl.isGamepadAvailable(0) and rl.isGamepadButtonDown(0, .right_face_right);
         if (bDown) {
-            bHeldT += rl.getFrameTime(); // REAL time: tap-vs-hold is a wall-clock decision, unaffected by debug time-scale
+            bHeldT += rawDt; // REAL time: tap-vs-hold is a wall-clock decision, unaffected by debug time-scale
         } else {
             if (bWasDown and bHeldT < ROLL_TAP_MAX) rollReq = true;
             bHeldT = 0;
@@ -472,10 +535,7 @@ pub fn run(shot: bool) void {
             if (rl.isGamepadButtonPressed(0, .right_trigger_2)) heavyReq = true;
         }
 
-        const mv = gatherMove(moveHeldT >= RUN_HOLD);
-        // REAL time like bHeldT (a wall-clock feel decision). Keeps accumulating through a
-        // roll, so holding the stick rolls you back out into the run you were in.
-        moveHeldT = if (mv.speed > 0.001) moveHeldT + rl.getFrameTime() else 0;
+        const mv = gatherMove();
         // Poise/stance regenerate every frame (relent and pressure resets — Elden Ring).
         g.hero.vit.tick(dt);
         g.hero.tickFlash(dt); // fade the red damage flash
@@ -514,28 +574,53 @@ pub fn run(shot: bool) void {
         // toad's chomp/lunge that connects returns the blow it lands ON the hero. Apply it,
         // resolve every footprint collision, then aim the camera at the SETTLED hero position.
         const hitsBefore = g.warren.totalHits();
-        const aliveBefore = g.warren.aliveCount();
         if (g.warren.update(dt, g.hero.pos, PLAY_HALF, heroBlade(g))) |h| {
             g.hero.takeHit(h);
             // The lunge carries stance damage; the chomp doesn't — split the felt blow by that.
-            g.rumble.play(if (h.stance > 0) rumblemod.hurt_heavy else rumblemod.hurt);
+            const slammed = h.stance > 0;
+            g.rumble.play(if (slammed) rumblemod.hurt_heavy else rumblemod.hurt);
+            g.rig.addShake(if (slammed) SHAKE_HURT_HEAVY else SHAKE_HURT);
         }
-        // Your blade connected this frame (hit count climbed) → a hit pulse sized to the swing;
-        // a toad going down on top of that adds the kill thunk (strongest-wins blends them).
-        if (g.warren.totalHits() > hitsBefore) g.rumble.play(if (g.hero.atkHeavy) rumblemod.hit_heavy else rumblemod.hit_light);
-        if (g.warren.aliveCount() < aliveBefore) g.rumble.play(rumblemod.kill);
+        // Your blade connected this frame (hit count climbed) → a hit pulse + frame crack
+        // sized to the swing; a toad going down on top adds the kill thunk (justDied — the
+        // dissipation means aliveCount only drops much later). Strongest-wins blends them.
+        if (g.warren.totalHits() > hitsBefore) {
+            g.rumble.play(if (g.hero.atkHeavy) rumblemod.hit_heavy else rumblemod.hit_light);
+            g.rig.addShake(if (g.hero.atkHeavy) SHAKE_HIT_HEAVY else SHAKE_HIT_LIGHT);
+        }
+        if (g.warren.anyDied()) {
+            g.rumble.play(rumblemod.kill);
+            g.rig.addShake(SHAKE_KILL);
+        }
+        // ER lock-on across a kill: the lock leaves a corpse the FRAME it dies — never
+        // waiting out the death anim/dissipation — snapping to the next valid target in
+        // view (nearest screen-centre, like a fresh acquire) or dropping if there's none.
+        if (g.lock) |li| {
+            const lf = &g.warren.frogs[li];
+            if (!lf.alive() or lf.dying()) g.lock = acquireLock(g);
+        }
         collideActors(g, dt);
+        g.rig.tickShake(rawDt); // impact shake decays on wall-clock time (bakes this frame's jitter)
         g.rig.follow(g.hero.shoulderPoint());
 
         // Rising-edge action pulses: a roll whump, the swing effort (heavy reads heavier than
         // light), and the death swell. Watching committed state catches queued actions too.
         if (g.hero.rolling and !wasRolling) g.rumble.play(rumblemod.roll);
         if (g.hero.attacking and !wasAttacking) g.rumble.play(if (g.hero.atkHeavy) rumblemod.swing_heavy else rumblemod.swing_light);
-        if (g.hero.dead and !wasDead) g.rumble.play(rumblemod.death);
+        if (g.hero.dead and !wasDead) {
+            g.rumble.play(rumblemod.death);
+            g.rig.addShake(SHAKE_DEATH);
+        }
+        // The YOU DIED tail: armed while dead, drains after the respawn (fade from black).
+        if (g.hero.dead) {
+            g.deathFade = RESPAWN_FADE;
+        } else if (g.deathFade > 0) {
+            g.deathFade -= rawDt;
+        }
         wasRolling = g.hero.rolling;
         wasAttacking = g.hero.attacking;
         wasDead = g.hero.dead;
-        g.rumble.update(rl.getFrameTime(), rl.isGamepadAvailable(0));
+        g.rumble.update(rawDt, rl.isGamepadAvailable(0));
 
         drawScene(g);
         hud(g);
@@ -587,9 +672,11 @@ fn collideActors(g: *Game, dt: f32) void {
 }
 
 // ── lock-on helpers ─────────────────────────────────────────────────────────────────
+// A dying toad is NOT a lock target anywhere below: the kill handler in run() switches
+// or drops the lock the frame it dies, and no acquire/cycle may pick a corpse back up.
 fn lockValid(g: *const Game, i: usize) bool {
     const f = &g.warren.frogs[i];
-    return f.alive() and mathx.distXZ(g.hero.pos, f.pos) <= MAX_LOCK_R + 2.0;
+    return f.alive() and !f.dying() and mathx.distXZ(g.hero.pos, f.pos) <= MAX_LOCK_R + 2.0;
 }
 
 // A world point projected to the screen, or null if it sits nearer than the near-clip
@@ -620,7 +707,7 @@ fn acquireLock(g: *Game) ?usize {
     var best: ?usize = null;
     var bestScore: f32 = 1e9;
     for (g.warren.frogs, 0..) |f, i| {
-        if (!f.alive() or mathx.distXZ(g.hero.pos, f.pos) > MAX_LOCK_R) continue;
+        if (!f.alive() or f.dying() or mathx.distXZ(g.hero.pos, f.pos) > MAX_LOCK_R) continue;
         const sx = lockScreenX(g, i) orelse continue;
         const score = @abs(sx - cx);
         if (score < bestScore) {
@@ -639,7 +726,7 @@ fn cycleLock(g: *Game, dir: f32) void {
     var best: ?usize = null;
     var bestGap: f32 = 1e9;
     for (g.warren.frogs, 0..) |f, i| {
-        if (i == cur or !f.alive()) continue;
+        if (i == cur or !f.alive() or f.dying()) continue;
         if (mathx.distXZ(g.hero.pos, f.pos) > MAX_LOCK_R) continue;
         const sx = lockScreenX(g, i) orelse continue;
         const gap = (sx - curX) * dir;
@@ -665,14 +752,17 @@ fn healthBar(x: f32, y: f32, w: f32, h: f32, frac: f32, border: ?rl.Color) void 
     if (border) |c| rl.drawRectangleLines(xi - 1, yi - 1, wi + 2, hi + 2, c);
 }
 
-// Floating HP bars over the toads (ER shows bars for foes). Drawn for any live toad that's
-// damaged or nearby; the bar flashes gold while the toad is staggered (wide-open cue).
+// A foe's bar only appears once you've HURT it, and lingers this long after the last hit —
+// so untouched foes stay unmarked and the bar fades from view when you disengage.
+const HURT_BAR_WINDOW = 5.0;
+
+// Floating HP bars over the toads (ER shows bars for foes). Shown ONLY for a live toad you've
+// hit within HURT_BAR_WINDOW; the bar flashes gold while the toad is staggered (wide-open cue).
 fn drawFrogBars(g: *Game) void {
     const cam = g.rig.cam;
     for (&g.warren.frogs) |*f| {
-        if (!f.alive()) continue;
-        const near = mathx.distXZ(g.hero.pos, f.pos) <= 15.0;
-        if (f.vit.hpFrac() >= 0.999 and !near) continue; // full + far → no clutter
+        if (!f.alive() or f.dying()) continue; // no bar over a corpse dissolving out
+        if (f.vit.sinceHit > HURT_BAR_WINDOW) continue; // only after a recent hit
         const s = projectToScreen(cam, f.topWorld()) orelse continue; // skip if behind the camera
         const w: f32 = 54;
         const border: ?rl.Color = if (f.staggered()) rgba(232, 196, 90, 255) else null;
@@ -971,7 +1061,7 @@ fn runShots(g: *Game) void {
 
         g.hero.takeHit(.{ .dmg = 999 }); // lethal → the death collapse
         sk = 0;
-        while (sk < 54) : (sk += 1) g.hero.updateDeath(dt);
+        while (sk < 130) : (sk += 1) g.hero.updateDeath(dt); // deep into the card: heap + YOU DIED full
         g.rig.pitch = 0.22;
         g.rig.dist = 5.2;
         g.rig.follow(g.hero.shoulderPoint());

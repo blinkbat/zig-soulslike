@@ -22,11 +22,23 @@ const PITCH_MAX = 1.15; // ~  66 deg (looking down)
 const SHOULDER = 0.55; // lateral offset (world units): hero sits left of centre
 const TARGET_RAISE = 0.15; // lift the look-at a touch above the shoulder point
 
+// ── impact shake ── trauma-based (shake ∝ trauma², so small hits whisper and big ones
+// crack), applied as a short translational jitter on both eye and look-at in follow().
+// The live loop feeds tickShake() real time; the --shot harness never does, so the
+// offset stays zero and captures stay deterministic. NO hitstop in this game — impact
+// weight is carried by shake/rumble/reactions only (owner's rule, see AGENTS.md).
+const SHAKE_MAX = 0.13; // world-unit jitter amplitude at full trauma
+const SHAKE_DECAY = 2.6; // trauma drained per second — shakes die fast (a crack, not a wobble)
+const SHAKE_FREQ = 33.0; // base jitter frequency (layered sines, incommensurate)
+
 pub const CamRig = struct {
     cam: rl.Camera3D,
     yaw: f32, // azimuth (radians); 0 = camera behind a +Z-facing hero
     pitch: f32, // elevation (radians); + looks down
     dist: f32,
+    trauma: f32 = 0, // 0..1 impact charge; addShake() feeds it, tickShake() drains it
+    shakeT: f32 = 0, // running phase for the jitter noise
+    shakeOff: rl.Vector3 = mathx.zero3, // this frame's world-space jitter (zero when calm)
 
     // Ground-plane forward the camera looks along (for camera-relative movement).
     pub fn forwardXZ(c: *const CamRig) rl.Vector3 {
@@ -68,6 +80,30 @@ pub const CamRig = struct {
         c.dist = clampF(c.dist - wheel * ZOOM_STEP, MIN_DIST, MAX_DIST);
     }
 
+    // Feed an impact into the shake (amt ~0.2 = a landed light, ~0.8 = getting slammed).
+    pub fn addShake(c: *CamRig, amt: f32) void {
+        c.trauma = clampF(c.trauma + amt, 0, 1);
+    }
+
+    // Advance + decay the shake and bake this frame's jitter offset. The LIVE loop calls
+    // this once per frame with real dt; --shot never calls it, so captures stay still.
+    pub fn tickShake(c: *CamRig, dt: f32) void {
+        c.trauma = clampF(c.trauma - SHAKE_DECAY * dt, 0, 1);
+        c.shakeT += dt;
+        const s = c.trauma * c.trauma * SHAKE_MAX; // trauma² — big hits crack, small ones whisper
+        if (s < 0.0005) {
+            c.shakeOff = mathx.zero3;
+            return;
+        }
+        // Layered incommensurate sines ≈ smooth noise, no RNG (nothing to reseed/replay).
+        const t = c.shakeT;
+        c.shakeOff = v3(
+            (mathx.sinf(t * SHAKE_FREQ) + 0.5 * mathx.sinf(t * SHAKE_FREQ * 2.31 + 1.7)) * s,
+            (mathx.sinf(t * SHAKE_FREQ * 1.17 + 4.2) + 0.5 * mathx.sinf(t * SHAKE_FREQ * 2.87 + 0.6)) * s * 0.6,
+            (mathx.sinf(t * SHAKE_FREQ * 0.93 + 2.9) + 0.5 * mathx.sinf(t * SHAKE_FREQ * 2.53 + 3.8)) * s,
+        );
+    }
+
     // Re-aim at the hero's shoulder point. Call every frame after input + movement.
     pub fn follow(c: *CamRig, shoulder: rl.Vector3) void {
         const cp = mathx.cosf(c.pitch);
@@ -80,8 +116,9 @@ pub const CamRig = struct {
             shoulder.y + TARGET_RAISE,
             shoulder.z + right.z * SHOULDER,
         );
-        c.cam.target = target;
-        c.cam.position = mathx.addV(target, mathx.scaleV(back, c.dist));
+        // Impact jitter rides BOTH ends so the whole frame kicks (a shake, not a re-aim).
+        c.cam.target = mathx.addV(target, c.shakeOff);
+        c.cam.position = mathx.addV(mathx.addV(target, mathx.scaleV(back, c.dist)), c.shakeOff);
     }
 };
 

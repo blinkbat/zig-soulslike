@@ -8,6 +8,15 @@ Keep this file lean. Prefer no comments in code; write succinct ones for novel/e
 Reuse existing helpers before adding new code. Don't make ad-hoc product/design decisions —
 ask. The owner (David) drives the design; implement what's asked and nothing extra.
 
+**FEEL RULES (owner's law, non-negotiable):**
+- **NO HITSTOP. EVER.** No freeze-frames, no time-dilation on impact, no dt zeroing.
+  Impact weight is carried by camera shake + rumble + blood/flash FX + the huge reaction
+  anims — never by stealing time from the player.
+- **ZERO INPUT LAG.** The stick maps STRAIGHT to ground speed every frame (light tilt =
+  walk, full tilt = run, keyboard = immediate run; no run-unlock hold, no windup gates).
+  Posture/gait blends may smooth the VISUALS only, and only very fast (~0.1s max) —
+  movement mechanics answer the input the same frame it happens.
+
 **WABI-SABI is the house style for ALL art.** Nothing organic is machined to uniform
 perfection — gaits, the dodge roll, creatures, teeth, flora, the prop scatter all earn their
 life from deliberate IMPERFECTION: uneven sizes, asymmetry, leans, gaps, the odd broken or
@@ -55,7 +64,9 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
 - `main.zig`   — entry; `--shot` = headless screenshot harness.
 - `game.zig`   — window/loop, input (mouse + gamepad), camera-relative movement + facing,
                  dodge-roll trigger, render orchestration (sun depth pass → retro capture
-                 → lit main pass → filter blit → vignette/HUD/menu crisp), sky, HUD, and
+                 → lit main pass → filter blit → vignette/HUD/menu crisp), sky, HUD,
+                 combat-beat feedback wiring (rumble + camera shake + per-actor hit flash;
+                 NO hitstop), the YOU DIED card (drawDeathOverlay + respawn fade), and
                  the `--shot` harness (which also captures filter + menu verification shots).
 - `menu.zig`   — the pause/debug menu (OPEN AT LAUNCH: Continue / Debug / Quit). Debug
                  holds Stats / Wireframe / Time Scale and the Retro Filters slider list
@@ -64,13 +75,23 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
 - `hero.zig`   — THE HERO. Anthropometric FK skeleton + every animation (idle/walk/run/
                  sprint/roll/attacks) + the blade hit capsule (souls-style: rides the
                  SWORD bone's dummy points, active only in the strike's TAE-like window,
-                 endpoints swept frame-to-frame). Start here for how the character moves.
+                 endpoints swept frame-to-frame) + the swing trail ribbon. The light slash
+                 is a REAL cut — sabre Cut One / kesa-giri geometry, sourced (Roworth 1798 /
+                 La Marchant 1796 / Hutton 1889 / kendo kinematics) in the CUT MECHANICS
+                 note above the AL_* block. Start here for how the character moves.
 - `camera.zig` — third-person over-the-shoulder orbit rig (yaw + clamped pitch, zoom,
-                 shoulder offset, `recenter`), and the camera-relative ground basis.
+                 shoulder offset, `recenter`), the camera-relative ground basis, and the
+                 trauma-based impact shake (tickShake is live-loop only, so --shot stays
+                 deterministic).
 - `gfx.zig`    — scene shader (warm hard sun + cast shadows + hemisphere ambient + rim
                  light on non-terrain + sun-banked distance haze + gamma/dither + a flora
-                 wind term gated by `windAmt`/`setWind`), the sun
-                 shadow-map depth pass, the mesh `Builder`, the fullscreen `Sky` shader
+                 wind term gated by `windAmt`/`setWind` + the per-actor `hitFlash` uniform
+                 + SURFACE MATERIALS: every Builder mesh carries surface-anchored UVs and
+                 a `gfx.Mat` id in texcoords2, and matAlbedo() textures it procedurally —
+                 stone/wood/cloth/steel/leather/skin/hide/plant, value-only, ±20% max, so
+                 patterns stick to animated bones and NOTHING reads gaudy), the sun
+                 shadow-map depth pass, the mesh `Builder` (setMat switches material per
+                 shape), the fullscreen `Sky` shader
                  (gradient + sun aureole/disc + fbm cloud deck; ray from gl_FragCoord —
                  fragTexCoord is CONSTANT for drawRectangle), and the `Vignette` overlay.
                  Adapted from zig-rts by REMOVING fog-of-war (a soulslike is fully lit).
@@ -81,8 +102,11 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
                  mesh each).
 - `frog.zig`   — THE GAPING TOAD (first foe) + the `Knot` of them. Squash-&-stretch rig,
                  hop/lunge/chomp state machine, and the combat reactions (light flinch /
-                 heavy stance-break stagger / death). Its attacks damage the hero; the hero's
-                 swept blade damages it. Homes sit off the avenue so a straight run won't wake them.
+                 heavy stance-break stagger / death → a grace-gold mote DISSIPATION, never
+                 a hard vanish). Landed blows read at the wound: contact-point blood burst,
+                 knockback shove, and a blood-red body flash. Its attacks damage the hero;
+                 the hero's swept blade damages it. Homes sit off the avenue so a straight
+                 run won't wake them.
 - `combat.zig` — SHARED combat `Vitals`: HP + the two-tier Elden Ring stagger (poise → light
                  stun, stance → heavy stun) + regen + death. Pure logic, unit-tested; hero and
                  frog both embed one. THE place to retune damage/poise feel. See `docs/ELDEN_RING.md`.
@@ -143,9 +167,9 @@ Ring, the north-star reference, throughout this file.)
   normal OS cursor usable elsewhere. Look is gated on `isCursorOnScreen() and
   isWindowFocused()`. This is deliberate — the owner needs the mouse usable outside the
   game; do NOT reintroduce `disableCursor`/pointer-lock.
-- **Move:** WASD / left stick, camera-relative; the hero turns to face travel. Movement
-  starts at a WALK and breaks into a RUN after ~0.5s held (`RUN_HOLD`; analog light tilt
-  stays walk). **Sprint:** hold Shift / hold Circle-B (bypasses the run gate). **Dodge roll:** Space /
+- **Move:** WASD / left stick, camera-relative; the hero turns to face travel. ZERO lag
+  (see FEEL RULES): stick tilt maps straight to speed each frame — light tilt walks, full
+  tilt runs; keyboard runs immediately. **Sprint:** hold Shift / hold Circle-B. **Dodge roll:** Space /
   TAP Circle-B (tap-vs-hold on the same button, like ER). **Attacks:** R1/RB or LMB =
   light slash; R2/RT or Shift+LMB = heavy overhead. Actions are committed (no mid-swing
   cancels), with an **ER-style input queue**: pressed mid-action, an attack/roll buffers
@@ -169,8 +193,11 @@ Ring, the north-star reference, throughout this file.)
   `camera.rightXZ` MUST be `(−cos yaw, 0, sin yaw)`. Flipping it mirrors L/R walking.
 - **Depth z-fighting:** `rl.gl.rlSetClipPlanes(0.2, 320)` is set once at startup — the
   default 0.01..1000 wrecks depth precision and the hero's overlapping boxes flicker / look
-  inverted as the camera moves. The ground sits at `y = -0.05` (env `GROUND_Y`) so soles /
-  prop bases aren't coplanar with it (and to give the run crouch headroom).
+  inverted as the camera moves. The ground sits a hair ABOVE `y = 0` (`env.GROUND_Y = 0.01`),
+  where soles / prop bases are authored, so content is planted-to-slightly-embedded and never
+  reads as FLOATING — off exact 0 so coplanar faces don't z-fight, but tiny so the embed is
+  imperceptible. (Owner's call: a small foot clip on the run-crouch / roll beats any float.
+  The old `-0.05` dropped the ground below the feet and floated everything ~2 in.)
 - **Sun + shadows are ONE source** (`gfx.SUN_DIR`) feeding both the shader's sunDir and the
   shadow camera — change the light only there.
 - **Shadow pass contract:** every caster draws through `game.drawCasters` (used by BOTH the

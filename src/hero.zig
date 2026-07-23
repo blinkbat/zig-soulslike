@@ -152,19 +152,24 @@ const BRASS = rgba(122, 92, 40, 255);
 //  CARRY  : the sword is HELD, never splinted to the arm — the hammer grip cants the
 //           blade ~34° forward of the forearm line (tip leading down-forward at rest,
 //           clear of the ground: the souls low-ready). The sword arm is a CARRY, not a
-//           mirror of the free arm: damped swing, a readier elbow, the run pump capped
-//           short of the full fold with the wrist laying the blade back so the tip
-//           trails low instead of skewering ahead.
+//           mirror of the free arm: damped swing, a readier elbow. A WALK keeps that
+//           restrained low-ready; a RUN opens it up — the arm eases a touch out to the
+//           side, the fore/aft pump mostly stills, and the wrist pitches the blade UP so
+//           it rides level with the TIP pointing away from the body, clear of the floor.
 //  ATTACK : committed sword cuts, KINETIC-CHAIN sequenced — pelvis rotation, trunk
 //           rotation, trunk flexion, shoulder, elbow extension, wrist, each a beat late,
-//           so the arm WHIPS (never one rigid unit). LIGHT (R1): a BIG diagonal slash —
-//           an EXAGGERATED readable windup (trunk coiled, knees loaded, fist by the ear,
-//           blade lying back over the shoulder), then swept HIGH-right to LOW-left
-//           ACROSS the body (shoulder yaw carries the arc wide; the wrist ROLLS the
-//           cutting edge into the arc; it finishes past the off hip, never buried at
-//           the feet) with a follow-through overshoot that settles. CHAINED lights
-//           ALTERNATE, Elden Ring-style: the buffered follow-up comes BACKHAND out of
-//           where the last cut landed (mirrored, slightly damped). HEAVY (R2): slow
+//           so the arm WHIPS (never one rigid unit). LIGHT (R1): a real DESCENDING
+//           DIAGONAL — sabre Cut One / kesa-giri (see the CUT MECHANICS note above the
+//           AL_* block): an EXAGGERATED readable windup (trunk coiled, knees loaded,
+//           fist by the ear, blade lying back over the shoulder), then the hand drops
+//           ACROSS the front — high-outside to low-inside, the diagonal carried by
+//           ADDUCTION (never a flat shoulder-height "helicopter" sweep) — the wrist
+//           ROLLS the cutting edge into the plane of motion and SNAPS the tip down
+//           through the line, finishing low past the off hip; the cut ARRESTS and
+//           lifts into recovery (an overshoot that settles, never a park). CHAINED
+//           lights ALTERNATE, Elden Ring-style: the buffered follow-up comes BACKHAND
+//           out of where the last cut landed (Cut Two, the mirrored diagonal, slightly
+//           damped — a moulinet re-chamber). HEAVY (R2): slow
 //           overhead — the EDGE comes down vertical (grip carries edges fore/aft — a
 //           cut, never a flat smack), a big readable
 //           windup past vertical over a STAGGERED load (brace leg up, sword-side leg
@@ -269,7 +274,7 @@ const AL_LAG = 0.03;
 const AL_RECOV_A = 0.62; // unwind to a stand across the tail
 const AL_HIT_A = 0.32; // TAE-style ACTIVE window — the blade only hits inside it
 const AL_HIT_B = 0.56;
-const AL_LUNGE = 0.35; // ground units stepped into the cut across the strike span
+const AL_LUNGE = 0.55; // ground units stepped into the cut — a real committed step-in (ER R1 pressure)
 const AL_CHAIN = 0.80; // u where a BUFFERED action may take over: the swing has visually
 //   resolved (overshoot settled) but the stand-down tail is skippable, so mashed R1s
 //   flow into a continuous combo instead of stuttering through idle each time.
@@ -283,21 +288,41 @@ const AH_HIT_A = 0.40;
 const AH_HIT_B = 0.58;
 const AH_LUNGE = 1.05; // the chop LEAPS forward through the drop — committed reach, ER-style
 const AH_CHAIN = 0.86; // the heavy earns a longer commitment before a buffered exit
+// ── CUT MECHANICS (the light slash) — grounded in period cutting instruction ─────────
+// The R1 is sabre CUT ONE / kesa-giri: the descending diagonal, high-right → low-left,
+// one-handed from a high chamber. What the sources dictate, and where it lives below:
+//  - THE DIAGONAL LIVES IN ADDUCTION (La Marchant's 1796 cavalry cut diagram; Roworth,
+//    "Art of Defence on Foot", 1798): the hand travels ACROSS the front, high-outside
+//    to low-inside, ending by the OFF HIP — never a flat shoulder-height sweep. So
+//    STRIKE_Z (across) is big and STRIKE_X (elevation) modest: the arm finishes
+//    forward-LOW, belt height, crossed past the body's midline.
+//  - THE EDGE LEADS the whole passage (Hutton, "Cold Steel", 1889, on the moulinet:
+//    "the edge leads during the passage of the blade along the line") — hasuji: the
+//    wrist ROLLS the edge into the plane of motion (EDGE_ROLL), else the cut slaps flat.
+//  - PROXIMAL → DISTAL, WRIST LAST (kendo men-uchi kinematics; Bunn's summation of
+//    speed): the AL_LAG chain fires pelvis → chest → shoulder → elbow → wrist, and the
+//    wrist is the fastest link — WRIST_SNAP whips the tip down THROUGH the line so the
+//    blade exits pointing down-forward along the cut plane (the kesa exit).
+//  - THE CUT ARRESTS, NEVER PARKS (tenouchi: the grip firms at contact, the blade
+//    passes through, then the arm lifts straight into recovery): a small overshoot
+//    (AL_OVER) settles out and the recovery drain re-chambers — chained lights come
+//    BACKHAND out of the finish (Cut Two, the mirrored diagonal) like a moulinet.
 // light amplitudes (deg unless noted)
 const AL_BODY_YAW = 26.0; // trunk winds HARD toward the sword side (the exaggerated tell)…
-const AL_BODY_YAW_THRU = 30.0; // …and releases through WELL past neutral — half the arc's width
-const AL_SH_WIND_X = 40.0; // shoulder: arm hauled well back…
-const AL_SH_WIND_Z = 70.0; // …and raised high on the sword side — fist beside the ear
-const AL_SH_STRIKE_X = 92.0; // arm swings up to ~horizontal at the peak (shX≈−STRIKE_X) so the arc rides chest→shoulder height, never sweeping the floor…
-const AL_SH_STRIKE_Z = 6.0; // …arm stays reaching OUT to the side (only slightly across), not tucked in across the body
-const AL_SH_SWEEP = 26.0; // shoulder yaw carrying the arm HORIZONTALLY across — the other half of the width
-const AL_EDGE_ROLL = 82.0; // wrist rolls the CUTTING EDGE ~flat into the horizontal arc — the edge leads the swipe (never a flat smack)
-const AL_ELBOW_WIND = 96.0; // deep coil
-const AL_ELBOW_STRIKE = 10.0; // near-full extension at contact (elbow fires late)
-const AL_WRIST_COCK = 58.0; // cock: blade lies BACK over the shoulder at the windup apex (the high-guard tell) and stays cocked through the early strike (the whip)
-const AL_WRIST_SNAP = 4.0; // wrist barely drops past neutral — the blade stays LEVEL through the cut (edge leading horizontally), not stabbing at the dirt
-const AL_SPINE_CRUNCH = 7.0; // forward trunk flexion through the cut (per segment)
-const AL_OVER = 7.0; // follow-through overshoot past the end pose, settling through recovery
+const AL_BODY_YAW_THRU = 24.0; // …and releases through past neutral (adduction supplies the rest of the width)
+const AL_SH_WIND_X = 42.0; // shoulder: arm hauled well back…
+const AL_SH_WIND_Z = 74.0; // …and raised high on the sword side — fist beside the ear
+const AL_SH_STRIKE_X = 58.0; // the hand finishes forward at CHEST height, arm reaching long — the arc
+//   descends shoulder → chest → past the off hip, never dropping to sweep the dirt
+const AL_SH_STRIKE_Z = 26.0; // the arm ADDUCTS across the midline (the diagonal) while still REACHING out
+const AL_SH_SWEEP = 34.0; // shoulder yaw carrying the arc wide around the front — the reach of the cut
+const AL_EDGE_ROLL = 78.0; // wrist rolls the CUTTING EDGE into the plane of motion — hasuji, the edge leads
+const AL_ELBOW_WIND = 94.0; // deep coil
+const AL_ELBOW_STRIKE = 5.0; // arm all but locked out at contact (elbow fires late) — full length into the cut
+const AL_WRIST_COCK = 56.0; // cock: blade lies BACK over the shoulder at the windup apex (the high-guard tell) and stays cocked through the early strike (the whip)
+const AL_WRIST_SNAP = 22.0; // the wrist-last whip: the tip snaps down through the line at the exit — angled along the cut plane, not stabbing the dirt
+const AL_SPINE_CRUNCH = 9.0; // forward trunk flexion through the cut (per segment) — the body commits into the diagonal
+const AL_OVER = 6.0; // follow-through overshoot past the end pose, settling through recovery (the arrest, not a park)
 const AL_LOAD = 0.016 * H; // the knees coil DOWN under the windup (anticipation you can feel)…
 const AL_DIP = 0.015 * H; // …and a slight settle into the stance on release
 // heavy amplitudes
@@ -326,6 +351,17 @@ pub const BLADE_R = 0.16; // capsule radius (world units) — a generous HIT vol
 // (~0.48m) while a swipe rides chest/shoulder height, so a thin capsule grazed the rim and
 // whiffed; this fattening is the vertical/horizontal forgiveness that lets swipes actually land.
 
+// ── the swing trail (juice: a fading steel ribbon the blade paints through a cut) ──────
+// Samples the outer blade span each frame the TIP really moves; drawn as unlit alpha
+// strips in the lit pass only (no shadow, never in the depth pass). Short-lived on
+// purpose — a crack of motion behind the edge, not a smoke plume.
+const TRAIL_N = 20; // ring capacity (~0.3 s of samples at 60 fps)
+const TRAIL_LIFE = 0.16; // seconds a sample persists
+const TRAIL_MIN_SWEEP = 0.05; // world units the tip must move in a frame to leave a sample
+const TRAIL_ROOT = 0.35; // ribbon spans this fraction down the blade → the tip
+const TRAIL_COL = rgba(224, 230, 244, 255); // pale steel flash (alpha set per segment)
+const TrailSample = struct { a: rl.Vector3 = mathx.zero3, b: rl.Vector3 = mathx.zero3, age: f32 = 1e9 };
+
 // ── combat vitals + what the hero's cuts deal (Elden Ring model, see docs/ELDEN_RING.md) ─
 // The hero is sturdier than a toad: mid-weight poise (~ER's Knight-set 51) so a couple of
 // bites shrug off, but sustained pressure still flinches then staggers him.
@@ -346,7 +382,8 @@ const HURT_STEP = 0.18 * H; // …and he's knocked a step back off the blow
 const STAG_LEAN = 42.0; // heavy stagger: a deep reeling arch back (deg)
 const STAG_STEP = 0.34 * H; // …and the trailing leg shoots back to catch balance (rx deg via knee)
 const DEATH_SINK = 0.30; // death: pelvis sinks to this fraction of stance height
-const DEATH_DUR = 1.6; // collapse + lie still before the hero respawns
+pub const DEATH_DUR = 3.6; // collapse + lie still before the hero respawns — long enough for
+//   the full YOU DIED choreography (game.zig's overlay reads deathT against this)
 
 // ── the grip (how the sword is HELD) ────────────────────────────────────────────────
 // A relaxed hammer grip cants the blade GRIP_PITCH forward of the forearm line — a sword
@@ -369,19 +406,22 @@ fn bladeAt(t: f32) rl.Vector3 {
 // unchanged): the base pulls back through the fist so close-in swipes connect, and the tip
 // reaches beyond the point so the far end of the arc lands.
 const BLADE_BASE = bladeAt(-0.06); // guard end, pulled back toward/through the fist
-const BLADE_TIP = bladeAt(0.60); // point, extended past the visible tip for reach
+const BLADE_TIP = bladeAt(0.64); // point, extended past the visible tip for reach (the far end of the arc lands)
 
 // The sword arm is a CARRY, not a mirror of the free arm (see armChain).
 const CARRY_DAMP = 0.45; // fraction of the gait swing the sword arm gives up
 const CARRY_ELBOW = 14.0; // readier standing/walking elbow on the sword side
-const CARRY_ELBOW_RUN = 62.0; // the carry arm never folds to the full ~90° pump
-const CARRY_WRIST_RUN = 4.0; // a whisper of lay-back at a run — the grip cant keeps the tip riding clear of the ground
+const CARRY_ELBOW_RUN = 30.0; // at a run the carry arm keeps a readier bend (kept close to the body, not folded to the chest)
+const CARRY_WRIST_LIFT = -72.0; // at a run, pitch the wrist so the blade levels out with its TIP pointing AWAY from the hero, clear of the floor
+const CARRY_ABD_RUN = 16.0; // a modest extra abduction at a run — arm stays fairly tight to the body, not flung wide
+const CARRY_SWING_STILL = 0.85; // mostly still the carry arm's fore/aft pump at full run so the tip-up hold reads steady
 
 // ── short transition blends (nothing snaps between stances) ────────────────────────
 const POSE_XFADE = 0.09; // seconds — cross-fade over any pose discontinuity (roll start/end)
-const SPEED_SMOOTH = 28.0; // units/s² — posture-blend speed chases ground speed, so
+const SPEED_SMOOTH = 80.0; // units/s² — posture-blend speed chases ground speed, so
 //   walk↔run↔sprint↔stop lean/crouch/arm-pump glide instead of stepping. Movement itself
-//   (and stride phase) stays on the RAW speed — responsiveness is untouched.
+//   (and stride phase) stays on the RAW speed — responsiveness is untouched. Owner's call:
+//   VERY fast (~0.04s full swing) — the stick IS the speed; the glide only kills the step.
 
 const STRIDE = 0.85 * H; // ground distance per full (two-step) cycle at walk pace — ties phase to travel, no foot-skate
 const WALK_REF_SPEED = WALK_SPEED; // reference walk speed the stride is tuned for
@@ -396,7 +436,7 @@ const FOOT_TOEOUT = 6.0; // feet splay slightly outward (Fick angle) — a real 
 const ARM_ABD = 9.0; // constant arm abduction so arms clear the torso (deg)
 const IDLE_KNEE = 4.0;
 const IDLE_ELBOW = 6.0;
-const MOVING_EASE = 4.0; // idle↔walk blend rate (1/s) — the `moving` fade in update()
+const MOVING_EASE = 10.0; // idle↔walk blend rate (1/s) — the `moving` fade in update(); fast, so gait answers the stick NOW
 
 fn sampleCurve(tbl: [8]f32, phase: f32) f32 {
     const ph = phase - @floor(phase); // 0..1
@@ -472,6 +512,8 @@ pub const Hero = struct {
     bladeA0: rl.Vector3 = mathx.zero3, // …last frame's endpoints, for swept-capsule hit tests
     bladeB0: rl.Vector3 = mathx.zero3,
     hitWasActive: bool = false, // edge detector: sweep history (+ future hit list) resets on activation
+    trail: [TRAIL_N]TrailSample = [_]TrailSample{.{}} ** TRAIL_N, // swing-trail ring (newest at trailHead)
+    trailHead: usize = 0,
     // combat
     vit: combat.Vitals = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX),
     stun: combat.StunKind = .none, // .light flinch / .heavy stagger (a committed reaction)
@@ -505,6 +547,7 @@ pub const Hero = struct {
     // rate. Phase is driven by DISTANCE (not time) so the feet never skate.
     pub fn update(self: *Hero, dt: f32, movedDist: f32, speed: f32) void {
         self.elapsed += dt;
+        self.ageTrail(dt);
         self.speed = speed;
         self.speedS = mathx.approach(self.speedS, speed, dt * SPEED_SMOOTH);
         self.blendT = @min(self.blendT + dt, 1e9);
@@ -546,6 +589,7 @@ pub const Hero = struct {
     // normal move/update while `rolling` is true; `bounds` clamps position like moveHero.
     pub fn updateRoll(self: *Hero, dt: f32, bounds: f32) void {
         self.elapsed += dt;
+        self.ageTrail(dt);
         self.blendT = @min(self.blendT + dt, 1e9);
         self.facing = mathx.approachAngle(self.facing, self.rollYaw, dt * ROLL_YAW_RATE); // whip, don't teleport
         const u = mathx.clampF(self.rollT / ROLL_DUR, 0, 1);
@@ -621,6 +665,7 @@ pub const Hero = struct {
     // like moveHero. Movement input is ignored — cuts are committed, souls-style.
     pub fn updateAttack(self: *Hero, dt: f32, bounds: f32) void {
         self.elapsed += dt;
+        self.ageTrail(dt);
         self.blendT = @min(self.blendT + dt, 1e9);
         const dur: f32 = if (self.atkHeavy) ATK_HEAVY_DUR else ATK_LIGHT_DUR;
         const sa: f32 = if (self.atkHeavy) AH_STRIKE_A else AL_STRIKE_A;
@@ -678,12 +723,35 @@ pub const Hero = struct {
         self.bladeB0 = self.bladeB;
         self.bladeA = rl.math.vector3Transform(BLADE_BASE, self.xf[SWORD]);
         self.bladeB = rl.math.vector3Transform(BLADE_TIP, self.xf[SWORD]);
+        // Trail sample — only inside the strike's ACTIVE window (the cut paints its arc;
+        // the windup/recovery leave nothing) and only while the tip is really sweeping.
+        if (self.hitActive() and mathx.lenV(mathx.subV(self.bladeB, self.bladeB0)) > TRAIL_MIN_SWEEP) {
+            self.trailHead = (self.trailHead + 1) % TRAIL_N;
+            self.trail[self.trailHead] = .{ .a = mathx.lerpV(self.bladeA, self.bladeB, TRAIL_ROOT), .b = self.bladeB, .age = 0 };
+        }
         const act = self.hitActive();
         if (act and !self.hitWasActive) {
             self.bladeA0 = self.bladeA;
             self.bladeB0 = self.bladeB;
         }
         self.hitWasActive = act;
+    }
+
+    // The swing trail: unlit alpha ribbon between consecutive blade samples, newest →
+    // oldest, each strip fading with its samples' age. Call INSIDE the 3D lit pass,
+    // after the opaque geometry (it never casts — draw() stays trail-free on purpose).
+    pub fn drawTrail(self: *const Hero) void {
+        rl.gl.rlDisableBackfaceCulling(); // the ribbon must read from both sides of the arc
+        defer rl.gl.rlEnableBackfaceCulling();
+        var i: usize = 0;
+        while (i + 1 < TRAIL_N) : (i += 1) {
+            const s0 = &self.trail[(self.trailHead + TRAIL_N - i) % TRAIL_N];
+            const s1 = &self.trail[(self.trailHead + TRAIL_N - i - 1) % TRAIL_N];
+            if (s0.age >= TRAIL_LIFE or s1.age >= TRAIL_LIFE) break; // the rest is older still
+            const f = 1.0 - 0.5 * (s0.age + s1.age) / TRAIL_LIFE;
+            const strip = [4]rl.Vector3{ s0.a, s0.b, s1.a, s1.b };
+            rl.drawTriangleStrip3D(&strip, mathx.withAlpha(TRAIL_COL, mathx.u8f(70.0 * f * f)));
+        }
     }
 
     // ── taking a hit (HP + the two-tier Elden Ring stagger) ─────────────────────────────
@@ -728,6 +796,13 @@ pub const Hero = struct {
     pub fn tickFlash(self: *Hero, dt: f32) void {
         self.hurtFlash = mathx.maxF(0, self.hurtFlash - dt * 2.6);
     }
+
+    // Age the swing trail. Called by EVERY per-frame advance path (update/attack/roll/
+    // stun/death — exactly one runs each frame), so samples fade for the --shot harness
+    // too, not just the live loop (stale ribbons otherwise haunt later captures).
+    fn ageTrail(self: *Hero, dt: f32) void {
+        for (&self.trail) |*s| s.age = mathx.minF(s.age + dt, 1e9);
+    }
     fn enterStun(self: *Hero, kind: combat.StunKind) void {
         self.attacking = false; // the reaction drops whatever he was committed to
         self.rolling = false;
@@ -752,6 +827,7 @@ pub const Hero = struct {
     // move/attack/roll while `staggered()`.
     pub fn updateStun(self: *Hero, dt: f32) void {
         self.elapsed += dt;
+        self.ageTrail(dt);
         self.blendT = @min(self.blendT + dt, 1e9);
         self.stunT += dt;
         self.speed = 0;
@@ -767,6 +843,7 @@ pub const Hero = struct {
     // Advance the death collapse; respawns the hero at full vitals when it completes.
     pub fn updateDeath(self: *Hero, dt: f32) void {
         self.elapsed += dt;
+        self.ageTrail(dt);
         self.blendT = @min(self.blendT + dt, 1e9);
         self.deathT += dt;
         self.speed = 0;
@@ -951,7 +1028,7 @@ pub const Hero = struct {
         var wx: [N]rl.Matrix = undefined;
         wx[ROOT] = mul3(
             ry(yawP),
-            mul(tr(0, hipY - AL_LOAD * wind - AL_DIP * sPelv, 0), mul(rx(4.0 * sChest), ry(facingDeg))), // knees coil under the windup, settle on release
+            mul(tr(0, hipY - AL_LOAD * wind - AL_DIP * sPelv, 0), mul(rx(5.5 * sChest), ry(facingDeg))), // knees coil under the windup; the body pitches INTO the cut on release
             tr(self.pos.x, 0, self.pos.z),
         );
         setLocal(&wx, SPINE, self.rest, mul(rx(crunch), ry(0.35 * yawC)));
@@ -973,12 +1050,13 @@ pub const Hero = struct {
         setLocal(&wx, SHL, self.rest, mul(rx(-10.0 * wind + 24.0 * sChest), rz(ARM_ABD)));
         setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 12.0 * wind)));
         setLocal(&wx, WRL, self.rest, rl.math.matrixIdentity());
-        // Sword arm: the whip. Shoulder wound high (fist by the ear — or past the off
-        // shoulder on the return), then slung ACROSS — the ry sweep carries the arc
-        // horizontally wide while rx brings it down only to hip height (a clear
-        // HIGH → LOW diagonal); elbow extends late; wrist cocks and snaps last, ROLLING
-        // the cutting edge into the arc. The overshoot rides the sweep so the blade
-        // whips past and settles.
+        // Sword arm: the whip, per the CUT MECHANICS note. Shoulder wound high (fist by
+        // the ear — or past the off shoulder on the return), then the hand drops ACROSS
+        // the front: rz ADDUCTS past the midline (the descending diagonal), rx rises only
+        // to a modest forward-low finish, ry sweeps the arc around; elbow extends late;
+        // the wrist fires LAST — rolling the edge into the plane (hasuji) and snapping
+        // the tip down through the line. The overshoot rides the sweep so the blade
+        // whips past and settles (the tenouchi arrest, not a park).
         const shX = AL_SH_WIND_X * wind - (AL_SH_STRIKE_X + AL_SH_WIND_X) * sSh;
         const shY = sw * (AL_SH_SWEEP * sSh + 0.8 * os);
         const shZ = sw * amp * (-AL_SH_WIND_Z * wind + (AL_SH_WIND_Z + AL_SH_STRIKE_Z) * sSh) - ARM_ABD;
@@ -1188,13 +1266,20 @@ fn armChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, swing: f32, m: f32, runB: f3
     // The sword arm (carry=1) CARRIES instead of mirroring: swing damped, a readier elbow
     // at rest/walk, the run pump capped short of the full fold, and the wrist laying the
     // blade back toward the forearm line so the tip trails low instead of skewering ahead.
-    const sw = swing * (1.0 - CARRY_DAMP * carry);
+    // Carry-arm presentation splits in two: the tip-LIFT (wrist up) rides on `carryMove` so the
+    // blade rides off the floor across ALL gaits, while the wider abduction + stilled pump ride
+    // on `carryRun` (a sharpened run blend) so a WALK stays restrained and only a true RUN opens
+    // the arm out — keeping it fairly tight to the body either way.
+    const carryMove = carry * m;
+    const carryRun = carry * mathx.smoothstep(0.5, 1.0, runB) * m;
+    const sw = swing * (1.0 - CARRY_DAMP * carry) * (1.0 - CARRY_SWING_STILL * carryRun);
     const walkElbow = mathx.maxF(6.0, 4.0 + 0.8 * sw);
     const runElbow = mathx.lerpF(RUN_ELBOW, CARRY_ELBOW_RUN, carry);
     const elbow = mathx.maxF(mathx.lerpF(IDLE_ELBOW, mathx.lerpF(walkElbow, runElbow, runB), m), CARRY_ELBOW * carry);
-    setLocal(wx, sh, rest, mul(rx(-sw), rz(side * ARM_ABD))); // −rx forward, ±side rz outward
+    const abd = ARM_ABD + CARRY_ABD_RUN * carryRun; // arm eases out to the side only at a true run
+    setLocal(wx, sh, rest, mul(rx(-sw), rz(side * abd))); // −rx forward, ±side rz outward
     setLocal(wx, el, rest, rx(-elbow)); // −rx = forearm forward (elbow flexes)
-    setLocal(wx, wr, rest, rx(carry * CARRY_WRIST_RUN * runB * m));
+    setLocal(wx, wr, rest, rx(CARRY_WRIST_LIFT * carryMove)); // blade tip lifted off the floor whenever moving
 }
 
 // Roll tuck: thighs to chest, heels toward glutes, arms hugged in front — all scaled by
@@ -1252,7 +1337,9 @@ fn swordMesh() rl.Mesh {
     const s = v3(0.5 * OUT_CA, 0, 0.5 * OUT_SA); // half-unit flat-side axis of the canted frame
     const n = v3(-0.5 * GRIP_CA * OUT_SA, 0.5 * GRIP_SA, 0.5 * GRIP_CA * OUT_CA); // half-unit edge-side axis
     const a = v3(-0.5 * GRIP_SA * OUT_SA, -0.5 * GRIP_CA, 0.5 * GRIP_SA * OUT_CA); // half-unit blade axis
+    b.setMat(.leather);
     b.addCylinder(bladeAt(0.026), bladeAt(-0.05), 0.014 * H, 0.012 * H, 6, BELT); // grip through the fist
+    b.setMat(.steel);
     b.addBox(bladeAt(-0.058), scaleV(s, 0.028 * H), scaleV(a, 0.028 * H), scaleV(n, 0.028 * H), BRASS); // pommel
     b.addBox(bladeAt(0.036), scaleV(n, 0.115 * H), scaleV(a, 0.02 * H), scaleV(s, 0.03 * H), STEEL); // crossguard, quillons on the edge line
     b.addBox(bladeAt(0.231), scaleV(n, 0.048 * H), scaleV(a, 0.37 * H), scaleV(s, 0.012 * H), STEEL); // blade, edges fore/aft
@@ -1264,9 +1351,13 @@ const scaleV = mathx.scaleV; // shared vector scale (was a local re-implementati
 
 fn pelvisMesh() rl.Mesh {
     var b = Builder.init();
+    b.setMat(.leather);
     b.addCube(v3(0, -0.01 * H, 0), v3(0.235 * H, 0.16 * H, 0.175 * H), BELT);
+    b.setMat(.cloth);
     b.addCube(v3(0, 0.055 * H, 0), v3(0.215 * H, 0.07 * H, 0.16 * H), TUNIC_DK); // hip skirt of the tunic
+    b.setMat(.steel);
     b.addCube(v3(0, -0.005 * H, 0.0925 * H), v3(0.035 * H, 0.035 * H, 0.012 * H), BRASS); // buckle
+    b.setMat(.leather);
     // leather tassets over the hips + a supply pouch on the right
     b.addCube(v3(0.095 * H, -0.055 * H, 0.05 * H), v3(0.07 * H, 0.085 * H, 0.016 * H), LEATHER);
     b.addCube(v3(-0.095 * H, -0.055 * H, 0.05 * H), v3(0.07 * H, 0.085 * H, 0.016 * H), LEATHER);
@@ -1281,12 +1372,14 @@ fn pelvisMesh() rl.Mesh {
     const s0 = v3(0.115 * H, -0.045 * H, -0.015 * H); // scabbard throat (at the belt line)
     const hl = 0.185 * H; // scabbard half-length
     b.addBox(v3(s0.x + d.x * hl, s0.y + d.y * hl, s0.z + d.z * hl), v3(p1.x * 0.020 * H, p1.y * 0.020 * H, p1.z * 0.020 * H), v3(d.x * hl, d.y * hl, d.z * hl), v3(p2.x * 0.010 * H, p2.y * 0.010 * H, p2.z * 0.010 * H), LEATHER_DK);
+    b.setMat(.steel);
     b.addBox(v3(s0.x + d.x * 2 * hl, s0.y + d.y * 2 * hl, s0.z + d.z * 2 * hl), v3(p1.x * 0.023 * H, p1.y * 0.023 * H, p1.z * 0.023 * H), v3(d.x * 0.014 * H, d.y * 0.014 * H, d.z * 0.014 * H), v3(p2.x * 0.012 * H, p2.y * 0.012 * H, p2.z * 0.012 * H), STEEL_DK); // chape
     return b.toMesh();
 }
 
 fn abdomenMesh() rl.Mesh {
     var b = Builder.init();
+    b.setMat(.cloth);
     // Slight waist taper: a lower belly block under a broader ribcage base.
     b.addCube(v3(0, -0.01 * H, 0), v3(0.205 * H, 0.13 * H, 0.145 * H), TUNIC);
     b.addCube(v3(0, 0.075 * H, 0), v3(0.235 * H, 0.09 * H, 0.16 * H), TUNIC);
@@ -1297,29 +1390,36 @@ fn abdomenMesh() rl.Mesh {
 
 fn chestMesh() rl.Mesh {
     var b = Builder.init();
+    b.setMat(.cloth);
     // Thorax topping out AT the shoulder line (~0.815 H) so the neck stays clear — the
     // broad-shouldered read comes from the pauldrons on the arms, not a tall chest block.
     b.addCube(v3(0, -0.005 * H, 0), v3(0.285 * H, 0.12 * H, 0.165 * H), TUNIC); // 0.695–0.815 H
+    b.setMat(.leather);
     b.addCube(v3(0, 0.035 * H, -0.005 * H), v3(0.305 * H, 0.06 * H, 0.18 * H), LEATHER_DK); // collar/mantle at the shoulders
+    b.setMat(.cloth);
     b.addCube(v3(0, -0.01 * H, 0.086 * H), v3(0.135 * H, 0.11 * H, 0.012 * H), CAPE); // tabard chest panel
     b.addCube(v3(0, -0.035 * H, -0.098 * H), v3(0.24 * H, 0.115 * H, 0.016 * H), CAPE); // short cape at the back
+    b.setMat(.leather);
     b.addCube(v3(0, 0.042 * H, -0.10 * H), v3(0.25 * H, 0.035 * H, 0.02 * H), LEATHER); // cape yoke
     return b.toMesh();
 }
 
 fn neckMesh() rl.Mesh {
     var b = Builder.init();
+    b.setMat(.skin);
     b.addCylinder(v3(0, 0, 0), v3(0, 0.070 * H, 0), 0.040 * H, 0.036 * H, 8, SKIN_DK);
     return b.toMesh();
 }
 
 fn headMesh() rl.Mesh {
     var b = Builder.init();
+    b.setMat(.skin);
     // Cranium, jaw, nose (facing cue), swept-back hair with a nape knot, and a thin
     // leather headband. Head joint sits at the chin line (~0.875 H); crown lands ~1.0 H.
     b.addCube(v3(0, 0.075 * H, -0.005 * H), v3(0.135 * H, 0.115 * H, 0.15 * H), SKIN); // cranium
     b.addCube(v3(0, 0.018 * H, 0.012 * H), v3(0.10 * H, 0.055 * H, 0.125 * H), SKIN); // jaw
     b.addCube(v3(0, 0.05 * H, 0.082 * H), v3(0.028 * H, 0.03 * H, 0.03 * H), SKIN_DK); // nose
+    b.setMat(.leather); // hair reads through the leather pore stipple (strand-ish, not plastic)
     b.addCube(v3(0, 0.118 * H, -0.025 * H), v3(0.145 * H, 0.05 * H, 0.15 * H), HAIR); // hair cap
     b.addCube(v3(0, 0.055 * H, -0.078 * H), v3(0.135 * H, 0.125 * H, 0.035 * H), HAIR); // back of hair
     b.addCube(v3(0, 0.012 * H, -0.092 * H), v3(0.05 * H, 0.05 * H, 0.035 * H), HAIR); // nape knot
@@ -1329,7 +1429,9 @@ fn headMesh() rl.Mesh {
 
 fn thighMesh() rl.Mesh {
     var b = Builder.init();
+    b.setMat(.cloth);
     b.addCylinder(v3(0, 0, 0), v3(0, -SEG_THIGH * H, 0), 0.078 * H, 0.058 * H, 10, CLOTHDK);
+    b.setMat(.leather);
     b.addCylinder(v3(0, -0.002 * H, 0), v3(0, -0.075 * H, 0), 0.088 * H, 0.072 * H, 10, LEATHER_DK); // skirt ring
     return b.toMesh();
 }
@@ -1337,7 +1439,9 @@ fn thighMesh() rl.Mesh {
 fn shankMesh() rl.Mesh {
     var b = Builder.init();
     // Calf bulge, then a leather boot shaft tapering to the ankle.
+    b.setMat(.cloth);
     b.addCylinder(v3(0, 0, 0), v3(0, -0.09 * H, 0), 0.058 * H, 0.062 * H, 10, CLOTHDK);
+    b.setMat(.leather);
     b.addCylinder(v3(0, -0.09 * H, 0), v3(0, -SEG_SHANK * H, 0), 0.064 * H, 0.036 * H, 10, BOOT);
     b.addCube(v3(0, -0.02 * H, 0.052 * H), v3(0.062 * H, 0.06 * H, 0.026 * H), LEATHER); // kneecap
     return b.toMesh();
@@ -1345,6 +1449,7 @@ fn shankMesh() rl.Mesh {
 
 fn footMesh() rl.Mesh {
     var b = Builder.init();
+    b.setMat(.leather);
     // Boot: sole rests on the ground (ankle joint is ANKLE_Y=0.039 H up), toes forward +Z.
     const ay = 0.039 * H;
     b.addCube(v3(0, -ay + 0.028 * H, 0.045 * H), v3(0.085 * H, 0.056 * H, 0.19 * H), BOOT);
@@ -1356,25 +1461,31 @@ fn footMesh() rl.Mesh {
 // layered leather + steel-rim pauldron; the right makes do with a plain cap.
 fn upperArmMesh(big: bool) rl.Mesh {
     var b = Builder.init();
+    b.setMat(.leather);
     if (big) {
         b.addCube(v3(0, -0.005 * H, 0), v3(0.125 * H, 0.10 * H, 0.13 * H), LEATHER);
+        b.setMat(.steel);
         b.addCube(v3(0, 0.048 * H, 0), v3(0.105 * H, 0.045 * H, 0.115 * H), STEEL_DK); // steel rim cap
     } else {
         b.addCube(v3(0, 0.005 * H, 0), v3(0.105 * H, 0.085 * H, 0.115 * H), LEATHER);
     }
+    b.setMat(.cloth);
     b.addCylinder(v3(0, 0, 0), v3(0, -SEG_UPARM * H, 0), 0.052 * H, 0.044 * H, 9, TUNIC);
     return b.toMesh();
 }
 
 fn forearmMesh() rl.Mesh {
     var b = Builder.init();
+    b.setMat(.cloth);
     b.addCylinder(v3(0, 0, 0), v3(0, -0.065 * H, 0), 0.044 * H, 0.040 * H, 9, TUNIC);
+    b.setMat(.leather);
     b.addCylinder(v3(0, -0.065 * H, 0), v3(0, -SEG_FOREARM * H, 0), 0.047 * H, 0.034 * H, 9, LEATHER); // bracer
     return b.toMesh();
 }
 
 fn handMesh() rl.Mesh {
     var b = Builder.init();
+    b.setMat(.leather);
     b.addCube(v3(0, -0.05 * H, 0.005 * H), v3(0.05 * H, 0.10 * H, 0.045 * H), BOOT); // glove
     return b.toMesh();
 }

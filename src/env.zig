@@ -249,9 +249,12 @@ pub const Env = struct {
 };
 
 // Flat ground plane as one big white quad — the scene shader's terrainAlbedo owns the look.
-// Sits a few cm below Y=0 so the hero's soles / prop bases (authored at Y=0) never sit
-// exactly coplanar with it (coplanar faces z-fight), with headroom for the run crouch.
-const GROUND_Y: f32 = -0.05;
+// Sits a HAIR ABOVE Y=0 (where soles / prop bases are authored) so nothing ever reads as
+// FLOATING: content is planted-to-slightly-embedded instead. The old -0.05 dropped the ground
+// BELOW the feet, which floated everything ~2 in. Owner's call: a tiny foot clip on the
+// run-crouch / roll is preferred over any float. Kept off exact 0 so coplanar faces don't
+// z-fight; kept tiny (~1 cm) so the embed is imperceptible.
+const GROUND_Y: f32 = 0.01;
 fn terrain(shader: rl.Shader, half: f32) rl.Model {
     var b = Builder.init();
     b.quad(v3(-half, GROUND_Y, -half), v3(-half, GROUND_Y, half), v3(half, GROUND_Y, half), v3(half, GROUND_Y, -half), v3(0, 1, 0), rl.Color.white);
@@ -263,6 +266,7 @@ fn terrain(shader: rl.Shader, half: f32) rl.Model {
 // columns snap partway up a drum, with the fallen drum mossing over beside the plinth.
 fn pillarMesh(shader: rl.Shader, broken: bool) rl.Model {
     var b = Builder.init();
+    b.setMat(.stone);
     b.addCube(v3(0, 0.18, 0), v3(1.7, 0.36, 1.7), STONE_DK);
     b.addCube(v3(0, 0.46, 0), v3(1.45, 0.24, 1.45), STONE);
     b.addCylinder(v3(0, 0.58, 0), v3(0, 2.0, 0), 0.62, 0.58, 8, STONE);
@@ -287,6 +291,7 @@ fn pillarMesh(shader: rl.Shader, broken: bool) rl.Model {
 // A broken rectangular ruin block — a squat mossy stone with a chipped upper corner.
 fn blockMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.stone);
     b.addCube(v3(0, 0.5, 0), v3(2.2, 1.0, 1.6), STONE);
     b.addCube(v3(0, 1.05, 0), v3(2.0, 0.16, 1.4), STONE_MOSS); // mossy cap
     b.addCube(v3(-0.7, 1.35, 0.2), v3(0.7, 0.5, 1.0), STONE_DK); // upstanding chunk
@@ -298,6 +303,7 @@ fn blockMesh(shader: rl.Shader) rl.Model {
 // parapet — a threshold you run through, framing the horizon gate beyond.
 fn archMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.stone);
     const px = 2.7; // pier center offset — the path (x ~ 0 +/- 1) passes clean between
     for ([_]f32{ -px, px }) |x| {
         b.addCube(v3(x, 0.22, 0), v3(1.6, 0.44, 1.6), STONE_DK); // base slab
@@ -317,6 +323,7 @@ fn archMesh(shader: rl.Shader) rl.Model {
 // survivors, rubble shed at the foot.
 fn wallMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.stone);
     b.addCube(v3(0, 0.6, 0), v3(7.0, 1.2, 0.85), STONE);
     b.addCube(v3(0.2, 1.55, 0), v3(6.2, 0.7, 0.75), STONE_DK);
     b.addCube(v3(-2.4, 2.25, 0), v3(1.1, 0.75, 0.70), STONE);
@@ -333,6 +340,7 @@ fn wallMesh(shader: rl.Shader) rl.Model {
 // Between silhouette against the haze.
 fn treeMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.wood);
     b.addCylinder(v3(0, 0, 0), v3(0.15, 1.7, 0.05), 0.24, 0.16, 7, BARK);
     b.addCylinder(v3(0.15, 1.7, 0.05), v3(0.42, 3.1, 0.12), 0.16, 0.09, 7, BARK);
     b.addCylinder(v3(0.42, 3.1, 0.12), v3(0.62, 4.15, 0.22), 0.09, 0.01, 6, BARK_DK); // top spike
@@ -349,6 +357,7 @@ fn treeMesh(shader: rl.Shader) rl.Model {
 // A grave cluster: two leaning headstones and one toppled flat, over low earth mounds.
 fn gravesMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.stone);
     b.addBox(v3(0, 0.42, 0), v3(0.28, 0, 0.02), v3(0.07, 0.42, 0.03), v3(0, 0.015, 0.075), STONE);
     b.addBox(v3(0.95, 0.33, -0.55), v3(0.22, 0, -0.03), v3(-0.10, 0.33, 0.02), v3(0.01, 0.02, 0.06), STONE_DK);
     b.addBox(v3(1.7, 0.07, 0.35), v3(0.26, 0, 0.05), v3(0, 0.06, 0.30), v3(-0.02, 0.02, 0.05), STONE_MOSS); // fallen flat
@@ -369,13 +378,17 @@ fn swordMesh(shader: rl.Shader) rl.Model {
         }
     }.along;
     // blade: from just under the soil to the guard
+    b.setMat(.steel);
     b.addBox(at(d, 0.42), v3(p1.x * 0.055, p1.y * 0.055, p1.z * 0.055), at(d, 0.50), v3(p2.x * 0.012, p2.y * 0.012, p2.z * 0.012), STEEL);
     // crossguard
     b.addBox(at(d, 0.95), v3(p1.x * 0.16, p1.y * 0.16, p1.z * 0.16), at(d, 0.025), v3(p2.x * 0.030, p2.y * 0.030, p2.z * 0.030), STEEL);
     // grip + pommel
+    b.setMat(.leather);
     b.addCylinder(at(d, 0.975), at(d, 1.20), 0.030, 0.026, 6, IRON);
+    b.setMat(.steel);
     b.addCube(at(d, 1.26), v3(0.075, 0.075, 0.075), BRASS);
     // disturbed earth at the point
+    b.setMat(.stone);
     b.addCube(v3(0.02, 0.045, 0.02), v3(0.34, 0.09, 0.30), STONE_MOSS);
     return b.toModel(shader);
 }
@@ -385,8 +398,11 @@ fn swordMesh(shader: rl.Shader) rl.Model {
 // shadow and haze like a beacon.
 fn graceMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.stone);
     b.addCylinder(v3(0, 0, 0), v3(0, 0.25, 0), 0.30, 0.36, 8, STONE_DK);
+    b.setMat(.steel);
     b.addCylinder(v3(0, 0.25, 0), v3(0, 0.50, 0), 0.36, 0.50, 8, IRON);
+    b.setMat(.plain); // the coals + wisp are emissive — no surface mottle over the glow
     b.addCylinder(v3(0, 0.42, 0), v3(0, 0.56, 0), 0.42, 0.28, 8, EMBER); // banked coals
     b.addCylinder(v3(0, 0.55, 0), v3(0, 1.45, 0), 0.030, 0.002, 6, WISP); // rising wisp
     b.addCylinder(v3(0, 0.52, 0), v3(0, 0.95, 0), 0.055, 0.006, 6, WISP);
@@ -402,6 +418,7 @@ fn graceMesh(shader: rl.Shader) rl.Model {
 // Lives at the world edge where the haze reduces it to a silhouette.
 fn towerMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.stone);
     b.addCube(v3(0, 4.0, 0), v3(6.4, 8.0, 6.4), STONE_DK);
     b.addCube(v3(0.3, 11.0, -0.2), v3(5.4, 6.0, 5.4), STONE);
     b.addCube(v3(-1.4, 15.6, -1.2), v3(2.4, 3.2, 2.2), STONE_DK); // crown shards
@@ -414,6 +431,7 @@ fn towerMesh(shader: rl.Shader) rl.Model {
 // The colossal horizon gate the avenue points at — twin towers and a high broken span.
 fn gateMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.stone);
     for ([_]f32{ -7.5, 7.5 }) |x| {
         b.addCube(v3(x, 7.0, 0), v3(5.0, 14.0, 5.0), STONE_DK);
         b.addCube(v3(x, 15.0, 0), v3(4.2, 2.0, 4.2), STONE);
@@ -428,11 +446,14 @@ fn gateMesh(shader: rl.Shader) rl.Model {
 // the fallen army's colors, matching the hero's cape.
 fn bannerMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.wood);
     b.addCylinder(v3(0, 0, 0), v3(0.28, 3.15, 0.10), 0.055, 0.035, 6, BARK_DK); // pole
     b.addCylinder(v3(-0.24, 3.02, 0.08), v3(0.80, 3.10, 0.12), 0.028, 0.022, 5, BARK_DK); // crossarm
     // ragged cloth: two hanging strips of unequal length, slightly skewed
+    b.setMat(.cloth);
     b.addBox(v3(0.06, 2.32, 0.10), v3(0.235, 0, 0.012), v3(0.03, 0.72, 0.015), v3(0.002, 0.01, 0.022), CLOTH);
     b.addBox(v3(0.52, 2.52, 0.115), v3(0.16, 0, 0.010), v3(0.045, 0.52, 0.01), v3(0.002, 0.008, 0.02), CLOTH);
+    b.setMat(.stone);
     b.addCube(v3(0.06, 0.09, 0.02), v3(0.42, 0.18, 0.38), STONE_DK); // anchoring stones
     return b.toModel(shader);
 }
@@ -441,6 +462,7 @@ fn bannerMesh(shader: rl.Shader) rl.Model {
 // it watched the road once.
 fn statueMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.stone);
     b.addCube(v3(0, 0.3, 0), v3(1.5, 0.6, 1.5), STONE_DK); // plinth
     b.addCube(v3(0, 0.72, 0), v3(1.2, 0.24, 1.2), STONE);
     b.addCylinder(v3(0, 0.84, 0), v3(0, 2.35, 0), 0.46, 0.30, 8, STONE); // robe
@@ -581,6 +603,7 @@ fn tuftInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, s: f32) void {
 // A single golden grass clump.
 fn tuftMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.plant);
     var rng = mathx.Rng.init(11);
     tuftInto(&b, &rng, 0, 0, 1.0);
     return b.toModel(shader);
@@ -589,6 +612,7 @@ fn tuftMesh(shader: rl.Shader) rl.Model {
 // A wide swathe: several clumps strewn across ~2.5 m.
 fn patchMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.plant);
     var rng = mathx.Rng.init(23);
     var i: i32 = 0;
     while (i < 5) : (i += 1) {
@@ -604,6 +628,7 @@ fn patchMesh(shader: rl.Shader) rl.Model {
 // poking through, grass at the skirt. Reads as a shrub, not a stack of boxes.
 fn shrubMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.plant);
     var rng = mathx.Rng.init(37);
     var i: i32 = 0;
     while (i < 14) : (i += 1) {
@@ -627,6 +652,7 @@ fn shrubMesh(shader: rl.Shader) rl.Model {
 // Pale erdleaf-like blooms nodding over a grass clump.
 fn flowersMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.plant);
     var rng = mathx.Rng.init(53);
     tuftInto(&b, &rng, 0, 0, 0.8);
     var i: i32 = 0;
@@ -645,6 +671,7 @@ fn flowersMesh(shader: rl.Shader) rl.Model {
 // Tall dry sedge, seed heads riding the tips.
 fn reedsMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.plant);
     var rng = mathx.Rng.init(71);
     var i: i32 = 0;
     while (i < 7) : (i += 1) {
@@ -666,6 +693,7 @@ fn reedsMesh(shader: rl.Shader) rl.Model {
 // Grace-side blooms: taller pale flowers with a faint emissive glow.
 fn glowMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.plant);
     var rng = mathx.Rng.init(89);
     tuftInto(&b, &rng, 0, 0, 0.75);
     var i: i32 = 0;
@@ -684,6 +712,7 @@ fn glowMesh(shader: rl.Shader) rl.Model {
 // Low rubble scatter — shattered drum bits half-sunk by the path.
 fn rubbleMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    b.setMat(.stone);
     b.addCube(v3(0, 0.16, 0), v3(0.55, 0.34, 0.45), STONE_DK);
     b.addCube(v3(0.65, 0.10, 0.3), v3(0.35, 0.22, 0.3), STONE);
     b.addCube(v3(-0.5, 0.09, -0.25), v3(0.3, 0.18, 0.35), STONE_MOSS);

@@ -105,7 +105,7 @@ const LUNGE_R = 5.6; // will commit a lunge inside this (but outside bite range)
 const BITE_R = 1.45; // chomps inside this
 const HOP_REACH = 1.95; // ground covered by an approach hop
 const HOP_APEX = 0.62; // approach-hop peak height
-const LUNGE_APEX = 1.15; // lunge arc peak height
+const LUNGE_APEX = 1.28; // lunge arc peak height — a big, violent pounce
 const KEEP_OFF = BITE_R - 0.25; // an approach hop stops here, just shy of bite range
 
 // Phase durations (seconds).
@@ -113,8 +113,8 @@ const HOP_COIL = 0.16;
 const HOP_FLIGHT = 0.40;
 const HOP_LAND = 0.16;
 const HOP_SETTLE_AGGRO = 0.07; // brief settle between bounds when hunting (keeps it fast)
-const LUNGE_COIL = 0.50; // the readable wind-up tell — a long, deep, unmistakable load
-const LUNGE_FLIGHT = 0.52;
+const LUNGE_COIL = 0.70; // the readable wind-up tell — a LONG, deep, unmistakable load (slow to wind, so it reads early)
+const LUNGE_FLIGHT = 0.34; // …then FIRES fast — a short, violent leap once it commits
 const LUNGE_LAND = 0.12;
 const RECOVER_DUR = 0.78; // the winded, wide-open window after a lunge
 const CHOMP_GAPE = 0.42; // sac balloons, jaw yawns (the tell) — held long so the bite reads early
@@ -131,7 +131,9 @@ const TURN_RATE = 7.0; // rad/s the toad yaws toward its target (between hops / 
 const REST_EXT = 0.34;
 const HIP_SWING = 66.0; // + extends the thigh back-and-down (push-off)
 const KNEE_STRAIGHTEN = 104.0; // + straightens the knee out of its tuck
-const FLASH_DUR = 0.20; // debug-only: how long a registered hit tints the hurt sphere
+const FLASH_DUR = 0.20; // how long a landed hit flares the toad blood-red (gfx hitFlash) + the debug wires
+const SHOVE_DECAY = 7.0; // 1/s — the hit shove bleeds off fast (a jolt off the blow, not a slide)
+const DISS_DUR = 0.95; // seconds the corpse takes to dissipate into motes once the collapse is done
 
 // ── telegraph FX ────────────────────────────────────────────────────────────────────
 // A tiny per-toad particle pool (unlit spheres drawn in the lit pass) that SELLS the tells:
@@ -141,6 +143,8 @@ const FX_MAX = 40; // per-toad budget (ring buffer — the oldest particle is ov
 const DUST = rgba(150, 132, 96, 175); // kicked-up bog dust (warm tan; unlit, so lift the value)
 const EMBER = rgba(252, 196, 84, 150); // amber charge glow — the lamp-eye colour, gathering (kept sheer so glints layer, not blob)
 const SPIT = rgba(176, 190, 150, 140); // pale sickly drool / spit fling
+const BLOOD = rgba(112, 22, 16, 235); // hit spray — dark oxblood, kin to the maw (unlit droplets)
+const MOTE = rgba(252, 198, 92, 170); // death dissipation — grace-gold motes rising off the corpse
 
 // The hero's blade this frame, handed in as plain data so the toad stays decoupled from the
 // hero rig. Endpoints are guard→tip; the *0 pair is last frame's, for a swept test.
@@ -156,8 +160,11 @@ pub const Blade = struct {
 
 // ── vitals (LOW poise, per the brief: "frogs have low poise") ──────────────────────────
 const HP_MAX = 46.0;
-const POISE_MAX = 12.0; // low — a couple of hits flinch it
-const STANCE_MAX = 26.0; // low — a few flinches cascade into the heavy stagger
+const POISE_MAX = 8.0; // BELOW the hero's light poise damage (10): every landed light
+//   FLINCHES a full-poise toad, so a clean hit on a coil/gape windup always interrupts
+//   and RESETS the attack (stun → idle → a fresh decide; the cooldown set at attack
+//   start keeps it from instantly resuming). A toad never tanks a hit mid-windup.
+const STANCE_MAX = 26.0; // low — a few flinches cascade into the heavy stagger (3rd chained light crumples)
 // What the toad's own attacks do to the HERO (guard→tip data flows the other way; these
 // are handed out when a chomp SNAP / lunge SLAM connects). The lunge is a heavy body-blow.
 const CHOMP_HIT = combat.Hit{ .dmg = 11, .poise = 15 };
@@ -253,10 +260,13 @@ pub const Frog = struct {
     vit: combat.Vitals = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX),
     hits: u32 = 0, // total blows landed (debug read-out)
     hitLatch: bool = false, // one hit per swing: set on contact, cleared when the blade goes inactive
-    flash: f32 = 0, // debug: fades after a registered hit
+    flash: f32 = 0, // blood-red body flash after a registered hit (fades over FLASH_DUR)
+    shove: rl.Vector3 = mathx.zero3, // knockback velocity a landed blow imparts (decays fast)
     heroHit: ?combat.Hit = null, // this frame's blow ON THE HERO (chomp/lunge connect), read by game.zig
     heroLatch: bool = false, // one hero-hit per attack action (chomp/lunge)
-    gone: bool = false, // corpse removed from play (death anim finished) — skipped everywhere
+    justDied: bool = false, // true only on the frame a blow kills it (game.zig keys the kill beat off this)
+    fade: f32 = 0, // death dissipation 0..1 — pose() shrinks + sinks the corpse by it
+    gone: bool = false, // corpse removed from play (dissipation finished) — skipped everywhere
 
     // telegraph FX (see the FX tuning block): a ring buffer of particles, a rate-based emit
     // carry so trickles are frame-rate independent, and a seeded RNG for the scatter.
@@ -306,6 +316,14 @@ pub const Frog = struct {
     pub fn staggered(self: *const Frog) bool {
         return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
     }
+    // Collapsed/dissipating — a corpse (HP bar hides, nothing should read it as a threat).
+    pub fn dying(self: *const Frog) bool {
+        return self.state == .dead;
+    }
+    // Normalized 0..1 strength of the blood-red hit flash (drives gfx's hitFlash uniform).
+    pub fn flashFrac(self: *const Frog) f32 {
+        return mathx.clampF(self.flash / FLASH_DUR, 0, 1);
+    }
 
     // ── actions ─────────────────────────────────────────────────────────────────────
     fn faceToward(self: *Frog, target: rl.Vector3, dt: f32) void {
@@ -341,6 +359,7 @@ pub const Frog = struct {
         self.state = .dead;
         self.t = 0;
         self.heroLatch = false;
+        self.justDied = true; // game.zig keys the kill beat (rumble/shake) off this frame
     }
     // Screenshot-harness hooks: force a reaction so --shot can frame the poses in isolation.
     pub fn debugStagger(self: *Frog, heavy: bool) void {
@@ -377,8 +396,12 @@ pub const Frog = struct {
     // Advance AI + animation for one frame; `hero` drives senses, `blade` the hero's swing.
     // Returns the blow this toad landed on the HERO this frame (null if none / it's a corpse).
     pub fn update(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32, blade: Blade) ?combat.Hit {
-        if (self.gone) return null;
+        if (self.gone) {
+            self.updateFx(dt); // a removed corpse's last motes keep drifting out
+            return null;
+        }
         self.heroHit = null;
+        self.justDied = false;
         self.vit.tick(dt); // poise/stance regenerate between hits (relent and it recovers)
         self.elapsed += dt;
         self.lungeCd = mathx.maxF(0, self.lungeCd - dt);
@@ -386,6 +409,13 @@ pub const Frog = struct {
         self.flash = mathx.maxF(0, self.flash - dt);
         self.t += dt;
         self.updateFx(dt); // advance live particles (bursts from any state keep animating)
+        // Hit shove: a landed blow carries the toad a jolt of ground off the blade —
+        // decays fast (a knock, not a slide); collision cleans up any overlap it causes.
+        if (mathx.lenXZ(self.shove) > 0.01) {
+            self.pos.x = mathx.clampF(self.pos.x + self.shove.x * dt, -bounds, bounds);
+            self.pos.z = mathx.clampF(self.pos.z + self.shove.z * dt, -bounds, bounds);
+            self.shove = mathx.scaleV(self.shove, mathx.maxF(0, 1.0 - SHOVE_DECAY * dt));
+        }
 
         switch (self.state) {
             .idle => self.updateIdle(dt, hero, bounds),
@@ -407,7 +437,14 @@ pub const Frog = struct {
             },
             .dead => {
                 self.resolveDeath();
-                if (self.t >= DEATH_DUR) self.gone = true;
+                // The corpse DISSIPATES, ER-style: once the collapse settles it breaks
+                // into rising grace-gold motes while pose() shrinks + sinks it away —
+                // never a hard vanish. Only then is the slot retired.
+                if (self.t >= DEATH_DUR) {
+                    self.fade = mathx.smoothstep(DEATH_DUR, DEATH_DUR + DISS_DUR, self.t);
+                    self.emitDissolve(dt);
+                    if (self.t >= DEATH_DUR + DISS_DUR) self.gone = true;
+                }
             },
         }
 
@@ -488,7 +525,7 @@ pub const Frog = struct {
             self.resolveLand(k);
             // Fire the impact dust ONCE, the frame we touch down (a big front-slam telegraph).
             if ((self.t - dt) < coil + flight) {
-                if (self.isLunge) self.dustBurst(self.impactWorld(), 22, 3.4, 0.24) else self.dustBurst(mathx.ground(self.pos.x, self.pos.z), 8, 1.8, 0.16);
+                if (self.isLunge) self.dustBurst(self.impactWorld(), 32, 4.4, 0.30) else self.dustBurst(mathx.ground(self.pos.x, self.pos.z), 8, 1.8, 0.16);
             }
             if (self.isLunge) self.tryImpact(hero, LUNGE_HIT); // the body-slam connects — FRONT zone only
         }
@@ -542,7 +579,7 @@ pub const Frog = struct {
     }
     fn resolveCoil(self: *Frog, k: f32, lunge: bool) void {
         self.base();
-        const deep: f32 = if (lunge) 1.45 else 1.0; // the lunge coils MUCH deeper (a bigger, longer tell)
+        const deep: f32 = if (lunge) 1.75 else 1.0; // the lunge coils MUCH deeper (a bigger, longer, more violent tell)
         self.sy = 1.0 - 0.30 * k * deep; // squash down
         self.sxz = 1.0 + 0.18 * k * deep; // spread wide
         self.legExt = mathx.lerpF(REST_EXT, 0.05, k); // knees stack up over the back
@@ -682,16 +719,68 @@ pub const Frog = struct {
         const reach = self.hurtRadius() + blade.r;
         // Swept: test this frame's blade segment AND last frame's, so a fast arc can't skip
         // the toad between frames.
-        if (distPointSeg(c, blade.a, blade.b) <= reach or distPointSeg(c, blade.a0, blade.b0) <= reach) {
+        const q1 = closestOnSeg(c, blade.a, blade.b);
+        const q0 = closestOnSeg(c, blade.a0, blade.b0);
+        const hit1 = mathx.lenV(mathx.subV(c, q1)) <= reach;
+        if (hit1 or mathx.lenV(mathx.subV(c, q0)) <= reach) {
             self.hits += 1;
             self.hitLatch = true;
             self.flash = FLASH_DUR;
+            // The blow READS at the wound: blood flung from the contact point along the
+            // blade's sweep, and the body knocked a jolt the same way.
+            const contact = if (hit1) q1 else q0;
+            var sweep = mathx.subV(
+                mathx.lerpV(blade.a, blade.b, 0.7),
+                mathx.lerpV(blade.a0, blade.b0, 0.7),
+            );
+            sweep.y = 0;
+            const dir = if (mathx.lenXZ(sweep) > 0.03) mathx.normV(sweep) else mathx.dirXZ(contact, c);
+            const heavyBlow = blade.hit.stance > 0;
+            self.bloodBurst(contact, dir, if (heavyBlow) 14 else 9, if (heavyBlow) 2.6 else 1.9);
+            self.shove = mathx.scaleV(dir, if (heavyBlow) 1.9 else 1.25);
             // Damage + the two-tier stagger (poise → light flinch; stance → heavy stagger).
             switch (self.vit.hit(blade.hit)) {
-                .death => self.enterDeath(),
+                .death => {
+                    self.bloodBurst(contact, dir, 10, 2.2); // the killing blow bleeds extra
+                    self.enterDeath();
+                },
                 .heavy => self.enterStun(.stunheavy),
                 .light => self.enterStun(.stunlight),
                 .none => {},
+            }
+        }
+    }
+
+    // A burst of dark blood flung from the CONTACT POINT, biased along the blade's sweep
+    // (with a little radial scatter and lob) — gravity brings it down fast so the ground
+    // catches the spatter. Unlit, like all the telegraph FX.
+    fn bloodBurst(self: *Frog, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
+        var i: i32 = 0;
+        while (i < n) : (i += 1) {
+            const a = self.fxRng.angle();
+            const sp = self.fxRng.range(0.4, 1.0) * spd;
+            const vel = v3(
+                dir.x * sp + mathx.cosf(a) * self.fxRng.range(0.15, 0.8),
+                self.fxRng.range(0.7, 2.4),
+                dir.z * sp + mathx.sinf(a) * self.fxRng.range(0.15, 0.8),
+            );
+            self.emit(at, vel, self.fxRng.range(0.28, 0.5), self.fxRng.range(0.028, 0.055) * self.scale, 0.008, BLOOD, 7.5);
+        }
+    }
+
+    // Death dissipation trickle: grace-gold motes rising off the sinking corpse, cut with
+    // a little settling dust. Runs every frame of the fade (rate-based, like emitCoil).
+    fn emitDissolve(self: *Frog, dt: f32) void {
+        self.fxAccum += 44.0 * (1.0 - 0.6 * self.fade) * dt;
+        while (self.fxAccum >= 1.0) {
+            self.fxAccum -= 1.0;
+            const a = self.fxRng.angle();
+            const rr = self.fxRng.range(0.05, 0.55) * self.scale * (1.0 - 0.6 * self.fade);
+            const p = v3(self.pos.x + mathx.cosf(a) * rr, self.fxRng.range(0.03, 0.35) * self.scale, self.pos.z + mathx.sinf(a) * rr);
+            if (self.fxRng.float() < 0.75) {
+                self.emit(p, v3(self.fxRng.signed() * 0.25, self.fxRng.range(0.5, 1.3), self.fxRng.signed() * 0.25), self.fxRng.range(0.5, 1.0), self.fxRng.range(0.025, 0.06) * self.scale, 0.003, MOTE, -0.7);
+            } else {
+                self.emit(p, v3(self.fxRng.signed() * 0.3, self.fxRng.range(0.1, 0.4), self.fxRng.signed() * 0.3), self.fxRng.range(0.3, 0.6), self.fxRng.range(0.04, 0.09) * self.scale, 0.01, DUST, 2.0);
             }
         }
     }
@@ -792,12 +881,15 @@ pub const Frog = struct {
 
     // ── pose: build the 9 world matrices from the resolved channels ─────────────────────
     pub fn pose(self: *Frog) void {
-        const fs = self.scale;
+        // Death dissipation: the whole rig shrinks about the seat and sinks into the
+        // ground while the motes rise — the corpse melts away rather than blinking out.
+        const fs = self.scale * (1.0 - 0.85 * self.fade);
+        const sink = -0.30 * self.scale * self.fade;
         // Body frame → world (per-toad uniform scale, pitch, face, then place at the seat).
         // NO squash here — the legs hang off this so they keep their size; squash rides BODY.
         const bframe = mul(
             scaleM(fs, fs, fs),
-            mul3(rx(self.pitch), ry(mathx.degrees(self.facing)), tr(self.pos.x, self.lift, self.pos.z)),
+            mul3(rx(self.pitch), ry(mathx.degrees(self.facing)), tr(self.pos.x, self.lift + sink, self.pos.z)),
         );
         const squash = scaleM(self.sxz, self.sy, self.sxz); // about the seat: flatten/widen or stretch
 
@@ -870,13 +962,30 @@ pub const Knot = struct {
         }
         return worst;
     }
-    pub fn draw(self: *const Knot) void {
-        for (&self.frogs) |*f| if (f.alive()) f.draw(&self.model);
+    // `scene` non-null (the lit pass) flares each struck toad blood-red via the shared
+    // hitFlash uniform; pass null from paths without per-actor flash (none today — the
+    // depth pass reuses this too, where the uniform write is simply inert).
+    pub fn draw(self: *const Knot, scene: ?*gfx.Scene) void {
+        for (&self.frogs) |*f| {
+            if (!f.alive()) continue;
+            if (scene) |sc| sc.setFlash(0.85 * f.flashFrac());
+            f.draw(&self.model);
+        }
+        if (scene) |sc| sc.setFlash(0);
     }
     // Telegraph particles — drawn AFTER the meshes (unlit, semi-transparent), in the lit pass
-    // only (never the shadow depth pass), so dust/charge/spit reads over the toads.
+    // only (never the shadow depth pass), so dust/charge/spit reads over the toads. Drawn for
+    // GONE toads too: a dissipated corpse's last motes drift out instead of popping off.
     pub fn drawFx(self: *const Knot) void {
-        for (&self.frogs) |*f| if (f.alive()) f.drawFx();
+        for (&self.frogs) |*f| f.drawFx();
+    }
+    // Did any toad die THIS frame? (The kill beat — rumble, shake — keys off this, since
+    // aliveCount only drops later, when the dissipation finishes.)
+    pub fn anyDied(self: *const Knot) bool {
+        for (&self.frogs) |*f| {
+            if (f.justDied) return true;
+        }
+        return false;
     }
     pub fn totalHits(self: *const Knot) u32 {
         var n: u32 = 0;
@@ -949,26 +1058,33 @@ fn toothRow(b: *Builder, cfg: ToothRow) void {
 // lower jaw + throat sac are separate (animated) parts.
 fn bodyMesh() rl.Mesh {
     var b = Builder.init();
+    b.setMat(.hide);
     // Body: a fat dome — belly (bottom) widening up to the midsection, then humping up and
     // narrowing to the back crown (apex set a touch REAR so the profile leans forward). Many
     // sides so it reads round from every angle (no lizard tail).
     b.addCylinder(v3(0, 0.02, -0.02), v3(0, 0.28, -0.03), 0.24, 0.42, 14, HIDE); // lower/mid
     b.addCylinder(v3(0, 0.28, -0.03), v3(0, 0.60, -0.10), 0.42, 0.15, 14, HIDE); // humped back
+    b.setMat(.skin);
     b.addCube(v3(0, 0.10, 0.08), v3(0.46, 0.16, 0.44), BELLY); // pale sickly belly, low + front
+    b.setMat(.hide);
 
     // Broad head jutting forward at the mouth line (~y0.24), warty brow above.
     b.addCube(v3(0, 0.34, 0.34), v3(0.62, 0.24, 0.34), HIDE); // head block / brow
     b.addCube(v3(0, 0.255, 0.46), v3(0.58, 0.09, 0.16), HIDE_DK); // upper lip / snout rim
+    b.setMat(.skin); // moist mouth tissue — soft mottle, not warty
     b.addCube(v3(0, 0.30, 0.32), v3(0.48, 0.06, 0.34), MAW); // roof of the mouth (gape not hollow)
     b.addCube(v3(0, 0.25, 0.18), v3(0.42, 0.16, 0.14), MAW); // gullet — a dark cavern behind the teeth when agape
+    b.setMat(.hide);
 
     // Bulging eyes on top of the head, set wide — bony brow, amber emissive dome, slit pupil.
     for ([_]f32{ -1, 1 }) |sgn| {
         const ex = 0.19 * sgn;
         b.addCube(v3(ex, 0.46, 0.30), v3(0.24, 0.13, 0.24), HIDE_DK); // brow socket
         b.addCylinder(v3(ex, 0.43, 0.31), v3(ex, 0.63, 0.31), 0.135, 0.085, 9, HIDE_LT); // eye mound
+        b.setMat(.plain); // glassy eye — no hide blotch over the emissive dome
         b.addCylinder(v3(ex, 0.575, 0.315), v3(ex, 0.645, 0.32), 0.10, 0.05, 9, EYE); // amber iris (emissive)
         b.addCube(v3(ex, 0.62, 0.36), v3(0.038, 0.07, 0.038), PUPIL); // slit pupil, facing forward
+        b.setMat(.hide);
     }
     // Nostrils at the snout tip.
     b.addCube(v3(0.08, 0.40, 0.54), v3(0.035, 0.035, 0.035), HIDE_DK);
@@ -1003,9 +1119,12 @@ fn lowerJawMesh() rl.Mesh {
             return v3(bx - P_JAW.x, by - P_JAW.y, bz - P_JAW.z);
         }
     }.at;
+    b.setMat(.hide);
     b.addCube(j(0, 0.185, 0.28), v3(0.58, 0.09, 0.46), HIDE); // jaw slab
+    b.setMat(.skin);
     b.addCube(j(0, 0.14, 0.26), v3(0.52, 0.07, 0.42), BELLY); // pale chin underside
     b.addCube(j(0, 0.225, 0.34), v3(0.48, 0.03, 0.30), TONGUE); // fleshy floor / tongue
+    b.setMat(.hide);
     b.addCube(j(0, 0.235, 0.49), v3(0.50, 0.05, 0.09), HIDE_DK); // lower lip rim
     // Lower teeth point UP from the rim — the same ragged wabi-sabi treatment, a different
     // seed so they don't mirror the uppers (they interlock unevenly).
@@ -1016,6 +1135,7 @@ fn lowerJawMesh() rl.Mesh {
 // Throat sac — authored about P_SAC at the origin; a pale distendable pouch under the chin.
 fn throatMesh() rl.Mesh {
     var b = Builder.init();
+    b.setMat(.skin); // stretched membrane — soft mottle, no warts
     b.addCylinder(v3(0, 0.06, 0), v3(0, -0.04, 0.01), 0.19, 0.24, 10, SAC);
     b.addCylinder(v3(0, -0.04, 0.01), v3(0, -0.13, 0.01), 0.24, 0.12, 10, SAC);
     b.addCube(v3(0, -0.02, 0.05), v3(0.34, 0.18, 0.24), SAC); // fill the pouch out front
@@ -1025,6 +1145,7 @@ fn throatMesh() rl.Mesh {
 // Back-leg thigh — authored at the hip origin, a fat haunch reaching up to the folded knee.
 fn thighMesh() rl.Mesh {
     var b = Builder.init();
+    b.setMat(.hide);
     const knee = v3(P_KNEE.x - P_HIP.x, P_KNEE.y - P_HIP.y, P_KNEE.z - P_HIP.z);
     b.addCylinder(v3(0, 0, 0), knee, 0.20, 0.13, 10, HIDE);
     b.addCylinder(v3(0, 0.03, -0.02), v3(knee.x * 0.55, knee.y * 0.55, knee.z * 0.55 - 0.03), 0.225, 0.17, 10, HIDE_LT); // big muscle bulge
@@ -1035,6 +1156,7 @@ fn thighMesh() rl.Mesh {
 // ground. `side` mirrors the toe splay. The long foot is the frog read.
 fn shankMesh(side: f32) rl.Mesh {
     var b = Builder.init();
+    b.setMat(.hide);
     // Foot target relative to the knee (knee sits at P_KNEE in the body frame; foot ~ground,
     // forward + slightly out).
     const foot = v3(-0.10 * side, 0.0 - P_KNEE.y, 0.16 - P_KNEE.z);
@@ -1053,6 +1175,7 @@ fn shankMesh(side: f32) rl.Mesh {
 // Front leg — authored at the shoulder origin; small, splayed, planting forward.
 fn armMesh() rl.Mesh {
     var b = Builder.init();
+    b.setMat(.hide);
     const hand = v3(0.02, -0.26, 0.16);
     b.addCylinder(v3(0, 0, 0), hand, 0.075, 0.045, 8, HIDE);
     b.addCube(v3(hand.x, hand.y - 0.005, hand.z + 0.03), v3(0.12, 0.03, 0.11), HIDE_DK); // splayed hand
@@ -1062,14 +1185,19 @@ fn armMesh() rl.Mesh {
     return b.toMesh();
 }
 
-// Shortest distance from point `p` to segment `a`-`b` (swept-blade hit test).
-fn distPointSeg(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) f32 {
+// Closest point on segment `a`-`b` to `p` (the blade contact point — where blood spawns).
+fn closestOnSeg(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     const ab = mathx.subV(b, a);
     const denom = mathx.lenV(ab);
-    if (denom < 1e-6) return mathx.lenV(mathx.subV(p, a));
-    const t = mathx.clampF((mathx.subV(p, a).x * ab.x + mathx.subV(p, a).y * ab.y + mathx.subV(p, a).z * ab.z) / (denom * denom), 0, 1);
-    const proj = v3(a.x + ab.x * t, a.y + ab.y * t, a.z + ab.z * t);
-    return mathx.lenV(mathx.subV(p, proj));
+    if (denom < 1e-6) return a;
+    const ap = mathx.subV(p, a);
+    const t = mathx.clampF((ap.x * ab.x + ap.y * ab.y + ap.z * ab.z) / (denom * denom), 0, 1);
+    return v3(a.x + ab.x * t, a.y + ab.y * t, a.z + ab.z * t);
+}
+
+// Shortest distance from point `p` to segment `a`-`b` (swept-blade hit test).
+fn distPointSeg(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) f32 {
+    return mathx.lenV(mathx.subV(p, closestOnSeg(p, a, b)));
 }
 
 // ── invariants under test (pure logic only — meshes/poses need a GPU window) ────────────

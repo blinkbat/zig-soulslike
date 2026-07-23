@@ -103,7 +103,6 @@ pub const SCALE = 1.4;
 const AGGRO_R = 11.0; // notices the hero within this
 const LUNGE_R = 5.6; // will commit a lunge inside this (but outside bite range)
 const BITE_R = 1.45; // chomps inside this
-const LEASH_R = 20.0; // hero beyond this from the toad's home → it disengages, drifts home
 const HOP_REACH = 1.95; // ground covered by an approach hop
 const HOP_APEX = 0.62; // approach-hop peak height
 const LUNGE_APEX = 1.15; // lunge arc peak height

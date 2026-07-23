@@ -67,9 +67,6 @@ pub const Vitals = struct {
     pub fn hpFrac(self: *const Vitals) f32 {
         return if (self.hpMax > 0) mathx.clampF(self.hp / self.hpMax, 0, 1) else 0;
     }
-    pub fn stanceFrac(self: *const Vitals) f32 {
-        return if (self.stanceMax > 0) mathx.clampF(self.stance / self.stanceMax, 0, 1) else 0;
-    }
 
     // Regenerate the meters. Call every frame. Nothing regens until REGEN_DELAY has elapsed
     // since the last hit; HP never auto-regens (souls: HP only comes back from flasks).

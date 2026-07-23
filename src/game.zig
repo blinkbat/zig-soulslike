@@ -555,12 +555,18 @@ fn lockValid(g: *const Game, i: usize) bool {
     return f.alive() and mathx.distXZ(g.hero.pos, f.pos) <= MAX_LOCK_R + 2.0;
 }
 
-// A world point projected to the screen, or null if it sits at/behind the camera plane —
-// the shared front-of-camera cull for the lock reticle, the foe HP bars, and lock-screen-x.
+// A world point projected to the screen, or null if it sits nearer than the near-clip
+// plane — the shared front-of-camera cull for the lock reticle, the foe HP bars, and
+// lock-screen-x. The threshold must be the near clip distance, not just depth > 0: a point
+// at depth ~0+ (a foe right at the camera plane, e.g. lunging past the hero as the camera
+// swings) projects to an unbounded screen coordinate, and the callers' @intFromFloat(s.x)
+// would then be an out-of-range cast (a panic in safe builds). Below near, nothing renders.
+const PROJECT_NEAR = 0.2; // == rlSetClipPlanes near, set in run()
 fn projectToScreen(cam: rl.Camera3D, p: rl.Vector3) ?rl.Vector2 {
     const to = mathx.subV(p, cam.position);
-    const fwd = mathx.subV(cam.target, cam.position);
-    if (to.x * fwd.x + to.y * fwd.y + to.z * fwd.z <= 0) return null; // behind the camera
+    const fwd = mathx.normV(mathx.subV(cam.target, cam.position)); // camera forward (unit)
+    const depth = to.x * fwd.x + to.y * fwd.y + to.z * fwd.z; // signed distance along the view axis
+    if (depth < PROJECT_NEAR) return null;
     return rl.getWorldToScreen(p, cam);
 }
 

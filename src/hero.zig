@@ -323,7 +323,10 @@ const AH_PITCH = 9.0; // whole-body forward pitch about the feet through the str
 // endpoints kept for swept tests so a fast arc can't tunnel through a target between
 // frames. One hit per swing per target: the (future) hit list clears on the activation
 // edge, where the sweep history also resets.
-pub const BLADE_R = 0.055; // capsule radius (world units) — a touch fatter than the mesh
+pub const BLADE_R = 0.16; // capsule radius (world units) — a generous HIT volume, well fatter
+// than the visible mesh (invisible in play, only debug-wired). The toads' hurt sphere sits low
+// (~0.48m) while a swipe rides chest/shoulder height, so a thin capsule grazed the rim and
+// whiffed; this fattening is the vertical/horizontal forgiveness that lets swipes actually land.
 
 // ── combat vitals + what the hero's cuts deal (Elden Ring model, see docs/ELDEN_RING.md) ─
 // The hero is sturdier than a toad: mid-weight poise (~ER's Knight-set 51) so a couple of
@@ -364,8 +367,11 @@ const FIST_Z = 0.005 * H;
 fn bladeAt(t: f32) rl.Vector3 {
     return v3(-GRIP_SA * OUT_SA * t * H, FIST_Y - GRIP_CA * t * H, FIST_Z + GRIP_SA * OUT_CA * t * H);
 }
-const BLADE_BASE = bladeAt(0.046); // guard, in the wrist frame
-const BLADE_TIP = bladeAt(0.481); // point
+// HIT capsule endpoints — extended PAST the visible blade for reach forgiveness (the mesh is
+// unchanged): the base pulls back through the fist so close-in swipes connect, and the tip
+// reaches beyond the point so the far end of the arc lands.
+const BLADE_BASE = bladeAt(-0.06); // guard end, pulled back toward/through the fist
+const BLADE_TIP = bladeAt(0.60); // point, extended past the visible tip for reach
 
 // The sword arm is a CARRY, not a mirror of the free arm (see armChain).
 const CARRY_DAMP = 0.45; // fraction of the gait swing the sword arm gives up

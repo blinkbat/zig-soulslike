@@ -30,7 +30,7 @@ pub const CamRig = struct {
 
     // Ground-plane forward the camera looks along (for camera-relative movement).
     pub fn forwardXZ(c: *const CamRig) rl.Vector3 {
-        return v3(mathx.sinf(c.yaw), 0, mathx.cosf(c.yaw));
+        return mathx.headingDir(c.yaw);
     }
     // Ground-plane right (screen-right) of the camera. The camera sits behind the hero
     // looking +forward, so screen-right = cross(up, eye−target) = −(cos yaw, 0, −sin yaw):

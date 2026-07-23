@@ -46,8 +46,6 @@ const SEG_THIGH = 0.245; // hip → knee   (femur)   .530-.285
 const SEG_SHANK = 0.246; // knee → ankle (tibia)   .285-.039
 const SEG_UPARM = 0.188; // shoulder → elbow        .818-.630
 const SEG_FOREARM = 0.145; // elbow → wrist         .630-.485
-const BREADTH_SHOULDER = 0.259; // biacromial breadth
-const BREADTH_HIP = 0.191; // bi-iliac / bitrochanteric breadth
 
 // Skeleton joints (indices). Every joint owns exactly one drawn bone mesh.
 const N = 18;
@@ -77,8 +75,8 @@ const parent = [N]i32{ -1, ROOT, SPINE, CHEST, NECK, ROOT, HIPL, KNEEL, ROOT, HI
 // A-pose splay and stance width come from constant abduction in the pose, not the rest
 // pose (so a bone mesh and its child joint never separate).
 fn restPositions() [N]rl.Vector3 {
-    const hx = 0.090; // hip half-separation (a touch under BREADTH_HIP/2 so the stance isn't splayed)
-    const sx = 0.150; // shoulder half-separation (~BREADTH_SHOULDER/2, plus pauldron room)
+    const hx = 0.090; // hip half-separation (a touch under half the bi-iliac breadth so the stance isn't splayed)
+    const sx = 0.150; // shoulder half-separation (~half the biacromial breadth, plus pauldron room)
     var r: [N]rl.Vector3 = undefined;
     r[ROOT] = v3(0, 0.530, 0);
     r[SPINE] = v3(0, 0.640, 0);
@@ -522,16 +520,17 @@ pub const Hero = struct {
     }
 
     // Begin a dodge roll in world direction `dir` (falls back to current facing). Ignored
-    // while already rolling — rolls are committed.
+    // while already rolling OR mid-attack — both are committed (mirrors startAttack's guard,
+    // so a stray call can't leave rolling+attacking latched together).
     pub fn startRoll(self: *Hero, dir: rl.Vector3) void {
-        if (self.rolling) return;
+        if (self.rolling or self.attacking) return;
         var d = v3(dir.x, 0, dir.z);
-        if (mathx.lenXZ(d) < 0.1) d = v3(mathx.sinf(self.facing), 0, mathx.cosf(self.facing));
+        if (mathx.lenXZ(d) < 0.1) d = mathx.headingDir(self.facing);
         d = mathx.normV(d);
         self.rolling = true;
         self.rollT = 0;
         self.rollDir = d;
-        self.rollYaw = std.math.atan2(d.x, d.z); // heading committed NOW; the visible yaw whips onto it
+        self.rollYaw = mathx.headingXZ(d); // heading committed NOW; the visible yaw whips onto it
         // Wabi-sabi, cosmetic only: roll over the shoulder of whichever leg is leading
         // (as a real forward roll does; right by habit from a standstill), and drift the
         // imperfection magnitudes so no two rolls read identical.

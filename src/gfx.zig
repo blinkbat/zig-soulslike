@@ -362,6 +362,16 @@ pub const RETRO_DEFAULTS = [RETRO_COUNT]f32{
     0.0,  0.0,  0.0,  0.0,  0.04,
 };
 
+// The RF_* indices, RETRO_NAMES, RETRO_UNIFORMS and RETRO_DEFAULTS are four parallel lists
+// kept in lockstep by position; their LENGTH is compiler-checked (the [RETRO_COUNT] type),
+// but a REORDER would silently bind the wrong label/uniform/default to an RF_* index. Anchor
+// a few entries at comptime so inserting or moving a filter fails the build instead.
+comptime {
+    std.debug.assert(std.mem.eql(u8, RETRO_UNIFORMS[RF_PIXELATE], "fPixelate"));
+    std.debug.assert(std.mem.eql(u8, RETRO_UNIFORMS[RF_GRAIN], "fGrain"));
+    std.debug.assert(std.mem.eql(u8, RETRO_NAMES[RF_CGA], "CGA"));
+}
+
 // Retro filter PRESETS — the SINGLE source for the menu's Preset rows AND the --shot
 // verification stacks (which previously re-hardcoded these values). Each is a set of
 // {filter, intensity}; Retro.applyPreset clears everything else first.

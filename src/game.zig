@@ -9,6 +9,7 @@ const hud_ = @import("hud.zig");
 const menumod = @import("menu.zig");
 const frogmod = @import("frog.zig");
 const collision = @import("collision.zig");
+const rumblemod = @import("rumble.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -40,6 +41,12 @@ const HERO_R = 0.36;
 // actor speed so ordinary wall contact still resolves firmly (no sinking).
 const COLLIDE_RATE = 11.0; // world units / sec
 
+// Depth clip planes, set once at startup (see run()): a tight near/far so the hero's
+// overlapping boxes don't z-fight. Single source — projectToScreen's near-cull (PROJECT_NEAR)
+// MUST equal CLIP_NEAR, so both read this rather than repeating the literal.
+const CLIP_NEAR = 0.2;
+const CLIP_FAR = 320.0;
+
 // ── lock-on (Elden Ring) ──
 const MAX_LOCK_R = 17.0; // won't acquire, and drops, a foe beyond this
 const LOCK_CAM_EASE = 9.0; // exponential ease rate for the lock-on camera swing (quick, snap-free)
@@ -61,6 +68,7 @@ const Game = struct {
     warren: frogmod.Knot, // the knot of gaping toads
     rig: cameramod.CamRig,
     lock: ?usize = null, // ER lock-on: index into warren.frogs, or null
+    rumble: rumblemod.Rumble = .{}, // controller vibration, keyed to combat beats
 
     fn init() Game {
         const scene = gfx.Scene.init();
@@ -147,7 +155,7 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
     if (faceYaw) |ty| {
         g.hero.facing = mathx.approachAngle(g.hero.facing, ty, TURN_RATE * dt);
     } else if (l > 0.001 and mv.speed > 0.001) {
-        g.hero.facing = mathx.approachAngle(g.hero.facing, std.math.atan2(dir.x, dir.z), TURN_RATE * dt);
+        g.hero.facing = mathx.approachAngle(g.hero.facing, mathx.headingXZ(dir), TURN_RATE * dt);
     }
     g.hero.update(dt, moved, speed);
     g.hero.pose();
@@ -160,7 +168,7 @@ fn rollDir(g: *Game, mv: Move) rl.Vector3 {
     const right = g.rig.rightXZ();
     const d = v3(fwd.x * mv.fz + right.x * mv.fx, 0, fwd.z * mv.fz + right.z * mv.fx);
     if (mathx.lenXZ(d) > 0.01) return d;
-    return v3(mathx.sinf(g.hero.facing), 0, mathx.cosf(g.hero.facing));
+    return mathx.headingDir(g.hero.facing);
 }
 
 // ── render ───────────────────────────────────────────────────────────────────────
@@ -210,6 +218,8 @@ fn drawScene(g: *Game) void {
     g.env.drawFlora();
     g.scene.setWind(false);
     if (g.menu.wireframe) rl.gl.rlDisableWireMode();
+    // Toad telegraph FX (dust / charge / spit) — unlit spheres, over the opaque geometry.
+    g.warren.drawFx();
     // Debug: the blade hit capsule (menu > Debug > Hitboxes) — red while ACTIVE, dim
     // through the rest of the swing. Drawn with the default shader, unlit on purpose.
     if (g.menu.hitboxes and g.hero.attacking) {
@@ -333,7 +343,7 @@ pub fn run(shot: bool) void {
     // as the camera moves. BeginMode3D reads these cull distances; the shadow pass
     // saves/restores them around its own ortho slab, so setting them once here sticks.
     // Set BEFORE the --shot branch so headless captures get the same depth precision.
-    rl.gl.rlSetClipPlanes(0.2, 320.0);
+    rl.gl.rlSetClipPlanes(CLIP_NEAR, CLIP_FAR);
 
     if (shot) {
         runShots(g);
@@ -349,6 +359,12 @@ pub fn run(shot: bool) void {
     var bHeldT: f32 = 0;
     var moveHeldT: f32 = 0; // continuous held-movement time; ≥ RUN_HOLD unlocks the run
     var lockCycleReady = true; // debounce so one flick cycles the lock-on target once
+    // Rising-edge trackers for rumble: fire a pulse the frame an action BEGINS (catches
+    // queued actions too, since we watch the hero's committed state, not the input press).
+    var wasRolling = false;
+    var wasAttacking = false;
+    var wasDead = false;
+    defer g.rumble.stop(); // never leave a motor latched after we exit the loop
     while (!rl.windowShouldClose()) {
         const dt = rl.getFrameTime() * g.menu.timeScale;
 
@@ -372,6 +388,7 @@ pub fn run(shot: bool) void {
             g.hero.update(rl.getFrameTime(), 0, 0);
             g.hero.pose();
             g.rig.follow(g.hero.shoulderPoint());
+            g.rumble.update(rl.getFrameTime(), false); // motors silent while paused (envelopes still decay)
             drawScene(g);
             hud(g);
             g.menu.draw(&g.retro);
@@ -404,7 +421,7 @@ pub fn run(shot: bool) void {
         if (g.lock) |li| {
             const dir = mathx.dirXZ(g.hero.pos, g.warren.frogs[li].pos);
             if (mathx.lenXZ(dir) > 0.001) {
-                g.rig.aim(std.math.atan2(dir.x, dir.z), LOCK_PITCH, dt, LOCK_CAM_EASE); // quick, snap-free swing
+                g.rig.aim(mathx.headingXZ(dir), LOCK_PITCH, dt, LOCK_CAM_EASE); // quick, snap-free swing
             }
             var flick: f32 = 0;
             if (inside and wasInside and @abs(md.x) > 40) flick = std.math.sign(md.x);
@@ -480,7 +497,7 @@ pub fn run(shot: bool) void {
         // While locked the hero faces the foe (so it strafes/backpedals around it), ER-style.
         const lockYaw: ?f32 = if (g.lock) |li| blk: {
             const d = mathx.dirXZ(g.hero.pos, g.warren.frogs[li].pos);
-            break :blk if (mathx.lenXZ(d) > 0.001) std.math.atan2(d.x, d.z) else null;
+            break :blk if (mathx.lenXZ(d) > 0.001) mathx.headingXZ(d) else null;
         } else null;
         if (g.hero.dead) {
             g.hero.updateDeath(dt); // collapse → respawn
@@ -496,9 +513,29 @@ pub fn run(shot: bool) void {
         // The knot hunts the hero; the hero's swept blade damages + staggers the toads, and a
         // toad's chomp/lunge that connects returns the blow it lands ON the hero. Apply it,
         // resolve every footprint collision, then aim the camera at the SETTLED hero position.
-        if (g.warren.update(dt, g.hero.pos, PLAY_HALF, heroBlade(g))) |h| g.hero.takeHit(h);
+        const hitsBefore = g.warren.totalHits();
+        const aliveBefore = g.warren.aliveCount();
+        if (g.warren.update(dt, g.hero.pos, PLAY_HALF, heroBlade(g))) |h| {
+            g.hero.takeHit(h);
+            // The lunge carries stance damage; the chomp doesn't — split the felt blow by that.
+            g.rumble.play(if (h.stance > 0) rumblemod.hurt_heavy else rumblemod.hurt);
+        }
+        // Your blade connected this frame (hit count climbed) → a hit pulse sized to the swing;
+        // a toad going down on top of that adds the kill thunk (strongest-wins blends them).
+        if (g.warren.totalHits() > hitsBefore) g.rumble.play(if (g.hero.atkHeavy) rumblemod.hit_heavy else rumblemod.hit_light);
+        if (g.warren.aliveCount() < aliveBefore) g.rumble.play(rumblemod.kill);
         collideActors(g, dt);
         g.rig.follow(g.hero.shoulderPoint());
+
+        // Rising-edge action pulses: a roll whump, the swing effort (heavy reads heavier than
+        // light), and the death swell. Watching committed state catches queued actions too.
+        if (g.hero.rolling and !wasRolling) g.rumble.play(rumblemod.roll);
+        if (g.hero.attacking and !wasAttacking) g.rumble.play(if (g.hero.atkHeavy) rumblemod.swing_heavy else rumblemod.swing_light);
+        if (g.hero.dead and !wasDead) g.rumble.play(rumblemod.death);
+        wasRolling = g.hero.rolling;
+        wasAttacking = g.hero.attacking;
+        wasDead = g.hero.dead;
+        g.rumble.update(rl.getFrameTime(), rl.isGamepadAvailable(0));
 
         drawScene(g);
         hud(g);
@@ -561,7 +598,7 @@ fn lockValid(g: *const Game, i: usize) bool {
 // at depth ~0+ (a foe right at the camera plane, e.g. lunging past the hero as the camera
 // swings) projects to an unbounded screen coordinate, and the callers' @intFromFloat(s.x)
 // would then be an out-of-range cast (a panic in safe builds). Below near, nothing renders.
-const PROJECT_NEAR = 0.2; // == rlSetClipPlanes near, set in run()
+const PROJECT_NEAR = CLIP_NEAR; // must equal the near clip plane set in run()
 fn projectToScreen(cam: rl.Camera3D, p: rl.Vector3) ?rl.Vector2 {
     const to = mathx.subV(p, cam.position);
     const fwd = mathx.normV(mathx.subV(cam.target, cam.position)); // camera forward (unit)
@@ -838,15 +875,15 @@ fn runShots(g: *Game) void {
         // A lunge into its recovery (the wide-open window).
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         f.startHop(mathx.ground(0, -3.6), PLAY_HALF, true);
-        stepFrog(f, 12, behind); // the deep telegraph coil
+        stepFrog(f, 26, behind); // deep into the long telegraph coil (loaded, dust flying, throat charged)
         shootFrog(g, f, "shots/25_frog_lunge_wind.png", 55, 0.09, 3.3);
-        stepFrog(f, 67, behind); // through flight + heavy landing, ~0.3 s into recovery
+        stepFrog(f, 60, behind); // through flight + heavy landing, ~0.3 s into recovery
         shootFrog(g, f, "shots/26_frog_recover.png", 70, 0.13, 3.2);
 
         // A chomp: gape (sac balloons, jaws yawn) → snap. Framed front-quarter to see the maw.
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         f.startChomp();
-        stepFrog(f, 15, front); // near full gape
+        stepFrog(f, 22, front); // near full gape (charge gathering, drool stringing)
         shootFrog(g, f, "shots/27_frog_gape.png", 162, 0.06, 2.2); // front 3/4, close — peer into the maw
         stepFrog(f, 6, front); // jaws slamming
         shootFrog(g, f, "shots/28_frog_snap.png", 162, 0.06, 2.2);

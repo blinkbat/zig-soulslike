@@ -89,6 +89,18 @@ pub fn perpXZ(f: rl.Vector3) rl.Vector3 {
     return v3(f.z, 0, -f.x);
 }
 
+/// Unit forward direction on the ground for a yaw angle (yaw 0 → +Z) — the single source for
+/// the `v3(sinf, 0, cosf)` idiom, and the inverse of headingXZ.
+pub fn headingDir(yaw: f32) rl.Vector3 {
+    return v3(sinf(yaw), 0, cosf(yaw));
+}
+
+/// Yaw angle of a ground direction (`atan2(x, z)`); the inverse of headingDir, Y ignored.
+/// A zero vector yields 0 (call sites that care guard the length first).
+pub fn headingXZ(v: rl.Vector3) f32 {
+    return std.math.atan2(v.x, v.z);
+}
+
 /// Closest point on segment a-b to p, measured in the XZ plane (returned with Y = 0).
 pub fn closestOnSegXZ(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     const abx = b.x - a.x;

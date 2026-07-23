@@ -113,11 +113,11 @@ const HOP_COIL = 0.16;
 const HOP_FLIGHT = 0.40;
 const HOP_LAND = 0.16;
 const HOP_SETTLE_AGGRO = 0.07; // brief settle between bounds when hunting (keeps it fast)
-const LUNGE_COIL = 0.34; // the readable wind-up tell
+const LUNGE_COIL = 0.50; // the readable wind-up tell — a long, deep, unmistakable load
 const LUNGE_FLIGHT = 0.52;
 const LUNGE_LAND = 0.12;
 const RECOVER_DUR = 0.78; // the winded, wide-open window after a lunge
-const CHOMP_GAPE = 0.30; // sac balloons, jaw yawns (the tell)
+const CHOMP_GAPE = 0.42; // sac balloons, jaw yawns (the tell) — held long so the bite reads early
 const CHOMP_SNAP = 0.11; // jaws slam
 const CHOMP_RECOVER = 0.42;
 const CHOMP_JAW = 64.0; // how wide the maw yawns (deg) — a big, readable gape
@@ -132,6 +132,15 @@ const REST_EXT = 0.34;
 const HIP_SWING = 66.0; // + extends the thigh back-and-down (push-off)
 const KNEE_STRAIGHTEN = 104.0; // + straightens the knee out of its tuck
 const FLASH_DUR = 0.20; // debug-only: how long a registered hit tints the hurt sphere
+
+// ── telegraph FX ────────────────────────────────────────────────────────────────────
+// A tiny per-toad particle pool (unlit spheres drawn in the lit pass) that SELLS the tells:
+// dust dug up as the lunge loads, an amber charge glow gathering at the maw, drool flung on
+// the gape, and a big radial dust SLAM at the impact point on a lunge landing.
+const FX_MAX = 40; // per-toad budget (ring buffer — the oldest particle is overwritten)
+const DUST = rgba(150, 132, 96, 175); // kicked-up bog dust (warm tan; unlit, so lift the value)
+const EMBER = rgba(252, 196, 84, 150); // amber charge glow — the lamp-eye colour, gathering (kept sheer so glints layer, not blob)
+const SPIT = rgba(176, 190, 150, 140); // pale sickly drool / spit fling
 
 // The hero's blade this frame, handed in as plain data so the toad stays decoupled from the
 // hero rig. Endpoints are guard→tip; the *0 pair is last frame's, for a swept test.
@@ -154,6 +163,13 @@ const STANCE_MAX = 26.0; // low — a few flinches cascade into the heavy stagge
 const CHOMP_HIT = combat.Hit{ .dmg = 11, .poise = 15 };
 const LUNGE_HIT = combat.Hit{ .dmg = 17, .poise = 26, .stance = 8 };
 const HERO_REACH = 0.55; // hero footprint added to the toad's attack range for the hit test
+// The lunge is a body-SLAM that crashes down in FRONT of the toad: only a hero inside the
+// frontal impact zone is crushed — one beside or behind the landing is clear (and the impact
+// dust burst is thrown at this same forward spot, so the danger reads). Reach is measured from
+// the seat (≈ the old radial range); the arc gate is what makes it front-only.
+const LUNGE_IMPACT_R = 1.9; // frontal slam reach from the seat
+const LUNGE_FRONT_DOT = 0.25; // hero must lie within the frontal arc (~±76°) to be caught
+const LUNGE_IMPACT_FWD = 0.6; // dust-burst / impact-zone centre, this far ahead of the seat (pre-scale)
 const DEATH_DUR = 1.25; // collapse-and-still before the corpse is removed from play
 
 // idle, hop, lunge, recover, chomp are the live behaviours; the last three are REACTIONS
@@ -169,6 +185,19 @@ fn classify(dist: f32, lungeReady: bool, chompReady: bool) Choice {
     if (dist <= LUNGE_R and lungeReady) return .lunge;
     return .hop;
 }
+
+// One telegraph particle: integrates ballistically, shrinks/grows r0→r1, fades out as its
+// life counts down. Drawn unlit so the dust/glow POPS over the dark hide (like the debug wires).
+const Particle = struct {
+    p: rl.Vector3 = mathx.zero3,
+    v: rl.Vector3 = mathx.zero3,
+    life: f32 = 0, // seconds remaining (0 = dead slot)
+    max: f32 = 1, // life at spawn (for the fade fraction)
+    r0: f32 = 0.05, // radius at spawn
+    r1: f32 = 0.05, // radius at death (r1>r0 = an expanding puff; r1<r0 = a shrinking spark)
+    col: rl.Color = DUST,
+    grav: f32 = 0, // downward accel (world/s²); negative floats up
+};
 
 // The shared toad meshes + material (built once, like env.models); every Frog draws these
 // with its own per-part matrices. Meshes live the whole program (leak at exit — fine).
@@ -229,10 +258,18 @@ pub const Frog = struct {
     heroLatch: bool = false, // one hero-hit per attack action (chomp/lunge)
     gone: bool = false, // corpse removed from play (death anim finished) — skipped everywhere
 
+    // telegraph FX (see the FX tuning block): a ring buffer of particles, a rate-based emit
+    // carry so trickles are frame-rate independent, and a seeded RNG for the scatter.
+    fx: [FX_MAX]Particle = [_]Particle{.{}} ** FX_MAX,
+    fxHead: usize = 0,
+    fxAccum: f32 = 0,
+    fxRng: mathx.Rng = mathx.Rng.init(1),
+
     xf: [NP]rl.Matrix = undefined,
 
     pub fn spawn(home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Frog {
         var f = Frog{ .pos = home, .home = home, .facing = faceYaw, .scale = scale * SCALE, .seed = seed };
+        f.fxRng = mathx.Rng.init(@as(u64, @intFromFloat(seed * 104729.0)) +% 1); // per-toad scatter, deterministic
         f.idleWait = 1.0 + seed * 2.0;
         f.resolveIdle();
         f.pose();
@@ -274,12 +311,12 @@ pub const Frog = struct {
     fn faceToward(self: *Frog, target: rl.Vector3, dt: f32) void {
         const d = mathx.dirXZ(self.pos, target);
         if (mathx.lenXZ(d) < 1e-3) return;
-        self.facing = mathx.approachAngle(self.facing, std.math.atan2(d.x, d.z), TURN_RATE * dt);
+        self.facing = mathx.approachAngle(self.facing, mathx.headingXZ(d), TURN_RATE * dt);
     }
 
     // Begin a hop toward `to` (clamped to bounds). `lunge` = the big committed leap.
     pub fn startHop(self: *Frog, to: rl.Vector3, bounds: f32, lunge: bool) void {
-        self.facing = std.math.atan2(to.x - self.pos.x, to.z - self.pos.z);
+        self.facing = mathx.headingXZ(mathx.subV(to, self.pos));
         self.hopFrom = self.pos;
         self.hopTo = v3(mathx.clampF(to.x, -bounds, bounds), 0, mathx.clampF(to.z, -bounds, bounds));
         self.isLunge = lunge;
@@ -321,6 +358,20 @@ pub const Frog = struct {
             self.heroLatch = true;
         }
     }
+    // The lunge SLAM: like tryBite, but FRONT-only — the hero must be inside the reach AND
+    // within the toad's frontal arc. A hero beside or behind the landing is clear (unless
+    // they're standing right on top of it), matching the dust burst thrown out front.
+    fn tryImpact(self: *Frog, hero: rl.Vector3, h: combat.Hit) void {
+        if (self.heroLatch) return;
+        const d = mathx.distXZ(self.pos, hero);
+        if (d > LUNGE_IMPACT_R + HERO_REACH) return;
+        const to = mathx.dirXZ(self.pos, hero);
+        const fwd = self.fdir();
+        const front = to.x * fwd.x + to.z * fwd.z; // cos of the angle from facing to the hero
+        if (d > 0.35 and front < LUNGE_FRONT_DOT) return; // off to the side / behind the slam
+        self.heroHit = h;
+        self.heroLatch = true;
+    }
 
     // ── per-frame update ──────────────────────────────────────────────────────────────
     // Advance AI + animation for one frame; `hero` drives senses, `blade` the hero's swing.
@@ -334,6 +385,7 @@ pub const Frog = struct {
         self.chompCd = mathx.maxF(0, self.chompCd - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
         self.t += dt;
+        self.updateFx(dt); // advance live particles (bursts from any state keep animating)
 
         switch (self.state) {
             .idle => self.updateIdle(dt, hero, bounds),
@@ -419,6 +471,7 @@ pub const Frog = struct {
             if (!self.isLunge) self.faceToward(hero, dt);
             const k = mathx.smoothstep(0, coil, self.t);
             self.resolveCoil(k, self.isLunge);
+            if (self.isLunge) self.emitCoil(dt, k); // dust dug up + amber charge — the big tell
         } else if (self.t < coil + flight) {
             const s = (self.t - coil) / flight; // 0..1 across the arc
             // Advance horizontally by an INCREMENT (velocity·dt), NOT an absolute lerp from a
@@ -433,7 +486,11 @@ pub const Frog = struct {
             // do NOT re-snap to hopTo, which would clobber a collision push on touchdown.
             const k = mathx.smoothstep(0, land, self.t - coil - flight);
             self.resolveLand(k);
-            if (self.isLunge) self.tryBite(hero, BITE_R + 0.5, LUNGE_HIT); // the body-slam connects
+            // Fire the impact dust ONCE, the frame we touch down (a big front-slam telegraph).
+            if ((self.t - dt) < coil + flight) {
+                if (self.isLunge) self.dustBurst(self.impactWorld(), 22, 3.4, 0.24) else self.dustBurst(mathx.ground(self.pos.x, self.pos.z), 8, 1.8, 0.16);
+            }
+            if (self.isLunge) self.tryImpact(hero, LUNGE_HIT); // the body-slam connects — FRONT zone only
         }
         self.pos.x = mathx.clampF(self.pos.x, -bounds, bounds);
         self.pos.z = mathx.clampF(self.pos.z, -bounds, bounds);
@@ -450,8 +507,11 @@ pub const Frog = struct {
     fn updateChomp(self: *Frog, dt: f32, hero: rl.Vector3) void {
         if (self.t < CHOMP_GAPE) {
             self.faceToward(hero, dt); // track the target while gaping
-            self.resolveGape(mathx.smoothstep(0, CHOMP_GAPE, self.t));
+            const k = mathx.smoothstep(0, CHOMP_GAPE, self.t);
+            self.resolveGape(k);
+            self.emitGape(dt, k); // amber charge gathers + drool strings from the maw
         } else if (self.t < CHOMP_GAPE + CHOMP_SNAP) {
+            if ((self.t - dt) < CHOMP_GAPE) self.spitSpray(); // jaws slam → a spray flung forward
             self.resolveSnap((self.t - CHOMP_GAPE) / CHOMP_SNAP);
             self.tryBite(hero, BITE_R, CHOMP_HIT); // jaws slam shut on the hero
         } else {
@@ -482,13 +542,16 @@ pub const Frog = struct {
     }
     fn resolveCoil(self: *Frog, k: f32, lunge: bool) void {
         self.base();
-        const deep: f32 = if (lunge) 1.15 else 1.0; // the lunge coils deeper (bigger tell)
+        const deep: f32 = if (lunge) 1.45 else 1.0; // the lunge coils MUCH deeper (a bigger, longer tell)
         self.sy = 1.0 - 0.30 * k * deep; // squash down
         self.sxz = 1.0 + 0.18 * k * deep; // spread wide
         self.legExt = mathx.lerpF(REST_EXT, 0.05, k); // knees stack up over the back
         self.pitch = -6.0 * k * deep; // nose tips up, ready to leap
         self.arm = 0.15 * k;
-        self.sac = 1.0 + 0.10 * k;
+        // The throat swells + jaw cracks open on a lunge load — extra read that a big one's coming.
+        const sacGain: f32 = if (lunge) 0.28 else 0.10;
+        self.sac = 1.0 + sacGain * k;
+        self.jaw = if (lunge) 12.0 * k else 0.0;
     }
     fn resolveFlight(self: *Frog, s: f32) void {
         self.lift = self.hopApex * 4.0 * s * (1.0 - s); // parabola, peak at s=0.5
@@ -633,6 +696,100 @@ pub const Frog = struct {
         }
     }
 
+    // ── telegraph FX (emit / integrate / draw) ─────────────────────────────────────────
+    // Unit facing vector on the ground (matches startHop's atan2(x, z) convention).
+    fn fdir(self: *const Frog) rl.Vector3 {
+        return mathx.headingDir(self.facing);
+    }
+    // The front-slam / dust-burst centre, a short reach ahead of the seat (rides the lift).
+    fn impactWorld(self: *const Frog) rl.Vector3 {
+        const d = self.fdir();
+        return v3(self.pos.x + d.x * LUNGE_IMPACT_FWD * self.scale, 0.04, self.pos.z + d.z * LUNGE_IMPACT_FWD * self.scale);
+    }
+    // Roughly the mouth/throat in world space (where charge gathers + drool strings from).
+    fn mouthWorld(self: *const Frog) rl.Vector3 {
+        const d = self.fdir();
+        return v3(self.pos.x + d.x * 0.52 * self.scale, 0.32 * self.scale + self.lift, self.pos.z + d.z * 0.52 * self.scale);
+    }
+    // Push one particle into the ring buffer (overwriting the oldest slot).
+    fn emit(self: *Frog, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
+        self.fx[self.fxHead] = .{ .p = p, .v = vel, .life = life, .max = life, .r0 = r0, .r1 = r1, .col = col, .grav = grav };
+        self.fxHead = (self.fxHead + 1) % FX_MAX;
+    }
+    fn updateFx(self: *Frog, dt: f32) void {
+        for (&self.fx) |*q| {
+            if (q.life <= 0) continue;
+            q.life -= dt;
+            q.p.x += q.v.x * dt;
+            q.p.y += q.v.y * dt;
+            q.p.z += q.v.z * dt;
+            q.v.y -= q.grav * dt;
+            if (q.p.y < 0) q.p.y = 0; // dust settles on the ground, doesn't sink through it
+        }
+    }
+    // A radial fan of dust from `c` (the lunge slam / a hop's smaller landing puff). `spd`
+    // scales the outward throw, `big` the puff radius — both ×scale for a heavy toad.
+    fn dustBurst(self: *Frog, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
+        var i: i32 = 0;
+        while (i < n) : (i += 1) {
+            const a = self.fxRng.angle();
+            const s = self.fxRng.range(0.5, 1.0) * spd * self.scale;
+            const vel = v3(mathx.cosf(a) * s, self.fxRng.range(0.6, 2.2), mathx.sinf(a) * s);
+            self.emit(v3(c.x, 0.05, c.z), vel, self.fxRng.range(0.35, 0.62), self.fxRng.range(0.06, 0.12) * self.scale, big * self.fxRng.range(0.8, 1.3) * self.scale, DUST, 4.5);
+        }
+    }
+    // Lunge COIL trickle: dust dug up around the haunches (ramps with the load `k`) + amber
+    // charge embers gathering + rising at the maw. Rate-based so it's frame-rate independent.
+    fn emitCoil(self: *Frog, dt: f32, k: f32) void {
+        self.fxAccum += (12.0 + 40.0 * k) * dt;
+        while (self.fxAccum >= 1.0) {
+            self.fxAccum -= 1.0;
+            const a = self.fxRng.angle();
+            const rr = self.fxRng.range(0.18, 0.5) * self.scale;
+            const bp = v3(self.pos.x + mathx.cosf(a) * rr, 0.04, self.pos.z + mathx.sinf(a) * rr);
+            self.emit(bp, v3(self.fxRng.signed() * 0.4, self.fxRng.range(0.5, 1.5), self.fxRng.signed() * 0.4), self.fxRng.range(0.3, 0.5), self.fxRng.range(0.05, 0.10) * self.scale, self.fxRng.range(0.14, 0.24) * self.scale, DUST, 3.0);
+            if (self.fxRng.float() < 0.6) { // an amber charge ember, gathering + drifting up
+                const m = self.mouthWorld();
+                self.emit(v3(m.x + self.fxRng.signed() * 0.22, m.y + self.fxRng.range(-0.08, 0.24), m.z + self.fxRng.signed() * 0.22), v3(self.fxRng.signed() * 0.22, self.fxRng.range(0.35, 0.95), self.fxRng.signed() * 0.22), self.fxRng.range(0.3, 0.55) + 0.4 * k, self.fxRng.range(0.03, 0.06) * self.scale, 0.004, EMBER, -0.6);
+            }
+        }
+    }
+    // Chomp GAPE trickle: charge embers gather at the yawning maw + heavy drool strings drip.
+    fn emitGape(self: *Frog, dt: f32, k: f32) void {
+        self.fxAccum += (10.0 + 30.0 * k) * dt;
+        while (self.fxAccum >= 1.0) {
+            self.fxAccum -= 1.0;
+            const m = self.mouthWorld();
+            self.emit(v3(m.x + self.fxRng.signed() * 0.22, m.y + self.fxRng.range(-0.05, 0.22), m.z + self.fxRng.signed() * 0.22), v3(self.fxRng.signed() * 0.2, self.fxRng.range(0.3, 0.8), self.fxRng.signed() * 0.2), self.fxRng.range(0.3, 0.55), self.fxRng.range(0.03, 0.06) * self.scale, 0.004, EMBER, -0.5);
+            if (self.fxRng.float() < 0.5) { // a drool droplet, slung down + a touch forward
+                const d = self.fdir();
+                self.emit(v3(m.x, m.y - 0.06, m.z), v3(d.x * 0.5 + self.fxRng.signed() * 0.2, -0.2, d.z * 0.5 + self.fxRng.signed() * 0.2), self.fxRng.range(0.35, 0.6), self.fxRng.range(0.03, 0.05) * self.scale, 0.015 * self.scale, SPIT, 5.0);
+            }
+        }
+    }
+    // Chomp SNAP: a forward spray of spit as the jaws slam.
+    fn spitSpray(self: *Frog) void {
+        const m = self.mouthWorld();
+        const d = self.fdir();
+        var i: i32 = 0;
+        while (i < 12) : (i += 1) {
+            const spd = self.fxRng.range(1.6, 3.4);
+            const vel = v3(d.x * spd + self.fxRng.signed() * 0.7, self.fxRng.range(0.2, 1.1), d.z * spd + self.fxRng.signed() * 0.7);
+            self.emit(m, vel, self.fxRng.range(0.28, 0.5), self.fxRng.range(0.03, 0.05) * self.scale, 0.012 * self.scale, SPIT, 6.0);
+        }
+    }
+    pub fn drawFx(self: *const Frog) void {
+        for (&self.fx) |*q| {
+            if (q.life <= 0) continue;
+            const frac = mathx.clampF(q.life / q.max, 0, 1);
+            const rad = mathx.lerpF(q.r1, q.r0, frac); // r0 at spawn (frac 1) → r1 at death (frac 0)
+            const a = mathx.u8f(@as(f32, @floatFromInt(q.col.a)) * frac);
+            // Low-poly: these are sub-10 cm specks, so a coarse sphere reads the same as raylib's
+            // default 16×16 one at ~1/5 the triangles — real savings when a whole knot bursts.
+            rl.drawSphereEx(q.p, rad, 6, 8, mathx.withAlpha(q.col, a));
+        }
+    }
+
     // ── pose: build the 9 world matrices from the resolved channels ─────────────────────
     pub fn pose(self: *Frog) void {
         const fs = self.scale;
@@ -715,6 +872,11 @@ pub const Knot = struct {
     }
     pub fn draw(self: *const Knot) void {
         for (&self.frogs) |*f| if (f.alive()) f.draw(&self.model);
+    }
+    // Telegraph particles — drawn AFTER the meshes (unlit, semi-transparent), in the lit pass
+    // only (never the shadow depth pass), so dust/charge/spit reads over the toads.
+    pub fn drawFx(self: *const Knot) void {
+        for (&self.frogs) |*f| if (f.alive()) f.drawFx();
     }
     pub fn totalHits(self: *const Knot) u32 {
         var n: u32 = 0;
@@ -923,6 +1085,29 @@ test "classify: ranges pick chomp < lunge < hop < rest, and cooldowns gate" {
 test "range thresholds are ordered and inside senses" {
     try std.testing.expect(BITE_R < LUNGE_R and LUNGE_R < AGGRO_R);
     try std.testing.expect(KEEP_OFF < BITE_R);
+}
+
+test "lunge impact catches the front zone, not the sides or behind" {
+    // facing 0 → the toad faces +Z; the slam zone is out FRONT.
+    var front = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    front.tryImpact(v3(0, 0, 1.0), LUNGE_HIT); // dead ahead, in reach
+    try std.testing.expect(front.heroHit != null);
+
+    var behind = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    behind.tryImpact(v3(0, 0, -1.0), LUNGE_HIT); // same distance, but behind
+    try std.testing.expect(behind.heroHit == null);
+
+    var beside = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    beside.tryImpact(v3(1.0, 0, 0), LUNGE_HIT); // off to the flank
+    try std.testing.expect(beside.heroHit == null);
+
+    var onTop = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    onTop.tryImpact(v3(0.1, 0, 0), LUNGE_HIT); // standing on it → caught regardless of arc
+    try std.testing.expect(onTop.heroHit != null);
+
+    var far = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    far.tryImpact(v3(0, 0, 99), LUNGE_HIT); // out front but way out of reach
+    try std.testing.expect(far.heroHit == null);
 }
 
 test "distPointSeg: endpoint, midpoint, and perpendicular cases" {

@@ -68,8 +68,8 @@ pub const Vitals = struct {
         return if (self.hpMax > 0) mathx.clampF(self.hp / self.hpMax, 0, 1) else 0;
     }
 
-    // Regenerate the meters. Call every frame. Nothing regens until REGEN_DELAY has elapsed
-    // since the last hit; HP never auto-regens (souls: HP only comes back from flasks).
+    // Regenerate the meters; call every frame. Nothing regens until REGEN_DELAY after the
+    // last hit; HP never auto-regens (flasks only).
     pub fn tick(self: *Vitals, dt: f32) void {
         self.sinceHit += dt;
         if (self.dead or self.sinceHit < REGEN_DELAY) return;
@@ -77,10 +77,9 @@ pub const Vitals = struct {
         self.stance = mathx.minF(self.stanceMax, self.stance + self.stanceMax / STANCE_REFILL * dt);
     }
 
-    // Apply a hit. Returns the reaction it triggers: none / light stun / heavy stun / death.
-    // A killing blow returns .death (and sets `dead`); the stun tiers otherwise cascade
-    // (poise empties → light; that light break — or direct stance damage — empties stance →
-    // heavy). Heavy outranks light on the same hit.
+    // Apply a hit; returns the reaction: none / light / heavy / death. Killing blow latches
+    // `dead`; otherwise the tiers cascade (poise empties → light; that break or direct stance
+    // damage empties stance → heavy), heavy outranking light on the same hit.
     pub fn hit(self: *Vitals, h: Hit) HitResult {
         if (self.dead) return .none;
         self.hp = mathx.maxF(0, self.hp - h.dmg);

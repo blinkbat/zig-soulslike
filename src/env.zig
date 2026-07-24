@@ -71,9 +71,8 @@ const SEED = rgba(118, 94, 46, 255);
 const PETAL_GLOW = rgba(242, 206, 118, 200); // slight emissive — kin to the grace ember
 
 // Hand-placed composition. The hero's runway (x = 0, z 26 -> -40, used by --shot and the
-// live start) stays clear; the arch spans it so you run THROUGH the ruin, and the distant
-// gate sits on its axis so the avenue frames it. Horizon giants live near the world edge
-// where the haze dissolves them into silhouettes.
+// live start) stays clear; the arch spans it and the distant gate sits on its axis, with
+// horizon giants near the world edge where the haze dissolves them into silhouettes.
 const P = struct { x: f32, z: f32, yaw: f32, s: f32, kind: u8 };
 const layout = [_]P{
     // colonnade avenue flanking the path
@@ -372,11 +371,7 @@ fn swordMesh(shader: rl.Shader) rl.Model {
     const d = v3(0.10, 0.90, 0.42); // unit-ish lean of the blade (point buried at origin)
     const p1 = v3(0.995, 0.090, 0.042); // ~perpendicular, edge direction
     const p2 = v3(0, -0.422, 0.9045); // ~perpendicular, flat direction
-    const at = struct {
-        fn along(dir: rl.Vector3, t: f32) rl.Vector3 {
-            return v3(dir.x * t, dir.y * t, dir.z * t);
-        }
-    }.along;
+    const at = mathx.scaleV; // a point t along a (unit-ish) direction — reuse the shared helper
     // blade: from just under the soil to the guard
     b.setMat(.steel);
     b.addBox(at(d, 0.42), v3(p1.x * 0.055, p1.y * 0.055, p1.z * 0.055), at(d, 0.50), v3(p2.x * 0.012, p2.y * 0.012, p2.z * 0.012), STEEL);
@@ -481,16 +476,18 @@ fn statueMesh(shader: rl.Shader) rl.Model {
 // don't sparkle — and they SWAY via the scene shader's height-based wind term (gfx.setWind;
 // windAmt gates it to flora only, so gaits/props stay rigid).
 
-fn addSolid(e: *Env, s: collision.Solid) void {
+fn addSolid(e: *Env, s: collision.Solid, top: f32) void {
     if (e.nsolids >= e.solid_buf.len) return;
-    e.solid_buf[e.nsolids] = s;
+    var sol = s;
+    sol.h = top; // projectile-blocking height (footprint push-out stays 2D)
+    e.solid_buf[e.nsolids] = sol;
     e.nsolids += 1;
 }
 
 // Footprint colliders for the SOLID props: round things → a circle, long things → a capsule
-// down their local X (rotated by the prop yaw; local +X under RotateY(θ) is (cosθ, 0, −sinθ)).
-// Flora, rubble, swords, banners, and the grace ember stay pass-through. The arch + far gate
-// each emit TWO piers so the avenue runs clean between them.
+// down their local X (rotated by yaw; local +X under RotateY(θ) is (cosθ, 0, −sinθ)). Flora,
+// rubble, swords, banners, and the grace ember stay pass-through; the arch + far gate each
+// emit TWO piers, and each solid carries its mesh's TOP height so arrows thunk into cover.
 fn buildColliders(e: *Env) void {
     for (e.props) |p| {
         const s = p.scale;
@@ -500,28 +497,29 @@ fn buildColliders(e: *Env) void {
         const cx = p.pos.x;
         const cz = p.pos.z;
         switch (p.kind) {
-            K_PILLAR, K_BROKEN => addSolid(e, collision.circle(cx, cz, 0.80 * s)),
-            K_TREE => addSolid(e, collision.circle(cx, cz, 0.38 * s)),
-            K_STATUE => addSolid(e, collision.circle(cx, cz, 0.90 * s)),
-            K_GRAVES => addSolid(e, collision.circle(cx, cz, 0.80 * s)),
-            K_TOWER => addSolid(e, collision.circle(cx, cz, 3.40 * s)),
+            K_PILLAR => addSolid(e, collision.circle(cx, cz, 0.80 * s), 5.8 * s),
+            K_BROKEN => addSolid(e, collision.circle(cx, cz, 0.80 * s), 2.9 * s), // snapped short
+            K_TREE => addSolid(e, collision.circle(cx, cz, 0.38 * s), 3.6 * s),
+            K_STATUE => addSolid(e, collision.circle(cx, cz, 0.90 * s), 2.7 * s),
+            K_GRAVES => addSolid(e, collision.circle(cx, cz, 0.80 * s), 0.9 * s), // headstone-low: shots arc over
+            K_TOWER => addSolid(e, collision.circle(cx, cz, 3.40 * s), 14.0 * s),
             K_BLOCK => {
                 const hl = 0.35 * s;
-                addSolid(e, collision.capsule(cx - ux * hl, cz - uz * hl, cx + ux * hl, cz + uz * hl, 0.80 * s));
+                addSolid(e, collision.capsule(cx - ux * hl, cz - uz * hl, cx + ux * hl, cz + uz * hl, 0.80 * s), 1.65 * s);
             },
             K_WALL => {
                 const hl = 2.8 * s;
-                addSolid(e, collision.capsule(cx - ux * hl, cz - uz * hl, cx + ux * hl, cz + uz * hl, 0.60 * s));
+                addSolid(e, collision.capsule(cx - ux * hl, cz - uz * hl, cx + ux * hl, cz + uz * hl, 0.60 * s), 3.0 * s);
             },
             K_ARCH => {
                 const off = 2.7 * s;
-                addSolid(e, collision.circle(cx - ux * off, cz - uz * off, 0.78 * s));
-                addSolid(e, collision.circle(cx + ux * off, cz + uz * off, 0.78 * s));
+                addSolid(e, collision.circle(cx - ux * off, cz - uz * off, 0.78 * s), 4.8 * s);
+                addSolid(e, collision.circle(cx + ux * off, cz + uz * off, 0.78 * s), 4.8 * s);
             },
             K_GATE => {
                 const off = 7.5 * s;
-                addSolid(e, collision.circle(cx - ux * off, cz - uz * off, 3.20 * s));
-                addSolid(e, collision.circle(cx + ux * off, cz + uz * off, 3.20 * s));
+                addSolid(e, collision.circle(cx - ux * off, cz - uz * off, 3.20 * s), 16.0 * s);
+                addSolid(e, collision.circle(cx + ux * off, cz + uz * off, 3.20 * s), 16.0 * s);
             },
             else => {},
         }

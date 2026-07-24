@@ -32,8 +32,7 @@ const radians = mathx.radians;
 pub const H: f32 = 1.8; // stature (world units ≈ metres)
 
 // Locomotion speeds (world units/sec) — the SINGLE source of truth, shared with game.zig
-// (which drives movement + the --shot harness) and with the gait blends below. Elden-Ring
-// analog feel: light left-stick = walk, full = run; hold sprint for the dash.
+// and the gait blends below. Elden-Ring analog feel: light stick = walk, full = run, hold sprint = dash.
 pub const WALK_SPEED: f32 = 1.7;
 pub const RUN_SPEED: f32 = 3.4;
 pub const SPRINT_SPEED: f32 = 5.1; // hold-B RUN — a touch faster than a full-stick walk-sprint
@@ -71,9 +70,8 @@ const SWORD = 17; // the drawn blade, parented to the RIGHT wrist — rides ever
 const parent = [N]i32{ -1, ROOT, SPINE, CHEST, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CHEST, SHL, ELL, CHEST, SHR, ELR, WRR };
 
 // Rest positions in the hero's local standing frame (X = hero's left/+, Y up, Z forward),
-// in world units. Limbs hang straight down so each bone mesh aligns with -Y; the small
-// A-pose splay and stance width come from constant abduction in the pose, not the rest
-// pose (so a bone mesh and its child joint never separate).
+// world units. Limbs hang straight down (aligned to -Y); A-pose splay and stance width come
+// from pose abduction, not the rest pose, so a bone mesh and its child joint never separate.
 fn restPositions() [N]rl.Vector3 {
     const hx = 0.090; // hip half-separation (a touch under half the bi-iliac breadth so the stance isn't splayed)
     const sx = 0.150; // shoulder half-separation (~half the biacromial breadth, plus pauldron room)
@@ -187,19 +185,16 @@ const BRASS = rgba(122, 92, 40, 255);
 //           SNAPS — but movement/mechanics stay instant; only the visible pose smooths.
 //
 // ── gait: normative sagittal joint angles over one stride, sampled every 12.5% (deg) ──
-// phase 0 = heel strike of that leg; stance ≈ 0..0.60, swing ≈ 0.60..1.0.
-// hip: +flexion (thigh forward). knee: +flexion (bend). ankle: +dorsiflexion (toe up).
-// pub so a second humanoid (the skeletal archer) can walk on the SAME normative gait
-// science instead of duplicating the tables — the shared foundation of "our humanoid model".
+// phase 0 = heel strike; stance ≈ 0..0.60, swing ≈ 0.60..1.0 (signs: hip/knee +flexion,
+// ankle +dorsiflexion). pub so the skeletal archer walks the SAME tables — the shared humanoid model.
 pub const HIP_FLEX = [8]f32{ 25, 13, 3, -5, -10, -3, 12, 22 };
 pub const KNEE_FLEX = [8]f32{ 5, 18, 10, 4, 10, 38, 62, 30 };
 pub const ANK_DORSI = [8]f32{ -2, -6, 2, 9, 6, -14, -6, -1 };
 
 // ── running gait (a distinct cycle, not a sped-up walk) ────────────────────────────
-// Sagittal joint angles after Novacheck, "The biomechanics of running" (Gait & Posture
-// 1998) and Physiopedia's running-biomechanics normatives: much larger ranges than
-// walking, forefoot contact, stance ≈ 40% (toe-off near phase 0.4), a big swing-knee
-// flexion (heel toward buttock), and a genuine flight phase (both feet airborne).
+// Sagittal angles after Novacheck (1998) / Physiopedia running normatives: much larger
+// ranges than walking, forefoot contact, stance ≈ 40% (toe-off near phase 0.4), big
+// swing-knee flexion (heel toward buttock), a genuine flight phase (both feet airborne).
 pub const RUN_HIP = [8]f32{ 42, 25, 8, -8, 5, 35, 60, 55 };
 pub const RUN_KNEE = [8]f32{ 26, 48, 40, 28, 62, 98, 80, 44 }; // deeper bend throughout — coiled + low
 pub const RUN_ANK = [8]f32{ -3, 10, 22, 2, -18, -6, 0, -2 };
@@ -221,17 +216,18 @@ const SPRINT_LEAN = 40.0; // near-horizontal forward tilt at full sprint (deg)
 const SPRINT_REF_SPEED = SPRINT_SPEED; // speed the extra sprint lean/crouch saturate at
 
 // ── dodge roll (committed tuck-and-somersault) ────────────────────────────────────
-// Phased like the FromSoft rolls: dive + somersault up front, then a spin-free recovery
-// (their "recovery frames") — NOT one linear spin/tuck/lunge smeared over the duration.
-// Knots below are normalized time u = rollT / ROLL_DUR.
+// Phased like FromSoft rolls: dive + somersault up front, then a spin-free recovery — NOT
+// one linear spin/tuck/lunge smeared over the duration. Knots below are u = rollT / ROLL_DUR.
 const ROLL_DUR = 0.70; // seconds, start to finish (souls medium-roll pacing, recovery included)
+const ROLL_IFRAME_END = 0.46; // invulnerable from the FIRST frame to here (~ER medium, a shade
+//   generous). The recovery tail stays vulnerable, so roll-catching still works on the hero.
 const ROLL_DIST = 3.5; // ground units travelled
 const ROLL_BALL_Y = 0.50; // pelvis/pivot height at mid-roll (the tucked "ball" centre)
 const ROLL_TUCK_IN = 0.16; // dive: crouched + balled by here, spin barely begun
-const ROLL_SPIN_A = 0.05; // somersault sweep, two OVERLAPPED eases so the tumble is
-const ROLL_SPIN_M0 = 0.40; //   front-loaded, not a metronome: the over-the-shoulder
-const ROLL_SPIN_M1 = 0.45; //   tumble (A..M1, ROLL_SPIN_OVER deg) hands off to the
-const ROLL_SPIN_B = 0.80; //   slower unroll (M0..B); the full 360° lands here, BEFORE the stand-up
+const ROLL_SPIN_A = 0.05; // somersault sweep: two OVERLAPPED eases, front-loaded. The
+const ROLL_SPIN_M0 = 0.40; //   over-the-shoulder tumble (A..M1, ROLL_SPIN_OVER deg) hands
+const ROLL_SPIN_M1 = 0.45; //   off to the slower unroll (M0..B); the full 360° lands here,
+const ROLL_SPIN_B = 0.80; //   BEFORE the stand-up.
 const ROLL_SPIN_OVER = 220.0; // degrees covered by the fast tumble segment
 const ROLL_UNTUCK_A = 0.62; // legs extend to plant as the last of the spin lands…
 const ROLL_UNTUCK_B = 0.97; // …spine/arms still settling as the roll hands off — never a parked stand
@@ -245,10 +241,9 @@ const ROLL_SPINE = 30.0; // forward spine curl per segment (deg)
 const ROLL_HEAD = 32.0; // chin to chest (deg)
 const ROLL_SHOULDER = 45.0; // arms tuck forward (deg)
 const ROLL_ELBOW = 100.0; // elbows tucked (deg)
-// Wabi-sabi: the somersault is imperfect the way a real one is — over ONE shoulder,
-// banked and briefly off-square, limbs uneven, magnitudes drifting a touch from roll to
-// roll. COSMETIC ONLY: none of these touch duration, distance, heading, or timing — the
-// dodge FEELS identical every time.
+// Wabi-sabi: the somersault is imperfect like a real one — over ONE shoulder, banked and
+// briefly off-square, limbs uneven, magnitudes drifting roll to roll. COSMETIC ONLY: none
+// touch duration/distance/heading/timing — the dodge FEELS identical every time.
 const ROLL_LEAN = 8.0; // bank toward the roll-side shoulder while balled (deg)
 const ROLL_SKEW = 7.0; // peak off-square yaw through the recovery, squared up by the end (deg)
 const ROLL_ARM_GUIDE = 1.25; // roll-side arm tucks harder across the body…
@@ -260,12 +255,10 @@ const ROLL_VAR_HI = 1.3; //   duration/distance/heading — mechanics stay exact
 const ROLL_YAW_RATE = 22.0; // rad/s — the body whips onto the roll heading instead of teleport-snapping
 
 // ── sword attacks (committed, one-handed) ───────────────────────────────────────────
-// Anatomy: a cut is a KINETIC CHAIN, released proximal → distal (pelvis rotation → trunk
-// rotation → trunk flexion → shoulder → elbow extension, wrist last — Bunn's summation-
-// of-speed). Each segment's strike span below fires one LAG beat after the segment
-// before it, so the arm WHIPS instead of moving as one rigid unit. Souls pacing: R1 is
-// fast and light (contact ~0.2s in, quick recovery); R2 is a slow committed overhead —
-// a big readable windup, a violent drop, the blade BURIED through a held follow-through.
+// A cut is a KINETIC CHAIN released proximal → distal (pelvis → trunk rotation → trunk
+// flexion → shoulder → elbow → wrist last, Bunn's summation-of-speed); each segment's strike
+// span fires one LAG beat after the one before, so the arm WHIPS. Souls pacing: R1 fast/light
+// (contact ~0.2s in, quick recovery), R2 a slow committed overhead — big windup, violent drop, blade BURIED through a held follow-through.
 const ATK_LIGHT_DUR = 0.60; // R1: diagonal high-right → low-left slash (seconds)
 const ATK_HEAVY_DUR = 1.00; // R2: overhead chop (seconds)
 // light knots (u = atkT / dur)
@@ -278,8 +271,7 @@ const AL_HIT_A = 0.32; // TAE-style ACTIVE window — the blade only hits inside
 const AL_HIT_B = 0.56;
 const AL_LUNGE = 0.55; // ground units stepped into the cut — a real committed step-in (ER R1 pressure)
 const AL_CHAIN = 0.80; // u where a BUFFERED action may take over: the swing has visually
-//   resolved (overshoot settled) but the stand-down tail is skippable, so mashed R1s
-//   flow into a continuous combo instead of stuttering through idle each time.
+//   resolved but the stand-down tail is skippable, so mashed R1s flow into a combo.
 // heavy knots
 const AH_WIND_B = 0.34; // slow raise to overhead — the R2 anticipation "tell"
 const AH_STRIKE_A = 0.38; // …a beat of hang at the top, then the drop
@@ -290,9 +282,8 @@ const AH_HIT_A = 0.40;
 const AH_HIT_B = 0.58;
 const AH_LUNGE = 1.05; // the chop LEAPS forward through the drop — committed reach, ER-style
 const AH_CHAIN = 0.86; // the heavy earns a longer commitment before a buffered exit
-const ATK_RETRACK = 9.0; // rad/s — LOCKED-ON only: once a swing is past RECOV_A (the strike
-//   has resolved), the hero re-squares onto the lock target through the tail, so a WHIFF
-//   doesn't leave him pointing into empty air. The cut itself stays fully committed.
+const ATK_RETRACK = 9.0; // rad/s — LOCKED-ON only: past RECOV_A the hero re-squares onto the
+//   lock target through the tail, so a WHIFF doesn't leave him facing empty air. The cut itself stays fully committed.
 // ── CUT MECHANICS (the light slash) — grounded in period cutting instruction ─────────
 // The R1 is the HORIZONTAL cut — sabre Cuts III/IV, the level pair (Roworth, "Art of
 // Defence on Foot", 1798; kendo's dō-giri, the flat cut across the trunk): a one-handed
@@ -332,10 +323,9 @@ const AL_ELBOW_STRIKE = 8.0; // arm out LONG for the whole pass (fires with the 
 const AL_WRIST_LAY = 18.0; // wrist deviation: the blade trails back at the CHAMBER only, released
 //   early in the pass so the window sweeps near-RADIAL (blade in line with the long arm)…
 const AL_WRIST_WHIP = 12.0; // …whipping to lead a touch past straight at the exit
-const AL_EDGE_ROLL = 90.0; // the swipe RE-GRIPS: roll the blade a quarter-turn about its OWN axis
-//   so the EDGE LEADS the horizontal pass and the FLAT lies in the swipe plane (edge-horiz,
-//   owner's law + Hutton's rule) — cone-free because the SWORD bone first cancels the grip
-//   cant exactly, putting the blade dead on the wrist's roll axis
+const AL_EDGE_ROLL = 90.0; // the swipe RE-GRIPS: roll the blade a quarter-turn about its OWN
+//   axis so the EDGE LEADS and the FLAT lies in the swipe plane (owner's law + Hutton's rule).
+//   Cone-free because the SWORD bone first cancels the grip cant exactly, putting the blade dead on the wrist's roll axis.
 const AL_TIP_UP = 10.0; // then a whisker of tip-high (applied −rx: more-negative = higher in the
 //   chain's pitch sum) so the line sits just above level after the body's forward commit
 const AL_SPINE_CRUNCH = 2.5; // a horizontal cut ROTATES — barely any forward commit (keeps the
@@ -359,21 +349,16 @@ const AH_RECOIL = 7.0; // impact judder: the buried blade bites, bounces a hair,
 const AH_LOAD = 0.02 * H; // the staggered stance loads under the windup…
 const AH_DIP = 0.05 * H; // …and the weight drops into the impact
 const AH_PITCH = 9.0; // whole-body forward pitch about the feet through the strike
-// Blade hitbox, souls-style: a capsule riding the SWORD bone's dummy points (guard →
-// tip), ACTIVE only inside the HIT window (the TAE-events equivalent), with last-frame
-// endpoints kept for swept tests so a fast arc can't tunnel through a target between
-// frames. One hit per swing per target: the (future) hit list clears on the activation
-// edge, where the sweep history also resets.
+// Blade hitbox, souls-style: a capsule on the SWORD bone's dummy points (guard → tip),
+// ACTIVE only inside the HIT window, with last-frame endpoints kept for swept tests so a
+// fast arc can't tunnel between frames. One hit per swing per target: the (future) hit list clears on the activation edge, where the sweep history also resets.
 pub const BLADE_R = 0.34; // capsule radius (world units) — a FAT hit volume, far past the
-// visible mesh (invisible in play, only debug-wired). This is the swipe's VERTICAL forgiveness:
-// the level arc rides at chest height (~1.25m) while a toad's hurt sphere tops out near ~1.1m
-// (lower on small ones), so the pill must reach well below the blade to land on LOW enemies —
-// and above it for tall ones — within reason. Thin pills read as whiffs on clean-looking hits.
+// visible mesh (invisible in play, debug-wired only). VERTICAL forgiveness: the chest-height
+// arc (~1.25m) must reach well below the blade to land LOW enemies (a toad's hurt sphere tops ~1.1m) and above for tall ones — thin pills read as whiffs on clean-looking hits.
 
 // ── the swing trail (juice: a fading steel ribbon the blade paints through a cut) ──────
-// Samples the outer blade span each frame the TIP really moves; drawn as unlit alpha
-// strips in the lit pass only (no shadow, never in the depth pass). Short-lived on
-// purpose — a crack of motion behind the edge, not a smoke plume.
+// Samples the outer blade span each frame the TIP moves; drawn as unlit alpha strips in
+// the lit pass only (no shadow, never the depth pass). Short-lived — a crack of motion, not a smoke plume.
 const TRAIL_N = 20; // ring capacity (~0.3 s of samples at 60 fps)
 const TRAIL_LIFE = 0.20; // seconds a sample persists (long enough that the full level arc
 //   still reads as one sheet at the swing's exit)
@@ -405,10 +390,8 @@ pub const DEATH_DUR = 3.6; // collapse + lie still before the hero respawns — 
 //   the full YOU DIED choreography (game.zig's overlay reads deathT against this)
 
 // ── the grip (how the sword is HELD) ────────────────────────────────────────────────
-// A relaxed hammer grip cants the blade GRIP_PITCH forward of the forearm line — a sword
-// is held at an angle to the forearm, never splinted straight along it. Baked into the
-// sword MESH about the fist centre (so the grip stays glued in the glove), and into the
-// capsule dummy points below; every pose and swing inherits the cant for free.
+// A hammer grip cants the blade GRIP_PITCH forward of the forearm line — held at an angle,
+// never splinted straight along it. Baked into the sword MESH (about the fist centre) and the capsule dummy points, so every pose and swing inherits the cant.
 const GRIP_PITCH = 34.0; // deg the blade leads forward of the forearm line
 const GRIP_OUT = 8.0; // deg the tip eases outward, so the low-ready hangs beside the leg, not across the shin
 const GRIP_CA = @cos(radians(GRIP_PITCH));
@@ -440,31 +423,24 @@ const CARRY_SWING_STILL = 0.6; // damp — but don't kill — the carry arm's fo
 // ── short transition blends (nothing snaps between stances) ────────────────────────
 const POSE_XFADE = 0.09; // seconds — cross-fade over any pose discontinuity (roll start/end)
 const SPEED_SMOOTH = 80.0; // units/s² — posture-blend speed chases ground speed, so
-//   walk↔run↔sprint↔stop lean/crouch/arm-pump glide instead of stepping. Movement itself
-//   (and stride phase) stays on the RAW speed — responsiveness is untouched. Owner's call:
-//   VERY fast (~0.04s full swing) — the stick IS the speed; the glide only kills the step.
+//   lean/crouch/arm-pump glide instead of stepping. Movement + stride phase stay on RAW
+//   speed (responsiveness untouched). Owner's call: VERY fast (~0.04s) — the stick IS the speed; the glide only kills the step.
 
 // ── locked-on footing: strafe + backpedal (the gait follows travel RELATIVE TO FACING) ──
-// While locked the hero faces the foe and walks any direction, so the gait splits by the
-// travel direction in the BODY frame: the sagittal leg/arm work scales with the forward
-// component — played TIME-REVERSED for a backpedal (backward walking ≈ forward walking
-// run backward, Thorstensson 1986) — and the lateral component drives a frontal-plane
-// SIDESTEP instead: each leg on its own half-beat swings toward the travel side (near
-// leg reaches out, far leg gathers across — a shuffle, no crossover), knee lifting
-// through its step so it never drags. Feet keep pointing AT THE TARGET — that is what
-// sells the strafe. The direction blends ease fast (visuals only, ~0.1 s per FEEL RULES;
-// position answers the stick raw, same frame).
+// Gait splits by travel in the BODY frame: the forward component scales the sagittal
+// leg/arm work (TIME-REVERSED for a backpedal, Thorstensson 1986), the lateral component
+// drives a frontal-plane SIDESTEP (each leg on its own half-beat, a shuffle, no crossover,
+// knee lifting so it never drags). Feet keep pointing AT THE TARGET — that sells the strafe;
+// direction blends ease fast (visuals only, ~0.1s; position answers the stick raw, same frame).
 const GAIT_DIR_EASE = 22.0; // 1/s — fwdB/latB chase the body-frame travel direction
 const STRAFE_OUT = 16.0; // the LEAD leg's out-step: frontal swing toward the travel side (deg)
 const STRAFE_XRZ = 12.0; // the TRAIL leg's cross: frontal swing PAST the midline (deg)…
 const STRAFE_CROSS = 13.0; // …with this much forward hip flex, so it plants across the FRONT
 //   of the stance leg — the grapevine beat, kept SUBTLE (owner: big splays stick out)
 const STRAFE_SPLIT = 1.5; // slight constant stance widening while strafing (never a foot pole)
-const STRAFE_STEP_W = 0.22; // width of each leg's step WINDOW (fraction of the cycle). The two
-//   legs' windows are offset a QUARTER cycle, so they can never overlap: exactly ONE leg is
-//   ever in motion — step, plant, step, plant. Half-cycle offsets with mirrored waves made
-//   both legs move at the same instants, mirrored — legs that "can't move separately", the
-//   parallel fail (owner's diagnosis, and the actual structural cause).
+const STRAFE_STEP_W = 0.22; // width of each leg's step WINDOW (fraction of the cycle). Windows
+//   are offset a QUARTER cycle so they never overlap: exactly ONE leg moves at a time. Half-cycle
+//   mirrored waves moved both legs at once — the parallel fail (owner's diagnosis, the actual structural cause).
 const STRAFE_KNEE = 17.0; // knee lift through the moving leg's step window (deg)
 const STRAFE_SOFT = 8.0; // constant SOFT KNEE in both legs while strafing — the stance stays
 //   athletic and springy between steps, never stiff straight poles (owner's note)
@@ -484,10 +460,12 @@ const A_SWAY = 0.009 * H; // lateral pelvis sway toward the stance foot (subtle 
 const A_PROT = 3.5; // pelvic transverse rotation (deg)
 const A_LIST = 2.0; // pelvic frontal drop toward the swing leg (deg)
 const TORSO_LEAN = 3.0; // forward torso lean while walking (deg) — walking is near-upright
-const HIP_ADDUCT = 2.0; // constant leg-toward-midline angle so the stance narrows (deg)
-const FOOT_TOEOUT = 6.0; // feet splay slightly outward (Fick angle) — a real standing/gait detail
+// pub: humanoid enemies (the ogre's braced idle stance) reuse these so their standing legs
+// line up EXACTLY with the shared walk (legChain) at the hand-off — no silent drift.
+pub const HIP_ADDUCT = 2.0; // constant leg-toward-midline angle so the stance narrows (deg)
+pub const FOOT_TOEOUT = 6.0; // feet splay slightly outward (Fick angle) — a real standing/gait detail
 const ARM_ABD = 9.0; // constant arm abduction so arms clear the torso (deg)
-const IDLE_KNEE = 4.0;
+pub const IDLE_KNEE = 4.0;
 const IDLE_ELBOW = 6.0;
 const MOVING_EASE = 10.0; // idle↔walk blend rate (1/s) — the `moving` fade in update(); fast, so gait answers the stick NOW
 
@@ -501,12 +479,11 @@ pub fn sampleCurve(tbl: [8]f32, phase: f32) f32 {
     return tbl[a] + (tbl[b] - tbl[a]) * f;
 }
 
-// Advance the shared humanoid GAIT STATE by one frame — the single source of walk/strafe
-// locomotion for the hero AND every humanoid enemy (see AGENTS.md's humanoid rule). Eases the
-// posture blends (`moving`, `speedS`) and the body-frame travel direction (`fwdB` fore/aft,
-// `latB` lateral — what splits sagittal walk from the locked-on strafe/backpedal in legChain),
-// and accumulates stride `phase` by DISTANCE (never time) so feet never skate. Pointers, not a
-// struct, so a caller's existing gait fields plug in with no struct refactor.
+// Advance the shared humanoid GAIT STATE one frame — the single source of walk/strafe for the
+// hero AND every humanoid enemy (AGENTS.md humanoid rule); eases the posture blends (`moving`,
+// `speedS`) and body-frame travel direction (`fwdB`/`latB`, splitting sagittal walk from the
+// strafe in legChain), and accumulates stride `phase` by DISTANCE (never time) so feet never
+// skate. Pointers, not a struct, so a caller's gait fields plug in with no refactor.
 pub fn advanceGait(phase: *f32, moving: *f32, fwdB: *f32, latB: *f32, speedS: *f32, dt: f32, movedDist: f32, speed: f32, moveYaw: ?f32, facing: f32) void {
     speedS.* = mathx.approach(speedS.*, speed, dt * SPEED_SMOOTH);
     const target: f32 = if (speed > 0.05) 1.0 else 0.0;
@@ -738,11 +715,9 @@ pub const Hero = struct {
         self.startXfade(); // whatever pose we were in cross-fades into the windup
     }
 
-    // Advance an in-progress attack: a short committed step into the cut + pose + blade
-    // capsule refresh. Call in place of move/update while `attacking`; `bounds` clamps
-    // like moveHero. Movement input is ignored — cuts are committed, souls-style.
-    // `faceYaw` (the lock target's heading, null unlocked) re-squares the hero through
-    // the RECOVERY tail only (ATK_RETRACK): a locked whiff recovers its turning fast.
+    // Advance an in-progress attack (committed step into the cut + pose + blade refresh);
+    // call in place of move/update while `attacking` (`bounds` clamps like moveHero), movement
+    // ignored. `faceYaw` (lock target heading, null unlocked) re-squares through the RECOVERY tail only (ATK_RETRACK), so a locked whiff recovers its turning fast.
     pub fn updateAttack(self: *Hero, dt: f32, bounds: f32, faceYaw: ?f32) void {
         self.elapsed += dt;
         self.ageTrail(dt);
@@ -852,11 +827,16 @@ pub const Hero = struct {
         return self.stun != .none;
     }
 
-    // Apply a blow. HP drains; poise/stance drive the flinch/stagger. Any reaction INTERRUPTS
-    // the current action (attack/roll) — souls commitment cuts both ways. Call from game.zig
-    // after the knot resolves its attacks.
+    // True through the roll's front-loaded invulnerability window — blows pass clean through.
+    pub fn iFramed(self: *const Hero) bool {
+        return self.rolling and self.rollT < ROLL_IFRAME_END;
+    }
+
+    // Apply a blow: HP drains, poise/stance drive the flinch/stagger. Any reaction INTERRUPTS
+    // the current action — souls commitment cuts both ways; call from game.zig after the knot resolves its attacks.
     pub fn takeHit(self: *Hero, h: combat.Hit) void {
         if (self.dead) return;
+        if (self.iFramed()) return; // rolled through it — no damage, no flinch, nothing
         const r = self.vit.hit(h);
         // Red damage-flash on ANY blow, punchier the harder the reaction (peripheral feedback).
         const flash: f32 = switch (r) {
@@ -964,11 +944,9 @@ pub const Hero = struct {
         const fw = self.fwdB;
         const lat = self.latB;
         const fwPos = mathx.clampF(fw, 0, 1);
-        // Walk→run blend from the short-EASED ground speed (speedS) so posture (lean,
-        // crouch, arm pump) glides across stance changes instead of stepping the frame
-        // speed does; sprintB adds extra lean/crouch past full run. Both are gated by
-        // FORWARDNESS: the run/sprint presentation (deep lean, crouch, pump, ninja carry)
-        // belongs to forward travel — a fast strafe/backpedal stays an upright walk.
+        // Walk→run blend from the short-EASED ground speed (speedS) so posture glides across
+        // stance changes instead of stepping; sprintB adds extra lean/crouch past full run.
+        // Both gated by FORWARDNESS: the run/sprint presentation belongs to forward travel — a fast strafe/backpedal stays an upright walk.
         const runB = mathx.clampF((self.speedS - RUN_SPEED_LO) / (RUN_SPEED_HI - RUN_SPEED_LO), 0, 1) * fwPos;
         const sprintB = mathx.clampF((self.speedS - RUN_SPEED_HI) / (SPRINT_REF_SPEED - RUN_SPEED_HI), 0, 1) * fwPos;
         const crouch = (RUN_CROUCH * runB + 0.5 * RUN_CROUCH * sprintB) * m +
@@ -1003,10 +981,9 @@ pub const Hero = struct {
         const bank = STRAFE_LEAN * lat * m;
         setLocal(&wx, SPINE, self.rest, mul3(rx(lean * 0.5), ry(-0.3 * prot), rz(0.5 * bank)));
         setLocal(&wx, CHEST, self.rest, mul3(rx(lean * 0.5), ry(-0.5 * prot), rz(0.5 * bank)));
-        // Idle/walk carries a gentle downward gaze (HEAD_WALK). When running, the body pitch
-        // + spine lean would drive the face at the floor, so counter that accumulated tilt
-        // down toward ~GAZE_AHEAD — a few metres ahead, NOT level/up — capped so the neck
-        // never hyperextends. Split across neck + head so the lift curves naturally.
+        // Idle/walk carries a gentle downward gaze (HEAD_WALK). Running, the body pitch + spine
+        // lean would drive the face at the floor, so counter that tilt toward ~GAZE_AHEAD (a few
+        // metres ahead, NOT level/up, capped so the neck never hyperextends), split across neck + head so the lift curves naturally.
         const fwdTilt = bodyPitch + lean;
         const gazeCounter = mathx.clampF(fwdTilt - GAZE_AHEAD, 0, NECK_EXT_MAX);
         setLocal(&wx, NECK, self.rest, mul(rx(-0.45 * gazeCounter), ry(-0.2 * prot)));
@@ -1044,15 +1021,10 @@ pub const Hero = struct {
         for (0..N) |i| wx[i] = lerpM(self.blendXf[i], wx[i], k);
     }
 
-    // Roll pose, three overlapping beats (the knots above): DIVE — crouch + ball up fast
-    // while the spin is barely started; SOMERSAULT — the tucked body tumbles forward about
-    // a pivot at ball height, front-loaded (fast over the shoulder, slower unroll) and
-    // landing the full 360° early; RECOVERY — spin done, legs extend to plant, pelvis
-    // rises back to stance. Wabi-sabi rides on top, all cosmetic: banked into the
-    // roll-side shoulder, a few degrees off-square through the recovery (the eyes finding
-    // the true heading first), guide arm hard / push arm loose, lead leg tighter than
-    // trail, magnitudes drifting per roll (rollVar). After facing, the body's +Z is
-    // rollDir, so a +X-axis rotation is a forward roll along it.
+    // Roll pose, three overlapping beats (the knots above): DIVE (crouch + ball up fast),
+    // SOMERSAULT (tucked body tumbles forward about a ball-height pivot, front-loaded, 360°
+    // landing early), RECOVERY (legs extend to plant, pelvis rises to stance); wabi-sabi rides
+    // on top, all cosmetic. After facing, the body's +Z is rollDir, so a +X-axis rotation is a forward roll along it.
     fn poseRoll(self: *Hero) void {
         const u = mathx.clampF(self.rollT / ROLL_DUR, 0, 1);
         const tuckIn = mathx.smoothstep(0, ROLL_TUCK_IN, u);
@@ -1096,13 +1068,10 @@ pub const Hero = struct {
         self.poseLight();
     }
 
-    // R1 — the LEVEL SWIPE (see CUT MECHANICS above), kinetic-chain sequenced: the trunk
-    // winds toward the sword side, then pelvis → chest → shoulder → elbow → wrist release
-    // in that order (each one AL_LAG late), the blade sweeping one wide horizontal arc
-    // across the front at chest height, and the whole load unwinds through the tail.
-    // Chained lights ALTERNATE (atkAlt): the FOREHAND sweeps right → left, the RETURN
-    // comes backhand out of where it landed — left → right — by mirroring the yaw/sweep
-    // terms (chambered shallower: the body blocks a full cross windup).
+    // R1 — the LEVEL SWIPE (see CUT MECHANICS above), kinetic-chain sequenced: trunk winds
+    // toward the sword side, then pelvis → chest → shoulder → elbow → wrist release (each
+    // AL_LAG late), the blade sweeping one wide horizontal arc across the front at chest height.
+    // Chained lights ALTERNATE (atkAlt): forehand right → left, the RETURN backhand left → right by mirroring the yaw/sweep terms (chambered shallower — the body blocks a full cross windup).
     fn poseLight(self: *Hero) void {
         const u = mathx.clampF(self.atkT / ATK_LIGHT_DUR, 0, 1);
         const rec = 1.0 - mathx.smoothstep(AL_RECOV_A, 1.0, u); // 1 until recovery, draining to 0
@@ -1152,13 +1121,11 @@ pub const Hero = struct {
         setLocal(&wx, SHL, self.rest, mul(rx(-10.0 * wind + 24.0 * sChest), rz(ARM_ABD)));
         setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 12.0 * wind)));
         setLocal(&wx, WRL, self.rest, rl.math.matrixIdentity());
-        // Sword arm: the swipe, per the CUT MECHANICS note. rx RAISES the arm into the
-        // chest-height plane — on its OWN early ramp (sRaise), fully arrived BEFORE the
-        // hit window opens, so the ENTIRE active arc is level (no rising half-vertical
-        // early frames). ry is the star — the hand wound around behind the sword
-        // shoulder, then SWEPT around the front to past the off shoulder (the overshoot
-        // rides it); rz only keeps the arm clear of the torso. The elbow extends late
-        // (contact at full reach out front) and the wrist fires LAST.
+        // Sword arm, the swipe (per CUT MECHANICS). rx RAISES the arm into the chest-height
+        // plane on its OWN early ramp (sRaise), fully arrived BEFORE the hit window so the
+        // ENTIRE active arc is level; ry is the star — hand wound behind the sword shoulder,
+        // then SWEPT around the front past the off shoulder (overshoot rides it), rz just
+        // clears the torso, the elbow extends late and the wrist fires LAST.
         const windAmp: f32 = if (self.atkAlt) AL_ALT_WIND else 1.0;
         const sRaise = mathx.smoothstep(AL_WIND_B - 0.06, AL_HIT_A - 0.02, u) * rec;
         const elev = AL_SH_ELEV_WIND * wind + (AL_SH_ELEV - AL_SH_ELEV_WIND) * sRaise;
@@ -1170,15 +1137,12 @@ pub const Hero = struct {
         setLocal(&wx, SHR, self.rest, mul3(rx(-elev), ry(sweep), rz(-ARM_ABD - 10.0 * amp * wind)));
         const elb = IDLE_ELBOW + (AL_ELBOW_WIND - IDLE_ELBOW) * wind - (AL_ELBOW_WIND - AL_ELBOW_STRIKE) * sElb;
         setLocal(&wx, ELR, self.rest, rx(-elb));
-        // Wrist + blade, the RE-GRIP (ramped by lvl through the raise, drained by rec —
-        // the low-ready carry outside the swing is untouched): the SWORD bone cancels the
-        // baked grip cant EXACTLY, laying the blade dead along the wrist's roll axis;
-        // then the wrist rolls it a quarter-turn about that axis (EDGE_ROLL — edge
-        // leading, flat in the plane, no cone), tips it a whisker high (TIP_UP), and the
-        // LAY→WHIP deviation trails the blade behind the hand through the chamber only,
-        // releasing early in the pass — the window sweeps near-RADIAL (blade in line
-        // with the long arm, tip at the outer edge), whipping just past straight at the
-        // exit. All in the swipe plane.
+        // Wrist + blade, the RE-GRIP (ramped by lvl through the raise, drained by rec — the
+        // low-ready carry is untouched): the SWORD bone cancels the baked grip cant EXACTLY
+        // (blade dead on the wrist's roll axis), then the wrist rolls it a quarter-turn
+        // (EDGE_ROLL, edge leading, no cone), tips it a whisker high (TIP_UP), and the
+        // LAY→WHIP deviation trails the blade through the chamber only, releasing early so
+        // the window sweeps near-RADIAL, whipping past straight at the exit. All in the swipe plane.
         const lvl = mathx.smoothstep(0.05, AL_STRIKE_A, u) * rec;
         const lay = sw * (AL_WRIST_LAY * wind - (AL_WRIST_LAY + AL_WRIST_WHIP) * sWr);
         setLocal(&wx, WRR, self.rest, mul3(ry(sw * AL_EDGE_ROLL * lvl), rx(-AL_TIP_UP * lvl), rz(lay)));
@@ -1249,10 +1213,9 @@ pub const Hero = struct {
         self.xf = wx;
     }
 
-    // Stagger — the reaction when poise (light) or stance (heavy) breaks. The torso RECOILS
-    // back, the head snaps with it, the arms fly out and balance goes; the LIGHT flinch is a
-    // quick sin pulse, the HEAVY stagger a deep sustained reel (trailing leg thrown back to
-    // catch himself) with a wobble — wide open, souls-committed. NOTHING parks: it eases out.
+    // Stagger — the reaction when poise (light) or stance (heavy) breaks: torso RECOILS back,
+    // head snaps, arms fly out, balance goes. LIGHT is a quick sin pulse, HEAVY a deep sustained
+    // reel (trailing leg thrown back) with a wobble — wide open, souls-committed, easing out (nothing parks).
     fn poseStun(self: *Hero) void {
         const heavy = self.stun == .heavy;
         const dur: f32 = if (heavy) combat.HEAVY_STUN_DUR else combat.LIGHT_STUN_DUR;
@@ -1378,20 +1341,15 @@ pub fn legChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, ph: f32, m: f32, runB: f
     const hipFlex = mathx.lerpF(sampleCurve(HIP_FLEX, phS), sampleCurve(RUN_HIP, phS), runB) * sagW;
     const kneeWR = mathx.lerpF(sampleCurve(KNEE_FLEX, phS), sampleCurve(RUN_KNEE, phS), runB);
     const ankDorsi = mathx.lerpF(sampleCurve(ANK_DORSI, phS), sampleCurve(RUN_ANK, phS), runB) * sagW;
-    // The sidestep scissor: a FULL-wave frontal swing per leg, half a cycle apart — one
-    // leg reaches OUT toward the travel side while the other CROSSES past neutral in
-    // front of it (the grapevine beat): at any instant the legs oppose, so the gait
-    // reads as real crossing steps, never two parallel legs sliding. The crossing leg
-    // gets forward hip flex (STRAFE_CROSS) so it visibly steps ACROSS THE FRONT of the
-    // stance leg, and each leg's knee lifts through its own step (reach OR cross).
+    // The sidestep scissor: a FULL-wave frontal swing per leg, half a cycle apart — one leg
+    // reaches OUT toward the travel side while the other CROSSES past neutral in front of it
+    // (the grapevine beat), so the legs always oppose and read as real crossing steps, never
+    // parallel legs sliding. The crossing leg gets forward hip flex (STRAFE_CROSS) to step ACROSS THE FRONT of the stance leg, and each knee lifts through its own step.
     const latW = @abs(lat) * m;
-    // THE SIDESTEP, grapevine-structured: each leg owns a PRIVATE step window, a quarter
-    // cycle apart — the lead (travel-side) leg steps OUT first, then the trail leg steps
-    // ACROSS the stance leg (the cross), each returning on its own second window (the
-    // uncross) — and every leg is PLANTED, dead still, outside its windows. The windows
-    // can never overlap, so the legs are fully INDEPENDENT: exactly one moves at any
-    // instant. (Half-cycle-offset mirrored waves moved both legs at the same instants —
-    // legs that couldn't move separately, the parallel fail: owner's diagnosis.)
+    // THE SIDESTEP, grapevine-structured: each leg owns a PRIVATE step window a quarter cycle
+    // apart — lead leg steps OUT first, trail leg steps ACROSS (the cross), each returning on
+    // its own second window, planted dead still otherwise. Windows never overlap so the legs
+    // are fully INDEPENDENT (exactly one moves at any instant); half-cycle mirrored waves moved both at once — the parallel fail (owner's diagnosis).
     const pShared = blk: { // undo the sagittal half-cycle phase offset — windows share ONE clock
         const raw = ph - (if (side > 0) @as(f32, 0.0) else 0.5);
         break :blk raw - @floor(raw);
@@ -1418,14 +1376,11 @@ pub fn legChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, ph: f32, m: f32, runB: f
 }
 
 fn armChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, swing: f32, m: f32, runB: f32, sprintB: f32, side: f32, carry: f32, sh: usize, el: usize, wr: usize) void {
-    // Contralateral fore/aft swing; the walking elbow tracks the FORWARD swing only (back
-    // arm stays nearly straight — no "zombie arms"), and running bends both to ~90° pumping.
-    // The sword arm (carry=1) CARRIES instead of mirroring: swing damped, a readier elbow.
-    // Carry-arm presentation splits in two: the low tip-LIFT rides on `carryMove` (any stick
-    // movement = WALK), while the dramatic "ninja" open-up — the fuller tip-lift, the blade
-    // yawed out to the right, the wider abduction, the mostly-stilled pump — rides on `sprint`
-    // (RUN = hold-B). So ALL stick speeds keep the humble walk carry; only a hold-B RUN opens
-    // it out. (See AGENTS.md: WALK = all stick, RUN = hold-B.)
+    // Contralateral fore/aft swing; the walking elbow tracks the FORWARD swing only (back arm
+    // nearly straight — no "zombie arms"), running bends both to ~90° pumping. The sword arm
+    // (carry=1) CARRIES instead of mirroring (swing damped, readier elbow): the low tip-LIFT
+    // rides on `carryMove` (any stick = WALK), the "ninja" open-up (fuller lift, blade yawed
+    // right, wider abduction, stilled pump) rides on `sprint` (RUN = hold-B), so all stick speeds keep the walk carry and only hold-B RUN opens it out (AGENTS.md: WALK = all stick, RUN = hold-B).
     const carryMove = carry * m; // any stick movement (WALK)
     const sprint = carry * mathx.clampF(sprintB, 0, 1) * m; // hold-B RUN only
     const sw = swing * (1.0 - CARRY_DAMP * carry) * (1.0 - CARRY_SWING_STILL * sprint);
@@ -1483,11 +1438,10 @@ fn buildMeshes() [N]rl.Mesh {
 }
 
 // The drawn arming sword, authored in the RIGHT-WRIST frame about the fist centre
-// (glove centre (0, FIST_Y, FIST_Z)), with the blade canted GRIP_PITCH forward of the
-// forearm line — a sword is HELD at an angle to the forearm, never straight along it. At
-// rest (arm hanging) the tip leads down-forward, clear of the ground: the souls
-// low-ready. Attacks whip the wrist/arm; the blade just rides. Keep BLADE_BASE/BLADE_TIP
-// (the hit capsule dummy points) matched to this geometry.
+// (0, FIST_Y, FIST_Z), blade canted GRIP_PITCH forward of the forearm line (held at an
+// angle, never straight along it); at rest the tip leads down-forward, clear of the ground
+// (souls low-ready), and attacks whip the wrist/arm while the blade just rides.
+// Keep BLADE_BASE/BLADE_TIP (the hit capsule dummy points) matched to this geometry.
 fn swordMesh() rl.Mesh {
     var b = Builder.init();
     // EDGE ORIENTATION matters: a hammer grip carries the cutting edges FORWARD/BACK

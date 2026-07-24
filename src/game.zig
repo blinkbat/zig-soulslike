@@ -19,8 +19,8 @@ const rgba = mathx.rgba;
 const SCREEN_W = 1280;
 const SCREEN_H = 800;
 
-// Locomotion speeds live with the hero rig (single source of truth) — the gait blends are
-// tuned to these same values, so keep them from drifting by referencing them here.
+// Locomotion speeds live with the hero rig (single source of truth); gait blends tune to
+// these, so reference them here to prevent drift.
 const WALK_SPEED = heromod.WALK_SPEED; // keyboard walk / gentle left-stick tilt
 const RUN_SPEED = heromod.RUN_SPEED; // full left-stick tilt (light tilt scales down toward walk)
 const SPRINT_SPEED = heromod.SPRINT_SPEED; // hold Circle/B (or Shift): dash/sprint
@@ -32,9 +32,9 @@ const ROLL_TAP_MAX = 0.22; // Circle/B released before this (real seconds) = a d
 // NO run-unlock hold, ever (owner's rule, see AGENTS.md): the stick IS the speed — tilt
 // maps straight to ground speed every frame, and keyboard movement runs immediately.
 
-// Impact shake fed to the camera rig (trauma² response lives in camera.zig). Sized so a
-// landed light reads as a tick and a lunge slam genuinely cracks the frame. NO hitstop —
-// impact weight comes from shake + rumble + the huge reaction anims only.
+// Impact shake fed to the camera rig (trauma² response in camera.zig), sized so a light
+// reads as a tick and a slam cracks the frame. NO hitstop — impact weight is shake +
+// rumble + reaction anims only.
 const SHAKE_HIT_LIGHT = 0.16;
 const SHAKE_HIT_HEAVY = 0.26;
 const SHAKE_KILL = 0.38;
@@ -43,26 +43,26 @@ const SHAKE_HURT_HEAVY = 0.62;
 const SHAKE_DEATH = 0.85;
 const RESPAWN_FADE = 0.9; // seconds of black → world after a respawn (the YOU DIED tail)
 
-// The hero's movement clamp: the world bounds inset by a margin so travel/rolls can't reach
-// the literal edge. Single source for moveHero, the roll updates, and the --shot harness.
+// Hero movement clamp: world bounds inset by a margin so travel/rolls can't reach the edge.
+// Single source for moveHero, roll updates, and the --shot harness.
 const PLAY_HALF = envmod.HALF - 2.0;
 
 // Hero footprint radius for ground collision (see collision.zig).
 const HERO_R = 0.36;
 
-// Skeletal-archer arrows: a shared pool of in-flight + stuck shafts, and the hero's centre-
-// of-mass height the archers aim at + arrows test their strike against.
+// Skeletal-archer arrows: shared pool of in-flight + stuck shafts, plus the hero centre-of-
+// mass height archers aim at and arrows test strikes against.
 const MAX_ARROWS = 24;
 const HERO_CENTER_Y = 1.0;
 
 // Collision correction is rate-limited so a large depenetration eases in over a few frames
-// (a smooth slide) rather than snapping there in one (a choppy warp); set above the fastest
-// actor speed so ordinary wall contact still resolves firmly (no sinking).
+// (smooth slide, not a choppy warp). Set above the fastest actor speed so wall contact
+// still resolves firmly (no sinking).
 const COLLIDE_RATE = 11.0; // world units / sec
 
-// Depth clip planes, set once at startup (see run()): a tight near/far so the hero's
-// overlapping boxes don't z-fight. Single source — projectToScreen's near-cull (PROJECT_NEAR)
-// MUST equal CLIP_NEAR, so both read this rather than repeating the literal.
+// Depth clip planes, set once at startup (see run()): tight near/far so the hero's
+// overlapping boxes don't z-fight. Invariant: projectToScreen's near-cull (PROJECT_NEAR)
+// MUST equal CLIP_NEAR — both read this, never the literal.
 const CLIP_NEAR = 0.2;
 const CLIP_FAR = 320.0;
 
@@ -72,8 +72,8 @@ const LOCK_CAM_EASE = 9.0; // exponential ease rate for the lock-on camera swing
 const LOCK_PITCH = 0.24; // framing pitch while locked (the toads sit low)
 const LOCK_FLICK = 0.65; // right-stick |x| past this cycles to the next target
 
-// Framebuffer clear tone — matches the sky shader's horizon band (displayed gfx.HAZE)
-// so any sliver the sky quad misses stays invisible.
+// Framebuffer clear tone — matches the sky shader's horizon band (displayed gfx.HAZE) so
+// any sliver the sky quad misses stays invisible.
 const CLEAR = rgba(80, 76, 69, 255);
 
 const Game = struct {
@@ -160,8 +160,8 @@ fn gatherMove() Move {
     return .{};
 }
 
-// Move + steer the hero from a camera-relative Move, advance its walk anim, and pose the
-// skeleton. Camera basis is read BEFORE this (so movement follows the current view).
+// Move + steer the hero from a camera-relative Move, advance the walk anim, and pose the
+// skeleton. Camera basis is read BEFORE this so movement follows the current view.
 fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
     const fwd = g.rig.forwardXZ();
     const right = g.rig.rightXZ();
@@ -179,10 +179,9 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
         g.hero.pos.x = mathx.clampF(g.hero.pos.x + dir.x * moved, -PLAY_HALF, PLAY_HALF);
         g.hero.pos.z = mathx.clampF(g.hero.pos.z + dir.z * moved, -PLAY_HALF, PLAY_HALF);
     }
-    // Facing: toward the LOCKED foe if locked (so the hero strafes/backpedals facing it,
-    // Elden-Ring style); otherwise toward the travel direction. ER exception: a hold-B
-    // SPRINT while locked faces the travel direction (the lock keeps the camera/target,
-    // but you free-run) — there is no sideways sprint, in ER or in this rig.
+    // Facing: toward the LOCKED foe (hero strafes/backpedals facing it, ER-style), else
+    // toward travel. ER exception: a hold-B SPRINT while locked faces travel — no sideways
+    // sprint exists.
     const sprinting = isMoving and mv.speed > RUN_SPEED + 0.01;
     if (faceYaw != null and !sprinting) {
         g.hero.facing = mathx.approachAngle(g.hero.facing, faceYaw.?, TURN_RATE * dt);
@@ -193,8 +192,8 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
     g.hero.pose();
 }
 
-// The world direction to roll: the current camera-relative move intent if any, else the
-// hero's current facing (a forward roll).
+// World direction to roll: the camera-relative move intent if any, else the hero's facing
+// (a forward roll).
 fn rollDir(g: *Game, mv: Move) rl.Vector3 {
     const fwd = g.rig.forwardXZ();
     const right = g.rig.rightXZ();
@@ -213,9 +212,9 @@ fn rollDir(g: *Game, mv: Move) rl.Vector3 {
 // depth draws are immaterial.
 fn drawCasters(g: *Game) void {
     g.env.drawProps();
-    // Combat flash rides the scene shader's hitFlash uniform per actor: the hero pops red
-    // on a suffered blow, each struck toad on a landed one. Inert during the depth pass
-    // (the uniform lives on the scene shader, not the swapped-in depth shader).
+    // Combat flash rides the scene shader's per-actor hitFlash uniform (hero reddens on a
+    // suffered blow, struck toads on a landed one). Inert during the depth pass — the
+    // uniform lives on the scene shader, not the swapped-in depth shader.
     g.scene.setFlash(0.6 * g.hero.hurtFlash);
     g.hero.draw();
     g.scene.setFlash(0);
@@ -233,7 +232,7 @@ fn setCasterShaders(g: *Game, sh: rl.Shader) void {
 }
 
 // Launch an arrow from a free pool slot (the loose event). Pool-full is rare (24 slots vs a
-// ~1.5s reload on two archers); overwrite slot 0 rather than drop the shot silently.
+// ~1.5s reload on two archers); overwrite slot 0 rather than silently drop the shot.
 fn spawnArrow(g: *Game, from: rl.Vector3, target: rl.Vector3) void {
     for (&g.arrows) |*ar| {
         if (!ar.live) {
@@ -245,7 +244,7 @@ fn spawnArrow(g: *Game, from: rl.Vector3, target: rl.Vector3) void {
 }
 
 // Draw every live/stuck arrow, oriented along its flight (shrinking as a stuck one fades).
-// Opaque lit geometry — drawn in the lit pass after the casters; non-casting (no shadow).
+// Opaque lit geometry, drawn after the casters; non-casting.
 fn drawArrows(g: *Game) void {
     for (&g.arrows) |*ar| {
         if (!ar.live) continue;
@@ -262,8 +261,8 @@ fn drawScene(g: *Game) void {
     g.scene.endShadowPass();
 
     rl.beginDrawing();
-    // With any retro filter live, the sky + 3D render into the capture RT and blit
-    // back through the filter shader; the vignette/HUD/menu stay crisp on top.
+    // With any retro filter live, sky + 3D render into the capture RT and blit back through
+    // the filter shader; vignette/HUD/menu stay crisp on top.
     const filtered = g.retro.begin();
     rl.clearBackground(CLEAR);
     g.sky.draw(g.rig.cam);
@@ -281,13 +280,13 @@ fn drawScene(g: *Game) void {
     g.scene.setWind(false);
     drawArrows(g); // in-flight + stuck arrows (lit, rigid, non-casting)
     if (g.menu.wireframe) rl.gl.rlDisableWireMode();
-    // Toad telegraph FX (dust / charge / spit / blood / death motes) — unlit spheres,
-    // over the opaque geometry. The hero's swing trail joins them (same unlit layer).
+    // Toad telegraph FX (dust / charge / spit / blood / death motes) — unlit spheres over
+    // the opaque geometry. The hero's swing trail joins them (same unlit layer).
     g.warren.drawFx();
     g.grief.drawFx();
     g.hero.drawTrail();
     // Debug: the blade hit capsule (menu > Debug > Hitboxes) — red while ACTIVE, dim
-    // through the rest of the swing. Drawn with the default shader, unlit on purpose.
+    // otherwise. Unlit, default shader on purpose.
     if (g.menu.hitboxes and g.hero.attacking) {
         const col = if (g.hero.hitActive()) rl.Color.red else mathx.withAlpha(rl.Color.red, 90);
         rl.drawCapsuleWires(g.hero.bladeA, g.hero.bladeB, heromod.BLADE_R, 6, 3, col);
@@ -311,8 +310,8 @@ fn drawScene(g: *Game) void {
     g.vignette.draw();
     drawHurtFlash(g); // red screen-edge pulse when the hero is hit (peripheral feedback)
     drawFoeBars(g, &g.warren.frogs); // floating foe HP bars, crisp over the finished frame…
-    drawFoeBars(g, &g.line.archers); // …one shared path for every foe group
-    drawBossBar(g); // the ogre gets an ER-style boss bar instead (its head towers off-screen)
+    drawFoeBars(g, &g.line.archers); // …one shared path for every foe group…
+    drawFoeBars(g, &g.grief.ogres); // …the ogre included (a regular foe, not a boss — owner's call)
     drawLockDot(g); // the ER lock-on reticle
     drawDeathOverlay(g); // the YOU DIED card + respawn fade, over everything
 }
@@ -383,8 +382,8 @@ fn hud(g: *Game) void {
     hud_.text("zig-soulslike", 16, 12, 24, rgba(232, 222, 198, 255));
     hud_.text("locomotion demo - anatomical rig, walk / run / sprint gait", 16, 40, 16, rgba(164, 154, 134, 255));
 
-    // Hero HP bar (ER puts the player's health top-left). The death card itself is
-    // drawDeathOverlay's — no mini YOU DIED here.
+    // Hero HP bar (ER puts player health top-left). Death card is drawDeathOverlay's — no
+    // mini YOU DIED here.
     healthBar(16, 66, 300, 16, g.hero.vit.hpFrac(), rgba(24, 20, 16, 220));
     if (!g.menu.isOpen()) {
         const help: [:0]const u8 = if (rl.isGamepadAvailable(0))
@@ -409,8 +408,8 @@ fn hud(g: *Game) void {
     const w = hud_.textW(s, 16);
     hud_.text(s, rl.getScreenWidth() - w - 16, 14, 16, rgba(150, 156, 164, 255));
 
-    // Debug stats overlay (menu > Debug > Stats) — perf line + the internal combat meters
-    // (poise/stance stay internal, ER-style; only HP shows on the bars).
+    // Debug stats overlay (menu > Debug > Stats) — perf line + internal combat meters.
+    // Poise/stance stay internal (ER-style); only HP shows on the bars.
     if (g.menu.stats) {
         var sbuf: [200]u8 = undefined;
         const st = std.fmt.bufPrintZ(&sbuf, "{d} fps   {d:.1} ms   pos {d:.1},{d:.1}   yaw {d:.2}   pitch {d:.2}   time x{d:.2}", .{
@@ -455,11 +454,10 @@ pub fn run(shot: bool) void {
     defer alloc.destroy(g);
     g.* = Game.init();
 
-    // Tight near/far so the perspective depth buffer has real precision — the default
-    // 0.01..1000 (100000:1) makes the hero's overlapping boxes z-fight and flicker/invert
-    // as the camera moves. BeginMode3D reads these cull distances; the shadow pass
-    // saves/restores them around its own ortho slab, so setting them once here sticks.
-    // Set BEFORE the --shot branch so headless captures get the same depth precision.
+    // Tight near/far for real depth precision — the default 0.01..1000 makes the hero's
+    // overlapping boxes z-fight and flicker/invert as the camera moves. BeginMode3D reads
+    // these; the shadow pass saves/restores them around its ortho slab, so setting them
+    // once here sticks. Set BEFORE the --shot branch so headless captures match.
     rl.gl.rlSetClipPlanes(CLIP_NEAR, CLIP_FAR);
 
     if (shot) {
@@ -467,16 +465,16 @@ pub fn run(shot: bool) void {
         return;
     }
 
-    // The mouse is HIDDEN while over the window (GLFW_CURSOR_HIDDEN — invisible but NOT
-    // locked) and moves the camera; push it past the window edge and it reappears as a
-    // normal cursor usable on other monitors / windows. No capture, ever. Esc quits.
+    // Mouse HIDDEN over the window (GLFW_CURSOR_HIDDEN — invisible but NOT locked) and
+    // drives the camera; past the window edge it reappears as a normal cursor. No capture,
+    // ever.
     rl.hideCursor();
     var wasInside = false;
     var bWasDown = false; // gamepad Circle/B: a TAP rolls, a HOLD sprints
     var bHeldT: f32 = 0;
     var lockCycleReady = true; // debounce so one flick cycles the lock-on target once
-    // Rising-edge trackers for rumble: fire a pulse the frame an action BEGINS (catches
-    // queued actions too, since we watch the hero's committed state, not the input press).
+    // Rising-edge trackers for rumble: pulse the frame an action BEGINS. Watching committed
+    // state (not the input press) catches queued actions too.
     var wasRolling = false;
     var wasAttacking = false;
     var wasDead = false;
@@ -490,9 +488,9 @@ pub fn run(shot: bool) void {
         if (rl.isKeyPressed(.escape)) g.menu.onEscape();
         if (rl.isGamepadAvailable(0) and rl.isGamepadButtonPressed(0, .middle_right)) g.menu.onStartButton();
 
-        // Alt+Enter toggles borderless-windowed fullscreen (keeps the mouse usable on other
-        // monitors — no exclusive mode-switch, matching this game's no-pointer-lock rule).
-        // Keep the retro capture RT matched to the window on the toggle AND on any manual resize.
+        // Alt+Enter toggles borderless-windowed fullscreen (no exclusive mode-switch, so the
+        // mouse stays usable elsewhere). Keep the retro capture RT matched to the window on
+        // the toggle AND on any manual resize.
         if (rl.isKeyPressed(.enter) and (rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt))) {
             rl.toggleBorderlessWindowed();
             g.retro.resize(rl.getScreenWidth(), rl.getScreenHeight());
@@ -500,13 +498,12 @@ pub fn run(shot: bool) void {
         if (rl.isWindowResized()) g.retro.resize(rl.getScreenWidth(), rl.getScreenHeight());
 
         if (g.menu.isOpen()) {
-            // The world holds while the menu is up: no camera/move input, but the hero
-            // keeps breathing (idle update with zero travel) so the scene stays alive.
+            // World holds while the menu is up: no camera/move input, but the hero keeps
+            // breathing (idle update, zero travel) so the scene stays alive.
             if (g.menu.update(&g.retro, rawDt) == .quit) break;
-            // Poison the pad-B tap window while the menu is up: B both BACKS OUT of the
-            // menu and dodge-rolls, so a zeroed window would turn the release of the very
-            // B press that closed the menu into an instant roll. Poisoned, that release
-            // reads as a hold (no tap); a fresh press after release taps normally.
+            // Poison the pad-B tap window: B both backs out of the menu AND rolls, so without
+            // this the release of the B that closed the menu fires an instant roll. Poisoned,
+            // that release reads as a hold; a fresh press after release taps normally.
             bWasDown = true;
             bHeldT = ROLL_TAP_MAX;
             wasInside = false; // swallow the mouse delta accumulated while in the menu
@@ -522,8 +519,8 @@ pub fn run(shot: bool) void {
             continue;
         }
 
-        // Lock-on toggle: R3 (pad) / middle-mouse (kb+m). With a foe locked it drops the lock;
-        // else it acquires the best foe in view — and if there is none, pad R3 recenters.
+        // Lock-on toggle: R3 (pad) / middle-mouse (kb+m). Locked → drop; else acquire the
+        // best foe in view, or pad R3 recenters if there is none.
         const lockPressed = rl.isMouseButtonPressed(.middle) or
             (rl.isGamepadAvailable(0) and rl.isGamepadButtonPressed(0, .right_thumb));
         if (lockPressed) {
@@ -538,8 +535,8 @@ pub fn run(shot: bool) void {
             if (!lockValid(g, li)) g.lock = null; // target wandered out of range
         }
 
-        // Camera look. LOCKED: the camera auto-swings onto the foe and manual look is
-        // suppressed — the right stick / mouse instead CYCLE targets. Unlocked: free look.
+        // Camera look. LOCKED: auto-swings onto the foe, manual look suppressed, and stick/
+        // mouse CYCLE targets instead. Unlocked: free look.
         const inside = rl.isWindowFocused() and rl.isCursorOnScreen();
         const md = rl.getMouseDelta();
         var wheel = rl.getMouseWheelMove();
@@ -584,10 +581,9 @@ pub fn run(shot: bool) void {
         }
         bWasDown = bDown;
 
-        // Sword attacks (ER layout): pad R1/RB = light slash, R2/RT = heavy; keyboard
-        // LMB = light, Shift+LMB = heavy (ER's kb default). Actions are committed (no
-        // mid-swing cancels), but input BUFFERS like Elden Ring: pressed mid-action, a
-        // request queues in the hero's one slot and fires at the earliest exit.
+        // Sword attacks (ER layout): R1/RB or LMB = light, R2/RT or Shift+LMB = heavy.
+        // Committed (no mid-swing cancels), but input BUFFERS ER-style: a mid-action press
+        // queues in the hero's one slot and fires at the earliest exit.
         var lightReq = false;
         var heavyReq = false;
         if (rl.isMouseButtonPressed(.left)) {
@@ -602,10 +598,9 @@ pub fn run(shot: bool) void {
         // Poise/stance regenerate every frame (relent and pressure resets — Elden Ring).
         g.hero.vit.tick(dt);
         g.hero.tickFlash(dt); // fade the red damage flash
-        // Action input is dead while the hero is staggered or dead (a reaction is committed;
-        // souls commitment cuts both ways). Otherwise: a roll press claims the whole frame
-        // (rolls win a same-frame conflict), and a queued roll re-steers every frame so it
-        // leaves in the direction HELD when it fires, not the one pressed — both ER behaviors.
+        // Action input is dead while staggered or dead (a reaction is committed). Otherwise a
+        // roll press wins a same-frame conflict, and a queued roll re-steers every frame so it
+        // leaves in the direction HELD at fire time, not pressed — both ER behaviors.
         if (!g.hero.dead and !g.hero.staggered()) {
             if (rollReq) {
                 g.hero.requestRoll(rollDir(g, mv));
@@ -624,21 +619,24 @@ pub fn run(shot: bool) void {
         } else null;
         if (g.hero.dead) {
             g.hero.updateDeath(dt); // collapse → respawn
+            // The frame he returns, the WORLD reloads with him (ER-style): every foe re-homed
+            // at full health, arrows cleared, lock dropped. Under the death card's full black,
+            // so it's a cut, never a pop.
+            if (!g.hero.dead) resetFoes(g);
         } else if (g.hero.staggered()) {
             g.hero.updateStun(dt); // reeling — wide open
         } else if (g.hero.rolling) {
             g.hero.updateRoll(dt, PLAY_HALF); // committed — ignores move input
         } else if (g.hero.attacking) {
-            // Committed — a short step into the cut; while LOCKED the recovery tail
-            // re-squares onto the target (a whiffed swing recovers its turning fast).
+            // Committed — a short step into the cut; while LOCKED the recovery tail re-squares
+            // onto the target (a whiffed swing recovers turning fast).
             g.hero.updateAttack(dt, PLAY_HALF, lockYaw);
         } else {
             moveHero(g, dt, mv, lockYaw);
         }
-        // The knot hunts the hero and the skeletons kite + loose at range; the hero's swept
-        // blade damages + staggers BOTH sides, and a toad's chomp/lunge OR an incoming arrow
-        // that connects returns the blow it lands ON the hero. Resolve it all, then settle
-        // collisions, then aim the camera at the SETTLED hero position.
+        // Knot hunts, skeletons kite + loose; the hero's swept blade damages/staggers both
+        // sides, and a connecting chomp/lunge/arrow returns its blow to the hero. Resolve all,
+        // settle collisions, then aim the camera at the SETTLED hero position.
         const hitsBefore = g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits();
         if (g.warren.update(dt, g.hero.pos, PLAY_HALF, heroBlade(g))) |h| {
             g.hero.takeHit(h);
@@ -653,9 +651,9 @@ pub fn run(shot: bool) void {
             g.rumble.play(rumblemod.hurt_heavy);
             g.rig.addShake(SHAKE_HURT_HEAVY);
         }
-        // The hero's blade lands on the skeletons; then they act — kite, and loose an arrow at
-        // the nock point aimed at the hero's centre of mass (the arrow's light homing + arc
-        // finish the job). A blade hit mid-draw interrupts the shot (enterStun clears the draw).
+        // Blade lands on the skeletons; then they act — kite and loose from the nock at the
+        // hero's centre of mass (arrow homing + arc finish the job). A blade hit mid-draw
+        // interrupts the shot (enterStun clears the draw).
         const bladeNow = heroBlade(g);
         for (&g.line.archers) |*a| {
             if (a.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) {
@@ -663,19 +661,21 @@ pub fn run(shot: bool) void {
             }
         }
         // Arrows in flight: gentle homing + arc, then a strike lands a chomp-weight blow.
+        // A hero inside the roll's i-frames is NOT a target (shaft passes through). World
+        // solids BLOCK shots (cover works) — a blocked arrow thunks into stone.
         for (&g.arrows) |*ar| {
             if (!ar.live) continue;
             ar.hit = false;
-            archermod.stepArrow(ar, g.hero.pos, HERO_CENTER_Y, dt);
+            archermod.stepArrow(ar, g.hero.pos, HERO_CENTER_Y, g.hero.iFramed(), g.env.solids(), dt);
             if (ar.hit and !g.hero.dead) {
                 g.hero.takeHit(archermod.ARROW_HIT);
                 g.rumble.play(rumblemod.hurt);
                 g.rig.addShake(SHAKE_HURT);
             }
         }
-        // Your blade connected this frame (either foe's hit count climbed) → a hit pulse +
-        // frame crack sized to the swing; a foe going down adds the kill thunk (justDied — the
-        // dissipation means aliveCount only drops much later). Strongest-wins blends them.
+        // Blade connected this frame (a foe's hit count climbed) → hit pulse + frame crack
+        // sized to the swing; a kill adds the thunk (via justDied, since dissipation delays
+        // the aliveCount drop). Strongest-wins blends them.
         if (g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits() > hitsBefore) {
             g.rumble.play(if (g.hero.atkHeavy) rumblemod.hit_heavy else rumblemod.hit_light);
             g.rig.addShake(if (g.hero.atkHeavy) SHAKE_HIT_HEAVY else SHAKE_HIT_LIGHT);
@@ -684,9 +684,9 @@ pub fn run(shot: bool) void {
             g.rumble.play(rumblemod.kill);
             g.rig.addShake(SHAKE_KILL);
         }
-        // ER lock-on across a kill: the lock leaves a corpse the FRAME it dies — never
-        // waiting out the death anim/dissipation — snapping to the next valid target in
-        // view (nearest screen-centre, like a fresh acquire) or dropping if there's none.
+        // ER lock-on across a kill: the lock leaves a corpse the FRAME it dies (not after the
+        // death anim), snapping to the next valid target (nearest screen-centre, like a fresh
+        // acquire) or dropping if none.
         if (g.lock) |li| {
             if (!foeLockable(g, li)) g.lock = acquireLock(g); // corpse the frame it dies → switch/drop
         }
@@ -694,8 +694,8 @@ pub fn run(shot: bool) void {
         g.rig.tickShake(rawDt); // impact shake decays on wall-clock time (bakes this frame's jitter)
         g.rig.follow(g.hero.shoulderPoint());
 
-        // Rising-edge action pulses: a roll whump, the swing effort (heavy reads heavier than
-        // light), and the death swell. Watching committed state catches queued actions too.
+        // Rising-edge action pulses: roll whump, swing effort (heavy > light), death swell.
+        // Watching committed state catches queued actions too.
         if (g.hero.rolling and !wasRolling) g.rumble.play(rumblemod.roll);
         if (g.hero.attacking and !wasAttacking) g.rumble.play(if (g.hero.atkHeavy) rumblemod.swing_heavy else rumblemod.swing_light);
         if (g.hero.dead and !wasDead) {
@@ -719,8 +719,8 @@ pub fn run(shot: bool) void {
     }
 }
 
-// The hero's blade this frame as plain data for the toads' hit test (endpoints guard→tip,
-// with last frame's for the swept test; active only inside the strike window).
+// The hero's blade this frame as plain data for the foe hit test (endpoints guard→tip, plus
+// last frame's for the swept test; active only inside the strike window).
 fn heroBlade(g: *const Game) frogmod.Blade {
     return .{
         .active = g.hero.hitActive(),
@@ -733,10 +733,9 @@ fn heroBlade(g: *const Game) frogmod.Blade {
     };
 }
 
-// Resolve footprint collisions on the XZ plane (see collision.zig). The hero keeps priority
-// — pushed out of world solids, then out of any GROUNDED toad; the toads then yield, each
-// pushed out of the world, the hero, and its grounded neighbours. Airborne toads (mid-hop)
-// are skipped so a leap arcs over you cleanly instead of shoving you around.
+// Resolve XZ footprint collisions (see collision.zig). Hero has priority (pushed out of
+// solids, then grounded toads); toads then yield to world/hero/grounded neighbours.
+// Airborne toads (mid-hop) are skipped so a leap arcs over you cleanly.
 fn collideActors(g: *Game, dt: f32) void {
     const solids = g.env.solids();
     const step = COLLIDE_RATE * dt; // max correction this frame — bigger pushes ease in (no warp)
@@ -767,8 +766,8 @@ fn collideActors(g: *Game, dt: f32) void {
         f.pos = mathx.approachV(f.pos, fp, step);
     }
 
-    // The skeletal archers yield last: each pushed out of the world, the hero, every grounded
-    // toad, and its fellow archers (same easing so a kite step into a wall slides, not warps).
+    // Archers yield last: each pushed out of world, hero, every grounded toad, and fellow
+    // archers (same easing so a kite step into a wall slides, not warps).
     for (&g.line.archers, 0..) |*a, i| {
         if (!a.alive()) continue;
         var ap = collision.resolve(a.pos, a.bodyR(), solids);
@@ -785,8 +784,8 @@ fn collideActors(g: *Game, dt: f32) void {
         a.pos = mathx.approachV(a.pos, ap, step);
     }
 
-    // The ogre is a giant — it yields to the WORLD (walls/columns) only, never to the tiny
-    // hero (the hero does the yielding, above), so it reads as immovable bulk.
+    // The ogre yields to the WORLD (walls/columns) only, never to the tiny hero (who yields
+    // above), so it reads as immovable bulk.
     for (&g.grief.ogres) |*o| {
         if (!o.alive()) continue;
         var op = collision.resolve(o.pos, o.bodyR(), solids);
@@ -829,12 +828,11 @@ fn lockValid(g: *const Game, r: FoeRef) bool {
     return foeLockable(g, r) and mathx.distXZ(g.hero.pos, foePos(g, r)) <= MAX_LOCK_R + 2.0;
 }
 
-// A world point projected to the screen, or null if it sits nearer than the near-clip
-// plane — the shared front-of-camera cull for the lock reticle, the foe HP bars, and
-// lock-screen-x. The threshold must be the near clip distance, not just depth > 0: a point
-// at depth ~0+ (a foe right at the camera plane, e.g. lunging past the hero as the camera
-// swings) projects to an unbounded screen coordinate, and the callers' @intFromFloat(s.x)
-// would then be an out-of-range cast (a panic in safe builds). Below near, nothing renders.
+// A world point projected to the screen, or null if nearer than the near-clip plane — the
+// shared front-of-camera cull for the lock reticle, foe HP bars, and lock-screen-x. The
+// threshold must be the near clip distance, not just depth > 0: a point at depth ~0+
+// projects to an unbounded coord, so callers' @intFromFloat(s.x) would panic (out-of-range
+// cast) in safe builds.
 const PROJECT_NEAR = CLIP_NEAR; // must equal the near clip plane set in run()
 fn projectToScreen(cam: rl.Camera3D, p: rl.Vector3) ?rl.Vector2 {
     const to = mathx.subV(p, cam.position);
@@ -850,8 +848,8 @@ fn lockScreenX(g: *const Game, r: FoeRef) ?f32 {
     return s.x;
 }
 
-// The foe nearest screen-centre and in range (Elden Ring locks what you're looking at); null
-// if none — the caller recenters instead. Considers BOTH groups so either is lockable.
+// The foe nearest screen-centre and in range (ER locks what you look at); null if none, so
+// the caller recenters. Considers all groups so any foe is lockable.
 fn acquireLock(g: *Game) ?FoeRef {
     const cx = @as(f32, @floatFromInt(rl.getScreenWidth())) * 0.5;
     var best: ?FoeRef = null;
@@ -915,13 +913,24 @@ fn healthBar(x: f32, y: f32, w: f32, h: f32, frac: f32, border: ?rl.Color) void 
     if (border) |c| rl.drawRectangleLines(xi - 1, yi - 1, wi + 2, hi + 2, c);
 }
 
+// The world-reload half of a hero death (ER: dying resets the field). Every group re-homes
+// fresh instances (full HP, home positions, slain restored), the arrow pool empties, the
+// lock drops. Instance state only — shared Models are permanent, never rebuilt.
+fn resetFoes(g: *Game) void {
+    g.warren.reset();
+    g.line.reset();
+    g.grief.reset();
+    g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
+    g.lock = null;
+}
+
 // A foe's bar only appears once you've HURT it, and lingers this long after the last hit —
 // so untouched foes stay unmarked and the bar fades from view when you disengage.
 const HURT_BAR_WINDOW = 5.0;
 
-// Floating HP bars over ANY foe group (the shared foe contract — one loop for toads AND
-// skeletons). Shown ONLY for a live foe hit within HURT_BAR_WINDOW; the bar flashes gold while
-// staggered (the wide-open cue). Untouched foes stay unmarked; the bar fades as you disengage.
+// Floating HP bars over ANY foe group (shared foe contract, one loop for all). Shown only
+// for a live foe hit within HURT_BAR_WINDOW; flashes gold while staggered (the wide-open
+// cue). Untouched foes stay unmarked.
 fn drawFoeBars(g: *Game, foes: anytype) void {
     const cam = g.rig.cam;
     for (foes) |*f| {
@@ -934,37 +943,14 @@ fn drawFoeBars(g: *Game, foes: anytype) void {
     }
 }
 
-// The lone ogre is a mini-boss, so it gets an Elden-Ring-style HP bar along the BOTTOM of the
-// screen (a floating over-the-head bar rides ~4.6 m up and sits off the top of the frame when
-// you're in close under a giant — you'd never see it). Shown while it's alive + engaged: locked
-// onto it, hit within the window, or the hero is inside its notice range (it looms into view).
-fn drawBossBar(g: *Game) void {
-    const o = &g.grief.ogres[0];
-    if (!o.alive() or o.dying()) return;
-    const locked = if (g.lock) |li| li.kind == .ogre else false;
-    const near = mathx.distXZ(g.hero.pos, o.pos) < 16.0;
-    if (!locked and !near and o.vit.sinceHit > HURT_BAR_WINDOW) return;
-    const w: f32 = @floatFromInt(rl.getScreenWidth());
-    const h: f32 = @floatFromInt(rl.getScreenHeight());
-    const bw = 0.44 * w;
-    const bx = (w - bw) * 0.5;
-    const by = h - 52.0;
-    const border: ?rl.Color = if (o.staggered()) rgba(232, 196, 90, 255) else null; // gold = wide open
-    healthBar(bx, by, bw, 13, o.vit.hpFrac(), border);
-    const name: [:0]const u8 = "Forsaken Ogre";
-    const fs: i32 = 18;
-    const tw = hud_.textW(name, fs);
-    hud_.text(name, @intFromFloat(w * 0.5 - @as(f32, @floatFromInt(tw)) * 0.5), @intFromFloat(by - 24.0), fs, rgba(216, 206, 184, 255));
-}
-
 // The glowing white reticle on the locked foe (ER's dot) — 2D + crisp, drawn after the 3D pass.
 fn drawLockDot(g: *Game) void {
     const li = g.lock orelse return;
     const s = projectToScreen(g.rig.cam, foeLockPoint(g, li)) orelse return; // skip if behind the camera
     const x: i32 = @intFromFloat(s.x);
     const y: i32 = @intFromFloat(s.y);
-    // A glowing white dot — an ACTUAL radial GRADIENT glow (bright centre → fully transparent
-    // edge), no shadow and no dark halo, with a small crisp core. Pure light (owner's call).
+    // A glowing white dot — a radial GRADIENT glow (bright centre → transparent edge) with a
+    // small crisp core, no dark halo. Pure light (owner's call).
     rl.drawCircleGradient(x, y, 15, rgba(255, 255, 255, 175), rgba(255, 255, 255, 0));
     rl.drawCircle(x, y, 2, rl.Color.white); // crisp hot centre
 }
@@ -983,8 +969,8 @@ fn stepWorld(g: *Game, dt: f32, speed: f32) void {
     g.rig.follow(g.hero.shoulderPoint());
 }
 
-// Locked-on footing counterpart of stepWorld: travel a world direction while the FACING
-// holds on a target heading — the strafe / backpedal gaits, framed like the walk stages.
+// Locked-on counterpart of stepWorld: travel a world direction while FACING holds on a
+// target heading — the strafe / backpedal gaits, framed like the walk stages.
 fn stepLocked(g: *Game, dt: f32, speed: f32, dir: rl.Vector3, faceYaw: f32) void {
     const moved = speed * dt;
     g.hero.pos.x = mathx.clampF(g.hero.pos.x + dir.x * moved, -PLAY_HALF, PLAY_HALF);
@@ -995,9 +981,8 @@ fn stepLocked(g: *Game, dt: f32, speed: f32, dir: rl.Vector3, faceYaw: f32) void
     g.rig.follow(g.hero.shoulderPoint());
 }
 
-// Render the current world + HUD and write one screenshot. The shared capture idiom for
-// every non-menu shot (menu shots interpose g.menu.draw before endDrawing, so they stay
-// inline below).
+// Render the current world + HUD and write one screenshot. Shared idiom for every non-menu
+// shot (menu shots interpose g.menu.draw before endDrawing, so they stay inline below).
 fn shoot(g: *Game, name: [:0]const u8) void {
     drawScene(g);
     hud(g);
@@ -1015,9 +1000,9 @@ fn advanceAttack(g: *Game, dt: f32, frames: i32) void {
     }
 }
 
-// Advance one toad `frames` steps against a sensed hero position `hero` (kept FAR so its
-// AI holds the state we forced rather than auto-deciding; placed along the action's heading
-// so the coil/gape re-aim doesn't fight the framing) and no blade — for the frog shots.
+// Advance one toad `frames` steps against a sensed hero position (kept FAR along the action's
+// heading so its AI holds the forced state and the coil/gape re-aim doesn't fight the
+// framing), no blade — for the frog shots.
 fn stepFrog(f: *frogmod.Frog, frames: i32, hero: rl.Vector3) void {
     const dt: f32 = 1.0 / 60.0;
     var k: i32 = 0;
@@ -1043,7 +1028,7 @@ fn shootArcher(g: *Game, a: *archermod.Archer, name: [:0]const u8, yaw: f32, pit
 }
 
 // Advance a lone ogre `frames` steps against a sensed hero position (kept where the caller
-// wants so its AI holds the forced state) and no blade — for the ogre --shot poses.
+// wants so its AI holds the forced state), no blade — for the ogre --shot poses.
 fn stepOgre(o: *ogremod.Ogre, frames: i32, hero: rl.Vector3) void {
     const dt: f32 = 1.0 / 60.0;
     var k: i32 = 0;
@@ -1062,8 +1047,8 @@ fn shootOgre(g: *Game, o: *ogremod.Ogre, name: [:0]const u8, yaw: f32, pitch: f3
 fn runShots(g: *Game) void {
     std.fs.cwd().makePath("shots") catch {};
     const dt: f32 = 1.0 / 60.0;
-    // Shots 1-9 judge geometry/animation — run them CLEAN of the default filter stack;
-    // the filter shots below set their own explicit stacks.
+    // Shots 1-9 judge geometry/animation — run CLEAN of the default filter stack; the filter
+    // shots below set their own explicit stacks.
     g.retro.allOff();
 
     g.hero.pos = mathx.ground(0, 26); // long runway of −Z travel ahead
@@ -1090,10 +1075,9 @@ fn runShots(g: *Game) void {
         shoot(g, st.name);
     }
 
-    // Locked-on footing: facing HOLDS on −Z (as if locked) while travel goes sideways /
-    // backwards — the strafe sidestep from the front (both beats: the open straddle and
-    // the gather) and the backpedal in side profile (the reversed stride in silhouette).
-    // Each capture SEEKS its stride phase (a fixed frame count lands on dead phases).
+    // Locked-on footing: facing HOLDS on −Z while travel goes sideways/backward — the strafe
+    // sidestep from the front and the backpedal in side profile. Each capture SEEKS its
+    // stride phase (a fixed frame count lands on dead phases).
     const lockedStages = [_]struct { name: [:0]const u8, yaw: f32, pitch: f32, dist: f32, phTgt: f32, dx: f32, dz: f32 }{
         // The strafe cycle, ONE SHOT PER BEAT (strafing his right; windows: lead leg
         // steps [0,.22]/[.5,.72], trail leg [.25,.47]/[.75,.97] — one leg at a time):
@@ -1147,10 +1131,10 @@ fn runShots(g: *Game) void {
         g.rig.follow(g.hero.shoulderPoint());
     }
 
-    // Sword swings: the light slash from the SWORD side (right profile — from the left
-    // the windup hides behind the torso), the heavy from the left in silhouette (an
-    // overhead is sagittal) at its windup apex and buried impact, then the heavy again
-    // with the hit capsule visible (menu > Debug > Hitboxes) to verify it rides the blade.
+    // Sword swings: light slash from the SWORD side (right profile — left hides the windup
+    // behind the torso), heavy from the left in silhouette (an overhead is sagittal) at
+    // windup apex + buried impact, then heavy again with the hit capsule visible (menu >
+    // Debug > Hitboxes) to verify it rides the blade.
     g.hero.pos = mathx.ground(0, 4);
     g.rig.yaw = mathx.radians(30); // front 3/4 — the hero faces -Z, so this shows the sword-arm arc (270 hid it behind the torso)
     g.rig.pitch = 0.13;
@@ -1170,8 +1154,8 @@ fn runShots(g: *Game) void {
     advanceAttack(g, dt, 10); // ~u 0.42 into the return swipe
     shoot(g, "shots/15c_atk_light_return.png");
     advanceAttack(g, dt, 999); // run the combo out
-    // TOP-DOWN — the SLASH must sweep a clean horizontal ARC across the FRONT of the hero
-    // (a swipe, not a downward poke): the swing-trail ribbon reads the arc from above.
+    // TOP-DOWN — the SLASH must sweep a clean horizontal ARC across the hero's FRONT (a
+    // swipe, not a downward poke); the swing-trail ribbon reads the arc from above.
     g.rig.yaw = mathx.radians(0);
     g.rig.pitch = 1.48; // near-straight-down (follow() doesn't clamp pitch like the live paths)
     g.rig.dist = 6.5;
@@ -1207,8 +1191,8 @@ fn runShots(g: *Game) void {
     {
         const dt2: f32 = 1.0 / 60.0;
         const f = &g.warren.frogs[0];
-        // The hero stands a couple of metres off — a scale reference, and it keeps the toad
-        // inside the sun's shadow ortho box (which tracks the hero's position).
+        // Hero stands a couple metres off — a scale reference that also keeps the toad inside
+        // the sun's shadow ortho box (which tracks the hero).
         g.hero.pos = mathx.ground(2.0, 0.9);
         g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z); // face the toad at origin
         g.hero.update(dt2, 0, 0, null);
@@ -1249,9 +1233,9 @@ fn runShots(g: *Game) void {
         stepFrog(f, 6, front); // jaws slamming
         shootFrog(g, f, "shots/28_frog_snap.png", 162, 0.06, 2.2);
 
-        // A TRACKED hit: the hero strikes; the swept blade capsule meets the hurt sphere and
-        // the counter ticks (Debug > Hitboxes draws both; Stats shows "frog hits N"). No
-        // consequence yet — detection only.
+        // A TRACKED hit: the swept blade capsule meets the hurt sphere and the counter ticks
+        // (Debug > Hitboxes draws both; Stats shows "frog hits N"). Detection only, no
+        // consequence yet.
         g.menu.hitboxes = true;
         g.menu.stats = true;
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
@@ -1362,8 +1346,8 @@ fn runShots(g: *Game) void {
         g.warren.frogs[0] = frogmod.Frog.spawn(mathx.ground(0, 60), 0, 1.0, 0.0); // shoo the origin toad out of the archer portraits
         const a = &g.line.archers[0];
         a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0); // faces +Z
-        // A "hero" placed in-band ahead (+Z) so the archer decides to shoot and pulls to full
-        // draw naturally; stop the moment it reaches the hold (full draw) for the portrait.
+        // A "hero" in-band ahead (+Z) so the archer decides to shoot and pulls to full draw
+        // naturally; stop at the hold (full draw) for the portrait.
         g.hero.pos = mathx.ground(3.0, 2.5); // near enough to keep the shadow ortho box over the archer
         g.hero.update(dt2, 0, 0, null);
         g.hero.pose();
@@ -1372,11 +1356,11 @@ fn runShots(g: *Game) void {
         shootArcher(g, a, "shots/40_archer_aim_side.png", 90, 0.06, 4.8); // profile: draw arm folded back, bow arm out
         shootArcher(g, a, "shots/41_archer_aim_front.png", 6, 0.12, 4.4); // front: skull + ribcage + the aim
         shootArcher(g, a, "shots/42_archer_aim_3q.png", 48, 0.10, 4.8); // three-quarter
-        // An arrow leaving the bow: loose from the nock toward a target ahead + step it into
-        // its arc, parked in the pool so drawArrows renders it (the oriented, arcing shaft).
+        // An arrow leaving the bow: loose from the nock toward a target ahead and step it into
+        // its arc, parked in the pool so drawArrows renders the oriented, arcing shaft.
         g.arrows[0] = archermod.launchArrow(a.nockWorld(), mathx.ground(0, 15));
         var m: i32 = 0;
-        while (m < 8) : (m += 1) archermod.stepArrow(&g.arrows[0], mathx.ground(0, 15), HERO_CENTER_Y, dt2);
+        while (m < 8) : (m += 1) archermod.stepArrow(&g.arrows[0], mathx.ground(0, 15), HERO_CENTER_Y, false, g.env.solids(), dt2);
         shootArcher(g, a, "shots/44_archer_loose.png", 90, 0.05, 5.2); // side-on: the shaft crosses the frame
         g.arrows[0] = .{};
         // A lowered/idle read too, to check the skeleton stands cleanly with the bow at rest.
@@ -1421,19 +1405,24 @@ fn runShots(g: *Game) void {
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         stepOgre(o, 54, far); // settle into idle, landing mid weight-shift (one leg relaxed)
         // Idle — a CLEAN standing read (hero shoved out of frame), pitched down a touch to see
-        // the full stooped-but-towering silhouette + the legs on the ground.
+        // the full stooped-but-towering silhouette and the legs on the ground.
         g.hero.pos = mathx.ground(oc.x - 22.0, oc.z);
         g.hero.update(dt2, 0, 0, null);
         g.hero.pose();
         shootOgre(g, o, "shots/47_ogre_idle.png", 55, 0.14, 13.0);
-        // Scale — the hero standing clearly to the ogre's side (it towers ~2.2x over him).
+        // Scale — the hero standing clearly to the ogre's side (it looms ~1.9x over him).
         g.hero.pos = mathx.ground(oc.x + 4.8, oc.z + 1.4);
         g.hero.facing = std.math.atan2(oc.x - g.hero.pos.x, oc.z - g.hero.pos.z); // face the ogre
         g.hero.update(dt2, 0, 0, null);
         g.hero.pose();
         shootOgre(g, o, "shots/48_ogre_scale.png", 30, 0.16, 15.5);
-        // Face close-up — read the single eye + the heavy sad brow. The ogre faces +Z, so the
-        // FRONT is yaw ~180 (as the toad's maw shots use); look slightly DOWN onto the brow.
+        // The approach — mid-stride on the shared gait, side-on, to judge the LUMBER (trunk
+        // roll + swagger + footfall catch). Sensed hero sits inside aggro dead ahead.
+        o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
+        stepOgre(o, 100, v3(oc.x, 0, oc.z + 15.0));
+        shootOgre(g, o, "shots/56_ogre_walk.png", 90, 0.06, 12.0);
+        // Face close-up — the single eye + heavy sad brow. Ogre faces +Z, so FRONT is yaw ~180
+        // (like the toad maw shots); look slightly DOWN onto the brow.
         g.rig.yaw = mathx.radians(182);
         g.rig.pitch = 0.16;
         g.rig.dist = 3.2;

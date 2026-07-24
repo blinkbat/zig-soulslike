@@ -5,6 +5,7 @@ const mathx = @import("mathx.zig");
 const combat = @import("combat.zig");
 const heromod = @import("hero.zig");
 const foe = @import("foe.zig");
+const collision = @import("collision.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -28,23 +29,30 @@ const Builder = gfx.Builder;
 // Rendering discipline matches hero/frog: procedural Builder meshes drawn with drawMesh
 // through one scene-shader material, so it lights + casts shadows like everything else.
 
-// ── palette (pre-gamma dark — the scene shader gammas output, so pale bone is authored at a
-// MODERATE value and lifts to ivory; hollows are near-black so sockets/gaps read empty) ────
-const BONE = rgba(150, 142, 118, 255); // weathered ivory
-const BONE_DK = rgba(96, 90, 74, 255); // shadowed recesses / old bone
-const BONE_LT = rgba(176, 168, 146, 255); // caught-light ridges
-const SOCKET = rgba(16, 14, 12, 255); // eye sockets, nasal cavity, rib gaps — hollow
-const TEETH = rgba(196, 188, 164, 255); // pale teeth, pop against the skull
-const BOWWOOD = rgba(44, 31, 19, 255); // dark horn-and-wood bow
-const BOWWOOD_LT = rgba(60, 44, 28, 255);
-const STRINGCOL = rgba(150, 144, 124, 255); // pale sinew string
-const ARROW_SHAFT = rgba(72, 58, 38, 255); // arrow shaft (wood)
-const ARROW_HEAD = rgba(120, 126, 134, 255); // steel pile
-const ARROW_FLETCH = rgba(84, 72, 56, 255); // feather fletching
+// ── palette (pre-gamma dark — the scene shader gammas output, so bone is authored moderate
+// and lifts to aged, yellowed ivory; hollows near-black so sockets/gaps read empty) ──────
+const BONE = rgba(126, 116, 92, 255); // weathered ivory, yellowed with the centuries
+const BONE_DK = rgba(78, 70, 55, 255); // shadowed recesses / old bone
+const BONE_LT = rgba(154, 144, 120, 255); // caught-light ridges
+const STAIN = rgba(96, 82, 60, 255); // grave-dirt staining (bones weather unevenly)
+const SOCKET = rgba(12, 10, 9, 255); // eye sockets, nasal cavity, rib hollow — void
+const TEETH = rgba(188, 178, 152, 255); // pale teeth, pop against the skull
+const BOWWOOD = rgba(32, 22, 13, 255); // dark horn-and-wood bow
+const BOWWOOD_LT = rgba(48, 35, 21, 255);
+const GRIP_WRAP = rgba(50, 38, 27, 255); // cracked leather grip wrap
+const STRINGCOL = rgba(170, 162, 140, 255); // pale sinew string
+const QUIVER_HIDE = rgba(46, 34, 24, 255); // the back quiver's cracked leather
+const QUIVER_LT = rgba(64, 49, 34, 255);
+// The arrow reads as a THREAT first (owner: "arrows need to be easier to
+// see") — pale shaft, big bone-white fletching + bright pile, both partly SELF-LIT
+// (vertex alpha < 255 = emissive) so a shot pops in shade and against the ground.
+const ARROW_SHAFT = rgba(118, 102, 76, 255); // pale ash shaft
+const ARROW_HEAD = rgba(158, 166, 178, 170); // bright steel pile (glints, slightly self-lit)
+const ARROW_FLETCH = rgba(176, 166, 140, 150); // bone-white feathers, self-lit — the tracer
 
-// ── rig: an 18-bone humanoid, same joint layout + parenting as the hero (the shared model),
-// with the weapon slot repurposed as the BOW. Bow rides the RIGHT wrist (a left-hand-draw
-// archer) — reusing the hero's weapon-on-right convention so the FK scaffold lines up. ─────
+// ── rig: an 18-bone humanoid, the hero's joint layout + parenting (the shared model), weapon
+// slot repurposed as the BOW. Bow rides the RIGHT wrist (a left-hand-draw archer) — the
+// hero's weapon-on-right convention, so the FK scaffold lines up. ─────
 const N = 18;
 const ROOT = 0; // pelvis
 const SPINE = 1; // lumbar column
@@ -67,8 +75,8 @@ const BOW = 17; // the drawn bow, parented to the right wrist
 
 const parent = [N]i32{ -1, ROOT, SPINE, CHEST, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CHEST, SHL, ELL, CHEST, SHR, ELR, WRR };
 
-// Stature + segment lengths: the hero's exact anthropometry (Drillis & Contini 1966 / Winter),
-// so the skeleton is a real human frame. H is imported; the fractions match hero.zig's table.
+// Stature + segment lengths: the hero's exact anthropometry (Drillis & Contini 1966 / Winter).
+// H is imported; the fractions match hero.zig's table.
 const H: f32 = heromod.H;
 const SEG_THIGH = 0.245;
 const SEG_SHANK = 0.246;
@@ -119,6 +127,29 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
     wx[i] = mul(local, wx[p]);
 }
 
+// ── bow geometry anchors (right-wrist frame) — shared by bowMesh AND the LIVE string that
+// poseString() stretches tip→nock→tip each frame, so mesh + string can never drift apart ──
+const BOW_FY = -0.05 * H; // fist centre in the wrist frame (the hero's grip anchor)
+const BOW_FZ = 0.02 * H; // held a touch out front of the palm
+const TIP_UP = 0.40 * H; // upper limb reach above the fist…
+const TIP_DN = 0.37 * H; // …lower limb a touch shorter (war bows are uneven — wabi-sabi)
+const TIP_Z = 0.06 * H; // the recurved tips kick forward of the grip line
+const FIST_L = v3(0, -0.05 * H, 0.02 * H); // the DRAW hand's fist centre (left-wrist frame)
+
+// Orient +Z along `dir` (the arrowXform convention), rotation only.
+fn orientZ(dir: rl.Vector3) rl.Matrix {
+    const yaw = mathx.degrees(std.math.atan2(dir.x, dir.z));
+    const pitch = mathx.degrees(std.math.asin(mathx.clampF(-dir.y, -1, 1)));
+    return mul(rx(pitch), ry(yaw));
+}
+
+// Stretch the unit +Z string segment from `a` to `b` (world space).
+fn stretchZ(a: rl.Vector3, b: rl.Vector3) rl.Matrix {
+    const d = mathx.subV(b, a);
+    const len = mathx.maxF(mathx.lenV(d), 1e-4);
+    return mul(scaleM(1, 1, len), mul(orientZ(mathx.scaleV(d, 1.0 / len)), tr(a.x, a.y, a.z)));
+}
+
 // ── locomotion / senses (world units / seconds) ─────────────────────────────────────────
 pub const SCALE = 1.0; // archers stand at the hero's height — no global bump (unlike the toads)
 const WALK_SPEED = heromod.WALK_SPEED * 0.95; // a wary, unhurried reposition
@@ -147,7 +178,7 @@ const STANCE_MAX = 30.0;
 pub const ARROW_HIT = combat.Hit{ .dmg = 16, .poise = 10 }; // eased down from 20 (owner: lower dmg a bit)
 const DEATH_DUR = 1.15; // collapse-and-still before the corpse dissipates
 const DISS_DUR = 0.9; // dissipation into bone-dust + grace motes
-const FLASH_DUR = 0.20;
+const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 7.0;
 
 // ── the arrow (a projectile, pooled) ────────────────────────────────────────────────────
@@ -180,11 +211,12 @@ pub fn launchArrow(from: rl.Vector3, target: rl.Vector3) Arrow {
     return .{ .pos = from, .vel = vel, .live = true };
 }
 
-// Advance one arrow a frame: LIGHT homing (a gentle heading bend toward the hero — never a
-// hard lock, so a sidestep beats it), gravity arc, then STICK on the hero / ground / expiry.
-// Sets `hit` the frame it strikes the hero; a stuck arrow ages out and clears `live` (drawn
-// shrinking away meanwhile — see arrowXform). `heroCenterY` = the hero's centre-of-mass height.
-pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, dt: f32) void {
+// Advance one arrow a frame: LIGHT homing (a gentle bend toward the hero, never a lock — a
+// sidestep beats it), gravity arc, then STICK on cover / hero / ground / expiry; sets `hit`
+// the frame it strikes, stuck arrows age out and clear `live`. `heroDodging` = roll i-frames
+// (shaft flies clean THROUGH the hero); `solids` = blockers arrows do NOT pierce — shots
+// thunk into cover below the solid's top height.
+pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, heroDodging: bool, solids: []const collision.Solid, dt: f32) void {
     if (!a.live) return;
     if (a.stuck) {
         a.age += dt;
@@ -205,8 +237,19 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, dt: f32) void {
         }
     }
     a.vel.y -= ARROW_GRAV * dt;
+    const prev = a.pos;
     a.pos = mathx.addV(a.pos, mathx.scaleV(a.vel, dt));
-    if (mathx.distXZ(a.pos, hero) <= ARROW_HIT_R and @abs(a.pos.y - heroCenterY) <= 0.85) {
+    // COVER first (a wall between archer and hero beats a hero hugging its far side): sample
+    // the frame's travel at midpoint + endpoint so a fast shaft can't tunnel a thin trunk.
+    const mid = mathx.lerpV(prev, a.pos, 0.5);
+    if (collision.blockedBy(mid, 0.04, solids) or collision.blockedBy(a.pos, 0.04, solids)) {
+        const dir = if (spd > 1e-3) mathx.scaleV(a.vel, 1.0 / spd) else v3(0, 0, 1);
+        a.pos = mathx.subV(if (collision.blockedBy(mid, 0.04, solids)) mid else a.pos, mathx.scaleV(dir, 0.26)); // head embedded, shaft + fletch proud
+        a.stuck = true;
+        a.age = 0;
+        return;
+    }
+    if (!heroDodging and mathx.distXZ(a.pos, hero) <= ARROW_HIT_R and @abs(a.pos.y - heroCenterY) <= 0.85) {
         a.hit = true;
         a.stuck = true;
         a.age = 0;
@@ -246,18 +289,22 @@ fn classify(dist: f32, reloaded: bool) Choice {
 // ── the shared skeleton meshes + material (built once, like the toad's) ──────────────────
 pub const Model = struct {
     mesh: [N]rl.Mesh,
+    string: rl.Mesh, // unit +Z segment; poseString stretches two of these tip→nock→tip
+    nockArrow: rl.Mesh, // the nocked shaft riding the drawn string (tail at origin, +Z)
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
         var mat = rl.loadMaterialDefault() catch @panic("archer material");
         mat.shader = shader;
-        return .{ .mesh = buildMeshes(), .mat = mat };
+        return .{ .mesh = buildMeshes(), .string = stringMesh(), .nockArrow = nockArrowMesh(), .mat = mat };
     }
     pub fn setShader(self: *Model, sh: rl.Shader) void {
         self.mat.shader = sh;
     }
-    pub fn draw(self: *const Model, xf: *const [N]rl.Matrix) void {
-        for (0..N) |i| rl.drawMesh(self.mesh[i], self.mat, xf[i]);
+    pub fn draw(self: *const Model, a: *const Archer) void {
+        for (0..N) |i| rl.drawMesh(self.mesh[i], self.mat, a.xf[i]);
+        for (a.stringXf) |sm| rl.drawMesh(self.string, self.mat, sm);
+        if (a.nockVis) rl.drawMesh(self.nockArrow, self.mat, a.nockXf);
     }
 };
 
@@ -272,7 +319,10 @@ pub const Archer = struct {
     t: f32 = 0,
     reloadCd: f32 = 0,
     elapsed: f32 = 0,
-    drawAmt: f32 = 0, // 0 = bow lowered, 1 = full draw (drives the pose)
+    drawAmt: f32 = 0, // 0 = string home, 1 = full draw — the STRING pull (kinks to the hand)
+    armT: f32 = 0, // the draw arm's arc: 0 rest → reach over the shoulder (quiver) → 1 anchor
+    kick: f32 = 0, // loose follow-through (hand flies back, bow bounces); decays after
+    headScan: f32 = 0, // idle sentry sweep (deg yaw) — the skull scans the ruins
     kiteDir: rl.Vector3 = mathx.zero3, // world XZ direction of the current reposition
     looseFired: bool = false, // one arrow per loose (latched)
 
@@ -295,6 +345,10 @@ pub const Archer = struct {
     gone: bool = false,
 
     xf: [N]rl.Matrix = undefined,
+    stringXf: [2]rl.Matrix = undefined, // tip→nock, nock→tip (live string segments)
+    nockXf: rl.Matrix = undefined,
+    nockVis: bool = false,
+    lastNock: rl.Vector3 = mathx.zero3, // the true release point (game.zig looses from here)
     rest: [N]rl.Vector3 = undefined,
 
     pub fn spawn(home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Archer {
@@ -344,16 +398,15 @@ pub const Archer = struct {
         self.facing = mathx.approachAngle(self.facing, mathx.headingXZ(d), TURN_RATE * dt);
     }
 
-    // The nock point (where the arrow sits at full draw) ~ the bow hand, in world space.
+    // The true nock point — where the arrow actually sits on the live string this frame, so
+    // the loosed projectile leaves from exactly where the nocked shaft was drawn.
     pub fn nockWorld(self: *const Archer) rl.Vector3 {
-        const f = mathx.headingDir(self.facing);
-        return v3(self.pos.x + f.x * 0.30 * self.scale, 1.02 * H * self.scale, self.pos.z + f.z * 0.30 * self.scale);
+        return self.lastNock;
     }
 
-    // ── per-frame update; returns true the frame it LOOSES (game.zig spawns the arrow). The
-    // hero's `blade` is applied at the END (via tryHit) so a kill sets justDied for exactly THIS
-    // frame's beat — the top-of-frame reset below makes it a true one-frame flag (was the
-    // nonstop-shake bug when tryHit ran externally and justDied never cleared). ────────────────
+    // ── per-frame update; returns true the frame it LOOSES (game.zig spawns the arrow). Hero's
+    // `blade` is applied at the END (via tryHit) so a kill sets justDied for THIS frame's beat
+    // only — the top-of-frame reset makes it a true one-frame flag (else the nonstop-shake bug). ──
     pub fn update(self: *Archer, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) bool {
         if (self.gone) return false;
         self.justDied = false; // one-frame flag: re-set below only if a blade kills it this frame
@@ -375,17 +428,27 @@ pub const Archer = struct {
         const d = mathx.distXZ(self.pos, hero);
         switch (self.state) {
             .idle => {
-                self.drawAmt = mathx.approach(self.drawAmt, 0, dt * 4.0);
-                if (d <= AGGRO_R) self.faceToward(hero, dt);
+                self.armT = mathx.approach(self.armT, 0, dt * 4.0);
+                self.drawAmt = mathx.approach(self.drawAmt, 0, dt * 6.0);
+                if (d <= AGGRO_R) {
+                    self.faceToward(hero, dt);
+                    self.headScan = mathx.approach(self.headScan, 0, dt * 70.0);
+                } else {
+                    // a slow sentry sweep — the empty skull scans the ruins for trespass
+                    self.headScan = mathx.approach(self.headScan, 32.0 * mathx.sinf(self.elapsed * 0.55 + self.seed * 9.0), dt * 45.0);
+                }
                 self.decide(d);
             },
             .draw => {
                 self.faceToward(hero, dt); // track while pulling
-                self.drawAmt = mathx.smoothstep(0, DRAW_DUR, self.t);
+                const u = mathx.clampF(self.t / DRAW_DUR, 0, 1);
+                self.armT = mathx.smoothstep(0, 0.92, u); // reach the quiver, nock, settle in
+                self.drawAmt = mathx.smoothstep(0.60, 1.0, u); // the string comes back only once hooked
                 if (self.t >= DRAW_DUR) self.enter(.hold);
             },
             .hold => {
                 self.faceToward(hero, dt);
+                self.armT = 1.0;
                 self.drawAmt = 1.0;
                 if (self.t >= HOLD_DUR) self.enter(.loose);
             },
@@ -394,7 +457,9 @@ pub const Archer = struct {
                     self.looseFired = true;
                     loosed = true; // game.zig spawns the arrow at nockWorld toward the hero
                 }
-                self.drawAmt = mathx.lerpF(1.0, 0.0, mathx.smoothstep(0, LOOSE_DUR, self.t)); // string snaps home
+                const u = mathx.clampF(self.t / LOOSE_DUR, 0, 1);
+                self.drawAmt = 1.0 - mathx.smoothstep(0, 0.38, u); // the string SNAPS home ahead of the arm…
+                self.kick = mathx.smoothstep(0, 0.5, u); // …while the hand flies back off the release
                 if (self.t >= LOOSE_DUR) {
                     self.reloadCd = RELOAD_CD;
                     self.enter(.recover);
@@ -402,11 +467,13 @@ pub const Archer = struct {
             },
             .recover => {
                 self.faceToward(hero, dt);
-                self.drawAmt = mathx.approach(self.drawAmt, 0, dt * 3.0);
+                self.armT = mathx.approach(self.armT, 0, dt * 2.4); // lower the bow, unhurried
+                self.drawAmt = mathx.approach(self.drawAmt, 0, dt * 8.0);
                 if (self.t >= RECOVER_DUR) self.decide(d);
             },
             .reposition => {
-                self.drawAmt = mathx.approach(self.drawAmt, 0, dt * 3.0);
+                self.armT = mathx.approach(self.armT, 0.15, dt * 3.0); // a wary half-ready carry
+                self.drawAmt = mathx.approach(self.drawAmt, 0, dt * 6.0);
                 // Step along the committed kite direction while FACING the hero — so travel-vs-
                 // facing feeds the shared gait as a STRAFE (lateral) or BACKPEDAL (kiting out).
                 self.faceToward(hero, dt);
@@ -418,18 +485,23 @@ pub const Archer = struct {
                 if (self.t >= REPOSITION_DUR) self.decide(d);
             },
             .stunlight => {
+                self.armT = mathx.approach(self.armT, 0, dt * 8.0);
                 if (self.t >= combat.LIGHT_STUN_DUR) self.enter(.idle);
             },
             .stunheavy => {
+                self.armT = mathx.approach(self.armT, 0, dt * 8.0);
                 if (self.t >= combat.HEAVY_STUN_DUR) self.enter(.idle);
             },
             .dead => {
+                self.armT = mathx.approach(self.armT, 0, dt * 3.0);
+                self.drawAmt = mathx.approach(self.drawAmt, 0, dt * 8.0);
                 if (self.t >= DEATH_DUR) {
                     self.fade = mathx.smoothstep(DEATH_DUR, DEATH_DUR + DISS_DUR, self.t);
                     if (self.t >= DEATH_DUR + DISS_DUR) self.gone = true;
                 }
             },
         }
+        if (self.state != .loose) self.kick = mathx.approach(self.kick, 0, dt * 4.5);
 
         // Drive the SHARED humanoid gait (the walk/strafe legs come from hero.legChain in pose()).
         const gaitSpeed: f32 = if (movedDist > 0) WALK_SPEED else 0;
@@ -522,11 +594,13 @@ pub const Archer = struct {
         var wx: [N]rl.Matrix = undefined;
         const collapse = mathx.lerpF(hipY, 0.22 * H, dk); // pelvis drops on death
         const pitchBody = 20.0 * dk - 26.0 * stunAmt; // topple forward dead / arch back stunned
-        // scaleM FIRST → the whole skeleton scales about its pelvis (per-archer size + the
-        // death-dissipation shrink `fs`); the world placement `tr(pos)` stays unscaled.
+        // scaleM FIRST → the whole skeleton scales about its pelvis (per-archer size + the shrink
+        // `fs`); the world placement `tr(pos)` stays unscaled. Pelvis HEIGHT must scale too
+        // (`hipY * fs`) — else at scale≠1 the scaled legs hang and feet sink underground (the
+        // documented humanoid gotcha; cf. ogre.zig's pelvY*fs).
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul(rz(10.0 * dk), rx(pitchBody)),
-            mul(tr(sway, (if (dead) collapse else hipY + bob) + sink, 0), ry(facingDeg)),
+            mul(tr(sway, (if (dead) collapse else hipY * fs + bob) + sink, 0), ry(facingDeg)),
             tr(self.pos.x, 0, self.pos.z),
         ));
 
@@ -538,6 +612,27 @@ pub const Archer = struct {
         }
         self.poseUpper(&wx, dk, stunAmt, dead);
         self.xf = wx;
+        self.poseString();
+    }
+
+    // The LIVE string + nocked arrow. Two thin segments run bow-tip → nock → bow-tip; while
+    // pulling the nock rides the DRAW HAND (hand-to-string contact by construction), else the
+    // rest line — so the string hauls back and SNAPS home on the loose, shaft riding it to release.
+    fn poseString(self: *Archer) void {
+        const tipU = rl.math.vector3Transform(v3(0, BOW_FY + TIP_UP, BOW_FZ + TIP_Z), self.xf[BOW]);
+        const tipD = rl.math.vector3Transform(v3(0, BOW_FY - TIP_DN, BOW_FZ + TIP_Z), self.xf[BOW]);
+        const restLine = mathx.lerpV(tipU, tipD, 0.52); // hooked a touch below centre
+        const hand = rl.math.vector3Transform(FIST_L, self.xf[WRL]);
+        const nock = mathx.lerpV(restLine, hand, self.drawAmt);
+        self.lastNock = nock;
+        self.stringXf[0] = stretchZ(tipU, nock);
+        self.stringXf[1] = stretchZ(nock, tipD);
+        self.nockVis = (self.state == .draw or self.state == .hold) and self.drawAmt > 0.03;
+        if (self.nockVis) {
+            const grip = rl.math.vector3Transform(v3(0, BOW_FY + 0.01 * H, BOW_FZ), self.xf[BOW]);
+            const dir = mathx.normV(mathx.subV(grip, nock));
+            self.nockXf = mul(orientZ(dir), tr(nock.x, nock.y, nock.z));
+        }
     }
 
     fn stunAmount(self: *const Archer) f32 {
@@ -551,19 +646,34 @@ pub const Archer = struct {
         return 0;
     }
 
-    // Spine, head, the archery arms, and (only when DEAD) the buckling legs. `dk` = death
-    // collapse, `stun` = recoil. Alive, the LEGS come from hero.legChain in pose() (the shared
-    // walk/strafe) — this only lays the archery upper body on top.
+    // Spine, head, the archery arms, and (only when DEAD) the buckling legs (`dk` = death
+    // collapse, `stun` = recoil). Alive, the legs come from hero.legChain in pose() — this only
+    // lays the archery upper body on top.
     fn poseUpper(self: *Archer, wx: *[N]rl.Matrix, dk: f32, stun: f32, dead: bool) void {
-        const dr = self.drawAmt; // 0..1 draw amount
         const rest = self.rest;
-        // Spine: a slight forward set at the ready, curling on death, arching back when stunned.
-        const spineX = 4.0 + 22.0 * dk - 20.0 * stun;
-        setLocal(wx, SPINE, rest, rx(spineX * 0.5));
-        setLocal(wx, CHEST, rest, mul(rx(spineX * 0.5), ry(-8.0 * dr))); // torso blades slightly as it draws
+        const at = self.armT;
+        const dr = self.drawAmt;
+        // The draw-arm arc in two beats: REACH over the shoulder for a shaft from the quiver
+        // (at 0→0.45), then sweep down and PULL to the cheek anchor (at 0.45→1). The string
+        // (dr) only follows the pull.
+        const reach = mathx.smoothstep(0.0, 0.45, at);
+        const pull = mathx.smoothstep(0.45, 1.0, at);
+        // Seeded wonk — each archer stands a little crooked (cosmetic only; wabi-sabi).
+        const wonk = (self.seed - 0.5) * 6.0;
+
+        // Spine: a slight ready-stoop that blades side-on through the pull, leaning back a
+        // hair at full draw (the counterweight); curls on death, arches back when stunned.
+        const spineX = 4.0 - 3.0 * dr + 22.0 * dk - 20.0 * stun;
+        setLocal(wx, SPINE, rest, mul(rx(spineX * 0.5), rz(wonk * 0.5)));
+        setLocal(wx, CHEST, rest, mul3(rx(spineX * 0.5), ry(-5.0 * reach - 9.0 * pull), rz(-wonk * 0.3)));
         setLocal(wx, NECK, rest, rx(3.0 + 12.0 * dk - 8.0 * stun));
-        // Head: sights down the arrow toward the target at the ready; hangs on death.
-        setLocal(wx, SKULL, rest, mul(rx(6.0 + 20.0 * dk - 30.0 * stun), ry(6.0 * dr)));
+        // Head: sentry-scans at rest, sights down the shaft as the pull anchors — craned in
+        // and CANTED onto the arrow (the archer's cheek-weld); lolls aside as it dies.
+        setLocal(wx, SKULL, rest, mul3(
+            rx(6.0 + 4.0 * pull + 20.0 * dk - 30.0 * stun),
+            ry(self.headScan + 8.0 * pull),
+            rz(wonk + 9.0 * dr + 14.0 * dk),
+        ));
 
         // Legs buckle under the crumple ONLY when dead; alive, hero.legChain (pose()) owns them.
         if (dead) {
@@ -576,30 +686,34 @@ pub const Archer = struct {
         }
 
         // ── the ARMS — the archer read ──
-        // Right arm = the BOW arm: extends toward the target (shoulder raised forward to
-        // horizontal), elbow near-straight, so the bow is held out front. Barely moves.
         const armStun = -70.0 * stun; // arms fly up when hit
-        const bowShFwd = -86.0 + armStun;
-        setLocal(wx, SHR, rest, mul(rx(bowShFwd - 30.0 * dk), rz(-9.0)));
-        setLocal(wx, ELR, rest, rx(-(10.0 + 4.0 * dr)));
-        setLocal(wx, WRR, rest, rz(-6.0));
-        // The bow arm tilts ~-100° forward to aim; rx(100) stands the bow VERTICAL, and ry(180)
-        // faces it the right way — string toward the archer, limbs bowing out to the target.
-        setLocal(wx, BOW, rest, mul(ry(180.0), rx(100.0)));
+        // Right arm = the BOW arm: rises early in the draw from a low carry, punching the bow
+        // out toward the target, elbow near-straight; a small forward BOUNCE off the release.
+        const bowT = mathx.clampF(at * 1.7, 0, 1);
+        const bowShFwd = mathx.lerpF(-26.0, -88.0, bowT) + 5.0 * self.kick + armStun;
+        setLocal(wx, SHR, rest, mul(rx(bowShFwd - 30.0 * dk), rz(-9.0 + wonk * 0.4)));
+        setLocal(wx, ELR, rest, rx(-(8.0 + 5.0 * bowT)));
+        setLocal(wx, WRR, rest, rz(-6.0 - 4.0 * self.kick));
+        // rx(100) stands the bow VERTICAL, ry(180) faces it — string toward the archer, limbs
+        // bowing out to the target; the whole bow rocks forward a touch off the loose.
+        setLocal(wx, BOW, rest, mul(ry(180.0), rx(100.0 - 3.0 * self.kick)));
 
-        // Left arm = the DRAW arm: from a low ready it RAISES and the elbow FOLDS to bring the
-        // hand back to the face anchor as `draw` → 1 (the pull), the elbow riding high. On the
-        // loose it snaps forward (draw → 0). A high draw elbow is the signature archer shape.
-        const drawShFwd = mathx.lerpF(-30.0, -80.0, dr) + armStun;
-        const drawElbow = mathx.lerpF(20.0, 148.0, dr); // fold to full draw
-        const elbowHigh = 22.0 * dr; // the drawing elbow rides up
-        setLocal(wx, SHL, rest, mul3(rx(drawShFwd - 30.0 * dk), ry(-18.0 * dr), rz(9.0 + elbowHigh)));
-        setLocal(wx, ELL, rest, rx(-drawElbow));
-        setLocal(wx, WRL, rest, rl.math.matrixIdentity());
+        // Left arm = the DRAW arm: beat one plucks a shaft from the back quiver (hand up-and-back
+        // over the shoulder), beat two hauls to the cheek with the elbow riding HIGH (the
+        // signature silhouette). On the loose the elbow springs open, the hand flies back past
+        // the ear; full draw carries a tiny wobble — held tension, not statuary.
+        const wob = (mathx.sinf(self.elapsed * 9.0 + self.seed * 7.0) + 0.5 * mathx.sinf(self.elapsed * 23.0)) * 1.1 * dr;
+        const drawSh = -26.0 - 102.0 * reach + 44.0 * pull + armStun - 30.0 * dk + wob;
+        const drawYaw = -26.0 * reach + 10.0 * pull; // out-and-back at the quiver, in at the anchor
+        const drawRz = 9.0 + 24.0 * pull - wonk * 0.4; // the drawing elbow rides up
+        const drawEl = 16.0 + 104.0 * reach + 32.0 * pull - 30.0 * self.kick;
+        setLocal(wx, SHL, rest, mul3(rx(drawSh), ry(drawYaw), rz(drawRz)));
+        setLocal(wx, ELL, rest, rx(-drawEl));
+        setLocal(wx, WRL, rest, rx(-12.0 * self.kick));
     }
 
     pub fn draw(self: *const Archer, model: *const Model) void {
-        model.draw(&self.xf);
+        model.draw(self);
     }
 };
 
@@ -618,8 +732,12 @@ pub const Line = struct {
 
     pub fn init(shader: rl.Shader) Line {
         var l = Line{ .model = Model.init(shader) };
-        for (homes, 0..) |h, i| l.archers[i] = Archer.spawn(mathx.ground(h.x, h.z), h.yaw, h.scale, h.seed);
+        l.reset();
         return l;
+    }
+    // Re-perch every archer, alive and fresh (a hero death reloads the world, ER-style).
+    pub fn reset(self: *Line) void {
+        for (homes, 0..) |h, i| self.archers[i] = Archer.spawn(mathx.ground(h.x, h.z), h.yaw, h.scale, h.seed);
     }
     pub fn setShader(self: *Line, sh: rl.Shader) void {
         self.model.setShader(sh);
@@ -652,7 +770,9 @@ pub const Line = struct {
     }
 };
 
-// ── bone meshes (authored at the joint origin, hero-local axes; lengths in units of H) ────
+// ── bone meshes (authored at the joint origin, hero-local axes; lengths in units of H).
+// Every bone carries its own seeded wonk — kinks, waists, stains, uneven knobs — so no two
+// limbs are the same machined part (wabi-sabi; the rig's mechanics never change). ─────────
 fn buildMeshes() [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
     mesh[ROOT] = pelvisMesh();
@@ -660,50 +780,64 @@ fn buildMeshes() [N]rl.Mesh {
     mesh[CHEST] = ribcageMesh();
     mesh[NECK] = neckMesh();
     mesh[SKULL] = skullMesh();
-    mesh[HIPL] = femurMesh();
-    mesh[KNEEL] = tibiaMesh();
-    mesh[ANKL] = footMesh(1.0);
-    mesh[HIPR] = femurMesh();
-    mesh[KNEER] = tibiaMesh();
-    mesh[ANKR] = footMesh(-1.0);
-    mesh[SHL] = humerusMesh();
-    mesh[ELL] = forearmMesh();
-    mesh[WRL] = handMesh();
-    mesh[SHR] = humerusMesh();
-    mesh[ELR] = forearmMesh();
-    mesh[WRR] = handMesh();
+    mesh[HIPL] = femurMesh(101);
+    mesh[KNEEL] = tibiaMesh(102);
+    mesh[ANKL] = footMesh(1.0, 103);
+    mesh[HIPR] = femurMesh(104);
+    mesh[KNEER] = tibiaMesh(105);
+    mesh[ANKR] = footMesh(-1.0, 106);
+    mesh[SHL] = humerusMesh(107);
+    mesh[ELL] = forearmMesh(108);
+    mesh[WRL] = handMesh(109);
+    mesh[SHR] = humerusMesh(110);
+    mesh[ELR] = forearmMesh(111);
+    mesh[WRR] = handMesh(112);
     mesh[BOW] = bowMesh();
     return mesh;
 }
 
-// A bone: a slightly-tapered shaft with a fatter knob at each joint end (low-poly articular
-// heads). `a`→`b` in the joint-local frame; `r` the shaft radius (units of H already applied).
-fn bone(b: *Builder, a: rl.Vector3, e: rl.Vector3, r: f32, col: rl.Color) void {
-    b.addCylinder(a, e, r, r * 0.9, 7, col);
-    b.addCylinder(v3(a.x, a.y + r * 0.6, a.z), v3(a.x, a.y - r * 0.6, a.z), r * 1.7, r * 1.7, 7, BONE_LT); // head knob at a
-    b.addCylinder(v3(e.x, e.y + r * 0.6, e.z), v3(e.x, e.y - r * 0.6, e.z), r * 1.6, r * 1.6, 7, BONE_LT); // head knob at e
+// A bone: a kinked, waisted shaft with a fatter articular knob at each joint end — never
+// machine-straight. `a`→`e` in the joint-local frame; `r` the shaft radius (H applied).
+fn bone(b: *Builder, rng: *mathx.Rng, a: rl.Vector3, e: rl.Vector3, r: f32, col: rl.Color) void {
+    const mid = v3(
+        (a.x + e.x) * 0.5 + rng.range(-0.007, 0.007) * H,
+        (a.y + e.y) * 0.5,
+        (a.z + e.z) * 0.5 + rng.range(-0.007, 0.007) * H,
+    );
+    const rm = r * rng.range(0.78, 0.9); // old bone waists at mid-shaft
+    b.addCylinder(a, mid, r, rm, 7, col);
+    b.addCylinder(mid, e, rm, r * 0.92, 7, col);
+    b.addCylinder(v3(a.x, a.y + r * 0.6, a.z), v3(a.x, a.y - r * 0.6, a.z), r * rng.range(1.5, 1.75), r * 1.55, 7, BONE_LT);
+    b.addCylinder(v3(e.x, e.y + r * 0.6, e.z), v3(e.x, e.y - r * 0.6, e.z), r * rng.range(1.4, 1.65), r * 1.5, 7, BONE_LT);
 }
 
 fn pelvisMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
-    // A bony pelvic girdle: a central sacrum block + two flared iliac blades.
-    b.addCube(v3(0, -0.01 * H, -0.01 * H), v3(0.10 * H, 0.11 * H, 0.10 * H), BONE_DK); // sacrum
-    b.addBox(v3(0.085 * H, 0.01 * H, 0.02 * H), v3(0.055 * H, 0.02 * H, 0.01 * H), v3(0.01 * H, 0.075 * H, 0.0), v3(0, 0, 0.06 * H), BONE); // left ilium blade
-    b.addBox(v3(-0.085 * H, 0.01 * H, 0.02 * H), v3(0.055 * H, 0.02 * H, 0.01 * H), v3(-0.01 * H, 0.075 * H, 0.0), v3(0, 0, 0.06 * H), BONE); // right ilium blade
-    b.addCube(v3(0, -0.06 * H, 0.01 * H), v3(0.14 * H, 0.05 * H, 0.09 * H), BONE_DK); // pubic mass
+    // An OPEN bony girdle, not a solid block: sacrum wedge, two flared iliac blades (the left
+    // runs bigger — wabi-sabi), a thin pubic bar, hip-socket knobs — and dark void within.
+    b.addCube(v3(0, 0.0, -0.02 * H), v3(0.085 * H, 0.10 * H, 0.075 * H), BONE_DK); // sacrum wedge
+    b.addCube(v3(0, -0.045 * H, -0.005 * H), v3(0.11 * H, 0.055 * H, 0.055 * H), SOCKET); // the hollow within
+    b.addBox(v3(0.082 * H, 0.022 * H, 0.0), v3(0.05 * H, 0.024 * H, 0.0), v3(0.014 * H, 0.062 * H, 0.0), v3(0, 0, 0.055 * H), BONE); // L ilium blade
+    b.addBox(v3(-0.080 * H, 0.018 * H, 0.0), v3(0.046 * H, 0.02 * H, 0.0), v3(-0.012 * H, 0.056 * H, 0.0), v3(0, 0, 0.050 * H), STAIN); // R ilium — smaller, dirt-stained
+    b.addCylinder(v3(0.07 * H, -0.055 * H, 0.045 * H), v3(-0.07 * H, -0.055 * H, 0.045 * H), 0.016 * H, 0.016 * H, 6, BONE_DK); // pubic bar
+    b.addCylinder(v3(0.090 * H, -0.002 * H, 0.01 * H), v3(0.090 * H, -0.032 * H, 0.01 * H), 0.030 * H, 0.026 * H, 7, BONE_LT); // L hip socket
+    b.addCylinder(v3(-0.090 * H, -0.002 * H, 0.01 * H), v3(-0.090 * H, -0.032 * H, 0.01 * H), 0.030 * H, 0.026 * H, 7, BONE_LT); // R hip socket
     return b.toMesh();
 }
 
 fn lumbarMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
-    // A short stack of lumbar vertebrae from ROOT toward CHEST (~0.53→0.76 H, span ~0.12 H local).
+    // A short CROOKED stack of lumbar vertebrae — each drifts a hair off plumb (old spines
+    // settle; nothing machined) — spinous processes poking back.
+    var rng = mathx.Rng.init(2203);
     var i: i32 = 0;
     while (i < 4) : (i += 1) {
         const y = 0.01 * H + @as(f32, @floatFromInt(i)) * 0.032 * H;
-        b.addCube(v3(0, y, -0.02 * H), v3(0.055 * H, 0.02 * H, 0.05 * H), if (@mod(i, 2) == 0) BONE else BONE_DK); // vertebral body
-        b.addCube(v3(0, y, -0.05 * H), v3(0.03 * H, 0.014 * H, 0.03 * H), BONE_DK); // spinous process, poking back
+        const ox = rng.range(-0.006, 0.006) * H;
+        b.addCube(v3(ox, y, -0.02 * H), v3(0.055 * H, 0.021 * H, 0.05 * H), if (@mod(i, 2) == 0) BONE else STAIN); // vertebral body
+        b.addCube(v3(ox, y, -0.052 * H), v3(0.028 * H, 0.014 * H, 0.032 * H), BONE_DK); // spinous process
     }
     return b.toMesh();
 }
@@ -711,30 +845,62 @@ fn lumbarMesh() rl.Mesh {
 fn ribcageMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
-    // Thorax joint sits ~0.76 H; author the cage around it. Spine column up the back, a sternum
-    // plate down the front, and paired ribs sweeping from the spine forward-and-down to the
-    // sternum. Each rib = two straight segments (back→side, side→front) — a bent bar that reads
-    // as a wrapping rib at game distance. The cage narrows top→bottom (chest tapers to waist).
-    b.addCube(v3(0, 0.02 * H, -0.07 * H), v3(0.05 * H, 0.16 * H, 0.05 * H), BONE_DK); // thoracic spine
-    b.addCube(v3(0, 0.03 * H, 0.075 * H), v3(0.04 * H, 0.13 * H, 0.015 * H), BONE_LT); // sternum plate
-    // shoulder girdle: clavicles + scapular nubs so the arms hang off real bone
+    // Thorax joint ~0.76 H; a near-black CORE fills the chest so the rib gaps read as hollow
+    // void, not daylight. Spine up the back, sternum down the front, FIVE paired ribs narrowing
+    // to the waist — each settling its own way, one SNAPPED to a jagged stub (an old wound).
+    b.addCube(v3(0, 0.015 * H, -0.005 * H), v3(0.13 * H, 0.185 * H, 0.10 * H), SOCKET); // the hollow core
+    b.addCube(v3(0, 0.02 * H, -0.07 * H), v3(0.05 * H, 0.17 * H, 0.05 * H), BONE_DK); // thoracic spine
+    b.addCube(v3(0, 0.032 * H, 0.078 * H), v3(0.036 * H, 0.125 * H, 0.016 * H), BONE_LT); // sternum
+    // shoulder girdle: clavicles (uneven pair) so the arms hang off real bone
     b.addBox(v3(0.07 * H, 0.10 * H, 0.02 * H), v3(0.075 * H, 0.012 * H, 0.0), v3(0, 0.012 * H, 0), v3(0, 0, 0.02 * H), BONE); // L clavicle
-    b.addBox(v3(-0.07 * H, 0.10 * H, 0.02 * H), v3(0.075 * H, 0.012 * H, 0.0), v3(0, 0.012 * H, 0), v3(0, 0, 0.02 * H), BONE); // R clavicle
-    const levels = [_]f32{ 0.085, 0.045, 0.005, -0.035 }; // rib heights (H) off the joint
-    const halfw = [_]f32{ 0.115, 0.125, 0.118, 0.095 }; // cage half-width at each level
-    const fwd = [_]f32{ 0.085, 0.095, 0.088, 0.070 }; // sternum reach forward at each level
+    b.addBox(v3(-0.07 * H, 0.10 * H, 0.02 * H), v3(0.075 * H, 0.015 * H, 0.0), v3(0, 0.010 * H, 0), v3(0, 0, 0.02 * H), STAIN); // R clavicle — thicker, stained
+    var rng = mathx.Rng.init(911);
+    const levels = [_]f32{ 0.088, 0.052, 0.014, -0.024, -0.060 }; // rib heights (H) off the joint
+    const halfw = [_]f32{ 0.104, 0.122, 0.120, 0.105, 0.082 }; // cage half-width at each level
+    const fwd = [_]f32{ 0.080, 0.094, 0.090, 0.076, 0.056 }; // sternum reach at each level
     for (0..levels.len) |li| {
         const y = levels[li] * H;
         const w = halfw[li] * H;
         const fz = fwd[li] * H;
-        const rr = 0.011 * H;
+        const rr = 0.0095 * H * rng.range(0.9, 1.12); // rib gauge drifts rib to rib
         const col = if (@mod(li, 2) == 0) BONE else BONE_LT;
         for ([_]f32{ 1, -1 }) |sgn| {
-            const spinePt = v3(0, y, -0.06 * H); // off the spine at the back
-            const sidePt = v3(sgn * w, y - 0.006 * H, 0.01 * H); // widest point at the flank
-            const frontPt = v3(sgn * 0.02 * H, y - 0.014 * H, fz); // meeting the sternum out front
-            b.addCylinder(spinePt, sidePt, rr, rr, 5, col); // back → side
-            b.addCylinder(sidePt, frontPt, rr, rr * 0.85, 5, col); // side → sternum
+            const droop = rng.range(-0.004, 0.010) * H; // each rib settles its own way
+            const spinePt = v3(0, y, -0.06 * H);
+            const sidePt = v3(sgn * w, y - 0.006 * H - droop, 0.01 * H);
+            const frontPt = v3(sgn * 0.02 * H, y - 0.014 * H - droop, fz);
+            b.addCylinder(spinePt, sidePt, rr, rr, 5, col);
+            if (li == 3 and sgn > 0) {
+                // the snapped rib: its front run dies at a jagged stub short of the sternum
+                const stub = mathx.lerpV(sidePt, frontPt, 0.38);
+                b.addCylinder(sidePt, stub, rr, rr * 0.25, 5, STAIN);
+            } else {
+                b.addCylinder(sidePt, frontPt, rr, rr * 0.85, 5, col);
+            }
+        }
+    }
+    // ── the back QUIVER — cracked leather slung behind the LEFT shoulder (the draw side), a
+    // fan of spare shafts at odd heights. It's what the nock-reach reaches FOR.
+    b.setMat(.leather);
+    const qBase = v3(0.010 * H, -0.095 * H, -0.105 * H);
+    const qMouth = v3(0.125 * H, 0.115 * H, -0.120 * H);
+    b.addCylinder(qBase, qMouth, 0.026 * H, 0.033 * H, 7, QUIVER_HIDE);
+    b.addCylinder(mathx.lerpV(qBase, qMouth, 0.94), qMouth, 0.036 * H, 0.035 * H, 7, QUIVER_LT); // rolled rim
+    b.addCylinder(mathx.lerpV(qBase, qMouth, 0.30), mathx.lerpV(qBase, qMouth, 0.44), 0.0345 * H, 0.0345 * H, 7, QUIVER_LT); // patch band
+    b.addBox(v3(0.0, 0.02 * H, 0.088 * H), v3(0.075 * H, 0.085 * H, 0.0), v3(-0.012 * H, 0.010 * H, 0.0), v3(0, 0, 0.007 * H), QUIVER_HIDE); // the worn strap, shoulder→hip across the ribs
+    b.setMat(.wood);
+    var qi: i32 = 0;
+    while (qi < 3) : (qi += 1) {
+        const fi = @as(f32, @floatFromInt(qi));
+        const off = v3(rng.range(-0.012, 0.012) * H, 0, rng.range(-0.012, 0.012) * H);
+        const foot = mathx.addV(mathx.lerpV(qBase, qMouth, 0.5), off);
+        const tip = mathx.addV(mathx.addV(qMouth, off), v3(rng.range(0.0, 0.03) * H + fi * 0.008 * H, rng.range(0.08, 0.15) * H, rng.range(-0.02, 0.01) * H));
+        b.addCylinder(foot, tip, 0.006 * H, 0.005 * H, 4, ARROW_SHAFT);
+        if (qi != 1) { // fletched — except the one bare shaft (wabi-sabi)
+            b.setMat(.cloth);
+            const fb = mathx.lerpV(foot, tip, 0.82);
+            b.addBox(fb, v3(0.002 * H, 0, 0), v3(0, 0.022 * H, 0.004 * H), v3(0, 0.004 * H, 0.020 * H), ARROW_FLETCH);
+            b.setMat(.wood);
         }
     }
     return b.toMesh();
@@ -744,131 +910,169 @@ fn neckMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
     b.addCylinder(v3(0, 0, 0), v3(0, 0.070 * H, 0), 0.026 * H, 0.024 * H, 7, BONE_DK); // cervical column
-    b.addCube(v3(0, 0.024 * H, 0), v3(0.03 * H, 0.02 * H, 0.03 * H), BONE); // a vertebra ring
+    b.addCube(v3(0, 0.020 * H, 0), v3(0.032 * H, 0.018 * H, 0.032 * H), BONE); // a vertebra ring
+    b.addCube(v3(0, 0.048 * H, -0.004 * H), v3(0.028 * H, 0.014 * H, 0.028 * H), STAIN); // and another, askew
     return b.toMesh();
 }
 
 fn skullMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
-    // Head joint ~0.885 H (chin line); cranium lands ~1.0 H. Cranium dome + brow, sunken eye
-    // sockets + nasal cavity (near-black hollows), cheekbones, and a toothed upper + lower jaw.
-    b.addCylinder(v3(0, 0.055 * H, -0.01 * H), v3(0, 0.11 * H, -0.01 * H), 0.075 * H, 0.052 * H, 9, BONE); // cranium crown
-    b.addCube(v3(0, 0.055 * H, -0.005 * H), v3(0.135 * H, 0.075 * H, 0.135 * H), BONE); // cranium box
-    b.addCube(v3(0, 0.072 * H, 0.058 * H), v3(0.12 * H, 0.028 * H, 0.03 * H), BONE_LT); // brow ridge
-    // eye sockets (deep, dark)
-    b.addCube(v3(0.042 * H, 0.05 * H, 0.062 * H), v3(0.05 * H, 0.045 * H, 0.03 * H), SOCKET);
-    b.addCube(v3(-0.042 * H, 0.05 * H, 0.062 * H), v3(0.05 * H, 0.045 * H, 0.03 * H), SOCKET);
-    b.addCube(v3(0, 0.03 * H, 0.07 * H), v3(0.022 * H, 0.04 * H, 0.025 * H), SOCKET); // nasal cavity
-    b.addCube(v3(0.055 * H, 0.03 * H, 0.05 * H), v3(0.03 * H, 0.03 * H, 0.04 * H), BONE_DK); // L cheekbone
-    b.addCube(v3(-0.055 * H, 0.03 * H, 0.05 * H), v3(0.03 * H, 0.03 * H, 0.04 * H), BONE_DK); // R cheekbone
-    // upper jaw + a ragged tooth row, then the mandible
-    b.addCube(v3(0, 0.012 * H, 0.055 * H), v3(0.085 * H, 0.03 * H, 0.055 * H), BONE); // maxilla
-    b.addCube(v3(0, -0.012 * H, 0.05 * H), v3(0.09 * H, 0.028 * H, 0.06 * H), BONE_DK); // mandible
+    // Head joint ~0.885 H (chin line); cranium lands ~1.0 H. A real death's-head: domed
+    // cranium over a narrower jaw, eye sockets DEEP and black under the brow, a dark GAPE
+    // between the teeth rows, one cheekbone chipped, an old cleft split in the crown.
+    b.addCylinder(v3(0, 0.06 * H, -0.008 * H), v3(0, 0.114 * H, -0.010 * H), 0.066 * H, 0.048 * H, 9, BONE); // crown (inside the box line — no hat-brim ledge)
+    b.addCube(v3(0, 0.058 * H, -0.004 * H), v3(0.140 * H, 0.082 * H, 0.138 * H), BONE); // cranium box
+    b.addCube(v3(0.020 * H, 0.098 * H, 0.010 * H), v3(0.014 * H, 0.030 * H, 0.11 * H), STAIN); // the old cleft, stained dark
+    b.addCube(v3(0, 0.075 * H, 0.062 * H), v3(0.126 * H, 0.026 * H, 0.030 * H), BONE_LT); // brow ridge
+    // eye sockets — DEEP black wells under the brow (the read at any distance), uneven
+    b.addCube(v3(0.043 * H, 0.048 * H, 0.064 * H), v3(0.054 * H, 0.048 * H, 0.028 * H), SOCKET);
+    b.addCube(v3(-0.041 * H, 0.046 * H, 0.064 * H), v3(0.048 * H, 0.044 * H, 0.028 * H), SOCKET);
+    b.addCube(v3(0, 0.028 * H, 0.070 * H), v3(0.022 * H, 0.042 * H, 0.026 * H), SOCKET); // nasal cavity
+    b.addCube(v3(0.058 * H, 0.026 * H, 0.048 * H), v3(0.030 * H, 0.028 * H, 0.042 * H), BONE_DK); // L cheekbone
+    b.addCube(v3(-0.056 * H, 0.024 * H, 0.046 * H), v3(0.024 * H, 0.022 * H, 0.038 * H), STAIN); // R cheekbone — chipped smaller
+    // upper jaw over a dark GAPE, the mandible slung low (an undead skull hangs open a little)
+    b.addCube(v3(0, 0.008 * H, 0.052 * H), v3(0.082 * H, 0.028 * H, 0.058 * H), BONE); // maxilla
+    b.addCube(v3(0, -0.020 * H, 0.048 * H), v3(0.070 * H, 0.026 * H, 0.052 * H), SOCKET); // the gape
+    b.addCube(v3(0, -0.038 * H, 0.046 * H), v3(0.078 * H, 0.020 * H, 0.056 * H), BONE_DK); // mandible
     var trng = mathx.Rng.init(4801);
     var i: i32 = -3;
     while (i <= 3) : (i += 1) {
-        if (trng.float() < 0.12) continue; // a missing tooth
-        const tx = @as(f32, @floatFromInt(i)) * 0.02 * H;
-        b.addCube(v3(tx, -0.003 * H, 0.081 * H), v3(0.011 * H, 0.02 * H * trng.range(0.7, 1.2), 0.01 * H), TEETH);
+        const tx = @as(f32, @floatFromInt(i)) * 0.019 * H;
+        if (trng.float() >= 0.14) // upper row (the odd tooth missing)
+            b.addCube(v3(tx, -0.006 * H, 0.082 * H), v3(0.010 * H, 0.020 * H * trng.range(0.7, 1.25), 0.009 * H), TEETH);
+        if (trng.float() >= 0.25) // lower row — more gaps, shorter pegs
+            b.addCube(v3(tx + 0.004 * H, -0.030 * H, 0.078 * H), v3(0.009 * H, 0.013 * H * trng.range(0.6, 1.1), 0.008 * H), TEETH);
     }
     return b.toMesh();
 }
 
-fn femurMesh() rl.Mesh {
+fn femurMesh(seed: u64) rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
-    bone(&b, v3(0, 0, 0), v3(0, -SEG_THIGH * H, 0), 0.026 * H, BONE);
+    var rng = mathx.Rng.init(seed);
+    bone(&b, &rng, v3(0, 0, 0), v3(0, -SEG_THIGH * H, 0), 0.024 * H, if (rng.float() < 0.4) STAIN else BONE);
     return b.toMesh();
 }
 
-fn tibiaMesh() rl.Mesh {
+fn tibiaMesh(seed: u64) rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
-    bone(&b, v3(0, 0, 0), v3(0, -SEG_SHANK * H, 0), 0.022 * H, BONE);
-    b.addCylinder(v3(0.014 * H, -0.01 * H, 0.006 * H), v3(0.006 * H, -SEG_SHANK * H * 0.8, 0.004 * H), 0.008 * H, 0.006 * H, 5, BONE_DK); // fibula alongside
+    var rng = mathx.Rng.init(seed);
+    bone(&b, &rng, v3(0, 0, 0), v3(0, -SEG_SHANK * H, 0), 0.020 * H, BONE);
+    b.addCylinder(v3(0.014 * H, -0.01 * H, 0.006 * H), v3(0.007 * H, -SEG_SHANK * H * 0.82, 0.004 * H), 0.008 * H, 0.005 * H, 5, STAIN); // fibula alongside
     return b.toMesh();
 }
 
-fn footMesh(side: f32) rl.Mesh {
+fn footMesh(side: f32, seed: u64) rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
+    var rng = mathx.Rng.init(seed);
     const ay = 0.039 * H;
-    b.addCube(v3(0, -ay + 0.02 * H, 0.05 * H), v3(0.05 * H, 0.03 * H, 0.13 * H), BONE_DK); // metatarsals / foot plate
-    // three toe bones fanning forward
-    for ([_]f32{ -1, 0, 1 }) |t| {
-        b.addCylinder(v3(t * 0.018 * H * side, -ay + 0.015 * H, 0.10 * H), v3(t * 0.026 * H * side, -ay + 0.012 * H, 0.15 * H), 0.008 * H, 0.005 * H, 4, BONE);
+    b.addCube(v3(0, -ay + 0.018 * H, 0.045 * H), v3(0.046 * H, 0.026 * H, 0.115 * H), BONE_DK); // metatarsal plate
+    for ([_]f32{ -1, 0, 1 }) |t| { // toe bones fan forward, each its own length
+        const tl = rng.range(0.125, 0.155);
+        b.addCylinder(v3(t * 0.017 * H * side, -ay + 0.014 * H, 0.09 * H), v3(t * 0.027 * H * side, -ay + 0.010 * H, tl * H), 0.0075 * H, 0.0045 * H, 4, BONE);
     }
-    b.addCube(v3(0, -ay + 0.03 * H, -0.02 * H), v3(0.035 * H, 0.04 * H, 0.04 * H), BONE); // heel / calcaneus
+    b.addCube(v3(0, -ay + 0.028 * H, -0.02 * H), v3(0.034 * H, 0.038 * H, 0.038 * H), STAIN); // heel / calcaneus
     return b.toMesh();
 }
 
-fn humerusMesh() rl.Mesh {
+fn humerusMesh(seed: u64) rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
-    bone(&b, v3(0, 0, 0), v3(0, -SEG_UPARM * H, 0), 0.022 * H, BONE);
+    var rng = mathx.Rng.init(seed);
+    bone(&b, &rng, v3(0, 0, 0), v3(0, -SEG_UPARM * H, 0), 0.020 * H, if (rng.float() < 0.3) STAIN else BONE);
     return b.toMesh();
 }
 
-fn forearmMesh() rl.Mesh {
+fn forearmMesh(seed: u64) rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
+    var rng = mathx.Rng.init(seed);
     // Radius + ulna: two thin parallel bones for the skeletal read.
-    bone(&b, v3(0.008 * H, 0, 0), v3(0.008 * H, -SEG_FOREARM * H, 0), 0.014 * H, BONE);
-    b.addCylinder(v3(-0.012 * H, -0.004 * H, 0.004 * H), v3(-0.006 * H, -SEG_FOREARM * H, 0.002 * H), 0.012 * H, 0.009 * H, 6, BONE_DK);
+    bone(&b, &rng, v3(0.008 * H, 0, 0), v3(0.008 * H, -SEG_FOREARM * H, 0), 0.013 * H, BONE);
+    b.addCylinder(v3(-0.012 * H, -0.004 * H, 0.004 * H), v3(-0.006 * H, -SEG_FOREARM * H, 0.002 * H), 0.011 * H, 0.008 * H, 6, STAIN);
     return b.toMesh();
 }
 
-fn handMesh() rl.Mesh {
+fn handMesh(seed: u64) rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
-    b.addCube(v3(0, -0.03 * H, 0.005 * H), v3(0.035 * H, 0.05 * H, 0.03 * H), BONE_DK); // metacarpals / palm
-    // four skeletal finger bones curling forward (a bony claw)
-    for ([_]f32{ -1.5, -0.5, 0.5, 1.5 }) |fgr| {
-        b.addCylinder(v3(fgr * 0.012 * H, -0.055 * H, 0.01 * H), v3(fgr * 0.014 * H, -0.075 * H, 0.03 * H), 0.007 * H, 0.004 * H, 4, BONE);
+    var rng = mathx.Rng.init(seed);
+    b.addCube(v3(0, -0.03 * H, 0.005 * H), v3(0.034 * H, 0.048 * H, 0.028 * H), BONE_DK); // metacarpals / palm
+    for ([_]f32{ -1.5, -0.5, 0.5, 1.5 }) |fgr| { // a bony claw — finger lengths drift
+        const fl = rng.range(0.068, 0.082);
+        b.addCylinder(v3(fgr * 0.012 * H, -0.055 * H, 0.01 * H), v3(fgr * 0.014 * H, -fl * H, 0.030 * H), 0.0065 * H, 0.0035 * H, 4, BONE);
     }
     return b.toMesh();
 }
 
-// The bow, authored in the RIGHT-WRIST frame about the fist — a recurve held vertically, the
-// grip at the hand, limbs sweeping up + down, a pale string on the near (target) side. Approx
-// the curve with three tapered segments per limb; the string is one thin taut cylinder.
+// The bow, authored in the RIGHT-WRIST frame about the fist — a TALL recurve, wrapped grip,
+// horn nocks, limbs UNEVEN (lower a touch shorter). NO string here: it's LIVE geometry
+// (poseString) so it draws + snaps with the pose.
 fn bowMesh() rl.Mesh {
     var b = Builder.init();
-    const fy = -0.05 * H; // fist centre in the wrist frame (matches the hero's grip anchor)
-    const fz = 0.02 * H; // held a touch out front of the palm
+    const fy = BOW_FY;
+    const fz = BOW_FZ;
+    b.setMat(.leather);
+    b.addCylinder(v3(0, fy + 0.055 * H, fz), v3(0, fy - 0.055 * H, fz), 0.019 * H, 0.019 * H, 7, GRIP_WRAP); // wrapped grip
+    b.addCylinder(v3(0, fy + 0.012 * H, fz), v3(0, fy - 0.012 * H, fz), 0.021 * H, 0.021 * H, 7, BOWWOOD_LT); // binding band
     b.setMat(.wood);
-    // grip
-    b.addCylinder(v3(0, fy + 0.05 * H, fz), v3(0, fy - 0.05 * H, fz), 0.016 * H, 0.016 * H, 6, BOWWOOD_LT);
-    // upper limb (grip → mid → recurved tip), then lower limb mirrored
-    const uy = [_]f32{ 0.05, 0.20, 0.34 };
-    const uz = [_]f32{ 0.0, -0.02, 0.05 }; // sweeps back then recurves forward at the tip
-    const ur = [_]f32{ 0.016, 0.012, 0.006 };
+    const uy = [_]f32{ 0.055, 0.22, 0.40 }; // upper limb (reach = TIP_UP)
+    const ly = [_]f32{ 0.055, 0.21, 0.37 }; // lower limb, shorter (TIP_DN)
+    const zz = [_]f32{ 0.0, -0.028, 0.06 }; // sweeps back, recurves forward at the tip (TIP_Z)
+    const rr = [_]f32{ 0.016, 0.011, 0.005 };
     for (0..2) |seg| {
-        b.addCylinder(v3(0, fy + uy[seg] * H, fz + uz[seg] * H), v3(0, fy + uy[seg + 1] * H, fz + uz[seg + 1] * H), ur[seg] * H, ur[seg + 1] * H, 5, BOWWOOD);
-        b.addCylinder(v3(0, fy - uy[seg] * H, fz + uz[seg] * H), v3(0, fy - uy[seg + 1] * H, fz + uz[seg + 1] * H), ur[seg] * H, ur[seg + 1] * H, 5, BOWWOOD);
+        b.addCylinder(v3(0, fy + uy[seg] * H, fz + zz[seg] * H), v3(0, fy + uy[seg + 1] * H, fz + zz[seg + 1] * H), rr[seg] * H, rr[seg + 1] * H, 6, BOWWOOD);
+        b.addCylinder(v3(0, fy - ly[seg] * H, fz + zz[seg] * H), v3(0, fy - ly[seg + 1] * H, fz + zz[seg + 1] * H), rr[seg] * H, rr[seg + 1] * H, 6, BOWWOOD);
     }
-    // string: tip to tip, drawn taut on the near side (toward the archer, −z of the limbs' curve)
     b.setMat(.plain);
-    const tipY = fy + uy[2] * H;
-    const tipZ = fz + uz[2] * H;
-    b.addCylinder(v3(0, tipY, tipZ), v3(0, fy - uy[2] * H, tipZ), 0.003 * H, 0.003 * H, 4, STRINGCOL);
+    // horn nocks capping the tips (where the live string ties on)
+    b.addCylinder(v3(0, fy + 0.385 * H, fz + 0.054 * H), v3(0, fy + 0.406 * H, fz + 0.062 * H), 0.008 * H, 0.004 * H, 5, TEETH);
+    b.addCylinder(v3(0, fy - 0.352 * H, fz + 0.054 * H), v3(0, fy - 0.376 * H, fz + 0.062 * H), 0.008 * H, 0.004 * H, 5, TEETH);
     return b.toMesh();
 }
 
-// ── an arrow mesh (one shared model, drawn per live/stuck arrow oriented along its velocity) ─
+// A unit string segment: hair-thin, 0→+Z, length 1 — poseString stretches two of these
+// tip→nock→tip every frame, so the string really hauls back, kinks, and snaps home.
+fn stringMesh() rl.Mesh {
+    var b = Builder.init();
+    b.setMat(.plain);
+    b.addCylinder(v3(0, 0, 0), v3(0, 0, 1), 0.0032 * H, 0.0032 * H, 4, STRINGCOL);
+    return b.toMesh();
+}
+
+// The nocked arrow — tail AT the origin (it rides the string nock), head out +Z, ~0.72 long
+// (matches the loosed projectile's fat visibility gauge so the hand-off is seamless).
+fn nockArrowMesh() rl.Mesh {
+    var b = Builder.init();
+    b.setMat(.wood);
+    b.addCylinder(v3(0, 0, 0.01), v3(0, 0, 0.63), 0.011, 0.011, 5, ARROW_SHAFT);
+    b.setMat(.steel);
+    b.addCylinder(v3(0, 0, 0.63), v3(0, 0, 0.73), 0.025, 0.001, 5, ARROW_HEAD);
+    b.setMat(.cloth);
+    b.addBox(v3(0, 0.028, 0.07), v3(0.0012, 0, 0), v3(0, 0.044, 0), v3(0, 0, 0.075), ARROW_FLETCH);
+    b.addBox(v3(0.025, -0.017, 0.07), v3(0.0012, 0, 0), v3(0.038, -0.025, 0), v3(0, 0, 0.075), ARROW_FLETCH);
+    b.addBox(v3(-0.025, -0.017, 0.07), v3(0.0012, 0, 0), v3(-0.038, -0.025, 0), v3(0, 0, 0.075), ARROW_FLETCH);
+    return b.toMesh();
+}
+
+// ── an arrow mesh (one shared model, drawn per live/stuck arrow oriented along its velocity).
+// Gauge + fletching run FAT for visibility — a projectile you're meant to dodge must read at
+// twenty metres, so it errs toward flare, not scale-model realism. ─────────────────────────
 pub fn arrowMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     // Authored along +Z (the flight axis); game.zig orients it to the velocity. ~0.7 m long.
     b.setMat(.wood);
-    b.addCylinder(v3(0, 0, -0.35), v3(0, 0, 0.28), 0.008, 0.008, 5, ARROW_SHAFT); // shaft
+    b.addCylinder(v3(0, 0, -0.35), v3(0, 0, 0.28), 0.012, 0.011, 5, ARROW_SHAFT); // shaft
     b.setMat(.steel);
-    b.addCylinder(v3(0, 0, 0.28), v3(0, 0, 0.37), 0.018, 0.001, 5, ARROW_HEAD); // pile / head
+    b.addCylinder(v3(0, 0, 0.28), v3(0, 0, 0.38), 0.025, 0.001, 5, ARROW_HEAD); // pile / head
     b.setMat(.cloth);
-    // fletching: three vanes at the tail
-    b.addBox(v3(0, 0.02, -0.30), v3(0.001, 0, 0), v3(0, 0.03, 0), v3(0, 0, 0.05), ARROW_FLETCH);
-    b.addBox(v3(0.018, -0.012, -0.30), v3(0.001, 0, 0), v3(0.026, -0.017, 0), v3(0, 0, 0.05), ARROW_FLETCH);
-    b.addBox(v3(-0.018, -0.012, -0.30), v3(0.001, 0, 0), v3(-0.026, -0.017, 0), v3(0, 0, 0.05), ARROW_FLETCH);
+    // fletching: three big pale vanes at the tail (the tracer the eye tracks)
+    b.addBox(v3(0, 0.028, -0.29), v3(0.0012, 0, 0), v3(0, 0.044, 0), v3(0, 0, 0.075), ARROW_FLETCH);
+    b.addBox(v3(0.025, -0.017, -0.29), v3(0.0012, 0, 0), v3(0.038, -0.025, 0), v3(0, 0, 0.075), ARROW_FLETCH);
+    b.addBox(v3(-0.025, -0.017, -0.29), v3(0.0012, 0, 0), v3(-0.038, -0.025, 0), v3(0, 0, 0.075), ARROW_FLETCH);
     return b.toModel(shader);
 }
 
@@ -883,4 +1087,28 @@ test "kite AI: too close backs off, too far closes, in-band shoots when reloaded
 
 test "range band is ordered and sits inside aggro" {
     try std.testing.expect(RANGE_MIN < RANGE_MAX and RANGE_MAX < AGGRO_R);
+}
+
+test "arrows thunk into cover instead of piercing it; tall shots clear a LOW blocker" {
+    // A chest-high wall dead on the flight line: the flat shot must stick in it, short of
+    // the target — cover answers the archers.
+    var low = collision.circle(0, 5.0, 0.8);
+    low.h = 0.9;
+    var tall = low;
+    tall.h = 5.0;
+    const dt: f32 = 1.0 / 60.0;
+
+    var blocked = launchArrow(v3(0, 1.3, 0), v3(0, 1.0, 12.0));
+    var i: u32 = 0;
+    while (i < 120 and !blocked.stuck) : (i += 1)
+        stepArrow(&blocked, v3(0, 0, 12.0), 1.0, false, &.{tall}, dt);
+    try std.testing.expect(blocked.stuck and !blocked.hit);
+    try std.testing.expect(blocked.pos.z < 5.5); // it died AT the wall, not at the target
+
+    // The same shot over a knee-high grave sails past it (arrows arc honestly over low cover).
+    var over = launchArrow(v3(0, 1.3, 0), v3(0, 1.0, 12.0));
+    i = 0;
+    while (i < 240 and !over.stuck) : (i += 1)
+        stepArrow(&over, v3(0, 0, 12.0), 1.0, false, &.{low}, dt);
+    try std.testing.expect(over.stuck and over.pos.z > 5.5); // cleared the grave, landed well beyond
 }

@@ -15,6 +15,10 @@ pub const Solid = struct {
     a: rl.Vector3, // segment start (XZ; Y ignored)
     b: rl.Vector3, // segment end
     r: f32, // capsule radius
+    // Blocking HEIGHT for projectiles (world Y of the obstacle's top): an arrow above flies
+    // clear, below thunks in; footprint push-out stays 2D and ignores it. Defaults sky-high
+    // so a Solid built without one blocks everything.
+    h: f32 = 1e9,
 };
 
 /// A circular obstacle (a==b).
@@ -58,6 +62,26 @@ pub fn resolve(p: rl.Vector3, pr: f32, solids: []const Solid) rl.Vector3 {
     return out;
 }
 
+/// Is the point `p` (a projectile in flight) inside solid `s` on XZ *and* below its blocking
+/// height? The projectile counterpart of pushOut — this is what makes COVER work: an arrow
+/// tests its flight against the same solids feet resolve against.
+pub fn blocksPoint(p: rl.Vector3, margin: f32, s: Solid) bool {
+    if (p.y > s.h) return false; // over the top — clears it
+    const q = mathx.closestOnSegXZ(p, s.a, s.b);
+    const dx = p.x - q.x;
+    const dz = p.z - q.z;
+    const rr = s.r + margin;
+    return dx * dx + dz * dz < rr * rr;
+}
+
+/// First solid (if any) that blocks the point — for callers that just need yes/no + where.
+pub fn blockedBy(p: rl.Vector3, margin: f32, solids: []const Solid) bool {
+    for (solids) |s| {
+        if (blocksPoint(p, margin, s)) return true;
+    }
+    return false;
+}
+
 test "pushOut clears a circle overlap to exactly touching" {
     const s = circle(0, 0, 1.0);
     const out = pushOut(v3(0.3, 0, 0), 0.5, s); // centres 0.3 apart, need 1.5
@@ -81,4 +105,12 @@ test "dead-centre push is finite and separates" {
     const s = circle(0, 0, 1.0);
     const out = pushOut(v3(0, 0, 0), 0.5, s);
     try std.testing.expect(std.math.isFinite(out.x) and out.x > 1.0);
+}
+
+test "blocksPoint respects the blocking height: hits below the top, clears above it" {
+    var s = circle(0, 0, 1.0);
+    s.h = 3.0;
+    try std.testing.expect(blocksPoint(v3(0.5, 1.2, 0), 0.05, s)); // chest-high shot into the pier
+    try std.testing.expect(!blocksPoint(v3(0.5, 3.5, 0), 0.05, s)); // lobbed clean over the top
+    try std.testing.expect(!blocksPoint(v3(2.0, 1.2, 0), 0.05, s)); // wide of it entirely
 }

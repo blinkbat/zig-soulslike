@@ -59,6 +59,7 @@ const TITLE_COL = rgba(232, 222, 198, 255);
 const HINT_COL = rgba(128, 122, 110, 255);
 const BAR_EDGE = rgba(120, 104, 74, 160);
 const BAR_FILL = rgba(198, 164, 96, 220);
+const ROW_HILITE = rgba(255, 232, 170, 22); // selected-row wash
 
 pub const Menu = struct {
     screen: Screen = .main, // the menu IS the start screen
@@ -149,10 +150,11 @@ pub const Menu = struct {
                 DBG_WIREFRAME => self.wireframe = !self.wireframe,
                 DBG_HITBOX => self.hitboxes = !self.hitboxes,
                 DBG_TIMESCALE => self.cycleTimeScale(),
-                else => {
+                DBG_CLOSE => {
                     self.screen = .main;
                     self.cursor = 0;
                 },
+                else => {},
             },
             .retro => switch (self.cursor) {
                 RET_PRESET_PS1 => retro.applyPreset(&gfx.PRESET_PS1),
@@ -209,8 +211,9 @@ pub const Menu = struct {
     fn drawCard(self: *const Menu, title: [:0]const u8, labels: []const [:0]const u8, sliders: ?*const gfx.Retro) void {
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
-        const rowH: i32 = if (labels.len > 8) 26 else 40;
-        const rowGap: i32 = if (labels.len > 8) 2 else 8;
+        const compact = labels.len > 8; // the long retro list packs tighter than the short menus
+        const rowH: i32 = if (compact) 26 else 40;
+        const rowGap: i32 = if (compact) 2 else 8;
         const headerH: i32 = 58;
         const footH: i32 = 18;
         const cardW: i32 = if (sliders != null) 470 else 360;
@@ -223,12 +226,12 @@ pub const Menu = struct {
         const tw = hud.textW(title, 20);
         hud.text(title, cx + @divTrunc(cardW - tw, 2), cy + 12, 20, TITLE_COL);
 
-        const fontSize: i32 = if (labels.len > 8) 16 else 18;
+        const fontSize: i32 = if (compact) 16 else 18;
         for (labels, 0..) |label, i| {
             const y = cy + headerH + (rowH + rowGap) * @as(i32, @intCast(i));
             const selected = self.cursor == i;
             const col = if (selected) TEXT_HOT else TEXT_DIM;
-            if (selected) rl.drawRectangle(cx + 14, y - 3, cardW - 28, rowH, rgba(255, 232, 170, 22));
+            if (selected) rl.drawRectangle(cx + 14, y - 3, cardW - 28, rowH, ROW_HILITE);
             hud.text(label, cx + 34, y, fontSize, col);
             if (selected) hud.text(">", cx + 20, y, fontSize, TEXT_HOT);
             // Intensity gauge on filter rows of the retro card.
@@ -296,18 +299,23 @@ fn keyNav(dir: NavDir) struct { a: rl.KeyboardKey, b: rl.KeyboardKey } {
     };
 }
 
+// The gamepad D-pad face button for a nav direction — the pad counterpart of keyNav, so the
+// dir→button map lives in ONE place (navPressed, adjTapped, adjHeldDir all read it).
+fn padNav(dir: NavDir) rl.GamepadButton {
+    return switch (dir) {
+        .up => .left_face_up,
+        .down => .left_face_down,
+        .left => .left_face_left,
+        .right => .left_face_right,
+    };
+}
+
 fn navPressed(dir: NavDir) bool {
     const k = keyNav(dir);
     if (rl.isKeyPressed(k.a) or rl.isKeyPressedRepeat(k.a)) return true;
     if (rl.isKeyPressed(k.b) or rl.isKeyPressedRepeat(k.b)) return true;
     if (rl.isGamepadAvailable(0)) {
-        const btn: rl.GamepadButton = switch (dir) {
-            .up => .left_face_up,
-            .down => .left_face_down,
-            .left => .left_face_left,
-            .right => .left_face_right,
-        };
-        if (rl.isGamepadButtonPressed(0, btn)) return true;
+        if (rl.isGamepadButtonPressed(0, padNav(dir))) return true;
     }
     return false;
 }
@@ -318,8 +326,7 @@ fn adjTapped(dir: NavDir) bool {
     const k = keyNav(dir);
     if (rl.isKeyPressed(k.a) or rl.isKeyPressed(k.b)) return true;
     if (rl.isGamepadAvailable(0)) {
-        const btn: rl.GamepadButton = if (dir == .left) .left_face_left else .left_face_right;
-        if (rl.isGamepadButtonPressed(0, btn)) return true;
+        if (rl.isGamepadButtonPressed(0, padNav(dir))) return true;
     }
     return false;
 }
@@ -331,8 +338,8 @@ fn adjHeldDir() i32 {
     if (rl.isKeyDown(l.a) or rl.isKeyDown(l.b)) dir -= 1;
     if (rl.isKeyDown(r.a) or rl.isKeyDown(r.b)) dir += 1;
     if (dir == 0 and rl.isGamepadAvailable(0)) {
-        if (rl.isGamepadButtonDown(0, .left_face_left)) dir -= 1;
-        if (rl.isGamepadButtonDown(0, .left_face_right)) dir += 1;
+        if (rl.isGamepadButtonDown(0, padNav(.left))) dir -= 1;
+        if (rl.isGamepadButtonDown(0, padNav(.right))) dir += 1;
     }
     return dir;
 }

@@ -31,6 +31,11 @@ const combat = @import("combat.zig");
 // A `Group` (Knot of toads, Line of archers) is a fixed array of Foe + the shared roll-ups
 // (anyDied / totalHits / aliveCount) the beats read; game.zig iterates the groups generically.
 
+// Blood/hit-flash duration (seconds): how long a struck foe pops on the shared gfx `hitFlash`
+// uniform. Cross-cutting (every foe drives the same uniform), so it lives here — one source for
+// the frog / archer / ogre `flashFrac()` instead of three identical local copies.
+pub const FLASH_DUR: f32 = 0.20;
+
 // The hero's blade this frame as plain data — keeps every foe decoupled from the hero rig.
 // Endpoints are guard→tip; the *0 pair is LAST frame's, for a swept (tunnel-proof) test.
 pub const Blade = struct {
@@ -53,10 +58,9 @@ pub const Strike = struct {
 };
 
 // THE shared hit behaviour: test the hero's swept blade against a foe's hurt sphere; on a
-// landed, un-latched blow LATCH it (one hit per swing), apply HP/poise/stance via `vit`, and
-// return the contact + sweep dir + reaction. Returns null when nothing lands (window closed —
-// which also RE-ARMS the latch — already latched this swing, or out of reach). Every foe's
-// tryHit is `if (foe.strike(...)) |s| { own FX; react on s.reaction; }`.
+// landed, un-latched blow LATCH it (one hit per swing), apply HP/poise/stance, and return
+// contact + sweep dir + reaction. Returns null when nothing lands — window closed (which
+// RE-ARMS the latch), already latched this swing, or out of reach.
 pub fn strike(vit: *combat.Vitals, hitLatch: *bool, center: rl.Vector3, hurtR: f32, blade: Blade) ?Strike {
     if (!blade.active) {
         hitLatch.* = false; // window closed → the next swing may land again

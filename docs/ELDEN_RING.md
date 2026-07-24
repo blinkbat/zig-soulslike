@@ -1,8 +1,8 @@
-# ELDEN_RING.md — the north-star, in numbers
+# Elden Ring — combat systems & numbers (reference)
 
-This is the gameplay/systems reference for **zig-soulslike**. Elden Ring (ER) is the north
-star (see AGENTS.md); when we say "keep pressure on", "poise", "stagger", "roll", "guard
-counter" — this is what we mean, with the real mechanics and the real numbers behind them.
+A reference for Elden Ring's (ER) combat mechanics and the real numbers behind them — poise,
+stagger, stance-break, damage, defense, stamina, guarding, rolling/i-frames, status buildup,
+and attack pacing.
 
 Compiled from heavy multi-source research (Fextralife wiki, Elden Ring Reforged wiki [a MOD
 wiki — flagged where used], wiki.gg / Eldenpedia, datamined motion-value & poise spreadsheets,
@@ -12,13 +12,13 @@ and community breakpoint threads), cross-verified. Tags: **[DM]** datamined/wiki
 > **Frame-data convention (read first).** FromSoft animation data is authored in **30 fps
 > units** (TAE ticks) but the game runs at 60 fps. Every "frames" figure on the wikis is a
 > 30 fps value — **×2 for on-screen 60 fps frames, ÷30 for seconds.** A "13-frame" medium
-> roll is **~0.43 s**, not 0.21 s. Getting this wrong is the #1 porting mistake.
+> roll is **~0.43 s**, not 0.21 s. Getting this conversion wrong is the #1 mistake reading these numbers.
 
 ---
 
-## 1. Poise, stagger & stance-break (the heart of our combat)
+## 1. Poise, stagger & stance-break
 
-ER runs **two separately-tracked meters**. We copy both (see [src/combat.zig](../src/combat.zig)).
+ER runs **two separately-tracked meters**.
 
 ### Poise — flinch resistance ("poise HP")
 - The visible poise stat is the **max of an invisible poise-HP pool**. Each hit subtracts a
@@ -57,12 +57,12 @@ build-guide figure. **[DM/APX]**
   sword R1), Lvl 2 medium (greatsword R1), Lvl 3 long (colossal R1), Lvl 4/7/10/11 knockdown.
   Hitstun applies **only if poise damage > remaining Toughness.** **[DM]**
 
-### Critical hits (model only — we don't build these yet)
+### Critical hits
 - Stance-break/parry/backstab → crumple → **R1 executes a critical**. Damage ≈ **2.5×–4×**;
   riposte > backstab by ~25–30%. Dagger riposte **420%** AP, straight sword **345%**, colossal
   **263%**. Weapon Critical stat (÷100) multiplies it: Misericorde 140, daggers/rapiers 130. **[DM]**
 
-### Poise/stance damage dealt by attacks — the tuning that matters
+### Poise/stance damage dealt by attacks
 Straight sword, one-handed, "stance damage" scale **[DM]**:
 
 | Attack | Stance dmg | ×light |
@@ -113,7 +113,7 @@ Sources: [Calculating Damage](https://eldenring.wiki.fextralife.com/Calculating+
 ## 3. Stamina & guarding
 
 - **Pool** is shallow: Endurance 1 → **80**, 15 → 105, 30 → 130, 50 → 155, 99 → 170. Softcaps
-  15/30/50. **[DM]** Tune *costs*, not pool size.
+  15/30/50. **[DM]**
 - **Regen ≈ 45 stamina/sec [APX]**, after a short **delay** post-spend; **paused** while
   attacking, blocking, sprinting. Heavy equip load **−20 % regen**. **[DM/APX]**
 - **Costs:** roll/backstep = **12, flat** (load-independent) — the anchor everything else is
@@ -152,9 +152,6 @@ Sources: [Stamina](https://eldenring.wiki.fextralife.com/Stamina) · [Guarding](
   16/14, ~2 rolls' distance, brief invis). Instant startup is why they feel better than rolls. **[DM]**
 - **Roll-catching:** enemies time delayed attacks to land in your **recovery** (after i-frames
   expire). Read: roll **on the strike**, not the wind-up; roll *toward* the attack.
-
-> **Our roll today** (see AGENTS.md): committed anim + exact travel, but **no i-frames, no
-> collision** yet. When we add i-frames, the medium-roll ~0.43 s front-loaded window is the target.
 
 Sources: [Dodging](https://eldenring.wiki.fextralife.com/Dodging) · [Equip Load](https://eldenring.wiki.fextralife.com/Equip+Load) · [Bloodhound's Step](https://eldenring.wiki.fextralife.com/Bloodhound's+Step)
 
@@ -201,64 +198,10 @@ Sources: [Status Effects](https://eldenring.wiki.fextralife.com/Status+Effects) 
   the escape. A roll can be **buffered during an attack's recovery tail** (the main defensive
   out). ER's buffer is long/generous. R1 chains within ~0.3–0.5 s. **[APX]**
 - **HP bars:** **bosses/great enemies show a named bar**; **common enemies show none** — bar
-  presence signals "notable fight." *(We deviate here — see §7.)*
+  presence signals "notable fight."
 - **Swing timing [APX]:** light R1 ~0.5–0.8 s, heavy R2 ~1.0–1.5 s, charged R2 ~1.5–2.5 s;
   recovery scales with weight class (colossal = multi-second punish windows → they lean on
   hyper armor).
 
 Sources: [Motion Values](https://eldenring.wiki.fextralife.com/Motion+Values) · [Flask of Crimson Tears](https://eldenring.wiki.fextralife.com/Flask+of+Crimson+Tears) · [Stance](https://eldenring.wiki.fextralife.com/Stance)
 
----
-
-## 7. How this maps to zig-soulslike (current build)
-
-Implemented in [src/combat.zig](../src/combat.zig) (`Vitals`), embedded in the hero
-([src/hero.zig](../src/hero.zig)) and the toads ([src/frog.zig](../src/frog.zig)), wired in
-[src/game.zig](../src/game.zig). We take the **two-meter** model verbatim and simplify the rest.
-
-**The model.** Each character has HP + a **poise** meter + a **stance** meter.
-- A hit chips poise by its poise-damage. Poise empties → **light stun** (flinch); poise resets;
-  the light break **chips stance**. Stance empties → **heavy stun** (stance-break stagger).
-  Heavy attacks also chip stance **directly** (`Hit.stance`) so they break it faster — exactly
-  ER's "charged/heavy breaks stance fast." **No criticals yet** (per the brief).
-- Both meters **regenerate after a short delay** (poise refills in ~1.3 s, stance ~4.6 s) — so
-  you must **keep pressure on** to cascade light → heavy. This is ER's regen-delay tension,
-  tuned snappier for a fast prototype (ER enemy delays are ~6–15 s).
-- **HP hits 0 → death.** Frog: collapse then despawn. Hero: collapse → **"YOU DIED"** → respawn
-  at the start grace.
-
-**Deviations from ER (deliberate, for this prototype):**
-- **Floating HP bars over foes** (owner's call) — ER shows bars only for bosses. Bars appear
-  over damaged/nearby toads and **flash a gold border while staggered** (our stand-in for ER's
-  stance-break crit-sparkle cue).
-- **Red screen-edge damage flash** when the hero is hit (ER-style peripheral feedback) — a
-  flinch is a **big, unmistakable** event: the whole body snaps back and the screen bleeds red.
-- Poise governs flinching in **all** states (not just during our own attacks) — no hyper-armor
-  windows yet.
-- No stamina, guarding, i-frames, status effects, AR/defense curve, or motion values yet — HP
-  and poise/stance damage are **flat per-attack constants**, not AR × MV × defense.
-
-**Current tunings** (all constants, easy to retune):
-
-| | HP | Poise | Stance |
-|---|---|---|---|
-| Hero | 100 | 55 (~ER Knight 51) | 90 |
-| Toad | 46 | **12 (low)** | **26 (low)** |
-
-| Attack | HP dmg | Poise dmg | Stance dmg |
-|---|---|---|---|
-| Hero light (R1) | 13 | 10 | — |
-| Hero heavy (R2) | 27 | 22 | 14 |
-| Toad chomp | 11 | 15 | — |
-| Toad lunge (slam) | 17 | 26 | 8 |
-
-Stun durations: light **0.46 s**, heavy **1.15 s**. A single light break chips **40 % of max
-stance**; regen delay **0.8 s** after the last hit.
-
-**Verify visually** (`--shot`, then inspect `shots/`): `31_frog_flinch` · `32_frog_stagger` ·
-`33_frog_death` · `34_hero_flinch` · `35_hero_stagger` · `36_hero_death` · `37_hp_bars`.
-
-**Next (still ER-shaped, not built):** i-frames on the roll (medium ~0.43 s front-loaded),
-stamina + guard/guard-counter, criticals off a stance break, hyper-armor windows during
-attacks, AR × motion-value × defense damage, and a status buildup (bleed reads naturally on a
-bog-toad bite).

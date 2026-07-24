@@ -117,7 +117,10 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
                  rule below), not a bespoke cycle. KITE-only AI (holds a range band, backs off
                  / closes, looses; never melees). Slowish, lightly-homing arrows that STICK
                  where they land + fade. One-and-done death (collapse → dissipate). Perched in
-                 the ruins, waking as you advance. Arrows are a pool owned by `game.zig`.
+                 the ruins, waking as you advance. Arrows are a pool owned by `game.zig`, and
+                 they respect COVER: each flight-steps against `env.solids()` (every solid
+                 carries its mesh-top `h`) and thunks into stone instead of piercing it —
+                 while still arcing over the LOW stuff (graves, ruin blocks).
 - `ogre.zig`   — THE ONE-EYED OGRE (third foe) + the `Grief` (a lone, sorrowful giant). A GIANT
                  humanoid (~2x the hero), hunched + mis-proportioned, dragging a great knotted
                  CLUB, with ONE dull-amber glowing eye — a sad but scary figure. FOUNDED ON THE
@@ -296,8 +299,8 @@ on `sprintB`.
 
 ## Next steps (not yet built)
 
-Stamina + the stamina economy (roll/attack/sprint costs, regen delay), roll **i-frames**
-(ER medium ~0.43s front-loaded), **criticals** off a stance break (the crumple + riposte —
+Stamina + the stamina economy (roll/attack/sprint costs, regen delay), **criticals** off a
+stance break (the crumple + riposte —
 the stagger already exists, `combat.zig`), **hyper-armor** windows during the hero's own
 attacks, guarding + **guard counter** (L1/L2), AR × motion-value × defense damage (today it's
 flat per-attack constants), a **status buildup** (bleed reads naturally on a toad bite), jump
@@ -305,7 +308,9 @@ flat per-attack constants), a **status buildup** (bleed reads naturally on a toa
 see hero.zig `Queued`), bonfires, real level geometry. See `docs/ELDEN_RING.md` for the target
 mechanics/numbers behind each. Combat itself (HP, poise/stance stagger, death, foe HP bars,
 damage flash) is IN — `combat.zig` is the retune point.
-Current gaps to remember: the roll has **no i-frames or collision** (pure anim +
-committed movement); there's **no foot IK** (feet approximate the ground; a run crouch can
+Current gaps to remember: the roll now has **front-loaded i-frames** (0→0.46 s of the 0.70 s
+roll — `hero.iFramed`, gating `takeHit` + the arrow connect; the recovery tail stays
+vulnerable so roll-catching works) but still **no collision**; there's **no foot IK** (feet
+approximate the ground; a run crouch can
 float/clip a touch); one leg-cycle is reused across run and sprint (no separate run mesh);
 attacks reuse one anim standing or moving (no separate running attacks).

@@ -125,17 +125,16 @@ const CHOMP_JAW = 64.0; // how wide the maw yawns (deg) — a big, readable gape
 const CHOMP_SAC = 1.95; // throat-sac inflate at full gape (scale)
 const LUNGE_CD = 2.1; // cooldowns keep it from spamming
 const CHOMP_CD = 0.7;
-const TURN_RATE = 5.0; // rad/s — the toad's MAX TURNING SPEED, everywhere (idle tracking,
-//   coil steering; hops/lunges LAUNCH ALONG THE BODY, never snapping onto the hero). ~285°/s:
-//   tracks hard between commits, but every hop/lunge still fires along wherever the body
-//   actually got to — so a tight strafe still beats the committed leaps. THE turn-feel knob.
+const TURN_RATE = 5.0; // rad/s (~285°/s) — the toad's MAX TURNING SPEED everywhere (idle
+//   tracking, coil steering; THE turn-feel knob). Hops/lunges LAUNCH ALONG THE BODY, never
+//   snapping onto the hero — so a tight strafe still beats the committed leaps.
 
 // Leg fold: legExt 0 = fully coiled, 1 = fully extended; the sit pose is REST_EXT. Hip &
 // knee rotate away from the authored sit pose by these swings across the 0..1 range.
 const REST_EXT = 0.34;
 const HIP_SWING = 66.0; // + extends the thigh back-and-down (push-off)
 const KNEE_STRAIGHTEN = 104.0; // + straightens the knee out of its tuck
-const FLASH_DUR = 0.20; // how long a landed hit flares the toad blood-red (gfx hitFlash) + the debug wires
+const FLASH_DUR = foe.FLASH_DUR; // how long a landed hit flares the toad blood-red (gfx hitFlash) + the debug wires
 const SHOVE_DECAY = 7.0; // 1/s — the hit shove bleeds off fast (a jolt off the blow, not a slide)
 const DISS_DUR = 0.95; // seconds the corpse takes to dissipate into motes once the collapse is done
 
@@ -157,9 +156,8 @@ pub const Blade = foe.Blade;
 // ── vitals (LOW poise, per the brief: "frogs have low poise") ──────────────────────────
 const HP_MAX = 46.0;
 const POISE_MAX = 8.0; // BELOW the hero's light poise damage (10): every landed light
-//   FLINCHES a full-poise toad, so a clean hit on a coil/gape windup always interrupts
-//   and RESETS the attack (stun → idle → a fresh decide; the cooldown set at attack
-//   start keeps it from instantly resuming). A toad never tanks a hit mid-windup.
+//   FLINCHES a full-poise toad, so a clean hit on a coil/gape windup always interrupts and
+//   RESETS the attack (the cooldown set at attack start keeps it from instantly resuming).
 const STANCE_MAX = 26.0; // low — a few flinches cascade into the heavy stagger (3rd chained light crumples)
 // What the toad's own attacks do to the HERO (guard→tip data flows the other way; these
 // are handed out when a chomp SNAP / lunge SLAM connects). The lunge is a heavy body-blow.
@@ -167,9 +165,8 @@ const CHOMP_HIT = combat.Hit{ .dmg = 13, .poise = 15 }; // eased down from 16 (o
 const LUNGE_HIT = combat.Hit{ .dmg = 19, .poise = 26, .stance = 8 }; // eased down from 24 — still a real slam
 const HERO_REACH = 0.55; // hero footprint added to the toad's attack range for the hit test
 // The lunge is a body-SLAM that crashes down in FRONT of the toad: only a hero inside the
-// frontal impact zone is crushed — one beside or behind the landing is clear (and the impact
-// dust burst is thrown at this same forward spot, so the danger reads). Reach is measured from
-// the seat (≈ the old radial range); the arc gate is what makes it front-only.
+// frontal impact zone is crushed (one beside or behind is clear), matching the forward dust
+// burst. Reach is from the seat; the arc gate is what makes it front-only.
 const LUNGE_IMPACT_R = 1.9; // frontal slam reach from the seat
 const LUNGE_FRONT_DOT = 0.25; // hero must lie within the frontal arc (~±76°) to be caught
 const LUNGE_IMPACT_FWD = 0.6; // dust-burst / impact-zone centre, this far ahead of the seat (pre-scale)
@@ -331,10 +328,9 @@ pub const Frog = struct {
         self.facing = mathx.approachAngle(self.facing, mathx.headingXZ(d), TURN_RATE * dt);
     }
 
-    // Begin a hop toward `to` (clamped to bounds). `lunge` = the big committed leap.
-    // NO snap-turn (the max turning speed): the intent point is only an AIM — the toad
-    // steers onto it through the coil at TURN_RATE and the leap LAUNCHES ALONG THE BODY
-    // at takeoff (see updateHop), so a hero circling a coiled toad genuinely gets around it.
+    // Begin a hop toward `to` (clamped to bounds); `lunge` = the big committed leap.
+    // NO snap-turn: the intent point is only an AIM — the toad steers onto it through the coil
+    // and the leap LAUNCHES ALONG THE BODY at takeoff, so circling a coiled toad gets around it.
     pub fn startHop(self: *Frog, to: rl.Vector3, bounds: f32, lunge: bool) void {
         self.hopAim = v3(mathx.clampF(to.x, -bounds, bounds), 0, mathx.clampF(to.z, -bounds, bounds));
         self.hopReach = mathx.distXZ(self.pos, self.hopAim);
@@ -939,10 +935,15 @@ pub const Knot = struct {
 
     pub fn init(shader: rl.Shader) Knot {
         var k = Knot{ .model = Model.init(shader) };
-        for (homes, 0..) |h, i| {
-            k.frogs[i] = Frog.spawn(mathx.ground(h.x, h.z), h.yaw, h.scale, h.seed);
-        }
+        k.reset();
         return k;
+    }
+    // Re-home every toad, alive and fresh (a hero death reloads the world, ER-style). The
+    // shared Model is untouched — instances only.
+    pub fn reset(self: *Knot) void {
+        for (homes, 0..) |h, i| {
+            self.frogs[i] = Frog.spawn(mathx.ground(h.x, h.z), h.yaw, h.scale, h.seed);
+        }
     }
     pub fn setShader(self: *Knot, sh: rl.Shader) void {
         self.model.setShader(sh);
@@ -1018,10 +1019,9 @@ fn tooth(b: *Builder, bpos: rl.Vector3, dir: rl.Vector3, len: f32, r: f32, col: 
     b.addCylinder(bpos, v3(bpos.x + dir.x * len, bpos.y + dir.y * len, bpos.z + dir.z * len), r, 0.004, 5, col);
 }
 
-// One ragged row of nine teeth — uneven size/lean/spacing, the odd gap and snapped-off stub,
-// bigger tusks at the corners. Seeded so the build stays deterministic. Shared by the upper
-// (body) and lower (jaw) rows, which differ ONLY in these params; `shift` rebases the row
-// into the jaw's local frame (P_JAW) for the lower teeth (zero for the uppers).
+// One ragged row of nine teeth — uneven size/lean/spacing, the odd gap and snapped stub,
+// bigger tusks at the corners (seeded, deterministic). Shared by the upper (body) and lower
+// (jaw) rows, differing ONLY in these params; `shift` rebases into the jaw's frame (P_JAW).
 const ToothRow = struct {
     seed: u64,
     tuskLen: f32,
@@ -1050,8 +1050,8 @@ fn toothRow(b: *Builder, cfg: ToothRow) void {
 }
 
 // A squat, hunched toad: a fat vertical dome (belly widening to a humped back) with a broad
-// warty head + bulging eyes jutting forward at the mouth line. Compact, wider than long. The
-// lower jaw + throat sac are separate (animated) parts.
+// warty head + bulging eyes at the mouth line, wider than long. The lower jaw + throat sac
+// are separate (animated) parts.
 fn bodyMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
@@ -1086,9 +1086,8 @@ fn bodyMesh() rl.Mesh {
     b.addCube(v3(0.08, 0.40, 0.54), v3(0.035, 0.035, 0.035), HIDE_DK);
     b.addCube(v3(-0.08, 0.40, 0.54), v3(0.035, 0.035, 0.035), HIDE_DK);
 
-    // Upper teeth: a RAGGED row hanging from the lip — uneven size / lean / spacing, the odd
-    // gap and snapped-off stub, big tusks near the corners. Wabi-sabi: no two alike (seeded,
-    // so the build stays deterministic).
+    // Upper teeth: a RAGGED row hanging from the lip — uneven size / lean / spacing, the odd gap
+    // and snapped stub, big tusks near the corners (seeded, deterministic; no two alike).
     toothRow(&b, .{ .seed = 9173, .tuskLen = 0.21, .toothLen = 0.13, .tuskRad = 0.046, .toothRad = 0.030, .dirY = -1, .zlean = 0.10, .z0 = 0.50 });
 
     // Warty humps scattered over the domed back (deterministic seed, like the flora clumps).
@@ -1139,9 +1138,8 @@ fn throatMesh() rl.Mesh {
 }
 
 // Back-leg thigh — authored at the hip origin, a fat haunch reaching up to the folded knee.
-// `side` mirrors the outward (frontal-x) lean so the RIGHT thigh reaches its own (mirrored)
-// knee: pose() places HAUNCH_R at −x with the shank at kneeOffR, so an unmirrored +x lean
-// would leave the right thigh pointing inward, short of the shank (matches shankMesh(side)).
+// `side` mirrors the outward lean so the RIGHT thigh reaches its own mirrored knee — else an
+// unmirrored +x lean points it inward, short of the shank (matches shankMesh(side)).
 fn thighMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
@@ -1152,7 +1150,7 @@ fn thighMesh(side: f32) rl.Mesh {
 }
 
 // Back-leg shank + webbed foot — authored at the knee origin, dropping down-forward to the
-// ground. `side` mirrors the toe splay. The long foot is the frog read.
+// ground; `side` mirrors the toe splay. The long foot is the frog read.
 fn shankMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);

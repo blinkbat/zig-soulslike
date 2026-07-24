@@ -185,9 +185,9 @@ pub fn approach(cur: f32, target: f32, maxStep: f32) f32 {
     return cur + std.math.sign(d) * maxStep;
 }
 
-/// Move `cur` toward `target` by at most `maxStep` (full 3D). Reaches `target` outright when
-/// it's within a step; otherwise steps straight toward it. Used to EASE large collision
-/// depenetrations over a few frames (a slide) instead of snapping there in one (a choppy warp).
+/// Move `cur` toward `target` by at most `maxStep` (full 3D), reaching it outright when within
+/// a step. EASEs large collision depenetrations over a few frames (a slide) instead of snapping
+/// there in one (a choppy warp).
 pub fn approachV(cur: rl.Vector3, target: rl.Vector3, maxStep: f32) rl.Vector3 {
     const dx = target.x - cur.x;
     const dy = target.y - cur.y;

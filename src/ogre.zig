@@ -31,24 +31,25 @@ const Builder = gfx.Builder;
 // through one scene-shader material, so it lights + casts shadows like everything else.
 
 // ── palette (pre-gamma dark — the scene shader gammas output, so mid values lift) ──────────
-// An ashen, weathered grey-tan hide (a sorrowful stone-giant, warm enough for the golden-hour
-// world), a paler scarred belly, near-black hollows, pale bone tusks + nails, and ONE eye that
-// glows a dull, tired amber — a lonely lamp, not a fierce glare (the sad read).
-const HIDE = rgba(58, 52, 43, 255); // ashen grey-tan hide
-const HIDE_DK = rgba(36, 32, 26, 255); // shadowed folds / warts — near-black
-const HIDE_LT = rgba(80, 72, 59, 255); // caught-light ridges / knuckles
-const BELLY = rgba(72, 65, 52, 255); // paler, scarred underside
-const SCAR = rgba(92, 82, 66, 255); // old scar tissue / calloused patches
-const EYE = rgba(236, 194, 108, 92); // the single eye — dull tired amber (low alpha = emissive)
-const EYE_RIM = rgba(28, 24, 18, 255); // heavy wet socket rim
-const PUPIL = rgba(10, 8, 6, 255);
-const TUSK = rgba(150, 140, 116, 255); // pale bone tusks + nails, pop against the hide
-const TUSK_DK = rgba(112, 104, 84, 255);
-const RAG = rgba(46, 40, 33, 255); // a filthy loin-rag (a scrap of pathos, keeps it un-goofy)
-const CLUB_WOOD = rgba(40, 30, 20, 255); // dark bog-oak haft
-const CLUB_WOOD_LT = rgba(58, 44, 28, 255); // grain highlight
-const CLUB_STONE = rgba(52, 50, 47, 255); // lashed-on stone / rusted iron lumps
-const CLUB_IRON = rgba(64, 58, 52, 255);
+// Ashen grey-tan hide, paler scarred belly, near-black hollows, pale bone tusks + nails, and
+// ONE eye of dull, tired amber — a lonely lamp, not a fierce glare (the sad read).
+const HIDE = rgba(39, 34, 28, 255); // ashen grey-tan hide — earthen, darker than bone
+const HIDE_DK = rgba(24, 20, 17, 255); // shadowed folds / warts — near-black
+const HIDE_LT = rgba(56, 49, 40, 255); // caught-light ridges / knuckles
+const BELLY = rgba(52, 46, 37, 255); // paler, scarred underside
+const SCAR = rgba(74, 64, 50, 255); // old scar tissue / calloused patches
+const EYE = rgba(242, 192, 96, 58); // the single eye — tired amber, SELF-LIT (low alpha = emissive)
+const EYE_RIM = rgba(20, 16, 13, 255); // heavy wet socket rim
+const PUPIL = rgba(8, 6, 5, 255);
+const TUSK = rgba(140, 130, 106, 255); // pale bone tusks + nails, pop against the hide
+const TUSK_DK = rgba(104, 96, 78, 255);
+const RAG = rgba(38, 32, 26, 255); // a filthy loin-rag (a scrap of pathos, keeps it un-goofy)
+const ROPE = rgba(52, 42, 29, 255); // plaited rope — belt + club lashings
+const CLUB_WOOD = rgba(30, 21, 13, 255); // dark bog-oak haft
+const CLUB_WOOD_LT = rgba(44, 32, 20, 255); // grain highlight
+const CLUB_STONE = rgba(45, 43, 40, 255); // lashed-on stone lumps
+const CLUB_IRON = rgba(50, 46, 42, 255); // old iron
+const IRON_RUST = rgba(72, 46, 26, 255); // rust-bitten iron / old blood-stain bleed
 
 // ── rig: an 18-bone humanoid, the hero's exact joint layout + parenting (the shared model),
 // with the weapon slot repurposed as the CLUB, parented to the RIGHT wrist. ────────────────
@@ -75,9 +76,9 @@ const CLUB = 17; // the great club, parented to the right wrist
 const parent = [N]i32{ -1, ROOT, SPINE, CHEST, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CHEST, SHL, ELL, CHEST, SHR, ELR, WRR };
 
 const H: f32 = heromod.H;
-// Ogre proportions (fractions of H): the LEGS keep the hero's segment lengths so the shared
-// gait reads honestly; the ARMS run long + heavy (an apish drag), the frame wide. Bulk comes
-// from the beefy meshes + the hunch (posed), not from warping the leg chain the gait expects.
+// Ogre proportions (fractions of H): LEGS keep the hero's segment lengths so the shared gait
+// reads honestly; ARMS run long + heavy, the frame wide. Bulk comes from the meshes + the
+// hunch, not from warping the leg chain the gait expects.
 const SEG_THIGH = 0.245;
 const SEG_SHANK = 0.246;
 const SEG_UPARM = 0.210; // long, heavy arms — but not so long they knuckle-drag + hide the legs
@@ -90,21 +91,25 @@ fn restPositions() [N]rl.Vector3 {
     r[ROOT] = v3(0, 0.530, 0);
     r[SPINE] = v3(0, 0.645, 0);
     r[CHEST] = v3(0, 0.775, 0);
-    r[NECK] = v3(0, 0.820, 0);
-    r[SKULL] = v3(0, 0.885, 0);
+    // The neck JUTS FORWARD out of the hump (vulture-set) so the low head + eye read clear of
+    // the shoulder silhouette. Burying the skull in the trapezius was the old fail — no head.
+    r[NECK] = v3(0, 0.822, 0.045);
+    r[SKULL] = v3(0, 0.878, 0.105);
     r[HIPL] = v3(hx, 0.530, 0);
     r[KNEEL] = v3(hx, 0.285, 0);
     r[ANKL] = v3(hx, 0.039, 0);
     r[HIPR] = v3(-hx, 0.530, 0);
     r[KNEER] = v3(-hx, 0.285, 0);
     r[ANKR] = v3(-hx, 0.039, 0);
-    r[SHL] = v3(sx, 0.800, 0);
-    r[ELL] = v3(sx, 0.565, 0);
-    r[WRL] = v3(sx, 0.370, 0);
-    r[SHR] = v3(-sx, 0.800, 0);
-    r[ELR] = v3(-sx, 0.565, 0);
-    r[WRR] = v3(-sx, 0.370, 0);
-    r[CLUB] = v3(-sx, 0.370, 0); // zero offset from the wrist; club mesh authored in the wrist frame
+    // The CLUB shoulder rides higher, the off shoulder slumps — a permanent working skew
+    // (each chain shifts wholesale, so segment lengths stay identical; cosmetic wabi-sabi).
+    r[SHL] = v3(sx, 0.791, 0);
+    r[ELL] = v3(sx, 0.556, 0);
+    r[WRL] = v3(sx, 0.361, 0);
+    r[SHR] = v3(-sx, 0.809, 0);
+    r[ELR] = v3(-sx, 0.574, 0);
+    r[WRR] = v3(-sx, 0.379, 0);
+    r[CLUB] = v3(-sx, 0.379, 0); // zero offset from the wrist; club mesh authored in the wrist frame
     for (&r) |*p| p.* = v3(p.x * H, p.y * H, p.z * H);
     return r;
 }
@@ -128,7 +133,7 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
 }
 
 // ── scale / locomotion / senses ───────────────────────────────────────────────────────────
-pub const SCALE = 2.5; // a towering giant — ~2.2x the hero's stature to the crown
+pub const SCALE = 2.1; // a hulking giant — ~1.9x the hero to the crown (owner: shrunk from 2.5)
 const WALK_SPEED = heromod.WALK_SPEED * 0.72; // a slow, ground-eating lumber (long legs cover it)
 const AGGRO_R = 18.0; // it sees you coming from far off (it's huge)
 const SLAM_R = 4.0; // starts the overhead slam within this (long club reach)
@@ -146,7 +151,7 @@ const SLAM_DUR = 0.22; // …then FIRE: a fast downward crash
 const SLAM_IMPACT_K = 0.72; // fraction into the slam the club meets the ground (impact frame)
 const RECOVER_DUR = 1.20; // hunched over the buried club, spent + wide open
 const SLAM_CD = 1.3; // beat between slams
-const FLASH_DUR = 0.20;
+const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 6.0;
 
 // ── combat vitals (a mini-boss: high poise so single lights won't interrupt it — the brief's
@@ -158,31 +163,32 @@ pub const SLAM_HIT = combat.Hit{ .dmg = 28, .poise = 44, .stance = 20 }; // a cr
 const DEATH_DUR = 1.7; // a slow, weighty topple — a giant falls hard (and sadly)
 const DISS_DUR = 1.1; // dissipation into grace-gold motes (ER-consistent with frog/archer)
 
-// What the hero's OWN attack does back is decided by hero.attackHit(); these constants are the
-// blows the OGRE lands. The slam only catches a hero in the FRONTAL crush zone (see tryImpact).
-const HERO_REACH = 0.55; // hero footprint added to the slam reach
-const SLAM_IMPACT_R = 1.65; // frontal crush reach from the seat (pre-scale — the club is long)
-const SLAM_FRONT_DOT = 0.15; // hero must lie within the frontal arc (~±81°) to be crushed
+// hero.attackHit() decides the hero's own blows; these constants are what the OGRE lands. The
+// slam crush zone is the CLUB'S LINE — a strip down the facing axis, NOT a half-disc fan (the
+// old shape was an unfair AoE); flank the line and you're safe.
+const HERO_REACH = 0.55; // hero footprint added to the strip on both axes
+const SLAM_LEN = 1.65; // crush strip length ahead of the seat (pre-scale — the club is long)
+const SLAM_HALF_W = 0.45; // crush strip HALF-width (pre-scale) — about the club head + shock
 const SLAM_IMPACT_FWD = 1.5; // dust-burst / crush-zone centre, this far ahead of the seat (pre-scale)
 
 // ── posture channel constants (degrees) — the club carry + the slam arc + the sad idle ─────
 const HUNCH = 9.0; // base forward stoop — stooped + weary, but still standing TALL (imposing)
 const CARRY_SH = -20.0; // club arm hangs forward-and-down (dragging the club)
 const CARRY_EL = -20.0; // arms hang fairly straight (long + heavy), not hugged in
-const OVER_SH = -182.0; // upper arm thrown straight UP (the club rears overhead, not behind)
-const WIND_EL = -42.0; // only a light cock, so the club points HIGH over the head, not back
+const OVER_SH = -158.0; // upper arm thrown up-and-back — the club COCKS diagonally over the
+const WIND_EL = -78.0; //   shoulder like a headsman's backswing, not a vertical telescope
 const SLAM_SH = -42.0; // club crashed forward-and-down into the earth
 const SLAM_EL = -6.0; // elbow driven near-straight through the blow
 const OFF_SH = -14.0; // off arm rests low
 const OFF_EL = -18.0;
-const HEAD_DROOP = 20.0; // downcast, sad at rest (+ = looks down)
+const HEAD_DROOP = 15.0; // downcast, sad at rest (+ = looks down) — low, but the face still shows
 
 // ── idle life + attack footwork (a big fella is never a frozen statue) ─────────────────────
 // The leg rest-stance constants are the hero's (legChain uses these), re-stated so the idle /
 // braced legs line up exactly with the shared walk when it kicks in (no jump at the hand-off).
-const HIP_ADDUCT = 2.0;
-const FOOT_TOEOUT = 6.0;
-const IDLE_KNEE = 4.0;
+const HIP_ADDUCT = heromod.HIP_ADDUCT;
+const FOOT_TOEOUT = heromod.FOOT_TOEOUT;
+const IDLE_KNEE = heromod.IDLE_KNEE;
 const IDLE_RATE = 1.5; // rad/s of the slow weight-shift cycle (~4.2 s period — heavy, unhurried)
 const BREATHE_RATE = 1.05; // rad/s of the breathing bob
 const A_BREATHE = 0.012 * H; // idle breathing rise/fall of the pelvis
@@ -252,6 +258,7 @@ pub const Ogre = struct {
     slamCd: f32 = 0,
     elapsed: f32 = 0,
     slammed: bool = false, // one crush per slam (the impact burst + hero hit are latched)
+    returning: bool = false, // .approach is trudging back HOME (disengaged), not chasing the hero
 
     // posture channels (degrees) resolved each frame by the state, read by pose().
     clubShoulder: f32 = CARRY_SH,
@@ -260,7 +267,12 @@ pub const Ogre = struct {
     offElbow: f32 = OFF_EL,
     bodyLean: f32 = HUNCH,
     headPitch: f32 = HEAD_DROOP,
+    twist: f32 = 0, // torso wind: shoulders coil BACK on the windup, whip THROUGH the slam
+    clubTilt: f32 = 8.0, // club-in-fist cant: leans back over the shoulder, whips on the blow
     legBrace: f32 = 0, // 0 = loose stance, 1 = feet planted + knees loaded (bracing a slam)
+    jolt: f32 = 0, // footfall CATCH: spikes to 1 as a foot plants, decays fast — the mass landing
+    judder: f32 = 0, // the club's ground-bounce after the slam impact (decaying oscillation)
+    headYaw: f32 = 0, // idle scan (deg) — the eye sweeps the ruins when nothing's near
 
     // shared humanoid GAIT STATE (hero.advanceGait drives these; hero.legChain animates the legs)
     phase: f32 = 0,
@@ -347,9 +359,8 @@ pub const Ogre = struct {
     }
 
     // ── per-frame update; returns the blow the ogre landed on the HERO this frame (null if
-    // none / it's a corpse). Mirrors the toad: vitals tick, the state machine runs, the shared
-    // gait advances, pose() builds the matrices, and the hero's blade is applied LAST (tryHit),
-    // so a kill sets justDied for exactly this frame's beat (reset at the top). ───────────────
+    // none / corpse). Mirrors the toad: vitals tick, state machine, shared gait, pose(), then
+    // the hero's blade LAST (tryHit) — a kill sets justDied for this frame's beat. ────────────
     pub fn update(self: *Ogre, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         if (self.gone) {
             self.updateFx(dt);
@@ -376,12 +387,20 @@ pub const Ogre = struct {
         const d = mathx.distXZ(self.pos, hero);
         switch (self.state) {
             .idle => {
-                if (d <= AGGRO_R) self.faceToward(hero, dt);
+                if (d <= AGGRO_R) {
+                    self.faceToward(hero, dt);
+                    self.headYaw = mathx.approach(self.headYaw, 0, dt * 90.0); // eye snaps onto YOU
+                } else {
+                    // nothing near — the eye sweeps the ruins in a slow, sad watch
+                    self.headYaw = mathx.approach(self.headYaw, 26.0 * mathx.sinf(self.elapsed * 0.33 + self.seed * 7.0), dt * 30.0);
+                }
                 self.setCarry(dt);
                 if (self.t >= 0.2) self.decide(d);
             },
             .approach => {
-                self.faceToward(hero, dt);
+                // Chasing → face/move toward the HERO; disengaged (returning) → toward HOME.
+                const tgt = if (self.returning) self.home else hero;
+                self.faceToward(tgt, dt);
                 const f = self.fdir();
                 const moved = WALK_SPEED * dt;
                 self.pos.x = mathx.clampF(self.pos.x + f.x * moved, -bounds, bounds);
@@ -389,11 +408,19 @@ pub const Ogre = struct {
                 movedDist = moved;
                 moveYaw = mathx.headingXZ(f); // travels along facing → forward gait
                 self.setCarry(dt);
-                if (d <= SLAM_R or d > AGGRO_R) self.decide(d);
+                if (self.returning) {
+                    // Re-aggro if the hero wanders back into range; else stop once home.
+                    if (d <= AGGRO_R) {
+                        self.returning = false;
+                        self.decide(d);
+                    } else if (mathx.distXZ(self.pos, self.home) <= 2.0) self.enterIdle();
+                } else if (d <= SLAM_R or d > AGGRO_R) self.decide(d);
             },
             .windup => {
                 self.faceToward(hero, dt * 0.4); // a little tracking while rearing (committed tell)
-                const k = mathx.smoothstep(0, WINDUP_DUR, self.t);
+                // Rear to the peak by ~82% of the windup, then HOLD the loaded beat — a still,
+                // trembling hover is a scarier and fairer tell than a ramp that fires on topping out.
+                const k = mathx.smoothstep(0, WINDUP_DUR * 0.82, self.t);
                 self.setWindup(k);
                 self.emitStrain(dt, k); // gravel trickles as it plants + loads
                 if (self.t >= WINDUP_DUR) self.enter(.slam);
@@ -405,7 +432,10 @@ pub const Ogre = struct {
                     self.tryImpact(hero, SLAM_HIT); // the club meets the earth — FRONT crush zone
                     if (!self.slammed) {
                         self.slammed = true;
-                        self.dustBurst(self.impactWorld(), 40, 5.2, 0.42); // a big radial slam of dust
+                        self.judder = 1.0; // the club BOUNCES off the earth (rings through recover)
+                        // Dust kept TIGHT to the landing so the ring doesn't oversell the narrow
+                        // crush strip — a 4 m ring over a 1.5 m kill line taught the wrong dodge.
+                        self.dustBurst(self.impactWorld(), 36, 3.8, 0.38);
                     }
                 }
                 if (self.t >= SLAM_DUR) {
@@ -417,9 +447,18 @@ pub const Ogre = struct {
                 self.setRecover(mathx.clampF(self.t / RECOVER_DUR, 0, 1));
                 if (self.t >= RECOVER_DUR) self.enterIdle();
             },
-            .stunlight => if (self.t >= combat.LIGHT_STUN_DUR) self.enterIdle(),
-            .stunheavy => if (self.t >= combat.HEAVY_STUN_DUR) self.enterIdle(),
+            // The stuns keep easing the carry channels toward neutral UNDER the big stun deltas
+            // — else a flinch mid-windup freezes the reared-back pose beneath the recoil (wrong).
+            .stunlight => {
+                self.easeChannelsNeutral(dt);
+                if (self.t >= combat.LIGHT_STUN_DUR) self.enterIdle();
+            },
+            .stunheavy => {
+                self.easeChannelsNeutral(dt);
+                if (self.t >= combat.HEAVY_STUN_DUR) self.enterIdle();
+            },
             .dead => {
+                self.easeChannelsNeutral(dt); // arms/carry settle as the body goes over
                 if (self.t >= DEATH_DUR) {
                     self.fade = mathx.smoothstep(DEATH_DUR, DEATH_DUR + DISS_DUR, self.t);
                     self.emitDissolve(dt);
@@ -427,12 +466,14 @@ pub const Ogre = struct {
                 }
             },
         }
+        self.jolt = mathx.maxF(0, self.jolt - dt * 7.0); // the footfall catch releases fast
+        self.judder = mathx.maxF(0, self.judder - dt * 3.2); // the club-bounce rings ~0.3 s
 
         // Drive the SHARED humanoid gait. The stride phase is fed a SCALE-CORRECTED distance so
         // the giant's long legs cycle at the right cadence for their reach (no skating).
         const gaitSpeed: f32 = if (movedDist > 0) WALK_SPEED else 0;
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, gaitSpeed, moveYaw, self.facing);
-        self.footfalls(); // heavy dust puffs as each foot plants (sells the weight)
+        self.footfalls(); // heavy dust puffs + the pelvis CATCH as each foot plants
         self.pose();
         self.tryHit(blade); // hero's blade AFTER the state machine (like the toad); a kill here
         //   flags justDied for this frame's kill beat, cleared at the top of the next update.
@@ -450,16 +491,19 @@ pub const Ogre = struct {
     fn enterIdle(self: *Ogre) void {
         self.state = .idle;
         self.t = 0;
+        self.returning = false;
     }
     fn enterStun(self: *Ogre, s: State) void {
         self.state = s; // the interrupt drops any in-progress slam (nothing lands)
         self.t = 0;
         self.slammed = false;
+        self.returning = false;
     }
     fn enterDeath(self: *Ogre) void {
         self.state = .dead;
         self.t = 0;
         self.justDied = true;
+        self.returning = false;
     }
 
     // Pick the next action from range + cooldown. In reach + ready → the overhead slam; in reach
@@ -467,11 +511,15 @@ pub const Ogre = struct {
     fn decide(self: *Ogre, dist: f32) void {
         switch (classify(dist, self.slamCd <= 0)) {
             .slam => self.enter(.windup),
-            .approach => self.enter(.approach),
+            .approach => {
+                self.returning = false; // chasing the hero
+                self.enter(.approach);
+            },
             .wait => self.enterIdle(),
             .idle => {
                 if (mathx.distXZ(self.pos, self.home) > 3.0) {
-                    self.enter(.approach); // wandered — trudge back toward home (faceToward handles it)
+                    self.returning = true; // wandered — trudge back toward HOME (approach handles it)
+                    self.enter(.approach);
                 } else self.enterIdle();
             },
         }
@@ -498,16 +546,17 @@ pub const Ogre = struct {
         }
     }
 
-    // The slam CRUSH: like the toad's lunge impact — FRONT-only. The hero must be inside the
-    // club's reach AND within the frontal arc; a hero beside or behind the giant is clear.
+    // The slam CRUSH: the club's ground footprint — a STRIP down the facing line. `axial` = how
+    // far ahead along the facing, `lateral` = off that line; both must be inside the club's span
+    // (beside the landing or behind is CLEAR — sidestep off the line).
     fn tryImpact(self: *Ogre, hero: rl.Vector3, h: combat.Hit) void {
         if (self.heroLatch) return;
-        const d = mathx.distXZ(self.pos, hero);
-        if (d > SLAM_IMPACT_R * self.scale + HERO_REACH) return;
-        const to = mathx.dirXZ(self.pos, hero);
+        const to = v3(hero.x - self.pos.x, 0, hero.z - self.pos.z);
         const fwd = self.fdir();
-        const front = to.x * fwd.x + to.z * fwd.z;
-        if (d > 0.5 and front < SLAM_FRONT_DOT) return; // off to the side / behind the crush
+        const axial = to.x * fwd.x + to.z * fwd.z;
+        const lateral = @abs(to.x * fwd.z - to.z * fwd.x);
+        if (axial < -0.2 or axial > SLAM_LEN * self.scale + HERO_REACH) return;
+        if (lateral > SLAM_HALF_W * self.scale + HERO_REACH) return;
         self.heroHit = h;
         self.heroLatch = true;
     }
@@ -525,50 +574,83 @@ pub const Ogre = struct {
 
     // ── posture resolvers (set the channel fields for the current beat) ─────────────────────
     fn setCarry(self: *Ogre, dt: f32) void {
-        // Ease everything toward the weary carry; slow breathing + a heavy weight-sway ride on
-        // top so it's ALIVE at rest — the club rocks, the head lolls with the shifting weight.
+        // Ease toward the weary carry; breathing + a heavy weight-sway keep it ALIVE at rest (the
+        // club rocks, the head lolls), with an occasional long sad sigh. WALKING (moving→1) the
+        // trunk pitches INTO the travel and the eye lifts to fix on the prey — the stalk.
         const e = dt * 6.0;
         const breathe = mathx.sinf(self.elapsed * BREATHE_RATE + self.seed * 6.28);
         const rock = mathx.sinf(self.elapsed * IDLE_RATE + self.seed * 6.28); // the weight-shift phase
-        self.clubShoulder = mathx.approach(self.clubShoulder, CARRY_SH + 3.0 * rock, e); // the heavy club swings
+        const sigh = mathx.smoothstep(0.80, 1.0, mathx.sinf(self.elapsed * 0.42 + self.seed * 11.0)); // a slow swell every ~15 s
+        const stalk = self.moving; // 0 idle → 1 mid-approach
+        self.clubShoulder = mathx.approach(self.clubShoulder, CARRY_SH + 3.0 * rock + 2.0 * sigh, e); // the heavy club swings
         self.clubElbow = mathx.approach(self.clubElbow, CARRY_EL + 2.5 * breathe, e);
         self.offShoulder = mathx.approach(self.offShoulder, OFF_SH - 2.5 * rock, e);
         self.offElbow = mathx.approach(self.offElbow, OFF_EL, e);
-        self.bodyLean = mathx.approach(self.bodyLean, HUNCH + 1.5 * breathe, e);
-        self.headPitch = mathx.approach(self.headPitch, HEAD_DROOP + 2.0 * breathe + 2.5 * rock, e); // head lolls
+        self.bodyLean = mathx.approach(self.bodyLean, HUNCH + 1.5 * breathe + 4.0 * sigh + 7.5 * stalk, e);
+        self.headPitch = mathx.approach(self.headPitch, HEAD_DROOP + 2.0 * breathe + 2.5 * rock + 5.0 * sigh - 7.0 * stalk, e);
+        self.twist = mathx.approach(self.twist, 0, e * 8.0);
+        self.clubTilt = mathx.approach(self.clubTilt, 8.0 + 2.0 * rock, e * 8.0);
+        self.legBrace = mathx.approach(self.legBrace, 0, e);
+    }
+    // Ease the carry channels toward a slack neutral while a stun/death owns the body — so an
+    // interrupt mid-windup doesn't FREEZE the reared-back arm under the recoil.
+    fn easeChannelsNeutral(self: *Ogre, dt: f32) void {
+        const e = dt * 4.0;
+        self.clubShoulder = mathx.approach(self.clubShoulder, CARRY_SH, e);
+        self.clubElbow = mathx.approach(self.clubElbow, CARRY_EL, e);
+        self.offShoulder = mathx.approach(self.offShoulder, OFF_SH, e);
+        self.offElbow = mathx.approach(self.offElbow, OFF_EL, e);
+        self.bodyLean = mathx.approach(self.bodyLean, HUNCH, e);
+        self.headPitch = mathx.approach(self.headPitch, HEAD_DROOP, e);
+        self.twist = mathx.approach(self.twist, 0, e * 2.0);
+        self.clubTilt = mathx.approach(self.clubTilt, 8.0, e * 2.0);
         self.legBrace = mathx.approach(self.legBrace, 0, e);
     }
     fn setWindup(self: *Ogre, k: f32) void {
-        // Rear the club overhead, arch back, PLANT the feet + load the knees — the tell.
-        self.clubShoulder = lerpF(CARRY_SH, OVER_SH, k);
-        self.clubElbow = lerpF(CARRY_EL, WIND_EL, k);
-        self.offShoulder = lerpF(OFF_SH, -74.0, k); // off arm flings out for balance
-        self.offElbow = lerpF(OFF_EL, -44.0, k);
-        self.bodyLean = lerpF(HUNCH, -24.0, k); // arch back
-        self.headPitch = lerpF(HEAD_DROOP, -18.0, k); // eye lifts to the target
-        self.legBrace = lerpF(0, 0.55, k); // set the feet + sink into the load
+        // SEQUENCED, not lockstep: legs plant + trunk arch FIRST (kBody), the coil winds through
+        // the middle (k), the club arm trails to the top LAST (kArm) — loading link by link.
+        const kBody = mathx.smoothstep(0, 0.7, k);
+        const kArm = k * @sqrt(k); // trails the body, arrives late
+        const shiver = mathx.sinf(self.t * 36.0) * 1.8 * mathx.smoothstep(0.75, 1.0, k);
+        self.clubShoulder = lerpF(CARRY_SH, OVER_SH, kArm) + shiver;
+        self.clubElbow = lerpF(CARRY_EL, WIND_EL, kArm);
+        self.offShoulder = lerpF(OFF_SH, -74.0, kBody); // off arm flings out for balance
+        self.offElbow = lerpF(OFF_EL, -44.0, kBody);
+        self.bodyLean = lerpF(HUNCH, -24.0, kBody); // arch back
+        self.headPitch = lerpF(HEAD_DROOP, -20.0, kBody); // the eye lifts to fix on YOU
+        self.twist = lerpF(0, -26.0, k); // shoulders wind over the back hip
+        self.clubTilt = lerpF(8.0, 30.0, kArm) + shiver * 0.6; // the head hangs back off the cock
+        self.legBrace = lerpF(0, 0.55, kBody); // set the feet + sink into the load
     }
     fn setSlam(self: *Ogre, k: f32) void {
-        // FIRE: the club whips down through a chop arc, the whole body driving hard forward.
-        self.clubShoulder = lerpF(OVER_SH, SLAM_SH, k);
-        self.clubElbow = lerpF(WIND_EL, SLAM_EL, k);
-        self.offShoulder = lerpF(-74.0, 8.0, k);
-        self.offElbow = lerpF(-44.0, -22.0, k);
-        self.bodyLean = lerpF(-24.0, 44.0, k); // whip forward, over the blow
-        self.headPitch = lerpF(-18.0, 24.0, k);
+        // FIRE: the club LEADS (fast quad-out, overshooting the seat), the mass follows a beat
+        // behind it, the coil releases, the wrist snaps the head through the arc.
+        const kArm = 1.0 - (1.0 - k) * (1.0 - k); // fast out — the club leads
+        self.clubShoulder = lerpF(OVER_SH, SLAM_SH + 6.0, kArm); // overshoots past the seat…
+        self.clubElbow = lerpF(WIND_EL, SLAM_EL, kArm);
+        self.offShoulder = lerpF(-74.0, 8.0, kArm);
+        self.offElbow = lerpF(-44.0, -22.0, kArm);
+        self.bodyLean = lerpF(-24.0, 44.0, k); // …the trunk drives through behind it
+        self.headPitch = lerpF(-20.0, 24.0, kArm);
+        self.twist = lerpF(-26.0, 12.0, kArm); // the coil releases through the strike
+        self.clubTilt = lerpF(30.0, -10.0, kArm); // wrist whip — the head leads the haft at impact
         self.legBrace = lerpF(0.55, 0.72, k); // drive off the deeply-bent legs
     }
     fn setRecover(self: *Ogre, u: f32) void {
         // Spent + doubled over the buried club for most of it, gathering upright only at the end
-        // (a big, honest, wide-open punish window). Heaving breaths sell the exhaustion.
+        // (the big wide-open punish window). The impact JUDDER rings through the arm; heaving
+        // breaths sell the exhaustion after.
         const spent = 1.0 - mathx.smoothstep(0.7, 1.0, u);
         const heave = 3.0 * mathx.sinf(self.elapsed * 7.0) * spent;
-        self.clubShoulder = lerpF(CARRY_SH, SLAM_SH, spent); // leaning on the planted club
-        self.clubElbow = lerpF(CARRY_EL, SLAM_EL, spent);
+        const ring = self.judder * mathx.sinf(self.t * 44.0);
+        self.clubShoulder = lerpF(CARRY_SH, SLAM_SH, spent) + heave * 0.4 + 6.5 * ring; // the club bounces, settles
+        self.clubElbow = lerpF(CARRY_EL, SLAM_EL, spent) + 3.0 * ring;
         self.offShoulder = lerpF(OFF_SH, -8.0, spent);
         self.offElbow = lerpF(OFF_EL, -34.0, spent);
-        self.bodyLean = lerpF(HUNCH, 46.0, spent);
+        self.bodyLean = lerpF(HUNCH, 46.0, spent) + 2.2 * ring;
         self.headPitch = lerpF(HEAD_DROOP, 34.0 + heave, spent);
+        self.twist = lerpF(0, 6.0, spent); // still slung a touch through from the blow
+        self.clubTilt = lerpF(8.0, -10.0, spent) + 4.0 * ring;
         self.legBrace = lerpF(0, 0.85, spent); // splayed + buckled, bearing weight on the club
     }
 
@@ -591,41 +673,53 @@ pub const Ogre = struct {
         const hipY = self.rest[ROOT].y;
 
         const dead = self.state == .dead;
-        const dk = if (dead) mathx.smoothstep(0, 0.55, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
+        // Death in TWO beats, not one smooth fold: the knees GIVE first (dk1 — the pelvis
+        // drops, legs buckle), THEN the mass pitches forward and CRASHES (dk2), with a small
+        // settle-bounce as it comes to rest. One curve read as "sinks over"; two read as falls.
+        const du = if (dead) mathx.clampF(self.t / DEATH_DUR, 0, 1) else 0;
+        const dk1 = mathx.smoothstep(0, 0.32, du);
+        const dk2 = mathx.smoothstep(0.22, 0.62, du);
+        const settle = mathx.smoothstep(0.62, 0.72, du) * (1.0 - mathx.smoothstep(0.72, 0.88, du)); // the bounce
         const stun = self.stunAmount();
         const light = self.state == .stunlight;
         const heavy = self.state == .stunheavy;
         const lstun: f32 = if (light) stun else 0;
         const hstun: f32 = if (heavy) stun else 0;
 
-        // Shared humanoid walk bob + weight-sway on the pelvis (quieting on collapse).
-        const m = self.moving * (1.0 - dk);
+        // Shared humanoid walk bob + weight-sway on the pelvis (quieting on collapse), plus
+        // the footfall CATCH — a sharp drop as each foot takes the mass, releasing fast.
+        const m = self.moving * (1.0 - dk1);
         const twoPi = std.math.tau;
         const bob = -0.5 * A_BOB * mathx.cosf(2.0 * twoPi * self.phase) * m;
+        const catchDip = -0.020 * H * self.jolt * m;
         const sway = A_SWAY * mathx.sinf(twoPi * self.phase) * m +
             A_SWAY * self.latB * mathx.cosf(twoPi * self.phase) * m;
 
         // Idle LIFE (fades out as the walk takes over): a slow breathing bob + a heavy weight-
         // shift that rocks the pelvis foot to foot and rolls the torso — so it's never a statue.
-        const idleAmt = (1.0 - mathx.clampF(self.moving * 2.0, 0, 1)) * (1.0 - dk);
+        const idleAmt = (1.0 - mathx.clampF(self.moving * 2.0, 0, 1)) * (1.0 - dk1);
         const wshift = mathx.sinf(self.elapsed * IDLE_RATE + self.seed * 6.28); // −1..1 weight phase
         const idleBob = A_BREATHE * mathx.sinf(self.elapsed * BREATHE_RATE + self.seed * 3.0) * idleAmt;
         const idleSway = A_IDLE_SWAY * wshift * idleAmt;
 
         var wx: [N]rl.Matrix = undefined;
         // Body pitch: base hunch/attack lean, a huge RECOIL back on a light flinch, a heavy
-        // forward SAG on a stance-break, and a full topple forward on death.
-        const leanX = self.bodyLean * (1.0 - dk) - 40.0 * lstun + 34.0 * hstun + 84.0 * dk;
-        const rollZ = 16.0 * dk + 9.0 * hstun + IDLE_ROLL * wshift * idleAmt; // keels on death/stagger; rocks at idle
+        // forward SAG on a stance-break, a nod into each footfall, and the death crash (dk2 +
+        // the settle-bounce past flat and back).
+        const leanX = self.bodyLean * (1.0 - dk2) - 40.0 * lstun + 34.0 * hstun + 2.2 * self.jolt * m + 84.0 * dk2 + 5.0 * settle;
+        // The LUMBER: walking, the trunk rolls with the stride and the pelvis YAWS with it (the
+        // swagger); the head counter-rolls in poseUpper so the weight reads without the face bobbling.
+        const lumber = 6.5 * mathx.sinf(twoPi * self.phase) * m;
+        const swagY = 4.5 * mathx.sinf(twoPi * self.phase + 0.5) * m;
+        const rollZ = 16.0 * dk2 + 9.0 * hstun + IDLE_ROLL * wshift * idleAmt + lumber + 1.5 * self.judder * mathx.sinf(self.t * 44.0);
         const drop = -0.24 * H * hstun; // pelvis sinks on the heavy stagger (toward a knee)
-        const collapse = lerpF(hipY, 0.32 * H, dk);
-        const pelvY = (if (dead) collapse else hipY + bob + idleBob + drop) + sink;
-        // The pelvis HEIGHT (and sway) must scale by `fs` too: the leg-offset children ride
-        // through scaleM, so the pelvis-joint world height has to scale in lockstep or the legs
-        // sink underground at SCALE≠1 (the hero/archer never hit this — they're ~1×). The world
-        // placement tr(pos) stays unscaled. scaleM FIRST → the giant scales about its own pelvis.
+        const collapse = lerpF(hipY, 0.32 * H, dk1); // the knees give — the pelvis comes down on dk1
+        const pelvY = (if (dead) collapse else hipY + bob + catchDip + idleBob + drop) + sink;
+        // The pelvis HEIGHT (and sway) must scale by `fs` too — the leg-offset children ride
+        // through scaleM, so the pelvis world height must scale in lockstep or the legs sink at
+        // SCALE≠1. The placement tr(pos) stays unscaled; scaleM FIRST → it scales about its pelvis.
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul(rz(rollZ), rx(leanX)),
+            mul3(rz(rollZ), rx(leanX), ry(swagY)),
             mul(tr((sway + idleSway) * fs, pelvY * fs, 0), ry(facingDeg)),
             tr(self.pos.x, 0, self.pos.z),
         ));
@@ -645,14 +739,13 @@ pub const Ogre = struct {
                 self.legPose(&wx, -1.0, rightFree, self.legBrace, HIPR, KNEER, ANKR);
             }
         }
-        self.poseUpper(&wx, dk, lstun, hstun, dead);
+        self.poseUpper(&wx, dk1, dk2, lstun, hstun, dead);
         self.xf = wx;
     }
 
-    // One leg posed for the standing beats (idle / mid-attack), NOT the walk (that's legChain).
-    // `free` 0→1 = how relaxed/unweighted this leg is (its knee softens + the heel eases up);
-    // `brace` 0→1 = the slam load (BOTH legs sink + plant wider). Matches legChain's rest stance
-    // constants (HIP_ADDUCT/FOOT_TOEOUT/IDLE_KNEE) so the hand-off to the walk doesn't pop.
+    // One leg posed for the standing beats (idle / mid-attack), NOT the walk (legChain does that).
+    // `free` 0→1 = how unweighted (knee softens, heel eases); `brace` 0→1 = slam load (both legs
+    // sink + plant wider) — matches legChain's rest constants so the hand-off doesn't pop.
     fn legPose(self: *const Ogre, wx: *[N]rl.Matrix, side: f32, free: f32, brace: f32, hip: usize, knee: usize, ank: usize) void {
         const hipFlex = 8.0 * brace + 5.0 * free;
         const kneeFlex = IDLE_KNEE + 32.0 * brace + 18.0 * free;
@@ -662,20 +755,31 @@ pub const Ogre = struct {
         setLocal(wx, ank, self.rest, mul(rx(hipFlex * 0.5 - 8.0 * free), ry(side * FOOT_TOEOUT))); // free heel eases up
     }
 
-    // Spine, the small low head, the two arms + the club, and (only when DEAD, or a HEAVY sag)
-    // the buckling legs. Alive, hero.legChain owns the legs; this lays the ogre body on top.
-    fn poseUpper(self: *Ogre, wx: *[N]rl.Matrix, dk: f32, lstun: f32, hstun: f32, dead: bool) void {
+    // Spine, low head, arms + club, and (only DEAD or a HEAVY sag) the buckling legs; alive,
+    // legChain owns the legs and this lays the body on top. Death is two-beat: `dk1` = knees give
+    // (folds the spine), `dk2` = the forward crash (throws the arms + lolls the head).
+    fn poseUpper(self: *Ogre, wx: *[N]rl.Matrix, dk1: f32, dk2: f32, lstun: f32, hstun: f32, dead: bool) void {
         const rest = self.rest;
-        // Curl the spine into the hunch; the stance-break folds it further, a flinch throws it back.
-        const spineFlex = 6.0 + 26.0 * dk + 18.0 * hstun - 22.0 * lstun;
-        setLocal(wx, SPINE, rest, rx(spineFlex * 0.5));
-        setLocal(wx, CHEST, rest, rx(spineFlex * 0.4));
-        // Head: hangs low + sad, sighting the target only on a windup; lolls on death/stagger.
-        setLocal(wx, NECK, rest, rx(self.headPitch * 0.35 + 8.0 * dk));
-        setLocal(wx, SKULL, rest, rx(self.headPitch * 0.6 + 14.0 * dk + 16.0 * hstun - 26.0 * lstun));
+        const m = self.moving * (1.0 - dk1);
+        const lumber = 6.5 * mathx.sinf(std.math.tau * self.phase) * m; // pelvis roll (pose())
+        const strideSway = 4.0 * mathx.sinf(std.math.tau * self.phase + 0.9) * m; // arms trail the stride
+        // Curl the spine into the hunch; the stance-break folds it further, a flinch throws it
+        // back. The torso WINDS about its axis through windup→slam (self.twist).
+        const spineFlex = 6.0 + 26.0 * dk1 + 18.0 * hstun - 22.0 * lstun;
+        setLocal(wx, SPINE, rest, mul(rx(spineFlex * 0.5), ry(self.twist * 0.4)));
+        setLocal(wx, CHEST, rest, mul(rx(spineFlex * 0.4), ry(self.twist * 0.6)));
+        // Head: hangs low + sad, scanning at idle, sighting on a windup, lolling on death/stagger;
+        // it counter-rolls the walk lumber so the mass sways under a steady skull.
+        setLocal(wx, NECK, rest, mul(rx(self.headPitch * 0.35 + 8.0 * dk1), rz(-lumber * 0.5)));
+        setLocal(wx, SKULL, rest, mul3(
+            rx(self.headPitch * 0.6 + 14.0 * dk2 + 16.0 * hstun - 26.0 * lstun),
+            ry(self.headYaw),
+            rz(-lumber * 0.35 + 18.0 * dk2),
+        ));
 
-        // Legs buckle under a full collapse (death) or a heavy stance-break (drops toward a knee).
-        const buckle = mathx.maxF(dk, 0.7 * hstun);
+        // Legs buckle under a full collapse (death, dk1 — the knees give FIRST) or a heavy
+        // stance-break (drops toward a knee).
+        const buckle = mathx.maxF(dk1, 0.7 * hstun);
         if (dead or hstun > 0.05) {
             setLocal(wx, HIPL, rest, mul(rx(-58.0 * buckle), rz(-4.0)));
             setLocal(wx, KNEEL, rest, rx(6.0 + 104.0 * buckle));
@@ -686,17 +790,20 @@ pub const Ogre = struct {
         }
 
         // ── the ARMS ──
-        // Off arm (left): rests low, flings out for balance on the windup, thrown up on a flinch.
+        // Off arm (left): rests low, flings out for balance on the windup, thrown up on a
+        // flinch — and swings against the stride on the walk (the free arm of the lumber).
         const armFly = -66.0 * lstun;
-        setLocal(wx, SHL, rest, mul(rx(self.offShoulder + armFly * 0.6 - 18.0 * dk), rz(14.0)));
+        setLocal(wx, SHL, rest, mul(rx(self.offShoulder + armFly * 0.6 - 18.0 * dk2 - strideSway), rz(14.0)));
         setLocal(wx, ELL, rest, rx(self.offElbow));
         setLocal(wx, WRL, rest, rl.math.matrixIdentity());
-        // Club arm (right): the whole slam arc rides this shoulder + elbow; the flinch flings it up.
-        setLocal(wx, SHR, rest, mul(rx(self.clubShoulder + armFly - 22.0 * dk), rz(-14.0)));
+        // Club arm (right): the whole slam arc rides this shoulder + elbow; the flinch flings
+        // it up; on the walk the dragged club surges a half-beat behind each stride.
+        setLocal(wx, SHR, rest, mul(rx(self.clubShoulder + armFly - 22.0 * dk2 + strideSway), rz(-14.0)));
         setLocal(wx, ELR, rest, rx(self.clubElbow));
         setLocal(wx, WRR, rest, rl.math.matrixIdentity());
-        // The club rides the wrist frame; a slight tilt so the head hangs a touch off the arm line.
-        setLocal(wx, CLUB, rest, rx(8.0));
+        // The club rides the wrist frame; clubTilt cants it back off the cock + whips it
+        // through the blow (a dead-constant tilt read as welded-on).
+        setLocal(wx, CLUB, rest, rx(self.clubTilt));
     }
 
     // ── telegraph FX (emit / integrate / draw) ──────────────────────────────────────────────
@@ -748,6 +855,7 @@ pub const Ogre = struct {
         }
         const crossed = (self.prevPhase < 0.5 and self.phase >= 0.5) or (self.phase < self.prevPhase); // 0.5 or the wrap past 0.0
         if (crossed) {
+            self.jolt = 1.0; // the pelvis CATCHES on the planting leg (pose dips + nods off this)
             const side: f32 = if (self.phase < 0.5) 1.0 else -1.0; // which foot just landed
             const f = self.fdir();
             const rr = 0.13 * H * self.scale;
@@ -817,8 +925,12 @@ pub const Grief = struct {
 
     pub fn init(shader: rl.Shader) Grief {
         var g = Grief{ .model = Model.init(shader) };
-        for (homes, 0..) |h, i| g.ogres[i] = Ogre.spawn(mathx.ground(h.x, h.z), h.yaw, h.scale, h.seed);
+        g.reset();
         return g;
+    }
+    // Re-home the giant, alive and fresh (a hero death reloads the world, ER-style).
+    pub fn reset(self: *Grief) void {
+        for (homes, 0..) |h, i| self.ogres[i] = Ogre.spawn(mathx.ground(h.x, h.z), h.yaw, h.scale, h.seed);
     }
     pub fn setShader(self: *Grief, sh: rl.Shader) void {
         self.model.setShader(sh);
@@ -879,31 +991,40 @@ fn buildMeshes() [N]rl.Mesh {
     mesh[KNEER] = shinMesh();
     mesh[ANKR] = footMesh(-1.0);
     mesh[SHL] = upperArmMesh();
-    mesh[ELL] = forearmMesh();
-    mesh[WRL] = fistMesh();
+    mesh[ELL] = forearmMesh(31, false);
+    mesh[WRL] = fistMesh(true); // the off hand wears the FORSAKEN's broken manacle
     mesh[SHR] = upperArmMesh();
-    mesh[ELR] = forearmMesh();
-    mesh[WRR] = fistMesh();
+    mesh[ELR] = forearmMesh(77, true); // the club forearm, rope-lashed for the grip
+    mesh[WRR] = fistMesh(false);
     mesh[CLUB] = clubMesh();
     return mesh;
 }
 
-// A thick tapered limb segment `a`→`e` with a fatter articular knob at each end.
+// A thick limb segment `a`→`e` that BULGES mid-length and swells into the far joint — same hide
+// tone throughout so the body reads as one flesh, not a michelin stack of rings (the old fail).
 fn limb(b: *Builder, a: rl.Vector3, e: rl.Vector3, r0: f32, r1: f32, col: rl.Color) void {
-    b.addCylinder(a, e, r0, r1, 9, col);
-    b.addCylinder(v3(a.x, a.y + r0 * 0.5, a.z), v3(a.x, a.y - r0 * 0.5, a.z), r0 * 1.35, r0 * 1.35, 8, HIDE_LT);
-    b.addCylinder(v3(e.x, e.y + r1 * 0.5, e.z), v3(e.x, e.y - r1 * 0.5, e.z), r1 * 1.3, r1 * 1.3, 8, HIDE_LT);
+    const mid = mathx.lerpV(a, e, 0.42);
+    b.addCylinder(a, mid, r0, r0 * 1.07, 9, col);
+    b.addCylinder(mid, e, r0 * 1.07, r1, 9, col);
+    b.addCylinder(v3(e.x, e.y + r1 * 0.45, e.z), v3(e.x, e.y - r1 * 0.45, e.z), r1 * 1.14, r1 * 1.14, 8, col);
 }
 
 fn pelvisMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCube(v3(0, 0.0, 0), v3(0.20 * H, 0.10 * H, 0.15 * H), HIDE); // broad pelvic block
-    b.addCube(v3(0, -0.05 * H, 0.06 * H), v3(0.17 * H, 0.06 * H, 0.11 * H), BELLY); // low belly / groin
+    // A ROUNDED hip mass (a barrel, not a crate) with real glutes behind and a slung groin.
+    b.addCylinder(v3(0, 0.052 * H, 0.005 * H), v3(0, -0.048 * H, 0.01 * H), 0.145 * H, 0.155 * H, 10, HIDE);
+    b.addCylinder(v3(0.068 * H, 0.005 * H, -0.055 * H), v3(0.062 * H, -0.03 * H, -0.125 * H), 0.082 * H, 0.045 * H, 9, HIDE); // L glute
+    b.addCylinder(v3(-0.068 * H, 0.01 * H, -0.055 * H), v3(-0.062 * H, -0.025 * H, -0.118 * H), 0.078 * H, 0.042 * H, 9, HIDE); // R glute, a touch higher
+    b.addCylinder(v3(0, -0.055 * H, 0.05 * H), v3(0, -0.095 * H, 0.055 * H), 0.085 * H, 0.05 * H, 9, BELLY); // low groin
+    b.setMat(.leather);
+    // a plaited rope belt cinched crooked round the hips — the rag hangs off it
+    b.addCylinder(v3(0.10 * H, 0.048 * H, 0), v3(-0.10 * H, 0.058 * H, 0), 0.145 * H, 0.145 * H, 9, ROPE);
     b.setMat(.cloth);
-    // a filthy loin-rag hanging off the hips (front + back flaps) — a scrap of pathos
-    b.addBox(v3(0, -0.02 * H, 0.14 * H), v3(0.16 * H, 0, 0), v3(0, -0.11 * H, 0.01 * H), v3(0, 0, 0.02 * H), RAG);
-    b.addBox(v3(0, -0.02 * H, -0.13 * H), v3(0.14 * H, 0, 0), v3(0, -0.10 * H, -0.01 * H), v3(0, 0, 0.02 * H), RAG);
+    // the filthy loin-rag — TORN STRIPS of uneven length, front + back (pathos, not tailoring)
+    b.addBox(v3(0.055 * H, -0.045 * H, 0.15 * H), v3(0.055 * H, 0, 0), v3(0.004 * H, -0.135 * H, 0.012 * H), v3(0, 0, 0.016 * H), RAG);
+    b.addBox(v3(-0.065 * H, -0.03 * H, 0.145 * H), v3(0.045 * H, 0, 0), v3(-0.006 * H, -0.105 * H, 0.008 * H), v3(0, 0, 0.016 * H), RAG);
+    b.addBox(v3(0.0, -0.04 * H, -0.14 * H), v3(0.12 * H, 0, 0), v3(0, -0.125 * H, -0.012 * H), v3(0, 0, 0.018 * H), RAG);
     return b.toMesh();
 }
 
@@ -911,67 +1032,90 @@ fn lumbarMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
     b.addCylinder(v3(0, 0, 0), v3(0, 0.13 * H, 0), 0.15 * H, 0.19 * H, 10, HIDE); // thick waist widening to the chest
+    b.addCylinder(v3(0, 0.01 * H, 0.05 * H), v3(0, 0.105 * H, 0.032 * H), 0.145 * H, 0.115 * H, 10, BELLY); // the sagging gut, slung forward
+    b.addCylinder(v3(0, 0.002 * H, 0.05 * H), v3(0, -0.018 * H, 0.045 * H), 0.138 * H, 0.12 * H, 10, HIDE_DK); // the fold where the gut overhangs the belt
+    b.addCube(v3(0, 0.045 * H, 0.162 * H), v3(0.045 * H, 0.016 * H, 0.02 * H), HIDE_DK); // navel crease
     return b.toMesh();
 }
 
 fn torsoMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    // A barrel chest, humped over the shoulders (the hunch); a paler scarred sternum.
-    b.addCylinder(v3(0, -0.02 * H, -0.01 * H), v3(0, 0.10 * H, -0.03 * H), 0.24 * H, 0.20 * H, 12, HIDE);
-    b.addCube(v3(0, 0.03 * H, -0.10 * H), v3(0.16 * H, 0.13 * H, 0.06 * H), HIDE_DK); // humped upper back
-    b.addCube(v3(0, 0.0, 0.14 * H), v3(0.15 * H, 0.11 * H, 0.05 * H), BELLY); // sternum plate
-    b.addCube(v3(0, -0.03 * H, 0.13 * H), v3(0.12 * H, 0.05 * H, 0.05 * H), SCAR); // old scar across the ribs
-    // heavy sloped shoulders (the club side a touch bigger — the working arm)
-    b.addCylinder(v3(0.20 * H, 0.06 * H, 0), v3(0.30 * H, 0.02 * H, 0), 0.13 * H, 0.11 * H, 9, HIDE_LT); // L trapezius
-    b.addCylinder(v3(-0.20 * H, 0.06 * H, 0), v3(-0.31 * H, 0.02 * H, 0), 0.14 * H, 0.12 * H, 9, HIDE_LT); // R trapezius (club arm)
-    // a scatter of warty lumps over the back + shoulders (seeded — wabi-sabi, deterministic)
+    // A barrel chest humped over the shoulders (the hunch) — ROUNDED masses throughout: a domed
+    // hump kept below the nape so the jutting head stays clear, heavy pecs (club side bigger).
+    b.addCylinder(v3(0, -0.02 * H, -0.01 * H), v3(0, 0.10 * H, -0.03 * H), 0.235 * H, 0.185 * H, 12, HIDE);
+    b.addCylinder(v3(0, -0.045 * H, -0.095 * H), v3(0, 0.075 * H, -0.115 * H), 0.155 * H, 0.085 * H, 10, HIDE_DK); // the hump — a dome, not a box
+    b.addCylinder(v3(0.065 * H, 0.045 * H, 0.10 * H), v3(0.058 * H, -0.035 * H, 0.135 * H), 0.088 * H, 0.055 * H, 9, HIDE); // L pec, sagging
+    b.addCylinder(v3(-0.065 * H, 0.05 * H, 0.10 * H), v3(-0.06 * H, -0.04 * H, 0.14 * H), 0.095 * H, 0.06 * H, 9, HIDE); // R pec (club side) — heavier
+    b.addCube(v3(0, -0.005 * H, 0.145 * H), v3(0.035 * H, 0.10 * H, 0.04 * H), BELLY); // sternum line between the pecs
+    b.addCube(v3(0, -0.055 * H, 0.135 * H), v3(0.11 * H, 0.035 * H, 0.045 * H), SCAR); // old scar under the ribs
+    // heavy shoulders SLOPING DOWN-AND-OUT (weary, not epaulettes) — the CLUB side carried
+    // visibly higher + bigger (its working arm), the off side slumped (matches the rig skew)
+    b.addCylinder(v3(0.155 * H, 0.04 * H, 0), v3(0.265 * H, -0.025 * H, 0), 0.10 * H, 0.072 * H, 9, HIDE); // L trapezius, slumped
+    b.addCylinder(v3(-0.155 * H, 0.062 * H, 0), v3(-0.275 * H, 0.0, 0), 0.118 * H, 0.085 * H, 9, HIDE); // R trapezius (club arm), carried high
+    // a scatter of warty lumps riding the SURFACE of the barrel (seeded — wabi-sabi)
     var rng = mathx.Rng.init(7321);
     var w: i32 = 0;
     while (w < 14) : (w += 1) {
         const a = rng.angle();
-        const yy = rng.range(-0.02, 0.12) * H;
-        const rr = 0.20 * H;
-        b.addCube(v3(mathx.cosf(a) * rr, yy, mathx.sinf(a) * rr * 0.8 - 0.02 * H), v3(rng.range(0.02, 0.045) * H, rng.range(0.015, 0.03) * H, rng.range(0.02, 0.045) * H), if (rng.float() < 0.5) HIDE_DK else HIDE_LT);
+        const yy = rng.range(-0.03, 0.10) * H;
+        const rr = (0.235 - (yy / H + 0.02) * 0.38) * H; // follow the barrel's taper — proud, not buried
+        b.addCube(v3(mathx.cosf(a) * rr, yy, mathx.sinf(a) * rr * 0.82 - 0.02 * H), v3(rng.range(0.02, 0.045) * H, rng.range(0.015, 0.03) * H, rng.range(0.02, 0.045) * H), if (rng.float() < 0.5) HIDE_DK else HIDE_LT);
     }
+    // an old broken SWORD BLADE left buried in the hump, rust bleeding down the hide —
+    // someone hunted this giant long ago, and only wounded it (the Forsaken's history).
+    b.setMat(.steel);
+    b.addBox(v3(0.055 * H, 0.075 * H, -0.13 * H), v3(0.028 * H, 0.007 * H, 0.0), v3(-0.006 * H, 0.052 * H, -0.024 * H), v3(0, 0, 0.006 * H), CLUB_IRON);
+    b.setMat(.skin);
+    b.addCube(v3(0.055 * H, 0.01 * H, -0.153 * H), v3(0.022 * H, 0.055 * H, 0.008 * H), IRON_RUST); // the rust-bleed streak
     return b.toMesh();
 }
 
 fn neckMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    // A short, thick, forward-set neck (the head sits low + jutting — the hunched, sad carriage).
-    b.addCylinder(v3(0, 0, 0), v3(0, 0.05 * H, 0.03 * H), 0.10 * H, 0.09 * H, 9, HIDE);
+    // A thick bull neck angled FORWARD along the jut (rest offset carries the head out front);
+    // a heavy nape fold where it leaves the hump.
+    b.addCylinder(v3(0, -0.01 * H, -0.01 * H), v3(0, 0.045 * H, 0.05 * H), 0.10 * H, 0.085 * H, 9, HIDE);
+    b.addCube(v3(0, 0.01 * H, -0.055 * H), v3(0.11 * H, 0.05 * H, 0.045 * H), HIDE_DK); // nape fold
     return b.toMesh();
 }
 
 fn headMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    // A small, low-browed head for the giant body — heavy overhanging brow, sunken cheeks, a
-    // sagging underbite with a couple of pale tusks, and ONE large central eye that glows a
-    // dull tired amber (the sorrowful lamp). Compact so the body reads all the more massive.
-    b.addCylinder(v3(0, 0.02 * H, 0.01 * H), v3(0, 0.10 * H, 0.0), 0.115 * H, 0.085 * H, 10, HIDE); // cranium
-    b.addCube(v3(0, 0.03 * H, 0.02 * H), v3(0.12 * H, 0.075 * H, 0.11 * H), HIDE); // face block
-    // heavy brow, overhanging — a permanent frown (the sad read)
-    b.addBox(v3(0, 0.075 * H, 0.10 * H), v3(0.14 * H, 0.02 * H, 0), v3(0, -0.006 * H, 0.03 * H), v3(0, 0.028 * H, 0), HIDE_DK);
-    // the single eye — a deep wet socket, a glowing amber dome, a small forward pupil
+    // The sorrowful lamp: a low-browed head on the jutting neck — heavy asymmetric brow above
+    // the eye, ONE self-lit amber eye pushed proud so it reads at range, sunken cheeks, a sagging
+    // tusked underbite, drooped ears. Sad — and scary.
+    b.addCylinder(v3(0, 0.02 * H, 0.005 * H), v3(0, 0.105 * H, -0.005 * H), 0.12 * H, 0.075 * H, 10, HIDE); // cranium
+    b.addCube(v3(0, 0.03 * H, 0.03 * H), v3(0.125 * H, 0.075 * H, 0.115 * H), HIDE); // face block
+    b.addCube(v3(0.01 * H, 0.09 * H, 0.02 * H), v3(0.05 * H, 0.02 * H, 0.09 * H), SCAR); // an old scalp scar across the dome
+    // the great brow — one heavy bar, one end drooped lower than the other (the sad frown)
+    b.addBox(v3(0, 0.076 * H, 0.088 * H), v3(0.078 * H, -0.007 * H, 0.0), v3(0.0, 0.024 * H, 0.006 * H), v3(0, 0, 0.030 * H), HIDE_DK);
+    // ── the EYE — a deep wet rim, then the amber dome PROUD of the face (emissive) ──
+    b.addCube(v3(0, 0.034 * H, 0.098 * H), v3(0.098 * H, 0.075 * H, 0.022 * H), EYE_RIM); // socket backing
+    b.setMat(.plain); // glassy — no hide-material blotch over the glow
+    b.addCylinder(v3(0, 0.034 * H, 0.100 * H), v3(0, 0.034 * H, 0.148 * H), 0.062 * H, 0.046 * H, 12, EYE); // the amber orb
+    b.addCylinder(v3(0, 0.034 * H, 0.148 * H), v3(0, 0.034 * H, 0.160 * H), 0.046 * H, 0.020 * H, 12, EYE); // its rounded crown
+    b.addCube(v3(0, 0.022 * H, 0.157 * H), v3(0.020 * H, 0.026 * H, 0.010 * H), PUPIL); // pupil set LOW — downcast
     b.setMat(.skin);
-    b.addCube(v3(0, 0.035 * H, 0.10 * H), v3(0.075 * H, 0.055 * H, 0.03 * H), EYE_RIM); // socket
-    b.setMat(.plain); // glassy eye — no hide blotch over the emissive dome
-    b.addCylinder(v3(0, 0.035 * H, 0.108 * H), v3(0, 0.035 * H, 0.135 * H), 0.058 * H, 0.042 * H, 12, EYE); // amber eyeball (emissive)
-    b.addCube(v3(0, 0.03 * H, 0.14 * H), v3(0.018 * H, 0.024 * H, 0.012 * H), PUPIL); // downcast pupil
-    b.setMat(.skin);
-    // a squat broad nose + sunken cheeks
-    b.addCube(v3(0, 0.0, 0.13 * H), v3(0.035 * H, 0.03 * H, 0.03 * H), HIDE_DK);
-    b.addCube(v3(0.07 * H, -0.01 * H, 0.08 * H), v3(0.03 * H, 0.035 * H, 0.04 * H), HIDE_DK); // L cheek hollow
-    b.addCube(v3(-0.07 * H, -0.01 * H, 0.08 * H), v3(0.03 * H, 0.035 * H, 0.04 * H), HIDE_DK); // R cheek hollow
-    // a heavy sagging lower jaw / underbite
-    b.addCube(v3(0, -0.055 * H, 0.09 * H), v3(0.10 * H, 0.03 * H, 0.075 * H), HIDE);
+    b.addCube(v3(0, -0.012 * H, 0.112 * H), v3(0.096 * H, 0.020 * H, 0.026 * H), HIDE_DK); // the weary bag under it
+    // squat nose + sunken cheeks
+    b.addCube(v3(0.004 * H, -0.028 * H, 0.128 * H), v3(0.048 * H, 0.026 * H, 0.032 * H), HIDE_DK);
+    b.addCube(v3(0.07 * H, -0.01 * H, 0.075 * H), v3(0.03 * H, 0.035 * H, 0.04 * H), HIDE_DK); // L cheek hollow
+    b.addCube(v3(-0.07 * H, -0.015 * H, 0.075 * H), v3(0.03 * H, 0.04 * H, 0.04 * H), HIDE_DK); // R cheek hollow, deeper
+    // the heavy sagging underbite + the DOWNTURNED mouth shadow above it
+    b.addCube(v3(0, -0.058 * H, 0.085 * H), v3(0.105 * H, 0.032 * H, 0.085 * H), HIDE);
+    b.addCube(v3(0, -0.041 * H, 0.122 * H), v3(0.062 * H, 0.010 * H, 0.014 * H), HIDE_DK); // mouth gap, centre
+    b.addCube(v3(0.052 * H, -0.048 * H, 0.118 * H), v3(0.022 * H, 0.009 * H, 0.012 * H), HIDE_DK); // corner, slumped lower
+    b.addCube(v3(-0.050 * H, -0.050 * H, 0.118 * H), v3(0.024 * H, 0.009 * H, 0.012 * H), HIDE_DK); // corner, slumped lower
+    // drooped little ears, pinned back-and-down (a beaten dog's set)
+    b.addBox(v3(0.128 * H, 0.005 * H, 0.0), v3(0.014 * H, 0.0, -0.020 * H), v3(0.014 * H, -0.052 * H, -0.012 * H), v3(0, 0, 0.032 * H), HIDE);
+    b.addBox(v3(-0.128 * H, 0.012 * H, 0.0), v3(0.014 * H, 0.0, 0.020 * H), v3(-0.012 * H, -0.046 * H, -0.010 * H), v3(0, 0, 0.030 * H), HIDE);
     b.setMat(.stone);
     // two pale tusks jutting up from the underbite (uneven — one bigger, wabi-sabi)
-    b.addCylinder(v3(0.045 * H, -0.04 * H, 0.14 * H), v3(0.052 * H, 0.02 * H, 0.15 * H), 0.016 * H, 0.004 * H, 6, TUSK);
-    b.addCylinder(v3(-0.05 * H, -0.045 * H, 0.14 * H), v3(-0.058 * H, 0.035 * H, 0.15 * H), 0.019 * H, 0.005 * H, 6, TUSK_DK);
+    b.addCylinder(v3(0.048 * H, -0.045 * H, 0.135 * H), v3(0.056 * H, 0.018 * H, 0.148 * H), 0.017 * H, 0.004 * H, 6, TUSK);
+    b.addCylinder(v3(-0.052 * H, -0.05 * H, 0.135 * H), v3(-0.062 * H, 0.042 * H, 0.150 * H), 0.020 * H, 0.005 * H, 6, TUSK_DK);
     return b.toMesh();
 }
 
@@ -979,6 +1123,7 @@ fn thighMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
     limb(&b, v3(0, 0, 0), v3(0, -SEG_THIGH * H, 0), 0.10 * H, 0.075 * H, HIDE); // massive thigh
+    b.addCube(v3(0.055 * H, -0.11 * H, 0.05 * H), v3(0.05 * H, 0.045 * H, 0.03 * H), SCAR); // an old calloused gouge
     return b.toMesh();
 }
 
@@ -993,12 +1138,19 @@ fn footMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
     const ay = 0.039 * H;
-    b.addCube(v3(0, -ay + 0.03 * H, 0.06 * H), v3(0.075 * H, 0.045 * H, 0.14 * H), HIDE); // broad flat foot
-    b.addCube(v3(0, -ay + 0.04 * H, -0.03 * H), v3(0.06 * H, 0.05 * H, 0.05 * H), HIDE_DK); // heel
+    // A ROUND elephantine foot: a fat tapering pad from heel to toes + a domed ankle boss,
+    // three stubby toe lobes out front (uneven), each capped with a blunt cracked nail.
+    b.addCylinder(v3(0, -ay + 0.032 * H, -0.03 * H), v3(0, -ay + 0.026 * H, 0.115 * H), 0.068 * H, 0.055 * H, 9, HIDE); // the pad
+    b.addCylinder(v3(0, -ay + 0.062 * H, -0.025 * H), v3(0, -ay + 0.012 * H, -0.032 * H), 0.058 * H, 0.066 * H, 9, HIDE_DK); // heel / ankle boss
+    for ([_]f32{ -1, 0, 1 }) |t| { // toe lobes, middle one longest
+        const tl: f32 = if (t == 0) 0.175 else 0.16;
+        b.addCylinder(v3(t * 0.040 * H * side, -ay + 0.026 * H, 0.10 * H), v3(t * 0.048 * H * side, -ay + 0.020 * H, tl * H), 0.030 * H, 0.022 * H, 7, HIDE);
+    }
     b.setMat(.stone);
-    // three blunt toe-nails
-    for ([_]f32{ -1, 0, 1 }) |t| {
-        b.addCube(v3(t * 0.045 * H * side, -ay + 0.02 * H, 0.185 * H), v3(0.024 * H, 0.018 * H, 0.02 * H), TUSK_DK);
+    for ([_]f32{ -1, 0, 1 }) |t| { // blunt nails, one cracked shorter (wabi-sabi)
+        const nl: f32 = if (t * side > 0.5) 0.012 else 0.018;
+        const tz: f32 = if (t == 0) 0.178 else 0.163;
+        b.addCube(v3(t * 0.048 * H * side, -ay + 0.024 * H, tz * H), v3(0.022 * H, 0.016 * H, nl * H), TUSK_DK);
     }
     return b.toMesh();
 }
@@ -1007,62 +1159,95 @@ fn upperArmMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
     limb(&b, v3(0, 0, 0), v3(0, -SEG_UPARM * H, 0), 0.088 * H, 0.072 * H, HIDE); // heavy upper arm
+    b.addCube(v3(-0.02 * H, -0.09 * H, 0.075 * H), v3(0.04 * H, 0.06 * H, 0.02 * H), SCAR); // old brand / callous
     return b.toMesh();
 }
 
-fn forearmMesh() rl.Mesh {
+fn forearmMesh(seed: u64, corded: bool) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
     limb(&b, v3(0, 0, 0), v3(0, -SEG_FOREARM * H, 0), 0.075 * H, 0.06 * H, HIDE); // thick forearm
-    return b.toMesh();
-}
-
-fn fistMesh() rl.Mesh {
-    var b = Builder.init();
-    b.setMat(.skin);
-    b.addCube(v3(0, -0.03 * H, 0.01 * H), v3(0.065 * H, 0.06 * H, 0.06 * H), HIDE); // big fist
-    b.setMat(.stone);
-    // four blunt knuckle-nails
-    for ([_]f32{ -1.5, -0.5, 0.5, 1.5 }) |k| {
-        b.addCube(v3(k * 0.028 * H, -0.02 * H, 0.06 * H), v3(0.014 * H, 0.02 * H, 0.016 * H), TUSK_DK);
+    var rng = mathx.Rng.init(seed);
+    b.addCube(v3(rng.range(-0.03, 0.03) * H, -rng.range(0.06, 0.12) * H, 0.055 * H), v3(0.035 * H, 0.03 * H, 0.02 * H), if (rng.float() < 0.5) SCAR else HIDE_DK); // a wart / old weal
+    if (corded) { // the CLUB forearm: wound with old rope — the grip it never lets go of
+        b.setMat(.leather);
+        b.addCylinder(v3(0, -0.075 * H, 0), v3(0, -0.105 * H, 0), 0.075 * H, 0.073 * H, 8, ROPE);
+        b.addCylinder(v3(0, -0.125 * H, 0), v3(0, -0.145 * H, 0), 0.070 * H, 0.068 * H, 8, ROPE);
     }
     return b.toMesh();
 }
 
-// The great club — authored in the RIGHT-WRIST frame, gripped near the top of the haft (at the
-// fist) and extending DOWN the arm line (−Y), so it hangs/drags when the arm is low and rears
-// overhead when the arm swings up. A gnarled bog-oak haft with a huge knotted head of lashed-on
-// stone + rusted iron lumps at the far end. Wabi-sabi: uneven lumps, a seeded scatter.
+fn fistMesh(shackled: bool) rl.Mesh {
+    var b = Builder.init();
+    b.setMat(.skin);
+    b.addCube(v3(0, -0.03 * H, 0.01 * H), v3(0.065 * H, 0.06 * H, 0.06 * H), HIDE); // big fist
+    b.addCube(v3(0, -0.008 * H, 0.042 * H), v3(0.052 * H, 0.02 * H, 0.02 * H), HIDE_LT); // knuckle ridge
+    b.setMat(.stone);
+    // four blunt knuckle-nails
+    for ([_]f32{ -1.5, -0.5, 0.5, 1.5 }) |k| {
+        b.addCube(v3(k * 0.028 * H, -0.02 * H, 0.062 * H), v3(0.014 * H, 0.02 * H, 0.016 * H), TUSK_DK);
+    }
+    if (shackled) {
+        // the FORSAKEN's iron: a rusted manacle still riveted round the wrist, three links of
+        // snapped chain swinging beneath — someone chained this giant, once, long ago.
+        b.setMat(.steel);
+        b.addCylinder(v3(0, 0.040 * H, 0.005 * H), v3(0, 0.012 * H, 0.005 * H), 0.062 * H, 0.060 * H, 8, CLUB_IRON);
+        b.addCube(v3(0, 0.026 * H, 0.070 * H), v3(0.020 * H, 0.024 * H, 0.014 * H), IRON_RUST); // the rivet boss
+        var li: i32 = 0;
+        while (li < 3) : (li += 1) {
+            const fi = @as(f32, @floatFromInt(li));
+            b.addCube(
+                v3(0.005 * H * fi, (-0.005 - 0.036 * fi) * H, (0.072 + 0.007 * fi) * H),
+                v3(0.013 * H, 0.026 * H, 0.009 * H),
+                if (li == 1) IRON_RUST else CLUB_IRON,
+            );
+        }
+    }
+    return b.toMesh();
+}
+
+// The great club — authored in the RIGHT-WRIST frame, gripped near the top of the haft and
+// extending DOWN the arm line (−Y), so it drags when the arm is low and rears overhead on the
+// swing. A gnarled bog-oak haft swelling into a knotted studded head; wabi-sabi, all uneven.
 fn clubMesh() rl.Mesh {
     var b = Builder.init();
     const gy = -0.03 * H; // grip centre in the wrist frame (at the fist)
     const gz = 0.02 * H; // a touch out front of the palm
-    const headY = gy - 0.50 * H; // the head sits ~0.5 H down the haft — a STOUT bludgeon, not a pike
+    const headY = gy - 0.54 * H; // the head a long haft down — a STOUT bludgeon, not a pike
+    b.setMat(.leather);
+    b.addCylinder(v3(0, gy + 0.13 * H, gz), v3(0, gy + 0.075 * H, gz), 0.036 * H, 0.040 * H, 8, ROPE); // rope-bound butt
     b.setMat(.wood);
-    // haft: a short butt above the fist, thickening down into the head; a hewn taper
-    b.addCylinder(v3(0, gy + 0.11 * H, gz), v3(0, gy, gz), 0.034 * H, 0.042 * H, 8, CLUB_WOOD_LT); // butt above the grip
-    b.addCylinder(v3(0, gy, gz), v3(0, gy - 0.26 * H, gz + 0.01 * H), 0.048 * H, 0.062 * H, 8, CLUB_WOOD); // haft
-    b.addCylinder(v3(0, gy - 0.26 * H, gz + 0.01 * H), v3(0, headY + 0.10 * H, gz + 0.02 * H), 0.062 * H, 0.090 * H, 8, CLUB_WOOD); // flare into the head
-    // the head: a fat knotted boulder-lump (big + round so it reads as heavy)
+    b.addCylinder(v3(0, gy + 0.075 * H, gz), v3(0, gy, gz), 0.040 * H, 0.046 * H, 8, CLUB_WOOD_LT); // the worn grip
+    b.addCylinder(v3(0, gy, gz), v3(0, gy - 0.28 * H, gz + 0.012 * H), 0.050 * H, 0.066 * H, 8, CLUB_WOOD); // haft, gently bowed
+    b.addCylinder(v3(0, gy - 0.28 * H, gz + 0.012 * H), v3(0, headY + 0.12 * H, gz + 0.024 * H), 0.066 * H, 0.096 * H, 8, CLUB_WOOD); // flare into the head
+    b.setMat(.steel);
+    b.addCylinder(v3(0, gy - 0.135 * H, gz + 0.006 * H), v3(0, gy - 0.165 * H, gz + 0.007 * H), 0.070 * H, 0.070 * H, 8, CLUB_IRON); // iron lashing band
+    b.addCylinder(v3(0, gy - 0.315 * H, gz + 0.015 * H), v3(0, gy - 0.345 * H, gz + 0.017 * H), 0.086 * H, 0.088 * H, 8, IRON_RUST); // rusted band
+    // the head: a fat knotted mass — BIG and round so it reads heavy from any angle
     b.setMat(.stone);
-    b.addCylinder(v3(0, headY + 0.16 * H, gz + 0.02 * H), v3(0, headY - 0.17 * H, gz + 0.02 * H), 0.135 * H, 0.135 * H, 11, CLUB_STONE);
-    b.addCube(v3(0, headY, gz + 0.02 * H), v3(0.15 * H, 0.16 * H, 0.15 * H), CLUB_STONE);
-    // lashed-on stones + rusted iron lumps + a couple of driven spikes (seeded scatter — wabi-sabi)
+    b.addCylinder(v3(0, headY + 0.18 * H, gz + 0.024 * H), v3(0, headY - 0.19 * H, gz + 0.024 * H), 0.150 * H, 0.146 * H, 11, CLUB_STONE);
+    b.addCube(v3(0, headY, gz + 0.024 * H), v3(0.17 * H, 0.18 * H, 0.17 * H), CLUB_STONE);
+    // lashed-on stones, rusted iron lumps + DRIVEN SPIKES (seeded scatter — wabi-sabi)
     b.setMat(.steel);
     var rng = mathx.Rng.init(5119);
     var i: i32 = 0;
-    while (i < 13) : (i += 1) {
+    while (i < 16) : (i += 1) {
         const a = rng.angle();
-        const yy = headY + rng.range(-0.15, 0.16) * H;
-        const rr = 0.135 * H;
+        const yy = headY + rng.range(-0.17, 0.18) * H;
+        const rr = 0.150 * H;
         const cx = mathx.cosf(a) * rr;
-        const cz = gz + 0.02 * H + mathx.sinf(a) * rr;
-        const sz = rng.range(0.035, 0.075) * H;
-        b.addCube(v3(cx, yy, cz), v3(sz, sz * rng.range(0.7, 1.2), sz), if (rng.float() < 0.5) CLUB_IRON else CLUB_STONE);
-        if (rng.float() < 0.4) { // a driven iron spike poking out
-            b.addCylinder(v3(cx, yy, cz), v3(cx * 1.8, yy, cz + (cz - (gz + 0.02 * H)) * 0.8 + 0.06 * H), 0.024 * H, 0.002 * H, 5, CLUB_IRON);
+        const cz = gz + 0.024 * H + mathx.sinf(a) * rr;
+        const sz = rng.range(0.040, 0.085) * H;
+        const roll = rng.float();
+        b.addCube(v3(cx, yy, cz), v3(sz, sz * rng.range(0.7, 1.25), sz), if (roll < 0.35) CLUB_IRON else if (roll < 0.5) IRON_RUST else CLUB_STONE);
+        if (rng.float() < 0.5) { // a driven iron spike, long enough to mean it
+            const sl = rng.range(1.9, 2.6);
+            b.addCylinder(v3(cx, yy, cz), v3(cx * sl, yy + rng.range(-0.02, 0.03) * H, gz + 0.024 * H + (cz - (gz + 0.024 * H)) * sl), 0.026 * H, 0.002 * H, 5, CLUB_IRON);
         }
     }
+    // two snapped sword blades buried in the head — the hunts it walked away from
+    b.addBox(v3(0.11 * H, headY + 0.10 * H, gz + 0.10 * H), v3(0.05 * H, 0.014 * H, 0.03 * H), v3(-0.004 * H, 0.05 * H, -0.01 * H), v3(0, 0, 0.006 * H), CLUB_IRON);
+    b.addBox(v3(-0.10 * H, headY - 0.06 * H, gz - 0.055 * H), v3(0.055 * H, 0.010 * H, -0.035 * H), v3(0.004 * H, 0.012 * H, 0.0), v3(0, 0, 0.005 * H), IRON_RUST);
     return b.toMesh();
 }
 
@@ -1087,16 +1272,24 @@ test "higher poise: a single hero light does NOT flinch the ogre (only sustained
     try std.testing.expectEqual(combat.HitResult.light, vit.hit(heromod.ATK_LIGHT_HIT));
 }
 
-test "slam crush catches the front zone, not the sides or behind" {
+test "slam crush is the club's LINE: hits ahead on the axis, clears the flanks + behind" {
     var front = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0); // faces +Z
-    front.tryImpact(v3(0, 0, 3.0), SLAM_HIT); // dead ahead, in reach
+    front.tryImpact(v3(0, 0, 3.0), SLAM_HIT); // dead ahead, in reach — under the falling club
     try std.testing.expect(front.heroHit != null);
+
+    var beside = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    beside.tryImpact(v3(3.0, 0, 0.6), SLAM_HIT); // close, but well OFF the club's line — the
+    try std.testing.expect(beside.heroHit == null); //   old half-disc fan wrongly crushed this
+
+    var grazing = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    grazing.tryImpact(v3(1.0, 0, 3.0), SLAM_HIT); // ahead and only a stride off the line — clipped
+    try std.testing.expect(grazing.heroHit != null);
 
     var behind = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     behind.tryImpact(v3(0, 0, -3.0), SLAM_HIT); // same distance, behind
     try std.testing.expect(behind.heroHit == null);
 
     var far = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    far.tryImpact(v3(0, 0, 99), SLAM_HIT); // out front but way out of reach
+    far.tryImpact(v3(0, 0, 99), SLAM_HIT); // on the line but way out of reach
     try std.testing.expect(far.heroHit == null);
 }

@@ -19,9 +19,9 @@ const alloc = std.heap.c_allocator;
 // only uses slot 0 for albedo), so the per-frame bind survives drawModel/drawMesh.
 const SLOT_SHADOW: i32 = 12;
 
-// THE SUN — one hard directional light. Single source for the shader uniform and the
-// shadow camera so shading and cast shadows can never disagree. Low golden-hour
-// elevation (~33 deg) from the front-left throws long raking amber shadows.
+// THE SUN — one hard directional light. Single source for the shader uniform and shadow
+// camera so shading and cast shadows can't disagree; low golden-hour elevation (~33 deg)
+// throws long raking amber shadows.
 pub const SUN_DIR = norm3(v3(-0.60, 0.50, -0.46));
 
 pub const SHADOWMAP_RES = 4096;
@@ -34,9 +34,8 @@ const SHADOW_CLIP_NEAR = 70.0;
 const SHADOW_CLIP_FAR = 190.0;
 
 // The haze color the world fades into with distance (authored pre-gamma — the shader
-// gammas output, so dark values lift). Warm grey-gold mist; the sky shader's horizon band
-// is authored to the DISPLAYED value of this so the seam disappears. The shader also
-// banks the haze golden toward the sun's quarter (see sceneFS) to match the sky's glow.
+// gammas output, so dark values lift). The sky shader's horizon band is authored to the
+// DISPLAYED value of this so the seam disappears.
 pub const HAZE = v3(0.078, 0.070, 0.056);
 // Haze falloff: 1-exp(-density*dist) — at 0.021, ~63% hazed by ~48 world units, so the
 // horizon giants (|z| ~ 50+) read as silhouettes while the avenue stays clear.
@@ -365,10 +364,9 @@ pub const Vignette = struct {
     tex: rl.Texture2D,
 
     // Authored PER-PIXEL in normalized screen space (not genImageGradientRadial, whose radius
-    // is the short dimension — on 16:9 that saturates to full dark across the width and reads
-    // as a contracted ring). Here the falloff is measured to the CORNERS: a big clean centre,
-    // then a smooth ramp to a dark, faintly COOL rim. Stretched to the screen, so it tracks the
-    // real aspect. Tune with the three consts below.
+    // is the short dimension — on 16:9 that saturates to full dark and reads as a contracted
+    // ring). Falloff measured to the CORNERS and stretched to screen, so it tracks the real
+    // aspect; tune with the three consts below.
     pub fn init() Vignette {
         const W = 256;
         const H = 256;
@@ -430,15 +428,10 @@ pub const RF_CURVE = 12;
 pub const RF_VHS = 13;
 pub const RF_GRAIN = 14;
 
-// SINGLE SOURCE OF TRUTH for the filters — one row per filter, in RF_* index order. The
-// three arrays the rest of the code consumes (menu labels, shader-uniform names, the owner-
-// tuned launch defaults) are DERIVED from this at comptime, so a name / uniform / default
-// can no longer drift out of positional lockstep. The old failure mode — three separate
-// parallel lists where appending to one but inserting mid-way into another silently bound
-// the wrong label/uniform/default to an RF_* index — is now structurally impossible.
-// Defaults = the launch look (owner-tuned): a light retro grunge — a whisper of pixelate/
-// chroma/grain over a posterize+dither crush. "Reset to Default" restores it; "All Off"
-// gives the clean render.
+// SINGLE SOURCE OF TRUTH — one row per filter in RF_* index order; the menu labels,
+// uniform names, and owner-tuned launch defaults are DERIVED at comptime so they can't
+// drift out of positional lockstep. Defaults = the launch look (owner-tuned): a light retro
+// grunge; "Reset to Default" restores it, "All Off" gives the clean render.
 const RetroFilter = struct { name: [:0]const u8, uniform: [:0]const u8, default: f32 };
 const RETRO_FILTERS = [RETRO_COUNT]RetroFilter{
     .{ .name = "Pixelate", .uniform = "fPixelate", .default = 0.07 },
@@ -666,10 +659,9 @@ pub const Retro = struct {
         };
     }
 
-    // Rebuild the capture RT + resolution uniform for a new window size (fullscreen toggle /
-    // window resize) — the filtered path renders into this RT and blits it at its own size, so
-    // it must track the backbuffer or it fills only a corner. The unfiltered path draws straight
-    // to the backbuffer and needs no handling. w/h ≤ 0 (a minimized window) is ignored.
+    // Rebuild the capture RT + resolution uniform for a new window size — the filtered path
+    // renders into this RT and blits at its own size, so it must track the backbuffer or it
+    // fills only a corner. w/h ≤ 0 (a minimized window) is ignored.
     pub fn resize(self: *Retro, w: i32, h: i32) void {
         if (w <= 0 or h <= 0) return;
         if (self.rt.texture.width == w and self.rt.texture.height == h) return;
@@ -788,9 +780,9 @@ pub const Scene = struct {
     }
 
     // Sun depth pass: call, draw casters (materials swapped to depthShader — drawMesh uses
-    // the MATERIAL's shader, beginShaderMode won't reach it), then endShadowPass. Must run
-    // BEFORE beginDrawing. The ortho box tracks `focus` (the hero), snapped to shadow
-    // texels so walking doesn't make shadow edges crawl.
+    // the MATERIAL's shader, beginShaderMode won't reach it), then endShadowPass; must run
+    // BEFORE beginDrawing. The ortho box tracks `focus`, snapped to shadow texels so walking
+    // doesn't make shadow edges crawl.
     pub fn beginShadowPass(self: *Scene, focus: rl.Vector3) void {
         const t = SHADOW_ORTHO / @as(f32, SHADOWMAP_RES);
         const fx = @round(focus.x / t) * t;
@@ -854,13 +846,10 @@ pub const Scene = struct {
 // Rides vertexTexCoord2.x; .plain is the generic grain every untagged shape gets.
 pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant };
 
-// Procedural-mesh Builder — trimmed from zig-diablo's scenemesh.Builder (verbatim from
-// zig-rts, plus toMesh for the FK-rigged hero which needs bare Meshes, not Models).
-// Every shape is emitted with SURFACE-ANCHORED UVs in ~world units (planar per quad face,
-// arc-length x axis-length on cylinders) plus the current material id in texcoords2 — the
-// scene shader textures off these, so patterns stay glued to animated bones instead of
-// swimming through world space. setMat() switches material between shapes; a per-shape UV
-// offset decorrelates identical shapes so nothing tiles in sync (wabi-sabi for free).
+// Procedural-mesh Builder (from zig-rts, plus toMesh for the FK-rigged hero which needs bare
+// Meshes, not Models). Every shape gets SURFACE-ANCHORED UVs in ~world units + the current
+// material id in texcoords2 so patterns stay glued to animated bones; setMat() switches
+// material and a per-shape UV offset decorrelates identical shapes so nothing tiles in sync.
 pub const Builder = struct {
     pos: std.ArrayList(f32),
     nrm: std.ArrayList(f32),
@@ -924,10 +913,8 @@ pub const Builder = struct {
         self.quadUV(a, b, c, d, n, col, t(a, a, ue, ve, o), t(b, a, ue, ve, o), t(c, a, ue, ve, o), t(d, a, ue, ve, o));
     }
 
-    // Axis-aligned box centered at `c` with full `size`. Faces wind CCW seen from
-    // OUTSIDE — raylib culls back faces, so inward winding renders boxes hollow (you
-    // see through the near wall into the far interior; the cylinders always wound
-    // correctly, which is why limbs looked solid while heads/torsos looked see-through).
+    // Axis-aligned box centered at `c` with full `size`. Faces wind CCW seen from OUTSIDE —
+    // raylib culls back faces, so inward winding renders boxes hollow.
     pub fn addCube(self: *Builder, c: rl.Vector3, size: rl.Vector3, col: rl.Color) void {
         const hx = size.x / 2;
         const hy = size.y / 2;
@@ -944,9 +931,8 @@ pub const Builder = struct {
     }
 
     // Parallelepiped from a center and three half-axis vectors — the oriented cousin of
-    // addCube. Face normals are the normalized axes. Winding matches addCube (CCW from
-    // outside); a LEFT-handed axis triple is normalized first so callers can pass axes
-    // in any order without turning the box inside-out.
+    // addCube. Winding matches addCube (CCW from outside); a LEFT-handed axis triple is
+    // normalized first so callers can pass axes in any order without turning the box inside-out.
     pub fn addBox(self: *Builder, c: rl.Vector3, ax: rl.Vector3, ay: rl.Vector3, azIn: rl.Vector3, col: rl.Color) void {
         const x = cross(ax, ay);
         const az = if (x.x * azIn.x + x.y * azIn.y + x.z * azIn.z < 0) neg(azIn) else azIn;
@@ -963,10 +949,9 @@ pub const Builder = struct {
         self.quad(corner(c, ax, ay, az, 1, -1, -1), corner(c, ax, ay, az, -1, -1, -1), corner(c, ax, ay, az, -1, 1, -1), corner(c, ax, ay, az, 1, 1, -1), norm3(neg(az)), col);
     }
 
-    // Tapered cylinder (no caps) a(radius ra) -> b(radius rb). Limbs use this for a
-    // rounded, organic read; rb≈0 for spikes. UVs: u = arc length around the barrel
-    // (continuous across facets — one shared shape offset), v = distance along the axis,
-    // so wood grain / brushed steel naturally run ALONG the limb (v) and banding wraps it.
+    // Tapered cylinder (no caps) a(radius ra) -> b(radius rb); rb≈0 for spikes. UVs: u = arc
+    // length around the barrel (continuous across facets), v = distance along the axis, so
+    // grain runs ALONG the limb and banding wraps it.
     pub fn addCylinder(self: *Builder, a: rl.Vector3, b: rl.Vector3, ra: f32, rb: f32, sides: i32, col: rl.Color) void {
         const axisV = v3(b.x - a.x, b.y - a.y, b.z - a.z);
         const axis = norm3(axisV);

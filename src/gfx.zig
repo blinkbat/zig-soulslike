@@ -206,10 +206,12 @@ const sceneFS =
     \\  vec3 base = fragColor.rgb;
     \\  vec3 n = normalize(fragNormal);
     \\  vec2 p = fragPosition.xz;
+    \\  int mi = -1;
     \\  if (groundMode==1){
     \\    base *= terrainAlbedo(p);
     \\  } else {
-    \\    base = matAlbedo(int(fragMatF + 0.5), fragUV, base);
+    \\    mi = int(fragMatF + 0.5);
+    \\    base = matAlbedo(mi, fragUV, base);
     \\  }
     \\  float ndl = dot(n, normalize(sunDir));
     \\  float diff = clamp((ndl + 0.12)/1.12, 0.0, 1.0); // tighter wrap = crisper terminator (more contrast)
@@ -224,6 +226,17 @@ const sceneFS =
     \\    // atmospheric backlight; NOT on terrain, where grazing angles would sheen it all).
     \\    float rim = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 2.6);
     \\    lit += rim*vec3(0.082, 0.096, 0.128)*(0.6 + 0.4*n.y)*(1.0 - 0.5*sh);
+    \\    // SHINY METAL (STEEL, id 4): a hot, tight Blinn-Phong sun glint + a cool sky sheen on
+    \\    // grazing angles, so blades/armour/steel props read as polished metal (not matte). The
+    \\    // spec is unclamped so the hotspot blows to white — the "super shiny" catch of light.
+    \\    if (mi == 4){
+    \\      vec3 H = normalize(normalize(sunDir) + V);
+    \\      float nh = max(dot(n, H), 0.0);
+    \\      float sp = pow(nh, 96.0)*3.6 + pow(nh, 22.0)*0.7;      // a BLINDING tight hotspot + a broader sheen
+    \\      lit += sp*vec3(1.5, 1.3, 1.0)*(1.0 - sh);              // hot near-white glint — steel POPS
+    \\      float fres = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 4.0);
+    \\      lit += fres*vec3(0.34, 0.40, 0.52)*(1.0 - 0.4*sh);     // bright cool reflective sky sheen at the edges
+    \\    }
     \\  }
     \\  float emis = 1.0 - fragColor.a;
     \\  lit = mix(lit, base*1.35, emis);
@@ -235,6 +248,9 @@ const sceneFS =
     \\  float sunAmt = pow(clamp(dot(-V, normalize(sunDir)), 0.0, 1.0), 3.0);
     \\  vec3 hazeC = hazeColor + vec3(0.34, 0.19, 0.05)*sunAmt;
     \\  lit = mix(lit, hazeC, clamp(haze, 0.0, 1.0));
+    \\  // A TOUCH more saturation overall — push colours out from their luma (kept subtle).
+    \\  float luma = dot(lit, vec3(0.299, 0.587, 0.114));
+    \\  lit = max(mix(vec3(luma), lit, 1.15), 0.0);
     \\  vec3 outc = pow(max(lit, 0.0), vec3(1.0/2.2));
     \\  outc += (hash21(gl_FragCoord.xy) - 0.5)*(2.0/255.0);
     \\  finalColor = vec4(outc, 1.0);
@@ -348,8 +364,31 @@ pub const Sky = struct {
 pub const Vignette = struct {
     tex: rl.Texture2D,
 
+    // Authored PER-PIXEL in normalized screen space (not genImageGradientRadial, whose radius
+    // is the short dimension — on 16:9 that saturates to full dark across the width and reads
+    // as a contracted ring). Here the falloff is measured to the CORNERS: a big clean centre,
+    // then a smooth ramp to a dark, faintly COOL rim. Stretched to the screen, so it tracks the
+    // real aspect. Tune with the three consts below.
     pub fn init() Vignette {
-        const img = rl.genImageGradientRadial(320, 200, 0.42, rl.Color.init(0, 0, 0, 0), rl.Color.init(0, 0, 0, 76));
+        const W = 256;
+        const H = 256;
+        const START = 0.62; // radius (0=centre, 1=edge-midpoint, ~1.41=corner) where the fade BEGINS — big clean centre
+        const ENDR = 1.34; // …and reaches full strength by here (the corners)
+        const MAX_A: f32 = 120.0; // corner darkness (0..255)
+        var img = rl.genImageColor(W, H, rl.Color.init(0, 0, 0, 0));
+        var y: i32 = 0;
+        while (y < H) : (y += 1) {
+            var x: i32 = 0;
+            while (x < W) : (x += 1) {
+                const nx = (@as(f32, @floatFromInt(x)) / (W - 1)) * 2.0 - 1.0;
+                const ny = (@as(f32, @floatFromInt(y)) / (H - 1)) * 2.0 - 1.0;
+                const r = @sqrt(nx * nx + ny * ny);
+                const t = mathx.smoothstep(START, ENDR, r); // 0 in the clean centre → 1 at the corners
+                const a = mathx.u8f(t * MAX_A);
+                // A dark, faintly cool slate — darkens AND cools the rim in one wash.
+                rl.imageDrawPixel(&img, x, y, rl.Color.init(10, 16, 28, a));
+            }
+        }
         const tex = rl.loadTextureFromImage(img) catch @panic("vignette");
         rl.unloadImage(img);
         rl.setTextureFilter(tex, .bilinear);

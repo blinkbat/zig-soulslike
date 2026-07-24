@@ -124,7 +124,10 @@ const CHOMP_JAW = 64.0; // how wide the maw yawns (deg) — a big, readable gape
 const CHOMP_SAC = 1.95; // throat-sac inflate at full gape (scale)
 const LUNGE_CD = 2.1; // cooldowns keep it from spamming
 const CHOMP_CD = 0.7;
-const TURN_RATE = 7.0; // rad/s the toad yaws toward its target (between hops / while idle)
+const TURN_RATE = 5.0; // rad/s — the toad's MAX TURNING SPEED, everywhere (idle tracking,
+//   coil steering; hops/lunges LAUNCH ALONG THE BODY, never snapping onto the hero). ~285°/s:
+//   tracks hard between commits, but every hop/lunge still fires along wherever the body
+//   actually got to — so a tight strafe still beats the committed leaps. THE turn-feel knob.
 
 // Leg fold: legExt 0 = fully coiled, 1 = fully extended; the sit pose is REST_EXT. Hip &
 // knee rotate away from the authored sit pose by these swings across the 0..1 range.
@@ -242,6 +245,9 @@ pub const Frog = struct {
     elapsed: f32 = 0,
     hopFrom: rl.Vector3 = mathx.zero3,
     hopTo: rl.Vector3 = mathx.zero3,
+    hopAim: rl.Vector3 = mathx.zero3, // the INTENT point committed at decision (steered onto through the coil)
+    hopReach: f32 = 0, // ground distance the leap covers (committed at decision)
+    launched: bool = false, // takeoff done — hopTo re-aimed along the body (see updateHop)
     hopApex: f32 = 0,
     hopDur: f32 = 0, // this hop's flight time (scales with reach)
     isLunge: bool = false, // the in-flight hop is a lunge (→ recovery on landing)
@@ -333,14 +339,18 @@ pub const Frog = struct {
     }
 
     // Begin a hop toward `to` (clamped to bounds). `lunge` = the big committed leap.
+    // NO snap-turn (the max turning speed): the intent point is only an AIM — the toad
+    // steers onto it through the coil at TURN_RATE and the leap LAUNCHES ALONG THE BODY
+    // at takeoff (see updateHop), so a hero circling a coiled toad genuinely gets around it.
     pub fn startHop(self: *Frog, to: rl.Vector3, bounds: f32, lunge: bool) void {
-        self.facing = mathx.headingXZ(mathx.subV(to, self.pos));
+        self.hopAim = v3(mathx.clampF(to.x, -bounds, bounds), 0, mathx.clampF(to.z, -bounds, bounds));
+        self.hopReach = mathx.distXZ(self.pos, self.hopAim);
         self.hopFrom = self.pos;
-        self.hopTo = v3(mathx.clampF(to.x, -bounds, bounds), 0, mathx.clampF(to.z, -bounds, bounds));
+        self.hopTo = self.hopAim; // provisional — re-aimed along facing at launch
+        self.launched = false;
         self.isLunge = lunge;
         self.hopApex = if (lunge) LUNGE_APEX else HOP_APEX;
-        const reach = mathx.distXZ(self.hopFrom, self.hopTo);
-        self.hopDur = if (lunge) LUNGE_FLIGHT else HOP_FLIGHT * mathx.clampF(0.5 + reach / HOP_REACH, 0.6, 1.5);
+        self.hopDur = if (lunge) LUNGE_FLIGHT else HOP_FLIGHT * mathx.clampF(0.5 + self.hopReach / HOP_REACH, 0.6, 1.5);
         self.state = if (lunge) .lunge else .hop;
         self.t = 0;
         self.heroLatch = false; // a fresh action gets one chance to land on the hero
@@ -504,12 +514,26 @@ pub const Frog = struct {
     fn updateHop(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32, coil: f32, flight: f32, land: f32) void {
         const total = coil + flight + land;
         if (self.t < coil) {
-            // COIL: hold at the takeoff spot, still steering onto the target, and load.
-            if (!self.isLunge) self.faceToward(hero, dt);
+            // COIL: hold at the takeoff spot, steering at the CAPPED turn rate, and load.
+            // A hop tracks the live hero; a lunge steers only onto its COMMITTED aim point
+            // (where you WERE at the decision) — the long tell stays honestly dodgeable.
+            if (self.isLunge) self.faceToward(self.hopAim, dt) else self.faceToward(hero, dt);
             const k = mathx.smoothstep(0, coil, self.t);
             self.resolveCoil(k, self.isLunge);
             if (self.isLunge) self.emitCoil(dt, k); // dust dug up + amber charge — the big tell
         } else if (self.t < coil + flight) {
+            if (!self.launched) {
+                // TAKEOFF: the leap goes where the BODY points (however far the coil's
+                // capped steering actually got), with the reach committed at decision.
+                self.launched = true;
+                self.hopFrom = self.pos;
+                const f = self.fdir();
+                self.hopTo = v3(
+                    mathx.clampF(self.pos.x + f.x * self.hopReach, -bounds, bounds),
+                    0,
+                    mathx.clampF(self.pos.z + f.z * self.hopReach, -bounds, bounds),
+                );
+            }
             const s = (self.t - coil) / flight; // 0..1 across the arc
             // Advance horizontally by an INCREMENT (velocity·dt), NOT an absolute lerp from a
             // stale hopFrom: this way a collision nudge mid-arc just deflects the leap instead

@@ -73,12 +73,16 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
                  (15 filters + presets), all driving gfx.Retro / loop toggles. Inspired by
                  ../crawler's pause -> Debug -> Retro Filters tree.
 - `hero.zig`   — THE HERO. Anthropometric FK skeleton + every animation (idle/walk/run/
-                 sprint/roll/attacks) + the blade hit capsule (souls-style: rides the
-                 SWORD bone's dummy points, active only in the strike's TAE-like window,
-                 endpoints swept frame-to-frame) + the swing trail ribbon. The light slash
-                 is a REAL cut — sabre Cut One / kesa-giri geometry, sourced (Roworth 1798 /
-                 La Marchant 1796 / Hutton 1889 / kendo kinematics) in the CUT MECHANICS
-                 note above the AL_* block. Start here for how the character moves.
+                 sprint/roll/attacks, plus the locked-on STRAFE/BACKPEDAL footing: crossing
+                 grapevine sidesteps + a time-reversed walk) + the blade hit capsule
+                 (souls-style: rides the SWORD bone's dummy points, active only in the
+                 strike's TAE-like window, endpoints swept frame-to-frame, FAT on purpose —
+                 vertical forgiveness so the level swipe lands on low/tall foes) + the swing
+                 trail ribbon. The light slash is a REAL cut — the HORIZONTAL pair (sabre
+                 Cuts III/IV, Roworth 1798 / kendo dō-giri), a LEVEL swipe: blade riding the
+                 OUTER EDGE of the arc for the whole hit window (owner's law: level +
+                 outward, never a dirt-stab, never hilt-first) — see the CUT MECHANICS note
+                 above the AL_* block. Start here for how the character moves.
 - `camera.zig` — third-person over-the-shoulder orbit rig (yaw + clamped pitch, zoom,
                  shoulder offset, `recenter`), the camera-relative ground basis, and the
                  trauma-based impact shake (tickShake is live-loop only, so --shot stays
@@ -162,6 +166,14 @@ the roll heading eases on fast — stances never snap, while mechanics stay inst
 Keyboard+mouse OR gamepad; the pad follows **Elden Ring's default layout**. (**ER** = Elden
 Ring, the north-star reference, throughout this file.)
 
+**WALK vs RUN (owner's definition — key locomotion FEEL off this):** the whole left-stick
+range is **WALK** (tilt only scales the walk SPEED, light→brisk), and **RUN is exclusively
+the hold-B / hold-Shift sprint**. So stick-only movement — even at full tilt — reads as a
+walk, and the aggressive/committed "run" presentation (e.g. the sword's out-to-the-side
+"ninja" carry, the deep run lean) belongs to the hold-B RUN only. In the rig this maps to
+`sprintB` (the hold-B speed band), NOT the stick-speed `runB`. Gate run-only pose flourishes
+on `sprintB`.
+
 - **Mouse:** HIDDEN while over the window and drives the camera, but NEVER locked/captured
   (`hideCursor` = GLFW_CURSOR_HIDDEN). Push it past the window edge and it reappears as a
   normal OS cursor usable elsewhere. Look is gated on `isCursorOnScreen() and
@@ -181,8 +193,12 @@ Ring, the north-star reference, throughout this file.)
   at launch; while it's up, gameplay input is held and the world idles.
 - **Lock-on (ER):** **R3** (pad) / **middle-mouse** (kb+m) toggles lock onto the foe nearest
   screen-centre in range; with none available R3 recenters. While locked the camera swings
-  onto the foe, the hero faces it (strafe/backpedal), a **glowing white dot** marks it, and a
-  right-stick / mouse **flick** cycles targets; the lock drops when the foe leaves range.
+  onto the foe, the hero faces it (with REAL strafe/backpedal footing — crossing sidesteps,
+  reversed-walk backpedal), a **glowing white dot** marks it, and a right-stick / mouse
+  **flick** cycles targets; the lock drops when the foe leaves range. ER exceptions, both
+  deliberate: a hold-B SPRINT while locked faces the TRAVEL direction (no sideways sprint
+  exists), and an attack's recovery tail re-squares the hero onto the target fast
+  (`ATK_RETRACK`) so a locked whiff isn't left pointing into empty air.
 - Reserved for later, matching ER: Cross/A = jump, L1/L2 = guard/skill.
 
 ## Hard invariants & gotchas (break these and it rots)

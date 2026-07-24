@@ -153,23 +153,29 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
     const right = g.rig.rightXZ();
     var dir = v3(fwd.x * mv.fz + right.x * mv.fx, 0, fwd.z * mv.fz + right.z * mv.fx);
     const l = mathx.lenXZ(dir);
+    const isMoving = l > 0.001 and mv.speed > 0.001;
     var moved: f32 = 0;
     var speed: f32 = 0;
-    if (l > 0.001 and mv.speed > 0.001) {
+    var moveYaw: ?f32 = null;
+    if (isMoving) {
         dir = v3(dir.x / l, 0, dir.z / l);
         speed = mv.speed;
         moved = speed * dt;
+        moveYaw = mathx.headingXZ(dir);
         g.hero.pos.x = mathx.clampF(g.hero.pos.x + dir.x * moved, -PLAY_HALF, PLAY_HALF);
         g.hero.pos.z = mathx.clampF(g.hero.pos.z + dir.z * moved, -PLAY_HALF, PLAY_HALF);
     }
     // Facing: toward the LOCKED foe if locked (so the hero strafes/backpedals facing it,
-    // Elden-Ring style); otherwise toward the travel direction.
-    if (faceYaw) |ty| {
-        g.hero.facing = mathx.approachAngle(g.hero.facing, ty, TURN_RATE * dt);
-    } else if (l > 0.001 and mv.speed > 0.001) {
-        g.hero.facing = mathx.approachAngle(g.hero.facing, mathx.headingXZ(dir), TURN_RATE * dt);
+    // Elden-Ring style); otherwise toward the travel direction. ER exception: a hold-B
+    // SPRINT while locked faces the travel direction (the lock keeps the camera/target,
+    // but you free-run) — there is no sideways sprint, in ER or in this rig.
+    const sprinting = isMoving and mv.speed > RUN_SPEED + 0.01;
+    if (faceYaw != null and !sprinting) {
+        g.hero.facing = mathx.approachAngle(g.hero.facing, faceYaw.?, TURN_RATE * dt);
+    } else if (isMoving) {
+        g.hero.facing = mathx.approachAngle(g.hero.facing, moveYaw.?, TURN_RATE * dt);
     }
-    g.hero.update(dt, moved, speed);
+    g.hero.update(dt, moved, speed, moveYaw);
     g.hero.pose();
 }
 
@@ -447,7 +453,7 @@ pub fn run(shot: bool) void {
             bWasDown = true;
             bHeldT = ROLL_TAP_MAX;
             wasInside = false; // swallow the mouse delta accumulated while in the menu
-            g.hero.update(rawDt, 0, 0);
+            g.hero.update(rawDt, 0, 0, null);
             g.hero.pose();
             g.rig.tickShake(rawDt); // any live shake decays out under the pause
             g.rig.follow(g.hero.shoulderPoint());
@@ -566,7 +572,9 @@ pub fn run(shot: bool) void {
         } else if (g.hero.rolling) {
             g.hero.updateRoll(dt, PLAY_HALF); // committed — ignores move input
         } else if (g.hero.attacking) {
-            g.hero.updateAttack(dt, PLAY_HALF); // committed — a short step into the cut
+            // Committed — a short step into the cut; while LOCKED the recovery tail
+            // re-squares onto the target (a whiffed swing recovers its turning fast).
+            g.hero.updateAttack(dt, PLAY_HALF, lockYaw);
         } else {
             moveHero(g, dt, mv, lockYaw);
         }
@@ -790,7 +798,19 @@ fn stepWorld(g: *Game, dt: f32, speed: f32) void {
     const moved = speed * dt;
     g.hero.pos.z = mathx.clampF(g.hero.pos.z - moved, -PLAY_HALF, PLAY_HALF); // travel −Z
     g.hero.facing = std.math.pi; // face −Z (no turning)
-    g.hero.update(dt, moved, speed);
+    g.hero.update(dt, moved, speed, if (moved > 0) std.math.pi else null);
+    g.hero.pose();
+    g.rig.follow(g.hero.shoulderPoint());
+}
+
+// Locked-on footing counterpart of stepWorld: travel a world direction while the FACING
+// holds on a target heading — the strafe / backpedal gaits, framed like the walk stages.
+fn stepLocked(g: *Game, dt: f32, speed: f32, dir: rl.Vector3, faceYaw: f32) void {
+    const moved = speed * dt;
+    g.hero.pos.x = mathx.clampF(g.hero.pos.x + dir.x * moved, -PLAY_HALF, PLAY_HALF);
+    g.hero.pos.z = mathx.clampF(g.hero.pos.z + dir.z * moved, -PLAY_HALF, PLAY_HALF);
+    g.hero.facing = faceYaw;
+    g.hero.update(dt, moved, speed, mathx.headingXZ(dir));
     g.hero.pose();
     g.rig.follow(g.hero.shoulderPoint());
 }
@@ -810,7 +830,7 @@ fn shoot(g: *Game, name: [:0]const u8) void {
 fn advanceAttack(g: *Game, dt: f32, frames: i32) void {
     var k: i32 = 0;
     while (k < frames and g.hero.attacking) : (k += 1) {
-        g.hero.updateAttack(dt, PLAY_HALF);
+        g.hero.updateAttack(dt, PLAY_HALF, null);
         g.rig.follow(g.hero.shoulderPoint());
     }
 }
@@ -864,6 +884,37 @@ fn runShots(g: *Game) void {
         shoot(g, st.name);
     }
 
+    // Locked-on footing: facing HOLDS on −Z (as if locked) while travel goes sideways /
+    // backwards — the strafe sidestep from the front (both beats: the open straddle and
+    // the gather) and the backpedal in side profile (the reversed stride in silhouette).
+    // Each capture SEEKS its stride phase (a fixed frame count lands on dead phases).
+    const lockedStages = [_]struct { name: [:0]const u8, yaw: f32, pitch: f32, dist: f32, phTgt: f32, dx: f32, dz: f32 }{
+        // The strafe cycle, ONE SHOT PER BEAT (strafing his right; windows: lead leg
+        // steps [0,.22]/[.5,.72], trail leg [.25,.47]/[.75,.97] — one leg at a time):
+        .{ .name = "shots/38a_strafe_stepout.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.11, .dx = 1, .dz = 0 }, // lead leg mid out-step, its knee up, trail PLANTED
+        .{ .name = "shots/38b_strafe_apart.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.235, .dx = 1, .dz = 0 }, // dwell: planted APART
+        .{ .name = "shots/38c_strafe_crossing.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.36, .dx = 1, .dz = 0 }, // trail leg mid CROSS, its knee up, lead PLANTED
+        .{ .name = "shots/38d_strafe_crossed.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.48, .dx = 1, .dz = 0 }, // dwell: trail planted ACROSS the lead — the X
+        .{ .name = "shots/38e_strafe_uncross.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.86, .dx = 1, .dz = 0 }, // trail leg mid UNCROSS back to neutral
+        .{ .name = "shots/39a_backpedal_side.png", .yaw = 90, .pitch = 0.10, .dist = 4.0, .phTgt = 0.05, .dx = 0, .dz = 1 }, // backpedal: the toe-reach plant
+        .{ .name = "shots/39b_backpedal_side.png", .yaw = 90, .pitch = 0.10, .dist = 4.0, .phTgt = 0.55, .dx = 0, .dz = 1 }, // …the counter-step
+    };
+    for (lockedStages) |st| {
+        g.rig.yaw = mathx.radians(st.yaw);
+        g.rig.pitch = st.pitch;
+        g.rig.dist = st.dist;
+        var k: i32 = 0;
+        while (k < 14) : (k += 1) stepLocked(g, dt, WALK_SPEED, v3(st.dx, 0, st.dz), std.math.pi); // settle the direction blends
+        var seek: i32 = 0;
+        while (seek < 90) : (seek += 1) {
+            const d = @abs(g.hero.phase - st.phTgt);
+            if (@min(d, 1.0 - d) < 0.022) break;
+            stepLocked(g, dt, WALK_SPEED, v3(st.dx, 0, st.dz), std.math.pi);
+        }
+        g.rig.follow(g.hero.shoulderPoint());
+        shoot(g, st.name);
+    }
+
     // Dodge roll (side profile): capture the crouch → somersault → recover of a −Z roll.
     g.hero.pos = mathx.ground(0, 8);
     g.rig.yaw = mathx.radians(90);
@@ -899,18 +950,30 @@ fn runShots(g: *Game) void {
     g.rig.pitch = 0.13;
     g.rig.dist = 4.2;
     g.hero.startAttack(.light);
-    advanceAttack(g, dt, 10); // ~u 0.28: windup apex — fist by the ear, blade over the shoulder
+    advanceAttack(g, dt, 10); // ~u 0.28: windup apex — fist at shoulder height, blade LEVEL back over the shoulder
     shoot(g, "shots/15a_atk_light_wind.png");
-    advanceAttack(g, dt, 5); // ~u 0.42: blade mid-arc, elbow whipping through
+    advanceAttack(g, dt, 5); // ~u 0.42: mid-arc — blade horizontal, tip OUTWARD, sweeping across
     shoot(g, "shots/15_atk_light_strike.png");
-    advanceAttack(g, dt, 4); // ~u 0.53: the whip PEAK — wrist snapped, blade level through contact
+    advanceAttack(g, dt, 4); // ~u 0.53: the whip PEAK — wrist fired, blade level through contact
     shoot(g, "shots/15p_atk_light_peak.png");
-    advanceAttack(g, dt, 3); // ~u 0.61: follow-through — blade swept across past the off hip
+    advanceAttack(g, dt, 3); // ~u 0.61: follow-through — blade carried across past the OFF shoulder, still level
     shoot(g, "shots/15b_atk_light_thru.png");
     g.hero.requestAttack(.light); // buffered past the chain knot → the ALTERNATE backhand
-    advanceAttack(g, dt, 22); // chain fires at ~u 0.80, then ~u 0.42 into the return swipe
+    advanceAttack(g, dt, 12); // chain fires at ~u 0.80, then into the backhand WINDUP (the chamber)
+    shoot(g, "shots/15r_atk_return_wind.png"); // verify the return chamber clears the torso (no arm buried in the chest)
+    advanceAttack(g, dt, 10); // ~u 0.42 into the return swipe
     shoot(g, "shots/15c_atk_light_return.png");
     advanceAttack(g, dt, 999); // run the combo out
+    // TOP-DOWN — the SLASH must sweep a clean horizontal ARC across the FRONT of the hero
+    // (a swipe, not a downward poke): the swing-trail ribbon reads the arc from above.
+    g.rig.yaw = mathx.radians(0);
+    g.rig.pitch = 1.48; // near-straight-down (follow() doesn't clamp pitch like the live paths)
+    g.rig.dist = 6.5;
+    g.hero.startAttack(.light);
+    advanceAttack(g, dt, 17); // ~u 0.47, deep in the active window — the trail fan painted across the front
+    shoot(g, "shots/15t_atk_light_top.png");
+    advanceAttack(g, dt, 999);
+    g.rig.pitch = 0.13;
     g.rig.yaw = mathx.radians(90);
     g.hero.startAttack(.heavy);
     advanceAttack(g, dt, 20); // ~u 0.33: overhead windup apex (the R2 tell)
@@ -942,7 +1005,7 @@ fn runShots(g: *Game) void {
         // inside the sun's shadow ortho box (which tracks the hero's position).
         g.hero.pos = mathx.ground(2.0, 0.9);
         g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z); // face the toad at origin
-        g.hero.update(dt2, 0, 0);
+        g.hero.update(dt2, 0, 0, null);
         g.hero.pose();
 
         const behind = mathx.ground(0, -60); // "hero" down the hop heading (−Z): coil re-aim ≈ heading
@@ -954,6 +1017,8 @@ fn runShots(g: *Game) void {
         shootFrog(g, f, "shots/21_frog_scale.png", 35, 0.16, 4.7); // with the hero, for size read
 
         // A hop: coil → leap → land (side profile shows the arc + squash/stretch).
+        // Hops LAUNCH ALONG THE BODY now (max turn speed), so spawn facing the heading.
+        f.* = frogmod.Frog.spawn(mathx.ground(0, 0), std.math.pi, 1.0, 0.0);
         f.startHop(mathx.ground(0, -2.2), PLAY_HALF, false);
         stepFrog(f, 6, behind); // mid coil (loaded, knees stacked)
         shootFrog(g, f, "shots/22_frog_coil.png", 90, 0.08, 3.0);
@@ -963,7 +1028,7 @@ fn runShots(g: *Game) void {
         shootFrog(g, f, "shots/24_frog_land.png", 90, 0.09, 3.1);
 
         // A lunge into its recovery (the wide-open window).
-        f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+        f.* = frogmod.Frog.spawn(mathx.ground(0, 0), std.math.pi, 1.0, 0.0);
         f.startHop(mathx.ground(0, -3.6), PLAY_HALF, true);
         stepFrog(f, 26, behind); // deep into the long telegraph coil (loaded, dust flying, throat charged)
         shootFrog(g, f, "shots/25_frog_lunge_wind.png", 55, 0.09, 3.3);
@@ -986,12 +1051,12 @@ fn runShots(g: *Game) void {
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         g.hero.pos = mathx.ground(0, 0.85);
         g.hero.facing = std.math.pi; // face -Z, toward the toad at the origin
-        g.hero.update(dt2, 0, 0);
+        g.hero.update(dt2, 0, 0, null);
         g.hero.pose();
         g.hero.startAttack(.light);
         var hk: i32 = 0;
         while (hk < 999 and g.hero.attacking) : (hk += 1) {
-            g.hero.updateAttack(dt2, PLAY_HALF);
+            g.hero.updateAttack(dt2, PLAY_HALF, null);
             _ = f.update(dt2, mathx.ground(0, 60), PLAY_HALF, heroBlade(g));
             if (hk == 15) { // mid the active window
                 g.rig.yaw = mathx.radians(60);
@@ -1009,7 +1074,7 @@ fn runShots(g: *Game) void {
         stepFrog(f, 8, front);
         g.hero.pos = mathx.ground(1.7, 3.6);
         g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
-        g.hero.update(1.0 / 60.0, 0, 0);
+        g.hero.update(1.0 / 60.0, 0, 0, null);
         g.hero.pose();
         g.lock = 0;
         g.rig.yaw = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
@@ -1075,7 +1140,7 @@ fn runShots(g: *Game) void {
         stepFrog(f, 4, front);
         g.hero.pos = mathx.ground(2.4, 4.2);
         g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
-        g.hero.update(dt, 0, 0);
+        g.hero.update(dt, 0, 0, null);
         g.hero.pose();
         g.rig.yaw = mathx.radians(202);
         g.rig.pitch = 0.16;

@@ -111,6 +111,16 @@ pub fn closestOnSegXZ(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     return v3(a.x + abx * t, 0, a.z + abz * t);
 }
 
+/// Closest point on segment a-b to p in full 3D (the swept-blade hit test rides this).
+pub fn closestOnSegV(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
+    const ab = subV(b, a);
+    const denom = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z;
+    if (denom < 1e-12) return a;
+    const ap = subV(p, a);
+    const t = clampF((ap.x * ab.x + ap.y * ab.y + ap.z * ab.z) / denom, 0, 1);
+    return v3(a.x + ab.x * t, a.y + ab.y * t, a.z + ab.z * t);
+}
+
 // ── full 3D vector helpers (FK rig, camera) ───────────────────────────────────────────
 pub fn addV(a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     return v3(a.x + b.x, a.y + b.y, a.z + b.z);

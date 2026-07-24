@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const gfx = @import("gfx.zig");
 const mathx = @import("mathx.zig");
 const combat = @import("combat.zig");
+const foe = @import("foe.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -149,17 +150,9 @@ const SPIT = rgba(176, 190, 150, 140); // pale sickly drool / spit fling
 const BLOOD = rgba(112, 22, 16, 235); // hit spray — dark oxblood, kin to the maw (unlit droplets)
 const MOTE = rgba(252, 198, 92, 170); // death dissipation — grace-gold motes rising off the corpse
 
-// The hero's blade this frame, handed in as plain data so the toad stays decoupled from the
-// hero rig. Endpoints are guard→tip; the *0 pair is last frame's, for a swept test.
-pub const Blade = struct {
-    active: bool = false,
-    r: f32 = 0,
-    a: rl.Vector3 = mathx.zero3,
-    b: rl.Vector3 = mathx.zero3,
-    a0: rl.Vector3 = mathx.zero3,
-    b0: rl.Vector3 = mathx.zero3,
-    hit: combat.Hit = .{}, // HP/poise/stance the swing deals (light vs heavy set by game.zig)
-};
+// The hero's blade, the SHARED foe standard's plain-data handle (see foe.zig). Re-exported
+// as frogmod.Blade for existing call sites; it IS foe.Blade.
+pub const Blade = foe.Blade;
 
 // ── vitals (LOW poise, per the brief: "frogs have low poise") ──────────────────────────
 const HP_MAX = 46.0;
@@ -170,8 +163,8 @@ const POISE_MAX = 8.0; // BELOW the hero's light poise damage (10): every landed
 const STANCE_MAX = 26.0; // low — a few flinches cascade into the heavy stagger (3rd chained light crumples)
 // What the toad's own attacks do to the HERO (guard→tip data flows the other way; these
 // are handed out when a chomp SNAP / lunge SLAM connects). The lunge is a heavy body-blow.
-const CHOMP_HIT = combat.Hit{ .dmg = 11, .poise = 15 };
-const LUNGE_HIT = combat.Hit{ .dmg = 17, .poise = 26, .stance = 8 };
+const CHOMP_HIT = combat.Hit{ .dmg = 13, .poise = 15 }; // eased down from 16 (owner: lower dmg a bit)
+const LUNGE_HIT = combat.Hit{ .dmg = 19, .poise = 26, .stance = 8 }; // eased down from 24 — still a real slam
 const HERO_REACH = 0.55; // hero footprint added to the toad's attack range for the hit test
 // The lunge is a body-SLAM that crashes down in FRONT of the toad: only a hero inside the
 // frontal impact zone is crushed — one beside or behind the landing is clear (and the impact
@@ -734,44 +727,23 @@ pub const Frog = struct {
     // ── the hero's blade lands on the toad (latched one-per-swing) ───────────────────────
     fn tryHit(self: *Frog, blade: Blade) void {
         if (self.state == .dead) return; // no hitting a corpse
-        if (!blade.active) {
-            self.hitLatch = false; // window closed → the next swing may land again
-            return;
-        }
-        if (self.hitLatch) return;
-        const c = self.centerWorld();
-        const reach = self.hurtRadius() + blade.r;
-        // Swept: test this frame's blade segment AND last frame's, so a fast arc can't skip
-        // the toad between frames.
-        const q1 = closestOnSeg(c, blade.a, blade.b);
-        const q0 = closestOnSeg(c, blade.a0, blade.b0);
-        const hit1 = mathx.lenV(mathx.subV(c, q1)) <= reach;
-        if (hit1 or mathx.lenV(mathx.subV(c, q0)) <= reach) {
-            self.hits += 1;
-            self.hitLatch = true;
-            self.flash = FLASH_DUR;
-            // The blow READS at the wound: blood flung from the contact point along the
-            // blade's sweep, and the body knocked a jolt the same way.
-            const contact = if (hit1) q1 else q0;
-            var sweep = mathx.subV(
-                mathx.lerpV(blade.a, blade.b, 0.7),
-                mathx.lerpV(blade.a0, blade.b0, 0.7),
-            );
-            sweep.y = 0;
-            const dir = if (mathx.lenXZ(sweep) > 0.03) mathx.normV(sweep) else mathx.dirXZ(contact, c);
-            const heavyBlow = blade.hit.stance > 0;
-            self.bloodBurst(contact, dir, if (heavyBlow) 14 else 9, if (heavyBlow) 2.6 else 1.9);
-            self.shove = mathx.scaleV(dir, if (heavyBlow) 1.9 else 1.25);
-            // Damage + the two-tier stagger (poise → light flinch; stance → heavy stagger).
-            switch (self.vit.hit(blade.hit)) {
-                .death => {
-                    self.bloodBurst(contact, dir, 10, 2.2); // the killing blow bleeds extra
-                    self.enterDeath();
-                },
-                .heavy => self.enterStun(.stunheavy),
-                .light => self.enterStun(.stunlight),
-                .none => {},
-            }
+        // The SHARED strike behaviour (foe.zig): swept hurt-sphere test + one-hit latch +
+        // damage; returns the contact + sweep dir + reaction. The toad lays ITS FX on top.
+        const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
+        self.hits += 1;
+        self.flash = FLASH_DUR;
+        const heavyBlow = blade.hit.stance > 0;
+        // The blow READS at the wound: blood flung along the sweep, body knocked the same way.
+        self.bloodBurst(s.contact, s.dir, if (heavyBlow) 14 else 9, if (heavyBlow) 2.6 else 1.9);
+        self.shove = mathx.scaleV(s.dir, if (heavyBlow) 1.9 else 1.25);
+        switch (s.reaction) {
+            .death => {
+                self.bloodBurst(s.contact, s.dir, 10, 2.2); // the killing blow bleeds extra
+                self.enterDeath();
+            },
+            .heavy => self.enterStun(.stunheavy),
+            .light => self.enterStun(.stunlight),
+            .none => {},
         }
     }
 
@@ -1032,12 +1004,12 @@ fn buildMeshes() [NP]rl.Mesh {
     mesh[BODY] = bodyMesh();
     mesh[LJAW] = lowerJawMesh();
     mesh[THROAT] = throatMesh();
-    mesh[HAUNCH_L] = thighMesh();
+    mesh[HAUNCH_L] = thighMesh(1.0);
     mesh[SHANK_L] = shankMesh(1.0);
-    mesh[HAUNCH_R] = thighMesh();
+    mesh[HAUNCH_R] = thighMesh(-1.0);
     mesh[SHANK_R] = shankMesh(-1.0);
-    mesh[ARM_L] = armMesh();
-    mesh[ARM_R] = armMesh();
+    mesh[ARM_L] = armMesh(1.0);
+    mesh[ARM_R] = armMesh(-1.0);
     return mesh;
 }
 
@@ -1167,10 +1139,13 @@ fn throatMesh() rl.Mesh {
 }
 
 // Back-leg thigh — authored at the hip origin, a fat haunch reaching up to the folded knee.
-fn thighMesh() rl.Mesh {
+// `side` mirrors the outward (frontal-x) lean so the RIGHT thigh reaches its own (mirrored)
+// knee: pose() places HAUNCH_R at −x with the shank at kneeOffR, so an unmirrored +x lean
+// would leave the right thigh pointing inward, short of the shank (matches shankMesh(side)).
+fn thighMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
-    const knee = v3(P_KNEE.x - P_HIP.x, P_KNEE.y - P_HIP.y, P_KNEE.z - P_HIP.z);
+    const knee = v3((P_KNEE.x - P_HIP.x) * side, P_KNEE.y - P_HIP.y, P_KNEE.z - P_HIP.z);
     b.addCylinder(v3(0, 0, 0), knee, 0.20, 0.13, 10, HIDE);
     b.addCylinder(v3(0, 0.03, -0.02), v3(knee.x * 0.55, knee.y * 0.55, knee.z * 0.55 - 0.03), 0.225, 0.17, 10, HIDE_LT); // big muscle bulge
     return b.toMesh();
@@ -1196,11 +1171,12 @@ fn shankMesh(side: f32) rl.Mesh {
     return b.toMesh();
 }
 
-// Front leg — authored at the shoulder origin; small, splayed, planting forward.
-fn armMesh() rl.Mesh {
+// Front leg — authored at the shoulder origin; small, splayed, planting forward. `side`
+// mirrors the outward-x lean so the RIGHT arm isn't flipped inward (as thighMesh/shankMesh).
+fn armMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
-    const hand = v3(0.02, -0.26, 0.16);
+    const hand = v3(0.02 * side, -0.26, 0.16);
     b.addCylinder(v3(0, 0, 0), hand, 0.075, 0.045, 8, HIDE);
     b.addCube(v3(hand.x, hand.y - 0.005, hand.z + 0.03), v3(0.12, 0.03, 0.11), HIDE_DK); // splayed hand
     for ([_]f32{ -1, 0, 1 }) |t| {
@@ -1209,19 +1185,10 @@ fn armMesh() rl.Mesh {
     return b.toMesh();
 }
 
-// Closest point on segment `a`-`b` to `p` (the blade contact point — where blood spawns).
-fn closestOnSeg(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
-    const ab = mathx.subV(b, a);
-    const denom = mathx.lenV(ab);
-    if (denom < 1e-6) return a;
-    const ap = mathx.subV(p, a);
-    const t = mathx.clampF((ap.x * ab.x + ap.y * ab.y + ap.z * ab.z) / (denom * denom), 0, 1);
-    return v3(a.x + ab.x * t, a.y + ab.y * t, a.z + ab.z * t);
-}
-
-// Shortest distance from point `p` to segment `a`-`b` (swept-blade hit test).
+// Shortest distance from point `p` to segment `a`-`b` (swept-blade hit test), on the shared
+// 3D segment helper (mathx.closestOnSegV — the same one foe.strike rides).
 fn distPointSeg(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) f32 {
-    return mathx.lenV(mathx.subV(p, closestOnSeg(p, a, b)));
+    return mathx.lenV(mathx.subV(p, mathx.closestOnSegV(p, a, b)));
 }
 
 // ── invariants under test (pure logic only — meshes/poses need a GPU window) ────────────

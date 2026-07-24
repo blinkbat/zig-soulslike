@@ -189,18 +189,20 @@ const BRASS = rgba(122, 92, 40, 255);
 // ── gait: normative sagittal joint angles over one stride, sampled every 12.5% (deg) ──
 // phase 0 = heel strike of that leg; stance ≈ 0..0.60, swing ≈ 0.60..1.0.
 // hip: +flexion (thigh forward). knee: +flexion (bend). ankle: +dorsiflexion (toe up).
-const HIP_FLEX = [8]f32{ 25, 13, 3, -5, -10, -3, 12, 22 };
-const KNEE_FLEX = [8]f32{ 5, 18, 10, 4, 10, 38, 62, 30 };
-const ANK_DORSI = [8]f32{ -2, -6, 2, 9, 6, -14, -6, -1 };
+// pub so a second humanoid (the skeletal archer) can walk on the SAME normative gait
+// science instead of duplicating the tables — the shared foundation of "our humanoid model".
+pub const HIP_FLEX = [8]f32{ 25, 13, 3, -5, -10, -3, 12, 22 };
+pub const KNEE_FLEX = [8]f32{ 5, 18, 10, 4, 10, 38, 62, 30 };
+pub const ANK_DORSI = [8]f32{ -2, -6, 2, 9, 6, -14, -6, -1 };
 
 // ── running gait (a distinct cycle, not a sped-up walk) ────────────────────────────
 // Sagittal joint angles after Novacheck, "The biomechanics of running" (Gait & Posture
 // 1998) and Physiopedia's running-biomechanics normatives: much larger ranges than
 // walking, forefoot contact, stance ≈ 40% (toe-off near phase 0.4), a big swing-knee
 // flexion (heel toward buttock), and a genuine flight phase (both feet airborne).
-const RUN_HIP = [8]f32{ 42, 25, 8, -8, 5, 35, 60, 55 };
-const RUN_KNEE = [8]f32{ 26, 48, 40, 28, 62, 98, 80, 44 }; // deeper bend throughout — coiled + low
-const RUN_ANK = [8]f32{ -3, 10, 22, 2, -18, -6, 0, -2 };
+pub const RUN_HIP = [8]f32{ 42, 25, 8, -8, 5, 35, 60, 55 };
+pub const RUN_KNEE = [8]f32{ 26, 48, 40, 28, 62, 98, 80, 44 }; // deeper bend throughout — coiled + low
+pub const RUN_ANK = [8]f32{ -3, 10, 22, 2, -18, -6, 0, -2 };
 // The run reads low + aggressive: a deep forward tilt over a low centre of gravity, with
 // normal pumping arms (bent ~90°).
 const RUN_LEAN = 24.0; // deep forward trunk lean when running (deg)
@@ -383,7 +385,7 @@ const TrailSample = struct { a: rl.Vector3 = mathx.zero3, b: rl.Vector3 = mathx.
 // ── combat vitals + what the hero's cuts deal (Elden Ring model, see docs/ELDEN_RING.md) ─
 // The hero is sturdier than a toad: mid-weight poise (~ER's Knight-set 51) so a couple of
 // bites shrug off, but sustained pressure still flinches then staggers him.
-pub const HP_MAX = 100.0;
+pub const HP_MAX = 70.0; // lowered from 100 — a few solid blows now kill (owner: raise the stakes)
 pub const POISE_MAX = 55.0;
 pub const STANCE_MAX = 90.0;
 // Poise/stance dealt by the cuts (HP damage rides alongside). The R2 is the heavier hit and
@@ -398,7 +400,6 @@ const HURT_LEAN = 40.0; // light flinch: torso snaps back this far (deg)
 const HURT_HEAD = 52.0; // …head whips back with it
 const HURT_STEP = 0.18 * H; // …and he's knocked a step back off the blow
 const STAG_LEAN = 42.0; // heavy stagger: a deep reeling arch back (deg)
-const STAG_STEP = 0.34 * H; // …and the trailing leg shoots back to catch balance (rx deg via knee)
 const DEATH_SINK = 0.30; // death: pelvis sinks to this fraction of stance height
 pub const DEATH_DUR = 3.6; // collapse + lie still before the hero respawns — long enough for
 //   the full YOU DIED choreography (game.zig's overlay reads deathT against this)
@@ -490,7 +491,7 @@ const IDLE_KNEE = 4.0;
 const IDLE_ELBOW = 6.0;
 const MOVING_EASE = 10.0; // idle↔walk blend rate (1/s) — the `moving` fade in update(); fast, so gait answers the stick NOW
 
-fn sampleCurve(tbl: [8]f32, phase: f32) f32 {
+pub fn sampleCurve(tbl: [8]f32, phase: f32) f32 {
     const ph = phase - @floor(phase); // 0..1
     const t = ph * 8.0;
     const base: usize = @intFromFloat(@floor(t));
@@ -498,6 +499,34 @@ fn sampleCurve(tbl: [8]f32, phase: f32) f32 {
     const b = (base + 1) % 8;
     const f = t - @floor(t);
     return tbl[a] + (tbl[b] - tbl[a]) * f;
+}
+
+// Advance the shared humanoid GAIT STATE by one frame — the single source of walk/strafe
+// locomotion for the hero AND every humanoid enemy (see AGENTS.md's humanoid rule). Eases the
+// posture blends (`moving`, `speedS`) and the body-frame travel direction (`fwdB` fore/aft,
+// `latB` lateral — what splits sagittal walk from the locked-on strafe/backpedal in legChain),
+// and accumulates stride `phase` by DISTANCE (never time) so feet never skate. Pointers, not a
+// struct, so a caller's existing gait fields plug in with no struct refactor.
+pub fn advanceGait(phase: *f32, moving: *f32, fwdB: *f32, latB: *f32, speedS: *f32, dt: f32, movedDist: f32, speed: f32, moveYaw: ?f32, facing: f32) void {
+    speedS.* = mathx.approach(speedS.*, speed, dt * SPEED_SMOOTH);
+    const target: f32 = if (speed > 0.05) 1.0 else 0.0;
+    moving.* = mathx.approach(moving.*, target, dt * MOVING_EASE);
+    if (moveYaw) |my| {
+        const rel = mathx.wrapPi(my - facing);
+        fwdB.* = mathx.approach(fwdB.*, mathx.cosf(rel), dt * GAIT_DIR_EASE);
+        latB.* = mathx.approach(latB.*, -mathx.sinf(rel), dt * GAIT_DIR_EASE);
+    } else {
+        fwdB.* = mathx.approach(fwdB.*, 1.0, dt * GAIT_DIR_EASE);
+        latB.* = mathx.approach(latB.*, 0.0, dt * GAIT_DIR_EASE);
+    }
+    if (movedDist > 0) {
+        // Longer strides at higher speed; sidesteps + backpedals run shorter (quicker feet).
+        const dirScale = mathx.lerpF(1.0, STRAFE_STRIDE, @abs(latB.*)) *
+            mathx.lerpF(1.0, BACK_STRIDE, mathx.maxF(0, -fwdB.*));
+        const strideLen = STRIDE * mathx.clampF(0.55 + 0.45 * speed / WALK_REF_SPEED, 0.8, 2.0) * dirScale;
+        phase.* += movedDist / strideLen;
+    }
+    phase.* -= @floor(phase.*);
 }
 
 // matrix shorthand — the shared raylib TRS helpers (MatrixMultiply(a,b) applies a FIRST
@@ -605,30 +634,10 @@ pub const Hero = struct {
         self.elapsed += dt;
         self.ageTrail(dt);
         self.speed = speed;
-        self.speedS = mathx.approach(self.speedS, speed, dt * SPEED_SMOOTH);
         self.blendT = @min(self.blendT + dt, 1e9);
-        const target: f32 = if (speed > 0.05) 1.0 else 0.0;
-        self.moving = mathx.approach(self.moving, target, dt * MOVING_EASE);
-        // Which way travel points in the BODY frame (fast-eased; idle settles forward so
-        // the next start from rest begins as a clean forward gait).
-        if (moveYaw) |my| {
-            const rel = mathx.wrapPi(my - self.facing);
-            self.fwdB = mathx.approach(self.fwdB, mathx.cosf(rel), dt * GAIT_DIR_EASE);
-            self.latB = mathx.approach(self.latB, -mathx.sinf(rel), dt * GAIT_DIR_EASE);
-        } else {
-            self.fwdB = mathx.approach(self.fwdB, 1.0, dt * GAIT_DIR_EASE);
-            self.latB = mathx.approach(self.latB, 0.0, dt * GAIT_DIR_EASE);
-        }
-        if (movedDist > 0) {
-            // Longer strides at higher speed (as people do), so run/sprint reuse this walk
-            // cycle at a believable cadence instead of a frantic shuffle. Sidesteps and
-            // backpedal steps run shorter (quicker feet for the same ground).
-            const dirScale = mathx.lerpF(1.0, STRAFE_STRIDE, @abs(self.latB)) *
-                mathx.lerpF(1.0, BACK_STRIDE, mathx.maxF(0, -self.fwdB));
-            const strideLen = STRIDE * mathx.clampF(0.55 + 0.45 * speed / WALK_REF_SPEED, 0.8, 2.0) * dirScale;
-            self.phase += movedDist / strideLen;
-        }
-        self.phase -= @floor(self.phase);
+        // The shared humanoid gait engine drives phase + the posture/direction blends (also
+        // used by the skeletal archer + any humanoid foe — one source of walk/strafe feel).
+        advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist, speed, moveYaw, self.facing);
     }
 
     // Begin a dodge roll in world direction `dir` (falls back to current facing). Ignored
@@ -1358,7 +1367,9 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
     wx[i] = mul(local, wx[p]);
 }
 
-fn legChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, ph: f32, m: f32, runB: f32, sag: f32, lat: f32, side: f32, hip: usize, knee: usize, ank: usize) void {
+// pub: humanoid enemies drive their legs through this same walk + locked-on strafe/backpedal
+// footing (AGENTS.md humanoid rule). N/joint-index layout must match the caller's (18-bone).
+pub fn legChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, ph: f32, m: f32, runB: f32, sag: f32, lat: f32, side: f32, hip: usize, knee: usize, ank: usize) void {
     // Sagittal gait weighted by the forward blend `sag`; a backpedal (sag < 0) samples
     // the SAME normative tables with phase run backward — reversed walking. The lateral
     // blend `lat` drives the CROSSING sidestep instead (the scissor below).
@@ -1606,8 +1617,9 @@ fn footMesh() rl.Mesh {
     return b.toMesh();
 }
 
-// Asymmetric pauldrons, souls-style: the sword-side (left) shoulder carries the big
-// layered leather + steel-rim pauldron; the right makes do with a plain cap.
+// Asymmetric pauldrons, souls-style: the LEFT (shield/off-hand) shoulder carries the big
+// layered leather + steel-rim pauldron; the right (the sword hand — SWORD rides WRR) makes
+// do with a plain cap, leaving the cutting arm freer.
 fn upperArmMesh(big: bool) rl.Mesh {
     var b = Builder.init();
     b.setMat(.leather);

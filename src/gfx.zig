@@ -93,7 +93,7 @@ const sceneVS =
     \\}
 ;
 // Lighting model (softness tricks ported from zig-diablo/zig-rts):
-//  - BARELY-WRAPPED LAMBERT: (N.L + 0.18)/1.18 clamped — shaded faces roll off gently.
+//  - BARELY-WRAPPED LAMBERT: (N.L + 0.12)/1.12 clamped — shaded faces roll off gently.
 //  - HEMISPHERE AMBIENT: cool sky from above, warm dirt bounce from below.
 //  - CAST SHADOW (3x3 PCF): the shadow term kills the sun AND eats the ambient, so
 //    shadow pools run deep and cool without collapsing to black.
@@ -430,30 +430,51 @@ pub const RF_CURVE = 12;
 pub const RF_VHS = 13;
 pub const RF_GRAIN = 14;
 
-pub const RETRO_NAMES = [RETRO_COUNT][:0]const u8{
-    "Pixelate",  "Chroma Fringe", "Posterize", "Dither", "Game Boy",
-    "CGA",       "Palette 16",    "Sepia",     "Mono",   "Amber CRT",
-    "Ink Edges", "Scanlines",     "CRT Curve", "VHS",    "Film Grain",
+// SINGLE SOURCE OF TRUTH for the filters — one row per filter, in RF_* index order. The
+// three arrays the rest of the code consumes (menu labels, shader-uniform names, the owner-
+// tuned launch defaults) are DERIVED from this at comptime, so a name / uniform / default
+// can no longer drift out of positional lockstep. The old failure mode — three separate
+// parallel lists where appending to one but inserting mid-way into another silently bound
+// the wrong label/uniform/default to an RF_* index — is now structurally impossible.
+// Defaults = the launch look (owner-tuned): a light retro grunge — a whisper of pixelate/
+// chroma/grain over a posterize+dither crush. "Reset to Default" restores it; "All Off"
+// gives the clean render.
+const RetroFilter = struct { name: [:0]const u8, uniform: [:0]const u8, default: f32 };
+const RETRO_FILTERS = [RETRO_COUNT]RetroFilter{
+    .{ .name = "Pixelate", .uniform = "fPixelate", .default = 0.07 },
+    .{ .name = "Chroma Fringe", .uniform = "fChroma", .default = 0.09 },
+    .{ .name = "Posterize", .uniform = "fPosterize", .default = 0.24 },
+    .{ .name = "Dither", .uniform = "fDither", .default = 0.40 },
+    .{ .name = "Game Boy", .uniform = "fGameBoy", .default = 0.0 },
+    .{ .name = "CGA", .uniform = "fCGA", .default = 0.07 },
+    .{ .name = "Palette 16", .uniform = "fPalette", .default = 0.07 },
+    .{ .name = "Sepia", .uniform = "fSepia", .default = 0.05 },
+    .{ .name = "Mono", .uniform = "fMono", .default = 0.0 },
+    .{ .name = "Amber CRT", .uniform = "fAmber", .default = 0.0 },
+    .{ .name = "Ink Edges", .uniform = "fEdges", .default = 0.0 },
+    .{ .name = "Scanlines", .uniform = "fScanlines", .default = 0.0 },
+    .{ .name = "CRT Curve", .uniform = "fCurve", .default = 0.0 },
+    .{ .name = "VHS", .uniform = "fVHS", .default = 0.0 },
+    .{ .name = "Film Grain", .uniform = "fGrain", .default = 0.04 },
 };
-const RETRO_UNIFORMS = [RETRO_COUNT][:0]const u8{
-    "fPixelate", "fChroma",    "fPosterize", "fDither", "fGameBoy",
-    "fCGA",      "fPalette",   "fSepia",     "fMono",   "fAmber",
-    "fEdges",    "fScanlines", "fCurve",     "fVHS",    "fGrain",
+pub const RETRO_NAMES = blk: {
+    var out: [RETRO_COUNT][:0]const u8 = undefined;
+    for (&out, RETRO_FILTERS) |*o, f| o.* = f.name;
+    break :blk out;
+};
+const RETRO_UNIFORMS = blk: {
+    var out: [RETRO_COUNT][:0]const u8 = undefined;
+    for (&out, RETRO_FILTERS) |*o, f| o.* = f.uniform;
+    break :blk out;
+};
+pub const RETRO_DEFAULTS = blk: {
+    var out: [RETRO_COUNT]f32 = undefined;
+    for (&out, RETRO_FILTERS) |*o, f| o.* = f.default;
+    break :blk out;
 };
 
-// The launch look (owner-tuned): a light retro grunge — a whisper of pixelate/chroma/
-// grain over a posterize+dither color crush. "Reset to Default" restores this;
-// "All Off" gives the clean render.
-pub const RETRO_DEFAULTS = [RETRO_COUNT]f32{
-    0.07, 0.09, 0.24, 0.40, 0.0,
-    0.07, 0.07, 0.05, 0.0,  0.0,
-    0.0,  0.0,  0.0,  0.0,  0.04,
-};
-
-// The RF_* indices, RETRO_NAMES, RETRO_UNIFORMS and RETRO_DEFAULTS are four parallel lists
-// kept in lockstep by position; their LENGTH is compiler-checked (the [RETRO_COUNT] type),
-// but a REORDER would silently bind the wrong label/uniform/default to an RF_* index. Anchor
-// a few entries at comptime so inserting or moving a filter fails the build instead.
+// The RF_* index constants must still line up with RETRO_FILTERS' rows; anchor a few at
+// comptime so moving a filter without updating its RF_* index fails the build.
 comptime {
     std.debug.assert(std.mem.eql(u8, RETRO_UNIFORMS[RF_PIXELATE], "fPixelate"));
     std.debug.assert(std.mem.eql(u8, RETRO_UNIFORMS[RF_GRAIN], "fGrain"));
@@ -643,6 +664,19 @@ pub const Retro = struct {
             .locs = locs,
             .loc_time = rl.getShaderLocation(sh, "time"),
         };
+    }
+
+    // Rebuild the capture RT + resolution uniform for a new window size (fullscreen toggle /
+    // window resize) — the filtered path renders into this RT and blits it at its own size, so
+    // it must track the backbuffer or it fills only a corner. The unfiltered path draws straight
+    // to the backbuffer and needs no handling. w/h ≤ 0 (a minimized window) is ignored.
+    pub fn resize(self: *Retro, w: i32, h: i32) void {
+        if (w <= 0 or h <= 0) return;
+        if (self.rt.texture.width == w and self.rt.texture.height == h) return;
+        rl.unloadRenderTexture(self.rt);
+        self.rt = rl.loadRenderTexture(w, h) catch @panic("retro rt");
+        var res = rl.Vector2{ .x = @floatFromInt(w), .y = @floatFromInt(h) };
+        rl.setShaderValue(self.shader, rl.getShaderLocation(self.shader, "resolution"), &res, .vec2);
     }
 
     pub fn anyActive(self: *const Retro) bool {

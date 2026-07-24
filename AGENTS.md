@@ -111,9 +111,31 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
                  knockback shove, and a blood-red body flash. Its attacks damage the hero;
                  the hero's swept blade damages it. Homes sit off the avenue so a straight
                  run won't wake them.
+- `archer.zig` — THE SKELETAL ARCHER (second foe) + the `Line` of them. A BARE-BONES humanoid
+                 (skull / ribcage / pelvis / bone-limbs + a bow) FOUNDED ON THE HERO RIG:
+                 same anthropometry, and it walks/strafes on the HERO'S gait (see the humanoid
+                 rule below), not a bespoke cycle. KITE-only AI (holds a range band, backs off
+                 / closes, looses; never melees). Slowish, lightly-homing arrows that STICK
+                 where they land + fade. One-and-done death (collapse → dissipate). Perched in
+                 the ruins, waking as you advance. Arrows are a pool owned by `game.zig`.
+- `ogre.zig`   — THE ONE-EYED OGRE (third foe) + the `Grief` (a lone, sorrowful giant). A GIANT
+                 humanoid (~2x the hero), hunched + mis-proportioned, dragging a great knotted
+                 CLUB, with ONE dull-amber glowing eye — a sad but scary figure. FOUNDED ON THE
+                 HERO RIG like the archer (same 18-bone layout + `hero.advanceGait`/`legChain`
+                 for the legs; the stride phase is fed a scale-corrected distance so the giant
+                 doesn't skate). HIGH POISE (shrugs off single lights — sustained pressure
+                 staggers it) + a lumbering approach into ONE attack for now: a big, readable
+                 OVERHEAD CLUB SLAM (long windup tell → fast crash → long wide-open recovery),
+                 front-arc crush only. Reactions are huge; death is a slow, weighty topple into
+                 the grace-mote dissipation. More attacks to come — the state machine has room.
+- `foe.zig`    — THE FOE STANDARD: the shared contract + behaviours every enemy plugs into, so
+                 lock-on, floating HP bars, collision, the blade hit-test, and the combat beats
+                 are written ONCE for all foes. Holds `Blade` (the hero's-swing data) and
+                 `strike()` (swept hurt-sphere test + one-hit latch + damage) that frog + archer
+                 `tryHit` both reuse. See its header contract + "Adding a foe" below.
 - `combat.zig` — SHARED combat `Vitals`: HP + the two-tier Elden Ring stagger (poise → light
                  stun, stance → heavy stun) + regen + death. Pure logic, unit-tested; hero and
-                 frog both embed one. THE place to retune damage/poise feel. See `docs/ELDEN_RING.md`.
+                 every foe embed one. THE place to retune damage/poise feel. See `docs/ELDEN_RING.md`.
 - `collision.zig` — 2D XZ capsule/circle footprint collision (push-out); actors + world solids.
 - `mathx.zig`  — ground-plane + vector/angle helpers (copied from zig-rts, extended).
 - `hud.zig`    — UI text in Exo (assets/, OFL alongside); the ONLY path to draw/measure text.
@@ -136,6 +158,13 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
   phase). Curves are 8-sample tables interpolated by stride phase; the two legs are 50% out
   of phase. Phase is driven by DISTANCE travelled (never time) so feet never skate; stride
   LENGTH scales with speed so one leg-cycle reads at every pace.
+- **HUMANOID ENEMIES REUSE THE HERO'S WALK/STRAFE ANIMS (owner's rule).** Any humanoid foe
+  (the skeletal archer, and future ones) locomotes on the HERO's gait — the pub normative
+  gait tables + `hero.legChain` (the walk cycle AND the locked-on strafe/backpedal footing)
+  driven by a shared gait state (phase / moving / fwdB / latB) advanced by `hero.advanceGait`.
+  Do NOT author a bespoke walk for a humanoid. Only the UPPER body / weapon work is per-enemy
+  (e.g. the archer's draw+loose rides on top of the shared legs). The hero is the single
+  source of humanoid locomotion; keep it that way so every human on screen moves as one.
 
 ### Animation art direction (the DESIRED look — honor it when retuning)
 
@@ -160,6 +189,32 @@ There is a full `ANIMATION ART DIRECTION` comment block at the top of the gait s
 Blends: idle↔walk by a `moving` ease; walk↔run↔sprint by ground SPEED (`runB`/`sprintB`
 chasing a short-eased speed); pose discontinuities (roll start/end) cross-fade ~0.09s and
 the roll heading eases on fast — stances never snap, while mechanics stay instant.
+
+## Adding a foe (the shared standard — `foe.zig`)
+
+Enemies share ONE contract + behaviour set so the cross-cutting systems — lock-on, floating
+HP bars, footprint collision, the hero's-blade hit test, the rumble/shake combat beats — are
+written once and work for every foe. `foe.zig`'s header is the authoritative contract; the
+frog and the archer are the two worked examples. To add a foe:
+
+- **Satisfy the contract.** Expose `pos` + an embedded `combat.Vitals` (`vit`) + `hits` +
+  `justDied`, and the accessors `alive/dying/staggered/airborne/bodyR/hurtRadius/centerWorld/
+  lockPoint/topWorld/flashFrac` + `tryHit(foe.Blade)`.
+- **Reuse the behaviour, don't re-roll it.** `tryHit` is
+  `if (foe.strike(&vit, &hitLatch, centre, hurtR, blade)) |s| { own FX; react on s.reaction }`
+  — the swept hit test, one-hit LATCH, and damage live in `foe.strike`; the foe only adds its
+  own FX (blood, bone-clatter, …) + the enterStun/enterDeath transitions.
+- **`justDied` is a ONE-FRAME flag.** Reset it at the TOP of `update`, set it in `enterDeath`,
+  and apply the blade (call `tryHit`) at the END of `update`. Then the kill beat fires exactly
+  once. (Applying the blade externally WITHOUT the reset latches it on → a nonstop rumble/
+  screen-shake until you quit — the real bug that taught this rule. Mirror the frog exactly.)
+- **Humanoids reuse the hero's walk/strafe** (see the hero-rig rule): `hero.advanceGait` +
+  `hero.legChain` for the legs; only the upper body / weapon is bespoke. Never author a
+  second walk cycle.
+- **Group + register.** Wrap instances in a `Group` (a `Knot`/`Line`) exposing `anyDied` /
+  `totalHits` / `aliveCount`; game.zig iterates groups generically (lock-on `FoeRef`,
+  `drawFoeBars`, the collision + beat loops), so a new foe drops in with little or no new
+  game.zig branching.
 
 ## Controls (`game.zig`)
 

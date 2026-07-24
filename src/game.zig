@@ -10,6 +10,8 @@ const menumod = @import("menu.zig");
 const frogmod = @import("frog.zig");
 const collision = @import("collision.zig");
 const rumblemod = @import("rumble.zig");
+const archermod = @import("archer.zig");
+const ogremod = @import("ogre.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -48,6 +50,11 @@ const PLAY_HALF = envmod.HALF - 2.0;
 // Hero footprint radius for ground collision (see collision.zig).
 const HERO_R = 0.36;
 
+// Skeletal-archer arrows: a shared pool of in-flight + stuck shafts, and the hero's centre-
+// of-mass height the archers aim at + arrows test their strike against.
+const MAX_ARROWS = 24;
+const HERO_CENTER_Y = 1.0;
+
 // Collision correction is rate-limited so a large depenetration eases in over a few frames
 // (a smooth slide) rather than snapping there in one (a choppy warp); set above the fastest
 // actor speed so ordinary wall contact still resolves firmly (no sinking).
@@ -78,8 +85,12 @@ const Game = struct {
     env: envmod.Env,
     hero: heromod.Hero,
     warren: frogmod.Knot, // the knot of gaping toads
+    line: archermod.Line, // the skeletal archers perched in the ruins
+    grief: ogremod.Grief, // the lone one-eyed ogre, deep in the ruins
+    arrowModel: rl.Model, // shared arrow mesh, drawn per live/stuck arrow with its own matrix
+    arrows: [MAX_ARROWS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_ARROWS,
     rig: cameramod.CamRig,
-    lock: ?usize = null, // ER lock-on: index into warren.frogs, or null
+    lock: ?FoeRef = null, // ER lock-on: which foe (toad or skeleton) is locked, or null
     rumble: rumblemod.Rumble = .{}, // controller vibration, keyed to combat beats
     deathFade: f32 = 0, // post-respawn fade-from-black seconds remaining (armed while dead)
 
@@ -99,6 +110,9 @@ const Game = struct {
             .env = envmod.Env.init(scene.shader),
             .hero = hero,
             .warren = frogmod.Knot.init(scene.shader),
+            .line = archermod.Line.init(scene.shader),
+            .grief = ogremod.Grief.init(scene.shader),
+            .arrowModel = archermod.arrowMesh(scene.shader),
             .rig = cameramod.newCamRig(hero.shoulderPoint(), hero.facing),
         };
     }
@@ -206,12 +220,37 @@ fn drawCasters(g: *Game) void {
     g.hero.draw();
     g.scene.setFlash(0);
     g.warren.draw(&g.scene);
+    g.line.draw(&g.scene);
+    g.grief.draw(&g.scene);
 }
 
 fn setCasterShaders(g: *Game, sh: rl.Shader) void {
     g.env.setShader(sh);
     g.hero.setShader(sh);
     g.warren.setShader(sh);
+    g.line.setShader(sh);
+    g.grief.setShader(sh);
+}
+
+// Launch an arrow from a free pool slot (the loose event). Pool-full is rare (24 slots vs a
+// ~1.5s reload on two archers); overwrite slot 0 rather than drop the shot silently.
+fn spawnArrow(g: *Game, from: rl.Vector3, target: rl.Vector3) void {
+    for (&g.arrows) |*ar| {
+        if (!ar.live) {
+            ar.* = archermod.launchArrow(from, target);
+            return;
+        }
+    }
+    g.arrows[0] = archermod.launchArrow(from, target);
+}
+
+// Draw every live/stuck arrow, oriented along its flight (shrinking as a stuck one fades).
+// Opaque lit geometry — drawn in the lit pass after the casters; non-casting (no shadow).
+fn drawArrows(g: *Game) void {
+    for (&g.arrows) |*ar| {
+        if (!ar.live) continue;
+        rl.drawMesh(g.arrowModel.meshes[0], g.arrowModel.materials[0], archermod.arrowXform(ar));
+    }
 }
 
 fn drawScene(g: *Game) void {
@@ -240,10 +279,12 @@ fn drawScene(g: *Game) void {
     g.scene.setWind(true);
     g.env.drawFlora();
     g.scene.setWind(false);
+    drawArrows(g); // in-flight + stuck arrows (lit, rigid, non-casting)
     if (g.menu.wireframe) rl.gl.rlDisableWireMode();
     // Toad telegraph FX (dust / charge / spit / blood / death motes) — unlit spheres,
     // over the opaque geometry. The hero's swing trail joins them (same unlit layer).
     g.warren.drawFx();
+    g.grief.drawFx();
     g.hero.drawTrail();
     // Debug: the blade hit capsule (menu > Debug > Hitboxes) — red while ACTIVE, dim
     // through the rest of the swing. Drawn with the default shader, unlit on purpose.
@@ -258,13 +299,20 @@ fn drawScene(g: *Game) void {
             const col = if (f.flash > 0) rl.Color.orange else mathx.withAlpha(rl.Color.yellow, 80);
             rl.drawSphereWires(f.centerWorld(), f.hurtRadius(), 6, 8, col);
         }
+        for (&g.grief.ogres) |*o| {
+            if (!o.alive()) continue;
+            const col = if (o.flash > 0) rl.Color.orange else mathx.withAlpha(rl.Color.yellow, 80);
+            rl.drawSphereWires(o.centerWorld(), o.hurtRadius(), 8, 10, col);
+        }
     }
     rl.endMode3D();
 
     if (filtered) g.retro.end();
     g.vignette.draw();
     drawHurtFlash(g); // red screen-edge pulse when the hero is hit (peripheral feedback)
-    drawFrogBars(g); // floating foe HP bars, crisp over the finished frame
+    drawFoeBars(g, &g.warren.frogs); // floating foe HP bars, crisp over the finished frame…
+    drawFoeBars(g, &g.line.archers); // …one shared path for every foe group
+    drawBossBar(g); // the ogre gets an ER-style boss bar instead (its head towers off-screen)
     drawLockDot(g); // the ER lock-on reticle
     drawDeathOverlay(g); // the YOU DIED card + respawn fade, over everything
 }
@@ -393,7 +441,7 @@ fn gaitLabel(moving: f32, speed: f32) [:0]const u8 {
 }
 
 pub fn run(shot: bool) void {
-    rl.setConfigFlags(.{ .msaa_4x_hint = true, .window_hidden = shot });
+    rl.setConfigFlags(.{ .msaa_4x_hint = true, .window_hidden = shot, .window_resizable = true });
     rl.initWindow(SCREEN_W, SCREEN_H, "zig-soulslike");
     defer rl.closeWindow();
     rl.setExitKey(.null);
@@ -442,6 +490,15 @@ pub fn run(shot: bool) void {
         if (rl.isKeyPressed(.escape)) g.menu.onEscape();
         if (rl.isGamepadAvailable(0) and rl.isGamepadButtonPressed(0, .middle_right)) g.menu.onStartButton();
 
+        // Alt+Enter toggles borderless-windowed fullscreen (keeps the mouse usable on other
+        // monitors — no exclusive mode-switch, matching this game's no-pointer-lock rule).
+        // Keep the retro capture RT matched to the window on the toggle AND on any manual resize.
+        if (rl.isKeyPressed(.enter) and (rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt))) {
+            rl.toggleBorderlessWindowed();
+            g.retro.resize(rl.getScreenWidth(), rl.getScreenHeight());
+        }
+        if (rl.isWindowResized()) g.retro.resize(rl.getScreenWidth(), rl.getScreenHeight());
+
         if (g.menu.isOpen()) {
             // The world holds while the menu is up: no camera/move input, but the hero
             // keeps breathing (idle update with zero travel) so the scene stays alive.
@@ -488,7 +545,7 @@ pub fn run(shot: bool) void {
         var wheel = rl.getMouseWheelMove();
         const padRX: f32 = if (rl.isGamepadAvailable(0)) rl.getGamepadAxisMovement(0, .right_x) else @as(f32, 0);
         if (g.lock) |li| {
-            const dir = mathx.dirXZ(g.hero.pos, g.warren.frogs[li].pos);
+            const dir = mathx.dirXZ(g.hero.pos, foePos(g, li));
             if (mathx.lenXZ(dir) > 0.001) {
                 g.rig.aim(mathx.headingXZ(dir), LOCK_PITCH, dt, LOCK_CAM_EASE); // quick, snap-free swing
             }
@@ -562,7 +619,7 @@ pub fn run(shot: bool) void {
 
         // While locked the hero faces the foe (so it strafes/backpedals around it), ER-style.
         const lockYaw: ?f32 = if (g.lock) |li| blk: {
-            const d = mathx.dirXZ(g.hero.pos, g.warren.frogs[li].pos);
+            const d = mathx.dirXZ(g.hero.pos, foePos(g, li));
             break :blk if (mathx.lenXZ(d) > 0.001) mathx.headingXZ(d) else null;
         } else null;
         if (g.hero.dead) {
@@ -578,10 +635,11 @@ pub fn run(shot: bool) void {
         } else {
             moveHero(g, dt, mv, lockYaw);
         }
-        // The knot hunts the hero; the hero's swept blade damages + staggers the toads, and a
-        // toad's chomp/lunge that connects returns the blow it lands ON the hero. Apply it,
-        // resolve every footprint collision, then aim the camera at the SETTLED hero position.
-        const hitsBefore = g.warren.totalHits();
+        // The knot hunts the hero and the skeletons kite + loose at range; the hero's swept
+        // blade damages + staggers BOTH sides, and a toad's chomp/lunge OR an incoming arrow
+        // that connects returns the blow it lands ON the hero. Resolve it all, then settle
+        // collisions, then aim the camera at the SETTLED hero position.
+        const hitsBefore = g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits();
         if (g.warren.update(dt, g.hero.pos, PLAY_HALF, heroBlade(g))) |h| {
             g.hero.takeHit(h);
             // The lunge carries stance damage; the chomp doesn't — split the felt blow by that.
@@ -589,14 +647,40 @@ pub fn run(shot: bool) void {
             g.rumble.play(if (slammed) rumblemod.hurt_heavy else rumblemod.hurt);
             g.rig.addShake(if (slammed) SHAKE_HURT_HEAVY else SHAKE_HURT);
         }
-        // Your blade connected this frame (hit count climbed) → a hit pulse + frame crack
-        // sized to the swing; a toad going down on top adds the kill thunk (justDied — the
+        // The lone ogre hunts + slams; its overhead crush is a heavy stance-damaging body-blow.
+        if (g.grief.update(dt, g.hero.pos, PLAY_HALF, heroBlade(g))) |h| {
+            g.hero.takeHit(h);
+            g.rumble.play(rumblemod.hurt_heavy);
+            g.rig.addShake(SHAKE_HURT_HEAVY);
+        }
+        // The hero's blade lands on the skeletons; then they act — kite, and loose an arrow at
+        // the nock point aimed at the hero's centre of mass (the arrow's light homing + arc
+        // finish the job). A blade hit mid-draw interrupts the shot (enterStun clears the draw).
+        const bladeNow = heroBlade(g);
+        for (&g.line.archers) |*a| {
+            if (a.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) {
+                spawnArrow(g, a.nockWorld(), v3(g.hero.pos.x, HERO_CENTER_Y, g.hero.pos.z));
+            }
+        }
+        // Arrows in flight: gentle homing + arc, then a strike lands a chomp-weight blow.
+        for (&g.arrows) |*ar| {
+            if (!ar.live) continue;
+            ar.hit = false;
+            archermod.stepArrow(ar, g.hero.pos, HERO_CENTER_Y, dt);
+            if (ar.hit and !g.hero.dead) {
+                g.hero.takeHit(archermod.ARROW_HIT);
+                g.rumble.play(rumblemod.hurt);
+                g.rig.addShake(SHAKE_HURT);
+            }
+        }
+        // Your blade connected this frame (either foe's hit count climbed) → a hit pulse +
+        // frame crack sized to the swing; a foe going down adds the kill thunk (justDied — the
         // dissipation means aliveCount only drops much later). Strongest-wins blends them.
-        if (g.warren.totalHits() > hitsBefore) {
+        if (g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits() > hitsBefore) {
             g.rumble.play(if (g.hero.atkHeavy) rumblemod.hit_heavy else rumblemod.hit_light);
             g.rig.addShake(if (g.hero.atkHeavy) SHAKE_HIT_HEAVY else SHAKE_HIT_LIGHT);
         }
-        if (g.warren.anyDied()) {
+        if (g.warren.anyDied() or g.line.anyDied() or g.grief.anyDied()) {
             g.rumble.play(rumblemod.kill);
             g.rig.addShake(SHAKE_KILL);
         }
@@ -604,8 +688,7 @@ pub fn run(shot: bool) void {
         // waiting out the death anim/dissipation — snapping to the next valid target in
         // view (nearest screen-centre, like a fresh acquire) or dropping if there's none.
         if (g.lock) |li| {
-            const lf = &g.warren.frogs[li];
-            if (!lf.alive() or lf.dying()) g.lock = acquireLock(g);
+            if (!foeLockable(g, li)) g.lock = acquireLock(g); // corpse the frame it dies → switch/drop
         }
         collideActors(g, dt);
         g.rig.tickShake(rawDt); // impact shake decays on wall-clock time (bakes this frame's jitter)
@@ -661,6 +744,12 @@ fn collideActors(g: *Game, dt: f32) void {
     for (&g.warren.frogs) |*f| {
         if (f.alive() and !f.airborne()) hp = collision.pushOutCircle(hp, HERO_R, f.pos, f.bodyR());
     }
+    for (&g.line.archers) |*a| {
+        if (a.alive()) hp = collision.pushOutCircle(hp, HERO_R, a.pos, a.bodyR());
+    }
+    for (&g.grief.ogres) |*o| {
+        if (o.alive()) hp = collision.pushOutCircle(hp, HERO_R, o.pos, o.bodyR());
+    }
     hp.x = mathx.clampF(hp.x, -PLAY_HALF, PLAY_HALF);
     hp.z = mathx.clampF(hp.z, -PLAY_HALF, PLAY_HALF);
     g.hero.pos = mathx.approachV(g.hero.pos, hp, step);
@@ -677,14 +766,67 @@ fn collideActors(g: *Game, dt: f32) void {
         fp.z = mathx.clampF(fp.z, -PLAY_HALF, PLAY_HALF);
         f.pos = mathx.approachV(f.pos, fp, step);
     }
+
+    // The skeletal archers yield last: each pushed out of the world, the hero, every grounded
+    // toad, and its fellow archers (same easing so a kite step into a wall slides, not warps).
+    for (&g.line.archers, 0..) |*a, i| {
+        if (!a.alive()) continue;
+        var ap = collision.resolve(a.pos, a.bodyR(), solids);
+        ap = collision.pushOutCircle(ap, a.bodyR(), g.hero.pos, HERO_R);
+        for (&g.warren.frogs) |*f| {
+            if (f.alive() and !f.airborne()) ap = collision.pushOutCircle(ap, a.bodyR(), f.pos, f.bodyR());
+        }
+        for (&g.line.archers, 0..) |*o, j| {
+            if (i == j or !o.alive()) continue;
+            ap = collision.pushOutCircle(ap, a.bodyR(), o.pos, o.bodyR());
+        }
+        ap.x = mathx.clampF(ap.x, -PLAY_HALF, PLAY_HALF);
+        ap.z = mathx.clampF(ap.z, -PLAY_HALF, PLAY_HALF);
+        a.pos = mathx.approachV(a.pos, ap, step);
+    }
+
+    // The ogre is a giant — it yields to the WORLD (walls/columns) only, never to the tiny
+    // hero (the hero does the yielding, above), so it reads as immovable bulk.
+    for (&g.grief.ogres) |*o| {
+        if (!o.alive()) continue;
+        var op = collision.resolve(o.pos, o.bodyR(), solids);
+        op.x = mathx.clampF(op.x, -PLAY_HALF, PLAY_HALF);
+        op.z = mathx.clampF(op.z, -PLAY_HALF, PLAY_HALF);
+        o.pos = mathx.approachV(o.pos, op, step);
+    }
 }
 
-// ── lock-on helpers ─────────────────────────────────────────────────────────────────
-// A dying toad is NOT a lock target anywhere below: the kill handler in run() switches
-// or drops the lock the frame it dies, and no acquire/cycle may pick a corpse back up.
-fn lockValid(g: *const Game, i: usize) bool {
-    const f = &g.warren.frogs[i];
-    return f.alive() and !f.dying() and mathx.distXZ(g.hero.pos, f.pos) <= MAX_LOCK_R + 2.0;
+// ── lock-on helpers (generic over ANY foe — toads AND skeletons — via FoeRef) ──────────
+// A reference to a locked foe across the heterogeneous groups; the lock-on + reticle systems
+// dispatch through the foe* accessors so every foe type is lockable (the foe standard, foe.zig).
+// A dying/dissipating foe is NEVER a target: the kill handler in run() drops/switches the lock
+// the frame it dies, and no acquire/cycle may pick a corpse back up.
+const FoeKind = enum { toad, archer, ogre };
+const FoeRef = struct { kind: FoeKind, idx: usize };
+fn foePos(g: *const Game, r: FoeRef) rl.Vector3 {
+    return switch (r.kind) {
+        .toad => g.warren.frogs[r.idx].pos,
+        .archer => g.line.archers[r.idx].pos,
+        .ogre => g.grief.ogres[r.idx].pos,
+    };
+}
+fn foeLockPoint(g: *const Game, r: FoeRef) rl.Vector3 {
+    return switch (r.kind) {
+        .toad => g.warren.frogs[r.idx].lockPoint(),
+        .archer => g.line.archers[r.idx].lockPoint(),
+        .ogre => g.grief.ogres[r.idx].lockPoint(),
+    };
+}
+// A live, non-dissipating foe (both a fresh acquire and a held lock require this).
+fn foeLockable(g: *const Game, r: FoeRef) bool {
+    return switch (r.kind) {
+        .toad => g.warren.frogs[r.idx].alive() and !g.warren.frogs[r.idx].dying(),
+        .archer => g.line.archers[r.idx].alive() and !g.line.archers[r.idx].dying(),
+        .ogre => g.grief.ogres[r.idx].alive() and !g.grief.ogres[r.idx].dying(),
+    };
+}
+fn lockValid(g: *const Game, r: FoeRef) bool {
+    return foeLockable(g, r) and mathx.distXZ(g.hero.pos, foePos(g, r)) <= MAX_LOCK_R + 2.0;
 }
 
 // A world point projected to the screen, or null if it sits nearer than the near-clip
@@ -703,47 +845,60 @@ fn projectToScreen(cam: rl.Camera3D, p: rl.Vector3) ?rl.Vector2 {
 }
 
 // Screen-x of a foe's lock point (null if it's behind the camera).
-fn lockScreenX(g: *const Game, i: usize) ?f32 {
-    const s = projectToScreen(g.rig.cam, g.warren.frogs[i].lockPoint()) orelse return null;
+fn lockScreenX(g: *const Game, r: FoeRef) ?f32 {
+    const s = projectToScreen(g.rig.cam, foeLockPoint(g, r)) orelse return null;
     return s.x;
 }
 
 // The foe nearest screen-centre and in range (Elden Ring locks what you're looking at); null
-// if none — the caller recenters instead.
-fn acquireLock(g: *Game) ?usize {
+// if none — the caller recenters instead. Considers BOTH groups so either is lockable.
+fn acquireLock(g: *Game) ?FoeRef {
     const cx = @as(f32, @floatFromInt(rl.getScreenWidth())) * 0.5;
-    var best: ?usize = null;
+    var best: ?FoeRef = null;
     var bestScore: f32 = 1e9;
-    for (g.warren.frogs, 0..) |f, i| {
+    considerLock(g, &g.warren.frogs, .toad, cx, &best, &bestScore);
+    considerLock(g, &g.line.archers, .archer, cx, &best, &bestScore);
+    considerLock(g, &g.grief.ogres, .ogre, cx, &best, &bestScore);
+    return best;
+}
+// One group's contribution to acquireLock — generic over the foe type (the shared contract).
+fn considerLock(g: *Game, foes: anytype, kind: FoeKind, cx: f32, best: *?FoeRef, bestScore: *f32) void {
+    for (foes, 0..) |*f, i| {
         if (!f.alive() or f.dying() or mathx.distXZ(g.hero.pos, f.pos) > MAX_LOCK_R) continue;
-        const sx = lockScreenX(g, i) orelse continue;
+        const r = FoeRef{ .kind = kind, .idx = i };
+        const sx = lockScreenX(g, r) orelse continue;
         const score = @abs(sx - cx);
-        if (score < bestScore) {
-            bestScore = score;
-            best = i;
+        if (score < bestScore.*) {
+            bestScore.* = score;
+            best.* = r;
         }
     }
-    return best;
 }
 
 // Switch to the next in-range foe whose screen-x lies on `dir` side (-1 left / +1 right) of
-// the current target — the right-stick / mouse flick cycle.
+// the current target — the right-stick / mouse flick cycle, across both groups.
 fn cycleLock(g: *Game, dir: f32) void {
     const cur = g.lock orelse return;
     const curX = lockScreenX(g, cur) orelse return;
-    var best: ?usize = null;
+    var best: ?FoeRef = null;
     var bestGap: f32 = 1e9;
-    for (g.warren.frogs, 0..) |f, i| {
-        if (i == cur or !f.alive() or f.dying()) continue;
+    considerCycle(g, &g.warren.frogs, .toad, cur, curX, dir, &best, &bestGap);
+    considerCycle(g, &g.line.archers, .archer, cur, curX, dir, &best, &bestGap);
+    considerCycle(g, &g.grief.ogres, .ogre, cur, curX, dir, &best, &bestGap);
+    if (best) |b| g.lock = b;
+}
+fn considerCycle(g: *Game, foes: anytype, kind: FoeKind, cur: FoeRef, curX: f32, dir: f32, best: *?FoeRef, bestGap: *f32) void {
+    for (foes, 0..) |*f, i| {
+        const r = FoeRef{ .kind = kind, .idx = i };
+        if ((cur.kind == kind and cur.idx == i) or !f.alive() or f.dying()) continue;
         if (mathx.distXZ(g.hero.pos, f.pos) > MAX_LOCK_R) continue;
-        const sx = lockScreenX(g, i) orelse continue;
+        const sx = lockScreenX(g, r) orelse continue;
         const gap = (sx - curX) * dir;
-        if (gap > 5.0 and gap < bestGap) {
-            bestGap = gap;
-            best = i;
+        if (gap > 5.0 and gap < bestGap.*) {
+            bestGap.* = gap;
+            best.* = r;
         }
     }
-    if (best) |b| g.lock = b;
 }
 
 // A 2D health bar: black backing, a dark empty track, a red fill. `border` outlines it
@@ -764,11 +919,12 @@ fn healthBar(x: f32, y: f32, w: f32, h: f32, frac: f32, border: ?rl.Color) void 
 // so untouched foes stay unmarked and the bar fades from view when you disengage.
 const HURT_BAR_WINDOW = 5.0;
 
-// Floating HP bars over the toads (ER shows bars for foes). Shown ONLY for a live toad you've
-// hit within HURT_BAR_WINDOW; the bar flashes gold while the toad is staggered (wide-open cue).
-fn drawFrogBars(g: *Game) void {
+// Floating HP bars over ANY foe group (the shared foe contract — one loop for toads AND
+// skeletons). Shown ONLY for a live foe hit within HURT_BAR_WINDOW; the bar flashes gold while
+// staggered (the wide-open cue). Untouched foes stay unmarked; the bar fades as you disengage.
+fn drawFoeBars(g: *Game, foes: anytype) void {
     const cam = g.rig.cam;
-    for (&g.warren.frogs) |*f| {
+    for (foes) |*f| {
         if (!f.alive() or f.dying()) continue; // no bar over a corpse dissolving out
         if (f.vit.sinceHit > HURT_BAR_WINDOW) continue; // only after a recent hit
         const s = projectToScreen(cam, f.topWorld()) orelse continue; // skip if behind the camera
@@ -778,15 +934,39 @@ fn drawFrogBars(g: *Game) void {
     }
 }
 
+// The lone ogre is a mini-boss, so it gets an Elden-Ring-style HP bar along the BOTTOM of the
+// screen (a floating over-the-head bar rides ~4.6 m up and sits off the top of the frame when
+// you're in close under a giant — you'd never see it). Shown while it's alive + engaged: locked
+// onto it, hit within the window, or the hero is inside its notice range (it looms into view).
+fn drawBossBar(g: *Game) void {
+    const o = &g.grief.ogres[0];
+    if (!o.alive() or o.dying()) return;
+    const locked = if (g.lock) |li| li.kind == .ogre else false;
+    const near = mathx.distXZ(g.hero.pos, o.pos) < 16.0;
+    if (!locked and !near and o.vit.sinceHit > HURT_BAR_WINDOW) return;
+    const w: f32 = @floatFromInt(rl.getScreenWidth());
+    const h: f32 = @floatFromInt(rl.getScreenHeight());
+    const bw = 0.44 * w;
+    const bx = (w - bw) * 0.5;
+    const by = h - 52.0;
+    const border: ?rl.Color = if (o.staggered()) rgba(232, 196, 90, 255) else null; // gold = wide open
+    healthBar(bx, by, bw, 13, o.vit.hpFrac(), border);
+    const name: [:0]const u8 = "Forsaken Ogre";
+    const fs: i32 = 18;
+    const tw = hud_.textW(name, fs);
+    hud_.text(name, @intFromFloat(w * 0.5 - @as(f32, @floatFromInt(tw)) * 0.5), @intFromFloat(by - 24.0), fs, rgba(216, 206, 184, 255));
+}
+
 // The glowing white reticle on the locked foe (ER's dot) — 2D + crisp, drawn after the 3D pass.
 fn drawLockDot(g: *Game) void {
     const li = g.lock orelse return;
-    const s = projectToScreen(g.rig.cam, g.warren.frogs[li].lockPoint()) orelse return; // skip if behind the camera
+    const s = projectToScreen(g.rig.cam, foeLockPoint(g, li)) orelse return; // skip if behind the camera
     const x: i32 = @intFromFloat(s.x);
     const y: i32 = @intFromFloat(s.y);
-    rl.drawCircle(x, y, 9, rgba(255, 255, 255, 40)); // soft halo
-    rl.drawCircle(x, y, 4, rgba(255, 255, 255, 230)); // bright core
-    rl.drawCircle(x, y, 2, rl.Color.white);
+    // A glowing white dot — an ACTUAL radial GRADIENT glow (bright centre → fully transparent
+    // edge), no shadow and no dark halo, with a small crisp core. Pure light (owner's call).
+    rl.drawCircleGradient(x, y, 15, rgba(255, 255, 255, 175), rgba(255, 255, 255, 0));
+    rl.drawCircle(x, y, 2, rl.Color.white); // crisp hot centre
 }
 
 // ── headless capture ───────────────────────────────────────────────────────────────
@@ -850,6 +1030,32 @@ fn shootFrog(g: *Game, f: *frogmod.Frog, name: [:0]const u8, yaw: f32, pitch: f3
     g.rig.pitch = pitch;
     g.rig.dist = dist;
     g.rig.follow(f.centerWorld());
+    shoot(g, name);
+}
+
+// Frame a skeletal archer and shoot it (the archer counterpart of shootFrog).
+fn shootArcher(g: *Game, a: *archermod.Archer, name: [:0]const u8, yaw: f32, pitch: f32, dist: f32) void {
+    g.rig.yaw = mathx.radians(yaw);
+    g.rig.pitch = pitch;
+    g.rig.dist = dist;
+    g.rig.follow(a.centerWorld());
+    shoot(g, name);
+}
+
+// Advance a lone ogre `frames` steps against a sensed hero position (kept where the caller
+// wants so its AI holds the forced state) and no blade — for the ogre --shot poses.
+fn stepOgre(o: *ogremod.Ogre, frames: i32, hero: rl.Vector3) void {
+    const dt: f32 = 1.0 / 60.0;
+    var k: i32 = 0;
+    while (k < frames) : (k += 1) _ = o.update(dt, hero, PLAY_HALF, .{});
+}
+
+// Frame the ogre and shoot it (pulled back + up: it's ~2x the hero, so it needs the distance).
+fn shootOgre(g: *Game, o: *ogremod.Ogre, name: [:0]const u8, yaw: f32, pitch: f32, dist: f32) void {
+    g.rig.yaw = mathx.radians(yaw);
+    g.rig.pitch = pitch;
+    g.rig.dist = dist;
+    g.rig.follow(o.centerWorld());
     shoot(g, name);
 }
 
@@ -1076,7 +1282,7 @@ fn runShots(g: *Game) void {
         g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
         g.hero.update(1.0 / 60.0, 0, 0, null);
         g.hero.pose();
-        g.lock = 0;
+        g.lock = .{ .kind = .toad, .idx = 0 };
         g.rig.yaw = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
         g.rig.pitch = 0.16;
         g.rig.dist = 5.4;
@@ -1148,6 +1354,118 @@ fn runShots(g: *Game) void {
         g.rig.follow(f.centerWorld());
         shoot(g, "shots/37_hp_bars.png");
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0); // reset the slot
+    }
+
+    // ── the skeletal archer: the bare-bones rig driven to a full-draw aim ──────────────────
+    {
+        const dt2: f32 = 1.0 / 60.0;
+        g.warren.frogs[0] = frogmod.Frog.spawn(mathx.ground(0, 60), 0, 1.0, 0.0); // shoo the origin toad out of the archer portraits
+        const a = &g.line.archers[0];
+        a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0); // faces +Z
+        // A "hero" placed in-band ahead (+Z) so the archer decides to shoot and pulls to full
+        // draw naturally; stop the moment it reaches the hold (full draw) for the portrait.
+        g.hero.pos = mathx.ground(3.0, 2.5); // near enough to keep the shadow ortho box over the archer
+        g.hero.update(dt2, 0, 0, null);
+        g.hero.pose();
+        var k: i32 = 0;
+        while (k < 140 and a.drawAmt < 0.98) : (k += 1) _ = a.update(dt2, mathx.ground(0, 12), PLAY_HALF, .{});
+        shootArcher(g, a, "shots/40_archer_aim_side.png", 90, 0.06, 4.8); // profile: draw arm folded back, bow arm out
+        shootArcher(g, a, "shots/41_archer_aim_front.png", 6, 0.12, 4.4); // front: skull + ribcage + the aim
+        shootArcher(g, a, "shots/42_archer_aim_3q.png", 48, 0.10, 4.8); // three-quarter
+        // An arrow leaving the bow: loose from the nock toward a target ahead + step it into
+        // its arc, parked in the pool so drawArrows renders it (the oriented, arcing shaft).
+        g.arrows[0] = archermod.launchArrow(a.nockWorld(), mathx.ground(0, 15));
+        var m: i32 = 0;
+        while (m < 8) : (m += 1) archermod.stepArrow(&g.arrows[0], mathx.ground(0, 15), HERO_CENTER_Y, dt2);
+        shootArcher(g, a, "shots/44_archer_loose.png", 90, 0.05, 5.2); // side-on: the shaft crosses the frame
+        g.arrows[0] = .{};
+        // A lowered/idle read too, to check the skeleton stands cleanly with the bow at rest.
+        a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+        var j: i32 = 0;
+        while (j < 20) : (j += 1) _ = a.update(dt2, mathx.ground(0, 60), PLAY_HALF, .{}); // hero far → stays idle
+        shootArcher(g, a, "shots/43_archer_idle_side.png", 90, 0.08, 4.6);
+        // The SHARED walk/strafe (hero.legChain): crowd it so it kites, catch it mid-backpedal.
+        a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+        var w2: i32 = 0;
+        while (w2 < 60) : (w2 += 1) _ = a.update(dt2, mathx.ground(0, 3), PLAY_HALF, .{}); // hero crowds → back off
+        shootArcher(g, a, "shots/45_archer_kite.png", 90, 0.09, 5.4);
+        // Lock-on onto a SKELETON — the reticle rides ANY foe now (FoeRef over both groups).
+        a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+        var lk: i32 = 0;
+        while (lk < 24) : (lk += 1) _ = a.update(dt2, mathx.ground(0, 60), PLAY_HALF, .{}); // settle to idle
+        g.hero.pos = mathx.ground(1.8, 6.0);
+        g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
+        g.hero.update(dt2, 0, 0, null);
+        g.hero.pose();
+        g.lock = .{ .kind = .archer, .idx = 0 };
+        g.rig.yaw = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
+        g.rig.pitch = 0.16;
+        g.rig.dist = 6.2;
+        g.rig.follow(g.hero.shoulderPoint());
+        shoot(g, "shots/46_archer_lockon.png");
+        g.lock = null;
+        // Restore both foes near their homes so they don't intrude on the retro/menu shots below.
+        a.* = archermod.Archer.spawn(mathx.ground(-16.0, -22.0), mathx.radians(60), 1.0, 0.2);
+        g.warren.frogs[0] = frogmod.Frog.spawn(mathx.ground(13.5, -14.0), mathx.radians(215), 1.08, 0.0);
+    }
+
+    // ── the one-eyed ogre: scale, the overhead-slam beats, and the reactions ────────────────
+    // Framed out on the OPEN plain north-east of the start (oc), clear of the x≈0 colonnade so
+    // the columns don't block the giant. `far` keeps its AI holding the forced state (facing +Z).
+    {
+        const dt2: f32 = 1.0 / 60.0;
+        const o = &g.grief.ogres[0];
+        const oc = mathx.ground(24.0, 30.0); // portrait spot — open ground, off the ruins
+        const far = v3(oc.x, 0, oc.z + 80.0); // sensed hero far ahead → holds state, faces +Z
+
+        o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
+        stepOgre(o, 54, far); // settle into idle, landing mid weight-shift (one leg relaxed)
+        // Idle — a CLEAN standing read (hero shoved out of frame), pitched down a touch to see
+        // the full stooped-but-towering silhouette + the legs on the ground.
+        g.hero.pos = mathx.ground(oc.x - 22.0, oc.z);
+        g.hero.update(dt2, 0, 0, null);
+        g.hero.pose();
+        shootOgre(g, o, "shots/47_ogre_idle.png", 55, 0.14, 13.0);
+        // Scale — the hero standing clearly to the ogre's side (it towers ~2.2x over him).
+        g.hero.pos = mathx.ground(oc.x + 4.8, oc.z + 1.4);
+        g.hero.facing = std.math.atan2(oc.x - g.hero.pos.x, oc.z - g.hero.pos.z); // face the ogre
+        g.hero.update(dt2, 0, 0, null);
+        g.hero.pose();
+        shootOgre(g, o, "shots/48_ogre_scale.png", 30, 0.16, 15.5);
+        // Face close-up — read the single eye + the heavy sad brow. The ogre faces +Z, so the
+        // FRONT is yaw ~180 (as the toad's maw shots use); look slightly DOWN onto the brow.
+        g.rig.yaw = mathx.radians(182);
+        g.rig.pitch = 0.16;
+        g.rig.dist = 3.2;
+        g.rig.follow(o.headWorld());
+        shoot(g, "shots/55_ogre_face.png");
+
+        // The overhead slam: windup (club reared high) → crash (impact dust) → spent recovery.
+        o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
+        o.debugSlam();
+        stepOgre(o, 50, far); // near the windup peak — club overhead, body arched back (the tell)
+        shootOgre(g, o, "shots/49_ogre_windup.png", 55, 0.00, 13.0);
+        stepOgre(o, 14, far); // into the crash + the radial impact dust
+        shootOgre(g, o, "shots/50_ogre_slam.png", 60, 0.06, 13.0);
+        stepOgre(o, 30, far); // ~0.4s into recovery — doubled over the buried club, wide open
+        shootOgre(g, o, "shots/51_ogre_recover.png", 48, 0.10, 12.5);
+
+        // Reactions: the rare light flinch, the heavy stance-break, the weighty death topple.
+        o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
+        o.debugStagger(false);
+        stepOgre(o, 13, far); // flinch peak (recoiled back, arm flung up)
+        shootOgre(g, o, "shots/52_ogre_flinch.png", 55, 0.04, 12.5);
+        o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
+        o.debugStagger(true);
+        stepOgre(o, 42, far); // deep in the stance-break — sagged onto a knee, wide open
+        shootOgre(g, o, "shots/53_ogre_stagger.png", 50, 0.10, 13.0);
+        o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
+        o.debugKill();
+        stepOgre(o, 72, far); // the slow topple, well into the collapse
+        shootOgre(g, o, "shots/54_ogre_death.png", 55, 0.12, 13.5);
+
+        // Restore it to its home deep in the ruins so it doesn't loom over the retro/menu shots.
+        o.* = ogremod.Ogre.spawn(mathx.ground(3.0, -50.0), 0, 1.0, 0.4);
     }
 
     // Restore the idle-hold framing for the filter/menu verification shots below.

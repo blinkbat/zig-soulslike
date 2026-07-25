@@ -953,14 +953,17 @@ pub const Builder = struct {
     // length around the barrel (continuous across facets), v = distance along the axis, so
     // grain runs ALONG the limb and banding wraps it.
     pub fn addCylinder(self: *Builder, a: rl.Vector3, b: rl.Vector3, ra: f32, rb: f32, sides: i32, col: rl.Color) void {
-        const axisV = v3(b.x - a.x, b.y - a.y, b.z - a.z);
-        const axis = norm3(axisV);
-        const alen = @sqrt(axisV.x * axisV.x + axisV.y * axisV.y + axisV.z * axisV.z);
-        const seed = if (@abs(axis.y) < 0.99) v3(0, 1, 0) else v3(1, 0, 0);
-        const u = norm3(cross(axis, seed));
-        const w = norm3(cross(axis, u));
-        const rmid = @max(0.5 * (ra + rb), 0.02); // arc-length radius (floor keeps spike UVs sane)
+        const f = axisFrame(a, b);
         const o = self.shapeOff();
+        const rmid = @max(0.5 * (ra + rb), 0.02); // arc-length radius (floor keeps spike UVs sane)
+        self.ringBand(a, b, f.u, f.w, ra, rb, sides, col, o, rmid, o.y, o.y + f.len);
+    }
+
+    // ONE band of a revolved surface: the quad ring between circle (a, ra) and circle (b, rb) in
+    // the (u, w) frame, with the UV offset / arc radius / v-range supplied by the caller — so a
+    // multi-band surface (a capsule's cap, a blob) keeps ONE continuous texture instead of a fresh
+    // decorrelated patch per band (which reads as rings of noise on a big smooth mass).
+    fn ringBand(self: *Builder, a: rl.Vector3, b: rl.Vector3, u: rl.Vector3, w: rl.Vector3, ra: f32, rb: f32, sides: i32, col: rl.Color, o: rl.Vector2, rmid: f32, va: f32, vb: f32) void {
         const sf: f32 = @floatFromInt(sides);
         var s: i32 = 0;
         while (s < sides) : (s += 1) {
@@ -975,7 +978,77 @@ pub const Builder = struct {
             const nmid = norm3(v3(d0.x + d1.x, d0.y + d1.y, d0.z + d1.z));
             const arc0 = a0 * rmid + o.x;
             const arc1 = a1 * rmid + o.x;
-            self.quadUV(p0, p1, p2, p3, nmid, col, .{ .x = arc0, .y = o.y }, .{ .x = arc1, .y = o.y }, .{ .x = arc1, .y = o.y + alen }, .{ .x = arc0, .y = o.y + alen });
+            self.quadUV(p0, p1, p2, p3, nmid, col, .{ .x = arc0, .y = va }, .{ .x = arc1, .y = va }, .{ .x = arc1, .y = vb }, .{ .x = arc0, .y = vb });
+        }
+    }
+
+    // A CAPSULE: the tapered barrel a→b plus real DOMED ends (radius ra behind a, rb past b).
+    // The organic default for any limb/haft — a bare addCylinder leaves open flat-looking ends
+    // that read as cut pipe, and stacking two of them shows the seam. Use this wherever flesh is.
+    pub fn addCapsule(self: *Builder, a: rl.Vector3, b: rl.Vector3, ra: f32, rb: f32, sides: i32, col: rl.Color) void {
+        const f = axisFrame(a, b);
+        const o = self.shapeOff();
+        const rmid = @max(0.5 * (ra + rb), 0.02);
+        self.ringBand(a, b, f.u, f.w, ra, rb, sides, col, o, rmid, o.y, o.y + f.len);
+        self.dome(a, neg(f.axis), f.u, f.w, ra, sides, col, o, rmid, o.y, -1);
+        self.dome(b, f.axis, f.u, f.w, rb, sides, col, o, rmid, o.y + f.len, 1);
+    }
+
+    // A standalone domed cap — a rounded stump wherever a bare cylinder would show its open end.
+    pub fn addDome(self: *Builder, c: rl.Vector3, dir: rl.Vector3, r: f32, sides: i32, col: rl.Color) void {
+        const f = axisFrame(c, scaleAdd(c, norm3(dir), @max(r, 1e-3)));
+        const o = self.shapeOff();
+        self.dome(c, f.axis, f.u, f.w, r, sides, col, o, @max(r, 0.02), o.y, 1);
+    }
+
+    // A hemispherical cap of radius r on `c`, bulging along `dir`. `vAt`/`vSign` continue the
+    // barrel's v coordinate over the dome so the grain doesn't restart at the seam.
+    fn dome(self: *Builder, c: rl.Vector3, dir: rl.Vector3, u: rl.Vector3, w: rl.Vector3, r: f32, sides: i32, col: rl.Color, o: rl.Vector2, rmid: f32, vAt: f32, vSign: f32) void {
+        if (r < 1e-4) return;
+        const BANDS = 3;
+        var k: i32 = BANDS;
+        while (k > 0) : (k -= 1) {
+            const t0 = std.math.pi * 0.5 * @as(f32, @floatFromInt(k)) / @as(f32, BANDS); // far pole side
+            const t1 = std.math.pi * 0.5 * @as(f32, @floatFromInt(k - 1)) / @as(f32, BANDS); // toward the seam
+            const c0 = scaleAdd(c, dir, r * mathx.sinf(t0));
+            const c1 = scaleAdd(c, dir, r * mathx.sinf(t1));
+            const v0 = vAt + vSign * r * t0;
+            const v1 = vAt + vSign * r * t1;
+            // vSign flips which ring is "first" so the winding stays CCW-from-outside on both ends.
+            if (vSign > 0) {
+                self.ringBand(c1, c0, u, w, r * mathx.cosf(t1), r * mathx.cosf(t0), sides, col, o, rmid, v1, v0);
+            } else {
+                self.ringBand(c0, c1, u, w, r * mathx.cosf(t0), r * mathx.cosf(t1), sides, col, o, rmid, v0, v1);
+            }
+        }
+    }
+
+    // A rounded ELLIPSOID mass centred on `c` with half-extents `r` — the anti-blockiness
+    // primitive. Anything organic (a cranium, a pec, a gut, a wart, a knuckle, a club's stone
+    // head) is one of these; addCube is for stone, iron and cloth, not for FLESH.
+    pub fn addBlob(self: *Builder, c: rl.Vector3, r: rl.Vector3, segs: i32, sides: i32, col: rl.Color) void {
+        const o = self.shapeOff();
+        const sf: f32 = @floatFromInt(sides);
+        const gf: f32 = @floatFromInt(segs);
+        const rmid = @max((r.x + r.z) * 0.5, 0.02);
+        const inv = v3(1.0 / @max(r.x, 1e-4), 1.0 / @max(r.y, 1e-4), 1.0 / @max(r.z, 1e-4));
+        var j: i32 = 0;
+        while (j < segs) : (j += 1) {
+            const t0 = std.math.pi * @as(f32, @floatFromInt(j)) / gf; // 0 = bottom pole, pi = top
+            const t1 = std.math.pi * @as(f32, @floatFromInt(j + 1)) / gf;
+            var s: i32 = 0;
+            while (s < sides) : (s += 1) {
+                const a0 = std.math.tau * @as(f32, @floatFromInt(s)) / sf;
+                const a1 = std.math.tau * @as(f32, @floatFromInt(s + 1)) / sf;
+                // Vertex order matches addCylinder's proven CCW-from-outside winding (lower ring
+                // first, sweeping +angle, then the upper ring back).
+                const p0 = onBlob(c, r, t0, a0);
+                const p1 = onBlob(c, r, t0, a1);
+                const p2 = onBlob(c, r, t1, a1);
+                const p3 = onBlob(c, r, t1, a0);
+                const g = v3((0.25 * (p0.x + p1.x + p2.x + p3.x) - c.x) * inv.x * inv.x, (0.25 * (p0.y + p1.y + p2.y + p3.y) - c.y) * inv.y * inv.y, (0.25 * (p0.z + p1.z + p2.z + p3.z) - c.z) * inv.z * inv.z);
+                self.quadUV(p0, p1, p2, p3, norm3(g), col, .{ .x = a0 * rmid + o.x, .y = o.y + t0 * r.y }, .{ .x = a1 * rmid + o.x, .y = o.y + t0 * r.y }, .{ .x = a1 * rmid + o.x, .y = o.y + t1 * r.y }, .{ .x = a0 * rmid + o.x, .y = o.y + t1 * r.y });
+            }
         }
     }
 
@@ -1010,6 +1083,23 @@ pub const Builder = struct {
 
 fn scaleAdd(base: rl.Vector3, dir: rl.Vector3, s: f32) rl.Vector3 {
     return v3(base.x + dir.x * s, base.y + dir.y * s, base.z + dir.z * s);
+}
+// The revolution frame for the segment a→b: unit axis, its two perpendiculars, and the length.
+// Pulled out of addCylinder so the capsule/dome/blob builders all revolve about the SAME frame
+// (the winding and the UV grain then match across primitives).
+const AxisFrame = struct { axis: rl.Vector3, u: rl.Vector3, w: rl.Vector3, len: f32 };
+fn axisFrame(a: rl.Vector3, b: rl.Vector3) AxisFrame {
+    const d = v3(b.x - a.x, b.y - a.y, b.z - a.z);
+    const axis = norm3(d);
+    const seed = if (@abs(axis.y) < 0.99) v3(0, 1, 0) else v3(1, 0, 0);
+    const u = norm3(cross(axis, seed));
+    return .{ .axis = axis, .u = u, .w = norm3(cross(axis, u)), .len = @sqrt(d.x * d.x + d.y * d.y + d.z * d.z) };
+}
+// A point on the ellipsoid (c, r): `t` = polar angle (0 = bottom pole), `ang` = angle around.
+// Signs match dirOn's (u, w) = (0,0,-1), (-1,0,0) frame for a +Y axis, so windings agree.
+fn onBlob(c: rl.Vector3, r: rl.Vector3, t: f32, ang: f32) rl.Vector3 {
+    const st = mathx.sinf(t);
+    return v3(c.x - r.x * mathx.sinf(ang) * st, c.y - r.y * mathx.cosf(t), c.z - r.z * mathx.cosf(ang) * st);
 }
 fn dirOn(u: rl.Vector3, w: rl.Vector3, ang: f32) rl.Vector3 {
     const c = mathx.cosf(ang);

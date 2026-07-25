@@ -645,11 +645,14 @@ pub fn run(shot: bool) void {
             g.rumble.play(if (slammed) rumblemod.hurt_heavy else rumblemod.hurt);
             g.rig.addShake(if (slammed) SHAKE_HURT_HEAVY else SHAKE_HURT);
         }
-        // The lone ogre hunts + slams; its overhead crush is a heavy stance-damaging body-blow.
+        // The lone ogre hunts, slams and side-swipes. The overhead crush is the full heavy beat; the
+        // faster swipe hurts less and is FELT less, so the two read apart through the pad and camera
+        // as well as on screen (split off the blow's own stance damage, like the toad's above).
         if (g.grief.update(dt, g.hero.pos, PLAY_HALF, heroBlade(g))) |h| {
             g.hero.takeHit(h);
-            g.rumble.play(rumblemod.hurt_heavy);
-            g.rig.addShake(SHAKE_HURT_HEAVY);
+            const crushed = h.stance >= ogremod.SLAM_HIT.stance;
+            g.rumble.play(if (crushed) rumblemod.hurt_heavy else rumblemod.hurt);
+            g.rig.addShake(if (crushed) SHAKE_HURT_HEAVY else SHAKE_HURT);
         }
         // Blade lands on the skeletons; then they act — kite and loose from the nock at the
         // hero's centre of mass (arrow homing + arc finish the job). A blade hit mid-draw
@@ -1463,6 +1466,22 @@ fn runShots(g: *Game) void {
         shootOgre(g, o, "shots/50_ogre_slam.png", 60, 0.06, 13.0);
         stepOgre(o, 30, far); // ~0.4s into recovery — doubled over the buried club, wide open
         shootOgre(g, o, "shots/51_ogre_recover.png", 48, 0.10, 12.5);
+
+        // The SIDE SWIPE — his fast answer to a hero who won't stand in front of him. The sensed
+        // hero sits round on his LEFT FLANK (that bearing is exactly what makes him choose the
+        // swipe), so these frames also show the PIVOT: he is still coming round as the club goes.
+        // Two ground-level frames for the pose + one steep top-down, which is the only angle a
+        // HORIZONTAL arc actually reads from.
+        {
+            const flank = v3(oc.x + 3.6, 0, oc.z - 1.2); // ~108 deg off his facing, inside SWIPE_R
+            o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
+            o.debugSwipe();
+            stepOgre(o, 18, flank); // near the top of the short cock-back — coiled, snarling
+            shootOgre(g, o, "shots/61_ogre_swipewind.png", 35, 0.12, 12.0);
+            stepOgre(o, 6, flank); // …the club crossing his centre line (the impact frame)
+            shootOgre(g, o, "shots/62_ogre_swipe.png", 35, 0.12, 12.0);
+            shootOgre(g, o, "shots/63_ogre_swipe_top.png", 35, 0.60, 15.0); // same frame, from above
+        }
 
         // Reactions: the rare light flinch, the heavy stance-break, the weighty death topple.
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);

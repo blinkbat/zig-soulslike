@@ -87,7 +87,15 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
                  shoulder offset, `recenter`), the camera-relative ground basis, and the
                  trauma-based impact shake (tickShake is live-loop only, so --shot stays
                  deterministic).
-- `gfx.zig`    — scene shader (warm hard sun + cast shadows + hemisphere ambient + rim
+- `gfx.zig`    — the mesh `Builder` now has ROUNDED primitives beside the boxes: `addCapsule`
+                 (tapered barrel + domed ends), `addBlob` (an ellipsoid mass) and `addDome`, all
+                 revolved about the shared `axisFrame` with ONE continuous UV band (`ringBand`) so
+                 a multi-band surface doesn't show a ring of decorrelated noise per band. **FLESH IS
+                 ROUND: organic mass = blob/capsule; addCube/addBox are for iron, blades, cloth.** A
+                 bare `addCylinder` leaves an open cut-pipe end and a hard rim at every seam, and
+                 those rims + boxes are what read as BLOCKY however good the animation on top is
+                 (`ogre.zig` is the worked example; hero/frog/archer are still on the old boxes).
+                 Also: scene shader (warm hard sun + cast shadows + hemisphere ambient + rim
                  light on non-terrain + sun-banked distance haze + gamma/dither + a flora
                  wind term gated by `windAmt`/`setWind` + the per-actor `hitFlash` uniform
                  + SURFACE MATERIALS: every Builder mesh carries surface-anchored UVs and
@@ -128,9 +136,21 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
 - `ogre.zig`   — THE ONE-EYED OGRE (third foe) + the `Grief` (a lone, sorrowful giant). A GIANT
                  humanoid (~2x the hero), hunched + mis-proportioned, HEFTING a great knotted
                  CLUB at his side, with ONE dull-amber glowing eye — a sad but scary figure.
-                 FOUNDED ON THE HERO RIG like the archer (same 18-bone layout + `hero.advanceGait`/
-                 `legChain` for the legs; the stride phase is fed a scale-corrected distance so the
-                 giant doesn't skate), and it carries the full humanoid UPPER-body articulation
+                 **HE HINGES AT THE WAIST AND HIS LEGS STAY PLANTED (owner's law).** The pelvis takes
+                 only `PELVIS_SHARE` (0.16) of any body pitch and the rest folds through SPINE →
+                 CHEST → HUMP; the brace is a knee-taking-up, not a squat (BRACE_HIP/KNEE 12/24).
+                 Pitching the ROOT rotates the LEGS with the trunk, so every stoop and swing swung
+                 his whole frame and from three-quarters he read as a quadruped bowing.
+                 FOUNDED ON THE HERO RIG like the archer (`hero.advanceGait`/`legChain` for the legs,
+                 driving the hero's OWN joint indices 5..10 — that block of the rig is frozen for
+                 that reason; the stride phase is fed a scale-corrected distance so the giant doesn't
+                 skate) but grown to **24 bones**: the hero's 0..17 plus a hinged JAW (a mouth that
+                 works — breath / roar / grit / pant / loll), TOES that roll off the ground at
+                 push-off, a HUMP so the back CURVES instead of pivoting at one waist joint, and a
+                 shoulder GIRDLE (clavicles) the arms hang off and heave with. Three of those are
+                 inserted ABOVE existing bones (NECK hangs off the hump, each shoulder off its
+                 clavicle), so `poseUpper` sets bones in DEPENDENCY order, not index order.
+                 It carries the full humanoid UPPER-body articulation
                  (see the rule below) — the club arm's swing is damped + lagged by the weight, and
                  the club rocks a beat behind the arm again. **THE CLUB NEVER TOUCHES THE GROUND
                  while carried** (owner's law — a club ploughing the dirt was the original goof, and
@@ -140,11 +160,20 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
                  rather than posture. `clubLowWorld()` is the club's business end off the posed
                  bone — the hover, the impact burst, and the crush strip's length are all measured
                  from it, never guessed. HIGH POISE (shrugs off single lights — sustained pressure
-                 staggers it) + a lumbering approach into ONE attack for now: a big, readable
-                 OVERHEAD CLUB SLAM (long windup tell → fast crash following THROUGH past vertical
-                 → long wide-open recovery), a crush STRIP down the facing line, not a fan.
-                 Reactions are huge; death is a slow, weighty topple into
-                 the grace-mote dissipation. More attacks to come — the state machine has room.
+                 staggers it) + a lumbering approach into TWO attacks: the big readable OVERHEAD CLUB
+                 SLAM (long windup tell → fast crash → long wide-open recovery), a crush STRIP down
+                 the facing line — now his CLOSE-IN punish (`SLAM_R` 2.3), because the shortened club
+                 plus planted legs put the crater ~1.2 out; and the FAST SIDE SWIPE (`swipewind` →
+                 `swipe`, 0.34 s + 0.20 s), a horizontal scythe through a SECTOR he keeps pivoting
+                 into (`SWIPE_TURN`), which is how he answers a hero who won't stand in front of him.
+                 The swipe is a WAIST move: the coil/whip is `twist`, plus the shoulder's own
+                 horizontal `clubSweep` (ry OUTSIDE the abduction, or it just spins the arm).
+                 **Every hurt shape is MEASURED off the posed club, never guessed** — `SLAM_LEN`,
+                 `SWIPE_INNER/OUTER/ARC_MID/ARC` all come from tracing `clubLowWorld()` frame by
+                 frame, and unit tests re-assert them (plus: the carried club never touches the
+                 ground, the slam DOES reach it, the head clears the chest barrel). Retune the club,
+                 an arm angle or the waist fold and RE-MEASURE. Reactions are huge; death is a slow,
+                 weighty topple into the grace-mote dissipation. More attacks can drop in beside these.
 - `foe.zig`    — THE FOE STANDARD: the shared contract + behaviours every enemy plugs into, so
                  lock-on, floating HP bars, collision, the blade hit-test, and the combat beats
                  are written ONCE for all foes. Holds `Blade` (the hero's-swing data) and
@@ -193,6 +222,14 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
   whatever it carries later still. Joints that all peak on the same frame read as one welded
   block however big you make the amplitudes — the lags are what sell the mass. `ogre.zig`'s
   `poseUpper` is the worked example.
+- **BIG BODIES HINGE AT THE WAIST, AND THEIR LEGS STAY PLANTED (owner's law).** A swing is the trunk
+  folding over feet that don't move — never the whole frame tipping. Route an attack's lean through
+  the SPINE/CHEST chain and leave the pelvis nearly upright (`ogre.PELVIS_SHARE`); a lean applied at
+  the ROOT rotates the legs with it and reads as lurching. Braces take up in the knees, they don't
+  squat. This is a giant's law first, but it applies to any heavy actor.
+- **`hero.legChain` is rig-size agnostic** (slices + explicit hip/knee/ankle indices; it assumes only
+  that bone 0 is the pelvis), so a foe rig may carry MORE bones than the hero's 18 — but a rig that
+  drives it must keep the hero's own leg indices where they are.
 
 ### Animation art direction (the DESIRED look — honor it when retuning)
 

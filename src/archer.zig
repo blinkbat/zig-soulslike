@@ -615,8 +615,8 @@ pub const Archer = struct {
         // Legs: the SHARED walk/strafe (runB = 0 — the archer only walks). When DEAD the crumple
         // in poseUpper owns the legs instead.
         if (!dead) {
-            heromod.legChain(&wx, self.rest, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, ANKL);
-            heromod.legChain(&wx, self.rest, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, ANKR);
+            heromod.legChain(&wx, &self.rest, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, ANKL);
+            heromod.legChain(&wx, &self.rest, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, ANKR);
         }
         self.poseUpper(&wx, dk, stunAmt, dead);
         self.xf = wx;

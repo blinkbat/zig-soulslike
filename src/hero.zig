@@ -990,8 +990,8 @@ pub const Hero = struct {
         setLocal(&wx, HEAD, self.rest, rx(HEAD_WALK - 0.55 * gazeCounter)); // +rx = gaze down (walk); the counter lifts it toward ahead when running
 
         // Legs — left uses phase, right is half a stride out.
-        legChain(&wx, self.rest, ph, m, runB, fw, lat, 1.0, HIPL, KNEEL, ANKL);
-        legChain(&wx, self.rest, ph + 0.5, m, runB, fw, lat, -1.0, HIPR, KNEER, ANKR);
+        legChain(&wx, &self.rest, ph, m, runB, fw, lat, 1.0, HIPL, KNEEL, ANKL);
+        legChain(&wx, &self.rest, ph + 0.5, m, runB, fw, lat, -1.0, HIPR, KNEER, ANKR);
 
         // Arms — contralateral swing (cos: same-side arm is BACK when its leg is forward);
         // bigger swing + ~90° elbows when running. The swing follows the SIGNED forward
@@ -1330,9 +1330,18 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
     wx[i] = mul(local, wx[p]);
 }
 
+// A joint set that names its PARENT explicitly and takes SLICES, so a foe rig with more bones
+// than the hero's 18 (the ogre's jaw / toes / clavicles) can still drive its legs through
+// legChain. The only layout it assumes is the shared one: bone 0 is the pelvis.
+fn setJoint(wx: []rl.Matrix, rest: []const rl.Vector3, i: usize, p: usize, animRot: rl.Matrix) void {
+    const off = mathx.subV(rest[i], rest[p]);
+    wx[i] = mul(mul(animRot, tr(off.x, off.y, off.z)), wx[p]);
+}
+
 // pub: humanoid enemies drive their legs through this same walk + locked-on strafe/backpedal
-// footing (AGENTS.md humanoid rule). N/joint-index layout must match the caller's (18-bone).
-pub fn legChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, ph: f32, m: f32, runB: f32, sag: f32, lat: f32, side: f32, hip: usize, knee: usize, ank: usize) void {
+// footing (AGENTS.md humanoid rule). Rig-size agnostic — the caller passes its own hip/knee/ankle
+// indices and its whole bone array; only "pelvis is bone 0" is assumed.
+pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, ph: f32, m: f32, runB: f32, sag: f32, lat: f32, side: f32, hip: usize, knee: usize, ank: usize) void {
     // Sagittal gait weighted by the forward blend `sag`; a backpedal (sag < 0) samples
     // the SAME normative tables with phase run backward — reversed walking. The lateral
     // blend `lat` drives the CROSSING sidestep instead (the scissor below).
@@ -1370,9 +1379,9 @@ pub fn legChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, ph: f32, m: f32, runB: f
         STRAFE_SOFT * latW + STRAFE_KNEE * pulse * latW;
     // hip: sagittal flexion (−rx = thigh forward; the cross adds its own), adduction
     // toward midline, the slight strafe stance-widening, then the step swing.
-    setLocal(wx, hip, rest, mul(rx(-hipFlex - crossF), rz(-side * HIP_ADDUCT + side * STRAFE_SPLIT * latW + reach)));
-    setLocal(wx, knee, rest, rx(kneeFlex)); // +rx = knee bends (shank swings back/up)
-    setLocal(wx, ank, rest, mul(rx(-ankDorsi), ry(side * FOOT_TOEOUT))); // dorsiflex + toe-out splay
+    setJoint(wx, rest, hip, ROOT, mul(rx(-hipFlex - crossF), rz(-side * HIP_ADDUCT + side * STRAFE_SPLIT * latW + reach)));
+    setJoint(wx, rest, knee, hip, rx(kneeFlex)); // +rx = knee bends (shank swings back/up)
+    setJoint(wx, rest, ank, knee, mul(rx(-ankDorsi), ry(side * FOOT_TOEOUT))); // dorsiflex + toe-out splay
 }
 
 fn armChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, swing: f32, m: f32, runB: f32, sprintB: f32, side: f32, carry: f32, sh: usize, el: usize, wr: usize) void {

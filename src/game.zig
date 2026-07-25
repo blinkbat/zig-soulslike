@@ -1416,13 +1416,38 @@ fn runShots(g: *Game) void {
         g.hero.update(dt2, 0, 0, null);
         g.hero.pose();
         shootOgre(g, o, "shots/48_ogre_scale.png", 30, 0.16, 15.5);
-        // The approach — mid-stride on the shared gait, side-on, to judge the LUMBER (trunk
-        // roll + swagger + footfall catch). Sensed hero sits inside aggro dead ahead.
+        // The approach — the shared gait, side-on, to judge the LUMBER (trunk roll + swagger +
+        // footfall catch) and the ARM SWING. Sensed hero sits inside aggro dead ahead. Sampled at
+        // THREE points a quarter-stride apart (the ogre's cycle is ~138 frames): one frame can't
+        // show a swing, and a gait that only reads at one phase isn't a gait.
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         stepOgre(o, 100, v3(oc.x, 0, oc.z + 15.0));
         shootOgre(g, o, "shots/56_ogre_walk.png", 90, 0.06, 12.0);
+        // …and b/c from yaw 270 — the OFF profile. Yaw 90 puts the club arm nearest the camera and
+        // buries the free arm behind the barrel, so the big contralateral swing is invisible from
+        // it: judging the swing off that side is judging an arm you cannot see. Half a stride
+        // apart, so between them the free arm is caught at BOTH extremes of its swing.
+        stepOgre(o, 34, v3(oc.x, 0, oc.z + 15.0));
+        shootOgre(g, o, "shots/57_ogre_walk_b.png", 270, 0.06, 12.0);
+        stepOgre(o, 69, v3(oc.x, 0, oc.z + 15.0));
+        shootOgre(g, o, "shots/58_ogre_walk_c.png", 270, 0.06, 12.0);
+        stepOgre(o, 17, v3(oc.x, 0, oc.z + 15.0));
+        shootOgre(g, o, "shots/59_ogre_walk_3q.png", 320, 0.08, 12.5); // front-left 3/4: free arm, lit
+        // THE HEAD CRANE — the sensed hero sits hard off his LEFT while his body still points +Z,
+        // so the eye is craned to the neck's limit a beat before the slow body can follow. Shot
+        // from behind-ish (yaw 20) where the head being turned off the shoulder line reads.
+        o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
+        stepOgre(o, 14, v3(oc.x + 9.0, 0, oc.z + 1.0)); // 14 frames: the head is AT its 55 deg
+        //   clamp while the ponderous body has only come round ~30 — any later and the body has
+        //   caught up and there is no lead left to see.
+        shootOgre(g, o, "shots/60_ogre_headtrack.png", 20, 0.20, 11.0);
+
         // Face close-up — the single eye + heavy sad brow. Ogre faces +Z, so FRONT is yaw ~180
-        // (like the toad maw shots); look slightly DOWN onto the brow.
+        // (like the toad maw shots); look slightly DOWN onto the brow. RESPAWNED to a settled
+        // IDLE first: taken off the WALKING ogre above, this framed the swinging club head
+        // instead of the face — a portrait has no business being shot mid-stride.
+        o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
+        stepOgre(o, 30, far);
         g.rig.yaw = mathx.radians(182);
         g.rig.pitch = 0.16;
         g.rig.dist = 3.2;

@@ -115,21 +115,35 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
                  (skull / ribcage / pelvis / bone-limbs + a bow) FOUNDED ON THE HERO RIG:
                  same anthropometry, and it walks/strafes on the HERO'S gait (see the humanoid
                  rule below), not a bespoke cycle. KITE-only AI (holds a range band, backs off
-                 / closes, looses; never melees). Slowish, lightly-homing arrows that STICK
-                 where they land + fade. One-and-done death (collapse → dissipate). Perched in
+                 / closes, looses; never melees). Slowish arrows that STICK
+                 where they land + fade; their homing is a LAUNCH NUDGE, not tracking — it trims
+                 only the lead error the hero's walk introduces and FADES to zero over the first
+                 `ARROW_HOME_FADE` of flight (~11 deg of bend, all of it early), so a sidestep beats
+                 a shot outright. Owner's note: full-flight homing read as a guided missile.
+                 One-and-done death (collapse → dissipate). Perched in
                  the ruins, waking as you advance. Arrows are a pool owned by `game.zig`, and
                  they respect COVER: each flight-steps against `env.solids()` (every solid
                  carries its mesh-top `h`) and thunks into stone instead of piercing it —
                  while still arcing over the LOW stuff (graves, ruin blocks).
 - `ogre.zig`   — THE ONE-EYED OGRE (third foe) + the `Grief` (a lone, sorrowful giant). A GIANT
-                 humanoid (~2x the hero), hunched + mis-proportioned, dragging a great knotted
-                 CLUB, with ONE dull-amber glowing eye — a sad but scary figure. FOUNDED ON THE
-                 HERO RIG like the archer (same 18-bone layout + `hero.advanceGait`/`legChain`
-                 for the legs; the stride phase is fed a scale-corrected distance so the giant
-                 doesn't skate). HIGH POISE (shrugs off single lights — sustained pressure
+                 humanoid (~2x the hero), hunched + mis-proportioned, HEFTING a great knotted
+                 CLUB at his side, with ONE dull-amber glowing eye — a sad but scary figure.
+                 FOUNDED ON THE HERO RIG like the archer (same 18-bone layout + `hero.advanceGait`/
+                 `legChain` for the legs; the stride phase is fed a scale-corrected distance so the
+                 giant doesn't skate), and it carries the full humanoid UPPER-body articulation
+                 (see the rule below) — the club arm's swing is damped + lagged by the weight, and
+                 the club rocks a beat behind the arm again. **THE CLUB NEVER TOUCHES THE GROUND
+                 while carried** (owner's law — a club ploughing the dirt was the original goof, and
+                 it read as a tripod leg propping the body up): it hangs from a `CLUB_DROP` budget
+                 short enough for a hanging fist to clear, held OUT on `CLUB_ABD`, raked back, and
+                 the rake backs out the trunk's stoop + stride flexion so GRAVITY sets the angle
+                 rather than posture. `clubLowWorld()` is the club's business end off the posed
+                 bone — the hover, the impact burst, and the crush strip's length are all measured
+                 from it, never guessed. HIGH POISE (shrugs off single lights — sustained pressure
                  staggers it) + a lumbering approach into ONE attack for now: a big, readable
-                 OVERHEAD CLUB SLAM (long windup tell → fast crash → long wide-open recovery),
-                 front-arc crush only. Reactions are huge; death is a slow, weighty topple into
+                 OVERHEAD CLUB SLAM (long windup tell → fast crash following THROUGH past vertical
+                 → long wide-open recovery), a crush STRIP down the facing line, not a fan.
+                 Reactions are huge; death is a slow, weighty topple into
                  the grace-mote dissipation. More attacks to come — the state machine has room.
 - `foe.zig`    — THE FOE STANDARD: the shared contract + behaviours every enemy plugs into, so
                  lock-on, floating HP bars, collision, the blade hit-test, and the combat beats
@@ -168,6 +182,17 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
   Do NOT author a bespoke walk for a humanoid. Only the UPPER body / weapon work is per-enemy
   (e.g. the archer's draw+loose rides on top of the shared legs). The hero is the single
   source of humanoid locomotion; keep it that way so every human on screen moves as one.
+- **AND THE UPPER BODY MUST ARTICULATE TOO — legs alone are not a gait (owner's law).** Shared
+  legs under a rigid trunk reads as "moving in ONE PIECE", which the owner will (rightly) call a
+  goof. Every walking humanoid owes, on top of `legChain`: a real CONTRALATERAL arm swing at full
+  amplitude (a giant lumbers on ~26°, not the hero's restrained 9), elbows flexing through the
+  FORWARD half of each swing only, the shoulder girdle COUNTER-ROTATING against the pelvis every
+  stride (`prot`) plus a counter-roll against its lean, a trunk NOD twice a stride as the mass
+  settles onto each foot, and a head that counter-rolls / -yaws / -nods all of it so the face
+  stays steady over a heaving body. **And stagger the LAGS:** a loaded limb arrives late, and
+  whatever it carries later still. Joints that all peak on the same frame read as one welded
+  block however big you make the amplitudes — the lags are what sell the mass. `ogre.zig`'s
+  `poseUpper` is the worked example.
 
 ### Animation art direction (the DESIRED look — honor it when retuning)
 

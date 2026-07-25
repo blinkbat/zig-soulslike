@@ -185,7 +185,12 @@ const SHOVE_DECAY = 7.0;
 // Slowish flight with LIGHT homing toward the hero (a gentle curve, not a lock-on), then it
 // STICKS where it lands (ground / near the hero) and fades. Plain data + a tiny integrator.
 const ARROW_SPEED = 15.0; // world units/s — slowish, dodgeable
-const ARROW_HOMING = 2.2; // rad/s the heading may bend toward the hero (LIGHT tracking)
+const ARROW_HOMING = 0.85; // rad/s the heading may bend toward the hero — a NUDGE, not a lock
+const ARROW_HOME_FADE = 0.45; // …and it decays to nothing over this much flight (see stepArrow):
+//   the assist exists to trim the LEAD ERROR at launch (the hero walked while the shaft was in the
+//   air), NOT to answer what he does afterwards. Held at full strength for the whole flight it read
+//   as a homing missile — owner's note: too much tracking. Total bend available is now ~11 deg,
+//   about the lead error at a full-range shot, and all of it spent in the first half-second.
 const ARROW_GRAV = 3.0; // gentle drop so long shots arc
 const ARROW_LIFE = 3.5; // seconds airborne before it gives up (falls + sticks)
 const ARROW_STICK_FADE = 1.4; // seconds a stuck arrow lingers, then fades
@@ -229,10 +234,13 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, heroDodging: boo
     if (spd > 1e-3) {
         const cur = mathx.scaleV(a.vel, 1.0 / spd);
         const to = mathx.normV(mathx.subV(target, a.pos));
-        // bend the HEADING toward the hero by a small fraction/second (keeps its speed) — but
-        // only while still closing, so a shot that's been dodged flies PAST instead of U-turning.
-        if (cur.x * to.x + cur.y * to.y + cur.z * to.z > 0.2) {
-            const bent = mathx.normV(mathx.lerpV(cur, to, mathx.clampF(ARROW_HOMING * dt, 0, 1)));
+        // bend the HEADING toward the hero by a small fraction/second (keeps its speed) — but only
+        // while still closing, so a shot that's been dodged flies PAST instead of U-turning, and
+        // only over the first ARROW_HOME_FADE of flight, after which the shaft is DEAD straight and
+        // a sidestep beats it outright.
+        const assist = ARROW_HOMING * (1.0 - mathx.smoothstep(0, ARROW_HOME_FADE, a.age));
+        if (assist > 0 and cur.x * to.x + cur.y * to.y + cur.z * to.z > 0.2) {
+            const bent = mathx.normV(mathx.lerpV(cur, to, mathx.clampF(assist * dt, 0, 1)));
             a.vel = mathx.scaleV(bent, spd);
         }
     }
@@ -1111,4 +1119,22 @@ test "arrows thunk into cover instead of piercing it; tall shots clear a LOW blo
     while (i < 240 and !over.stuck) : (i += 1)
         stepArrow(&over, v3(0, 0, 12.0), 1.0, false, &.{low}, dt);
     try std.testing.expect(over.stuck and over.pos.z > 5.5); // cleared the grave, landed well beyond
+}
+
+test "a SIDESTEP beats an arrow: the homing is a launch nudge, not a lock" {
+    const dt: f32 = 1.0 / 60.0;
+    // Loosed at a hero 12 out; he then steps three body-widths off the flight line and holds.
+    // The old full-flight homing curved onto him anyway; the faded nudge must fly past.
+    var shot = launchArrow(v3(0, 1.3, 0), v3(0, 1.0, 12.0));
+    const dodged = v3(2.6, 0, 12.0);
+    var i: u32 = 0;
+    while (i < 300 and !shot.stuck) : (i += 1) stepArrow(&shot, dodged, 1.0, false, &.{}, dt);
+    try std.testing.expect(shot.stuck and !shot.hit);
+    try std.testing.expect(shot.pos.x < 1.6); // it bent a little, then committed — never reached him
+
+    // …but it still trims the LEAD ERROR: a hero who only drifts a step gets hit.
+    var lead = launchArrow(v3(0, 1.3, 0), v3(0, 1.0, 12.0));
+    i = 0;
+    while (i < 300 and !lead.stuck) : (i += 1) stepArrow(&lead, v3(0.5, 0, 12.0), 1.0, false, &.{}, dt);
+    try std.testing.expect(lead.hit);
 }

@@ -163,9 +163,12 @@ const Prop = struct { kind: u8, pos: rl.Vector3, yaw: f32, scale: f32 };
 // prop's base. Deterministic — same seed, same field, every launch.
 const SCATTER = 260;
 
-// Cap on generated footprint colliders (solid props only — plenty of headroom; the arch and
-// far gate each emit two).
-const SOLID_CAP = 160;
+// Cap on generated footprint colliders. DERIVED from the prop table rather than picked, because a
+// hand-tuned cap fails SILENTLY: buildColliders drops any collider past it, so adding solid props
+// to `layout` would quietly leave some of them walk-through. No branch there emits more than TWO
+// per prop (the arch and the far gate), so two-per-prop is provably sufficient for ANY future kind
+// assignment — including a scattered one. ~21 KB in Env; the guard in addSolid can no longer fire.
+const SOLID_CAP = 2 * (layout.len + SCATTER);
 
 pub const Env = struct {
     ground: rl.Model,
@@ -227,8 +230,10 @@ pub const Env = struct {
 
     // Draw one half of the prop list: flora=false = stone/structure props, flora=true =
     // plants. The K_TUFT boundary is the single split point both callers share.
+    // Iterate by POINTER: this runs 3x per frame over all 324 props (props twice — depth + lit —
+    // and flora once), and `Prop` is 24 bytes, so a by-value loop copied ~23 KB a frame for nothing.
     fn drawSplit(self: *const Env, flora: bool) void {
-        for (self.props) |p| {
+        for (&self.props) |*p| {
             if ((p.kind >= K_TUFT) != flora) continue;
             rl.drawModelEx(self.models[p.kind], p.pos, v3(0, 1, 0), p.yaw, v3(p.scale, p.scale, p.scale), rl.Color.white);
         }
@@ -477,7 +482,8 @@ fn statueMesh(shader: rl.Shader) rl.Model {
 // windAmt gates it to flora only, so gaits/props stay rigid).
 
 fn addSolid(e: *Env, s: collision.Solid, top: f32) void {
-    if (e.nsolids >= e.solid_buf.len) return;
+    if (e.nsolids >= e.solid_buf.len) return; // unreachable by SOLID_CAP's construction; kept cheap
+
     var sol = s;
     sol.h = top; // projectile-blocking height (footprint push-out stays 2D)
     e.solid_buf[e.nsolids] = sol;

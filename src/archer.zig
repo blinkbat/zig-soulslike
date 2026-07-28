@@ -162,6 +162,18 @@ const HURT_R = 0.42; // hurt-sphere radius for the hero's blade
 // Pelvis walk oscillation — the hero's amplitudes, so the shared gait reads as one humanoid.
 const A_BOB = 0.024 * H;
 const A_SWAY = 0.009 * H;
+// Where a skeletal foot meets the earth, MEASURED off footMesh: the metatarsal plate + heel, with
+// the toe bones fanning out to ~0.245·H ahead. Its underside sits a touch ABOVE the ankle-height
+// plane (the plate's bottom is at −ay + 0.005·H), hence the slightly smaller drop. hero.legChain
+// clamps each ankle's pitch against this so the toes can't rake through the ground.
+const solePatches = [_]heromod.SolePatch{
+    .{ .bone = ANKL, .heel = 0.04 * H, .toe = 0.245 * H, .halfW = 0.05 * H, .drop = 0.034 * H },
+    .{ .bone = ANKR, .heel = 0.04 * H, .toe = 0.245 * H, .halfW = 0.05 * H, .drop = 0.034 * H },
+};
+
+const A_PROT = 4.0; // deg of pelvic TRANSVERSE rotation per stride (the hero walks on 3.5; bare
+//   bone reads its rotation more plainly than clothed hips do, so a touch more). The sidestep's
+//   own crossing drive comes from hero.strafeProt on top of this.
 
 // ── archery timing (seconds) — a readable draw so the tell lands early, then a quick loose ─
 const DRAW_DUR = 0.85; // raise + pull to full draw (the tell)
@@ -250,9 +262,12 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, heroDodging: boo
     // COVER first (a wall between archer and hero beats a hero hugging its far side): sample
     // the frame's travel at midpoint + endpoint so a fast shaft can't tunnel a thin trunk.
     const mid = mathx.lerpV(prev, a.pos, 0.5);
-    if (collision.blockedBy(mid, 0.04, solids) or collision.blockedBy(a.pos, 0.04, solids)) {
-        const dir = if (spd > 1e-3) mathx.scaleV(a.vel, 1.0 / spd) else v3(0, 0, 1);
-        a.pos = mathx.subV(if (collision.blockedBy(mid, 0.04, solids)) mid else a.pos, mathx.scaleV(dir, 0.26)); // head embedded, shaft + fletch proud
+    const midBlocked = collision.blockedBy(mid, 0.04, solids);
+    if (midBlocked or collision.blockedBy(a.pos, 0.04, solids)) {
+        // Normalize the CURRENT velocity: `spd` was sampled before homing + gravity touched it, so
+        // using it as the divisor left the embed offset a frame of gravity out of true.
+        const dir = mathx.normV(a.vel);
+        a.pos = mathx.subV(if (midBlocked) mid else a.pos, mathx.scaleV(dir, 0.26)); // head embedded, shaft + fletch proud
         a.stuck = true;
         a.age = 0;
         return;
@@ -273,11 +288,11 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, heroDodging: boo
 pub fn arrowXform(a: *const Arrow) rl.Matrix {
     const spd = mathx.lenV(a.vel);
     const dir = if (spd > 1e-3) mathx.scaleV(a.vel, 1.0 / spd) else v3(0, -1, 0);
-    const yaw = mathx.degrees(std.math.atan2(dir.x, dir.z));
-    const pitch = mathx.degrees(std.math.asin(mathx.clampF(-dir.y, -1, 1))); // +pitch = nose down
     const fade = if (a.stuck) 1.0 - mathx.smoothstep(ARROW_STICK_FADE * 0.5, ARROW_STICK_FADE, a.age) else 1.0;
     const s = mathx.clampF(fade, 0.06, 1.0);
-    return mul(scaleM(s, s, s), mul3(rx(pitch), ry(yaw), tr(a.pos.x, a.pos.y, a.pos.z)));
+    // orientZ is the one place the +Z-along-`dir` yaw/pitch pair is derived (the string, the nocked
+    // shaft and the loosed arrow all ride it) — this used to re-derive the same two angles inline.
+    return mul(scaleM(s, s, s), mul(orientZ(dir), tr(a.pos.x, a.pos.y, a.pos.z)));
 }
 
 // ── animation state ─────────────────────────────────────────────────────────────────────
@@ -427,11 +442,7 @@ pub const Archer = struct {
         var movedDist: f32 = 0; // this frame's walk distance + heading → the shared gait
         var moveYaw: ?f32 = null;
 
-        if (mathx.lenXZ(self.shove) > 0.01) {
-            self.pos.x = mathx.clampF(self.pos.x + self.shove.x * dt, -bounds, bounds);
-            self.pos.z = mathx.clampF(self.pos.z + self.shove.z * dt, -bounds, bounds);
-            self.shove = mathx.scaleV(self.shove, mathx.maxF(0, 1.0 - SHOVE_DECAY * dt));
-        }
+        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt); // the bone-clatter jolt off a blow
 
         const d = mathx.distXZ(self.pos, hero);
         switch (self.state) {
@@ -512,8 +523,11 @@ pub const Archer = struct {
         if (self.state != .loose) self.kick = mathx.approach(self.kick, 0, dt * 4.5);
 
         // Drive the SHARED humanoid gait (the walk/strafe legs come from hero.legChain in pose()).
+        // legChain's geometry is entirely RIG-LOCAL (it divides the measured hip height by the root
+        // matrix's own scale), so the stride phase must be fed a SCALE-CORRECTED distance or a
+        // scale≠1 archer's planted foot skates — the same correction ogre.zig applies.
         const gaitSpeed: f32 = if (movedDist > 0) WALK_SPEED else 0;
-        heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist, gaitSpeed, moveYaw, self.facing);
+        heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, gaitSpeed, moveYaw, self.facing);
         self.pose();
         self.tryHit(blade); // hero's blade AFTER the state machine (like the toad); a kill here
         //   flags justDied for this frame's kill beat, cleared at the top of the next update.
@@ -596,29 +610,38 @@ pub const Archer = struct {
         const m = self.moving * (1.0 - dk);
         const twoPi = std.math.tau;
         const bob = -0.5 * A_BOB * mathx.cosf(2.0 * twoPi * self.phase) * m;
-        const sway = A_SWAY * mathx.sinf(twoPi * self.phase) * m +
-            A_SWAY * self.latB * mathx.cosf(twoPi * self.phase) * m; // weight rides onto the planting foot
+        const latW = @abs(self.latB) * m;
+        // Sway/prot/dip all come from hero.zig so the sidestep reads IDENTICALLY on every humanoid
+        // (AGENTS.md's rule covers the trunk, not just legChain). The dip is not optional: a leg
+        // swung out to sidestep no longer reaches the ground, and the archer had no dip at all, so
+        // its strafing feet hovered on stiff straight legs.
+        const sway = heromod.strafeSway(latW, 0) * mathx.sinf(twoPi * self.phase) * m;
+        const prot = A_PROT * mathx.sinf(twoPi * self.phase) * m * @abs(self.fwdB) +
+            heromod.strafeProt(self.phase, self.latB, m);
+        const dip = heromod.STRAFE_DIP * latW;
 
         var wx: [N]rl.Matrix = undefined;
         const collapse = mathx.lerpF(hipY, 0.22 * H, dk); // pelvis drops on death
         const pitchBody = 20.0 * dk - 26.0 * stunAmt; // topple forward dead / arch back stunned
         // scaleM FIRST → the whole skeleton scales about its pelvis (per-archer size + the shrink
-        // `fs`); the world placement `tr(pos)` stays unscaled. Pelvis HEIGHT must scale too
-        // (`hipY * fs`) — else at scale≠1 the scaled legs hang and feet sink underground (the
-        // documented humanoid gotcha; cf. ogre.zig's pelvY*fs).
+        // `fs`); the world placement `tr(pos)` stays unscaled. But this translate is applied AFTER
+        // the scale, so EVERY term in it is in WORLD units: the whole rig-local pelvis expression
+        // (hip height, bob, dip, the death collapse) and the sway must each be × fs, or at scale≠1
+        // the legs hang and the feet sink (the documented humanoid gotcha; cf. ogre.zig's pelvY*fs).
+        const pelvY = if (dead) collapse else hipY + bob - dip;
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul(rz(10.0 * dk), rx(pitchBody)),
-            mul(tr(sway, (if (dead) collapse else hipY * fs + bob) + sink, 0), ry(facingDeg)),
+            mul3(rz(10.0 * dk), rx(pitchBody), ry(prot)),
+            mul(tr(sway * fs, pelvY * fs + sink, 0), ry(facingDeg)),
             tr(self.pos.x, 0, self.pos.z),
         ));
 
         // Legs: the SHARED walk/strafe (runB = 0 — the archer only walks). When DEAD the crumple
         // in poseUpper owns the legs instead.
         if (!dead) {
-            heromod.legChain(&wx, &self.rest, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, ANKL);
-            heromod.legChain(&wx, &self.rest, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, ANKR);
+            heromod.legChain(&wx, &self.rest, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
+            heromod.legChain(&wx, &self.rest, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, solePatches[1]);
         }
-        self.poseUpper(&wx, dk, stunAmt, dead);
+        self.poseUpper(&wx, dk, stunAmt, dead, prot);
         self.xf = wx;
         self.poseString();
     }
@@ -657,7 +680,10 @@ pub const Archer = struct {
     // Spine, head, the archery arms, and (only when DEAD) the buckling legs (`dk` = death
     // collapse, `stun` = recoil). Alive, the legs come from hero.legChain in pose() — this only
     // lays the archery upper body on top.
-    fn poseUpper(self: *Archer, wx: *[N]rl.Matrix, dk: f32, stun: f32, dead: bool) void {
+    // `prot` = the pelvis' transverse rotation this frame; the spine/chest COUNTER-ROTATE it so the
+    // ribcage stays squared on the target while the hips work under it (an archer above all needs
+    // its aim to survive its own footwork).
+    fn poseUpper(self: *Archer, wx: *[N]rl.Matrix, dk: f32, stun: f32, dead: bool, prot: f32) void {
         const rest = self.rest;
         const at = self.armT;
         const dr = self.drawAmt;
@@ -672,8 +698,8 @@ pub const Archer = struct {
         // Spine: a slight ready-stoop that blades side-on through the pull, leaning back a
         // hair at full draw (the counterweight); curls on death, arches back when stunned.
         const spineX = 4.0 - 3.0 * dr + 22.0 * dk - 20.0 * stun;
-        setLocal(wx, SPINE, rest, mul(rx(spineX * 0.5), rz(wonk * 0.5)));
-        setLocal(wx, CHEST, rest, mul3(rx(spineX * 0.5), ry(-5.0 * reach - 9.0 * pull), rz(-wonk * 0.3)));
+        setLocal(wx, SPINE, rest, mul3(rx(spineX * 0.5), ry(-0.35 * prot), rz(wonk * 0.5)));
+        setLocal(wx, CHEST, rest, mul3(rx(spineX * 0.5), ry(-0.5 * prot - 5.0 * reach - 9.0 * pull), rz(-wonk * 0.3)));
         setLocal(wx, NECK, rest, rx(3.0 + 12.0 * dk - 8.0 * stun));
         // Head: sentry-scans at rest, sights down the shaft as the pull anchors — craned in
         // and CANTED onto the arrow (the archer's cheek-weld); lolls aside as it dies.
@@ -727,8 +753,7 @@ pub const Archer = struct {
 
 // ── a group of archers (perched in the ruins, waking as the hero advances) ────────────────
 const COUNT = 2;
-const Home = struct { x: f32, z: f32, yaw: f32, scale: f32, seed: f32 };
-const homes = [COUNT]Home{
+const homes = [COUNT]foe.Home{
     // Set among the columns/graves off the avenue, flanking the toad knot's ground.
     .{ .x = -16.0, .z = -22.0, .yaw = mathx.radians(60), .scale = 1.0, .seed = 0.2 },
     .{ .x = 17.5, .z = -34.0, .yaw = mathx.radians(210), .scale = 1.04, .seed = 0.7 },
@@ -753,28 +778,20 @@ pub const Line = struct {
     pub fn draw(self: *const Line, scene: ?*gfx.Scene) void {
         for (&self.archers) |*a| {
             if (!a.alive()) continue;
-            if (scene) |sc| sc.setFlash(0.85 * a.flashFrac());
+            if (scene) |sc| sc.setFlash(foe.FLASH_GAIN * a.flashFrac());
             a.draw(&self.model);
         }
         if (scene) |sc| sc.setFlash(0);
     }
+    // The shared Group roll-ups (foe.zig).
     pub fn anyDied(self: *const Line) bool {
-        for (&self.archers) |*a| {
-            if (a.justDied) return true;
-        }
-        return false;
+        return foe.anyDied(&self.archers);
     }
     pub fn totalHits(self: *const Line) u32 {
-        var n: u32 = 0;
-        for (&self.archers) |*a| n += a.hits;
-        return n;
+        return foe.totalHits(&self.archers);
     }
     pub fn aliveCount(self: *const Line) u32 {
-        var n: u32 = 0;
-        for (&self.archers) |*a| {
-            if (a.alive()) n += 1;
-        }
-        return n;
+        return foe.aliveCount(&self.archers);
     }
 };
 

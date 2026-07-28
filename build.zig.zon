@@ -6,7 +6,9 @@
     .minimum_zig_version = "0.14.1",
     .dependencies = .{
         .raylib_zig = .{
-            .url = "git+https://github.com/Not-Nik/raylib-zig#731884848a1c5480ee58f38d5b787c501925cbe2",
+            // raylib-zig moved from Not-Nik/ to its own org; same commit, so the package hash is
+            // unchanged (the old URL only still worked via GitHub's transfer redirect).
+            .url = "git+https://github.com/raylib-zig/raylib-zig#731884848a1c5480ee58f38d5b787c501925cbe2",
             .hash = "raylib_zig-5.6.0-dev-KE8REPE1BQChb1aqFIBZFfA6gyqq8mpQQ3it3g5xSGuJ",
         },
     },

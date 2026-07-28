@@ -34,9 +34,10 @@ const Builder = gfx.Builder;
 //            tell), then a fast SNAP forward — jaws slam, head thrusts — and a short recover.
 //   Nothing parks dead: hops overshoot into a splat, the chomp recoils, idle keeps breathing.
 //
-// Hits: the hero's swept blade capsule is tested against each toad's hurt sphere (one hit
-// per swing, latched). We TRACK the count and nothing more — no flinch, no damage, no death
-// yet (scope: creature + AI). The hit plumbing is here so combat drops straight in later.
+// Hits: the hero's swept blade capsule is tested against each toad's hurt sphere through the
+// SHARED foe.strike (one hit per swing, latched), and combat is fully wired — HP, the two-tier
+// poise/stance stagger, and death into a grace-mote dissipation, plus the toad's own chomp/lunge
+// blows on the hero. See combat.zig for the meters and foe.zig for the shared contract.
 
 // ── matrix shorthand (raylib TRS: mul(a,b) applies a FIRST then b) ──────────────────────
 // The shared helpers from mathx (single source for the "a-first" convention across rigs).
@@ -149,10 +150,6 @@ const SPIT = rgba(176, 190, 150, 140); // pale sickly drool / spit fling
 const BLOOD = rgba(112, 22, 16, 235); // hit spray — dark oxblood, kin to the maw (unlit droplets)
 const MOTE = rgba(252, 198, 92, 170); // death dissipation — grace-gold motes rising off the corpse
 
-// The hero's blade, the SHARED foe standard's plain-data handle (see foe.zig). Re-exported
-// as frogmod.Blade for existing call sites; it IS foe.Blade.
-pub const Blade = foe.Blade;
-
 // ── vitals (LOW poise, per the brief: "frogs have low poise") ──────────────────────────
 const HP_MAX = 46.0;
 const POISE_MAX = 8.0; // BELOW the hero's light poise damage (10): every landed light
@@ -163,7 +160,7 @@ const STANCE_MAX = 26.0; // low — a few flinches cascade into the heavy stagge
 // are handed out when a chomp SNAP / lunge SLAM connects). The lunge is a heavy body-blow.
 const CHOMP_HIT = combat.Hit{ .dmg = 13, .poise = 15 }; // eased down from 16 (owner: lower dmg a bit)
 const LUNGE_HIT = combat.Hit{ .dmg = 19, .poise = 26, .stance = 8 }; // eased down from 24 — still a real slam
-const HERO_REACH = 0.55; // hero footprint added to the toad's attack range for the hit test
+const HERO_REACH = foe.HERO_REACH; // hero footprint added to the toad's attack range for the hit test
 // The lunge is a body-SLAM that crashes down in FRONT of the toad: only a hero inside the
 // frontal impact zone is crushed (one beside or behind is clear), matching the forward dust
 // burst. Reach is from the seat; the arc gate is what makes it front-only.
@@ -186,18 +183,9 @@ fn classify(dist: f32, lungeReady: bool, chompReady: bool) Choice {
     return .hop;
 }
 
-// One telegraph particle: integrates ballistically, shrinks/grows r0→r1, fades out as its
-// life counts down. Drawn unlit so the dust/glow POPS over the dark hide (like the debug wires).
-const Particle = struct {
-    p: rl.Vector3 = mathx.zero3,
-    v: rl.Vector3 = mathx.zero3,
-    life: f32 = 0, // seconds remaining (0 = dead slot)
-    max: f32 = 1, // life at spawn (for the fade fraction)
-    r0: f32 = 0.05, // radius at spawn
-    r1: f32 = 0.05, // radius at death (r1>r0 = an expanding puff; r1<r0 = a shrinking spark)
-    col: rl.Color = DUST,
-    grav: f32 = 0, // downward accel (world/s²); negative floats up
-};
+// One telegraph particle — the SHARED shape + integrator + draw (foe.zig); only the AUTHORING of
+// the bursts below (dust / charge / drool / blood / motes) is the toad's own.
+const Particle = foe.Particle;
 
 // The shared toad meshes + material (built once, like env.models); every Frog draws these
 // with its own per-part matrices. Meshes live the whole program (leak at exit — fine).
@@ -275,7 +263,10 @@ pub const Frog = struct {
 
     pub fn spawn(home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Frog {
         var f = Frog{ .pos = home, .home = home, .facing = faceYaw, .scale = scale * SCALE, .seed = seed };
-        f.fxRng = mathx.Rng.init(@as(u64, @intFromFloat(seed * 104729.0)) +% 1); // per-toad scatter, deterministic
+        // @abs first: @intFromFloat into an UNSIGNED type is illegal behaviour for a negative
+        // input, and `spawn` is public with no documented seed sign (a -0.5 wabi-sabi seed would
+        // panic in Debug/ReleaseSafe). Every current seed is >= 0, so the field is unchanged.
+        f.fxRng = mathx.Rng.init(@as(u64, @intFromFloat(@abs(seed) * 104729.0)) +% 1); // per-toad scatter, deterministic
         f.idleWait = 1.0 + seed * 2.0;
         f.resolveIdle();
         f.pose();
@@ -394,7 +385,7 @@ pub const Frog = struct {
     // ── per-frame update ──────────────────────────────────────────────────────────────
     // Advance AI + animation for one frame; `hero` drives senses, `blade` the hero's swing.
     // Returns the blow this toad landed on the HERO this frame (null if none / it's a corpse).
-    pub fn update(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32, blade: Blade) ?combat.Hit {
+    pub fn update(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         if (self.gone) {
             self.updateFx(dt); // a removed corpse's last motes keep drifting out
             return null;
@@ -408,13 +399,7 @@ pub const Frog = struct {
         self.flash = mathx.maxF(0, self.flash - dt);
         self.t += dt;
         self.updateFx(dt); // advance live particles (bursts from any state keep animating)
-        // Hit shove: a landed blow carries the toad a jolt of ground off the blade —
-        // decays fast (a knock, not a slide); collision cleans up any overlap it causes.
-        if (mathx.lenXZ(self.shove) > 0.01) {
-            self.pos.x = mathx.clampF(self.pos.x + self.shove.x * dt, -bounds, bounds);
-            self.pos.z = mathx.clampF(self.pos.z + self.shove.z * dt, -bounds, bounds);
-            self.shove = mathx.scaleV(self.shove, mathx.maxF(0, 1.0 - SHOVE_DECAY * dt));
-        }
+        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt); // the knockback off a landed blow
 
         switch (self.state) {
             .idle => self.updateIdle(dt, hero, bounds),
@@ -721,7 +706,7 @@ pub const Frog = struct {
     }
 
     // ── the hero's blade lands on the toad (latched one-per-swing) ───────────────────────
-    fn tryHit(self: *Frog, blade: Blade) void {
+    fn tryHit(self: *Frog, blade: foe.Blade) void {
         if (self.state == .dead) return; // no hitting a corpse
         // The SHARED strike behaviour (foe.zig): swept hurt-sphere test + one-hit latch +
         // damage; returns the contact + sweep dir + reaction. The toad lays ITS FX on top.
@@ -792,21 +777,12 @@ pub const Frog = struct {
         const d = self.fdir();
         return v3(self.pos.x + d.x * 0.52 * self.scale, 0.32 * self.scale + self.lift, self.pos.z + d.z * 0.52 * self.scale);
     }
-    // Push one particle into the ring buffer (overwriting the oldest slot).
+    // The pool plumbing is the shared one (foe.zig) — these just name the toad's own ring.
     fn emit(self: *Frog, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        self.fx[self.fxHead] = .{ .p = p, .v = vel, .life = life, .max = life, .r0 = r0, .r1 = r1, .col = col, .grav = grav };
-        self.fxHead = (self.fxHead + 1) % FX_MAX;
+        foe.emitParticle(&self.fx, &self.fxHead, p, vel, life, r0, r1, col, grav);
     }
     fn updateFx(self: *Frog, dt: f32) void {
-        for (&self.fx) |*q| {
-            if (q.life <= 0) continue;
-            q.life -= dt;
-            q.p.x += q.v.x * dt;
-            q.p.y += q.v.y * dt;
-            q.p.z += q.v.z * dt;
-            q.v.y -= q.grav * dt;
-            if (q.p.y < 0) q.p.y = 0; // dust settles on the ground, doesn't sink through it
-        }
+        foe.tickParticles(&self.fx, dt);
     }
     // A radial fan of dust from `c` (the lunge slam / a hop's smaller landing puff). `spd`
     // scales the outward throw, `big` the puff radius — both ×scale for a heavy toad.
@@ -860,15 +836,7 @@ pub const Frog = struct {
         }
     }
     pub fn drawFx(self: *const Frog) void {
-        for (&self.fx) |*q| {
-            if (q.life <= 0) continue;
-            const frac = mathx.clampF(q.life / q.max, 0, 1);
-            const rad = mathx.lerpF(q.r1, q.r0, frac); // r0 at spawn (frac 1) → r1 at death (frac 0)
-            const a = mathx.u8f(@as(f32, @floatFromInt(q.col.a)) * frac);
-            // Low-poly: these are sub-10 cm specks, so a coarse sphere reads the same as raylib's
-            // default 16×16 one at ~1/5 the triangles — real savings when a whole knot bursts.
-            rl.drawSphereEx(q.p, rad, 6, 8, mathx.withAlpha(q.col, a));
-        }
+        foe.drawParticles(&self.fx);
     }
 
     // ── pose: build the 9 world matrices from the resolved channels ─────────────────────
@@ -921,8 +889,7 @@ const COUNT = 4;
 // Homes sit ≥12 m off the x≈0 avenue so a straight run down the path doesn't wake them (and
 // so the hero-gait --shot stays clean) — they guard the flanks and the graveyard, waking
 // when the player veers into the ruins. Seeds/scales vary so the knot never moves as one.
-const Home = struct { x: f32, z: f32, yaw: f32, scale: f32, seed: f32 };
-const homes = [COUNT]Home{
+const homes = [COUNT]foe.Home{
     .{ .x = 13.5, .z = -14.0, .yaw = mathx.radians(215), .scale = 1.08, .seed = 0.0 },
     .{ .x = -13.0, .z = -20.0, .yaw = mathx.radians(70), .scale = 0.94, .seed = 0.37 },
     .{ .x = 14.5, .z = -8.0, .yaw = mathx.radians(250), .scale = 1.0, .seed = 0.61 },
@@ -950,7 +917,7 @@ pub const Knot = struct {
     }
     // Advance the whole knot; returns the STRONGEST blow any toad landed on the hero this
     // frame (null if none), for game.zig to apply to the hero's vitals.
-    pub fn update(self: *Knot, dt: f32, hero: rl.Vector3, bounds: f32, blade: Blade) ?combat.Hit {
+    pub fn update(self: *Knot, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         var worst: ?combat.Hit = null;
         for (&self.frogs) |*f| {
             if (f.update(dt, hero, bounds, blade)) |h| {
@@ -965,7 +932,7 @@ pub const Knot = struct {
     pub fn draw(self: *const Knot, scene: ?*gfx.Scene) void {
         for (&self.frogs) |*f| {
             if (!f.alive()) continue;
-            if (scene) |sc| sc.setFlash(0.85 * f.flashFrac());
+            if (scene) |sc| sc.setFlash(foe.FLASH_GAIN * f.flashFrac());
             f.draw(&self.model);
         }
         if (scene) |sc| sc.setFlash(0);
@@ -976,26 +943,15 @@ pub const Knot = struct {
     pub fn drawFx(self: *const Knot) void {
         for (&self.frogs) |*f| f.drawFx();
     }
-    // Did any toad die THIS frame? (The kill beat — rumble, shake — keys off this, since
-    // aliveCount only drops later, when the dissipation finishes.)
+    // The shared Group roll-ups (foe.zig) — identical for every foe, so they live there.
     pub fn anyDied(self: *const Knot) bool {
-        for (&self.frogs) |*f| {
-            if (f.justDied) return true;
-        }
-        return false;
+        return foe.anyDied(&self.frogs);
     }
     pub fn totalHits(self: *const Knot) u32 {
-        var n: u32 = 0;
-        for (&self.frogs) |*f| n += f.hits;
-        return n;
+        return foe.totalHits(&self.frogs);
     }
-    // How many toads are still standing (for a debug read-out / future clear-the-knot logic).
     pub fn aliveCount(self: *const Knot) u32 {
-        var n: u32 = 0;
-        for (&self.frogs) |*f| {
-            if (f.alive()) n += 1;
-        }
-        return n;
+        return foe.aliveCount(&self.frogs);
     }
 };
 

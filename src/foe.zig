@@ -31,10 +31,118 @@ const combat = @import("combat.zig");
 // A `Group` (Knot of toads, Line of archers) is a fixed array of Foe + the shared roll-ups
 // (anyDied / totalHits / aliveCount) the beats read; game.zig iterates the groups generically.
 
+// ── shared foe tuning ── every one of these was three identical copies (frog / archer / ogre)
+// before it moved here. Cross-cutting values live in ONE place so a retune can't reach two foes
+// and miss the third.
+//
 // Blood/hit-flash duration (seconds): how long a struck foe pops on the shared gfx `hitFlash`
 // uniform. Cross-cutting (every foe drives the same uniform), so it lives here — one source for
-// the frog / archer / ogre `flashFrac()` instead of three identical local copies.
+// the frog / archer / ogre `flashFrac()`.
 pub const FLASH_DUR: f32 = 0.20;
+// …and how hard that flash drives the uniform, applied by every Group's draw().
+pub const FLASH_GAIN: f32 = 0.85;
+// The HERO's own footprint, added to a foe's attack reach on the hit test — the counterpart of
+// game.HERO_R (collision). Every foe's attack shape widens by the same body, so it is one number.
+pub const HERO_REACH: f32 = 0.55;
+
+// One instance's spawn record in a Group's `homes` table (position, heading, size + FX seed).
+// Identical for every foe, so the shape lives here rather than being re-declared per file.
+pub const Home = struct { x: f32, z: f32, yaw: f32, scale: f32, seed: f32 };
+
+// Carry a landed blow's KNOCKBACK for one frame and bleed it off: shove the footprint along
+// `shove` (clamped to the arena), then decay `shove` by `decay`/sec. A jolt off the blade, not a
+// slide — collision cleans up any overlap it causes. Shared: the frog, archer and ogre all had a
+// byte-identical copy of this block at the top of their update().
+pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32, dt: f32) void {
+    if (mathx.lenXZ(shove.*) <= 0.01) return;
+    pos.x = mathx.clampF(pos.x + shove.x * dt, -bounds, bounds);
+    pos.z = mathx.clampF(pos.z + shove.z * dt, -bounds, bounds);
+    shove.* = mathx.scaleV(shove.*, mathx.maxF(0, 1.0 - decay * dt));
+}
+
+// ── TELEGRAPH FX: the shared particle pool ──────────────────────────────────────────────
+// The unlit specks that SELL a foe's tells — dust dug up under a coil, an amber charge glow, a
+// blood burst at the wound, the grace-gold motes a corpse dissipates into. The frog and the ogre
+// each carried a byte-identical copy of the struct + these three routines; the SHAPE of a
+// particle and how it integrates/draws is cross-cutting, so it lives here. What stays per-foe is
+// the AUTHORING (which bursts fire, how fast, how big) — that is the creature's character.
+//
+// Each owner keeps its own fixed-size ring + head + emit-rate carry + seeded Rng, so pools stay
+// independent and deterministic; these routines just operate on them.
+
+/// One telegraph particle: integrates ballistically, lerps r0→r1, fades out as its life runs down.
+pub const Particle = struct {
+    p: rl.Vector3 = mathx.zero3,
+    v: rl.Vector3 = mathx.zero3,
+    life: f32 = 0, // seconds remaining (0 = dead slot)
+    max: f32 = 1, // life at spawn (for the fade fraction)
+    r0: f32 = 0.05, // radius at spawn
+    r1: f32 = 0.05, // radius at death (r1>r0 = an expanding puff; r1<r0 = a shrinking spark)
+    col: rl.Color = mathx.rgba(255, 255, 255, 255),
+    grav: f32 = 0, // downward accel (world/s²); negative floats up
+};
+
+/// Push one particle into the ring, overwriting the oldest slot and advancing `head`.
+pub fn emitParticle(pool: []Particle, head: *usize, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
+    pool[head.*] = .{ .p = p, .v = vel, .life = life, .max = life, .r0 = r0, .r1 = r1, .col = col, .grav = grav };
+    head.* = (head.* + 1) % pool.len;
+}
+
+/// Integrate every live particle a frame. Dust settles ON the ground rather than sinking through.
+pub fn tickParticles(pool: []Particle, dt: f32) void {
+    for (pool) |*q| {
+        if (q.life <= 0) continue;
+        q.life -= dt;
+        q.p.x += q.v.x * dt;
+        q.p.y += q.v.y * dt;
+        q.p.z += q.v.z * dt;
+        q.v.y -= q.grav * dt;
+        if (q.p.y < 0) q.p.y = 0;
+    }
+}
+
+/// Draw the live particles as unlit spheres — call INSIDE the lit 3D pass, after the opaque
+/// geometry (never the shadow depth pass), so the dust/glow reads OVER the foe.
+/// Low-poly on purpose: these are sub-10 cm specks, so a coarse sphere reads the same as raylib's
+/// default 16×16 one at ~1/5 the triangles — real savings when a whole knot bursts at once.
+pub fn drawParticles(pool: []const Particle) void {
+    for (pool) |*q| {
+        if (q.life <= 0) continue;
+        const frac = mathx.clampF(q.life / q.max, 0, 1);
+        const rad = mathx.lerpF(q.r1, q.r0, frac); // r0 at spawn (frac 1) → r1 at death (frac 0)
+        const a = mathx.u8f(@as(f32, @floatFromInt(q.col.a)) * frac);
+        rl.drawSphereEx(q.p, rad, 6, 8, mathx.withAlpha(q.col, a));
+    }
+}
+
+// ── the Group roll-ups (generic over ANY foe array — the shared contract is all they touch) ──
+// Every Group (Knot / Line / Grief) exposes these three; the bodies were identical in all three,
+// so they live here once and each Group's method is a one-line delegate.
+
+/// Did any foe die THIS frame? The kill beat keys off this, since aliveCount only drops later
+/// (when the dissipation finishes).
+pub fn anyDied(foes: anytype) bool {
+    for (foes) |*f| {
+        if (f.justDied) return true;
+    }
+    return false;
+}
+
+/// Total blows landed across the group (drives the combat beats + the debug read-out).
+pub fn totalHits(foes: anytype) u32 {
+    var n: u32 = 0;
+    for (foes) |*f| n += f.hits;
+    return n;
+}
+
+/// How many foes are still standing.
+pub fn aliveCount(foes: anytype) u32 {
+    var n: u32 = 0;
+    for (foes) |*f| {
+        if (f.alive()) n += 1;
+    }
+    return n;
+}
 
 // The hero's blade this frame as plain data — keeps every foe decoupled from the hero rig.
 // Endpoints are guard→tip; the *0 pair is LAST frame's, for a swept (tunnel-proof) test.

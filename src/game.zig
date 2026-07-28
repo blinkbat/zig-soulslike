@@ -8,6 +8,7 @@ const cameramod = @import("camera.zig");
 const hud_ = @import("hud.zig");
 const menumod = @import("menu.zig");
 const frogmod = @import("frog.zig");
+const foemod = @import("foe.zig"); // THE FOE STANDARD — the shared Blade/strike contract
 const collision = @import("collision.zig");
 const rumblemod = @import("rumble.zig");
 const archermod = @import("archer.zig");
@@ -25,6 +26,9 @@ const WALK_SPEED = heromod.WALK_SPEED; // keyboard walk / gentle left-stick tilt
 const RUN_SPEED = heromod.RUN_SPEED; // full left-stick tilt (light tilt scales down toward walk)
 const SPRINT_SPEED = heromod.SPRINT_SPEED; // hold Circle/B (or Shift): dash/sprint
 const TURN_RATE = 12.0; // rad/sec the hero yaws toward its heading (souls turn briskly)
+const STRAFE_SPEED = 0.85; // LOCKED-ON sideways travel, as a fraction of forward (ER is anisotropic
+//   too). Deliberately mild — the owner wants the cadence calmed WITHOUT slowing him down much —
+//   and it is the last 15% that lands the sidestep's step rate on the forward walk's. See moveHero.
 const STICK_DEADZONE = 0.16; // left-stick move deadzone
 const LOOK_DEADZONE = 0.12; // right-stick look deadzone
 const PAD_LOOK_RATE = 2.7; // rad/sec camera orbit at full right-stick deflection
@@ -171,18 +175,29 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
     var moved: f32 = 0;
     var speed: f32 = 0;
     var moveYaw: ?f32 = null;
+    // ER exception below: a hold-B SPRINT while locked faces TRAVEL, so it is not a strafe at all.
+    const sprinting = isMoving and mv.speed > RUN_SPEED + 0.01;
     if (isMoving) {
         dir = v3(dir.x / l, 0, dir.z / l);
         speed = mv.speed;
-        moved = speed * dt;
         moveYaw = mathx.headingXZ(dir);
+        // Locked-on ANISOTROPY (ER does this too): sideways travel runs a little slower than
+        // forward. It is not an input gate — the stick still maps straight to speed the same frame,
+        // it is the DIRECTION that costs. This is also what lets the sidestep keep a walking
+        // CADENCE: step rate is speed / hero.STRAFE_CYCLE and the cycle is capped by real hip ROM,
+        // so pure lateral travel at full forward speed needs ~20% more steps per second than a
+        // walk — geometry, not tuning, and unfixable in the animation without skating the foot.
+        if (faceYaw != null and !sprinting) {
+            const latAmt = @abs(mathx.sinf(mathx.wrapPi(moveYaw.? - g.hero.facing)));
+            speed *= mathx.lerpF(1.0, STRAFE_SPEED, latAmt);
+        }
+        moved = speed * dt;
         g.hero.pos.x = mathx.clampF(g.hero.pos.x + dir.x * moved, -PLAY_HALF, PLAY_HALF);
         g.hero.pos.z = mathx.clampF(g.hero.pos.z + dir.z * moved, -PLAY_HALF, PLAY_HALF);
     }
     // Facing: toward the LOCKED foe (hero strafes/backpedals facing it, ER-style), else
     // toward travel. ER exception: a hold-B SPRINT while locked faces travel — no sideways
     // sprint exists.
-    const sprinting = isMoving and mv.speed > RUN_SPEED + 0.01;
     if (faceYaw != null and !sprinting) {
         g.hero.facing = mathx.approachAngle(g.hero.facing, faceYaw.?, TURN_RATE * dt);
     } else if (isMoving) {
@@ -212,9 +227,10 @@ fn rollDir(g: *Game, mv: Move) rl.Vector3 {
 // depth draws are immaterial.
 fn drawCasters(g: *Game) void {
     g.env.drawProps();
-    // Combat flash rides the scene shader's per-actor hitFlash uniform (hero reddens on a
-    // suffered blow, struck toads on a landed one). Inert during the depth pass — the
-    // uniform lives on the scene shader, not the swapped-in depth shader.
+    // Combat flash rides the scene shader's per-actor hitFlash uniform: the hero reddens on a
+    // suffered blow, and every struck FOE on a landed one (each Group's draw sets it per instance
+    // from foe.FLASH_GAIN). Inert during the depth pass — the uniform lives on the scene shader,
+    // not the swapped-in depth shader.
     g.scene.setFlash(0.6 * g.hero.hurtFlash);
     g.hero.draw();
     g.scene.setFlash(0);
@@ -424,9 +440,13 @@ fn hud(g: *Game) void {
         hud_.text(st, 16, 116, 15, rgba(170, 190, 150, 255));
         const h = &g.hero;
         var cbuf: [200]u8 = undefined;
-        const ct = std.fmt.bufPrintZ(&cbuf, "hero  hp {d:.0}/{d:.0}  poise {d:.0}/{d:.0}  stance {d:.0}/{d:.0}   toads {d} left  hits {d}", .{
+        // Foe counts span EVERY group (the combat beats already do) — a toads-only "hits" read
+        // silently ignored every blow landed on a skeleton or the giant.
+        const foesLeft = g.warren.aliveCount() + g.line.aliveCount() + g.grief.aliveCount();
+        const foeHits = g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits();
+        const ct = std.fmt.bufPrintZ(&cbuf, "hero  hp {d:.0}/{d:.0}  poise {d:.0}/{d:.0}  stance {d:.0}/{d:.0}   foes {d} left  hits {d}", .{
             h.vit.hp, h.vit.hpMax, h.vit.poise, h.vit.poiseMax, h.vit.stance, h.vit.stanceMax,
-            g.warren.aliveCount(), g.warren.totalHits(),
+            foesLeft, foeHits,
         }) catch "";
         hud_.text(ct, 16, 136, 15, rgba(150, 180, 190, 255));
     }
@@ -440,11 +460,18 @@ fn gaitLabel(moving: f32, speed: f32) [:0]const u8 {
 }
 
 pub fn run(shot: bool) void {
-    rl.setConfigFlags(.{ .msaa_4x_hint = true, .window_hidden = shot, .window_resizable = true });
+    // VSYNC is why fullscreen was tearing. setTargetFPS is a CPU-side frame LIMITER — it paces how
+    // often we draw but never tells the driver to swap during vblank, so the swap lands mid-scan and
+    // the seam shows. Windowed mode hid it because Windows' compositor effectively syncs for us;
+    // exclusive fullscreen bypasses the compositor and the tear appears. vsync_hint asks GLFW for
+    // swap interval 1, which is the actual fix. It must be set BEFORE initWindow to take effect.
+    rl.setConfigFlags(.{ .msaa_4x_hint = true, .vsync_hint = true, .window_hidden = shot, .window_resizable = true });
     rl.initWindow(SCREEN_W, SCREEN_H, "zig-soulslike");
     defer rl.closeWindow();
     rl.setExitKey(.null);
-    rl.setTargetFPS(60);
+    // No setTargetFPS alongside vsync: the two limiters fight on any display that isn't 60 Hz (vsync
+    // paces to the refresh, then raylib's own busy-wait throttles on top, which reads as judder).
+    // Everything is dt-driven, so presenting at the panel's rate is simply smoother.
 
     hud_.init();
     defer hud_.deinit();
@@ -638,7 +665,10 @@ pub fn run(shot: bool) void {
         // sides, and a connecting chomp/lunge/arrow returns its blow to the hero. Resolve all,
         // settle collisions, then aim the camera at the SETTLED hero position.
         const hitsBefore = g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits();
-        if (g.warren.update(dt, g.hero.pos, PLAY_HALF, heroBlade(g))) |h| {
+        // ONE snapshot of the blade for every group this frame — the hero's pose is already
+        // resolved above, so re-deriving it per group only invited the three to disagree.
+        const bladeNow = heroBlade(g);
+        if (g.warren.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |h| {
             g.hero.takeHit(h);
             // The lunge carries stance damage; the chomp doesn't — split the felt blow by that.
             const slammed = h.stance > 0;
@@ -648,7 +678,7 @@ pub fn run(shot: bool) void {
         // The lone ogre hunts, slams and side-swipes. The overhead crush is the full heavy beat; the
         // faster swipe hurts less and is FELT less, so the two read apart through the pad and camera
         // as well as on screen (split off the blow's own stance damage, like the toad's above).
-        if (g.grief.update(dt, g.hero.pos, PLAY_HALF, heroBlade(g))) |h| {
+        if (g.grief.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |h| {
             g.hero.takeHit(h);
             const crushed = h.stance >= ogremod.SLAM_HIT.stance;
             g.rumble.play(if (crushed) rumblemod.hurt_heavy else rumblemod.hurt);
@@ -657,7 +687,6 @@ pub fn run(shot: bool) void {
         // Blade lands on the skeletons; then they act — kite and loose from the nock at the
         // hero's centre of mass (arrow homing + arc finish the job). A blade hit mid-draw
         // interrupts the shot (enterStun clears the draw).
-        const bladeNow = heroBlade(g);
         for (&g.line.archers) |*a| {
             if (a.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) {
                 spawnArrow(g, a.nockWorld(), v3(g.hero.pos.x, HERO_CENTER_Y, g.hero.pos.z));
@@ -723,8 +752,9 @@ pub fn run(shot: bool) void {
 }
 
 // The hero's blade this frame as plain data for the foe hit test (endpoints guard→tip, plus
-// last frame's for the swept test; active only inside the strike window).
-fn heroBlade(g: *const Game) frogmod.Blade {
+// last frame's for the swept test; active only inside the strike window). Typed on the FOE
+// STANDARD directly (foe.Blade), not on frog.zig's re-export — the blade is every foe's business.
+fn heroBlade(g: *const Game) foemod.Blade {
     return .{
         .active = g.hero.hitActive(),
         .r = heromod.BLADE_R,
@@ -959,6 +989,10 @@ fn drawLockDot(g: *Game) void {
 }
 
 // ── headless capture ───────────────────────────────────────────────────────────────
+// The harness steps on a FIXED timestep so every capture is reproducible frame-for-frame; the
+// per-stage frame counts in runShots are all quoted against it, so it is one constant, not six
+// scattered `1.0 / 60.0` literals.
+const SHOT_DT: f32 = 1.0 / 60.0;
 // Walk the hero along a FIXED world direction (−Z, into the ruins) and shoot it from
 // several true camera angles + stride phases into shots/ (window hidden). Movement is
 // world-fixed here (not camera-relative like the live loop) so we can orbit the camera to
@@ -1003,17 +1037,18 @@ fn advanceAttack(g: *Game, dt: f32, frames: i32) void {
     }
 }
 
-// Advance one toad `frames` steps against a sensed hero position (kept FAR along the action's
-// heading so its AI holds the forced state and the coil/gape re-aim doesn't fight the
-// framing), no blade — for the frog shots.
-fn stepFrog(f: *frogmod.Frog, frames: i32, hero: rl.Vector3) void {
-    const dt: f32 = 1.0 / 60.0;
+// Advance ANY foe `frames` steps against a sensed hero position (kept FAR along the action's
+// heading so its AI holds the forced state and the coil/gape/head-track re-aim doesn't fight the
+// framing), no blade. Generic over the foe contract — one loop for toads, archers and the ogre.
+fn stepFoe(f: anytype, frames: i32, hero: rl.Vector3) void {
     var k: i32 = 0;
-    while (k < frames) : (k += 1) _ = f.update(dt, hero, PLAY_HALF, .{});
+    while (k < frames) : (k += 1) _ = f.update(SHOT_DT, hero, PLAY_HALF, .{});
 }
 
-// Frame a toad and shoot it.
-fn shootFrog(g: *Game, f: *frogmod.Frog, name: [:0]const u8, yaw: f32, pitch: f32, dist: f32) void {
+// Frame ANY foe on its body-mass centre and shoot it. Generic for the same reason as stepFoe —
+// the toad / archer / ogre versions of this were byte-identical bar the parameter type. (The ogre
+// just wants a bigger `dist`: it's ~2x the hero.)
+fn shootFoe(g: *Game, f: anytype, name: [:0]const u8, yaw: f32, pitch: f32, dist: f32) void {
     g.rig.yaw = mathx.radians(yaw);
     g.rig.pitch = pitch;
     g.rig.dist = dist;
@@ -1021,35 +1056,9 @@ fn shootFrog(g: *Game, f: *frogmod.Frog, name: [:0]const u8, yaw: f32, pitch: f3
     shoot(g, name);
 }
 
-// Frame a skeletal archer and shoot it (the archer counterpart of shootFrog).
-fn shootArcher(g: *Game, a: *archermod.Archer, name: [:0]const u8, yaw: f32, pitch: f32, dist: f32) void {
-    g.rig.yaw = mathx.radians(yaw);
-    g.rig.pitch = pitch;
-    g.rig.dist = dist;
-    g.rig.follow(a.centerWorld());
-    shoot(g, name);
-}
-
-// Advance a lone ogre `frames` steps against a sensed hero position (kept where the caller
-// wants so its AI holds the forced state), no blade — for the ogre --shot poses.
-fn stepOgre(o: *ogremod.Ogre, frames: i32, hero: rl.Vector3) void {
-    const dt: f32 = 1.0 / 60.0;
-    var k: i32 = 0;
-    while (k < frames) : (k += 1) _ = o.update(dt, hero, PLAY_HALF, .{});
-}
-
-// Frame the ogre and shoot it (pulled back + up: it's ~2x the hero, so it needs the distance).
-fn shootOgre(g: *Game, o: *ogremod.Ogre, name: [:0]const u8, yaw: f32, pitch: f32, dist: f32) void {
-    g.rig.yaw = mathx.radians(yaw);
-    g.rig.pitch = pitch;
-    g.rig.dist = dist;
-    g.rig.follow(o.centerWorld());
-    shoot(g, name);
-}
-
 fn runShots(g: *Game) void {
     std.fs.cwd().makePath("shots") catch {};
-    const dt: f32 = 1.0 / 60.0;
+    const dt: f32 = SHOT_DT;
     // Shots 1-9 judge geometry/animation — run CLEAN of the default filter stack; the filter
     // shots below set their own explicit stacks.
     g.retro.allOff();
@@ -1082,13 +1091,19 @@ fn runShots(g: *Game) void {
     // sidestep from the front and the backpedal in side profile. Each capture SEEKS its
     // stride phase (a fixed frame count lands on dead phases).
     const lockedStages = [_]struct { name: [:0]const u8, yaw: f32, pitch: f32, dist: f32, phTgt: f32, dx: f32, dz: f32 }{
-        // The strafe cycle, ONE SHOT PER BEAT (strafing his right; windows: lead leg
-        // steps [0,.22]/[.5,.72], trail leg [.25,.47]/[.75,.97] — one leg at a time):
-        .{ .name = "shots/38a_strafe_stepout.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.11, .dx = 1, .dz = 0 }, // lead leg mid out-step, its knee up, trail PLANTED
-        .{ .name = "shots/38b_strafe_apart.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.235, .dx = 1, .dz = 0 }, // dwell: planted APART
-        .{ .name = "shots/38c_strafe_crossing.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.36, .dx = 1, .dz = 0 }, // trail leg mid CROSS, its knee up, lead PLANTED
-        .{ .name = "shots/38d_strafe_crossed.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.48, .dx = 1, .dz = 0 }, // dwell: trail planted ACROSS the lead — the X
-        .{ .name = "shots/38e_strafe_uncross.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.86, .dx = 1, .dz = 0 }, // trail leg mid UNCROSS back to neutral
+        // The strafe cycle, ONE SHOT PER BEAT of the grapevine (strafing his RIGHT, so the LEFT
+        // leg is the one that crosses). Each leg plants at its own phase 0 — the left at ph 0, the
+        // right at ph 0.5 — and stays down for hero.STRAFE_STANCE of the cycle, so the beats are:
+        //   ph .50  right foot lands WIDE      ph .81  left leg airborne, crossing IN FRONT
+        //   ph .02  left foot lands ACROSS     ph .31  right leg airborne, passing BEHIND
+        // Retarget these together with STRAFE_STANCE — they are that constant's beats, not free knobs.
+        .{ .name = "shots/38a_strafe_stepout.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.50, .dx = 1, .dz = 0 }, // the out-step LANDS: right foot wide, widest straddle
+        .{ .name = "shots/38b_strafe_apart.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.57, .dx = 1, .dz = 0 }, // double support, planted APART, weight transferring
+        .{ .name = "shots/38c_strafe_crossing.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.81, .dx = 1, .dz = 0 }, // LEFT leg airborne mid-CROSS: hip flexed, knee up, passing in FRONT
+        .{ .name = "shots/38d_strafe_crossed.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.02, .dx = 1, .dz = 0 }, // CROSSED: left foot planted PAST the right — the X
+        .{ .name = "shots/38e_strafe_uncross.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.31, .dx = 1, .dz = 0 }, // the UNCROSS: right leg airborne, passing BEHIND the crossed leg
+        .{ .name = "shots/38f_strafe_crossed_3q.png", .yaw = 40, .pitch = 0.13, .dist = 4.2, .phTgt = 0.02, .dx = 1, .dz = 0 }, // the X again from three-quarters — the cross must read off-axis too
+        .{ .name = "shots/38g_strafe_crossing_3q.png", .yaw = 40, .pitch = 0.13, .dist = 4.2, .phTgt = 0.81, .dx = 1, .dz = 0 }, // …and the front-pass, where a behind-pass would look identical head-on
         .{ .name = "shots/39a_backpedal_side.png", .yaw = 90, .pitch = 0.10, .dist = 4.0, .phTgt = 0.05, .dx = 0, .dz = 1 }, // backpedal: the toe-reach plant
         .{ .name = "shots/39b_backpedal_side.png", .yaw = 90, .pitch = 0.10, .dist = 4.0, .phTgt = 0.55, .dx = 0, .dz = 1 }, // …the counter-step
     };
@@ -1192,49 +1207,48 @@ fn runShots(g: *Game) void {
 
     // ── the gaping toad: model + each state, then a tracked hit landing on it ──────────
     {
-        const dt2: f32 = 1.0 / 60.0;
         const f = &g.warren.frogs[0];
         // Hero stands a couple metres off — a scale reference that also keeps the toad inside
         // the sun's shadow ortho box (which tracks the hero).
         g.hero.pos = mathx.ground(2.0, 0.9);
         g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z); // face the toad at origin
-        g.hero.update(dt2, 0, 0, null);
+        g.hero.update(dt, 0, 0, null);
         g.hero.pose();
 
         const behind = mathx.ground(0, -60); // "hero" down the hop heading (−Z): coil re-aim ≈ heading
         const front = mathx.ground(0, 60); // "hero" out front (+Z): idle/gape keep facing the camera side
 
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0); // faces +Z; profiled from the side
-        stepFrog(f, 8, front); // settle to idle (far → won't wake)
-        shootFrog(g, f, "shots/20_frog_idle.png", 90, 0.10, 2.7);
-        shootFrog(g, f, "shots/21_frog_scale.png", 35, 0.16, 4.7); // with the hero, for size read
+        stepFoe(f, 8, front); // settle to idle (far → won't wake)
+        shootFoe(g, f, "shots/20_frog_idle.png", 90, 0.10, 2.7);
+        shootFoe(g, f, "shots/21_frog_scale.png", 35, 0.16, 4.7); // with the hero, for size read
 
         // A hop: coil → leap → land (side profile shows the arc + squash/stretch).
         // Hops LAUNCH ALONG THE BODY now (max turn speed), so spawn facing the heading.
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), std.math.pi, 1.0, 0.0);
         f.startHop(mathx.ground(0, -2.2), PLAY_HALF, false);
-        stepFrog(f, 6, behind); // mid coil (loaded, knees stacked)
-        shootFrog(g, f, "shots/22_frog_coil.png", 90, 0.08, 3.0);
-        stepFrog(f, 22, behind); // arc apex (stretched, airborne)
-        shootFrog(g, f, "shots/23_frog_leap.png", 90, 0.05, 3.4);
-        stepFrog(f, 22, behind); // landing splat
-        shootFrog(g, f, "shots/24_frog_land.png", 90, 0.09, 3.1);
+        stepFoe(f, 6, behind); // mid coil (loaded, knees stacked)
+        shootFoe(g, f, "shots/22_frog_coil.png", 90, 0.08, 3.0);
+        stepFoe(f, 22, behind); // arc apex (stretched, airborne)
+        shootFoe(g, f, "shots/23_frog_leap.png", 90, 0.05, 3.4);
+        stepFoe(f, 22, behind); // landing splat
+        shootFoe(g, f, "shots/24_frog_land.png", 90, 0.09, 3.1);
 
         // A lunge into its recovery (the wide-open window).
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), std.math.pi, 1.0, 0.0);
         f.startHop(mathx.ground(0, -3.6), PLAY_HALF, true);
-        stepFrog(f, 26, behind); // deep into the long telegraph coil (loaded, dust flying, throat charged)
-        shootFrog(g, f, "shots/25_frog_lunge_wind.png", 55, 0.09, 3.3);
-        stepFrog(f, 60, behind); // through flight + heavy landing, ~0.3 s into recovery
-        shootFrog(g, f, "shots/26_frog_recover.png", 70, 0.13, 3.2);
+        stepFoe(f, 26, behind); // deep into the long telegraph coil (loaded, dust flying, throat charged)
+        shootFoe(g, f, "shots/25_frog_lunge_wind.png", 55, 0.09, 3.3);
+        stepFoe(f, 60, behind); // through flight + heavy landing, ~0.3 s into recovery
+        shootFoe(g, f, "shots/26_frog_recover.png", 70, 0.13, 3.2);
 
         // A chomp: gape (sac balloons, jaws yawn) → snap. Framed front-quarter to see the maw.
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         f.startChomp();
-        stepFrog(f, 22, front); // near full gape (charge gathering, drool stringing)
-        shootFrog(g, f, "shots/27_frog_gape.png", 162, 0.06, 2.2); // front 3/4, close — peer into the maw
-        stepFrog(f, 6, front); // jaws slamming
-        shootFrog(g, f, "shots/28_frog_snap.png", 162, 0.06, 2.2);
+        stepFoe(f, 22, front); // near full gape (charge gathering, drool stringing)
+        shootFoe(g, f, "shots/27_frog_gape.png", 162, 0.06, 2.2); // front 3/4, close — peer into the maw
+        stepFoe(f, 6, front); // jaws slamming
+        shootFoe(g, f, "shots/28_frog_snap.png", 162, 0.06, 2.2);
 
         // A TRACKED hit: the swept blade capsule meets the hurt sphere and the counter ticks
         // (Debug > Hitboxes draws both; Stats shows "frog hits N"). Detection only, no
@@ -1244,13 +1258,13 @@ fn runShots(g: *Game) void {
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         g.hero.pos = mathx.ground(0, 0.85);
         g.hero.facing = std.math.pi; // face -Z, toward the toad at the origin
-        g.hero.update(dt2, 0, 0, null);
+        g.hero.update(dt, 0, 0, null);
         g.hero.pose();
         g.hero.startAttack(.light);
         var hk: i32 = 0;
         while (hk < 999 and g.hero.attacking) : (hk += 1) {
-            g.hero.updateAttack(dt2, PLAY_HALF, null);
-            _ = f.update(dt2, mathx.ground(0, 60), PLAY_HALF, heroBlade(g));
+            g.hero.updateAttack(dt, PLAY_HALF, null);
+            _ = f.update(dt, mathx.ground(0, 60), PLAY_HALF, heroBlade(g));
             if (hk == 15) { // mid the active window
                 g.rig.yaw = mathx.radians(60);
                 g.rig.pitch = 0.12;
@@ -1264,10 +1278,10 @@ fn runShots(g: *Game) void {
 
         // Lock-on: the glowing white reticle riding a locked foe (ER-style).
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-        stepFrog(f, 8, front);
+        stepFoe(f, 8, front);
         g.hero.pos = mathx.ground(1.7, 3.6);
         g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
-        g.hero.update(1.0 / 60.0, 0, 0, null);
+        g.hero.update(dt, 0, 0, null);
         g.hero.pose();
         g.lock = .{ .kind = .toad, .idx = 0 };
         g.rig.yaw = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
@@ -1286,16 +1300,16 @@ fn runShots(g: *Game) void {
         // FROG — light flinch, heavy stance-break crumple, death collapse.
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         f.debugStagger(false);
-        stepFrog(f, 13, front); // flinch PEAK (reared back and up off the blow)
-        shootFrog(g, f, "shots/31_frog_flinch.png", 70, 0.12, 3.2);
+        stepFoe(f, 13, front); // flinch PEAK (reared back and up off the blow)
+        shootFoe(g, f, "shots/31_frog_flinch.png", 70, 0.12, 3.2);
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         f.debugStagger(true);
-        stepFrog(f, 24, front); // deep in the crumple — splayed, wide open
-        shootFrog(g, f, "shots/32_frog_stagger.png", 55, 0.12, 3.4);
+        stepFoe(f, 24, front); // deep in the crumple — splayed, wide open
+        shootFoe(g, f, "shots/32_frog_stagger.png", 55, 0.12, 3.4);
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         f.debugKill();
-        stepFrog(f, 42, front); // collapsed
-        shootFrog(g, f, "shots/33_frog_death.png", 60, 0.10, 3.4);
+        stepFoe(f, 42, front); // collapsed
+        shootFoe(g, f, "shots/33_frog_death.png", 60, 0.10, 3.4);
 
         // HERO — force each reaction with a synthetic blow, framed from the sword 3/4.
         g.hero.pos = mathx.ground(0, 4);
@@ -1330,7 +1344,7 @@ fn runShots(g: *Game) void {
         g.hero.hurtFlash = 0; // clear any leftover flash from the death shot (harness never ticks it)
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         f.vit.hp = f.vit.hpMax * 0.45;
-        stepFrog(f, 4, front);
+        stepFoe(f, 4, front);
         g.hero.pos = mathx.ground(2.4, 4.2);
         g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
         g.hero.update(dt, 0, 0, null);
@@ -1345,44 +1359,43 @@ fn runShots(g: *Game) void {
 
     // ── the skeletal archer: the bare-bones rig driven to a full-draw aim ──────────────────
     {
-        const dt2: f32 = 1.0 / 60.0;
         g.warren.frogs[0] = frogmod.Frog.spawn(mathx.ground(0, 60), 0, 1.0, 0.0); // shoo the origin toad out of the archer portraits
         const a = &g.line.archers[0];
         a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0); // faces +Z
         // A "hero" in-band ahead (+Z) so the archer decides to shoot and pulls to full draw
         // naturally; stop at the hold (full draw) for the portrait.
         g.hero.pos = mathx.ground(3.0, 2.5); // near enough to keep the shadow ortho box over the archer
-        g.hero.update(dt2, 0, 0, null);
+        g.hero.update(dt, 0, 0, null);
         g.hero.pose();
         var k: i32 = 0;
-        while (k < 140 and a.drawAmt < 0.98) : (k += 1) _ = a.update(dt2, mathx.ground(0, 12), PLAY_HALF, .{});
-        shootArcher(g, a, "shots/40_archer_aim_side.png", 90, 0.06, 4.8); // profile: draw arm folded back, bow arm out
-        shootArcher(g, a, "shots/41_archer_aim_front.png", 6, 0.12, 4.4); // front: skull + ribcage + the aim
-        shootArcher(g, a, "shots/42_archer_aim_3q.png", 48, 0.10, 4.8); // three-quarter
+        while (k < 140 and a.drawAmt < 0.98) : (k += 1) _ = a.update(dt, mathx.ground(0, 12), PLAY_HALF, .{});
+        shootFoe(g, a, "shots/40_archer_aim_side.png", 90, 0.06, 4.8); // profile: draw arm folded back, bow arm out
+        shootFoe(g, a, "shots/41_archer_aim_front.png", 6, 0.12, 4.4); // front: skull + ribcage + the aim
+        shootFoe(g, a, "shots/42_archer_aim_3q.png", 48, 0.10, 4.8); // three-quarter
         // An arrow leaving the bow: loose from the nock toward a target ahead and step it into
         // its arc, parked in the pool so drawArrows renders the oriented, arcing shaft.
         g.arrows[0] = archermod.launchArrow(a.nockWorld(), mathx.ground(0, 15));
         var m: i32 = 0;
-        while (m < 8) : (m += 1) archermod.stepArrow(&g.arrows[0], mathx.ground(0, 15), HERO_CENTER_Y, false, g.env.solids(), dt2);
-        shootArcher(g, a, "shots/44_archer_loose.png", 90, 0.05, 5.2); // side-on: the shaft crosses the frame
+        while (m < 8) : (m += 1) archermod.stepArrow(&g.arrows[0], mathx.ground(0, 15), HERO_CENTER_Y, false, g.env.solids(), dt);
+        shootFoe(g, a, "shots/44_archer_loose.png", 90, 0.05, 5.2); // side-on: the shaft crosses the frame
         g.arrows[0] = .{};
         // A lowered/idle read too, to check the skeleton stands cleanly with the bow at rest.
         a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         var j: i32 = 0;
-        while (j < 20) : (j += 1) _ = a.update(dt2, mathx.ground(0, 60), PLAY_HALF, .{}); // hero far → stays idle
-        shootArcher(g, a, "shots/43_archer_idle_side.png", 90, 0.08, 4.6);
+        while (j < 20) : (j += 1) _ = a.update(dt, mathx.ground(0, 60), PLAY_HALF, .{}); // hero far → stays idle
+        shootFoe(g, a, "shots/43_archer_idle_side.png", 90, 0.08, 4.6);
         // The SHARED walk/strafe (hero.legChain): crowd it so it kites, catch it mid-backpedal.
         a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         var w2: i32 = 0;
-        while (w2 < 60) : (w2 += 1) _ = a.update(dt2, mathx.ground(0, 3), PLAY_HALF, .{}); // hero crowds → back off
-        shootArcher(g, a, "shots/45_archer_kite.png", 90, 0.09, 5.4);
+        while (w2 < 60) : (w2 += 1) _ = a.update(dt, mathx.ground(0, 3), PLAY_HALF, .{}); // hero crowds → back off
+        shootFoe(g, a, "shots/45_archer_kite.png", 90, 0.09, 5.4);
         // Lock-on onto a SKELETON — the reticle rides ANY foe now (FoeRef over both groups).
         a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         var lk: i32 = 0;
-        while (lk < 24) : (lk += 1) _ = a.update(dt2, mathx.ground(0, 60), PLAY_HALF, .{}); // settle to idle
+        while (lk < 24) : (lk += 1) _ = a.update(dt, mathx.ground(0, 60), PLAY_HALF, .{}); // settle to idle
         g.hero.pos = mathx.ground(1.8, 6.0);
         g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
-        g.hero.update(dt2, 0, 0, null);
+        g.hero.update(dt, 0, 0, null);
         g.hero.pose();
         g.lock = .{ .kind = .archer, .idx = 0 };
         g.rig.yaw = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
@@ -1400,57 +1413,56 @@ fn runShots(g: *Game) void {
     // Framed out on the OPEN plain north-east of the start (oc), clear of the x≈0 colonnade so
     // the columns don't block the giant. `far` keeps its AI holding the forced state (facing +Z).
     {
-        const dt2: f32 = 1.0 / 60.0;
         const o = &g.grief.ogres[0];
         const oc = mathx.ground(24.0, 30.0); // portrait spot — open ground, off the ruins
         const far = v3(oc.x, 0, oc.z + 80.0); // sensed hero far ahead → holds state, faces +Z
 
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
-        stepOgre(o, 54, far); // settle into idle, landing mid weight-shift (one leg relaxed)
+        stepFoe(o, 54, far); // settle into idle, landing mid weight-shift (one leg relaxed)
         // Idle — a CLEAN standing read (hero shoved out of frame), pitched down a touch to see
         // the full stooped-but-towering silhouette and the legs on the ground.
         g.hero.pos = mathx.ground(oc.x - 22.0, oc.z);
-        g.hero.update(dt2, 0, 0, null);
+        g.hero.update(dt, 0, 0, null);
         g.hero.pose();
-        shootOgre(g, o, "shots/47_ogre_idle.png", 55, 0.14, 13.0);
+        shootFoe(g, o, "shots/47_ogre_idle.png", 55, 0.14, 13.0);
         // Scale — the hero standing clearly to the ogre's side (it looms ~1.9x over him).
         g.hero.pos = mathx.ground(oc.x + 4.8, oc.z + 1.4);
         g.hero.facing = std.math.atan2(oc.x - g.hero.pos.x, oc.z - g.hero.pos.z); // face the ogre
-        g.hero.update(dt2, 0, 0, null);
+        g.hero.update(dt, 0, 0, null);
         g.hero.pose();
-        shootOgre(g, o, "shots/48_ogre_scale.png", 30, 0.16, 15.5);
+        shootFoe(g, o, "shots/48_ogre_scale.png", 30, 0.16, 15.5);
         // The approach — the shared gait, side-on, to judge the LUMBER (trunk roll + swagger +
         // footfall catch) and the ARM SWING. Sensed hero sits inside aggro dead ahead. Sampled at
         // THREE points a quarter-stride apart (the ogre's cycle is ~138 frames): one frame can't
         // show a swing, and a gait that only reads at one phase isn't a gait.
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
-        stepOgre(o, 100, v3(oc.x, 0, oc.z + 15.0));
-        shootOgre(g, o, "shots/56_ogre_walk.png", 90, 0.06, 12.0);
+        stepFoe(o, 100, v3(oc.x, 0, oc.z + 15.0));
+        shootFoe(g, o, "shots/56_ogre_walk.png", 90, 0.06, 12.0);
         // …and b/c from yaw 270 — the OFF profile. Yaw 90 puts the club arm nearest the camera and
         // buries the free arm behind the barrel, so the big contralateral swing is invisible from
         // it: judging the swing off that side is judging an arm you cannot see. Half a stride
         // apart, so between them the free arm is caught at BOTH extremes of its swing.
-        stepOgre(o, 34, v3(oc.x, 0, oc.z + 15.0));
-        shootOgre(g, o, "shots/57_ogre_walk_b.png", 270, 0.06, 12.0);
-        stepOgre(o, 69, v3(oc.x, 0, oc.z + 15.0));
-        shootOgre(g, o, "shots/58_ogre_walk_c.png", 270, 0.06, 12.0);
-        stepOgre(o, 17, v3(oc.x, 0, oc.z + 15.0));
-        shootOgre(g, o, "shots/59_ogre_walk_3q.png", 320, 0.08, 12.5); // front-left 3/4: free arm, lit
+        stepFoe(o, 34, v3(oc.x, 0, oc.z + 15.0));
+        shootFoe(g, o, "shots/57_ogre_walk_b.png", 270, 0.06, 12.0);
+        stepFoe(o, 69, v3(oc.x, 0, oc.z + 15.0));
+        shootFoe(g, o, "shots/58_ogre_walk_c.png", 270, 0.06, 12.0);
+        stepFoe(o, 17, v3(oc.x, 0, oc.z + 15.0));
+        shootFoe(g, o, "shots/59_ogre_walk_3q.png", 320, 0.08, 12.5); // front-left 3/4: free arm, lit
         // THE HEAD CRANE — the sensed hero sits hard off his LEFT while his body still points +Z,
         // so the eye is craned to the neck's limit a beat before the slow body can follow. Shot
         // from behind-ish (yaw 20) where the head being turned off the shoulder line reads.
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
-        stepOgre(o, 14, v3(oc.x + 9.0, 0, oc.z + 1.0)); // 14 frames: the head is AT its 55 deg
+        stepFoe(o, 14, v3(oc.x + 9.0, 0, oc.z + 1.0)); // 14 frames: the head is AT its 55 deg
         //   clamp while the ponderous body has only come round ~30 — any later and the body has
         //   caught up and there is no lead left to see.
-        shootOgre(g, o, "shots/60_ogre_headtrack.png", 20, 0.20, 11.0);
+        shootFoe(g, o, "shots/60_ogre_headtrack.png", 20, 0.20, 11.0);
 
         // Face close-up — the single eye + heavy sad brow. Ogre faces +Z, so FRONT is yaw ~180
         // (like the toad maw shots); look slightly DOWN onto the brow. RESPAWNED to a settled
         // IDLE first: taken off the WALKING ogre above, this framed the swinging club head
         // instead of the face — a portrait has no business being shot mid-stride.
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
-        stepOgre(o, 30, far);
+        stepFoe(o, 30, far);
         g.rig.yaw = mathx.radians(182);
         g.rig.pitch = 0.16;
         g.rig.dist = 3.2;
@@ -1458,14 +1470,18 @@ fn runShots(g: *Game) void {
         shoot(g, "shots/55_ogre_face.png");
 
         // The overhead slam: windup (club reared high) → crash (impact dust) → spent recovery.
+        // FRAME COUNTS ARE DERIVED FROM THE STATE MACHINE, not eyeballed — a shot that lands in the
+        // windup while calling itself the slam means the swing is being judged from a frame that does
+        // not contain it (AGENTS.md: framing is part of the test). debugSlam enters .windup at t=0, so
+        // at 1/60: windup ends / slam begins at 72, the club meets the earth at 84, slam ends at 86.
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         o.debugSlam();
-        stepOgre(o, 50, far); // near the windup peak — club overhead, body arched back (the tell)
-        shootOgre(g, o, "shots/49_ogre_windup.png", 55, 0.00, 13.0);
-        stepOgre(o, 14, far); // into the crash + the radial impact dust
-        shootOgre(g, o, "shots/50_ogre_slam.png", 60, 0.06, 13.0);
-        stepOgre(o, 30, far); // ~0.4s into recovery — doubled over the buried club, wide open
-        shootOgre(g, o, "shots/51_ogre_recover.png", 48, 0.10, 12.5);
+        stepFoe(o, 64, far); // f64: deep in the loaded peak HOLD — club overhead, arched back, trembling
+        shootFoe(g, o, "shots/49_ogre_windup.png", 55, 0.00, 13.0);
+        stepFoe(o, 21, far); // f85: one frame past IMPACT — club at the crater, the dust burst still tight
+        shootFoe(g, o, "shots/50_ogre_slam.png", 60, 0.06, 13.0);
+        stepFoe(o, 25, far); // f110: ~0.4 s into recovery — doubled over the buried club, wide open
+        shootFoe(g, o, "shots/51_ogre_recover.png", 48, 0.10, 12.5);
 
         // The SIDE SWIPE — his fast answer to a hero who won't stand in front of him. The sensed
         // hero sits round on his LEFT FLANK (that bearing is exactly what makes him choose the
@@ -1473,29 +1489,32 @@ fn runShots(g: *Game) void {
         // Two ground-level frames for the pose + one steep top-down, which is the only angle a
         // HORIZONTAL arc actually reads from.
         {
+            // Derived like the slam's, off debugSwipe entering .swipewind at t=0: at 1/60 the
+            // cock-back ends / the sweep begins at frame 28, the club crosses his centre line
+            // (impact) at 34, and the sweep ends at 40.
             const flank = v3(oc.x + 3.6, 0, oc.z - 1.2); // ~108 deg off his facing, inside SWIPE_R
             o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
             o.debugSwipe();
-            stepOgre(o, 18, flank); // near the top of the short cock-back — coiled, snarling
-            shootOgre(g, o, "shots/61_ogre_swipewind.png", 35, 0.12, 12.0);
-            stepOgre(o, 6, flank); // …the club crossing his centre line (the impact frame)
-            shootOgre(g, o, "shots/62_ogre_swipe.png", 35, 0.12, 12.0);
-            shootOgre(g, o, "shots/63_ogre_swipe_top.png", 35, 0.60, 15.0); // same frame, from above
+            stepFoe(o, 24, flank); // f24: the top of the short cock-back — coiled, snarling
+            shootFoe(g, o, "shots/61_ogre_swipewind.png", 35, 0.12, 12.0);
+            stepFoe(o, 11, flank); // f35: one frame past IMPACT — the club crossing his centre line
+            shootFoe(g, o, "shots/62_ogre_swipe.png", 35, 0.12, 12.0);
+            shootFoe(g, o, "shots/63_ogre_swipe_top.png", 35, 0.60, 15.0); // same frame, from above
         }
 
         // Reactions: the rare light flinch, the heavy stance-break, the weighty death topple.
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         o.debugStagger(false);
-        stepOgre(o, 13, far); // flinch peak (recoiled back, arm flung up)
-        shootOgre(g, o, "shots/52_ogre_flinch.png", 55, 0.04, 12.5);
+        stepFoe(o, 13, far); // flinch peak (recoiled back, arm flung up)
+        shootFoe(g, o, "shots/52_ogre_flinch.png", 55, 0.04, 12.5);
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         o.debugStagger(true);
-        stepOgre(o, 42, far); // deep in the stance-break — sagged onto a knee, wide open
-        shootOgre(g, o, "shots/53_ogre_stagger.png", 50, 0.10, 13.0);
+        stepFoe(o, 42, far); // deep in the stance-break — sagged onto a knee, wide open
+        shootFoe(g, o, "shots/53_ogre_stagger.png", 50, 0.10, 13.0);
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         o.debugKill();
-        stepOgre(o, 72, far); // the slow topple, well into the collapse
-        shootOgre(g, o, "shots/54_ogre_death.png", 55, 0.12, 13.5);
+        stepFoe(o, 72, far); // the slow topple, well into the collapse
+        shootFoe(g, o, "shots/54_ogre_death.png", 55, 0.12, 13.5);
 
         // Restore it to its home deep in the ruins so it doesn't loom over the retro/menu shots.
         o.* = ogremod.Ogre.spawn(mathx.ground(3.0, -50.0), 0, 1.0, 0.4);

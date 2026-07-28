@@ -116,7 +116,7 @@ const STEEL = rgba(98, 104, 114, 255);
 const STEEL_DK = rgba(58, 62, 70, 255);
 const BRASS = rgba(122, 92, 40, 255);
 
-// ══ ANIMATION ART DIRECTION — the DESIRED LOOK of each state (read before retuning) ══════
+// -.--.- ANIMATION ART DIRECTION — the DESIRED LOOK of each state (read before retuning) -.--.--.--.--.--.-
 // These are the intent; the numeric knobs below are only tuned to hit them. If you change a
 // knob, keep it serving the description — and update the description if the intent changes.
 //
@@ -177,7 +177,7 @@ const BRASS = rgba(122, 92, 40, 255);
 //           Feet planted (the step is root translation); facing locked at commit. Hit
 //           capsule rides the blade, active only inside the strike window (souls
 //           TAE-style), swept frame-to-frame. NOTHING parks dead at an end pose.
-//  Blends : idle↔walk by a `moving` ease; walk↔run↔sprint by ground SPEED — runB/sprintB
+//  Blends : idle—walk by a `moving` ease; walk—run—sprint by ground SPEED — runB/sprintB
 //           chase a short-EASED speed (speedS) so posture never steps when speed does.
 //           Stride LENGTH scales with speed so one leg-cycle reads at every pace. Any
 //           pose DISCONTINUITY (roll start/end) cross-fades over POSE_XFADE, and the roll
@@ -326,7 +326,7 @@ const AL_WRIST_WHIP = 12.0; // …whipping to lead a touch past straight at the 
 const AL_EDGE_ROLL = 90.0; // the swipe RE-GRIPS: roll the blade a quarter-turn about its OWN
 //   axis so the EDGE LEADS and the FLAT lies in the swipe plane (owner's law + Hutton's rule).
 //   Cone-free because the SWORD bone first cancels the grip cant exactly, putting the blade dead on the wrist's roll axis.
-const AL_TIP_UP = 10.0; // then a whisker of tip-high (applied −rx: more-negative = higher in the
+const AL_TIP_UP = 10.0; // then a whisker of tip-high (applied -^'rx: more-negative = higher in the
 //   chain's pitch sum) so the line sits just above level after the body's forward commit
 const AL_SPINE_CRUNCH = 2.5; // a horizontal cut ROTATES — barely any forward commit (keeps the
 //   swipe PLANE flat instead of tipping it toward the ground mid-strike)
@@ -429,28 +429,88 @@ const SPEED_SMOOTH = 80.0; // units/s² — posture-blend speed chases ground sp
 // ── locked-on footing: strafe + backpedal (the gait follows travel RELATIVE TO FACING) ──
 // Gait splits by travel in the BODY frame: the forward component scales the sagittal
 // leg/arm work (TIME-REVERSED for a backpedal, Thorstensson 1986), the lateral component
-// drives a frontal-plane SIDESTEP (each leg on its own half-beat, a shuffle, no crossover,
-// knee lifting so it never drags). Feet keep pointing AT THE TARGET — that sells the strafe;
-// direction blends ease fast (visuals only, ~0.1s; position answers the stick raw, same frame).
+// drives a real CROSSING SIDESTEP (the grapevine below). Direction blends ease fast (visuals
+// only, ~0.1s; position answers the stick raw, same frame).
 const GAIT_DIR_EASE = 22.0; // 1/s — fwdB/latB chase the body-frame travel direction
-const STRAFE_OUT = 16.0; // the LEAD leg's out-step: frontal swing toward the travel side (deg)
-const STRAFE_XRZ = 12.0; // the TRAIL leg's cross: frontal swing PAST the midline (deg)…
-const STRAFE_CROSS = 13.0; // …with this much forward hip flex, so it plants across the FRONT
-//   of the stance leg — the grapevine beat, kept SUBTLE (owner: big splays stick out)
-const STRAFE_SPLIT = 1.5; // slight constant stance widening while strafing (never a foot pole)
-const STRAFE_STEP_W = 0.22; // width of each leg's step WINDOW (fraction of the cycle). Windows
-//   are offset a QUARTER cycle so they never overlap: exactly ONE leg moves at a time. Half-cycle
-//   mirrored waves moved both legs at once — the parallel fail (owner's diagnosis, the actual structural cause).
-const STRAFE_KNEE = 17.0; // knee lift through the moving leg's step window (deg)
-const STRAFE_SOFT = 8.0; // constant SOFT KNEE in both legs while strafing — the stance stays
-//   athletic and springy between steps, never stiff straight poles (owner's note)
-const STRAFE_DIP = 0.012 * H; // matching pelvis drop so the soft-kneed legs stay planted
+//
+// ── THE CROSSING SIDESTEP (grapevine), BUILT FROM GEOMETRY — NOT FROM TUNED ANGLES ─────────
+// Two facts drive the whole thing, and getting either wrong is what made the old sidestep read
+// as sliding rather than stepping:
+//
+// 1. A PLANTED FOOT IS WORLD-FIXED. While it is down the body travels PAST it, so its offset
+//    from the pelvis must sweep backward through stance at exactly the rate the body advances —
+//    LINEAR IN DISTANCE, like the sagittal hip curve does for the walk. The old code held each
+//    strafe leg at a CONSTANT frontal angle between step windows ("planted dead still"), which
+//    is only still in JOINT space: in world space the foot was dragged along under the body.
+//    That skate, not the amplitude, is why it looked wrong.
+// 2. THE CROSS IS FREE — it falls out of the HIP OFFSETS. Give both legs the SAME symmetric
+//    ±STRAFE_ABD sweep half a cycle apart and, because each hip sits `hx` off the midline, the
+//    leg on the FAR side lands PAST the near foot (a front cross) while the near leg then swings
+//    wide OUTSIDE it (the uncross). No lead/trail amplitude split, no bias term. The old code
+//    gave the crossing leg LESS reach than the out-stepping one (XRZ 12 < OUT 16) — backwards:
+//    the far leg has ~2·hx more ground to make up, so with less swing it only ever reached the
+//    midline and the legs never actually crossed.
+//
+// Anatomy check (Sinclair et al. 2016, lateral shuffle vs side-step cutting): peak hip abduction
+// through a lateral shuffle runs ~17-20 deg, so STRAFE_ABD is a MEASURED range, not a big splay —
+// this is "correct", not "loud". The crossing leg passes IN FRONT (hip flexion) and its partner
+// necessarily passes BEHIND it; that front/behind pairing IS the grapevine.
+const STRAFE_ABD = 22.0; // peak frontal hip swing either side of the hip (deg) — the sweep is
+//   symmetric, so this is BOTH the out-step's abduction and the cross's adduction
+const STRAFE_STANCE = 0.52; // fraction of the cycle each foot is planted (2·0.52 -^' 1 = ~4% of the
+//   cycle in double support — brisk footwork, feet exchanging almost as soon as they arrive).
+//   ── CADENCE, and why these two numbers are the ONLY dial ──
+//   Phase is driven by DISTANCE, so step CADENCE = speed / STRAFE_CYCLE. There is no third lever:
+//   pace the animation any other way and the planted foot skates, which is the bug this rewrite
+//   exists to kill. So a sidestep that reads "too fast" can ONLY be slowed by lengthening the
+//   cycle, and the cycle is capped by real hip ROM (STRAFE_ABD) once double support is spent.
+//   These are that cap: 22 deg is the top of the measured lateral-shuffle band and 0.52 has
+//   essentially no double support left to trade. Pure lateral travel at the hero's full walk speed
+//   therefore still costs ~20% MORE steps per second than walking forward — that residue is
+//   geometry, not tuning, and closing it needs an ER-style locked-on lateral speed factor
+//   (a MECHANICS change, so not made here). `unit_strafe_cadence_near_walk` pins the ratio.
+const STRAFE_CROSS = 38.0; // the crossing leg's hip FLEXION peak through swing — it must pass IN
+//   FRONT of the stance leg (it cannot adduct THROUGH it), which is what makes the cross read.
+//   It has to be this big: the knee flexion that buys ground clearance drags the ankle BACKWARDS
+//   (a normal walk's mid-swing foot sits BEHIND its own hip), so ~24 deg of hip left the crossing
+//   foot trailing — passing behind the stance leg while the thigh went in front of it.
+const STRAFE_BEHIND = 10.0; // …and its partner's hip EXTENSION peak, passing BEHIND the crossed
+//   leg on the uncross. Front-cross one leg + behind-pass the other = the grapevine, structurally.
+const STRAFE_LAND = 7.0; // fore/aft hip offset at plant (deg), swept out linearly through stance:
+//   a front cross lands a little AHEAD of the stance foot, then the body travels past it
+const STRAFE_CLEAR = 0.035 * H; // DAYLIGHT under the swing foot at mid-swing. Asked for as a
+//   HEIGHT and solved for (see legChain), not tuned as a knee angle: hip flexion and knee flexion
+//   fight each other vertically, so a "knee lift" constant does not mean a foot leaves the ground.
+const STRAFE_SINK = 0.0055 * H; // how much SHORTER than dead-straight the leg is left at full
+//   abduction — i.e. the residual knee bend at the widest point of the step (~12 deg). Feeds
+//   STRAFE_DIP, and it is what keeps the stance springy rather than locked out on straight poles
+//   (owner's note); the knee opens up further as the leg comes back under the body.
+const STRAFE_PROT = 7.0; // pelvic TRANSVERSE rotation (deg): the crossing hip swings FORWARD to
+//   carry that leg around the stance leg. Real crossovers are pelvis-driven, not hip-driven.
 const STRAFE_SWAY = 0.012 * H; // pelvis rides ONTO each planting foot (the weight transfer
-//   is what makes a shuffle read as steps, not a slide) — a bit above the walk's sway
+//   is what makes a sidestep read as steps, not a slide) — a bit above the walk's sway
 const STRAFE_LEAN = 2.5; // torso banks gently INTO the travel side (deg, cosmetic)
-const STRAFE_STRIDE = 0.85; // sidestep cycle length (stride-length scale at full lateral) —
-//   kept LONG so the gait takes few, big, readable steps instead of a rapid parallel patter
 const BACK_STRIDE = 0.85; // backpedal steps shorten a touch too (cautious, toe-reaching)
+
+// Rest hip→ankle span: the strafe geometry is all measured off this, so it scales with the rig.
+// (`unit_leg_len_matches_rig` re-asserts it against restPositions, and the archer/ogre keep the
+// hero's leg fractions on purpose, so their rest-derived leg length agrees — scale aside.)
+pub const LEG_LEN = (0.530 - 0.039) * H;
+// ── derived, so a retune of STRAFE_ABD/STANCE can never silently desync the three of them ──
+const STRAFE_REACH = LEG_LEN * @sin(mathx.radians(STRAFE_ABD)); // half the stance sweep, in units
+const STRAFE_CYCLE = 2.0 * STRAFE_REACH / STRAFE_STANCE; // body travel per FULL cycle. advanceGait
+//   MUST use this as the stride length for a pure sidestep: phase and sweep are two views of the
+//   same distance, and if they disagree by any factor the skate comes straight back.
+// pub: every humanoid that strafes owes the same drop (scaled by its own rig size), or its feet
+// hover — the archer used to have no dip term at all.
+// Pelvis drop, solved rather than picked: at FULL abduction the foot is STRAFE_REACH out to the
+// side and still has to touch the floor, so the pelvis must sit low enough that a near-straight leg
+// spans the hypotenuse of (drop-adjusted height, reach). Falls out as ~4% of H — a low athletic
+// settle, which is also exactly where the SOFT KNEE comes from. (The old 0.012·H was under a third
+// of what 19 deg of abduction costs, so the strafe stood on straight legs with the feet hovering.)
+// legChain's vertical solve assumes the caller dropped the pelvis by precisely this much — that is
+// the contract, and `strafe: planted feet stay ON the ground` holds both ends of it to it.
+pub const STRAFE_DIP = LEG_LEN - @sqrt((LEG_LEN - STRAFE_SINK) * (LEG_LEN - STRAFE_SINK) - STRAFE_REACH * STRAFE_REACH);
 
 const STRIDE = 0.85 * H; // ground distance per full (two-step) cycle at walk pace — ties phase to travel, no foot-skate
 const WALK_REF_SPEED = WALK_SPEED; // reference walk speed the stride is tuned for
@@ -467,7 +527,7 @@ pub const FOOT_TOEOUT = 6.0; // feet splay slightly outward (Fick angle) — a r
 const ARM_ABD = 9.0; // constant arm abduction so arms clear the torso (deg)
 pub const IDLE_KNEE = 4.0;
 const IDLE_ELBOW = 6.0;
-const MOVING_EASE = 10.0; // idle↔walk blend rate (1/s) — the `moving` fade in update(); fast, so gait answers the stick NOW
+const MOVING_EASE = 10.0; // idle—walk blend rate (1/s) — the `moving` fade in update(); fast, so gait answers the stick NOW
 
 pub fn sampleCurve(tbl: [8]f32, phase: f32) f32 {
     const ph = phase - @floor(phase); // 0..1
@@ -497,13 +557,84 @@ pub fn advanceGait(phase: *f32, moving: *f32, fwdB: *f32, latB: *f32, speedS: *f
         latB.* = mathx.approach(latB.*, 0.0, dt * GAIT_DIR_EASE);
     }
     if (movedDist > 0) {
-        // Longer strides at higher speed; sidesteps + backpedals run shorter (quicker feet).
-        const dirScale = mathx.lerpF(1.0, STRAFE_STRIDE, @abs(latB.*)) *
+        // Sagittal strides lengthen with speed; the SIDESTEP's cycle is FIXED at STRAFE_CYCLE,
+        // because legChain's stance sweep is measured in UNITS off the leg — scale one without the
+        // other and the planted foot skates again. So a faster sidestep raises the CADENCE, not the
+        // step length, which is also how a real shuffle answers speed once abduction is maxed out.
+        const sagLen = STRIDE * mathx.clampF(0.55 + 0.45 * speed / WALK_REF_SPEED, 0.8, 2.0) *
             mathx.lerpF(1.0, BACK_STRIDE, mathx.maxF(0, -fwdB.*));
-        const strideLen = STRIDE * mathx.clampF(0.55 + 0.45 * speed / WALK_REF_SPEED, 0.8, 2.0) * dirScale;
+        const strideLen = mathx.lerpF(sagLen, STRAFE_CYCLE, @abs(latB.*));
         phase.* += movedDist / strideLen;
     }
     phase.* -= @floor(phase.*);
+}
+
+// ── FOOT PLANT: keep soles ON the ground instead of through it ─────────────────────────────────
+// An FK gait drives JOINT ANGLES, so the pelvis height and the feet are related only by whatever the
+// bob curve happens to say — and wherever the two disagree the sole goes UNDER the world. It is
+// worst where a rotating foot digs a corner in: the boot is ~0.19·H long, so 15 deg of ankle pitch
+// buries a toe 4 cm even with the ankle joint itself sitting exactly right.
+//
+// Lowering the world is NOT the fix (that just floats everything else instead — `env.GROUND_Y` sits
+// where prop bases and soles are authored, deliberately). The remedy is to MEASURE the deepest sole
+// corner every frame and lift the skeleton until it clears. Because it is a rigid translation of
+// every bone by the same dy it cannot distort a pose, and dy is only ever UPWARD — so a real flight
+// phase, a roll, or a foot legitimately in the air is left completely alone.
+//
+// A rig declares each of its ground-contact bones as a sole PATCH: the rectangle its sole actually
+// occupies in that bone's local frame. Measure it off the mesh (`addCube` takes a FULL size,
+// `addCapsule`/`addBlob` take true RADII — mixing those up is how the ogre ended up with a foot pad
+// authored 0.036·H below its own sole plane), and re-measure when the foot is remodelled.
+// The height a sole is allowed to reach down to. Soles + prop bases are all authored at y = 0 while
+// the ground SURFACE sits a hair above at `env.GROUND_Y`, so planting to 0 preserves exactly the
+// deliberate ~1 cm embed AGENTS.md calls for — planted-to-slightly-embedded, never floating.
+pub const SOLE_Y: f32 = 0.0;
+
+pub const SolePatch = struct {
+    bone: usize,
+    heel: f32, // how far the sole reaches BEHIND the bone origin (-^'z)
+    toe: f32, //  …and ahead of it (+z)
+    halfW: f32,
+    drop: f32, // how far BELOW the bone origin the sole plane sits (the ankle joint height)
+};
+
+// The deepest point any of these soles reaches. Measurement only — nothing is moved.
+pub fn soleDepth(wx: []const rl.Matrix, patches: []const SolePatch) f32 {
+    var lowest: f32 = std.math.floatMax(f32);
+    for (patches) |p| {
+        for ([_]f32{ -p.halfW, p.halfW }) |x| {
+            for ([_]f32{ -p.heel, p.toe }) |z| {
+                lowest = mathx.minF(lowest, rl.math.vector3Transform(v3(x, -p.drop, z), wx[p.bone]).y);
+            }
+        }
+    }
+    return lowest;
+}
+
+// The hero's own boot footprint, measured off `footMesh`: the sole cube spans z −0.05·H…+0.14·H and
+// x ±0.0425·H, and its underside lands exactly on the ankle-height plane.
+pub const BOOT_SOLE = [_]SolePatch{
+    .{ .bone = ANKL, .heel = 0.05 * H, .toe = 0.14 * H, .halfW = 0.0425 * H, .drop = 0.039 * H },
+    .{ .bone = ANKR, .heel = 0.05 * H, .toe = 0.14 * H, .halfW = 0.0425 * H, .drop = 0.039 * H },
+};
+
+// The sidestep's PELVIS drive — pub so the hero and every humanoid foe counter-rotate identically
+// (AGENTS.md's humanoid rule covers the TRUNK, not just the legs). A real crossover is pelvis-led:
+// the CROSSING hip swings FORWARD to carry that leg around the stance leg, and legs alone under a
+// square pelvis is what leaves a sidestep looking like the feet are doing it by themselves.
+// Returns degrees of pelvic ry, peaking on the crossing foot's plant. It needs no `lat` sign flip:
+// the crossing leg swaps sides at exactly the phase where cos(tau·ph) swaps sign, so one
+// expression covers both directions (left leg crosses travelling right, right leg travelling left).
+pub fn strafeProt(ph: f32, lat: f32, m: f32) f32 {
+    return -STRAFE_PROT * mathx.cosf(std.math.tau * ph) * @abs(lat) * m;
+}
+
+// The sidestep's pelvic SWAY amplitude. Weight has to sit over whichever foot is in single support,
+// and which leg that is does NOT depend on travel direction — so a strafe keeps the walk's sway
+// PHASE and only opens the amplitude up. (The old term was `lat`-signed and cos-phased, i.e. it
+// leaned the wrong way half the cycle and peaked in double support, when the weight is centred.)
+pub fn strafeSway(latW: f32, runB: f32) f32 {
+    return mathx.lerpF(A_SWAY * (1.0 - 0.6 * runB), STRAFE_SWAY, latW);
 }
 
 // matrix shorthand — the shared raylib TRS helpers (MatrixMultiply(a,b) applies a FIRST
@@ -551,7 +682,7 @@ pub const Hero = struct {
     phase: f32 = 0, // stride phase [0,1) (left-leg reference)
     moving: f32 = 0, // eased 0..1 walk blend
     speed: f32 = 0, // this frame's ground speed (world units/sec) — for HUD + stride scaling
-    fwdB: f32 = 1, // eased travel-vs-facing FORWARD component (+1 ahead … −1 backpedal)
+    fwdB: f32 = 1, // eased travel-vs-facing FORWARD component (+1 ahead … -^'1 backpedal)
     latB: f32 = 0, // eased travel-vs-facing LATERAL component (+1 = stepping to his RIGHT)
     elapsed: f32 = 0,
     // dodge roll
@@ -586,7 +717,7 @@ pub const Hero = struct {
 
     // transition smoothing
     speedS: f32 = 0, // short-eased ground speed driving POSTURE blends only
-    blendT: f32 = 1e9, // seconds since the last pose discontinuity (≥ POSE_XFADE = no blend)
+    blendT: f32 = 1e9, // seconds since the last pose discontinuity (… POSE_XFADE = no blend)
     blendXf: [N]rl.Matrix = undefined, // frozen source pose for the cross-fade
 
     pub fn init(shader: rl.Shader) Hero {
@@ -607,11 +738,18 @@ pub const Hero = struct {
     // rate; `moveYaw` the world heading of travel (null when idle) — against `facing` it
     // shapes the locked-on strafe/backpedal gait. Phase is driven by DISTANCE (not time)
     // so the feet never skate.
-    pub fn update(self: *Hero, dt: f32, movedDist: f32, speed: f32, moveYaw: ?f32) void {
+    // The prologue EVERY per-frame advance path owes: the clock, the swing trail's fade, and the
+    // cross-fade timer. Exactly one of update/updateRoll/updateAttack/updateStun/updateDeath runs
+    // each frame, and each had its own copy of these three lines.
+    fn tickClocks(self: *Hero, dt: f32) void {
         self.elapsed += dt;
         self.ageTrail(dt);
-        self.speed = speed;
         self.blendT = @min(self.blendT + dt, 1e9);
+    }
+
+    pub fn update(self: *Hero, dt: f32, movedDist: f32, speed: f32, moveYaw: ?f32) void {
+        self.tickClocks(dt);
+        self.speed = speed;
         // The shared humanoid gait engine drives phase + the posture/direction blends (also
         // used by the skeletal archer + any humanoid foe — one source of walk/strafe feel).
         advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist, speed, moveYaw, self.facing);
@@ -643,9 +781,7 @@ pub const Hero = struct {
     // Advance an in-progress roll: committed ease-out travel + pose. Call in place of the
     // normal move/update while `rolling` is true; `bounds` clamps position like moveHero.
     pub fn updateRoll(self: *Hero, dt: f32, bounds: f32) void {
-        self.elapsed += dt;
-        self.ageTrail(dt);
-        self.blendT = @min(self.blendT + dt, 1e9);
+        self.tickClocks(dt);
         self.facing = mathx.approachAngle(self.facing, self.rollYaw, dt * ROLL_YAW_RATE); // whip, don't teleport
         const u = mathx.clampF(self.rollT / ROLL_DUR, 0, 1);
         // Lunge: full speed through the dive + somersault, smooth-braked through the
@@ -719,9 +855,7 @@ pub const Hero = struct {
     // call in place of move/update while `attacking` (`bounds` clamps like moveHero), movement
     // ignored. `faceYaw` (lock target heading, null unlocked) re-squares through the RECOVERY tail only (ATK_RETRACK), so a locked whiff recovers its turning fast.
     pub fn updateAttack(self: *Hero, dt: f32, bounds: f32, faceYaw: ?f32) void {
-        self.elapsed += dt;
-        self.ageTrail(dt);
-        self.blendT = @min(self.blendT + dt, 1e9);
+        self.tickClocks(dt);
         const dur: f32 = if (self.atkHeavy) ATK_HEAVY_DUR else ATK_LIGHT_DUR;
         const sa: f32 = if (self.atkHeavy) AH_STRIKE_A else AL_STRIKE_A;
         const sb: f32 = if (self.atkHeavy) AH_STRIKE_B else AL_STRIKE_B;
@@ -747,9 +881,7 @@ pub const Hero = struct {
         if (self.atkT / dur >= chain and self.queued != null) {
             self.attacking = false;
             self.fireQueued(); // start* runs its own cross-fade out of this pose
-            // ER combo naturalism: a light chained off a light ALTERNATES — the return
-            // swipe comes backhand out of where the last one landed.
-            if (self.attacking and !self.atkHeavy and wasLight) self.atkAlt = !wasAlt;
+            self.alternateChain(wasLight, wasAlt);
             self.pose(); // first frame of the new action (windup or dive)
             self.updateBlade();
             return;
@@ -762,8 +894,15 @@ pub const Hero = struct {
             // `moving` is NOT reset — held input walks straight out of the recovery.
             self.startXfade();
             self.fireQueued(); // anything still buffered leaves the gate instantly
-            if (self.attacking and !self.atkHeavy and wasLight) self.atkAlt = !wasAlt; // late-buffered lights still alternate
+            self.alternateChain(wasLight, wasAlt); // late-buffered lights still alternate
         }
+    }
+
+    // ER combo naturalism: a light chained off a light ALTERNATES — the return swipe comes
+    // backhand out of where the last one landed. Call right after fireQueued() (both exits
+    // — the chain knot and the anim's end — owe it, and startAttack has just zeroed atkAlt).
+    fn alternateChain(self: *Hero, wasLight: bool, wasAlt: bool) void {
+        if (self.attacking and !self.atkHeavy and wasLight) self.atkAlt = !wasAlt;
     }
 
     // TAE-events equivalent: the blade only HITS inside the strike's active window.
@@ -782,13 +921,13 @@ pub const Hero = struct {
         self.bladeB0 = self.bladeB;
         self.bladeA = rl.math.vector3Transform(BLADE_BASE, self.xf[SWORD]);
         self.bladeB = rl.math.vector3Transform(BLADE_TIP, self.xf[SWORD]);
+        const act = self.hitActive(); // sampled ONCE — both the trail and the edge test read it
         // Trail sample — only inside the strike's ACTIVE window (the cut paints its arc;
         // the windup/recovery leave nothing) and only while the tip is really sweeping.
-        if (self.hitActive() and mathx.lenV(mathx.subV(self.bladeB, self.bladeB0)) > TRAIL_MIN_SWEEP) {
+        if (act and mathx.lenV(mathx.subV(self.bladeB, self.bladeB0)) > TRAIL_MIN_SWEEP) {
             self.trailHead = (self.trailHead + 1) % TRAIL_N;
             self.trail[self.trailHead] = .{ .a = mathx.lerpV(self.bladeA, self.bladeB, TRAIL_ROOT), .b = self.bladeB, .age = 0 };
         }
-        const act = self.hitActive();
         if (act and !self.hitWasActive) {
             self.bladeA0 = self.bladeA;
             self.bladeB0 = self.bladeB;
@@ -890,9 +1029,7 @@ pub const Hero = struct {
     // Advance a stagger; clears back to normal control when it finishes. Call in place of
     // move/attack/roll while `staggered()`.
     pub fn updateStun(self: *Hero, dt: f32) void {
-        self.elapsed += dt;
-        self.ageTrail(dt);
-        self.blendT = @min(self.blendT + dt, 1e9);
+        self.tickClocks(dt);
         self.stunT += dt;
         self.speed = 0;
         self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
@@ -906,9 +1043,7 @@ pub const Hero = struct {
 
     // Advance the death collapse; respawns the hero at full vitals when it completes.
     pub fn updateDeath(self: *Hero, dt: f32) void {
-        self.elapsed += dt;
-        self.ageTrail(dt);
-        self.blendT = @min(self.blendT + dt, 1e9);
+        self.tickClocks(dt);
         self.deathT += dt;
         self.speed = 0;
         self.speedS = 0;
@@ -952,14 +1087,21 @@ pub const Hero = struct {
         const crouch = (RUN_CROUCH * runB + 0.5 * RUN_CROUCH * sprintB) * m +
             STRAFE_DIP * @abs(lat) * m; // low centre of gravity; strafing settles onto its soft knees
 
-        // ── pelvis oscillations (walk bob ↔ run airtime bounce) ──
+        // ── pelvis oscillations (walk bob — run airtime bounce) ──
         const walkBob = -0.5 * A_BOB * mathx.cosf(2.0 * twoPi * ph); // twice/stride, symmetric
         const runBounce = A_RUN_BOUNCE * (0.5 - 0.5 * mathx.cosf(2.0 * twoPi * (ph - 0.2))); // up-only, peaks at flight
-        const bob = mathx.lerpF(walkBob, runBounce, runB) * m + 0.006 * H * mathx.sinf(self.elapsed * 2.2) * (1.0 - m);
-        const sway = A_SWAY * mathx.sinf(twoPi * ph) * m * (1.0 - 0.6 * runB) +
-            STRAFE_SWAY * lat * mathx.cosf(twoPi * ph) * m; // strafe: weight sits OVER the planted leg, off the stepping one (cos peaks mid-window)
-        const prot = A_PROT * mathx.sinf(twoPi * ph) * m; // pelvic transverse rotation
-        const list = A_LIST * mathx.sinf(twoPi * ph) * m; // pelvic frontal drop
+        // Both the bob and the pelvic list belong to the SAGITTAL compass gait, so they fade out with
+        // forwardness. A pure sidestep has its own vertical story — legChain solves those feet against
+        // an assumed pelvis height (STRAFE_DIP) and knows nothing about a bob laid on top, so leaving
+        // the walk's ±0.012·H running through a strafe drove the planted foot ~7 cm under.
+        const fwAbs = @abs(fw);
+        const bob = mathx.lerpF(walkBob, runBounce, runB) * m * fwAbs + 0.006 * H * mathx.sinf(self.elapsed * 2.2) * (1.0 - m);
+        const latW = @abs(lat) * m;
+        const sway = strafeSway(latW, runB) * mathx.sinf(twoPi * ph) * m; // weight sits over the single-support foot; a strafe just opens the amplitude
+        // Pelvic transverse rotation: the walk's, plus the sidestep's own crossing drive (which
+        // peaks on the crossing foot's plant). Both counter-rotate up the spine below.
+        const prot = A_PROT * mathx.sinf(twoPi * ph) * m * @abs(fw) + strafeProt(ph, lat, m);
+        const list = A_LIST * mathx.sinf(twoPi * ph) * m * fwAbs; // pelvic frontal drop (sagittal gait's)
 
         // Root: place at world pos, at hip height (crouched when running), swayed/bobbed in
         // body frame, PITCHED FORWARD ABOUT THE FEET (so the centre of gravity leads the
@@ -968,9 +1110,15 @@ pub const Hero = struct {
         const hipY = self.rest[ROOT].y;
         const bodyPitch = (BODY_PITCH_RUN * runB + (BODY_PITCH_SPRINT - BODY_PITCH_RUN) * sprintB) * m;
         var wx: [N]rl.Matrix = undefined;
+        // Pelvis height. NOTE: a "pelvis floor" that held this up off the legs' own reach was tried
+        // here and REVERTED — it is arithmetically right and wrong for the character. The run's crouch
+        // is deliberately deeper than the legs can pay for, so the floor cancelled most of RUN_CROUCH
+        // and the run stood up and read slow and floaty (owner's verdict). The remaining sink is NOT
+        // this term anyway: see the bodyPitch note below.
+        const pelvY = hipY - crouch + bob;
         wx[ROOT] = mul3(
             mul(rz(list), ry(prot)), // tilt/rotate pelvis about its centre
-            mul(tr(sway, hipY - crouch + bob, 0), mul(rx(bodyPitch), ry(facingDeg))), // crouch, pitch whole body forward about the feet, then face
+            mul(tr(sway, pelvY, 0), mul(rx(bodyPitch), ry(facingDeg))), // crouch, pitch whole body forward about the feet, then face
             tr(self.pos.x, 0, self.pos.z), // place in the world
         );
 
@@ -990,8 +1138,8 @@ pub const Hero = struct {
         setLocal(&wx, HEAD, self.rest, rx(HEAD_WALK - 0.55 * gazeCounter)); // +rx = gaze down (walk); the counter lifts it toward ahead when running
 
         // Legs — left uses phase, right is half a stride out.
-        legChain(&wx, &self.rest, ph, m, runB, fw, lat, 1.0, HIPL, KNEEL, ANKL);
-        legChain(&wx, &self.rest, ph + 0.5, m, runB, fw, lat, -1.0, HIPR, KNEER, ANKR);
+        legChain(&wx, &self.rest, ph, m, runB, fw, lat, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
+        legChain(&wx, &self.rest, ph + 0.5, m, runB, fw, lat, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
 
         // Arms — contralateral swing (cos: same-side arm is BACK when its leg is forward);
         // bigger swing + ~90° elbows when running. The swing follows the SIGNED forward
@@ -1007,6 +1155,7 @@ pub const Hero = struct {
         self.applyXfade(&wx);
         self.xf = wx;
     }
+
 
     // Freeze the current pose as the source of a short cross-fade — call at any pose
     // DISCONTINUITY (roll start/end). pose()/poseRoll() blend out of it over POSE_XFADE.
@@ -1146,7 +1295,7 @@ pub const Hero = struct {
         const lvl = mathx.smoothstep(0.05, AL_STRIKE_A, u) * rec;
         const lay = sw * (AL_WRIST_LAY * wind - (AL_WRIST_LAY + AL_WRIST_WHIP) * sWr);
         setLocal(&wx, WRR, self.rest, mul3(ry(sw * AL_EDGE_ROLL * lvl), rx(-AL_TIP_UP * lvl), rz(lay)));
-        setLocal(&wx, SWORD, self.rest, rx(GRIP_PITCH * lvl)); // +rx maps the baked cant back onto the wrist's −Y exactly (rx(+34)·cant ≡ blade dead on the roll axis)
+        setLocal(&wx, SWORD, self.rest, rx(GRIP_PITCH * lvl)); // +rx maps the baked cant back onto the wrist's -^'Y exactly (rx(+34)·cant … blade dead on the roll axis)
         self.applyXfade(&wx);
         self.xf = wx;
     }
@@ -1231,8 +1380,8 @@ pub const Hero = struct {
         const hipY = self.rest[ROOT].y;
         const sinkMag: f32 = if (heavy) 0.06 else 0.05;
         const sink = sinkMag * H * amt;
-        // Knocked back off the blow: the body shifts along −facing (the flinch reads as impact,
-        // not a lean). +Z in the pre-facing frame is the facing dir, so a −Z offset = backward.
+        // Knocked back off the blow: the body shifts along -^'facing (the flinch reads as impact,
+        // not a lean). +Z in the pre-facing frame is the facing dir, so a -^'Z offset = backward.
         const backMag: f32 = if (heavy) 0.10 * H else HURT_STEP;
         const back = backMag * amt;
 
@@ -1321,8 +1470,8 @@ pub const Hero = struct {
 };
 
 // offset(child) in the parent's frame = restPos(child) - restPos(parent), since all rest
-// orientations are identity. world(child) = local(child) ∘ world(parent), where
-// local = animRot ∘ translate(offset) (animRot applied first, about the joint).
+// orientations are identity. world(child) = local(child) -^~ world(parent), where
+// local = animRot -^~ translate(offset) (animRot applied first, about the joint).
 fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix) void {
     const p: usize = @intCast(parent[i]);
     const off = mathx.subV(rest[i], rest[p]);
@@ -1341,7 +1490,11 @@ fn setJoint(wx: []rl.Matrix, rest: []const rl.Vector3, i: usize, p: usize, animR
 // pub: humanoid enemies drive their legs through this same walk + locked-on strafe/backpedal
 // footing (AGENTS.md humanoid rule). Rig-size agnostic — the caller passes its own hip/knee/ankle
 // indices and its whole bone array; only "pelvis is bone 0" is assumed.
-pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, ph: f32, m: f32, runB: f32, sag: f32, lat: f32, side: f32, hip: usize, knee: usize, ank: usize) void {
+// `sole` carries BOTH the ankle bone index and that foot's sole footprint, because the ankle's pitch
+// has to be clamped against the ground (see ankleLimits) and only the rig knows how long its own boot
+// is. Each humanoid passes its own measured patch.
+pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, ph: f32, m: f32, runB: f32, sag: f32, lat: f32, side: f32, hip: usize, knee: usize, sole: SolePatch) void {
+    const ank = sole.bone;
     // Sagittal gait weighted by the forward blend `sag`; a backpedal (sag < 0) samples
     // the SAME normative tables with phase run backward — reversed walking. The lateral
     // blend `lat` drives the CROSSING sidestep instead (the scissor below).
@@ -1350,38 +1503,137 @@ pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, ph: f32, m: f32, runB
     const hipFlex = mathx.lerpF(sampleCurve(HIP_FLEX, phS), sampleCurve(RUN_HIP, phS), runB) * sagW;
     const kneeWR = mathx.lerpF(sampleCurve(KNEE_FLEX, phS), sampleCurve(RUN_KNEE, phS), runB);
     const ankDorsi = mathx.lerpF(sampleCurve(ANK_DORSI, phS), sampleCurve(RUN_ANK, phS), runB) * sagW;
-    // The sidestep scissor: a FULL-wave frontal swing per leg, half a cycle apart — one leg
-    // reaches OUT toward the travel side while the other CROSSES past neutral in front of it
-    // (the grapevine beat), so the legs always oppose and read as real crossing steps, never
-    // parallel legs sliding. The crossing leg gets forward hip flex (STRAFE_CROSS) to step ACROSS THE FRONT of the stance leg, and each knee lifts through its own step.
+    // ── THE CROSSING SIDESTEP. See the geometry note above STRAFE_ABD for WHY it is shaped this
+    // way: ONE symmetric sweep per leg, half a cycle apart, and the hip offsets alone turn that
+    // into a front cross followed by an outside uncross. Nothing here is a tuned amplitude.
     const latW = @abs(lat) * m;
-    // THE SIDESTEP, grapevine-structured: each leg owns a PRIVATE step window a quarter cycle
-    // apart — lead leg steps OUT first, trail leg steps ACROSS (the cross), each returning on
-    // its own second window, planted dead still otherwise. Windows never overlap so the legs
-    // are fully INDEPENDENT (exactly one moves at any instant); half-cycle mirrored waves moved both at once — the parallel fail (owner's diagnosis).
-    const pShared = blk: { // undo the sagittal half-cycle phase offset — windows share ONE clock
-        const raw = ph - (if (side > 0) @as(f32, 0.0) else 0.5);
-        break :blk raw - @floor(raw);
-    };
-    const lead = side * lat < 0; // the leg on the travel side steps first
-    const a: f32 = if (lead) 0.0 else 0.25;
-    const wave = mathx.smoothstep(a, a + STRAFE_STEP_W, pShared) -
-        mathx.smoothstep(a + 0.5, a + 0.5 + STRAFE_STEP_W, pShared);
-    const amp: f32 = if (lead) STRAFE_OUT else STRAFE_XRZ;
-    const reach = -lat * amp * wave * m; // toward the travel side; the trail leg passes the midline
-    const crossF = (if (lead) @as(f32, 0.0) else STRAFE_CROSS) * wave * latW; // trail plants across the FRONT
-    // Knee lifts only inside THIS leg's step windows (a half-sine pulse over each); the
-    // planted leg's knee stays quiet. The alternation is structural, not tuned.
-    const k1 = mathx.clampF((pShared - a) / STRAFE_STEP_W, 0, 1);
-    const k2 = mathx.clampF((pShared - a - 0.5) / STRAFE_STEP_W, 0, 1);
-    const pulse = mathx.sinf(std.math.pi * k1) + mathx.sinf(std.math.pi * k2);
-    const kneeFlex = mathx.lerpF(IDLE_KNEE, kneeWR, sagW) +
-        STRAFE_SOFT * latW + STRAFE_KNEE * pulse * latW;
-    // hip: sagittal flexion (−rx = thigh forward; the cross adds its own), adduction
-    // toward midline, the slight strafe stance-widening, then the step swing.
-    setJoint(wx, rest, hip, ROOT, mul(rx(-hipFlex - crossF), rz(-side * HIP_ADDUCT + side * STRAFE_SPLIT * latW + reach)));
+    const thigh = rest[hip].y - rest[knee].y;
+    const shank = rest[knee].y - rest[ank].y;
+    const legLen = thigh + shank;
+    const rigS = legLen / LEG_LEN; // rig-relative, so the 2x ogre would get a 2x sidestep
+    const reach = STRAFE_REACH * rigS; // the measured sweep, scaled onto THIS rig
+    const q = ph - @floor(ph); // leg-local phase; q = 0 is the instant this foot PLANTS
+    // Foot travel along the travel direction, -^'reach..+reach. Through STANCE it is LINEAR in phase
+    // (= linear in distance = the foot stays put while the body passes over it — the whole point).
+    // Through SWING a Hermite carries it back, LEAVING at the stance velocity (so toe-off keeps
+    // drifting back a beat, as a real foot does) and ARRIVING at rest (a landing foot is still).
+    const swingLen = 1.0 - STRAFE_STANCE;
+    var s: f32 = undefined;
+    var w: f32 = -1.0; // swing progress 0..1; negative while planted
+    if (q < STRAFE_STANCE) {
+        s = reach * (1.0 - 2.0 * q / STRAFE_STANCE);
+    } else {
+        w = (q - STRAFE_STANCE) / swingLen;
+        const v0 = -2.0 * reach * swingLen / STRAFE_STANCE; // ds/dw at lift-off, matched to stance
+        const w2 = w * w;
+        const w3 = w2 * w;
+        s = -reach * (2.0 * w3 - 3.0 * w2 + 1.0) + v0 * (w3 - 2.0 * w2 + w) + reach * (3.0 * w2 - 2.0 * w3);
+    }
+    // The foot's world +X displacement from directly under its OWN hip: rz(+) swings a leg toward
+    // +X, and lat > 0 is travel to his RIGHT, which is world -^'X. Note `dx` (a DISTANCE) is what the
+    // sweep keeps linear, never an angle — that is what stops the planted foot creeping.
+    const dx = -lat * s * m;
+    // Which leg CROSSES: the one whose hip is on the far side from travel has further to go, so it
+    // comes around the other IN FRONT (hip flexion) while its partner passes BEHIND it on the
+    // uncross. That front/behind pairing is the grapevine — it isn't optional, a leg cannot
+    // adduct THROUGH the leg it is standing next to.
+    const crossing = side * lat > 0;
+    const inSwing = w >= 0;
+    const arc = if (inSwing) mathx.sinf(std.math.pi * w) else 0.0; // 0→1→0, swing only
+    const passF = (if (crossing) @as(f32, STRAFE_CROSS) else -STRAFE_BEHIND) * arc * latW;
+    // A front cross lands a little AHEAD of the stance foot; that offset then sweeps out linearly
+    // through stance for exactly the same no-skate reason as the frontal sweep above.
+    const landF = if (inSwing or !crossing) 0.0 else STRAFE_LAND * (1.0 - 2.0 * q / STRAFE_STANCE) * latW;
+    const latHip = passF + landF; // this leg's sagittal angle, LATERAL contribution only
+    // ── THE VERTICAL SOLVE: ask for a foot HEIGHT, solve the knee for it ────────────────────────
+    // The one part of a sidestep that cannot be left to constants. Hip flexion and knee flexion
+    // fight each other vertically, so a "knee lift" angle does NOT translate to a foot leaving the
+    // ground: the old 17 deg of lift over 13 deg of hip flex netted about a CENTIMETRE once the
+    // pelvis dip was subtracted, and the swing foot just skimmed the grass. So state the two
+    // heights we actually care about — planted feet sit ON the ground, the swing foot gets
+    // STRAFE_CLEAR of daylight — and solve the knee that puts the ankle there (law of cosines on
+    // the 2-link leg). It also means the feet stay planted at EVERY abduction angle, not just the
+    // one the dip constant happened to be tuned for.
+    const clear = STRAFE_CLEAR * rigS * arc * latW;
+    // MEASURE the hip's actual height rather than assuming the caller lowered the pelvis by exactly
+    // STRAFE_DIP. That assumption held for a pure sidestep and quietly broke on a DIAGONAL, where the
+    // sagittal bob and the run crouch are also moving the pelvis and the solve knew nothing about
+    // them. Reading the real height makes the plant exact under any pelvis motion — and turns
+    // STRAFE_DIP from a contract the caller must honour into simple advice about giving the leg room.
+    const rootS = mathx.maxF(1e-4, @sqrt(wx[ROOT].m0 * wx[ROOT].m0 + wx[ROOT].m1 * wx[ROOT].m1 + wx[ROOT].m2 * wx[ROOT].m2));
+    const hipW = rl.math.vector3Transform(mathx.subV(rest[hip], rest[ROOT]), wx[ROOT]);
+    // …down to the ANKLE JOINT, which rides rest[ank].y above the sole plane — not down to the floor.
+    const vert = mathx.maxF(0.1 * legLen, (hipW.y - SOLE_Y) / rootS - rest[ank].y - clear);
+    // The hip's rotations compose rx (sagittal) FIRST then rz (frontal), so the frontal swing acts
+    // on the ALREADY-SHORTENED leg: the abduction angle is atan(sideways / height), NOT asin over
+    // the full leg length, and the two links must span the HYPOTENUSE of those. Getting this wrong
+    // is subtle and lands the planted foot a centimetre or two off the floor at wide abduction.
+    const span = @sqrt(vert * vert + dx * dx); // hip→ankle length the two links must make up
+    const abd = mathx.degrees(std.math.atan2(dx, vert));
+    // Solve against the leg's FULL sagittal angle, not just the lateral part: on a DIAGONAL the walk's
+    // own hip flexion is in there too, and ignoring it left the foot 14 cm under.
+    const totalHip = hipFlex + latHip;
+    const cosK = mathx.clampF((span - thigh * mathx.cosf(mathx.radians(totalHip))) / shank, -1.0, 1.0);
+    const latKnee = totalHip + mathx.degrees(std.math.acos(cosK));
+    // Blend to the normative sagittal knee as the sidestep fades out, so a forward walk is untouched —
+    // but hand over EARLY, because a half-and-half knee satisfies neither the gait tables nor the
+    // ground. Past ~half-lateral the solve owns it outright.
+    const kneeW = mathx.smoothstep(0.10, 0.55, latW);
+    const kneeFlex = mathx.lerpF(mathx.lerpF(IDLE_KNEE, kneeWR, sagW), mathx.maxF(0, latKnee), kneeW);
+    // Ankle levels the SOLE in BOTH planes — rz undoes the frontal swing, rx undoes the shank's
+    // pitch — so a strafing foot lands flat instead of on a corner. Both release through mid-swing,
+    // where a real foot is free to hang.
+    const held = if (inSwing) 1.0 - arc else 1.0;
+    const flat = (latHip - kneeFlex) * held * latW;
+    // The solved `abd` REPLACES the walk's constant adduction rather than adding to it — the solve
+    // already accounts for every degree of frontal rotation, so leaving HIP_ADDUCT on top
+    // double-counts it and lifts the planted foot about a centimetre off the floor at full stride.
+    const frontal = mathx.lerpF(-side * HIP_ADDUCT, abd, latW);
+    const roll = -frontal * held;
+    // hip: sagittal flexion (-^'rx = thigh forward; the cross/behind pass and the plant offset add
+    // their own), then the frontal angle — the walk's adduction, or the sidestep's swept swing.
+    setJoint(wx, rest, hip, ROOT, mul(rx(-hipFlex - latHip), rz(frontal)));
     setJoint(wx, rest, knee, hip, rx(kneeFlex)); // +rx = knee bends (shank swings back/up)
-    setJoint(wx, rest, ank, knee, mul(rx(-ankDorsi), ry(side * FOOT_TOEOUT))); // dorsiflex + toe-out splay
+    // ── Ankle: dorsiflex + toe-out splay + keep the sole out of the dirt ────────────────────────
+    // A 0.19·H boot buries a corner 4 cm at 15 deg of pitch, and ANK_DORSI asks for more than that at
+    // heel strike and toe-off. A real foot answers by PIVOTING on that corner — the ankle joint rises
+    // — which forward kinematics will never do for us, so the toe or heel just rakes underground.
+    //
+    // Level it by MEASURING, because the foot's world pitch is not just this joint's: the body pitch
+    // (deep at a run), the spine lean and the pelvis roll all stack on top, and a clamp on the local
+    // angle alone silently misses every one of them — which is exactly why the first attempt at this
+    // left the sink untouched. So: pose the foot, find its deepest sole corner, and rotate the ankle
+    // just enough to lift that corner to the floor. Two passes converge; the correction is zero the
+    // moment the foot is clear, so a swing foot, a flight phase and a roll are never touched.
+    const wscale = mathx.maxF(1e-4, @sqrt(wx[knee].m0 * wx[knee].m0 + wx[knee].m1 * wx[knee].m1 + wx[knee].m2 * wx[knee].m2));
+    var pitch = -ankDorsi + flat;
+    var pass: u8 = 0;
+    while (pass < 5) : (pass += 1) {
+        setJoint(wx, rest, ank, knee, mul3(rx(pitch), ry(side * FOOT_TOEOUT), rz(roll)));
+        var deepest: f32 = std.math.floatMax(f32);
+        var worst = v3(0, 0, 0);
+        var worstZ: f32 = 0;
+        for ([_]f32{ -sole.halfW, sole.halfW }) |cx| {
+            for ([_]f32{ -sole.heel, sole.toe }) |cz| {
+                const c = rl.math.vector3Transform(v3(cx, -sole.drop, cz), wx[ank]);
+                if (c.y < deepest) {
+                    deepest = c.y;
+                    worst = c;
+                    worstZ = cz;
+                }
+            }
+        }
+        if (deepest >= SOLE_Y) break;
+        // Rotating about the ankle's own X lifts that corner at a rate set by its HORIZONTAL distance
+        // from the joint — measured, not taken from the foot's length, because an already steeply
+        // pitched foot (toe-off plantarflexion) has most of that length pointing DOWN and a
+        // length-based step then badly undershoots. A corner ahead of the ankle rises as the toe
+        // comes up, one behind as it goes down.
+        const ankW = rl.math.vector3Transform(v3(0, 0, 0), wx[ank]);
+        const lever = mathx.maxF(0.02 * wscale, mathx.lenXZ(mathx.subV(worst, ankW)));
+        const step = mathx.degrees(std.math.asin(mathx.clampF((SOLE_Y - deepest) / lever, -1, 1)));
+        pitch += if (worstZ > 0) -step else step;
+    }
 }
 
 fn armChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, swing: f32, m: f32, runB: f32, sprintB: f32, side: f32, carry: f32, sh: usize, el: usize, wr: usize) void {
@@ -1397,8 +1649,8 @@ fn armChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, swing: f32, m: f32, runB: f3
     const runElbow = mathx.lerpF(RUN_ELBOW, CARRY_ELBOW_RUN, carry);
     const elbow = mathx.maxF(mathx.lerpF(IDLE_ELBOW, mathx.lerpF(walkElbow, runElbow, runB), m), CARRY_ELBOW * carry);
     const abd = ARM_ABD + CARRY_ABD_RUN * sprint; // arm eases out to the side only on a hold-B RUN
-    setLocal(wx, sh, rest, mul(rx(-sw), rz(side * abd))); // −rx forward, ±side rz outward
-    setLocal(wx, el, rest, rx(-elbow)); // −rx = forearm forward (elbow flexes)
+    setLocal(wx, sh, rest, mul(rx(-sw), rz(side * abd))); // -^'rx forward, ±side rz outward
+    setLocal(wx, el, rest, rx(-elbow)); // -^'rx = forearm forward (elbow flexes)
     // Wrist shapes the BLADE only (the arm stays put): a WALK holds it LOW off the floor;
     // a hold-B RUN raises it to the full angle AND yaws it out to the right off the flank
     // (the ninja read). Off the floor either way, but only the RUN reads higher/out.
@@ -1516,7 +1768,7 @@ fn chestMesh() rl.Mesh {
     b.setMat(.cloth);
     // Thorax topping out AT the shoulder line (~0.815 H) so the neck stays clear — the
     // broad-shouldered read comes from the pauldrons on the arms, not a tall chest block.
-    b.addCube(v3(0, -0.005 * H, 0), v3(0.285 * H, 0.12 * H, 0.165 * H), TUNIC); // 0.695–0.815 H
+    b.addCube(v3(0, -0.005 * H, 0), v3(0.285 * H, 0.12 * H, 0.165 * H), TUNIC); // 0.695—0.815 H
     b.setMat(.leather);
     b.addCube(v3(0, 0.035 * H, -0.005 * H), v3(0.305 * H, 0.06 * H, 0.18 * H), LEATHER_DK); // collar/mantle at the shoulders
     b.setMat(.cloth);
@@ -1654,6 +1906,157 @@ test "roll travel: the brake profile integrates to ROLL_DIST" {
         dist += peak * (1.0 - mathx.smoothstep(ROLL_BRAKE_A, ROLL_BRAKE_B, u)) * (ROLL_DUR / steps);
     }
     try std.testing.expectApproxEqAbs(@as(f64, ROLL_DIST), dist, 1e-3);
+}
+
+// ── THE CROSSING SIDESTEP, measured off the posed rig ───────────────────────────────────────────
+// Every one of these guards a failure the old sidestep actually shipped, and every one is invisible
+// in code review and obvious on screen. They pose the real legChain and read the real ankle
+// matrices — the same "measure it, don't guess it" discipline ogre.zig's club tests use.
+//
+// Pose ONE leg mid-sidestep and return its ankle in the PELVIS-CENTRED frame (+x = his LEFT,
+// +z = forward, y = height above the ground). The pelvis is lowered by exactly the STRAFE_DIP the
+// contract obliges a caller to apply, so ankle y is directly comparable to the rest foot height.
+fn testStrafeAnkle(ph: f32, lat: f32, side: f32, hip: usize, knee: usize, sole: SolePatch) rl.Vector3 {
+    const rest = restPositions();
+    var wx: [N]rl.Matrix = undefined;
+    wx[ROOT] = tr(0, rest[ROOT].y - STRAFE_DIP * @abs(lat), 0);
+    legChain(&wx, &rest, ph, 1.0, 0.0, 0.0, lat, side, hip, knee, sole);
+    return rl.math.vector3Transform(v3(0, 0, 0), wx[sole.bone]);
+}
+
+test "strafe: the legs really CROSS, then UNCROSS (the whole point of the grapevine)" {
+    const rest = restPositions();
+    const hx = rest[HIPL].x; // his LEFT hip sits at +x
+    // Sidestepping to his RIGHT (lat > 0 → travel is world -^'x), so the LEFT leg is the crosser.
+    // Its foot must end up PAST the right foot — i.e. further -^'x than the right foot — at its plant.
+    const crossedL = testStrafeAnkle(0.0, 1.0, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
+    const crossedR = testStrafeAnkle(0.0 + 0.5, 1.0, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
+    try std.testing.expect(crossedL.x < crossedR.x - 0.05); // genuinely crossed, not merely touching
+    // …and half a cycle later the same pair must be UNCROSSED and wide: left back on his left side.
+    const openL = testStrafeAnkle(0.5, 1.0, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
+    const openR = testStrafeAnkle(0.5 + 0.5, 1.0, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
+    try std.testing.expect(openL.x > openR.x + 2.0 * hx); // uncrossed AND wider than the hips
+    // Mirror it: sidestepping LEFT must cross the other way, or the gait only works one direction.
+    const mCrossR = testStrafeAnkle(0.5 + 0.5, -1.0, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
+    const mCrossL = testStrafeAnkle(0.5, -1.0, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
+    try std.testing.expect(mCrossR.x > mCrossL.x + 0.05);
+}
+
+test "strafe: the crossing leg passes IN FRONT and its partner passes BEHIND" {
+    // A leg cannot adduct THROUGH the leg it is standing beside, so the cross has to go around one
+    // side or the other. Mid-swing (peak clearance) the crosser's ankle must be forward of the
+    // pelvis and the uncrosser's behind it — that pairing IS the grapevine.
+    const crossMid = testStrafeAnkle(0.52 + 0.48 * 0.5, 1.0, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
+    const behindMid = testStrafeAnkle(0.52 + 0.48 * 0.5 + 0.5, 1.0, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
+    try std.testing.expect(crossMid.z > 0.05);
+    try std.testing.expect(behindMid.z < -0.05);
+    try std.testing.expect(crossMid.z > behindMid.z + 0.25); // and unmistakably on opposite sides
+}
+
+test "strafe: planted feet stay ON the ground and the swing foot actually leaves it" {
+    // The failure this catches is the one that shipped: 17 deg of "knee lift" over 13 deg of hip
+    // flex netted ~1 cm of clearance once the pelvis dip was subtracted, so the swing foot skimmed
+    // the grass and the sidestep read as a slide. It also holds the STRAFE_DIP contract: legChain's
+    // vertical solve assumes the caller dropped the pelvis by exactly STRAFE_DIP, and if the two
+    // ever disagree the planted feet hover or sink at some abduction angle.
+    const restFootY = restPositions()[ANKL].y;
+    var worstPlanted: f32 = 0;
+    var bestSwing: f32 = 0;
+    var i: i32 = 0;
+    while (i < 200) : (i += 1) {
+        const ph = @as(f32, @floatFromInt(i)) / 200.0;
+        for ([_]f32{ 1.0, -1.0 }) |lat| {
+            const q = ph - @floor(ph);
+            const a = testStrafeAnkle(ph, lat, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
+            const err = @abs(a.y - restFootY);
+            if (q < STRAFE_STANCE) {
+                worstPlanted = mathx.maxF(worstPlanted, err); // planted: pinned to the ground
+            } else {
+                bestSwing = mathx.maxF(bestSwing, a.y - restFootY); // swing: gets real daylight
+            }
+        }
+    }
+    try std.testing.expect(worstPlanted < 0.006); // sub-centimetre at H = 1.8 — no float, no clip
+    try std.testing.expect(bestSwing > 0.8 * STRAFE_CLEAR);
+}
+
+test "strafe: the planted foot does NOT skate — it holds still while the body passes it" {
+    // THE headline bug. Phase advances by DISTANCE, so over a slice of stance the body travels
+    // (dPhase · STRAFE_CYCLE) and the planted foot must slide back through the pelvis frame by
+    // exactly that much, leaving it fixed in the world. Holding a constant joint angle instead —
+    // what "planted dead still" used to mean — drags the foot along under the body.
+    const step = 0.01;
+    var q: f32 = 0.06;
+    while (q < STRAFE_STANCE - 0.06) : (q += step) {
+        const a = testStrafeAnkle(q, 1.0, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
+        const b = testStrafeAnkle(q + step, 1.0, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
+        const bodyTravel = step * STRAFE_CYCLE; // world -^'x, so the foot must gain +x by this much
+        try std.testing.expect(@abs((b.x - a.x) - bodyTravel) < 0.1 * bodyTravel);
+    }
+}
+
+test "strafe: cadence lands near the forward walk's — no coffeed-up patter" {
+    // Step rate = speed / cycle length, and the sidestep is the SHORTER cycle, so without help it
+    // patters. Two things close the gap: STRAFE_CYCLE pushed to the hip-ROM ceiling, and game.zig's
+    // mild locked-on lateral speed factor. Pin the result so a retune of either can't quietly
+    // reintroduce the patter (or overcorrect into a moonwalk).
+    const walkCycle = STRIDE; // at the reference walk speed the stride scale is exactly 1
+    const strafeSpeed = 0.85; // game.STRAFE_SPEED — sideways travel as a fraction of forward
+    const walkCadence = 1.0 / walkCycle; // cycles per unit time at unit speed
+    const strafeCadence = strafeSpeed / STRAFE_CYCLE;
+    try std.testing.expect(strafeCadence < 1.15 * walkCadence);
+    try std.testing.expect(strafeCadence > 0.75 * walkCadence);
+}
+
+test "the rig's rest leg length matches the LEG_LEN the strafe geometry is measured off" {
+    const rest = restPositions();
+    try std.testing.expect(@abs((rest[HIPL].y - rest[ANKL].y) - LEG_LEN) < 1e-4);
+    try std.testing.expect(@abs((rest[HIPR].y - rest[ANKR].y) - LEG_LEN) < 1e-4);
+}
+
+// The deepest any sole corner reaches, over a full stride at `speed` travelling `lat`-ward.
+fn deepestSole(speed: f32, lat: f32) f32 {
+    // Bare rig — `init` wants a live shader, and pose() only ever touches `rest`.
+    var h = Hero{ .mesh = undefined, .mat = undefined, .rest = restPositions() };
+    h.moving = 1;
+    h.speedS = speed;
+    h.fwdB = @sqrt(mathx.maxF(0, 1.0 - lat * lat));
+    h.latB = lat;
+    var lowest: f32 = std.math.floatMax(f32);
+    var i: i32 = 0;
+    while (i < 240) : (i += 1) {
+        h.phase = @as(f32, @floatFromInt(i)) / 240.0;
+        h.pose();
+        lowest = mathx.minF(lowest, soleDepth(&h.xf, &BOOT_SOLE));
+    }
+    return lowest;
+}
+
+test "feet do not RAKE through the floor — walking, running, sprinting or sidestepping" {
+    // The owner's report, pinned. An FK gait has no idea where the ground is: the pelvis rides a bob
+    // curve while the feet ride joint angles, and every disagreement between them buries a sole.
+    // legChain's ankle levelling takes out the big one — a long boot pitching its toe or heel under —
+    // so hold it to a shallow residue rather than the several centimetres it used to dig.
+    // The WALK is the case the owner reported and the one now genuinely fixed: it used to rake 8.6 cm
+    // under; the ankle levelling brings it inside the deliberate hair of embed. Sidesteps are held to
+    // the same bar, since legChain's vertical solve pins those feet outright.
+    try std.testing.expect(deepestSole(WALK_SPEED, 0.0) > SOLE_Y - 0.015);
+    try std.testing.expect(deepestSole(WALK_SPEED, 1.0) > SOLE_Y - 0.015);
+    try std.testing.expect(deepestSole(WALK_SPEED, -1.0) > SOLE_Y - 0.015);
+    // A DIAGONAL keeps a larger residue: there the normative sagittal gait and the sidestep solve are
+    // both driving one leg, and no single knee angle satisfies the gait tables AND the ground. Down
+    // from 14 cm by solving against the full hip angle; the rest waits on real foot IK.
+    try std.testing.expect(deepestSole(WALK_SPEED, 0.7) > SOLE_Y - 0.08);
+    try std.testing.expect(deepestSole(WALK_SPEED, -0.7) > SOLE_Y - 0.08); // …and diagonally
+    // RUN and SPRINT keep a KNOWN, larger clip, and its cause is not the feet at all: `rx(bodyPitch)`
+    // in pose() rotates the whole body about the WORLD ORIGIN, not about the support foot as its own
+    // comment claims, so under a deep run lean any foot swung forward is levered straight down. No
+    // ankle angle can undo that — the foot is not mis-angled, it is in the wrong PLACE. Fixing it
+    // means pitching about the stance foot, which reshapes the run's signature pose, so it is left
+    // alone deliberately (AGENTS.md already records the run-crouch clip as a known gap, and the owner
+    // has called a small clip preferable to any float). This bound only stops it getting WORSE.
+    try std.testing.expect(deepestSole(RUN_SPEED, 0.0) > SOLE_Y - 0.10);
+    try std.testing.expect(deepestSole(SPRINT_SPEED, 0.0) > SOLE_Y - 0.30);
 }
 
 test "gait curves wrap continuously across the stride seam" {

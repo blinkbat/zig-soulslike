@@ -310,25 +310,27 @@ fn padNav(dir: NavDir) rl.GamepadButton {
     };
 }
 
-fn navPressed(dir: NavDir) bool {
+// A fresh press of a direction on EITHER device — the one place the key/pad pair for a NavDir is
+// read. `autoRepeat` folds in the keyboard's held-key repeat: menu NAVIGATION wants it (hold Down
+// to run the cursor), slider ADJUST does not (the glide covers held keys instead).
+fn dirPressed(dir: NavDir, autoRepeat: bool) bool {
     const k = keyNav(dir);
-    if (rl.isKeyPressed(k.a) or rl.isKeyPressedRepeat(k.a)) return true;
-    if (rl.isKeyPressed(k.b) or rl.isKeyPressedRepeat(k.b)) return true;
+    if (rl.isKeyPressed(k.a) or rl.isKeyPressed(k.b)) return true;
+    if (autoRepeat and (rl.isKeyPressedRepeat(k.a) or rl.isKeyPressedRepeat(k.b))) return true;
     if (rl.isGamepadAvailable(0)) {
         if (rl.isGamepadButtonPressed(0, padNav(dir))) return true;
     }
     return false;
 }
 
-// Slider adjust inputs: a TAP (no key-repeat — the glide covers held keys), the held
-// direction for the glide, and the coarse-step modifier (Shift / LB).
+fn navPressed(dir: NavDir) bool {
+    return dirPressed(dir, true);
+}
+
+// Slider adjust inputs: a TAP (no key-repeat), the held direction for the glide, and the
+// coarse-step modifier (Shift / LB).
 fn adjTapped(dir: NavDir) bool {
-    const k = keyNav(dir);
-    if (rl.isKeyPressed(k.a) or rl.isKeyPressed(k.b)) return true;
-    if (rl.isGamepadAvailable(0)) {
-        if (rl.isGamepadButtonPressed(0, padNav(dir))) return true;
-    }
-    return false;
+    return dirPressed(dir, false);
 }
 
 fn adjHeldDir() i32 {

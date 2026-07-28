@@ -166,6 +166,13 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
                  plus planted legs put the crater ~1.2 out; and the FAST SIDE SWIPE (`swipewind` →
                  `swipe`, 0.34 s + 0.20 s), a horizontal scythe through a SECTOR he keeps pivoting
                  into (`SWIPE_TURN`), which is how he answers a hero who won't stand in front of him.
+                 **HE DOES NOT STRAFE** (owner's call): a giant crossing its legs over a base that
+                 wide is how you fall over, and it fights the planted-legs law. `latB` is pinned to 0
+                 at his `legChain` calls so he can never inherit the hero's grapevine; he answers a
+                 flanking hero by PIVOTING instead (`faceToward`, and `SWIPE_TURN` mid-swing).
+                 Both attacks are LONG-TELL / HARD-PUNISH by design: `WINDUP_DUR` 1.20 s and
+                 `SWIPE_WIND_DUR` 0.46 s pay for `SLAM_HIT` 36 and `SWIPE_HIT` 23 — you always get
+                 told, and the price of missing the tell is steep.
                  The swipe is a WAIST move: the coil/whip is `twist`, plus the shoulder's own
                  horizontal `clubSweep` (ry OUTSIDE the abduction, or it just spins the arm).
                  **Every hurt shape is MEASURED off the posed club, never guessed** — `SLAM_LEN`,
@@ -204,6 +211,33 @@ The bar for "human" is anatomy (real segment proportions) + real gaits, not poly
   phase). Curves are 8-sample tables interpolated by stride phase; the two legs are 50% out
   of phase. Phase is driven by DISTANCE travelled (never time) so feet never skate; stride
   LENGTH scales with speed so one leg-cycle reads at every pace.
+- **THE CROSSING SIDESTEP IS GEOMETRY, NOT TUNED ANGLES.** The locked-on strafe is a real grapevine:
+  both legs take ONE symmetric ±`STRAFE_ABD` frontal sweep half a cycle apart, and because each hip
+  sits `hx` off the midline the far leg lands PAST the near foot (a front cross, going around it with
+  hip FLEXION) while the near leg then swings wide OUTSIDE it (the uncross, passing BEHIND). No
+  lead/trail amplitude split — the cross falls out of the hip offsets. Two rules keep it honest:
+  - **A PLANTED FOOT IS WORLD-FIXED.** Through stance its offset from the pelvis sweeps backward
+    LINEAR IN DISTANCE, at exactly the rate the body advances. Holding a strafe leg at a constant
+    joint angle is only still in JOINT space — in world space the foot is dragged along under the
+    body, and that skate (not the amplitude) is what made the old sidestep read as sliding.
+  - **ASK FOR FOOT HEIGHTS, SOLVE FOR THE KNEE.** Hip and knee flexion fight each other vertically,
+    so a "knee lift" angle does not mean a foot leaves the ground (17° over 13° of hip netted ~1 cm).
+    `legChain` measures the hip's real height and solves the knee to place the ankle.
+  - **CADENCE has exactly one dial.** Phase is driven by DISTANCE, so step rate = speed /
+    `STRAFE_CYCLE`, and the cycle is capped by real hip ROM. A sidestep that reads too fast can ONLY
+    be slowed by lengthening the cycle or slowing lateral travel (`game.STRAFE_SPEED`, ER-style
+    anisotropy) — never by pacing the animation, which brings the skate straight back.
+- **FEET DO NOT SINK: level the ANKLE, never lift the BODY.** A 0.19·H boot buries a corner 4 cm at
+  15° of pitch, and the normative ankle curve asks for more at heel strike and toe-off (a real foot
+  pivots on that corner; FK never will). `legChain` poses the foot, measures its deepest sole corner
+  against its rig's `SolePatch`, and rotates the ankle just enough to clear — measured, because the
+  foot's world pitch also carries the body pitch, spine lean and pelvis roll. TWO fixes were tried
+  and REVERTED, both instructive: lifting the whole skeleton to clear the deepest corner judders
+  ("like parkinsons") because which corner is deepest changes frame to frame, and holding the pelvis
+  up off the legs' own reach cancels `RUN_CROUCH`, standing the run up so it reads slow. Whole-body
+  corrections to a local problem always read as a tremor. Also check the MESH: `addCube` takes a FULL
+  size but `addCapsule`/`addBlob` take true RADII, and that mix-up had the ogre's foot pad authored
+  0.036·H below its own sole plane — buried to the ankle before any animation ran.
 - **HUMANOID ENEMIES REUSE THE HERO'S WALK/STRAFE ANIMS (owner's rule).** Any humanoid foe
   (the skeletal archer, and future ones) locomotes on the HERO's gait — the pub normative
   gait tables + `hero.legChain` (the walk cycle AND the locked-on strafe/backpedal footing)
@@ -327,6 +361,12 @@ on `sprintB`.
   is the facing angle.
 - **Strafe sign:** the camera looks +Z from behind, so screen-right is world −X →
   `camera.rightXZ` MUST be `(−cos yaw, 0, sin yaw)`. Flipping it mirrors L/R walking.
+- **VSYNC, not `setTargetFPS`.** `vsync_hint` is set in `setConfigFlags` BEFORE `initWindow`, and
+  there is deliberately no `setTargetFPS`. `setTargetFPS` is a CPU-side frame LIMITER: it paces how
+  often we draw but never asks the driver to swap during vblank, so the swap lands mid-scan and TEARS.
+  Windowed mode hid that (Windows' compositor effectively syncs); exclusive fullscreen bypasses the
+  compositor and the seam showed. Don't add a frame cap back on top — two limiters fight on any panel
+  that isn't 60 Hz and read as judder. Everything is dt-driven, so the panel's rate is fine.
 - **Depth z-fighting:** `rl.gl.rlSetClipPlanes(0.2, 320)` is set once at startup — the
   default 0.01..1000 wrecks depth precision and the hero's overlapping boxes flicker / look
   inverted as the camera moves. The ground sits a hair ABOVE `y = 0` (`env.GROUND_Y = 0.01`),
@@ -374,5 +414,10 @@ Current gaps to remember: the roll now has **front-loaded i-frames** (0→0.46 s
 roll — `hero.iFramed`, gating `takeHit` + the arrow connect; the recovery tail stays
 vulnerable so roll-catching works) but still **no collision**; there's **no foot IK** (feet
 approximate the ground; a run crouch can
-float/clip a touch); one leg-cycle is reused across run and sprint (no separate run mesh);
+float/clip a touch — and the CAUSE is now known: `rx(bodyPitch)` in `hero.pose()` rotates the body
+about the WORLD ORIGIN, not about the support foot as its comment claims, so under a deep lean any
+foot swung forward is levered straight down. Walking and pure sidesteps are exact; a diagonal keeps
+~6 cm because the normative sagittal gait and the sidestep solve both drive one leg and no single
+knee angle satisfies both. Both want real foot IK, or pitching about the stance foot);
+one leg-cycle is reused across run and sprint (no separate run mesh);
 attacks reuse one anim standing or moving (no separate running attacks).

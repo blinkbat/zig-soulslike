@@ -94,6 +94,20 @@ const CLAVR = 23; // …and R, the loaded side
 
 const parent = [N]i32{ -1, ROOT, SPINE, HUMP, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CLAVL, SHL, ELL, CLAVR, SHR, ELR, WRR, SKULL, ANKL, ANKR, CHEST, CHEST, CHEST };
 
+// Where this giant carries his weight, MEASURED off footMesh: the fat pad under each ankle.
+// `hero.legChain` levels each ankle against its own patch every frame so the sole can't rake
+// through the ground (and `hero.soleDepth` is the measurement the unit tests read).
+//
+// The TOES are deliberately NOT patches. They are the one part of him MEANT to break the surface —
+// TOE_GRIP claws them into the dirt as he braces a slam and TOE_PUSH drives off the ball at the end
+// of each stance — so planting off them would cancel exactly the detail that makes the foot look
+// like it works the ground, and would jack the whole giant up mid-slam until his club could no
+// longer reach the earth (which is precisely what the club tests caught when they were included).
+const solePatches = [_]heromod.SolePatch{
+    .{ .bone = ANKL, .heel = 0.094 * H, .toe = 0.144 * H, .halfW = 0.082 * H, .drop = 0.039 * H },
+    .{ .bone = ANKR, .heel = 0.094 * H, .toe = 0.144 * H, .halfW = 0.082 * H, .drop = 0.039 * H },
+};
+
 const H: f32 = heromod.H;
 // Ogre proportions (fractions of H): LEGS keep the hero's segment lengths so the shared gait
 // reads honestly; ARMS run long + heavy, the frame wide. Bulk comes from the meshes + the
@@ -195,7 +209,9 @@ const TRUNK_NOD = 5.5; // deg the trunk flexes twice a stride as the mass settle
 
 // ── slam timing (seconds) — a LONG readable wind-up (the tell lands early), a fast crash, and
 // a long winded recovery (the punish window a giant's slow attack must give). ───────────────
-const WINDUP_DUR = 0.90; // rear the club overhead — the unmistakable tell
+const WINDUP_DUR = 1.20; // rear the club overhead — the unmistakable tell. LONG on purpose (owner):
+//   the deal with this giant is that you always get told, and the price of missing the tell went UP
+//   with SLAM_HIT — more telegraph bought with more damage, which is the souls bargain.
 const SLAM_DUR = 0.22; // …then FIRE: a fast downward crash
 const SLAM_IMPACT_K = 0.85; // fraction into the slam the club meets the ground (impact frame) —
 //   MEASURED off the posed club's arc, which first touches the earth at ~0.19 s of the 0.22 s crash
@@ -207,7 +223,8 @@ const SLAM_CD = 1.3; // beat between slams
 // front sector while he pivots into it (SWIPE_TURN) — so stepping to his flank no longer means
 // safety, it means being where the arc is going. Costs less than the slam in damage and in recovery,
 // which is what makes it a real mix-up rather than a strictly better move.
-const SWIPE_WIND_DUR = 0.34; // the cock-back — SHORT (a third of the slam's tell)
+const SWIPE_WIND_DUR = 0.46; // the cock-back — still SHORT next to the slam's tell (about a third of
+//   it), just long enough to be readable now that it hurts more
 const SWIPE_DUR = 0.20; // …and the sweep itself, faster than the slam's crash
 const SWIPE_IMPACT_K = 0.42; // fraction into the sweep the club crosses his centre line
 const SWIPE_REC_DUR = 0.52; // a brief overswung stagger — not the slam's wide-open collapse
@@ -220,16 +237,19 @@ const SHOVE_DECAY = 6.0;
 const HP_MAX = 300.0;
 const POISE_MAX = 30.0; // 3 fast hero-lights (poise 10) to flinch once; a lone light is shrugged off
 const STANCE_MAX = 90.0; // keep the pressure on to reach the heavy stance-break
-pub const SLAM_HIT = combat.Hit{ .dmg = 28, .poise = 44, .stance = 20 }; // a crushing body-blow (heavy); dmg eased down from 34
-pub const SWIPE_HIT = combat.Hit{ .dmg = 17, .poise = 30, .stance = 11 }; // the swipe trades weight for
-//   speed + coverage: it staggers and hurts, but it is not the slam
+pub const SLAM_HIT = combat.Hit{ .dmg = 36, .poise = 44, .stance = 20 }; // a crushing body-blow (heavy).
+//   Paid for by WINDUP_DUR: the tell is over a second, so eating this is a read you missed, not a coin
+//   flip. (It went 34 → 28 when the tell was short; back UP to 36 now the tell is long.)
+pub const SWIPE_HIT = combat.Hit{ .dmg = 23, .poise = 30, .stance = 11 }; // the swipe trades weight for
+//   speed + coverage: it staggers and hurts, but it is still clearly not the slam. Up from 17 against
+//   its own longer cock-back, keeping the same ~0.64 ratio to the slam it always had.
 const DEATH_DUR = 1.7; // a slow, weighty topple — a giant falls hard (and sadly)
 const DISS_DUR = 1.1; // dissipation into grace-gold motes (ER-consistent with frog/archer)
 
 // hero.attackHit() decides the hero's own blows; these constants are what the OGRE lands. The
 // slam crush zone is the CLUB'S LINE — a strip down the facing axis, NOT a half-disc fan (the
 // old shape was an unfair AoE); flank the line and you're safe.
-const HERO_REACH = 0.55; // hero footprint added to the strip on both axes
+const HERO_REACH = foe.HERO_REACH; // hero footprint added to the strip on both axes
 const SLAM_LEN = 1.05; // crush strip length ahead of the seat (pre-scale). MEASURED, not guessed:
 //   clubLowWorld() traced frame by frame, the head first touches earth ~1.2 out and skids in to 0.94,
 //   and the drum's own footprint carries ~0.45 further — so 1.05 x scale ends the strip on the club's
@@ -385,19 +405,8 @@ const DUST = rgba(150, 132, 96, 175); // kicked-up dust (warm tan; unlit, so lif
 const BLOOD = rgba(84, 20, 16, 235); // dark ichor spray on a landed blow
 const MOTE = rgba(252, 198, 92, 170); // death dissipation — grace-gold motes
 
-const Particle = struct {
-    p: rl.Vector3 = mathx.zero3,
-    v: rl.Vector3 = mathx.zero3,
-    life: f32 = 0,
-    max: f32 = 1,
-    r0: f32 = 0.05,
-    r1: f32 = 0.05,
-    col: rl.Color = DUST,
-    grav: f32 = 0,
-};
-
-// The hero's blade as plain data (the shared foe standard). Re-exported for symmetry.
-pub const Blade = foe.Blade;
+// The SHARED particle shape + integrator + draw (foe.zig); only the bursts below are the ogre's.
+const Particle = foe.Particle;
 
 // idle/approach/windup/slam/recover are the live behaviours; the last three are REACTIONS
 // (interrupts) — a light flinch, the heavy stance-break, and death.
@@ -504,7 +513,8 @@ pub const Ogre = struct {
     pub fn spawn(home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Ogre {
         var o = Ogre{ .pos = home, .home = home, .facing = faceYaw, .scale = scale * SCALE, .seed = seed };
         o.rest = restPositions();
-        o.fxRng = mathx.Rng.init(@as(u64, @intFromFloat(seed * 88883.0)) +% 7);
+        // @abs first — @intFromFloat into an unsigned type traps on a negative seed (see frog.zig).
+        o.fxRng = mathx.Rng.init(@as(u64, @intFromFloat(@abs(seed) * 88883.0)) +% 7);
         o.pose();
         return o;
     }
@@ -583,11 +593,7 @@ pub const Ogre = struct {
         var moveYaw: ?f32 = null;
 
         // Hit shove — a jolt off a landed blow (a giant barely budges, so it decays fast).
-        if (mathx.lenXZ(self.shove) > 0.01) {
-            self.pos.x = mathx.clampF(self.pos.x + self.shove.x * dt, -bounds, bounds);
-            self.pos.z = mathx.clampF(self.pos.z + self.shove.z * dt, -bounds, bounds);
-            self.shove = mathx.scaleV(self.shove, mathx.maxF(0, 1.0 - SHOVE_DECAY * dt));
-        }
+        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
         const d = mathx.distXZ(self.pos, hero);
         const bearing = self.bearingTo(hero);
@@ -804,9 +810,10 @@ pub const Ogre = struct {
         self.heroLatch = true;
     }
 
-    // The SWIPE's hurt shape: a SECTOR — the band the club scythes through, centred on his facing
-    // (he has been pivoting onto you all through the cock-back, so his facing IS the arc's centre by
-    // the time it lands). Hug his legs (inside SWIPE_INNER) or be outside the arc, and it misses.
+    // The SWIPE's hurt shape: a SECTOR — the band the club scythes through, centred on SWIPE_ARC_MID
+    // (his CLUB side, not his facing: the swing starts cocked behind his right shoulder and finishes
+    // past his left, so the swept bearings are offset — see that constant). Hug his legs (inside
+    // SWIPE_INNER) or stand outside the arc, and it misses.
     fn trySwipe(self: *Ogre, hero: rl.Vector3, h: combat.Hit) void {
         if (self.heroLatch) return;
         const d = mathx.distXZ(self.pos, hero);
@@ -1040,7 +1047,7 @@ pub const Ogre = struct {
         return 0;
     }
 
-    // ── pose: build the 18 bone matrices for this frame ─────────────────────────────────────
+    // ── pose: build all N (24) bone matrices for this frame ─────────────────────────────────
     pub fn pose(self: *Ogre) void {
         const fs = self.scale * (1.0 - 0.55 * self.fade);
         const sink = -0.95 * self.scale * self.fade; // the corpse sinks as it dissipates
@@ -1115,8 +1122,13 @@ pub const Ogre = struct {
         // are never two frozen pillars. DEAD → the crumple in poseUpper owns them.
         if (!dead) {
             if (self.moving > 0.25) {
-                heromod.legChain(&wx, &self.rest, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, ANKL);
-                heromod.legChain(&wx, &self.rest, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, ANKR);
+                // NO LATERAL GAIT (owner's call): a giant does not cross its legs. Crossing over a
+                // base this wide is how you fall down, and it fights the planted-legs law besides.
+                // He answers a flanking hero by PIVOTING on planted feet instead (pivotPose below +
+                // SWIPE_TURN), so latB is pinned to 0 here rather than left to the hero's grapevine
+                // in case a future AI ever gives him sideways travel.
+                heromod.legChain(&wx, &self.rest, self.phase, m, 0, self.fwdB, 0, 1.0, HIPL, KNEEL, solePatches[0]);
+                heromod.legChain(&wx, &self.rest, self.phase + 0.5, m, 0, self.fwdB, 0, -1.0, HIPR, KNEER, solePatches[1]);
             } else {
                 const leftFree = mathx.clampF(-wshift, 0, 1) * idleAmt; // left leg relaxes when weight rocks right
                 const rightFree = mathx.clampF(wshift, 0, 1) * idleAmt;
@@ -1296,20 +1308,12 @@ pub const Ogre = struct {
         const low = self.clubLowWorld();
         return v3(low.x, 0.05, low.z);
     }
+    // The pool plumbing is the shared one (foe.zig) — these just name the ogre's own ring.
     fn emit(self: *Ogre, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        self.fx[self.fxHead] = .{ .p = p, .v = vel, .life = life, .max = life, .r0 = r0, .r1 = r1, .col = col, .grav = grav };
-        self.fxHead = (self.fxHead + 1) % FX_MAX;
+        foe.emitParticle(&self.fx, &self.fxHead, p, vel, life, r0, r1, col, grav);
     }
     fn updateFx(self: *Ogre, dt: f32) void {
-        for (&self.fx) |*q| {
-            if (q.life <= 0) continue;
-            q.life -= dt;
-            q.p.x += q.v.x * dt;
-            q.p.y += q.v.y * dt;
-            q.p.z += q.v.z * dt;
-            q.v.y -= q.grav * dt;
-            if (q.p.y < 0) q.p.y = 0;
-        }
+        foe.tickParticles(&self.fx, dt);
     }
     // A radial fan of dust from `c` (the slam crush; scaled up for the giant).
     fn dustBurst(self: *Ogre, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
@@ -1379,13 +1383,7 @@ pub const Ogre = struct {
         }
     }
     pub fn drawFx(self: *const Ogre) void {
-        for (&self.fx) |*q| {
-            if (q.life <= 0) continue;
-            const frac = mathx.clampF(q.life / q.max, 0, 1);
-            const rad = lerpF(q.r1, q.r0, frac);
-            const a = mathx.u8f(@as(f32, @floatFromInt(q.col.a)) * frac);
-            rl.drawSphereEx(q.p, rad, 6, 8, mathx.withAlpha(q.col, a));
-        }
+        foe.drawParticles(&self.fx);
     }
 
     pub fn draw(self: *const Ogre, model: *const Model) void {
@@ -1397,8 +1395,7 @@ pub const Ogre = struct {
 // mirrors the Knot/Line so game.zig iterates it generically; COUNT stays 1 for now (bump it
 // and add homes to field more). ────────────────────────────────────────────────────────────
 const COUNT = 1;
-const Home = struct { x: f32, z: f32, yaw: f32, scale: f32, seed: f32 };
-const homes = [COUNT]Home{
+const homes = [COUNT]foe.Home{
     // Deep down the avenue, past the toads + archers — the climax of the approach. Faces back
     // up the avenue (+Z) so the hero meets its eye as they close in.
     .{ .x = 3.0, .z = -50.0, .yaw = 0.0, .scale = 1.0, .seed = 0.4 },
@@ -1433,7 +1430,7 @@ pub const Grief = struct {
     pub fn draw(self: *const Grief, scene: ?*gfx.Scene) void {
         for (&self.ogres) |*o| {
             if (!o.alive()) continue;
-            if (scene) |sc| sc.setFlash(0.85 * o.flashFrac());
+            if (scene) |sc| sc.setFlash(foe.FLASH_GAIN * o.flashFrac());
             o.draw(&self.model);
         }
         if (scene) |sc| sc.setFlash(0);
@@ -1441,23 +1438,15 @@ pub const Grief = struct {
     pub fn drawFx(self: *const Grief) void {
         for (&self.ogres) |*o| o.drawFx();
     }
+    // The shared Group roll-ups (foe.zig).
     pub fn anyDied(self: *const Grief) bool {
-        for (&self.ogres) |*o| {
-            if (o.justDied) return true;
-        }
-        return false;
+        return foe.anyDied(&self.ogres);
     }
     pub fn totalHits(self: *const Grief) u32 {
-        var n: u32 = 0;
-        for (&self.ogres) |*o| n += o.hits;
-        return n;
+        return foe.totalHits(&self.ogres);
     }
     pub fn aliveCount(self: *const Grief) u32 {
-        var n: u32 = 0;
-        for (&self.ogres) |*o| {
-            if (o.alive()) n += 1;
-        }
-        return n;
+        return foe.aliveCount(&self.ogres);
     }
 };
 
@@ -1711,9 +1700,18 @@ fn footMesh(side: f32) rl.Mesh {
     const ay = 0.039 * H;
     // A ROUND elephantine foot: a fat capsule pad heel→ball, a domed ankle boss above it, and a
     // heel pad swelling behind. The toe lobes hang off the TOE bone now, so the foot ROLLS.
-    b.addCapsule(v3(0, -ay + 0.032 * H, -0.026 * H), v3(0, -ay + 0.026 * H, 0.086 * H), 0.068 * H, 0.058 * H, 13, HIDE); // the pad
-    b.addBlob(v3(0, -ay + 0.044 * H, -0.030 * H), v3(0.062 * H, 0.052 * H, 0.058 * H), 8, 13, HIDE_DK); // heel / ankle boss
-    b.addBlob(v3(side * 0.020 * H, -ay + 0.020 * H, 0.030 * H), v3(0.062 * H, 0.034 * H, 0.062 * H), 7, 12, HIDE); // the sole pad, splayed
+    //
+    // `PAD_UP` is not a style tweak — it is a BUG FIX, and the bug was a unit mix-up: addCube takes
+    // a FULL size but addCapsule/addBlob take true RADII, so the pad's fat 0.068·H radius hung
+    // 0.036·H BELOW the sole plane the ankle height (ay) defines. Every ogre therefore stood buried
+    // to the ankle — 0.036·H × SCALE is over 10 cm of foot underground, before any animation.
+    // Raising all three lumps by that much lands the deepest point exactly ON the sole plane and
+    // leaves the ankle sitting low INSIDE the pad, which is how a real elephantine foot reads.
+    // RE-MEASURE this if the pad radii change; `the ogre STANDS on the ground` guards it.
+    const PAD_UP = 0.036 * H;
+    b.addCapsule(v3(0, -ay + 0.032 * H + PAD_UP, -0.026 * H), v3(0, -ay + 0.026 * H + PAD_UP, 0.086 * H), 0.068 * H, 0.058 * H, 13, HIDE); // the pad
+    b.addBlob(v3(0, -ay + 0.044 * H + PAD_UP, -0.030 * H), v3(0.062 * H, 0.052 * H, 0.058 * H), 8, 13, HIDE_DK); // heel / ankle boss
+    b.addBlob(v3(side * 0.020 * H, -ay + 0.020 * H + PAD_UP, 0.030 * H), v3(0.062 * H, 0.034 * H, 0.062 * H), 7, 12, HIDE); // the sole pad, splayed
     return b.toMesh();
 }
 

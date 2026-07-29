@@ -670,6 +670,13 @@ pub const Hero = struct {
     trailHead: usize = 0,
     // combat
     vit: combat.Vitals = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX),
+    stam: combat.Stamina = .{}, // ER's third bar — the hero's alone; foes don't carry one
+    sprinting: bool = false, // hold-B RUN, resolved by the caller — the only CONTINUOUS drain
+    // THE WORLD IS HELD (menu up). He keeps breathing, but his COMBAT clocks must not run:
+    // the live loop already freezes vit/hurtFlash by simply not ticking them, and stamina rides
+    // tickClocks instead, so without this it is the one meter that keeps moving under a pause —
+    // bleeding on a sprint you paused mid-stride, and refilling for free the rest of the time.
+    held: bool = false,
     stun: combat.StunKind = .none, // .light flinch / .heavy stagger (a committed reaction)
     stunT: f32 = 0, // seconds into the current stagger
     hurtFlash: f32 = 0, // 0..1 red damage-flash intensity (set on any hit, decays) — HUD reads it
@@ -708,6 +715,10 @@ pub const Hero = struct {
         self.elapsed += dt;
         self.ageTrail(dt);
         self.blendT = @min(self.blendT + dt, 1e9);
+        // Stamina belongs in the prologue for the same reason the others do: it must advance
+        // exactly ONCE per frame whichever path is running, and hanging it off the live loop
+        // instead would leave --shot draining every swing it takes and never refilling.
+        if (!self.held) self.stam.tick(dt, self.sprinting, self.attacking);
     }
 
     pub fn update(self: *Hero, dt: f32, movedDist: f32, speed: f32, moveYaw: ?f32) void {
@@ -723,6 +734,8 @@ pub const Hero = struct {
     // so a stray call can't leave rolling+attacking latched together).
     pub fn startRoll(self: *Hero, dir: rl.Vector3) void {
         if (self.rolling or self.attacking) return;
+        if (!self.stam.afford(combat.STAM_ROLL)) return; // a no-op while LOCKOUT is off
+        self.stam.spend(combat.STAM_ROLL);
         var d = v3(dir.x, 0, dir.z);
         if (mathx.lenXZ(d) < 0.1) d = mathx.headingDir(self.facing);
         d = mathx.normV(d);
@@ -807,6 +820,9 @@ pub const Hero = struct {
     // already mid-swing (player input goes through requestAttack, which buffers instead).
     pub fn startAttack(self: *Hero, kind: Attack) void {
         if (self.rolling or self.attacking) return;
+        const cost: f32 = if (kind == .heavy) combat.STAM_HEAVY else combat.STAM_LIGHT;
+        if (!self.stam.afford(cost)) return; // a no-op while LOCKOUT is off
+        self.stam.spend(cost);
         self.attacking = true;
         self.atkHeavy = kind == .heavy;
         self.atkAlt = false; // a fresh light is always the forehand; chaining flips it (see updateAttack)
@@ -1019,6 +1035,8 @@ pub const Hero = struct {
         self.stun = .none;
         self.hurtFlash = 0;
         self.vit = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX);
+        self.stam.reset();
+        self.sprinting = false;
         self.pos = self.spawnPos;
         self.facing = self.spawnFacing;
         self.moving = 0;

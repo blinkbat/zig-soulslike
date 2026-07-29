@@ -53,6 +53,10 @@ pub const LIGHT_STUN_DUR = 0.46;
 pub const HEAVY_STUN_DUR = 1.15;
 pub const FOE_LIGHT_STUN_DUR = 0.78;
 pub const FOE_HEAVY_STUN_DUR = 2.40;
+// "Longer ago than any delay here" — the since-last-event clocks start saturated so a meter
+// that has never been touched is already past its gate. Big enough that adding a frame's dt
+// leaves it unchanged in f32, so it never creeps or overflows.
+const LONG_AGO = 1e9;
 
 pub const Vitals = struct {
     hp: f32,
@@ -61,7 +65,7 @@ pub const Vitals = struct {
     poiseMax: f32,
     stance: f32,
     stanceMax: f32,
-    sinceHit: f32 = 1e9, // seconds since the last poise-damaging hit (gates regen)
+    sinceHit: f32 = LONG_AGO, // seconds since the last poise-damaging hit (gates regen)
     dead: bool = false,
     regenDelay: f32 = REGEN_DELAY, // …how long that gate holds
     regenRate: f32 = 1.0, // …and the multiplier on the refill speed once it opens
@@ -125,6 +129,70 @@ pub const Vitals = struct {
             return .heavy;
         }
         return if (light) .light else .none;
+    }
+};
+
+// ── STAMINA: the hero's alone ───────────────────────────────────────────────────────────
+// Elden Ring's shallow, fast-refilling pool (docs/ELDEN_RING.md §3 — these ARE its numbers,
+// at Endurance 15). Every committed action takes a flat bite and it pours back roughly four
+// times as fast as a roll spends it, so it paces a FLURRY without ever becoming a resource
+// you manage between fights.
+//
+// Deliberately NOT on `Vitals`: that struct is shared with every foe, and an enemy stamina
+// meter nothing reads and nothing draws is a field that rots. Enemies pay for commitment in
+// recovery frames instead.
+pub const STAM_MAX = 105.0; // ER's Endurance-15 pool — about eight rolls from full
+pub const STAM_ROLL = 12.0; // ER's flat, load-independent roll cost: the anchor for the rest
+pub const STAM_LIGHT = 10.0; // R1, ER's straight-sword band
+pub const STAM_HEAVY = 16.0; // R2 — ER heavies run ~1.3-1.8x their own light
+pub const STAM_SPRINT = 9.0; // …per second held
+const STAM_REGEN = 45.0; // …per second, once the delay is out
+const STAM_DELAY = 0.55; // seconds after the last spend before it refills
+
+// LOCKOUT IS OFF, ON PURPOSE. In ER an empty bar means you cannot roll/attack/sprint, and that
+// is the game's primary death window — but it is also pure time taken off the player, which the
+// FEEL RULES spend as little of as they can. Switching it on is a combat-feel decision and the
+// owner's to make, not a side effect of drawing the bar. Both spend sites already ask `afford`,
+// so flipping this one constant turns the whole economy on.
+pub const STAM_LOCKOUT = false;
+
+pub const Stamina = struct {
+    cur: f32 = STAM_MAX,
+    max: f32 = STAM_MAX,
+    sinceSpend: f32 = LONG_AGO, // gates the refill delay
+
+    pub fn frac(self: *const Stamina) f32 {
+        return if (self.max > 0) mathx.clampF(self.cur / self.max, 0, 1) else 0;
+    }
+
+    /// Can this action be paid for? Always true while STAM_LOCKOUT is off.
+    pub fn afford(self: *const Stamina, cost: f32) bool {
+        return !STAM_LOCKOUT or self.cur >= cost;
+    }
+
+    /// Charge a one-off action (a roll, a swing). Floors at 0 — an action already committed
+    /// is never refunded or cut short partway by running the pool dry.
+    pub fn spend(self: *Stamina, cost: f32) void {
+        self.cur = mathx.maxF(0, self.cur - cost);
+        self.sinceSpend = 0;
+    }
+
+    /// Per frame. `sprinting` bleeds continuously; `committed` (mid-swing) only PAUSES the
+    /// refill, ER-style. Neither the delay nor the pause ever touches the player's input.
+    pub fn tick(self: *Stamina, dt: f32, sprinting: bool, committed: bool) void {
+        if (sprinting) {
+            self.cur = mathx.maxF(0, self.cur - STAM_SPRINT * dt);
+            self.sinceSpend = 0;
+            return;
+        }
+        self.sinceSpend += dt;
+        if (committed or self.sinceSpend < STAM_DELAY) return;
+        self.cur = mathx.minF(self.max, self.cur + STAM_REGEN * dt);
+    }
+
+    pub fn reset(self: *Stamina) void {
+        self.cur = self.max;
+        self.sinceSpend = LONG_AGO;
     }
 };
 
@@ -202,4 +270,48 @@ test "the punish window a foe gives you outlasts the one you give it" {
     try std.testing.expect(FOE_HEAVY_STUN_DUR > 2.0 * HEAVY_STUN_DUR);
     try std.testing.expect(FOE_LIGHT_STUN_DUR > LIGHT_STUN_DUR);
     try std.testing.expect(FOE_REGEN_DELAY > REGEN_DELAY and FOE_REGEN_RATE < 1.0);
+}
+
+test "a roll costs its flat bite and the refill waits out the delay" {
+    var s = Stamina{};
+    s.spend(STAM_ROLL);
+    try std.testing.expectApproxEqAbs(STAM_MAX - STAM_ROLL, s.cur, 1e-4);
+    s.tick(0.5, false, false); // still inside STAM_DELAY — nothing back yet
+    try std.testing.expectApproxEqAbs(STAM_MAX - STAM_ROLL, s.cur, 1e-4);
+    var t: f32 = 0;
+    while (t < 1.2) : (t += 1.0 / 60.0) s.tick(1.0 / 60.0, false, false);
+    try std.testing.expectApproxEqAbs(STAM_MAX, s.cur, 1e-3);
+}
+
+test "sprinting bleeds the pool and holds the refill off" {
+    var s = Stamina{};
+    var t: f32 = 0;
+    while (t < 1.0) : (t += 1.0 / 60.0) s.tick(1.0 / 60.0, true, false);
+    try std.testing.expectApproxEqAbs(STAM_MAX - STAM_SPRINT, s.cur, 0.2); // ~a second's bleed
+    s.tick(1.0 / 60.0, false, false); // the very next frame is still inside the delay
+    try std.testing.expect(s.cur < STAM_MAX - STAM_SPRINT + 0.2);
+}
+
+test "a swing PAUSES the refill rather than draining it" {
+    var s = Stamina{};
+    s.spend(STAM_HEAVY);
+    const after = s.cur;
+    var t: f32 = 0;
+    while (t < 2.0) : (t += 1.0 / 60.0) s.tick(1.0 / 60.0, false, true); // committed the whole time
+    try std.testing.expectApproxEqAbs(after, s.cur, 1e-4); // paused, not bled
+}
+
+test "the pool refills far faster than any one action drains it" {
+    // The whole reason stamina paces a flurry instead of gating a fight: the heaviest single
+    // spend is back inside half a second of standing still, once the delay is out.
+    try std.testing.expect(STAM_REGEN > 2.0 * STAM_HEAVY);
+    try std.testing.expect(STAM_HEAVY > STAM_LIGHT and STAM_LIGHT < STAM_ROLL);
+    try std.testing.expect(STAM_MAX / STAM_ROLL > 6.0); // ER's "~8 rolls from full"
+}
+
+test "lockout only bites when it is switched on" {
+    var s = Stamina{};
+    s.spend(STAM_MAX); // bone dry
+    try std.testing.expectApproxEqAbs(@as(f32, 0), s.cur, 1e-4);
+    try std.testing.expectEqual(!STAM_LOCKOUT, s.afford(STAM_ROLL));
 }

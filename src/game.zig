@@ -9,6 +9,7 @@ const hud_ = @import("hud.zig");
 const menumod = @import("menu.zig");
 const frogmod = @import("frog.zig");
 const foemod = @import("foe.zig"); // THE FOE STANDARD — the shared Blade/strike contract
+const combat = @import("combat.zig");
 const collision = @import("collision.zig");
 const rumblemod = @import("rumble.zig");
 const archermod = @import("archer.zig");
@@ -180,6 +181,13 @@ fn gatherMove() Move {
     return .{};
 }
 
+// THE hold-B/Shift SPRINT test, read straight off the raw Move: a real heading plus a speed
+// past a full-tilt walk. ONE definition — moveHero's two ER facing exceptions and the stamina
+// bleed both go through it, and they must never disagree about what a sprint is.
+fn sprintingMove(mv: Move) bool {
+    return mv.speed > RUN_SPEED + 0.01 and (mv.fx * mv.fx + mv.fz * mv.fz) > 1e-6;
+}
+
 // Move + steer the hero from a camera-relative Move, advance the walk anim, and pose the
 // skeleton. Camera basis is read BEFORE this so movement follows the current view.
 fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
@@ -192,7 +200,7 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
     var speed: f32 = 0;
     var moveYaw: ?f32 = null;
     // ER exception below: a hold-B SPRINT while locked faces TRAVEL, so it is not a strafe at all.
-    const sprinting = isMoving and mv.speed > RUN_SPEED + 0.01;
+    const sprinting = isMoving and sprintingMove(mv);
     if (isMoving) {
         dir = v3(dir.x / l, 0, dir.z / l);
         speed = mv.speed;
@@ -425,26 +433,35 @@ fn drawHurtFlash(g: *Game) void {
     rl.drawRectangleGradientH(w - t, 0, t, h, clear, edge); // right
 }
 
-fn hud(g: *Game) void {
-    // ASCII only — the Balthazar atlas is loaded with the default (ASCII) glyph set, so a "·"
-    // or "—" would render as a tofu "?". Every size comes from hud_'s type scale, never a literal.
-    hud_.text("zig-soulslike", 16, 12, hud_.TITLE, rgba(232, 222, 198, 255));
-    const subY = 12 + hud_.lineH(hud_.TITLE);
-    // Not a "locomotion demo" any more — that subtitle outlived the swordplay, three foes, the
-    // stagger model and five regions, and it was the first line of text in every screenshot.
-    hud_.text("a fallen kingdom - sword, roll, lock-on; toads, skeletons, a giant", 16, subY, hud_.SMALL, rgba(164, 154, 134, 255));
-
-    // Hero HP bar (ER puts player health top-left). Death card is drawDeathOverlay's — no
-    // mini YOU DIED here.
-    const barY = subY + hud_.lineH(hud_.SMALL) + 4;
-    healthBar(16, @floatFromInt(barY), 340, 18, g.hero.vit.hpFrac(), rgba(24, 20, 16, 220));
-    if (!g.menu.isOpen()) {
-        const help: [:0]const u8 = if (rl.isGamepadAvailable(PAD))
-            "L-stick move (tilt = speed)   R-stick look   R1 slash   R2 heavy   B: sprint / tap roll   R3 recenter   Start menu"
-        else
-            "WASD move   mouse look   LMB slash   Shift+LMB heavy   Shift sprint   Space roll   Esc menu";
-        hud_.text(help, 16, rl.getScreenHeight() - hud_.lineH(hud_.SMALL) - 14, hud_.SMALL, rgba(188, 178, 158, 255));
+// THE HUD IS ELDEN RING'S, and only in ER's places: vitals bars top-left, the armament grid
+// bottom-left, the debug readout top-right (where ER keeps its compass). Nothing else — the
+// old title / subtitle / control-crib lines are gone, so a screenshot is the game, not a
+// caption over it. `dt` only drives the HP chip trail; --shot passes SHOT_DT.
+fn hud(g: *Game, dt: f32) void {
+    // ER hides the HUD behind its menus and under the death card, and both want the corners
+    // clear — a chip trail hanging across an empty HP bar under YOU DIED reads as a fault.
+    if (!g.menu.isOpen() and !g.hero.dead) {
+        // HP is live. FP has nothing to spend it on yet (no spells, no skills) so it sits full;
+        // stamina is REAL — the roll/swing bites and the sprint bleed are in combat.zig.
+        hud_.vitals(dt, g.hero.vit.hpFrac(), 1.0, g.hero.stam.frac());
+        hud_.equipment();
     }
+    if (g.menu.stats) debugCorner(g);
+}
+
+// The debug readout, top-right, toggled by menu > Debug > Stats. Right-aligned rows stepped
+// off the type scale (hard-coded Y values overlapped the moment the face grew). Poise, stance
+// and the stamina NUMBERS stay in here rather than on the bars — ER keeps its meters hidden,
+// and this is the one place you get to look behind them.
+const DBG_ROW = 200; // …the widest debug row, in bytes
+
+fn debugCorner(g: *Game) void {
+    // ASCII only — the Balthazar atlas is the default (ASCII) glyph set, so a "·" or "—" is tofu.
+    // ONE scratch buffer for all four rows: each is formatted, drawn, and finished with before
+    // the next overwrites it, so four separate arrays only cost stack and invite a fifth.
+    var buf: [DBG_ROW]u8 = undefined;
+    const step = hud_.lineH(hud_.SMALL);
+    var y: i32 = 18;
 
     const label: [:0]const u8 = if (g.hero.dead)
         "dead"
@@ -456,49 +473,43 @@ fn hud(g: *Game) void {
         (if (g.hero.atkHeavy) "striking" else "slashing")
     else
         gaitLabel(g.hero.moving, g.hero.speed);
-    var buf: [64]u8 = undefined;
-    const s = std.fmt.bufPrintZ(&buf, "{s}   {d:.1} m/s", .{ label, g.hero.speed }) catch "";
-    const w = hud_.textW(s, hud_.BODY);
-    hud_.text(s, rl.getScreenWidth() - w - 16, 14, hud_.BODY, rgba(150, 156, 164, 255));
+    dbgRow(std.fmt.bufPrintZ(&buf, "{s}   {d:.1} m/s", .{ label, g.hero.speed }) catch "", y, hud_.BODY, rgba(150, 156, 164, 255));
+    y += hud_.lineH(hud_.BODY) + 4;
 
-    // Debug stats overlay (menu > Debug > Stats) — perf line + internal combat meters.
-    // Poise/stance stay internal (ER-style); only HP shows on the bars.
-    if (g.menu.stats) {
-        // Three stacked rows, positioned off the type scale rather than off hard-coded Y values —
-        // at literal 116/136/156 with the larger face they overlapped each other.
-        const row0 = barY + 30;
-        const step = hud_.lineH(hud_.SMALL);
-        var sbuf: [200]u8 = undefined;
-        const st = std.fmt.bufPrintZ(&sbuf, "{d} fps   {d:.1} ms   pos {d:.1},{d:.1}   yaw {d:.2}   pitch {d:.2}   time x{d:.2}", .{
-            rl.getFPS(),
-            rl.getFrameTime() * 1000.0,
-            g.hero.pos.x,
-            g.hero.pos.z,
-            g.rig.yaw,
-            g.rig.pitch,
-            g.menu.timeScale,
-        }) catch "";
-        hud_.text(st, 16, row0, hud_.SMALL, rgba(170, 190, 150, 255));
-        // World + culling line: how much of the world exists vs how much of it this frame drew.
-        // The expansion's whole perf claim is "thousands of props, a few hundred draws" — this is
-        // where you check it while playing instead of taking a comment's word for it.
-        var wbuf: [200]u8 = undefined;
-        const wt = std.fmt.bufPrintZ(&wbuf, "world  props {d}  solids {d}  fires {d}   drawn {d} in {d} cells (both passes)", .{
-            g.env.propCount(), g.env.solidCount(), g.env.lightCount(), g.env.stat_draws, g.env.stat_cells,
-        }) catch "";
-        hud_.text(wt, 16, row0 + step * 2, hud_.SMALL, rgba(150, 175, 195, 255));
-        const h = &g.hero;
-        var cbuf: [200]u8 = undefined;
-        // Foe counts span EVERY group (the combat beats already do) — a toads-only "hits" read
-        // silently ignored every blow landed on a skeleton or the giant.
-        const foesLeft = g.warren.aliveCount() + g.line.aliveCount() + g.grief.aliveCount();
-        const foeHits = g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits();
-        const ct = std.fmt.bufPrintZ(&cbuf, "hero  hp {d:.0}/{d:.0}  poise {d:.0}/{d:.0}  stance {d:.0}/{d:.0}   foes {d} left  hits {d}", .{
-            h.vit.hp, h.vit.hpMax, h.vit.poise, h.vit.poiseMax, h.vit.stance, h.vit.stanceMax,
-            foesLeft, foeHits,
-        }) catch "";
-        hud_.text(ct, 16, row0 + step, hud_.SMALL, rgba(150, 180, 190, 255));
-    }
+    dbgRow(std.fmt.bufPrintZ(&buf, "{d} fps   {d:.1} ms   pos {d:.1},{d:.1}   yaw {d:.2}   pitch {d:.2}   time x{d:.2}", .{
+        rl.getFPS(),
+        rl.getFrameTime() * 1000.0,
+        g.hero.pos.x,
+        g.hero.pos.z,
+        g.rig.yaw,
+        g.rig.pitch,
+        g.menu.timeScale,
+    }) catch "", y, hud_.SMALL, rgba(170, 190, 150, 255));
+    y += step;
+
+    // Foe counts span EVERY group (the combat beats already do) — a toads-only "hits" read
+    // silently ignored every blow landed on a skeleton or the giant.
+    const h = &g.hero;
+    const foesLeft = g.warren.aliveCount() + g.line.aliveCount() + g.grief.aliveCount();
+    const foeHits = g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits();
+    dbgRow(std.fmt.bufPrintZ(&buf, "hero  hp {d:.0}/{d:.0}  poise {d:.0}/{d:.0}  stance {d:.0}/{d:.0}  stam {d:.0}/{d:.0}   foes {d} left  hits {d}", .{
+        h.vit.hp,   h.vit.hpMax, h.vit.poise, h.vit.poiseMax, h.vit.stance, h.vit.stanceMax,
+        h.stam.cur, h.stam.max,  foesLeft,    foeHits,
+    }) catch "", y, hud_.SMALL, rgba(150, 180, 190, 255));
+    y += step;
+
+    // World + culling line: how much of the world EXISTS vs how much of it this frame drew.
+    // The expansion's whole perf claim is "thousands of props, a few hundred draws" — this is
+    // where you check it while playing instead of taking a comment's word for it.
+    dbgRow(std.fmt.bufPrintZ(&buf, "world  props {d}  solids {d}  fires {d}   drawn {d} in {d} cells (both passes)", .{
+        g.env.propCount(), g.env.solidCount(), g.env.lightCount(), g.env.stat_draws, g.env.stat_cells,
+    }) catch "", y, hud_.SMALL, rgba(150, 175, 195, 255));
+}
+
+// One right-aligned debug row, inset by the HUD's own margin so the corner lines up with the
+// bars opposite it.
+fn dbgRow(s: [:0]const u8, y: i32, size: i32, col: rl.Color) void {
+    hud_.textRight(s, hud_.MARGIN, y, size, col);
 }
 
 fn gaitLabel(moving: f32, speed: f32) [:0]const u8 {
@@ -573,6 +584,9 @@ pub fn run(shot: bool) void {
         }
         if (rl.isWindowResized()) g.retro.resize(rl.getScreenWidth(), rl.getScreenHeight());
 
+        // Set from the menu in ONE place, before the branch, so the flag can never disagree with
+        // which path actually ran: a held hero breathes but his combat clocks stop (see hero.held).
+        g.hero.held = g.menu.isOpen();
         if (g.menu.isOpen()) {
             // World holds while the menu is up: no camera/move input, but the hero keeps
             // breathing (idle update, zero travel) so the scene stays alive.
@@ -589,7 +603,7 @@ pub fn run(shot: bool) void {
             g.rig.follow(g.hero.shoulderPoint());
             g.rumble.update(rawDt, false); // motors silent while paused (envelopes still decay)
             drawScene(g);
-            hud(g);
+            hud(g, rawDt);
             g.menu.draw(&g.retro);
             rl.endDrawing();
             continue;
@@ -687,6 +701,14 @@ pub fn run(shot: bool) void {
             }
             g.hero.steerQueuedRoll(rollDir(g, mv));
         }
+        // STAMINA (ER, docs/ELDEN_RING.md §3): the sprint is the only CONTINUOUS drain, and it
+        // only drains while he is actually running on his feet — a roll's lunge and an attack's
+        // step travel fast but are neither of them a sprint. The roll/swing bites are charged at
+        // their start (hero.startRoll/startAttack) and the meter itself advances inside
+        // hero.tickClocks, so it ticks exactly once on whichever path runs below. Set AFTER the
+        // requests above, so rolling/attacking already reflect anything that fired this frame.
+        g.hero.sprinting = sprintingMove(mv) and
+            !g.hero.rolling and !g.hero.attacking and !g.hero.dead and !g.hero.staggered();
 
         // While locked the hero faces the foe (so it strafes/backpedals around it), ER-style.
         const lockYaw: ?f32 = if (g.lock) |li| blk: {
@@ -795,7 +817,7 @@ pub fn run(shot: bool) void {
         g.rumble.update(rawDt, rl.isGamepadAvailable(PAD));
 
         drawScene(g);
-        hud(g);
+        hud(g, rawDt);
         rl.endDrawing();
     }
 }
@@ -981,20 +1003,6 @@ fn considerCycle(g: *Game, foes: anytype, kind: FoeKind, cur: FoeRef, curX: f32,
     }
 }
 
-// A 2D health bar: black backing, a dark empty track, a red fill. `border` outlines it
-// (used to flash gold on a stance-broken foe — ER's crit-opening cue).
-fn healthBar(x: f32, y: f32, w: f32, h: f32, frac: f32, border: ?rl.Color) void {
-    const xi: i32 = @intFromFloat(x);
-    const yi: i32 = @intFromFloat(y);
-    const wi: i32 = @intFromFloat(w);
-    const hi: i32 = @intFromFloat(h);
-    rl.drawRectangle(xi - 1, yi - 1, wi + 2, hi + 2, rgba(0, 0, 0, 170)); // backing
-    rl.drawRectangle(xi, yi, wi, hi, rgba(38, 12, 10, 230)); // empty track
-    const fw: i32 = @intFromFloat(w * mathx.clampF(frac, 0, 1));
-    if (fw > 0) rl.drawRectangle(xi, yi, fw, hi, rgba(158, 32, 28, 255)); // blood-red fill
-    if (border) |c| rl.drawRectangleLines(xi - 1, yi - 1, wi + 2, hi + 2, c);
-}
-
 // The world-reload half of a hero death (ER: dying resets the field). Every group re-homes
 // fresh instances (full HP, home positions, slain restored), the arrow pool empties, the
 // lock drops. Instance state only — shared Models are permanent, never rebuilt.
@@ -1019,9 +1027,7 @@ fn drawFoeBars(g: *Game, foes: anytype) void {
         if (!f.alive() or f.dying()) continue; // no bar over a corpse dissolving out
         if (f.vit.sinceHit > HURT_BAR_WINDOW) continue; // only after a recent hit
         const s = projectToScreen(cam, f.topWorld()) orelse continue; // skip if behind the camera
-        const w: f32 = 54;
-        const border: ?rl.Color = if (f.staggered()) rgba(232, 196, 90, 255) else null;
-        healthBar(s.x - w * 0.5, s.y - 16, w, 5, f.vit.hpFrac(), border);
+        hud_.foeBar(s.x, s.y, f.vit.hpFrac(), f.staggered()); // size/colour/lift all live in hud
     }
 }
 
@@ -1071,7 +1077,7 @@ fn stepLocked(g: *Game, dt: f32, speed: f32, dir: rl.Vector3, faceYaw: f32) void
 // shot (menu shots interpose g.menu.draw before endDrawing, so they stay inline below).
 fn shoot(g: *Game, name: [:0]const u8) void {
     drawScene(g);
-    hud(g);
+    hud(g, SHOT_DT); // the fixed harness timestep — the HP chip trail stays reproducible
     rl.endDrawing();
     rl.takeScreenshot(name);
 }
@@ -1127,6 +1133,10 @@ fn shootFoe(g: *Game, f: anytype, name: [:0]const u8, yaw: f32, pitch: f32, dist
 fn runShots(g: *Game) void {
     std.fs.cwd().makePath("shots") catch {};
     const dt: f32 = SHOT_DT;
+    // The menu OPENS AT LAUNCH, and the HUD hides behind it (ER does the same) — so the harness
+    // has to close it or every capture is of a game sitting in its pause screen. The two menu
+    // shots below re-open it explicitly and put it back.
+    g.menu.screen = .closed;
     // Shots 1-9 judge geometry/animation — run CLEAN of the default filter stack; the filter
     // shots below set their own explicit stacks.
     g.retro.allOff();
@@ -1408,13 +1418,22 @@ fn runShots(g: *Game) void {
         shoot(g, "shots/36_hero_death.png");
         while (g.hero.dead) g.hero.updateDeath(dt); // run out → respawn (restores clean state)
 
-        // HP BARS: a half-health foe's floating bar + the hero's top-left bar, together.
+        // THE BARS: a half-health foe's floating bar plus the hero's whole top-left corner —
+        // and the corner has to be WORKING, not full. So wound him, spend the pool, and shoot
+        // the frame right after the blow, which is when ER's chip trail is at its widest: the
+        // red fill already at the new HP with the pale bar still hanging at the old one.
         g.hero.hurtFlash = 0; // clear any leftover flash from the death shot (harness never ticks it)
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         f.vit.hp = f.vit.hpMax * 0.45;
+        // …and mark it RECENTLY hurt. drawFoeBars gates on HURT_BAR_WINDOW, and only vit.hit()
+        // moves sinceHit — so setting hp straight left this shot, the one named for the bars,
+        // with no foe bar in it at all.
+        f.vit.sinceHit = 0;
         stepFoe(f, 4, front);
         g.hero.pos = mathx.ground(2.4, 4.2);
         g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
+        g.hero.vit.hp = g.hero.vit.hpMax * 0.55;
+        g.hero.stam.spend(combat.STAM_ROLL + combat.STAM_HEAVY);
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
         g.rig.yaw = mathx.radians(202);
@@ -1422,6 +1441,8 @@ fn runShots(g: *Game) void {
         g.rig.dist = 6.4;
         g.rig.follow(f.centerWorld());
         shoot(g, "shots/37_hp_bars.png");
+        g.hero.vit.hp = g.hero.vit.hpMax; // …back to full for everything downstream (the chip snaps up with it)
+        g.hero.stam.reset();
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0); // reset the slot
     }
 
@@ -1727,7 +1748,7 @@ fn runShots(g: *Game) void {
     g.menu.screen = .main;
     g.menu.cursor = 0;
     drawScene(g);
-    hud(g);
+    hud(g, SHOT_DT);
     g.menu.draw(&g.retro);
     rl.endDrawing();
     rl.takeScreenshot("shots/12_menu_main.png");
@@ -1736,7 +1757,7 @@ fn runShots(g: *Game) void {
     g.menu.screen = .retro;
     g.menu.cursor = gfx.RF_GAMEBOY;
     drawScene(g);
-    hud(g);
+    hud(g, SHOT_DT);
     g.menu.draw(&g.retro);
     rl.endDrawing();
     rl.takeScreenshot("shots/13_menu_retro.png");

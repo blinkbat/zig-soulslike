@@ -41,8 +41,15 @@ third-person over-the-shoulder camera, in a lit 3D world with cast shadows (warm
 slate sky, cloud deck, haze, vignette, plus point-light torch/brazier/campfire fire). Three foes
 hunt him — **gaping toads**, **skeletal archers**, a lone **one-eyed ogre** — with ER lock-on and
 a full combat layer: HP + two-tier poise/stance stagger + death, both sides (`combat.zig`, and
-**`docs/ELDEN_RING.md`** as the systems reference). No stamina, criticals, guarding or jump yet.
-The bar for "human" is anatomy + real gaits, not polygon count.
+**`docs/ELDEN_RING.md`** as the systems reference). **STAMINA is live but does not LOCK OUT** —
+the roll/swing bites and the sprint bleed all run at ER's own numbers, and `combat.STAM_LOCKOUT`
+switches the "empty = can't act" half on when the owner wants it. No criticals, guarding or jump
+yet. The bar for "human" is anatomy + real gaits, not polygon count.
+
+**THE HUD IS ELDEN RING'S**, in ER's three places and nowhere else: HP/FP/stamina bars top-left,
+the four-slot equipment CROSS bottom-left, the debug readout top-right (menu >
+Debug > Stats). It hides behind the menu and under the YOU DIED card. FP is a full static bar —
+there is nothing to spend it on until spells exist.
 
 **THE WORLD** is a 320 m square golden-hour plain ringed by cliffs, holding five regions
 (see `env.zig`'s header for the map, `props.zig` for the models):
@@ -93,7 +100,12 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
   near your subject or the shot has no cast shadows. For a WORLD change take a steep overhead
   MAP shot (`dist` near 55 — a camera 85 m up looks through 85 m of haze).
 - **Thin geometry needs a CROP.** Strings, nocked arrows, flutes and setts are invisible in a
-  full-frame shot; crop and zoom (System.Drawing) before calling one broken.
+  full-frame shot; crop and zoom (System.Drawing) before calling one broken. The HUD counts:
+  a 34 px slot and a 1 px bar rim are unjudgeable at 1:1.
+- **The harness CLOSES THE MENU first** (`runShots`). The menu opens at launch and the HUD hides
+  behind it, so without that line every capture is of the game sitting in its pause screen.
+  `37_hp_bars.png` is the HUD's own test: it wounds the hero and spends the pool on purpose, so
+  all three bars and the chip trail are non-full in exactly one shot.
 - `--shot` PNGs are not byte-deterministic (flora wind + grain read `rl.getTime`) — verify
   visually, never by hash-diff.
 - Don't commit, push, or create branches unless explicitly asked.
@@ -155,12 +167,17 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
 - `foe.zig`    — THE FOE STANDARD: the shared contract + behaviours every enemy plugs into, so
                  lock-on, HP bars, collision, the blade hit-test and the combat beats are written
                  ONCE. Holds `Blade` and `strike()`.
-- `combat.zig` — SHARED `Vitals`: HP + the two-tier stagger + regen + death. Pure logic,
-                 unit-tested. THE place to retune damage/poise feel.
+- `combat.zig` — SHARED `Vitals`: HP + the two-tier stagger + regen + death. Plus `Stamina`,
+                 the HERO'S ALONE (a foe meter nothing reads would only rot). Pure logic,
+                 unit-tested. THE place to retune damage/poise/stamina feel.
 - `collision.zig` — 2D XZ capsule/circle footprint collision (push-out).
 - `mathx.zig`  — ground-plane + vector/angle helpers.
 - `hud.zig`    — UI text in Balthazar; the ONLY path to draw/measure text. Two atlases of the
-                 same face: 96 px for HUD, 160 px for the YOU DIED card.
+                 same face: 96 px for HUD, 160 px for the YOU DIED card. Also THE ELDEN RING
+                 HUD itself — the three vitals bars and the four-slot equipment cross — taking plain
+                 fractions, so it knows nothing about the hero. Colours here are LITERAL screen
+                 values (drawn after the retro blit, outside the scene shader), so the
+                 author-dark rules do not apply.
 
 ## The hero rig (`hero.zig`)
 
@@ -366,6 +383,20 @@ Placement is deterministic: if it fits once it fits.
 - **Retro pass contract:** when any filter is active the whole frame renders into `Retro.rt` then
   blits through the combined filter shader; vignette, HUD and menu draw AFTER the blit so they
   never crunch. All-zero = pass bypassed entirely.
+- **THE RETRO RT IS `GL_NEAREST`, AND PIXELATE POINT-SAMPLES IT.** A block kept one pixel of the
+  four and threw the rest away, so fine distant detail twinkled as it moved between a kept and a
+  discarded pixel. `sceneTap` box-filters the block instead (`PIX_BOX` is how much of the average
+  to take: 0 = hard blocks + the flicker, 1 = a true 2x2 downsample, soft). This is a TRADE, not a
+  free win — the twinkle IS a hard edge crossing a pixel boundary. Distance-fading the pixelation
+  instead was considered and REJECTED: `loadRenderTexture` attaches depth as a renderbuffer so
+  there is nothing to fade against, and block sizes are whole pixels, so at the 2 px default the
+  only step down is "off" — a hard ring sliding through the world.
+- **SUB-PIXEL FILTER OFFSETS SNAP UNDER NEAREST, AND FILTERING THEM UNDOES THAT.** The chroma
+  fringe's offset is half a pixel at its default, which `GL_NEAREST` rounded back onto the base
+  texel — with pixelate on the fringe was a near no-op, which is the look it was tuned to. Routed
+  through `sceneTap` that same half pixel straddled the block boundary and R/B smeared a whole
+  pixel apart: a colour blur that reads as "the box filter made it blurry". Its offset now snaps
+  to whole BLOCKS, so every channel reads the same averaged block.
 - **All UI text goes through `hud.text/textW`**, in **Balthazar** (`assets/`, OFL alongside;
   owner's pick). The atlas is **ASCII-only** — a `·` or `—` renders as tofu. Exo and Tagesschrift
   are GONE; one face only.
@@ -380,7 +411,8 @@ Placement is deterministic: if it fits once it fits.
 
 ## Next steps (not yet built)
 
-Stamina + its economy, **criticals** off a stance break (the stagger already exists), hyper-armor
+Stamina LOCKOUT (the meter is live; `combat.STAM_LOCKOUT` gates ER's "empty = can't
+roll/attack/sprint"), **criticals** off a stance break (the stagger already exists), hyper-armor
 windows during the hero's own attacks, guarding + **guard counter**, AR × motion-value × defense
 damage (today it's flat constants), **status buildup**, jump, distinct combo follow-up anims,
 bonfires, real level geometry. See `docs/ELDEN_RING.md` for the target mechanics behind each.

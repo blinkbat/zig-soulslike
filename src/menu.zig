@@ -27,7 +27,11 @@ const DBG_WIREFRAME = 2;
 const DBG_HITBOX = 3;
 const DBG_TIMESCALE = 4;
 const DBG_CLOSE = 5;
-const DBG_COUNT = 6;
+// Every _COUNT is DERIVED from its last row, never re-counted by hand. Typed out separately,
+// a count and its list drift the first time a row is inserted: the labels array stays one
+// short and the cursor wraps before it, so the new row is drawn nowhere and reachable never —
+// silently, with nothing to catch it.
+const DBG_COUNT = DBG_CLOSE + 1;
 
 // Retro rows: the filter sliders, then presets, then Reset / All Off / Close.
 const RET_PRESET_PS1 = gfx.RETRO_COUNT + 0;
@@ -37,7 +41,7 @@ const RET_PRESET_GB = gfx.RETRO_COUNT + 3;
 const RET_RESET = gfx.RETRO_COUNT + 4;
 const RET_ALL_OFF = gfx.RETRO_COUNT + 5;
 const RET_CLOSE = gfx.RETRO_COUNT + 6;
-const RET_COUNT = gfx.RETRO_COUNT + 7;
+const RET_COUNT = RET_CLOSE + 1;
 
 // Slider feel: a TAP steps fine, Shift/LB-tap steps coarse, and HOLDING a direction
 // glides continuously after a short delay — frame-rate-fine adjustment.
@@ -51,7 +55,7 @@ const ADJ_GLIDE_RATE: f32 = 0.25; // intensity per second while gliding
 const MAIN_CONTINUE = 0;
 const MAIN_DEBUG = 1;
 const MAIN_QUIT = 2;
-const MAIN_COUNT = 3;
+const MAIN_COUNT = MAIN_QUIT + 1;
 
 // ── palette (display-space; menus draw over the finished frame) ──
 const VEIL = rgba(6, 6, 9, 150);

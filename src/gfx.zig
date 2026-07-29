@@ -680,9 +680,10 @@ pub const RF_GRAIN = 14;
 // grunge; "Reset to Default" restores it, "All Off" gives the clean render.
 const RetroFilter = struct { name: [:0]const u8, uniform: [:0]const u8, default: f32 };
 const RETRO_FILTERS = [RETRO_COUNT]RetroFilter{
-    // 0 because blocks snap to whole pixels now and 0.03 rounded to 1 = no-op (see retroFS); 0.08 is
-    // the first intensity that buys a real, steady 2x2 block.
-    .{ .name = "Pixelate", .uniform = "fPixelate", .default = 0.0 },
+    // Blocks snap to whole pixels (see retroFS), so what matters is where the rounding lands:
+    // 0.03 rounds to 1 px and is a no-op, 0.05 is the first intensity that buys a real, steady
+    // 2x2 block. That 2x2 is the owner's launch look.
+    .{ .name = "Pixelate", .uniform = "fPixelate", .default = 0.05 },
     .{ .name = "Chroma Fringe", .uniform = "fChroma", .default = 0.09 },
     .{ .name = "Posterize", .uniform = "fPosterize", .default = 0.24 },
     .{ .name = "Dither", .uniform = "fDither", .default = 0.40 },
@@ -743,6 +744,32 @@ const retroFS =
     \\out vec4 finalColor;
     \\float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
     \\float luma(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
+    \\// EVERY read of the captured scene goes through this. Snapping the UV to a block centre
+    \\// POINT-samples it — the RT is GL_NEAREST — so a 2x2 block kept one pixel and threw three
+    \\// away, and a reed or a distant column edge landing in a discarded pixel on some frames and
+    \\// a kept one on others is what twinkled. Pixelate sets pixQ to a QUARTER of a block, which
+    \\// turns this into a 4-sample BOX FILTER over that block: the detail is averaged in rather
+    \\// than gambled on, at every distance and with no boundary to see. pixQ zero (pixelate off,
+    \\// or a block rounded to 1 px) collapses it back to the single tap it always was.
+    \\//
+    \\// PIX_BOX is how much of that average to take, and it is a STRAIGHT TRADE, not a free win:
+    \\// point-sampling is exactly what makes a block edge hard, so filtering the twinkle out
+    \\// softens the crunch by the same stroke — the twinkle IS a hard edge crossing a pixel
+    \\// boundary. 0 = the old hard blocks and the old flicker; 1 = a true 2x2 downsample, calm and
+    \\// noticeably soft; between = flicker amplitude scaled down by that much for that much less
+    \\// bite. One dial, so it can be judged by playing rather than argued about.
+    \\const float PIX_BOX = 0.5;
+    \\vec2 pixQ = vec2(0.0);
+    \\float pixStep = 0.0; // one block's WIDTH in UV, zero when pixelate is off (chroma snaps to it)
+    \\vec4 sceneTap(vec2 p){
+    \\  vec4 pt = texture(texture0, p);
+    \\  if (pixQ.x <= 0.0) return pt;
+    \\  vec4 box = 0.25*(texture(texture0, p - pixQ)
+    \\                 + texture(texture0, p + vec2( pixQ.x, -pixQ.y))
+    \\                 + texture(texture0, p + vec2(-pixQ.x,  pixQ.y))
+    \\                 + texture(texture0, p + pixQ));
+    \\  return mix(pt, box, PIX_BOX);
+    \\}
     \\// 4x4 Bayer matrix, thresholds at +0.5/16 centers.
     \\const float bayer[16] = float[16](
     \\     0.0,  8.0,  2.0, 10.0,
@@ -797,17 +824,34 @@ const retroFS =
     \\    float blk = max(floor(mix(1.0, 14.0, fPixelate) + 0.5), 1.0);
     \\    vec2 grid = max(resolution/blk, vec2(1.0));
     \\    uv = (floor(uv*grid) + 0.5)/grid;
+    \\    // …and arm the box filter (see sceneTap). A quarter-block from the centre puts the four
+    \\    // taps on the quadrant centres, which at the 2 px default is EXACTLY the block's four
+    \\    // pixels. Above 2 px it is a 4x supersample of the block rather than a full box — the
+    \\    // taps would have to grow with blk^2 for that, and 14 px would cost 196 of them.
+    \\    if (blk > 1.0) pixQ = blk/(4.0*resolution);
+    \\    pixStep = blk/resolution.x;
     \\  }
     \\  // Chroma fringe: fetch R and B slightly off-axis (worn composite cable).
-    \\  vec4 baseTex = texture(texture0, uv);
+    \\  vec4 baseTex = sceneTap(uv);
     \\  vec3 col;
     \\  if (fChroma > 0.0){
+    \\    // THE OFFSET SNAPS TO WHOLE BLOCKS. Unsnapped it is half a pixel at the default 9%, which
+    \\    // GL_NEAREST used to round straight back onto the base texel — the fringe was a near
+    \\    // no-op with pixelate on, and that is the look this was tuned to. Filtered, that same
+    \\    // half pixel instead straddles the block boundary and R/B smear a pixel apart: a colour
+    \\    // blur, not the flicker fix, and most of what read as "blurry". Snapped, R and B come
+    \\    // from the same averaged blocks G does, so the channels can't disagree about where a
+    \\    // block edge is — and a fringe on a pixelated image belongs in block units anyway.
     \\    float off = fChroma*0.0045;
-    \\    col.r = texture(texture0, uv + vec2(off, 0.0)).r;
+    \\    vec2 o = vec2(off, 0.0);
+    \\    if (pixStep > 0.0) o.x = floor(off/pixStep + 0.5)*pixStep;
+    \\    col.r = sceneTap(uv + o).r;
     \\    col.g = baseTex.g;
-    \\    col.b = texture(texture0, uv - vec2(off, 0.0)).b;
+    \\    col.b = sceneTap(uv - o).b;
     \\  } else { col = baseTex.rgb; }
-    \\  // Ink edges: Sobel on luminance, applied as a darkening AFTER the color crush.
+    \\  // Ink edges: Sobel on luminance, applied as a darkening AFTER the color crush. Deliberately
+    \\  // NOT routed through sceneTap: eight taps become thirty-two, and its own 1.5 px kernel is
+    \\  // already a filter. Off by default, so it is not what flickers in the launch look.
     \\  float edgeF = 0.0;
     \\  if (fEdges > 0.0){
     \\    vec2 t = 1.5/resolution;

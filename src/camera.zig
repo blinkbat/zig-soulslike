@@ -5,11 +5,9 @@ const mathx = @import("mathx.zig");
 const v3 = mathx.v3;
 const clampF = mathx.clampF;
 
-// Third-person OVER-THE-SHOULDER camera, souls-style: it orbits a point near the hero's
-// shoulders at a fixed distance, fully rotatable by the mouse (yaw + clamped pitch) with
-// scroll zoom. The hero is framed slightly off-centre (a lateral shoulder offset) so the
-// view ahead is unobstructed. The rig also exposes the camera-relative ground basis that
-// WASD movement steers by.
+// Third-person OVER-THE-SHOULDER camera: it orbits a point near the hero's shoulders at a
+// fixed distance (yaw + clamped pitch, scroll zoom), framing him slightly off-centre so the
+// view ahead is unobstructed. It also exposes the camera-relative ground basis WASD steers by.
 
 pub const MIN_DIST = 2.4;
 pub const MAX_DIST = 9.0;
@@ -22,11 +20,10 @@ const PITCH_MAX = 1.15; // ~  66 deg (looking down)
 const SHOULDER = 0.55; // lateral offset (world units): hero sits left of centre
 const TARGET_RAISE = 0.15; // lift the look-at a touch above the shoulder point
 
-// ── impact shake ── trauma-based (shake ∝ trauma², so small hits whisper and big ones
-// crack), applied as a short translational jitter on both eye and look-at in follow().
-// The live loop feeds tickShake() real time; the --shot harness never does, so the
-// offset stays zero and captures stay deterministic. NO hitstop in this game — impact
-// weight is carried by shake/rumble/reactions only (owner's rule, see AGENTS.md).
+// ── impact shake ── trauma-based (shake ∝ trauma², so small hits whisper and big ones crack),
+// applied as a short translational jitter on eye and look-at in follow(). Only the live loop
+// feeds tickShake(), so --shot captures stay deterministic. NO hitstop in this game — impact
+// weight is carried by shake/rumble/reactions alone (owner's law).
 const SHAKE_MAX = 0.13; // world-unit jitter amplitude at full trauma
 const SHAKE_DECAY = 2.6; // trauma drained per second — shakes die fast (a crack, not a wobble)
 const SHAKE_FREQ = 33.0; // base jitter frequency (layered sines, incommensurate)

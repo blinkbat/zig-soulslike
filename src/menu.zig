@@ -3,13 +3,17 @@ const rl = @import("raylib");
 const gfx = @import("gfx.zig");
 const hud = @import("hud.zig");
 const mathx = @import("mathx.zig");
+const rumblemod = @import("rumble.zig");
 
 const rgba = mathx.rgba;
 
-// The pause/debug menu, inspired by ../crawler's pause -> Debug -> Retro Filters tree.
-// OPEN AT LAUNCH (it doubles as the start screen): Continue / Debug / Quit. The Debug
-// submenu holds the dev toggles; Retro Filters is a slider list over gfx.Retro.values.
-// All chrome is primitive rects + hud text (Exo, ASCII only), drawn crisp AFTER the
+// THE pad index (rumble.PAD) — the menu must poll the same controller the game loop and the
+// vibration calls do, so it reads the shared constant rather than repeating a literal 0.
+const PAD = rumblemod.PAD;
+
+// The pause/debug menu, OPEN AT LAUNCH (it doubles as the start screen): Continue / Debug /
+// Quit. Debug holds the dev toggles; Retro Filters is a slider list over gfx.Retro.values.
+// All chrome is primitive rects + hud text (Balthazar, ASCII only), drawn crisp AFTER the
 // retro pass so menus never crunch. Esc/B backs out one level; Esc/Start toggles.
 
 pub const Action = enum { none, quit };
@@ -200,44 +204,45 @@ pub const Menu = struct {
             .debug => self.drawCard("DEBUG", &self.debugLabels(), null),
             .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), retro),
         }
-        const hint: [:0]const u8 = if (rl.isGamepadAvailable(0))
+        const hint: [:0]const u8 = if (rl.isGamepadAvailable(PAD))
             "D-pad move / adjust (hold glides, LB coarse)   A select   B back   Start close"
         else
             "Up/Down move   Left/Right adjust (hold glides, Shift coarse)   Enter select   Esc back";
-        const hw = hud.textW(hint, 15);
-        hud.text(hint, @divTrunc(sw - hw, 2), sh - 34, 15, HINT_COL);
+        const hw = hud.textW(hint, hud.HINT);
+        hud.text(hint, @divTrunc(sw - hw, 2), sh - hud.lineH(hud.HINT) - 12, hud.HINT, HINT_COL);
     }
 
     fn drawCard(self: *const Menu, title: [:0]const u8, labels: []const [:0]const u8, sliders: ?*const gfx.Retro) void {
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
+        // Row height and card size are DERIVED from the font size, so growing the type scale
+        // doesn't leave rows overlapping or labels running off the card edge.
         const compact = labels.len > 8; // the long retro list packs tighter than the short menus
-        const rowH: i32 = if (compact) 26 else 40;
+        const fontSize: i32 = if (compact) hud.SMALL else hud.BODY;
+        const rowH: i32 = hud.lineH(fontSize) + (if (compact) @as(i32, 2) else @as(i32, 14));
         const rowGap: i32 = if (compact) 2 else 8;
-        const headerH: i32 = 58;
-        const footH: i32 = 18;
-        const cardW: i32 = if (sliders != null) 470 else 360;
+        const headerH: i32 = hud.lineH(hud.TITLE) + 22;
+        const footH: i32 = 20;
+        const cardW: i32 = if (sliders != null) 620 else 470;
         const cardH: i32 = headerH + (rowH + rowGap) * @as(i32, @intCast(labels.len)) + footH;
         const cx = @divTrunc(sw - cardW, 2);
         const cy = @divTrunc(sh - cardH, 2);
         rl.drawRectangle(cx, cy, cardW, cardH, CARD);
         rl.drawRectangleLines(cx, cy, cardW, cardH, CARD_EDGE);
-        rl.drawRectangle(cx + 18, cy + 40, cardW - 36, 1, CARD_EDGE); // rule under the title
-        const tw = hud.textW(title, 20);
-        hud.text(title, cx + @divTrunc(cardW - tw, 2), cy + 12, 20, TITLE_COL);
-
-        const fontSize: i32 = if (compact) 16 else 18;
+        rl.drawRectangle(cx + 18, cy + hud.lineH(hud.TITLE) + 10, cardW - 36, 1, CARD_EDGE); // rule under the title
+        const tw = hud.textW(title, hud.TITLE);
+        hud.text(title, cx + @divTrunc(cardW - tw, 2), cy + 12, hud.TITLE, TITLE_COL);
         for (labels, 0..) |label, i| {
             const y = cy + headerH + (rowH + rowGap) * @as(i32, @intCast(i));
             const selected = self.cursor == i;
             const col = if (selected) TEXT_HOT else TEXT_DIM;
             if (selected) rl.drawRectangle(cx + 14, y - 3, cardW - 28, rowH, ROW_HILITE);
-            hud.text(label, cx + 34, y, fontSize, col);
+            hud.text(label, cx + 40, y, fontSize, col);
             if (selected) hud.text(">", cx + 20, y, fontSize, TEXT_HOT);
             // Intensity gauge on filter rows of the retro card.
             if (sliders) |r| {
                 if (i < gfx.RETRO_COUNT) {
-                    drawGauge(cx + cardW - 34 - 110, y + @divTrunc(fontSize, 2) - 4, 110, 8, r.values[i], selected);
+                    drawGauge(cx + cardW - 40 - 130, y + @divTrunc(fontSize, 2) - 3, 130, 10, r.values[i], selected);
                 }
             }
         }
@@ -249,8 +254,8 @@ fn drawGauge(x: i32, y: i32, w: i32, h: i32, v: f32, selected: bool) void {
     const fill: i32 = @intFromFloat(@as(f32, @floatFromInt(w - 2)) * mathx.clampF(v, 0, 1));
     if (fill > 0) rl.drawRectangle(x + 1, y + 1, fill, h - 2, BAR_FILL);
     if (selected) {
-        hud.text("<", x - 14, y - 4, 16, TEXT_HOT);
-        hud.text(">", x + w + 5, y - 4, 16, TEXT_HOT);
+        hud.text("<", x - 20, y - 7, hud.SMALL, TEXT_HOT);
+        hud.text(">", x + w + 7, y - 7, hud.SMALL, TEXT_HOT);
     }
 }
 
@@ -317,8 +322,8 @@ fn dirPressed(dir: NavDir, autoRepeat: bool) bool {
     const k = keyNav(dir);
     if (rl.isKeyPressed(k.a) or rl.isKeyPressed(k.b)) return true;
     if (autoRepeat and (rl.isKeyPressedRepeat(k.a) or rl.isKeyPressedRepeat(k.b))) return true;
-    if (rl.isGamepadAvailable(0)) {
-        if (rl.isGamepadButtonPressed(0, padNav(dir))) return true;
+    if (rl.isGamepadAvailable(PAD)) {
+        if (rl.isGamepadButtonPressed(PAD, padNav(dir))) return true;
     }
     return false;
 }
@@ -339,24 +344,29 @@ fn adjHeldDir() i32 {
     const r = keyNav(.right);
     if (rl.isKeyDown(l.a) or rl.isKeyDown(l.b)) dir -= 1;
     if (rl.isKeyDown(r.a) or rl.isKeyDown(r.b)) dir += 1;
-    if (dir == 0 and rl.isGamepadAvailable(0)) {
-        if (rl.isGamepadButtonDown(0, padNav(.left))) dir -= 1;
-        if (rl.isGamepadButtonDown(0, padNav(.right))) dir += 1;
+    if (dir == 0 and rl.isGamepadAvailable(PAD)) {
+        if (rl.isGamepadButtonDown(PAD, padNav(.left))) dir -= 1;
+        if (rl.isGamepadButtonDown(PAD, padNav(.right))) dir += 1;
     }
     return dir;
 }
 
 fn coarseHeld() bool {
     if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift)) return true;
-    return rl.isGamepadAvailable(0) and rl.isGamepadButtonDown(0, .left_trigger_1);
+    return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, .left_trigger_1);
 }
 
 fn confirmPressed() bool {
-    if (rl.isKeyPressed(.enter) or rl.isKeyPressed(.space)) return true;
-    return rl.isGamepadAvailable(0) and rl.isGamepadButtonPressed(0, .right_face_down);
+    // ALT+Enter belongs to the game loop's borderless-fullscreen toggle, so Enter must not ALSO
+    // confirm the highlighted row while Alt is down. The menu is open at launch, so without this
+    // the very first Alt+Enter selected whatever the cursor sat on — with the cursor one row off
+    // Quit, toggling fullscreen could exit the game.
+    const altHeld = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
+    if ((rl.isKeyPressed(.enter) and !altHeld) or rl.isKeyPressed(.space)) return true;
+    return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .right_face_down);
 }
 
 fn backPressed() bool {
     // Esc is routed by the game loop (onEscape); pad B backs out here.
-    return rl.isGamepadAvailable(0) and rl.isGamepadButtonPressed(0, .right_face_right);
+    return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .right_face_right);
 }

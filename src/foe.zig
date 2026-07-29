@@ -4,14 +4,11 @@ const mathx = @import("mathx.zig");
 const combat = @import("combat.zig");
 
 // ── THE FOE STANDARD ────────────────────────────────────────────────────────────────────
-// The shared contract + behaviours every enemy plugs into, so the game's cross-cutting foe
-// systems — lock-on, floating HP bars, footprint collision, the hero's-blade hit test, and
-// the combat beats (rumble/shake) — are written ONCE and work for ANY foe (the gaping toad,
-// the skeletal archer, and whatever comes next). Adding an enemy should be: build its rig +
-// AI, satisfy this contract, reuse the behaviours here, and it drops into every system with
-// little or no game.zig change.
+// The contract + behaviours every enemy plugs into, so the cross-cutting systems — lock-on, HP
+// bars, collision, the blade hit test, the combat beats — are written ONCE for any foe. Adding
+// an enemy is: build its rig + AI, satisfy this contract, reuse the behaviours here.
 //
-// THE CONTRACT — a Foe type exposes (duck-typed; the shared/generic call sites check it):
+// THE CONTRACT — a Foe type exposes (duck-typed; the generic call sites check it):
 //   FIELDS   pos: rl.Vector3          — ground position (XZ; Y≈0)
 //            vit: combat.Vitals       — HP + the two-tier poise/stance stagger (embed one)
 //            hits: u32                — total blows landed on it (drives the combat beats)
@@ -31,28 +28,29 @@ const combat = @import("combat.zig");
 // A `Group` (Knot of toads, Line of archers) is a fixed array of Foe + the shared roll-ups
 // (anyDied / totalHits / aliveCount) the beats read; game.zig iterates the groups generically.
 
-// ── shared foe tuning ── every one of these was three identical copies (frog / archer / ogre)
-// before it moved here. Cross-cutting values live in ONE place so a retune can't reach two foes
-// and miss the third.
-//
-// Blood/hit-flash duration (seconds): how long a struck foe pops on the shared gfx `hitFlash`
-// uniform. Cross-cutting (every foe drives the same uniform), so it lives here — one source for
-// the frog / archer / ogre `flashFrac()`.
-pub const FLASH_DUR: f32 = 0.20;
-// …and how hard that flash drives the uniform, applied by every Group's draw().
-pub const FLASH_GAIN: f32 = 0.85;
-// The HERO's own footprint, added to a foe's attack reach on the hit test — the counterpart of
-// game.HERO_R (collision). Every foe's attack shape widens by the same body, so it is one number.
+// ── shared foe tuning ── each of these was three identical copies (frog / archer / ogre). One
+// place, so a retune can't reach two foes and miss the third.
+pub const FLASH_DUR: f32 = 0.20; // seconds a struck foe pops on the shared gfx `hitFlash` uniform
+pub const FLASH_GAIN: f32 = 0.85; // …and how hard it drives it, applied by every Group's draw()
+// THE HERO'S FOOTPRINT, in the one place both sides can see it.
+// `HERO_R` is the collision radius game.zig pushes him out of the world with; `HERO_REACH` is the
+// forgiveness every foe adds to its own attack reach on top of it. They lived in different files
+// (HERO_R in game.zig, HERO_REACH here) with each comment pointing at the other, so no foe could
+// reason about how close the hero can actually GET — which is how the ogre's swipe ended up with an
+// inner edge inside the distance collision physically permits (see ogre.SWIPE_INNER).
+pub const HERO_R: f32 = 0.36;
 pub const HERO_REACH: f32 = 0.55;
+/// The nearest the hero can stand to a foe of footprint `bodyR` — collision never allows closer.
+/// Attack shapes with an inner edge must clear this or the "get inside it" counter cannot exist.
+pub fn closestApproach(bodyR: f32) f32 {
+    return bodyR + HERO_R;
+}
 
-// One instance's spawn record in a Group's `homes` table (position, heading, size + FX seed).
-// Identical for every foe, so the shape lives here rather than being re-declared per file.
+/// One instance's spawn record in a Group's `homes` table.
 pub const Home = struct { x: f32, z: f32, yaw: f32, scale: f32, seed: f32 };
 
-// Carry a landed blow's KNOCKBACK for one frame and bleed it off: shove the footprint along
-// `shove` (clamped to the arena), then decay `shove` by `decay`/sec. A jolt off the blade, not a
-// slide — collision cleans up any overlap it causes. Shared: the frog, archer and ogre all had a
-// byte-identical copy of this block at the top of their update().
+// Carry a landed blow's KNOCKBACK for one frame and bleed it off. A jolt off the blade, not a
+// slide — collision cleans up any overlap it causes.
 pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32, dt: f32) void {
     if (mathx.lenXZ(shove.*) <= 0.01) return;
     pos.x = mathx.clampF(pos.x + shove.x * dt, -bounds, bounds);
@@ -61,14 +59,13 @@ pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32,
 }
 
 // ── TELEGRAPH FX: the shared particle pool ──────────────────────────────────────────────
-// The unlit specks that SELL a foe's tells — dust dug up under a coil, an amber charge glow, a
-// blood burst at the wound, the grace-gold motes a corpse dissipates into. The frog and the ogre
-// each carried a byte-identical copy of the struct + these three routines; the SHAPE of a
-// particle and how it integrates/draws is cross-cutting, so it lives here. What stays per-foe is
-// the AUTHORING (which bursts fire, how fast, how big) — that is the creature's character.
+// The unlit specks that SELL a foe's tells — dust under a coil, an amber charge glow, a blood
+// burst, the grace-gold motes a corpse dissipates into. The particle's SHAPE and how it
+// integrates/draws is cross-cutting and lives here; the AUTHORING (which bursts fire, how fast,
+// how big) stays per-foe — that is the creature's character.
 //
-// Each owner keeps its own fixed-size ring + head + emit-rate carry + seeded Rng, so pools stay
-// independent and deterministic; these routines just operate on them.
+// Each owner keeps its own ring + head + emit carry + seeded Rng, so pools stay independent and
+// deterministic; these routines just operate on them.
 
 /// One telegraph particle: integrates ballistically, lerps r0→r1, fades out as its life runs down.
 pub const Particle = struct {

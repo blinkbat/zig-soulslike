@@ -33,15 +33,26 @@ pub const Hit = struct {
     stance: f32 = 0,
 };
 
-// ── tuning (shared feel constants) ──────────────────────────────────────────────────────
-const REGEN_DELAY = 0.8; // seconds after the last hit before poise/stance start refilling
+// ── tuning ──────────────────────────────────────────────────────────────────────────────
+// THE TWO SIDES ARE TUNED SEPARATELY (owner's call). A stagger you INFLICT is a punish window
+// you must be able to walk into and use; a stagger you SUFFER is time taken off the player,
+// which this game spends as little of as it can (FEEL RULES). So the foe numbers are the
+// generous ones, side by side with the hero's where you can see the gap.
+const REGEN_DELAY = 0.8; // seconds after the last hit before the HERO's meters start refilling
 const POISE_REFILL = 1.3; // seconds to refill poise from empty (once regen kicks in)
 const STANCE_REFILL = 4.6; // …stance refills slower — the "keep pressure on" meter
 const LIGHT_BREAK_STANCE = 0.40; // fraction of max stance a single LIGHT break chips off
-// Stun durations (seconds). Light is a sharp flinch (big + readable — a flinch is a BIG deal
-// in a soulslike); heavy is the long wide-open stagger.
+// A foe whose poise is back before your next swing can only be staggered by a burst, and every
+// fight collapses into "land two fast or don't bother". Chip damage has to PERSIST.
+const FOE_REGEN_DELAY = 2.2;
+const FOE_REGEN_RATE = 0.45;
+// Stun durations (seconds). Light is a sharp flinch (BIG and readable); heavy is the long
+// wide-open stagger. The foe durations are what a stance break is FOR — long enough to close
+// and take a free swing, or breaking it bought nothing but a noise.
 pub const LIGHT_STUN_DUR = 0.46;
 pub const HEAVY_STUN_DUR = 1.15;
+pub const FOE_LIGHT_STUN_DUR = 0.78;
+pub const FOE_HEAVY_STUN_DUR = 2.40;
 
 pub const Vitals = struct {
     hp: f32,
@@ -52,6 +63,8 @@ pub const Vitals = struct {
     stanceMax: f32,
     sinceHit: f32 = 1e9, // seconds since the last poise-damaging hit (gates regen)
     dead: bool = false,
+    regenDelay: f32 = REGEN_DELAY, // …how long that gate holds
+    regenRate: f32 = 1.0, // …and the multiplier on the refill speed once it opens
 
     pub fn init(hpMax: f32, poiseMax: f32, stanceMax: f32) Vitals {
         return .{
@@ -64,17 +77,26 @@ pub const Vitals = struct {
         };
     }
 
+    /// The same vitals on a FOE's regen schedule — slow to start, slow to fill. Every enemy
+    /// builds through here; only the hero uses the plain `init`.
+    pub fn initFoe(hpMax: f32, poiseMax: f32, stanceMax: f32) Vitals {
+        var v = init(hpMax, poiseMax, stanceMax);
+        v.regenDelay = FOE_REGEN_DELAY;
+        v.regenRate = FOE_REGEN_RATE;
+        return v;
+    }
+
     pub fn hpFrac(self: *const Vitals) f32 {
         return if (self.hpMax > 0) mathx.clampF(self.hp / self.hpMax, 0, 1) else 0;
     }
 
-    // Regenerate the meters; call every frame. Nothing regens until REGEN_DELAY after the
+    // Regenerate the meters; call every frame. Nothing regens until `regenDelay` after the
     // last hit; HP never auto-regens (flasks only).
     pub fn tick(self: *Vitals, dt: f32) void {
         self.sinceHit += dt;
-        if (self.dead or self.sinceHit < REGEN_DELAY) return;
-        self.poise = mathx.minF(self.poiseMax, self.poise + self.poiseMax / POISE_REFILL * dt);
-        self.stance = mathx.minF(self.stanceMax, self.stance + self.stanceMax / STANCE_REFILL * dt);
+        if (self.dead or self.sinceHit < self.regenDelay) return;
+        self.poise = mathx.minF(self.poiseMax, self.poise + self.poiseMax / POISE_REFILL * self.regenRate * dt);
+        self.stance = mathx.minF(self.stanceMax, self.stance + self.stanceMax / STANCE_REFILL * self.regenRate * dt);
     }
 
     // Apply a hit; returns the reaction: none / light / heavy / death. Killing blow latches
@@ -156,4 +178,28 @@ test "regen waits out the delay, then refills; HP never regens" {
     while (t < 3.0) : (t += 1.0 / 60.0) v.tick(1.0 / 60.0);
     try std.testing.expectApproxEqAbs(v.poiseMax, v.poise, 1e-3); // poise back to full
     try std.testing.expectApproxEqAbs(@as(f32, 90), v.hp, 1e-5); // HP stays where it was
+}
+
+test "a foe's chip damage PERSISTS far longer than the hero's" {
+    // The whole point of the split: two seconds after a hit the hero is fully recovered and the
+    // foe has not started refilling at all, so pressure on a foe actually accrues.
+    var hero = Vitals.init(100, 20, 40);
+    var foeV = Vitals.initFoe(100, 20, 40);
+    _ = hero.hit(.{ .poise = 15 });
+    _ = foeV.hit(.{ .poise = 15 });
+    var t: f32 = 0;
+    while (t < 2.0) : (t += 1.0 / 60.0) {
+        hero.tick(1.0 / 60.0);
+        foeV.tick(1.0 / 60.0);
+    }
+    try std.testing.expectApproxEqAbs(hero.poiseMax, hero.poise, 1e-3); // hero is back
+    try std.testing.expectApproxEqAbs(@as(f32, 5), foeV.poise, 1e-3); // the foe is still chipped
+}
+
+test "the punish window a foe gives you outlasts the one you give it" {
+    // A stance break must be worth causing: long enough to walk in on. The hero's own stays
+    // short on purpose — the FEEL RULES spend as little of the player's time as they can.
+    try std.testing.expect(FOE_HEAVY_STUN_DUR > 2.0 * HEAVY_STUN_DUR);
+    try std.testing.expect(FOE_LIGHT_STUN_DUR > LIGHT_STUN_DUR);
+    try std.testing.expect(FOE_REGEN_DELAY > REGEN_DELAY and FOE_REGEN_RATE < 1.0);
 }

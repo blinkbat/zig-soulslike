@@ -1,423 +1,393 @@
 # AGENTS.md — zig-soulslike
 
-A third-person **soulslike** prototype in native **Zig 0.14.1 + raylib**. Founded on the
-sibling `../zig-rts` rendering engine (procedural-mesh `Builder`, single-sun shadow-map
-pipeline, Exo HUD), which itself descends from `../zig-diablo`.
+A third-person **soulslike** prototype in native **Zig 0.14.1 + raylib**, founded on the sibling
+`../zig-rts` rendering engine (procedural-mesh `Builder`, single-sun shadow-map pipeline).
 
 Keep this file lean. Prefer no comments in code; write succinct ones for novel/edge cases.
 Reuse existing helpers before adding new code. Don't make ad-hoc product/design decisions —
 ask. The owner (David) drives the design; implement what's asked and nothing extra.
 
-**FEEL RULES (owner's law, non-negotiable):**
-- **NO HITSTOP. EVER.** No freeze-frames, no time-dilation on impact, no dt zeroing.
-  Impact weight is carried by camera shake + rumble + blood/flash FX + the huge reaction
-  anims — never by stealing time from the player.
-- **ZERO INPUT LAG.** The stick maps STRAIGHT to ground speed every frame (light tilt =
-  walk, full tilt = run, keyboard = immediate run; no run-unlock hold, no windup gates).
-  Posture/gait blends may smooth the VISUALS only, and only very fast (~0.1s max) —
-  movement mechanics answer the input the same frame it happens.
+## The laws (owner's, non-negotiable)
 
-**WABI-SABI is the house style for ALL art.** Nothing organic is machined to uniform
-perfection — gaits, the dodge roll, creatures, teeth, flora, the prop scatter all earn their
-life from deliberate IMPERFECTION: uneven sizes, asymmetry, leans, gaps, the odd broken or
-oversized piece, magnitudes drifting piece to piece. Author the variation IN with a seeded
-`mathx.Rng` (so builds stay deterministic) instead of laying elements out in clean rows or
-mirrored pairs. When a model or anim reads "dumb"/fake, it's almost always too REGULAR — rough
-it up. Wabi-sabi is COSMETIC only: mechanics stay exact (the roll's body is imperfect, but its
-distance/heading/timing are identical every time).
+- **NO HITSTOP. EVER.** No freeze-frames, no time-dilation on impact, no dt zeroing. Impact
+  weight comes from camera shake + rumble + blood/flash FX + huge reaction anims — never from
+  stealing time from the player.
+- **ZERO INPUT LAG.** The stick maps STRAIGHT to ground speed every frame. Posture/gait blends
+  may smooth the VISUALS only, and only fast (~0.1 s max).
+- **WABI-SABI is the house style for ALL art.** Nothing organic is machined: uneven sizes,
+  asymmetry, leans, gaps, the odd broken or oversized piece. Author the variation IN with a
+  seeded `mathx.Rng` (builds stay deterministic) instead of clean rows or mirrored pairs. When a
+  model or anim reads "dumb"/fake it is almost always too REGULAR. Cosmetic only — mechanics
+  stay exact (the roll's body is imperfect, its distance/heading/timing identical every time).
+- **REACTIONS ARE HUGE.** A flinch or stagger must be big and obvious, never a subtle lean.
+- **FLESH IS ROUND.** Organic mass = `addBlob`/`addCapsule`; `addCube`/`addBox` is for iron,
+  blades, cloth, masonry. A bare `addCylinder` leaves an open cut-pipe end and a hard rim, and
+  those rims + boxes are what read as BLOCKY however good the animation on top is.
+- **PACKED STONE HAS A CORE.** A wall laid as a row of blocks is only the FACING; behind it a
+  real wall is packed solid. Without a substrate the joints leak sky (or the far side of the
+  room) and it reads as loose stones balanced on each other. And overlap the facing well past
+  its slot — butted blocks show a seam round every one, like a model kit. `props.courseInto` /
+  `courseStack` do both; every coursed prop goes through them.
+- **BIG BODIES HINGE AT THE WAIST, LEGS STAY PLANTED.** A swing is the trunk folding over feet
+  that don't move. Route lean through SPINE/CHEST and leave the pelvis nearly upright
+  (`ogre.PELVIS_SHARE`); lean at the ROOT rotates the legs and reads as lurching. Braces take up
+  in the knees, they don't squat.
 
-## What exists (first demo = locomotion + camera)
+## What exists
 
-A convincingly **human** hero that **walks / runs / sprints / dodge-rolls** and **swings a
-sword** (R1 light slash / R2 heavy overhead, kinetic-chain sequenced, blade hit-capsule
-scaffolding), under a **third-person over-the-shoulder camera**, in a **lit 3D world with
-cast shadows**: a golden-hour plain (warm low sun vs cool slate sky, procedural cloud
-deck, distance haze, vignette) dressed as a fallen kingdom — colonnade avenue, gate arch,
-walls, dead trees, graves, war banners, a statue, an emissive grace ember, and colossal
-hazed horizon ruins. A **knot of gaping toads** hunts the hero (hop/lunge/chomp AI), with
-**ER lock-on**, and a full **combat layer**: HP + a two-tier poise/stance stagger (light
-flinch → heavy stance-break) + death, both sides (see `combat.zig` and **`docs/ELDEN_RING.md`**,
-the systems reference). No stamina, i-frames, criticals, guarding, or jump yet.
-The bar for "human" is anatomy (real segment proportions) + real gaits, not polygon count.
+A convincingly **human** hero that walks / runs / sprints / dodge-rolls and swings a sword (R1
+light slash / R2 heavy overhead, kinetic-chain sequenced, swept blade hit-capsule), under a
+third-person over-the-shoulder camera, in a lit 3D world with cast shadows (warm low sun vs cool
+slate sky, cloud deck, haze, vignette, plus point-light torch/brazier/campfire fire). Three foes
+hunt him — **gaping toads**, **skeletal archers**, a lone **one-eyed ogre** — with ER lock-on and
+a full combat layer: HP + two-tier poise/stance stagger + death, both sides (`combat.zig`, and
+**`docs/ELDEN_RING.md`** as the systems reference). No stamina, criticals, guarding or jump yet.
+The bar for "human" is anatomy + real gaits, not polygon count.
+
+**THE WORLD** is a 320 m square golden-hour plain ringed by cliffs, holding five regions
+(see `env.zig`'s header for the map, `props.zig` for the models):
+
+| Direction | Region | What's there |
+| --- | --- | --- |
+| centre / south | the fallen avenue | colonnade, gate arch, grace ember, the start |
+| north | **the Fallen City** | plaza, walls, ruined house shells, a torchlit **chapel you walk into**, two **watchtowers** with dark ground rooms, carts, the colossal horizon gate |
+| east | **the Tarn** | a shallow lake you **wade**, drowned columns, a collapsed causeway, willows, reeds |
+| west | **the Old Wood** | great trees (3 variants), ferns/brambles/bushes, boulders, a **standing-stone circle**, a woodcutter's **cottage** + campfire |
+| south | **the Windswept Downs** | open and sparse — lone trees, field stones, graves, a watchtower |
+
+**77 prop kinds**, 7,876 instances and 1,575 colliders, of which a frame draws ~1,000 across both
+passes (measured: 985 in the city, 1,059 in the wood). See **PERFORMANCE** — that ratio is why the
+world is affordable, and the debug Stats overlay prints it live so it stays checkable.
+
+**Density VARIES, and that is the point** (owner's law). A flat per-region density gives every
+square metre the same cover and the result is a carpet — uniformly thick, nowhere to walk,
+nothing to notice. `env.coverField` is two octaves of value noise (~34 m clearings broken up at
+~11 m) pushed toward its extremes; the region constant is now the PEAK and the field scales it,
+to nothing in the clearings. The SAME field gates the scattered structure belts, so a clearing
+is a clearing for everything standing in it.
+
+**A region needs three layers to read as lush**, and leaving one out reads as sparse however
+many props you place: a GROUND-HUGGER between the standing plants (clover / moss / heather), an
+UNDERSTOREY at knee-to-chest height (fern, bramble, thicket, sapling), and the CANOPY. Dead
+growth (bracken, snags, stumps, logs) is what stops it looking like a garden. And the SOIL
+changes with the region too — the wood's floor is a different colour, not a green tint over the
+meadow's (`gfx.terrainAlbedo`'s region drift).
 
 ## Build & verify
 
-- `zig` is NOT on PATH. Build with `build.cmd` (debug) / `build-release.cmd`; the vendored
-  toolchain is `..\.zigtoolchain\zig-x86_64-windows-0.14.1\zig.exe` (shared with the siblings).
-- `zig build test` runs unit tests.
+- `zig` is NOT on PATH. Build with `build.cmd` / `build-release.cmd`; the vendored toolchain is
+  `..\.zigtoolchain\zig-x86_64-windows-0.14.1\zig.exe`. `zig build test` runs unit tests.
 - Verify rendering/animation changes by RUNNING `zig-out\bin\zig-soulslike.exe --shot` (or
-  `shot.cmd`) and INSPECTING the PNGs in `shots\`. `--shot` HIDES the window (headless):
-  it scripts a −Z walk→run→sprint and a dodge roll, capturing side/front/back/3-quarter
-  angles at each speed. Never claim a visual change works without a shot. `shots\` is
-  gitignored. Do NOT launch the interactive window to "check" — use `--shot`; the owner
-  launches the real game themselves.
-- **Framing is part of the test.** Before tuning an animation from a shot, confirm the camera
-  actually SHOWS the moving part. A mis-framed angle (e.g. the SWORD arm hidden behind the
-  torso — what yaw 270 did to the light slash) means you're tuning a swing you can't see, and
-  every knob after that is guesswork. If a shot looks off, suspect the CAMERA first
-  (yaw/pitch/dist) and capture the TRUE contact frame, not an arbitrary mid-point; fix the
-  framing, THEN judge the anim. Diagnose bad shots EARLY — don't burn iterations on them.
+  `shot.cmd`) and INSPECTING the PNGs in `shots\`. `--shot` hides the window: it scripts a walk→
+  run→sprint and a roll at several angles, then every foe's states, then the **WORLD TOUR**
+  (`70..92`): one framing per region, the chapel/watchtower interiors under torchlight, the tarn,
+  the cliffs, five overhead MAP shots and two Stats readouts. Never claim a visual change works
+  without a shot. `shots\` is gitignored. Do NOT launch the interactive window to "check" — the
+  owner plays the real game himself, and while he has it open the build cannot overwrite the exe.
+- **Framing is part of the test.** Confirm the camera actually SHOWS the moving part before
+  tuning from a shot; a mis-framed angle means you're tuning a swing you can't see. Suspect the
+  CAMERA first (yaw/pitch/dist) and capture the TRUE contact frame. Landscape shots have three
+  traps: `follow` does not clamp pitch, so a small NEGATIVE pitch at long `dist` puts the camera
+  under the terrain; the camera ends at `target + back*dist`, so an interior framing must be
+  DERIVED from the room's real extent; and the shadow ortho box tracks the HERO, so `standHero`
+  near your subject or the shot has no cast shadows. For a WORLD change take a steep overhead
+  MAP shot (`dist` near 55 — a camera 85 m up looks through 85 m of haze).
+- **Thin geometry needs a CROP.** Strings, nocked arrows, flutes and setts are invisible in a
+  full-frame shot; crop and zoom (System.Drawing) before calling one broken.
+- `--shot` PNGs are not byte-deterministic (flora wind + grain read `rl.getTime`) — verify
+  visually, never by hash-diff.
 - Don't commit, push, or create branches unless explicitly asked.
 
 ## Module map
 
 - `main.zig`   — entry; `--shot` = headless screenshot harness.
-- `game.zig`   — window/loop, input (mouse + gamepad), camera-relative movement + facing,
-                 dodge-roll trigger, render orchestration (sun depth pass → retro capture
-                 → lit main pass → filter blit → vignette/HUD/menu crisp), sky, HUD,
-                 combat-beat feedback wiring (rumble + camera shake + per-actor hit flash;
-                 NO hitstop), the YOU DIED card (drawDeathOverlay + respawn fade), and
-                 the `--shot` harness (which also captures filter + menu verification shots).
-- `menu.zig`   — the pause/debug menu (OPEN AT LAUNCH: Continue / Debug / Quit). Debug
-                 holds Stats / Wireframe / Time Scale and the Retro Filters slider list
-                 (15 filters + presets), all driving gfx.Retro / loop toggles. Inspired by
-                 ../crawler's pause -> Debug -> Retro Filters tree.
-- `hero.zig`   — THE HERO. Anthropometric FK skeleton + every animation (idle/walk/run/
-                 sprint/roll/attacks, plus the locked-on STRAFE/BACKPEDAL footing: crossing
-                 grapevine sidesteps + a time-reversed walk) + the blade hit capsule
-                 (souls-style: rides the SWORD bone's dummy points, active only in the
-                 strike's TAE-like window, endpoints swept frame-to-frame, FAT on purpose —
-                 vertical forgiveness so the level swipe lands on low/tall foes) + the swing
-                 trail ribbon. The light slash is a REAL cut — the HORIZONTAL pair (sabre
-                 Cuts III/IV, Roworth 1798 / kendo dō-giri), a LEVEL swipe: blade riding the
-                 OUTER EDGE of the arc for the whole hit window (owner's law: level +
-                 outward, never a dirt-stab, never hilt-first) — see the CUT MECHANICS note
-                 above the AL_* block. Start here for how the character moves.
-- `camera.zig` — third-person over-the-shoulder orbit rig (yaw + clamped pitch, zoom,
-                 shoulder offset, `recenter`), the camera-relative ground basis, and the
-                 trauma-based impact shake (tickShake is live-loop only, so --shot stays
-                 deterministic).
-- `gfx.zig`    — the mesh `Builder` now has ROUNDED primitives beside the boxes: `addCapsule`
-                 (tapered barrel + domed ends), `addBlob` (an ellipsoid mass) and `addDome`, all
-                 revolved about the shared `axisFrame` with ONE continuous UV band (`ringBand`) so
-                 a multi-band surface doesn't show a ring of decorrelated noise per band. **FLESH IS
-                 ROUND: organic mass = blob/capsule; addCube/addBox are for iron, blades, cloth.** A
-                 bare `addCylinder` leaves an open cut-pipe end and a hard rim at every seam, and
-                 those rims + boxes are what read as BLOCKY however good the animation on top is
-                 (`ogre.zig` is the worked example; hero/frog/archer are still on the old boxes).
-                 Also: scene shader (warm hard sun + cast shadows + hemisphere ambient + rim
-                 light on non-terrain + sun-banked distance haze + gamma/dither + a flora
-                 wind term gated by `windAmt`/`setWind` + the per-actor `hitFlash` uniform
-                 + SURFACE MATERIALS: every Builder mesh carries surface-anchored UVs and
-                 a `gfx.Mat` id in texcoords2, and matAlbedo() textures it procedurally —
-                 stone/wood/cloth/steel/leather/skin/hide/plant, value-only, ±20% max, so
-                 patterns stick to animated bones and NOTHING reads gaudy), the sun
-                 shadow-map depth pass, the mesh `Builder` (setMat switches material per
-                 shape), the fullscreen `Sky` shader
-                 (gradient + sun aureole/disc + fbm cloud deck; ray from gl_FragCoord —
-                 fragTexCoord is CONSTANT for drawRectangle), and the `Vignette` overlay.
-                 Adapted from zig-rts by REMOVING fog-of-war (a soulslike is fully lit).
-- `env.zig`    — procedural ground plane (extends far past the playable bounds so it
-                 dissolves fully into haze) + a hand-placed prop layout: columns, gate
-                 arch, walls, trees, graves, swords, banners, statue, grace ember,
-                 horizon giants, and a seeded flora scatter (kind-indexed models, one
-                 mesh each).
-- `frog.zig`   — THE GAPING TOAD (first foe) + the `Knot` of them. Squash-&-stretch rig,
-                 hop/lunge/chomp state machine, and the combat reactions (light flinch /
-                 heavy stance-break stagger / death → a grace-gold mote DISSIPATION, never
-                 a hard vanish). Landed blows read at the wound: contact-point blood burst,
-                 knockback shove, and a blood-red body flash. Its attacks damage the hero;
-                 the hero's swept blade damages it. Homes sit off the avenue so a straight
-                 run won't wake them.
-- `archer.zig` — THE SKELETAL ARCHER (second foe) + the `Line` of them. A BARE-BONES humanoid
-                 (skull / ribcage / pelvis / bone-limbs + a bow) FOUNDED ON THE HERO RIG:
-                 same anthropometry, and it walks/strafes on the HERO'S gait (see the humanoid
-                 rule below), not a bespoke cycle. KITE-only AI (holds a range band, backs off
-                 / closes, looses; never melees). Slowish arrows that STICK
-                 where they land + fade; their homing is a LAUNCH NUDGE, not tracking — it trims
-                 only the lead error the hero's walk introduces and FADES to zero over the first
-                 `ARROW_HOME_FADE` of flight (~11 deg of bend, all of it early), so a sidestep beats
-                 a shot outright. Owner's note: full-flight homing read as a guided missile.
-                 One-and-done death (collapse → dissipate). Perched in
-                 the ruins, waking as you advance. Arrows are a pool owned by `game.zig`, and
-                 they respect COVER: each flight-steps against `env.solids()` (every solid
-                 carries its mesh-top `h`) and thunks into stone instead of piercing it —
-                 while still arcing over the LOW stuff (graves, ruin blocks).
-- `ogre.zig`   — THE ONE-EYED OGRE (third foe) + the `Grief` (a lone, sorrowful giant). A GIANT
-                 humanoid (~2x the hero), hunched + mis-proportioned, HEFTING a great knotted
-                 CLUB at his side, with ONE dull-amber glowing eye — a sad but scary figure.
-                 **HE HINGES AT THE WAIST AND HIS LEGS STAY PLANTED (owner's law).** The pelvis takes
-                 only `PELVIS_SHARE` (0.16) of any body pitch and the rest folds through SPINE →
-                 CHEST → HUMP; the brace is a knee-taking-up, not a squat (BRACE_HIP/KNEE 12/24).
-                 Pitching the ROOT rotates the LEGS with the trunk, so every stoop and swing swung
-                 his whole frame and from three-quarters he read as a quadruped bowing.
-                 FOUNDED ON THE HERO RIG like the archer (`hero.advanceGait`/`legChain` for the legs,
-                 driving the hero's OWN joint indices 5..10 — that block of the rig is frozen for
-                 that reason; the stride phase is fed a scale-corrected distance so the giant doesn't
-                 skate) but grown to **24 bones**: the hero's 0..17 plus a hinged JAW (a mouth that
-                 works — breath / roar / grit / pant / loll), TOES that roll off the ground at
-                 push-off, a HUMP so the back CURVES instead of pivoting at one waist joint, and a
-                 shoulder GIRDLE (clavicles) the arms hang off and heave with. Three of those are
-                 inserted ABOVE existing bones (NECK hangs off the hump, each shoulder off its
-                 clavicle), so `poseUpper` sets bones in DEPENDENCY order, not index order.
-                 It carries the full humanoid UPPER-body articulation
-                 (see the rule below) — the club arm's swing is damped + lagged by the weight, and
-                 the club rocks a beat behind the arm again. **THE CLUB NEVER TOUCHES THE GROUND
-                 while carried** (owner's law — a club ploughing the dirt was the original goof, and
-                 it read as a tripod leg propping the body up): it hangs from a `CLUB_DROP` budget
-                 short enough for a hanging fist to clear, held OUT on `CLUB_ABD`, raked back, and
-                 the rake backs out the trunk's stoop + stride flexion so GRAVITY sets the angle
-                 rather than posture. `clubLowWorld()` is the club's business end off the posed
-                 bone — the hover, the impact burst, and the crush strip's length are all measured
-                 from it, never guessed. HIGH POISE (shrugs off single lights — sustained pressure
-                 staggers it) + a lumbering approach into TWO attacks: the big readable OVERHEAD CLUB
-                 SLAM (long windup tell → fast crash → long wide-open recovery), a crush STRIP down
-                 the facing line — now his CLOSE-IN punish (`SLAM_R` 2.3), because the shortened club
-                 plus planted legs put the crater ~1.2 out; and the FAST SIDE SWIPE (`swipewind` →
-                 `swipe`, 0.34 s + 0.20 s), a horizontal scythe through a SECTOR he keeps pivoting
-                 into (`SWIPE_TURN`), which is how he answers a hero who won't stand in front of him.
-                 **HE DOES NOT STRAFE** (owner's call): a giant crossing its legs over a base that
-                 wide is how you fall over, and it fights the planted-legs law. `latB` is pinned to 0
-                 at his `legChain` calls so he can never inherit the hero's grapevine; he answers a
-                 flanking hero by PIVOTING instead (`faceToward`, and `SWIPE_TURN` mid-swing).
-                 Both attacks are LONG-TELL / HARD-PUNISH by design: `WINDUP_DUR` 1.20 s and
-                 `SWIPE_WIND_DUR` 0.46 s pay for `SLAM_HIT` 36 and `SWIPE_HIT` 23 — you always get
-                 told, and the price of missing the tell is steep.
-                 The swipe is a WAIST move: the coil/whip is `twist`, plus the shoulder's own
-                 horizontal `clubSweep` (ry OUTSIDE the abduction, or it just spins the arm).
-                 **Every hurt shape is MEASURED off the posed club, never guessed** — `SLAM_LEN`,
-                 `SWIPE_INNER/OUTER/ARC_MID/ARC` all come from tracing `clubLowWorld()` frame by
-                 frame, and unit tests re-assert them (plus: the carried club never touches the
-                 ground, the slam DOES reach it, the head clears the chest barrel). Retune the club,
-                 an arm angle or the waist fold and RE-MEASURE. Reactions are huge; death is a slow,
-                 weighty topple into the grace-mote dissipation. More attacks can drop in beside these.
+- `game.zig`   — window/loop, input, camera-relative movement + facing, roll trigger, render
+                 orchestration (sun depth pass → retro capture → lit pass → filter blit →
+                 vignette/HUD/menu), sky, HUD, combat-beat feedback (rumble + shake + hit flash;
+                 NO hitstop), the YOU DIED card, and the `--shot` harness.
+- `menu.zig`   — the pause/debug menu (OPEN AT LAUNCH: Continue / Debug / Quit). Debug holds
+                 Stats / Wireframe / Time Scale and the Retro Filters list (15 filters + presets).
+- `hero.zig`   — THE HERO. Anthropometric FK skeleton + every animation, the swept blade hit
+                 capsule (rides the SWORD bone's dummy points, active only in the strike's window,
+                 FAT on purpose for vertical forgiveness) and the swing trail. The light slash is a
+                 REAL cut — the horizontal pair (sabre Cuts III/IV), LEVEL and OUTWARD for the
+                 whole hit window (never a dirt-stab, never hilt-first). Start here.
+- `camera.zig` — over-the-shoulder orbit rig (yaw + clamped pitch, zoom, shoulder offset,
+                 `recenter`), the camera-relative ground basis, trauma-based impact shake
+                 (live-loop only, so `--shot` stays deterministic).
+- `gfx.zig`    — the mesh `Builder` (boxes plus ROUNDED `addCapsule`/`addBlob`/`addDome`, all
+                 revolved about the shared `axisFrame` with ONE continuous UV band). Scene shader:
+                 warm hard sun + cast shadows + hemisphere ambient + rim light + POINT LIGHTS +
+                 a WATER material + haze + gamma/dither + a wind term + `hitFlash` + SURFACE
+                 MATERIALS (every mesh carries surface-anchored UVs and a `gfx.Mat` id;
+                 `matAlbedo` textures it procedurally, value-only, ±20%, so nothing reads gaudy).
+                 Also the shadow depth pass, the fullscreen `Sky`, and the `Vignette`.
+- `env.zig`    — THE WORLD: the ground plane, the five regions AUTHORED IN CODE (a region is a
+                 paragraph you can read, not a table of coordinates), the seeded ground-cover
+                 scatter + `coverField`, and the three systems that make this size affordable —
+                 the UNIFORM GRID, the CULLERS (`View`/`Cull`), the grid-local solid queries.
+                 Also gathers each fire's `gfx.Light` and uploads the nearest per frame.
+- `props.zig`  — EVERY static model, plus ONE table (`INFO`) holding all the rest of the engine
+                 needs per kind: mesh builder, bounding radius, top height, view distance, casts /
+                 sways, footprint colliders, any fire. A kind is ONE ROW; the old layout spread
+                 that across four places and forgetting one failed SILENTLY. Shared weathering
+                 helpers (`courseInto`, `courseStack`, `quoinsInto`, `lichenInto`, `chipsInto`,
+                 `crackInto`, `tuftInto`) so every ruin ages the same way. Big props with many
+                 instances come in VARIANTS (`BIG_TREES`, `CLIFFS`).
+- `frog.zig`   — THE GAPING TOAD + the `Knot`. Squash-&-stretch rig, hop/lunge/chomp AI, huge
+                 reactions, death → a grace-gold mote DISSIPATION (never a hard vanish).
+- `archer.zig` — THE SKELETAL ARCHER + the `Line`. A bare-bones humanoid FOUNDED ON THE HERO RIG.
+                 KITE-only AI (holds a range band, never melees) plus one panic **BACKSTEP** on a
+                 long cooldown — see below. Slowish arrows that STICK and fade; their homing is a
+                 LAUNCH NUDGE that fades out over `ARROW_HOME_FADE`, so a sidestep beats a shot.
+                 Arrows are a pool owned by `game.zig` and they respect COVER (each flight-steps
+                 against `env.solids()`, thunking into stone while still arcing over low kerbs).
+- `ogre.zig`   — THE ONE-EYED OGRE + the `Grief`. A giant (~2x hero), hunched, hefting a knotted
+                 CLUB, one dull-amber eye. FOUNDED ON THE HERO RIG but grown to 24 bones (a hinged
+                 JAW, TOES, a HUMP, a shoulder GIRDLE); three are inserted ABOVE existing bones, so
+                 `poseUpper` sets bones in DEPENDENCY order, not index order. HIGH POISE + two
+                 attacks: the OVERHEAD SLAM (long tell → fast crash → long recovery, a crush strip
+                 down the facing line) and the FAST SIDE SWIPE (a horizontal scythe through a
+                 sector he keeps pivoting into). **HE DOES NOT STRAFE** (`latB` pinned to 0) — he
+                 answers a flanking hero by PIVOTING. **THE CLUB NEVER TOUCHES THE GROUND while
+                 carried.** Every hurt shape is MEASURED off the posed club (`clubLowWorld()`),
+                 never guessed, and unit tests re-assert them — retune anything and RE-MEASURE.
 - `foe.zig`    — THE FOE STANDARD: the shared contract + behaviours every enemy plugs into, so
-                 lock-on, floating HP bars, collision, the blade hit-test, and the combat beats
-                 are written ONCE for all foes. Holds `Blade` (the hero's-swing data) and
-                 `strike()` (swept hurt-sphere test + one-hit latch + damage) that frog + archer
-                 `tryHit` both reuse. See its header contract + "Adding a foe" below.
-- `combat.zig` — SHARED combat `Vitals`: HP + the two-tier Elden Ring stagger (poise → light
-                 stun, stance → heavy stun) + regen + death. Pure logic, unit-tested; hero and
-                 every foe embed one. THE place to retune damage/poise feel. See `docs/ELDEN_RING.md`.
-- `collision.zig` — 2D XZ capsule/circle footprint collision (push-out); actors + world solids.
-- `mathx.zig`  — ground-plane + vector/angle helpers (copied from zig-rts, extended).
-- `hud.zig`    — UI text in Exo (assets/, OFL alongside); the ONLY path to draw/measure text.
+                 lock-on, HP bars, collision, the blade hit-test and the combat beats are written
+                 ONCE. Holds `Blade` and `strike()`.
+- `combat.zig` — SHARED `Vitals`: HP + the two-tier stagger + regen + death. Pure logic,
+                 unit-tested. THE place to retune damage/poise feel.
+- `collision.zig` — 2D XZ capsule/circle footprint collision (push-out).
+- `mathx.zig`  — ground-plane + vector/angle helpers.
+- `hud.zig`    — UI text in Balthazar; the ONLY path to draw/measure text. Two atlases of the
+                 same face: 96 px for HUD, 160 px for the YOU DIED card.
 
 ## The hero rig (`hero.zig`)
 
-- **Anatomy is real.** Bone lengths are fixed fractions of stature `H` (=1.8), from the
-  Drillis & Contini (1966) segment table as tabulated in Winter, *Biomechanics and Motor
-  Control of Human Movement*. This is why proportions read as human.
-- **Forward kinematics.** A 17-bone skeleton (pelvis, spine, chest, neck, head, and 3-joint
-  legs/arms). `pose()` chains a world matrix per bone ONCE per frame; `draw()` only replays
-  the stored matrices. The sun depth pass and the lit pass both call `draw()`, so the cast
-  shadow and lit silhouette always match. Bones are bare `rl.Mesh`es drawn with `drawMesh`
-  through one material whose shader is swapped for the depth pass (`setShader`).
-- **Matrix convention (critical):** raylib `MatrixMultiply(a, b)` applies **a FIRST, then
-  b**. Local joint transform = `mul(animRot, translate(offset))`; world = `mul(local,
-  parentWorld)`. Get this backwards and the skeleton explodes.
-- **Gaits are real.** Walk uses normative sagittal hip/knee/ankle curves (Perry, *Gait
-  Analysis* / Winter); run/sprint use Novacheck running kinematics (bigger ranges, flight
-  phase). Curves are 8-sample tables interpolated by stride phase; the two legs are 50% out
-  of phase. Phase is driven by DISTANCE travelled (never time) so feet never skate; stride
+- **Anatomy is real.** Bone lengths are fixed fractions of stature `H` (=1.8) from Drillis &
+  Contini (1966) as tabulated in Winter. This is why proportions read as human.
+- **Forward kinematics.** 17 bones; `pose()` chains a world matrix per bone ONCE per frame,
+  `draw()` only replays them, so the cast shadow and the lit silhouette always match.
+- **Matrix convention (critical):** raylib `MatrixMultiply(a, b)` applies **a FIRST, then b**.
+  Local = `mul(animRot, translate(offset))`; world = `mul(local, parentWorld)`. Backwards and the
+  skeleton explodes.
+- **Gaits are real.** Walk uses normative sagittal curves (Perry / Winter); run/sprint use
+  Novacheck. Phase is driven by DISTANCE travelled (never time) so feet never skate, and stride
   LENGTH scales with speed so one leg-cycle reads at every pace.
-- **THE CROSSING SIDESTEP IS GEOMETRY, NOT TUNED ANGLES.** The locked-on strafe is a real grapevine:
-  both legs take ONE symmetric ±`STRAFE_ABD` frontal sweep half a cycle apart, and because each hip
-  sits `hx` off the midline the far leg lands PAST the near foot (a front cross, going around it with
-  hip FLEXION) while the near leg then swings wide OUTSIDE it (the uncross, passing BEHIND). No
-  lead/trail amplitude split — the cross falls out of the hip offsets. Two rules keep it honest:
+- **THE CROSSING SIDESTEP IS GEOMETRY, NOT TUNED ANGLES.** Both legs take ONE symmetric
+  ±`STRAFE_ABD` sweep half a cycle apart; because each hip sits `hx` off the midline the far leg
+  lands PAST the near foot. No lead/trail amplitude split. Three rules keep it honest:
   - **A PLANTED FOOT IS WORLD-FIXED.** Through stance its offset from the pelvis sweeps backward
-    LINEAR IN DISTANCE, at exactly the rate the body advances. Holding a strafe leg at a constant
-    joint angle is only still in JOINT space — in world space the foot is dragged along under the
-    body, and that skate (not the amplitude) is what made the old sidestep read as sliding.
-  - **ASK FOR FOOT HEIGHTS, SOLVE FOR THE KNEE.** Hip and knee flexion fight each other vertically,
-    so a "knee lift" angle does not mean a foot leaves the ground (17° over 13° of hip netted ~1 cm).
-    `legChain` measures the hip's real height and solves the knee to place the ankle.
-  - **CADENCE has exactly one dial.** Phase is driven by DISTANCE, so step rate = speed /
-    `STRAFE_CYCLE`, and the cycle is capped by real hip ROM. A sidestep that reads too fast can ONLY
-    be slowed by lengthening the cycle or slowing lateral travel (`game.STRAFE_SPEED`, ER-style
-    anisotropy) — never by pacing the animation, which brings the skate straight back.
-- **FEET DO NOT SINK: level the ANKLE, never lift the BODY.** A 0.19·H boot buries a corner 4 cm at
-  15° of pitch, and the normative ankle curve asks for more at heel strike and toe-off (a real foot
-  pivots on that corner; FK never will). `legChain` poses the foot, measures its deepest sole corner
-  against its rig's `SolePatch`, and rotates the ankle just enough to clear — measured, because the
-  foot's world pitch also carries the body pitch, spine lean and pelvis roll. TWO fixes were tried
-  and REVERTED, both instructive: lifting the whole skeleton to clear the deepest corner judders
-  ("like parkinsons") because which corner is deepest changes frame to frame, and holding the pelvis
-  up off the legs' own reach cancels `RUN_CROUCH`, standing the run up so it reads slow. Whole-body
-  corrections to a local problem always read as a tremor. Also check the MESH: `addCube` takes a FULL
-  size but `addCapsule`/`addBlob` take true RADII, and that mix-up had the ogre's foot pad authored
-  0.036·H below its own sole plane — buried to the ankle before any animation ran.
-- **HUMANOID ENEMIES REUSE THE HERO'S WALK/STRAFE ANIMS (owner's rule).** Any humanoid foe
-  (the skeletal archer, and future ones) locomotes on the HERO's gait — the pub normative
-  gait tables + `hero.legChain` (the walk cycle AND the locked-on strafe/backpedal footing)
-  driven by a shared gait state (phase / moving / fwdB / latB) advanced by `hero.advanceGait`.
-  Do NOT author a bespoke walk for a humanoid. Only the UPPER body / weapon work is per-enemy
-  (e.g. the archer's draw+loose rides on top of the shared legs). The hero is the single
-  source of humanoid locomotion; keep it that way so every human on screen moves as one.
-- **AND THE UPPER BODY MUST ARTICULATE TOO — legs alone are not a gait (owner's law).** Shared
-  legs under a rigid trunk reads as "moving in ONE PIECE", which the owner will (rightly) call a
-  goof. Every walking humanoid owes, on top of `legChain`: a real CONTRALATERAL arm swing at full
-  amplitude (a giant lumbers on ~26°, not the hero's restrained 9), elbows flexing through the
-  FORWARD half of each swing only, the shoulder girdle COUNTER-ROTATING against the pelvis every
-  stride (`prot`) plus a counter-roll against its lean, a trunk NOD twice a stride as the mass
-  settles onto each foot, and a head that counter-rolls / -yaws / -nods all of it so the face
-  stays steady over a heaving body. **And stagger the LAGS:** a loaded limb arrives late, and
-  whatever it carries later still. Joints that all peak on the same frame read as one welded
-  block however big you make the amplitudes — the lags are what sell the mass. `ogre.zig`'s
-  `poseUpper` is the worked example.
-- **BIG BODIES HINGE AT THE WAIST, AND THEIR LEGS STAY PLANTED (owner's law).** A swing is the trunk
-  folding over feet that don't move — never the whole frame tipping. Route an attack's lean through
-  the SPINE/CHEST chain and leave the pelvis nearly upright (`ogre.PELVIS_SHARE`); a lean applied at
-  the ROOT rotates the legs with it and reads as lurching. Braces take up in the knees, they don't
-  squat. This is a giant's law first, but it applies to any heavy actor.
-- **`hero.legChain` is rig-size agnostic** (slices + explicit hip/knee/ankle indices; it assumes only
-  that bone 0 is the pelvis), so a foe rig may carry MORE bones than the hero's 18 — but a rig that
-  drives it must keep the hero's own leg indices where they are.
+    LINEAR IN DISTANCE. Holding a constant joint angle is only still in JOINT space, and that
+    skate — not the amplitude — is what made the old sidestep slide.
+  - **ASK FOR FOOT HEIGHTS, SOLVE FOR THE KNEE.** Hip and knee flexion fight each other
+    vertically, so a "knee lift" angle does not lift a foot. `legChain` measures the hip's real
+    height and solves the knee to place the ankle.
+  - **CADENCE has one dial.** Step rate = speed / `STRAFE_CYCLE`. Slow a too-fast sidestep by
+    lengthening the cycle or slowing lateral travel — never by pacing the animation.
+- **FEET DO NOT SINK: level the ANKLE, never lift the BODY.** `legChain` poses the foot, measures
+  its deepest sole corner against its rig's `SolePatch`, and rotates the ankle just enough to
+  clear. Two whole-body fixes were tried and REVERTED: lifting the skeleton judders (which corner
+  is deepest changes frame to frame) and holding the pelvis up cancels `RUN_CROUCH`. Whole-body
+  corrections to a local problem always read as a tremor. Also check the MESH: `addCube` takes a
+  FULL size but `addCapsule`/`addBlob` take true RADII.
+- **HUMANOID ENEMIES REUSE THE HERO'S WALK/STRAFE.** Any humanoid foe locomotes on
+  `hero.advanceGait` + `hero.legChain`. Do NOT author a bespoke walk. Only the upper body /
+  weapon is per-enemy. `legChain` is rig-size agnostic, so a foe rig may carry MORE bones than the
+  hero's 18 — but it must keep the hero's own leg indices (5..10) where they are.
+- **AND THE UPPER BODY MUST ARTICULATE TOO — legs alone are not a gait.** Shared legs under a
+  rigid trunk reads as moving in ONE PIECE. Every walking humanoid owes: a contralateral arm
+  swing at full amplitude, elbows flexing through the FORWARD half only, a shoulder girdle
+  COUNTER-ROTATING against the pelvis (`prot`), a trunk NOD twice a stride, and a head that
+  counter-rolls/-yaws/-nods all of it. **And stagger the LAGS** — a loaded limb arrives late and
+  whatever it carries later still. Joints that peak on the same frame read as one welded block
+  however big the amplitudes. `ogre.poseUpper` is the worked example.
+- **A SCALE≠1 humanoid must scale its pelvis HEIGHT** (`pelvY*fs`) or the legs sink and it reads
+  as a crouching blob.
 
-### Animation art direction (the DESIRED look — honor it when retuning)
+### Animation art direction (the DESIRED look)
 
-There is a full `ANIMATION ART DIRECTION` comment block at the top of the gait section in
-`hero.zig`; keep it truthful. In short:
+- **IDLE** — upright, still, alive: a slow breathing bob only.
+- **WALK** — unhurried, grounded, near-upright (~3° lean). RESTRAINED arms (never both forearms
+  out front — the "zombie arms" fail). LOW hip sway. Clear heel→toe stride, slight toe-out.
+- **RUN** — low and aggressive: deep forward lean over a crouched pelvis so the COG leads the
+  base. NORMAL pumping arms bent ~90°, explicitly not swept-back "naruto" arms. Real flight phase.
+- **SPRINT** — the run dialled up: deeper tilt, lower, longer, faster. Falling forward and
+  catching it.
+- **ROLL** — three beats: dive into a tight tuck, ONE somersault over ONE shoulder about a low
+  ball centre (banked, limbs uneven, drifting roll to roll — cosmetic only), then a spin-free
+  rise. Duration/distance/heading exact every time. No float.
 
-- **IDLE** — upright, still, alive: only a slow breathing bob. No limb motion.
-- **WALK** — unhurried, grounded, calm. Near-upright (~3° lean). RESTRAINED arms (small
-  swing, rear arm nearly straight — never both forearms out front, the "zombie arms" fail).
-  LOW hip sway (no waddle). Clear heel→toe stride, readable knee bend, slight toe-out.
-- **RUN** — low and aggressive. DEEP forward lean over a LOW centre of gravity (pelvis
-  crouched), the WHOLE body pitched forward about the feet so the **COG leads the base**
-  (driving, falling-forward). NORMAL pumping arms bent ~90° — explicitly NOT swept-back
-  "naruto" arms (tried and rejected). Real flight phase via an up-only bounce.
-- **SPRINT** — the run dialled up: even deeper forward tilt (near-diving), lower, longer,
-  faster. "Falling forward and catching it."
-- **ROLL** — a committed dodge in three beats: dive into a tight tuck, ONE forward somersault
-  over ONE shoulder about a low ball centre (banked, limbs uneven, drifting a touch roll to
-  roll — wabi-sabi, cosmetic only), then a spin-free rise to stance. The lunge is dead
-  straight and the duration/distance/heading are exact every time. No float.
+Blends: idle↔walk by a `moving` ease; walk↔run↔sprint by ground SPEED. Pose discontinuities
+cross-fade ~0.09 s; stances never snap while mechanics stay instant.
 
-Blends: idle↔walk by a `moving` ease; walk↔run↔sprint by ground SPEED (`runB`/`sprintB`
-chasing a short-eased speed); pose discontinuities (roll start/end) cross-fade ~0.09s and
-the roll heading eases on fast — stances never snap, while mechanics stay instant.
-
-## Adding a foe (the shared standard — `foe.zig`)
-
-Enemies share ONE contract + behaviour set so the cross-cutting systems — lock-on, floating
-HP bars, footprint collision, the hero's-blade hit test, the rumble/shake combat beats — are
-written once and work for every foe. `foe.zig`'s header is the authoritative contract; the
-frog and the archer are the two worked examples. To add a foe:
+## Adding a foe (`foe.zig`)
 
 - **Satisfy the contract.** Expose `pos` + an embedded `combat.Vitals` (`vit`) + `hits` +
   `justDied`, and the accessors `alive/dying/staggered/airborne/bodyR/hurtRadius/centerWorld/
   lockPoint/topWorld/flashFrac` + `tryHit(foe.Blade)`.
-- **Reuse the behaviour, don't re-roll it.** `tryHit` is
-  `if (foe.strike(&vit, &hitLatch, centre, hurtR, blade)) |s| { own FX; react on s.reaction }`
-  — the swept hit test, one-hit LATCH, and damage live in `foe.strike`; the foe only adds its
-  own FX (blood, bone-clatter, …) + the enterStun/enterDeath transitions.
+- **Reuse the behaviour.** `tryHit` is `if (foe.strike(...)) |s| { own FX; react on s.reaction }`
+  — the swept test, one-hit LATCH and damage live in `foe.strike`.
+- **Build vitals with `combat.Vitals.initFoe`,** never `init` — that is what puts the enemy on
+  the slow foe regen schedule.
 - **`justDied` is a ONE-FRAME flag.** Reset it at the TOP of `update`, set it in `enterDeath`,
-  and apply the blade (call `tryHit`) at the END of `update`. Then the kill beat fires exactly
-  once. (Applying the blade externally WITHOUT the reset latches it on → a nonstop rumble/
-  screen-shake until you quit — the real bug that taught this rule. Mirror the frog exactly.)
-- **Humanoids reuse the hero's walk/strafe** (see the hero-rig rule): `hero.advanceGait` +
-  `hero.legChain` for the legs; only the upper body / weapon is bespoke. Never author a
-  second walk cycle.
-- **Group + register.** Wrap instances in a `Group` (a `Knot`/`Line`) exposing `anyDied` /
-  `totalHits` / `aliveCount`; game.zig iterates groups generically (lock-on `FoeRef`,
-  `drawFoeBars`, the collision + beat loops), so a new foe drops in with little or no new
-  game.zig branching.
+  and apply the blade at the END of `update`. Applying the blade externally WITHOUT the reset
+  latches it on → a nonstop rumble/shake until you quit. Mirror the frog exactly.
+- **Humanoids reuse the hero's walk/strafe** (see the rig rules). Never author a second walk.
+- **Group + register.** Wrap instances in a `Group` (`Knot`/`Line`/`Grief`) exposing `anyDied` /
+  `totalHits` / `aliveCount`; game.zig iterates groups generically.
+
+## Combat feel
+
+- **The two sides are tuned SEPARATELY** (`combat.zig`). A stagger you inflict is a punish WINDOW
+  you must be able to walk into and use; a stagger you suffer is time taken off the player, which
+  the FEEL RULES spend as little of as possible. Hence `FOE_LIGHT_STUN_DUR` / `FOE_HEAVY_STUN_DUR`
+  well past the hero's, and `FOE_REGEN_DELAY` / `FOE_REGEN_RATE` far slower — a foe whose poise is
+  back before your next swing can only be staggered by a burst, and every fight collapses into
+  "land two fast or don't bother".
+- **The archer's BACKSTEP** is a committed jump straight back, triggered inside sword reach, on a
+  long (7 s) cooldown. Its walking kite is a stroll and a hero who simply runs at it would always
+  be on top of it; this buys the shot back exactly once, and closing the distance stays the
+  correct answer the rest of the time. An evade you can spam is a wall.
 
 ## Controls (`game.zig`)
 
-Keyboard+mouse OR gamepad; the pad follows **Elden Ring's default layout**. (**ER** = Elden
-Ring, the north-star reference, throughout this file.)
+Keyboard+mouse OR gamepad; the pad follows **Elden Ring's default layout** (**ER** = the
+north-star reference throughout this file).
 
-**WALK vs RUN (owner's definition — key locomotion FEEL off this):** the whole left-stick
-range is **WALK** (tilt only scales the walk SPEED, light→brisk), and **RUN is exclusively
-the hold-B / hold-Shift sprint**. So stick-only movement — even at full tilt — reads as a
-walk, and the aggressive/committed "run" presentation (e.g. the sword's out-to-the-side
-"ninja" carry, the deep run lean) belongs to the hold-B RUN only. In the rig this maps to
-`sprintB` (the hold-B speed band), NOT the stick-speed `runB`. Gate run-only pose flourishes
-on `sprintB`.
+**WALK vs RUN (owner's definition):** the whole left-stick range is **WALK** (tilt scales walk
+speed only), and **RUN is exclusively the hold-B / hold-Shift sprint**. So stick-only movement
+even at full tilt reads as a walk, and the aggressive "run" presentation (the out-to-the-side
+sword carry, the deep lean) belongs to the hold-B RUN only — gate run-only flourishes on
+`sprintB`, not the stick-speed `runB`.
 
-- **Mouse:** HIDDEN while over the window and drives the camera, but NEVER locked/captured
-  (`hideCursor` = GLFW_CURSOR_HIDDEN). Push it past the window edge and it reappears as a
-  normal OS cursor usable elsewhere. Look is gated on `isCursorOnScreen() and
-  isWindowFocused()`. This is deliberate — the owner needs the mouse usable outside the
-  game; do NOT reintroduce `disableCursor`/pointer-lock.
-- **Move:** WASD / left stick, camera-relative; the hero turns to face travel. ZERO lag
-  (see FEEL RULES): stick tilt maps straight to speed each frame — light tilt walks, full
-  tilt runs; keyboard runs immediately. **Sprint:** hold Shift / hold Circle-B. **Dodge roll:** Space /
-  TAP Circle-B (tap-vs-hold on the same button, like ER). **Attacks:** R1/RB or LMB =
-  light slash; R2/RT or Shift+LMB = heavy overhead. Actions are committed (no mid-swing
-  cancels), with an **ER-style input queue**: pressed mid-action, an attack/roll buffers
-  in ONE slot (last press wins; a same-frame roll press outranks attack) and fires at the
-  earliest exit — the attack's chain knot (`AL_CHAIN`/`AH_CHAIN`, so mashed R1s flow) or
-  the roll's end; a queued roll leaves in the direction HELD at fire time, not pressed.
-  **Camera:** mouse / right stick; scroll or D-pad zoom. **Esc** opens/backs out of the
-  menu (pad **Start** toggles it); QUITTING is a menu row now, not a key. The menu opens
-  at launch; while it's up, gameplay input is held and the world idles.
-- **Lock-on (ER):** **R3** (pad) / **middle-mouse** (kb+m) toggles lock onto the foe nearest
-  screen-centre in range; with none available R3 recenters. While locked the camera swings
-  onto the foe, the hero faces it (with REAL strafe/backpedal footing — crossing sidesteps,
-  reversed-walk backpedal), a **glowing white dot** marks it, and a right-stick / mouse
-  **flick** cycles targets; the lock drops when the foe leaves range. ER exceptions, both
-  deliberate: a hold-B SPRINT while locked faces the TRAVEL direction (no sideways sprint
-  exists), and an attack's recovery tail re-squares the hero onto the target fast
-  (`ATK_RETRACK`) so a locked whiff isn't left pointing into empty air.
-- Reserved for later, matching ER: Cross/A = jump, L1/L2 = guard/skill.
+- **Mouse:** HIDDEN over the window and drives the camera, but NEVER locked/captured. Push it
+  past the window edge and it reappears as a normal OS cursor. Deliberate — the owner needs the
+  mouse outside the game; do NOT reintroduce `disableCursor`/pointer-lock.
+- **Move:** WASD / left stick, camera-relative; the hero turns to face travel. **Sprint:** hold
+  Shift / Circle-B. **Dodge roll:** Space / TAP Circle-B (tap-vs-hold on the same button, like
+  ER). **Attacks:** R1/RB or LMB = light slash; R2/RT or Shift+LMB = heavy overhead. Actions are
+  committed (no mid-swing cancels) with an **ER-style input queue**: pressed mid-action, an
+  attack/roll buffers in ONE slot (last press wins; a same-frame roll press outranks attack) and
+  fires at the earliest exit — the attack's chain knot or the roll's end. A queued roll leaves in
+  the direction HELD at fire time, not pressed.
+- **Camera:** mouse / right stick; scroll or D-pad zoom. **Esc** opens/backs out of the menu (pad
+  **Start** toggles). Quitting is a menu row. The menu opens at launch; while it's up gameplay
+  input is held and the world idles.
+- **Lock-on (ER):** **R3** / **middle-mouse** toggles onto the foe nearest screen-centre; with
+  none available R3 recenters. While locked the camera swings on, the hero faces it with REAL
+  strafe/backpedal footing, a glowing white dot marks it, and a stick/mouse **flick** cycles
+  targets. Two deliberate ER exceptions: a hold-B SPRINT while locked faces TRAVEL (no sideways
+  sprint exists), and an attack's recovery tail re-squares onto the target (`ATK_RETRACK`).
+- Reserved, matching ER: Cross/A = jump, L1/L2 = guard/skill.
 
-## Hard invariants & gotchas (break these and it rots)
+## PERFORMANCE: how a 320 m world stays cheap (`env.zig`)
 
-- **Coordinates:** ground is XZ, Y up. Hero faces +Z at yaw 0; `atan2(facing.x, facing.z)`
-  is the facing angle.
+Four things carry it; all four are load-bearing.
+
+- **UNIFORM GRID (CSR).** Props bucketed by 16 m cell into two indexes — structures and flora —
+  built by counting sort into one flat array. No allocation, no pointers, and each cell carries
+  the MAXIMA its pass needs so a whole cell can be accepted or rejected before any prop in it is
+  looked at.
+- **THE LIT PASS culls per cell, then per prop**: four frustum SIDE planes plus each kind's own
+  `view` distance (stricter and cheaper than near/far planes).
+- **THE DEPTH PASS culls by SHADOW REACH, not camera distance.** At this sun elevation a caster
+  throws its shadow ~1.5x its height sideways (`SUN_REACH`), so a prop matters iff its footprint
+  plus that reach can touch the sun's ortho box (`castsInto`). A naive distance cull here clips
+  real shadows; this is the version that doesn't.
+- **COLLISION + ARROW FLIGHT query the grid**, never the whole solid list.
+
+**Check it, don't trust it.** Menu > Debug > Stats prints `world props N solids N fires N drawn N
+in N cells`, and `--shot` captures it (`91_stats_city.png`, `92_stats_wood.png`). If `drawn` ever
+approaches `props`, a culler has been defeated.
+
+**Caps are init-time PANICS, not silent drops** (`MAX_PROPS`/`MAX_SOLIDS`/`MAX_SOLID_REFS`). A
+silently dropped collider is a walk-through wall and a dropped prop is a hole in the world.
+Placement is deterministic: if it fits once it fits.
+
+## Hard invariants & gotchas
+
+- **Coordinates:** ground is XZ, Y up. Hero faces +Z at yaw 0; `atan2(facing.x, facing.z)` is the
+  facing angle.
 - **Strafe sign:** the camera looks +Z from behind, so screen-right is world −X →
   `camera.rightXZ` MUST be `(−cos yaw, 0, sin yaw)`. Flipping it mirrors L/R walking.
-- **VSYNC, not `setTargetFPS`.** `vsync_hint` is set in `setConfigFlags` BEFORE `initWindow`, and
-  there is deliberately no `setTargetFPS`. `setTargetFPS` is a CPU-side frame LIMITER: it paces how
-  often we draw but never asks the driver to swap during vblank, so the swap lands mid-scan and TEARS.
-  Windowed mode hid that (Windows' compositor effectively syncs); exclusive fullscreen bypasses the
-  compositor and the seam showed. Don't add a frame cap back on top — two limiters fight on any panel
-  that isn't 60 Hz and read as judder. Everything is dt-driven, so the panel's rate is fine.
-- **Depth z-fighting:** `rl.gl.rlSetClipPlanes(0.2, 320)` is set once at startup — the
-  default 0.01..1000 wrecks depth precision and the hero's overlapping boxes flicker / look
-  inverted as the camera moves. The ground sits a hair ABOVE `y = 0` (`env.GROUND_Y = 0.01`),
-  where soles / prop bases are authored, so content is planted-to-slightly-embedded and never
-  reads as FLOATING — off exact 0 so coplanar faces don't z-fight, but tiny so the embed is
-  imperceptible. (Owner's call: a small foot clip on the run-crouch / roll beats any float.
-  The old `-0.05` dropped the ground below the feet and floated everything ~2 in.)
-- **Sun + shadows are ONE source** (`gfx.SUN_DIR`) feeding both the shader's sunDir and the
-  shadow camera — change the light only there.
-- **Shadow pass contract:** every caster draws through `game.drawCasters` (used by BOTH the
-  depth pass and the lit pass, so transforms can't drift). drawMesh/drawModel use the
-  MATERIAL's shader, so the depth pass swaps caster shaders to `depthShader` and back
-  (`setCasterShaders`); it runs BEFORE `beginDrawing`. Terrain receives but does NOT cast,
-  and FLORA is a non-caster too (`env.drawFlora`, drawn only in the lit pass with the wind
-  term on) so thin swaying blades never sparkle in / desync from the shadow map.
-  The ortho box tracks the hero (`focus`), snapped to shadow texels so edges don't crawl.
-- **The hero is per-bone matrices, not `drawModelEx`.** `pose()` once, `draw()` replays.
-- **The scene shader gammas output (`pow 1/2.2`):** author dark colours near-black.
+- **VSYNC, not `setTargetFPS`.** `vsync_hint` is set before `initWindow` and there is deliberately
+  no frame cap: `setTargetFPS` is a CPU-side limiter that never asks the driver to swap during
+  vblank, so the swap lands mid-scan and TEARS in exclusive fullscreen. Two limiters also fight on
+  any panel that isn't 60 Hz.
+- **Depth z-fighting:** `rlSetClipPlanes(0.2, 320)` at startup — the default 0.01..1000 wrecks
+  precision and the hero's overlapping boxes flicker. The ground sits a hair ABOVE y=0
+  (`env.GROUND_Y = 0.01`) where soles and prop bases are authored, so content is
+  planted-to-slightly-embedded and never FLOATS.
+- **Sun + shadows are ONE source** (`gfx.SUN_DIR`) feeding both the shader and the shadow camera.
+- **Shadow pass contract:** every caster draws through `game.drawCasters` (used by BOTH passes, so
+  transforms can't drift). drawMesh/drawModel use the MATERIAL's shader, so the depth pass swaps
+  caster shaders (`setCasterShaders`) and runs BEFORE `beginDrawing`. Terrain receives but does
+  not cast, and FLORA is a non-caster too (thin swaying blades would sparkle in / desync from the
+  shadow map). The ortho box tracks the hero, snapped to shadow texels so edges don't crawl.
+- **The hero is per-bone matrices, not `drawModelEx`.**
+- **The scene shader gammas output (`pow 1/2.2`): author dark colours near-black.**
 - **Vertex alpha is the EMISSIVE channel** (255 = fully lit; lower = self-lit).
-- **Prototype models/meshes are permanent** (CPU arrays stay attached; they live the whole
-  program and leak at exit — fine). Don't `unloadModel` them.
-- **All UI text goes through `hud.text/textW`**, and the Exo atlas is **ASCII-only** — a `·`
-  or `—` renders as a tofu `?`. Keep HUD strings ASCII.
-- **Fullscreen shader passes must build their ray/UV from `gl_FragCoord`** + a resolution
-  uniform when drawn via `drawRectangle` — raylib maps rectangle texcoords to the tiny
-  shapes-texture rect, so `fragTexCoord` is effectively CONSTANT across the quad (the sky
-  hit this). `drawTexturePro` blits (the retro pass) get real 0..1 texcoords and are fine.
-- **Retro pass contract:** when any filter is active the whole frame (sky + 3D) renders
-  into `Retro.rt`, then blits through the combined filter shader; vignette, HUD, and menu
-  draw AFTER the blit so they never crunch. Filter values are 0..1 uniforms in a fixed
-  pipeline order (see gfx.zig's retroFS comment); all-zero = pass bypassed entirely.
+- **A BIG SMOOTH MASS NEEDS A NEARLY-BLACK ALBEDO** — and FORM BREAKS. The shader's hot key
+  (`*1.72`) plus the gamma lift turns any mid-dark value pale wherever a large face takes the sun
+  square on (`BARK_OLD`, the `CLIFF_*` set, `PAVE*`, the `MARBLE*` set all exist for this). The
+  bigger the face, the darker it must start — and a dark smooth mass still reads as plastic
+  without breaks (the trunk's bark ridges, a column's flutes, a keep's course banding).
+- **TWO STONE MATERIALS.** `.stone` is rubble masonry, matte; `.marble` is the dressed stone of
+  the kingdom that fell — veined by the shader and carrying the only real gloss besides steel and
+  water. That gloss is what says one of them was built with money, and it is kept LOW: a gloss
+  that reads "shiny" on a swatch lays a wash over every sunward face and undoes the dark-albedo
+  rule. Marble = columns, arches, statues, entablature; stone = walls, towers, cottages, rubble.
+- **`gfx.Mat` is APPEND-ONLY** — the shader hard-codes 9 for water and 10 for marble; comptime
+  asserts guard both.
+- **BUILDER WINDING IS NOT CHECKED, AND FACE-DOWN GEOMETRY IS INVISIBLE.** A flat annulus swept
+  outward-first points DOWN, raylib culls it, and the tarn simply isn't there (the declared `n`
+  does not fix the winding). Sweep inner@a0 → inner@a1 → outer@a1 → outer@a0. Likewise `addBox`
+  accepts a **non-perpendicular** axis triple and builds a skewed parallelepiped with daylight
+  between the blocks. For a ring, radial is the position direction and tangent is
+  `(cos a, 0, sin a)`; for an arch ring at angle a, radial is `(−cos a, sin a, 0)` and tangent is
+  `(sin a, cos a, 0)`.
+- **A cylinder is CAPLESS.** An open end shows its culled interior — you see straight through it.
+  Cap with `addDome` (rounded) or an axis-flattened `addBlob` (flat); a flat cap constrains the
+  piece to a world axis, which is why the fallen column drums lie along X and Z.
+- **REPEATED BIG PROPS NEED VARIANTS.** One mesh placed sixty times across a wood, or every 6.5 m
+  around the horizon, reads as a periodic pattern. Yaw and scale do not hide it. `BIG_TREES` /
+  `CLIFFS` exist for this, and long-wavelength variation beats per-instance noise.
+- **A CULLER BUG LOOKS LIKE AN EMPTY WORLD, AND ONE-ORIENTATION TESTS MISS IT.**
+  `View.fromCamera` sign-corrects its plane normals against the camera forward instead of assuming
+  a handedness — this camera's screen-right is world −X. Its test sweeps seven headings.
+- **A LIGHT'S RADIUS MATTERS MORE THAN ITS BRIGHTNESS.** A 9 m torch in a 5x7 m chapel reaches
+  every surface from every corner, so four summed to a flat wash however dim each was. Fire has
+  to POOL: small radii, few of them, darkness between.
+- **Fullscreen shader passes must build their ray/UV from `gl_FragCoord`** + a resolution uniform
+  when drawn via `drawRectangle` — raylib maps rectangle texcoords to the tiny shapes-texture
+  rect, so `fragTexCoord` is effectively CONSTANT (the sky hit this). `drawTexturePro` blits are
+  fine.
+- **Retro pass contract:** when any filter is active the whole frame renders into `Retro.rt` then
+  blits through the combined filter shader; vignette, HUD and menu draw AFTER the blit so they
+  never crunch. All-zero = pass bypassed entirely.
+- **All UI text goes through `hud.text/textW`**, in **Balthazar** (`assets/`, OFL alongside;
+  owner's pick). The atlas is **ASCII-only** — a `·` or `—` renders as tofu. Exo and Tagesschrift
+  are GONE; one face only.
+- **SIZES COME FROM `hud`'s TYPE SCALE** (`TITLE`/`BODY`/`SMALL`/`HINT`), never a literal at the
+  call site; stacked rows step by `hud.lineH(size)`. Two rules keep it crisp: the atlas resolution
+  must stay ABOVE the largest size drawn (an UPSCALED glyph is the jagged one), and the drop
+  shadow's offset scales with the size (a fixed 1 px shadow under large type reads as a smudge).
+- **Prototype models/meshes are permanent** (CPU arrays stay attached; they live the whole program
+  and leak at exit — fine). Don't `unloadModel` them.
+- **Never bulk-edit source through PowerShell** `Get-Content`/`Set-Content`: em dashes mojibake
+  and a BOM appears. Use the Edit tool.
 
 ## Next steps (not yet built)
 
-Stamina + the stamina economy (roll/attack/sprint costs, regen delay), **criticals** off a
-stance break (the crumple + riposte —
-the stagger already exists, `combat.zig`), **hyper-armor** windows during the hero's own
-attacks, guarding + **guard counter** (L1/L2), AR × motion-value × defense damage (today it's
-flat per-attack constants), a **status buildup** (bleed reads naturally on a toad bite), jump
-(Cross/A), distinct combo follow-up anims (ER-style input buffering + chain exits are in —
-see hero.zig `Queued`), bonfires, real level geometry. See `docs/ELDEN_RING.md` for the target
-mechanics/numbers behind each. Combat itself (HP, poise/stance stagger, death, foe HP bars,
-damage flash) is IN — `combat.zig` is the retune point.
-Current gaps to remember: the roll now has **front-loaded i-frames** (0→0.46 s of the 0.70 s
-roll — `hero.iFramed`, gating `takeHit` + the arrow connect; the recovery tail stays
-vulnerable so roll-catching works) but still **no collision**; there's **no foot IK** (feet
-approximate the ground; a run crouch can
-float/clip a touch — and the CAUSE is now known: `rx(bodyPitch)` in `hero.pose()` rotates the body
-about the WORLD ORIGIN, not about the support foot as its comment claims, so under a deep lean any
-foot swung forward is levered straight down. Walking and pure sidesteps are exact; a diagonal keeps
-~6 cm because the normative sagittal gait and the sidestep solve both drive one leg and no single
-knee angle satisfies both. Both want real foot IK, or pitching about the stance foot);
-one leg-cycle is reused across run and sprint (no separate run mesh);
-attacks reuse one anim standing or moving (no separate running attacks).
+Stamina + its economy, **criticals** off a stance break (the stagger already exists), hyper-armor
+windows during the hero's own attacks, guarding + **guard counter**, AR × motion-value × defense
+damage (today it's flat constants), **status buildup**, jump, distinct combo follow-up anims,
+bonfires, real level geometry. See `docs/ELDEN_RING.md` for the target mechanics behind each.
+
+Current gaps: the roll has front-loaded i-frames (0→0.46 s of 0.70 s, gating `takeHit` + the
+arrow connect) but still **no collision**; there is **no foot IK** — `rx(bodyPitch)` in
+`hero.pose()` rotates the body about the WORLD ORIGIN, not the support foot, so under a deep lean
+a forward-swung foot is levered down (walking and pure sidesteps are exact; a diagonal keeps
+~6 cm). One leg-cycle is reused across run and sprint, and attacks reuse one anim standing or
+moving.

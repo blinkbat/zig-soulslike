@@ -3,20 +3,17 @@ const builtin = @import("builtin");
 const rl = @import("raylib");
 
 // ── CONTROLLER RUMBLE ───────────────────────────────────────────────────────────────────
-// Ported from zig-diablo's rumble.zig. raylib's GLFW desktop backend STUBS OUT
-// SetGamepadVibration (this game runs GLFW — see the --shot log), so on Windows we drive
-// XInput directly, resolving XInputSetState at runtime from whichever xinput DLL is present
-// (cached) — sidestepping import-lib/ABI concerns and leaving build.zig untouched. Elsewhere
-// we fall back to raylib's API (works under SDL, a harmless no-op otherwise).
+// raylib's GLFW desktop backend STUBS OUT SetGamepadVibration, so on Windows we drive XInput
+// directly, resolving XInputSetState at runtime from whichever xinput DLL is present (cached)
+// — no import lib, no build.zig change. Elsewhere we fall back to raylib's API.
 //
-// Each combat beat is an `Event`: a peak per motor plus a duration. Motors fade linearly, and
-// overlapping events blend "strongest-wins" so a big SLAM takes over a lingering buzz without
-// a weak tick cutting a strong one short. Because each beat has its own low/high/dur SIGNATURE,
-// the grip teaches the fight — a light poke, a heavy crunch, and the lunge slam all feel
-// distinct, so the player builds pattern memory through the hands, not just the eyes.
+// Each combat beat is an `Event`: a peak per motor plus a duration. Motors fade linearly and
+// overlapping events blend STRONGEST-WINS, so a big slam takes over a lingering buzz without a
+// weak tick cutting a strong one short. Every beat has its own low/high/dur SIGNATURE, so the
+// grip teaches the fight — pattern memory through the hands, not just the eyes.
 //
-// XInput has a low-frequency ("heavy") motor and a high-frequency ("buzz") motor. The player's
-// own actions lean on buzz; blows SUFFERED lean on the heavy motor; death swells both.
+// XInput's two motors: low-frequency ("heavy") and high-frequency ("buzz"). The player's own
+// actions lean on buzz, blows SUFFERED lean on heavy, death swells both.
 
 // input polling (game.zig) and this module's XInput calls must target the SAME pad.
 pub const PAD = 0;

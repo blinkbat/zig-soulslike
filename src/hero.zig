@@ -10,24 +10,19 @@ const Builder = gfx.Builder;
 const radians = mathx.radians;
 
 // ── THE HERO ────────────────────────────────────────────────────────────────────────
-// A fully articulated human, proportioned from real anthropometry and animated with a
-// real gait cycle. Two things make him read as HUMAN rather than a mannequin:
+// Two things make him read as HUMAN rather than a mannequin, and neither is polygon count:
 //
-//  1. ANATOMY. Every bone length is a fixed fraction of stature H, taken from the
-//     Drillis & Contini (1966) body-segment table as tabulated in Winter, "Biomechanics
-//     and Motor Control of Human Movement" — copied verbatim below. This is why the
-//     half-way point of the body sits at the pubis, the elbow at the navel, etc.
+//  1. ANATOMY. Every bone length is a fixed fraction of stature H, from the Drillis & Contini
+//     (1966) segment table as tabulated in Winter, "Biomechanics and Motor Control of Human
+//     Movement" — copied verbatim below. Hence the body's half-way point at the pubis, the
+//     elbow at the navel.
+//  2. GAIT. Normative sagittal joint-angle curves (Perry / Winter) plus contralateral arm
+//     swing, a twice-per-stride pelvis bob, once-per-stride sway, and pelvic transverse
+//     rotation under torso counter-rotation. Invariants of human walking, not keyframes.
 //
-//  2. GAIT. The legs are driven by normative sagittal-plane joint-angle curves (hip,
-//     knee, ankle over one stride) after Perry, "Gait Analysis" / Winter's normative
-//     kinematics — with contralateral arm swing, a twice-per-stride vertical pelvis bob,
-//     once-per-stride lateral sway, and pelvic transverse rotation with torso counter-
-//     rotation. These are the invariants of human walking, not eyeballed keyframes.
-//
-// Rendering: a forward-kinematics skeleton. Each bone is a small procedural mesh authored
-// in its joint's local frame; per frame `pose()` chains matrices down the hierarchy to a
-// world matrix per bone, and `draw()` replays them. Depth pass and lit pass call the same
-// `draw()`, so the cast shadow always matches the lit silhouette.
+// FK skeleton: each bone is a procedural mesh in its joint's local frame; `pose()` chains
+// matrices down the hierarchy once per frame and `draw()` replays them. Both the depth pass
+// and the lit pass call the same `draw()`, so shadow and silhouette always match.
 
 pub const H: f32 = 1.8; // stature (world units ≈ metres)
 
@@ -41,8 +36,14 @@ pub const SPRINT_SPEED: f32 = 5.1; // hold-B RUN — a touch faster than a full-
 // Reference joint HEIGHTS off the floor these imply, for sanity: ankle .039, knee .285,
 // hip(trochanter) .530, wrist .485, elbow .630, shoulder(acromion) .818, chin .870,
 // crown 1.0 — each below is the difference between two of these.
-const SEG_THIGH = 0.245; // hip → knee   (femur)   .530-.285
-const SEG_SHANK = 0.246; // knee → ankle (tibia)   .285-.039
+// The LEG pair is pub: every humanoid foe keeps the hero's leg fractions on purpose (legChain's
+// strafe geometry is measured off LEG_LEN below and `unit_leg_len_matches_rig` re-asserts it), and
+// archer.zig / ogre.zig each held their own copy of these two numbers with a comment saying "the
+// hero's segment lengths". Three copies of a number that MUST agree is a drift waiting to happen,
+// and the failure mode is a foe whose planted feet skate. Arms differ per creature, so those stay
+// local to each rig.
+pub const SEG_THIGH = 0.245; // hip → knee   (femur)   .530-.285
+pub const SEG_SHANK = 0.246; // knee → ankle (tibia)   .285-.039
 const SEG_UPARM = 0.188; // shoulder → elbow        .818-.630
 const SEG_FOREARM = 0.145; // elbow → wrist         .630-.485
 
@@ -116,73 +117,55 @@ const STEEL = rgba(98, 104, 114, 255);
 const STEEL_DK = rgba(58, 62, 70, 255);
 const BRASS = rgba(122, 92, 40, 255);
 
-// -.--.- ANIMATION ART DIRECTION — the DESIRED LOOK of each state (read before retuning) -.--.--.--.--.--.-
-// These are the intent; the numeric knobs below are only tuned to hit them. If you change a
-// knob, keep it serving the description — and update the description if the intent changes.
+// ── ANIMATION ART DIRECTION — the DESIRED LOOK (read before retuning) ──────────────────
+// The knobs below are only tuned to hit these. Change a knob and keep it serving the
+// description; change the intent and update the description. (AGENTS.md carries the
+// locomotion summary; the CARRY and ATTACK intent lives only here.)
 //
-//  IDLE   : upright, still, but alive — only a slow breathing bob + faint weight settle.
-//           No limb motion. Reads "at rest, ready."
-//  WALK   : unhurried, grounded, calm. Near-upright torso (~3° lean). RESTRAINED arms — a
-//           small swing, the rear arm nearly straight (never both forearms out front, the
-//           "zombie arms" failure). LOW hip sway (no waddle). Clear heel→toe stride with a
-//           readable knee bend. Feet toe-out slightly; head carries a gentle downward gaze.
-//  RUN    : low and aggressive. DEEP forward lean over a LOW centre of gravity (pelvis
-//           crouched), the WHOLE body pitched forward about the feet so the COG leads the
-//           base — driving, coiled. The HEAD lifts so the gaze lands a few metres AHEAD
-//           (~20° down) — off the floor, but NOT craned level/up (capped, natural neck).
-//           NORMAL pumping arms bent ~90° (explicitly NOT
-//           swept-back "naruto" arms — that was tried and rejected). A real flight phase
-//           (both feet airborne) via an up-only bounce; big swing-knee flexion.
-//  SPRINT : the run dialled up — even deeper forward tilt (near-diving), lower, longer
-//           stride, faster turnover. "Falling forward and catching it."
-//  ROLL   : a committed dodge in three beats, souls-style — DIVE into a tight tuck (barely
-//           any spin yet), ONE full forward somersault about a low ball centre with the
-//           spin EASED (front-loaded: fast over, slower unroll; the 360° lands BEFORE the
-//           stand-up), then a spin-free RECOVERY: legs extend to plant, the body rises to
-//           stance while the lunge brakes. WABI-SABI, not machined: it goes over ONE
-//           shoulder (picked from the leading leg) — banked into that shoulder, slightly
-//           off-square, squaring up only as he rises — with the guide arm tucked hard
-//           across and the push arm loose, the lead leg balled tighter than the trail,
-//           and the magnitudes drifting a touch roll to roll (no two identical). Travel
-//           stays DEAD-STRAIGHT — the dodge must feel exact; the imperfection lives
-//           entirely in the body. Never a constant-rate spin (a pivoting mannequin), and
-//           still snappy — no float/hang.
-//  CARRY  : the sword is HELD, never splinted to the arm — the hammer grip cants the
-//           blade ~34° forward of the forearm line (tip leading down-forward at rest,
-//           clear of the ground: the souls low-ready). The sword arm is a CARRY, not a
-//           mirror of the free arm: damped swing, a readier elbow. A WALK keeps that
-//           restrained low-ready; a RUN opens it up — the arm eases a touch out to the
-//           side, the fore/aft pump mostly stills, and the wrist pitches the blade UP so
-//           it rides level with the TIP pointing away from the body, clear of the floor.
-//  ATTACK : committed sword cuts, KINETIC-CHAIN sequenced — pelvis rotation, trunk
-//           rotation, trunk flexion, shoulder, elbow extension, wrist, each a beat late,
-//           so the arm WHIPS (never one rigid unit). LIGHT (R1): a real DESCENDING
-//           DIAGONAL — sabre Cut One / kesa-giri (see the CUT MECHANICS note above the
-//           AL_* block): an EXAGGERATED readable windup (trunk coiled, knees loaded,
-//           fist by the ear, blade lying back over the shoulder), then the hand drops
-//           ACROSS the front — high-outside to low-inside, the diagonal carried by
-//           ADDUCTION (never a flat shoulder-height "helicopter" sweep) — the wrist
-//           ROLLS the cutting edge into the plane of motion and SNAPS the tip down
-//           through the line, finishing low past the off hip; the cut ARRESTS and
-//           lifts into recovery (an overshoot that settles, never a park). CHAINED
-//           lights ALTERNATE, Elden Ring-style: the buffered follow-up comes BACKHAND
-//           out of where the last cut landed (Cut Two, the mirrored diagonal, slightly
-//           damped — a moulinet re-chamber). HEAVY (R2): slow
-//           overhead — the EDGE comes down vertical (grip carries edges fore/aft — a
-//           cut, never a flat smack), a big readable
-//           windup past vertical over a STAGGERED load (brace leg up, sword-side leg
-//           sat back), a breathing "gather" at the top of the raise, a violent trunk-
-//           driven drop with a lateral coil whipping past, the blade BURIED low and
-//           BITING (a recoil judder) through the held follow-through, then a slow rise.
-//           Feet planted (the step is root translation); facing locked at commit. Hit
-//           capsule rides the blade, active only inside the strike window (souls
-//           TAE-style), swept frame-to-frame. NOTHING parks dead at an end pose.
-//  Blends : idle—walk by a `moving` ease; walk—run—sprint by ground SPEED — runB/sprintB
-//           chase a short-EASED speed (speedS) so posture never steps when speed does.
-//           Stride LENGTH scales with speed so one leg-cycle reads at every pace. Any
-//           pose DISCONTINUITY (roll start/end) cross-fades over POSE_XFADE, and the roll
-//           heading is eased onto fast (ROLL_YAW_RATE), never teleport-snapped. NOTHING
-//           SNAPS — but movement/mechanics stay instant; only the visible pose smooths.
+//  IDLE   : upright, still, alive — a slow breathing bob and nothing else.
+//  WALK   : unhurried, near-upright (~3° lean). RESTRAINED arms, rear arm nearly straight
+//           (never both forearms out front — the "zombie arms" fail). LOW hip sway. Clear
+//           heel→toe stride, readable knee bend, slight toe-out, a gentle downward gaze.
+//  RUN    : low and aggressive — deep lean over a crouched pelvis, the whole body pitched
+//           about the FEET so the COG leads the base. The head lifts so the gaze lands a few
+//           metres ahead (~20° down), never craned level. NORMAL pumping arms bent ~90°,
+//           explicitly not swept-back "naruto" arms (tried, rejected). Real flight phase via
+//           an up-only bounce.
+//  SPRINT : the run dialled up — deeper tilt, lower, longer, faster. Falling forward and
+//           catching it.
+//  ROLL   : three beats — DIVE into a tuck (barely any spin yet), ONE somersault about a low
+//           ball centre with the spin front-loaded (fast over, slower unroll; the 360° lands
+//           BEFORE the stand-up), then a spin-free rise. Over ONE shoulder, banked into it,
+//           briefly off-square, guide arm tucked hard and push arm loose, lead leg balled
+//           tighter, magnitudes drifting roll to roll. Travel stays DEAD STRAIGHT — the
+//           imperfection is entirely in the body. Never a constant-rate spin; no float.
+//  CARRY  : the sword is HELD, never splinted to the arm — the hammer grip cants the blade
+//           ~34° forward of the forearm (tip leading down-forward, clear of the ground: the
+//           souls low-ready). The sword arm is a CARRY, not a mirror of the free arm: damped
+//           swing, readier elbow. A RUN opens it up — the arm eases out to the side, the
+//           fore/aft pump stills, and the wrist pitches the blade UP to ride level, tip away
+//           from the body.
+//  ATTACK : KINETIC-CHAIN sequenced — pelvis → trunk rotation → trunk flexion → shoulder →
+//           elbow → wrist, each a beat late, so the arm WHIPS instead of moving as one unit.
+//           LIGHT (R1) is a real DESCENDING DIAGONAL (sabre Cut One / kesa-giri — see the CUT
+//           MECHANICS note above the AL_* block): readable windup (trunk coiled, knees loaded,
+//           fist by the ear, blade back over the shoulder), then the hand drops ACROSS the
+//           front, high-outside to low-inside, the diagonal carried by ADDUCTION — never a
+//           flat shoulder-height helicopter sweep. The wrist rolls the edge into the plane and
+//           SNAPS the tip through, finishing past the off hip; the cut ARRESTS and lifts into
+//           recovery. Chained lights ALTERNATE (ER-style): the buffered follow-up comes
+//           BACKHAND out of where the last landed, damped — a moulinet re-chamber.
+//           HEAVY (R2) is a slow overhead: the EDGE comes down vertical (a cut, never a flat
+//           smack), windup past vertical over a STAGGERED load, a breathing gather at the top,
+//           a violent trunk-driven drop with a lateral coil whipping past, the blade BURIED
+//           low and BITING through a held follow-through, then a slow rise. Feet planted (the
+//           step is root translation), facing locked at commit, hit capsule active only inside
+//           the strike window. NOTHING parks dead at an end pose.
+//  BLENDS : idle↔walk by a `moving` ease; walk↔run↔sprint by ground SPEED (runB/sprintB chase
+//           an eased `speedS`, so posture never steps when speed does). Stride LENGTH scales
+//           with speed. Pose discontinuities cross-fade over POSE_XFADE and the roll heading
+//           eases on at ROLL_YAW_RATE. Nothing SNAPS — but only the visible pose smooths;
+//           movement and mechanics stay instant.
 //
 // ── gait: normative sagittal joint angles over one stride, sampled every 12.5% (deg) ──
 // phase 0 = heel strike; stance ≈ 0..0.60, swing ≈ 0.60..1.0 (signs: hip/knee +flexion,
@@ -284,30 +267,23 @@ const AH_LUNGE = 1.05; // the chop LEAPS forward through the drop — committed 
 const AH_CHAIN = 0.86; // the heavy earns a longer commitment before a buffered exit
 const ATK_RETRACK = 9.0; // rad/s — LOCKED-ON only: past RECOV_A the hero re-squares onto the
 //   lock target through the tail, so a WHIFF doesn't leave him facing empty air. The cut itself stays fully committed.
-// ── CUT MECHANICS (the light slash) — grounded in period cutting instruction ─────────
-// The R1 is the HORIZONTAL cut — sabre Cuts III/IV, the level pair (Roworth, "Art of
-// Defence on Foot", 1798; kendo's dō-giri, the flat cut across the trunk): a one-handed
-// LEVEL SWIPE that sweeps a wide arc ACROSS THE FRONT at chest height (owner's law: a
-// swipe, never a downward poke). What the sources dictate, and where it lives below:
-//  - THE ARC LIVES IN ROTATION, NOT ELEVATION: hips → trunk rotate through the cut and
-//    the shoulder YAWS the raised arm around the body's vertical axis (SWEEP_WIND →
-//    SWEEP_END, ~125° of horizontal travel + ~50° of trunk). The arm's forward-raise
-//    (ELEV) holds the swipe PLANE at chest height and barely moves during the strike.
-//  - THE BLADE LIES FLAT IN THE PLANE, EDGE LEADING (Hutton, "Cold Steel", 1889: "the
-//    edge leads during the passage of the blade along the line"): the swipe RE-GRIPS —
-//    the SWORD bone cancels the baked grip cant (GRIP_PITCH) exactly, the wrist then
-//    ROLLS the blade a quarter-turn about its own axis (EDGE_ROLL, cone-free by that
-//    cancel) so the edge faces the travel and the flat lies horizontal, riding a
-//    whisker tip-high (TIP_UP). Ramped in with the raise, drained through recovery —
-//    the low-ready carry never changes.
-//  - PROXIMAL → DISTAL, WRIST LAST (kendo kinematics; Bunn's summation of speed): the
-//    AL_LAG chain fires pelvis → chest → shoulder → elbow → wrist. The blade CHAMBERS
-//    laid back over the sword shoulder (WRIST_LAY, trailing the hand like a moulinet
-//    passage) and the wrist whips it THROUGH the line last (WRIST_WHIP), in plane.
-//  - THE CUT ARRESTS, NEVER PARKS (tenouchi): a small overshoot (AL_OVER) settles out
-//    through recovery — and chained lights come BACKHAND out of the finish (Cut IV out
-//    of Cut III, the mirrored horizontal) like a moulinet: the return chambers SHALLOW
-//    across the chest (ALT_WIND), right where the forehand landed.
+// ── CUT MECHANICS (the light slash) — from period cutting instruction ────────────────
+// The R1 is the HORIZONTAL cut: sabre Cuts III/IV (Roworth 1798; kendo's dō-giri), a one-handed
+// LEVEL SWIPE across the front at chest height. Owner's law: a swipe, never a downward poke.
+//  - THE ARC LIVES IN ROTATION, NOT ELEVATION. Hips → trunk rotate through the cut and the
+//    shoulder YAWS the raised arm about the body's vertical axis (SWEEP_WIND → SWEEP_END, ~125°
+//    plus ~50° of trunk). The forward-raise (ELEV) only holds the PLANE at chest height.
+//  - THE BLADE LIES FLAT IN THE PLANE, EDGE LEADING (Hutton 1889). The swipe RE-GRIPS: the
+//    SWORD bone cancels the baked grip cant (GRIP_PITCH) exactly, then the wrist ROLLS a
+//    quarter-turn about the blade's own axis (EDGE_ROLL, cone-free thanks to that cancel) so
+//    the edge faces travel and the flat lies horizontal, a whisker tip-high (TIP_UP). Ramped in
+//    with the raise, drained through recovery — the low-ready carry never changes.
+//  - PROXIMAL → DISTAL, WRIST LAST (Bunn's summation of speed). The AL_LAG chain fires pelvis →
+//    chest → shoulder → elbow → wrist; the blade CHAMBERS laid back over the sword shoulder
+//    (WRIST_LAY) and the wrist whips it through the line last (WRIST_WHIP), in plane.
+//  - THE CUT ARRESTS, NEVER PARKS (tenouchi): a small overshoot (AL_OVER) settles through
+//    recovery, and a chained light comes BACKHAND out of the finish (Cut IV out of Cut III),
+//    chambering SHALLOW across the chest (ALT_WIND) right where the forehand landed.
 // light amplitudes (deg unless noted)
 const AL_BODY_YAW = 26.0; // trunk winds HARD toward the sword side (the exaggerated tell)…
 const AL_BODY_YAW_THRU = 24.0; // …and releases through past neutral (rotation IS the cut's width)
@@ -433,47 +409,38 @@ const SPEED_SMOOTH = 80.0; // units/s² — posture-blend speed chases ground sp
 // only, ~0.1s; position answers the stick raw, same frame).
 const GAIT_DIR_EASE = 22.0; // 1/s — fwdB/latB chase the body-frame travel direction
 //
-// ── THE CROSSING SIDESTEP (grapevine), BUILT FROM GEOMETRY — NOT FROM TUNED ANGLES ─────────
-// Two facts drive the whole thing, and getting either wrong is what made the old sidestep read
-// as sliding rather than stepping:
+// ── THE CROSSING SIDESTEP (grapevine): GEOMETRY, NOT TUNED ANGLES ──────────────────────────
+// Two facts drive it, and getting either wrong is what made the old sidestep slide:
 //
 // 1. A PLANTED FOOT IS WORLD-FIXED. While it is down the body travels PAST it, so its offset
-//    from the pelvis must sweep backward through stance at exactly the rate the body advances —
-//    LINEAR IN DISTANCE, like the sagittal hip curve does for the walk. The old code held each
-//    strafe leg at a CONSTANT frontal angle between step windows ("planted dead still"), which
-//    is only still in JOINT space: in world space the foot was dragged along under the body.
-//    That skate, not the amplitude, is why it looked wrong.
-// 2. THE CROSS IS FREE — it falls out of the HIP OFFSETS. Give both legs the SAME symmetric
-//    ±STRAFE_ABD sweep half a cycle apart and, because each hip sits `hx` off the midline, the
-//    leg on the FAR side lands PAST the near foot (a front cross) while the near leg then swings
-//    wide OUTSIDE it (the uncross). No lead/trail amplitude split, no bias term. The old code
-//    gave the crossing leg LESS reach than the out-stepping one (XRZ 12 < OUT 16) — backwards:
-//    the far leg has ~2·hx more ground to make up, so with less swing it only ever reached the
-//    midline and the legs never actually crossed.
+//    from the pelvis must sweep backward through stance LINEAR IN DISTANCE, at the rate the
+//    body advances. Holding a strafe leg at a constant frontal angle is only still in JOINT
+//    space; in world space the foot is dragged along under the body, and that skate — not the
+//    amplitude — is the bug.
+// 2. THE CROSS IS FREE, out of the HIP OFFSETS. Give both legs the SAME symmetric ±STRAFE_ABD
+//    sweep half a cycle apart and, because each hip sits `hx` off the midline, the FAR leg lands
+//    past the near foot (a front cross) while the near leg swings wide OUTSIDE it (the uncross).
+//    No lead/trail split. Giving the crossing leg LESS reach is backwards — it has ~2·hx more
+//    ground to cover, so it only ever reached the midline and the legs never crossed.
 //
-// Anatomy check (Sinclair et al. 2016, lateral shuffle vs side-step cutting): peak hip abduction
-// through a lateral shuffle runs ~17-20 deg, so STRAFE_ABD is a MEASURED range, not a big splay —
-// this is "correct", not "loud". The crossing leg passes IN FRONT (hip flexion) and its partner
-// necessarily passes BEHIND it; that front/behind pairing IS the grapevine.
+// Anatomy check (Sinclair et al. 2016): peak hip abduction through a lateral shuffle runs
+// ~17-20 deg, so STRAFE_ABD is a MEASURED range, not a splay. Crossing leg IN FRONT (hip
+// flexion), partner necessarily BEHIND: that pairing IS the grapevine.
 const STRAFE_ABD = 22.0; // peak frontal hip swing either side of the hip (deg) — the sweep is
 //   symmetric, so this is BOTH the out-step's abduction and the cross's adduction
-const STRAFE_STANCE = 0.52; // fraction of the cycle each foot is planted (2·0.52 -^' 1 = ~4% of the
-//   cycle in double support — brisk footwork, feet exchanging almost as soon as they arrive).
-//   ── CADENCE, and why these two numbers are the ONLY dial ──
-//   Phase is driven by DISTANCE, so step CADENCE = speed / STRAFE_CYCLE. There is no third lever:
-//   pace the animation any other way and the planted foot skates, which is the bug this rewrite
-//   exists to kill. So a sidestep that reads "too fast" can ONLY be slowed by lengthening the
-//   cycle, and the cycle is capped by real hip ROM (STRAFE_ABD) once double support is spent.
-//   These are that cap: 22 deg is the top of the measured lateral-shuffle band and 0.52 has
-//   essentially no double support left to trade. Pure lateral travel at the hero's full walk speed
-//   therefore still costs ~20% MORE steps per second than walking forward — that residue is
-//   geometry, not tuning, and closing it needs an ER-style locked-on lateral speed factor
-//   (a MECHANICS change, so not made here). `unit_strafe_cadence_near_walk` pins the ratio.
-const STRAFE_CROSS = 38.0; // the crossing leg's hip FLEXION peak through swing — it must pass IN
-//   FRONT of the stance leg (it cannot adduct THROUGH it), which is what makes the cross read.
-//   It has to be this big: the knee flexion that buys ground clearance drags the ankle BACKWARDS
-//   (a normal walk's mid-swing foot sits BEHIND its own hip), so ~24 deg of hip left the crossing
-//   foot trailing — passing behind the stance leg while the thigh went in front of it.
+const STRAFE_STANCE = 0.52; // fraction of the cycle each foot is planted (~4% double support)
+//   ── CADENCE has exactly ONE dial ── phase is driven by DISTANCE, so cadence = speed /
+//   STRAFE_CYCLE. Pace the animation any other way and the planted foot skates again. A sidestep
+//   that reads too fast can ONLY be slowed by lengthening the cycle, and the cycle is capped by
+//   hip ROM once double support is spent — 22 deg is the top of the measured lateral-shuffle band
+//   and 0.52 has no double support left to trade. So pure lateral travel still costs ~20% more
+//   steps/sec than walking forward; that residue is geometry, and closing it needs an ER-style
+//   locked-on lateral speed factor (a MECHANICS change, not made here).
+//   `unit_strafe_cadence_near_walk` pins the ratio.
+const STRAFE_CROSS = 38.0; // the crossing leg's hip FLEXION peak — it must pass IN FRONT of the
+//   stance leg (it cannot adduct THROUGH it). It has to be this big: the knee flexion that buys
+//   ground clearance drags the ankle BACKWARDS, so ~24 deg left the crossing foot trailing —
+//   passing behind the stance leg while the thigh went in front of it.
 const STRAFE_BEHIND = 10.0; // …and its partner's hip EXTENSION peak, passing BEHIND the crossed
 //   leg on the uncross. Front-cross one leg + behind-pass the other = the grapevine, structurally.
 const STRAFE_LAND = 7.0; // fore/aft hip offset at plant (deg), swept out linearly through stance:
@@ -501,15 +468,12 @@ const STRAFE_REACH = LEG_LEN * @sin(mathx.radians(STRAFE_ABD)); // half the stan
 const STRAFE_CYCLE = 2.0 * STRAFE_REACH / STRAFE_STANCE; // body travel per FULL cycle. advanceGait
 //   MUST use this as the stride length for a pure sidestep: phase and sweep are two views of the
 //   same distance, and if they disagree by any factor the skate comes straight back.
-// pub: every humanoid that strafes owes the same drop (scaled by its own rig size), or its feet
-// hover — the archer used to have no dip term at all.
-// Pelvis drop, solved rather than picked: at FULL abduction the foot is STRAFE_REACH out to the
-// side and still has to touch the floor, so the pelvis must sit low enough that a near-straight leg
-// spans the hypotenuse of (drop-adjusted height, reach). Falls out as ~4% of H — a low athletic
-// settle, which is also exactly where the SOFT KNEE comes from. (The old 0.012·H was under a third
-// of what 19 deg of abduction costs, so the strafe stood on straight legs with the feet hovering.)
-// legChain's vertical solve assumes the caller dropped the pelvis by precisely this much — that is
-// the contract, and `strafe: planted feet stay ON the ground` holds both ends of it to it.
+// Pelvis drop, SOLVED not picked: at full abduction the foot is STRAFE_REACH out to the side and
+// still has to touch the floor, so the pelvis must sit low enough that a near-straight leg spans
+// the hypotenuse. Falls out as ~4% of H — which is also where the soft knee comes from. legChain's
+// vertical solve assumes the caller dropped the pelvis by exactly this much; that is the contract,
+// and `strafe: planted feet stay ON the ground` holds both ends to it. pub because every humanoid
+// that strafes owes the same drop, scaled by its own rig (the archer once had none, and hovered).
 pub const STRAFE_DIP = LEG_LEN - @sqrt((LEG_LEN - STRAFE_SINK) * (LEG_LEN - STRAFE_SINK) - STRAFE_REACH * STRAFE_REACH);
 
 const STRIDE = 0.85 * H; // ground distance per full (two-step) cycle at walk pace — ties phase to travel, no foot-skate
@@ -570,24 +534,23 @@ pub fn advanceGait(phase: *f32, moving: *f32, fwdB: *f32, latB: *f32, speedS: *f
 }
 
 // ── FOOT PLANT: keep soles ON the ground instead of through it ─────────────────────────────────
-// An FK gait drives JOINT ANGLES, so the pelvis height and the feet are related only by whatever the
-// bob curve happens to say — and wherever the two disagree the sole goes UNDER the world. It is
-// worst where a rotating foot digs a corner in: the boot is ~0.19·H long, so 15 deg of ankle pitch
-// buries a toe 4 cm even with the ankle joint itself sitting exactly right.
+// An FK gait drives JOINT ANGLES, so pelvis height and feet relate only through whatever the bob
+// curve says, and wherever they disagree the sole goes UNDER the world. Worst where a rotating
+// foot digs a corner in: the boot is ~0.19·H long, so 15 deg of ankle pitch buries a toe 4 cm
+// with the ankle joint sitting exactly right.
 //
-// Lowering the world is NOT the fix (that just floats everything else instead — `env.GROUND_Y` sits
-// where prop bases and soles are authored, deliberately). The remedy is to MEASURE the deepest sole
-// corner every frame and lift the skeleton until it clears. Because it is a rigid translation of
-// every bone by the same dy it cannot distort a pose, and dy is only ever UPWARD — so a real flight
-// phase, a roll, or a foot legitimately in the air is left completely alone.
+// Lowering the world is NOT the fix — that floats everything else instead. MEASURE the deepest
+// sole corner each frame and lift the skeleton until it clears: a rigid translation of every bone
+// by the same dy cannot distort a pose, and dy is only ever UPWARD, so a flight phase, a roll, or
+// a foot legitimately in the air is left alone.
 //
-// A rig declares each of its ground-contact bones as a sole PATCH: the rectangle its sole actually
-// occupies in that bone's local frame. Measure it off the mesh (`addCube` takes a FULL size,
-// `addCapsule`/`addBlob` take true RADII — mixing those up is how the ogre ended up with a foot pad
-// authored 0.036·H below its own sole plane), and re-measure when the foot is remodelled.
-// The height a sole is allowed to reach down to. Soles + prop bases are all authored at y = 0 while
-// the ground SURFACE sits a hair above at `env.GROUND_Y`, so planting to 0 preserves exactly the
-// deliberate ~1 cm embed AGENTS.md calls for — planted-to-slightly-embedded, never floating.
+// A rig declares each ground-contact bone as a sole PATCH — the rectangle its sole occupies in
+// that bone's local frame. MEASURE it off the mesh (`addCube` takes a FULL size,
+// `addCapsule`/`addBlob` take true RADII; mixing those up gave the ogre a foot pad authored
+// 0.036·H below its own sole plane) and re-measure when the foot is remodelled.
+//
+// Soles and prop bases are authored at y = 0 while the ground SURFACE sits a hair above at
+// `env.GROUND_Y`, so planting to 0 preserves the deliberate ~1 cm embed: never floating.
 pub const SOLE_Y: f32 = 0.0;
 
 pub const SolePatch = struct {
@@ -1546,28 +1509,23 @@ pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, ph: f32, m: f32, runB
     const landF = if (inSwing or !crossing) 0.0 else STRAFE_LAND * (1.0 - 2.0 * q / STRAFE_STANCE) * latW;
     const latHip = passF + landF; // this leg's sagittal angle, LATERAL contribution only
     // ── THE VERTICAL SOLVE: ask for a foot HEIGHT, solve the knee for it ────────────────────────
-    // The one part of a sidestep that cannot be left to constants. Hip flexion and knee flexion
-    // fight each other vertically, so a "knee lift" angle does NOT translate to a foot leaving the
-    // ground: the old 17 deg of lift over 13 deg of hip flex netted about a CENTIMETRE once the
-    // pelvis dip was subtracted, and the swing foot just skimmed the grass. So state the two
-    // heights we actually care about — planted feet sit ON the ground, the swing foot gets
-    // STRAFE_CLEAR of daylight — and solve the knee that puts the ankle there (law of cosines on
-    // the 2-link leg). It also means the feet stay planted at EVERY abduction angle, not just the
-    // one the dip constant happened to be tuned for.
+    // The one part of a sidestep that cannot be constants. Hip and knee flexion fight each other
+    // vertically, so a "knee lift" angle does NOT lift a foot — 17 deg over 13 deg of hip netted
+    // about a CENTIMETRE and the swing foot skimmed the grass. So state the heights that matter
+    // (planted feet ON the ground, swing foot STRAFE_CLEAR above it) and solve the knee that puts
+    // the ankle there. Feet then stay planted at EVERY abduction angle, not just the tuned one.
     const clear = STRAFE_CLEAR * rigS * arc * latW;
-    // MEASURE the hip's actual height rather than assuming the caller lowered the pelvis by exactly
-    // STRAFE_DIP. That assumption held for a pure sidestep and quietly broke on a DIAGONAL, where the
-    // sagittal bob and the run crouch are also moving the pelvis and the solve knew nothing about
-    // them. Reading the real height makes the plant exact under any pelvis motion — and turns
-    // STRAFE_DIP from a contract the caller must honour into simple advice about giving the leg room.
+    // MEASURE the hip's real height rather than assuming the caller dropped the pelvis by exactly
+    // STRAFE_DIP. That held for a pure sidestep and broke on a DIAGONAL, where the sagittal bob and
+    // the run crouch move the pelvis too. Reading it makes the plant exact under any pelvis motion,
+    // and turns STRAFE_DIP from a contract into advice about giving the leg room.
     const rootS = mathx.maxF(1e-4, @sqrt(wx[ROOT].m0 * wx[ROOT].m0 + wx[ROOT].m1 * wx[ROOT].m1 + wx[ROOT].m2 * wx[ROOT].m2));
     const hipW = rl.math.vector3Transform(mathx.subV(rest[hip], rest[ROOT]), wx[ROOT]);
     // …down to the ANKLE JOINT, which rides rest[ank].y above the sole plane — not down to the floor.
     const vert = mathx.maxF(0.1 * legLen, (hipW.y - SOLE_Y) / rootS - rest[ank].y - clear);
-    // The hip's rotations compose rx (sagittal) FIRST then rz (frontal), so the frontal swing acts
-    // on the ALREADY-SHORTENED leg: the abduction angle is atan(sideways / height), NOT asin over
-    // the full leg length, and the two links must span the HYPOTENUSE of those. Getting this wrong
-    // is subtle and lands the planted foot a centimetre or two off the floor at wide abduction.
+    // The hip composes rx (sagittal) FIRST then rz (frontal), so the frontal swing acts on the
+    // ALREADY-SHORTENED leg: abduction is atan(sideways / height), NOT asin over the full leg,
+    // and the links span the HYPOTENUSE. Get it wrong and the planted foot floats a centimetre.
     const span = @sqrt(vert * vert + dx * dx); // hip→ankle length the two links must make up
     const abd = mathx.degrees(std.math.atan2(dx, vert));
     // Solve against the leg's FULL sagittal angle, not just the lateral part: on a DIAGONAL the walk's
@@ -1595,16 +1553,14 @@ pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, ph: f32, m: f32, runB
     setJoint(wx, rest, hip, ROOT, mul(rx(-hipFlex - latHip), rz(frontal)));
     setJoint(wx, rest, knee, hip, rx(kneeFlex)); // +rx = knee bends (shank swings back/up)
     // ── Ankle: dorsiflex + toe-out splay + keep the sole out of the dirt ────────────────────────
-    // A 0.19·H boot buries a corner 4 cm at 15 deg of pitch, and ANK_DORSI asks for more than that at
-    // heel strike and toe-off. A real foot answers by PIVOTING on that corner — the ankle joint rises
-    // — which forward kinematics will never do for us, so the toe or heel just rakes underground.
+    // A 0.19·H boot buries a corner 4 cm at 15 deg of pitch, and ANK_DORSI asks for more at heel
+    // strike and toe-off. A real foot PIVOTS on that corner (the ankle rises); FK never will.
     //
-    // Level it by MEASURING, because the foot's world pitch is not just this joint's: the body pitch
-    // (deep at a run), the spine lean and the pelvis roll all stack on top, and a clamp on the local
-    // angle alone silently misses every one of them — which is exactly why the first attempt at this
-    // left the sink untouched. So: pose the foot, find its deepest sole corner, and rotate the ankle
-    // just enough to lift that corner to the floor. Two passes converge; the correction is zero the
-    // moment the foot is clear, so a swing foot, a flight phase and a roll are never touched.
+    // So level it by MEASURING — the foot's world pitch is not just this joint's, the body pitch,
+    // spine lean and pelvis roll all stack on top, and a clamp on the local angle misses every one
+    // of them (which is why the first attempt changed nothing). Pose the foot, find its deepest
+    // sole corner, rotate the ankle just enough to lift it to the floor. Two passes converge, and
+    // the correction is zero the moment the foot is clear — swing, flight and roll are untouched.
     const wscale = mathx.maxF(1e-4, @sqrt(wx[knee].m0 * wx[knee].m0 + wx[knee].m1 * wx[knee].m1 + wx[knee].m2 * wx[knee].m2));
     var pitch = -ankDorsi + flat;
     var pass: u8 = 0;
@@ -1909,13 +1865,12 @@ test "roll travel: the brake profile integrates to ROLL_DIST" {
 }
 
 // ── THE CROSSING SIDESTEP, measured off the posed rig ───────────────────────────────────────────
-// Every one of these guards a failure the old sidestep actually shipped, and every one is invisible
-// in code review and obvious on screen. They pose the real legChain and read the real ankle
-// matrices — the same "measure it, don't guess it" discipline ogre.zig's club tests use.
+// Each of these guards a failure the old sidestep actually shipped — invisible in review, obvious
+// on screen. They pose the real legChain and read the real ankle matrices: the same "measure it,
+// don't guess it" discipline as ogre.zig's club tests.
 //
 // Pose ONE leg mid-sidestep and return its ankle in the PELVIS-CENTRED frame (+x = his LEFT,
-// +z = forward, y = height above the ground). The pelvis is lowered by exactly the STRAFE_DIP the
-// contract obliges a caller to apply, so ankle y is directly comparable to the rest foot height.
+// +z = forward, y = height above ground), with the pelvis lowered by exactly STRAFE_DIP.
 fn testStrafeAnkle(ph: f32, lat: f32, side: f32, hip: usize, knee: usize, sole: SolePatch) rl.Vector3 {
     const rest = restPositions();
     var wx: [N]rl.Matrix = undefined;

@@ -24,22 +24,60 @@ const SLOT_SHADOW: i32 = 12;
 // throws long raking amber shadows.
 pub const SUN_DIR = norm3(v3(-0.60, 0.50, -0.46));
 
-pub const SHADOWMAP_RES = 4096;
-const SHADOW_ORTHO = 44.0; // world-unit square the sun's ortho box covers around the focus (tight = crisp)
+// ── THE SHADOW BOX ── the single trade in the whole renderer: DISTANCE against CRISPNESS
+// against the depth pass's draw count. Texel size is SHADOW_ORTHO / SHADOWMAP_RES, and the
+// depth pass has to draw every caster that can throw INTO the box, so widening it costs draws
+// quadratically while resolution costs only fill.
+//
+// Owner's call: reach matters more than edge fidelity here, and 44 m (±22 around the hero) cut
+// shadows off well inside the visible field — you could watch a great tree's shadow pop in. 108
+// with the map doubled to 8192 is 2.5x the reach for a texel that only coarsens 0.011 → 0.013 m,
+// and it lands the cut-off out where the haze is already eating detail.
+pub const SHADOWMAP_RES = 8192;
+// PUBLIC because env's depth-pass cull must know how big the box is to decide what can throw a
+// shadow into it — one source, so changing the box can't leave the cull wrong in either
+// direction (too small pops shadows, too large re-drops the perf you just bought).
+pub const SHADOW_ORTHO = 108.0;
 const SUN_DIST = 120.0; // shadow camera distance along SUN_DIR
-// Tight depth slab around the casters. Ortho depth is LINEAR over near..far, so the
-// shader's NDC bias = bias*(far-near) world units — leaving raylib's default planes makes
-// the bias huge and small casters' shadows detach or vanish.
-const SHADOW_CLIP_NEAR = 70.0;
-const SHADOW_CLIP_FAR = 190.0;
+// Depth slab around the casters, kept as TIGHT as the box allows. Ortho depth is LINEAR over
+// near..far, so the shader's NDC bias costs bias*(far-near) WORLD units — widen the slab and
+// small casters' shadows start to detach. The box's own half-diagonal sets the floor: a corner
+// 76 m out along the view axis has to stay inside, so the slab tracks SHADOW_ORTHO.
+const SHADOW_CLIP_NEAR = SUN_DIST - SHADOW_ORTHO * 0.78;
+const SHADOW_CLIP_FAR = SUN_DIST + SHADOW_ORTHO * 0.78;
 
 // The haze color the world fades into with distance (authored pre-gamma — the shader
 // gammas output, so dark values lift). The sky shader's horizon band is authored to the
 // DISPLAYED value of this so the seam disappears.
 pub const HAZE = v3(0.078, 0.070, 0.056);
-// Haze falloff: 1-exp(-density*dist) — at 0.021, ~63% hazed by ~48 world units, so the
-// horizon giants (|z| ~ 50+) read as silhouettes while the avenue stays clear.
-const HAZE_DENSITY: f32 = 0.021;
+// Haze falloff: 1-exp(-density*dist). PULLED BACK from the old 0.021 (which was ~63% hazed by
+// 48 units) when the world grew to env.HALF 160: at that density everything past ~100 units was
+// flat haze, so seven eighths of the map was reachable but invisible. At 0.013 it's ~63% by 75
+// units and ~88% by 160, so the far cliffs / horizon gate / great trees still dissolve into
+// golden-hour SILHOUETTES — you just get to see the world's scale from the start point.
+const HAZE_DENSITY: f32 = 0.013;
+
+// ── POINT LIGHTS ── torches, braziers, campfires, the grace ember. The sun can't reach inside
+// a roofed ruin, so an interior needs its own light or it's a black hole; these are what make
+// the chapel/watchtower interiors readable. Small fixed set of uniforms, filled each frame with
+// the lights NEAREST the camera (env.uploadLights) — the world holds far more than MAX_LIGHTS,
+// but only the ones you can see are ever on the GPU.
+pub const MAX_LIGHTS = 16;
+comptime {
+    // The scene FS declares `lightPos/lightCol/lightRad[16]` as literals — GLSL array sizes can't
+    // read a Zig constant. Raising MAX_LIGHTS without editing all three declarations would overrun
+    // the uniform arrays, so fail the BUILD instead (same guard style as `Mat`'s water/marble ids).
+    @setEvalBranchQuota(200_000); // scanning a ~9 KB shader source three times at comptime
+    std.debug.assert(MAX_LIGHTS == 16);
+    std.debug.assert(std.mem.indexOf(u8, sceneFS, "lightPos[16]") != null);
+    std.debug.assert(std.mem.indexOf(u8, sceneFS, "lightCol[16]") != null);
+    std.debug.assert(std.mem.indexOf(u8, sceneFS, "lightRad[16]") != null);
+}
+pub const Light = struct {
+    pos: rl.Vector3,
+    col: rl.Vector3, // colour PRE-MULTIPLIED by intensity (pre-gamma, like every other colour here)
+    radius: f32, // falloff reaches exactly zero here, so a light can never leak past its room
+};
 
 // Depth-only pass for the sun's shadow map (zig-diablo's depth shader verbatim).
 const depthVS =
@@ -64,7 +102,7 @@ const sceneVS =
     \\uniform mat4 mvp;
     \\uniform mat4 matModel;
     \\uniform float windAmt;   // 0 = rigid (terrain / props / hero); 1 = flora opts into sway
-    \\uniform float windTime;  // seconds, drives the sway phase
+    \\uniform float uTime;     // seconds — drives the flora sway phase AND the water ripples (FS)
     \\out vec3 fragPosition;
     \\out vec4 fragColor;
     \\out vec3 fragNormal;
@@ -78,7 +116,7 @@ const sceneVS =
     \\        vec3 baseW = vec3(matModel*vec4(0.0, 0.0, 0.0, 1.0));
     \\        float h = max(p.y, 0.0);
     \\        float bend = h*h*windAmt*0.10;
-    \\        float phase = windTime*1.5 + baseW.x*0.6 + baseW.z*0.5;
+    \\        float phase = uTime*1.5 + baseW.x*0.6 + baseW.z*0.5;
     \\        float sway = sin(phase) + 0.3*sin(phase*2.7 + 1.3);
     \\        p.x += bend*sway;
     \\        p.z += bend*sway*0.4;
@@ -97,6 +135,10 @@ const sceneVS =
 //  - CAST SHADOW (3x3 PCF): the shadow term kills the sun AND eats the ambient, so
 //    shadow pools run deep and cool without collapsing to black.
 //  - EMISSIVE CHANNEL: vertex alpha < 255 marks self-lit material (embers, glints).
+//  - POINT LIGHTS: up to MAX_LIGHTS warm torch/fire lights, quadratic falloff to zero at
+//    their radius, HEAVILY wrapped (+0.35) so a torch fills a room instead of spotlighting
+//    the one wall it faces. They stack on top of the sun key, and they are NOT shadowed
+//    (there is one shadow map and it belongs to the sun).
 //  - DISTANCE HAZE: mix toward HAZE by 1-exp(-density*dist-from-camera) — atmosphere.
 //  - GAMMA + DITHER: pow(1/2.2) then +-1 LSB screen noise so near-dark gradients don't
 //    band on an 8-bit target. Gamma lifts dark albedos hard — author colors near-black.
@@ -113,37 +155,95 @@ const sceneFS =
     \\uniform vec3 hazeColor;   // sky/haze tint (pre-gamma)
     \\uniform float hazeDensity;
     \\uniform float hitFlash;   // 0..1 blood-red combat flash on the CURRENT draw (per-actor)
+    \\uniform float uTime;      // seconds — water ripple phase (shared with the VS wind term)
     \\uniform mat4 lightVP;     // sun's ortho view-projection (captured in the depth pass)
     \\uniform sampler2D shadowMap;
     \\uniform int shadowMapResolution;
+    \\uniform vec3 lightPos[16];  // MAX_LIGHTS torch/fire lights, nearest-first
+    \\uniform vec3 lightCol[16];  // colour * intensity (pre-gamma)
+    \\uniform float lightRad[16];
+    \\uniform int nLights;
     \\out vec4 finalColor;
     \\float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
     \\float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
     \\  return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x), mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y); }
     \\float speck(vec2 p, float s){ return hash21(floor(p*s)); }
+    \\// ---- DETAIL LOD: the fix for distant SIZZLE ----------------------------------------------
+    \\// Every pattern below is procedural, sampled ONCE per fragment at a FIXED frequency in world/UV
+    \\// units. Near the camera a pixel covers a fraction of a cycle and it resolves; far away a pixel
+    \\// spans many cycles, so the single sample it takes is essentially random — and it re-randomises
+    \\// as the camera moves a sub-pixel amount. That is the flicker on small distant objects, and MSAA
+    \\// cannot touch it (MSAA supersamples COVERAGE; shading still runs once per pixel).
+    \\//
+    \\// A texture solves this with mipmaps. Procedural noise has no mip chain, so build one by hand:
+    \\// measure the fragment's footprint in the pattern's own coordinate space with screen-space
+    \\// derivatives, and where a term's cycle is smaller than that footprint, fade it to its MEAN
+    \\// (0.5 for vnoise/speck/mottle) — which is exactly what a correctly-filtered texel would be.
+    \\// Below Nyquist nothing changes, so the near-field look is untouched to the bit.
+    \\//
+    \\// `fwidth` must be evaluated in UNIFORM control flow, so main() computes the footprints up front
+    \\// and passes them down rather than each helper taking its own derivative inside a branch.
+    \\float uvFoot(vec2 q){ return length(fwidth(q)); }
+    \\// How unresolvable a `freq`-cycles-per-unit term is at this footprint: 0 = fine, 1 = mush.
+    \\float band(float freq, float px){ return smoothstep(0.35, 1.0, px*freq); }
+    \\float fvn(vec2 q, float freq, vec2 off, float px){ return mix(vnoise(q*freq + off), 0.5, band(freq, px)); }
+    \\float fvn2(vec2 q, vec2 freq, vec2 off, float px){ return mix(vnoise(q*freq + off), 0.5, band(max(freq.x, freq.y), px)); }
+    \\// speck is a HARD hash (floor, no interpolation), so it is the worst offender of the lot.
+    \\float fspk(vec2 q, float freq, float px){ return mix(speck(q, freq), 0.5, band(freq, px)); }
+    \\// ---- SPECULAR ANTI-ALIASING ---------------------------------------------------------------
+    \\// The albedo LOD above fixes patterns; this fixes HIGHLIGHTS, which alias for the same reason.
+    \\// A pow(nh, 320) lobe is far narrower than a pixel on anything distant, so whether it lands on
+    \\// this fragment is luck — and it stops being the same luck the instant the camera moves, which
+    \\// is the blink. Returns a 0..1 sharpness: widen the lobe by it AND dim the peak by it, so the
+    \\// pixel keeps roughly the energy it ought to average to instead of gambling on a direct hit
+    \\// (the cheap end of Toksvig). 1 = full sharpness up close, nothing changes.
+    \\// FLOORED at 0.05 for two reasons: it keeps a hint of sheen on the furthest surfaces instead of
+    \\// mathematically deleting the highlight, and it keeps the exponent strictly positive — an
+    \\// exponent that reached 0 would hit pow(0.0, 0.0), which GLSL leaves undefined and which can
+    \\// hand a NaN straight into the haze mix.
+    \\float lobe(float px, float k){ return max(1.0/(1.0 + px*k), 0.05); }
     \\// ---- TERRAIN ALBEDO ---- dry golden grassland (pre-gamma, so everything starts
     \\// dark): sun-bleached khaki grass drifting to damp green, a worn dirt path down the
     \\// ruin avenue (x ~ 0, edges wobbled), stony patches, and dark scrub clumps. All
     \\// smooth field noise — no coarse per-tile specks, which read as a checkerboard.
-    \\vec3 terrainAlbedo(vec2 p){
-    \\  float f1 = vnoise(p*0.055);
-    \\  float f2 = vnoise(p*0.35 + 7.7);
-    \\  float f3 = vnoise(p*1.6 + 3.1);
-    \\  float blades = vnoise(p*7.0)*0.65 + speck(p, 31.0)*0.35;
+    \\vec3 terrainAlbedo(vec2 p, float px){
+    \\  float f1 = fvn(p, 0.055, vec2(0.0), px);
+    \\  float f2 = fvn(p, 0.35, vec2(7.7), px);
+    \\  float f3 = fvn(p, 1.6, vec2(3.1), px);
+    \\  // `blades` is the ground's sizzle: a 7-cycle noise plus a 31-cell HARD hash. Past a few tens
+    \\  // of metres both are far under a pixel, and they were what made the whole plain crawl.
+    \\  float blades = fvn(p, 7.0, vec2(0.0), px)*0.65 + fspk(p, 31.0, px)*0.35;
     \\  vec3 dry = vec3(0.140, 0.114, 0.058);
     \\  vec3 grn = vec3(0.080, 0.100, 0.048);
     \\  vec3 c = mix(grn, dry, smoothstep(0.22, 0.78, f1 + 0.30*(f2 - 0.5)));
     \\  c *= 0.80 + 0.50*blades + 0.20*f3;
-    \\  float wob = (vnoise(vec2(p.y*0.13, 3.7)) - 0.5)*3.2;
+    \\  float wob = (vnoise(vec2(p.y*0.13, 3.7)) - 0.5)*3.2; // 0.13 cycles/unit — resolves to the horizon
     \\  float path = smoothstep(2.8, 1.2, abs(p.x + wob));
-    \\  vec3 dirt = vec3(0.130, 0.110, 0.082)*(0.80 + 0.40*f3)*(0.88 + 0.24*speck(p, 21.0));
+    \\  vec3 dirt = vec3(0.130, 0.110, 0.082)*(0.80 + 0.40*f3)*(0.88 + 0.24*fspk(p, 21.0, px));
     \\  c = mix(c, dirt, path*0.85);
-    \\  float rocky = smoothstep(0.64, 0.86, vnoise(p*0.09 + 47.1));
-    \\  vec3 rock = vec3(0.140, 0.142, 0.140)*(0.78 + 0.40*vnoise(p*2.7))*(0.88 + 0.24*speck(p, 11.0));
+    \\  float rocky = smoothstep(0.64, 0.86, fvn(p, 0.09, vec2(47.1), px));
+    \\  vec3 rock = vec3(0.140, 0.142, 0.140)*(0.78 + 0.40*fvn(p, 2.7, vec2(0.0), px))*(0.88 + 0.24*fspk(p, 11.0, px));
     \\  c = mix(c, rock, rocky*(1.0 - path)*0.9);
-    \\  float scrub = smoothstep(0.68, 0.90, vnoise(p*0.22 + 8.9))*(1.0 - rocky)*(1.0 - path);
+    \\  float scrub = smoothstep(0.68, 0.90, fvn(p, 0.22, vec2(8.9), px))*(1.0 - rocky)*(1.0 - path);
     \\  c = mix(c, vec3(0.042, 0.055, 0.026)*(0.7 + 0.6*blades), scrub*0.8);
-    \\  return c*(0.78 + 0.22*vnoise(p*0.03 + 9.7));
+    \\  // REGION DRIFT. The five regions each grow their own flora, but the SOIL underneath them was
+    \\  // one field, so the wood's floor read as the same dry gold meadow with trees standing on it.
+    \\  // West goes damp and green (shaded, leaf-littered); east goes silty and pale toward the tarn.
+    \\  // The wood gets a floor of its OWN, not a tint over the meadow's: leaf mould drifting into
+    \\  // damp shaded turf, mottled at a few metres' scale. Tinting the grassland green only made a
+    \\  // brighter, more saturated LAWN — the floor of a closed wood is darker AND browner AND
+    \\  // patchier than open ground, and all three of those have to change together.
+    \\  float wood = smoothstep(-46.0, -104.0, p.x);
+    \\  if (wood > 0.001){
+    \\    vec3 litter = vec3(0.058, 0.050, 0.030);   // last year's leaves
+    \\    vec3 shade  = vec3(0.040, 0.056, 0.032);   // moss and damp turf
+    \\    float m = fvn(p, 0.13, vec2(21.3), px)*0.7 + fvn(p, 0.44, vec2(5.1), px)*0.3;
+    \\    vec3 floorC = mix(shade, litter, smoothstep(0.34, 0.72, m))*(0.78 + 0.55*blades);
+    \\    c = mix(c, floorC, wood*0.86);
+    \\  }
+    \\  float marsh = smoothstep(44.0, 108.0, p.x);
+    \\  c = mix(c, c*vec3(1.06, 0.97, 0.74), marsh*0.42);
+    \\  return c*(0.78 + 0.22*fvn(p, 0.03, vec2(9.7), px));
     \\}
     \\// ---- SURFACE MATERIALS ---- every Builder mesh carries a material id (gfx.Mat, in
     \\// vertexTexCoord2.x) plus surface-anchored UVs in ~world units, so patterns stick to
@@ -151,40 +251,122 @@ const sceneFS =
     \\// are VALUE-only multiplies around 1.0 (the authored hue survives) held inside ~+-20%
     \\// — weathered surface read, never wallpaper. Keep them QUIET.
     \\float mottle(vec2 p){ return vnoise(p)*0.6 + vnoise(p*3.7 + 11.3)*0.4; }
-    \\vec3 matAlbedo(int m, vec2 q, vec3 base){
+    \\// mottle is TWO octaves (freq and 3.7*freq), and they must be banded SEPARATELY. Filtering the
+    \\// pair against one frequency throws the coarse octave away as soon as the fine one goes — which
+    \\// flattened toad hide and plant clumps at middle distance, where the broad blotches still had
+    \\// several pixels each and should have survived. Per-octave is what a real mip chain does.
+    \\float fmot(vec2 q, float freq, float px){
+    \\  return mix(vnoise(q*freq), 0.5, band(freq, px))*0.6
+    \\       + mix(vnoise(q*freq*3.7 + 11.3), 0.5, band(freq*3.7, px))*0.4;
+    \\}
+    \\vec3 matAlbedo(int m, vec2 q, vec3 base, float px){
     \\  if (m == 1){        // STONE: blotch, two-octave grain, soft strata, ROUNDED pits.
     \\    // All smooth value noise — hard speck/step cells read as square pixels on a
     \\    // close column face, so weathering must stay soft-edged.
-    \\    float blotch = vnoise(q*2.1);
-    \\    float grain = vnoise(q*6.1 + 4.7)*0.6 + vnoise(q*12.3 + 9.2)*0.4;
-    \\    float strata = vnoise(vec2(q.x*0.4, q.y*3.4) + 23.1);
+    \\    float blotch = fvn(q, 2.1, vec2(0.0), px);
+    \\    float grain = fvn(q, 6.1, vec2(4.7), px)*0.6 + fvn(q, 12.3, vec2(9.2), px)*0.4;
+    \\    float strata = fvn2(q, vec2(0.4, 3.4), vec2(23.1), px);
     \\    base *= (0.88 + 0.24*blotch)*(0.94 + 0.12*grain)*(0.94 + 0.12*strata);
-    \\    base *= 1.0 - 0.13*smoothstep(0.74, 0.95, vnoise(q*9.0 + 31.7));
+    \\    base *= 1.0 - 0.13*smoothstep(0.74, 0.95, fvn(q, 9.0, vec2(31.7), px));
     \\  } else if (m == 2){ // WOOD: long grain streaks along v, slow wander
-    \\    float grain = vnoise(vec2(q.x*9.0, q.y*0.8));
-    \\    base *= (0.82 + 0.30*grain)*(0.94 + 0.12*vnoise(q*2.9 + 5.1));
+    \\    float grain = fvn2(q, vec2(9.0, 0.8), vec2(0.0), px);
+    \\    base *= (0.82 + 0.30*grain)*(0.94 + 0.12*fvn(q, 2.9, vec2(5.1), px));
     \\  } else if (m == 3){ // CLOTH: soft anisotropic weave + broad wrinkle shading
-    \\    float weave = vnoise(q*vec2(30.0, 3.2))*0.5 + vnoise(q*vec2(3.2, 30.0) + 9.7)*0.5;
-    \\    base *= (0.91 + 0.15*weave)*(0.92 + 0.15*vnoise(q*1.7 + 2.3));
+    \\    float weave = fvn2(q, vec2(30.0, 3.2), vec2(0.0), px)*0.5 + fvn2(q, vec2(3.2, 30.0), vec2(9.7), px)*0.5;
+    \\    base *= (0.91 + 0.15*weave)*(0.92 + 0.15*fvn(q, 1.7, vec2(2.3), px));
     \\  } else if (m == 4){ // STEEL: fine brush lines along the length + broad soft tarnish
-    \\    float brush = vnoise(vec2(q.x*46.0, q.y*2.3));
-    \\    base *= (0.94 + 0.11*brush)*(0.95 + 0.10*vnoise(q*0.9 + 7.7));
+    \\    // 46 cycles/unit is the highest frequency in the whole shader — a blade or a helm seen
+    \\    // across the avenue was sampling it once per pixel and strobing.
+    \\    float brush = fvn2(q, vec2(46.0, 2.3), vec2(0.0), px);
+    \\    base *= (0.94 + 0.11*brush)*(0.95 + 0.10*fvn(q, 0.9, vec2(7.7), px));
     \\  } else if (m == 5){ // LEATHER: pore stipple + crease mottle
-    \\    base *= (0.90 + 0.17*vnoise(q*13.0))*(0.92 + 0.15*vnoise(q*3.1 + 6.3));
+    \\    base *= (0.90 + 0.17*fvn(q, 13.0, vec2(0.0), px))*(0.92 + 0.15*fvn(q, 3.1, vec2(6.3), px));
     \\  } else if (m == 6){ // SKIN: faint soft mottle only
-    \\    base *= 0.94 + 0.11*mottle(q*4.6);
+    \\    base *= 0.94 + 0.11*fmot(q, 4.6, px);
     \\  } else if (m == 7){ // HIDE: amphibian blotch patches + fine wart grain — DARKEN
     \\    // only (max ~1.0): the bog toad must stay a near-black night thing, its blotches
     \\    // reading as damp shadow, never pale camo.
-    \\    float patch = smoothstep(0.35, 0.75, vnoise(q*2.4));
-    \\    base *= (0.72 + 0.26*patch)*(0.88 + 0.12*vnoise(q*8.2 + 3.3));
+    \\    float patch = smoothstep(0.35, 0.75, fvn(q, 2.4, vec2(0.0), px));
+    \\    base *= (0.72 + 0.26*patch)*(0.88 + 0.12*fvn(q, 8.2, vec2(3.3), px));
     \\  } else if (m == 8){ // PLANT: broad value drift so clumps read as many blades
-    \\    base *= 0.87 + 0.22*mottle(q*2.2);
-    \\  } else {            // PLAIN: the old generic grain, now surface-anchored
-    \\    float g = vnoise(q*1.1)*0.45 + vnoise(q*4.3)*0.35 + speck(q, 13.0)*0.20;
+    \\    base *= 0.87 + 0.22*fmot(q, 2.2, px);
+    \\  } else if (m == 10){ // MARBLE: a cool body crossed by wandering VEINS, plus the crazing
+    \\    // and dull weathered patches a thousand years outdoors puts on burnished stone. This
+    \\    // is the one material allowed past the +-20% house limit: a vein that stays inside it
+    \\    // is a smudge, and marble without veins is just pale stone. The wobble term is what
+    \\    // keeps them WANDERING — a clean sin() gives you barber-shop stripes.
+    \\    float wob  = fvn(q, 0.9, vec2(0.0), px)*1.7 + fvn(q, 2.7, vec2(3.1), px)*0.55;
+    \\    // The veins are the one pattern whose mean ISN'T 0.5: pow(1-|sin|, n) is a thin spike, so it
+    \\    // averages to about 1/(n·pi/2) — 0.09 at n=7, 0.05 at n=13. Fading them to 0.5 would turn a
+    \\    // distant column into a dark smear and fading them to 0 would brighten it; fade to the true
+    \\    // mean and the column keeps its overall value while the stripes stop strobing. Their thinness
+    \\    // makes them alias far above their nominal ~7 cycles/unit, hence the 20/26 bands.
+    \\    float vein = mix(pow(1.0 - abs(sin((q.x*0.8 + q.y*2.4 + wob)*3.1)), 7.0), 0.09, band(20.0, px));
+    \\    float hair = mix(pow(1.0 - abs(sin((q.x*2.3 - q.y*1.1 + wob*1.7)*2.2)), 13.0), 0.05, band(26.0, px));
+    \\    base *= 1.0 + 0.15*fvn(q, 1.4, vec2(7.7), px) - 0.30*vein - 0.17*hair;
+    \\    base *= 0.95 + 0.12*fvn(q, 11.0, vec2(2.9), px);                         // crazing
+    \\    base *= 1.0 - 0.17*smoothstep(0.60, 0.92, fvn(q, 0.35, vec2(19.0), px)); // where the polish is gone
+    \\  } else if (m == 9){ // WATER: silt drifting under the surface (the RIPPLES are geometry-
+    \\    // free — see waterNormal — this is only what's suspended in the tarn)
+    \\    base *= 0.84 + 0.30*fmot(q, 0.7, px);
+    \\  } else {            // PLAIN: the old generic grain, now surface-anchored. This is the DEFAULT
+    \\    // material — every untagged shape (the skeleton's bones, eyes, glints) lands here, so its
+    \\    // 13-cell hard hash was sizzling on more of the world than any other single term.
+    \\    float g = fvn(q, 1.1, vec2(0.0), px)*0.45 + fvn(q, 4.3, vec2(0.0), px)*0.35 + fspk(q, 13.0, px)*0.20;
     \\    base *= 0.88 + 0.24*g;
     \\  }
     \\  return base;
+    \\}
+    \\// ---- WATER SURFACE ---- the tarn is a FLAT mesh; every ripple you see is this normal.
+    \\// Two crossed swell trains plus a drifting noise octave, differenced to a slope — cheap,
+    \\// and because it keys off WORLD xz the wave field is continuous across the whole lake
+    \\// (per-mesh UVs would seam at the shore ring).
+    \\// Wavelengths are LONG (~7 m on the primary train): the first pass was ~3 m and the lake
+    \\// read as hammered metal from any height. A sheltered tarn has slow swells with a fine
+    \\// chop riding them, which is what the third term is for.
+    \\float swell(vec2 q, float t){
+    \\  return sin(q.x*0.85 + t*0.95)*0.60 + sin(q.y*0.66 - t*0.72)*0.48
+    \\       + sin((q.x + q.y)*2.1 + t*1.9)*0.16 + sin((q.x - q.y*1.7)*4.3 - t*2.7)*0.07
+    \\       + vnoise(q*0.7 + vec2(t*0.09, -t*0.07))*1.15 + vnoise(q*3.1 - vec2(t*0.21, t*0.16))*0.28;
+    \\}
+    \\vec3 waterNormal(vec2 q, float t, float px){
+    \\  // The finite-difference baseline must be at least a PIXEL wide. Fixed at 0.14, a distant
+    \\  // fragment measured the slope over a step far SMALLER than its own footprint, so it sampled
+    \\  // ripple detail it had no hope of resolving and the normal thrashed frame to frame — which
+    \\  // the razor-tight specular below then turned into sparkle. Widening the step with the
+    \\  // footprint makes this a FILTERED slope across the pixel rather than a point slope, so the
+    \\  // sheet flattens toward mirror as it recedes (which is what real water does) and the glitter
+    \\  // settles into a moving streak instead of a field of blinking dots.
+    \\  float E = max(0.14, px);  // slope sample step, in world units
+    \\  // STEEPNESS matters more than it looks. At 0.10 the normals barely left vertical, so the
+    \\  // fresnel and the sun glint were near-constant across the whole sheet: a flat milky pane
+    \\  // with one blown-out white splodge in it. 0.24 breaks both into moving streaks and
+    \\  // scatters the glitter into sparkle, which is what actually reads as water.
+    \\  const float AMP = 0.24;
+    \\  float h0 = swell(q, t);
+    \\  return normalize(vec3(-(swell(q + vec2(E, 0.0), t) - h0)/E*AMP, 1.0,
+    \\                        -(swell(q + vec2(0.0, E), t) - h0)/E*AMP));
+    \\}
+    \\// Torch/fire light: quadratic falloff reaching exactly 0 at the radius (so a light can
+    \\// never leak out of its room), lambert wrapped hard so one flame fills a chamber.
+    \\vec3 pointLights(vec3 pos, vec3 n){
+    \\  vec3 sum = vec3(0.0);
+    \\  for (int i = 0; i < nLights; i++){
+    \\    vec3 d = lightPos[i] - pos;
+    \\    // Reject on the SQUARED distance so out-of-range lights cost no sqrt. Most fragments are
+    \\    // outside most of the 16 uploaded radii, so this is the common path through the loop.
+    \\    float r = lightRad[i];
+    \\    float d2 = dot(d, d);
+    \\    if (d2 >= r*r) continue;
+    \\    float dist = sqrt(d2);
+    \\    float att = 1.0 - dist/r;
+    \\    att *= att;
+    \\    // Wrapped, but not so hard that every surface in the room gets the same value — the
+    \\    // wrap is there so a torch FILLS a chamber, not so it erases form.
+    \\    float ndl = clamp((dot(n, d/max(dist, 1e-4)) + 0.22)/1.22, 0.0, 1.0);
+    \\    sum += lightCol[i]*att*ndl;
+    \\  }
+    \\  return sum;
     \\}
     \\// Fraction of this fragment in sun shadow (0 lit, 1 shadowed): 3x3 PCF. Outside the
     \\// ortho box counts as lit.
@@ -193,7 +375,10 @@ const sceneFS =
     \\  p.xyz /= p.w;
     \\  p.xyz = p.xyz*0.5 + 0.5;
     \\  if (p.z > 1.0 || p.z < 0.0 || p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) return 0.0;
-    \\  float bias = max(0.0016*(1.0 - ndl), 0.0004);
+    \\  // Bias is in NDC, so it costs bias*(far-near) WORLD units — the slab widened with the
+    \\  // box, so these came DOWN to keep the real offset near 0.22 m. Too much and small
+    \\  // casters peter-pan off their own feet.
+    \\  float bias = max(0.0013*(1.0 - ndl), 0.00032);
     \\  float texel = 1.0/float(shadowMapResolution);
     \\  float sc = 0.0;
     \\  for (int x = -1; x <= 1; x++)
@@ -202,49 +387,110 @@ const sceneFS =
     \\  return sc/9.0;
     \\}
     \\void main(){
+    \\  // Hoisted per-fragment invariants. These were each recomputed several times below, and this
+    \\  // is a FILL-BOUND shader (a full-screen terrain pass at 1280x800 is ~1M fragments), so the
+    \\  // duplicates were real work: `sunDir` arrives ALREADY normalized from gfx.SUN_DIR, yet
+    \\  // normalize(sunDir) appeared five times; `length(camPos - fragPosition)` was computed once
+    \\  // for V and again for the haze distance; and clamp(dot(n,V)) was recomputed by the rim term
+    \\  // and by all three fresnels. Same output, one evaluation each.
+    \\  vec3 L = normalize(sunDir);
     \\  vec3 base = fragColor.rgb;
     \\  vec3 n = normalize(fragNormal);
     \\  vec2 p = fragPosition.xz;
+    \\  vec3 toCam = camPos - fragPosition;
+    \\  float dist = length(toCam);
+    \\  vec3 V = toCam/max(dist, 1e-5);
+    \\  float nv = clamp(dot(n, V), 0.0, 1.0);
+    \\  // Detail-LOD footprints, both taken HERE: `fwidth` needs uniform control flow, and `mi == 9`
+    \\  // (water) is NOT uniform — it rides a vertex attribute. `pxP` measures the world-xz patterns
+    \\  // (terrain albedo, water silt, the ripple normal's difference step); `pxQ` the surface-anchored
+    \\  // material UVs (every prop pattern, and the specular lobe widths further down). Terrain pays
+    \\  // for a `pxQ` it never reads — one quad-difference, and the alternative is two different LOD
+    \\  // proxies for the albedo and the highlight of the same surface.
+    \\  float pxP = uvFoot(p);
+    \\  float pxQ = uvFoot(fragUV);
     \\  int mi = -1;
     \\  if (groundMode==1){
-    \\    base *= terrainAlbedo(p);
+    \\    base *= terrainAlbedo(p, pxP);
     \\  } else {
     \\    mi = int(fragMatF + 0.5);
-    \\    base = matAlbedo(mi, fragUV, base);
+    \\    // WATER is textured in WORLD xz, not surface UVs: the tarn is a radial fan of quads
+    \\    // and the Builder decorrelates UVs per shape, so surface-anchored silt would show the
+    \\    // lake's triangulation as a patchwork of unrelated blotches.
+    \\    // The footprint must be taken in the SAME space as the coordinate, or the LOD is measured
+    \\    // against the wrong scale — water textures in world xz, everything else in surface UVs.
+    \\    base = matAlbedo(mi, (mi == 9) ? p : fragUV, base, (mi == 9) ? pxP : pxQ);
+    \\    // …and its ripples live in the NORMAL, so they must land before any lighting term.
+    \\    if (mi == 9) { n = waterNormal(p, uTime, pxP); nv = clamp(dot(n, V), 0.0, 1.0); } // ripples move the normal
     \\  }
-    \\  float ndl = dot(n, normalize(sunDir));
+    \\  float ndl = dot(n, L);
     \\  float diff = clamp((ndl + 0.12)/1.12, 0.0, 1.0); // tighter wrap = crisper terminator (more contrast)
     \\  float sh = shadowFrac(fragPosition, ndl);
     \\  // Golden-hour split: warm amber key vs cool slate sky ambient + warm dirt bounce.
     \\  // CONTRAST lives here: a low ambient floor + shadows eating deep vs a hot key.
     \\  vec3 hemi = mix(vec3(0.090, 0.076, 0.054), vec3(0.168, 0.188, 0.244), n.y*0.5 + 0.5); // darker floor — darks go DARKER
-    \\  vec3 lit = base*(hemi*(1.0 - 0.62*sh) + vec3(1.32, 1.10, 0.80)*diff*1.72*(1.0 - sh)); // hotter warm sun key
-    \\  vec3 V = normalize(camPos - fragPosition);
+    \\  vec3 lit = base*(hemi*(1.0 - 0.62*sh) + vec3(1.32, 1.10, 0.80)*diff*1.72*(1.0 - sh) // hotter warm sun key
+    \\                   + pointLights(fragPosition, n));                                   // + torch/firelight
     \\  if (groundMode == 0){
     \\    // Cool sky rim on props/hero — lifts silhouettes off the dark ground (cheap
     \\    // atmospheric backlight; NOT on terrain, where grazing angles would sheen it all).
-    \\    float rim = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 2.6);
+    \\    // NOT on water either: a rim on a flat sheet frosts the whole lake.
+    \\    float rim = (mi == 9) ? 0.0 : pow(1.0 - nv, 2.6);
     \\    lit += rim*vec3(0.082, 0.096, 0.128)*(0.6 + 0.4*n.y)*(1.0 - 0.5*sh);
     \\    // SHINY METAL (STEEL, id 4): a hot, tight Blinn-Phong sun glint + a cool sky sheen on
     \\    // grazing angles, so blades/armour/steel props read as polished metal (not matte). The
     \\    // spec is unclamped so the hotspot blows to white — the "super shiny" catch of light.
     \\    if (mi == 4){
-    \\      vec3 H = normalize(normalize(sunDir) + V);
+    \\      vec3 H = normalize(L + V);
     \\      float nh = max(dot(n, H), 0.0);
-    \\      float sp = pow(nh, 96.0)*3.6 + pow(nh, 22.0)*0.7;      // a BLINDING tight hotspot + a broader sheen
+    \\      // The tight 96-exponent lobe is what made distant blades and helms strobe; the broad
+    \\      // 22 one already spans several pixels, so it is left alone.
+    \\      float w = lobe(pxQ, 8.0);
+    \\      float sp = pow(nh, 96.0*w)*3.6*w + pow(nh, 22.0)*0.7;  // a BLINDING tight hotspot + a broader sheen
     \\      lit += sp*vec3(1.5, 1.3, 1.0)*(1.0 - sh);              // hot near-white glint — steel POPS
-    \\      float fres = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 4.0);
+    \\      float fres = pow(1.0 - nv, 4.0);
     \\      lit += fres*vec3(0.34, 0.40, 0.52)*(1.0 - 0.4*sh);     // bright cool reflective sky sheen at the edges
+    \\    }
+    \\    // POLISHED STONE. Marble was cut and burnished; the rubble masonry beside it never
+    \\    // was, and what sells that difference is not colour, it is a HIGHLIGHT — a dressed
+    \\    // capital catching the low sun next to a matte wall is the whole read. ONE gloss dial
+    \\    // per material drives one Blinn lobe, so "shinier than the thing beside it" stays a
+    \\    // number instead of another shader path. Kept LOW — a gloss that reads as "shiny" on
+    \\    // a swatch is a gloss that lays a broad wash over every sunward face, and a ruin washed
+    \\    // pale is the exact failure the dark-albedo rule exists to stop. This wants to be a
+    \\    // tight glance off a burnished edge, not a coat of varnish.
+    \\    float gloss = (mi == 10) ? 0.55 : (mi == 1) ? 0.09 : 0.0;
+    \\    if (gloss > 0.001){
+    \\      vec3 Hg = normalize(L + V);
+    \\      float nhg = max(dot(n, Hg), 0.0);
+    \\      float wg = lobe(pxQ, 8.0); // a burnished capital across the plaza was blinking, same cause
+    \\      lit += (pow(nhg, 78.0*wg)*0.72*wg + pow(nhg, 20.0)*0.06)*gloss*vec3(1.18, 1.05, 0.86)*(1.0 - sh);
+    \\      lit += pow(1.0 - nv, 6.0)*gloss*vec3(0.07, 0.09, 0.13);
+    \\    }
+    \\    // WATER (id 9): a long tight sun streak shattered across the ripples + a broad sky
+    \\    // reflection at grazing angles. This — not the albedo — is what makes it read WET.
+    \\    if (mi == 9){
+    \\      vec3 H = normalize(L + V);
+    \\      float nh = max(dot(n, H), 0.0);
+    \\      // A TIGHT glitter path only. The broad term used to sit at 0.30, which is a sheen
+    \\      // across the whole sheet from any angle — that plus a pale albedo is what made the
+    \\      // tarn read as milk. Water's read comes from a hot narrow highlight on a dark body.
+    \\      // 320 is the sharpest lobe in the renderer and the tarn is the widest thing wearing one,
+    \\      // so this is where sparkle was worst. Widened HARDER than steel (k 10) because the ripple
+    \\      // normal it rides is itself high-frequency.
+    \\      float ww = lobe(pxP, 10.0);
+    \\      lit += (pow(nh, 320.0*ww)*2.6*ww + pow(nh, 48.0)*0.07)*vec3(1.5, 1.26, 0.92)*(1.0 - sh);
+    \\      float fres = pow(1.0 - nv, 4.0);
+    \\      lit += fres*vec3(0.058, 0.072, 0.104);                 // the slate sky, only at grazing angles
     \\    }
     \\  }
     \\  float emis = 1.0 - fragColor.a;
     \\  lit = mix(lit, base*1.35, emis);
     \\  // Combat flash: the struck actor pops blood-red for a beat (per-draw uniform).
     \\  lit = mix(lit, vec3(0.55, 0.07, 0.05), hitFlash);
-    \\  float dist = length(fragPosition - camPos);
     \\  float haze = 1.0 - exp(-hazeDensity*dist);
     \\  // Haze banks golden looking into the sun's quarter (matches the sky shader's bank).
-    \\  float sunAmt = pow(clamp(dot(-V, normalize(sunDir)), 0.0, 1.0), 3.0);
+    \\  float sunAmt = pow(clamp(dot(-V, L), 0.0, 1.0), 3.0);
     \\  vec3 hazeC = hazeColor + vec3(0.34, 0.19, 0.05)*sunAmt;
     \\  lit = mix(lit, hazeC, clamp(haze, 0.0, 1.0));
     \\  // A TOUCH more saturation overall — push colours out from their luma (kept subtle).
@@ -434,7 +680,9 @@ pub const RF_GRAIN = 14;
 // grunge; "Reset to Default" restores it, "All Off" gives the clean render.
 const RetroFilter = struct { name: [:0]const u8, uniform: [:0]const u8, default: f32 };
 const RETRO_FILTERS = [RETRO_COUNT]RetroFilter{
-    .{ .name = "Pixelate", .uniform = "fPixelate", .default = 0.07 },
+    // 0 because blocks snap to whole pixels now and 0.03 rounded to 1 = no-op (see retroFS); 0.08 is
+    // the first intensity that buys a real, steady 2x2 block.
+    .{ .name = "Pixelate", .uniform = "fPixelate", .default = 0.0 },
     .{ .name = "Chroma Fringe", .uniform = "fChroma", .default = 0.09 },
     .{ .name = "Posterize", .uniform = "fPosterize", .default = 0.24 },
     .{ .name = "Dither", .uniform = "fDither", .default = 0.40 },
@@ -538,10 +786,16 @@ const retroFS =
     \\    float band = smoothstep(0.986, 1.0, sin(uv.y*7.0 + time*1.6)*0.5 + 0.5);
     \\    uv.x += band*fVHS*0.05*(hash21(vec2(floor(time*13.0), 7.0)) - 0.5)*2.0;
     \\  }
-    \\  // Pixelate: quantize the UV onto a coarse grid (1px = off ... ~14px = full chunk).
+    \\  // Pixelate: quantize the UV onto a coarse grid (1px = off ... 14px = full chunk).
+    \\  // THE BLOCK MUST BE A WHOLE NUMBER OF PIXELS. mix(1,14,f) yields fractional sizes, and at the
+    \\  // old default 0.03 that was 1.39 — a 1280-wide frame resampled onto a 921-cell grid. A
+    \\  // non-integer ratio makes some cells cover two source pixels and some one, and WHICH cells do
+    \\  // changes as the scene moves: that beat is a shimmer, not a crunch, and it landed on exactly
+    \\  // the fine distant detail everything else here is trying to calm down. Snapped, a block maps to
+    \\  // exactly n x n pixels and the grid is rock steady. n == 1 is then a true no-op.
     \\  if (fPixelate > 0.0){
-    \\    float px = mix(1.0, 14.0, fPixelate);
-    \\    vec2 grid = max(resolution/px, vec2(1.0));
+    \\    float blk = max(floor(mix(1.0, 14.0, fPixelate) + 0.5), 1.0);
+    \\    vec2 grid = max(resolution/blk, vec2(1.0));
     \\    uv = (floor(uv*grid) + 0.5)/grid;
     \\  }
     \\  // Chroma fringe: fetch R and B slightly off-axis (worn composite cable).
@@ -628,9 +882,14 @@ const retroFS =
     \\    col += (n - 0.5)*fVHS*0.12;
     \\    col = mix(col, vec3(luma(col)), fVHS*0.25);
     \\  }
-    \\  // Film grain: animated per-pixel flicker.
+    \\  // Film grain: animated per-pixel flicker, HELD on a 24 Hz beat. Real emulsion grain changes
+    \\  // once per photographed frame; this re-rolled every rendered frame, so on a 144 Hz panel it
+    \\  // ran six times the intended rate and read as electronic sparkle rather than film. Quantising
+    \\  // the seed also decouples the look from the player's refresh rate, which it had no business
+    \\  // depending on.
     \\  if (fGrain > 0.0){
-    \\    float gnoise = hash21(gl_FragCoord.xy + vec2(mod(time, 97.0)*137.0, mod(time, 89.0)*291.0));
+    \\    float gt = floor(time*24.0);
+    \\    float gnoise = hash21(gl_FragCoord.xy + vec2(mod(gt, 97.0)*137.0, mod(gt, 89.0)*291.0));
     \\    col += (gnoise - 0.5)*fGrain*0.18;
     \\  }
     \\  col *= crtMask;
@@ -743,8 +1002,12 @@ pub const Scene = struct {
     loc_lightVP: i32,
     loc_camPos: i32,
     loc_windAmt: i32,
-    loc_windTime: i32,
+    loc_time: i32,
     loc_flash: i32,
+    loc_lightPos: i32,
+    loc_lightCol: i32,
+    loc_lightRad: i32,
+    loc_nLights: i32,
     saved_near: @TypeOf(rl.gl.rlGetCullDistanceNear()) = 0,
     saved_far: @TypeOf(rl.gl.rlGetCullDistanceFar()) = 0,
 
@@ -765,6 +1028,8 @@ pub const Scene = struct {
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "windAmt"), &windOff, .float);
         var flashOff: f32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "hitFlash"), &flashOff, .float);
+        var noLights: i32 = 0;
+        rl.setShaderValue(shader, rl.getShaderLocation(shader, "nLights"), &noLights, .int);
         return .{
             .shader = shader,
             .depthShader = depthShader,
@@ -774,8 +1039,12 @@ pub const Scene = struct {
             .loc_lightVP = rl.getShaderLocation(shader, "lightVP"),
             .loc_camPos = rl.getShaderLocation(shader, "camPos"),
             .loc_windAmt = rl.getShaderLocation(shader, "windAmt"),
-            .loc_windTime = rl.getShaderLocation(shader, "windTime"),
+            .loc_time = rl.getShaderLocation(shader, "uTime"),
             .loc_flash = rl.getShaderLocation(shader, "hitFlash"),
+            .loc_lightPos = rl.getShaderLocation(shader, "lightPos"),
+            .loc_lightCol = rl.getShaderLocation(shader, "lightCol"),
+            .loc_lightRad = rl.getShaderLocation(shader, "lightRad"),
+            .loc_nLights = rl.getShaderLocation(shader, "nLights"),
         };
     }
 
@@ -819,7 +1088,32 @@ pub const Scene = struct {
         var cp = camPos;
         rl.setShaderValue(self.shader, self.loc_camPos, &cp, .vec3);
         var t: f32 = @floatCast(rl.getTime());
-        rl.setShaderValue(self.shader, self.loc_windTime, &t, .float);
+        rl.setShaderValue(self.shader, self.loc_time, &t, .float);
+    }
+
+    // Upload this frame's point lights (torches/fires). Caller passes the ones NEAREST the
+    // camera — env.uploadLights does the picking — and anything past MAX_LIGHTS is dropped,
+    // which is invisible in practice because the dropped ones are the furthest away.
+    pub fn setLights(self: *Scene, lights: []const Light) void {
+        var pos: [MAX_LIGHTS * 3]f32 = undefined;
+        var col: [MAX_LIGHTS * 3]f32 = undefined;
+        var rad: [MAX_LIGHTS]f32 = undefined;
+        const n = @min(lights.len, MAX_LIGHTS);
+        for (lights[0..n], 0..) |l, i| {
+            pos[i * 3 + 0] = l.pos.x;
+            pos[i * 3 + 1] = l.pos.y;
+            pos[i * 3 + 2] = l.pos.z;
+            col[i * 3 + 0] = l.col.x;
+            col[i * 3 + 1] = l.col.y;
+            col[i * 3 + 2] = l.col.z;
+            rad[i] = l.radius;
+        }
+        var ni: i32 = @intCast(n);
+        rl.setShaderValue(self.shader, self.loc_nLights, &ni, .int);
+        if (n == 0) return; // nothing to push; the count alone switches the loop off
+        rl.setShaderValueV(self.shader, self.loc_lightPos, &pos, .vec3, ni);
+        rl.setShaderValueV(self.shader, self.loc_lightCol, &col, .vec3, ni);
+        rl.setShaderValueV(self.shader, self.loc_lightRad, &rad, .float, ni);
     }
 
     pub fn setGround(self: *Scene, on: bool) void {
@@ -843,8 +1137,16 @@ pub const Scene = struct {
 };
 
 // Per-fragment surface material for the scene shader's texturing pass (see matAlbedo).
-// Rides vertexTexCoord2.x; .plain is the generic grain every untagged shape gets.
-pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant };
+// Rides vertexTexCoord2.x; .plain is the generic grain every untagged shape gets. The ORDER is
+// the shader's `m ==` ladder — append only, never reorder.
+pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble };
+comptime {
+    // The shader hard-codes 9 for water in three places (albedo, ripple normal, spec/fresnel)
+    // and 10 for marble in two (albedo, gloss); fail the build rather than silently texture the
+    // tarn as marble if the enum ever shifts. APPEND-ONLY past this point.
+    std.debug.assert(@intFromEnum(Mat.water) == 9);
+    std.debug.assert(@intFromEnum(Mat.marble) == 10);
+}
 
 // Procedural-mesh Builder (from zig-rts, plus toMesh for the FK-rigged hero which needs bare
 // Meshes, not Models). Every shape gets SURFACE-ANCHORED UVs in ~world units + the current

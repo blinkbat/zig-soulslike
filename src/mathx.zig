@@ -38,12 +38,6 @@ pub fn clampF(v: f32, lo: f32, hi: f32) f32 {
     return v;
 }
 
-pub fn clampI(v: i32, lo: i32, hi: i32) i32 {
-    if (v < lo) return lo;
-    if (v > hi) return hi;
-    return v;
-}
-
 pub fn maxF(a: f32, b: f32) f32 {
     return if (a > b) a else b;
 }

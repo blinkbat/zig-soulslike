@@ -78,8 +78,10 @@ const parent = [N]i32{ -1, ROOT, SPINE, CHEST, NECK, ROOT, HIPL, KNEEL, ROOT, HI
 // Stature + segment lengths: the hero's exact anthropometry (Drillis & Contini 1966 / Winter).
 // H is imported; the fractions match hero.zig's table.
 const H: f32 = heromod.H;
-const SEG_THIGH = 0.245;
-const SEG_SHANK = 0.246;
+// The LEGS take the hero's fractions from the shared source — legChain's strafe geometry is
+// measured off them, so a local copy that drifted would make this skeleton's planted feet skate.
+const SEG_THIGH = heromod.SEG_THIGH;
+const SEG_SHANK = heromod.SEG_SHANK;
 const SEG_UPARM = 0.188;
 const SEG_FOREARM = 0.145;
 
@@ -182,6 +184,21 @@ const LOOSE_DUR = 0.14; // the release snap
 const RECOVER_DUR = 0.55; // lower the bow, reset
 const RELOAD_CD = 1.1; // beat between shots (nock the next)
 const REPOSITION_DUR = 1.6; // how long a kite step lasts before re-deciding
+
+// ── THE BACKSTEP ── the archer's one panic button: a committed JUMP straight back when the hero
+// closes inside sword reach. The walking kite (`reposition`) is a stroll and a hero who simply
+// runs at it is always on top of it; this buys the shot back.
+//
+// LONG cooldown by design. An evade you can spam is a wall — the hero could never close at all.
+// Once every seven seconds it is a genuine out, and the rest of the time closing is the correct
+// answer. The fight gets a rhythm: close, get leapt away from, close again, now it is yours.
+const BACKSTEP_R = 3.9; // hero this close and it bails (well inside RANGE_MIN's walking kite)
+const BACKSTEP_CD = 7.0; // …but only this often
+const BACKSTEP_GATHER = 0.13; // the coil. Short — it is a flinch, not a wind-up
+const BACKSTEP_FLIGHT = 0.44; // the leap itself
+const BACKSTEP_LAND = 0.30; // …and the landing, wide open (the price of using it)
+const BACKSTEP_DIST = 4.7; // ground covered, straight away from the hero — back into the band
+const BACKSTEP_RISE = 0.34; // peak hop height (world units)
 
 // ── combat vitals (a skeleton is brittle: low-ish HP, modest poise) ─────────────────────
 const HP_MAX = 58.0;
@@ -298,7 +315,8 @@ pub fn arrowXform(a: *const Arrow) rl.Matrix {
 // ── animation state ─────────────────────────────────────────────────────────────────────
 // idle → (in band) draw → hold → loose → recover → reload; reposition when out of band. The
 // last three are REACTIONS (interrupts): a light flinch, the heavy stance-break, and death.
-const State = enum { idle, draw, hold, loose, recover, reposition, stunlight, stunheavy, dead };
+// `backstep` is the fourth interrupt — the panic leap, off its own long cooldown.
+const State = enum { idle, draw, hold, loose, recover, reposition, backstep, stunlight, stunheavy, dead };
 
 // Pure kite decision — a function of range + reload, so it's unit-testable without a world.
 const Choice = enum { shoot, back_off, close_in, hold_ground };
@@ -307,6 +325,30 @@ fn classify(dist: f32, reloaded: bool) Choice {
     if (dist < RANGE_MIN) return .back_off; // too close — kite out
     if (dist > RANGE_MAX) return .close_in; // too far — step in
     return if (reloaded) .shoot else .hold_ground; // in band: fire when nocked
+}
+
+// Pure backstep gate, same shape as `classify` so it is testable without a world. It cuts into
+// ANY committed action (a half-drawn shot is abandoned) except a release already in the air, a
+// stagger, or death — being locked into a draw while a sword comes down is the hole this fills.
+fn wantsBackstep(dist: f32, cd: f32, s: State) bool {
+    if (dist > BACKSTEP_R or cd > 0) return false;
+    return switch (s) {
+        .idle, .draw, .hold, .recover, .reposition => true,
+        .loose, .backstep, .stunlight, .stunheavy, .dead => false,
+    };
+}
+
+// How far through the leap: 0 at the coil, 1 the instant it lands. Drives the travel AND the
+// pose, so the feet and the ground agree by construction.
+fn leapU(t: f32) f32 {
+    return mathx.clampF((t - BACKSTEP_GATHER) / BACKSTEP_FLIGHT, 0, 1);
+}
+// Distance covered by time t — front-loaded, so it explodes off the coil and coasts to a stop
+// instead of ending on a hard stop.
+fn leapTravel(t: f32) f32 {
+    const u = leapU(t);
+    const e = 1.0 - (1.0 - u) * (1.0 - u);
+    return BACKSTEP_DIST * e;
 }
 
 // ── the shared skeleton meshes + material (built once, like the toad's) ──────────────────
@@ -346,8 +388,11 @@ pub const Archer = struct {
     armT: f32 = 0, // the draw arm's arc: 0 rest → reach over the shoulder (quiver) → 1 anchor
     kick: f32 = 0, // loose follow-through (hand flies back, bow bounces); decays after
     headScan: f32 = 0, // idle sentry sweep (deg yaw) — the skull scans the ruins
-    kiteDir: rl.Vector3 = mathx.zero3, // world XZ direction of the current reposition
+    kiteDir: rl.Vector3 = mathx.zero3, // world XZ direction of the current reposition AND the leap
     looseFired: bool = false, // one arrow per loose (latched)
+    backstepCd: f32 = 0, // the panic leap's long cooldown
+    leapDone: f32 = 0, // ground already covered by the current leap (so travel integrates once)
+    hop: f32 = 0, // world-space height off the ground mid-leap (rides the ROOT translate)
 
     // Shared humanoid GAIT STATE — hero.advanceGait drives these, hero.legChain animates the
     // legs (the player's walk + strafe/backpedal). fwdB/latB = travel direction vs facing.
@@ -358,7 +403,7 @@ pub const Archer = struct {
     speedS: f32 = 0,
 
     // combat
-    vit: combat.Vitals = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX),
+    vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX),
     hits: u32 = 0,
     hitLatch: bool = false,
     flash: f32 = 0,
@@ -382,8 +427,12 @@ pub const Archer = struct {
         return a;
     }
 
+    // All three ride `hop`: the backstep lifts the whole rig off the earth (pose() adds it to the
+    // pelvis), so a hurt sphere / reticle / HP bar pinned to ground height DETACHES from the body
+    // for the whole 0.44 s leap — the reticle sits at its feet and the blade tests empty air below
+    // it. The frog does the same with `lift`; this is the archer's counterpart.
     pub fn centerWorld(self: *const Archer) rl.Vector3 {
-        return v3(self.pos.x, 0.95 * H * self.scale, self.pos.z);
+        return v3(self.pos.x, 0.95 * H * self.scale + self.hop, self.pos.z);
     }
     pub fn hurtRadius(self: *const Archer) f32 {
         return HURT_R * self.scale;
@@ -392,10 +441,10 @@ pub const Archer = struct {
         return BODY_R * self.scale;
     }
     pub fn lockPoint(self: *const Archer) rl.Vector3 {
-        return v3(self.pos.x, 0.90 * H * self.scale, self.pos.z);
+        return v3(self.pos.x, 0.90 * H * self.scale + self.hop, self.pos.z);
     }
     pub fn topWorld(self: *const Archer) rl.Vector3 {
-        return v3(self.pos.x, 1.15 * H * self.scale, self.pos.z);
+        return v3(self.pos.x, 1.15 * H * self.scale + self.hop, self.pos.z);
     }
     pub fn alive(self: *const Archer) bool {
         return !self.gone;
@@ -409,10 +458,9 @@ pub const Archer = struct {
     pub fn flashFrac(self: *const Archer) f32 {
         return mathx.clampF(self.flash / FLASH_DUR, 0, 1);
     }
-    // Airborne never happens (no hops) — always grounded for collision.
+    // Off the ground only during the backstep's flight — the one time it leaves the earth.
     pub fn airborne(self: *const Archer) bool {
-        _ = self;
-        return false;
+        return self.state == .backstep and self.hop > 0.04;
     }
 
     fn faceToward(self: *Archer, target: rl.Vector3, dt: f32) void {
@@ -436,6 +484,7 @@ pub const Archer = struct {
         self.elapsed += dt;
         self.vit.tick(dt);
         self.reloadCd = mathx.maxF(0, self.reloadCd - dt);
+        self.backstepCd = mathx.maxF(0, self.backstepCd - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
         self.t += dt;
         var loosed = false;
@@ -445,6 +494,9 @@ pub const Archer = struct {
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt); // the bone-clatter jolt off a blow
 
         const d = mathx.distXZ(self.pos, hero);
+        // THE PANIC LEAP interrupts whatever it was doing — checked before the state machine so a
+        // hero who closes mid-draw gets leapt away from on the same frame he arrives.
+        if (wantsBackstep(d, self.backstepCd, self.state)) self.enterBackstep();
         switch (self.state) {
             .idle => {
                 self.armT = mathx.approach(self.armT, 0, dt * 4.0);
@@ -503,13 +555,30 @@ pub const Archer = struct {
                 moveYaw = mathx.headingXZ(self.kiteDir);
                 if (self.t >= REPOSITION_DUR) self.decide(d);
             },
+            .backstep => {
+                // Coil, leap, land — FACING the hero the whole way (retreating, not fleeing: the
+                // bow comes straight back up on landing).
+                self.faceToward(hero, dt);
+                self.armT = mathx.approach(self.armT, 0.15, dt * 5.0);
+                self.drawAmt = mathx.approach(self.drawAmt, 0, dt * 12.0); // the half-drawn shot is abandoned
+                const want = leapTravel(self.t);
+                const step = want - self.leapDone;
+                self.leapDone = want;
+                self.pos.x = mathx.clampF(self.pos.x + self.kiteDir.x * step, -bounds, bounds);
+                self.pos.z = mathx.clampF(self.pos.z + self.kiteDir.z * step, -bounds, bounds);
+                self.hop = BACKSTEP_RISE * mathx.sinf(leapU(self.t) * std.math.pi);
+                if (self.t >= BACKSTEP_GATHER + BACKSTEP_FLIGHT + BACKSTEP_LAND) {
+                    self.hop = 0;
+                    self.decide(mathx.distXZ(self.pos, hero));
+                }
+            },
             .stunlight => {
                 self.armT = mathx.approach(self.armT, 0, dt * 8.0);
-                if (self.t >= combat.LIGHT_STUN_DUR) self.enter(.idle);
+                if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enter(.idle);
             },
             .stunheavy => {
                 self.armT = mathx.approach(self.armT, 0, dt * 8.0);
-                if (self.t >= combat.HEAVY_STUN_DUR) self.enter(.idle);
+                if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enter(.idle);
             },
             .dead => {
                 self.armT = mathx.approach(self.armT, 0, dt * 3.0);
@@ -564,16 +633,44 @@ pub const Archer = struct {
         return mathx.headingDir(yaw);
     }
 
+    // Commit a direction away from the hero, spend the cooldown, zero the travel integrator.
+    fn enterBackstep(self: *Archer) void {
+        self.state = .backstep;
+        self.t = 0;
+        self.looseFired = false;
+        self.kiteDir = self.awayDir();
+        self.leapDone = 0;
+        self.hop = 0;
+        self.backstepCd = BACKSTEP_CD;
+    }
+
     fn enterStun(self: *Archer, s: State) void {
         self.state = s;
         self.t = 0;
         self.drawAmt = 0; // interrupted mid-draw — no shot leaves the bow
         self.looseFired = false;
+        self.hop = 0; // caught in the air: it comes straight down
     }
     fn enterDeath(self: *Archer) void {
         self.state = .dead;
         self.t = 0;
+        self.hop = 0;
         self.justDied = true;
+    }
+
+    // The leap's PELVIS: it coils, extends as it flies, gathers again to meet the ground, and
+    // absorbs. Routed through the PELVIS, not knee angles — hero.legChain solves the knee to put
+    // the ankle on the ground, so lowering the pelvis IS the crouch and the feet stay planted
+    // for free. Asking for a knee angle instead gives you a floating crouch.
+    fn leapCrouch(self: *const Archer) f32 {
+        if (self.state != .backstep) return 0;
+        if (self.t < BACKSTEP_GATHER) return 0.11 * H * mathx.smoothstep(0, BACKSTEP_GATHER, self.t);
+        const land = (self.t - BACKSTEP_GATHER - BACKSTEP_FLIGHT) / BACKSTEP_LAND;
+        if (land < 0) {
+            const u = leapU(self.t);
+            return 0.11 * H * (1.0 - u) + 0.14 * H * mathx.smoothstep(0.6, 1.0, u);
+        }
+        return 0.14 * H * (1.0 - mathx.smoothstep(0, 1, mathx.clampF(land, 0, 1)));
     }
 
     // ── the hero's blade lands on the skeleton (the SHARED foe.strike behaviour) ───────────
@@ -628,10 +725,13 @@ pub const Archer = struct {
         // the scale, so EVERY term in it is in WORLD units: the whole rig-local pelvis expression
         // (hip height, bob, dip, the death collapse) and the sway must each be × fs, or at scale≠1
         // the legs hang and the feet sink (the documented humanoid gotcha; cf. ogre.zig's pelvY*fs).
-        const pelvY = if (dead) collapse else hipY + bob - dip;
+        const pelvY = if (dead) collapse else hipY + bob - dip - self.leapCrouch();
+        // `self.hop` is WORLD units and rides outside the ×fs terms: the leap lifts the whole rig
+        // off the earth, and rig-local legChain neither knows nor needs to — its feet come up
+        // with the body, which is what airborne looks like.
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul3(rz(10.0 * dk), rx(pitchBody), ry(prot)),
-            mul(tr(sway * fs, pelvY * fs + sink, 0), ry(facingDeg)),
+            mul(tr(sway * fs, pelvY * fs + sink + self.hop, 0), ry(facingDeg)),
             tr(self.pos.x, 0, self.pos.z),
         ));
 
@@ -666,12 +766,21 @@ pub const Archer = struct {
         }
     }
 
+    // How much the trunk is folded over the leap right now (0..1): it builds through the coil,
+    // holds through the flight, and unwinds over the landing.
+    fn leapLean(self: *const Archer) f32 {
+        if (self.state != .backstep) return 0;
+        const inAir = BACKSTEP_GATHER + BACKSTEP_FLIGHT;
+        if (self.t < inAir) return mathx.smoothstep(0, BACKSTEP_GATHER * 1.4, self.t);
+        return 1.0 - mathx.smoothstep(0, 1, mathx.clampF((self.t - inAir) / BACKSTEP_LAND, 0, 1));
+    }
+
     fn stunAmount(self: *const Archer) f32 {
         if (self.state == .stunlight) {
-            const u = mathx.clampF(self.t / combat.LIGHT_STUN_DUR, 0, 1);
+            const u = mathx.clampF(self.t / combat.FOE_LIGHT_STUN_DUR, 0, 1);
             return mathx.sinf(u * std.math.pi);
         } else if (self.state == .stunheavy) {
-            const u = mathx.clampF(self.t / combat.HEAVY_STUN_DUR, 0, 1);
+            const u = mathx.clampF(self.t / combat.FOE_HEAVY_STUN_DUR, 0, 1);
             return mathx.smoothstep(0, 0.14, u) * (1.0 - mathx.smoothstep(0.7, 1.0, u));
         }
         return 0;
@@ -697,7 +806,9 @@ pub const Archer = struct {
 
         // Spine: a slight ready-stoop that blades side-on through the pull, leaning back a
         // hair at full draw (the counterweight); curls on death, arches back when stunned.
-        const spineX = 4.0 - 3.0 * dr + 22.0 * dk - 20.0 * stun;
+        // On the LEAP it folds toward the hero — body back, chest forward. That counter-lean IS
+        // the read: a figure that stays upright while it travels backwards is being slid.
+        const spineX = 4.0 - 3.0 * dr + 22.0 * dk - 20.0 * stun + 26.0 * self.leapLean();
         setLocal(wx, SPINE, rest, mul3(rx(spineX * 0.5), ry(-0.35 * prot), rz(wonk * 0.5)));
         setLocal(wx, CHEST, rest, mul3(rx(spineX * 0.5), ry(-0.5 * prot - 5.0 * reach - 9.0 * pull), rz(-wonk * 0.3)));
         setLocal(wx, NECK, rest, rx(3.0 + 12.0 * dk - 8.0 * stun));
@@ -717,6 +828,26 @@ pub const Archer = struct {
             setLocal(wx, HIPR, rest, mul(rx(-52.0 * dk), rz(3.0)));
             setLocal(wx, KNEER, rest, rx(8.0 + 92.0 * dk));
             setLocal(wx, ANKR, rest, ry(-7.0));
+        }
+        // …and the OTHER time legChain is wrong: mid-leap the ground is a third of a metre below
+        // the feet and legChain's job is putting them ON it. So the air phase overrides — knees
+        // tuck at the apex, then swing out to reach for the landing — weighted by the SAME sine
+        // that drives the hop, so tuck and height cannot drift apart. The legs are deliberately
+        // mismatched; a symmetric tuck reads as a rigged prop.
+        if (self.state == .backstep) {
+            const u = leapU(self.t);
+            const w = mathx.sinf(mathx.clampF(u, 0, 1) * std.math.pi);
+            if (w > 0.02) {
+                const catchUp = mathx.smoothstep(0.52, 1.0, u); // the legs come forward to land
+                const hipA = -32.0 * w + 34.0 * catchUp;
+                const kneeA = 10.0 + 84.0 * w - 46.0 * catchUp;
+                setLocal(wx, HIPL, rest, mul(rx(hipA + 7.0), rz(-4.0)));
+                setLocal(wx, KNEEL, rest, rx(kneeA + 9.0));
+                setLocal(wx, ANKL, rest, rx(-14.0 * w));
+                setLocal(wx, HIPR, rest, mul(rx(hipA - 6.0), rz(4.0)));
+                setLocal(wx, KNEER, rest, rx(kneeA - 7.0));
+                setLocal(wx, ANKR, rest, rx(-11.0 * w));
+            }
         }
 
         // ── the ARMS — the archer read ──
@@ -1112,6 +1243,36 @@ test "kite AI: too close backs off, too far closes, in-band shoots when reloaded
 
 test "range band is ordered and sits inside aggro" {
     try std.testing.expect(RANGE_MIN < RANGE_MAX and RANGE_MAX < AGGRO_R);
+}
+
+test "the backstep fires only when crowded, off cooldown, and interruptible" {
+    try std.testing.expect(wantsBackstep(BACKSTEP_R - 0.5, 0, .draw)); // crowded mid-draw: bail
+    try std.testing.expect(wantsBackstep(BACKSTEP_R - 0.5, 0, .reposition)); // …even while kiting
+    try std.testing.expect(!wantsBackstep(BACKSTEP_R + 0.5, 0, .draw)); // not crowded yet
+    try std.testing.expect(!wantsBackstep(BACKSTEP_R - 0.5, 3.0, .draw)); // still on cooldown
+    try std.testing.expect(!wantsBackstep(0.5, 0, .loose)); // the arrow is already leaving
+    try std.testing.expect(!wantsBackstep(0.5, 0, .stunheavy)); // staggered: it cannot
+    try std.testing.expect(!wantsBackstep(0.5, 0, .dead));
+    try std.testing.expect(!wantsBackstep(0.5, 0, .backstep)); // no chaining into itself
+}
+
+test "the leap clears sword reach, lands where its curve says, and never overshoots" {
+    // It must actually ESCAPE: starting at the trigger radius, the landing has to put the archer
+    // back inside its shooting band, or the evade buys nothing and the hero just walks after it.
+    try std.testing.expect(BACKSTEP_R + BACKSTEP_DIST > RANGE_MIN);
+    // The travel curve is monotonic, starts at nothing, and finishes at exactly BACKSTEP_DIST —
+    // the position is integrated from it frame by frame, so a curve that overshot would teleport.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), leapTravel(0), 1e-5);
+    try std.testing.expectApproxEqAbs(BACKSTEP_DIST, leapTravel(BACKSTEP_GATHER + BACKSTEP_FLIGHT), 1e-4);
+    var prev: f32 = -1;
+    var t: f32 = 0;
+    while (t <= BACKSTEP_GATHER + BACKSTEP_FLIGHT + BACKSTEP_LAND) : (t += 0.01) {
+        const d = leapTravel(t);
+        try std.testing.expect(d >= prev - 1e-5 and d <= BACKSTEP_DIST + 1e-4);
+        prev = d;
+    }
+    // And the cooldown has to outlast the move several times over, or it is a kite, not a panic.
+    try std.testing.expect(BACKSTEP_CD > 4.0 * (BACKSTEP_GATHER + BACKSTEP_FLIGHT + BACKSTEP_LAND));
 }
 
 test "arrows thunk into cover instead of piercing it; tall shots clear a LOW blocker" {

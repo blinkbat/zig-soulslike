@@ -17,6 +17,11 @@ const ogremod = @import("ogre.zig");
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
 
+// THE pad index, from rumble.zig — input polling and the XInput vibration calls MUST target the
+// same controller, and rumble.PAD says so. It was said in a comment while 23 call sites here (and
+// 12 in menu.zig) hardcoded a literal 0, so honouring it meant finding all 35 by hand.
+const PAD = rumblemod.PAD;
+
 const SCREEN_W = 1280;
 const SCREEN_H = 800;
 
@@ -51,8 +56,9 @@ const RESPAWN_FADE = 0.9; // seconds of black → world after a respawn (the YOU
 // Single source for moveHero, roll updates, and the --shot harness.
 const PLAY_HALF = envmod.HALF - 2.0;
 
-// Hero footprint radius for ground collision (see collision.zig).
-const HERO_R = 0.36;
+// Hero footprint radius for ground collision (see collision.zig). Defined in foe.zig alongside
+// foe.HERO_REACH, so a foe's attack shapes can be reasoned about against how close he can GET.
+const HERO_R = foemod.HERO_R;
 
 // Skeletal-archer arrows: shared pool of in-flight + stuck shafts, plus the hero centre-of-
 // mass height archers aim at and arrows test strikes against.
@@ -67,7 +73,13 @@ const COLLIDE_RATE = 11.0; // world units / sec
 // Depth clip planes, set once at startup (see run()): tight near/far so the hero's
 // overlapping boxes don't z-fight. Invariant: projectToScreen's near-cull (PROJECT_NEAR)
 // MUST equal CLIP_NEAR — both read this, never the literal.
-const CLIP_NEAR = 0.2;
+// DEPTH PRECISION IS SET BY THE NEAR PLANE, and it is what makes distant detail FLICKER. Resolution
+// at depth z goes roughly as z²·(1/near − 1/far)/2^24, so at 0.2 the gap between depth steps out at
+// 250 m was ~1.9 cm — and props.zig deliberately OVERLAPS its facing blocks by a couple of cm
+// ("blocks OVERLAP their slot"), so those overlaps fell inside one depth step and z-fought.
+// 0.55 buys 2.5x the precision (~0.75 cm at 250 m) and costs nothing: the orbit rig never puts the
+// eye nearer than camera.MIN_DIST (2.4) to its look-at, and the closest --shot framing is 2.0.
+const CLIP_NEAR = 0.55;
 const CLIP_FAR = 320.0;
 
 // ── lock-on (Elden Ring) ──
@@ -98,27 +110,31 @@ const Game = struct {
     rumble: rumblemod.Rumble = .{}, // controller vibration, keyed to combat beats
     deathFade: f32 = 0, // post-respawn fade-from-black seconds remaining (armed while dead)
 
-    fn init() Game {
-        const scene = gfx.Scene.init();
-        var hero = heromod.Hero.init(scene.shader);
-        hero.pos = mathx.ground(0, 4); // start just south of the ruin avenue
-        hero.facing = std.math.pi; // facing -Z, into the columns
-        hero.setSpawn(hero.pos, hero.facing); // where a death returns him
-        hero.pose();
-        return .{
-            .scene = scene,
-            .sky = gfx.Sky.init(),
-            .vignette = gfx.Vignette.init(),
-            .retro = gfx.Retro.init(rl.getScreenWidth(), rl.getScreenHeight()),
-            .menu = .{}, // opens on the main screen: Continue / Debug / Quit
-            .env = envmod.Env.init(scene.shader),
-            .hero = hero,
-            .warren = frogmod.Knot.init(scene.shader),
-            .line = archermod.Line.init(scene.shader),
-            .grief = ogremod.Grief.init(scene.shader),
-            .arrowModel = archermod.arrowMesh(scene.shader),
-            .rig = cameramod.newCamRig(hero.shoulderPoint(), hero.facing),
-        };
+    // Built IN PLACE rather than returned by value: Env alone is ~450 KB of flat prop/grid
+    // arrays, and a by-value Game would copy all of it across the stack on the way out.
+    fn init(g: *Game) void {
+        g.scene = gfx.Scene.init();
+        g.sky = gfx.Sky.init();
+        g.vignette = gfx.Vignette.init();
+        g.retro = gfx.Retro.init(rl.getScreenWidth(), rl.getScreenHeight());
+        g.menu = .{}; // opens on the main screen: Continue / Debug / Quit
+        g.env.build(g.scene.shader);
+        g.hero = heromod.Hero.init(g.scene.shader);
+        g.hero.pos = mathx.ground(0, 4); // start just south of the ruin avenue
+        g.hero.facing = std.math.pi; // facing -Z, into the columns
+        g.hero.setSpawn(g.hero.pos, g.hero.facing); // where a death returns him
+        g.hero.pose();
+        g.warren = frogmod.Knot.init(g.scene.shader);
+        g.line = archermod.Line.init(g.scene.shader);
+        g.grief = ogremod.Grief.init(g.scene.shader);
+        g.arrowModel = archermod.arrowMesh(g.scene.shader);
+        g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
+        // Fields that would otherwise take their struct-literal defaults; set explicitly
+        // because there is no literal to default from any more.
+        g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
+        g.lock = null;
+        g.rumble = .{};
+        g.deathFade = 0;
     }
 };
 
@@ -140,10 +156,10 @@ fn gatherMove() Move {
     var sprint = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
     // Gamepad first (analog left stick; Circle/B held = dash/sprint). A pushed stick wins
     // over the keyboard so its analog speed is honoured.
-    if (rl.isGamepadAvailable(0)) {
-        if (rl.isGamepadButtonDown(0, .right_face_right)) sprint = true;
-        const gx = axisDZ(rl.getGamepadAxisMovement(0, .left_x), STICK_DEADZONE);
-        const gz = -axisDZ(rl.getGamepadAxisMovement(0, .left_y), STICK_DEADZONE); // stick up = forward
+    if (rl.isGamepadAvailable(PAD)) {
+        if (rl.isGamepadButtonDown(PAD, .right_face_right)) sprint = true;
+        const gx = axisDZ(rl.getGamepadAxisMovement(PAD, .left_x), STICK_DEADZONE);
+        const gz = -axisDZ(rl.getGamepadAxisMovement(PAD, .left_y), STICK_DEADZONE); // stick up = forward
         const gmag = mathx.minF(@sqrt(gx * gx + gz * gz), 1.0);
         if (gmag > 0.001) {
             const sp = if (sprint) SPRINT_SPEED else gmag * RUN_SPEED; // tilt IS the speed, this frame
@@ -218,15 +234,13 @@ fn rollDir(g: *Game, mv: Move) rl.Vector3 {
 }
 
 // ── render ───────────────────────────────────────────────────────────────────────
-// Casters = the hero + the stone props (NOT the ground, which only receives; NOT the
-// flora, which is a non-caster drawn only in the lit pass and swayed by wind). Drawn by
-// BOTH the sun depth pass and the lit pass through this one function so transforms match.
-// Deliberately NO distance culling for the depth pass: with the low sun, a tall caster
-// far OUTSIDE the shadow ortho box still throws its shadow INTO it (reach ~ 1.5x height
-// at ~33 deg), so cull-by-distance-from-focus would clip real shadows. The ~300 extra
-// depth draws are immaterial.
-fn drawCasters(g: *Game) void {
-    g.env.drawProps();
+// Casters = the hero + the stone props. NOT the ground (receives only) and NOT the flora (a
+// non-caster, lit pass only, swayed by wind). BOTH passes draw through this one function so
+// transforms can't drift; only the CULL differs, and each pass hands in its own (env.Cull).
+// The depth pass culls by SHADOW REACH, not distance from focus — a tall caster well outside
+// the box still throws into it at this sun angle, so a plain distance cull clips real shadows.
+fn drawCasters(g: *Game, cull: envmod.Cull) void {
+    g.env.drawProps(cull);
     // Combat flash rides the scene shader's per-actor hitFlash uniform: the hero reddens on a
     // suffered blow, and every struck FOE on a landed one (each Group's draw sets it per instance
     // from foe.FLASH_GAIN). Inert during the depth pass — the uniform lives on the scene shader,
@@ -259,6 +273,15 @@ fn spawnArrow(g: *Game, from: rl.Vector3, target: rl.Vector3) void {
     g.arrows[0] = archermod.launchArrow(from, target);
 }
 
+// The world solids one arrow could hit THIS frame: everything within its own travel distance,
+// pulled from the prop grid. stepArrow samples the midpoint and endpoint of the step, so the
+// query radius has to cover a whole frame of flight plus the fattest margin it tests with.
+// Static buffer because it is refilled per arrow per frame and never outlives the call.
+var arrow_cover_buf: [envmod.MAX_NEAR]collision.Solid = undefined;
+fn arrowCover(g: *const Game, ar: *const archermod.Arrow, dt: f32) []const collision.Solid {
+    return g.env.nearSolids(ar.pos, mathx.lenV(ar.vel) * dt + 1.5, &arrow_cover_buf);
+}
+
 // Draw every live/stuck arrow, oriented along its flight (shrinking as a stuck one fades).
 // Opaque lit geometry, drawn after the casters; non-casting.
 fn drawArrows(g: *Game) void {
@@ -269,10 +292,12 @@ fn drawArrows(g: *Game) void {
 }
 
 fn drawScene(g: *Game) void {
-    // Sun depth pass into the shadow map (before beginDrawing). Ortho box tracks the hero.
+    g.env.resetStats(); // culling counters for the debug overlay, both passes together
+    // Sun depth pass into the shadow map (before beginDrawing). Ortho box tracks the hero, and
+    // the pass draws only what can throw INTO that box (env.Cull.sun).
     g.scene.beginShadowPass(g.hero.pos);
     setCasterShaders(g, g.scene.depthShader);
-    drawCasters(g);
+    drawCasters(g, .{ .sun = g.hero.pos });
     setCasterShaders(g, g.scene.shader);
     g.scene.endShadowPass();
 
@@ -283,16 +308,24 @@ fn drawScene(g: *Game) void {
     rl.clearBackground(CLEAR);
     g.sky.draw(g.rig.cam);
 
+    // ONE view frustum for the whole lit pass, built from the settled camera — props and flora
+    // must cull against the same one or a prop can be in for the shadow and out for the light.
+    const aspect = @as(f32, @floatFromInt(rl.getScreenWidth())) / @as(f32, @floatFromInt(rl.getScreenHeight()));
+    const view = envmod.View.fromCamera(g.rig.cam, aspect);
+
     rl.beginMode3D(g.rig.cam);
     g.scene.bind(g.rig.cam.position);
+    // Torchlight: the fires nearest the camera, guttering. Must land before anything draws —
+    // the uniforms are read by every subsequent draw through the scene shader.
+    g.env.uploadLights(&g.scene, g.rig.cam.position, @floatCast(rl.getTime()));
     g.scene.setGround(true);
     g.env.drawGround();
     g.scene.setGround(false);
     if (g.menu.wireframe) rl.gl.rlEnableWireMode();
-    drawCasters(g);
+    drawCasters(g, .{ .view = view });
     // Flora last: non-casting, and swayed by the scene shader's wind term (props/hero rigid).
     g.scene.setWind(true);
-    g.env.drawFlora();
+    g.env.drawFlora(&view);
     g.scene.setWind(false);
     drawArrows(g); // in-flight + stuck arrows (lit, rigid, non-casting)
     if (g.menu.wireframe) rl.gl.rlDisableWireMode();
@@ -393,20 +426,24 @@ fn drawHurtFlash(g: *Game) void {
 }
 
 fn hud(g: *Game) void {
-    // ASCII only — the Exo atlas is loaded with the default (ASCII) glyph set, so a "·"
-    // or "—" would render as a tofu "?".
-    hud_.text("zig-soulslike", 16, 12, 24, rgba(232, 222, 198, 255));
-    hud_.text("locomotion demo - anatomical rig, walk / run / sprint gait", 16, 40, 16, rgba(164, 154, 134, 255));
+    // ASCII only — the Balthazar atlas is loaded with the default (ASCII) glyph set, so a "·"
+    // or "—" would render as a tofu "?". Every size comes from hud_'s type scale, never a literal.
+    hud_.text("zig-soulslike", 16, 12, hud_.TITLE, rgba(232, 222, 198, 255));
+    const subY = 12 + hud_.lineH(hud_.TITLE);
+    // Not a "locomotion demo" any more — that subtitle outlived the swordplay, three foes, the
+    // stagger model and five regions, and it was the first line of text in every screenshot.
+    hud_.text("a fallen kingdom - sword, roll, lock-on; toads, skeletons, a giant", 16, subY, hud_.SMALL, rgba(164, 154, 134, 255));
 
     // Hero HP bar (ER puts player health top-left). Death card is drawDeathOverlay's — no
     // mini YOU DIED here.
-    healthBar(16, 66, 300, 16, g.hero.vit.hpFrac(), rgba(24, 20, 16, 220));
+    const barY = subY + hud_.lineH(hud_.SMALL) + 4;
+    healthBar(16, @floatFromInt(barY), 340, 18, g.hero.vit.hpFrac(), rgba(24, 20, 16, 220));
     if (!g.menu.isOpen()) {
-        const help: [:0]const u8 = if (rl.isGamepadAvailable(0))
+        const help: [:0]const u8 = if (rl.isGamepadAvailable(PAD))
             "L-stick move (tilt = speed)   R-stick look   R1 slash   R2 heavy   B: sprint / tap roll   R3 recenter   Start menu"
         else
             "WASD move   mouse look   LMB slash   Shift+LMB heavy   Shift sprint   Space roll   Esc menu";
-        hud_.text(help, 16, rl.getScreenHeight() - 30, 16, rgba(188, 178, 158, 255));
+        hud_.text(help, 16, rl.getScreenHeight() - hud_.lineH(hud_.SMALL) - 14, hud_.SMALL, rgba(188, 178, 158, 255));
     }
 
     const label: [:0]const u8 = if (g.hero.dead)
@@ -421,12 +458,16 @@ fn hud(g: *Game) void {
         gaitLabel(g.hero.moving, g.hero.speed);
     var buf: [64]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "{s}   {d:.1} m/s", .{ label, g.hero.speed }) catch "";
-    const w = hud_.textW(s, 16);
-    hud_.text(s, rl.getScreenWidth() - w - 16, 14, 16, rgba(150, 156, 164, 255));
+    const w = hud_.textW(s, hud_.BODY);
+    hud_.text(s, rl.getScreenWidth() - w - 16, 14, hud_.BODY, rgba(150, 156, 164, 255));
 
     // Debug stats overlay (menu > Debug > Stats) — perf line + internal combat meters.
     // Poise/stance stay internal (ER-style); only HP shows on the bars.
     if (g.menu.stats) {
+        // Three stacked rows, positioned off the type scale rather than off hard-coded Y values —
+        // at literal 116/136/156 with the larger face they overlapped each other.
+        const row0 = barY + 30;
+        const step = hud_.lineH(hud_.SMALL);
         var sbuf: [200]u8 = undefined;
         const st = std.fmt.bufPrintZ(&sbuf, "{d} fps   {d:.1} ms   pos {d:.1},{d:.1}   yaw {d:.2}   pitch {d:.2}   time x{d:.2}", .{
             rl.getFPS(),
@@ -437,7 +478,15 @@ fn hud(g: *Game) void {
             g.rig.pitch,
             g.menu.timeScale,
         }) catch "";
-        hud_.text(st, 16, 116, 15, rgba(170, 190, 150, 255));
+        hud_.text(st, 16, row0, hud_.SMALL, rgba(170, 190, 150, 255));
+        // World + culling line: how much of the world exists vs how much of it this frame drew.
+        // The expansion's whole perf claim is "thousands of props, a few hundred draws" — this is
+        // where you check it while playing instead of taking a comment's word for it.
+        var wbuf: [200]u8 = undefined;
+        const wt = std.fmt.bufPrintZ(&wbuf, "world  props {d}  solids {d}  fires {d}   drawn {d} in {d} cells (both passes)", .{
+            g.env.propCount(), g.env.solidCount(), g.env.lightCount(), g.env.stat_draws, g.env.stat_cells,
+        }) catch "";
+        hud_.text(wt, 16, row0 + step * 2, hud_.SMALL, rgba(150, 175, 195, 255));
         const h = &g.hero;
         var cbuf: [200]u8 = undefined;
         // Foe counts span EVERY group (the combat beats already do) — a toads-only "hits" read
@@ -448,7 +497,7 @@ fn hud(g: *Game) void {
             h.vit.hp, h.vit.hpMax, h.vit.poise, h.vit.poiseMax, h.vit.stance, h.vit.stanceMax,
             foesLeft, foeHits,
         }) catch "";
-        hud_.text(ct, 16, 136, 15, rgba(150, 180, 190, 255));
+        hud_.text(ct, 16, row0 + step, hud_.SMALL, rgba(150, 180, 190, 255));
     }
 }
 
@@ -479,7 +528,7 @@ pub fn run(shot: bool) void {
     const alloc = std.heap.c_allocator;
     const g = alloc.create(Game) catch return;
     defer alloc.destroy(g);
-    g.* = Game.init();
+    g.init();
 
     // Tight near/far for real depth precision — the default 0.01..1000 makes the hero's
     // overlapping boxes z-fight and flicker/invert as the camera moves. BeginMode3D reads
@@ -513,7 +562,7 @@ pub fn run(shot: bool) void {
         // Esc backs the menu out one level (opens it when closed); pad Start toggles.
         // Quit lives in the menu now.
         if (rl.isKeyPressed(.escape)) g.menu.onEscape();
-        if (rl.isGamepadAvailable(0) and rl.isGamepadButtonPressed(0, .middle_right)) g.menu.onStartButton();
+        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .middle_right)) g.menu.onStartButton();
 
         // Alt+Enter toggles borderless-windowed fullscreen (no exclusive mode-switch, so the
         // mouse stays usable elsewhere). Keep the retro capture RT matched to the window on
@@ -549,13 +598,13 @@ pub fn run(shot: bool) void {
         // Lock-on toggle: R3 (pad) / middle-mouse (kb+m). Locked → drop; else acquire the
         // best foe in view, or pad R3 recenters if there is none.
         const lockPressed = rl.isMouseButtonPressed(.middle) or
-            (rl.isGamepadAvailable(0) and rl.isGamepadButtonPressed(0, .right_thumb));
+            (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .right_thumb));
         if (lockPressed) {
             if (g.lock != null) {
                 g.lock = null;
             } else {
                 g.lock = acquireLock(g);
-                if (g.lock == null and rl.isGamepadAvailable(0)) g.rig.recenter(g.hero.facing);
+                if (g.lock == null and rl.isGamepadAvailable(PAD)) g.rig.recenter(g.hero.facing);
             }
         }
         if (g.lock) |li| {
@@ -567,7 +616,7 @@ pub fn run(shot: bool) void {
         const inside = rl.isWindowFocused() and rl.isCursorOnScreen();
         const md = rl.getMouseDelta();
         var wheel = rl.getMouseWheelMove();
-        const padRX: f32 = if (rl.isGamepadAvailable(0)) rl.getGamepadAxisMovement(0, .right_x) else @as(f32, 0);
+        const padRX: f32 = if (rl.isGamepadAvailable(PAD)) rl.getGamepadAxisMovement(PAD, .right_x) else @as(f32, 0);
         if (g.lock) |li| {
             const dir = mathx.dirXZ(g.hero.pos, foePos(g, li));
             if (mathx.lenXZ(dir) > 0.001) {
@@ -584,22 +633,22 @@ pub fn run(shot: bool) void {
             }
         } else {
             if (inside and wasInside) g.rig.rotate(md.x, md.y);
-            if (rl.isGamepadAvailable(0)) {
+            if (rl.isGamepadAvailable(PAD)) {
                 const rx = axisDZ(padRX, LOOK_DEADZONE);
-                const ry = axisDZ(rl.getGamepadAxisMovement(0, .right_y), LOOK_DEADZONE);
+                const ry = axisDZ(rl.getGamepadAxisMovement(PAD, .right_y), LOOK_DEADZONE);
                 g.rig.orbit(-rx * PAD_LOOK_RATE * dt, ry * PAD_LOOK_RATE * dt);
             }
         }
         wasInside = inside;
-        if (rl.isGamepadAvailable(0)) {
-            if (rl.isGamepadButtonPressed(0, .left_face_up)) wheel += 1; // D-pad up = zoom in
-            if (rl.isGamepadButtonPressed(0, .left_face_down)) wheel -= 1; // D-pad down = zoom out
+        if (rl.isGamepadAvailable(PAD)) {
+            if (rl.isGamepadButtonPressed(PAD, .left_face_up)) wheel += 1; // D-pad up = zoom in
+            if (rl.isGamepadButtonPressed(PAD, .left_face_down)) wheel -= 1; // D-pad down = zoom out
         }
         if (wheel != 0) g.rig.zoom(wheel);
 
         // Dodge roll: Space, or a short TAP of Circle/B (holding B sprints instead).
         var rollReq = rl.isKeyPressed(.space);
-        const bDown = rl.isGamepadAvailable(0) and rl.isGamepadButtonDown(0, .right_face_right);
+        const bDown = rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, .right_face_right);
         if (bDown) {
             bHeldT += rawDt; // REAL time: tap-vs-hold is a wall-clock decision, unaffected by debug time-scale
         } else {
@@ -616,9 +665,9 @@ pub fn run(shot: bool) void {
         if (rl.isMouseButtonPressed(.left)) {
             if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift)) heavyReq = true else lightReq = true;
         }
-        if (rl.isGamepadAvailable(0)) {
-            if (rl.isGamepadButtonPressed(0, .right_trigger_1)) lightReq = true;
-            if (rl.isGamepadButtonPressed(0, .right_trigger_2)) heavyReq = true;
+        if (rl.isGamepadAvailable(PAD)) {
+            if (rl.isGamepadButtonPressed(PAD, .right_trigger_1)) lightReq = true;
+            if (rl.isGamepadButtonPressed(PAD, .right_trigger_2)) heavyReq = true;
         }
 
         const mv = gatherMove();
@@ -698,7 +747,7 @@ pub fn run(shot: bool) void {
         for (&g.arrows) |*ar| {
             if (!ar.live) continue;
             ar.hit = false;
-            archermod.stepArrow(ar, g.hero.pos, HERO_CENTER_Y, g.hero.iFramed(), g.env.solids(), dt);
+            archermod.stepArrow(ar, g.hero.pos, HERO_CENTER_Y, g.hero.iFramed(), arrowCover(g, ar, dt), dt);
             if (ar.hit and !g.hero.dead) {
                 g.hero.takeHit(archermod.ARROW_HIT);
                 g.rumble.play(rumblemod.hurt);
@@ -743,7 +792,7 @@ pub fn run(shot: bool) void {
         wasRolling = g.hero.rolling;
         wasAttacking = g.hero.attacking;
         wasDead = g.hero.dead;
-        g.rumble.update(rawDt, rl.isGamepadAvailable(0));
+        g.rumble.update(rawDt, rl.isGamepadAvailable(PAD));
 
         drawScene(g);
         hud(g);
@@ -769,10 +818,18 @@ fn heroBlade(g: *const Game) foemod.Blade {
 // Resolve XZ footprint collisions (see collision.zig). Hero has priority (pushed out of
 // solids, then grounded toads); toads then yield to world/hero/grounded neighbours.
 // Airborne toads (mid-hop) are skipped so a leap arcs over you cleanly.
+// Clamp a resolved XZ position back inside the play bounds. Four actor loops in collideActors each
+// had their own copy of this pair of clampF lines.
+fn inBounds(p: rl.Vector3) rl.Vector3 {
+    return v3(mathx.clampF(p.x, -PLAY_HALF, PLAY_HALF), p.y, mathx.clampF(p.z, -PLAY_HALF, PLAY_HALF));
+}
+
 fn collideActors(g: *Game, dt: f32) void {
-    const solids = g.env.solids();
     const step = COLLIDE_RATE * dt; // max correction this frame — bigger pushes ease in (no warp)
-    var hp = collision.resolve(g.hero.pos, HERO_R, solids);
+    // Each actor resolves against the solids in its OWN neighbourhood (env.resolveActor queries
+    // the prop grid). The world holds ~700 solids now; scanning all of them per actor, twice a
+    // frame, was the other thing that would not have survived the expansion.
+    var hp = g.env.resolveActor(g.hero.pos, HERO_R);
     for (&g.warren.frogs) |*f| {
         if (f.alive() and !f.airborne()) hp = collision.pushOutCircle(hp, HERO_R, f.pos, f.bodyR());
     }
@@ -782,28 +839,24 @@ fn collideActors(g: *Game, dt: f32) void {
     for (&g.grief.ogres) |*o| {
         if (o.alive()) hp = collision.pushOutCircle(hp, HERO_R, o.pos, o.bodyR());
     }
-    hp.x = mathx.clampF(hp.x, -PLAY_HALF, PLAY_HALF);
-    hp.z = mathx.clampF(hp.z, -PLAY_HALF, PLAY_HALF);
-    g.hero.pos = mathx.approachV(g.hero.pos, hp, step);
+    g.hero.pos = mathx.approachV(g.hero.pos, inBounds(hp), step);
 
     for (&g.warren.frogs, 0..) |*f, i| {
         if (!f.alive() or f.airborne()) continue;
-        var fp = collision.resolve(f.pos, f.bodyR(), solids);
+        var fp = g.env.resolveActor(f.pos, f.bodyR());
         fp = collision.pushOutCircle(fp, f.bodyR(), g.hero.pos, HERO_R);
         for (&g.warren.frogs, 0..) |*o, j| {
             if (i == j or !o.alive() or o.airborne()) continue;
             fp = collision.pushOutCircle(fp, f.bodyR(), o.pos, o.bodyR());
         }
-        fp.x = mathx.clampF(fp.x, -PLAY_HALF, PLAY_HALF);
-        fp.z = mathx.clampF(fp.z, -PLAY_HALF, PLAY_HALF);
-        f.pos = mathx.approachV(f.pos, fp, step);
+        f.pos = mathx.approachV(f.pos, inBounds(fp), step);
     }
 
     // Archers yield last: each pushed out of world, hero, every grounded toad, and fellow
     // archers (same easing so a kite step into a wall slides, not warps).
     for (&g.line.archers, 0..) |*a, i| {
         if (!a.alive()) continue;
-        var ap = collision.resolve(a.pos, a.bodyR(), solids);
+        var ap = g.env.resolveActor(a.pos, a.bodyR());
         ap = collision.pushOutCircle(ap, a.bodyR(), g.hero.pos, HERO_R);
         for (&g.warren.frogs) |*f| {
             if (f.alive() and !f.airborne()) ap = collision.pushOutCircle(ap, a.bodyR(), f.pos, f.bodyR());
@@ -812,19 +865,15 @@ fn collideActors(g: *Game, dt: f32) void {
             if (i == j or !o.alive()) continue;
             ap = collision.pushOutCircle(ap, a.bodyR(), o.pos, o.bodyR());
         }
-        ap.x = mathx.clampF(ap.x, -PLAY_HALF, PLAY_HALF);
-        ap.z = mathx.clampF(ap.z, -PLAY_HALF, PLAY_HALF);
-        a.pos = mathx.approachV(a.pos, ap, step);
+        a.pos = mathx.approachV(a.pos, inBounds(ap), step);
     }
 
     // The ogre yields to the WORLD (walls/columns) only, never to the tiny hero (who yields
     // above), so it reads as immovable bulk.
     for (&g.grief.ogres) |*o| {
         if (!o.alive()) continue;
-        var op = collision.resolve(o.pos, o.bodyR(), solids);
-        op.x = mathx.clampF(op.x, -PLAY_HALF, PLAY_HALF);
-        op.z = mathx.clampF(op.z, -PLAY_HALF, PLAY_HALF);
-        o.pos = mathx.approachV(o.pos, op, step);
+        const op = g.env.resolveActor(o.pos, o.bodyR());
+        o.pos = mathx.approachV(o.pos, inBounds(op), step);
     }
 }
 
@@ -1043,6 +1092,25 @@ fn advanceAttack(g: *Game, dt: f32, frames: i32) void {
 fn stepFoe(f: anytype, frames: i32, hero: rl.Vector3) void {
     var k: i32 = 0;
     while (k < frames) : (k += 1) _ = f.update(SHOT_DT, hero, PLAY_HALF, .{});
+}
+
+// Plant the hero at a world spot facing `faceYaw`, settled and posed. The WORLD TOUR shots
+// below all start here — and they must, because the sun's shadow ortho box tracks the hero, so
+// a landscape framed far from him comes back with no cast shadows in it at all.
+fn standHero(g: *Game, x: f32, z: f32, faceYaw: f32) void {
+    g.hero.pos = mathx.ground(x, z);
+    g.hero.facing = faceYaw;
+    g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pose();
+}
+
+// Frame an arbitrary world point and shoot it — the landscape counterpart of shootFoe.
+fn shootAt(g: *Game, name: [:0]const u8, at: rl.Vector3, yaw: f32, pitch: f32, dist: f32) void {
+    g.rig.yaw = mathx.radians(yaw);
+    g.rig.pitch = pitch;
+    g.rig.dist = dist;
+    g.rig.follow(at);
+    shoot(g, name);
 }
 
 // Frame ANY foe on its body-mass centre and shoot it. Generic for the same reason as stepFoe —
@@ -1376,7 +1444,7 @@ fn runShots(g: *Game) void {
         // its arc, parked in the pool so drawArrows renders the oriented, arcing shaft.
         g.arrows[0] = archermod.launchArrow(a.nockWorld(), mathx.ground(0, 15));
         var m: i32 = 0;
-        while (m < 8) : (m += 1) archermod.stepArrow(&g.arrows[0], mathx.ground(0, 15), HERO_CENTER_Y, false, g.env.solids(), dt);
+        while (m < 8) : (m += 1) archermod.stepArrow(&g.arrows[0], mathx.ground(0, 15), HERO_CENTER_Y, false, arrowCover(g, &g.arrows[0], dt), dt);
         shootFoe(g, a, "shots/44_archer_loose.png", 90, 0.05, 5.2); // side-on: the shaft crosses the frame
         g.arrows[0] = .{};
         // A lowered/idle read too, to check the skeleton stands cleanly with the bow at rest.
@@ -1389,6 +1457,18 @@ fn runShots(g: *Game) void {
         var w2: i32 = 0;
         while (w2 < 60) : (w2 += 1) _ = a.update(dt, mathx.ground(0, 3), PLAY_HALF, .{}); // hero crowds → back off
         shootFoe(g, a, "shots/45_archer_kite.png", 90, 0.09, 5.4);
+        // THE BACKSTEP: crowd it inside sword reach to trigger the panic leap, then catch the
+        // apex and the landing absorb. Side-on — from the front you cannot see it leave the
+        // ground.
+        a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+        var bs: i32 = 0;
+        while (bs < 400 and !a.airborne()) : (bs += 1) _ = a.update(dt, mathx.ground(0, 2.2), PLAY_HALF, .{});
+        var bp: i32 = 0;
+        while (bp < 7) : (bp += 1) _ = a.update(dt, mathx.ground(0, 2.2), PLAY_HALF, .{}); // …on to the apex
+        shootFoe(g, a, "shots/45b_archer_backstep.png", 90, 0.06, 6.0);
+        var bl: i32 = 0;
+        while (bl < 18) : (bl += 1) _ = a.update(dt, mathx.ground(0, 2.2), PLAY_HALF, .{});
+        shootFoe(g, a, "shots/45c_archer_backstep_land.png", 90, 0.06, 6.0);
         // Lock-on onto a SKELETON — the reticle rides ANY foe now (FoeRef over both groups).
         a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         var lk: i32 = 0;
@@ -1518,6 +1598,111 @@ fn runShots(g: *Game) void {
 
         // Restore it to its home deep in the ruins so it doesn't loom over the retro/menu shots.
         o.* = ogremod.Ogre.spawn(mathx.ground(3.0, -50.0), 0, 1.0, 0.4);
+    }
+
+    // ── THE WORLD TOUR ── one capture per region, plus the interiors that only exist because
+    // the scene shader grew point lights. These are the shots that verify the EXPANSION: that
+    // each direction reads as its own place, that the culling isn't eating geometry, that the
+    // torches light a roofed room, and that the tarn reads as water.
+    {
+        // The avenue from the start, looking north up the processional way into the city.
+        standHero(g, 0, 12, std.math.pi);
+        shootAt(g, "shots/70_avenue_north.png", g.hero.shoulderPoint(), 180, 0.16, 9.0);
+        // A high, wide vista north — the whole depth of the world in one frame: avenue, plaza,
+        // city wall, the colossal gate, and the cliffs behind it dissolving into haze.
+        shootAt(g, "shots/71_vista_north.png", mathx.ground(0, 6), 180, 0.30, 9.0);
+
+        // THE FALLEN CITY: the plaza, then the chapel from the road, then INSIDE it.
+        standHero(g, 2.0, -66.0, std.math.pi);
+        shootAt(g, "shots/72_city_plaza.png", mathx.ground(0, -74), 180, 0.26, 9.0);
+        // The chapel sits at (-30, -66) turned to yaw 270, which maps its local +Z (the altar
+        // end) to world −X and its doorway to world +X: the nave runs along X from -33.6 (altar)
+        // to -26.4 (door). All three framings below are DERIVED from that, not guessed — the
+        // first pass guessed the mapping and shot the outside of a wall.
+        standHero(g, -22.0, -66.0, -std.math.pi * 0.5);
+        shootAt(g, "shots/73_chapel_outside.png", mathx.ground(-30, -66), 270, 0.22, 17.0);
+        // Looking WEST down the nave from the doorway: the roofed altar end gets NO sun, so what
+        // you can see of it is the standing torches — the whole reason gfx grew point lights.
+        // The camera has to end up AT the doorway (x ≈ -26.4), so target + dist must land there;
+        // aiming deeper buries it in the altar, which is what the first two attempts did.
+        standHero(g, -29.6, -66.0, -std.math.pi * 0.5);
+        shootAt(g, "shots/74_chapel_torchlit.png", v3(-30.7, 1.4, -66.0), 270, 0.05, 4.4);
+        // …and closer on the altar itself, still outside its 1.25 m half-depth.
+        standHero(g, -30.6, -66.0, -std.math.pi * 0.5);
+        shootAt(g, "shots/75_chapel_altar.png", v3(-32.6, 1.0, -66.0), 270, 0.10, 4.8);
+
+        // A watchtower: the drum with its door brazier, then the dark room inside it. Placed at
+        // yaw 20, so its local −Z doorway faces world (−sin20, −cos20) ≈ (−0.34, −0.94): out to
+        // the south-west. The camera has to sit on THAT side or the shot is just a wall of blocks:
+        // `back` is (−sin yaw, ·, −cos yaw), so yaw 20 is the bearing that puts the eye out in front
+        // of the door. (This was yaw 168 — the opposite side — and only ever looked like a doorway
+        // because towerDoorway's arithmetic was opening the drum on +Z instead of −Z.)
+        standHero(g, 34.0, -95.0, mathx.radians(20));
+        shootAt(g, "shots/76_watchtower.png", mathx.ground(36, -88), 20, 0.16, 27.0);
+        // Inside the drum: the camera must sit within the 2.35 m wall radius, so target the
+        // middle and keep dist under it or the eye ends up embedded in masonry.
+        standHero(g, 36.4, -88.4, 0);
+        shootAt(g, "shots/77_watchtower_inside.png", v3(35.7, 1.7, -87.6), 200, 0.06, 2.0);
+
+        // THE TARN. gfx.SUN_DIR points (−0.60, +0.50, −0.46) from the surface TOWARD the sun, so
+        // the sun is low in the WEST: the glitter path only exists looking WEST across the water.
+        // Standing on the west shore looking east (the first framing) is the one angle guaranteed
+        // to show none of it.
+        standHero(g, 130.0, 14.0, -std.math.pi * 0.5);
+        shootAt(g, "shots/78_tarn.png", mathx.ground(122, 12), 268, 0.10, 13.0);
+        standHero(g, 70.0, 8.0, std.math.pi * 0.5);
+        shootAt(g, "shots/79_tarn_causeway.png", mathx.ground(78, 8), 100, 0.18, 12.0);
+
+        // THE OLD WOOD: under the canopy, then one great tree whole (for judging the model),
+        // then the stone circle and the woodcutter's cottage with its fire.
+        standHero(g, -84.0, 4.0, -std.math.pi * 0.5);
+        shootAt(g, "shots/80_wood.png", mathx.ground(-90, 4), 260, 0.12, 11.0);
+        shootAt(g, "shots/81_bigtree.png", v3(-90.0, 5.0, 6.0), 300, -0.10, 17.0);
+        standHero(g, -90.0, -16.0, -std.math.pi * 0.5);
+        shootAt(g, "shots/82_stone_circle.png", mathx.ground(-98, -16), 265, 0.14, 15.0);
+        standHero(g, -66.0, 30.0, -std.math.pi * 0.5);
+        shootAt(g, "shots/83_cottage.png", mathx.ground(-72, 30), 258, 0.10, 12.0);
+
+        // THE DOWNS: open and sparse, with the tower on the rise.
+        standHero(g, 22.0, 82.0, 0);
+        shootAt(g, "shots/84_downs.png", mathx.ground(22, 92), 8, 0.14, 14.0);
+
+        // THE EDGE: the cliff wall that the movement clamp now hides behind. Pitch must stay
+        // POSITIVE — at -0.05 with dist 15 the camera drops below y=0 and the shot is half
+        // underside-of-terrain (a mis-framed capture, not a broken cliff).
+        standHero(g, 40.0, 140.0, 0);
+        shootAt(g, "shots/85_cliffs.png", mathx.ground(40, 152), 4, 0.22, 22.0);
+        // …and a long raking view ALONG the wall, which is the angle that shows whether it reads
+        // as one escarpment or as a row of separate rocks.
+        standHero(g, 10.0, 150.0, std.math.pi * 0.5);
+        shootAt(g, "shots/85b_cliffs_along.png", mathx.ground(30, 158), 80, 0.16, 26.0);
+
+        // MAP SHOTS — one steep overhead per region. Ground-level framings are what you judge
+        // a MODEL from, but they cannot show you layout, spacing or relative SCALE, which is
+        // where a procedurally-placed region actually goes wrong.
+        // Distances kept near 55: the haze is deliberately thick, and a camera 85 m up looks at
+        // everything THROUGH 85 m of it, so a higher map shot grades its own subject into murk.
+        const maps = [_]struct { name: [:0]const u8, x: f32, z: f32, dist: f32 }{
+            .{ .name = "shots/86_map_city.png", .x = 0, .z = -80, .dist = 58 },
+            .{ .name = "shots/87_map_tarn.png", .x = 92, .z = 8, .dist = 58 },
+            .{ .name = "shots/88_map_wood.png", .x = -92, .z = 6, .dist = 55 },
+            .{ .name = "shots/89_map_downs.png", .x = 20, .z = 92, .dist = 58 },
+            .{ .name = "shots/90_map_start.png", .x = 0, .z = 0, .dist = 52 },
+        };
+        for (maps) |m| {
+            standHero(g, m.x, m.z, std.math.pi);
+            shootAt(g, m.name, mathx.ground(m.x, m.z), 180, 1.02, m.dist);
+        }
+
+        // PERF READOUT — the debug Stats overlay from ground level in the two busiest places, so
+        // the culling numbers are captured, not assumed. Read the "world" line: props in the
+        // world vs draws issued this frame across BOTH passes.
+        g.menu.stats = true;
+        standHero(g, 2.0, -72.0, std.math.pi);
+        shootAt(g, "shots/91_stats_city.png", g.hero.shoulderPoint(), 180, 0.22, 8.0);
+        standHero(g, -88.0, 8.0, -std.math.pi * 0.5);
+        shootAt(g, "shots/92_stats_wood.png", g.hero.shoulderPoint(), 265, 0.20, 8.0);
+        g.menu.stats = false;
     }
 
     // Restore the idle-hold framing for the filter/menu verification shots below.

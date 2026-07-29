@@ -5,11 +5,10 @@ const mathx = @import("mathx.zig");
 const v3 = mathx.v3;
 
 // ── GROUND-PLANE COLLISION ──────────────────────────────────────────────────────────────
-// A flat soulslike arena: no verticality worth simulating, so collision is purely 2D on the
-// XZ plane. Every solid is a CAPSULE — a segment a→b with radius r (a plain circle is the
-// a==b degenerate). Actors are circles that get PUSHED OUT of solids along the shortest
-// exit. Walls are one fat capsule down their length; pillars/blocks/piers are circles; a
-// long ruin block is a short capsule. Cheap, allocation-free, and robust for footprints.
+// A flat arena with no verticality worth simulating, so collision is purely 2D on XZ. Every
+// solid is a CAPSULE (segment a→b, radius r; a==b is a plain circle) and actors are circles
+// PUSHED OUT along the shortest exit. A wall is one fat capsule down its length, a pillar a
+// circle, a ruin block a short capsule. Cheap, allocation-free, robust for footprints.
 
 pub const Solid = struct {
     a: rl.Vector3, // segment start (XZ; Y ignored)
@@ -74,7 +73,9 @@ pub fn blocksPoint(p: rl.Vector3, margin: f32, s: Solid) bool {
     return dx * dx + dz * dz < rr * rr;
 }
 
-/// First solid (if any) that blocks the point — for callers that just need yes/no + where.
+/// Does ANY of these solids block the point? (Yes/no only — it deliberately doesn't say which,
+/// because no caller has ever needed to know: arrow flight embeds the shaft along its own velocity
+/// and the flora scatter just rejects the spot.)
 pub fn blockedBy(p: rl.Vector3, margin: f32, solids: []const Solid) bool {
     for (solids) |s| {
         if (blocksPoint(p, margin, s)) return true;

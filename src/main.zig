@@ -15,6 +15,10 @@ pub fn main() void {
     game.run(shot);
 }
 
+// EVERY module carrying tests must be named here. Zig only collects tests from files the test
+// ROOT reaches, and this is the root: env.zig and props.zig hang off game.zig alone, so leaving
+// them out silently dropped 12 tests — including the culler sweep that exists because "a culler
+// bug looks like an EMPTY WORLD" and the INFO table's index/collider checks.
 test {
     _ = @import("hero.zig");
     _ = @import("camera.zig");
@@ -23,5 +27,8 @@ test {
     _ = @import("archer.zig");
     _ = @import("ogre.zig");
     _ = @import("foe.zig");
+    _ = @import("combat.zig");
     _ = @import("collision.zig");
+    _ = @import("env.zig");
+    _ = @import("props.zig");
 }

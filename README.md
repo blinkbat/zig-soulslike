@@ -2,7 +2,7 @@
 
 A third-person soulslike prototype in native **Zig 0.14.1 + raylib**, built on the
 sibling `../zig-rts` rendering engine (procedural-mesh Builder, single-sun shadow-map
-pipeline, Exo HUD).
+pipeline). UI is set in **Balthazar** (OFL, in `assets/`).
 
 ## First demo
 
@@ -19,10 +19,43 @@ pipeline, Exo HUD).
   mono, amber CRT, ink edges, scanlines, CRT curvature, VHS, film grain) with PS1 /
   CRT / VHS / Game Boy one-press presets.
 - A **lit 3D world with cast shadows** (warm golden-hour sun + hemisphere ambient +
-  shadow map + distance haze), a shader sky with a cloud deck and sun aureole, and a
-  ruined-kingdom set: colonnade avenue, gate arch, walls, dead trees, graves, war
-  banners, a glowing grace ember, colossal ruin silhouettes on the horizon, and a
-  seeded meadow scatter (grass tufts, patches, reeds, shrubs, flowers).
+  shadow map + distance haze), a shader sky with a cloud deck and sun aureole, and
+  **point-light fire** — torches, braziers and campfires that actually light the rooms
+  they stand in, with guttering flames.
+
+## The world
+
+A **320 m square** ringed by cliffs, holding five regions that each read as their own place:
+
+- **centre / south — the fallen avenue.** Where you start: colonnade, gate arch, ruined walls,
+  dead trees, graves, war banners, a glowing grace ember.
+- **north — the Fallen City.** A processional way to a paved plaza, broken perimeter walls, a
+  quarter of ruined house shells, two **watchtowers** with dark ground rooms, abandoned carts,
+  and a **wayside chapel you can walk into** — still roofed over its altar end, so the inside is
+  genuinely dark and the standing torches are what let you see it. A colossal gate closes the
+  view to the north.
+- **east — the Tarn.** A shallow peat lake you **wade straight through**, with drowned columns
+  standing in it, a stone causeway running out and stopping where its middle span fell in,
+  willows over the margin and reed beds in the shallows.
+- **west — the Old Wood.** Great trees in three variants with layered canopies, ferns, brambles
+  and bushes underfoot, mossy boulders, a **standing-stone circle** in a clearing, and a
+  woodcutter's **cottage** whose campfire is still ringed in stone.
+- **south — the Windswept Downs.** Open, dry and nearly empty — the region that makes the others
+  feel dense. Lone trees, field stones, old graves, a watchtower on the rise.
+
+Every region is dressed in three layers — ground cover, understorey, canopy — from a registry of
+**77 prop kinds**: great trees in three variants, conifers, birches, dead snags and saplings;
+ferns, brambles, thickets, nettles, thistles, foxgloves, heather, gorse, clover, moss, mushrooms
+and bracken; boulders, outcrops, scree and cairns; wells, shrines, post lanterns, fences, barrels,
+woodpiles, sarcophagi, stair fragments, gibbets and bones; torches, braziers and campfires that
+light what's around them.
+
+**7,876 static props and 1,575 colliders, of which a frame draws around 1,000** (measured off
+Debug > Stats in the city and the wood): props are indexed into a uniform grid and culled per cell
+against the view frustum, per-kind view distances, and — for the sun's depth pass — whether a
+caster's shadow can physically reach the shadow box. Collision and arrow flight query the same grid.
+Turn on **Debug > Stats** to watch those numbers live. For playtesting at this density use
+`build-release.cmd`; the debug build carries Zig's safety checks through every culling loop.
 
 ## Controls
 
@@ -30,27 +63,30 @@ Keyboard + mouse **or** a gamepad (Elden Ring default layout):
 
 | Action | Keyboard / Mouse | Gamepad (Elden Ring binds) |
 | --- | --- | --- |
-| Move | WASD | Left stick (analog — light tilt walks, full tilt runs) |
+| Move | WASD | Left stick (analog — tilt is the speed, every frame) |
 | Camera | Mouse | Right stick |
 | Sprint | Hold Shift | **Hold** Circle / B (dash) |
 | Dodge roll | Space | **Tap** Circle / B |
+| Light slash | LMB | R1 / RB |
+| Heavy overhead | Shift + LMB | R2 / RT |
+| Lock on / cycle target | Middle mouse / flick | R3 (right-stick click) / flick |
 | Zoom | Scroll wheel | D-pad up / down |
-| Recenter camera | — | R3 (right-stick click) |
-| Free / recapture mouse | Tab | — (pad never locks the pointer) |
 | Menu (Continue / Debug / Quit) | Esc | Start |
+| Borderless fullscreen | Alt + Enter | — |
 
-The camera sits over the hero's **right shoulder**; movement is camera-relative and the
-hero turns to face the direction of travel. Free-look captures the mouse — **Tab** frees it
-(or lose window focus) so the pointer can always escape to exit. The dodge roll is a
-committed tuck-and-somersault in the input direction (or forward). Reserved for later,
-matching Elden Ring: Cross/A = jump, L1/R1/L2/R2 = combat, R3 = lock-on.
+The camera sits over the hero's **right shoulder**; movement is camera-relative and the hero turns
+to face the direction of travel. The mouse is **hidden but never captured** — push it past the
+window edge and it comes back as a normal cursor, so the pointer can always escape. Attacks and the
+roll are committed, with an Elden-Ring-style one-slot input buffer that fires at the earliest exit.
+While locked on, the hero faces the target with real strafe/backpedal footing and R3 cycles targets.
+Reserved for later, matching Elden Ring: Cross/A = jump, L1/L2 = guard / skill.
 
 ## Build & run
 
 ```
 build.cmd        REM debug build -> zig-out\bin\zig-soulslike.exe
 run.cmd          REM build + launch
-shot.cmd         REM build + headless walk-cycle screenshots into shots\
+shot.cmd         REM build + headless screenshots into shots\ (gaits, foes, world tour, maps)
 build-release.cmd
 ```
 

@@ -10,34 +10,26 @@ const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
 // ── THE GAPING TOAD ───────────────────────────────────────────────────────────────────
-// A creative first enemy for the Lands-Between plain: a squat, warty bog-toad about 2/3 the
-// hero's mass, all mouth and teeth. It doesn't walk — it HOPS, coiling low then firing off
-// its haunches; it closes the last gap with a committed LUNGE that leaves it winded and
-// wide open (the "recovery window"); and up close it gapes its throat sac and CHOMPS.
+// A squat warty bog-toad, ~2/3 the hero's mass, all mouth and teeth. It doesn't walk — it HOPS,
+// coiling low then firing off its haunches; it closes the last gap with a committed LUNGE that
+// leaves it winded and wide open; up close it gapes its throat sac and CHOMPS.
 //
-// Same rendering discipline as the hero (procedural Builder meshes + a per-part matrix
-// rig, drawn with drawMesh through one scene-shader material so it lights + casts shadows
-// like everything else). But where the hero is an anthropometric FK skeleton, the toad is
-// a shallow 9-part rig whose LIFE comes from SQUASH & STRETCH — the coil, the airborne
-// stretch, the landing splat, the throat balloon — plus a hinged jaw and folding haunches.
+// Where the hero is an anthropometric FK skeleton, the toad is a shallow 9-part rig whose LIFE
+// is SQUASH & STRETCH — the coil, the airborne stretch, the landing splat, the throat balloon —
+// plus a hinged jaw and folding haunches.
 //
-// ART DIRECTION (the DESIRED feel — exaggerated + readable, per the game's combat feel):
-//   IDLE   : sits low and breathing, throat pulsing, the odd twitch/turn. Alive, waiting.
-//   HOP    : the frog verb. COIL (squash down, knees over the back, a beat of anticipation)
-//            → LAUNCH (haunches fire straight, body STRETCHES thin, nose up) → a clean
-//            ballistic ARC → LAND (front legs reach, body SPLATS wide, absorbs). Somewhat
-//            fast: it keeps bounding, small settles between hops.
-//   LUNGE  : a big committed leap to close distance — a DEEP readable coil (the tell),
-//            a long flat arc aimed at the hero, then a heavy landing into a RECOVERY: it
-//            lands splayed and spent for a beat, unable to act. That beat is the opening.
-//   CHOMP  : in bite range it rears, the throat sac BALLOONS + the jaw gapes wide (the
-//            tell), then a fast SNAP forward — jaws slam, head thrusts — and a short recover.
+// ART DIRECTION (exaggerated + readable):
+//   IDLE  : low and breathing, throat pulsing, the odd twitch. Alive, waiting.
+//   HOP   : the frog verb. COIL (squash, knees over the back, a beat of anticipation) → LAUNCH
+//           (haunches fire, body STRETCHES thin, nose up) → ballistic arc → LAND (front legs
+//           reach, body SPLATS wide). It keeps bounding, small settles between.
+//   LUNGE : a big committed leap — a DEEP readable coil, a long flat arc, then a heavy landing
+//           into a RECOVERY where it lies splayed and spent. That beat is the opening.
+//   CHOMP : it rears, the sac BALLOONS and the jaw gapes (the tell), then a fast SNAP.
 //   Nothing parks dead: hops overshoot into a splat, the chomp recoils, idle keeps breathing.
 //
-// Hits: the hero's swept blade capsule is tested against each toad's hurt sphere through the
-// SHARED foe.strike (one hit per swing, latched), and combat is fully wired — HP, the two-tier
-// poise/stance stagger, and death into a grace-mote dissipation, plus the toad's own chomp/lunge
-// blows on the hero. See combat.zig for the meters and foe.zig for the shared contract.
+// Combat is the SHARED path — foe.strike for the hero's blade, combat.Vitals for the meters,
+// death into a grace-mote dissipation. See foe.zig's contract.
 
 // ── matrix shorthand (raylib TRS: mul(a,b) applies a FIRST then b) ──────────────────────
 // The shared helpers from mathx (single source for the "a-first" convention across rigs).
@@ -241,7 +233,7 @@ pub const Frog = struct {
     sac: f32 = 1, // throat-sac inflate scale
 
     // combat
-    vit: combat.Vitals = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX),
+    vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX),
     hits: u32 = 0, // total blows landed (debug read-out)
     hitLatch: bool = false, // one hit per swing: set on contact, cleared when the blade goes inactive
     flash: f32 = 0, // blood-red body flash after a registered hit (fades over FLASH_DUR)
@@ -413,11 +405,11 @@ pub const Frog = struct {
             // ── reactions (interrupts) ──
             .stunlight => {
                 self.resolveStunLight();
-                if (self.t >= combat.LIGHT_STUN_DUR) self.enterIdle(0.02);
+                if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enterIdle(0.02);
             },
             .stunheavy => {
                 self.resolveStunHeavy();
-                if (self.t >= combat.HEAVY_STUN_DUR) self.enterIdle(0.06);
+                if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enterIdle(0.06);
             },
             .dead => {
                 self.resolveDeath();
@@ -666,7 +658,7 @@ pub const Frog = struct {
         // A big, unmistakable FLINCH: the toad REARS back and UP off the blow, jaw gaping,
         // recoiling clear of the ground, then slams back down as it eases home.
         self.base();
-        const u = mathx.clampF(self.t / combat.LIGHT_STUN_DUR, 0, 1);
+        const u = mathx.clampF(self.t / combat.FOE_LIGHT_STUN_DUR, 0, 1);
         const j = mathx.sinf(u * std.math.pi); // 0 → 1 → 0 over the flinch
         self.pitch = -30.0 * j; // whole body thrown back
         self.sy = 1.0 - 0.22 * j;
@@ -680,7 +672,7 @@ pub const Frog = struct {
         // STANCE BROKEN — it CRUMPLES: slams flat and wide, splayed and reeling, jaw lolling,
         // wide open the whole beat (ER's stance break; the critical/riposte comes later).
         self.base();
-        const u = mathx.clampF(self.t / combat.HEAVY_STUN_DUR, 0, 1);
+        const u = mathx.clampF(self.t / combat.FOE_HEAVY_STUN_DUR, 0, 1);
         const down = mathx.smoothstep(0, 0.16, u) * (1.0 - mathx.smoothstep(0.74, 1.0, u)); // slam, gather at the end
         const reel = mathx.sinf(self.elapsed * 8.0);
         self.lift = 0;

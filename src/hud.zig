@@ -1,20 +1,33 @@
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 
-// ALL UI text goes through here in Exo (assets/, OFL license alongside) — zig-rts's hud
-// discipline: never call rl.drawText/measureText directly in UI code or layout drifts
-// between the font and the fallback. One 44 px atlas: every HUD size is <= 22, so draws
-// only ever downscale. A SECOND 128 px atlas (same face) exists solely for the huge
-// cinematic captions (YOU DIED) so those don't upscale to mush. Falls back to raylib's
-// default font if the asset is missing (path is CWD-relative — run from repo root).
+// ALL UI text goes through here, in BALTHAZAR (assets/, OFL alongside). Never call
+// rl.drawText/measureText directly in UI code or layout drifts between the font and the
+// fallback. Two atlases of the same face — ATLAS_PX for the HUD, ATLAS_BIG_PX for the
+// cinematic captions — both sized ABOVE the largest type drawn at them, so every draw
+// DOWNscales (an upscaled glyph is the jagged one). Falls back to raylib's default font if
+// the asset is missing; the path is CWD-relative, so run from the repo root.
 var haveFont = false;
 var font: rl.Font = undefined;
 var haveBig = false;
 var fontBig: rl.Font = undefined;
 
-const FONT_PATH = "assets/Exo-Regular.ttf";
-const ATLAS_PX = 44;
-const ATLAS_BIG_PX = 128;
+const FONT_PATH = "assets/Balthazar-Regular.ttf";
+// Atlas resolution. Must stay comfortably ABOVE the largest size anything draws at (TITLE), so
+// every draw DOWNscales — an upscaled glyph is the jagged one. 44 px was sized for a HUD that
+// topped out at 24; at the current sizes it was being magnified and the thin strokes of this face
+// broke up into stair-steps.
+const ATLAS_PX = 96;
+const ATLAS_BIG_PX = 160; // the cinematic caption atlas (YOU DIED draws near 90 px)
+
+// ── THE TYPE SCALE ── every size in the game comes from here. Scattered literals at call sites
+// drift, and "make the text bigger" then becomes fifteen separate edits with no consistency at the
+// end of it. Balthazar is a light serif with fine strokes, so it wants to be set LARGER than a
+// UI sans would: below ~18 px its detail simply falls apart.
+pub const TITLE: i32 = 34; // the game title, card headings
+pub const BODY: i32 = 22; // primary readouts — the gait/speed line, menu rows
+pub const SMALL: i32 = 20; // secondary readouts — subtitle, control hints, debug lines
+pub const HINT: i32 = 19; // the least important line on screen
 
 pub fn init() void {
     if (rl.loadFontEx(FONT_PATH, ATLAS_PX, null)) |f| {
@@ -49,11 +62,20 @@ fn drawStr(s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
     rl.drawTextEx(font, s, .{ .x = @floatFromInt(x), .y = @floatFromInt(y) }, @floatFromInt(size), 0, col);
 }
 
-// Text with a 1 px drop shadow for legibility over the 3D scene. Shadow tracks the face
-// alpha so fading text doesn't leave a black ghost.
+// Text with a drop shadow for legibility over the 3D scene. Shadow tracks the face alpha so
+// fading text doesn't leave a black ghost, and its OFFSET SCALES with the size — a fixed 1 px
+// shadow under 30 px type reads as a smudge on the glyph edge rather than as depth, which is
+// half of what "jagged" looks like at a glance.
 pub fn text(s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
-    drawStr(s, x + 1, y + 1, size, mathx.withAlpha(rl.Color.black, @intCast(@as(u16, 200) * col.a / 255)));
+    const off: i32 = @max(@divTrunc(size, 14), 1);
+    drawStr(s, x + off, y + off, size, mathx.withAlpha(rl.Color.black, @intCast(@as(u16, 200) * col.a / 255)));
     drawStr(s, x, y, size, col);
+}
+
+/// Line height for a given size — the vertical step between stacked lines of text. One place, so
+/// a size change doesn't leave the debug overlay's rows overlapping.
+pub fn lineH(size: i32) i32 {
+    return size + @divTrunc(size, 3);
 }
 
 // Huge letter-spaced caption, CENTERED on (cx, cy) — the cinematic text path (YOU DIED).

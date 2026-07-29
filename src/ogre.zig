@@ -11,29 +11,22 @@ const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
 // ── THE ONE-EYED OGRE ───────────────────────────────────────────────────────────────────
-// The third foe: a GIANT — roughly twice the hero's height — hunched, humanoid-LEANING but
-// misshapen, hefting an enormous knotted club at his side. A sad figure (heavy brow, downcast single
-// eye, a slumped weary carriage) that is nonetheless a real threat: HIGH POISE (it shrugs off
-// single lights — you must land sustained pressure to stagger it) and a slow, ground-eating
-// approach into a big committed OVERHEAD CLUB SLAM. Only the one attack for now (the brief
-// promises a tricky array later — the state machine is laid out so more drop in beside it).
+// A GIANT, roughly twice the hero's height: hunched, humanoid-leaning but misshapen, hefting a
+// knotted club at his side. A sad figure — heavy brow, downcast single eye, weary carriage —
+// and a real threat: HIGH POISE (single lights bounce off; only sustained pressure staggers
+// him) into a big committed OVERHEAD SLAM and a fast SIDE SWIPE. More attacks drop in beside
+// them; the state machine is laid out for it.
 //
-// FOUNDED ON THE HUMANOID MODEL (owner's rule, see AGENTS.md + archer.zig): it reuses the
-// hero's real anthropometry scaffold — the same 18-bone parent hierarchy + FK convention —
-// and, crucially, LOCOMOTES ON THE HERO'S NORMATIVE GAIT (heromod.advanceGait + legChain),
-// never a bespoke walk. What differs is the SKIN (a hulking mis-proportioned frame: barrel
-// chest, long heavy arms, a low small head with ONE eye) and the UPPER body (the club carry +
-// the overhead slam ride on top of the shared legs). The weapon slot is repurposed as the
-// CLUB. Because the whole rig scales up (SCALE), the stride phase is fed a scale-corrected
-// distance so the giant's long legs don't skate (see update()).
+// FOUNDED ON THE HUMANOID MODEL (owner's rule): the hero's anthropometry scaffold, parent
+// hierarchy and FK convention, and — crucially — the hero's NORMATIVE GAIT (advanceGait +
+// legChain), never a bespoke walk. What differs is the SKIN (barrel chest, long heavy arms, a
+// low small one-eyed head) and the UPPER body. The whole rig scales up, so the stride phase is
+// fed a SCALE-CORRECTED distance or the long legs skate (see update()).
 //
-// The upper body ARTICULATES on the walk as hard as the legs do (AGENTS.md's second humanoid
-// rule): contralateral arm swing, a shoulder girdle counter-rotating against the pelvis, a trunk
-// nod per footfall, and a chain of deliberate LAGS — the loaded club arm trails the stride, the
-// club trails the arm. Shared legs under a rigid trunk is what reads as moving in ONE PIECE.
-//
-// Rendering discipline matches hero/frog/archer: procedural Builder meshes drawn with drawMesh
-// through one scene-shader material, so it lights + casts shadows like everything else.
+// And the upper body ARTICULATES as hard as the legs: contralateral swing, a girdle
+// counter-rotating against the pelvis, a trunk nod per footfall, and a chain of deliberate LAGS
+// — the loaded club arm trails the stride, the club trails the arm. Shared legs under a rigid
+// trunk is what reads as moving in ONE PIECE.
 
 // ── palette (pre-gamma dark — the scene shader gammas output, so mid values lift) ──────────
 // Ashen grey-tan hide, paler scarred belly, near-black hollows, pale bone tusks + nails, and
@@ -95,14 +88,13 @@ const CLAVR = 23; // …and R, the loaded side
 const parent = [N]i32{ -1, ROOT, SPINE, HUMP, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CLAVL, SHL, ELL, CLAVR, SHR, ELR, WRR, SKULL, ANKL, ANKR, CHEST, CHEST, CHEST };
 
 // Where this giant carries his weight, MEASURED off footMesh: the fat pad under each ankle.
-// `hero.legChain` levels each ankle against its own patch every frame so the sole can't rake
-// through the ground (and `hero.soleDepth` is the measurement the unit tests read).
+// `hero.legChain` levels each ankle against its patch every frame so the sole can't rake through
+// the ground.
 //
-// The TOES are deliberately NOT patches. They are the one part of him MEANT to break the surface —
-// TOE_GRIP claws them into the dirt as he braces a slam and TOE_PUSH drives off the ball at the end
-// of each stance — so planting off them would cancel exactly the detail that makes the foot look
-// like it works the ground, and would jack the whole giant up mid-slam until his club could no
-// longer reach the earth (which is precisely what the club tests caught when they were included).
+// The TOES are deliberately NOT patches — they are the one part of him MEANT to break the
+// surface (TOE_GRIP claws into the dirt bracing a slam, TOE_PUSH drives off the ball). Planting
+// off them would cancel that and jack the whole giant up mid-slam until his club could no longer
+// reach the earth, which is exactly what the club tests caught when they were included.
 const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKL, .heel = 0.094 * H, .toe = 0.144 * H, .halfW = 0.082 * H, .drop = 0.039 * H },
     .{ .bone = ANKR, .heel = 0.094 * H, .toe = 0.144 * H, .halfW = 0.082 * H, .drop = 0.039 * H },
@@ -112,10 +104,15 @@ const H: f32 = heromod.H;
 // Ogre proportions (fractions of H): LEGS keep the hero's segment lengths so the shared gait
 // reads honestly; ARMS run long + heavy, the frame wide. Bulk comes from the meshes + the
 // hunch, not from warping the leg chain the gait expects.
-const SEG_THIGH = 0.245;
-const SEG_SHANK = 0.246;
-const SEG_UPARM = 0.210; // long, heavy arms — but not so long they knuckle-drag + hide the legs
-const SEG_FOREARM = 0.170;
+const SEG_THIGH = heromod.SEG_THIGH; // shared with the hero — legChain's geometry is measured off
+const SEG_SHANK = heromod.SEG_SHANK; //   these, so they must never drift from the source
+// Owner's call: arms SHORTER and LEANER, hands BIGGER. Length came back toward the hero's own
+// fractions (0.188 / 0.145) — the old 0.210 / 0.170 read as an ape's reach — and the girth came
+// off the limbs and went into the FISTS, which is where a brute's power should read anyway.
+// Shortening the arm shortens the club's reach to the earth, so the slam's waist fold and
+// SLAM_LEN / SWIPE_INNER / SWIPE_OUTER are all RE-MEASURED against it (see those constants).
+const SEG_UPARM = 0.194; // heavy arms, but no longer knuckle-draggers
+const SEG_FOREARM = 0.153;
 
 fn restPositions() [N]rl.Vector3 {
     const hx = 0.135; // wide hip half-separation (a broad base)
@@ -250,36 +247,45 @@ const DISS_DUR = 1.1; // dissipation into grace-gold motes (ER-consistent with f
 // slam crush zone is the CLUB'S LINE — a strip down the facing axis, NOT a half-disc fan (the
 // old shape was an unfair AoE); flank the line and you're safe.
 const HERO_REACH = foe.HERO_REACH; // hero footprint added to the strip on both axes
-const SLAM_LEN = 1.05; // crush strip length ahead of the seat (pre-scale). MEASURED, not guessed:
-//   clubLowWorld() traced frame by frame, the head first touches earth ~1.2 out and skids in to 0.94,
-//   and the drum's own footprint carries ~0.45 further — so 1.05 x scale ends the strip on the club's
-//   actual outer edge. Retune the club, the slam arc or the waist fold and RE-MEASURE this with it
-//   (it used to claim 3.15 against a club that reached 1.7 — a metre and a half of free damage).
+const SLAM_LEN = 1.05; // crush strip length ahead of the seat (pre-scale). MEASURED off
+//   clubLowWorld() frame by frame: the head first touches earth ~1.19 out, skids in to 0.95, and the
+//   drum's footprint carries ~0.45 further, so 1.05 x scale ends the strip on the club's real outer
+//   edge. Retune the club, the slam arc or the waist fold and RE-MEASURE (it once claimed 3.15
+//   against a club that reached 1.7 — a metre and a half of free damage).
+//   RE-MEASURED after the arms were shortened: crater 0.95, first-earth 1.19 — unmoved, because the
+//   slam's depth is carried by the 62 deg waist fold, not by arm length. Note the strip's far end
+//   (2.21) still sits ~0.6 past the drum's outer edge; that slack is load-bearing, since SLAM_R 2.30
+//   must stay under `SLAM_LEN*scale + HERO_REACH` or he commits to swings that cannot land. Tighten
+//   the strip only together with SLAM_R (the test pins the pair).
 const SLAM_HALF_W = 0.45; // crush strip HALF-width (pre-scale) — about the club head + shock
 // The SWIPE's hurt shape is a SECTOR, not a strip: a band at arm's length swept through the front
 // arc. Inside SWIPE_INNER you are under the arc (hugging his legs — the counter to it); past the
 // band you are out of reach; outside the arc it hasn't come round to you yet. MEASURED off the
 // posed club at the impact frame, like SLAM_LEN — re-measure if the arm angles or CLUB_DROP change.
-const SWIPE_INNER = 0.70; // pre-scale: nearer than this and the club passes over you
-const SWIPE_OUTER = 1.95; // …and the outer edge of the swept band (the club's tip rides at ~1.67)
+const SWIPE_INNER = 1.18; // pre-scale: nearer than this and the club passes over you. RE-MEASURED —
+//   the club's low point sweeps a band 2.63..3.56 out (1.25..1.69 pre-scale), so at the old 0.70 the
+//   sector claimed from 0.92 world once trySwipe's HERO_REACH forgiveness was applied — and the hero
+//   CANNOT stand nearer than 1.52 (the ogre's own bodyR 1.16 + HERO_R 0.36, held by collision). The
+//   "hug his legs and the arc passes over you" counter this constant exists to create therefore did
+//   not exist at all: every reachable position inside the band was a hit. At 1.18 the sector starts
+//   at 1.93, leaving a real ~0.4 m pocket at his feet that beats the swipe.
+const SWIPE_OUTER = 1.95; // …and the outer edge of the swept band (the club's tip rides at ~1.69)
 // The sector is NOT centred on his facing: the club starts cocked behind his right shoulder and
-// finishes past his left, so the swept bearings run about −119..+22 (MEASURED off the posed bone
-// frame by frame, height 2.37 → 1.07 — head down to hip on a hero). The arc is centred on THAT.
-// Centring it on the facing instead claims a slice of his left the club never reaches and gives away
-// the right rear where the swing actually starts.
+// finishes past his left, so the swept bearings run ~−119..+22 (MEASURED off the posed bone, height
+// 2.37 → 1.07 — head to hip on a hero). Centre it on the facing instead and you claim a slice of
+// his left the club never reaches while giving away the right rear where the swing starts.
 const SWIPE_ARC_MID = -48.0; // deg (negative = his club side, his right)
 const SWIPE_ARC = 144.0; // deg of total sweep — ±72 about SWIPE_ARC_MID
 
 // ── posture channel constants (degrees) — the club carry + the slam arc + the sad idle ─────
 const HUNCH = 9.0; // base forward stoop — stooped + weary, but still standing TALL (imposing)
-// HE HINGES AT THE WAIST (owner's law): the fraction of any body pitch the PELVIS is allowed to
-// take. Small on purpose — the pelvis stays over his planted feet and the trunk folds above it, so
-// a swing bends the giant in the middle instead of tipping his whole frame (legs included) forward.
+// HE HINGES AT THE WAIST (owner's law): the fraction of any body pitch the PELVIS may take. Small
+// on purpose — the pelvis stays over his planted feet and the trunk folds above it, so a swing
+// bends the giant in the middle instead of tipping his whole frame, legs included.
 const PELVIS_SHARE = 0.16;
-// THE CARRY (owner's call): the club is HEFTED AT HIS SIDE, never dragged. The arm hangs
-// plumb-and-a-hair-back under the weight and the club is RAKED BACK in the fist so the stone
-// head trails behind him, hovering a hand's breadth clear of the grass — it must never touch
-// (a club ploughing through the dirt was the old goof), and only the SLAM reaches the earth.
+// THE CARRY (owner's law): the club is HEFTED AT HIS SIDE, never dragged. The arm hangs
+// plumb-and-a-hair-back under the weight and the club is RAKED BACK in the fist so the head trails
+// behind him a hand's breadth clear of the grass. It must NEVER touch; only the SLAM reaches earth.
 const CARRY_SH = 5.0; // club arm hangs plumb, a hair BACK — the head's weight pulls it behind
 const CARRY_EL = -13.0; // a heavy arm keeps some natural flex — never a straight pole
 // NB the club's world rake is the SUM of every ancestor's pitch — the body's hunch/lean and the
@@ -300,21 +306,19 @@ const OFF_EL = -18.0;
 const HEAD_DROOP = 8.0; // downcast, sad at rest (+ = looks down) — low, but the face still SHOWS
 //   (the neck already carries the head forward and the waist stoop pitches it further; stacking a
 //   deep droop on both aimed the face at the dirt and cost him his whole silhouette read)
-// THE EYE TRACKS YOU. A giant is OUT-TURNED (TURN_RATE is only ~137 deg/s), so the head has to
-// get there first: it swivels onto your bearing well ahead of the body, craning to the limit of a
-// neck and no further. Circling him, that swivel is the single biggest "he is alive and he has
-// noticed" cue — and a free, honest telegraph of who he has decided to crush.
+// THE EYE TRACKS YOU. A giant is OUT-TURNED (TURN_RATE ~137 deg/s), so the head gets there first,
+// swivelling onto your bearing ahead of the body and craning to a neck's limit. Circling him, that
+// swivel is the biggest "he has noticed" cue — and an honest telegraph of who he means to crush.
 const HEAD_YAW_MAX = 55.0; // deg the neck cranes before the body has to come round with it
 const HEAD_TRACK_RATE = 220.0; // deg/s — comfortably faster than the body's turn, so it LEADS
 const HEAD_SCAN = 26.0; // deg of the slow, sad idle sweep when nothing is in range
 const HEAD_LOOK_DOWN = 16.0; // extra downward pitch at arm's length: he has to look DOWN at you
 
 // ── the WALK's upper-body articulation (owner's law: a humanoid must NOT move in one piece) ──
-// Contralateral swing, giant-scaled, with every link arriving LATE by its own weight: the FREE
-// arm swings huge and loose, the CLUB arm is loaded with a hundredweight of stone so it swings
-// SHORT and BEHIND the stride, and the club keeps rocking in the fist after the arm has already
-// turned over — a pendulum hung off a pendulum. THE LAGS ARE THE POINT: every joint peaking on
-// the same frame is exactly what reads as one welded block, however big the amplitudes get.
+// Contralateral swing, giant-scaled, every link arriving LATE by its own weight: the FREE arm
+// swings huge and loose, the CLUB arm is loaded so it swings SHORT and BEHIND the stride, and the
+// club keeps rocking in the fist after the arm has turned over — a pendulum off a pendulum. THE
+// LAGS ARE THE POINT: joints peaking on the same frame read as one welded block at any amplitude.
 const OFF_ARM_SWING = 26.0; // deg the free shoulder swings (the hero walks on 9 — a giant lumbers)
 const OFF_ELBOW_SWING = 22.0; // deg the free elbow flexes through its forward swing
 const CLUB_ARM_SWING = 9.0; // the loaded shoulder swings short — the club's mass damps it
@@ -322,11 +326,10 @@ const CLUB_ELBOW_SWING = 6.0; // and its elbow barely gives (locked round the ha
 const CLUB_LAG = 0.6; // rad the loaded arm trails the stride — heavy limbs arrive late
 const CLUB_PEND = 7.0; // deg the club rocks in the fist, trailing the arm in its turn
 const PEND_LAG = 1.0; // rad the club's own rock trails the arm's swing
-// ABDUCTION — the club arm is held OUT from the body, and this is load-bearing in both senses:
-// a giant hefts a hundredweight of stone clear of his own legs, AND the whole chain's vertical
-// drop scales by cos(abduction), which is most of what lifts the head off the grass. It has to
-// come back IN for the slam, though, or the club crashes down beside the facing line instead of
-// on it — so it's a resolved channel like the rest, not a constant.
+// ABDUCTION — the club arm held OUT from the body, load-bearing in both senses: it clears his own
+// legs, AND the chain's vertical drop scales by cos(abduction), which is most of what lifts the
+// head off the grass. It must come back IN for the slam or the club lands beside the facing line
+// instead of on it — so it is a resolved channel, not a constant.
 const CLUB_ABD = 22.0; // carried: held clear of his stride, but AT his side — not splayed out like a
 //   prop (the shorter CLUB_DROP is what buys this: the hover no longer depends on the abduction)
 const WIND_ABD = 16.0; // cocked overhead, coming in over the centre
@@ -490,7 +493,7 @@ pub const Ogre = struct {
     prevPhase: f32 = 0, // for footfall dust on the stride half-cycles
 
     // combat
-    vit: combat.Vitals = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX),
+    vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX),
     hits: u32 = 0,
     hitLatch: bool = false,
     flash: f32 = 0,
@@ -689,11 +692,11 @@ pub const Ogre = struct {
             // — else a flinch mid-windup freezes the reared-back pose beneath the recoil (wrong).
             .stunlight => {
                 self.easeChannelsNeutral(dt);
-                if (self.t >= combat.LIGHT_STUN_DUR) self.enterIdle();
+                if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enterIdle();
             },
             .stunheavy => {
                 self.easeChannelsNeutral(dt);
-                if (self.t >= combat.HEAVY_STUN_DUR) self.enterIdle();
+                if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enterIdle();
             },
             .dead => {
                 self.easeChannelsNeutral(dt); // arms/carry settle as the body goes over
@@ -1038,10 +1041,10 @@ pub const Ogre = struct {
 
     fn stunAmount(self: *const Ogre) f32 {
         if (self.state == .stunlight) {
-            const u = mathx.clampF(self.t / combat.LIGHT_STUN_DUR, 0, 1);
+            const u = mathx.clampF(self.t / combat.FOE_LIGHT_STUN_DUR, 0, 1);
             return mathx.sinf(u * std.math.pi);
         } else if (self.state == .stunheavy) {
-            const u = mathx.clampF(self.t / combat.HEAVY_STUN_DUR, 0, 1);
+            const u = mathx.clampF(self.t / combat.FOE_HEAVY_STUN_DUR, 0, 1);
             return mathx.smoothstep(0, 0.12, u) * (1.0 - mathx.smoothstep(0.78, 1.0, u));
         }
         return 0;
@@ -1089,12 +1092,11 @@ pub const Ogre = struct {
         // Body pitch: the base stoop / attack lean, a huge RECOIL back on a light flinch, a heavy
         // forward SAG on a stance-break, a nod into each footfall, and the death crash.
         //
-        // HE HINGES AT THE WAIST (owner's law). The pelvis is allowed only PELVIS_SHARE of that
-        // pitch — it stays over his planted feet — and the rest is handed to the SPINE → CHEST →
-        // HUMP chain in poseUpper. Pitching the ROOT rotates the LEGS with the trunk, so every
-        // stoop and every swing swings his whole frame (and from three-quarters it reads as a
-        // quadruped bowing) instead of a mass folding at the middle over feet that stay put.
-        // DEATH is the deliberate exception: a topple IS the entire frame going over.
+        // HE HINGES AT THE WAIST (owner's law). The pelvis takes only PELVIS_SHARE of that pitch
+        // and stays over his planted feet; the rest goes to SPINE → CHEST → HUMP in poseUpper.
+        // Pitching the ROOT rotates the LEGS with the trunk, so every stoop swings his whole
+        // frame and from three-quarters reads as a quadruped bowing. DEATH is the exception: a
+        // topple IS the entire frame going over.
         const bodyPitch = self.bodyLean * (1.0 - dk2) - 40.0 * lstun + 34.0 * hstun;
         const leanX = PELVIS_SHARE * bodyPitch + 2.2 * self.jolt * m + 84.0 * dk2 + 5.0 * settle;
         const waist = (1.0 - PELVIS_SHARE) * bodyPitch; // …the share the trunk folds through
@@ -1187,19 +1189,16 @@ pub const Ogre = struct {
         // The trunk NODS twice a stride as the mass settles onto each planted foot, and the
         // footfall CATCH spikes it further — the sagittal life the trunk had none of.
         const nod = TRUNK_NOD * (0.5 - 0.5 * mathx.cosf(2.0 * armPh)) * m + 1.6 * self.jolt * m;
-        // Curl the spine into the hunch; the stance-break folds it further, a flinch throws it
-        // back. The torso WINDS about its axis through windup→slam (self.twist) — and WALKING,
-        // the shoulder girdle COUNTER-ROTATES against the pelvis every stride and counter-rolls
-        // its lumber. That counter-wind is most of why a walking trunk reads as a jointed spine
-        // instead of one welded block (the pelvis alone yawing just swings the whole slab).
+        // Curl the spine into the hunch; a stance-break folds it further, a flinch throws it back.
+        // The torso WINDS about its axis through windup→slam (self.twist), and walking, the
+        // girdle COUNTER-ROTATES against the pelvis and counter-rolls its lumber. That counter-
+        // wind is most of why a walking trunk reads as a jointed spine and not one welded slab.
         const spineFlex = 6.0 + 26.0 * dk1 + 12.0 * hstun - 14.0 * lstun;
-        // THE WAIST HINGE. `waist` is the body pitch the pelvis refused (see pose()) and it is
-        // SHARED down the three-segment back (lumbar → ribcage → hump) together with the spine's
-        // own resting curl, so the trunk folds as a CURVE over planted legs — one joint doing all
-        // of it looks hinged, and doing it at the ROOT swings the legs too.
+        // THE WAIST HINGE. `waist` is the pitch the pelvis refused (see pose()), SHARED down the
+        // three-segment back (lumbar → ribcage → hump) with the spine's own curl, so the trunk
+        // folds as a CURVE over planted legs. One joint doing all of it looks hinged.
         // `nod`'s split across SPINE + CHEST must keep summing to 1.0 — the club's rake cancels
-        // exactly that much (see the CLUB line) — so the hump's nod share is its own, extra, and
-        // lands only on the head, which is where a heavy nod belongs anyway.
+        // exactly that much — so the hump's nod share is extra and lands only on the head.
         setLocal(wx, SPINE, rest, mul3(rx(spineFlex * 0.40 + waist * 0.46 + nod * 0.45), ry(self.twist * 0.4 - 0.45 * prot), rz(-0.30 * lumber)));
         setLocal(wx, CHEST, rest, mul3(rx(spineFlex * 0.32 + waist * 0.34 + nod * 0.55), ry(self.twist * 0.6 - 0.75 * prot), rz(-0.45 * lumber)));
         // The HUMP: the mass between his shoulders, on its own hinge. It rolls a beat behind the
@@ -1212,13 +1211,12 @@ pub const Ogre = struct {
             ry(self.twist * 0.2 - 0.25 * prot),
             rz(-0.22 * lumber),
         ));
-        // Head: hangs low + sad, scanning at idle, sighting on a windup, lolling on death/stagger;
-        // walking it counter-rolls, counter-yaws AND counter-nods the heaving trunk, so the mass
-        // pitches and swaggers under a skull whose eye stays on YOU (as a real head barely moves).
-        // …and the neck BACKS OUT most of whatever extra the waist is stooping (past its resting
-        // hunch), the same gravity/attention argument as the club's rake: a giant folded over his
-        // own gut still holds his face up to look down the avenue at you. Only while the club HANGS
-        // — through a windup/slam the head is meant to ride the body's arc and drive with it.
+        // Head: hangs low and sad, scanning at idle, sighting on a windup, lolling on death.
+        // Walking it counter-rolls, counter-yaws AND counter-nods the heaving trunk, so the mass
+        // swaggers under a skull whose eye stays on YOU. It also BACKS OUT most of whatever extra
+        // the waist is stooping past its resting hunch — a giant folded over his own gut still
+        // holds his face up to look at you — but only while the club HANGS; through a windup the
+        // head is meant to ride the body's arc.
         const level = 0.6 * hung * mathx.maxF(0, waist - (1.0 - PELVIS_SHARE) * HUNCH);
         setLocal(wx, NECK, rest, mul3(rx(self.headPitch * 0.35 + self.headLook * 0.3 + 8.0 * dk1 - 0.55 * nod - level * 0.45), ry(0.55 * prot + 0.30 * self.headYaw), rz(-lumber * 0.5)));
         setLocal(wx, SKULL, rest, mul3(
@@ -1480,13 +1478,12 @@ fn buildMeshes() [N]rl.Mesh {
     return mesh;
 }
 
-// FLESH IS ROUND. Every organic mass here is a `addBlob` ellipsoid or an `addCapsule` (domed both
-// ends); addCube/addBox are reserved for what really is hard and flat — iron, buried blades, cloth
-// strips. A bare addCylinder leaves an open cut-pipe end and a hard ring at every seam, and those
-// rings + boxes are exactly what read as BLOCKY however good the animation on top of them is.
+// FLESH IS ROUND. Every organic mass here is an `addBlob` or an `addCapsule`; addCube/addBox is
+// for what really is hard and flat. A bare addCylinder leaves an open cut-pipe end and a hard
+// ring at every seam, and those rings + boxes are what read as BLOCKY however good the animation.
 //
-// A thick limb segment `a`→`e` that BULGES mid-length and swells into a rounded joint ball at the
-// far end — one hide tone throughout, so the body reads as one flesh rather than a michelin stack.
+// A thick limb `a`→`e` that BULGES mid-length and swells into a joint ball at the far end — one
+// hide tone throughout, so the body reads as one flesh, not a michelin stack.
 fn limb(b: *Builder, a: rl.Vector3, e: rl.Vector3, r0: f32, r1: f32, col: rl.Color) void {
     const mid = mathx.lerpV(a, e, 0.42);
     b.addCapsule(a, mid, r0, r0 * 1.09, 12, col);
@@ -1701,11 +1698,10 @@ fn footMesh(side: f32) rl.Mesh {
     // A ROUND elephantine foot: a fat capsule pad heel→ball, a domed ankle boss above it, and a
     // heel pad swelling behind. The toe lobes hang off the TOE bone now, so the foot ROLLS.
     //
-    // `PAD_UP` is not a style tweak — it is a BUG FIX, and the bug was a unit mix-up: addCube takes
-    // a FULL size but addCapsule/addBlob take true RADII, so the pad's fat 0.068·H radius hung
-    // 0.036·H BELOW the sole plane the ankle height (ay) defines. Every ogre therefore stood buried
-    // to the ankle — 0.036·H × SCALE is over 10 cm of foot underground, before any animation.
-    // Raising all three lumps by that much lands the deepest point exactly ON the sole plane and
+    // `PAD_UP` is a BUG FIX, not a style tweak, and the bug was a unit mix-up: addCube takes a
+    // FULL size but addCapsule/addBlob take true RADII, so the pad's 0.068·H radius hung 0.036·H
+    // BELOW the sole plane `ay` defines — over 10 cm of foot underground at SCALE, before any
+    // animation ran. Raising all three lumps by that much lands the deepest point ON the plane and
     // leaves the ankle sitting low INSIDE the pad, which is how a real elephantine foot reads.
     // RE-MEASURE this if the pad radii change; `the ogre STANDS on the ground` guards it.
     const PAD_UP = 0.036 * H;
@@ -1737,53 +1733,60 @@ fn toeMesh(side: f32) rl.Mesh {
 fn upperArmMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    limb(&b, v3(0, 0, 0), v3(0, -SEG_UPARM * H, 0), 0.088 * H, 0.072 * H, HIDE); // heavy upper arm
-    b.addBlob(v3(0, -0.070 * H, 0.052 * H), v3(0.062 * H, 0.070 * H, 0.040 * H), 7, 12, HIDE); // biceps swell, front
-    b.addBlob(v3(0, -0.086 * H, -0.048 * H), v3(0.056 * H, 0.076 * H, 0.036 * H), 7, 12, HIDE); // triceps, long + behind
-    b.addBlob(v3(-0.020 * H, -0.090 * H, 0.070 * H), v3(0.034 * H, 0.052 * H, 0.020 * H), 6, 11, SCAR); // old brand / callous
+    // Leaner than it was (0.088/0.072): the mass moved to the fists. Still tapered, still
+    // blob-swelled — a thinner limb must not become a smooth pole (FLESH IS ROUND).
+    limb(&b, v3(0, 0, 0), v3(0, -SEG_UPARM * H, 0), 0.077 * H, 0.063 * H, HIDE); // heavy upper arm
+    b.addBlob(v3(0, -0.064 * H, 0.046 * H), v3(0.055 * H, 0.064 * H, 0.036 * H), 7, 12, HIDE); // biceps swell, front
+    b.addBlob(v3(0, -0.078 * H, -0.043 * H), v3(0.050 * H, 0.070 * H, 0.032 * H), 7, 12, HIDE); // triceps, long + behind
+    b.addBlob(v3(-0.018 * H, -0.082 * H, 0.062 * H), v3(0.030 * H, 0.047 * H, 0.018 * H), 6, 11, SCAR); // old brand / callous
     return b.toMesh();
 }
 
 fn forearmMesh(seed: u64, corded: bool) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    limb(&b, v3(0, 0, 0), v3(0, -SEG_FOREARM * H, 0), 0.075 * H, 0.06 * H, HIDE); // thick forearm
-    b.addBlob(v3(0, -0.048 * H, 0.020 * H), v3(0.070 * H, 0.056 * H, 0.058 * H), 7, 12, HIDE); // the forearm's upper mass
+    limb(&b, v3(0, 0, 0), v3(0, -SEG_FOREARM * H, 0), 0.066 * H, 0.053 * H, HIDE); // thick forearm
+    b.addBlob(v3(0, -0.043 * H, 0.018 * H), v3(0.062 * H, 0.050 * H, 0.051 * H), 7, 12, HIDE); // the forearm's upper mass
     var rng = mathx.Rng.init(seed);
-    b.addBlob(v3(rng.range(-0.03, 0.03) * H, -rng.range(0.06, 0.12) * H, 0.052 * H), v3(0.030 * H, 0.026 * H, 0.020 * H), 6, 10, if (rng.float() < 0.5) SCAR else HIDE_DK); // a wart / old weal
+    b.addBlob(v3(rng.range(-0.027, 0.027) * H, -rng.range(0.055, 0.11) * H, 0.046 * H), v3(0.027 * H, 0.023 * H, 0.018 * H), 6, 10, if (rng.float() < 0.5) SCAR else HIDE_DK); // a wart / old weal
     if (corded) { // the CLUB forearm: wound with old rope — the grip it never lets go of
+        // Bands hug the LEANER shaft and stay inside the shorter segment (ends at −SEG_FOREARM·H).
         b.setMat(.leather);
-        b.addCylinder(v3(0, -0.075 * H, 0), v3(0, -0.105 * H, 0), 0.075 * H, 0.073 * H, 8, ROPE);
-        b.addCylinder(v3(0, -0.125 * H, 0), v3(0, -0.145 * H, 0), 0.070 * H, 0.068 * H, 8, ROPE);
+        b.addCylinder(v3(0, -0.066 * H, 0), v3(0, -0.093 * H, 0), 0.066 * H, 0.064 * H, 8, ROPE);
+        b.addCylinder(v3(0, -0.111 * H, 0), v3(0, -0.129 * H, 0), 0.061 * H, 0.059 * H, 8, ROPE);
     }
     return b.toMesh();
 }
 
+// The FISTS carry the mass the arms gave up (owner's call): oversized, knotted, out of proportion
+// to the leaner limb above them — which is the read, not an error. A brute's power belongs in the
+// hands. `gy`/`gz` (the club's grip anchor) are unchanged, so the club geometry is untouched.
 fn fistMesh(shackled: bool) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addBlob(v3(0, -0.030 * H, 0.008 * H), v3(0.062 * H, 0.058 * H, 0.056 * H), 9, 13, HIDE); // big fist
-    b.addBlob(v3(0, -0.048 * H, 0.020 * H), v3(0.052 * H, 0.030 * H, 0.048 * H), 7, 12, HIDE); // the curled fingers' mass
+    b.addBlob(v3(0, -0.032 * H, 0.009 * H), v3(0.078 * H, 0.073 * H, 0.070 * H), 9, 13, HIDE); // big fist
+    b.addBlob(v3(0, -0.054 * H, 0.023 * H), v3(0.066 * H, 0.038 * H, 0.060 * H), 7, 12, HIDE); // the curled fingers' mass
     b.setMat(.skin);
     for ([_]f32{ -1.5, -0.5, 0.5, 1.5 }) |k| { // four ROUND knuckles, uneven — not one flat ridge
-        b.addBlob(v3(k * 0.027 * H, -0.010 * H, 0.040 * H), v3(0.017 * H, 0.016 * H, 0.016 * H), 6, 10, HIDE_LT);
+        b.addBlob(v3(k * 0.034 * H, -0.010 * H, 0.050 * H), v3(0.022 * H, 0.020 * H, 0.020 * H), 6, 10, HIDE_LT);
     }
     b.setMat(.stone);
     for ([_]f32{ -1.5, -0.5, 0.5, 1.5 }) |k| { // blunt knuckle-nails, one cracked short
-        const nl: f32 = if (k > 1.0) 0.010 else 0.015;
-        b.addBlob(v3(k * 0.027 * H, -0.014 * H, 0.056 * H), v3(0.013 * H, 0.016 * H, nl * H), 6, 10, TUSK_DK);
+        const nl: f32 = if (k > 1.0) 0.013 else 0.019;
+        b.addBlob(v3(k * 0.034 * H, -0.015 * H, 0.070 * H), v3(0.016 * H, 0.020 * H, nl * H), 6, 10, TUSK_DK);
     }
     if (shackled) {
         // the FORSAKEN's iron: a rusted manacle still riveted round the wrist, three links of
         // snapped chain swinging beneath — someone chained this giant, once, long ago.
+        // It rings the WRIST, so it tracks the (now leaner) forearm's end, not the bigger fist.
         b.setMat(.steel);
-        b.addCylinder(v3(0, 0.040 * H, 0.005 * H), v3(0, 0.012 * H, 0.005 * H), 0.062 * H, 0.060 * H, 8, CLUB_IRON);
-        b.addCube(v3(0, 0.026 * H, 0.070 * H), v3(0.020 * H, 0.024 * H, 0.014 * H), IRON_RUST); // the rivet boss
+        b.addCylinder(v3(0, 0.040 * H, 0.005 * H), v3(0, 0.012 * H, 0.005 * H), 0.057 * H, 0.055 * H, 8, CLUB_IRON);
+        b.addCube(v3(0, 0.026 * H, 0.064 * H), v3(0.020 * H, 0.024 * H, 0.014 * H), IRON_RUST); // the rivet boss
         var li: i32 = 0;
         while (li < 3) : (li += 1) {
             const fi = @as(f32, @floatFromInt(li));
             b.addCube(
-                v3(0.005 * H * fi, (-0.005 - 0.036 * fi) * H, (0.072 + 0.007 * fi) * H),
+                v3(0.005 * H * fi, (-0.005 - 0.036 * fi) * H, (0.066 + 0.007 * fi) * H),
                 v3(0.013 * H, 0.026 * H, 0.009 * H),
                 if (li == 1) IRON_RUST else CLUB_IRON,
             );
@@ -1797,10 +1800,9 @@ fn fistMesh(shackled: bool) rl.Mesh {
 // it overhead. A gnarled bog-oak haft swelling into a knotted studded head; wabi-sabi, all uneven.
 //
 // LENGTH IS A HARD CONSTRAINT, not taste: a hanging fist sits ~0.38 H off the ground, so a club
-// that hangs further than that CANNOT clear the grass at any believable rake — which is exactly
-// how the old one ended up ploughing the dirt like a tripod leg. Everything below the grip
-// therefore lives inside CLUB_DROP; the mass it lost in LENGTH went back in as WIDTH (a fatter,
-// stubbier, more brutal head reads heavier anyway than a long pole ever did).
+// hanging further than that CANNOT clear the grass at any believable rake — which is how the old
+// one ended up ploughing the dirt like a tripod leg. Everything below the grip lives inside
+// CLUB_DROP; the mass it lost in length went back in as WIDTH, which reads heavier anyway.
 const CLUB_DROP = 0.30 * H; // grip → the club's LOWEST point. The clearance budget; nothing below it.
 //   Cut from 0.42: at 0.42 the thing hung to within a hand's breadth of the grass and only a big
 //   abduction kept it clear, so the arm had to be splayed out like a third leg to carry it. The
@@ -1863,6 +1865,19 @@ fn clubMesh() rl.Mesh {
 // each one is invisible in code review and obvious on screen: the club ploughing the dirt, the head
 // swallowed by the shoulders, and a swipe hitbox that doesn't match where the club goes. They cost a
 // few matrix chains to check and they catch a whole class of "it looks like a goof" regressions.
+test "the swipe leaves a REACHABLE pocket at his feet — the counter has to exist" {
+    // SWIPE_INNER's whole job is "hug his legs and the arc passes over you". That is only true if
+    // the sector's inner edge sits OUTSIDE the closest the hero can physically stand, which
+    // collision pins at the ogre's bodyR + the hero's own radius. At the old SWIPE_INNER = 0.70 the
+    // sector reached in to 0.92 world and the pocket was empty set — the documented counter was
+    // unreachable and every legal position inside the band was a hit.
+    const o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.4);
+    const closest = foe.closestApproach(o.bodyR()); // collision never lets him nearer than this
+    const sectorInner = SWIPE_INNER * o.scale - HERO_REACH; // where trySwipe starts connecting
+    try std.testing.expect(sectorInner > closest + 0.2); // a real pocket, not a rounding error
+    try std.testing.expect(sectorInner < SWIPE_OUTER * o.scale); // …and still a band, not a wall
+}
+
 test "the carried club NEVER touches the ground — standing or lumbering (owner's law)" {
     var idle = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.4);
     var k: i32 = 0;
@@ -1985,7 +2000,7 @@ test "swipe hurt SECTOR: sweeps the whole front arc, misses the flanks behind it
 }
 
 test "higher poise: a single hero light does NOT flinch the ogre (only sustained pressure does)" {
-    var vit = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX);
+    var vit = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX);
     // One hero light (poise 10) vs the ogre's 30 poise → no reaction (it shrugs it off).
     try std.testing.expectEqual(combat.HitResult.none, vit.hit(heromod.ATK_LIGHT_HIT));
     // Three quick lights (no regen between) empty the 30 poise → the first flinch.

@@ -16,6 +16,7 @@ const collision = @import("collision.zig");
 const rumblemod = @import("rumble.zig");
 const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
+const sfx = @import("audio.zig"); // the procedural sound bank — every voice synthesized at launch
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -37,9 +38,28 @@ const TURN_RATE = 12.0; // rad/sec the hero yaws toward its heading (souls turn 
 const STRAFE_SPEED = 0.85; // LOCKED-ON sideways travel, as a fraction of forward (ER is anisotropic
 //   too). Deliberately mild — the owner wants the cadence calmed WITHOUT slowing him down much —
 //   and it is the last 15% that lands the sidestep's step rate on the forward walk's. See moveHero.
-const STICK_DEADZONE = 0.16; // left-stick move deadzone
-const LOOK_DEADZONE = 0.12; // right-stick look deadzone
-const PAD_LOOK_RATE = 2.7; // rad/sec camera orbit at full right-stick deflection
+const STICK_DEADZONE = 0.16; // left-stick move deadzone — RADIAL, see stickRadial
+// Right-stick LOOK deadzone. Still bigger than the move stick's: a look stick's resting deflection
+// turns the whole world, where the move stick's only nudges the hero a few centimetres. It had been
+// pushed to 0.22 to stop "moving right rotates the cam right a bit as well" — but that was the
+// mouse-emulation cross-talk the look-device LATCH below now kills at the source, and a radial 0.22
+// throws away a quarter of the stick's travel before anything happens, which is what a look stick
+// reads as DEAD.
+const LOOK_DEADZONE = 0.14;
+// Pixels of mouse travel in one frame that count as the player REACHING FOR THE MOUSE — see the
+// look-device latch. A hidden, uncaptured cursor collects a pixel of jitter from the desk, and
+// without a floor here that jitter takes the camera away from the stick mid-fight.
+const MOUSE_WAKE: f32 = 2.0;
+// ── THE LOOK STICK (ER's) ── three dials, and the split between the first two is the point.
+// YAW is unbounded and a full turn at this rate takes ~2.3 s. PITCH is CLAMPED to 1.35 rad end to
+// end (camera.PITCH_MIN..PITCH_MAX), so running it at the yaw rate slams the camera from the sky to
+// the dirt in half a second — the stick has no fine vertical range at all. Every third-person
+// console camera, ER included, runs vertical appreciably slower than horizontal for exactly this.
+const LOOK_RATE_YAW = 2.7; // rad/sec orbit at full right-stick deflection
+const LOOK_RATE_PITCH = 1.6; // …and vertical, deliberately slower (see above)
+// Response shape past the deadzone: 1 = linear, >1 = fine aim near the centre with the SAME top
+// rate still reached at the rim. A linear look stick has one usable speed — its fastest.
+const LOOK_CURVE = 1.5;
 const ROLL_TAP_MAX = 0.22; // Circle/B released before this (real seconds) = a dodge tap; longer = a sprint hold
 // NO run-unlock hold, ever (owner's rule, see AGENTS.md): the stick IS the speed — tilt
 // maps straight to ground speed every frame, and keyboard movement runs immediately.
@@ -105,6 +125,16 @@ const LOCK_FLICK = 0.65; // right-stick |x| past this cycles to the next target
 // any sliver the sky quad misses stays invisible.
 const CLEAR = rgba(80, 76, 69, 255);
 
+/// What the two look devices were saying this frame, and which one owns the camera. Raw values,
+/// deliberately — the point is to see what arrives BEFORE the deadzone eats it.
+const LookProbe = struct {
+    mdx: f32 = 0,
+    mdy: f32 = 0,
+    rx: f32 = 0,
+    ry: f32 = 0,
+    pad: bool = false,
+};
+
 const Game = struct {
     scene: gfx.Scene,
     sky: gfx.Sky,
@@ -124,6 +154,12 @@ const Game = struct {
     lock: ?FoeRef = null, // ER lock-on: which foe (toad or skeleton) is locked, or null
     rumble: rumblemod.Rumble = .{}, // controller vibration, keyed to combat beats
     deathFade: f32 = 0, // post-respawn fade-from-black seconds remaining (armed while dead)
+    /// THE LOOK-INPUT PROBE — raw, per frame, straight onto the debug readout. The camera yaw is
+    /// written in exactly four places and none of them can see the movement stick, so "walking
+    /// forward turns the camera" cannot come from the code: it is one of the two INPUT DEVICES
+    /// saying something the player is not. This is how you find out which, in one glance, instead
+    /// of guessing: walk straight with Stats up and read which pair is non-zero.
+    probe: LookProbe = .{},
 
     // Built IN PLACE rather than returned by value: Env alone is ~450 KB of flat prop/grid
     // arrays, and a by-value Game would copy all of it across the stack on the way out.
@@ -170,11 +206,51 @@ const Game = struct {
 // keyboard movement is an immediate run (hold sprint for the dash). No hold gates.
 const Move = struct { fx: f32 = 0, fz: f32 = 0, speed: f32 = 0 };
 
-// Rescale a raw stick axis past its deadzone into a clean 0..±1.
-fn axisDZ(v: f32, dz: f32) f32 {
-    const a = @abs(v);
-    if (a < dz) return 0;
-    return std.math.sign(v) * (a - dz) / (1.0 - dz);
+/// A STICK, DEADZONED RADIALLY — direction and magnitude, kept apart.
+///
+/// Deadzoning each axis on its own is a SQUARE deadzone and it is wrong twice over. It chops the
+/// axes independently, so the angle you get is NOT the angle the thumb pushed: at a 0.22 deadzone a
+/// stick held 15° off horizontal comes out 3° off it, because the small axis is eaten whole while
+/// the big one barely notices — the camera (and the hero) creep toward the cardinals and every
+/// diagonal fights you. And a full-deflection diagonal rescales to ~0.88 magnitude, so the stick is
+/// measurably slower on the diagonals than on the axes. Radial keeps the DIRECTION exactly and
+/// reshapes only the MAGNITUDE, which is what a twin-stick camera — ER's included — actually does.
+///
+/// `curve` shapes that magnitude: 1 = linear, >1 = fine control near the centre with the same top
+/// rate still reached at the rim.
+const Stick = struct { x: f32 = 0, y: f32 = 0, mag: f32 = 0 };
+
+fn stickRadial(x: f32, y: f32, dz: f32, curve: f32) Stick {
+    const m = @sqrt(x * x + y * y);
+    if (m < dz) return .{};
+    // Clamped, because a real pad reports past 1 on the diagonals (a square gate on a round stick).
+    const t = mathx.minF((m - dz) / (1.0 - dz), 1.0);
+    return .{ .x = x / m, .y = y / m, .mag = std.math.pow(f32, t, curve) };
+}
+
+test "a radial stick keeps the thumb's ANGLE and does not favour the cardinals" {
+    // The bug this pins: per-axis deadzoning eats the small component whole, so a stick pushed just
+    // off horizontal comes out very nearly horizontal. Here it must come out where it was pushed,
+    // deadzone or no.
+    const ang = 0.26; // ~15°, the case that used to collapse to ~3°
+    const s = stickRadial(mathx.cosf(ang), mathx.sinf(ang), LOOK_DEADZONE, 1.0);
+    try std.testing.expectApproxEqAbs(ang, std.math.atan2(s.y, s.x), 1e-5);
+    // …and a full-deflection DIAGONAL is as fast as a full-deflection cardinal. Square deadzoning
+    // left the diagonal at ~0.88 of the axis, which is the "diagonals drag" half of the same fault.
+    const diag = stickRadial(0.7071, 0.7071, LOOK_DEADZONE, 1.0);
+    const card = stickRadial(1.0, 0.0, LOOK_DEADZONE, 1.0);
+    try std.testing.expectApproxEqAbs(card.mag, diag.mag, 1e-4);
+    // Dead centre is dead, and a pad reading past 1 on the gate corners still clamps to 1.
+    try std.testing.expectEqual(@as(f32, 0), stickRadial(0.05, -0.05, LOOK_DEADZONE, 1.0).mag);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), stickRadial(1.0, 1.0, LOOK_DEADZONE, 1.0).mag, 1e-4);
+}
+
+test "the look curve is fine near centre and still reaches full rate at the rim" {
+    // A curve that changed the TOP speed would be a sensitivity change wearing a curve's clothes.
+    try std.testing.expectApproxEqAbs(@as(f32, 1), stickRadial(1.0, 0.0, LOOK_DEADZONE, LOOK_CURVE).mag, 1e-4);
+    const half = stickRadial(0.5 * (1.0 - LOOK_DEADZONE) + LOOK_DEADZONE, 0.0, LOOK_DEADZONE, LOOK_CURVE);
+    try std.testing.expect(half.mag < 0.5); // half throw gives LESS than half rate — that is the point
+    try std.testing.expect(half.mag > 0.2); // …but it is still a curve, not a dead zone with a lip
 }
 
 fn gatherMove() Move {
@@ -183,12 +259,18 @@ fn gatherMove() Move {
     // over the keyboard so its analog speed is honoured.
     if (rl.isGamepadAvailable(PAD)) {
         if (rl.isGamepadButtonDown(PAD, .right_face_right)) sprint = true;
-        const gx = axisDZ(rl.getGamepadAxisMovement(PAD, .left_x), STICK_DEADZONE);
-        const gz = -axisDZ(rl.getGamepadAxisMovement(PAD, .left_y), STICK_DEADZONE); // stick up = forward
-        const gmag = mathx.minF(@sqrt(gx * gx + gz * gz), 1.0);
-        if (gmag > 0.001) {
-            const sp = if (sprint) SPRINT_SPEED else gmag * RUN_SPEED; // tilt IS the speed, this frame
-            return .{ .fx = gx, .fz = gz, .speed = sp };
+        // LINEAR curve here, and that is the FEEL RULE, not an oversight: the move stick's tilt maps
+        // STRAIGHT to ground speed with nothing shaping it in between. The look stick gets a curve;
+        // this one must not.
+        const s = stickRadial(
+            rl.getGamepadAxisMovement(PAD, .left_x),
+            rl.getGamepadAxisMovement(PAD, .left_y),
+            STICK_DEADZONE,
+            1.0,
+        );
+        if (s.mag > 0.001) {
+            const sp = if (sprint) SPRINT_SPEED else s.mag * RUN_SPEED; // tilt IS the speed, this frame
+            return .{ .fx = s.x, .fz = -s.y, .speed = sp }; // stick up (−y) = forward
         }
     }
     // Keyboard (digital → an immediate run; walking is the stick's analog privilege).
@@ -499,10 +581,16 @@ fn hud(g: *Game, dt: f32) void {
     // ER hides the HUD behind its menus and under the death card, and both want the corners
     // clear — a chip trail hanging across an empty HP bar under YOU DIED reads as a fault.
     if (!g.menu.isOpen() and !g.hero.dead) {
-        // HP is live. FP has nothing to spend it on yet (no spells, no skills) so it sits full;
-        // stamina is REAL — the roll/swing bites and the sprint bleed are in combat.zig.
-        hud_.vitals(dt, g.hero.vit.hpFrac(), 1.0, g.hero.stam.frac(), g.hero.stamRefused / combat.STAM_REFUSE_FLASH);
-        hud_.equipment();
+        // All three bars are LIVE now. FP still has nothing to SPEND it on (no spells, no skills),
+        // so it sits full — but it is a real meter rather than a literal 1.0, because the Cerulean
+        // flask pours into it and a flask whose target is a constant cannot be seen to work.
+        hud_.vitals(dt, g.hero.vit.hpFrac(), g.hero.fp.frac(), g.hero.stam.frac(), g.hero.stamRefused / combat.STAM_REFUSE_FLASH);
+        // The one-line translation combat.FlaskKind → hud.FlaskTint: hud takes plain values and
+        // knows nothing about the combat layer, so the mapping belongs on this side of the fence.
+        hud_.equipment(switch (g.hero.flasks.sel) {
+            .crimson => hud_.FlaskTint.crimson,
+            .cerulean => hud_.FlaskTint.cerulean,
+        }, g.hero.flasks.ready());
         hud_.runes(g.hero.runes.display()); // the ROLLING value, not the banked total
     }
     if (g.menu.stats) debugCorner(g);
@@ -563,6 +651,20 @@ fn debugCorner(g: *Game) void {
     dbgRow(std.fmt.bufPrintZ(&buf, "world  props {d}  solids {d}  fires {d}   drawn {d} in {d} cells (both passes)", .{
         g.env.propCount(), g.env.solidCount(), g.env.lightCount(), g.env.stat_draws, g.env.stat_cells,
     }) catch "", y, hud_.SMALL, rgba(150, 175, 195, 255));
+    y += step;
+
+    // THE LOOK PROBE. Camera yaw is written in four places and not one of them can see the movement
+    // stick, so if the camera turns while you walk, something is SENDING look input. Walk straight
+    // and read this: `stick` moving means the right stick is drifting (or a thumb is resting on
+    // it); `mouse` moving means something is driving the OS cursor — a pad running through a
+    // mouse-emulation layer puts the LEFT stick on it, which is exactly this symptom.
+    dbgRow(std.fmt.bufPrintZ(&buf, "look  {s}   mouse {d:.1},{d:.1}   stick {d:.3},{d:.3}", .{
+        if (g.probe.pad) "PAD" else "MOUSE",
+        g.probe.mdx,
+        g.probe.mdy,
+        g.probe.rx,
+        g.probe.ry,
+    }) catch "", y, hud_.SMALL, rgba(196, 170, 130, 255));
 }
 
 // One right-aligned debug row, inset by the HUD's own margin so the corner lines up with the
@@ -595,6 +697,14 @@ pub fn run(shot: bool) void {
     hud_.init();
     defer hud_.deinit();
 
+    // NO AUDIO UNDER --shot. The harness renders hundreds of frames as fast as it can with no
+    // wall clock behind them, so every beat it stages would fire at once into a device nobody is
+    // listening to — and opening one costs a second of startup for a run that only writes PNGs.
+    // The defer carries its own guard: inside an `if` block it would run at the end of the BLOCK,
+    // tearing the device down on the line after it opened.
+    if (!shot) sfx.init();
+    defer if (!shot) sfx.deinit();
+
     const alloc = std.heap.c_allocator;
     const g = alloc.create(Game) catch return;
     defer alloc.destroy(g);
@@ -619,11 +729,20 @@ pub fn run(shot: bool) void {
     var bWasDown = false; // gamepad Circle/B: a TAP rolls, a HOLD sprints
     var bHeldT: f32 = 0;
     var lockCycleReady = true; // debounce so one flick cycles the lock-on target once
+    // Which device owns the camera. Starts on the MOUSE, so a keyboard+mouse player never has to
+    // wiggle a stick to get look working; the first real right-stick deflection takes it.
+    var lookPad = false;
     // Rising-edge trackers for rumble: pulse the frame an action BEGINS. Watching committed
     // state (not the input press) catches queued actions too.
     var wasRolling = false;
     var wasAttacking = false;
     var wasDead = false;
+    var wasRefused: f32 = 0; // …and the refusal flash, whose rising edge IS the ignored input
+    var wasStun: combat.StunKind = .none;
+    // Footfalls key off the stride phase, not a timer: `hero.phase` is driven by DISTANCE
+    // travelled, so a step lands exactly when a foot does at any speed, and slowing down
+    // lengthens the gap between them for free. Seeded past 0.5 so the first step is a fresh one.
+    var lastPhase: f32 = 0.75;
     defer g.rumble.stop(); // never leave a motor latched after we exit the loop
     while (!rl.windowShouldClose()) {
         const rawDt = rl.getFrameTime(); // wall-clock dt: feel systems (shake, rumble, fades, tap windows)
@@ -764,19 +883,68 @@ pub fn run(shot: bool) void {
                 lockCycleReady = true;
             }
         } else {
-            if (inside and wasInside) g.rig.rotate(md.x, md.y);
-            if (rl.isGamepadAvailable(PAD)) {
-                const rx = axisDZ(padRX, LOOK_DEADZONE);
-                const ry = axisDZ(rl.getGamepadAxisMovement(PAD, .right_y), LOOK_DEADZONE);
-                g.rig.orbit(-rx * PAD_LOOK_RATE * dt, ry * PAD_LOOK_RATE * dt);
+            // ── ONE LOOK DEVICE AT A TIME ── the mouse delta and the right stick used to be SUMMED
+            // every frame, which is wrong twice over. It means a pad player is still steering with
+            // whatever the OS cursor happens to do (and a pad running through a mouse-emulation
+            // layer — Steam Input's desktop fallback, DS4Windows — puts the LEFT stick on that
+            // cursor, so moving right turns the camera right); and it means the tiniest resting
+            // deflection on one device adds to the other rather than being ignored.
+            //
+            // So: the last device to give a REAL look input owns the camera, and the other is dead
+            // until it gives one of its own. Switching costs nothing and is instant — this is a
+            // latch, not a lockout.
+            const padRY: f32 = if (rl.isGamepadAvailable(PAD)) rl.getGamepadAxisMovement(PAD, .right_y) else @as(f32, 0);
+            const look = stickRadial(padRX, padRY, LOOK_DEADZONE, LOOK_CURVE);
+            const padLook = look.mag > 0;
+            // MOUSE_WAKE, not zero: a hidden-but-uncaptured cursor picks up a pixel of jitter from
+            // the desk, and one pixel used to be enough to take the camera off the stick.
+            const mouseLook = inside and wasInside and (@abs(md.x) + @abs(md.y)) > MOUSE_WAKE;
+            if (mouseLook) lookPad = false;
+            if (padLook) lookPad = true;
+            if (lookPad) {
+                // rawDt, NOT dt: looking around is a FEEL system like the shake and the rumble, and
+                // it lives on the wall clock. On `dt` the debug time scale quartered the stick's
+                // camera speed while leaving the mouse's (per-PIXEL, no dt at all) untouched — the
+                // two devices disagreed about how fast the world turns.
+                g.rig.orbit(
+                    -look.x * look.mag * LOOK_RATE_YAW * rawDt,
+                    look.y * look.mag * LOOK_RATE_PITCH * rawDt,
+                );
+            } else if (inside and wasInside) {
+                g.rig.rotate(md.x, md.y);
             }
+            // …and record what BOTH devices said, deadzone or no, for the debug readout.
+            g.probe = .{
+                .mdx = md.x,
+                .mdy = md.y,
+                .rx = padRX,
+                .ry = padRY,
+                .pad = lookPad,
+            };
         }
         wasInside = inside;
+        // PAD ZOOM MOVED TO D-PAD LEFT/RIGHT. Down is ER's quick-item cycle (the flasks, below) and
+        // up is ER's spell cycle, which this build has nothing to put on yet — so the vertical pair
+        // belongs to the item slots and the horizontal one takes the zoom it displaced.
         if (rl.isGamepadAvailable(PAD)) {
-            if (rl.isGamepadButtonPressed(PAD, .left_face_up)) wheel += 1; // D-pad up = zoom in
-            if (rl.isGamepadButtonPressed(PAD, .left_face_down)) wheel -= 1; // D-pad down = zoom out
+            if (rl.isGamepadButtonPressed(PAD, .left_face_right)) wheel += 1; // D-pad right = zoom in
+            if (rl.isGamepadButtonPressed(PAD, .left_face_left)) wheel -= 1; // D-pad left = zoom out
         }
         if (wheel != 0) g.rig.zoom(wheel);
+
+        // ── THE FLASKS (ER) ── X / Square drinks the one in the quick-item slot, D-pad DOWN cycles
+        // which one that is. On the keyboard: R drinks, T cycles (ER's own KB default puts "use
+        // item" on R, and T is its unclaimed neighbour).
+        var drinkReq = rl.isKeyPressed(.r);
+        var cycleReq = rl.isKeyPressed(.t);
+        if (rl.isGamepadAvailable(PAD)) {
+            if (rl.isGamepadButtonPressed(PAD, .right_face_left)) drinkReq = true;
+            if (rl.isGamepadButtonPressed(PAD, .left_face_down)) cycleReq = true;
+        }
+        if (cycleReq and !g.hero.dead) {
+            g.hero.cycleFlask();
+            sfx.play(.flask_cycle);
+        }
 
         // Dodge roll: Space, or a short TAP of Circle/B (holding B sprints instead).
         var rollReq = rl.isKeyPressed(.space);
@@ -824,6 +992,10 @@ pub fn run(shot: bool) void {
                 g.hero.requestAttack(.light);
             }
             g.hero.steerQueuedRoll(rollDir(g, mv));
+            // The draught is NOT buffered — it is the one action you should never find yourself
+            // committed to because of a press you made a second ago in a panic. It either starts
+            // now, on a free hero, or it does not happen.
+            if (drinkReq and g.hero.startDrink()) sfx.play(.flask_drink);
         }
         // The sprint is the only CONTINUOUS drain, and only while he is actually running on his feet — a
         // roll's lunge and an attack's step travel fast but are not sprints. The roll/swing bites are
@@ -848,6 +1020,8 @@ pub fn run(shot: bool) void {
             g.hero.updateStun(dt); // reeling — wide open
         } else if (g.hero.rolling) {
             g.hero.updateRoll(dt, PLAY_HALF); // committed — ignores move input
+        } else if (g.hero.drinking) {
+            g.hero.updateDrink(dt); // committed, and planted — the flask's whole cost
         } else if (g.hero.attacking) {
             // Committed — a short step into the cut; while LOCKED the recovery tail re-squares
             // onto the target (a whiffed swing recovers turning fast).
@@ -868,6 +1042,7 @@ pub fn run(shot: bool) void {
             const slammed = h.stance > 0;
             g.rumble.play(if (slammed) rumblemod.hurt_heavy else rumblemod.hurt);
             g.rig.addShake(if (slammed) SHAKE_HURT_HEAVY else SHAKE_HURT);
+            sfx.play(if (slammed) .hurt_heavy else .hurt);
         }
         // The lone ogre hunts, slams and side-swipes. The overhead crush is the full heavy beat; the
         // faster swipe hurts less and is FELT less, so the two read apart through the pad and camera
@@ -877,6 +1052,7 @@ pub fn run(shot: bool) void {
             const crushed = h.stance >= ogremod.SLAM_HIT.stance;
             g.rumble.play(if (crushed) rumblemod.hurt_heavy else rumblemod.hurt);
             g.rig.addShake(if (crushed) SHAKE_HURT_HEAVY else SHAKE_HURT);
+            sfx.play(if (crushed) .hurt_heavy else .hurt);
         }
         // Blade lands on the skeletons; then they act — kite and loose from the nock at the
         // hero's centre of mass (arrow homing + arc finish the job). A blade hit mid-draw
@@ -893,10 +1069,28 @@ pub fn run(shot: bool) void {
             if (!ar.live) continue;
             ar.hit = false;
             archermod.stepArrow(ar, g.hero.pos, HERO_CENTER_Y, g.hero.iFramed(), arrowCover(g, ar, dt), dt);
-            if (ar.hit and !g.hero.dead) {
-                g.hero.takeHit(archermod.ARROW_HIT);
-                g.rumble.play(rumblemod.hurt);
-                g.rig.addShake(SHAKE_HURT);
+            if (ar.hit) {
+                // It found the hero. The BEAT is skipped on a corpse, but the shaft still landed in
+                // him — so the sound is the flesh one either way. Testing `!dead` on the whole
+                // branch dropped a hit on a dying hero through to the world-impact arm below, which
+                // then played a scuff of DIRT for an arrow that was standing in his chest.
+                if (!g.hero.dead) {
+                    g.hero.takeHit(archermod.ARROW_HIT);
+                    g.rumble.play(rumblemod.hurt);
+                    g.rig.addShake(SHAKE_HURT);
+                }
+                sfx.play(.arrow_hit);
+            } else if (ar.stuck and ar.age == 0) {
+                // It STUCK without connecting — into cover, or into the earth. Worth its own
+                // sound: an arrow thunking off the pillar you ducked behind is the game telling
+                // you the cover WORKED, which is the whole reason arrows test the solids at all.
+                // `age == 0` is the sticking frame exactly, and it needs no state of its own:
+                // stepArrow zeroes the age when it plants and adds dt on every frame after.
+                //
+                // WHICH thunk comes from what it went into — timber knocks, iron rings, masonry
+                // cracks dead, and a miss into the earth just scuffs. The mapping lives beside the
+                // four voices it picks from (`sfx.arrowImpact`), not here.
+                sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
             }
         }
         // Blade connected this frame (a foe's hit count climbed) → hit pulse + frame crack
@@ -905,13 +1099,19 @@ pub fn run(shot: bool) void {
         if (g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits() > hitsBefore) {
             g.rumble.play(if (g.hero.atkHeavy) rumblemod.hit_heavy else rumblemod.hit_light);
             g.rig.addShake(if (g.hero.atkHeavy) SHAKE_HIT_HEAVY else SHAKE_HIT_LIGHT);
+            sfx.play(if (g.hero.atkHeavy) .hit_heavy else .hit_light);
         }
         if (g.warren.anyDied() or g.line.anyDied() or g.grief.anyDied()) {
             g.rumble.play(rumblemod.kill);
             g.rig.addShake(SHAKE_KILL);
+            // The kill beat: a THUD, and nothing else (owner's call — no bell, no jingle). Each foe
+            // already cries out in the world where it died; this is the weight landing, played at
+            // the listener so a kill across the plaza still registers.
+            sfx.play(.kill);
         }
         // …and the kill PAYS. Same one-frame `justDied` flag the beat above reads, so the runes, the
         // rumble and the shake all fire together or not at all; each group knows its own worth.
+        // …and it pays SILENTLY: the kill thud above is the whole beat (owner's call — no jingle).
         g.hero.runes.gain(g.warren.runesDropped() + g.line.runesDropped() + g.grief.runesDropped());
         // ER lock-on across a kill: the lock leaves a corpse the FRAME it dies (not after the
         // death anim), snapping to the next valid target (nearest screen-centre, like a fresh
@@ -922,15 +1122,38 @@ pub fn run(shot: bool) void {
         collideActors(g, dt);
         g.rig.tickShake(rawDt); // impact shake decays on wall-clock time (bakes this frame's jitter)
         g.rig.follow(g.hero.shoulderPoint());
+        // THE EARS RIDE THE CAMERA, not the hero — the pan has to agree with what is on screen, and
+        // the camera is the eye. Set after `follow`, so a foe's sound is panned against the settled
+        // view rather than against last frame's.
+        sfx.listen(g.rig.cam.position, g.rig.rightXZ());
+        sfx.ambience(); // keep the wind bed alive (a no-op while it is still running)
+        footsteps(g, &lastPhase);
 
         // Rising-edge action pulses: roll whump, swing effort (heavy > light), death swell.
         // Watching committed state catches queued actions too.
-        if (g.hero.rolling and !wasRolling) g.rumble.play(rumblemod.roll);
-        if (g.hero.attacking and !wasAttacking) g.rumble.play(if (g.hero.atkHeavy) rumblemod.swing_heavy else rumblemod.swing_light);
+        if (g.hero.rolling and !wasRolling) {
+            g.rumble.play(rumblemod.roll);
+            sfx.play(.roll);
+        }
+        if (g.hero.attacking and !wasAttacking) {
+            g.rumble.play(if (g.hero.atkHeavy) rumblemod.swing_heavy else rumblemod.swing_light);
+            sfx.play(if (g.hero.atkHeavy) .swing_heavy else .swing_light);
+        }
+        // A REFUSED action is heard as well as seen. `stamRefused` is set by hero.startRoll /
+        // startAttack the instant they decline, so its rising edge is exactly the input that did
+        // nothing — the one thing a ZERO INPUT LAG game must never leave silent.
+        if (g.hero.stamRefused > wasRefused) sfx.play(.refused);
+        wasRefused = g.hero.stamRefused;
+        // The stagger is its own beat: the blow that caused it already played, this is his footing
+        // going. Only the HEAVY one — a light flinch is over before a scuff could read.
+        if (g.hero.stun == .heavy and wasStun != .heavy) sfx.play(.stagger);
+        wasStun = g.hero.stun;
         if (g.hero.dead and !wasDead) {
             g.rumble.play(rumblemod.death);
             g.rig.addShake(SHAKE_DEATH);
+            sfx.play(.death);
         }
+        if (!g.hero.dead and wasDead) sfx.play(.respawn); // waking at the grace
         // The YOU DIED tail: armed while dead, drains after the respawn (fade from black).
         if (g.hero.dead) {
             g.deathFade = RESPAWN_HOLD + RESPAWN_FADE;
@@ -946,6 +1169,36 @@ pub fn run(shot: bool) void {
         hud(g, rawDt);
         rl.endDrawing();
     }
+}
+
+// ── FOOTFALLS ── a step on every heel strike, which the gait already tells us about: `hero.phase`
+// is the stride cycle, the LEFT foot plants at 0 and the right at 0.5, and the phase advances by
+// DISTANCE. So the crossing test below is the whole thing — no timer, no per-speed tuning, and a
+// hero slowing to a crawl gets his steps spaced out for nothing. (`ogre.footfalls` reads the same
+// crossing for its dust, which is where the idiom comes from.)
+//
+// The VOICE is chosen by ground speed, not by the gait blend: walk, run and sprint each have their
+// own boot, and hearing which one you are in is a real part of knowing how fast you are going.
+fn footsteps(g: *Game, last: *f32) void {
+    const h = &g.hero;
+    // Nothing plants during a roll, a stagger or a death — those anims move the feet on their own
+    // terms and a stride-phase step under them lands nowhere near a foot.
+    if (h.moving < 0.45 or h.rolling or h.dead or h.staggered()) {
+        last.* = h.phase;
+        return;
+    }
+    const crossed = (last.* < 0.5 and h.phase >= 0.5) or (h.phase < last.*); // 0.5, or the wrap past 0
+    last.* = h.phase;
+    if (!crossed) return;
+    const id: sfx.Id = if (h.speed >= SPRINT_SPEED - 0.3)
+        .step_sprint
+    else if (h.speed >= RUN_SPEED - 0.3)
+        .step_hard
+    else
+        .step_soft;
+    // Quieter the slower he goes, on top of the voice change — a careful walk should not land as
+    // hard as a sprint that happens to be crossing the same phase.
+    sfx.playAt(id, mathx.clampF(0.45 + 0.55 * h.speed / SPRINT_SPEED, 0.35, 1.0));
 }
 
 // The hero's blade this frame as plain data for the foe hit test (endpoints guard→tip, plus

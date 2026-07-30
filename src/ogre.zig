@@ -6,6 +6,7 @@ const combat = @import("combat.zig");
 const heromod = @import("hero.zig");
 const foe = @import("foe.zig");
 const wf = @import("worldfmt.zig");
+const sfx = @import("audio.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -651,6 +652,7 @@ pub const Ogre = struct {
                         // Dust kept TIGHT to the landing so the ring doesn't oversell the narrow
                         // crush strip — a 4 m ring over a 1.5 m kill line taught the wrong dodge.
                         self.dustBurst(self.impactWorld(), 36, 3.8, 0.38);
+                        sfx.world(.ogre_slam, self.impactWorld()); // the crater, at the crater
                     }
                 }
                 if (self.t >= SLAM_DUR) {
@@ -734,6 +736,11 @@ pub const Ogre = struct {
             self.heroLatch = false; // a fresh blow gets one chance to land on the hero
             self.swiped = s == .swipe; // …and picks which recovery beat follows it
         }
+        // BOTH TELLS ANNOUNCE THEMSELVES, at the top of the wind-up rather than at the blow: the
+        // roar runs the length of the overhead's 0.9 s raise, and the swipe's whoosh starts as the
+        // club cocks. A tell you only hear on impact is not a tell.
+        if (s == .windup) sfx.world(.ogre_roar, self.pos);
+        if (s == .swipewind) sfx.world(.ogre_swipe, self.pos);
     }
     fn enterIdle(self: *Ogre) void {
         self.state = .idle;
@@ -792,9 +799,11 @@ pub const Ogre = struct {
         self.bloodBurst(s.contact, s.dir, if (heavyBlow) 16 else 10, if (heavyBlow) 2.8 else 2.0);
         // A giant barely gives — a much smaller shove than the toad's, so hits read as glancing off bulk.
         self.shove = mathx.scaleV(s.dir, if (heavyBlow) 0.7 else 0.4);
+        sfx.world(.ogre_hurt, self.pos);
         switch (s.reaction) {
             .death => {
                 self.bloodBurst(s.contact, s.dir, 14, 2.4);
+                sfx.world(.ogre_die, self.pos);
                 self.enterDeath();
             },
             .heavy => self.enterStun(.stunheavy),
@@ -1359,6 +1368,7 @@ pub const Ogre = struct {
             const rr = 0.13 * H * self.scale;
             const foot = v3(self.pos.x - f.z * side * rr, 0.05, self.pos.z + f.x * side * rr);
             self.dustBurst(foot, 6, 1.4, 0.14);
+            sfx.world(.ogre_step, foot); // …and it is HEARD coming, which is most of being a giant
         }
         self.prevPhase = self.phase;
     }

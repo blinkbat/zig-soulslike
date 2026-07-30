@@ -70,4 +70,5 @@ test {
     _ = @import("props.zig");
     _ = @import("worldfmt.zig");
     _ = @import("editor.zig"); // hangs off game.zig, which this root does not reach for tests
+    _ = @import("audio.zig"); // …likewise: the sound bank's synthesis tests need no device
 }

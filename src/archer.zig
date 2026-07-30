@@ -7,6 +7,7 @@ const heromod = @import("hero.zig");
 const foe = @import("foe.zig");
 const collision = @import("collision.zig");
 const wf = @import("worldfmt.zig");
+const sfx = @import("audio.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -250,6 +251,10 @@ pub const Arrow = struct {
     stuck: bool = false,
     age: f32 = 0, // in flight: seconds airborne; stuck: seconds since it stuck (fade timer)
     hit: bool = false, // it connected with the hero this frame (game.zig reads + clears)
+    /// WHAT IT STUCK IN, set on the frame it plants. null = the bare earth (a miss), which is the
+    /// commonest case by far and wants its own duller, fizzier impact. game.zig reads it to pick
+    /// the sound; nothing else cares.
+    struck: ?collision.Surface = null,
     // The trail ring. Ages start SATURATED so a fresh arrow draws no streak from wherever the slot
     // was last used — a pooled arrow would otherwise flash a ribbon across the map on its first frame.
     trail: [TRAIL_N]rl.Vector3 = [_]rl.Vector3{mathx.zero3} ** TRAIL_N,
@@ -357,8 +362,11 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, heroDodging: boo
     // COVER first (a wall between archer and hero beats a hero hugging its far side): sample
     // the frame's travel at midpoint + endpoint so a fast shaft can't tunnel a thin trunk.
     const mid = mathx.lerpV(prev, a.pos, 0.5);
-    const midBlocked = collision.blockedBy(mid, 0.04, solids);
-    if (midBlocked or collision.blockedBy(a.pos, 0.04, solids)) {
+    const midSurf = collision.blockerAt(mid, 0.04, solids);
+    const endSurf = collision.blockerAt(a.pos, 0.04, solids);
+    const midBlocked = midSurf != null;
+    if (midBlocked or endSurf != null) {
+        a.struck = midSurf orelse endSurf; // …what it went into, for the impact sound
         // Normalize the CURRENT velocity: `spd` was sampled before homing + gravity touched it, so
         // using it as the divisor left the embed offset a frame of gravity out of true.
         const dir = mathx.normV(a.vel);
@@ -606,6 +614,7 @@ pub const Archer = struct {
                 if (first) {
                     self.looseFired = true;
                     loosed = true; // game.zig spawns the arrow at nockWorld toward the hero
+                    sfx.world(.bow_loose, self.pos); // the twang: the one cue that says MOVE
                 }
                 // The string only starts snapping AFTER the release frame. `pose()` (and with it
                 // poseString, which is what moves `lastNock`) runs before this returns, so decaying
@@ -694,6 +703,10 @@ pub const Archer = struct {
         self.state = s;
         self.t = 0;
         self.looseFired = false;
+        // The DRAW is the tell — a creak of loading limbs that starts DRAW_DUR before the shaft
+        // leaves. Announced here rather than in the state machine's body so it fires once on the
+        // transition, not once a frame while the string comes back.
+        if (s == .draw) sfx.world(.bow_draw, self.pos);
     }
 
     // Pick the next action from range + reload (kite AI). A too-close hero drives a back-off
@@ -768,8 +781,12 @@ pub const Archer = struct {
         self.flash = FLASH_DUR;
         const heavyBlow = blade.hit.stance > 0;
         self.shove = mathx.scaleV(s.dir, if (heavyBlow) 1.8 else 1.15); // a bone-clatter jolt off the blow
+        sfx.world(.bone_hurt, self.pos);
         switch (s.reaction) {
-            .death => self.enterDeath(),
+            .death => {
+                sfx.world(.bone_die, self.pos);
+                self.enterDeath();
+            },
             .heavy => self.enterStun(.stunheavy),
             .light => self.enterStun(.stunlight),
             .none => {},

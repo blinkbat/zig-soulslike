@@ -164,9 +164,14 @@ const sceneVS =
     \\        float w = hh*hh;
     \\        float tongue = p.x*9.3 + p.z*7.7;        // per-tongue — they sit at different offsets
     \\        float seed = baseW.x*1.7 + baseW.z*1.3;  // …and no two FIRES gutter together
-    \\        // ~10 Hz on the finest octave: a real flame tip flickers far faster than 4 rad/s did.
-    \\        float ph = uTime*7.4 + seed + tongue - hh*13.0;
-    \\        float lash  = sin(ph) + 0.50*sin(ph*2.31 + 1.7) + 0.28*sin(ph*4.70 + 0.4) + 0.15*sin(ph*9.10);
+    \\        // SLOWED AND SMOOTHED (owner: the flames read skinny and weird). The base rate came
+    \\        // down by a third and the two top octaves were more than halved: at 7.4 rad/s with a
+    \\        // 9x octave on it, a narrow tongue was being shaken faster than the eye can integrate,
+    \\        // which is what read as buzzing wire rather than as fire. The tongues are now FAT (see
+    \\        // props.flameInto), and a fat lobe wants to roll and swell, not vibrate — so the slow
+    \\        // terms carry the motion and the fast ones only stop it looking looped.
+    \\        float ph = uTime*4.9 + seed + tongue - hh*9.0;
+    \\        float lash  = sin(ph) + 0.42*sin(ph*2.31 + 1.7) + 0.12*sin(ph*4.70 + 0.4) + 0.05*sin(ph*9.10);
     \\        float twist = sin(ph*0.61 + 2.1) + 0.40*sin(ph*1.90 + 3.3);
     \\        // AMPLITUDE IS A FRACTION OF A TONGUE'S WIDTH, NOT OF ITS HEIGHT. This was 0.45, which
     \\        // displaced a tip by 0.22 — a tongue is 0.03..0.055 wide, so it was being sheared three
@@ -174,15 +179,22 @@ const sceneVS =
     \\        // flame leans and shimmers; it does not swing across itself.
     \\        // …and eased down again (owner: all flames a bit more subtle). Fire SIMMERS more than it
     \\        // thrashes; the tell is the shape reorganising, not the distance travelled.
-    \\        p.x += w*0.080*lash  + hh*0.022*twist;
-    \\        p.z += w*0.066*twist - hh*0.018*lash;
+    \\        // …then RAISED, because the tongues got SHORTER. `w` here is hh SQUARED, so dropping the
+    \\        // height band by a third cut the lateral swing to well under half without anyone asking
+    \\        // for that — the flames went stiff at the same moment they went fat. These put the
+    \\        // travel back where it was in world units, which against a wider lobe reads as the whole
+    \\        // tongue ROLLING rather than a wire being flicked.
+    \\        p.x += w*0.150*lash  + hh*0.034*twist;
+    \\        p.z += w*0.125*twist - hh*0.028*lash;
     \\        // SHOOT: tongues leap and drop back, biased upward — fire climbs. The VERTICAL is where
     \\        // a flame's amplitude legitimately lives, so this carries most of the motion now.
-    \\        p.y += hh*(0.090*sin(ph*0.83 + 0.9) + 0.040*sin(ph*2.7)) + w*0.095*max(0.0, sin(ph*0.47));
+    \\        p.y += hh*(0.105*sin(ph*0.83 + 0.9) + 0.040*sin(ph*2.7)) + w*0.150*max(0.0, sin(ph*0.47));
     \\        // NECK, about the prop's own axis — which is where a torch's flame sits. A brazier's
     \\        // or a bonfire's SECOND tongue is offset up to 0.2, so for that one this also nudges
     \\        // sideways; at this amplitude that reads as sway, so it stays the cheap approximation.
-    \\        float pinch = 1.0 + 0.24*hh*sin(ph*1.37 + 0.7);
+    \\        // Eased off with the widening: a fat lobe necking as hard as a thin one did reads as an
+    \\        // hourglass, and the swelling is supposed to be the subtle half of the writhe.
+    \\        float pinch = 1.0 + 0.17*hh*sin(ph*1.37 + 0.7);
     \\        p.x *= pinch;
     \\        p.z *= pinch;
     \\    }

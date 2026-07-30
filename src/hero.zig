@@ -671,11 +671,19 @@ pub const Hero = struct {
     // combat
     vit: combat.Vitals = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX),
     stam: combat.Stamina = .{}, // ER's third bar — the hero's alone; foes don't carry one
+    fp: combat.Focus = .{}, // …the blue one, likewise. Nothing spends it yet; the Cerulean fills it
     runes: combat.Runes = .{}, // …and ER's currency, likewise his alone (souls, by ER's name)
+    flasks: combat.Flasks = .{}, // Crimson + Cerulean, sharing the quick-item slot
+    // THE DRINK, committed like an attack (see combat.Flasks): the charge is spent at the START,
+    // the restore lands at FLASK_POUR_AT, and a stagger mid-draught costs you the flask.
+    drinking: bool = false,
+    drinkT: f32 = 0,
+    poured: bool = false,
     /// Seconds left on the "that was refused" flash. An empty-bar input does NOTHING in ER, and
     /// nothing is indistinguishable from a dropped frame — which, under a ZERO INPUT LAG law, is
     /// the one thing the player must never have to wonder about. So the refusal is SHOWN, on the
     /// bar that caused it. It changes no mechanics: this is a light on the dashboard.
+    /// Set it through `refuse()`, never by hand — see there.
     stamRefused: f32 = 0,
     sprinting: bool = false, // hold-B RUN, resolved by the caller — the only CONTINUOUS drain
     // THE WORLD IS HELD (menu up). He keeps breathing, but his COMBAT clocks must not run:
@@ -748,9 +756,9 @@ pub const Hero = struct {
     // while already rolling OR mid-attack — both are committed (mirrors startAttack's guard,
     // so a stray call can't leave rolling+attacking latched together).
     pub fn startRoll(self: *Hero, dir: rl.Vector3) void {
-        if (self.rolling or self.attacking) return;
+        if (self.committed()) return;
         if (!self.stam.canAct()) {
-            self.stamRefused = combat.STAM_REFUSE_FLASH;
+            self.refuse();
             return;
         }
         self.stam.spend(combat.STAM_ROLL);
@@ -807,13 +815,33 @@ pub const Hero = struct {
     // (one slot, last press wins). game.zig routes a same-frame roll press here INSTEAD
     // of the attack press (rolls win the frame), and steers a queued roll every frame so
     // it leaves in the direction held when it fires — both Elden Ring behaviors.
+
+    /// IS HE COMMITTED TO SOMETHING? The one place that answers it, because the three committed
+    /// actions have to be asked about together or one of them gets forgotten — and the DRAUGHT was.
+    /// It was absent from every guard below, so an attack or roll pressed mid-drink skipped the
+    /// buffer and started immediately: the swing charged its stamina and sat latched behind the
+    /// drink, and a ROLL actually ran (the frame dispatch tries `rolling` first) with `drinking`
+    /// still set, so the draught silently resumed — and could still pour — once the roll ended.
+    /// `updateDrink` calling `fireQueued` was the tell: nothing could ever be in the queue.
+    pub fn committed(self: *const Hero) bool {
+        return self.rolling or self.attacking or self.drinking;
+    }
+
+    /// THAT INPUT DID NOTHING, and the player is told so. Four call sites were each re-stating
+    /// `self.stamRefused = combat.STAM_REFUSE_FLASH`, which is the sort of line that gets copied
+    /// into a fifth refusal and then quietly left out of a sixth — and a refusal nobody can see is
+    /// exactly the failure the flash exists to prevent.
+    fn refuse(self: *Hero) void {
+        self.stamRefused = combat.STAM_REFUSE_FLASH;
+    }
+
     pub fn requestAttack(self: *Hero, kind: Attack) void {
-        if (self.rolling or self.attacking) {
+        if (self.committed()) {
             self.queued = .{ .attack = kind };
         } else self.startAttack(kind);
     }
     pub fn requestRoll(self: *Hero, dir: rl.Vector3) void {
-        if (self.rolling or self.attacking) {
+        if (self.committed()) {
             self.queued = .{ .roll = dir };
         } else self.startRoll(dir);
     }
@@ -834,13 +862,13 @@ pub const Hero = struct {
         }
     }
 
-    // Begin a committed sword attack in the current facing. Ignored while rolling or
-    // already mid-swing (player input goes through requestAttack, which buffers instead).
+    // Begin a committed sword attack in the current facing. Ignored while committed to anything
+    // else (player input goes through requestAttack, which buffers instead).
     pub fn startAttack(self: *Hero, kind: Attack) void {
-        if (self.rolling or self.attacking) return;
+        if (self.committed()) return;
         const cost: f32 = if (kind == .heavy) combat.STAM_HEAVY else combat.STAM_LIGHT;
         if (!self.stam.canAct()) {
-            self.stamRefused = combat.STAM_REFUSE_FLASH;
+            self.refuse();
             return;
         }
         self.stam.spend(cost);
@@ -903,6 +931,70 @@ pub const Hero = struct {
     // — the chain knot and the anim's end — owe it, and startAttack has just zeroed atkAlt).
     fn alternateChain(self: *Hero, wasLight: bool, wasAlt: bool) void {
         if (self.attacking and !self.atkHeavy and wasLight) self.atkAlt = !wasAlt;
+    }
+
+    // ── THE FLASK ───────────────────────────────────────────────────────────────────────
+    // ER's quick item, committed. The charge goes the instant you commit — that is what makes a
+    // panicked drink a real mistake rather than something you can back out of — and the restore
+    // arrives partway through, so the window is a cost you pay before you get anything.
+
+    /// Swap which flask is up (D-pad down). Free, and legal at any time except mid-draught: it is
+    /// a belt gesture, not an action, and gating it behind combat state would make it feel sticky.
+    pub fn cycleFlask(self: *Hero) void {
+        if (self.dead or self.drinking) return;
+        self.flasks.cycle();
+    }
+
+    /// Start a draught. Refused (and flagged, like an empty stamina bar) when the flask is dry;
+    /// ignored outright while committed to something else, exactly as `startAttack` is.
+    pub fn startDrink(self: *Hero) bool {
+        if (self.committed() or self.dead or self.staggered()) return false;
+        // THE CHARGE MUST NOT GO INTO A BAR THAT CANNOT TAKE IT. `combat.Focus.restore` reports
+        // whether it took any, and its test states the contract as "the caller keeps the charge" —
+        // but the caller was `_ = self.fp.restore(...)` at POUR time, a whole second after
+        // `flasks.take()` had already spent it. Since nothing in this build spends FP, the blue bar
+        // is ALWAYS full, so every single Cerulean draught burned a charge for nothing.
+        //
+        // Only the CERULEAN is gated. Drinking a Crimson at full health and wasting it is ER's own
+        // behaviour and stays; the blue one is the deliberate exception because it can only EVER be
+        // wasted until spells exist.
+        if (self.flasks.sel == .cerulean and !self.fp.canTake()) {
+            self.refuse();
+            return false;
+        }
+        if (!self.flasks.take()) {
+            self.refuse(); // dry — the HUD's "that did nothing" flash
+            return false;
+        }
+        self.drinking = true;
+        self.drinkT = 0;
+        self.poured = false;
+        self.startXfade();
+        return true;
+    }
+
+    /// Advance the draught; call in place of move/attack/roll while `drinking`. The pour lands once,
+    /// at FLASK_POUR_AT — before that you have spent the charge and got nothing, which is the whole
+    /// shape of the decision.
+    pub fn updateDrink(self: *Hero, dt: f32) void {
+        self.tickClocks(dt);
+        self.drinkT += dt;
+        self.speed = 0;
+        self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
+        const u = self.drinkT / combat.FLASK_DRINK_DUR;
+        if (!self.poured and u >= combat.FLASK_POUR_AT) {
+            self.poured = true;
+            switch (self.flasks.sel) {
+                .crimson => self.vit.hp = mathx.minF(self.vit.hpMax, self.vit.hp + self.vit.hpMax * combat.FLASK_HP_FRAC),
+                .cerulean => _ = self.fp.restore(self.fp.max * combat.FLASK_FP_FRAC),
+            }
+        }
+        self.pose();
+        if (self.drinkT >= combat.FLASK_DRINK_DUR) {
+            self.drinking = false;
+            self.startXfade();
+            self.fireQueued(); // anything buffered during the draught leaves the moment it ends
+        }
     }
 
     // TAE-events equivalent: the blade only HITS inside the strike's active window.
@@ -1009,6 +1101,10 @@ pub const Hero = struct {
     fn enterStun(self: *Hero, kind: combat.StunKind) void {
         self.attacking = false; // the reaction drops whatever he was committed to
         self.rolling = false;
+        // …the draught included, AND THE CHARGE IS ALREADY GONE. That is ER's rule and it is the
+        // sharpest edge on the whole system: drink in the wrong window and you lose the flask AND
+        // the health it was going to give you.
+        self.drinking = false;
         self.queued = null;
         self.stun = kind;
         self.stunT = 0;
@@ -1018,6 +1114,7 @@ pub const Hero = struct {
     fn enterDeath(self: *Hero) void {
         self.attacking = false;
         self.rolling = false;
+        self.drinking = false;
         self.stun = .none;
         self.queued = null;
         self.dead = true;
@@ -1057,6 +1154,10 @@ pub const Hero = struct {
         self.hurtFlash = 0;
         self.vit = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX);
         self.stam.reset();
+        self.fp.reset();
+        // FLASKS REFILL AT THE GRACE, and a death IS a return to one — same event, same rule as ER.
+        self.flasks.refill();
+        self.drinking = false;
         self.stamRefused = 0; // a respawn must not inherit the last life's refusal flash
         self.sprinting = false;
         self.pos = self.spawnPos;
@@ -1072,6 +1173,7 @@ pub const Hero = struct {
         if (self.dead) return self.poseDeath();
         if (self.stun != .none) return self.poseStun();
         if (self.rolling) return self.poseRoll();
+        if (self.drinking) return self.poseDrink();
         if (self.attacking) return self.poseAttack();
         const m = self.moving;
         const ph = self.phase;
@@ -1360,6 +1462,60 @@ pub const Hero = struct {
         const elb = IDLE_ELBOW + (AH_ELBOW_WIND - IDLE_ELBOW) * wind + 5.0 * gather - (AH_ELBOW_WIND - AH_ELBOW_STRIKE) * sElb;
         setLocal(&wx, ELR, self.rest, rx(-elb));
         setLocal(&wx, WRR, self.rest, rx(AH_WRIST_COCK * wind - (AH_WRIST_COCK + AH_WRIST_SNAP) * sWr + 8.0 * rcl));
+        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        self.applyXfade(&wx);
+        self.xf = wx;
+    }
+
+    // THE DRAUGHT — the OFF hand does all of it. The sword stays in the right fist at its low-ready
+    // the whole time, which is the read that matters: he is drinking WITH HIS GUARD DOWN but he has
+    // not put the weapon away, and that is why the window is dangerous rather than merely slow.
+    //
+    // Three beats out of one `lift` curve — raise, tip and drink, lower — so the pour (which lands
+    // on the game's clock at FLASK_POUR_AT) coincides with the head being back. The legs hold the
+    // idle stance: he plants to drink.
+    fn poseDrink(self: *Hero) void {
+        const u = mathx.clampF(self.drinkT / combat.FLASK_DRINK_DUR, 0, 1);
+        // Up fast, HOLD at the mouth through the pour, down slower — a flask is emptied, not waved.
+        const lift = mathx.smoothstep(0, 0.26, u) * (1.0 - mathx.smoothstep(0.72, 1.0, u));
+        // …and the tip is a separate, later curve riding on top, so the wrist rolls the bottle up
+        // only once it has arrived. Both peaking together reads as one stiff gesture.
+        const tip = mathx.smoothstep(0.22, 0.46, u) * (1.0 - mathx.smoothstep(0.66, 0.92, u));
+        const facingDeg = mathx.degrees(self.facing);
+        const hipY = self.rest[ROOT].y;
+        // He settles onto his heels to drink, and rocks back a touch as the flask goes up.
+        const sink = 0.012 * H * lift;
+        const lean = -6.0 * tip;
+
+        var wx: [N]rl.Matrix = undefined;
+        wx[ROOT] = mul3(
+            ry(4.0 * lift), // …turning the drinking shoulder a little toward the camera side
+            mul(tr(0, hipY - sink, 0), mul(rx(lean * 0.35), ry(facingDeg))),
+            tr(self.pos.x, 0, self.pos.z),
+        );
+        setLocal(&wx, SPINE, self.rest, rx(lean * 0.35));
+        setLocal(&wx, CHEST, self.rest, rx(lean * 0.30));
+        // The head tips BACK to drink — the single most legible part of the whole action, and the
+        // reason this reads at all from the over-the-shoulder camera.
+        setLocal(&wx, NECK, self.rest, rx(-14.0 * tip));
+        setLocal(&wx, HEAD, self.rest, rx(HEAD_WALK - 30.0 * tip));
+        // Legs: the standing stance, knees soft. A drink is not a squat.
+        setLocal(&wx, HIPL, self.rest, mul(rx(-2.0 * lift), rz(-HIP_ADDUCT)));
+        setLocal(&wx, KNEEL, self.rest, rx(IDLE_KNEE + 4.0 * lift));
+        setLocal(&wx, ANKL, self.rest, ry(FOOT_TOEOUT));
+        setLocal(&wx, HIPR, self.rest, mul(rx(-1.0 * lift), rz(HIP_ADDUCT)));
+        setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 3.0 * lift));
+        setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
+        // THE FLASK ARM (left): shoulder forward and across, elbow folded hard so the hand comes to
+        // the face rather than out in front of it — an unfolded elbow is what makes a "drink" read
+        // as a salute.
+        setLocal(&wx, SHL, self.rest, mul(rx(-58.0 * lift - 14.0 * tip), rz(ARM_ABD + 16.0 * lift)));
+        setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 96.0 * lift + 22.0 * tip)));
+        setLocal(&wx, WRL, self.rest, rx(-28.0 * tip)); // the wrist rolls the bottle up at the lips
+        // The sword arm just carries, quietly, exactly as it does at idle.
+        setLocal(&wx, SHR, self.rest, mul(rx(2.0 * lift), rz(-ARM_ABD)));
+        setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + CARRY_ELBOW)));
+        setLocal(&wx, WRR, self.rest, rl.math.matrixIdentity());
         setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
         self.applyXfade(&wx);
         self.xf = wx;
@@ -1869,6 +2025,64 @@ fn handMesh() rl.Mesh {
 }
 
 // ── invariants under test (pure math only — meshes/poses need a GPU window) ──────────
+
+/// A Hero for the STATE tests. `mesh`/`mat` are GPU handles and stay `undefined` — nothing here
+/// draws — but `rest` is real, because `pose()` reads it and a pose over undefined joints is
+/// arithmetic on garbage.
+fn testHero() Hero {
+    return .{ .mesh = undefined, .mat = undefined, .rest = restPositions() };
+}
+
+test "the DRAUGHT is committed like the other two: inputs buffer, they do not fire through it" {
+    // The bug: `drinking` was missing from every committed-action guard, so an attack pressed
+    // mid-drink skipped the buffer and started on the spot (charging its stamina), and a roll
+    // actually RAN while the draught stayed latched behind it.
+    var h = testHero();
+    try std.testing.expect(h.startDrink());
+    const stamAtDrink = h.stam.cur;
+
+    h.requestAttack(.light);
+    try std.testing.expect(h.drinking); // still drinking…
+    try std.testing.expect(!h.attacking); // …and the swing did NOT start…
+    try std.testing.expectEqual(stamAtDrink, h.stam.cur); // …nor charge for one
+    try std.testing.expect(h.queued != null); // it went where it belongs: the queue
+
+    // A roll press replaces it in the one slot (last press wins) and likewise waits.
+    h.requestRoll(v3(0, 0, 1));
+    try std.testing.expect(!h.rolling and h.drinking);
+
+    // …and it leaves the instant the draught ends — which is what `updateDrink`'s fireQueued is
+    // for, a call nothing could reach before this fix.
+    var guard: u32 = 0;
+    while (h.drinking and guard < 500) : (guard += 1) h.updateDrink(0.016);
+    try std.testing.expect(!h.drinking);
+    try std.testing.expect(h.rolling);
+    try std.testing.expect(h.queued == null);
+}
+
+test "a Cerulean is refused into a full bar rather than pouring a charge away" {
+    // Nothing spends FP in this build, so the blue bar is permanently full: taking the charge at
+    // the press and only discovering the pour was a no-op a second later meant EVERY Cerulean
+    // draught was wasted. `combat.Focus`'s own test states the contract as "the caller keeps the
+    // charge" — this is the caller actually keeping it.
+    var h = testHero();
+    h.flasks.sel = .cerulean;
+    const before = h.flasks.ready();
+    try std.testing.expect(!h.startDrink()); // refused…
+    try std.testing.expectEqual(before, h.flasks.ready()); // …and it cost nothing
+    try std.testing.expect(h.stamRefused > 0); // …and it SAID so, like an empty bar
+
+    // Spend some, and it is a normal drink again.
+    h.fp.cur = 10;
+    try std.testing.expect(h.startDrink());
+    try std.testing.expectEqual(before - 1, h.flasks.ready());
+
+    // The CRIMSON keeps ER's behaviour: drinking at full health wastes it, and that is correct.
+    var g = testHero();
+    try std.testing.expect(g.startDrink());
+    try std.testing.expectEqual(combat.FLASK_CRIMSON - 1, g.flasks.ready());
+}
+
 test "roll knots are ordered and the somersault lands exactly 360 before the rise" {
     comptime {
         std.debug.assert(0 < ROLL_TUCK_IN and ROLL_TUCK_IN < ROLL_UNTUCK_A);

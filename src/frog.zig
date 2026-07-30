@@ -5,6 +5,7 @@ const mathx = @import("mathx.zig");
 const combat = @import("combat.zig");
 const foe = @import("foe.zig");
 const wf = @import("worldfmt.zig");
+const sfx = @import("audio.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -331,11 +332,15 @@ pub const Frog = struct {
         self.state = if (lunge) .lunge else .hop;
         self.t = 0;
         self.heroLatch = false; // a fresh action gets one chance to land on the hero
+        // The LUNGE announces itself at the top of its long coil — that croak IS the tell, and it
+        // has to arrive with the wind-up rather than with the leap or it teaches nothing.
+        sfx.world(if (lunge) .toad_lunge else .toad_hop, self.pos);
     }
     pub fn startChomp(self: *Frog) void {
         self.state = .chomp;
         self.t = 0;
         self.heroLatch = false;
+        sfx.world(.toad_gape, self.pos); // the sac ballooning: the bite's own tell
     }
     fn enterStun(self: *Frog, s: State) void {
         self.state = s; // the interrupt drops any in-progress attack (nothing lands)
@@ -543,7 +548,10 @@ pub const Frog = struct {
             self.resolveGape(k);
             self.emitGape(dt, k); // amber charge gathers + drool strings from the maw
         } else if (self.t < CHOMP_GAPE + CHOMP_SNAP) {
-            if ((self.t - dt) < CHOMP_GAPE) self.spitSpray(); // jaws slam → a spray flung forward
+            if ((self.t - dt) < CHOMP_GAPE) {
+                self.spitSpray(); // jaws slam → a spray flung forward
+                sfx.world(.toad_chomp, self.pos);
+            }
             self.resolveSnap((self.t - CHOMP_GAPE) / CHOMP_SNAP);
             self.tryBite(hero, BITE_R, CHOMP_HIT); // jaws slam shut on the hero
         } else {
@@ -714,9 +722,11 @@ pub const Frog = struct {
         // The blow READS at the wound: blood flung along the sweep, body knocked the same way.
         self.bloodBurst(s.contact, s.dir, if (heavyBlow) 14 else 9, if (heavyBlow) 2.6 else 1.9);
         self.shove = mathx.scaleV(s.dir, if (heavyBlow) 1.9 else 1.25);
+        sfx.world(.toad_hurt, self.pos);
         switch (s.reaction) {
             .death => {
                 self.bloodBurst(s.contact, s.dir, 10, 2.2); // the killing blow bleeds extra
+                sfx.world(.toad_die, self.pos);
                 self.enterDeath();
             },
             .heavy => self.enterStun(.stunheavy),

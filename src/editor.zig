@@ -196,6 +196,45 @@ const unitTips = [_][:0]const u8{
     "Hold and sweep to remove spawns ([ ] sets radius)",
 };
 
+// ── ICONS ── one per layer and one per brush, so the strips read as pictures first and words
+// second. These are TABLES beside the name tables they mirror, pinned by the same comptime length
+// checks — an icon list that drifts out of step with its brush list is worse than no icons at all,
+// because every button then confidently shows the wrong thing.
+fn layerIcon(l: Layer) ui.Icon {
+    return switch (l) {
+        .ground => .ground,
+        .cover => .cover,
+        .decor => .decor,
+        .props => .props,
+        .units => .units,
+    };
+}
+
+// Ground has no icon list — its brushes ARE colours, and `soilSwatch` is a truer icon for "moss"
+// than any glyph. The other four map brush-for-brush, eraser last, exactly like the name tables.
+const coverIcons = [_]ui.Icon{ .zone, .clearing, .erase };
+const decorIcons = [_]ui.Icon{ .scatter, .patch, .single, .erase };
+const propIcons = [_]ui.Icon{ .stamp, .row, .ring, .cluster, .ivy, .erase };
+const unitIcons = [_]ui.Icon{ .toad, .archer, .ogre, .erase };
+
+comptime {
+    std.debug.assert(coverIcons.len == coverBrushes.len);
+    std.debug.assert(decorIcons.len == decorBrushes.len);
+    std.debug.assert(propIcons.len == propBrushes.len);
+    std.debug.assert(unitIcons.len == unitBrushes.len);
+}
+
+/// The icons for a layer's brush strip, or null for GROUND, whose caller draws swatches instead.
+fn brushIconsFor(l: Layer) ?[]const ui.Icon {
+    return switch (l) {
+        .ground => null,
+        .cover => &coverIcons,
+        .decor => &decorIcons,
+        .props => &propIcons,
+        .units => &unitIcons,
+    };
+}
+
 fn brushesFor(l: Layer) []const [:0]const u8 {
     return switch (l) {
         .ground => &groundBrushes,
@@ -2201,6 +2240,25 @@ const BarRow = struct {
         return ui.buttonTip(r.ctx, ui.rect(r.x, 5, w, BAR_H - 10), label, hud.MONO, active, tip);
     }
 
+    /// A LAYER: picture AND name. A layer is a place you go, and the name is what you learn it by;
+    /// the icon is what you find it by once you have.
+    fn layer(r: *BarRow, ic: ui.Icon, label: [:0]const u8, active: bool, tip: [:0]const u8) bool {
+        const w = ui.iconButtonW(label, hud.MONO);
+        defer r.x += w + GAP;
+        const rect = ui.rect(r.x, 5, w, BAR_H - 10);
+        ui.tipFor(r.ctx, rect, tip);
+        return ui.iconButton(r.ctx, rect, ic, label, hud.MONO, active);
+    }
+
+    /// A VERB: picture only, square, explained on hover. Save/Open/Undo are glyphs everyone already
+    /// reads, and spelling all seven out is what left the top bar with no room for the document
+    /// readout at 1280 — this buys ~250 px back and reads faster besides.
+    fn verb(r: *BarRow, ic: ui.Icon, tip: [:0]const u8) bool {
+        const w = BAR_H - 10;
+        defer r.x += w + GAP;
+        return ui.iconOnly(r.ctx, ui.rect(r.x, 5, w, w), ic, false, tip);
+    }
+
     fn gap(r: *BarRow, px: i32) void {
         r.x += px;
     }
@@ -2211,17 +2269,17 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
     var row = BarRow{ .ctx = ctx, .x = 8 };
     inline for (@typeInfo(Layer).@"enum".fields) |f| {
         const l: Layer = @enumFromInt(f.value);
-        if (row.button(l.label(), ed.layer == l, layerTips[f.value])) ed.setLayer(l);
+        if (row.layer(layerIcon(l), l.label(), ed.layer == l, layerTips[f.value])) ed.setLayer(l);
     }
     row.gap(14); // the layer strip and the file buttons are different kinds of thing
-    if (row.button("New", false, "Start an empty map (Ctrl+N)")) ed.request(.new);
-    if (row.button("Open", false, "Open a map from worlds/ (Ctrl+O)")) ed.request(.open);
-    if (row.button("Save", false, "Write the map to disk (Ctrl+S)")) ed.saveNow(m);
-    if (row.button("Save As", false, "Write it under a new name (Ctrl+Shift+S)")) {
+    if (row.verb(.new, "New — start an empty map (Ctrl+N)")) ed.request(.new);
+    if (row.verb(.open, "Open — a map from worlds/ (Ctrl+O)")) ed.request(.open);
+    if (row.verb(.save, "Save — write the map to disk (Ctrl+S)")) ed.saveNow(m);
+    if (row.verb(.saveas, "Save As — write it under a new name (Ctrl+Shift+S)")) {
         ed.nameLen = 0;
         ed.modal = .save_as;
     }
-    if (row.button("Reload", false, "Throw away every unsaved change and re-read the file")) {
+    if (row.verb(.reload, "Reload — throw away every unsaved change and re-read the file")) {
         var line: usize = 0;
         wf.load(ed.curPath(), m, &line) catch |e| {
             ed.sayFmt("RELOAD FAILED: {s} (line {d})", .{ @errorName(e), line });
@@ -2230,10 +2288,11 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
         ed.adopt(m, env, false);
         ed.say("reloaded from disk");
     }
-    if (row.button("Undo", false, "Ctrl+Z")) {
+    row.gap(10); // …and undo/redo are a pair apart from the file verbs
+    if (row.verb(.undo, "Undo (Ctrl+Z)")) {
         if (ed.undo(m)) ed.rebuild(m, env);
     }
-    if (row.button("Redo", false, "Ctrl+Y")) {
+    if (row.verb(.redo, "Redo (Ctrl+Y)")) {
         if (ed.redo(m)) ed.rebuild(m, env);
     }
 
@@ -2256,7 +2315,9 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
     // SELECT sits above the brushes and outside them: it is the mode where the left button
     // picks things instead of painting them, and it is what makes "click an object to select
     // it" possible at all.
-    if (ui.buttonTip(ctx, ui.rect(8, y, SIDE_W - 16, ROW_H - 2), "Select", hud.MONO, ed.selecting, "Left-click picks objects; left-drag pans the map (Esc)")) {
+    const selR = ui.rect(8, y, SIDE_W - 16, ROW_H - 2);
+    ui.tipFor(ctx, selR, "Left-click picks objects; left-drag pans the map (Esc)");
+    if (ui.iconButton(ctx, selR, .select, "Select", hud.MONO, ed.selecting)) {
         ed.selecting = true;
     }
     y += ROW_H + 8;
@@ -2265,10 +2326,23 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
     y += ROW_H;
     const brushes = brushesFor(ed.layer);
     const tips = brushTipsFor(ed.layer);
+    const glyphs = brushIconsFor(ed.layer);
     for (brushes, 0..) |b, i| {
         var lab: [40]u8 = undefined;
         const s = std.fmt.bufPrintZ(&lab, "{d} {s}", .{ i + 1, b }) catch b;
-        if (ui.buttonTip(ctx, ui.rect(8, y, SIDE_W - 16, ROW_H - 4), s, hud.MONO, !ed.selecting and ed.brushIdx() == i, tips[i])) {
+        const r = ui.rect(8, y, SIDE_W - 16, ROW_H - 4);
+        ui.tipFor(ctx, r, tips[i]);
+        const on = !ed.selecting and ed.brushIdx() == i;
+        const hit = if (glyphs) |g|
+            ui.iconButton(ctx, r, g[i], s, hud.MONO, on)
+        else
+            // GROUND: the swatch IS the icon. The eraser at the end of the strip has no colour of
+            // its own, so it takes the drawn glyph the other layers use for the same job.
+            (if (i + 1 == brushes.len)
+                ui.iconButton(ctx, r, .erase, s, hud.MONO, on)
+            else
+                ui.swatchButton(ctx, r, soilSwatch(@enumFromInt(i + 1)), s, hud.MONO, on));
+        if (hit) {
             ed.setBrush(i);
             ed.selecting = false; // arming a brush hands the left button to it
         }

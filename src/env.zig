@@ -529,8 +529,14 @@ pub const Env = struct {
 };
 
 // A flame's guttering, in [-1, 1]: three incommensurate rates so it never reads as a pulse.
+//
+// SOFTENED AND SLOWED (owner's call). The old weights were front-loaded onto 9.1 and 19.7 rad/s —
+// 1.4 and 3.1 Hz — which is a STROBE, not a fire: at that rate a pool of light reads as a fault in
+// the renderer rather than as something burning. The energy moved to the slow term, so what a room
+// does now is BREATHE, with only a little chop riding on top. A real fire's light varies mostly on
+// the half-second, which is also slow enough that the eye reads it as warmth instead of flicker.
 fn gutter(t: f32, phase: f32) f32 {
-    return 0.55 * mathx.sinf(t * 9.1 + phase) + 0.28 * mathx.sinf(t * 19.7 + phase * 2.3) + 0.17 * mathx.sinf(t * 4.3 + phase * 0.6);
+    return 0.30 * mathx.sinf(t * 4.3 + phase) + 0.14 * mathx.sinf(t * 8.9 + phase * 2.3) + 0.56 * mathx.sinf(t * 1.7 + phase * 0.6);
 }
 
 // Does a caster at `pos` (bounding radius `bound`, height `top`) reach the sun's ortho box
@@ -917,6 +923,7 @@ fn buildSolids(e: *Env) void {
                 part.r * s,
             );
             sol.h = part.h * s;
+            sol.surf = nfo.surf; // …and what it is made of, for whatever hits it (see collision.Surface)
             e.solid_buf[e.nsolids] = sol;
             e.nsolids += 1;
         }

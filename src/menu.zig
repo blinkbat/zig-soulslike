@@ -4,6 +4,7 @@ const gfx = @import("gfx.zig");
 const hud = @import("hud.zig");
 const mathx = @import("mathx.zig");
 const rumblemod = @import("rumble.zig");
+const sfx = @import("audio.zig");
 
 const rgba = mathx.rgba;
 
@@ -105,8 +106,14 @@ pub const Menu = struct {
             .debug => DBG_COUNT,
             .retro => RET_COUNT,
         };
-        if (navPressed(.up)) self.cursor = (self.cursor + rows - 1) % rows;
-        if (navPressed(.down)) self.cursor = (self.cursor + 1) % rows;
+        if (navPressed(.up)) {
+            self.cursor = (self.cursor + rows - 1) % rows;
+            sfx.play(.menu_move);
+        }
+        if (navPressed(.down)) {
+            self.cursor = (self.cursor + 1) % rows;
+            sfx.play(.menu_move);
+        }
 
         // Slider adjust (retro screen, filter rows only): tap = fine step, Shift/LB-tap
         // = coarse step, hold = continuous glide after a short delay.
@@ -131,8 +138,14 @@ pub const Menu = struct {
             if (adjTapped(.left) or adjTapped(.right)) self.cycleTimeScale();
         }
 
-        if (confirmPressed()) return self.confirm(retro);
-        if (backPressed()) self.onEscape();
+        if (confirmPressed()) {
+            sfx.play(.menu_pick);
+            return self.confirm(retro);
+        }
+        if (backPressed()) {
+            sfx.play(.menu_back);
+            self.onEscape();
+        }
         return .none;
     }
 

@@ -2,6 +2,9 @@ const std = @import("std");
 const rl = @import("raylib");
 const hud = @import("hud.zig");
 const mathx = @import("mathx.zig");
+const icons = @import("icons.zig");
+
+pub const Icon = icons.Icon;
 
 const rgba = mathx.rgba;
 
@@ -136,6 +139,64 @@ pub fn button(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, active
     rl.drawRectangleLinesEx(r, 1, alpha(TRIM, if (active) 220 else if (h) 170 else 80));
     const tw = hud.monoW(label, size);
     const tx: i32 = @intFromFloat(r.x + (r.width - @as(f32, @floatFromInt(tw))) * 0.5);
+    const ty: i32 = @intFromFloat(r.y + (r.height - @as(f32, @floatFromInt(hud.monoLineH(size)))) * 0.5);
+    hud.mono(label, tx, ty, size, if (active) HOT else VALUE);
+    return h and ctx.pressed;
+}
+
+// ── ICON BUTTONS ── the same button, with a glyph. Two shapes, and which one to use is decided by
+// whether the label earns its width: a LAYER is a place you go and wants its name, a file action is
+// a verb everyone already knows the picture for and wants the room back.
+/// Inset from a button's left edge to its icon, and from the icon to its label.
+const ICON_PAD: i32 = 8;
+const ICON_GAP: i32 = 7;
+
+/// How wide `iconButton` needs to be for this label — so a row of them can lay itself out without
+/// each call site re-deriving the same sum and drifting from it.
+pub fn iconButtonW(label: [:0]const u8, size: i32) i32 {
+    return ICON_PAD * 2 + size + ICON_GAP + hud.monoW(label, size);
+}
+
+/// Icon on the left, label after it. The icon is sized to the label's type size, so the two scale
+/// together and a button never ends up with a glyph twice the height of its own text.
+pub fn iconButton(ctx: *Ctx, r: rl.Rectangle, ic: Icon, label: [:0]const u8, size: i32, active: bool) bool {
+    const h = ctx.hot(r);
+    const face = if (active) ACTIVE_FILL else if (h) HOVER_FILL else IDLE_FILL;
+    rl.drawRectangleRec(r, face);
+    rl.drawRectangleLinesEx(r, 1, alpha(TRIM, if (active) 220 else if (h) 170 else 80));
+    const fg = if (active) HOT else VALUE;
+    const isz: f32 = @floatFromInt(size);
+    icons.draw(ic, r.x + @as(f32, @floatFromInt(ICON_PAD)) + isz * 0.5, r.y + r.height * 0.5, isz, fg);
+    const tx: i32 = @as(i32, @intFromFloat(r.x)) + ICON_PAD + size + ICON_GAP;
+    const ty: i32 = @intFromFloat(r.y + (r.height - @as(f32, @floatFromInt(hud.monoLineH(size)))) * 0.5);
+    hud.mono(label, tx, ty, size, fg);
+    return h and ctx.pressed;
+}
+
+/// Icon ONLY, square, explaining itself on hover. For the verbs — a row of seven file buttons
+/// spelled out fills the whole top bar at 1280 and leaves the document readout nowhere to go.
+pub fn iconOnly(ctx: *Ctx, r: rl.Rectangle, ic: Icon, active: bool, tip: [:0]const u8) bool {
+    tipFor(ctx, r, tip);
+    const h = ctx.hot(r);
+    const face = if (active) ACTIVE_FILL else if (h) HOVER_FILL else IDLE_FILL;
+    rl.drawRectangleRec(r, face);
+    rl.drawRectangleLinesEx(r, 1, alpha(TRIM, if (active) 220 else if (h) 170 else 80));
+    icons.draw(ic, r.x + r.width * 0.5, r.y + r.height * 0.5, @min(r.width, r.height) * 0.62, if (active) HOT else if (h) HOT else VALUE);
+    return h and ctx.pressed;
+}
+
+/// A colour SWATCH button — the soil brushes, where the paint itself is the only honest icon. A
+/// drawn glyph for "moss" would be a picture of a word; the colour is the thing.
+pub fn swatchButton(ctx: *Ctx, r: rl.Rectangle, paint: rl.Color, label: [:0]const u8, size: i32, active: bool) bool {
+    const h = ctx.hot(r);
+    const face = if (active) ACTIVE_FILL else if (h) HOVER_FILL else IDLE_FILL;
+    rl.drawRectangleRec(r, face);
+    rl.drawRectangleLinesEx(r, 1, alpha(TRIM, if (active) 220 else if (h) 170 else 80));
+    const sw: f32 = @floatFromInt(size);
+    const sr = rl.Rectangle{ .x = r.x + @as(f32, @floatFromInt(ICON_PAD)), .y = r.y + (r.height - sw) * 0.5, .width = sw, .height = sw };
+    rl.drawRectangleRec(sr, paint);
+    rl.drawRectangleLinesEx(sr, 1, alpha(TRIM, 150));
+    const tx: i32 = @as(i32, @intFromFloat(r.x)) + ICON_PAD + size + ICON_GAP;
     const ty: i32 = @intFromFloat(r.y + (r.height - @as(f32, @floatFromInt(hud.monoLineH(size)))) * 0.5);
     hud.mono(label, tx, ty, size, if (active) HOT else VALUE);
     return h and ctx.pressed;

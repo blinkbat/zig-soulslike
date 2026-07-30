@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const gfx = @import("gfx.zig");
 const mathx = @import("mathx.zig");
+const collision = @import("collision.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -439,6 +440,11 @@ pub const Info = struct {
     casts: bool = true,
     parts: []const Part = &.{},
     light: ?LightSpec = null,
+    /// What this kind's colliders are MADE of, for whatever hits them — today, the arrow's impact
+    /// sound. Defaults to `.stone` because this world is masonry and rock by a wide margin, so only
+    /// the timber and the ironwork have to say anything (see `buildSolids`, which copies it onto
+    /// every collider the kind produces).
+    surf: collision.Surface = .stone,
 };
 
 /// "Never distance-cull this" — past the camera's far clip plane, so only the frustum can
@@ -466,12 +472,12 @@ pub const INFO = [NK]Info{
         .{ .ax = 2.7, .bx = 2.7, .r = 0.78, .h = 4.8 },
     } },
     .{ .kind = .wall, .build = wallMesh, .bound = 5.0, .top = 3.6, .view = 220, .parts = &.{.{ .ax = -2.8, .bx = 2.8, .r = 0.60, .h = 3.0 }} },
-    .{ .kind = .tree, .build = treeMesh, .bound = 5.3, .top = 4.9, .view = 240, .parts = circleParts(0.38, 3.6) },
+    .{ .kind = .tree, .build = treeMesh, .bound = 5.3, .top = 4.9, .view = 240, .parts = circleParts(0.38, 3.6), .surf = .wood },
     .{ .kind = .graves, .build = gravesMesh, .bound = 2.3, .top = 1.05, .view = 150, .parts = circleParts(0.80, 0.9) },
     .{ .kind = .sword, .build = swordMesh, .bound = 1.6, .top = 1.35, .view = 120 },
     // A BONFIRE now, not an ember in a bowl — so its light is a fire's: warmer, brighter, and it
     // GUTTERS (0.10 was an ember's steady glow, and the flame above it is no longer standing still).
-    .{ .kind = .grace, .build = graceMesh, .bound = 1.9, .top = 1.6, .view = 300, .light = .{ .y = 0.45, .col = v3(0.58, 0.32, 0.12), .radius = 8.0, .flicker = 0.26 } },
+    .{ .kind = .grace, .build = graceMesh, .bound = 1.9, .top = 1.6, .view = 300, .light = .{ .y = 0.45, .col = v3(0.80, 0.45, 0.17), .radius = 9.0, .flicker = 0.17 } },
     .{ .kind = .tower, .build = towerMesh, .bound = 17.5, .top = 17.2, .view = FAR, .parts = circleParts(3.40, 14.0) },
     .{ .kind = .gate, .build = gateMesh, .bound = 19.6, .top = 16.4, .view = FAR, .parts = &.{
         .{ .ax = -7.5, .bx = -7.5, .r = 3.20, .h = 16.0 },
@@ -499,14 +505,14 @@ pub const INFO = [NK]Info{
         .{ .ax = 2.3, .az = -1.9, .bx = 2.3, .bz = 1.9, .r = 0.34, .h = 2.6 },
         .{ .ax = -2.3, .az = 1.9, .bx = 2.3, .bz = 1.9, .r = 0.34, .h = 3.4 },
         .{ .ax = -2.3, .az = -1.9, .bx = -0.95, .bz = -1.9, .r = 0.34, .h = 1.2 }, // collapsed to knee height
-    } },
+    }, .surf = .wood },
     // The causeway: you WALK it, so only its kerbs are solid — low enough that arrows arc over.
     .{ .kind = .causeway, .build = causewayMesh, .bound = 6.5, .top = 0.5, .view = 240, .parts = &.{
         .{ .ax = -5.0, .az = -1.45, .bx = 5.0, .bz = -1.45, .r = 0.20, .h = 0.5 },
         .{ .ax = -5.0, .az = 1.45, .bx = 5.0, .bz = 1.45, .r = 0.20, .h = 0.5 },
     } },
     .{ .kind = .paving, .build = pavingMesh, .bound = 3.2, .top = 0.15, .view = 150 },
-    .{ .kind = .cart, .build = cartMesh, .bound = 3.4, .top = 1.7, .view = 170, .parts = &.{.{ .ax = -1.1, .bx = 1.1, .r = 0.55, .h = 1.3 }} },
+    .{ .kind = .cart, .build = cartMesh, .bound = 3.4, .top = 1.7, .view = 170, .parts = &.{.{ .ax = -1.1, .bx = 1.1, .r = 0.55, .h = 1.3 }}, .surf = .wood },
     .{ .kind = .monolith, .build = monolithMesh, .bound = 5.2, .top = 4.9, .view = FAR, .parts = circleParts(0.62, 4.6) },
     // THREE cliff variants, for the same reason the great trees have three: the ring repeats a
     // segment every 6.5 m (the shipped map's `edge` step) for 1.3 km, and one silhouette repeated at
@@ -525,32 +531,44 @@ pub const INFO = [NK]Info{
     .{ .kind = .cliff6, .build = cliff6, .bound = 18.0, .top = 14.5, .view = FAR, .parts = &cliffParts },
     .{ .kind = .boulder, .build = boulderMesh, .bound = 3.2, .top = 2.5, .view = 220, .parts = circleParts(1.15, 2.3) },
     .{ .kind = .rocks, .build = rocksMesh, .bound = 2.2, .top = 0.85, .view = 160 },
-    .{ .kind = .stump, .build = stumpMesh, .bound = 1.7, .top = 1.25, .view = 150, .parts = circleParts(0.46, 1.2) },
-    .{ .kind = .log, .build = logMesh, .bound = 3.0, .top = 0.75, .view = 160, .parts = &.{.{ .ax = -1.9, .bx = 1.9, .r = 0.36, .h = 0.75 }} },
+    .{ .kind = .stump, .build = stumpMesh, .bound = 1.7, .top = 1.25, .view = 150, .parts = circleParts(0.46, 1.2), .surf = .wood },
+    .{ .kind = .log, .build = logMesh, .bound = 3.0, .top = 0.75, .view = 160, .parts = &.{.{ .ax = -1.9, .bx = 1.9, .r = 0.36, .h = 0.75 }}, .surf = .wood },
     // ── village + wayside dressing ──
     .{ .kind = .well, .build = wellMesh, .bound = 2.6, .top = 2.4, .view = 240, .parts = circleParts(1.05, 1.15) },
-    .{ .kind = .shrine, .build = shrineMesh, .bound = 2.8, .top = 2.5, .view = 240, .parts = circleParts(0.72, 1.9), .light = .{ .y = 1.20, .col = v3(0.40, 0.22, 0.09), .radius = 5.0, .flicker = 0.30 } },
-    .{ .kind = .lantern, .build = lanternMesh, .bound = 3.4, .top = 3.1, .view = 230, .parts = circleParts(0.17, 3.0), .light = .{ .y = 2.62, .col = v3(0.46, 0.28, 0.12), .radius = 8.0, .flicker = 0.12 } },
-    .{ .kind = .fence, .build = fenceMesh, .bound = 3.6, .top = 1.25, .view = 180, .parts = &.{.{ .ax = -3.0, .bx = 3.0, .r = 0.16, .h = 1.25 }} },
-    .{ .kind = .barrels, .build = barrelsMesh, .bound = 1.8, .top = 1.35, .view = 170, .parts = circleParts(0.78, 1.2) },
-    .{ .kind = .woodpile, .build = woodpileMesh, .bound = 2.4, .top = 1.35, .view = 180, .parts = &.{.{ .ax = -1.25, .bx = 1.25, .r = 0.62, .h = 1.3 }} },
+    .{ .kind = .shrine, .build = shrineMesh, .bound = 2.8, .top = 2.5, .view = 240, .parts = circleParts(0.72, 1.9), .light = .{ .y = 1.20, .col = v3(0.56, 0.32, 0.13), .radius = 5.5, .flicker = 0.19 } },
+    // …a step UNDER the brazier (owner's ladder — see the fire block below): it is a caged wick on a
+    // post, not an open bowl of coals, so it lights a stretch of road rather than a plaza.
+    .{ .kind = .lantern, .build = lanternMesh, .bound = 3.4, .top = 3.1, .view = 230, .parts = circleParts(0.17, 3.0), .light = .{ .y = 2.62, .col = v3(1.05, 0.60, 0.25), .radius = 11.5, .flicker = 0.08 }, .surf = .metal },
+    .{ .kind = .fence, .build = fenceMesh, .bound = 3.6, .top = 1.25, .view = 180, .parts = &.{.{ .ax = -3.0, .bx = 3.0, .r = 0.16, .h = 1.25 }}, .surf = .wood },
+    .{ .kind = .barrels, .build = barrelsMesh, .bound = 1.8, .top = 1.35, .view = 170, .parts = circleParts(0.78, 1.2), .surf = .wood },
+    .{ .kind = .woodpile, .build = woodpileMesh, .bound = 2.4, .top = 1.35, .view = 180, .parts = &.{.{ .ax = -1.25, .bx = 1.25, .r = 0.62, .h = 1.3 }}, .surf = .wood },
     .{ .kind = .bones, .build = bonesMesh, .bound = 1.6, .top = 0.55, .view = 140 },
     .{ .kind = .sarcophagus, .build = sarcophagusMesh, .bound = 2.4, .top = 1.05, .view = 200, .parts = &.{.{ .ax = -0.95, .bx = 0.95, .r = 0.72, .h = 1.0 }} },
     .{ .kind = .stairs, .build = stairsMesh, .bound = 2.8, .top = 1.5, .view = 190, .parts = &.{.{ .ax = -1.3, .bx = 1.3, .r = 0.95, .h = 1.4 }} },
-    .{ .kind = .gibbet, .build = gibbetMesh, .bound = 4.4, .top = 4.1, .view = 220, .parts = circleParts(0.24, 4.0) },
+    .{ .kind = .gibbet, .build = gibbetMesh, .bound = 4.4, .top = 4.1, .view = 220, .parts = circleParts(0.24, 4.0), .surf = .wood },
     .{ .kind = .cairn, .build = cairnMesh, .bound = 1.8, .top = 1.5, .view = 180, .parts = circleParts(0.52, 1.4) },
     // ── more rock ──
     .{ .kind = .outcrop, .build = outcropMesh, .bound = 3.4, .top = 1.1, .view = 200, .parts = &.{.{ .ax = -1.4, .bx = 1.4, .r = 1.1, .h = 1.05 }} },
     .{ .kind = .scree, .build = screeMesh, .bound = 2.6, .top = 0.35, .view = 160 },
-    // Fire INTENSITIES are deliberately modest. At ~1.0 four torches in one room summed past the
-    // sun's own key and flattened the chapel interior to a uniform warm beige — a lit room with no
-    // form left in it. A fire should pool: bright at the flame, falling off into darkness.
-    // …and their RADII are small. A 9 m torch inside a 5x7 m chapel reaches every surface in the
-    // room from every corner, so four of them summed to a flat uniform wash no matter how dim each
-    // one was. 6 m makes each torch a POOL with darkness between them, which is the whole point.
-    .{ .kind = .torch, .build = torchMesh, .bound = 2.6, .top = 2.35, .view = 200, .parts = circleParts(0.18, 2.0), .light = .{ .y = 1.98, .col = v3(0.62, 0.33, 0.12), .radius = 6.0, .flicker = 0.22 } },
-    .{ .kind = .brazier, .build = brazierMesh, .bound = 1.9, .top = 1.55, .view = 210, .parts = circleParts(0.50, 1.2), .light = .{ .y = 1.14, .col = v3(0.70, 0.38, 0.13), .radius = 13.0, .flicker = 0.20 } },
-    .{ .kind = .campfire, .build = campfireMesh, .bound = 1.5, .top = 1.0, .view = 200, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(0.72, 0.35, 0.11), .radius = 11.0, .flicker = 0.28 } },
+    // ── THE FIRE LADDER (owner's call: braziers much brighter, lanterns a step under them) ──
+    // The BRAZIER is the brightest fire in the world — it is the one you site to light a place, and
+    // it now reads that way from across the plaza. The LANTERN sits deliberately one step below it,
+    // then the campfire, then the torch.
+    //
+    // BRIGHTNESS carries most of the increase, RADIUS very little, and that split is the whole
+    // reason the chapel still has form in it: a light's radius is what decides how many surfaces it
+    // touches, so widening one is how a room goes flat, while driving its colour makes the POOL
+    // hotter and leaves the darkness between pools exactly where it was. The torch is the most
+    // conservative of the four for that reason — four of them share one 5x7 m room, and at 9 m they
+    // summed to a uniform warm beige with no form left in it.
+    // THE TORCH IS THE EXCEPTION AND IT STAYS WHERE IT WAS. It was raised with the rest of the
+    // ladder and the chapel went straight back to a uniform warm beige with no form left in it —
+    // the exact failure the paragraph above describes, re-created in one line. FOUR of these share
+    // a 5x7 m room, so it is the only fire in the world whose brightness is a SUM, and the ladder
+    // does not apply to it. Braziers light plazas; torches light a pool of floor and no more.
+    .{ .kind = .torch, .build = torchMesh, .bound = 2.6, .top = 2.35, .view = 200, .parts = circleParts(0.18, 2.0), .light = .{ .y = 1.98, .col = v3(0.64, 0.34, 0.13), .radius = 6.0, .flicker = 0.15 }, .surf = .metal },
+    .{ .kind = .brazier, .build = brazierMesh, .bound = 1.9, .top = 1.55, .view = 210, .parts = circleParts(0.50, 1.2), .light = .{ .y = 1.14, .col = v3(1.55, 0.84, 0.29), .radius = 16.0, .flicker = 0.13 }, .surf = .metal },
+    .{ .kind = .campfire, .build = campfireMesh, .bound = 1.5, .top = 1.0, .view = 200, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
     // The tarn sheet: wadeable (no parts — owner's call, there is no swim and an invisible wall
     // on open water feels worse than shallow water) and NOT a caster (a flat film casts nothing,
     // and putting it in the shadow map would only shadow the lakebed it is sitting on).
@@ -588,16 +606,16 @@ pub const INFO = [NK]Info{
     // Great trees CAST (they are half the western skyline) and therefore do NOT sway — the
     // depth pass has no wind term, so a swaying caster's shadow would crawl away from it.
     // Three variants: one mesh repeated sixty times across a wood reads as sixty copies.
-    .{ .kind = .bigtree, .build = bigTree1, .bound = 13.5, .top = 11.0, .view = FAR, .parts = circleParts(0.95, 6.0) },
-    .{ .kind = .bigtree2, .build = bigTree2, .bound = 13.0, .top = 8.5, .view = FAR, .parts = circleParts(0.95, 5.0) },
-    .{ .kind = .bigtree3, .build = bigTree3, .bound = 14.0, .top = 13.5, .view = FAR, .parts = circleParts(0.90, 6.5) },
-    .{ .kind = .willow, .build = willowMesh, .bound = 8.0, .top = 7.1, .view = 300, .parts = circleParts(0.72, 4.4) },
-    .{ .kind = .conifer, .build = coniferMesh, .bound = 12.5, .top = 12.0, .view = FAR, .parts = circleParts(0.58, 5.0) },
-    .{ .kind = .birch, .build = birchMesh, .bound = 10.0, .top = 9.4, .view = 340, .parts = circleParts(0.44, 5.0) },
-    .{ .kind = .snag, .build = snagMesh, .bound = 8.2, .top = 7.8, .view = 320, .parts = circleParts(0.42, 6.0) },
+    .{ .kind = .bigtree, .build = bigTree1, .bound = 13.5, .top = 11.0, .view = FAR, .parts = circleParts(0.95, 6.0), .surf = .wood },
+    .{ .kind = .bigtree2, .build = bigTree2, .bound = 13.0, .top = 8.5, .view = FAR, .parts = circleParts(0.95, 5.0), .surf = .wood },
+    .{ .kind = .bigtree3, .build = bigTree3, .bound = 14.0, .top = 13.5, .view = FAR, .parts = circleParts(0.90, 6.5), .surf = .wood },
+    .{ .kind = .willow, .build = willowMesh, .bound = 8.0, .top = 7.1, .view = 300, .parts = circleParts(0.72, 4.4), .surf = .wood },
+    .{ .kind = .conifer, .build = coniferMesh, .bound = 12.5, .top = 12.0, .view = FAR, .parts = circleParts(0.58, 5.0), .surf = .wood },
+    .{ .kind = .birch, .build = birchMesh, .bound = 10.0, .top = 9.4, .view = 340, .parts = circleParts(0.44, 5.0), .surf = .wood },
+    .{ .kind = .snag, .build = snagMesh, .bound = 8.2, .top = 7.8, .view = 320, .parts = circleParts(0.42, 6.0), .surf = .wood },
     // A sapling CASTS (it is 3 m of tree, and a 3 m thing with no shadow reads as a decal) and so
     // must not sway — the depth pass has no wind term.
-    .{ .kind = .sapling, .build = saplingMesh, .bound = 3.8, .top = 3.4, .view = 220, .parts = circleParts(0.16, 2.2) },
+    .{ .kind = .sapling, .build = saplingMesh, .bound = 3.8, .top = 3.4, .view = 220, .parts = circleParts(0.16, 2.2), .surf = .wood },
 };
 
 pub fn info(k: Kind) *const Info {
@@ -3654,23 +3672,31 @@ fn flameInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, s: f32) vo
     // tongues dance; both are STICKY, so both are put back at the end.
     b.setMat(.flame);
     b.setAnimY(cy);
-    // THE HEART: a small, low pool at the fuel. Small on purpose — a big pale core is what made an
-    // earlier version read as a traffic cone.
-    b.addBlob(v3(cx, cy + 0.015 * s, cz), v3(0.125 * s, 0.050 * s, 0.125 * s), 3, 9, COAL);
-    b.addBlob(v3(cx, cy + 0.065 * s, cz), v3(0.050 * s, 0.060 * s, 0.050 * s), 3, 8, FLAME_CORE);
+    // THE HEART: a low pool at the fuel, and a BROAD one — a fire sits in its bed, it does not
+    // balance on it. (Small and tight is what made an earlier version read as a traffic cone; the
+    // opposite failure, a narrow heart under narrow tongues, read as a candle.)
+    b.addBlob(v3(cx, cy + 0.015 * s, cz), v3(0.175 * s, 0.045 * s, 0.175 * s), 3, 9, COAL);
+    b.addBlob(v3(cx, cy + 0.055 * s, cz), v3(0.078 * s, 0.048 * s, 0.078 * s), 3, 8, FLAME_CORE);
     // TONGUES: TAPERED SPIRES, not stacked blobs. A capsule with ra > rb is a smooth cone with
     // rounded ends, which is the shape of a flame tongue — two fat blobs one on top of the other is
     // the shape of a snowman, and at six sides their facet folds were most of what read as crumpled
     // paper once the vertex writhe started bending them.
     //
-    // FIVE, at unequal heights, each in TWO segments so the spire can bend on its way up (a
-    // straight one is a spike). Narrow relative to their height: the silhouette is the whole read.
+    // LOW AND WIDE (owner's call — they read SKINNY and weird). A real fire is roughly as broad as
+    // it is tall and it BOILS; a tall thin one is a blowtorch. Three numbers carry that: the height
+    // band came down by a third, the tongue gauge nearly doubled, and the base spread out — so the
+    // silhouette is now a squat cluster of fat lobes instead of a bundle of needles, and the vertex
+    // writhe has something with body to bend rather than whipping a wire about.
+    //
+    // SIX, at unequal heights, each in TWO segments so the spire can bend on its way up (a straight
+    // one is a spike). The tips also stay FATTER: tapering to a twelfth of the base is what turned
+    // every tongue into a hair at the top, and hairs are exactly what read as "weird".
     var t: i32 = 0;
-    while (t < 5) : (t += 1) {
+    while (t < 6) : (t += 1) {
         const a = rng.angle();
-        const off = rng.range(0.01, 0.070) * s;
-        const h = rng.range(0.20, 0.60) * s; // the tallest tongue sets the flame's height
-        const w = rng.range(0.030, 0.055) * s; // …and they stay NARROW relative to it
+        const off = rng.range(0.02, 0.115) * s; // a BROAD base — the lobes sit beside each other
+        const h = rng.range(0.17, 0.44) * s; // the tallest tongue sets the flame's height
+        const w = rng.range(0.058, 0.100) * s; // …and they are FAT relative to it now
         const lean = rng.range(0.01, 0.05) * s;
         const y0 = cy + 0.02 * s;
         const x0 = cx + mathx.cosf(a) * off;
@@ -3683,17 +3709,19 @@ fn flameInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, s: f32) vo
             v3(x0, y0, z0),
             v3(mx, y0 + h * 0.55, mz),
             w,
-            w * 0.74,
+            w * 0.82,
             7,
             if (t == 0) FLAME_MID else if (rng.float() < 0.55) FLAME_MID else FLAME_TIP,
         );
-        b.addCapsule(v3(mx, y0 + h * 0.52, mz), v3(tx, y0 + h, tz), w * 0.72, w * 0.12, 6, FLAME_TIP);
+        b.addCapsule(v3(mx, y0 + h * 0.52, mz), v3(tx, y0 + h, tz), w * 0.80, w * 0.26, 6, FLAME_TIP);
     }
-    // …and a few loose EMBERS drifting off the top.
+    // …and a few loose EMBERS drifting off the top. Brought DOWN with the tongues: embers hanging
+    // where the old flame's tips used to be left a column of specks over a fire that no longer
+    // reaches them.
     var i: i32 = 0;
     while (i < 4) : (i += 1) {
         const r = rng.range(0.010, 0.022) * s;
-        b.addBlob(v3(cx + rng.signed() * 0.14 * s, cy + rng.range(0.45, 0.95) * s, cz + rng.signed() * 0.14 * s), v3(r, r, r), 3, 5, WISP);
+        b.addBlob(v3(cx + rng.signed() * 0.16 * s, cy + rng.range(0.30, 0.62) * s, cz + rng.signed() * 0.16 * s), v3(r, r, r), 3, 5, WISP);
     }
     b.setAnimY(0); // sticky, like setMat — hand the Builder back the way it was found
 }

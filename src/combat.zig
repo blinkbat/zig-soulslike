@@ -186,6 +186,105 @@ pub const Stamina = struct {
     }
 };
 
+// ── FOCUS (FP): the hero's alone, like Stamina ──────────────────────────────────────────
+// ER's blue bar. NOTHING SPENDS IT YET — there are no spells or skills — so it sits full, exactly
+// as it does in a build with no catalyst equipped. It is a real meter rather than the HUD's old
+// hardcoded 1.0 for one reason: the Cerulean flask has to pour into SOMETHING, and a flask whose
+// target is a literal cannot be tested, tuned, or seen to work.
+pub const FP_MAX = 60.0;
+
+pub const Focus = struct {
+    cur: f32 = FP_MAX,
+    max: f32 = FP_MAX,
+
+    pub fn frac(self: *const Focus) f32 {
+        return if (self.max > 0) mathx.clampF(self.cur / self.max, 0, 1) else 0;
+    }
+    /// Is there room for a pour? Asked BEFORE the charge is spent — a flask whose restore would be
+    /// a no-op must be refused at the press, not discovered a second later when the liquid lands
+    /// and the charge is already gone (see `hero.startDrink`).
+    pub fn canTake(self: *const Focus) bool {
+        return self.cur < self.max - 1e-3;
+    }
+    /// Returns whether it actually took any. The same test `canTake` makes, kept here so the pour
+    /// can never disagree with the gate that let it through.
+    pub fn restore(self: *Focus, amt: f32) bool {
+        if (!self.canTake()) return false;
+        self.cur = minF(self.max, self.cur + amt);
+        return true;
+    }
+    pub fn reset(self: *Focus) void {
+        self.cur = self.max;
+    }
+};
+
+// ── FLASKS (Elden Ring's, both of them) ─────────────────────────────────────────────────
+// The Flask of CRIMSON Tears restores HP, the Flask of CERULEAN Tears restores FP, they share the
+// quick-item slot, and D-pad down cycles which one is up. Charges refill at the grace — here, on
+// the respawn, which is the same event.
+//
+// THE DRINK IS COMMITTED, and that is the whole design. A heal you can take for free mid-combo is
+// not a resource, it is a button; ER makes you find a gap, and the gap is what turns "I am hurt"
+// into a decision. So it takes FLASK_DRINK_DUR of standing still, the restore lands PART WAY IN
+// (raise the flask, then drink — a heal that fires on frame one lets you cancel out of your own
+// commitment), and a blow that staggers you interrupts it AND spends the charge, ER-style.
+//
+// (ER lets you walk while drinking. This one plants you, because walking-and-drinking needs the
+// flask arm blended onto the live walk and the hero has no upper-body layer yet — see poseDrink.)
+pub const FlaskKind = enum { crimson, cerulean };
+
+pub const FLASK_CRIMSON: u8 = 4; // charges of each at a fresh grace…
+pub const FLASK_CERULEAN: u8 = 2; // …fewer blue, since there is far less to spend it on
+pub const FLASK_HP_FRAC: f32 = 0.45; // fraction of the MAX restored — ER's low-upgrade Crimson
+pub const FLASK_FP_FRAC: f32 = 0.50;
+pub const FLASK_DRINK_DUR: f32 = 1.05; // the committed window
+pub const FLASK_POUR_AT: f32 = 0.42; // …and where inside it the restore actually lands
+
+pub const Flasks = struct {
+    crimson: u8 = FLASK_CRIMSON,
+    cerulean: u8 = FLASK_CERULEAN,
+    sel: FlaskKind = .crimson,
+
+    pub fn charges(self: *const Flasks, k: FlaskKind) u8 {
+        return switch (k) {
+            .crimson => self.crimson,
+            .cerulean => self.cerulean,
+        };
+    }
+    /// Charges of the one currently in the slot.
+    pub fn ready(self: *const Flasks) u8 {
+        return self.charges(self.sel);
+    }
+    /// D-pad down. Cycles regardless of whether the other one has anything left — an empty flask
+    /// you can still SEE in the slot is how you know to go and rest, and skipping it would make
+    /// the cycle silently do nothing when you are dry.
+    pub fn cycle(self: *Flasks) void {
+        self.sel = switch (self.sel) {
+            .crimson => .cerulean,
+            .cerulean => .crimson,
+        };
+    }
+    /// Spend one charge of the selected flask. Callers gate on this: false = nothing was drunk.
+    pub fn take(self: *Flasks) bool {
+        switch (self.sel) {
+            .crimson => {
+                if (self.crimson == 0) return false;
+                self.crimson -= 1;
+            },
+            .cerulean => {
+                if (self.cerulean == 0) return false;
+                self.cerulean -= 1;
+            },
+        }
+        return true;
+    }
+    /// Back to full — resting at the grace, which for this build is the respawn.
+    pub fn refill(self: *Flasks) void {
+        self.crimson = FLASK_CRIMSON;
+        self.cerulean = FLASK_CERULEAN;
+    }
+};
+
 // ── RUNES: the run's currency — the HERO'S ALONE, like Stamina ───────────────────────────
 // Souls / blood echoes / runes: same mechanic, ER's name (ER is the north star). A kill pays out the
 // instant it lands but the COUNTER never jumps — it ROLLS up over a beat, which is the difference
@@ -408,6 +507,52 @@ test "a rune payout mid-roll retargets instead of restarting" {
     t = 0;
     while (t < 3.0) : (t += 1.0 / 60.0) r.tick(1.0 / 60.0);
     try std.testing.expectEqual(@as(u32, 240), r.display());
+}
+
+test "flasks: a drink spends exactly one charge, and an empty flask refuses" {
+    var f = Flasks{};
+    try std.testing.expectEqual(FLASK_CRIMSON, f.ready());
+    var i: u8 = 0;
+    while (i < FLASK_CRIMSON) : (i += 1) try std.testing.expect(f.take());
+    try std.testing.expectEqual(@as(u8, 0), f.ready());
+    try std.testing.expect(!f.take()); // dry — and it must SAY so rather than heal for free
+    // …and draining one leaves the other untouched: they are separate flasks, not one pool.
+    f.cycle();
+    try std.testing.expectEqual(FlaskKind.cerulean, f.sel);
+    try std.testing.expectEqual(FLASK_CERULEAN, f.ready());
+    try std.testing.expect(f.take());
+    f.refill();
+    try std.testing.expectEqual(FLASK_CERULEAN, f.ready());
+    f.cycle();
+    try std.testing.expectEqual(FLASK_CRIMSON, f.ready());
+}
+
+test "flasks: the cycle still moves when the other one is empty" {
+    // Otherwise being dry on blue would silently make D-pad down do nothing, and an input that
+    // does nothing with no feedback is the exact thing the stamina refusal flash exists to stop.
+    var f = Flasks{};
+    f.cerulean = 0;
+    f.cycle();
+    try std.testing.expectEqual(FlaskKind.cerulean, f.sel);
+    try std.testing.expectEqual(@as(u8, 0), f.ready());
+}
+
+test "focus refuses a pour it cannot take, so a full bar never eats a charge" {
+    // The one deliberate step away from ER: nothing spends FP in this build, so a Cerulean flask
+    // that consumed a charge into a permanently-full bar would be a button that can only ever be
+    // wasted. Restoring nothing reports false and the caller keeps the charge.
+    var fp = Focus{};
+    try std.testing.expect(!fp.restore(10));
+    fp.cur = 10;
+    try std.testing.expect(fp.restore(FP_MAX * FLASK_FP_FRAC));
+    try std.testing.expectApproxEqAbs(@as(f32, 40), fp.cur, 1e-4);
+    try std.testing.expect(fp.restore(FP_MAX)); // tops out rather than overflowing
+    try std.testing.expectApproxEqAbs(FP_MAX, fp.cur, 1e-4);
+}
+
+test "the flask heals a real bite of the bar, and the pour lands inside the commitment" {
+    try std.testing.expect(FLASK_HP_FRAC > 0.25 and FLASK_HP_FRAC < 0.75); // meaningful, not a full heal
+    try std.testing.expect(FLASK_POUR_AT > 0.2 and FLASK_POUR_AT < 1.0); // …and you pay before you drink
 }
 
 test "the lockout switch is what decides whether an empty pool bites" {

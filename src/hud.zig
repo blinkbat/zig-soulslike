@@ -28,17 +28,33 @@ pub const BODY: i32 = 22; // primary readouts — the debug gait/speed line, men
 pub const SMALL: i32 = 20; // secondary readouts — the debug corner's rows
 pub const HINT: i32 = 19; // the least important line on screen (the menu's control crib)
 
+// MIPMAP THE ATLAS. This is what "jagged" actually was, and the old comment had exactly half the
+// rule: an UPscaled glyph is jagged, yes — but a 96 px glyph drawn at 20 is a 4.8x DOWNscale, and a
+// bilinear fetch only ever reads the four texels nearest one sample point. At that ratio it is
+// skipping four texels out of five, so which part of a thin serif stroke survives is luck, and it
+// changes when the text moves a pixel. That is the shimmer, and it is the same undersampling the
+// scene shader's detail-LOD block exists to fix — a procedural pattern and a font atlas alias for
+// one reason.
+//
+// The fix is the same one too: give it a mip chain and let the hardware pick the level that matches
+// the footprint. Trilinear then blends between levels so a size between two mips doesn't pop.
+fn atlas(path: [:0]const u8, px: i32) ?rl.Font {
+    var f = rl.loadFontEx(path, px, null) catch return null;
+    if (f.glyphCount == 0) return null;
+    rl.genTextureMipmaps(&f.texture);
+    rl.setTextureFilter(f.texture, .trilinear);
+    return f;
+}
+
 pub fn init() void {
-    if (rl.loadFontEx(FONT_PATH, ATLAS_PX, null)) |f| {
+    if (atlas(FONT_PATH, ATLAS_PX)) |f| {
         font = f;
-        rl.setTextureFilter(font.texture, .bilinear);
         haveFont = true;
-    } else |_| {}
-    if (rl.loadFontEx(FONT_PATH, ATLAS_BIG_PX, null)) |f| {
+    }
+    if (atlas(FONT_PATH, ATLAS_BIG_PX)) |f| {
         fontBig = f;
-        rl.setTextureFilter(fontBig.texture, .bilinear);
         haveBig = true;
-    } else |_| {}
+    }
     initMono();
 }
 
@@ -104,17 +120,13 @@ pub const MONO: i32 = 18;
 
 fn initMono() void {
     for (MONO_CANDIDATES) |path| {
-        if (rl.loadFontEx(path, MONO_ATLAS_PX, null)) |f| {
-            // A face that failed to load can still come back as raylib's 0-glyph default; only
-            // take it if it actually carries glyphs, or every string measures as nothing.
-            if (f.glyphCount > 0) {
-                monoFont = f;
-                rl.setTextureFilter(monoFont.texture, .bilinear);
-                haveMono = true;
-                return;
-            }
-            rl.unloadFont(f);
-        } else |_| {}
+        // `atlas` also rejects a face that "loaded" as raylib's 0-glyph default — take one of those
+        // and every string in the editor measures as nothing.
+        if (atlas(path, MONO_ATLAS_PX)) |f| {
+            monoFont = f;
+            haveMono = true;
+            return;
+        }
     }
 }
 
@@ -180,8 +192,12 @@ const FP_H: i32 = 11;
 const ST_W: i32 = 232;
 const ST_H: i32 = 11;
 
-const TRACK = rgba(16, 13, 11, 232); // the empty channel behind every fill
-const FRAME = rgba(116, 104, 84, 238); // the tarnished-metal rim, a hairline outside the track
+// ALPHAS ARE DELIBERATELY SHORT OF OPAQUE (owner's call — the bars and the rune plate read as
+// solid furniture sat on top of the game). ER's own HUD lets the world through its chrome, which is
+// most of why it feels like part of the frame rather than a layer above it. Everything below is
+// pulled back about a fifth: still legible against dry grass, no longer a sticker.
+const TRACK = rgba(16, 13, 11, 186); // the empty channel behind every fill
+const FRAME = rgba(116, 104, 84, 210); // the tarnished-metal rim, a hairline outside the track
 // Each bar is THREE values: a flat body, a shaded bottom third, a lit hairline on top. One flat colour is
 // the tell that a bar was drawn rather than designed; a fat centred gradient is the other, reading as a
 // plastic tube.
@@ -237,8 +253,8 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32) void {
 fn bar(x: i32, y: i32, w: i32, h: i32, frac: f32, chipFrac: f32, hi: rl.Color, lo: rl.Color, tp: rl.Color) void {
     // The rim goes OUTSIDE the fill, between the black edge and the track: over the fill it muddies the
     // lit hairline below and the bar loses its top edge.
-    rl.drawRectangle(x - 3, y - 3, w + 6, h + 6, rgba(0, 0, 0, 70)); // a soft seat off the sky…
-    rl.drawRectangle(x - 2, y - 2, w + 4, h + 4, rgba(0, 0, 0, 215)); // …the hard black edge…
+    rl.drawRectangle(x - 3, y - 3, w + 6, h + 6, rgba(0, 0, 0, 50)); // a soft seat off the sky…
+    rl.drawRectangle(x - 2, y - 2, w + 4, h + 4, rgba(0, 0, 0, 165)); // …the hard black edge…
     rl.drawRectangle(x - 1, y - 1, w + 2, h + 2, FRAME); // …and one warm metal hairline
     rl.drawRectangle(x, y, w, h, TRACK);
     const wf: f32 = @floatFromInt(w);
@@ -287,8 +303,8 @@ pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool) void {
 // own margin, so the two bottom corners sit on one line.
 const RUNE_W: i32 = 122;
 const RUNE_H: i32 = 32;
-const RUNE_FILL = rgba(14, 12, 10, 224);
-const RUNE_EDGE = rgba(116, 104, 84, 214); // …the vitals bars' FRAME colour, deliberately
+const RUNE_FILL = rgba(14, 12, 10, 170); // …pulled back with the bars (see TRACK) — owner's call
+const RUNE_EDGE = rgba(116, 104, 84, 186); // …the vitals bars' FRAME colour, deliberately
 const RUNE_TEXT = rgba(228, 216, 190, 255);
 
 /// `n` is the ROLLING value (`combat.Runes.display()`), not the banked total: a number that snaps is a
@@ -298,7 +314,7 @@ pub fn runes(n: u32) void {
     const s = std.fmt.bufPrintZ(&buf, "{d}", .{n}) catch return;
     const x = rl.getScreenWidth() - RUNE_W - MARGIN;
     const y = rl.getScreenHeight() - RUNE_H - BOTTOM;
-    rl.drawRectangle(x - 2, y - 2, RUNE_W + 4, RUNE_H + 4, rgba(0, 0, 0, 176)); // the hard black seat
+    rl.drawRectangle(x - 2, y - 2, RUNE_W + 4, RUNE_H + 4, rgba(0, 0, 0, 128)); // the hard black seat
     rl.drawRectangle(x, y, RUNE_W, RUNE_H, RUNE_FILL);
     rl.drawRectangleLines(x, y, RUNE_W, RUNE_H, RUNE_EDGE);
     text(s, x + RUNE_W - textW(s, BODY) - 11, y + @divTrunc(RUNE_H - lineH(BODY), 2) + 1, BODY, RUNE_TEXT);
@@ -347,7 +363,22 @@ const STEEL_DK = rgba(126, 132, 140, 255);
 const BRASS = rgba(182, 146, 78, 255);
 const GRIP = rgba(112, 82, 56, 255); // …light enough to READ against the well, not true leather
 
-pub fn equipment() void {
+/// What is in a slot. The cross has exactly four and only two of them hold anything, so this is an
+/// exhaustive little enum rather than an icon-id system for a game with two icons.
+pub const Slot = enum { empty, sword, flask };
+
+/// WHICH flask is in the quick-item slot. Its own enum for the same reason `Slot` is one, and
+/// deliberately NOT `combat.FlaskKind`: this file takes plain values and knows nothing about the
+/// hero or the combat layer (AGENTS.md), so the caller does the one-line translation. It replaces a
+/// `crimson: bool` threaded through three functions — a two-variant type flattened to a boolean,
+/// where every `false` silently means "the other one" and a third flask would land as Cerulean
+/// everywhere without a single compile error.
+pub const FlaskTint = enum { crimson, cerulean };
+
+/// `tint` picks which flask is drawn in the DOWN slot, `charges` how many are left — the cross is
+/// where ER shows both, and a charge count you have to open a menu for is a charge count you play
+/// without.
+pub fn equipment(tint: FlaskTint, charges: u8) void {
     // Three columns wide, corners left out. The two axes pitch SEPARATELY (see PITCH_Y) — one shared step
     // either splays the cross apart vertically or crushes the side arms together.
     const stepX = SLOT_W + SLOT_GAP;
@@ -355,13 +386,17 @@ pub fn equipment() void {
     const bottom = rl.getScreenHeight() - BOTTOM;
     const midX = left + stepX; // the centre cell of the three
     const midY = bottom - SLOT_H - PITCH_Y; // …the side arms' top edge
-    slot(midX, midY - PITCH_Y, false); // UP — sorcery/incantation
-    slot(left, midY, false); // LEFT — left hand
-    slot(midX + stepX, midY, true); // RIGHT — right hand, the sword
-    slot(midX, midY + PITCH_Y, false); // DOWN — quick item
+    slot(midX, midY - PITCH_Y, .empty, .crimson, 0); // UP — sorcery/incantation
+    slot(left, midY, .empty, .crimson, 0); // LEFT — left hand
+    slot(midX + stepX, midY, .sword, .crimson, 0); // RIGHT — right hand, the sword
+    slot(midX, midY + PITCH_Y, .flask, tint, charges); // DOWN — the quick item
 }
 
-fn slot(x: i32, y: i32, on: bool) void {
+fn slot(x: i32, y: i32, holds: Slot, tint: FlaskTint, charges: u8) void {
+    // A slot with a DRY flask in it is still occupied — it lights as a filled slot and the flask is
+    // drawn dim, because "empty flask" and "no flask" have to look different or you cannot tell
+    // whether to go and rest.
+    const on = holds != .empty;
     rl.drawRectangle(x, y, SLOT_W, SLOT_H, rgba(8, 7, 6, if (on) WELL_ON else WELL_OFF)); // the well
     const r = rl.Rectangle{
         .x = @floatFromInt(x),
@@ -370,7 +405,77 @@ fn slot(x: i32, y: i32, on: bool) void {
         .height = @floatFromInt(SLOT_H),
     };
     rl.drawRectangleLinesEx(r, 1, if (on) SLOT_ON else SLOT_OFF);
-    if (on) sword(@floatFromInt(x + @divTrunc(SLOT_W, 2)), @floatFromInt(y + @divTrunc(SLOT_H, 2)));
+    const cx: f32 = @floatFromInt(x + @divTrunc(SLOT_W, 2));
+    const cy: f32 = @floatFromInt(y + @divTrunc(SLOT_H, 2));
+    switch (holds) {
+        .empty => {},
+        .sword => sword(cx, cy),
+        .flask => {
+            flask(cx, cy, tint, charges > 0);
+            // The charge count, bottom-right of the slot like ER's. Small, and it goes RED-dim at
+            // zero rather than vanishing — a missing number reads as a HUD fault.
+            var buf: [8]u8 = undefined;
+            const s = std.fmt.bufPrintZ(&buf, "{d}", .{charges}) catch return;
+            const col = if (charges > 0) rgba(232, 224, 202, 255) else rgba(150, 96, 88, 220);
+            text(s, x + SLOT_W - textW(s, HINT) - 5, y + SLOT_H - lineH(HINT) + 1, HINT, col);
+        },
+    }
+}
+
+// ── THE FLASK ICON ── a round-shouldered bottle with a stopper: ER's own silhouette, and the one
+// shape that cannot be mistaken for the sword in the slot above it. Drawn from primitives at the
+// same stroke scale the sword uses, so the two read as one icon set.
+const CRIMSON = rgba(196, 46, 40, 255); // Flask of Crimson Tears
+const CRIMSON_DK = rgba(104, 24, 22, 255);
+const CERULEAN = rgba(64, 128, 200, 255); // …of Cerulean Tears
+const CERULEAN_DK = rgba(28, 62, 118, 255);
+const GLASS = rgba(206, 202, 192, 255);
+const CORK = rgba(150, 118, 74, 255);
+
+fn flask(cx: f32, cy: f32, tint: FlaskTint, full: bool) void {
+    const s: f32 = @floatFromInt(ICON);
+    const k = s / 34.0; // the sword icon's stroke scale — the set has to match
+    const lit = switch (tint) {
+        .crimson => CRIMSON,
+        .cerulean => CERULEAN,
+    };
+    const dk = switch (tint) {
+        .crimson => CRIMSON_DK,
+        .cerulean => CERULEAN_DK,
+    };
+    // Dry flasks keep their shape and lose their contents, which is exactly what you need to read.
+    const fill = if (full) lit else rgba(dk.r, dk.g, dk.b, 150);
+    const body = s * 0.30; // half-width of the bulb
+    const bodyY = cy + s * 0.10;
+    // The BULB, as three stacked rounded bands — a circle alone reads as a bauble, and the taper
+    // into the neck is most of what says "bottle".
+    rl.drawCircleV(.{ .x = cx, .y = bodyY }, body, fill);
+    rl.drawRectangleRounded(.{
+        .x = cx - body * 0.86,
+        .y = bodyY - body * 0.95,
+        .width = body * 1.72,
+        .height = body * 1.30,
+    }, 0.45, 6, fill);
+    // The NECK and the shoulders.
+    rl.drawRectangleV(
+        .{ .x = cx - s * 0.085, .y = cy - s * 0.30 },
+        .{ .x = s * 0.17, .y = s * 0.30 },
+        fill,
+    );
+    // A lit highlight down the left of the glass — one stroke, and it is what stops the icon
+    // reading as a flat blob at 66 px.
+    rl.drawLineEx(
+        .{ .x = cx - body * 0.52, .y = bodyY - body * 0.55 },
+        .{ .x = cx - body * 0.62, .y = bodyY + body * 0.35 },
+        1.8 * k,
+        rgba(GLASS.r, GLASS.g, GLASS.b, if (full) 190 else 90),
+    );
+    // The STOPPER, proud of the neck.
+    rl.drawRectangleV(
+        .{ .x = cx - s * 0.065, .y = cy - s * 0.40 },
+        .{ .x = s * 0.13, .y = s * 0.11 },
+        CORK,
+    );
 }
 
 // The one armament he carries, on ER's icon diagonal (tip up-left, pommel down-right). STROKES, not boxes:

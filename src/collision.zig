@@ -10,6 +10,13 @@ const v3 = mathx.v3;
 // shortest exit — a wall is one fat capsule down its length, a pillar a circle, a ruin block a short
 // capsule. Cheap, allocation-free, robust for footprints.
 
+/// WHAT A SOLID IS MADE OF — carried for the benefit of whatever HITS it. Collision itself does not
+/// care (a wall stops you the same however it is built), so this is deliberately a coarse three-way
+/// split rather than a material system: it exists because an arrow burying itself in a tree and an
+/// arrow skidding off a marble arch are different EVENTS, and the only place that difference lives
+/// is in the sound. Default `.stone` — this world is mostly masonry and rock.
+pub const Surface = enum { stone, wood, metal };
+
 pub const Solid = struct {
     a: rl.Vector3, // segment start (XZ; Y ignored)
     b: rl.Vector3, // segment end
@@ -18,6 +25,7 @@ pub const Solid = struct {
     // in. Footprint push-out stays 2D and ignores it. Sky-high default, so a Solid built without one
     // blocks everything.
     h: f32 = 1e9,
+    surf: Surface = .stone,
 };
 
 /// A circular obstacle (a==b).
@@ -72,13 +80,20 @@ pub fn blocksPoint(p: rl.Vector3, margin: f32, s: Solid) bool {
     return dx * dx + dz * dz < rr * rr;
 }
 
-/// Yes/no only, and deliberately not WHICH: no caller has needed to know (arrow flight embeds the
-/// shaft along its own velocity). For a grid-local query with no copying, see `env.blockedNear`.
+/// Yes/no only. For a grid-local query with no copying, see `env.blockedNear`.
 pub fn blockedBy(p: rl.Vector3, margin: f32, solids: []const Solid) bool {
+    return blockerAt(p, margin, solids) != null;
+}
+
+/// …and WHICH KIND of thing blocked it. This used to be deliberately absent ("no caller has needed
+/// to know") and now one does: an arrow burying itself in a tree, ringing off an iron brazier and
+/// skidding into a marble arch are three different events, and the surface is the only thing that
+/// tells them apart. Returns the FIRST blocker's surface, which for a point test is the only one.
+pub fn blockerAt(p: rl.Vector3, margin: f32, solids: []const Solid) ?Surface {
     for (solids) |s| {
-        if (blocksPoint(p, margin, s)) return true;
+        if (blocksPoint(p, margin, s)) return s.surf;
     }
-    return false;
+    return null;
 }
 
 test "pushOut clears a circle overlap to exactly touching" {

@@ -31,6 +31,16 @@ pub const H: f32 = 1.8; // stature (world units ≈ metres)
 pub const WALK_SPEED: f32 = 1.7;
 pub const RUN_SPEED: f32 = 3.4;
 pub const SPRINT_SPEED: f32 = 5.1; // hold-B RUN — a touch faster than a full-stick walk-sprint
+/// LOCKED-ON sideways travel, as a fraction of forward (ER is anisotropic too). Deliberately mild —
+/// the owner wants the cadence calmed WITHOUT slowing him down much — and it is the last 15% that
+/// lands the sidestep's step rate on the forward walk's.
+///
+/// It lives HERE with the other three speeds rather than in game.zig, which is where it was: the
+/// SIDESTEP CADENCE is a property of this rig (see STRAFE_CYCLE), so
+/// `unit_strafe_cadence_near_walk` needs the number — and a test cannot import game.zig without a
+/// cycle, so it re-stated the literal with a comment pointing at the other copy. Two numbers that
+/// must agree, in two files, neither of which can see the other. `moveHero` reads this one now.
+pub const STRAFE_SPEED: f32 = 0.85;
 
 // Body-segment lengths as a fraction of stature H (Drillis & Contini 1966; Winter).
 // Reference joint HEIGHTS off the floor these imply, for sanity: ankle .039, knee .285,
@@ -479,7 +489,12 @@ pub const STRAFE_DIP = LEG_LEN - @sqrt((LEG_LEN - STRAFE_SINK) * (LEG_LEN - STRA
 const STRIDE = 0.85 * H; // ground distance per full (two-step) cycle at walk pace — ties phase to travel, no foot-skate
 const WALK_REF_SPEED = WALK_SPEED; // reference walk speed the stride is tuned for
 const ARM_SWING = 9.0; // shoulder flex amplitude (deg) at walk — restrained, contralateral to the legs
-const A_BOB = 0.024 * H; // vertical pelvis travel (peak-to-peak ~ realistic 4-5 cm at H=1.8)
+/// Vertical pelvis travel (peak-to-peak ~ realistic 4-5 cm at H=1.8). pub for the same reason
+/// SEG_THIGH/SEG_SHANK and HIP_ADDUCT are: a humanoid foe that wants the hero's walk needs the
+/// hero's AMPLITUDE too, and archer.zig held a byte-identical copy under a comment saying so —
+/// which is a number that must agree, written down twice, waiting for the first retune. (The
+/// OGRE's 0.030 is deliberately its own: a giant's swagger, like its wider A_PROT.)
+pub const A_BOB = 0.024 * H;
 const A_SWAY = 0.009 * H; // lateral pelvis sway toward the stance foot (subtle — no waddle)
 const A_PROT = 3.5; // pelvic transverse rotation (deg)
 const A_LIST = 2.0; // pelvic frontal drop toward the swing leg (deg)
@@ -2222,9 +2237,10 @@ test "strafe: cadence lands near the forward walk's — no coffeed-up patter" {
     // mild locked-on lateral speed factor. Pin the result so a retune of either can't quietly
     // reintroduce the patter (or overcorrect into a moonwalk).
     const walkCycle = STRIDE; // at the reference walk speed the stride scale is exactly 1
-    const strafeSpeed = 0.85; // game.STRAFE_SPEED — sideways travel as a fraction of forward
     const walkCadence = 1.0 / walkCycle; // cycles per unit time at unit speed
-    const strafeCadence = strafeSpeed / STRAFE_CYCLE;
+    // Off the SHARED constant, not a re-stated literal: this test and `moveHero` have to be talking
+    // about the same lateral factor or the ratio it pins is a ratio nothing in the game runs at.
+    const strafeCadence = STRAFE_SPEED / STRAFE_CYCLE;
     try std.testing.expect(strafeCadence < 1.15 * walkCadence);
     try std.testing.expect(strafeCadence > 0.75 * walkCadence);
 }

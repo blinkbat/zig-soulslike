@@ -166,7 +166,7 @@ const HURT_R = 0.42; // hurt-sphere radius for the hero's blade
 // (A local A_SWAY sat here too and was DEAD: the sway comes from `heromod.strafeSway`, which owns
 // the walk amplitude AND the sidestep's wider one. A second copy of the hero's number that nothing
 // read would only have gone stale the first time either was retuned.)
-const A_BOB = 0.024 * H;
+const A_BOB = heromod.A_BOB;
 // Where a skeletal foot meets the earth, MEASURED off footMesh: the metatarsal plate + heel, with
 // the toe bones fanning out to ~0.245·H ahead. Its underside sits a touch ABOVE the ankle-height
 // plane (the plate's bottom is at −ay + 0.005·H), hence the slightly smaller drop. hero.legChain

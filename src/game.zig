@@ -36,9 +36,10 @@ const WALK_SPEED = heromod.WALK_SPEED; // keyboard walk / gentle left-stick tilt
 const RUN_SPEED = heromod.RUN_SPEED; // full left-stick tilt (light tilt scales down toward walk)
 const SPRINT_SPEED = heromod.SPRINT_SPEED; // hold Circle/B (or Shift): dash/sprint
 const TURN_RATE = 12.0; // rad/sec the hero yaws toward its heading (souls turn briskly)
-const STRAFE_SPEED = 0.85; // LOCKED-ON sideways travel, as a fraction of forward (ER is anisotropic
-//   too). Deliberately mild — the owner wants the cadence calmed WITHOUT slowing him down much —
-//   and it is the last 15% that lands the sidestep's step rate on the forward walk's. See moveHero.
+const STRAFE_SPEED = heromod.STRAFE_SPEED; // LOCKED-ON sideways travel, as a fraction of forward —
+//   the rig's number, beside the three speeds above, because the SIDESTEP CADENCE it sets is a
+//   property of the rig and hero.zig's own cadence test needs it (it used to hold a second copy of
+//   the literal, with a comment pointing here). See moveHero.
 const STICK_DEADZONE = 0.16; // left-stick move deadzone — RADIAL, see stickRadial
 // Right-stick LOOK deadzone. Still bigger than the move stick's: a look stick's resting deflection
 // turns the whole world, where the move stick's only nudges the hero a few centimetres. It had been
@@ -745,11 +746,27 @@ fn dbgRow(s: [:0]const u8, y: i32, size: i32, col: rl.Color) void {
     hud_.textRight(s, hud_.MARGIN, y, size, col);
 }
 
+/// WHICH GAIT A GROUND SPEED IS, in one place. Two callers ask it — the debug readout's caption and
+/// the footstep VOICE — and each wrote out the same pair of `>= X_SPEED - 0.3` tests with the same
+/// unnamed slack. Two copies of a threshold that is only ever meant to mean one thing, so the boot
+/// you hear and the word on screen could disagree about what you are doing after any retune of
+/// either. The slack is named here as well: it exists because `speed` is the frame's RAW travel rate
+/// and a stick held at full tilt lands a hair under the constant it is nominally clamped to.
+const GAIT_SLACK: f32 = 0.3;
+const Gait = enum { walk, run, sprint };
+fn gaitOf(speed: f32) Gait {
+    if (speed >= SPRINT_SPEED - GAIT_SLACK) return .sprint;
+    if (speed >= RUN_SPEED - GAIT_SLACK) return .run;
+    return .walk;
+}
+
 fn gaitLabel(moving: f32, speed: f32) [:0]const u8 {
     if (moving < 0.5) return "idle";
-    if (speed >= SPRINT_SPEED - 0.3) return "sprinting";
-    if (speed >= RUN_SPEED - 0.3) return "running";
-    return "walking";
+    return switch (gaitOf(speed)) {
+        .sprint => "sprinting",
+        .run => "running",
+        .walk => "walking",
+    };
 }
 
 /// How the process runs: the game, or one of the two headless capture modes in `shots.zig`.
@@ -1318,12 +1335,11 @@ fn footsteps(g: *Game, last: *f32) void {
     const crossed = (last.* < 0.5 and h.phase >= 0.5) or (h.phase < last.*); // 0.5, or the wrap past 0
     last.* = h.phase;
     if (!crossed) return;
-    const id: sfx.Id = if (h.speed >= SPRINT_SPEED - 0.3)
-        .step_sprint
-    else if (h.speed >= RUN_SPEED - 0.3)
-        .step_hard
-    else
-        .step_soft;
+    const id: sfx.Id = switch (gaitOf(h.speed)) {
+        .sprint => .step_sprint,
+        .run => .step_hard,
+        .walk => .step_soft,
+    };
     // Quieter the slower he goes, on top of the voice change — a careful walk should not land as
     // hard as a sprint that happens to be crossing the same phase.
     sfx.playAt(id, mathx.clampF(0.45 + 0.55 * h.speed / SPRINT_SPEED, 0.35, 1.0));
@@ -1394,8 +1410,10 @@ fn inBounds(p: rl.Vector3) rl.Vector3 {
 fn collideActors(g: *Game, dt: f32) void {
     const step = COLLIDE_RATE * dt; // max correction this frame — bigger pushes ease in (no warp)
     // Each actor resolves against the solids in its OWN neighbourhood (env.resolveActor queries
-    // the prop grid). The world holds ~700 solids now; scanning all of them per actor, twice a
-    // frame, was the other thing that would not have survived the expansion.
+    // the prop grid). The world holds THOUSANDS of solids; scanning all of them per actor, twice a
+    // frame, was the other thing that would not have survived the expansion. (No count here on
+    // purpose — the number said "~700" when the map had grown past 1,800, and the live figure is on
+    // the debug Stats line where it cannot go stale.)
     var hp = g.env.resolveActor(g.hero.pos, HERO_R);
     for (g.warren.live()) |*f| {
         if (f.alive() and !f.airborne()) hp = collision.pushOutCircle(hp, HERO_R, f.pos, f.bodyR());

@@ -324,7 +324,7 @@ const floraKinds = props.FLORA_KINDS;
 const solidKinds = props.SOLID_KINDS;
 
 /// Which GROUP shelves each stocked layer has anything on — resolved once at COMPTIME, because
-/// `props.INFO` is comptime and so is the answer. It used to be a linear scan of all 77 kinds per
+/// `props.INFO` is comptime and so is the answer. It used to be a linear scan of EVERY kind per
 /// group per frame, run while laying out the chip row, to answer a question that cannot change at
 /// runtime. Indexed [layer][group]; layers with no kind palette are simply all false.
 const layerGroups = blk: {
@@ -2039,11 +2039,13 @@ pub const Editor = struct {
         // The SELECTED op: its own shape, plus a marker on every instance it placed. The markers are the
         // important half — the only way to see what a generator you are dialling actually owns.
         //
-        // The full-list scan is measured and LEFT: 8k integer compares is nothing beside the ~6k wire
-        // segments the markers cost, and the obvious shortcut (an op's props are contiguous, so stop at the
-        // end of the run) would bake in an ordering `materialize` does not promise — the cover pass appends
-        // out of op order. It runs to the END even past MAX_MARKERS, because the TOTAL is what the properties
-        // panel needs to admit the cap.
+        // The full-list scan is measured and LEFT: one integer compare per prop in the world is nothing
+        // beside the ~6k wire segments the markers themselves cost (it said "8k integer compares" when the
+        // map had grown past 17k props — the ratio is what carries the argument, not the count, so the
+        // count is gone rather than re-stated to go stale again). The obvious shortcut — an op's props are
+        // contiguous, so stop at the end of the run — would bake in an ordering `materialize` does not
+        // promise, since the cover pass appends out of op order. It runs to the END even past MAX_MARKERS,
+        // because the TOTAL is what the properties panel needs to admit the cap.
         self.selOwned = 0;
         self.selMarked = 0;
         if (self.sel) |s| {
@@ -2240,8 +2242,10 @@ const RING_N_MAX: i32 = 64;
 const LEAN_LIM: f32 = 40;
 
 /// ONE row pitch for every stacked row in the chrome. Three panels had grown three different
-/// values off the same font, so a button in one column sat half a line off the label beside it.
-const ROW_H: i32 = hud.monoLineH(hud.MONO) + 6;
+/// values off the same font, so a button in one column sat half a line off the label beside it —
+/// and the object viewer had quietly become a fourth, so the value now lives in `ui.zig` where both
+/// files can read it (see there).
+const ROW_H: i32 = ui.ROW_H;
 /// Extra drop under a slider, which draws its bar BELOW its label and so is taller than a row.
 const SLIDER_DROP: i32 = 20;
 

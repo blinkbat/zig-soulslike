@@ -457,9 +457,15 @@ pub const Frog = struct {
             },
             .lunge => {
                 self.lungeCd = LUNGE_CD;
-                // Land just short of the hero (don't leap past them).
+                // Land just short of the hero (don't leap past them). FLOORED AT 0 like the hop
+                // below it: `classify` only returns `.lunge` past BITE_R and KEEP_OFF is inside
+                // that, so the difference is positive today — but the two branches computing the
+                // same "stop short of him" distance with only one of them guarded means a retune
+                // that lifted KEEP_OFF to BITE_R would make the toad lunge BACKWARDS, away from
+                // the hero, with nothing in the code to say so (the relation is asserted in a test
+                // and nowhere else).
                 const dir = mathx.dirXZ(self.pos, hero);
-                const reach = mathx.minF(d - KEEP_OFF, LUNGE_R);
+                const reach = mathx.minF(mathx.maxF(0, d - KEEP_OFF), LUNGE_R);
                 self.startHop(v3(self.pos.x + dir.x * reach, 0, self.pos.z + dir.z * reach), bounds, true);
             },
             .hop => {

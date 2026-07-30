@@ -19,6 +19,13 @@ const rgba = mathx.rgba;
 
 pub const MSG_CAP = 120; // shared cap for short UI strings (tips, toasts, prompts)
 
+/// ONE ROW PITCH for every stacked row of editor chrome. It lived in editor.zig, whose own comment
+/// says "Three panels had grown three different values off the same font, so a button in one column
+/// sat half a line off the label beside it" — and objview.zig was then a FOURTH, with a private
+/// `lineH()` at +4 for its INFO column. It has to live here because both files need it and
+/// editor.zig imports objview.zig, so the constant cannot go the other way.
+pub const ROW_H: i32 = hud.monoLineH(hud.MONO) + 6;
+
 /// POINTER TRAVEL that separates a CLICK from a DRAG, in pixels. One number for every gesture in the
 /// editor that has to tell those apart — the map's right button (context menu vs. orbit) and the object
 /// viewer's left button (open vs. spin). It was a bare `4.0` in both files: two thresholds meant to feel

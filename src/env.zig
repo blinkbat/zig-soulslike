@@ -440,6 +440,17 @@ pub const Env = struct {
         self.nsolids = 0;
         self.nlights = 0;
         self.npools = 0;
+        // …AND THE SOLID GRID, EMPTIED, before anything queries it. The first op loop below runs
+        // `avoid.solid` candidates through `blockedNear`, which walks `sgrid_start[c]..[c+1]` — and
+        // `buildSolids`, the only writer of those spans, does not run until after that loop. Env is
+        // built IN PLACE inside a heap-allocated Game, so its struct-literal default for this array
+        // never runs (the same trap `fillIndex` documents for Index's per-cell maxima): on the very
+        // first materialize those spans were raw heap bytes, so `sgrid_items[k]` / `solid_buf[..]`
+        // indexed out of range — a bounds panic in Debug, arbitrary reads in ReleaseFast. Zeroing
+        // `sgrid_start` is the whole fix: every span is then empty, so `sgrid_items` is never read.
+        // It only takes a scatter with "solids" ticked (the properties panel offers it on every op)
+        // to reach; the shipped map sets it on `cover` alone, which runs after the grid is built.
+        @memset(&self.sgrid_start, 0);
 
         var p = Placer{ .e = self, .m = m };
         // Everything except the ground cover, in file order — later ops read what earlier ones
@@ -1549,9 +1560,16 @@ test "replaying the SHIPPED map produces a stable world" {
     // …and the numbers themselves, so a scatter that quietly gains or loses instances is a failing
     // test rather than something you notice in a screenshot months later. Update them DELIBERATELY,
     // together with whatever map or placement change moved them.
-    try std.testing.expectEqual(@as(usize, 17292), props0);
-    try std.testing.expectEqual(@as(usize, 1836), solids0);
-    try std.testing.expectEqual(@as(usize, 34), lights0);
+    //
+    // RE-PINNED (17292/1836/34 → 17253/1859/37) after they were found STALE: the props rework that
+    // added kinds and re-measured bounds moved all three and left this test red, and a permanently
+    // failing pin cannot catch the NEXT drift — which is the only thing it is for. Both directions
+    // are consistent with that change: more kinds carrying colliders and fires (solids +23, lights
+    // +3), and different bounds changing how many scatter candidates the solid probe rejects
+    // (props −39). If you move them again, move these with it in the same commit.
+    try std.testing.expectEqual(@as(usize, 17253), props0);
+    try std.testing.expectEqual(@as(usize, 1859), solids0);
+    try std.testing.expectEqual(@as(usize, 37), lights0);
 }
 
 test "the map's half drives the world, not a constant in this file" {

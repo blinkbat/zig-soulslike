@@ -245,9 +245,11 @@ fn pageCount(n: usize) i32 {
     return @max(1, @divTrunc(total + perPage() - 1, perPage()));
 }
 
-/// One row pitch for the readout column, off the same font metric the editor's panels use.
+/// One row pitch for the readout column — THE editor's, not a private one off the same font metric.
+/// It was `monoLineH + 4` against the panels' `+ 6`, which is exactly the drift editor.zig's own
+/// ROW_H comment exists to stop; both now read `ui.ROW_H`.
 fn lineH() i32 {
-    return hud.monoLineH(hud.MONO) + 4;
+    return ui.ROW_H;
 }
 
 const clampI = mathx.clampI; // the shared one — this file used to carry its own copy

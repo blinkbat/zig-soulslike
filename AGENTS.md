@@ -119,11 +119,14 @@ and the map's own `half:` is the only source), holding five regions
 | west | **the Old Wood** | great trees (3 variants), ferns/brambles/bushes, boulders, a **standing-stone circle**, a woodcutter's **cottage** + campfire |
 | south | **the Windswept Downs** | open and sparse — lone trees, field stones, graves, a watchtower |
 
-**80 prop kinds**, **17,292 instances and 1,836 colliders**, of which a frame draws **~975** across
-both passes (measured in the city; the wood is comparable). See **PERFORMANCE** — that ratio is why
-the world is affordable, and the debug Stats overlay prints it live so it stays checkable. The three
+**80 prop kinds**, **17,253 instances, 1,859 colliders and 37 fires**, of which a frame draws **~975**
+across both passes (measured in the city; the wood is comparable). See **PERFORMANCE** — that ratio is
+why the world is affordable, and the debug Stats overlay prints it live so it stays checkable. The three
 numbers are also PINNED by `env`'s "replaying the SHIPPED map produces a stable world" test, so a
 scatter that quietly gains or loses instances fails the build instead of drifting in a screenshot.
+**Move them here and in that test together**: the props rework left the test pinning 17,292/1,836/34
+and this line repeating it, so the guard sat red for two commits — and a pin that always fails cannot
+catch the next drift, which is the only thing it is for.
 
 **Density VARIES, and that is the point** (owner's law). A flat per-region density gives every
 square metre the same cover and the result is a carpet — uniformly thick, nowhere to walk,

@@ -2237,8 +2237,9 @@ test "the rig's rest leg length matches the LEG_LEN the strafe geometry is measu
 
 // The deepest any sole corner reaches, over a full stride at `speed` travelling `lat`-ward.
 fn deepestSole(speed: f32, lat: f32) f32 {
-    // Bare rig — `init` wants a live shader, and pose() only ever touches `rest`.
-    var h = Hero{ .mesh = undefined, .mat = undefined, .rest = restPositions() };
+    // Bare rig, through the shared `testHero()` — `init` wants a live shader, and pose() only ever
+    // touches `rest`. (This was a second copy of that literal five lines below the helper.)
+    var h = testHero();
     h.moving = 1;
     h.speedS = speed;
     h.fwdB = @sqrt(mathx.maxF(0, 1.0 - lat * lat));

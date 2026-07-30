@@ -1143,11 +1143,9 @@ fn armMesh(side: f32) rl.Mesh {
     return b.toMesh();
 }
 
-// Shortest distance from point `p` to segment `a`-`b` (swept-blade hit test), on the shared
-// 3D segment helper (mathx.closestOnSegV — the same one foe.strike rides).
-fn distPointSeg(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) f32 {
-    return mathx.lenV(mathx.subV(p, mathx.closestOnSegV(p, a, b)));
-}
+// (A `distPointSeg` wrapper over `mathx.closestOnSegV` sat here with no caller but its own test —
+// the blade test itself goes through `foe.strike`, which rides the mathx helper directly. The three
+// assertions it carried were really about that helper, so they moved to mathx.zig, beside it.)
 
 // ── invariants under test (pure logic only — meshes/poses need a GPU window) ────────────
 test "classify: ranges pick chomp < lunge < hop < rest, and cooldowns gate" {
@@ -1185,14 +1183,6 @@ test "lunge impact catches the front zone, not the sides or behind" {
     var far = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     far.tryImpact(v3(0, 0, 99), LUNGE_HIT); // out front but way out of reach
     try std.testing.expect(far.heroHit == null);
-}
-
-test "distPointSeg: endpoint, midpoint, and perpendicular cases" {
-    const a = v3(0, 0, 0);
-    const b = v3(2, 0, 0);
-    try std.testing.expectApproxEqAbs(@as(f32, 1), distPointSeg(v3(1, 1, 0), a, b), 1e-5); // perpendicular
-    try std.testing.expectApproxEqAbs(@as(f32, 1), distPointSeg(v3(-1, 0, 0), a, b), 1e-5); // past the end → to endpoint
-    try std.testing.expectApproxEqAbs(@as(f32, 0), distPointSeg(v3(1, 0, 0), a, b), 1e-5); // on the segment
 }
 
 test "a hop's flight parabola starts and ends on the ground and peaks at the apex" {

@@ -238,7 +238,7 @@ pub fn chip(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, active: bool, usedW:
 // moved: +/− at a bound must not bank an undo step or raise the dirty flag, or the editor asks you to save
 // work you didn't do.
 fn stepper(comptime T: type, ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *T, step: T, lo: T, hi: T) bool {
-    const clampfn = comptime if (T == f32) mathx.clampF else clampI;
+    const clampfn = comptime if (T == f32) mathx.clampF else mathx.clampI;
     hud.mono(label, x, y + 4, hud.MONO, LABEL);
     const bw: i32 = 20;
     // Wide enough for the WIDEST world coordinate ("-152.0"), or the sign and last digit clip and the
@@ -265,10 +265,6 @@ fn stepper(comptime T: type, ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const
         }
     }
     return changed;
-}
-
-fn clampI(v: i32, lo: i32, hi: i32) i32 {
-    return @max(lo, @min(hi, v));
 }
 
 pub fn stepperF(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, step: f32, lo: f32, hi: f32) bool {

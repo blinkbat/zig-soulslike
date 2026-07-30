@@ -240,8 +240,12 @@ const Rack = struct {
                 ph -= @floor(ph);
                 // A narrow pulse, not a square: the duty is what gives it that thin reedy whistle.
                 const pulse: f32 = if (ph < 0.30) 1.0 else -1.0;
-                // Lowpassed hard, or an 8 kHz square at 22 kHz is pure alias fizz.
-                work[i] += lp.step(pulse, 4200) * amp * decay(u, 3.0) * mathx.smoothstep(0, 0.15, u);
+                // Lowpassed hard, or an 8 kHz square at 22 kHz is pure alias fizz — and lowpassed
+                // HARDER than that (2600, was 4200) because every bird in this game is a bird out on
+                // the plain. A pulse wave's reedy top is the first thing a couple of hundred metres of
+                // air takes off it, so keeping it is what made the calls sound like they were coming
+                // from just off camera.
+                work[i] += lp.step(pulse, 2600) * amp * decay(u, 3.0) * mathx.smoothstep(0, 0.15, u);
             }
             t += dur + r.rng.range(0.012, 0.045);
         }
@@ -376,6 +380,32 @@ const Rack = struct {
 const CRUSH_BITS: f32 = 5.5;
 const CRUSH_HOLD: u32 = 2;
 
+// ── AIR ABSORPTION, BAKED ───────────────────────────────────────────────────────────────
+// The cue that actually makes a sound read as FAR rather than as quiet. Air swallows high frequencies
+// far faster than low ones — ISO 9613-2 puts 4 kHz at roughly fifteen times the loss per hundred
+// metres that 250 Hz takes, and 8 kHz at fifty — so distance is a spectral tilt long before it is a
+// level. raylib gives no filter on a playing voice (volume, pitch and pan, and that is the lot), so
+// for the two voices that are ALWAYS distant it goes into the RENDER, which a synthesized bank makes
+// free: it is one number in the master stage.
+//
+// Here rather than as literals inside `mkWind`/`mkBirds` because "these two are the far ones" is a
+// decision about the whole soundscape, not a tuning detail of either, and because it is the one thing
+// about them a test can actually hold (a pitched chirp's brightness cannot be measured by ear-free
+// means nearly as cleanly as its cutoff can be read).
+const AIR_FAR_BED: f32 = 1400; // the wind, a few hundred metres of it in every direction
+const AIR_FAR_CALL: f32 = 2100; // …and a bird somewhere out on the plain
+/// The two big LOW cries — the owl and the wolf. Darker again than a bird's whistle, and that is not
+/// a guess: they are further out (a howl is rolled to 240 m) and they are low to begin with, so what
+/// arrives is the fundamental and almost none of the throat above it.
+const AIR_FAR_CRY: f32 = 1950;
+/// The darkest any NEAR voice is rendered (mkOgreStep / mkStepSoft sit here). The far ones above must
+/// stay clear of it, or "far" is being claimed for something no duller than a boot on gravel at your feet.
+const AIR_NEAR_DARKEST: f32 = 2200;
+/// …and the one voice that is deliberately NEARER than anything else in the game: the crickets are in
+/// the grass AT YOUR FEET, so they are the only ambient layer rendered BRIGHT. Turning that round is
+/// what would put the whole insect field out on the horizon with the wind.
+const AIR_NEAR_GRASS: f32 = 4200;
+
 // ── THE VOICES ──────────────────────────────────────────────────────────────────────────
 // Order is the BANK table's order below; the two are pinned at comptime.
 pub const Id = enum {
@@ -429,7 +459,15 @@ pub const Id = enum {
     menu_pick,
     menu_back,
     wind,
+    // ── THE CANOPY ── five ambient voices instead of one, because a plain with a single repeating
+    // bird on it reads as a plain with a single repeating bird on it. Two of them are BEDS (wind,
+    // crickets) and three are sparse CALLS on their own long clocks (see `CALLS`), so nothing here
+    // ever arrives on the same beat as anything else.
     birds, // …their OWN voice, not five phrases baked into the wind loop (see mkBirds)
+    birdsong, // …a SECOND bird, and the opposite kind: fluted and slurred where `birds` is stepped
+    owl, // hoo … hu-hoooo, from somewhere in the ruins
+    crickets, // the insect chirr in the grass — a BED, and the only ambient voice rendered bright
+    wolf, // a howl a long way off, and the loudest-carrying thing in the world
 };
 const NV = @typeInfo(Id).@"enum".fields.len;
 
@@ -445,13 +483,57 @@ const NV = @typeInfo(Id).@"enum".fields.len;
 //   `vjit` — per-trigger LEVEL wobble. The one that was missing, and the one that matters most for
 //            footsteps: real steps vary in weight far more than they vary in pitch, and a run of
 //            identically-loud steps reads as a machine however well the pitch is jittered.
+// ── THE SUBMIX TRIM ── one multiplier for THE BACKGROUND, applied to every row's gain in `trigger`.
+//
+// WHY THIS EXISTS RATHER THAN SIX EDITED LITERALS: "all ambience should be in the background softly"
+// is a decision about a WHOLE FAMILY, and a family whose level lives as one number per row cannot be
+// moved as a family — you edit six literals, miss one, and the one you missed is now the loudest thing
+// in its group with nothing to compare it against. So a row's `gain` stays what it always was, the
+// BALANCE INSIDE its family, and the family's own level is here. (Same argument `MASTER_VOL` makes for
+// the whole output, one level up.)
+//
+// THERE IS DELIBERATELY NO TRIM FOR THE COMBAT VOICES. A `.creature` family covering the toads and the
+// ogre was tried and REVERTED (owner: "I meant ambient sounds not combat sounds") — a fight is the
+// thing the player is listening TO, and quietening the animals you are being eaten by is the opposite
+// of the note. The toads and the giant sit at the reference level with the hero.
+pub const Submix = enum {
+    /// Everything that is not background: the hero, his steel, his flasks, the arrows, the foes he is
+    /// fighting, the chrome. The reference level — trim 1.0 by definition.
+    game,
+    /// THE BACKGROUND: both beds and all three sparse calls. Its whole job is to be noticed only
+    /// when it stops, which is a level, not a mix position.
+    ambience,
+};
+
+const TRIM_AMBIENCE: f32 = 0.55; // the canopy pushed a real 5 dB into the back of the room
+
+fn submixTrim(m: Submix) f32 {
+    return switch (m) {
+        .game => 1.0,
+        .ambience => TRIM_AMBIENCE,
+    };
+}
+
 const Row = struct {
     make: *const fn (*Rack) void,
     gain: f32 = 0.7,
+    /// Which family's trim this row pays (see `Submix`). Defaults to the reference level, so a voice
+    /// that is neither a creature nor background needs no ceremony.
+    mix: Submix = .game,
     jit: f32 = 0.06,
     vjit: f32 = 0.12,
     vars: u8 = 1,
     poly: u8 = 2,
+    /// HOW FAR THIS VOICE CARRIES, in metres — the range `world()` fades it out over, and past which
+    /// it costs nothing at all. Per VOICE because it is a property of the sound, not of the engine: a
+    /// croak dies in the reeds and a giant's club hitting the earth is heard across the plaza, and one
+    /// shared 46 m for everything got both wrong in opposite directions. It was audibly wrong, too —
+    /// a knot of toads forty metres off murmured away at you through terrain you could not see them
+    /// in, while the slam this file's own comment says "should carry across the plaza" went silent
+    /// four metres short of it.
+    ///
+    /// Only voices that go through `world()` use it; the hero's own sounds play at the listener.
+    reach: f32 = FALLOFF,
 };
 
 // ── the renderers ───────────────────────────────────────────────────────────────────────
@@ -909,14 +991,23 @@ fn mkWind(r: *Rack) void {
     var whistle = Svf{};
     var top = Pole{};
     var moan = Svf{};
+    // PER-TAKE GUST PHASES. The bed is baked TWICE from different seeds and the two takes are played
+    // hard left and hard right (see `bed`), which is the only way a stereo pair can put you INSIDE
+    // weather rather than in front of it. The noise decorrelates itself, but the gust clocks were pure
+    // functions of `t`, so both takes swelled on exactly the same frame — and a gust that arrives in
+    // both ears at once collapses the field back to a point in the middle. Rolled per take, the wind
+    // crosses you.
+    const q1 = r.rng.angle();
+    const q2 = r.rng.angle();
+    const q3 = r.rng.angle();
     var i: usize = 0;
     while (i < r.n) : (i += 1) {
         const t = @as(f32, @floatFromInt(i)) / SRF;
         // The gusts. Three clocks, and the layers below take DIFFERENT mixes of them, so no two
         // layers peak together.
-        const g1 = 0.5 + 0.5 * mathx.sinf(std.math.tau * 0.083 * t);
-        const g2 = 0.5 + 0.5 * mathx.sinf(std.math.tau * 0.031 * t + 2.1);
-        const g3 = 0.5 + 0.5 * mathx.sinf(std.math.tau * 0.157 * t + 4.4);
+        const g1 = 0.5 + 0.5 * mathx.sinf(std.math.tau * 0.083 * t + q1);
+        const g2 = 0.5 + 0.5 * mathx.sinf(std.math.tau * 0.031 * t + 2.1 + q2);
+        const g3 = 0.5 + 0.5 * mathx.sinf(std.math.tau * 0.157 * t + 4.4 + q3);
         const nz = r.rng.signed();
 
         // 1. THE BODY — a low, wide band. The weight of moving air; almost all of the level.
@@ -931,10 +1022,18 @@ fn mkWind(r: *Rack) void {
         //    what gives the plain a size.
         const m = moan.step(nz, 52.0 + 34.0 * g3, 0.55).bp;
 
-        work[i] = b * (0.30 + 0.70 * g2) * 0.85 +
-            w * (0.10 + 0.50 * g1) * 0.30 +
-            s * 0.16 +
-            m * 0.55;
+        // ── THE MIX, RE-BALANCED FOR DISTANCE (owner: the bed should sound further away) ──────────
+        // `norm` sets the LEVEL, so this is purely about WHERE the wind is, and the answer is spectral:
+        // air absorbs high frequencies far faster than low ones (ISO 9613-2 puts 4 kHz at roughly
+        // fifteen times the loss per hundred metres that 250 Hz takes), so near air is bright and
+        // distant air is nothing but weight. The SIBILANCE is the layer that says "this is happening at
+        // your ears" — cut hard. The BODY and the MOAN are what survive the crossing, and they carry
+        // the size of the plain, so they come up. Turning the whole thing down could never do this: it
+        // would only have made a near sound quiet, which the ear reads as a small source close by.
+        work[i] = b * (0.30 + 0.70 * g2) * 0.94 +
+            w * (0.10 + 0.50 * g1) * 0.20 +
+            s * 0.05 +
+            m * 0.68;
     }
     // THE BIRDS USED TO LIVE IN HERE, and could not be heard: the bed's own gain is 0.055 (owner's
     // call, and right), so a call mixed into this buffer went out at a twentieth of the level it was
@@ -944,9 +1043,13 @@ fn mkWind(r: *Rack) void {
     r.norm(0.42);
     r.sat(1.2);
     r.crush(CRUSH_BITS + 1.5, CRUSH_HOLD); // gentler than the house: a crushed noise bed hisses
-    r.warm(2600);
+    // 1400, down from 2600 — the AIR ABSORPTION of a few hundred metres of it, which is the cue that
+    // actually reads as distance (see the mix above). It also lets the birds through: they were given
+    // a brighter master than the house on the grounds that "a call has to get out from under the
+    // wind", and with the bed's own top gone they get out from under a darker one.
+    r.warm(AIR_FAR_BED);
     r.wow(0.003, 0.4);
-    r.hiss(0.05);
+    r.hiss(0.035); // …and less tape hiss: hiss is the MEDIUM, and a medium you can hear is a near one
     r.norm(0.62);
     r.ends(0.9, 0.9); // long crossfade ends, so the re-trigger seam is inaudible
 }
@@ -959,12 +1062,135 @@ fn mkWind(r: *Rack) void {
 // deliberately not. Four takes, and `ambience` spaces them minutes apart across a session, so what
 // you get is the odd call from somewhere out on the plain rather than a dawn chorus on a loop.
 fn mkBirds(r: *Rack) void {
-    r.chirp(0.04, r.rng.range(0.55, 0.85), r.rng.range(1750, 2900));
+    // Pitched a little lower than they were (1750-2900 → 1550-2500): the very top of a whistle is what
+    // a long crossing of air eats first, so a distant call is not just quieter, it is a rounder note.
+    r.chirp(0.04, r.rng.range(0.55, 0.85), r.rng.range(1550, 2500));
     // …and now and then another one answers it, a little further off.
-    if (r.rng.float() < 0.45) r.chirp(r.rng.range(0.42, 0.72), r.rng.range(0.28, 0.48), r.rng.range(1900, 3100));
-    // Brighter than the house cutoff: a call has to get out from under the wind, and the pulse's
-    // reedy top IS the sound.
-    r.masterX(1.1, 4200, CRUSH_BITS + 1.0, CRUSH_HOLD);
+    if (r.rng.float() < 0.45) r.chirp(r.rng.range(0.42, 0.72), r.rng.range(0.28, 0.48), r.rng.range(1700, 2700));
+    // 2100, not the old 4200. That number was set "brighter than the house cutoff" so a call could get
+    // out from under the wind — but brightness is exactly what a sound a hundred metres off does NOT
+    // have, so it bought audibility by putting the bird in the room with you. It gets out from under
+    // the bed now because the BED went dark too (see mkWind's warm), which is the honest way round:
+    // both are far, and neither is competing for the top of the spectrum.
+    r.masterX(1.1, AIR_FAR_CALL, CRUSH_BITS + 1.0, CRUSH_HOLD);
+}
+
+// ── THE SECOND BIRD ── and it is deliberately the OPPOSITE of `mkBirds`. That one JUMPS between
+// stepped semitones and holds each note flat (a machine's idea of a bird, which is the house style);
+// this one SLURS — a glide between notes is the single cue that separates a fluted whistle from a
+// blip, and having both is what stops the plain sounding like it has one bird on it. Built out of
+// `body`, whose exponential pitch glide IS a slur; nothing else in the rack does one.
+fn mkBirdsong(r: *Rack) void {
+    const f0 = r.rng.range(1050, 1650);
+    const up = f0 * r.rng.range(1.20, 1.55);
+    r.body(0.05, 0.16, f0, up, 0.75, 3.2); // the up-slur…
+    r.body(0.26, 0.22, up, f0 * r.rng.range(0.80, 0.95), 0.60, 2.6); // …and back down past where it started
+    // …and now and then a third note on the end of the phrase, so the motif is not always the same
+    // length. A call you can predict the shape of stops registering after the second one.
+    if (r.rng.float() < 0.5) r.body(0.56, 0.18, f0 * 1.1, f0 * 1.45, 0.40, 3.0);
+    r.air(0.05, 0.09, 0.06, 2600, 1400, 0.5, 4.0); // the breath at the front of it
+    r.masterX(1.1, AIR_FAR_CALL, CRUSH_BITS + 1.0, CRUSH_HOLD);
+}
+
+// ── THE OWL ── a tawny owl's phrase, which is the one birdcall everybody can name: a short "hoo",
+// a beat of NOTHING, then the long falling "hu-hoooo". The gap is the whole character — a hoot
+// without it is just a note, and the pause is what makes the second half arrive.
+//
+// `growl` with the roughness almost off is the right primitive and not an obvious one: a saw dragged
+// through a lowpass sitting a couple of octaves up is a HOLLOW tone, which is what an owl is. A pure
+// sine (`body`) reads as a flute or a synth pad; the little bit of rasp left in is the bird.
+fn mkOwl(r: *Rack) void {
+    r.growl(0.0, 0.26, 470, 430, 0.55, 0.05, 0.30); // hoo…
+    r.air(0.0, 0.18, 0.10, 900, 500, 0.5, 3.0); // …breath in front of it
+    r.growl(0.62, 0.85, 520, 375, 0.90, 0.06, 0.16); // …hu-hoooo, falling away
+    r.air(0.62, 0.28, 0.12, 1100, 520, 0.5, 2.2);
+    r.body(0.64, 0.55, 245, 200, 0.22, 1.6); // an octave under, for the woody chest of it
+    r.masterX(1.15, AIR_FAR_CRY, CRUSH_BITS + 1.0, CRUSH_HOLD);
+}
+
+// ── THE WOLF ── one long breath: a cry that RISES until it finds its note, holds there, and falls
+// off the end. All three parts are one gesture and they overlap, which is why it is two growls
+// rather than three — a howl that steps between phases reads as somebody operating a synthesizer.
+//
+// It carries further than anything else in the world (see its BANK row), and it should: a real howl
+// is meant to be heard across a valley, and this is the one sound in the game whose entire job is to
+// tell you how big the place is.
+fn mkWolf(r: *Rack) void {
+    r.growl(0.0, 0.55, 240, 430, 0.75, 0.10, 0.55); // the rise, still gathering
+    r.growl(0.42, 1.50, 440, 300, 1.00, 0.08, 0.14); // …the held note, and the fall out of it
+    r.air(0.0, 1.90, 0.16, 1400, 420, 0.45, 1.1); // breath behind the whole cry
+    r.body(0.35, 1.40, 215, 148, 0.30, 1.3); // …and the chest under it
+    r.masterX(1.30, AIR_FAR_CRY, CRUSH_BITS + 1.0, CRUSH_HOLD);
+}
+
+// ── THE CRICKETS ── the other BED, and the one that actually makes a golden-hour field sound like
+// one. Its shape is nothing like the wind's, and the difference is the point:
+//
+//   THE WIND IS ONE CONTINUOUS THING. The crickets are MANY DISCRETE ones — a cricket chirp is a
+//   burst of three to five hard pulses of ~4.5 kHz stridulation, a fifth of a second long, repeated
+//   two or three times a second. So this is built as N INDIVIDUALS, each with its own pitch, its own
+//   chirp rate, its own pulse count and its own place in its cycle. That independence is the whole
+//   texture: run them off one clock and a field of crickets becomes a rhythm section.
+//
+//   AND IT IS BRIGHT (AIR_NEAR_GRASS), alone among the ambient voices. Crickets are in the grass at
+//   your feet, not out on the plain, and the spectral tilt is what says so — rendered dark like the
+//   wind the whole insect field moves to the horizon.
+//
+// Baked TWICE from different seeds and played hard left / hard right like the wind (see `bed`), so
+// the field surrounds you instead of chirping at you from between the speakers.
+const CRICKETS = 7; // individuals near enough to be heard APART; past that it is a chirr, not a field
+const CRICKET_SING: f32 = 0.22; // fraction of its own cycle one cricket is actually singing
+
+fn mkCrickets(r: *Rack) void {
+    var hz: [CRICKETS]f32 = undefined; // stridulation pitch — species and body size
+    var rate: [CRICKETS]f32 = undefined; // chirps per second
+    var at: [CRICKETS]f32 = undefined; // …and where in its own cycle this one starts
+    var amp: [CRICKETS]f32 = undefined; // how near it is
+    var pulses: [CRICKETS]f32 = undefined; // pulses per chirp
+    var ph: [CRICKETS]f32 = [_]f32{0} ** CRICKETS; // accumulated, not f*t: at 8 s an f32 product of a
+    //   4 kHz phase has lost its low bits and the pitch wobbles audibly
+    for (0..CRICKETS) |k| {
+        hz[k] = r.rng.range(3500, 5200);
+        rate[k] = r.rng.range(1.7, 3.1);
+        at[k] = r.rng.float();
+        amp[k] = r.rng.range(0.18, 1.0);
+        pulses[k] = @floor(r.rng.range(3, 6));
+    }
+    var band = Svf{};
+    var far = Pole{};
+    const q = r.rng.angle(); // the distant field's own swell clock, rolled per take
+    var i: usize = 0;
+    while (i < r.n) : (i += 1) {
+        const t = @as(f32, @floatFromInt(i)) / SRF;
+        var s: f32 = 0;
+        for (0..CRICKETS) |k| {
+            ph[k] += hz[k] / SRF;
+            ph[k] -= @floor(ph[k]);
+            const u = t * rate[k] + at[k];
+            const c = u - @floor(u); // 0..1 through this cricket's chirp cycle
+            if (c > CRICKET_SING) continue; // …silent for the rest of it
+            const w = c / CRICKET_SING; // 0..1 across the chirp itself
+            const p = w * pulses[k];
+            // A saw DOWN per pulse (a hard front, a fast fade) under one arch across the whole
+            // chirp: that pulse train is what makes it a chirr rather than a beep.
+            const pulse = 1.0 - (p - @floor(p));
+            s += mathx.sinf(std.math.tau * ph[k]) * pulse * pulse * mathx.sinf(std.math.pi * w) * amp[k];
+        }
+        // The seven get a resonant band so they have a BODY instead of being bare sines…
+        const near = band.step(s, 4300, 0.42).bp;
+        // …and under them, the hundreds too far away to hear apart: a soft filtered hiss on a slow
+        // swell. Without it the field has a countable number of crickets in it, which is the tell.
+        const swellK = 0.55 + 0.45 * mathx.sinf(std.math.tau * 0.047 * t + q);
+        const chorus = far.step(r.rng.signed(), 3800) * swellK;
+        work[i] = near * 0.80 + chorus * 0.30;
+    }
+    r.sat(1.15);
+    r.crush(CRUSH_BITS + 1.5, CRUSH_HOLD); // gentle, like the wind's: a crushed chirr fizzes
+    r.warm(AIR_NEAR_GRASS); // …and BRIGHT, unlike the wind's — see the block above
+    r.wow(0.002, 0.6);
+    r.hiss(0.010);
+    r.norm(0.66);
+    r.ends(0.9, 0.9); // long crossfade ends, so the re-trigger seam is inaudible
 }
 
 // ── THE BANK ── one row per voice, in `Id` order.
@@ -973,9 +1199,14 @@ const BANK = [NV]Row{
     // most-repeated sound in the game by an order of magnitude, and they are the one that grates first.
     // …and LOW in the mix (owner's call). Footsteps are the sound you hear most and want to notice
     // least: they belong under the fight, marking cadence, not competing with it.
-    .{ .make = mkStepSoft, .gain = 0.13, .jit = 0.13, .vjit = 0.30, .vars = 4, .poly = 3 },
-    .{ .make = mkStepHard, .gain = 0.17, .jit = 0.12, .vjit = 0.26, .vars = 4, .poly = 3 },
-    .{ .make = mkStepSprint, .gain = 0.20, .jit = 0.11, .vjit = 0.24, .vars = 4, .poly = 3 },
+    // …and dropped a further ~40% (owner: too loud). REPETITION is why they read louder than their
+    // number: a boot lands ~twice a second forever, and a sound at a given level that never stops is
+    // heard as much louder than the same level heard once — which is the one thing a per-voice gain
+    // cannot see. The three keep their RATIO, because walk < run < sprint is load-bearing: hearing
+    // which boot you are in is part of knowing how fast you are going (see mkStepSprint).
+    .{ .make = mkStepSoft, .gain = 0.075, .jit = 0.13, .vjit = 0.30, .vars = 4, .poly = 3 },
+    .{ .make = mkStepHard, .gain = 0.100, .jit = 0.12, .vjit = 0.26, .vars = 4, .poly = 3 },
+    .{ .make = mkStepSprint, .gain = 0.120, .jit = 0.11, .vjit = 0.24, .vars = 4, .poly = 3 },
     .{ .make = mkRoll, .gain = 0.55, .jit = 0.09, .vjit = 0.14, .vars = 2 },
     // SUBTLE (owner's call). `master` normalizes every voice's peak, so a swing's LEVEL is only ever
     // this number — reshaping the whoosh made it stop sounding silly, and this is what makes it stop
@@ -991,31 +1222,43 @@ const BANK = [NV]Row{
     .{ .make = mkRefused, .gain = 0.34, .jit = 0.06, .vjit = 0.08, .vars = 2 },
     .{ .make = mkDeath, .gain = 0.95, .jit = 0.0, .vjit = 0.0, .poly = 1 },
     .{ .make = mkRespawn, .gain = 0.55, .jit = 0.0, .vjit = 0.0, .poly = 1 },
-    .{ .make = mkToadHop, .gain = 0.40, .jit = 0.15, .vjit = 0.26, .vars = 4, .poly = 4 },
-    .{ .make = mkToadLunge, .gain = 0.62, .jit = 0.12, .vjit = 0.16, .vars = 3, .poly = 3 },
-    .{ .make = mkToadGape, .gain = 0.46, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3 },
-    .{ .make = mkToadChomp, .gain = 0.62, .jit = 0.13, .vjit = 0.18, .vars = 3, .poly = 3 },
-    .{ .make = mkToadHurt, .gain = 0.58, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3 },
-    .{ .make = mkToadDie, .gain = 0.66, .jit = 0.11, .vjit = 0.14, .vars = 3, .poly = 3 },
+    // THE TOADS ARE SMALL AND CLOSE. Their aggro radius is 11 m and they bite at 1.45, so 30 m of
+    // reach covers everything a toad can do to you with room over — and stops a knot you cannot see
+    // filling the plain with wet noises, which is what the old shared 46 m did.
+    .{ .make = mkToadHop, .gain = 0.40, .jit = 0.15, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 30 },
+    .{ .make = mkToadLunge, .gain = 0.62, .jit = 0.12, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 34 },
+    .{ .make = mkToadGape, .gain = 0.46, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 26 },
+    .{ .make = mkToadChomp, .gain = 0.62, .jit = 0.13, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 30 },
+    .{ .make = mkToadHurt, .gain = 0.58, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 30 },
+    .{ .make = mkToadDie, .gain = 0.66, .jit = 0.11, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 34 },
     // The nock/draw creak sits WELL under the loose (owner's call): it is a tell you register at
     // the edge of hearing, and the twang is the one that has to cut through.
-    .{ .make = mkBowDraw, .gain = 0.17, .jit = 0.10, .vjit = 0.18, .vars = 3, .poly = 3 },
-    .{ .make = mkBowLoose, .gain = 0.58, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3 },
+    .{ .make = mkBowDraw, .gain = 0.17, .jit = 0.10, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 44 },
+    // THE TWANG REACHES FURTHEST OF THE TWO, and by design: it is the one cue in the fight that means
+    // MOVE, and an archer shoots from 8-20 m — so its range carries well past its own band, where the
+    // creak of the draw only has to be heard from inside it.
+    .{ .make = mkBowLoose, .gain = 0.58, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 64 },
     .{ .make = mkArrowHit, .gain = 0.72, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3 },
     // The earth is the miss and therefore the one you hear most — quietest of the four, widest
     // variance, so a volley into the dirt never reads as one sample on repeat.
-    .{ .make = mkArrowDirt, .gain = 0.34, .jit = 0.15, .vjit = 0.28, .vars = 4, .poly = 4 },
-    .{ .make = mkArrowWood, .gain = 0.56, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 4 },
-    .{ .make = mkArrowStone, .gain = 0.50, .jit = 0.13, .vjit = 0.22, .vars = 4, .poly = 4 },
-    .{ .make = mkArrowMetal, .gain = 0.52, .jit = 0.11, .vjit = 0.18, .vars = 3, .poly = 3 },
-    .{ .make = mkBoneHurt, .gain = 0.62, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 3 },
-    .{ .make = mkBoneDie, .gain = 0.68, .jit = 0.09, .vjit = 0.12, .vars = 3 },
-    .{ .make = mkOgreStep, .gain = 0.60, .jit = 0.08, .vjit = 0.20, .vars = 4, .poly = 3 },
-    .{ .make = mkOgreRoar, .gain = 0.80, .jit = 0.06, .vjit = 0.10, .vars = 3 },
-    .{ .make = mkOgreSlam, .gain = 1.00, .jit = 0.06, .vjit = 0.08, .vars = 3 },
-    .{ .make = mkOgreSwipe, .gain = 0.72, .jit = 0.07, .vjit = 0.12, .vars = 3 },
-    .{ .make = mkOgreHurt, .gain = 0.66, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3 },
-    .{ .make = mkOgreDie, .gain = 0.92, .jit = 0.0, .vjit = 0.0, .poly = 1 },
+    // An arrow thunking off the pillar you ducked behind is the game telling you cover WORKED, so the
+    // four impacts have to reach past the range they were loosed from.
+    .{ .make = mkArrowDirt, .gain = 0.34, .jit = 0.15, .vjit = 0.28, .vars = 4, .poly = 4, .reach = 38 },
+    .{ .make = mkArrowWood, .gain = 0.56, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 4, .reach = 44 },
+    .{ .make = mkArrowStone, .gain = 0.50, .jit = 0.13, .vjit = 0.22, .vars = 4, .poly = 4, .reach = 48 },
+    .{ .make = mkArrowMetal, .gain = 0.52, .jit = 0.11, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 52 },
+    .{ .make = mkBoneHurt, .gain = 0.62, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 44 },
+    .{ .make = mkBoneDie, .gain = 0.68, .jit = 0.09, .vjit = 0.12, .vars = 3, .reach = 54 },
+    // ── THE GIANT IS THE FURTHEST-CARRYING THING IN THE WORLD, and that IS his presence. Everything
+    // about him is an octave down and half a second longer (see the ogre block above); low frequencies
+    // are also what survive a couple of hundred metres of air, so the physics and the character agree
+    // for once. You should hear him walking long before you can see which ruin he is behind.
+    .{ .make = mkOgreStep, .gain = 0.60, .jit = 0.08, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 115 },
+    .{ .make = mkOgreRoar, .gain = 0.80, .jit = 0.06, .vjit = 0.10, .vars = 3, .reach = 135 },
+    .{ .make = mkOgreSlam, .gain = 1.00, .jit = 0.06, .vjit = 0.08, .vars = 3, .reach = 135 },
+    .{ .make = mkOgreSwipe, .gain = 0.72, .jit = 0.07, .vjit = 0.12, .vars = 3, .reach = 85 },
+    .{ .make = mkOgreHurt, .gain = 0.66, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 80 },
+    .{ .make = mkOgreDie, .gain = 0.92, .jit = 0.0, .vjit = 0.0, .poly = 1, .reach = 135 },
     .{ .make = mkFlaskDrink, .gain = 0.52, .jit = 0.06, .vjit = 0.10, .vars = 2, .poly = 2 },
     .{ .make = mkFlaskCycle, .gain = 0.30, .jit = 0.07, .vjit = 0.08, .vars = 2, .poly = 3 },
     .{ .make = mkKill, .gain = 0.55, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 4 },
@@ -1024,20 +1267,62 @@ const BANK = [NV]Row{
     .{ .make = mkMenuBack, .gain = 0.32, .jit = 0.03, .vjit = 0.05 },
     // MUCH quieter (owner's call). A bed you can pick out is a bed that is too loud: its whole job
     // is to stop silence reading as broken audio, and it does that at a level you only notice when
-    // it stops. The birds ride inside this, so they came down with it.
-    .{ .make = mkWind, .gain = 0.055, .jit = 0.0, .vjit = 0.0, .poly = 1 },
-    // Quiet, but a level you can actually HEAR — twice the bed's, where the old baked-in calls went
-    // out at a twentieth of it. Four takes and wide pitch jitter: the same bird twice running is
-    // worse than no bird at all.
-    .{ .make = mkBirds, .gain = 0.13, .jit = 0.14, .vjit = 0.22, .vars = 4, .poly = 2 },
+    // it stops.
+    //
+    // TWO TAKES, and `gain` is now PER CHANNEL. The bed plays both at once, hard left and hard right
+    // (`bed`), and the arithmetic of that is not obvious: raylib's pan law is 0.5·x·(3−x²), so a
+    // hard-panned sound is ~3.2 dB LOUDER in its own ear than a centred one is in either, and two
+    // uncorrelated takes sum by power rather than by amplitude. Per ear that lands 0.030 × 2 within a
+    // whisker of the old centred 0.055, so this is a small real drop on top of a much wider field —
+    // which is the half of "further away" that lowering it could never buy.
+    .{ .make = mkWind, .gain = 0.030, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
+    // …and the birds are now POSITIONED (see `ambience`), so this gain is the level of a call at the
+    // near end of the band rather than of one at your ear: the distance curve takes 30-80% back off it
+    // depending on where the call was rolled. Four takes and wide pitch jitter: the same bird twice
+    // running is worse than no bird at all.
+    // ── THE ANIMAL CALLS ── all four dropped a further ~30% on top of the family trim (owner). The
+    // trim alone could not do it: a multiplier moves the whole family together, and what was wanted was
+    // the ANIMALS down RELATIVE to the air they sit in — so the cut lives in these four rows, which is
+    // exactly what a row's gain is for (the balance inside its own family).
+    .{ .make = mkBirds, .gain = 0.20, .mix = .ambience, .jit = 0.14, .vjit = 0.22, .vars = 4, .poly = 2, .reach = 210 },
+    // The FLUTED bird sits a touch under the chiptune one: it is a purer tone, and a pure tone at the
+    // same peak reads louder than a pulse train does (nothing masks it).
+    .{ .make = mkBirdsong, .gain = 0.17, .mix = .ambience, .jit = 0.13, .vjit = 0.22, .vars = 4, .poly = 2, .reach = 200 },
+    // THE OWL IS RARE AND IT IS ALLOWED TO BE HEARD. Where a bird is scenery, one hoot every half
+    // minute is an EVENT — so it goes out louder than either bird and gets three real takes, since a
+    // sound you hear twice an hour must never be recognisable as the same recording.
+    .{ .make = mkOwl, .gain = 0.24, .mix = .ambience, .jit = 0.08, .vjit = 0.14, .vars = 3, .poly = 2, .reach = 170 },
+    // The chirr, at bed level: its whole job is that you only notice it when it stops (see mkWind's
+    // row). `poly = 1` and two takes, like the wind — `bed` plays both at once and nothing overlaps.
+    //
+    // AND IT SITS A THIRD OF THE WIND'S NUMBER, which looks wrong and is not. `master`/`norm` set the
+    // PEAK, so at 0.042 this was landing at the same peak amplitude as the bed — and it was WAY too
+    // loud (owner), for two reasons that both cost about 6 dB and neither of which peak level can see:
+    //   BRIGHTNESS. The chirr lives at ~4 kHz, which is the very top of human sensitivity; the wind's
+    //   energy is under 1.4 kHz, where the ear gives away most of a decade. Equal amplitude at those
+    //   two places is nothing like equal loudness.
+    //   TRANSIENTS. A cricket is a train of hard pulse fronts, so its RMS is far below its peak and it
+    //   still pops out of a mix — where smooth noise at the same peak is simply a floor.
+    // So do NOT "correct" this back toward the wind's 0.030 on the grounds that they are both beds.
+    .{ .make = mkCrickets, .gain = 0.010, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
+    // ── THE FURTHEST-CARRYING SOUND IN THE WORLD, past even the birds, and that IS the point: a howl
+    // is meant to cross a valley. Rolled out to 240 m (see CALLS), so most of the time what arrives is
+    // the tail of the distance curve — which is exactly how a wolf you cannot see should sound.
+    .{ .make = mkWolf, .gain = 0.32, .mix = .ambience, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 1, .reach = 260 },
 };
 
 /// How long each voice renders for. Kept beside the bank rather than inside each renderer so the
 /// memory cost of the whole thing is readable in one place: at 22 kHz, one second is 44 KB.
 fn seconds(id: Id) f32 {
     return switch (id) {
+        // The two BEDS are the only long ones, and they are deliberately DIFFERENT lengths: equal
+        // loops would re-trigger together for the whole session, and two textures repeating in
+        // lockstep is a loop you can hear even when neither is audible on its own.
         .wind => 8.0,
+        .crickets => 7.3,
         .death => 3.2,
+        .wolf => 2.4, // one long breath — the rise, the held note and the fall out of it
+        .owl => 1.6, // …hoo, a beat of nothing, then hu-hoooo
         .ogre_die => 2.2,
         .respawn => 1.4,
         .bone_die, .toad_die, .ogre_roar => 1.1,
@@ -1045,6 +1330,7 @@ fn seconds(id: Id) f32 {
         // Every arrow impact is QUICK either way (owner's law) — a third of a second, tops.
         .arrow_hit, .arrow_dirt, .arrow_wood, .arrow_stone, .arrow_metal => 0.36,
         .birds => 1.3, // long enough for a phrase plus the answer that can start at 0.72
+        .birdsong => 1.0, // …up-slur, down-slur, and the third note that sometimes lands at 0.56
         .roll, .swing_heavy, .ogre_swipe, .ogre_step => 0.7,
         else => 0.5,
     };
@@ -1082,9 +1368,57 @@ var muted = false;
 var lisPos: rl.Vector3 = mathx.zero3;
 var lisRight: rl.Vector3 = mathx.v3(1, 0, 0);
 
-/// Past this the world falls silent. Generous: the ogre's slam should carry across the plaza, and
-/// the per-voice gain plus the inverse falloff already keep distant sounds where they belong.
+/// The DEFAULT reach, for a voice whose row does not say otherwise (see `Row.reach`, which is where
+/// the interesting ones live). Only voices played through `world()` care.
 const FALLOFF: f32 = 46.0;
+
+// ── DIRECTION ───────────────────────────────────────────────────────────────────────────
+// What a stereo pair can and cannot tell you, so nobody has to re-derive it:
+//
+//   AZIMUTH is real and cheap — an inter-channel level difference is most of how you place a sound
+//   left or right, and it survives distance unchanged, so `PAN_WIDTH` applies at any range.
+//   FRONT vs BACK is not. We resolve that from spectral notches the outer ear cuts into sound
+//   arriving from behind, and reproducing it needs an HRTF and headphones. With two speakers and a
+//   level control there is no honest cue, so `REAR_DUCK` is a NUDGE and nothing more.
+//   ELEVATION is likewise unavailable, which is why nothing here reads Y.
+//
+/// How far off centre a source dead abeam is panned. Short of hard, deliberately: a sound that
+/// vanishes from one ear reads as a broken channel, and the camera sits only a few metres behind the
+/// hero, so nothing in gameplay is ever truly abeam of the ears.
+const PAN_WIDTH: f32 = 0.42;
+/// …and inside this radius the pan CLOSES TO CENTRE. A source on top of the listener has a bearing
+/// that is arithmetically fine and perceptually meaningless: a toad chewing on your leg crosses from
+/// one side of you to the other in a single frame, and panning that honestly strobes the sound
+/// between the speakers. Real hearing does the same thing — at arm's length the direction of a sound
+/// stops being the thing you notice about it.
+const PAN_NEAR: f32 = 1.4;
+/// How much a source DIRECTLY BEHIND the listener is ducked, as a fraction. Kept small on purpose,
+/// and the reason is gameplay rather than physics: your own head really does shadow a rear source by
+/// several dB, but this is a game where the thing behind you is the thing that kills you, so the cue
+/// is set where it disambiguates a bearing and nowhere near where it could hide an ogre. Zero it and
+/// nothing breaks — front and back simply become one bearing again.
+const REAR_DUCK: f32 = 0.10;
+/// Distance PITCH droop, at full reach. This is standing in for air absorption, which is the cue we
+/// cannot have: a distant sound is dull, and raylib gives us no filter on a playing voice — only
+/// volume, pitch and pan. Resampling down drags the spectral centroid the same way a lowpass does and
+/// lengthens the transients besides, which is the other thing distance does to a sound. It is a proxy
+/// and it is small; the voices that are ALWAYS far (the wind, the birds) get the real thing baked into
+/// them instead, because a synthesized bank can simply be rendered dark.
+const PITCH_DROOP: f32 = 0.05;
+/// The bed's two channels, as pan values. Not 1/0: see `bed`.
+const BED_PAN: f32 = 0.93;
+
+/// PAN FOR A BEARING — and the one place the sign of it is decided, because raylib's `pan` is NOT a
+/// left-to-right position. It is the LEFT channel's own gain, with the right taking `1 - pan`
+/// (raudio.c's `MixAudioFrames`: `const float left = buffer->pan; const float right = 1.0f - left;`).
+/// raylib's header says only "(0.5 is center)" and never which end is which, so the obvious reading is
+/// backwards — and this file had it backwards, mirroring every positional sound in the game: a foe on
+/// your right came out of the left speaker.
+///
+/// So `side` (+1 = the source is to SCREEN-RIGHT, off camera.rightXZ) has to SUBTRACT here.
+fn panFor(side: f32, width: f32) f32 {
+    return mathx.clampF(0.5 - width * side, 0.04, 0.96);
+}
 
 /// Build the whole bank. ~40 voices, most under half a second — a few hundred milliseconds of
 /// synthesis at launch, once. Silently does nothing if the audio device refuses to open, so a box
@@ -1162,37 +1496,45 @@ pub fn mute(on: bool) void {
 /// scale the row's own gain; the per-trigger pitch jitter is applied here, which is the thing that
 /// stops a hundred footsteps reading as one sample on a loop.
 pub fn play(id: Id) void {
-    emit(id, 1.0, 0.5);
+    emit(id, 1.0, 0.5, 1.0);
 }
 
 /// …with an explicit strength, for the beats that come in degrees (a light vs a heavy).
 pub fn playAt(id: Id, vol: f32) void {
-    emit(id, vol, 0.5);
+    emit(id, vol, 0.5, 1.0);
 }
 
 /// Trigger a voice somewhere in the WORLD: attenuated by distance and panned across the camera.
 /// Beyond FALLOFF it costs nothing at all — the test is two subtractions before any state is touched.
 pub fn world(id: Id, at: rl.Vector3) void {
     if (!ready) return;
+    const row = BANK[@intFromEnum(id)];
     // SQUARED for the reject, and that is what makes the early-out the cheap thing this voice's own
     // test claims it is: `distXZ` is a square ROOT, and it was being paid on every call by every
     // foe on the map — including the great majority that are out of earshot and return one line
     // later. The root is now only taken by the sounds that will actually be heard.
     const d2 = mathx.dist2XZ(at, lisPos);
-    if (d2 > FALLOFF * FALLOFF) return;
+    if (d2 > row.reach * row.reach) return;
     const d = @sqrt(d2);
     // Inverse-square-ish, squared again at the tail so distant sounds fall away rather than
-    // hanging at a constant murmur across the whole plain.
-    const k = 1.0 - d / FALLOFF;
-    const vol = k * k;
+    // hanging at a constant murmur across the whole plain. Over the voice's OWN reach now, so the
+    // curve has the same shape for a croak and for a giant and only its scale differs.
+    const k = 1.0 - d / row.reach;
+    const near = d / row.reach; // 0 underfoot → 1 at the edge of earshot
     const to = mathx.dirXZ(lisPos, at);
     const side = to.x * lisRight.x + to.z * lisRight.z;
-    // Never fully hard-panned: a sound that vanishes from one ear reads as a bug, and the camera
-    // is only a couple of metres from the hero anyway.
-    emit(id, vol, mathx.clampF(0.5 + 0.42 * side, 0.04, 0.96));
+    // FORWARD is derived from the stored right vector rather than being a third thing to pass in and
+    // keep in step: on the ground plane `perpXZ(right)` IS camera-forward for this codebase's basis
+    // (right is (−cos yaw, 0, sin yaw), so its perpendicular is (sin yaw, 0, cos yaw) = headingDir).
+    const fwd = mathx.perpXZ(lisRight);
+    const front = to.x * fwd.x + to.z * fwd.z; // +1 dead ahead → −1 dead behind
+    const rear = 1.0 - REAR_DUCK * 0.5 * (1.0 - front);
+    // …and the pan closes to centre in the near field, so a foe standing on you doesn't strobe.
+    const width = PAN_WIDTH * mathx.smoothstep(0, PAN_NEAR, d);
+    emit(id, k * k * rear, panFor(side, width), 1.0 - PITCH_DROOP * near);
 }
 
-fn emit(id: Id, vol: f32, pan: f32) void {
+fn emit(id: Id, vol: f32, pan: f32, pitchScale: f32) void {
     if (!ready or muted or vol <= 0.01) return;
     const idx = @intFromEnum(id);
     const row = BANK[idx];
@@ -1202,15 +1544,44 @@ fn emit(id: Id, vol: f32, pan: f32) void {
     // in, and when they are not, the pitch jitter covers it.
     const pick = s.next;
     s.next = (s.next + 1) % (row.vars * row.poly);
-    const snd = s.snd[pick % row.vars][pick / row.vars % row.poly];
+    trigger(s.snd[pick % row.vars][pick / row.vars % row.poly], row, vol, pan, pitchScale);
+}
+
+/// Set one alias up and start it. Split out of `emit` because the BED does not round-robin — it plays
+/// two specific takes at two specific pans — and the four raylib calls that turn a row plus a volume
+/// into a playing sound must not exist twice (the wind bed was the one voice whose level was applied
+/// outside this path once already, and it silently ignored how a row's gain is meant to map).
+fn trigger(snd: rl.Sound, row: Row, vol: f32, pan: f32, pitchScale: f32) void {
     // Pitch AND level wobble, both per trigger. The level one is deliberately one-sided-ish (it
     // only ever takes away) so a jittered step can never be LOUDER than the tuned gain — variance
     // must not turn into the occasional bang.
     const vj = 1.0 - @abs(rng.signed()) * row.vjit;
-    rl.setSoundVolume(snd, mathx.clampF(row.gain * vol * vj, 0, 1));
-    rl.setSoundPitch(snd, 1.0 + rng.signed() * row.jit);
+    // …and the FAMILY trim, here rather than baked into each row's gain: this is the one place a
+    // row's number becomes a raylib volume, so it is the only place the two can be composed without
+    // one of the forty-seven rows quietly missing out (see `Submix`).
+    rl.setSoundVolume(snd, mathx.clampF(row.gain * submixTrim(row.mix) * vol * vj, 0, 1));
+    rl.setSoundPitch(snd, (1.0 + rng.signed() * row.jit) * pitchScale);
     rl.setSoundPan(snd, pan);
     rl.playSound(snd);
+}
+
+/// ── THE BED, IN TWO CHANNELS ────────────────────────────────────────────────────────────
+/// Play a voice's first two takes at once, one pushed left and one right. This is the whole of what
+/// makes an ambient bed ENVELOPING rather than a thing in front of you, and it is not a volume
+/// question: two ears fed the same buffer hear ONE SOURCE, located between the speakers, however
+/// quiet it is. Feed them two independently-seeded renders of the same recipe and there is no single
+/// place for the sound to be, so it stops having a location and becomes the air you are standing in.
+/// (Same reason the takes' gust clocks are rolled per take — see mkWind.)
+///
+/// Not panned fully to 1.0 / 0.0: a channel that is completely absent from one ear reads as a fault
+/// rather than as width, and it collapses badly the moment somebody listens on one speaker.
+fn bed(id: Id, vol: f32) void {
+    if (!ready or muted) return;
+    const idx = @intFromEnum(id);
+    const row = BANK[idx];
+    const s = &slots[idx];
+    trigger(s.snd[0][0], row, vol, BED_PAN, 1.0);
+    if (row.vars > 1) trigger(s.snd[1][0], row, vol, 1.0 - BED_PAN, 1.0);
 }
 
 /// Keep the wind bed alive. Call once a frame; it re-triggers only when the last pass has run out,
@@ -1220,24 +1591,74 @@ fn emit(id: Id, vol: f32, pan: f32) void {
 /// itself from `BANK[wind].gain`, which made it the one voice in the game whose level was applied
 /// somewhere other than the one function that knows how a row's gain becomes a raylib volume — so
 /// the bed would have quietly ignored any change to how that mapping works.
-/// How long between birdcalls. Long, and WIDELY spread: the point of a bird is that you notice it,
-/// which needs enough silence in front of it that you had stopped expecting one.
-const BIRD_GAP_LO: f32 = 7.0;
-const BIRD_GAP_HI: f32 = 21.0;
-var birdWait: f32 = 4.0; // …and the first one holds off until you are out of the menu
+/// ── THE LOOPING BEDS ── played as a hard-panned PAIR (see `bed`) and re-triggered when they run out.
+/// Two of them now, moving air and the insect chirr, and they are separate VOICES rather than one
+/// buffer holding both for the same reason the birds were lifted out of the wind: baked together they
+/// would loop together, and two textures that repeat in lockstep is a loop you can hear. Their lengths
+/// are deliberately coprime-ish (8.0 / 7.3) so the pair never re-aligns inside a session.
+const BEDS = [_]Id{ .wind, .crickets };
 
-/// The wind bed and the birds over it, ticked once a frame from the live loop.
+/// ── ONE SPARSE AMBIENT CALL ── which voice, how long between them, and how far out it is rolled.
+///
+/// A TABLE, because there are three of these now and they differ in nothing but those numbers.
+/// Written out per voice it is three copies of the same clock, and the day one of them silently stops
+/// firing there is nothing to compare the broken one against.
+///
+/// THE GAPS ARE LONG AND WIDELY SPREAD, and that is the whole design: the point of a call is that you
+/// NOTICE it, which needs enough silence in front of it that you had stopped expecting one. The rarer
+/// the voice, the wider its band — a bird every ten seconds is scenery, a wolf every two minutes is
+/// the world telling you where you are.
+///
+/// AND EACH IS ROLLED A DISTANCE, never played at the ear. `world()` then puts it at a bearing and at
+/// the level that distance earns, so what you get across a session is calls from all over the plain at
+/// every level from clear to barely-there. Nothing is rolled nearer than `distLo`: there is no bird you
+/// are standing next to in this world, and pretending otherwise is what once put them inside your head.
+const Call = struct {
+    id: Id,
+    gapLo: f32,
+    gapHi: f32,
+    distLo: f32,
+    distHi: f32,
+    /// How long the FIRST one holds off. Staggered across the table so they don't all land together
+    /// in the first half-minute — and all past the menu, so none of them fires behind the pause card.
+    first: f32,
+};
+
+const CALLS = [_]Call{
+    .{ .id = .birds, .gapLo = 9, .gapHi = 26, .distLo = 26, .distHi = 120, .first = 4 },
+    .{ .id = .birdsong, .gapLo = 11, .gapHi = 31, .distLo = 30, .distHi = 140, .first = 9 },
+    // Rarer than either bird by a factor of three, and further out: an owl is a thing you hear
+    // occasionally from somewhere in the ruins, not a resident of the tree you are standing under.
+    .{ .id = .owl, .gapLo = 26, .gapHi = 70, .distLo = 40, .distHi = 150, .first = 22 },
+    // …and the wolf rarest and furthest of all. At 90-240 m most howls arrive on the tail of the
+    // distance curve, which is exactly how something you cannot see should sound.
+    .{ .id = .wolf, .gapLo = 48, .gapHi = 140, .distLo = 90, .distHi = 240, .first = 55 },
+};
+
+/// Seconds left on each row's clock, seeded from its own `first`.
+var callWait: [CALLS.len]f32 = init: {
+    var w: [CALLS.len]f32 = undefined;
+    for (CALLS, 0..) |c, i| w[i] = c.first;
+    break :init w;
+};
+
+/// The beds and the calls over them, ticked once a frame from the live loop.
 pub fn ambience(dt: f32) void {
     if (!ready or muted) return;
-    // `wind` is poly 1 / vars 1, so slot 0 IS the voice — asking raylib whether that one is still
-    // running is the whole re-trigger test.
-    if (!rl.isSoundPlaying(slots[@intFromEnum(Id.wind)].snd[0][0])) emit(.wind, 1.0, 0.5);
-    // The birds ride a clock rather than the bed's loop: baked into the wind buffer they repeated
-    // with it, five phrases in the same order for ever (see mkWind).
-    birdWait -= dt;
-    if (birdWait <= 0) {
-        birdWait = rng.range(BIRD_GAP_LO, BIRD_GAP_HI);
-        play(.birds);
+    // Take 0 is the LEFT channel of a bed and both takes are the same length, so asking raylib whether
+    // that one is still running is the whole re-trigger test for the pair.
+    for (BEDS) |b| {
+        if (!rl.isSoundPlaying(slots[@intFromEnum(b)].snd[0][0])) bed(b, 1.0);
+    }
+    // Every sparse call rides its OWN clock rather than a bed's loop: baked into the wind buffer the
+    // birds repeated with it, five phrases in the same order for ever (see mkWind).
+    for (CALLS, 0..) |c, i| {
+        callWait[i] -= dt;
+        if (callWait[i] > 0) continue;
+        callWait[i] = rng.range(c.gapLo, c.gapHi);
+        const a = rng.angle();
+        const d = rng.range(c.distLo, c.distHi);
+        world(c.id, mathx.v3(lisPos.x + mathx.cosf(a) * d, lisPos.y, lisPos.z + mathx.sinf(a) * d));
     }
 }
 
@@ -1316,4 +1737,221 @@ test "the world falloff is silent past its own range and loudest underfoot" {
     const near = 1.0 - 0.0 / FALLOFF;
     const far = 1.0 - (FALLOFF * 0.9) / FALLOFF;
     try std.testing.expect(near * near > far * far * 50.0); // a real curve, not a plateau
+}
+
+test "PAN IS THE LEFT CHANNEL'S GAIN — a source on your right must pan DOWN, not up" {
+    // THE bug this pins, and it is worth a test of its own because the mistake is the natural reading
+    // of the API. raylib's mixer takes `pan` as the LEFT gain and gives the right `1 - pan`
+    // (raudio.c MixAudioFrames), while its header says only "(0.5 is center)". So `0.5 + width*side`
+    // — which is what any of us would write — sends a foe on your right out of the LEFT speaker, and
+    // every positional sound in the game was mirrored. If somebody ever "fixes" the sign back, this
+    // fails instead of the game quietly lying about which way to turn.
+    const right = panFor(1.0, PAN_WIDTH); // source to SCREEN-RIGHT…
+    const left = panFor(-1.0, PAN_WIDTH);
+    try std.testing.expect(right < 0.5); // …so the LEFT channel's gain comes DOWN
+    try std.testing.expect(left > 0.5);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), panFor(0.0, PAN_WIDTH), 1e-6); // dead ahead is centre
+    // …and never so far that a channel disappears (which reads as a broken speaker, not as width).
+    for ([_]f32{ -4, -1, 0, 1, 4 }) |s| {
+        const p = panFor(s, PAN_WIDTH);
+        try std.testing.expect(p >= 0.04 and p <= 0.96);
+    }
+    // The BED is the deliberate exception: it wants to be as wide as it can get away with.
+    try std.testing.expect(BED_PAN > 0.5 + PAN_WIDTH);
+    try std.testing.expect(BED_PAN < 1.0);
+}
+
+test "the near field closes the pan, so a foe standing on you does not strobe" {
+    // A bearing at arm's length is arithmetically fine and perceptually meaningless: a toad chewing
+    // your leg crosses from one side to the other in a frame, and panning that honestly flicks the
+    // sound between the speakers.
+    const onTop = PAN_WIDTH * mathx.smoothstep(0, PAN_NEAR, 0.05);
+    const clear = PAN_WIDTH * mathx.smoothstep(0, PAN_NEAR, 4.0);
+    try std.testing.expect(onTop < 0.02); // effectively centred
+    try std.testing.expectApproxEqAbs(PAN_WIDTH, clear, 1e-6); // and full width once it is off you
+}
+
+test "reach is per VOICE: a giant carries, a toad does not, a bird carries furthest" {
+    // The soundscape's whole legibility rests on this ordering — one shared range for everything is
+    // how you end up hearing toads through terrain and missing a slam across the plaza.
+    const reach = struct {
+        fn of(id: Id) f32 {
+            return BANK[@intFromEnum(id)].reach;
+        }
+    }.of;
+    try std.testing.expect(reach(.toad_chomp) < reach(.bow_loose));
+    try std.testing.expect(reach(.bow_loose) < reach(.ogre_slam));
+    try std.testing.expect(reach(.ogre_slam) < reach(.birds));
+    // …and the HOWL past even the birds. It is the furthest-carrying sound in the world by design:
+    // the one voice whose whole job is telling you how big the place is.
+    try std.testing.expect(reach(.birds) < reach(.wolf));
+    // The archer's TWANG is the cue to move and must outrange the creak of the draw that precedes it.
+    try std.testing.expect(reach(.bow_loose) > reach(.bow_draw));
+    // A toad's world is 11 m wide (its aggro radius), so its voice must comfortably cover that and
+    // not much more.
+    try std.testing.expect(reach(.toad_chomp) > 12.0 and reach(.toad_chomp) < 40.0);
+    // …and every voice has to be able to be heard at all.
+    for (BANK) |row| try std.testing.expect(row.reach > 1.0);
+}
+
+test "every sparse call is rolled INSIDE its own reach, and none of them is rolled at your ear" {
+    // Two ways the CALLS table can be wrong and neither shows on screen: a `distHi` past the voice's
+    // own `reach` makes the far half of the band SILENCE (`world` early-outs, so the call simply never
+    // happens and the clock has already been spent), and a `distLo` near zero puts the thing in your
+    // head — which is the bug the birds were moved off `play` to fix in the first place.
+    for (CALLS) |c| {
+        const row = BANK[@intFromEnum(c.id)];
+        try std.testing.expect(c.distHi < row.reach);
+        try std.testing.expect(c.distLo > 10.0 and c.distLo < c.distHi);
+        // …and a gap band that is a real band, so no voice fires on a fixed metronome.
+        try std.testing.expect(c.gapLo > 0 and c.gapHi > c.gapLo * 1.5);
+        try std.testing.expect(c.first > 1.0); // never behind the pause card at launch
+    }
+    // RARITY ORDER, which is the whole shape of the canopy: birds are scenery, the owl is occasional,
+    // the wolf is an event. Pinned because it is the thing a retune would quietly invert.
+    try std.testing.expect(CALLS[2].gapLo > CALLS[0].gapLo * 2.0); // owl vs birds
+    try std.testing.expect(CALLS[3].gapLo > CALLS[2].gapLo * 1.5); // wolf vs owl
+}
+
+test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience" {
+    // Every bed and every sparse call pays the trim: an ambient voice left on `.game` is the one that
+    // ends up loudest in its own group with nothing to compare it against.
+    for (BEDS) |b| try std.testing.expectEqual(Submix.ambience, BANK[@intFromEnum(b)].mix);
+    for (CALLS) |c| try std.testing.expectEqual(Submix.ambience, BANK[@intFromEnum(c.id)].mix);
+    try std.testing.expect(TRIM_AMBIENCE > 0 and TRIM_AMBIENCE < 1.0);
+
+    // AND NOTHING ELSE DOES. A `.creature` family covering the toads and the ogre was tried and
+    // REVERTED (owner: "I meant ambient sounds not combat sounds") — a fight is what the player is
+    // listening TO, and quietening the animal eating you is the opposite of the note. Asserted so the
+    // idea cannot come back by accident: exactly the beds and the calls are trimmed, and no combat
+    // voice is.
+    var trimmed: usize = 0;
+    for (BANK) |row| {
+        if (row.mix == .ambience) trimmed += 1;
+    }
+    try std.testing.expectEqual(BEDS.len + CALLS.len, trimmed);
+    for ([_]Id{ .toad_chomp, .toad_die, .ogre_slam, .ogre_roar, .bone_die, .hit_heavy, .hurt }) |id| {
+        try std.testing.expectEqual(Submix.game, BANK[@intFromEnum(id)].mix);
+    }
+
+    // THE BEDS SIT UNDER THE CALLS, which is what makes one a floor and the other an event: a bed you
+    // can pick out is a bed that is too loud.
+    var loudBed: f32 = 0;
+    for (BEDS) |b| loudBed = mathx.maxF(loudBed, BANK[@intFromEnum(b)].gain);
+    for (CALLS) |c| try std.testing.expect(BANK[@intFromEnum(c.id)].gain > loudBed);
+}
+
+test "the two BEDS loop at different lengths, so they never re-align" {
+    // Equal-length beds re-trigger on the same frame for the whole session, and two textures
+    // repeating in lockstep is a loop you can hear even when neither is audible alone.
+    try std.testing.expect(BEDS.len == 2);
+    try std.testing.expect(seconds(.wind) != seconds(.crickets));
+    // Both are played through `bed`, which needs two takes to have two channels to pan.
+    for (BEDS) |b| try std.testing.expect(BANK[@intFromEnum(b)].vars >= 2);
+}
+
+test "a source BEHIND you is ducked, but nowhere near enough to hide it" {
+    // Front/back cannot be resolved by a stereo pan (it takes the outer ear's own spectral notches),
+    // so this is a nudge. It is deliberately tiny: in a game where the thing behind you is the thing
+    // that kills you, a rear cue that actually worked would be a bug.
+    const ahead = 1.0 - REAR_DUCK * 0.5 * (1.0 - 1.0);
+    const behind = 1.0 - REAR_DUCK * 0.5 * (1.0 - -1.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), ahead, 1e-6);
+    try std.testing.expect(behind < ahead);
+    try std.testing.expect(behind > 0.85); // still unmistakably audible
+}
+
+test "the BED's two takes are decorrelated — that IS its width, and it is checkable" {
+    // The claim `bed` rests on: two ears fed the same buffer hear one source between the speakers,
+    // and two independent renders of the same recipe have no single place to be. If the takes ever
+    // came out correlated — a shared seed, a gust clock that is a pure function of `t`, a `make` that
+    // stopped drawing from the rng — the bed would silently collapse back to a point and nothing on
+    // screen would say so. Measured as the zero-lag normalised cross-correlation of the takes that
+    // actually ship, seeded with `init`'s own expression.
+    // usize, like `init`'s loop index: `Id`'s tag type is a u6, and the seed expression below
+    // overflows it long before it reaches Rack.init.
+    const idx: usize = @intFromEnum(Id.wind);
+    const first = try std.testing.allocator.alloc(f32, MAX_N); // `work` is one shared buffer
+    defer std.testing.allocator.free(first);
+
+    var r0 = Rack.init(0x9E3779B9 *% (idx + 1) +% 0, seconds(.wind));
+    BANK[idx].make(&r0);
+    @memcpy(first[0..r0.n], work[0..r0.n]);
+    var r1 = Rack.init(0x9E3779B9 *% (idx + 1) +% 1, seconds(.wind));
+    BANK[idx].make(&r1);
+    try std.testing.expectEqual(r0.n, r1.n); // the pair must retrigger together
+
+    var dot: f64 = 0;
+    var ea: f64 = 0;
+    var eb: f64 = 0;
+    for (first[0..r0.n], work[0..r1.n]) |a, b| {
+        dot += @as(f64, a) * @as(f64, b);
+        ea += @as(f64, a) * @as(f64, a);
+        eb += @as(f64, b) * @as(f64, b);
+    }
+    try std.testing.expect(ea > 0 and eb > 0);
+    const corr = @abs(dot) / @sqrt(ea * eb);
+    try std.testing.expect(corr < 0.2); // independent noise; identical buffers would read 1.0
+    try std.testing.expect(BANK[idx].vars >= 2); // …and there have to BE two of them to play
+}
+
+test "hard-panning the bed does not smuggle the level back up" {
+    // `mkWind`'s gain came down from 0.055 to 0.030 and the comment claims that lands within a
+    // whisker of the old per-ear level while being a small real drop. That is not obvious arithmetic —
+    // raylib's pan law makes a hard-panned take LOUDER in its own ear than a centred one is in either,
+    // and two uncorrelated takes sum by power — so it is asserted rather than believed.
+    const law = struct {
+        fn g(pan: f32) f32 {
+            return 0.5 * pan * (3.0 - pan * pan); // raudio.c MixAudioFrames
+        }
+    }.g;
+    // Hard pan really is the louder end of that law — the reason the drop was needed at all.
+    try std.testing.expect(law(1.0) > law(0.5) * 1.3);
+    const before = 0.055 * law(0.5); // one centred take, in either ear
+    const after = BANK[@intFromEnum(Id.wind)].gain *
+        @sqrt(law(BED_PAN) * law(BED_PAN) + law(1.0 - BED_PAN) * law(1.0 - BED_PAN));
+    try std.testing.expect(after < before); // quieter, as asked…
+    try std.testing.expect(after > before * 0.6); // …but a nudge, not a mute
+}
+
+test "the two ambient voices are baked DARK, which is the cue level cannot buy" {
+    // The BED is noise, so its brightness is measurable: a zero-crossing rate is the cheap honest
+    // proxy for spectral centroid, and for a noise band it tracks it closely. Held against the NEAR
+    // voices it shares the mix with — that gap is the whole of "the wind sounds further away", and it
+    // is a thing lowering the gain could never have produced.
+    const crossings = struct {
+        fn of(id: Id, idx: usize) f32 {
+            var r = Rack.init(0x9E3779B9 *% (idx + 1), seconds(id));
+            BANK[idx].make(&r);
+            var n: f32 = 0;
+            var i: usize = 1;
+            while (i < r.n) : (i += 1) {
+                if ((work[i] >= 0) != (work[i - 1] >= 0)) n += 1;
+            }
+            return n / (@as(f32, @floatFromInt(r.n)) / SRF); // crossings per second
+        }
+    }.of;
+    const wind = crossings(.wind, @intFromEnum(Id.wind));
+    try std.testing.expect(wind < 0.75 * crossings(.toad_chomp, @intFromEnum(Id.toad_chomp)));
+    try std.testing.expect(wind < 0.60 * crossings(.swing_light, @intFromEnum(Id.swing_light)));
+
+    // THE BIRDS ARE NOT MEASURED THIS WAY, and the reason is worth writing down: a chirp is PITCHED,
+    // so its zero-crossing rate is set by its fundamental and barely moves when you take the reedy
+    // harmonics off the top. Measured, the call came out at 5026 crossings/sec against a sword
+    // swing's 5032 — an assertion that passes by a tenth of a percent is not a test, it is a
+    // coincidence waiting to be retuned. So the bird's distance is held where the decision actually
+    // lives: the cutoff it is rendered through.
+    try std.testing.expect(AIR_FAR_CALL < AIR_NEAR_DARKEST);
+    try std.testing.expect(AIR_FAR_BED < AIR_FAR_CALL); // the bed is the furthest thing in the world
+    // The two big LOW cries are darker again than a bird's whistle — they are further out AND low to
+    // begin with, so what crosses the plain is the fundamental and almost none of the throat.
+    try std.testing.expect(AIR_FAR_CRY < AIR_FAR_CALL);
+    try std.testing.expect(AIR_FAR_CRY < AIR_NEAR_DARKEST);
+    // …and neither so dark it stops being the thing it is: a bird still has to be a whistle (its band
+    // tops out at 2500 Hz) and wind still has to have air in it, not just rumble.
+    try std.testing.expect(AIR_FAR_CALL > 1200 and AIR_FAR_BED > 800);
+    // THE CRICKETS ARE THE EXCEPTION, and the ONE ambient voice on the near side of the line: they are
+    // in the grass at your feet, and the spectral tilt is the only thing that says so. Rendered as dark
+    // as the wind the whole insect field moves to the horizon — which is not where crickets are.
+    try std.testing.expect(AIR_NEAR_GRASS > AIR_NEAR_DARKEST);
 }

@@ -107,7 +107,8 @@ standing stonework), `edge` (the cliff rim), `cover` (the lattice ground scatter
 - `bake.zig` is the one-way door that produced the first map from the old code-authored
   regions, kept as the record of where it came from. `--bake` re-runs it and OVERWRITES the map.
 
-**THE WORLD** is a 320 m square golden-hour plain ringed by cliffs, holding five regions
+**THE WORLD** is a 560 m square golden-hour plain ringed by cliffs (`worldfmt.DEFAULT_HALF` is 280,
+and the map's own `half:` is the only source), holding five regions
 (see the map file, `props.zig` for the models):
 
 | Direction | Region | What's there |
@@ -311,7 +312,7 @@ lines where the concerns genuinely part company, and each new file is named so t
                  unit-tested. THE place to retune damage/poise/stamina feel.
 - `collision.zig` — 2D XZ capsule/circle footprint collision (push-out).
 - `mathx.zig`  — ground-plane + vector/angle helpers.
-- `audio.zig`  — THE SOUND BANK: ~40 voices, every one SYNTHESIZED at launch from the same handful of
+- `audio.zig`  — THE SOUND BANK: ~45 voices, every one SYNTHESIZED at launch from the same handful of
                  layers (`body` / `air` / `grit` / `ring` / `tick` / `growl` / `chirp`) through one
                  shared tape-style `master`, which is what makes separately-authored sounds feel
                  recorded in the same room. Read it as recipes. Three things to know before retuning:
@@ -321,6 +322,41 @@ lines where the concerns genuinely part company, and each new file is named so t
                  voice's shape is judged by EAR — the tests only prove it renders, stays in range and
                  is not silence. An arrow's impact is chosen by the SURFACE it struck
                  (`arrowImpact`): masonry and iron ring, flesh, earth and timber must not.
+                 **SPACE IS THE OTHER HALF OF IT**, and it is built from three things, because raylib
+                 hands us only volume / pitch / pan per playing sound. (1) **EVERY VOICE CARRIES ITS
+                 OWN `reach`** — a croak dies at 30 m, an ogre's slam carries 135, a birdcall 210. One
+                 shared range got both ends wrong: toads murmured through terrain you couldn't see them
+                 in while the slam went silent short of the plaza. (2) **DISTANCE IS SPECTRAL, NOT
+                 JUST LEVEL.** Air eats high frequencies ~15x faster than low ones over the same
+                 distance, so a far sound is DULL — turning one down only makes a near sound quiet. The
+                 voices that are always far (the wind, the birds) have it BAKED IN (`AIR_FAR_BED` /
+                 `AIR_FAR_CALL`); everything else gets a small pitch droop with distance as a proxy,
+                 since we cannot filter a voice that is already playing. (3) **THE BED IS TWO
+                 DECORRELATED TAKES, HARD LEFT AND HARD RIGHT** (`bed`). Two ears fed the SAME buffer
+                 hear one source between the speakers however quiet it is; two independent renders of
+                 one recipe have no single place to be, which is the only way a stereo pair puts you
+                 inside weather. Its gust clocks are rolled per take for the same reason. FRONT vs BACK
+                 is deliberately barely there (`REAR_DUCK`): resolving it needs an HRTF, and in a game
+                 where the thing behind you kills you, a rear cue that worked would be a bug.
+                 **THE CANOPY IS FIVE VOICES, NOT ONE.** Two are looping BEDS played as a hard-panned
+                 pair (`bed`) — the wind, and the CRICKET chirr, which is built as N independent
+                 individuals (own pitch, own chirp rate, own place in its cycle) because one clock
+                 turns a field of crickets into a rhythm section. Their lengths are deliberately
+                 unequal, or the two loops re-align and you can hear it. The other three are sparse
+                 CALLS on their own long clocks — two contrasting BIRDS (one stepped/chiptune, one
+                 SLURRED, because a glide is what separates a whistle from a blip), an OWL, and a
+                 WOLF howl, the furthest-carrying sound in the world. All three are table-driven
+                 (`CALLS`: gap band + distance band) and rolled a BEARING AND A DISTANCE through
+                 `world()`, never played at the ear. The crickets are the ONE ambient voice rendered
+                 BRIGHT (`AIR_NEAR_GRASS`): they are in the grass at your feet, and the spectral tilt
+                 is the only thing that says so.
+                 **THE AMBIENCE HAS ITS OWN TRIM** (`Submix.ambience` / `TRIM_AMBIENCE`), applied where
+                 a row's gain becomes a raylib volume, so "put the background further back" is ONE
+                 number and not six literals with one silently missed. NOTHING ELSE IS TRIMMED — a
+                 `.creature` family over the toads and the ogre was tried and REVERTED (owner: "I meant
+                 ambient sounds not combat sounds"); a fight is what the player is listening TO, and
+                 quietening the animal eating him is the opposite of the note. A test pins that exactly
+                 the beds and the calls are trimmed, so the idea cannot come back by accident.
 - `hud.zig`    — UI text in Balthazar; the ONLY path to draw/measure text. Two atlases of the
                  same face: 96 px for HUD, 160 px for the YOU DIED card. Also THE ELDEN RING
                  HUD itself — the three vitals bars and the four-slot equipment cross — taking plain
@@ -332,7 +368,9 @@ lines where the concerns genuinely part company, and each new file is named so t
 
 - **Anatomy is real.** Bone lengths are fixed fractions of stature `H` (=1.8) from Drillis &
   Contini (1966) as tabulated in Winter. This is why proportions read as human.
-- **Forward kinematics.** 17 bones; `pose()` chains a world matrix per bone ONCE per frame,
+- **Forward kinematics.** 18 bones (`hero.N` — the 17 joints plus the SWORD, which is a real bone on
+  the right wrist; the humanoid rule below says "the hero's 18" and this line said 17);
+  `pose()` chains a world matrix per bone ONCE per frame,
   `draw()` only replays them, so the cast shadow and the lit silhouette always match.
 - **Matrix convention (critical):** raylib `MatrixMultiply(a, b)` applies **a FIRST, then b**.
   Local = `mul(animRot, translate(offset))`; world = `mul(local, parentWorld)`. Backwards and the
@@ -477,7 +515,7 @@ sword carry, the deep lean) belongs to the hold-B RUN only — gate run-only flo
   sprint exists), and an attack's recovery tail re-squares onto the target (`ATK_RETRACK`).
 - Reserved, matching ER: Cross/A = jump, L1/L2 = guard/skill.
 
-## PERFORMANCE: how a 320 m world stays cheap (`env.zig`)
+## PERFORMANCE: how a 560 m world stays cheap (`env.zig`)
 
 Four things carry it; all four are load-bearing.
 
@@ -585,6 +623,14 @@ Placement is deterministic: if it fits once it fits.
   shadow's offset scales with the size (a fixed 1 px shadow under large type reads as a smudge).
 - **Prototype models/meshes are permanent** (CPU arrays stay attached; they live the whole program
   and leak at exit — fine). Don't `unloadModel` them.
+- **raylib's `SetSoundPan` IS THE LEFT CHANNEL'S GAIN, not a left-to-right position.** Its mixer is
+  `left = pan; right = 1 - pan` (`raudio.c`'s `MixAudioFrames`), so **`pan = 1.0` is hard LEFT** —
+  the opposite of the obvious reading, and raylib's own header says only "(0.5 is center)" without
+  saying which end is which. Writing the natural `0.5 + width*side` mirrors every positional sound in
+  the game, which is what it did until `audio.panFor` was fixed; that one function is now the only
+  place the sign is decided, and a test pins it. Note also that the pan law is `0.5·x·(3 − x²)`, so a
+  hard-panned sound is ~3.2 dB LOUDER in its own ear than a centred one is in either — which is why
+  the two-channel wind bed needed its gain pulled down when it was widened.
 - **Never bulk-edit source through PowerShell** `Get-Content`/`Set-Content`: em dashes mojibake
   and a BOM appears. Use the Edit tool.
 

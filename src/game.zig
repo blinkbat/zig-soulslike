@@ -47,6 +47,15 @@ const STICK_DEADZONE = 0.16; // left-stick move deadzone — RADIAL, see stickRa
 // throws away a quarter of the stick's travel before anything happens, which is what a look stick
 // reads as DEAD.
 const LOOK_DEADZONE = 0.14;
+/// How hard the right stick must be pushed to TAKE THE CAMERA off the mouse — a different question
+/// from how hard it must be pushed to turn (`LOOK_DEADZONE`), and keeping them the same number is what
+/// let a worn pad kill mouse look outright (see the latch in run()).
+///
+/// Sits well clear of any resting deflection ON PURPOSE. A tired analogue stick rests anywhere up to
+/// ~0.25 and the deadzone is 0.14, so a claim gated on the deadzone is a claim a drifting stick makes
+/// on every frame for ever. 0.40 is past anything a stick does sitting still and nowhere near a real
+/// push, so a player reaching for the stick still gets the camera on the first flick.
+const LOOK_CLAIM = 0.40;
 // Pixels of mouse travel in one frame that count as the player REACHING FOR THE MOUSE — see the
 // look-device latch. A hidden, uncaptured cursor collects a pixel of jitter from the desk, and
 // without a floor here that jitter takes the camera away from the stick mid-fight.
@@ -128,11 +137,20 @@ const CLEAR = rgba(80, 76, 69, 255);
 
 /// What the two look devices were saying this frame, and which one owns the camera. Raw values,
 /// deliberately — the point is to see what arrives BEFORE the deadzone eats it.
+/// …plus what the camera ACTUALLY DID with them. The raw pair alone cannot separate the three things
+/// that feel identical on screen — a stick resting off centre, a cursor collecting desk jitter, or a
+/// rate that is simply too high — because all three show up as numbers moving. So the probe also
+/// carries `mag` (the stick's RAW magnitude, which is the only number that can tell a resting
+/// deflection from a real push — read it against LOOK_DEADZONE and LOOK_CLAIM) and `dyaw` (degrees the
+/// camera turned this frame: zero with your hands off means nothing in here is drifting and the
+/// problem is sensitivity).
 const LookProbe = struct {
     mdx: f32 = 0,
     mdy: f32 = 0,
     rx: f32 = 0,
     ry: f32 = 0,
+    mag: f32 = 0, // RAW stick magnitude, 0..1 — vs LOOK_DEADZONE (turns) and LOOK_CLAIM (claims)
+    dyaw: f32 = 0, // degrees of yaw applied this frame, whichever device did it
     pad: bool = false,
 };
 
@@ -201,6 +219,11 @@ pub const Game = struct {
         g.lock = null;
         g.rumble = .{};
         g.deathFade = 0;
+        // …the look probe included. It was the one field this block missed, and `Game` is built in
+        // place from `alloc.create`, so its default never ran: the readout printed raw heap bytes as
+        // floats, and `pad` is a BOOL — reading one that is neither 0 nor 1 is illegal behaviour, not
+        // just a wrong caption.
+        g.probe = .{};
     }
 };
 
@@ -248,6 +271,31 @@ test "a radial stick keeps the thumb's ANGLE and does not favour the cardinals" 
     // Dead centre is dead, and a pad reading past 1 on the gate corners still clamps to 1.
     try std.testing.expectEqual(@as(f32, 0), stickRadial(0.05, -0.05, LOOK_DEADZONE, 1.0).mag);
     try std.testing.expectApproxEqAbs(@as(f32, 1), stickRadial(1.0, 1.0, LOOK_DEADZONE, 1.0).mag, 1e-4);
+}
+
+test "A DRIFTING STICK CANNOT CLAIM THE CAMERA — the two look thresholds are not the same number" {
+    // THE bug this pins, and it presented as three separate complaints at once ("stick drift?", "camera
+    // drifting?", "too sensitive?"). The device latch claimed the camera on anything that cleared
+    // LOOK_DEADZONE, and a worn analogue stick RESTS past that — so on such a pad the claim was true
+    // every frame, mouse look was dead for the whole session, and the camera crept at whatever the
+    // leftover deflection asked for.
+    //
+    // The fix is two thresholds: LOOK_DEADZONE decides what TURNS the camera, LOOK_CLAIM decides what
+    // TAKES it off the other device. Collapse them back into one and the fault returns silently, so the
+    // gap is asserted rather than commented.
+    try std.testing.expect(LOOK_CLAIM > LOOK_DEADZONE);
+    // …and the gap has to clear a real resting deflection. A tired stick sits up to ~0.25; anything
+    // under that for LOOK_CLAIM means drift can still steal the camera while you are using the mouse.
+    const WORN_STICK_REST: f32 = 0.25;
+    try std.testing.expect(LOOK_CLAIM > WORN_STICK_REST);
+    // …while staying nowhere near a deliberate push, or reaching for the stick stops working.
+    try std.testing.expect(LOOK_CLAIM < 0.7);
+    // A stick resting at a typical drift still produces a SMALL turn rate, not a fast one — that is the
+    // deadzone doing its half of the job, and it is why drift reads as a slow creep rather than a spin.
+    const drift = stickRadial(WORN_STICK_REST, 0, LOOK_DEADZONE, LOOK_CURVE);
+    try std.testing.expect(drift.mag < 0.10);
+    // …and dead centre still claims nothing at all.
+    try std.testing.expectEqual(@as(f32, 0), stickRadial(0, 0, LOOK_DEADZONE, LOOK_CURVE).mag);
 }
 
 test "the look curve is fine near centre and still reaches full rate at the rim" {
@@ -646,8 +694,8 @@ fn debugCorner(g: *Game) void {
     // Foe counts span EVERY group (the combat beats already do) — a toads-only "hits" read
     // silently ignored every blow landed on a skeleton or the giant.
     const h = &g.hero;
-    const foesLeft = g.warren.aliveCount() + g.line.aliveCount() + g.grief.aliveCount();
-    const foeHits = g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits();
+    const foesLeft = allAlive(g);
+    const foeHits = allHits(g);
     dbgRow(std.fmt.bufPrintZ(&buf, "hero  hp {d:.0}/{d:.0}  poise {d:.0}/{d:.0}  stance {d:.0}/{d:.0}  stam {d:.0}/{d:.0}   foes {d} left  hits {d}", .{
         h.vit.hp,   h.vit.hpMax, h.vit.poise, h.vit.poiseMax, h.vit.stance, h.vit.stanceMax,
         h.stam.cur, h.stam.max,  foesLeft,    foeHits,
@@ -662,17 +710,32 @@ fn debugCorner(g: *Game) void {
     }) catch "", y, hud_.SMALL, rgba(150, 175, 195, 255));
     y += step;
 
-    // THE LOOK PROBE. Camera yaw is written in four places and not one of them can see the movement
-    // stick, so if the camera turns while you walk, something is SENDING look input. Walk straight
-    // and read this: `stick` moving means the right stick is drifting (or a thumb is resting on
-    // it); `mouse` moving means something is driving the OS cursor — a pad running through a
-    // mouse-emulation layer puts the LEFT stick on it, which is exactly this symptom.
-    dbgRow(std.fmt.bufPrintZ(&buf, "look  {s}   mouse {d:.1},{d:.1}   stick {d:.3},{d:.3}", .{
+    // ── THE LOOK PROBE ── and it exists to settle ONE question in a glance: the camera feels wrong,
+    // and stick drift, cursor jitter and too-high sensitivity all look identical on screen. Put your
+    // hands OFF both devices and read the row:
+    //
+    //   dyaw 0.00 with everything at rest  → nothing is drifting. The camera is only moving when you
+    //                                        move it, so what feels wrong is the RATE, not a fault.
+    //   mag above 0.14 (LOOK_DEADZONE)     → the stick rests far enough off centre to TURN the camera.
+    //                                        That is hardware drift getting through; raise the
+    //                                        deadzone (radial, so it costs no diagonal range).
+    //   mag under 0.14 but non-zero        → drift exists, the deadzone is already eating it, and it
+    //                                        is NOT what you are feeling.
+    //   mag above 0.40 (LOOK_CLAIM) at rest→ the stick is bad enough to CLAIM the camera off the
+    //                                        mouse while sitting still. Raise both dials.
+    //   mouse non-zero while you hold still→ something is driving the OS cursor. A pad running through
+    //                                        a mouse-emulation layer (Steam Input's desktop fallback,
+    //                                        DS4Windows) puts a STICK on it, which is exactly this.
+    //
+    // `look PAD/MOUSE` says which device currently owns the camera — the latch, not a preference.
+    dbgRow(std.fmt.bufPrintZ(&buf, "look  {s}   mouse {d:.1},{d:.1}   stick {d:.3},{d:.3}   mag {d:.3}   dyaw {d:.2}", .{
         if (g.probe.pad) "PAD" else "MOUSE",
         g.probe.mdx,
         g.probe.mdy,
         g.probe.rx,
         g.probe.ry,
+        g.probe.mag,
+        g.probe.dyaw,
     }) catch "", y, hud_.SMALL, rgba(196, 170, 130, 255));
 }
 
@@ -773,6 +836,13 @@ pub fn run(mode: Mode) void {
         // The map can be swapped under us at any moment (the editor's New / Open / Reload / undo),
         // and the clamp is the one piece of world size that lives outside `materialize`.
         PLAY_HALF = g.map.half - envmod.PLAY_INSET;
+        // THE WORLD GOES QUIET IN THE EDITOR. `sfx.mute`'s own doc said "the editor uses it, since a
+        // map you are dressing should not be croaking at you" — and nothing called it, so the claim
+        // was simply untrue and the wind bed ran on until its buffer ended and then stopped, which
+        // reads as the audio having died. Driven off the flag once a frame rather than hooked onto the
+        // three ways in and out (menu > Editor, Leave, F5 playtest): `mute` early-outs when the state
+        // is unchanged, and one line here cannot be the transition somebody forgot.
+        sfx.mute(g.editor.on);
 
         // Esc backs the menu out one level (opens it when closed); pad Start toggles. NOT WHILE THE EDITOR
         // IS UP: Esc is the editor's own back-out key, and this runs BEFORE the editor branch, so every Esc
@@ -862,6 +932,11 @@ pub fn run(mode: Mode) void {
             g.rig.tickShake(rawDt); // any live shake decays out under the pause
             g.rig.follow(g.hero.shoulderPoint());
             g.rumble.update(rawDt, false); // motors silent while paused (envelopes still decay)
+            // THE WIND KEEPS BLOWING UNDER THE PAUSE CARD. Ambience was only ticked on the gameplay
+            // path, so the bed ran out mid-gust a few seconds into any pause and the world went
+            // completely silent behind the menu — which reads as the audio having crashed. The ears
+            // stay where the camera left them, which is right: nothing has moved.
+            sfx.ambience(rawDt);
             drawScene(g);
             hud(g, rawDt);
             g.menu.draw(&g.retro);
@@ -891,6 +966,19 @@ pub fn run(mode: Mode) void {
         const md = rl.getMouseDelta();
         var wheel = rl.getMouseWheelMove();
         const padRX: f32 = if (rl.isGamepadAvailable(PAD)) rl.getGamepadAxisMovement(PAD, .right_x) else @as(f32, 0);
+        // Both look axes are read HERE, before the lock branch, because the PROBE is written for both
+        // paths below. It used to be recorded only on the unlocked one, so locking on froze the
+        // readout on whatever it last said — a diagnostic that lies is worse than no diagnostic.
+        const padRY: f32 = if (rl.isGamepadAvailable(PAD)) rl.getGamepadAxisMovement(PAD, .right_y) else @as(f32, 0);
+        // The yaw BEFORE any look input lands, so the probe can report what the camera actually turned
+        // this frame rather than what the devices claimed. Measured across every path below (locked
+        // aim included), because "the camera drifts" has to be answerable without knowing which one ran.
+        const yawBefore = g.rig.yaw;
+        // RAW stick magnitude, before any deadzone. Both the drift diagnosis and the device latch below
+        // need the untouched number: how far the stick is actually pushed is the only thing that can
+        // tell a resting deflection apart from a real one.
+        const padMag = @sqrt(padRX * padRX + padRY * padRY);
+        var lookMag: f32 = 0;
         if (g.lock) |li| {
             const dir = mathx.dirXZ(g.hero.pos, foePos(g, li));
             if (mathx.lenXZ(dir) > 0.001) {
@@ -916,14 +1004,31 @@ pub fn run(mode: Mode) void {
             // So: the last device to give a REAL look input owns the camera, and the other is dead
             // until it gives one of its own. Switching costs nothing and is instant — this is a
             // latch, not a lockout.
-            const padRY: f32 = if (rl.isGamepadAvailable(PAD)) rl.getGamepadAxisMovement(PAD, .right_y) else @as(f32, 0);
             const look = stickRadial(padRX, padRY, LOOK_DEADZONE, LOOK_CURVE);
-            const padLook = look.mag > 0;
+            lookMag = padMag;
             // MOUSE_WAKE, not zero: a hidden-but-uncaptured cursor picks up a pixel of jitter from
             // the desk, and one pixel used to be enough to take the camera off the stick.
             const mouseLook = inside and wasInside and (@abs(md.x) + @abs(md.y)) > MOUSE_WAKE;
-            if (mouseLook) lookPad = false;
-            if (padLook) lookPad = true;
+            // ── CLAIMING THE CAMERA IS A DIFFERENT QUESTION FROM TURNING IT, and conflating the two
+            // is what made a worn stick disable the mouse for the whole session.
+            //
+            // It used to claim on `look.mag > 0` — i.e. on ANYTHING that cleared LOOK_DEADZONE. A worn
+            // right stick RESTS at 0.15-0.25, which is past the 0.14 deadzone, so on such a pad the
+            // claim was true on every single frame: the latch pinned itself to PAD on frame one, the
+            // mouse never worked again, and the camera crept at the fraction of a degree per second the
+            // leftover deflection asks for. All three of the owner's symptoms — "stick drift", "camera
+            // drifting", "too sensitive" — are that one line.
+            //
+            // So the CLAIM takes a decisive push (LOOK_CLAIM, well past any resting deflection) while
+            // the TURN still starts at LOOK_DEADZONE. Drift can reach the second and never the first,
+            // so a drifting pad can no longer take the camera off a mouse that is being used.
+            const padClaim = padMag > LOOK_CLAIM;
+            // …and LAST DEVICE WINS has to be resolved as a TIE, not by statement order. Written as two
+            // independent ifs the second one always won, so "the last device to give a real look input
+            // owns the camera" actually meant "the pad owns the camera whenever it says anything at
+            // all". Both talking at once now keeps whoever already had it.
+            if (padClaim and !mouseLook) lookPad = true;
+            if (mouseLook and !padClaim) lookPad = false;
             if (lookPad) {
                 // rawDt, NOT dt: looking around is a FEEL system like the shake and the rumble, and
                 // it lives on the wall clock. On `dt` the debug time scale quartered the stick's
@@ -936,15 +1041,20 @@ pub fn run(mode: Mode) void {
             } else if (inside and wasInside) {
                 g.rig.rotate(md.x, md.y);
             }
-            // …and record what BOTH devices said, deadzone or no, for the debug readout.
-            g.probe = .{
-                .mdx = md.x,
-                .mdy = md.y,
-                .rx = padRX,
-                .ry = padRY,
-                .pad = lookPad,
-            };
         }
+        // …and record what BOTH devices said, deadzone or no, for the debug readout — on EITHER
+        // path, so the readout still tracks the sticks while locked on.
+        g.probe = .{
+            .mdx = md.x,
+            .mdy = md.y,
+            .rx = padRX,
+            .ry = padRY,
+            .mag = lookMag,
+            // Wrapped: yaw lives in (−pi, pi] so a turn across the seam is a small delta, not a full
+            // circle. This is the line that says whether the camera moved AT ALL.
+            .dyaw = mathx.degrees(mathx.wrapPi(g.rig.yaw - yawBefore)),
+            .pad = lookPad,
+        };
         wasInside = inside;
         // PAD ZOOM MOVED TO D-PAD LEFT/RIGHT. Down is ER's quick-item cycle (the flasks, below) and
         // up is ER's spell cycle, which this build has nothing to put on yet — so the vertical pair
@@ -1055,27 +1165,21 @@ pub fn run(mode: Mode) void {
         // Knot hunts, skeletons kite + loose; the hero's swept blade damages/staggers both
         // sides, and a connecting chomp/lunge/arrow returns its blow to the hero. Resolve all,
         // settle collisions, then aim the camera at the SETTLED hero position.
-        const hitsBefore = g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits();
+        const hitsBefore = allHits(g);
         // ONE snapshot of the blade for every group this frame — the hero's pose is already
         // resolved above, so re-deriving it per group only invited the three to disagree.
         const bladeNow = heroBlade(g);
         if (g.warren.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |h| {
             g.hero.takeHit(h);
             // The lunge carries stance damage; the chomp doesn't — split the felt blow by that.
-            const slammed = h.stance > 0;
-            g.rumble.play(if (slammed) rumblemod.hurt_heavy else rumblemod.hurt);
-            g.rig.addShake(if (slammed) SHAKE_HURT_HEAVY else SHAKE_HURT);
-            sfx.play(if (slammed) .hurt_heavy else .hurt);
+            heroHurtBeat(g, h.stance > 0, true);
         }
         // The lone ogre hunts, slams and side-swipes. The overhead crush is the full heavy beat; the
         // faster swipe hurts less and is FELT less, so the two read apart through the pad and camera
         // as well as on screen (split off the blow's own stance damage, like the toad's above).
         if (g.grief.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |h| {
             g.hero.takeHit(h);
-            const crushed = h.stance >= ogremod.SLAM_HIT.stance;
-            g.rumble.play(if (crushed) rumblemod.hurt_heavy else rumblemod.hurt);
-            g.rig.addShake(if (crushed) SHAKE_HURT_HEAVY else SHAKE_HURT);
-            sfx.play(if (crushed) .hurt_heavy else .hurt);
+            heroHurtBeat(g, h.stance >= ogremod.SLAM_HIT.stance, true);
         }
         // Blade lands on the skeletons; then they act — kite and loose from the nock at the
         // hero's centre of mass (arrow homing + arc finish the job). A blade hit mid-draw
@@ -1099,8 +1203,7 @@ pub fn run(mode: Mode) void {
                 // then played a scuff of DIRT for an arrow that was standing in his chest.
                 if (!g.hero.dead) {
                     g.hero.takeHit(archermod.ARROW_HIT);
-                    g.rumble.play(rumblemod.hurt);
-                    g.rig.addShake(SHAKE_HURT);
+                    heroHurtBeat(g, false, false); // …the rip below is this blow's own voice
                 }
                 sfx.play(.arrow_hit);
             } else if (ar.stuck and ar.age == 0) {
@@ -1119,12 +1222,12 @@ pub fn run(mode: Mode) void {
         // Blade connected this frame (a foe's hit count climbed) → hit pulse + frame crack
         // sized to the swing; a kill adds the thunk (via justDied, since dissipation delays
         // the aliveCount drop). Strongest-wins blends them.
-        if (g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits() > hitsBefore) {
+        if (allHits(g) > hitsBefore) {
             g.rumble.play(if (g.hero.atkHeavy) rumblemod.hit_heavy else rumblemod.hit_light);
             g.rig.addShake(if (g.hero.atkHeavy) SHAKE_HIT_HEAVY else SHAKE_HIT_LIGHT);
             sfx.play(if (g.hero.atkHeavy) .hit_heavy else .hit_light);
         }
-        if (g.warren.anyDied() or g.line.anyDied() or g.grief.anyDied()) {
+        if (anyFoeDied(g)) {
             g.rumble.play(rumblemod.kill);
             g.rig.addShake(SHAKE_KILL);
             // The kill beat: a THUD, and nothing else (owner's call — no bell, no jingle). Each foe
@@ -1135,7 +1238,7 @@ pub fn run(mode: Mode) void {
         // …and the kill PAYS. Same one-frame `justDied` flag the beat above reads, so the runes, the
         // rumble and the shake all fire together or not at all; each group knows its own worth.
         // …and it pays SILENTLY: the kill thud above is the whole beat (owner's call — no jingle).
-        g.hero.runes.gain(g.warren.runesDropped() + g.line.runesDropped() + g.grief.runesDropped());
+        g.hero.runes.gain(allRunes(g));
         // ER lock-on across a kill: the lock leaves a corpse the FRAME it dies (not after the
         // death anim), snapping to the next valid target (nearest screen-centre, like a fresh
         // acquire) or dropping if none.
@@ -1224,6 +1327,44 @@ fn footsteps(g: *Game, last: *f32) void {
     // Quieter the slower he goes, on top of the voice change — a careful walk should not land as
     // hard as a sprint that happens to be crossing the same phase.
     sfx.playAt(id, mathx.clampF(0.45 + 0.55 * h.speed / SPRINT_SPEED, 0.35, 1.0));
+}
+
+// ── THE HERO WAS HURT ── the rumble + camera crack + voice for one blow landing on him, in ONE
+// place. Three call sites (a toad's chomp/lunge, the ogre's swipe/slam, an arrow) each wrote out the
+// same three-line trio with the same `if (heavy)` ternary repeated on each line — so retuning the
+// felt weight of a heavy hit meant finding nine lines and there was nothing to say when you found
+// eight. Each caller still decides for ITSELF what counts as heavy: that test is per-attack (stance
+// damage for the toad, the slam's own stance for the ogre, never for an arrow) and is not shared.
+//
+// `voice` false means the caller has its OWN sound and this must not double it: an arrow landing in
+// him plays `.arrow_hit` — the rip through flesh IS the sound of that blow — so it takes the grip and
+// the camera and leaves the grunt alone. That exception is why the sound stays inside the helper
+// rather than being left to each caller: written out at the call site it is three more copies of the
+// same ternary, and hidden behind a flag it is one line that says which blows get a voice.
+//
+// NO HITSTOP here or anywhere (owner's law): impact weight is shake + rumble + FX + reaction anims.
+fn heroHurtBeat(g: *Game, heavy: bool, voice: bool) void {
+    g.rumble.play(if (heavy) rumblemod.hurt_heavy else rumblemod.hurt);
+    g.rig.addShake(if (heavy) SHAKE_HURT_HEAVY else SHAKE_HURT);
+    if (voice) sfx.play(if (heavy) .hurt_heavy else .hurt);
+}
+
+// ── THE FOE ROLL-UPS ── the three groups, summed in ONE place each. Every one of these was written
+// out as `g.warren.X() + g.line.X() + g.grief.X()` at each site — `totalHits` three separate times —
+// which is the parallel-list-in-lockstep failure the FoeRef switch was already fixed for: a fourth
+// foe means editing every copy, and a copy you miss silently stops counting (the debug read-out once
+// ignored every blow landed on anything but a toad, for exactly this reason).
+fn allHits(g: *const Game) u32 {
+    return g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits();
+}
+fn allAlive(g: *const Game) u32 {
+    return g.warren.aliveCount() + g.line.aliveCount() + g.grief.aliveCount();
+}
+fn anyFoeDied(g: *const Game) bool {
+    return g.warren.anyDied() or g.line.anyDied() or g.grief.anyDied();
+}
+fn allRunes(g: *const Game) u32 {
+    return g.warren.runesDropped() + g.line.runesDropped() + g.grief.runesDropped();
 }
 
 // The hero's blade this frame as plain data for the foe hit test (endpoints guard→tip, plus

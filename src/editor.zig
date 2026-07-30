@@ -767,6 +767,15 @@ pub const Editor = struct {
         return true;
     }
 
+    /// The index space just moved under us (a removal shifted everything after it down, or an
+    /// undo swapped the whole document): repair what points into it.
+    ///
+    /// THE MARKED SET GOES WHOLESALE, and that is not laziness. `marked` holds raw op indices
+    /// (Decor/Props) or foe indices (Units), and a removal renumbers them — so an index that is
+    /// still in range now names a DIFFERENT thing, and the next Del / drag / Ctrl+C silently acts
+    /// on it. `removeOp`'s own comment already spells this hazard out for the pick path; the
+    /// marquee had the same one and no guard, because bounds-checking `i >= m.nops` at every use
+    /// only catches the entries that fell off the END.
     fn clampSel(self: *Editor, m: *const wf.Map) void {
         if (self.sel) |s| {
             if (s >= m.nops) self.sel = if (m.nops == 0) null else m.nops - 1;
@@ -774,6 +783,7 @@ pub const Editor = struct {
         if (self.selFoe) |s| {
             if (s >= m.nfoes) self.selFoe = null;
         }
+        self.nMarked = 0;
     }
 
     /// Re-derive the camera after the shot harness pokes the orbit state directly.
@@ -1069,6 +1079,21 @@ pub const Editor = struct {
             self.dragging = false;
             self.commitDrag(m, env);
         }
+        // …and so do the two MARQUEE gestures, for the same reason and one more. Their own release
+        // handling sits BELOW the `.ground` branch's unconditional return, so Tabbing to Ground
+        // mid-sweep left `marquee`/`moving` latched on for good: the left button then painted soil
+        // while a live gizmo hung in the world, and the next release back on Props committed a
+        // selection (or a MOVE) from the stale corners of a gesture abandoned minutes earlier.
+        if ((self.marquee or self.moving) and !rl.isMouseButtonDown(.left)) {
+            if (ground) |g| self.dragTo = g;
+            if (self.marquee) {
+                self.marquee = false;
+                self.marqueeSelect(m, self.dragFrom, self.dragTo);
+            } else {
+                self.moving = false;
+                self.moveMarked(m, env, self.dragTo.x - self.moveFrom.x, self.dragTo.z - self.moveFrom.z);
+            }
+        }
 
         // ── the RIGHT button: menu on a thing, deselect on nothing, rotate on a drag ──
         if (rl.isMouseButtonReleased(.right)) {
@@ -1140,22 +1165,11 @@ pub const Editor = struct {
 
         const shift = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
 
-        // SHIFT+DRAG is the marquee, on every layer that has things to select.
-        if (self.marquee) {
+        // SHIFT+DRAG is the marquee, on every layer that has things to select; dragging INSIDE an
+        // existing selection moves the whole set, StarEdit-style. Both only TRACK here — the commit
+        // is hoisted to the top of this function, where the release lands whatever branch is live.
+        if (self.marquee or self.moving) {
             if (ground) |g| self.dragTo = g;
-            if (rl.isMouseButtonReleased(.left)) {
-                self.marquee = false;
-                self.marqueeSelect(m, self.dragFrom, self.dragTo);
-            }
-            return;
-        }
-        // …and dragging INSIDE an existing selection moves the whole set, StarEdit-style.
-        if (self.moving) {
-            if (ground) |g| self.dragTo = g;
-            if (rl.isMouseButtonReleased(.left)) {
-                self.moving = false;
-                self.moveMarked(m, env, self.dragTo.x - self.moveFrom.x, self.dragTo.z - self.moveFrom.z);
-            }
             return;
         }
 
@@ -1584,6 +1598,7 @@ pub const Editor = struct {
                     std.mem.copyForwards(wf.Foe, m.foes[i - 1 .. m.nfoes - 1], m.foes[i..m.nfoes]);
                     m.nfoes -= 1;
                     self.selFoe = null;
+                    self.clampSel(m); // the spawn indices just shifted — see there
                     self.sayFmt("-foe ({d:.0}, {d:.0})", .{ f.x, f.z });
                     return true;
                 }
@@ -1648,6 +1663,7 @@ pub const Editor = struct {
             std.mem.copyForwards(wf.Foe, m.foes[f .. m.nfoes - 1], m.foes[f + 1 .. m.nfoes]);
             m.nfoes -= 1;
             self.selFoe = null;
+            self.clampSel(m); // the spawn indices just shifted — see there
             self.say("-foe");
             return;
         }
@@ -2390,8 +2406,8 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
                 ui.iconButton(ctx, r, .erase, s, hud.MONO, on)
             else if (@as(GroundBrush, @enumFromInt(i)) == .water)
                 // WATER is not a soil id, so it has no swatch in that table — it gets the tarn's own
-                // colour, which is the only honest picture for it.
-                ui.swatchButton(ctx, r, ui.col(30, 52, 58, 255), s, hud.MONO, on)
+                // chrome colour, the same one the minimap draws it in (see WATER_SWATCH).
+                ui.swatchButton(ctx, r, WATER_SWATCH, s, hud.MONO, on)
             else
                 ui.swatchButton(ctx, r, soilSwatch(@enumFromInt(i + 1)), s, hud.MONO, on));
         if (hit) {
@@ -2485,6 +2501,14 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         y += ROW_H + 4;
         _ = ui.slider(ctx, x, y, w, "radius", &ed.radius, 1, 60);
         y += ROW_H + SLIDER_DROP;
+        // COUNTED EVERY FRAME, and left that way DELIBERATELY: this is a full scan of the armed
+        // brush's grid — 12,544 bytes for the soil, 50,176 for the water — to print one number. It is
+        // ~50 µs of byte compares at the water resolution, i.e. under a tenth of a percent of a frame,
+        // and it is only paid while the Ground layer's panel is open. Caching it would mean a dirty
+        // flag on two grids that four separate paths write (the brush, the eraser, "clear all paint",
+        // undo), which is four places to forget for a readout nobody reads mid-stroke. Measured, not
+        // assumed cheap — and if it ever stops being cheap, count during `paintSoil`/`paintWater`
+        // instead of adding a flag.
         var painted: usize = 0;
         if (wet) {
             for (m.water) |v| {
@@ -2501,7 +2525,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         hud.mono(s, x, y, hud.MONO, ui.LABEL);
         y += ROW_H;
         const n: usize = if (wet) wf.WATER_N else wf.SOIL_N;
-        const cell = 2 * m.half / @as(f32, @floatFromInt(n));
+        const cell = m.cellSize(n);
         const s2 = std.fmt.bufPrintZ(&buf, "cell {d:.1} m", .{cell}) catch "";
         hud.mono(s2, x, y, hud.MONO, ui.LABEL);
         y += ROW_H;
@@ -2801,7 +2825,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
 }
 
 // The whole map at a glance: the painted soil, then everything standing on it, then where you
-// are. Click to fly there — on a 320 m world, crossing it by flying is the slow part.
+// are. Click to fly there — on a 560 m world, crossing it by flying is the slow part.
 fn drawMinimap(ed: *Editor, m: *const wf.Map, ctx: *ui.Ctx, sw: i32, sh: i32) void {
     const x0 = sw - PROP_W - MINI_W - 8;
     const y0 = sh - STATUS_H - MINI_W - 8;
@@ -2854,7 +2878,7 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, ctx: *ui.Ctx, sw: i32, sh: i32) vo
                 .y = @as(f32, @floatFromInt(py)) + @as(f32, @floatFromInt(cz)) * wCellPx,
                 .width = @ceil(@as(f32, @floatFromInt(run)) * wCellPx),
                 .height = @ceil(wCellPx),
-            }, ui.col(34, 58, 66, 255));
+            }, WATER_SWATCH);
             cx += run;
         }
     }
@@ -2893,6 +2917,14 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, ctx: *ui.Ctx, sw: i32, sh: i32) vo
     }
     ui.tipFor(ctx, r, "Click to fly there");
 }
+
+/// HOW WATER READS IN THE CHROME — the brush swatch and the minimap, which are the only two places
+/// the editor draws the stuff as a flat colour. They were two separate literals, `(30,52,58)` and
+/// `(34,58,66)`, each commented as "the tarn's own colour", so the button and the map disagreed
+/// about what the thing you were painting looks like. It is deliberately NOT `propart.WATER_*`:
+/// those are authored pre-gamma for the scene shader and come out near-black up here, where the
+/// chrome draws literal screen values (see ui.zig).
+const WATER_SWATCH = ui.col(32, 55, 62, 255);
 
 fn soilSwatch(s: wf.Soil) rl.Color {
     return switch (s) {

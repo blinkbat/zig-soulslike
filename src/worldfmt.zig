@@ -417,6 +417,14 @@ pub const Map = struct {
         return px >= r.x and px <= r.x1 and pz >= r.z and pz <= r.z1;
     }
 
+    /// The world size of one cell of an `n`-a-side painted grid. Both grids span `-half..+half`, so
+    /// this one expression is the SOIL grid's pitch, the WATER grid's pitch, and what the properties
+    /// panel prints as "cell N m" — it was written out at each of those sites, and a pitch that
+    /// disagreed with the grid it indexes puts a brush stroke in the wrong cells.
+    pub fn cellSize(self: *const Map, n: usize) f32 {
+        return 2 * self.half / @as(f32, @floatFromInt(n));
+    }
+
     /// World position → soil cell index, or null when it falls outside the grid.
     pub fn soilIndex(self: *const Map, px: f32, pz: f32) ?usize {
         const t = (px + self.half) / (2 * self.half);
@@ -430,7 +438,7 @@ pub const Map = struct {
     /// Paint a disc of soil. Returns whether anything actually changed, so a stroke that lands
     /// on ground already that material doesn't bank an undo step or raise the dirty flag.
     pub fn paintSoil(self: *Map, px: f32, pz: f32, radius: f32, id: Soil) bool {
-        const cell = 2 * self.half / @as(f32, @floatFromInt(SOIL_N));
+        const cell = self.cellSize(SOIL_N);
         const r2 = radius * radius;
         var changed = false;
         var cz: usize = 0;
@@ -458,7 +466,7 @@ pub const Map = struct {
     /// same shape, because they are the same gesture on two grids — but on the finer lattice and with
     /// only two values. Returns whether anything changed.
     pub fn paintWater(self: *Map, px: f32, pz: f32, radius: f32, wet: bool) bool {
-        const cell = 2 * self.half / @as(f32, @floatFromInt(WATER_N));
+        const cell = self.cellSize(WATER_N);
         const r2 = radius * radius;
         const v: u8 = if (wet) 1 else 0;
         var changed = false;
@@ -946,12 +954,19 @@ pub fn pathFor(dst: []u8, name: []const u8) []const u8 {
     }
     if (n > stem and dst[n - 1] == '_') n -= 1; // no trailing separator
     if (n == stem) { // a name of pure punctuation still has to land somewhere
+        // BOUNDED, like the loops either side of it. This was the one unchecked write in the
+        // function whose whole job is making an untrusted typed name safe: on a `dst` too short to
+        // hold "worlds/" + "untitled" + ".world" it ran straight off the end. Every caller passes a
+        // PATH_CAP buffer today, so nothing has ever hit it — which is exactly why it would have
+        // stayed until something passed a smaller one.
         for ("untitled") |c| {
+            if (n + EXT.len >= dst.len) break;
             dst[n] = c;
             n += 1;
         }
     }
     for (EXT) |c| {
+        if (n >= dst.len) break;
         dst[n] = c;
         n += 1;
     }

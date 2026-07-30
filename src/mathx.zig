@@ -42,6 +42,13 @@ pub fn maxF(a: f32, b: f32) f32 {
     return if (a > b) a else b;
 }
 
+/// `clampF`'s integer counterpart. Here rather than in the two UI files that wanted it: `ui.zig` and
+/// `objview.zig` each carried a private copy of this one line, which is one copy more than a thing
+/// this small has any business having.
+pub fn clampI(v: i32, lo: i32, hi: i32) i32 {
+    return @max(lo, @min(hi, v));
+}
+
 pub fn minF(a: f32, b: f32) f32 {
     return if (a < b) a else b;
 }
@@ -327,6 +334,25 @@ test "approachAngle takes the shortest arc across the seam" {
     // 350 deg -> 10 deg is +20 deg through the seam, never -340 the long way round.
     const stepped = approachAngle(radians(350), radians(10), radians(5));
     try std.testing.expectApproxEqAbs(wrapPi(radians(355)), wrapPi(stepped), 1e-5);
+}
+
+test "closestOnSegV clamps to the ENDS, which is what makes the swept blade test honest" {
+    // The swept-capsule hit test (foe.strike) is entirely this helper: an unclamped projection would
+    // report a hit off the far end of the blade's LINE rather than off the blade. (These assertions
+    // lived in frog.zig behind a one-line wrapper with no caller; they belong beside the helper.)
+    const a = v3(0, 0, 0);
+    const b = v3(2, 0, 0);
+    const d = struct {
+        fn to(p: rl.Vector3, aa: rl.Vector3, bb: rl.Vector3) f32 {
+            return lenV(subV(p, closestOnSegV(p, aa, bb)));
+        }
+    }.to;
+    try std.testing.expectApproxEqAbs(@as(f32, 1), d(v3(1, 1, 0), a, b), 1e-5); // perpendicular
+    try std.testing.expectApproxEqAbs(@as(f32, 1), d(v3(-1, 0, 0), a, b), 1e-5); // past the end → to the endpoint
+    try std.testing.expectApproxEqAbs(@as(f32, 0), d(v3(1, 0, 0), a, b), 1e-5); // on the segment
+    try std.testing.expectApproxEqAbs(@as(f32, 3), d(v3(5, 0, 0), a, b), 1e-5); // …and past the OTHER end
+    // A degenerate segment is a point, not a divide-by-zero.
+    try std.testing.expectApproxEqAbs(@as(f32, 5), d(v3(5, 0, 0), a, a), 1e-5);
 }
 
 test "smoothstep clamps outside [a,b] and passes its midpoint" {

@@ -335,20 +335,22 @@ pub const Env = struct {
             lo[1] = @min(lo[1], cz);
             hi[1] = @max(hi[1], cz);
         }
-        const cellW = 2 * m.half / @as(f32, @floatFromInt(N));
+        // ONE cell width for the whole function. It was computed twice under two names (`cellW` for
+        // the painted extent, `cellM` for the encode) — the same expression, so the two could only
+        // ever agree, which is exactly why nobody would notice if one of them stopped.
+        const cell = m.cellSize(N);
         const edge = struct {
             fn at(c: usize, half: f32, cw: f32) f32 {
                 return -half + @as(f32, @floatFromInt(c)) * cw;
             }
         }.at;
-        const MARGIN = 2.0 * cellW;
-        const x0 = edge(lo[0], m.half, cellW) - MARGIN;
-        const x1 = edge(hi[0] + 1, m.half, cellW) + MARGIN;
-        const z0 = edge(lo[1], m.half, cellW) - MARGIN;
-        const z1 = edge(hi[1] + 1, m.half, cellW) + MARGIN;
+        const MARGIN = 2.0 * cell;
+        const x0 = edge(lo[0], m.half, cell) - MARGIN;
+        const x1 = edge(hi[0] + 1, m.half, cell) + MARGIN;
+        const z0 = edge(lo[1], m.half, cell) - MARGIN;
+        const z1 = edge(hi[1] + 1, m.half, cell) + MARGIN;
         self.waterMid = v3((x0 + x1) * 0.5, 0, (z0 + z1) * 0.5);
         self.waterSpan = v3((x1 - x0) * 0.5 / GROUND_HALF, 1, (z1 - z0) * 0.5 / GROUND_HALF);
-        const cellM = 2 * m.half / @as(f32, @floatFromInt(N));
         // `dIn` counts cells to the nearest DRY cell, `dOut` to the nearest WET one. Held in cell units
         // (a float is plenty and keeps the chamfer readable); FAR is any distance past what either ramp
         // can use, so the interior of a big lake stops accumulating.
@@ -402,10 +404,10 @@ pub const Env = struct {
         const shoreF: f32 = @floatFromInt(gfx.WATER_SHORE);
         for (m.water, 0..) |wet, i| {
             const enc: f32 = if (wet != 0) blk: {
-                const metres = @max(0.0, (dIn[i] - 0.5) * cellM);
+                const metres = @max(0.0, (dIn[i] - 0.5) * cell);
                 break :blk shoreF + mathx.clampF(metres / gfx.WATER_DEEP_AT, 0, 1) * (255.0 - shoreF);
             } else blk: {
-                const metres = @max(0.0, (dOut[i] - 0.5) * cellM);
+                const metres = @max(0.0, (dOut[i] - 0.5) * cell);
                 break :blk shoreF * (1.0 - mathx.clampF(metres / gfx.WATER_WET_OUT, 0, 1));
             };
             self.waterField[i] = mathx.u8f(enc);
@@ -486,12 +488,12 @@ pub const Env = struct {
         indexProps(self);
     }
 
-    /// Every solid in the world — for whole-world work (tests, tooling). Gameplay must use
-    /// nearSolids/resolveActor: this list is ~700 long and scanning it per actor per frame is
-    /// exactly what the grid exists to avoid.
-    pub fn solids(self: *const Env) []const collision.Solid {
-        return self.solid_buf[0..self.nsolids];
-    }
+    // (A `solids()` accessor handing back the WHOLE list lived here and had no caller — the "tests,
+    // tooling" its doc claimed it was for never materialized, and every real path goes through
+    // `nearSolids` / `blockedNear` / `resolveActor` on purpose. Kept as a note rather than as a
+    // public function nobody reaches for but somebody eventually would: `solid_buf[0..nsolids]` is
+    // one line to write when a tool actually needs it, and until then it is a footgun with a
+    // docstring. `solidCount()` still reports the number for the debug overlay.)
 
     /// The solids that could touch a circle of radius `r` about `p`, written into `out`.
     /// Conservative: it may hand back a few extra (cell granularity), never fewer.

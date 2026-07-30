@@ -250,9 +250,7 @@ fn lineH() i32 {
     return hud.monoLineH(hud.MONO) + 4;
 }
 
-fn clampI(v: i32, lo: i32, hi: i32) i32 {
-    return @max(lo, @min(hi, v));
-}
+const clampI = mathx.clampI; // the shared one — this file used to carry its own copy
 
 /// Draw + drive the GALLERY. Returns true while the viewer should stay up.
 fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {

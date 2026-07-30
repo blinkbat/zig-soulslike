@@ -76,4 +76,9 @@ test {
     _ = @import("worldfmt.zig");
     _ = @import("editor.zig"); // hangs off game.zig, which this root does not reach for tests
     _ = @import("audio.zig"); // …likewise: the sound bank's synthesis tests need no device
+    // …AND game.zig ITSELF, which this list said was unreachable and then never named. `main()` is not
+    // referenced in a test build, so nothing pulled it in: its three tests — the radial stick's angle,
+    // the look curve, and the drifting-stick latch — had never run ONCE. The block's own comment
+    // describes exactly this failure and the file it points at was the file missing from it.
+    _ = @import("game.zig");
 }

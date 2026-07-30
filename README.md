@@ -25,7 +25,7 @@ pipeline). UI is set in **Balthazar** (OFL, in `assets/`).
 
 ## The world
 
-A **320 m square** ringed by cliffs, holding five regions that each read as their own place:
+A **560 m square** ringed by cliffs, holding five regions that each read as their own place:
 
 - **centre / south — the fallen avenue.** Where you start: colonnade, gate arch, ruined walls,
   dead trees, graves, war banners, a glowing grace ember.
@@ -44,14 +44,17 @@ A **320 m square** ringed by cliffs, holding five regions that each read as thei
   feel dense. Lone trees, field stones, old graves, a watchtower on the rise.
 
 Every region is dressed in three layers — ground cover, understorey, canopy — from a registry of
-**77 prop kinds**: great trees in three variants, conifers, birches, dead snags and saplings;
+**80 prop kinds**: great trees in three variants, conifers, birches, dead snags and saplings;
 ferns, brambles, thickets, nettles, thistles, foxgloves, heather, gorse, clover, moss, mushrooms
 and bracken; boulders, outcrops, scree and cairns; wells, shrines, post lanterns, fences, barrels,
 woodpiles, sarcophagi, stair fragments, gibbets and bones; torches, braziers and campfires that
 light what's around them.
 
-**7,876 static props and 1,575 colliders, of which a frame draws around 1,000** (measured off
-Debug > Stats in the city and the wood): props are indexed into a uniform grid and culled per cell
+**17,292 static props and 1,836 colliders, of which a frame draws about 975 in the city and 1,250 in
+the wood** (read straight off Debug > Stats in `shots/91_stats_city.png` and `92_stats_wood.png`; the
+first two numbers are pinned by `env`'s "replaying the SHIPPED map produces a stable world" test, so
+they cannot drift out of this paragraph again): props are
+indexed into a uniform grid and culled per cell
 against the view frustum, per-kind view distances, and — for the sun's depth pass — whether a
 caster's shadow can physically reach the shadow box. Collision and arrow flight query the same grid.
 Turn on **Debug > Stats** to watch those numbers live. For playtesting at this density use

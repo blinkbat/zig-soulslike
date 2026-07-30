@@ -1268,9 +1268,6 @@ pub const Editor = struct {
                         return;
                     }
                     self.bank(m);
-                    // A new zone goes in FRONT: zones resolve first-match-wins, so appending
-                    // would put it behind the world-wide fallback and it would never match.
-                    std.mem.copyBackwards(wf.Zone, m.zones[1 .. m.nzones + 1], m.zones[0..m.nzones]);
                     const box = normRect(a, b);
                     var z = wf.Zone{
                         .x = box.x0,
@@ -1282,10 +1279,20 @@ pub const Editor = struct {
                     @memcpy(z.name[0..3], "new");
                     // Seed its mix from whatever already grows in the middle of the box, so a
                     // fresh zone starts as the ground it replaced rather than as bare earth.
+                    //
+                    // ASKED BEFORE THE SHIFT. `zoneAt` scans `zones[0..nzones]`, and the insert
+                    // below moves every zone up one while `nzones` still says the old count — so
+                    // asked afterwards the scan saw `zones[0]` twice, never saw the LAST zone at
+                    // all, and its fallback returned the second-to-last. On the shipped map the
+                    // last zone is `plain`, the world-wide fallback, so a zone drawn on open
+                    // meadow inherited `downs` — heather and gorse where grass should have been.
                     if (m.zoneAt((z.x + z.x1) * 0.5, (z.z + z.z1) * 0.5)) |src| {
                         z.mix = src.mix;
                         z.nmix = src.nmix;
                     }
+                    // A new zone goes in FRONT: zones resolve first-match-wins, so appending
+                    // would put it behind the world-wide fallback and it would never match.
+                    std.mem.copyBackwards(wf.Zone, m.zones[1 .. m.nzones + 1], m.zones[0..m.nzones]);
                     m.zones[0] = z;
                     m.nzones += 1;
                     self.say("+zone");

@@ -208,6 +208,13 @@ pub fn wrapPi(a: f32) f32 {
     return x;
 }
 
+/// Wrap a DEGREE angle into (-180, 180] — `wrapPi`'s counterpart for the bearings the foes
+/// reason in. A difference of two wrapped bearings is NOT itself wrapped (it spans ±360), so
+/// any "is this bearing inside that arc" test owes this before it takes an absolute value.
+pub fn wrapDeg(a: f32) f32 {
+    return degrees(wrapPi(radians(a)));
+}
+
 /// Shortest-arc ease of a radian angle toward target by at most `maxStep`.
 pub fn approachAngle(cur: f32, target: f32, maxStep: f32) f32 {
     const d = wrapPi(target - cur);

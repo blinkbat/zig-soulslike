@@ -829,7 +829,13 @@ pub const Ogre = struct {
         // The hero's own width is worth more arc the closer in he stands — the same forgiveness the
         // strip's HERO_REACH gives, expressed as the angle his footprint subtends at this radius.
         const slack = mathx.degrees(std.math.atan2(HERO_REACH, mathx.maxF(0.5, d)));
-        if (@abs(self.bearingTo(hero) - SWIPE_ARC_MID) > SWIPE_ARC * 0.5 + slack) return;
+        // WRAPPED. `bearingTo` lands in (-180, 180], so the offset from SWIPE_ARC_MID spans
+        // (-132, 228] and an unwrapped @abs reads the far side of the seam as a huge angle. It
+        // happens to agree today (half-arc 72 + slack 16 is nowhere near the 132 where the seam
+        // starts), which is exactly the kind of accident that breaks silently the day the arc
+        // widens or SWIPE_ARC_MID moves — and the failure is a dead wedge behind him that the
+        // club visibly sweeps through.
+        if (@abs(mathx.wrapDeg(self.bearingTo(hero) - SWIPE_ARC_MID)) > SWIPE_ARC * 0.5 + slack) return;
         self.heroHit = h;
         self.heroLatch = true;
     }
@@ -1951,7 +1957,7 @@ test "the swipe's hurt SECTOR matches where the club actually goes (band + arc, 
         const rad = mathx.distXZ(o.pos, club);
         try std.testing.expect(rad >= SWIPE_INNER * o.scale and rad <= SWIPE_OUTER * o.scale);
         const bearing = mathx.degrees(mathx.wrapPi(mathx.headingXZ(mathx.dirXZ(o.pos, club)) - o.facing));
-        try std.testing.expect(@abs(bearing - SWIPE_ARC_MID) <= SWIPE_ARC * 0.5);
+        try std.testing.expect(@abs(mathx.wrapDeg(bearing - SWIPE_ARC_MID)) <= SWIPE_ARC * 0.5);
         lowest = mathx.minF(lowest, club.y);
         highest = mathx.maxF(highest, club.y);
     }

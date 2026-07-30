@@ -228,7 +228,11 @@ const ARROW_HOME_FADE = 0.45; // …and it decays to nothing over this much flig
 const ARROW_GRAV = 3.0; // gentle drop so long shots arc
 const ARROW_LIFE = 3.5; // seconds airborne before it gives up (falls + sticks)
 const ARROW_STICK_FADE = 1.4; // seconds a stuck arrow lingers, then fades
-const ARROW_HIT_R = 0.5; // hero footprint the arrow must reach to connect
+const ARROW_HIT_R = 0.5; // hero footprint the arrow must reach to connect…
+const ARROW_HIT_HALF_H = 0.85; // …and how far above/below his centre of mass still counts. It was a
+//   bare literal inside stepArrow's connect test while its horizontal partner had a name and a
+//   comment — so the shaft's hurt volume was half tunable and half invisible. Generous on purpose:
+//   the hero's chest rides HERO_CENTER_Y and this reaches his knees and his crown.
 
 // ── THE FLIGHT TRAIL ── a streak behind a shaft in the air. Same ring-buffer shape as the hero's
 // swing trail, and SHORT for the same reason: this is a tracer, not a smoke plume. Its real job is
@@ -363,7 +367,7 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, heroDodging: boo
         a.age = 0;
         return;
     }
-    if (!heroDodging and mathx.distXZ(a.pos, hero) <= ARROW_HIT_R and @abs(a.pos.y - heroCenterY) <= 0.85) {
+    if (!heroDodging and mathx.distXZ(a.pos, hero) <= ARROW_HIT_R and @abs(a.pos.y - heroCenterY) <= ARROW_HIT_HALF_H) {
         a.hit = true;
         a.stuck = true;
         a.age = 0;
@@ -1285,17 +1289,19 @@ fn stringMesh() rl.Mesh {
 }
 
 // The nocked arrow — tail AT the origin (it rides the string nock), head out +Z, ~0.72 long
-// (matches the loosed projectile's fat visibility gauge so the hand-off is seamless).
+// (matches the loosed projectile's gauge so the hand-off is seamless). Its GAUGE tracks the loosed
+// arrow's (both came down by a quarter with it) but its LENGTH does not: this one is pinned by the
+// draw, running nock → past the grip, and shortening it would float the head behind the bow.
 fn nockArrowMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.wood);
-    b.addCylinder(v3(0, 0, 0.01), v3(0, 0, 0.63), 0.011, 0.011, 5, ARROW_SHAFT);
+    b.addCylinder(v3(0, 0, 0.01), v3(0, 0, 0.63), 0.00825, 0.00825, 5, ARROW_SHAFT);
     b.setMat(.steel);
-    b.addCylinder(v3(0, 0, 0.63), v3(0, 0, 0.73), 0.025, 0.001, 5, ARROW_HEAD);
+    b.addCylinder(v3(0, 0, 0.63), v3(0, 0, 0.73), 0.01875, 0.001, 5, ARROW_HEAD);
     b.setMat(.cloth);
-    b.addBox(v3(0, 0.028, 0.07), v3(0.0012, 0, 0), v3(0, 0.044, 0), v3(0, 0, 0.075), ARROW_FLETCH);
-    b.addBox(v3(0.025, -0.017, 0.07), v3(0.0012, 0, 0), v3(0.038, -0.025, 0), v3(0, 0, 0.075), ARROW_FLETCH);
-    b.addBox(v3(-0.025, -0.017, 0.07), v3(0.0012, 0, 0), v3(-0.038, -0.025, 0), v3(0, 0, 0.075), ARROW_FLETCH);
+    b.addBox(v3(0, 0.021, 0.07), v3(0.0009, 0, 0), v3(0, 0.033, 0), v3(0, 0, 0.075), ARROW_FLETCH);
+    b.addBox(v3(0.01875, -0.0128, 0.07), v3(0.0009, 0, 0), v3(0.0285, -0.01875, 0), v3(0, 0, 0.075), ARROW_FLETCH);
+    b.addBox(v3(-0.01875, -0.0128, 0.07), v3(0.0009, 0, 0), v3(-0.0285, -0.01875, 0), v3(0, 0, 0.075), ARROW_FLETCH);
     return b.toMesh();
 }
 
@@ -1304,21 +1310,23 @@ fn nockArrowMesh() rl.Mesh {
 // twenty metres, so it errs toward flare, not scale-model realism. ─────────────────────────
 pub fn arrowMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
-    // Authored along +Z (the flight axis); game.zig orients it to the velocity. ~0.95 m long.
+    // Authored along +Z (the flight axis); game.zig orients it to the velocity. ~0.74 m long.
     //
-    // GROWN by about a third (owner's call). It was already erring toward flare over scale-model
-    // realism for the reason in the header — a projectile you are meant to DODGE has to read at
-    // twenty metres — and it still lost against a busy meadow. Everything scales together (shaft
-    // gauge, pile, vane span) so it reads as a bigger arrow rather than a stretched one.
+    // It was GROWN by about a third once, then taken back DOWN to where it started (owner's call:
+    // too big). Everything scales together — shaft gauge, pile, vane span, overall length — so it
+    // reads as a smaller arrow rather than a thinned one, and it still errs toward flare over
+    // scale-model realism for the reason in the header: a projectile you are meant to DODGE has to
+    // read at twenty metres. That flare is what the fat fletching and the bright pile are FOR, so
+    // shrink it further only by measuring a shot, never by eye at point-blank.
     b.setMat(.wood);
-    b.addCylinder(v3(0, 0, -0.47), v3(0, 0, 0.38), 0.017, 0.015, 5, ARROW_SHAFT); // shaft
+    b.addCylinder(v3(0, 0, -0.3525), v3(0, 0, 0.285), 0.0128, 0.0113, 5, ARROW_SHAFT); // shaft
     b.setMat(.steel);
-    b.addCylinder(v3(0, 0, 0.38), v3(0, 0, 0.52), 0.034, 0.001, 5, ARROW_HEAD); // pile / head
+    b.addCylinder(v3(0, 0, 0.285), v3(0, 0, 0.39), 0.0255, 0.001, 5, ARROW_HEAD); // pile / head
     b.setMat(.cloth);
     // fletching: three big pale vanes at the tail (the tracer the eye tracks)
-    b.addBox(v3(0, 0.038, -0.39), v3(0.0016, 0, 0), v3(0, 0.060, 0), v3(0, 0, 0.100), ARROW_FLETCH);
-    b.addBox(v3(0.034, -0.023, -0.39), v3(0.0016, 0, 0), v3(0.052, -0.034, 0), v3(0, 0, 0.100), ARROW_FLETCH);
-    b.addBox(v3(-0.034, -0.023, -0.39), v3(0.0016, 0, 0), v3(-0.052, -0.034, 0), v3(0, 0, 0.100), ARROW_FLETCH);
+    b.addBox(v3(0, 0.0285, -0.2925), v3(0.0012, 0, 0), v3(0, 0.045, 0), v3(0, 0, 0.075), ARROW_FLETCH);
+    b.addBox(v3(0.0255, -0.0173, -0.2925), v3(0.0012, 0, 0), v3(0.039, -0.0255, 0), v3(0, 0, 0.075), ARROW_FLETCH);
+    b.addBox(v3(-0.0255, -0.0173, -0.2925), v3(0.0012, 0, 0), v3(-0.039, -0.0255, 0), v3(0, 0, 0.075), ARROW_FLETCH);
     return b.toModel(shader);
 }
 

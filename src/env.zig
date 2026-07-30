@@ -846,14 +846,10 @@ const Placer = struct {
     }
 };
 
-// A prop-local (x, z) offset carried through an instance's yaw + scale into world offsets.
-// Same convention the colliders use: local +X → (cos, −sin), local +Z → (sin, cos).
-fn localToWorld(lx: f32, lz: f32, yaw: f32, scale: f32) [2]f32 {
-    const th = mathx.radians(yaw);
-    const c = mathx.cosf(th);
-    const s = mathx.sinf(th);
-    return .{ scale * (lx * c + lz * s), scale * (-lx * s + lz * c) };
-}
+// (A `localToWorld` helper lived here and had NO caller: `buildSolids` carries the prop-local →
+// world transform itself, and deliberately, because it hoists the one cos/sin per INSTANCE across
+// all of that kind's parts rather than per part. bake.zig keeps its own copy for the same
+// convention — local +X → (cos, −sin), local +Z → (sin, cos) — and that one is live.)
 
 // ── THE COVER FIELD (owner's law: vary the density, a lot) ─────────────────────────────
 // A per-region density CONSTANT gives every square metre the same cover, and the result is a carpet:

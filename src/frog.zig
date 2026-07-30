@@ -4,6 +4,7 @@ const gfx = @import("gfx.zig");
 const mathx = @import("mathx.zig");
 const combat = @import("combat.zig");
 const foe = @import("foe.zig");
+const wf = @import("worldfmt.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -160,6 +161,9 @@ const LUNGE_IMPACT_R = 1.9; // frontal slam reach from the seat
 const LUNGE_FRONT_DOT = 0.25; // hero must lie within the frontal arc (~±76°) to be caught
 const LUNGE_IMPACT_FWD = 0.6; // dust-burst / impact-zone centre, this far ahead of the seat (pre-scale)
 const DEATH_DUR = 1.25; // collapse-and-still before the corpse is removed from play
+/// RUNES a toad is worth. The cheapest kill in the world and the yardstick the other two are set
+/// against: an archer is two of these, the giant fifteen.
+pub const RUNES: u32 = 60;
 
 // idle, hop, lunge, recover, chomp are the live behaviours; the last three are REACTIONS
 // (interrupts) — a light flinch, the heavy stance-break stagger, and death.
@@ -876,33 +880,37 @@ pub const Frog = struct {
 // ── a KNOT of toads (a group of toads is literally a "knot") ────────────────────────────
 // The shared model + the live instances. game.zig owns one of these; the meadow is dressed
 // with the knot the way env.zig dresses it with props.
-const COUNT = 4;
-
-// Homes sit ≥12 m off the x≈0 avenue so a straight run down the path doesn't wake them (and
-// so the hero-gait --shot stays clean) — they guard the flanks and the graveyard, waking
-// when the player veers into the ruins. Seeds/scales vary so the knot never moves as one.
-const homes = [COUNT]foe.Home{
-    .{ .x = 13.5, .z = -14.0, .yaw = mathx.radians(215), .scale = 1.08, .seed = 0.0 },
-    .{ .x = -13.0, .z = -20.0, .yaw = mathx.radians(70), .scale = 0.94, .seed = 0.37 },
-    .{ .x = 14.5, .z = -8.0, .yaw = mathx.radians(250), .scale = 1.0, .seed = 0.61 },
-    .{ .x = -12.5, .z = -27.0, .yaw = mathx.radians(120), .scale = 1.14, .seed = 0.83 },
-};
+// WHERE the toads stand is the MAP's business now (`foe: toad …` records, placed with the
+// editor's Foe tool) — the knot only knows how one behaves. The array is a fixed cap and `n`
+// is how many the map actually posted.
+const CAP: usize = wf.MAX_PER_KIND;
 
 pub const Knot = struct {
     model: Model,
-    frogs: [COUNT]Frog = undefined,
+    frogs: [CAP]Frog = undefined,
+    n: usize = 0,
 
     pub fn init(shader: rl.Shader) Knot {
-        var k = Knot{ .model = Model.init(shader) };
-        k.reset();
-        return k;
+        return .{ .model = Model.init(shader) };
     }
     // Re-home every toad, alive and fresh (a hero death reloads the world, ER-style). The
     // shared Model is untouched — instances only.
-    pub fn reset(self: *Knot) void {
-        for (homes, 0..) |h, i| {
-            self.frogs[i] = Frog.spawn(mathx.ground(h.x, h.z), h.yaw, h.scale, h.seed);
+    pub fn reset(self: *Knot, m: *const wf.Map) void {
+        self.n = 0;
+        for (m.foes[0..m.nfoes]) |h| {
+            if (h.kind != .toad or self.n >= CAP) continue;
+            self.frogs[self.n] = Frog.spawn(mathx.ground(h.x, h.z), mathx.radians(h.yaw), h.scale, h.seed);
+            self.n += 1;
         }
+    }
+    /// The toads this map actually posted. Every caller iterates THIS, never the whole array —
+    /// the tail is `undefined` and reading it is a crash waiting for a quiet afternoon.
+    pub fn live(self: *Knot) []Frog {
+        return self.frogs[0..self.n];
+    }
+    /// Read-only view, for the `*const Knot` paths (draw, the roll-ups).
+    pub fn liveConst(self: *const Knot) []const Frog {
+        return self.frogs[0..self.n];
     }
     pub fn setShader(self: *Knot, sh: rl.Shader) void {
         self.model.setShader(sh);
@@ -911,7 +919,7 @@ pub const Knot = struct {
     // frame (null if none), for game.zig to apply to the hero's vitals.
     pub fn update(self: *Knot, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         var worst: ?combat.Hit = null;
-        for (&self.frogs) |*f| {
+        for (self.live()) |*f| {
             if (f.update(dt, hero, bounds, blade)) |h| {
                 if (worst == null or h.dmg > worst.?.dmg) worst = h;
             }
@@ -922,7 +930,7 @@ pub const Knot = struct {
     // hitFlash uniform; pass null from paths without per-actor flash (none today — the
     // depth pass reuses this too, where the uniform write is simply inert).
     pub fn draw(self: *const Knot, scene: ?*gfx.Scene) void {
-        for (&self.frogs) |*f| {
+        for (self.liveConst()) |*f| {
             if (!f.alive()) continue;
             if (scene) |sc| sc.setFlash(foe.FLASH_GAIN * f.flashFrac());
             f.draw(&self.model);
@@ -933,17 +941,20 @@ pub const Knot = struct {
     // only (never the shadow depth pass), so dust/charge/spit reads over the toads. Drawn for
     // GONE toads too: a dissipated corpse's last motes drift out instead of popping off.
     pub fn drawFx(self: *const Knot) void {
-        for (&self.frogs) |*f| f.drawFx();
+        for (self.liveConst()) |*f| f.drawFx();
     }
     // The shared Group roll-ups (foe.zig) — identical for every foe, so they live there.
     pub fn anyDied(self: *const Knot) bool {
-        return foe.anyDied(&self.frogs);
+        return foe.anyDied(self.liveConst());
+    }
+    pub fn runesDropped(self: *const Knot) u32 {
+        return foe.runesDropped(self.liveConst(), RUNES);
     }
     pub fn totalHits(self: *const Knot) u32 {
-        return foe.totalHits(&self.frogs);
+        return foe.totalHits(self.liveConst());
     }
     pub fn aliveCount(self: *const Knot) u32 {
-        return foe.aliveCount(&self.frogs);
+        return foe.aliveCount(self.liveConst());
     }
 };
 

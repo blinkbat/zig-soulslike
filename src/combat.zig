@@ -148,13 +148,27 @@ pub const STAM_HEAVY = 16.0; // R2 — ER heavies run ~1.3-1.8x their own light
 pub const STAM_SPRINT = 9.0; // …per second held
 const STAM_REGEN = 45.0; // …per second, once the delay is out
 const STAM_DELAY = 0.55; // seconds after the last spend before it refills
+/// How long the stamina bar flags a refused action. Long enough to read as deliberate, short
+/// enough that it never lingers past the moment the pool comes back.
+pub const STAM_REFUSE_FLASH: f32 = 0.35;
 
-// LOCKOUT IS OFF, ON PURPOSE. In ER an empty bar means you cannot roll/attack/sprint, and that
-// is the game's primary death window — but it is also pure time taken off the player, which the
-// FEEL RULES spend as little of as they can. Switching it on is a combat-feel decision and the
-// owner's to make, not a side effect of drawing the bar. Both spend sites already ask `afford`,
-// so flipping this one constant turns the whole economy on.
-pub const STAM_LOCKOUT = false;
+// LOCKOUT IS ON (owner's call): an empty bar means you cannot roll, attack or sprint. This is
+// the genre's primary death window and the only thing that makes the meter a real decision —
+// without it the bar is a readout of nothing.
+//
+// It does NOT violate the no-time-theft law. What that law forbids is taking control away from
+// the player during THEIR action (hitstop, dilation, input lag); a stamina lockout is the
+// consequence of a choice they made a second ago, it is signalled by a bar they can read, and
+// WALKING is never gated — you can always move, turn and back off on an empty meter. The old
+// note below is kept because the reasoning still matters:
+//
+// (Previously OFF, on the grounds that it is pure time taken off the player, which the
+// FEEL RULES spend as little of as they can. Switching it on was a combat-feel decision and
+// the owner's to make, not a side effect of drawing the bar.)
+//
+// Left as a constant rather than deleted: it is the one switch that turns the whole economy
+// off again, and every gate asks `canAct`/`canSprint` rather than testing the pool directly.
+pub const STAM_LOCKOUT = true;
 
 pub const Stamina = struct {
     cur: f32 = STAM_MAX,
@@ -165,9 +179,16 @@ pub const Stamina = struct {
         return if (self.max > 0) mathx.clampF(self.cur / self.max, 0, 1) else 0;
     }
 
-    /// Can this action be paid for? Always true while STAM_LOCKOUT is off.
-    pub fn afford(self: *const Stamina, cost: f32) bool {
-        return !STAM_LOCKOUT or self.cur >= cost;
+    /// Can a committed action START? The soulslike rule is NOT "can you pay for it" — it is
+    /// "have you got ANY stamina left". A roll costs 12 and you are allowed to take it on 1,
+    /// which empties the bar and locks you out afterwards.
+    ///
+    /// That asymmetry is load-bearing, not a rounding error: the PANIC ROLL on the last sliver
+    /// of the meter is the most important move in the genre. Gating on `cur >= cost` instead
+    /// silently deletes it and makes the bottom tenth of the bar dead weight — it would look
+    /// like stamina and behave like nothing. Every FromSoft game since Demon's works this way.
+    pub fn canAct(self: *const Stamina) bool {
+        return !STAM_LOCKOUT or self.cur > 0;
     }
 
     /// Charge a one-off action (a roll, a swing). Floors at 0 — an action already committed
@@ -179,6 +200,13 @@ pub const Stamina = struct {
 
     /// Per frame. `sprinting` bleeds continuously; `committed` (mid-swing) only PAUSES the
     /// refill, ER-style. Neither the delay nor the pause ever touches the player's input.
+    /// Can a sprint be STARTED or SUSTAINED? Same rule as `canAct`, checked separately because
+    /// a sprint is continuous: it has to stop the instant the bar empties, and the caller has to
+    /// drop the hero to a walk rather than freeze him.
+    pub fn canSprint(self: *const Stamina) bool {
+        return self.canAct();
+    }
+
     pub fn tick(self: *Stamina, dt: f32, sprinting: bool, committed: bool) void {
         if (sprinting) {
             self.cur = mathx.maxF(0, self.cur - STAM_SPRINT * dt);
@@ -195,6 +223,48 @@ pub const Stamina = struct {
         self.sinceSpend = LONG_AGO;
     }
 };
+
+// ── RUNES: the run's currency — the HERO'S ALONE, like Stamina ───────────────────────────
+// The souls counter, and it is called RUNES because this game's north star is Elden Ring (see
+// AGENTS.md) — the HUD, the pad layout and the stagger model all follow ER, so the currency does
+// too. Souls / blood echoes / runes: same mechanic, ER's name.
+//
+// A kill pays out the instant it lands, but the COUNTER never jumps: it ROLLS up to the new total
+// over a beat. That is the whole difference between a readout and a reward, and it is why every
+// game in the genre does it. Pure logic, here with the rest of it, so the roll is unit-testable
+// without a HUD to look at.
+pub const RUNE_ROLL_RATE = 7.0; // …of the remaining gap, per second — a big haul counts up fast
+pub const RUNE_ROLL_FLOOR = 26.0; // …but never slower than this per second, or the last few runes
+//   crawl for a second and a half after the number has visually stopped moving.
+
+pub const Runes = struct {
+    total: u32 = 0,
+    shown: f32 = 0, // what the HUD prints — chases `total`
+
+    pub fn gain(self: *Runes, n: u32) void {
+        self.total += n;
+    }
+
+    /// Per frame. EXPONENTIAL with a floor: proportional so a nine-hundred-rune giant counts up
+    /// fast, floored so a sixty-rune toad doesn't take longer to tally than the fight did.
+    pub fn tick(self: *Runes, dt: f32) void {
+        const goal: f32 = @floatFromInt(self.total);
+        if (self.shown >= goal) {
+            self.shown = goal; // …and never DRIFT above it, or the display shows a rune you don't have
+            return;
+        }
+        self.shown = minF(goal, self.shown + maxF((goal - self.shown) * RUNE_ROLL_RATE, RUNE_ROLL_FLOOR) * dt);
+    }
+
+    /// What to print. FLOORED, not rounded: a counter mid-roll must never show a number above the
+    /// runes actually banked.
+    pub fn display(self: *const Runes) u32 {
+        return @intFromFloat(@floor(maxF(self.shown, 0)));
+    }
+};
+
+const minF = mathx.minF;
+const maxF = mathx.maxF;
 
 // ── invariants under test (pure logic) ──────────────────────────────────────────────────
 test "a small hit chips poise without a stun" {
@@ -283,6 +353,45 @@ test "a roll costs its flat bite and the refill waits out the delay" {
     try std.testing.expectApproxEqAbs(STAM_MAX, s.cur, 1e-3);
 }
 
+test "an empty pool locks out rolling, attacking and sprinting" {
+    var s = Stamina{};
+    try std.testing.expect(s.canAct());
+    try std.testing.expect(s.canSprint());
+    s.spend(STAM_MAX);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), s.cur, 1e-4);
+    try std.testing.expect(!s.canAct()); // no roll, no swing…
+    try std.testing.expect(!s.canSprint()); // …and no sprint
+    // …until the delay is out and something has come back.
+    var t: f32 = 0;
+    while (t < STAM_DELAY + 0.05) : (t += 1.0 / 60.0) s.tick(1.0 / 60.0, false, false);
+    try std.testing.expect(s.canAct());
+}
+
+test "THE PANIC ROLL: a sliver of stamina still buys a full-cost action" {
+    // The genre's defining asymmetry. You may act on ANY stamina above zero, pay what you have,
+    // and be locked out afterwards. Gating on `cur >= cost` would delete this and quietly turn
+    // the bottom tenth of the bar into decoration.
+    var s = Stamina{};
+    s.cur = 1.0;
+    try std.testing.expect(s.canAct());
+    s.spend(STAM_ROLL); // costs 12, he has 1 — the roll happens anyway
+    try std.testing.expectApproxEqAbs(@as(f32, 0), s.cur, 1e-4);
+    try std.testing.expect(!s.canAct()); // and now he pays for it
+}
+
+test "a roll chain costs the sum of its rolls — the refill cannot pay for it" {
+    // Committed actions pause the refill (ER pauses while attacking/rolling/sprinting), so
+    // chaining three rolls back to back must cost 3x, not 3x minus whatever leaked back in.
+    var s = Stamina{};
+    var i: usize = 0;
+    while (i < 3) : (i += 1) {
+        s.spend(STAM_ROLL);
+        var t: f32 = 0;
+        while (t < 0.70) : (t += 1.0 / 60.0) s.tick(1.0 / 60.0, false, true); // committed: mid-roll
+    }
+    try std.testing.expectApproxEqAbs(STAM_MAX - 3 * STAM_ROLL, s.cur, 1e-3);
+}
+
 test "sprinting bleeds the pool and holds the refill off" {
     var s = Stamina{};
     var t: f32 = 0;
@@ -309,9 +418,48 @@ test "the pool refills far faster than any one action drains it" {
     try std.testing.expect(STAM_MAX / STAM_ROLL > 6.0); // ER's "~8 rolls from full"
 }
 
-test "lockout only bites when it is switched on" {
+test "runes roll UP to a kill's payout and never overshoot it" {
+    var r = Runes{};
+    r.gain(900); // an ogre
+    try std.testing.expectEqual(@as(u32, 900), r.total);
+    try std.testing.expectEqual(@as(u32, 0), r.display()); // …but the counter has not moved yet
+    var t: f32 = 0;
+    while (t < 3.0) : (t += 1.0 / 60.0) r.tick(1.0 / 60.0);
+    try std.testing.expectEqual(@as(u32, 900), r.display()); // …and it lands EXACTLY on the total
+    // It must never print more than is banked, at any point in the roll — a counter that overshoots
+    // and settles back is worse than one that snaps.
+    var r2 = Runes{};
+    r2.gain(60);
+    t = 0;
+    while (t < 2.0) : (t += 1.0 / 60.0) {
+        r2.tick(1.0 / 60.0);
+        try std.testing.expect(r2.display() <= r2.total);
+    }
+    try std.testing.expectEqual(@as(u32, 60), r2.display());
+}
+
+test "a rune payout mid-roll retargets instead of restarting" {
+    // Killing a second foe while the first one's runes are still counting up must add to the goal,
+    // not reset the roll — otherwise a flurry of kills leaves the counter permanently behind.
+    var r = Runes{};
+    r.gain(120);
+    var t: f32 = 0;
+    while (t < 0.15) : (t += 1.0 / 60.0) r.tick(1.0 / 60.0);
+    const mid = r.display();
+    try std.testing.expect(mid > 0 and mid < 120);
+    r.gain(120);
+    try std.testing.expectEqual(@as(u32, 240), r.total);
+    try std.testing.expect(r.display() >= mid); // never goes BACKWARDS on a fresh kill
+    t = 0;
+    while (t < 3.0) : (t += 1.0 / 60.0) r.tick(1.0 / 60.0);
+    try std.testing.expectEqual(@as(u32, 240), r.display());
+}
+
+test "the lockout switch is what decides whether an empty pool bites" {
     var s = Stamina{};
     s.spend(STAM_MAX); // bone dry
     try std.testing.expectApproxEqAbs(@as(f32, 0), s.cur, 1e-4);
-    try std.testing.expectEqual(!STAM_LOCKOUT, s.afford(STAM_ROLL));
+    // Written against the constant rather than against `false`, so flipping STAM_LOCKOUT back
+    // off stays a one-line change instead of a one-line change plus a failing test.
+    try std.testing.expectEqual(!STAM_LOCKOUT, s.canAct());
 }

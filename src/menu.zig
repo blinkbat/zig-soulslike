@@ -16,7 +16,7 @@ const PAD = rumblemod.PAD;
 // All chrome is primitive rects + hud text (Balthazar, ASCII only), drawn crisp AFTER the
 // retro pass so menus never crunch. Esc/B backs out one level; Esc/Start toggles.
 
-pub const Action = enum { none, quit };
+pub const Action = enum { none, quit, editor };
 
 const Screen = enum { closed, main, debug, retro };
 
@@ -53,8 +53,9 @@ const ADJ_GLIDE_RATE: f32 = 0.25; // intensity per second while gliding
 // Main rows — mainLabels() keys each label by its row index (like DBG_*/RET_*), so the
 // labels can't drift out of lockstep with these constants.
 const MAIN_CONTINUE = 0;
-const MAIN_DEBUG = 1;
-const MAIN_QUIT = 2;
+const MAIN_EDITOR = 1;
+const MAIN_DEBUG = 2;
+const MAIN_QUIT = 3;
 const MAIN_COUNT = MAIN_QUIT + 1;
 
 // ── palette (display-space; menus draw over the finished frame) ──
@@ -142,6 +143,10 @@ pub const Menu = struct {
             .closed => {},
             .main => switch (self.cursor) {
                 MAIN_CONTINUE => self.screen = .closed,
+                MAIN_EDITOR => {
+                    self.screen = .closed; // the editor is its own scene; the menu gets out of the way
+                    return .editor;
+                },
                 MAIN_DEBUG => {
                     self.screen = .debug;
                     self.cursor = 0;
@@ -268,6 +273,7 @@ fn drawGauge(x: i32, y: i32, w: i32, h: i32, v: f32, selected: bool) void {
 fn mainLabels() [MAIN_COUNT][:0]const u8 {
     var out: [MAIN_COUNT][:0]const u8 = undefined;
     out[MAIN_CONTINUE] = "Continue";
+    out[MAIN_EDITOR] = "Editor";
     out[MAIN_DEBUG] = "Debug";
     out[MAIN_QUIT] = "Quit";
     return out;

@@ -5,6 +5,7 @@ const mathx = @import("mathx.zig");
 const combat = @import("combat.zig");
 const heromod = @import("hero.zig");
 const foe = @import("foe.zig");
+const wf = @import("worldfmt.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -241,6 +242,10 @@ pub const SWIPE_HIT = combat.Hit{ .dmg = 23, .poise = 30, .stance = 11 }; // the
 //   speed + coverage: it staggers and hurts, but it is still clearly not the slam. Up from 17 against
 //   its own longer cock-back, keeping the same ~0.64 ratio to the slam it always had.
 const DEATH_DUR = 1.7; // a slow, weighty topple — a giant falls hard (and sadly)
+/// RUNES the one-eyed ogre is worth: fifteen toads. He has 300 HP behind high poise and two attacks
+/// that take a third of your health, so the payout has to say "that was the fight of the region" —
+/// a mini-boss that pays like a patrol is a mini-boss nobody chooses to fight.
+pub const RUNES: u32 = 900;
 const DISS_DUR = 1.1; // dissipation into grace-gold motes (ER-consistent with frog/archer)
 
 // hero.attackHit() decides the hero's own blows; these constants are what the OGRE lands. The
@@ -1392,25 +1397,33 @@ pub const Ogre = struct {
 // ── a lone ogre (a "Grief" — one sorrowful giant haunting the deep ruins). The Group shell
 // mirrors the Knot/Line so game.zig iterates it generically; COUNT stays 1 for now (bump it
 // and add homes to field more). ────────────────────────────────────────────────────────────
-const COUNT = 1;
-const homes = [COUNT]foe.Home{
-    // Deep down the avenue, past the toads + archers — the climax of the approach. Faces back
-    // up the avenue (+Z) so the hero meets its eye as they close in.
-    .{ .x = 3.0, .z = -50.0, .yaw = 0.0, .scale = 1.0, .seed = 0.4 },
-};
+// WHERE the ogre stands is the MAP's business now (`foe: ogre …` records).
+const CAP = wf.MAX_PER_KIND;
 
 pub const Grief = struct {
     model: Model,
-    ogres: [COUNT]Ogre = undefined,
+    ogres: [CAP]Ogre = undefined,
+    n: usize = 0,
 
     pub fn init(shader: rl.Shader) Grief {
-        var g = Grief{ .model = Model.init(shader) };
-        g.reset();
-        return g;
+        return .{ .model = Model.init(shader) };
+    }
+    /// The ogres this map posted — never iterate the whole array, the tail is `undefined`.
+    pub fn live(self: *Grief) []Ogre {
+        return self.ogres[0..self.n];
+    }
+    /// Read-only view, for the `*const Grief` paths (draw, the roll-ups).
+    pub fn liveConst(self: *const Grief) []const Ogre {
+        return self.ogres[0..self.n];
     }
     // Re-home the giant, alive and fresh (a hero death reloads the world, ER-style).
-    pub fn reset(self: *Grief) void {
-        for (homes, 0..) |h, i| self.ogres[i] = Ogre.spawn(mathx.ground(h.x, h.z), h.yaw, h.scale, h.seed);
+    pub fn reset(self: *Grief, m: *const wf.Map) void {
+        self.n = 0;
+        for (m.foes[0..m.nfoes]) |h| {
+            if (h.kind != .ogre or self.n >= CAP) continue;
+            self.ogres[self.n] = Ogre.spawn(mathx.ground(h.x, h.z), mathx.radians(h.yaw), h.scale, h.seed);
+            self.n += 1;
+        }
     }
     pub fn setShader(self: *Grief, sh: rl.Shader) void {
         self.model.setShader(sh);
@@ -1418,7 +1431,7 @@ pub const Grief = struct {
     // Advance the group; returns the STRONGEST blow any ogre landed on the hero this frame.
     pub fn update(self: *Grief, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         var worst: ?combat.Hit = null;
-        for (&self.ogres) |*o| {
+        for (self.live()) |*o| {
             if (o.update(dt, hero, bounds, blade)) |h| {
                 if (worst == null or h.dmg > worst.?.dmg) worst = h;
             }
@@ -1426,7 +1439,7 @@ pub const Grief = struct {
         return worst;
     }
     pub fn draw(self: *const Grief, scene: ?*gfx.Scene) void {
-        for (&self.ogres) |*o| {
+        for (self.liveConst()) |*o| {
             if (!o.alive()) continue;
             if (scene) |sc| sc.setFlash(foe.FLASH_GAIN * o.flashFrac());
             o.draw(&self.model);
@@ -1434,17 +1447,20 @@ pub const Grief = struct {
         if (scene) |sc| sc.setFlash(0);
     }
     pub fn drawFx(self: *const Grief) void {
-        for (&self.ogres) |*o| o.drawFx();
+        for (self.liveConst()) |*o| o.drawFx();
     }
     // The shared Group roll-ups (foe.zig).
     pub fn anyDied(self: *const Grief) bool {
-        return foe.anyDied(&self.ogres);
+        return foe.anyDied(self.liveConst());
+    }
+    pub fn runesDropped(self: *const Grief) u32 {
+        return foe.runesDropped(self.liveConst(), RUNES);
     }
     pub fn totalHits(self: *const Grief) u32 {
-        return foe.totalHits(&self.ogres);
+        return foe.totalHits(self.liveConst());
     }
     pub fn aliveCount(self: *const Grief) u32 {
-        return foe.aliveCount(&self.ogres);
+        return foe.aliveCount(self.liveConst());
     }
 };
 

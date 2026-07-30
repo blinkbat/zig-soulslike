@@ -47,7 +47,9 @@ pub fn closestApproach(bodyR: f32) f32 {
 }
 
 /// One instance's spawn record in a Group's `homes` table.
-pub const Home = struct { x: f32, z: f32, yaw: f32, scale: f32, seed: f32 };
+// (A `Home` struct used to live here, describing one hard-coded spawn. Spawns are map data now
+// — `worldfmt.Foe`, placed with the editor's Units layer — and every group reads them from
+// there, so nothing referenced it any more.)
 
 // Carry a landed blow's KNOCKBACK for one frame and bleed it off. A jolt off the blade, not a
 // slide — collision cleans up any overlap it causes.
@@ -129,6 +131,18 @@ pub fn anyDied(foes: anytype) bool {
 pub fn totalHits(foes: anytype) u32 {
     var n: u32 = 0;
     for (foes) |*f| n += f.hits;
+    return n;
+}
+
+/// RUNES the group paid out THIS FRAME: `per` for every instance whose one-frame `justDied` is set.
+/// Keyed off the same flag the kill BEAT reads, so the payout, the rumble and the shake can never
+/// disagree about whether something died — and because that flag is one-frame, a corpse cannot pay
+/// twice however long its dissipation takes.
+pub fn runesDropped(foes: anytype, per: u32) u32 {
+    var n: u32 = 0;
+    for (foes) |*f| {
+        if (f.justDied) n += per;
+    }
     return n;
 }
 

@@ -133,6 +133,11 @@ pub fn normV(a: rl.Vector3) rl.Vector3 {
     if (l < 1e-6) return v3(0, 0, 0);
     return v3(a.x / l, a.y / l, a.z / l);
 }
+/// Cross product. env.zig and gfx.zig each carry a private copy for their own frustum/axis-frame
+/// work; this is the one every OTHER caller should reach for.
+pub fn crossV(a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
+    return v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+}
 pub fn lerpV(a: rl.Vector3, b: rl.Vector3, t: f32) rl.Vector3 {
     return v3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
 }

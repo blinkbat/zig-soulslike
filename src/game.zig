@@ -3,6 +3,8 @@ const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 const gfx = @import("gfx.zig");
 const envmod = @import("env.zig");
+const worldfmt = @import("worldfmt.zig");
+const editormod = @import("editor.zig");
 const heromod = @import("hero.zig");
 const cameramod = @import("camera.zig");
 const hud_ = @import("hud.zig");
@@ -51,11 +53,23 @@ const SHAKE_KILL = 0.38;
 const SHAKE_HURT = 0.42;
 const SHAKE_HURT_HEAVY = 0.62;
 const SHAKE_DEATH = 0.85;
-const RESPAWN_FADE = 0.9; // seconds of black → world after a respawn (the YOU DIED tail)
+// The YOU DIED tail, in two beats. The HOLD is the important one: black used to be reached on
+// exactly the frame the respawn fired and to start lifting on the very next one, so the card cut
+// straight into a lit meadow and the whole sequence read as a glitch rather than as a death. A beat
+// of solid nothing is what lets it land.
+const RESPAWN_HOLD = 0.55; // seconds of FULL black after the respawn…
+const RESPAWN_FADE = 0.9; // …then this long fading up into the fresh world
 
-// Hero movement clamp: world bounds inset by a margin so travel/rolls can't reach the edge.
-// Single source for moveHero, roll updates, and the --shot harness.
-const PLAY_HALF = envmod.HALF - 2.0;
+// Hero movement clamp: the MAP's bounds inset by a margin so travel/rolls can't reach the edge.
+// Single source for moveHero, roll updates, every foe's update, and the --shot harness.
+//
+// A `var`, refreshed from the live map each frame, because the map decides how big the world is and
+// the editor can swap the map at any moment. It was `envmod.HALF - 2` — a COMPILE-TIME constant —
+// which is why a map's `half:` governed the cliff ring, the ground cover and the soil grid but not
+// where the player could actually walk: resize the map and the hero still stopped at the old bound
+// with the rock a hundred metres further out. Two dozen call sites read this identifier, so keeping
+// it an identifier (rather than threading a parameter) is what kept the change to one line.
+var PLAY_HALF: f32 = worldfmt.DEFAULT_HALF - envmod.PLAY_INSET;
 
 // Hero footprint radius for ground collision (see collision.zig). Defined in foe.zig alongside
 // foe.HERO_REACH, so a foe's attack shapes can be reasoned about against how close he can GET.
@@ -99,6 +113,8 @@ const Game = struct {
     vignette: gfx.Vignette,
     retro: gfx.Retro,
     menu: menumod.Menu,
+    map: worldfmt.Map, // THE WORLD, as data: env materializes this and the editor edits it
+    editor: editormod.Editor,
     env: envmod.Env,
     hero: heromod.Hero,
     warren: frogmod.Knot, // the knot of gaping toads
@@ -119,7 +135,11 @@ const Game = struct {
         g.vignette = gfx.Vignette.init();
         g.retro = gfx.Retro.init(rl.getScreenWidth(), rl.getScreenHeight());
         g.menu = .{}; // opens on the main screen: Continue / Debug / Quit
-        g.env.build(g.scene.shader);
+        worldfmt.loadOrPanic(worldfmt.START_MAP, &g.map);
+        PLAY_HALF = g.map.half - envmod.PLAY_INSET; // before anything spawns against it
+        g.env.build(&g.scene); // meshes once…
+        g.env.materialize(&g.map); // …then the world from the map, re-runnable per edit
+        g.env.uploadSoil(&g.map);
         g.hero = heromod.Hero.init(g.scene.shader);
         g.hero.pos = mathx.ground(0, 4); // start just south of the ruin avenue
         g.hero.facing = std.math.pi; // facing -Z, into the columns
@@ -128,11 +148,17 @@ const Game = struct {
         g.warren = frogmod.Knot.init(g.scene.shader);
         g.line = archermod.Line.init(g.scene.shader);
         g.grief = ogremod.Grief.init(g.scene.shader);
+        // Foes come from the MAP, so the groups can only be homed once it is loaded — init
+        // builds the shared meshes and nothing else.
+        g.warren.reset(&g.map);
+        g.line.reset(&g.map);
+        g.grief.reset(&g.map);
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
         g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
         // Fields that would otherwise take their struct-literal defaults; set explicitly
         // because there is no literal to default from any more.
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
+        g.editor = .{};
         g.lock = null;
         g.rumble = .{};
         g.deathFade = 0;
@@ -299,33 +325,55 @@ fn drawArrows(g: *Game) void {
     }
 }
 
+// The camera the frame is rendered from. The editor flies its own; everything else in the
+// render path reads THIS rather than g.rig.cam, so the two can never disagree about which eye
+// the frustum was built for (a cull against the wrong camera empties the screen).
+fn sceneCam(g: *const Game) rl.Camera3D {
+    return if (g.editor.on) g.editor.cam else g.rig.cam;
+}
+
+// What the sun's ortho box tracks. Normally the hero; in the editor, whatever the camera is
+// looking at — otherwise flying away from the hero to dress a corner of the map loses every
+// cast shadow there, and the lighting you are judging is not the lighting the player gets.
+fn sunFocus(g: *const Game) rl.Vector3 {
+    return if (g.editor.on) mathx.ground(g.editor.cam.target.x, g.editor.cam.target.z) else g.hero.pos;
+}
+
 fn drawScene(g: *Game) void {
     g.env.resetStats(); // culling counters for the debug overlay, both passes together
-    // Sun depth pass into the shadow map (before beginDrawing). Ortho box tracks the hero, and
+    const cam = sceneCam(g);
+    const focus = sunFocus(g);
+    // Sun depth pass into the shadow map (before beginDrawing). Ortho box tracks the focus, and
     // the pass draws only what can throw INTO that box (env.Cull.sun).
-    g.scene.beginShadowPass(g.hero.pos);
+    g.scene.beginShadowPass(focus);
     setCasterShaders(g, g.scene.depthShader);
-    drawCasters(g, .{ .sun = g.hero.pos });
+    drawCasters(g, .{ .sun = focus });
     setCasterShaders(g, g.scene.shader);
     g.scene.endShadowPass();
 
     rl.beginDrawing();
     // With any retro filter live, sky + 3D render into the capture RT and blit back through
     // the filter shader; vignette/HUD/menu stay crisp on top.
-    const filtered = g.retro.begin();
+    //
+    // THE EDITOR NEVER FILTERS. Pixelate and chroma fringe are exactly the things that make a
+    // thin gizmo line and a distant prop unjudgeable, and you cannot dress a world through a
+    // lens that is lying about it. The filters are a PRESENTATION choice; editing is not.
+    const filtered = if (g.editor.on) false else g.retro.begin();
     rl.clearBackground(CLEAR);
-    g.sky.draw(g.rig.cam);
+    g.sky.draw(cam);
 
     // ONE view frustum for the whole lit pass, built from the settled camera — props and flora
     // must cull against the same one or a prop can be in for the shadow and out for the light.
     const aspect = @as(f32, @floatFromInt(rl.getScreenWidth())) / @as(f32, @floatFromInt(rl.getScreenHeight()));
-    const view = envmod.View.fromCamera(g.rig.cam, aspect);
+    const view = envmod.View.fromCamera(cam, aspect);
 
-    rl.beginMode3D(g.rig.cam);
-    g.scene.bind(g.rig.cam.position);
-    // Torchlight: the fires nearest the camera, guttering. Must land before anything draws —
-    // the uniforms are read by every subsequent draw through the scene shader.
-    g.env.uploadLights(&g.scene, g.rig.cam.position, @floatCast(rl.getTime()));
+    rl.beginMode3D(cam);
+    g.scene.bind(cam.position);
+    // Torchlight: the fires whose pool is ON SCREEN, nearest first, guttering. Must land before
+    // anything draws — the uniforms are read by every subsequent draw through the scene shader.
+    // It takes the same frustum the prop cull uses, so a light and the geometry it lights can
+    // never disagree about whether they are in frame.
+    g.env.uploadLights(&g.scene, &view, @floatCast(rl.getTime()));
     g.scene.setGround(true);
     g.env.drawGround();
     g.scene.setGround(false);
@@ -342,6 +390,9 @@ fn drawScene(g: *Game) void {
     g.warren.drawFx();
     g.grief.drawFx();
     g.hero.drawTrail();
+    // Arrow flight streaks — alpha ribbons like the swing trail, so they belong in this unlit
+    // group after the opaque geometry, not up with the shafts themselves.
+    archermod.drawArrowTrails(&g.arrows);
     // Debug: the blade hit capsule (menu > Debug > Hitboxes) — red while ACTIVE, dim
     // otherwise. Unlit, default shader on purpose.
     if (g.menu.hitboxes and g.hero.attacking) {
@@ -350,25 +401,34 @@ fn drawScene(g: *Game) void {
     }
     // Frog hurt spheres (menu > Debug > Hitboxes): dim normally, flaring on a tracked hit.
     if (g.menu.hitboxes) {
-        for (&g.warren.frogs) |*f| {
+        for (g.warren.live()) |*f| {
             if (!f.alive()) continue;
             const col = if (f.flash > 0) rl.Color.orange else mathx.withAlpha(rl.Color.yellow, 80);
             rl.drawSphereWires(f.centerWorld(), f.hurtRadius(), 6, 8, col);
         }
-        for (&g.grief.ogres) |*o| {
+        for (g.grief.live()) |*o| {
             if (!o.alive()) continue;
             const col = if (o.flash > 0) rl.Color.orange else mathx.withAlpha(rl.Color.yellow, 80);
             rl.drawSphereWires(o.centerWorld(), o.hurtRadius(), 8, 10, col);
         }
     }
+    // Editor gizmos: op outlines, the selection's instances, the drag in progress. Inside the
+    // 3D pass so they sit in the world, but AFTER everything else so nothing occludes them.
+    if (g.editor.on) g.editor.draw3D(&g.map, &g.env);
     rl.endMode3D();
 
     if (filtered) g.retro.end();
-    g.vignette.draw();
+    // THE GAMEPLAY OVERLAY IS GAMEPLAY'S. Every line below either projects against `g.rig.cam`
+    // (which is NOT the eye this frame was rendered from once the editor flies its own — see
+    // sceneCam) or reads a hero clock the editor path deliberately never ticks: hurtFlash froze a
+    // red screen-edge wash over the whole editing session if you entered right after being hit,
+    // and a lock left over from before Menu > Editor drew its reticle at a stale screen position.
+    if (g.editor.on) return;
+    g.vignette.draw(); // the vignette darkens the corners the chrome lives in
     drawHurtFlash(g); // red screen-edge pulse when the hero is hit (peripheral feedback)
-    drawFoeBars(g, &g.warren.frogs); // floating foe HP bars, crisp over the finished frame…
-    drawFoeBars(g, &g.line.archers); // …one shared path for every foe group…
-    drawFoeBars(g, &g.grief.ogres); // …the ogre included (a regular foe, not a boss — owner's call)
+    drawFoeBars(g, g.warren.live()); // floating foe HP bars, crisp over the finished frame…
+    drawFoeBars(g, g.line.live()); // …one shared path for every foe group…
+    drawFoeBars(g, g.grief.live()); // …the ogre included (a regular foe, not a boss — owner's call)
     drawLockDot(g); // the ER lock-on reticle
     drawDeathOverlay(g); // the YOU DIED card + respawn fade, over everything
 }
@@ -408,11 +468,15 @@ fn drawDeathOverlay(g: *Game) void {
             hud_.bigCentered("YOU DIED", cx, cy + 3, size, spacing, glow);
             hud_.bigCentered("YOU DIED", cx, cy, size, spacing, rgba(156, 22, 16, mathx.u8f(232.0 * ta)));
         }
-        const blackK = mathx.smoothstep(0.86, 1.0, u); // swallow the respawn snap
+        // …reaching FULL black a little BEFORE the respawn rather than on the same frame, so the
+        // hold starts while the card is still up and the cut itself is buried inside it.
+        const blackK = mathx.smoothstep(0.82, 0.94, u);
         if (blackK > 0.001) rl.drawRectangle(0, 0, w, h, rgba(0, 0, 0, mathx.u8f(255.0 * blackK)));
     } else if (g.deathFade > 0) {
-        const k = mathx.clampF(g.deathFade / RESPAWN_FADE, 0, 1);
-        rl.drawRectangle(0, 0, w, h, rgba(0, 0, 0, mathx.u8f(255.0 * k))); // wake at the grace
+        // HOLD, then fade. `deathFade` runs RESPAWN_HOLD + RESPAWN_FADE; everything above the fade
+        // length is the held beat of solid black, and only the last RESPAWN_FADE of it lifts.
+        const k = if (g.deathFade > RESPAWN_FADE) 1.0 else mathx.clampF(g.deathFade / RESPAWN_FADE, 0, 1);
+        rl.drawRectangle(0, 0, w, h, rgba(0, 0, 0, mathx.u8f(255.0 * k))); // wake at the bonfire
     }
 }
 
@@ -443,8 +507,9 @@ fn hud(g: *Game, dt: f32) void {
     if (!g.menu.isOpen() and !g.hero.dead) {
         // HP is live. FP has nothing to spend it on yet (no spells, no skills) so it sits full;
         // stamina is REAL — the roll/swing bites and the sprint bleed are in combat.zig.
-        hud_.vitals(dt, g.hero.vit.hpFrac(), 1.0, g.hero.stam.frac());
+        hud_.vitals(dt, g.hero.vit.hpFrac(), 1.0, g.hero.stam.frac(), g.hero.stamRefused / combat.STAM_REFUSE_FLASH);
         hud_.equipment();
+        hud_.runes(g.hero.runes.display()); // the ROLLING value, not the banked total
     }
     if (g.menu.stats) debugCorner(g);
 }
@@ -569,11 +634,21 @@ pub fn run(shot: bool) void {
     while (!rl.windowShouldClose()) {
         const rawDt = rl.getFrameTime(); // wall-clock dt: feel systems (shake, rumble, fades, tap windows)
         const dt = rawDt * g.menu.timeScale;
+        // The map can be swapped under us at any moment (the editor's New / Open / Reload / undo),
+        // and the clamp is the one piece of world size that lives outside `materialize`.
+        PLAY_HALF = g.map.half - envmod.PLAY_INSET;
 
         // Esc backs the menu out one level (opens it when closed); pad Start toggles.
         // Quit lives in the menu now.
-        if (rl.isKeyPressed(.escape)) g.menu.onEscape();
-        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .middle_right)) g.menu.onStartButton();
+        //
+        // NOT WHILE THE EDITOR IS UP: Esc is the editor's own back-out key (context menu →
+        // selection → out), and this line runs BEFORE the editor branch, so every Esc pressed in
+        // there also TOGGLED the pause card behind it. An odd number of them left the menu open,
+        // and an F5 playtest then dropped the player straight into a paused world.
+        if (!g.editor.on) {
+            if (rl.isKeyPressed(.escape)) g.menu.onEscape();
+            if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .middle_right)) g.menu.onStartButton();
+        }
 
         // Alt+Enter toggles borderless-windowed fullscreen (no exclusive mode-switch, so the
         // mouse stays usable elsewhere). Keep the retro capture RT matched to the window on
@@ -586,11 +661,63 @@ pub fn run(shot: bool) void {
 
         // Set from the menu in ONE place, before the branch, so the flag can never disagree with
         // which path actually ran: a held hero breathes but his combat clocks stop (see hero.held).
+        // THE EDITOR is its own scene over the same world: no gameplay, no hero input, no foes
+        // thinking. It runs before the menu branch so Esc reaches the editor rather than
+        // reopening the pause card behind it.
+        if (g.editor.on) {
+            // THE CURSOR COMES BACK. Gameplay hides it because the mouse IS the camera there;
+            // the editor is a pointer tool — palettes, sliders, a brush you aim — and hiding the
+            // pointer in a pointer tool makes it unusable. Re-hidden on the way out.
+            rl.showCursor();
+            switch (g.editor.update(&g.map, &g.env, rawDt)) {
+                .none => {},
+                .leave => {
+                    g.editor.on = false;
+                    g.menu.screen = .main;
+                    rl.hideCursor(); // back to the gameplay rule: the mouse IS the camera
+                },
+                // F5 PLAYTEST: drop straight into the live world at the editor's viewpoint, so
+                // the thing you just dressed is the thing you are standing in. Esc brings the
+                // menu back and Editor returns you here.
+                .playtest => {
+                    g.editor.on = false;
+                    rl.hideCursor();
+                    g.hero.pos = mathx.ground(g.editor.cam.target.x, g.editor.cam.target.z);
+                    g.hero.pos = g.env.resolveActor(g.hero.pos, HERO_R);
+                    g.hero.setSpawn(g.hero.pos, g.hero.facing);
+                    g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
+                    wasInside = false; // swallow the mouse delta the editor's look accumulated
+                },
+            }
+            g.hero.held = true;
+            g.hero.pose();
+            // Re-home the foes from the map every frame the editor is up, so moving a spawn
+            // moves the thing you can SEE. They are not updated while editing, so re-spawning
+            // them costs nothing and there is no animation state to lose.
+            g.warren.reset(&g.map);
+            g.line.reset(&g.map);
+            g.grief.reset(&g.map);
+            drawScene(g);
+            editormod.drawOverlay(&g.editor, &g.map, &g.env, rawDt);
+            rl.endDrawing();
+            continue;
+        }
+
         g.hero.held = g.menu.isOpen();
         if (g.menu.isOpen()) {
             // World holds while the menu is up: no camera/move input, but the hero keeps
             // breathing (idle update, zero travel) so the scene stays alive.
-            if (g.menu.update(&g.retro, rawDt) == .quit) break;
+            switch (g.menu.update(&g.retro, rawDt)) {
+                .quit => break,
+                .editor => {
+                    // Drop the lock on the way in: the reticle rides a FoeRef into groups the
+                    // editor re-homes from the map every frame, so a held lock survives into a
+                    // world where its index means something else.
+                    g.lock = null;
+                    g.editor.enter(g.hero.pos);
+                },
+                .none => {},
+            }
             // Poison the pad-B tap window: B both backs out of the menu AND rolls, so without
             // this the release of the B that closed the menu fires an instant roll. Poisoned,
             // that release reads as a hold; a fresh press after release taps normally.
@@ -684,7 +811,13 @@ pub fn run(shot: bool) void {
             if (rl.isGamepadButtonPressed(PAD, .right_trigger_2)) heavyReq = true;
         }
 
-        const mv = gatherMove();
+        // STAMINA GATES THE SPRINT AT THE SOURCE. Denying it here rather than downstream keeps
+        // `sprintingMove` the ONE definition of a sprint: the speed the hero travels at, the two
+        // ER facing exceptions and the continuous bleed all read the same Move, so they cannot
+        // disagree about whether he is sprinting. Capped to the walk ceiling, never zeroed —
+        // running out of stamina drops you to a walk, it does not root you to the spot.
+        var mv = gatherMove();
+        if (!g.hero.stam.canSprint()) mv.speed = @min(mv.speed, RUN_SPEED);
         // Poise/stance regenerate every frame (relent and pressure resets — Elden Ring).
         g.hero.vit.tick(dt);
         g.hero.tickFlash(dt); // fade the red damage flash
@@ -758,7 +891,7 @@ pub fn run(shot: bool) void {
         // Blade lands on the skeletons; then they act — kite and loose from the nock at the
         // hero's centre of mass (arrow homing + arc finish the job). A blade hit mid-draw
         // interrupts the shot (enterStun clears the draw).
-        for (&g.line.archers) |*a| {
+        for (g.line.live()) |*a| {
             if (a.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) {
                 spawnArrow(g, a.nockWorld(), v3(g.hero.pos.x, HERO_CENTER_Y, g.hero.pos.z));
             }
@@ -787,6 +920,9 @@ pub fn run(shot: bool) void {
             g.rumble.play(rumblemod.kill);
             g.rig.addShake(SHAKE_KILL);
         }
+        // …and the kill PAYS. Same one-frame `justDied` flag the beat above reads, so the runes, the
+        // rumble and the shake all fire together or not at all; each group knows its own worth.
+        g.hero.runes.gain(g.warren.runesDropped() + g.line.runesDropped() + g.grief.runesDropped());
         // ER lock-on across a kill: the lock leaves a corpse the FRAME it dies (not after the
         // death anim), snapping to the next valid target (nearest screen-centre, like a fresh
         // acquire) or dropping if none.
@@ -807,7 +943,7 @@ pub fn run(shot: bool) void {
         }
         // The YOU DIED tail: armed while dead, drains after the respawn (fade from black).
         if (g.hero.dead) {
-            g.deathFade = RESPAWN_FADE;
+            g.deathFade = RESPAWN_HOLD + RESPAWN_FADE;
         } else if (g.deathFade > 0) {
             g.deathFade -= rawDt;
         }
@@ -852,22 +988,22 @@ fn collideActors(g: *Game, dt: f32) void {
     // the prop grid). The world holds ~700 solids now; scanning all of them per actor, twice a
     // frame, was the other thing that would not have survived the expansion.
     var hp = g.env.resolveActor(g.hero.pos, HERO_R);
-    for (&g.warren.frogs) |*f| {
+    for (g.warren.live()) |*f| {
         if (f.alive() and !f.airborne()) hp = collision.pushOutCircle(hp, HERO_R, f.pos, f.bodyR());
     }
-    for (&g.line.archers) |*a| {
+    for (g.line.live()) |*a| {
         if (a.alive()) hp = collision.pushOutCircle(hp, HERO_R, a.pos, a.bodyR());
     }
-    for (&g.grief.ogres) |*o| {
+    for (g.grief.live()) |*o| {
         if (o.alive()) hp = collision.pushOutCircle(hp, HERO_R, o.pos, o.bodyR());
     }
     g.hero.pos = mathx.approachV(g.hero.pos, inBounds(hp), step);
 
-    for (&g.warren.frogs, 0..) |*f, i| {
+    for (g.warren.live(), 0..) |*f, i| {
         if (!f.alive() or f.airborne()) continue;
         var fp = g.env.resolveActor(f.pos, f.bodyR());
         fp = collision.pushOutCircle(fp, f.bodyR(), g.hero.pos, HERO_R);
-        for (&g.warren.frogs, 0..) |*o, j| {
+        for (g.warren.live(), 0..) |*o, j| {
             if (i == j or !o.alive() or o.airborne()) continue;
             fp = collision.pushOutCircle(fp, f.bodyR(), o.pos, o.bodyR());
         }
@@ -876,14 +1012,14 @@ fn collideActors(g: *Game, dt: f32) void {
 
     // Archers yield last: each pushed out of world, hero, every grounded toad, and fellow
     // archers (same easing so a kite step into a wall slides, not warps).
-    for (&g.line.archers, 0..) |*a, i| {
+    for (g.line.live(), 0..) |*a, i| {
         if (!a.alive()) continue;
         var ap = g.env.resolveActor(a.pos, a.bodyR());
         ap = collision.pushOutCircle(ap, a.bodyR(), g.hero.pos, HERO_R);
-        for (&g.warren.frogs) |*f| {
+        for (g.warren.live()) |*f| {
             if (f.alive() and !f.airborne()) ap = collision.pushOutCircle(ap, a.bodyR(), f.pos, f.bodyR());
         }
-        for (&g.line.archers, 0..) |*o, j| {
+        for (g.line.live(), 0..) |*o, j| {
             if (i == j or !o.alive()) continue;
             ap = collision.pushOutCircle(ap, a.bodyR(), o.pos, o.bodyR());
         }
@@ -892,7 +1028,7 @@ fn collideActors(g: *Game, dt: f32) void {
 
     // The ogre yields to the WORLD (walls/columns) only, never to the tiny hero (who yields
     // above), so it reads as immovable bulk.
-    for (&g.grief.ogres) |*o| {
+    for (g.grief.live()) |*o| {
         if (!o.alive()) continue;
         const op = g.env.resolveActor(o.pos, o.bodyR());
         o.pos = mathx.approachV(o.pos, inBounds(op), step);
@@ -958,9 +1094,9 @@ fn acquireLock(g: *Game) ?FoeRef {
     const cx = @as(f32, @floatFromInt(rl.getScreenWidth())) * 0.5;
     var best: ?FoeRef = null;
     var bestScore: f32 = 1e9;
-    considerLock(g, &g.warren.frogs, .toad, cx, &best, &bestScore);
-    considerLock(g, &g.line.archers, .archer, cx, &best, &bestScore);
-    considerLock(g, &g.grief.ogres, .ogre, cx, &best, &bestScore);
+    considerLock(g, g.warren.live(), .toad, cx, &best, &bestScore);
+    considerLock(g, g.line.live(), .archer, cx, &best, &bestScore);
+    considerLock(g, g.grief.live(), .ogre, cx, &best, &bestScore);
     return best;
 }
 // One group's contribution to acquireLock — generic over the foe type (the shared contract).
@@ -984,9 +1120,9 @@ fn cycleLock(g: *Game, dir: f32) void {
     const curX = lockScreenX(g, cur) orelse return;
     var best: ?FoeRef = null;
     var bestGap: f32 = 1e9;
-    considerCycle(g, &g.warren.frogs, .toad, cur, curX, dir, &best, &bestGap);
-    considerCycle(g, &g.line.archers, .archer, cur, curX, dir, &best, &bestGap);
-    considerCycle(g, &g.grief.ogres, .ogre, cur, curX, dir, &best, &bestGap);
+    considerCycle(g, g.warren.live(), .toad, cur, curX, dir, &best, &bestGap);
+    considerCycle(g, g.line.live(), .archer, cur, curX, dir, &best, &bestGap);
+    considerCycle(g, g.grief.live(), .ogre, cur, curX, dir, &best, &bestGap);
     if (best) |b| g.lock = b;
 }
 fn considerCycle(g: *Game, foes: anytype, kind: FoeKind, cur: FoeRef, curX: f32, dir: f32, best: *?FoeRef, bestGap: *f32) void {
@@ -1007,9 +1143,9 @@ fn considerCycle(g: *Game, foes: anytype, kind: FoeKind, cur: FoeRef, curX: f32,
 // fresh instances (full HP, home positions, slain restored), the arrow pool empties, the
 // lock drops. Instance state only — shared Models are permanent, never rebuilt.
 fn resetFoes(g: *Game) void {
-    g.warren.reset();
-    g.line.reset();
-    g.grief.reset();
+    g.warren.reset(&g.map);
+    g.line.reset(&g.map);
+    g.grief.reset(&g.map);
     g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
     g.lock = null;
 }
@@ -1130,8 +1266,33 @@ fn shootFoe(g: *Game, f: anytype, name: [:0]const u8, yaw: f32, pitch: f32, dist
     shoot(g, name);
 }
 
+// The harness photographs ANIMATIONS, not the stamina economy, so it tops the pool up before
+// every action it stages. With the lockout live and the refill paused mid-action, a run of seven
+// attack shots back to back drains ~84 of 105 and the last ones would start being REFUSED —
+// turning them silently into pictures of a hero standing still. `37_hp_bars` is the deliberate
+// exception: it spends the pool on purpose to photograph a working bar.
+fn stagedAttack(g: *Game, kind: heromod.Attack) void {
+    g.hero.stam.reset();
+    g.hero.startAttack(kind);
+}
+
+fn stagedRoll(g: *Game, dir: rl.Vector3) void {
+    g.hero.stam.reset();
+    g.hero.startRoll(dir);
+}
+
 fn runShots(g: *Game) void {
     std.fs.cwd().makePath("shots") catch {};
+    // The foe portraits pose group member [0] directly, and the groups are sized by the MAP
+    // now — so a map that posts no toads used to read undefined memory here. Fail with the
+    // reason instead: this is a dev harness, and a clear message beats a mystery crash.
+    if (g.warren.n == 0 or g.line.n == 0 or g.grief.n == 0) {
+        std.debug.print(
+            "--shot needs at least one of each foe in {s} (have {d} toads, {d} archers, {d} ogres)\n",
+            .{ worldfmt.START_MAP, g.warren.n, g.line.n, g.grief.n },
+        );
+        @panic("shot harness: the map posts no foes to photograph");
+    }
     const dt: f32 = SHOT_DT;
     // The menu OPENS AT LAUNCH, and the HUD hides behind it (ER does the same) — so the harness
     // has to close it or every capture is of a game sitting in its pause screen. The two menu
@@ -1206,7 +1367,7 @@ fn runShots(g: *Game) void {
     g.rig.yaw = mathx.radians(90);
     g.rig.pitch = 0.10;
     g.rig.dist = 4.4;
-    g.hero.startRoll(v3(0, 0, -1));
+    stagedRoll(g, v3(0, 0, -1));
     const rollStages = [_]struct { name: [:0]const u8, adv: i32 }{
         .{ .name = "shots/7_roll_tuck.png", .adv = 6 }, // ~u 0.14 (dive: balled + banked, spin barely begun)
         .{ .name = "shots/8_roll_over.png", .adv = 8 }, // ~u 0.33 (front-loaded tumble — inverted)
@@ -1235,7 +1396,7 @@ fn runShots(g: *Game) void {
     g.rig.yaw = mathx.radians(30); // front 3/4 — the hero faces -Z, so this shows the sword-arm arc (270 hid it behind the torso)
     g.rig.pitch = 0.13;
     g.rig.dist = 4.2;
-    g.hero.startAttack(.light);
+    stagedAttack(g, .light);
     advanceAttack(g, dt, 10); // ~u 0.28: windup apex — fist at shoulder height, blade LEVEL back over the shoulder
     shoot(g, "shots/15a_atk_light_wind.png");
     advanceAttack(g, dt, 5); // ~u 0.42: mid-arc — blade horizontal, tip OUTWARD, sweeping across
@@ -1244,6 +1405,7 @@ fn runShots(g: *Game) void {
     shoot(g, "shots/15p_atk_light_peak.png");
     advanceAttack(g, dt, 3); // ~u 0.61: follow-through — blade carried across past the OFF shoulder, still level
     shoot(g, "shots/15b_atk_light_thru.png");
+    g.hero.stam.reset(); // staged like the rest — the buffering is what this shot is about
     g.hero.requestAttack(.light); // buffered past the chain knot → the ALTERNATE backhand
     advanceAttack(g, dt, 12); // chain fires at ~u 0.80, then into the backhand WINDUP (the chamber)
     shoot(g, "shots/15r_atk_return_wind.png"); // verify the return chamber clears the torso (no arm buried in the chest)
@@ -1255,20 +1417,20 @@ fn runShots(g: *Game) void {
     g.rig.yaw = mathx.radians(0);
     g.rig.pitch = 1.48; // near-straight-down (follow() doesn't clamp pitch like the live paths)
     g.rig.dist = 6.5;
-    g.hero.startAttack(.light);
+    stagedAttack(g, .light);
     advanceAttack(g, dt, 17); // ~u 0.47, deep in the active window — the trail fan painted across the front
     shoot(g, "shots/15t_atk_light_top.png");
     advanceAttack(g, dt, 999);
     g.rig.pitch = 0.13;
     g.rig.yaw = mathx.radians(90);
-    g.hero.startAttack(.heavy);
+    stagedAttack(g, .heavy);
     advanceAttack(g, dt, 20); // ~u 0.33: overhead windup apex (the R2 tell)
     shoot(g, "shots/16_atk_heavy_windup.png");
     advanceAttack(g, dt, 14); // ~u 0.57: buried impact, follow-through holding
     shoot(g, "shots/17_atk_heavy_impact.png");
     advanceAttack(g, dt, 999);
     g.menu.hitboxes = true;
-    g.hero.startAttack(.heavy);
+    stagedAttack(g, .heavy);
     advanceAttack(g, dt, 28); // ~u 0.47: inside the active window — capsule red on the blade
     shoot(g, "shots/18_atk_hitbox.png");
     advanceAttack(g, dt, 999);
@@ -1338,7 +1500,7 @@ fn runShots(g: *Game) void {
         g.hero.facing = std.math.pi; // face -Z, toward the toad at the origin
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
-        g.hero.startAttack(.light);
+        stagedAttack(g, .light);
         var hk: i32 = 0;
         while (hk < 999 and g.hero.attacking) : (hk += 1) {
             g.hero.updateAttack(dt, PLAY_HALF, null);
@@ -1434,6 +1596,13 @@ fn runShots(g: *Game) void {
         g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
         g.hero.vit.hp = g.hero.vit.hpMax * 0.55;
         g.hero.stam.spend(combat.STAM_ROLL + combat.STAM_HEAVY);
+        // …and BANK SOME RUNES, part-rolled. This is the HUD's own test shot, and a rune counter
+        // photographed at 0 tells you nothing about whether it draws, fits its plate or right-aligns
+        // — the same reason the bars are wounded and the pool spent for this one capture. Ticked a
+        // few frames so it is caught MID-TALLY, which is the state it spends its life in.
+        g.hero.runes.gain(ogremod.RUNES + 2 * frogmod.RUNES);
+        var rk: i32 = 0;
+        while (rk < 14) : (rk += 1) g.hero.runes.tick(SHOT_DT);
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
         g.rig.yaw = mathx.radians(202);
@@ -1441,8 +1610,20 @@ fn runShots(g: *Game) void {
         g.rig.dist = 6.4;
         g.rig.follow(f.centerWorld());
         shoot(g, "shots/37_hp_bars.png");
+
+        // THE LOCKOUT, on an empty bar: the stamina bar flags a refused action so an input that
+        // does nothing can't be mistaken for a dropped one. Drain it dry, ask for a roll, and
+        // confirm the request was REFUSED (he must still be on his feet) before shooting.
+        g.hero.stam.spend(combat.STAM_MAX);
+        g.hero.startRoll(v3(0, 0, -1));
+        std.debug.assert(!g.hero.rolling); // the whole point: an empty pool cannot roll
+        g.hero.update(dt, 0, 0, null);
+        g.hero.pose();
+        shoot(g, "shots/37b_stam_locked.png");
+
         g.hero.vit.hp = g.hero.vit.hpMax; // …back to full for everything downstream (the chip snaps up with it)
         g.hero.stam.reset();
+        g.hero.stamRefused = 0;
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0); // reset the slot
     }
 
@@ -1632,6 +1813,13 @@ fn runShots(g: *Game) void {
         // A high, wide vista north — the whole depth of the world in one frame: avenue, plaza,
         // city wall, the colossal gate, and the cliffs behind it dissolving into haze.
         shootAt(g, "shots/71_vista_north.png", mathx.ground(0, 6), 180, 0.30, 9.0);
+        // THE BONFIRE, close. It sits at (3, 6.5) — the start — and it is the one prop in the world
+        // the player will stand over more than any other, so it gets its own framing rather than
+        // being judged from whatever corner of the avenue shot it happens to fall in. Low pitch: the
+        // read is the SWORD's silhouette against the plain, and looking down on it loses that
+        // entirely. Hero kept alongside for scale and to hold the shadow box over it.
+        standHero(g, 1.4, 7.4, mathx.radians(120));
+        shootAt(g, "shots/71b_bonfire.png", v3(3.0, 0.55, 6.5), 300, 0.07, 3.1);
 
         // THE FALLEN CITY: the plaza, then the chapel from the road, then INSIDE it.
         standHero(g, 2.0, -66.0, std.math.pi);
@@ -1691,12 +1879,34 @@ fn runShots(g: *Game) void {
         // THE EDGE: the cliff wall that the movement clamp now hides behind. Pitch must stay
         // POSITIVE — at -0.05 with dist 15 the camera drops below y=0 and the shot is half
         // underside-of-terrain (a mis-framed capture, not a broken cliff).
-        standHero(g, 40.0, 140.0, 0);
-        shootAt(g, "shots/85_cliffs.png", mathx.ground(40, 152), 4, 0.22, 22.0);
+        //
+        // DERIVED FROM THE MAP'S OWN EXTENT, never a literal. These were hardcoded at z 140–158,
+        // which framed the rim of a 320 m world and then framed a hundred metres of empty meadow
+        // the moment the map grew — the cliffs a distant band on the horizon, and the shot silently
+        // stopped being a test of them.
+        const rimZ = g.map.half - 20.0;
+        standHero(g, 40.0, rimZ, 0);
+        shootAt(g, "shots/85_cliffs.png", mathx.ground(40, rimZ + 12), 4, 0.22, 22.0);
         // …and a long raking view ALONG the wall, which is the angle that shows whether it reads
         // as one escarpment or as a row of separate rocks.
-        standHero(g, 10.0, 150.0, std.math.pi * 0.5);
-        shootAt(g, "shots/85b_cliffs_along.png", mathx.ground(30, 158), 80, 0.16, 26.0);
+        standHero(g, 10.0, rimZ + 10, std.math.pi * 0.5);
+        shootAt(g, "shots/85b_cliffs_along.png", mathx.ground(30, rimZ + 18), 80, 0.16, 26.0);
+        // THE START ARC — the partial ring of cliffs wrapping the start bowl, and the only place
+        // in the world where the six cliff CHARACTERS stand side by side close enough to compare.
+        // The rim shots above are all 20+ m of haze away; a variant whose whole point is its
+        // surface (creeper, a collapse scar) cannot be judged from those.
+        //
+        // Each arc segment's detailed face is its local −Z turned inward by its own yaw, so the
+        // camera has to sit on the side the face points AT — derived per shot, not guessed:
+        //   the north-west pair sit at yaw 0/−30 (faces toward −Z), so the eye goes NORTH of them
+        //   looking +Z (camera yaw 0);
+        standHero(g, 0.0, 6.0, 0);
+        shootAt(g, "shots/85c_arc_ivied.png", mathx.ground(0, 21), 0, 0.16, 22.0);
+        //   the east flank sits at yaw 85 (face toward −X), so the eye goes WEST of it looking +X
+        //   (camera yaw 90). This is the COLLAPSED one — the gully, the fresh pale rock down its
+        //   edges, and the rubble apron fanned out at its foot.
+        standHero(g, 22.0, 3.0, mathx.radians(90));
+        shootAt(g, "shots/85d_arc_collapsed.png", mathx.ground(36, 2), 90, 0.14, 20.0);
 
         // MAP SHOTS — one steep overhead per region. Ground-level framings are what you judge
         // a MODEL from, but they cannot show you layout, spacing or relative SCALE, which is
@@ -1767,4 +1977,107 @@ fn runShots(g: *Game) void {
     g.retro.values = gfx.RETRO_DEFAULTS;
     shoot(g, "shots/14_retro_default.png");
     g.retro.allOff();
+
+    editorShots(g);
+}
+
+// THE EDITOR — four captures, because its whole job is legibility and none of that can be
+// judged from the game shots. The Props layer at rest, a generator selected (its gizmo plus a
+// marker on every instance it owns — the thing that makes a scatter editable), a Decor belt
+// mid-drag, and the Ground layer with soil painted.
+fn editorShots(g: *Game) void {
+    g.editor.enter(mathx.ground(0, -66)); // the chapel end of the processional way
+    g.editor.setLayer(.props);
+    g.editor.dist = 46;
+    g.editor.pitch = -0.65;
+    g.editor.applyCamForShot();
+
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, SHOT_DT);
+    rl.endDrawing();
+    rl.takeScreenshot("shots/95_editor_props.png");
+
+    // Select the wood's canopy belt — the biggest generator in the map, and the one whose
+    // ownership markers say most about what selection means here. It sows great trees, which
+    // are casters and therefore PROPS, not Decor: only that layer can select it.
+    g.editor.setLayer(.props);
+    for (g.map.slice(), 0..) |o, i| {
+        if (o.op == .belt and o.nmix > 3) {
+            g.editor.sel = i;
+            g.editor.focusOnForShot(&g.map, i);
+            break;
+        }
+    }
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, SHOT_DT);
+    rl.endDrawing();
+    rl.takeScreenshot("shots/96_editor_selected.png");
+
+    // A Decor scatter drag in progress over the start meadow.
+    g.editor.enter(mathx.ground(0, 0));
+    g.editor.setLayer(.decor);
+    g.editor.brush[@intFromEnum(editormod.Layer.decor)] = 0; // Scatter
+    g.editor.decorKind = .foxglove;
+    g.editor.focus = mathx.ground(0, 0);
+    g.editor.pitch = -0.95;
+    g.editor.yaw = 0;
+    g.editor.dist = 44;
+    g.editor.applyCamForShot();
+    g.editor.dragging = true;
+    g.editor.dragFrom = mathx.ground(-16, -12);
+    g.editor.dragTo = mathx.ground(14, 16);
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, SHOT_DT);
+    rl.endDrawing();
+    rl.takeScreenshot("shots/97_editor_drag.png");
+    g.editor.dragging = false;
+
+    // THE GROUND LAYER with real paint down: a worn dirt track along the avenue and a stone
+    // apron at the arch, so the shader's soil override is captured rather than assumed. Painted
+    // into the LIVE map, then undone, so the shot never leaves the world dirty.
+    const before = g.map.soil;
+    g.editor.setLayer(.ground);
+    g.editor.brush[@intFromEnum(editormod.Layer.ground)] = 0; // dirt
+    g.editor.radius = 5;
+    var z: f32 = 22;
+    while (z > -40) : (z -= 3) _ = g.map.paintSoil(0.6, z, 4.5, .dirt);
+    _ = g.map.paintSoil(0, -30, 9, .stone);
+    _ = g.map.paintSoil(-13.5, 3, 6, .moss);
+    g.env.uploadSoil(&g.map);
+    g.editor.focus = mathx.ground(0, -10);
+    g.editor.pitch = -0.85;
+    g.editor.yaw = std.math.pi;
+    g.editor.dist = 46;
+    g.editor.applyCamForShot();
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, SHOT_DT);
+    rl.endDrawing();
+    rl.takeScreenshot("shots/98_editor_ground.png");
+
+    g.map.soil = before;
+    g.env.uploadSoil(&g.map);
+
+    // MARQUEE + CLIPBOARD: a shift-drag box over the avenue with the Props inside it marked,
+    // so the selection ring on each and the box itself are both captured.
+    g.editor.setLayer(.props);
+    g.editor.focus = mathx.ground(0, -12);
+    g.editor.pitch = -0.8;
+    g.editor.yaw = std.math.pi;
+    g.editor.dist = 40;
+    g.editor.applyCamForShot();
+    g.editor.selectForShot(&g.map, mathx.ground(-20, -30), mathx.ground(20, 6));
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, SHOT_DT);
+    rl.endDrawing();
+    rl.takeScreenshot("shots/99_editor_marquee.png");
+
+    // The OPEN dialog over the same frame — the file list is chrome and can't be judged from
+    // any of the above.
+    g.editor.openForShot();
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, SHOT_DT);
+    rl.endDrawing();
+    rl.takeScreenshot("shots/99b_editor_open.png");
+
+    g.editor.on = false;
 }

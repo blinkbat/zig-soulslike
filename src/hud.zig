@@ -1,3 +1,4 @@
+const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 
@@ -42,6 +43,7 @@ pub fn init() void {
         rl.setTextureFilter(fontBig.texture, .bilinear);
         haveBig = true;
     } else |_| {}
+    initMono();
 }
 
 pub fn deinit() void {
@@ -49,6 +51,8 @@ pub fn deinit() void {
     haveFont = false;
     if (haveBig) rl.unloadFont(fontBig);
     haveBig = false;
+    if (haveMono) rl.unloadFont(monoFont);
+    haveMono = false;
 }
 
 pub fn textW(s: [:0]const u8, size: i32) i32 {
@@ -78,6 +82,67 @@ pub fn text(s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
 /// a size change doesn't leave the debug overlay's rows overlapping.
 pub fn lineH(size: i32) i32 {
     return size + @divTrunc(size, 3);
+}
+
+// ── MONOSPACE (the EDITOR only) ────────────────────────────────────────────────────────
+// A REAL system monospace face — Consolas first, then the other Windows-stock fixed-pitch
+// faces, then whatever exists on a non-Windows box. Numbers line up in a column and a value
+// that grows a digit doesn't shove the row about, which is what an editor needs and what
+// Balthazar — a display serif with proportional widths — is exactly wrong for. Kept OUT of the
+// game's own UI, which stays Balthazar by owner's pick.
+//
+// Loaded ONE atlas well above the drawn size so every draw downscales, same rule as the HUD
+// face. raylib's built-in bitmap font is the last resort only: it is a 10 px pixel font, it
+// looks like a pixel font, and at anything other than an exact integer multiple of its cell it
+// smears — which is why it isn't the primary here any more.
+const MONO_CANDIDATES = [_][:0]const u8{
+    "C:/Windows/Fonts/consola.ttf", // Consolas — the good one
+    "C:/Windows/Fonts/lucon.ttf", // Lucida Console
+    "C:/Windows/Fonts/cour.ttf", // Courier New
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+    "/System/Library/Fonts/Menlo.ttc",
+};
+const MONO_ATLAS_PX = 40; // >= 2x MONO, so the editor's text always downscales
+
+var haveMono = false;
+var monoFont: rl.Font = undefined;
+
+/// The editor's one type size. A TTF now, so this is a free choice rather than a multiple of a
+/// bitmap cell — 18 is where Consolas is dense enough for a panel and still crisp.
+pub const MONO: i32 = 18;
+
+fn initMono() void {
+    for (MONO_CANDIDATES) |path| {
+        if (rl.loadFontEx(path, MONO_ATLAS_PX, null)) |f| {
+            // A face that failed to load can still come back as raylib's 0-glyph default; only
+            // take it if it actually carries glyphs, or every string measures as nothing.
+            if (f.glyphCount > 0) {
+                monoFont = f;
+                rl.setTextureFilter(monoFont.texture, .bilinear);
+                haveMono = true;
+                return;
+            }
+            rl.unloadFont(f);
+        } else |_| {}
+    }
+}
+
+pub fn mono(s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
+    if (!haveMono) {
+        rl.drawText(s, x, y, size, col);
+        return;
+    }
+    rl.drawTextEx(monoFont, s, .{ .x = @floatFromInt(x), .y = @floatFromInt(y) }, @floatFromInt(size), 0, col);
+}
+
+pub fn monoW(s: [:0]const u8, size: i32) i32 {
+    if (!haveMono) return rl.measureText(s, size);
+    return @intFromFloat(rl.measureTextEx(monoFont, s, @floatFromInt(size), 0).x);
+}
+
+/// Row pitch for stacked monospace rows.
+pub fn monoLineH(size: i32) i32 {
+    return size + @divTrunc(size, 4);
 }
 
 /// Right-aligned text ending `pad` px from the right screen edge — the debug corner's row
@@ -154,7 +219,10 @@ const CHIP_RATE = 0.55; // …then drains this fraction of the bar per second
 
 /// The three vitals bars, top-left. `dt` drives the chip trail only — pass the fixed shot
 /// timestep under --shot and it stays reproducible.
-pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32) void {
+/// `stamRefused` in 0..1 is how hot the "that action was refused" flag on the stamina bar burns
+/// — the caller's timer normalised. An empty-bar input does nothing at all in ER, and nothing is
+/// indistinguishable from a dropped input; this is the one place that can say which it was.
+pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32) void {
     if (hp > chip) {
         chip = hp; // healing (and a respawn) snaps it — never strand a trail across the bar
         chipHold = 0;
@@ -169,6 +237,15 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32) void {
     bar(MARGIN, y, FP_W, FP_H, fp, 0, FP_HI, FP_LO, FP_TP);
     y += FP_H + BAR_GAP;
     bar(MARGIN, y, ST_W, ST_H, stam, 0, ST_HI, ST_LO, ST_TP);
+    // The refusal flag: the stamina bar's own frame lights up. Drawn OVER the finished bar and
+    // outside its fill, so an empty bar — which is exactly when this fires and has no fill to
+    // tint — still reads loudly.
+    const k = mathx.clampF(stamRefused, 0, 1);
+    if (k > 0.001) {
+        const a: u8 = @intFromFloat(230 * k);
+        rl.drawRectangleLines(MARGIN - 2, y - 2, ST_W + 4, ST_H + 4, rgba(232, 96, 72, a));
+        rl.drawRectangleLines(MARGIN - 3, y - 3, ST_W + 6, ST_H + 6, rgba(232, 96, 72, a / 2));
+    }
 }
 
 fn bar(x: i32, y: i32, w: i32, h: i32, frac: f32, chipFrac: f32, hi: rl.Color, lo: rl.Color, tp: rl.Color) void {
@@ -216,6 +293,35 @@ pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool) void {
     if (staggered) rl.drawRectangleLines(x - 1, y - 1, FOE_W + 2, FOE_H + 2, STAGGER_RIM);
 }
 
+// ── THE RUNE COUNTER, bottom-right ──────────────────────────────────────────────────────
+// ER's fourth and last piece of screen furniture, in ER's own corner — which is also the last free
+// corner, so the HUD's "three places and nowhere else" rule becomes four and stops there.
+//
+// The number itself ROLLS (combat.Runes owns that; this only prints what it is handed). A plate
+// dark enough to hold the digits against dry grass, a hairline in the same tarnished metal as the
+// vitals frames opposite, and the number RIGHT-ALIGNED — a counter that grows a digit and shoves
+// itself sideways is the one thing you cannot read at a glance mid-fight.
+const RUNE_W: i32 = 122;
+const RUNE_H: i32 = 32;
+/// Seated off the bottom edge by the same margin the equipment cross uses, so the two bottom
+/// corners sit on one line. Read `BOTTOM` — two separately-tuned numbers is how they drift.
+const RUNE_FILL = rgba(14, 12, 10, 224);
+const RUNE_EDGE = rgba(116, 104, 84, 214); // …the vitals bars' FRAME colour, deliberately
+const RUNE_TEXT = rgba(228, 216, 190, 255);
+
+/// `n` is the ROLLING value (combat.Runes.display()), not the banked total — the counter is the
+/// payoff for the kill, and a number that snaps is a readout where one that counts up is a reward.
+pub fn runes(n: u32) void {
+    var buf: [16]u8 = undefined;
+    const s = std.fmt.bufPrintZ(&buf, "{d}", .{n}) catch return;
+    const x = rl.getScreenWidth() - RUNE_W - MARGIN;
+    const y = rl.getScreenHeight() - RUNE_H - BOTTOM;
+    rl.drawRectangle(x - 2, y - 2, RUNE_W + 4, RUNE_H + 4, rgba(0, 0, 0, 176)); // the hard black seat
+    rl.drawRectangle(x, y, RUNE_W, RUNE_H, RUNE_FILL);
+    rl.drawRectangleLines(x, y, RUNE_W, RUNE_H, RUNE_EDGE);
+    text(s, x + RUNE_W - textW(s, BODY) - 11, y + @divTrunc(RUNE_H - lineH(BODY), 2) + 1, BODY, RUNE_TEXT);
+}
+
 // ── the equipment cross, bottom-left ────────────────────────────────────────────────────
 // ER's bottom-left is a D-PAD CROSS of exactly four slots and nothing else: sorcery UP,
 // left-hand armament LEFT, right-hand armament RIGHT, quick item DOWN. Only the right hand's
@@ -227,14 +333,30 @@ pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool) void {
 // they read as a keypad in the corner rather than as the game's equipment. The GAP is wide
 // enough to be read as a gap at a glance: the four arms have to look like a cross, and a tight
 // gap closes them back into a block.
-const SLOT_W: i32 = 44;
-const SLOT_H: i32 = 60;
-const SLOT_GAP: i32 = 8; // between the LEFT/RIGHT arms and the centre column
+// THE WHOLE CROSS SCALES OFF ONE NUMBER. Everything below is a TUNED PROPORTION with a reason
+// attached — the portrait slot, a gap wide enough to read as a gap, a vertical pitch deliberately
+// tighter than a slot is tall — so resizing by editing the four numbers individually is exactly
+// how those relationships get lost. Change EQ_SCALE instead.
+// The sword icon needs nothing: it already sizes off SLOT_W and carries its stroke widths up.
+//
+// A PERCENTAGE, not an integer multiplier. It was `2`, and an integer dial can only ever say 1x or
+// 2x — so "a bit smaller" was not expressible through it at all, and the only way to ask for it was
+// to edit the four base numbers by hand, which is the one thing the paragraph above forbids. Now
+// the law and the request can both be satisfied: 150 is the owner's 2x eased back a quarter.
+const EQ_SCALE: i32 = 150; // percent
+fn eq(v: i32) i32 {
+    return @divTrunc(v * EQ_SCALE, 100);
+}
+const SLOT_W: i32 = eq(44);
+const SLOT_H: i32 = eq(60);
+const SLOT_GAP: i32 = eq(8); // between the LEFT/RIGHT arms and the centre column
 // The vertical pitch is DELIBERATELY LESS THAN A SLOT IS TALL, and it is not derived from
 // SLOT_GAP. Stepping down by a full slot plus a gap leaves a void up the middle taller than the
 // slots themselves — the four read as scattered rather than as one cross. Pulled in, the top and
 // bottom slots overlap the side slots' rows and the group closes up into a single shape.
-const PITCH_Y: i32 = 48;
+const PITCH_Y: i32 = eq(48);
+// The seat off the bottom edge does NOT scale: it is a screen margin like MARGIN, shared in
+// spirit with the bars in the opposite corner, and doubling it would just push the cross inward.
 const BOTTOM: i32 = 26;
 
 // An ER slot is a faint WELL under a visible thin rim — get that round the wrong way and the

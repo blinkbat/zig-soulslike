@@ -23,6 +23,17 @@ ask. The owner (David) drives the design; implement what's asked and nothing ext
 - **FLESH IS ROUND.** Organic mass = `addBlob`/`addCapsule`; `addCube`/`addBox` is for iron,
   blades, cloth, masonry. A bare `addCylinder` leaves an open cut-pipe end and a hard rim, and
   those rims + boxes are what read as BLOCKY however good the animation on top is.
+- **RELIEF IS SUBTLE.** Protruding detail — flutes, bark ridges, bedding bands, coursing, fracture
+  shards — exists to BREAK UP a big mass, and it does that with a few centimetres. Stand it further
+  off than that and it reads DISHEVELED: strips stuck onto a column, slates hung off a cliff, a wall
+  of rubble tipped into a mould. Detail on a curved mass protrudes a few PERCENT of that mass's
+  radius, not a tenth: sink the proud primitive most of the way in and let only its edge break the
+  surface. Prefer more SIDES on the mass over more relief on top of it (a 9-gon shaft's flats are
+  wide enough that anything sitting on one looks glued to it). And judge the stand-off against the
+  ASSEMBLED thing, not one mesh — the cliff ring overlaps segments hard, so detail that clears its
+  own body by a little clears its neighbour's by a lot. Cut AMPLITUDE, never irregularity: same
+  counts, same seeds, same lean. Quieter is not the same as more regular, and "made regular" is the
+  opposite failure, not the fix. See `props.zig`'s RELIEF IS SUBTLE block.
 - **PACKED STONE HAS A CORE.** A wall laid as a row of blocks is only the FACING; behind it a
   real wall is packed solid. Without a substrate the joints leak sky (or the far side of the
   room) and it reads as loose stones balanced on each other. And overlap the facing well past
@@ -41,18 +52,47 @@ third-person over-the-shoulder camera, in a lit 3D world with cast shadows (warm
 slate sky, cloud deck, haze, vignette, plus point-light torch/brazier/campfire fire). Three foes
 hunt him — **gaping toads**, **skeletal archers**, a lone **one-eyed ogre** — with ER lock-on and
 a full combat layer: HP + two-tier poise/stance stagger + death, both sides (`combat.zig`, and
-**`docs/ELDEN_RING.md`** as the systems reference). **STAMINA is live but does not LOCK OUT** —
-the roll/swing bites and the sprint bleed all run at ER's own numbers, and `combat.STAM_LOCKOUT`
-switches the "empty = can't act" half on when the owner wants it. No criticals, guarding or jump
-yet. The bar for "human" is anatomy + real gaits, not polygon count.
+**`docs/ELDEN_RING.md`** as the systems reference). **STAMINA IS FULLY LIVE, LOCKOUT INCLUDED** —
+an empty bar means no roll, no swing, no sprint (see STAMINA below). No criticals, guarding or
+jump yet. The bar for "human" is anatomy + real gaits, not polygon count.
 
 **THE HUD IS ELDEN RING'S**, in ER's three places and nowhere else: HP/FP/stamina bars top-left,
 the four-slot equipment CROSS bottom-left, the debug readout top-right (menu >
 Debug > Stats). It hides behind the menu and under the YOU DIED card. FP is a full static bar —
 there is nothing to spend it on until spells exist.
 
+**THE WORLD IS DATA, AND THE EDITOR OWNS IT.** `worlds/01_fallen_plain.world` is a versioned
+text file of authoring OPS (`worldfmt.zig`); `env.materialize` replays it into props. Nothing
+about the world is authored in Zig any more — `env.zig` is the loader, `editor.zig` is the
+author, and **Menu > Editor** is how you get there.
+
+**THE MAP STORES THE AUTHORING, NOT ITS OUTPUT.** A wood is one `belt` of 260 attempts with a
+kind mix and an edge gradient, not 260 coordinates — so the file is ~280 lines you can read in
+a diff, and a density dial re-expands it instead of stamping instances. Ops: `at` (one literal
+prop), `belt` (rect scatter), `disc` (annulus), `ring`, `line` (broken run), `ivy` (sows on
+standing stonework), `edge` (the cliff rim), `cover` (the lattice ground scatter). Plus `zone`
+/ `clear` / `runway` / `foe` tables.
+
+- **EVERY GENERATOR OP CARRIES ITS OWN SEED** and gets its own `Rng`. The old code drew every
+  op from ONE shared stream, which meant inserting a belt re-rolled every op after it — no edit
+  was ever local, and that alone makes a world uneditable. Independent seeds are load-bearing.
+- **ORDER IS MEANING.** Ops replay in file order because later ones read what earlier ones
+  placed: `ivy` only climbs stone already standing, a belt only rejects water already poured,
+  and `cover` needs the solid grid. The properties panel's up/down move an op for this reason.
+- **ONE FIELD TABLE DRIVES THE WRITER AND THE PARSER** (`fieldsOf`), walked at comptime in
+  table order. Driving it off `std.meta.fields(Op)` instead reads the STRUCT's order and
+  silently writes a value in the wrong column. Unknown keys and missing fields are LOAD ERRORS.
+- **A MISSING OR BROKEN MAP PANICS** with the file and line. No built-in fallback: quietly
+  running a different world hides the fault behind a world nobody authored.
+- **`buildSolids` RESETS.** `materialize` runs it twice (once for the cover scatter to query,
+  once after) and an appending version silently doubles every collider in the world.
+- Props carry the index of the op that placed them, which is what lets a click on a rock select
+  the generator that grew it. Without it only literals would be selectable.
+- `bake.zig` is the one-way door that produced the first map from the old code-authored
+  regions, kept as the record of where it came from. `--bake` re-runs it and OVERWRITES the map.
+
 **THE WORLD** is a 320 m square golden-hour plain ringed by cliffs, holding five regions
-(see `env.zig`'s header for the map, `props.zig` for the models):
+(see the map file, `props.zig` for the models):
 
 | Direction | Region | What's there |
 | --- | --- | --- |
@@ -134,11 +174,53 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  MATERIALS (every mesh carries surface-anchored UVs and a `gfx.Mat` id;
                  `matAlbedo` textures it procedurally, value-only, ±20%, so nothing reads gaudy).
                  Also the shadow depth pass, the fullscreen `Sky`, and the `Vignette`.
-- `env.zig`    — THE WORLD: the ground plane, the five regions AUTHORED IN CODE (a region is a
-                 paragraph you can read, not a table of coordinates), the seeded ground-cover
-                 scatter + `coverField`, and the three systems that make this size affordable —
+- `worldfmt.zig` — THE MAP FORMAT: the op vocabulary, the zone/clearing/runway/foe tables, and
+                 one comptime field table driving both the writer and the parser. Load/save.
+- `editor.zig` — THE EDITOR (Menu > Editor). Organised in LAYERS the StarEdit way — GROUND
+                 (paint the soil), COVER (zone density + clearings), DECOR (flora), PROPS
+                 (stone/timber/fire), UNITS (foe spawns) — and **only the ACTIVE layer is
+                 live**: every layer stays visible but a click can only pick, place or erase in
+                 the one you are on, so dressing ferns can never nudge a chapel. Each layer
+                 ends in its own scoped ERASE brush and remembers the brush you left it on.
+                 SELECTION IS BY CLICKING THE THING IN THE WORLD — there is deliberately no list
+                 of ops (that was the document model showing through the window, and it read as a
+                 history log next to Undo/Redo). A properties
+                 panel per op kind, world gizmos, minimap, whole-map undo/redo,
+                 New/Open/Save/Save-As (an unsaved map always confirms first), SHIFT+DRAG
+                 marquee, drag-the-selection-to-move, Ctrl+C/X/V/A, F5 playtest.
+                 **CONTROLS ARE THE OWNER'S, VERBATIM — do not invent additions:** LMB click
+                 picks an object, LMB drag PANS; RMB click on an object opens its menu, on
+                 nothing DESELECTS, RMB drag ROTATES (4 px splits click from drag); wheel ZOOMS;
+                 WASD and the arrows pan; Enter confirms, Esc backs out one level and opens the
+                 menu when there is nothing left to back out of. The camera is an ORBIT rig
+                 (ground focus + yaw/pitch/dist), not a free-fly, and the pan works by re-aiming
+                 at the point the cursor GRABBED — so terrain stays under the pointer at any
+                 zoom or angle. THE CURSOR IS SHOWN here and re-hidden on the way out; gameplay
+                 hides it because there the mouse IS the camera.
+                 SELECT MODE exists because "click to select" and "click to paint" cannot share
+                 the left button: it is armed by default, any brush disarms it, Esc re-arms it.
+                 Tab cycles layers, 1-9 pick a brush, [ ] size it, G snaps.
+                 The CLIPBOARD is file-scope and outlives a map load on purpose, so a stand of
+                 trees can be carried from one map into another; its contents are stored
+                 relative to the selection's centre, so a paste lands under the cursor.
+                 It draws with the RETRO PASS BYPASSED and in a real SYSTEM MONOSPACE face
+                 (Consolas, then the other stock fixed-pitch faces — `hud.mono`, NOT Balthazar,
+                 and NOT raylib's bitmap font): you cannot dress a world through a lens that is
+                 lying about it, and columns of numbers need fixed advances.
+                 Chrome text FITS ITSELF to the space left over — the status readout is laid out
+                 first and the control crib shortens, then drops, rather than drawing over it.
+- `ui.zig`     — the editor's immediate-mode widget kit, lifted from `../zig-diablo/src/ui.zig`
+                 and re-backed onto `hud.zig`. `Ctx.anyHot` gates world clicks NEXT frame.
+- `bake.zig`   — the one-way door that emitted the first map from the old code-authored regions.
+- `env.zig`    — THE WORLD: the ground plane, the REPLAY of a map's ops into props, the
+                 `coverField`, and the three systems that make this size affordable —
                  the UNIFORM GRID, the CULLERS (`View`/`Cull`), the grid-local solid queries.
                  Also gathers each fire's `gfx.Light` and uploads the nearest per frame.
+- `props.zig`  — also `displayName`/`group` for the editor palette: enum tags are terse
+                 identifiers ("tree", "birch", "broken") which are right in code and useless in a
+                 palette. Both are EXHAUSTIVE SWITCHES, so a new kind is a compile error until it
+                 has been named and shelved — same guarantee INFO's comptime block gives, with no
+                 second table to keep in lockstep.
 - `props.zig`  — EVERY static model, plus ONE table (`INFO`) holding all the rest of the engine
                  needs per kind: mesh builder, bounding radius, top height, view distance, casts /
                  sways, footprint colliders, any fire. A kind is ONE ROW; the old layout spread
@@ -262,6 +344,33 @@ cross-fade ~0.09 s; stances never snap while mechanics stay instant.
   well past the hero's, and `FOE_REGEN_DELAY` / `FOE_REGEN_RATE` far slower — a foe whose poise is
   back before your next swing can only be staggered by a burst, and every fight collapses into
   "land two fast or don't bother".
+
+## STAMINA (`combat.zig`) — the soulslike rules, all of them
+
+- **AN EMPTY BAR LOCKS OUT roll / attack / sprint** (`STAM_LOCKOUT`, owner's call). This does NOT
+  break the no-time-theft law: that law forbids taking control away during the player's own
+  action, and a lockout is the consequence of a choice made a second earlier, readable off a bar.
+- **WALKING IS NEVER GATED.** Running dry drops you to a walk (`mv.speed` is capped to
+  `RUN_SPEED`), never roots you. Denied at the SOURCE so `sprintingMove` stays the one definition
+  of a sprint and the speed, the facing exceptions and the bleed cannot disagree.
+- **YOU MAY ACT ON ANY STAMINA ABOVE ZERO** — `canAct()` is `cur > 0`, NOT `cur >= cost`. A roll
+  costs 12 and you can take it on 1, emptying the bar and locking you out after. That asymmetry
+  is the PANIC ROLL, and gating on the cost instead deletes the genre's most important move and
+  turns the bottom tenth of the bar into decoration. Every FromSoft game works this way.
+- **A COMMITTED ACTION IS NEVER CUT SHORT.** `spend` floors at 0; nothing is refunded or aborted
+  partway by the pool running out.
+- **THE REFILL PAUSES while attacking, ROLLING or sprinting**, then waits `STAM_DELAY`. Rolling
+  counts, or a roll chain costs less than the sum of its rolls.
+- **A REFUSED ACTION IS SHOWN** (`hero.stamRefused` → a red ring on the stamina bar). In ER an
+  empty-bar input does nothing at all, and *nothing* is indistinguishable from a dropped input —
+  which under a ZERO INPUT LAG law is the one thing the player must never have to wonder about.
+  Feedback only; it changes no mechanics.
+- **The shot harness stages its own stamina** (`stagedAttack`/`stagedRoll` reset the pool). It
+  photographs animations, not the economy — seven attack shots back to back would otherwise
+  drain the bar and the last ones would silently become pictures of a hero standing still.
+
+## Foe pacing
+
 - **The archer's BACKSTEP** is a committed jump straight back, triggered inside sword reach, on a
   long (7 s) cooldown. Its walking kite is a stroll and a hero who simply runs at it would always
   be on top of it; this buys the shot back exactly once, and closing the distance stays the
@@ -411,11 +520,12 @@ Placement is deterministic: if it fits once it fits.
 
 ## Next steps (not yet built)
 
-Stamina LOCKOUT (the meter is live; `combat.STAM_LOCKOUT` gates ER's "empty = can't
-roll/attack/sprint"), **criticals** off a stance break (the stagger already exists), hyper-armor
-windows during the hero's own attacks, guarding + **guard counter**, AR × motion-value × defense
-damage (today it's flat constants), **status buildup**, jump, distinct combo follow-up anims,
-bonfires, real level geometry. See `docs/ELDEN_RING.md` for the target mechanics behind each.
+**Criticals** off a stance break (the stagger already exists), hyper-armor windows during the
+hero's own attacks, guarding + **guard counter** — which is also the last piece of stamina ER has
+and this doesn't: blocked hits cost stamina by Guard Boost, and emptying the bar while guarding is
+a GUARD BREAK. AR × motion-value × defense damage (today it's flat constants), **status buildup**,
+jump, distinct combo follow-up anims, bonfires, real level geometry. See `docs/ELDEN_RING.md` for
+the target mechanics behind each.
 
 Current gaps: the roll has front-loaded i-frames (0→0.46 s of 0.70 s, gating `takeHit` + the
 arrow connect) but still **no collision**; there is **no foot IK** — `rx(bodyPitch)` in

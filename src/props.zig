@@ -67,9 +67,13 @@ const THATCH_DK = rgba(52, 42, 22, 255);
 // Emissive (vertex alpha < 255 = self-lit): the grace ember, its wisp, and every flame.
 const EMBER = rgba(240, 162, 58, 40);
 const WISP = rgba(250, 196, 110, 120);
-const FLAME_CORE = rgba(255, 214, 138, 25); // near-white heart of a torch
-const FLAME_MID = rgba(252, 158, 52, 40);
-const FLAME_TIP = rgba(214, 96, 26, 90); // the cooler, more transparent-reading tongue
+// Eased DOWN across the board (owner: all flames a bit more subtle). These ride the EMISSIVE
+// channel, which the scene shader takes to `base*1.35` — so a near-white core at 255 came back
+// blown out and a fire was the loudest thing on any screen it appeared in. Same hues, same
+// core→mid→tip ramp, less glare; the light each fire casts is unchanged.
+const FLAME_CORE = rgba(226, 190, 128, 25); // pale heart of a torch — no longer near-WHITE
+const FLAME_MID = rgba(214, 138, 48, 40);
+const FLAME_TIP = rgba(176, 82, 24, 90); // the cooler, more transparent-reading tongue
 const COAL = rgba(196, 78, 22, 70);
 const CLOTH = rgba(76, 20, 12, 255); // faded war-banner crimson (matches the hero's cape)
 const CLOTH_DK = rgba(48, 14, 10, 255); // …in the folds, and where the rain got into it
@@ -117,6 +121,15 @@ const BIRCH_BARK = rgba(104, 100, 90, 255); // pale, and the only tree you can p
 const BIRCH_SCAR = rgba(44, 42, 38, 255);
 const BONE = rgba(108, 104, 92, 255);
 const RUST = rgba(58, 38, 24, 255);
+// BONFIRE ASH — the palest albedo in the world, and deliberately so. Everything else out here is
+// authored near-black because the shader's hot key plus the gamma lift turn mid values pale; ash is
+// the one material that WANTS to come back pale, because a grey pat of it in a ring of stones is
+// what finds your eye across a hundred metres of golden plain. That is the bonfire's whole job, and
+// it is done by albedo, not by the light. Still kept well under mid grey: at 126 the lift took it
+// to 237 and the pit read as spilled paint.
+const ASH = rgba(78, 74, 70, 255);
+const ASH_LT = rgba(96, 92, 86, 255); // where it has been raked over, or a fresh drift
+const ASH_DK = rgba(46, 43, 40, 255); // wet, or trodden into the kerb
 // The tarn: dark peat-water in the middle, silted a little paler at the rim. The RIPPLES and
 // the sun glitter are the shader's (gfx.Mat.water); these are only what's suspended in it.
 // Authored DARK on purpose — the first pass was three times this bright and the lake read as
@@ -156,9 +169,12 @@ pub const Kind = enum(u8) {
     paving, // a worn flagstone patch
     cart, // a broken wagon
     monolith, // standing stone
-    cliff, // the world's rock wall (three variants — see CLIFFS)
+    cliff, // the world's rock wall (six variants — see CLIFFS)
     cliff2,
     cliff3,
+    cliff4, // …ivy-laced: creeper curtains down the face, moss packed into the seams
+    cliff5, // …collapsed: a gully torn out of it, fresh rock at the scar, the apron at its foot
+    cliff6, // …both — an old collapse gone green
     // rock + wood litter
     boulder,
     rocks,
@@ -221,10 +237,166 @@ pub const Kind = enum(u8) {
     sapling,
 };
 
+// ── EDITOR PRESENTATION ── what a kind is CALLED and what shelf it lives on. Enum tags are
+// terse identifiers ("tree", "birch", "broken"), which is right in code and useless in a
+// palette: you cannot tell a dead tree from a birch, or a snapped column from a whole one.
+//
+// Written as EXHAUSTIVE SWITCHES rather than a parallel table. A switch with no `else` is
+// checked by the compiler, so adding a Kind is a build error until it has been named and
+// filed — the same guarantee INFO's comptime block gives, without a second array to keep in
+// lockstep with the first.
+
+/// The shelves the editor's palette is divided into. Ordered as they appear in the UI.
+pub const Group = enum {
+    ruins,
+    buildings,
+    village,
+    rock,
+    trees,
+    fire,
+    water,
+    grass,
+    flowers,
+    brush,
+    ferns,
+    wetland,
+    fungus,
+
+    pub const N = @typeInfo(Group).@"enum".fields.len;
+
+    pub fn label(g: Group) [:0]const u8 {
+        return switch (g) {
+            .ruins => "Ruins",
+            .buildings => "Buildings",
+            .village => "Village",
+            .rock => "Rock",
+            .trees => "Trees",
+            .fire => "Fire",
+            .water => "Water",
+            .grass => "Grass",
+            .flowers => "Flowers",
+            .brush => "Brush",
+            .ferns => "Ferns",
+            .wetland => "Wetland",
+            .fungus => "Fungus",
+        };
+    }
+};
+
+/// The name shown in the editor. Says what the thing IS, not what the identifier is.
+pub fn displayName(k: Kind) [:0]const u8 {
+    return switch (k) {
+        .pillar => "Column",
+        .broken => "Snapped Column",
+        .block => "Ruin Block",
+        .arch => "Gate Arch",
+        .wall => "Ruined Wall",
+        .tree => "Dead Tree",
+        .graves => "Graves",
+        .sword => "Planted Sword",
+        .grace => "Grace Ember",
+        .tower => "Horizon Keep",
+        .gate => "Colossal Gate",
+        .rubble => "Rubble",
+        .banner => "War Banner",
+        .statue => "Sentinel Statue",
+        .chapel => "Chapel",
+        .watchtower => "Watchtower",
+        .cottage => "Ruined House",
+        .causeway => "Causeway",
+        .paving => "Flagstones",
+        .cart => "Broken Cart",
+        .monolith => "Standing Stone",
+        // Named for the CHARACTER each one carries, not numbered: the palette's job is to say
+        // what the thing is, and "Cliff Face II" tells you nothing about which rock you are
+        // about to stand up.
+        .cliff => "Cliff Face (Weathered)",
+        .cliff2 => "Cliff Face (Blocky)",
+        .cliff3 => "Cliff Face (Ragged)",
+        .cliff4 => "Cliff Face (Ivied)",
+        .cliff5 => "Cliff Face (Collapsed)",
+        .cliff6 => "Cliff Face (Overgrown)",
+        .boulder => "Boulder",
+        .rocks => "Rock Cluster",
+        .stump => "Stump",
+        .log => "Fallen Log",
+        .well => "Well",
+        .shrine => "Wayside Shrine",
+        .lantern => "Post Lantern",
+        .fence => "Fence Run",
+        .barrels => "Barrels",
+        .woodpile => "Woodpile",
+        .bones => "Old Bones",
+        .sarcophagus => "Sarcophagus",
+        .stairs => "Stair Fragment",
+        .gibbet => "Gibbet Cage",
+        .cairn => "Cairn",
+        .outcrop => "Bedrock Shelf",
+        .scree => "Scree",
+        .torch => "Iron Torch",
+        .brazier => "Brazier",
+        .campfire => "Campfire",
+        .water => "Water Sheet",
+        .tuft => "Grass Tuft",
+        .patch => "Grass Patch",
+        .shrub => "Shrub",
+        .flowers => "Flowers",
+        .reeds => "Reeds",
+        .glow => "Glowing Bloom",
+        .bush => "Bush",
+        .bramble => "Bramble",
+        .fern => "Fern",
+        .grasstall => "Tall Grass",
+        .clover => "Clover Mat",
+        .moss => "Moss",
+        .mushrooms => "Mushrooms",
+        .nettles => "Nettles",
+        .thistle => "Thistle",
+        .foxglove => "Foxglove",
+        .heather => "Heather",
+        .gorse => "Gorse",
+        .cattails => "Bulrushes",
+        .lilypads => "Lily Pads",
+        .bracken => "Dead Bracken",
+        .thicket => "Thicket",
+        .wildflowers => "Wildflowers",
+        .ivy => "Ivy",
+        .bigtree => "Great Tree I",
+        .bigtree2 => "Great Tree II",
+        .bigtree3 => "Great Tree III",
+        .willow => "Willow",
+        .conifer => "Conifer",
+        .birch => "Birch",
+        .snag => "Dead Snag",
+        .sapling => "Sapling",
+    };
+}
+
+/// Which shelf a kind sits on in the palette.
+pub fn group(k: Kind) Group {
+    return switch (k) {
+        .pillar, .broken, .block, .arch, .wall, .statue, .monolith, .paving, .stairs, .rubble, .banner, .sword, .graves, .sarcophagus, .bones, .gibbet, .cairn => .ruins,
+        .chapel, .watchtower, .cottage, .tower, .gate, .causeway => .buildings,
+        .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart, .grace => .village,
+        .boulder, .rocks, .outcrop, .scree, .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6, .stump, .log => .rock,
+        .tree, .bigtree, .bigtree2, .bigtree3, .willow, .conifer, .birch, .snag, .sapling => .trees,
+        .torch, .brazier, .campfire => .fire,
+        .water => .water,
+        .tuft, .patch, .grasstall, .clover, .moss => .grass,
+        .flowers, .wildflowers, .foxglove, .thistle, .glow => .flowers,
+        .shrub, .bush, .bramble, .thicket, .gorse, .heather, .nettles, .ivy => .brush,
+        .fern, .bracken => .ferns,
+        .reeds, .cattails, .lilypads => .wetland,
+        .mushrooms => .fungus,
+    };
+}
+
 /// The great-tree variants as a set, so placement code mixes them instead of naming one.
 pub const BIG_TREES = [_]Kind{ .bigtree, .bigtree2, .bigtree3 };
-/// …and the cliff variants, for the ring around the world.
-pub const CLIFFS = [_]Kind{ .cliff, .cliff2, .cliff3 };
+/// …and the cliff variants, for the ring around the world. SIX of them: the rim repeats a
+/// segment every 6.5 m for well over a kilometre, and the more characters that alternate along it
+/// the further the eye has to travel before it finds the repeat.
+pub const CLIFFS = [_]Kind{ .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
 
@@ -294,7 +466,9 @@ pub const INFO = [NK]Info{
     .{ .kind = .tree, .build = treeMesh, .bound = 5.3, .top = 4.9, .view = 240, .parts = circleParts(0.38, 3.6) },
     .{ .kind = .graves, .build = gravesMesh, .bound = 2.3, .top = 1.05, .view = 150, .parts = circleParts(0.80, 0.9) },
     .{ .kind = .sword, .build = swordMesh, .bound = 1.6, .top = 1.35, .view = 120 },
-    .{ .kind = .grace, .build = graceMesh, .bound = 1.9, .top = 1.6, .view = 300, .light = .{ .y = 0.60, .col = v3(0.34, 0.24, 0.10), .radius = 6.5, .flicker = 0.10 } },
+    // A BONFIRE now, not an ember in a bowl — so its light is a fire's: warmer, brighter, and it
+    // GUTTERS (0.10 was an ember's steady glow, and the flame above it is no longer standing still).
+    .{ .kind = .grace, .build = graceMesh, .bound = 1.9, .top = 1.6, .view = 300, .light = .{ .y = 0.45, .col = v3(0.58, 0.32, 0.12), .radius = 8.0, .flicker = 0.26 } },
     .{ .kind = .tower, .build = towerMesh, .bound = 17.5, .top = 17.2, .view = FAR, .parts = circleParts(3.40, 14.0) },
     .{ .kind = .gate, .build = gateMesh, .bound = 19.6, .top = 16.4, .view = FAR, .parts = &.{
         .{ .ax = -7.5, .bx = -7.5, .r = 3.20, .h = 16.0 },
@@ -337,6 +511,15 @@ pub const INFO = [NK]Info{
     .{ .kind = .cliff, .build = cliff1, .bound = 18.0, .top = 15.5, .view = FAR, .parts = &cliffParts },
     .{ .kind = .cliff2, .build = cliff2, .bound = 17.0, .top = 14.0, .view = FAR, .parts = &cliffParts },
     .{ .kind = .cliff3, .build = cliff3, .bound = 19.0, .top = 16.8, .view = FAR, .parts = &cliffParts },
+    // …and three MORE, because six characters alternating along the rim (and around the start
+    // arc) is what pushes the repeat past where the eye looks for it. `top` tracks ~1.15x the
+    // variant's own H, like the three above; the bound stays generous — the collapsed one throws
+    // its rubble apron a good 6 m clear of the face, and a too-small bound pops it at the frustum
+    // edge. All three share `cliffParts`, which is sized to the rock MASS and not to any one
+    // variant's crest, so a shorter face is still a solid face.
+    .{ .kind = .cliff4, .build = cliff4, .bound = 17.5, .top = 14.9, .view = FAR, .parts = &cliffParts },
+    .{ .kind = .cliff5, .build = cliff5, .bound = 17.0, .top = 13.3, .view = FAR, .parts = &cliffParts },
+    .{ .kind = .cliff6, .build = cliff6, .bound = 18.0, .top = 14.5, .view = FAR, .parts = &cliffParts },
     .{ .kind = .boulder, .build = boulderMesh, .bound = 3.2, .top = 2.5, .view = 220, .parts = circleParts(1.15, 2.3) },
     .{ .kind = .rocks, .build = rocksMesh, .bound = 2.2, .top = 0.85, .view = 160 },
     .{ .kind = .stump, .build = stumpMesh, .bound = 1.7, .top = 1.25, .view = 150, .parts = circleParts(0.46, 1.2) },
@@ -495,6 +678,23 @@ const Course = struct {
     core: f32 = 0.80, // substrate thickness as a fraction of `thick` (0 = facing only)
 };
 
+// ── RELIEF IS SUBTLE (owner's call) ────────────────────────────────────────────────────
+// Surface detail — bedding bands, arrises, quoins, joints, coursing, fracture shards — exists to
+// BREAK UP a big dark mass so it doesn't read as plastic. It does that job with a few centimetres.
+// Every one of these started out standing far enough off its mass to be counted individually, and
+// the result reads as DISHEVELED: strips stuck onto a column, slates hung off a cliff, a wall of
+// rubble tipped into a mould. Rules of thumb, all learned the same way:
+//
+//   - Detail on a curved mass should protrude a FEW PERCENT of that mass's radius, not a tenth.
+//     Sink a proud primitive most of the way in and let only its edge break the surface.
+//   - Prefer more SIDES on the mass over more relief on top of it. A 9-gon shaft has flats wide
+//     enough that anything sitting on one reads as glued to it; a 12-gon does not.
+//   - Cut AMPLITUDE, never irregularity. Same counts, same seeds, same asymmetry and lean — the
+//     wabi-sabi law stands. Quieter is not the same as more regular, and a model that has been
+//     made regular is the other failure, not the fix for this one.
+//   - The exceptions that must stay generous: the coursing OVERLAP (butted blocks show a seam
+//     round every one) and the substrate CORE (without it the joints leak sky).
+
 fn courseInto(bb: *Builder, r: *mathx.Rng, ax: f32, az: f32, bx: f32, bz: f32, spec: Course) void {
     bb.setMat(.stone);
     const dx = bx - ax;
@@ -540,12 +740,18 @@ fn courseInto(bb: *Builder, r: *mathx.Rng, ax: f32, az: f32, bx: f32, bz: f32, s
             const s = (t - 0.5) * runLen; // signed distance along the run from its centre
             if (s > spec.gapLo and s < spec.gapHi and yc > spec.sillY and yc < spec.headY) continue; // the opening
             if (r.float() < crumble) continue;
+            // The OVERLAP stays generous — butted blocks show a seam round every one, and the
+            // facing has to run well past its slot. What comes down is everything OUT OF PLANE:
+            // the ±0.03 shove, the roll, the skew and the course-height spread together made every
+            // block stand a different distance off its neighbours, and a wall of that reads as
+            // rubble tipped into a mould rather than as coursed masonry. A facade should be felt
+            // across a whole face, not counted block by block.
             const bw = (runLen / @as(f32, @floatFromInt(nb))) * r.range(1.20, 1.50); // BEDDED, not butted
-            const col = if (r.float() < 0.24) STONE_LT else if (r.float() < 0.4) STONE_DK else STONE;
+            const col = if (r.float() < 0.15) STONE_LT else if (r.float() < 0.32) STONE_DK else STONE;
             bb.addBox(
-                v3(ax + ux * (t * runLen) + r.signed() * 0.03, yc, az + uz * (t * runLen) + r.signed() * 0.03),
-                v3(ux * bw * 0.5, r.signed() * 0.012, uz * bw * 0.5),
-                v3(r.signed() * 0.02, ch * 0.54 * r.range(1.0, 1.12), r.signed() * 0.02),
+                v3(ax + ux * (t * runLen) + r.signed() * 0.016, yc, az + uz * (t * runLen) + r.signed() * 0.016),
+                v3(ux * bw * 0.5, r.signed() * 0.006, uz * bw * 0.5),
+                v3(r.signed() * 0.010, ch * 0.54 * r.range(1.0, 1.06), r.signed() * 0.010),
                 v3(-uz * spec.thick, 0, ux * spec.thick),
                 col,
             );
@@ -564,15 +770,20 @@ fn courseStack(bb: *Builder, r: *mathx.Rng, cx: f32, y0: f32, cz: f32, w: f32, d
     var i: i32 = 0;
     while (i < n) : (i += 1) {
         const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n));
-        const sw = w * (1.0 - taper * t) * r.range(0.985, 1.02);
-        const sd = d * (1.0 - taper * t) * r.range(0.985, 1.02);
-        const h = ch * r.range(1.0, 1.14); // courses OVERLAP
+        // Same rule as `courseInto`: the courses still overlap (a butted stack shows every seam)
+        // but each slab sits far closer to the one under it. The ±0.05 shove was a fifth of a
+        // course height, so a tower's silhouette stepped in and out all the way up.
+        const sw = w * (1.0 - taper * t) * r.range(0.99, 1.014);
+        const sd = d * (1.0 - taper * t) * r.range(0.99, 1.014);
+        const h = ch * r.range(1.0, 1.08); // courses OVERLAP
         bb.addBox(
-            v3(cx + r.signed() * 0.05, y + h * 0.45, cz + r.signed() * 0.05),
-            v3(sw * 0.5, r.signed() * 0.014, r.signed() * 0.012),
+            v3(cx + r.signed() * 0.026, y + h * 0.45, cz + r.signed() * 0.026),
+            v3(sw * 0.5, r.signed() * 0.008, r.signed() * 0.007),
             v3(0, h * 0.5, 0),
-            v3(r.signed() * 0.012, 0, sd * 0.5),
-            if (@mod(i, 2) == 0) STONE_DK else if (r.float() < 0.22) STONE_LT else STONE,
+            v3(r.signed() * 0.007, 0, sd * 0.5),
+            // The banding stays — it is the form break a big dark mass needs — but every OTHER
+            // course being the darkest stone was a zebra. Now it only tends dark.
+            if (@mod(i, 2) == 0 and r.float() < 0.55) STONE_DK else if (r.float() < 0.16) STONE_LT else STONE,
         );
         y += ch;
     }
@@ -708,21 +919,34 @@ fn pillarMesh(shader: rl.Shader, broken: bool) rl.Model {
         const off = v3(rng.signed() * 0.022, 0, rng.signed() * 0.022); // the drum has slipped
         const p0 = axisAt(y0, leanX, leanZ);
         const p1 = axisAt(y1, leanX, leanZ);
+        // TWELVE sides, not nine. The shaft is the biggest curved surface in the world and the one
+        // you stand next to; at nine the flats were wide enough that an arris landing mid-facet
+        // read as a strip glued on rather than as an edge of the stone itself.
         b.addCylinder(
             v3(p0.x + off.x, y0, p0.z + off.z),
             v3(p1.x + off.x, y1, p1.z + off.z),
             radAt(y0) * rng.range(0.99, 1.02),
             radAt(y1) * rng.range(0.98, 1.01),
-            9,
+            12,
             if (@mod(d, 2) == 0) MARBLE else MARBLE_LT,
         );
-        // The bed joint: a thin proud ring of mortar-line stone at every drum seam.
-        if (d > 0) b.addCylinder(v3(p0.x + off.x, y0 - 0.025, p0.z + off.z), v3(p0.x + off.x, y0 + 0.025, p0.z + off.z), radAt(y0) * 1.03, radAt(y0) * 1.03, 9, MARBLE_DK);
+        // The bed joint: a thin proud ring of mortar-line stone at every drum seam. 1.015, not
+        // 1.03 — a joint is a line you notice, not a collar standing off the shaft.
+        if (d > 0) b.addCylinder(v3(p0.x + off.x, y0 - 0.02, p0.z + off.z), v3(p0.x + off.x, y0 + 0.02, p0.z + off.z), radAt(y0) * 1.015, radAt(y0) * 1.015, 12, MARBLE_DK);
     }
     // FLUTING: sixteen arrises up the shaft, following its taper and lean; a fifth spalled away.
     // Keep them the SAME STONE as the drum. Tinting a ridge lighter turns fluting into a
     // BARCODE — the eye stops reading a round column and reads stripes painted on a cylinder.
     // The ridge's own shading is the whole effect; the colour must not help.
+    //
+    // THEY ARE ARRISES, NOT RODS. Real fluting is a groove cut INTO the shaft and the arris is the
+    // sliver of original surface left between two of them, so the relief is a few millimetres of a
+    // 60 cm shaft. Approximating it with proud cylinders inverts that, and at the old numbers the
+    // inversion showed: a 4-SIDED rod is a square bar, and at radius 0.040 sitting on 0.985 of the
+    // radius it stood ~11% of the shaft's own radius clear of the 9-gon's flats — sixteen strips
+    // visibly stuck ON the column instead of cut into it. Now SUNK to 0.955 so most of the rod is
+    // buried and only the arris breaks the surface, thinner, and 5-sided so it has no square corner
+    // to catch the light along its whole length.
     var fl: i32 = 0;
     while (fl < 16) : (fl += 1) {
         if (rng.float() < 0.20) continue;
@@ -731,32 +955,36 @@ fn pillarMesh(shader: rl.Shader, broken: bool) rl.Model {
         const y1 = shaftTop - rng.range(0.02, 0.30);
         const c0 = axisAt(y0, leanX, leanZ);
         const c1 = axisAt(y1, leanX, leanZ);
-        const r0 = radAt(y0) * 0.985;
-        const r1 = radAt(y1) * 0.985;
+        const r0 = radAt(y0) * 0.955;
+        const r1 = radAt(y1) * 0.955;
         b.addCylinder(
             v3(c0.x + mathx.cosf(a) * r0, y0, c0.z + mathx.sinf(a) * r0),
             v3(c1.x + mathx.cosf(a) * r1, y1, c1.z + mathx.sinf(a) * r1),
-            rng.range(0.028, 0.040),
-            rng.range(0.022, 0.034),
-            4,
+            rng.range(0.016, 0.023),
+            rng.range(0.013, 0.019),
+            5,
             if (rng.float() < 0.30) MARBLE_DK else MARBLE,
         );
     }
 
     if (broken) {
         // THE FRACTURE: a snapped column does not end flat. Half a dozen angular shards of
-        // unequal height standing out of the break, tilted every which way.
+        // unequal height standing out of the break — but STANDING OUT is the part that was
+        // overdone: at up to 0.34 tall and skewed ±0.07 on both in-plane axes they were a crown of
+        // spikes, and the eye read them before it read the column. A break is a JAGGED PLANE, so
+        // the shards keep their unequal heights and random bearings and lose two thirds of their
+        // rise and half their tilt.
         const c = axisAt(shaftTop, leanX, leanZ);
         var s: i32 = 0;
         while (s < 7) : (s += 1) {
             const a = rng.angle();
-            const rr = rng.range(0.05, 0.42);
-            const h = rng.range(0.05, 0.34);
+            const rr = rng.range(0.05, 0.38);
+            const h = rng.range(0.04, 0.13);
             b.addBox(
                 v3(c.x + mathx.cosf(a) * rr, shaftTop + h * 0.4, c.z + mathx.sinf(a) * rr),
-                v3(rng.range(0.10, 0.24), rng.signed() * 0.05, rng.signed() * 0.06),
-                v3(rng.signed() * 0.07, h * 0.5, rng.signed() * 0.07),
-                v3(rng.signed() * 0.05, 0, rng.range(0.09, 0.22)),
+                v3(rng.range(0.10, 0.24), rng.signed() * 0.025, rng.signed() * 0.03),
+                v3(rng.signed() * 0.035, h * 0.5, rng.signed() * 0.035),
+                v3(rng.signed() * 0.025, 0, rng.range(0.09, 0.22)),
                 if (rng.float() < 0.35) MARBLE_LT else MARBLE_DK,
             );
         }
@@ -1227,46 +1455,132 @@ fn graceMesh(shader: rl.Shader) rl.Model {
     // ground in the world: set kerbstones and a worn marble pave. Nothing else in this file is
     // deliberate — that contrast is the whole read.
     b.setMat(.stone);
+    // …and the ring is HAND-LAID, not machined. Eleven stones at even spacing, matched radii and a
+    // matched stand-off came out as a COG: a gear tooth every 33 degrees round a pale disc. The
+    // wabi-sabi law covers this exactly — the cure is a wide size band, a wide distance band and
+    // real angular jitter, not fewer stones.
     var k: i32 = 0;
-    while (k < 11) : (k += 1) {
-        const a = std.math.tau * @as(f32, @floatFromInt(k)) / 11.0 + rng.signed() * 0.10;
-        const dd = rng.range(0.86, 1.00);
-        const rr = rng.range(0.11, 0.18);
-        b.addBlob(v3(mathx.cosf(a) * dd, rr * rng.range(0.42, 0.66), mathx.sinf(a) * dd), v3(rr, rr * 0.7, rr * 1.15), 3, 5, if (rng.float() < 0.3) STONE_MOSS else STONE_DK);
+    while (k < 10) : (k += 1) {
+        const a = std.math.tau * @as(f32, @floatFromInt(k)) / 10.0 + rng.signed() * 0.30;
+        const dd = rng.range(0.78, 1.08);
+        const rr = rng.range(0.085, 0.215);
+        b.addBlob(
+            v3(mathx.cosf(a) * dd, rr * rng.range(0.36, 0.70), mathx.sinf(a) * dd),
+            v3(rr, rr * rng.range(0.55, 0.85), rr * rng.range(0.85, 1.30)),
+            3,
+            5 + rng.intn(2),
+            if (rng.float() < 0.3) STONE_MOSS else if (rng.float() < 0.5) ROCK_DEEP else STONE_DK,
+        );
     }
-    b.setMat(.marble);
-    b.addCylinder(v3(0, 0.012, 0), v3(0, 0.055, 0), 0.78, 0.72, 12, MARBLE_DK); // the worn pave
-    b.addCylinder(v3(0, 0.05, 0), v3(0, 0.26, 0), 0.34, 0.30, 9, MARBLE); // the foot the bowl sits on
-    b.addCylinder(v3(0, 0.24, 0), v3(0, 0.30, 0), 0.33, 0.38, 9, MARBLE_LT); // its collar
-    // THE BOWL: an iron basin, rivets round the rim, rust where three centuries of coals sat.
-    b.setMat(.steel);
-    b.addCylinder(v3(0, 0.28, 0), v3(0, 0.50, 0), 0.34, 0.50, 10, IRON);
-    b.addCylinder(v3(0, 0.48, 0), v3(0, 0.54, 0), 0.51, 0.50, 10, RUST); // the rolled rim
-    b.addDome(v3(0, 0.28, 0), v3(0, -1, 0), 0.34, 10, IRON); // closes the bowl's underside
-    var rv: i32 = 0;
-    while (rv < 8) : (rv += 1) {
-        const a = std.math.tau * @as(f32, @floatFromInt(rv)) / 8.0;
-        b.addBlob(v3(mathx.cosf(a) * 0.495, 0.44, mathx.sinf(a) * 0.495), v3(0.024, 0.024, 0.024), 3, 5, STEEL);
-    }
-    b.setMat(.plain); // the coals + wisp are emissive — no surface mottle over the glow
-    b.addCylinder(v3(0, 0.42, 0), v3(0, 0.56, 0), 0.42, 0.28, 8, EMBER); // banked coals
-    var c: i32 = 0;
-    while (c < 5) : (c += 1) { // individual coals breaking the ember bed's flat top
+    // THE ASH BED filling the ring — a shallow pale mound, raked flatter in the middle where
+    // people have knelt at it. Sunk at its rim so it reads as lying IN the ring of stones rather
+    // than as a disc set on top of them.
+    b.setMat(.plain);
+    b.addBlob(v3(0, 0.055, 0), v3(0.82, 0.070, 0.82), 3, 12, ASH_DK);
+    b.addBlob(v3(rng.signed() * 0.06, 0.095, rng.signed() * 0.06), v3(0.66, 0.070, 0.64), 3, 11, ASH);
+    b.addBlob(v3(rng.signed() * 0.10, 0.125, rng.signed() * 0.10), v3(0.40, 0.055, 0.38), 3, 9, ASH_LT);
+    // …drifts and scorch, so the bed is not one smooth pat of grey.
+    var dr: i32 = 0;
+    while (dr < 7) : (dr += 1) {
         const a = rng.angle();
-        const dd = rng.range(0.05, 0.30);
-        b.addBlob(v3(mathx.cosf(a) * dd, 0.545, mathx.sinf(a) * dd), v3(rng.range(0.04, 0.08), rng.range(0.02, 0.05), rng.range(0.04, 0.08)), 3, 5, if (rng.float() < 0.5) COAL else EMBER);
+        const dd = rng.range(0.18, 0.66);
+        const rr = rng.range(0.09, 0.20);
+        b.addBlob(
+            v3(mathx.cosf(a) * dd, 0.115 + rng.range(0, 0.03), mathx.sinf(a) * dd),
+            v3(rr, rng.range(0.018, 0.038), rr * rng.range(0.7, 1.2)),
+            3,
+            6,
+            if (rng.float() < 0.4) ASH_LT else if (rng.float() < 0.6) ASH_DK else ASH,
+        );
     }
-    b.addCylinder(v3(0, 0.55, 0), v3(rng.signed() * 0.06, 1.52, rng.signed() * 0.06), 0.030, 0.002, 6, WISP); // rising wisp
-    b.addCylinder(v3(0, 0.52, 0), v3(rng.signed() * 0.05, 0.98, rng.signed() * 0.05), 0.055, 0.006, 6, WISP);
-    b.addCylinder(v3(0.06, 0.53, -0.04), v3(0.14, 1.22, -0.10), 0.026, 0.002, 5, WISP); // a second, thinner thread
-    // Drifting MOTES, spiralling out as they rise — the grace's tell from across the plain.
+    // BONES in the ash. Whoever kindled it, and everyone who tried before them — the one piece of
+    // narrative the prop carries, and the reason it is a bonfire and not a fire pit.
+    var bn: i32 = 0;
+    while (bn < 6) : (bn += 1) {
+        const a = rng.angle();
+        const dd = rng.range(0.20, 0.62);
+        const ln = rng.range(0.10, 0.22);
+        const a2 = a + rng.signed() * 1.4;
+        b.addCapsule(
+            v3(mathx.cosf(a) * dd, 0.135, mathx.sinf(a) * dd),
+            v3(mathx.cosf(a) * dd + mathx.cosf(a2) * ln, 0.135 + rng.range(0, 0.05), mathx.sinf(a) * dd + mathx.sinf(a2) * ln),
+            rng.range(0.016, 0.028),
+            rng.range(0.014, 0.024),
+            4,
+            BONE,
+        );
+    }
+    b.addBlob(v3(rng.signed() * 0.4, 0.17, rng.signed() * 0.4), v3(0.075, 0.065, 0.080), 3, 6, BONE); // a skull, half sunk
+    // ── THE COILED SWORD ── the whole silhouette, and the one thing that names this a bonfire
+    // rather than a brazier: a straight blade driven POINT-DOWN into the ash, hilt up, its blade
+    // TWISTED down its length. The twist is not decoration — a straight flat blade at this size
+    // reads as a stick from ten metres, and the coil is what catches the sun differently every few
+    // centimetres so the eye reads a sword.
+    //
+    // Canted a few degrees off plumb, because nothing organic here is machined (wabi-sabi) and
+    // because a sword somebody DROVE into the ground would not land true.
+    b.setMat(.steel);
+    const tilt = rng.signed() * 0.05; // radians off vertical, carried up the blade
+    const BLADE_TOP: f32 = 1.12;
+    const SEGS: i32 = 10;
+    var sg: i32 = 0;
+    while (sg < SEGS) : (sg += 1) {
+        const t0 = @as(f32, @floatFromInt(sg)) / @as(f32, @floatFromInt(SEGS));
+        const y = 0.09 + t0 * (BLADE_TOP - 0.09);
+        // BROAD, and only half-twisted. At 0.07 half-width over a metre of height the blade was a
+        // 4 cm sliver — the twist had no facet wide enough to catch the light differently, so the
+        // whole thing read as a thin white SPIKE and the coil was invisible. A coiled sword is a
+        // big flat blade; widen it and the twist does its job.
+        const a = t0 * 2.6 + 0.35; // ~150 deg from point to shoulder — fewer, wider facets
+        const hw = mathx.lerpF(0.030, 0.115, t0); // narrow at the point, broad at the shoulder
+        const th = mathx.lerpF(0.011, 0.021, t0); // …and thicker edge-to-edge as it widens
+        // ax = the flat (twisting), ay = up the blade, az = edge-to-edge. Perpendicular BY
+        // CONSTRUCTION — addBox happily builds a skewed parallelepiped out of a sloppy triple.
+        b.addBox(
+            v3(tilt * y * 3.0, y, tilt * y * 1.2),
+            v3(mathx.cosf(a) * hw, 0, mathx.sinf(a) * hw),
+            v3(0, (BLADE_TOP - 0.09) / @as(f32, @floatFromInt(SEGS)) * 0.66, 0),
+            v3(-mathx.sinf(a) * th, 0, mathx.cosf(a) * th),
+            // DARK IRON with steel only as a glint. Mostly-STEEL came back near-white under the
+            // hot key and the blade lost its edges against the sky (the big-mass albedo rule again,
+            // on a small mass that happens to be the brightest thing in the prop).
+            if (@mod(sg, 2) == 0) IRON else if (rng.float() < 0.35) STEEL else RUST,
+        );
+    }
+    // The HILT: crossguard, bound grip, pommel. From behind, the hilt is the whole read.
+    const hx = tilt * BLADE_TOP * 3.0;
+    const hz = tilt * BLADE_TOP * 1.2;
+    b.addBox(v3(hx, BLADE_TOP + 0.03, hz), v3(0.185, 0, 0.02), v3(0, 0.020, 0), v3(-0.012, 0, 0.032), IRON); // quillons
+    b.addBlob(v3(hx + 0.185, BLADE_TOP + 0.03, hz), v3(0.030, 0.030, 0.030), 3, 5, RUST); // …a knop at each end
+    b.addBlob(v3(hx - 0.185, BLADE_TOP + 0.03, hz), v3(0.028, 0.028, 0.028), 3, 5, RUST);
+    b.setMat(.leather);
+    b.addCylinder(v3(hx, BLADE_TOP + 0.05, hz), v3(hx + tilt * 0.1, BLADE_TOP + 0.20, hz), 0.030, 0.028, 6, TIMBER_DK); // bound grip
+    b.setMat(.steel);
+    b.addBlob(v3(hx + tilt * 0.12, BLADE_TOP + 0.235, hz), v3(0.046, 0.040, 0.046), 3, 6, RUST); // pommel
+    // …and THE FIRE at its base, low and broad, licking up the blade. Through `flameInto`, so it
+    // gets the vertex writhe and the same tongue vocabulary as every other fire in the world.
+    // …and kept LOW. At scale 1.05 the tongues reached 0.64 and swallowed the lower two thirds of
+    // the blade: the fire won the silhouette the sword is supposed to own, which is the whole point
+    // of a bonfire being a sword and not a campfire. Round its base, not up its length.
+    flameInto(&b, &rng, rng.signed() * 0.04, 0.13, rng.signed() * 0.04, 0.70);
+    flameInto(&b, &rng, rng.signed() * 0.20, 0.11, rng.signed() * 0.20, 0.44);
+    b.setMat(.plain);
+    // The rising WISP + drifting motes: the bonfire's tell from across the plain, kept from the
+    // grace it replaces because that read was the one thing about it that worked.
+    //
+    // SHORTER AND THINNER than the grace's were. WISP is strongly emissive (alpha 120), and a
+    // 1.6 m tapered cylinder of it stood BEHIND the sword and read as a white spike taller than
+    // the blade — it was winning the silhouette the sword is supposed to own. At this length it
+    // goes back to being heat-shimmer coming off the fire.
+    b.addCylinder(v3(0, 0.60, 0), v3(rng.signed() * 0.05, 1.02, rng.signed() * 0.05), 0.018, 0.002, 5, WISP);
+    b.addCylinder(v3(0.07, 0.58, -0.05), v3(0.15, 0.86, -0.11), 0.014, 0.002, 5, WISP);
     var m: i32 = 0;
     while (m < 9) : (m += 1) {
         const t = @as(f32, @floatFromInt(m)) / 9.0;
         const a = t * 7.4 + rng.signed() * 0.5;
-        const dd = 0.06 + t * rng.range(0.20, 0.42);
+        const dd = 0.08 + t * rng.range(0.22, 0.46);
         const sz = 0.024 * (1.0 - 0.55 * t);
-        b.addBlob(v3(mathx.cosf(a) * dd, 0.62 + t * 0.86 + rng.signed() * 0.06, mathx.sinf(a) * dd), v3(sz, sz, sz), 3, 5, WISP);
+        b.addBlob(v3(mathx.cosf(a) * dd, 0.70 + t * 0.86 + rng.signed() * 0.06, mathx.sinf(a) * dd), v3(sz, sz, sz), 3, 5, WISP);
     }
     b.setMat(.plant);
     tuftInto(&b, &rng, rng.signed() * 1.05, rng.signed() * 1.05, 0.55);
@@ -1700,25 +2014,144 @@ fn rubbleMesh(shader: rl.Shader) rl.Model {
 // along the horizon read as a BRUTALIST SKYLINE — grey boxes with flat tops and hard vertical
 // corners, exactly like distant tower blocks. Rock silhouettes undulate; buildings crenellate.
 // Rounded mass gives the silhouette, the slabs give the surface its bedding.
+// THE THREE VARIANTS MUST ACTUALLY DIFFER. They used to differ only by seed and height, which is
+// the same rock three times: at ±15% per-instance scale and ±7° of yaw, a wall built from three
+// near-identical meshes reads UNIFORM however smooth each one is — the failure at the other end
+// from the spikes. So each carries a CHARACTER, and because `mix=cliff,cliff2,cliff3` picks per
+// segment, the wall alternates between three kinds of rock in random order.
+//
+// Variation belongs in the MASS, not in protruding detail (see RELIEF IS SUBTLE). Body widths,
+// how far a body sits back, how faceted it is, how deep the clefts between them run — all of that
+// is silhouette and surface at long wavelength, and none of it makes a spike.
+const CliffKind = struct {
+    H: f32,
+    /// Body half-width band. WIDE ranges are what stop the face reading as a row of matched
+    /// columns; the bodies still have to overlap their neighbours, so the floor stays generous.
+    wLo: f32,
+    wHi: f32,
+    /// How far bodies wander in and out of the face. This is the CLEFT dial: a body set back
+    /// leaves a shadowed vertical channel between its neighbours, which is the negative space a
+    /// rock face has and a smooth mass does not.
+    cleft: f32,
+    /// 0 = rounded and weathered, 1 = angular and freshly broken. Drives the facet counts, so one
+    /// variant is chunky rock and another is worn smooth.
+    blocky: f32,
+    /// Bedding bands across the face, and how much their relief VARIES. Varying the relief is what
+    /// reads as strata; a fixed relief on every band reads as corduroy.
+    bands: i32,
+    /// OVERGROWTH. Curtains of creeper pouring down the face, moss packed into the bedding seams,
+    /// and a fuller green crest. 0 = bare rock. This is the one variation that is not stone: a
+    /// green-shot face beside a bare one is the biggest read the wall has, because it changes the
+    /// HUE and not just the silhouette.
+    ivy: f32 = 0,
+    /// COLLAPSE. How far the face has lost a piece of itself: a gully torn down through the mass,
+    /// pale freshly-broken rock along its edges, and the missing volume lying in an apron at the
+    /// foot. 0 = intact.
+    broken: f32 = 0,
+};
+
+const CLIFF_ROUND = CliffKind{ .H = 13.5, .wLo = 2.9, .wHi = 5.0, .cleft = 0.55, .blocky = 0.15, .bands = 7 };
+const CLIFF_BLOCKY = CliffKind{ .H = 12.2, .wLo = 2.4, .wHi = 4.2, .cleft = 1.15, .blocky = 0.85, .bands = 10 };
+const CLIFF_RAGGED = CliffKind{ .H = 14.6, .wLo = 3.2, .wHi = 5.6, .cleft = 0.85, .blocky = 0.5, .bands = 8 };
+// A damp, weathered face that the wood has got into: rounded rock under creeper.
+const CLIFF_IVIED = CliffKind{ .H = 13.0, .wLo = 3.0, .wHi = 5.2, .cleft = 0.70, .blocky = 0.22, .bands = 8, .ivy = 1.0 };
+// The one that came down: angular, freshly broken, LOWER than its neighbours (it lost its crest)
+// and standing in its own rubble. Few bands, because half the strata are on the floor.
+const CLIFF_SHATTERED = CliffKind{ .H = 11.6, .wLo = 2.2, .wHi = 4.6, .cleft = 1.35, .blocky = 0.90, .bands = 5, .broken = 1.0 };
+// An OLD collapse: the scar has softened and gone green. Both dials, neither at full — the point
+// of it is that it reads as time passing, not as a third kind of damage.
+const CLIFF_OVERGROWN = CliffKind{ .H = 12.6, .wLo = 2.7, .wHi = 4.8, .cleft = 0.95, .blocky = 0.45, .bands = 7, .ivy = 0.8, .broken = 0.55 };
+
 fn cliff1(shader: rl.Shader) rl.Model {
-    return cliffMesh(shader, 90210, 13.5);
+    return cliffMesh(shader, 90210, CLIFF_ROUND);
 }
 fn cliff2(shader: rl.Shader) rl.Model {
-    return cliffMesh(shader, 90277, 12.2);
+    return cliffMesh(shader, 90277, CLIFF_BLOCKY);
 }
 fn cliff3(shader: rl.Shader) rl.Model {
-    return cliffMesh(shader, 90341, 14.6);
+    return cliffMesh(shader, 90341, CLIFF_RAGGED);
+}
+fn cliff4(shader: rl.Shader) rl.Model {
+    return cliffMesh(shader, 90407, CLIFF_IVIED);
+}
+fn cliff5(shader: rl.Shader) rl.Model {
+    return cliffMesh(shader, 90473, CLIFF_SHATTERED);
+}
+fn cliff6(shader: rl.Shader) rl.Model {
+    return cliffMesh(shader, 90539, CLIFF_OVERGROWN);
 }
 
-fn cliffMesh(shader: rl.Shader, seed: u64, H: f32) rl.Model {
+/// One rock body of a cliff segment — an ellipsoid, as `addBlob` builds it.
+const CliffBody = struct { x: f32, y: f32, z: f32, rx: f32, ry: f32, rz: f32 };
+
+/// The FRONTMOST rock surface at (x, y): the smallest z any of the segment's bodies reaches there,
+/// or null when no body covers the point at all — in which case nothing gets placed, which is the
+/// whole point. This is what lets the creeper follow the rock's curve and the collapse scar sit ON
+/// the face instead of both being hung on a guessed depth plane.
+///
+/// `q <= 0.04` skips a body the point is outside of, and also the very rim of one, where the
+/// ellipsoid is edge-on: the surface there is nearly parallel to the view and anything anchored to
+/// it reads as sticking out sideways.
+fn cliffFaceZ(bs: []const CliffBody, x: f32, y: f32) ?f32 {
+    var best: ?f32 = null;
+    for (bs) |bd| {
+        const ux = (x - bd.x) / bd.rx;
+        const uy = (y - bd.y) / bd.ry;
+        const q = 1.0 - ux * ux - uy * uy;
+        if (q <= 0.04) continue;
+        const z = bd.z - bd.rz * @sqrt(q);
+        if (best == null or z < best.?) best = z;
+    }
+    return best;
+}
+
+/// …the same query for something with a FOOTPRINT rather than a point: the REARMOST surface across
+/// a grid over (halfW, halfH), so a flat pad or plate is seated behind the shallowest rock it spans
+/// instead of behind its own centre. A wide one seated on its centre leaves the curving face at its
+/// own ends and comes out as a shelf with a lit top face — the horizontal version of the mistake a
+/// fixed depth plane makes vertically. The centre must be on the rock; samples that fall off it are
+/// ignored rather than rejecting the whole thing, or the flanks lose their dressing entirely.
+fn cliffSeatZ(bs: []const CliffBody, x: f32, y: f32, halfW: f32, halfH: f32) ?f32 {
+    var back = cliffFaceZ(bs, x, y) orelse return null;
+    for ([_]f32{ -1, 0, 1 }) |dx| {
+        for ([_]f32{ -1, 0, 1 }) |dy| {
+            const z = cliffFaceZ(bs, x + dx * halfW, y + dy * halfH) orelse continue;
+            if (z > back) back = z;
+        }
+    }
+    return back;
+}
+
+fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
+    const H = k.H;
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
+    // The COLLAPSE and OVERGROWTH blocks below draw from their own stream. A shared one would have
+    // meant every draw they make shifts `rng` for everything after it, so bolting them on would
+    // silently re-roll the three original variants — the same locality argument the map's
+    // per-op seeds are built on, one scale down.
+    var frng = mathx.Rng.init(seed ^ 0x5C1FF00D);
     b.setMat(.stone);
     // THE MASS: five overlapping rock bodies along local X. Their crest follows a smooth
     // (not random) ridge curve, so neighbouring segments in the ring still line up into a
     // continuous escarpment rather than a sawtooth.
     const NM = 5;
-    var crest: [NM]f32 = undefined;
+    // THE REAL SUMMIT of each body, recorded as it is built. The crest furniture used to be placed
+    // off `hgt` — the height the body was ASKED for — which stopped describing the summit the moment
+    // the shoulder's own height began to vary: caps then landed anywhere from buried in the rock to
+    // a flat plate hanging off it, and the scrub floated. Anything that sits ON the rock has to be
+    // told where the rock actually ended.
+    const Summit = struct { x: f32, z: f32, y: f32, rx: f32, rz: f32 };
+    var top: [NM]Summit = undefined;
+    // EVERY BODY, recorded the same way and for the same reason one step further on: the OVERGROWTH
+    // and COLLAPSE blocks below have to know where the face IS, not just where its summits are. The
+    // mass is a stack of ellipsoids, so it curves away at its top and its flanks; anything hung on
+    // a fixed z plane clings to the rock at mid-height and pokes out into thin air above it. The
+    // bands and ribs get away with a fixed depth only because they are meant to be MOSTLY BURIED
+    // and to show wherever the surface happens to be shallow — a runner that crosses the whole
+    // height of the face has no such licence.
+    var bodies: [NM * 2]CliffBody = undefined;
+    var nbody: usize = 0;
     var m: i32 = 0;
     while (m < NM) : (m += 1) {
         const u = @as(f32, @floatFromInt(m)) / @as(f32, NM - 1); // 0..1 across the segment
@@ -1729,54 +2162,120 @@ fn cliffMesh(shader: rl.Shader, seed: u64, H: f32) rl.Model {
         // segment, and because every segment is the same mesh repeated every 8 m along the ring,
         // that arch tiled into a row of regular TEETH along the horizon. The undulation has to
         // come from the per-instance scale, whose wavelength is the whole wall.
-        const hgt = H * (0.93 + 0.07 * mathx.sinf(u * std.math.pi)) * rng.range(0.96, 1.04);
-        crest[@intCast(m)] = hgt;
+        // Per-body height wander, on TOP of the near-flat arch. Irregular heights across the
+        // segment are safe where an ARCH is not: an arch is a symmetric shape and repeats into
+        // regular teeth, whereas unequal shoulders just read as broken rock.
+        const hgt = H * (0.93 + 0.07 * mathx.sinf(u * std.math.pi)) * rng.range(0.88, 1.12);
         // Bodies are WIDE relative to their spacing (they span ±9 over a ±5.2 layout), so a
         // segment's mass runs well past its own footprint and interpenetrates its neighbours in
         // the ring. Narrower bodies left a V-shaped notch of sky between every pair of segments,
         // and the wall read as a row of separate rock stacks instead of one escarpment.
-        const rx = rng.range(3.4, 4.4);
-        const rz = rng.range(2.2, 3.2);
+        //
+        // The BAND is the variant's, and it is wide on purpose: matched body widths are most of
+        // what made the smoothed wall read as a row of columns.
+        const rx = rng.range(k.wLo, k.wHi);
+        const rz = rng.range(2.0, 3.4);
+        // …and this is the CLEFT: how far this body sits in or out of the face. A body set back
+        // leaves a shadowed vertical channel beside its neighbours. Negative space, which costs
+        // nothing in silhouette and is what a smooth mass is missing.
+        const inOut = rng.signed() * k.cleft;
+        // Facet counts follow `blocky`, and they VARY body to body — a face of mixed chunky and
+        // worn masses reads as rock, where one tessellation for all of them reads as one material
+        // extruded. This is the variation that replaces the spikes, not a return to them.
+        const sides: i32 = @intFromFloat(@round(10.0 - 4.0 * k.blocky + rng.signed() * 1.4));
+        const rings: i32 = @intFromFloat(@round(6.0 - 2.0 * k.blocky + rng.signed() * 0.8));
         // Two stacked bodies per position: a broad foot and a narrower shoulder, so the profile
         // tapers the way weathered rock does instead of standing up like a column.
-        b.addBlob(v3(cx, hgt * 0.34, rng.signed() * 0.5), v3(rx, hgt * 0.42, rz), 4, 7, if (@mod(m, 2) == 0) CLIFF_ROCK else CLIFF_DK);
-        b.addBlob(v3(cx + rng.signed() * 0.7, hgt * 0.78, 0.5 + rng.signed() * 0.6), v3(rx * 0.78, hgt * 0.34, rz * 0.8), 4, 7, if (rng.float() < 0.3) CLIFF_LT else CLIFF_ROCK);
+        const fz = inOut + rng.signed() * 0.4;
+        b.addBlob(v3(cx, hgt * 0.34, fz), v3(rx, hgt * 0.42, rz), rings, sides, if (@mod(m, 2) == 0) CLIFF_ROCK else CLIFF_DK);
+        bodies[nbody] = .{ .x = cx, .y = hgt * 0.34, .z = fz, .rx = rx, .ry = hgt * 0.42, .rz = rz };
+        nbody += 1;
+        const sx = cx + rng.signed() * 0.9;
+        const sz = inOut * 0.7 + 0.5 + rng.signed() * 0.7;
+        const sy = hgt * 0.78;
+        const srx = rx * rng.range(0.62, 0.88);
+        const sry = hgt * rng.range(0.26, 0.40);
+        const srz = rz * rng.range(0.7, 0.95);
+        b.addBlob(
+            v3(sx, sy, sz),
+            v3(srx, sry, srz),
+            @max(rings - 1, 3),
+            @max(sides - 1, 5),
+            if (rng.float() < 0.3) CLIFF_LT else CLIFF_ROCK,
+        );
+        bodies[nbody] = .{ .x = sx, .y = sy, .z = sz, .rx = srx, .ry = sry, .rz = srz };
+        nbody += 1;
+        top[@intCast(m)] = .{ .x = sx, .z = sz, .y = sy + sry, .rx = srx, .rz = srz };
     }
+    const face = bodies[0..nbody];
     // BEDDING PLANES: thin wide slabs laid across the face, each stepped back and up. These are
-    // what read as rock strata; they only ever protrude a little from the rounded mass.
+    // what read as rock strata, and they must only ever protrude A LITTLE from the rounded mass.
+    //
+    // THEY USED TO STAND RIGHT OFF IT. A half-depth of 1.1 centred at z −2.2 reached past the
+    // body's own front face, so every slab was a shelf hanging in the air rather than a band in
+    // the rock — nine courses of them and the wall read as disheveled, a heap of slates instead of
+    // an escarpment. Bedded back into the mass with a third of the stand-off and half the tilt,
+    // the banding still catches the low sun (the form break a dark mass needs) without the
+    // silhouette breaking up. Count and seeds unchanged: this is QUIETER, not more regular.
+    // SIX broad bands, not nine narrow ones, and each BEDDED INTO the body rather than laid on it.
+    // The stand-off has to be judged against the ASSEMBLED wall, not one mesh: rim segments overlap
+    // heavily (a body spans ±9 over a ±5.2 layout) and a neighbour's front surface can sit a metre
+    // shallower than your own, so anything that clears its own body by a little clears the
+    // neighbour's by a lot. Sunk to z −1.2 with a 0.4 half-depth, a band shows where the surface
+    // happens to be shallow and hides where it is deep — which is what strata do.
+    // …and the RELIEF PER BAND VARIES WIDELY. That is the correction to the over-smoothed version:
+    // six bands all standing the same shallow amount is corduroy, and reads as uniform even though
+    // no single band is obtrusive. Most bands here are nearly flush — a tonal seam more than a
+    // ledge — and one in five stands out enough to catch the sun and throw a line of shadow. The
+    // CEILING is what matters for not being disheveled, not the average.
     var course: i32 = 0;
-    while (course < 9) : (course += 1) {
-        const t = @as(f32, @floatFromInt(course)) / 8.0;
-        const y = H * (0.06 + 0.88 * t);
-        const halfW = (5.4 - 2.0 * t) * rng.range(0.9, 1.1);
+    while (course < k.bands) : (course += 1) {
+        const t = @as(f32, @floatFromInt(course)) / @as(f32, @floatFromInt(k.bands - 1));
+        const y = H * (0.07 + 0.86 * t) * rng.range(0.96, 1.04); // bands are not evenly spaced either
+        const halfW = (5.4 - 2.0 * t) * rng.range(0.85, 1.15);
         const back = 1.1 * t; // the face rakes back as it rises
-        const nb = 2 + rng.intn(2);
+        const nb = 2 + rng.intn(3);
+        // This band's own prominence: mostly a seam, occasionally a real ledge.
+        const bold = rng.float() < 0.22;
+        const depth: f32 = if (bold) rng.range(0.34, 0.50) else rng.range(0.16, 0.28);
+        const rise: f32 = if (bold) rng.range(0.20, 0.32) else rng.range(0.09, 0.18);
         var i: i32 = 0;
         while (i < nb) : (i += 1) {
             const fi = (@as(f32, @floatFromInt(i)) + 0.5) / @as(f32, @floatFromInt(nb));
             const cx = (fi * 2.0 - 1.0) * halfW;
-            const w = (2.0 * halfW / @as(f32, @floatFromInt(nb))) * rng.range(0.9, 1.25);
+            const w = (2.0 * halfW / @as(f32, @floatFromInt(nb))) * rng.range(0.95, 1.35); // bands RUN
             b.addBox(
-                v3(cx + rng.signed() * 0.3, y, back - 2.2 + rng.signed() * 0.25),
-                v3(w * 0.5, rng.signed() * 0.10, rng.signed() * 0.05), // slabs TILT — bedding is never level
-                v3(rng.signed() * 0.12, rng.range(0.22, 0.55), rng.signed() * 0.10),
-                v3(rng.signed() * 0.10, 0, rng.range(0.5, 1.1)),
-                if (rng.float() < 0.28) CLIFF_LT else if (rng.float() < 0.5) CLIFF_DK else CLIFF_ROCK,
+                v3(cx + rng.signed() * 0.22, y, back - 1.20 + rng.signed() * 0.16),
+                v3(w * 0.5, rng.signed() * 0.045, rng.signed() * 0.03), // slabs still TILT, a little
+                v3(rng.signed() * 0.05, rise, rng.signed() * 0.04),
+                v3(rng.signed() * 0.04, 0, depth),
+                if (rng.float() < 0.24) CLIFF_LT else if (rng.float() < 0.46) CLIFF_DK else CLIFF_ROCK,
             );
         }
     }
     // FRACTURE: a few near-vertical ribs up the face, breaking the horizontal banding. Tapered
     // capsules, not boxes — a rock rib is a spine, not a pilaster.
+    //
+    // THESE WERE THE SPIKES. A 6-sided capsule tapering from 1.0 down to 0.2 over eleven metres is
+    // a hexagonal CONE, and five of them leaning off each segment at unrelated angles is most of
+    // what read as disheveled — worst on the assembled rim, where they stood out of the neighbour
+    // segment's body as well as their own. Now barely tapered (a spine of even thickness, not a
+    // horn), shorter, sunk to the band depth, and rounder in section.
+    // Their PROMINENCE varies the same way the bands' does: mostly a crease you read as shading,
+    // one or two standing far enough out to break the horizontal banding, which is their job.
     var f: i32 = 0;
-    while (f < 5) : (f += 1) {
+    while (f < 6) : (f += 1) {
         const cx = rng.range(-4.6, 4.6);
-        const h = rng.range(0.35, 0.85) * H;
+        const h = rng.range(0.26, 0.68) * H;
+        const bold = rng.float() < 0.3;
+        const rr = if (bold) rng.range(0.42, 0.60) else rng.range(0.20, 0.34);
+        const z0: f32 = if (bold) -1.55 else -1.25;
         b.addCapsule(
-            v3(cx, 0.2, -2.3 + rng.signed() * 0.3),
-            v3(cx + rng.signed() * 0.9, h, -1.6 + rng.signed() * 0.4),
-            rng.range(0.5, 1.0),
-            rng.range(0.2, 0.5),
-            6,
+            v3(cx, 0.2, z0 + rng.signed() * 0.14),
+            v3(cx + rng.signed() * 0.34, h, z0 + 0.35 + rng.signed() * 0.18),
+            rr,
+            rr * rng.range(0.70, 0.92),
+            @as(i32, if (bold) 9 else 7),
             CLIFF_DK,
         );
     }
@@ -1790,23 +2289,246 @@ fn cliffMesh(shader: rl.Shader, seed: u64, H: f32) rl.Model {
         const r = rng.range(0.35, 1.30) * (1.0 - 0.4 * @abs(cz + 1.0) / 3.2); // biggest against the wall
         b.addBlob(v3(cx, r * 0.55, cz), v3(r, r * 0.7, r * rng.range(0.8, 1.2)), 4, 6, if (rng.float() < 0.3) CLIFF_LT else CLIFF_ROCK);
     }
-    // The crest: rounded caps and a scrub lip, so the top reads as a rounded-off summit you
-    // could stand on rather than as a cut edge.
-    var c: i32 = 0;
-    while (c < NM) : (c += 1) {
-        const u = @as(f32, @floatFromInt(c)) / @as(f32, NM - 1);
-        const cx = (u * 2.0 - 1.0) * 5.2;
-        // WIDE and FLAT caps: they have to merge with the neighbouring segment's, or each cap is
-        // a peak and the ring reads as a row of triangular stacks with sky in the notches.
-        b.addBlob(v3(cx + rng.signed() * 0.6, crest[@intCast(c)] * 0.97, 0.9 + rng.signed() * 0.6), v3(rng.range(2.4, 3.4), rng.range(0.35, 0.70), rng.range(1.6, 2.4)), 3, 6, CLIFF_ROCK);
+    // ── THE COLLAPSE (`k.broken`) ── a face that has LOST a piece of itself. There is no CSG in
+    // the Builder, so the void is made the way the `cleft` dial already makes one: a near-black
+    // mass sunk INTO the face where the rock should be, which reads as depth. It sits at the
+    // BANDS' depth for the same reason they do — the bodies wander in and out, so a fixed z shows
+    // the scar where the surface is proud and swallows it where the surface is deep.
+    if (k.broken > 0) {
+        const gx = frng.range(-3.0, 3.0); // where the gully comes down
+        const gTop = H * frng.range(0.58, 0.84); // …and how far up it reaches
+        const gW = frng.range(0.75, 1.25) * (0.6 + 0.4 * k.broken); // half-width of the GAP itself
+        // THE GULLY IS MADE OF ROCK AND SHADOW, NOT OF A DARK COLOUR. A near-black albedo does not
+        // read as a void on a sunlit face: the scene shader's hot key plus its gamma lift bring
+        // ROCK_DEEP back as MID TAN wherever the low sun catches it square (the trap the palette
+        // block at the top of this file exists for), and the first version's "dark channel" came out
+        // as a stack of pale lumps climbing the face like a totem.
+        //
+        // So it is built the way the `cleft` dial already builds negative space: two BUTTRESSES
+        // standing forward either side of the gap, and the shadow one of them throws across it IS
+        // the gully. Same construction as the FRACTURE ribs above, one scale up.
+        // Each buttress is a RUN OF CAPSULES following the face, not a stack of blobs: an `addBlob`
+        // at three rings has a cone POLE at each end, and seven of them stacked up a rib came out
+        // as a row of stalagmites — the spike failure again, wearing a different hat. Capsule ends
+        // are hemispherical and consecutive segments share a radius at the joint, so the whole rib
+        // is one continuous spine. Exactly the lesson the FRACTURE block above already learned.
+        b.setMat(.stone);
+        for ([_]f32{ 1, -1 }) |sgn| {
+            // THE TWO SIDES ARE NOT A PAIR. One rib runs tall and lean, the other short and stout:
+            // matched ribs either side of a gap read as a DOORWAY, which is the one thing a rockfall
+            // scar must not look like — and that is exactly how the first capsule version came out.
+            const rTop = gTop * frng.range(0.62, 1.0);
+            const rGirth = frng.range(0.78, 1.25);
+            const rSegs: i32 = 5;
+            var prev: ?rl.Vector3 = null;
+            var prevR: f32 = 0;
+            var st: i32 = 0;
+            while (st <= rSegs) : (st += 1) {
+                const rt = @as(f32, @floatFromInt(st)) / @as(f32, @floatFromInt(rSegs));
+                // Barely tapered overall (a spine, not a horn) but it SWELLS AND PINCHES on the way
+                // up — an even-width capsule run is a pilaster, which the fracture note above
+                // already says a rock rib is not.
+                const rw = frng.range(0.48, 1.02) * rGirth * (1.0 - 0.34 * rt);
+                const cx = gx + sgn * (gW + rw * 0.9);
+                const y = rTop * (0.04 + 0.94 * rt);
+                const fz = cliffFaceZ(face, cx, y) orelse {
+                    prev = null;
+                    continue;
+                };
+                // …and the LAST segment is sunk nearly flush, so the rib DIES INTO the face instead
+                // of ending on a smooth dome standing clear of it (two of those read as thumbs).
+                const proud: f32 = if (st == rSegs) 0.85 else 0.25;
+                const p = v3(cx, y, fz + rw * proud);
+                if (prev) |q| b.addCapsule(q, p, prevR, rw, 9, if (frng.float() < 0.3) CLIFF_DK else CLIFF_ROCK);
+                prev = p;
+                prevR = rw;
+            }
+        }
+        // FRESH ROCK in the FLOOR of the channel: the pale scar the fall exposed, nearly flush, so
+        // it is a tonal step and not another lump. Pale rock lying in the buttresses' shadow is what
+        // says BROKEN rather than merely bumpy — and it has to be inside the gap, not flanking it
+        // (an earlier pass put wide plates either side, and they simply covered the channel).
+        var e: i32 = 0;
+        while (e < 7) : (e += 1) {
+            const w = frng.range(0.20, 0.45);
+            const cx = gx + frng.signed() * gW * 0.7;
+            const y = gTop * frng.range(0.08, 0.94);
+            const hh = frng.range(0.35, 0.95);
+            const fz = cliffSeatZ(face, cx, y, w, hh) orelse continue;
+            const d = frng.range(0.26, 0.38);
+            b.addBox(
+                v3(cx, y, fz + d - 0.06),
+                v3(w, frng.signed() * 0.05, frng.signed() * 0.04),
+                v3(frng.signed() * 0.06, hh, frng.signed() * 0.05),
+                v3(0, 0, d),
+                CLIFF_LT,
+            );
+        }
+        // THE APRON: the volume that left the face, fanned out from under the gully. More of it
+        // than the shared talus above, spread much further, and SORTED — the big blocks stop first
+        // and the small stuff runs out. An unsorted pile reads as scenery scattered by hand.
+        const nApron: i32 = @intFromFloat(@round(14.0 + 10.0 * k.broken));
+        var ap: i32 = 0;
+        while (ap < nApron) : (ap += 1) {
+            const out = frng.float(); // 0 = against the wall, 1 = the toe of the fan
+            const cx = gx + frng.signed() * (1.6 + 4.4 * out);
+            const cz = -1.2 - out * frng.range(2.0, 5.4);
+            const r = frng.range(0.30, 1.15) * (1.0 - 0.45 * out);
+            b.addBlob(v3(cx, r * 0.5, cz), v3(r, r * frng.range(0.55, 0.80), r * frng.range(0.80, 1.25)), 4, 6, if (frng.float() < 0.28) CLIFF_LT else CLIFF_ROCK);
+        }
+        // …and two TOPPLED SLABS leaning on the foot, which is what a collapse leaves that a scree
+        // slope does not: pieces still recognisable as pieces of the face. Sheared on purpose (the
+        // vertical axis leans while the horizontal stays level) — that IS a slab come to rest.
+        var sl: i32 = 0;
+        while (sl < 3) : (sl += 1) {
+            const hh = frng.range(1.1, 2.0);
+            const lean = frng.range(0.45, 0.95) * (if (frng.float() < 0.5) @as(f32, -1) else 1);
+            b.addBox(
+                v3(gx + frng.signed() * 3.4, hh * 0.42, -2.8 + frng.signed() * 0.9),
+                v3(frng.range(0.70, 1.40), 0, frng.signed() * 0.20),
+                v3(lean * hh, hh, frng.signed() * 0.30),
+                v3(0, 0, frng.range(0.22, 0.42)),
+                if (frng.float() < 0.4) CLIFF_LT else CLIFF_DK,
+            );
+        }
     }
+    // THE CREST fills the SADDLES between the summits — it does not crown them.
+    //
+    // The caps were the worst thing on the cliff. Each sat on its own body, WIDER than the body it
+    // sat on and only 0.35–0.70 m thick, which is a plate: five mushroom brims per segment, three
+    // hundred segments of them along the skyline. And their height was placed off the height the
+    // body was ASKED for, not the summit it actually reached, so they wandered between buried and
+    // hanging in the air.
+    //
+    // Their real job was never to cap anything — it was to stop a NOTCH OF SKY opening between
+    // neighbouring masses, which is what made an earlier version read as a row of separate stacks.
+    // So they belong in the dips, not on the peaks: a low mass bridging each pair of summits, its
+    // top kept BELOW both of them so it can never become a peak of its own or break the silhouette.
+    var c: i32 = 0;
+    while (c + 1 < NM) : (c += 1) {
+        const a = top[@intCast(c)];
+        const d = top[@intCast(c + 1)];
+        const lo = @min(a.y, d.y);
+        // Wide enough to reach into both summits, and seated so its crown sits just under the lower
+        // of the two. Rounded (5x9) because this IS the skyline where the two masses meet.
+        b.addBlob(
+            v3((a.x + d.x) * 0.5, lo - H * rng.range(0.05, 0.10), (a.z + d.z) * 0.5 + rng.signed() * 0.4),
+            v3(@abs(d.x - a.x) * 0.5 + @min(a.rx, d.rx) * 0.75, H * rng.range(0.07, 0.12), @min(a.rz, d.rz) * rng.range(0.85, 1.05)),
+            5,
+            9,
+            if (rng.float() < 0.25) CLIFF_LT else CLIFF_ROCK,
+        );
+    }
+    // SCRUB on the crest — placed against the real summit, and sitting a little BELOW it so it
+    // hugs the rock. Floating a flat green disc above the skyline was the other half of what read
+    // as stupid up there.
     b.setMat(.plant);
     var g: i32 = 0;
     while (g < 6) : (g += 1) {
-        const u = rng.float();
-        const cx = (u * 2.0 - 1.0) * 4.6;
-        const idx: usize = @intFromFloat(mathx.clampF(u * (NM - 1), 0, NM - 1));
-        b.addBlob(v3(cx, crest[idx] * 1.02, 1.2 + rng.signed() * 0.8), v3(rng.range(0.8, 1.7), 0.32, rng.range(0.6, 1.2)), 3, 6, if (rng.float() < 0.5) SCRUB_DK else STONE_MOSS);
+        const s = top[@intCast(rng.intn(NM))];
+        const r = rng.range(0.6, 1.3);
+        b.addBlob(
+            v3(s.x + rng.signed() * s.rx * 0.6, s.y - rng.range(0.10, 0.45), s.z + rng.signed() * s.rz * 0.5),
+            v3(r, r * rng.range(0.45, 0.75), r * rng.range(0.7, 1.1)),
+            3,
+            6,
+            if (rng.float() < 0.5) SCRUB_DK else STONE_MOSS,
+        );
+    }
+    // ── THE OVERGROWTH (`k.ivy`) ── creeper down the face, moss in the seams, a fuller green
+    // crest. Hung at the BANDS' depth, and that is the whole trick: ivy takes where the rock is
+    // proud and skips the hollows, so a runner sunk to a fixed z clings to some bodies and
+    // vanishes behind others. Standing every curtain clear of the face would be a green sheet
+    // hanging in the air — the RELIEF IS SUBTLE failure in leaf form.
+    if (k.ivy > 0) {
+        const nCurtain: i32 = @intFromFloat(@round(7.0 + 5.0 * k.ivy));
+        var cu: i32 = 0;
+        while (cu < nCurtain) : (cu += 1) {
+            var cx = frng.range(-5.4, 5.4);
+            // It starts PARTWAY UP and hangs down from there: ivy climbs off the ground and the
+            // growing tip is at the top, so the mass belongs low and the runner thins as it rises.
+            const y0 = H * frng.range(0.34, 0.86);
+            const drop = y0 * frng.range(0.60, 0.95);
+            const steps: i32 = 8;
+            var prev: ?rl.Vector3 = null;
+            var st: i32 = 0;
+            while (st <= steps) : (st += 1) {
+                const s = @as(f32, @floatFromInt(st)) / @as(f32, @floatFromInt(steps));
+                const y = y0 - drop * s;
+                cx += frng.signed() * 0.18; // the runner WANDERS as it descends — it isn't a plumb line
+                // Off the rock at this height → this length of runner simply does not exist. That
+                // clause is the whole fix for the version that hung green tiles in the sky above
+                // the mass; `prev = null` also breaks the woody run, so nothing spans the gap.
+                const fz = cliffFaceZ(face, cx, y) orelse {
+                    prev = null;
+                    continue;
+                };
+                const p = v3(cx, y, fz - 0.06); // a hair proud: it clings, it does not hang
+                if (prev) |q| {
+                    b.setMat(.wood);
+                    b.addCapsule(q, p, 0.030, 0.045, 5, BARK_DK); // thickening downward, toward the root
+                }
+                prev = p;
+                // LEAVES: small, many, and SUNK most of the way into the rock so only the front cap
+                // breaks the surface — about 25% of the radius. The first pass used blobs three
+                // times this size standing clear of the face, and a leaf that stands 40 cm off a
+                // rock reads as a green tile stuck to it, which is exactly how it came out.
+                b.setMat(.plant);
+                const nLeaf: i32 = 2 + frng.intn(3);
+                var lf: i32 = 0;
+                while (lf < nLeaf) : (lf += 1) {
+                    const lx = cx + frng.signed() * 0.55;
+                    const ly = y + frng.signed() * 0.30;
+                    const lz = cliffFaceZ(face, lx, ly) orelse continue;
+                    const r = frng.range(0.16, 0.38);
+                    const rz2 = r * frng.range(0.55, 0.85);
+                    b.addBlob(
+                        v3(lx, ly, lz + rz2 - r * 0.15),
+                        v3(r, r * frng.range(0.7, 1.15), rz2),
+                        3,
+                        7, // rounder than the old 6: at this size the facets ARE the silhouette
+                        if (frng.float() < 0.35) SCRUB_DK else IVY_GRN,
+                    );
+                }
+            }
+        }
+        // Moss packed into the seams: low wide pads pressed flat onto the face, on the same measured
+        // surface. This is what carries the damp read across the rock the creeper hasn't reached.
+        // SMALL pads, MANY of them, and seated across their whole FOOTPRINT (cliffSeatZ, not
+        // cliffFaceZ). A pad seated on its centre alone leaves the curving surface at its own ends
+        // however well its middle sits — at half-widths up to 2.2 they came out as flat green
+        // SHELVES with a lit top face, the horizontal version of the mistake the runners were
+        // making vertically. Moss grows in patches anyway.
+        b.setMat(.plant);
+        var ms: i32 = 0;
+        while (ms < 16) : (ms += 1) {
+            const mx = frng.range(-5.0, 5.0);
+            const my = H * frng.range(0.08, 0.74);
+            const w = frng.range(0.40, 1.05);
+            const hh = w * frng.range(0.30, 0.60);
+            const fz = cliffSeatZ(face, mx, my, w, hh) orelse continue;
+            b.addBlob(
+                v3(mx, my, fz + 0.22), // ~4 cm of it shows: a tonal patch, not a cushion
+                v3(w, hh, 0.26),
+                3,
+                7,
+                if (frng.float() < 0.5) MOSS_DK else STONE_MOSS,
+            );
+        }
+        // …and a fuller crest on top of the shared scrub. An overgrown face is green OVER the top,
+        // not only down the front — from the plain the skyline is most of what you see of it.
+        var cs: i32 = 0;
+        while (cs < 5) : (cs += 1) {
+            const s = top[@intCast(frng.intn(NM))];
+            const r = frng.range(0.8, 1.6);
+            b.addBlob(
+                v3(s.x + frng.signed() * s.rx * 0.7, s.y - frng.range(0.05, 0.35), s.z + frng.signed() * s.rz * 0.6),
+                v3(r, r * frng.range(0.40, 0.70), r * frng.range(0.7, 1.1)),
+                3,
+                6,
+                if (frng.float() < 0.4) IVY_GRN else SCRUB_DK,
+            );
+        }
     }
     return b.toModel(shader);
 }
@@ -2525,9 +3247,14 @@ fn shrineMesh(shader: rl.Shader) rl.Model {
         const h = rng.range(0.09, 0.17);
         b.setMat(.cloth);
         b.addCylinder(v3(x, 0.45, -0.34), v3(x, 0.45 + h, -0.34), 0.035, 0.032, 6, PETAL_WHITE);
-        b.setMat(.plain);
+        // A candle flame is a teardrop and already the right shape — it only wanted to MOVE. The
+        // datum is this candle's OWN wick (the stubs are unequal), so each of the three gutters on
+        // its own tiny amplitude instead of the three swaying together off a shared height.
+        b.setMat(.flame);
+        b.setAnimY(0.45 + h);
         b.addBlob(v3(x, 0.45 + h + 0.035, -0.34), v3(0.022, 0.045, 0.022), 3, 5, FLAME_CORE);
         b.addBlob(v3(x, 0.45 + h + 0.085, -0.34), v3(0.014, 0.035, 0.014), 3, 5, FLAME_TIP);
+        b.setAnimY(0);
     }
     b.setMat(.plant);
     tuftInto(&b, &rng, rng.signed() * 1.0, rng.signed() * 0.9, 0.7);
@@ -2556,9 +3283,16 @@ fn lanternMesh(shader: rl.Shader) rl.Model {
     b.addCylinder(v3(0.30, 2.42, 0), v3(0.30, 2.47, 0), 0.14, 0.14, 8, IRON);
     b.addCylinder(v3(0.30, 2.74, 0), v3(0.30, 2.80, 0), 0.16, 0.11, 8, IRON);
     b.addDome(v3(0.30, 2.80, 0), v3(0, 1, 0), 0.11, 8, IRON);
-    b.setMat(.plain);
+    // `.flame` + setAnimY, NOT flameInto: this flame is the right shape already and it lives inside
+    // a 0.11 cage, where five tapered spires would poke straight through the ironwork. What it was
+    // missing is the MOTION — on `.plain` it was the one fire in the world standing perfectly still.
+    // Its height above the wick is small, so the shared writhe moves it proportionally little, which
+    // is exactly what a sheltered flame in a housing does.
+    b.setMat(.flame);
+    b.setAnimY(2.48); // the wick, not the prop's base — the datum the writhe measures from
     b.addBlob(v3(0.30, 2.56, 0), v3(0.075, 0.10, 0.075), 4, 7, FLAME_CORE);
     b.addBlob(v3(0.30, 2.66, 0), v3(0.045, 0.07, 0.045), 3, 6, FLAME_MID);
+    b.setAnimY(0);
     b.setMat(.plant);
     tuftInto(&b, &rng, rng.signed() * 0.5, rng.signed() * 0.5, 0.75);
     return b.toModel(shader);
@@ -2910,38 +3644,55 @@ fn screeMesh(shader: rl.Shader) rl.Model {
 // uneven heights and leans, mostly orange, with only a small hot heart. Built as a fat stack of
 // near-white blobs it read as a traffic cone: the pale core was the biggest thing in it.
 fn flameInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, s: f32) void {
-    b.setMat(.plain); // no surface mottle over a glow
-    b.addBlob(v3(cx, cy + 0.02 * s, cz), v3(0.15 * s, 0.09 * s, 0.15 * s), 4, 7, COAL); // the glowing base
-    b.addBlob(v3(cx, cy + 0.11 * s, cz), v3(0.075 * s, 0.10 * s, 0.075 * s), 4, 7, FLAME_CORE); // small hot heart
-    // Three tongues of unequal height, leaning different ways — fire is never symmetric.
+    // `.flame` gets two things `.plain` could not: the vertex shader's WRITHE (so the thing
+    // actually moves — the light has been guttering since it was written, over a flame standing
+    // perfectly still) and no surface grain at all, which is what the old comment here asked for.
+    // `setAnimY(cy)` is what tells the shader where the fuel is, so the coals hold still while the
+    // tongues dance; both are STICKY, so both are put back at the end.
+    b.setMat(.flame);
+    b.setAnimY(cy);
+    // THE HEART: a small, low pool at the fuel. Small on purpose — a big pale core is what made an
+    // earlier version read as a traffic cone.
+    b.addBlob(v3(cx, cy + 0.015 * s, cz), v3(0.125 * s, 0.050 * s, 0.125 * s), 3, 9, COAL);
+    b.addBlob(v3(cx, cy + 0.065 * s, cz), v3(0.050 * s, 0.060 * s, 0.050 * s), 3, 8, FLAME_CORE);
+    // TONGUES: TAPERED SPIRES, not stacked blobs. A capsule with ra > rb is a smooth cone with
+    // rounded ends, which is the shape of a flame tongue — two fat blobs one on top of the other is
+    // the shape of a snowman, and at six sides their facet folds were most of what read as crumpled
+    // paper once the vertex writhe started bending them.
+    //
+    // FIVE, at unequal heights, each in TWO segments so the spire can bend on its way up (a
+    // straight one is a spike). Narrow relative to their height: the silhouette is the whole read.
     var t: i32 = 0;
-    while (t < 3) : (t += 1) {
+    while (t < 5) : (t += 1) {
         const a = rng.angle();
-        const off = rng.range(0.0, 0.06) * s;
-        const h = rng.range(0.26, 0.52) * s; // the tallest tongue sets the flame's height
-        const w = rng.range(0.048, 0.075) * s; // …and they stay NARROW relative to it
-        const lean = rng.range(0.02, 0.07) * s;
-        b.addBlob(
-            v3(cx + mathx.cosf(a) * off + mathx.cosf(a) * lean, cy + 0.10 * s + h * 0.45, cz + mathx.sinf(a) * off + mathx.sinf(a) * lean),
-            v3(w, h * 0.55, w),
-            4,
-            6,
-            if (t == 0) FLAME_MID else if (rng.float() < 0.5) FLAME_MID else FLAME_TIP,
+        const off = rng.range(0.01, 0.070) * s;
+        const h = rng.range(0.20, 0.60) * s; // the tallest tongue sets the flame's height
+        const w = rng.range(0.030, 0.055) * s; // …and they stay NARROW relative to it
+        const lean = rng.range(0.01, 0.05) * s;
+        const y0 = cy + 0.02 * s;
+        const x0 = cx + mathx.cosf(a) * off;
+        const z0 = cz + mathx.sinf(a) * off;
+        const mx = x0 + mathx.cosf(a) * lean;
+        const mz = z0 + mathx.sinf(a) * lean;
+        const tx = mx + mathx.cosf(a) * lean * 1.6 + rng.signed() * 0.02 * s;
+        const tz = mz + mathx.sinf(a) * lean * 1.6 + rng.signed() * 0.02 * s;
+        b.addCapsule(
+            v3(x0, y0, z0),
+            v3(mx, y0 + h * 0.55, mz),
+            w,
+            w * 0.74,
+            7,
+            if (t == 0) FLAME_MID else if (rng.float() < 0.55) FLAME_MID else FLAME_TIP,
         );
-        // …each tapering to a cooler point above.
-        b.addBlob(
-            v3(cx + mathx.cosf(a) * (off + lean * 2.4), cy + 0.10 * s + h * 0.92, cz + mathx.sinf(a) * (off + lean * 2.4)),
-            v3(w * 0.55, h * 0.30, w * 0.55),
-            3,
-            6,
-            FLAME_TIP,
-        );
+        b.addCapsule(v3(mx, y0 + h * 0.52, mz), v3(tx, y0 + h, tz), w * 0.72, w * 0.12, 6, FLAME_TIP);
     }
+    // …and a few loose EMBERS drifting off the top.
     var i: i32 = 0;
     while (i < 4) : (i += 1) {
-        const r = rng.range(0.012, 0.026) * s;
-        b.addCube(v3(cx + rng.signed() * 0.16 * s, cy + rng.range(0.55, 1.05) * s, cz + rng.signed() * 0.16 * s), v3(r, r, r), WISP);
+        const r = rng.range(0.010, 0.022) * s;
+        b.addBlob(v3(cx + rng.signed() * 0.14 * s, cy + rng.range(0.45, 0.95) * s, cz + rng.signed() * 0.14 * s), v3(r, r, r), 3, 5, WISP);
     }
+    b.setAnimY(0); // sticky, like setMat — hand the Builder back the way it was found
 }
 
 // A standing iron TORCH: three splayed feet, a twisted shaft, a cage of iron straps holding
@@ -3888,18 +4639,24 @@ fn bigTreeMesh(shader: rl.Shader, spec: TreeSpec) rl.Model {
     b.addCapsule(t2, fork, 0.62, 0.48, 8, BARK);
     // Bark RIDGES: slim darker capsules running up the barrel. Without them the trunk is one
     // smooth lit cylinder and reads as plastic however dark you make it — the form needs breaks.
+    //
+    // Same correction as the column's flutes (see RELIEF IS SUBTLE): these were 4-SIDED rods, so
+    // square bars, and at radius 0.15 sitting as far out as 0.92 of a ~0.93 barrel they stood a
+    // FIFTH of the trunk's radius clear of its flats — more proud than the flutes were. Bark is a
+    // texture you read at two metres, not a set of battens. Thinner, seated further in so the rod
+    // is mostly buried, 6-sided so there is no square corner running the whole height.
     var rb: i32 = 0;
     while (rb < 9) : (rb += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(rb)) / 9.0 + rng.signed() * 0.2;
-        const r0 = rng.range(0.74, 0.92);
+        const r0 = rng.range(0.70, 0.83);
         const y0 = rng.range(0.0, 0.6);
         const y1 = rng.range(0.65, 1.0) * spec.trunk;
         b.addCapsule(
             v3(mathx.cosf(a) * r0, y0, mathx.sinf(a) * r0),
             v3(mathx.cosf(a + rng.signed() * 0.25) * r0 * 0.72, y1, mathx.sinf(a + rng.signed() * 0.25) * r0 * 0.72),
-            rng.range(0.07, 0.15),
-            rng.range(0.04, 0.09),
-            4,
+            rng.range(0.05, 0.10),
+            rng.range(0.03, 0.065),
+            6,
             if (rng.float() < 0.5) BARK_DK else BARK_OLD,
         );
     }

@@ -18,6 +18,17 @@ const alloc = std.heap.c_allocator;
 // Shadow sampler lives on a high texture slot raylib's default material never binds (it
 // only uses slot 0 for albedo), so the per-frame bind survives drawModel/drawMesh.
 const SLOT_SHADOW: i32 = 12;
+const SLOT_SOIL: i32 = 13;
+
+/// THE SOIL GRID's resolution across the whole world. 112 cells over a 560 m map is 5 m a cell,
+/// which is about the smallest patch of ground worth painting by hand — and the sample position
+/// is noise-jittered in the shader, so a cell edge never reads as a 5 m step.
+///
+/// It is a count, not a pitch, so it has to GROW WITH THE WORLD or a bigger map paints in bigger
+/// blocks: at 64 over 560 m a "cell" is 8.75 m, which is a brush you cannot draw a path with.
+/// Costs one byte per cell everywhere it is stored — the texture, `wf.Map.soil`, and 24 of those
+/// in the editor's undo ring, so ~300 KB of BSS for the increase.
+pub const SOIL_N: i32 = 112;
 
 // THE SUN — one hard directional light. Single source for the shader uniform and shadow
 // camera so shading and cast shadows can't disagree; low golden-hour elevation (~33 deg)
@@ -121,6 +132,60 @@ const sceneVS =
     \\        p.x += bend*sway;
     \\        p.z += bend*sway*0.4;
     \\    }
+    \\    // ---- FIRE MOVES ---- flame meshes are permanent geometry like every other prop, so the
+    \\    // writhe has to happen HERE. Amplitude grows with height ABOVE THE FUEL (texcoords2.y
+    \\    // carries the flame's own base, written by props.flameInto), so the coals stay welded to
+    \\    // the hearth and only the tongues dance — keyed off p.y alone the whole fire would slide.
+    \\    // THREE incommensurate motions, because a flame that only waves side to side reads as a
+    \\    // flag: a fast lateral lash, a slower twist about the fire's own axis, and a vertical
+    \\    // BREATHE that makes it gutter and flare. Phased off the prop's WORLD origin so no two
+    \\    // fires in a room dance in lockstep — the same argument env.gutter makes for their light,
+    \\    // and this is its visible half (the light has been guttering all along; the flame it was
+    \\    // supposed to be coming off has been standing perfectly still).
+    \\    // FOUR things have to be true or it reads as a rigid object being waved about, which is
+    \\    // exactly how the first version came out — only (1) was:
+    \\    //
+    \\    //  1. AMPLITUDE GROWS WITH HEIGHT ABOVE THE FUEL, so the coals stay welded to the hearth.
+    \\    //  2. EACH TONGUE HAS ITS OWN PHASE. Keyed off the prop origin alone, every vertex of a
+    \\    //     fire shared one phase and the whole flame leaned left and right AS ONE PIECE — the
+    \\    //     "moves in one piece" failure the rig rules call out for humanoids, on a fire. A
+    \\    //     vertex's own offset from the fire's axis differs tongue to tongue, which de-syncs
+    \\    //     them while keeping each tongue coherent (a blob is small beside the gap between
+    \\    //     tongues).
+    \\    //  3. THE WRINKLES TRAVEL UP. The -hh term advects the wave toward the tip. Without it a
+    \\    //     tongue lashes in place, and a thing that lashes in place is a flag, not a flame.
+    \\    //  4. IT PINCHES AND LEAPS. Motion that only translates reads as a solid being shaken,
+    \\    //     however fast you shake it; fire necks, swells and shoots.
+    \\    if (vertexTexCoord2.x > 10.5) {
+    \\        vec3 baseW = vec3(matModel*vec4(0.0, 0.0, 0.0, 1.0));
+    \\        // CLAMPED: the drifting wisps are authored up to a whole unit above the fuel, and an
+    \\        // h-squared term would fling those across the room.
+    \\        float hh = clamp(p.y - vertexTexCoord2.y, 0.0, 0.6);
+    \\        float w = hh*hh;
+    \\        float tongue = p.x*9.3 + p.z*7.7;        // per-tongue — they sit at different offsets
+    \\        float seed = baseW.x*1.7 + baseW.z*1.3;  // …and no two FIRES gutter together
+    \\        // ~10 Hz on the finest octave: a real flame tip flickers far faster than 4 rad/s did.
+    \\        float ph = uTime*7.4 + seed + tongue - hh*13.0;
+    \\        float lash  = sin(ph) + 0.50*sin(ph*2.31 + 1.7) + 0.28*sin(ph*4.70 + 0.4) + 0.15*sin(ph*9.10);
+    \\        float twist = sin(ph*0.61 + 2.1) + 0.40*sin(ph*1.90 + 3.3);
+    \\        // AMPLITUDE IS A FRACTION OF A TONGUE'S WIDTH, NOT OF ITS HEIGHT. This was 0.45, which
+    \\        // displaced a tip by 0.22 — a tongue is 0.03..0.055 wide, so it was being sheared three
+    \\        // times its own width and came out a bent noodle with the facet folds to prove it. A
+    \\        // flame leans and shimmers; it does not swing across itself.
+    \\        // …and eased down again (owner: all flames a bit more subtle). Fire SIMMERS more than it
+    \\        // thrashes; the tell is the shape reorganising, not the distance travelled.
+    \\        p.x += w*0.080*lash  + hh*0.022*twist;
+    \\        p.z += w*0.066*twist - hh*0.018*lash;
+    \\        // SHOOT: tongues leap and drop back, biased upward — fire climbs. The VERTICAL is where
+    \\        // a flame's amplitude legitimately lives, so this carries most of the motion now.
+    \\        p.y += hh*(0.090*sin(ph*0.83 + 0.9) + 0.040*sin(ph*2.7)) + w*0.095*max(0.0, sin(ph*0.47));
+    \\        // NECK, about the prop's own axis — which is where a torch's flame sits. A brazier's
+    \\        // or a bonfire's SECOND tongue is offset up to 0.2, so for that one this also nudges
+    \\        // sideways; at this amplitude that reads as sway, so it stays the cheap approximation.
+    \\        float pinch = 1.0 + 0.24*hh*sin(ph*1.37 + 0.7);
+    \\        p.x *= pinch;
+    \\        p.z *= pinch;
+    \\    }
     \\    fragPosition = vec3(matModel*vec4(p, 1.0));
     \\    fragColor = vertexColor;
     \\    fragNormal = normalize(mat3(matModel)*vertexNormal);
@@ -206,6 +271,56 @@ const sceneFS =
     \\// dark): sun-bleached khaki grass drifting to damp green, a worn dirt path down the
     \\// ruin avenue (x ~ 0, edges wobbled), stony patches, and dark scrub clumps. All
     \\// smooth field noise — no coarse per-tile specks, which read as a checkerboard.
+    \\// ---- PAINTED SOIL ---- an OVERRIDE laid over the procedural floor above, never a
+    \\// replacement for it: id 0 means "nobody painted here" and the field below returns the
+    \\// ground untouched, so the whole authored look survives by construction and painting is
+    \\// purely additive. The grain (blades / f3) is carried THROUGH the override, or a painted
+    \\// patch reads as flat plastic against the ground it sits in.
+    \\uniform sampler2D soilMap;
+    \\uniform float soilHalf;    // world half-extent the grid spans
+    \\uniform float soilCell;    // metres per grid cell — the scale the coverage ring samples at
+    \\uniform int   soilOn;      // 0 = nothing painted anywhere; skip the fetch entirely
+    \\vec3 soilColor(int id){
+    \\  // Authored NEAR-BLACK like every other albedo here — the shader's hot key plus the
+    \\  // gamma lift turns any mid-dark value pale where a big face takes the sun square on.
+    \\  if (id==1) return vec3(0.130, 0.106, 0.074);  // trodden dirt / a path worn through
+    \\  if (id==2) return vec3(0.072, 0.098, 0.042);  // green turf
+    \\  if (id==3) return vec3(0.132, 0.134, 0.130);  // stone, flagged or scoured bare
+    \\  if (id==4) return vec3(0.150, 0.132, 0.090);  // pale silt, the tarn's margin
+    \\  if (id==5) return vec3(0.062, 0.058, 0.054);  // ash and burnt ground
+    \\  return vec3(0.046, 0.062, 0.034);             // 6 = deep moss
+    \\}
+    \\int soilAt(vec2 w){
+    \\  vec2 uv = w/(2.0*soilHalf) + 0.5;
+    \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0;
+    \\  return int(texture(soilMap, uv).r*255.0 + 0.5);
+    \\}
+    \\vec3 paintedSoil(vec3 c, vec2 p, float blades, float f3, float px){
+    \\  if (soilOn == 0) return c;
+    \\  // JITTER THE LOOKUP, don't filter the id. Ids do not interpolate — blending 2 and 4
+    \\  // gives 3, a material nobody painted — so the cell edge is broken up by pushing the
+    \\  // SAMPLE POSITION around instead, which turns a 5 m staircase into a ragged margin.
+    \\  vec2 j = vec2(vnoise(p*0.62), vnoise(p*0.62 + 47.3)) - 0.5;
+    \\  vec2 q = p + j*3.4;
+    \\  // …then SOFTEN IT BY COVERAGE. The jitter alone still gives a hard in/out at every
+    \\  // texel — the boundary is ragged but it is still a cliff, and against a procedural
+    \\  // floor that cross-fades over metres it reads as a decal laid on the world. So sample a
+    \\  // ring around the point and blend by HOW MANY taps agree: deep inside a patch every tap
+    \\  // agrees and the paint is full strength, at the margin only some do and it fades out.
+    \\  // Cheap, and it cannot invent a material — coverage weights an id, it never mixes two.
+    \\  vec2 o[4] = vec2[4](vec2(1.0,0.0), vec2(-1.0,0.0), vec2(0.0,1.0), vec2(0.0,-1.0));
+    \\  int id = soilAt(q);
+    \\  float cov = (id != 0) ? 1.0 : 0.0;
+    \\  for (int i = 0; i < 4; i++){
+    \\    int t = soilAt(q + o[i]*soilCell*0.85);
+    \\    if (t == 0) continue;
+    \\    if (id == 0) id = t;          // the centre is bare but a neighbour is painted: fade IN
+    \\    if (t == id) cov += 1.0;
+    \\  }
+    \\  if (id == 0) return c;
+    \\  vec3 s = soilColor(id)*(0.80 + 0.50*blades + 0.20*f3);
+    \\  return mix(c, s, (cov/5.0)*0.92);
+    \\}
     \\vec3 terrainAlbedo(vec2 p, float px){
     \\  float f1 = fvn(p, 0.055, vec2(0.0), px);
     \\  float f2 = fvn(p, 0.35, vec2(7.7), px);
@@ -243,6 +358,7 @@ const sceneFS =
     \\  }
     \\  float marsh = smoothstep(44.0, 108.0, p.x);
     \\  c = mix(c, c*vec3(1.06, 0.97, 0.74), marsh*0.42);
+    \\  c = paintedSoil(c, p, blades, f3, px);
     \\  return c*(0.78 + 0.22*fvn(p, 0.03, vec2(9.7), px));
     \\}
     \\// ---- SURFACE MATERIALS ---- every Builder mesh carries a material id (gfx.Mat, in
@@ -259,28 +375,77 @@ const sceneFS =
     \\  return mix(vnoise(q*freq), 0.5, band(freq, px))*0.6
     \\       + mix(vnoise(q*freq*3.7 + 11.3), 0.5, band(freq*3.7, px))*0.4;
     \\}
-    \\vec3 matAlbedo(int m, vec2 q, vec3 base, float px){
-    \\  if (m == 1){        // STONE: blotch, two-octave grain, soft strata, ROUNDED pits.
+    \\// ---- WEATHERING ---- dirt does not fall evenly. It RUNS DOWN verticals, SETTLES on anything
+    \\// facing the sky, and lichen takes the faces that never see the sun. All three key off the
+    \\// world NORMAL, so they land where the GEOMETRY says they should instead of being one more
+    \\// octave of noise — which is the whole difference between a surface that reads as aged and one
+    \\// that reads as merely busy. A thousand years outdoors is the point of every ruin out here, and
+    \\// none of it was being said.
+    \\vec3 weather(vec3 c, vec2 q, vec3 n, float px){
+    \\  float up = clamp(n.y, 0.0, 1.0);   // 1 = a ledge, a step tread, the top of a fallen drum
+    \\  float vert = 1.0 - abs(n.y);       // 1 = a wall or a column shaft, 0 = a floor or a soffit
+    \\  // RUNOFF: streaks stretched hard along the vertical, on the verticals only. Rain gathers as
+    \\  // it falls, so this is what puts the dark tails under every ledge and cornice.
+    \\  float streak = fvn2(q, vec2(7.0, 0.35), vec2(13.7), px)*0.65
+    \\               + fvn2(q, vec2(19.0, 0.70), vec2(5.3), px)*0.35;
+    \\  c *= 1.0 - 0.16*vert*smoothstep(0.45, 0.95, streak);
+    \\  // SETTLED DIRT on whatever faces the sky, broken up so a ledge is grimy in patches and not
+    \\  // uniformly dimmed (which would just read as the light being wrong).
+    \\  c *= 1.0 - 0.13*up*smoothstep(0.30, 0.85, fvn(q, 1.7, vec2(41.3), px));
+    \\  // LICHEN takes the COLD faces — biased away from the low western sun (gfx.SUN_DIR) — and it
+    \\  // TINTS rather than darkens. This is the one place these patterns touch HUE, deliberately:
+    \\  // the house rule is value-only because value keeps the authored palette, but a grey-green
+    \\  // bloom on old stone is a colour event and no amount of darkening can say it. Kept low and
+    \\  // desaturated for exactly the reason the rule exists.
+    \\  float cold = clamp(-(n.x*0.6 + n.z*0.8), 0.0, 1.0);
+    \\  float lich = smoothstep(0.55, 0.92, fvn(q, 1.1, vec2(59.1), px))*cold*vert;
+    \\  return mix(c, c*vec3(0.78, 0.94, 0.72), lich*0.55);
+    \\}
+    \\vec3 matAlbedo(int m, vec2 q, vec3 base, vec3 n, float px){
+    \\  if (m == 1){        // STONE: blotch at TWO scales, two-octave grain, soft strata, ROUNDED pits.
     \\    // All smooth value noise — hard speck/step cells read as square pixels on a
     \\    // close column face, so weathering must stay soft-edged.
+    \\    // TWO SCALES OF BLOTCH, not one. A single 2.1-cycle term is a ~0.5 m patch: right for a
+    \\    // wall block, and it leaves a 15 m cliff face or the colossal gate with NO variation at
+    \\    // the scale of the MASS — so the biggest surfaces in the world came back as flat tan
+    \\    // planes, which is the same failure the near-black albedos and the form breaks exist to
+    \\    // fight. The old 0.24 is SPLIT between the two, so the range and the mean are unchanged
+    \\    // to the bit: this is more scale coverage at exactly the old loudness, not more noise.
+    \\    float mass = fvn(q, 0.30, vec2(17.3), px);
     \\    float blotch = fvn(q, 2.1, vec2(0.0), px);
     \\    float grain = fvn(q, 6.1, vec2(4.7), px)*0.6 + fvn(q, 12.3, vec2(9.2), px)*0.4;
     \\    float strata = fvn2(q, vec2(0.4, 3.4), vec2(23.1), px);
-    \\    base *= (0.88 + 0.24*blotch)*(0.94 + 0.12*grain)*(0.94 + 0.12*strata);
-    \\    base *= 1.0 - 0.13*smoothstep(0.74, 0.95, fvn(q, 9.0, vec2(31.7), px));
-    \\  } else if (m == 2){ // WOOD: long grain streaks along v, slow wander
+    \\    base *= (0.88 + 0.12*mass + 0.12*blotch)*(0.94 + 0.12*grain)*(0.94 + 0.12*strata);
+    \\    // …and the pits read as EROSION rather than as pepper. At 9 cycles/unit they were 11 cm
+    \\    // dots, all the same size and all the same value — dirt sprinkled on the rock. Bigger,
+    \\    // fewer and softer-edged (a wider smoothstep takes fewer of them) is a weathered hollow.
+    \\    base *= 1.0 - 0.15*smoothstep(0.70, 0.97, fvn(q, 5.5, vec2(31.7), px));
+    \\    base = weather(base, q, n, px);   // rubble masonry has stood out in the rain the longest
+    \\  } else if (m == 2){ // WOOD: long grain streaks along v, slow wander, BOARD scale
     \\    float grain = fvn2(q, vec2(9.0, 0.8), vec2(0.0), px);
-    \\    base *= (0.82 + 0.30*grain)*(0.94 + 0.12*fvn(q, 2.9, vec2(5.1), px));
-    \\  } else if (m == 3){ // CLOTH: soft anisotropic weave + broad wrinkle shading
+    \\    // Timber comes in PIECES. Without a board scale a cart bed, a palisade or a woodpile is
+    \\    // one continuous streak field running straight through every plank in it.
+    \\    float board = fvn2(q, vec2(0.35, 2.6), vec2(31.1), px);
+    \\    base *= (0.82 + 0.30*grain)*(0.94 + 0.12*fvn(q, 2.9, vec2(5.1), px))*(0.95 + 0.10*board);
+    \\  } else if (m == 3){ // CLOTH: soft anisotropic weave + broad wrinkle shading + FOLDS
     \\    float weave = fvn2(q, vec2(30.0, 3.2), vec2(0.0), px)*0.5 + fvn2(q, vec2(3.2, 30.0), vec2(9.7), px)*0.5;
-    \\    base *= (0.91 + 0.15*weave)*(0.92 + 0.15*fvn(q, 1.7, vec2(2.3), px));
-    \\  } else if (m == 4){ // STEEL: fine brush lines along the length + broad soft tarnish
+    \\    // Broad banding along the hang, anisotropic the OTHER way from the weave: a banner has to
+    \\    // read as cloth carrying its own weight, not as a painted board.
+    \\    float fold = fvn2(q, vec2(1.1, 0.22), vec2(17.9), px);
+    \\    base *= (0.91 + 0.15*weave)*(0.92 + 0.15*fvn(q, 1.7, vec2(2.3), px))*(0.94 + 0.12*fold);
+    \\  } else if (m == 4){ // STEEL: fine brush lines along the length + broad soft tarnish + PITTING
     \\    // 46 cycles/unit is the highest frequency in the whole shader — a blade or a helm seen
     \\    // across the avenue was sampling it once per pixel and strobing.
     \\    float brush = fvn2(q, vec2(46.0, 2.3), vec2(0.0), px);
     \\    base *= (0.94 + 0.11*brush)*(0.95 + 0.10*fvn(q, 0.9, vec2(7.7), px));
-    \\  } else if (m == 5){ // LEATHER: pore stipple + crease mottle
+    \\    // Old iron is not evenly bright. A few soft dark freckles where the rust took, low enough
+    \\    // in frequency to read as damage to the metal rather than as dirt lying on it.
+    \\    base *= 1.0 - 0.12*smoothstep(0.68, 0.95, fvn(q, 3.3, vec2(27.7), px));
+    \\  } else if (m == 5){ // LEATHER: pore stipple + crease mottle + PANEL scale
     \\    base *= (0.90 + 0.17*fvn(q, 13.0, vec2(0.0), px))*(0.92 + 0.15*fvn(q, 3.1, vec2(6.3), px));
+    \\    // A bracer, a pauldron and a scabbard are CUT PIECES; one pore field across the lot of
+    \\    // them reads as moulded plastic however good the pores are.
+    \\    base *= 0.95 + 0.10*fvn(q, 0.80, vec2(37.3), px);
     \\  } else if (m == 6){ // SKIN: faint soft mottle only
     \\    base *= 0.94 + 0.11*fmot(q, 4.6, px);
     \\  } else if (m == 7){ // HIDE: amphibian blotch patches + fine wart grain — DARKEN
@@ -290,6 +455,10 @@ const sceneFS =
     \\    base *= (0.72 + 0.26*patch)*(0.88 + 0.12*fvn(q, 8.2, vec2(3.3), px));
     \\  } else if (m == 8){ // PLANT: broad value drift so clumps read as many blades
     \\    base *= 0.87 + 0.22*fmot(q, 2.2, px);
+    \\    // …and a LEAF-scale octave on top. The broad drift says "this is a clump"; this says the
+    \\    // clump is made of separate leaves. The new cliff ivy needed it more than anything —
+    \\    // without it a creeper cluster is one flat green lump stuck to the rock.
+    \\    base *= 0.93 + 0.14*fvn(q, 9.0, vec2(13.1), px);
     \\  } else if (m == 10){ // MARBLE: a cool body crossed by wandering VEINS, plus the crazing
     \\    // and dull weathered patches a thousand years outdoors puts on burnished stone. This
     \\    // is the one material allowed past the +-20% house limit: a vein that stays inside it
@@ -306,6 +475,24 @@ const sceneFS =
     \\    base *= 1.0 + 0.15*fvn(q, 1.4, vec2(7.7), px) - 0.30*vein - 0.17*hair;
     \\    base *= 0.95 + 0.12*fvn(q, 11.0, vec2(2.9), px);                         // crazing
     \\    base *= 1.0 - 0.17*smoothstep(0.60, 0.92, fvn(q, 0.35, vec2(19.0), px)); // where the polish is gone
+    \\    // BLOCK DRIFT: dressed stone is quarried in pieces and no two blocks match. Frequency low
+    \\    // enough that it varies drum to drum down a colonnade rather than within any one drum,
+    \\    // which is what stops twelve columns reading as twelve copies of one column.
+    \\    base *= 0.94 + 0.12*fvn(q, 0.22, vec2(53.7), px);
+    \\    base = weather(base, q, n, px);   // …and the kingdom's own stone has stood out here just as long
+    \\  } else if (m == 11){ // FLAME: no surface texture at all — but it GUTTERS.
+    \\    // A fire has no SURFACE to weather, and the generic grain the default branch applies was
+    \\    // mottling the one thing in the scene that is pure emitted light (flameInto's own comment,
+    \\    // "no surface mottle over a glow", asked for this and could not get it — `.plain` IS the
+    \\    // grain).
+    \\    // What it gets instead is BRIGHTNESS FLICKER, which is the other half of reading as fire:
+    \\    // the vertex writhe moves the shape, this makes it surge and dim. Deliberately near-uniform
+    \\    // in SPACE and fast in TIME — a fine spatial pattern here would sizzle on a distant torch,
+    \\    // and temporal flicker cannot alias spatially at all.
+    \\    float fl = sin(uTime*11.0 + q.x*2.1 + q.y*1.7)*0.5
+    \\             + sin(uTime*19.0 + q.x*3.3)*0.3
+    \\             + sin(uTime*31.0 + q.y*2.6)*0.2;
+    \\    base *= 1.0 + 0.10*fl;   // 0.26 on top of an already-hot emissive blew the tongues to yellow
     \\  } else if (m == 9){ // WATER: silt drifting under the surface (the RIPPLES are geometry-
     \\    // free — see waterNormal — this is only what's suspended in the tarn)
     \\    base *= 0.84 + 0.30*fmot(q, 0.7, px);
@@ -419,7 +606,7 @@ const sceneFS =
     \\    // lake's triangulation as a patchwork of unrelated blotches.
     \\    // The footprint must be taken in the SAME space as the coordinate, or the LOD is measured
     \\    // against the wrong scale — water textures in world xz, everything else in surface UVs.
-    \\    base = matAlbedo(mi, (mi == 9) ? p : fragUV, base, (mi == 9) ? pxP : pxQ);
+    \\    base = matAlbedo(mi, (mi == 9) ? p : fragUV, base, n, (mi == 9) ? pxP : pxQ);
     \\    // …and its ripples live in the NORMAL, so they must land before any lighting term.
     \\    if (mi == 9) { n = waterNormal(p, uTime, pxP); nv = clamp(dot(n, V), 0.0, 1.0); } // ripples move the normal
     \\  }
@@ -1025,6 +1212,27 @@ pub const Retro = struct {
 
 // Depth-only FBO for the shadow map (zig-diablo's loadShadowmap; the 100s are rlgl's
 // depth-attachment enums, unchanged in this binding).
+// A blank SOIL_N x SOIL_N single-byte texture, updated in place by setSoil. NEAREST filtering
+// is load-bearing: the bytes are enum ids, and a bilinear fetch between 2 and 4 returns 3 — a
+// material nobody painted, showing as a seam of the wrong ground along every boundary.
+fn loadSoilTexture() rl.Texture2D {
+    const n: usize = @intCast(SOIL_N);
+    const blank = std.heap.c_allocator.alloc(u8, n * n) catch @panic("soil texture");
+    defer std.heap.c_allocator.free(blank);
+    @memset(blank, 0);
+    const img = rl.Image{
+        .data = blank.ptr,
+        .width = SOIL_N,
+        .height = SOIL_N,
+        .mipmaps = 1,
+        .format = .uncompressed_grayscale,
+    };
+    const tex = rl.loadTextureFromImage(img) catch @panic("soil texture");
+    rl.setTextureFilter(tex, .point);
+    rl.setTextureWrap(tex, .clamp);
+    return tex;
+}
+
 fn loadShadowmap(res: i32) rl.RenderTexture2D {
     const fbo = rl.gl.rlLoadFramebuffer();
     const depthTex = rl.gl.rlLoadTextureDepth(res, res, false);
@@ -1052,6 +1260,10 @@ pub const Scene = struct {
     loc_lightCol: i32,
     loc_lightRad: i32,
     loc_nLights: i32,
+    soilTex: rl.Texture2D,
+    loc_soilOn: i32,
+    loc_soilHalf: i32,
+    loc_soilCell: i32,
     saved_near: @TypeOf(rl.gl.rlGetCullDistanceNear()) = 0,
     saved_far: @TypeOf(rl.gl.rlGetCullDistanceFar()) = 0,
 
@@ -1064,6 +1276,8 @@ pub const Scene = struct {
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "shadowMap"), &slotShadow, .int);
         var res: i32 = SHADOWMAP_RES;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "shadowMapResolution"), &res, .int);
+        var slotSoil = SLOT_SOIL;
+        rl.setShaderValue(shader, rl.getShaderLocation(shader, "soilMap"), &slotSoil, .int);
         var haze = HAZE;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "hazeColor"), &haze, .vec3);
         var density: f32 = HAZE_DENSITY;
@@ -1078,6 +1292,10 @@ pub const Scene = struct {
             .shader = shader,
             .depthShader = depthShader,
             .shadowMap = loadShadowmap(SHADOWMAP_RES),
+            .soilTex = loadSoilTexture(),
+            .loc_soilOn = rl.getShaderLocation(shader, "soilOn"),
+            .loc_soilHalf = rl.getShaderLocation(shader, "soilHalf"),
+            .loc_soilCell = rl.getShaderLocation(shader, "soilCell"),
             .lightVP = rl.math.matrixIdentity(),
             .loc_ground = rl.getShaderLocation(shader, "groundMode"),
             .loc_lightVP = rl.getShaderLocation(shader, "lightVP"),
@@ -1128,6 +1346,7 @@ pub const Scene = struct {
         rl.gl.rlActiveTextureSlot(SLOT_SHADOW);
         rl.gl.rlEnableTexture(self.shadowMap.depth.id);
         rl.gl.rlActiveTextureSlot(0);
+        self.bindSoil();
         rl.setShaderValueMatrix(self.shader, self.loc_lightVP, self.lightVP);
         var cp = camPos;
         rl.setShaderValue(self.shader, self.loc_camPos, &cp, .vec3);
@@ -1165,6 +1384,38 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_ground, &m, .int);
     }
 
+    /// Push the painted soil grid: SOIL_N x SOIL_N material ids, one byte each, 0 = unpainted.
+    /// `half` is the world half-extent the grid spans. Re-uploads the whole (4 KB) texture,
+    /// which is nothing — a brush stroke can call this every frame it moves.
+    ///
+    /// NEAREST filtering on purpose: the ids are enum values, and a bilinear fetch between 2
+    /// and 4 returns 3 — a material nobody painted, appearing as a seam of the wrong ground
+    /// along every boundary. The shader jitters its sample position instead.
+    pub fn setSoil(self: *Scene, ids: []const u8, half: f32) void {
+        const n: usize = @intCast(SOIL_N);
+        std.debug.assert(ids.len == n * n);
+        rl.updateTexture(self.soilTex, ids.ptr);
+        var painted: i32 = 0;
+        for (ids) |v| {
+            if (v != 0) {
+                painted = 1;
+                break;
+            }
+        }
+        rl.setShaderValue(self.shader, self.loc_soilOn, &painted, .int);
+        var h = half;
+        rl.setShaderValue(self.shader, self.loc_soilHalf, &h, .float);
+        var cell = 2.0 * half / @as(f32, @floatFromInt(SOIL_N));
+        rl.setShaderValue(self.shader, self.loc_soilCell, &cell, .float);
+    }
+
+    // The soil texture rides its own slot alongside the shadow map, bound once per frame.
+    fn bindSoil(self: *Scene) void {
+        rl.gl.rlActiveTextureSlot(SLOT_SOIL);
+        rl.gl.rlEnableTexture(self.soilTex.id);
+        rl.gl.rlActiveTextureSlot(0);
+    }
+
     // Flora opt into vertex-shader sway; everything else (terrain, props, hero) draws rigid.
     // Toggle ON only around the flora draw, OFF immediately after.
     pub fn setWind(self: *Scene, on: bool) void {
@@ -1183,13 +1434,15 @@ pub const Scene = struct {
 // Per-fragment surface material for the scene shader's texturing pass (see matAlbedo).
 // Rides vertexTexCoord2.x; .plain is the generic grain every untagged shape gets. The ORDER is
 // the shader's `m ==` ladder — append only, never reorder.
-pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble };
+pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame };
 comptime {
-    // The shader hard-codes 9 for water in three places (albedo, ripple normal, spec/fresnel)
-    // and 10 for marble in two (albedo, gloss); fail the build rather than silently texture the
-    // tarn as marble if the enum ever shifts. APPEND-ONLY past this point.
+    // The shader hard-codes 9 for water in three places (albedo, ripple normal, spec/fresnel),
+    // 10 for marble in two (albedo, gloss) and 11 for flame in two (the VERTEX shader's writhe and
+    // the albedo's leave-it-alone branch); fail the build rather than silently texture the tarn as
+    // marble if the enum ever shifts. APPEND-ONLY past this point.
     std.debug.assert(@intFromEnum(Mat.water) == 9);
     std.debug.assert(@intFromEnum(Mat.marble) == 10);
+    std.debug.assert(@intFromEnum(Mat.flame) == 11);
 }
 
 // Procedural-mesh Builder (from zig-rts, plus toMesh for the FK-rigged hero which needs bare
@@ -1203,6 +1456,11 @@ pub const Builder = struct {
     uv2: std.ArrayList(f32),
     col: std.ArrayList(u8),
     matf: f32 = 0, // current Mat id, written per vertex into texcoords2.x
+    /// The local Y a shape's VERTEX ANIMATION measures from, written per vertex into texcoords2.y.
+    /// Only fire uses it so far: a flame is authored at the top of its torch, so the vertex shader
+    /// cannot tell "height above the fuel" from `p.y` alone — and without that distinction the
+    /// coals writhe as hard as the tongues. `uv2.y` was a hardcoded 0, so this channel was free.
+    animY: f32 = 0,
     shapeN: f32 = 0, // per-shape counter driving the UV decorrelation offset
 
     pub fn init() Builder {
@@ -1220,6 +1478,12 @@ pub const Builder = struct {
         self.matf = @floatFromInt(@intFromEnum(m));
     }
 
+    /// Datum for the vertex animation of every shape added after this call — see `animY`. STICKY
+    /// like `setMat`, so a shape that animates must set it back to 0 when it is done.
+    pub fn setAnimY(self: *Builder, y: f32) void {
+        self.animY = y;
+    }
+
     fn shapeOff(self: *Builder) rl.Vector2 {
         self.shapeN += 1;
         return .{ .x = self.shapeN * 3.71, .y = self.shapeN * 7.13 };
@@ -1229,7 +1493,7 @@ pub const Builder = struct {
         self.pos.appendSlice(&.{ p.x, p.y, p.z }) catch @panic("oom");
         self.nrm.appendSlice(&.{ n.x, n.y, n.z }) catch @panic("oom");
         self.uv.appendSlice(&.{ u, v }) catch @panic("oom");
-        self.uv2.appendSlice(&.{ self.matf, 0 }) catch @panic("oom");
+        self.uv2.appendSlice(&.{ self.matf, self.animY }) catch @panic("oom");
         self.col.appendSlice(&.{ c.r, c.g, c.b, c.a }) catch @panic("oom");
     }
 

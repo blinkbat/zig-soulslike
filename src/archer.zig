@@ -6,6 +6,7 @@ const combat = @import("combat.zig");
 const heromod = @import("hero.zig");
 const foe = @import("foe.zig");
 const collision = @import("collision.zig");
+const wf = @import("worldfmt.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -206,6 +207,9 @@ const POISE_MAX = 14.0; // a clean light hit still flinches it out of a draw
 const STANCE_MAX = 30.0;
 pub const ARROW_HIT = combat.Hit{ .dmg = 16, .poise = 10 }; // eased down from 20 (owner: lower dmg a bit)
 const DEATH_DUR = 1.15; // collapse-and-still before the corpse dissipates
+/// RUNES a skeletal archer is worth — twice a toad. It is not tougher so much as further away, and
+/// closing that gap under fire is the work you are being paid for.
+pub const RUNES: u32 = 130;
 const DISS_DUR = 0.9; // dissipation into bone-dust + grace motes
 const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 7.0;
@@ -225,6 +229,15 @@ const ARROW_LIFE = 3.5; // seconds airborne before it gives up (falls + sticks)
 const ARROW_STICK_FADE = 1.4; // seconds a stuck arrow lingers, then fades
 const ARROW_HIT_R = 0.5; // hero footprint the arrow must reach to connect
 
+// ── THE FLIGHT TRAIL ── a streak behind a shaft in the air. Same ring-buffer shape as the hero's
+// swing trail, and SHORT for the same reason: this is a tracer, not a smoke plume. Its real job is
+// legibility — an arrow you are meant to sidestep has to announce not just where it IS but where it
+// came FROM, which is what tells you which way to move.
+pub const TRAIL_N = 10;
+const TRAIL_LIFE = 0.17; // seconds a sample lingers
+const TRAIL_W = 0.055; // half-width at the head, tapering to nothing at the tail
+const TRAIL_COL = rgba(214, 198, 158, 255); // pale, kin to the fletching — alpha set per segment
+
 pub const Arrow = struct {
     pos: rl.Vector3 = mathx.zero3,
     vel: rl.Vector3 = mathx.zero3,
@@ -232,7 +245,59 @@ pub const Arrow = struct {
     stuck: bool = false,
     age: f32 = 0, // in flight: seconds airborne; stuck: seconds since it stuck (fade timer)
     hit: bool = false, // it connected with the hero this frame (game.zig reads + clears)
+    // The trail ring. Ages start SATURATED so a fresh arrow draws no streak from wherever the slot
+    // was last used — a pooled arrow would otherwise flash a ribbon across the map on its first frame.
+    trail: [TRAIL_N]rl.Vector3 = [_]rl.Vector3{mathx.zero3} ** TRAIL_N,
+    trailAge: [TRAIL_N]f32 = [_]f32{1e9} ** TRAIL_N,
+    trailHead: usize = 0,
 };
+
+/// The streak behind a shaft in flight — a tapering tube down the last few positions, fading with
+/// age. VIEW-INDEPENDENT by construction: solid geometry cannot turn edge-on and vanish, which is
+/// exactly what a flat ribbon does when an arrow flies toward or away from you — i.e. precisely when
+/// you most need to see where it came from.
+/// Draw INSIDE the lit 3D pass, after the opaque geometry, with the other unlit FX.
+/// Takes the WHOLE POOL, and toggles backface culling exactly ONCE around the lot. That is not
+/// tidiness: rlgl BATCHES these draws, so a `defer rlEnableBackfaceCulling()` inside a per-arrow
+/// function re-enabled culling before the batch was ever flushed — and every ribbon then got culled
+/// on whichever winding faced away, which is why the first version drew provably-correct trail data
+/// as nothing at all. The hero's swing trail wraps its whole loop for the same reason.
+pub fn drawArrowTrails(arrows: []const Arrow) void {
+    for (arrows) |*a| drawArrowTrail(a);
+}
+
+fn drawArrowTrail(a: *const Arrow) void {
+    if (!a.live) return;
+    var i: usize = 0;
+    while (i + 1 < TRAIL_N) : (i += 1) {
+        // `ia`/`ib`, not `i0`/`i1` — those are real Zig integer TYPE names and shadowing a
+        // primitive is a compile error.
+        const ia = (a.trailHead + TRAIL_N - i) % TRAIL_N;
+        const ib = (a.trailHead + TRAIL_N - i - 1) % TRAIL_N;
+        const g0 = a.trailAge[ia];
+        const g1 = a.trailAge[ib];
+        if (g0 >= TRAIL_LIFE or g1 >= TRAIL_LIFE) break; // the rest is older still
+        const p0 = a.trail[ia];
+        const p1 = a.trail[ib];
+        const seg = mathx.subV(p1, p0);
+        if (mathx.lenV(seg) < 1e-4) continue;
+        // A TAPERED CYLINDER per segment, not a triangle-strip ribbon. The ribbon was the wrong
+        // primitive twice over: it drew provably-correct data as nothing at all (`drawTriangleStrip3D`
+        // is the one call in this file's draw path I could not get to appear, and the hero's swing
+        // trail — the idiom this was copied from — uses it too and may never have shown either), and
+        // a flat quad has a winding and an edge-on angle to worry about. Solid geometry has neither,
+        // it is what the telegraph particles already use, and for a streak behind a shaft a round
+        // tapering tube is the better shape anyway.
+        // The taper is FLOORED and the alpha is LINEAR. Fading width and alpha together, both
+        // quadratically, compounded into nothing: the oldest segment came out at alpha 20 and a
+        // near-zero radius, so the streak was really just a collar round the arrowhead. A tracer has
+        // to be legible along its whole length — that IS the feature.
+        const w0 = TRAIL_W * (0.35 + 0.65 * (1.0 - g0 / TRAIL_LIFE));
+        const w1 = TRAIL_W * (0.35 + 0.65 * (1.0 - g1 / TRAIL_LIFE));
+        const f = 1.0 - 0.5 * (g0 + g1) / TRAIL_LIFE;
+        rl.drawCylinderEx(p0, p1, w0, w1, 4, mathx.withAlpha(TRAIL_COL, mathx.u8f(190.0 * f)));
+    }
+}
 
 // Loose an arrow from `from` toward `target`, with a little loft so the shot ARCS toward a
 // (usually lower) target over distance — the light homing in stepArrow refines the rest.
@@ -276,6 +341,14 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, heroDodging: boo
     a.vel.y -= ARROW_GRAV * dt;
     const prev = a.pos;
     a.pos = mathx.addV(a.pos, mathx.scaleV(a.vel, dt));
+    // Push this frame's position onto the trail ring. Aged FIRST, so the sample just written is the
+    // freshest one at age 0 and the ribbon tapers away from the head. Nothing is pushed once the
+    // shaft sticks (the branch above returns), so a stuck arrow's streak ages out and dies instead
+    // of hanging in the air behind it.
+    for (&a.trailAge) |*ag| ag.* = @min(ag.* + dt, 1e9);
+    a.trailHead = (a.trailHead + 1) % TRAIL_N;
+    a.trail[a.trailHead] = a.pos;
+    a.trailAge[a.trailHead] = 0;
     // COVER first (a wall between archer and hero beats a hero hugging its far side): sample
     // the frame's travel at midpoint + endpoint so a fast shaft can't tunnel a thin trunk.
     const mid = mathx.lerpV(prev, a.pos, 0.5);
@@ -524,13 +597,22 @@ pub const Archer = struct {
                 if (self.t >= HOLD_DUR) self.enter(.loose);
             },
             .loose => {
-                if (!self.looseFired) {
+                const first = !self.looseFired;
+                if (first) {
                     self.looseFired = true;
                     loosed = true; // game.zig spawns the arrow at nockWorld toward the hero
                 }
-                const u = mathx.clampF(self.t / LOOSE_DUR, 0, 1);
-                self.drawAmt = 1.0 - mathx.smoothstep(0, 0.38, u); // the string SNAPS home ahead of the arm…
-                self.kick = mathx.smoothstep(0, 0.5, u); // …while the hand flies back off the release
+                // The string only starts snapping AFTER the release frame. `pose()` (and with it
+                // poseString, which is what moves `lastNock`) runs before this returns, so decaying
+                // drawAmt on the release frame itself hauled the nock ~a fifth of the draw back down
+                // the string — and game.zig then loosed the arrow from THERE, not from the anchor
+                // the nocked shaft was drawn at. One frame of hold costs nothing and the release
+                // point is now the one the pose was photographed in.
+                if (!first) {
+                    const u = mathx.clampF(self.t / LOOSE_DUR, 0, 1);
+                    self.drawAmt = 1.0 - mathx.smoothstep(0, 0.38, u); // the string SNAPS home ahead of the arm…
+                    self.kick = mathx.smoothstep(0, 0.5, u); // …while the hand flies back off the release
+                }
                 if (self.t >= LOOSE_DUR) {
                     self.reloadCd = RELOAD_CD;
                     self.enter(.recover);
@@ -883,31 +965,39 @@ pub const Archer = struct {
 };
 
 // ── a group of archers (perched in the ruins, waking as the hero advances) ────────────────
-const COUNT = 2;
-const homes = [COUNT]foe.Home{
-    // Set among the columns/graves off the avenue, flanking the toad knot's ground.
-    .{ .x = -16.0, .z = -22.0, .yaw = mathx.radians(60), .scale = 1.0, .seed = 0.2 },
-    .{ .x = 17.5, .z = -34.0, .yaw = mathx.radians(210), .scale = 1.04, .seed = 0.7 },
-};
+// WHERE the archers are perched is the MAP's business now (`foe: archer …` records).
+const CAP = wf.MAX_PER_KIND;
 
 pub const Line = struct {
     model: Model,
-    archers: [COUNT]Archer = undefined,
+    archers: [CAP]Archer = undefined,
+    n: usize = 0,
 
     pub fn init(shader: rl.Shader) Line {
-        var l = Line{ .model = Model.init(shader) };
-        l.reset();
-        return l;
+        return .{ .model = Model.init(shader) };
+    }
+    /// The archers this map posted — never iterate the whole array, the tail is `undefined`.
+    pub fn live(self: *Line) []Archer {
+        return self.archers[0..self.n];
+    }
+    /// Read-only view, for the `*const Line` paths (draw, the roll-ups).
+    pub fn liveConst(self: *const Line) []const Archer {
+        return self.archers[0..self.n];
     }
     // Re-perch every archer, alive and fresh (a hero death reloads the world, ER-style).
-    pub fn reset(self: *Line) void {
-        for (homes, 0..) |h, i| self.archers[i] = Archer.spawn(mathx.ground(h.x, h.z), h.yaw, h.scale, h.seed);
+    pub fn reset(self: *Line, m: *const wf.Map) void {
+        self.n = 0;
+        for (m.foes[0..m.nfoes]) |h| {
+            if (h.kind != .archer or self.n >= CAP) continue;
+            self.archers[self.n] = Archer.spawn(mathx.ground(h.x, h.z), mathx.radians(h.yaw), h.scale, h.seed);
+            self.n += 1;
+        }
     }
     pub fn setShader(self: *Line, sh: rl.Shader) void {
         self.model.setShader(sh);
     }
     pub fn draw(self: *const Line, scene: ?*gfx.Scene) void {
-        for (&self.archers) |*a| {
+        for (self.liveConst()) |*a| {
             if (!a.alive()) continue;
             if (scene) |sc| sc.setFlash(foe.FLASH_GAIN * a.flashFrac());
             a.draw(&self.model);
@@ -916,13 +1006,16 @@ pub const Line = struct {
     }
     // The shared Group roll-ups (foe.zig).
     pub fn anyDied(self: *const Line) bool {
-        return foe.anyDied(&self.archers);
+        return foe.anyDied(self.liveConst());
+    }
+    pub fn runesDropped(self: *const Line) u32 {
+        return foe.runesDropped(self.liveConst(), RUNES);
     }
     pub fn totalHits(self: *const Line) u32 {
-        return foe.totalHits(&self.archers);
+        return foe.totalHits(self.liveConst());
     }
     pub fn aliveCount(self: *const Line) u32 {
-        return foe.aliveCount(&self.archers);
+        return foe.aliveCount(self.liveConst());
     }
 };
 
@@ -1219,16 +1312,21 @@ fn nockArrowMesh() rl.Mesh {
 // twenty metres, so it errs toward flare, not scale-model realism. ─────────────────────────
 pub fn arrowMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
-    // Authored along +Z (the flight axis); game.zig orients it to the velocity. ~0.7 m long.
+    // Authored along +Z (the flight axis); game.zig orients it to the velocity. ~0.95 m long.
+    //
+    // GROWN by about a third (owner's call). It was already erring toward flare over scale-model
+    // realism for the reason in the header — a projectile you are meant to DODGE has to read at
+    // twenty metres — and it still lost against a busy meadow. Everything scales together (shaft
+    // gauge, pile, vane span) so it reads as a bigger arrow rather than a stretched one.
     b.setMat(.wood);
-    b.addCylinder(v3(0, 0, -0.35), v3(0, 0, 0.28), 0.012, 0.011, 5, ARROW_SHAFT); // shaft
+    b.addCylinder(v3(0, 0, -0.47), v3(0, 0, 0.38), 0.017, 0.015, 5, ARROW_SHAFT); // shaft
     b.setMat(.steel);
-    b.addCylinder(v3(0, 0, 0.28), v3(0, 0, 0.38), 0.025, 0.001, 5, ARROW_HEAD); // pile / head
+    b.addCylinder(v3(0, 0, 0.38), v3(0, 0, 0.52), 0.034, 0.001, 5, ARROW_HEAD); // pile / head
     b.setMat(.cloth);
     // fletching: three big pale vanes at the tail (the tracer the eye tracks)
-    b.addBox(v3(0, 0.028, -0.29), v3(0.0012, 0, 0), v3(0, 0.044, 0), v3(0, 0, 0.075), ARROW_FLETCH);
-    b.addBox(v3(0.025, -0.017, -0.29), v3(0.0012, 0, 0), v3(0.038, -0.025, 0), v3(0, 0, 0.075), ARROW_FLETCH);
-    b.addBox(v3(-0.025, -0.017, -0.29), v3(0.0012, 0, 0), v3(-0.038, -0.025, 0), v3(0, 0, 0.075), ARROW_FLETCH);
+    b.addBox(v3(0, 0.038, -0.39), v3(0.0016, 0, 0), v3(0, 0.060, 0), v3(0, 0, 0.100), ARROW_FLETCH);
+    b.addBox(v3(0.034, -0.023, -0.39), v3(0.0016, 0, 0), v3(0.052, -0.034, 0), v3(0, 0, 0.100), ARROW_FLETCH);
+    b.addBox(v3(-0.034, -0.023, -0.39), v3(0.0016, 0, 0), v3(-0.052, -0.034, 0), v3(0, 0, 0.100), ARROW_FLETCH);
     return b.toModel(shader);
 }
 
@@ -1273,6 +1371,36 @@ test "the leap clears sword reach, lands where its curve says, and never oversho
     }
     // And the cooldown has to outlast the move several times over, or it is a kite, not a panic.
     try std.testing.expect(BACKSTEP_CD > 4.0 * (BACKSTEP_GATHER + BACKSTEP_FLIGHT + BACKSTEP_LAND));
+}
+
+test "an arrow in flight lays a trail, and a pooled one never inherits the last shot's" {
+    const dt: f32 = 1.0 / 60.0;
+    var a = launchArrow(v3(0, 1.4, 0), v3(0, 1.0, 14.0));
+    // A FRESH arrow has no trail at all: every age starts saturated, so the ribbon cannot draw a
+    // streak from wherever this pool slot was last used — which would flash a band across the map
+    // on the shot's first frame.
+    for (a.trailAge) |g| try std.testing.expect(g >= TRAIL_LIFE);
+    var i: u32 = 0;
+    while (i < 6) : (i += 1) stepArrow(&a, v3(0, 0, 14.0), 1.0, false, &.{}, dt);
+    // Six frames of flight → six live samples, the newest at `trailHead` with age 0.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), a.trailAge[a.trailHead], 1e-6);
+    var live: u32 = 0;
+    for (a.trailAge) |g| {
+        if (g < TRAIL_LIFE) live += 1;
+    }
+    try std.testing.expectEqual(@as(u32, 6), live);
+    // …and they are DISTINCT positions marching along the flight, or the ribbon has no length and
+    // every segment collapses to a degenerate quad.
+    const newest = a.trail[a.trailHead];
+    const prev = a.trail[(a.trailHead + TRAIL_N - 1) % TRAIL_N];
+    try std.testing.expect(mathx.lenV(mathx.subV(newest, prev)) > 0.05);
+    try std.testing.expect(newest.z > prev.z); // marching the way it is flying
+
+    // A STUCK arrow stops laying trail — its streak ages out behind it instead of hanging in the air.
+    a.stuck = true;
+    const headAtStick = a.trailHead;
+    stepArrow(&a, v3(0, 0, 14.0), 1.0, false, &.{}, dt);
+    try std.testing.expectEqual(headAtStick, a.trailHead);
 }
 
 test "arrows thunk into cover instead of piercing it; tall shots clear a LOW blocker" {

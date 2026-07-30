@@ -1,8 +1,11 @@
 const std = @import("std");
 const game = @import("game.zig");
+const bake = @import("bake.zig");
+const wf = @import("worldfmt.zig");
 
 // Entry point. Default launches the game; `--shot` renders headless (window hidden) and
-// writes walk-cycle PNGs to shots/ for offline visual checks.
+// writes walk-cycle PNGs to shots/ for offline visual checks; `--bake` re-emits the first map
+// from bake.zig and exits without opening a window (see that file — it is a one-way door).
 pub fn main() void {
     const alloc = std.heap.c_allocator;
     const argv = std.process.argsAlloc(alloc) catch {
@@ -11,8 +14,44 @@ pub fn main() void {
     };
     defer std.process.argsFree(alloc, argv);
 
+    if (argv.len >= 2 and std.mem.eql(u8, argv[1], "--bake")) {
+        runBake(alloc) catch |e| {
+            std.debug.print("bake FAILED: {s}\n", .{@errorName(e)});
+            std.process.exit(1);
+        };
+        return;
+    }
     const shot = argv.len >= 2 and std.mem.eql(u8, argv[1], "--shot");
     game.run(shot);
+}
+
+fn runBake(alloc: std.mem.Allocator) !void {
+    const m = try alloc.create(wf.Map); // ~600 KB of flat arrays: too big for the stack
+    defer alloc.destroy(m);
+    bake.build(m);
+
+    try std.fs.cwd().makePath("worlds");
+    var f = try std.fs.cwd().createFile("worlds/01_fallen_plain.world", .{});
+    defer f.close();
+    var buf = std.io.bufferedWriter(f.writer());
+    try wf.write(m, buf.writer());
+    try buf.flush();
+
+    // Re-read what was just written: a bake that emits a file the loader rejects is worse than
+    // one that fails, because the failure would surface later as an empty world.
+    const text = try std.fs.cwd().readFileAlloc(alloc, "worlds/01_fallen_plain.world", 1 << 22);
+    defer alloc.free(text);
+    const back = try alloc.create(wf.Map);
+    defer alloc.destroy(back);
+    var line: usize = 0;
+    wf.parse(text, back, &line) catch |e| {
+        std.debug.print("bake wrote a file it cannot read back: {s} at line {d}\n", .{ @errorName(e), line });
+        return e;
+    };
+    std.debug.print(
+        "baked worlds/01_fallen_plain.world — {d} ops, {d} zones, {d} clearings ({d} bytes)\n",
+        .{ m.nops, m.nzones, m.nclearings, text.len },
+    );
 }
 
 // EVERY module carrying tests must be named here. Zig only collects tests from files the test
@@ -31,4 +70,6 @@ test {
     _ = @import("collision.zig");
     _ = @import("env.zig");
     _ = @import("props.zig");
+    _ = @import("worldfmt.zig");
+    _ = @import("editor.zig"); // hangs off game.zig, which this root does not reach for tests
 }

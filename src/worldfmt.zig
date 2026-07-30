@@ -1,0 +1,1088 @@
+const std = @import("std");
+const props = @import("props.zig");
+const mathx = @import("mathx.zig");
+const gfx = @import("gfx.zig");
+
+const Kind = props.Kind;
+
+// ── THE MAP ── the world is DATA. A map is a versioned text file of authoring OPS, replayed
+// in order by env.zig to materialize the world; the editor is the only thing that writes one.
+//
+// The ops are the AUTHORING, not its output. A wood is one `belt` of 260 attempts with a mix
+// and an edge gradient — not 260 coordinates — so the file stays a few hundred lines you can
+// read in a diff, and dragging a density dial re-expands it instead of stamping instances.
+//
+// EVERY GENERATOR OP CARRIES ITS OWN SEED, and gets its own Rng. This is the load-bearing
+// difference from the code-authored world it replaces, which drew every op from one shared
+// stream: there, inserting a belt re-rolled every op after it, so no edit was ever local.
+// Independent seeds make an edit touch only its own children — which is what makes the thing
+// editable at all. The world stays deterministic either way (same file, same world, always).
+//
+// FORMAT. One record per line, `#` comments, blank lines ignored:
+//
+//     <name> <required positionals, in FIELDS order> [key=value ...]
+//
+// The positionals come from ONE table (`FIELDS`) that both the writer and the parser walk, so
+// a field added to one can't go missing from the other. The optional tail carries the sparse
+// dials (mix, seed, skip, gradients) and is matched by struct field name. An UNKNOWN key or a
+// missing positional is a LOAD ERROR, never a silent default — a map that half-loads is a
+// world with a hole in it, and the hole is a long way from the typo that caused it.
+
+pub const VERSION: u32 = 1;
+
+/// Playable half-extent a map gets when it doesn't say otherwise — so the world spans 2x this on
+/// each axis. THE MAP IS THE ONLY SOURCE for this: the movement clamp, the cliff ring, the ground
+/// cover's extent and the soil grid's scale all read `Map.half`. `env.MAX_HALF` is the ceiling the
+/// fixed spatial grid can index, and `env`'s tests assert this default sits inside it.
+///
+/// Lives here rather than in env.zig because env imports THIS file; the other direction would be a
+/// circular import for one float.
+pub const DEFAULT_HALF: f32 = 280.0;
+
+pub const MAX_OPS: usize = 2048;
+pub const MAX_MIX: usize = 24; // a scatter's weighted kind mix (weight = repetition)
+pub const MAX_ZONES: usize = 16;
+pub const MAX_CLEARINGS: usize = 32;
+pub const MAX_FOES: usize = 256;
+pub const NAME_CAP: usize = 48;
+
+// ── ops ────────────────────────────────────────────────────────────────────────────────
+
+pub const OpKind = enum(u8) {
+    /// One prop, placed exactly. No RNG, no seed — what the editor stamps and drags.
+    at,
+    /// Rect scatter: `n` ATTEMPTS in a box, rejected against the avoid set and the cover
+    /// field. Attempts, not a guarantee: rejection is what keeps a scatter from reading sown.
+    belt,
+    /// Annulus scatter about a centre, r0..r1 — shorelines, reed beds, talus, drowned ruin.
+    disc,
+    /// Evenly spaced ring facing its centre, with one stone left out (`skip`): a ring with
+    /// every position filled reads as a fence.
+    ring,
+    /// A broken run from a→b: segments nose to tail, `gap` of them collapsed. City walls.
+    line,
+    /// Sow a climber at the FEET of stonework already standing in a box. Ivy needs a wall
+    /// behind it, so it walks the props that are there rather than scattering over ground.
+    ivy,
+    /// The world's rock rim: four walls of overlapping cliff segments, height from two long
+    /// waves so the crest reads as topography rather than as jitter.
+    edge,
+    /// The lattice ground cover over the whole world: one candidate per cell, kind and
+    /// density from the zone it lands in, scaled by the cover field. Exactly one per map.
+    cover,
+};
+
+/// What a scatter refuses to grow through. Defaults differ per op kind (see `defaults`), and
+/// the editor exposes them as tick boxes — a belt that ignores water is how you sow lilies.
+pub const Avoid = struct {
+    runway: bool = false, // the hero's start lane, kept clear so a straight walk out is never blocked
+    water: bool = false, // open water
+    clear: bool = false, // the authored clearings
+    solid: bool = false, // anything with a footprint collider (queried against the solid grid)
+};
+
+/// Which axis a belt's density gradient runs along; `.none` is a flat belt.
+pub const Axis = enum(u8) { none, x, z };
+
+/// One authoring operation. FLAT rather than a tagged union: the editor's properties panel
+/// pokes fields by name, the FIELDS table decides which ones a given op kind actually uses,
+/// and the unused ones cost a few bytes and no ceremony.
+pub const Op = struct {
+    op: OpKind = .at,
+    kind: Kind = .pillar, // the prop placed, or the mix's fallback when `nmix` is 0
+    x: f32 = 0, // point / rect min / centre / line start
+    z: f32 = 0,
+    x1: f32 = 0, // rect max / line end
+    z1: f32 = 0,
+    r0: f32 = 0, // disc inner radius / ring radius / line segment length / edge step
+    r1: f32 = 0, // disc outer radius
+    yaw: f32 = 0,
+    scale: f32 = 1,
+    sLo: f32 = 0.85, // scale band the instances draw from
+    sHi: f32 = 1.15,
+    n: i32 = 0, // attempts (belt/disc), positions (ring), talus count (edge)
+    skip: i32 = -1, // ring: the position left empty; -1 = none
+    seed: u64 = 0,
+    chance: f32 = 1.0, // per-candidate acceptance (ivy takes, line segment survives)
+    /// Disc radial bias: 0 spreads evenly across the annulus, 1 is area-uniform (sqrt), which
+    /// clusters toward the inner edge — how a lily raft sits on its rootstock.
+    bias: f32 = 0,
+    /// Does this scatter respect the world's COVER FIELD — the noise that carves clearings and
+    /// thickets, so a clearing is a clearing for everything standing in it? On for belts, which
+    /// is where the law came from. Off for a scatter that carries its own shaping (the wood's
+    /// canopy has a gradient) or that has no business thinning (a shoreline reed bed), because
+    /// double-dipping thins it twice and the second one is invisible in the numbers.
+    field: bool = false,
+    /// Belt density gradient: acceptance ramps `gFloor`→1 as the axis runs gA→gB. This is what
+    /// stops a wood ending in a hard tree line that reads as a wall of scenery.
+    gAxis: Axis = .none,
+    gA: f32 = 0,
+    gB: f32 = 0,
+    gFloor: f32 = 0,
+    avoid: Avoid = .{},
+    /// Weighted kind mix, weight BY REPETITION — the cheapest honest weighting for a small set,
+    /// and it keeps a region's character readable as one line of text. Empty = use `kind`.
+    mix: [MAX_MIX]Kind = undefined,
+    nmix: u8 = 0,
+
+    /// The kind this op places for one instance.
+    pub fn pick(self: *const Op, r: *mathx.Rng) Kind {
+        if (self.nmix == 0) return self.kind;
+        return self.mix[@intCast(r.intn(@intCast(self.nmix)))];
+    }
+
+    /// This op's own generator, independent of every other op's.
+    pub fn stream(self: *const Op) mathx.Rng {
+        return mathx.Rng.init(self.seed);
+    }
+
+    /// The gradient's acceptance multiplier at a point (1 where there is no gradient).
+    pub fn gradAt(self: *const Op, px: f32, pz: f32) f32 {
+        const v = switch (self.gAxis) {
+            .none => return 1.0,
+            .x => px,
+            .z => pz,
+        };
+        return self.gFloor + (1.0 - self.gFloor) * mathx.smoothstep(self.gA, self.gB, v);
+    }
+};
+
+// The REQUIRED positional fields of each op kind, in the order they are written and read.
+// ONE table, both directions: this is the whole defence against a writer and a parser that
+// agree today and disagree after the next field is added.
+//
+// A comptime function rather than a lookup table, because the field walk has to run at
+// COMPTIME to index the struct by name — and because the order here must be the order on the
+// line. Driving the walk off `std.meta.fields(Op)` instead reads the STRUCT's declaration
+// order, which silently ignores this table and writes `n` in the wrong column the moment the
+// two disagree.
+fn fieldsOf(comptime k: OpKind) []const []const u8 {
+    return switch (k) {
+        .at => &.{ "kind", "x", "z", "yaw", "scale" },
+        .belt => &.{ "kind", "x", "z", "x1", "z1", "n", "sLo", "sHi" },
+        .disc => &.{ "kind", "x", "z", "r0", "r1", "n", "sLo", "sHi" },
+        .ring => &.{ "kind", "x", "z", "r0", "n", "sLo", "sHi" },
+        .line => &.{ "kind", "x", "z", "x1", "z1", "r0", "sLo", "sHi" },
+        .ivy => &.{ "kind", "x", "z", "x1", "z1", "sLo", "sHi" },
+        .edge => &.{ "kind", "r0", "n", "sLo", "sHi" },
+        .cover => &.{ "r0", "sLo", "sHi" }, // r0 = lattice pitch
+    };
+}
+
+comptime {
+    // Every name in the table must BE a field of Op. A typo here would otherwise surface as a
+    // compile error deep inside @field, pointing at the walk rather than at the table.
+    @setEvalBranchQuota(20000);
+    for (@typeInfo(OpKind).@"enum".fields) |ek| {
+        const k: OpKind = @enumFromInt(ek.value);
+        for (fieldsOf(k)) |name| {
+            if (!@hasField(Op, name)) @compileError("worldfmt: " ++ @tagName(k) ++ " names a field Op does not have: " ++ name);
+        }
+    }
+}
+
+// Per-kind defaults for the fields that aren't positional, so a hand-written line behaves the
+// way that op is meant to without spelling out every dial.
+pub fn defaults(k: OpKind) Op {
+    var o = Op{ .op = k };
+    switch (k) {
+        .at => {},
+        .belt => {
+            o.avoid = .{ .runway = true, .water = true };
+            o.field = true;
+        },
+        .disc => {},
+        .ring => o.skip = -1,
+        .line => o.chance = 0.78, // ~a fifth of the run has fallen
+        .ivy => o.chance = 0.55,
+        .edge => {},
+        .cover => o.avoid = .{ .runway = true, .water = true, .solid = true },
+    }
+    return o;
+}
+
+// ── the tables an op is read against ───────────────────────────────────────────────────
+
+/// A ground-cover zone: what the lattice scatter grows inside this rect, and how thickly WHERE
+/// IT IS THICKEST. `density` is the PEAK — the cover field scales it down from there, to nothing
+/// in the clearings. Zones are tested in order and the FIRST containing rect wins, so a small
+/// zone laid after a large one cuts a hole in it.
+pub const Zone = struct {
+    name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
+    x: f32 = 0,
+    z: f32 = 0,
+    x1: f32 = 0,
+    z1: f32 = 0,
+    density: f32 = 0.6,
+    mix: [MAX_MIX]Kind = undefined,
+    nmix: u8 = 0,
+
+    pub fn contains(self: *const Zone, px: f32, pz: f32) bool {
+        return px >= self.x and px <= self.x1 and pz >= self.z and pz <= self.z1;
+    }
+    /// One instance's kind from the mix, or null when the zone has no mix at all. OPTIONAL, not a
+    /// fallback kind: `mix` is `undefined` until something fills it, and `Rng.intn(0)` returns 0,
+    /// so an unguarded version read raw heap bytes as a `props.Kind` — an out-of-range enum, which
+    /// is illegal behaviour whatever those bytes happen to be. `parseZone` also rejects an empty
+    /// mix outright, so this is the second lock on the same door (the editor can hold a zone in
+    /// that state between a drag and its seeding).
+    pub fn pick(self: *const Zone, rng: *mathx.Rng) ?Kind {
+        if (self.nmix == 0) return null;
+        return self.mix[@intCast(rng.intn(@intCast(self.nmix)))];
+    }
+    pub fn label(self: *const Zone) []const u8 {
+        return std.mem.sliceTo(&self.name, 0);
+    }
+};
+
+/// A circle the canopy and the cover scatter keep out of — the stone circle's glade, the
+/// cottage yard. A clearing you authored is worth more than one the noise happened to leave.
+pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
+
+pub const FoeKind = enum(u8) { toad, archer, ogre };
+
+/// One posted spawn. `yaw` is DEGREES like every other yaw in the format (the rigs take
+/// radians; the loader converts). `seed` is the per-instance animation phase in 0..1 — it is
+/// what stops a knot of toads breathing and hopping as one body.
+pub const Foe = struct {
+    kind: FoeKind = .toad,
+    x: f32 = 0,
+    z: f32 = 0,
+    yaw: f32 = 0,
+    scale: f32 = 1,
+    seed: f32 = 0,
+};
+
+/// How many of ONE kind a map may post. Each group keeps a fixed array this size.
+pub const MAX_PER_KIND: usize = 24;
+
+/// The hero's start lane, kept clear of every scatter: the `--shot` travel corridor and the
+/// live start, so walking straight out of the grace is never blocked by something that grew.
+pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 = 30 };
+
+// ── the painted soil ───────────────────────────────────────────────────────────────────
+// A material id per grid cell over the whole map, 0 = UNPAINTED. Unpainted is the default and
+// means "leave the procedural ground exactly as it is", so the authored look survives painting
+// by construction and the grid is empty in a fresh map.
+
+pub const SOIL_N: usize = @intCast(gfx.SOIL_N);
+pub const SOIL_CELLS: usize = SOIL_N * SOIL_N;
+
+pub const Soil = enum(u8) {
+    none, // unpainted — the procedural floor shows through untouched
+    dirt,
+    turf,
+    stone,
+    silt,
+    ash,
+    moss,
+
+    pub const N = @typeInfo(Soil).@"enum".fields.len;
+};
+
+comptime {
+    // The shader's soilColor() hard-codes ids 1..6 and falls through to moss. Adding a soil
+    // without extending it would paint the new material as moss, silently.
+    std.debug.assert(Soil.N == 7);
+}
+
+// ── the map ────────────────────────────────────────────────────────────────────────────
+
+pub const Map = struct {
+    name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
+    /// Playable half-extent. The movement clamp and the cliff rim are derived from it.
+    half: f32 = DEFAULT_HALF,
+    runway: Runway = .{},
+
+    ops: [MAX_OPS]Op = undefined,
+    nops: usize = 0,
+    zones: [MAX_ZONES]Zone = undefined,
+    nzones: usize = 0,
+    clearings: [MAX_CLEARINGS]Clearing = undefined,
+    nclearings: usize = 0,
+    foes: [MAX_FOES]Foe = undefined,
+    nfoes: usize = 0,
+    /// The painted soil, row-major from -half to +half on both axes. All zero = nothing painted.
+    soil: [SOIL_CELLS]u8 = [_]u8{0} ** SOIL_CELLS,
+
+    pub fn label(self: *const Map) []const u8 {
+        return std.mem.sliceTo(&self.name, 0);
+    }
+
+    pub fn setName(self: *Map, s: []const u8) void {
+        self.name = [_]u8{0} ** NAME_CAP;
+        const n = @min(s.len, NAME_CAP - 1);
+        @memcpy(self.name[0..n], s[0..n]);
+    }
+
+    pub fn clear(self: *Map) void {
+        self.nops = 0;
+        self.nzones = 0;
+        self.nclearings = 0;
+        self.nfoes = 0;
+        self.soil = [_]u8{0} ** SOIL_CELLS;
+    }
+
+    /// The smallest map that is actually VALID: a world-spanning fallback zone and the cover op
+    /// that reads it. A truly empty map fails its own loader (`NoCoverOp`) and shows as bare
+    /// terrain, so "New" must hand back something that loads and grows grass.
+    pub fn blank(self: *Map, name: []const u8) void {
+        self.* = .{};
+        self.setName(name);
+        var z = Zone{ .x = -4000, .z = -4000, .x1 = 4000, .z1 = 4000, .density = 0.7 };
+        const mix = [_]Kind{ .grasstall, .grasstall, .patch, .tuft, .clover, .moss, .wildflowers };
+        for (mix, 0..) |k, i| z.mix[i] = k;
+        z.nmix = mix.len;
+        @memcpy(z.name[0..5], "plain");
+        self.zones[0] = z;
+        self.nzones = 1;
+
+        var cover = defaults(.cover);
+        cover.r0 = 3.3; // lattice pitch
+        cover.sLo = 0.72;
+        cover.sHi = 1.38;
+        cover.seed = 1001;
+        self.ops[0] = cover;
+        self.nops = 1;
+
+        // The rim, so a new map is bounded terrain rather than a plane running into haze.
+        var rim = defaults(.edge);
+        rim.kind = .cliff;
+        rim.r0 = 6.5;
+        rim.n = 90;
+        rim.sLo = 0.92;
+        rim.sHi = 1.24;
+        rim.seed = 1002;
+        for (props.CLIFFS, 0..) |k, i| rim.mix[i] = k;
+        rim.nmix = props.CLIFFS.len;
+        // Before the cover op: the ground cover queries the solid grid, so the rim has to exist
+        // by then or grass grows through the cliffs.
+        self.ops[1] = self.ops[0];
+        self.ops[0] = rim;
+        self.nops = 2;
+    }
+
+    /// Append an op, returning its index. Capacity overflow is a hard error rather than a
+    /// silent drop: a dropped op is a missing region, and nothing downstream would say so.
+    pub fn add(self: *Map, o: Op) !usize {
+        if (self.nops >= MAX_OPS) return error.TooManyOps;
+        self.ops[self.nops] = o;
+        self.nops += 1;
+        return self.nops - 1;
+    }
+
+    pub fn remove(self: *Map, i: usize) void {
+        if (i >= self.nops) return;
+        std.mem.copyForwards(Op, self.ops[i .. self.nops - 1], self.ops[i + 1 .. self.nops]);
+        self.nops -= 1;
+    }
+
+    /// Move an op to a new position in the replay order. Order is meaningful — `ivy` reads the
+    /// stonework placed before it, and the cover scatter must run after everything solid.
+    pub fn reorder(self: *Map, from: usize, to: usize) void {
+        if (from >= self.nops or to >= self.nops or from == to) return;
+        const moved = self.ops[from];
+        if (from < to) {
+            std.mem.copyForwards(Op, self.ops[from..to], self.ops[from + 1 .. to + 1]);
+        } else {
+            std.mem.copyBackwards(Op, self.ops[to + 1 .. from + 1], self.ops[to..from]);
+        }
+        self.ops[to] = moved;
+    }
+
+    pub fn slice(self: *const Map) []const Op {
+        return self.ops[0..self.nops];
+    }
+
+    /// The zone governing a point — first containing rect wins, last zone is the fallback.
+    pub fn zoneAt(self: *const Map, px: f32, pz: f32) ?*const Zone {
+        if (self.nzones == 0) return null;
+        for (self.zones[0..self.nzones]) |*z| {
+            if (z.contains(px, pz)) return z;
+        }
+        return &self.zones[self.nzones - 1];
+    }
+
+    pub fn onRunway(self: *const Map, px: f32, pz: f32) bool {
+        const r = self.runway;
+        return px >= r.x and px <= r.x1 and pz >= r.z and pz <= r.z1;
+    }
+
+    /// World position → soil cell index, or null when it falls outside the grid.
+    pub fn soilIndex(self: *const Map, px: f32, pz: f32) ?usize {
+        const t = (px + self.half) / (2 * self.half);
+        const u = (pz + self.half) / (2 * self.half);
+        if (t < 0 or t >= 1 or u < 0 or u >= 1) return null;
+        const cx: usize = @intFromFloat(t * @as(f32, @floatFromInt(SOIL_N)));
+        const cz: usize = @intFromFloat(u * @as(f32, @floatFromInt(SOIL_N)));
+        return @min(cz, SOIL_N - 1) * SOIL_N + @min(cx, SOIL_N - 1);
+    }
+
+    /// Paint a disc of soil. Returns whether anything actually changed, so a stroke that lands
+    /// on ground already that material doesn't bank an undo step or raise the dirty flag.
+    pub fn paintSoil(self: *Map, px: f32, pz: f32, radius: f32, id: Soil) bool {
+        const cell = 2 * self.half / @as(f32, @floatFromInt(SOIL_N));
+        const r2 = radius * radius;
+        var changed = false;
+        var cz: usize = 0;
+        while (cz < SOIL_N) : (cz += 1) {
+            const wz = -self.half + (@as(f32, @floatFromInt(cz)) + 0.5) * cell;
+            if (@abs(wz - pz) > radius + cell) continue;
+            var cx: usize = 0;
+            while (cx < SOIL_N) : (cx += 1) {
+                const wx = -self.half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
+                const dx = wx - px;
+                const dz = wz - pz;
+                if (dx * dx + dz * dz > r2) continue;
+                const i = cz * SOIL_N + cx;
+                const v: u8 = @intFromEnum(id);
+                if (self.soil[i] != v) {
+                    self.soil[i] = v;
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
+    pub fn inClearing(self: *const Map, px: f32, pz: f32) bool {
+        for (self.clearings[0..self.nclearings]) |c| {
+            const dx = px - c.x;
+            const dz = pz - c.z;
+            if (dx * dx + dz * dz < c.r * c.r) return true;
+        }
+        return false;
+    }
+};
+
+// ── writing ────────────────────────────────────────────────────────────────────────────
+
+pub fn write(m: *const Map, w: anytype) !void {
+    try w.print("version: {d}\n", .{VERSION});
+    try w.print("name: {s}\n", .{m.label()});
+    try w.print("half: {d:.1}\n", .{m.half});
+    try w.print("runway: {d:.2} {d:.2} {d:.2} {d:.2}\n", .{ m.runway.x, m.runway.z, m.runway.x1, m.runway.z1 });
+    try w.writeAll("\n");
+
+    for (m.zones[0..m.nzones]) |*z| {
+        try w.print("zone: {s} {d:.1} {d:.1} {d:.1} {d:.1} {d:.3} ", .{ z.label(), z.x, z.z, z.x1, z.z1, z.density });
+        try writeMix(w, z.mix[0..z.nmix]);
+        try w.writeAll("\n");
+    }
+    for (m.clearings[0..m.nclearings]) |c| {
+        try w.print("clear: {d:.1} {d:.1} {d:.1}\n", .{ c.x, c.z, c.r });
+    }
+    if (m.nzones + m.nclearings > 0) try w.writeAll("\n");
+
+    for (m.ops[0..m.nops]) |*o| try writeOp(o, w);
+
+    // The soil grid, RUN-LENGTH encoded: 4096 cells that are almost all the same value, so
+    // runs turn a 4 KB wall of digits into a handful of readable lines. Omitted entirely when
+    // nothing is painted, which is the common case and keeps a fresh map clean.
+    var anyPaint = false;
+    for (m.soil) |v| {
+        if (v != 0) {
+            anyPaint = true;
+            break;
+        }
+    }
+    if (anyPaint) {
+        try w.writeAll("\n");
+        var i: usize = 0;
+        var perLine: usize = 0;
+        while (i < SOIL_CELLS) {
+            const v = m.soil[i];
+            var run: usize = 1;
+            while (i + run < SOIL_CELLS and m.soil[i + run] == v) run += 1;
+            if (perLine == 0) try w.writeAll("soil:");
+            try w.print(" {d}x{d}", .{ v, run });
+            i += run;
+            perLine += 1;
+            if (perLine == 16) {
+                try w.writeAll("\n");
+                perLine = 0;
+            }
+        }
+        if (perLine != 0) try w.writeAll("\n");
+    }
+
+    if (m.nfoes > 0) try w.writeAll("\n");
+    for (m.foes[0..m.nfoes]) |f| {
+        try w.print("foe: {s} {d:.2} {d:.2} {d:.1} {d:.2} {d:.2}\n", .{ @tagName(f.kind), f.x, f.z, f.yaw, f.scale, f.seed });
+    }
+}
+
+fn writeOp(o: *const Op, w: anytype) !void {
+    try w.print("{s}:", .{@tagName(o.op)});
+    const d = defaults(o.op);
+    switch (o.op) {
+        inline else => |k| {
+            inline for (comptime fieldsOf(k)) |name| {
+                try w.writeAll(" ");
+                try writeTail(w, @field(o, name));
+            }
+            // The optional tail: only what differs from this kind's DEFAULTS, so a plain belt
+            // stays one short line and every key present in a file is a decision somebody
+            // actually made. Positionals are excluded per-kind — emitting one here too would
+            // write `kind=fern` after the fern already in column one.
+            inline for (@typeInfo(Op).@"struct".fields) |f| {
+                if (comptime canTail(k, f.name)) {
+                    if (!eqlVal(@field(o, f.name), @field(d, f.name))) {
+                        try w.print(" {s}=", .{f.name});
+                        try writeTail(w, @field(o, f.name));
+                    }
+                }
+            }
+        },
+    }
+    if (o.nmix > 0) {
+        try w.writeAll(" mix=");
+        try writeMix(w, o.mix[0..o.nmix]);
+    }
+    try w.writeAll("\n");
+}
+
+fn writeMix(w: anytype, mix: []const Kind) !void {
+    for (mix, 0..) |k, i| {
+        if (i > 0) try w.writeAll(",");
+        try w.writeAll(@tagName(k));
+    }
+}
+
+fn writeTail(w: anytype, v: anytype) !void {
+    const T = @TypeOf(v);
+    switch (@typeInfo(T)) {
+        .@"enum" => try w.print("{s}", .{@tagName(v)}),
+        .float => try w.print("{d}", .{v}),
+        .int => try w.print("{d}", .{v}),
+        .bool => try w.print("{s}", .{if (v) "1" else "0"}),
+        .@"struct" => { // Avoid — a comma list of the flags that are on, or `-` for none
+            var any = false;
+            inline for (@typeInfo(T).@"struct".fields) |f| {
+                if (@field(v, f.name)) {
+                    if (any) try w.writeAll(",");
+                    try w.writeAll(f.name);
+                    any = true;
+                }
+            }
+            if (!any) try w.writeAll("-");
+        },
+        else => @compileError("worldfmt: no serializer for " ++ @typeName(T)),
+    }
+}
+
+// ── reading ────────────────────────────────────────────────────────────────────────────
+
+pub const ParseError = error{
+    BadVersion,
+    UnknownRecord,
+    UnknownKey,
+    MissingField,
+    ExtraField,
+    BadNumber,
+    BadKind,
+    TooManyOps,
+    TooManyZones,
+    TooManyClearings,
+    TooManyFoes,
+    NoCoverOp,
+};
+
+/// Parse a whole map. `lineOut` receives the 1-based line number a failure landed on, so the
+/// editor's load error can point at it instead of just saying the file is bad.
+pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
+    m.* = .{};
+    var seenVersion = false;
+    var soilAt: usize = 0; // running cursor, so soil runs may wrap across lines
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    var ln: usize = 0;
+    while (lines.next()) |raw| {
+        ln += 1;
+        lineOut.* = ln;
+        const line = trim(stripComment(raw));
+        if (line.len == 0) continue;
+        const colon = std.mem.indexOfScalar(u8, line, ':') orelse return ParseError.UnknownRecord;
+        const rec = trim(line[0..colon]);
+        var it = std.mem.tokenizeAny(u8, line[colon + 1 ..], " \t");
+        if (std.mem.eql(u8, rec, "version")) {
+            if (try nextInt(&it) != VERSION) return ParseError.BadVersion;
+            seenVersion = true;
+        } else if (std.mem.eql(u8, rec, "name")) {
+            m.setName(trim(line[colon + 1 ..]));
+        } else if (std.mem.eql(u8, rec, "half")) {
+            m.half = try nextFloat(&it);
+        } else if (std.mem.eql(u8, rec, "runway")) {
+            m.runway = .{ .x = try nextFloat(&it), .z = try nextFloat(&it), .x1 = try nextFloat(&it), .z1 = try nextFloat(&it) };
+        } else if (std.mem.eql(u8, rec, "zone")) {
+            if (m.nzones >= MAX_ZONES) return ParseError.TooManyZones;
+            m.zones[m.nzones] = try parseZone(&it);
+            m.nzones += 1;
+        } else if (std.mem.eql(u8, rec, "clear")) {
+            if (m.nclearings >= MAX_CLEARINGS) return ParseError.TooManyClearings;
+            m.clearings[m.nclearings] = .{ .x = try nextFloat(&it), .z = try nextFloat(&it), .r = try nextFloat(&it) };
+            m.nclearings += 1;
+        } else if (std.mem.eql(u8, rec, "soil")) {
+            // Runs continue ACROSS lines — `soilAt` is a running cursor over the whole grid, so
+            // the writer can wrap wherever it likes and a hand-edited file can too.
+            while (it.next()) |tok| {
+                const xi = std.mem.indexOfScalar(u8, tok, 'x') orelse return ParseError.BadNumber;
+                const v = std.fmt.parseInt(u8, tok[0..xi], 10) catch return ParseError.BadNumber;
+                const run = std.fmt.parseInt(usize, tok[xi + 1 ..], 10) catch return ParseError.BadNumber;
+                if (v >= Soil.N) return ParseError.BadKind;
+                if (soilAt + run > SOIL_CELLS) return ParseError.ExtraField;
+                @memset(m.soil[soilAt .. soilAt + run], v);
+                soilAt += run;
+            }
+        } else if (std.mem.eql(u8, rec, "foe")) {
+            if (m.nfoes >= MAX_FOES) return ParseError.TooManyFoes;
+            m.foes[m.nfoes] = .{
+                .kind = try enumFromName(FoeKind, it.next() orelse return ParseError.MissingField),
+                .x = try nextFloat(&it),
+                .z = try nextFloat(&it),
+                .yaw = try nextFloat(&it),
+                .scale = try nextFloat(&it),
+                .seed = try nextFloat(&it),
+            };
+            m.nfoes += 1;
+        } else if (enumFromName(OpKind, rec)) |k| {
+            if (m.nops >= MAX_OPS) return ParseError.TooManyOps;
+            m.ops[m.nops] = try parseOp(k, &it);
+            m.nops += 1;
+        } else |_| {
+            return ParseError.UnknownRecord;
+        }
+    }
+    if (!seenVersion) return ParseError.BadVersion;
+    // A map with no cover op has no ground cover at all, which looks like a load failure and
+    // isn't one — so it IS one. Same reasoning as env's caps: fail loudly at the cause.
+    for (m.ops[0..m.nops]) |o| {
+        if (o.op == .cover) return;
+    }
+    return ParseError.NoCoverOp;
+}
+
+fn parseZone(it: *std.mem.TokenIterator(u8, .any)) !Zone {
+    var z = Zone{};
+    const nm = it.next() orelse return ParseError.MissingField;
+    const n = @min(nm.len, NAME_CAP - 1);
+    @memcpy(z.name[0..n], nm[0..n]);
+    z.x = try nextFloat(it);
+    z.z = try nextFloat(it);
+    z.x1 = try nextFloat(it);
+    z.z1 = try nextFloat(it);
+    z.density = try nextFloat(it);
+    z.nmix = try parseMix(it.next() orelse return ParseError.MissingField, &z.mix);
+    // A zone with no mix grows NOTHING, and `zoneAt` hands it out as the fallback for every point
+    // it covers — so a bald region, a long way from the line that caused it. Same rule as the rest
+    // of this parser: fail at the cause. (A token of pure separators, e.g. `,`, parses to 0.)
+    if (z.nmix == 0) return ParseError.MissingField;
+    if (it.next() != null) return ParseError.ExtraField;
+    return z;
+}
+
+fn parseOp(kind: OpKind, it: *std.mem.TokenIterator(u8, .any)) !Op {
+    var o = defaults(kind);
+    switch (kind) {
+        inline else => |k| {
+            // Required positionals, in TABLE order — the same walk the writer makes.
+            inline for (comptime fieldsOf(k)) |name| {
+                const tok = it.next() orelse return ParseError.MissingField;
+                @field(o, name) = try parseVal(@TypeOf(@field(o, name)), tok);
+            }
+            // Optional key=value tail.
+            while (it.next()) |tok| {
+                const eq = std.mem.indexOfScalar(u8, tok, '=') orelse return ParseError.UnknownKey;
+                const key = tok[0..eq];
+                const val = tok[eq + 1 ..];
+                if (std.mem.eql(u8, key, "mix")) {
+                    o.nmix = try parseMix(val, &o.mix);
+                    continue;
+                }
+                var matched = false;
+                inline for (@typeInfo(Op).@"struct".fields) |f| {
+                    if (comptime canTail(k, f.name)) {
+                        if (std.mem.eql(u8, key, f.name)) {
+                            @field(o, f.name) = try parseVal(@TypeOf(@field(o, f.name)), val);
+                            matched = true;
+                        }
+                    }
+                }
+                if (!matched) return ParseError.UnknownKey;
+            }
+        },
+    }
+    return o;
+}
+
+fn parseMix(s: []const u8, out: *[MAX_MIX]Kind) !u8 {
+    var n: u8 = 0;
+    var parts = std.mem.splitScalar(u8, s, ',');
+    while (parts.next()) |p| {
+        const t = trim(p);
+        if (t.len == 0) continue;
+        if (n >= MAX_MIX) return ParseError.ExtraField;
+        out[n] = try enumFromName(Kind, t);
+        n += 1;
+    }
+    return n;
+}
+
+fn parseVal(comptime T: type, tok: []const u8) !T {
+    return switch (@typeInfo(T)) {
+        .@"enum" => try enumFromName(T, tok),
+        .float => std.fmt.parseFloat(T, tok) catch ParseError.BadNumber,
+        .int => std.fmt.parseInt(T, tok, 10) catch ParseError.BadNumber,
+        .bool => std.mem.eql(u8, tok, "1") or std.mem.eql(u8, tok, "true"),
+        .@"struct" => blk: { // Avoid
+            var v: T = .{};
+            if (std.mem.eql(u8, tok, "-")) break :blk v;
+            var parts = std.mem.splitScalar(u8, tok, ',');
+            while (parts.next()) |p| {
+                const t = trim(p);
+                if (t.len == 0) continue;
+                var hit = false;
+                inline for (@typeInfo(T).@"struct".fields) |f| {
+                    if (std.mem.eql(u8, t, f.name)) {
+                        @field(v, f.name) = true;
+                        hit = true;
+                    }
+                }
+                if (!hit) break :blk ParseError.UnknownKey;
+            }
+            break :blk v;
+        },
+        else => @compileError("worldfmt: no parser for " ++ @typeName(T)),
+    };
+}
+
+// ── files ──────────────────────────────────────────────────────────────────────────────
+
+pub const DIR = "worlds";
+pub const START_MAP = "worlds/01_fallen_plain.world";
+
+// One scratch buffer for whole-file reads. A map is a few tens of KB, the cap is generous, and
+// a file-level buffer keeps load/save off the allocator like everything else in the hot path.
+var textBuf: [1 << 20]u8 = undefined;
+
+/// `load` parses HERE and copies out only on success. `parse` blanks its destination on the
+/// first line, so parsing straight into the caller's map left a HALF-LOADED world behind on any
+/// error — and the editor then went on editing a map that no longer matched the one on screen,
+/// with the failure message five minutes behind it.
+var loadScratch: Map = undefined;
+
+pub fn load(path: []const u8, m: *Map, lineOut: *usize) !void {
+    var f = try std.fs.cwd().openFile(path, .{});
+    defer f.close();
+    const n = try f.readAll(&textBuf);
+    if (n == textBuf.len) return error.MapTooLarge; // a truncated map parses as a SHORTER world
+    try parse(textBuf[0..n], &loadScratch, lineOut);
+    m.* = loadScratch;
+}
+
+/// Load the world or DIE, printing the file and the line. Deliberately not a fallback to some
+/// built-in default: the map IS the world, and quietly running a different one hides the real
+/// problem behind a world the author never asked for. Same rule as env's caps — fail at the
+/// cause, not three screens later when the ruins are missing.
+pub fn loadOrPanic(path: []const u8, m: *Map) void {
+    var line: usize = 0;
+    load(path, m, &line) catch |e| {
+        std.debug.print("world: cannot load {s} — {s} (line {d})\n", .{ path, @errorName(e), line });
+        @panic("worldfmt: the map failed to load");
+    };
+}
+
+pub const EXT = ".world";
+pub const MAX_FILES: usize = 64;
+pub const PATH_CAP: usize = 96;
+
+/// The maps on disk, newest listing wins. Fixed storage like everything else here; a directory
+/// with more than MAX_FILES maps simply lists the first MAX_FILES rather than failing.
+pub const Listing = struct {
+    names: [MAX_FILES][PATH_CAP]u8 = undefined,
+    n: usize = 0,
+
+    /// NUL-terminated, because the UI list wants `[:0]const u8`. Safe because `scan` zeroes
+    /// each slot before copying and always leaves at least the final byte clear.
+    pub fn name(self: *const Listing, i: usize) [:0]const u8 {
+        return std.mem.span(@as([*:0]const u8, @ptrCast(&self.names[i])));
+    }
+
+    /// Rescan `worlds/`. A missing directory is an EMPTY listing, not an error — that is just a
+    /// project that hasn't saved a map yet.
+    pub fn scan(self: *Listing) void {
+        self.n = 0;
+        var dir = std.fs.cwd().openDir(DIR, .{ .iterate = true }) catch return;
+        defer dir.close();
+        var it = dir.iterate();
+        while (it.next() catch null) |e| {
+            if (e.kind != .file) continue;
+            if (!std.mem.endsWith(u8, e.name, EXT)) continue;
+            if (self.n >= MAX_FILES) break;
+            const len = @min(e.name.len, PATH_CAP - 1);
+            @memset(&self.names[self.n], 0);
+            @memcpy(self.names[self.n][0..len], e.name[0..len]);
+            self.n += 1;
+        }
+        // Lexicographic, so the list is stable between scans instead of following whatever
+        // order the filesystem happens to hand back.
+        std.mem.sort([PATH_CAP]u8, self.names[0..self.n], {}, struct {
+            fn lt(_: void, a: [PATH_CAP]u8, b: [PATH_CAP]u8) bool {
+                return std.mem.order(u8, std.mem.sliceTo(&a, 0), std.mem.sliceTo(&b, 0)) == .lt;
+            }
+        }.lt);
+    }
+};
+
+/// Build `worlds/<slug>.world` from a typed name. Anything that isn't alphanumeric becomes an
+/// underscore, so a name with a slash or a colon in it cannot escape the directory or produce a
+/// path the OS refuses.
+pub fn pathFor(dst: []u8, name: []const u8) []const u8 {
+    var n: usize = 0;
+    for (DIR) |c| {
+        if (n < dst.len) {
+            dst[n] = c;
+            n += 1;
+        }
+    }
+    if (n < dst.len) {
+        dst[n] = '/';
+        n += 1;
+    }
+    const stem = n; // where the NAME starts — the emptiness test below is against this, not 0,
+    // because `n` already carries "worlds/" and a name of pure punctuation would otherwise
+    // slip past the fallback and produce the hidden file "worlds/.world".
+    var lastUnderscore = true; // also trims leading separators
+    for (name) |c| {
+        if (n + EXT.len >= dst.len) break;
+        const ok = std.ascii.isAlphanumeric(c);
+        if (!ok and lastUnderscore) continue; // never two separators in a row
+        dst[n] = if (ok) std.ascii.toLower(c) else '_';
+        lastUnderscore = !ok;
+        n += 1;
+    }
+    if (n > stem and dst[n - 1] == '_') n -= 1; // no trailing separator
+    if (n == stem) { // a name of pure punctuation still has to land somewhere
+        for ("untitled") |c| {
+            dst[n] = c;
+            n += 1;
+        }
+    }
+    for (EXT) |c| {
+        dst[n] = c;
+        n += 1;
+    }
+    return dst[0..n];
+}
+
+pub fn save(path: []const u8, m: *const Map) !void {
+    try std.fs.cwd().makePath(DIR);
+    var f = try std.fs.cwd().createFile(path, .{});
+    defer f.close();
+    var buf = std.io.bufferedWriter(f.writer());
+    try write(m, buf.writer());
+    try buf.flush();
+}
+
+// ── shared plumbing ────────────────────────────────────────────────────────────────────
+
+/// Is `name` one of this kind's required positionals?
+fn isPositional(comptime k: OpKind, comptime name: []const u8) bool {
+    // The field walk is O(op kinds x Op fields x name length) string compares at comptime, and
+    // the default 1000-branch budget is spent well before it finishes.
+    @setEvalBranchQuota(20000);
+    for (fieldsOf(k)) |f| {
+        if (std.mem.eql(u8, f, name)) return true;
+    }
+    return false;
+}
+
+/// May `name` appear in this kind's optional key=value tail? Everything except the
+/// discriminator, the mix (written as one `mix=` key) and the kind's own positionals — so
+/// exactly one place in the line can ever set a given field, in both directions.
+fn canTail(comptime k: OpKind, comptime name: []const u8) bool {
+    @setEvalBranchQuota(20000);
+    const never = [_][]const u8{ "op", "mix", "nmix" };
+    for (never) |n| {
+        if (std.mem.eql(u8, n, name)) return false;
+    }
+    return !isPositional(k, name);
+}
+
+fn eqlVal(a: anytype, b: @TypeOf(a)) bool {
+    return switch (@typeInfo(@TypeOf(a))) {
+        .@"struct" => std.meta.eql(a, b),
+        else => a == b,
+    };
+}
+
+fn enumFromName(comptime T: type, s: []const u8) !T {
+    return std.meta.stringToEnum(T, s) orelse ParseError.BadKind;
+}
+
+fn nextFloat(it: *std.mem.TokenIterator(u8, .any)) !f32 {
+    const t = it.next() orelse return ParseError.MissingField;
+    return std.fmt.parseFloat(f32, t) catch ParseError.BadNumber;
+}
+
+fn nextInt(it: *std.mem.TokenIterator(u8, .any)) !u32 {
+    const t = it.next() orelse return ParseError.MissingField;
+    return std.fmt.parseInt(u32, t, 10) catch ParseError.BadNumber;
+}
+
+fn stripComment(s: []const u8) []const u8 {
+    return if (std.mem.indexOfScalar(u8, s, '#')) |i| s[0..i] else s;
+}
+
+fn trim(s: []const u8) []const u8 {
+    return std.mem.trim(u8, s, " \t\r\n");
+}
+
+// ── tests ──────────────────────────────────────────────────────────────────────────────
+
+test "an op round-trips through write and parse" {
+    var m = Map{};
+    m.setName("Round Trip");
+    var o = defaults(.belt);
+    o.kind = .fern;
+    o.x = -152;
+    o.z = -125;
+    o.x1 = -54;
+    o.z1 = 132;
+    o.n = 220;
+    o.sLo = 0.8;
+    o.sHi = 1.35;
+    o.seed = 4711;
+    o.gAxis = .x;
+    o.gA = -54;
+    o.gB = -84;
+    o.gFloor = 0.18;
+    o.nmix = 3;
+    o.mix[0] = .bigtree;
+    o.mix[1] = .conifer;
+    o.mix[2] = .birch;
+    _ = try m.add(o);
+    _ = try m.add(defaults(.cover));
+
+    var buf: [8192]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(&m, fbs.writer());
+
+    var back = Map{};
+    var ln: usize = 0;
+    try parse(fbs.getWritten(), &back, &ln);
+    try std.testing.expectEqual(@as(usize, 2), back.nops);
+    const b = back.ops[0];
+    try std.testing.expectEqual(Kind.fern, b.kind);
+    try std.testing.expectEqual(@as(i32, 220), b.n);
+    try std.testing.expectEqual(@as(u64, 4711), b.seed);
+    try std.testing.expectEqual(Axis.x, b.gAxis);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.18), b.gFloor, 1e-6);
+    try std.testing.expectEqual(@as(u8, 3), b.nmix);
+    try std.testing.expectEqual(Kind.conifer, b.mix[1]);
+    try std.testing.expect(b.avoid.runway and b.avoid.water and !b.avoid.solid);
+}
+
+test "the soil grid and foe records survive a round trip" {
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    const back = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(back);
+    m.blank("Round Trip");
+    // A painted patch plus a lone cell, so both a long run and a one-cell run are exercised.
+    _ = m.paintSoil(0, 0, 30, .stone);
+    m.soil[SOIL_CELLS - 1] = @intFromEnum(Soil.ash);
+    m.foes[0] = .{ .kind = .ogre, .x = 3, .z = -50, .yaw = 90, .scale = 1.2, .seed = 0.4 };
+    m.nfoes = 1;
+
+    var buf: [1 << 18]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    var line: usize = 0;
+    try parse(fbs.getWritten(), back, &line);
+
+    try std.testing.expectEqualSlices(u8, &m.soil, &back.soil);
+    try std.testing.expectEqual(@as(usize, 1), back.nfoes);
+    try std.testing.expectEqual(FoeKind.ogre, back.foes[0].kind);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.2), back.foes[0].scale, 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.4), back.foes[0].seed, 1e-4);
+}
+
+test "blank() produces a map its own loader accepts" {
+    // `New` must hand back something that LOADS: an empty map trips NoCoverOp and shows as bare
+    // terrain, which reads as a rendering bug rather than as an empty document.
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    const back = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(back);
+    m.blank("Fresh");
+    var buf: [1 << 16]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    var line: usize = 0;
+    try parse(fbs.getWritten(), back, &line);
+    try std.testing.expect(back.zoneAt(0, 0) != null);
+    try std.testing.expect(back.zoneAt(0, 0).?.nmix > 0);
+}
+
+test "pathFor slugifies, and cannot escape the worlds directory" {
+    var buf: [PATH_CAP]u8 = undefined;
+    try std.testing.expectEqualStrings("worlds/the_fallen_plain.world", pathFor(&buf, "The Fallen Plain"));
+    // Separators and traversal collapse to underscores rather than reaching a parent directory.
+    try std.testing.expectEqualStrings("worlds/etc_passwd.world", pathFor(&buf, "../../etc/passwd"));
+    try std.testing.expectEqualStrings("worlds/a_b.world", pathFor(&buf, "  a   b  "));
+    try std.testing.expectEqualStrings("worlds/untitled.world", pathFor(&buf, "///"));
+}
+
+test "a bad key or a missing field is a load error, never a default" {
+    var m = Map{};
+    var ln: usize = 0;
+    try std.testing.expectError(ParseError.UnknownKey, parse(
+        "version: 1\ncover: 3.3 0.7 1.4\nbelt: fern -1 -1 1 1 10 0.8 1.2 wobble=3\n",
+        &m,
+        &ln,
+    ));
+    try std.testing.expectError(ParseError.MissingField, parse("version: 1\nbelt: fern -1 -1 1 1\n", &m, &ln));
+    try std.testing.expectError(ParseError.UnknownRecord, parse("version: 1\nsplat: 1 2 3\n", &m, &ln));
+    try std.testing.expectError(ParseError.BadVersion, parse("version: 99\n", &m, &ln));
+    // A map with no ground cover is a silent-looking failure, so it fails loudly instead.
+    try std.testing.expectError(ParseError.NoCoverOp, parse("version: 1\nat: pillar 0 0 0 1\n", &m, &ln));
+}
+
+test "each op gets its own stream, so editing one cannot re-roll another" {
+    var a = defaults(.belt);
+    a.seed = 100;
+    var b = defaults(.belt);
+    b.seed = 200;
+    var ra = a.stream();
+    var rb = b.stream();
+    const a0 = ra.float();
+    _ = rb.float();
+    // Re-running `a` alone reproduces it exactly, whatever `b` has drawn in between.
+    var ra2 = a.stream();
+    try std.testing.expectEqual(a0, ra2.float());
+}
+
+test "zones resolve first-match-wins with the last as fallback" {
+    var m = Map{};
+    m.nzones = 2;
+    m.zones[0] = .{ .x = -200, .z = -200, .x1 = -52, .z1 = 200, .density = 0.98 };
+    m.zones[1] = .{ .x = -200, .z = -200, .x1 = 200, .z1 = 200, .density = 0.80 };
+    try std.testing.expectApproxEqAbs(@as(f32, 0.98), m.zoneAt(-100, 0).?.density, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.80), m.zoneAt(0, 0).?.density, 1e-6);
+    // Outside every rect still resolves — to the fallback, never to null.
+    try std.testing.expectApproxEqAbs(@as(f32, 0.80), m.zoneAt(9999, 9999).?.density, 1e-6);
+}
+
+test "reorder preserves every other op's position" {
+    var m = Map{};
+    for (0..5) |i| {
+        var o = defaults(.at);
+        o.n = @intCast(i);
+        _ = try m.add(o);
+    }
+    m.reorder(0, 3); // 0,1,2,3,4 -> 1,2,3,0,4
+    const want = [_]i32{ 1, 2, 3, 0, 4 };
+    for (want, 0..) |v, i| try std.testing.expectEqual(v, m.ops[i].n);
+    m.reorder(3, 0); // and back
+    for (0..5) |i| try std.testing.expectEqual(@as(i32, @intCast(i)), m.ops[i].n);
+}

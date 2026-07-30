@@ -4,6 +4,7 @@ const gfx = @import("gfx.zig");
 const mathx = @import("mathx.zig");
 const collision = @import("collision.zig");
 const props = @import("props.zig");
+const wf = @import("worldfmt.zig");
 
 const v3 = mathx.v3;
 const Kind = props.Kind;
@@ -34,14 +35,35 @@ const Kind = props.Kind;
 //      this is the version that doesn't.
 //   4. COLLISION and ARROW FLIGHT query the same grid instead of scanning every solid.
 //
-// All static and deterministic — every scatter runs off a seeded mathx.Rng, so the world is
-// identical every launch and --shot stays comparable frame to frame.
+// The world itself is DATA — `worlds/*.world`, an ordered list of authoring ops (worldfmt.zig)
+// that `materialize` replays into the prop list below. This file no longer authors anything; it
+// loads, indexes, culls and draws.
+//
+// All static and deterministic — every scatter runs off ITS OWN seeded mathx.Rng (one per op,
+// not one per world), so the world is identical every launch, --shot stays comparable frame to
+// frame, and editing one scatter cannot re-roll its neighbours.
 
-pub const HALF: f32 = 160.0; // playable bounds span [-HALF, +HALF] on X and Z
+// THE WORLD'S SIZE IS THE MAP'S (`wf.Map.half`), not a constant in here. It used to be both, and
+// the copy in this file was the one that counted: the movement clamp read it, so a map could
+// declare any `half:` it liked and the hero still stopped at 158 with the cliffs visibly further
+// out. The only compile-time size left is the CEILING the fixed grid can index.
+/// How far outside the playable bounds the rock wall stands.
+pub const RIM_OUT: f32 = 6.0;
+/// How far INSIDE the map's half the movement clamp sits, so the hero stops just short of the
+/// rock rather than clipping into it. `game.playHalf` is the map's half less this.
+pub const PLAY_INSET: f32 = 2.0;
+/// The largest `half` the uniform grid can index without cells clamping together. Beyond this the
+/// culling still WORKS but degrades — everything past the edge piles into the boundary cells, and a
+/// cell that can't be rejected is thirty props tested individually. Derived, so raising GRID_N
+/// raises this and the assertions below re-check themselves.
+pub const MAX_HALF: f32 = GRID_HALF + CELL - RIM_OUT - CLIFF_BOUND;
+/// The cliff mesh's own bounding radius, which sticks out past the rim it is placed on.
+const CLIFF_BOUND: f32 = 18.0;
 // The ground QUAD extends far past the bounds so the terrain runs all the way into full
-// distance haze — no visible plane edge / sky band below the horizon, from anywhere.
-const GROUND_HALF: f32 = 360.0;
-const CLIFF_EDGE: f32 = HALF + 6.0; // the rock wall stands just outside the movement clamp
+// distance haze — no visible plane edge / sky band below the horizon, from anywhere. It has to
+// clear the FARTHEST the player can stand plus the distance at which haze goes fully opaque
+// (~1/HAZE_DENSITY x 3), or the plane's edge shows at the world's corners. One quad: free.
+const GROUND_HALF: f32 = wf.DEFAULT_HALF + 220.0;
 
 // Storage caps. All fixed — Env is one flat block inside the heap-allocated Game, never
 // allocates, and never resizes. Overflowing any of them is a BUILD-TIME (well, init-time)
@@ -55,8 +77,12 @@ const MAX_LIGHTS = 192; // fires in the world; gfx.MAX_LIGHTS of them reach the 
 // The grid. CELL is a compromise: small enough that a cell is a meaningful cull unit, large
 // enough that the per-cell overhead (576 cells walked per pass) stays trivial.
 const CELL: f32 = 16.0;
-const GRID_N: usize = 24;
-const GRID_SPAN: f32 = CELL * @as(f32, @floatFromInt(GRID_N)); // 384 — covers the cliff ring with room over
+// 40 cells a side — 640 m, which covers a 280 m map's cliff ring (286 + 18 of cliff bound) with
+// room over. Grown from 24 with the world; the arrays are BSS and the per-frame cost is one loop
+// over NCELL doing four plane tests, so 1,600 cells instead of 576 is not measurable next to the
+// prop work it saves. See MAX_HALF — that is the number this choice really sets.
+const GRID_N: usize = 40;
+const GRID_SPAN: f32 = CELL * @as(f32, @floatFromInt(GRID_N));
 const GRID_HALF: f32 = GRID_SPAN * 0.5;
 const NCELL: usize = GRID_N * GRID_N;
 // Half-diagonal of a square of side 1 — the factor that turns a square's half-width into the
@@ -72,6 +98,11 @@ const SUN_REACH: f32 = @sqrt(gfx.SUN_DIR.x * gfx.SUN_DIR.x + gfx.SUN_DIR.z * gfx
 // single texel into the shadow map.
 const SHADOW_BOX: f32 = gfx.SHADOW_ORTHO * HALF_DIAG;
 
+// How far away a fire's pool of light still reads at all. Kept at the OLD accept distance so the
+// frustum cull in `uploadLights` changes only WHICH lights are dropped (the off-screen ones),
+// never how far a visible one reaches.
+const LIGHT_REACH: f32 = 90.0;
+
 // Largest number of solids one grid query can hand back. A 16 m cell in the densest spot (the
 // watchtower's 11-collider drum plus its spill) holds well under 30, and a query straddles at
 // most four cells.
@@ -84,7 +115,21 @@ pub const MAX_NEAR = 160;
 // z-fight; kept tiny (~1 cm) so the embed is imperceptible.
 const GROUND_Y: f32 = 0.01;
 
-const Prop = struct { kind: Kind, pos: rl.Vector3, yaw: f32, scale: f32 };
+// `op` is the map op that placed this instance. It is what lets the editor turn a click on a
+// rock into the line that grew it — without it, selection could only ever reach literals, and
+// the generators (which are most of the world) would be unreachable except through the list.
+const Prop = struct { kind: Kind, pos: rl.Vector3, yaw: f32, scale: f32, op: u16 = 0 };
+
+/// The floor of the cover field's gate: a scatter that respects the field still places this
+/// fraction of its attempts in a total clearing, so a clearing THINS the structures standing in
+/// it without emptying it. Named because belt and disc both read it and a drift between the two
+/// would be invisible in the world.
+const FIELD_FLOOR: f32 = 0.35;
+
+/// The ground plane's height, for anything that has to draw ON it (the editor's gizmos).
+pub fn groundY() f32 {
+    return GROUND_Y;
+}
 
 // A fire's static description; the per-frame guttering is applied in uploadLights.
 const WorldLight = struct { base: gfx.Light, flicker: f32, phase: f32 };
@@ -168,6 +213,9 @@ pub const Cull = union(enum) {
 pub const Env = struct {
     ground: rl.Model,
     models: [props.NK]rl.Model,
+    // The scene this world draws through, kept so the painted soil can be pushed to its shader
+    // without threading a Scene pointer through every editor call that touches the map.
+    scene: ?*gfx.Scene = null,
     props: [MAX_PROPS]Prop = undefined,
     nprops: usize = 0,
     solid_buf: [MAX_SOLIDS]collision.Solid = undefined,
@@ -189,9 +237,12 @@ pub const Env = struct {
     stat_draws: u32 = 0,
     stat_cells: u32 = 0,
 
-    /// Build the world IN PLACE. Not an `init()` returning a value: Env is ~450 KB of flat
-    /// arrays, and a by-value return would copy that through the stack twice.
-    pub fn build(self: *Env, shader: rl.Shader) void {
+    /// Load the meshes ONCE. Separate from `materialize` because the models outlive every edit:
+    /// the editor re-materializes the world on each change, and rebuilding 77 procedural meshes
+    /// to move one rock would stall for a second every time.
+    pub fn build(self: *Env, scene: *gfx.Scene) void {
+        self.scene = scene;
+        const shader = scene.shader;
         // Index each mesh by its own kind so the array and the kinds can't drift out of
         // lockstep (props.INFO's comptime block already pins the table; this pins the models).
         for (&self.models, props.INFO) |*m, row| m.* = row.build(shader);
@@ -200,16 +251,52 @@ pub const Env = struct {
         self.nsolids = 0;
         self.nlights = 0;
         self.npools = 0;
+    }
 
-        var p = Placer{ .e = self, .rng = mathx.Rng.init(20260728) };
-        avenue(&p); // the start: unchanged from the 120 m world, runway included
-        fallenCity(&p);
-        theTarn(&p);
-        oldWood(&p);
-        theDowns(&p);
-        cliffRing(&p);
-        buildSolids(self); // …before the scatter, which asks the solid grid where it may grow
-        scatterFlora(&p);
+    /// Push the map's painted soil to the terrain shader. Separate from `materialize` on
+    /// purpose: nothing about the prop list depends on the paint, so a brush stroke re-uploads
+    /// 4 KB instead of re-expanding eight thousand props.
+    pub fn uploadSoil(self: *Env, m: *const wf.Map) void {
+        if (self.scene) |sc| sc.setSoil(&m.soil, m.half);
+    }
+
+    /// Turn a map into the world, IN PLACE. Not an `init()` returning a value: Env is ~450 KB
+    /// of flat arrays, and a by-value return would copy that through the stack twice.
+    ///
+    /// Re-entrant on purpose — this is what the editor calls after every edit, so the edited
+    /// map IS the live preview. Everything it touches is reset at the top; nothing accumulates.
+    pub fn materialize(self: *Env, m: *const wf.Map) void {
+        self.nprops = 0;
+        self.nsolids = 0;
+        self.nlights = 0;
+        self.npools = 0;
+
+        var p = Placer{ .e = self, .m = m };
+        // Everything except the ground cover, in file order — later ops read what earlier ones
+        // placed (ivy climbs standing stone; a belt rejects water already poured).
+        for (m.slice(), 0..) |*o, i| {
+            p.cur = @intCast(i);
+            if (o.op != .cover) p.expand(o);
+        }
+        // …then the solid grid, because the cover scatter asks it where it may grow…
+        buildSolids(self);
+        const beforeCover = self.nprops;
+        for (m.slice(), 0..) |*o, i| {
+            p.cur = @intCast(i);
+            if (o.op == .cover) p.expand(o);
+        }
+        // …and REBUILD it only if the cover pass actually laid down a collider. A stale grid is
+        // a walk-through wall, so this cannot simply be skipped — but ground cover is flora,
+        // and flora has no footprint, so in every real map the answer is no and the second full
+        // pass over ~8k props was pure waste on a path the editor runs on every edit.
+        var coverIsSolid = false;
+        for (self.props[beforeCover..self.nprops]) |pr| {
+            if (props.info(pr.kind).parts.len > 0) {
+                coverIsSolid = true;
+                break;
+            }
+        }
+        if (coverIsSolid) buildSolids(self);
         indexProps(self);
     }
 
@@ -261,6 +348,51 @@ pub const Env = struct {
             if (dx * dx + dz * dz < r * r) return true;
         }
         return false;
+    }
+
+    /// The prop a ray hits first, as an index into `props` — the editor's world picking. A plain
+    /// linear ray/sphere sweep over every instance: ~8k spheres on a CLICK is nothing, and going
+    /// through the grid here would mean walking cells in ray order for no measurable gain.
+    ///
+    /// Each prop's sphere is centred half way up its mesh, not on its ground origin, so a click
+    /// on a tower's parapet picks the tower rather than whatever weed is growing at its foot.
+    pub fn pick(self: *const Env, origin: rl.Vector3, dir: rl.Vector3) ?usize {
+        return self.pickIf(origin, dir, {}, struct {
+            fn all(_: void, _: u16) bool {
+                return true;
+            }
+        }.all);
+    }
+
+    /// `pick`, but only over the props whose OP the predicate accepts. The editor's layers need
+    /// the filter INSIDE the sweep: rejecting after the nearest hit has won means a fern standing
+    /// under a tree is unpickable, because the tree's far bigger sphere takes the ray and is then
+    /// thrown away — which reads as the Decor layer refusing to select anything in a wood.
+    pub fn pickIf(
+        self: *const Env,
+        origin: rl.Vector3,
+        dir: rl.Vector3,
+        ctx: anytype,
+        comptime accept: fn (@TypeOf(ctx), u16) bool,
+    ) ?usize {
+        var best: ?usize = null;
+        var bestT: f32 = std.math.floatMax(f32);
+        for (self.props[0..self.nprops], 0..) |pr, i| {
+            if (!accept(ctx, pr.op)) continue;
+            const nfo = props.info(pr.kind);
+            const c = v3(pr.pos.x, pr.pos.y + nfo.top * pr.scale * 0.5, pr.pos.z);
+            const rad = @max(nfo.bound * pr.scale * 0.5, 0.35);
+            const oc = mathx.subV(c, origin);
+            const along = oc.x * dir.x + oc.y * dir.y + oc.z * dir.z;
+            if (along <= 0) continue; // behind the eye
+            const perp2 = (oc.x * oc.x + oc.y * oc.y + oc.z * oc.z) - along * along;
+            if (perp2 > rad * rad) continue;
+            if (along < bestT) {
+                bestT = along;
+                best = i;
+            }
+        }
+        return best;
     }
 
     pub fn setShader(self: *Env, sh: rl.Shader) void {
@@ -341,18 +473,28 @@ pub const Env = struct {
         }
     }
 
-    /// Push this frame's torch/fire lights: the gfx.MAX_LIGHTS nearest the camera, each with
-    /// its guttering applied. The world may hold far more than the shader can hold; the ones
-    /// dropped are the furthest away, where a light contributes nothing anyway.
-    pub fn uploadLights(self: *const Env, scene: *gfx.Scene, camPos: rl.Vector3, t: f32) void {
+    /// Push this frame's torch/fire lights: the gfx.MAX_LIGHTS nearest the camera whose pool of
+    /// light is actually ON SCREEN, each with its guttering applied. The world may hold far more
+    /// than the shader can hold; the ones dropped are the furthest away, where a light contributes
+    /// nothing anyway.
+    ///
+    /// THE FRUSTUM TEST IS A PERFORMANCE FIX, not a tidy-up. This used to accept any fire within
+    /// `radius + 90` of the eye — which in the Fallen City is every fire in the region (the world
+    /// holds 34), so `nLights` saturated at gfx.MAX_LIGHTS every single frame. `pointLights` runs
+    /// per FRAGMENT and is called unconditionally, so the full-screen terrain pass alone was
+    /// evaluating ~16M loop iterations for lights that were mostly BEHIND the camera. Tested
+    /// against the same frustum the prop culler uses (View.visible, whose test sweeps seven
+    /// headings), with the light's own radius as the sphere: a torch still lights its room the
+    /// instant you look at it, and costs nothing at all when you don't.
+    pub fn uploadLights(self: *const Env, scene: *gfx.Scene, view: *const View, t: f32) void {
         var picked: [gfx.MAX_LIGHTS]gfx.Light = undefined;
         var dist: [gfx.MAX_LIGHTS]f32 = undefined;
         var n: usize = 0;
         for (self.lights[0..self.nlights]) |wl| {
-            const d2 = mathx.dist2XZ(wl.base.pos, camPos);
-            // Past its own radius plus a bit, a light cannot reach anything on screen near the
-            // camera; that alone throws away most of the world's fires.
-            if (d2 > (wl.base.radius + 90.0) * (wl.base.radius + 90.0)) continue;
+            // Off screen → it lights nothing you can see. The distance cap is unchanged from the
+            // old bound, so nothing that WAS lit stops being lit; only the off-screen ones go.
+            if (!view.visible(wl.base.pos, wl.base.radius, LIGHT_REACH)) continue;
+            const d2 = mathx.dist2XZ(wl.base.pos, view.pos);
             const k = 1.0 + wl.flicker * gutter(t, wl.phase);
             const lit = gfx.Light{
                 .pos = wl.base.pos,
@@ -435,25 +577,35 @@ fn terrain(shader: rl.Shader, half: f32) rl.Model {
     return b.toModel(shader);
 }
 
-// ── placement ──────────────────────────────────────────────────────────────────────────
-// Regions are AUTHORED IN CODE rather than as one giant coordinate table: a region is a
-// paragraph you can read ("a ring of nine standing stones, one missing"), the seeded jitter
-// keeps it wabi-sabi, and a table of four thousand rows is not something anyone can edit.
+// ── placement: REPLAYING A MAP ─────────────────────────────────────────────────────────
+// The world used to be authored here, as five paragraphs of Zig. It is authored in a MAP FILE
+// now (worldfmt.zig) and this is the other half of that: the expansion of each op into props.
+//
+// Two rules the replay lives by:
+//
+//   ORDER IS MEANING. Ops run in file order, because later ops read what earlier ones placed:
+//   `ivy` only climbs stonework that is already standing, a belt only rejects water that has
+//   already been poured, and `cover` needs the solid grid built. Nothing here may reorder.
+//
+//   EACH OP DRAWS FROM ITS OWN STREAM (`op.stream()`), never a shared one. That is what keeps
+//   an edit local — see worldfmt.zig's header. It is also why this file no longer holds a
+//   world seed: there isn't one any more, there are 277 of them.
 
 const Placer = struct {
     e: *Env,
-    rng: mathx.Rng,
+    m: *const wf.Map,
+    cur: u16 = 0, // the op being expanded, stamped onto every prop it places
 
-    fn at(self: *Placer, kind: Kind, x: f32, z: f32, yaw: f32, scale: f32) void {
-        self.atY(kind, x, 0, z, yaw, scale);
+    fn at(self: *Placer, kind: Kind, x: f32, z: f32, yaw: f32, scale: f32, rng: *mathx.Rng) void {
+        self.atY(kind, x, 0, z, yaw, scale, rng);
     }
 
     // With an explicit Y — only water uses it, to stagger overlapping sheets out of z-fighting.
-    fn atY(self: *Placer, kind: Kind, x: f32, y: f32, z: f32, yaw: f32, scale: f32) void {
+    fn atY(self: *Placer, kind: Kind, x: f32, y: f32, z: f32, yaw: f32, scale: f32, rng: *mathx.Rng) void {
         if (self.e.nprops >= MAX_PROPS) @panic("env: MAX_PROPS exceeded — raise the cap");
-        self.e.props[self.e.nprops] = .{ .kind = kind, .pos = v3(x, y, z), .yaw = yaw, .scale = scale };
+        self.e.props[self.e.nprops] = .{ .kind = kind, .pos = v3(x, y, z), .yaw = yaw, .scale = scale, .op = self.cur };
         self.e.nprops += 1;
-        if (props.info(kind).light) |ls| self.addLight(x, y, z, scale, ls);
+        if (props.info(kind).light) |ls| self.addLight(x, y, z, scale, ls, rng);
         if (kind == .water) {
             // An init-time PANIC, like MAX_PROPS/MAX_SOLIDS — never a silent drop. A dropped pool
             // makes `inWater` lie about that sheet, and the flora scatter then grows grass and
@@ -464,326 +616,228 @@ const Placer = struct {
         }
     }
 
-    fn addLight(self: *Placer, x: f32, y: f32, z: f32, scale: f32, ls: props.LightSpec) void {
+    fn addLight(self: *Placer, x: f32, y: f32, z: f32, scale: f32, ls: props.LightSpec, rng: *mathx.Rng) void {
         if (self.e.nlights >= MAX_LIGHTS) return; // fires past the cap simply don't light — never a crash
         self.e.lights[self.e.nlights] = .{
             .base = .{ .pos = v3(x, y + ls.y * scale, z), .col = ls.col, .radius = ls.radius * mathx.maxF(scale, 0.6) },
             .flicker = ls.flicker,
-            .phase = self.rng.range(0, 60), // every flame guttering on its own beat
+            .phase = rng.range(0, 60), // every flame guttering on its own beat
         };
         self.e.nlights += 1;
     }
 
-    // Jittered placement: the workhorse. Spread is the positional wobble, s the scale band.
-    fn jit(self: *Placer, kind: Kind, x: f32, z: f32, spread: f32, sLo: f32, sHi: f32) void {
-        self.at(
-            kind,
-            x + self.rng.signed() * spread,
-            z + self.rng.signed() * spread,
-            self.rng.range(0, 360),
-            self.rng.range(sLo, sHi),
-        );
+    /// The full accept test for one scatter candidate: the op's `avoid` set, then the cover
+    /// field, then any density gradient. ONE function because belt and disc had the same three
+    /// clauses written out separately, and the cover-field literal drifting between the two
+    /// would be invisible — one scatter quietly thinning at a different rate than its neighbour.
+    fn accepts(self: *Placer, o: *const wf.Op, x: f32, z: f32, rng: *mathx.Rng) bool {
+        if (self.rejects(o, x, z)) return false;
+        // The cover field, mixed toward 1 so structures THIN where the flora does without
+        // vanishing. Same field the ground cover uses, so a clearing is a clearing for
+        // everything standing in it.
+        if (o.field and rng.float() > FIELD_FLOOR + (1.0 - FIELD_FLOOR) * coverField(x, z)) return false;
+        if (o.gAxis != .none and rng.float() > o.gradAt(x, z)) return false;
+        return true;
     }
 
-    // A scattered belt of one kind in a box, skipping the start runway, open water, and the
-    // world's CLEARINGS (`coverField`, mixed toward 1 so structures thin where the flora does
-    // without vanishing). `n` is an attempt count, not a guarantee — rejection keeps the world
-    // honest, and clumping keeps it from looking sown.
-    fn belt(self: *Placer, kind: Kind, x0: f32, z0: f32, x1: f32, z1: f32, n: i32, sLo: f32, sHi: f32) void {
-        var i: i32 = 0;
-        while (i < n) : (i += 1) {
-            const x = self.rng.range(x0, x1);
-            const z = self.rng.range(z0, z1);
-            if (onRunway(x, z)) continue;
-            if (self.e.inWater(x, z, 1.04)) continue;
-            if (self.rng.float() > 0.35 + 0.65 * coverField(x, z)) continue;
-            self.at(kind, x, z, self.rng.range(0, 360), self.rng.range(sLo, sHi));
+    /// The shared rejection test every scatter runs a candidate through. Which clauses apply is
+    /// the op's own `avoid` set, so lilies can float on the water that grass must keep off.
+    fn rejects(self: *Placer, o: *const wf.Op, x: f32, z: f32) bool {
+        if (o.avoid.runway and self.m.onRunway(x, z)) return true;
+        if (o.avoid.water and self.e.inWater(x, z, 1.04)) return true;
+        if (o.avoid.clear and self.m.inClearing(x, z)) return true;
+        if (o.avoid.solid) {
+            // Don't grow through the world: the solid grid already knows what is here.
+            var buf: [MAX_NEAR]collision.Solid = undefined;
+            const probe = v3(x, 0.2, z);
+            if (collision.blockedBy(probe, 0.35, self.e.nearSolids(probe, 1.4, &buf))) return true;
+        }
+        return false;
+    }
+
+    fn expand(self: *Placer, o: *const wf.Op) void {
+        var rng = o.stream();
+        switch (o.op) {
+            .at => self.atY(o.kind, o.x, o.r1, o.z, o.yaw, o.scale, &rng),
+            .belt => self.belt(o, &rng),
+            .disc => self.disc(o, &rng),
+            .ring => self.ring(o, &rng),
+            .line => self.line(o, &rng),
+            .ivy => self.ivy(o, &rng),
+            .edge => self.edge(o, &rng),
+            .cover => self.cover(o, &rng),
         }
     }
 
-    // One of a SET of kinds, picked at random — for props that exist in variants (the great
-    // trees) so a region mixes them instead of repeating one silhouette.
-    fn anyOf(self: *Placer, kinds: []const Kind) Kind {
-        return kinds[@intCast(self.rng.intn(@intCast(kinds.len)))];
+    // A scattered belt in a box. `n` is an ATTEMPT count, not a guarantee — rejection keeps the
+    // world honest, and the clumping it leaves keeps a region from looking sown.
+    fn belt(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
+        var i: i32 = 0;
+        while (i < o.n) : (i += 1) {
+            const x = rng.range(o.x, o.x1);
+            const z = rng.range(o.z, o.z1);
+            if (!self.accepts(o, x, z, rng)) continue;
+            self.at(o.pick(rng), x, z, rng.range(0, 360), rng.range(o.sLo, o.sHi), rng);
+        }
+    }
+
+    // An annulus scatter: shorelines, reed beds, talus, drowned ruin. `bias` bends the radial
+    // distribution toward area-uniform, which packs a raft in around its rootstock.
+    fn disc(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
+        var i: i32 = 0;
+        while (i < o.n) : (i += 1) {
+            const a = rng.angle();
+            const t = rng.float();
+            const d = o.r0 + (o.r1 - o.r0) * (t + (@sqrt(t) - t) * o.bias);
+            const x = o.x + mathx.cosf(a) * d;
+            const z = o.z + mathx.sinf(a) * d;
+            if (!self.accepts(o, x, z, rng)) continue;
+            self.at(o.pick(rng), x, z, rng.range(0, 360), rng.range(o.sLo, o.sHi), rng);
+        }
     }
 
     // A ring of props about a centre — henges, stone circles, camps.
-    fn ring(self: *Placer, kind: Kind, cx: f32, cz: f32, radius: f32, n: i32, skip: i32, sLo: f32, sHi: f32) void {
+    fn ring(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
         var i: i32 = 0;
-        while (i < n) : (i += 1) {
-            if (i == skip) continue; // the gap: a ring with every stone present reads as a fence
-            const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n));
-            const r = radius * self.rng.range(0.94, 1.06);
+        while (i < o.n) : (i += 1) {
+            if (i == o.skip) continue; // the gap: a ring with every stone present reads as a fence
+            const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(o.n));
+            const r = o.r0 * rng.range(0.94, 1.06);
+            const x = o.x + mathx.cosf(a) * r;
+            const z = o.z + mathx.sinf(a) * r;
+            if (self.rejects(o, x, z)) continue;
             self.at(
-                kind,
-                cx + mathx.cosf(a) * r,
-                cz + mathx.sinf(a) * r,
-                mathx.degrees(-a) + 90 + self.rng.signed() * 12, // faces the centre, roughly
-                self.rng.range(sLo, sHi),
+                o.pick(rng),
+                x,
+                z,
+                mathx.degrees(-a) + 90 + rng.signed() * 12, // faces the centre, roughly
+                rng.range(o.sLo, o.sHi),
+                rng,
             );
         }
     }
-};
 
-// The hero's runway (x ≈ 0, z 26 → -40) is the --shot travel lane and the live start: it stays
-// clear of everything, so a straight walk out of the grace is never blocked by a scatter.
-fn onRunway(x: f32, z: f32) bool {
-    return @abs(x) < 3.4 and z > -44 and z < 30;
-}
-
-// ── CENTRE: the fallen avenue (the original hand composition, unchanged) ────────────────
-const P = struct { x: f32, z: f32, yaw: f32, s: f32, kind: Kind };
-const avenue_layout = [_]P{
-    // colonnade avenue flanking the path
-    .{ .x = -6, .z = 14, .yaw = 8, .s = 0.9, .kind = .broken },
-    .{ .x = 6, .z = 12, .yaw = 0, .s = 1.0, .kind = .pillar },
-    .{ .x = -6, .z = -6, .yaw = 0, .s = 1.0, .kind = .pillar },
-    .{ .x = 6, .z = -6, .yaw = 0, .s = 1.1, .kind = .pillar },
-    .{ .x = -6, .z = -16, .yaw = 0, .s = 1.0, .kind = .broken },
-    .{ .x = 6, .z = -16, .yaw = 12, .s = 1.0, .kind = .pillar },
-    .{ .x = -6, .z = -26, .yaw = 0, .s = 0.95, .kind = .pillar },
-    .{ .x = 6, .z = -26, .yaw = 0, .s = 1.05, .kind = .broken },
-    .{ .x = -6, .z = -36, .yaw = -6, .s = 1.05, .kind = .pillar },
-    .{ .x = 6, .z = -36, .yaw = 20, .s = 0.95, .kind = .broken },
-    // the gate arch over the path
-    .{ .x = 0, .z = -31, .yaw = 0, .s = 1.0, .kind = .arch },
-    // the grace ember, just off the path by the start
-    .{ .x = 3.0, .z = 6.5, .yaw = 0, .s = 1.0, .kind = .grace },
-    // ruined walls
-    .{ .x = -14, .z = -14, .yaw = 78, .s = 1.1, .kind = .wall },
-    .{ .x = 15, .z = -40, .yaw = -12, .s = 1.2, .kind = .wall },
-    .{ .x = -24, .z = -28, .yaw = 100, .s = 0.9, .kind = .wall },
-    // dead trees
-    .{ .x = -12, .z = -2, .yaw = 0, .s = 1.1, .kind = .tree },
-    .{ .x = 16, .z = -31, .yaw = 140, .s = 1.3, .kind = .tree },
-    .{ .x = -20, .z = -38, .yaw = 70, .s = 0.9, .kind = .tree },
-    .{ .x = 24, .z = 6, .yaw = 200, .s = 1.0, .kind = .tree },
-    // graveyard cluster + a stray marker
-    .{ .x = -11, .z = -29, .yaw = 15, .s = 1.0, .kind = .graves },
-    .{ .x = -14, .z = -33, .yaw = -40, .s = 0.9, .kind = .graves },
-    .{ .x = 13, .z = -26, .yaw = 60, .s = 0.8, .kind = .graves },
-    // swords left standing in the earth
-    .{ .x = -2.8, .z = -21, .yaw = 30, .s = 1.0, .kind = .sword },
-    .{ .x = 10, .z = -8, .yaw = -70, .s = 0.9, .kind = .sword },
-    .{ .x = -12.5, .z = -31, .yaw = 120, .s = 1.1, .kind = .sword },
-    // ruin blocks
-    .{ .x = 15, .z = -3, .yaw = -25, .s = 1.3, .kind = .block },
-    .{ .x = 13, .z = -22, .yaw = 70, .s = 1.0, .kind = .block },
-    .{ .x = -9, .z = -44, .yaw = 30, .s = 1.0, .kind = .block },
-    .{ .x = 20, .z = -18, .yaw = 55, .s = 1.0, .kind = .block },
-    .{ .x = -22, .z = -6, .yaw = -35, .s = 0.9, .kind = .block },
-    // war banners flanking the avenue + a headless sentinel by the grace
-    .{ .x = 7.5, .z = -11, .yaw = -18, .s = 1.0, .kind = .banner },
-    .{ .x = -7.5, .z = -33, .yaw = 155, .s = 1.1, .kind = .banner },
-    .{ .x = -8.5, .z = 7, .yaw = 155, .s = 1.0, .kind = .statue },
-    // rubble scatter near the path
-    .{ .x = 2.5, .z = -13, .yaw = 45, .s = 1.0, .kind = .rubble },
-    .{ .x = -4, .z = -34, .yaw = 10, .s = 1.0, .kind = .rubble },
-    .{ .x = 8, .z = 2, .yaw = 70, .s = 0.8, .kind = .rubble },
-    .{ .x = -8, .z = -20, .yaw = 0, .s = 1.0, .kind = .rubble },
-    // hand-placed flora accents: glowing blooms hug the grace; flowers among the graves
-    .{ .x = 2.1, .z = 5.5, .yaw = 40, .s = 1.0, .kind = .glow },
-    .{ .x = 4.2, .z = 7.6, .yaw = 210, .s = 0.85, .kind = .glow },
-    .{ .x = -11.8, .z = -30.6, .yaw = 75, .s = 1.0, .kind = .flowers },
-    .{ .x = 12.4, .z = -27.2, .yaw = 150, .s = 0.9, .kind = .flowers },
-    .{ .x = -13.2, .z = -15.7, .yaw = 25, .s = 1.15, .kind = .reeds },
-    // denser flowers ringing the graveyard — mourning blooms clustered on the graves
-    .{ .x = -9.6, .z = -28.2, .yaw = 20, .s = 0.95, .kind = .flowers },
-    .{ .x = -13.5, .z = -27.8, .yaw = 130, .s = 1.05, .kind = .flowers },
-    .{ .x = -15.4, .z = -31.4, .yaw = 250, .s = 0.9, .kind = .flowers },
-    .{ .x = -12.2, .z = -34.4, .yaw = 300, .s = 1.0, .kind = .flowers },
-    .{ .x = -9.4, .z = -32.6, .yaw = 60, .s = 0.85, .kind = .flowers },
-    .{ .x = 11.0, .z = -24.2, .yaw = 200, .s = 0.9, .kind = .flowers },
-    .{ .x = 14.6, .z = -24.8, .yaw = 20, .s = 0.95, .kind = .flowers },
-    // a brazier at the arch, so the threshold reads at dusk and the piers catch firelight
-    .{ .x = -3.5, .z = -30.2, .yaw = 0, .s = 1.0, .kind = .brazier },
-    // the paving of the old road surfacing through the grass
-    .{ .x = 0, .z = -4, .yaw = 0, .s = 1.2, .kind = .paving },
-    .{ .x = 0.6, .z = -19, .yaw = 40, .s = 1.1, .kind = .paving },
-    .{ .x = -0.8, .z = -38, .yaw = 15, .s = 1.0, .kind = .paving },
-};
-
-fn avenue(p: *Placer) void {
-    for (avenue_layout) |q| p.at(q.kind, q.x, q.z, q.yaw, q.s);
-    // The start's own dressing, off the table because it is placed RELATIVE to what's already
-    // there: ivy at the feet of the columns, lanterns marking the way north, and the meadow the
-    // hero actually stands in. The runway (|x| < 3.4) stays clear — `belt` enforces that.
-    ivyOnRuins(p, -30, -46, 30, 26);
-    p.at(.lantern, 4.6, 1.5, 0, 1.0);
-    p.at(.lantern, -4.6, -22.0, 0, 1.0);
-    p.at(.well, -13.5, 3.0, 0, 1.0);
-    p.at(.shrine, 6.8, -3.5, 200, 1.0);
-    p.at(.cairn, -5.2, 18.0, 0, 1.1);
-    p.at(.barrels, 9.5, -16.0, 50, 0.95);
-    // A dense flowering meadow around the grace — the first thing the player ever looks at.
-    p.belt(.wildflowers, -18, -6, 18, 24, 60, 0.85, 1.35);
-    p.belt(.grasstall, -20, -8, 20, 26, 80, 0.85, 1.4);
-    p.belt(.clover, -20, -8, 20, 26, 60, 0.9, 1.5);
-    p.belt(.foxglove, -18, -6, 18, 22, 26, 0.85, 1.2);
-    p.belt(.sapling, -24, -42, 24, 26, 30, 0.8, 1.2);
-    p.belt(.thicket, -26, -44, 26, 26, 20, 0.85, 1.25);
-    p.belt(.bush, -26, -44, 26, 26, 34, 0.85, 1.3);
-    p.belt(.mushrooms, -22, -40, 22, 24, 24, 0.9, 1.3);
-    p.belt(.rocks, -26, -44, 26, 26, 22, 0.8, 1.2);
-    p.belt(.outcrop, -28, -44, 28, 26, 10, 0.85, 1.2);
-}
-
-// ── NORTH: THE FALLEN CITY ─────────────────────────────────────────────────────────────
-// What the avenue was pointing at all along. A processional way runs on north to a plaza; the
-// perimeter wall is broken into runs; a chapel off the west side is roofed and torchlit, and
-// two watchtowers still stand. The colossal horizon gate closes the view 120 m out.
-fn fallenCity(p: *Placer) void {
-    // The processional way carries on: colonnade every 11 m, alternating whole and snapped,
-    // with paving and rubble underfoot.
-    var z: f32 = -48;
-    while (z > -112) : (z -= 11) {
-        const wob = p.rng.signed() * 1.2;
-        for ([_]f32{ -6.5, 6.5 }) |side| {
-            const kind: Kind = if (p.rng.float() < 0.45) .pillar else .broken;
-            p.at(kind, side + wob, z + p.rng.signed() * 1.5, p.rng.range(-14, 14), p.rng.range(0.85, 1.15));
+    // A broken run from a→b: segments laid nose to tail, `chance` of each surviving. Both the
+    // city's perimeter and the processional colonnade are this — one is a wall and one is a
+    // row of columns, and the only difference is the kind mix and the spacing.
+    fn line(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
+        const dx = o.x1 - o.x;
+        const dz = o.z1 - o.z;
+        const len = @sqrt(dx * dx + dz * dz);
+        if (len < 1e-4 or o.r0 < 1e-4) return; // a zero-length or zero-step run would spin forever
+        const ux = dx / len;
+        const uz = dz / len;
+        const yaw = mathx.degrees(std.math.atan2(-uz, ux)); // local +X is (cos yaw, −sin yaw)
+        var t: f32 = o.r0 * 0.5;
+        while (t < len) : (t += o.r0 * rng.range(1.0, 1.5)) {
+            if (rng.float() > o.chance) continue; // a collapsed stretch
+            const x = o.x + ux * t + rng.signed() * 0.6;
+            const z = o.z + uz * t + rng.signed() * 0.6;
+            if (self.rejects(o, x, z)) continue;
+            self.at(o.pick(rng), x, z, yaw + rng.signed() * 6, rng.range(o.sLo, o.sHi), rng);
         }
-        if (p.rng.float() < 0.6) p.jit(.paving, p.rng.range(-3.2, 3.2), z, 2.5, 0.9, 1.4);
-        if (p.rng.float() < 0.5) p.jit(.rubble, p.rng.range(-5, 5), z, 3.0, 0.8, 1.3);
     }
-    // The PLAZA at (0, -80): a paved floor, a sentinel statue on each side, braziers, and the
-    // stumps of a colonnade that ringed it.
-    var i: i32 = 0;
-    while (i < 14) : (i += 1) p.jit(.paving, 0, -80, 13.0, 1.0, 1.5);
-    p.at(.statue, -9.5, -74, 150, 1.25);
-    p.at(.statue, 9.0, -86, 20, 1.15);
-    p.at(.brazier, -5.0, -79.0, 0, 1.1);
-    p.at(.brazier, 5.4, -81.5, 0, 1.0);
-    p.ring(.broken, 0, -80, 15.5, 12, 5, 0.8, 1.2);
-    p.at(.monolith, 0, -80, p.rng.range(0, 360), 1.35); // a broken victory stone at the centre
-    p.belt(.rubble, -18, -94, 18, -66, 16, 0.8, 1.4);
 
-    // THE CHAPEL — roofed over its altar end, so the inside is genuinely dark. Four standing
-    // torches set against the walls are what make it readable, and the doorway faces the
-    // processional way (yaw 90 turns its local −Z door to face world −X… so use yaw 270 to
-    // open EAST, toward the road).
-    const cx: f32 = -30.0;
-    const cz: f32 = -66.0;
-    p.at(.chapel, cx, cz, 270, 1.0);
-    // Torch positions in the chapel's LOCAL frame, then rotated by that same yaw. THREE, not one
-    // per corner: with a 6 m radius each, three read as three pools of light with shadow between
-    // them, where four filled the nave evenly and there was nothing left to light.
-    const torches = [_][2]f32{ .{ -1.9, 2.4 }, .{ 1.9, 2.4 }, .{ 1.9, -1.4 } };
-    for (torches) |t| {
-        const w = localToWorld(t[0], t[1], 270, 1.0);
-        p.at(.torch, cx + w[0], cz + w[1], p.rng.range(0, 360), 0.95);
-    }
-    p.at(.brazier, cx + 5.2, cz + 0.6, 0, 0.95); // one outside the door, marking it from the road
-    p.belt(.graves, cx - 9, cz - 8, cx - 3, cz + 8, 5, 0.85, 1.15);
-    p.belt(.rubble, cx - 7, cz - 9, cx + 7, cz + 9, 7, 0.8, 1.2);
-    p.belt(.flowers, cx - 9, cz - 9, cx - 2, cz + 9, 8, 0.8, 1.1);
-
-    // Two WATCHTOWERS, each with a torch burning in its dark ground room.
-    towerSite(p, 36.0, -88.0, 20);
-    towerSite(p, -52.0, -104.0, 200);
-
-    // The perimeter: broken wall runs on three sides of the city, laid end to end with gaps.
-    wallRun(p, -46, -120, 46, -120, 7.4); // north face
-    wallRun(p, -46, -120, -46, -58, 7.4); // west face
-    wallRun(p, 46, -120, 46, -62, 7.4); // east face
-    // A RUINED QUARTER either side of the way: the shells of houses, close-packed the way a
-    // city is, so the place reads as somewhere people lived and not only as monuments.
-    const quarter = [_][3]f32{
-        .{ 20, -58, 84 },   .{ 27, -64, 12 },   .{ 19, -70, 96 },  .{ 28, -76, 4 },
-        .{ -18, -92, 270 }, .{ -25, -99, 186 }, .{ -16, -105, 8 }, .{ 24, -100, 200 },
-        .{ 31, -107, 92 },  .{ -30, -86, 96 },
-    };
-    for (quarter) |h| {
-        p.at(.cottage, h[0], h[1], h[2] + p.rng.signed() * 8, p.rng.range(0.95, 1.35));
-        p.belt(.rubble, h[0] - 5, h[1] - 5, h[0] + 5, h[1] + 5, 3, 0.8, 1.3);
-        if (p.rng.float() < 0.45) p.jit(.paving, h[0], h[1] - 5.5, 2.0, 1.0, 1.4);
-    }
-    // Carts abandoned on the road out, and swords left where men fell.
-    p.at(.cart, 4.6, -55.0, 28, 1.0);
-    p.at(.cart, -5.8, -97.0, 200, 0.95);
-    p.belt(.sword, -20, -110, 20, -50, 9, 0.85, 1.15);
-    p.belt(.banner, -24, -112, 24, -52, 6, 0.9, 1.2);
-    p.belt(.block, -40, -118, 40, -50, 26, 0.85, 1.35);
-    p.belt(.tree, -42, -118, 42, -48, 16, 0.8, 1.25);
-    // The city's own furniture: wells and lanterns on the road, stair fragments and tombs among
-    // the ruins, ivy taking the walls, bones where the fighting was worst.
-    p.at(.well, -12.0, -62.0, 0, 1.05);
-    p.at(.well, 16.5, -95.0, 0, 1.0);
-    p.at(.shrine, 5.5, -50.0, 186, 1.0);
-    p.at(.gibbet, -8.5, -54.0, 200, 1.05);
-    p.at(.gibbet, 11.0, -110.0, 20, 0.95);
-    var ln: i32 = 0;
-    while (ln < 8) : (ln += 1) { // lanterns down the processional way, alternating sides
-        const lz = -52.0 - @as(f32, @floatFromInt(ln)) * 8.5;
-        p.at(.lantern, if (@mod(ln, 2) == 0) @as(f32, 4.2) else -4.2, lz, 0, p.rng.range(0.9, 1.1));
-    }
-    p.belt(.stairs, -42, -116, 42, -50, 14, 0.85, 1.3);
-    p.belt(.sarcophagus, -40, -114, 40, -52, 12, 0.9, 1.25);
-    p.belt(.barrels, -38, -112, 38, -50, 18, 0.85, 1.2);
-    p.belt(.woodpile, -36, -110, 36, -52, 10, 0.85, 1.15);
-    p.belt(.bones, -40, -116, 40, -48, 22, 0.85, 1.3);
-    p.belt(.cart, -34, -112, 34, -50, 8, 0.85, 1.1);
-    p.belt(.fence, -38, -112, 38, -52, 14, 0.9, 1.2);
-    ivyOnRuins(p, -46, -122, 46, -46); // creeper taking the ruins back — only ON the stone
-    p.belt(.nettles, -44, -120, 44, -48, 120, 0.85, 1.35); // …and nettles in every corner
-    p.belt(.sapling, -44, -120, 44, -48, 70, 0.8, 1.2); // trees coming up through the streets
-    p.belt(.thicket, -44, -120, 44, -48, 40, 0.85, 1.3);
-    // The horizon giants, dissolved by haze — now genuinely far out, where the pulled-back
-    // haze still reduces them to silhouettes.
-    p.at(.gate, 2, -124, 4, 1.35);
-    p.at(.tower, -34, -132, 10, 1.4);
-    p.at(.tower, 44, -126, -25, 1.15);
-    p.at(.tower, -96, -128, 40, 1.2);
-    p.at(.tower, 104, -120, 15, 1.3);
-    p.at(.tower, -128, -66, 55, 1.1);
-    p.at(.tower, 132, -78, -30, 1.0);
-}
-
-// A watchtower and its dressing: a torch inside the dark room, a brazier at the door, spill.
-fn towerSite(p: *Placer, x: f32, z: f32, yaw: f32) void {
-    p.at(.watchtower, x, z, yaw, 1.0);
-    p.at(.torch, x + p.rng.signed() * 0.9, z + p.rng.signed() * 0.9, p.rng.range(0, 360), 0.9); // inside the drum
-    const door = localToWorld(0, -3.6, yaw, 1.0); // just outside the doorway (local −Z)
-    p.at(.brazier, x + door[0], z + door[1], 0, 1.0);
-    p.belt(.rubble, x - 6, z - 6, x + 6, z + 6, 5, 0.8, 1.3);
-    p.belt(.block, x - 8, z - 8, x + 8, z + 8, 3, 0.8, 1.1);
-}
-
-// Sow ivy at the FEET of the stonework already standing inside a box. Ivy climbs: its runners only
-// make sense with a wall behind them, so it is placed by walking the props that are there rather
-// than by scattering over ground. Runs after the structures, before the flora scatter.
-fn ivyOnRuins(p: *Placer, x0: f32, z0: f32, x1: f32, z1: f32) void {
-    const n = p.e.nprops; // snapshot: the ivy we add must not seed more ivy
-    for (p.e.props[0..n]) |pr| {
-        switch (pr.kind) {
-            .wall, .pillar, .broken, .block, .arch, .statue, .cottage, .chapel, .watchtower, .stairs, .monolith => {},
-            else => continue,
+    // Sow a climber at the FEET of the stonework already standing inside a box. Ivy climbs: its
+    // runners only make sense with a wall behind them, so this walks the props that are THERE
+    // rather than scattering over ground — which is why op order matters.
+    fn ivy(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
+        const n = self.e.nprops; // snapshot: the ivy we add must not seed more ivy
+        for (self.e.props[0..n]) |pr| {
+            switch (pr.kind) {
+                .wall, .pillar, .broken, .block, .arch, .statue, .cottage, .chapel, .watchtower, .stairs, .monolith => {},
+                else => continue,
+            }
+            if (pr.pos.x < o.x or pr.pos.x > o.x1 or pr.pos.z < o.z or pr.pos.z > o.z1) continue;
+            if (rng.float() > o.chance) continue;
+            const nfo = props.info(pr.kind);
+            // Hug the base: just outside the prop's own footprint, so the runners lie against it.
+            const a = rng.angle();
+            const d = nfo.bound * pr.scale * rng.range(0.18, 0.42);
+            self.at(o.kind, pr.pos.x + mathx.cosf(a) * d, pr.pos.z + mathx.sinf(a) * d, mathx.degrees(a), rng.range(o.sLo, o.sHi), rng);
         }
-        if (pr.pos.x < x0 or pr.pos.x > x1 or pr.pos.z < z0 or pr.pos.z > z1) continue;
-        if (p.rng.float() > 0.55) continue;
-        const nfo = props.info(pr.kind);
-        // Hug the base: just outside the prop's own footprint, so the runners lie against it.
-        const a = p.rng.angle();
-        const d = nfo.bound * pr.scale * p.rng.range(0.18, 0.42);
-        p.at(.ivy, pr.pos.x + mathx.cosf(a) * d, pr.pos.z + mathx.sinf(a) * d, mathx.degrees(a), p.rng.range(0.85, 1.5));
     }
-}
 
-// A broken run of city wall from a→b: segments laid nose to tail with gaps where it fell.
-fn wallRun(p: *Placer, ax: f32, az: f32, bx: f32, bz: f32, seg: f32) void {
-    const dx = bx - ax;
-    const dz = bz - az;
-    const len = @sqrt(dx * dx + dz * dz);
-    const ux = dx / len;
-    const uz = dz / len;
-    const yaw = mathx.degrees(std.math.atan2(-uz, ux)); // local +X is (cos yaw, −sin yaw)
-    var t: f32 = seg * 0.5;
-    while (t < len) : (t += seg * p.rng.range(1.0, 1.5)) {
-        if (p.rng.float() < 0.22) continue; // a collapsed stretch
-        const s = p.rng.range(0.9, 1.25);
-        p.at(.wall, ax + ux * t + p.rng.signed() * 0.6, az + uz * t + p.rng.signed() * 0.6, yaw + p.rng.signed() * 6, s);
-        if (p.rng.float() < 0.35) p.jit(.rubble, ax + ux * t, az + uz * t, 3.0, 0.8, 1.2);
+    // ── THE EDGE: a cliff wall right round the world ────────────────────────────────────
+    // The movement clamp sits just inside a rock face, so the world's edge reads as terrain
+    // rather than as an invisible wall in open grass. Each segment's detailed face is its local
+    // −Z, so each side takes the yaw that turns that face INWARD (north 180, south 0, east 90,
+    // west 270). The step is a DEEP overlap against a 10.4 m segment: that is what turns a row
+    // of separate rocks into one continuous escarpment.
+    fn edge(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
+        if (o.r0 < 1e-4) return;
+        const rim = self.m.half + 6.0; // the rock wall stands just outside the movement clamp
+        var t: f32 = -rim;
+        while (t <= rim) : (t += o.r0) {
+            const jitter = rng.signed() * 1.6;
+            self.at(o.pick(rng), t + jitter, -rim - rng.range(0, 2.5), 180 + rng.signed() * 7, self.ridge(o, t, rng), rng);
+            self.at(o.pick(rng), t - jitter, rim + rng.range(0, 2.5), 0 + rng.signed() * 7, self.ridge(o, t + 91, rng), rng);
+            self.at(o.pick(rng), rim + rng.range(0, 2.5), t + jitter, 90 + rng.signed() * 7, self.ridge(o, t + 213, rng), rng);
+            self.at(o.pick(rng), -rim - rng.range(0, 2.5), t - jitter, 270 + rng.signed() * 7, self.ridge(o, t + 347, rng), rng);
+        }
+        // Talus and scrub spilling off the feet of the walls, so the base isn't a clean line.
+        // Kept INSIDE half−4: the cliff mesh has its own talus reaching ~4 m in, and a boulder
+        // dropped into that shows as a wrong-coloured lump growing out of the rock.
+        var i: i32 = 0;
+        while (i < o.n) : (i += 1) {
+            const along = rng.range(-rim, rim);
+            const off = rng.range(self.m.half - 20, self.m.half - 4);
+            const pos: [2]f32 = switch (rng.intn(4)) {
+                0 => .{ along, -off },
+                1 => .{ along, off },
+                2 => .{ off, along },
+                else => .{ -off, along },
+            };
+            const kind: Kind = if (rng.float() < 0.45) .boulder else if (rng.float() < 0.7) .rocks else .bush;
+            self.at(kind, pos[0], pos[1], rng.range(0, 360), rng.range(0.8, 1.5), rng);
+        }
     }
-}
+
+    // Segment scale as a function of WHERE ALONG the wall it sits: two long sines (~90 m and
+    // ~37 m) plus a little noise. Purely random per-segment scale gives the crest hedge-trimmer
+    // jitter; summed long waves read as topography — headlands and saddles you see coming.
+    fn ridge(self: *Placer, o: *const wf.Op, along: f32, rng: *mathx.Rng) f32 {
+        _ = self;
+        const mid = (o.sLo + o.sHi) * 0.5;
+        const amp = (o.sHi - o.sLo) * 0.5;
+        return mid + amp * (0.62 * mathx.sinf(along * 0.070) + 0.31 * mathx.sinf(along * 0.170 + 1.9)) + rng.signed() * amp * 0.16;
+    }
+
+    // ── the seeded ground cover ─────────────────────────────────────────────────────────
+    // A stratified scatter over the whole world: one candidate per LATTICE cell at a jittered
+    // position, so coverage is even without the O(n·m) rejection sampling the small world used.
+    // Kind follows the ZONE it lands in; DENSITY follows that zone's peak times the cover field.
+    fn cover(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
+        const pitch = o.r0;
+        if (pitch < 0.1) return;
+        const half = self.m.half;
+        const n: i32 = @intFromFloat(@ceil(2 * half / pitch));
+        var iz: i32 = 0;
+        while (iz < n) : (iz += 1) {
+            var ix: i32 = 0;
+            while (ix < n) : (ix += 1) {
+                const bx = -half + (@as(f32, @floatFromInt(ix)) + 0.5) * pitch;
+                const bz = -half + (@as(f32, @floatFromInt(iz)) + 0.5) * pitch;
+                const x = bx + rng.signed() * pitch * 0.48;
+                const z = bz + rng.signed() * pitch * 0.48;
+                const zone = self.m.zoneAt(x, z) orelse continue;
+                if (rng.float() > zone.density * coverField(x, z)) continue;
+                if (self.m.inClearing(x, z)) continue;
+                // Water uses a TIGHTER inset than a belt's: reeds may stand at the rim, but
+                // nothing grows mid-lake.
+                if (self.e.inWater(x, z, 0.97)) continue;
+                if (self.m.onRunway(x, z)) continue;
+                var buf: [MAX_NEAR]collision.Solid = undefined;
+                const probe = v3(x, 0.2, z);
+                if (collision.blockedBy(probe, 0.35, self.e.nearSolids(probe, 1.4, &buf))) continue;
+                // A mix-less zone grows nothing (the accessor says so rather than indexing an
+                // `undefined` slot — see wf.Zone.pick).
+                const kind = zone.pick(rng) orelse continue;
+                self.at(kind, x, z, rng.range(0, 360), rng.range(o.sLo, o.sHi), rng);
+            }
+        }
+    }
+};
 
 // A prop-local (x, z) offset carried through an instance's yaw + scale into world offsets.
 // Same convention the colliders use: local +X → (cos, −sin), local +Z → (sin, cos).
@@ -793,263 +847,6 @@ fn localToWorld(lx: f32, lz: f32, yaw: f32, scale: f32) [2]f32 {
     const s = mathx.sinf(th);
     return .{ scale * (lx * c + lz * s), scale * (-lx * s + lz * c) };
 }
-
-// ── EAST: THE TARN ─────────────────────────────────────────────────────────────────────
-// A shallow peat lake you WADE (owner's call — there is no swim, and an invisible wall on open
-// water feels worse than ankle-deep water). Drowned columns stand in it, a stone causeway runs
-// out and stops where its middle span fell in, willows lean over the margin, reeds everywhere.
-fn theTarn(p: *Placer) void {
-    const lx: f32 = 104.0;
-    const lz: f32 = 6.0;
-    p.atY(.water, lx, 0, lz, 0, 3.1); // ~40 m across
-    p.atY(.water, 62.0, 0.004, -52.0, 40, 1.05); // a separate pool to the north-west (offset Y:
-    //   two coplanar water sheets would z-fight, and 4 mm is invisible)
-
-    // The causeway: runs west→east out into the tarn, ending in its collapsed span. Scale 1.35
-    // gives a 13.5 m crossing about 4 m wide — at 2.4 its flagstones were nearly 2 m each and
-    // the whole thing read as a pier built for something much larger than the hero.
-    p.at(.causeway, 74.0, 8.0, 6, 1.35);
-    p.at(.causeway, 86.5, 9.4, 10, 1.35); // a second span carrying on out into deeper water
-    p.belt(.rocks, 66, 0, 82, 16, 8, 0.8, 1.3);
-
-    // Drowned ruin: columns and blocks standing in the shallows — placed INSIDE the sheet so
-    // they rise through it, which is the whole read.
-    var i: i32 = 0;
-    while (i < 9) : (i += 1) {
-        const a = p.rng.angle();
-        const d = p.rng.range(6.0, 34.0);
-        p.at(if (p.rng.float() < 0.6) .broken else .block, lx + mathx.cosf(a) * d, lz + mathx.sinf(a) * d, p.rng.range(0, 360), p.rng.range(0.8, 1.2));
-    }
-    // The margin: willows leaning over, reed beds in the shallows and out onto the wet ground.
-    var w: i32 = 0;
-    while (w < 11) : (w += 1) {
-        const a = p.rng.angle();
-        const d = p.rng.range(36.0, 46.0);
-        p.at(.willow, lx + mathx.cosf(a) * d, lz + mathx.sinf(a) * d, p.rng.range(0, 360), p.rng.range(0.85, 1.3));
-    }
-    // The bed: reeds and bulrushes in a broad band straddling the shoreline, thickest right at it.
-    var r: i32 = 0;
-    while (r < 420) : (r += 1) {
-        const a = p.rng.angle();
-        const d = p.rng.range(26.0, 54.0);
-        const kind: Kind = if (p.rng.float() < 0.45) .cattails else .reeds;
-        p.at(kind, lx + mathx.cosf(a) * d, lz + mathx.sinf(a) * d, p.rng.range(0, 360), p.rng.range(0.9, 1.55));
-    }
-    // LILY PADS, floating — placed INSIDE the sheet, which the flora scatter is forbidden from
-    // doing (it rejects open water), so they have to be hand-sown here.
-    // Sown in RAFTS rather than evenly: lilies spread from a rootstock, so they come in patches
-    // hugging the shallows, with open water between them.
-    var raft: i32 = 0;
-    while (raft < 14) : (raft += 1) {
-        const ra = p.rng.angle();
-        const rd = p.rng.range(16.0, 33.0); // out from the middle, toward the shallow rim
-        const rx = lx + mathx.cosf(ra) * rd;
-        const rz = lz + mathx.sinf(ra) * rd;
-        var lp: i32 = 0;
-        while (lp < 7) : (lp += 1) {
-            const a = p.rng.angle();
-            const d = p.rng.range(0.0, 4.5) * @sqrt(p.rng.float());
-            p.at(.lilypads, rx + mathx.cosf(a) * d, rz + mathx.sinf(a) * d, p.rng.range(0, 360), p.rng.range(0.85, 1.6));
-        }
-    }
-    var lp2: i32 = 0;
-    while (lp2 < 14) : (lp2 += 1) {
-        const a = p.rng.angle();
-        const d = p.rng.range(1.0, 9.0);
-        p.at(.lilypads, 62.0 + mathx.cosf(a) * d, -52.0 + mathx.sinf(a) * d, p.rng.range(0, 360), p.rng.range(0.8, 1.3));
-    }
-    p.belt(.boulder, 62, -40, 150, 55, 26, 0.8, 1.5);
-    p.belt(.rocks, 58, -50, 152, 60, 44, 0.8, 1.4);
-    p.belt(.bush, 60, -55, 152, 62, 60, 0.8, 1.3);
-    p.belt(.thicket, 58, -58, 152, 62, 40, 0.85, 1.4);
-    p.belt(.nettles, 56, -60, 152, 62, 70, 0.85, 1.3);
-    p.belt(.reeds, 52, -66, 78, -34, 90, 0.9, 1.4); // the north-western pool's own bed
-    p.belt(.cattails, 52, -66, 78, -34, 60, 0.9, 1.4);
-    p.belt(.willow, 52, -62, 74, -40, 8, 0.8, 1.1);
-    p.belt(.log, 62, -30, 148, 50, 14, 0.8, 1.2);
-    p.belt(.outcrop, 60, -50, 150, 58, 16, 0.85, 1.3);
-    p.belt(.sapling, 58, -55, 152, 60, 45, 0.8, 1.2);
-    p.belt(.birch, 56, -56, 152, 60, 16, 0.8, 1.15); // birches like wet ground
-    // A camp on the shore, long cold.
-    p.at(.campfire, 88.0, 34.0, 0, 1.0);
-    p.at(.log, 90.6, 35.4, 20, 1.0);
-    p.at(.cart, 85.0, 37.5, 130, 0.9);
-    p.at(.barrels, 86.6, 31.6, 70, 0.95);
-    p.at(.fence, 91.0, 30.0, 24, 0.95);
-    // A fisherman's shrine facing the water, and a lantern on the causeway's landward end.
-    p.at(.shrine, 72.0, 14.0, 100, 1.0);
-    p.at(.lantern, 68.5, 8.5, 0, 1.0);
-    // A lone tower away across the water, for the eye to travel to.
-    p.at(.tower, 146, 30, -40, 1.1);
-    p.at(.monolith, 70, 42, p.rng.range(0, 360), 1.1);
-}
-
-// ── WEST: THE OLD WOOD ─────────────────────────────────────────────────────────────────
-// Great trees, close enough that their canopies overlap and the ground beneath them goes dark.
-// Ferns and brambles on the floor, boulders under the moss, a stone circle in a clearing, and
-// a woodcutter's cottage whose campfire is still ringed.
-fn oldWood(p: *Placer) void {
-    // THE CANOPY. Density rises toward the west edge, so walking in feels like entering it. The
-    // species are MIXED — great trees for mass, conifers for the skyline's punctuation, birches
-    // for a colour you can pick out at distance, snags so not everything is alive.
-    var i: i32 = 0;
-    while (i < 260) : (i += 1) {
-        const x = p.rng.range(-152, -54);
-        const z = p.rng.range(-120, 130);
-        // Thin out on the eastern margin — a hard tree line reads as a wall of scenery.
-        const edge = mathx.smoothstep(-54, -84, x);
-        if (p.rng.float() > 0.18 + 0.82 * edge) continue;
-        if (nearClearing(x, z)) continue;
-        const roll = p.rng.float();
-        const kind: Kind = if (roll < 0.52) p.anyOf(&props.BIG_TREES) else if (roll < 0.72) .conifer else if (roll < 0.86) .birch else if (roll < 0.94) .snag else .tree;
-        p.at(kind, x, z, p.rng.range(0, 360), p.rng.range(0.68, 1.24));
-    }
-    // The understorey: young trees and thickets between the big trunks. This is the layer that
-    // turns a stand of trees into a WOOD — without it you see straight through to the far edge.
-    p.belt(.sapling, -152, -125, -54, 132, 150, 0.8, 1.35);
-    p.belt(.thicket, -152, -125, -54, 132, 110, 0.85, 1.45);
-    p.belt(.stump, -150, -120, -56, 130, 60, 0.8, 1.3);
-    p.belt(.log, -150, -120, -56, 130, 55, 0.8, 1.3);
-    p.belt(.boulder, -152, -125, -56, 132, 46, 0.8, 1.6);
-    p.belt(.rocks, -152, -125, -56, 132, 60, 0.8, 1.4);
-    p.belt(.outcrop, -152, -125, -58, 132, 24, 0.85, 1.4);
-    p.belt(.fern, -152, -125, -54, 132, 220, 0.8, 1.35);
-    p.belt(.bramble, -152, -125, -54, 132, 150, 0.8, 1.4);
-    p.belt(.bush, -152, -125, -52, 132, 130, 0.8, 1.4);
-    p.belt(.mushrooms, -152, -125, -54, 132, 130, 0.85, 1.5);
-    p.belt(.bracken, -152, -125, -54, 132, 120, 0.85, 1.4);
-    p.belt(.moss, -152, -125, -54, 132, 140, 0.9, 1.6);
-    p.belt(.nettles, -150, -120, -56, 130, 70, 0.85, 1.3);
-    // A ring of mushrooms in the deep wood, and a cairn or two marking a path nobody walks.
-    p.ring(.mushrooms, -120, 52, 3.2, 9, 4, 0.9, 1.4);
-    p.belt(.cairn, -145, -110, -60, 120, 7, 0.9, 1.2);
-    p.belt(.bones, -148, -118, -58, 128, 9, 0.85, 1.2);
-
-    // THE STONE CIRCLE, in a clearing the trees keep out of (see nearClearing).
-    p.ring(.monolith, -98, -16, 8.5, 9, 6, 0.9, 1.25);
-    p.at(.monolith, -98, -16, 30, 0.7); // a small altar stone at the centre
-    p.belt(.flowers, -106, -24, -90, -8, 12, 0.8, 1.2);
-    p.belt(.glow, -104, -22, -92, -10, 5, 0.9, 1.2); // the faint blooms only grow here and at the grace
-    p.at(.brazier, -93.0, -11.0, 0, 1.0);
-
-    // THE WOODCUTTER'S COTTAGE — doorway facing local −Z, turned to open east onto the wood.
-    const hx: f32 = -74.0;
-    const hz: f32 = 30.0;
-    p.at(.cottage, hx, hz, 270, 1.05);
-    const door = localToWorld(0, -4.6, 270, 1.05);
-    p.at(.campfire, hx + door[0], hz + door[1], 0, 1.1);
-    p.at(.log, hx + 4.4, hz + 3.0, 70, 1.0);
-    p.at(.stump, hx + 3.2, hz - 3.4, 0, 1.15); // the chopping block
-    p.at(.cart, hx + 6.5, hz - 1.0, 190, 0.95);
-    p.at(.torch, hx + 1.6, hz + 0.4, 0, 0.9); // one still burning inside the shell
-    // The yard: a woodpile against the gable, a well, a fence run, and the tools left out.
-    p.at(.woodpile, hx - 3.6, hz + 2.6, 12, 1.05);
-    p.at(.well, hx + 7.5, hz + 4.5, 0, 1.0);
-    p.at(.fence, hx + 2.0, hz + 8.0, 6, 1.1);
-    p.at(.fence, hx + 9.5, hz + 8.6, -8, 1.0);
-    p.at(.barrels, hx - 5.0, hz - 2.2, 40, 1.0);
-    p.at(.lantern, hx + 4.2, hz - 4.6, 0, 1.0);
-    p.belt(.log, hx - 6, hz - 6, hx + 8, hz + 8, 10, 0.85, 1.2);
-    p.belt(.bramble, hx - 10, hz - 10, hx + 10, hz + 10, 14, 0.8, 1.2);
-    p.belt(.wildflowers, hx - 9, hz - 9, hx + 9, hz + 9, 18, 0.85, 1.25);
-    p.belt(.mushrooms, hx - 8, hz - 8, hx + 8, hz + 8, 10, 0.9, 1.3);
-}
-
-// Places the wood's canopy leaves alone: the stone circle's clearing and the cottage yard.
-fn nearClearing(x: f32, z: f32) bool {
-    return mathx.dist2XZ(v3(x, 0, z), v3(-98, 0, -16)) < 18.0 * 18.0 or
-        mathx.dist2XZ(v3(x, 0, z), v3(-74, 0, 30)) < 15.0 * 15.0;
-}
-
-// ── SOUTH: THE WINDSWEPT DOWNS ─────────────────────────────────────────────────────────
-// Open, dry and nearly empty: the region that makes the others feel dense. Lone trees leaning
-// off the prevailing wind, field stones, old graves, and a watchtower on the rise.
-fn theDowns(p: *Placer) void {
-    // Kept the SPARSEST region on purpose — it is what makes the wood and the city feel dense —
-    // but sparse means "few tall things", not "empty ground": the heath cover underfoot is thick.
-    p.belt(.bigtree, -120, 52, 40, 150, 18, 0.7, 1.05);
-    p.belt(.tree, -130, 48, 60, 152, 32, 0.8, 1.25);
-    p.belt(.snag, -130, 50, 70, 150, 12, 0.8, 1.1);
-    p.belt(.boulder, -140, 46, 140, 152, 40, 0.8, 1.7);
-    p.belt(.rocks, -140, 46, 145, 154, 60, 0.8, 1.4);
-    p.belt(.outcrop, -140, 46, 145, 152, 34, 0.85, 1.45);
-    p.belt(.scree, -140, 48, 145, 152, 26, 0.85, 1.4);
-    p.belt(.cairn, -120, 52, 120, 150, 16, 0.9, 1.25);
-    p.belt(.graves, -60, 60, 60, 140, 20, 0.8, 1.2);
-    p.belt(.sarcophagus, -50, 66, 50, 130, 7, 0.9, 1.2);
-    p.belt(.monolith, -110, 60, 110, 148, 11, 0.9, 1.3);
-    p.belt(.wall, -100, 58, 100, 145, 12, 0.9, 1.2);
-    p.belt(.shrub, -145, 44, 145, 155, 90, 0.8, 1.4);
-    p.belt(.gorse, -145, 44, 145, 155, 110, 0.85, 1.5);
-    p.belt(.heather, -148, 44, 148, 156, 200, 0.9, 1.6);
-    p.belt(.thistle, -140, 46, 140, 152, 90, 0.85, 1.3);
-    p.belt(.sword, -40, 55, 40, 120, 9, 0.9, 1.1);
-    p.belt(.bones, -80, 58, 80, 140, 12, 0.85, 1.25);
-    towerSite(p, 22.0, 98.0, 350);
-    p.at(.tower, -74, 138, 25, 1.0);
-    p.at(.tower, 96, 132, -15, 1.15);
-    // A lonely fire out on the downs — the one warm thing in the region.
-    p.at(.campfire, -34.0, 74.0, 0, 1.0);
-    p.at(.log, -32.0, 76.2, 30, 1.0);
-    p.at(.cairn, -30.5, 71.0, 0, 1.15);
-    // A gibbet on the road south, and a shrine further along it.
-    p.at(.gibbet, 6.0, 62.0, 30, 1.0);
-    p.at(.shrine, -4.5, 88.0, 186, 1.0);
-    p.at(.lantern, 3.0, 104.0, 0, 1.0);
-}
-
-// ── THE EDGE: a cliff wall right round the world ────────────────────────────────────────
-// The movement clamp sits just inside a rock face, so the world's edge reads as terrain rather
-// than as an invisible wall in open grass. Each segment's detailed face is its local −Z, so
-// each side takes the yaw that turns that face INWARD (north 180, south 0, east 90, west 270).
-// Segment scale is a function of WHERE ALONG the wall it sits: two long sines (~90 m and ~37 m)
-// plus a little noise. Purely random per-segment scale gives the crest hedge-trimmer jitter;
-// summed long waves read as topography — headlands and saddles you see coming.
-fn ridgeScale(p: *Placer, along: f32) f32 {
-    return 1.03 + 0.20 * mathx.sinf(along * 0.070) + 0.10 * mathx.sinf(along * 0.170 + 1.9) + p.rng.signed() * 0.05;
-}
-
-fn cliffRing(p: *Placer) void {
-    // Step 8 against a 10.4 m wide segment: they OVERLAP, which is what turns a row of separate
-    // rocks into one continuous escarpment. Scale stays inside 0.92..1.24 for the same reason —
-    // at the old 0.85..1.45 the crest line jumped 8 m between neighbours and sawtoothed.
-    const step: f32 = 6.5; // deep overlap: see the cliff mesh's note on notches between segments
-    var t: f32 = -CLIFF_EDGE;
-    while (t <= CLIFF_EDGE) : (t += step) {
-        const jitter = p.rng.signed() * 1.6;
-        // North (−Z) and south (+Z) faces, then east (+X) and west (−X): each side gets the yaw
-        // that turns the segment's detailed local −Z face INWARD, and a variant picked at random.
-        // Height comes from ridgeScale — see there for why it isn't just rng.
-        p.at(p.anyOf(&props.CLIFFS), t + jitter, -CLIFF_EDGE - p.rng.range(0, 2.5), 180 + p.rng.signed() * 7, ridgeScale(p, t));
-        p.at(p.anyOf(&props.CLIFFS), t - jitter, CLIFF_EDGE + p.rng.range(0, 2.5), 0 + p.rng.signed() * 7, ridgeScale(p, t + 91));
-        p.at(p.anyOf(&props.CLIFFS), CLIFF_EDGE + p.rng.range(0, 2.5), t + jitter, 90 + p.rng.signed() * 7, ridgeScale(p, t + 213));
-        p.at(p.anyOf(&props.CLIFFS), -CLIFF_EDGE - p.rng.range(0, 2.5), t - jitter, 270 + p.rng.signed() * 7, ridgeScale(p, t + 347));
-    }
-    // Talus and scrub spilling off the feet of the walls, so the base isn't a clean line. Kept
-    // INSIDE HALF-4: the cliff mesh has its own talus reaching ~4 m in, and a boulder dropped
-    // into that shows as a wrong-coloured lump growing out of the rock.
-    var i: i32 = 0;
-    while (i < 90) : (i += 1) {
-        const along = p.rng.range(-CLIFF_EDGE, CLIFF_EDGE);
-        const off = p.rng.range(HALF - 20, HALF - 4);
-        const side = p.rng.intn(4);
-        const pos: [2]f32 = switch (side) {
-            0 => .{ along, -off },
-            1 => .{ along, off },
-            2 => .{ off, along },
-            else => .{ -off, along },
-        };
-        const kind: Kind = if (p.rng.float() < 0.45) .boulder else if (p.rng.float() < 0.7) .rocks else .bush;
-        p.at(kind, pos[0], pos[1], p.rng.range(0, 360), p.rng.range(0.8, 1.5));
-    }
-}
-
-// ── the seeded ground cover ────────────────────────────────────────────────────────────
-// A stratified scatter over the whole world: one candidate per LATTICE cell at a jittered
-// position, so coverage is even without the O(n·m) rejection sampling the small world used.
-// Kind follows the region; DENSITY follows the region times the cover FIELD below.
-// Lattice pitch: ONE candidate per cell of this size, jittered inside it.
-const LATTICE: f32 = 3.3;
 
 // ── THE COVER FIELD (owner's law: vary the density, a lot) ─────────────────────────────
 // A per-region density CONSTANT gives every square metre the same cover, and the result is a
@@ -1093,86 +890,16 @@ pub fn coverField(x: f32, z: f32) f32 {
     return t * t * (3.0 - 2.0 * t) * 1.25;
 }
 
-fn scatterFlora(p: *Placer) void {
-    var buf: [MAX_NEAR]collision.Solid = undefined;
-    const n: i32 = @intFromFloat(@ceil(2 * HALF / LATTICE));
-    var iz: i32 = 0;
-    while (iz < n) : (iz += 1) {
-        var ix: i32 = 0;
-        while (ix < n) : (ix += 1) {
-            const bx = -HALF + (@as(f32, @floatFromInt(ix)) + 0.5) * LATTICE;
-            const bz = -HALF + (@as(f32, @floatFromInt(iz)) + 0.5) * LATTICE;
-            const x = bx + p.rng.signed() * LATTICE * 0.48;
-            const z = bz + p.rng.signed() * LATTICE * 0.48;
-            const r = region(x, z);
-            if (p.rng.float() > r.density * coverField(x, z)) continue;
-            if (onRunway(x, z)) continue;
-            if (p.e.inWater(x, z, 0.97)) continue; // reeds may stand at the rim, nothing mid-lake
-            // Don't grow through the world: the solid grid already knows what is here.
-            const probe = v3(x, 0.2, z);
-            if (collision.blockedBy(probe, 0.35, p.e.nearSolids(probe, 1.4, &buf))) continue;
-            p.at(r.pick(&p.rng), x, z, p.rng.range(0, 360), p.rng.range(0.72, 1.38));
-        }
-    }
-}
-
-// A region's ground-cover character: what it grows, and how much of the lattice it fills WHERE
-// IT IS THICKEST — `density` is the peak, not the average; `coverField` scales it down from
-// there, to nothing in the clearings.
-const Region = struct {
-    density: f32,
-    kinds: []const Kind,
-
-    fn pick(self: Region, rng: *mathx.Rng) Kind {
-        return self.kinds[@intCast(rng.intn(@intCast(self.kinds.len)))];
-    }
-};
-
-// Weighted by REPETITION in the list — the cheapest honest way to weight a small set, and it
-// keeps each region's mix readable as a line of text. Each list should hold at least one LOW
-// ground-hugger (clover / moss / heather): without something filling between the standing plants
-// you get an even spacing of individuals with bare soil showing through, which reads as sparse no
-// matter how many you place.
-const COVER_PLAIN = [_]Kind{
-    .grasstall, .grasstall, .grasstall, .patch,  .patch,       .tuft,
-    .clover,    .clover,    .moss,      .shrub,  .wildflowers, .wildflowers,
-    .flowers,   .thistle,   .foxglove,  .bracken,
-};
-const COVER_WOOD = [_]Kind{
-    .fern,   .fern,      .fern,   .bramble, .bramble,   .thicket,
-    .bush,   .moss,      .moss,   .moss,    .mushrooms, .mushrooms,
-    .bracken, .bracken,  .clover, .nettles, .grasstall, .patch,
-};
-const COVER_MARSH = [_]Kind{
-    .reeds,  .reeds,      .cattails, .cattails, .cattails, .patch,
-    .bush,   .nettles,    .moss,     .moss,     .grasstall, .wildflowers,
-};
-// NB no ivy in the city's general cover, even though it belongs to the city: ivy is a CLIMBER, and
-// dropped on open ground its runners stand up unsupported like beanstalks. It only goes where there
-// is stone to take it — see ivyOnRuins.
-const COVER_CITY = [_]Kind{
-    .tuft,   .tuft, .patch, .nettles, .nettles,     .thistle,
-    .clover, .moss, .shrub, .shrub,   .wildflowers, .grasstall,
-};
-const COVER_DOWNS = [_]Kind{
-    .heather, .heather, .heather, .gorse, .gorse,   .patch,
-    .patch,   .tuft,    .tuft,    .moss,  .thistle, .bracken,
-};
-
-fn region(x: f32, z: f32) Region {
-    if (x < -52) return .{ .density = 0.98, .kinds = &COVER_WOOD }; // thickets under the great trees
-    if (x > 50) return .{ .density = 0.86, .kinds = &COVER_MARSH }; // reed beds, and open silt between
-    if (z < -46) return .{ .density = 0.44, .kinds = &COVER_CITY }; // paved, trodden, sparse
-    if (z > 46) return .{ .density = 0.58, .kinds = &COVER_DOWNS }; // wind-scoured
-    return .{ .density = 0.80, .kinds = &COVER_PLAIN }; // the home plain, as it always was
-}
-
 // ── the indexes ────────────────────────────────────────────────────────────────────────
 
 // Footprint colliders for every solid prop: each kind's local Part list, rotated by the
 // instance yaw and scaled. Each solid carries its part's own TOP height, so arrows thunk into
 // a chapel wall but arc clean over a causeway kerb.
 fn buildSolids(e: *Env) void {
+    // RESET, so this is idempotent: materialize runs it twice (once for the cover scatter to
+    // query, once after, in case a later op added colliders) and an appending version silently
+    // doubled every footprint in the world.
+    e.nsolids = 0;
     for (e.props[0..e.nprops]) |pr| {
         const nfo = props.info(pr.kind);
         const s = pr.scale;
@@ -1405,10 +1132,10 @@ test "the cover field actually varies — real clearings and real thickets" {
     var hi: f32 = -9;
     var sum: f32 = 0;
     var n: f32 = 0;
-    var x: f32 = -HALF;
-    while (x <= HALF) : (x += 3) {
-        var z: f32 = -HALF;
-        while (z <= HALF) : (z += 3) {
+    var x: f32 = -wf.DEFAULT_HALF;
+    while (x <= wf.DEFAULT_HALF) : (x += 3) {
+        var z: f32 = -wf.DEFAULT_HALF;
+        while (z <= wf.DEFAULT_HALF) : (z += 3) {
             const f = coverField(x, z);
             lo = @min(lo, f);
             hi = @max(hi, f);
@@ -1422,25 +1149,79 @@ test "the cover field actually varies — real clearings and real thickets" {
     try std.testing.expect(mean > 0.45 and mean < 0.80); // …and it is not secretly a constant
 }
 
-test "the world's regions cover every reachable position with real ground cover" {
-    // Every point inside the playable bounds must resolve to a region with a non-empty mix and
-    // a plausible density — a gap here is a bald patch of terrain the player can walk to.
-    var x: f32 = -HALF;
-    while (x <= HALF) : (x += 7) {
-        var z: f32 = -HALF;
-        while (z <= HALF) : (z += 7) {
-            const r = region(x, z);
-            try std.testing.expect(r.kinds.len > 0);
-            try std.testing.expect(r.density > 0.1 and r.density <= 1.0);
-            for (r.kinds) |k| try std.testing.expect(props.info(k).flora);
+test "the SHIPPED map parses, and its zones cover every reachable position" {
+    // Against the real file, not a fixture. The map IS the world now, so a map that fails to
+    // parse is a game that starts in a void — and this is the cheapest place to find out, well
+    // before a launch. Every point inside the playable bounds must resolve to a zone with a
+    // non-empty flora mix and a plausible density; a gap is a bald patch you can walk to.
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    var line: usize = 0;
+    wf.load(wf.START_MAP, m, &line) catch |e| {
+        if (e == error.FileNotFound) return error.SkipZigTest; // run from another cwd
+        std.debug.print("{s} failed to parse at line {d}\n", .{ wf.START_MAP, line });
+        return e;
+    };
+    try std.testing.expect(m.nops > 0);
+
+    var x: f32 = -m.half;
+    while (x <= m.half) : (x += 7) {
+        var z: f32 = -m.half;
+        while (z <= m.half) : (z += 7) {
+            const zone = m.zoneAt(x, z) orelse return error.NoZone;
+            try std.testing.expect(zone.nmix > 0);
+            try std.testing.expect(zone.density > 0.1 and zone.density <= 1.0);
+            for (zone.mix[0..zone.nmix]) |k| try std.testing.expect(props.info(k).flora);
         }
     }
 }
 
-test "the cliff ring stands outside the movement clamp" {
-    // PLAY_HALF (game.zig) insets HALF by 2; the rock must be beyond that or the player is
-    // stopped by air with the cliff still ahead of them.
-    try std.testing.expect(CLIFF_EDGE > HALF);
-    // …and inside the grid, or its cells clamp together and the culling degrades.
-    try std.testing.expect(CLIFF_EDGE + props.info(.cliff).bound < GRID_HALF + CELL);
+test "every generator op in the shipped map has its own seed" {
+    // Two ops sharing a seed AND a shape would place the same instances twice, and a seed left
+    // at zero is an op nobody gave a stream to. Both are silent — the world just looks subtly
+    // repetitive — so they are asserted rather than eyeballed.
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    var line: usize = 0;
+    wf.load(wf.START_MAP, m, &line) catch |e| {
+        if (e == error.FileNotFound) return error.SkipZigTest;
+        return e;
+    };
+    for (m.slice(), 0..) |o, i| {
+        if (o.op == .at) continue; // literals draw nothing
+        try std.testing.expect(o.seed != 0);
+        for (m.slice()[0..i]) |prev| {
+            if (prev.op != .at) try std.testing.expect(prev.seed != o.seed);
+        }
+    }
 }
+
+test "the cliff ring stands outside the movement clamp, and inside the grid" {
+    // PLAY_HALF (game.zig) insets the map's half; the rock must be beyond that or the player is
+    // stopped by air with the cliff still ahead of them.
+    try std.testing.expect(RIM_OUT > 0);
+    // CLIFF_BOUND is a hand-copied mirror of the mesh's own bound, because MAX_HALF has to be a
+    // comptime value and `props.info` is a runtime lookup. Pin them together or the ceiling
+    // silently stops matching the rock it is sized for.
+    try std.testing.expectApproxEqAbs(CLIFF_BOUND, props.info(.cliff).bound, 1e-4);
+    // The DEFAULT map must fit inside what the grid can index, or everything past the boundary
+    // piles into the edge cells and a cell that cannot be rejected is thirty props tested one by
+    // one — the culling still works, it just stops being cheap.
+    try std.testing.expect(wf.DEFAULT_HALF <= MAX_HALF);
+    // …and the ground quad has to clear the far corner plus the haze reach, or the plane's own
+    // edge shows as a hard line under the sky from the corners of the world.
+    try std.testing.expect(GROUND_HALF > wf.DEFAULT_HALF + 200);
+}
+
+test "the map's half drives the world, not a constant in this file" {
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("sized");
+    // `blank` writes the default, and a map that says something else is obeyed. This is the
+    // regression that mattered: the clamp used to be comptime, so a resized map moved its cliffs
+    // and its ground cover and left the hero walled in at the old bound.
+    try std.testing.expectApproxEqAbs(wf.DEFAULT_HALF, m.half, 1e-4);
+    m.half = 120;
+    try std.testing.expectApproxEqAbs(@as(f32, 118), m.half - PLAY_INSET, 1e-4);
+}
+

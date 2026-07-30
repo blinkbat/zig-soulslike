@@ -671,6 +671,12 @@ pub const Hero = struct {
     // combat
     vit: combat.Vitals = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX),
     stam: combat.Stamina = .{}, // ER's third bar — the hero's alone; foes don't carry one
+    runes: combat.Runes = .{}, // …and ER's currency, likewise his alone (souls, by ER's name)
+    /// Seconds left on the "that was refused" flash. An empty-bar input does NOTHING in ER, and
+    /// nothing is indistinguishable from a dropped frame — which, under a ZERO INPUT LAG law, is
+    /// the one thing the player must never have to wonder about. So the refusal is SHOWN, on the
+    /// bar that caused it. It changes no mechanics: this is a light on the dashboard.
+    stamRefused: f32 = 0,
     sprinting: bool = false, // hold-B RUN, resolved by the caller — the only CONTINUOUS drain
     // THE WORLD IS HELD (menu up). He keeps breathing, but his COMBAT clocks must not run:
     // the live loop already freezes vit/hurtFlash by simply not ticking them, and stamina rides
@@ -718,7 +724,16 @@ pub const Hero = struct {
         // Stamina belongs in the prologue for the same reason the others do: it must advance
         // exactly ONCE per frame whichever path is running, and hanging it off the live loop
         // instead would leave --shot draining every swing it takes and never refilling.
-        if (!self.held) self.stam.tick(dt, self.sprinting, self.attacking);
+        // ER pauses the refill while attacking, sprinting or blocking. ROLLING counts too: the
+        // bite is charged at the dive and the pool must not start climbing back before he is on
+        // his feet, or a roll chain costs less than the sum of its rolls.
+        if (!self.held) self.stam.tick(dt, self.sprinting, self.attacking or self.rolling);
+        self.stamRefused = @max(0, self.stamRefused - dt);
+        // The rune counter's ROLL. In the prologue for the same reason as the rest: it must advance
+        // exactly once per frame whichever path is running. NOT gated on `held` — it is a display
+        // animation, not a combat clock, and a counter frozen mid-tally under the pause menu reads
+        // as the payout having been dropped.
+        self.runes.tick(dt);
     }
 
     pub fn update(self: *Hero, dt: f32, movedDist: f32, speed: f32, moveYaw: ?f32) void {
@@ -734,7 +749,10 @@ pub const Hero = struct {
     // so a stray call can't leave rolling+attacking latched together).
     pub fn startRoll(self: *Hero, dir: rl.Vector3) void {
         if (self.rolling or self.attacking) return;
-        if (!self.stam.afford(combat.STAM_ROLL)) return; // a no-op while LOCKOUT is off
+        if (!self.stam.canAct()) {
+            self.stamRefused = combat.STAM_REFUSE_FLASH;
+            return;
+        }
         self.stam.spend(combat.STAM_ROLL);
         var d = v3(dir.x, 0, dir.z);
         if (mathx.lenXZ(d) < 0.1) d = mathx.headingDir(self.facing);
@@ -821,7 +839,10 @@ pub const Hero = struct {
     pub fn startAttack(self: *Hero, kind: Attack) void {
         if (self.rolling or self.attacking) return;
         const cost: f32 = if (kind == .heavy) combat.STAM_HEAVY else combat.STAM_LIGHT;
-        if (!self.stam.afford(cost)) return; // a no-op while LOCKOUT is off
+        if (!self.stam.canAct()) {
+            self.stamRefused = combat.STAM_REFUSE_FLASH;
+            return;
+        }
         self.stam.spend(cost);
         self.attacking = true;
         self.atkHeavy = kind == .heavy;
@@ -1036,6 +1057,7 @@ pub const Hero = struct {
         self.hurtFlash = 0;
         self.vit = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX);
         self.stam.reset();
+        self.stamRefused = 0; // a respawn must not inherit the last life's refusal flash
         self.sprinting = false;
         self.pos = self.spawnPos;
         self.facing = self.spawnFacing;

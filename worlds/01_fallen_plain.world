@@ -1,0 +1,318 @@
+version: 1
+name: The Fallen Plain
+half: 280.0
+runway: -3.40 -44.00 3.40 30.00
+
+zone: wood -400.0 -400.0 -52.0 400.0 0.980 fern,fern,fern,bramble,bramble,thicket,bush,moss,moss,moss,mushrooms,mushrooms,bracken,bracken,clover,nettles,grasstall,patch
+zone: marsh 50.0 -400.0 400.0 400.0 0.860 reeds,reeds,cattails,cattails,cattails,patch,bush,nettles,moss,moss,grasstall,wildflowers
+zone: city -400.0 -400.0 400.0 -46.0 0.440 tuft,tuft,patch,nettles,nettles,thistle,clover,moss,shrub,shrub,wildflowers,grasstall
+zone: downs -400.0 46.0 400.0 400.0 0.580 heather,heather,heather,gorse,gorse,patch,patch,tuft,tuft,moss,thistle,bracken
+zone: plain -400.0 -400.0 400.0 400.0 0.800 grasstall,grasstall,grasstall,patch,patch,tuft,clover,clover,moss,shrub,wildflowers,wildflowers,flowers,thistle,foxglove,bracken
+clear: -98.0 -16.0 18.0
+clear: -74.0 30.0 15.0
+
+at: broken -6 -16 0 1
+at: pillar 6 -16 12 1
+at: pillar -6 -26 0 0.95
+at: broken 6 -26 0 1.05
+at: pillar -6 -36 -6 1.05
+at: broken 6 -36 20 0.95
+at: arch 0 -31 0 1
+at: grace 3 6.5 0 1
+at: wall -14 -14 78 1.1
+at: wall 15 -40 -12 1.2
+at: wall -24 -28 100 0.9
+at: tree 16 -31 140 1.3
+at: tree -20 -38 70 0.9
+at: tree 24 6 200 1
+at: graves -11 -29 15 1
+at: graves -14 -33 -40 0.9
+at: graves 13 -26 60 0.8
+at: sword -2.8 -21 30 1
+at: sword 10 -8 -70 0.9
+at: sword -12.5 -31 120 1.1
+at: block 13 -22 70 1
+at: block -9 -44 30 1
+at: block 20 -18 55 1
+at: block -22 -6 -35 0.9
+at: banner 7.5 -11 -18 1
+at: banner -7.5 -33 155 1.1
+at: rubble -4 -34 10 1
+at: rubble -8 -20 0 1
+at: glow 2.1 5.5 40 1
+at: glow 4.2 7.6 210 0.85
+at: flowers -11.8 -30.6 75 1
+at: flowers 12.4 -27.2 150 0.9
+at: reeds -13.2 -15.7 25 1.15
+at: flowers -9.6 -28.2 20 0.95
+at: flowers -13.5 -27.8 130 1.05
+at: flowers -15.4 -31.4 250 0.9
+at: flowers -12.2 -34.4 300 1
+at: flowers -9.4 -32.6 60 0.85
+at: flowers 11 -24.2 200 0.9
+at: flowers 14.6 -24.8 20 0.95
+at: brazier -3.5 -30.2 0 1
+at: paving 0.6 -19 40 1.1
+at: paving -0.8 -38 15 1
+ivy: ivy -30 -46 30 26 0.85 1.5 seed=1001
+at: lantern -4.6 -22 0 1
+at: barrels 9.5 -16 50 0.95
+line: pillar -6.5 -48 -6.5 -112 11 0.85 1.15 seed=1012 chance=1 mix=pillar,broken,broken
+line: pillar 6.5 -48 6.5 -112 11 0.85 1.15 seed=1013 chance=1 mix=pillar,broken,broken
+belt: paving -3.2 -112 3.2 -48 6 0.9 1.4 seed=1014
+belt: rubble -5 -112 5 -48 5 0.8 1.3 seed=1015
+disc: paving 0 -80 0 13 14 1 1.5 seed=1016
+at: statue -9.5 -74 150 1.25
+at: statue 9 -86 20 1.15
+at: brazier -5 -79 0 1.1
+at: brazier 5.4 -81.5 0 1
+ring: broken 0 -80 15.5 12 0.8 1.2 skip=5 seed=1017
+at: monolith 0 -80 53.984127 1.35
+belt: rubble -18 -94 18 -66 16 0.8 1.4 seed=1018
+at: chapel -30 -66 270 1
+at: torch -32.4 -67.9 316.2509 0.95
+at: torch -32.4 -64.1 73.87982 0.95
+at: torch -28.6 -64.1 19.865921 0.95
+at: brazier -24.8 -65.4 0 0.95
+belt: graves -39 -74 -33 -58 5 0.85 1.15 seed=1019
+belt: rubble -37 -75 -23 -57 7 0.8 1.2 seed=1020
+belt: flowers -39 -75 -32 -57 8 0.8 1.1 seed=1021
+at: watchtower 36 -88 20 1
+at: torch 36.713963 -87.5745 343.4176 0.9
+at: brazier 34.768726 -91.3829 0 1
+belt: rubble 30 -94 42 -82 5 0.8 1.3 seed=1022
+belt: block 28 -96 44 -80 3 0.8 1.1 seed=1023
+at: watchtower -52 -104 200 1
+at: torch -52.2126 -104.00495 143.86153 0.9
+at: brazier -50.768726 -100.6171 0 1
+belt: rubble -58 -110 -46 -98 5 0.8 1.3 seed=1024
+belt: block -60 -112 -44 -96 3 0.8 1.1 seed=1025
+line: wall -46 -120 46 -120 7.4 0.9 1.25 seed=1026
+line: wall -46 -120 -46 -58 7.4 0.9 1.25 seed=1027
+line: wall 46 -120 46 -62 7.4 0.9 1.25 seed=1028
+at: cottage 20 -58 86.52664 1.1265762
+belt: rubble 15 -63 25 -53 3 0.8 1.3 seed=1029
+at: paving 18.025572 -63.746544 210.48729 1.2873824
+at: cottage 27 -64 9.38909 0.9549689
+belt: rubble 22 -69 32 -59 3 0.8 1.3 seed=1030
+at: cottage 19 -70 93.00073 1.3202649
+belt: rubble 14 -75 24 -65 3 0.8 1.3 seed=1031
+at: cottage 28 -76 1.7146258 0.95355207
+belt: rubble 23 -81 33 -71 3 0.8 1.3 seed=1032
+at: cottage -18 -92 276.2871 1.225119
+belt: rubble -23 -97 -13 -87 3 0.8 1.3 seed=1033
+at: cottage -25 -99 183.64934 1.2434168
+belt: rubble -30 -104 -20 -94 3 0.8 1.3 seed=1034
+at: cottage -16 -105 0.38069773 1.0856084
+belt: rubble -21 -110 -11 -100 3 0.8 1.3 seed=1035
+at: cottage 24 -100 197.99501 1.2561555
+belt: rubble 19 -105 29 -95 3 0.8 1.3 seed=1036
+at: cottage 31 -107 98.09985 1.3246107
+belt: rubble 26 -112 36 -102 3 0.8 1.3 seed=1037
+at: cottage -30 -86 97.644516 1.2851979
+belt: rubble -35 -91 -25 -81 3 0.8 1.3 seed=1038
+at: cart 4.6 -55 28 1
+at: cart -5.8 -97 200 0.95
+belt: sword -20 -110 20 -50 9 0.85 1.15 seed=1039
+belt: banner -24 -112 24 -52 6 0.9 1.2 seed=1040
+belt: block -40 -118 40 -50 26 0.85 1.35 seed=1041
+belt: tree -42 -118 42 -48 16 0.8 1.25 seed=1042
+at: well -12 -62 0 1.05
+at: well 16.5 -95 0 1
+at: shrine 5.5 -50 186 1
+at: gibbet -8.5 -54 200 1.05
+at: gibbet 11 -110 20 0.95
+at: lantern 4.2 -52 0 0.9257024
+at: lantern -4.2 -60.5 0 0.99195755
+at: lantern 4.2 -69 0 1.0168699
+at: lantern -4.2 -77.5 0 0.98294085
+at: lantern 4.2 -86 0 1.0628136
+at: lantern -4.2 -94.5 0 1.0609455
+at: lantern 4.2 -103 0 0.9532882
+at: lantern -4.2 -111.5 0 1.0368644
+belt: stairs -42 -116 42 -50 14 0.85 1.3 seed=1043
+belt: sarcophagus -40 -114 40 -52 12 0.9 1.25 seed=1044
+belt: barrels -38 -112 38 -50 18 0.85 1.2 seed=1045
+belt: woodpile -36 -110 36 -52 10 0.85 1.15 seed=1046
+belt: bones -40 -116 40 -48 22 0.85 1.3 seed=1047
+belt: cart -34 -112 34 -50 8 0.85 1.1 seed=1048
+belt: fence -38 -112 38 -52 14 0.9 1.2 seed=1049
+ivy: ivy -46 -122 46 -46 0.85 1.5 seed=1050
+belt: nettles -44 -120 44 -48 120 0.85 1.35 seed=1051
+belt: sapling -44 -120 44 -48 70 0.8 1.2 seed=1052
+belt: thicket -44 -120 44 -48 40 0.85 1.3 seed=1053
+at: gate 2 -124 4 1.35
+at: tower -34 -132 10 1.4
+at: tower 44 -126 -25 1.15
+at: tower -96 -128 40 1.2
+at: tower 104 -120 15 1.3
+at: tower -128 -66 55 1.1
+at: tower 132 -78 -30 1
+at: water 104 6 0 3.1
+at: water 62 -52 40 1.05 r1=0.004
+at: causeway 74 8 6 1.35
+at: causeway 86.5 9.4 10 1.35
+belt: rocks 66 0 82 16 8 0.8 1.3 seed=1054
+disc: broken 104 6 6 34 9 0.8 1.2 seed=1055 mix=broken,broken,broken,block,block
+disc: willow 104 6 36 46 11 0.85 1.3 seed=1056
+disc: reeds 104 6 26 54 420 0.9 1.55 seed=1057 mix=reeds,reeds,cattails,cattails
+disc: lilypads 88.64858 28.776575 0 4.5 7 0.85 1.6 seed=1058 bias=1
+disc: lilypads 86.73065 -5.575301 0 4.5 7 0.85 1.6 seed=1059 bias=1
+disc: lilypads 95.96979 26.054014 0 4.5 7 0.85 1.6 seed=1060 bias=1
+disc: lilypads 106.1243 -10.50333 0 4.5 7 0.85 1.6 seed=1061 bias=1
+disc: lilypads 92.89533 -7.247304 0 4.5 7 0.85 1.6 seed=1062 bias=1
+disc: lilypads 108.8747 31.630056 0 4.5 7 0.85 1.6 seed=1063 bias=1
+disc: lilypads 108.84197 26.946226 0 4.5 7 0.85 1.6 seed=1064 bias=1
+disc: lilypads 87.7966 -2.5268059 0 4.5 7 0.85 1.6 seed=1065 bias=1
+disc: lilypads 108.361465 -26.664608 0 4.5 7 0.85 1.6 seed=1066 bias=1
+disc: lilypads 84.67261 3.3382747 0 4.5 7 0.85 1.6 seed=1067 bias=1
+disc: lilypads 119.98487 12.172785 0 4.5 7 0.85 1.6 seed=1068 bias=1
+disc: lilypads 101.84826 -10.3831005 0 4.5 7 0.85 1.6 seed=1069 bias=1
+disc: lilypads 128.2871 10.513048 0 4.5 7 0.85 1.6 seed=1070 bias=1
+disc: lilypads 91.95677 -12.262703 0 4.5 7 0.85 1.6 seed=1071 bias=1
+disc: lilypads 62 -52 1 9 14 0.8 1.3 seed=1072
+belt: boulder 62 -40 150 55 26 0.8 1.5 seed=1073
+belt: rocks 58 -50 152 60 44 0.8 1.4 seed=1074
+belt: bush 60 -55 152 62 60 0.8 1.3 seed=1075
+belt: thicket 58 -58 152 62 40 0.85 1.4 seed=1076
+belt: nettles 56 -60 152 62 70 0.85 1.3 seed=1077
+belt: reeds 52 -66 78 -34 90 0.9 1.4 seed=1078
+belt: cattails 52 -66 78 -34 60 0.9 1.4 seed=1079
+belt: willow 52 -62 74 -40 8 0.8 1.1 seed=1080
+belt: log 62 -30 148 50 14 0.8 1.2 seed=1081
+belt: outcrop 60 -50 150 58 16 0.85 1.3 seed=1082
+belt: sapling 58 -55 152 60 45 0.8 1.2 seed=1083
+belt: birch 56 -56 152 60 16 0.8 1.15 seed=1084
+at: campfire 88 34 0 1
+at: log 90.6 35.4 20 1
+at: cart 85 37.5 130 0.9
+at: barrels 86.6 31.6 70 0.95
+at: fence 91 30 24 0.95
+at: shrine 72 14 100 1
+at: lantern 68.5 8.5 0 1
+at: tower 146 30 -40 1.1
+at: monolith 70 42 221.90613 1.1
+belt: bigtree -152 -120 -54 130 260 0.68 1.24 seed=1085 field=0 gAxis=x gA=-54 gB=-84 gFloor=0.18 avoid=runway,water,clear mix=bigtree,bigtree,bigtree2,bigtree2,bigtree3,bigtree3,bigtree3,bigtree3,conifer,conifer,conifer,conifer,birch,birch,birch,snag,snag,tree
+belt: sapling -152 -125 -54 132 150 0.8 1.35 seed=1086
+belt: thicket -152 -125 -54 132 110 0.85 1.45 seed=1087
+belt: stump -150 -120 -56 130 60 0.8 1.3 seed=1088
+belt: log -150 -120 -56 130 55 0.8 1.3 seed=1089
+belt: boulder -152 -125 -56 132 46 0.8 1.6 seed=1090
+belt: rocks -152 -125 -56 132 60 0.8 1.4 seed=1091
+belt: outcrop -152 -125 -58 132 24 0.85 1.4 seed=1092
+belt: fern -152 -125 -54 132 220 0.8 1.35 seed=1093
+belt: bramble -152 -125 -54 132 150 0.8 1.4 seed=1094
+belt: bush -152 -125 -52 132 130 0.8 1.4 seed=1095
+belt: mushrooms -152 -125 -54 132 130 0.85 1.5 seed=1096
+belt: bracken -152 -125 -54 132 120 0.85 1.4 seed=1097
+belt: moss -152 -125 -54 132 140 0.9 1.6 seed=1098
+belt: nettles -150 -120 -56 130 70 0.85 1.3 seed=1099
+ring: mushrooms -120 52 3.2 9 0.9 1.4 skip=4 seed=1100
+belt: cairn -145 -110 -60 120 7 0.9 1.2 seed=1101
+belt: bones -148 -118 -58 128 9 0.85 1.2 seed=1102
+ring: monolith -98 -16 8.5 9 0.9 1.25 skip=6 seed=1103
+at: monolith -98 -16 30 0.7
+belt: flowers -106 -24 -90 -8 12 0.8 1.2 seed=1104
+belt: glow -104 -22 -92 -10 5 0.9 1.2 seed=1105
+at: brazier -93 -11 0 1
+at: cottage -74 30 270 1.05
+at: campfire -69.17 30 0 1.1
+at: log -69.6 33 70 1
+at: stump -70.8 26.6 0 1.15
+at: cart -67.5 29 190 0.95
+at: torch -72.4 30.4 0 0.9
+at: woodpile -77.6 32.6 12 1.05
+at: well -66.5 34.5 0 1
+at: fence -72 38 6 1.1
+at: fence -64.5 38.6 -8 1
+at: barrels -79 27.8 40 1
+at: lantern -69.8 25.4 0 1
+belt: log -80 24 -66 38 10 0.85 1.2 seed=1106
+belt: bramble -84 20 -64 40 14 0.8 1.2 seed=1107
+belt: wildflowers -83 21 -65 39 18 0.85 1.25 seed=1108
+belt: mushrooms -82 22 -66 38 10 0.9 1.3 seed=1109
+belt: bigtree -120 52 40 150 18 0.7 1.05 seed=1110
+belt: tree -130 48 60 152 32 0.8 1.25 seed=1111
+belt: snag -130 50 70 150 12 0.8 1.1 seed=1112
+belt: boulder -140 46 140 152 40 0.8 1.7 seed=1113
+belt: rocks -140 46 145 154 60 0.8 1.4 seed=1114
+belt: outcrop -140 46 145 152 34 0.85 1.45 seed=1115
+belt: scree -140 48 145 152 26 0.85 1.4 seed=1116
+belt: cairn -120 52 120 150 16 0.9 1.25 seed=1117
+belt: graves -60 60 60 140 20 0.8 1.2 seed=1118
+belt: sarcophagus -50 66 50 130 7 0.9 1.2 seed=1119
+belt: monolith -110 60 110 148 11 0.9 1.3 seed=1120
+belt: wall -100 58 100 145 12 0.9 1.2 seed=1121
+belt: shrub -145 44 145 155 90 0.8 1.4 seed=1122
+belt: gorse -145 44 145 155 110 0.85 1.5 seed=1123
+belt: heather -148 44 148 156 200 0.9 1.6 seed=1124
+belt: thistle -140 46 140 152 90 0.85 1.3 seed=1125
+belt: sword -40 55 40 120 9 0.9 1.1 seed=1126
+belt: bones -80 58 80 140 12 0.85 1.25 seed=1127
+at: watchtower 22 98 350 1
+at: torch 22.646893 98.20538 260.72687 0.9
+at: brazier 22.625134 94.45469 0 1
+belt: rubble 16 92 28 104 5 0.8 1.3 seed=1128
+belt: block 14 90 30 106 3 0.8 1.1 seed=1129
+at: tower -74 138 25 1
+at: tower 96 132 -15 1.15
+at: campfire -34 74 0 1
+at: log -32 76.2 30 1
+at: cairn -30.5 71 0 1.15
+at: gibbet 6 62 30 1
+at: shrine -4.5 88 186 1
+at: lantern 3 104 0 1
+edge: cliff 6.5 90 0.92 1.24 seed=1130 mix=cliff,cliff2,cliff3
+belt: fern 6.163364 5.057564 6.4073987 6.9361725 4 0.85 1.15 seed=1135
+at: cliff4 -6.976265 20.026823 0 1.06
+at: cliff2 -16.332672 11.457226 -65 0.94
+at: cliff 6.0736103 24.729649 -30 1.13
+at: cliff6 25.703642 23.932638 0 0.98
+at: bigtree3 34.81001 15.895905 65 1.08
+at: cliff5 37.946518 2.0594444 85 0.92
+at: cliff4 33.88849 -10.500702 150 1.16
+at: sapling 28.896612 18.261948 -80 0.69999987
+at: boulder 33.567192 -2.5694323 0 1.8999991
+at: boulder 34.357544 -1.6565113 0 1
+at: boulder 35.735546 -2.081213 0 1
+at: rocks 36.042847 -1.2849226 0 1
+at: rocks 32.20282 -4.793005 0 1
+at: rocks 34.54863 1.4906998 0 2.5499985
+at: sapling 27.579033 19.121225 0 1
+at: scree 28.527107 19.908676 0 1
+at: scree 26.932539 19.43559 0 1
+at: scree 29.648 16.555735 0 1
+at: scree 30.755537 15.48067 0 1
+at: outcrop 31.50979 18.366009 0 1
+at: outcrop 30.223083 19.818571 0 1
+belt: patch 28.861532 17.424274 28.861532 17.424274 4 0.85 1.15 seed=1136
+belt: patch 23.837065 20.123394 23.837065 20.123394 4 0.85 1.15 seed=1138
+belt: grasstall 31.515175 15.047656 31.515175 15.047656 4 0.85 1.15 seed=1139
+belt: grasstall 28.747974 17.592213 28.747974 17.592213 4 0.85 1.15 seed=1140
+belt: grasstall 24.919773 20.580845 24.919773 20.580845 4 0.85 1.15 seed=1141
+belt: patch 31.709148 16.298782 31.709148 16.298782 4 0.85 1.15 seed=1142
+belt: clover 30.769503 14.6680155 30.769503 14.6680155 4 0.85 1.15 seed=1143
+belt: clover 32.027096 11.330907 32.03635 11.330907 4 0.85 1.15 seed=1144
+belt: moss 34.24675 9.750492 34.24675 9.750492 4 0.85 1.15 seed=1145
+belt: moss 33.136726 10.538911 33.136726 10.538911 4 0.85 1.15 seed=1146
+belt: moss 31.391012 14.762978 31.391012 14.762978 4 0.85 1.15 seed=1147
+belt: thistle 24.362614 20.1786 24.362614 20.1786 4 0.85 1.15 seed=1149
+belt: foxglove 18.11321 23.612991 18.11321 23.612991 4 0.85 1.15 seed=1150
+belt: glow 17.904926 24.57586 17.904926 24.57586 4 0.85 1.15 seed=1152
+belt: glow 19.192635 22.327652 19.192635 22.327652 4 0.85 1.15 seed=1153
+at: bigtree3 -117.52747 -13.46286 70 1
+at: bigtree3 -112.9496 -21.635458 0 1.4999995
+at: bigtree3 -91.96587 -3.935358 0 1
+at: bigtree3 -105.547035 -23.7589 40 1.2999997
+cover: 3.3 0.72 1.38 seed=1131
+
+soil: 0x1887 1x2 0x62 1x2 0x59 1x2 0x1 1x3 0x58 1x6 0x60 2x2 1x1 0x61 2x2 1x2
+soil: 0x60 2x1 0x10273
+
+foe: toad 13.50 -14.00 215.0 1.08 0.00
+foe: toad -13.00 -20.00 70.0 0.94 0.37
+foe: toad 14.50 -8.00 250.0 1.00 0.61
+foe: toad -12.50 -27.00 120.0 1.14 0.83
+foe: archer -16.00 -22.00 60.0 1.00 0.20
+foe: archer 17.50 -34.00 210.0 1.04 0.70
+foe: ogre 3.00 -50.00 0.0 1.00 0.40

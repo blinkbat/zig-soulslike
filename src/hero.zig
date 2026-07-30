@@ -54,8 +54,13 @@ pub const STRAFE_SPEED: f32 = 0.85;
 // local to each rig.
 pub const SEG_THIGH = 0.245; // hip → knee   (femur)   .530-.285
 pub const SEG_SHANK = 0.246; // knee → ankle (tibia)   .285-.039
-const SEG_UPARM = 0.188; // shoulder → elbow        .818-.630
-const SEG_FOREARM = 0.145; // elbow → wrist         .630-.485
+// The ARM pair is pub for the same reason and with one caveat: a creature whose arms are its own
+// (the OGRE's are deliberately heavier — 0.194 / 0.153) keeps its own numbers, but a rig documented
+// as carrying "the hero's exact anthropometry" — the skeletal ARCHER — must READ these rather than
+// re-state them. It held byte-identical copies under a comment saying they matched the table here,
+// which is the drift hazard the LEG comment above was written for, one file over.
+pub const SEG_UPARM = 0.188; // shoulder → elbow        .818-.630
+pub const SEG_FOREARM = 0.145; // elbow → wrist         .630-.485
 
 // Skeleton joints (indices). Every joint owns exactly one drawn bone mesh.
 const N = 18;

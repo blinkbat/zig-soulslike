@@ -293,7 +293,10 @@ lines where the concerns genuinely part company, and each new file is named so t
                  long cooldown — see below. Slowish arrows that STICK and fade; their homing is a
                  LAUNCH NUDGE that fades out over `ARROW_HOME_FADE`, so a sidestep beats a shot.
                  Arrows are a pool owned by `game.zig` and they respect COVER (each flight-steps
-                 against `env.solids()`, thunking into stone while still arcing over low kerbs).
+                 against the solids in its own travel neighbourhood — `game.arrowCover` →
+                 `env.nearSolids` — thunking into stone while still arcing over low kerbs. NOT a
+                 whole-list `env.solids()`: that accessor was removed for having no caller, and every
+                 real path goes through the prop grid on purpose).
 - `ogre.zig`   — THE ONE-EYED OGRE + the `Grief`. A giant (~2x hero), hunched, hefting a knotted
                  CLUB, one dull-amber eye. FOUNDED ON THE HERO RIG but grown to 24 bones (a hinged
                  JAW, TOES, a HUMP, a shoulder GIRDLE); three are inserted ABOVE existing bones, so

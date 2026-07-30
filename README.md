@@ -50,10 +50,11 @@ and bracken; boulders, outcrops, scree and cairns; wells, shrines, post lanterns
 woodpiles, sarcophagi, stair fragments, gibbets and bones; torches, braziers and campfires that
 light what's around them.
 
-**17,292 static props and 1,836 colliders, of which a frame draws about 975 in the city and 1,250 in
+**17,253 static props and 1,859 colliders, of which a frame draws about 975 in the city and 1,250 in
 the wood** (read straight off Debug > Stats in `shots/91_stats_city.png` and `92_stats_wood.png`; the
-first two numbers are pinned by `env`'s "replaying the SHIPPED map produces a stable world" test, so
-they cannot drift out of this paragraph again): props are
+first two numbers are pinned by `env`'s "replaying the SHIPPED map produces a stable world" test —
+this paragraph is the copy that went stale when the props rework moved them, so move it together
+with that test and AGENTS.md's own line, all three or none): props are
 indexed into a uniform grid and culled per cell
 against the view frustum, per-kind view distances, and — for the sun's depth pass — whether a
 caster's shadow can physically reach the shadow box. Collision and arrow flight query the same grid.

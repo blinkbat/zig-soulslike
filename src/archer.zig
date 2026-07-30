@@ -84,8 +84,11 @@ const H: f32 = heromod.H;
 // measured off them, so a local copy that drifted would make this skeleton's planted feet skate.
 const SEG_THIGH = heromod.SEG_THIGH;
 const SEG_SHANK = heromod.SEG_SHANK;
-const SEG_UPARM = 0.188;
-const SEG_FOREARM = 0.145;
+// …and so do the ARMS, from the same source. These were byte-identical copies of hero.zig's numbers
+// under the comment above claiming they matched its table — two numbers that MUST agree, written
+// down twice, waiting for the first retune. (The OGRE's are genuinely its own and stay local.)
+const SEG_UPARM = heromod.SEG_UPARM;
+const SEG_FOREARM = heromod.SEG_FOREARM;
 
 fn restPositions() [N]rl.Vector3 {
     const hx = 0.090; // hip half-separation
@@ -542,7 +545,7 @@ pub const Archer = struct {
         return self.state == .dead;
     }
     pub fn flashFrac(self: *const Archer) f32 {
-        return mathx.clampF(self.flash / FLASH_DUR, 0, 1);
+        return foe.flashFrac(self.flash);
     }
     // Off the ground only during the backstep's flight — the one time it leaves the earth.
     pub fn airborne(self: *const Archer) bool {
@@ -550,9 +553,7 @@ pub const Archer = struct {
     }
 
     fn faceToward(self: *Archer, target: rl.Vector3, dt: f32) void {
-        const d = mathx.dirXZ(self.pos, target);
-        if (mathx.lenXZ(d) < 1e-3) return;
-        self.facing = mathx.approachAngle(self.facing, mathx.headingXZ(d), TURN_RATE * dt);
+        foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt); // shared — see foe.zig
     }
 
     // The true nock point — where the arrow actually sits on the live string this frame, so

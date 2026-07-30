@@ -743,7 +743,10 @@ fn readGrid(it: *std.mem.TokenIterator(u8, .any), cells: []u8, at: usize, lim: u
         const v = std.fmt.parseInt(u8, tok[0..xi], 10) catch return ParseError.BadNumber;
         const run = std.fmt.parseInt(usize, tok[xi + 1 ..], 10) catch return ParseError.BadNumber;
         if (v >= lim) return ParseError.BadKind;
-        if (cur + run > cells.len) return ParseError.ExtraField;
+        // SUBTRACT, never add: `run` is a usize parsed straight out of the file, so `cur + run`
+        // overflows on any run near usize's ceiling — an integer-overflow panic in Debug, and in
+        // ReleaseFast a wrapped comparison that passes and then @memsets a wrapped range.
+        if (run > cells.len - cur) return ParseError.ExtraField;
         @memset(cells[cur .. cur + run], v);
         cur += run;
     }

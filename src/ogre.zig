@@ -171,7 +171,13 @@ const lerpF = mathx.lerpF;
 // A half-sine pulse over the window [a,b] of a 0..1 stride phase, zero outside it — the shape of
 // any once-per-stride event that owns a slice of the cycle rather than the whole of it (the
 // toe-off drive, the swing-leg toe lift). A full-cycle sine would smear it over both.
-fn bump(x: f32, a: f32, b: f32) f32 {
+//
+// NOT `bump`, which is what this was called: hero.zig has its OWN private `bump(u, a, b)` and it is
+// a DIFFERENT CURVE — a product of two smoothsteps about the window's midpoint, flatter-topped and
+// with zero slope at both ends. Two shapes under one name in one codebase is a reader carrying the
+// wrong graph in their head from whichever file they read first, and the whole reason the ogre's
+// swing knots are re-measured rather than eyeballed is that nobody should have to guess.
+fn stridePulse(x: f32, a: f32, b: f32) f32 {
     if (x <= a or x >= b) return 0;
     return mathx.sinf(std.math.pi * (x - a) / (b - a));
 }
@@ -564,7 +570,7 @@ pub const Ogre = struct {
         return self.state == .dead;
     }
     pub fn flashFrac(self: *const Ogre) f32 {
-        return mathx.clampF(self.flash / FLASH_DUR, 0, 1);
+        return foe.flashFrac(self.flash);
     }
     // Grounded always (no hops) — collision keeps it out of the hero/world.
     pub fn airborne(self: *const Ogre) bool {
@@ -576,9 +582,7 @@ pub const Ogre = struct {
         return mathx.headingDir(self.facing);
     }
     fn faceToward(self: *Ogre, target: rl.Vector3, dt: f32) void {
-        const d = mathx.dirXZ(self.pos, target);
-        if (mathx.lenXZ(d) < 1e-3) return;
-        self.facing = mathx.approachAngle(self.facing, mathx.headingXZ(d), TURN_RATE * dt);
+        foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt); // shared — see foe.zig
     }
 
     // ── per-frame update; returns the blow the ogre landed on the HERO this frame (null if
@@ -670,7 +674,9 @@ pub const Ogre = struct {
                 if (self.t >= SWIPE_WIND_DUR) self.enter(.swipe);
             },
             .swipe => {
-                self.facing = mathx.approachAngle(self.facing, mathx.headingXZ(mathx.dirXZ(self.pos, hero)), SWIPE_TURN * dt);
+                // Through the SHARED turn (at the swipe's own faster rate), not a fourth copy of the
+                // same arc written inline — which also picks up its zero-length guard.
+                foe.faceToward(self.pos, &self.facing, hero, SWIPE_TURN, dt);
                 const k = mathx.smoothstep(0, SWIPE_DUR, self.t);
                 self.setSwipe(k);
                 if (self.t >= SWIPE_DUR * SWIPE_IMPACT_K) {
@@ -1128,13 +1134,16 @@ pub const Ogre = struct {
         const rollZ = 16.0 * dk2 + 9.0 * hstun + IDLE_ROLL * wshift * idleAmt + lumber + 1.5 * self.judder * mathx.sinf(self.t * 44.0);
         const drop = -0.24 * H * hstun; // pelvis sinks on the heavy stagger (toward a knee)
         const collapse = lerpF(hipY, 0.32 * H, dk1); // the knees give — the pelvis comes down on dk1
-        const pelvY = (if (dead) collapse else hipY + bob + catchDip + idleBob + braceSink + drop) + sink;
+        const pelvY = if (dead) collapse else hipY + bob + catchDip + idleBob + braceSink + drop;
         // The pelvis HEIGHT (and sway) must scale by `fs` too — the leg-offset children ride
         // through scaleM, so the pelvis world height must scale in lockstep or the legs sink at
         // SCALE≠1. The placement tr(pos) stays unscaled; scaleM FIRST → it scales about its pelvis.
+        // `sink` rides OUTSIDE those terms (like archer.zig's): it is already in WORLD units
+        // (−0.95 · scale · fade), so folding it into pelvY put it through `fs` a SECOND time and
+        // buried the dissipating corpse about twice as deep as authored.
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul3(rz(rollZ), rx(leanX), ry(prot)),
-            mul(tr((sway + idleSway) * fs, pelvY * fs, 0), ry(facingDeg)),
+            mul(tr((sway + idleSway) * fs, pelvY * fs + sink, 0), ry(facingDeg)),
             tr(self.pos.x, 0, self.pos.z),
         ));
 
@@ -1173,7 +1182,7 @@ pub const Ogre = struct {
     // them under; each footfall jostles them a degree or two.
     fn toePose(self: *const Ogre, wx: *[N]rl.Matrix, ph: f32, m: f32, curl: f32, toe: usize) void {
         const p = ph - @floor(ph);
-        const roll = (TOE_PUSH * bump(p, 0.28, 0.62) - TOE_LIFT * bump(p, 0.62, 1.0)) * m;
+        const roll = (TOE_PUSH * stridePulse(p, 0.28, 0.62) - TOE_LIFT * stridePulse(p, 0.62, 1.0)) * m;
         setLocal(wx, toe, self.rest, rx(roll + TOE_GRIP * self.legBrace + TOE_CURL * curl + 2.0 * self.jolt * m));
     }
 

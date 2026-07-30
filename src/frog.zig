@@ -307,14 +307,12 @@ pub const Frog = struct {
     }
     // Normalized 0..1 strength of the blood-red hit flash (drives gfx's hitFlash uniform).
     pub fn flashFrac(self: *const Frog) f32 {
-        return mathx.clampF(self.flash / FLASH_DUR, 0, 1);
+        return foe.flashFrac(self.flash);
     }
 
     // ── actions ─────────────────────────────────────────────────────────────────────
     fn faceToward(self: *Frog, target: rl.Vector3, dt: f32) void {
-        const d = mathx.dirXZ(self.pos, target);
-        if (mathx.lenXZ(d) < 1e-3) return;
-        self.facing = mathx.approachAngle(self.facing, mathx.headingXZ(d), TURN_RATE * dt);
+        foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt); // shared — see foe.zig
     }
 
     // Begin a hop toward `to` (clamped to bounds); `lunge` = the big committed leap.

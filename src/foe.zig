@@ -38,6 +38,24 @@ pub fn closestApproach(bodyR: f32) f32 {
     return bodyR + HERO_R;
 }
 
+/// TURN TOWARD A POINT at `rate` rad/s, shortest arc, ignoring a target you are standing on. Each
+/// foe carried a byte-identical copy of these three lines (frog / archer / ogre), differing only in
+/// which of its own TURN_RATEs it reached for — the same WET failure `applyShove` and `strike` live
+/// here to prevent. The zero-length guard is the load-bearing part: `headingXZ` of a zero vector is
+/// atan2(0, 0) = 0, so a hero standing exactly on a foe would otherwise snap its facing to +Z.
+pub fn faceToward(pos: rl.Vector3, facing: *f32, target: rl.Vector3, rate: f32, dt: f32) void {
+    const d = mathx.dirXZ(pos, target);
+    if (mathx.lenXZ(d) < 1e-3) return;
+    facing.* = mathx.approachAngle(facing.*, mathx.headingXZ(d), rate * dt);
+}
+
+/// A struck foe's 0..1 flash strength for the shared `gfx` hitFlash uniform (see FLASH_DUR /
+/// FLASH_GAIN). Likewise three byte-identical copies of one expression over a constant that was
+/// ALREADY shared, which is one copy more than a thing this small has any business having.
+pub fn flashFrac(flash: f32) f32 {
+    return mathx.clampF(flash / FLASH_DUR, 0, 1);
+}
+
 // Carry a landed blow's KNOCKBACK for one frame and bleed it off — a jolt off the blade, not a slide.
 // Collision cleans up any overlap it causes.
 pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32, dt: f32) void {

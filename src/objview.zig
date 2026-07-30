@@ -315,8 +315,14 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
         st.grabbed = hover;
         st.travel = 0;
     }
+    // BOUNDS-CHECKED ON BOTH ARMS. `grabbed` is an index into the SHELF's kind list, and the shelf
+    // is a different length per shelf — so a grab that outlives a shelf change indexes off the end
+    // of the shorter one and reads a `Kind` out of range. The release arm already guarded; the drag
+    // arm did not, and one guard is a guard nobody can rely on.
     if (st.grabbed) |g| {
-        if (rl.isMouseButtonDown(.left)) {
+        if (g >= list.len) {
+            st.grabbed = null;
+        } else if (rl.isMouseButtonDown(.left)) {
             const d = rl.getMouseDelta();
             st.travel += @abs(d.x) + @abs(d.y);
             if (st.travel > CLICK_SLOP) {
@@ -325,7 +331,7 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
                 p.pitch = mathx.clampF(p.pitch - d.y * ROT_RATE, MIN_PITCH, MAX_PITCH);
             }
         } else {
-            if (st.travel <= CLICK_SLOP and g < list.len) st.open = list[g];
+            if (st.travel <= CLICK_SLOP) st.open = list[g]; // in range: the arm above just checked it
             st.grabbed = null;
         }
     }

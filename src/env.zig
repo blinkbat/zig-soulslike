@@ -266,6 +266,10 @@ pub const Env = struct {
     waterField: [wf.WATER_CELLS]u8 = [_]u8{gfx.WATER_SHORE} ** wf.WATER_CELLS,
     waterAny: bool = false,
     waterHalf: f32 = 0,
+    /// Where the painted water actually IS: the sheet is drawn at this centre, scaled by this fraction
+    /// of the world quad, so a pond costs a pond's worth of fill instead of a full screen of it.
+    waterMid: rl.Vector3 = mathx.zero3,
+    waterSpan: rl.Vector3 = mathx.zero3,
     // Per-frame culling counters, surfaced by the debug Stats overlay. The whole expansion rests
     // on the claim that a world of thousands of props costs a few hundred draws, and this is what
     // makes that claim CHECKABLE while playing instead of a thing I asserted once in a comment.
@@ -315,6 +319,35 @@ pub const Env = struct {
             if (self.scene) |sc| sc.setWater(&self.waterField, m.half, false);
             return;
         }
+        // THE PAINTED EXTENT, so the sheet can be drawn at the size of the water instead of the size of
+        // the world. It is one quad either way, but a world-spanning one is a FULL-SCREEN fill through
+        // the scene shader every frame — a bilinear field fetch and a discard for every pixel of dry
+        // land on screen — to draw a pond in one corner. Two cells of margin so the shader's soft edge
+        // has somewhere to fade.
+        var lo: [2]usize = .{ N - 1, N - 1 };
+        var hi: [2]usize = .{ 0, 0 };
+        for (m.water, 0..) |wet, i| {
+            if (wet == 0) continue;
+            const cx = i % N;
+            const cz = i / N;
+            lo[0] = @min(lo[0], cx);
+            hi[0] = @max(hi[0], cx);
+            lo[1] = @min(lo[1], cz);
+            hi[1] = @max(hi[1], cz);
+        }
+        const cellW = 2 * m.half / @as(f32, @floatFromInt(N));
+        const edge = struct {
+            fn at(c: usize, half: f32, cw: f32) f32 {
+                return -half + @as(f32, @floatFromInt(c)) * cw;
+            }
+        }.at;
+        const MARGIN = 2.0 * cellW;
+        const x0 = edge(lo[0], m.half, cellW) - MARGIN;
+        const x1 = edge(hi[0] + 1, m.half, cellW) + MARGIN;
+        const z0 = edge(lo[1], m.half, cellW) - MARGIN;
+        const z1 = edge(hi[1] + 1, m.half, cellW) + MARGIN;
+        self.waterMid = v3((x0 + x1) * 0.5, 0, (z0 + z1) * 0.5);
+        self.waterSpan = v3((x1 - x0) * 0.5 / GROUND_HALF, 1, (z1 - z0) * 0.5 / GROUND_HALF);
         const cellM = 2 * m.half / @as(f32, @floatFromInt(N));
         // `dIn` counts cells to the nearest DRY cell, `dOut` to the nearest WET one. Held in cell units
         // (a float is plenty and keeps the chamfer readable); FAR is any distance past what either ramp
@@ -385,9 +418,13 @@ pub const Env = struct {
     pub fn drawWater(self: *Env) void {
         if (!self.waterAny) return;
         if (self.scene) |sc| {
-            sc.setWaterSheet(true);
-            rl.drawModel(self.waterSheet, mathx.zero3, 1.0, rl.Color.white);
-            sc.setWaterSheet(false);
+            // The sheet's three tones come from the PROP PALETTE, so a painted lake and the authored
+            // water prop beside it are the same water by construction rather than by coincidence.
+            sc.setWaterSheet(true, props.waterTones());
+            // Scaled to the painted extent (Y left at 1 so the surface height is untouched). The shape
+            // inside it is still the shader's business — this only stops the quad covering the map.
+            rl.drawModelEx(self.waterSheet, self.waterMid, v3(0, 1, 0), 0, self.waterSpan, rl.Color.white);
+            sc.setWaterSheet(false, undefined);
         }
     }
 

@@ -19,6 +19,12 @@ const rgba = mathx.rgba;
 
 pub const MSG_CAP = 120; // shared cap for short UI strings (tips, toasts, prompts)
 
+/// POINTER TRAVEL that separates a CLICK from a DRAG, in pixels. One number for every gesture in the
+/// editor that has to tell those apart — the map's right button (context menu vs. orbit) and the object
+/// viewer's left button (open vs. spin). It was a bare `4.0` in both files: two thresholds meant to feel
+/// identical, written down twice, eventually stop being identical.
+pub const DRAG_PX: f32 = 4.0;
+
 // ── palette ── iron and brass, so the chrome sits against the golden-hour world without
 // competing with it. Kept here rather than at call sites: one place to retune the whole editor.
 pub const INK = rgba(10, 9, 8, 232);

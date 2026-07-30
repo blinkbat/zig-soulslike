@@ -251,6 +251,25 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  `coverField`, and the three systems that make this size affordable —
                  the UNIFORM GRID, the CULLERS (`View`/`Cull`), the grid-local solid queries.
                  Also gathers each fire's `gfx.Light` and uploads the nearest per frame.
+**HOW THE FILES ARE DIVIDED** (and why, because the rule is not "keep files short"): the thing being
+minimised is HOW MANY TOKENS IT TAKES TO MAKE A CORRECT CHANGE. That favours COHESION, not size — a
+900-line file whose contents all change together is fine, and splitting it into forty files makes the
+work harder, because then finding the code costs more than reading it. So the splits here are on
+lines where the concerns genuinely part company, and each new file is named so the first grep lands:
+- `props.zig` is the VOCABULARY and the TABLE (kinds, groups, INFO, `info()`); the meshes live in
+  seven `prop*.zig` files by family — `propart.zig` (the palette + shared weathering moves),
+  `propruins`, `propbuild`, `propvillage`, `proprock`, `propwood`, `propflora`, `propfx`. The
+  qualifier in each row (`.build = wood.snagMesh`) IS the pointer to the file. Bark reads pale? That
+  is one file, and it is the file holding every other thing made of wood.
+- `shaders.zig` is every line of GLSL and nothing else; `gfx.zig` is the Zig that compiles it, feeds
+  it uniforms and binds it. The contract between them (uniform names, material ids, texture slots) is
+  written at the top of `shaders.zig`.
+- `shots.zig` is the headless `--shot` harness — ~1,000 lines that never run while anybody is
+  playing, and so never belong in context while working on the loop.
+- `objview.zig` is the editor's object viewer. `editor.zig` is still the biggest file in the repo and
+  is the next candidate (its chrome — top bar, side panel, properties, minimap, status — parts
+  company with its editing model), but it has not been split yet.
+
 - `props.zig`  — also `displayName`/`group` for the editor palette: enum tags are terse
                  identifiers ("tree", "birch", "broken") which are right in code and useless in a
                  palette. Both are EXHAUSTIVE SWITCHES, so a new kind is a compile error until it

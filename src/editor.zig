@@ -34,7 +34,7 @@ const v3 = mathx.v3;
 
 const LOOK_SENS: f32 = 0.0032;
 const UNDO_CAP: usize = 24;
-const DRAG_PX: f32 = 4.0; // right-button travel that turns a context click into a camera fly
+const DRAG_PX = ui.DRAG_PX; // the shared click-vs-drag threshold (see there)
 const SNAP: f32 = 1.0; // grid pitch when snap is on
 /// How often a held slider may re-expand the world. A rebuild is ~8k props plus the solid grid plus both
 /// indexes — far too much per frame, and fast enough at this rate that a drag still reads as live. 5, down
@@ -995,11 +995,13 @@ pub const Editor = struct {
     fn rebuild(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
         self.rebuildDue = false;
         self.rebuildT = 0;
-        env.materialize(m);
+        // THE PAINTED FIELDS FIRST, then the props. `materialize`'s cover scatter asks `env.inWater`
+        // where it may sow, so uploading after it leaves the scatter reading the PREVIOUS field: grass
+        // through the middle of a lake you just painted, and no grass where you just drained one, both
+        // lasting until the next unrelated edit happened to rebuild.
         env.uploadSoil(m);
-        // The water field too: the flora scatter asks `inWater`, so a rebuild that left a stale field
-        // would sow grass across a lake somebody had just painted (or refuse to sow one they wiped).
         env.uploadWater(m);
+        env.materialize(m);
     }
 
     /// Ask for a rebuild, THROTTLED. A dragged slider reports a change every frame and a rebuild is the whole

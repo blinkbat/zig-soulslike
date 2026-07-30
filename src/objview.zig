@@ -68,6 +68,9 @@ const MAX_PITCH: f32 = 1.35;
 const MIN_ZOOM: f32 = 0.45;
 const MAX_ZOOM: f32 = 4.0;
 const ROT_RATE: f32 = 0.008; // radians per pixel of drag
+/// Click-vs-drag travel — the SAME threshold the map's right-button gesture uses, so "pressed without
+/// moving" means one thing everywhere in the editor.
+const CLICK_SLOP = ui.DRAG_PX;
 const ZOOM_RATE: f32 = 0.12; // per wheel notch
 
 /// How far back "fit" is, as a multiple of the kind's own bounding radius. Framed off `info.bound`,
@@ -327,8 +330,10 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
         }
     }
 
-    // …and now draw the page. The render/blit pair per cell is ~12 tiny off-screen passes a frame,
-    // each one model over a ground quad — measured at no cost worth naming beside the world behind it.
+    // …and now draw the page: a render/blit pair per cell, so twelve off-screen passes a frame, each one
+    // model over a ground quad at 236x198. That is ~0.5 Mpx of the scene shader against the ~1 Mpx the
+    // world behind it already costs, and it is only paid while the gallery is actually open — so it is
+    // left alone rather than cached. (Not measured with a profiler; that is the arithmetic.)
     i = start;
     while (i < end) : (i += 1) {
         const kind = list[i];
@@ -365,11 +370,6 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
     if (ui.button(ctx, ui.rect(box.x + modalW() - 96, by, 80, 24), "Close", hud.MONO, false)) return false;
     return true;
 }
-
-/// Pixels of pointer travel that separate a click from a drag. Four, like the editor's own
-/// click-vs-orbit split on the right button — one number for both would be nice, but that one lives
-/// in editor.zig and this file must not depend on it.
-const CLICK_SLOP: f32 = 4.0;
 
 // ── the big viewer ──────────────────────────────────────────────────────────────────────
 

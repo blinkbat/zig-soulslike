@@ -429,6 +429,7 @@ pub const Id = enum {
     menu_pick,
     menu_back,
     wind,
+    birds, // …their OWN voice, not five phrases baked into the wind loop (see mkBirds)
 };
 const NV = @typeInfo(Id).@"enum".fields.len;
 
@@ -496,20 +497,26 @@ fn mkRoll(r: *Rack) void {
 }
 
 fn mkSwingLight(r: *Rack) void {
-    // R1: a fast, tight whoosh. High and short, so it reads as EDGE rather than as weight — the
-    // heavy below is the one allowed to sound like effort.
-    r.air(0.0, 0.17, 0.9, 700, 3400, 0.55, 2.2);
-    r.air(0.02, 0.13, 0.5, 3600, 900, 0.5, 3.0); // the tip passing, coming back down
-    r.master(1.4, 5200);
+    // R1: MOVED AIR, not a cartoon vwip (owner's call — the old pair sounded stupid). It swept UP
+    // 700→3400 with the resonance halfway open and a second sweep coming back DOWN over the top of
+    // it: two pitched glides fighting, which is a slide whistle, not a blade. One broad pass now,
+    // its cutoff DRIFTING DOWN as the tip goes by (the only doppler a whoosh gets), resonance
+    // nearly shut so it stays airy, and barely any drive — saturation is what turned the noise
+    // into a rasp. Loudness lives in BANK.gain, since `master` normalizes every voice.
+    r.air(0.0, 0.15, 0.55, 2000, 620, 0.16, 2.6);
+    r.air(0.015, 0.085, 0.16, 5200, 2400, 0.12, 3.4); // the EDGE: a thin hiss riding the front of it
+    r.master(1.05, 4200);
 }
 
 fn mkSwingHeavy(r: *Rack) void {
-    // R2: a long, low, two-part sweep — the raise, then the drop. The gap between them is the
-    // tell, and it is the same beat the animation holds at the top of the arc.
-    r.air(0.0, 0.30, 0.45, 500, 1500, 0.4, 1.6);
-    r.air(0.24, 0.30, 1.0, 2600, 300, 0.6, 2.0);
-    r.body(0.26, 0.16, 190, 70, 0.35, 3.6);
-    r.master(1.8, 4200);
+    // R2: the raise, a beat, then the drop — the same two-part gesture, still timed to the pause the
+    // animation holds at the top of the arc, but taken out of cartoon territory the same way the
+    // light was: resonance nearly shut, less drive, and the raise dropped to almost nothing so the
+    // DROP is the only part that speaks.
+    r.air(0.0, 0.26, 0.26, 900, 1500, 0.14, 1.7);
+    r.air(0.24, 0.30, 0.72, 2200, 380, 0.18, 2.1);
+    r.body(0.26, 0.14, 170, 64, 0.22, 3.8); // a little mass behind the edge
+    r.master(1.25, 3600);
 }
 
 fn mkHitLight(r: *Rack) void {
@@ -715,13 +722,17 @@ fn mkArrowWood(r: *Rack) void {
 }
 
 fn mkArrowStone(r: *Rack) void {
-    // INTO MASONRY — hard and DEAD. The head skids, so there is a bright scrape on the front, but
-    // stone gives nothing back: a short high crack, no body to speak of, no ring.
+    // INTO MASONRY — a STRUCTURE, and the one place a bodkin head meets something harder than it is.
+    // The stone itself gives nothing back, so what rings is the HEAD and the shaft behind it: a
+    // bright TINK, high and gone almost at once, over the dead crack (owner's call). That tink is
+    // what makes "that was a wall" audible without looking, and it is exactly what the ORGANIC
+    // three — flesh, earth, timber — must never have.
     arrowRip(r, 0.40);
     r.tick(0.0, 0.85, 7000);
     r.body(0.0, 0.055, 420, 190, 0.55, 9.0);
+    r.ring(0.002, 0.11, 3100, 0.34, 9.0, 2);
     r.grit(0.0, 0.07, 0.75, 4200, 0.35, 7.5);
-    r.master(2.1, 5200);
+    r.master(2.1, 5600); // …and the warmth stage opened up enough to let the tink through
 }
 
 fn mkArrowMetal(r: *Rack) void {
@@ -925,23 +936,12 @@ fn mkWind(r: *Rack) void {
             s * 0.16 +
             m * 0.55;
     }
-    // Settle the air BEFORE the birds go in, so a chirp cannot set the peak and drag the whole
-    // bed down under it — the calls are meant to sit ON the wind, at their own level.
+    // THE BIRDS USED TO LIVE IN HERE, and could not be heard: the bed's own gain is 0.055 (owner's
+    // call, and right), so a call mixed into this buffer went out at a twentieth of the level it was
+    // written at. Worse, being part of an 8-second loop meant the same five phrases in the same
+    // order for the whole session. They are `Id.birds` now — their own voice, at their own level,
+    // on their own slow clock (see `mkBirds` and `ambience`).
     r.norm(0.42);
-
-    // ── SPARSE DIGITAL BIRDCALLS ── five phrases across eight seconds, which is sparse enough that
-    // you notice one rather than expecting the next. Deliberately CHIPTUNE: stepped semitone
-    // intervals, narrow pulse waves, no glide — the world is a golden-hour ruin seen through a
-    // retro filter, and a naturalistic bird would be the one thing in it pretending not to be.
-    // Kept quiet and low in the mix; a bird you hear clearly is a bird you get sick of.
-    var c: i32 = 0;
-    while (c < 5) : (c += 1) {
-        // Spread across the buffer with jitter, and kept clear of both ends — a call cut in half by
-        // the loop seam is the one thing that WOULD give the loop away.
-        const slot = 0.9 + @as(f32, @floatFromInt(c)) * 1.35 + r.rng.range(-0.35, 0.35);
-        r.chirp(slot, r.rng.range(0.055, 0.10), r.rng.range(1750, 2900));
-    }
-
     r.sat(1.2);
     r.crush(CRUSH_BITS + 1.5, CRUSH_HOLD); // gentler than the house: a crushed noise bed hisses
     r.warm(2600);
@@ -949,6 +949,22 @@ fn mkWind(r: *Rack) void {
     r.hiss(0.05);
     r.norm(0.62);
     r.ends(0.9, 0.9); // long crossfade ends, so the re-trigger seam is inaudible
+}
+
+// ── SPARSE DIGITAL BIRDCALLS ── one phrase, sometimes answered by a second. Deliberately CHIPTUNE:
+// stepped semitone intervals, narrow pulse waves, no glide — the world is a golden-hour ruin seen
+// through a retro filter, and a naturalistic bird would be the one thing in it pretending not to be.
+//
+// Its own voice rather than part of the wind (see mkWind): a bird has to be AUDIBLE, and the bed is
+// deliberately not. Four takes, and `ambience` spaces them minutes apart across a session, so what
+// you get is the odd call from somewhere out on the plain rather than a dawn chorus on a loop.
+fn mkBirds(r: *Rack) void {
+    r.chirp(0.04, r.rng.range(0.55, 0.85), r.rng.range(1750, 2900));
+    // …and now and then another one answers it, a little further off.
+    if (r.rng.float() < 0.45) r.chirp(r.rng.range(0.42, 0.72), r.rng.range(0.28, 0.48), r.rng.range(1900, 3100));
+    // Brighter than the house cutoff: a call has to get out from under the wind, and the pulse's
+    // reedy top IS the sound.
+    r.masterX(1.1, 4200, CRUSH_BITS + 1.0, CRUSH_HOLD);
 }
 
 // ── THE BANK ── one row per voice, in `Id` order.
@@ -961,8 +977,12 @@ const BANK = [NV]Row{
     .{ .make = mkStepHard, .gain = 0.17, .jit = 0.12, .vjit = 0.26, .vars = 4, .poly = 3 },
     .{ .make = mkStepSprint, .gain = 0.20, .jit = 0.11, .vjit = 0.24, .vars = 4, .poly = 3 },
     .{ .make = mkRoll, .gain = 0.55, .jit = 0.09, .vjit = 0.14, .vars = 2 },
-    .{ .make = mkSwingLight, .gain = 0.44, .jit = 0.11, .vjit = 0.18, .vars = 4, .poly = 3 },
-    .{ .make = mkSwingHeavy, .gain = 0.52, .jit = 0.07, .vjit = 0.12, .vars = 3 },
+    // SUBTLE (owner's call). `master` normalizes every voice's peak, so a swing's LEVEL is only ever
+    // this number — reshaping the whoosh made it stop sounding silly, and this is what makes it stop
+    // shouting. It now sits under the hit it leads into, which is the sound that should land.
+    // `poly` on the heavy too: a chained R2 must not cut its own predecessor off mid-whoosh.
+    .{ .make = mkSwingLight, .gain = 0.26, .jit = 0.11, .vjit = 0.18, .vars = 4, .poly = 3 },
+    .{ .make = mkSwingHeavy, .gain = 0.34, .jit = 0.07, .vjit = 0.12, .vars = 3, .poly = 2 },
     .{ .make = mkHitLight, .gain = 0.70, .jit = 0.11, .vjit = 0.18, .vars = 4, .poly = 4 },
     .{ .make = mkHitHeavy, .gain = 0.85, .jit = 0.08, .vjit = 0.14, .vars = 3, .poly = 3 },
     .{ .make = mkHurt, .gain = 0.72, .jit = 0.10, .vjit = 0.14, .vars = 3 },
@@ -1006,6 +1026,10 @@ const BANK = [NV]Row{
     // is to stop silence reading as broken audio, and it does that at a level you only notice when
     // it stops. The birds ride inside this, so they came down with it.
     .{ .make = mkWind, .gain = 0.055, .jit = 0.0, .vjit = 0.0, .poly = 1 },
+    // Quiet, but a level you can actually HEAR — twice the bed's, where the old baked-in calls went
+    // out at a twentieth of it. Four takes and wide pitch jitter: the same bird twice running is
+    // worse than no bird at all.
+    .{ .make = mkBirds, .gain = 0.13, .jit = 0.14, .vjit = 0.22, .vars = 4, .poly = 2 },
 };
 
 /// How long each voice renders for. Kept beside the bank rather than inside each renderer so the
@@ -1020,6 +1044,7 @@ fn seconds(id: Id) f32 {
         .ogre_slam, .bow_draw, .flask_drink => 1.05,
         // Every arrow impact is QUICK either way (owner's law) — a third of a second, tops.
         .arrow_hit, .arrow_dirt, .arrow_wood, .arrow_stone, .arrow_metal => 0.36,
+        .birds => 1.3, // long enough for a phrase plus the answer that can start at 0.72
         .roll, .swing_heavy, .ogre_swipe, .ogre_step => 0.7,
         else => 0.5,
     };
@@ -1195,12 +1220,25 @@ fn emit(id: Id, vol: f32, pan: f32) void {
 /// itself from `BANK[wind].gain`, which made it the one voice in the game whose level was applied
 /// somewhere other than the one function that knows how a row's gain becomes a raylib volume — so
 /// the bed would have quietly ignored any change to how that mapping works.
-pub fn ambience() void {
+/// How long between birdcalls. Long, and WIDELY spread: the point of a bird is that you notice it,
+/// which needs enough silence in front of it that you had stopped expecting one.
+const BIRD_GAP_LO: f32 = 7.0;
+const BIRD_GAP_HI: f32 = 21.0;
+var birdWait: f32 = 4.0; // …and the first one holds off until you are out of the menu
+
+/// The wind bed and the birds over it, ticked once a frame from the live loop.
+pub fn ambience(dt: f32) void {
     if (!ready or muted) return;
     // `wind` is poly 1 / vars 1, so slot 0 IS the voice — asking raylib whether that one is still
     // running is the whole re-trigger test.
-    if (rl.isSoundPlaying(slots[@intFromEnum(Id.wind)].snd[0][0])) return;
-    emit(.wind, 1.0, 0.5);
+    if (!rl.isSoundPlaying(slots[@intFromEnum(Id.wind)].snd[0][0])) emit(.wind, 1.0, 0.5);
+    // The birds ride a clock rather than the bed's loop: baked into the wind buffer they repeated
+    // with it, five phrases in the same order for ever (see mkWind).
+    birdWait -= dt;
+    if (birdWait <= 0) {
+        birdWait = rng.range(BIRD_GAP_LO, BIRD_GAP_HI);
+        play(.birds);
+    }
 }
 
 /// WHAT AN ARROW ENDED UP IN → which impact you hear. `null` is the bare earth (the miss), which is

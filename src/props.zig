@@ -79,6 +79,9 @@ const COAL = rgba(196, 78, 22, 70);
 const CLOTH = rgba(76, 20, 12, 255); // faded war-banner crimson (matches the hero's cape)
 const CLOTH_DK = rgba(48, 14, 10, 255); // …in the folds, and where the rain got into it
 const CLOTH_SUN = rgba(96, 46, 32, 255); // …and at the frayed hem, where the sun ate the dye out
+// Undyed CANVAS for tarps and sacking. Any of the dyed reds on a sun-facing swell saturates to
+// plastic under the warm key — R so far ahead of G/B survives every darkening. Canvas doesn't.
+const CANVAS = rgba(42, 36, 28, 255);
 
 // Plant palette (pre-gamma dark) — Limgrave gold over scrub green.
 const GRASS_GOLD = rgba(96, 76, 34, 255);
@@ -403,6 +406,40 @@ pub const BIG_TREES = [_]Kind{ .bigtree, .bigtree2, .bigtree3 };
 pub const CLIFFS = [_]Kind{ .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
+
+/// THE TWO STOCKED PALETTES, split on the same flag the renderer splits its passes on: `flora` kinds
+/// are the swaying non-casters, which is exactly the editor's Decor stock, and everything else is
+/// Props. Resolved at COMPTIME off INFO itself, so a new kind lands on the right shelf the moment it
+/// has a row — and it lives HERE, beside the table it is derived from, because the editor's palette,
+/// its group chips and the object viewer all ask the same question and a second copy of the answer is
+/// how one of them ends up offering a fern under Ruins.
+pub const FLORA_KINDS = kindsWhere(true);
+pub const SOLID_KINDS = kindsWhere(false);
+
+fn kindsWhere(comptime flora: bool) [countWhere(flora)]Kind {
+    var out: [countWhere(flora)]Kind = undefined;
+    var n = 0;
+    for (0..NK) |i| {
+        const k: Kind = @enumFromInt(i);
+        if (info(k).flora == flora) {
+            out[n] = k;
+            n += 1;
+        }
+    }
+    return out;
+}
+
+fn countWhere(comptime flora: bool) usize {
+    var n: usize = 0;
+    for (0..NK) |i| {
+        if (info(@enumFromInt(i)).flora == flora) n += 1;
+    }
+    return n;
+}
+
+comptime {
+    std.debug.assert(FLORA_KINDS.len + SOLID_KINDS.len == NK);
+}
 
 /// One footprint collider in the kind's LOCAL space (a capsule a→b with radius r; a==b is a
 /// plain circle). env rotates by the instance yaw and multiplies by its scale. `h` is the
@@ -803,8 +840,9 @@ fn courseStack(bb: *Builder, r: *mathx.Rng, cx: f32, y0: f32, cz: f32, w: f32, d
             v3(0, h * 0.5, 0),
             v3(r.signed() * 0.007, 0, sd * 0.5),
             // The banding stays — it is the form break a big dark mass needs — but every OTHER
-            // course being the darkest stone was a zebra. Now it only tends dark.
-            if (@mod(i, 2) == 0 and r.float() < 0.55) STONE_DK else if (r.float() < 0.16) STONE_LT else STONE,
+            // course being the darkest stone was a zebra. Dark only TENDS even: odd courses
+            // go dark too (less often), so the period never survives more than a few courses.
+            if (r.float() < (if (@mod(i, 2) == 0) @as(f32, 0.5) else 0.24)) STONE_DK else if (r.float() < 0.16) STONE_LT else STONE,
         );
         y += ch;
     }
@@ -1209,6 +1247,10 @@ fn archMesh(shader: rl.Shader) rl.Model {
     b.addBox(v3(-1.35, 0.20, rng.range(-1.1, 0.6)), v3(0.28, rng.signed() * 0.10, 0.02), v3(rng.signed() * 0.1, 0.19, 0), v3(0, 0, 0.36), MARBLE_DK);
     // Above the crown: the stub of the parapet that once ran across, most of it gone.
     b.setMat(.stone);
+    // SPANDREL stubs first — the fill that carried the parapet over the ring's shoulders.
+    // Without them the slab's ends hang over daylight where the ring curves away below.
+    b.addCube(v3(1.30, spring + px + ringR - 0.26, -0.02), v3(0.56, 0.52, 0.56), STONE);
+    b.addCube(v3(-0.76, spring + px + ringR - 0.18, 0.03), v3(0.50, 0.44, 0.60), STONE_DK);
     b.addBox(v3(0.3, spring + px + ringR + 0.20, 0), v3(1.35, rng.signed() * 0.02, 0), v3(0, 0.22, 0), v3(0, 0, 0.62), STONE_DK);
     b.addCube(v3(-0.5, spring + px + ringR + 0.56, 0.02), v3(0.62, 0.44, 0.86), STONE);
     b.addCube(v3(1.15, spring + px + ringR + 0.40, -0.04), v3(0.5, 0.26, 0.72), STONE_DK);
@@ -1220,7 +1262,14 @@ fn archMesh(shader: rl.Shader) rl.Model {
         lichenInto(&b, &rng, v3(x, rng.range(0.5, 1.3), 0.56), v3(0.30, 0.30, 0.02), 3);
         tuftInto(&b, &rng, x + rng.signed() * 1.1, rng.signed() * 1.2, 0.8);
     }
-    lichenInto(&b, &rng, v3(rng.signed() * 1.6, spring + px * 0.55, 0.0), v3(0.5, 0.5, 0.03), 4); // the damp soffit
+    // The damp soffit: lichen ON the ring's inner face, half-sunk into the stone — the old
+    // version floated a patch mid-opening. Both spots sit clear of the collapsed haunch
+    // (t 0.23..0.37), flanking the keystone where the drip line runs.
+    for ([_]f32{ 0.47, 0.62 }) |t| {
+        const a = std.math.pi * t;
+        const rIn = px - 0.30;
+        lichenInto(&b, &rng, v3(-mathx.cosf(a) * rIn, spring + mathx.sinf(a) * rIn, rng.signed() * 0.22), v3(0.15, 0.10, 0.15), 3);
+    }
     return b.toModel(shader);
 }
 
@@ -1278,8 +1327,20 @@ fn treeMesh(shader: rl.Shader) rl.Model {
     const bend = v3(rng.range(0.08, 0.24), 0, rng.signed() * 0.14);
     const j1 = v3(bend.x, 1.70, bend.z);
     const j2 = v3(bend.x * 2.8, 3.05, bend.z * 2.4);
-    b.addCapsule(v3(0, 0, 0), j1, 0.26, 0.165, 8, BARK);
-    b.addCapsule(j1, j2, 0.165, 0.095, 7, BARK);
+    // A point ON the bole: the taper and the BEND both. Anything dressed onto the trunk goes
+    // through here — seated at a fixed radius on a trunk that leans, the fungus and the lichen
+    // floated off its side like stickers.
+    const onBole = struct {
+        fn go(bd: rl.Vector3, y: f32, a: f32, sink: f32) rl.Vector3 {
+            const rr = (0.26 - 0.056 * y) * (1.0 - sink);
+            return v3(bd.x * (y / 1.7) + mathx.cosf(a) * rr, y, bd.z * (y / 1.7) + mathx.sinf(a) * rr);
+        }
+    }.go;
+    // BARK_OLD, not BARK — the same correction the great trees, the stump and the log all needed:
+    // this bole takes the low sun square on, and at BARK's value the shader's hot key plus its
+    // gamma lift handed back a smooth PALE TAN post. A dead tree is the darkest thing on the plain.
+    b.addCapsule(v3(0, 0, 0), j1, 0.26, 0.165, 8, BARK_OLD);
+    b.addCapsule(j1, j2, 0.165, 0.095, 7, BARK_OLD);
     b.addCapsule(j2, v3(j2.x + rng.signed() * 0.3, 4.05, j2.z + rng.signed() * 0.25), 0.095, 0.012, 6, BARK_DK); // the snapped leader
     // PEELING BARK: slim strips up the bole, a couple standing away from it. Those vertical
     // breaks are what stop the trunk reading as a smooth dowel under the low sun.
@@ -1297,7 +1358,10 @@ fn treeMesh(shader: rl.Shader) rl.Model {
             rng.range(0.030, 0.055),
             rng.range(0.018, 0.040),
             4,
-            if (rng.float() < 0.45) BARK_DK else BARK_OLD,
+            // The VALUE INVERSION that says "peeling": strips still holding are dark bark, and where
+            // one has lifted or gone, the wood UNDER it is bare and pale. Dark strips on a dark bole
+            // are invisible; dark strips on a pale bole read as painted stripes.
+            if (rng.float() < 0.45) BARK_DK else if (rng.float() < 0.7) TIMBER else BARK_OLD,
         );
     }
     // A SPLIT up the heartwood, and the hollow where a limb rotted out of it.
@@ -1334,15 +1398,17 @@ fn treeMesh(shader: rl.Shader) rl.Model {
         const a = std.math.tau * @as(f32, @floatFromInt(r)) / 5.0 + rng.signed() * 0.35;
         const d = rng.range(0.42, 0.72);
         const heave: f32 = if (r == 2) rng.range(0.14, 0.26) else 0.0;
-        b.addCapsule(v3(0, 0.26, 0), v3(mathx.cosf(a) * d, 0.02 + heave, mathx.sinf(a) * d), rng.range(0.09, 0.13), rng.range(0.025, 0.05), 5, BARK);
+        b.addCapsule(v3(0, 0.26, 0), v3(mathx.cosf(a) * d, 0.02 + heave, mathx.sinf(a) * d), rng.range(0.09, 0.13), rng.range(0.025, 0.05), 5, BARK_OLD);
     }
     // BRACKET FUNGUS on the shaded side: a dead trunk with fungus has been dead for years; one
     // without has been dead since Tuesday.
     b.setMat(.plant);
     const fa = rng.angle();
-    b.addBlob(v3(mathx.cosf(fa) * 0.24, rng.range(0.7, 1.5), mathx.sinf(fa) * 0.24), v3(0.17, 0.035, 0.14), 3, 6, CAP_BROWN);
-    b.addBlob(v3(mathx.cosf(fa + 0.5) * 0.21, rng.range(0.4, 1.0), mathx.sinf(fa + 0.5) * 0.21), v3(0.11, 0.028, 0.10), 3, 5, CAP_PALE);
-    lichenInto(&b, &rng, v3(mathx.cosf(fa + 3.0) * 0.20, rng.range(0.5, 1.6), mathx.sinf(fa + 3.0) * 0.20), v3(0.10, 0.34, 0.10), 3);
+    const fy1 = rng.range(0.7, 1.5);
+    const fy2 = rng.range(0.4, 1.0);
+    b.addBlob(onBole(bend, fy1, fa, 0.35), v3(0.17, 0.035, 0.14), 3, 6, CAP_BROWN);
+    b.addBlob(onBole(bend, fy2, fa + 0.5, 0.30), v3(0.11, 0.028, 0.10), 3, 5, CAP_PALE);
+    lichenInto(&b, &rng, onBole(bend, rng.range(0.5, 1.6), fa + 3.0, 0.25), v3(0.10, 0.34, 0.10), 3);
     tuftInto(&b, &rng, rng.signed() * 0.8, rng.signed() * 0.8, 0.8);
     tuftInto(&b, &rng, rng.signed() * 1.0, rng.signed() * 1.0, 0.62);
     return b.toModel(shader);
@@ -1356,6 +1422,11 @@ fn gravesMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4807);
     const spots = [_][2]f32{ .{ 0, 0 }, .{ 0.95, -0.55 }, .{ -0.85, 0.42 }, .{ 1.62, 0.38 }, .{ -0.35, -0.95 }, .{ 0.55, 0.95 } };
+    // The first round-topped stone's placement, kept so the face lichen below has a real
+    // stone to grow on (it used to float at head height over an empty plot).
+    var lx: f32 = 0;
+    var lz: f32 = 0;
+    var lh: f32 = 0.6;
     for (spots, 0..) |sp, i| {
         const x = sp[0] + rng.signed() * 0.10;
         const z = sp[1] + rng.signed() * 0.10;
@@ -1368,6 +1439,11 @@ fn gravesMesh(shader: rl.Shader) rl.Model {
         switch (@mod(i, 4)) {
             0 => { // round-topped headstone
                 const h = rng.range(0.52, 0.78);
+                if (i == 0) {
+                    lx = x;
+                    lz = z;
+                    lh = h;
+                }
                 b.addBox(v3(x + tipX * h * 0.5, h * 0.5, z + tipZ * h * 0.5), v3(0.26, tipX, 0.02), v3(-tipX * 0.2, h * 0.5, 0), v3(0.01, tipZ, 0.075), col);
                 b.addBlob(v3(x + tipX * h, h, z + tipZ * h), v3(0.255, 0.16, 0.075), 3, 7, col);
                 crackInto(&b, v3(x + tipX * h * 0.3 + 0.09, h * 0.30, z + tipZ * h * 0.3 + 0.08), v3(tipX * 0.4, 0.98, 0.06), v3(1, 0, 0), rng.range(0.14, 0.34), 0.012, 0.02);
@@ -1400,7 +1476,8 @@ fn gravesMesh(shader: rl.Shader) rl.Model {
         }
     }
     chipsInto(&b, &rng, 0.4, 0, 1.35, 0.05, 0.13, 5);
-    lichenInto(&b, &rng, v3(rng.signed() * 0.7, rng.range(0.2, 0.55), rng.signed() * 0.5), v3(0.13, 0.12, 0.02), 4);
+    lichenInto(&b, &rng, v3(lx + 0.08, lh * 0.35, lz + 0.05), v3(0.10, 0.10, 0.05), 4); // on the first stone's face
+
     lichenInto(&b, &rng, v3(rng.signed() * 0.9, 0.07, rng.signed() * 0.7), v3(0.34, 0.02, 0.30), 4);
     tuftInto(&b, &rng, rng.range(-1.1, 1.8), rng.range(-1.1, 1.1), 0.75);
     tuftInto(&b, &rng, rng.range(-1.1, 1.8), rng.range(-1.1, 1.1), 0.6);
@@ -1995,18 +2072,29 @@ fn rubbleMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.26) STONE_MOSS else if (rng.float() < 0.5) STONE_LT else STONE_DK,
         );
     }
-    // Two angular pieces that broke recently enough to still have corners on them.
+    // Two angular pieces that broke recently enough to still have corners on them. Each gets a
+    // real TIPPED orthonormal frame (yaw + a hard lean about it) and sits low — the old ones
+    // stood square and pale, and a dressed block sitting flat reads as delivered, not fallen.
     var g: i32 = 0;
     while (g < 2) : (g += 1) {
         const a = rng.angle();
         const d = rng.range(0.3, 0.9);
         const s = rng.range(0.16, 0.30);
+        const yaw = rng.angle();
+        const lean = rng.range(0.18, 0.42);
+        const cy = mathx.cosf(yaw);
+        const sy = mathx.sinf(yaw);
+        const cl = mathx.cosf(lean);
+        const sl = mathx.sinf(lean);
+        const u = v3(cy * cl, sl, sy * cl); // long axis, tipped off the horizontal
+        const w = v3(-cy * sl, cl, -sy * sl); // its up, leaning with it
+        const hd = s * rng.range(0.6, 1.1); // half-depth along the level third axis
         b.addBox(
-            v3(mathx.cosf(a) * d, s * 0.55, mathx.sinf(a) * d),
-            v3(s, rng.signed() * 0.12, 0.03),
-            v3(rng.signed() * 0.1, s * 0.62, 0),
-            v3(0, 0, s * rng.range(0.6, 1.1)),
-            STONE,
+            v3(mathx.cosf(a) * d, s * 0.38, mathx.sinf(a) * d),
+            v3(u.x * s, u.y * s, u.z * s),
+            v3(w.x * s * 0.62, w.y * s * 0.62, w.z * s * 0.62),
+            v3(-sy * hd, 0, cy * hd),
+            if (rng.float() < 0.5) STONE_DK else STONE,
         );
     }
     // A DRUM SHARD and a scrap of carved moulding — the pieces that say this came off something
@@ -2615,7 +2703,11 @@ fn monolithMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(606);
     b.setMat(.stone);
-    const lean = v3(rng.signed() * 0.30, 4.55, rng.signed() * 0.24);
+    // Guaranteed VISIBLE lean — signed() can roll near plumb, and a plumb monolith reads as
+    // set by a crane yesterday. Direction random, magnitude never less than a hand's width.
+    const leanSX: f32 = if (rng.float() < 0.5) 1 else -1;
+    const leanSZ: f32 = if (rng.float() < 0.5) 1 else -1;
+    const lean = v3(leanSX * rng.range(0.14, 0.32), 4.55, leanSZ * rng.range(0.10, 0.26));
     b.addBox(
         v3(lean.x * 0.5, lean.y * 0.5, lean.z * 0.5),
         v3(0.58, 0.04, 0.02),
@@ -2626,11 +2718,19 @@ fn monolithMesh(shader: rl.Shader) rl.Model {
     // A narrower cap slab, snapped a little off-axis, and a shoulder chunk lost.
     b.addBox(v3(lean.x + rng.signed() * 0.1, lean.y + 0.16, lean.z), v3(0.42, 0.05, 0), v3(0, 0.18, 0.04), v3(0, 0, 0.30), CLIFF_DK);
     b.addBlob(v3(lean.x * 0.62 + 0.5, lean.y * 0.6, lean.z * 0.6 + 0.2), v3(0.20, 0.26, 0.18), 3, 5, CLIFF_LT);
-    // Carved bands: three shallow inset courses, unevenly spaced (a mason's hand, not a ruler).
-    var i: i32 = 0;
-    while (i < 3) : (i += 1) {
-        const t = 0.28 + 0.22 * @as(f32, @floatFromInt(i)) + rng.signed() * 0.03;
-        b.addBox(v3(lean.x * t, lean.y * t, lean.z * t), v3(0.60, 0, 0), v3(0, 0.055, 0), v3(0, 0, 0.42), CLIFF_DK);
+    // Carved bands: three shallow inset courses. Spacing, thickness and reach all wander (a
+    // mason's hand, not a ruler), and the middle band is BROKEN — it stops where the shoulder
+    // spalled instead of ringing the stone like a barrel hoop.
+    for ([_]f32{ 0.24, 0.49, 0.76 }, 0..) |t0, bi| {
+        const t = t0 + rng.signed() * 0.04;
+        const broken = bi == 1;
+        b.addBox(
+            v3(lean.x * t + (if (broken) @as(f32, 0.26) else rng.signed() * 0.02), lean.y * t, lean.z * t),
+            v3((if (broken) @as(f32, 0.34) else 0.60) * rng.range(0.94, 1.03), 0, 0),
+            v3(0, rng.range(0.038, 0.075), 0),
+            v3(0, 0, 0.42 * rng.range(0.92, 1.04)),
+            CLIFF_DK,
+        );
     }
     b.setMat(.plant);
     b.addBlob(v3(lean.x * 0.25 - 0.42, 0.75, lean.z * 0.25), v3(0.16, 0.55, 0.30), 3, 5, STONE_MOSS); // lichen streak
@@ -2646,7 +2746,29 @@ fn stumpMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(313);
     b.setMat(.wood);
-    b.addCapsule(v3(0, 0, 0), v3(rng.signed() * 0.08, 1.05, rng.signed() * 0.08), 0.46, 0.40, 8, BARK);
+    // BARK_OLD, not BARK — the barrel takes the sun face-on and came back a pale smooth loaf
+    // (same correction as the great tree's trunk).
+    b.addCapsule(v3(0, 0, 0), v3(rng.signed() * 0.08, 1.05, rng.signed() * 0.08), 0.46, 0.40, 8, BARK_OLD);
+    // Bark ridges, mostly buried (RELIEF IS SUBTLE) — the texture that stops the barrel
+    // reading as plastic however dark it starts.
+    var rb: i32 = 0;
+    while (rb < 7) : (rb += 1) {
+        const a = std.math.tau * @as(f32, @floatFromInt(rb)) / 7.0 + rng.signed() * 0.25;
+        // Seated so the rod's EDGE breaks the surface (~5% of the radius proud). The first cut
+        // buried them completely and the barrel stayed one smooth lit loaf.
+        const r0 = rng.range(0.43, 0.465);
+        b.addCapsule(
+            v3(mathx.cosf(a) * r0, rng.range(0.0, 0.2), mathx.sinf(a) * r0),
+            v3(mathx.cosf(a + rng.signed() * 0.2) * r0 * 0.90, rng.range(0.72, 1.0), mathx.sinf(a + rng.signed() * 0.2) * r0 * 0.90),
+            rng.range(0.035, 0.055),
+            rng.range(0.025, 0.045),
+            6,
+            if (rng.float() < 0.5) BARK_DK else BARK_OLD,
+        );
+    }
+    // The broken top reads as WOOD: a pale heartwood face just proud of the bark, the moss
+    // cap riding it off-centre where the rot got in.
+    b.addBlob(v3(0.02, 1.06, -0.03), v3(0.36, 0.055, 0.34), 4, 8, TIMBER);
     var i: i32 = 0;
     while (i < 3) : (i += 1) {
         const a = rng.angle();
@@ -2662,10 +2784,10 @@ fn stumpMesh(shader: rl.Shader) rl.Model {
     var r: i32 = 0;
     while (r < 4) : (r += 1) {
         const a = rng.angle();
-        b.addCapsule(v3(0, 0.30, 0), v3(mathx.cosf(a) * 0.72, 0.02, mathx.sinf(a) * 0.72), 0.15, 0.05, 5, BARK);
+        b.addCapsule(v3(0, 0.30, 0), v3(mathx.cosf(a) * 0.72, 0.02, mathx.sinf(a) * 0.72), 0.15, 0.05, 5, BARK_OLD);
     }
     b.setMat(.plant);
-    b.addBlob(v3(0, 1.06, 0), v3(0.34, 0.09, 0.32), 3, 6, STONE_MOSS);
+    b.addBlob(v3(-0.12, 1.07, 0.10), v3(0.26, 0.08, 0.24), 3, 6, STONE_MOSS);
     return b.toModel(shader);
 }
 
@@ -2675,7 +2797,24 @@ fn logMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(818);
     b.setMat(.wood);
-    b.addCapsule(v3(-1.85, 0.36, rng.signed() * 0.1), v3(1.9, 0.30, rng.signed() * 0.12), 0.36, 0.25, 8, BARK);
+    // BARK_OLD + ridges run ALONG the barrel — same plastic-loaf correction as the stump.
+    b.addCapsule(v3(-1.85, 0.36, rng.signed() * 0.1), v3(1.9, 0.30, rng.signed() * 0.12), 0.36, 0.25, 8, BARK_OLD);
+    var rb: i32 = 0;
+    while (rb < 6) : (rb += 1) {
+        const phi = std.math.tau * @as(f32, @floatFromInt(rb)) / 6.0 + rng.signed() * 0.3;
+        const sink = rng.range(0.78, 0.90);
+        b.addCapsule(
+            v3(rng.range(-1.75, -1.1), 0.36 + mathx.sinf(phi) * 0.33 * sink, mathx.cosf(phi) * 0.33 * sink),
+            v3(rng.range(1.0, 1.75), 0.31 + mathx.sinf(phi + rng.signed() * 0.3) * 0.26 * sink, mathx.cosf(phi + rng.signed() * 0.3) * 0.26 * sink),
+            rng.range(0.028, 0.05),
+            rng.range(0.02, 0.04),
+            6,
+            if (rng.float() < 0.5) BARK_DK else BARK_OLD,
+        );
+    }
+    // The snapped tip shows pale heartwood — the one bright note, and what says "broken",
+    // not "moulded with a round end".
+    b.addBlob(v3(1.94, 0.30, 0.02), v3(0.07, 0.20, 0.17), 4, 7, TIMBER);
     var i: i32 = 0;
     while (i < 4) : (i += 1) {
         const x = rng.range(-1.5, 1.6);
@@ -2749,14 +2888,22 @@ fn chapelMesh(shader: rl.Shader) rl.Model {
     while (rf < 7) : (rf += 1) {
         const z = -hl + 0.55 + @as(f32, @floatFromInt(rf)) * 1.05;
         b.setMat(.wood);
-        b.addBox(v3(0, wh + 0.55, z), v3(hw + 0.15, -0.42, 0), v3(0, 0.10, 0), v3(0, 0, 0.10), TIMBER_DK); // a rafter, both slopes
-        b.addBox(v3(0, wh + 0.55, z), v3(hw + 0.15, 0.42, 0), v3(0, 0.10, 0), v3(0, 0, 0.10), TIMBER_DK);
+        // A COUPLE of rafters per bay, each running from its OWN wall head up to the ridge. Written as
+        // two full-span planks tilted opposite ways they crossed over the middle of the nave, and the
+        // roof read as scaffolding — an X lattice, not a pitch.
+        for ([_]f32{ -1, 1 }) |sgn| {
+            b.addBox(v3(sgn * (hw + 0.15) * 0.5, wh + 0.55, z), v3(sgn * (hw + 0.15) * 0.5, -0.42, 0), v3(0, 0.10, 0), v3(0, 0, 0.10), TIMBER_DK);
+        }
         if (z < -1.3) continue; // the south end has lost its covering; the altar two thirds keeps it
         b.setMat(.stone);
         for ([_]f32{ -1, 1 }) |sgn| {
+            const run = (hw + 0.25) * 0.5;
             b.addBox(
-                v3(sgn * (hw * 0.52), wh + 0.30, z),
-                v3(sgn * hw * 0.56, 0.48, 0),
+                v3(sgn * run, wh + 0.48, z),
+                // DOWN and OUT from the ridge. At +0.48 the slab climbed as it went out, which put the
+                // eaves ABOVE the ridge line: a valley roof, and the reason the covering read as flat
+                // panels lying over the walls.
+                v3(sgn * run, -0.42, 0),
                 v3(0, 0.09, 0),
                 v3(0, 0, 0.55 * rng.range(0.94, 1.04)),
                 if (rng.float() < 0.3) STONE_DK else STONE,
@@ -3194,7 +3341,11 @@ fn cartMesh(shader: rl.Shader) rl.Model {
     wheel(&b, -0.9, 0.62, 0.95, 0.60, false, &rng);
     wheel(&b, 0.85, 0.09, -1.0, 0.58, true, &rng);
     b.setMat(.cloth);
-    b.addBlob(v3(0.2, 0.86, 0.2), v3(0.45, 0.10, 0.35), 3, 5, CLOTH); // a rag of cargo cover
+    // A slumped CANVAS tarp of cargo cover — dyed red was tried twice (CLOTH, then the darker
+    // fold tone) and both flared to neon on the sun-facing swell; see CANVAS. The one dyed
+    // note left is a rag of the old crimson pinned under its edge.
+    b.addBlob(v3(0.2, 0.84, 0.2), v3(0.45, 0.09, 0.35), 3, 5, CANVAS);
+    b.addBlob(v3(0.42, 0.78, -0.04), v3(0.17, 0.045, 0.14), 3, 5, CLOTH_DK);
     b.setMat(.plant);
     tuftInto(&b, &rng, rng.signed() * 1.2, rng.signed() * 1.2, 0.7);
     return b.toModel(shader);
@@ -3209,22 +3360,76 @@ fn wellMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2101);
     b.setMat(.stone);
-    // The drum: a core cylinder faced with rounded stones in three overlapping courses. A bare
-    // cylinder reads as a pipe; stones alone leak daylight at every joint.
-    b.addCylinder(v3(0, 0.02, 0), v3(0, 1.04, 0), 0.80, 0.80, 12, MORTAR);
+    // The drum: a core cylinder under a COURSED FACING of blocks. It used to be three rings of
+    // twelve identical rounded blobs, alternately pale and mossy — a lattice of beads that read as
+    // bubble wrap, not field stone. Same rule as every other wall here: the core carries the form
+    // and the facing only stands proud enough to catch the sun.
+    const R: f32 = 0.80;
+    b.addCylinder(v3(0, 0.02, 0), v3(0, 1.04, 0), R, R, 12, MORTAR);
     var c: i32 = 0;
-    while (c < 3) : (c += 1) {
-        const y = 0.16 + @as(f32, @floatFromInt(c)) * 0.30;
-        const n: i32 = 12;
-        var i: i32 = 0;
-        while (i < n) : (i += 1) {
-            const a = std.math.tau * (@as(f32, @floatFromInt(i)) + (if (@mod(c, 2) == 0) @as(f32, 0) else 0.5)) / @as(f32, @floatFromInt(n));
-            const r = rng.range(0.20, 0.28); // wide enough that neighbours bed into each other
-            b.addBlob(v3(mathx.cosf(a) * 0.84, y, mathx.sinf(a) * 0.84), v3(r, 0.21, r), 3, 5, if (rng.float() < 0.3) STONE_LT else if (rng.float() < 0.5) STONE_MOSS else STONE);
+    while (c < 4) : (c += 1) {
+        const y0 = 0.05 + @as(f32, @floatFromInt(c)) * 0.25;
+        // Walk the ring by ACCUMULATED ARC so block WIDTHS can vary: dividing the circle into n
+        // equal slots is what makes a course read as beads however much the radii wobble. Each
+        // course starts at its own angle, so no joint stacks into a vertical seam.
+        var a = rng.angle();
+        const stop = a + std.math.tau;
+        while (a < stop) {
+            const halfArc = rng.range(0.09, 0.19); // metres along the face
+            const dHalf = halfArc / R;
+            const am = a + dHalf;
+            const cs = mathx.cosf(am);
+            const sn = mathx.sinf(am);
+            const hh = rng.range(0.085, 0.125);
+            const depth = rng.range(0.045, 0.085); // how far out of the core it stands
+            b.addBox(
+                v3(cs * R, y0 + hh + rng.signed() * 0.012, sn * R),
+                v3(-sn * halfArc, rng.signed() * 0.022, cs * halfArc), // along the face, a little out of level
+                v3(0, hh, 0),
+                v3(cs * depth, 0, sn * depth),
+                // Mostly ONE stone: 30% pale and 35% mossy was a checkerboard. The moss belongs
+                // where the wet is (see below), not sprinkled over the whole drum.
+                if (rng.float() < 0.16) STONE_LT else if (rng.float() < 0.22) STONE_DK else STONE,
+            );
+            a += 2 * dHalf + rng.range(0.015, 0.05) / R;
         }
     }
-    b.addCylinder(v3(0, 1.02, 0), v3(0, 1.10, 0), 0.98, 0.98, 12, STONE_DK); // coping ring
-    b.addCylinder(v3(0, 0.0, 0), v3(0, 0.06, 0), 0.70, 0.70, 12, IRON); // the dark of the shaft
+    // Moss where a well is actually wet: the bottom course, and the shaded lip under the coping.
+    for ([_]f32{ 0.10, 0.94 }) |my| {
+        const ma = rng.angle();
+        lichenInto(&b, &rng, v3(mathx.cosf(ma) * 0.84, my, mathx.sinf(ma) * 0.84), v3(0.22, 0.09, 0.20), 3);
+    }
+    b.setMat(.stone);
+    // THE COPING, laid as slabs rather than turned as a ring — one has gone altogether and one has
+    // been shoved out of line, which is the whole difference between a ruin and a garden feature.
+    const nc: i32 = 11;
+    var k: i32 = 0;
+    while (k < nc) : (k += 1) {
+        if (k == 7) continue; // the missing slab
+        const am = std.math.tau * (@as(f32, @floatFromInt(k)) + 0.5) / @as(f32, @floatFromInt(nc));
+        const shove: f32 = if (k == 3) rng.range(0.04, 0.07) else 0.0;
+        const cs = mathx.cosf(am);
+        const sn = mathx.sinf(am);
+        // A SHADE OVER the exact share of the ring (2πr/n/2 = 0.25 m), because each slab is a flat box
+        // tangent to a circle: butted exactly, the corners leave wedge gaps and the coping reads as
+        // loose flagstones balanced round the rim.
+        const halfArc = std.math.pi * 2.0 * 0.875 / @as(f32, @floatFromInt(nc)) * 0.5 * 1.18;
+        // Deep enough to be a DRESSED coping stone and only just overhanging: thin slabs hung far
+        // out past the face read as a frill of flagstones balanced on the rim. The inner edge stops
+        // clear of the mouth, so no pale ends ring the hole.
+        b.addBox(
+            v3(cs * (0.875 + shove), 1.07 + rng.signed() * 0.012, sn * (0.875 + shove)),
+            v3(-sn * halfArc, rng.signed() * 0.018, cs * halfArc),
+            v3(0, rng.range(0.06, 0.078), 0),
+            v3(cs * 0.13, 0, sn * 0.13),
+            if (rng.float() < 0.22) STONE else STONE_DK,
+        );
+    }
+    // THE MOUTH, dark. It has to be a CLOSED shape, not a tube: a tube shows you the world straight
+    // through its far wall (that face points away and is culled), which reads as a hole in the mesh.
+    // So the black is a solid dark lens seated just under the coping, wide enough to seal the whole
+    // bore — deep water in shadow, which is all a well mouth ever is from standing height.
+    b.addBlob(v3(0, 0.62, 0), v3(0.80, 0.26, 0.80), 3, 12, ROCK_DEEP);
     b.setMat(.wood);
     for ([_]f32{ -0.78, 0.78 }) |px| {
         b.addCapsule(v3(px, 1.0, 0), v3(px + rng.signed() * 0.05, 2.05, rng.signed() * 0.05), 0.085, 0.07, 6, TIMBER_DK);
@@ -3237,7 +3442,9 @@ fn wellMesh(shader: rl.Shader) rl.Model {
     b.addDome(v3(0.55, 1.10, 0.55), v3(0, -1, 0), 0.17, 8, TIMBER_DK);
     b.setMat(.plant);
     tuftInto(&b, &rng, rng.signed() * 1.3, rng.signed() * 1.3, 0.8);
-    b.addBlob(v3(0.9, 1.06, -0.4), v3(0.3, 0.08, 0.25), 3, 5, MOSS_SOFT);
+    // ON the coping, not off the edge of it: at radius 0.98 this patch was a green flap hanging in
+    // the air beside the well.
+    b.addBlob(v3(0.62, 1.10, -0.36), v3(0.19, 0.05, 0.16), 3, 6, MOSS_SOFT);
     return b.toModel(shader);
 }
 
@@ -3252,11 +3459,29 @@ fn shrineMesh(shader: rl.Shader) rl.Model {
     // The housing: two side walls, a back, and a gable — open to the front (local −Z).
     for ([_]f32{ -0.44, 0.44 }) |sx| b.addCube(v3(sx, 1.05, 0.06), v3(0.22, 1.2, 0.82), STONE);
     b.addCube(v3(0, 1.05, 0.42), v3(1.1, 1.2, 0.2), STONE_DK);
-    var g: i32 = 0;
-    while (g < 4) : (g += 1) {
-        const t = @as(f32, @floatFromInt(g)) / 4.0;
-        b.addCube(v3(0, 1.70 + t * 0.42, 0.06), v3(1.15 * (1.0 - t * 0.75), 0.16, 0.9 * (1.0 - t * 0.2)), if (@mod(g, 2) == 0) STONE else STONE_DK);
+    // THE CAP is a real PITCHED GABLE — two sloped slabs to a ridge stone — over one eaves band
+    // that throws a shadow line across the front. It was four clean rectangles shrinking as they
+    // went up: a stepped ziggurat, machine-square, and the tidiest object in the world sitting on
+    // top of a wayside shrine.
+    b.addBox(v3(0, 1.735, 0.06), v3(0.70, 0.015, 0), v3(0, 0.045, 0), v3(0, 0, 0.50), STONE_DK);
+    for ([_]f32{ -1, 1 }) |sgn| {
+        b.addBox(
+            v3(sgn * 0.35, 1.97, 0.06),
+            // DOWN the pitch, outward. The sign is the whole roof: a slab that rises as it leaves the
+            // centre makes a VALLEY, and two of them make the butterfly the first cut of this read as.
+            v3(sgn * 0.35, -0.195, 0),
+            v3(0, 0.065, 0), // slab thickness
+            v3(0, 0, 0.47 * rng.range(0.96, 1.04)),
+            if (sgn < 0) STONE else STONE_LT, // one pitch takes the low sun, the other doesn't
+        );
     }
+    b.addBox(v3(rng.signed() * 0.02, 2.20, 0.06), v3(0.125, 0.008, 0), v3(0, 0.05, 0), v3(0, 0, 0.45), STONE_LT); // ridge stone, straddling the joint
+    // …and it has not come through the years whole: a corner of the eaves has slipped, and the
+    // piece that broke off it lies on the step below.
+    b.addBox(v3(-0.58, 1.72, -0.30), v3(0.15, -0.05, 0), v3(0, 0.04, 0), v3(0, 0, 0.13), STONE_DK);
+    b.addBlob(v3(0.40, 0.47, -0.30), v3(0.13, 0.05, 0.10), 3, 5, STONE_LT);
+    lichenInto(&b, &rng, v3(-0.20, 2.02, -0.02), v3(0.15, 0.05, 0.13), 3); // where the rain sits on the pitch
+    b.setMat(.stone);
     // The figure inside: a small hooded form, face lost.
     b.addCylinder(v3(0, 0.46, 0.06), v3(rng.signed() * 0.03, 1.24, 0.06), 0.26, 0.17, 8, STONE_LT);
     b.addBlob(v3(0, 1.34, 0.06), v3(0.17, 0.19, 0.17), 4, 7, STONE);
@@ -3351,38 +3576,63 @@ fn fenceMesh(shader: rl.Shader) rl.Model {
 }
 
 // BARRELS and crates, stacked and spilled. Staves are individual, so the barrels read as coopered
-// rather than as cylinders.
+// rather than as cylinders. Casks come BOTH WAYS — headed (full, still worth keeping) and stood
+// OPEN and empty (owner's favourite): a store yard where every cask is sealed reads as a delivery
+// that nobody has broken into yet.
 fn barrelsMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2105);
     const barrel = struct {
-        fn go(bb: *Builder, r: *mathx.Rng, cx: f32, cz: f32, tilt: f32, h: f32) void {
-            const staves: i32 = 10;
+        fn go(bb: *Builder, r: *mathx.Rng, cx: f32, cz: f32, tilt: f32, h: f32, open: bool) void {
+            bb.setMat(.wood);
+            // The BODY is solid and bellied — two tapered drums meeting at the bulge. The old
+            // build was ten free-standing staves with daylight between them: a picket ring,
+            // not a cask. Same rule as packed stone: the staves are only the FACING.
+            bb.addCylinder(v3(cx, 0.01, cz), v3(cx + tilt * 0.5, h * 0.5, cz), 0.26, 0.30, 10, TIMBER_DK);
+            bb.addCylinder(v3(cx + tilt * 0.5, h * 0.5, cz), v3(cx + tilt, h, cz), 0.30, 0.26, 10, TIMBER_DK);
+            // Stave seams ride the body, proud at the chimes and sunk at the belly. On an OPEN cask they
+            // stop well under the rim: run to the top and their capsule ends stand up through the chime
+            // hoop as a crown of separate tabs — the picket ring, back again by the other door.
+            const staves: i32 = 9;
+            const staveTop = if (open) h - 0.11 else h - 0.03;
             var i: i32 = 0;
             while (i < staves) : (i += 1) {
-                const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(staves));
-                const rr = 0.30;
-                bb.setMat(.wood);
+                const a = std.math.tau * (@as(f32, @floatFromInt(i)) + r.range(-0.15, 0.15)) / @as(f32, @floatFromInt(staves));
                 bb.addCapsule(
-                    v3(cx + mathx.cosf(a) * rr * 0.86, 0.02, cz + mathx.sinf(a) * rr * 0.86),
-                    v3(cx + mathx.cosf(a) * rr * 0.86 + tilt, h, cz + mathx.sinf(a) * rr * 0.86),
-                    0.055,
-                    0.05,
+                    v3(cx + mathx.cosf(a) * 0.245, 0.04, cz + mathx.sinf(a) * 0.245),
+                    v3(cx + mathx.cosf(a) * 0.245 + tilt, staveTop, cz + mathx.sinf(a) * 0.245),
+                    0.045,
+                    0.04,
                     4,
                     if (r.float() < 0.4) TIMBER else TIMBER_DK,
                 );
             }
             bb.setMat(.steel);
-            for ([_]f32{ 0.2, 0.78 }) |t| {
-                bb.addCylinder(v3(cx + tilt * t, h * t, cz), v3(cx + tilt * t, h * t + 0.05, cz), 0.33, 0.33, 10, RUST);
+            for ([_]f32{ 0.18, 0.74 }) |t| {
+                bb.addCylinder(v3(cx + tilt * t, h * t, cz), v3(cx + tilt * t, h * t + 0.05, cz), 0.315, 0.315, 10, RUST);
             }
             bb.setMat(.wood);
-            bb.addCylinder(v3(cx + tilt, h - 0.03, cz), v3(cx + tilt, h, cz), 0.29, 0.29, 10, TIMBER_DK); // the head
+            if (!open) {
+                bb.addBlob(v3(cx + tilt, h - 0.02, cz), v3(0.27, 0.035, 0.27), 3, 10, TIMBER_DK); // the head — CAPPED (an open cylinder end reads hollow)
+                return;
+            }
+            // EMPTY: no head, and you see down INTO it. The cavity is a dark drum seen from
+            // OUTSIDE — its near wall faces away and is culled, so the eye lands on the far wall
+            // and the floor below it, which is what reads as depth. (A bare open cylinder end
+            // reads as a hole in the mesh; a capped one reads as a lid.) The drum's rim sits a
+            // hair proud of the body's so the two can't z-fight along the chime.
+            bb.addCylinder(v3(cx + tilt * 0.42, h * 0.42, cz), v3(cx + tilt, h + 0.006, cz), 0.235, 0.256, 10, BARK_OLD);
+            bb.addBlob(v3(cx + tilt * 0.42, h * 0.42, cz), v3(0.235, 0.025, 0.235), 3, 10, BARK_OLD); // the bottom head, seen from above
+            bb.setMat(.steel);
+            // The chime hoop sits AT the top edge, capping the stave ends. Below them and the stave
+            // tops stand up as a crown of separate teeth — a picket ring again, the thing this prop
+            // was rebuilt to stop reading as.
+            bb.addCylinder(v3(cx + tilt, h - 0.045, cz), v3(cx + tilt, h + 0.012, cz), 0.305, 0.305, 10, RUST);
         }
     }.go;
-    barrel(&b, &rng, 0, 0, 0.02, 0.82);
-    barrel(&b, &rng, 0.62, 0.28, -0.04, 0.76);
-    barrel(&b, &rng, -0.35, 0.66, 0.05, 0.70);
+    barrel(&b, &rng, 0, 0, 0.02, 0.82, false);
+    barrel(&b, &rng, 0.62, 0.28, -0.04, 0.76, true);
+    barrel(&b, &rng, -0.35, 0.66, 0.05, 0.70, true);
     // A crate, and one broken open.
     b.setMat(.wood);
     b.addCube(v3(-0.75, 0.26, -0.45), v3(0.62, 0.52, 0.58), TIMBER_DK);
@@ -3412,7 +3662,11 @@ fn woodpileMesh(shader: rl.Shader) rl.Model {
         while (z < halfW) {
             const d = rng.range(0.17, 0.24);
             if (rng.float() > 0.10) {
-                b.addCapsule(v3(-0.55 + rng.signed() * 0.06, y, z), v3(0.55 + rng.signed() * 0.06, y + rng.signed() * 0.03, z), d * 0.5, d * 0.5, 5, if (rng.float() < 0.35) BARK_DK else if (rng.float() < 0.6) TIMBER else TIMBER_DK);
+                // Billet lengths WANDER (±0.15, not ±0.06): a stack of identical sausages is
+                // the too-regular fail. A few show a pale sawn END disc.
+                const x1 = 0.55 + rng.signed() * 0.15;
+                b.addCapsule(v3(-0.55 + rng.signed() * 0.15, y, z), v3(x1, y + rng.signed() * 0.03, z), d * 0.5, d * 0.5, 5, if (rng.float() < 0.35) BARK_DK else if (rng.float() < 0.6) TIMBER else TIMBER_DK);
+                if (rng.float() < 0.35) b.addBlob(v3(x1 + 0.01, y, z), v3(0.025, d * 0.36, d * 0.36), 3, 6, THATCH);
             }
             z += d;
         }
@@ -3424,7 +3678,10 @@ fn woodpileMesh(shader: rl.Shader) rl.Model {
         b.addCapsule(v3(mathx.cosf(a) * d, 0.10, mathx.sinf(a) * d), v3(mathx.cosf(a) * d + rng.signed() * 0.5, 0.10, mathx.sinf(a) * d + rng.signed() * 0.5), 0.095, 0.085, 5, TIMBER_DK);
     }
     b.setMat(.cloth);
-    b.addBlob(v3(0, 1.16, 0), v3(0.85, 0.10, 0.75), 3, 6, THATCH_DK); // a sagging cover
+    // The sagging cover, in two overlapped uneven swells — one 6-sided pancake read as a
+    // hexagonal tabletop hovering over the stack.
+    b.addBlob(v3(-0.12, 1.08, 0.06), v3(0.68, 0.09, 0.62), 4, 9, THATCH_DK);
+    b.addBlob(v3(0.30, 1.05, -0.14), v3(0.44, 0.07, 0.40), 4, 9, THATCH_DK);
     b.setMat(.plant);
     tuftInto(&b, &rng, rng.signed() * 1.4, rng.signed() * 1.4, 0.75);
     return b.toModel(shader);
@@ -3480,10 +3737,16 @@ fn sarcophagusMesh(shader: rl.Shader) rl.Model {
     b.addCube(v3(0, 0.52, -0.44), v3(1.9, 0.64, 0.16), STONE);
     b.addCube(v3(0.87, 0.52, 0), v3(0.16, 0.64, 0.75), STONE);
     b.addCube(v3(-0.87, 0.52, 0), v3(0.16, 0.64, 0.75), STONE);
-    b.addCube(v3(0, 0.24, 0), v3(1.6, 0.10, 0.6), IRON); // the dark floor of it
-    // The lid, dragged off and canted against the side.
-    b.addBox(v3(-0.35, 0.92, 0.30), v3(1.0, 0.10, 0), v3(-0.04, 0.11, 0), v3(0, 0, 0.5), STONE_LT);
-    b.addBox(v3(1.35, 0.30, 0.5), v3(0.55, 0.42, 0), v3(0.16, 0.20, 0), v3(0, 0, 0.42), STONE_DK); // …a broken end on the ground
+    // Debris fill most of the way up the chest — with only a floor at the bottom the opening
+    // under the canted lid was a pitch-black void with hard triangle edges, reading as a hole
+    // in the mesh rather than an opened grave.
+    b.addCube(v3(0, 0.36, 0), v3(1.6, 0.34, 0.6), MORTAR);
+    // The lid, dragged off and canted against the side — MARBLE: it carries the effigy, and a
+    // dressed lid over a rubble-stone chest is the kingdom's money showing.
+    b.setMat(.marble);
+    b.addBox(v3(-0.35, 0.92, 0.30), v3(1.0, 0.10, 0), v3(-0.04, 0.11, 0), v3(0, 0, 0.5), MARBLE);
+    b.addBox(v3(1.35, 0.30, 0.5), v3(0.55, 0.42, 0), v3(0.16, 0.20, 0), v3(0, 0, 0.42), MARBLE_DK); // …a broken end on the ground
+    b.setMat(.stone);
     // A worn effigy line down the lid, and moss where the rain sits.
     b.addBox(v3(-0.35, 1.00, 0.30), v3(0.7, 0.07, 0), v3(0, 0.03, 0), v3(0, 0, 0.10), STONE_MOSS);
     b.setMat(.plant);
@@ -3544,7 +3807,7 @@ fn gibbetMesh(shader: rl.Shader) rl.Model {
     var k: i32 = 0;
     while (k < 4) : (k += 1) {
         const y = 3.86 - @as(f32, @floatFromInt(k)) * 0.11;
-        b.addCylinder(v3(lean + 1.0, y, 0), v3(lean + 1.0, y - 0.09, 0), 0.035, 0.035, 5, RUST);
+        b.addCylinder(v3(lean + 1.0, y, 0), v3(lean + 1.0, y - 0.09, 0), 0.035, 0.035, 5, IRON);
     }
     // The cage: uprights bowed outward, three hoops, and a spiked base.
     const cx = lean + 1.0;
@@ -3552,12 +3815,15 @@ fn gibbetMesh(shader: rl.Shader) rl.Model {
     var u: i32 = 0;
     while (u < 6) : (u += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(u)) / 6.0;
-        b.addCapsule(v3(cx + mathx.cosf(a) * 0.08, top, mathx.sinf(a) * 0.08), v3(cx + mathx.cosf(a) * 0.30, top - 0.55, mathx.sinf(a) * 0.30), 0.022, 0.026, 4, RUST);
-        b.addCapsule(v3(cx + mathx.cosf(a) * 0.30, top - 0.55, mathx.sinf(a) * 0.30), v3(cx + mathx.cosf(a) * 0.20, top - 1.25, mathx.sinf(a) * 0.20), 0.026, 0.022, 4, RUST);
+        // IRON bars, one or two gone rusty — all-RUST rods under the warm key read as pale
+        // timber, and the whole cage read as a wooden birdcage.
+        const bar = if (rng.float() < 0.25) RUST else IRON;
+        b.addCapsule(v3(cx + mathx.cosf(a) * 0.08, top, mathx.sinf(a) * 0.08), v3(cx + mathx.cosf(a) * 0.30, top - 0.55, mathx.sinf(a) * 0.30), 0.022, 0.026, 4, bar);
+        b.addCapsule(v3(cx + mathx.cosf(a) * 0.30, top - 0.55, mathx.sinf(a) * 0.30), v3(cx + mathx.cosf(a) * 0.20, top - 1.25, mathx.sinf(a) * 0.20), 0.026, 0.022, 4, bar);
     }
     for ([_]f32{ 0.0, -0.55, -1.25 }) |dy| {
         const rr: f32 = if (dy < -0.3) 0.26 else 0.20;
-        b.addCylinder(v3(cx, top + dy, 0), v3(cx, top + dy + 0.04, 0), rr, rr, 8, RUST);
+        b.addCylinder(v3(cx, top + dy, 0), v3(cx, top + dy + 0.04, 0), rr, rr, 8, if (dy < -1.0) RUST else IRON);
     }
     b.addCylinder(v3(cx, top - 1.28, 0), v3(cx, top - 1.22, 0), 0.20, 0.20, 8, IRON);
     b.setMat(.plant);
@@ -3782,10 +4048,15 @@ fn campfireMesh(shader: rl.Shader) rl.Model {
     b.setMat(.stone);
     var i: i32 = 0;
     while (i < 9) : (i += 1) {
-        const a = std.math.tau * @as(f32, @floatFromInt(i)) / 9.0 + rng.signed() * 0.15;
-        const d = rng.range(0.52, 0.66);
-        const r = rng.range(0.13, 0.23);
-        b.addBlob(v3(mathx.cosf(a) * d, r * 0.72, mathx.sinf(a) * d), v3(r, r * 0.8, r * 1.1), 3, 6, if (rng.float() < 0.4) CLIFF_LT else CLIFF_ROCK);
+        // One stone MISSING and one kicked out of the ring — a complete even circle of
+        // same-sized hexagonal gumdrops read as placed by a compass. More sides so each
+        // stone reads round, and a wider size spread so no two match.
+        if (i == 3) continue;
+        const kicked = i == 6;
+        const a = std.math.tau * @as(f32, @floatFromInt(i)) / 9.0 + rng.signed() * 0.22;
+        const d = if (kicked) rng.range(0.95, 1.15) else rng.range(0.48, 0.68);
+        const r = rng.range(0.10, 0.26);
+        b.addBlob(v3(mathx.cosf(a) * d, r * (if (kicked) @as(f32, 0.55) else 0.72), mathx.sinf(a) * d), v3(r, r * rng.range(0.6, 0.95), r * rng.range(0.9, 1.3)), 4, 8, if (rng.float() < 0.4) CLIFF_LT else CLIFF_ROCK);
     }
     b.setMat(.wood);
     var l: i32 = 0;
@@ -4494,29 +4765,53 @@ fn thicketMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3013);
     b.setMat(.wood);
+    // The canes ARCH: up in one segment, then over and OUT in a second. Straight rods from a
+    // common root read as a teepee of dowels — a thicket is a tangle, and the bend is the tangle.
+    // Their TIPS are kept, because a cane that ends in bare air is a stick poking out of a bush;
+    // most of them get a clump hung on the end once the plant material is up.
+    var tips: [14][3]f32 = undefined;
     var s: i32 = 0;
     while (s < 14) : (s += 1) {
         const a = rng.angle();
         const d = rng.range(0.0, 0.7);
         const h = rng.range(0.7, 1.6);
-        b.addCapsule(
-            v3(mathx.cosf(a) * d, 0.0, mathx.sinf(a) * d),
-            v3(mathx.cosf(a) * d + rng.signed() * 0.5, h, mathx.sinf(a) * d + rng.signed() * 0.5),
-            rng.range(0.030, 0.055),
-            0.015,
-            4,
-            if (rng.float() < 0.5) BARK_DK else BARK,
-        );
+        const x0 = mathx.cosf(a) * d;
+        const z0 = mathx.sinf(a) * d;
+        // The knee: where it stops climbing and starts falling away. Out along its own bearing, so
+        // the crowns splay OUTWARD off the clump rather than all crossing over the middle.
+        const kx = x0 + mathx.cosf(a) * rng.range(0.05, 0.3) + rng.signed() * 0.12;
+        const kz = z0 + mathx.sinf(a) * rng.range(0.05, 0.3) + rng.signed() * 0.12;
+        const ky = h * rng.range(0.6, 0.82);
+        const col = if (rng.float() < 0.5) BARK_DK else BARK;
+        b.addCapsule(v3(x0, 0.0, z0), v3(kx, ky, kz), rng.range(0.030, 0.055), rng.range(0.022, 0.038), 4, col);
+        // The fall-away is SHORT: reaching far past the mass, a cane is a dowel sticking out of a
+        // bush rather than part of it.
+        const tx = kx + mathx.cosf(a) * rng.range(0.12, 0.34) + rng.signed() * 0.10;
+        const tz = kz + mathx.sinf(a) * rng.range(0.12, 0.34) + rng.signed() * 0.10;
+        const ty = h * rng.range(0.94, 1.06);
+        b.addCapsule(v3(kx, ky, kz), v3(tx, ty, tz), rng.range(0.022, 0.038), 0.012, 4, col);
+        tips[@intCast(s)] = .{ tx, ty, tz };
     }
     b.setMat(.plant);
+    // MORE clumps and SMALLER ones, and rounder: 30 wide six-sided blobs squashed to 0.6 of their
+    // width read as hexagonal DINNER PLATES floating on the canes. A third of them sit low, which is
+    // what makes the base opaque — the old build was see-through under knee height.
     var i: i32 = 0;
-    while (i < 30) : (i += 1) {
+    while (i < 46) : (i += 1) {
         const a = rng.angle();
         const d = rng.range(0.0, 1.0) * @sqrt(rng.float());
-        const r = rng.range(0.14, 0.30) * (1.0 - 0.25 * d);
-        const y = rng.range(0.20, 1.45) * (1.0 - 0.22 * d);
-        const col = if (rng.float() < 0.15) LEAF_GOLD else if (rng.float() < 0.45) LEAF_DK else if (rng.float() < 0.7) LEAF else LEAF_DAMP;
-        b.addBlob(v3(mathx.cosf(a) * d, y, mathx.sinf(a) * d), v3(r, r * rng.range(0.6, 0.9), r * rng.range(0.85, 1.2)), 4, 6, col);
+        const low = i < 16;
+        const r = rng.range(0.10, 0.21) * (1.0 - 0.25 * d);
+        const y = if (low) rng.range(0.10, 0.55) else rng.range(0.35, 1.45) * (1.0 - 0.22 * d);
+        // Gold is a HIGHLIGHT: at 15% it was a spatter of bright yellow plates across the mass.
+        const col = if (rng.float() < 0.07) LEAF_GOLD else if (rng.float() < 0.12) BRACKEN_BRN else if (rng.float() < 0.5) LEAF_DK else if (rng.float() < 0.72) LEAF else LEAF_DAMP;
+        b.addBlob(v3(mathx.cosf(a) * d, y, mathx.sinf(a) * d), v3(r, r * rng.range(0.78, 1.0), r * rng.range(0.9, 1.15)), 4, 7, col);
+    }
+    // Growth ON the cane tips, so most of them end in leaf instead of in air.
+    for (tips) |t| {
+        if (rng.float() < 0.3) continue; // a couple stay bare and dead — that is the wabi-sabi
+        const r = rng.range(0.075, 0.135);
+        b.addBlob(v3(t[0], t[1], t[2]), v3(r, r * rng.range(0.8, 1.0), r * rng.range(0.9, 1.1)), 3, 6, if (rng.float() < 0.35) LEAF_DK else if (rng.float() < 0.7) LEAF else LEAF_DAMP);
     }
     tuftInto(&b, &rng, rng.signed() * 0.9, rng.signed() * 0.9, 0.85);
     return b.toModel(shader);
@@ -4910,7 +5205,37 @@ fn snagMesh(shader: rl.Shader) rl.Model {
     const lean = rng.signed() * 0.4;
     b.addCapsule(v3(0, 0, 0), v3(lean * 0.5, H * 0.6, lean * 0.3), 0.55, 0.36, 8, BARK_OLD);
     b.addCapsule(v3(lean * 0.5, H * 0.6, lean * 0.3), v3(lean, H, lean * 0.6), 0.36, 0.26, 7, BARK_DK);
-    // The snapped crown: splinters of unequal length standing up out of the break.
+    // A point on the TRUNK's surface at height y and angle a: taper and lean both, so what is
+    // dressed onto it stays on it all the way up.
+    const onTrunk = struct {
+        fn go(hh: f32, ln: f32, y: f32, a: f32, sink: f32) rl.Vector3 {
+            const t = y / hh;
+            const rr = (if (t < 0.6) 0.55 + (0.36 - 0.55) * (t / 0.6) else 0.36 + (0.26 - 0.36) * ((t - 0.6) / 0.4)) * (1.0 - sink);
+            const ax = if (t < 0.6) ln * 0.5 * (t / 0.6) else ln * (0.5 + 0.5 * ((t - 0.6) / 0.4));
+            return v3(ax + mathx.cosf(a) * rr, y, ax * 0.6 + mathx.sinf(a) * rr);
+        }
+    }.go;
+    // GRAIN RIDGES up the trunk, mostly buried. Without them a 7 m eight-sided cone is one smooth
+    // lit face from every angle and the snag reads as a PLANK stood on end — the same correction
+    // the stump and the fallen log needed, and the more necessary here for the height.
+    var rb: i32 = 0;
+    while (rb < 8) : (rb += 1) {
+        const a = std.math.tau * @as(f32, @floatFromInt(rb)) / 8.0 + rng.signed() * 0.22;
+        const y0 = rng.range(0.1, 2.1);
+        const y1 = @min(y0 + rng.range(1.6, 3.6), H - 0.25);
+        b.addCapsule(
+            onTrunk(H, lean, y0, a, 0.055),
+            onTrunk(H, lean, y1, a + rng.signed() * 0.16, 0.055),
+            rng.range(0.05, 0.085),
+            rng.range(0.03, 0.06),
+            5,
+            // Bare dead wood: shade grooves, and a couple of ribs the weather has silvered.
+            if (rng.float() < 0.72) BARK_DK else TIMBER,
+        );
+    }
+    // The snapped crown: pale HEARTWOOD across the break — the one bright note, and what says
+    // "snapped" rather than "moulded to a point" — with splinters of unequal length out of it.
+    b.addBlob(v3(lean, H - 0.02, lean * 0.6), v3(0.235, 0.055, 0.235), 3, 7, TIMBER);
     var s: i32 = 0;
     while (s < 5) : (s += 1) {
         const a = rng.angle();
@@ -4921,15 +5246,19 @@ fn snagMesh(shader: rl.Shader) rl.Model {
             rng.range(0.06, 0.14),
             0.015,
             4,
-            BARK_DK,
+            if (rng.float() < 0.45) TIMBER else BARK_DK,
         );
     }
-    // A couple of broken limb stubs, and one long bare branch still on.
+    // A couple of broken limb stubs, and one long bare branch still on. STUBS, so they are thick
+    // at the trunk and end in a pale snapped face — thin even tapers read as twigs stuck on.
     var l: i32 = 0;
     while (l < 4) : (l += 1) {
         const a = rng.angle();
         const y = rng.range(H * 0.35, H * 0.9);
-        b.addCapsule(v3(lean * 0.4, y, lean * 0.2), v3(lean * 0.4 + mathx.cosf(a) * rng.range(0.5, 1.1), y + rng.range(-0.1, 0.45), lean * 0.2 + mathx.sinf(a) * rng.range(0.5, 1.1)), 0.10, 0.03, 4, BARK_DK);
+        const reach = rng.range(0.45, 0.95);
+        const tip = v3(lean * 0.4 + mathx.cosf(a) * reach, y + rng.range(-0.1, 0.4), lean * 0.2 + mathx.sinf(a) * reach);
+        b.addCapsule(v3(lean * 0.4, y, lean * 0.2), tip, 0.17, 0.065, 5, BARK_DK);
+        b.addBlob(tip, v3(0.065, 0.055, 0.065), 3, 5, TIMBER);
     }
     const ba = rng.angle();
     b.addCapsule(v3(lean * 0.5, H * 0.7, lean * 0.3), v3(lean * 0.5 + mathx.cosf(ba) * 2.6, H * 0.85, lean * 0.3 + mathx.sinf(ba) * 2.6), 0.16, 0.03, 5, BARK_DK);

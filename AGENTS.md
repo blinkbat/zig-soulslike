@@ -84,6 +84,22 @@ standing stonework), `edge` (the cliff rim), `cover` (the lattice ground scatter
   silently writes a value in the wrong column. Unknown keys and missing fields are LOAD ERRORS.
 - **A MISSING OR BROKEN MAP PANICS** with the file and line. No built-in fallback: quietly
   running a different world hides the fault behind a world nobody authored.
+- **PROPS CAN LEAN.** Any op carries `lean` (degrees off plumb) and `leanDir` (which way it falls,
+  measured like yaw): exact on an `at`, and a MAXIMUM on a scatter, which rolls each instance its
+  own amount and direction so a wood leans every which way instead of as one storm. Steppers live
+  in the properties panel. The tilt turns about the prop's GROUND ORIGIN, so the base stays planted
+  and the culling sphere (centred there too) is unchanged — and `buildSolids` carries the footprint
+  with it, capped at the part's own radius, or you bump into air beside a tipped trunk. Lean 0 draws
+  down the original path and consumes NOTHING from the op's rng, so no existing world moved.
+- **WATER IS PAINTED, AND ITS COAST IS DERIVED** (Ground layer > **Water**). The map stores one BIT
+  per cell — wet or dry, a finer grid than the soil's (`gfx.WATER_N`) — and `env.uploadWater` turns
+  that outline into a SIGNED DISTANCE FIELD: 128 is the waterline, above it depth, below it the walk
+  back to dry land. One field, three effects, so they cannot disagree: the shader discards the sheet
+  outside the shore, ramps shallow→deep inside it, and WETS THE SAND in the band outside. The sheet
+  itself is ONE world-spanning quad on the `.water` material — no mesh is built per coastline, which
+  is why re-painting a shore is a texture upload and not a rebuild. `inWater` reads the same field,
+  so the flora scatter keeps out of a lake you just painted (a water stroke re-sows on RELEASE).
+  The authored `water` PROP still works and is still what the shipped tarn uses.
 - **`buildSolids` RESETS.** `materialize` runs it twice (once for the cover scatter to query,
   once after) and an appending version silently doubles every collider in the world.
 - Props carry the index of the op that placed them, which is what lets a click on a rock select
@@ -130,9 +146,14 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
   `shot.cmd`) and INSPECTING the PNGs in `shots\`. `--shot` hides the window: it scripts a walk→
   run→sprint and a roll at several angles, then every foe's states, then the **WORLD TOUR**
   (`70..92`): one framing per region, the chapel/watchtower interiors under torchlight, the tarn,
-  the cliffs, five overhead MAP shots and two Stats readouts. Never claim a visual change works
-  without a shot. `shots\` is gitignored. Do NOT launch the interactive window to "check" — the
-  owner plays the real game himself, and while he has it open the build cannot overwrite the exe.
+  the cliffs, five overhead MAP shots and two Stats readouts, then the EDITOR (`95..99e`) — layers,
+  a marquee, the ground brush, PAINTED WATER from low down and overhead, and the OBJECT VIEWER's two
+  levels. Never claim a visual change works without a shot. `shots\` is gitignored. Do NOT launch the
+  interactive window to "check" — the owner plays the real game himself, and while he has it open the
+  build cannot overwrite the exe (build with `--prefix zig-out-dev` when it is).
+- `--shot-props` renders every kind ALONE into `shots\props\` — one portrait per model, framed off its
+  own INFO bounds with the hero beside it for scale. Still the way to sweep the whole set in one go;
+  for ONE model the editor's object viewer is faster and shows the same thing from any angle.
 - **Framing is part of the test.** Confirm the camera actually SHOWS the moving part before
   tuning from a shot; a mis-framed angle means you're tuning a swing you can't see. Suspect the
   CAMERA first (yaw/pitch/dist) and capture the TRUE contact frame. Landscape shots have three
@@ -211,6 +232,18 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  lying about it, and columns of numbers need fixed advances.
                  Chrome text FITS ITSELF to the space left over — the status readout is laid out
                  first and the control crib shortens, then drops, rather than drawing over it.
+- `objview.zig` — THE OBJECT VIEWER (editor top bar > **Objects**, or right-click a selection >
+                 **View {prop}…**, or the properties panel's **view**). A paged GALLERY of every
+                 placeable kind, SHELVED BY LAYER (Decor = the flora palette, Props = the rest, off
+                 the same two comptime lists in props.zig), each cell a LIVE off-screen render of the
+                 real model through the real scene shader — never an icon, so a mesh that reads wrong
+                 here reads wrong in the game. Drag a cell to spin it, wheel to zoom, click to open
+                 ONE object filling the screen with its INFO row beside it (bound / top / view /
+                 casts / colliders / surface — half of "why does this prop look wrong" is a row in
+                 INFO disagreeing with the mesh). Two levels, and Esc backs out one at a time. The
+                 preview runs no depth pass, so it calls `gfx.Scene.shadowsOff` — without it every
+                 fragment is tested against the WORLD's shadow map and the model comes back dark.
+                 It replaces `--shot-props` as the way to judge a model: same look, no rebuild.
 - `ui.zig`     — the editor's immediate-mode widget kit, lifted from `../zig-diablo/src/ui.zig`
                  and re-backed onto `hud.zig`. `Ctx.anyHot` gates world clicks NEXT frame.
 - `bake.zig`   — the one-way door that emitted the first map from the old code-authored regions.
@@ -259,6 +292,16 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  unit-tested. THE place to retune damage/poise/stamina feel.
 - `collision.zig` — 2D XZ capsule/circle footprint collision (push-out).
 - `mathx.zig`  — ground-plane + vector/angle helpers.
+- `audio.zig`  — THE SOUND BANK: ~40 voices, every one SYNTHESIZED at launch from the same handful of
+                 layers (`body` / `air` / `grit` / `ring` / `tick` / `growl` / `chirp`) through one
+                 shared tape-style `master`, which is what makes separately-authored sounds feel
+                 recorded in the same room. Read it as recipes. Three things to know before retuning:
+                 **`master` NORMALIZES each voice** (`norm`), so a layer's `amp` sets its BALANCE
+                 inside the voice and only `BANK.gain` sets how loud the thing is; **`vars`/`jit`/
+                 `vjit`** are the anti-grate dials (different takes, then pitch, then level); and a
+                 voice's shape is judged by EAR — the tests only prove it renders, stays in range and
+                 is not silence. An arrow's impact is chosen by the SURFACE it struck
+                 (`arrowImpact`): masonry and iron ring, flesh, earth and timber must not.
 - `hud.zig`    — UI text in Balthazar; the ONLY path to draw/measure text. Two atlases of the
                  same face: 96 px for HUD, 160 px for the YOU DIED card. Also THE ELDEN RING
                  HUD itself — the three vitals bars and the four-slot equipment cross — taking plain

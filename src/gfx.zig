@@ -19,6 +19,7 @@ const alloc = std.heap.c_allocator;
 // only uses slot 0 for albedo), so the per-frame bind survives drawModel/drawMesh.
 const SLOT_SHADOW: i32 = 12;
 const SLOT_SOIL: i32 = 13;
+const SLOT_WATER: i32 = 14;
 
 /// THE SOIL GRID's resolution across the whole world. 112 cells over a 560 m map is 5 m a cell,
 /// which is about the smallest patch of ground worth painting by hand — and the sample position
@@ -29,6 +30,21 @@ const SLOT_SOIL: i32 = 13;
 /// Costs one byte per cell everywhere it is stored — the texture, `wf.Map.soil`, and 24 of those
 /// in the editor's undo ring, so ~300 KB of BSS for the increase.
 pub const SOIL_N: i32 = 112;
+
+/// THE WATER FIELD's resolution — finer than the soil's, because a coastline is a SHAPE you read and
+/// a patch of dirt is not. 224 over a 560 m map is 2.5 m a cell, and the field is BILINEAR (unlike
+/// the soil's ids, which must not interpolate), so the shoreline the shader draws is smooth well
+/// under a cell.
+pub const WATER_N: i32 = 224;
+
+/// The field's byte encoding, and the one place it is written down. 128 is the WATERLINE: above it
+/// the value is depth (how far inside the lake), below it the distance back out to dry land. One
+/// signed field, so the shore, the shallows and the wet sand all fall out of a single lookup.
+pub const WATER_SHORE: u8 = 128;
+/// Metres from the shore at which the water reads FULLY DEEP, and metres of soaked sand outside it.
+/// Both are how far the ENCODING ramps, not a limit on what you can paint.
+pub const WATER_DEEP_AT: f32 = 11.0;
+pub const WATER_WET_OUT: f32 = 3.4;
 
 // THE SUN — one hard directional light. Single source for the shader uniform and shadow
 // camera so shading and cast shadows can't disagree; low golden-hour elevation (~33 deg)
@@ -307,6 +323,30 @@ const sceneFS =
     \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0;
     \\  return int(texture(soilMap, uv).r*255.0 + 0.5);
     \\}
+    \\// ---- PAINTED WATER ---- one SIGNED field, bilinear, and everything about the coast comes out
+    \\// of it: 0.5 is the waterline, above it depth, below it the walk back to dry land. The mask the
+    \\// author paints is only the outline (see wf.Map.water); this is what turns an outline into a
+    \\// shore that fades, shallows that pale, and sand that is wet where the water has been.
+    \\uniform sampler2D waterMap;
+    \\uniform float waterHalf;   // world half-extent the field spans
+    \\uniform int   waterOn;     // 0 = nothing painted; every read below is skipped
+    \\uniform int   waterSheet;  // 1 while the PAINTED sheet draws — authored water props keep their own colours
+    \\float waterField(vec2 w){
+    \\  vec2 uv = w/(2.0*waterHalf) + 0.5;
+    \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
+    \\  return texture(waterMap, uv).r;
+    \\}
+    \\// WET SAND. The band just OUTSIDE the waterline, darkened and saturated the way soaked ground is.
+    \\// Done in the terrain's albedo rather than as another sheet, because it IS the ground — a
+    \\// separate mud mesh is what the old hand-placed lakes needed and what gave them their hard rim.
+    \\vec3 wetShore(vec3 c, vec2 p){
+    \\  if (waterOn == 0) return c;
+    \\  float f = waterField(p);
+    \\  if (f <= 0.002) return c;                       // dry land, well away from any water
+    \\  float wet = clamp(f/0.5, 0.0, 1.0);             // 0 at the ramp's edge, 1 at the waterline
+    \\  wet = wet*wet;                                  // the last metre or so does most of the work
+    \\  return mix(c, c*0.42 + vec3(0.020, 0.019, 0.014), wet*0.85);
+    \\}
     \\vec3 paintedSoil(vec3 c, vec2 p, float blades, float f3, float px){
     \\  if (soilOn == 0) return c;
     \\  // JITTER THE LOOKUP, don't filter the id. Ids do not interpolate — blending 2 and 4
@@ -371,6 +411,9 @@ const sceneFS =
     \\  float marsh = smoothstep(44.0, 108.0, p.x);
     \\  c = mix(c, c*vec3(1.06, 0.97, 0.74), marsh*0.42);
     \\  c = paintedSoil(c, p, blades, f3, px);
+    \\  // LAST, over the paint as well: sand is soaked by the water standing on it, whatever material
+    \\  // somebody painted there.
+    \\  c = wetShore(c, p);
     \\  return c*(0.78 + 0.22*fvn(p, 0.03, vec2(9.7), px));
     \\}
     \\// ---- SURFACE MATERIALS ---- every Builder mesh carries a material id (gfx.Mat, in
@@ -507,6 +550,28 @@ const sceneFS =
     \\    base *= 1.0 + 0.10*fl;   // 0.26 on top of an already-hot emissive blew the tongues to yellow
     \\  } else if (m == 9){ // WATER: silt drifting under the surface (the RIPPLES are geometry-
     \\    // free — see waterNormal — this is only what's suspended in the tarn)
+    \\    // THE PAINTED SHEET reads its colour from the field instead of from the mesh: one quad over
+    \\    // the whole world, present only where the field says water and shaded deep→shallow by how far
+    \\    // inside the shore it is. Dry fragments are DISCARDED, which is what lets one sheet serve any
+    \\    // shape of lake without a mesh per coastline. Authored water props (waterSheet == 0) keep the
+    \\    // deep→shallow ramp baked into their own vertices.
+    \\    if (waterSheet == 1){
+    \\      // `q` IS world xz for water (see the call site — water textures in world space, not surface
+    \\      // UVs), which is the coordinate the field is indexed in.
+    \\      float f = waterField(q);
+    \\      if (f < 0.503) discard;                       // outside the waterline: no sheet here at all
+    \\      float d = clamp((f - 0.5)*2.0, 0.0, 1.0);     // 0 at the shore, 1 in the deep
+    \\      // Same three tones the authored sheet uses (props.WATER_SHALLOW/MID/DEEP), as the linear
+    \\      // values the shader works in.
+    \\      vec3 shallow = vec3(0.118, 0.137, 0.122);
+    \\      vec3 midC    = vec3(0.071, 0.098, 0.102);
+    \\      vec3 deep    = vec3(0.051, 0.075, 0.082);
+    \\      base = (d < 0.5) ? mix(shallow, midC, smoothstep(0.0, 0.5, d))
+    \\                       : mix(midC, deep, smoothstep(0.5, 1.0, d));
+    \\      // …and the last half metre of it goes THIN, so the edge dies into the wet sand instead of
+    \\      // ruling a line across it. (No blending: the ground shows through where we discard.)
+    \\      if (d < 0.06 && fract(q.x*0.9 + q.y*0.7 + vnoise(q*2.3)*3.0) > d*14.0) discard;
+    \\    }
     \\    base *= 0.84 + 0.30*fmot(q, 0.7, px);
     \\  } else {            // PLAIN: the old generic grain, now surface-anchored. This is the DEFAULT
     \\    // material — every untagged shape (the skeleton's bones, eyes, glints) lands here, so its
@@ -1228,19 +1293,28 @@ pub const Retro = struct {
 // is load-bearing: the bytes are enum ids, and a bilinear fetch between 2 and 4 returns 3 — a
 // material nobody painted, showing as a seam of the wrong ground along every boundary.
 fn loadSoilTexture() rl.Texture2D {
-    const n: usize = @intCast(SOIL_N);
-    const blank = std.heap.c_allocator.alloc(u8, n * n) catch @panic("soil texture");
+    return loadFieldTexture(SOIL_N, .point);
+}
+
+/// A blank n x n single-byte texture, updated in place by the setters above. The FILTER is the whole
+/// reason this takes a parameter: soil bytes are enum IDS and must never interpolate (a bilinear fetch
+/// between 2 and 4 returns 3 — a material nobody painted, showing as a seam of the wrong ground along
+/// every boundary), while the water field is a continuous DISTANCE and bilinear is exactly what turns
+/// its 2.5 m lattice into a smooth coastline.
+fn loadFieldTexture(n: i32, filter: rl.TextureFilter) rl.Texture2D {
+    const cells: usize = @intCast(n * n);
+    const blank = std.heap.c_allocator.alloc(u8, cells) catch @panic("field texture");
     defer std.heap.c_allocator.free(blank);
     @memset(blank, 0);
     const img = rl.Image{
         .data = blank.ptr,
-        .width = SOIL_N,
-        .height = SOIL_N,
+        .width = n,
+        .height = n,
         .mipmaps = 1,
         .format = .uncompressed_grayscale,
     };
-    const tex = rl.loadTextureFromImage(img) catch @panic("soil texture");
-    rl.setTextureFilter(tex, .point);
+    const tex = rl.loadTextureFromImage(img) catch @panic("field texture");
+    rl.setTextureFilter(tex, filter);
     rl.setTextureWrap(tex, .clamp);
     return tex;
 }
@@ -1276,6 +1350,10 @@ pub const Scene = struct {
     loc_soilOn: i32,
     loc_soilHalf: i32,
     loc_soilCell: i32,
+    waterTex: rl.Texture2D,
+    loc_waterOn: i32,
+    loc_waterHalf: i32,
+    loc_waterSheet: i32,
     saved_near: @TypeOf(rl.gl.rlGetCullDistanceNear()) = 0,
     saved_far: @TypeOf(rl.gl.rlGetCullDistanceFar()) = 0,
 
@@ -1290,6 +1368,11 @@ pub const Scene = struct {
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "shadowMapResolution"), &res, .int);
         var slotSoil = SLOT_SOIL;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "soilMap"), &slotSoil, .int);
+        var slotWater = SLOT_WATER;
+        rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterMap"), &slotWater, .int);
+        var waterOff: i32 = 0;
+        rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterOn"), &waterOff, .int);
+        rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterSheet"), &waterOff, .int);
         var haze = HAZE;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "hazeColor"), &haze, .vec3);
         var density: f32 = HAZE_DENSITY;
@@ -1308,6 +1391,10 @@ pub const Scene = struct {
             .loc_soilOn = rl.getShaderLocation(shader, "soilOn"),
             .loc_soilHalf = rl.getShaderLocation(shader, "soilHalf"),
             .loc_soilCell = rl.getShaderLocation(shader, "soilCell"),
+            .waterTex = loadFieldTexture(WATER_N, .bilinear),
+            .loc_waterOn = rl.getShaderLocation(shader, "waterOn"),
+            .loc_waterHalf = rl.getShaderLocation(shader, "waterHalf"),
+            .loc_waterSheet = rl.getShaderLocation(shader, "waterSheet"),
             .lightVP = rl.math.matrixIdentity(),
             .loc_ground = rl.getShaderLocation(shader, "groundMode"),
             .loc_lightVP = rl.getShaderLocation(shader, "lightVP"),
@@ -1369,6 +1456,18 @@ pub const Scene = struct {
     // Upload this frame's point lights (torches/fires). Caller passes the ones NEAREST the
     // camera — env.uploadLights does the picking — and anything past MAX_LIGHTS is dropped,
     // which is invisible in practice because the dropped ones are the furthest away.
+    /// TAKE CAST SHADOWS OFF the draws that follow, until the next `bind`. For an off-screen preview
+    /// (the editor's object viewer) that runs no depth pass of its own: left alone, every fragment is
+    /// tested against the WORLD's shadow map through the world's light matrix, so a previewed model
+    /// comes back arbitrarily dark depending on where the hero happens to be standing.
+    ///
+    /// Done by pushing the light matrix' output past the far plane — `shadowFrac` counts anything
+    /// outside the ortho box as LIT, which is precisely the state wanted, and it costs no uniform and
+    /// no branch in the shader.
+    pub fn shadowsOff(self: *Scene) void {
+        rl.setShaderValueMatrix(self.shader, self.loc_lightVP, rl.math.matrixTranslate(0, 0, 5));
+    }
+
     pub fn setLights(self: *Scene, lights: []const Light) void {
         var pos: [MAX_LIGHTS * 3]f32 = undefined;
         var col: [MAX_LIGHTS * 3]f32 = undefined;
@@ -1394,6 +1493,26 @@ pub const Scene = struct {
     pub fn setGround(self: *Scene, on: bool) void {
         var m: i32 = if (on) 1 else 0;
         rl.setShaderValue(self.shader, self.loc_ground, &m, .int);
+    }
+
+    /// Push the WATER FIELD: WATER_N² bytes of signed distance around the shore (see WATER_SHORE).
+    /// BILINEAR, unlike the soil's ids — this one is a continuous quantity and the filtering is what
+    /// makes a 2.5 m lattice draw a coastline you cannot see the cells in.
+    pub fn setWater(self: *Scene, field: []const u8, half: f32, any: bool) void {
+        const n: usize = @intCast(WATER_N);
+        std.debug.assert(field.len == n * n);
+        rl.updateTexture(self.waterTex, field.ptr);
+        var on: i32 = if (any) 1 else 0;
+        rl.setShaderValue(self.shader, self.loc_waterOn, &on, .int);
+        var h = half;
+        rl.setShaderValue(self.shader, self.loc_waterHalf, &h, .float);
+    }
+
+    /// Mark the draws that follow as the PAINTED SHEET (field-coloured) or as ordinary authored water
+    /// (vertex-coloured). Toggle on around the sheet and off immediately after, like `setWind`.
+    pub fn setWaterSheet(self: *Scene, on: bool) void {
+        var v: i32 = if (on) 1 else 0;
+        rl.setShaderValue(self.shader, self.loc_waterSheet, &v, .int);
     }
 
     /// Push the painted soil grid: SOIL_N x SOIL_N material ids, one byte each, 0 = unpainted.
@@ -1422,10 +1541,12 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_soilCell, &cell, .float);
     }
 
-    // The soil texture rides its own slot alongside the shadow map, bound once per frame.
+    // The soil and water fields ride their own slots alongside the shadow map, bound once per frame.
     fn bindSoil(self: *Scene) void {
         rl.gl.rlActiveTextureSlot(SLOT_SOIL);
         rl.gl.rlEnableTexture(self.soilTex.id);
+        rl.gl.rlActiveTextureSlot(SLOT_WATER);
+        rl.gl.rlEnableTexture(self.waterTex.id);
         rl.gl.rlActiveTextureSlot(0);
     }
 

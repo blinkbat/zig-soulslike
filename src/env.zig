@@ -94,9 +94,56 @@ pub const MAX_NEAR = 160;
 // coplanar faces don't z-fight, and tiny enough (~1 cm) that the embed is imperceptible.
 const GROUND_Y: f32 = 0.01;
 
+/// The painted sheet's surface height — the same ankle-deep 0.055 the authored water prop uses, so a
+/// painted lake and a placed one wade identically and cannot z-fight where they meet.
+const WATER_Y: f32 = 0.055;
+
+// The distance transform's two working grids. FILE SCOPE, not on Env and not on the stack: 200 KB of
+// f32 per grid is far too much for a stack frame, and they hold nothing between calls — every cell is
+// written before it is read (see uploadWater).
+var scratchIn: [wf.WATER_CELLS]f32 = undefined;
+var scratchOut: [wf.WATER_CELLS]f32 = undefined;
+
 // `op` is the map op that placed this instance — what lets a click on a rock select the generator that
 // grew it. Without it only literals would be selectable, and generators are most of the world.
-const Prop = struct { kind: Kind, pos: rl.Vector3, yaw: f32, scale: f32, op: u16 = 0 };
+// `lean`/`leanDir` TIP the instance off plumb (see the LEAN block below); 0 is plumb and costs nothing.
+const Prop = struct { kind: Kind, pos: rl.Vector3, yaw: f32, scale: f32, lean: f32 = 0, leanDir: f32 = 0, op: u16 = 0 };
+
+// ── LEAN ───────────────────────────────────────────────────────────────────────────────
+// A prop can stand OFF PLUMB: `lean` degrees, tipped toward the compass direction `leanDir`, which is
+// measured the same way as every yaw here (direction (cos d, −sin d) — see the yaw note in `line`).
+//
+// The tilt turns about the prop's GROUND ORIGIN, so its base stays planted where it was placed. That
+// is also why nothing below inflates a culling bound: `info.bound` is a sphere about that same origin
+// (and `bound >= top` is asserted in props), so rotating the mesh inside it leaves it enclosed.
+
+/// The world direction a lean tips TOWARD.
+fn leanToward(dirDeg: f32) rl.Vector3 {
+    const a = mathx.radians(dirDeg);
+    return v3(mathx.cosf(a), 0, -mathx.sinf(a));
+}
+
+/// The rotation AXIS for that lean: horizontal and square to the tip direction, signed so a POSITIVE
+/// angle about it carries the top over the way `leanToward` points (right-hand rule, which is what
+/// raylib's MatrixRotate builds).
+fn leanAxis(dirDeg: f32) rl.Vector3 {
+    const d = leanToward(dirDeg);
+    return v3(d.z, 0, -d.x);
+}
+
+/// How far sideways a point `up` metres up a leaning prop's axis ends up, as a world offset. PUBLIC
+/// because the editor's selection marker has to tip with the prop it is marking, and a second copy of
+/// this trig over there is exactly how a marker ends up pointing somewhere the prop doesn't.
+pub fn leanOffsetAt(lean: f32, dirDeg: f32, up: f32) rl.Vector3 {
+    if (lean == 0) return mathx.zero3;
+    const s = mathx.sinf(mathx.radians(lean)) * up;
+    const d = leanToward(dirDeg);
+    return v3(d.x * s, 0, d.z * s);
+}
+
+fn leanSwing(pr: Prop, up: f32) rl.Vector3 {
+    return leanOffsetAt(pr.lean, pr.leanDir, up);
+}
 
 /// The cover field's gate FLOOR: a scatter that respects the field still places this fraction of its
 /// attempts in a total clearing, so a clearing THINS what stands in it without emptying it. Named because
@@ -212,6 +259,13 @@ pub const Env = struct {
     nlights: usize = 0,
     pools: [8]Pool = undefined,
     npools: usize = 0,
+    /// THE PAINTED WATER: the sheet drawn over the whole world, and the signed field that decides where
+    /// it exists (see uploadWater). `waterAny` is false for a map with nothing painted, and then neither
+    /// is touched — the shipped map's authored `water` props are a separate, still-supported thing.
+    waterSheet: rl.Model = undefined,
+    waterField: [wf.WATER_CELLS]u8 = [_]u8{gfx.WATER_SHORE} ** wf.WATER_CELLS,
+    waterAny: bool = false,
+    waterHalf: f32 = 0,
     // Per-frame culling counters, surfaced by the debug Stats overlay. The whole expansion rests
     // on the claim that a world of thousands of props costs a few hundred draws, and this is what
     // makes that claim CHECKABLE while playing instead of a thing I asserted once in a comment.
@@ -229,6 +283,7 @@ pub const Env = struct {
         // lockstep (props.INFO's comptime block already pins the table; this pins the models).
         for (&self.models, props.INFO) |*m, row| m.* = row.build(shader);
         self.ground = terrain(shader, GROUND_HALF);
+        self.waterSheet = waterQuad(shader, GROUND_HALF);
         self.nprops = 0;
         self.nsolids = 0;
         self.nlights = 0;
@@ -240,6 +295,100 @@ pub const Env = struct {
     /// 4 KB instead of re-expanding eight thousand props.
     pub fn uploadSoil(self: *Env, m: *const wf.Map) void {
         if (self.scene) |sc| sc.setSoil(&m.soil, m.half);
+    }
+
+    /// TURN THE PAINTED MASK INTO A SHORE. This is the whole "no manual blending" claim, and it is a
+    /// SIGNED DISTANCE TRANSFORM: measure every cell's distance to the nearest cell of the other kind,
+    /// then encode wet cells above the waterline byte and dry ones below it. The shader reads that one
+    /// field for three separate things (where the sheet exists, how deep it looks, and how far the wet
+    /// sand reaches), so a coast, its shallows and its beach can never disagree with each other.
+    ///
+    /// Two passes of a chamfer transform, forward then backward — exact enough that no eye can tell it
+    /// from a Euclidean one at 2.5 m cells, and it is ~100k adds over the whole world, so a brush
+    /// stroke can call this on every frame it moves.
+    pub fn uploadWater(self: *Env, m: *const wf.Map) void {
+        const N = wf.WATER_N;
+        self.waterAny = m.anyWater();
+        self.waterHalf = m.half;
+        if (!self.waterAny) {
+            @memset(&self.waterField, 0);
+            if (self.scene) |sc| sc.setWater(&self.waterField, m.half, false);
+            return;
+        }
+        const cellM = 2 * m.half / @as(f32, @floatFromInt(N));
+        // `dIn` counts cells to the nearest DRY cell, `dOut` to the nearest WET one. Held in cell units
+        // (a float is plenty and keeps the chamfer readable); FAR is any distance past what either ramp
+        // can use, so the interior of a big lake stops accumulating.
+        const FAR: f32 = 1e9;
+        var dIn = &scratchIn;
+        var dOut = &scratchOut;
+        for (m.water, 0..) |wet, i| {
+            dIn[i] = if (wet != 0) FAR else 0;
+            dOut[i] = if (wet != 0) 0 else FAR;
+        }
+        // The two chamfer weights: 1 straight, √2 diagonal.
+        const D1: f32 = 1.0;
+        const D2: f32 = 1.41421356;
+        for ([_]*[wf.WATER_CELLS]f32{ dIn, dOut }) |d| {
+            var z: usize = 0;
+            while (z < N) : (z += 1) {
+                var x: usize = 0;
+                while (x < N) : (x += 1) {
+                    const i = z * N + x;
+                    var best = d[i];
+                    if (z > 0) {
+                        best = @min(best, d[i - N] + D1);
+                        if (x > 0) best = @min(best, d[i - N - 1] + D2);
+                        if (x + 1 < N) best = @min(best, d[i - N + 1] + D2);
+                    }
+                    if (x > 0) best = @min(best, d[i - 1] + D1);
+                    d[i] = best;
+                }
+            }
+            var zb: usize = N;
+            while (zb > 0) {
+                zb -= 1;
+                var xb: usize = N;
+                while (xb > 0) {
+                    xb -= 1;
+                    const i = zb * N + xb;
+                    var best = d[i];
+                    if (zb + 1 < N) {
+                        best = @min(best, d[i + N] + D1);
+                        if (xb > 0) best = @min(best, d[i + N - 1] + D2);
+                        if (xb + 1 < N) best = @min(best, d[i + N + 1] + D2);
+                    }
+                    if (xb + 1 < N) best = @min(best, d[i + 1] + D1);
+                    d[i] = best;
+                }
+            }
+        }
+        // ENCODE. Half a cell is subtracted from both distances so the WATERLINE lands on the boundary
+        // between a wet cell and a dry one rather than at a wet cell's centre — without it a painted
+        // lake reads half a cell too big and the beach starts inside the water.
+        const shoreF: f32 = @floatFromInt(gfx.WATER_SHORE);
+        for (m.water, 0..) |wet, i| {
+            const enc: f32 = if (wet != 0) blk: {
+                const metres = @max(0.0, (dIn[i] - 0.5) * cellM);
+                break :blk shoreF + mathx.clampF(metres / gfx.WATER_DEEP_AT, 0, 1) * (255.0 - shoreF);
+            } else blk: {
+                const metres = @max(0.0, (dOut[i] - 0.5) * cellM);
+                break :blk shoreF * (1.0 - mathx.clampF(metres / gfx.WATER_WET_OUT, 0, 1));
+            };
+            self.waterField[i] = mathx.u8f(enc);
+        }
+        if (self.scene) |sc| sc.setWater(&self.waterField, m.half, true);
+    }
+
+    /// The painted sheet, drawn with the field driving its colour. Called from the lit pass only — it is
+    /// not a shadow caster (a flat sheet at ankle height throws nothing worth the depth-pass draw).
+    pub fn drawWater(self: *Env) void {
+        if (!self.waterAny) return;
+        if (self.scene) |sc| {
+            sc.setWaterSheet(true);
+            rl.drawModel(self.waterSheet, mathx.zero3, 1.0, rl.Color.white);
+            sc.setWaterSheet(false);
+        }
     }
 
     /// Turn a map into the world, IN PLACE — not an `init()` returning a value, since Env is ~450 KB of
@@ -279,6 +428,24 @@ pub const Env = struct {
             }
         }
         if (coverIsSolid) buildSolids(self);
+        indexProps(self);
+    }
+
+    /// DEV HARNESS ONLY (`--shot-props`): stage exactly ONE prop at the origin on bare ground —
+    /// plus its light, if the kind carries one — and index it, so every kind can be photographed
+    /// in isolation. Same reset discipline as `materialize`: nothing accumulates across calls.
+    pub fn stageOne(self: *Env, kind: Kind) void {
+        self.nprops = 0;
+        self.nsolids = 0;
+        self.nlights = 0;
+        self.npools = 0;
+        self.props[0] = .{ .kind = kind, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1.0, .op = 0 };
+        self.nprops = 1;
+        if (props.info(kind).light) |ls| {
+            self.lights[0] = .{ .base = .{ .pos = v3(0, ls.y, 0), .col = ls.col, .radius = ls.radius }, .flicker = ls.flicker, .phase = 0 };
+            self.nlights = 1;
+        }
+        buildSolids(self);
         indexProps(self);
     }
 
@@ -359,7 +526,28 @@ pub const Env = struct {
             const r = w.radius * inset;
             if (dx * dx + dz * dz < r * r) return true;
         }
-        return false;
+        // …and the PAINTED water, off the same field the shader draws. The field is a DISTANCE, so
+        // `inset` (a radius multiplier for a pool) becomes a SHORELINE MARGIN here: under 1 it holds the
+        // answer back from the last foot of shallows, at or over 1 it takes any water at all.
+        const margin = (1.0 - mathx.clampF(inset, 0, 1)) * gfx.WATER_DEEP_AT;
+        return self.paintedDepth(x, z) * gfx.WATER_DEEP_AT > margin + 0.01;
+    }
+
+    /// How deep the painted water is at a point: 0 dry, 1 as deep as the field ramps (gfx.WATER_DEEP_AT
+    /// metres from the shore). The one reader of the field outside the shader — wading, the scatter's
+    /// water test, and anything later that needs to know it is standing in a lake.
+    pub fn paintedDepth(self: *const Env, x: f32, z: f32) f32 {
+        if (!self.waterAny or self.waterHalf <= 0) return 0;
+        const N = wf.WATER_N;
+        const t = (x + self.waterHalf) / (2 * self.waterHalf);
+        const u = (z + self.waterHalf) / (2 * self.waterHalf);
+        if (t < 0 or t >= 1 or u < 0 or u >= 1) return 0;
+        const cx: usize = @min(@as(usize, @intFromFloat(t * @as(f32, @floatFromInt(N)))), N - 1);
+        const cz: usize = @min(@as(usize, @intFromFloat(u * @as(f32, @floatFromInt(N)))), N - 1);
+        const v: f32 = @floatFromInt(self.waterField[cz * N + cx]);
+        const shore: f32 = @floatFromInt(gfx.WATER_SHORE);
+        if (v <= shore) return 0;
+        return (v - shore) / (255.0 - shore);
     }
 
     /// The prop a ray hits first — the editor's world picking. A plain linear ray/sphere sweep: ~8k
@@ -390,7 +578,10 @@ pub const Env = struct {
         for (self.props[0..self.nprops], 0..) |pr, i| {
             if (!accept(ctx, pr.op)) continue;
             const nfo = props.info(pr.kind);
-            const c = v3(pr.pos.x, pr.pos.y + nfo.top * pr.scale * 0.5, pr.pos.z);
+            // Half way up the mesh — and half way up its LEAN when it has one, so a click lands on a
+            // tipped tree where you SEE it rather than where it would have stood plumb.
+            const sw = leanSwing(pr, nfo.top * pr.scale * 0.5);
+            const c = v3(pr.pos.x + sw.x, pr.pos.y + nfo.top * pr.scale * 0.5, pr.pos.z + sw.z);
             const rad = @max(nfo.bound * pr.scale * 0.5, 0.35);
             const oc = mathx.subV(c, origin);
             const along = oc.x * dir.x + oc.y * dir.y + oc.z * dir.z;
@@ -403,6 +594,13 @@ pub const Env = struct {
             }
         }
         return best;
+    }
+
+    /// One kind's built model. The editor's object viewer draws these on their own, off-screen — and it
+    /// has to be THIS model, the one the world draws, or the viewer is judging a second copy of the
+    /// mesh that nobody plays.
+    pub fn model(self: *const Env, kind: Kind) rl.Model {
+        return self.models[@intFromEnum(kind)];
     }
 
     pub fn setShader(self: *Env, sh: rl.Shader) void {
@@ -478,7 +676,20 @@ pub const Env = struct {
                     },
                 }
                 self.stat_draws += 1;
-                rl.drawModelEx(self.models[@intFromEnum(pr.kind)], pr.pos, v3(0, 1, 0), pr.yaw, v3(pr.scale, pr.scale, pr.scale), rl.Color.white);
+                const sc = v3(pr.scale, pr.scale, pr.scale);
+                if (pr.lean == 0) {
+                    rl.drawModelEx(self.models[@intFromEnum(pr.kind)], pr.pos, v3(0, 1, 0), pr.yaw, sc, rl.Color.white);
+                } else {
+                    // A LEANING instance needs two rotations, and raylib's DrawModelEx only takes one —
+                    // so the YAW rides in the model transform (applied FIRST, in the mesh's own space)
+                    // and the LEAN is the axis-angle it does take: the prop spins on its base, then tips
+                    // over toward leanDir in WORLD space. The uniform scale between them commutes with
+                    // both, so the order costs nothing. The model is copied by value, so this cannot
+                    // leak a transform onto the next instance of the same kind.
+                    var mdl = self.models[@intFromEnum(pr.kind)];
+                    mdl.transform = rl.math.matrixRotateY(mathx.radians(pr.yaw));
+                    rl.drawModelEx(mdl, pr.pos, leanAxis(pr.leanDir), pr.lean, sc, rl.Color.white);
+                }
             }
         }
     }
@@ -590,6 +801,17 @@ fn terrain(shader: rl.Shader, half: f32) rl.Model {
     return b.toModel(shader);
 }
 
+/// THE PAINTED WATER SHEET: one world-spanning quad on the `.water` material. It has no shape of its
+/// own — the shader DISCARDS every fragment the field says is dry (see `waterSheet` there), so a lake
+/// of any outline costs this one quad and needs no mesh built for its coastline. Two triangles is also
+/// why the shore can be re-painted at interactive speed: nothing is rebuilt, one texture is re-uploaded.
+fn waterQuad(shader: rl.Shader, half: f32) rl.Model {
+    var b = gfx.Builder.init();
+    b.setMat(.water);
+    b.quad(v3(-half, WATER_Y, -half), v3(-half, WATER_Y, half), v3(half, WATER_Y, half), v3(half, WATER_Y, -half), v3(0, 1, 0), rl.Color.white);
+    return b.toModel(shader);
+}
+
 // ── placement: REPLAYING A MAP ─────────────────────────────────────────────────────────
 // The world was once authored here as five paragraphs of Zig; it lives in a MAP FILE now, and this is the
 // other half of that — the expansion of each op into props. Two rules:
@@ -605,6 +827,12 @@ const Placer = struct {
     e: *Env,
     m: *const wf.Map,
     cur: u16 = 0, // the op being expanded, stamped onto every prop it places
+    // The LEAN the op being expanded asks for, held here rather than threaded through `at` — every
+    // scatter would otherwise grow a parameter it does nothing with. `exact` is the `at` op: a literal
+    // leans exactly as authored, while a scatter rolls each instance its own amount and direction.
+    lean: f32 = 0,
+    leanDir: f32 = 0,
+    leanExact: bool = false,
 
     fn at(self: *Placer, kind: Kind, x: f32, z: f32, yaw: f32, scale: f32, rng: *mathx.Rng) void {
         self.atY(kind, x, 0, z, yaw, scale, rng);
@@ -613,7 +841,22 @@ const Placer = struct {
     // With an explicit Y — only water uses it, to stagger overlapping sheets out of z-fighting.
     fn atY(self: *Placer, kind: Kind, x: f32, y: f32, z: f32, yaw: f32, scale: f32, rng: *mathx.Rng) void {
         if (self.e.nprops >= MAX_PROPS) @panic("env: MAX_PROPS exceeded — raise the cap");
-        self.e.props[self.e.nprops] = .{ .kind = kind, .pos = v3(x, y, z), .yaw = yaw, .scale = scale, .op = self.cur };
+        // NOTHING is drawn from `rng` unless the op actually asked for a lean. Every existing world's
+        // arrangement IS that stream, so an unconditional roll here would reshuffle the whole map (and
+        // fail the pinned-instance-count test) the moment this field appeared.
+        var lean: f32 = 0;
+        var leanDir: f32 = self.leanDir;
+        if (self.lean != 0) {
+            if (self.leanExact) {
+                lean = self.lean;
+            } else {
+                // A dial as a MAXIMUM: never dead plumb (authored variation is the point) and reaching
+                // the full figure at the top, each instance falling its own way.
+                lean = self.lean * rng.range(0.15, 1.0);
+                leanDir = rng.range(0, 360);
+            }
+        }
+        self.e.props[self.e.nprops] = .{ .kind = kind, .pos = v3(x, y, z), .yaw = yaw, .scale = scale, .lean = lean, .leanDir = leanDir, .op = self.cur };
         self.e.nprops += 1;
         if (props.info(kind).light) |ls| self.addLight(x, y, z, scale, ls, rng);
         if (kind == .water) {
@@ -667,6 +910,9 @@ const Placer = struct {
 
     fn expand(self: *Placer, o: *const wf.Op) void {
         var rng = o.stream();
+        self.lean = o.lean;
+        self.leanDir = o.leanDir;
+        self.leanExact = o.op == .at;
         switch (o.op) {
             .at => self.atY(o.kind, o.x, o.r1, o.z, o.yaw, o.scale, &rng),
             .belt => self.belt(o, &rng),
@@ -924,6 +1170,20 @@ fn buildSolids(e: *Env) void {
             );
             sol.h = part.h * s;
             sol.surf = nfo.surf; // …and what it is made of, for whatever hits it (see collision.Surface)
+            // A LEANING prop's footprint goes WITH it, or you bump into air beside a tipped trunk and
+            // walk through the trunk itself. Push-out is 2D — ONE footprint for the whole height — so it
+            // sits where the tilt puts the collider's MID height, and the shift is capped at the part's
+            // own radius so a footprint can never wander off the mass it belongs to.
+            if (pr.lean != 0) {
+                var off = leanSwing(pr, part.h * s * 0.5);
+                const lim = part.r * s;
+                const len = mathx.lenXZ(off);
+                if (len > lim) off = mathx.scaleV(off, lim / len);
+                sol.a.x += off.x;
+                sol.a.z += off.z;
+                sol.b.x += off.x;
+                sol.b.z += off.z;
+            }
             e.solid_buf[e.nsolids] = sol;
             e.nsolids += 1;
         }

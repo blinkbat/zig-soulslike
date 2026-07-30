@@ -94,6 +94,14 @@ pub const Op = struct {
     r1: f32 = 0, // disc outer radius
     yaw: f32 = 0,
     scale: f32 = 1,
+    /// TIP THE PROP OFF PLUMB: `lean` degrees, toward the compass direction `leanDir` (measured
+    /// like yaw). A literal `at` leans exactly this much and in exactly that direction; a SCATTER
+    /// reads `lean` as the MOST any one instance gets and rolls both amount and direction per
+    /// instance, so a wood leans every which way instead of as one hurricane-struck block. 0 =
+    /// plumb, which is every op's default — nothing in a map without these keys draws from its
+    /// stream, so adding the field cannot reshuffle a world.
+    lean: f32 = 0,
+    leanDir: f32 = 0,
     sLo: f32 = 0.85, // scale band the instances draw from
     sHi: f32 = 1.15,
     n: i32 = 0, // attempts (belt/disc), positions (ring), talus count (edge)
@@ -273,6 +281,16 @@ comptime {
     std.debug.assert(Soil.N == 7);
 }
 
+// ── the painted WATER ───────────────────────────────────────────────────────────────────
+// A second painted grid, and a much simpler one: one BIT per cell — wet or dry. Everything that
+// makes water read as water (where the coast is, how the shallows fade into the deep, where the sand
+// is soaked) is DERIVED from this mask by env's signed distance field, never painted by hand. That
+// is the whole design: painting a lake is painting its OUTLINE, and the gradient is arithmetic.
+//
+// Finer than the soil grid, because a shoreline is a shape you read and a material patch is not.
+pub const WATER_N: usize = @intCast(gfx.WATER_N);
+pub const WATER_CELLS: usize = WATER_N * WATER_N;
+
 // ── the map ────────────────────────────────────────────────────────────────────────────
 
 pub const Map = struct {
@@ -291,6 +309,9 @@ pub const Map = struct {
     nfoes: usize = 0,
     /// The painted soil, row-major from -half to +half on both axes. All zero = nothing painted.
     soil: [SOIL_CELLS]u8 = [_]u8{0} ** SOIL_CELLS,
+    /// The painted WATER MASK, same layout, 1 = wet. Depth, shoreline and wet sand are all derived
+    /// from it (see env.uploadWater) — this is only the outline.
+    water: [WATER_CELLS]u8 = [_]u8{0} ** WATER_CELLS,
 
     pub fn label(self: *const Map) []const u8 {
         return std.mem.sliceTo(&self.name, 0);
@@ -308,6 +329,7 @@ pub const Map = struct {
         self.nclearings = 0;
         self.nfoes = 0;
         self.soil = [_]u8{0} ** SOIL_CELLS;
+        self.water = [_]u8{0} ** WATER_CELLS;
     }
 
     /// The smallest VALID map: a world-spanning fallback zone plus the cover op that reads it. A truly
@@ -432,6 +454,52 @@ pub const Map = struct {
         return changed;
     }
 
+    /// Paint (or wipe) a disc of the WATER MASK. Same shape as `paintSoil` — and deliberately the
+    /// same shape, because they are the same gesture on two grids — but on the finer lattice and with
+    /// only two values. Returns whether anything changed.
+    pub fn paintWater(self: *Map, px: f32, pz: f32, radius: f32, wet: bool) bool {
+        const cell = 2 * self.half / @as(f32, @floatFromInt(WATER_N));
+        const r2 = radius * radius;
+        const v: u8 = if (wet) 1 else 0;
+        var changed = false;
+        var cz: usize = 0;
+        while (cz < WATER_N) : (cz += 1) {
+            const wz = -self.half + (@as(f32, @floatFromInt(cz)) + 0.5) * cell;
+            if (@abs(wz - pz) > radius + cell) continue;
+            var cx: usize = 0;
+            while (cx < WATER_N) : (cx += 1) {
+                const wx = -self.half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
+                const dx = wx - px;
+                const dz = wz - pz;
+                if (dx * dx + dz * dz > r2) continue;
+                const i = cz * WATER_N + cx;
+                if (self.water[i] != v) {
+                    self.water[i] = v;
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
+    /// Is this cell of the mask wet? Out-of-grid is dry.
+    pub fn waterAt(self: *const Map, px: f32, pz: f32) bool {
+        const t = (px + self.half) / (2 * self.half);
+        const u = (pz + self.half) / (2 * self.half);
+        if (t < 0 or t >= 1 or u < 0 or u >= 1) return false;
+        const cx: usize = @min(@as(usize, @intFromFloat(t * @as(f32, @floatFromInt(WATER_N)))), WATER_N - 1);
+        const cz: usize = @min(@as(usize, @intFromFloat(u * @as(f32, @floatFromInt(WATER_N)))), WATER_N - 1);
+        return self.water[cz * WATER_N + cx] != 0;
+    }
+
+    /// Has anything been painted wet at all? What lets the renderer skip the sheet entirely.
+    pub fn anyWater(self: *const Map) bool {
+        for (self.water) |v| {
+            if (v != 0) return true;
+        }
+        return false;
+    }
+
     pub fn inClearing(self: *const Map, px: f32, pz: f32) bool {
         for (self.clearings[0..self.nclearings]) |c| {
             const dx = px - c.x;
@@ -475,22 +543,13 @@ pub fn write(m: *const Map, w: anytype) !void {
     }
     if (anyPaint) {
         try w.writeAll("\n");
-        var i: usize = 0;
-        var perLine: usize = 0;
-        while (i < SOIL_CELLS) {
-            const v = m.soil[i];
-            var run: usize = 1;
-            while (i + run < SOIL_CELLS and m.soil[i + run] == v) run += 1;
-            if (perLine == 0) try w.writeAll("soil:");
-            try w.print(" {d}x{d}", .{ v, run });
-            i += run;
-            perLine += 1;
-            if (perLine == 16) {
-                try w.writeAll("\n");
-                perLine = 0;
-            }
-        }
-        if (perLine != 0) try w.writeAll("\n");
+        try writeGrid(w, "soil", &m.soil);
+    }
+    // …and the water mask the same way. Both grids are RLE because both are mostly one value; the
+    // shared writer is what keeps the two records from drifting into different encodings.
+    if (m.anyWater()) {
+        try w.writeAll("\n");
+        try writeGrid(w, "water", &m.water);
     }
 
     if (m.nfoes > 0) try w.writeAll("\n");
@@ -526,6 +585,28 @@ fn writeOp(o: *const Op, w: anytype) !void {
         try writeMix(w, o.mix[0..o.nmix]);
     }
     try w.writeAll("\n");
+}
+
+/// One painted grid, RUN-LENGTH encoded: thousands of cells that are almost all the same value, so
+/// runs turn a wall of digits into a handful of readable lines. Wrapped at 16 runs a line; the reader
+/// carries a running cursor, so where it wraps is not part of the format.
+fn writeGrid(w: anytype, label: []const u8, cells: []const u8) !void {
+    var i: usize = 0;
+    var perLine: usize = 0;
+    while (i < cells.len) {
+        const v = cells[i];
+        var run: usize = 1;
+        while (i + run < cells.len and cells[i + run] == v) run += 1;
+        if (perLine == 0) try w.print("{s}:", .{label});
+        try w.print(" {d}x{d}", .{ v, run });
+        i += run;
+        perLine += 1;
+        if (perLine == 16) {
+            try w.writeAll("\n");
+            perLine = 0;
+        }
+    }
+    if (perLine != 0) try w.writeAll("\n");
 }
 
 fn writeMix(w: anytype, mix: []const Kind) !void {
@@ -580,6 +661,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     m.* = .{};
     var seenVersion = false;
     var soilAt: usize = 0; // running cursor, so soil runs may wrap across lines
+    var waterAt: usize = 0; // …and the water mask's own
     var lines = std.mem.splitScalar(u8, text, '\n');
     var ln: usize = 0;
     while (lines.next()) |raw| {
@@ -611,15 +693,11 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
         } else if (std.mem.eql(u8, rec, "soil")) {
             // Runs continue ACROSS lines — `soilAt` is a running cursor over the whole grid, so
             // the writer can wrap wherever it likes and a hand-edited file can too.
-            while (it.next()) |tok| {
-                const xi = std.mem.indexOfScalar(u8, tok, 'x') orelse return ParseError.BadNumber;
-                const v = std.fmt.parseInt(u8, tok[0..xi], 10) catch return ParseError.BadNumber;
-                const run = std.fmt.parseInt(usize, tok[xi + 1 ..], 10) catch return ParseError.BadNumber;
-                if (v >= Soil.N) return ParseError.BadKind;
-                if (soilAt + run > SOIL_CELLS) return ParseError.ExtraField;
-                @memset(m.soil[soilAt .. soilAt + run], v);
-                soilAt += run;
-            }
+            soilAt = try readGrid(&it, &m.soil, soilAt, Soil.N);
+        } else if (std.mem.eql(u8, rec, "water")) {
+            // The mask is one bit wide, so the ceiling is 2 — anything else in the file is a typo,
+            // and a stray 7 would otherwise become "very wet" in whatever reads it next.
+            waterAt = try readGrid(&it, &m.water, waterAt, 2);
         } else if (std.mem.eql(u8, rec, "foe")) {
             if (m.nfoes >= MAX_FOES) return ParseError.TooManyFoes;
             m.foes[m.nfoes] = .{
@@ -646,6 +724,22 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
         if (o.op == .cover) return;
     }
     return ParseError.NoCoverOp;
+}
+
+/// One RLE grid record, continuing from `at` and returning the new cursor. `lim` is the exclusive
+/// ceiling on a cell value — a value past it is a corrupt file, not a new material.
+fn readGrid(it: *std.mem.TokenIterator(u8, .any), cells: []u8, at: usize, lim: u8) !usize {
+    var cur = at;
+    while (it.next()) |tok| {
+        const xi = std.mem.indexOfScalar(u8, tok, 'x') orelse return ParseError.BadNumber;
+        const v = std.fmt.parseInt(u8, tok[0..xi], 10) catch return ParseError.BadNumber;
+        const run = std.fmt.parseInt(usize, tok[xi + 1 ..], 10) catch return ParseError.BadNumber;
+        if (v >= lim) return ParseError.BadKind;
+        if (cur + run > cells.len) return ParseError.ExtraField;
+        @memset(cells[cur .. cur + run], v);
+        cur += run;
+    }
+    return cur;
 }
 
 fn parseZone(it: *std.mem.TokenIterator(u8, .any)) !Zone {

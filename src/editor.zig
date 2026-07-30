@@ -6,6 +6,8 @@ const props = @import("props.zig");
 const ui = @import("ui.zig");
 const wf = @import("worldfmt.zig");
 const envmod = @import("env.zig");
+const gfx = @import("gfx.zig");
+const objview = @import("objview.zig");
 
 const Kind = props.Kind;
 const v3 = mathx.v3;
@@ -155,7 +157,9 @@ const layerTips = [Layer.N][:0]const u8{
 
 // Brush tables. The LAST entry of every layer is its scoped eraser, so an erase can never reach
 // out of the layer you are working in.
-const groundBrushes = [_][:0]const u8{ "dirt", "turf", "stone", "silt", "ash", "moss", "Erase" };
+// Ground carries the six soils, then WATER — which is not a soil but is the same gesture on the same
+// ground, and the layer where you would look for it — then the eraser, which wipes both.
+const groundBrushes = [_][:0]const u8{ "dirt", "turf", "stone", "silt", "ash", "moss", "Water", "Erase" };
 const coverBrushes = [_][:0]const u8{ "Zone", "Clearing", "Erase" };
 const decorBrushes = [_][:0]const u8{ "Scatter", "Patch", "Single", "Erase" };
 const propBrushes = [_][:0]const u8{ "Stamp", "Row", "Ring", "Cluster", "Ivy", "Erase" };
@@ -168,7 +172,8 @@ const groundTips = [_][:0]const u8{
     "Pale silt, the tarn's margin",
     "Ash and burnt ground",
     "Deep moss",
-    "Hold and sweep to unpaint — the procedural floor shows through again",
+    "Hold and sweep to flood — depth, shore and wet sand are all worked out from the outline",
+    "Hold and sweep to unpaint — soil AND water; the procedural floor shows through again",
 };
 const coverTips = [_][:0]const u8{
     "Drag a rectangle the ground cover grows differently inside",
@@ -262,9 +267,10 @@ comptime {
     std.debug.assert(decorTips.len == decorBrushes.len);
     std.debug.assert(propTips.len == propBrushes.len);
     std.debug.assert(unitTips.len == unitBrushes.len);
-    // The ground brushes ARE the soil ids in order (index 0 = .dirt = id 1), plus the eraser,
-    // and `soilOf` decodes by ordinal. Pin it so reordering either side is a compile error.
-    std.debug.assert(groundBrushes.len == wf.Soil.N);
+    // The ground brushes OPEN WITH the soil ids in order (index 0 = .dirt = id 1) and end with WATER
+    // and the eraser, neither of which is a soil — the paint path decodes the soils by ordinal, so pin
+    // the run so reordering either side is a compile error rather than a brush painting the wrong dirt.
+    std.debug.assert(groundBrushes.len == wf.Soil.N + 1);
     for (0..wf.Soil.N - 1) |i| {
         std.debug.assert(std.mem.eql(u8, groundBrushes[i], @tagName(@as(wf.Soil, @enumFromInt(i + 1)))));
     }
@@ -278,7 +284,10 @@ comptime {
 // Positional brush indices, matching the tables above. `brushIdx()` is turned straight into one
 // of these with @enumFromInt, so a name table and its enum drifting apart would silently make
 // every brush in the layer mean the one next to it.
-const GroundBrush = enum { dirt, turf, stone, silt, ash, moss, erase };
+/// PUBLIC because the `--shot` harness arms this layer's brushes by name rather than by number — an
+/// index would silently shift the moment a brush is inserted, and the shot would then be of the wrong
+/// tool with the right caption.
+pub const GroundBrush = enum { dirt, turf, stone, silt, ash, moss, water, erase };
 const CoverBrush = enum { zone, clearing, erase };
 const DecorBrush = enum { scatter, patch, single, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
@@ -308,38 +317,11 @@ fn pinBrushes(comptime E: type, comptime names: []const [:0]const u8) void {
     if (!std.mem.eql(u8, fields[fields.len - 1].name, "erase")) @compileError("editor: " ++ @typeName(E) ++ " must end in `erase`");
 }
 
-// The KIND PALETTES, split by the same flag the renderer splits its passes on: `flora` props
-// are the swaying non-casters, which is exactly the Decor layer's stock, and everything else is
-// Props. Derived from props.INFO rather than listed by hand, so a new kind lands in the right
-// palette the moment it is added to that table.
-const floraKinds = blk: {
-    var out: [props.NK]Kind = undefined;
-    var n = 0;
-    for (0..props.NK) |i| {
-        const k: Kind = @enumFromInt(i);
-        if (props.info(k).flora) {
-            out[n] = k;
-            n += 1;
-        }
-    }
-    break :blk out[0..n].*;
-};
-const solidKinds = blk: {
-    var out: [props.NK]Kind = undefined;
-    var n = 0;
-    for (0..props.NK) |i| {
-        const k: Kind = @enumFromInt(i);
-        if (!props.info(k).flora) {
-            out[n] = k;
-            n += 1;
-        }
-    }
-    break :blk out[0..n].*;
-};
-
-comptime {
-    std.debug.assert(floraKinds.len + solidKinds.len == props.NK);
-}
+// THE KIND PALETTES live in props.zig now, beside the INFO table they are derived from — the object
+// viewer needs the same two lists, and a second comptime copy of "which shelf is this on" is how a
+// fern ends up offered under Ruins in one place and not the other.
+const floraKinds = props.FLORA_KINDS;
+const solidKinds = props.SOLID_KINDS;
 
 /// Which GROUP shelves each stocked layer has anything on — resolved once at COMPTIME, because
 /// `props.INFO` is comptime and so is the answer. It used to be a linear scan of all 77 kinds per
@@ -376,7 +358,7 @@ pub const Action = enum { none, leave, playtest };
 
 /// Which dialog owns the screen. Only one at a time, and while one is up the world takes no
 /// input at all — `beginModal` claims the pointer wholesale.
-pub const Modal = enum { none, new_map, open_map, save_as, confirm };
+pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects };
 
 /// What a confirm is standing in FRONT of: an unsaved map is about to be thrown away, and this
 /// is what happens once you say so. Without it, "Discard" has no idea what it was discarding.
@@ -504,6 +486,9 @@ pub const Editor = struct {
     dragFrom: rl.Vector3 = mathx.zero3,
     dragTo: rl.Vector3 = mathx.zero3,
     painting: bool = false, // a soil stroke in progress (one undo step for the whole stroke)
+    /// …and whether that stroke has moved WATER, which is the one paint the prop scatter cares about:
+    /// consumed on release to re-sow the world once instead of 60 times a second (see the ground path).
+    wetStroke: bool = false,
     wipe: Wipe = .{}, // a held ERASE stroke, likewise one undo step
     rmbDown: bool = false,
     rmbTravel: f32 = 0, // pixels the right button has moved while held
@@ -524,6 +509,9 @@ pub const Editor = struct {
     // File dialogs.
     modal: Modal = .none,
     pending: Pending = .none,
+    /// THE OBJECT VIEWER's own state (gallery page, shelf, per-kind pose). It outlives its modal on
+    /// purpose: close the gallery to check something in the world and it reopens where you left it.
+    objects: objview.State = .{},
     nameBuf: [wf.NAME_CAP]u8 = undefined,
     nameLen: usize = 0,
     fileSel: usize = 0,
@@ -810,6 +798,15 @@ pub const Editor = struct {
         self.modal = .open_map;
     }
 
+    /// Put the OBJECT VIEWER up for the shot harness: the gallery on a shelf, or one object filling it.
+    pub fn objectsForShot(self: *Editor, shelf: objview.Shelf, page: i32, one: ?Kind) void {
+        self.modal = .objects;
+        self.objects.shelf = shelf;
+        self.objects.page = page;
+        self.objects.open = one;
+        self.objects.grabbed = null;
+    }
+
     /// Fly to an op. Picking a row and then hunting the map for what it changed is the thing
     /// that makes a list-driven editor unusable, so the camera goes there.
     fn focusOn(self: *Editor, m: *const wf.Map, i: usize) void {
@@ -865,8 +862,12 @@ pub const Editor = struct {
             self.moving = false;
             if (self.wipe.on) self.wipeEnd();
             if (rl.isKeyPressed(.escape)) {
-                self.modal = .none;
-                self.pending = .none;
+                // ESC BACKS OUT ONE LEVEL, and the object viewer has two of them: the big single-object
+                // view falls back to the gallery, and only then does the gallery let go of the screen.
+                if (!(self.modal == .objects and objview.back(&self.objects))) {
+                    self.modal = .none;
+                    self.pending = .none;
+                }
             }
             return .none;
         }
@@ -996,6 +997,9 @@ pub const Editor = struct {
         self.rebuildT = 0;
         env.materialize(m);
         env.uploadSoil(m);
+        // The water field too: the flora scatter asks `inWater`, so a rebuild that left a stale field
+        // would sow grass across a lake somebody had just painted (or refuse to sow one they wiped).
+        env.uploadWater(m);
     }
 
     /// Ask for a rebuild, THROTTLED. A dragged slider reports a change every frame and a rebuild is the whole
@@ -1098,11 +1102,36 @@ pub const Editor = struct {
                         self.bank(m);
                         self.painting = true;
                     }
-                    const id: wf.Soil = if (self.erasing()) .none else @enumFromInt(self.brushIdx() + 1);
-                    if (m.paintSoil(g.x, g.z, self.radius, id)) env.uploadSoil(m);
+                    // WATER is its own grid, and the eraser wipes BOTH — a stroke that lifted the soil
+                    // and left the lake would be an eraser that only half worked, on the one layer
+                    // where you can see straight through what it missed.
+                    switch (@as(GroundBrush, @enumFromInt(self.brushIdx()))) {
+                        .water => if (m.paintWater(g.x, g.z, self.radius, true)) {
+                            env.uploadWater(m);
+                            self.wetStroke = true;
+                        },
+                        .erase => {
+                            if (m.paintSoil(g.x, g.z, self.radius, .none)) env.uploadSoil(m);
+                            if (m.paintWater(g.x, g.z, self.radius, false)) {
+                                env.uploadWater(m);
+                                self.wetStroke = true;
+                            }
+                        },
+                        else => {
+                            const id: wf.Soil = @enumFromInt(self.brushIdx() + 1);
+                            if (m.paintSoil(g.x, g.z, self.radius, id)) env.uploadSoil(m);
+                        },
+                    }
                 }
             } else if (self.painting and rl.isMouseButtonReleased(.left)) {
                 self.painting = false;
+                // A WATER stroke re-sows the world when it ENDS, never mid-sweep: the scatter reads
+                // `inWater`, so the grass has to be lifted out of a new lake (and grown back over a
+                // drained one) — but re-expanding 17k props per frame of a drag is a slideshow.
+                if (self.wetStroke) {
+                    self.wetStroke = false;
+                    self.rebuild(m, env);
+                }
             }
             return;
         }
@@ -2009,7 +2038,10 @@ pub const Editor = struct {
                     self.selMarked += 1;
                     const nfo = props.info(pr.kind);
                     const h = @max(nfo.top * pr.scale, 0.4);
-                    rl.drawCubeWires(v3(pr.pos.x, pr.pos.y + h * 0.5, pr.pos.z), 0.3, h, 0.3, ui.HOT);
+                    // The marker TIPS with a leaning instance (its own trig, from env, so the two can
+                    // never disagree): a plumb column beside a tilted trunk reads as marking the ground.
+                    const sw = envmod.leanOffsetAt(pr.lean, pr.leanDir, h * 0.5);
+                    rl.drawCubeWires(v3(pr.pos.x + sw.x, pr.pos.y + h * 0.5, pr.pos.z + sw.z), 0.3, h, 0.3, ui.HOT);
                 }
             }
         }
@@ -2185,6 +2217,9 @@ const COORD_LIM: f32 = 400;
 const COUNT_MAX: i32 = 4000;
 /// Positions a `ring` may have. Small on purpose — a ring is a stone circle, not a scatter.
 const RING_N_MAX: i32 = 64;
+/// How far off plumb a prop may be tipped. Past ~40° a tree reads as FALLING rather than leaning, and
+/// the footprint (2D, nudged by the tilt and capped at its own radius) stops matching what you see.
+const LEAN_LIM: f32 = 40;
 
 /// ONE row pitch for every stacked row in the chrome. Three panels had grown three different
 /// values off the same font, so a button in one column sat half a line off the label beside it.
@@ -2192,7 +2227,10 @@ const ROW_H: i32 = hud.monoLineH(hud.MONO) + 6;
 /// Extra drop under a slider, which draws its bar BELOW its label and so is taller than a row.
 const SLIDER_DROP: i32 = 20;
 
-pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, t: f32) void {
+/// `scene` is here for the OBJECT VIEWER alone: its thumbnails are the world's own models drawn
+/// off-screen through the world's own shader, and that is the only way a preview can be trusted to
+/// look like the game.
+pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, t: f32) void {
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
     var ctx = ui.Ctx.begin(t);
@@ -2212,7 +2250,7 @@ pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, t: f32) void {
     drawStatus(ed, m, env, &ctx, sw, sh);
     if (overlaid) ctx.setLive(true);
     if (ed.modal != .none) {
-        drawModal(ed, m, env, &ctx);
+        drawModal(ed, m, env, scene, &ctx);
     } else if (ed.menuOpen) {
         drawContextMenu(ed, m, env, &ctx);
     }
@@ -2295,6 +2333,14 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
     if (row.verb(.redo, "Redo (Ctrl+Y)")) {
         if (ed.redo(m)) ed.rebuild(m, env);
     }
+    row.gap(10);
+    // THE OBJECT VIEWER. Spelled out rather than given a glyph: it is not a verb everyone already
+    // reads the picture for, and it is the one thing up here that opens a room rather than doing
+    // something to the map.
+    if (row.button("Objects", ed.modal == .objects, "Object viewer — every model in a gallery; click one to turn it over")) {
+        ed.menuOpen = false;
+        ed.modal = .objects;
+    }
 
     // Just the UNSAVED marker up here. The document readout moved to the status bar: the layer
     // strip plus seven file buttons already fill this row at 1280, and the two were drawing
@@ -2340,6 +2386,10 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
             // its own, so it takes the drawn glyph the other layers use for the same job.
             (if (i + 1 == brushes.len)
                 ui.iconButton(ctx, r, .erase, s, hud.MONO, on)
+            else if (@as(GroundBrush, @enumFromInt(i)) == .water)
+                // WATER is not a soil id, so it has no swatch in that table — it gets the tarn's own
+                // colour, which is the only honest picture for it.
+                ui.swatchButton(ctx, r, ui.col(30, 52, 58, 255), s, hud.MONO, on)
             else
                 ui.swatchButton(ctx, r, soilSwatch(@enumFromInt(i + 1)), s, hud.MONO, on));
         if (hit) {
@@ -2425,27 +2475,57 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
 
     // GROUND and UNITS have no op to edit — they get their own inspectors.
     if (ed.layer == .ground) {
-        hud.mono("SOIL BRUSH", x, y, hud.MONO, ui.TITLE);
+        // THE PANEL REPORTS THE GRID THE ARMED BRUSH ACTUALLY PAINTS. Water rides this layer but has
+        // its own, finer lattice, and a readout that answered "12544 cells at 5.0 m" while you were
+        // flooding a bay would be a panel lying about the tool in your hand.
+        const wet = @as(GroundBrush, @enumFromInt(ed.brushIdx())) == .water;
+        hud.mono(if (wet) "WATER BRUSH" else "SOIL BRUSH", x, y, hud.MONO, ui.TITLE);
         y += ROW_H + 4;
         _ = ui.slider(ctx, x, y, w, "radius", &ed.radius, 1, 60);
         y += ROW_H + SLIDER_DROP;
         var painted: usize = 0;
-        for (m.soil) |v| {
-            if (v != 0) painted += 1;
+        if (wet) {
+            for (m.water) |v| {
+                if (v != 0) painted += 1;
+            }
+        } else {
+            for (m.soil) |v| {
+                if (v != 0) painted += 1;
+            }
         }
         var buf: [64]u8 = undefined;
-        const s = std.fmt.bufPrintZ(&buf, "{d} of {d} cells", .{ painted, wf.SOIL_CELLS }) catch "";
+        const total = if (wet) wf.WATER_CELLS else wf.SOIL_CELLS;
+        const s = std.fmt.bufPrintZ(&buf, "{d} of {d} cells", .{ painted, total }) catch "";
         hud.mono(s, x, y, hud.MONO, ui.LABEL);
         y += ROW_H;
-        const cell = 2 * m.half / @as(f32, @floatFromInt(wf.SOIL_N));
+        const n: usize = if (wet) wf.WATER_N else wf.SOIL_N;
+        const cell = 2 * m.half / @as(f32, @floatFromInt(n));
         const s2 = std.fmt.bufPrintZ(&buf, "cell {d:.1} m", .{cell}) catch "";
         hud.mono(s2, x, y, hud.MONO, ui.LABEL);
-        y += ROW_H + 10;
-        if (ui.buttonTip(ctx, ui.rect(x, y, w, 24), "clear all paint", hud.MONO, false, "Unpaint the whole map")) {
+        y += ROW_H;
+        if (wet) {
+            // The two numbers that explain what the brush is deciding FOR you.
+            const s3 = std.fmt.bufPrintZ(&buf, "deep at {d:.0} m in", .{gfx.WATER_DEEP_AT}) catch "";
+            hud.mono(s3, x, y, hud.MONO, ui.alpha(ui.LABEL, 190));
+            y += ROW_H;
+            const s4 = std.fmt.bufPrintZ(&buf, "wet sand {d:.1} m out", .{gfx.WATER_WET_OUT}) catch "";
+            hud.mono(s4, x, y, hud.MONO, ui.alpha(ui.LABEL, 190));
+            y += ROW_H;
+        }
+        y += 10;
+        const clearLabel: [:0]const u8 = if (wet) "drain the map" else "clear all paint";
+        const clearTip: [:0]const u8 = if (wet) "Wipe every painted lake" else "Unpaint the whole map";
+        if (ui.buttonTip(ctx, ui.rect(x, y, w, 24), clearLabel, hud.MONO, false, clearTip)) {
             ed.bank(m);
-            m.soil = [_]u8{0} ** wf.SOIL_CELLS;
-            env.uploadSoil(m);
-            ed.say("paint cleared");
+            if (wet) {
+                m.water = [_]u8{0} ** wf.WATER_CELLS;
+                ed.rebuild(m, env); // the flora scatter reads `inWater`, so draining re-sows the bed
+                ed.say("water cleared");
+            } else {
+                m.soil = [_]u8{0} ** wf.SOIL_CELLS;
+                env.uploadSoil(m);
+                ed.say("paint cleared");
+            }
         }
         return;
     }
@@ -2545,6 +2625,13 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     var head: [48]u8 = undefined;
     const title = std.fmt.bufPrintZ(&head, "#{d} {s}", .{ s, @tagName(o.op) }) catch "";
     hud.mono(title, x, y, hud.MONO, ui.TITLE);
+    // STRAIGHT TO THE MODEL from the thing you just clicked in the world — the fix-a-prop loop starts
+    // with "what IS this and why does it look wrong", and the answer is the viewer, not the dials.
+    if (o.op != .cover and ui.buttonTip(ctx, ui.rect(x + w - 74, y - 2, 74, 22), "view", hud.MONO, false, "Open this kind in the object viewer")) {
+        ed.objects.show(o.kind);
+        ed.modal = .objects;
+        return;
+    }
     y += ROW_H;
     // WHAT THIS OP ACTUALLY GREW, and honestly: a scatter's `count` is an ATTEMPT count, so the
     // number of instances it owns is always lower and is the only thing that tells you whether a
@@ -2570,6 +2657,11 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             changed = ui.stepperF(ctx, x, y, w, "yaw", &o.yaw, 5, -360, 720) or changed;
             y += ROW_H;
             changed = ui.stepperF(ctx, x, y, w, "scale", &o.scale, 0.05, 0.1, 4) or changed;
+            y += ROW_H;
+            // OFF PLUMB, exactly as dialled: how far it tips, and which way it falls.
+            changed = ui.stepperF(ctx, x, y, w, "lean", &o.lean, 1, 0, LEAN_LIM) or changed;
+            y += ROW_H;
+            changed = ui.stepperF(ctx, x, y, w, "lean dir", &o.leanDir, 15, -360, 720) or changed;
             y += ROW_H;
         },
         .belt, .ivy => {
@@ -2645,6 +2737,10 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         changed = ui.stepperF(ctx, x, y, w, "scale hi", &o.sHi, 0.05, 0.1, 3) or changed;
         y += ROW_H;
         if (o.sHi < o.sLo) o.sHi = o.sLo; // an inverted band silently places nothing
+        // A scatter's lean is a CEILING, not a setting: each instance rolls its own amount up to this
+        // and its own direction, because a stand of trees all tipped the same way reads as a storm.
+        changed = ui.stepperF(ctx, x, y, w, "lean max", &o.lean, 1, 0, LEAN_LIM) or changed;
+        y += ROW_H;
         var sb: [40]u8 = undefined;
         const seedLab = std.fmt.bufPrintZ(&sb, "seed {d}", .{o.seed}) catch "";
         hud.mono(seedLab, x, y + 4, hud.MONO, ui.LABEL);
@@ -2735,6 +2831,28 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, ctx: *ui.Ctx, sw: i32, sh: i32) vo
                 .width = @ceil(@as(f32, @floatFromInt(run)) * cellPx),
                 .height = @ceil(cellPx),
             }, soilSwatch(@enumFromInt(id)));
+            cx += run;
+        }
+    }
+    // …then the WATER over it, run-lengthed the same way. A lake you painted has to be findable from
+    // the minimap or crossing the map to check on it is guesswork.
+    const wCellPx = inner / @as(f32, @floatFromInt(wf.WATER_N));
+    for (0..wf.WATER_N) |cz| {
+        const row = m.water[cz * wf.WATER_N ..][0..wf.WATER_N];
+        var cx: usize = 0;
+        while (cx < wf.WATER_N) {
+            if (row[cx] == 0) {
+                cx += 1;
+                continue;
+            }
+            var run: usize = 1;
+            while (cx + run < wf.WATER_N and row[cx + run] != 0) run += 1;
+            rl.drawRectangleRec(.{
+                .x = @as(f32, @floatFromInt(px)) + @as(f32, @floatFromInt(cx)) * wCellPx,
+                .y = @as(f32, @floatFromInt(py)) + @as(f32, @floatFromInt(cz)) * wCellPx,
+                .width = @ceil(@as(f32, @floatFromInt(run)) * wCellPx),
+                .height = @ceil(wCellPx),
+            }, ui.col(34, 58, 66, 255));
             cx += run;
         }
     }
@@ -2852,7 +2970,7 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
 // away unsaved work. `beginModal` claims the pointer wholesale, and update() refuses all other
 // input while one is up, so there is no way to edit the map behind a dialog.
 
-fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx) void {
+fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) void {
     // ENTER CONFIRMS, everywhere. ALT+Enter belongs to the game loop's borderless-fullscreen
     // toggle, which runs ahead of the editor — without this guard one Alt+Enter both resized the
     // window and committed the dialog behind it.
@@ -2924,6 +3042,11 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx) void {
             }
             if (ui.button(ctx, ui.rect(box.x + 164, by, 120, 28), "Cancel", hud.MONO, false)) ed.modal = .none;
         },
+        // THE OBJECT VIEWER owns its own two levels (gallery / one object) inside this one modal slot —
+        // see objview.zig. It reports only "still up", because Esc-to-back-out lives in `update`.
+        .objects => {
+            if (!objview.draw(&ed.objects, env, scene, ctx)) ed.modal = .none;
+        },
     }
 }
 
@@ -2932,9 +3055,12 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx) void {
 // `switch (i)` on positional indices, so inserting a row above Delete moved its number and silently rewired
 // it to Duplicate. A row that cannot act on the selection draws DIM rather than looking live and doing
 // nothing when clicked.
-const MenuItem = enum { focus, reroll, duplicate, delete, close };
+const MenuItem = enum { view, focus, reroll, duplicate, delete, close };
 
 const menuRows = [_]struct { act: MenuItem, label: [:0]const u8 }{
+    // `view` gets its label FILLED IN at draw time with the kind's own name — "View Dead Tree…", not
+    // "View…", because the row is about one specific model and the point is knowing which.
+    .{ .act = .view, .label = "View…" },
     .{ .act = .focus, .label = "Focus" },
     .{ .act = .reroll, .label = "Re-roll" },
     .{ .act = .duplicate, .label = "Duplicate" },
@@ -2942,7 +3068,7 @@ const menuRows = [_]struct { act: MenuItem, label: [:0]const u8 }{
     .{ .act = .close, .label = "Close" },
 };
 
-const MENU_W: i32 = 150;
+const MENU_W: i32 = 150; // the FLOOR; the menu grows to fit its widest row (see drawContextMenu)
 const MENU_EDGE: i32 = 4; // clear space kept between the menu and the screen edge
 
 /// Can this row do anything to what is selected right now? A foe spawn has no seed to re-roll
@@ -2952,28 +3078,57 @@ fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
     return switch (act) {
         .close => true,
         .focus => op != null,
+        // The ground COVER op places from a zone's mix rather than from a kind of its own, so there
+        // is no one model for this row to open.
+        .view => if (op) |s| m.ops[s].op != .cover else false,
         .reroll, .duplicate => if (op) |s| isMovable(&m.ops[s]) else false,
         .delete => op != null or (ed.layer == .units and ed.selFoe != null),
     };
 }
 
+/// The `view` row's label, naming the model it opens. Falls back to the bare verb when there is no
+/// op under the selection — the row draws dim in that case anyway.
+fn viewLabel(ed: *const Editor, m: *const wf.Map, buf: []u8) [:0]const u8 {
+    const s = ed.sel orelse return "View…";
+    if (s >= m.nops or m.ops[s].op == .cover) return "View…";
+    return std.fmt.bufPrintZ(buf, "View {s}…", .{props.displayName(m.ops[s].kind)}) catch "View…";
+}
+
 fn drawContextMenu(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx) void {
     const menuH: i32 = ROW_H * @as(i32, @intCast(menuRows.len)) + 6;
+    // The menu SIZES ITSELF to its widest row: the view row carries a model's display name, and
+    // "View Woodcutter's Cottage…" is twice the width of "Duplicate".
+    var lbuf: [64]u8 = undefined;
+    const viewRow = viewLabel(ed, m, &lbuf);
+    var menuW: i32 = MENU_W;
+    for (menuRows) |row| {
+        const label = if (row.act == .view) viewRow else row.label;
+        menuW = @max(menuW, hud.monoW(label, hud.MONO) + 26);
+    }
     // BOTH axes come from where the menu was OPENED, never the live cursor: anchoring x to
     // ctx.mouse slid the panel sideways under the pointer as you reached for a row.
-    const x: i32 = @intFromFloat(@min(ed.menuAt.x, @as(f32, @floatFromInt(rl.getScreenWidth() - MENU_W - MENU_EDGE))));
+    const x: i32 = @intFromFloat(@min(ed.menuAt.x, @as(f32, @floatFromInt(rl.getScreenWidth() - menuW - MENU_EDGE))));
     const y: i32 = @intFromFloat(@min(ed.menuAt.y, @as(f32, @floatFromInt(rl.getScreenHeight() - menuH - MENU_EDGE))));
-    const box = ui.rect(x, y, MENU_W, menuH);
+    const box = ui.rect(x, y, menuW, menuH);
     ui.panel(ctx, box, null);
     for (menuRows, 0..) |row, i| {
-        const r = ui.rect(x + 3, y + 3 + @as(i32, @intCast(i)) * ROW_H, MENU_W - 6, ROW_H - 2);
+        const label = if (row.act == .view) viewRow else row.label;
+        const r = ui.rect(x + 3, y + 3 + @as(i32, @intCast(i)) * ROW_H, menuW - 6, ROW_H - 2);
         if (!menuEnabled(ed, m, row.act)) {
-            ui.disabled(ctx, r, row.label, hud.MONO);
+            ui.disabled(ctx, r, label, hud.MONO);
             continue;
         }
-        if (!ui.button(ctx, r, row.label, hud.MONO, false)) continue;
+        if (!ui.button(ctx, r, label, hud.MONO, false)) continue;
         ed.menuOpen = false;
         switch (row.act) {
+            // Straight into the object viewer on this op's kind — the "why does this thing look wrong"
+            // question, answered where you asked it.
+            .view => if (ed.sel) |s| {
+                if (s < m.nops) {
+                    ed.objects.show(m.ops[s].kind);
+                    ed.modal = .objects;
+                }
+            },
             .focus => if (ed.sel) |s| ed.focusOn(m, s),
             .reroll => ed.rerollSel(m, env),
             .duplicate => ed.duplicateSel(m, env),

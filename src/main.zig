@@ -8,7 +8,7 @@ const wf = @import("worldfmt.zig");
 pub fn main() void {
     const alloc = std.heap.c_allocator;
     const argv = std.process.argsAlloc(alloc) catch {
-        game.run(false);
+        game.run(.play);
         return;
     };
     defer std.process.argsFree(alloc, argv);
@@ -20,8 +20,13 @@ pub fn main() void {
         };
         return;
     }
-    const shot = argv.len >= 2 and std.mem.eql(u8, argv[1], "--shot");
-    game.run(shot);
+    const mode: game.Mode = if (argv.len >= 2 and std.mem.eql(u8, argv[1], "--shot-props"))
+        .props
+    else if (argv.len >= 2 and std.mem.eql(u8, argv[1], "--shot"))
+        .shots
+    else
+        .play;
+    game.run(mode);
 }
 
 fn runBake(alloc: std.mem.Allocator) !void {

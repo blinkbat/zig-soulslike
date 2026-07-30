@@ -661,6 +661,11 @@ pub const Hero = struct {
     queued: ?Queued = null, // the ER-style input buffer (see Queued)
     atkHeavy: bool = false, // which cut: R1 slash (false) or R2 overhead (true)
     atkAlt: bool = false, // light-combo alternator: false = forehand slash, true = the RETURN backhand
+    /// HOW MANY SWINGS HE HAS THROWN, ever. Wraps, and nothing minds — it exists so a caller can see
+    /// a swing BEGIN, which the `attacking` flag cannot tell it: a chained combo clears that flag and
+    /// sets it again inside ONE frame (see `updateAttack`'s buffered exit), so watching its rising
+    /// edge heard the first R1 of a mashed combo and none of the rest. Counted, like `stamRefused`.
+    swings: u32 = 0,
     bladeA: rl.Vector3 = mathx.zero3, // blade capsule endpoints in WORLD space (guard → tip)
     bladeB: rl.Vector3 = mathx.zero3,
     bladeA0: rl.Vector3 = mathx.zero3, // …last frame's endpoints, for swept-capsule hit tests
@@ -873,6 +878,7 @@ pub const Hero = struct {
         }
         self.stam.spend(cost);
         self.attacking = true;
+        self.swings +%= 1; // every cut, including a chained one — see the field
         self.atkHeavy = kind == .heavy;
         self.atkAlt = false; // a fresh light is always the forehand; chaining flips it (see updateAttack)
         self.atkT = 0;

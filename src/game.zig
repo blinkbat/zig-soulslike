@@ -17,6 +17,7 @@ const rumblemod = @import("rumble.zig");
 const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
 const sfx = @import("audio.zig"); // the procedural sound bank — every voice synthesized at launch
+const props = @import("props.zig"); // the prop table, for the `--shot-props` portrait harness
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -174,6 +175,7 @@ const Game = struct {
         g.env.build(&g.scene); // meshes once…
         g.env.materialize(&g.map); // …then the world from the map, re-runnable per edit
         g.env.uploadSoil(&g.map);
+        g.env.uploadWater(&g.map); // the painted lakes' depth field (see env.uploadWater)
         g.hero = heromod.Hero.init(g.scene.shader);
         g.hero.pos = mathx.ground(0, 4); // start just south of the ruin avenue
         g.hero.facing = std.math.pi; // facing -Z, into the columns
@@ -453,6 +455,10 @@ fn drawScene(g: *Game) void {
     g.scene.setGround(true);
     g.env.drawGround();
     g.scene.setGround(false);
+    // THE PAINTED WATER, straight after the ground it lies on: one quad whose dry fragments the shader
+    // discards, so everything standing in a lake (reeds, drowned columns) draws over it by depth test
+    // in the passes below rather than needing to be sorted against it.
+    g.env.drawWater();
     if (g.menu.wireframe) rl.gl.rlEnableWireMode();
     drawCasters(g, .{ .view = view });
     // Flora last: non-casting, and swayed by the scene shader's wind term (props/hero rigid).
@@ -680,7 +686,11 @@ fn gaitLabel(moving: f32, speed: f32) [:0]const u8 {
     return "walking";
 }
 
-pub fn run(shot: bool) void {
+/// How the process runs: the game, the `--shot` harness, or the `--shot-props` prop portraits.
+pub const Mode = enum { play, shots, props };
+
+pub fn run(mode: Mode) void {
+    const shot = mode != .play;
     // VSYNC is why fullscreen was tearing. setTargetFPS is a CPU-side frame LIMITER — it paces how
     // often we draw but never tells the driver to swap during vblank, so the swap lands mid-scan and
     // the seam shows. Windowed mode hid it because Windows' compositor effectively syncs for us;
@@ -716,8 +726,12 @@ pub fn run(shot: bool) void {
     // once here sticks. Set BEFORE the --shot branch so headless captures match.
     rl.gl.rlSetClipPlanes(CLIP_NEAR, CLIP_FAR);
 
-    if (shot) {
+    if (mode == .shots) {
         runShots(g);
+        return;
+    }
+    if (mode == .props) {
+        runPropShots(g);
         return;
     }
 
@@ -735,7 +749,9 @@ pub fn run(shot: bool) void {
     // Rising-edge trackers for rumble: pulse the frame an action BEGINS. Watching committed
     // state (not the input press) catches queued actions too.
     var wasRolling = false;
-    var wasAttacking = false;
+    // The swing COUNT, not the `attacking` flag: a chained combo clears that flag and sets it again
+    // within one frame, so its rising edge missed every cut after the first (see hero.swings).
+    var wasSwings: u32 = 0;
     var wasDead = false;
     var wasRefused: f32 = 0; // …and the refusal flash, whose rising edge IS the ignored input
     var wasStun: combat.StunKind = .none;
@@ -808,7 +824,7 @@ pub fn run(shot: bool) void {
             g.line.reset(&g.map);
             g.grief.reset(&g.map);
             drawScene(g);
-            editormod.drawOverlay(&g.editor, &g.map, &g.env, rawDt);
+            editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, rawDt);
             rl.endDrawing();
             continue;
         }
@@ -1126,7 +1142,7 @@ pub fn run(shot: bool) void {
         // the camera is the eye. Set after `follow`, so a foe's sound is panned against the settled
         // view rather than against last frame's.
         sfx.listen(g.rig.cam.position, g.rig.rightXZ());
-        sfx.ambience(); // keep the wind bed alive (a no-op while it is still running)
+        sfx.ambience(rawDt); // keep the wind bed alive, and let the odd bird call over it
         footsteps(g, &lastPhase);
 
         // Rising-edge action pulses: roll whump, swing effort (heavy > light), death swell.
@@ -1135,9 +1151,12 @@ pub fn run(shot: bool) void {
             g.rumble.play(rumblemod.roll);
             sfx.play(.roll);
         }
-        if (g.hero.attacking and !wasAttacking) {
+        // EVERY cut is heard, chained ones included: the counter ticks in hero.startAttack, which is
+        // the one door a swing can come through. `atkHeavy` already describes the NEW swing here.
+        if (g.hero.swings != wasSwings) {
             g.rumble.play(if (g.hero.atkHeavy) rumblemod.swing_heavy else rumblemod.swing_light);
             sfx.play(if (g.hero.atkHeavy) .swing_heavy else .swing_light);
+            wasSwings = g.hero.swings;
         }
         // A REFUSED action is heard as well as seen. `stamRefused` is set by hero.startRoll /
         // startAttack the instant they decline, so its rising edge is exactly the input that did
@@ -1161,7 +1180,6 @@ pub fn run(shot: bool) void {
             g.deathFade -= rawDt;
         }
         wasRolling = g.hero.rolling;
-        wasAttacking = g.hero.attacking;
         wasDead = g.hero.dead;
         g.rumble.update(rawDt, rl.isGamepadAvailable(PAD));
 
@@ -1525,6 +1543,31 @@ fn stagedAttack(g: *Game, kind: heromod.Attack) void {
 fn stagedRoll(g: *Game, dir: rl.Vector3) void {
     g.hero.stam.reset();
     g.hero.startRoll(dir);
+}
+
+// ── `--shot-props`: every prop kind alone on bare ground, one PNG each ──────────────────
+// The world tour judges REGIONS; retuning one MODEL needs the model by itself. Each kind is
+// staged at the origin (`env.stageOne`), framed off its own INFO bounds, with the hero standing
+// beside it — he is the scale reference, and the shadow ortho box tracks him, so without him
+// the portrait would have no cast shadows.
+fn runPropShots(g: *Game) void {
+    std.fs.cwd().makePath("shots/props") catch {};
+    g.menu.screen = .closed;
+    g.retro.allOff();
+    // No foes in the portraits — a toad idling into a wide framing reads as part of the model.
+    g.warren.n = 0;
+    g.line.n = 0;
+    g.grief.n = 0;
+    for (props.INFO, 0..) |row, i| {
+        g.env.stageOne(row.kind);
+        const r = mathx.maxF(row.bound, 0.9);
+        standHero(g, -(r + 1.1), 0.35 * r + 0.9, mathx.radians(115));
+        const aim = v3(0, mathx.clampF(row.top * 0.45, 0.4, 9.0), 0);
+        const dist = mathx.clampF(mathx.maxF(r * 2.1, row.top * 1.7), 3.2, 60.0);
+        var buf: [96]u8 = undefined;
+        const name = std.fmt.bufPrintZ(&buf, "shots/props/{d:0>2}_{s}.png", .{ i, @tagName(row.kind) }) catch unreachable;
+        shootAt(g, name, aim, 35, 0.30, dist);
+    }
 }
 
 fn runShots(g: *Game) void {
@@ -2231,7 +2274,7 @@ fn editorShots(g: *Game) void {
     g.editor.applyCamForShot();
 
     drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, SHOT_DT);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
     rl.endDrawing();
     rl.takeScreenshot("shots/95_editor_props.png");
 
@@ -2247,7 +2290,7 @@ fn editorShots(g: *Game) void {
         }
     }
     drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, SHOT_DT);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
     rl.endDrawing();
     rl.takeScreenshot("shots/96_editor_selected.png");
 
@@ -2265,7 +2308,7 @@ fn editorShots(g: *Game) void {
     g.editor.dragFrom = mathx.ground(-16, -12);
     g.editor.dragTo = mathx.ground(14, 16);
     drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, SHOT_DT);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
     rl.endDrawing();
     rl.takeScreenshot("shots/97_editor_drag.png");
     g.editor.dragging = false;
@@ -2288,12 +2331,49 @@ fn editorShots(g: *Game) void {
     g.editor.dist = 46;
     g.editor.applyCamForShot();
     drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, SHOT_DT);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
     rl.endDrawing();
     rl.takeScreenshot("shots/98_editor_ground.png");
 
     g.map.soil = before;
     g.env.uploadSoil(&g.map);
+
+    // PAINTED WATER, the same way: a pond swept in with the brush and shot from low down, which is the
+    // angle that judges the thing it is FOR — the coast fading into wet sand with no hand-blending and
+    // no mesh authored for the outline. Painted into the live map and wiped again afterwards.
+    const beforeWater = g.map.water;
+    g.editor.setLayer(.ground);
+    g.editor.brush[@intFromEnum(editormod.Layer.ground)] = @intFromEnum(editormod.GroundBrush.water);
+    g.editor.radius = 7;
+    // A bay with a headland: two overlapping sweeps and a bite taken out, so the shot shows what the
+    // field does with a shape nobody could have authored as a disc.
+    var wz: f32 = -6;
+    while (wz < 26) : (wz += 2.5) _ = g.map.paintWater(-26 + wz * 0.35, wz, 9.5, true);
+    var wx: f32 = -34;
+    while (wx < -8) : (wx += 2.5) _ = g.map.paintWater(wx, 14, 7.5, true);
+    _ = g.map.paintWater(-21, 9, 4.6, false); // the headland
+    g.env.uploadWater(&g.map);
+    g.editor.focus = mathx.ground(-24, 10);
+    g.editor.pitch = -0.34;
+    g.editor.yaw = 2.4;
+    g.editor.dist = 34;
+    g.editor.applyCamForShot();
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
+    rl.endDrawing();
+    rl.takeScreenshot("shots/98b_editor_water.png");
+    // …and once from overhead, where the SHAPE is what you judge: the shoreline should read as one
+    // continuous coast, not as the discs it was swept from.
+    g.editor.pitch = -1.15;
+    g.editor.dist = 58;
+    g.editor.applyCamForShot();
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
+    rl.endDrawing();
+    rl.takeScreenshot("shots/98c_editor_water_map.png");
+
+    g.map.water = beforeWater;
+    g.env.uploadWater(&g.map);
 
     // MARQUEE + CLIPBOARD: a shift-drag box over the avenue with the Props inside it marked,
     // so the selection ring on each and the box itself are both captured.
@@ -2305,7 +2385,7 @@ fn editorShots(g: *Game) void {
     g.editor.applyCamForShot();
     g.editor.selectForShot(&g.map, mathx.ground(-20, -30), mathx.ground(20, 6));
     drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, SHOT_DT);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
     rl.endDrawing();
     rl.takeScreenshot("shots/99_editor_marquee.png");
 
@@ -2313,9 +2393,30 @@ fn editorShots(g: *Game) void {
     // any of the above.
     g.editor.openForShot();
     drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, SHOT_DT);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
     rl.endDrawing();
     rl.takeScreenshot("shots/99b_editor_open.png");
+
+    // THE OBJECT VIEWER, both levels. Each cell is a live off-screen render of the real model, so
+    // this is the one shot that proves the previews are framed, lit and right way up — and the big
+    // view is where a model gets judged from now on.
+    g.editor.objectsForShot(.props, 0, null);
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
+    rl.endDrawing();
+    rl.takeScreenshot("shots/99c_editor_objects.png");
+
+    g.editor.objectsForShot(.props, 0, .well);
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
+    rl.endDrawing();
+    rl.takeScreenshot("shots/99d_editor_object_one.png");
+
+    g.editor.objectsForShot(.decor, 0, null);
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
+    rl.endDrawing();
+    rl.takeScreenshot("shots/99e_editor_objects_decor.png");
 
     g.editor.on = false;
 }

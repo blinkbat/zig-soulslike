@@ -137,11 +137,12 @@ const DISS_DUR = 0.95; // seconds the corpse takes to dissipate into motes once 
 // dust dug up as the lunge loads, an amber charge glow gathering at the maw, drool flung on
 // the gape, and a big radial dust SLAM at the impact point on a lunge landing.
 const FX_MAX = 40; // per-toad budget (ring buffer — the oldest particle is overwritten)
-const DUST = rgba(150, 132, 96, 175); // kicked-up bog dust (warm tan; unlit, so lift the value)
+const DUST = foe.DUST; // kicked-up bog dust — the SHARED one (see foe.zig: it was two copies)
 const EMBER = rgba(252, 196, 84, 150); // amber charge glow — the lamp-eye colour, gathering (kept sheer so glints layer, not blob)
 const SPIT = rgba(176, 190, 150, 140); // pale sickly drool / spit fling
-const BLOOD = rgba(112, 22, 16, 235); // hit spray — dark oxblood, kin to the maw (unlit droplets)
-const MOTE = rgba(252, 198, 92, 170); // death dissipation — grace-gold motes rising off the corpse
+const BLOOD = rgba(112, 22, 16, 235); // hit spray — dark oxblood, kin to the maw (unlit droplets). The
+//   toad's OWN: the ogre bleeds a darker ichor, which is why this one stays local.
+const MOTE = foe.MOTE; // death dissipation — the shared grace-gold every corpse goes out in
 
 // ── vitals (LOW poise, per the brief: "frogs have low poise") ──────────────────────────
 const HP_MAX = 46.0;
@@ -894,14 +895,9 @@ pub const Knot = struct {
         return .{ .model = Model.init(shader) };
     }
     // Re-home every toad, alive and fresh (a hero death reloads the world, ER-style). The
-    // shared Model is untouched — instances only.
+    // shared Model is untouched — instances only. Body in foe.zig, like the roll-ups.
     pub fn reset(self: *Knot, m: *const wf.Map) void {
-        self.n = 0;
-        for (m.foes[0..m.nfoes]) |h| {
-            if (h.kind != .toad or self.n >= CAP) continue;
-            self.frogs[self.n] = Frog.spawn(mathx.ground(h.x, h.z), mathx.radians(h.yaw), h.scale, h.seed);
-            self.n += 1;
-        }
+        foe.resetGroup(Frog, &self.frogs, &self.n, m, .toad);
     }
     /// The toads this map actually posted. Every caller iterates THIS, never the whole array —
     /// the tail is `undefined` and reading it is a crash waiting for a quiet afternoon.
@@ -930,12 +926,7 @@ pub const Knot = struct {
     // hitFlash uniform; pass null from paths without per-actor flash (none today — the
     // depth pass reuses this too, where the uniform write is simply inert).
     pub fn draw(self: *const Knot, scene: ?*gfx.Scene) void {
-        for (self.liveConst()) |*f| {
-            if (!f.alive()) continue;
-            if (scene) |sc| sc.setFlash(foe.FLASH_GAIN * f.flashFrac());
-            f.draw(&self.model);
-        }
-        if (scene) |sc| sc.setFlash(0);
+        foe.drawGroup(self.liveConst(), &self.model, scene);
     }
     // Telegraph particles — drawn AFTER the meshes (unlit, semi-transparent), in the lit pass
     // only (never the shadow depth pass), so dust/charge/spit reads over the toads. Drawn for

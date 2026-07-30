@@ -102,9 +102,11 @@ standing stonework), `edge` (the cliff rim), `cover` (the lattice ground scatter
 | west | **the Old Wood** | great trees (3 variants), ferns/brambles/bushes, boulders, a **standing-stone circle**, a woodcutter's **cottage** + campfire |
 | south | **the Windswept Downs** | open and sparse — lone trees, field stones, graves, a watchtower |
 
-**77 prop kinds**, 7,876 instances and 1,575 colliders, of which a frame draws ~1,000 across both
-passes (measured: 985 in the city, 1,059 in the wood). See **PERFORMANCE** — that ratio is why the
-world is affordable, and the debug Stats overlay prints it live so it stays checkable.
+**80 prop kinds**, **17,292 instances and 1,836 colliders**, of which a frame draws **~975** across
+both passes (measured in the city; the wood is comparable). See **PERFORMANCE** — that ratio is why
+the world is affordable, and the debug Stats overlay prints it live so it stays checkable. The three
+numbers are also PINNED by `env`'s "replaying the SHIPPED map produces a stable world" test, so a
+scatter that quietly gains or loses instances fails the build instead of drifting in a screenshot.
 
 **Density VARIES, and that is the point** (owner's law). A flat per-region density gives every
 square metre the same cover and the result is a carpet — uniformly thick, nowhere to walk,
@@ -248,7 +250,10 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  never guessed, and unit tests re-assert them — retune anything and RE-MEASURE.
 - `foe.zig`    — THE FOE STANDARD: the shared contract + behaviours every enemy plugs into, so
                  lock-on, HP bars, collision, the blade hit-test and the combat beats are written
-                 ONCE. Holds `Blade` and `strike()`.
+                 ONCE. Holds `Blade` and `strike()`, the telegraph PARTICLE pool (plus the two burst
+                 colours that are the WORLD's and not one creature's — `DUST` and the grace-gold
+                 `MOTE` every corpse dissipates into), and the Group plumbing: `resetGroup` /
+                 `drawGroup` / `anyDied` / `totalHits` / `runesDropped` / `aliveCount`.
 - `combat.zig` — SHARED `Vitals`: HP + the two-tier stagger + regen + death. Plus `Stamina`,
                  the HERO'S ALONE (a foe meter nothing reads would only rot). Pure logic,
                  unit-tested. THE place to retune damage/poise/stamina feel.
@@ -334,7 +339,10 @@ cross-fade ~0.09 s; stances never snap while mechanics stay instant.
   latches it on → a nonstop rumble/shake until you quit. Mirror the frog exactly.
 - **Humanoids reuse the hero's walk/strafe** (see the rig rules). Never author a second walk.
 - **Group + register.** Wrap instances in a `Group` (`Knot`/`Line`/`Grief`) exposing `anyDied` /
-  `totalHits` / `aliveCount`; game.zig iterates groups generically.
+  `totalHits` / `aliveCount`; game.zig iterates groups generically. Its `reset` and `draw` are
+  ONE-LINE DELEGATES to `foe.resetGroup` / `foe.drawGroup` — don't re-write either body. The draw's
+  `setFlash(0)` tail is the line a fourth copy would forget, and a Group that leaves the uniform hot
+  reddens whatever draws next.
 
 ## Combat feel
 

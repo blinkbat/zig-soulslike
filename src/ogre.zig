@@ -175,12 +175,11 @@ fn bump(x: f32, a: f32, b: f32) f32 {
     return mathx.sinf(std.math.pi * (x - a) / (b - a));
 }
 
-// world(child) = animRot ∘ translate(offset) ∘ world(parent) — the hero's exact convention.
+// world(child) = animRot ∘ translate(offset) ∘ world(parent) — the hero's exact convention, and
+// THROUGH the hero, not a third copy of it: `heromod.setJoint` is that one statement of the
+// "MatrixMultiply(a, b) applies a FIRST" rule. All this adds is the ogre's own parent table.
 fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix) void {
-    const p: usize = @intCast(parent[i]);
-    const off = mathx.subV(rest[i], rest[p]);
-    const local = mul(animRot, tr(off.x, off.y, off.z));
-    wx[i] = mul(local, wx[p]);
+    heromod.setJoint(wx, &rest, i, @intCast(parent[i]), animRot);
 }
 
 // ── scale / locomotion / senses ───────────────────────────────────────────────────────────
@@ -409,9 +408,10 @@ const BRACE_SINK = 0.011 * H; // …the pelvis drop those two angles absorb exac
 
 // ── telegraph FX (a small unlit particle pool — dust, blood, death motes; like the toad's) ──
 const FX_MAX = 56;
-const DUST = rgba(150, 132, 96, 175); // kicked-up dust (warm tan; unlit, so lift the value)
-const BLOOD = rgba(84, 20, 16, 235); // dark ichor spray on a landed blow
-const MOTE = rgba(252, 198, 92, 170); // death dissipation — grace-gold motes
+const DUST = foe.DUST; // kicked-up dust — the SHARED one (see foe.zig: it was two copies)
+const BLOOD = rgba(84, 20, 16, 235); // dark ichor spray on a landed blow — his OWN (the toad's is
+//   a lighter oxblood, kin to its maw), which is why this one stays local
+const MOTE = foe.MOTE; // death dissipation — the shared grace-gold every corpse goes out in
 
 // The SHARED particle shape + integrator + draw (foe.zig); only the bursts below are the ogre's.
 const Particle = foe.Particle;
@@ -1417,13 +1417,9 @@ pub const Grief = struct {
         return self.ogres[0..self.n];
     }
     // Re-home the giant, alive and fresh (a hero death reloads the world, ER-style).
+    // Body in foe.zig, like the roll-ups.
     pub fn reset(self: *Grief, m: *const wf.Map) void {
-        self.n = 0;
-        for (m.foes[0..m.nfoes]) |h| {
-            if (h.kind != .ogre or self.n >= CAP) continue;
-            self.ogres[self.n] = Ogre.spawn(mathx.ground(h.x, h.z), mathx.radians(h.yaw), h.scale, h.seed);
-            self.n += 1;
-        }
+        foe.resetGroup(Ogre, &self.ogres, &self.n, m, .ogre);
     }
     pub fn setShader(self: *Grief, sh: rl.Shader) void {
         self.model.setShader(sh);
@@ -1439,12 +1435,7 @@ pub const Grief = struct {
         return worst;
     }
     pub fn draw(self: *const Grief, scene: ?*gfx.Scene) void {
-        for (self.liveConst()) |*o| {
-            if (!o.alive()) continue;
-            if (scene) |sc| sc.setFlash(foe.FLASH_GAIN * o.flashFrac());
-            o.draw(&self.model);
-        }
-        if (scene) |sc| sc.setFlash(0);
+        foe.drawGroup(self.liveConst(), &self.model, scene);
     }
     pub fn drawFx(self: *const Grief) void {
         for (self.liveConst()) |*o| o.drawFx();

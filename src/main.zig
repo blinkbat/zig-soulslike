@@ -3,9 +3,8 @@ const game = @import("game.zig");
 const bake = @import("bake.zig");
 const wf = @import("worldfmt.zig");
 
-// Entry point. Default launches the game; `--shot` renders headless (window hidden) and
-// writes walk-cycle PNGs to shots/ for offline visual checks; `--bake` re-emits the first map
-// from bake.zig and exits without opening a window (see that file — it is a one-way door).
+// Entry point. Default launches the game; `--shot` renders headless into shots/ for offline visual
+// checks; `--bake` re-emits the first map from bake.zig and exits (a one-way door — see that file).
 pub fn main() void {
     const alloc = std.heap.c_allocator;
     const argv = std.process.argsAlloc(alloc) catch {
@@ -37,8 +36,8 @@ fn runBake(alloc: std.mem.Allocator) !void {
     try wf.write(m, buf.writer());
     try buf.flush();
 
-    // Re-read what was just written: a bake that emits a file the loader rejects is worse than
-    // one that fails, because the failure would surface later as an empty world.
+    // Re-read what was just written: a bake that emits a file the loader rejects is worse than one
+    // that fails, because the failure surfaces later as an empty world.
     const text = try std.fs.cwd().readFileAlloc(alloc, "worlds/01_fallen_plain.world", 1 << 22);
     defer alloc.free(text);
     const back = try alloc.create(wf.Map);
@@ -54,10 +53,9 @@ fn runBake(alloc: std.mem.Allocator) !void {
     );
 }
 
-// EVERY module carrying tests must be named here. Zig only collects tests from files the test
-// ROOT reaches, and this is the root: env.zig and props.zig hang off game.zig alone, so leaving
-// them out silently dropped 12 tests — including the culler sweep that exists because "a culler
-// bug looks like an EMPTY WORLD" and the INFO table's index/collider checks.
+// EVERY module carrying tests must be named here — Zig only collects from files the test ROOT reaches,
+// and this is the root. env.zig and props.zig hang off game.zig alone, so leaving them out silently
+// dropped 12 tests, the culler sweep and the INFO table's checks among them.
 test {
     _ = @import("hero.zig");
     _ = @import("camera.zig");

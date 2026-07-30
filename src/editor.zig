@@ -10,40 +10,35 @@ const envmod = @import("env.zig");
 const Kind = props.Kind;
 const v3 = mathx.v3;
 
-// EDITOR — an in-game scene over the live world. The map being edited IS the map the game
-// materializes, so every change re-runs env.materialize and what you are looking at is what the
-// player gets. No separate preview, nothing to keep in sync.
+// EDITOR — an in-game scene over the live world. The map being edited IS the map the game materializes, so
+// every change re-runs env.materialize and what you look at is what the player gets: no separate preview,
+// nothing to keep in sync.
 //
-// WORKSPACE IS ORGANISED IN LAYERS, the StarEdit way: GROUND (paint the soil), COVER (the flora
-// carpet's zones and clearings), DECOR (the small growing things), PROPS (the standing stone and
-// timber), UNITS (foe spawns). The rule that makes layers worth having is that ONLY THE ACTIVE
-// LAYER IS LIVE — every layer stays visible, but a click can only pick, place or erase in the
-// one you are on, so dressing ferns can never nudge a chapel. Each layer ends in its own scoped
-// ERASE brush, and each remembers which brush you left it on.
+// LAYERS, the StarEdit way: GROUND (paint the soil), COVER (the flora carpet's zones and clearings), DECOR
+// (small growing things), PROPS (standing stone and timber), UNITS (foe spawns). What makes them worth
+// having is that ONLY THE ACTIVE LAYER IS LIVE — every layer stays visible, but a click can only pick,
+// place or erase in the one you are on, so dressing ferns can never nudge a chapel. Each ends in its own
+// scoped ERASE brush and remembers the brush you left it on.
 //
-// THE OPS ARE THE DOCUMENT, BUT THERE IS NO LIST OF THEM. A map is an ordered list of authoring
-// ops (worldfmt.zig) and SELECTION IS BY CLICKING THE THING IN THE WORLD: clicking a prop selects
-// the op that GREW it (props carry their op index), which is what keeps the generators — most of
-// the world — reachable by pointing. A scrolling list of the ops themselves was tried and removed
+// THE OPS ARE THE DOCUMENT, BUT THERE IS NO LIST OF THEM. SELECTION IS BY CLICKING THE THING IN THE WORLD:
+// clicking a prop selects the op that GREW it (props carry their op index), which is what keeps the
+// generators — most of the world — reachable by pointing. A scrolling list of the ops was tried and removed
 // (see the note further down): it was the document model showing through the window.
 //
-// Interaction grammar (diablo's editor, which is StarEdit's): LEFT paints/places or, in Select
-// mode, picks and pans; RIGHT-CLICK opens the context menu and RIGHT-DRAG orbits the camera (a
-// 4 px threshold splits them); the WHEEL zooms; Tab cycles layers, 1..9 pick a brush inside the
-// layer, [ ] size the brush, G toggles grid snap. The camera is a TURNTABLE over a ground focus,
-// not a free-fly. Every mutation banks an undo snapshot BEFORE it lands.
+// Interaction grammar (diablo's editor, which is StarEdit's): LEFT paints/places, or in Select mode picks
+// and pans; RIGHT-CLICK opens the context menu and RIGHT-DRAG orbits (a 4 px threshold splits them); WHEEL
+// zooms; Tab cycles layers, 1..9 pick a brush, [ ] size it, G snaps. The camera is a TURNTABLE over a
+// ground focus, not a free-fly. Every mutation banks an undo snapshot BEFORE it lands.
 
 const LOOK_SENS: f32 = 0.0032;
 const UNDO_CAP: usize = 24;
 const DRAG_PX: f32 = 4.0; // right-button travel that turns a context click into a camera fly
 const SNAP: f32 = 1.0; // grid pitch when snap is on
-/// How often a held slider is allowed to re-expand the world. A rebuild is ~8k props plus the
-/// solid grid plus both indexes — far too much to run per frame, and fast enough at this rate
-/// that a drag still reads as live.
-/// 5, down from 8, because the world got bigger: the cover lattice's candidate count scales with
-/// AREA, so a 560 m map evaluates ~29k candidates per rebuild against ~9k at 320 m. Holding the
-/// rate would have tripled the per-second cost of dragging a dial; holding the COST keeps the drag
-/// feeling the same as it did, at a fifth of a second of latency instead of an eighth.
+/// How often a held slider may re-expand the world. A rebuild is ~8k props plus the solid grid plus both
+/// indexes — far too much per frame, and fast enough at this rate that a drag still reads as live. 5, down
+/// from 8, because the cover lattice's candidate count scales with AREA: a 560 m map evaluates ~29k
+/// candidates per rebuild against ~9k at 320 m, so holding the RATE would have tripled the per-second cost
+/// of a drag. Holding the COST keeps the drag feeling the same, at a fifth of a second of latency.
 const REBUILD_HZ: f32 = 5.0;
 
 // ── THE HELD ERASER ── press and sweep and everything the cursor crosses goes, as ONE undo step,
@@ -59,8 +54,10 @@ const ERASE_HZ: f32 = REBUILD_HZ;
 /// in under a second.
 const ERASE_STEP: f32 = 0.6;
 /// Most instance markers drawn for one selected generator. A belt's count dials to 4000, and
-/// 4000 wire cubes is 48k line segments a frame — so the marker pass stops here and the status
-/// line SAYS it stopped, rather than quietly showing a fraction of what the op owns.
+/// 4000 wire cubes is 48k line segments a frame — so the marker pass stops here and the PROPERTIES
+/// PANEL says so (`selOwned` / `selMarked`), rather than quietly showing a fraction of what the op
+/// owns. NO SILENT CAPS: 500 markers under an op that owns 4000 reads as an op that owns 500, and
+/// the whole reason the markers exist is to tell you what a generator you are dialling has grown.
 const MAX_MARKERS: usize = 500;
 
 /// Most things one marquee can hold, and most one clipboard can carry.
@@ -498,6 +495,11 @@ pub const Editor = struct {
     pathLen: usize = 0,
     hotFrame: bool = false, // chrome owned the pointer LAST frame (gates world clicks)
     editing: bool = false, // mid-gesture on a properties widget (one undo step per gesture)
+    /// How many instances the selected op OWNS, and how many of them `draw3D` got a marker onto
+    /// before MAX_MARKERS stopped it. Counted in the marker pass (which already walks the whole
+    /// prop list) and reported by the properties panel, so the cap is never silent.
+    selOwned: usize = 0,
+    selMarked: usize = 0,
 
     status: [ui.MSG_CAP]u8 = undefined,
     statusLen: usize = 0,
@@ -788,14 +790,11 @@ pub const Editor = struct {
         self.lookAtGround(c.x, c.z, span);
     }
 
-    // Frame a patch of ground `span` metres across. Capped well inside the haze: framing a
-    // 250 m belt by its full extent puts the eye so far back that every prop is past its own
-    // view distance and all you get is fog with markers floating in it.
-    //
-    // It moves the ORBIT STATE, never `cam` directly: `orbitCam` re-derives the camera from
-    // focus/yaw/pitch/dist every frame, so a fly-to written straight into `cam` was overwritten
-    // before it was ever drawn — the minimap's "click to fly there" and the context menu's Focus
-    // both changed the angle and then stayed exactly where they were.
+    // Frame a patch of ground `span` across, capped well inside the haze — framing a 250 m belt by its full
+    // extent puts the eye so far back that every prop is past its own view distance and all you get is fog
+    // with markers in it. It moves the ORBIT STATE, never `cam`: `orbitCam` re-derives the camera every
+    // frame, so a fly-to written into `cam` was overwritten before it was drawn, and the minimap's "click to
+    // fly there" and the menu's Focus both changed the angle and then stayed put.
     fn lookAtGround(self: *Editor, cx: f32, cz: f32, span: f32) void {
         self.dist = mathx.clampF(span * 0.8 + 12, 14, 150);
         self.pitch = if (span > 90) -1.05 else -0.72;
@@ -810,17 +809,29 @@ pub const Editor = struct {
         self.statusT = @max(0, self.statusT - dt);
         self.wipe.t += dt; // the held eraser's rate gate
         self.tickRebuild(m, env, dt); // service any rebuild a held widget coalesced
-        self.orbitCam(dt);
 
-        // A MODAL owns everything. No camera, no brushes, no shortcuts behind it — the only
-        // input it leaves alive is Esc, which cancels.
+        // A MODAL owns everything: no camera, no brushes, no shortcuts behind it, and the only input it
+        // leaves alive is Esc. Tested BEFORE `orbitCam`, which reads WASD/arrows, the right-drag and the
+        // wheel straight off raylib — with the call above this, typing a map name containing w/a/s/d panned
+        // the view out from under the dialog and a wheel over the Open list also zoomed the world.
         if (self.modal != .none) {
+            // …and it CANCELS any gesture in flight. `worldMouse` is the only place a held button is
+            // released and it does not run under a modal, so an interrupted right-press would stay latched
+            // for the session and kill every left-button gesture there is (see worldMouse's own note).
+            self.rmbDown = false;
+            self.rmbTravel = 0;
+            self.panning = false;
+            self.dragging = false;
+            self.marquee = false;
+            self.moving = false;
+            if (self.wipe.on) self.wipeEnd();
             if (rl.isKeyPressed(.escape)) {
                 self.modal = .none;
                 self.pending = .none;
             }
             return .none;
         }
+        self.orbitCam(dt);
         // Serviced here rather than in commitPending, because leaving is the game loop's call.
         if (self.pending == .leave) {
             self.pending = .none;
@@ -937,13 +948,10 @@ pub const Editor = struct {
         return .none;
     }
 
-    /// Re-derive EVERYTHING the map feeds after a change: the props and the painted soil. The
-    /// two used to be called as a pair at each call site, which meant undo could restore a map
-    /// whose paint was still the post-edit version — one call so they cannot come apart.
-    ///
-    /// A soil-only edit (a brush stroke) deliberately does NOT come through here: nothing about
-    /// the prop list depends on the paint, and re-expanding 8k props to tint a patch of dirt
-    /// mid-stroke would stutter.
+    /// Re-derive EVERYTHING the map feeds — props and painted soil. They were called as a pair at each site,
+    /// so undo could restore a map whose paint was still the post-edit version; one call, so they cannot
+    /// come apart. A soil-only edit deliberately does NOT come through here: nothing in the prop list
+    /// depends on the paint, and re-expanding 8k props to tint a patch of dirt mid-stroke would stutter.
     fn rebuild(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
         self.rebuildDue = false;
         self.rebuildT = 0;
@@ -951,13 +959,9 @@ pub const Editor = struct {
         env.uploadSoil(m);
     }
 
-    /// Ask for a rebuild, THROTTLED. Dragging a slider reports a change every frame, and a
-    /// rebuild is the whole world — ~8k props re-expanded, the solid grid rebuilt and both
-    /// spatial indexes refilled. At 60 Hz that turned every dial into a slideshow.
-    ///
-    /// So a gesture coalesces: the request is remembered and serviced at REBUILD_HZ, which is
-    /// fast enough that dragging still feels live, and `endGesture` guarantees a final one so
-    /// the world can never be left showing a stale value.
+    /// Ask for a rebuild, THROTTLED. A dragged slider reports a change every frame and a rebuild is the whole
+    /// world, which at 60 Hz turned every dial into a slideshow — so a gesture COALESCES, serviced at
+    /// REBUILD_HZ, and `endGesture` guarantees a final one so the world is never left showing a stale value.
     fn requestRebuild(self: *Editor) void {
         self.rebuildDue = true;
     }
@@ -1001,23 +1005,20 @@ pub const Editor = struct {
     // the left button paints, and the two cannot share it. A BRUSH is what is armed on entry (see
     // `selecting`); Select is its own row in the brush strip, and arming any brush disarms it.
     fn worldMouse(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
-        // CHROME OWNS THE POINTER — but only for STARTING something. A gesture already in flight
-        // is serviced wherever the cursor has got to, because its RELEASE has to land: bailing
-        // out of this whole function because the pointer happens to be over a panel is what left
-        // `panning` / `dragging` / `marquee` / `rmbDown` latched on afterwards.
+        // CHROME OWNS THE POINTER — but only for STARTING something. A gesture in flight is serviced
+        // wherever the cursor got to, because its RELEASE has to land: bailing out of this function because
+        // the pointer is over a panel is what left `panning`/`dragging`/`marquee`/`rmbDown` latched on.
         const blocked = self.hotFrame or self.menuOpen;
         const ground = self.groundAt();
 
-        // A HELD STROKE ENDS THE MOMENT THE BUTTON IS UP, whatever branch is live this frame. Its
-        // own branch can be skipped mid-stroke (holding Shift hands the button to the marquee), and
-        // a stroke left latched `on` would let the next press erase from under a panel — the same
-        // shape of bug as the right button latching itself on.
+        // A HELD STROKE ENDS THE MOMENT THE BUTTON IS UP, whatever branch is live: its own branch can be
+        // skipped mid-stroke (Shift hands the button to the marquee), and a stroke left latched would let
+        // the next press erase from under a panel — the same shape of bug as the right button latching.
         if (self.wipe.on and !rl.isMouseButtonDown(.left)) self.wipeEnd();
-        // …and a SHAPE DRAG commits the same way, for the same reason. Its own release handling
-        // lives at the very bottom of this function, past several early returns — arm the eraser
-        // (a digit key) mid-drag and the eraser branch below shadows it, stranding `dragging` on
-        // for the rest of the session: a HOT gizmo that never goes away, and a drag that commits
-        // whenever the eraser is next disarmed.
+        // …and a SHAPE DRAG commits the same way. Its own release handling is at the bottom of this function
+        // past several early returns, so arming the eraser mid-drag lets that branch shadow it — stranding
+        // `dragging` on for the session: a HOT gizmo that never goes away, committing whenever the eraser is
+        // next disarmed.
         if (self.dragging and !rl.isMouseButtonDown(.left)) {
             if (ground) |g| self.dragTo = g;
             self.dragging = false;
@@ -1611,9 +1612,9 @@ pub const Editor = struct {
         self.bank(m);
         var o = m.ops[s];
         o.seed = self.freshSeed(m);
-        // Offset so the copy isn't hidden exactly under the original — through `translateOp`,
-        // which knows which kinds carry a second corner. Adding to `x1` by hand moved it on the
-        // kinds that don't use it too, and wrote a stray `x1=6` into the saved file.
+        // Offset so the copy isn't hidden under the original, through `translateOp`, which knows which kinds
+        // carry a second corner. Adding to `x1` by hand moved it on the kinds that don't use it too, and
+        // wrote a stray `x1=6` into the saved file.
         translateOp(&o, DUPE_OFFSET, 0);
         const idx = m.add(o) catch return;
         self.sel = idx;
@@ -1837,9 +1838,8 @@ pub const Editor = struct {
     }
 
     fn commitPending(self: *Editor, what: Pending) void {
-        // Only `leave` stays pending — update() services it, because leaving is the game loop's
-        // call to make. The other two are handled right here, so leaving them latched would
-        // strand a stale intent that the next confirm would inherit.
+        // Only `leave` stays pending, because leaving is the game loop's call; the other two are handled
+        // here, and leaving them latched would strand a stale intent the next confirm inherits.
         self.pending = if (what == .leave) .leave else .none;
         switch (what) {
             .none => {},
@@ -1920,7 +1920,7 @@ pub const Editor = struct {
 
     // ── world-space drawing (inside the 3D pass) ─────────────────────────────────────
 
-    pub fn draw3D(self: *const Editor, m: *const wf.Map, env: *const envmod.Env) void {
+    pub fn draw3D(self: *Editor, m: *const wf.Map, env: *const envmod.Env) void {
         const y = envmod.groundY() + 0.05;
         rl.drawCubeWires(v3(0, y, 0), m.half * 2, 0.02, m.half * 2, ui.alpha(ui.TRIM, 90));
         outline(m.runway.x, m.runway.z, m.runway.x1, m.runway.z1, y, ui.alpha(ui.HOT, 70));
@@ -1943,23 +1943,24 @@ pub const Editor = struct {
             rl.drawCubeWires(v3(f.x, y + FOE_BOX_H * 0.5, f.z), FOE_BOX_W, FOE_BOX_H, FOE_BOX_W, col);
         }
 
-        // The SELECTED op: its own shape, plus a marker on every instance it placed. The second
-        // half is the important one — it is the only way to see what a generator you are
-        // dialling actually owns.
+        // The SELECTED op: its own shape, plus a marker on every instance it placed. The markers are the
+        // important half — the only way to see what a generator you are dialling actually owns.
         //
-        // It scans the whole prop list to find the ≤MAX_MARKERS that belong to one op. Measured
-        // and LEFT: 8k integer compares is nothing beside the ~6k wire segments the markers
-        // themselves cost, and the obvious shortcut — an op's props are contiguous, so stop at the
-        // end of the run — would bake in an ordering `materialize` does not promise (the cover
-        // pass appends out of op order).
+        // The full-list scan is measured and LEFT: 8k integer compares is nothing beside the ~6k wire
+        // segments the markers cost, and the obvious shortcut (an op's props are contiguous, so stop at the
+        // end of the run) would bake in an ordering `materialize` does not promise — the cover pass appends
+        // out of op order. It runs to the END even past MAX_MARKERS, because the TOTAL is what the properties
+        // panel needs to admit the cap.
+        self.selOwned = 0;
+        self.selMarked = 0;
         if (self.sel) |s| {
             if (s < m.nops and (self.layer == .decor or self.layer == .props)) {
                 drawOpGizmo(&m.ops[s], y);
-                var drawn: usize = 0;
                 for (env.props[0..env.nprops]) |pr| {
                     if (pr.op != s) continue;
-                    if (drawn >= MAX_MARKERS) break; // capped, and the status line says so
-                    drawn += 1;
+                    self.selOwned += 1;
+                    if (self.selMarked >= MAX_MARKERS) continue; // capped — reported, never silent
+                    self.selMarked += 1;
                     const nfo = props.info(pr.kind);
                     const h = @max(nfo.top * pr.scale, 0.4);
                     rl.drawCubeWires(v3(pr.pos.x, pr.pos.y + h * 0.5, pr.pos.z), 0.3, h, 0.3, ui.HOT);
@@ -2269,8 +2270,9 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
     y += 6;
 
     // The kind palette, filtered TWICE: to the layer's own stock (Decor sows the flora, Props
-    // stand the rest up), then to the chosen GROUP. Seventy-seven kinds in one flat list is a
-    // scroll hunt; grouped, everything is two clicks away.
+    // stand the rest up), then to the chosen GROUP. Every kind in one flat list is a scroll hunt;
+    // grouped, everything is two clicks away. (No count in this sentence deliberately — it said
+    // "seventy-seven" three kinds ago.)
     if (ed.layer == .decor or ed.layer == .props) {
         hud.mono("GROUP", 10, y, hud.MONO, ui.alpha(ui.TRIM, 235));
         y += ROW_H;
@@ -2462,6 +2464,17 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     var head: [48]u8 = undefined;
     const title = std.fmt.bufPrintZ(&head, "#{d} {s}", .{ s, @tagName(o.op) }) catch "";
     hud.mono(title, x, y, hud.MONO, ui.TITLE);
+    y += ROW_H;
+    // WHAT THIS OP ACTUALLY GREW, and honestly: a scatter's `count` is an ATTEMPT count, so the
+    // number of instances it owns is always lower and is the only thing that tells you whether a
+    // density dial did anything. When the marker pass hit MAX_MARKERS this is also where it admits
+    // it, rather than leaving 500 wire cubes to imply the op owns 500.
+    var own: [56]u8 = undefined;
+    const owned = if (ed.selOwned > ed.selMarked)
+        std.fmt.bufPrintZ(&own, "{d} instances ({d} marked)", .{ ed.selOwned, ed.selMarked }) catch ""
+    else
+        std.fmt.bufPrintZ(&own, "{d} instances", .{ed.selOwned}) catch "";
+    hud.mono(owned, x, y, hud.MONO, ui.alpha(ui.LABEL, if (ed.selOwned > ed.selMarked) 255 else 170));
     y += ROW_H + 4;
 
     var changed = false;
@@ -2833,13 +2846,11 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx) void {
     }
 }
 
-// RIGHT-CLICK menu on the selection — the operations you reach for often enough that hunting
-// them in the properties panel is friction.
-//
-// ONE TABLE, walked in order, each row carrying WHAT IT DOES. The rows used to be a list of
-// labels dispatched by `switch (i)` on positional indices, so inserting a row above Delete moved
-// Delete's number and silently rewired it to Duplicate. And a row that cannot act on the current
-// selection is drawn DIM rather than left looking live and doing nothing when clicked.
+// RIGHT-CLICK menu on the selection — the operations you reach for often enough that hunting them in the
+// properties panel is friction. ONE TABLE, each row carrying WHAT IT DOES: they were labels dispatched by
+// `switch (i)` on positional indices, so inserting a row above Delete moved its number and silently rewired
+// it to Duplicate. A row that cannot act on the selection draws DIM rather than looking live and doing
+// nothing when clicked.
 const MenuItem = enum { focus, reroll, duplicate, delete, close };
 
 const menuRows = [_]struct { act: MenuItem, label: [:0]const u8 }{

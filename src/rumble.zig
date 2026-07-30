@@ -3,17 +3,15 @@ const builtin = @import("builtin");
 const rl = @import("raylib");
 
 // ── CONTROLLER RUMBLE ───────────────────────────────────────────────────────────────────
-// raylib's GLFW desktop backend STUBS OUT SetGamepadVibration, so on Windows we drive XInput
-// directly, resolving XInputSetState at runtime from whichever xinput DLL is present (cached)
-// — no import lib, no build.zig change. Elsewhere we fall back to raylib's API.
+// raylib's GLFW desktop backend STUBS OUT SetGamepadVibration, so on Windows this drives XInput
+// directly, resolving XInputSetState at runtime from whichever xinput DLL is present (cached) — no
+// import lib, no build.zig change. Elsewhere it falls back to raylib's API.
 //
-// Each combat beat is an `Event`: a peak per motor plus a duration. Motors fade linearly and
-// overlapping events blend STRONGEST-WINS, so a big slam takes over a lingering buzz without a
-// weak tick cutting a strong one short. Every beat has its own low/high/dur SIGNATURE, so the
-// grip teaches the fight — pattern memory through the hands, not just the eyes.
-//
-// XInput's two motors: low-frequency ("heavy") and high-frequency ("buzz"). The player's own
-// actions lean on buzz, blows SUFFERED lean on heavy, death swells both.
+// Each combat beat is an `Event`: a peak per motor plus a duration. Motors fade linearly and overlaps
+// blend STRONGEST-WINS, so a big slam takes over a lingering buzz and a weak tick never cuts a strong
+// one short. Every beat has its own SIGNATURE, so the grip teaches the fight — pattern memory through
+// the hands. XInput's two motors are low ("heavy") and high ("buzz"): the player's own actions lean on
+// buzz, blows SUFFERED lean on heavy, death swells both.
 
 // input polling (game.zig) and this module's XInput calls must target the SAME pad.
 pub const PAD = 0;
@@ -41,8 +39,8 @@ const Motor = struct {
         if (m.dur <= 0 or m.t <= 0) return 0;
         return m.peak * (m.t / m.dur);
     }
-    // A new pulse takes over only if at least as strong, right now, as what's still playing —
-    // a big impact overrides a fading buzz; a small tick never truncates a bigger event.
+    // Takes over only if at least as strong RIGHT NOW as what is still playing: a big impact overrides
+    // a fading buzz, a small tick never truncates a bigger event.
     fn pulse(m: *Motor, peak: f32, dur: f32) void {
         if (dur <= 0) return;
         if (peak >= m.level()) {
@@ -65,9 +63,8 @@ pub const Rumble = struct {
         self.high.pulse(e.high, e.dur);
     }
 
-    // Advance envelopes by dt and command the motors. `active` gates OUTPUT: pass false with
-    // no controller or while paused, so the grip is silent while envelopes still decay in the
-    // background (unpausing doesn't replay a stale buzz).
+    // `active` gates OUTPUT only: pass false with no controller or while paused, so the grip is silent
+    // while envelopes keep decaying in the background (unpausing doesn't replay a stale buzz).
     pub fn update(self: *Rumble, dt: f32, active: bool) void {
         self.low.tick(dt);
         self.high.tick(dt);

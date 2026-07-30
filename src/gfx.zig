@@ -1385,8 +1385,9 @@ pub const Scene = struct {
     }
 
     /// Push the painted soil grid: SOIL_N x SOIL_N material ids, one byte each, 0 = unpainted.
-    /// `half` is the world half-extent the grid spans. Re-uploads the whole (4 KB) texture,
-    /// which is nothing — a brush stroke can call this every frame it moves.
+    /// `half` is the world half-extent the grid spans. Re-uploads the WHOLE texture — SOIL_N² bytes,
+    /// ~12 KB at 112 a side — which is still nothing, so a brush stroke can call this every frame it
+    /// moves. (It said 4 KB, from when the grid was 64 a side.)
     ///
     /// NEAREST filtering on purpose: the ids are enum values, and a bilinear fetch between 2
     /// and 4 returns 3 — a material nobody painted, appearing as a seam of the wrong ground

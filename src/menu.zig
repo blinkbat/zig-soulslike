@@ -11,10 +11,9 @@ const rgba = mathx.rgba;
 // vibration calls do, so it reads the shared constant rather than repeating a literal 0.
 const PAD = rumblemod.PAD;
 
-// The pause/debug menu, OPEN AT LAUNCH (it doubles as the start screen): Continue / Debug /
-// Quit. Debug holds the dev toggles; Retro Filters is a slider list over gfx.Retro.values.
-// All chrome is primitive rects + hud text (Balthazar, ASCII only), drawn crisp AFTER the
-// retro pass so menus never crunch. Esc/B backs out one level; Esc/Start toggles.
+// The pause/debug menu, OPEN AT LAUNCH (it doubles as the start screen). Debug holds the dev toggles; Retro
+// Filters is a slider list over gfx.Retro.values. All chrome is primitive rects + hud text (Balthazar,
+// ASCII only), drawn crisp AFTER the retro pass so menus never crunch.
 
 pub const Action = enum { none, quit, editor };
 
@@ -27,10 +26,9 @@ const DBG_WIREFRAME = 2;
 const DBG_HITBOX = 3;
 const DBG_TIMESCALE = 4;
 const DBG_CLOSE = 5;
-// Every _COUNT is DERIVED from its last row, never re-counted by hand. Typed out separately,
-// a count and its list drift the first time a row is inserted: the labels array stays one
-// short and the cursor wraps before it, so the new row is drawn nowhere and reachable never —
-// silently, with nothing to catch it.
+// Every _COUNT is DERIVED from its last row, never counted by hand: typed separately, a count and its list
+// drift the first time a row is inserted — the labels array stays one short and the cursor wraps before it,
+// so the new row is drawn nowhere and reachable never, silently.
 const DBG_COUNT = DBG_CLOSE + 1;
 
 // Retro rows: the filter sliders, then presets, then Reset / All Off / Close.
@@ -367,10 +365,9 @@ fn coarseHeld() bool {
 }
 
 fn confirmPressed() bool {
-    // ALT+Enter belongs to the game loop's borderless-fullscreen toggle, so Enter must not ALSO
-    // confirm the highlighted row while Alt is down. The menu is open at launch, so without this
-    // the very first Alt+Enter selected whatever the cursor sat on — with the cursor one row off
-    // Quit, toggling fullscreen could exit the game.
+    // ALT+Enter is the game loop's borderless-fullscreen toggle, so Enter must not ALSO confirm the
+    // highlighted row while Alt is down. The menu is open at launch, so without this the first Alt+Enter
+    // selected whatever the cursor sat on — one row off Quit, toggling fullscreen could exit the game.
     const altHeld = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
     if ((rl.isKeyPressed(.enter) and !altHeld) or rl.isKeyPressed(.space)) return true;
     return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .right_face_down);

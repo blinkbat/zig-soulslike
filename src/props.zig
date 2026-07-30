@@ -393,9 +393,12 @@ pub fn group(k: Kind) Group {
 
 /// The great-tree variants as a set, so placement code mixes them instead of naming one.
 pub const BIG_TREES = [_]Kind{ .bigtree, .bigtree2, .bigtree3 };
-/// …and the cliff variants, for the ring around the world. SIX of them: the rim repeats a
-/// segment every 6.5 m for well over a kilometre, and the more characters that alternate along it
-/// the further the eye has to travel before it finds the repeat.
+/// …and the cliff variants, as a SET, for the rock that rings the world and the arc round the start
+/// bowl. SIX of them: an `edge` op repeats a segment every few metres for well over a kilometre, and
+/// the more characters that alternate along it the further the eye has to travel before it finds the
+/// repeat. What any one map draws from the set is the MAP's business — the shipped rim mixes the
+/// first three and stands 4-6 up as literals in the start arc, where their surfaces can be read.
+/// `Map.blank` seeds a fresh rim from the whole set.
 pub const CLIFFS = [_]Kind{ .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
@@ -506,8 +509,8 @@ pub const INFO = [NK]Info{
     .{ .kind = .cart, .build = cartMesh, .bound = 3.4, .top = 1.7, .view = 170, .parts = &.{.{ .ax = -1.1, .bx = 1.1, .r = 0.55, .h = 1.3 }} },
     .{ .kind = .monolith, .build = monolithMesh, .bound = 5.2, .top = 4.9, .view = FAR, .parts = circleParts(0.62, 4.6) },
     // THREE cliff variants, for the same reason the great trees have three: the ring repeats a
-    // segment every 8 m for 1.3 km, and one silhouette repeated at that pitch reads as a periodic
-    // TOOTHED pattern along the horizon — unmistakably manufactured.
+    // segment every 6.5 m (the shipped map's `edge` step) for 1.3 km, and one silhouette repeated at
+    // that pitch reads as a periodic TOOTHED pattern along the horizon — unmistakably manufactured.
     .{ .kind = .cliff, .build = cliff1, .bound = 18.0, .top = 15.5, .view = FAR, .parts = &cliffParts },
     .{ .kind = .cliff2, .build = cliff2, .bound = 17.0, .top = 14.0, .view = FAR, .parts = &cliffParts },
     .{ .kind = .cliff3, .build = cliff3, .bound = 19.0, .top = 16.8, .view = FAR, .parts = &cliffParts },

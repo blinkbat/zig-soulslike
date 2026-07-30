@@ -5,18 +5,18 @@ const mathx = @import("mathx.zig");
 const v3 = mathx.v3;
 
 // ── GROUND-PLANE COLLISION ──────────────────────────────────────────────────────────────
-// A flat arena with no verticality worth simulating, so collision is purely 2D on XZ. Every
-// solid is a CAPSULE (segment a→b, radius r; a==b is a plain circle) and actors are circles
-// PUSHED OUT along the shortest exit. A wall is one fat capsule down its length, a pillar a
-// circle, a ruin block a short capsule. Cheap, allocation-free, robust for footprints.
+// A flat arena with no verticality worth simulating, so this is purely 2D on XZ. Every solid is a
+// CAPSULE (segment a→b, radius r; a==b is a circle) and actors are circles PUSHED OUT along the
+// shortest exit — a wall is one fat capsule down its length, a pillar a circle, a ruin block a short
+// capsule. Cheap, allocation-free, robust for footprints.
 
 pub const Solid = struct {
     a: rl.Vector3, // segment start (XZ; Y ignored)
     b: rl.Vector3, // segment end
     r: f32, // capsule radius
-    // Blocking HEIGHT for projectiles (world Y of the obstacle's top): an arrow above flies
-    // clear, below thunks in; footprint push-out stays 2D and ignores it. Defaults sky-high
-    // so a Solid built without one blocks everything.
+    // Blocking HEIGHT for projectiles (world Y of the top): an arrow above flies clear, below thunks
+    // in. Footprint push-out stays 2D and ignores it. Sky-high default, so a Solid built without one
+    // blocks everything.
     h: f32 = 1e9,
 };
 
@@ -50,8 +50,8 @@ pub fn pushOutCircle(p: rl.Vector3, pr: f32, c: rl.Vector3, cr: f32) rl.Vector3 
     return pushOut(p, pr, .{ .a = c, .b = c, .r = cr });
 }
 
-/// Resolve a circle against many solids. Two passes settle the common case of overlapping
-/// two solids at once (an inside corner) without a full iterative solver.
+/// Two passes settle the common case of overlapping two solids at once (an inside corner) without a
+/// full iterative solver.
 pub fn resolve(p: rl.Vector3, pr: f32, solids: []const Solid) rl.Vector3 {
     var out = p;
     var pass: u32 = 0;
@@ -61,9 +61,8 @@ pub fn resolve(p: rl.Vector3, pr: f32, solids: []const Solid) rl.Vector3 {
     return out;
 }
 
-/// Is the point `p` (a projectile in flight) inside solid `s` on XZ *and* below its blocking
-/// height? The projectile counterpart of pushOut — this is what makes COVER work: an arrow
-/// tests its flight against the same solids feet resolve against.
+/// Inside `s` on XZ *and* below its blocking height? The projectile counterpart of pushOut, and what
+/// makes COVER work: an arrow tests its flight against the same solids feet resolve against.
 pub fn blocksPoint(p: rl.Vector3, margin: f32, s: Solid) bool {
     if (p.y > s.h) return false; // over the top — clears it
     const q = mathx.closestOnSegXZ(p, s.a, s.b);
@@ -73,9 +72,8 @@ pub fn blocksPoint(p: rl.Vector3, margin: f32, s: Solid) bool {
     return dx * dx + dz * dz < rr * rr;
 }
 
-/// Does ANY of these solids block the point? (Yes/no only — it deliberately doesn't say which,
-/// because no caller has ever needed to know: arrow flight embeds the shaft along its own velocity
-/// and the flora scatter just rejects the spot.)
+/// Yes/no only, and deliberately not WHICH: no caller has needed to know (arrow flight embeds the
+/// shaft along its own velocity). For a grid-local query with no copying, see `env.blockedNear`.
 pub fn blockedBy(p: rl.Vector3, margin: f32, solids: []const Solid) bool {
     for (solids) |s| {
         if (blocksPoint(p, margin, s)) return true;

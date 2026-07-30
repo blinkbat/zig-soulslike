@@ -5,39 +5,37 @@ const gfx = @import("gfx.zig");
 
 const Kind = props.Kind;
 
-// ── THE MAP ── the world is DATA. A map is a versioned text file of authoring OPS, replayed
-// in order by env.zig to materialize the world; the editor is the only thing that writes one.
+// ── THE MAP ── the world is DATA: a versioned text file of authoring OPS, replayed in order by
+// env.zig; the editor is the only thing that writes one.
 //
-// The ops are the AUTHORING, not its output. A wood is one `belt` of 260 attempts with a mix
-// and an edge gradient — not 260 coordinates — so the file stays a few hundred lines you can
-// read in a diff, and dragging a density dial re-expands it instead of stamping instances.
+// The ops are the AUTHORING, not its output. A wood is one `belt` of 260 attempts with a mix and an
+// edge gradient, not 260 coordinates — so the file stays readable in a diff and a density dial
+// re-expands it instead of stamping instances.
 //
-// EVERY GENERATOR OP CARRIES ITS OWN SEED, and gets its own Rng. This is the load-bearing
-// difference from the code-authored world it replaces, which drew every op from one shared
-// stream: there, inserting a belt re-rolled every op after it, so no edit was ever local.
-// Independent seeds make an edit touch only its own children — which is what makes the thing
-// editable at all. The world stays deterministic either way (same file, same world, always).
+// EVERY GENERATOR OP CARRIES ITS OWN SEED and gets its own Rng. That is the load-bearing difference
+// from the code-authored world it replaces, which drew every op from ONE shared stream: there,
+// inserting a belt re-rolled every op after it, so no edit was ever local. The world is deterministic
+// either way; independent seeds are what make it EDITABLE.
 //
-// FORMAT. One record per line, `#` comments, blank lines ignored:
-//
-//     <name> <required positionals, in FIELDS order> [key=value ...]
-//
-// The positionals come from ONE table (`FIELDS`) that both the writer and the parser walk, so
-// a field added to one can't go missing from the other. The optional tail carries the sparse
-// dials (mix, seed, skip, gradients) and is matched by struct field name. An UNKNOWN key or a
-// missing positional is a LOAD ERROR, never a silent default — a map that half-loads is a
-// world with a hole in it, and the hole is a long way from the typo that caused it.
+// FORMAT — one record per line, `#` comments, blank lines ignored:
+//     <name> <required positionals, in fieldsOf() order> [key=value ...]
+// The positionals come from ONE table both the writer and the parser walk, so a field added to one
+// can't go missing from the other; the optional tail carries the sparse dials, matched by field name.
+// An unknown key, a missing positional or a value that only LOOKS parseable is a LOAD ERROR, never a
+// silent default — a map that half-loads is a world with a hole in it, a long way from the typo.
 
 pub const VERSION: u32 = 1;
 
-/// Playable half-extent a map gets when it doesn't say otherwise — so the world spans 2x this on
-/// each axis. THE MAP IS THE ONLY SOURCE for this: the movement clamp, the cliff ring, the ground
-/// cover's extent and the soil grid's scale all read `Map.half`. `env.MAX_HALF` is the ceiling the
-/// fixed spatial grid can index, and `env`'s tests assert this default sits inside it.
-///
-/// Lives here rather than in env.zig because env imports THIS file; the other direction would be a
-/// circular import for one float.
+/// Playable half-extent when a map doesn't say otherwise; the world spans 2x this per axis. THE MAP IS
+/// THE ONLY SOURCE — the movement clamp, the cliff ring, the cover extent and the soil grid all read
+/// `Map.half`. `env.MAX_HALF` is the ceiling the fixed grid can index and env's tests pin this default
+/// under it. Lives here because env imports this file, not the other way round.
 pub const DEFAULT_HALF: f32 = 280.0;
+
+/// Sanity bound on a `half:` record, and a POSITIVE one. Not the design limit (`env.MAX_HALF` is), but
+/// the cover lattice is O((half/pitch)²) candidates, so an absurd value is a HANG at load rather than
+/// a big world — and a zero or negative half inverts every derived extent.
+pub const MAX_DECLARED_HALF: f32 = 4096.0;
 
 pub const MAX_OPS: usize = 2048;
 pub const MAX_MIX: usize = 24; // a scatter's weighted kind mix (weight = repetition)
@@ -51,29 +49,28 @@ pub const NAME_CAP: usize = 48;
 pub const OpKind = enum(u8) {
     /// One prop, placed exactly. No RNG, no seed — what the editor stamps and drags.
     at,
-    /// Rect scatter: `n` ATTEMPTS in a box, rejected against the avoid set and the cover
-    /// field. Attempts, not a guarantee: rejection is what keeps a scatter from reading sown.
+    /// Rect scatter: `n` ATTEMPTS in a box, rejected against the avoid set and the cover field.
+    /// Attempts, not a guarantee — rejection is what keeps a scatter from reading sown.
     belt,
     /// Annulus scatter about a centre, r0..r1 — shorelines, reed beds, talus, drowned ruin.
     disc,
-    /// Evenly spaced ring facing its centre, with one stone left out (`skip`): a ring with
-    /// every position filled reads as a fence.
+    /// Evenly spaced ring facing its centre, one position left out (`skip`): a full ring reads as a fence.
     ring,
-    /// A broken run from a→b: segments nose to tail, `gap` of them collapsed. City walls.
+    /// A broken run from a→b: segments nose to tail, some collapsed. City walls.
     line,
-    /// Sow a climber at the FEET of stonework already standing in a box. Ivy needs a wall
-    /// behind it, so it walks the props that are there rather than scattering over ground.
+    /// Sow a climber at the FEET of stonework already standing in a box — ivy needs a wall behind it,
+    /// so this walks the props that are THERE rather than scattering over ground.
     ivy,
-    /// The world's rock rim: four walls of overlapping cliff segments, height from two long
-    /// waves so the crest reads as topography rather than as jitter.
+    /// The world's rock rim: four walls of overlapping cliff segments, height from two long waves so
+    /// the crest reads as topography rather than jitter.
     edge,
-    /// The lattice ground cover over the whole world: one candidate per cell, kind and
-    /// density from the zone it lands in, scaled by the cover field. Exactly one per map.
+    /// The lattice ground cover over the whole world: one candidate per cell, kind and density from the
+    /// zone it lands in, scaled by the cover field. Exactly one per map.
     cover,
 };
 
-/// What a scatter refuses to grow through. Defaults differ per op kind (see `defaults`), and
-/// the editor exposes them as tick boxes — a belt that ignores water is how you sow lilies.
+/// What a scatter refuses to grow through. Defaults differ per op kind, and the editor exposes them as
+/// tick boxes — a belt that ignores water is how you sow lilies.
 pub const Avoid = struct {
     runway: bool = false, // the hero's start lane, kept clear so a straight walk out is never blocked
     water: bool = false, // open water
@@ -84,9 +81,8 @@ pub const Avoid = struct {
 /// Which axis a belt's density gradient runs along; `.none` is a flat belt.
 pub const Axis = enum(u8) { none, x, z };
 
-/// One authoring operation. FLAT rather than a tagged union: the editor's properties panel
-/// pokes fields by name, the FIELDS table decides which ones a given op kind actually uses,
-/// and the unused ones cost a few bytes and no ceremony.
+/// One authoring operation. FLAT rather than a tagged union: the properties panel pokes fields by name,
+/// `fieldsOf` decides which ones a kind uses, and the unused ones cost a few bytes and no ceremony.
 pub const Op = struct {
     op: OpKind = .at,
     kind: Kind = .pillar, // the prop placed, or the mix's fallback when `nmix` is 0
@@ -104,24 +100,23 @@ pub const Op = struct {
     skip: i32 = -1, // ring: the position left empty; -1 = none
     seed: u64 = 0,
     chance: f32 = 1.0, // per-candidate acceptance (ivy takes, line segment survives)
-    /// Disc radial bias: 0 spreads evenly across the annulus, 1 is area-uniform (sqrt), which
-    /// clusters toward the inner edge — how a lily raft sits on its rootstock.
+    /// Disc radial bias: 0 spreads evenly across the annulus, 1 is area-uniform (sqrt), clustering
+    /// toward the inner edge — how a lily raft sits on its rootstock.
     bias: f32 = 0,
-    /// Does this scatter respect the world's COVER FIELD — the noise that carves clearings and
-    /// thickets, so a clearing is a clearing for everything standing in it? On for belts, which
-    /// is where the law came from. Off for a scatter that carries its own shaping (the wood's
-    /// canopy has a gradient) or that has no business thinning (a shoreline reed bed), because
-    /// double-dipping thins it twice and the second one is invisible in the numbers.
+    /// Respect the world's COVER FIELD (the noise that carves clearings, so a clearing is a clearing for
+    /// everything standing in it)? On for belts. OFF for a scatter that carries its own shaping (the
+    /// canopy's gradient) or has no business thinning (a shoreline reed bed): double-dipping thins it
+    /// twice and the second one is invisible in the numbers.
     field: bool = false,
-    /// Belt density gradient: acceptance ramps `gFloor`→1 as the axis runs gA→gB. This is what
-    /// stops a wood ending in a hard tree line that reads as a wall of scenery.
+    /// Belt density gradient: acceptance ramps `gFloor`→1 as the axis runs gA→gB. What stops a wood
+    /// ending in a hard tree line that reads as a wall of scenery.
     gAxis: Axis = .none,
     gA: f32 = 0,
     gB: f32 = 0,
     gFloor: f32 = 0,
     avoid: Avoid = .{},
-    /// Weighted kind mix, weight BY REPETITION — the cheapest honest weighting for a small set,
-    /// and it keeps a region's character readable as one line of text. Empty = use `kind`.
+    /// Weighted kind mix, weight BY REPETITION — the cheapest honest weighting for a small set, and it
+    /// keeps a region's character readable as one line of text. Empty = use `kind`.
     mix: [MAX_MIX]Kind = undefined,
     nmix: u8 = 0,
 
@@ -147,15 +142,11 @@ pub const Op = struct {
     }
 };
 
-// The REQUIRED positional fields of each op kind, in the order they are written and read.
-// ONE table, both directions: this is the whole defence against a writer and a parser that
-// agree today and disagree after the next field is added.
-//
-// A comptime function rather than a lookup table, because the field walk has to run at
-// COMPTIME to index the struct by name — and because the order here must be the order on the
-// line. Driving the walk off `std.meta.fields(Op)` instead reads the STRUCT's declaration
-// order, which silently ignores this table and writes `n` in the wrong column the moment the
-// two disagree.
+// The REQUIRED positionals per op kind, in the order written and read. ONE table, both directions —
+// the whole defence against a writer and a parser that agree today and disagree after the next field.
+// A comptime function because the walk must run at COMPTIME to index the struct by name. Driving it off
+// `std.meta.fields(Op)` reads the STRUCT's order instead, silently ignoring this table and writing `n`
+// in the wrong column the moment the two disagree.
 fn fieldsOf(comptime k: OpKind) []const []const u8 {
     return switch (k) {
         .at => &.{ "kind", "x", "z", "yaw", "scale" },
@@ -181,8 +172,8 @@ comptime {
     }
 }
 
-// Per-kind defaults for the fields that aren't positional, so a hand-written line behaves the
-// way that op is meant to without spelling out every dial.
+// Per-kind defaults for the non-positional fields, so a hand-written line behaves the way that op is
+// meant to without spelling out every dial.
 pub fn defaults(k: OpKind) Op {
     var o = Op{ .op = k };
     switch (k) {
@@ -203,10 +194,9 @@ pub fn defaults(k: OpKind) Op {
 
 // ── the tables an op is read against ───────────────────────────────────────────────────
 
-/// A ground-cover zone: what the lattice scatter grows inside this rect, and how thickly WHERE
-/// IT IS THICKEST. `density` is the PEAK — the cover field scales it down from there, to nothing
-/// in the clearings. Zones are tested in order and the FIRST containing rect wins, so a small
-/// zone laid after a large one cuts a hole in it.
+/// What the lattice scatter grows inside this rect, and how thickly WHERE IT IS THICKEST: `density` is
+/// the PEAK and the cover field scales it down to nothing in the clearings. Tested in order, FIRST
+/// containing rect wins — so a small zone laid after a large one cuts a hole in it.
 pub const Zone = struct {
     name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
     x: f32 = 0,
@@ -220,12 +210,10 @@ pub const Zone = struct {
     pub fn contains(self: *const Zone, px: f32, pz: f32) bool {
         return px >= self.x and px <= self.x1 and pz >= self.z and pz <= self.z1;
     }
-    /// One instance's kind from the mix, or null when the zone has no mix at all. OPTIONAL, not a
-    /// fallback kind: `mix` is `undefined` until something fills it, and `Rng.intn(0)` returns 0,
-    /// so an unguarded version read raw heap bytes as a `props.Kind` — an out-of-range enum, which
-    /// is illegal behaviour whatever those bytes happen to be. `parseZone` also rejects an empty
-    /// mix outright, so this is the second lock on the same door (the editor can hold a zone in
-    /// that state between a drag and its seeding).
+    /// OPTIONAL, not a fallback kind: `mix` is `undefined` until filled and `Rng.intn(0)` returns 0, so
+    /// an unguarded version read raw heap bytes as a `props.Kind` — an out-of-range enum, illegal
+    /// whatever those bytes are. `parseZone` rejects an empty mix too; this is the second lock on the
+    /// same door, since the editor can hold a zone in that state between a drag and its seeding.
     pub fn pick(self: *const Zone, rng: *mathx.Rng) ?Kind {
         if (self.nmix == 0) return null;
         return self.mix[@intCast(rng.intn(@intCast(self.nmix)))];
@@ -235,15 +223,15 @@ pub const Zone = struct {
     }
 };
 
-/// A circle the canopy and the cover scatter keep out of — the stone circle's glade, the
-/// cottage yard. A clearing you authored is worth more than one the noise happened to leave.
+/// A circle the canopy and the cover scatter keep out of — the stone circle's glade, the cottage yard.
+/// A clearing you authored is worth more than one the noise happened to leave.
 pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 
 pub const FoeKind = enum(u8) { toad, archer, ogre };
 
-/// One posted spawn. `yaw` is DEGREES like every other yaw in the format (the rigs take
-/// radians; the loader converts). `seed` is the per-instance animation phase in 0..1 — it is
-/// what stops a knot of toads breathing and hopping as one body.
+/// One posted spawn. `yaw` is DEGREES like every yaw in the format (the rigs take radians; the loader
+/// converts). `seed` is the per-instance animation phase in 0..1 — what stops a knot of toads breathing
+/// and hopping as one body.
 pub const Foe = struct {
     kind: FoeKind = .toad,
     x: f32 = 0,
@@ -256,14 +244,13 @@ pub const Foe = struct {
 /// How many of ONE kind a map may post. Each group keeps a fixed array this size.
 pub const MAX_PER_KIND: usize = 24;
 
-/// The hero's start lane, kept clear of every scatter: the `--shot` travel corridor and the
-/// live start, so walking straight out of the grace is never blocked by something that grew.
+/// The hero's start lane, kept clear of every scatter (the `--shot` corridor and the live start), so
+/// walking straight out of the grace is never blocked by something that grew.
 pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 = 30 };
 
 // ── the painted soil ───────────────────────────────────────────────────────────────────
-// A material id per grid cell over the whole map, 0 = UNPAINTED. Unpainted is the default and
-// means "leave the procedural ground exactly as it is", so the authored look survives painting
-// by construction and the grid is empty in a fresh map.
+// A material id per grid cell, 0 = UNPAINTED, meaning "leave the procedural ground exactly as it is" —
+// so the authored look survives painting by construction and a fresh map's grid is empty.
 
 pub const SOIL_N: usize = @intCast(gfx.SOIL_N);
 pub const SOIL_CELLS: usize = SOIL_N * SOIL_N;
@@ -323,9 +310,9 @@ pub const Map = struct {
         self.soil = [_]u8{0} ** SOIL_CELLS;
     }
 
-    /// The smallest map that is actually VALID: a world-spanning fallback zone and the cover op
-    /// that reads it. A truly empty map fails its own loader (`NoCoverOp`) and shows as bare
-    /// terrain, so "New" must hand back something that loads and grows grass.
+    /// The smallest VALID map: a world-spanning fallback zone plus the cover op that reads it. A truly
+    /// empty map fails its own loader (`NoCoverOp`) and shows as bare terrain, so "New" must hand back
+    /// something that loads and grows grass.
     pub fn blank(self: *Map, name: []const u8) void {
         self.* = .{};
         self.setName(name);
@@ -521,10 +508,9 @@ fn writeOp(o: *const Op, w: anytype) !void {
                 try w.writeAll(" ");
                 try writeTail(w, @field(o, name));
             }
-            // The optional tail: only what differs from this kind's DEFAULTS, so a plain belt
-            // stays one short line and every key present in a file is a decision somebody
-            // actually made. Positionals are excluded per-kind — emitting one here too would
-            // write `kind=fern` after the fern already in column one.
+            // The tail carries only what differs from this kind's DEFAULTS, so a plain belt stays one
+            // short line and every key in a file is a decision somebody made. Positionals are excluded
+            // per-kind — emitting one here too would write `kind=fern` after the fern in column one.
             inline for (@typeInfo(Op).@"struct".fields) |f| {
                 if (comptime canTail(k, f.name)) {
                     if (!eqlVal(@field(o, f.name), @field(d, f.name))) {
@@ -611,6 +597,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             m.setName(trim(line[colon + 1 ..]));
         } else if (std.mem.eql(u8, rec, "half")) {
             m.half = try nextFloat(&it);
+            if (!(m.half > 0 and m.half <= MAX_DECLARED_HALF)) return ParseError.BadNumber;
         } else if (std.mem.eql(u8, rec, "runway")) {
             m.runway = .{ .x = try nextFloat(&it), .z = try nextFloat(&it), .x1 = try nextFloat(&it), .z1 = try nextFloat(&it) };
         } else if (std.mem.eql(u8, rec, "zone")) {
@@ -653,8 +640,8 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
         }
     }
     if (!seenVersion) return ParseError.BadVersion;
-    // A map with no cover op has no ground cover at all, which looks like a load failure and
-    // isn't one — so it IS one. Same reasoning as env's caps: fail loudly at the cause.
+    // A map with no cover op has no ground cover, which LOOKS like a load failure and isn't — so it is
+    // one. Same reasoning as env's caps: fail loudly at the cause.
     for (m.ops[0..m.nops]) |o| {
         if (o.op == .cover) return;
     }
@@ -672,9 +659,8 @@ fn parseZone(it: *std.mem.TokenIterator(u8, .any)) !Zone {
     z.z1 = try nextFloat(it);
     z.density = try nextFloat(it);
     z.nmix = try parseMix(it.next() orelse return ParseError.MissingField, &z.mix);
-    // A zone with no mix grows NOTHING, and `zoneAt` hands it out as the fallback for every point
-    // it covers — so a bald region, a long way from the line that caused it. Same rule as the rest
-    // of this parser: fail at the cause. (A token of pure separators, e.g. `,`, parses to 0.)
+    // A zone with no mix grows NOTHING, and `zoneAt` hands it out as the fallback for every point it
+    // covers — a bald region, a long way from the line. (A token of pure separators parses to 0.)
     if (z.nmix == 0) return ParseError.MissingField;
     if (it.next() != null) return ParseError.ExtraField;
     return z;
@@ -730,9 +716,16 @@ fn parseMix(s: []const u8, out: *[MAX_MIX]Kind) !u8 {
 fn parseVal(comptime T: type, tok: []const u8) !T {
     return switch (@typeInfo(T)) {
         .@"enum" => try enumFromName(T, tok),
-        .float => std.fmt.parseFloat(T, tok) catch ParseError.BadNumber,
+        .float => try finiteFloat(T, tok),
         .int => std.fmt.parseInt(T, tok, 10) catch ParseError.BadNumber,
-        .bool => std.mem.eql(u8, tok, "1") or std.mem.eql(u8, tok, "true"),
+        // Anything else is a LOAD ERROR, not `false`: leniency here meant `field=yes` or a typo like
+        // `field=ture` read as OFF, silently taking a belt off the cover field with nothing pointing at
+        // the line. Same rule as an unknown key.
+        .bool => blk: {
+            if (std.mem.eql(u8, tok, "1") or std.mem.eql(u8, tok, "true")) break :blk true;
+            if (std.mem.eql(u8, tok, "0") or std.mem.eql(u8, tok, "false")) break :blk false;
+            break :blk ParseError.BadNumber;
+        },
         .@"struct" => blk: { // Avoid
             var v: T = .{};
             if (std.mem.eql(u8, tok, "-")) break :blk v;
@@ -760,14 +753,13 @@ fn parseVal(comptime T: type, tok: []const u8) !T {
 pub const DIR = "worlds";
 pub const START_MAP = "worlds/01_fallen_plain.world";
 
-// One scratch buffer for whole-file reads. A map is a few tens of KB, the cap is generous, and
-// a file-level buffer keeps load/save off the allocator like everything else in the hot path.
+// One scratch buffer for whole-file reads — a map is a few tens of KB, and a file-level buffer keeps
+// load/save off the allocator like everything else here.
 var textBuf: [1 << 20]u8 = undefined;
 
-/// `load` parses HERE and copies out only on success. `parse` blanks its destination on the
-/// first line, so parsing straight into the caller's map left a HALF-LOADED world behind on any
-/// error — and the editor then went on editing a map that no longer matched the one on screen,
-/// with the failure message five minutes behind it.
+/// `load` parses HERE and copies out only on SUCCESS. `parse` blanks its destination on the first line,
+/// so parsing straight into the caller's map left a half-loaded world behind on any error — and the
+/// editor went on editing a map that no longer matched the one on screen.
 var loadScratch: Map = undefined;
 
 pub fn load(path: []const u8, m: *Map, lineOut: *usize) !void {
@@ -779,10 +771,9 @@ pub fn load(path: []const u8, m: *Map, lineOut: *usize) !void {
     m.* = loadScratch;
 }
 
-/// Load the world or DIE, printing the file and the line. Deliberately not a fallback to some
-/// built-in default: the map IS the world, and quietly running a different one hides the real
-/// problem behind a world the author never asked for. Same rule as env's caps — fail at the
-/// cause, not three screens later when the ruins are missing.
+/// Load the world or DIE, printing the file and the line. Deliberately NOT a fallback to a built-in
+/// default: the map IS the world, so quietly running a different one hides the fault behind a world
+/// nobody authored. Same rule as env's caps — fail at the cause.
 pub fn loadOrPanic(path: []const u8, m: *Map) void {
     var line: usize = 0;
     load(path, m, &line) catch |e| {
@@ -795,20 +786,20 @@ pub const EXT = ".world";
 pub const MAX_FILES: usize = 64;
 pub const PATH_CAP: usize = 96;
 
-/// The maps on disk, newest listing wins. Fixed storage like everything else here; a directory
-/// with more than MAX_FILES maps simply lists the first MAX_FILES rather than failing.
+/// The maps on disk. Fixed storage like everything else here; a directory with more than MAX_FILES maps
+/// lists the first MAX_FILES rather than failing.
 pub const Listing = struct {
     names: [MAX_FILES][PATH_CAP]u8 = undefined,
     n: usize = 0,
 
-    /// NUL-terminated, because the UI list wants `[:0]const u8`. Safe because `scan` zeroes
-    /// each slot before copying and always leaves at least the final byte clear.
+    /// NUL-terminated, because the UI list wants `[:0]const u8`. Safe because `scan` zeroes each slot
+    /// before copying and always leaves the final byte clear.
     pub fn name(self: *const Listing, i: usize) [:0]const u8 {
         return std.mem.span(@as([*:0]const u8, @ptrCast(&self.names[i])));
     }
 
-    /// Rescan `worlds/`. A missing directory is an EMPTY listing, not an error — that is just a
-    /// project that hasn't saved a map yet.
+    /// Rescan `worlds/`. A missing directory is an EMPTY listing, not an error — just a project that
+    /// hasn't saved a map yet.
     pub fn scan(self: *Listing) void {
         self.n = 0;
         var dir = std.fs.cwd().openDir(DIR, .{ .iterate = true }) catch return;
@@ -833,9 +824,8 @@ pub const Listing = struct {
     }
 };
 
-/// Build `worlds/<slug>.world` from a typed name. Anything that isn't alphanumeric becomes an
-/// underscore, so a name with a slash or a colon in it cannot escape the directory or produce a
-/// path the OS refuses.
+/// Build `worlds/<slug>.world` from a typed name. Anything non-alphanumeric becomes an underscore, so a
+/// name with a slash or a colon can neither escape the directory nor produce a path the OS refuses.
 pub fn pathFor(dst: []u8, name: []const u8) []const u8 {
     var n: usize = 0;
     for (DIR) |c| {
@@ -848,9 +838,9 @@ pub fn pathFor(dst: []u8, name: []const u8) []const u8 {
         dst[n] = '/';
         n += 1;
     }
-    const stem = n; // where the NAME starts — the emptiness test below is against this, not 0,
-    // because `n` already carries "worlds/" and a name of pure punctuation would otherwise
-    // slip past the fallback and produce the hidden file "worlds/.world".
+    const stem = n; // where the NAME starts. The emptiness test below is against THIS, not 0: `n`
+    // already carries "worlds/", and a name of pure punctuation would otherwise slip past the fallback
+    // and produce the hidden file "worlds/.world".
     var lastUnderscore = true; // also trims leading separators
     for (name) |c| {
         if (n + EXT.len >= dst.len) break;
@@ -919,9 +909,19 @@ fn enumFromName(comptime T: type, s: []const u8) !T {
     return std.meta.stringToEnum(T, s) orelse ParseError.BadKind;
 }
 
+/// REFUSE a non-finite float. `parseFloat` accepts "nan" and "inf" and neither survives the world: a
+/// NaN x/z walks straight through `env.cellCoord`'s `f <= 0` guard into `@intFromFloat` (illegal
+/// behaviour), a NaN `seed` does the same in `frog.spawn`, and an infinite `half:` overflows the cover
+/// lattice's count — all a long way from the line that caused it.
+fn finiteFloat(comptime T: type, tok: []const u8) !T {
+    const v = std.fmt.parseFloat(T, tok) catch return ParseError.BadNumber;
+    if (!std.math.isFinite(v)) return ParseError.BadNumber;
+    return v;
+}
+
 fn nextFloat(it: *std.mem.TokenIterator(u8, .any)) !f32 {
     const t = it.next() orelse return ParseError.MissingField;
-    return std.fmt.parseFloat(f32, t) catch ParseError.BadNumber;
+    return finiteFloat(f32, t);
 }
 
 fn nextInt(it: *std.mem.TokenIterator(u8, .any)) !u32 {
@@ -1008,8 +1008,8 @@ test "the soil grid and foe records survive a round trip" {
 }
 
 test "blank() produces a map its own loader accepts" {
-    // `New` must hand back something that LOADS: an empty map trips NoCoverOp and shows as bare
-    // terrain, which reads as a rendering bug rather than as an empty document.
+    // `New` must hand back something that LOADS: an empty map trips NoCoverOp and shows as bare terrain,
+    // which reads as a rendering bug rather than an empty document.
     const m = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(m);
     const back = try std.testing.allocator.create(Map);
@@ -1046,6 +1046,28 @@ test "a bad key or a missing field is a load error, never a default" {
     try std.testing.expectError(ParseError.BadVersion, parse("version: 99\n", &m, &ln));
     // A map with no ground cover is a silent-looking failure, so it fails loudly instead.
     try std.testing.expectError(ParseError.NoCoverOp, parse("version: 1\nat: pillar 0 0 0 1\n", &m, &ln));
+}
+
+test "a value that only LOOKS parseable is a load error too" {
+    var m = Map{};
+    var ln: usize = 0;
+    const cover = "version: 1\ncover: 3.3 0.7 1.4\n";
+    // `field=ture` used to load as OFF and quietly take the belt off the cover field — a whole region
+    // thinning differently, five hundred lines from the typo.
+    try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=ture\n", &m, &ln));
+    try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=yes\n", &m, &ln));
+    // …and `0`/`false` still mean off, so the writer's own output round-trips.
+    try parse(cover ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=0\n", &m, &ln);
+    try std.testing.expect(!m.ops[1].field);
+    // NON-FINITE floats parse fine in std, then crash deep inside env with no file and no line.
+    try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "at: pillar nan 0 0 1\n", &m, &ln));
+    try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "foe: toad 0 0 0 1 inf\n", &m, &ln));
+    try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: inf\n" ++ cover[11..], &m, &ln));
+    // An absurd or non-positive `half` is a hang / an inverted world, not a big map.
+    try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 0\n" ++ cover[11..], &m, &ln));
+    try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 99999\n" ++ cover[11..], &m, &ln));
+    try parse("version: 1\nhalf: 280\n" ++ cover[11..], &m, &ln);
+    try std.testing.expectApproxEqAbs(DEFAULT_HALF, m.half, 1e-4);
 }
 
 test "each op gets its own stream, so editing one cannot re-roll another" {

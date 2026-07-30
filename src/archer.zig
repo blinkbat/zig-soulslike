@@ -122,12 +122,11 @@ const mul3 = mathx.mul3;
 const scaleV = mathx.scaleV;
 const scaleM = mathx.scaleM;
 
-// world(child) = animRot ∘ translate(offset) ∘ world(parent) — the hero's exact convention.
+// world(child) = animRot ∘ translate(offset) ∘ world(parent) — the hero's exact convention, and
+// THROUGH the hero, not a third copy of it: `heromod.setJoint` is that one statement of the
+// "MatrixMultiply(a, b) applies a FIRST" rule. All this adds is the archer's own parent table.
 fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix) void {
-    const p: usize = @intCast(parent[i]);
-    const off = mathx.subV(rest[i], rest[p]);
-    const local = mul(animRot, tr(off.x, off.y, off.z));
-    wx[i] = mul(local, wx[p]);
+    heromod.setJoint(wx, &rest, i, @intCast(parent[i]), animRot);
 }
 
 // ── bow geometry anchors (right-wrist frame) — shared by bowMesh AND the LIVE string that
@@ -162,9 +161,11 @@ const RANGE_MAX = 20.0; // out past here → step in to close to band
 const TURN_RATE = 6.0; // rad/s — tracks the hero (light aim tracking)
 const BODY_R = 0.34; // ground footprint (matches the hero's HERO_R feel)
 const HURT_R = 0.42; // hurt-sphere radius for the hero's blade
-// Pelvis walk oscillation — the hero's amplitudes, so the shared gait reads as one humanoid.
+// Pelvis walk oscillation — the hero's amplitude, so the shared gait reads as one humanoid.
+// (A local A_SWAY sat here too and was DEAD: the sway comes from `heromod.strafeSway`, which owns
+// the walk amplitude AND the sidestep's wider one. A second copy of the hero's number that nothing
+// read would only have gone stale the first time either was retuned.)
 const A_BOB = 0.024 * H;
-const A_SWAY = 0.009 * H;
 // Where a skeletal foot meets the earth, MEASURED off footMesh: the metatarsal plate + heel, with
 // the toe bones fanning out to ~0.245·H ahead. Its underside sits a touch ABOVE the ankle-height
 // plane (the plate's bottom is at −ay + 0.005·H), hence the slightly smaller drop. hero.legChain
@@ -985,24 +986,15 @@ pub const Line = struct {
         return self.archers[0..self.n];
     }
     // Re-perch every archer, alive and fresh (a hero death reloads the world, ER-style).
+    // Body in foe.zig, like the roll-ups.
     pub fn reset(self: *Line, m: *const wf.Map) void {
-        self.n = 0;
-        for (m.foes[0..m.nfoes]) |h| {
-            if (h.kind != .archer or self.n >= CAP) continue;
-            self.archers[self.n] = Archer.spawn(mathx.ground(h.x, h.z), mathx.radians(h.yaw), h.scale, h.seed);
-            self.n += 1;
-        }
+        foe.resetGroup(Archer, &self.archers, &self.n, m, .archer);
     }
     pub fn setShader(self: *Line, sh: rl.Shader) void {
         self.model.setShader(sh);
     }
     pub fn draw(self: *const Line, scene: ?*gfx.Scene) void {
-        for (self.liveConst()) |*a| {
-            if (!a.alive()) continue;
-            if (scene) |sc| sc.setFlash(foe.FLASH_GAIN * a.flashFrac());
-            a.draw(&self.model);
-        }
-        if (scene) |sc| sc.setFlash(0);
+        foe.drawGroup(self.liveConst(), &self.model, scene);
     }
     // The shared Group roll-ups (foe.zig).
     pub fn anyDied(self: *const Line) bool {

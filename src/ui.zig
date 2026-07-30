@@ -5,15 +5,14 @@ const mathx = @import("mathx.zig");
 
 const rgba = mathx.rgba;
 
-// UI — a tiny immediate-mode widget kit for the editor. Each widget hit-tests AND draws in one
-// call. `Ctx.anyHot` accumulates "the pointer is over some widget this frame"; the editor gates
-// world clicks on it NEXT frame, because a one-frame lag is imperceptible and the alternative
-// is splitting every widget into a layout pass and an interaction pass.
+// UI — a tiny immediate-mode widget kit for the editor: each widget hit-tests AND draws in one call.
+// `Ctx.anyHot` accumulates "the pointer is over some widget this frame" and the editor gates world clicks
+// on it NEXT frame, since a one-frame lag is imperceptible and the alternative is splitting every widget
+// into a layout pass and an interaction pass.
 //
-// Text goes through hud.mono/monoW — raylib's fixed-cell bitmap font, NOT the game's Balthazar.
-// An editor is columns of numbers, and a proportional display face makes a value shove its row
-// about every time it grows a digit. The chrome also draws with the retro pass BYPASSED, so
-// these colours are LITERAL screen values and the author-dark rule does not apply.
+// Text goes through hud.mono/monoW, NOT the game's Balthazar: an editor is columns of numbers, and a
+// proportional face shoves a row about every time a value grows a digit. The chrome draws with the retro
+// pass BYPASSED, so these colours are LITERAL screen values and the author-dark rule does not apply.
 
 pub const MSG_CAP = 120; // shared cap for short UI strings (tips, toasts, prompts)
 
@@ -37,11 +36,11 @@ pub fn alpha(c: rl.Color, a: u8) rl.Color {
 /// Literal screen colour, for the one-off swatches the editor mixes (minimap soil, op dots).
 pub const col = rgba;
 
-// The rect the live left-drag STARTED on, at file scope because a Ctx is rebuilt every frame.
-// Without it a widget that reads "hovered AND held" is driven by any press at all: hold the
-// button down on a button, sweep across the properties panel, and every slider you crossed took
-// the value under the pointer. An immediate-mode kit has no widget ids, but a panel lays out to
-// the same rect frame after frame, which is identity enough for the length of one drag.
+// The rect the live left-drag STARTED on, at file scope because a Ctx is rebuilt every frame. Without it a
+// widget reading "hovered AND held" is driven by ANY press: hold the button down on a button, sweep across
+// the properties panel, and every slider you crossed took the value under the pointer. An immediate-mode
+// kit has no widget ids, but a panel lays out to the same rect frame after frame — identity enough for one
+// drag.
 var dragOwner: ?rl.Rectangle = null;
 
 pub const Ctx = struct {
@@ -64,10 +63,9 @@ pub const Ctx = struct {
         return c;
     }
 
-    /// Turn widget INPUT on or off while leaving hit-testing (and therefore `anyHot`) alive.
-    /// A modal or a context menu is drawn LAST but sits over chrome drawn FIRST, so without
-    /// muting that chrome a click "through" the dialog lands on the top bar or the kind list and
-    /// edits the map behind it.
+    /// Turn widget INPUT off while leaving hit-testing (and so `anyHot`) alive. A modal or context menu is
+    /// drawn LAST but sits over chrome drawn FIRST, so without muting that chrome a click "through" the
+    /// dialog lands on the top bar or the kind list and edits the map behind it.
     pub fn setLive(ctx: *Ctx, live: bool) void {
         ctx.pressed = live and rl.isMouseButtonPressed(.left);
         ctx.down = live and rl.isMouseButtonDown(.left);
@@ -119,9 +117,8 @@ pub fn drawTip(ctx: *Ctx) void {
     hud.mono(s, x, y, hud.MONO, VALUE);
 }
 
-/// A panel that also CLAIMS its rect as chrome. Without the claim, world clicks fall through
-/// the padding between widgets onto the map behind — so the claim and the panel travel
-/// together and the click-through hole can't silently reopen.
+/// A panel that also CLAIMS its rect as chrome. Without the claim, world clicks fall through the padding
+/// between widgets onto the map behind — so claim and panel travel together and the hole can't reopen.
 pub fn panel(ctx: *Ctx, r: rl.Rectangle, title: ?[:0]const u8) void {
     _ = ctx.hot(r);
     rl.drawRectangleRec(r, PANEL_FILL);
@@ -144,9 +141,8 @@ pub fn button(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, active
     return h and ctx.pressed;
 }
 
-/// A row that LOOKS like a button but cannot be pressed — for an action that does not apply to
-/// what is selected. Drawn rather than omitted so the menu keeps its shape and the row's absence
-/// isn't read as the menu having moved.
+/// Looks like a button, cannot be pressed — for an action that doesn't apply to what is selected. Drawn
+/// rather than omitted, so the menu keeps its shape and a missing row isn't read as the menu having moved.
 pub fn disabled(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32) void {
     _ = ctx.hot(r);
     rl.drawRectangleRec(r, IDLE_FILL);
@@ -170,17 +166,16 @@ pub fn chip(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, active: bool, usedW:
     return button(ctx, rect(x, y, w, 24), label, hud.MONO, active);
 }
 
-// A [-] value [+] stepper row. ONE geometry and one clamp guard for both value types, so the
-// float and int rows stacked in a panel can't drift apart. A change is reported only when the
-// CLAMPED value actually moved: +/- at a bound must not bank an undo step or raise the dirty
-// flag, or the editor asks you to save work you didn't do.
+// A [-] value [+] stepper row. ONE geometry and one clamp guard for both value types, so the float and int
+// rows stacked in a panel can't drift apart. A change is reported only when the CLAMPED value actually
+// moved: +/− at a bound must not bank an undo step or raise the dirty flag, or the editor asks you to save
+// work you didn't do.
 fn stepper(comptime T: type, ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *T, step: T, lo: T, hi: T) bool {
     const clampfn = comptime if (T == f32) mathx.clampF else clampI;
     hud.mono(label, x, y + 4, hud.MONO, LABEL);
     const bw: i32 = 20;
-    // The value column has to hold the WIDEST thing a world coordinate prints ("-152.0"), or
-    // the sign and the last digit get clipped and the readout lies about where the op is. One
-    // decimal, not two: this is metres of world, and the second decimal is never the edit.
+    // Wide enough for the WIDEST world coordinate ("-152.0"), or the sign and last digit clip and the
+    // readout lies about where the op is. One decimal: this is metres, and the second is never the edit.
     const vw: i32 = 62;
     const bx = x + w - bw * 2 - vw;
     var changed = false;
@@ -217,8 +212,8 @@ pub fn stepperI(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *i32,
     return stepper(i32, ctx, x, y, w, label, v, step, lo, hi);
 }
 
-/// A drag slider — for the dials you want to FEEL (density, radius), where stepping one notch
-/// at a time tells you nothing about the shape of the range.
+/// For the dials you want to FEEL (density, radius), where one notch at a time tells you nothing about the
+/// shape of the range.
 pub fn slider(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, lo: f32, hi: f32) bool {
     hud.mono(label, x, y, hud.MONO, LABEL);
     const barY = y + hud.monoLineH(hud.MONO) + 3;
@@ -232,8 +227,8 @@ pub fn slider(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, l
     var buf: [24]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "{d:.2}", .{v.*}) catch "?";
     hud.mono(s, x + w - hud.monoW(s, hud.MONO), y, hud.MONO, VALUE);
-    // Driven by the drag that GRABBED this bar, not by "hovered while held" — so a press that
-    // began elsewhere can't set it, and a grab that wanders off the bar keeps hold of it.
+    // Driven by the drag that GRABBED this bar, not "hovered while held": a press that began elsewhere
+    // can't set it, and a grab that wanders off the bar keeps hold of it.
     if (ctx.owns(r) and ctx.down) {
         const t = mathx.clampF((ctx.mouse.x - r.x) / r.width, 0, 1);
         const nv = lo + t * (hi - lo);
@@ -270,8 +265,7 @@ pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, focused: bo
     if (focused) {
         var ch = rl.getCharPressed();
         while (ch != 0) : (ch = rl.getCharPressed()) {
-            // The HUD atlas is ASCII-ONLY — a typed 'é' or an em dash renders as tofu, so it
-            // never enters the buffer in the first place.
+            // The atlas is ASCII-ONLY — a typed 'é' renders as tofu, so it never enters the buffer.
             if (ch >= 32 and ch < 127 and len.* < buf.len - 1) {
                 buf[len.*] = @intCast(ch);
                 len.* += 1;
@@ -316,7 +310,7 @@ pub fn list(ctx: *Ctx, r: rl.Rectangle, labels: []const [:0]const u8, sel: usize
         hud.mono(labels[idx], @as(i32, @intFromFloat(rowR.x)) + 6, @as(i32, @intFromFloat(rowR.y)) + 2, hud.MONO, if (idx == sel) HOT else VALUE);
         if (h and ctx.pressed) clicked = idx;
     }
-    // Scroll nub, so a long list looks scrollable instead of truncated.
+    // A nub, so a long list looks scrollable instead of truncated.
     if (maxScroll > 0) {
         const trackH = r.height - 6;
         const nubH = @max(18.0, trackH * @as(f32, @floatFromInt(rows)) / @as(f32, @floatFromInt(labels.len)));
@@ -332,8 +326,8 @@ pub fn list(ctx: *Ctx, r: rl.Rectangle, labels: []const [:0]const u8, sel: usize
     return clicked;
 }
 
-/// Modal scaffold: dim the screen, centre a panel, return its top-left in PIXEL ints. The
-/// backdrop eats the pointer wholesale, so nothing behind a modal is ever clickable.
+/// Dim the screen, centre a panel, return its top-left. The backdrop eats the pointer wholesale, so
+/// nothing behind a modal is ever clickable.
 pub const ModalBox = struct { x: i32, y: i32, w: i32, h: i32 };
 
 pub fn beginModal(ctx: *Ctx, w: i32, h: i32, title: [:0]const u8) ModalBox {

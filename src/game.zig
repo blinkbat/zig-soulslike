@@ -60,15 +60,14 @@ const SHAKE_DEATH = 0.85;
 const RESPAWN_HOLD = 0.55; // seconds of FULL black after the respawn…
 const RESPAWN_FADE = 0.9; // …then this long fading up into the fresh world
 
-// Hero movement clamp: the MAP's bounds inset by a margin so travel/rolls can't reach the edge.
-// Single source for moveHero, roll updates, every foe's update, and the --shot harness.
+// Hero movement clamp: the MAP's bounds inset so travel/rolls can't reach the edge. One source for
+// moveHero, the roll and attack updates, every foe's update and the --shot harness.
 //
-// A `var`, refreshed from the live map each frame, because the map decides how big the world is and
-// the editor can swap the map at any moment. It was `envmod.HALF - 2` — a COMPILE-TIME constant —
-// which is why a map's `half:` governed the cliff ring, the ground cover and the soil grid but not
-// where the player could actually walk: resize the map and the hero still stopped at the old bound
-// with the rock a hundred metres further out. Two dozen call sites read this identifier, so keeping
-// it an identifier (rather than threading a parameter) is what kept the change to one line.
+// A `var` refreshed from the live map each frame, because the map decides the world's size and the editor
+// can swap it at any moment. It was a COMPILE-TIME `envmod.HALF - 2`, which is why a map's `half:` governed
+// the cliff ring, the cover and the soil grid but NOT where the player could walk — resize and the hero
+// still stopped at the old bound with the rock a hundred metres out. Two dozen call sites read this name,
+// so keeping it a name rather than threading a parameter kept the fix to one line.
 var PLAY_HALF: f32 = worldfmt.DEFAULT_HALF - envmod.PLAY_INSET;
 
 // Hero footprint radius for ground collision (see collision.zig). Defined in foe.zig alongside
@@ -85,15 +84,14 @@ const HERO_CENTER_Y = 1.0;
 // still resolves firmly (no sinking).
 const COLLIDE_RATE = 11.0; // world units / sec
 
-// Depth clip planes, set once at startup (see run()): tight near/far so the hero's
-// overlapping boxes don't z-fight. Invariant: projectToScreen's near-cull (PROJECT_NEAR)
-// MUST equal CLIP_NEAR — both read this, never the literal.
-// DEPTH PRECISION IS SET BY THE NEAR PLANE, and it is what makes distant detail FLICKER. Resolution
-// at depth z goes roughly as z²·(1/near − 1/far)/2^24, so at 0.2 the gap between depth steps out at
-// 250 m was ~1.9 cm — and props.zig deliberately OVERLAPS its facing blocks by a couple of cm
-// ("blocks OVERLAP their slot"), so those overlaps fell inside one depth step and z-fought.
-// 0.55 buys 2.5x the precision (~0.75 cm at 250 m) and costs nothing: the orbit rig never puts the
-// eye nearer than camera.MIN_DIST (2.4) to its look-at, and the closest --shot framing is 2.0.
+// Depth clip planes, set once in run(). Invariant: projectToScreen's PROJECT_NEAR must EQUAL CLIP_NEAR —
+// both read this, never the literal.
+//
+// DEPTH PRECISION IS SET BY THE NEAR PLANE, and it is what makes distant detail FLICKER: resolution at
+// depth z goes as z²·(1/near − 1/far)/2^24, so at 0.2 the gap between steps at 250 m was ~1.9 cm — and
+// props.zig deliberately overlaps its facing blocks by a couple of cm, so those overlaps fell inside one
+// step and z-fought. 0.55 buys 2.5x the precision (~0.75 cm at 250 m) for nothing: the orbit rig never puts
+// the eye nearer than camera.MIN_DIST (2.4), and the closest --shot framing is 2.0.
 const CLIP_NEAR = 0.55;
 const CLIP_FAR = 320.0;
 
@@ -231,11 +229,10 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
         dir = v3(dir.x / l, 0, dir.z / l);
         speed = mv.speed;
         moveYaw = mathx.headingXZ(dir);
-        // Locked-on ANISOTROPY (ER does this too): sideways travel runs a little slower than
-        // forward. It is not an input gate — the stick still maps straight to speed the same frame,
-        // it is the DIRECTION that costs. This is also what lets the sidestep keep a walking
-        // CADENCE: step rate is speed / hero.STRAFE_CYCLE and the cycle is capped by real hip ROM,
-        // so pure lateral travel at full forward speed needs ~20% more steps per second than a
+        // Locked-on ANISOTROPY (ER's too): sideways travel runs slower than forward. Not an input gate —
+        // the stick still maps straight to speed the same frame, it is the DIRECTION that costs. Also what
+        // lets the sidestep keep a walking CADENCE: step rate is speed / hero.STRAFE_CYCLE and the cycle is
+        // capped by real hip ROM, so pure lateral travel at full speed needs ~20% more steps/sec than a
         // walk — geometry, not tuning, and unfixable in the animation without skating the foot.
         if (faceYaw != null and !sprinting) {
             const latAmt = @abs(mathx.sinf(mathx.wrapPi(moveYaw.? - g.hero.facing)));
@@ -268,11 +265,10 @@ fn rollDir(g: *Game, mv: Move) rl.Vector3 {
 }
 
 // ── render ───────────────────────────────────────────────────────────────────────
-// Casters = the hero + the stone props. NOT the ground (receives only) and NOT the flora (a
-// non-caster, lit pass only, swayed by wind). BOTH passes draw through this one function so
-// transforms can't drift; only the CULL differs, and each pass hands in its own (env.Cull).
-// The depth pass culls by SHADOW REACH, not distance from focus — a tall caster well outside
-// the box still throws into it at this sun angle, so a plain distance cull clips real shadows.
+// Casters = the hero + the stone props. NOT the ground (receives only) and NOT the flora (lit pass only,
+// swayed by wind). BOTH passes draw through this ONE function so transforms can't drift; only the CULL
+// differs, and each pass hands in its own. The depth pass culls by SHADOW REACH, not distance from focus —
+// a tall caster well outside the box still throws into it at this sun angle.
 fn drawCasters(g: *Game, cull: envmod.Cull) void {
     g.env.drawProps(cull);
     // Combat flash rides the scene shader's per-actor hitFlash uniform: the hero reddens on a
@@ -352,12 +348,10 @@ fn drawScene(g: *Game) void {
     g.scene.endShadowPass();
 
     rl.beginDrawing();
-    // With any retro filter live, sky + 3D render into the capture RT and blit back through
-    // the filter shader; vignette/HUD/menu stay crisp on top.
-    //
-    // THE EDITOR NEVER FILTERS. Pixelate and chroma fringe are exactly the things that make a
-    // thin gizmo line and a distant prop unjudgeable, and you cannot dress a world through a
-    // lens that is lying about it. The filters are a PRESENTATION choice; editing is not.
+    // With any filter live, sky + 3D render into the capture RT and blit back through the filter shader;
+    // vignette/HUD/menu stay crisp on top. THE EDITOR NEVER FILTERS: pixelate and chroma fringe are exactly
+    // what makes a thin gizmo line and a distant prop unjudgeable, and you cannot dress a world through a
+    // lens that is lying about it. Filters are PRESENTATION; editing is not.
     const filtered = if (g.editor.on) false else g.retro.begin();
     rl.clearBackground(CLEAR);
     g.sky.draw(cam);
@@ -638,13 +632,10 @@ pub fn run(shot: bool) void {
         // and the clamp is the one piece of world size that lives outside `materialize`.
         PLAY_HALF = g.map.half - envmod.PLAY_INSET;
 
-        // Esc backs the menu out one level (opens it when closed); pad Start toggles.
-        // Quit lives in the menu now.
-        //
-        // NOT WHILE THE EDITOR IS UP: Esc is the editor's own back-out key (context menu →
-        // selection → out), and this line runs BEFORE the editor branch, so every Esc pressed in
-        // there also TOGGLED the pause card behind it. An odd number of them left the menu open,
-        // and an F5 playtest then dropped the player straight into a paused world.
+        // Esc backs the menu out one level (opens it when closed); pad Start toggles. NOT WHILE THE EDITOR
+        // IS UP: Esc is the editor's own back-out key, and this runs BEFORE the editor branch, so every Esc
+        // pressed in there also toggled the pause card behind it — an odd number left the menu open and an
+        // F5 playtest dropped the player into a paused world.
         if (!g.editor.on) {
             if (rl.isKeyPressed(.escape)) g.menu.onEscape();
             if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .middle_right)) g.menu.onStartButton();
@@ -834,12 +825,11 @@ pub fn run(shot: bool) void {
             }
             g.hero.steerQueuedRoll(rollDir(g, mv));
         }
-        // STAMINA (ER, docs/ELDEN_RING.md §3): the sprint is the only CONTINUOUS drain, and it
-        // only drains while he is actually running on his feet — a roll's lunge and an attack's
-        // step travel fast but are neither of them a sprint. The roll/swing bites are charged at
-        // their start (hero.startRoll/startAttack) and the meter itself advances inside
-        // hero.tickClocks, so it ticks exactly once on whichever path runs below. Set AFTER the
-        // requests above, so rolling/attacking already reflect anything that fired this frame.
+        // The sprint is the only CONTINUOUS drain, and only while he is actually running on his feet — a
+        // roll's lunge and an attack's step travel fast but are not sprints. The roll/swing bites are
+        // charged at their start and the meter advances inside hero.tickClocks, so it ticks exactly once
+        // whichever path runs below. Set AFTER the requests above, so rolling/attacking already reflect
+        // anything that fired this frame.
         g.hero.sprinting = sprintingMove(mv) and
             !g.hero.rolling and !g.hero.attacking and !g.hero.dead and !g.hero.staggered();
 
@@ -1035,12 +1025,15 @@ fn collideActors(g: *Game, dt: f32) void {
     }
 }
 
-// ── lock-on helpers (generic over ANY foe — toads AND skeletons — via FoeRef) ──────────
-// A reference to a locked foe across the heterogeneous groups; the lock-on + reticle systems
-// dispatch through the foe* accessors so every foe type is lockable (the foe standard, foe.zig).
-// A dying/dissipating foe is NEVER a target: the kill handler in run() drops/switches the lock
-// the frame it dies, and no acquire/cycle may pick a corpse back up.
-const FoeKind = enum { toad, archer, ogre };
+// ── lock-on helpers (generic over ANY foe via FoeRef) ──────────────────────────────────
+// A reference to a locked foe across the heterogeneous groups; lock-on and the reticle dispatch through the
+// foe* accessors, so every foe type is lockable. A dying foe is NEVER a target — run()'s kill handler
+// drops or switches the lock the frame it dies, and no acquire/cycle may pick a corpse back up.
+//
+// THE MAP'S own foe enum, not a second one: a local `enum { toad, archer, ogre }` sat beside
+// `worldfmt.FoeKind`'s identical tags, two parallel lists kept in lockstep by hand where a fourth foe means
+// editing both and nothing catches the one you miss.
+const FoeKind = worldfmt.FoeKind;
 const FoeRef = struct { kind: FoeKind, idx: usize };
 fn foePos(g: *const Game, r: FoeRef) rl.Vector3 {
     return switch (r.kind) {
@@ -1842,10 +1835,9 @@ fn runShots(g: *Game) void {
 
         // A watchtower: the drum with its door brazier, then the dark room inside it. Placed at
         // yaw 20, so its local −Z doorway faces world (−sin20, −cos20) ≈ (−0.34, −0.94): out to
-        // the south-west. The camera has to sit on THAT side or the shot is just a wall of blocks:
-        // `back` is (−sin yaw, ·, −cos yaw), so yaw 20 is the bearing that puts the eye out in front
-        // of the door. (This was yaw 168 — the opposite side — and only ever looked like a doorway
-        // because towerDoorway's arithmetic was opening the drum on +Z instead of −Z.)
+        // the south-west, and the camera must sit on THAT side or the shot is a wall of blocks. `back` is
+        // (−sin yaw, ·, −cos yaw), so yaw 20 puts the eye in front of the door. (It was yaw 168 — the
+        // opposite side — and only looked like a doorway because towerDoorway opened the drum on +Z.)
         standHero(g, 34.0, -95.0, mathx.radians(20));
         shootAt(g, "shots/76_watchtower.png", mathx.ground(36, -88), 20, 0.16, 27.0);
         // Inside the drum: the camera must sit within the 2.35 m wall radius, so target the
@@ -1853,10 +1845,9 @@ fn runShots(g: *Game) void {
         standHero(g, 36.4, -88.4, 0);
         shootAt(g, "shots/77_watchtower_inside.png", v3(35.7, 1.7, -87.6), 200, 0.06, 2.0);
 
-        // THE TARN. gfx.SUN_DIR points (−0.60, +0.50, −0.46) from the surface TOWARD the sun, so
-        // the sun is low in the WEST: the glitter path only exists looking WEST across the water.
-        // Standing on the west shore looking east (the first framing) is the one angle guaranteed
-        // to show none of it.
+        // THE TARN. gfx.SUN_DIR points from the surface TOWARD the sun, which is low in the WEST — so the
+        // glitter path only exists looking WEST across the water, and the west shore looking east is the one
+        // angle guaranteed to show none of it.
         standHero(g, 130.0, 14.0, -std.math.pi * 0.5);
         shootAt(g, "shots/78_tarn.png", mathx.ground(122, 12), 268, 0.10, 13.0);
         standHero(g, 70.0, 8.0, std.math.pi * 0.5);
@@ -1876,14 +1867,10 @@ fn runShots(g: *Game) void {
         standHero(g, 22.0, 82.0, 0);
         shootAt(g, "shots/84_downs.png", mathx.ground(22, 92), 8, 0.14, 14.0);
 
-        // THE EDGE: the cliff wall that the movement clamp now hides behind. Pitch must stay
-        // POSITIVE — at -0.05 with dist 15 the camera drops below y=0 and the shot is half
-        // underside-of-terrain (a mis-framed capture, not a broken cliff).
-        //
-        // DERIVED FROM THE MAP'S OWN EXTENT, never a literal. These were hardcoded at z 140–158,
-        // which framed the rim of a 320 m world and then framed a hundred metres of empty meadow
-        // the moment the map grew — the cliffs a distant band on the horizon, and the shot silently
-        // stopped being a test of them.
+        // THE EDGE: the cliff wall the movement clamp hides behind. Pitch must stay POSITIVE — at −0.05 with
+        // dist 15 the camera drops below y=0 and half the shot is underside-of-terrain. And DERIVED from the
+        // map's own extent, never a literal: hardcoded at z 140-158 these framed a 320 m world's rim, then
+        // a hundred metres of empty meadow the moment the map grew, and silently stopped testing the cliffs.
         const rimZ = g.map.half - 20.0;
         standHero(g, 40.0, rimZ, 0);
         shootAt(g, "shots/85_cliffs.png", mathx.ground(40, rimZ + 12), 4, 0.22, 22.0);
@@ -1891,15 +1878,13 @@ fn runShots(g: *Game) void {
         // as one escarpment or as a row of separate rocks.
         standHero(g, 10.0, rimZ + 10, std.math.pi * 0.5);
         shootAt(g, "shots/85b_cliffs_along.png", mathx.ground(30, rimZ + 18), 80, 0.16, 26.0);
-        // THE START ARC — the partial ring of cliffs wrapping the start bowl, and the only place
-        // in the world where the six cliff CHARACTERS stand side by side close enough to compare.
-        // The rim shots above are all 20+ m of haze away; a variant whose whole point is its
-        // surface (creeper, a collapse scar) cannot be judged from those.
+        // THE START ARC — the only place the cliff CHARACTERS stand side by side close enough to compare.
+        // The rim shots above are all 20+ m of haze away, and a variant whose whole point is its surface
+        // (creeper, a collapse scar) cannot be judged from those.
         //
-        // Each arc segment's detailed face is its local −Z turned inward by its own yaw, so the
-        // camera has to sit on the side the face points AT — derived per shot, not guessed:
-        //   the north-west pair sit at yaw 0/−30 (faces toward −Z), so the eye goes NORTH of them
-        //   looking +Z (camera yaw 0);
+        // Each segment's detailed face is its local −Z turned inward by its own yaw, so the camera must sit
+        // on the side the face points AT — derived per shot, not guessed. The north-west pair sit at yaw
+        // 0/−30 (faces toward −Z), so the eye goes NORTH of them looking +Z (camera yaw 0):
         standHero(g, 0.0, 6.0, 0);
         shootAt(g, "shots/85c_arc_ivied.png", mathx.ground(0, 21), 0, 0.16, 22.0);
         //   the east flank sits at yaw 85 (face toward −X), so the eye goes WEST of it looking +X

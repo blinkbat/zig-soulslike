@@ -5,9 +5,9 @@ const mathx = @import("mathx.zig");
 const v3 = mathx.v3;
 const clampF = mathx.clampF;
 
-// Third-person OVER-THE-SHOULDER camera: it orbits a point near the hero's shoulders at a
-// fixed distance (yaw + clamped pitch, scroll zoom), framing him slightly off-centre so the
-// view ahead is unobstructed. It also exposes the camera-relative ground basis WASD steers by.
+// Third-person OVER-THE-SHOULDER camera: orbits a point near the hero's shoulders at a fixed distance
+// (yaw + clamped pitch, scroll zoom), framing him off-centre so the view ahead is unobstructed. Also
+// exposes the camera-relative ground basis WASD steers by.
 
 pub const MIN_DIST = 2.4;
 pub const MAX_DIST = 9.0;
@@ -20,10 +20,9 @@ const PITCH_MAX = 1.15; // ~  66 deg (looking down)
 const SHOULDER = 0.55; // lateral offset (world units): hero sits left of centre
 const TARGET_RAISE = 0.15; // lift the look-at a touch above the shoulder point
 
-// ── impact shake ── trauma-based (shake ∝ trauma², so small hits whisper and big ones crack),
-// applied as a short translational jitter on eye and look-at in follow(). Only the live loop
-// feeds tickShake(), so --shot captures stay deterministic. NO hitstop in this game — impact
-// weight is carried by shake/rumble/reactions alone (owner's law).
+// ── impact shake ── trauma-based (shake ∝ trauma², so small hits whisper and big ones crack), as a
+// short translational jitter on eye and look-at in follow(). Only the LIVE loop feeds tickShake(), so
+// --shot stays deterministic. NO hitstop (owner's law) — impact weight is shake/rumble/reactions alone.
 const SHAKE_MAX = 0.13; // world-unit jitter amplitude at full trauma
 const SHAKE_DECAY = 2.6; // trauma drained per second — shakes die fast (a crack, not a wobble)
 const SHAKE_FREQ = 33.0; // base jitter frequency (layered sines, incommensurate)
@@ -41,9 +40,8 @@ pub const CamRig = struct {
     pub fn forwardXZ(c: *const CamRig) rl.Vector3 {
         return mathx.headingDir(c.yaw);
     }
-    // Ground-plane right (screen-right) of the camera. The camera sits behind the hero
-    // looking +forward, so screen-right = cross(up, eye−target) = −(cos yaw, 0, −sin yaw):
-    // at yaw 0 that's −X, which is what pressing D must push toward.
+    // Screen-right on the ground. The camera sits behind the hero looking +forward, so screen-right =
+    // cross(up, eye−target) = −(cos yaw, 0, −sin yaw): at yaw 0 that's −X, which is where D must push.
     pub fn rightXZ(c: *const CamRig) rl.Vector3 {
         return v3(-mathx.cosf(c.yaw), 0, mathx.sinf(c.yaw));
     }
@@ -82,8 +80,8 @@ pub const CamRig = struct {
         c.trauma = clampF(c.trauma + amt, 0, 1);
     }
 
-    // Advance + decay the shake and bake this frame's jitter offset. The LIVE loop calls
-    // this once per frame with real dt; --shot never calls it, so captures stay still.
+    // Decay the trauma and bake this frame's jitter. The LIVE loop calls this once per frame with real
+    // dt; --shot never calls it, so captures stay still.
     pub fn tickShake(c: *CamRig, dt: f32) void {
         c.trauma = clampF(c.trauma - SHAKE_DECAY * dt, 0, 1);
         c.shakeT += dt;
@@ -92,7 +90,7 @@ pub const CamRig = struct {
             c.shakeOff = mathx.zero3;
             return;
         }
-        // Layered incommensurate sines ≈ smooth noise, no RNG (nothing to reseed/replay).
+        // Layered incommensurate sines ≈ smooth noise, and no RNG to reseed or replay.
         const t = c.shakeT;
         c.shakeOff = v3(
             (mathx.sinf(t * SHAKE_FREQ) + 0.5 * mathx.sinf(t * SHAKE_FREQ * 2.31 + 1.7)) * s,
@@ -120,8 +118,8 @@ pub const CamRig = struct {
 };
 
 test "ground basis holds the strafe-sign invariant" {
-    // AGENTS.md hard invariant: the camera looks +Z from behind at yaw 0, so screen-right
-    // is world -X. Flipping rightXZ mirrors L/R walking.
+    // AGENTS.md hard invariant: at yaw 0 the camera looks +Z from behind, so screen-right is world −X.
+    // Flipping rightXZ mirrors L/R walking.
     const rig = CamRig{ .cam = undefined, .yaw = 0, .pitch = 0, .dist = 4 };
     const f = rig.forwardXZ();
     const r = rig.rightXZ();

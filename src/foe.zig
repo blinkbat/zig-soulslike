@@ -2,57 +2,44 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 const combat = @import("combat.zig");
+const gfx = @import("gfx.zig");
+const wf = @import("worldfmt.zig");
 
 // ── THE FOE STANDARD ────────────────────────────────────────────────────────────────────
-// The contract + behaviours every enemy plugs into, so the cross-cutting systems — lock-on, HP
-// bars, collision, the blade hit test, the combat beats — are written ONCE for any foe. Adding
-// an enemy is: build its rig + AI, satisfy this contract, reuse the behaviours here.
+// The contract + behaviours every enemy plugs into, so lock-on, HP bars, collision, the blade hit
+// test and the combat beats are written ONCE. Adding an enemy is: build its rig + AI, satisfy the
+// contract, reuse what's here.
 //
-// THE CONTRACT — a Foe type exposes (duck-typed; the generic call sites check it):
-//   FIELDS   pos: rl.Vector3          — ground position (XZ; Y≈0)
-//            vit: combat.Vitals       — HP + the two-tier poise/stance stagger (embed one)
-//            hits: u32                — total blows landed on it (drives the combat beats)
-//            justDied: bool           — true only on the frame a blow kills it (kill beat)
-//   METHODS  alive() bool             — a live combatant (a fully-dissipated corpse is false)
-//            dying() bool             — collapsed/dissipating: no threat, no HP bar, no lock
-//            staggered() bool         — reeling/dead: the wide-open window
-//            airborne() bool          — off the ground (collision leaves it be); false if N/A
-//            bodyR() f32              — ground-footprint radius (collision)
-//            hurtRadius() f32         — hurt-sphere radius the hero's blade tests against
-//            centerWorld() rl.Vector3 — body-mass centre (blade test + camera focus)
-//            lockPoint() rl.Vector3   — where the lock-on reticle rides
-//            topWorld() rl.Vector3    — where the floating HP bar rides (above the head)
-//            flashFrac() f32          — 0..1 blood/hit-flash strength (gfx hitFlash uniform)
-//            tryHit(Blade) void       — apply the hero's blade this frame (reuse `strike`)
+// THE CONTRACT — duck-typed; the generic call sites check it:
+//   FIELDS   pos (ground XZ, Y≈0), vit (embed a combat.Vitals), hits (total blows landed),
+//            justDied (true ONLY on the frame a blow kills it — drives the kill beat)
+//   METHODS  alive (a fully-dissipated corpse is false) / dying (collapsing: no threat, no bar, no
+//            lock) / staggered (the wide-open window) / airborne (collision leaves it be; false if
+//            N/A) / bodyR (collision footprint) / hurtRadius (what the blade tests) / centerWorld
+//            (mass centre) / lockPoint (reticle) / topWorld (floating HP bar) / flashFrac (0..1 for
+//            gfx hitFlash) / tryHit(Blade) — reuse `strike`.
 //
-// A `Group` (Knot of toads, Line of archers) is a fixed array of Foe + the shared roll-ups
-// (anyDied / totalHits / aliveCount) the beats read; game.zig iterates the groups generically.
+// A `Group` is a fixed array of Foe plus the shared plumbing below; game.zig iterates them generically.
 
-// ── shared foe tuning ── each of these was three identical copies (frog / archer / ogre). One
-// place, so a retune can't reach two foes and miss the third.
+// ── shared foe tuning ── each was three identical copies (frog / archer / ogre). One place, so a
+// retune can't reach two foes and miss the third.
 pub const FLASH_DUR: f32 = 0.20; // seconds a struck foe pops on the shared gfx `hitFlash` uniform
 pub const FLASH_GAIN: f32 = 0.85; // …and how hard it drives it, applied by every Group's draw()
-// THE HERO'S FOOTPRINT, in the one place both sides can see it.
-// `HERO_R` is the collision radius game.zig pushes him out of the world with; `HERO_REACH` is the
-// forgiveness every foe adds to its own attack reach on top of it. They lived in different files
-// (HERO_R in game.zig, HERO_REACH here) with each comment pointing at the other, so no foe could
-// reason about how close the hero can actually GET — which is how the ogre's swipe ended up with an
-// inner edge inside the distance collision physically permits (see ogre.SWIPE_INNER).
+// THE HERO'S FOOTPRINT, where both sides can see it: `HERO_R` is what game.zig pushes him out of the
+// world with, `HERO_REACH` the forgiveness every foe adds to its own attack reach. They lived in
+// different files with each comment pointing at the other, so no foe could reason about how close the
+// hero can GET — which is how the ogre's swipe got an inner edge inside the distance collision
+// permits (see ogre.SWIPE_INNER).
 pub const HERO_R: f32 = 0.36;
 pub const HERO_REACH: f32 = 0.55;
-/// The nearest the hero can stand to a foe of footprint `bodyR` — collision never allows closer.
-/// Attack shapes with an inner edge must clear this or the "get inside it" counter cannot exist.
+/// The nearest the hero can stand to a foe of footprint `bodyR`. An attack shape with an inner edge
+/// must clear this or the "get inside it" counter cannot exist.
 pub fn closestApproach(bodyR: f32) f32 {
     return bodyR + HERO_R;
 }
 
-/// One instance's spawn record in a Group's `homes` table.
-// (A `Home` struct used to live here, describing one hard-coded spawn. Spawns are map data now
-// — `worldfmt.Foe`, placed with the editor's Units layer — and every group reads them from
-// there, so nothing referenced it any more.)
-
-// Carry a landed blow's KNOCKBACK for one frame and bleed it off. A jolt off the blade, not a
-// slide — collision cleans up any overlap it causes.
+// Carry a landed blow's KNOCKBACK for one frame and bleed it off — a jolt off the blade, not a slide.
+// Collision cleans up any overlap it causes.
 pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32, dt: f32) void {
     if (mathx.lenXZ(shove.*) <= 0.01) return;
     pos.x = mathx.clampF(pos.x + shove.x * dt, -bounds, bounds);
@@ -61,13 +48,18 @@ pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32,
 }
 
 // ── TELEGRAPH FX: the shared particle pool ──────────────────────────────────────────────
-// The unlit specks that SELL a foe's tells — dust under a coil, an amber charge glow, a blood
-// burst, the grace-gold motes a corpse dissipates into. The particle's SHAPE and how it
-// integrates/draws is cross-cutting and lives here; the AUTHORING (which bursts fire, how fast,
-// how big) stays per-foe — that is the creature's character.
-//
-// Each owner keeps its own ring + head + emit carry + seeded Rng, so pools stay independent and
-// deterministic; these routines just operate on them.
+// The unlit specks that SELL a foe's tells. The particle's SHAPE and how it integrates/draws is
+// cross-cutting and lives here; the AUTHORING (which bursts fire, how fast, how big) stays per-foe —
+// that is the creature's character. Each owner keeps its own ring + head + emit carry + seeded Rng,
+// so pools stay independent and deterministic.
+
+// Two burst COLOURS belong here for the same reason FLASH_* do (they were byte-identical copies in
+// frog.zig and ogre.zig): they are the WORLD's, not one creature's. `DUST` is what any heavy body
+// kicks off dry ground; `MOTE` is the grace-gold every corpse dissipates into, which has to be ONE
+// colour or the dissipation stops reading as one phenomenon. BLOOD stays per-foe — the toad bleeds
+// oxblood and the ogre dark ichor, on purpose.
+pub const DUST = mathx.rgba(150, 132, 96, 175);
+pub const MOTE = mathx.rgba(252, 198, 92, 170);
 
 /// One telegraph particle: integrates ballistically, lerps r0→r1, fades out as its life runs down.
 pub const Particle = struct {
@@ -100,10 +92,9 @@ pub fn tickParticles(pool: []Particle, dt: f32) void {
     }
 }
 
-/// Draw the live particles as unlit spheres — call INSIDE the lit 3D pass, after the opaque
-/// geometry (never the shadow depth pass), so the dust/glow reads OVER the foe.
-/// Low-poly on purpose: these are sub-10 cm specks, so a coarse sphere reads the same as raylib's
-/// default 16×16 one at ~1/5 the triangles — real savings when a whole knot bursts at once.
+/// Unlit spheres — call INSIDE the lit 3D pass, after the opaque geometry (never the depth pass), so
+/// the dust/glow reads OVER the foe. Low-poly on purpose: at sub-10 cm a coarse sphere reads the same
+/// as raylib's default 16×16 at ~1/5 the triangles, which is real when a whole knot bursts at once.
 pub fn drawParticles(pool: []const Particle) void {
     for (pool) |*q| {
         if (q.life <= 0) continue;
@@ -114,12 +105,35 @@ pub fn drawParticles(pool: []const Particle) void {
     }
 }
 
-// ── the Group roll-ups (generic over ANY foe array — the shared contract is all they touch) ──
-// Every Group (Knot / Line / Grief) exposes these three; the bodies were identical in all three,
-// so they live here once and each Group's method is a one-line delegate.
+// ── the Group plumbing (generic over ANY foe array — the shared contract is all it touches) ──
+// Every Group's bodies for these were identical, so they live here once and each Group's method is a
+// one-line delegate. A `reset` or `draw` that drifted on ONE foe shows up as that foe surviving a
+// death, or as a hot hitFlash uniform reddening whatever draws next — and nothing would say so.
 
-/// Did any foe die THIS frame? The kill beat keys off this, since aliveCount only drops later
-/// (when the dissipation finishes).
+/// RE-HOME from the map: every spawn of `want`, built fresh (full HP, home position, slain restored)
+/// — what a hero death does to the field, ER-style. Overflow past `out.len` is skipped.
+pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want: wf.FoeKind) void {
+    n.* = 0;
+    for (m.foes[0..m.nfoes]) |h| {
+        if (h.kind != want or n.* >= out.len) continue;
+        out[n.*] = T.spawn(mathx.ground(h.x, h.z), mathx.radians(h.yaw), h.scale, h.seed);
+        n.* += 1;
+    }
+}
+
+/// Draw the live instances, each flaring by its OWN hit flash on the shared `hitFlash` uniform, then
+/// put the uniform back to 0. `scene` null = a path with no per-actor flash (the depth pass, where the
+/// write is inert anyway).
+pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
+    for (foes) |*f| {
+        if (!f.alive()) continue;
+        if (scene) |sc| sc.setFlash(FLASH_GAIN * f.flashFrac());
+        f.draw(model);
+    }
+    if (scene) |sc| sc.setFlash(0);
+}
+
+/// Died THIS frame? The kill beat keys off this — aliveCount only drops once the dissipation finishes.
 pub fn anyDied(foes: anytype) bool {
     for (foes) |*f| {
         if (f.justDied) return true;
@@ -134,10 +148,9 @@ pub fn totalHits(foes: anytype) u32 {
     return n;
 }
 
-/// RUNES the group paid out THIS FRAME: `per` for every instance whose one-frame `justDied` is set.
-/// Keyed off the same flag the kill BEAT reads, so the payout, the rumble and the shake can never
-/// disagree about whether something died — and because that flag is one-frame, a corpse cannot pay
-/// twice however long its dissipation takes.
+/// RUNES paid out THIS FRAME: `per` per instance whose one-frame `justDied` is set. The same flag the
+/// kill BEAT reads, so payout / rumble / shake can never disagree — and being one-frame, a corpse
+/// cannot pay twice however long its dissipation takes.
 pub fn runesDropped(foes: anytype, per: u32) u32 {
     var n: u32 = 0;
     for (foes) |*f| {
@@ -167,19 +180,18 @@ pub const Blade = struct {
     hit: combat.Hit = .{}, // HP/poise/stance the swing deals (light vs heavy, set by game.zig)
 };
 
-// What a landed blow yields: WHERE it connected + the sweep direction (for blood/knockback) +
-// the reaction the vitals decided (none / light / heavy / death). The caller lays its own FX +
-// state transition on top — the geometry, one-hit LATCH, and damage are handled here.
+// What a landed blow yields: WHERE it connected, the sweep direction (blood/knockback), and the
+// reaction the vitals decided. The caller lays its own FX + state transition on top; the geometry,
+// the one-hit LATCH and the damage are handled here.
 pub const Strike = struct {
     contact: rl.Vector3,
     dir: rl.Vector3,
     reaction: combat.HitResult,
 };
 
-// THE shared hit behaviour: test the hero's swept blade against a foe's hurt sphere; on a
-// landed, un-latched blow LATCH it (one hit per swing), apply HP/poise/stance, and return
-// contact + sweep dir + reaction. Returns null when nothing lands — window closed (which
-// RE-ARMS the latch), already latched this swing, or out of reach.
+// THE shared hit behaviour: swept blade vs hurt sphere; on a landed un-latched blow, LATCH it (one hit
+// per swing), apply HP/poise/stance and return the Strike. Null when nothing lands — window closed
+// (which RE-ARMS the latch), already latched this swing, or out of reach.
 pub fn strike(vit: *combat.Vitals, hitLatch: *bool, center: rl.Vector3, hurtR: f32, blade: Blade) ?Strike {
     if (!blade.active) {
         hitLatch.* = false; // window closed → the next swing may land again

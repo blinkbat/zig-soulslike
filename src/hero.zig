@@ -1485,7 +1485,13 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
 // A joint set that names its PARENT explicitly and takes SLICES, so a foe rig with more bones
 // than the hero's 18 (the ogre's jaw / toes / clavicles) can still drive its legs through
 // legChain. The only layout it assumes is the shared one: bone 0 is the pelvis.
-fn setJoint(wx: []rl.Matrix, rest: []const rl.Vector3, i: usize, p: usize, animRot: rl.Matrix) void {
+//
+// pub because it is THE statement of the matrix convention AGENTS.md calls critical
+// ("MatrixMultiply(a, b) applies a FIRST, then b… backwards and the skeleton explodes"), and
+// archer.zig and ogre.zig each carried a byte-identical copy of it. Their `setLocal` is now a
+// one-line delegate that supplies its own rig's `parent[i]` — which IS per-rig — so there is one
+// place left where the convention can be got wrong.
+pub fn setJoint(wx: []rl.Matrix, rest: []const rl.Vector3, i: usize, p: usize, animRot: rl.Matrix) void {
     const off = mathx.subV(rest[i], rest[p]);
     wx[i] = mul(mul(animRot, tr(off.x, off.y, off.z)), wx[p]);
 }

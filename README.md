@@ -25,7 +25,13 @@ pipeline). UI is set in **Balthazar** (OFL, in `assets/`).
 
 ## The world
 
-A **560 m square** ringed by cliffs, holding five regions that each read as their own place:
+A **560 m square** ringed by cliffs, holding five regions that each read as their own place.
+
+The ground has a **shape you sculpt**: raise, lower, smooth and flatten it with a brush in the editor,
+and the hero walks it with a real slope limit (about 40°) and a step height — he takes a bank or a
+terrace lip without thinking about it, slides along a face too steep to climb, and cannot get up a
+cliff at all. Foes are held to the same rules, so nothing chases you up a wall. The shipped map is
+deliberately flat; the elevation is there for the worlds you build next.
 
 - **centre / south — the fallen avenue.** Where you start: colonnade, gate arch, ruined walls,
   dead trees, graves, war banners, a glowing grace ember.
@@ -90,7 +96,7 @@ Reserved for later, matching Elden Ring: Cross/A = jump, L1/L2 = guard / skill.
 ```
 build.cmd        REM debug build -> zig-out\bin\zig-soulslike.exe
 run.cmd          REM build + launch
-shot.cmd         REM build + headless screenshots into shots\ (gaits, foes, world tour, maps)
+shot.cmd         REM build + headless screenshots into shots\ (gaits, foes, world tour, maps, terrain)
 build-release.cmd
 ```
 

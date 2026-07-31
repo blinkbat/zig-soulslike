@@ -328,7 +328,10 @@ pub fn launchArrow(from: rl.Vector3, target: rl.Vector3) Arrow {
 // the frame it strikes, stuck arrows age out and clear `live`. `heroDodging` = roll i-frames
 // (shaft flies clean THROUGH the hero); `solids` = blockers arrows do NOT pierce — shots
 // thunk into cover below the solid's top height.
-pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, heroDodging: bool, solids: []const collision.Solid, dt: f32) void {
+/// `groundY` is the terrain height under the shaft RIGHT NOW (game.zig samples it per arrow per frame):
+/// a heightfield world has no single floor, and an arrow that tests against y = 0 flies straight through
+/// a hillside looking for a plain that isn't there.
+pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, heroDodging: bool, solids: []const collision.Solid, dt: f32) void {
     if (!a.live) return;
     if (a.stuck) {
         a.age += dt;
@@ -382,8 +385,8 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, heroDodging: boo
         a.hit = true;
         a.stuck = true;
         a.age = 0;
-    } else if (a.pos.y <= 0.02 or a.age >= ARROW_LIFE) {
-        a.pos.y = mathx.maxF(a.pos.y, 0.02); // stuck in the earth where it landed
+    } else if (a.pos.y <= groundY + 0.02 or a.age >= ARROW_LIFE) {
+        a.pos.y = mathx.maxF(a.pos.y, groundY + 0.02); // stuck in the earth where it landed
         a.stuck = true;
         a.age = 0;
     }
@@ -520,8 +523,11 @@ pub const Archer = struct {
     // pelvis), so a hurt sphere / reticle / HP bar pinned to ground height DETACHES from the body
     // for the whole 0.44 s leap — the reticle sits at its feet and the blade tests empty air below
     // it. The frog does the same with `lift`; this is the archer's counterpart.
+    // Every height below is measured from `pos.y` — THE GROUND UNDER HIM, not from y = 0. On a flat map
+    // that is the same number; on a hillside a lock reticle, an HP bar and a hurt sphere pinned to the
+    // datum would all hang in the air beside a skeleton standing 8 m up.
     pub fn centerWorld(self: *const Archer) rl.Vector3 {
-        return v3(self.pos.x, 0.95 * H * self.scale + self.hop, self.pos.z);
+        return v3(self.pos.x, self.pos.y + 0.95 * H * self.scale + self.hop, self.pos.z);
     }
     pub fn hurtRadius(self: *const Archer) f32 {
         return HURT_R * self.scale;
@@ -530,10 +536,10 @@ pub const Archer = struct {
         return BODY_R * self.scale;
     }
     pub fn lockPoint(self: *const Archer) rl.Vector3 {
-        return v3(self.pos.x, 0.90 * H * self.scale + self.hop, self.pos.z);
+        return v3(self.pos.x, self.pos.y + 0.90 * H * self.scale + self.hop, self.pos.z);
     }
     pub fn topWorld(self: *const Archer) rl.Vector3 {
-        return v3(self.pos.x, 1.15 * H * self.scale + self.hop, self.pos.z);
+        return v3(self.pos.x, self.pos.y + 1.15 * H * self.scale + self.hop, self.pos.z);
     }
     pub fn alive(self: *const Archer) bool {
         return !self.gone;
@@ -837,7 +843,7 @@ pub const Archer = struct {
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul3(rz(10.0 * dk), rx(pitchBody), ry(prot)),
             mul(tr(sway * fs, pelvY * fs + sink + self.hop, 0), ry(facingDeg)),
-            tr(self.pos.x, 0, self.pos.z),
+            heromod.rootAt(self.pos), // …on the sculpted ground under him, not on y = 0
         ));
 
         // Legs: the SHARED walk/strafe (runB = 0 — the archer only walks). When DEAD the crumple
@@ -1399,7 +1405,7 @@ test "an arrow in flight lays a trail, and a pooled one never inherits the last 
     // on the shot's first frame.
     for (a.trailAge) |g| try std.testing.expect(g >= TRAIL_LIFE);
     var i: u32 = 0;
-    while (i < 6) : (i += 1) stepArrow(&a, v3(0, 0, 14.0), 1.0, false, &.{}, dt);
+    while (i < 6) : (i += 1) stepArrow(&a, v3(0, 0, 14.0), 1.0, 0, false, &.{}, dt);
     // Six frames of flight → six live samples, the newest at `trailHead` with age 0.
     try std.testing.expectApproxEqAbs(@as(f32, 0), a.trailAge[a.trailHead], 1e-6);
     var live: u32 = 0;
@@ -1417,7 +1423,7 @@ test "an arrow in flight lays a trail, and a pooled one never inherits the last 
     // A STUCK arrow stops laying trail — its streak ages out behind it instead of hanging in the air.
     a.stuck = true;
     const headAtStick = a.trailHead;
-    stepArrow(&a, v3(0, 0, 14.0), 1.0, false, &.{}, dt);
+    stepArrow(&a, v3(0, 0, 14.0), 1.0, 0, false, &.{}, dt);
     try std.testing.expectEqual(headAtStick, a.trailHead);
 }
 
@@ -1433,7 +1439,7 @@ test "arrows thunk into cover instead of piercing it; tall shots clear a LOW blo
     var blocked = launchArrow(v3(0, 1.3, 0), v3(0, 1.0, 12.0));
     var i: u32 = 0;
     while (i < 120 and !blocked.stuck) : (i += 1)
-        stepArrow(&blocked, v3(0, 0, 12.0), 1.0, false, &.{tall}, dt);
+        stepArrow(&blocked, v3(0, 0, 12.0), 1.0, 0, false, &.{tall}, dt);
     try std.testing.expect(blocked.stuck and !blocked.hit);
     try std.testing.expect(blocked.pos.z < 5.5); // it died AT the wall, not at the target
 
@@ -1441,7 +1447,7 @@ test "arrows thunk into cover instead of piercing it; tall shots clear a LOW blo
     var over = launchArrow(v3(0, 1.3, 0), v3(0, 1.0, 12.0));
     i = 0;
     while (i < 240 and !over.stuck) : (i += 1)
-        stepArrow(&over, v3(0, 0, 12.0), 1.0, false, &.{low}, dt);
+        stepArrow(&over, v3(0, 0, 12.0), 1.0, 0, false, &.{low}, dt);
     try std.testing.expect(over.stuck and over.pos.z > 5.5); // cleared the grave, landed well beyond
 }
 
@@ -1452,13 +1458,13 @@ test "a SIDESTEP beats an arrow: the homing is a launch nudge, not a lock" {
     var shot = launchArrow(v3(0, 1.3, 0), v3(0, 1.0, 12.0));
     const dodged = v3(2.6, 0, 12.0);
     var i: u32 = 0;
-    while (i < 300 and !shot.stuck) : (i += 1) stepArrow(&shot, dodged, 1.0, false, &.{}, dt);
+    while (i < 300 and !shot.stuck) : (i += 1) stepArrow(&shot, dodged, 1.0, 0, false, &.{}, dt);
     try std.testing.expect(shot.stuck and !shot.hit);
     try std.testing.expect(shot.pos.x < 1.6); // it bent a little, then committed — never reached him
 
     // …but it still trims the LEAD ERROR: a hero who only drifts a step gets hit.
     var lead = launchArrow(v3(0, 1.3, 0), v3(0, 1.0, 12.0));
     i = 0;
-    while (i < 300 and !lead.stuck) : (i += 1) stepArrow(&lead, v3(0.5, 0, 12.0), 1.0, false, &.{}, dt);
+    while (i < 300 and !lead.stuck) : (i += 1) stepArrow(&lead, v3(0.5, 0, 12.0), 1.0, 0, false, &.{}, dt);
     try std.testing.expect(lead.hit);
 }

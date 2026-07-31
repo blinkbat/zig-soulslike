@@ -414,8 +414,12 @@ pub const sceneFS =
     \\  } else if (m == 7){ // HIDE: amphibian blotch patches + fine wart grain — DARKEN
     \\    // only (max ~1.0): the bog toad must stay a near-black night thing, its blotches
     \\    // reading as damp shadow, never pale camo.
-    \\    float patch = smoothstep(0.35, 0.75, fvn(q, 2.4, vec2(0.0), px));
-    \\    base *= (0.72 + 0.26*patch)*(0.88 + 0.12*fvn(q, 8.2, vec2(3.3), px));
+    \\    // `blotch`, NOT `patch`: `patch` is a RESERVED WORD in GLSL (the tessellation qualifier), and
+    \\    // a driver that enforces it — Intel's does — fails the whole scene shader to compile, which
+    \\    // is a hard panic at startup with nothing but "syntax error" and a line number to go on. Any
+    \\    // local named for a tessellation, layout or subroutine keyword is the same trap.
+    \\    float blotch = smoothstep(0.35, 0.75, fvn(q, 2.4, vec2(0.0), px));
+    \\    base *= (0.72 + 0.26*blotch)*(0.88 + 0.12*fvn(q, 8.2, vec2(3.3), px));
     \\  } else if (m == 8){ // PLANT: broad value drift so clumps read as many blades
     \\    base *= 0.87 + 0.22*fmot(q, 2.2, px);
     \\    // …and a LEAF-scale octave on top. The broad drift says "this is a clump"; this says the

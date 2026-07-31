@@ -213,6 +213,31 @@ const RUN_SPEED_HI = RUN_SPEED; // …saturating exactly at run speed (sprintB t
 const SPRINT_LEAN = 40.0; // near-horizontal forward tilt at full sprint (deg)
 const SPRINT_REF_SPEED = SPRINT_SPEED; // speed the extra sprint lean/crouch saturate at
 
+// ── THE SLOPE LEAN ── standing on or walking up sculpted ground, the whole body folds toward the hill
+// (`Hero.slopePitch`, added to the run lean because it is the same motion about the same hinge — the
+// feet). Without it a climb is an upright body sliding up a ramp, and a descent is the same thing
+// backwards; the lean is most of what makes a hill read as a hill you are ON rather than in front of.
+//
+// A FRACTION of the slope, not a match. A body that pitched the full angle would be normal to the
+// ground, i.e. leaning the same amount whether it is climbing or standing still, which reads as the
+// character being welded to the terrain. Half of it is the posture of someone taking a hill on.
+const SLOPE_LEAN: f32 = 0.55;
+/// …capped, because the hero can stand on ground far steeper than he can walk up (`env.MAX_SLOPE`
+/// governs travel, not standing), and a 40 deg fold at the waist reads as a stumble.
+const SLOPE_LEAN_MAX: f32 = 16.0;
+/// How fast the lean chases the ground, in degrees a second. Fast enough to be honest about a ridge,
+/// slow enough that the 2.5 m lattice's slope changes do not step — and a VISUAL blend only, so the
+/// FEEL RULES' ~0.1 s ceiling applies: at this rate the full 16 deg takes 0.13 s and any real change
+/// in ground far less.
+pub const SLOPE_LEAN_RATE: f32 = 120.0;
+
+/// The body pitch a given uphill gradient asks for, in degrees. `rise` is metres of climb per metre
+/// travelled along the facing (`env.slopeAlong`), so it is signed: downhill leans back.
+pub fn slopeLean(rise: f32) f32 {
+    const deg = mathx.degrees(std.math.atan(rise)) * SLOPE_LEAN;
+    return mathx.clampF(deg, -SLOPE_LEAN_MAX, SLOPE_LEAN_MAX);
+}
+
 // ── dodge roll (committed tuck-and-somersault) ────────────────────────────────────
 // Phased like FromSoft rolls: dive + somersault up front, then a spin-free recovery — NOT
 // one linear spin/tuck/lunge smeared over the duration. Knots below are u = rollT / ROLL_DUR.
@@ -638,6 +663,14 @@ fn lerpM(a: rl.Matrix, b: rl.Matrix, t: f32) rl.Matrix {
     return out;
 }
 
+/// WHERE THE FEET ARE, as the last matrix of every root chain. It was `tr(pos.x, 0, pos.z)` written out
+/// in all seven poses (walk, roll, attack, drink, stun, death…), which is seven places to forget when
+/// the ground stopped being flat — and a rig that misses one sinks into the hill in exactly one state.
+/// Any rig whose actor stands on terrain uses this; there is nothing hero-specific about it.
+pub fn rootAt(pos: rl.Vector3) rl.Matrix {
+    return tr(pos.x, pos.y, pos.z);
+}
+
 // A smooth 0→1→0 pulse over [a, b] — the overshoot/recoil grace notes that keep a strike
 // from parking dead at its end pose (the wooden-mannequin failure).
 fn bump(u: f32, a: f32, b: f32) f32 {
@@ -660,7 +693,14 @@ pub const Hero = struct {
     xf: [N]rl.Matrix = undefined, // per-bone world matrix, recomputed each frame by pose()
 
     // gameplay/anim state
-    pos: rl.Vector3 = mathx.zero3, // feet on Y=0
+    /// Feet on the GROUND: x/z where he stands, y the terrain height under him (0 on a flat map, so
+    /// this is unchanged for an unsculpted world). Every pose translates the root by all three — see
+    /// `rootAt` — and the camera, the blade capsule and every world point follow from that.
+    pos: rl.Vector3 = mathx.zero3,
+    /// Whole-body pitch from the SLOPE he is standing on, in degrees, + = uphill ahead (lean into the
+    /// climb). Set by the loop from the terrain gradient along his facing and eased there, not here:
+    /// the rig is told what the ground is doing, it does not go looking.
+    slopePitch: f32 = 0,
     facing: f32 = 0, // yaw radians, 0 = +Z
     phase: f32 = 0, // stride phase [0,1) (left-leg reference)
     moving: f32 = 0, // eased 0..1 walk blend
@@ -1239,7 +1279,11 @@ pub const Hero = struct {
         // base — the driving, falling-forward run), then faced.
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
-        const bodyPitch = (BODY_PITCH_RUN * runB + (BODY_PITCH_SPRINT - BODY_PITCH_RUN) * sprintB) * m;
+        // …plus the SLOPE he is standing on. Same rx term as the run lean because it is the same
+        // motion — the trunk folding forward over planted feet — and it hinges about the FEET here
+        // (the rx is applied before the world translate), which is what a climb actually looks like.
+        // Set by the loop and already eased, so nothing snaps as the ground changes under him.
+        const bodyPitch = (BODY_PITCH_RUN * runB + (BODY_PITCH_SPRINT - BODY_PITCH_RUN) * sprintB) * m + self.slopePitch;
         var wx: [N]rl.Matrix = undefined;
         // Pelvis height. NOTE: a "pelvis floor" that held this up off the legs' own reach was tried
         // here and REVERTED — it is arithmetically right and wrong for the character. The run's crouch
@@ -1250,7 +1294,7 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             mul(rz(list), ry(prot)), // tilt/rotate pelvis about its centre
             mul(tr(sway, pelvY, 0), mul(rx(bodyPitch), ry(facingDeg))), // crouch, pitch whole body forward about the feet, then face
-            tr(self.pos.x, 0, self.pos.z), // place in the world
+            rootAt(self.pos), // place in the world, ON the ground under him
         );
 
         // Spine chain — lean deepens through run into sprint + counter-rotation vs pelvis.
@@ -1323,7 +1367,7 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             mul(rz(lean), rx(spin)), // dip the roll-side shoulder, then somersault forward over it
             mul(ry(facingDeg + skew), tr(0, ballY, 0)), // face roll dir (off-square fading out), lift to the ball centre
-            tr(self.pos.x, 0, self.pos.z), // place in the world
+            rootAt(self.pos), // place in the world, ON the ground under him
         );
         setLocal(&wx, SPINE, self.rest, rx(ROLL_SPINE * tuck)); // curl forward
         setLocal(&wx, CHEST, self.rest, rx(ROLL_SPINE * tuck));
@@ -1380,7 +1424,7 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             ry(yawP),
             mul(tr(0, hipY - AL_LOAD * wind - AL_DIP * sPelv, 0), mul(rx(1.5 * sChest), ry(facingDeg))), // knees coil under the windup; only a WHISKER of forward pitch (the swipe plane stays flat)
-            tr(self.pos.x, 0, self.pos.z),
+            rootAt(self.pos),
         );
         setLocal(&wx, SPINE, self.rest, mul(rx(crunch), ry(0.35 * yawC)));
         setLocal(&wx, CHEST, self.rest, mul(rx(crunch), ry(0.65 * yawC)));
@@ -1463,7 +1507,7 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             ry(yaw),
             mul(tr(0, hipY - dip, 0), mul(rx(AH_PITCH * sPelv), ry(facingDeg))),
-            tr(self.pos.x, 0, self.pos.z),
+            rootAt(self.pos),
         );
         setLocal(&wx, SPINE, self.rest, mul(rx(0.5 * spineX), rz(0.5 * tilt)));
         setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * spineX), rz(0.5 * tilt)));
@@ -1517,7 +1561,7 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             ry(4.0 * lift), // …turning the drinking shoulder a little toward the camera side
             mul(tr(0, hipY - sink, 0), mul(rx(lean * 0.35), ry(facingDeg))),
-            tr(self.pos.x, 0, self.pos.z),
+            rootAt(self.pos),
         );
         setLocal(&wx, SPINE, self.rest, rx(lean * 0.35));
         setLocal(&wx, CHEST, self.rest, rx(lean * 0.30));
@@ -1574,7 +1618,7 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             rz(wob),
             mul(tr(0, hipY - sink, -back), mul(rx(-0.55 * lean), ry(facingDeg))), // whole body snaps back
-            tr(self.pos.x, 0, self.pos.z),
+            rootAt(self.pos),
         );
         setLocal(&wx, SPINE, self.rest, mul(rx(-0.55 * lean), rz(0.3 * wob))); // arch BACK hard
         setLocal(&wx, CHEST, self.rest, mul(rx(-0.55 * lean), rz(0.3 * wob)));
@@ -1621,7 +1665,7 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             rz(twist),
             mul(tr(0, y, 0), mul(rx(pitch), ry(facingDeg))),
-            tr(self.pos.x, 0, self.pos.z),
+            rootAt(self.pos),
         );
         setLocal(&wx, SPINE, self.rest, rx(28.0 * k)); // curl down
         setLocal(&wx, CHEST, self.rest, rx(28.0 * k));
@@ -1648,9 +1692,17 @@ pub const Hero = struct {
         for (0..N) |i| rl.drawMesh(self.mesh[i], self.mat, self.xf[i]);
     }
 
-    // Eye/target point for the camera: roughly the base of the neck, in world space.
+    /// Eye/target point for the camera: roughly the base of the neck, in world space.
+    ///
+    /// The chest height is measured from `pos.y` — THE GROUND HE IS STANDING ON. It was measured from
+    /// zero, which was the same thing on a flat world and is a camera aimed at the bottom of the hill
+    /// on a sculpted one: eight metres up a bank, the rig framed a point eight metres below his feet
+    /// and the hero sat off the top of the screen.
+    ///
+    /// Deliberately the REST height rather than the posed chest bone: the camera must not bob with the
+    /// gait or dip through a roll, so this is the height he'd have standing still.
     pub fn shoulderPoint(self: *const Hero) rl.Vector3 {
-        return v3(self.pos.x, self.rest[CHEST].y, self.pos.z);
+        return v3(self.pos.x, self.pos.y + self.rest[CHEST].y, self.pos.z);
     }
 };
 

@@ -15,8 +15,20 @@ const v3 = mathx.v3;
 // Difference from zig-rts: the RTS fog-of-war multiply is GONE. A soulslike world is
 // fully lit and explored; the only visibility term left is atmospheric distance haze.
 
-// c_allocator = malloc, matching raylib's libc free() in UnloadMesh/Model.
-const alloc = std.heap.c_allocator;
+// ── THE MESH ALLOCATOR MUST BE `raw_c_allocator`, NOT `c_allocator` ────────────────────
+// Every Builder mesh hands its CPU arrays to raylib, which frees them with libc `free()` in
+// `UnloadMesh`. That only works if the pointer IS a malloc pointer — and `std.heap.c_allocator`'s is
+// NOT on this platform: with no `posix_memalign` (Windows), it over-allocates, stores the original
+// malloc pointer in a header BEFORE the aligned address it returns, and its own `free` reads that
+// header back. Hand one of those to C `free()` and you free an interior pointer: heap corruption, which
+// surfaces as a 0xC0000374 exit with no stack in it, arbitrarily far from the cause.
+//
+// It was `c_allocator`, under a comment asserting it "= malloc, matching raylib's libc free()". Nothing
+// ever unloaded a Builder mesh, so the claim was never tested — the terrain is the first geometry here
+// that is genuinely transient (it is re-authored as you sculpt), and it found this immediately.
+// `raw_c_allocator` is the one that really is malloc/free; it asserts alignment fits max_align_t, which
+// f32 and u8 arrays trivially do.
+const alloc = std.heap.raw_c_allocator;
 
 // Shadow sampler lives on a high texture slot raylib's default material never binds (it
 // only uses slot 0 for albedo), so the per-frame bind survives drawModel/drawMesh.
@@ -39,6 +51,16 @@ pub const SOIL_N: i32 = 112;
 /// the soil's ids, which must not interpolate), so the shoreline the shader draws is smooth well
 /// under a cell.
 pub const WATER_N: i32 = 224;
+
+/// THE HEIGHT FIELD's resolution — the same 2.5 m pitch as the water, and for the same reason: it is a
+/// shape you read, not a patch you tint. It is also the SHARPEST FEATURE THE TERRAIN CAN HOLD. Heights
+/// are sampled bilinearly, so one cell of rise is one cell wide however hard you sculpt it: a 2 m step
+/// over 2.5 m is a scramble, 6 m over 2.5 m is a cliff face, and nothing narrower than 2.5 m exists.
+/// Finer would allow crisper ledges and costs quadratically in mesh (see env's terrain chunks).
+///
+/// NOT shared with WATER_N despite being the same number: they answer to different things (a coastline's
+/// legibility vs how sharp a ledge may be) and either can move without the other.
+pub const HEIGHT_N: i32 = 224;
 
 /// The field's byte encoding, and the one place it is written down. 128 is the WATERLINE: above it
 /// the value is depth (how far inside the lake), below it the distance back out to dry land. One
@@ -498,9 +520,15 @@ pub const Scene = struct {
         const t = SHADOW_ORTHO / @as(f32, SHADOWMAP_RES);
         const fx = @round(focus.x / t) * t;
         const fz = @round(focus.z / t) * t;
+        // …AND THE FOCUS HEIGHT, snapped the same way. With terrain elevation the hero can be 20 m up a
+        // hill, and a box pinned to y = 0 carries him toward its edge (a raised caster shifts sideways
+        // in shadow space by its height times the sun's horizontal run) — shadows start dropping out
+        // near the top of a climb. Snapped for the same reason x and z are: an unsnapped focus makes
+        // every shadow edge crawl as you walk.
+        const fy = @round(focus.y / t) * t;
         const cam = rl.Camera3D{
-            .position = v3(fx + SUN_DIR.x * SUN_DIST, SUN_DIR.y * SUN_DIST, fz + SUN_DIR.z * SUN_DIST),
-            .target = v3(fx, 0, fz),
+            .position = v3(fx + SUN_DIR.x * SUN_DIST, fy + SUN_DIR.y * SUN_DIST, fz + SUN_DIR.z * SUN_DIST),
+            .target = v3(fx, fy, fz),
             .up = v3(0, 0, -1),
             .fovy = SHADOW_ORTHO, // orthographic: fovy is the box height in world units
             .projection = .orthographic,
@@ -726,6 +754,20 @@ pub const Builder = struct {
         self.vert(a, n, col, ta.x, ta.y);
         self.vert(c, n, col, tc.x, tc.y);
         self.vert(d, n, col, td.x, td.y);
+    }
+
+    /// A quad with a normal PER CORNER, and world-XZ UVs. The terrain's primitive: a heightfield
+    /// shares every vertex with its neighbours, so the normals have to be the averaged ones or a
+    /// smooth hill renders as origami — `quad`'s single face normal is exactly what facets it.
+    /// UVs are world x/z rather than in-plane, so the grain does not shear on a steep face (and the
+    /// scene shader's terrain albedo reads world xz anyway).
+    pub fn quadSmooth(self: *Builder, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, na: rl.Vector3, nb: rl.Vector3, nc: rl.Vector3, nd: rl.Vector3, col: rl.Color) void {
+        self.vert(a, na, col, a.x, a.z);
+        self.vert(b, nb, col, b.x, b.z);
+        self.vert(c, nc, col, c.x, c.z);
+        self.vert(a, na, col, a.x, a.z);
+        self.vert(c, nc, col, c.x, c.z);
+        self.vert(d, nd, col, d.x, d.z);
     }
 
     // Planar-mapped quad: UVs are in-plane world-unit coordinates (u along a->b, v across),

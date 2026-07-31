@@ -186,7 +186,10 @@ fn render(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, kind: Kin
     scene.shadowsOff();
     scene.setLights(&.{}); // …and no torches: a preview is lit by the sun and the sky, like a field
     scene.setGround(true);
-    env.drawGround();
+    // No frustum to cull against — a preview draws the whole ground under one object, and building a
+    // View for the off-screen camera to reject 200 tiles the model is standing on top of would be
+    // ceremony. Sculpted or not, the terrain here is a floor for the portrait.
+    env.drawGround(null);
     scene.setGround(false);
     // FLORA SWAYS in the world, so it sways here — a fern judged rigid is a fern judged wrong.
     scene.setWind(nfo.flora);

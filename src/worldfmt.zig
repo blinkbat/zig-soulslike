@@ -291,6 +291,112 @@ comptime {
 pub const WATER_N: usize = @intCast(gfx.WATER_N);
 pub const WATER_CELLS: usize = WATER_N * WATER_N;
 
+// ── the sculpted ELEVATION ───────────────────────────────────────────────────────────────
+// The third painted grid, and the only one with a datum: one QUANTISED HEIGHT per lattice point,
+// `HEIGHT_STEP` metres a step, biased so byte `HEIGHT_ZERO` is the old flat ground. A fresh map is
+// every cell at that datum, which is byte-identical in behaviour to the world before elevation
+// existed — and RLEs to a single run, so a flat map's file does not grow at all.
+//
+// QUANTISED because the file is TEXT and the writer is a run-length encoder. A float grid would be
+// 50,176 unique values, i.e. an unreadable megabyte with no runs in it; a 0.25 m step is finer than
+// a foot and lets a plateau, a bank and a flat valley floor each collapse to one run. It is also the
+// visible limit on smoothness — a long shallow ramp is a staircase of 0.25 m risers 2.5 m apart,
+// which at 5.7 degrees is under the mesh's own faceting.
+//
+// SAMPLED AT LATTICE POINTS, NOT CELL CENTRES (unlike soil and water, which are cell PAINT). A
+// height is a corner of the terrain mesh: N points span -half..+half inclusive, so the field's edge
+// lands exactly on the world's edge and there is no half-cell of unexplained ground at the rim.
+pub const HEIGHT_N: usize = @intCast(gfx.HEIGHT_N);
+pub const HEIGHT_CELLS: usize = HEIGHT_N * HEIGHT_N;
+/// Metres per quantisation step.
+pub const HEIGHT_STEP: f32 = 0.25;
+/// The byte that means "ground level" — everything below it is dug out, above it raised.
+pub const HEIGHT_ZERO: u8 = 64;
+/// How far the encoding reaches: 16 m down (deep enough for any basin) and ~48 m up.
+pub const HEIGHT_MIN: f32 = -@as(f32, @floatFromInt(HEIGHT_ZERO)) * HEIGHT_STEP;
+pub const HEIGHT_MAX: f32 = @as(f32, @floatFromInt(255 - HEIGHT_ZERO)) * HEIGHT_STEP;
+
+/// Byte → metres, and the inverse. The only two places the encoding is spelled out.
+pub fn heightOf(b: u8) f32 {
+    return (@as(f32, @floatFromInt(b)) - @as(f32, @floatFromInt(HEIGHT_ZERO))) * HEIGHT_STEP;
+}
+pub fn heightByte(m: f32) u8 {
+    const q = @round(m / HEIGHT_STEP) + @as(f32, @floatFromInt(HEIGHT_ZERO));
+    return @intFromFloat(mathx.clampF(q, 0, 255));
+}
+
+/// THE ONE HEIGHT SAMPLER — bilinear over an `HEIGHT_N` lattice spanning `-half..+half` inclusive.
+/// Free function over a slice rather than a method, because the field has two owners that must agree
+/// to the millimetre: the MAP holds the authored grid and the editor sculpts it, while `env` keeps
+/// the live copy the terrain mesh was built from and every actor stands on. Two implementations of
+/// this is a hero who walks a centimetre off the mesh he can see.
+pub fn sampleHeight(field: []const u8, half: f32, px: f32, pz: f32) f32 {
+    std.debug.assert(field.len == HEIGHT_CELLS);
+    const last: f32 = @floatFromInt(HEIGHT_N - 1);
+    const step = 2 * half / last; // POINT pitch: N points, N-1 gaps
+    // Clamped rather than zeroed outside: past the rim the ground continues at the edge's height,
+    // which is what the terrain skirt draws and what keeps an actor at the bound from falling.
+    const fx = mathx.clampF((px + half) / step, 0, last);
+    const fz = mathx.clampF((pz + half) / step, 0, last);
+    const x0: usize = @intFromFloat(@floor(fx));
+    const z0: usize = @intFromFloat(@floor(fz));
+    const x1 = @min(x0 + 1, HEIGHT_N - 1);
+    const z1 = @min(z0 + 1, HEIGHT_N - 1);
+    const tx = fx - @floor(fx);
+    const tz = fz - @floor(fz);
+    const h00 = heightOf(field[z0 * HEIGHT_N + x0]);
+    const h10 = heightOf(field[z0 * HEIGHT_N + x1]);
+    const h01 = heightOf(field[z1 * HEIGHT_N + x0]);
+    const h11 = heightOf(field[z1 * HEIGHT_N + x1]);
+    return mathx.lerpF(mathx.lerpF(h00, h10, tx), mathx.lerpF(h01, h11, tx), tz);
+}
+
+/// The terrain's GRADIENT at a point: (dh/dx, dh/dz), i.e. metres of rise per metre travelled. Its
+/// length is the tangent of the slope angle, which is what the walkable test and the hero's lean read.
+///
+/// Measured over a whole cell either side rather than at the sample: the field is bilinear, so its
+/// true derivative is piecewise-constant and JUMPS at every lattice line — a lean driven off that
+/// steps visibly as you cross one, and a slope limit driven off it turns a smooth bank into stripes.
+pub fn sampleGrad(field: []const u8, half: f32, px: f32, pz: f32) [2]f32 {
+    const step = 2 * half / @as(f32, @floatFromInt(HEIGHT_N - 1));
+    const hx1 = sampleHeight(field, half, px + step, pz);
+    const hx0 = sampleHeight(field, half, px - step, pz);
+    const hz1 = sampleHeight(field, half, px, pz + step);
+    const hz0 = sampleHeight(field, half, px, pz - step);
+    return .{ (hx1 - hx0) / (2 * step), (hz1 - hz0) / (2 * step) };
+}
+
+/// A touched-lattice rect that contains nothing, as `lo > hi` on both axes — what `Map.sculpt` reports
+/// for a stroke that missed the grid, so a caller's rebuild loops simply do not run.
+pub const EMPTY_SPAN: [4]usize = .{ 1, 1, 0, 0 };
+
+/// The lattice-point index range a brush of radius `r` centred at `c` reaches on one axis, INCLUSIVE,
+/// or null when it misses the grid entirely. Signed internally on purpose: clamping first would turn a
+/// brush a hundred metres off the map into a hit on point 0.
+fn pointSpan(c: f32, r: f32, half: f32, step: f32) ?[2]usize {
+    const last: f32 = @floatFromInt(HEIGHT_N - 1);
+    const a = @ceil((c - r + half) / step);
+    const b = @floor((c + r + half) / step);
+    if (b < 0 or a > last) return null;
+    const lo = mathx.clampF(a, 0, last);
+    const hi = mathx.clampF(b, 0, last);
+    if (lo > hi) return null;
+    return .{ @intFromFloat(lo), @intFromFloat(hi) };
+}
+
+/// What a sculpt brush does to the ground under it.
+pub const Sculpt = enum {
+    /// Push the ground up by `amount` metres at the centre, tapering to nothing at the rim.
+    raise,
+    /// …and down.
+    lower,
+    /// Pull every point toward the average of its neighbours — the dial that turns a lumpy raise
+    /// into a bank you can walk. Without it a brush stroke is all cliffs.
+    smooth,
+    /// Flatten toward the height under the brush's centre — terraces, building pads, a road.
+    flatten,
+};
+
 // ── the map ────────────────────────────────────────────────────────────────────────────
 
 pub const Map = struct {
@@ -312,6 +418,9 @@ pub const Map = struct {
     /// The painted WATER MASK, same layout, 1 = wet. Depth, shoreline and wet sand are all derived
     /// from it (see env.uploadWater) — this is only the outline.
     water: [WATER_CELLS]u8 = [_]u8{0} ** WATER_CELLS,
+    /// THE SCULPTED GROUND: one quantised height per lattice POINT (see the HEIGHT block above).
+    /// Defaults to the DATUM, not to zero — an all-zero grid would sink the whole world 16 m.
+    height: [HEIGHT_CELLS]u8 = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS,
 
     pub fn label(self: *const Map) []const u8 {
         return std.mem.sliceTo(&self.name, 0);
@@ -330,6 +439,8 @@ pub const Map = struct {
         self.nfoes = 0;
         self.soil = [_]u8{0} ** SOIL_CELLS;
         self.water = [_]u8{0} ** WATER_CELLS;
+        // To the DATUM, not to zero: `@memset(.., 0)` here would drop the ground to HEIGHT_MIN.
+        self.height = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS;
     }
 
     /// The smallest VALID map: a world-spanning fallback zone plus the cover op that reads it. A truly
@@ -508,6 +619,101 @@ pub const Map = struct {
         return false;
     }
 
+    /// The ground height at a world position, in metres above the old flat datum.
+    pub fn heightAt(self: *const Map, px: f32, pz: f32) f32 {
+        return sampleHeight(&self.height, self.half, px, pz);
+    }
+
+    /// The terrain gradient there — (dh/dx, dh/dz).
+    pub fn gradAt(self: *const Map, px: f32, pz: f32) [2]f32 {
+        return sampleGrad(&self.height, self.half, px, pz);
+    }
+
+    /// Has the ground been sculpted at all? What lets the renderer keep the old single-quad plane.
+    pub fn anyHeight(self: *const Map) bool {
+        for (self.height) |v| {
+            if (v != HEIGHT_ZERO) return true;
+        }
+        return false;
+    }
+
+    /// The world position of height lattice point (ix, iz) — the mesh's own corner grid.
+    pub fn heightPoint(self: *const Map, ix: usize, iz: usize) [2]f32 {
+        const step = 2 * self.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
+        return .{ -self.half + @as(f32, @floatFromInt(ix)) * step, -self.half + @as(f32, @floatFromInt(iz)) * step };
+    }
+
+    /// SCULPT the ground under a brush. `amount` is metres for raise/lower and a 0..1 strength for
+    /// smooth/flatten; returns whether anything changed (so a stroke that achieves nothing banks no
+    /// undo step, exactly like `paintSoil`).
+    ///
+    /// The falloff is a SMOOTHSTEP over the radius, not a disc: a flat-topped brush leaves a cylinder
+    /// with a vertical wall around it — unwalkable by construction, so every stroke would need
+    /// smoothing afterwards to be usable at all. Cosine-shouldered, the raise brush alone already
+    /// produces banks you can climb.
+    ///
+    /// `out` receives the rect of lattice points touched (lo x, lo z, hi x, hi z inclusive) so the
+    /// caller can rebuild just those terrain chunks; it is the whole grid's worth of nothing when the
+    /// stroke misses. Reported even when nothing CHANGED — a caller that only rebuilt on a change
+    /// would be right, but the rect is also what the editor draws its brush ring from.
+    pub fn sculpt(self: *Map, px: f32, pz: f32, radius: f32, mode: Sculpt, amount: f32, out: *[4]usize) bool {
+        const step = 2 * self.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
+        const r = mathx.maxF(radius, step * 0.5);
+        out.* = EMPTY_SPAN;
+        const xs = pointSpan(px, r, self.half, step) orelse return false;
+        const zs = pointSpan(pz, r, self.half, step) orelse return false;
+        out.* = .{ xs[0], zs[0], xs[1], zs[1] };
+        const lo = xs[0];
+        const hi = xs[1];
+        const zlo = zs[0];
+        const zhi = zs[1];
+        // FLATTEN's target and SMOOTH's source are both read BEFORE anything is written: a flatten
+        // that re-read its own output would creep the target as the brush moved, and a smooth done in
+        // place is a directional blur that drags the terrain toward +x.
+        const target = self.heightAt(px, pz);
+        var before: [HEIGHT_N]f32 = undefined; // one row of the pre-pass, for smooth's neighbours
+        var changed = false;
+        var iz = zlo;
+        while (iz <= zhi) : (iz += 1) {
+            if (mode == .smooth) {
+                var ix: usize = 0;
+                while (ix < HEIGHT_N) : (ix += 1) before[ix] = heightOf(self.height[iz * HEIGHT_N + ix]);
+            }
+            var ix = lo;
+            while (ix <= hi) : (ix += 1) {
+                const p = self.heightPoint(ix, iz);
+                const dx = p[0] - px;
+                const dz = p[1] - pz;
+                const d = @sqrt(dx * dx + dz * dz);
+                if (d > r) continue;
+                const fall = mathx.smoothstep(r, r * 0.15, d); // 1 in the middle, 0 at the rim
+                const i = iz * HEIGHT_N + ix;
+                const cur = heightOf(self.height[i]);
+                const want = switch (mode) {
+                    .raise => cur + amount * fall,
+                    .lower => cur - amount * fall,
+                    .flatten => mathx.lerpF(cur, target, mathx.clampF(amount, 0, 1) * fall),
+                    // The 4-neighbour mean, from the UNTOUCHED row above and the pre-pass row here.
+                    // Edge points reuse themselves, which leaves the rim where it is instead of
+                    // pulling it toward a neighbour that does not exist.
+                    .smooth => blk: {
+                        const xm = if (ix > 0) before[ix - 1] else cur;
+                        const xp = if (ix + 1 < HEIGHT_N) before[ix + 1] else cur;
+                        const zm = if (iz > 0) heightOf(self.height[(iz - 1) * HEIGHT_N + ix]) else cur;
+                        const zp = if (iz + 1 < HEIGHT_N) heightOf(self.height[(iz + 1) * HEIGHT_N + ix]) else cur;
+                        break :blk mathx.lerpF(cur, (xm + xp + zm + zp) * 0.25, mathx.clampF(amount, 0, 1) * fall);
+                    },
+                };
+                const v = heightByte(mathx.clampF(want, HEIGHT_MIN, HEIGHT_MAX));
+                if (self.height[i] != v) {
+                    self.height[i] = v;
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
     pub fn inClearing(self: *const Map, px: f32, pz: f32) bool {
         for (self.clearings[0..self.nclearings]) |c| {
             const dx = px - c.x;
@@ -553,11 +759,19 @@ pub fn write(m: *const Map, w: anytype) !void {
         try w.writeAll("\n");
         try writeGrid(w, "soil", &m.soil);
     }
-    // …and the water mask the same way. Both grids are RLE because both are mostly one value; the
-    // shared writer is what keeps the two records from drifting into different encodings.
+    // …and the water mask the same way. All three grids are RLE because all three are mostly one
+    // value; the shared writer is what keeps the records from drifting into different encodings.
     if (m.anyWater()) {
         try w.writeAll("\n");
         try writeGrid(w, "water", &m.water);
+    }
+    // …and the SCULPTED GROUND. Omitted for a flat map, which is why adding elevation did not touch a
+    // single existing world file. A sculpted one is the biggest record in the format by far — heights
+    // vary continuously, so the runs are short — and that is the honest cost of storing a shape
+    // instead of the ops that made it.
+    if (m.anyHeight()) {
+        try w.writeAll("\n");
+        try writeGrid(w, "hgt", &m.height);
     }
 
     if (m.nfoes > 0) try w.writeAll("\n");
@@ -670,6 +884,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     var seenVersion = false;
     var soilAt: usize = 0; // running cursor, so soil runs may wrap across lines
     var waterAt: usize = 0; // …and the water mask's own
+    var hgtAt: usize = 0; // …and the sculpted ground's
     var lines = std.mem.splitScalar(u8, text, '\n');
     var ln: usize = 0;
     while (lines.next()) |raw| {
@@ -706,6 +921,10 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             // The mask is one bit wide, so the ceiling is 2 — anything else in the file is a typo,
             // and a stray 7 would otherwise become "very wet" in whatever reads it next.
             waterAt = try readGrid(&it, &m.water, waterAt, 2);
+        } else if (std.mem.eql(u8, rec, "hgt")) {
+            // EVERY byte is a legal height, so the ceiling is 256 — which is why `readGrid` takes a
+            // u16 limit rather than the u8 the other two grids need.
+            hgtAt = try readGrid(&it, &m.height, hgtAt, 256);
         } else if (std.mem.eql(u8, rec, "foe")) {
             if (m.nfoes >= MAX_FOES) return ParseError.TooManyFoes;
             m.foes[m.nfoes] = .{
@@ -735,8 +954,9 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
 }
 
 /// One RLE grid record, continuing from `at` and returning the new cursor. `lim` is the exclusive
-/// ceiling on a cell value — a value past it is a corrupt file, not a new material.
-fn readGrid(it: *std.mem.TokenIterator(u8, .any), cells: []u8, at: usize, lim: u8) !usize {
+/// ceiling on a cell value — a value past it is a corrupt file, not a new material. A u16, because the
+/// height grid's ceiling is 256: every byte is a legal elevation, and a u8 limit cannot say so.
+fn readGrid(it: *std.mem.TokenIterator(u8, .any), cells: []u8, at: usize, lim: u16) !usize {
     var cur = at;
     while (it.next()) |tok| {
         const xi = std.mem.indexOfScalar(u8, tok, 'x') orelse return ParseError.BadNumber;
@@ -1117,6 +1337,130 @@ test "the soil grid and foe records survive a round trip" {
     try std.testing.expectEqual(FoeKind.ogre, back.foes[0].kind);
     try std.testing.expectApproxEqAbs(@as(f32, 1.2), back.foes[0].scale, 1e-4);
     try std.testing.expectApproxEqAbs(@as(f32, 0.4), back.foes[0].seed, 1e-4);
+}
+
+test "the height field round-trips, and a FLAT map writes no height record at all" {
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    const back = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(back);
+    m.blank("Hills");
+
+    // A FLAT map must not carry the record. This is what kept every existing world file byte-identical
+    // when elevation arrived, and it is also 50 KB of RLE nobody wants in a diff for a plain.
+    {
+        var buf: [1 << 18]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        try write(m, fbs.writer());
+        try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "hgt:") == null);
+        // …and it loads back FLAT, not at the bottom of the encoding's range. The grid's default is the
+        // datum byte, so a `.{}`-initialised map is ground level; defaulting to 0 would sink the world
+        // HEIGHT_MIN metres and every prop with it.
+        var line: usize = 0;
+        try parse(fbs.getWritten(), back, &line);
+        try std.testing.expect(!back.anyHeight());
+        try std.testing.expectApproxEqAbs(@as(f32, 0), back.heightAt(0, 0), 1e-6);
+        try std.testing.expectApproxEqAbs(@as(f32, 0), back.heightAt(-190, 77), 1e-6);
+    }
+
+    // Now sculpt: a hill, a hollow beside it, and one lattice point set by hand at the far corner so a
+    // one-cell run is exercised as well as long ones.
+    var span: [4]usize = undefined;
+    try std.testing.expect(m.sculpt(-40, 20, 30, .raise, 9.0, &span));
+    try std.testing.expect(m.sculpt(30, -10, 18, .lower, 4.0, &span));
+    m.height[HEIGHT_CELLS - 1] = heightByte(2.5);
+    try std.testing.expect(m.anyHeight());
+
+    var buf: [1 << 21]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    var line: usize = 0;
+    try parse(fbs.getWritten(), back, &line);
+    try std.testing.expectEqualSlices(u8, &m.height, &back.height);
+    // …and the SHAPE survived, not just the bytes: the hill is up, the hollow is down, and untouched
+    // ground between them is still exactly zero.
+    try std.testing.expect(back.heightAt(-40, 20) > 8.0);
+    try std.testing.expect(back.heightAt(30, -10) < -3.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), back.heightAt(0, 200), 1e-6);
+}
+
+test "sculpt: the brush tapers, respects its radius, and cannot leave the encoding's range" {
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("Sculpt");
+    var span: [4]usize = undefined;
+
+    // A single raise: full bite in the middle, LESS at the rim, nothing outside it. The taper is what
+    // makes a stroke walkable at all — a flat-topped brush leaves a vertical wall round a cylinder.
+    _ = m.sculpt(0, 0, 20, .raise, 6.0, &span);
+    const mid = m.heightAt(0, 0);
+    const edge = m.heightAt(17, 0);
+    try std.testing.expect(mid > 5.5);
+    try std.testing.expect(edge > 0.0 and edge < mid * 0.6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), m.heightAt(40, 0), 1e-6); // outside: untouched
+
+    // SMOOTH pulls each point toward its neighbours, so a SPIKE comes down…
+    _ = m.sculpt(60, 0, 3, .raise, 8.0, &span);
+    const spike = m.heightAt(60, 0);
+    _ = m.sculpt(60, 0, 7, .smooth, 1.0, &span);
+    try std.testing.expect(m.heightAt(60, 0) < spike - 0.5);
+    // …and a PLATEAU is left where it is, because its neighbours are already at its own height. That
+    // asymmetry is the whole reason smoothing is safe to sweep over ground you have already shaped:
+    // it takes the lumps out of a bank without eroding the terrace beside it.
+    const plateau = m.heightAt(0, 0);
+    _ = m.sculpt(0, 0, 20, .smooth, 1.0, &span);
+    try std.testing.expectApproxEqAbs(plateau, m.heightAt(0, 0), HEIGHT_STEP);
+
+    // FLATTEN takes the ground toward the height under the brush CENTRE — so a stroke started on the
+    // dome's top pulls its shoulder UP to that height rather than cutting the top off. A few passes,
+    // because one pass moves each point most of the way and the taper leaves the rim behind.
+    var f: usize = 0;
+    while (f < 6) : (f += 1) _ = m.sculpt(0, 0, 20, .flatten, 1.0, &span);
+    try std.testing.expectApproxEqAbs(m.heightAt(0, 0), m.heightAt(10, 0), 0.3);
+
+    // …and no amount of digging can leave the byte range. A clamp that wrapped would put a pit at the
+    // top of a mountain.
+    var i: usize = 0;
+    while (i < 40) : (i += 1) _ = m.sculpt(0, 0, 20, .lower, 12.0, &span);
+    try std.testing.expect(m.heightAt(0, 0) >= HEIGHT_MIN - 1e-4);
+    i = 0;
+    while (i < 80) : (i += 1) _ = m.sculpt(0, 0, 20, .raise, 12.0, &span);
+    try std.testing.expect(m.heightAt(0, 0) <= HEIGHT_MAX + 1e-4);
+
+    // A stroke that MISSES the grid changes nothing and reports an empty rect, so a caller's rebuild
+    // loops don't run (and don't index a wild range).
+    var out: [4]usize = undefined;
+    try std.testing.expect(!m.sculpt(9000, 9000, 5, .raise, 4, &out));
+    try std.testing.expect(out[0] > out[2] and out[1] > out[3]);
+}
+
+test "the height sampler is bilinear, edge-clamped, and its gradient points UPHILL" {
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("Ramp");
+    // A ramp built by hand: height rises with the x index, nothing varies in z. Every sampled value in
+    // between must land ON that ramp — a nearest-neighbour lookup would give a staircase instead, and
+    // the hero would climb 2.5 m-wide steps up a slope that is supposed to be smooth.
+    for (0..HEIGHT_N) |iz| {
+        for (0..HEIGHT_N) |ix| {
+            m.height[iz * HEIGHT_N + ix] = heightByte(@as(f32, @floatFromInt(ix)) * 0.25);
+        }
+    }
+    const step = 2 * m.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
+    const x0 = -m.half + 10 * step;
+    try std.testing.expectApproxEqAbs(@as(f32, 2.5), m.heightAt(x0, 0), 1e-3);
+    // …and half a cell along is half a step up. THE bilinear claim.
+    try std.testing.expectApproxEqAbs(@as(f32, 2.625), m.heightAt(x0 + step * 0.5, 0), 1e-3);
+    // Off the grid entirely, the edge height CONTINUES rather than dropping to zero: an actor at the
+    // world's bound must not fall off a lip that only exists because the field ran out.
+    try std.testing.expectApproxEqAbs(m.heightAt(-m.half, 0), m.heightAt(-m.half - 60, 0), 1e-4);
+    try std.testing.expectApproxEqAbs(m.heightAt(m.half, 0), m.heightAt(m.half + 60, 0), 1e-4);
+
+    // The gradient: +x is uphill here, z is flat. Its LENGTH is the tangent of the slope angle, which
+    // is what the walkable test compares against — 0.25 m per 2.5 m cell is 0.1.
+    const g = m.gradAt(0, 0);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.1), g[0], 1e-3);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), g[1], 1e-4);
 }
 
 test "blank() produces a map its own loader accepts" {

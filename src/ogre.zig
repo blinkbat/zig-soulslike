@@ -535,8 +535,10 @@ pub const Ogre = struct {
     }
 
     // ── foe-contract accessors (heights in world units, so they ride the giant scale) ───────
+    // …and all measured from `pos.y`, THE GROUND UNDER HIM. Pinned to the datum instead, a giant on a
+    // rise carries his hurt sphere and his HP bar down at the foot of the hill.
     pub fn centerWorld(self: *const Ogre) rl.Vector3 {
-        return v3(self.pos.x, 0.60 * H * self.scale, self.pos.z); // chest-ish mass centre
+        return v3(self.pos.x, self.pos.y + 0.60 * H * self.scale, self.pos.z); // chest-ish mass centre
     }
     pub fn hurtRadius(self: *const Ogre) f32 {
         return HURT_R * self.scale;
@@ -545,14 +547,14 @@ pub const Ogre = struct {
         return BODY_R * self.scale;
     }
     pub fn lockPoint(self: *const Ogre) rl.Vector3 {
-        return v3(self.pos.x, 0.62 * H * self.scale, self.pos.z);
+        return v3(self.pos.x, self.pos.y + 0.62 * H * self.scale, self.pos.z);
     }
     pub fn topWorld(self: *const Ogre) rl.Vector3 {
-        return v3(self.pos.x, 1.02 * H * self.scale, self.pos.z);
+        return v3(self.pos.x, self.pos.y + 1.02 * H * self.scale, self.pos.z);
     }
     // The head, roughly — for framing the face close-up (the single eye) in --shot.
     pub fn headWorld(self: *const Ogre) rl.Vector3 {
-        return v3(self.pos.x, 0.86 * H * self.scale, self.pos.z);
+        return v3(self.pos.x, self.pos.y + 0.86 * H * self.scale, self.pos.z);
     }
     // The club's business end in world space, straight off the posed bone. Carried, its Y is the
     // hover the whole CARRY tuning exists to protect (it must stay clear of the grass); slamming,
@@ -686,7 +688,7 @@ pub const Ogre = struct {
                         // No crater — a swipe never touches the earth. What it kicks up is the
                         // grass/dust the head DRAGS through the air at its own height.
                         const low = self.clubLowWorld();
-                        self.dustBurst(v3(low.x, 0.05, low.z), 12, 2.2, 0.20);
+                        self.dustBurst(v3(low.x, self.pos.y + 0.05, low.z), 12, 2.2, 0.20);
                     }
                 }
                 if (self.t >= SWIPE_DUR) {
@@ -1144,7 +1146,7 @@ pub const Ogre = struct {
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul3(rz(rollZ), rx(leanX), ry(prot)),
             mul(tr((sway + idleSway) * fs, pelvY * fs + sink, 0), ry(facingDeg)),
-            tr(self.pos.x, 0, self.pos.z),
+            heromod.rootAt(self.pos), // …on the sculpted ground under him, not on y = 0
         ));
 
         // Legs. WALKING → the SHARED hero gait (alternating, independent — the owner's humanoid
@@ -1333,14 +1335,14 @@ pub const Ogre = struct {
     // front — so retuning the club's length or its arc can never leave the dust in the wrong place.
     fn impactWorld(self: *const Ogre) rl.Vector3 {
         const low = self.clubLowWorld();
-        return v3(low.x, 0.05, low.z);
+        return v3(low.x, self.pos.y + 0.05, low.z); // a hair over the ground HE stands on
     }
     // The pool plumbing is the shared one (foe.zig) — these just name the ogre's own ring.
     fn emit(self: *Ogre, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
         foe.emitParticle(&self.fx, &self.fxHead, p, vel, life, r0, r1, col, grav);
     }
     fn updateFx(self: *Ogre, dt: f32) void {
-        foe.tickParticles(&self.fx, dt);
+        foe.tickParticles(&self.fx, dt, self.pos.y); // dust settles on the ground HE is standing on
     }
     // A radial fan of dust from `c` (the slam crush; scaled up for the giant).
     fn dustBurst(self: *Ogre, c: rl.Vector3, n: i32, spd: f32, big: f32) void {

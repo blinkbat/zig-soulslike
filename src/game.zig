@@ -108,12 +108,30 @@ const HERO_R = foemod.HERO_R;
 // Skeletal-archer arrows: shared pool of in-flight + stuck shafts, plus the hero centre-of-
 // mass height archers aim at and arrows test strikes against.
 const MAX_ARROWS = 24;
+/// The hero's centre of mass ABOVE HIS OWN FEET — not a world height. It was both while the world was
+/// flat, and reading it as a world height on sculpted terrain aims every arrow at the datum: an archer
+/// on the plain shooting a hero on a 10 m bank puts the shaft through the hillside below him.
 pub const HERO_CENTER_Y = 1.0;
 
 // Collision correction is rate-limited so a large depenetration eases in over a few frames
 // (smooth slide, not a choppy warp). Set above the fastest actor speed so wall contact
 // still resolves firmly (no sinking).
 const COLLIDE_RATE = 11.0; // world units / sec
+
+// ── STANDING ON SCULPTED GROUND ────────────────────────────────────────────────────────
+// An actor's `pos.y` is the ground height under them, and it is written HERE, once, for the hero and
+// every foe (`ground`/`groundActor` below) — the rigs only read it.
+//
+// IT IS EASED, NOT SNAPPED, and that is the whole anti-jank measure. A step up is a vertical
+// discontinuity in the terrain the moment you cross it, and the camera rides the hero's shoulder: snap
+// the Y and a 0.4 m ledge kicks the entire frame. Chasing it at a metre-per-second rate turns the same
+// ledge into two frames of rise you feel as a step instead of a cut. The rates are deliberately
+// asymmetric — walking off a lip should DROP faster than a climb lifts, or the hero moon-walks off it.
+const GROUND_RISE_RATE = 9.0; // m/s the body climbs onto higher ground…
+const GROUND_FALL_RATE = 16.0; // …and falls onto lower (gravity-ish, no real fall state yet)
+/// Past this the ease is abandoned and the actor is planted: a teleport (respawn, F5 playtest, the shot
+/// harness) must not spend a second sliding up out of the earth, and no real step is anywhere near it.
+const GROUND_SNAP: f32 = 2.5;
 
 // Depth clip planes, set once in run(). Invariant: projectToScreen's PROJECT_NEAR must EQUAL CLIP_NEAR —
 // both read this, never the literal.
@@ -197,9 +215,14 @@ pub const Game = struct {
         // lake grows grass across the middle of it, and stays that way until something else rebuilds.
         g.env.uploadSoil(&g.map);
         g.env.uploadWater(&g.map);
+        // …AND THE SCULPTED GROUND, which `materialize` needs even more urgently than the water: every
+        // prop is planted at the height under it, so replaying the ops against a flat field stands the
+        // whole world at the wrong elevation.
+        g.env.uploadHeight(&g.map);
         g.env.materialize(&g.map); // …then the world from the map, re-runnable per edit
         g.hero = heromod.Hero.init(g.scene.shader);
         g.hero.pos = mathx.ground(0, 4); // start just south of the ruin avenue
+        plantActor(g, &g.hero.pos); // …standing ON it, whatever the ground there was sculpted to
         g.hero.facing = std.math.pi; // facing -Z, into the columns
         g.hero.setSpawn(g.hero.pos, g.hero.facing); // where a death returns him
         g.hero.pose();
@@ -348,6 +371,63 @@ fn sprintingMove(mv: Move) bool {
     return mv.speed > RUN_SPEED + 0.01 and (mv.fx * mv.fx + mv.fz * mv.fz) > 1e-6;
 }
 
+/// PLANT AN ACTOR ON THE GROUND: ease `pos.y` toward the terrain height under its feet. See the rate
+/// constants above for why this is eased rather than assigned. Returns nothing — it writes `pos.y`,
+/// which is the one place any actor's height comes from.
+fn groundActor(g: *const Game, pos: *rl.Vector3, dt: f32) void {
+    const want = g.env.groundAt(pos.x, pos.z);
+    const d = want - pos.y;
+    if (@abs(d) > GROUND_SNAP) {
+        pos.y = want; // a teleport, not a step
+        return;
+    }
+    const rate: f32 = if (d > 0) GROUND_RISE_RATE else GROUND_FALL_RATE;
+    pos.y = mathx.approach(pos.y, want, rate * dt);
+}
+
+/// …and PLANT ONE NOW, with no ease: a spawn, a respawn, an editor playtest drop. Anything that decides
+/// where an actor IS rather than where it is going.
+fn plantActor(g: *const Game, pos: *rl.Vector3) void {
+    pos.y = g.env.groundAt(pos.x, pos.z);
+}
+
+/// The ground height, as the camera rig wants it: a plain function over a context, so `camera.zig` can
+/// keep the eye out of the terrain without knowing what a height field is. PUBLIC because the `--shot`
+/// harness frames through the same `followClear` the live loop does — a shot camera that clipped into
+/// terrain the real one avoids would be photographing a bug that isn't there.
+pub fn envGroundAt(e: *const envmod.Env, x: f32, z: f32) f32 {
+    return e.groundAt(x, z);
+}
+
+/// Where each live foe stands, for the terrain gate below. Generic over any group's `live()` slice.
+fn snapshotPos(foes: anytype, out: []rl.Vector3) void {
+    for (foes, 0..) |*f, i| {
+        if (i >= out.len) return;
+        out[i] = f.pos;
+    }
+}
+
+/// THE FOES GET THE SAME GROUND RULES THE HERO DOES. Each moved itself during its own update, knowing
+/// nothing about the terrain; this re-takes that displacement through `env.walkStep`, so a hunting toad
+/// or a kiting archer is held off ground too steep to walk exactly as the player is — and cannot chase
+/// you up a cliff face.
+///
+/// AIRBORNE FOES ARE LEFT ALONE: a toad's lunge and an archer's backstep are committed leaps, and a leap
+/// is entitled to cross ground you could not walk. Their landing is grounded by `groundActor` like
+/// everything else.
+fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3) void {
+    for (foes, 0..) |*f, i| {
+        if (i >= was.len or !f.alive() or f.airborne()) continue;
+        const dx = f.pos.x - was[i].x;
+        const dz = f.pos.z - was[i].z;
+        const d = @sqrt(dx * dx + dz * dz);
+        if (d < 1e-5) continue;
+        const stepped = g.env.walkStep(was[i], v3(dx / d, 0, dz / d), d);
+        f.pos.x = stepped.x;
+        f.pos.z = stepped.z;
+    }
+}
+
 // Move + steer the hero from a camera-relative Move, advance the walk anim, and pose the
 // skeleton. Camera basis is read BEFORE this so movement follows the current view.
 fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
@@ -375,8 +455,14 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
             speed *= mathx.lerpF(1.0, STRAFE_SPEED, latAmt);
         }
         moved = speed * dt;
-        g.hero.pos.x = mathx.clampF(g.hero.pos.x + dir.x * moved, -PLAY_HALF, PLAY_HALF);
-        g.hero.pos.z = mathx.clampF(g.hero.pos.z + dir.z * moved, -PLAY_HALF, PLAY_HALF);
+        // THE TERRAIN DECIDES WHETHER THE STEP HAPPENS (env.walkStep): a slight step or an incline
+        // inside the slope limit is taken, anything steeper has its uphill component refused and the
+        // hero slides along the face. `moved` is left alone on purpose — it drives the STRIDE PHASE,
+        // and shortening it because a cliff refused the step would slow the leg cycle to a crawl while
+        // he pushes against it, which reads as the animation breaking rather than as the hill winning.
+        const stepped = g.env.walkStep(g.hero.pos, dir, moved);
+        g.hero.pos.x = mathx.clampF(stepped.x, -PLAY_HALF, PLAY_HALF);
+        g.hero.pos.z = mathx.clampF(stepped.z, -PLAY_HALF, PLAY_HALF);
     }
     // Facing: toward the LOCKED foe (hero strafes/backpedals facing it, ER-style), else
     // toward travel. ER exception: a hold-B SPRINT while locked faces travel — no sideways
@@ -388,6 +474,18 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
     }
     g.hero.update(dt, moved, speed, moveYaw);
     g.hero.pose();
+}
+
+/// The hero's posture on the ground he is standing on: ease the whole-body lean toward what the slope
+/// under him asks for. Measured along his FACING, not his travel, so backing down a bank leans back —
+/// the lean is about the hill, not about the direction he happens to be going.
+///
+/// Runs for EVERY hero state, not just walking: standing still on a bank is exactly when you notice an
+/// upright body, and `pose()` is what draws him then too.
+fn leanToGround(g: *Game, dt: f32) void {
+    const face = mathx.headingDir(g.hero.facing);
+    const want = heromod.slopeLean(g.env.slopeAlong(g.hero.pos.x, g.hero.pos.z, face));
+    g.hero.slopePitch = mathx.approach(g.hero.slopePitch, want, heromod.SLOPE_LEAN_RATE * dt);
 }
 
 // World direction to roll: the camera-relative move intent if any, else the hero's facing
@@ -425,6 +523,17 @@ fn setCasterShaders(g: *Game, sh: rl.Shader) void {
     g.warren.setShader(sh);
     g.line.setShader(sh);
     g.grief.setShader(sh);
+}
+
+/// The WORLD height of the hero's centre of mass — his feet plus `HERO_CENTER_Y`. What an archer aims
+/// at and what an arrow tests its strike against; one definition, so the aim and the hit can't disagree.
+pub fn heroCenterY(g: *const Game) f32 {
+    return g.hero.pos.y + HERO_CENTER_Y;
+}
+
+/// …and that centre as a point, which is what a loose is aimed at.
+fn heroAimPoint(g: *const Game) rl.Vector3 {
+    return v3(g.hero.pos.x, heroCenterY(g), g.hero.pos.z);
 }
 
 // Launch an arrow from a free pool slot (the loose event). Pool-full is rare (24 slots vs a
@@ -468,7 +577,12 @@ fn sceneCam(g: *const Game) rl.Camera3D {
 // looking at — otherwise flying away from the hero to dress a corner of the map loses every
 // cast shadow there, and the lighting you are judging is not the lighting the player gets.
 fn sunFocus(g: *const Game) rl.Vector3 {
-    return if (g.editor.on) mathx.ground(g.editor.cam.target.x, g.editor.cam.target.z) else g.hero.pos;
+    // The GROUND under the editor's aim, not the datum: the shadow box tracks its focus in all three
+    // axes now (gfx.beginShadowPass), and dressing a hilltop with the box 20 m below it drops every
+    // cast shadow up there.
+    if (!g.editor.on) return g.hero.pos;
+    const t = g.editor.cam.target;
+    return v3(t.x, g.env.groundAt(t.x, t.z), t.z);
 }
 
 pub fn drawScene(g: *Game) void {
@@ -505,7 +619,7 @@ pub fn drawScene(g: *Game) void {
     // never disagree about whether they are in frame.
     g.env.uploadLights(&g.scene, &view, @floatCast(rl.getTime()));
     g.scene.setGround(true);
-    g.env.drawGround();
+    g.env.drawGround(&view); // sculpted terrain is tiled, so it culls against the same frustum
     g.scene.setGround(false);
     // THE PAINTED WATER, straight after the ground it lies on: one quad whose dry fragments the shader
     // discards, so everything standing in a lake (reeds, drowned columns) draws over it by depth test
@@ -681,11 +795,17 @@ fn debugCorner(g: *Game) void {
     dbgRow(std.fmt.bufPrintZ(&buf, "{s}   {d:.1} m/s", .{ label, g.hero.speed }) catch "", y, hud_.BODY, rgba(150, 156, 164, 255));
     y += hud_.lineH(hud_.BODY) + 4;
 
-    dbgRow(std.fmt.bufPrintZ(&buf, "{d} fps   {d:.1} ms   pos {d:.1},{d:.1}   yaw {d:.2}   pitch {d:.2}   time x{d:.2}", .{
+    // POS CARRIES ITS HEIGHT, and the ground carries its SLOPE — the two numbers you need to tell "the
+    // hill refused my step" from "something else is wrong". `slope` is degrees under his feet against
+    // env.MAX_SLOPE's 40; `lean` is what the rig is doing about it.
+    dbgRow(std.fmt.bufPrintZ(&buf, "{d} fps   {d:.1} ms   pos {d:.1},{d:.1}  y {d:.2}  slope {d:.0}deg  lean {d:.0}   yaw {d:.2}   pitch {d:.2}   time x{d:.2}", .{
         rl.getFPS(),
         rl.getFrameTime() * 1000.0,
         g.hero.pos.x,
         g.hero.pos.z,
+        g.hero.pos.y,
+        mathx.degrees(std.math.atan(g.env.slopeAt(g.hero.pos.x, g.hero.pos.z))),
+        g.hero.slopePitch,
         g.rig.yaw,
         g.rig.pitch,
         g.menu.timeScale,
@@ -904,6 +1024,7 @@ pub fn run(mode: Mode) void {
                     rl.hideCursor();
                     g.hero.pos = mathx.ground(g.editor.cam.target.x, g.editor.cam.target.z);
                     g.hero.pos = g.env.resolveActor(g.hero.pos, HERO_R);
+                    plantActor(g, &g.hero.pos); // …on the ground, AFTER the push-out moved him in XZ
                     g.hero.setSpawn(g.hero.pos, g.hero.facing);
                     g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
                     wasInside = false; // swallow the mouse delta the editor's look accumulated
@@ -1160,6 +1281,19 @@ pub fn run(mode: Mode) void {
             const d = mathx.dirXZ(g.hero.pos, foePos(g, li));
             break :blk if (mathx.lenXZ(d) > 0.001) mathx.headingXZ(d) else null;
         } else null;
+        // The slope under him, eased into the rig BEFORE it poses — every branch below ends in a
+        // `pose()`, so this has to be settled first or the lean is always one frame stale.
+        leanToGround(g, dt);
+        // WHERE EVERY FOE STOOD BEFORE IT ACTED. The terrain gate below re-takes each one's step
+        // through `env.walkStep`, which is how a foe inherits the hero's slope limit and step height
+        // without every rig having to learn about the world. Snapshotting is the price of the AI
+        // moving itself: the alternative is threading the Env through three creatures' update paths.
+        var wasToad: [worldfmt.MAX_PER_KIND]rl.Vector3 = undefined;
+        var wasArcher: [worldfmt.MAX_PER_KIND]rl.Vector3 = undefined;
+        var wasOgre: [worldfmt.MAX_PER_KIND]rl.Vector3 = undefined;
+        snapshotPos(g.warren.live(), &wasToad);
+        snapshotPos(g.line.live(), &wasArcher);
+        snapshotPos(g.grief.live(), &wasOgre);
         if (g.hero.dead) {
             g.hero.updateDeath(dt); // collapse → respawn
             // The frame he returns, the WORLD reloads with him (ER-style): every foe re-homed
@@ -1203,16 +1337,24 @@ pub fn run(mode: Mode) void {
         // interrupts the shot (enterStun clears the draw).
         for (g.line.live()) |*a| {
             if (a.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) {
-                spawnArrow(g, a.nockWorld(), v3(g.hero.pos.x, HERO_CENTER_Y, g.hero.pos.z));
+                spawnArrow(g, a.nockWorld(), heroAimPoint(g));
             }
         }
+        // …and the ground has its say about all three: every step a foe just took is re-taken through
+        // the slope limit, so none of them walks up anything the hero couldn't.
+        gateTerrain(g, g.warren.live(), &wasToad);
+        gateTerrain(g, g.line.live(), &wasArcher);
+        gateTerrain(g, g.grief.live(), &wasOgre);
         // Arrows in flight: gentle homing + arc, then a strike lands a chomp-weight blow.
         // A hero inside the roll's i-frames is NOT a target (shaft passes through). World
         // solids BLOCK shots (cover works) — a blocked arrow thunks into stone.
         for (&g.arrows) |*ar| {
             if (!ar.live) continue;
             ar.hit = false;
-            archermod.stepArrow(ar, g.hero.pos, HERO_CENTER_Y, g.hero.iFramed(), arrowCover(g, ar, dt), dt);
+            // The GROUND under the shaft, so it plants in a hillside instead of diving through it to
+            // find y = 0 — and the hero's centre measured from HIS ground, not from the datum, or an
+            // archer shooting up a bank aims at the hero's knees.
+            archermod.stepArrow(ar, g.hero.pos, heroCenterY(g), g.env.groundAt(ar.pos.x, ar.pos.z), g.hero.iFramed(), arrowCover(g, ar, dt), dt);
             if (ar.hit) {
                 // It found the hero. The BEAT is skipped on a corpse, but the shaft still landed in
                 // him — so the sound is the flesh one either way. Testing `!dead` on the whole
@@ -1263,8 +1405,17 @@ pub fn run(mode: Mode) void {
             if (!foeLockable(g, li)) g.lock = acquireLock(g); // corpse the frame it dies → switch/drop
         }
         collideActors(g, dt);
+        // …and EVERYTHING SETTLES ONTO THE GROUND, last: collision moves actors in XZ (out of walls,
+        // off each other), so their height is only known once that is done. Before it, a hero pushed
+        // out of a wall onto lower ground would spend the frame at the wall's height.
+        groundActor(g, &g.hero.pos, dt);
+        for (g.warren.live()) |*f| groundActor(g, &f.pos, dt);
+        for (g.line.live()) |*a| groundActor(g, &a.pos, dt);
+        for (g.grief.live()) |*o| groundActor(g, &o.pos, dt);
         g.rig.tickShake(rawDt); // impact shake decays on wall-clock time (bakes this frame's jitter)
-        g.rig.follow(g.hero.shoulderPoint());
+        // …and the boom shortens rather than burying the eye in the hillside behind him (see
+        // camera.followClear). On sculpted ground this is not an edge case: it happens on every climb.
+        g.rig.followClear(g.hero.shoulderPoint(), &g.env, envGroundAt);
         // THE EARS RIDE THE CAMERA, not the hero — the pan has to agree with what is on screen, and
         // the camera is the eye. Set after `follow`, so a foe's sound is panned against the settled
         // view rather than against last frame's.

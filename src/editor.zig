@@ -148,7 +148,7 @@ pub const Layer = enum(u8) {
 };
 
 const layerTips = [Layer.N][:0]const u8{
-    "Paint the soil under everything (Tab cycles layers)",
+    "SHAPE the land and paint the soil under everything (Tab cycles layers)",
     "The flora carpet: zone density and the clearings it keeps out of",
     "Growing things — ferns, grass, bramble, reeds",
     "Standing things — stone, timber, fire, water",
@@ -157,15 +157,48 @@ const layerTips = [Layer.N][:0]const u8{
 
 // Brush tables. The LAST entry of every layer is its scoped eraser, so an erase can never reach
 // out of the layer you are working in.
-// Ground carries the six soils, then WATER — which is not a soil but is the same gesture on the same
-// ground, and the layer where you would look for it — then the eraser, which wipes both.
-const groundBrushes = [_][:0]const u8{ "dirt", "turf", "stone", "silt", "ash", "moss", "Water", "Erase" };
-const coverBrushes = [_][:0]const u8{ "Zone", "Clearing", "Erase" };
-const decorBrushes = [_][:0]const u8{ "Scatter", "Patch", "Single", "Erase" };
+//
+// HAND TOOLS FIRST, GENERATORS AFTER (owner's rule). The direct one — the brush that puts exactly one
+// thing exactly where you clicked — leads every layer, and the scatters follow it: you author by hand
+// and reach for a generator when you want a wood. It is also what the digit keys land on, since 1
+// arms the first brush.
+//
+// Ground is the LAND ITSELF, and it has two halves: the SHAPE you sculpt (raise / lower / smooth /
+// flatten, the direct tools, so they lead) and the SURFACE you paint over it (the six soils, then
+// water — not a soil, but the same gesture on the same ground and the layer you would look in). The
+// eraser wipes the paint and the water; it deliberately does NOT flatten, because an erase that
+// silently destroyed the terrain you sculpted is not an undo anybody wants by accident.
+const groundBrushes = [_][:0]const u8{ "Raise", "Lower", "Smooth", "Flat", "dirt", "turf", "stone", "silt", "ash", "moss", "Water", "Erase" };
+const coverBrushes = [_][:0]const u8{ "Clearing", "Zone", "Erase" };
+const decorBrushes = [_][:0]const u8{ "Single", "Patch", "Scatter", "Erase" };
 const propBrushes = [_][:0]const u8{ "Stamp", "Row", "Ring", "Cluster", "Ivy", "Erase" };
 const unitBrushes = [_][:0]const u8{ "toad", "archer", "ogre", "Erase" };
 
+/// Where the SOIL ids start in `groundBrushes`, since the sculpt tools now come first. The paint path
+/// decodes a soil by ordinal (`brushIdx() - GROUND_SOIL_0 + 1`), so this one constant is what keeps the
+/// palette's order and `wf.Soil`'s from having to agree — and the comptime block below pins the run.
+const GROUND_SOIL_0: usize = 4;
+
+/// SMOOTH and FLATTEN take a 0..1 blend where raise/lower take metres, so they need their own scale off
+/// the one `sculptRate` dial. Higher than 1 because evening ground out should feel quicker than piling
+/// it up: you reach for these to fix a stroke you have already made.
+const SCULPT_EVEN: f32 = 0.5;
+
+/// How many brushes the number keys reach — 1..9. Named because the brush strip labels a row with its
+/// digit, and Ground has more brushes than there are digits: past this the label must not claim a key.
+const DIGIT_KEYS: usize = 9;
+
+// The three sculpt swatches (literal screen values, like every other chrome colour — see ui.zig): earth
+// lifted, earth cut away, and the neutral grey shared by the two tools that even ground out.
+const RAISE_SWATCH = ui.col(126, 100, 62, 255);
+const LOWER_SWATCH = ui.col(74, 60, 44, 255);
+const EVEN_SWATCH = ui.col(96, 100, 104, 255);
+
 const groundTips = [_][:0]const u8{
+    "Hold and sweep to RAISE the ground — [ ] sets the brush size, and the panel sets how hard",
+    "Hold and sweep to dig the ground DOWN",
+    "Hold and sweep to SMOOTH what you sculpted — this is what turns a lump into a slope you can walk",
+    "Hold and sweep to FLATTEN toward the height you started the stroke on — terraces, pads, roads",
     "Trodden dirt — a path worn through ([ ] sets radius)",
     "Green turf",
     "Stone, flagged or scoured bare",
@@ -173,17 +206,17 @@ const groundTips = [_][:0]const u8{
     "Ash and burnt ground",
     "Deep moss",
     "Hold and sweep to flood — depth, shore and wet sand are all worked out from the outline",
-    "Hold and sweep to unpaint — soil AND water; the procedural floor shows through again",
+    "Hold and sweep to unpaint soil AND water. It leaves the sculpted SHAPE alone",
 };
 const coverTips = [_][:0]const u8{
-    "Drag a rectangle the ground cover grows differently inside",
     "Drag a circle nothing grows in",
+    "Drag a rectangle the ground cover grows differently inside",
     "Hold and sweep to remove the zones and clearings you cross",
 };
 const decorTips = [_][:0]const u8{
-    "Drag a rectangle to sow a scattered belt inside it",
-    "Drag from the centre out for a round patch",
     "Click to place ONE plant, exactly there",
+    "Drag from the centre out for a round patch",
+    "Drag a rectangle to sow a scattered belt inside it",
     "Hold and sweep to remove the ops that grew the plants you cross",
 };
 const propTips = [_][:0]const u8{
@@ -216,9 +249,10 @@ fn layerIcon(l: Layer) ui.Icon {
 }
 
 // Ground has no icon list — its brushes ARE colours, and `soilSwatch` is a truer icon for "moss"
-// than any glyph. The other four map brush-for-brush, eraser last, exactly like the name tables.
-const coverIcons = [_]ui.Icon{ .zone, .clearing, .erase };
-const decorIcons = [_]ui.Icon{ .scatter, .patch, .single, .erase };
+// than any glyph (the four sculpt tools take a swatch too, tinted by what they do to the land). The
+// other four map brush-for-brush, eraser last, exactly like the name tables.
+const coverIcons = [_]ui.Icon{ .clearing, .zone, .erase };
+const decorIcons = [_]ui.Icon{ .single, .patch, .scatter, .erase };
 const propIcons = [_]ui.Icon{ .stamp, .row, .ring, .cluster, .ivy, .erase };
 const unitIcons = [_]ui.Icon{ .toad, .archer, .ogre, .erase };
 
@@ -227,6 +261,17 @@ comptime {
     std.debug.assert(decorIcons.len == decorBrushes.len);
     std.debug.assert(propIcons.len == propBrushes.len);
     std.debug.assert(unitIcons.len == unitBrushes.len);
+}
+
+/// A SECTION HEADING to draw above brush `i`, or null for "no break here". The Ground layer earns one:
+/// it carries two unrelated jobs — the SHAPE of the land and the SURFACE painted over it — and twelve
+/// undifferentiated rows is a list you have to read every time instead of a palette you learn once.
+/// Nothing else needs it; four or five rows of one kind of thing is already a group.
+fn brushSectionFor(l: Layer, i: usize) ?[:0]const u8 {
+    if (l != .ground) return null;
+    if (i == 0) return "shape";
+    if (i == GROUND_SOIL_0) return "surface";
+    return null;
 }
 
 /// The icons for a layer's brush strip, or null for GROUND, whose caller draws swatches instead.
@@ -267,13 +312,18 @@ comptime {
     std.debug.assert(decorTips.len == decorBrushes.len);
     std.debug.assert(propTips.len == propBrushes.len);
     std.debug.assert(unitTips.len == unitBrushes.len);
-    // The ground brushes OPEN WITH the soil ids in order (index 0 = .dirt = id 1) and end with WATER
-    // and the eraser, neither of which is a soil — the paint path decodes the soils by ordinal, so pin
-    // the run so reordering either side is a compile error rather than a brush painting the wrong dirt.
-    std.debug.assert(groundBrushes.len == wf.Soil.N + 1);
+    // The ground brushes carry the soil ids AS A RUN starting at GROUND_SOIL_0 (so soil id 1 = .dirt is
+    // the brush at that index), with the four sculpt tools ahead of them and WATER + the eraser behind.
+    // The paint path decodes a soil by ordinal off that offset, so the run is pinned here: reorder
+    // either side and it is a compile error, not a brush that quietly paints the wrong dirt.
+    std.debug.assert(groundBrushes.len == GROUND_SOIL_0 + (wf.Soil.N - 1) + 2);
     for (0..wf.Soil.N - 1) |i| {
-        std.debug.assert(std.mem.eql(u8, groundBrushes[i], @tagName(@as(wf.Soil, @enumFromInt(i + 1)))));
+        std.debug.assert(std.mem.eql(u8, groundBrushes[GROUND_SOIL_0 + i], @tagName(@as(wf.Soil, @enumFromInt(i + 1)))));
     }
+    // …and the four sculpt brushes ARE `wf.Sculpt`'s modes, in its order, so `GroundBrush` can be
+    // turned straight into one.
+    const sculptN = @typeInfo(wf.Sculpt).@"enum".fields.len;
+    std.debug.assert(GROUND_SOIL_0 == sculptN);
     // …and the unit brushes ARE the foe kinds in order, plus the eraser.
     std.debug.assert(unitBrushes.len == @typeInfo(wf.FoeKind).@"enum".fields.len + 1);
     for (0..@typeInfo(wf.FoeKind).@"enum".fields.len) |i| {
@@ -287,9 +337,13 @@ comptime {
 /// PUBLIC because the `--shot` harness arms this layer's brushes by name rather than by number — an
 /// index would silently shift the moment a brush is inserted, and the shot would then be of the wrong
 /// tool with the right caption.
-pub const GroundBrush = enum { dirt, turf, stone, silt, ash, moss, water, erase };
-const CoverBrush = enum { zone, clearing, erase };
-const DecorBrush = enum { scatter, patch, single, erase };
+pub const GroundBrush = enum { raise, lower, smooth, flat, dirt, turf, stone, silt, ash, moss, water, erase };
+const CoverBrush = enum { clearing, zone, erase };
+/// PUBLIC for the same reason `GroundBrush` is: the `--shot` harness arms a brush to photograph it, and
+/// it used to do that with a literal index and a comment saying which brush that was. Both of those
+/// comments went stale the moment the hand tools were moved to the front of every strip — the shot then
+/// captures the wrong tool under the right caption, which is the failure a name cannot have.
+pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
 const UnitBrush = enum { toad, archer, ogre, erase };
 
@@ -452,6 +506,13 @@ const Wipe = struct {
 pub const Editor = struct {
     on: bool = false,
     cam: rl.Camera3D = undefined,
+    /// THE WORLD, for the questions the cursor and the camera have to ask the TERRAIN — where a ray
+    /// meets sculpted ground, how high the ground under the focus is. Cached here rather than threaded
+    /// through `groundAt`'s nine callers (the input pass, three drag paths, the gizmos, the status
+    /// readout, the shot harness), exactly as `Env` caches its Scene for the same reason. Set at the
+    /// top of `update`/`drawOverlay`; null falls back to the flat plane, which is what a map with
+    /// nothing sculpted is anyway.
+    world: ?*const envmod.Env = null,
     // ORBIT state: a focus point on the ground, and the eye swung around it.
     focus: rl.Vector3 = mathx.zero3,
     yaw: f32 = 0,
@@ -489,6 +550,14 @@ pub const Editor = struct {
     /// …and whether that stroke has moved WATER, which is the one paint the prop scatter cares about:
     /// consumed on release to re-sow the world once instead of 60 times a second (see the ground path).
     wetStroke: bool = false,
+    /// …and whether it has moved the GROUND, which every prop cares about even more: they are planted at
+    /// the height under them, so a sculpt stroke has to re-materialize the world when it ends or the
+    /// trees you just raised a hill under are still standing at the old level.
+    heightStroke: bool = false,
+    /// How hard the sculpt brushes bite, in METRES A SECOND at the centre of the stroke. A rate, not a
+    /// per-frame step (see `worldMouse`'s dt). 3 m/s over a 6 m brush is about a second to make
+    /// something you can see and several to make a hill, which is the pace that lets you stop.
+    sculptRate: f32 = 3.0,
     wipe: Wipe = .{}, // a held ERASE stroke, likewise one undo step
     rmbDown: bool = false,
     rmbTravel: f32 = 0, // pixels the right button has moved while held
@@ -538,7 +607,9 @@ pub const Editor = struct {
         self.yaw = 0;
         self.pitch = -0.7;
         self.dist = 28;
-        self.focus = mathx.ground(at.x, at.z);
+        // Straight off the hero's own feet, which already carry the ground height under him — no need to
+        // ask the terrain, and `world` is not set until the first `update` anyway.
+        self.focus = v3(at.x, at.y, at.z);
         self.cam = .{
             .position = at,
             .target = at,
@@ -647,8 +718,9 @@ pub const Editor = struct {
         self.cam.target = self.focus;
         self.cam.position = mathx.addV(self.focus, mathx.scaleV(f, -self.dist));
         // Never let the eye go under the terrain — the world simply vanishes and the way back
-        // out is not obvious.
-        self.cam.position.y = @max(self.cam.position.y, 0.6);
+        // out is not obvious. Measured against the GROUND AT THE EYE, not against y = 0: on a
+        // sculpted map the old floor let the camera swing straight into the side of a hill.
+        self.cam.position.y = @max(self.cam.position.y, self.groundHeight(self.cam.position.x, self.cam.position.z) + 0.6);
     }
 
     fn orbitCam(self: *Editor, dt: f32) void {
@@ -687,6 +759,7 @@ pub const Editor = struct {
         if (rl.isKeyDown(.s) or rl.isKeyDown(.down)) self.focus = mathx.addV(self.focus, mathx.scaleV(gf, -step));
         if (rl.isKeyDown(.d) or rl.isKeyDown(.right)) self.focus = mathx.addV(self.focus, mathx.scaleV(r, step));
         if (rl.isKeyDown(.a) or rl.isKeyDown(.left)) self.focus = mathx.addV(self.focus, mathx.scaleV(r, -step));
+        self.focusToGround(); // …and the focus rides the ground it just panned over
         self.applyCam();
     }
 
@@ -705,26 +778,51 @@ pub const Editor = struct {
     /// any zoom and any angle, which is the only pan that ever feels right.
     fn dragPan(self: *Editor) void {
         const now = self.groundAt() orelse return;
-        self.focus = mathx.addV(self.focus, mathx.subV(self.panGrab, now));
+        // XZ only: the grab point and the point now under the cursor sit at DIFFERENT terrain heights on
+        // a sculpted map, and feeding that difference into the focus makes a pan across a hill climb.
+        self.focus.x += self.panGrab.x - now.x;
+        self.focus.z += self.panGrab.z - now.z;
+        self.focusToGround();
         self.applyCam();
     }
 
-    /// Where the cursor meets the ground plane, or null when it is aimed at the sky.
+    /// Where the cursor meets the GROUND — the sculpted surface, not a plane — or null when it is
+    /// aimed at the sky. Everything the editor places, paints and picks is aimed with this, so on a
+    /// map with hills a plane solve would put every click metres from where the pointer looks.
     ///
     /// Called a few times a frame (the input pass, the gizmo pass, the status readout) and NOT
-    /// cached: it is one unproject and a ray/plane solve, and threading a per-frame cache through
+    /// cached: it is one unproject and a ray march, and threading a per-frame cache through
     /// a function the shot harness also calls out of band buys nothing measurable.
     pub fn groundAt(self: *const Editor) ?rl.Vector3 {
         const ray = rl.getScreenToWorldRay(rl.getMousePosition(), self.cam);
         if (ray.direction.y > -1e-4) return null;
-        const t = (envmod.groundY() - ray.position.y) / ray.direction.y;
-        if (t <= 0) return null;
-        var p = mathx.addV(ray.position, mathx.scaleV(ray.direction, t));
+        var p = blk: {
+            if (self.world) |w| break :blk w.rayGround(ray.position, ray.direction) orelse return null;
+            const t = (envmod.groundY() - ray.position.y) / ray.direction.y;
+            if (t <= 0) return null;
+            break :blk mathx.addV(ray.position, mathx.scaleV(ray.direction, t));
+        };
         if (self.snap) {
             p.x = @round(p.x / SNAP) * SNAP;
             p.z = @round(p.z / SNAP) * SNAP;
+            p.y = self.groundHeight(p.x, p.z); // …re-read, or a snapped point hangs off the slope
         }
         return p;
+    }
+
+    /// The ground's height at a world XZ — the editor's own thin wrapper, so a null world (a headless
+    /// harness, a first frame) answers with the flat datum instead of needing a check at every use.
+    pub fn groundHeight(self: *const Editor, x: f32, z: f32) f32 {
+        if (self.world) |w| return w.groundAt(x, z);
+        return envmod.groundY();
+    }
+
+    /// Drop the camera's focus onto the ground under it. Called after anything that moves the focus in
+    /// XZ: a focus left at the old height on a sculpted map either sinks into a hill (and the orbit
+    /// swings underground) or floats over a valley, and either way the thing you are looking at is not
+    /// in the middle of the view any more.
+    fn focusToGround(self: *Editor) void {
+        self.focus.y = self.groundHeight(self.focus.x, self.focus.z);
     }
 
     // ── undo ────────────────────────────────────────────────────────────────────────
@@ -846,12 +944,17 @@ pub const Editor = struct {
         self.pitch = if (span > 90) -1.05 else -0.72;
         self.yaw = 0;
         self.focus = mathx.ground(cx, cz);
+        self.focusToGround(); // …onto the ground there, or flying to a hilltop parks the orbit inside it
         self.applyCam();
     }
 
     // ── input ───────────────────────────────────────────────────────────────────────
 
     pub fn update(self: *Editor, m: *wf.Map, env: *envmod.Env, dt: f32) Action {
+        // THE WORLD, for the terrain questions the cursor and camera ask — see `Editor.world`. Set here
+        // and in `drawOverlay` because those are the two entry points, and a null one silently falls
+        // back to a flat plane, which on a sculpted map is a cursor that misses everything you aim at.
+        self.world = env;
         self.statusT = @max(0, self.statusT - dt);
         self.wipe.t += dt; // the held eraser's rate gate
         self.tickRebuild(m, env, dt); // service any rebuild a held widget coalesced
@@ -994,7 +1097,7 @@ pub const Editor = struct {
         // call on `rmbDown` out here meant the release that clears it never ran, so one
         // right-click latched the flag on and killed every left-button gesture there is —
         // select, paint, stamp, marquee and pan — for the rest of the session.
-        self.worldMouse(m, env);
+        self.worldMouse(m, env, dt);
         return .none;
     }
 
@@ -1011,6 +1114,12 @@ pub const Editor = struct {
         // lasting until the next unrelated edit happened to rebuild.
         env.uploadSoil(m);
         env.uploadWater(m);
+        // …and the SCULPTED GROUND, which `materialize` needs even harder than the water: every prop is
+        // planted at the ground height under it, so a stale field stands the whole world at the old
+        // elevation. This is also the path an UNDO of a sculpt stroke comes back through, which is why
+        // it rebuilds the terrain wholesale rather than by touched tile — undo replaces the document,
+        // and there is no stroke rect to be local about.
+        env.uploadHeight(m);
         env.materialize(m);
     }
 
@@ -1059,7 +1168,9 @@ pub const Editor = struct {
     // SELECT MODE is what makes the left button able to mean "select" at all: with a brush armed
     // the left button paints, and the two cannot share it. A BRUSH is what is armed on entry (see
     // `selecting`); Select is its own row in the brush strip, and arming any brush disarms it.
-    fn worldMouse(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
+    /// `dt` is REAL seconds, and the sculpt brushes need it: they move the ground at a rate rather than
+    /// by a step per frame, so a stroke covers the same ground at 30 fps and at 240.
+    fn worldMouse(self: *Editor, m: *wf.Map, env: *envmod.Env, dt: f32) void {
         // CHROME OWNS THE POINTER — but only for STARTING something. A gesture in flight is serviced
         // wherever the cursor got to, because its RELEASE has to land: bailing out of this function because
         // the pointer is over a panel is what left `panning`/`dragging`/`marquee`/`rmbDown` latched on.
@@ -1133,6 +1244,34 @@ pub const Editor = struct {
                     // and left the lake would be an eraser that only half worked, on the one layer
                     // where you can see straight through what it missed.
                     switch (@as(GroundBrush, @enumFromInt(self.brushIdx()))) {
+                        // SCULPTING the land. Rate-limited by dt, not applied per frame: a raise brush
+                        // that added its full step every frame would climb at 60x on a fast machine and
+                        // be unusable on a slow one — the same frame-rate independence the traversal
+                        // rule needs, for the same reason.
+                        .raise, .lower, .smooth, .flat => |b| {
+                            const mode: wf.Sculpt = switch (b) {
+                                .raise => .raise,
+                                .lower => .lower,
+                                .smooth => .smooth,
+                                else => .flatten,
+                            };
+                            const amt: f32 = switch (mode) {
+                                // Metres a second for the two that move the ground…
+                                .raise, .lower => self.sculptRate * dt,
+                                // …and a 0..1 blend per second for the two that even it out. Capped
+                                // under 1: at 1 a single frame would snap every point to the target,
+                                // which turns "smooth" into "flatten" and "flatten" into a cookie cutter.
+                                else => mathx.minF(self.sculptRate * dt * SCULPT_EVEN, 0.9),
+                            };
+                            var span: [4]usize = wf.EMPTY_SPAN;
+                            if (m.sculpt(g.x, g.z, self.radius, mode, amt, &span)) {
+                                // The MESH first (so what you see is what you just did), then the world
+                                // ON it — but only on the release: re-expanding 17k props every frame of
+                                // a drag is a slideshow, the same reason a water stroke waits.
+                                env.sculptHeight(m, span);
+                                self.heightStroke = true;
+                            }
+                        },
                         .water => if (m.paintWater(g.x, g.z, self.radius, true)) {
                             env.uploadWater(m);
                             self.wetStroke = true;
@@ -1145,18 +1284,20 @@ pub const Editor = struct {
                             }
                         },
                         else => {
-                            const id: wf.Soil = @enumFromInt(self.brushIdx() + 1);
+                            const id: wf.Soil = @enumFromInt(self.brushIdx() - GROUND_SOIL_0 + 1);
                             if (m.paintSoil(g.x, g.z, self.radius, id)) env.uploadSoil(m);
                         },
                     }
                 }
             } else if (self.painting and rl.isMouseButtonReleased(.left)) {
                 self.painting = false;
-                // A WATER stroke re-sows the world when it ENDS, never mid-sweep: the scatter reads
-                // `inWater`, so the grass has to be lifted out of a new lake (and grown back over a
-                // drained one) — but re-expanding 17k props per frame of a drag is a slideshow.
-                if (self.wetStroke) {
+                // A WATER or SCULPT stroke re-sows the world when it ENDS, never mid-sweep: the scatter
+                // reads `inWater` and every prop is planted at the ground height under it, so the grass
+                // has to be lifted out of a new lake and the trees stood back up on a new hill — but
+                // re-expanding 17k props per frame of a drag is a slideshow.
+                if (self.wetStroke or self.heightStroke) {
                     self.wetStroke = false;
+                    self.heightStroke = false;
                     self.rebuild(m, env);
                 }
             }
@@ -2014,8 +2155,12 @@ pub const Editor = struct {
     // ── world-space drawing (inside the 3D pass) ─────────────────────────────────────
 
     pub fn draw3D(self: *Editor, m: *const wf.Map, env: *const envmod.Env) void {
-        const y = envmod.groundY() + 0.05;
-        rl.drawCubeWires(v3(0, y, 0), m.half * 2, 0.02, m.half * 2, ui.alpha(ui.TRIM, 90));
+        gizmoWorld = env; // every wireframe below rides the ground — see liftAt
+        // A LIFT above the ground now, not an absolute height.
+        const y: f32 = 0.05;
+        // The map border stays a flat box: it is the world's EXTENT, not a thing standing on the
+        // ground, and a border that dipped into every valley would read as another op's outline.
+        rl.drawCubeWires(v3(0, envmod.groundY() + y, 0), m.half * 2, 0.02, m.half * 2, ui.alpha(ui.TRIM, 90));
         outline(m.runway.x, m.runway.z, m.runway.x1, m.runway.z1, y, ui.alpha(ui.HOT, 70));
 
         // OTHER LAYERS DRAW DIM. Everything stays visible — you cannot dress a wood you cannot
@@ -2033,7 +2178,10 @@ pub const Editor = struct {
         for (m.foes[0..m.nfoes], 0..) |f, i| {
             const sel = self.layer == .units and self.selFoe == i;
             const col = if (sel) ui.HOT else ui.alpha(foeSwatch(f.kind), unitA);
-            rl.drawCubeWires(v3(f.x, y + FOE_BOX_H * 0.5, f.z), FOE_BOX_W, FOE_BOX_H, FOE_BOX_W, col);
+            // …standing on the ground, like the foe it marks: a spawn table stores x/z only, so a box
+            // drawn at the datum floats over a valley and buries itself in a hill.
+            const at = liftAt(f.x, f.z, y + FOE_BOX_H * 0.5);
+            rl.drawCubeWires(at, FOE_BOX_W, FOE_BOX_H, FOE_BOX_W, col);
         }
 
         // The SELECTED op: its own shape, plus a marker on every instance it placed. The markers are the
@@ -2072,7 +2220,7 @@ pub const Editor = struct {
             if (self.layer == .units) {
                 if (i >= m.nfoes) continue;
                 const f = m.foes[i];
-                rl.drawCubeWires(v3(f.x, y + MARK_BOX_H * 0.5, f.z), MARK_BOX_W, MARK_BOX_H, MARK_BOX_W, ui.TRIM);
+                rl.drawCubeWires(liftAt(f.x, f.z, y + MARK_BOX_H * 0.5), MARK_BOX_W, MARK_BOX_H, MARK_BOX_W, ui.TRIM);
             } else {
                 if (i >= m.nops) continue;
                 const p = opAnchor(&m.ops[i]);
@@ -2086,7 +2234,7 @@ pub const Editor = struct {
         if (self.moving) {
             const dx = self.dragTo.x - self.moveFrom.x;
             const dz = self.dragTo.z - self.moveFrom.z;
-            rl.drawLine3D(v3(self.moveFrom.x, y, self.moveFrom.z), v3(self.dragTo.x, y, self.dragTo.z), ui.HOT);
+            groundLine(self.moveFrom.x, self.moveFrom.z, self.dragTo.x, self.dragTo.z, y, ui.HOT);
             for (self.marked[0..self.nMarked]) |i| {
                 if (self.layer == .units) {
                     if (i >= m.nfoes) continue;
@@ -2119,7 +2267,7 @@ pub const Editor = struct {
                 }
             } else if (self.layer == .props) {
                 switch (@as(PropBrush, @enumFromInt(self.brushIdx()))) {
-                    .row => rl.drawLine3D(v3(a.x, y, a.z), v3(b.x, y, b.z), ui.HOT),
+                    .row => groundLine(a.x, a.z, b.x, b.z, y, ui.HOT),
                     .ring, .cluster => ringXZ(a.x, a.z, rad, y, ui.HOT),
                     .ivy => outlineOf(box, y, ui.HOT),
                     .stamp, .erase => {},
@@ -2150,7 +2298,7 @@ fn drawOpGizmo(o: *const wf.Op, y: f32) void {
             if (o.r0 > 0.05) ringXZ(o.x, o.z, o.r0, y, ui.alpha(ui.HOT, 130));
         },
         .ring => ringXZ(o.x, o.z, o.r0, y, ui.HOT),
-        .line => rl.drawLine3D(v3(o.x, y, o.z), v3(o.x1, y, o.z1), ui.HOT),
+        .line => groundLine(o.x, o.z, o.x1, o.z1, y, ui.HOT),
         .edge, .cover => {}, // world-wide: their gizmo would be the whole map border
     }
 }
@@ -2178,19 +2326,49 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
     };
 }
 
+// ── GIZMOS FOLLOW THE GROUND ───────────────────────────────────────────────────────────
+// Every wireframe below used to be drawn at ONE height, which was right while the world was a plane
+// and is wrong the moment it isn't: a brush ring at a fixed y is buried in the near side of a hill and
+// hanging in the air over the far side, and the ring is the thing you SCULPT with. So the `y` these
+// take is now a LIFT ABOVE THE GROUND, sampled per vertex.
+//
+// The terrain comes from file scope rather than a parameter, and deliberately: it would otherwise have
+// to be threaded through a dozen call sites and two free functions that exist precisely so a marker is
+// the same marker everywhere. Set once at the top of `draw3D` — the only pass that draws any of this —
+// and null falls back to a flat lift, which is what an unsculpted map is.
+var gizmoWorld: ?*const envmod.Env = null;
+
+/// A gizmo vertex: `lift` metres above the ground at (x, z).
+fn liftAt(x: f32, z: f32, lift: f32) rl.Vector3 {
+    if (gizmoWorld) |w| return v3(x, w.groundAt(x, z) + lift, z);
+    return v3(x, envmod.groundY() + lift, z);
+}
+
+/// A line whose ENDS ride the ground. Split into a few segments so a long run over a hill follows it
+/// instead of cutting through — an op's `line` gizmo can be eighty metres of ground.
+fn groundLine(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void {
+    const SEG = 12;
+    var i: i32 = 0;
+    while (i < SEG) : (i += 1) {
+        const t0 = @as(f32, @floatFromInt(i)) / SEG;
+        const t1 = @as(f32, @floatFromInt(i + 1)) / SEG;
+        rl.drawLine3D(
+            liftAt(mathx.lerpF(x0, x1, t0), mathx.lerpF(z0, z1, t0), lift),
+            liftAt(mathx.lerpF(x0, x1, t1), mathx.lerpF(z0, z1, t1), lift),
+            col,
+        );
+    }
+}
+
 fn outlineOf(r: Rect, y: f32, col: rl.Color) void {
     outline(r.x0, r.z0, r.x1, r.z1, y, col);
 }
 
 fn outline(x0: f32, z0: f32, x1: f32, z1: f32, y: f32, col: rl.Color) void {
-    const a = v3(x0, y, z0);
-    const b = v3(x1, y, z0);
-    const c = v3(x1, y, z1);
-    const d = v3(x0, y, z1);
-    rl.drawLine3D(a, b, col);
-    rl.drawLine3D(b, c, col);
-    rl.drawLine3D(c, d, col);
-    rl.drawLine3D(d, a, col);
+    groundLine(x0, z0, x1, z0, y, col);
+    groundLine(x1, z0, x1, z1, y, col);
+    groundLine(x1, z1, x0, z1, y, col);
+    groundLine(x0, z1, x0, z0, y, col);
 }
 
 fn ringXZ(cx: f32, cz: f32, r: f32, y: f32, col: rl.Color) void {
@@ -2207,8 +2385,8 @@ fn ringSeg(cx: f32, cz: f32, r: f32, y: f32, col: rl.Color, seg: i32) void {
         const a0 = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(seg));
         const a1 = std.math.tau * @as(f32, @floatFromInt(i + 1)) / @as(f32, @floatFromInt(seg));
         rl.drawLine3D(
-            v3(cx + mathx.cosf(a0) * r, y, cz + mathx.sinf(a0) * r),
-            v3(cx + mathx.cosf(a1) * r, y, cz + mathx.sinf(a1) * r),
+            liftAt(cx + mathx.cosf(a0) * r, cz + mathx.sinf(a0) * r, y),
+            liftAt(cx + mathx.cosf(a1) * r, cz + mathx.sinf(a1) * r, y),
             col,
         );
     }
@@ -2253,6 +2431,7 @@ const SLIDER_DROP: i32 = 20;
 /// off-screen through the world's own shader, and that is the only way a preview can be trusted to
 /// look like the game.
 pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, t: f32) void {
+    ed.world = env; // …the status readout and the gizmos ask the terrain too (see Editor.world)
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
     var ctx = ui.Ctx.begin(t);
@@ -2396,8 +2575,15 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
     const tips = brushTipsFor(ed.layer);
     const glyphs = brushIconsFor(ed.layer);
     for (brushes, 0..) |b, i| {
+        if (brushSectionFor(ed.layer, i)) |sec| {
+            hud.mono(sec, 18, y, hud.MONO, ui.alpha(ui.LABEL, 150));
+            y += hud.monoLineH(hud.MONO);
+        }
         var lab: [40]u8 = undefined;
-        const s = std.fmt.bufPrintZ(&lab, "{d} {s}", .{ i + 1, b }) catch b;
+        // The DIGIT ONLY WHERE THERE IS ONE. Ground now carries twelve brushes and the shortcut keys
+        // stop at 9, so labelling the last three "10 Water" promises a key that does nothing — the
+        // number is a hint about the keyboard, and a wrong hint is worse than none.
+        const s = if (i < DIGIT_KEYS) (std.fmt.bufPrintZ(&lab, "{d} {s}", .{ i + 1, b }) catch b) else b;
         const r = ui.rect(8, y, SIDE_W - 16, ROW_H - 4);
         ui.tipFor(ctx, r, tips[i]);
         const on = !ed.selecting and ed.brushIdx() == i;
@@ -2408,12 +2594,17 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
             // its own, so it takes the drawn glyph the other layers use for the same job.
             (if (i + 1 == brushes.len)
                 ui.iconButton(ctx, r, .erase, s, hud.MONO, on)
-            else if (@as(GroundBrush, @enumFromInt(i)) == .water)
+            else switch (@as(GroundBrush, @enumFromInt(i))) {
+                // THE SCULPT TOOLS get swatches too, so the strip stays one kind of thing: earth going
+                // up, earth going down, and two greys for the two that even it out.
+                .raise => ui.swatchButton(ctx, r, RAISE_SWATCH, s, hud.MONO, on),
+                .lower => ui.swatchButton(ctx, r, LOWER_SWATCH, s, hud.MONO, on),
+                .smooth, .flat => ui.swatchButton(ctx, r, EVEN_SWATCH, s, hud.MONO, on),
                 // WATER is not a soil id, so it has no swatch in that table — it gets the tarn's own
                 // chrome colour, the same one the minimap draws it in (see WATER_SWATCH).
-                ui.swatchButton(ctx, r, WATER_SWATCH, s, hud.MONO, on)
-            else
-                ui.swatchButton(ctx, r, soilSwatch(@enumFromInt(i + 1)), s, hud.MONO, on));
+                .water => ui.swatchButton(ctx, r, WATER_SWATCH, s, hud.MONO, on),
+                else => ui.swatchButton(ctx, r, soilSwatch(@enumFromInt(i - GROUND_SOIL_0 + 1)), s, hud.MONO, on),
+            });
         if (hit) {
             ed.setBrush(i);
             ed.selecting = false; // arming a brush hands the left button to it
@@ -2497,14 +2688,54 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
 
     // GROUND and UNITS have no op to edit — they get their own inspectors.
     if (ed.layer == .ground) {
-        // THE PANEL REPORTS THE GRID THE ARMED BRUSH ACTUALLY PAINTS. Water rides this layer but has
-        // its own, finer lattice, and a readout that answered "12544 cells at 5.0 m" while you were
-        // flooding a bay would be a panel lying about the tool in your hand.
-        const wet = @as(GroundBrush, @enumFromInt(ed.brushIdx())) == .water;
-        hud.mono(if (wet) "WATER BRUSH" else "SOIL BRUSH", x, y, hud.MONO, ui.TITLE);
+        // THE PANEL REPORTS THE GRID THE ARMED BRUSH ACTUALLY WORKS ON. All three of this layer's tools
+        // have their own lattice — soil 5 m, water and height 2.5 m — and a readout answering "12544
+        // cells at 5.0 m" while you are flooding a bay is a panel lying about the tool in your hand.
+        const brush = @as(GroundBrush, @enumFromInt(ed.brushIdx()));
+        const wet = brush == .water;
+        const sculpting = switch (brush) {
+            .raise, .lower, .smooth, .flat => true,
+            else => false,
+        };
+        hud.mono(if (sculpting) "SCULPT" else if (wet) "WATER BRUSH" else "SOIL BRUSH", x, y, hud.MONO, ui.TITLE);
         y += ROW_H + 4;
         _ = ui.slider(ctx, x, y, w, "radius", &ed.radius, 1, 60);
         y += ROW_H + SLIDER_DROP;
+        if (sculpting) {
+            _ = ui.slider(ctx, x, y, w, "strength", &ed.sculptRate, 0.5, 12);
+            y += ROW_H + SLIDER_DROP;
+            // WHAT THE GROUND IS DOING UNDER THE CURSOR, which is the whole readout a sculptor needs:
+            // how high it is, how steep, and — the number that matters — whether the hero could walk
+            // there. Guessing at "is this too steep now?" and going to playtest to find out is the loop
+            // this row exists to close.
+            var hbuf: [96]u8 = undefined;
+            const at = ed.groundAt() orelse mathx.zero3;
+            const slope = mathx.degrees(std.math.atan(env.slopeAt(at.x, at.z)));
+            const hs = std.fmt.bufPrintZ(&hbuf, "here {d:.2} m   slope {d:.0} deg", .{ at.y - envmod.groundY(), slope }) catch "";
+            hud.mono(hs, x, y, hud.MONO, ui.LABEL);
+            y += ROW_H;
+            const walk = env.walkableAt(at.x, at.z);
+            const limit = mathx.degrees(std.math.atan(envmod.MAX_SLOPE));
+            const ws = if (walk)
+                std.fmt.bufPrintZ(&hbuf, "walkable (limit {d:.0} deg)", .{limit}) catch ""
+            else
+                std.fmt.bufPrintZ(&hbuf, "TOO STEEP to walk (over {d:.0} deg)", .{limit}) catch "";
+            hud.mono(ws, x, y, hud.MONO, if (walk) ui.alpha(ui.LABEL, 190) else ui.HOT);
+            y += ROW_H;
+            const rs = std.fmt.bufPrintZ(&hbuf, "range {d:.0}..{d:.0} m, {d:.2} m steps", .{ wf.HEIGHT_MIN, wf.HEIGHT_MAX, wf.HEIGHT_STEP }) catch "";
+            hud.mono(rs, x, y, hud.MONO, ui.alpha(ui.LABEL, 160));
+            y += ROW_H;
+            const ss = std.fmt.bufPrintZ(&hbuf, "steps up to {d:.2} m for free", .{envmod.STEP_UP}) catch "";
+            hud.mono(ss, x, y, hud.MONO, ui.alpha(ui.LABEL, 160));
+            y += ROW_H + 10;
+            if (ui.buttonTip(ctx, ui.rect(x, y, w, 24), "level the map", hud.MONO, false, "Flatten the whole world back to zero. Undoable")) {
+                ed.bank(m);
+                m.height = [_]u8{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS;
+                ed.rebuild(m, env); // props are planted at the ground height, so levelling re-plants them
+                ed.say("ground levelled");
+            }
+            return;
+        }
         // COUNTED EVERY FRAME, and left that way DELIBERATELY: this is a full scan of the armed
         // brush's grid — 12,544 bytes for the soil, 50,176 for the water — to print one number. It is
         // ~50 µs of byte compares at the water resolution, i.e. under a tenth of a percent of a frame,
@@ -2864,6 +3095,35 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, ctx: *ui.Ctx, sw: i32, sh: i32) vo
             cx += run;
         }
     }
+    // …then the RELIEF, as a hillshade: raised ground lightens, dug ground darkens, and the SLOPE
+    // darkens on top of that so a bank has an edge you can see. Without it a sculpted map's minimap is
+    // the same flat rectangle it was before, and the one view that should tell you the shape of the land
+    // at a glance tells you nothing — you would have to fly the camera over it to find your own hills.
+    //
+    // Drawn at a COARSER stride than the height lattice (224 points into a 190 px map is under a pixel
+    // each), so this is ~2k rectangles rather than 50k.
+    if (m.anyHeight()) {
+        const RN: usize = 56; // …one shade block per four lattice points
+        const rCellPx = inner / @as(f32, @floatFromInt(RN));
+        const stride = wf.HEIGHT_N / RN;
+        for (0..RN) |cz| {
+            for (0..RN) |cx| {
+                const i = (cz * stride) * wf.HEIGHT_N + cx * stride;
+                const h = wf.heightOf(m.height[i]);
+                if (@abs(h) < wf.HEIGHT_STEP) continue; // ground at the datum: leave the soil showing
+                // Saturating at ±12 m, which is a hill you would notice; past that it is just white.
+                const k = mathx.clampF(h / 12.0, -1, 1);
+                const a: u8 = mathx.u8f(@abs(k) * 150.0);
+                const col = if (k > 0) ui.col(236, 226, 200, a) else ui.col(18, 14, 10, a);
+                rl.drawRectangleRec(.{
+                    .x = @as(f32, @floatFromInt(px)) + @as(f32, @floatFromInt(cx)) * rCellPx,
+                    .y = @as(f32, @floatFromInt(py)) + @as(f32, @floatFromInt(cz)) * rCellPx,
+                    .width = @ceil(rCellPx),
+                    .height = @ceil(rCellPx),
+                }, col);
+            }
+        }
+    }
     // …then the WATER over it, run-lengthed the same way. A lake you painted has to be findable from
     // the minimap or crossing the map to check on it is guesswork.
     const wCellPx = inner / @as(f32, @floatFromInt(wf.WATER_N));
@@ -2949,9 +3209,16 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
     // RIGHT FIRST, so the left side knows how much room is actually left. The document, then
     // where the cursor is and what the brush is set to — what you look down for mid-stroke.
     // Right-aligned as one run so the columns don't jitter.
-    var buf: [180]u8 = undefined;
+    var buf: [200]u8 = undefined;
     const g = ed.groundAt() orelse mathx.zero3;
-    const right = std.fmt.bufPrintZ(&buf, "{s}{s} {d}ops {d}props {d}drawn   {s}  {d:.0},{d:.0}  r{d:.0}{s}", .{
+    // THE CURSOR'S HEIGHT rides beside its x/z, and only on a sculpted map: it is the number you are
+    // working to while shaping ground, and on a flat one it would be a column of 0.0 for ever.
+    var hbuf: [24]u8 = undefined;
+    const hs: [:0]const u8 = if (m.anyHeight())
+        (std.fmt.bufPrintZ(&hbuf, ",{d:.1}m", .{g.y - envmod.groundY()}) catch "")
+    else
+        "";
+    const right = std.fmt.bufPrintZ(&buf, "{s}{s} {d}ops {d}props {d}drawn   {s}  {d:.0},{d:.0}{s}  r{d:.0}{s}", .{
         m.label(),
         if (ed.dirty) "*" else "",
         m.nops,
@@ -2960,6 +3227,7 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
         ed.layer.label(),
         g.x,
         g.z,
+        hs,
         ed.radius,
         if (ed.snap) "  SNAP" else "",
     }) catch "";

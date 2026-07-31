@@ -74,13 +74,31 @@ fn stepLocked(g: *Game, dt: f32, speed: f32, dir: rl.Vector3, faceYaw: f32) void
     g.rig.follow(g.hero.shoulderPoint());
 }
 
+/// CAPTURE THE FRAME THAT WAS JUST DRAWN — and the order here is the whole point.
+///
+/// **THE SCREENSHOT MUST HAPPEN BEFORE `endDrawing`.** `endDrawing` SWAPS the buffers, and
+/// `takeScreenshot` reads the CURRENT framebuffer — so taken after the swap it reads the buffer that
+/// was just swapped in, which holds the PREVIOUS frame. Every capture in this harness was off by one:
+/// `91_stats_city.png` came back with no Stats overlay on it, `98c` held `98b`'s framing, and the
+/// world-tour shots each held the framing before them. It hid for so long because consecutive shots
+/// mostly look alike — it takes a hard cut (the editor's chrome appearing in a landscape shot) to be
+/// obvious. raylib's own F12 handler does it in this order, inside `EndDrawing` and before the swap.
+///
+/// The batch is FLUSHED first, for the same reason raylib flushes before its own capture: anything
+/// still sitting in the current draw batch has not reached the framebuffer yet, so without this the
+/// last few draws of a frame (the HUD, an overlay) can be missing from the PNG.
+fn snap(name: [:0]const u8) void {
+    rl.gl.rlDrawRenderBatchActive();
+    rl.takeScreenshot(name);
+    rl.endDrawing();
+}
+
 // Render the current world + HUD and write one screenshot. Shared idiom for every non-menu
-// shot (menu shots interpose g.menu.draw before endDrawing, so they stay inline below).
+// shot (menu shots interpose g.menu.draw before the capture, so they stay inline below).
 fn shoot(g: *Game, name: [:0]const u8) void {
     drawScene(g);
     hud(g, SHOT_DT); // the fixed harness timestep — the HP chip trail stays reproducible
-    rl.endDrawing();
-    rl.takeScreenshot(name);
+    snap(name);
 }
 
 // Advance an in-progress attack up to `frames` frames (stopping early when it ends),
@@ -117,6 +135,18 @@ fn shootAt(g: *Game, name: [:0]const u8, at: rl.Vector3, yaw: f32, pitch: f32, d
     g.rig.pitch = pitch;
     g.rig.dist = dist;
     g.rig.follow(at);
+    shoot(g, name);
+}
+
+/// Frame the hero the way the LIVE camera does — through `followClear`, so the boom shortens instead of
+/// ending up inside a hillside. Any shot taken on sculpted ground wants this rather than `shootAt`: the
+/// first version of the climb captures were of the sky below the horizon, because the camera was buried
+/// in the slope the hero had just walked up.
+fn shootClear(g: *Game, name: [:0]const u8, yaw: f32, pitch: f32, dist: f32) void {
+    g.rig.yaw = mathx.radians(yaw);
+    g.rig.pitch = pitch;
+    g.rig.dist = dist;
+    g.rig.followClear(g.hero.shoulderPoint(), &g.env, game.envGroundAt);
     shoot(g, name);
 }
 
@@ -536,7 +566,7 @@ pub fn runShots(g: *Game) void {
         // its arc, parked in the pool so drawArrows renders the oriented, arcing shaft.
         g.arrows[0] = archermod.launchArrow(a.nockWorld(), mathx.ground(0, 15));
         var m: i32 = 0;
-        while (m < 8) : (m += 1) archermod.stepArrow(&g.arrows[0], mathx.ground(0, 15), HERO_CENTER_Y, false, arrowCover(g, &g.arrows[0], dt), dt);
+        while (m < 8) : (m += 1) archermod.stepArrow(&g.arrows[0], mathx.ground(0, 15), HERO_CENTER_Y, g.env.groundAt(g.arrows[0].pos.x, g.arrows[0].pos.z), false, arrowCover(g, &g.arrows[0], dt), dt);
         shootFoe(g, a, "shots/44_archer_loose.png", 90, 0.05, 5.2); // side-on: the shaft crosses the frame
         g.arrows[0] = .{};
         // A lowered/idle read too, to check the skeleton stands cleanly with the bow at rest.
@@ -842,8 +872,7 @@ pub fn runShots(g: *Game) void {
     drawScene(g);
     hud(g, SHOT_DT);
     g.menu.draw(&g.retro);
-    rl.endDrawing();
-    rl.takeScreenshot("shots/12_menu_main.png");
+    snap("shots/12_menu_main.png");
 
     g.retro.values[gfx.RF_GAMEBOY] = 1.0; // show a live gauge on the retro card
     g.menu.screen = .retro;
@@ -851,8 +880,7 @@ pub fn runShots(g: *Game) void {
     drawScene(g);
     hud(g, SHOT_DT);
     g.menu.draw(&g.retro);
-    rl.endDrawing();
-    rl.takeScreenshot("shots/13_menu_retro.png");
+    snap("shots/13_menu_retro.png");
     g.menu.screen = .closed;
 
     // The owner-tuned default stack — the look the game actually launches with.
@@ -876,8 +904,7 @@ fn editorShots(g: *Game) void {
 
     drawScene(g);
     editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    rl.endDrawing();
-    rl.takeScreenshot("shots/95_editor_props.png");
+    snap("shots/95_editor_props.png");
 
     // Select the wood's canopy belt — the biggest generator in the map, and the one whose
     // ownership markers say most about what selection means here. It sows great trees, which
@@ -892,13 +919,12 @@ fn editorShots(g: *Game) void {
     }
     drawScene(g);
     editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    rl.endDrawing();
-    rl.takeScreenshot("shots/96_editor_selected.png");
+    snap("shots/96_editor_selected.png");
 
     // A Decor scatter drag in progress over the start meadow.
     g.editor.enter(mathx.ground(0, 0));
     g.editor.setLayer(.decor);
-    g.editor.brush[@intFromEnum(editormod.Layer.decor)] = 0; // Scatter
+    g.editor.brush[@intFromEnum(editormod.Layer.decor)] = @intFromEnum(editormod.DecorBrush.scatter);
     g.editor.decorKind = .foxglove;
     g.editor.focus = mathx.ground(0, 0);
     g.editor.pitch = -0.95;
@@ -910,8 +936,7 @@ fn editorShots(g: *Game) void {
     g.editor.dragTo = mathx.ground(14, 16);
     drawScene(g);
     editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    rl.endDrawing();
-    rl.takeScreenshot("shots/97_editor_drag.png");
+    snap("shots/97_editor_drag.png");
     g.editor.dragging = false;
 
     // THE GROUND LAYER with real paint down: a worn dirt track along the avenue and a stone
@@ -919,7 +944,7 @@ fn editorShots(g: *Game) void {
     // into the LIVE map, then undone, so the shot never leaves the world dirty.
     const before = g.map.soil;
     g.editor.setLayer(.ground);
-    g.editor.brush[@intFromEnum(editormod.Layer.ground)] = 0; // dirt
+    g.editor.brush[@intFromEnum(editormod.Layer.ground)] = @intFromEnum(editormod.GroundBrush.dirt);
     g.editor.radius = 5;
     var z: f32 = 22;
     while (z > -40) : (z -= 3) _ = g.map.paintSoil(0.6, z, 4.5, .dirt);
@@ -933,8 +958,7 @@ fn editorShots(g: *Game) void {
     g.editor.applyCamForShot();
     drawScene(g);
     editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    rl.endDrawing();
-    rl.takeScreenshot("shots/98_editor_ground.png");
+    snap("shots/98_editor_ground.png");
 
     g.map.soil = before;
     g.env.uploadSoil(&g.map);
@@ -964,8 +988,7 @@ fn editorShots(g: *Game) void {
     g.editor.applyCamForShot();
     drawScene(g);
     editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    rl.endDrawing();
-    rl.takeScreenshot("shots/98b_editor_water.png");
+    snap("shots/98b_editor_water.png");
     // …and once from overhead, where the SHAPE is what you judge: the shoreline should read as one
     // continuous coast, not as the discs it was swept from.
     g.editor.pitch = -1.15;
@@ -973,8 +996,7 @@ fn editorShots(g: *Game) void {
     g.editor.applyCamForShot();
     drawScene(g);
     editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    rl.endDrawing();
-    rl.takeScreenshot("shots/98c_editor_water_map.png");
+    snap("shots/98c_editor_water_map.png");
 
     g.map.water = beforeWater;
     g.env.uploadWater(&g.map);
@@ -990,16 +1012,14 @@ fn editorShots(g: *Game) void {
     g.editor.selectForShot(&g.map, mathx.ground(-20, -30), mathx.ground(20, 6));
     drawScene(g);
     editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    rl.endDrawing();
-    rl.takeScreenshot("shots/99_editor_marquee.png");
+    snap("shots/99_editor_marquee.png");
 
     // The OPEN dialog over the same frame — the file list is chrome and can't be judged from
     // any of the above.
     g.editor.openForShot();
     drawScene(g);
     editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    rl.endDrawing();
-    rl.takeScreenshot("shots/99b_editor_open.png");
+    snap("shots/99b_editor_open.png");
 
     // THE OBJECT VIEWER, both levels. Each cell is a live off-screen render of the real model, so
     // this is the one shot that proves the previews are framed, lit and right way up — and the big
@@ -1007,20 +1027,132 @@ fn editorShots(g: *Game) void {
     g.editor.objectsForShot(.props, 0, null);
     drawScene(g);
     editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    rl.endDrawing();
-    rl.takeScreenshot("shots/99c_editor_objects.png");
+    snap("shots/99c_editor_objects.png");
 
     g.editor.objectsForShot(.props, 0, .well);
     drawScene(g);
     editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    rl.endDrawing();
-    rl.takeScreenshot("shots/99d_editor_object_one.png");
+    snap("shots/99d_editor_object_one.png");
 
     g.editor.objectsForShot(.decor, 0, null);
     drawScene(g);
     editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    rl.endDrawing();
-    rl.takeScreenshot("shots/99e_editor_objects_decor.png");
+    snap("shots/99e_editor_objects_decor.png");
 
     g.editor.on = false;
+    elevationShots(g);
+}
+
+// ── ELEVATION (`100..104`) ─────────────────────────────────────────────────────────────
+// LAST, and self-contained, because it is the one block that changes the SHAPE of the world: it sculpts
+// a hill and a hollow into the live map, photographs them from the ground and from above, walks the hero
+// up the slope, and puts the map back exactly as it found it. Ordered after everything else so nothing
+// that follows can be captured standing on terrain the shipped map does not have.
+//
+// The shipped map is FLAT on purpose (owner's call), which means these five are the only proof the
+// terrain renders, plants props, shades and can be walked at all — there is nowhere else to look.
+fn elevationShots(g: *Game) void {
+    const before = g.map.height;
+    var span: [4]usize = undefined;
+    // A ridge NW of the start with a shoulder you can walk and a face you cannot, plus a hollow beside
+    // it. Built out of overlapping raises and then SMOOTHED, which is how you would actually author it —
+    // so the capture judges the brushes and not a hand-filled array.
+    _ = g.map.sculpt(-34, -6, 26, .raise, 11.0, &span);
+    _ = g.map.sculpt(-20, -24, 18, .raise, 6.0, &span);
+    _ = g.map.sculpt(-48, 14, 14, .raise, 4.0, &span);
+    _ = g.map.sculpt(6, -22, 15, .lower, 5.0, &span);
+    var s: usize = 0;
+    while (s < 3) : (s += 1) {
+        _ = g.map.sculpt(-34, -6, 30, .smooth, 1.0, &span);
+        _ = g.map.sculpt(6, -22, 18, .smooth, 1.0, &span);
+    }
+    // The world REPLAYED onto the new ground: every prop plants at the height under it, and this is the
+    // path the editor takes when a sculpt stroke is released.
+    g.env.uploadHeight(&g.map);
+    g.env.materialize(&g.map);
+
+    // From the flat ground below, looking up the ridge: the framing that judges whether a hill reads as
+    // a hill — its own shading, its silhouette against the haze, and the flora standing ON it rather
+    // than sunk through it.
+    standHero(g, -6, 6, mathx.radians(215));
+    plantHeroForShot(g);
+    shootAt(g, "shots/100_hill_from_below.png", g.hero.shoulderPoint(), 215, 0.06, 9.0);
+
+    // …and from ON the ridge looking back down over the avenue, which is where a badly-lit heightfield
+    // gives itself away: the sunward faces bright, the leeward ones dark, and the far ground BELOW you.
+    standHero(g, -30, -8, mathx.radians(75));
+    plantHeroForShot(g);
+    shootAt(g, "shots/101_hill_from_above.png", g.hero.shoulderPoint(), 75, 0.30, 11.0);
+
+    // WALKING IT. Six seconds of holding "uphill" from the foot of the slope, through the real movement
+    // path (`walkStep` + the grounding + the slope lean), so the capture is of the hero having CLIMBED
+    // rather than of a hero placed on a hill. The debug overlay is on for the second, which is where the
+    // y / slope / lean numbers can be read against what the picture shows.
+    //
+    // FRAMED FROM DOWNHILL (the yaw is the travel heading, so the camera sits behind him on the lower
+    // ground), and through `followClear` — the boom shortens instead of ending up inside the slope,
+    // which is exactly what the live camera does and the whole reason it had to learn to.
+    standHero(g, -14, -2, mathx.radians(215));
+    plantHeroForShot(g);
+    const uphill = mathx.headingDir(mathx.radians(215));
+    var k: i32 = 0;
+    while (k < 360) : (k += 1) {
+        const stepped = g.env.walkStep(g.hero.pos, uphill, heromod.WALK_SPEED * SHOT_DT);
+        g.hero.pos.x = stepped.x;
+        g.hero.pos.z = stepped.z;
+        plantHeroForShot(g);
+        g.hero.slopePitch = heromod.slopeLean(g.env.slopeAlong(g.hero.pos.x, g.hero.pos.z, uphill));
+        g.hero.update(SHOT_DT, heromod.WALK_SPEED * SHOT_DT, heromod.WALK_SPEED, mathx.radians(215));
+        g.hero.pose();
+    }
+    // PITCHED WELL DOWN, and that is the lesson rather than a preference: a camera behind a hero on a
+    // 34 deg slope is looking INTO a rising wedge of ground, so at a gameplay pitch the hillside fills
+    // the frame and the hero is behind it. The camera has to look DOWN the slope at him — which is what
+    // a player does with the right stick the moment they start climbing, and the reason `followClear`
+    // pulls the boom in rather than lifting it (lifting would take that choice away).
+    shootClear(g, "shots/102_hill_climb.png", 215, 0.62, 8.0);
+    g.menu.stats = true;
+    shootClear(g, "shots/103_hill_stats.png", 215, 0.62, 8.0);
+    g.menu.stats = false;
+
+    // THE WHOLE SHAPE AT ONCE, from a long way back and only moderately steep. A near-vertical MAP
+    // framing is right for judging a LAYOUT and wrong for judging RELIEF: from straight above, a hill
+    // is a patch of slightly different shading, and the thing you need to see is its profile.
+    standHero(g, -4, 22, mathx.radians(215));
+    plantHeroForShot(g);
+    shootAt(g, "shots/104_hill_profile.png", v3(-24, 6, -8), 215, 0.42, 92.0);
+
+    // THE SCULPT TOOL ITSELF: the Ground layer with Raise armed over the ridge, so the brush ring lying
+    // ON the slope, the shape/surface split in the strip, the SCULPT panel's height + slope + walkable
+    // readout and the minimap's relief are all in one frame. This is the shot that judges the EDITOR
+    // half of elevation, and none of the four above can: they are the world, not the tool.
+    g.editor.enter(g.hero.pos);
+    g.editor.setLayer(.ground);
+    g.editor.brush[@intFromEnum(editormod.Layer.ground)] = @intFromEnum(editormod.GroundBrush.raise);
+    g.editor.radius = 14;
+    // The focus rides the GROUND, like the live editor's does: left at y = 0 over an 11 m ridge it
+    // aims inside the hill, the eye clamp shoves the camera up off the slope, and the framing you get
+    // is of the flat land past it.
+    g.editor.focus = v3(-30, g.env.groundAt(-30, -8), -8);
+    g.editor.pitch = -0.42;
+    g.editor.yaw = 2.5;
+    g.editor.dist = 62;
+    g.editor.applyCamForShot();
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
+    snap("shots/105_editor_sculpt.png");
+    g.editor.on = false;
+
+    // …and PUT IT BACK. The harness must not leave the shipped map sculpted: the world tour above and
+    // the pinned instance counts in env's own test are both of a flat plain.
+    g.map.height = before;
+    g.env.uploadHeight(&g.map);
+    g.env.materialize(&g.map);
+}
+
+/// Stand the hero ON the ground, with no easing — the harness has no frame loop to ease across, and a
+/// hero left at the datum on a sculpted map is photographed knee-deep in his own hill.
+fn plantHeroForShot(g: *Game) void {
+    g.hero.pos.y = g.env.groundAt(g.hero.pos.x, g.hero.pos.z);
+    g.hero.pose();
 }

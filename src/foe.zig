@@ -5,13 +5,17 @@ const combat = @import("combat.zig");
 const gfx = @import("gfx.zig");
 const wf = @import("worldfmt.zig");
 
+const v3 = mathx.v3;
+
 // ── THE FOE STANDARD ────────────────────────────────────────────────────────────────────
 // The contract + behaviours every enemy plugs into, so lock-on, HP bars, collision, the blade hit
 // test and the combat beats are written ONCE. Adding an enemy is: build its rig + AI, satisfy the
 // contract, reuse what's here.
 //
 // THE CONTRACT — duck-typed; the generic call sites check it:
-//   FIELDS   pos (ground XZ, Y≈0), vit (embed a combat.Vitals), hits (total blows landed),
+//   FIELDS   pos (where it stands: XZ, and Y = THE GROUND HEIGHT THERE — 0 on a flat map, whatever the
+//            terrain was sculpted to otherwise; game.zig grounds it every frame), vit (embed a
+//            combat.Vitals), hits (total blows landed),
 //            justDied (true ONLY on the frame a blow kills it — drives the kill beat)
 //   METHODS  alive (a fully-dissipated corpse is false) / dying (collapsing: no threat, no bar, no
 //            lock) / staggered (the wide-open window) / airborne (collision leaves it be; false if
@@ -97,8 +101,11 @@ pub fn emitParticle(pool: []Particle, head: *usize, p: rl.Vector3, vel: rl.Vecto
     head.* = (head.* + 1) % pool.len;
 }
 
-/// Integrate every live particle a frame. Dust settles ON the ground rather than sinking through.
-pub fn tickParticles(pool: []Particle, dt: f32) void {
+/// Integrate every live particle a frame. Dust settles ON the ground rather than sinking through, and
+/// `floor` is where that ground IS — the emitting creature's own `pos.y`, since a burst belongs to its
+/// feet. It used to be a hard 0, which on sculpted terrain drops a puff of dust and a corpse's motes
+/// straight through the hill the creature is standing on.
+pub fn tickParticles(pool: []Particle, dt: f32, floor: f32) void {
     for (pool) |*q| {
         if (q.life <= 0) continue;
         q.life -= dt;
@@ -106,7 +113,7 @@ pub fn tickParticles(pool: []Particle, dt: f32) void {
         q.p.y += q.v.y * dt;
         q.p.z += q.v.z * dt;
         q.v.y -= q.grav * dt;
-        if (q.p.y < 0) q.p.y = 0;
+        if (q.p.y < floor) q.p.y = floor;
     }
 }
 
@@ -134,7 +141,9 @@ pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want:
     n.* = 0;
     for (m.foes[0..m.nfoes]) |h| {
         if (h.kind != want or n.* >= out.len) continue;
-        out[n.*] = T.spawn(mathx.ground(h.x, h.z), mathx.radians(h.yaw), h.scale, h.seed);
+        // ON THE GROUND, which the map's own height field decides — a spawn table stores x/z only, so
+        // posting a foe on a sculpted rise and dropping it at y = 0 would bury it to the waist.
+        out[n.*] = T.spawn(v3(h.x, m.heightAt(h.x, h.z), h.z), mathx.radians(h.yaw), h.scale, h.seed);
         n.* += 1;
     }
 }

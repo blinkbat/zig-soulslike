@@ -271,8 +271,10 @@ pub const Frog = struct {
         return f;
     }
 
+    // Heights measured from `pos.y` — THE GROUND UNDER IT — plus `lift`, which is the hop's height above
+    // that ground. Pinned to the datum instead, a toad on a bank keeps its hurt sphere down in the field.
     pub fn centerWorld(self: *const Frog) rl.Vector3 {
-        return v3(self.pos.x, BODY_CY * self.scale + self.lift, self.pos.z);
+        return v3(self.pos.x, self.pos.y + BODY_CY * self.scale + self.lift, self.pos.z);
     }
     pub fn hurtRadius(self: *const Frog) f32 {
         return HURT_R * self.scale;
@@ -283,7 +285,7 @@ pub const Frog = struct {
     // The point the lock-on reticle rides — the centre of the body mass (not the head), so
     // the dot sits on the bulk of the toad.
     pub fn lockPoint(self: *const Frog) rl.Vector3 {
-        return v3(self.pos.x, 0.30 * self.scale + self.lift, self.pos.z);
+        return v3(self.pos.x, self.pos.y + 0.30 * self.scale + self.lift, self.pos.z);
     }
     // Airborne mid-hop/lunge — ground collision leaves it be while it's in the air.
     pub fn airborne(self: *const Frog) bool {
@@ -291,7 +293,7 @@ pub const Frog = struct {
     }
     // Top of the domed back in world space — where the floating HP bar rides.
     pub fn topWorld(self: *const Frog) rl.Vector3 {
-        return v3(self.pos.x, 0.80 * self.scale + self.lift, self.pos.z);
+        return v3(self.pos.x, self.pos.y + 0.80 * self.scale + self.lift, self.pos.z);
     }
     // A live combatant (a corpse whose death anim has finished is skipped everywhere).
     pub fn alive(self: *const Frog) bool {
@@ -529,7 +531,8 @@ pub const Frog = struct {
             self.resolveLand(k);
             // Fire the impact dust ONCE, the frame we touch down (a big front-slam telegraph).
             if ((self.t - dt) < coil + flight) {
-                if (self.isLunge) self.dustBurst(self.impactWorld(), 32, 4.4, 0.30) else self.dustBurst(mathx.ground(self.pos.x, self.pos.z), 8, 1.8, 0.16);
+                // …at its FEET, which `pos` already is now that it carries the ground height.
+                if (self.isLunge) self.dustBurst(self.impactWorld(), 32, 4.4, 0.30) else self.dustBurst(self.pos, 8, 1.8, 0.16);
             }
             if (self.isLunge) self.tryImpact(hero, LUNGE_HIT); // the body-slam connects — FRONT zone only
         }
@@ -793,7 +796,7 @@ pub const Frog = struct {
         foe.emitParticle(&self.fx, &self.fxHead, p, vel, life, r0, r1, col, grav);
     }
     fn updateFx(self: *Frog, dt: f32) void {
-        foe.tickParticles(&self.fx, dt);
+        foe.tickParticles(&self.fx, dt, self.pos.y); // dust settles on the ground IT is standing on
     }
     // A radial fan of dust from `c` (the lunge slam / a hop's smaller landing puff). `spd`
     // scales the outward throw, `big` the puff radius — both ×scale for a heavy toad.
@@ -860,7 +863,8 @@ pub const Frog = struct {
         // NO squash here — the legs hang off this so they keep their size; squash rides BODY.
         const bframe = mul(
             scaleM(fs, fs, fs),
-            mul3(rx(self.pitch), ry(mathx.degrees(self.facing)), tr(self.pos.x, self.lift + sink, self.pos.z)),
+            // `pos.y` is the ground under it, `lift` the hop above that ground.
+            mul3(rx(self.pitch), ry(mathx.degrees(self.facing)), tr(self.pos.x, self.pos.y + self.lift + sink, self.pos.z)),
         );
         const squash = scaleM(self.sxz, self.sy, self.sxz); // about the seat: flatten/widen or stretch
 

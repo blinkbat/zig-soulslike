@@ -56,6 +56,10 @@ a full combat layer: HP + two-tier poise/stance stagger + death, both sides (`co
 an empty bar means no roll, no swing, no sprint (see STAMINA below). No criticals, guarding or
 jump yet. The bar for "human" is anatomy + real gaits, not polygon count.
 
+**THE GROUND HAS ELEVATION**, sculpted in the editor and walked with a real slope limit and a step
+height — hills, banks, terraces and cliffs you cannot climb (see ELEVATION). The SHIPPED map is
+deliberately flat, and a flat map is byte-for-byte the world that existed before it.
+
 **THE HUD IS ELDEN RING'S**, in ER's three places and nowhere else: HP/FP/stamina bars top-left,
 the four-slot equipment CROSS bottom-left, the debug readout top-right (menu >
 Debug > Stats). It hides behind the menu and under the YOU DIED card. FP is a full static bar —
@@ -91,6 +95,28 @@ standing stonework), `edge` (the cliff rim), `cover` (the lattice ground scatter
   and the culling sphere (centred there too) is unchanged — and `buildSolids` carries the footprint
   with it, capped at the part's own radius, or you bump into air beside a tipped trunk. Lean 0 draws
   down the original path and consumes NOTHING from the op's rng, so no existing world moved.
+- **THE GROUND HAS A SHAPE, AND YOU SCULPT IT** (Ground layer > **Raise / Lower / Smooth / Flat**). The
+  map stores one QUANTISED HEIGHT per lattice point — `wf.HEIGHT_N` at 2.5 m, `HEIGHT_STEP` 0.25 m,
+  biased so the byte `HEIGHT_ZERO` is the old flat ground — and `env.uploadHeight` turns it into the
+  terrain you walk on. See ELEVATION below for the whole system; the load-bearing parts:
+  - **A FLAT MAP IS THE OLD WORLD, EXACTLY.** `heightAny` false means the terrain is the ONE original
+    world-spanning quad, `groundAt` returns `GROUND_Y`, `walkStep` returns the step it was given, and
+    the `hgt:` record is not written at all. That is why elevation touched no existing world file and
+    why the shipped map is byte-for-byte the plain it always was.
+  - **QUANTISED BECAUSE THE FILE IS TEXT.** The writer is a run-length encoder; a float grid is 50,176
+    unique values with no runs in it. At 0.25 m a plateau, a bank and a valley floor each collapse to
+    one run, and 0.25 m over a 2.5 m cell is 5.7 deg — under the mesh's own faceting.
+  - **THE MESH IS TILED** (`TCHUNK`, 15x15 tiles): a sculpt stroke rebuilds the two or three tiles it
+    touched instead of 100k triangles, and the tiles are the draw cull unit. Normals come from the
+    FIELD, not from each tile's triangles, so two independently-built tiles agree at their seam.
+  - **NOTHING SAMPLES THE MAP DIRECTLY.** Env keeps the live copy (`heightField`) that the visible mesh
+    was built from, and `wf.sampleHeight` is the ONE sampler both owners call — so the hero cannot walk
+    a centimetre off the mesh he can see. A test pins the two together.
+  - **EVERY PROP PLANTS AT THE HEIGHT UNDER IT**, which is why `uploadHeight` must run BEFORE
+    `materialize` (`env.build` → uploadSoil → uploadWater → uploadHeight → materialize) and why a
+    sculpt stroke re-materializes the world on RELEASE, exactly as a water stroke re-sows it.
+  - **THE SKIRT** carries the ground from the map's rim out to the haze, its inner edge following the
+    border heights so there is no step at the seam.
 - **WATER IS PAINTED, AND ITS COAST IS DERIVED** (Ground layer > **Water**). The map stores one BIT
   per cell — wet or dry, a finer grid than the soil's (`gfx.WATER_N`) — and `env.uploadWater` turns
   that outline into a SIGNED DISTANCE FIELD: 128 is the waterline, above it depth, below it the walk
@@ -152,7 +178,11 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
   (`70..92`): one framing per region, the chapel/watchtower interiors under torchlight, the tarn,
   the cliffs, five overhead MAP shots and two Stats readouts, then the EDITOR (`95..99e`) — layers,
   a marquee, the ground brush, PAINTED WATER from low down and overhead, and the OBJECT VIEWER's two
-  levels. Never claim a visual change works without a shot. `shots\` is gitignored. Do NOT launch the
+  levels — then ELEVATION (`100..105`): a sculpted ridge from below and from on it, the hero having
+  WALKED up it (through the real `walkStep` + grounding + lean, with the debug numbers on), its profile
+  from a distance, and the Ground layer with a sculpt brush armed. That block sculpts the live map and
+  puts it back, so it runs LAST and nothing after it stands on terrain the shipped map does not have.
+  Never claim a visual change works without a shot. `shots\` is gitignored. Do NOT launch the
   interactive window to "check" — the owner plays the real game himself, and while he has it open the
   build cannot overwrite the exe (build with `--prefix zig-out-dev` when it is).
 - `--shot-props` renders every kind ALONE into `shots\props\` — one portrait per model, framed off its
@@ -169,6 +199,12 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
 - **Thin geometry needs a CROP.** Strings, nocked arrows, flutes and setts are invisible in a
   full-frame shot; crop and zoom (System.Drawing) before calling one broken. The HUD counts:
   a 34 px slot and a 1 px bar rim are unjudgeable at 1:1.
+- **THE SCREENSHOT GOES BEFORE `endDrawing`, NEVER AFTER** (`shots.snap`). `endDrawing` SWAPS the
+  buffers and `takeScreenshot` reads the CURRENT one, so taken after the swap every capture is the
+  PREVIOUS frame. The whole harness was off by one: `91_stats_city.png` came back with no Stats overlay
+  on it and the world tour each held the framing before it. It hid for a long time because consecutive
+  shots mostly look alike — it took a hard cut (the object viewer's chrome turning up in a landscape
+  shot) to be obvious. Flush the batch first, exactly as raylib's own F12 handler does.
 - **The harness CLOSES THE MENU first** (`runShots`). The menu opens at launch and the HUD hides
   behind it, so without that line every capture is of the game sitting in its pause screen.
   `37_hp_bars.png` is the HUD's own test: it wounds the hero and spends the pool on purpose, so
@@ -204,8 +240,10 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
 - `worldfmt.zig` — THE MAP FORMAT: the op vocabulary, the zone/clearing/runway/foe tables, and
                  one comptime field table driving both the writer and the parser. Load/save.
 - `editor.zig` — THE EDITOR (Menu > Editor). Organised in LAYERS the StarEdit way — GROUND
-                 (paint the soil), COVER (zone density + clearings), DECOR (flora), PROPS
-                 (stone/timber/fire), UNITS (foe spawns) — and **only the ACTIVE layer is
+                 (SHAPE the land, then paint the soil, then flood it — the strip is sectioned
+                 `shape` / `surface` because those are two different jobs), COVER (zone density +
+                 clearings), DECOR (flora), PROPS (stone/timber/fire), UNITS (foe spawns) —
+                 and **only the ACTIVE layer is
                  live**: every layer stays visible but a click can only pick, place or erase in
                  the one you are on, so dressing ferns can never nudge a chapel. Each layer
                  ends in its own scoped ERASE brush and remembers the brush you left it on.
@@ -226,7 +264,15 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  hides it because there the mouse IS the camera.
                  SELECT MODE exists because "click to select" and "click to paint" cannot share
                  the left button: it is armed by default, any brush disarms it, Esc re-arms it.
-                 Tab cycles layers, 1-9 pick a brush, [ ] size it, G snaps.
+                 Tab cycles layers, 1-9 pick a brush, [ ] size it, G snaps. **HAND TOOLS LEAD EVERY
+                 STRIP** (owner's rule): the brush that puts exactly one thing where you clicked is
+                 first and the scatters follow it — Decor opens on `Single`, Props on `Stamp`, Ground
+                 on the sculpt tools. A row is only labelled with a digit if that digit reaches it
+                 (Ground has twelve brushes and the keys stop at nine).
+                 GIZMOS RIDE THE GROUND, not a plane: their `y` is a LIFT above the terrain, sampled
+                 per vertex (`liftAt`, `groundLine`). A brush ring drawn at a fixed height is buried
+                 in the near side of a hill and hanging over the far side — and the ring is the thing
+                 you SCULPT with. The minimap hillshades the same field for the same reason.
                  The CLIPBOARD is file-scope and outlives a map load on purpose, so a stand of
                  trees can be carried from one map into another; its contents are stored
                  relative to the selection's centre, so a paste lands under the cursor.
@@ -251,7 +297,9 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
 - `ui.zig`     — the editor's immediate-mode widget kit, lifted from `../zig-diablo/src/ui.zig`
                  and re-backed onto `hud.zig`. `Ctx.anyHot` gates world clicks NEXT frame.
 - `bake.zig`   — the one-way door that emitted the first map from the old code-authored regions.
-- `env.zig`    — THE WORLD: the ground plane, the REPLAY of a map's ops into props, the
+- `env.zig`    — THE WORLD: the TERRAIN (the sculpted heightfield, its tiled mesh and skirt, and the
+                 ground/slope/step queries every actor stands on — see ELEVATION), the REPLAY of a
+                 map's ops into props, the
                  `coverField`, and the three systems that make this size affordable —
                  the UNIFORM GRID, the CULLERS (`View`/`Cull`), the grid-local solid queries.
                  Also gathers each fire's `gfx.Light` and uploads the nearest per frame.
@@ -450,6 +498,58 @@ cross-fade ~0.09 s; stances never snap while mechanics stay instant.
   `setFlash(0)` tail is the line a fourth copy would forget, and a Group that leaves the uniform hot
   reddens whatever draws next.
 
+## ELEVATION — the ground has a shape (`env.zig`, `worldfmt.zig`)
+
+The world is a HEIGHTFIELD you sculpt in the editor (see the Ground-layer bullet above for the storage
+and the mesh). This section is the part that decides how it PLAYS.
+
+- **TWO RULES DECIDE EVERY STEP** (`env.walkStep`), and either one passing is enough:
+  - the rise ahead is under **`STEP_UP`** (0.55 m) — a kerb, a terrace lip, a step. Always taken,
+    however steep the face carrying it. Sized to the ENCODING: heights quantise to 0.25 m, so this
+    makes "up to two risers" walkable with headroom and three a wall.
+  - or the rise is within what **`MAX_SLOPE`** (tan 40 deg) gives over that distance — an incline.
+- **MEASURED OVER A FIXED LOOKAHEAD (`STEP_PROBE`), NEVER OVER THE FRAME'S OWN TRAVEL.** This is the
+  one thing here that cannot be got wrong quietly. Against the frame's distance, `STEP_UP` is true of
+  every millimetre a 240 fps hero takes into a vertical cliff — so he ratchets up it at tens of metres
+  a second, faster the better the machine. A test pins the rule across four frame rates.
+- **A REFUSED STEP IS NOT A STOP.** The UPHILL COMPONENT is removed and the rest of the move is taken,
+  at full length: walking into a cliff at an angle slides you along it, straight on holds you still,
+  and no input is ever dropped. A hard block would put invisible corners all over a hillside.
+- **THE STEP RULE IS ALSO WHAT KEEPS THE FOOT OF A CLIFF WALKABLE.** The slope test samples the
+  gradient where you are going, and at the base of a cliff that gradient is the cliff's — so without
+  `STEP_UP` you would be held a metre off every rock face by a wall you cannot see.
+- **FOES GET THE SAME RULES**, applied as a POST-STEP GATE (`game.gateTerrain`): each moved itself
+  knowing nothing about the world, and its displacement is re-taken through `walkStep`. AIRBORNE foes
+  are exempt — a toad's lunge and an archer's backstep are committed leaps and may cross anything.
+- **`pos.y` IS THE GROUND UNDER AN ACTOR**, written in ONE place (`game.groundActor`) for the hero and
+  every foe; the rigs only read it. It is **EASED, NOT SNAPPED** (`GROUND_RISE_RATE` /
+  `GROUND_FALL_RATE`), and that is the anti-jank measure: a step is a discontinuity the moment you
+  cross it, and the camera rides the hero's shoulder, so snapping kicks the whole frame. Past
+  `GROUND_SNAP` it plants instead — a respawn must not slide up out of the earth.
+- **EVERY WORLD POINT ON AN ACTOR IS MEASURED FROM `pos.y`** — `hero.shoulderPoint`, every foe's
+  `centerWorld`/`lockPoint`/`topWorld`, the ogre's crush point, the toad's dust. Measured from the
+  datum instead, a foe on a bank keeps its HP bar and its hurt sphere down in the field, and the
+  camera frames a point 8 m below the hero (it did — he sat off the top of the screen).
+- **THE CAMERA SHORTENS ITS BOOM RATHER THAN BURYING THE EYE** (`camera.followClear`). On a slope the
+  boom swings into the hillside constantly; lifting the eye instead would tip the view toward looking
+  straight down as you climb, taking the pitch away from the player. It pulls in, and only lifts as a
+  last resort. **A low pitch on a steep slope still looks INTO the rising ground** — that is geometry,
+  and the answer is the player's own right stick (the shot harness raises the pitch for the same
+  reason).
+- **THE HERO LEANS INTO THE HILL** (`hero.slopeLean`, `SLOPE_LEAN` 0.55 of the slope, capped at 16 deg,
+  eased at `SLOPE_LEAN_RATE`), through the SAME `rx(bodyPitch)` term as the run lean, because it is the
+  same motion about the same hinge — the trunk folding over planted feet. A body pitched the FULL angle
+  is normal to the ground and reads as welded to it.
+- **THE TERRAIN RECEIVES SHADOWS BUT STILL DOES NOT CAST.** A hill shades by its own normal and throws
+  nothing across the ground behind it. Self-shadowing a heightfield off a 108 m ortho box puts acne
+  everywhere the surface grazes the sun, which is a worse artefact than a missing hill shadow. The
+  shadow box now tracks the focus in Y as well (`gfx.beginShadowPass`), or a hero 20 m up carries his
+  own shadow toward the box's edge.
+- **NO FOOT IK, so feet clip a few cm on steep ground** — the gap AGENTS.md already names, now visible
+  in a second place. Props are planted at their ORIGIN only, so a wide base on a slope buries one edge:
+  the alternative is tilting props to the ground normal, and a leaning chapel is a louder error than a
+  plinth with one corner in the dirt.
+
 ## Combat feel
 
 - **The two sides are tuned SEPARATELY** (`combat.zig`). A stagger you inflict is a punish WINDOW
@@ -628,7 +728,22 @@ Placement is deterministic: if it fits once it fits.
   must stay ABOVE the largest size drawn (an UPSCALED glyph is the jagged one), and the drop
   shadow's offset scales with the size (a fixed 1 px shadow under large type reads as a smudge).
 - **Prototype models/meshes are permanent** (CPU arrays stay attached; they live the whole program
-  and leak at exit — fine). Don't `unloadModel` them.
+  and leak at exit — fine). Don't `unloadModel` them. The TERRAIN TILES are the one exception — they
+  are re-authored as you sculpt — and getting there cost two separate crashes worth knowing about:
+  - **`gfx`'s mesh allocator MUST be `raw_c_allocator`, not `c_allocator`.** raylib frees mesh CPU
+    arrays with libc `free()`, and `std.heap.c_allocator` does NOT hand out malloc pointers on Windows
+    (no `posix_memalign` → it over-allocates and hides the original pointer in a header BEFORE the
+    aligned address). Freeing one with C `free()` frees an interior pointer: heap corruption, surfacing
+    as a `0xC0000374` exit with no stack in it. It was `c_allocator` under a comment claiming it "=
+    malloc, matching raylib's libc free()" — untested for as long as nothing was ever unloaded.
+  - **`rl.unloadModel` UNLOADS THE MATERIAL'S SHADER.** The shader on a terrain tile is the SCENE
+    shader every other draw uses, so unloading one tile deletes the program out from under the whole
+    renderer and frees its uniform table — and the next tile frees the same pointer again. Go through
+    `env.unloadTerrain`, which points the material at raylib's default shader first.
+- **GLSL RESERVED WORDS ARE NOT ONLY THE OBVIOUS ONES.** A local named `patch` (the tessellation
+  qualifier) compiled everywhere the author tested and failed on Intel, which enforces it even at
+  `#version 330` — and a scene shader that fails to compile is a hard panic at startup with nothing but
+  "syntax error" and a line number. `layout`, `subroutine` and friends are the same trap.
 - **raylib's `SetSoundPan` IS THE LEFT CHANNEL'S GAIN, not a left-to-right position.** Its mixer is
   `left = pan; right = 1 - pan` (`raudio.c`'s `MixAudioFrames`), so **`pan = 1.0` is hard LEFT** —
   the opposite of the obvious reading, and raylib's own header says only "(0.5 is center)" without
@@ -649,9 +764,17 @@ a GUARD BREAK. AR × motion-value × defense damage (today it's flat constants),
 jump, distinct combo follow-up anims, bonfires, real level geometry. See `docs/ELDEN_RING.md` for
 the target mechanics behind each.
 
+Elevation exists but nothing has been AUTHORED with it yet: the shipped map is flat on purpose, and
+there is no FALLING — walk off a lip and you are eased down it at `GROUND_FALL_RATE` rather than
+dropping, because there is no airborne state for the hero to be in (jump is unbuilt for the same
+reason). Terrain does not cast shadows, and painted water is still one level plane, so a lake is a
+basin you dig rather than a pool at any height.
+
 Current gaps: the roll has front-loaded i-frames (0→0.46 s of 0.70 s, gating `takeHit` + the
 arrow connect) but still **no collision**; there is **no foot IK** — `rx(bodyPitch)` in
 `hero.pose()` rotates the body about the WORLD ORIGIN, not the support foot, so under a deep lean
 a forward-swung foot is levered down (walking and pure sidesteps are exact; a diagonal keeps
-~6 cm). One leg-cycle is reused across run and sprint, and attacks reuse one anim standing or
+~6 cm), and on SLOPED ground the same absence shows as feet clipping a few cm into the hill, since
+each sole is levelled against a flat `SolePatch` plane rather than the terrain under it.
+One leg-cycle is reused across run and sprint, and attacks reuse one anim standing or
 moving.

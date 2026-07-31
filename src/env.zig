@@ -92,7 +92,53 @@ pub const MAX_NEAR = 160;
 // planted-to-slightly-embedded and nothing ever reads as FLOATING. The old −0.05 put it BELOW the feet
 // and floated everything ~2 in; owner's call is that a tiny foot clip beats any float. Off exact 0 so
 // coplanar faces don't z-fight, and tiny enough (~1 cm) that the embed is imperceptible.
+//
+// With elevation this became the DATUM the sculpted field is measured from, not the ground's height:
+// `groundAt` is this plus the map's height at that point, and a flat map still puts every surface
+// exactly where it was.
 const GROUND_Y: f32 = 0.01;
+
+// ── ELEVATION ──────────────────────────────────────────────────────────────────────────
+// The ground is a HEIGHTFIELD now (`wf.Map.height`, 2.5 m lattice, sculpted in the editor). Three
+// things follow from that, and all three are why this is not just a taller quad:
+//
+//  1. THE MESH IS CHUNKED. One world-spanning mesh is 100k triangles that must be REBUILT while a
+//     sculpt brush is dragging — 13 MB of vertex churn per frame, i.e. a slideshow. Split into
+//     `TCHUNK`-cell tiles, a stroke rebuilds the two or three tiles it touched and the rest of the
+//     terrain is not looked at. The tiles are also the cull unit for drawing.
+//  2. NOTHING SAMPLES THE MAP DIRECTLY. Env keeps its own copy of the field (`heightField`), pushed
+//     by `uploadHeight`, exactly like the soil and water it sits beside — so gameplay stands on the
+//     field the visible mesh was built from and can never read a half-edited grid.
+//  3. A FLAT MAP COSTS NOTHING. `heightAny` is false until something is sculpted, and then the whole
+//     terrain is the ONE original quad again: same draw, same mesh, byte-identical world.
+/// Height lattice points per terrain chunk. 16 points = 15 quads = 37.5 m of ground per tile, giving
+/// 15x15 tiles over a 224-point field — a rebuild of ~450 quads per brush frame, and a cull unit
+/// comfortably smaller than the view distance.
+const TCHUNK: usize = 16;
+/// Tiles per axis, rounded up so the last one carries the remainder. Fixed at comptime because the
+/// lattice is a fixed size whatever the map's `half` is.
+const TILES: usize = (wf.HEIGHT_N - 2) / (TCHUNK - 1) + 1;
+const NTILES: usize = TILES * TILES;
+
+/// How steep the ground may be and still be walked, as the TANGENT of the slope angle (rise over run).
+/// tan 40 deg — ER's own limit is in this region, and it is the angle at which a scramble stops being a
+/// walk. Above it the uphill part of a move is refused (see `walkStep`).
+pub const MAX_SLOPE: f32 = 0.839;
+/// A rise this small is ALWAYS steppable, however steep the face carrying it — the "slight step" rule.
+/// Two things need it. A low ledge or terrace lip is otherwise a wall, since a half-metre rise across
+/// half a metre is 45 deg of slope; and a hero walking along the FOOT of a cliff samples the cliff's own
+/// gradient and would be held a metre off it by an invisible wall.
+///
+/// SIZED TO THE ENCODING, not picked: heights quantise to `wf.HEIGHT_STEP` (0.25 m), so the ledges that
+/// can actually exist are 0.25, 0.50, 0.75… A limit of 0.55 makes "up to two steps" walkable with
+/// headroom to spare and three steps a wall, which is a rule you can author against. It is also mid-shin
+/// on an H=1.8 hero, which is about what a person steps up without thinking.
+pub const STEP_UP: f32 = 0.55;
+/// The fixed distance the walkable test looks AHEAD, and the reason the rule is frame-rate independent.
+/// Measured against the frame's own travel instead, a 60 Hz hero moving 6 cm a frame would be allowed
+/// STEP_UP for every one of those 6 cm — i.e. he would ratchet up a vertical cliff at 27 m/s. Looking a
+/// fixed half-metre ahead asks the same question of the terrain however fast time is running.
+pub const STEP_PROBE: f32 = 0.5;
 
 /// The painted sheet's surface height — the same ankle-deep 0.055 the authored water prop uses, so a
 /// painted lake and a placed one wade identically and cannot z-fight where they meet.
@@ -178,6 +224,13 @@ const Index = struct {
     bound: [NCELL]f32 = [_]f32{0} ** NCELL, // max scaled bounding radius in the cell
     view: [NCELL]f32 = [_]f32{0} ** NCELL, // max view distance in the cell
     top: [NCELL]f32 = [_]f32{0} ** NCELL, // max scaled top height (shadow reach)
+    // …and the cell's VERTICAL extent, which only matters with elevation and matters absolutely then:
+    // the per-cell reject is a sphere about the cell's centre, and a cell whose props stand 20 m up a
+    // hill is nowhere near a sphere centred at y = 0. Under-sized here, a whole hillside's worth of
+    // props vanishes from the frame — the failure mode AGENTS.md files under "a culler bug looks like
+    // an empty world". Flat maps fold to 0 and cost the two extra floats and nothing else.
+    ylo: [NCELL]f32 = [_]f32{0} ** NCELL,
+    yhi: [NCELL]f32 = [_]f32{0} ** NCELL,
 };
 
 /// The camera's four frustum SIDE planes, all through the eye point, plus that point. Near and far are
@@ -270,6 +323,22 @@ pub const Env = struct {
     /// of the world quad, so a pond costs a pond's worth of fill instead of a full screen of it.
     waterMid: rl.Vector3 = mathx.zero3,
     waterSpan: rl.Vector3 = mathx.zero3,
+    /// THE SCULPTED GROUND: the live copy of the map's height lattice, and the mesh built from it.
+    /// `heightAny` false means the map is flat and `ground` (the one quad) draws instead of the tiles —
+    /// so an unsculpted world is exactly the world that existed before elevation.
+    heightField: [wf.HEIGHT_CELLS]u8 = [_]u8{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS,
+    heightHalf: f32 = wf.DEFAULT_HALF,
+    heightAny: bool = false,
+    /// One model per terrain tile, plus the SKIRT that carries the ground out to the haze. `built`
+    /// tracks which tiles hold a live mesh, because they are unloaded and rebuilt as you sculpt and a
+    /// stale handle here is a double free.
+    tiles: [NTILES]rl.Model = undefined,
+    tileBuilt: [NTILES]bool = [_]bool{false} ** NTILES,
+    /// Each tile's bounding sphere, for the draw cull: centre and radius in world space.
+    tileMid: [NTILES]rl.Vector3 = [_]rl.Vector3{mathx.zero3} ** NTILES,
+    tileRad: [NTILES]f32 = [_]f32{0} ** NTILES,
+    skirt: rl.Model = undefined,
+    skirtBuilt: bool = false,
     // Per-frame culling counters, surfaced by the debug Stats overlay. The whole expansion rests
     // on the claim that a world of thousands of props costs a few hundred draws, and this is what
     // makes that claim CHECKABLE while playing instead of a thing I asserted once in a comment.
@@ -292,6 +361,18 @@ pub const Env = struct {
         self.nsolids = 0;
         self.nlights = 0;
         self.npools = 0;
+        // THE TERRAIN TILES START EMPTY, said explicitly. Env is built IN PLACE inside a heap-allocated
+        // Game, so these fields' struct-literal defaults never run and `tileBuilt` would be raw heap
+        // bytes — a true byte there sends `dropTile` into `unloadModel` on a garbage handle, which is a
+        // free() of whatever the allocator last had there. Same trap `fillIndex` and `materialize`
+        // document for their arrays; this one crashes rather than looking wrong.
+        self.tileBuilt = [_]bool{false} ** NTILES;
+        self.tileRad = [_]f32{0} ** NTILES;
+        self.tileMid = [_]rl.Vector3{mathx.zero3} ** NTILES;
+        self.skirtBuilt = false;
+        self.heightField = [_]u8{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS;
+        self.heightHalf = wf.DEFAULT_HALF;
+        self.heightAny = false;
     }
 
     /// Push the map's painted soil to the terrain shader. Separate from `materialize` on
@@ -299,6 +380,204 @@ pub const Env = struct {
     /// 4 KB instead of re-expanding eight thousand props.
     pub fn uploadSoil(self: *Env, m: *const wf.Map) void {
         if (self.scene) |sc| sc.setSoil(&m.soil, m.half);
+    }
+
+    /// TAKE THE MAP'S SCULPTED GROUND and build the terrain from it: copy the field, then rebuild every
+    /// tile. Call it on load and after any wholesale change (undo, a new map); a BRUSH calls
+    /// `sculptHeight` instead, which rebuilds only what it touched.
+    ///
+    /// This has to run BEFORE `materialize`, because every prop is planted at the ground height under
+    /// it — replay the ops against a stale field and the whole world stands at the old elevation.
+    pub fn uploadHeight(self: *Env, m: *const wf.Map) void {
+        self.heightField = m.height;
+        self.heightHalf = m.half;
+        self.heightAny = m.anyHeight();
+        self.rebuildTerrain();
+    }
+
+    /// A SCULPT STROKE: take the map's field again but rebuild only the tiles the brush's lattice rect
+    /// (`wf.Map.sculpt`'s `out`) actually reached. This is what makes dragging the raise brush
+    /// interactive — a full rebuild is ~100k triangles of Builder work every frame the mouse moves.
+    pub fn sculptHeight(self: *Env, m: *const wf.Map, span: [4]usize) void {
+        self.heightField = m.height;
+        self.heightHalf = m.half;
+        const wasAny = self.heightAny;
+        self.heightAny = m.anyHeight();
+        // First sculpt on a flat map, or the last undo back to flat: the whole terrain changes
+        // representation (quad ↔ tiles), so there is nothing partial about it.
+        if (wasAny != self.heightAny) return self.rebuildTerrain();
+        if (!self.heightAny) return;
+        if (span[0] > span[2] or span[1] > span[3]) return; // the stroke missed the grid
+        // A tile shares its edge points with its neighbour, so a point at a seam belongs to BOTH: the
+        // range is widened by one point either way or a stroke on a boundary leaves a visible crack.
+        const lo = tileOf(if (span[0] > 0) span[0] - 1 else 0);
+        const hi = tileOf(@min(span[2] + 1, wf.HEIGHT_N - 1));
+        const zlo = tileOf(if (span[1] > 0) span[1] - 1 else 0);
+        const zhi = tileOf(@min(span[3] + 1, wf.HEIGHT_N - 1));
+        var tz = zlo;
+        while (tz <= zhi) : (tz += 1) {
+            var tx = lo;
+            while (tx <= hi) : (tx += 1) self.buildTile(tz * TILES + tx);
+        }
+        self.buildSkirt(); // its inner edge follows the terrain's rim, which a stroke there moves
+    }
+
+    /// Drop and rebuild every terrain tile (and the skirt) from the live field. Unloads first: these
+    /// meshes are the one geometry in the game that is genuinely transient — props are prototypes that
+    /// live for the whole program, terrain is re-authored under you.
+    fn rebuildTerrain(self: *Env) void {
+        for (0..NTILES) |i| {
+            if (!self.heightAny) {
+                self.dropTile(i);
+                continue;
+            }
+            self.buildTile(i);
+        }
+        if (self.heightAny) {
+            self.buildSkirt();
+        } else if (self.skirtBuilt) {
+            unloadTerrain(self.skirt);
+            self.skirtBuilt = false;
+        }
+    }
+
+    fn dropTile(self: *Env, i: usize) void {
+        if (!self.tileBuilt[i]) return;
+        unloadTerrain(self.tiles[i]);
+        self.tileBuilt[i] = false;
+    }
+
+    /// ONE TERRAIN TILE: the quads between lattice points [x0..x1] x [z0..z1], with SHARED per-point
+    /// normals so the surface reads smooth across a tile and across the seam into the next one (the
+    /// normal at a point is computed from the FIELD, not from this tile's triangles, which is what lets
+    /// two independently-built tiles agree at their shared edge).
+    fn buildTile(self: *Env, i: usize) void {
+        self.dropTile(i);
+        const tx = i % TILES;
+        const tz = i / TILES;
+        const x0 = tx * (TCHUNK - 1);
+        const z0 = tz * (TCHUNK - 1);
+        if (x0 + 1 >= wf.HEIGHT_N or z0 + 1 >= wf.HEIGHT_N) return; // a degenerate last tile
+        const x1 = @min(x0 + TCHUNK - 1, wf.HEIGHT_N - 1);
+        const z1 = @min(z0 + TCHUNK - 1, wf.HEIGHT_N - 1);
+        const half = self.heightHalf;
+        const step = 2 * half / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+        var b = gfx.Builder.init();
+        var yLo: f32 = std.math.floatMax(f32);
+        var yHi: f32 = -std.math.floatMax(f32);
+        var iz = z0;
+        while (iz < z1) : (iz += 1) {
+            var ix = x0;
+            while (ix < x1) : (ix += 1) {
+                const xa = -half + @as(f32, @floatFromInt(ix)) * step;
+                const xb = xa + step;
+                const za = -half + @as(f32, @floatFromInt(iz)) * step;
+                const zb = za + step;
+                const ha = self.pointY(ix, iz);
+                const hb = self.pointY(ix + 1, iz);
+                const hc = self.pointY(ix + 1, iz + 1);
+                const hd = self.pointY(ix, iz + 1);
+                yLo = @min(yLo, @min(@min(ha, hb), @min(hc, hd)));
+                yHi = @max(yHi, @max(@max(ha, hb), @max(hc, hd)));
+                // Wound the way `quad` winds a floor (a→b→c→d anticlockwise seen from above), or
+                // raylib culls the ground and you look straight through the world.
+                b.quadSmooth(
+                    v3(xa, ha, za),
+                    v3(xa, hd, zb),
+                    v3(xb, hc, zb),
+                    v3(xb, hb, za),
+                    self.pointNormal(ix, iz),
+                    self.pointNormal(ix, iz + 1),
+                    self.pointNormal(ix + 1, iz + 1),
+                    self.pointNormal(ix + 1, iz),
+                    rl.Color.white,
+                );
+            }
+        }
+        self.tiles[i] = b.toModel(if (self.scene) |sc| sc.shader else self.ground.materials[0].shader);
+        self.tileBuilt[i] = true;
+        // The cull sphere about the tile's real extent, vertical span included — a tile 20 m up is not
+        // where a flat-bottomed bound would say it is.
+        const cx = -half + (@as(f32, @floatFromInt(x0)) + @as(f32, @floatFromInt(x1))) * 0.5 * step;
+        const cz = -half + (@as(f32, @floatFromInt(z0)) + @as(f32, @floatFromInt(z1))) * 0.5 * step;
+        const spanX = @as(f32, @floatFromInt(x1 - x0)) * step;
+        const spanZ = @as(f32, @floatFromInt(z1 - z0)) * step;
+        self.tileMid[i] = v3(cx, (yLo + yHi) * 0.5, cz);
+        self.tileRad[i] = 0.5 * @sqrt(spanX * spanX + spanZ * spanZ + (yHi - yLo) * (yHi - yLo));
+    }
+
+    /// THE SKIRT: a ring of ground from the height field's rim out to the haze, so a sculpted world
+    /// still dissolves into distance with no visible plane edge (the flat map's one big quad does this
+    /// job by simply being enormous). Its INNER edge follows the terrain's own border heights, so there
+    /// is no step at the seam; its outer edge lies at the datum, far enough out that the transition is
+    /// behind the cliff ring and inside full haze.
+    fn buildSkirt(self: *Env) void {
+        if (self.skirtBuilt) {
+            unloadTerrain(self.skirt);
+            self.skirtBuilt = false;
+        }
+        const half = self.heightHalf;
+        const out = GROUND_HALF;
+        if (out <= half) return;
+        const n = wf.HEIGHT_N - 1;
+        const step = 2 * half / @as(f32, @floatFromInt(n));
+        const up = v3(0, 1, 0);
+        var b = gfx.Builder.init();
+        var i: usize = 0;
+        while (i < n) : (i += 1) {
+            const a = -half + @as(f32, @floatFromInt(i)) * step;
+            const c = a + step;
+            // North (−Z) and south (+Z) runs, then west/east. Each quad's inner edge takes the two
+            // border heights it spans; the outer corners sit at the datum.
+            b.quadSmooth(v3(a, self.pointY(i, 0), -half), v3(a, 0, -out), v3(c, 0, -out), v3(c, self.pointY(i + 1, 0), -half), up, up, up, up, rl.Color.white);
+            b.quadSmooth(v3(a, 0, out), v3(a, self.pointY(i, n), half), v3(c, self.pointY(i + 1, n), half), v3(c, 0, out), up, up, up, up, rl.Color.white);
+            b.quadSmooth(v3(-out, 0, a), v3(-out, 0, c), v3(-half, self.pointY(0, i + 1), c), v3(-half, self.pointY(0, i), a), up, up, up, up, rl.Color.white);
+            b.quadSmooth(v3(half, self.pointY(n, i), a), v3(half, self.pointY(n, i + 1), c), v3(out, 0, c), v3(out, 0, a), up, up, up, up, rl.Color.white);
+        }
+        // …and the four corner squares the runs leave open.
+        const cs = [_][2]f32{ .{ -1, -1 }, .{ 1, -1 }, .{ -1, 1 }, .{ 1, 1 } };
+        for (cs) |s| {
+            const ix: usize = if (s[0] < 0) 0 else n;
+            const iz: usize = if (s[1] < 0) 0 else n;
+            const hy = self.pointY(ix, iz);
+            const xi = s[0] * half;
+            const xo = s[0] * out;
+            const zi = s[1] * half;
+            const zo = s[1] * out;
+            // Wound off the inner corner outward in a fixed order and flipped by the quadrant's sign
+            // product, so all four faces point UP (a corner built by one recipe faces down in two of
+            // the four quadrants, and a downward-facing patch of ground is simply not there).
+            if (s[0] * s[1] > 0) {
+                b.quadSmooth(v3(xi, hy, zi), v3(xi, 0, zo), v3(xo, 0, zo), v3(xo, 0, zi), up, up, up, up, rl.Color.white);
+            } else {
+                b.quadSmooth(v3(xi, hy, zi), v3(xo, 0, zi), v3(xo, 0, zo), v3(xi, 0, zo), up, up, up, up, rl.Color.white);
+            }
+        }
+        self.skirt = b.toModel(if (self.scene) |sc| sc.shader else self.ground.materials[0].shader);
+        self.skirtBuilt = true;
+    }
+
+    /// The world Y of one lattice point — the mesh's own corner height, datum included.
+    fn pointY(self: *const Env, ix: usize, iz: usize) f32 {
+        return GROUND_Y + wf.heightOf(self.heightField[@min(iz, wf.HEIGHT_N - 1) * wf.HEIGHT_N + @min(ix, wf.HEIGHT_N - 1)]);
+    }
+
+    /// The surface normal AT a lattice point, from the field's central differences. Taken from the
+    /// FIELD rather than from adjacent triangle faces so two tiles meeting at a seam compute the same
+    /// normal on both sides — otherwise every tile boundary is a visible crease.
+    fn pointNormal(self: *const Env, ix: usize, iz: usize) rl.Vector3 {
+        const step = 2 * self.heightHalf / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+        const xm = self.pointY(if (ix > 0) ix - 1 else 0, iz);
+        const xp = self.pointY(ix + 1, iz);
+        const zm = self.pointY(ix, if (iz > 0) iz - 1 else 0);
+        const zp = self.pointY(ix, iz + 1);
+        // A one-sided difference at the rim spans one step, not two: dividing by 2·step there would
+        // halve the edge's slope and put a soft lip round the whole map.
+        const xSpan: f32 = if (ix > 0 and ix + 1 < wf.HEIGHT_N) 2.0 else 1.0;
+        const zSpan: f32 = if (iz > 0 and iz + 1 < wf.HEIGHT_N) 2.0 else 1.0;
+        const dx = (xp - xm) / (step * xSpan);
+        const dz = (zp - zm) / (step * zSpan);
+        return mathx.normV(v3(-dx, 1.0, -dz));
     }
 
     /// TURN THE PAINTED MASK INTO A SHORE. This is the whole "no manual blending" claim, and it is a
@@ -567,6 +846,135 @@ pub const Env = struct {
         return collision.resolve(p, r, self.nearSolids(p, r + 1.0, &buf));
     }
 
+    // ── STANDING ON THE GROUND ─────────────────────────────────────────────────────────
+    // Everything that touches the earth reads these three: the hero, every foe, arrows, prop
+    // planting, the editor's cursor and its camera. They are the only readers of `heightField`
+    // outside the mesh builder, so the world you stand on and the world you see are one field.
+
+    /// The ground's world Y under a point — the datum plus whatever the map was sculpted to. On a flat
+    /// map this is exactly `GROUND_Y`, so nothing that used to sit at 0.01 has moved.
+    pub fn groundAt(self: *const Env, x: f32, z: f32) f32 {
+        if (!self.heightAny) return GROUND_Y;
+        return GROUND_Y + wf.sampleHeight(&self.heightField, self.heightHalf, x, z);
+    }
+
+    /// The ground GRADIENT there — (dh/dx, dh/dz), metres of rise per metre travelled.
+    pub fn gradAt(self: *const Env, x: f32, z: f32) [2]f32 {
+        if (!self.heightAny) return .{ 0, 0 };
+        return wf.sampleGrad(&self.heightField, self.heightHalf, x, z);
+    }
+
+    /// How steep the ground is there, as the TANGENT of the slope angle (0 = flat, 1 = 45 deg).
+    pub fn slopeAt(self: *const Env, x: f32, z: f32) f32 {
+        const g = self.gradAt(x, z);
+        return @sqrt(g[0] * g[0] + g[1] * g[1]);
+    }
+
+    /// How much the ground rises along `dir` — the slope an actor FACING that way is climbing (negative
+    /// descending). Signed, unlike `slopeAt`, which is why the hero's lean reads uphill from downhill.
+    pub fn slopeAlong(self: *const Env, x: f32, z: f32, dir: rl.Vector3) f32 {
+        const g = self.gradAt(x, z);
+        return g[0] * dir.x + g[1] * dir.z;
+    }
+
+    /// CAN AN ACTOR STAND HERE — is the ground walkable rather than a cliff face? The one question the
+    /// slope limit answers, kept separate from `walkStep` so a spawn/teleport can ask it too.
+    pub fn walkableAt(self: *const Env, x: f32, z: f32) bool {
+        return self.slopeAt(x, z) <= MAX_SLOPE;
+    }
+
+    /// THE TRAVERSAL RULE, and the whole of it: take a step from `from` along `dir` for `dist` metres and
+    /// return where the actor actually ends up (XZ; the caller grounds Y).
+    ///
+    /// Walkable if EITHER of two things is true, measured over a FIXED lookahead (`STEP_PROBE`) rather
+    /// than over this frame's travel — see that constant for why the frame's own distance cannot be used:
+    ///
+    ///   * the rise ahead is under `STEP_UP` — a kerb, a terrace lip, a step. Always allowed, whatever
+    ///     the face's angle, which is also what stops the foot of a cliff wearing an invisible wall.
+    ///   * or the rise is within what `MAX_SLOPE` would give over that distance — an incline.
+    ///
+    /// A refused step is not a stop: the UPHILL COMPONENT is removed and what is left of the move is
+    /// taken. So walking into a cliff at an angle slides you along it, straight on holds you still, and
+    /// nothing about the input is dropped — the ground simply refuses to be climbed.
+    pub fn walkStep(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32) rl.Vector3 {
+        const to = v3(from.x + dir.x * dist, from.y, from.z + dir.z * dist);
+        if (!self.heightAny or dist <= 0) return to;
+        if (self.stepOk(from, dir, dist)) return to;
+        // The horizontal direction the ground rises fastest, and what is left of the move once its
+        // uphill part is taken out. A step straight at the face leaves nothing and the actor holds.
+        const g = self.gradAt(from.x, from.z);
+        const gl = @sqrt(g[0] * g[0] + g[1] * g[1]);
+        if (gl < 1e-5) return to;
+        const ux = g[0] / gl;
+        const uz = g[1] / gl;
+        const along = dir.x * ux + dir.z * uz;
+        if (along <= 0) return to; // already heading down or across it — never refuse that
+        const tx = dir.x - ux * along;
+        const tz = dir.z - uz * along;
+        const tl = @sqrt(tx * tx + tz * tz);
+        if (tl < 1e-5) return v3(from.x, from.y, from.z);
+        // The tangent keeps the step's LENGTH, not just its direction, so sliding along a wall travels
+        // at walking pace instead of quietly slowing to nothing as you square up to it.
+        const slide = v3(from.x + tx / tl * dist, from.y, from.z + tz / tl * dist);
+        // …and it has to be walkable itself, or a tangent that runs onto a steeper part of the same
+        // face would let you climb it sideways.
+        if (self.stepOk(from, v3(tx / tl, 0, tz / tl), dist)) return slide;
+        return v3(from.x, from.y, from.z);
+    }
+
+    /// Is the ground `probe` metres along `dir` a step this actor may take? See `walkStep`.
+    fn stepOk(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32) bool {
+        const probe = mathx.maxF(dist, STEP_PROBE);
+        const h0 = self.groundAt(from.x, from.z);
+        const h1 = self.groundAt(from.x + dir.x * probe, from.z + dir.z * probe);
+        const rise = h1 - h0;
+        return rise <= mathx.maxF(STEP_UP, MAX_SLOPE * probe);
+    }
+
+    /// Where a ray meets the ground — the editor's cursor, and anything else aiming at the terrain.
+    /// Marched rather than solved: the surface is a bilinear patchwork, so there is no closed form, and
+    /// a march that steps a fraction of a lattice cell cannot skip a ridge. Refined by bisection once a
+    /// crossing is bracketed, so the answer is exact to a centimetre.
+    ///
+    /// Falls back to the flat plane solve when nothing is sculpted, which is both faster and exactly
+    /// what the editor did before.
+    pub fn rayGround(self: *const Env, origin: rl.Vector3, dir: rl.Vector3) ?rl.Vector3 {
+        if (!self.heightAny) {
+            if (@abs(dir.y) < 1e-6) return null;
+            const t = (GROUND_Y - origin.y) / dir.y;
+            if (t <= 0) return null;
+            return v3(origin.x + dir.x * t, GROUND_Y, origin.z + dir.z * t);
+        }
+        const step = 2 * self.heightHalf / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+        const horiz = @sqrt(dir.x * dir.x + dir.z * dir.z);
+        // Advance half a lattice cell of GROUND distance per step (or a fixed slab when looking almost
+        // straight down, where the horizontal march is nearly zero and would never terminate).
+        const dt = if (horiz > 1e-4) step * 0.5 / horiz else step * 0.5;
+        const MAX_T: f32 = 4.0 * GROUND_HALF;
+        var t: f32 = 0;
+        var prev = origin.y - self.groundAt(origin.x, origin.z);
+        while (t < MAX_T) {
+            const nt = t + dt;
+            const p = v3(origin.x + dir.x * nt, origin.y + dir.y * nt, origin.z + dir.z * nt);
+            const cur = p.y - self.groundAt(p.x, p.z);
+            if (prev > 0 and cur <= 0) {
+                var lo = t;
+                var hi = nt;
+                var k: usize = 0;
+                while (k < 20) : (k += 1) {
+                    const mid = (lo + hi) * 0.5;
+                    const q = v3(origin.x + dir.x * mid, origin.y + dir.y * mid, origin.z + dir.z * mid);
+                    if (q.y - self.groundAt(q.x, q.z) > 0) lo = mid else hi = mid;
+                }
+                const q = v3(origin.x + dir.x * hi, origin.y + dir.y * hi, origin.z + dir.z * hi);
+                return v3(q.x, self.groundAt(q.x, q.z), q.z);
+            }
+            prev = cur;
+            t = nt;
+        }
+        return null;
+    }
+
     /// Water depth-ish test: is this ground position inside a pool? (Nothing blocks there —
     /// the tarn is wadeable by design — but the scatter uses it, and wading FX will too.)
     pub fn inWater(self: *const Env, x: f32, z: f32, inset: f32) bool {
@@ -656,11 +1064,40 @@ pub const Env = struct {
     pub fn setShader(self: *Env, sh: rl.Shader) void {
         self.ground.materials[0].shader = sh;
         for (&self.models) |*m| m.materials[0].shader = sh;
+        // The terrain tiles too, or the depth pass leaves them on the scene shader. They are not
+        // casters today (see drawGround), so this only matters if that ever changes — but a caster set
+        // that half-swaps its shaders is precisely the drift `setCasterShaders` exists to prevent.
+        for (self.tiles[0..], self.tileBuilt[0..]) |*t, built| {
+            if (built) t.materials[0].shader = sh;
+        }
+        if (self.skirtBuilt) self.skirt.materials[0].shader = sh;
     }
 
-    // Terrain receives shadows but doesn't cast; drawn separately with groundMode on.
-    pub fn drawGround(self: *const Env) void {
-        rl.drawModel(self.ground, mathx.zero3, 1.0, rl.Color.white);
+    /// Terrain receives shadows but doesn't cast; drawn separately with groundMode on.
+    ///
+    /// SCULPTED GROUND IS TILED and culled per tile — one world-spanning heightfield mesh is ~100k
+    /// triangles, most of them behind you. A FLAT map draws the single original quad instead, which is
+    /// cheaper than any number of tiles and is why nothing changed for the shipped world.
+    ///
+    /// The terrain still does NOT cast: a hill therefore shades by its own normal but throws no shadow
+    /// across the ground behind it. Self-shadowing a heightfield off a 108 m ortho box invites acne
+    /// everywhere the surface grazes the sun, and that is a worse artefact than a missing hill shadow.
+    pub fn drawGround(self: *Env, view: ?*const View) void {
+        if (!self.heightAny) {
+            rl.drawModel(self.ground, mathx.zero3, 1.0, rl.Color.white);
+            return;
+        }
+        for (self.tiles[0..], self.tileBuilt[0..], self.tileMid[0..], self.tileRad[0..]) |t, built, mid, rad| {
+            if (!built) continue;
+            // The terrain has no per-kind view distance to cull by, so the frustum sides alone decide;
+            // GROUND_HALF is past the haze's own opacity, i.e. "everything in front of you".
+            if (view) |vw| {
+                if (!vw.visible(mid, rad, GROUND_HALF)) continue;
+            }
+            self.stat_draws += 1;
+            rl.drawModel(t, mathx.zero3, 1.0, rl.Color.white);
+        }
+        if (self.skirtBuilt) rl.drawModel(self.skirt, mathx.zero3, 1.0, rl.Color.white);
     }
 
     /// The stone/structure props — the shadow casters, drawn in BOTH passes through this ONE
@@ -701,10 +1138,15 @@ pub const Env = struct {
         var c: usize = 0;
         while (c < NCELL) : (c += 1) {
             if (idx.start[c] == idx.start[c + 1]) continue;
-            const centre = cellCentre(c);
+            var centre = cellCentre(c);
+            // Lifted onto the cell's own props (see Index.ylo/yhi): with terrain elevation the cell is a
+            // slab that can sit tens of metres off the datum, and testing a sphere at y = 0 against the
+            // frustum rejects a hilltop you are looking straight at.
+            centre.y = (idx.ylo[c] + idx.yhi[c]) * 0.5;
+            const vspan = (idx.yhi[c] - idx.ylo[c]) * 0.5;
             switch (cull) {
                 .view => |*vw| {
-                    if (!vw.visible(centre, CELL_CIRCUM + idx.bound[c], idx.view[c])) continue;
+                    if (!vw.visible(centre, CELL_CIRCUM + idx.bound[c] + vspan, idx.view[c])) continue;
                 },
                 .sun => |focus| {
                     if (!castsInto(focus, centre, CELL_CIRCUM + idx.bound[c], idx.top[c])) continue;
@@ -821,6 +1263,30 @@ fn inward(a: rl.Vector3, b: rl.Vector3, inside: rl.Vector3) rl.Vector3 {
     return if (d < 0) mathx.scaleV(n, -1) else n;
 }
 
+/// DROP A TERRAIN MESH, and the ONE safe way to do it. The terrain is the only geometry in the game that
+/// is ever unloaded (every prop is a permanent prototype — AGENTS.md says not to unload those, and this
+/// is why): raylib's `UnloadModel` calls `UnloadMaterial`, which UNLOADS THE MATERIAL'S SHADER. The
+/// shader on a tile is the SCENE shader every other draw in the frame uses, so unloading one tile
+/// deleted the program out from under the whole renderer and freed its uniform table — and the next tile
+/// freed the same pointer again. That is a heap corruption at exit and a dead renderer before it, and
+/// the symptom is an exit code with no stack in it.
+///
+/// Pointing the material at raylib's DEFAULT shader first makes `UnloadMaterial` skip it (it never
+/// unloads the default, nor the default texture), while the mesh's own VBOs and CPU arrays still go —
+/// so this frees everything a rebuild should and nothing it shouldn't.
+fn unloadTerrain(model: rl.Model) void {
+    var m = model;
+    m.materials[0].shader.id = rl.gl.rlGetShaderIdDefault();
+    rl.unloadModel(m);
+}
+
+// Height lattice point → the terrain tile that owns it. Tiles overlap by one point (they share their
+// edges), so a point on a seam answers with the LOWER tile and callers that care widen their range by
+// a point either side — see `sculptHeight`.
+fn tileOf(point: usize) usize {
+    return @min(point / (TCHUNK - 1), TILES - 1);
+}
+
 // World coordinate → grid column/row, clamped so anything outside the grid lands in the edge
 // cell rather than indexing out of bounds (the cliff ring sits near the limit by design).
 fn cellCoord(w: f32) usize {
@@ -884,11 +1350,28 @@ const Placer = struct {
     leanDir: f32 = 0,
     leanExact: bool = false,
 
+    // PLANTED ON THE GROUND, which with elevation means the sculpted height there and not y = 0. Prop
+    // bases are authored at their own local zero, so this one line is what stands the whole world on the
+    // terrain — and why `uploadHeight` must run before `materialize`.
+    //
+    // The height is taken at the prop's ORIGIN only. A wide base on a slope therefore buries one edge
+    // and lifts the other, which is the right trade at this pitch: the alternative is tilting props to
+    // the ground normal, and a leaning wall or a tipped chapel is a much louder error than a plinth with
+    // one corner in the dirt. Steep ground is for looking at, not for building on.
     fn at(self: *Placer, kind: Kind, x: f32, z: f32, yaw: f32, scale: f32, rng: *mathx.Rng) void {
-        self.atY(kind, x, 0, z, yaw, scale, rng);
+        self.atY(kind, x, self.groundY(x, z), z, yaw, scale, rng);
     }
 
-    // With an explicit Y — only water uses it, to stagger overlapping sheets out of z-fighting.
+    /// The sculpted ground height for a prop about to be placed — read off the MAP being replayed, not
+    /// off `env.groundAt`, because `materialize` may be running before the field has been uploaded (the
+    /// `--shot-props` harness stages props with no map at all). Minus the datum: prop Y is measured from
+    /// the same zero soles are.
+    fn groundY(self: *const Placer, x: f32, z: f32) f32 {
+        return self.m.heightAt(x, z);
+    }
+
+    // With an explicit Y — water (staggering overlapping sheets out of z-fighting) and the ground plant
+    // above.
     fn atY(self: *Placer, kind: Kind, x: f32, y: f32, z: f32, yaw: f32, scale: f32, rng: *mathx.Rng) void {
         if (self.e.nprops >= MAX_PROPS) @panic("env: MAX_PROPS exceeded — raise the cap");
         // NOTHING is drawn from `rng` unless the op actually asked for a lean. Every existing world's
@@ -964,7 +1447,11 @@ const Placer = struct {
         self.leanDir = o.leanDir;
         self.leanExact = o.op == .at;
         switch (o.op) {
-            .at => self.atY(o.kind, o.x, o.r1, o.z, o.yaw, o.scale, &rng),
+            // `r1` on a literal is a Y OFFSET ABOVE THE GROUND, not an absolute height — the only user
+            // is the authored water sheet, staggering overlapping pools out of z-fighting, and an
+            // absolute would leave a tarn hanging in the air over a raised valley floor. Every existing
+            // map leaves it 0, so every existing prop simply plants.
+            .at => self.atY(o.kind, o.x, self.groundY(o.x, o.z) + o.r1, o.z, o.yaw, o.scale, &rng),
             .belt => self.belt(o, &rng),
             .disc => self.disc(o, &rng),
             .ring => self.ring(o, &rng),
@@ -1314,6 +1801,10 @@ fn fillIndex(e: *Env, idx: *Index, want_flora: bool) void {
     idx.bound = [_]f32{0} ** NCELL;
     idx.view = [_]f32{0} ** NCELL;
     idx.top = [_]f32{0} ** NCELL;
+    // The vertical extent folds the OTHER way (a min and a max about the datum), so it starts at the
+    // datum rather than at zero-the-sentinel — an empty cell then has an empty span, not a 20 m one.
+    idx.ylo = [_]f32{0} ** NCELL;
+    idx.yhi = [_]f32{0} ** NCELL;
     var counts = [_]u32{0} ** NCELL;
     for (e.props[0..e.nprops]) |pr| {
         if (props.info(pr.kind).flora != want_flora) continue;
@@ -1335,6 +1826,8 @@ fn fillIndex(e: *Env, idx: *Index, want_flora: bool) void {
         idx.bound[c] = mathx.maxF(idx.bound[c], nfo.bound * pr.scale);
         idx.view[c] = mathx.maxF(idx.view[c], nfo.view);
         idx.top[c] = mathx.maxF(idx.top[c], nfo.top * pr.scale);
+        idx.ylo[c] = mathx.minF(idx.ylo[c], pr.pos.y);
+        idx.yhi[c] = mathx.maxF(idx.yhi[c], pr.pos.y);
     }
 }
 
@@ -1435,6 +1928,157 @@ test "a solid's cell iterator covers its whole footprint" {
     }
     try std.testing.expect(seen >= 2);
     try std.testing.expect(hasLeft and hasRight);
+}
+
+// ── ELEVATION ──────────────────────────────────────────────────────────────────────────
+// A test Env is ~1 MB of flat arrays, so these allocate one rather than putting it on the stack. Only
+// the height field is filled in: nothing below touches props, the grid or the GPU.
+fn envWithRamp(rise: f32) !*Env {
+    const e = try std.testing.allocator.create(Env);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.heightHalf = wf.DEFAULT_HALF;
+    e.heightAny = true;
+    // Height rises with x at `rise` metres per metre — a uniform slope, so the expected answer at any
+    // point is arithmetic rather than a lookup.
+    const step = 2 * e.heightHalf / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+    for (0..wf.HEIGHT_N) |iz| {
+        for (0..wf.HEIGHT_N) |ix| {
+            const x = -e.heightHalf + @as(f32, @floatFromInt(ix)) * step;
+            e.heightField[iz * wf.HEIGHT_N + ix] = wf.heightByte(x * rise);
+        }
+    }
+    return e;
+}
+
+test "walkStep: an incline inside the limit is taken, a cliff face is refused" {
+    // A 20 deg slope (tan 0.364) — comfortably walkable.
+    {
+        const e = try envWithRamp(0.364);
+        defer std.testing.allocator.destroy(e);
+        try std.testing.expect(e.walkableAt(0, 0));
+        const up = e.walkStep(v3(0, 0, 0), v3(1, 0, 0), 0.1);
+        try std.testing.expectApproxEqAbs(@as(f32, 0.1), up.x, 1e-4); // the whole step happened
+    }
+    // A 60 deg face (tan 1.73) — past MAX_SLOPE, so the climb is refused outright.
+    {
+        const e = try envWithRamp(1.73);
+        defer std.testing.allocator.destroy(e);
+        try std.testing.expect(!e.walkableAt(0, 0));
+        const up = e.walkStep(v3(0, 0, 0), v3(1, 0, 0), 0.1);
+        try std.testing.expectApproxEqAbs(@as(f32, 0), up.x, 1e-4);
+        // …but DOWNHILL is never refused. A rule that blocked both would trap an actor who somehow
+        // ended up on a cliff, which is what a spawn on one is.
+        const down = e.walkStep(v3(0, 0, 0), v3(-1, 0, 0), 0.1);
+        try std.testing.expectApproxEqAbs(@as(f32, -0.1), down.x, 1e-4);
+        // …and ACROSS the face slides at full pace rather than sticking: walking into a cliff at an
+        // angle has to leave you moving, or a hillside reads as a set of invisible corners.
+        const across = e.walkStep(v3(0, 0, 0), mathx.normV(v3(1, 0, 1)), 0.1);
+        try std.testing.expect(@abs(across.z - 0.1) < 0.02); // kept the step's LENGTH along z
+        try std.testing.expect(across.x < 0.02); // …and gave up the uphill part of it
+    }
+}
+
+test "THE STEP RULE IS FRAME-RATE INDEPENDENT — a wall cannot be ratcheted up 0.4 m at a time" {
+    // THE bug this exists for. `STEP_UP` says a rise under 0.45 m is always steppable, and measured
+    // against the FRAME'S OWN travel that is true of every 1 mm step a 240 fps hero takes into a
+    // vertical cliff — so he would climb it at tens of metres a second, faster the better the machine.
+    // The fixed `STEP_PROBE` lookahead is the fix, and this pins it across four frame rates.
+    const e = try envWithRamp(1.73); // 60 deg: not walkable at any dt
+    defer std.testing.allocator.destroy(e);
+    for ([_]f32{ 1.0 / 30.0, 1.0 / 60.0, 1.0 / 144.0, 1.0 / 1000.0 }) |dt| {
+        var p = v3(0, 0, 0);
+        var i: usize = 0;
+        while (i < 200) : (i += 1) p = e.walkStep(p, v3(1, 0, 0), 6.0 * dt);
+        try std.testing.expectApproxEqAbs(@as(f32, 0), p.x, 1e-3);
+    }
+}
+
+test "a SLIGHT STEP is always taken, however steep the face carrying it" {
+    // The owner's ask, and the other half of the anti-jank story: a low ledge is a step, not a wall. Two
+    // terraces with a single riser between them, authored at 0.5 m — two quantisation steps, which is the
+    // tallest ledge STEP_UP is meant to let through.
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.heightHalf = wf.DEFAULT_HALF;
+    e.heightAny = true;
+    const mid = wf.HEIGHT_N / 2;
+    const LEDGE: f32 = 0.5;
+    for (0..wf.HEIGHT_N) |iz| {
+        for (0..wf.HEIGHT_N) |ix| {
+            e.heightField[iz * wf.HEIGHT_N + ix] = wf.heightByte(if (ix >= mid) LEDGE else 0.0);
+        }
+    }
+    const step = 2 * e.heightHalf / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+    const x0 = -e.heightHalf + @as(f32, @floatFromInt(mid)) * step - step * 1.5; // just short of the lip
+    var p = v3(x0, 0, 0);
+    var i: usize = 0;
+    while (i < 120) : (i += 1) p = e.walkStep(p, v3(1, 0, 0), 6.0 / 60.0);
+    try std.testing.expect(p.x > x0 + 4.0); // he is well past it
+    try std.testing.expectApproxEqAbs(LEDGE, e.groundAt(p.x, p.z) - GROUND_Y, 1e-3); // …and UP it
+    // …and it is `STEP_UP` doing the work, not the slope limit having a lucky day: the riser is one
+    // lattice cell, so as a pure gradient question it is right on the edge, and a rule that only asked
+    // about slope would hold at the lip depending on where in the cell the probe landed.
+    try std.testing.expect(LEDGE <= STEP_UP);
+
+    // A THREE-STEP ledge (0.75 m) is a wall. This is the other side of the same number, and what stops
+    // "always steppable" from quietly meaning "climbs anything one riser at a time".
+    for (0..wf.HEIGHT_N) |iz| {
+        for (0..wf.HEIGHT_N) |ix| {
+            e.heightField[iz * wf.HEIGHT_N + ix] = wf.heightByte(if (ix >= mid) 6.0 else 0.0);
+        }
+    }
+    var q = v3(x0, 0, 0);
+    i = 0;
+    while (i < 120) : (i += 1) q = e.walkStep(q, v3(1, 0, 0), 6.0 / 60.0);
+    try std.testing.expect(e.groundAt(q.x, q.z) - GROUND_Y < 0.01); // still on the lower terrace
+}
+
+test "env's ground agrees with the MAP's to the millimetre" {
+    // Two owners, one field: the map holds what the editor sculpts, env holds the copy the terrain mesh
+    // was built from and every actor stands on. They share `wf.sampleHeight` precisely so a hero cannot
+    // walk a centimetre off the mesh he can see — this is that claim, checked.
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("Agree");
+    var span: [4]usize = undefined;
+    _ = m.sculpt(-30, 40, 26, .raise, 7.5, &span);
+    _ = m.sculpt(20, -20, 14, .lower, 3.0, &span);
+
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.heightField = m.height;
+    e.heightHalf = m.half;
+    e.heightAny = m.anyHeight();
+    for ([_][2]f32{ .{ -30, 40 }, .{ 20, -20 }, .{ 0, 0 }, .{ -117.3, 88.6 }, .{ 279, -279 } }) |p| {
+        // env adds the DATUM (the 1 cm the old flat plane sat at) and the map does not, which is the
+        // only difference there may ever be between them.
+        try std.testing.expectApproxEqAbs(m.heightAt(p[0], p[1]) + GROUND_Y, e.groundAt(p[0], p[1]), 1e-5);
+    }
+    // A FLAT map is the old world exactly: the datum, everywhere, with no field consulted at all.
+    e.heightAny = false;
+    try std.testing.expectApproxEqAbs(GROUND_Y, e.groundAt(-30, 40), 1e-6);
+}
+
+test "rayGround finds the surface of a hill, not the plane under it" {
+    // The editor aims every click with this. On sculpted ground a plane solve lands metres from where
+    // the pointer is looking, which reads as the whole editor having gone out of register.
+    const e = try envWithRamp(0.5); // a steady 26 deg slope rising with x
+    defer std.testing.allocator.destroy(e);
+    // Straight down from high above a point 40 m along the ramp: the hit must be that point, at its own
+    // height (40 * 0.5 = 20 m, plus the datum).
+    const hit = e.rayGround(v3(40, 200, 0), v3(0, -1, 0)) orelse return error.NoHit;
+    try std.testing.expectApproxEqAbs(@as(f32, 40), hit.x, 0.05);
+    try std.testing.expectApproxEqAbs(@as(f32, 20) + GROUND_Y, hit.y, 0.05);
+    // An OBLIQUE ray hits the near face of the slope, so its x is short of where the flat-plane solve
+    // would have put it — that difference IS the bug this fixes.
+    const flatT = (GROUND_Y - 60.0) / -0.5; // the plane answer for the ray below
+    const oblique = e.rayGround(v3(-60, 60, 0), mathx.normV(v3(1, -0.5, 0))) orelse return error.NoHit;
+    try std.testing.expect(oblique.x < -60 + flatT * 0.9);
+    try std.testing.expectApproxEqAbs(e.groundAt(oblique.x, oblique.z), oblique.y, 0.05);
+    // Aimed at the sky: nothing, rather than a point behind the eye.
+    try std.testing.expect(e.rayGround(v3(0, 10, 0), mathx.normV(v3(0, 1, 0))) == null);
 }
 
 test "the cover field actually varies — real clearings and real thickets" {

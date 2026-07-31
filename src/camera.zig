@@ -19,6 +19,10 @@ const PITCH_MIN = -0.20; // ~ -11 deg (looking up from just below)
 const PITCH_MAX = 1.15; // ~  66 deg (looking down)
 const SHOULDER = 0.55; // lateral offset (world units): hero sits left of centre
 const TARGET_RAISE = 0.15; // lift the look-at a touch above the shoulder point
+/// How far the eye stays clear of the ground (see `followClear`). Past the near clip plane by a margin:
+/// an eye exactly ON the surface has the terrain filling the bottom of the frame, and one a hair under
+/// it has the terrain filling ALL of it.
+const GROUND_CLEAR = 0.7;
 
 // ── impact shake ── trauma-based (shake ∝ trauma², so small hits whisper and big ones crack), as a
 // short translational jitter on eye and look-at in follow(). Only the LIVE loop feeds tickShake(), so
@@ -99,21 +103,66 @@ pub const CamRig = struct {
         );
     }
 
-    // Re-aim at the hero's shoulder point. Call every frame after input + movement.
-    pub fn follow(c: *CamRig, shoulder: rl.Vector3) void {
+    /// The unit vector from the look-at point toward the eye — behind the hero and above him by the
+    /// pitch. Pub because `followClear` needs to know where the eye WOULD be at a given boom length,
+    /// and a second copy of this trig is how a camera ends up looking somewhere the rig doesn't.
+    pub fn backDir(c: *const CamRig) rl.Vector3 {
         const cp = mathx.cosf(c.pitch);
-        const sp = mathx.sinf(c.pitch);
-        // Unit vector from target toward the camera (behind + above by pitch).
-        const back = v3(-mathx.sinf(c.yaw) * cp, sp, -mathx.cosf(c.yaw) * cp);
+        return v3(-mathx.sinf(c.yaw) * cp, mathx.sinf(c.pitch), -mathx.cosf(c.yaw) * cp);
+    }
+
+    /// What the camera looks AT: the shoulder point, offset to frame the hero off-centre and lifted a
+    /// touch. Also pub for `followClear`'s sake.
+    pub fn targetFor(c: *const CamRig, shoulder: rl.Vector3) rl.Vector3 {
         const right = c.rightXZ();
-        const target = v3(
+        return v3(
             shoulder.x + right.x * SHOULDER,
             shoulder.y + TARGET_RAISE,
             shoulder.z + right.z * SHOULDER,
         );
+    }
+
+    // Re-aim at the hero's shoulder point. Call every frame after input + movement.
+    pub fn follow(c: *CamRig, shoulder: rl.Vector3) void {
+        c.place(c.targetFor(shoulder), c.dist);
+    }
+
+    /// FOLLOW WITHOUT BURYING THE EYE IN A HILLSIDE. On sculpted ground the boom swings into the slope
+    /// behind the hero constantly — a hero halfway up a bank has the camera underground, and what you
+    /// then see is the sky below the horizon with the world floating over it and no hero at all.
+    ///
+    /// The fix is the one souls cameras use: SHORTEN THE BOOM until the eye clears, rather than lifting
+    /// it. Lifting changes the pitch you asked for — the view tips toward looking straight down as you
+    /// climb, which fights the player for control of the camera. Pulling in keeps the angle and just
+    /// brings you closer, which is what walking backwards into a wall does anyway.
+    ///
+    /// `groundAt` is passed as a comptime function over a context (the `env.pickIf` idiom) so this file
+    /// stays independent of the world: the camera needs to know the height of the ground, not what a
+    /// height field is.
+    pub fn followClear(c: *CamRig, shoulder: rl.Vector3, ctx: anytype, comptime groundAt: fn (@TypeOf(ctx), f32, f32) f32) void {
+        const target = c.targetFor(shoulder);
+        const back = c.backDir();
+        var d = c.dist;
+        // Walked in from the requested distance rather than solved: the ground under the boom is a
+        // bilinear patchwork, so there is no closed form, and a step of a quarter metre is finer than
+        // the eye can read at any zoom.
+        while (d > MIN_DIST) {
+            const p = mathx.addV(target, mathx.scaleV(back, d));
+            if (p.y >= groundAt(ctx, p.x, p.z) + GROUND_CLEAR) break;
+            d = mathx.maxF(d - 0.25, MIN_DIST);
+        }
+        c.place(target, d);
+        // …and if even the closest boom is inside the hill (standing in a hollow, or against a face
+        // steeper than the pitch), LIFT as the last resort. A wrong angle beats being underground.
+        const floor = groundAt(ctx, c.cam.position.x, c.cam.position.z) + GROUND_CLEAR;
+        if (c.cam.position.y < floor) c.cam.position.y = floor;
+    }
+
+    /// Put the eye `dist` back along the boom from `target`, jitter included.
+    fn place(c: *CamRig, target: rl.Vector3, dist: f32) void {
         // Impact jitter rides BOTH ends so the whole frame kicks (a shake, not a re-aim).
         c.cam.target = mathx.addV(target, c.shakeOff);
-        c.cam.position = mathx.addV(mathx.addV(target, mathx.scaleV(back, c.dist)), c.shakeOff);
+        c.cam.position = mathx.addV(mathx.addV(target, mathx.scaleV(c.backDir(), dist)), c.shakeOff);
     }
 };
 

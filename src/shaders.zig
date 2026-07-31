@@ -164,6 +164,12 @@ pub const sceneFS =
     \\uniform float lightRad[16];
     \\uniform int nLights;
     \\out vec4 finalColor;
+    \\// HOW SOLID A FLAME IS (owner's call: all flames somewhat transparent). The one material in the
+    \\// scene that is emitted light rather than a lit surface, so what is behind it should come through
+    \\// it — and the COOLER the tongue the more of it does, because a tip is the thin edge of the fire
+    \\// where a core is deep enough to hide what it stands in front of.
+    \\const float FLAME_A_CORE = 0.86;
+    \\const float FLAME_A_TIP = 0.42;
     \\float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
     \\float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
     \\  return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x), mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y); }
@@ -673,7 +679,15 @@ pub const sceneFS =
     \\  lit = max(mix(vec3(luma), lit, 1.15), 0.0);
     \\  vec3 outc = pow(max(lit, 0.0), vec3(1.0/2.2));
     \\  outc += (hash21(gl_FragCoord.xy) - 0.5)*(2.0/255.0);
-    \\  finalColor = vec4(outc, 1.0);
+    \\  // …and the flame's own body is the only thing here that is not opaque. Graded off the VERTEX
+    \\  // emissive rather than a second channel: `emis` runs ~0.90 at FLAME_CORE down to ~0.65 at
+    \\  // FLAME_TIP, which is already the hot-to-cool ramp the tongues are authored with.
+    \\  // The depth WRITE stays on, so a flame blends over what was drawn BEFORE it — the ground, the
+    \\  // water, its own ironwork — and its overlapping tongues do not stack into a brighter core. A
+    \\  // prop drawn after it and standing behind it is still occluded, which at a torch's size reads
+    \\  // as nothing; sorting the whole prop pass to fix that would cost far more than it buys.
+    \\  float outA = (mi == 11) ? mix(FLAME_A_TIP, FLAME_A_CORE, smoothstep(0.62, 0.90, emis)) : 1.0;
+    \\  finalColor = vec4(outc, outA);
     \\}
 ;
 

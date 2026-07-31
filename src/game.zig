@@ -833,7 +833,7 @@ pub fn hud(g: *Game, dt: f32) void {
         // All three bars are LIVE now. FP still has nothing to SPEND it on (no spells, no skills),
         // so it sits full — but it is a real meter rather than a literal 1.0, because the Cerulean
         // flask pours into it and a flask whose target is a constant cannot be seen to work.
-        hud_.vitals(dt, g.hero.vit.hpFrac(), g.hero.fp.frac(), g.hero.stam.frac(), g.hero.stamRefused / combat.STAM_REFUSE_FLASH);
+        hud_.vitals(dt, g.hero.vit.hpFrac(), g.hero.fp.frac(), g.hero.stam.frac(), g.hero.stamRefused / combat.STAM_REFUSE_FLASH, g.hero.stam.windedTo());
         // The one-line translation combat.FlaskKind → hud.FlaskTint: hud takes plain values and
         // knows nothing about the combat layer, so the mapping belongs on this side of the fence.
         hud_.equipment(switch (g.hero.flasks.sel) {
@@ -1060,7 +1060,8 @@ pub fn run(mode: Mode) void {
         // reads as the audio having died. Driven off the flag once a frame rather than hooked onto the
         // three ways in and out (menu > Editor, Leave, F5 playtest): `mute` early-outs when the state
         // is unchanged, and one line here cannot be the transition somebody forgot.
-        sfx.mute(g.editor.on);
+        // …EXCEPT while its jukebox is up, which is a sound tool and would otherwise play into a mute.
+        sfx.mute(g.editor.on and !g.editor.auditioning());
 
         // Pad SELECT opens the GAME menu, pad START the CHARACTER one; TAB is START's keyboard twin.
         // NOT WHILE THE EDITOR IS UP: Esc is the editor's own back-out key and this runs before its
@@ -1126,6 +1127,11 @@ pub fn run(mode: Mode) void {
             // …and the chests with them, for the same reason and off the same source of truth: moving,
             // adding or deleting a box has to move the box you can SEE. Off `env`'s prop list rather than
             // the map's ops, so it follows the world the editor has actually rebuilt.
+            //
+            // MEASURED AND LEFT: this is a full scan of the prop list (~17k byte compares, tens of µs)
+            // once a frame, and it is paid only while the editor is open — the same order as the Ground
+            // panel's own grid scan, and for the same reason. Gating it on "the world rebuilt this frame"
+            // would mean a flag the editor sets and four edit paths must remember, to save µs in a tool.
             rehomeChests(g);
             // …AND THE GRIP GOES QUIET, envelopes still decaying — the same call the pause card makes,
             // for the same reason. Without it the editor branch never ticks the rumble at all: a live

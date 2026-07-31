@@ -182,9 +182,9 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
   `shot.cmd`) and INSPECTING the PNGs in `shots\`. `--shot` hides the window: it scripts a walk→
   run→sprint and a roll at several angles, then every foe's states, then the **WORLD TOUR**
   (`70..92`): one framing per region, the chapel/watchtower interiors under torchlight, the tarn,
-  the cliffs, five overhead MAP shots and two Stats readouts, then the EDITOR (`95..99e`) — layers,
-  a marquee, the ground brush, PAINTED WATER from low down and overhead, and the OBJECT VIEWER's two
-  levels — then ELEVATION (`100..105`): a sculpted ridge from below and from on it, the hero having
+  the cliffs, five overhead MAP shots and two Stats readouts, then the EDITOR (`95..99g`) — layers,
+  a marquee, the ground brush, PAINTED WATER from low down and overhead, the OBJECT VIEWER's two
+  levels, the INTERACTABLES layer and the JUKEBOX (`99f`/`99g`) — then ELEVATION (`100..105`): a sculpted ridge from below and from on it, the hero having
   WALKED up it (through the real `walkStep` + grounding + lean, with the debug numbers on), its profile
   from a distance, and the Ground layer with a sculpt brush armed. That block sculpts the live map and
   puts it back, so it runs LAST and nothing after it stands on terrain the shipped map does not have.
@@ -262,11 +262,21 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
 - `editor.zig` — THE EDITOR (Menu > Editor). Organised in LAYERS the StarEdit way — GROUND
                  (SHAPE the land, then paint the soil, then flood it — the strip is sectioned
                  `shape` / `surface` because those are two different jobs), COVER (zone density +
-                 clearings), DECOR (flora), PROPS (stone/timber/fire), UNITS (foe spawns) —
+                 clearings), DECOR (flora), PROPS (stone/timber/fire), **INTERACTABLES** (the things
+                 the player OPENS — chests, and their contents), UNITS (foe spawns) —
                  and **only the ACTIVE layer is
                  live**: every layer stays visible but a click can only pick, place or erase in
                  the one you are on, so dressing ferns can never nudge a chapel. Each layer
                  ends in its own scoped ERASE brush and remembers the brush you left it on.
+                 **WHICH LAYER STOCKS A KIND IS `props.stock`**, read off INFO's own flags (`flora` →
+                 Decor, `interact` → Interactables, else Props) — the editor's palette, its group chips
+                 and the object viewer's shelves all ask that one question, so a kind cannot be offered
+                 on two layers or on none. A chest is still an ordinary `at` op of kind `.chest`, which
+                 is why the shipped map did not move when the layer was added; and Interactables has no
+                 scatter brush on purpose, since contents live on the OP (`Op.loot`) and a generator
+                 would put the same list in every box it grew. **The marked set does not cross layers**
+                 (`setLayer` clears it): `marked` holds op indices on the object layers and foe indices
+                 on Units, and Del reads it against whatever layer is live now.
                  SELECTION IS BY CLICKING THE THING IN THE WORLD — there is deliberately no list
                  of ops (that was the document model showing through the window, and it read as a
                  history log next to Undo/Redo). A properties
@@ -276,8 +286,12 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  **CONTROLS ARE THE OWNER'S, VERBATIM — do not invent additions:** LMB click
                  picks an object, LMB drag PANS; RMB click on an object opens its menu, on
                  nothing DESELECTS, RMB drag ROTATES (4 px splits click from drag); wheel ZOOMS;
-                 WASD and the arrows pan; Enter confirms, Esc backs out one level and opens the
-                 menu when there is nothing left to back out of. The camera is an ORBIT rig
+                 WASD and the arrows pan; Enter confirms, and **Esc backs out one level, where one
+                 level up is SELECT MODE** (owner's rule: Select is "back out and let me grab
+                 something", then Esc again is "back out fully"). So the ladder is context menu →
+                 Select → the menu, and it does NOT deselect on the way — that step used to throw away
+                 the selection you were backing out of a brush to work on. Right-click on nothing is
+                 the deselect. The camera is an ORBIT rig
                  (ground focus + yaw/pitch/dist), not a free-fly, and the pan works by re-aiming
                  at the point the cursor GRABBED — so terrain stays under the pointer at any
                  zoom or angle. THE CURSOR IS SHOWN here and re-hidden on the way out; gameplay
@@ -304,8 +318,9 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  first and the control crib shortens, then drops, rather than drawing over it.
 - `objview.zig` — THE OBJECT VIEWER (editor top bar > **Objects**, or right-click a selection >
                  **View {prop}…**, or the properties panel's **view**). A paged GALLERY of every
-                 placeable kind, SHELVED BY LAYER (Decor = the flora palette, Props = the rest, off
-                 the same two comptime lists in props.zig), each cell a LIVE off-screen render of the
+                 placeable kind, SHELVED BY LAYER (Decor = the flora palette, Interactables = the things
+                 that open, Props = the rest — off `props.stock`, the same split the brush palette
+                 uses), each cell a LIVE off-screen render of the
                  real model through the real scene shader — never an icon, so a mesh that reads wrong
                  here reads wrong in the game. Drag a cell to spin it, wheel to zoom, click to open
                  ONE object filling the screen with its INFO row beside it (bound / top / view /
@@ -314,6 +329,16 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  preview runs no depth pass, so it calls `gfx.Scene.shadowsOff` — without it every
                  fragment is tested against the WORLD's shadow map and the model comes back dark.
                  It replaces `--shot-props` as the way to judge a model: same look, no rebuild.
+                 Its EAR-SIDE twin is the **JUKEBOX** (top bar > **Sounds**): every voice in
+                 `audio.zig`'s bank as a list — names walked off `sfx.Id` at comptime, so a new voice is
+                 in it the moment it has a row — a click or up/down plays it, space replays, and the
+                 selected row's own dials (gain / reach / takes / poly / jitter / submix) sit beside it,
+                 because a sound you cannot hear is usually explained by its `reach` or its trim. It can
+                 audition AT THE EAR or out at the camera focus, which is the only way to judge the
+                 distance falloff and the pan. The editor is muted (`sfx.mute`, off `editor.on`) so the
+                 mute makes an exception for it (`editor.auditioning`), and the editor calls
+                 `sfx.listen` with its own camera or a world audition would be measured from wherever
+                 the GAME camera last stood.
 - `ui.zig`     — the editor's immediate-mode widget kit, lifted from `../zig-diablo/src/ui.zig`
                  and re-backed onto `hud.zig`. `Ctx.anyHot` gates world clicks NEXT frame.
 - `icons.zig`  — the editor's GLYPH SET, drawn from primitives (`ui.Icon` re-exports it). Vector, not
@@ -616,6 +641,14 @@ and the mesh). This section is the part that decides how it PLAYS.
 - **WALKING IS NEVER GATED.** Running dry drops you to a walk (`mv.speed` is capped to
   `RUN_SPEED`), never roots you. Denied at the SOURCE so `sprintingMove` stays the one definition
   of a sprint and the speed, the facing exceptions and the bleed cannot disagree.
+- **RUN IT ALL THE WAY OUT AND YOU ARE WINDED** (`STAM_WIND_CLEAR`, 0.5, owner's call): the sprint
+  stays denied until the bar is back to HALF. A LATCH, not a `cur == 0` test — the denial has to
+  outlive the emptiness, or the first milligram of regen buys one frame of running that empties it
+  again and a spent player mashing Shift walks anyway while the bar strobes at zero. **SPRINT ONLY:**
+  roll and attack keep `canAct`'s panic rule. It is latched by `settleWind`, called from every path
+  that moves `cur`, so the drain from a sprint and the drain from a roll cannot disagree about whether
+  you are spent — and the stamina bar draws the mark it owes (`Stamina.windedTo` → `hud.vitals`),
+  because "can I run yet" is a question with an answer whether or not a key is down.
 - **YOU MAY ACT ON ANY STAMINA ABOVE ZERO** — `canAct()` is `cur > 0`, NOT `cur >= cost`. A roll
   costs 12 and you can take it on 1, emptying the bar and locking you out after. That asymmetry
   is the PANIC ROLL, and gating on the cost instead deletes the genre's most important move and
@@ -717,6 +750,13 @@ Placement is deterministic: if it fits once it fits.
 - **The hero is per-bone matrices, not `drawModelEx`.**
 - **The scene shader gammas output (`pow 1/2.2`): author dark colours near-black.**
 - **Vertex alpha is the EMISSIVE channel** (255 = fully lit; lower = self-lit).
+- **THE FLAME MATERIAL IS THE ONE THING DRAWN SEMI-TRANSPARENT** (owner's call), and its opacity is
+  GRADED off that same emissive: `FLAME_A_CORE` where a tongue is hot enough to hide what is behind it
+  down to `FLAME_A_TIP` at the cool tip, which is already the ramp `flameInto` authors. Depth WRITE
+  stays on, so a flame blends over what was drawn BEFORE it (ground, water, its own ironwork) and its
+  overlapping tongues do not stack into a brighter core; a prop drawn later and standing behind one is
+  still occluded, which at a torch's size reads as nothing and is far cheaper than sorting the prop
+  pass. The flame still casts a solid shadow — the depth pass has no colour and no alpha.
 - **A BIG SMOOTH MASS NEEDS A NEARLY-BLACK ALBEDO** — and FORM BREAKS. The shader's hot key
   (`*1.72`) plus the gamma lift turns any mid-dark value pale wherever a large face takes the sun
   square on (`BARK_OLD`, the `CLIFF_*` set, `PAVE*`, the `MARBLE*` set all exist for this). The

@@ -225,7 +225,11 @@ const CHIP_RATE = 0.55; // …then drains this fraction of the bar per second
 /// --shot and it stays reproducible. `stamRefused` in 0..1 is how hot the "that action was refused" flag
 /// burns: an empty-bar input does nothing at all in ER, and nothing is indistinguishable from a DROPPED
 /// input, so this is the one place that can say which it was.
-pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32) void {
+///
+/// `windedTo` is the fraction the bar must reach before a sprint is allowed again, or 0 when it may
+/// sprint now. A HELD state rather than a press-triggered flash, because that is the question the
+/// player is actually asking — "can I run YET" — and it has an answer whether or not a key is down.
+pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, windedTo: f32) void {
     if (hp > chip) {
         chip = hp; // healing (and a respawn) snaps it — never strand a trail across the bar
         chipHold = 0;
@@ -240,6 +244,16 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32) void {
     bar(MARGIN, y, FP_W, FP_H, fp, 0, FP_HI, FP_LO, FP_TP);
     y += FP_H + BAR_GAP;
     bar(MARGIN, y, ST_W, ST_H, stam, 0, ST_HI, ST_LO, ST_TP);
+    // WINDED: the bar carries the mark it has to refill PAST before the sprint comes back, and the
+    // track behind it reads as owed rather than as spare. Drawn under the refusal frame so a refused
+    // input still wins the eye.
+    if (windedTo > 0.001) {
+        const wf: f32 = @floatFromInt(ST_W);
+        const owed: i32 = @intFromFloat(wf * mathx.clampF(windedTo, 0, 1));
+        const fill: i32 = @intFromFloat(wf * mathx.clampF(stam, 0, 1));
+        if (owed > fill) rl.drawRectangle(MARGIN + fill, y, owed - fill, ST_H, rgba(232, 96, 72, 46));
+        rl.drawRectangle(MARGIN + owed - 1, y - 1, 2, ST_H + 2, rgba(240, 150, 120, 210)); // the threshold
+    }
     // The refusal flag lights the stamina bar's own FRAME, over the finished bar and outside its fill —
     // so an empty bar, which is exactly when this fires and has no fill to tint, still reads loudly.
     const k = mathx.clampF(stamRefused, 0, 1);

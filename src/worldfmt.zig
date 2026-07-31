@@ -1129,7 +1129,9 @@ fn parseVal(comptime T: type, tok: []const u8) !T {
 // ── files ──────────────────────────────────────────────────────────────────────────────
 
 pub const DIR = "worlds";
-pub const START_MAP = "worlds/01_fallen_plain.world";
+/// BUILT from `DIR` and `EXT` rather than re-spelling them: the shipped map's path had the directory
+/// written out a second time, so moving the maps meant finding both.
+pub const START_MAP = DIR ++ "/01_fallen_plain" ++ EXT;
 
 // One scratch buffer for whole-file reads — a map is a few tens of KB, and a file-level buffer keeps
 // load/save off the allocator like everything else here.

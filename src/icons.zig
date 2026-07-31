@@ -22,6 +22,7 @@ pub const Icon = enum {
     cover,
     decor,
     props,
+    interact,
     units,
     // modes + edits
     select,
@@ -110,6 +111,14 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             vline(cx + s * 0.10, cy + s * 0.02, s * 0.52, w, col);
             hline(cx, cy + s * 0.28, s * 0.52, w, col);
             hline(cx, cy + s * 0.38, s * 0.74, w * 1.3, col); // …and a plinth to match the abacus
+        },
+        // Interactables: a chest. The DOMED lid over a band is the whole read — drawn as a plain box
+        // it is the `zone` glyph, and the hasp is what says the thing opens.
+        .interact => {
+            box(cx, cy + s * 0.15, s * 0.72, s * 0.42, w, col); // the carcase
+            arc(cx, cy - s * 0.06, s * 0.36, 180, 360, w, col); // …under a barrel lid
+            hline(cx, cy - s * 0.06, s * 0.72, w, col); //         …resting on its rim
+            dot(cx, cy + s * 0.06, w * 1.2, col); //               the hasp, over the joint
         },
         // Units: a figure. Head and shoulders — spawns are people-shaped things.
         .units => {

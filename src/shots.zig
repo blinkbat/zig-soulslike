@@ -559,6 +559,21 @@ pub fn runShots(g: *Game) void {
         g.hero.pose();
         shoot(g, "shots/37b_stam_locked.png");
 
+        // …and WINDED with stamina in the bar, which is the state the empty one above cannot show: a
+        // pool refilling after being run dry, denied the SPRINT until it reaches half, with the owed band
+        // and the threshold mark saying how much is left to wait for. Ticked (not assigned) so it is the
+        // real regen curve, and asserted so a capture can never quietly become a picture of a bar that
+        // is simply part full.
+        // Ticked to a CONDITION rather than for a duration, so it needs neither the refill delay nor the
+        // regen rate spelled out here — retune either and this still lands on a fifth of a bar.
+        var st: usize = 0;
+        while (g.hero.stam.frac() < 0.2 and st < 600) : (st += 1) g.hero.stam.tick(SHOT_DT, false, false);
+        std.debug.assert(g.hero.stam.cur > 0 and !g.hero.stam.canSprint());
+        g.hero.stamRefused = 0; // no refusal flash — the mark has to carry this on its own
+        g.hero.update(dt, 0, 0, null);
+        g.hero.pose();
+        shoot(g, "shots/37c_stam_winded.png");
+
         g.hero.vit.hp = g.hero.vit.hpMax; // …back to full for everything downstream (the chip snaps up with it)
         g.hero.stam.reset();
         g.hero.stamRefused = 0;
@@ -1131,10 +1146,12 @@ fn chestShots(g: *Game) void {
     game.rehomeChestsForShot(g);
 }
 
-// THE EDITOR — four captures, because its whole job is legibility and none of that can be
-// judged from the game shots. The Props layer at rest, a generator selected (its gizmo plus a
-// marker on every instance it owns — the thing that makes a scatter editable), a Decor belt
-// mid-drag, and the Ground layer with soil painted.
+// THE EDITOR — its whole job is legibility and none of that can be judged from the game shots, so it
+// gets a frame per room: the Props layer at rest, a generator selected (its gizmo plus a marker on every
+// instance it owns — the thing that makes a scatter editable), a Decor belt mid-drag, the Ground layer
+// with soil painted, painted WATER low and overhead, a marquee, the Open dialog, the object viewer's two
+// levels, the Interactables layer and the jukebox. (No count in this sentence deliberately — it said
+// "four captures" for six of them.)
 fn editorShots(g: *Game) void {
     g.editor.enter(mathx.ground(0, -66)); // the chapel end of the processional way
     g.editor.setLayer(.props);
@@ -1278,6 +1295,29 @@ fn editorShots(g: *Game) void {
     drawScene(g);
     editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
     snap("shots/99e_editor_objects_decor.png");
+
+    // THE INTERACTABLES LAYER — its own brush strip (a hand tool and an eraser, no scatters) and its own
+    // one-shelf palette. Worth a frame of its own because it is the layer whose whole point is that the
+    // Props layer can no longer touch what is on it.
+    g.editor.modal = .none;
+    g.editor.setLayer(.interact);
+    g.editor.selecting = false;
+    g.editor.focus = mathx.ground(0, -12);
+    g.editor.pitch = -0.7;
+    g.editor.yaw = std.math.pi;
+    g.editor.dist = 34;
+    g.editor.applyCamForShot();
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
+    snap("shots/99f_editor_interact.png");
+
+    // THE JUKEBOX. Chrome, so like the Open dialog it cannot be judged from any world shot — and the
+    // row of dials beside the list is the half that has to line up with `audio.zig`'s own table.
+    g.editor.soundsForShot(.ogre_slam);
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
+    snap("shots/99g_editor_sounds.png");
+    g.editor.modal = .none;
 
     g.editor.on = false;
     elevationShots(g);

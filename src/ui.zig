@@ -353,12 +353,19 @@ pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, focused: bo
 }
 
 /// A scrolling list of labels; returns the index clicked, if any. `scroll` is in ROWS.
+/// How many rows a list this many pixels high shows — `list`'s own arithmetic, exported because a
+/// caller that moves the selection BY KEY has to scroll it into view and cannot do that with a second
+/// copy of the row height.
+pub fn listRows(heightPx: i32) i32 {
+    return @divTrunc(heightPx - 6, ROW_H);
+}
+
 pub fn list(ctx: *Ctx, r: rl.Rectangle, labels: []const [:0]const u8, sel: usize, scroll: *i32) ?usize {
     _ = ctx.hot(r);
     rl.drawRectangleRec(r, rgba(12, 11, 10, 240));
     rl.drawRectangleLinesEx(r, 1, alpha(TRIM, 90));
-    const rowH: i32 = hud.monoLineH(hud.MONO) + 6;
-    const rows: i32 = @divTrunc(@as(i32, @intFromFloat(r.height)) - 6, rowH);
+    const rowH: i32 = ROW_H; // was a second copy of ROW_H's own expression
+    const rows: i32 = listRows(@intFromFloat(r.height));
     const maxScroll = @max(0, @as(i32, @intCast(labels.len)) - rows);
     if (rl.checkCollisionPointRec(ctx.mouse, r)) {
         scroll.* -= @intFromFloat(ctx.wheel * 3);

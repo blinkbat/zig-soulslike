@@ -146,6 +146,11 @@ pub const Chests = struct {
     /// The LIDS, drawn where the prop grid draws the bodies. Every chest's lid, unconditionally: a chest
     /// is already distance- and frustum-culled as a PROP, and culling the lid separately would need a
     /// second copy of that logic to disagree with the first.
+    ///
+    /// So the BODIES are culled and the lids are not — that is the trade, and it is only affordable while
+    /// chests are rare (`CAP` is 64, and both passes draw, so a full map would spend 128 draw calls a
+    /// frame on lids mostly off screen). If a map ever carries dozens, the fix is for `env` to hand back
+    /// which chests survived its cull, NOT a second frustum test in here.
     pub fn draw(self: *const Chests) void {
         for (self.liveConst()) |*c| {
             rl.drawMesh(self.lid.meshes[0], self.lid.materials[0], c.lidXf());

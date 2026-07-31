@@ -164,10 +164,24 @@ pub const STAM_REFUSE_FLASH: f32 = 0.35;
 // whole economy off, and every gate asks `canAct`/`canSprint` rather than the pool.
 pub const STAM_LOCKOUT = true;
 
+/// WINDED: run the pool ALL THE WAY OUT and the sprint stays denied until the bar is back to this
+/// fraction of full (owner's call). Without it, sprint on an empty bar is a stutter — the first
+/// milligram of regen buys a frame of running that empties it again, so a spent player mashing Shift
+/// travels at a walk anyway while the bar strobes at zero. A latch that has to be paid back to half
+/// makes running dry a decision with a cost you can see, and the cost is the thing that makes the
+/// sprint worth spending in the first place.
+///
+/// SPRINT ONLY. Roll and attack keep the PANIC rule (`canAct` — any stamina above zero), because
+/// deleting the panic roll is exactly what that rule exists to prevent.
+pub const STAM_WIND_CLEAR: f32 = 0.5;
+
 pub const Stamina = struct {
     cur: f32 = STAM_MAX,
     max: f32 = STAM_MAX,
     sinceSpend: f32 = LONG_AGO, // gates the refill delay
+    /// Latched the moment the pool hits 0, held until it has refilled to `STAM_WIND_CLEAR`. A LATCH
+    /// and not a `cur == 0` test, which is the whole point: the denial has to outlive the emptiness.
+    winded: bool = false,
 
     pub fn frac(self: *const Stamina) f32 {
         return if (self.max > 0) mathx.clampF(self.cur / self.max, 0, 1) else 0;
@@ -185,12 +199,14 @@ pub const Stamina = struct {
     pub fn spend(self: *Stamina, cost: f32) void {
         self.cur = mathx.maxF(0, self.cur - cost);
         self.sinceSpend = 0;
+        self.settleWind();
     }
 
-    /// Same rule as `canAct`, asked separately because a sprint is CONTINUOUS: it must stop the instant
-    /// the bar empties, and the caller drops the hero to a WALK rather than freezing him.
+    /// A sprint is asked separately from `canAct` for two reasons: it is CONTINUOUS, so it must stop
+    /// the instant the bar empties (the caller drops the hero to a WALK, never freezes him), and it is
+    /// the one action the WINDED latch gates.
     pub fn canSprint(self: *const Stamina) bool {
-        return self.canAct();
+        return self.canAct() and (!STAM_LOCKOUT or !self.winded);
     }
 
     /// Per frame. `sprinting` bleeds continuously; `committed` (mid-swing / mid-roll) only PAUSES the
@@ -199,16 +215,36 @@ pub const Stamina = struct {
         if (sprinting) {
             self.cur = mathx.maxF(0, self.cur - STAM_SPRINT * dt);
             self.sinceSpend = 0;
-            return;
+        } else {
+            self.sinceSpend += dt;
+            if (!committed and self.sinceSpend >= STAM_DELAY) {
+                self.cur = mathx.minF(self.max, self.cur + STAM_REGEN * dt);
+            }
         }
-        self.sinceSpend += dt;
-        if (committed or self.sinceSpend < STAM_DELAY) return;
-        self.cur = mathx.minF(self.max, self.cur + STAM_REGEN * dt);
+        self.settleWind();
+    }
+
+    /// The fill the bar owes before the sprint comes back, as a fraction, or 0 when it owes nothing.
+    /// The HUD's only question — it draws the mark, it does not know the rule.
+    pub fn windedTo(self: *const Stamina) f32 {
+        return if (self.canSprint()) 0 else STAM_WIND_CLEAR;
+    }
+
+    /// The winded latch, set and cleared in ONE place and called from every path that moves `cur`. Two
+    /// copies of "did that empty me?" is how the drain from a sprint and the drain from a roll end up
+    /// disagreeing about whether the player is spent.
+    fn settleWind(self: *Stamina) void {
+        if (self.cur <= 0) {
+            self.winded = true;
+        } else if (self.winded and self.cur >= STAM_WIND_CLEAR * self.max) {
+            self.winded = false;
+        }
     }
 
     pub fn reset(self: *Stamina) void {
         self.cur = self.max;
         self.sinceSpend = LONG_AGO;
+        self.winded = false;
     }
 };
 
@@ -470,6 +506,34 @@ test "an empty pool locks out rolling, attacking and sprinting" {
     var t: f32 = 0;
     while (t < STAM_DELAY + 0.05) : (t += 1.0 / 60.0) s.tick(1.0 / 60.0, false, false);
     try std.testing.expect(s.canAct());
+}
+
+test "running the bar dry costs the sprint until it is back to half" {
+    var s = Stamina{};
+    // SPRINT it all the way out, through the continuous drain rather than by spending a lump.
+    var t: f32 = 0;
+    while (s.cur > 0) : (t += 1.0 / 60.0) s.tick(1.0 / 60.0, true, false);
+    try std.testing.expect(s.winded);
+    try std.testing.expect(!s.canSprint());
+    // A sliver back is enough to ROLL again — the panic roll is untouched by this — and not nearly
+    // enough to run on, which is the whole difference the latch makes.
+    var u: f32 = 0;
+    while (u < STAM_DELAY + 0.10) : (u += 1.0 / 60.0) s.tick(1.0 / 60.0, false, false);
+    try std.testing.expect(s.cur > 0 and s.cur < STAM_WIND_CLEAR * s.max);
+    try std.testing.expect(s.canAct());
+    try std.testing.expect(!s.canSprint());
+    try std.testing.expectApproxEqAbs(STAM_WIND_CLEAR, s.windedTo(), 1e-6);
+    // …and it clears at the threshold, not one frame before it.
+    while (s.cur < STAM_WIND_CLEAR * s.max) s.tick(1.0 / 60.0, false, false);
+    try std.testing.expect(!s.winded);
+    try std.testing.expect(s.canSprint());
+    try std.testing.expectApproxEqAbs(@as(f32, 0), s.windedTo(), 1e-6);
+    // A RESPAWN is not winded, whatever the last life ended on.
+    s.cur = 0;
+    s.settleWind();
+    try std.testing.expect(s.winded);
+    s.reset();
+    try std.testing.expect(!s.winded and s.canSprint());
 }
 
 test "THE PANIC ROLL: a sliver of stamina still buys a full-cost action" {

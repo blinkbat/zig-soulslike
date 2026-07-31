@@ -9,6 +9,7 @@ const envmod = @import("env.zig");
 const gfx = @import("gfx.zig");
 const objview = @import("objview.zig");
 const item = @import("item.zig"); // the chest-contents dialog
+const sfx = @import("audio.zig"); // the jukebox
 
 const Kind = props.Kind;
 const v3 = mathx.v3;
@@ -18,7 +19,8 @@ const v3 = mathx.v3;
 // nothing to keep in sync.
 //
 // LAYERS, the StarEdit way: GROUND (paint the soil), COVER (the flora carpet's zones and clearings), DECOR
-// (small growing things), PROPS (standing stone and timber), UNITS (foe spawns). What makes them worth
+// (small growing things), PROPS (standing stone and timber), INTERACTABLES (what the player OPENS),
+// UNITS (foe spawns). What makes them worth
 // having is that ONLY THE ACTIVE LAYER IS LIVE — every layer stays visible, but a click can only pick,
 // place or erase in the one you are on, so dressing ferns can never nudge a chapel. Each ends in its own
 // scoped ERASE brush and remembers the brush you left it on.
@@ -133,6 +135,7 @@ pub const Layer = enum(u8) {
     cover,
     decor,
     props,
+    interact,
     units,
 
     pub const N = @typeInfo(Layer).@"enum".fields.len;
@@ -143,7 +146,19 @@ pub const Layer = enum(u8) {
             .cover => "Cover",
             .decor => "Decor",
             .props => "Props",
+            .interact => "Interactables",
             .units => "Units",
+        };
+    }
+
+    /// THE LAYERS WHOSE CONTENT IS OPS. One code path serves all three — the ray pick, the marquee,
+    /// the move, the scoped erase and the properties panel are written once and only the brush strip
+    /// and the kind pool differ. Written out per site it was a dozen `== .decor or == .props` tests,
+    /// and a third op layer means every one of them is a place the new layer is silently inert.
+    fn opLayer(l: Layer) bool {
+        return switch (l) {
+            .decor, .props, .interact => true,
+            .ground, .cover, .units => false,
         };
     }
 };
@@ -153,6 +168,7 @@ const layerTips = [Layer.N][:0]const u8{
     "The flora carpet: zone density and the clearings it keeps out of",
     "Growing things — ferns, grass, bramble, reeds",
     "Standing things — stone, timber, fire, water",
+    "Things the player OPENS — chests, and what is in them (right-click > Items…)",
     "Foe spawns",
 };
 
@@ -173,6 +189,9 @@ const groundBrushes = [_][:0]const u8{ "Raise", "Lower", "Smooth", "Flat", "dirt
 const coverBrushes = [_][:0]const u8{ "Clearing", "Zone", "Erase" };
 const decorBrushes = [_][:0]const u8{ "Single", "Patch", "Scatter", "Erase" };
 const propBrushes = [_][:0]const u8{ "Stamp", "Row", "Ring", "Cluster", "Ivy", "Erase" };
+// INTERACTABLES place ONE AT A TIME, and deliberately have no scatter: a chest's contents are the op's
+// own (`Op.loot`), so a generator would put the identical list in every box it grew.
+const interactBrushes = [_][:0]const u8{ "Stamp", "Erase" };
 // The three kobold roles read as their own words rather than as "kobold_x": the family is obvious from
 // the icons and the models, and these labels have to match `wf.FoeKind`'s tags EXACTLY (the comptime
 // block below compares them byte for byte, so the map file's `foe: priest …` and this button are one
@@ -232,6 +251,10 @@ const propTips = [_][:0]const u8{
     "Drag a box to sow ivy at the feet of the stone already standing in it",
     "Hold and sweep to remove the ops that placed the props you cross",
 };
+const interactTips = [_][:0]const u8{
+    "Click to place one, exactly there — then right-click it > Items… to fill it",
+    "Hold and sweep to remove the ones you cross",
+};
 const unitTips = [_][:0]const u8{
     "Post a gaping toad",
     "Post a skeletal archer",
@@ -252,6 +275,7 @@ fn layerIcon(l: Layer) ui.Icon {
         .cover => .cover,
         .decor => .decor,
         .props => .props,
+        .interact => .interact,
         .units => .units,
     };
 }
@@ -262,12 +286,14 @@ fn layerIcon(l: Layer) ui.Icon {
 const coverIcons = [_]ui.Icon{ .clearing, .zone, .erase };
 const decorIcons = [_]ui.Icon{ .single, .patch, .scatter, .erase };
 const propIcons = [_]ui.Icon{ .stamp, .row, .ring, .cluster, .ivy, .erase };
+const interactIcons = [_]ui.Icon{ .stamp, .erase };
 const unitIcons = [_]ui.Icon{ .toad, .archer, .ogre, .berserker, .priest, .slinger, .erase };
 
 comptime {
     std.debug.assert(coverIcons.len == coverBrushes.len);
     std.debug.assert(decorIcons.len == decorBrushes.len);
     std.debug.assert(propIcons.len == propBrushes.len);
+    std.debug.assert(interactIcons.len == interactBrushes.len);
     std.debug.assert(unitIcons.len == unitBrushes.len);
 }
 
@@ -289,6 +315,7 @@ fn brushIconsFor(l: Layer) ?[]const ui.Icon {
         .cover => &coverIcons,
         .decor => &decorIcons,
         .props => &propIcons,
+        .interact => &interactIcons,
         .units => &unitIcons,
     };
 }
@@ -299,6 +326,7 @@ fn brushesFor(l: Layer) []const [:0]const u8 {
         .cover => &coverBrushes,
         .decor => &decorBrushes,
         .props => &propBrushes,
+        .interact => &interactBrushes,
         .units => &unitBrushes,
     };
 }
@@ -309,6 +337,7 @@ fn brushTipsFor(l: Layer) []const [:0]const u8 {
         .cover => &coverTips,
         .decor => &decorTips,
         .props => &propTips,
+        .interact => &interactTips,
         .units => &unitTips,
     };
 }
@@ -319,6 +348,7 @@ comptime {
     std.debug.assert(coverTips.len == coverBrushes.len);
     std.debug.assert(decorTips.len == decorBrushes.len);
     std.debug.assert(propTips.len == propBrushes.len);
+    std.debug.assert(interactTips.len == interactBrushes.len);
     std.debug.assert(unitTips.len == unitBrushes.len);
     // The ground brushes carry the soil ids AS A RUN starting at GROUND_SOIL_0 (so soil id 1 = .dirt is
     // the brush at that index), with the four sculpt tools ahead of them and WATER + the eraser behind.
@@ -335,7 +365,14 @@ comptime {
     // …and the unit brushes ARE the foe kinds in order, plus the eraser.
     std.debug.assert(unitBrushes.len == @typeInfo(wf.FoeKind).@"enum".fields.len + 1);
     for (0..@typeInfo(wf.FoeKind).@"enum".fields.len) |i| {
-        std.debug.assert(std.mem.eql(u8, unitBrushes[i], @tagName(@as(wf.FoeKind, @enumFromInt(i)))));
+        const tag = @tagName(@as(wf.FoeKind, @enumFromInt(i)));
+        std.debug.assert(std.mem.eql(u8, unitBrushes[i], tag));
+        // …AND SO ARE THEIR ICONS, by NAME and not just by count. The length check above cannot see a
+        // reordering, and this is the one strip whose glyphs are all the same KIND of thing — three
+        // doglike kobolds with different kits — so a swapped pair would show the priest's staff over
+        // the berserker and read as a drawing bug rather than as a table out of step. The icon set
+        // happens to name these exactly as `FoeKind` does, so the pin costs nothing.
+        std.debug.assert(std.mem.eql(u8, @tagName(unitIcons[i]), tag));
     }
 }
 
@@ -353,6 +390,7 @@ const CoverBrush = enum { clearing, zone, erase };
 /// captures the wrong tool under the right caption, which is the failure a name cannot have.
 pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
+const InteractBrush = enum { stamp, erase };
 const UnitBrush = enum { toad, archer, ogre, berserker, priest, slinger, erase };
 
 comptime {
@@ -362,6 +400,7 @@ comptime {
     pinBrushes(CoverBrush, &coverBrushes);
     pinBrushes(DecorBrush, &decorBrushes);
     pinBrushes(PropBrush, &propBrushes);
+    pinBrushes(InteractBrush, &interactBrushes);
     pinBrushes(GroundBrush, &groundBrushes);
     pinBrushes(UnitBrush, &unitBrushes);
 }
@@ -380,10 +419,21 @@ fn pinBrushes(comptime E: type, comptime names: []const [:0]const u8) void {
 }
 
 // THE KIND PALETTES live in props.zig now, beside the INFO table they are derived from — the object
-// viewer needs the same two lists, and a second comptime copy of "which shelf is this on" is how a
+// viewer needs the same lists, and a second comptime copy of "which shelf is this on" is how a
 // fern ends up offered under Ruins in one place and not the other.
 const floraKinds = props.FLORA_KINDS;
 const solidKinds = props.SOLID_KINDS;
+const interactKinds = props.INTERACT_KINDS;
+
+/// The kinds an op layer stocks. `null` for the layers that place no props at all.
+fn kindPool(l: Layer) ?[]const Kind {
+    return switch (l) {
+        .decor => &floraKinds,
+        .props => &solidKinds,
+        .interact => &interactKinds,
+        .ground, .cover, .units => null,
+    };
+}
 
 /// Which GROUP shelves each stocked layer has anything on — resolved once at COMPTIME, because
 /// `props.INFO` is comptime and so is the answer. It used to be a linear scan of EVERY kind per
@@ -393,12 +443,23 @@ const layerGroups = blk: {
     var t = [_][@typeInfo(props.Group).@"enum".fields.len]bool{
         [_]bool{false} ** @typeInfo(props.Group).@"enum".fields.len,
     } ** Layer.N;
-    for ([_]Layer{ .decor, .props }) |l| {
-        const pool: []const Kind = if (l == .decor) &floraKinds else &solidKinds;
-        for (pool) |k| t[@intFromEnum(l)][@intFromEnum(props.group(k))] = true;
+    for (0..Layer.N) |i| {
+        const l: Layer = @enumFromInt(i);
+        const pool = kindPool(l) orelse continue;
+        for (pool) |k| t[i][@intFromEnum(props.group(k))] = true;
     }
     break :blk t;
 };
+
+/// The FIRST shelf a layer stocks — where the group chips land when you arrive on a layer whose
+/// current shelf it has nothing on. Read off the same table the chips are, so a layer cannot open on
+/// an empty shelf the day its stock changes.
+fn firstGroup(l: Layer) props.Group {
+    for (0..props.Group.N) |g| {
+        if (layerGroups[@intFromEnum(l)][g]) return @enumFromInt(g);
+    }
+    return .ruins;
+}
 
 /// Does this layer have any kind on that shelf? Drives which group chips are offered — Props has
 /// no Ferns shelf, and an empty shelf is a dead button that teaches you nothing.
@@ -412,7 +473,11 @@ fn layerOf(o: *const wf.Op) Layer {
         .cover => .cover,
         .ivy => .props,
         .edge => .props,
-        else => if (props.info(o.kind).flora) .decor else .props,
+        else => switch (props.stock(o.kind)) {
+            .decor => .decor,
+            .props => .props,
+            .interact => .interact,
+        },
     };
 }
 
@@ -420,7 +485,30 @@ pub const Action = enum { none, leave, playtest };
 
 /// Which dialog owns the screen. Only one at a time, and while one is up the world takes no
 /// input at all — `beginModal` claims the pointer wholesale.
-pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot };
+pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, jukebox };
+
+// ── THE JUKEBOX ── every voice in the bank, by name, one click each.
+//
+// It exists for the same reason the object viewer does: a sound you can only hear by making the game
+// produce it is a sound you retune by playing the game until it happens. An ogre's death is one click
+// here and a fight away in there.
+//
+// The NAMES ARE THE ENUM'S, walked at comptime. No second table — a voice added to `sfx.Id` is in this
+// list the moment it has a row, which is the only way a test tool can be trusted to be complete.
+const VOICE_NAMES = blk: {
+    const fields = @typeInfo(sfx.Id).@"enum".fields;
+    var out: [fields.len][:0]const u8 = undefined;
+    for (fields, 0..) |f, i| out[i] = f.name;
+    break :blk out;
+};
+
+// The jukebox panel, as ONE set of numbers: the modal is sized from them and so is the scroll maths
+// that keeps a key-moved selection on screen (`ui.listRows`), which is why the list height is a name
+// and not a literal in two expressions.
+const JUKE_W: i32 = 620;
+const JUKE_H: i32 = 520;
+const JUKE_LIST_W: i32 = 300;
+const JUKE_LIST_H: i32 = JUKE_H - 150;
 
 /// What a confirm is standing in FRONT of: an unsaved map is about to be thrown away, and this
 /// is what happens once you say so. Without it, "Discard" has no idea what it was discarding.
@@ -495,7 +583,7 @@ fn eraseMiss(l: Layer) [:0]const u8 {
         .ground => "",
         .cover => "nothing here (the last zone is the fallback and stays)",
         .units => "no spawn inside the brush",
-        .decor, .props => "nothing in this layer here",
+        .decor, .props, .interact => "nothing in this layer here",
     };
 }
 
@@ -541,6 +629,7 @@ pub const Editor = struct {
     brush: [Layer.N]usize = [_]usize{0} ** Layer.N,
     decorKind: Kind = .fern,
     propKind: Kind = .pillar,
+    interactKind: Kind = .chest,
     groupSel: props.Group = .ruins, // which palette shelf is open
     radius: f32 = 6.0,
     snap: bool = false,
@@ -589,6 +678,13 @@ pub const Editor = struct {
     /// THE OBJECT VIEWER's own state (gallery page, shelf, per-kind pose). It outlives its modal on
     /// purpose: close the gallery to check something in the world and it reopens where you left it.
     objects: objview.State = .{},
+    /// THE JUKEBOX's own state, outliving its modal for the same reason the viewer's does: you close it
+    /// to go and look at the thing the sound belongs to, and it should still be on that voice.
+    juke: usize = 0,
+    jukeScroll: i32 = 0,
+    /// Audition IN THE WORLD (at the camera's focus, so the distance is `dist` and you can hear a
+    /// voice's `reach` fall off by zooming out) rather than at the ear.
+    jukeWorld: bool = false,
     nameBuf: [wf.NAME_CAP]u8 = undefined,
     nameLen: usize = 0,
     fileSel: usize = 0,
@@ -608,6 +704,51 @@ pub const Editor = struct {
     status: [ui.MSG_CAP]u8 = undefined,
     statusLen: usize = 0,
     statusT: f32 = 0,
+
+    /// IS THE JUKEBOX AUDITIONING? The editor is otherwise muted (`sfx.mute`, driven off `on` once a
+    /// frame in game.zig), and a sound tool inside a muted mode would play nothing at all.
+    pub fn auditioning(self: *const Editor) bool {
+        return self.modal == .jukebox;
+    }
+
+    /// UP/DOWN walk the bank and audition as they go, SPACE replays. Stepping is the only way to
+    /// compare two voices in a family — going back to the mouse between them puts a second of silence
+    /// where the comparison was.
+    fn jukeKeys(self: *Editor) void {
+        var moved = false;
+        if (rl.isKeyPressed(.down) and self.juke + 1 < VOICE_NAMES.len) {
+            self.juke += 1;
+            moved = true;
+        }
+        if (rl.isKeyPressed(.up) and self.juke > 0) {
+            self.juke -= 1;
+            moved = true;
+        }
+        if (moved) {
+            self.jukeReveal();
+            self.jukePlay();
+        }
+        if (rl.isKeyPressed(.space)) self.jukePlay();
+    }
+
+    /// Scroll the selected row back into view. `ui.list` scrolls by WHEEL and never moves itself, so a
+    /// selection stepped past the bottom edge would otherwise be playing a name you cannot see.
+    fn jukeReveal(self: *Editor) void {
+        const rows = ui.listRows(JUKE_LIST_H);
+        const sel: i32 = @intCast(self.juke);
+        if (sel < self.jukeScroll) self.jukeScroll = sel;
+        if (sel > self.jukeScroll + rows - 1) self.jukeScroll = sel - rows + 1;
+    }
+
+    /// Play the selected voice — at the ear, or out at the focus so its distance falloff and pan are
+    /// the real ones. ONE path, so the list's click and the Play button cannot audition differently.
+    fn jukePlay(self: *Editor) void {
+        if (self.juke >= VOICE_NAMES.len) return;
+        const id: sfx.Id = @enumFromInt(self.juke);
+        if (self.jukeWorld) sfx.world(id, self.focus) else sfx.play(id);
+        // ASCII only — the HUD atlas has no glyph for a musical note and would draw tofu.
+        self.sayFmt("played {s}", .{VOICE_NAMES[self.juke]});
+    }
 
     /// Enter the editor, parking the camera above wherever the hero is standing.
     pub fn enter(self: *Editor, at: rl.Vector3) void {
@@ -684,8 +825,23 @@ pub const Editor = struct {
     fn erasing(self: *const Editor) bool {
         return self.brushIdx() == brushesFor(self.layer).len - 1;
     }
+    /// The armed kind for the ACTIVE layer, as a pointer so the palette can set the same field the
+    /// placement path reads. One per op layer, because each remembers its own pick.
+    /// EXHAUSTIVE, no `else`: an `else` arm here hands a future layer the PROPS palette silently, which
+    /// is the same trap `props.displayName` and `INFO` are written as exhaustive switches to avoid.
+    fn kindSlot(self: *Editor) *Kind {
+        return switch (self.layer) {
+            .decor => &self.decorKind,
+            .interact => &self.interactKind,
+            .ground, .cover, .props, .units => &self.propKind,
+        };
+    }
     fn kindForLayer(self: *const Editor) Kind {
-        return if (self.layer == .decor) self.decorKind else self.propKind;
+        return switch (self.layer) {
+            .decor => self.decorKind,
+            .interact => self.interactKind,
+            .ground, .cover, .props, .units => self.propKind,
+        };
     }
 
     /// THE ONE WAY TO CHANGE LAYER. It also lands the kind palette on a shelf this layer actually
@@ -695,10 +851,14 @@ pub const Editor = struct {
     /// didn't, so reaching Decor by clicking gave you an empty palette and reaching it by Tab
     /// did not.
     pub fn setLayer(self: *Editor, l: Layer) void {
+        // THE MARKED SET DOES NOT CROSS LAYERS. `marked` holds op indices on the object layers and FOE
+        // indices on Units, and Del / drag-the-selection read it against whatever layer is live NOW — so
+        // a marquee over the wood, Tab, and Del deleted trees while you were looking at the chests.
+        // `paste` guards the Units case with exactly this argument and the object layers had none,
+        // which only became reachable when a third op layer existed to Tab to.
+        if (self.layer != l) self.nMarked = 0;
         self.layer = l;
-        if ((l == .decor or l == .props) and !layerHasGroup(l, self.groupSel)) {
-            self.groupSel = if (l == .decor) .grass else .ruins;
-        }
+        if (l.opLayer() and !layerHasGroup(l, self.groupSel)) self.groupSel = firstGroup(l);
     }
 
     // ── camera ──────────────────────────────────────────────────────────────────────
@@ -914,6 +1074,15 @@ pub const Editor = struct {
         self.modal = .open_map;
     }
 
+    /// Put the JUKEBOX up for the shot harness, parked on one voice. It does NOT play it — `--shot` is
+    /// headless and a capture that fired a sound would be a capture with a side effect.
+    pub fn soundsForShot(self: *Editor, id: sfx.Id) void {
+        self.modal = .jukebox;
+        self.menuOpen = false;
+        self.juke = @intFromEnum(id);
+        self.jukeReveal(); // …and scrolled to, or the capture is of a list with no visible selection
+    }
+
     /// Put the OBJECT VIEWER up for the shot harness: the gallery on a shelf, or one object filling it.
     pub fn objectsForShot(self: *Editor, shelf: objview.Shelf, page: i32, one: ?Kind) void {
         self.modal = .objects;
@@ -982,6 +1151,9 @@ pub const Editor = struct {
             self.marquee = false;
             self.moving = false;
             if (self.wipe.on) self.wipeEnd();
+            // The jukebox is the one modal with a keyboard of its own (step + replay). Safe here
+            // because arrows and space only pan and act on the WORLD, which no modal reaches.
+            if (self.modal == .jukebox) self.jukeKeys();
             if (rl.isKeyPressed(.escape)) {
                 // ESC BACKS OUT ONE LEVEL, and the object viewer has two of them: the big single-object
                 // view falls back to the gallery, and only then does the gallery let go of the screen.
@@ -993,6 +1165,10 @@ pub const Editor = struct {
             return .none;
         }
         self.orbitCam(dt);
+        // THE EARS ARE WHERE THE EDITOR'S CAMERA IS. Only the jukebox is audible in here, but it plays
+        // through the same `world()` the game does, so without this its distance and pan would be
+        // measured from wherever the GAME camera was last standing.
+        sfx.listen(self.cam.position, self.right());
         // Serviced here rather than in commitPending, because leaving is the game loop's call.
         if (self.pending == .leave) {
             self.pending = .none;
@@ -1051,19 +1227,23 @@ pub const Editor = struct {
             }
             return .none;
         }
-        // ESC BACKS OUT ONE LEVEL, and opens the menu when there is nothing left to back out of:
-        // context menu → selection → armed brush → out. Jumping straight to the menu from a live
-        // selection is how you lose a selection you spent a minute building.
+        // ESC BACKS OUT ONE LEVEL, and SELECT MODE is what one level up IS (owner's rule): "back out
+        // and let me grab something", then "back out fully". So the ladder is context menu → Select
+        // → the menu, and a brush of any kind is one Esc from being able to pick things up again —
+        // which is also what AGENTS.md has always said Esc does.
+        //
+        // IT NO LONGER DESELECTS. That step sat between the brush and the menu, so backing out of
+        // Stamp threw away the selection you were backing out to work on, and Esc from Select with
+        // something picked took two presses to reach the menu. Right-click on nothing is the deselect
+        // (and always was the discoverable one), so nothing is lost.
         if (rl.isKeyPressed(.escape)) {
             if (self.menuOpen) {
                 self.menuOpen = false;
                 return .none;
             }
-            if (self.nMarked > 0 or self.sel != null or self.selFoe != null) {
-                self.nMarked = 0;
-                self.sel = null;
-                self.selFoe = null;
-                self.say("deselected");
+            if (!self.selecting) {
+                self.selecting = true;
+                self.say("select");
                 return .none;
             }
             self.request(.leave);
@@ -1072,7 +1252,7 @@ pub const Editor = struct {
         if (rl.isKeyPressed(.f5)) return .playtest;
 
         // Tab cycles LAYERS; the digits pick a brush inside the layer (diablo's grammar, which
-        // is StarEdit's). Shift+Tab goes back, because five layers is enough to overshoot.
+        // is StarEdit's). Shift+Tab goes back, because six layers is enough to overshoot.
         if (rl.isKeyPressed(.tab)) {
             const back = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
             const cur = @intFromEnum(self.layer);
@@ -1189,6 +1369,12 @@ pub const Editor = struct {
         // skipped mid-stroke (Shift hands the button to the marquee), and a stroke left latched would let
         // the next press erase from under a panel — the same shape of bug as the right button latching.
         if (self.wipe.on and !rl.isMouseButtonDown(.left)) self.wipeEnd();
+        // …and so does a GROUND STROKE, for the same reason and with a worse consequence than a stuck
+        // flag: its own release handler is inside the `.ground` branch below, which is skipped the
+        // moment you Tab to another layer (or Esc into Select) mid-sweep — so `painting` latched on and,
+        // worse, `wetStroke`/`heightStroke` never got to fire the RE-SOW that a water or sculpt stroke
+        // owes the world. The grass stayed standing in the new lake until some unrelated edit rebuilt.
+        if (self.painting and !rl.isMouseButtonDown(.left)) self.endPaint(m, env);
         // …and a SHAPE DRAG commits the same way. Its own release handling is at the bottom of this function
         // past several early returns, so arming the eraser mid-drag lets that branch shadow it — stranding
         // `dragging` on for the session: a HOT gizmo that never goes away, committing whenever the eraser is
@@ -1241,7 +1427,11 @@ pub const Editor = struct {
 
         // GROUND is a true paint layer: hold and sweep, one undo step for the whole stroke. A
         // stroke ALREADY running keeps going over chrome; a fresh one may not start there.
-        if (self.layer == .ground) {
+        // …and SELECT MODE owns the left button here as much as anywhere else. Without the guard the
+        // strip drew every ground brush unlit (it lights nothing while Select is armed) and the button
+        // went on painting anyway — chrome saying one thing and the tool doing another. With it, Esc on
+        // Ground means what it means everywhere: the left button pans until you re-arm a brush.
+        if (self.layer == .ground and !self.selecting) {
             if (rl.isMouseButtonDown(.left) and (self.painting or !blocked)) {
                 if (ground) |g| {
                     if (!self.painting) {
@@ -1298,16 +1488,7 @@ pub const Editor = struct {
                     }
                 }
             } else if (self.painting and rl.isMouseButtonReleased(.left)) {
-                self.painting = false;
-                // A WATER or SCULPT stroke re-sows the world when it ENDS, never mid-sweep: the scatter
-                // reads `inWater` and every prop is planted at the ground height under it, so the grass
-                // has to be lifted out of a new lake and the trees stood back up on a new hill — but
-                // re-expanding 17k props per frame of a drag is a slideshow.
-                if (self.wetStroke or self.heightStroke) {
-                    self.wetStroke = false;
-                    self.heightStroke = false;
-                    self.rebuild(m, env);
-                }
+                self.endPaint(m, env);
             }
             return;
         }
@@ -1371,7 +1552,7 @@ pub const Editor = struct {
                 .units => {
                     if (ground) |g| self.addFoe(m, g);
                 },
-                .cover, .decor, .props => {
+                .cover, .decor, .props, .interact => {
                     if (ground) |g| {
                         self.dragging = true;
                         self.dragFrom = g;
@@ -1386,6 +1567,21 @@ pub const Editor = struct {
         // where the release lands whatever branch is live this frame.
         if (self.dragging) {
             if (ground) |g| self.dragTo = g;
+        }
+    }
+
+    /// End a ground stroke. A WATER or SCULPT stroke re-sows the world when it ENDS, never mid-sweep:
+    /// the scatter reads `inWater` and every prop is planted at the ground height under it, so the grass
+    /// has to be lifted out of a new lake and the trees stood back up on a new hill — but re-expanding
+    /// 17k props per frame of a drag is a slideshow. ONE body, because the stroke can also end from
+    /// outside the `.ground` branch (see the release guard at the top of `worldMouse`), and a second
+    /// copy of this is a second place to forget the re-sow.
+    fn endPaint(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
+        self.painting = false;
+        if (self.wetStroke or self.heightStroke) {
+            self.wetStroke = false;
+            self.heightStroke = false;
+            self.rebuild(m, env);
         }
     }
 
@@ -1436,7 +1632,7 @@ pub const Editor = struct {
 
     /// Pick something in the ACTIVE layer only. Returns whether anything was selected.
     fn pickInLayer(self: *Editor, m: *wf.Map, env: *envmod.Env) bool {
-        if (self.layer == .decor or self.layer == .props) {
+        if (self.layer.opLayer()) {
             const ray = self.cursorRay();
             if (env.pickIf(ray.position, ray.direction, self.filter(m), OpFilter.inLayer)) |pi| {
                 const o = env.props[pi].op;
@@ -1564,6 +1760,18 @@ pub const Editor = struct {
                 },
                 .patch => {
                     o = self.discOp(m, a, span);
+                },
+                .erase => return,
+            }
+        } else if (self.layer == .interact) {
+            // Its OWN brush enum, not PropBrush: the two strips share a `stamp` at index 0 and nothing
+            // else, so decoded as a PropBrush this layer's eraser would read as `row` and lay a line.
+            switch (@as(InteractBrush, @enumFromInt(self.brushIdx()))) {
+                .stamp => {
+                    o.x = a.x;
+                    o.z = a.z;
+                    o.yaw = 0;
+                    o.scale = 1;
                 },
                 .erase => return,
             }
@@ -1775,7 +1983,7 @@ pub const Editor = struct {
                     return true;
                 }
             },
-            .decor, .props => {
+            .decor, .props, .interact => {
                 // `pickInLayer` SELECTS what it finds, which is what the erase then removes — but a
                 // world-wide op (the rim) can't be removed, and leaving it selected means a sweep
                 // across the cliffs silently retargets the properties panel onto something the
@@ -1892,7 +2100,7 @@ pub const Editor = struct {
             self.selFoe = if (self.nMarked > 0) self.marked[0] else null;
             self.sel = null; // the two selections are layer-exclusive; leaving the other set
             // would show a properties panel for something this marquee cannot touch
-        } else if (self.layer == .decor or self.layer == .props) {
+        } else if (self.layer.opLayer()) {
             for (m.ops[0..m.nops], 0..) |*o, i| {
                 if (layerOf(o) != self.layer or !isMovable(o)) continue;
                 const p = opAnchor(o);
@@ -1986,7 +2194,7 @@ pub const Editor = struct {
         const nOps: usize = if (onUnits) 0 else nClipOps;
         const nFoes: usize = if (onUnits) nClipFoes else 0;
         if (nOps == 0 and nFoes == 0) {
-            if (onUnits) self.say("clipboard holds ops — paste them on Decor or Props") else self.say("clipboard holds spawns — paste them on Units");
+            if (onUnits) self.say("clipboard holds ops — paste them on an object layer") else self.say("clipboard holds spawns — paste them on Units");
             return;
         }
         self.bank(m);
@@ -2205,7 +2413,7 @@ pub const Editor = struct {
         self.selOwned = 0;
         self.selMarked = 0;
         if (self.sel) |s| {
-            if (s < m.nops and (self.layer == .decor or self.layer == .props)) {
+            if (s < m.nops and self.layer.opLayer()) {
                 drawOpGizmo(&m.ops[s], y);
                 for (env.props[0..env.nprops]) |pr| {
                     if (pr.op != s) continue;
@@ -2281,6 +2489,7 @@ pub const Editor = struct {
                     .stamp, .erase => {},
                 }
             }
+            // INTERACTABLES place one thing at a point — there is no shape for a drag to preview.
         }
 
         // THE BRUSH under the cursor, at its real radius — a paint brush whose size you can
@@ -2556,6 +2765,12 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
         ed.menuOpen = false;
         ed.modal = .objects;
     }
+    // …and its counterpart for the EARS. Beside Objects because they are the same kind of thing: a room
+    // you open to judge one asset without having to make the game produce it.
+    if (row.button("Sounds", ed.modal == .jukebox, "Jukebox — play any sound in the bank on demand")) {
+        ed.menuOpen = false;
+        ed.modal = .jukebox;
+    }
 
     // Just the UNSAVED marker up here. The document readout moved to the status bar: the layer
     // strip plus seven file buttons already fill this row at 1280, and the two were drawing
@@ -2627,11 +2842,11 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
     }
     y += 6;
 
-    // The kind palette, filtered TWICE: to the layer's own stock (Decor sows the flora, Props
-    // stand the rest up), then to the chosen GROUP. Every kind in one flat list is a scroll hunt;
+    // The kind palette, filtered TWICE: to the layer's own stock (Decor sows the flora, Props stand
+    // the rest up, Interactables open), then to the chosen GROUP. One flat list is a scroll hunt;
     // grouped, everything is two clicks away. (No count in this sentence deliberately — it said
     // "seventy-seven" three kinds ago.)
-    if (ed.layer == .decor or ed.layer == .props) {
+    if (kindPool(ed.layer)) |pool| {
         hud.mono("GROUP", 10, y, hud.MONO, ui.alpha(ui.TRIM, 235));
         y += ROW_H;
         // Only the groups this layer actually has stock in — Props has no Ferns shelf, and an
@@ -2655,7 +2870,6 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
 
         hud.mono("KIND", 10, y, hud.MONO, ui.alpha(ui.TRIM, 235));
         y += ROW_H;
-        const pool: []const Kind = if (ed.layer == .decor) &floraKinds else &solidKinds;
         // Collapse to the visible shelf, keeping a map back to the real kind.
         var labels: [props.NK][:0]const u8 = undefined;
         var kinds: [props.NK]Kind = undefined;
@@ -2682,7 +2896,7 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
         // document. Changing a placed prop is now what it looks like — erase it and stamp the new
         // one, which is one more action and no longer a surprise.
         if (ui.list(ctx, ui.rect(8, y, SIDE_W - 16, listH), labels[0..n], selIdx, &ed.kindScroll)) |i| {
-            if (ed.layer == .decor) ed.decorKind = kinds[i] else ed.propKind = kinds[i];
+            ed.kindSlot().* = kinds[i];
         }
     }
 }
@@ -3361,6 +3575,54 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
             if (ui.button(ctx, ui.rect(box.x + 24, box.y + 84 + rows * 26 + 8, 120, 28), "Done", hud.MONO, false) or confirm) {
                 ed.modal = .none;
             }
+        },
+        // ── THE JUKEBOX ── the bank as a list, a click to hear it, and the row's own dials beside it.
+        // Deliberately not a tree or a search box: the enum is already ordered by FAMILY, so scrolling
+        // it is scrolling the creatures, and forty-odd rows is a list you look down, not one you query.
+        .jukebox => {
+            const box = ui.beginModal(ctx, JUKE_W, JUKE_H, "Sounds");
+            if (ui.list(ctx, ui.rect(box.x + 20, box.y + 56, JUKE_LIST_W, JUKE_LIST_H), &VOICE_NAMES, ed.juke, &ed.jukeScroll)) |i| {
+                ed.juke = i;
+                ed.jukePlay(); // a click IS the audition — this is a listen tool, not a chooser
+            }
+            // The selected voice's own numbers, which are the ones you would be retuning. `reach` and
+            // the submix are the two that explain a sound you cannot hear.
+            const nfo = sfx.voiceInfo(@enumFromInt(@min(ed.juke, VOICE_NAMES.len - 1)));
+            const cx = box.x + 40 + JUKE_LIST_W;
+            var cy = box.y + 56;
+            var buf: [96]u8 = undefined;
+            hud.mono(VOICE_NAMES[@min(ed.juke, VOICE_NAMES.len - 1)], cx, cy, hud.MONO, ui.TITLE);
+            cy += ROW_H + 6;
+            const rows = [_][:0]const u8{ "gain", "reach", "takes", "poly", "pitch jit", "level jit", "submix" };
+            inline for (rows, 0..) |label, ri| {
+                const val: [:0]const u8 = switch (ri) {
+                    0 => std.fmt.bufPrintZ(&buf, "{d:.2}", .{nfo.gain}) catch "",
+                    1 => std.fmt.bufPrintZ(&buf, "{d:.0} m", .{nfo.reach}) catch "",
+                    2 => std.fmt.bufPrintZ(&buf, "{d}", .{nfo.vars}) catch "",
+                    3 => std.fmt.bufPrintZ(&buf, "{d}", .{nfo.poly}) catch "",
+                    4 => std.fmt.bufPrintZ(&buf, "{d:.2}", .{nfo.jit}) catch "",
+                    5 => std.fmt.bufPrintZ(&buf, "{d:.2}", .{nfo.vjit}) catch "",
+                    else => @tagName(nfo.mix),
+                };
+                hud.mono(label, cx, cy, hud.MONO, ui.LABEL);
+                hud.mono(val, cx + 130, cy, hud.MONO, ui.VALUE);
+                cy += ROW_H;
+            }
+            cy += 10;
+            // WHERE it plays from. At the ear is the sound itself; out at the focus is the sound as the
+            // game will actually deliver it — panned and faded over its own `reach`, which is the half
+            // you cannot judge from a waveform.
+            _ = ui.checkbox(ctx, cx, cy, "play out in the world", &ed.jukeWorld);
+            cy += ROW_H;
+            const ds = if (ed.jukeWorld)
+                (std.fmt.bufPrintZ(&buf, "at the focus, {d:.0} m out - zoom to move it", .{ed.dist}) catch "")
+            else
+                "at the ear";
+            hud.mono(ds, cx, cy, hud.MONO, ui.alpha(ui.LABEL, 170));
+            const by = box.y + JUKE_H - 44;
+            if (ui.button(ctx, ui.rect(box.x + 20, by, 150, 28), "Play again", hud.MONO, false) or confirm) ed.jukePlay();
+            if (ui.button(ctx, ui.rect(box.x + 180, by, 120, 28), "Done", hud.MONO, false)) ed.modal = .none;
+            hud.mono("up / down step and play, space replays", box.x + 320, by + 6, hud.MONO, ui.alpha(ui.LABEL, 150));
         },
         .new_map, .save_as => {
             const isNew = ed.modal == .new_map;

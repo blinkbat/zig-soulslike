@@ -26,19 +26,21 @@ const Kind = props.Kind;
 // so a mesh that reads wrong in this viewer reads wrong in the game — which is the entire point of
 // having it.
 //
-// Shelved by LAYER (Decor = the flora palette, Props = everything else), the same split the brush
-// palette uses, off the same two comptime lists in props.zig.
+// Shelved by LAYER (Decor = the flora palette, Interactables = the things that open, Props = the
+// rest), the same split the brush palette uses, off the same comptime lists in props.zig.
 
-/// The layer shelves the gallery offers. The editor's other layers (Ground, Cover, Units) place no
-/// props, so there is nothing for this to show them.
+/// The layer shelves the gallery offers — one per layer that places props, off `props.Stock`. The
+/// editor's other layers (Ground, Cover, Units) place none, so there is nothing for this to show them.
 pub const Shelf = enum {
     decor,
     props,
+    interact,
 
     pub fn kinds(s: Shelf) []const Kind {
         return switch (s) {
             .decor => &props.FLORA_KINDS,
             .props => &props.SOLID_KINDS,
+            .interact => &props.INTERACT_KINDS,
         };
     }
 
@@ -46,6 +48,15 @@ pub const Shelf = enum {
         return switch (s) {
             .decor => "Decor",
             .props => "Props",
+            .interact => "Interactables",
+        };
+    }
+
+    fn of(k: Kind) Shelf {
+        return switch (props.stock(k)) {
+            .decor => .decor,
+            .props => .props,
+            .interact => .interact,
         };
     }
 };
@@ -128,7 +139,7 @@ pub const State = struct {
     /// Point the gallery at the shelf that owns `k` and put the big viewer on it — how the properties
     /// panel's "view model" button gets you to the selected op's kind.
     pub fn show(self: *State, k: Kind) void {
-        self.shelf = if (props.info(k).flora) .decor else .props;
+        self.shelf = Shelf.of(k);
         self.open = k;
         self.grabbed = null;
         const list = self.shelf.kinds();

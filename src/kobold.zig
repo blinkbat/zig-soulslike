@@ -1372,8 +1372,10 @@ fn lumbarMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x10BA);
     const s = H;
-    b.addBlob(v3(0, 0.058 * s, -0.004 * s), v3(0.068 * s, 0.066 * s, 0.064 * s), 5, 9, FUR);
-    furInto(&b, v3(0, 0.014 * s, -0.038 * s), v3(0, 0.100 * s, -0.038 * s), 0.056 * s, 22, &rng, FUR_DK, STAND_PELT);
+    // Widened WITH the ribcage above it, not for its own sake: a trunk that steps in at the waist and
+    // back out at the hips reads as two animals, and the pinch is more obvious the bigger the chest.
+    b.addBlob(v3(0, 0.058 * s, -0.004 * s), v3(0.082 * s, 0.066 * s, 0.078 * s), 5, 9, FUR);
+    furInto(&b, v3(0, 0.014 * s, -0.048 * s), v3(0, 0.100 * s, -0.048 * s), 0.058 * s, 22, &rng, FUR_DK, STAND_PELT);
     return b.toMesh();
 }
 
@@ -1383,17 +1385,23 @@ fn ribcageMesh() rl.Mesh {
     const s = H;
     // HOLLOW-CHESTED and narrow — a scavenger, not an athlete. Deeper front-to-back than it is wide,
     // which is a dog's ribcage and reads instantly as not-human. But it has to have real MASS or the
-    // shoulders read as a coat hanger (they did: the first render had no chest at all), and the ruff
-    // over the WITHERS is what carries a pack fighter's breadth without widening the skeleton.
-    b.addBlob(v3(0, 0.042 * s, 0.002 * s), v3(0.078 * s, 0.072 * s, 0.082 * s), 5, 9, FUR);
-    b.addBlob(v3(0, 0.004 * s, 0.004 * s), v3(0.068 * s, 0.040 * s, 0.068 * s), 4, 8, FUR_DK);
+    // shoulders read as a coat hanger, and the ruff over the WITHERS is what carries a pack fighter's
+    // breadth without widening the skeleton.
+    //
+    // GROWN ~30% (owner: "bizarrely tiny chests"). "Narrow" is a RATIO against its own depth, and it
+    // had been taken as an absolute: at 0.078·H of half-width the ribcage was slimmer than the upper
+    // arm hanging beside it, so the trunk read as a slab pinched between two oversized limbs rather
+    // than as the body they are bolted to. Depth grew harder than width, so it is MORE dog-chested
+    // than before and not less.
+    b.addBlob(v3(0, 0.044 * s, 0.002 * s), v3(0.102 * s, 0.086 * s, 0.112 * s), 5, 9, FUR);
+    b.addBlob(v3(0, 0.002 * s, 0.004 * s), v3(0.090 * s, 0.048 * s, 0.096 * s), 4, 8, FUR_DK);
     // A hide STRAP, asymmetric on purpose. `addBox`'s three vectors are HALF-EXTENTS: 0.067·H of them is
     // a 28 x 24 cm plank across the whole chest, which reads as armour plate.
-    b.addBox(v3(0.024 * s, 0.042 * s, 0.038 * s), v3(0.024 * s, 0.074 * s, 0.006 * s), v3(-0.026 * s, 0.010 * s, 0), v3(0, 0, 0.011 * s), HIDE);
+    b.addBox(v3(0.030 * s, 0.044 * s, 0.052 * s), v3(0.026 * s, 0.082 * s, 0.006 * s), v3(-0.028 * s, 0.010 * s, 0), v3(0, 0, 0.011 * s), HIDE);
     // THE WITHERS — the shoulder mane, standing proud across the top of the back. On a dog this is the
     // highest point of the body and the reason a wolf reads bigger than it is.
-    furInto(&b, v3(-0.056 * s, 0.086 * s, -0.028 * s), v3(0.056 * s, 0.086 * s, -0.028 * s), 0.046 * s, 24, &rng, FUR_LT, STAND_MANE);
-    furInto(&b, v3(0, 0.006 * s, -0.046 * s), v3(0, 0.082 * s, -0.046 * s), 0.046 * s, 16, &rng, FUR_DK, STAND_PELT);
+    furInto(&b, v3(-0.072 * s, 0.098 * s, -0.034 * s), v3(0.072 * s, 0.098 * s, -0.034 * s), 0.054 * s, 24, &rng, FUR_LT, STAND_MANE);
+    furInto(&b, v3(0, 0.006 * s, -0.062 * s), v3(0, 0.090 * s, -0.062 * s), 0.052 * s, 16, &rng, FUR_DK, STAND_PELT);
     return b.toMesh();
 }
 

@@ -1728,6 +1728,25 @@ pub fn listen(pos: rl.Vector3, right: rl.Vector3) void {
     lisRight = right;
 }
 
+/// ONE VOICE'S DIALS, for the editor's JUKEBOX to print beside whatever it is auditioning: the
+/// numbers you need in front of you while judging a sound are the same ones you would be retuning.
+/// A VIEW of the row rather than the row itself — `make` is a renderer pointer nothing outside this
+/// file can do anything with, and a public `Row` is an invitation to build a second bank.
+pub const VoiceInfo = struct {
+    gain: f32,
+    mix: Submix,
+    jit: f32,
+    vjit: f32,
+    vars: u8,
+    poly: u8,
+    reach: f32,
+};
+
+pub fn voiceInfo(id: Id) VoiceInfo {
+    const r = BANK[@intFromEnum(id)];
+    return .{ .gain = r.gain, .mix = r.mix, .jit = r.jit, .vjit = r.vjit, .vars = r.vars, .poly = r.poly, .reach = r.reach };
+}
+
 /// Silence the world without tearing the device down — the editor uses it, since a map you are
 /// dressing should not be croaking at you.
 pub fn mute(on: bool) void {

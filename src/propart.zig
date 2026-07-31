@@ -68,7 +68,7 @@ pub const WISP = rgba(250, 196, 110, 120);
 // core→mid→tip ramp, less glare; the light each fire casts is unchanged.
 pub const FLAME_CORE = rgba(226, 190, 128, 25); // pale heart of a torch — no longer near-WHITE
 pub const FLAME_MID = rgba(214, 138, 48, 40);
-pub const FLAME_TIP = rgba(176, 82, 24, 90); // the cooler, more transparent-reading tongue
+pub const FLAME_TIP = rgba(176, 82, 24, 90); // the cooler tongue — and now the most transparent of them
 pub const COAL = rgba(196, 78, 22, 70);
 pub const CLOTH = rgba(76, 20, 12, 255); // faded war-banner crimson (matches the hero's cape)
 pub const CLOTH_DK = rgba(48, 14, 10, 255); // …in the folds, and where the rain got into it
@@ -398,10 +398,12 @@ pub fn crackInto(bb: *Builder, a: rl.Vector3, dir: rl.Vector3, side: rl.Vector3,
     );
 }
 
-// One flame: emissive TONGUES, not a cone. The geometry is opaque (there is no alpha blending in
-// this pipeline), so a fire has to read from its SILHOUETTE — which means tall narrow lobes at
+// One flame: emissive TONGUES, not a cone. A fire reads from its SILHOUETTE — tall narrow lobes at
 // uneven heights and leans, mostly orange, with only a small hot heart. Built as a fat stack of
-// near-white blobs it read as a traffic cone: the pale core was the biggest thing in it.
+// near-white blobs it read as a traffic cone: the pale core was the biggest thing in it. The tongues
+// are also the one thing in the scene the shader draws SEMI-TRANSPARENT (`FLAME_A_CORE`/`_TIP`),
+// graded off this ramp's own emissive — so the silhouette still has to carry it, but the thin end of
+// it now lets the world through.
 pub fn flameInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, s: f32) void {
     // `.flame` gets two things `.plain` could not: the vertex shader's WRITHE (so the thing
     // actually moves — the light has been guttering since it was written, over a flame standing

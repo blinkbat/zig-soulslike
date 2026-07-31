@@ -149,6 +149,7 @@ pub const Group = enum {
     ruins,
     buildings,
     village,
+    treasure,
     rock,
     trees,
     fire,
@@ -167,6 +168,7 @@ pub const Group = enum {
             .ruins => "Ruins",
             .buildings => "Buildings",
             .village => "Village",
+            .treasure => "Treasure",
             .rock => "Rock",
             .trees => "Trees",
             .fire => "Fire",
@@ -276,7 +278,8 @@ pub fn group(k: Kind) Group {
     return switch (k) {
         .pillar, .broken, .block, .arch, .wall, .statue, .monolith, .paving, .stairs, .rubble, .banner, .sword, .graves, .sarcophagus, .bones, .gibbet, .cairn => .ruins,
         .chapel, .watchtower, .cottage, .tower, .gate, .causeway => .buildings,
-        .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart, .grace, .chest => .village,
+        .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart, .grace => .village,
+        .chest => .treasure,
         .boulder, .rocks, .outcrop, .scree, .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6, .stump, .log => .rock,
         .tree, .bigtree, .bigtree2, .bigtree3, .willow, .conifer, .birch, .snag, .sapling => .trees,
         .torch, .brazier, .campfire => .fire,
@@ -306,21 +309,30 @@ pub const CLIFFS = [_]Kind{ .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6 
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
 
-/// THE TWO STOCKED PALETTES, split on the same flag the renderer splits its passes on: `flora` kinds
-/// are the swaying non-casters, which is exactly the editor's Decor stock, and everything else is
-/// Props. Resolved at COMPTIME off INFO itself, so a new kind lands on the right shelf the moment it
-/// has a row — and it lives HERE, beside the table it is derived from, because the editor's palette,
-/// its group chips and the object viewer all ask the same question and a second copy of the answer is
-/// how one of them ends up offering a fern under Ruins.
-pub const FLORA_KINDS = kindsWhere(true);
-pub const SOLID_KINDS = kindsWhere(false);
+/// WHICH EDITOR LAYER STOCKS A KIND — the palette shelves, read off INFO's own flags rather than
+/// listed a second time: `flora` is the swaying non-casters (Decor), `interact` is the things that
+/// answer the interact button (Interactables), and everything else stands still (Props). The editor's
+/// brush palette, its group chips and the object viewer all ask this one question, and a second copy
+/// of the answer is how a fern ends up offered under Ruins in one place and not the other.
+pub const Stock = enum { decor, props, interact };
 
-fn kindsWhere(comptime wantFlora: bool) [countWhere(wantFlora)]Kind {
-    var out: [countWhere(wantFlora)]Kind = undefined;
+pub fn stock(k: Kind) Stock {
+    const nfo = info(k);
+    if (nfo.flora) return .decor;
+    if (nfo.interact) return .interact;
+    return .props;
+}
+
+pub const FLORA_KINDS = kindsOn(.decor);
+pub const SOLID_KINDS = kindsOn(.props);
+pub const INTERACT_KINDS = kindsOn(.interact);
+
+fn kindsOn(comptime s: Stock) [countOn(s)]Kind {
+    var out: [countOn(s)]Kind = undefined;
     var n = 0;
     for (0..NK) |i| {
         const k: Kind = @enumFromInt(i);
-        if (info(k).flora == wantFlora) {
+        if (stock(k) == s) {
             out[n] = k;
             n += 1;
         }
@@ -328,16 +340,21 @@ fn kindsWhere(comptime wantFlora: bool) [countWhere(wantFlora)]Kind {
     return out;
 }
 
-fn countWhere(comptime wantFlora: bool) usize {
+fn countOn(comptime s: Stock) usize {
     var n: usize = 0;
     for (0..NK) |i| {
-        if (info(@enumFromInt(i)).flora == wantFlora) n += 1;
+        if (stock(@enumFromInt(i)) == s) n += 1;
     }
     return n;
 }
 
 comptime {
-    std.debug.assert(FLORA_KINDS.len + SOLID_KINDS.len == NK);
+    // The three shelves PARTITION the kinds: every kind is offered on exactly one of them, so a new
+    // row cannot be unreachable from the palette and cannot turn up on two.
+    std.debug.assert(FLORA_KINDS.len + SOLID_KINDS.len + INTERACT_KINDS.len == NK);
+    // …and the two flags must not both be set, since `stock` resolves flora first and the kind would
+    // silently shelve as Decor.
+    for (INFO) |row| std.debug.assert(!(row.interact and row.flora));
 }
 /// One footprint collider in the kind`s LOCAL space — the type lives in the art kit, beside the
 /// tower ring that is built out of it, and is re-exported here because every caller says `props.Part`.
@@ -368,6 +385,10 @@ pub const Info = struct {
     /// Drawn in the flora pass: NOT in the shadow map (thin blades sparkle in it) and swayed by
     /// the shader's wind term.
     flora: bool = false,
+    /// AN INTERACTABLE: a prop the player does something to rather than walks around, so it carries
+    /// state and a second owner beside the prop grid (`chest.zig`). Only the editor reads this — it is
+    /// what shelves the kind on the Interactables layer instead of Props.
+    interact: bool = false,
     /// Included in the sun depth pass. Flora never is; nor is the water sheet (a flat film has
     /// no shadow to give) — everything else casts.
     casts: bool = true,
@@ -484,7 +505,7 @@ pub const INFO = [NK]Info{
     // `chest.zig` at this instance's transform and the prop's own culling sphere is what decides whether
     // any of it is submitted, so a bound taken off the closed silhouette pops the lid at the frustum edge.
     // `.wood` so a stray arrow thunks instead of ringing.
-    .{ .kind = .chest, .build = village.chestMesh, .bound = 1.6, .top = village.CHEST_TOP + 0.34, .view = 150, .parts = &.{.{ .r = 0.56, .h = village.CHEST_HINGE_Y }}, .surf = .wood },
+    .{ .kind = .chest, .build = village.chestMesh, .bound = 1.6, .top = village.CHEST_TOP + 0.34, .view = 150, .interact = true, .parts = &.{.{ .r = 0.56, .h = village.CHEST_HINGE_Y }}, .surf = .wood },
     // ── more rock ──
     .{ .kind = .outcrop, .build = rock.outcropMesh, .bound = 3.4, .top = 1.1, .view = 200, .parts = &.{.{ .ax = -1.4, .bx = 1.4, .r = 1.1, .h = 1.05 }} },
     .{ .kind = .scree, .build = rock.screeMesh, .bound = 2.6, .top = 0.35, .view = 160 },

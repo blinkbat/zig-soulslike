@@ -5,6 +5,7 @@ const mathx = @import("mathx.zig");
 const collision = @import("collision.zig");
 const props = @import("props.zig");
 const wf = @import("worldfmt.zig");
+const chestmod = @import("chest.zig"); // for `Site` alone — env finds the boxes, chest.zig runs them
 
 const v3 = mathx.v3;
 const Kind = props.Kind;
@@ -1117,6 +1118,21 @@ pub const Env = struct {
     pub fn propCount(self: *const Env) usize {
         return self.nprops;
     }
+
+    /// EVERY CHEST THAT WAS ACTUALLY PLACED, in prop order. Filled here rather than read back off the ops
+    /// because a prop's final position is env's answer, not the op's: it is planted at the terrain height
+    /// under it, and a scatter could place several from one line. Returns how many were written; the
+    /// caller's array is the cap (`chest.CAP`) and the overflow is dropped, like `foe.resetGroup`'s.
+    pub fn chestSites(self: *const Env, out: []chestmod.Site) usize {
+        var n: usize = 0;
+        for (self.props[0..self.nprops]) |pr| {
+            if (pr.kind != .chest) continue;
+            if (n >= out.len) break;
+            out[n] = .{ .pos = pr.pos, .yaw = pr.yaw, .scale = pr.scale, .op = pr.op };
+            n += 1;
+        }
+        return n;
+    }
     pub fn solidCount(self: *const Env) usize {
         return self.nsolids;
     }
@@ -2212,8 +2228,12 @@ test "replaying the SHIPPED map produces a stable world" {
     // are consistent with that change: more kinds carrying colliders and fires (solids +23, lights
     // +3), and different bounds changing how many scatter candidates the solid probe rejects
     // (props −39). If you move them again, move these with it in the same commit.
-    try std.testing.expectEqual(@as(usize, 17253), props0);
-    try std.testing.expectEqual(@as(usize, 1859), solids0);
+    //
+    // RE-PINNED TWICE MORE for THE MAP changing under it, not the code — the owner edits it while playing
+    // (two cliff4s and a lean, then a chest). `git diff worlds/` BEFORE suspecting the engine: a world
+    // edit's numbers add up (two cliffs = +4 solids, exactly two `cliffParts`), a code fault's do not.
+    try std.testing.expectEqual(@as(usize, 17205), props0);
+    try std.testing.expectEqual(@as(usize, 1864), solids0);
     try std.testing.expectEqual(@as(usize, 37), lights0);
 }
 

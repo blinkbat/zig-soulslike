@@ -18,6 +18,8 @@ const rumblemod = @import("rumble.zig");
 const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
 const koboldmod = @import("kobold.zig"); // THE WARBAND — three roles in one group (the priest heals)
+const chestmod = @import("chest.zig"); // the openable boxes
+const item = @import("item.zig"); // …and what is in them
 const sfx = @import("audio.zig"); // the procedural sound bank — every voice synthesized at launch
 
 const v3 = mathx.v3;
@@ -188,6 +190,8 @@ pub const Game = struct {
     line: archermod.Line, // the skeletal archers perched in the ruins
     grief: ogremod.Grief, // the lone one-eyed ogre, deep in the ruins
     band: koboldmod.Warband, // the kobold warband — berserkers, priests and slingers, mixed
+    chests: chestmod.Chests, // the openable boxes — props with a lid and a state (chest.zig)
+    bag: item.Bag = .{}, // …and what came out of them. The hero's, but held here with the rest of the run
     arrowModel: rl.Model, // shared arrow mesh, drawn per live/stuck arrow with its own matrix
     stoneModel: rl.Model, // …and the slingers' stone, drawn from the SAME pool (see Arrow.stone)
     arrows: [MAX_ARROWS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_ARROWS,
@@ -233,12 +237,17 @@ pub const Game = struct {
         g.line = archermod.Line.init(g.scene.shader);
         g.grief = ogremod.Grief.init(g.scene.shader);
         g.band = koboldmod.Warband.init(g.scene.shader);
+        g.chests = chestmod.Chests.init(g.scene.shader);
         // Foes come from the MAP, so the groups can only be homed once it is loaded — init
         // builds the shared meshes and nothing else.
         g.warren.reset(&g.map);
         g.line.reset(&g.map);
         g.grief.reset(&g.map);
         g.band.reset(&g.map);
+        // …and the chests come from the PROPS, so this goes after `materialize` rather than beside the
+        // foe groups: a chest's position is where env actually planted it (see `env.chestSites`).
+        rehomeChests(g);
+        g.bag = .{};
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
         g.stoneModel = koboldmod.stoneMesh(g.scene.shader);
         g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
@@ -511,6 +520,10 @@ fn rollDir(g: *Game, mv: Move) rl.Vector3 {
 // a tall caster well outside the box still throws into it at this sun angle.
 fn drawCasters(g: *Game, cull: envmod.Cull) void {
     g.env.drawProps(cull);
+    // THE CHEST LIDS, with the props and not after them: a lid is a caster like the box under it, and
+    // drawn outside this function it would be missing from the shadow map — a chest with its lid thrown
+    // back would cast the shadow of a closed one.
+    g.chests.draw();
     // Combat flash rides the scene shader's per-actor hitFlash uniform: the hero reddens on a
     // suffered blow, and every struck FOE on a landed one (each Group's draw sets it per instance
     // from foe.FLASH_GAIN). Inert during the depth pass — the uniform lives on the scene shader,
@@ -554,6 +567,38 @@ fn spawnArrow(g: *Game, from: rl.Vector3, target: rl.Vector3) void {
 /// comptime `loose` callback, which is how the kobolds reach a projectile pool they know nothing about.
 pub fn spawnStone(g: *Game, from: rl.Vector3) void {
     poolPut(g, archermod.launchStone(from, heroAimPoint(g), koboldmod.STONE_SPEED));
+}
+
+// A chest is a PROP with a lid and a state, so the list is rebuilt from the props whenever the world is.
+// RE-HOMING SHUTS EVERY LID — the honest trade for no per-instance save, and only a load or an editor
+// edit re-materializes.
+fn rehomeChests(g: *Game) void {
+    var sites: [chestmod.CAP]chestmod.Site = undefined;
+    const n = g.env.chestSites(&sites);
+    g.chests.reset(sites[0..n]);
+}
+
+/// Shims for the shot harness, so it drives the same two calls the loop does.
+pub fn rehomeChestsForShot(g: *Game) void {
+    rehomeChests(g);
+}
+pub fn openChestForShot(g: *Game) bool {
+    const had = g.chests.near != null;
+    interact(g);
+    return had;
+}
+
+/// OPEN THE CHEST IN REACH. The whole interaction: `chest.zig` decides whether there is one (so the reach
+/// test lives in one place), and what comes back goes into the bag HERE, because the bag is the hero's and
+/// a chest has no business knowing he exists.
+fn interact(g: *Game) void {
+    const got = g.chests.openNear(&g.map) orelse return;
+    for (got.loot) |it| g.bag.add(it, 1);
+    if (got.loot.len > 0) sfx.world(.item_get, got.at);
+    // The same beat a landed blow gets, at a fraction of it: a chest is a good thing happening, and under
+    // the NO HITSTOP law the way anything is felt here is shake and rumble, never a pause.
+    g.rig.addShake(0.12);
+    g.rumble.play(rumblemod.hit_light);
 }
 
 // Pool-full is rare (24 slots against a ~1.5 s reload); overwrite slot 0 rather than silently drop the
@@ -787,6 +832,10 @@ pub fn hud(g: *Game, dt: f32) void {
             .cerulean => hud_.FlaskTint.cerulean,
         }, g.hero.flasks.ready());
         hud_.runes(g.hero.runes.display()); // the ROLLING value, not the banked total
+        // …and the INTERACT prompt, when there is something to interact with. ER's own place for it:
+        // low centre, above the bars' line, plain and small. It is not on the object in the world,
+        // because a floating world-space label is a different game's UI language.
+        if (g.chests.near != null) hud_.prompt("E / A  Open");
     }
     if (g.menu.stats) debugCorner(g);
 }
@@ -1004,13 +1053,16 @@ pub fn run(mode: Mode) void {
         // is unchanged, and one line here cannot be the transition somebody forgot.
         sfx.mute(g.editor.on);
 
-        // Esc backs the menu out one level (opens it when closed); pad Start toggles. NOT WHILE THE EDITOR
-        // IS UP: Esc is the editor's own back-out key, and this runs BEFORE the editor branch, so every Esc
-        // pressed in there also toggled the pause card behind it — an odd number left the menu open and an
-        // F5 playtest dropped the player into a paused world.
+        // Pad SELECT opens the GAME menu, pad START the CHARACTER one; TAB is START's keyboard twin.
+        // NOT WHILE THE EDITOR IS UP: Esc is the editor's own back-out key and this runs before its
+        // branch, so an odd number of them used to leave the pause card open behind it.
         if (!g.editor.on) {
             if (rl.isKeyPressed(.escape)) g.menu.onEscape();
-            if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .middle_right)) g.menu.onStartButton();
+            if (rl.isKeyPressed(.tab)) g.menu.onStartButton();
+            if (rl.isGamepadAvailable(PAD)) {
+                if (rl.isGamepadButtonPressed(PAD, .middle_left)) g.menu.onSelectButton();
+                if (rl.isGamepadButtonPressed(PAD, .middle_right)) g.menu.onStartButton();
+            }
         }
 
         // Alt+Enter toggles borderless-windowed fullscreen (no exclusive mode-switch, so the
@@ -1062,6 +1114,10 @@ pub fn run(mode: Mode) void {
             g.line.reset(&g.map);
             g.grief.reset(&g.map);
             g.band.reset(&g.map);
+            // …and the chests with them, for the same reason and off the same source of truth: moving,
+            // adding or deleting a box has to move the box you can SEE. Off `env`'s prop list rather than
+            // the map's ops, so it follows the world the editor has actually rebuilt.
+            rehomeChests(g);
             // …AND THE GRIP GOES QUIET, envelopes still decaying — the same call the pause card makes,
             // for the same reason. Without it the editor branch never ticks the rumble at all: a live
             // envelope froze for the whole editing session and then replayed as a phantom buzz on the
@@ -1077,7 +1133,7 @@ pub fn run(mode: Mode) void {
         if (g.menu.isOpen()) {
             // World holds while the menu is up: no camera/move input, but the hero keeps
             // breathing (idle update, zero travel) so the scene stays alive.
-            switch (g.menu.update(&g.retro, rawDt)) {
+            switch (g.menu.update(&g.retro, rawDt, &g.bag)) {
                 .quit => break,
                 .editor => {
                     // Drop the lock on the way in: the reticle rides a FoeRef into groups the
@@ -1106,7 +1162,7 @@ pub fn run(mode: Mode) void {
             sfx.ambience(rawDt);
             drawScene(g);
             hud(g, rawDt);
-            g.menu.draw(&g.retro);
+            g.menu.draw(&g.retro, &g.bag);
             rl.endDrawing();
             continue;
         }
@@ -1246,6 +1302,13 @@ pub fn run(mode: Mode) void {
             sfx.play(.flask_cycle);
         }
 
+        // ── INTERACT (ER) ── A / Cross, or E on the keyboard, which is ER's own default for it. The only
+        // free face button and the one every soulslike puts this on. Nothing but chests answers it yet, and
+        // `interact` is a no-op when there is nothing in reach — so no gating here beyond being alive.
+        var useReq = rl.isKeyPressed(.e);
+        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .right_face_down)) useReq = true;
+        if (useReq and !g.hero.dead) interact(g);
+
         // Dodge roll: Space, or a short TAP of Circle/B (holding B sprints instead).
         var rollReq = rl.isKeyPressed(.space);
         const bDown = rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, .right_face_right);
@@ -1383,6 +1446,9 @@ pub fn run(mode: Mode) void {
             // weight on the blow's own numbers rather than on which creature threw it.
             heroHurtBeat(g, h.poise >= koboldmod.ZERK_HIT.poise, true);
         }
+        // The lids swing and the "which one is in reach" answer is recomputed — once, here, so the prompt
+        // the player reads and the button they then press cannot disagree about which box they mean.
+        g.chests.update(dt, g.hero.pos);
         // …and the ground has its say about all of them: every step a foe just took is re-taken through
         // the slope limit, so none of them walks up anything the hero couldn't.
         gateTerrain(g, g.warren.live(), &wasToad);

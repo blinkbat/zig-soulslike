@@ -49,8 +49,10 @@ ask. The owner (David) drives the design; implement what's asked and nothing ext
 A convincingly **human** hero that walks / runs / sprints / dodge-rolls and swings a sword (R1
 light slash / R2 heavy overhead, kinetic-chain sequenced, swept blade hit-capsule), under a
 third-person over-the-shoulder camera, in a lit 3D world with cast shadows (warm low sun vs cool
-slate sky, cloud deck, haze, vignette, plus point-light torch/brazier/campfire fire). Three foes
-hunt him — **gaping toads**, **skeletal archers**, a lone **one-eyed ogre** — with ER lock-on and
+slate sky, cloud deck, haze, vignette, plus point-light torch/brazier/campfire fire). Four foes
+hunt him — **gaping toads**, **skeletal archers**, a lone **one-eyed ogre**, and a **kobold WARBAND**
+(`kobold.zig` — three roles of one doglike creature in ONE group, because the priest heals its
+friends: berserker / priest / slinger) — with ER lock-on and
 a full combat layer: HP + two-tier poise/stance stagger + death, both sides (`combat.zig`, and
 **`docs/ELDEN_RING.md`** as the systems reference). **STAMINA IS FULLY LIVE, LOCKOUT INCLUDED** —
 an empty bar means no roll, no swing, no sprint (see STAMINA below). No criticals, guarding or
@@ -145,14 +147,18 @@ and the map's own `half:` is the only source), holding five regions
 | west | **the Old Wood** | great trees (3 variants), ferns/brambles/bushes, boulders, a **standing-stone circle**, a woodcutter's **cottage** + campfire |
 | south | **the Windswept Downs** | open and sparse — lone trees, field stones, graves, a watchtower |
 
-**80 prop kinds**, **17,253 instances, 1,859 colliders and 37 fires**, of which a frame draws **~975**
+**81 prop kinds**, **17,204 instances, 1,863 colliders and 37 fires**, of which a frame draws **~975**
 across both passes (measured in the city; the wood is comparable). See **PERFORMANCE** — that ratio is
 why the world is affordable, and the debug Stats overlay prints it live so it stays checkable. The three
 numbers are also PINNED by `env`'s "replaying the SHIPPED map produces a stable world" test, so a
 scatter that quietly gains or loses instances fails the build instead of drifting in a screenshot.
 **Move them here and in that test together**: the props rework left the test pinning 17,292/1,836/34
 and this line repeating it, so the guard sat red for two commits — and a pin that always fails cannot
-catch the next drift, which is the only thing it is for.
+catch the next drift, which is the only thing it is for. **AND `git diff worlds/` BEFORE SUSPECTING THE
+CODE** — the owner edits the map in the editor while playing, so the commonest reason this pin goes red is
+that the WORLD changed, not the engine. The three numbers tell you which: a world edit's counts add up
+(two cliffs = +4 solids exactly, because `cliffParts` is 2 each, plus the cover their footprints now
+reject), where a code fault does not land that neatly.
 
 **Density VARIES, and that is the point** (owner's law). A flat per-region density gives every
 square metre the same cover and the result is a carpet — uniformly thick, nowhere to walk,
@@ -196,9 +202,23 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
   DERIVED from the room's real extent; and the shadow ortho box tracks the HERO, so `standHero`
   near your subject or the shot has no cast shadows. For a WORLD change take a steep overhead
   MAP shot (`dist` near 55 — a camera 85 m up looks through 85 m of haze).
+- **A SUBJECT MUST BE LIT, NOT JUST IN FRAME.** `gfx.SUN_DIR` is (−0.60, 0.50, −0.46), which in the rig's
+  terms means the sun is over the shoulder of a camera at **yaw ≈ 53** and straight into the lens of one at
+  **≈ 233**. A foe TURNS TO FACE the hero, so "photograph its front" means putting the sensed hero where the
+  camera is — and if you park that in the 180-215 band you get its front in its own shadow: near-black, no
+  colour, no fur, no weapon. Every kobold role portrait was shot that way and every one of them was
+  unjudgeable. Put the sensed hero on the SUN's bearing and shoot from ~53; for a lit REAR view turn the
+  subject round (send it the other way) rather than orbiting the camera behind it.
 - **Thin geometry needs a CROP.** Strings, nocked arrows, flutes and setts are invisible in a
   full-frame shot; crop and zoom (System.Drawing) before calling one broken. The HUD counts:
   a 34 px slot and a 1 px bar rim are unjudgeable at 1:1.
+- **JUDGE ALBEDO BY SAMPLING THE RENDER, NOT BY EYE.** The chain is albedo × the shader's hot key (1.72)
+  → linear → gamma 1/2.2, and a 2.2-power curve beats intuition every time: a "dark brown" 46/34/22 pelt
+  came back on screen at 151/130/107, i.e. pale khaki, and within 10% of the golden-hour grass beside it in
+  BOTH value and hue — so there was no silhouette at all. Four passes of nudging that by feel got nowhere;
+  one `GetPixel` of the subject AND of what it stands against settled it. Screen ∝ albedo^(1/2.2), so a
+  factor you want on screen is that factor^2.2 on the albedo — solve, don't guess. Separate on HUE as well
+  as value: everything outdoors here is warm, so a warm-brown creature needs to be greyer as well as darker.
 - **THE SCREENSHOT GOES BEFORE `endDrawing`, NEVER AFTER** (`shots.snap`). `endDrawing` SWAPS the
   buffers and `takeScreenshot` reads the CURRENT one, so taken after the swap every capture is the
   PREVIOUS frame. The whole harness was off by one: `91_stats_city.png` came back with no Stats overlay
@@ -365,6 +385,16 @@ lines where the concerns genuinely part company, and each new file is named so t
                  answers a flanking hero by PIVOTING. **THE CLUB NEVER TOUCHES THE GROUND while
                  carried.** Every hurt shape is MEASURED off the posed club (`clubLowWorld()`),
                  never guessed, and unit tests re-assert them — retune anything and RE-MEASURE.
+- `kobold.zig` — THE KOBOLD WARBAND + the `Warband`. THREE ROLES OF ONE CREATURE in one file and one
+                 struct (berserker / priest / slinger), because the body, gait, fur, death and reactions
+                 are shared and only the KIT and the state machine differ. Doglike, on the shared humanoid
+                 scaffold. THE PRIEST IS WHY THEY ARE ONE GROUP: it heals whoever is worst off, so
+                 something has to see the whole band, and `Warband.update` resolves the heal (the priest
+                 owns the animation, never the targeting). Three things ride matrices rather than bones —
+                 the off-hand axe, the hinged JAW (`gape`) and the TAIL chain — which is the pattern for
+                 anything the 18-bone scaffold has no slot for. **EVERY BONE NEEDS A MATRIX EVERY FRAME:**
+                 the death pose skipped the six leg bones and handed `drawMesh` UNDEFINED matrices for a
+                 whole release, which is what `66c_kobold_death.png` exists to catch.
 - `foe.zig`    — THE FOE STANDARD: the shared contract + behaviours every enemy plugs into, so
                  lock-on, HP bars, collision, the blade hit-test and the combat beats are written
                  ONCE. Holds `Blade` and `strike()`, the telegraph PARTICLE pool (plus the two burst

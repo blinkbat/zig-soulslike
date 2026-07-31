@@ -482,7 +482,8 @@ pub const Id = enum {
     // ── THE KOBOLDS ── a DOG-THING, and every voice has a throat in it: the family reads as one
     // animal because the yip and the snarl are the same larynx at different sizes. Small, dry and
     // QUICK — the opposite of the ogre's block above, which is the point of putting them beside it.
-    kobold_chop, // the axe comes round — a snarl with iron on the end
+    kobold_snarl, // HE COMMITS — one bark per flurry, and the cue to get out of reach
+    kobold_chop, // …then the axe coming round, once per swing and nothing else in it
     kobold_heave, // …and the flurry's price: a winded, ragged panting
     kobold_cast, // the priest's tell, rising
     kobold_heal, // …and it landing on somebody
@@ -494,6 +495,8 @@ pub const Id = enum {
     // the flasks
     flask_drink,
     flask_cycle,
+    chest_open, // a lid coming up: the lock giving, the hinge turning, the boards settling back
+    item_get, // …and something going into the bag
     // the world and the chrome
     kill,
     menu_move,
@@ -644,53 +647,67 @@ fn mkSwingHeavy(r: *Rack) void {
     r.master(1.25, 3600);
 }
 
+// ── ABRASION ── what actually causes harsh here, because it is four things and none of them is volume:
+//   1. `master(drive, …)` — `sat` is a saturator, so drive GENERATES harmonics, right into the 2-5 kHz
+//      band the ear is most sensitive to. Biggest cause by far.
+//   2. `master(…, cut)` — the tape bandwidth that would otherwise stop them getting out.
+//   3. `tick(…, cut)` — a transient at 5 kHz is an ice-pick; it says CONTACT just as well far lower.
+//   4. `ring` — partials space at ~1.48x, so 1400 Hz with 3 of them reaches past 4 kHz. On flesh that
+//      metallic sting should barely be there.
+// The `body` layer is the only one carrying mass, so it gains what the others give up. NOT quieter: a
+// gain trim over combat was tried and reverted (owner: "I meant ambient sounds not combat sounds").
+
 fn mkHitLight(r: *Rack) void {
-    // Blade into a body: a wet crack, a short bright edge ring, and a low thump under it. The ring
-    // is what says STEEL did it — take it out and the same hit reads as a punch.
-    r.tick(0.0, 0.55, 5200);
-    r.body(0.0, 0.13, 220, 78, 0.9, 5.0);
-    r.grit(0.0, 0.10, 0.5, 3000, 0.35, 5.5);
-    r.ring(0.004, 0.16, 1400, 0.22, 6.0, 3);
-    r.master(2.1, 4600);
+    // Blade into a body: a wet crack and a low thump under it. The ring is what says STEEL did it, but
+    // it is a hit on FLESH — it is a hint of edge, not a bell, so it sits an octave down with one fewer
+    // partial and a third of the level.
+    r.tick(0.0, 0.34, 2200);
+    r.body(0.0, 0.20, 170, 56, 1.05, 3.8); // …lower and longer: this is the layer doing the work
+    r.body(0.0, 0.09, 88, 52, 0.5, 5.0); // a sub under it, for the thud
+    r.grit(0.0, 0.10, 0.34, 1500, 0.45, 5.0);
+    r.ring(0.004, 0.13, 700, 0.13, 7.0, 2);
+    r.master(1.25, 2500);
 }
 
 fn mkHitHeavy(r: *Rack) void {
     // The R2 connecting: everything the light has, dropped an octave and given a crunch that
     // carries. The second body an eighth of a second later is the follow-through settling.
-    r.tick(0.0, 0.7, 4200);
-    r.body(0.0, 0.30, 170, 44, 1.2, 3.0);
-    r.grit(0.0, 0.22, 0.75, 1800, 0.65, 3.4);
-    r.ring(0.006, 0.26, 900, 0.26, 4.5, 4);
-    r.body(0.11, 0.20, 74, 36, 0.45, 3.2);
-    r.master(2.6, 3800);
+    r.tick(0.0, 0.40, 1800);
+    r.body(0.0, 0.36, 128, 34, 1.35, 2.4);
+    r.body(0.0, 0.14, 66, 38, 0.62, 4.0); // …and the floor under that
+    r.grit(0.0, 0.24, 0.52, 1200, 0.75, 3.2);
+    r.ring(0.006, 0.20, 520, 0.15, 5.0, 3);
+    r.body(0.11, 0.22, 58, 30, 0.5, 3.0);
+    r.master(1.45, 2100);
 }
 
 fn mkHurt(r: *Rack) void {
     // Taking a chomp: a short winded grunt over the impact. Deliberately GUTTURAL and short — a
-    // long cry would be the loudest thing in every fight and it would wear out in a minute.
-    r.body(0.0, 0.16, 150, 58, 0.7, 4.4);
-    r.growl(0.01, 0.20, 210, 150, 0.55, 0.16, 0.12);
-    r.grit(0.0, 0.09, 0.3, 1600, 0.4, 5.0);
-    r.master(2.0, 3200);
+    // long cry would be the loudest thing in every fight and it would wear out in a minute. `rough` is
+    // the rasp dial and it comes DOWN with everything else: a throat, not a bandsaw.
+    r.body(0.0, 0.19, 118, 46, 0.85, 3.8);
+    r.growl(0.01, 0.22, 156, 108, 0.60, 0.11, 0.14);
+    r.grit(0.0, 0.09, 0.22, 1100, 0.45, 5.0);
+    r.master(1.3, 2200);
 }
 
 fn mkHurtHeavy(r: *Rack) void {
     // The lunge or the slam landing: the air goes out of him. Lower, longer, and the growl falls
     // further, which is the whole difference between "ow" and "that hurt".
-    r.body(0.0, 0.32, 128, 40, 1.0, 2.8);
-    r.growl(0.0, 0.38, 190, 96, 0.8, 0.22, 0.10);
-    r.grit(0.0, 0.16, 0.45, 1300, 0.6, 3.6);
-    r.air(0.02, 0.24, 0.20, 1800, 300, 0.35, 3.0);
-    r.master(2.5, 2900);
+    r.body(0.0, 0.38, 98, 30, 1.15, 2.4);
+    r.growl(0.0, 0.42, 140, 70, 0.85, 0.15, 0.10);
+    r.grit(0.0, 0.16, 0.34, 900, 0.68, 3.4);
+    r.air(0.02, 0.26, 0.18, 1400, 240, 0.30, 3.0);
+    r.master(1.5, 1900);
 }
 
 fn mkStagger(r: *Rack) void {
     // A stance break: boots losing the floor. All scuff, no impact — the impact already played on
     // the blow that caused it, and doubling it makes a stagger read as a second hit.
-    r.grit(0.0, 0.34, 0.6, 1700, 0.7, 2.4);
-    r.air(0.0, 0.30, 0.35, 1600, 400, 0.4, 2.6);
-    r.body(0.14, 0.16, 84, 46, 0.35, 4.0);
-    r.master(1.8, 2800);
+    r.grit(0.0, 0.36, 0.52, 1200, 0.8, 2.4);
+    r.air(0.0, 0.32, 0.30, 1200, 320, 0.34, 2.6);
+    r.body(0.14, 0.18, 70, 38, 0.42, 3.6);
+    r.master(1.35, 2000);
 }
 
 fn mkRefused(r: *Rack) void {
@@ -960,24 +977,42 @@ fn mkOgreDie(r: *Rack) void {
 // workhorse here the way `body` is for the ogre: a kobold's character is that it is always making a
 // noise, and the noise is always an animal one.
 
+// THE BARKS, and they go LOW. A real jackal's larynx sits near 400-600 Hz; up to seventy-two of them
+// yipping there through a saturator is the most fatiguing noise this bank can make. A creature can be
+// small in the SILHOUETTE and low in the THROAT — the model says how big it is.
+
+fn mkKoboldSnarl(r: *Rack) void {
+    // HE COMMITS. One bark, and it is a chest sound: a short low woof with the throat tearing at the end
+    // of it. This is the cue to back off, so it is the most PRESENT thing the creature does — present
+    // being different from bright, which is the whole note.
+    r.body(0.0, 0.12, 132, 84, 0.75, 4.0); // the chest behind the bark
+    r.growl(0.0, 0.14, 176, 236, 0.85, 0.14, 0.06); // …up, fast, barely any rasp
+    r.growl(0.10, 0.26, 208, 118, 0.60, 0.26, 0.16); // …and tearing on the way down
+    r.air(0.0, 0.10, 0.16, 900, 1900, 0.30, 3.2);
+    r.master(1.35, 2300);
+}
+
 fn mkKoboldChop(r: *Rack) void {
-    // A snarl with a hand-axe on the end of it. The growl leads (he is committing before the arm is),
-    // the air is the haft coming round, and the tick is the head arriving.
-    r.growl(0.0, 0.20, 210, 158, 0.62, 0.42, 0.14); // a rising bark falling into a snarl
-    r.air(0.04, 0.18, 0.40, 2600, 620, 0.42, 3.0); // the swing — DOWN-sweeping, so it reads as travelling
-    r.tick(0.15, 0.34, 5200);
-    r.body(0.15, 0.09, 168, 74, 0.34, 5.5);
-    r.master(2.3, 4200);
+    // JUST THE AXE. The snarl moved out (mkKoboldSnarl, once per flurry) and so did the impact — this
+    // used to carry a `tick` + `body`, i.e. the sound of the blow LANDING, on every swing whether it hit
+    // anything or not. A swing that always sounds like a hit is a swing you cannot read.
+    r.air(0.0, 0.21, 0.46, 1700, 420, 0.34, 2.6); // DOWN-sweeping, so it reads as travelling past you
+    r.grit(0.02, 0.10, 0.08, 1000, 0.4, 3.0); // …the haft turning in a fist
+    r.growl(0.0, 0.15, 148, 116, 0.26, 0.24, 0.30); // a low grunt of effort under it, not a bark
+    r.master(1.15, 2000);
 }
 
 fn mkKoboldHeave(r: *Rack) void {
     // THE OPENING, and it has to SOUND like one — this is the cue that says come back in. Ragged
-    // panting on a body that has nothing left: two breaths, air only, no pitch to speak of.
-    r.air(0.0, 0.26, 0.52, 1500, 420, 0.22, 1.8);
-    r.growl(0.02, 0.22, 132, 96, 0.30, 0.62, 0.18); // …a wheeze under the first one
-    r.air(0.34, 0.30, 0.46, 1250, 380, 0.20, 1.6);
-    r.growl(0.36, 0.26, 118, 86, 0.26, 0.66, 0.20);
-    r.master(1.9, 2400);
+    // panting on a body that has nothing left: air-led, with a thin wheeze rather than a growl, because
+    // a creature this size that is out of breath squeaks. THREE breaths, quickening: panting is a rhythm
+    // and two of them is just two noises.
+    r.air(0.0, 0.24, 0.52, 1300, 380, 0.22, 1.8);
+    r.growl(0.02, 0.20, 148, 104, 0.26, 0.30, 0.18); // …a wheeze under the first one
+    r.air(0.30, 0.26, 0.48, 1150, 340, 0.20, 1.6);
+    r.growl(0.32, 0.22, 132, 92, 0.24, 0.34, 0.20);
+    r.air(0.58, 0.22, 0.40, 1000, 300, 0.18, 1.6);
+    r.master(1.3, 1900);
 }
 
 fn mkKoboldCast(r: *Rack) void {
@@ -986,7 +1021,7 @@ fn mkKoboldCast(r: *Rack) void {
     r.ring(0.0, 0.95, 330, 0.34, 1.4, 5); // …rising by being joined, not by sliding
     r.ring(0.30, 0.70, 495, 0.26, 1.6, 4);
     r.ring(0.60, 0.50, 660, 0.20, 2.0, 3);
-    r.growl(0.0, 0.90, 168, 214, 0.34, 0.30, 0.30); // the chant itself, climbing
+    r.growl(0.0, 0.90, 300, 400, 0.34, 0.26, 0.30); // the chant itself, climbing
     r.air(0.45, 0.55, 0.14, 900, 3400, 0.5, 1.2); // …and light gathering
     r.master(2.0, 4600);
 }
@@ -1023,30 +1058,33 @@ fn mkKoboldSling(r: *Rack) void {
 fn mkKoboldBite(r: *Rack) void {
     // TEETH. A snap has three parts and the middle one is what sells it: the jaw opening (air), the
     // clack of the teeth meeting (tick + a tight ring), and the wet click of the throat behind it.
-    r.air(0.0, 0.07, 0.30, 1200, 3000, 0.4, 3.5);
-    r.tick(0.06, 0.62, 7000);
-    r.ring(0.06, 0.07, 1500, 0.22, 9.0, 3); // the clack — bright and gone
-    r.growl(0.0, 0.16, 232, 176, 0.5, 0.55, 0.10);
-    r.master(2.4, 5200);
+    r.air(0.0, 0.07, 0.26, 900, 1700, 0.32, 3.5);
+    r.tick(0.06, 0.34, 2600); // the clack — and 7 kHz of it was the ice-pick in the mix
+    r.ring(0.06, 0.06, 620, 0.14, 9.0, 2);
+    r.body(0.05, 0.10, 128, 72, 0.55, 4.5); // the jaw has MASS: this is what the clack was missing
+    r.growl(0.0, 0.16, 210, 148, 0.5, 0.22, 0.10);
+    r.master(1.3, 2200);
 }
 
 fn mkKoboldHurt(r: *Rack) void {
     // A yelp — up, then straight down. `growl` with f1 ABOVE f0 rises, and a rise is what a small
-    // thing does when it is hurt (the ogre's falls; that difference is most of the size gap).
-    r.growl(0.0, 0.16, 260, 400, 0.85, 0.42, 0.10);
-    r.growl(0.05, 0.16, 200, 132, 0.42, 0.50, 0.24); // …and the fall out of it
-    r.air(0.0, 0.10, 0.22, 1800, 700, 0.3, 3.0);
-    r.master(2.3, 4600);
+    // thing does when it is hurt (the ogre's falls; that difference is most of the size gap). The RISE is
+    // the character, so it stays; what goes is the register it rose INTO.
+    r.body(0.0, 0.13, 120, 66, 0.6, 4.2);
+    r.growl(0.0, 0.15, 200, 300, 0.85, 0.16, 0.08);
+    r.growl(0.05, 0.18, 168, 104, 0.42, 0.26, 0.24); // …and the fall out of it
+    r.air(0.0, 0.10, 0.16, 1200, 500, 0.26, 3.0);
+    r.master(1.3, 2200);
 }
 
 fn mkKoboldDie(r: *Rack) void {
     // The yelp that does not recover: it starts as the hurt voice and comes apart, dropping through a
     // rattle into nothing. The body under it is what stops it reading as a bird.
-    r.growl(0.0, 0.20, 280, 420, 0.9, 0.45, 0.08);
-    r.growl(0.10, 0.48, 240, 84, 0.62, 0.62, 0.14);
-    r.grit(0.28, 0.34, 0.30, 1700, 0.7, 2.4); // …a wet rattle in the throat
-    r.body(0.34, 0.22, 108, 44, 0.34, 3.0); // …and the body going down
-    r.master(2.1, 3400);
+    r.growl(0.0, 0.18, 216, 326, 0.9, 0.18, 0.08);
+    r.growl(0.09, 0.48, 194, 78, 0.62, 0.30, 0.14);
+    r.grit(0.26, 0.34, 0.24, 1100, 0.75, 2.4); // …a wet rattle in the throat
+    r.body(0.30, 0.26, 96, 36, 0.44, 2.8); // …and the body going down
+    r.master(1.35, 1900);
 }
 
 fn mkFlaskDrink(r: *Rack) void {
@@ -1064,6 +1102,30 @@ fn mkFlaskDrink(r: *Rack) void {
     r.grit(0.10, 0.45, 0.10, 900, 0.5, 2.2); // the liquid moving between them
     r.body(0.58, 0.42, 90, 150, 0.5, 1.7); // …and the warmth arriving
     r.master(1.8, 2800);
+}
+
+fn mkChestOpen(r: *Rack) void {
+    // A LID COMING UP, in the three parts it actually has: the lock giving (a hard iron snap), the HINGE
+    // turning under load (a long dry grind, which is the part that says heavy), and the boards knocking
+    // as the lid goes over past its balance. The grind is the whole voice — a chest that opens with one
+    // click reads as a lunchbox.
+    r.tick(0.0, 0.55, 4200);
+    r.ring(0.0, 0.16, 620, 0.34, 6.0, 3); // the lock plate
+    r.grit(0.06, 0.52, 0.30, 1100, 0.85, 1.1); // the hinge, coarse and slow
+    r.body(0.06, 0.30, 132, 88, 0.40, 1.6); // …the mass of it turning
+    r.tick(0.60, 0.42, 2600); // the lid arriving, over
+    r.body(0.60, 0.16, 108, 58, 0.46, 4.0);
+    r.master(2.0, 3200);
+}
+
+fn mkItemGet(r: *Rack) void {
+    // SOMETHING GAINED. Grace-adjacent, deliberately: it is the same warm bloom the priest's heal borrows
+    // and the ember gives off, because in this world every good thing is the same gold. Short — you may
+    // pick up eight of these in one chest and a fanfare eight times over is a joke.
+    r.ring(0.0, 0.34, 784, 0.46, 3.2, 3);
+    r.ring(0.02, 0.28, 1176, 0.22, 4.4, 2);
+    r.air(0.0, 0.20, 0.12, 2400, 5200, 0.45, 2.6);
+    r.master(1.9, 6000);
 }
 
 fn mkFlaskCycle(r: *Rack) void {
@@ -1232,15 +1294,21 @@ fn mkBirdsong(r: *Rack) void {
 // a beat of NOTHING, then the long falling "hu-hoooo". The gap is the whole character — a hoot
 // without it is just a note, and the pause is what makes the second half arrive.
 //
-// `growl` with the roughness almost off is the right primitive and not an obvious one: a saw dragged
-// through a lowpass sitting a couple of octaves up is a HOLLOW tone, which is what an owl is. A pure
-// sine (`body`) reads as a flute or a synth pad; the little bit of rasp left in is the bird.
+// ── AND IT WAS THE MOSQUITO, twice. `growl` carries a hard-coded 5.5→8.5 Hz / 3.5% vibrato, which is
+// right for a throat under load and is a culicine wingbeat on a long quiet sustained tone. So the tone
+// comes off `growl`: `body` is a bare sine with no vibrato, two a fifth apart give the HOLLOW the formant
+// sweep was for, and the `air` comes up because a real hoot is mostly breath.
 fn mkOwl(r: *Rack) void {
-    r.growl(0.0, 0.26, 470, 430, 0.55, 0.05, 0.30); // hoo…
-    r.air(0.0, 0.18, 0.10, 900, 500, 0.5, 3.0); // …breath in front of it
-    r.growl(0.62, 0.85, 520, 375, 0.90, 0.06, 0.16); // …hu-hoooo, falling away
-    r.air(0.62, 0.28, 0.12, 1100, 520, 0.5, 2.2);
-    r.body(0.64, 0.55, 245, 200, 0.22, 1.6); // an octave under, for the woody chest of it
+    // "hoo…" — short, and already breath-led.
+    r.body(0.0, 0.22, 330, 316, 0.60, 2.6);
+    r.body(0.0, 0.20, 495, 474, 0.16, 3.4); // …a fifth over, for the hollow
+    r.air(0.0, 0.20, 0.34, 1000, 560, 0.42, 2.6);
+    // "…hu-hoooo" — falling away. Shorter than the old 0.85 s: a sustain long enough to hum along with is
+    // a sustain long enough to hear a waver in.
+    r.body(0.60, 0.52, 352, 268, 0.95, 1.9);
+    r.body(0.60, 0.46, 528, 402, 0.22, 2.6);
+    r.air(0.60, 0.44, 0.40, 1150, 520, 0.42, 2.0);
+    r.body(0.62, 0.50, 176, 142, 0.28, 1.7); // an octave under, for the woody chest of it
     r.masterX(1.15, AIR_FAR_CRY, CRUSH_BITS + 1.0, CRUSH_HOLD);
 }
 
@@ -1249,7 +1317,11 @@ fn mkOwl(r: *Rack) void {
 // wingbeat waver on it, and rolled out to 240 m so what usually arrived was a QUIET one — the exact
 // condition for hearing an insect beside your ear instead of an animal across a valley. Dropping the
 // fundamental to ~260 Hz and roughening the drive was tried first; the owner's answer was to cut it,
-// so this is NOT a tuning problem waiting to be reopened. The OWL still carries the far cries.)
+// so this is NOT a tuning problem waiting to be reopened.
+//
+// CUTTING IT DID NOT FIX THE MOSQUITO — it was never the wolf, it is the RECIPE SHAPE: a long, clean,
+// quiet, SUSTAINED `growl` heard from a distance. The OWL was built the same way. The rule: **`growl` is
+// for SHORT, LOUD, ROUGH things**; for anything sustained and quiet use `body`, which has no vibrato.)
 
 // ── THE CRICKETS ── the other BED, and the one that actually makes a golden-hour field sound like
 // one. Its shape is nothing like the wind's, and the difference is the point:
@@ -1268,9 +1340,11 @@ fn mkOwl(r: *Rack) void {
 // the field surrounds you instead of chirping at you from between the speakers.
 //
 // DELETED ONCE AND RESTORED UNCHANGED. Told "get rid of the mosquito sound" I reasoned my way to this
-// voice — bright, continuous, right at the top of hearing — and removed it. It was the WOLF (`mkWolf`).
-// Nothing here was ever wrong; the note stays so the next person to go looking for a whine starts at
-// the fundamentals of the CALLS rather than at the brightest thing in the mix.
+// voice — bright, continuous, right at the top of hearing — and removed it. It was not this; the whine was
+// a sustained `growl` in the CALLS, twice over (the wolf, then the owl — see `mkOwl`). Nothing here was
+// ever wrong, and the note stays because the reasoning that condemned it is so tempting: "mosquito" makes
+// you look for the BRIGHTEST thing in the mix, and a mosquito is not bright, it is a faint sustained tone
+// with a ~6 Hz waver on it. Look at the fundamentals and the vibrato, not the top octave.
 const CRICKETS = 7; // individuals near enough to be heard APART; past that it is a chirr, not a field
 const CRICKET_SING: f32 = 0.22; // fraction of its own cycle one cricket is actually singing
 
@@ -1346,13 +1420,14 @@ const BANK = [NV]Row{
     // this number — reshaping the whoosh made it stop sounding silly, and this is what makes it stop
     // shouting. It now sits under the hit it leads into, which is the sound that should land.
     // `poly` on the heavy too: a chained R2 must not cut its own predecessor off mid-whoosh.
-    .{ .make = mkSwingLight, .gain = 0.26, .jit = 0.11, .vjit = 0.18, .vars = 4, .poly = 3 },
-    .{ .make = mkSwingHeavy, .gain = 0.34, .jit = 0.07, .vjit = 0.12, .vars = 3, .poly = 2 },
-    .{ .make = mkHitLight, .gain = 0.70, .jit = 0.11, .vjit = 0.18, .vars = 4, .poly = 4 },
-    .{ .make = mkHitHeavy, .gain = 0.85, .jit = 0.08, .vjit = 0.14, .vars = 3, .poly = 3 },
-    .{ .make = mkHurt, .gain = 0.72, .jit = 0.10, .vjit = 0.14, .vars = 3 },
-    .{ .make = mkHurtHeavy, .gain = 0.88, .jit = 0.07, .vjit = 0.10, .vars = 3 },
-    .{ .make = mkStagger, .gain = 0.55, .jit = 0.10, .vjit = 0.16, .vars = 2 },
+    // MORE TAKES + WIDER JITTER on everything a fight repeats: repetition is its own kind of abrasive.
+    .{ .make = mkSwingLight, .gain = 0.26, .jit = 0.16, .vjit = 0.22, .vars = 5, .poly = 3 },
+    .{ .make = mkSwingHeavy, .gain = 0.34, .jit = 0.12, .vjit = 0.16, .vars = 4, .poly = 2 },
+    .{ .make = mkHitLight, .gain = 0.68, .jit = 0.19, .vjit = 0.24, .vars = 6, .poly = 4 },
+    .{ .make = mkHitHeavy, .gain = 0.82, .jit = 0.15, .vjit = 0.20, .vars = 5, .poly = 3 },
+    .{ .make = mkHurt, .gain = 0.70, .jit = 0.17, .vjit = 0.20, .vars = 5 },
+    .{ .make = mkHurtHeavy, .gain = 0.86, .jit = 0.13, .vjit = 0.16, .vars = 4 },
+    .{ .make = mkStagger, .gain = 0.55, .jit = 0.16, .vjit = 0.20, .vars = 4 },
     .{ .make = mkRefused, .gain = 0.34, .jit = 0.06, .vjit = 0.08, .vars = 2 },
     .{ .make = mkDeath, .gain = 0.95, .jit = 0.0, .vjit = 0.0, .poly = 1 },
     .{ .make = mkRespawn, .gain = 0.55, .jit = 0.0, .vjit = 0.0, .poly = 1 },
@@ -1397,22 +1472,32 @@ const BANK = [NV]Row{
     // is the worst case for repetition: five of them yipping the same recording is the single most
     // obviously fake noise a game can make, and there are up to seventy-two of these. Short reaches
     // too — they are small, and a scavenger you can hear from the far side of the plaza is an ogre.
-    .{ .make = mkKoboldChop, .gain = 0.54, .jit = 0.16, .vjit = 0.22, .vars = 4, .poly = 4, .reach = 46 },
+    // The SNARL is the commit and the most PRESENT thing they do — one per flurry, carrying further than
+    // the swing it precedes, because it is a cue and the swing is only a noise. SIX takes and the widest
+    // pitch jitter in the bank: a warband is the worst case in the game for repetition, and this is the
+    // voice you hear most of.
+    .{ .make = mkKoboldSnarl, .gain = 0.62, .jit = 0.22, .vjit = 0.24, .vars = 6, .poly = 3, .reach = 58 },
+    .{ .make = mkKoboldChop, .gain = 0.38, .jit = 0.22, .vjit = 0.28, .vars = 6, .poly = 4, .reach = 40 },
     // The HEAVE has to carry: it is the cue that says come back in, and you will often have backed
     // off to hear it. Loudest and furthest of the family, deliberately.
-    .{ .make = mkKoboldHeave, .gain = 0.60, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 2, .reach = 62 },
+    .{ .make = mkKoboldHeave, .gain = 0.58, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 2, .reach = 62 },
     // …and so must the CAST, for the same reason and more so — it is a thing you have to cross a
     // field to stop, so it has to be audible from where you would have to leave.
     .{ .make = mkKoboldCast, .gain = 0.62, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 2, .reach = 78 },
     // The heal LANDING is quieter than the cast on purpose (see mkKoboldHeal).
     .{ .make = mkKoboldHeal, .gain = 0.40, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 3, .reach = 54 },
-    .{ .make = mkKoboldWhirl, .gain = 0.44, .jit = 0.14, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 44 },
+    .{ .make = mkKoboldWhirl, .gain = 0.42, .jit = 0.20, .vjit = 0.24, .vars = 5, .poly = 3, .reach = 44 },
     .{ .make = mkKoboldSling, .gain = 0.50, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 4, .reach = 52 },
-    .{ .make = mkKoboldBite, .gain = 0.58, .jit = 0.15, .vjit = 0.22, .vars = 4, .poly = 3, .reach = 40 },
-    .{ .make = mkKoboldHurt, .gain = 0.62, .jit = 0.18, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 48 },
-    .{ .make = mkKoboldDie, .gain = 0.70, .jit = 0.12, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 58 },
+    .{ .make = mkKoboldBite, .gain = 0.56, .jit = 0.20, .vjit = 0.26, .vars = 6, .poly = 3, .reach = 40 },
+    .{ .make = mkKoboldHurt, .gain = 0.60, .jit = 0.24, .vjit = 0.30, .vars = 6, .poly = 4, .reach = 48 },
+    .{ .make = mkKoboldDie, .gain = 0.68, .jit = 0.18, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 58 },
     .{ .make = mkFlaskDrink, .gain = 0.52, .jit = 0.06, .vjit = 0.10, .vars = 2, .poly = 2 },
     .{ .make = mkFlaskCycle, .gain = 0.30, .jit = 0.07, .vjit = 0.08, .vars = 2, .poly = 3 },
+    // A CHEST CARRIES: it is a landmark event and you will be standing over it, but somebody across the
+    // plaza should hear the hinge. Almost no jitter on either — a chest opens the same way every time,
+    // and this is one of the few voices in the bank that is not one of a crowd.
+    .{ .make = mkChestOpen, .gain = 0.72, .jit = 0.04, .vjit = 0.06, .vars = 2, .poly = 2, .reach = 70 },
+    .{ .make = mkItemGet, .gain = 0.44, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 4 },
     .{ .make = mkKill, .gain = 0.55, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 4 },
     .{ .make = mkMenuMove, .gain = 0.30, .jit = 0.06, .vjit = 0.08, .vars = 2, .poly = 3 },
     .{ .make = mkMenuPick, .gain = 0.38, .jit = 0.03, .vjit = 0.05 },
@@ -1477,9 +1562,10 @@ fn seconds(id: Id) f32 {
         // ended early would stop being a tell halfway through the thing it is telling you about.
         .kobold_cast => 1.35,
         .kobold_die => 1.15,
-        .kobold_heave => 0.8, // two ragged breaths
+        .kobold_heave => 0.85, // three ragged breaths, quickening
         .kobold_whirl => 0.75, // …three passes of the cord (see mkKoboldWhirl)
         .ogre_slam, .bow_draw, .flask_drink => 1.05,
+        .chest_open => 0.9, // the lock, the whole hinge turn, and the lid arriving over
         // Every arrow impact is QUICK either way (owner's law) — a third of a second, tops.
         .arrow_hit, .arrow_dirt, .arrow_wood, .arrow_stone, .arrow_metal => 0.36,
         .birds => 1.3, // long enough for a phrase plus the answer that can start at 0.72
@@ -1494,7 +1580,12 @@ fn seconds(id: Id) f32 {
 // `poly` ALIASES sharing one copy of the sample data, and triggers round-robin through them. That
 // is what lets four toads croak over each other instead of cutting each other off.
 
-const MAX_VARS = 4;
+/// HOW MANY SEPARATE TAKES a voice may be rendered as. Raised 4 → 6 for the combat set on the owner's
+/// "more randomized": four takes of a sound you hear a thousand times in a session is audibly four, and
+/// repetition is its own kind of abrasive. It costs only what the rows that ASK for six cost — a take is
+/// rendered and stored per `vars`, not per MAX_VARS — and a voice's buffer is its own `length` seconds,
+/// which for every one of these is under half a second.
+const MAX_VARS = 6;
 const MAX_POLY = 4;
 
 /// THE OUTPUT LEVEL, in one place. It was stated as a literal `0.85` twice — once in `init` and

@@ -7,60 +7,49 @@ const heromod = @import("hero.zig");
 const foe = @import("foe.zig");
 const wf = @import("worldfmt.zig");
 const sfx = @import("audio.zig");
+const propart = @import("propart.zig"); // the WORLD's palette — its iron is this creature's iron too
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
 // ── THE KOBOLDS ─────────────────────────────────────────────────────────────────────────
-// A WARBAND, not a fourth monster: three ROLES of one creature, and the whole point of them is that
-// they are only dangerous together. Doglike humanoids — muzzle, pricked ears, a fur ruff, a tail —
-// somewhat shorter than a man (SCALE), so a knot of them reads as a pack of scavengers rather than as
-// small people.
+// A WARBAND, not a fourth monster: three ROLES of one doglike creature, only dangerous together.
 //
-//   BERSERKER — two axes and no plan. A FLURRY of wild alternating chops, then a long heaving
-//               RECOVERY that is the entire opening. Low poise: he is interruptible on purpose,
-//               because a foe that swings this much has to be punishable.
-//   PRIEST    — a staff, and no attack at all. It hangs at the BACK of the band and pours HP into
-//               whoever is hurt worst, off a long cooldown, through a readable cast you can break.
-//               It is the priority target, and the fight teaches you that by itself.
-//   SLINGER   — a whirled sling at range, and TEETH if you close. It has no third answer, so
-//               closing is correct and staying at range is not.
+//   BERSERKER — two axes, a flurry of wild chops, then a long heaving RECOVERY that is the whole
+//               opening. Low poise on purpose: a foe that swings this much has to be punishable.
+//   PRIEST    — a staff and NO attack. Hangs at the back and heals whoever is worst off, through a
+//               breakable cast. The priority target, and the fight teaches you that by itself.
+//   SLINGER   — sling at range, TEETH if you close. No third answer, so closing is correct.
 //
-// ONE FILE AND ONE STRUCT, because they are one creature: the body, the gait, the fur, the death and
-// the reactions are shared and only the KIT and the state machine differ. Three files would be three
-// copies of a doglike skull. (AGENTS.md's file rule: minimise the tokens it takes to make a correct
-// change, which favours cohesion — a change to "how a kobold looks" is one place.)
-//
-// FOUNDED ON THE SHARED HUMANOID SCAFFOLD (`hero.N` / `hero.PARENT` / `hero.restHumanoid`) and it
-// walks on `hero.advanceGait` + `hero.legChain` like every other biped here — AGENTS.md's humanoid
-// rule. Nothing about the locomotion is authored in this file; what is authored is the upper body.
+// ONE STRUCT, because they are one creature: body, gait, fur, death and reactions are shared and only
+// the KIT and the state machine differ. On the shared humanoid scaffold (`hero.restHumanoid`) and the
+// shared gait (`hero.advanceGait` + `legChain`) — only the upper body is authored here.
 
-// ── palette ── pre-gamma dark (the scene shader gammas output, so these lift a lot). A scavenger's
-// colours: dust-brown fur going grey at the muzzle, cheap iron, filthy hide.
-// AUTHORED NEARLY BLACK, and this is the law I broke on the first pass (AGENTS.md: "A BIG SMOOTH MASS
-// NEEDS A NEARLY-BLACK ALBEDO"). The scene shader's hot key (*1.72) plus the gamma lift turns any
-// mid-dark value PALE wherever a large face takes the sun square on — and a kobold is nothing but large
-// smooth faces. At 84/62/40 the pelt rendered as pale pine and three of them read as wooden mannequins
-// rather than as animals. Roughly halved, and the SPREAD between the three widened, because form only
-// reads if the shadowed side is genuinely darker than the lit one.
-// …and then back UP a third, because the law has a scope I over-applied a second time. "Nearly black"
-// is for a BIG SMOOTH mass — a cliff face, a keep wall — where one huge face takes the sun square on. A
-// kobold is small and its surface is already broken to pieces by the tufts, so it never gets that flat
-// hot face; halved outright it went from pale pine to grey-brown ROCK and lost the dust-brown warmth
-// that makes it fur. 60/43/26 is the landing point between the two renders.
-const FUR = rgba(60, 43, 26, 255); // dust-brown pelt
-const FUR_DK = rgba(30, 21, 13, 255); // …its shadowed underside and the tufts' roots
-const FUR_LT = rgba(94, 71, 45, 255); // …sun-bleached along the back and shoulders
-const MUZZLE = rgba(38, 28, 20, 255); // the darker mask over the snout
-const NOSE = rgba(18, 15, 13, 255);
-const EAR_IN = rgba(96, 60, 52, 255); // the pink-grey inside of a pricked ear
-const EYE = rgba(168, 128, 44, 200); // amber, slightly self-lit so it catches in shade
-const TOOTH = rgba(196, 188, 166, 255);
-const HIDE = rgba(48, 36, 26, 255); // scraps of cured hide — belt, harness, wraps
-const HIDE_LT = rgba(66, 50, 36, 255);
-const IRON = rgba(72, 74, 78, 255); // cheap, unpolished iron
-const IRON_LT = rgba(104, 108, 114, 255);
+// ── palette ── PRE-GAMMA: screen ∝ albedo^(1/2.2) after the shader's 1.72 hot key, so these values are
+// far darker than they look. Sampled, not eyeballed — sunlit pelt lands ~105 against the field's 126, and
+// the R-toward-G compression is what separates the silhouette from warm grass where the values meet.
+const FUR = rgba(29, 24, 17, 255); // dust-brown pelt
+const FUR_DK = rgba(14, 11, 8, 255); // …its shadowed underside and the tufts' roots
+const FUR_LT = rgba(46, 38, 26, 255); // …sun-bleached along the back and shoulders
+const MUZZLE = rgba(18, 15, 12, 255); // the darker mask over the snout
+const NOSE = rgba(10, 9, 8, 255);
+const EAR_IN = rgba(74, 44, 37, 255); // the pink-grey inside of a pricked ear
+/// Vertex alpha under 255 is the emissive channel, and LOWER is HOTTER (`propart`'s flames run 25-40).
+const EYE = rgba(250, 196, 74, 105);
+const TOOTH = rgba(150, 143, 126, 255);
+const HIDE = rgba(24, 18, 14, 255); // scraps of cured hide — belt, harness, wraps
+const HIDE_LT = rgba(36, 28, 20, 255);
+/// Filthy sacking — a shade lighter than the pelt, or a garment reads as more animal.
+const CLOTH = rgba(52, 45, 33, 255);
+const CLOTH_DK = rgba(33, 28, 21, 255);
+/// CHEAP, UNPOLISHED IRON — and this is the WORLD's iron (`propart.IRON`), not a fourth transcription of
+/// it. The local copy was 72/74/78, which is nearly the hero's own polished STEEL (98/104/114): once the
+/// axe head grew to a size you could actually see, two blades came back as bright WHITE CARDBOARD SLABS
+/// hanging off a dark animal, and they were the loudest thing in the frame. A scavenger's axe is a dark
+/// pitted lump. One authority for "what iron looks like here" is also how it stays that way.
+const IRON = propart.IRON;
+const IRON_LT = rgba(46, 44, 41, 255); // …the one ground edge, honed back to bare metal
 const HAFT = rgba(46, 33, 21, 255); // dark wood
 const CLAW = rgba(150, 142, 122, 255);
 /// The priest's fetish colours — bone, and the grace-adjacent gold its magic borrows.
@@ -101,15 +90,11 @@ const SEG_SHANK = heromod.SEG_SHANK;
 const SEG_UPARM = heromod.SEG_UPARM;
 const SEG_FOREARM = heromod.SEG_FOREARM;
 
-/// SOMEWHAT SHORTER THAN A MAN (owner's brief) — not a child's height, which would read as comic, and
-/// not so close to the hero's that the difference stops being a silhouette. At 0.82 a kobold's crown
-/// lands about at the Tarnished's collarbone, which is where "I can see over its head" happens.
-pub const SCALE: f32 = 0.82;
-/// …and NARROWER ACROSS THE SHOULDERS than a man, which is most of what makes it read as a different
-/// animal rather than as a scaled-down person. The hips stay nearly the hero's — a scavenger is
-/// hollow-chested, not narrow-hipped.
-const HIP_HALF = 0.086;
-const SHOULDER_HALF = 0.132;
+/// Level with the hero's stature; the HUNCH is what leaves it reading as the lower, wider animal.
+pub const SCALE: f32 = 1.02;
+/// BROADER than the hero — the muzzle, hunch and ruff carry "different animal" without a narrow frame.
+const HIP_HALF = 0.096;
+const SHOULDER_HALF = 0.168;
 
 fn restPositions() [N]rl.Vector3 {
     return heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
@@ -130,12 +115,12 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
     heromod.setJoint(wx, &rest, i, @intCast(parent[i]), animRot);
 }
 
-/// The kobold's PAW footprint, measured off `footMesh` below: the pad spans z −0.035·H…+0.175·H and
-/// x ±0.044·H, its underside on the ankle plane. A longer foot than the hero's boot for its height —
+/// The kobold's PAW footprint, measured off `footMesh` below: the pad spans z −0.041·H…+0.206·H and
+/// x ±0.052·H, its underside on the ankle plane. A longer foot than the hero's boot for its height —
 /// it is a dog's foot, and the toes are most of its length.
 const solePatches = [_]heromod.SolePatch{
-    .{ .bone = ANKL, .heel = 0.035 * H, .toe = 0.175 * H, .halfW = 0.044 * H, .drop = 0.036 * H },
-    .{ .bone = ANKR, .heel = 0.035 * H, .toe = 0.175 * H, .halfW = 0.044 * H, .drop = 0.036 * H },
+    .{ .bone = ANKL, .heel = 0.041 * H, .toe = 0.206 * H, .halfW = 0.052 * H, .drop = 0.042 * H },
+    .{ .bone = ANKR, .heel = 0.041 * H, .toe = 0.206 * H, .halfW = 0.052 * H, .drop = 0.042 * H },
 };
 
 const A_BOB = heromod.A_BOB; // the hero's own pelvis amplitude — a shared walk owes a shared bob
@@ -171,11 +156,13 @@ const SPEC = [_]Spec{
     // takes a lot of killing but the flurry can always be stopped. (This said 13 and the test caught
     // it: 13 is ABOVE the slinger's, i.e. the hardest of the three to interrupt, which is the exact
     // opposite of what he is for.)
-    .{ .hp = 76, .poise = 11, .stance = 34, .speed = 1.22, .bodyR = 0.34, .hurtR = 0.52, .runes = 120, .wantMin = 0.0, .wantMax = 1.5 },
+    // …and the BODY/HURT radii came up with the build (owner: "too wimpy" — a wider animal whose collision
+    // and hurt sphere stayed at the old width is one you clip through and swing past).
+    .{ .hp = 76, .poise = 11, .stance = 34, .speed = 1.22, .bodyR = 0.40, .hurtR = 0.60, .runes = 120, .wantMin = 0.0, .wantMax = 1.5 },
     // priest — frail, and the only one with no attack at all. Its whole defence is the band.
-    .{ .hp = 54, .poise = 10, .stance = 24, .speed = 0.86, .bodyR = 0.32, .hurtR = 0.50, .runes = 210, .wantMin = 7.5, .wantMax = 12.0 },
+    .{ .hp = 54, .poise = 10, .stance = 24, .speed = 0.86, .bodyR = 0.38, .hurtR = 0.58, .runes = 210, .wantMin = 7.5, .wantMax = 12.0 },
     // slinger — middling everything, dangerous only at the range it chooses.
-    .{ .hp = 62, .poise = 12, .stance = 28, .speed = 1.0, .bodyR = 0.32, .hurtR = 0.50, .runes = 140, .wantMin = 5.0, .wantMax = 10.5 },
+    .{ .hp = 62, .poise = 12, .stance = 28, .speed = 1.0, .bodyR = 0.38, .hurtR = 0.58, .runes = 140, .wantMin = 5.0, .wantMax = 10.5 },
 };
 
 fn spec(r: Role) *const Spec {
@@ -257,6 +244,18 @@ const REPOSITION_DUR = 1.3;
 /// rotate with it — the whole figure tips like a felled post and nothing reads as folding at all, which
 /// is exactly what the berserker's heave did on its first render.
 const PELVIS_SHARE: f32 = 0.12;
+
+/// How far the knees fold on the two beats that are not a gait. A waist fold has to be paid for
+/// somewhere, and on straight legs 46 deg of it still reads as a plank tipping.
+const CROUCH_HEAVE: f32 = 32.0;
+const CROUCH_STUN: f32 = 20.0;
+
+/// The pelvis drop a `crouch` of hip flexion costs. `legCrouch` bends the knee TWICE the hip, so the
+/// shank's angle is equal and opposite to the thigh's and the leg simply shortens by cos(crouch). Drop it
+/// by anything else and the paws float or sink — there is no foot IK here.
+fn legSink(crouch: f32) f32 {
+    return (SEG_THIGH + SEG_SHANK) * H * (1.0 - mathx.cosf(mathx.radians(crouch)));
+}
 
 // ── FX ──────────────────────────────────────────────────────────────────────────────────
 const NPART = 22; // a modest per-kobold pool: a warband is up to 72 of these
@@ -341,6 +340,12 @@ pub const Kobold = struct {
     fxRng: mathx.Rng = mathx.Rng.init(1),
 
     xf: [N]rl.Matrix = undefined,
+    /// The two things that ride matrices rather than bones (see `Model.draw`): the hinged JAW and the
+    /// TAIL chain. Written by `pose` alongside `xf`, so they cannot fall a frame behind the body.
+    jawXf: rl.Matrix = undefined,
+    tailXf: [TAIL_N]rl.Matrix = undefined,
+    /// The tail's lash, in degrees, eased so a hit or a swing whips it rather than teleporting it.
+    tailWhip: f32 = 0,
     rest: [N]rl.Vector3 = undefined,
 
     pub fn spawn(home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Kobold {
@@ -470,6 +475,7 @@ pub const Kobold = struct {
         self.castCd = mathx.maxF(0, self.castCd - dt);
         self.slingCd = mathx.maxF(0, self.slingCd - dt);
         self.biteCd = mathx.maxF(0, self.biteCd - dt);
+        self.tailWhip = mathx.approach(self.tailWhip, 0, dt * TAIL_WHIP_DECAY);
         var act: Act = .none;
         var movedDist: f32 = 0;
         var moveYaw: ?f32 = null;
@@ -504,8 +510,7 @@ pub const Kobold = struct {
                     if (self.chopsLeft > 0) {
                         self.chopsLeft -= 1;
                         self.chopLeftHand = !self.chopLeftHand;
-                        self.enter(.chop);
-                        sfx.world(.kobold_chop, self.pos);
+                        self.enter(.chop); // …which is what plays the swing (see `enter`)
                     } else self.enter(.heave);
                 }
             },
@@ -574,6 +579,14 @@ pub const Kobold = struct {
             .whirl => sfx.world(.kobold_whirl, self.pos),
             .bite => sfx.world(.kobold_bite, self.pos),
             .heave => sfx.world(.kobold_heave, self.pos),
+            // THE SWING SOUND LIVES HERE, once per chop, and the SNARL is separate and fires only when he
+            // commits to a flurry (`decide`). It used to be one voice with the snarl AND an impact baked
+            // into it, played per swing AND AGAIN on contact — so a three-chop flurry that connected was
+            // six overlapping barks with six impacts in them, which is most of what "weird sounds" was.
+            .chop => {
+                sfx.world(.kobold_chop, self.pos);
+                self.tailWhip = TAIL_WHIP_CHOP * (if (self.chopLeftHand) @as(f32, -1.0) else 1.0);
+            },
             else => {},
         }
     }
@@ -598,8 +611,10 @@ pub const Kobold = struct {
                     // swing and the player can read the burst rather than guessing each time.
                     self.chopsLeft = ZERK_SWINGS_LO + @as(u32, @intCast(self.fxRng.intn(@intCast(ZERK_SWINGS_HI - ZERK_SWINGS_LO + 1))));
                     self.chopLeftHand = false;
+                    // THE SNARL IS THE COMMIT, once per flurry — not per swing. It is the cue to back
+                    // off, and a cue repeated five times in two seconds stops being one.
+                    sfx.world(.kobold_snarl, self.pos);
                     self.enter(.chop);
-                    sfx.world(.kobold_chop, self.pos);
                     return;
                 }
                 self.moveDir = mathx.dirXZ(self.pos, heroAt(self));
@@ -694,6 +709,9 @@ pub const Kobold = struct {
         self.flash = FLASH_DUR;
         const heavyBlow = blade.hit.stance > 0;
         self.shove = mathx.scaleV(s.dir, if (heavyBlow) 2.1 else 1.35);
+        // The tail snaps sideways off the blow before it clamps under — the first frame of a flinch, and
+        // visible from behind, where the body's own reaction mostly is not.
+        self.tailWhip = TAIL_WHIP_HURT * (if (self.fxRng.float() < 0.5) @as(f32, -1.0) else 1.0);
         self.emitBlood(s.contact, s.dir);
         sfx.world(.kobold_hurt, self.pos);
         switch (s.reaction) {
@@ -718,6 +736,16 @@ pub const Kobold = struct {
         self.dealt = true; // an interrupted swing lands nothing
         self.chopsLeft = 0; // …and the flurry is over, not paused
         self.castGlow = 0;
+    }
+
+    /// Stage a reaction for the shot harness, `ogre.debugStagger`/`debugKill` verbatim. These exist
+    /// because a flinch and a death cannot be reached by stepping a foe next to a hero who is not
+    /// swinging — and un-photographed is how the death pose came to be posing six UNDEFINED matrices.
+    pub fn debugStagger(self: *Kobold, heavy: bool) void {
+        self.enterStun(if (heavy) .stunheavy else .stunlight);
+    }
+    pub fn debugKill(self: *Kobold) void {
+        self.enterDeath();
     }
 
     fn enterDeath(self: *Kobold) void {
@@ -753,17 +781,17 @@ pub const Kobold = struct {
         const dip = heromod.STRAFE_DIP * latW;
 
         var wx: [N]rl.Matrix = undefined;
-        const collapse = mathx.lerpF(hipY, 0.20 * H, dk);
-        // A kobold walks with its trunk already tipped forward — a scavenger's slouch, and the thing
-        // that most separates its silhouette from a short man's.
-        //
-        // THE HEAVE IS NOT HERE, and that is AGENTS.md's law: "BIG BODIES HINGE AT THE WAIST, LEGS STAY
-        // PLANTED. Route lean through SPINE/CHEST and leave the pelvis nearly upright; lean at the ROOT
-        // rotates the legs and reads as lurching." The first version put 34 deg of doubling-over on the
-        // pelvis and it read as a slight tip of the whole body — the legs came with it, so nothing
-        // FOLDED. `poseUpper` owns the fold now (`PELVIS_SHARE` below is the ogre's idea, same reason).
-        const slouch = 7.0 + 4.0 * m + PELVIS_SHARE * 34.0 * self.heaveAmt() + 16.0 * dk - 22.0 * stunAmt;
-        const pelvY = if (dead) collapse else hipY + bob - dip - 0.05 * H * self.heaveAmt();
+        const collapse = mathx.lerpF(hipY, 0.16 * H, dk);
+        // A scavenger's slouch. THE HEAVE IS NOT HERE — AGENTS.md routes a fold through SPINE/CHEST and
+        // leaves the pelvis upright, because lean at the ROOT turns the legs with it and nothing folds.
+        const heave = self.heaveAmt();
+        // THE CROUCH — how far the knees are folded, and therefore how far the pelvis drops. A heaving
+        // berserker sags into his own legs, and a stagger buckles them; on straight poles both beats
+        // read as a tip of a plank. `legCrouch` below owns the geometry, this is just the amount.
+        const crouch = CROUCH_HEAVE * heave + CROUCH_STUN * stunAmt;
+        const slouch = 7.0 + 4.0 * m + PELVIS_SHARE * 46.0 * heave + 16.0 * dk - 14.0 * stunAmt;
+        const sag = legSink(crouch);
+        const pelvY = if (dead) collapse else hipY + bob - dip - sag;
         // scaleM FIRST → the whole rig scales about its pelvis; the world placement stays unscaled.
         // EVERY rig-local term in the translate is × fs (hip height, bob, dip, sway, the collapse) or
         // at SCALE≠1 the legs hang and the feet sink — AGENTS.md's documented humanoid gotcha.
@@ -773,12 +801,89 @@ pub const Kobold = struct {
             heromod.rootAt(self.pos), // …on the sculpted ground under it, never y = 0
         ));
 
-        if (!dead) {
+        // EVERY BONE GETS A MATRIX EVERY FRAME (the ogre's rule, and the kobold was breaking it): the
+        // six leg bones were posed only `if (!dead)`, and `wx` starts UNDEFINED — so a dying kobold
+        // handed six garbage matrices straight to `drawMesh`. It is undefined behaviour that happened to
+        // look survivable because the body is small and the dissipation is quick.
+        if (dead) {
+            self.legCrumple(&wx, dk);
+        } else if (crouch > 0.5) {
+            // Standing beats fold the knees instead of walking (the ogre's `legPose` split, same reason:
+            // legChain is the WALK and a crouch is not a gait).
+            self.legCrouch(&wx, crouch, 1.0, HIPL, KNEEL, ANKL);
+            self.legCrouch(&wx, crouch, -1.0, HIPR, KNEER, ANKR);
+        } else {
             heromod.legChain(&wx, &self.rest, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
             heromod.legChain(&wx, &self.rest, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, solePatches[1]);
         }
         self.poseUpper(&wx, dk, stunAmt, prot);
         self.xf = wx;
+        self.poseJaw();
+        self.poseTail(dk, stunAmt);
+    }
+
+    /// ONE LEG, FOLDED — the standing beats (the heave, a stagger), not the walk. `legChain` owns the
+    /// gait; this is the ogre's `legPose` split for the same reason, and it is built off the same shared
+    /// constants (`IDLE_KNEE`, `HIP_ADDUCT`, `FOOT_TOEOUT`) the hero's own standing poses use, so the
+    /// hand-off at crouch = 0 lands exactly where legChain leaves a standing leg.
+    fn legCrouch(self: *Kobold, wx: *[N]rl.Matrix, crouch: f32, side: f32, hip: usize, knee: usize, ank: usize) void {
+        // KNEE = 2x HIP is what keeps the shank's angle equal and opposite to the thigh's, so the ankle
+        // stays directly under the hip and the foot does not slide — see `legSink` for the drop it costs.
+        setLocal(wx, hip, self.rest, mul(rx(-crouch), rz(-side * heromod.HIP_ADDUCT)));
+        setLocal(wx, knee, self.rest, rx(heromod.IDLE_KNEE + 2.0 * crouch));
+        // The ankle takes the shank's pitch back out so the paw stays flat on the ground.
+        setLocal(wx, ank, self.rest, mul(rx(-crouch), ry(side * heromod.FOOT_TOEOUT)));
+    }
+
+    /// …and the legs of a corpse. It FOLDS — one knee up under it, the other splayed — because a body
+    /// that dies with its legs straight is a falling plank, and this is the beat the player sees most
+    /// often. Asymmetric on purpose (wabi-sabi: nothing about a death is a matched pair).
+    fn legCrumple(self: *Kobold, wx: *[N]rl.Matrix, dk: f32) void {
+        setLocal(wx, HIPL, self.rest, mul(rx(-64.0 * dk), rz(-heromod.HIP_ADDUCT - 16.0 * dk)));
+        setLocal(wx, KNEEL, self.rest, rx(heromod.IDLE_KNEE + 96.0 * dk));
+        setLocal(wx, ANKL, self.rest, mul(rx(24.0 * dk), ry(heromod.FOOT_TOEOUT)));
+        setLocal(wx, HIPR, self.rest, mul(rx(-22.0 * dk), rz(heromod.HIP_ADDUCT + 30.0 * dk)));
+        setLocal(wx, KNEER, self.rest, rx(heromod.IDLE_KNEE + 52.0 * dk));
+        setLocal(wx, ANKR, self.rest, mul(rx(10.0 * dk), ry(-heromod.FOOT_TOEOUT)));
+    }
+
+    /// THE JAW, hinged about `JAW_PIVOT` in the skull's frame. To rotate about a point: translate it to
+    /// the origin, turn, put it back — and in this convention `mul(a, b)` applies a FIRST, so that reads
+    /// left to right.
+    fn poseJaw(self: *Kobold) void {
+        const a = GAPE_DEG * self.gape();
+        self.jawXf = mul(mul3(
+            tr(-JAW_PIVOT.x, -JAW_PIVOT.y, -JAW_PIVOT.z),
+            rx(a),
+            tr(JAW_PIVOT.x, JAW_PIVOT.y, JAW_PIVOT.z),
+        ), self.xf[SKULL]);
+    }
+
+    /// THE TAIL, chained off the pelvis. Each link inherits its parent, so a few degrees per joint is a
+    /// long curve at the tip — which is the whole reason a tail is worth having: it is the one part of
+    /// this creature whose motion is visible from behind, and it costs five matrices.
+    fn poseTail(self: *Kobold, dk: f32, stunAmt: f32) void {
+        const twoPi = std.math.tau;
+        const m = self.moving * (1.0 - dk);
+        // A CLAMPED tail is fear and a HIGH one is commitment — the same vocabulary a real animal uses,
+        // and it means the tail is telling you what the creature is doing before its arms do. The clamp
+        // is spread down the whole tail, so it curls UNDER rather than hinging at the root.
+        const clamp = (34.0 * stunAmt + 26.0 * dk + 22.0 * self.heaveAmt()) / TAIL_N;
+        // The sway lags one link behind the next, so the tail follows rather than swinging as one bar.
+        const swayAmp = (6.0 + 12.0 * m) + self.tailWhip;
+        var acc = mul(tr(TAIL_ROOT.x, TAIL_ROOT.y, TAIL_ROOT.z), self.xf[ROOT]);
+        for (0..TAIL_N) |i| {
+            const fi = @as(f32, @floatFromInt(i));
+            const lagPh = self.phase - fi * 0.085;
+            const yaw = swayAmp * mathx.sinf(twoPi * lagPh) * (0.45 + 0.16 * fi);
+            // Per-link, not cumulative: the SET is spent once leaving the rump and each link after it
+            // adds only the CURL, so the tail trails out behind and bends toward its brush.
+            const pitch = (if (i == 0) TAIL_SET else TAIL_CURL) + clamp + 3.0 * mathx.sinf(twoPi * 2.0 * lagPh) * m;
+            // -rx tips the link's -Z end DOWN, which is a tail hanging; +rx lifts it.
+            acc = mul(mul(rx(-pitch), ry(yaw)), acc);
+            self.tailXf[i] = acc;
+            acc = mul(tr(0, 0, -TAIL_SEG * H), acc);
+        }
     }
 
     fn stunAmount(self: *const Kobold) f32 {
@@ -797,6 +902,33 @@ pub const Kobold = struct {
         return mathx.smoothstep(0, 0.16, u) * (1.0 - mathx.smoothstep(0.78, 1.0, u));
     }
 
+    /// THE CHOP'S TRUNK COIL, in degrees of yaw: −1 wound AWAY from the live hand, +1 whipped through
+    /// past it. The whole reason the flurry reads as thrown rather than waved.
+    fn chopTwist(self: *const Kobold) f32 {
+        if (self.state != .chop) return 0;
+        const u = mathx.clampF(self.t / ZERK_CHOP, 0, 1);
+        const coil = 1.0 - mathx.smoothstep(0, ZERK_HIT_A, u); // wound up through the raise
+        const thru = mathx.smoothstep(ZERK_HIT_A, ZERK_HIT_B, u); // …and unwound through the strike
+        const sgn: f32 = if (self.chopLeftHand) -1.0 else 1.0;
+        return sgn * (28.0 * coil - 22.0 * thru);
+    }
+
+    /// …and the FOLD that comes with it: he drops his weight into the blow and stands back out of it.
+    fn chopThrow(self: *const Kobold) f32 {
+        if (self.state != .chop) return 0;
+        const u = mathx.clampF(self.t / ZERK_CHOP, 0, 1);
+        return 22.0 * mathx.smoothstep(ZERK_HIT_A * 0.6, ZERK_HIT_B, u) * (1.0 - mathx.smoothstep(ZERK_HIT_B, 1.0, u)) -
+            9.0 * (1.0 - mathx.smoothstep(0, ZERK_HIT_A, u)); // …arching back on the raise first
+    }
+
+    /// THE BITE'S HEAD DRIVE (0..1). The snap is the neck and the trunk throwing the jaw at you; the
+    /// arms sweeping back are a consequence, not the move.
+    fn biteLunge(self: *const Kobold) f32 {
+        if (self.state != .bite) return 0;
+        const u = mathx.clampF(self.t / BITE_DUR, 0, 1);
+        return mathx.smoothstep(0, BITE_HIT_A, u) * (1.0 - mathx.smoothstep(BITE_HIT_B, 1.0, u));
+    }
+
     // ── THE UPPER BODY ──────────────────────────────────────────────────────────────────
     // AGENTS.md: legs alone are NOT a gait. Shared legs under a rigid trunk read as moving in one
     // piece, so every walking humanoid here owes a contralateral arm swing at full amplitude, elbows
@@ -812,36 +944,60 @@ pub const Kobold = struct {
         // TRUNK. The nod is twice a stride (once per foot-fall); the girdle counter-rotates the
         // pelvis, and it LAGS it by an eighth of a cycle because a torso answers hips, it does not
         // anticipate them.
-        const nod = 2.2 * mathx.sinf(2.0 * twoPi * ph) * m;
+        const nod = 3.6 * mathx.sinf(2.0 * twoPi * ph) * m;
         const counter = -0.62 * prot;
-        // THE WAIST TAKES THE FOLD. The heave's whole job is to read as an opening from across a field,
-        // and AGENTS.md's other law applies too — REACTIONS ARE HUGE, never a subtle lean — so this is a
-        // deliberate 46 deg through the lumbar and 30 more through the chest, over planted feet. It was
-        // 6 deg here with 34 on the pelvis, which is the same total angle arranged so that none of it
-        // showed. The spine leads and the chest follows it, which is what makes it a fold and not a hinge.
+        // THE WAIST TAKES THE FOLD, over knees that pay for it (`legCrouch`). 46 deg through the lumbar
+        // and 30 more through the chest: the spine leads and the chest follows, which is what makes it a
+        // fold rather than a hinge.
         const fold = 46.0 * heave;
+        // …AND IT BREATHES, which is the difference between "doubled over" and "parked doubled over". A
+        // heave is a body dragging air in: ~2.4 Hz through the lumbar, and it is the one channel here big
+        // enough to see from across the field while the rest of him holds still.
+        const gasp = 9.0 * heave * mathx.sinf(twoPi * 2.4 * self.t);
         const spineExtra = 14.0 * dk - 16.0 * stunAmt;
-        setLocal(wx, SPINE, self.rest, mul3(rx(nod + fold + spineExtra * 0.5), ry(counter * 0.45), rz(1.4 * mathx.sinf(twoPi * ph) * m)));
-        setLocal(wx, CHEST, self.rest, mul3(rx(nod * 0.6 + 0.65 * fold + spineExtra * 0.5), ry(counter * 0.55), rz(-1.0 * mathx.sinf(twoPi * ph) * m)));
+        // THE CHOP'S KINETIC CHAIN. A wild swing is the TRUNK throwing the arm — coiling away, then
+        // whipping through — and the first pass had the shoulder doing all of it alone, which is the
+        // "windmill you can stand next to" read. `chopTwist` is the coil (yaw, +ve toward the live hand)
+        // and `chopThrow` the fold that comes with it.
+        const twist = self.chopTwist();
+        const throwF = self.chopThrow();
+        setLocal(wx, SPINE, self.rest, mul3(
+            rx(nod + fold + gasp + spineExtra * 0.5 + throwF * 0.45),
+            ry(counter * 0.45 + twist * 0.40),
+            rz(1.4 * mathx.sinf(twoPi * ph) * m),
+        ));
+        setLocal(wx, CHEST, self.rest, mul3(
+            rx(nod * 0.6 + 0.65 * fold + gasp * 0.7 + spineExtra * 0.5 + throwF * 0.55),
+            ry(counter * 0.55 + twist * 0.60),
+            rz(-1.0 * mathx.sinf(twoPi * ph) * m),
+        ));
 
         // NECK + SKULL. A dog leads with its nose: the head hangs a touch forward of vertical and
-        // counter-rolls the trunk. On the heave it drops to the floor, on a stagger it snaps back.
+        // counter-rolls the trunk. On the heave it drops to the floor, on a stagger it snaps back — and
+        // on a BITE the whole head drives forward, which the first pass left out entirely: the slinger's
+        // snap moved its ARMS and nothing else, so the one attack that is literally called a bite had no
+        // head in it. `lunge` is that, and it is worth more than every arm angle in this file.
+        const lunge = self.biteLunge();
         const headYaw = -counter * 0.5 + 6.0 * mathx.sinf(self.elapsed * 0.7 + self.seed * 6.0) * (1.0 - m);
-        const headPitch = 8.0 - nod * 0.8 + 30.0 * heave - 34.0 * stunAmt + 22.0 * dk;
-        setLocal(wx, NECK, self.rest, mul(rx(headPitch * 0.45), ry(headYaw * 0.4)));
-        setLocal(wx, SKULL, self.rest, mul3(rx(headPitch * 0.55), ry(headYaw * 0.6), rz(-1.8 * mathx.sinf(twoPi * ph) * m)));
+        // …and it carries LEVEL, not nodded. The +8 here plus the trunk's own slouch had it studying the
+        // grass in every idle frame, which is not a predator's posture and hides the whole face.
+        const headPitch = -3.0 - nod * 0.8 + 34.0 * heave - 52.0 * stunAmt + 26.0 * dk + 26.0 * lunge - throwF * 0.3;
+        setLocal(wx, NECK, self.rest, mul(rx(headPitch * 0.45 + 16.0 * lunge), ry(headYaw * 0.4)));
+        setLocal(wx, SKULL, self.rest, mul3(rx(headPitch * 0.55 + 10.0 * lunge), ry(headYaw * 0.6), rz(-1.8 * mathx.sinf(twoPi * ph) * m)));
 
         // ARMS. The contralateral swing is the shared humanoid one; each role then overrides the arm
         // that carries its kit. LAG: the shoulder leads, the elbow arrives an eighth of a cycle later.
-        const swing = 13.0 * m;
+        // The amplitude is well over the hero's restrained 9 deg on purpose — his walk is a soldier's and
+        // this is a scavenger's, loose and swinging, and it is most of what tells the two gaits apart.
+        const swing = 22.0 * m;
         const lag = 0.125;
         const shL = -swing * mathx.cosf(twoPi * ph);
         const shR = -swing * mathx.cosf(twoPi * (ph + 0.5));
-        const elL = 22.0 + 16.0 * mathx.maxF(0, -mathx.cosf(twoPi * (ph - lag))) * m;
-        const elR = 22.0 + 16.0 * mathx.maxF(0, -mathx.cosf(twoPi * (ph + 0.5 - lag))) * m;
+        const elL = 24.0 + 24.0 * mathx.maxF(0, -mathx.cosf(twoPi * (ph - lag))) * m;
+        const elR = 24.0 + 24.0 * mathx.maxF(0, -mathx.cosf(twoPi * (ph + 0.5 - lag))) * m;
         // A kobold's arms hang wide of a narrow chest — the abduction is what stops the forearms
         // clipping the ruff.
-        const abd = 11.0;
+        const abd = 13.0;
 
         switch (self.role) {
             .berserker => self.poseZerk(wx, shL, shR, elL, elR, abd, heave, dk, stunAmt),
@@ -877,18 +1033,25 @@ pub const Kobold = struct {
                 eL = 74.0;
             }
         } else if (heave > 0.01) {
-            // Hanging off his own arms, axes dragging in the dirt.
-            aL = 26.0 * heave;
-            aR = 26.0 * heave;
-            eL = 18.0 + 10.0 * heave;
-            eR = 18.0 + 10.0 * heave;
+            // Hanging off his own arms, axes dragging in the dirt — and SWINGING, loose, on the breath.
+            // Dead-still arms on a gasping body is a mannequin holding a pose.
+            const swingLoose = 9.0 * heave * mathx.sinf(std.math.tau * 1.2 * self.t);
+            aL = 30.0 * heave + swingLoose;
+            aR = 30.0 * heave - swingLoose;
+            eL = 18.0 + 14.0 * heave;
+            eR = 18.0 + 14.0 * heave;
         }
-        const flail = 30.0 * stunAmt + 24.0 * dk; // arms fly up on a hit
-        setLocal(wx, SHL, self.rest, mul3(rx(aL - flail), ry(-8.0), rz(abd)));
-        setLocal(wx, ELL, self.rest, rx(-eL));
+        // ARMS FLY UP ON A HIT, and REACTIONS ARE HUGE (owner's law) — 30 deg was a shrug. This is the
+        // beat the player is looking at when they land a blow, so it gets the biggest amplitude here.
+        const flail = 52.0 * stunAmt + 40.0 * dk;
+        // …and ASYMMETRICALLY, because two arms thrown up by exactly the same amount is a puppet on one
+        // string. The right takes more, always: whichever way he was swinging, one side had more weight
+        // in it than the other.
+        setLocal(wx, SHL, self.rest, mul3(rx(aL - flail * 0.78), ry(-8.0 - 14.0 * stunAmt), rz(abd + 20.0 * stunAmt)));
+        setLocal(wx, ELL, self.rest, rx(-eL - 18.0 * stunAmt));
         setLocal(wx, WRL, self.rest, rx(-8.0));
-        setLocal(wx, SHR, self.rest, mul3(rx(aR - flail), ry(8.0), rz(-abd)));
-        setLocal(wx, ELR, self.rest, rx(-eR));
+        setLocal(wx, SHR, self.rest, mul3(rx(aR - flail), ry(8.0 + 18.0 * stunAmt), rz(-abd - 26.0 * stunAmt)));
+        setLocal(wx, ELR, self.rest, rx(-eR - 26.0 * stunAmt));
         setLocal(wx, WRR, self.rest, rx(-8.0));
         setLocal(wx, KIT, self.rest, rl.math.matrixIdentity());
     }
@@ -905,14 +1068,16 @@ pub const Kobold = struct {
         // this is the thing it is doing, not a thing it is holding.
         const aL = mathx.lerpF(shL, -74.0, c);
         const eL = mathx.lerpF(elL, 82.0, c);
-        setLocal(wx, SHL, self.rest, mul3(rx(aL - flail), ry(mathx.lerpF(-6.0, -34.0, c)), rz(abd * (1.0 - 0.5 * c))));
-        setLocal(wx, ELL, self.rest, rx(-eL));
+        setLocal(wx, SHL, self.rest, mul3(rx(aL - flail * 0.78), ry(mathx.lerpF(-6.0, -34.0, c)), rz(abd * (1.0 - 0.5 * c) + 18.0 * stunAmt)));
+        setLocal(wx, ELL, self.rest, rx(-eL - 16.0 * stunAmt));
         setLocal(wx, WRL, self.rest, rx(-6.0));
-        setLocal(wx, SHR, self.rest, mul3(rx(aR - flail), ry(mathx.lerpF(6.0, 16.0, c)), rz(-abd * (1.0 - 0.4 * c))));
-        setLocal(wx, ELR, self.rest, rx(-eR));
+        setLocal(wx, SHR, self.rest, mul3(rx(aR - flail), ry(mathx.lerpF(6.0, 16.0, c)), rz(-abd * (1.0 - 0.4 * c) - 24.0 * stunAmt)));
+        setLocal(wx, ELR, self.rest, rx(-eR - 22.0 * stunAmt));
         setLocal(wx, WRR, self.rest, rx(-10.0 - 16.0 * c));
-        // The staff itself tips from a carried angle toward vertical as the light gathers.
-        setLocal(wx, KIT, self.rest, rx(mathx.lerpF(24.0, -8.0, c)));
+        // The staff itself tips from a carried angle toward vertical as the light gathers — and PAST
+        // vertical at the peak, hauled back over the head, because the staff's own angle is the tell you
+        // can read at a distance where the arms are four pixels.
+        setLocal(wx, KIT, self.rest, rx(mathx.lerpF(24.0, -18.0, c)));
     }
 
     /// THE SLING WHIRLS OVER THE HEAD, and the arm really goes round with it — the tell is motion,
@@ -929,30 +1094,42 @@ pub const Kobold = struct {
             yR = 34.0 * mathx.cosf(w);
             eR = 26.0;
         } else if (self.state == .bite) {
-            const u = mathx.clampF(self.t / BITE_DUR, 0, 1);
-            const snap = mathx.smoothstep(BITE_HIT_A * 0.5, BITE_HIT_B, u) * (1.0 - mathx.smoothstep(BITE_HIT_B, 1.0, u));
-            aR = shR - 34.0 * snap; // arms sweep back as it lunges with the head
-            eR = elR + 20.0 * snap;
+            const snap = self.biteLunge();
+            aR = shR - 46.0 * snap; // arms sweep back and WIDE as it throws its head at you
+            eR = elR + 26.0 * snap;
         }
-        const flail = 26.0 * stunAmt + 20.0 * dk;
-        setLocal(wx, SHL, self.rest, mul3(rx(shL - flail), ry(-6.0), rz(abd)));
-        setLocal(wx, ELL, self.rest, rx(-elL));
+        var aL = shL;
+        var eL = elL;
+        if (self.state == .bite) {
+            const snap = self.biteLunge();
+            aL = shL - 46.0 * snap;
+            eL = elL + 26.0 * snap;
+        }
+        const flail = 46.0 * stunAmt + 36.0 * dk;
+        setLocal(wx, SHL, self.rest, mul3(rx(aL - flail * 0.78), ry(-6.0 - 12.0 * stunAmt), rz(abd + 18.0 * stunAmt + 22.0 * self.biteLunge())));
+        setLocal(wx, ELL, self.rest, rx(-eL - 16.0 * stunAmt));
         setLocal(wx, WRL, self.rest, rx(-6.0));
-        setLocal(wx, SHR, self.rest, mul3(rx(aR - flail), ry(yR), rz(-abd)));
-        setLocal(wx, ELR, self.rest, rx(-eR));
+        setLocal(wx, SHR, self.rest, mul3(rx(aR - flail), ry(yR + 16.0 * stunAmt), rz(-abd - 24.0 * stunAmt - 22.0 * self.biteLunge())));
+        setLocal(wx, ELR, self.rest, rx(-eR - 22.0 * stunAmt));
         setLocal(wx, WRR, self.rest, rx(-8.0));
         setLocal(wx, KIT, self.rest, rx(if (self.state == .whirl) -40.0 else 10.0));
     }
 
-    /// THE JAW OPENS on the bite, and the SNOUT drives the whole reaction. Returned as a number the
-    /// draw uses on the muzzle mesh rather than posed as a bone: a hinged jaw would be a nineteenth
-    /// bone on a shared eighteen-bone scaffold, and one creature is not worth breaking that for.
+    /// HOW WIDE THE MOUTH IS (0..1). Applied to the jaw mesh's hinge by `poseJaw`, not to a bone — the
+    /// scaffold is the shared eighteen and a jaw is not worth breaking that for. It IS worth drawing,
+    /// though, which is what this had wrong: nothing called `gape` at all, so the mouth never opened on a
+    /// bite, on a snarl or on a death, and the slinger's whole attack was two arms moving.
     pub fn gape(self: *const Kobold) f32 {
-        if (self.state == .bite) {
-            const u = mathx.clampF(self.t / BITE_DUR, 0, 1);
-            return mathx.smoothstep(0, BITE_HIT_A, u) * (1.0 - mathx.smoothstep(BITE_HIT_B, 1.0, u));
+        if (self.state == .bite) return self.biteLunge();
+        // A CHOP IS A SNARL. He is not biting you, but nothing swings an axe with its mouth shut, and a
+        // gaping muzzle mid-flurry is the cheapest ferocity in the file.
+        if (self.state == .chop) {
+            const u = mathx.clampF(self.t / ZERK_CHOP, 0, 1);
+            return 0.62 * mathx.smoothstep(0, ZERK_HIT_A, u) * (1.0 - mathx.smoothstep(ZERK_HIT_B, 1.0, u));
         }
-        if (self.state == .dead) return 0.45 * mathx.smoothstep(0, 0.3, self.t / DEATH_DUR);
+        if (self.state == .heave) return 0.85 * self.heaveAmt(); // …and it is where the air comes in
+        if (self.state == .stunlight or self.state == .stunheavy) return 0.7 * self.stunAmount();
+        if (self.state == .dead) return 0.55 * mathx.smoothstep(0, 0.3, self.t / DEATH_DUR);
         return 0;
     }
 
@@ -970,86 +1147,131 @@ pub const Kobold = struct {
 // FUR is the same idea taken further — tufts at irregular angles and sizes, and RELIEF IS SUBTLE, so
 // each one stands off its mass by a few percent of that mass's radius rather than a tenth.
 
-/// How far a fur tuft stands off the mass it grows from, as a fraction of that mass's radius.
-///
-/// RELIEF IS SUBTLE cuts the other way for FUR, and 0.16 was me applying the masonry rule to a pelt.
-/// That law is about detail whose job is to BREAK UP a big smooth mass — flutes, coursing, bark ridges
-/// — where a tenth of the radius reads as strips glued on. Fur is not that: it is the SILHOUETTE, and a
-/// pelt that only breaks its own outline by a few percent is a shaved animal. Rendered, the first pass
-/// read as bare sticks with the tufts invisible.
-const FUR_OUT: f32 = 0.42;
+/// How far a tuft's TIP stands proud, as a fraction of the mass's radius. The PELT is surface relief —
+/// less reads as spots painted on a pole, more as paddles glued to one; the MANE is a FEATURE, where the
+/// stand-off IS the silhouette.
+const STAND_PELT: f32 = 0.20;
+const STAND_MANE: f32 = 0.34;
 
-/// Sow `n` tufts of fur around a limb segment a→b of radius `r`. The tufts are BLOBS sunk most of the
-/// way into the mass with only their ends breaking the surface, which is what makes a pelt out of a
-/// smooth capsule instead of a hedgehog.
-fn furInto(b: *Builder, a: rl.Vector3, bb: rl.Vector3, r: f32, n: i32, rng: *mathx.Rng, col: rl.Color) void {
+/// Sow `n` tufts around the segment a→b of radius `r`, tips standing `stand`Â·r proud.
+///
+/// The perpendicular pair comes off the AXIS (as `gfx.axisFrame` does). Offsetting in the XZ plane works
+/// on a leg and lays every HORIZONTAL band — ruff, brow, withers — into one flat invisible disc.
+fn furInto(b: *Builder, a: rl.Vector3, bb: rl.Vector3, r: f32, n: i32, rng: *mathx.Rng, col: rl.Color, stand: f32) void {
+    const axis = mathx.normV(mathx.subV(bb, a));
+    const seed = if (@abs(axis.y) < 0.99) v3(0, 1, 0) else v3(1, 0, 0);
+    const u = mathx.normV(mathx.crossV(axis, seed));
+    const w = mathx.normV(mathx.crossV(axis, u));
     var i: i32 = 0;
     while (i < n) : (i += 1) {
-        const t = rng.range(0.12, 0.92);
+        const t = rng.range(0.10, 0.94);
         const p = mathx.lerpV(a, bb, t);
         const ang = rng.angle();
-        // A tuft lies mostly ALONG the limb (fur has a lie), so it is a long thin blob, not a spike.
-        const out = r * (1.0 + FUR_OUT * rng.range(0.5, 1.0));
-        const cx = p.x + mathx.cosf(ang) * out * 0.72;
-        const cz = p.z + mathx.sinf(ang) * out * 0.72;
-        const len = r * rng.range(1.1, 2.1);
-        // FAT tufts, not needles. A clump of fur is a lump the width of a finger; at 0.26-0.42 of the
-        // limb's radius these were slivers that vanished into the capsule they grew from.
-        //
-        // …and ROUNDER: at 3 segments x 5 sides a blob this size is a visible polyhedron, and rendered,
-        // the pelt came back reading as angular ARMOUR PLATE rather than fur. 4x7 is still cheap (a
-        // warband is up to 72 of these) and it is the difference between a lump and a facet.
-        b.addBlob(v3(cx, p.y, cz), v3(r * rng.range(0.48, 0.78), len, r * rng.range(0.48, 0.78)), 4, 7, col);
+        const dir = mathx.addV(mathx.scaleV(u, mathx.cosf(ang)), mathx.scaleV(w, mathx.sinf(ang)));
+        // A CAPSULE ALONG THE AXIS, not a blob: `addBlob`'s long axis is always Y, so a blob tuft only
+        // lies down a VERTICAL segment and stands on end everywhere else.
+        // The centre is SOLVED (r + standÂ·r − thick) so the amount proud survives retuning `thick`.
+        const thick = r * rng.range(0.20, 0.32);
+        const c = mathx.addV(p, mathx.scaleV(dir, r * (1.0 + stand) - thick));
+        // SHORT clumps, and skewed off the axis a little each — parallel tufts of equal length are a
+        // pinecone, and the skew is what turns rows of them into a coat.
+        const half = r * rng.range(0.30, 0.62) * (1.0 + stand);
+        const lie = mathx.normV(mathx.addV(mathx.scaleV(axis, rng.range(0.6, 1.0)), mathx.scaleV(dir, rng.signed() * 0.45)));
+        b.addCapsule(
+            mathx.addV(c, mathx.scaleV(lie, -half)),
+            mathx.addV(c, mathx.scaleV(lie, half)),
+            thick,
+            thick * rng.range(0.45, 0.75),
+            6,
+            col,
+        );
     }
 }
 
 // ── the head ────────────────────────────────────────────────────────────────────────────
-// A DOG'S HEAD ON A HUMANOID: the skull is a rounded box of bone, the SNOUT is the whole character —
-// long, tapering, with the nose leather at the end — and the EARS are pricked triangles standing off
-// the crown. Get the muzzle length wrong and it is a man in a mask.
-const SNOUT_LEN = 0.088; // fractions of H, the head being the one place they are worth naming
-const SNOUT_DROP = 0.018;
+// A DOG'S HEAD ON A HUMANOID, and its SIZE is most of how big the creature reads: relative head size is
+// how the eye judges scale. The muzzle is SHORT, DEEP and BLUNT — a hyena's, not a greyhound's; long and
+// tapering it comes back as a horse.
+const SNOUT_LEN = 0.070; // fractions of H, the head being the one place they are worth naming
+const SNOUT_DROP = 0.014;
+/// Where the jaw hinges, in the skull bone's frame — the mesh is split at this line so `gape` can open
+/// it (see `jawMesh`). Behind the cheek and level with the tooth row, where a real mandible pivots.
+const JAW_PIVOT = v3(0, 0.020 * H, -0.006 * H);
+/// How far the jaw drops at a full gape. BIG: a snap you cannot see is not a tell, and the mouth is the
+/// only part of this creature that says "teeth" from more than a few metres.
+const GAPE_DEG: f32 = 34.0;
 
 fn skullMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x4B0B01D);
     const s = H;
     // The braincase — a blob wider than it is tall, with the occiput swelling out at the back.
-    b.addBlob(v3(0, 0.030 * s, 0.004 * s), v3(0.049 * s, 0.044 * s, 0.055 * s), 5, 9, FUR);
-    b.addBlob(v3(0, 0.020 * s, -0.032 * s), v3(0.040 * s, 0.036 * s, 0.030 * s), 4, 8, FUR_DK);
-    // The BROW ridge — a low band over the eyes. It is what gives a dog a expression at all.
-    b.addCapsule(v3(-0.040 * s, 0.036 * s, 0.036 * s), v3(0.040 * s, 0.036 * s, 0.036 * s), 0.013 * s, 0.013 * s, 6, FUR_LT);
-    // The SNOUT: two tapering capsules, the second the nose bridge, dropping as it runs forward.
-    const noseZ = (0.030 + SNOUT_LEN) * s;
-    b.addCapsule(v3(0, 0.024 * s, 0.040 * s), v3(0, 0.024 * s - SNOUT_DROP * s, noseZ), 0.030 * s, 0.018 * s, 9, MUZZLE);
-    b.addCapsule(v3(0, 0.036 * s, 0.046 * s), v3(0, 0.030 * s - SNOUT_DROP * s, noseZ - 0.004 * s), 0.016 * s, 0.010 * s, 7, FUR_DK);
+    b.addBlob(v3(0, 0.032 * s, 0.004 * s), v3(0.066 * s, 0.058 * s, 0.070 * s), 5, 9, FUR);
+    b.addBlob(v3(0, 0.020 * s, -0.040 * s), v3(0.054 * s, 0.048 * s, 0.040 * s), 4, 8, FUR_DK);
+    // The BROW ridge — a low band over the eyes. It is what gives a dog an expression at all.
+    b.addCapsule(v3(-0.050 * s, 0.044 * s, 0.044 * s), v3(0.050 * s, 0.044 * s, 0.044 * s), 0.017 * s, 0.017 * s, 7, FUR_LT);
+    // The CHEEKS — the masseter mass either side of the jaw hinge. A muzzle with nothing behind it is
+    // the thing that reads as a snout stuck on a ball; this is what makes it one skull.
+    for ([_]f32{ -1, 1 }) |side| {
+        b.addBlob(v3(side * 0.044 * s, 0.016 * s, 0.022 * s), v3(0.024 * s, 0.026 * s, 0.030 * s), 4, 7, FUR);
+    }
+    // The SNOUT: short, deep and blunt, dropping a little as it runs forward. Two capsules — the muzzle
+    // proper and the nose bridge over it.
+    const noseZ = (0.040 + SNOUT_LEN) * s;
+    b.addCapsule(v3(0, 0.024 * s, 0.040 * s), v3(0, 0.024 * s - SNOUT_DROP * s, noseZ), 0.040 * s, 0.030 * s, 9, MUZZLE);
+    b.addCapsule(v3(0, 0.042 * s, 0.046 * s), v3(0, 0.036 * s - SNOUT_DROP * s, noseZ - 0.004 * s), 0.024 * s, 0.017 * s, 7, FUR_DK);
     // The nose leather, and it is BLACK — the one hard dark note on the whole face, which is what the
     // eye finds first and reads as "dog".
-    b.addBlob(v3(0, 0.026 * s - SNOUT_DROP * s, noseZ + 0.004 * s), v3(0.014 * s, 0.011 * s, 0.010 * s), 3, 7, NOSE);
-    // The lower jaw, shorter than the upper — an underslung muzzle reads as a snarl.
-    b.addCapsule(v3(0, 0.008 * s, 0.040 * s), v3(0, 0.006 * s - SNOUT_DROP * s * 0.7, noseZ - 0.016 * s), 0.020 * s, 0.012 * s, 7, MUZZLE);
-    // TEETH, just proud of the lip line. Small, uneven, and only the canines really show.
+    b.addBlob(v3(0, 0.028 * s - SNOUT_DROP * s, noseZ + 0.006 * s), v3(0.022 * s, 0.018 * s, 0.014 * s), 3, 7, NOSE);
+    // UPPER TEETH — the canines hang BELOW the lip line, which is what makes a closed mouth still read
+    // as armed. They stay on the skull; the lower set rides the jaw.
     for ([_]f32{ -1, 1 }) |side| {
-        b.addBlob(v3(side * 0.014 * s, 0.014 * s - SNOUT_DROP * s * 0.5, noseZ - 0.026 * s), v3(0.0042 * s, 0.010 * s, 0.0042 * s), 2, 5, TOOTH);
-        b.addBlob(v3(side * 0.010 * s, 0.018 * s - SNOUT_DROP * s * 0.5, noseZ - 0.014 * s), v3(0.0030 * s, 0.006 * s, 0.0030 * s), 2, 4, TOOTH);
+        b.addBlob(v3(side * 0.020 * s, 0.008 * s - SNOUT_DROP * s * 0.5, noseZ - 0.030 * s), v3(0.0062 * s, 0.015 * s, 0.0062 * s), 2, 5, TOOTH);
+        b.addBlob(v3(side * 0.015 * s, 0.012 * s - SNOUT_DROP * s * 0.5, noseZ - 0.014 * s), v3(0.0042 * s, 0.009 * s, 0.0042 * s), 2, 4, TOOTH);
     }
     // EYES — amber, self-lit (vertex alpha < 255 is the emissive channel), set FORWARD and close: a
     // predator's placement, and the difference between a wolf and a sheep.
     for ([_]f32{ -1, 1 }) |side| {
-        b.addBlob(v3(side * 0.026 * s, 0.032 * s, 0.043 * s), v3(0.0085 * s, 0.0085 * s, 0.0060 * s), 3, 6, EYE);
+        b.addBlob(v3(side * 0.032 * s, 0.038 * s, 0.052 * s), v3(0.0125 * s, 0.0125 * s, 0.0085 * s), 3, 6, EYE);
     }
-    // EARS: pricked, tall, ASYMMETRIC (one a touch lower and cocked out — a scavenger has been in
-    // fights). Built as flattened blobs so they have an inner face to catch light.
+    // EARS: pricked, TALL, ASYMMETRIC — the read at distance, when the muzzle is a few pixels.
+    // `baseY` sinks them into the crown: seated at the surface height on the CENTRE LINE they float
+    // clear of it out at their real x, where the same ellipsoid has already fallen away.
     for ([_]f32{ -1, 1 }) |side| {
-        const lean: f32 = if (side < 0) 12.0 else -19.0;
-        const hgt: f32 = if (side < 0) 0.052 else 0.046;
+        const lean: f32 = if (side < 0) 14.0 else -22.0;
+        const hgt: f32 = if (side < 0) 0.092 else 0.080;
         const baseX = side * 0.036 * s;
-        const tipX = baseX + side * 0.016 * s + mathx.sinf(mathx.radians(lean)) * 0.01 * s;
-        b.addBlob(v3((baseX + tipX) * 0.5, (0.058 + hgt * 0.5) * s, -0.010 * s), v3(0.016 * s, hgt * 0.5 * s, 0.008 * s), 3, 6, FUR);
-        b.addBlob(v3((baseX + tipX) * 0.5, (0.056 + hgt * 0.45) * s, -0.006 * s), v3(0.009 * s, hgt * 0.38 * s, 0.004 * s), 3, 5, EAR_IN);
+        const tipX = baseX + side * 0.024 * s + mathx.sinf(mathx.radians(lean)) * 0.016 * s;
+        const baseY = 0.036; // sunk well into the crown, so the ear GROWS from it
+        b.addBlob(v3((baseX + tipX) * 0.5, (baseY + hgt * 0.5) * s, -0.018 * s), v3(0.026 * s, hgt * 0.5 * s, 0.013 * s), 4, 7, FUR);
+        b.addBlob(v3((baseX + tipX) * 0.5, (baseY + hgt * 0.48) * s, -0.012 * s), v3(0.015 * s, hgt * 0.38 * s, 0.006 * s), 3, 6, EAR_IN);
     }
-    // A fur ruff round the base of the skull, so the head does not meet the neck on a clean seam.
-    furInto(&b, v3(-0.03 * s, 0.006 * s, -0.020 * s), v3(0.03 * s, 0.006 * s, -0.020 * s), 0.030 * s, 9, &rng, FUR_LT);
+    // A fur ruff round the base of the skull, so the head does not meet the neck on a clean seam, and a
+    // cheek ruff back off each jaw hinge.
+    furInto(&b, v3(-0.036 * s, 0.004 * s, -0.026 * s), v3(0.036 * s, 0.004 * s, -0.026 * s), 0.040 * s, 16, &rng, FUR, STAND_MANE);
+    for ([_]f32{ -1, 1 }) |side| {
+        furInto(&b, v3(side * 0.040 * s, 0.030 * s, 0.010 * s), v3(side * 0.050 * s, 0.000 * s, -0.030 * s), 0.026 * s, 9, &rng, FUR_DK, STAND_MANE);
+    }
+    return b.toMesh();
+}
+
+/// Its own mesh so `gape` can open it — one more mesh on a pivot, no nineteenth bone. Authored into the
+/// skull, `gape()` had no caller at all and the mouth never moved.
+fn jawMesh() rl.Mesh {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x9A4);
+    const s = H;
+    const noseZ = (0.040 + SNOUT_LEN) * s;
+    // Shorter than the upper — an underslung muzzle reads as a snarl — and WIDE, so an open mouth is a
+    // hole with mass round it rather than a gap.
+    b.addCapsule(v3(0, 0.004 * s, 0.036 * s), v3(0, 0.002 * s - SNOUT_DROP * s * 0.7, noseZ - 0.018 * s), 0.028 * s, 0.019 * s, 8, MUZZLE);
+    b.addBlob(v3(0, 0.010 * s, 0.006 * s), v3(0.030 * s, 0.020 * s, 0.026 * s), 4, 7, FUR_DK); // the ramus, back at the hinge
+    // LOWER TEETH, meeting the upper set. Uneven — nothing here has been to a dentist.
+    for ([_]f32{ -1, 1 }) |side| {
+        b.addBlob(v3(side * 0.018 * s, 0.016 * s, noseZ - 0.034 * s), v3(0.0058 * s, 0.014 * s, 0.0058 * s), 2, 5, TOOTH);
+        b.addBlob(v3(side * 0.013 * s, 0.014 * s, noseZ - 0.020 * s), v3(0.0040 * s, 0.008 * s, 0.0040 * s), 2, 4, TOOTH);
+    }
+    furInto(&b, v3(-0.020 * s, 0.000 * s, 0.010 * s), v3(0.020 * s, 0.000 * s, 0.010 * s), 0.022 * s, 6, &rng, FUR_DK, STAND_PELT);
     return b.toMesh();
 }
 
@@ -1057,12 +1279,18 @@ fn neckMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x4EC0);
     const s = H;
-    b.addCapsule(v3(0, 0, 0), v3(0, 0.062 * s, 0.006 * s), 0.038 * s, 0.032 * s, 8, FUR);
+    // SHORT and THICK. The first pass ran the neck 11 cm at 6.8 cm radius and the head above it was
+    // small, which together read as a LLAMA — a little head on a long stalk. A scavenger's head sits
+    // straight on its shoulders.
+    b.addCapsule(v3(0, 0, 0), v3(0, 0.048 * s, 0.010 * s), 0.050 * s, 0.044 * s, 8, FUR);
     // THE RUFF — a thick mane round the neck and over the shoulders. This is the single biggest
     // silhouette cue after the snout: it is what makes the shoulders look like an animal's. It did not
-    // read AT ALL in the first render, which is what sent every radius on this creature up.
-    furInto(&b, v3(0, 0.006 * s, -0.004 * s), v3(0, 0.052 * s, -0.004 * s), 0.046 * s, 26, &rng, FUR_LT);
-    furInto(&b, v3(0, 0.012 * s, -0.012 * s), v3(0, 0.046 * s, -0.012 * s), 0.050 * s, 18, &rng, FUR_DK);
+    // read AT ALL in the first render — and see `furInto`: the reason is that these bands run
+    // HORIZONTALLY, and the old tuft placement flattened every one of them into a disc.
+    furInto(&b, v3(0, 0.004 * s, -0.006 * s), v3(0, 0.046 * s, -0.006 * s), 0.058 * s, 34, &rng, FUR, STAND_MANE);
+    furInto(&b, v3(0, 0.010 * s, -0.016 * s), v3(0, 0.040 * s, -0.016 * s), 0.062 * s, 26, &rng, FUR_DK, STAND_MANE);
+    // …and a COLLAR of it lying across the shoulders, which is the band that was invisible.
+    furInto(&b, v3(-0.062 * s, 0.006 * s, -0.010 * s), v3(0.062 * s, 0.006 * s, -0.010 * s), 0.034 * s, 22, &rng, FUR_LT, STAND_MANE);
     return b.toMesh();
 }
 
@@ -1070,27 +1298,73 @@ fn pelvisMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xBE17);
     const s = H;
-    b.addBlob(v3(0, 0.014 * s, 0), v3(0.070 * s, 0.052 * s, 0.058 * s), 5, 9, FUR);
+    b.addBlob(v3(0, 0.014 * s, 0), v3(0.092 * s, 0.066 * s, 0.076 * s), 5, 9, FUR);
     // A filthy hide belt — cloth and leather are the one place a BOX is right.
-    b.addCube(v3(0, 0.030 * s, 0), v3(0.126 * s, 0.020 * s, 0.100 * s), HIDE);
-    b.addCube(v3(0, 0.030 * s, 0.052 * s), v3(0.034 * s, 0.028 * s, 0.010 * s), HIDE_LT); // the buckle plate
-    // THE TAIL — low-set, heavy at the root, hanging and curling. A kobold without one is a goblin.
-    var t: f32 = 0;
-    var prev = v3(0, 0.010 * s, -0.044 * s);
-    var i: i32 = 0;
-    while (i < 5) : (i += 1) {
-        t += 1.0;
-        const k = t / 5.0;
-        const nxt = v3(
-            mathx.sinf(k * 2.2 + 0.4) * 0.026 * s,
-            (0.010 - 0.052 * k) * s,
-            (-0.044 - 0.058 * k) * s,
-        );
-        b.addCapsule(prev, nxt, (0.020 - 0.011 * k) * s, (0.019 - 0.011 * k) * s, 7, if (@rem(i, 2) == 0) FUR else FUR_DK);
-        furInto(&b, prev, nxt, (0.020 - 0.011 * k) * s, 4, &rng, FUR_LT);
-        prev = nxt;
+    b.addCube(v3(0, 0.030 * s, 0), v3(0.170 * s, 0.026 * s, 0.132 * s), HIDE);
+    b.addCube(v3(0, 0.030 * s, 0.070 * s), v3(0.044 * s, 0.034 * s, 0.014 * s), HIDE_LT); // the buckle plate
+    // ── THE LOINCLOTH (owner's ask) ── two panels of sacking hung off the belt, front and back, RAGGED at
+    // the hem: strips of uneven length rather than one straight edge, because a straight hem is the tell
+    // that a thing was authored and not worn. Slung from the belt so it hangs OVER the hip joint, which is
+    // also what stops the legs reading as bare poles under a bare pelvis.
+    b.setMat(.cloth);
+    for ([_]f32{ 1, -1 }) |sz| {
+        const zf = sz * 0.062 * s;
+        b.addCube(v3(0, -0.006 * s, zf), v3(0.150 * s, 0.086 * s, 0.026 * s), CLOTH);
+        // The rag hem: eight strips, each its own length and a couple of them missing.
+        var i: i32 = 0;
+        while (i < 8) : (i += 1) {
+            if (rng.float() < 0.14) continue;
+            const rx0 = (@as(f32, @floatFromInt(i)) - 3.5) * 0.036 * s;
+            const drop = rng.range(0.030, 0.086) * s;
+            b.addCube(
+                v3(rx0 + rng.signed() * 0.006 * s, -0.048 * s - drop * 0.5, zf + rng.signed() * 0.004 * s),
+                v3(0.030 * s, drop, 0.020 * s),
+                if (rng.float() < 0.4) CLOTH_DK else CLOTH,
+            );
+        }
     }
-    furInto(&b, v3(-0.05 * s, 0.006 * s, -0.02 * s), v3(0.05 * s, 0.006 * s, -0.02 * s), 0.040 * s, 8, &rng, FUR_DK);
+    b.setMat(.hide);
+    // THE TAIL IS NOT HERE ANY MORE — see `tailMesh`. Built into this mesh it was welded to the pelvis
+    // and could not move, and a dead-still tail on a walking animal is worse than none.
+    furInto(&b, v3(-0.062 * s, 0.006 * s, -0.028 * s), v3(0.062 * s, 0.006 * s, -0.028 * s), 0.050 * s, 14, &rng, FUR_DK, STAND_PELT);
+    return b.toMesh();
+}
+
+/// The PRIEST'S alone, so it is its own mesh drawn per role (`Model.draw`) — welded into the lumbar it
+/// would dress the berserker too. On the SPINE, not the ROOT, so it folds with the trunk on the heave.
+fn robeMesh() rl.Mesh {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x0BE);
+    const s = H;
+    b.setMat(.cloth);
+    // The body of it: a tapering drape from the shoulders to below the knee, hanging off the lumbar.
+    var i: i32 = 0;
+    while (i < 7) : (i += 1) {
+        const k = @as(f32, @floatFromInt(i)) / 6.0;
+        const y = (0.10 - 0.34 * k) * s;
+        const wide = (0.098 + 0.052 * k) * s; // flares as it falls
+        b.addCube(
+            v3(rng.signed() * 0.006 * s, y, rng.signed() * 0.005 * s),
+            v3(wide * 2.0, 0.062 * s, (0.086 + 0.030 * k) * s),
+            if (@rem(i, 2) == 0) CLOTH else CLOTH_DK,
+        );
+    }
+    // A HOOD, thrown back off the shoulders — the one detail that says priest rather than beggar.
+    b.addBlob(v3(0, 0.108 * s, -0.062 * s), v3(0.082 * s, 0.062 * s, 0.070 * s), 4, 8, CLOTH_DK);
+    b.addBlob(v3(0, 0.126 * s, -0.020 * s), v3(0.094 * s, 0.034 * s, 0.078 * s), 4, 8, CLOTH);
+    // …and the TORN HEM. Uneven strips, a couple gone — same move as the loincloth's, longer.
+    var k2: i32 = 0;
+    while (k2 < 11) : (k2 += 1) {
+        if (rng.float() < 0.18) continue;
+        const a = std.math.tau * (@as(f32, @floatFromInt(k2)) + rng.signed() * 0.3) / 11.0;
+        const r = 0.140 * s;
+        const drop = rng.range(0.034, 0.108) * s;
+        b.addCube(
+            v3(mathx.cosf(a) * r, -0.252 * s - drop * 0.5, mathx.sinf(a) * r * 0.72),
+            v3(0.042 * s, drop, 0.030 * s),
+            if (rng.float() < 0.45) CLOTH_DK else CLOTH,
+        );
+    }
     return b.toMesh();
 }
 
@@ -1098,8 +1372,8 @@ fn lumbarMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x10BA);
     const s = H;
-    b.addBlob(v3(0, 0.058 * s, -0.004 * s), v3(0.058 * s, 0.062 * s, 0.056 * s), 5, 9, FUR);
-    furInto(&b, v3(0, 0.020 * s, -0.030 * s), v3(0, 0.096 * s, -0.030 * s), 0.048 * s, 14, &rng, FUR_DK);
+    b.addBlob(v3(0, 0.058 * s, -0.004 * s), v3(0.068 * s, 0.066 * s, 0.064 * s), 5, 9, FUR);
+    furInto(&b, v3(0, 0.014 * s, -0.038 * s), v3(0, 0.100 * s, -0.038 * s), 0.056 * s, 22, &rng, FUR_DK, STAND_PELT);
     return b.toMesh();
 }
 
@@ -1108,16 +1382,56 @@ fn ribcageMesh() rl.Mesh {
     var rng = mathx.Rng.init(0x21BC);
     const s = H;
     // HOLLOW-CHESTED and narrow — a scavenger, not an athlete. Deeper front-to-back than it is wide,
-    // which is a dog's ribcage and reads instantly as not-human.
-    // DEEP front-to-back and narrow across — a dog's ribcage, and it has to have real MASS or the
-    // shoulders read as a coat hanger (they did: the first render had no chest at all).
-    b.addBlob(v3(0, 0.040 * s, 0.002 * s), v3(0.064 * s, 0.062 * s, 0.070 * s), 5, 9, FUR);
-    b.addBlob(v3(0, 0.006 * s, 0.004 * s), v3(0.056 * s, 0.034 * s, 0.058 * s), 4, 8, FUR_DK);
-    // A hide harness over one shoulder — asymmetric on purpose (wabi-sabi; nothing here is a matched
-    // pair) and it breaks up the chest mass.
-    b.addBox(v3(0.020 * s, 0.040 * s, 0.030 * s), v3(0.020 * s, 0.062 * s, 0.006 * s), v3(-0.052 * s, 0.020 * s, 0), v3(0, 0, 0.030 * s), HIDE);
-    furInto(&b, v3(-0.04 * s, 0.072 * s, -0.026 * s), v3(0.04 * s, 0.072 * s, -0.026 * s), 0.040 * s, 12, &rng, FUR_LT);
-    furInto(&b, v3(0, 0.010 * s, -0.034 * s), v3(0, 0.070 * s, -0.034 * s), 0.038 * s, 8, &rng, FUR_DK);
+    // which is a dog's ribcage and reads instantly as not-human. But it has to have real MASS or the
+    // shoulders read as a coat hanger (they did: the first render had no chest at all), and the ruff
+    // over the WITHERS is what carries a pack fighter's breadth without widening the skeleton.
+    b.addBlob(v3(0, 0.042 * s, 0.002 * s), v3(0.078 * s, 0.072 * s, 0.082 * s), 5, 9, FUR);
+    b.addBlob(v3(0, 0.004 * s, 0.004 * s), v3(0.068 * s, 0.040 * s, 0.068 * s), 4, 8, FUR_DK);
+    // A hide STRAP, asymmetric on purpose. `addBox`'s three vectors are HALF-EXTENTS: 0.067·H of them is
+    // a 28 x 24 cm plank across the whole chest, which reads as armour plate.
+    b.addBox(v3(0.024 * s, 0.042 * s, 0.038 * s), v3(0.024 * s, 0.074 * s, 0.006 * s), v3(-0.026 * s, 0.010 * s, 0), v3(0, 0, 0.011 * s), HIDE);
+    // THE WITHERS — the shoulder mane, standing proud across the top of the back. On a dog this is the
+    // highest point of the body and the reason a wolf reads bigger than it is.
+    furInto(&b, v3(-0.056 * s, 0.086 * s, -0.028 * s), v3(0.056 * s, 0.086 * s, -0.028 * s), 0.046 * s, 24, &rng, FUR_LT, STAND_MANE);
+    furInto(&b, v3(0, 0.006 * s, -0.046 * s), v3(0, 0.082 * s, -0.046 * s), 0.046 * s, 16, &rng, FUR_DK, STAND_PELT);
+    return b.toMesh();
+}
+
+// ── THE TAIL ────────────────────────────────────────────────────────────────────────────
+// NOT A BONE — a chain of meshes whose matrices `pose` builds off the pelvis, so the scaffold stays the
+// shared eighteen. Built into the pelvis mesh it could not move, and a dead-still tail is worse than
+// none. It sways with the gait, lashes on a chop and clamps under on a stagger, which is also how a real
+// animal tells you what it is about to do.
+const TAIL_N = 5;
+const TAIL_SEG = 0.062; // fractions of H per link — ~56 cm of tail all told, a real counterweight
+/// HIGH on the rump and well back — a tail sets on TOP of the pelvis. Rooted low and central it comes
+/// out between the thighs and there is nothing to see.
+const TAIL_ROOT = v3(0, 0.026 * H, -0.062 * H);
+/// The angle off the rump, then what each further link adds: it TRAILS, out past the legs where it can
+/// be seen, rather than hanging.
+const TAIL_SET: f32 = 20.0;
+const TAIL_CURL: f32 = 15.0;
+const TAIL_R0 = 0.034; // thick where it leaves the body…
+const TAIL_R1 = 0.011; // …and a brush at the tip
+/// A lash is KICKED IN and bleeds off, so a swing or a blow whips the tail instead of teleporting it.
+const TAIL_WHIP_DECAY = 90.0;
+const TAIL_WHIP_CHOP = 34.0; // …when he commits to a swing
+const TAIL_WHIP_HURT = 52.0; // …and harder when something lands on him
+
+fn tailMesh(i: usize) rl.Mesh {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x7A11 + i * 977);
+    const s = H;
+    const k0 = @as(f32, @floatFromInt(i)) / TAIL_N;
+    const k1 = @as(f32, @floatFromInt(i + 1)) / TAIL_N;
+    const r0 = mathx.lerpF(TAIL_R0, TAIL_R1, k0) * s;
+    const r1 = mathx.lerpF(TAIL_R0, TAIL_R1, k1) * s;
+    // Each link is authored along its own -Z (trailing behind the body), so the chain's matrices are a
+    // plain translate-and-rotate down the tail.
+    const a = mathx.zero3;
+    const bb = v3(rng.signed() * 0.004 * s, rng.signed() * 0.003 * s, -TAIL_SEG * s);
+    b.addCapsule(a, bb, r0, r1, 8, if (i % 2 == 0) FUR else FUR_DK);
+    furInto(&b, a, bb, r0, 7 + @as(i32, @intCast(i)), &rng, if (i >= TAIL_N - 2) FUR else FUR_DK, STAND_MANE);
     return b.toMesh();
 }
 
@@ -1131,7 +1445,9 @@ fn limbMesh(seed: u64, len: f32, r0: f32, r1: f32, col: rl.Color, tufts: i32) rl
     const a = v3(0, 0, 0);
     const bb = v3(kink, -len * s, rng.signed() * 0.005 * s);
     b.addCapsule(a, bb, r0 * s, r1 * s, 8, col);
-    furInto(&b, a, bb, r0 * s, tufts, &rng, if (rng.float() < 0.5) FUR_LT else FUR_DK);
+    // THE LIMB TUFTS TAKE THE LIMB'S OWN COLOUR: a tuft that CONTRASTS reads as an object stuck on, one
+    // that matches reads as texture. Contrast belongs to the mane, where a tuft IS its own thing.
+    furInto(&b, a, bb, r0 * s, tufts, &rng, if (rng.float() < 0.4) col else FUR_DK, STAND_PELT);
     return b.toMesh();
 }
 
@@ -1141,14 +1457,14 @@ fn handMesh(seed: u64) rl.Mesh {
     const s = H;
     // A PAW-HAND: a padded palm and four short digits with claws. Short enough to read as an animal's,
     // articulate enough to hold a haft.
-    b.addBlob(v3(0, -0.018 * s, 0.004 * s), v3(0.019 * s, 0.022 * s, 0.014 * s), 3, 7, FUR);
+    b.addBlob(v3(0, -0.020 * s, 0.004 * s), v3(0.025 * s, 0.028 * s, 0.019 * s), 3, 7, FUR);
     var i: i32 = 0;
     while (i < 4) : (i += 1) {
-        const fx = (@as(f32, @floatFromInt(i)) - 1.5) * 0.0095 * s;
-        const fl = 0.020 * s * rng.range(0.85, 1.15);
-        const tip = v3(fx, -0.038 * s - fl, 0.010 * s);
-        b.addCapsule(v3(fx, -0.032 * s, 0.008 * s), tip, 0.0046 * s, 0.0036 * s, 5, MUZZLE);
-        b.addBlob(v3(tip.x, tip.y - 0.003 * s, tip.z + 0.003 * s), v3(0.0028 * s, 0.005 * s, 0.0028 * s), 2, 4, CLAW);
+        const fx = (@as(f32, @floatFromInt(i)) - 1.5) * 0.0125 * s;
+        const fl = 0.024 * s * rng.range(0.85, 1.15);
+        const tip = v3(fx, -0.044 * s - fl, 0.012 * s);
+        b.addCapsule(v3(fx, -0.038 * s, 0.008 * s), tip, 0.0060 * s, 0.0046 * s, 5, MUZZLE);
+        b.addBlob(v3(tip.x, tip.y - 0.004 * s, tip.z + 0.004 * s), v3(0.0038 * s, 0.007 * s, 0.0038 * s), 2, 4, CLAW);
     }
     return b.toMesh();
 }
@@ -1158,21 +1474,22 @@ fn footMesh(seed: u64) rl.Mesh {
     var rng = mathx.Rng.init(seed);
     const s = H;
     // The PAW. Measured against `solePatches` above: the pad's underside sits on the ankle plane at
-    // −0.036·H, spans z −0.035·H…+0.175·H and x ±0.044·H. Change it and re-measure that table, or the
-    // foot planting solves against a sole that is not where the mesh is.
-    b.addBlob(v3(0, -0.026 * s, 0.062 * s), v3(0.040 * s, 0.014 * s, 0.098 * s), 4, 8, FUR_DK);
-    b.addCapsule(v3(0, -0.014 * s, -0.028 * s), v3(0, -0.014 * s, 0.030 * s), 0.026 * s, 0.030 * s, 7, FUR);
+    // −0.042·H, spans z −0.041·H…+0.206·H and x ±0.052·H. Change it and re-measure that table, or the
+    // foot planting solves against a sole that is not where the mesh is. (Scaled 1.18 with the rest of
+    // the build; that table moved by the same factor in the same commit.)
+    b.addBlob(v3(0, -0.031 * s, 0.073 * s), v3(0.047 * s, 0.017 * s, 0.116 * s), 4, 8, FUR_DK);
+    b.addCapsule(v3(0, -0.017 * s, -0.033 * s), v3(0, -0.017 * s, 0.035 * s), 0.031 * s, 0.035 * s, 7, FUR);
     // Three forward toes with claws, and a heel pad behind.
     var i: i32 = 0;
     while (i < 3) : (i += 1) {
-        const fx = (@as(f32, @floatFromInt(i)) - 1.0) * 0.024 * s;
-        const tipZ = (0.150 + rng.range(0.0, 0.022)) * s;
-        b.addCapsule(v3(fx, -0.030 * s, 0.100 * s), v3(fx, -0.032 * s, tipZ), 0.012 * s, 0.009 * s, 6, FUR_DK);
-        b.addBlob(v3(fx, -0.032 * s, tipZ + 0.008 * s), v3(0.005 * s, 0.005 * s, 0.010 * s), 2, 5, CLAW);
+        const fx = (@as(f32, @floatFromInt(i)) - 1.0) * 0.028 * s;
+        const tipZ = (0.177 + rng.range(0.0, 0.026)) * s;
+        b.addCapsule(v3(fx, -0.035 * s, 0.118 * s), v3(fx, -0.038 * s, tipZ), 0.014 * s, 0.011 * s, 6, FUR_DK);
+        b.addBlob(v3(fx, -0.038 * s, tipZ + 0.009 * s), v3(0.006 * s, 0.006 * s, 0.012 * s), 2, 5, CLAW);
     }
-    b.addBlob(v3(0, -0.028 * s, -0.026 * s), v3(0.030 * s, 0.012 * s, 0.020 * s), 3, 6, MUZZLE);
+    b.addBlob(v3(0, -0.033 * s, -0.031 * s), v3(0.035 * s, 0.014 * s, 0.024 * s), 3, 6, MUZZLE);
     // Hide wraps round the ankle — every one of these has been scavenged off something.
-    b.addCube(v3(0, 0.006 * s, 0.006 * s), v3(0.056 * s, 0.016 * s, 0.050 * s), HIDE);
+    b.addCube(v3(0, 0.007 * s, 0.007 * s), v3(0.066 * s, 0.019 * s, 0.059 * s), HIDE);
     return b.toMesh();
 }
 
@@ -1180,9 +1497,10 @@ fn footMesh(seed: u64) rl.Mesh {
 // Each is authored in the RIGHT WRIST's frame, like the hero's sword and the archer's bow, and hangs
 // off `hero.HELD`. IRON AND WOOD, so these are the one place boxes belong.
 
-const AXE_HAFT = 0.150; // fractions of H
-const STAFF_TOP = 0.300;
-const SLING_LEN = 0.140;
+// A weapon you cannot see is an attack with no tell, and the axe head was 8 cm of iron on a 27 cm haft.
+const AXE_HAFT = 0.250; // fractions of H
+const STAFF_TOP = 0.340;
+const SLING_LEN = 0.190;
 
 fn axeMesh(seed: u64) rl.Mesh {
     var b = Builder.init();
@@ -1192,16 +1510,16 @@ fn axeMesh(seed: u64) rl.Mesh {
     // A crude hand-axe: a short haft with a wedge of iron lashed to the head, canted forward so it
     // leads the wrist (the same grip cant the hero's sword has).
     const headY = grip.y + AXE_HAFT * s;
-    b.addCylinder(v3(grip.x, grip.y - 0.030 * s, grip.z), v3(grip.x, headY, grip.z + 0.014 * s), 0.0090 * s, 0.0075 * s, 7, HAFT);
+    b.addCylinder(v3(grip.x, grip.y - 0.048 * s, grip.z), v3(grip.x, headY, grip.z + 0.020 * s), 0.0145 * s, 0.0120 * s, 8, HAFT);
     // …capped, because a cylinder is CAPLESS and an open end shows its culled interior.
-    b.addDome(v3(grip.x, grip.y - 0.030 * s, grip.z), v3(0, -1, 0), 0.0090 * s, 7, HAFT);
-    b.addCube(v3(grip.x, grip.y - 0.006 * s, grip.z), v3(0.020 * s, 0.026 * s, 0.020 * s), HIDE); // grip wrap
+    b.addDome(v3(grip.x, grip.y - 0.048 * s, grip.z), v3(0, -1, 0), 0.0145 * s, 8, HAFT);
+    b.addCube(v3(grip.x, grip.y - 0.006 * s, grip.z), v3(0.032 * s, 0.042 * s, 0.032 * s), HIDE); // grip wrap
     // The blade: a wedge, chipped, and NOT symmetric.
-    const bx = 0.030 * s * rng.range(0.9, 1.1);
-    b.addBox(v3(grip.x + bx * 0.5, headY - 0.004 * s, grip.z + 0.016 * s), v3(bx, 0.006 * s, 0), v3(0, 0.044 * s, 0.004 * s), v3(0, 0, 0.013 * s), IRON);
-    b.addBox(v3(grip.x + bx * 1.0, headY - 0.004 * s, grip.z + 0.016 * s), v3(0.010 * s, 0.004 * s, 0), v3(0, 0.036 * s, 0), v3(0, 0, 0.009 * s), IRON_LT); // the ground edge
+    const bx = 0.056 * s * rng.range(0.9, 1.1);
+    b.addBox(v3(grip.x + bx * 0.5, headY - 0.006 * s, grip.z + 0.022 * s), v3(bx, 0.010 * s, 0), v3(0, 0.082 * s, 0.006 * s), v3(0, 0, 0.020 * s), IRON);
+    b.addBox(v3(grip.x + bx * 1.0, headY - 0.006 * s, grip.z + 0.022 * s), v3(0.018 * s, 0.005 * s, 0), v3(0, 0.068 * s, 0), v3(0, 0, 0.014 * s), IRON_LT); // the ground edge
     // A lashing where the head meets the haft.
-    b.addCapsule(v3(grip.x - 0.004 * s, headY - 0.014 * s, grip.z + 0.010 * s), v3(grip.x + 0.006 * s, headY + 0.020 * s, grip.z + 0.018 * s), 0.0072 * s, 0.0072 * s, 6, HIDE_LT);
+    b.addCapsule(v3(grip.x - 0.006 * s, headY - 0.024 * s, grip.z + 0.014 * s), v3(grip.x + 0.010 * s, headY + 0.034 * s, grip.z + 0.026 * s), 0.0115 * s, 0.0115 * s, 7, HIDE_LT);
     return b.toMesh();
 }
 
@@ -1220,25 +1538,27 @@ fn staffMesh() rl.Mesh {
             grip.y - 0.115 * s + (STAFF_TOP + 0.115) * s * k,
             grip.z + mathx.sinf(k * 1.7 + 1.0) * 0.008 * s,
         );
-        b.addCapsule(prev, nxt, (0.0088 - 0.0016 * k) * s, (0.0086 - 0.0016 * k) * s, 7, HAFT);
+        b.addCapsule(prev, nxt, (0.0140 - 0.0026 * k) * s, (0.0137 - 0.0026 * k) * s, 8, HAFT);
         prev = nxt;
     }
-    b.addDome(v3(grip.x, grip.y - 0.115 * s, grip.z), v3(0, -1, 0), 0.0088 * s, 7, HAFT);
+    b.addDome(v3(grip.x, grip.y - 0.115 * s, grip.z), v3(0, -1, 0), 0.0140 * s, 8, HAFT);
     // The head: a fork of the branch holding a bound bone charm, and a self-lit stone in the crook.
-    // Self-lit because the CAST has to be legible from across a plaza and a lit mesh in shade is not.
+    // Self-lit because the CAST has to be legible from across a plaza and a lit mesh in shade is not —
+    // and BIG for the same reason. At 2 cm it was a bead; the tell has to be the brightest thing on the
+    // field the moment it lights.
     for ([_]f32{ -1, 1 }) |side| {
-        b.addCapsule(prev, v3(prev.x + side * 0.020 * s, prev.y + 0.026 * s, prev.z + 0.006 * s), 0.0060 * s, 0.0040 * s, 6, HAFT);
+        b.addCapsule(prev, v3(prev.x + side * 0.032 * s, prev.y + 0.042 * s, prev.z + 0.010 * s), 0.0095 * s, 0.0062 * s, 6, HAFT);
     }
-    b.addBlob(v3(prev.x, prev.y + 0.020 * s, prev.z + 0.004 * s), v3(0.011 * s, 0.013 * s, 0.011 * s), 4, 7, HEAL_GLOW);
+    b.addBlob(v3(prev.x, prev.y + 0.030 * s, prev.z + 0.006 * s), v3(0.021 * s, 0.025 * s, 0.021 * s), 4, 8, HEAL_GLOW);
     // Charms and feathers on thongs — a wayside priest's whole authority.
     var k: i32 = 0;
     while (k < 4) : (k += 1) {
         const hy = prev.y - rng.range(0.03, 0.10) * s;
-        const hx = prev.x + rng.signed() * 0.012 * s;
-        b.addCapsule(v3(hx, hy, prev.z), v3(hx + rng.signed() * 0.006 * s, hy - 0.022 * s, prev.z + rng.signed() * 0.005 * s), 0.0016 * s, 0.0014 * s, 4, HIDE_LT);
-        b.addBlob(v3(hx, hy - 0.026 * s, prev.z), v3(0.0050 * s, 0.0090 * s, 0.0038 * s), 2, 5, BONE_CHARM);
+        const hx = prev.x + rng.signed() * 0.016 * s;
+        b.addCapsule(v3(hx, hy, prev.z), v3(hx + rng.signed() * 0.008 * s, hy - 0.030 * s, prev.z + rng.signed() * 0.006 * s), 0.0026 * s, 0.0022 * s, 4, HIDE_LT);
+        b.addBlob(v3(hx, hy - 0.036 * s, prev.z), v3(0.0078 * s, 0.0135 * s, 0.0058 * s), 2, 5, BONE_CHARM);
     }
-    b.addCube(v3(grip.x, grip.y, grip.z), v3(0.020 * s, 0.030 * s, 0.020 * s), HIDE); // the grip wrap
+    b.addCube(v3(grip.x, grip.y, grip.z), v3(0.030 * s, 0.044 * s, 0.030 * s), HIDE); // the grip wrap
     return b.toMesh();
 }
 
@@ -1251,18 +1571,18 @@ fn slingMesh() rl.Mesh {
     const pouch = v3(grip.x, grip.y, grip.z + SLING_LEN * s);
     for ([_]f32{ -1, 1 }) |side| {
         b.addCapsule(
-            v3(grip.x + side * 0.006 * s, grip.y, grip.z),
-            v3(pouch.x + side * 0.010 * s, pouch.y, pouch.z - 0.016 * s),
-            0.0018 * s,
-            0.0016 * s,
-            4,
+            v3(grip.x + side * 0.009 * s, grip.y, grip.z),
+            v3(pouch.x + side * 0.015 * s, pouch.y, pouch.z - 0.022 * s),
+            0.0032 * s,
+            0.0028 * s,
+            5,
             SLING_CORD,
         );
     }
     // The pouch, and a stone sitting in it — the loaded sling is the readable one.
-    b.addBlob(pouch, v3(0.016 * s, 0.010 * s, 0.014 * s), 3, 7, HIDE);
-    b.addBlob(v3(pouch.x, pouch.y + 0.005 * s, pouch.z), v3(0.009 * s, 0.008 * s, 0.009 * s), 3, 6, STONE_COL);
-    b.addCube(grip, v3(0.020 * s, 0.026 * s, 0.020 * s), HIDE_LT);
+    b.addBlob(pouch, v3(0.024 * s, 0.015 * s, 0.021 * s), 4, 7, HIDE);
+    b.addBlob(v3(pouch.x, pouch.y + 0.008 * s, pouch.z), v3(0.014 * s, 0.013 * s, 0.014 * s), 3, 6, STONE_COL);
+    b.addCube(grip, v3(0.030 * s, 0.038 * s, 0.030 * s), HIDE_LT);
     return b.toMesh();
 }
 
@@ -1271,7 +1591,7 @@ pub fn stoneMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x570E);
     // Irregular, because a slung stone is a stone off the ground and not a ball bearing.
-    b.addBlob(mathx.zero3, v3(0.040 * rng.range(0.9, 1.2), 0.036 * rng.range(0.9, 1.2), 0.042), 3, 6, STONE_COL);
+    b.addBlob(mathx.zero3, v3(0.055 * rng.range(0.9, 1.2), 0.050 * rng.range(0.9, 1.2), 0.058), 4, 7, STONE_COL);
     return b.toModel(shader);
 }
 
@@ -1282,21 +1602,18 @@ fn buildMeshes() [N]rl.Mesh {
     mesh[CHEST] = ribcageMesh();
     mesh[NECK] = neckMesh();
     mesh[SKULL] = skullMesh();
-    // LIMB RADII: a FURRY ANIMAL, not a skeleton. These were the archer's numbers (0.030/0.023 leg,
-    // 0.022/0.018 arm) because that is the file I built the rig from — and rendered, three kobolds came
-    // back as spindly stick-figures with skin-coloured bones. A dog's leg under fur is nearly twice
-    // that, and the fur is on TOP of it. Every one is up ~55-60%, and the tuft counts with them.
-    mesh[HIPL] = limbMesh(0x7401, SEG_THIGH, 0.049, 0.038, FUR, 12);
-    mesh[KNEEL] = limbMesh(0x7402, SEG_SHANK, 0.036, 0.025, FUR, 10);
+    // Past the hero's own thigh (0.078Â·H) on purpose — he is a man in cloth, this is an animal in fur.
+    mesh[HIPL] = limbMesh(0x7401, SEG_THIGH, 0.076, 0.058, FUR, 22);
+    mesh[KNEEL] = limbMesh(0x7402, SEG_SHANK, 0.056, 0.039, FUR, 19);
     mesh[ANKL] = footMesh(0x7403);
-    mesh[HIPR] = limbMesh(0x7404, SEG_THIGH, 0.049, 0.038, FUR, 12);
-    mesh[KNEER] = limbMesh(0x7405, SEG_SHANK, 0.036, 0.025, FUR, 10);
+    mesh[HIPR] = limbMesh(0x7404, SEG_THIGH, 0.076, 0.058, FUR, 22);
+    mesh[KNEER] = limbMesh(0x7405, SEG_SHANK, 0.056, 0.039, FUR, 19);
     mesh[ANKR] = footMesh(0x7406);
-    mesh[SHL] = limbMesh(0x7407, SEG_UPARM, 0.035, 0.028, FUR, 10);
-    mesh[ELL] = limbMesh(0x7408, SEG_FOREARM, 0.028, 0.021, FUR, 11);
+    mesh[SHL] = limbMesh(0x7407, SEG_UPARM, 0.055, 0.044, FUR, 19);
+    mesh[ELL] = limbMesh(0x7408, SEG_FOREARM, 0.044, 0.033, FUR, 20);
     mesh[WRL] = handMesh(0x7409);
-    mesh[SHR] = limbMesh(0x740A, SEG_UPARM, 0.035, 0.028, FUR, 10);
-    mesh[ELR] = limbMesh(0x740B, SEG_FOREARM, 0.028, 0.021, FUR, 11);
+    mesh[SHR] = limbMesh(0x740A, SEG_UPARM, 0.055, 0.044, FUR, 19);
+    mesh[ELR] = limbMesh(0x740B, SEG_FOREARM, 0.044, 0.033, FUR, 20);
     mesh[WRR] = handMesh(0x740C);
     // Bone 17 draws nothing shared — the KIT is per role (see Model.kit).
     var empty = Builder.init();
@@ -1305,22 +1622,30 @@ fn buildMeshes() [N]rl.Mesh {
     return mesh;
 }
 
-/// One shared Model for the whole warband: the body once, and the three kits beside it. The BERSERKER
-/// carries two axes, so there is a second, deliberately different one for the off hand — the same
-/// mesh in both fists is the kind of mirrored pair the house style exists to avoid.
+/// One shared Model for the warband. The berserker's off-hand axe is a SECOND mesh, deliberately unlike
+/// the first. Four things ride matrices rather than bones (off-hand axe, JAW, TAIL, the priest's ROBE):
+/// the pattern for anything the 18-bone scaffold has no slot for.
 pub const Model = struct {
     mesh: [N]rl.Mesh,
     kit: [3]rl.Mesh, // indexed by Role
     offAxe: rl.Mesh,
+    jaw: rl.Mesh,
+    robe: rl.Mesh, // the PRIEST's alone
+    tail: [TAIL_N]rl.Mesh,
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
         var mat = rl.loadMaterialDefault() catch @panic("kobold material");
         mat.shader = shader;
+        var tail: [TAIL_N]rl.Mesh = undefined;
+        for (0..TAIL_N) |i| tail[i] = tailMesh(i);
         return .{
             .mesh = buildMeshes(),
             .kit = [3]rl.Mesh{ axeMesh(0xA7E1), staffMesh(), slingMesh() },
             .offAxe = axeMesh(0xA7E2),
+            .jaw = jawMesh(),
+            .robe = robeMesh(),
+            .tail = tail,
             .mat = mat,
         };
     }
@@ -1332,6 +1657,10 @@ pub const Model = struct {
             if (i == KIT) continue;
             rl.drawMesh(self.mesh[i], self.mat, k.xf[i]);
         }
+        rl.drawMesh(self.jaw, self.mat, k.jawXf);
+        for (0..TAIL_N) |i| rl.drawMesh(self.tail[i], self.mat, k.tailXf[i]);
+        // THE ROBE IS THE PRIEST'S ALONE — on the SPINE, so it folds with the trunk (see `robeMesh`).
+        if (k.role == .priest) rl.drawMesh(self.robe, self.mat, k.xf[SPINE]);
         rl.drawMesh(self.kit[@intFromEnum(k.role)], self.mat, k.xf[KIT]);
         // The off-hand axe rides the LEFT wrist, mirrored across X so its blade faces outward.
         if (k.role == .berserker) {
@@ -1341,13 +1670,10 @@ pub const Model = struct {
 };
 
 // ── THE WARBAND ─────────────────────────────────────────────────────────────────────────
-// ONE group holding ALL THREE ROLES mixed, and that is a design decision with a reason: the PRIEST
-// heals a friend, so somebody has to be able to see the whole band at once. Split across three Groups
-// (one per FoeKind, like the toads and the archers) that "somebody" would have to be game.zig,
-// threading two foreign groups into a third's update. Mixed in one array it is a loop over `self`.
-//
-// It is also why `reset` is not `foe.resetGroup`: that filters ONE kind, and three filtered passes
-// would bucket the band by role and lose the map's own ordering.
+// ALL THREE ROLES IN ONE ARRAY because the PRIEST heals a friend, so something has to see the whole
+// band; split per FoeKind that something would be game.zig threading two groups into a third's update.
+// Same reason `reset` is not `foe.resetGroup`: that filters ONE kind, and three passes would bucket the
+// band by role and lose the map's ordering.
 
 /// Room for a full posting of every role (`wf.MAX_PER_KIND` each). Deliberately not smaller: the cap
 /// is what a map may legally ask for, and `resetGroup`'s contract is to SKIP the overflow — a band
@@ -1418,14 +1744,9 @@ pub const Warband = struct {
 
     /// Drive the whole band a frame. Returns the hero blow to apply, if any of them landed one.
     ///
-    /// THE HEAL IS RESOLVED HERE, and this is the reason the band is one array: the priest's cast
-    /// completes inside its own update and hands back `.healed`, and the CHOICE of who receives it is
-    /// made from the band as a whole — the neediest living member in range. The priest owns the
-    /// animation and the timing; it never learns who its friends are.
-    /// `loose` is passed as a comptime function over a context (the `env.pickIf` / `camera.followClear`
-    /// idiom) so this file stays independent of the projectile pool: a slinger's stone shares the
-    /// ARROW pool, which game.zig owns, and the band needs to know where a stone leaves from — not
-    /// what a pool is.
+    /// The HEAL is resolved here rather than in the priest: it owns the cast, never the targeting.
+    /// `loose` is a comptime fn over a context (the `env.pickIf` idiom) so this file need not know that
+    /// a slinger's stone shares game.zig's arrow pool.
     pub fn update(
         self: *Warband,
         dt: f32,
@@ -1456,11 +1777,11 @@ pub const Warband = struct {
                     }
                 },
             }
-            // A live hurt window that reaches the hero: one blow per swing, latched.
+            // A live hurt window that reaches the hero: one blow per swing, latched. It PLAYS NOTHING —
+            // the swing already sounded at `enter` and the hero's own `.hurt` is the impact.
             if (k.hurtOpen() and mathx.distXZ(k.pos, hero) <= k.hurtReach()) {
                 k.markDealt();
                 blow = k.hurtBlow();
-                sfx.world(if (k.state == .bite) .kobold_bite else .kobold_chop, k.pos);
             }
         }
         return blow;
@@ -1503,14 +1824,12 @@ test "the role table, the enum and the map's foe kinds agree" {
     try std.testing.expect(roleOf(.ogre) == null);
 }
 
-test "a kobold is shorter than the hero but not a child" {
-    // The owner's brief is "somewhat shorter than a man", and both halves matter: too close and the
-    // silhouette stops reading, too small and it is comic.
-    try std.testing.expect(SCALE < 0.9 and SCALE > 0.72);
-    // …and NARROWER across the shoulders than the hips are wide relative to a man's — the thing that
-    // makes it a different animal rather than a scaled-down person.
-    try std.testing.expect(SHOULDER_HALF < heromod.SHOULDER_HALF);
-    try std.testing.expect(HIP_HALF < heromod.HIP_HALF);
+test "a kobold is a man's height and BROADER than he is" {
+    // Pinned loose on purpose: this encoded an earlier brief (shorter and narrower than the hero) that
+    // the owner superseded twice on playtest. What is left is what still holds.
+    try std.testing.expect(SCALE > 0.95 and SCALE < 1.15);
+    try std.testing.expect(SHOULDER_HALF > heromod.SHOULDER_HALF);
+    try std.testing.expect(HIP_HALF > heromod.HIP_HALF);
 }
 
 test "the berserker's recovery is a REAL opening, and his poise is glass" {

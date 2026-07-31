@@ -2,6 +2,7 @@ const std = @import("std");
 const props = @import("props.zig");
 const mathx = @import("mathx.zig");
 const gfx = @import("gfx.zig");
+const item = @import("item.zig");
 
 const Kind = props.Kind;
 
@@ -39,6 +40,10 @@ pub const MAX_DECLARED_HALF: f32 = 4096.0;
 
 pub const MAX_OPS: usize = 2048;
 pub const MAX_MIX: usize = 24; // a scatter's weighted kind mix (weight = repetition)
+/// How many items one chest holds. Small on purpose: a chest in a soulslike is one or two things you
+/// remember finding, not a container. Weight BY REPETITION like `mix`, so two Golden Seeds is the tag
+/// twice — no count column to parse, and the file still reads as a sentence.
+pub const MAX_LOOT: usize = 8;
 pub const MAX_ZONES: usize = 16;
 pub const MAX_CLEARINGS: usize = 32;
 pub const MAX_FOES: usize = 256;
@@ -127,6 +132,11 @@ pub const Op = struct {
     /// keeps a region's character readable as one line of text. Empty = use `kind`.
     mix: [MAX_MIX]Kind = undefined,
     nmix: u8 = 0,
+    /// What is in the chest this op placed. Only an `at` of kind `.chest` reads it, and it is never
+    /// written when empty, so adding the field moved no existing world. Serialized like `mix`: a `loot=`
+    /// tail of comma-separated tags.
+    loot: [MAX_LOOT]item.Kind = undefined,
+    nloot: u8 = 0,
 
     /// The kind this op places for one instance.
     pub fn pick(self: *const Op, r: *mathx.Rng) Kind {
@@ -822,6 +832,13 @@ fn writeOp(o: *const Op, w: anytype) !void {
         try w.writeAll(" mix=");
         try writeMix(w, o.mix[0..o.nmix]);
     }
+    if (o.nloot > 0) {
+        try w.writeAll(" loot=");
+        for (o.loot[0..o.nloot], 0..) |it, i| {
+            if (i > 0) try w.writeAll(",");
+            try w.writeAll(item.tag(it));
+        }
+    }
     try w.writeAll("\n");
 }
 
@@ -1025,6 +1042,10 @@ fn parseOp(kind: OpKind, it: *std.mem.TokenIterator(u8, .any)) !Op {
                     o.nmix = try parseMix(val, &o.mix);
                     continue;
                 }
+                if (std.mem.eql(u8, key, "loot")) {
+                    o.nloot = try parseLoot(val, &o.loot);
+                    continue;
+                }
                 var matched = false;
                 inline for (@typeInfo(Op).@"struct".fields) |f| {
                     if (comptime canTail(k, f.name)) {
@@ -1039,6 +1060,22 @@ fn parseOp(kind: OpKind, it: *std.mem.TokenIterator(u8, .any)) !Op {
         },
     }
     return o;
+}
+
+/// A chest's contents. `parseMix`'s shape over `item.Kind` — and an UNKNOWN TAG IS A LOAD ERROR, like
+/// every other unknown name in this format: silently dropping an item you cannot spell means the chest
+/// you authored quietly holds less than the file says.
+fn parseLoot(s: []const u8, out: *[MAX_LOOT]item.Kind) !u8 {
+    var n: u8 = 0;
+    var parts = std.mem.splitScalar(u8, s, ',');
+    while (parts.next()) |p| {
+        const t = trim(p);
+        if (t.len == 0) continue;
+        if (n >= MAX_LOOT) return ParseError.ExtraField;
+        out[n] = item.fromTag(t) orelse return ParseError.BadKind;
+        n += 1;
+    }
+    return n;
 }
 
 fn parseMix(s: []const u8, out: *[MAX_MIX]Kind) !u8 {
@@ -1239,7 +1276,9 @@ fn isPositional(comptime k: OpKind, comptime name: []const u8) bool {
 /// exactly one place in the line can ever set a given field, in both directions.
 fn canTail(comptime k: OpKind, comptime name: []const u8) bool {
     @setEvalBranchQuota(20000);
-    const never = [_][]const u8{ "op", "mix", "nmix" };
+    // The array-plus-count pairs are written by hand as their own `key=` tail (see writeOp), so the
+    // generic field walk must not also try to emit them — an `[8]item.Kind` has no `writeTail` form.
+    const never = [_][]const u8{ "op", "mix", "nmix", "loot", "nloot" };
     for (never) |n| {
         if (std.mem.eql(u8, n, name)) return false;
     }

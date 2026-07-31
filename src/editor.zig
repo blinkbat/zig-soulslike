@@ -8,6 +8,7 @@ const wf = @import("worldfmt.zig");
 const envmod = @import("env.zig");
 const gfx = @import("gfx.zig");
 const objview = @import("objview.zig");
+const item = @import("item.zig"); // the chest-contents dialog
 
 const Kind = props.Kind;
 const v3 = mathx.v3;
@@ -419,7 +420,7 @@ pub const Action = enum { none, leave, playtest };
 
 /// Which dialog owns the screen. Only one at a time, and while one is up the world takes no
 /// input at all — `beginModal` claims the pointer wholesale.
-pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects };
+pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot };
 
 /// What a confirm is standing in FRONT of: an unsaved map is about to be thrown away, and this
 /// is what happens once you say so. Without it, "Discard" has no idea what it was discarding.
@@ -3323,6 +3324,44 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
                 ed.pending = .none;
             }
         },
+        // ── WHAT IS IN THE CHEST ── a row per item kind with a count and a −/+ pair. The counts ARE the
+        // op's `loot` list (weight by repetition, like `mix`), so this dialog reads and writes the map
+        // directly and there is nothing to apply or cancel: the edit is the edit, exactly as the properties
+        // panel's steppers work.
+        .loot => {
+            const rows: i32 = @intCast(item.NK);
+            const box = ui.beginModal(ctx, 470, 96 + rows * 26 + 44, "Chest contents");
+            const op: ?usize = if (ed.sel) |s| (if (s < m.nops and m.ops[s].kind == .chest) s else null) else null;
+            if (op == null) {
+                ed.modal = .none; // the selection went away under it
+                return;
+            }
+            const o = &m.ops[op.?];
+            var buf: [48]u8 = undefined;
+            const total = std.fmt.bufPrintZ(&buf, "{d} / {d} items", .{ o.nloot, wf.MAX_LOOT }) catch "";
+            hud.mono(total, box.x + 24, box.y + 58, hud.MONO, ui.LABEL);
+            var i: usize = 0;
+            while (i < item.NK) : (i += 1) {
+                const k: item.Kind = @enumFromInt(i);
+                const y = box.y + 84 + @as(i32, @intCast(i)) * 26;
+                hud.mono(item.displayName(k), box.x + 24, y + 5, hud.MONO, ui.VALUE);
+                const n = lootCount(o, k);
+                var nbuf: [8]u8 = undefined;
+                const ns = std.fmt.bufPrintZ(&nbuf, "{d}", .{n}) catch "0";
+                hud.mono(ns, box.x + 340, y + 5, hud.MONO, if (n > 0) ui.VALUE else ui.LABEL);
+                if (ui.button(ctx, ui.rect(box.x + 368, y, 24, 22), "-", hud.MONO, false)) {
+                    lootRemove(o, k);
+                    ed.dirty = true;
+                }
+                if (ui.button(ctx, ui.rect(box.x + 396, y, 24, 22), "+", hud.MONO, false)) {
+                    lootAdd(o, k);
+                    ed.dirty = true;
+                }
+            }
+            if (ui.button(ctx, ui.rect(box.x + 24, box.y + 84 + rows * 26 + 8, 120, 28), "Done", hud.MONO, false) or confirm) {
+                ed.modal = .none;
+            }
+        },
         .new_map, .save_as => {
             const isNew = ed.modal == .new_map;
             const box = ui.beginModal(ctx, 460, 180, if (isNew) "New map" else "Save map as");
@@ -3374,12 +3413,16 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
 // `switch (i)` on positional indices, so inserting a row above Delete moved its number and silently rewired
 // it to Duplicate. A row that cannot act on the selection draws DIM rather than looking live and doing
 // nothing when clicked.
-const MenuItem = enum { view, focus, reroll, duplicate, delete, close };
+const MenuItem = enum { view, loot, focus, reroll, duplicate, delete, close };
 
 const menuRows = [_]struct { act: MenuItem, label: [:0]const u8 }{
     // `view` gets its label FILLED IN at draw time with the kind's own name — "View Dead Tree…", not
     // "View…", because the row is about one specific model and the point is knowing which.
     .{ .act = .view, .label = "View…" },
+    // …and ITEMS is live only on a chest (see `menuEnabled`) — the one prop that HOLDS anything, so the
+    // one prop with contents to edit. Right-click the box, put things in it: the owner's own ask, and it
+    // lands as a properties edit on the op that placed it rather than as a second document.
+    .{ .act = .loot, .label = "Items…" },
     .{ .act = .focus, .label = "Focus" },
     .{ .act = .reroll, .label = "Re-roll" },
     .{ .act = .duplicate, .label = "Duplicate" },
@@ -3392,6 +3435,35 @@ const MENU_EDGE: i32 = 4; // clear space kept between the menu and the screen ed
 
 /// Can this row do anything to what is selected right now? A foe spawn has no seed to re-roll
 /// and nothing the op paths can copy, so on Units those two rows are dead.
+// ── A CHEST'S CONTENTS, as the map stores them ─────────────────────────────────────────
+// `Op.loot` is a flat list weighted BY REPETITION (two Golden Seeds is the tag twice — see worldfmt), so a
+// "count" is how many times a kind appears in it and the dialog's −/+ are an append and a
+// remove-one-swapping-in-the-last. Order in the list means nothing, which is what lets the remove be O(1).
+
+fn lootCount(o: *const wf.Op, k: item.Kind) u8 {
+    var n: u8 = 0;
+    for (o.loot[0..o.nloot]) |it| {
+        if (it == k) n += 1;
+    }
+    return n;
+}
+
+fn lootAdd(o: *wf.Op, k: item.Kind) void {
+    if (o.nloot >= wf.MAX_LOOT) return; // full: the counter above says so, so this needs no complaint
+    o.loot[o.nloot] = k;
+    o.nloot += 1;
+}
+
+fn lootRemove(o: *wf.Op, k: item.Kind) void {
+    var i: u8 = 0;
+    while (i < o.nloot) : (i += 1) {
+        if (o.loot[i] != k) continue;
+        o.loot[i] = o.loot[o.nloot - 1]; // swap the last one down — order carries no meaning here
+        o.nloot -= 1;
+        return;
+    }
+}
+
 fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
     const op: ?usize = if (ed.sel) |s| (if (s < m.nops) s else null) else null;
     return switch (act) {
@@ -3400,6 +3472,10 @@ fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
         // The ground COVER op places from a zone's mix rather than from a kind of its own, so there
         // is no one model for this row to open.
         .view => if (op) |s| m.ops[s].op != .cover else false,
+        // Only a LITERAL chest has contents to edit. A scatter that happens to include `.chest` in its mix
+        // would put the same list in every box it grew, which is not a thing anybody wants — and `at` is
+        // the op you get when you stamp one down, so this is also the only way you place one.
+        .loot => if (op) |s| (m.ops[s].op == .at and m.ops[s].kind == .chest) else false,
         .reroll, .duplicate => if (op) |s| isMovable(&m.ops[s]) else false,
         .delete => op != null or (ed.layer == .units and ed.selFoe != null),
     };
@@ -3448,6 +3524,7 @@ fn drawContextMenu(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx) void
                     ed.modal = .objects;
                 }
             },
+            .loot => ed.modal = .loot,
             .focus => if (ed.sel) |s| ed.focusOn(m, s),
             .reroll => ed.rerollSel(m, env),
             .duplicate => ed.duplicateSel(m, env),

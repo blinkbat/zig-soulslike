@@ -127,6 +127,14 @@ pub const CamRig = struct {
         c.place(c.targetFor(shoulder), c.dist);
     }
 
+    /// Re-aim with `at` DEAD CENTRE — the over-the-shoulder offset cancelled. Not for gameplay: this is
+    /// for a close PORTRAIT of something, where `SHOULDER` is no longer a gentle framing bias but most of
+    /// the frame. At a metre out, 0.55 m sideways is ~26 deg off axis and the subject leaves the picture
+    /// (the kobold head shot came back as a corner of fur with an empty field in the middle of it).
+    pub fn followCentred(c: *CamRig, at: rl.Vector3) void {
+        c.place(v3(at.x, at.y + TARGET_RAISE, at.z), c.dist);
+    }
+
     /// FOLLOW WITHOUT BURYING THE EYE IN A HILLSIDE. On sculpted ground the boom swings into the slope
     /// behind the hero constantly — a hero halfway up a bank has the camera underground, and what you
     /// then see is the sky below the horizon with the world floating over it and no hero at all.

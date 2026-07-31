@@ -565,3 +565,102 @@ pub fn gibbetMesh(shader: rl.Shader) rl.Model {
 
 // A CAIRN: field stones stacked by hand, largest at the bottom, leaning as they rise. A waymarker
 // somebody built, which is why it is the one pile of rocks in the world that looks deliberate.
+
+// -- THE TREASURE CHEST -- a banded coffer, and the ONE prop with a moving part. The BODY is the prop;
+// the LID is its own mesh, because a prop draws as one model at one matrix. `chest.zig` owns the hinge.
+// The DIMENSIONS live here, where both meshes are, or the lid floats the first time the box is resized.
+
+pub const CHEST_HALF_X: f32 = 0.52; // half-width across the front
+pub const CHEST_HALF_Z: f32 = 0.34; // half-depth
+pub const CHEST_BODY_H: f32 = 0.52; // the coffer's rim height — where the lid sits
+/// The hinge line: back edge, at the rim. `chest.zig` turns the lid about this, so it is the contract
+/// between the two meshes and the reason both are in this file.
+pub const CHEST_HINGE_Y: f32 = CHEST_BODY_H;
+pub const CHEST_HINGE_Z: f32 = -CHEST_HALF_Z;
+pub const CHEST_TOP: f32 = CHEST_BODY_H + 0.30; // the closed lid's crown — INFO's `top`
+
+/// The coffer: oak boards, iron bands, a lock plate. Iron and cut timber, so this is one of the places
+/// boxes are right (FLESH IS ROUND is about flesh).
+pub fn chestMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(2112);
+    b.setMat(.wood);
+    const hx = CHEST_HALF_X;
+    const hz = CHEST_HALF_Z;
+    // FEET first, so the box does not sit flush in the dirt — a chest on the ground with no gap under it
+    // reads as sunk into the terrain rather than standing on it.
+    for ([_]f32{ -1, 1 }) |sx| {
+        for ([_]f32{ -1, 1 }) |sz| {
+            b.addCube(v3(sx * (hx - 0.07), 0.045, sz * (hz - 0.06)), v3(0.13, 0.09, 0.12), TIMBER_DK);
+        }
+    }
+    // The carcase, as ONE solid mass — the boards below are only the facing, the same rule the well's
+    // drum and every coursed wall here follow. Without a core the plank joints leak daylight.
+    b.addCube(v3(0, 0.09 + CHEST_BODY_H * 0.5, 0), v3(hx * 2.0 - 0.03, CHEST_BODY_H, hz * 2.0 - 0.03), TIMBER_DK);
+    // BOARDS across the front and back, uneven widths and a hair proud (RELIEF IS SUBTLE — a few percent
+    // of the mass, or they read as slats nailed onto a crate).
+    var x = -hx + 0.04;
+    while (x < hx - 0.06) {
+        const w = rng.range(0.13, 0.22);
+        const cx = x + w * 0.5;
+        for ([_]f32{ -1, 1 }) |sz| {
+            b.addCube(v3(cx, 0.09 + CHEST_BODY_H * 0.5, sz * hz), v3(w - 0.012, CHEST_BODY_H - 0.05, 0.03), if (rng.float() < 0.4) TIMBER else TIMBER_DK);
+        }
+        x += w;
+    }
+    b.setMat(.steel);
+    // IRON BANDS round the girth — two, and neither is centred, because a scavenged coffer was repaired
+    // rather than made.
+    for ([_]f32{ 0.30, 0.72 }) |f| {
+        const y = 0.09 + CHEST_BODY_H * f;
+        b.addCube(v3(0, y, 0), v3(hx * 2.0 + 0.02, 0.055, hz * 2.0 + 0.02), if (rng.float() < 0.35) RUST else IRON);
+    }
+    // The LOCK PLATE and its hasp, front and centre — the one detail that says "this opens".
+    b.addCube(v3(0, 0.09 + CHEST_BODY_H - 0.06, hz + 0.012), v3(0.20, 0.19, 0.035), IRON);
+    b.addCylinder(v3(0, 0.09 + CHEST_BODY_H - 0.10, hz + 0.035), v3(0, 0.09 + CHEST_BODY_H - 0.10, hz + 0.075), 0.035, 0.030, 7, RUST);
+    b.addDome(v3(0, 0.09 + CHEST_BODY_H - 0.10, hz + 0.075), v3(0, 0, 1), 0.035, 7, RUST);
+    return b.toModel(shader);
+}
+
+/// THE LID, authored about its HINGE — origin at the back edge of the rim, so `chest.zig` opens it with
+/// one `rx` and no offset arithmetic. A domed coffer top: banded to match, and hollow-looking underneath
+/// (a slab lid thrown back shows a flat white belly and reads as a plank).
+pub fn chestLidMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(2113);
+    b.setMat(.wood);
+    const hx = CHEST_HALF_X;
+    const d = CHEST_HALF_Z * 2.0;
+    // The lid runs FORWARD along +Z from the hinge at the origin, and rises to its crown mid-span.
+    b.addCube(v3(0, 0.05, d * 0.5), v3(hx * 2.0 - 0.02, 0.10, d - 0.02), TIMBER_DK);
+    // The dome over it — a half-round drum lying along X, which is what a treasure chest's top IS.
+    b.addCylinder(v3(-hx + 0.01, 0.10, d * 0.5), v3(hx - 0.01, 0.10, d * 0.5), d * 0.42, d * 0.42, 9, TIMBER_DK);
+    // Boards over the dome, following its curve — a few percent proud, uneven widths.
+    var i: i32 = 0;
+    while (i < 5) : (i += 1) {
+        const a = -0.9 + @as(f32, @floatFromInt(i)) * 0.45 + rng.signed() * 0.06;
+        const r = d * 0.43;
+        b.addCube(
+            v3(0, 0.10 + mathx.cosf(a) * r, d * 0.5 + mathx.sinf(a) * r),
+            v3(hx * 2.0 - 0.06, 0.028, d * rng.range(0.16, 0.26)),
+            if (rng.float() < 0.4) TIMBER else TIMBER_DK,
+        );
+    }
+    b.setMat(.steel);
+    // The bands carry OVER the lid in line with the body's — STRAPS FOLLOWING THE DOME, front to back, not
+    // slabs. `addCube` takes a FULL size but `addBox` takes HALF-EXTENT VECTORS, and `d * 0.86` of them is
+    // a 1.17 m plate: rendered, the closed chest had two white posts standing up either side of it with the
+    // dome hidden between them. Walked round the arc rather than laid over it as one bar, because a strap
+    // bends round what it is strapping.
+    for ([_]f32{ -1, 1 }) |sx| {
+        const bx = sx * (hx - 0.15);
+        var seg: i32 = 0;
+        while (seg < 5) : (seg += 1) {
+            const a = -1.15 + @as(f32, @floatFromInt(seg)) * 0.575;
+            const r = d * 0.435;
+            b.addCube(v3(bx, 0.10 + mathx.cosf(a) * r, d * 0.5 + mathx.sinf(a) * r), v3(0.10, 0.052, d * 0.24), if (rng.float() < 0.35) RUST else IRON);
+        }
+    }
+    b.addCube(v3(0, 0.075, d - 0.015), v3(0.28, 0.20, 0.06), IRON); // the hasp eye, off the front lip
+    return b.toModel(shader);
+}

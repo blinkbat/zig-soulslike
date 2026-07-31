@@ -120,6 +120,13 @@ fn stepFoe(f: anytype, frames: i32, hero: rl.Vector3) void {
     while (k < frames) : (k += 1) _ = f.update(SHOT_DT, hero, game.PLAY_HALF, .{});
 }
 
+/// THE CAMERA YAW WITH THE SUN BEHIND IT — `gfx.SUN_DIR` in the rig's terms, so ~233 shoots into it.
+/// Every framing of a creature or an object wants this: from the opposite band a subject comes back as a
+/// silhouette in its own shadow, and you cannot judge a model off a cut-out. `LIT_BACK` is where the
+/// camera sits, for aiming a staged hero down the same bearing.
+pub const LIT_YAW: f32 = 53.0;
+pub const LIT_BACK = v3(-0.794, 0, -0.608);
+
 // Plant the hero at a world spot facing `faceYaw`, settled and posed. The WORLD TOUR shots
 // below all start here — and they must, because the sun's shadow ortho box tracks the hero, so
 // a landscape framed far from him comes back with no cast shadows in it at all.
@@ -136,6 +143,16 @@ fn shootAt(g: *Game, name: [:0]const u8, at: rl.Vector3, yaw: f32, pitch: f32, d
     g.rig.pitch = pitch;
     g.rig.dist = dist;
     g.rig.follow(at);
+    shoot(g, name);
+}
+
+/// A PORTRAIT — `at` DEAD CENTRE, which no other helper here does. The rig aims 0.55 m to the side
+/// (`camera.SHOULDER`); up close that is ~26 deg off axis and the subject leaves the frame entirely.
+fn shootPortrait(g: *Game, name: [:0]const u8, at: rl.Vector3, yaw: f32, pitch: f32, dist: f32) void {
+    g.rig.yaw = mathx.radians(yaw);
+    g.rig.pitch = pitch;
+    g.rig.dist = dist;
+    g.rig.followCentred(at);
     shoot(g, name);
 }
 
@@ -732,7 +749,13 @@ pub fn runShots(g: *Game) void {
     // instances directly into the group's array rather than posting `foe:` records.
     {
         const kc = mathx.ground(-26.0, 30.0); // open ground west of the ogre's spot, clear of ruins
-        const far = v3(kc.x, 0, kc.z + 80.0); // sensed hero far off → each holds its idle, facing +Z
+        // ── FACE THE SUN, NOT THE CAMERA ── a foe TURNS TO FACE the hero, so shooting its front puts the
+        // camera where the hero is; and `LIT_YAW` says which bearing is lit. Every front framing here used
+        // to sit in the backlit band and photograph a silhouette. So the sensed hero goes on the sun's
+        // bearing, the band turns that way itself, and the camera shoots front-on and front-lit at once.
+        const litB = LIT_BACK; // the XZ bearing of backDir(LIT_YAW) — where the camera sits
+        const far = v3(kc.x + litB.x * 80.0, 0, kc.z + litB.z * 80.0); // …far enough off that each holds its idle
+        const near = v3(kc.x + litB.x * 1.2, 0, kc.z + litB.z * 1.2); // …and in reach, for the attack beats
         g.band.n = 3;
         const zerk = &g.band.band[0];
         const priest = &g.band.band[1];
@@ -745,19 +768,24 @@ pub fn runShots(g: *Game) void {
         priest.* = koboldmod.Kobold.spawnAs(.priest, kc, 0, 1.0, 0.55);
         sling.* = koboldmod.Kobold.spawnAs(.slinger, mathx.ground(kc.x + 1.7, kc.z), 0, 1.0, 0.85);
         for ([_]*koboldmod.Kobold{ zerk, priest, sling }) |k| stepFoe(k, 30, far);
-        standHero(g, kc.x + 4.4, kc.z + 0.6, mathx.radians(-100));
-        shootAt(g, "shots/64_kobold_band.png", v3(kc.x + 0.6, kc.y + 1.0, kc.z), 20, 0.10, 7.6);
-        // …and the same three FROM THE FRONT. Yaw ~188, not ~8: the rig's camera sits at `target +
-        // back*dist` and `backDir` puts it at −Z for yaw 0, so a yaw near ZERO is dead BEHIND a subject
-        // facing +Z. The first version of this shot was captioned "to judge the HEAD" and photographed
-        // three backs — the exact trap AGENTS.md names (confirm the camera SHOWS the thing first).
-        shootAt(g, "shots/64b_kobold_heads.png", v3(kc.x, kc.y + 1.18, kc.z), 188, 0.03, 3.6);
+        standHero(g, kc.x + 3.2, kc.z - 3.4, mathx.radians(-140));
+        shootAt(g, "shots/64_kobold_band.png", v3(kc.x + 0.6, kc.y + 1.0, kc.z), LIT_YAW, 0.10, 7.6);
+        // …and the same three CLOSE, to judge the heads as a group. Front-on AND front-lit, which needs
+        // both halves: the camera on the sun's bearing (LIT_YAW) and the band turned toward it (`far`).
+        shootAt(g, "shots/64b_kobold_heads.png", v3(kc.x, kc.y + 1.30, kc.z), LIT_YAW, 0.03, 4.2);
         // …and ONE head, close and three-quarter, which is the only framing that can actually settle
         // the doglike read: the muzzle LENGTH against the skull, the pricked ears, the amber eye set
         // forward. At band range those are a few pixels each.
-        shootAt(g, "shots/64c_kobold_head.png", v3(kc.x + 1.7, kc.y + 1.22, kc.z), 208, 0.05, 1.15);
-        // …and the TAIL, from behind and low — the one silhouette cue the front cannot show.
-        shootAt(g, "shots/64d_kobold_tail.png", v3(kc.x - 1.7, kc.y + 0.62, kc.z), 20, 0.10, 1.9);
+        //
+        // `shootPortrait`, not `shootAt` — see there. And from just BELOW the eyeline: looking DOWN at a
+        // head carried a few degrees forward photographs the crown and hides the face.
+        shootPortrait(g, "shots/64c_kobold_head.png", v3(kc.x + 1.7, kc.y + 1.42, kc.z), LIT_YAW + 12, -0.05, 2.3);
+        // …and the TAIL. THE ONE SHOT THAT WANTS A LIT BACK, so it turns the SUBJECT round rather than
+        // orbiting the camera behind it (which would put the whole animal in silhouette). Three-quarter,
+        // not dead astern: aimed up its own length a trailing tail foreshortens to a stub.
+        const back = v3(kc.x - litB.x * 80.0, 0, kc.z - litB.z * 80.0);
+        for ([_]*koboldmod.Kobold{ zerk, priest, sling }) |k| stepFoe(k, 40, back);
+        shootPortrait(g, "shots/64d_kobold_tail.png", v3(kc.x - 1.7, kc.y + 0.74, kc.z), LIT_YAW - 34, 0.14, 2.7);
 
         // Hero out of frame for the role portraits.
         g.hero.pos = mathx.ground(kc.x, kc.z - 26.0);
@@ -775,13 +803,16 @@ pub fn runShots(g: *Game) void {
         park(priest, .priest, away);
         park(sling, .slinger, away);
 
-        // THE BERSERKER mid-chop: the live hand down and across, the other already re-chambering. Two
-        // frames a beat apart, because one frame cannot show a flurry.
+        // THE BERSERKER mid-chop, two frames one beat apart. TIMED OFF THE STATE, like the heave below:
+        // a fixed frame count spends most of itself in `.idle` and lands either side of the raise's own
+        // zero crossing, i.e. on the two frames where his arm hangs by his side.
         zerk.* = koboldmod.Kobold.spawnAs(.berserker, kc, 0, 1.0, 0.15);
-        stepFoe(zerk, 8, v3(kc.x, 0, kc.z + 1.2)); // hero in reach → commits to the flurry
-        shootFoe(g, zerk, "shots/65_kobold_chop.png", 150, 0.08, 4.2);
-        stepFoe(zerk, 14, v3(kc.x, 0, kc.z + 1.2));
-        shootFoe(g, zerk, "shots/65b_kobold_chop_b.png", 150, 0.08, 4.2);
+        var zf: i32 = 0;
+        while (zerk.state != .chop and zf < 600) : (zf += 1) _ = zerk.update(SHOT_DT, near, game.PLAY_HALF, .{});
+        stepFoe(zerk, 5, near); // ~u 0.20: the top of the raise, axe cocked over the shoulder
+        shootFoe(g, zerk, "shots/65_kobold_chop.png", LIT_YAW + 20, 0.06, 3.4);
+        stepFoe(zerk, 8, near); // ~u 0.50: mid-strike, the axe crossing his centre line
+        shootFoe(g, zerk, "shots/65b_kobold_chop_b.png", LIT_YAW + 20, 0.06, 3.4);
         // …and the HEAVE, which is the opening the whole design rests on: doubled over at the waist,
         // axes dragging. If this does not read as "come back in", the berserker has no counter.
         //
@@ -790,9 +821,21 @@ pub fn runShots(g: *Game) void {
         // somewhere different every time the roll changes — the first render caught him still swinging.
         // Step until he is actually heaving, then a beat further so the fold has arrived.
         var guard: i32 = 0;
-        while (zerk.state != .heave and guard < 600) : (guard += 1) _ = zerk.update(SHOT_DT, v3(kc.x, 0, kc.z + 1.2), game.PLAY_HALF, .{});
-        stepFoe(zerk, 12, v3(kc.x, 0, kc.z + 1.2)); // …into the hold, where the fold is deepest
-        shootFoe(g, zerk, "shots/66_kobold_heave.png", 105, 0.04, 4.0); // side-on: a FOLD is a profile read
+        while (zerk.state != .heave and guard < 600) : (guard += 1) _ = zerk.update(SHOT_DT, near, game.PLAY_HALF, .{});
+        stepFoe(zerk, 12, near); // …into the hold, where the fold is deepest
+        shootFoe(g, zerk, "shots/66_kobold_heave.png", LIT_YAW + 62, 0.04, 3.6); // side-on: a FOLD is a profile read
+
+        // …and THE REACTIONS, which had no shots at all — which is how six leg bones came to be handed to
+        // `drawMesh` as UNDEFINED matrices on every death in the game without anybody seeing it. A flinch
+        // and a death are the two poses the player looks at most and neither was ever photographed.
+        zerk.* = koboldmod.Kobold.spawnAs(.berserker, kc, 0, 1.0, 0.15);
+        zerk.debugStagger(true);
+        stepFoe(zerk, 10, far); // deep in the stance-break: knees buckled, arms flung, muzzle up
+        shootFoe(g, zerk, "shots/66b_kobold_stagger.png", LIT_YAW + 22, 0.06, 3.8);
+        zerk.* = koboldmod.Kobold.spawnAs(.berserker, kc, 0, 1.0, 0.15);
+        zerk.debugKill();
+        stepFoe(zerk, 34, far); // folded onto the ground, before the motes take him
+        shootFoe(g, zerk, "shots/66c_kobold_death.png", LIT_YAW + 30, 0.16, 3.6);
 
         // THE PRIEST casting: staff up two-handed, gold gathering into the head. The tell has to be
         // legible, so it is shot at the range you would have to read it from as well as close up.
@@ -803,8 +846,8 @@ pub fn runShots(g: *Game) void {
         priest.castCd = 0;
         var cf: i32 = 0;
         while (cf < 64) : (cf += 1) _ = g.band.update(SHOT_DT, far, game.PLAY_HALF, .{}, g, game.spawnStone);
-        shootFoe(g, priest, "shots/67_kobold_cast.png", 30, 0.10, 4.4);
-        shootFoe(g, priest, "shots/67b_kobold_cast_far.png", 30, 0.14, 13.0);
+        shootFoe(g, priest, "shots/67_kobold_cast.png", LIT_YAW + 16, 0.10, 4.4);
+        shootFoe(g, priest, "shots/67b_kobold_cast_far.png", LIT_YAW + 16, 0.14, 13.0);
 
         // THE SLINGER: the sling round overhead (the tell), then the teeth close in. Both framed from
         // the FRONT-QUARTER — a sling whirls over the head and a bite comes forward, so a rear view
@@ -813,24 +856,30 @@ pub fn runShots(g: *Game) void {
         park(priest, .priest, away);
         sling.* = koboldmod.Kobold.spawnAs(.slinger, kc, 0, 1.0, 0.85);
         sling.slingCd = 0;
+        const band8 = v3(kc.x + litB.x * 8.0, 0, kc.z + litB.z * 8.0); // inside its range band, on the lit bearing
         var g2: i32 = 0;
-        while (sling.state != .whirl and g2 < 600) : (g2 += 1) _ = sling.update(SHOT_DT, v3(kc.x, 0, kc.z + 8.0), game.PLAY_HALF, .{});
-        stepFoe(sling, 16, v3(kc.x, 0, kc.z + 8.0)); // …a third of the way round the cone
-        shootFoe(g, sling, "shots/68_kobold_whirl.png", 205, 0.10, 3.8);
+        while (sling.state != .whirl and g2 < 600) : (g2 += 1) _ = sling.update(SHOT_DT, band8, game.PLAY_HALF, .{});
+        stepFoe(sling, 16, band8); // …a third of the way round the cone
+        shootFoe(g, sling, "shots/68_kobold_whirl.png", LIT_YAW + 18, 0.10, 3.8);
         sling.* = koboldmod.Kobold.spawnAs(.slinger, kc, 0, 1.0, 0.85);
         sling.biteCd = 0;
         var g3: i32 = 0;
-        while (sling.state != .bite and g3 < 600) : (g3 += 1) _ = sling.update(SHOT_DT, v3(kc.x, 0, kc.z + 1.0), game.PLAY_HALF, .{});
-        stepFoe(sling, 10, v3(kc.x, 0, kc.z + 1.0)); // …inside the snap, where the jaw is open
-        shootFoe(g, sling, "shots/69_kobold_bite.png", 195, 0.04, 2.6);
+        while (sling.state != .bite and g3 < 600) : (g3 += 1) _ = sling.update(SHOT_DT, near, game.PLAY_HALF, .{});
+        stepFoe(sling, 10, near); // …inside the snap, where the jaw is open
+        shootFoe(g, sling, "shots/69_kobold_bite.png", LIT_YAW + 14, 0.04, 2.6);
+        // …and the OPEN JAW itself, head-on and close. This is the shot that would have caught `gape`
+        // never being called: the mouth is the whole attack, and at band range it is four pixels.
+        shootPortrait(g, "shots/69e_kobold_bite_jaw.png", sling.lockPoint(), LIT_YAW, 0.02, 1.9);
 
         // …and the WALK, side on, at three phases a quarter-stride apart: the shared gait under a
-        // narrower trunk, and the one thing a single frame provably cannot verify.
-        zerk.* = koboldmod.Kobold.spawnAs(.berserker, mathx.ground(kc.x, kc.z - 9.0), 0, 1.0, 0.15);
+        // narrower trunk, and the one thing a single frame provably cannot verify. Started BACK down the
+        // lit bearing so he walks up it into the light rather than out of it.
+        zerk.* = koboldmod.Kobold.spawnAs(.berserker, mathx.ground(kc.x - litB.x * 9.0, kc.z - litB.z * 9.0), 0, 1.0, 0.15);
+        const walkTo = v3(kc.x + litB.x * 40.0, 0, kc.z + litB.z * 40.0);
         const walkNames = [_][:0]const u8{ "shots/69b_kobold_walk.png", "shots/69c_kobold_walk.png", "shots/69d_kobold_walk.png" };
         for ([_]i32{ 26, 9, 9 }, 0..) |adv, wi| {
-            stepFoe(zerk, adv, v3(kc.x, 0, kc.z + 40.0)); // hero far ahead → walks toward it
-            shootFoe(g, zerk, walkNames[wi], 90, 0.06, 4.6);
+            stepFoe(zerk, adv, walkTo); // hero far ahead on the sun's bearing → walks toward it, LIT
+            shootFoe(g, zerk, walkNames[wi], LIT_YAW + 58, 0.06, 4.6);
         }
         g.band.n = 0; // …and the field is empty again: the band is not on the shipped map
     }
@@ -984,7 +1033,7 @@ pub fn runShots(g: *Game) void {
     g.menu.cursor = 0;
     drawScene(g);
     hud(g, SHOT_DT);
-    g.menu.draw(&g.retro);
+    g.menu.draw(&g.retro, &g.bag);
     snap("shots/12_menu_main.png");
 
     g.retro.values[gfx.RF_GAMEBOY] = 1.0; // show a live gauge on the retro card
@@ -992,7 +1041,7 @@ pub fn runShots(g: *Game) void {
     g.menu.cursor = gfx.RF_GAMEBOY;
     drawScene(g);
     hud(g, SHOT_DT);
-    g.menu.draw(&g.retro);
+    g.menu.draw(&g.retro, &g.bag);
     snap("shots/13_menu_retro.png");
     g.menu.screen = .closed;
 
@@ -1001,7 +1050,83 @@ pub fn runShots(g: *Game) void {
     shoot(g, "shots/14_retro_default.png");
     g.retro.allOff();
 
+    chestShots(g);
     editorShots(g);
+}
+
+// ── THE TREASURE CHEST ── does the closed box read as one, does the PROMPT appear, does the lid actually
+// swing (one frame cannot show it), and do the contents land in a readable list.
+//
+// STAGES its own op into the live map and takes it out again: chests are not on the shipped map, and the
+// contents come from the placing OP, so a hand-built instance would be empty by construction.
+fn chestShots(g: *Game) void {
+    const cx: f32 = 12.0;
+    const cz: f32 = 10.0;
+    const saved = g.map.nops;
+    var op = worldfmt.defaults(.at);
+    op.kind = .chest;
+    op.x = cx;
+    op.z = cz;
+    // THE FRONT FACES THE LIT CAMERA, and this is derived rather than guessed: `drawModelEx` turns the
+    // model about +Y, which sends local +Z to (sin yaw, 0, cos yaw), and the camera at yaw 53 (the sun's
+    // bearing — see the kobold block) sits toward (−0.794, 0, −0.608). Solving those gives ~233. The first
+    // version used 214 by eye and photographed the chest's BACK, with the lid swinging up into the lens.
+    op.yaw = 233;
+    op.loot[0] = .golden_seed;
+    op.loot[1] = .rune_arc;
+    op.loot[2] = .rune_arc;
+    op.loot[3] = .kobold_fang;
+    op.nloot = 4;
+    g.map.ops[g.map.nops] = op;
+    g.map.nops += 1;
+    g.env.materialize(&g.map);
+    game.rehomeChestsForShot(g);
+    g.bag = .{};
+
+    // CLOSED, with the hero in reach so the PROMPT is in frame.
+    //
+    // He stands BESIDE the box, out along the camera's own RIGHT: the chest's front, his approach and the
+    // lens all want the same side of it and cannot all have it, so anywhere else he occludes the subject.
+    const gy = mathx.ground(cx, cz).y;
+    const right = v3(-LIT_BACK.z, 0, LIT_BACK.x); // square to the boom, on the ground
+    const hx = cx + right.x * 1.8;
+    const hz = cz + right.z * 1.8;
+    const aim = v3(cx, gy + 0.55, cz);
+    standHero(g, hx, hz, mathx.headingXZ(v3(cx - hx, 0, cz - hz)));
+    g.chests.update(SHOT_DT, g.hero.pos);
+    shootPortrait(g, "shots/106_chest_closed.png", aim, LIT_YAW, 0.16, 4.4);
+
+    // …OPENING, three frames across the swing, because a hinge is the one thing a single frame provably
+    // cannot show. Opened once and then stepped: the lid eases, so the frames are not evenly spaced in
+    // travel and that is the point.
+    _ = game.openChestForShot(g);
+    const names = [_][:0]const u8{ "shots/106b_chest_opening.png", "shots/106c_chest_opening.png", "shots/106d_chest_open.png" };
+    for ([_]i32{ 8, 10, 34 }, 0..) |adv, i| {
+        var f: i32 = 0;
+        while (f < adv) : (f += 1) g.chests.update(SHOT_DT, g.hero.pos);
+        shootPortrait(g, names[i], aim, LIT_YAW, 0.16, 4.4);
+    }
+
+    // …and THE INVENTORY the four items landed in, which is the other end of the loop. Through the real
+    // CHARACTER menu (Start), not a bespoke draw, so the shot is of the thing the player opens.
+    g.menu.onStartButton();
+    g.menu.cursor = 0;
+    _ = g.menu.update(&g.retro, SHOT_DT, &g.bag);
+    drawScene(g);
+    g.menu.draw(&g.retro, &g.bag);
+    snap("shots/106e_character_menu.png");
+    g.menu.screen = .inventory;
+    g.menu.cursor = 0;
+    drawScene(g);
+    g.menu.draw(&g.retro, &g.bag);
+    snap("shots/106f_inventory.png");
+    g.menu.screen = .closed;
+
+    // …and PUT THE WORLD BACK. Same discipline as the ELEVATION block: the harness must not leave a chest
+    // standing in the middle of the shipped plain for every shot after it.
+    g.map.nops = saved;
+    g.env.materialize(&g.map);
+    game.rehomeChestsForShot(g);
 }
 
 // THE EDITOR — four captures, because its whole job is legibility and none of that can be

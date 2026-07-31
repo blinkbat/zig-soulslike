@@ -86,6 +86,10 @@ pub const Kind = enum(u8) {
     stairs, // a fragment of stone stair going nowhere
     gibbet, // a hanging cage on a post
     cairn,
+    /// THE TREASURE CHEST — the one prop with a moving part and the only one that HOLDS anything. This
+    /// row is the BODY; its lid is a second mesh on a hinge (`chest.zig`), and what is inside it is the
+    /// placing op's own `loot` list (`worldfmt.Op`).
+    chest,
     // more rock
     outcrop, // a low shelf of bedrock breaking the turf
     scree,
@@ -225,6 +229,7 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .stairs => "Stair Fragment",
         .gibbet => "Gibbet Cage",
         .cairn => "Cairn",
+        .chest => "Treasure Chest",
         .outcrop => "Bedrock Shelf",
         .scree => "Scree",
         .torch => "Iron Torch",
@@ -271,7 +276,7 @@ pub fn group(k: Kind) Group {
     return switch (k) {
         .pillar, .broken, .block, .arch, .wall, .statue, .monolith, .paving, .stairs, .rubble, .banner, .sword, .graves, .sarcophagus, .bones, .gibbet, .cairn => .ruins,
         .chapel, .watchtower, .cottage, .tower, .gate, .causeway => .buildings,
-        .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart, .grace => .village,
+        .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart, .grace, .chest => .village,
         .boulder, .rocks, .outcrop, .scree, .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6, .stump, .log => .rock,
         .tree, .bigtree, .bigtree2, .bigtree3, .willow, .conifer, .birch, .snag, .sapling => .trees,
         .torch, .brazier, .campfire => .fire,
@@ -475,6 +480,11 @@ pub const INFO = [NK]Info{
     .{ .kind = .stairs, .build = village.stairsMesh, .bound = 2.8, .top = 1.5, .view = 190, .parts = &.{.{ .ax = -1.3, .bx = 1.3, .r = 0.95, .h = 1.4 }} },
     .{ .kind = .gibbet, .build = village.gibbetMesh, .bound = 4.4, .top = 4.1, .view = 220, .parts = circleParts(0.24, 4.0), .surf = .wood },
     .{ .kind = .cairn, .build = rock.cairnMesh, .bound = 1.8, .top = 1.5, .view = 180, .parts = circleParts(0.52, 1.4) },
+    // THE CHEST. `bound` and `top` cover the LID THROWN BACK, not the closed box — the lid is drawn by
+    // `chest.zig` at this instance's transform and the prop's own culling sphere is what decides whether
+    // any of it is submitted, so a bound taken off the closed silhouette pops the lid at the frustum edge.
+    // `.wood` so a stray arrow thunks instead of ringing.
+    .{ .kind = .chest, .build = village.chestMesh, .bound = 1.6, .top = village.CHEST_TOP + 0.34, .view = 150, .parts = &.{.{ .r = 0.56, .h = village.CHEST_BODY_H + 0.09 }}, .surf = .wood },
     // ── more rock ──
     .{ .kind = .outcrop, .build = rock.outcropMesh, .bound = 3.4, .top = 1.1, .view = 200, .parts = &.{.{ .ax = -1.4, .bx = 1.4, .r = 1.1, .h = 1.05 }} },
     .{ .kind = .scree, .build = rock.screeMesh, .bound = 2.6, .top = 0.35, .view = 160 },

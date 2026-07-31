@@ -320,6 +320,16 @@ pub fn runes(n: u32) void {
     text(s, x + RUNE_W - textW(s, BODY) - 11, y + @divTrunc(RUNE_H - lineH(BODY), 2) + 1, BODY, RUNE_TEXT);
 }
 
+/// An INTERACT prompt, low centre. Not in the world over the thing — a floating label is another game's
+/// UI language, and this HUD is ER's.
+pub fn prompt(s: [:0]const u8) void {
+    const w = textW(s, BODY);
+    const x = @divTrunc(rl.getScreenWidth() - w, 2);
+    const y = rl.getScreenHeight() - lineH(BODY) - BOTTOM - 76;
+    rl.drawRectangle(x - 14, y - 6, w + 28, lineH(BODY) + 12, rgba(0, 0, 0, 132));
+    text(s, x, y, BODY, rgba(226, 214, 186, 240));
+}
+
 // ── the equipment cross, bottom-left ────────────────────────────────────────────────────
 // ER's bottom-left is a D-PAD CROSS of exactly four slots: sorcery UP, left hand LEFT, right hand RIGHT,
 // quick item DOWN. Only the right hand's is filled — the hero carries one sword and there are no spells or

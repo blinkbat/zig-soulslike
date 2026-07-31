@@ -5,6 +5,7 @@ const hud = @import("hud.zig");
 const mathx = @import("mathx.zig");
 const rumblemod = @import("rumble.zig");
 const sfx = @import("audio.zig");
+const item = @import("item.zig"); // the CHARACTER menu lists what the hero carries
 
 const rgba = mathx.rgba;
 
@@ -18,7 +19,44 @@ const PAD = rumblemod.PAD;
 
 pub const Action = enum { none, quit, editor };
 
-const Screen = enum { closed, main, debug, retro };
+// TWO OVERLAYS, TWO BUTTONS: SELECT/Esc the GAME menu (Continue/Editor/Debug/Quit), START the CHARACTER
+// one (Inventory/Equipment). Both here because they are the same widget and share `isOpen`, which is what
+// the loop holds gameplay on — split, "is anything up?" becomes two answers that can disagree.
+// `Screen.root` is what tells them apart, so Esc out of the inventory does not land in the pause menu.
+const Screen = enum {
+    closed,
+    main, // ── the GAME menu (Select) …
+    debug,
+    retro,
+    character, // ── and the CHARACTER menu (Start) …
+    inventory,
+    equipment,
+
+    /// Which button owns this screen — the screen its `back` chain bottoms out at.
+    fn root(s: Screen) Screen {
+        return switch (s) {
+            .closed => .closed,
+            .main, .debug, .retro => .main,
+            .character, .inventory, .equipment => .character,
+        };
+    }
+};
+
+// Character rows.
+const CHR_INVENTORY = 0;
+const CHR_EQUIPMENT = 1;
+const CHR_CLOSE = 2;
+const CHR_COUNT = CHR_CLOSE + 1;
+
+// Equipment rows — the four ER slots, then Back. READ-ONLY for now: they show what the cross bottom-left
+// already shows, in words, and there is nothing else in the game to put in them. Listed anyway because
+// "Equipment" leading to nothing at all is worse than "Equipment" leading to the truth.
+const EQP_RIGHT = 0;
+const EQP_LEFT = 1;
+const EQP_SPELL = 2;
+const EQP_QUICK = 3;
+const EQP_CLOSE = 4;
+const EQP_COUNT = EQP_CLOSE + 1;
 
 // Debug rows (Retro Filters gets a submenu; the rest toggle/cycle in place).
 const DBG_RETRO = 0;
@@ -83,28 +121,46 @@ pub const Menu = struct {
         return self.screen != .closed;
     }
 
-    // Esc / pad Start. Esc backs out one level; Start toggles open/closed outright.
+    /// Esc, and pad SELECT. Backs out one level, and opens the GAME menu when nothing is up.
     pub fn onEscape(self: *Menu) void {
         self.cursor = 0;
         self.screen = switch (self.screen) {
             .closed => .main,
-            .main => .closed,
-            .debug => .main,
-            .retro => .debug,
+            .main, .character => .closed, // …a root closes rather than backing out of nothing
+            .debug, .retro => if (self.screen == .retro) .debug else .main,
+            .inventory, .equipment => .character,
         };
     }
+
+    /// Pad SELECT / Back — the GAME menu's own button, and a plain toggle onto its root. If the CHARACTER
+    /// menu is what is up, this swaps to the game menu rather than closing: pressing the button for the
+    /// thing you want should always get you that thing.
+    pub fn onSelectButton(self: *Menu) void {
+        self.cursor = 0;
+        self.screen = if (self.screen.root() == .main) .closed else .main;
+    }
+
+    /// Pad START — the CHARACTER menu (owner's call: "start menu will be character-driven"). Same shape as
+    /// Select's, mirrored: it toggles its own root and takes over from the other one.
     pub fn onStartButton(self: *Menu) void {
         self.cursor = 0;
-        self.screen = if (self.screen == .closed) .main else .closed;
+        self.screen = if (self.screen.root() == .character) .closed else .character;
     }
 
     // dt is the REAL frame time (not time-scaled) so the glide speed never changes.
-    pub fn update(self: *Menu, retro: *gfx.Retro, dt: f32) Action {
+    pub fn update(self: *Menu, retro: *gfx.Retro, dt: f32, bag: *const item.Bag) Action {
         const rows: usize = switch (self.screen) {
             .closed => return .none,
             .main => MAIN_COUNT,
             .debug => DBG_COUNT,
             .retro => RET_COUNT,
+            .character => CHR_COUNT,
+            // …and the LISTS are as long as they are: the inventory has a row per thing you carry plus a
+            // Back, so an empty bag is one row and the cursor cannot leave it.
+            // `@max(1, …)` because an EMPTY bag still draws a row saying so (see `bagLabels`), and a row
+            // count that disagreed with the list drawn would put the cursor somewhere with nothing on it.
+            .inventory => @max(1, bag.distinct()) + 1,
+            .equipment => EQP_COUNT,
         };
         if (navPressed(.up)) {
             self.cursor = (self.cursor + rows - 1) % rows;
@@ -140,7 +196,7 @@ pub const Menu = struct {
 
         if (confirmPressed()) {
             sfx.play(.menu_pick);
-            return self.confirm(retro);
+            return self.confirm(retro, bag);
         }
         if (backPressed()) {
             sfx.play(.menu_back);
@@ -149,7 +205,7 @@ pub const Menu = struct {
         return .none;
     }
 
-    fn confirm(self: *Menu, retro: *gfx.Retro) Action {
+    fn confirm(self: *Menu, retro: *gfx.Retro, bag: *const item.Bag) Action {
         switch (self.screen) {
             .closed => {},
             .main => switch (self.cursor) {
@@ -179,6 +235,29 @@ pub const Menu = struct {
                     self.cursor = 0;
                 },
                 else => {},
+            },
+            // ── THE CHARACTER MENU ── two rows that go somewhere and one that comes back.
+            .character => switch (self.cursor) {
+                CHR_INVENTORY => {
+                    self.screen = .inventory;
+                    self.cursor = 0;
+                },
+                CHR_EQUIPMENT => {
+                    self.screen = .equipment;
+                    self.cursor = 0;
+                },
+                CHR_CLOSE => self.screen = .closed,
+                else => {},
+            },
+            // Nothing to confirm on either list yet — no item DOES anything, and inventing a "Use" that
+            // silently did nothing would be worse than a list you only read. So ONLY the Back row acts,
+            // and it is the last one either list draws.
+            .inventory, .equipment => {
+                const last = (if (self.screen == .inventory) @max(1, bag.distinct()) + 1 else EQP_COUNT) - 1;
+                if (self.cursor == last) {
+                    self.screen = .character;
+                    self.cursor = 0;
+                }
             },
             .retro => switch (self.cursor) {
                 RET_PRESET_PS1 => retro.applyPreset(&gfx.PRESET_PS1),
@@ -213,7 +292,7 @@ pub const Menu = struct {
     }
 
     // ── draw ─────────────────────────────────────────────────────────────────────
-    pub fn draw(self: *const Menu, retro: *const gfx.Retro) void {
+    pub fn draw(self: *const Menu, retro: *const gfx.Retro, bag: *const item.Bag) void {
         if (self.screen == .closed) return;
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
@@ -223,9 +302,14 @@ pub const Menu = struct {
             .main => self.drawCard("SOULSLIKE", &mainLabels(), null),
             .debug => self.drawCard("DEBUG", &self.debugLabels(), null),
             .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), retro),
+            .character => self.drawCard("CHARACTER", &characterLabels(), null),
+            // A SLICE, not a fixed array: the inventory is as long as the bag is, and `bagLabels` fills a
+            // file-scope buffer it hands back the used part of.
+            .inventory => self.drawCard("INVENTORY", bagLabels(bag), null),
+            .equipment => self.drawCard("EQUIPMENT", &equipLabels(), null),
         }
         const hint: [:0]const u8 = if (rl.isGamepadAvailable(PAD))
-            "D-pad move / adjust (hold glides, LB coarse)   A select   B back   Start close"
+            "D-pad move / adjust (hold glides, LB coarse)   A select   B back   Select game   Start character"
         else
             "Up/Down move   Left/Right adjust (hold glides, Shift coarse)   Enter select   Esc back";
         const hw = hud.textW(hint, hud.HINT);
@@ -288,6 +372,51 @@ fn mainLabels() [MAIN_COUNT][:0]const u8 {
     out[MAIN_DEBUG] = "Debug";
     out[MAIN_QUIT] = "Quit";
     return out;
+}
+
+fn characterLabels() [CHR_COUNT][:0]const u8 {
+    var out: [CHR_COUNT][:0]const u8 = undefined;
+    out[CHR_INVENTORY] = "Inventory";
+    out[CHR_EQUIPMENT] = "Equipment";
+    out[CHR_CLOSE] = "Close";
+    return out;
+}
+
+fn equipLabels() [EQP_COUNT][:0]const u8 {
+    var out: [EQP_COUNT][:0]const u8 = undefined;
+    // The four ER slots in the cross's own order, saying what is actually in them. Three are empty and
+    // that is the honest answer — there is one sword in this game and nothing else to hold.
+    out[EQP_RIGHT] = "Right Hand    Straight Sword";
+    out[EQP_LEFT] = "Left Hand     -";
+    out[EQP_SPELL] = "Sorcery       -";
+    out[EQP_QUICK] = "Quick Item    Flask";
+    out[EQP_CLOSE] = "Back";
+    return out;
+}
+
+/// THE INVENTORY LIST — one row per thing carried, then Back.
+///
+/// Rows are formatted into a FILE-SCOPE buffer and handed back as a slice, the same way `debugLabels`
+/// works: the row count is not comptime-known (it is whatever the bag holds), and nothing in this file
+/// allocates. The count is capped by `item.NK`, so the buffer is exactly big enough by construction.
+var bagRowBuf: [item.NK][40]u8 = undefined;
+var bagLabelBuf: [item.NK + 1][:0]const u8 = undefined;
+
+fn bagLabels(bag: *const item.Bag) [][:0]const u8 {
+    var n: usize = 0;
+    while (bag.nth(n)) |k| : (n += 1) {
+        // Name then count, columns aligned — a list of things you own is read down the left and totted up
+        // down the right, and a ragged right edge makes it unscannable.
+        bagLabelBuf[n] = std.fmt.bufPrintZ(&bagRowBuf[n], "{s: <26}{d}", .{ item.displayName(k), bag.count(k) }) catch "?";
+    }
+    if (n == 0) {
+        // An EMPTY bag says so. A menu that opens onto one row reading "Back" looks broken.
+        bagLabelBuf[0] = "(nothing carried)";
+        bagLabelBuf[1] = "Back";
+        return bagLabelBuf[0..2];
+    }
+    bagLabelBuf[n] = "Back";
+    return bagLabelBuf[0 .. n + 1];
 }
 
 var dbgTimeBuf: [48]u8 = undefined;

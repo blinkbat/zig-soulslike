@@ -484,7 +484,7 @@ pub const INFO = [NK]Info{
     // `chest.zig` at this instance's transform and the prop's own culling sphere is what decides whether
     // any of it is submitted, so a bound taken off the closed silhouette pops the lid at the frustum edge.
     // `.wood` so a stray arrow thunks instead of ringing.
-    .{ .kind = .chest, .build = village.chestMesh, .bound = 1.6, .top = village.CHEST_TOP + 0.34, .view = 150, .parts = &.{.{ .r = 0.56, .h = village.CHEST_BODY_H + 0.09 }}, .surf = .wood },
+    .{ .kind = .chest, .build = village.chestMesh, .bound = 1.6, .top = village.CHEST_TOP + 0.34, .view = 150, .parts = &.{.{ .r = 0.56, .h = village.CHEST_HINGE_Y }}, .surf = .wood },
     // ── more rock ──
     .{ .kind = .outcrop, .build = rock.outcropMesh, .bound = 3.4, .top = 1.1, .view = 200, .parts = &.{.{ .ax = -1.4, .bx = 1.4, .r = 1.1, .h = 1.05 }} },
     .{ .kind = .scree, .build = rock.screeMesh, .bound = 2.6, .top = 0.35, .view = 160 },

@@ -414,15 +414,6 @@ pub const Retro = struct {
     }
 };
 
-// Depth-only FBO for the shadow map (zig-diablo's loadShadowmap; the 100s are rlgl's
-// depth-attachment enums, unchanged in this binding).
-// A blank SOIL_N x SOIL_N single-byte texture, updated in place by setSoil. NEAREST filtering
-// is load-bearing: the bytes are enum ids, and a bilinear fetch between 2 and 4 returns 3 — a
-// material nobody painted, showing as a seam of the wrong ground along every boundary.
-fn loadSoilTexture() rl.Texture2D {
-    return loadFieldTexture(SOIL_N, .point);
-}
-
 /// A blank n x n single-byte texture, updated in place by the setters above. The FILTER is the whole
 /// reason this takes a parameter: soil bytes are enum IDS and must never interpolate (a bilinear fetch
 /// between 2 and 4 returns 3 — a material nobody painted, showing as a seam of the wrong ground along
@@ -515,7 +506,10 @@ pub const Scene = struct {
             .shader = shader,
             .depthShader = depthShader,
             .shadowMap = loadShadowmap(SHADOWMAP_RES),
-            .soilTex = loadSoilTexture(),
+            // POINT filtering on the soil, BILINEAR on the water — see loadFieldTexture, which is where
+            // that difference is explained (and where the soil's own one-line wrapper's duplicate copy
+            // of the explanation used to sit).
+            .soilTex = loadFieldTexture(SOIL_N, .point),
             .loc_soilOn = rl.getShaderLocation(shader, "soilOn"),
             .loc_soilHalf = rl.getShaderLocation(shader, "soilHalf"),
             .loc_soilCell = rl.getShaderLocation(shader, "soilCell"),
@@ -588,9 +582,6 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_time, &t, .float);
     }
 
-    // Upload this frame's point lights (torches/fires). Caller passes the ones NEAREST the
-    // camera — env.uploadLights does the picking — and anything past MAX_LIGHTS is dropped,
-    // which is invisible in practice because the dropped ones are the furthest away.
     /// TAKE CAST SHADOWS OFF the draws that follow, until the next `bind`. For an off-screen preview
     /// (the editor's object viewer) that runs no depth pass of its own: left alone, every fragment is
     /// tested against the WORLD's shadow map through the world's light matrix, so a previewed model
@@ -603,6 +594,9 @@ pub const Scene = struct {
         rl.setShaderValueMatrix(self.shader, self.loc_lightVP, rl.math.matrixTranslate(0, 0, 5));
     }
 
+    /// Upload this frame's point lights (torches/fires). Caller passes the ones NEAREST the camera —
+    /// `env.uploadLights` does the picking — and anything past MAX_LIGHTS is dropped, which is invisible
+    /// in practice because the dropped ones are the furthest away.
     pub fn setLights(self: *Scene, lights: []const Light) void {
         var pos: [MAX_LIGHTS * 3]f32 = undefined;
         var col: [MAX_LIGHTS * 3]f32 = undefined;

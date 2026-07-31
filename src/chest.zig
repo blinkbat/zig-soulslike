@@ -166,7 +166,14 @@ comptime {
     // The lid is authored about the hinge and posed by `lidXf` alone, so the two files must agree that
     // the hinge is on the BACK edge at the rim. A positive Z here would open the lid toward the player.
     std.debug.assert(village.CHEST_HINGE_Z < 0);
-    std.debug.assert(village.CHEST_TOP > village.CHEST_BODY_H);
+    // …and the hinge must be at the RIM, i.e. clear of the feet the carcase stands on. It was
+    // `CHEST_BODY_H` — a foot's height short — which sank the closed lid into the box and left its hasp
+    // eye 8.5 cm above the hasp it closes over. Asserted rather than commented, because the two numbers
+    // live in the other file and nothing else would have said so.
+    std.debug.assert(village.CHEST_HINGE_Y > village.CHEST_BODY_H);
+    // The crown has to be above the rim by at least the dome that makes it, or `INFO.top` is describing
+    // a silhouette the lid does not have.
+    std.debug.assert(village.CHEST_TOP >= village.CHEST_HINGE_Y + village.CHEST_LID_R);
 }
 
 // ── tests ───────────────────────────────────────────────────────────────────────────────

@@ -732,7 +732,7 @@ pub const Env = struct {
         // to reach; the shipped map sets it on `cover` alone, which runs after the grid is built.
         @memset(&self.sgrid_start, 0);
 
-        var p = Placer{ .e = self, .m = m };
+        var p = Placer{ .e = self, .m = m, .flat = !m.anyHeight() };
         // Everything except the ground cover, in file order — later ops read what earlier ones
         // placed (ivy climbs standing stone; a belt rejects water already poured).
         for (m.slice(), 0..) |*o, i| {
@@ -1359,6 +1359,9 @@ fn waterQuad(shader: rl.Shader, half: f32) rl.Model {
 const Placer = struct {
     e: *Env,
     m: *const wf.Map,
+    /// Is this map UNSCULPTED? Resolved ONCE per replay (`anyHeight` is a 50k-byte scan, so it must not
+    /// be asked per candidate) and read by `groundY` — see there for why the shortcut is exact.
+    flat: bool,
     cur: u16 = 0, // the op being expanded, stamped onto every prop it places
     // The LEAN the op being expanded asks for, held here rather than threaded through `at` — every
     // scatter would otherwise grow a parameter it does nothing with. `exact` is the `at` op: a literal
@@ -1383,7 +1386,15 @@ const Placer = struct {
     /// off `env.groundAt`, because `materialize` may be running before the field has been uploaded (the
     /// `--shot-props` harness stages props with no map at all). Minus the datum: prop Y is measured from
     /// the same zero soles are.
+    ///
+    /// A FLAT MAP SKIPS THE SAMPLE ENTIRELY, and that is exact rather than an approximation: an all-datum
+    /// field makes every one of `sampleHeight`'s four corners `heightOf(HEIGHT_ZERO)` = 0 and its two
+    /// lerps `0 + (0-0)*t`, so the bilinear returns a bit-identical 0. It is worth the branch because
+    /// this runs per PROP PLACED and per solid-avoiding scatter CANDIDATE — ~46,000 samples per
+    /// `materialize` on the shipped map, on the path the editor re-runs five times a second while a
+    /// slider is held, all of it computing a zero it already knows.
     fn groundY(self: *const Placer, x: f32, z: f32) f32 {
+        if (self.flat) return 0;
         return self.m.heightAt(x, z);
     }
 
@@ -1449,13 +1460,22 @@ const Placer = struct {
         if (o.avoid.runway and self.m.onRunway(x, z)) return true;
         if (o.avoid.water and self.e.inWater(x, z, 1.04)) return true;
         if (o.avoid.clear and self.m.inClearing(x, z)) return true;
-        if (o.avoid.solid) {
-            // Don't grow through the world: the solid grid already knows what is here. Through
-            // `blockedNear`, which walks the grid in place — a scatter asks this per candidate and
-            // only wants the bool, so copying the cells' solids out first was pure waste.
-            if (self.e.blockedNear(v3(x, SOLID_PROBE_Y, z), SOLID_PROBE_M, SOLID_PROBE_R)) return true;
-        }
+        // Don't grow through the world: the solid grid already knows what is here.
+        if (o.avoid.solid and self.blockedHere(x, z)) return true;
         return false;
+    }
+
+    /// IS THERE MASONRY WHERE THIS CANDIDATE WANTS TO STAND? The `avoid.solid` test and the ground
+    /// cover's own are the same question, and were the same call written out twice with the three
+    /// SOLID_PROBE_* constants spelled out in both — a drift showing as flora growing through walls in
+    /// one scatter and not the other, with nothing to say which was wrong.
+    ///
+    /// Probed at ANKLE HEIGHT ABOVE THE GROUND UNDER THE CANDIDATE, not above the datum: a solid's `h`
+    /// is a world height, so a bare 0.2 is metres UNDERGROUND on a bank and metres of air over a basin —
+    /// where it read as "over the top" and let cover grow straight through the masonry. Flat ground
+    /// gives 0 here, so the shipped world is byte-for-byte what it was.
+    fn blockedHere(self: *Placer, x: f32, z: f32) bool {
+        return self.e.blockedNear(v3(x, self.groundY(x, z) + SOLID_PROBE_Y, z), SOLID_PROBE_M, SOLID_PROBE_R);
     }
 
     fn expand(self: *Placer, o: *const wf.Op) void {
@@ -1642,7 +1662,7 @@ const Placer = struct {
                 // The grid, walked IN PLACE — see `blockedNear`. This is the ~29,000-candidate loop
                 // whose copying it exists to delete, and it is deliberately LAST: every cheaper
                 // rejection above (the density gate alone drops ~a third) is a query never made.
-                if (self.e.blockedNear(v3(x, SOLID_PROBE_Y, z), SOLID_PROBE_M, SOLID_PROBE_R)) continue;
+                if (self.blockedHere(x, z)) continue;
                 // A mix-less zone grows nothing (the accessor says so rather than indexing an
                 // `undefined` slot — see wf.Zone.pick).
                 const kind = zone.pick(rng) orelse continue;
@@ -1722,7 +1742,11 @@ fn buildSolids(e: *Env) void {
                 pr.pos.z + s * (-part.bx * sn + part.bz * c),
                 part.r * s,
             );
-            sol.h = part.h * s;
+            // A WORLD Y, not the part's local one: `collision.Solid.h` is the height a projectile
+            // clears, tested against the shaft's world y (`blocksPoint`). Left prop-local it was only
+            // right on a flat map — a wall planted 12 m up a bank got h = 3, so every arrow above y = 3
+            // flew clean through it, and one in a dug basin blocked shots passing well over its top.
+            sol.h = pr.pos.y + part.h * s;
             sol.surf = nfo.surf; // …and what it is made of, for whatever hits it (see collision.Surface)
             // A LEANING prop's footprint goes WITH it, or you bump into air beside a tipped trunk and
             // walk through the trunk itself. Push-out is 2D — ONE footprint for the whole height — so it
@@ -1945,6 +1969,30 @@ test "a solid's cell iterator covers its whole footprint" {
     }
     try std.testing.expect(seen >= 2);
     try std.testing.expect(hasLeft and hasRight);
+}
+
+test "a solid's blocking height is a WORLD height, so cover still works up a bank" {
+    // THE bug: `collision.Solid.h` is tested against a projectile's WORLD y (`blocksPoint`), and it was
+    // filled with the part's PROP-LOCAL height. On a flat map the two coincide, which is why nothing
+    // showed; 12 m up a bank a wall's top read as 3 m, so every arrow above y = 3 flew clean through it
+    // (and one in a dug basin blocked shots passing well over its crest).
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    const top = props.info(.wall).parts[0].h;
+    e.props[0] = .{ .kind = .wall, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
+    e.props[1] = .{ .kind = .wall, .pos = v3(60, 12, 0), .yaw = 0, .scale = 1, .op = 0 };
+    e.nprops = 2;
+    buildSolids(e);
+    var buf: [MAX_NEAR]collision.Solid = undefined;
+    // On the flat, unchanged: chest-high is blocked, well over the parapet is not.
+    const flat = e.nearSolids(v3(0, 0, 0), 1.0, &buf);
+    try std.testing.expect(collision.blockedBy(v3(0, top - 0.5, 0), 0.04, flat));
+    try std.testing.expect(!collision.blockedBy(v3(0, top + 0.5, 0), 0.04, flat));
+    // …and 12 m up, the SAME wall blocks at ITS chest height rather than at the datum's.
+    const up = e.nearSolids(v3(60, 12, 0), 1.0, &buf);
+    try std.testing.expect(collision.blockedBy(v3(60, 12 + top - 0.5, 0), 0.04, up));
+    try std.testing.expect(!collision.blockedBy(v3(60, 12 + top + 0.5, 0), 0.04, up));
 }
 
 // ── ELEVATION ──────────────────────────────────────────────────────────────────────────
@@ -2235,6 +2283,25 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(@as(usize, 17205), props0);
     try std.testing.expectEqual(@as(usize, 1864), solids0);
     try std.testing.expectEqual(@as(usize, 37), lights0);
+}
+
+test "the flat-map plant shortcut is EXACT, not an approximation" {
+    // `Placer.groundY` returns a literal 0 for an unsculpted map instead of sampling — which is only
+    // legal because the sampler returns a bit-identical 0 there. Pinned as EXACT equality (not approx):
+    // an off-by-an-epsilon would move every prop in the shipped world by a hair and the instance-count
+    // test above would not notice, because nothing about it is a count.
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("Flat");
+    try std.testing.expect(!m.anyHeight());
+    for ([_][2]f32{ .{ 0, 0 }, .{ -117.3, 88.6 }, .{ 279.9, -279.9 }, .{ 1.25, -63.7 } }) |p| {
+        try std.testing.expectEqual(@as(f32, 0), m.heightAt(p[0], p[1]));
+    }
+    // …and a SCULPTED map must not take the shortcut, or the whole world plants at the datum.
+    var span: [4]usize = undefined;
+    try std.testing.expect(m.sculpt(0, 0, 20, .raise, 5.0, &span));
+    try std.testing.expect(m.anyHeight());
+    try std.testing.expect(m.heightAt(0, 0) > 4.0);
 }
 
 test "the map's half drives the world, not a constant in this file" {

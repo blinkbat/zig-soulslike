@@ -1057,12 +1057,14 @@ pub fn runShots(g: *Game) void {
 // ── THE TREASURE CHEST ── does the closed box read as one, does the PROMPT appear, does the lid actually
 // swing (one frame cannot show it), and do the contents land in a readable list.
 //
-// STAGES its own op into the live map and takes it out again: chests are not on the shipped map, and the
-// contents come from the placing OP, so a hand-built instance would be empty by construction.
+// STAGES its own op into the live map and takes it out again. Not because the map has no chest — it has
+// one, off the avenue — but because that one carries NO `loot=`, and the contents come from the placing
+// OP, so photographing it would photograph an empty box and an empty inventory.
 fn chestShots(g: *Game) void {
     const cx: f32 = 12.0;
     const cz: f32 = 10.0;
     const saved = g.map.nops;
+    if (saved >= worldfmt.MAX_OPS) return; // …and never write off the end of a map that is already full
     var op = worldfmt.defaults(.at);
     op.kind = .chest;
     op.x = cx;

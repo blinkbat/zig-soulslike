@@ -1828,13 +1828,6 @@ fn bed(id: Id, vol: f32) void {
     if (row.vars > 1) trigger(s.snd[1][0], row, vol, 1.0 - BED_PAN, 1.0);
 }
 
-/// Keep the wind bed alive. Call once a frame; it re-triggers only when the last pass has run out,
-/// and the voice's long crossfaded ends are what make the seam inaudible.
-///
-/// The re-trigger goes through `emit` like everything else. It used to set the volume, pitch and pan
-/// itself from `BANK[wind].gain`, which made it the one voice in the game whose level was applied
-/// somewhere other than the one function that knows how a row's gain becomes a raylib volume — so
-/// the bed would have quietly ignored any change to how that mapping works.
 /// ── THE LOOPING BEDS ── played as a hard-panned PAIR (see `bed`) and re-triggered when they run out.
 /// Two of them now, moving air and the insect chirr, and they are separate VOICES rather than one
 /// buffer holding both for the same reason the birds were lifted out of the wind: baked together they

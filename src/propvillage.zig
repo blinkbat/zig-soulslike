@@ -563,21 +563,34 @@ pub fn gibbetMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A CAIRN: field stones stacked by hand, largest at the bottom, leaning as they rise. A waymarker
-// somebody built, which is why it is the one pile of rocks in the world that looks deliberate.
-
 // -- THE TREASURE CHEST -- a banded coffer, and the ONE prop with a moving part. The BODY is the prop;
 // the LID is its own mesh, because a prop draws as one model at one matrix. `chest.zig` owns the hinge.
 // The DIMENSIONS live here, where both meshes are, or the lid floats the first time the box is resized.
 
 pub const CHEST_HALF_X: f32 = 0.52; // half-width across the front
 pub const CHEST_HALF_Z: f32 = 0.34; // half-depth
-pub const CHEST_BODY_H: f32 = 0.52; // the coffer's rim height — where the lid sits
-/// The hinge line: back edge, at the rim. `chest.zig` turns the lid about this, so it is the contract
-/// between the two meshes and the reason both are in this file.
-pub const CHEST_HINGE_Y: f32 = CHEST_BODY_H;
+/// THE FEET the coffer stands on, so the box does not sit flush in the dirt. It is the one chest
+/// dimension that was NOT named here, and every height in `chestMesh` was `0.09 + …` — including the
+/// rim, which is what let the hinge below forget it: the lid was placed at CHEST_BODY_H, i.e. a foot's
+/// height DOWN inside the carcase, so the closed lid buried its own slab and its hasp eye stood 8.5 cm
+/// clear of the hasp it is supposed to close over. Exactly the drift the block above warns about.
+pub const CHEST_FOOT_H: f32 = 0.09;
+pub const CHEST_BODY_H: f32 = 0.52; // the carcase's own height, feet excluded
+/// The hinge line: back edge, AT THE RIM — which is the feet plus the carcase. `chest.zig` turns the lid
+/// about this, so it is the contract between the two meshes and the reason both are in this file.
+pub const CHEST_HINGE_Y: f32 = CHEST_FOOT_H + CHEST_BODY_H;
 pub const CHEST_HINGE_Z: f32 = -CHEST_HALF_Z;
-pub const CHEST_TOP: f32 = CHEST_BODY_H + 0.30; // the closed lid's crown — INFO's `top`
+/// The lid's DOME — a half-round drum lying along X, radius as a fraction of the coffer's depth. Named
+/// because `CHEST_TOP` is derived from it and `chestLidMesh` builds it: a crown figure guessed instead
+/// (it was CHEST_BODY_H + 0.30, which was 8.6 cm short of the real one) is `INFO.top` lying about the
+/// silhouette the shadow cull is sizing.
+pub const CHEST_LID_R: f32 = CHEST_HALF_Z * 0.84;
+const CHEST_LID_SLAB: f32 = 0.10; // …seated on a slab this thick, so the drum's axis rides here
+/// How far the highest thing riding the drum stands off it — the IRON STRAPS, not the boards (they are
+/// the thicker of the two, so they are what sets the silhouette).
+const CHEST_RELIEF_PROUD: f32 = 0.065;
+/// The closed lid's crown — INFO's `top`.
+pub const CHEST_TOP: f32 = CHEST_HINGE_Y + CHEST_LID_SLAB + CHEST_LID_R + CHEST_RELIEF_PROUD;
 
 /// The coffer: oak boards, iron bands, a lock plate. Iron and cut timber, so this is one of the places
 /// boxes are right (FLESH IS ROUND is about flesh).
@@ -591,12 +604,12 @@ pub fn chestMesh(shader: rl.Shader) rl.Model {
     // reads as sunk into the terrain rather than standing on it.
     for ([_]f32{ -1, 1 }) |sx| {
         for ([_]f32{ -1, 1 }) |sz| {
-            b.addCube(v3(sx * (hx - 0.07), 0.045, sz * (hz - 0.06)), v3(0.13, 0.09, 0.12), TIMBER_DK);
+            b.addCube(v3(sx * (hx - 0.07), CHEST_FOOT_H * 0.5, sz * (hz - 0.06)), v3(0.13, CHEST_FOOT_H, 0.12), TIMBER_DK);
         }
     }
     // The carcase, as ONE solid mass — the boards below are only the facing, the same rule the well's
     // drum and every coursed wall here follow. Without a core the plank joints leak daylight.
-    b.addCube(v3(0, 0.09 + CHEST_BODY_H * 0.5, 0), v3(hx * 2.0 - 0.03, CHEST_BODY_H, hz * 2.0 - 0.03), TIMBER_DK);
+    b.addCube(v3(0, CHEST_FOOT_H + CHEST_BODY_H * 0.5, 0), v3(hx * 2.0 - 0.03, CHEST_BODY_H, hz * 2.0 - 0.03), TIMBER_DK);
     // BOARDS across the front and back, uneven widths and a hair proud (RELIEF IS SUBTLE — a few percent
     // of the mass, or they read as slats nailed onto a crate).
     var x = -hx + 0.04;
@@ -604,7 +617,7 @@ pub fn chestMesh(shader: rl.Shader) rl.Model {
         const w = rng.range(0.13, 0.22);
         const cx = x + w * 0.5;
         for ([_]f32{ -1, 1 }) |sz| {
-            b.addCube(v3(cx, 0.09 + CHEST_BODY_H * 0.5, sz * hz), v3(w - 0.012, CHEST_BODY_H - 0.05, 0.03), if (rng.float() < 0.4) TIMBER else TIMBER_DK);
+            b.addCube(v3(cx, CHEST_FOOT_H + CHEST_BODY_H * 0.5, sz * hz), v3(w - 0.012, CHEST_BODY_H - 0.05, 0.03), if (rng.float() < 0.4) TIMBER else TIMBER_DK);
         }
         x += w;
     }
@@ -612,13 +625,15 @@ pub fn chestMesh(shader: rl.Shader) rl.Model {
     // IRON BANDS round the girth — two, and neither is centred, because a scavenged coffer was repaired
     // rather than made.
     for ([_]f32{ 0.30, 0.72 }) |f| {
-        const y = 0.09 + CHEST_BODY_H * f;
+        const y = CHEST_FOOT_H + CHEST_BODY_H * f;
         b.addCube(v3(0, y, 0), v3(hx * 2.0 + 0.02, 0.055, hz * 2.0 + 0.02), if (rng.float() < 0.35) RUST else IRON);
     }
-    // The LOCK PLATE and its hasp, front and centre — the one detail that says "this opens".
-    b.addCube(v3(0, 0.09 + CHEST_BODY_H - 0.06, hz + 0.012), v3(0.20, 0.19, 0.035), IRON);
-    b.addCylinder(v3(0, 0.09 + CHEST_BODY_H - 0.10, hz + 0.035), v3(0, 0.09 + CHEST_BODY_H - 0.10, hz + 0.075), 0.035, 0.030, 7, RUST);
-    b.addDome(v3(0, 0.09 + CHEST_BODY_H - 0.10, hz + 0.075), v3(0, 0, 1), 0.035, 7, RUST);
+    // The LOCK PLATE and its hasp, front and centre — the one detail that says "this opens". Hung off
+    // the RIM (`CHEST_HINGE_Y`), which is where the lid's own hasp eye comes down: they are the two
+    // halves of one fastening and neither may be measured from a different datum.
+    b.addCube(v3(0, CHEST_HINGE_Y - 0.06, hz + 0.012), v3(0.20, 0.19, 0.035), IRON);
+    b.addCylinder(v3(0, CHEST_HINGE_Y - 0.10, hz + 0.035), v3(0, CHEST_HINGE_Y - 0.10, hz + 0.075), 0.035, 0.030, 7, RUST);
+    b.addDome(v3(0, CHEST_HINGE_Y - 0.10, hz + 0.075), v3(0, 0, 1), 0.035, 7, RUST);
     return b.toModel(shader);
 }
 
@@ -631,17 +646,28 @@ pub fn chestLidMesh(shader: rl.Shader) rl.Model {
     b.setMat(.wood);
     const hx = CHEST_HALF_X;
     const d = CHEST_HALF_Z * 2.0;
+    const axis = CHEST_LID_SLAB; // the drum's axis height above the hinge
+    const R = CHEST_LID_R;
     // The lid runs FORWARD along +Z from the hinge at the origin, and rises to its crown mid-span.
-    b.addCube(v3(0, 0.05, d * 0.5), v3(hx * 2.0 - 0.02, 0.10, d - 0.02), TIMBER_DK);
+    b.addCube(v3(0, axis * 0.5, d * 0.5), v3(hx * 2.0 - 0.02, axis, d - 0.02), TIMBER_DK);
     // The dome over it — a half-round drum lying along X, which is what a treasure chest's top IS.
-    b.addCylinder(v3(-hx + 0.01, 0.10, d * 0.5), v3(hx - 0.01, 0.10, d * 0.5), d * 0.42, d * 0.42, 9, TIMBER_DK);
+    const ex = hx - 0.01; // …and where its two ends sit
+    b.addCylinder(v3(-ex, axis, d * 0.5), v3(ex, axis, d * 0.5), R, R, 9, TIMBER_DK);
+    // …CAPPED at both ends, or you look straight THROUGH the lid from either side: a cylinder is
+    // capless, its far wall faces away and is culled, and the coffer is only 1.01 m wide so both ends
+    // stand a hair proud of the carcase. AXIS-FLATTENED blobs rather than domes — a hemisphere of this
+    // radius would balloon the lid 29 cm sideways (AGENTS.md's "a flat cap constrains the piece to a
+    // world axis", which the drum already is).
+    for ([_]f32{ -1, 1 }) |sx| {
+        b.addBlob(v3(sx * ex, axis, d * 0.5), v3(0.012, R, R), 3, 9, TIMBER_DK);
+    }
     // Boards over the dome, following its curve — a few percent proud, uneven widths.
     var i: i32 = 0;
     while (i < 5) : (i += 1) {
         const a = -0.9 + @as(f32, @floatFromInt(i)) * 0.45 + rng.signed() * 0.06;
-        const r = d * 0.43;
+        const r = R * 1.024;
         b.addCube(
-            v3(0, 0.10 + mathx.cosf(a) * r, d * 0.5 + mathx.sinf(a) * r),
+            v3(0, axis + mathx.cosf(a) * r, d * 0.5 + mathx.sinf(a) * r),
             v3(hx * 2.0 - 0.06, 0.028, d * rng.range(0.16, 0.26)),
             if (rng.float() < 0.4) TIMBER else TIMBER_DK,
         );
@@ -657,10 +683,10 @@ pub fn chestLidMesh(shader: rl.Shader) rl.Model {
         var seg: i32 = 0;
         while (seg < 5) : (seg += 1) {
             const a = -1.15 + @as(f32, @floatFromInt(seg)) * 0.575;
-            const r = d * 0.435;
-            b.addCube(v3(bx, 0.10 + mathx.cosf(a) * r, d * 0.5 + mathx.sinf(a) * r), v3(0.10, 0.052, d * 0.24), if (rng.float() < 0.35) RUST else IRON);
+            const r = R * 1.036;
+            b.addCube(v3(bx, axis + mathx.cosf(a) * r, d * 0.5 + mathx.sinf(a) * r), v3(0.10, 0.052, d * 0.24), if (rng.float() < 0.35) RUST else IRON);
         }
     }
-    b.addCube(v3(0, 0.075, d - 0.015), v3(0.28, 0.20, 0.06), IRON); // the hasp eye, off the front lip
+    b.addCube(v3(0, axis * 0.75, d - 0.015), v3(0.28, 0.20, 0.06), IRON); // the hasp eye, off the front lip
     return b.toModel(shader);
 }

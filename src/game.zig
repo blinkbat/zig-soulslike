@@ -87,6 +87,10 @@ const SHAKE_KILL = 0.38;
 const SHAKE_HURT = 0.42;
 const SHAKE_HURT_HEAVY = 0.62;
 const SHAKE_DEATH = 0.85;
+// …and the ONE non-combat beat: a chest coming open. Here with the rest of the ladder rather than as a
+// literal at the call site, because that ladder is how the whole game's impact weight is read against
+// itself — a bare number in `interact` is a felt weight nobody can compare to a landed hit.
+const SHAKE_CHEST = 0.12;
 // The YOU DIED tail, in two beats. The HOLD is the important one: black used to be reached on
 // exactly the frame the respawn fired and to start lifting on the very next one, so the card cut
 // straight into a lit meadow and the whole sequence read as a glitch rather than as a death. A beat
@@ -544,6 +548,11 @@ fn setCasterShaders(g: *Game, sh: rl.Shader) void {
     g.line.setShader(sh);
     g.grief.setShader(sh);
     g.band.setShader(sh);
+    // THE CHEST LIDS TOO. `drawCasters` draws them in BOTH passes, so a lid left on the scene shader is
+    // rasterized into the shadow map through a shader that SAMPLES that same map — and pays the whole
+    // point-light loop per fragment for a pass whose colour is thrown away. `Chests.setShader` existed
+    // for exactly this and had no caller.
+    g.chests.setShader(sh);
 }
 
 /// The WORLD height of the hero's centre of mass — his feet plus `HERO_CENTER_Y`. What an archer aims
@@ -597,7 +606,7 @@ fn interact(g: *Game) void {
     if (got.loot.len > 0) sfx.world(.item_get, got.at);
     // The same beat a landed blow gets, at a fraction of it: a chest is a good thing happening, and under
     // the NO HITSTOP law the way anything is felt here is shake and rumble, never a pause.
-    g.rig.addShake(0.12);
+    g.rig.addShake(SHAKE_CHEST);
     g.rumble.play(rumblemod.hit_light);
 }
 
@@ -1471,7 +1480,11 @@ pub fn run(mode: Mode) void {
                 // branch dropped a hit on a dying hero through to the world-impact arm below, which
                 // then played a scuff of DIRT for an arrow that was standing in his chest.
                 if (!g.hero.dead) {
-                    g.hero.takeHit(archermod.ARROW_HIT);
+                    // A STONE IS NOT AN ARROW. The pool is shared and `Arrow.stone` is what says which
+                    // this is — its own doc says the flag decides "which blow it deals" — but every
+                    // connect applied `ARROW_HIT` regardless, so a slinger's pebble hit for an arrow's
+                    // 16 damage and 10 poise while `kobold.STONE_HIT` (10 / 8) sat with no reader at all.
+                    g.hero.takeHit(if (ar.stone) koboldmod.STONE_HIT else archermod.ARROW_HIT);
                     heroHurtBeat(g, false, false); // …the rip below is this blow's own voice
                 }
                 sfx.play(.arrow_hit);

@@ -29,6 +29,17 @@ pub fn StrBuf(comptime cap: usize) type {
     };
 }
 
+/// A SINCE-LAST-EVENT CLOCK THAT STARTS SATURATED, so an untouched one is already past every gate it
+/// feeds and nothing has to carry a separate "has this happened yet" bool. Big enough that a frame's
+/// dt leaves it unchanged in f32 — it never creeps and never overflows, which is why every user pins
+/// it with `@min(clock + dt, LONG_AGO)`.
+///
+/// Here rather than in one owner: `combat.Vitals.sinceHit` / `Stamina.sinceSpend` named it privately
+/// while `hero.blendT`, the hero's swing-trail ages and the archer's arrow-trail ages all wrote the
+/// bare `1e9` for the same meaning. (`collision.Solid.h` and `env`'s distance-transform FAR are a
+/// different idea — an unreachable DISTANCE, not a clock — and deliberately keep their own literals.)
+pub const LONG_AGO: f32 = 1e9;
+
 pub fn clampF(v: f32, lo: f32, hi: f32) f32 {
     // NaN passes both `<` and `>`, so it'd escape unclamped and blow up a downstream
     // @intFromFloat; pin it to lo (safe, no meaningful clamp position for NaN).
@@ -83,6 +94,19 @@ pub fn dirXZ(from: rl.Vector3, to: rl.Vector3) rl.Vector3 {
 
 pub fn lenXZ(v: rl.Vector3) f32 {
     return @sqrt(v.x * v.x + v.z * v.z);
+}
+
+/// TAKE A STEP ON XZ, CLAMPED TO ±`bounds`, leaving `pos.y` (the ground height under the actor) alone.
+/// Every rig that moves itself owes this, and every one of them wrote it out as the same pair of
+/// `clampF(pos.x + dir.x * dist, -bounds, bounds)` lines: the hero's roll and his attack lunge, the
+/// archer's kite and its backstep, the ogre's lumber, the toad's hop, and `foe.applyShove`'s knockback —
+/// seven copies of two lines, over a bound (`game.PLAY_HALF`) that moves with the map's `half:`.
+///
+/// Deliberately NOT the terrain rule: `env.walkStep` decides whether a step happens at all and
+/// `game.gateTerrain` re-takes each foe's through it. This is only the world's edge.
+pub fn stepXZ(pos: *rl.Vector3, dir: rl.Vector3, dist: f32, bounds: f32) void {
+    pos.x = clampF(pos.x + dir.x * dist, -bounds, bounds);
+    pos.z = clampF(pos.z + dir.z * dist, -bounds, bounds);
 }
 
 /// Right-hand perpendicular of a facing direction in the XZ plane.

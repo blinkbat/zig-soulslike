@@ -64,8 +64,7 @@ pub fn flashFrac(flash: f32) f32 {
 // Collision cleans up any overlap it causes.
 pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32, dt: f32) void {
     if (mathx.lenXZ(shove.*) <= 0.01) return;
-    pos.x = mathx.clampF(pos.x + shove.x * dt, -bounds, bounds);
-    pos.z = mathx.clampF(pos.z + shove.z * dt, -bounds, bounds);
+    mathx.stepXZ(pos, shove.*, dt, bounds); // the shared bounded step — shove is a velocity, so dist = dt
     shove.* = mathx.scaleV(shove.*, mathx.maxF(0, 1.0 - decay * dt));
 }
 

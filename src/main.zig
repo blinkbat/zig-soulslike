@@ -34,16 +34,15 @@ fn runBake(alloc: std.mem.Allocator) !void {
     defer alloc.destroy(m);
     bake.build(m);
 
-    try std.fs.cwd().makePath("worlds");
-    var f = try std.fs.cwd().createFile("worlds/01_fallen_plain.world", .{});
-    defer f.close();
-    var buf = std.io.bufferedWriter(f.writer());
-    try wf.write(m, buf.writer());
-    try buf.flush();
+    // THROUGH `wf.save` AND `wf.START_MAP`, not a hand-rolled write to a literal path. This was
+    // makePath + createFile + bufferedWriter + write + flush — i.e. `wf.save`'s body again — with the
+    // shipped map's name spelled out three times. `--bake` OVERWRITES the map the game loads, so a
+    // rename would have left it writing and verifying the old file while the game read the new one.
+    try wf.save(wf.START_MAP, m);
 
     // Re-read what was just written: a bake that emits a file the loader rejects is worse than one
     // that fails, because the failure surfaces later as an empty world.
-    const text = try std.fs.cwd().readFileAlloc(alloc, "worlds/01_fallen_plain.world", 1 << 22);
+    const text = try std.fs.cwd().readFileAlloc(alloc, wf.START_MAP, 1 << 22);
     defer alloc.free(text);
     const back = try alloc.create(wf.Map);
     defer alloc.destroy(back);
@@ -53,8 +52,8 @@ fn runBake(alloc: std.mem.Allocator) !void {
         return e;
     };
     std.debug.print(
-        "baked worlds/01_fallen_plain.world — {d} ops, {d} zones, {d} clearings ({d} bytes)\n",
-        .{ m.nops, m.nzones, m.nclearings, text.len },
+        "baked {s} — {d} ops, {d} zones, {d} clearings ({d} bytes)\n",
+        .{ wf.START_MAP, m.nops, m.nzones, m.nclearings, text.len },
     );
 }
 

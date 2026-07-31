@@ -40,9 +40,10 @@ pub const LIGHT_STUN_DUR = 0.46;
 pub const HEAVY_STUN_DUR = 1.15;
 pub const FOE_LIGHT_STUN_DUR = 0.78;
 pub const FOE_HEAVY_STUN_DUR = 2.40;
-// Since-last-event clocks start SATURATED, so an untouched meter is already past its gate. Big enough
-// that a frame's dt leaves it unchanged in f32 — it never creeps or overflows.
-const LONG_AGO = 1e9;
+// Since-last-event clocks start SATURATED, so an untouched meter is already past its gate. The value
+// is `mathx`'s now: the hero rig and the archer's arrows keep the same kind of clock and were writing
+// the bare literal, and one sentinel with one meaning belongs in one place.
+const LONG_AGO = mathx.LONG_AGO;
 
 pub const Vitals = struct {
     hp: f32,

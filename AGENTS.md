@@ -296,6 +296,14 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  It replaces `--shot-props` as the way to judge a model: same look, no rebuild.
 - `ui.zig`     — the editor's immediate-mode widget kit, lifted from `../zig-diablo/src/ui.zig`
                  and re-backed onto `hud.zig`. `Ctx.anyHot` gates world clicks NEXT frame.
+- `icons.zig`  — the editor's GLYPH SET, drawn from primitives (`ui.Icon` re-exports it). Vector, not
+                 an atlas: the buttons scale off `hud.MONO` and a bitmap icon would be the one thing in
+                 the chrome that blurs when the type size moves.
+- `rumble.zig` — CONTROLLER RUMBLE, and the reason it is its own file: raylib's GLFW backend STUBS OUT
+                 `SetGamepadVibration`, so on Windows this resolves `XInputSetState` from whichever
+                 xinput DLL is present and drives the two motors itself. Holds the combat beat
+                 vocabulary (`hit_light` … `death`) — each beat its own SIGNATURE, blended
+                 strongest-wins — and `PAD`, THE pad index both this and game.zig's polling must use.
 - `bake.zig`   — the one-way door that emitted the first map from the old code-authored regions.
 - `env.zig`    — THE WORLD: the TERRAIN (the sculpted heightfield, its tiled mesh and skirt, and the
                  ground/slope/step queries every actor stands on — see ELEVATION), the REPLAY of a
@@ -333,7 +341,9 @@ lines where the concerns genuinely part company, and each new file is named so t
                  that across four places and forgetting one failed SILENTLY. Shared weathering
                  helpers (`courseInto`, `courseStack`, `quoinsInto`, `lichenInto`, `chipsInto`,
                  `crackInto`, `tuftInto`) so every ruin ages the same way. Big props with many
-                 instances come in VARIANTS (`BIG_TREES`, `CLIFFS`).
+                 instances come in VARIANTS — the great trees (`bigtree`/`bigtree2`/`bigtree3`) and
+                 the six `CLIFFS`. A wood picks among them through its op's WEIGHTED `mix=`, which is
+                 why only the rim has a `Kind` set here to seed from.
 - `frog.zig`   — THE GAPING TOAD + the `Knot`. Squash-&-stretch rig, hop/lunge/chomp AI, huge
                  reactions, death → a grace-gold mote DISSIPATION (never a hard vanish).
 - `archer.zig` — THE SKELETAL ARCHER + the `Line`. A bare-bones humanoid FOUNDED ON THE HERO RIG.
@@ -691,8 +701,9 @@ Placement is deterministic: if it fits once it fits.
   Cap with `addDome` (rounded) or an axis-flattened `addBlob` (flat); a flat cap constrains the
   piece to a world axis, which is why the fallen column drums lie along X and Z.
 - **REPEATED BIG PROPS NEED VARIANTS.** One mesh placed sixty times across a wood, or every 6.5 m
-  around the horizon, reads as a periodic pattern. Yaw and scale do not hide it. `BIG_TREES` /
-  `CLIFFS` exist for this, and long-wavelength variation beats per-instance noise.
+  around the horizon, reads as a periodic pattern. Yaw and scale do not hide it. The three `bigtree`
+  kinds and the six `CLIFFS` exist for this — a scatter draws among them through its op's WEIGHTED
+  `mix=` — and long-wavelength variation beats per-instance noise.
 - **A CULLER BUG LOOKS LIKE AN EMPTY WORLD, AND ONE-ORIENTATION TESTS MISS IT.**
   `View.fromCamera` sign-corrects its plane normals against the camera forward instead of assuming
   a handedness — this camera's screen-right is world −X. Its test sweeps seven headings.

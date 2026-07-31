@@ -625,8 +625,7 @@ pub const Ogre = struct {
                 self.faceToward(tgt, dt);
                 const f = self.fdir();
                 const moved = WALK_SPEED * dt;
-                self.pos.x = mathx.clampF(self.pos.x + f.x * moved, -bounds, bounds);
-                self.pos.z = mathx.clampF(self.pos.z + f.z * moved, -bounds, bounds);
+                mathx.stepXZ(&self.pos, f, moved, bounds);
                 movedDist = moved;
                 moveYaw = mathx.headingXZ(f); // travels along facing → forward gait
                 self.setCarry(dt);

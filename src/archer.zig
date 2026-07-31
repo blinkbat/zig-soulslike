@@ -261,7 +261,7 @@ pub const Arrow = struct {
     // The trail ring. Ages start SATURATED so a fresh arrow draws no streak from wherever the slot
     // was last used — a pooled arrow would otherwise flash a ribbon across the map on its first frame.
     trail: [TRAIL_N]rl.Vector3 = [_]rl.Vector3{mathx.zero3} ** TRAIL_N,
-    trailAge: [TRAIL_N]f32 = [_]f32{1e9} ** TRAIL_N,
+    trailAge: [TRAIL_N]f32 = [_]f32{mathx.LONG_AGO} ** TRAIL_N,
     trailHead: usize = 0,
 };
 
@@ -331,6 +331,13 @@ pub fn launchArrow(from: rl.Vector3, target: rl.Vector3) Arrow {
 /// `groundY` is the terrain height under the shaft RIGHT NOW (game.zig samples it per arrow per frame):
 /// a heightfield world has no single floor, and an arrow that tests against y = 0 flies straight through
 /// a hillside looking for a plain that isn't there.
+/// Is the shaft AT `p` inside the hero's hurt volume — a fat vertical pill about his centre of mass?
+/// Named because the connect test samples it twice (midpoint + endpoint, see stepArrow), and two
+/// copies of a hurt volume is how one of them stops matching the other after a retune.
+fn heroReached(p: rl.Vector3, hero: rl.Vector3, heroCenterY: f32) bool {
+    return mathx.distXZ(p, hero) <= ARROW_HIT_R and @abs(p.y - heroCenterY) <= ARROW_HIT_HALF_H;
+}
+
 pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, heroDodging: bool, solids: []const collision.Solid, dt: f32) void {
     if (!a.live) return;
     if (a.stuck) {
@@ -361,7 +368,7 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, he
     // freshest one at age 0 and the ribbon tapers away from the head. Nothing is pushed once the
     // shaft sticks (the branch above returns), so a stuck arrow's streak ages out and dies instead
     // of hanging in the air behind it.
-    for (&a.trailAge) |*ag| ag.* = @min(ag.* + dt, 1e9);
+    for (&a.trailAge) |*ag| ag.* = @min(ag.* + dt, mathx.LONG_AGO);
     a.trailHead = (a.trailHead + 1) % TRAIL_N;
     a.trail[a.trailHead] = a.pos;
     a.trailAge[a.trailHead] = 0;
@@ -381,7 +388,11 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, he
         a.age = 0;
         return;
     }
-    if (!heroDodging and mathx.distXZ(a.pos, hero) <= ARROW_HIT_R and @abs(a.pos.y - heroCenterY) <= ARROW_HIT_HALF_H) {
+    // …and the HERO, sampled over the same two points for the same reason. It used to test the
+    // ENDPOINT alone while cover took midpoint AND endpoint: at ARROW_SPEED the shaft covers 0.25 m a
+    // frame at 60 fps against a 0.5 m hit radius, so a frame longer than ~33 ms (a 30 Hz panel, a
+    // hitch, or a debug time scale above 1) steps it clean through him and the shot silently misses.
+    if (!heroDodging and (heroReached(a.pos, hero, heroCenterY) or heroReached(mid, hero, heroCenterY))) {
         a.hit = true;
         a.stuck = true;
         a.age = 0;
@@ -652,8 +663,7 @@ pub const Archer = struct {
                 // facing feeds the shared gait as a STRAFE (lateral) or BACKPEDAL (kiting out).
                 self.faceToward(hero, dt);
                 const moved = WALK_SPEED * dt;
-                self.pos.x = mathx.clampF(self.pos.x + self.kiteDir.x * moved, -bounds, bounds);
-                self.pos.z = mathx.clampF(self.pos.z + self.kiteDir.z * moved, -bounds, bounds);
+                mathx.stepXZ(&self.pos, self.kiteDir, moved, bounds);
                 movedDist = moved;
                 moveYaw = mathx.headingXZ(self.kiteDir);
                 if (self.t >= REPOSITION_DUR) self.decide(d);
@@ -667,8 +677,7 @@ pub const Archer = struct {
                 const want = leapTravel(self.t);
                 const step = want - self.leapDone;
                 self.leapDone = want;
-                self.pos.x = mathx.clampF(self.pos.x + self.kiteDir.x * step, -bounds, bounds);
-                self.pos.z = mathx.clampF(self.pos.z + self.kiteDir.z * step, -bounds, bounds);
+                mathx.stepXZ(&self.pos, self.kiteDir, step, bounds);
                 self.hop = BACKSTEP_RISE * mathx.sinf(leapU(self.t) * std.math.pi);
                 if (self.t >= BACKSTEP_GATHER + BACKSTEP_FLIGHT + BACKSTEP_LAND) {
                     self.hop = 0;

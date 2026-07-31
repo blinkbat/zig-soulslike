@@ -1290,10 +1290,11 @@ fn tileOf(point: usize) usize {
 // World coordinate → grid column/row, clamped so anything outside the grid lands in the edge
 // cell rather than indexing out of bounds (the cliff ring sits near the limit by design).
 fn cellCoord(w: f32) usize {
-    const f = (w + GRID_HALF) / CELL;
-    if (f <= 0) return 0;
-    const i: usize = @intFromFloat(f);
-    return @min(i, GRID_N - 1);
+    // CLAMPED IN FLOAT, BEFORE THE CAST. The old version cast first and clamped after, so the promise
+    // in the comment above only held for values `@intFromFloat` could represent: a NaN passes both
+    // `<=` and `>=` and would reach the cast (illegal behaviour, not cell 0), and so would anything
+    // past usize's range. `clampF` pins NaN to `lo`, which is the edge cell this is documented to give.
+    return @intFromFloat(mathx.clampF((w + GRID_HALF) / CELL, 0, @floatFromInt(GRID_N - 1)));
 }
 
 fn cellOf(x: f32, z: f32) usize {

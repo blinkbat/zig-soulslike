@@ -669,13 +669,25 @@ pub const Map = struct {
         const zhi = zs[1];
         // FLATTEN's target and SMOOTH's source are both read BEFORE anything is written: a flatten
         // that re-read its own output would creep the target as the brush moved, and a smooth done in
-        // place is a directional blur that drags the terrain toward +x.
+        // place is a directional blur that drags the terrain toward the direction the loops run.
+        // BOTH AXES need a pre-pass, and only x used to have one: the row above (iz−1) has ALREADY
+        // been rewritten by this same stroke, so reading `self.height` for `zm` fed the smooth its own
+        // output and dragged the terrain toward +z — the exact fault `before` exists to prevent, one
+        // axis over. `above` carries that row's pre-values forward instead.
         const target = self.heightAt(px, pz);
-        var before: [HEIGHT_N]f32 = undefined; // one row of the pre-pass, for smooth's neighbours
+        var before: [HEIGHT_N]f32 = undefined; // row iz's heights as they were before this stroke…
+        var above: [HEIGHT_N]f32 = undefined; // …and row iz−1's, which the loop has since overwritten
         var changed = false;
         var iz = zlo;
         while (iz <= zhi) : (iz += 1) {
             if (mode == .smooth) {
+                // The first row's neighbour above is outside the stroke and so still untouched; every
+                // later row takes the copy the previous iteration left in `before`.
+                if (iz == zlo) {
+                    if (iz > 0) {
+                        for (0..HEIGHT_N) |ix| above[ix] = heightOf(self.height[(iz - 1) * HEIGHT_N + ix]);
+                    }
+                } else above = before;
                 var ix: usize = 0;
                 while (ix < HEIGHT_N) : (ix += 1) before[ix] = heightOf(self.height[iz * HEIGHT_N + ix]);
             }
@@ -693,13 +705,14 @@ pub const Map = struct {
                     .raise => cur + amount * fall,
                     .lower => cur - amount * fall,
                     .flatten => mathx.lerpF(cur, target, mathx.clampF(amount, 0, 1) * fall),
-                    // The 4-neighbour mean, from the UNTOUCHED row above and the pre-pass row here.
-                    // Edge points reuse themselves, which leaves the rim where it is instead of
-                    // pulling it toward a neighbour that does not exist.
+                    // The 4-neighbour mean, entirely from PRE-STROKE values: this row and the one
+                    // above out of the two pre-pass buffers, the row below straight from the field
+                    // (the loop has not reached it yet). Edge points reuse themselves, which leaves
+                    // the rim where it is instead of pulling it toward a neighbour that does not exist.
                     .smooth => blk: {
                         const xm = if (ix > 0) before[ix - 1] else cur;
                         const xp = if (ix + 1 < HEIGHT_N) before[ix + 1] else cur;
-                        const zm = if (iz > 0) heightOf(self.height[(iz - 1) * HEIGHT_N + ix]) else cur;
+                        const zm = if (iz > 0) above[ix] else cur;
                         const zp = if (iz + 1 < HEIGHT_N) heightOf(self.height[(iz + 1) * HEIGHT_N + ix]) else cur;
                         break :blk mathx.lerpF(cur, (xm + xp + zm + zp) * 0.25, mathx.clampF(amount, 0, 1) * fall);
                     },

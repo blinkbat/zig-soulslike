@@ -381,7 +381,7 @@ const TRAIL_LIFE = 0.20; // seconds a sample persists (long enough that the full
 const TRAIL_MIN_SWEEP = 0.05; // world units the tip must move in a frame to leave a sample
 const TRAIL_ROOT = 0.35; // ribbon spans this fraction down the blade → the tip
 const TRAIL_COL = rgba(224, 230, 244, 255); // pale steel flash (alpha set per segment)
-const TrailSample = struct { a: rl.Vector3 = mathx.zero3, b: rl.Vector3 = mathx.zero3, age: f32 = 1e9 };
+const TrailSample = struct { a: rl.Vector3 = mathx.zero3, b: rl.Vector3 = mathx.zero3, age: f32 = mathx.LONG_AGO };
 
 // ── combat vitals + what the hero's cuts deal (Elden Ring model, see docs/ELDEN_RING.md) ─
 // The hero is sturdier than a toad: mid-weight poise (~ER's Knight-set 51) so a couple of
@@ -766,7 +766,7 @@ pub const Hero = struct {
 
     // transition smoothing
     speedS: f32 = 0, // short-eased ground speed driving POSTURE blends only
-    blendT: f32 = 1e9, // seconds since the last pose discontinuity (… POSE_XFADE = no blend)
+    blendT: f32 = mathx.LONG_AGO, // seconds since the last pose discontinuity (… POSE_XFADE = no blend)
     blendXf: [N]rl.Matrix = undefined, // frozen source pose for the cross-fade
 
     pub fn init(shader: rl.Shader) Hero {
@@ -793,7 +793,7 @@ pub const Hero = struct {
     fn tickClocks(self: *Hero, dt: f32) void {
         self.elapsed += dt;
         self.ageTrail(dt);
-        self.blendT = @min(self.blendT + dt, 1e9);
+        self.blendT = @min(self.blendT + dt, mathx.LONG_AGO);
         // Stamina belongs in the prologue for the same reason the others do: it must advance
         // exactly ONCE per frame whichever path is running, and hanging it off the live loop
         // instead would leave --shot draining every swing it takes and never refilling.
@@ -857,8 +857,7 @@ pub const Hero = struct {
         const peak = ROLL_DIST / (ROLL_DUR * 0.5 * (ROLL_BRAKE_A + ROLL_BRAKE_B));
         const speed = peak * (1.0 - mathx.smoothstep(ROLL_BRAKE_A, ROLL_BRAKE_B, u));
         const moved = speed * dt;
-        self.pos.x = mathx.clampF(self.pos.x + self.rollDir.x * moved, -bounds, bounds);
-        self.pos.z = mathx.clampF(self.pos.z + self.rollDir.z * moved, -bounds, bounds);
+        mathx.stepXZ(&self.pos, self.rollDir, moved, bounds);
         self.speed = speed;
         self.speedS = mathx.approach(self.speedS, speed, dt * SPEED_SMOOTH);
         self.rollT += dt;
@@ -958,8 +957,7 @@ pub const Hero = struct {
         // Step into the cut: the lunge is spread evenly across the strike span.
         const speed: f32 = if (u >= sa and u < sb) lunge / ((sb - sa) * dur) else 0;
         const moved = speed * dt;
-        self.pos.x = mathx.clampF(self.pos.x + mathx.sinf(self.facing) * moved, -bounds, bounds);
-        self.pos.z = mathx.clampF(self.pos.z + mathx.cosf(self.facing) * moved, -bounds, bounds);
+        mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), moved, bounds);
         self.speed = speed;
         self.speedS = mathx.approach(self.speedS, speed, dt * SPEED_SMOOTH);
         if (faceYaw) |ty| {
@@ -1162,7 +1160,7 @@ pub const Hero = struct {
     // stun/death — exactly one runs each frame), so samples fade for the --shot harness
     // too, not just the live loop (stale ribbons otherwise haunt later captures).
     fn ageTrail(self: *Hero, dt: f32) void {
-        for (&self.trail) |*s| s.age = mathx.minF(s.age + dt, 1e9);
+        for (&self.trail) |*s| s.age = mathx.minF(s.age + dt, mathx.LONG_AGO);
     }
     fn enterStun(self: *Hero, kind: combat.StunKind) void {
         self.attacking = false; // the reaction drops whatever he was committed to

@@ -285,9 +285,13 @@ pub fn group(k: Kind) Group {
     };
 }
 
-/// The great-tree variants as a set, so placement code mixes them instead of naming one.
-pub const BIG_TREES = [_]Kind{ .bigtree, .bigtree2, .bigtree3 };
-/// …and the cliff variants, as a SET, for the rock that rings the world and the arc round the start
+// (A `BIG_TREES` set of the three great-tree variants lived here, doc'd "so placement code mixes them
+// instead of naming one" — and NOTHING read it. The wood's variety is a WEIGHTED mix in the map file
+// (`mix=bigtree,bigtree,bigtree2,…`), which an unweighted set cannot express, so the constant had no
+// caller and no plausible one; `CLIFFS` below is the same idea and has two real readers, which is what
+// made this one look load-bearing. The VARIANTS themselves are the mechanism — they are `Kind` values
+// and the map picks among them.)
+/// The cliff variants, as a SET, for the rock that rings the world and the arc round the start
 /// bowl. SIX of them: an `edge` op repeats a segment every few metres for well over a kilometre, and
 /// the more characters that alternate along it the further the eye has to travel before it finds the
 /// repeat. What any one map draws from the set is the MAP's business — the shipped rim mixes the

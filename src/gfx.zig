@@ -288,12 +288,38 @@ pub const RETRO_DEFAULTS = blk: {
     break :blk out;
 };
 
-// The RF_* index constants must still line up with RETRO_FILTERS' rows; anchor a few at
-// comptime so moving a filter without updating its RF_* index fails the build.
+// The RF_* index constants must line up with RETRO_FILTERS' rows — EVERY ONE OF THEM. This anchored
+// three ("anchor a FEW at comptime so moving a filter without updating its RF_* index fails the
+// build"), and a few is not enough for a parallel list: the eight indices the PRESET_* tables read
+// were all unpinned, so reordering a row made PRESET_CRT silently enable the wrong filters with no
+// compile error — and RF_PALETTE / RF_MONO / RF_AMBER / RF_EDGES had no reader at ALL, so they looked
+// load-bearing while nothing could catch them drifting. The uniform name IS the row's identity, so
+// pinning each index against it covers the lot and gives the four orphans a reader.
 comptime {
-    std.debug.assert(std.mem.eql(u8, RETRO_UNIFORMS[RF_PIXELATE], "fPixelate"));
-    std.debug.assert(std.mem.eql(u8, RETRO_UNIFORMS[RF_GRAIN], "fGrain"));
-    std.debug.assert(std.mem.eql(u8, RETRO_NAMES[RF_CGA], "CGA"));
+    const PINS = [_]struct { i: usize, u: [:0]const u8 }{
+        .{ .i = RF_PIXELATE, .u = "fPixelate" },
+        .{ .i = RF_CHROMA, .u = "fChroma" },
+        .{ .i = RF_POSTERIZE, .u = "fPosterize" },
+        .{ .i = RF_DITHER, .u = "fDither" },
+        .{ .i = RF_GAMEBOY, .u = "fGameBoy" },
+        .{ .i = RF_CGA, .u = "fCGA" },
+        .{ .i = RF_PALETTE, .u = "fPalette" },
+        .{ .i = RF_SEPIA, .u = "fSepia" },
+        .{ .i = RF_MONO, .u = "fMono" },
+        .{ .i = RF_AMBER, .u = "fAmber" },
+        .{ .i = RF_EDGES, .u = "fEdges" },
+        .{ .i = RF_SCANLINES, .u = "fScanlines" },
+        .{ .i = RF_CURVE, .u = "fCurve" },
+        .{ .i = RF_VHS, .u = "fVHS" },
+        .{ .i = RF_GRAIN, .u = "fGrain" },
+    };
+    // …and the pin list itself has to be EXHAUSTIVE and in order, or a filter added without a row
+    // here would simply be unpinned again — the fault this block is being widened to close.
+    std.debug.assert(PINS.len == RETRO_COUNT);
+    for (PINS, 0..) |row, k| {
+        std.debug.assert(row.i == k);
+        std.debug.assert(std.mem.eql(u8, RETRO_UNIFORMS[row.i], row.u));
+    }
 }
 
 // Retro filter PRESETS — the SINGLE source for the menu's Preset rows AND the --shot

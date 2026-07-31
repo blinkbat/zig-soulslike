@@ -186,10 +186,15 @@ fn render(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, kind: Kin
     scene.shadowsOff();
     scene.setLights(&.{}); // …and no torches: a preview is lit by the sun and the sky, like a field
     scene.setGround(true);
-    // No frustum to cull against — a preview draws the whole ground under one object, and building a
-    // View for the off-screen camera to reject 200 tiles the model is standing on top of would be
-    // ceremony. Sculpted or not, the terrain here is a floor for the portrait.
-    env.drawGround(null);
+    // CULLED AGAINST THIS PREVIEW'S OWN FRUSTUM. This passed `null` — "building a View for the
+    // off-screen camera to reject 200 tiles the model is standing on top of would be ceremony" — which
+    // is true of a FLAT map, where the ground is one enormous quad and there is nothing to reject. On a
+    // SCULPTED map it is 225 terrain tiles, undrawn-to-drawn, and the gallery runs this once per CELL:
+    // 12 x 225 = 2,700 tile draws a frame (~2.4M triangles) to floor twelve thumbnails that each see
+    // two or three tiles from 3 m away. One `View` is the difference, and it is the same culler the
+    // world pass is already proven with — so the image is unchanged either way.
+    const view = envmod.View.fromCamera(cam, aspect);
+    env.drawGround(&view);
     scene.setGround(false);
     // FLORA SWAYS in the world, so it sways here — a fern judged rigid is a fern judged wrong.
     scene.setWind(nfo.flora);

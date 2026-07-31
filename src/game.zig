@@ -1038,6 +1038,11 @@ pub fn run(mode: Mode) void {
             g.warren.reset(&g.map);
             g.line.reset(&g.map);
             g.grief.reset(&g.map);
+            // …AND THE GRIP GOES QUIET, envelopes still decaying — the same call the pause card makes,
+            // for the same reason. Without it the editor branch never ticks the rumble at all: a live
+            // envelope froze for the whole editing session and then replayed as a phantom buzz on the
+            // frame you left, which is precisely what `update`'s `active` flag exists to prevent.
+            g.rumble.update(rawDt, false);
             drawScene(g);
             editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, rawDt);
             rl.endDrawing();

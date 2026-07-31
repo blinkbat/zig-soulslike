@@ -11,6 +11,7 @@ const heromod = @import("hero.zig");
 const frogmod = @import("frog.zig");
 const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
+const koboldmod = @import("kobold.zig");
 const foemod = @import("foe.zig");
 const mathx = @import("mathx.zig");
 const objview = @import("objview.zig");
@@ -720,6 +721,118 @@ pub fn runShots(g: *Game) void {
 
         // Restore it to its home deep in the ruins so it doesn't loom over the retro/menu shots.
         o.* = ogremod.Ogre.spawn(mathx.ground(3.0, -50.0), 0, 1.0, 0.4);
+    }
+
+    // ── THE KOBOLD WARBAND ── three roles of one creature, so the shots have to answer two separate
+    // questions: does the shared BODY read as a doglike animal (the muzzle, the ears, the ruff, the
+    // tail, the fur, and a stature short of a man's), and does each ROLE read as its own job from its
+    // kit and its pose alone? Hence a scale shot against the hero and a signature-action shot each.
+    //
+    // The band is EMPTY on the shipped map (owner: build them, place them later), so these stage
+    // instances directly into the group's array rather than posting `foe:` records.
+    {
+        const kc = mathx.ground(-26.0, 30.0); // open ground west of the ogre's spot, clear of ruins
+        const far = v3(kc.x, 0, kc.z + 80.0); // sensed hero far off → each holds its idle, facing +Z
+        g.band.n = 3;
+        const zerk = &g.band.band[0];
+        const priest = &g.band.band[1];
+        const sling = &g.band.band[2];
+
+        // SCALE AND SILHOUETTE FIRST, all three together with the hero beside them: the one shot that
+        // says whether "somewhat shorter than a man" landed, and whether the three are distinguishable
+        // at a glance without labels.
+        zerk.* = koboldmod.Kobold.spawnAs(.berserker, mathx.ground(kc.x - 1.7, kc.z), 0, 1.0, 0.15);
+        priest.* = koboldmod.Kobold.spawnAs(.priest, kc, 0, 1.0, 0.55);
+        sling.* = koboldmod.Kobold.spawnAs(.slinger, mathx.ground(kc.x + 1.7, kc.z), 0, 1.0, 0.85);
+        for ([_]*koboldmod.Kobold{ zerk, priest, sling }) |k| stepFoe(k, 30, far);
+        standHero(g, kc.x + 4.4, kc.z + 0.6, mathx.radians(-100));
+        shootAt(g, "shots/64_kobold_band.png", v3(kc.x + 0.6, kc.y + 1.0, kc.z), 20, 0.10, 7.6);
+        // …and the same three FROM THE FRONT. Yaw ~188, not ~8: the rig's camera sits at `target +
+        // back*dist` and `backDir` puts it at −Z for yaw 0, so a yaw near ZERO is dead BEHIND a subject
+        // facing +Z. The first version of this shot was captioned "to judge the HEAD" and photographed
+        // three backs — the exact trap AGENTS.md names (confirm the camera SHOWS the thing first).
+        shootAt(g, "shots/64b_kobold_heads.png", v3(kc.x, kc.y + 1.18, kc.z), 188, 0.03, 3.6);
+        // …and ONE head, close and three-quarter, which is the only framing that can actually settle
+        // the doglike read: the muzzle LENGTH against the skull, the pricked ears, the amber eye set
+        // forward. At band range those are a few pixels each.
+        shootAt(g, "shots/64c_kobold_head.png", v3(kc.x + 1.7, kc.y + 1.22, kc.z), 208, 0.05, 1.15);
+        // …and the TAIL, from behind and low — the one silhouette cue the front cannot show.
+        shootAt(g, "shots/64d_kobold_tail.png", v3(kc.x - 1.7, kc.y + 0.62, kc.z), 20, 0.10, 1.9);
+
+        // Hero out of frame for the role portraits.
+        g.hero.pos = mathx.ground(kc.x, kc.z - 26.0);
+        g.hero.update(dt, 0, 0, null);
+        g.hero.pose();
+        // …AND THE OTHER TWO, or a role portrait has two spectators standing in it. The first version of
+        // these shots left all three posted (the band shots need them) and every "single kobold" framing
+        // came back with three in it, which makes a pose impossible to judge.
+        const away = mathx.ground(kc.x - 40.0, kc.z + 40.0);
+        const park = struct {
+            fn it(k: *koboldmod.Kobold, role: koboldmod.Role, at: rl.Vector3) void {
+                k.* = koboldmod.Kobold.spawnAs(role, at, 0, 1.0, 0.5);
+            }
+        }.it;
+        park(priest, .priest, away);
+        park(sling, .slinger, away);
+
+        // THE BERSERKER mid-chop: the live hand down and across, the other already re-chambering. Two
+        // frames a beat apart, because one frame cannot show a flurry.
+        zerk.* = koboldmod.Kobold.spawnAs(.berserker, kc, 0, 1.0, 0.15);
+        stepFoe(zerk, 8, v3(kc.x, 0, kc.z + 1.2)); // hero in reach → commits to the flurry
+        shootFoe(g, zerk, "shots/65_kobold_chop.png", 150, 0.08, 4.2);
+        stepFoe(zerk, 14, v3(kc.x, 0, kc.z + 1.2));
+        shootFoe(g, zerk, "shots/65b_kobold_chop_b.png", 150, 0.08, 4.2);
+        // …and the HEAVE, which is the opening the whole design rests on: doubled over at the waist,
+        // axes dragging. If this does not read as "come back in", the berserker has no counter.
+        //
+        // TIMED OFF THE STATE, not off a frame count. `stepFoe(zerk, 130, …)` was a guess at "past the
+        // flurry", and the flurry is 3-5 chops ROLLED PER COMMIT (1.26-2.1 s), so a fixed count lands
+        // somewhere different every time the roll changes — the first render caught him still swinging.
+        // Step until he is actually heaving, then a beat further so the fold has arrived.
+        var guard: i32 = 0;
+        while (zerk.state != .heave and guard < 600) : (guard += 1) _ = zerk.update(SHOT_DT, v3(kc.x, 0, kc.z + 1.2), game.PLAY_HALF, .{});
+        stepFoe(zerk, 12, v3(kc.x, 0, kc.z + 1.2)); // …into the hold, where the fold is deepest
+        shootFoe(g, zerk, "shots/66_kobold_heave.png", 105, 0.04, 4.0); // side-on: a FOLD is a profile read
+
+        // THE PRIEST casting: staff up two-handed, gold gathering into the head. The tell has to be
+        // legible, so it is shot at the range you would have to read it from as well as close up.
+        zerk.* = koboldmod.Kobold.spawnAs(.berserker, mathx.ground(kc.x - 1.6, kc.z + 0.4), 0, 1.0, 0.15);
+        zerk.vit.hp = 20; // …somebody worth healing, or the priest has nothing to cast for
+        priest.* = koboldmod.Kobold.spawnAs(.priest, kc, 0, 1.0, 0.55);
+        priest.healWanted = true;
+        priest.castCd = 0;
+        var cf: i32 = 0;
+        while (cf < 64) : (cf += 1) _ = g.band.update(SHOT_DT, far, game.PLAY_HALF, .{}, g, game.spawnStone);
+        shootFoe(g, priest, "shots/67_kobold_cast.png", 30, 0.10, 4.4);
+        shootFoe(g, priest, "shots/67b_kobold_cast_far.png", 30, 0.14, 13.0);
+
+        // THE SLINGER: the sling round overhead (the tell), then the teeth close in. Both framed from
+        // the FRONT-QUARTER — a sling whirls over the head and a bite comes forward, so a rear view
+        // shows neither. The other two parked out of frame first, as above.
+        park(zerk, .berserker, away);
+        park(priest, .priest, away);
+        sling.* = koboldmod.Kobold.spawnAs(.slinger, kc, 0, 1.0, 0.85);
+        sling.slingCd = 0;
+        var g2: i32 = 0;
+        while (sling.state != .whirl and g2 < 600) : (g2 += 1) _ = sling.update(SHOT_DT, v3(kc.x, 0, kc.z + 8.0), game.PLAY_HALF, .{});
+        stepFoe(sling, 16, v3(kc.x, 0, kc.z + 8.0)); // …a third of the way round the cone
+        shootFoe(g, sling, "shots/68_kobold_whirl.png", 205, 0.10, 3.8);
+        sling.* = koboldmod.Kobold.spawnAs(.slinger, kc, 0, 1.0, 0.85);
+        sling.biteCd = 0;
+        var g3: i32 = 0;
+        while (sling.state != .bite and g3 < 600) : (g3 += 1) _ = sling.update(SHOT_DT, v3(kc.x, 0, kc.z + 1.0), game.PLAY_HALF, .{});
+        stepFoe(sling, 10, v3(kc.x, 0, kc.z + 1.0)); // …inside the snap, where the jaw is open
+        shootFoe(g, sling, "shots/69_kobold_bite.png", 195, 0.04, 2.6);
+
+        // …and the WALK, side on, at three phases a quarter-stride apart: the shared gait under a
+        // narrower trunk, and the one thing a single frame provably cannot verify.
+        zerk.* = koboldmod.Kobold.spawnAs(.berserker, mathx.ground(kc.x, kc.z - 9.0), 0, 1.0, 0.15);
+        const walkNames = [_][:0]const u8{ "shots/69b_kobold_walk.png", "shots/69c_kobold_walk.png", "shots/69d_kobold_walk.png" };
+        for ([_]i32{ 26, 9, 9 }, 0..) |adv, wi| {
+            stepFoe(zerk, adv, v3(kc.x, 0, kc.z + 40.0)); // hero far ahead → walks toward it
+            shootFoe(g, zerk, walkNames[wi], 90, 0.06, 4.6);
+        }
+        g.band.n = 0; // …and the field is empty again: the band is not on the shipped map
     }
 
     // ── THE WORLD TOUR ── one capture per region, plus the interiors that only exist because

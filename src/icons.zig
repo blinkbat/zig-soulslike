@@ -43,6 +43,12 @@ pub const Icon = enum {
     toad,
     archer,
     ogre,
+    // …and the kobold warband. Each is drawn as its KIT rather than as its face: at 20 px three
+    // doglike heads would be three identical smudges, where two axes, a staff and a sling are three
+    // different shapes you can tell apart at a glance.
+    berserker,
+    priest,
+    slinger,
     // files
     new,
     open,
@@ -237,6 +243,26 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             arc(cx, cy + s * 0.28, s * 0.42, 180, 360, w, col); // a great hunched mass
             hline(cx, cy + s * 0.28, s * 0.80, w, col);
             dot(cx, cy - s * 0.04, w * 2.0, col); // ONE eye — the whole character in one dot
+        },
+        .berserker => {
+            // TWO axes, crossed — the whole character, and it cannot be mistaken for one weapon.
+            for ([_]f32{ -1, 1 }) |side| {
+                line(cx + side * s * 0.26, cy + s * 0.34, cx - side * s * 0.20, cy - s * 0.30, w, col); // the haft
+                arc(cx - side * s * 0.20, cy - s * 0.30, s * 0.15, if (side < 0) 200 else 340, if (side < 0) 340 else 480, w, col); // …its blade
+            }
+        },
+        .priest => {
+            line(cx - s * 0.06, cy + s * 0.40, cx - s * 0.06, cy - s * 0.20, w, col); // a tall crooked staff
+            arc(cx - s * 0.06, cy - s * 0.26, s * 0.13, 180, 360, w, col); // …forked at the head
+            dot(cx - s * 0.06, cy - s * 0.28, w * 1.9, col); // …holding the light
+            line(cx + s * 0.14, cy + s * 0.06, cx + s * 0.14, cy + s * 0.26, w * 0.7, col); // a charm on a thong
+        },
+        .slinger => {
+            // The pouch at the bottom of two cords, mid-whirl: a V with a stone in it.
+            line(cx - s * 0.24, cy - s * 0.32, cx - s * 0.05, cy + s * 0.26, w * 0.8, col);
+            line(cx + s * 0.24, cy - s * 0.32, cx + s * 0.05, cy + s * 0.26, w * 0.8, col);
+            arc(cx, cy + s * 0.26, s * 0.10, 0, 180, w, col); // …the leather pouch
+            dot(cx, cy + s * 0.24, w * 1.7, col); // …and the stone
         },
 
         // ── FILES ───────────────────────────────────────────────────────────────────────

@@ -62,35 +62,62 @@ pub const SEG_SHANK = 0.246; // knee → ankle (tibia)   .285-.039
 pub const SEG_UPARM = 0.188; // shoulder → elbow        .818-.630
 pub const SEG_FOREARM = 0.145; // elbow → wrist         .630-.485
 
-// Skeleton joints (indices). Every joint owns exactly one drawn bone mesh.
-const N = 18;
-const ROOT = 0; // pelvis
-const SPINE = 1; // lumbar / mid-torso pivot
-const CHEST = 2; // thorax / shoulder girdle
-const NECK = 3;
-const HEAD = 4;
-const HIPL = 5;
-const KNEEL = 6;
-const ANKL = 7;
-const HIPR = 8;
-const KNEER = 9;
-const ANKR = 10;
-const SHL = 11; // shoulder L
-const ELL = 12; // elbow L
-const WRL = 13; // wrist L
-const SHR = 14;
-const ELR = 15;
-const WRR = 16;
-const SWORD = 17; // the drawn blade, parented to the RIGHT wrist — rides every pose
+// ── THE SHARED HUMANOID SCAFFOLD ────────────────────────────────────────────────────────
+// The 18-bone layout, its parent table and its rest pose, PUBLIC — because this is the humanoid
+// model every biped in the game is founded on, and it had been copied out per creature. archer.zig
+// said so itself: "Rig scaffold (parent/rest/setLocal) is re-stated locally … if a third humanoid
+// ever appears, lift the scaffold into a shared module then." The ogre made three and nothing moved;
+// the kobolds would have been a fourth transcription of the same seventeen Y values.
+//
+// It belongs HERE, next to `setJoint` / `legChain` / `advanceGait` / the gait tables, because that is
+// already where the shared humanoid model lives — a separate rig module would split one idea in two.
+//
+// BONE 17 IS THE WEAPON SLOT, parented to the right wrist, and it is the same slot for all of them:
+// the hero's SWORD, the archer's BOW, a kobold's AXE or STAFF or SLING. Only the MESH differs, which
+// is exactly why the scaffold is shareable at all.
+//
+// The OGRE is deliberately not on this: it carries 24 bones (a hinged jaw, toes, a hump, a shoulder
+// girdle) with three inserted ABOVE existing joints, so its layout genuinely is its own. What it DOES
+// share is the leg indices below, which `legChain` requires of everything.
+pub const N = 18;
+pub const ROOT = 0; // pelvis
+pub const SPINE = 1; // lumbar / mid-torso pivot
+pub const CHEST = 2; // thorax / shoulder girdle
+pub const NECK = 3;
+pub const HEAD = 4;
+// THE LEG INDICES ARE FIXED AT 5..10 for every humanoid, ogre included (AGENTS.md's rule): a foe rig
+// may carry MORE bones than these 18, but it must keep its legs here or `legChain` drives the wrong
+// joints.
+pub const HIPL = 5;
+pub const KNEEL = 6;
+pub const ANKL = 7;
+pub const HIPR = 8;
+pub const KNEER = 9;
+pub const ANKR = 10;
+pub const SHL = 11; // shoulder L
+pub const ELL = 12; // elbow L
+pub const WRL = 13; // wrist L
+pub const SHR = 14;
+pub const ELR = 15;
+pub const WRR = 16;
+/// The WEAPON slot — whatever this creature holds in its right hand, parented to that wrist so it
+/// rides every pose for free. `SWORD` is the hero's name for it.
+pub const HELD = 17;
+const SWORD = HELD;
 
-const parent = [N]i32{ -1, ROOT, SPINE, CHEST, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CHEST, SHL, ELL, CHEST, SHR, ELR, WRR };
+pub const PARENT = [N]i32{ -1, ROOT, SPINE, CHEST, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CHEST, SHL, ELL, CHEST, SHR, ELR, WRR };
+const parent = PARENT;
 
-// Rest positions in the hero's local standing frame (X = hero's left/+, Y up, Z forward),
-// world units. Limbs hang straight down (aligned to -Y); A-pose splay and stance width come
-// from pose abduction, not the rest pose, so a bone mesh and its child joint never separate.
-fn restPositions() [N]rl.Vector3 {
-    const hx = 0.090; // hip half-separation (a touch under half the bi-iliac breadth so the stance isn't splayed)
-    const sx = 0.150; // shoulder half-separation (~half the biacromial breadth, plus pauldron room)
+/// THE REST POSE for any humanoid on this scaffold: joint positions in the creature's own standing
+/// frame (X = its left, Y up, Z forward), as fractions of stature scaled by `stature`. Limbs hang
+/// straight down — A-pose splay and stance width come from pose abduction, not from here, so a bone
+/// mesh and its child joint can never separate.
+///
+/// `hx` / `sx` are the hip and shoulder half-separations, in the SAME fractional units, because that
+/// pair is the one honest per-creature difference in a humanoid's proportions: a kobold is narrower
+/// across the shoulders than the Tarnished and it should not have to restate seventeen other numbers
+/// to say so.
+pub fn restHumanoid(hx: f32, sx: f32, stature: f32) [N]rl.Vector3 {
     var r: [N]rl.Vector3 = undefined;
     r[ROOT] = v3(0, 0.530, 0);
     r[SPINE] = v3(0, 0.640, 0);
@@ -109,9 +136,17 @@ fn restPositions() [N]rl.Vector3 {
     r[SHR] = v3(-sx, 0.818, 0);
     r[ELR] = v3(-sx, 0.630, 0);
     r[WRR] = v3(-sx, 0.485, 0);
-    r[SWORD] = v3(-sx, 0.485, 0); // zero offset from the wrist; the mesh is authored in the wrist frame
-    for (&r) |*p| p.* = v3(p.x * H, p.y * H, p.z * H);
+    r[HELD] = v3(-sx, 0.485, 0); // zero offset from the wrist; the mesh is authored in the wrist frame
+    for (&r) |*p| p.* = v3(p.x * stature, p.y * stature, p.z * stature);
     return r;
+}
+
+/// The HERO's own proportions on the shared scaffold above.
+pub const HIP_HALF = 0.090; // hip half-separation (a touch under half the bi-iliac breadth so the stance isn't splayed)
+pub const SHOULDER_HALF = 0.150; // shoulder half-separation (~half the biacromial breadth, plus pauldron room)
+
+fn restPositions() [N]rl.Vector3 {
+    return restHumanoid(HIP_HALF, SHOULDER_HALF, H);
 }
 
 // ── palette (pre-gamma dark: the scene shader gammas output, so these lift a lot) ──────

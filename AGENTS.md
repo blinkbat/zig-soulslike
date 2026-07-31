@@ -371,7 +371,9 @@ lines where the concerns genuinely part company, and each new file is named so t
                  colours that are the WORLD's and not one creature's — `DUST` and the grace-gold
                  `MOTE` every corpse dissipates into), and the Group plumbing: `resetGroup` /
                  `drawGroup` / `anyDied` / `totalHits` / `runesDropped` / `aliveCount`.
-- `combat.zig` — SHARED `Vitals`: HP + the two-tier stagger + regen + death. Plus `Stamina`,
+- `combat.zig` — SHARED `Vitals`: HP + the two-tier stagger + regen + death + `heal`/`needsHeal` (the
+                 one path that moves a foe's HP UP — `tick` never does, "flasks only" — and it CANNOT
+                 raise the dead, because `dead` is a latch the whole foe standard reads). Plus `Stamina`,
                  the HERO'S ALONE (a foe meter nothing reads would only rot). Pure logic,
                  unit-tested. THE place to retune damage/poise/stamina feel.
 - `collision.zig` — 2D XZ capsule/circle footprint collision (push-out).
@@ -463,6 +465,13 @@ lines where the concerns genuinely part company, and each new file is named so t
   `hero.advanceGait` + `hero.legChain`. Do NOT author a bespoke walk. Only the upper body /
   weapon is per-enemy. `legChain` is rig-size agnostic, so a foe rig may carry MORE bones than the
   hero's 18 — but it must keep the hero's own leg indices (5..10) where they are.
+- **AND THE 18-BONE SCAFFOLD ITSELF IS SHARED** — `hero.N` / `hero.PARENT` / `hero.restHumanoid(hx,
+  sx, stature)`, with bone 17 as the WEAPON slot (`hero.HELD`) on the right wrist whatever hangs off
+  it: the hero's sword, the archer's bow, a kobold's axe. Do not transcribe the joint layout into a
+  new creature file. It WAS transcribed per creature, under a note in archer.zig saying to lift it
+  "if a third humanoid ever appears"; the ogre made three and nothing moved. Only `hx`/`sx` and the
+  stature are honestly per-creature. The OGRE stays off it on purpose — 24 bones with three inserted
+  ABOVE existing joints is a different layout, not a wider one.
 - **AND THE UPPER BODY MUST ARTICULATE TOO — legs alone are not a gait.** Shared legs under a
   rigid trunk reads as moving in ONE PIECE. Every walking humanoid owes: a contralateral arm
   swing at full amplitude, elbows flexing through the FORWARD half only, a shoulder girdle

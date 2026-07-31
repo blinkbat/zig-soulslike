@@ -172,7 +172,11 @@ const groundBrushes = [_][:0]const u8{ "Raise", "Lower", "Smooth", "Flat", "dirt
 const coverBrushes = [_][:0]const u8{ "Clearing", "Zone", "Erase" };
 const decorBrushes = [_][:0]const u8{ "Single", "Patch", "Scatter", "Erase" };
 const propBrushes = [_][:0]const u8{ "Stamp", "Row", "Ring", "Cluster", "Ivy", "Erase" };
-const unitBrushes = [_][:0]const u8{ "toad", "archer", "ogre", "Erase" };
+// The three kobold roles read as their own words rather than as "kobold_x": the family is obvious from
+// the icons and the models, and these labels have to match `wf.FoeKind`'s tags EXACTLY (the comptime
+// block below compares them byte for byte, so the map file's `foe: priest …` and this button are one
+// name).
+const unitBrushes = [_][:0]const u8{ "toad", "archer", "ogre", "berserker", "priest", "slinger", "Erase" };
 
 /// Where the SOIL ids start in `groundBrushes`, since the sculpt tools now come first. The paint path
 /// decodes a soil by ordinal (`brushIdx() - GROUND_SOIL_0 + 1`), so this one constant is what keeps the
@@ -231,6 +235,9 @@ const unitTips = [_][:0]const u8{
     "Post a gaping toad",
     "Post a skeletal archer",
     "Post the one-eyed ogre",
+    "Post a kobold berserker — two axes, a wild flurry, then a long opening",
+    "Post a kobold priest — no attack, heals the hurt one; break the cast",
+    "Post a kobold slinger — stones at range, teeth up close",
     "Hold and sweep to remove spawns ([ ] sets radius)",
 };
 
@@ -254,7 +261,7 @@ fn layerIcon(l: Layer) ui.Icon {
 const coverIcons = [_]ui.Icon{ .clearing, .zone, .erase };
 const decorIcons = [_]ui.Icon{ .single, .patch, .scatter, .erase };
 const propIcons = [_]ui.Icon{ .stamp, .row, .ring, .cluster, .ivy, .erase };
-const unitIcons = [_]ui.Icon{ .toad, .archer, .ogre, .erase };
+const unitIcons = [_]ui.Icon{ .toad, .archer, .ogre, .berserker, .priest, .slinger, .erase };
 
 comptime {
     std.debug.assert(coverIcons.len == coverBrushes.len);
@@ -345,7 +352,7 @@ const CoverBrush = enum { clearing, zone, erase };
 /// captures the wrong tool under the right caption, which is the failure a name cannot have.
 pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
-const UnitBrush = enum { toad, archer, ogre, erase };
+const UnitBrush = enum { toad, archer, ogre, berserker, priest, slinger, erase };
 
 comptime {
     // Every brush enum pinned to the table it indexes, case-insensitively so "Erase"/"Zone" read
@@ -2316,13 +2323,19 @@ const MARK_RING_SEG: i32 = 12; // coarse on purpose — see ringSeg
 const GIZMO_R: f32 = 1.2; // one literal prop's own gizmo
 const CURSOR_R: f32 = 0.9; // the plain cursor ring, where no brush radius applies
 
-/// Marker colours for the three foe kinds — a green toad, bone-pale archer, orange-lit ogre, so
-/// the Units layer reads without the labels. Through `ui.col` like every other editor swatch.
+/// Marker colours per foe kind — a green toad, bone-pale archer, orange-lit ogre, and the kobold
+/// warband on ONE dust-brown hue so a pack reads as a pack at a glance, separated only by value
+/// (the berserker brightest, the priest gold-lit, the slinger dark). Through `ui.col` like every
+/// other editor swatch. EXHAUSTIVE on purpose: a foe kind added without a marker is a compile error
+/// rather than an invisible spawn on the Units layer.
 fn foeSwatch(k: wf.FoeKind) rl.Color {
     return switch (k) {
         .toad => ui.col(120, 200, 110, 255),
         .archer => ui.col(210, 205, 180, 255),
         .ogre => ui.col(220, 140, 90, 255),
+        .berserker => ui.col(206, 150, 96, 255),
+        .priest => ui.col(228, 190, 104, 255), // …the gold it casts with
+        .slinger => ui.col(152, 116, 78, 255),
     };
 }
 

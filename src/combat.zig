@@ -81,6 +81,31 @@ pub const Vitals = struct {
         return if (self.hpMax > 0) mathx.clampF(self.hp / self.hpMax, 0, 1) else 0;
     }
 
+    /// PUT HP BACK. The kobold priest's whole reason to exist, and the first thing in the game that
+    /// moves this meter UPWARD on a foe — `tick` deliberately regenerates poise and stance and never
+    /// HP ("flasks only"), so a healer needs its own door.
+    ///
+    /// IT CANNOT RAISE THE DEAD, and that is the load-bearing line rather than a nicety: `dead` is a
+    /// LATCH the whole foe standard reads (`alive`, the dissipation, `justDied`), so healing a corpse
+    /// past 0 would hand back a foe with hp on the clock and `dead` still true — a thing with a health
+    /// bar that cannot be hit and never finishes dying. A priest watching a friend fall has missed its
+    /// window; that IS the counterplay.
+    ///
+    /// Returns how much it actually restored, so a caster can tell a real save from a wasted cast and
+    /// only pay for the one that landed.
+    pub fn heal(self: *Vitals, amt: f32) f32 {
+        if (self.dead or amt <= 0) return 0;
+        const before = self.hp;
+        self.hp = mathx.minF(self.hpMax, self.hp + amt);
+        return self.hp - before;
+    }
+
+    /// Is this one worth healing — alive, and actually missing something? What a priest picks its
+    /// target by, and the same test `heal` makes, so the choice and the pour cannot disagree.
+    pub fn needsHeal(self: *const Vitals, slack: f32) bool {
+        return !self.dead and self.hp < self.hpMax - slack;
+    }
+
     // Per frame. Nothing regens until `regenDelay` after the last hit; HP never does (flasks only).
     pub fn tick(self: *Vitals, dt: f32) void {
         self.sinceHit += dt;
@@ -361,6 +386,30 @@ test "lethal damage returns death and latches dead" {
     try std.testing.expectEqual(HitResult.death, v.hit(.{ .dmg = 40, .poise = 99 }));
     try std.testing.expect(v.dead);
     try std.testing.expectEqual(HitResult.none, v.hit(.{ .dmg = 40 })); // no reaction once dead
+}
+
+test "a healer puts HP back, tops out, and CANNOT raise the dead" {
+    // The kobold priest's mechanic. The dead check is the one that matters: `dead` is a latch every
+    // part of the foe standard reads, so healing a corpse would produce a thing with health and no
+    // way to die.
+    var v = Vitals.initFoe(100, 20, 40);
+    _ = v.hit(.{ .dmg = 60 });
+    try std.testing.expectApproxEqAbs(@as(f32, 40), v.hp, 1e-4);
+    try std.testing.expect(v.needsHeal(1.0));
+    try std.testing.expectApproxEqAbs(@as(f32, 25), v.heal(25), 1e-4); // …reports what it restored
+    try std.testing.expectApproxEqAbs(@as(f32, 65), v.hp, 1e-4);
+    // Tops out rather than overflowing, and reports only the part that landed — so a caster can tell
+    // a real save from a wasted cast.
+    try std.testing.expectApproxEqAbs(@as(f32, 35), v.heal(999), 1e-4);
+    try std.testing.expectApproxEqAbs(v.hpMax, v.hp, 1e-4);
+    try std.testing.expect(!v.needsHeal(1.0));
+    try std.testing.expectApproxEqAbs(@as(f32, 0), v.heal(50), 1e-4); // nothing missing → nothing poured
+    // …and a corpse stays a corpse.
+    var d = Vitals.initFoe(100, 20, 40);
+    try std.testing.expectEqual(HitResult.death, d.hit(.{ .dmg = 200 }));
+    try std.testing.expectApproxEqAbs(@as(f32, 0), d.heal(80), 1e-4);
+    try std.testing.expect(d.dead and d.hp <= 0);
+    try std.testing.expect(!d.needsHeal(1.0)); // never a target, either
 }
 
 test "regen waits out the delay, then refills; HP never regens" {

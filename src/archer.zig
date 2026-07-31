@@ -24,9 +24,13 @@ const Builder = gfx.Builder;
 // passes), and the hero's NORMATIVE GAIT tables (heromod.HIP_FLEX/… + sampleCurve, now pub)
 // so the skeleton walks on the same science instead of a duplicated cycle. What differs is
 // the SKIN — bone meshes, not the Tarnished's armour — and the animation: an archer's
-// nock / draw / hold / loose instead of sword cuts. Rig scaffold (parent/rest/setLocal) is
-// re-stated locally so the archer's weapon bone (a BOW, not a sword) stays independent; if a
-// third humanoid ever appears, lift the scaffold into a shared module then.
+// nock / draw / hold / loose instead of sword cuts.
+//
+// THE RIG SCAFFOLD IS SHARED NOW (`hero.N` / `hero.PARENT` / `hero.restHumanoid`). This file used to
+// re-state it locally under a note saying to lift it "if a third humanoid ever appears" — the ogre
+// made three and the kobolds would have made a fourth transcription of the same seventeen numbers.
+// The weapon bone stays independent the way it was always meant to: slot 17 is `hero.HELD`, and what
+// hangs off it is this creature's business (a BOW here, a sword on the hero, an axe on a kobold).
 //
 // Rendering discipline matches hero/frog: procedural Builder meshes drawn with drawMesh
 // through one scene-shader material, so it lights + casts shadows like everything else.
@@ -52,30 +56,32 @@ const ARROW_SHAFT = rgba(118, 102, 76, 255); // pale ash shaft
 const ARROW_HEAD = rgba(158, 166, 178, 170); // bright steel pile (glints, slightly self-lit)
 const ARROW_FLETCH = rgba(176, 166, 140, 150); // bone-white feathers, self-lit — the tracer
 
-// ── rig: an 18-bone humanoid, the hero's joint layout + parenting (the shared model), weapon
-// slot repurposed as the BOW. Bow rides the RIGHT wrist (a left-hand-draw archer) — the
-// hero's weapon-on-right convention, so the FK scaffold lines up. ─────
-const N = 18;
-const ROOT = 0; // pelvis
-const SPINE = 1; // lumbar column
-const CHEST = 2; // ribcage + shoulder girdle
-const NECK = 3;
-const SKULL = 4;
-const HIPL = 5;
-const KNEEL = 6;
-const ANKL = 7;
-const HIPR = 8;
-const KNEER = 9;
-const ANKR = 10;
-const SHL = 11; // shoulder L (the DRAW arm)
-const ELL = 12;
-const WRL = 13;
-const SHR = 14; // shoulder R (the BOW arm)
-const ELR = 15;
-const WRR = 16;
-const BOW = 17; // the drawn bow, parented to the right wrist
+// ── rig: THE SHARED 18-BONE HUMANOID SCAFFOLD (`hero.zig`), weapon slot repurposed as the BOW.
+// Bow rides the RIGHT wrist (a left-hand-draw archer) — the shared weapon-on-right convention, so
+// the FK scaffold lines up. These were seventeen local constants, a local parent table and a local
+// `restPositions` transcribing the hero's numbers, under the note that said to lift them the moment
+// a third humanoid appeared. Lifted. Only the SKULL alias and the BOW name are the archer's own. ─────
+const N = heromod.N;
+const ROOT = heromod.ROOT;
+const SPINE = heromod.SPINE;
+const CHEST = heromod.CHEST;
+const NECK = heromod.NECK;
+const SKULL = heromod.HEAD; // …the archer's name for it: this one is a bare skull
+const HIPL = heromod.HIPL;
+const KNEEL = heromod.KNEEL;
+const ANKL = heromod.ANKL;
+const HIPR = heromod.HIPR;
+const KNEER = heromod.KNEER;
+const ANKR = heromod.ANKR;
+const SHL = heromod.SHL; // shoulder L (the DRAW arm)
+const ELL = heromod.ELL;
+const WRL = heromod.WRL;
+const SHR = heromod.SHR; // shoulder R (the BOW arm)
+const ELR = heromod.ELR;
+const WRR = heromod.WRR;
+const BOW = heromod.HELD; // the drawn bow, in the shared weapon slot
 
-const parent = [N]i32{ -1, ROOT, SPINE, CHEST, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CHEST, SHL, ELL, CHEST, SHR, ELR, WRR };
+const parent = heromod.PARENT;
 
 // Stature + segment lengths: the hero's exact anthropometry (Drillis & Contini 1966 / Winter).
 // H is imported; the fractions match hero.zig's table.
@@ -91,29 +97,9 @@ const SEG_UPARM = heromod.SEG_UPARM;
 const SEG_FOREARM = heromod.SEG_FOREARM;
 
 fn restPositions() [N]rl.Vector3 {
-    const hx = 0.090; // hip half-separation
-    const sx = 0.150; // shoulder half-separation
-    var r: [N]rl.Vector3 = undefined;
-    r[ROOT] = v3(0, 0.530, 0);
-    r[SPINE] = v3(0, 0.640, 0);
-    r[CHEST] = v3(0, 0.760, 0);
-    r[NECK] = v3(0, 0.815, 0);
-    r[SKULL] = v3(0, 0.885, 0);
-    r[HIPL] = v3(hx, 0.530, 0);
-    r[KNEEL] = v3(hx, 0.285, 0);
-    r[ANKL] = v3(hx, 0.039, 0);
-    r[HIPR] = v3(-hx, 0.530, 0);
-    r[KNEER] = v3(-hx, 0.285, 0);
-    r[ANKR] = v3(-hx, 0.039, 0);
-    r[SHL] = v3(sx, 0.818, 0);
-    r[ELL] = v3(sx, 0.630, 0);
-    r[WRL] = v3(sx, 0.485, 0);
-    r[SHR] = v3(-sx, 0.818, 0);
-    r[ELR] = v3(-sx, 0.630, 0);
-    r[WRR] = v3(-sx, 0.485, 0);
-    r[BOW] = v3(-sx, 0.485, 0); // zero offset from the wrist; bow mesh authored in the wrist frame
-    for (&r) |*p| p.* = v3(p.x * H, p.y * H, p.z * H);
-    return r;
+    // A skeleton has the Tarnished's own frame — same stature, same hips, same shoulders. It is the
+    // FLESH that is missing, not the bones.
+    return heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF, H);
 }
 
 // matrix shorthand (shared mathx TRS — mul(a,b) applies a FIRST then b)
@@ -258,6 +244,12 @@ pub const Arrow = struct {
     /// commonest case by far and wants its own duller, fizzier impact. game.zig reads it to pick
     /// the sound; nothing else cares.
     struck: ?collision.Surface = null,
+    /// A SLINGER'S STONE rather than an arrow. The pool, the flight integrator, the cover test and the
+    /// hero connect are all identical — a projectile is a projectile — so the kobolds share this whole
+    /// system rather than growing a second one. All this flag changes is which MESH game.zig draws and
+    /// which blow it deals; keeping it a flag on the existing Arrow is the reason cover, homing and the
+    /// tunnelling fix apply to stones for free.
+    stone: bool = false,
     // The trail ring. Ages start SATURATED so a fresh arrow draws no streak from wherever the slot
     // was last used — a pooled arrow would otherwise flash a ribbon across the map on its first frame.
     trail: [TRAIL_N]rl.Vector3 = [_]rl.Vector3{mathx.zero3} ** TRAIL_N,
@@ -321,6 +313,20 @@ pub fn launchArrow(from: rl.Vector3, target: rl.Vector3) Arrow {
     var vel = mathx.scaleV(d, ARROW_SPEED);
     vel.y += ARROW_SPEED * 0.10 + dist * 0.04; // loft, to counter the drop across the gap
     return .{ .pos = from, .vel = vel, .live = true };
+}
+
+/// A SLINGER'S STONE, off the same launcher. Slower and lobbed higher, so it arcs visibly and you walk
+/// out of it rather than rolling — which is what keeps the slinger answerable by closing. `speed` is
+/// the kobold's own constant; this file only owns the flight.
+pub fn launchStone(from: rl.Vector3, target: rl.Vector3, speed: f32) Arrow {
+    var d = mathx.subV(target, from);
+    const dist = mathx.lenV(d);
+    d = if (dist < 1e-3) v3(0, 0, 1) else mathx.scaleV(d, 1.0 / dist);
+    var vel = mathx.scaleV(d, speed);
+    // MORE loft than an arrow's, proportionally: a stone that flew flat would be an arrow with a
+    // different mesh, and the arc IS the tell.
+    vel.y += speed * 0.24 + dist * 0.07;
+    return .{ .pos = from, .vel = vel, .live = true, .stone = true };
 }
 
 // Advance one arrow a frame: LIGHT homing (a gentle bend toward the hero, never a lock — a

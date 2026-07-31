@@ -17,6 +17,7 @@ const collision = @import("collision.zig");
 const rumblemod = @import("rumble.zig");
 const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
+const koboldmod = @import("kobold.zig"); // THE WARBAND — three roles in one group (the priest heals)
 const sfx = @import("audio.zig"); // the procedural sound bank — every voice synthesized at launch
 
 const v3 = mathx.v3;
@@ -186,7 +187,9 @@ pub const Game = struct {
     warren: frogmod.Knot, // the knot of gaping toads
     line: archermod.Line, // the skeletal archers perched in the ruins
     grief: ogremod.Grief, // the lone one-eyed ogre, deep in the ruins
+    band: koboldmod.Warband, // the kobold warband — berserkers, priests and slingers, mixed
     arrowModel: rl.Model, // shared arrow mesh, drawn per live/stuck arrow with its own matrix
+    stoneModel: rl.Model, // …and the slingers' stone, drawn from the SAME pool (see Arrow.stone)
     arrows: [MAX_ARROWS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_ARROWS,
     rig: cameramod.CamRig,
     lock: ?FoeRef = null, // ER lock-on: which foe (toad or skeleton) is locked, or null
@@ -229,12 +232,15 @@ pub const Game = struct {
         g.warren = frogmod.Knot.init(g.scene.shader);
         g.line = archermod.Line.init(g.scene.shader);
         g.grief = ogremod.Grief.init(g.scene.shader);
+        g.band = koboldmod.Warband.init(g.scene.shader);
         // Foes come from the MAP, so the groups can only be homed once it is loaded — init
         // builds the shared meshes and nothing else.
         g.warren.reset(&g.map);
         g.line.reset(&g.map);
         g.grief.reset(&g.map);
+        g.band.reset(&g.map);
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
+        g.stoneModel = koboldmod.stoneMesh(g.scene.shader);
         g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
         // Fields that would otherwise take their struct-literal defaults; set explicitly
         // because there is no literal to default from any more.
@@ -515,6 +521,7 @@ fn drawCasters(g: *Game, cull: envmod.Cull) void {
     g.warren.draw(&g.scene);
     g.line.draw(&g.scene);
     g.grief.draw(&g.scene);
+    g.band.draw(&g.scene);
 }
 
 fn setCasterShaders(g: *Game, sh: rl.Shader) void {
@@ -523,6 +530,7 @@ fn setCasterShaders(g: *Game, sh: rl.Shader) void {
     g.warren.setShader(sh);
     g.line.setShader(sh);
     g.grief.setShader(sh);
+    g.band.setShader(sh);
 }
 
 /// The WORLD height of the hero's centre of mass — his feet plus `HERO_CENTER_Y`. What an archer aims
@@ -539,13 +547,25 @@ fn heroAimPoint(g: *const Game) rl.Vector3 {
 // Launch an arrow from a free pool slot (the loose event). Pool-full is rare (24 slots vs a
 // ~1.5s reload on two archers); overwrite slot 0 rather than silently drop the shot.
 fn spawnArrow(g: *Game, from: rl.Vector3, target: rl.Vector3) void {
+    poolPut(g, archermod.launchArrow(from, target));
+}
+
+/// A SLINGER'S STONE into the SAME pool — see `archer.Arrow.stone`. Passed to `Warband.update` as the
+/// comptime `loose` callback, which is how the kobolds reach a projectile pool they know nothing about.
+pub fn spawnStone(g: *Game, from: rl.Vector3) void {
+    poolPut(g, archermod.launchStone(from, heroAimPoint(g), koboldmod.STONE_SPEED));
+}
+
+// Pool-full is rare (24 slots against a ~1.5 s reload); overwrite slot 0 rather than silently drop the
+// shot. One place, so an arrow and a stone can never disagree about what a full pool means.
+fn poolPut(g: *Game, a: archermod.Arrow) void {
     for (&g.arrows) |*ar| {
         if (!ar.live) {
-            ar.* = archermod.launchArrow(from, target);
+            ar.* = a;
             return;
         }
     }
-    g.arrows[0] = archermod.launchArrow(from, target);
+    g.arrows[0] = a;
 }
 
 // The world solids one arrow could hit THIS frame: everything within its own travel distance,
@@ -562,7 +582,8 @@ pub fn arrowCover(g: *const Game, ar: *const archermod.Arrow, dt: f32) []const c
 fn drawArrows(g: *Game) void {
     for (&g.arrows) |*ar| {
         if (!ar.live) continue;
-        rl.drawMesh(g.arrowModel.meshes[0], g.arrowModel.materials[0], archermod.arrowXform(ar));
+        const m = if (ar.stone) &g.stoneModel else &g.arrowModel;
+        rl.drawMesh(m.meshes[0], m.materials[0], archermod.arrowXform(ar));
     }
 }
 
@@ -637,6 +658,7 @@ pub fn drawScene(g: *Game) void {
     // the opaque geometry. The hero's swing trail joins them (same unlit layer).
     g.warren.drawFx();
     g.grief.drawFx();
+    g.band.drawFx(); // kobold blood, death motes, and the priest's cast gathering into its staff
     g.hero.drawTrail();
     // Arrow flight streaks — alpha ribbons like the swing trail, so they belong in this unlit
     // group after the opaque geometry, not up with the shafts themselves.
@@ -677,6 +699,7 @@ pub fn drawScene(g: *Game) void {
     drawFoeBars(g, g.warren.live()); // floating foe HP bars, crisp over the finished frame…
     drawFoeBars(g, g.line.live()); // …one shared path for every foe group…
     drawFoeBars(g, g.grief.live()); // …the ogre included (a regular foe, not a boss — owner's call)
+    drawFoeBars(g, g.band.live()); // …and the whole warband, roles mixed in one array
     drawLockDot(g); // the ER lock-on reticle
     drawDeathOverlay(g); // the YOU DIED card + respawn fade, over everything
 }
@@ -1038,6 +1061,7 @@ pub fn run(mode: Mode) void {
             g.warren.reset(&g.map);
             g.line.reset(&g.map);
             g.grief.reset(&g.map);
+            g.band.reset(&g.map);
             // …AND THE GRIP GOES QUIET, envelopes still decaying — the same call the pause card makes,
             // for the same reason. Without it the editor branch never ticks the rumble at all: a live
             // envelope froze for the whole editing session and then replayed as a phantom buzz on the
@@ -1296,9 +1320,13 @@ pub fn run(mode: Mode) void {
         var wasToad: [worldfmt.MAX_PER_KIND]rl.Vector3 = undefined;
         var wasArcher: [worldfmt.MAX_PER_KIND]rl.Vector3 = undefined;
         var wasOgre: [worldfmt.MAX_PER_KIND]rl.Vector3 = undefined;
+        // The warband is THREE kinds in one array, so its snapshot is three times the per-kind cap —
+        // sized off `kobold.CAP` rather than restating the arithmetic.
+        var wasBand: [koboldmod.CAP]rl.Vector3 = undefined;
         snapshotPos(g.warren.live(), &wasToad);
         snapshotPos(g.line.live(), &wasArcher);
         snapshotPos(g.grief.live(), &wasOgre);
+        snapshotPos(g.band.live(), &wasBand);
         if (g.hero.dead) {
             g.hero.updateDeath(dt); // collapse → respawn
             // The frame he returns, the WORLD reloads with him (ER-style): every foe re-homed
@@ -1345,11 +1373,22 @@ pub fn run(mode: Mode) void {
                 spawnArrow(g, a.nockWorld(), heroAimPoint(g));
             }
         }
-        // …and the ground has its say about all three: every step a foe just took is re-taken through
+        // THE WARBAND acts as one group, because the priest's heal has to see the whole band (see
+        // kobold.Warband). It hands back at most one blow a frame — a berserker's axe or a slinger's
+        // teeth, both already latched to land once per swing — and looses its stones through
+        // `spawnStone`, passed as the comptime callback so kobold.zig never learns what a pool is.
+        if (g.band.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnStone)) |h| {
+            g.hero.takeHit(h);
+            // A chop is the heavier of the two, and it is the one that carries poise — split the felt
+            // weight on the blow's own numbers rather than on which creature threw it.
+            heroHurtBeat(g, h.poise >= koboldmod.ZERK_HIT.poise, true);
+        }
+        // …and the ground has its say about all of them: every step a foe just took is re-taken through
         // the slope limit, so none of them walks up anything the hero couldn't.
         gateTerrain(g, g.warren.live(), &wasToad);
         gateTerrain(g, g.line.live(), &wasArcher);
         gateTerrain(g, g.grief.live(), &wasOgre);
+        gateTerrain(g, g.band.live(), &wasBand);
         // Arrows in flight: gentle homing + arc, then a strike lands a chomp-weight blow.
         // A hero inside the roll's i-frames is NOT a target (shaft passes through). World
         // solids BLOCK shots (cover works) — a blocked arrow thunks into stone.
@@ -1417,6 +1456,7 @@ pub fn run(mode: Mode) void {
         for (g.warren.live()) |*f| groundActor(g, &f.pos, dt);
         for (g.line.live()) |*a| groundActor(g, &a.pos, dt);
         for (g.grief.live()) |*o| groundActor(g, &o.pos, dt);
+        for (g.band.live()) |*k| groundActor(g, &k.pos, dt);
         g.rig.tickShake(rawDt); // impact shake decays on wall-clock time (bakes this frame's jitter)
         // …and the boom shortens rather than burying the eye in the hillside behind him (see
         // camera.followClear). On sculpted ground this is not an edge case: it happens on every climb.
@@ -1527,16 +1567,18 @@ fn heroHurtBeat(g: *Game, heavy: bool, voice: bool) void {
 // foe means editing every copy, and a copy you miss silently stops counting (the debug read-out once
 // ignored every blow landed on anything but a toad, for exactly this reason).
 fn allHits(g: *const Game) u32 {
-    return g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits();
+    return g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits() + g.band.totalHits();
 }
 fn allAlive(g: *const Game) u32 {
-    return g.warren.aliveCount() + g.line.aliveCount() + g.grief.aliveCount();
+    return g.warren.aliveCount() + g.line.aliveCount() + g.grief.aliveCount() + g.band.aliveCount();
 }
 fn anyFoeDied(g: *const Game) bool {
-    return g.warren.anyDied() or g.line.anyDied() or g.grief.anyDied();
+    return g.warren.anyDied() or g.line.anyDied() or g.grief.anyDied() or g.band.anyDied();
 }
 fn allRunes(g: *const Game) u32 {
-    return g.warren.runesDropped() + g.line.runesDropped() + g.grief.runesDropped();
+    // The band's payout is PER ROLE (a priest is worth the most), so its own `runesDropped` does the
+    // summing rather than taking a flat per-group figure like the other three.
+    return g.warren.runesDropped() + g.line.runesDropped() + g.grief.runesDropped() + g.band.runesDropped();
 }
 
 // The hero's blade this frame as plain data for the foe hit test (endpoints guard→tip, plus
@@ -1616,6 +1658,20 @@ fn collideActors(g: *Game, dt: f32) void {
         const op = g.env.resolveActor(o.pos, o.bodyR());
         o.pos = mathx.approachV(o.pos, inBounds(op), step);
     }
+
+    // THE WARBAND yields to everything, itself included — a pack that walked through each other would
+    // stack three kobolds on one spot, and a knot of them is the whole point of the encounter. Bumping
+    // each other apart is also what keeps the priest from being safely buried inside the front line.
+    for (g.band.live(), 0..) |*k, i| {
+        if (!k.alive()) continue;
+        var kp = g.env.resolveActor(k.pos, k.bodyR());
+        kp = collision.pushOutCircle(kp, k.bodyR(), g.hero.pos, HERO_R);
+        for (g.band.live(), 0..) |*o, j| {
+            if (i == j or !o.alive()) continue;
+            kp = collision.pushOutCircle(kp, k.bodyR(), o.pos, o.bodyR());
+        }
+        k.pos = mathx.approachV(k.pos, inBounds(kp), step);
+    }
 }
 
 // ── lock-on helpers (generic over ANY foe via FoeRef) ──────────────────────────────────
@@ -1628,26 +1684,38 @@ fn collideActors(g: *Game, dt: f32) void {
 // editing both and nothing catches the one you miss.
 const FoeKind = worldfmt.FoeKind;
 const FoeRef = struct { kind: FoeKind, idx: usize };
+// THE THREE KOBOLD ROLES ALL LIVE IN ONE ARRAY (`kobold.Warband` — the priest has to be able to see
+// its friends), so unlike the other groups a FoeRef's `kind` does not pick the array: all three index
+// `g.band.band`. `kobold.roleOf` is what says a kind is a kobold at all.
+fn bandIdx(r: FoeRef) ?usize {
+    return if (koboldmod.roleOf(r.kind) != null) r.idx else null;
+}
 fn foePos(g: *const Game, r: FoeRef) rl.Vector3 {
+    if (bandIdx(r)) |i| return g.band.band[i].pos;
     return switch (r.kind) {
         .toad => g.warren.frogs[r.idx].pos,
         .archer => g.line.archers[r.idx].pos,
         .ogre => g.grief.ogres[r.idx].pos,
+        .berserker, .priest, .slinger => unreachable, // handled above
     };
 }
 fn foeLockPoint(g: *const Game, r: FoeRef) rl.Vector3 {
+    if (bandIdx(r)) |i| return g.band.band[i].lockPoint();
     return switch (r.kind) {
         .toad => g.warren.frogs[r.idx].lockPoint(),
         .archer => g.line.archers[r.idx].lockPoint(),
         .ogre => g.grief.ogres[r.idx].lockPoint(),
+        .berserker, .priest, .slinger => unreachable,
     };
 }
 // A live, non-dissipating foe (both a fresh acquire and a held lock require this).
 fn foeLockable(g: *const Game, r: FoeRef) bool {
+    if (bandIdx(r)) |i| return g.band.band[i].alive() and !g.band.band[i].dying();
     return switch (r.kind) {
         .toad => g.warren.frogs[r.idx].alive() and !g.warren.frogs[r.idx].dying(),
         .archer => g.line.archers[r.idx].alive() and !g.line.archers[r.idx].dying(),
         .ogre => g.grief.ogres[r.idx].alive() and !g.grief.ogres[r.idx].dying(),
+        .berserker, .priest, .slinger => unreachable,
     };
 }
 fn lockValid(g: *const Game, r: FoeRef) bool {
@@ -1683,7 +1751,25 @@ fn acquireLock(g: *Game) ?FoeRef {
     considerLock(g, g.warren.live(), .toad, cx, &best, &bestScore);
     considerLock(g, g.line.live(), .archer, cx, &best, &bestScore);
     considerLock(g, g.grief.live(), .ogre, cx, &best, &bestScore);
+    // The band's members carry DIFFERENT kinds in one array, so each contributes under its own role's
+    // kind rather than the group's — `considerLock`'s single-kind signature cannot say that.
+    for (g.band.live(), 0..) |*k, i| {
+        if (!k.alive() or k.dying() or mathx.distXZ(g.hero.pos, k.pos) > MAX_LOCK_R) continue;
+        const r = FoeRef{ .kind = kindOfRole(k.role), .idx = i };
+        const sx = lockScreenX(g, r) orelse continue;
+        const score = @abs(sx - cx);
+        if (score < bestScore) {
+            bestScore = score;
+            best = r;
+        }
+    }
     return best;
+}
+
+/// A kobold role → the map foe kind that posts it. The inverse of `kobold.roleOf`, and it lives here
+/// because a `FoeRef` is game.zig's idea, not the creature's.
+fn kindOfRole(r: koboldmod.Role) FoeKind {
+    return @enumFromInt(@intFromEnum(FoeKind.berserker) + @intFromEnum(r));
 }
 // One group's contribution to acquireLock — generic over the foe type (the shared contract).
 fn considerLock(g: *Game, foes: anytype, kind: FoeKind, cx: f32, best: *?FoeRef, bestScore: *f32) void {
@@ -1709,6 +1795,18 @@ fn cycleLock(g: *Game, dir: f32) void {
     considerCycle(g, g.warren.live(), .toad, cur, curX, dir, &best, &bestGap);
     considerCycle(g, g.line.live(), .archer, cur, curX, dir, &best, &bestGap);
     considerCycle(g, g.grief.live(), .ogre, cur, curX, dir, &best, &bestGap);
+    // …and the band, per member's own role kind (see acquireLock).
+    for (g.band.live(), 0..) |*k, i| {
+        const r = FoeRef{ .kind = kindOfRole(k.role), .idx = i };
+        if ((koboldmod.roleOf(cur.kind) != null and cur.idx == i) or !k.alive() or k.dying()) continue;
+        if (mathx.distXZ(g.hero.pos, k.pos) > MAX_LOCK_R) continue;
+        const sx = lockScreenX(g, r) orelse continue;
+        const gap = (sx - curX) * dir;
+        if (gap > 5.0 and gap < bestGap) {
+            bestGap = gap;
+            best = r;
+        }
+    }
     if (best) |b| g.lock = b;
 }
 fn considerCycle(g: *Game, foes: anytype, kind: FoeKind, cur: FoeRef, curX: f32, dir: f32, best: *?FoeRef, bestGap: *f32) void {
@@ -1732,6 +1830,7 @@ fn resetFoes(g: *Game) void {
     g.warren.reset(&g.map);
     g.line.reset(&g.map);
     g.grief.reset(&g.map);
+    g.band.reset(&g.map);
     g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
     g.lock = null;
 }

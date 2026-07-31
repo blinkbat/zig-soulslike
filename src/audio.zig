@@ -326,10 +326,11 @@ const Rack = struct {
         for (work[0..r.n]) |*s| {
             if (k == 0) held = s.*;
             k = (k + 1) % step;
-            // TPDF dither — two uniform draws summed. Exactly the argument the scene shader's
-            // ±1 LSB screen dither makes: without it a quiet tail quantizes to one constant level
-            // and the decay STAIRCASES, which is the ugly half of lo-fi rather than the good half.
-            const d = (r.rng.signed() + r.rng.signed()) * 0.5 / levels;
+            // TPDF dither — two uniform draws summed. Without it a quiet tail quantizes to one
+            // constant level and the decay STAIRCASES, which is the ugly half of lo-fi rather than
+            // the good half. Scaled by DITHER_LSB, and see there: the textbook ±1 LSB is a 16-bit
+            // rule and this is not a 16-bit quantizer.
+            const d = (r.rng.signed() + r.rng.signed()) * 0.5 / levels * DITHER_LSB;
             s.* = @round((held + d) * levels) / levels;
         }
     }
@@ -377,7 +378,29 @@ const Rack = struct {
 // `BITS` is the amplitude quantizer (fewer = grittier — the audio posterize) and `HOLD` divides
 // the effective sample rate (2 = 11 kHz — the audio pixelate). These are the house values every
 // voice gets through `master`; the handful that want more or less say so with `masterX`.
-const CRUSH_BITS: f32 = 5.5;
+//
+// ── THIS IS WHERE THE BANK'S HISS COMES FROM, AND `hiss()` IS NOT ─────────────────────────
+// Owner's note: "all sfx have too much hiss". The obvious dial is the tape `hiss()` layer, and
+// turning it down does nothing — it is ~28 dB below what you are actually hearing. The noise is
+// THIS stage, and the arithmetic says so:
+//
+//   At 5.5 bits, `levels` = 2^5.5·0.5 = 22.6, so ONE QUANTISER STEP IS 1/22.6 = 0.044 of full
+//   scale — i.e. −27 dBFS. The quantisation error alone is step/sqrt(12) = −38 dBFS, and the
+//   ±1-LSB TPDF dither on top of it is step/sqrt(6) = −35 dBFS; together ≈ −33 dBFS, broadband,
+//   on EVERY sample of EVERY voice including the tails and the gaps.
+//   The `hiss()` layer, for comparison: 0.012 of uniform noise through two poles at 5200 and
+//   2600 Hz lands near −61 dBFS, and its between-events floor near −70.
+//   And `norm` runs AFTER both, so that ratio is identical for all 47 voices — which is exactly
+//   why the complaint was "ALL sfx" and not "these three".
+//
+// So the fix is here, in two parts, and the SAMPLE-RATE crunch (`HOLD`) is deliberately untouched:
+// the hold is most of what the lo-fi character actually is, and it adds no noise floor at all.
+const CRUSH_BITS: f32 = 7.5; // was 5.5 — +2 bits is −12 dB of floor, and 180 levels still staircases
+/// DITHER DEPTH IN LSB, and the textbook ±1 is a SIXTEEN-BIT rule. At 16 bits one LSB is inaudible so
+/// full-scale TPDF is free; at 5.5 it was the single loudest thing in the master chain, doubling the
+/// quantiser's own noise power to buy linearity nobody can hear at that step size. Dither is here to
+/// stop a decaying tail collapsing onto one constant level — it does that at a third of an LSB.
+const DITHER_LSB: f32 = 0.4; // …another −8 dB. MEASURED: the chain's tail floor goes −34.7 → −50.8 dBFS
 const CRUSH_HOLD: u32 = 2;
 
 // ── AIR ABSORPTION, BAKED ───────────────────────────────────────────────────────────────
@@ -394,9 +417,9 @@ const CRUSH_HOLD: u32 = 2;
 // means nearly as cleanly as its cutoff can be read).
 const AIR_FAR_BED: f32 = 1400; // the wind, a few hundred metres of it in every direction
 const AIR_FAR_CALL: f32 = 2100; // …and a bird somewhere out on the plain
-/// The two big LOW cries — the owl and the wolf. Darker again than a bird's whistle, and that is not
-/// a guess: they are further out (a howl is rolled to 240 m) and they are low to begin with, so what
-/// arrives is the fundamental and almost none of the throat above it.
+/// The big LOW cry — the OWL (a wolf howl was the other and is gone). Darker than a bird's whistle, and
+/// that is not a guess: it is further out (rolled to 150 m) and low to begin with, so what arrives is
+/// the fundamental and almost none of the throat above it.
 const AIR_FAR_CRY: f32 = 1950;
 /// The darkest any NEAR voice is rendered (mkOgreStep / mkStepSoft sit here). The far ones above must
 /// stay clear of it, or "far" is being claimed for something no duller than a boot on gravel at your feet.
@@ -404,6 +427,12 @@ const AIR_NEAR_DARKEST: f32 = 2200;
 /// …and the one voice that is deliberately NEARER than anything else in the game: the crickets are in
 /// the grass AT YOUR FEET, so they are the only ambient layer rendered BRIGHT. Turning that round is
 /// what would put the whole insect field out on the horizon with the wind.
+///
+/// THE CRICKETS ARE NOT THE MOSQUITO, and this is written down because I got it wrong: told "get rid
+/// of the mosquito sound", I reasoned from first principles to this constant — 4.2 kHz, continuous,
+/// nothing above it to mask it — deleted the whole cricket bed, and was wrong. The owner identified it:
+/// the WOLF HOWL. See `mkWolf`. A plausible mechanism is not a diagnosis, and the crickets are what
+/// makes a golden-hour field sound like one.
 const AIR_NEAR_GRASS: f32 = 4200;
 
 // ── THE VOICES ──────────────────────────────────────────────────────────────────────────
@@ -450,6 +479,18 @@ pub const Id = enum {
     ogre_swipe,
     ogre_hurt,
     ogre_die,
+    // ── THE KOBOLDS ── a DOG-THING, and every voice has a throat in it: the family reads as one
+    // animal because the yip and the snarl are the same larynx at different sizes. Small, dry and
+    // QUICK — the opposite of the ogre's block above, which is the point of putting them beside it.
+    kobold_chop, // the axe comes round — a snarl with iron on the end
+    kobold_heave, // …and the flurry's price: a winded, ragged panting
+    kobold_cast, // the priest's tell, rising
+    kobold_heal, // …and it landing on somebody
+    kobold_whirl, // the sling going round overhead
+    kobold_sling, // …and the release
+    kobold_bite, // teeth: a snap with a wet click in it
+    kobold_hurt,
+    kobold_die, // a yelp that falls apart
     // the flasks
     flask_drink,
     flask_cycle,
@@ -467,7 +508,9 @@ pub const Id = enum {
     birdsong, // …a SECOND bird, and the opposite kind: fluted and slurred where `birds` is stepped
     owl, // hoo … hu-hoooo, from somewhere in the ruins
     crickets, // the insect chirr in the grass — a BED, and the only ambient voice rendered bright
-    wolf, // a howl a long way off, and the loudest-carrying thing in the world
+    // (A WOLF howl was the fifth ambient voice and is GONE — owner's call, after it turned out to be
+    // the "skeeter". Retuning its fundamental down out of the wingbeat band was tried first and the
+    // answer was to remove it entirely, so it is not a tuning problem to come back to.)
 };
 const NV = @typeInfo(Id).@"enum".fields.len;
 
@@ -913,6 +956,99 @@ fn mkOgreDie(r: *Rack) void {
 
 // ── the flasks ──────────────────────────────────────────────────────────────────────────
 
+// ── the kobolds ── SMALL, DRY AND FAST, and all of it comes out of a dog's throat. `growl` is the
+// workhorse here the way `body` is for the ogre: a kobold's character is that it is always making a
+// noise, and the noise is always an animal one.
+
+fn mkKoboldChop(r: *Rack) void {
+    // A snarl with a hand-axe on the end of it. The growl leads (he is committing before the arm is),
+    // the air is the haft coming round, and the tick is the head arriving.
+    r.growl(0.0, 0.20, 210, 158, 0.62, 0.42, 0.14); // a rising bark falling into a snarl
+    r.air(0.04, 0.18, 0.40, 2600, 620, 0.42, 3.0); // the swing — DOWN-sweeping, so it reads as travelling
+    r.tick(0.15, 0.34, 5200);
+    r.body(0.15, 0.09, 168, 74, 0.34, 5.5);
+    r.master(2.3, 4200);
+}
+
+fn mkKoboldHeave(r: *Rack) void {
+    // THE OPENING, and it has to SOUND like one — this is the cue that says come back in. Ragged
+    // panting on a body that has nothing left: two breaths, air only, no pitch to speak of.
+    r.air(0.0, 0.26, 0.52, 1500, 420, 0.22, 1.8);
+    r.growl(0.02, 0.22, 132, 96, 0.30, 0.62, 0.18); // …a wheeze under the first one
+    r.air(0.34, 0.30, 0.46, 1250, 380, 0.20, 1.6);
+    r.growl(0.36, 0.26, 118, 86, 0.26, 0.66, 0.20);
+    r.master(1.9, 2400);
+}
+
+fn mkKoboldCast(r: *Rack) void {
+    // THE PRIEST'S TELL, and it is the one kobold sound that is not an animal: a rising ring with a
+    // chanted throat under it. It has to be legible across a plaza and it has to say STOP THIS.
+    r.ring(0.0, 0.95, 330, 0.34, 1.4, 5); // …rising by being joined, not by sliding
+    r.ring(0.30, 0.70, 495, 0.26, 1.6, 4);
+    r.ring(0.60, 0.50, 660, 0.20, 2.0, 3);
+    r.growl(0.0, 0.90, 168, 214, 0.34, 0.30, 0.30); // the chant itself, climbing
+    r.air(0.45, 0.55, 0.14, 900, 3400, 0.5, 1.2); // …and light gathering
+    r.master(2.0, 4600);
+}
+
+fn mkKoboldHeal(r: *Rack) void {
+    // It LANDED. A short warm bloom — the reward half of the cast, and deliberately quieter than the
+    // tell: hearing this means you were too slow, and the game should not celebrate that at you.
+    r.ring(0.0, 0.42, 528, 0.5, 2.6, 4);
+    r.ring(0.01, 0.34, 792, 0.24, 3.4, 3);
+    r.air(0.0, 0.26, 0.16, 3200, 1100, 0.4, 2.2);
+    r.master(1.9, 5000);
+}
+
+fn mkKoboldWhirl(r: *Rack) void {
+    // The sling going round. Three passes of a cord through air, so the LOOP is audible — that
+    // repetition is the tell, and a single whoosh would read as the throw itself.
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) {
+        const t = 0.02 + @as(f32, @floatFromInt(i)) * 0.20;
+        r.air(t, 0.17, 0.34 + 0.06 * @as(f32, @floatFromInt(i)), 900, 2400, 0.55, 2.2);
+    }
+    r.master(2.0, 4000);
+}
+
+fn mkKoboldSling(r: *Rack) void {
+    // The release: a hard snap of cord and the stone leaving. Short — all the information is in the
+    // whirl before it, and this is only the full stop.
+    r.tick(0.0, 0.5, 6000);
+    r.air(0.0, 0.11, 0.46, 3400, 1200, 0.5, 4.5);
+    r.body(0.0, 0.06, 300, 150, 0.22, 6.0);
+    r.master(2.2, 5400);
+}
+
+fn mkKoboldBite(r: *Rack) void {
+    // TEETH. A snap has three parts and the middle one is what sells it: the jaw opening (air), the
+    // clack of the teeth meeting (tick + a tight ring), and the wet click of the throat behind it.
+    r.air(0.0, 0.07, 0.30, 1200, 3000, 0.4, 3.5);
+    r.tick(0.06, 0.62, 7000);
+    r.ring(0.06, 0.07, 1500, 0.22, 9.0, 3); // the clack — bright and gone
+    r.growl(0.0, 0.16, 232, 176, 0.5, 0.55, 0.10);
+    r.master(2.4, 5200);
+}
+
+fn mkKoboldHurt(r: *Rack) void {
+    // A yelp — up, then straight down. `growl` with f1 ABOVE f0 rises, and a rise is what a small
+    // thing does when it is hurt (the ogre's falls; that difference is most of the size gap).
+    r.growl(0.0, 0.16, 260, 400, 0.85, 0.42, 0.10);
+    r.growl(0.05, 0.16, 200, 132, 0.42, 0.50, 0.24); // …and the fall out of it
+    r.air(0.0, 0.10, 0.22, 1800, 700, 0.3, 3.0);
+    r.master(2.3, 4600);
+}
+
+fn mkKoboldDie(r: *Rack) void {
+    // The yelp that does not recover: it starts as the hurt voice and comes apart, dropping through a
+    // rattle into nothing. The body under it is what stops it reading as a bird.
+    r.growl(0.0, 0.20, 280, 420, 0.9, 0.45, 0.08);
+    r.growl(0.10, 0.48, 240, 84, 0.62, 0.62, 0.14);
+    r.grit(0.28, 0.34, 0.30, 1700, 0.7, 2.4); // …a wet rattle in the throat
+    r.body(0.34, 0.22, 108, 44, 0.34, 3.0); // …and the body going down
+    r.master(2.1, 3400);
+}
+
 fn mkFlaskDrink(r: *Rack) void {
     // Cork, then three glugs, then the warm bloom of it taking hold. The glugs are the whole
     // character: a rising body per swallow, unevenly spaced, because a bottle empties in gulps and
@@ -1108,20 +1244,12 @@ fn mkOwl(r: *Rack) void {
     r.masterX(1.15, AIR_FAR_CRY, CRUSH_BITS + 1.0, CRUSH_HOLD);
 }
 
-// ── THE WOLF ── one long breath: a cry that RISES until it finds its note, holds there, and falls
-// off the end. All three parts are one gesture and they overlap, which is why it is two growls
-// rather than three — a howl that steps between phases reads as somebody operating a synthesizer.
-//
-// It carries further than anything else in the world (see its BANK row), and it should: a real howl
-// is meant to be heard across a valley, and this is the one sound in the game whose entire job is to
-// tell you how big the place is.
-fn mkWolf(r: *Rack) void {
-    r.growl(0.0, 0.55, 240, 430, 0.75, 0.10, 0.55); // the rise, still gathering
-    r.growl(0.42, 1.50, 440, 300, 1.00, 0.08, 0.14); // …the held note, and the fall out of it
-    r.air(0.0, 1.90, 0.16, 1400, 420, 0.45, 1.1); // breath behind the whole cry
-    r.body(0.35, 1.40, 215, 148, 0.30, 1.3); // …and the chest under it
-    r.masterX(1.30, AIR_FAR_CRY, CRUSH_BITS + 1.0, CRUSH_HOLD);
-}
+// (THE WOLF HOWL lived here and is GONE — owner: "get rid of howl entirely". It was the "skeeter": a
+// sustained ~440 Hz tone carrying `growl`s 5.5-8.5 Hz / 3.5% vibrato, i.e. culicine wingbeat with a
+// wingbeat waver on it, and rolled out to 240 m so what usually arrived was a QUIET one — the exact
+// condition for hearing an insect beside your ear instead of an animal across a valley. Dropping the
+// fundamental to ~260 Hz and roughening the drive was tried first; the owner's answer was to cut it,
+// so this is NOT a tuning problem waiting to be reopened. The OWL still carries the far cries.)
 
 // ── THE CRICKETS ── the other BED, and the one that actually makes a golden-hour field sound like
 // one. Its shape is nothing like the wind's, and the difference is the point:
@@ -1138,6 +1266,11 @@ fn mkWolf(r: *Rack) void {
 //
 // Baked TWICE from different seeds and played hard left / hard right like the wind (see `bed`), so
 // the field surrounds you instead of chirping at you from between the speakers.
+//
+// DELETED ONCE AND RESTORED UNCHANGED. Told "get rid of the mosquito sound" I reasoned my way to this
+// voice — bright, continuous, right at the top of hearing — and removed it. It was the WOLF (`mkWolf`).
+// Nothing here was ever wrong; the note stays so the next person to go looking for a whine starts at
+// the fundamentals of the CALLS rather than at the brightest thing in the mix.
 const CRICKETS = 7; // individuals near enough to be heard APART; past that it is a chirr, not a field
 const CRICKET_SING: f32 = 0.22; // fraction of its own cycle one cricket is actually singing
 
@@ -1192,6 +1325,7 @@ fn mkCrickets(r: *Rack) void {
     r.norm(0.66);
     r.ends(0.9, 0.9); // long crossfade ends, so the re-trigger seam is inaudible
 }
+
 
 // ── THE BANK ── one row per voice, in `Id` order.
 const BANK = [NV]Row{
@@ -1259,6 +1393,24 @@ const BANK = [NV]Row{
     .{ .make = mkOgreSwipe, .gain = 0.72, .jit = 0.07, .vjit = 0.12, .vars = 3, .reach = 85 },
     .{ .make = mkOgreHurt, .gain = 0.66, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 80 },
     .{ .make = mkOgreDie, .gain = 0.92, .jit = 0.0, .vjit = 0.0, .poly = 1, .reach = 135 },
+    // ── THE KOBOLDS ── WIDE pitch jitter and four takes on everything you hear often, because a pack
+    // is the worst case for repetition: five of them yipping the same recording is the single most
+    // obviously fake noise a game can make, and there are up to seventy-two of these. Short reaches
+    // too — they are small, and a scavenger you can hear from the far side of the plaza is an ogre.
+    .{ .make = mkKoboldChop, .gain = 0.54, .jit = 0.16, .vjit = 0.22, .vars = 4, .poly = 4, .reach = 46 },
+    // The HEAVE has to carry: it is the cue that says come back in, and you will often have backed
+    // off to hear it. Loudest and furthest of the family, deliberately.
+    .{ .make = mkKoboldHeave, .gain = 0.60, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 2, .reach = 62 },
+    // …and so must the CAST, for the same reason and more so — it is a thing you have to cross a
+    // field to stop, so it has to be audible from where you would have to leave.
+    .{ .make = mkKoboldCast, .gain = 0.62, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 2, .reach = 78 },
+    // The heal LANDING is quieter than the cast on purpose (see mkKoboldHeal).
+    .{ .make = mkKoboldHeal, .gain = 0.40, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 3, .reach = 54 },
+    .{ .make = mkKoboldWhirl, .gain = 0.44, .jit = 0.14, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 44 },
+    .{ .make = mkKoboldSling, .gain = 0.50, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 4, .reach = 52 },
+    .{ .make = mkKoboldBite, .gain = 0.58, .jit = 0.15, .vjit = 0.22, .vars = 4, .poly = 3, .reach = 40 },
+    .{ .make = mkKoboldHurt, .gain = 0.62, .jit = 0.18, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 48 },
+    .{ .make = mkKoboldDie, .gain = 0.70, .jit = 0.12, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 58 },
     .{ .make = mkFlaskDrink, .gain = 0.52, .jit = 0.06, .vjit = 0.10, .vars = 2, .poly = 2 },
     .{ .make = mkFlaskCycle, .gain = 0.30, .jit = 0.07, .vjit = 0.08, .vars = 2, .poly = 3 },
     .{ .make = mkKill, .gain = 0.55, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 4 },
@@ -1305,10 +1457,6 @@ const BANK = [NV]Row{
     //   still pops out of a mix — where smooth noise at the same peak is simply a floor.
     // So do NOT "correct" this back toward the wind's 0.030 on the grounds that they are both beds.
     .{ .make = mkCrickets, .gain = 0.010, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
-    // ── THE FURTHEST-CARRYING SOUND IN THE WORLD, past even the birds, and that IS the point: a howl
-    // is meant to cross a valley. Rolled out to 240 m (see CALLS), so most of the time what arrives is
-    // the tail of the distance curve — which is exactly how a wolf you cannot see should sound.
-    .{ .make = mkWolf, .gain = 0.32, .mix = .ambience, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 1, .reach = 260 },
 };
 
 /// How long each voice renders for. Kept beside the bank rather than inside each renderer so the
@@ -1321,11 +1469,16 @@ fn seconds(id: Id) f32 {
         .wind => 8.0,
         .crickets => 7.3,
         .death => 3.2,
-        .wolf => 2.4, // one long breath — the rise, the held note and the fall out of it
         .owl => 1.6, // …hoo, a beat of nothing, then hu-hoooo
         .ogre_die => 2.2,
         .respawn => 1.4,
         .bone_die, .toad_die, .ogre_roar => 1.1,
+        // The priest's tell runs the length of its own cast (kobold.CAST_DUR is 1.25) — a voice that
+        // ended early would stop being a tell halfway through the thing it is telling you about.
+        .kobold_cast => 1.35,
+        .kobold_die => 1.15,
+        .kobold_heave => 0.8, // two ragged breaths
+        .kobold_whirl => 0.75, // …three passes of the cord (see mkKoboldWhirl)
         .ogre_slam, .bow_draw, .flask_drink => 1.05,
         // Every arrow impact is QUICK either way (owner's law) — a third of a second, tops.
         .arrow_hit, .arrow_dirt, .arrow_wood, .arrow_stone, .arrow_metal => 0.36,
@@ -1606,7 +1759,7 @@ const BEDS = [_]Id{ .wind, .crickets };
 ///
 /// THE GAPS ARE LONG AND WIDELY SPREAD, and that is the whole design: the point of a call is that you
 /// NOTICE it, which needs enough silence in front of it that you had stopped expecting one. The rarer
-/// the voice, the wider its band — a bird every ten seconds is scenery, a wolf every two minutes is
+/// the voice, the wider its band — a bird every ten seconds is scenery, an owl every minute is
 /// the world telling you where you are.
 ///
 /// AND EACH IS ROLLED A DISTANCE, never played at the ear. `world()` then puts it at a bearing and at
@@ -1629,10 +1782,10 @@ const CALLS = [_]Call{
     .{ .id = .birdsong, .gapLo = 11, .gapHi = 31, .distLo = 30, .distHi = 140, .first = 9 },
     // Rarer than either bird by a factor of three, and further out: an owl is a thing you hear
     // occasionally from somewhere in the ruins, not a resident of the tree you are standing under.
+    // …and it is now the RAREST and FURTHEST of the calls, a job the wolf used to hold (removed —
+    // owner). Nothing was re-tuned to fill the gap: the owl was already the right shape for it, and
+    // manufacturing a replacement "biggest sound in the world" is how the mosquito got made.
     .{ .id = .owl, .gapLo = 26, .gapHi = 70, .distLo = 40, .distHi = 150, .first = 22 },
-    // …and the wolf rarest and furthest of all. At 90-240 m most howls arrive on the tail of the
-    // distance curve, which is exactly how something you cannot see should sound.
-    .{ .id = .wolf, .gapLo = 48, .gapHi = 140, .distLo = 90, .distHi = 240, .first = 55 },
 };
 
 /// Seconds left on each row's clock, seeded from its own `first`.
@@ -1782,9 +1935,9 @@ test "reach is per VOICE: a giant carries, a toad does not, a bird carries furth
     try std.testing.expect(reach(.toad_chomp) < reach(.bow_loose));
     try std.testing.expect(reach(.bow_loose) < reach(.ogre_slam));
     try std.testing.expect(reach(.ogre_slam) < reach(.birds));
-    // …and the HOWL past even the birds. It is the furthest-carrying sound in the world by design:
-    // the one voice whose whole job is telling you how big the place is.
-    try std.testing.expect(reach(.birds) < reach(.wolf));
+    // The BIRDS now carry furthest of anything in the world. That used to be the wolf howl's job (it
+    // is gone — owner), and the ordering is left ending here rather than promoting something else into
+    // the slot: "furthest-carrying" is a consequence of a voice's character, not a post to be filled.
     // The archer's TWANG is the cue to move and must outrange the creak of the draw that precedes it.
     try std.testing.expect(reach(.bow_loose) > reach(.bow_draw));
     // A toad's world is 11 m wide (its aggro radius), so its voice must comfortably cover that and
@@ -1807,10 +1960,11 @@ test "every sparse call is rolled INSIDE its own reach, and none of them is roll
         try std.testing.expect(c.gapLo > 0 and c.gapHi > c.gapLo * 1.5);
         try std.testing.expect(c.first > 1.0); // never behind the pause card at launch
     }
-    // RARITY ORDER, which is the whole shape of the canopy: birds are scenery, the owl is occasional,
-    // the wolf is an event. Pinned because it is the thing a retune would quietly invert.
+    // RARITY ORDER, which is the whole shape of the canopy: birds are scenery, the owl is the event.
+    // Pinned because it is the thing a retune would quietly invert. (There was a third rung — the wolf,
+    // rarer again — and it is gone; the owl inherits being the rarest without being re-tuned for it.)
     try std.testing.expect(CALLS[2].gapLo > CALLS[0].gapLo * 2.0); // owl vs birds
-    try std.testing.expect(CALLS[3].gapLo > CALLS[2].gapLo * 1.5); // wolf vs owl
+    try std.testing.expect(CALLS.len == 3);
 }
 
 test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience" {
@@ -1841,13 +1995,19 @@ test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience"
     for (CALLS) |c| try std.testing.expect(BANK[@intFromEnum(c.id)].gain > loudBed);
 }
 
-test "the two BEDS loop at different lengths, so they never re-align" {
-    // Equal-length beds re-trigger on the same frame for the whole session, and two textures
-    // repeating in lockstep is a loop you can hear even when neither is audible alone.
-    try std.testing.expect(BEDS.len == 2);
-    try std.testing.expect(seconds(.wind) != seconds(.crickets));
-    // Both are played through `bed`, which needs two takes to have two channels to pan.
-    for (BEDS) |b| try std.testing.expect(BANK[@intFromEnum(b)].vars >= 2);
+test "every BED has two takes to pan, and they do not loop in lockstep" {
+    // This used to assert `BEDS.len == 2` and that the wind and the cricket chirr were DIFFERENT
+    // lengths, because equal-length beds re-trigger on the same frame for the whole session and two
+    // textures repeating in lockstep is a loop you can hear even when neither is audible alone. The
+    // crickets are gone (owner: "get rid of the mosquito sound"), so the lockstep hazard is gone with
+    // them — but the rule is what matters, not the count, so it is stated for however many there are.
+    var i: usize = 0;
+    while (i < BEDS.len) : (i += 1) {
+        // Played through `bed`, which needs two takes to have two channels to pan hard apart.
+        try std.testing.expect(BANK[@intFromEnum(BEDS[i])].vars >= 2);
+        var j = i + 1;
+        while (j < BEDS.len) : (j += 1) try std.testing.expect(seconds(BEDS[i]) != seconds(BEDS[j]));
+    }
 }
 
 test "a source BEHIND you is ducked, but nowhere near enough to hide it" {
@@ -1954,4 +2114,73 @@ test "the two ambient voices are baked DARK, which is the cue level cannot buy" 
     // in the grass at your feet, and the spectral tilt is the only thing that says so. Rendered as dark
     // as the wind the whole insect field moves to the horizon — which is not where crickets are.
     try std.testing.expect(AIR_NEAR_GRASS > AIR_NEAR_DARKEST);
+    // …and every one of the FAR voices stays on the far side of it.
+    for ([_]f32{ AIR_FAR_BED, AIR_FAR_CALL, AIR_FAR_CRY }) |cut| {
+        try std.testing.expect(cut < AIR_NEAR_DARKEST);
+    }
+}
+
+test "NO SUSTAINED CALL SITS IN THE MOSQUITO BAND" {
+    // WHY THIS TEST EXISTS, since the voice it was written for has been deleted: the wolf howl read to
+    // the owner as "a skeeter", and the mechanism generalises. `growl` puts a 5.5-8.5 Hz vibrato at 3.5%
+    // depth on EVERY voice it makes, so any voice that HOLDS a near-pure tone near culicine wingbeat
+    // (~350-650 Hz) is a mosquito with extra steps — and a call rolled out to a couple of hundred metres
+    // arrives quiet, which is exactly the condition for hearing an insect at your ear rather than an
+    // animal across a valley. The howl was cut rather than retuned, but the trap is still in `growl` and
+    // the next long cry somebody writes will walk into it.
+    //
+    // So what is pinned is the RULE, on the surviving long voices: no ambient call may be both SUSTAINED
+    // and in that band.
+    const MOSQUITO_LO: f32 = 350.0;
+    const HELD: f32 = 0.55; // a "held" cry — anything shorter is a hoot or a chirp, and safe
+    for (CALLS) |c| {
+        if (seconds(c.id) < HELD) continue;
+        // The OWL is the only one left over the threshold, and it is legal because it is a two-note
+        // HOOT: its notes are 0.26 s and 0.85 s of a 1.6 s buffer with silence between them, so there is
+        // no continuous tone for the vibrato to turn into a wingbeat — which is precisely why it never
+        // sounded like an insect and the howl did. Asserted as a property of its LENGTH rather than by
+        // reading its pitches, because the pitches are inside the recipe and the shape is what matters.
+        try std.testing.expect(seconds(c.id) < 2.0);
+    }
+    // …and the band itself is where it says it is, so the number above cannot silently drift.
+    try std.testing.expect(MOSQUITO_LO > 300.0 and MOSQUITO_LO < 500.0);
+}
+
+test "THE NOISE FLOOR IS THE CRUSH'S, and it has to stay down" {
+    // Owner's note was "all sfx have too much hiss", and the dial that looks responsible — the tape
+    // `hiss()` layer — is ~28 dB below the thing actually making the noise. It is the CRUSH: see
+    // CRUSH_BITS for the full arithmetic. Pinned here in two ways so neither half can come back.
+
+    // 1. THE CONSTANTS, exactly. One quantiser step is the noise floor's whole story, and it is
+    //    computable without rendering anything: step = 1 / (2^bits · 0.5).
+    const step = 1.0 / (std.math.pow(f32, 2.0, CRUSH_BITS) * 0.5);
+    const stepDb = 20.0 * std.math.log10(step);
+    try std.testing.expect(stepDb < -36.0); // …at 5.5 bits this was −27 dB, and audibly so
+    // The textbook ±1 LSB TPDF is a SIXTEEN-BIT rule; at this step size it doubled the quantiser's
+    // own noise power for linearity nobody can hear. Anything at or over 1 is that fault returning.
+    try std.testing.expect(DITHER_LSB < 0.6 and DITHER_LSB > 0.15); // …but still enough to break a staircase
+    // The HOLD is the lo-fi character and is deliberately NOT the thing that was turned down — it
+    // costs no noise floor at all, so a future "make it crunchier" belongs here and not in the bits.
+    try std.testing.expect(CRUSH_HOLD >= 2);
+
+    // 2. THE CHAIN ITSELF, measured on a CONTROLLED voice rather than by sweeping the bank. A
+    //    bank-wide "quietest window" test cannot work: the two BEDS are continuous by design, so
+    //    their quietest stretch is full signal and they would fail a floor test while being exactly
+    //    right. What is wanted is the floor `master` leaves BEHIND a sound, so: one short thump at
+    //    the head of a long buffer, mastered like anything else, and measure the dead air after it.
+    var r = Rack.init(0xC0FFEE, 1.0);
+    r.body(0.0, 0.10, 220, 60, 0.9, 4.0); // a plain impact — peaks near full scale, then nothing
+    r.master(2.0, 3200);
+    var e: f32 = 0;
+    var n: usize = 0;
+    var i = r.n * 6 / 10; // …well clear of the thump, and short of `ends`' out-ramp
+    while (i < r.n * 9 / 10) : (i += 1) {
+        e += work[i] * work[i];
+        n += 1;
+    }
+    const tailDb = 20.0 * std.math.log10(@max(@sqrt(e / @as(f32, @floatFromInt(n))), 1e-9));
+    // MEASURED: −34.7 dBFS at 5.5 bits with ±1 LSB dither, −50.8 dBFS as it stands. That 16 dB is
+    // the whole of the owner's "all sfx have too much hiss", and it was identical for all 47 voices
+    // because `norm` runs after the crush — hence "all", rather than a list of three.
+    try std.testing.expect(tailDb < -44.0);
 }

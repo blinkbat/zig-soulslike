@@ -235,7 +235,10 @@ pub const Zone = struct {
 /// A clearing you authored is worth more than one the noise happened to leave.
 pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 
-pub const FoeKind = enum(u8) { toad, archer, ogre };
+/// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at
+/// comptime and `kobold.roleOf` reads the three kobold entries as a contiguous run off `berserker`, so
+/// inserting a kind in the middle silently renumbers both. Add at the end.
+pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger };
 
 /// One posted spawn. `yaw` is DEGREES like every yaw in the format (the rigs take radians; the loader
 /// converts). `seed` is the per-instance animation phase in 0..1 — what stops a knot of toads breathing

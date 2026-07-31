@@ -205,10 +205,10 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
 - **A SUBJECT MUST BE LIT, NOT JUST IN FRAME.** `gfx.SUN_DIR` is (−0.60, 0.50, −0.46), which in the rig's
   terms means the sun is over the shoulder of a camera at **yaw ≈ 53** and straight into the lens of one at
   **≈ 233**. A foe TURNS TO FACE the hero, so "photograph its front" means putting the sensed hero where the
-  camera is — and if you park that in the 180-215 band you get its front in its own shadow: near-black, no
-  colour, no fur, no weapon. Every kobold role portrait was shot that way and every one of them was
-  unjudgeable. Put the sensed hero on the SUN's bearing and shoot from ~53; for a lit REAR view turn the
-  subject round (send it the other way) rather than orbiting the camera behind it.
+  camera is — and parking that in the 180-215 band puts its front in its own shadow: near-black, no
+  colour, no fur, no weapon, and unjudgeable (every kobold role portrait was shot that way). Put the
+  sensed hero on the SUN's bearing and shoot from ~53; for a lit REAR view turn the subject round rather
+  than orbiting the camera behind it.
 - **Thin geometry needs a CROP.** Strings, nocked arrows, flutes and setts are invisible in a
   full-frame shot; crop and zoom (System.Drawing) before calling one broken. The HUD counts:
   a 34 px slot and a 1 px bar rim are unjudgeable at 1:1.
@@ -460,24 +460,23 @@ lines where the concerns genuinely part company, and each new file is named so t
                  is deliberately barely there (`REAR_DUCK`): resolving it needs an HRTF, and in a game
                  where the thing behind you kills you, a rear cue that worked would be a bug.
                  **THE CANOPY IS FIVE VOICES, NOT ONE.** Two are looping BEDS played as a hard-panned
-                 pair (`bed`) — the wind, and the CRICKET chirr, which is built as N independent
-                 individuals (own pitch, own chirp rate, own place in its cycle) because one clock
-                 turns a field of crickets into a rhythm section. Their lengths are deliberately
-                 unequal, or the two loops re-align and you can hear it. The other three are sparse
-                 CALLS on their own long clocks — two contrasting BIRDS (one stepped/chiptune, one
-                 SLURRED, because a glide is what separates a whistle from a blip), an OWL, and a
-                 WOLF howl, the furthest-carrying sound in the world. All three are table-driven
-                 (`CALLS`: gap band + distance band) and rolled a BEARING AND A DISTANCE through
-                 `world()`, never played at the ear. The crickets are the ONE ambient voice rendered
-                 BRIGHT (`AIR_NEAR_GRASS`): they are in the grass at your feet, and the spectral tilt
-                 is the only thing that says so.
+                 pair (`bed`) — the wind, and the CRICKET chirr, built as N independent individuals
+                 (own pitch, chirp rate and place in the cycle) because one clock turns a field of
+                 crickets into a rhythm section. Their lengths are deliberately unequal, or the loops
+                 re-align and you hear it. The other three are sparse CALLS on their own long clocks:
+                 two contrasting BIRDS (one stepped, one SLURRED — a glide is what separates a whistle
+                 from a blip) and an OWL, the rarest and furthest. Table-driven (`CALLS`: gap band +
+                 distance band) and rolled a BEARING AND A DISTANCE through `world()`, never played at
+                 the ear. (A WOLF howl was the sixth and is GONE, owner's call, after turning out to be
+                 the "skeeter" — nothing was retuned to inherit its range.) The crickets are the ONE
+                 ambient voice rendered BRIGHT (`AIR_NEAR_GRASS`): they are in the grass at your feet
+                 and the spectral tilt is the only thing that says so.
                  **THE AMBIENCE HAS ITS OWN TRIM** (`Submix.ambience` / `TRIM_AMBIENCE`), applied where
                  a row's gain becomes a raylib volume, so "put the background further back" is ONE
                  number and not six literals with one silently missed. NOTHING ELSE IS TRIMMED — a
                  `.creature` family over the toads and the ogre was tried and REVERTED (owner: "I meant
-                 ambient sounds not combat sounds"); a fight is what the player is listening TO, and
-                 quietening the animal eating him is the opposite of the note. A test pins that exactly
-                 the beds and the calls are trimmed, so the idea cannot come back by accident.
+                 ambient sounds not combat sounds"), and a test pins exactly the beds and the calls so
+                 the idea cannot come back by accident.
 - `hud.zig`    — UI text in Balthazar; the ONLY path to draw/measure text. Two atlases of the
                  same face: 96 px for HUD, 160 px for the YOU DIED card. Also THE ELDEN RING
                  HUD itself — the three vitals bars and the four-slot equipment cross — taking plain
@@ -824,8 +823,7 @@ Placement is deterministic: if it fits once it fits.
     arrays with libc `free()`, and `std.heap.c_allocator` does NOT hand out malloc pointers on Windows
     (no `posix_memalign` → it over-allocates and hides the original pointer in a header BEFORE the
     aligned address). Freeing one with C `free()` frees an interior pointer: heap corruption, surfacing
-    as a `0xC0000374` exit with no stack in it. It was `c_allocator` under a comment claiming it "=
-    malloc, matching raylib's libc free()" — untested for as long as nothing was ever unloaded.
+    as a `0xC0000374` exit with no stack in it.
   - **`rl.unloadModel` UNLOADS THE MATERIAL'S SHADER.** The shader on a terrain tile is the SCENE
     shader every other draw uses, so unloading one tile deletes the program out from under the whole
     renderer and frees its uniform table — and the next tile frees the same pointer again. Go through

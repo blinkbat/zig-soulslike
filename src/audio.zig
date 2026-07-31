@@ -2,26 +2,19 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 
-// ── AUDIO ── every sound in the game, SYNTHESIZED AT LAUNCH. No .wav files anywhere.
+// ── AUDIO ── every sound in the game, SYNTHESIZED AT LAUNCH. No .wav files anywhere: the same argument
+// as the meshes, and WABI-SABI applies to ears too — a footstep sample played twice is the most obviously
+// fake sound a game makes, so the variation is authored in with a seeded Rng.
 //
-// Same argument as the meshes and the ground texture: a procedural bank is a few hundred lines you
-// can retune in a diff, it weighs nothing in the repo, and the variation can be AUTHORED IN with a
-// seeded Rng instead of shipping six takes of a footstep (WABI-SABI, and it is as much a law for
-// ears as for eyes — a footstep sample played twice is the most obviously fake sound a game makes).
+// THE HOUSE SOUND is warm analogue tape: low and fat, everything through a saturation → lowpass → wow →
+// hiss chain, almost every gesture noise or a naive oscillator dragged through a SWEEPING RESONANT
+// FILTER. That sweep is the character — it is what makes a whoosh travel and a hit land in a body.
 //
-// THE HOUSE SOUND is warm analogue tape: everything is LOW and FAT, everything goes through a
-// saturation → lowpass → wow → hiss chain on the way out, and almost every gesture is noise or a
-// simple oscillator dragged through a SWEEPING RESONANT FILTER. That sweep is the whole character —
-// it is what makes a whoosh feel like it travels, a hit feel like it lands in a body, and a menu
-// blip feel like a piece of hardware rather than a beep.
+// 22 kHz IS THE COLOUR, not a compromise: the 11 kHz ceiling rolls the fizz off noise, band-limits the
+// oscillators so they stop buzzing, and puts the sound in the same era as the retro picture.
 //
-// THE SAMPLE RATE IS 22 kHz ON PURPOSE. An 11 kHz ceiling is not a compromise here, it IS the
-// vintage colour: it rolls the fizz off noise, band-limits the naive oscillators so they stop
-// buzzing, and puts everything in the same era as the retro filter stack the picture goes through.
-//
-// LAYOUT: one `BANK` row per voice carries its renderer AND its playback feel (gain, pitch jitter,
-// how many baked variants, how many can overlap), so a voice is ONE ROW — the same "a kind is one
-// row" rule props.INFO follows, for the same reason.
+// One `BANK` row per voice carries its renderer AND its playback feel, so a voice is ONE ROW — the rule
+// `props.INFO` follows, for the same reason.
 
 pub const SR: usize = 22050;
 const SRF: f32 = @floatFromInt(SR);
@@ -379,22 +372,15 @@ const Rack = struct {
 // the effective sample rate (2 = 11 kHz — the audio pixelate). These are the house values every
 // voice gets through `master`; the handful that want more or less say so with `masterX`.
 //
-// ── THIS IS WHERE THE BANK'S HISS COMES FROM, AND `hiss()` IS NOT ─────────────────────────
-// Owner's note: "all sfx have too much hiss". The obvious dial is the tape `hiss()` layer, and
-// turning it down does nothing — it is ~28 dB below what you are actually hearing. The noise is
-// THIS stage, and the arithmetic says so:
+// ── THE BANK'S HISS COMES FROM HERE, AND `hiss()` IS NOT IT ───────────────────────────────
+// "All sfx have too much hiss" is THIS stage, ~28 dB above the tape hiss layer, and turning that layer
+// down does nothing. The arithmetic: at 5.5 bits one quantiser step is 0.044 FS (−27 dBFS), so the
+// quantisation error is −38 and ±1-LSB TPDF dither on top is −35, together ≈ −33 dBFS broadband on every
+// sample of every voice. `hiss()` for comparison sits near −61. `norm` runs after both, so the ratio is
+// identical for all 47 voices — which is why the complaint was "ALL sfx" and not "these three".
 //
-//   At 5.5 bits, `levels` = 2^5.5·0.5 = 22.6, so ONE QUANTISER STEP IS 1/22.6 = 0.044 of full
-//   scale — i.e. −27 dBFS. The quantisation error alone is step/sqrt(12) = −38 dBFS, and the
-//   ±1-LSB TPDF dither on top of it is step/sqrt(6) = −35 dBFS; together ≈ −33 dBFS, broadband,
-//   on EVERY sample of EVERY voice including the tails and the gaps.
-//   The `hiss()` layer, for comparison: 0.012 of uniform noise through two poles at 5200 and
-//   2600 Hz lands near −61 dBFS, and its between-events floor near −70.
-//   And `norm` runs AFTER both, so that ratio is identical for all 47 voices — which is exactly
-//   why the complaint was "ALL sfx" and not "these three".
-//
-// So the fix is here, in two parts, and the SAMPLE-RATE crunch (`HOLD`) is deliberately untouched:
-// the hold is most of what the lo-fi character actually is, and it adds no noise floor at all.
+// Fixed in the two constants below. The SAMPLE-RATE crunch (`HOLD`) is deliberately untouched: it is most
+// of what the lo-fi character actually is and adds no noise floor at all.
 const CRUSH_BITS: f32 = 7.5; // was 5.5 — +2 bits is −12 dB of floor, and 180 levels still staircases
 /// DITHER DEPTH IN LSB, and the textbook ±1 is a SIXTEEN-BIT rule. At 16 bits one LSB is inaudible so
 /// full-scale TPDF is free; at 5.5 it was the single loudest thing in the master chain, doubling the
@@ -517,31 +503,23 @@ pub const Id = enum {
 };
 const NV = @typeInfo(Id).@"enum".fields.len;
 
-// ── VARIANCE: KEEP THE IDENTITY, LOSE THE GRATE (owner's law, and it is the same law the world's
-// wabi-sabi follows). A sound you hear four hundred times a session has to be recognisably ITSELF
-// every time and never twice the same, and three separate dials do that:
+// ── VARIANCE: KEEP THE IDENTITY, LOSE THE GRATE (owner's law — the wabi-sabi rule, for ears). Three
+// dials, in order of how much they buy:
 //
-//   `vars` — N genuinely different TAKES, baked from different seeds. The strongest of the three by
-//            far: the ear catches a repeated waveform long before it catches a repeated pitch, so
-//            the sounds you hear most (footsteps, hits, croaks) get four apiece and they ROTATE
-//            round-robin, which means you cannot hear the same one twice in a row.
-//   `jit`  — per-trigger PITCH wobble. Cheap, and it does the fine-grain work between takes.
-//   `vjit` — per-trigger LEVEL wobble. The one that was missing, and the one that matters most for
-//            footsteps: real steps vary in weight far more than they vary in pitch, and a run of
-//            identically-loud steps reads as a machine however well the pitch is jittered.
-// ── THE SUBMIX TRIM ── one multiplier for THE BACKGROUND, applied to every row's gain in `trigger`.
+//   `vars` — N different TAKES baked from different seeds, rotated round-robin so you cannot hear the
+//            same one twice in a row. By far the strongest: the ear catches a repeated WAVEFORM long
+//            before it catches a repeated pitch.
+//   `jit`  — per-trigger PITCH wobble, for the fine grain between takes.
+//   `vjit` — per-trigger LEVEL wobble. Matters most for footsteps: real steps vary in weight far more
+//            than in pitch, and identically-loud ones read as a machine however well pitched.
 //
-// WHY THIS EXISTS RATHER THAN SIX EDITED LITERALS: "all ambience should be in the background softly"
-// is a decision about a WHOLE FAMILY, and a family whose level lives as one number per row cannot be
-// moved as a family — you edit six literals, miss one, and the one you missed is now the loudest thing
-// in its group with nothing to compare it against. So a row's `gain` stays what it always was, the
-// BALANCE INSIDE its family, and the family's own level is here. (Same argument `MASTER_VOL` makes for
-// the whole output, one level up.)
+// ── THE SUBMIX TRIM ── one multiplier for THE BACKGROUND, applied where a row's gain becomes a volume.
+// A row's own `gain` is its BALANCE INSIDE its family; a family's level is one number here, because
+// "put the ambience further back" cannot be six edited literals with one silently missed.
 //
-// THERE IS DELIBERATELY NO TRIM FOR THE COMBAT VOICES. A `.creature` family covering the toads and the
-// ogre was tried and REVERTED (owner: "I meant ambient sounds not combat sounds") — a fight is the
-// thing the player is listening TO, and quietening the animals you are being eaten by is the opposite
-// of the note. The toads and the giant sit at the reference level with the hero.
+// NO TRIM FOR THE COMBAT VOICES. A `.creature` family over the toads and the ogre was tried and REVERTED
+// (owner: "I meant ambient sounds not combat sounds") — a fight is what the player is listening TO, and
+// quietening the animal eating him is the opposite of the note.
 pub const Submix = enum {
     /// Everything that is not background: the hero, his steel, his flasks, the arrows, the foes he is
     /// fighting, the chrome. The reference level — trim 1.0 by definition.
@@ -654,8 +632,8 @@ fn mkSwingHeavy(r: *Rack) void {
 //   3. `tick(…, cut)` — a transient at 5 kHz is an ice-pick; it says CONTACT just as well far lower.
 //   4. `ring` — partials space at ~1.48x, so 1400 Hz with 3 of them reaches past 4 kHz. On flesh that
 //      metallic sting should barely be there.
-// The `body` layer is the only one carrying mass, so it gains what the others give up. NOT quieter: a
-// gain trim over combat was tried and reverted (owner: "I meant ambient sounds not combat sounds").
+// The `body` layer is the only one carrying mass, so it gains what the others give up. DARKER, not
+// quieter — combat takes no submix trim (see `Submix`).
 
 fn mkHitLight(r: *Rack) void {
     // Blade into a body: a wet crack and a low thump under it. The ring is what says STEEL did it, but
@@ -1027,12 +1005,15 @@ fn mkKoboldCast(r: *Rack) void {
 }
 
 fn mkKoboldHeal(r: *Rack) void {
-    // It LANDED. A short warm bloom — the reward half of the cast, and deliberately quieter than the
-    // tell: hearing this means you were too slow, and the game should not celebrate that at you.
-    r.ring(0.0, 0.42, 528, 0.5, 2.6, 4);
-    r.ring(0.01, 0.34, 792, 0.24, 3.4, 3);
-    r.air(0.0, 0.26, 0.16, 3200, 1100, 0.4, 2.2);
-    r.master(1.9, 5000);
+    // It LANDED. A HIGH SOFT CHIME (owner's call — it was a low bell, which is a church, not a trinket):
+    // a small bright thing struck once, two octaves up from where it was, with the fundamental thin and
+    // the partials doing the work. Hearing this means you were too slow, so it stays quiet and short —
+    // the game should not celebrate that at you.
+    r.ring(0.0, 0.30, 2112, 0.34, 4.2, 3);
+    r.ring(0.012, 0.24, 3168, 0.20, 5.0, 2);
+    r.ring(0.0, 0.16, 1584, 0.10, 5.5, 2); // just enough body to be a chime and not a sine beep
+    r.air(0.0, 0.13, 0.07, 6200, 3000, 0.5, 3.4);
+    r.master(1.6, 9000); // the low-pass opened up: a chime that is rolled off at 5k is a bell again
 }
 
 fn mkKoboldWhirl(r: *Rack) void {
@@ -1323,28 +1304,17 @@ fn mkOwl(r: *Rack) void {
 // quiet, SUSTAINED `growl` heard from a distance. The OWL was built the same way. The rule: **`growl` is
 // for SHORT, LOUD, ROUGH things**; for anything sustained and quiet use `body`, which has no vibrato.)
 
-// ── THE CRICKETS ── the other BED, and the one that actually makes a golden-hour field sound like
-// one. Its shape is nothing like the wind's, and the difference is the point:
+// ── THE CRICKETS ── the other BED, and shaped nothing like the wind's, which is the point. The wind is
+// ONE continuous thing; crickets are MANY discrete ones — a chirp is three to five hard ~4.5 kHz pulses,
+// a fifth of a second, two or three times a second. So this is N INDIVIDUALS with their own pitch, rate,
+// pulse count and place in the cycle: run them off one clock and a field becomes a rhythm section.
 //
-//   THE WIND IS ONE CONTINUOUS THING. The crickets are MANY DISCRETE ones — a cricket chirp is a
-//   burst of three to five hard pulses of ~4.5 kHz stridulation, a fifth of a second long, repeated
-//   two or three times a second. So this is built as N INDIVIDUALS, each with its own pitch, its own
-//   chirp rate, its own pulse count and its own place in its cycle. That independence is the whole
-//   texture: run them off one clock and a field of crickets becomes a rhythm section.
+// It is also the one ambient voice rendered BRIGHT (AIR_NEAR_GRASS) — crickets are in the grass at your
+// feet, and the spectral tilt is what says so. Baked twice and hard-panned like the wind (`bed`).
 //
-//   AND IT IS BRIGHT (AIR_NEAR_GRASS), alone among the ambient voices. Crickets are in the grass at
-//   your feet, not out on the plain, and the spectral tilt is what says so — rendered dark like the
-//   wind the whole insect field moves to the horizon.
-//
-// Baked TWICE from different seeds and played hard left / hard right like the wind (see `bed`), so
-// the field surrounds you instead of chirping at you from between the speakers.
-//
-// DELETED ONCE AND RESTORED UNCHANGED. Told "get rid of the mosquito sound" I reasoned my way to this
-// voice — bright, continuous, right at the top of hearing — and removed it. It was not this; the whine was
-// a sustained `growl` in the CALLS, twice over (the wolf, then the owl — see `mkOwl`). Nothing here was
-// ever wrong, and the note stays because the reasoning that condemned it is so tempting: "mosquito" makes
-// you look for the BRIGHTEST thing in the mix, and a mosquito is not bright, it is a faint sustained tone
-// with a ~6 Hz waver on it. Look at the fundamentals and the vibrato, not the top octave.
+// A "MOSQUITO" COMPLAINT IS NOT THIS VOICE. It was condemned once on exactly that reasoning and restored
+// unchanged; the whine was a sustained `growl` in the CALLS. A mosquito is not bright — it is a faint
+// sustained tone with a ~6 Hz waver. Look at fundamentals and vibrato, not the top octave.
 const CRICKETS = 7; // individuals near enough to be heard APART; past that it is a chirr, not a field
 const CRICKET_SING: f32 = 0.22; // fraction of its own cycle one cricket is actually singing
 
@@ -1484,8 +1454,10 @@ const BANK = [NV]Row{
     // …and so must the CAST, for the same reason and more so — it is a thing you have to cross a
     // field to stop, so it has to be audible from where you would have to leave.
     .{ .make = mkKoboldCast, .gain = 0.62, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 2, .reach = 78 },
-    // The heal LANDING is quieter than the cast on purpose (see mkKoboldHeal).
-    .{ .make = mkKoboldHeal, .gain = 0.40, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 3, .reach = 54 },
+    // The heal LANDING is quieter than the cast on purpose (see mkKoboldHeal), and quieter again on the
+    // owner's call now that it is a high chime: high frequencies read as louder at the same level, so
+    // the same number would have been an increase.
+    .{ .make = mkKoboldHeal, .gain = 0.22, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 3, .reach = 54 },
     .{ .make = mkKoboldWhirl, .gain = 0.42, .jit = 0.20, .vjit = 0.24, .vars = 5, .poly = 3, .reach = 44 },
     .{ .make = mkKoboldSling, .gain = 0.50, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 4, .reach = 52 },
     .{ .make = mkKoboldBite, .gain = 0.56, .jit = 0.20, .vjit = 0.26, .vars = 6, .poly = 3, .reach = 40 },
@@ -1885,9 +1857,9 @@ const CALLS = [_]Call{
     .{ .id = .birdsong, .gapLo = 11, .gapHi = 31, .distLo = 30, .distHi = 140, .first = 9 },
     // Rarer than either bird by a factor of three, and further out: an owl is a thing you hear
     // occasionally from somewhere in the ruins, not a resident of the tree you are standing under.
-    // …and it is now the RAREST and FURTHEST of the calls, a job the wolf used to hold (removed —
-    // owner). Nothing was re-tuned to fill the gap: the owl was already the right shape for it, and
-    // manufacturing a replacement "biggest sound in the world" is how the mosquito got made.
+    // …and the RAREST and FURTHEST of the calls. Nothing was re-tuned to inherit that when the wolf was
+    // cut: "furthest-carrying" is a consequence of a voice's character, not a post to be filled, and
+    // manufacturing a replacement for it is how the mosquito got made.
     .{ .id = .owl, .gapLo = 26, .gapHi = 70, .distLo = 40, .distHi = 150, .first = 22 },
 };
 
@@ -2038,9 +2010,7 @@ test "reach is per VOICE: a giant carries, a toad does not, a bird carries furth
     try std.testing.expect(reach(.toad_chomp) < reach(.bow_loose));
     try std.testing.expect(reach(.bow_loose) < reach(.ogre_slam));
     try std.testing.expect(reach(.ogre_slam) < reach(.birds));
-    // The BIRDS now carry furthest of anything in the world. That used to be the wolf howl's job (it
-    // is gone — owner), and the ordering is left ending here rather than promoting something else into
-    // the slot: "furthest-carrying" is a consequence of a voice's character, not a post to be filled.
+    // The BIRDS carry furthest of anything in the world, and the ordering ends there.
     // The archer's TWANG is the cue to move and must outrange the creak of the draw that precedes it.
     try std.testing.expect(reach(.bow_loose) > reach(.bow_draw));
     // A toad's world is 11 m wide (its aggro radius), so its voice must comfortably cover that and
@@ -2077,11 +2047,8 @@ test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience"
     for (CALLS) |c| try std.testing.expectEqual(Submix.ambience, BANK[@intFromEnum(c.id)].mix);
     try std.testing.expect(TRIM_AMBIENCE > 0 and TRIM_AMBIENCE < 1.0);
 
-    // AND NOTHING ELSE DOES. A `.creature` family covering the toads and the ogre was tried and
-    // REVERTED (owner: "I meant ambient sounds not combat sounds") — a fight is what the player is
-    // listening TO, and quietening the animal eating you is the opposite of the note. Asserted so the
-    // idea cannot come back by accident: exactly the beds and the calls are trimmed, and no combat
-    // voice is.
+    // AND NOTHING ELSE DOES — asserted so the reverted `.creature` trim (see `Submix`) cannot come back
+    // by accident. Exactly the beds and the calls are trimmed; no combat voice is.
     var trimmed: usize = 0;
     for (BANK) |row| {
         if (row.mix == .ambience) trimmed += 1;
@@ -2099,11 +2066,11 @@ test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience"
 }
 
 test "every BED has two takes to pan, and they do not loop in lockstep" {
-    // This used to assert `BEDS.len == 2` and that the wind and the cricket chirr were DIFFERENT
-    // lengths, because equal-length beds re-trigger on the same frame for the whole session and two
-    // textures repeating in lockstep is a loop you can hear even when neither is audible alone. The
-    // crickets are gone (owner: "get rid of the mosquito sound"), so the lockstep hazard is gone with
-    // them — but the rule is what matters, not the count, so it is stated for however many there are.
+    // BEDS MUST NOT SHARE A LENGTH: equal-length beds re-trigger on the same frame for the whole
+    // session, and two textures repeating in lockstep is a loop you can hear even when neither is
+    // audible alone. Stated for however many beds there are rather than pinning the count.
+    // (This block claimed the crickets had been REMOVED. They are in `BEDS` — they were deleted once
+    // and restored unchanged, and the comment did not come back with them.)
     var i: usize = 0;
     while (i < BEDS.len) : (i += 1) {
         // Played through `bed`, which needs two takes to have two channels to pan hard apart.

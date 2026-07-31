@@ -14,26 +14,13 @@ const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
 // ── THE SKELETAL ARCHER ─────────────────────────────────────────────────────────────────
-// The second foe: a bare-bones skeleton that KITES — it holds a range band off the hero,
-// looses slowish lightly-homing arrows that stick where they land and fade, and never melees
-// (the opening is closing the gap). One-and-done death (collapse → dissipate; no ER reform).
+// A bare-bones skeleton that KITES: it holds a range band, looses slowish lightly-homing arrows that
+// stick and fade, and never melees — the opening is closing the gap. One-and-done death.
 //
-// FOUNDED ON THE HUMANOID MODEL (owner's brief): it reuses the hero's real anthropometry
-// (Drillis & Contini segment fractions), the same forward-kinematics scaffold (a per-bone
-// world matrix chained down a parent hierarchy, `draw()` replays it in both the depth + lit
-// passes), and the hero's NORMATIVE GAIT tables (heromod.HIP_FLEX/… + sampleCurve, now pub)
-// so the skeleton walks on the same science instead of a duplicated cycle. What differs is
-// the SKIN — bone meshes, not the Tarnished's armour — and the animation: an archer's
-// nock / draw / hold / loose instead of sword cuts.
-//
-// THE RIG SCAFFOLD IS SHARED NOW (`hero.N` / `hero.PARENT` / `hero.restHumanoid`). This file used to
-// re-state it locally under a note saying to lift it "if a third humanoid ever appears" — the ogre
-// made three and the kobolds would have made a fourth transcription of the same seventeen numbers.
-// The weapon bone stays independent the way it was always meant to: slot 17 is `hero.HELD`, and what
-// hangs off it is this creature's business (a BOW here, a sword on the hero, an axe on a kobold).
-//
-// Rendering discipline matches hero/frog: procedural Builder meshes drawn with drawMesh
-// through one scene-shader material, so it lights + casts shadows like everything else.
+// FOUNDED ON THE SHARED HUMANOID MODEL (owner's brief) — `hero.restHumanoid`'s scaffold, the hero's
+// anthropometry and his NORMATIVE GAIT tables, so it walks on the same science rather than a duplicated
+// cycle. What differs is the SKIN and the animation: nock / draw / hold / loose instead of cuts. Slot 17
+// is `hero.HELD`, carrying a BOW here.
 
 // ── palette (pre-gamma dark — the scene shader gammas output, so bone is authored moderate
 // and lifts to aged, yellowed ivory; hollows near-black so sockets/gaps read empty) ──────
@@ -215,7 +202,11 @@ const ARROW_HOME_FADE = 0.45; // …and it decays to nothing over this much flig
 //   air), NOT to answer what he does afterwards. Held at full strength for the whole flight it read
 //   as a homing missile — owner's note: too much tracking. Total bend available is now ~11 deg,
 //   about the lead error at a full-range shot, and all of it spent in the first half-second.
-const ARROW_GRAV = 3.0; // gentle drop so long shots arc
+const ARROW_GRAV: f32 = 3.0; // gentle drop so long shots arc
+/// A STONE DROPS HARDER THAN A SHAFT — which this file has always claimed and never did, because one
+/// gravity served both. It is what makes the lob a lob: with the loft solved (see `launchAt`) the arc's
+/// height is set by gravity alone, so this is the only dial that decides how much of a lob it is.
+const STONE_GRAV: f32 = 9.0;
 const ARROW_LIFE = 3.5; // seconds airborne before it gives up (falls + sticks)
 const ARROW_STICK_FADE = 1.4; // seconds a stuck arrow lingers, then fades
 const ARROW_HIT_R = 0.5; // hero footprint the arrow must reach to connect…
@@ -306,27 +297,39 @@ fn drawArrowTrail(a: *const Arrow) void {
 
 // Loose an arrow from `from` toward `target`, with a little loft so the shot ARCS toward a
 // (usually lower) target over distance — the light homing in stepArrow refines the rest.
-pub fn launchArrow(from: rl.Vector3, target: rl.Vector3) Arrow {
-    var d = mathx.subV(target, from);
-    const dist = mathx.lenV(d);
-    d = if (dist < 1e-3) v3(0, 0, 1) else mathx.scaleV(d, 1.0 / dist);
-    var vel = mathx.scaleV(d, ARROW_SPEED);
-    vel.y += ARROW_SPEED * 0.10 + dist * 0.04; // loft, to counter the drop across the gap
-    return .{ .pos = from, .vel = vel, .live = true };
-}
-
-/// A SLINGER'S STONE, off the same launcher. Slower and lobbed higher, so it arcs visibly and you walk
-/// out of it rather than rolling — which is what keeps the slinger answerable by closing. `speed` is
-/// the kobold's own constant; this file only owns the flight.
-pub fn launchStone(from: rl.Vector3, target: rl.Vector3, speed: f32) Arrow {
+/// LAUNCH AT A POINT AND ACTUALLY HIT IT. Aim straight at the target, then add exactly the loft that
+/// gravity will take back over the flight — and "exactly" is arithmetic, not a feel dial:
+///
+/// adding vertical speed does not change the HORIZONTAL speed, so arrival is at `t = dist/speed`
+/// whatever the loft; the drop over that flight is `½·g·t`, so lofting by that much means the shot
+/// arrives on the aim line. It is an equality, and every value of `speed`, `g` and `dist` satisfies it.
+///
+/// THE OLD VERSIONS GUESSED, and the slinger's guess was wrong by more than the hero is tall (owner:
+/// "terrrrrible aim … goes right over me"). `speed·0.24 + dist·0.07` is 3.3 m/s of lift at ten metres
+/// against 1.2 m of drop, i.e. the stone crossed 1.8 m ABOVE his centre of mass while the hurt volume
+/// reaches 0.85 — a clean miss over the top, every time, at every range. The arrow's guess had the
+/// same sign and was merely small enough to stay inside the volume, which is why only one of the two
+/// looked broken.
+fn launchAt(from: rl.Vector3, target: rl.Vector3, speed: f32, grav: f32, stone: bool) Arrow {
     var d = mathx.subV(target, from);
     const dist = mathx.lenV(d);
     d = if (dist < 1e-3) v3(0, 0, 1) else mathx.scaleV(d, 1.0 / dist);
     var vel = mathx.scaleV(d, speed);
-    // MORE loft than an arrow's, proportionally: a stone that flew flat would be an arrow with a
-    // different mesh, and the arc IS the tell.
-    vel.y += speed * 0.24 + dist * 0.07;
-    return .{ .pos = from, .vel = vel, .live = true, .stone = true };
+    vel.y += 0.5 * grav * (dist / speed);
+    return .{ .pos = from, .vel = vel, .live = true, .stone = stone };
+}
+
+pub fn launchArrow(from: rl.Vector3, target: rl.Vector3) Arrow {
+    return launchAt(from, target, ARROW_SPEED, ARROW_GRAV, false);
+}
+
+/// A SLINGER'S STONE, off the same launcher: slower, and it DROPS HARDER (`STONE_GRAV`), which is where
+/// the visible lob comes from now that the loft is solved rather than piled on. Heavier gravity buys a
+/// taller arc for free — the compensating loft rises with it — so the stone still arrives on the aim
+/// line while flying a path you can read and walk out of. `speed` is the kobold's own constant; this
+/// file only owns the flight.
+pub fn launchStone(from: rl.Vector3, target: rl.Vector3, speed: f32) Arrow {
+    return launchAt(from, target, speed, STONE_GRAV, true);
 }
 
 // Advance one arrow a frame: LIGHT homing (a gentle bend toward the hero, never a lock — a
@@ -353,21 +356,27 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, he
     }
     a.age += dt;
     const target = v3(hero.x, heroCenterY, hero.z);
-    const spd = mathx.lenV(a.vel);
-    if (spd > 1e-3) {
-        const cur = mathx.scaleV(a.vel, 1.0 / spd);
-        const to = mathx.normV(mathx.subV(target, a.pos));
-        // bend the HEADING toward the hero by a small fraction/second (keeps its speed) — but only
-        // while still closing, so a shot that's been dodged flies PAST instead of U-turning, and
-        // only over the first ARROW_HOME_FADE of flight, after which the shaft is DEAD straight and
-        // a sidestep beats it outright.
+    // HOMING IS HORIZONTAL ONLY, and the vertical is left strictly to the launch and to gravity. The
+    // assist exists to trim the LEAD ERROR — the hero walked while the shot was in the air — and lead
+    // error is a bearing, never a height. Bending the FULL 3D vector (and renormalising it to keep the
+    // speed) re-aimed the whole velocity down the sight line, which spends the solved loft on closing
+    // the gap: harmless on a flat shaft, fatal to a lob, and it made the stone fall short of a target
+    // it was launched exactly at. So the plane the assist may turn in is the ground plane.
+    const hs = mathx.lenXZ(a.vel);
+    if (hs > 1e-3) {
         const assist = ARROW_HOMING * (1.0 - mathx.smoothstep(0, ARROW_HOME_FADE, a.age));
-        if (assist > 0 and cur.x * to.x + cur.y * to.y + cur.z * to.z > 0.2) {
+        const cur = v3(a.vel.x / hs, 0, a.vel.z / hs);
+        const to = mathx.dirXZ(a.pos, target);
+        // …and only while still CLOSING, so a shot that has been dodged flies PAST instead of U-turning.
+        if (assist > 0 and cur.x * to.x + cur.z * to.z > 0.2) {
             const bent = mathx.normV(mathx.lerpV(cur, to, mathx.clampF(assist * dt, 0, 1)));
-            a.vel = mathx.scaleV(bent, spd);
+            a.vel.x = bent.x * hs;
+            a.vel.z = bent.z * hs;
         }
     }
-    a.vel.y -= ARROW_GRAV * dt;
+    // …and the drop, which is per-PROJECTILE: `launchAt` solved the loft against this exact number, so
+    // integrating a shaft's gravity under a stone would put the stone back off the aim line.
+    a.vel.y -= (if (a.stone) STONE_GRAV else ARROW_GRAV) * dt;
     const prev = a.pos;
     a.pos = mathx.addV(a.pos, mathx.scaleV(a.vel, dt));
     // Push this frame's position onto the trail ring. Aged FIRST, so the sample just written is the
@@ -1464,6 +1473,52 @@ test "arrows thunk into cover instead of piercing it; tall shots clear a LOW blo
     while (i < 240 and !over.stuck) : (i += 1)
         stepArrow(&over, v3(0, 0, 12.0), 1.0, 0, false, &.{low}, dt);
     try std.testing.expect(over.stuck and over.pos.z > 5.5); // cleared the grave, landed well beyond
+}
+
+test "a shot that is aimed at a standing hero HITS him, at every range and either weight" {
+    // The solved loft is an EQUALITY, so this is not a tolerance check on a feel dial: a target that
+    // does not move must be struck whatever the distance, and it was the slinger sailing over the
+    // hero's head at every range that said the loft was being guessed.
+    const dt: f32 = 1.0 / 60.0;
+    const heroY: f32 = 1.0;
+    for ([_]f32{ 3, 8, 14, 20 }) |range| {
+        const hero = v3(0, 0, range);
+        const aim = v3(0, heroY, range);
+        // From a launch point ABOVE the target (a bow at the chest, a sling pouch over the head) and
+        // from BELOW it, since the aim line's own slope is what the old loft was fighting.
+        for ([_]f32{ 1.4, 2.1, 0.4 }) |fromY| {
+            var shaft = launchArrow(v3(0, fromY, 0), aim);
+            var stone = launchStone(v3(0, fromY, 0), aim, 11.0);
+            var i: u32 = 0;
+            while (i < 600 and !shaft.stuck) : (i += 1) stepArrow(&shaft, hero, heroY, 0, false, &.{}, dt);
+            i = 0;
+            while (i < 600 and !stone.stuck) : (i += 1) stepArrow(&stone, hero, heroY, 0, false, &.{}, dt);
+            try std.testing.expect(shaft.hit);
+            try std.testing.expect(stone.hit);
+        }
+    }
+}
+
+test "the stone LOBS and the shaft does not — the arc is the slinger's tell" {
+    // Same launcher, same aim, and the stone must still be the one that goes over a wall. Peak height
+    // above the launch is what a player reads as an arc, so that is what this compares.
+    const dt: f32 = 1.0 / 60.0;
+    const aim = v3(0, 1.0, 14.0);
+    var shaft = launchArrow(v3(0, 1.4, 0), aim);
+    var stone = launchStone(v3(0, 1.4, 0), aim, 11.0);
+    var peakShaft: f32 = 0;
+    var peakStone: f32 = 0;
+    var i: u32 = 0;
+    while (i < 600 and !shaft.stuck) : (i += 1) {
+        stepArrow(&shaft, v3(0, 0, 14.0), 1.0, 0, false, &.{}, dt);
+        peakShaft = @max(peakShaft, shaft.pos.y - 1.4);
+    }
+    i = 0;
+    while (i < 600 and !stone.stuck) : (i += 1) {
+        stepArrow(&stone, v3(0, 0, 14.0), 1.0, 0, false, &.{}, dt);
+        peakStone = @max(peakStone, stone.pos.y - 1.4);
+    }
+    try std.testing.expect(peakStone > peakShaft * 2.0);
 }
 
 test "a SIDESTEP beats an arrow: the homing is a launch nudge, not a lock" {

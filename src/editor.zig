@@ -18,17 +18,15 @@ const v3 = mathx.v3;
 // every change re-runs env.materialize and what you look at is what the player gets: no separate preview,
 // nothing to keep in sync.
 //
-// LAYERS, the StarEdit way: GROUND (paint the soil), COVER (the flora carpet's zones and clearings), DECOR
-// (small growing things), PROPS (standing stone and timber), INTERACTABLES (what the player OPENS),
-// UNITS (foe spawns). What makes them worth
-// having is that ONLY THE ACTIVE LAYER IS LIVE — every layer stays visible, but a click can only pick,
-// place or erase in the one you are on, so dressing ferns can never nudge a chapel. Each ends in its own
-// scoped ERASE brush and remembers the brush you left it on.
+// LAYERS, the StarEdit way: GROUND (shape + paint the land), COVER (the flora carpet's zones and
+// clearings), DECOR (growing things), PROPS (stone and timber), INTERACTABLES (what the player OPENS),
+// UNITS (foe spawns). ONLY THE ACTIVE LAYER IS LIVE — every layer stays visible, but a click can only
+// pick, place or erase in the one you are on, so dressing ferns can never nudge a chapel. Each ends in
+// its own scoped ERASE brush and remembers the brush you left it on.
 //
-// THE OPS ARE THE DOCUMENT, BUT THERE IS NO LIST OF THEM. SELECTION IS BY CLICKING THE THING IN THE WORLD:
-// clicking a prop selects the op that GREW it (props carry their op index), which is what keeps the
-// generators — most of the world — reachable by pointing. A scrolling list of the ops was tried and removed
-// (see the note further down): it was the document model showing through the window.
+// THE OPS ARE THE DOCUMENT, BUT THERE IS NO LIST OF THEM: clicking a prop selects the op that GREW it
+// (props carry their op index), which is what keeps the generators — most of the world — reachable by
+// pointing. A scrolling op list was tried and removed as the document model showing through the window.
 //
 // Interaction grammar (diablo's editor, which is StarEdit's): LEFT paints/places, or in Select mode picks
 // and pans; RIGHT-CLICK opens the context menu and RIGHT-DRAG orbits (a 4 px threshold splits them); WHEEL
@@ -89,9 +87,8 @@ const FOE_PICK_R: f32 = 1.6;
 // Undo ring at file scope: a Map is ~230 KB and 24 of them is ~5.5 MB, which belongs in BSS
 // rather than inside Game (already ~2 MB) or on an allocator this codebase otherwise avoids.
 //
-// A TRUE RING — `undoBase` says which slot holds the oldest snapshot. It used to be a plain array
-// that slid its whole contents down one to make room, which at 230 KB a Map meant a 5.4 MB
-// memmove on EVERY edit once the 24 slots were full, for a bookkeeping change of one integer.
+// A TRUE RING — `undoBase` is the slot holding the oldest snapshot. A sliding array would memmove
+// 5.4 MB per edit once the 24 slots are full (a Map is 230 KB) to change one integer.
 var undoRing: [UNDO_CAP]wf.Map = undefined;
 var undoBase: usize = 0; // ring slot of the OLDEST live snapshot
 var undoN: usize = 0; // how many snapshots are live
@@ -172,19 +169,15 @@ const layerTips = [Layer.N][:0]const u8{
     "Foe spawns",
 };
 
-// Brush tables. The LAST entry of every layer is its scoped eraser, so an erase can never reach
-// out of the layer you are working in.
+// Brush tables. The LAST entry of every layer is its scoped eraser, so an erase can never reach out of
+// the layer you are in.
 //
-// HAND TOOLS FIRST, GENERATORS AFTER (owner's rule). The direct one — the brush that puts exactly one
-// thing exactly where you clicked — leads every layer, and the scatters follow it: you author by hand
-// and reach for a generator when you want a wood. It is also what the digit keys land on, since 1
-// arms the first brush.
+// HAND TOOLS FIRST, GENERATORS AFTER (owner's rule): the brush that puts one thing where you clicked
+// leads every strip, which is also what the digit keys land on.
 //
-// Ground is the LAND ITSELF, and it has two halves: the SHAPE you sculpt (raise / lower / smooth /
-// flatten, the direct tools, so they lead) and the SURFACE you paint over it (the six soils, then
-// water — not a soil, but the same gesture on the same ground and the layer you would look in). The
-// eraser wipes the paint and the water; it deliberately does NOT flatten, because an erase that
-// silently destroyed the terrain you sculpted is not an undo anybody wants by accident.
+// Ground carries two jobs — the SHAPE you sculpt (leading, being the direct tools) and the SURFACE you
+// paint over it. Its eraser wipes paint and water and deliberately does NOT flatten: an erase that
+// destroyed the terrain you sculpted is not an undo anybody wants by accident.
 const groundBrushes = [_][:0]const u8{ "Raise", "Lower", "Smooth", "Flat", "dirt", "turf", "stone", "silt", "ash", "moss", "Water", "Erase" };
 const coverBrushes = [_][:0]const u8{ "Clearing", "Zone", "Erase" };
 const decorBrushes = [_][:0]const u8{ "Single", "Patch", "Scatter", "Erase" };
@@ -384,10 +377,9 @@ comptime {
 /// tool with the right caption.
 pub const GroundBrush = enum { raise, lower, smooth, flat, dirt, turf, stone, silt, ash, moss, water, erase };
 const CoverBrush = enum { clearing, zone, erase };
-/// PUBLIC for the same reason `GroundBrush` is: the `--shot` harness arms a brush to photograph it, and
-/// it used to do that with a literal index and a comment saying which brush that was. Both of those
-/// comments went stale the moment the hand tools were moved to the front of every strip — the shot then
-/// captures the wrong tool under the right caption, which is the failure a name cannot have.
+/// PUBLIC for the same reason `GroundBrush` is: the `--shot` harness arms brushes BY NAME. A literal
+/// index goes stale the moment a brush is inserted, and the shot then captures the wrong tool under the
+/// right caption — the one failure a name cannot have.
 pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
 const InteractBrush = enum { stamp, erase };
@@ -435,10 +427,9 @@ fn kindPool(l: Layer) ?[]const Kind {
     };
 }
 
-/// Which GROUP shelves each stocked layer has anything on — resolved once at COMPTIME, because
-/// `props.INFO` is comptime and so is the answer. It used to be a linear scan of EVERY kind per
-/// group per frame, run while laying out the chip row, to answer a question that cannot change at
-/// runtime. Indexed [layer][group]; layers with no kind palette are simply all false.
+/// Which GROUP shelves each stocked layer has anything on, resolved at COMPTIME because `props.INFO` is
+/// comptime and so is the answer — not a per-frame scan of every kind to settle a question that cannot
+/// change at runtime. Indexed [layer][group]; layers with no kind palette are all false.
 const layerGroups = blk: {
     var t = [_][@typeInfo(props.Group).@"enum".fields.len]bool{
         [_]bool{false} ** @typeInfo(props.Group).@"enum".fields.len,
@@ -1351,11 +1342,10 @@ pub const Editor = struct {
     //   right-drag            rotate
     //   wheel                 zoom
     //   WASD / arrows         pan
-    //   Enter confirm, Esc back — and Esc with nothing to back out of opens the menu
+    //   Enter confirm, Esc back — to SELECT mode, then to the menu (see the Esc ladder in `update`)
     //
-    // SELECT MODE is what makes the left button able to mean "select" at all: with a brush armed
-    // the left button paints, and the two cannot share it. A BRUSH is what is armed on entry (see
-    // `selecting`); Select is its own row in the brush strip, and arming any brush disarms it.
+    // SELECT MODE is what lets the left button mean "select" at all: with a brush armed it paints, and
+    // the two cannot share it. A brush is armed on entry; arming any brush disarms Select, Esc re-arms it.
     /// `dt` is REAL seconds, and the sculpt brushes need it: they move the ground at a rate rather than
     /// by a step per frame, so a stroke covers the same ground at 30 fps and at 240.
     fn worldMouse(self: *Editor, m: *wf.Map, env: *envmod.Env, dt: f32) void {
@@ -2550,10 +2540,9 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
 }
 
 // ── GIZMOS FOLLOW THE GROUND ───────────────────────────────────────────────────────────
-// Every wireframe below used to be drawn at ONE height, which was right while the world was a plane
-// and is wrong the moment it isn't: a brush ring at a fixed y is buried in the near side of a hill and
-// hanging in the air over the far side, and the ring is the thing you SCULPT with. So the `y` these
-// take is now a LIFT ABOVE THE GROUND, sampled per vertex.
+// The `y` these take is a LIFT ABOVE THE GROUND, sampled per vertex — never an absolute height. A brush
+// ring at a fixed y is buried in the near side of a hill and hanging over the far side, and the ring is
+// the thing you SCULPT with.
 //
 // The terrain comes from file scope rather than a parameter, and deliberately: it would otherwise have
 // to be threaded through a dozen call sites and two free functions that exist precisely so a marker is
@@ -2889,23 +2878,18 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
         // window the arithmetic goes negative and a rectangle with negative height draws
         // inside-out over the panel above it.
         const listH = @max(0, sh - y - STATUS_H - 8);
-        // THE PALETTE ARMS THE BRUSH. That is ALL it does. It used to also RETARGET whatever was
-        // selected — picking "Birch" with a column selected silently turned that column into a
-        // birch, mutating the map from a click whose obvious meaning is "the next thing I place is
-        // a birch". Owner's call, and the right one: a click in a chooser should not edit the
-        // document. Changing a placed prop is now what it looks like — erase it and stamp the new
-        // one, which is one more action and no longer a surprise.
+        // THE PALETTE ARMS THE BRUSH, and that is ALL it does (owner's call): a click in a chooser must
+        // not edit the document. It once also RETARGETED the selection, so picking "Birch" turned a
+        // selected column into one. Changing a placed prop is erase-and-stamp.
         if (ui.list(ctx, ui.rect(8, y, SIDE_W - 16, listH), labels[0..n], selIdx, &ed.kindScroll)) |i| {
             ed.kindSlot().* = kinds[i];
         }
     }
 }
 
-// (There used to be an OPS list here — every op in the map as a scrolling row. It was the
-// document model showing through the window: nobody dressing a world wants to read a list of
-// its own edit operations, and it read as a history log next to Undo/Redo, which it wasn't.
-// Selection is by CLICKING THE THING IN THE WORLD, which was always the better half and is what
-// StarEdit does. Ops are still reachable by pointing at anything they placed.)
+// (An OPS list lived here and was removed: nobody dressing a world wants to read a list of their own
+// edit operations, and beside Undo/Redo it read as a history log. Selection is by CLICKING THE THING,
+// StarEdit-style, and every op is reachable by pointing at what it placed.)
 
 fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32, sh: i32) void {
     const x0 = sw - PROP_W;

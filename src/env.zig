@@ -20,22 +20,20 @@ const Kind = props.Kind;
 // Every scatter runs off ITS OWN seeded Rng (one per op, not one per world), so the world is identical
 // every launch and editing one scatter cannot re-roll its neighbours.
 //
-// PERFORMANCE — the whole point of the structure below, since most of thousands of props are behind you
-// or lost in haze:
-//   1. A UNIFORM GRID indexes every prop by cell (CSR: one items array + per-cell spans, no
-//      allocation). Two indexes, structures and flora, so each pass walks only its own and each cell
-//      carries the maxima that pass needs.
-//   2. The LIT PASS culls per CELL first (four frustum side planes + the cell's max view distance),
-//      then per prop. A rejected cell is 30 props never touched.
+// PERFORMANCE — the whole point of the structure below, since most of 17k props are behind you or lost
+// in haze:
+//   1. A UNIFORM GRID indexes every prop by cell (CSR: one items array + per-cell spans, no allocation).
+//      Two indexes, structures and flora, so each pass walks only its own and each cell carries the
+//      maxima that pass needs.
+//   2. The LIT PASS culls per CELL first (four frustum side planes + the cell's max view distance), then
+//      per prop. A rejected cell is 30 props never touched.
 //   3. The DEPTH PASS culls by SHADOW REACH, not camera distance: at this sun elevation a caster throws
 //      its shadow ~1.5x its height sideways, so a prop matters iff its footprint plus that reach can
 //      touch the sun's ortho box. A naive distance cull clips real shadows.
 //   4. COLLISION and ARROW FLIGHT query the same grid instead of scanning every solid.
 
-// THE WORLD'S SIZE IS THE MAP'S (`wf.Map.half`), not a constant here. It was once both, and the copy in
-// this file was the one that counted — the movement clamp read it, so a map could declare any `half:` and
-// the hero still stopped at 158 with the cliffs visibly further out. The only compile-time size left is
-// the CEILING the fixed grid can index.
+// THE WORLD'S SIZE IS THE MAP'S (`wf.Map.half`), never a constant here. The only compile-time size left
+// is the CEILING the fixed grid can index.
 /// How far outside the playable bounds the rock wall stands.
 pub const RIM_OUT: f32 = 6.0;
 /// How far INSIDE the map's half the movement clamp sits, so the hero stops short of the rock rather
@@ -100,18 +98,15 @@ pub const MAX_NEAR = 160;
 const GROUND_Y: f32 = 0.01;
 
 // ── ELEVATION ──────────────────────────────────────────────────────────────────────────
-// The ground is a HEIGHTFIELD now (`wf.Map.height`, 2.5 m lattice, sculpted in the editor). Three
-// things follow from that, and all three are why this is not just a taller quad:
+// The ground is a HEIGHTFIELD (`wf.Map.height`, 2.5 m lattice, sculpted in the editor). Three rules:
 //
-//  1. THE MESH IS CHUNKED. One world-spanning mesh is 100k triangles that must be REBUILT while a
-//     sculpt brush is dragging — 13 MB of vertex churn per frame, i.e. a slideshow. Split into
-//     `TCHUNK`-cell tiles, a stroke rebuilds the two or three tiles it touched and the rest of the
-//     terrain is not looked at. The tiles are also the cull unit for drawing.
-//  2. NOTHING SAMPLES THE MAP DIRECTLY. Env keeps its own copy of the field (`heightField`), pushed
-//     by `uploadHeight`, exactly like the soil and water it sits beside — so gameplay stands on the
-//     field the visible mesh was built from and can never read a half-edited grid.
-//  3. A FLAT MAP COSTS NOTHING. `heightAny` is false until something is sculpted, and then the whole
-//     terrain is the ONE original quad again: same draw, same mesh, byte-identical world.
+//  1. THE MESH IS CHUNKED. One world-spanning mesh is 100k triangles rebuilt every frame a sculpt brush
+//     drags — a slideshow. In `TCHUNK` tiles a stroke rebuilds the two or three it touched, and the
+//     tiles are the draw cull unit too.
+//  2. NOTHING SAMPLES THE MAP DIRECTLY. Env keeps the live copy (`heightField`) the visible mesh was
+//     built from, so gameplay cannot stand on a half-edited grid.
+//  3. A FLAT MAP COSTS NOTHING: until something is sculpted the terrain is the ONE original quad, same
+//     draw, byte-identical world.
 /// Height lattice points per terrain chunk. 16 points = 15 quads = 37.5 m of ground per tile, giving
 /// 15x15 tiles over a 224-point field — a rebuild of ~450 quads per brush frame, and a cull unit
 /// comfortably smaller than the view distance.
@@ -811,16 +806,11 @@ pub const Env = struct {
     }
 
     /// Is `p` blocked by any solid near it? The COPY-FREE counterpart of `nearSolids` +
-    /// `collision.blockedBy`, for callers that only want the yes/no — same cells, same `blocksPoint`,
-    /// same margin, but tested in place and short-circuited on the first hit.
+    /// `collision.blockedBy` — same cells, same margin, tested in place and short-circuited.
     ///
-    /// PERFORMANCE, on the one path where it counts: `nearSolids` COPIES every candidate solid (32 bytes)
-    /// into the caller's buffer, and the ground cover asks this once per LATTICE CANDIDATE — ~29,000
-    /// queries on the shipped map, each copying out ~30 solids, so ~28 MB of memcpy per `materialize`
-    /// discarded after one bool. The editor re-materializes at REBUILD_HZ while a dial is held.
-    ///
-    /// It also has no MAX_NEAR ceiling to truncate at, which can only turn a MISSED blocker into a found
-    /// one — and in practice neither happens, since the 160-slot cap was never reached.
+    /// It exists for the ground cover, which asks once per LATTICE CANDIDATE (~29,000 per `materialize`,
+    /// and the editor re-materializes at REBUILD_HZ while a dial is held): copying ~30 solids out per
+    /// query is ~28 MB of memcpy thrown away after one bool. No MAX_NEAR ceiling to truncate at either.
     pub fn blockedNear(self: *const Env, p: rl.Vector3, margin: f32, r: f32) bool {
         const x0 = cellCoord(p.x - r);
         const x1 = cellCoord(p.x + r);
@@ -1279,17 +1269,11 @@ fn inward(a: rl.Vector3, b: rl.Vector3, inside: rl.Vector3) rl.Vector3 {
     return if (d < 0) mathx.scaleV(n, -1) else n;
 }
 
-/// DROP A TERRAIN MESH, and the ONE safe way to do it. The terrain is the only geometry in the game that
-/// is ever unloaded (every prop is a permanent prototype — AGENTS.md says not to unload those, and this
-/// is why): raylib's `UnloadModel` calls `UnloadMaterial`, which UNLOADS THE MATERIAL'S SHADER. The
-/// shader on a tile is the SCENE shader every other draw in the frame uses, so unloading one tile
-/// deleted the program out from under the whole renderer and freed its uniform table — and the next tile
-/// freed the same pointer again. That is a heap corruption at exit and a dead renderer before it, and
-/// the symptom is an exit code with no stack in it.
-///
-/// Pointing the material at raylib's DEFAULT shader first makes `UnloadMaterial` skip it (it never
-/// unloads the default, nor the default texture), while the mesh's own VBOs and CPU arrays still go —
-/// so this frees everything a rebuild should and nothing it shouldn't.
+/// DROP A TERRAIN MESH — the ONE safe way, and the terrain is the only geometry here ever unloaded.
+/// raylib's `unloadModel` calls `UnloadMaterial`, which UNLOADS THE MATERIAL'S SHADER — and a tile's
+/// shader is the SCENE shader every other draw uses, so unloading one tile deletes the program out from
+/// under the renderer and the next tile frees the same pointer again. Pointing the material at raylib's
+/// DEFAULT shader first makes `UnloadMaterial` skip it while the mesh's own VBOs and arrays still go.
 fn unloadTerrain(model: rl.Model) void {
     var m = model;
     m.materials[0].shader.id = rl.gl.rlGetShaderIdDefault();
@@ -2266,20 +2250,13 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(solids0, e.solidCount());
     try std.testing.expectEqual(lights0, e.lightCount());
 
-    // …and the numbers themselves, so a scatter that quietly gains or loses instances is a failing
-    // test rather than something you notice in a screenshot months later. Update them DELIBERATELY,
-    // together with whatever map or placement change moved them.
+    // …and the numbers themselves, so a scatter that quietly gains or loses instances fails the build
+    // instead of drifting in a screenshot. Move them DELIBERATELY, in the same commit as whatever moved
+    // them — and move AGENTS.md's copy with them, or the pin sits red and a red pin catches nothing.
     //
-    // RE-PINNED (17292/1836/34 → 17253/1859/37) after they were found STALE: the props rework that
-    // added kinds and re-measured bounds moved all three and left this test red, and a permanently
-    // failing pin cannot catch the NEXT drift — which is the only thing it is for. Both directions
-    // are consistent with that change: more kinds carrying colliders and fires (solids +23, lights
-    // +3), and different bounds changing how many scatter candidates the solid probe rejects
-    // (props −39). If you move them again, move these with it in the same commit.
-    //
-    // RE-PINNED TWICE MORE for THE MAP changing under it, not the code — the owner edits it while playing
-    // (two cliff4s and a lean, then a chest). `git diff worlds/` BEFORE suspecting the engine: a world
-    // edit's numbers add up (two cliffs = +4 solids, exactly two `cliffParts`), a code fault's do not.
+    // `git diff worlds/` BEFORE SUSPECTING THE CODE: the owner edits the map while playing, and a world
+    // edit's counts add up exactly (two cliffs = +4 solids, `cliffParts` being 2 each) where a code
+    // fault's do not.
     try std.testing.expectEqual(@as(usize, 17205), props0);
     try std.testing.expectEqual(@as(usize, 1864), solids0);
     try std.testing.expectEqual(@as(usize, 37), lights0);

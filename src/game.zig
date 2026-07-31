@@ -98,14 +98,9 @@ const SHAKE_CHEST = 0.12;
 const RESPAWN_HOLD = 0.55; // seconds of FULL black after the respawn…
 const RESPAWN_FADE = 0.9; // …then this long fading up into the fresh world
 
-// Hero movement clamp: the MAP's bounds inset so travel/rolls can't reach the edge. One source for
-// moveHero, the roll and attack updates, every foe's update and the --shot harness.
-//
-// A `var` refreshed from the live map each frame, because the map decides the world's size and the editor
-// can swap it at any moment. It was a COMPILE-TIME `envmod.HALF - 2`, which is why a map's `half:` governed
-// the cliff ring, the cover and the soil grid but NOT where the player could walk — resize and the hero
-// still stopped at the old bound with the rock a hundred metres out. Two dozen call sites read this name,
-// so keeping it a name rather than threading a parameter kept the fix to one line.
+// Hero movement clamp: the MAP's bounds inset so travel and rolls cannot reach the edge. One source for
+// moveHero, the roll/attack updates, every foe and the --shot harness. A `var` refreshed from the live map
+// each frame, NOT a comptime constant: the map owns the world's size and the editor can swap it mid-frame.
 pub var PLAY_HALF: f32 = worldfmt.DEFAULT_HALF - envmod.PLAY_INSET;
 
 // Hero footprint radius for ground collision (see collision.zig). Defined in foe.zig alongside
@@ -126,14 +121,10 @@ pub const HERO_CENTER_Y = 1.0;
 const COLLIDE_RATE = 11.0; // world units / sec
 
 // ── STANDING ON SCULPTED GROUND ────────────────────────────────────────────────────────
-// An actor's `pos.y` is the ground height under them, and it is written HERE, once, for the hero and
-// every foe (`ground`/`groundActor` below) — the rigs only read it.
-//
-// IT IS EASED, NOT SNAPPED, and that is the whole anti-jank measure. A step up is a vertical
-// discontinuity in the terrain the moment you cross it, and the camera rides the hero's shoulder: snap
-// the Y and a 0.4 m ledge kicks the entire frame. Chasing it at a metre-per-second rate turns the same
-// ledge into two frames of rise you feel as a step instead of a cut. The rates are deliberately
-// asymmetric — walking off a lip should DROP faster than a climb lifts, or the hero moon-walks off it.
+// An actor's `pos.y` is the ground under them, written HERE for the hero and every foe (`groundActor`);
+// the rigs only read it. EASED, NOT SNAPPED — a step is a discontinuity the moment you cross it and the
+// camera rides the hero's shoulder, so a snap kicks the whole frame. Asymmetric on purpose: walking off
+// a lip must drop faster than a climb lifts, or he moon-walks off it.
 const GROUND_RISE_RATE = 9.0; // m/s the body climbs onto higher ground…
 const GROUND_FALL_RATE = 16.0; // …and falls onto lower (gravity-ish, no real fall state yet)
 /// Past this the ease is abandoned and the actor is planted: a teleport (respawn, F5 playtest, the shot
@@ -161,15 +152,10 @@ const LOCK_FLICK = 0.65; // right-stick |x| past this cycles to the next target
 // any sliver the sky quad misses stays invisible.
 const CLEAR = rgba(80, 76, 69, 255);
 
-/// What the two look devices were saying this frame, and which one owns the camera. Raw values,
-/// deliberately — the point is to see what arrives BEFORE the deadzone eats it.
-/// …plus what the camera ACTUALLY DID with them. The raw pair alone cannot separate the three things
-/// that feel identical on screen — a stick resting off centre, a cursor collecting desk jitter, or a
-/// rate that is simply too high — because all three show up as numbers moving. So the probe also
-/// carries `mag` (the stick's RAW magnitude, which is the only number that can tell a resting
-/// deflection from a real push — read it against LOOK_DEADZONE and LOOK_CLAIM) and `dyaw` (degrees the
-/// camera turned this frame: zero with your hands off means nothing in here is drifting and the
-/// problem is sensitivity).
+/// What the two look devices said this frame, which one owns the camera, and what the camera actually
+/// DID with them. RAW values on purpose — the point is what arrives before the deadzone eats it — plus
+/// `mag` (the only number that separates a resting deflection from a real push) and `dyaw` (zero with
+/// your hands off means nothing drifts and the complaint is sensitivity).
 const LookProbe = struct {
     mdx: f32 = 0,
     mdy: f32 = 0,
@@ -262,10 +248,9 @@ pub const Game = struct {
         g.lock = null;
         g.rumble = .{};
         g.deathFade = 0;
-        // …the look probe included. It was the one field this block missed, and `Game` is built in
-        // place from `alloc.create`, so its default never ran: the readout printed raw heap bytes as
-        // floats, and `pad` is a BOOL — reading one that is neither 0 nor 1 is illegal behaviour, not
-        // just a wrong caption.
+        // …the look probe included: `Game` is built in place from `alloc.create`, so a field this block
+        // misses never gets its default at all — and `pad` is a bool, where raw heap bytes are illegal
+        // behaviour rather than merely a wrong caption.
         g.probe = .{};
     }
 };
@@ -277,18 +262,12 @@ pub const Game = struct {
 // keyboard movement is an immediate run (hold sprint for the dash). No hold gates.
 const Move = struct { fx: f32 = 0, fz: f32 = 0, speed: f32 = 0 };
 
-/// A STICK, DEADZONED RADIALLY — direction and magnitude, kept apart.
+/// A STICK, DEADZONED RADIALLY — direction and magnitude kept apart, which is what a twin-stick camera
+/// (ER's included) does. Per-AXIS deadzoning is a square gate and wrong twice over: it eats the small
+/// component whole, so a stick held 15° off horizontal comes out 3° off it and everything creeps toward
+/// the cardinals; and a full diagonal rescales to ~0.88, so the stick is slower diagonally than axially.
 ///
-/// Deadzoning each axis on its own is a SQUARE deadzone and it is wrong twice over. It chops the
-/// axes independently, so the angle you get is NOT the angle the thumb pushed: at a 0.22 deadzone a
-/// stick held 15° off horizontal comes out 3° off it, because the small axis is eaten whole while
-/// the big one barely notices — the camera (and the hero) creep toward the cardinals and every
-/// diagonal fights you. And a full-deflection diagonal rescales to ~0.88 magnitude, so the stick is
-/// measurably slower on the diagonals than on the axes. Radial keeps the DIRECTION exactly and
-/// reshapes only the MAGNITUDE, which is what a twin-stick camera — ER's included — actually does.
-///
-/// `curve` shapes that magnitude: 1 = linear, >1 = fine control near the centre with the same top
-/// rate still reached at the rim.
+/// `curve` shapes the magnitude only: 1 = linear, >1 = fine near the centre, same top rate at the rim.
 const Stick = struct { x: f32 = 0, y: f32 = 0, mag: f32 = 0 };
 
 fn stickRadial(x: f32, y: f32, dz: f32, curve: f32) Stick {
@@ -912,24 +891,11 @@ fn debugCorner(g: *Game) void {
     }) catch "", y, hud_.SMALL, rgba(150, 175, 195, 255));
     y += step;
 
-    // ── THE LOOK PROBE ── and it exists to settle ONE question in a glance: the camera feels wrong,
-    // and stick drift, cursor jitter and too-high sensitivity all look identical on screen. Put your
-    // hands OFF both devices and read the row:
-    //
-    //   dyaw 0.00 with everything at rest  → nothing is drifting. The camera is only moving when you
-    //                                        move it, so what feels wrong is the RATE, not a fault.
-    //   mag above 0.14 (LOOK_DEADZONE)     → the stick rests far enough off centre to TURN the camera.
-    //                                        That is hardware drift getting through; raise the
-    //                                        deadzone (radial, so it costs no diagonal range).
-    //   mag under 0.14 but non-zero        → drift exists, the deadzone is already eating it, and it
-    //                                        is NOT what you are feeling.
-    //   mag above 0.40 (LOOK_CLAIM) at rest→ the stick is bad enough to CLAIM the camera off the
-    //                                        mouse while sitting still. Raise both dials.
-    //   mouse non-zero while you hold still→ something is driving the OS cursor. A pad running through
-    //                                        a mouse-emulation layer (Steam Input's desktop fallback,
-    //                                        DS4Windows) puts a STICK on it, which is exactly this.
-    //
-    // `look PAD/MOUSE` says which device currently owns the camera — the latch, not a preference.
+    // ── THE LOOK PROBE ── stick drift, cursor jitter and too-high sensitivity all look identical on
+    // screen. Take your hands off both devices and read the row: `dyaw` 0 means nothing drifts and what
+    // feels wrong is the RATE; `mag` over LOOK_DEADZONE means hardware drift is getting through; `mouse`
+    // non-zero at rest means something is driving the OS cursor (a pad through a mouse-emulation layer).
+    // `look PAD/MOUSE` is the latch that says who owns the camera, not a preference.
     dbgRow(std.fmt.bufPrintZ(&buf, "look  {s}   mouse {d:.1},{d:.1}   stick {d:.3},{d:.3}   mag {d:.3}   dyaw {d:.2}", .{
         if (g.probe.pad) "PAD" else "MOUSE",
         g.probe.mdx,
@@ -1232,34 +1198,20 @@ pub fn run(mode: Mode) void {
                 lockCycleReady = true;
             }
         } else {
-            // ── ONE LOOK DEVICE AT A TIME ── the mouse delta and the right stick used to be SUMMED
-            // every frame, which is wrong twice over. It means a pad player is still steering with
-            // whatever the OS cursor happens to do (and a pad running through a mouse-emulation
-            // layer — Steam Input's desktop fallback, DS4Windows — puts the LEFT stick on that
-            // cursor, so moving right turns the camera right); and it means the tiniest resting
-            // deflection on one device adds to the other rather than being ignored.
-            //
-            // So: the last device to give a REAL look input owns the camera, and the other is dead
-            // until it gives one of its own. Switching costs nothing and is instant — this is a
-            // latch, not a lockout.
+            // ── ONE LOOK DEVICE AT A TIME ── never the SUM of mouse and stick: a pad through a
+            // mouse-emulation layer puts a stick on the OS cursor, and a resting deflection on one
+            // device must not add to the other. The last device to give a REAL look input owns the
+            // camera and the other is dead until it gives one of its own — a latch, not a lockout.
             const look = stickRadial(padRX, padRY, LOOK_DEADZONE, LOOK_CURVE);
             lookMag = padMag;
             // MOUSE_WAKE, not zero: a hidden-but-uncaptured cursor picks up a pixel of jitter from
             // the desk, and one pixel used to be enough to take the camera off the stick.
             const mouseLook = inside and wasInside and (@abs(md.x) + @abs(md.y)) > MOUSE_WAKE;
-            // ── CLAIMING THE CAMERA IS A DIFFERENT QUESTION FROM TURNING IT, and conflating the two
-            // is what made a worn stick disable the mouse for the whole session.
-            //
-            // It used to claim on `look.mag > 0` — i.e. on ANYTHING that cleared LOOK_DEADZONE. A worn
-            // right stick RESTS at 0.15-0.25, which is past the 0.14 deadzone, so on such a pad the
-            // claim was true on every single frame: the latch pinned itself to PAD on frame one, the
-            // mouse never worked again, and the camera crept at the fraction of a degree per second the
-            // leftover deflection asks for. All three of the owner's symptoms — "stick drift", "camera
-            // drifting", "too sensitive" — are that one line.
-            //
-            // So the CLAIM takes a decisive push (LOOK_CLAIM, well past any resting deflection) while
-            // the TURN still starts at LOOK_DEADZONE. Drift can reach the second and never the first,
-            // so a drifting pad can no longer take the camera off a mouse that is being used.
+            // ── CLAIMING THE CAMERA IS A DIFFERENT QUESTION FROM TURNING IT. A worn right stick RESTS
+            // at 0.15-0.25, past LOOK_DEADZONE, so claiming on anything that merely clears the deadzone
+            // pins the latch to PAD on frame one and the mouse never works again. The CLAIM takes a
+            // decisive push (LOOK_CLAIM); the TURN still starts at the deadzone. Drift reaches the
+            // second and never the first.
             const padClaim = padMag > LOOK_CLAIM;
             // …and LAST DEVICE WINS has to be resolved as a TIE, not by statement order. Written as two
             // independent ifs the second one always won, so "the last device to give a real look input
@@ -1481,29 +1433,22 @@ pub fn run(mode: Mode) void {
             // archer shooting up a bank aims at the hero's knees.
             archermod.stepArrow(ar, g.hero.pos, heroCenterY(g), g.env.groundAt(ar.pos.x, ar.pos.z), g.hero.iFramed(), arrowCover(g, ar, dt), dt);
             if (ar.hit) {
-                // It found the hero. The BEAT is skipped on a corpse, but the shaft still landed in
-                // him — so the sound is the flesh one either way. Testing `!dead` on the whole
-                // branch dropped a hit on a dying hero through to the world-impact arm below, which
-                // then played a scuff of DIRT for an arrow that was standing in his chest.
+                // It found the hero. The BEAT is skipped on a corpse but the SOUND is not — the shaft
+                // still landed in flesh, and testing `!dead` on the whole branch dropped a hit on a
+                // dying hero into the world-impact arm below, which scuffed DIRT for an arrow standing
+                // in his chest.
                 if (!g.hero.dead) {
-                    // A STONE IS NOT AN ARROW. The pool is shared and `Arrow.stone` is what says which
-                    // this is — its own doc says the flag decides "which blow it deals" — but every
-                    // connect applied `ARROW_HIT` regardless, so a slinger's pebble hit for an arrow's
-                    // 16 damage and 10 poise while `kobold.STONE_HIT` (10 / 8) sat with no reader at all.
+                    // A STONE IS NOT AN ARROW: `Arrow.stone` decides which blow it deals.
                     g.hero.takeHit(if (ar.stone) koboldmod.STONE_HIT else archermod.ARROW_HIT);
                     heroHurtBeat(g, false, false); // …the rip below is this blow's own voice
                 }
                 sfx.play(.arrow_hit);
             } else if (ar.stuck and ar.age == 0) {
-                // It STUCK without connecting — into cover, or into the earth. Worth its own
-                // sound: an arrow thunking off the pillar you ducked behind is the game telling
-                // you the cover WORKED, which is the whole reason arrows test the solids at all.
-                // `age == 0` is the sticking frame exactly, and it needs no state of its own:
-                // stepArrow zeroes the age when it plants and adds dt on every frame after.
-                //
-                // WHICH thunk comes from what it went into — timber knocks, iron rings, masonry
-                // cracks dead, and a miss into the earth just scuffs. The mapping lives beside the
-                // four voices it picks from (`sfx.arrowImpact`), not here.
+                // It STUCK without connecting — into cover or into the earth, and that gets its own
+                // sound: a shaft thunking off the pillar you ducked behind is the game telling you the
+                // cover WORKED. `age == 0` is the sticking frame exactly and needs no state of its own.
+                // WHICH thunk is chosen by the SURFACE, beside the voices it picks from
+                // (`sfx.arrowImpact`), not here.
                 sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
             }
         }
@@ -1626,12 +1571,9 @@ fn footsteps(g: *Game, last: *f32) void {
     sfx.playAt(id, mathx.clampF(0.45 + 0.55 * h.speed / SPRINT_SPEED, 0.35, 1.0));
 }
 
-// ── THE HERO WAS HURT ── the rumble + camera crack + voice for one blow landing on him, in ONE
-// place. Three call sites (a toad's chomp/lunge, the ogre's swipe/slam, an arrow) each wrote out the
-// same three-line trio with the same `if (heavy)` ternary repeated on each line — so retuning the
-// felt weight of a heavy hit meant finding nine lines and there was nothing to say when you found
-// eight. Each caller still decides for ITSELF what counts as heavy: that test is per-attack (stance
-// damage for the toad, the slam's own stance for the ogre, never for an arrow) and is not shared.
+// ── THE HERO WAS HURT ── the rumble + camera crack + voice for one blow landing on him, in ONE place,
+// so the felt weight of a hit is retuned here and nowhere else. Each caller still decides for ITSELF
+// what counts as heavy — that test is per-attack and is deliberately not shared.
 //
 // `voice` false means the caller has its OWN sound and this must not double it: an arrow landing in
 // him plays `.arrow_hit` — the rip through flesh IS the sound of that blow — so it takes the grip and

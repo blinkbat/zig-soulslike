@@ -63,6 +63,11 @@ const TOOTH_DK = rgba(126, 116, 90, 255);
 // The eyes GLOW: a low alpha drives the shader's emissive channel hard, so this bright
 // amber-gold burns through shadow and haze like the grace ember — lamp-eyes in the dark.
 const EYE = rgba(252, 196, 84, 96);
+/// …and the same lamp turned RED for the lunge (owner's call): the tell arrives with the coil and leaves
+/// on the landing, so the one thing on the toad you were already watching is what announces the pounce.
+/// HOTTER as well as redder — a lower alpha drives the emissive harder, so it flares rather than just
+/// changing hue, which is what makes it read across a field.
+const EYE_HOT = rgba(255, 62, 34, 62);
 const PUPIL = rgba(10, 8, 6, 255);
 const CLAW = rgba(28, 26, 20, 255);
 
@@ -162,6 +167,9 @@ const HERO_REACH = foe.HERO_REACH; // hero footprint added to the toad's attack 
 const LUNGE_IMPACT_R = 1.9; // frontal slam reach from the seat
 const LUNGE_FRONT_DOT = 0.25; // hero must lie within the frontal arc (~±76°) to be caught
 const LUNGE_IMPACT_FWD = 0.6; // dust-burst / impact-zone centre, this far ahead of the seat (pre-scale)
+/// Embers a second dragged off the body through the lunge's flight (`emitLungeTrail`). High, because the
+/// flight is `LUNGE_FLIGHT` long — a rate that reads as continuous over a third of a second has to be.
+const TRAIL_RATE: f32 = 150.0;
 const DEATH_DUR = 1.25; // collapse-and-still before the corpse is removed from play
 /// RUNES a toad is worth. The cheapest kill in the world and the yardstick the other two are set
 /// against: an archer is two of these, the giant fifteen.
@@ -189,18 +197,25 @@ const Particle = foe.Particle;
 // with its own per-part matrices. Meshes live the whole program (leak at exit — fine).
 pub const Model = struct {
     mesh: [NP]rl.Mesh,
+    /// THE IRISES, twice: calm amber and hot RED. Their own mesh rather than part of the head because a
+    /// baked vertex colour cannot change, and the eyes going red is a TELL — it has to arrive with the
+    /// wind-up and leave with the landing. Two small meshes and an index is the whole mechanism; the
+    /// alternative was a per-draw tint uniform, which would redden the warts and the teeth with them.
+    eyes: [2]rl.Mesh,
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
         var mat = rl.loadMaterialDefault() catch @panic("frog material");
         mat.shader = shader;
-        return .{ .mesh = buildMeshes(), .mat = mat };
+        return .{ .mesh = buildMeshes(), .eyes = [2]rl.Mesh{ eyeMesh(EYE), eyeMesh(EYE_HOT) }, .mat = mat };
     }
     pub fn setShader(self: *Model, sh: rl.Shader) void {
         self.mat.shader = sh;
     }
-    pub fn draw(self: *const Model, xf: *const [NP]rl.Matrix) void {
+    pub fn draw(self: *const Model, xf: *const [NP]rl.Matrix, hot: bool) void {
         for (0..NP) |i| rl.drawMesh(self.mesh[i], self.mat, xf[i]);
+        // On the BODY's matrix, which is the part the eyes are authored in (see `bodyMesh`).
+        rl.drawMesh(self.eyes[@intFromBool(hot)], self.mat, xf[BODY]);
     }
 };
 
@@ -524,6 +539,7 @@ pub const Frog = struct {
             self.pos.x += (self.hopTo.x - self.hopFrom.x) * inv * dt;
             self.pos.z += (self.hopTo.z - self.hopFrom.z) * inv * dt;
             self.resolveFlight(s);
+            if (self.isLunge) self.emitLungeTrail(dt, s);
         } else {
             // Landed: hold wherever we ended up (collision may still adjust it) and splat —
             // do NOT re-snap to hopTo, which would clobber a collision push on touchdown.
@@ -742,6 +758,50 @@ pub const Frog = struct {
         }
     }
 
+    /// THE LUNGE'S WAKE — the thing that makes a leap read as dangerous rather than as a jump. Two layers,
+    /// emitted every frame of the flight and NOT rate-gated: a leap is a third of a second, and a trail
+    /// with gaps in it is a trail you do not see at all.
+    ///
+    ///  - CHARGE, dragged off the body: amber embers with a NEGATIVE gravity, so the wake hangs in the air
+    ///    behind it and marks the path the slam is coming down.
+    ///  - DUST, torn off the ground under it, thrown backwards along the arc — that back-spray is what
+    ///    says "this is being propelled" instead of "this is falling".
+    ///
+    /// Heaviest at the START of the arc (`1 - s`), where the speed is: a wake that thickened on the way
+    /// down would read as braking.
+    fn emitLungeTrail(self: *Frog, dt: f32, s: f32) void {
+        const c = self.centerWorld();
+        const back = mathx.scaleV(self.fdir(), -1);
+        const heavy = 1.0 - 0.55 * s;
+        var i: u32 = 0;
+        const n: u32 = @intFromFloat(@max(1.0, TRAIL_RATE * heavy * dt));
+        while (i < n) : (i += 1) {
+            const a = self.fxRng.angle();
+            const r = self.fxRng.range(0.05, 0.42) * self.scale;
+            self.emit(
+                v3(c.x + mathx.cosf(a) * r, c.y + self.fxRng.signed() * 0.30 * self.scale, c.z + mathx.sinf(a) * r),
+                v3(back.x * self.fxRng.range(0.5, 2.2), self.fxRng.range(-0.1, 0.7), back.z * self.fxRng.range(0.5, 2.2)),
+                self.fxRng.range(0.26, 0.58),
+                self.fxRng.range(0.030, 0.075) * self.scale,
+                0.004,
+                EMBER,
+                -0.55,
+            );
+        }
+        // …and the ground it is skimming, kicked up behind the feet.
+        if (self.fxRng.float() < dt * 44.0 * heavy) {
+            self.emit(
+                v3(self.pos.x + self.fxRng.signed() * 0.3 * self.scale, self.pos.y + 0.05, self.pos.z + self.fxRng.signed() * 0.3 * self.scale),
+                v3(back.x * self.fxRng.range(1.0, 2.6), self.fxRng.range(0.5, 1.6), back.z * self.fxRng.range(1.0, 2.6)),
+                self.fxRng.range(0.3, 0.62),
+                self.fxRng.range(0.05, 0.12) * self.scale,
+                0.01,
+                foe.DUST,
+                2.6,
+            );
+        }
+    }
+
     // A burst of dark blood flung from the CONTACT POINT, biased along the blade's sweep
     // (with a little radial scatter and lob) — gravity brings it down fast so the ground
     // catches the spatter. Unlit, like all the telegraph FX.
@@ -891,8 +951,15 @@ pub const Frog = struct {
         self.xf = wx;
     }
 
+    /// EYES UP: the lunge's wind-up and its flight, and nothing else. Not the hop (a hop is travel, not an
+    /// attack) and not the chomp (already inside your guard — a tell you cannot act on is decoration).
+    /// So the red is exactly the window in which "get out of the way" is still useful advice.
+    pub fn eyesHot(self: *const Frog) bool {
+        return self.state == .lunge;
+    }
+
     pub fn draw(self: *const Frog, model: *const Model) void {
-        model.draw(&self.xf);
+        model.draw(&self.xf, self.eyesHot());
     }
 };
 
@@ -1020,6 +1087,20 @@ fn toothRow(b: *Builder, cfg: ToothRow) void {
 // A squat, hunched toad: a fat vertical dome (belly widening to a humped back) with a broad
 // warty head + bulging eyes at the mouth line, wider than long. The lower jaw + throat sac
 // are separate (animated) parts.
+/// THE IRISES ALONE, in whatever colour they are burning. Authored in the BODY's own space and at the same
+/// coordinates the sockets in `bodyMesh` were cut for, so the two cannot drift apart. `.plain` because a
+/// hide blotch over an emissive dome reads as a dirty lamp.
+fn eyeMesh(col: rl.Color) rl.Mesh {
+    var b = Builder.init();
+    b.setMat(.plain);
+    for ([_]f32{ -1, 1 }) |sgn| {
+        const ex = 0.19 * sgn;
+        b.addCylinder(v3(ex, 0.575, 0.315), v3(ex, 0.645, 0.32), 0.10, 0.05, 9, col);
+        b.addCube(v3(ex, 0.62, 0.36), v3(0.038, 0.07, 0.038), PUPIL); // slit pupil, facing forward
+    }
+    return b.toMesh();
+}
+
 fn bodyMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
@@ -1040,15 +1121,12 @@ fn bodyMesh() rl.Mesh {
     b.addCube(v3(0, 0.25, 0.18), v3(0.42, 0.16, 0.14), MAW); // gullet — a dark cavern behind the teeth when agape
     b.setMat(.hide);
 
-    // Bulging eyes on top of the head, set wide — bony brow, amber emissive dome, slit pupil.
+    // Bulging eyes on top of the head, set wide — bony brow and mound HERE, the IRIS in its own mesh
+    // (`eyeMesh`) so it can change colour with the toad's state. See `Model.draw`.
     for ([_]f32{ -1, 1 }) |sgn| {
         const ex = 0.19 * sgn;
         b.addCube(v3(ex, 0.46, 0.30), v3(0.24, 0.13, 0.24), HIDE_DK); // brow socket
         b.addCylinder(v3(ex, 0.43, 0.31), v3(ex, 0.63, 0.31), 0.135, 0.085, 9, HIDE_LT); // eye mound
-        b.setMat(.plain); // glassy eye — no hide blotch over the emissive dome
-        b.addCylinder(v3(ex, 0.575, 0.315), v3(ex, 0.645, 0.32), 0.10, 0.05, 9, EYE); // amber iris (emissive)
-        b.addCube(v3(ex, 0.62, 0.36), v3(0.038, 0.07, 0.038), PUPIL); // slit pupil, facing forward
-        b.setMat(.hide);
     }
     // Nostrils at the snout tip.
     b.addCube(v3(0.08, 0.40, 0.54), v3(0.035, 0.035, 0.035), HIDE_DK);

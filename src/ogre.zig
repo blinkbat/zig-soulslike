@@ -13,22 +13,17 @@ const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
 // ── THE ONE-EYED OGRE ───────────────────────────────────────────────────────────────────
-// A GIANT, roughly twice the hero's height: hunched, humanoid-leaning but misshapen, hefting a
-// knotted club at his side. A sad figure — heavy brow, downcast single eye, weary carriage —
-// and a real threat: HIGH POISE (single lights bounce off; only sustained pressure staggers
-// him) into a big committed OVERHEAD SLAM and a fast SIDE SWIPE. More attacks drop in beside
-// them; the state machine is laid out for it.
+// A GIANT, ~2x the hero: hunched, misshapen, hefting a knotted club. A sad figure — heavy brow, downcast
+// single eye — and a real threat: HIGH POISE (single lights bounce off) into a committed OVERHEAD SLAM
+// and a fast SIDE SWIPE.
 //
-// FOUNDED ON THE HUMANOID MODEL (owner's rule): the hero's anthropometry scaffold, parent
-// hierarchy and FK convention, and — crucially — the hero's NORMATIVE GAIT (advanceGait +
-// legChain), never a bespoke walk. What differs is the SKIN (barrel chest, long heavy arms, a
-// low small one-eyed head) and the UPPER body. The whole rig scales up, so the stride phase is
-// fed a SCALE-CORRECTED distance or the long legs skate (see update()).
+// FOUNDED ON THE HUMANOID MODEL (owner's rule): the hero's scaffold, FK convention and NORMATIVE GAIT
+// (`advanceGait` + `legChain`), never a bespoke walk. The rig scales up, so the stride phase is fed a
+// SCALE-CORRECTED distance or the long legs skate.
 //
-// And the upper body ARTICULATES as hard as the legs: contralateral swing, a girdle
-// counter-rotating against the pelvis, a trunk nod per footfall, and a chain of deliberate LAGS
-// — the loaded club arm trails the stride, the club trails the arm. Shared legs under a rigid
-// trunk is what reads as moving in ONE PIECE.
+// AND THE UPPER BODY ARTICULATES AS HARD AS THE LEGS: contralateral swing, a girdle counter-rotating
+// against the pelvis, a trunk nod per footfall, and a chain of LAGS — the loaded club arm trails the
+// stride, the club trails the arm. Shared legs under a rigid trunk read as moving in ONE PIECE.
 
 // ── palette (pre-gamma dark — the scene shader gammas output, so mid values lift) ──────────
 // Ashen grey-tan hide, paler scarred belly, near-black hollows, pale bone tusks + nails, and
@@ -89,14 +84,12 @@ const CLAVR = 23; // …and R, the loaded side
 
 const parent = [N]i32{ -1, ROOT, SPINE, HUMP, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CLAVL, SHL, ELL, CLAVR, SHR, ELR, WRR, SKULL, ANKL, ANKR, CHEST, CHEST, CHEST };
 
-// Where this giant carries his weight, MEASURED off footMesh: the fat pad under each ankle.
-// `hero.legChain` levels each ankle against its patch every frame so the sole can't rake through
-// the ground.
+// Where this giant carries his weight, MEASURED off `footMesh`: the fat pad under each ankle, which
+// `hero.legChain` levels every frame so the sole cannot rake through the ground.
 //
-// The TOES are deliberately NOT patches — they are the one part of him MEANT to break the
-// surface (TOE_GRIP claws into the dirt bracing a slam, TOE_PUSH drives off the ball). Planting
-// off them would cancel that and jack the whole giant up mid-slam until his club could no longer
-// reach the earth, which is exactly what the club tests caught when they were included.
+// The TOES are deliberately NOT patches — they are the one part of him MEANT to break the surface
+// (clawing dirt to brace a slam, driving off the ball). Planting off them jacks the whole giant up
+// mid-slam until his club cannot reach the earth, which is what the club tests caught.
 const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKL, .heel = 0.094 * H, .toe = 0.144 * H, .halfW = 0.082 * H, .drop = 0.039 * H },
     .{ .bone = ANKR, .heel = 0.094 * H, .toe = 0.144 * H, .halfW = 0.082 * H, .drop = 0.039 * H },
@@ -168,15 +161,13 @@ const mul3 = mathx.mul3;
 const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 
-// A half-sine pulse over the window [a,b] of a 0..1 stride phase, zero outside it — the shape of
-// any once-per-stride event that owns a slice of the cycle rather than the whole of it (the
-// toe-off drive, the swing-leg toe lift). A full-cycle sine would smear it over both.
+// A half-sine pulse over the window [a,b] of a 0..1 stride phase, zero outside — the shape of any
+// once-per-stride event owning a SLICE of the cycle (toe-off drive, swing-leg toe lift), where a
+// full-cycle sine would smear it over both.
 //
-// NOT `bump`, which is what this was called: hero.zig has its OWN private `bump(u, a, b)` and it is
-// a DIFFERENT CURVE — a product of two smoothsteps about the window's midpoint, flatter-topped and
-// with zero slope at both ends. Two shapes under one name in one codebase is a reader carrying the
-// wrong graph in their head from whichever file they read first, and the whole reason the ogre's
-// swing knots are re-measured rather than eyeballed is that nobody should have to guess.
+// Deliberately NOT called `bump`: hero.zig's private `bump` is a DIFFERENT curve (two smoothsteps,
+// flatter-topped, zero slope at both ends), and two shapes under one name is a reader carrying the
+// wrong graph from whichever file they opened first.
 fn stridePulse(x: f32, a: f32, b: f32) f32 {
     if (x <= a or x >= b) return 0;
     return mathx.sinf(std.math.pi * (x - a) / (b - a));
@@ -258,16 +249,12 @@ const DISS_DUR = 1.1; // dissipation into grace-gold motes (ER-consistent with f
 // slam crush zone is the CLUB'S LINE — a strip down the facing axis, NOT a half-disc fan (the
 // old shape was an unfair AoE); flank the line and you're safe.
 const HERO_REACH = foe.HERO_REACH; // hero footprint added to the strip on both axes
-const SLAM_LEN = 1.05; // crush strip length ahead of the seat (pre-scale). MEASURED off
-//   clubLowWorld() frame by frame: the head first touches earth ~1.19 out, skids in to 0.95, and the
-//   drum's footprint carries ~0.45 further, so 1.05 x scale ends the strip on the club's real outer
-//   edge. Retune the club, the slam arc or the waist fold and RE-MEASURE (it once claimed 3.15
-//   against a club that reached 1.7 — a metre and a half of free damage).
-//   RE-MEASURED after the arms were shortened: crater 0.95, first-earth 1.19 — unmoved, because the
-//   slam's depth is carried by the 62 deg waist fold, not by arm length. Note the strip's far end
-//   (2.21) still sits ~0.6 past the drum's outer edge; that slack is load-bearing, since SLAM_R 2.30
-//   must stay under `SLAM_LEN*scale + HERO_REACH` or he commits to swings that cannot land. Tighten
-//   the strip only together with SLAM_R (the test pins the pair).
+const SLAM_LEN = 1.05; // crush strip length ahead of the seat (pre-scale). MEASURED off `clubLowWorld`
+//   frame by frame — head first touches earth ~1.19 out, skids to 0.95, the drum's footprint carries
+//   ~0.45 further — so this ends the strip on the club's real outer edge. RE-MEASURE after any change to
+//   the club, the slam arc or the waist fold; it once claimed 3.15 against a club reaching 1.7.
+//   The far end sits ~0.6 past the drum, and that slack is load-bearing: SLAM_R must stay under
+//   `SLAM_LEN*scale + HERO_REACH` or he commits to swings that cannot land. A test pins the pair.
 const SLAM_HALF_W = 0.45; // crush strip HALF-width (pre-scale) — about the club head + shock
 // The SWIPE's hurt shape is a SECTOR, not a strip: a band at arm's length swept through the front
 // arc. Inside SWIPE_INNER you are under the arc (hugging his legs — the counter to it); past the
@@ -1119,11 +1106,10 @@ pub const Ogre = struct {
         // Body pitch: the base stoop / attack lean, a huge RECOIL back on a light flinch, a heavy
         // forward SAG on a stance-break, a nod into each footfall, and the death crash.
         //
-        // HE HINGES AT THE WAIST (owner's law). The pelvis takes only PELVIS_SHARE of that pitch
-        // and stays over his planted feet; the rest goes to SPINE → CHEST → HUMP in poseUpper.
-        // Pitching the ROOT rotates the LEGS with the trunk, so every stoop swings his whole
-        // frame and from three-quarters reads as a quadruped bowing. DEATH is the exception: a
-        // topple IS the entire frame going over.
+        // HE HINGES AT THE WAIST (owner's law): the pelvis takes only PELVIS_SHARE and stays over his
+        // planted feet, the rest folds through SPINE → CHEST → HUMP. Pitching the ROOT rotates the LEGS
+        // with the trunk and reads as a quadruped bowing. DEATH is the exception — a topple IS the whole
+        // frame going over.
         const bodyPitch = self.bodyLean * (1.0 - dk2) - 40.0 * lstun + 34.0 * hstun;
         const leanX = PELVIS_SHARE * bodyPitch + 2.2 * self.jolt * m + 84.0 * dk2 + 5.0 * settle;
         const waist = (1.0 - PELVIS_SHARE) * bodyPitch; // …the share the trunk folds through
@@ -1731,12 +1717,10 @@ fn footMesh(side: f32) rl.Mesh {
     // A ROUND elephantine foot: a fat capsule pad heel→ball, a domed ankle boss above it, and a
     // heel pad swelling behind. The toe lobes hang off the TOE bone now, so the foot ROLLS.
     //
-    // `PAD_UP` is a BUG FIX, not a style tweak, and the bug was a unit mix-up: addCube takes a
-    // FULL size but addCapsule/addBlob take true RADII, so the pad's 0.068·H radius hung 0.036·H
-    // BELOW the sole plane `ay` defines — over 10 cm of foot underground at SCALE, before any
-    // animation ran. Raising all three lumps by that much lands the deepest point ON the plane and
-    // leaves the ankle sitting low INSIDE the pad, which is how a real elephantine foot reads.
-    // RE-MEASURE this if the pad radii change; `the ogre STANDS on the ground` guards it.
+    // `PAD_UP` is a FIX, not a style tweak: `addCube` takes a FULL size but `addCapsule`/`addBlob` take
+    // true RADII, so the pad's 0.068·H radius hung that far BELOW the sole plane `ay` defines — 10 cm of
+    // foot underground at SCALE before any animation ran. RE-MEASURE if the pad radii change; the test
+    // `the ogre STANDS on the ground` guards it.
     const PAD_UP = 0.036 * H;
     b.addCapsule(v3(0, -ay + 0.032 * H + PAD_UP, -0.026 * H), v3(0, -ay + 0.026 * H + PAD_UP, 0.086 * H), 0.068 * H, 0.058 * H, 13, HIDE); // the pad
     b.addBlob(v3(0, -ay + 0.044 * H + PAD_UP, -0.030 * H), v3(0.062 * H, 0.052 * H, 0.058 * H), 8, 13, HIDE_DK); // heel / ankle boss

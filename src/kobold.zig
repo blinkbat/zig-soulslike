@@ -296,6 +296,25 @@ const BITE_DUR = 0.52;
 const BITE_HIT_A = 0.30;
 const BITE_HIT_B = 0.52;
 const BITE_CD = 1.15;
+// ── WHAT A SNAP IS MADE OF ──────────────────────────────────────────────────────────────
+// A CHAMBER, then the WAIST throwing the head at you, and the neck extending so the muzzle stays on
+// the target through the fold. The first pass had none of the three: no chamber, no trunk (the fold
+// was the berserker's heave and nothing else touched it), and a head pitched 49 deg NOSE-DOWN — so
+// over a pelvis that never moved, with both arms flung up and out to the sides, it read as an animal
+// squatting to relieve itself rather than one biting you (owner's verdict, and unmistakable once
+// seen). The head must go FORWARD, not down; the fold belongs at the WAIST over planted legs
+// (AGENTS.md); and the arms have to get OUT OF THE WAY, because the head is the weapon.
+const BITE_COIL_AT = 0.42; // fraction of the pre-hit window spent chambering before the snap fires
+const BITE_ARCH = 14.0; // …how far the trunk rocks BACK into it (deg through the lumbar)
+// The snap: the waist throwing the whole head at you (deg through the lumbar; the chest adds 0.65 of
+// it again and the pelvis its small share). KEPT WELL UNDER THE HEAVE'S 46 — at 30 the trunk came out
+// 60 deg off vertical, which is not a lunge, it is the berserker's doubled-over recovery wearing a
+// different name. A snap is a body leaning INTO something.
+const BITE_FOLD = 18.0;
+const BITE_GAZE = 26.0; // …and the neck EXTENDING through that fold, so the muzzle leads it and
+//   finishes a shade BELOW level — where a waist-high target actually is.
+const BITE_ARM_BACK = 30.0; // the forelimbs drawn back…
+const BITE_ARM_TUCK = 14.0; // …and IN, off the line the teeth are travelling
 pub const BITE_HIT = combat.Hit{ .dmg = 9, .poise = 7 };
 /// The stone leaves slower and drops harder than an arrow — it is a lobbed pebble, not a shaft, and
 /// the arc is what makes it dodgeable by walking rather than by rolling.
@@ -315,7 +334,28 @@ const PELVIS_SHARE: f32 = 0.12;
 /// somewhere, and on straight legs 46 deg of it still reads as a plank tipping.
 const CROUCH_HEAVE: f32 = 32.0;
 const CROUCH_STUN: f32 = 20.0;
-const CROUCH_DASH: f32 = 44.0; // the airborne tuck — deeper than either, because nothing is holding him up
+
+// ── THE POUNCE, AND WHY IT IS ASYMMETRIC ────────────────────────────────────────────────
+// A LEAP IS ONE KNEE UP (owner's call) and the other leg left behind — the shape every jumping
+// animal makes, and the one thing a symmetric tuck can never read as. The first pass drew both legs
+// through `legCrouch` at one shared amount, so a pounce came out as a figure squatting in mid-air
+// with its knees welded together: a hop, not a leap.
+//
+// AND IT HAD NO COIL. The tuck rode `dashU`, which is CLAMPED TO 0 for the whole DASH_GATHER window
+// — so through the entire wind-up he stood bolt upright and the legs only moved once he was already
+// airborne, which is the anticipation arriving after the action it was supposed to anticipate.
+//
+// Three beats, in order: COIL (both knees load, pelvis drops), FLIGHT (lead knee to the chest, trail
+// leg extended behind, toes pointed), ABSORB (both knees give as he arrives).
+const DASH_COIL: f32 = 30.0; // the gather — both legs, and the pelvis pays for it through `legSink`
+const DASH_ABSORB: f32 = 24.0; // …and again on the landing, which is what stops him arriving on stilts
+const DASH_LEAD_HIP: f32 = 76.0; // the lead knee driven up under the chest…
+const DASH_LEAD_KNEE: f32 = 88.0; // …with the heel folded in under it
+const DASH_TRAIL_HIP: f32 = 32.0; // the trail leg swept BACK — the half that makes it a leap…
+const DASH_TRAIL_KNEE: f32 = 26.0; // …loose, not locked: a straight trailing leg is a stick
+const DASH_TOE: f32 = 24.0; // toes pointed in the air, both legs. Flat paws in flight read as a lift
+const DASH_LEAN: f32 = 20.0; // …and the trunk pitches INTO it, through the waist like everything else
+const DASH_ARM_BACK: f32 = 44.0; // the axes drawn back through the flight, ready to arrive swinging
 
 /// The pelvis drop a `crouch` of hip flexion costs. `legCrouch` bends the knee TWICE the hip, so the
 /// shank's angle is equal and opposite to the thigh's and the leg simply shortens by cos(crouch). Drop it
@@ -377,6 +417,10 @@ pub const Kobold = struct {
     biteCd: f32 = 0,
     dashCd: f32 = 0,
     dashDone: f32 = 0, // ground the current lunge has already covered (travel is a curve, not a speed)
+    /// The stride phase FROZEN at the moment he left the ground, which is what decides the leading
+    /// leg (`dashLeadIsLeft`). Frozen and not live: `phase` keeps advancing while he is in the air,
+    /// so reading it per frame would swap the lead leg mid-leap.
+    dashPhase: f32 = 0,
     /// Height off the earth. Non-zero ONLY during the berserker's dash — the one thing a kobold does
     /// that leaves the ground, which is why `airborne` reads it rather than answering a flat false.
     hop: f32 = 0,
@@ -678,6 +722,7 @@ pub const Kobold = struct {
             .dash => {
                 self.dashDone = 0;
                 self.dashCd = DASH_CD;
+                self.dashPhase = self.phase; // …and the leading leg is decided HERE, once (see the field)
                 sfx.world(.kobold_snarl, self.pos);
                 self.tailWhip = TAIL_WHIP_CHOP;
             },
@@ -922,11 +967,19 @@ pub const Kobold = struct {
         // THE CROUCH — how far the knees are folded, and therefore how far the pelvis drops. A heaving
         // berserker sags into his own legs, and a stagger buckles them; on straight poles both beats
         // read as a tip of a plank. `legCrouch` below owns the geometry, this is just the amount.
-        // …and a DASH tucks the legs under him in the air, deepest at the top of the arc. Without it the
-        // lunge is a standing figure sliding four metres, which reads as a bug rather than as a pounce.
-        const tuck = if (self.state == .dash) CROUCH_DASH * mathx.sinf(dashU(self.t) * std.math.pi) else 0;
-        const crouch = CROUCH_HEAVE * heave + CROUCH_STUN * stunAmt + tuck;
-        const slouch = 7.0 + 4.0 * m + PELVIS_SHARE * 46.0 * heave + 16.0 * dk - 14.0 * stunAmt;
+        // …and a DASH loads the legs before it and absorbs on the far end. Only the SYMMETRIC part is
+        // here, because only that moves the pelvis; the one-knee-up half of the leap is `legDash`,
+        // and in the air the pelvis is wherever `hop` puts it.
+        const gather = self.dashGather();
+        const fly = self.dashFly();
+        const landAbs = self.dashLand();
+        const dashLoad = DASH_COIL * gather + DASH_ABSORB * landAbs;
+        const crouch = CROUCH_HEAVE * heave + CROUCH_STUN * stunAmt + dashLoad;
+        // The pelvis takes its SHARE of a fold and no more (PELVIS_SHARE) — the heave's, and now the
+        // bite's, so the snap carries a hint of the whole body behind it without the legs turning
+        // with it. Almost none of it, deliberately: that share is what separates a lunge from a lurch.
+        const slouch = 7.0 + 4.0 * m + PELVIS_SHARE * (46.0 * heave + BITE_FOLD * self.biteLunge()) +
+            16.0 * dk - 14.0 * stunAmt;
         const sag = legSink(crouch);
         const pelvY = if (dead) collapse else hipY + bob - dip - sag;
         // scaleM FIRST → the whole rig scales about its pelvis; the world placement stays unscaled.
@@ -946,6 +999,12 @@ pub const Kobold = struct {
         // look survivable because the body is small and the dissipation is quick.
         if (dead) {
             self.legCrumple(&wx, dk);
+        } else if (self.state == .dash) {
+            // THE POUNCE IS ITS OWN LEG POSE, and it has to come before the crouch branch: the coil
+            // and the absorb would satisfy `crouch > 0.5` and hand a LEAP to the symmetric squat.
+            const leadL = self.dashLeadIsLeft();
+            self.legDash(&wx, dashLoad, fly, leadL, 1.0, HIPL, KNEEL, ANKL);
+            self.legDash(&wx, dashLoad, fly, !leadL, -1.0, HIPR, KNEER, ANKR);
         } else if (crouch > 0.5) {
             // Standing beats fold the knees instead of walking (the ogre's `legPose` split, same reason:
             // legChain is the WALK and a crouch is not a gait).
@@ -965,13 +1024,31 @@ pub const Kobold = struct {
     /// gait; this is the ogre's `legPose` split for the same reason, and it is built off the same shared
     /// constants (`IDLE_KNEE`, `HIP_ADDUCT`, `FOOT_TOEOUT`) the hero's own standing poses use, so the
     /// hand-off at crouch = 0 lands exactly where legChain leaves a standing leg.
+    /// A ONE-LINE DELEGATE to `legDash` with no flight in it, because that is exactly what a crouch
+    /// is: the symmetric half of the pounce and nothing else. Written out separately the two carried
+    /// the same hip/knee/ankle formula twice, and the knee's `2x` relationship (see below) is the
+    /// sort of thing that gets retuned in one copy.
     fn legCrouch(self: *Kobold, wx: *[N]rl.Matrix, crouch: f32, side: f32, hip: usize, knee: usize, ank: usize) void {
-        // KNEE = 2x HIP is what keeps the shank's angle equal and opposite to the thigh's, so the ankle
-        // stays directly under the hip and the foot does not slide — see `legSink` for the drop it costs.
-        setLocal(wx, hip, self.rest, mul(rx(-crouch), rz(-side * heromod.HIP_ADDUCT)));
-        setLocal(wx, knee, self.rest, rx(heromod.IDLE_KNEE + 2.0 * crouch));
-        // The ankle takes the shank's pitch back out so the paw stays flat on the ground.
-        setLocal(wx, ank, self.rest, mul(rx(-crouch), ry(side * heromod.FOOT_TOEOUT)));
+        self.legDash(wx, crouch, 0, false, side, hip, knee, ank);
+    }
+
+    /// ONE LEG THROUGH THE POUNCE. `load` is the symmetric part (the coil, then the landing absorb)
+    /// and behaves exactly like `legCrouch`'s crouch, so the hand-off at either end lands on the same
+    /// standing leg. `fly` is the ASYMMETRIC part, and it is the whole point: the lead knee comes up
+    /// under the chest while the trail leg is left extended behind, toes pointed on both.
+    fn legDash(self: *Kobold, wx: *[N]rl.Matrix, load: f32, fly: f32, lead: bool, side: f32, hip: usize, knee: usize, ank: usize) void {
+        // The lead leg FLEXES (knee toward the chest); the trail leg EXTENDS (swept back). Same axis,
+        // opposite signs — which is all "asymmetric" means here.
+        const hipA = if (lead) DASH_LEAD_HIP * fly else -DASH_TRAIL_HIP * fly;
+        const kneeA = if (lead) DASH_LEAD_KNEE * fly else DASH_TRAIL_KNEE * fly;
+        // KNEE = 2x HIP on the symmetric part is what keeps the shank's angle equal and opposite to
+        // the thigh's, so the ankle stays under the hip and the foot does not slide — `legSink` is
+        // the pelvis drop that costs, and it assumes exactly this relationship.
+        setLocal(wx, hip, self.rest, mul(rx(-(load + hipA)), rz(-side * heromod.HIP_ADDUCT)));
+        setLocal(wx, knee, self.rest, rx(heromod.IDLE_KNEE + 2.0 * load + kneeA));
+        // …and the paws point. Flat feet dangling under a leaping animal read as a lift, not a jump —
+        // the toe-point is small and it is most of what says he left the ground on purpose.
+        setLocal(wx, ank, self.rest, mul(rx(-load + DASH_TOE * fly), ry(side * heromod.FOOT_TOEOUT)));
     }
 
     /// …and the legs of a corpse. It FOLDS — one knee up under it, the other splayed — because a body
@@ -1038,7 +1115,7 @@ pub const Kobold = struct {
     fn heaveAmt(self: *const Kobold) f32 {
         if (self.state != .heave) return 0;
         const u = mathx.clampF(self.t / ZERK_RECOVER, 0, 1);
-        return mathx.smoothstep(0, 0.16, u) * (1.0 - mathx.smoothstep(0.78, 1.0, u));
+        return mathx.pulse(u, 0, 0.16, 0.78, 1.0);
     }
 
     /// THE CHOP'S TRUNK COIL, in degrees of yaw: −1 wound AWAY from the live hand, +1 whipped through
@@ -1060,12 +1137,48 @@ pub const Kobold = struct {
             9.0 * (1.0 - mathx.smoothstep(0, ZERK_HIT_A, u)); // …arching back on the raise first
     }
 
-    /// THE BITE'S HEAD DRIVE (0..1). The snap is the neck and the trunk throwing the jaw at you; the
-    /// arms sweeping back are a consequence, not the move.
+    /// THE BITE'S HEAD DRIVE (0..1). The snap is the WAIST and the neck throwing the jaw at you; the
+    /// arms getting out of the way are a consequence, not the move.
     fn biteLunge(self: *const Kobold) f32 {
         if (self.state != .bite) return 0;
         const u = mathx.clampF(self.t / BITE_DUR, 0, 1);
-        return mathx.smoothstep(0, BITE_HIT_A, u) * (1.0 - mathx.smoothstep(BITE_HIT_B, 1.0, u));
+        return mathx.pulse(u, 0, BITE_HIT_A, BITE_HIT_B, 1.0);
+    }
+
+    // ── THE POUNCE'S THREE BEATS, as amounts (see the DASH_* block) ─────────────────────
+    /// THE COIL, 0..1. Peaks at the instant he leaves the ground and is gone shortly after — the
+    /// anticipation has to happen BEFORE the leap, which is what riding `dashU` could never do.
+    fn dashGather(self: *const Kobold) f32 {
+        if (self.state != .dash) return 0;
+        return mathx.pulse(self.t, 0, DASH_GATHER * 0.8, DASH_GATHER, DASH_GATHER + DASH_FLIGHT * 0.22);
+    }
+    /// THE FLIGHT, 0..1 — where the legs are asymmetric. In fast off the launch, out through the
+    /// last quarter of the arc as the lead leg reaches for the ground.
+    fn dashFly(self: *const Kobold) f32 {
+        if (self.state != .dash) return 0;
+        return mathx.pulse(dashU(self.t), 0, 0.22, 0.74, 1.0);
+    }
+    /// THE ABSORB, 0..1 — the knees giving as he arrives, over the DASH_LAND window he is open for.
+    fn dashLand(self: *const Kobold) f32 {
+        if (self.state != .dash) return 0;
+        const a = DASH_GATHER + DASH_FLIGHT;
+        return mathx.pulse(self.t, a - DASH_FLIGHT * 0.18, a + DASH_LAND * 0.25, a + DASH_LAND * 0.45, a + DASH_LAND);
+    }
+    /// Which leg leads the leap — the one already SWUNG FORWARD, because you push off the other. Off
+    /// the shared gait curve, the same test `hero.startRoll` picks its rolling shoulder with.
+    fn dashLeadIsLeft(self: *const Kobold) bool {
+        return heromod.sampleCurve(heromod.HIP_FLEX, self.dashPhase) >
+            heromod.sampleCurve(heromod.HIP_FLEX, self.dashPhase + 0.5);
+    }
+
+    /// …and its CHAMBER (0..1), the head and trunk rocking back over the front of the wind-up. The
+    /// crack in a snap comes from the REVERSAL, not from the speed: without this the jaw simply
+    /// travels, which is a reach with the mouth open.
+    fn biteCoil(self: *const Kobold) f32 {
+        if (self.state != .bite) return 0;
+        const u = mathx.clampF(self.t / BITE_DUR, 0, 1);
+        const knee = BITE_HIT_A * BITE_COIL_AT;
+        return mathx.pulse(u, 0, knee, knee, BITE_HIT_A); // b == c: a spike, no hold
     }
 
     // ── THE UPPER BODY ──────────────────────────────────────────────────────────────────
@@ -1088,7 +1201,14 @@ pub const Kobold = struct {
         // THE WAIST TAKES THE FOLD, over knees that pay for it (`legCrouch`). 46 deg through the lumbar
         // and 30 more through the chest: the spine leads and the chest follows, which is what makes it a
         // fold rather than a hinge.
-        const fold = 46.0 * heave;
+        // …and THE BITE FOLDS HERE TOO, for the same reason the heave does: it is the trunk hinging
+        // over planted feet that throws the head, and a snap driven from the neck alone is a body
+        // standing still with its face moving. The chamber arches it back first.
+        const lunge = self.biteLunge();
+        const coil = self.biteCoil();
+        // …and the POUNCE leans into itself the same way: a leaping body is not a standing one moving
+        // sideways through the air. Through the waist, like the rest of them.
+        const fold = 46.0 * heave + BITE_FOLD * lunge - BITE_ARCH * coil + DASH_LEAN * self.dashFly();
         // …AND IT BREATHES, which is the difference between "doubled over" and "parked doubled over". A
         // heave is a body dragging air in: ~2.4 Hz through the lumbar, and it is the one channel here big
         // enough to see from across the field while the rest of him holds still.
@@ -1113,16 +1233,20 @@ pub const Kobold = struct {
 
         // NECK + SKULL. A dog leads with its nose: the head hangs a touch forward of vertical and
         // counter-rolls the trunk. On the heave it drops to the floor, on a stagger it snaps back — and
-        // on a BITE the whole head drives forward, which the first pass left out entirely: the slinger's
-        // snap moved its ARMS and nothing else, so the one attack that is literally called a bite had no
-        // head in it. `lunge` is that, and it is worth more than every arm angle in this file.
-        const lunge = self.biteLunge();
+        // on a BITE the whole head drives forward — see the fold above, which is where that drive now
+        // comes from.
         const headYaw = -counter * 0.5 + 6.0 * mathx.sinf(self.elapsed * 0.7 + self.seed * 6.0) * (1.0 - m);
         // …and it carries LEVEL, not nodded. The +8 here plus the trunk's own slouch had it studying the
         // grass in every idle frame, which is not a predator's posture and hides the whole face.
-        const headPitch = -3.0 - nod * 0.8 + 34.0 * heave - 52.0 * stunAmt + 26.0 * dk + 26.0 * lunge - throwF * 0.3;
-        setLocal(wx, NECK, self.rest, mul(rx(headPitch * 0.45 + 16.0 * lunge), ry(headYaw * 0.4)));
-        setLocal(wx, SKULL, self.rest, mul3(rx(headPitch * 0.55 + 10.0 * lunge), ry(headYaw * 0.6), rz(-1.8 * mathx.sinf(twoPi * ph) * m)));
+        //
+        // THE BITE EXTENDS IT, it does not nod it. `+26 * lunge` was here — nose DOWN, on top of a neck
+        // and skull each adding more of the same, ~49 deg of it — so the one attack named after teeth
+        // aimed them at the dirt in front of his own feet. The waist now supplies the forward drive
+        // (BITE_FOLD ≈ 49 deg once the chest follows), and this is the counter that keeps the muzzle on
+        // the target through it: the head ends up level and LEADING, which is the whole read.
+        const headPitch = -3.0 - nod * 0.8 + 34.0 * heave - 52.0 * stunAmt + 26.0 * dk - BITE_GAZE * lunge + 10.0 * coil - throwF * 0.3;
+        setLocal(wx, NECK, self.rest, mul(rx(headPitch * 0.45), ry(headYaw * 0.4)));
+        setLocal(wx, SKULL, self.rest, mul3(rx(headPitch * 0.55), ry(headYaw * 0.6), rz(-1.8 * mathx.sinf(twoPi * ph) * m)));
 
         // ARMS. The contralateral swing is the shared humanoid one; each role then overrides the arm
         // that carries its kit. LAG: the shoulder leads, the elbow arrives an eighth of a cycle later.
@@ -1179,6 +1303,16 @@ pub const Kobold = struct {
             aR = 30.0 * heave - swingLoose;
             eL = 18.0 + 14.0 * heave;
             eR = 18.0 + 14.0 * heave;
+        } else if (self.state == .dash) {
+            // THE AXES COME BACK THROUGH THE FLIGHT, cocked to arrive swinging — the dash exists to
+            // set up a chop, and arms left hanging at the walk's amplitude made the leap read as a
+            // creature being thrown rather than one jumping at you. Split, so it is not a puppet on
+            // one string (the same rule as the flail below).
+            const f = self.dashFly();
+            aL = 26.0 + DASH_ARM_BACK * f;
+            aR = 26.0 + DASH_ARM_BACK * f * 0.82;
+            eL = 30.0 + 46.0 * f;
+            eR = 30.0 + 38.0 * f;
         }
         // ARMS FLY UP ON A HIT, and REACTIONS ARE HUGE (owner's law) — 30 deg was a shrug. This is the
         // beat the player is looking at when they land a blow, so it gets the biggest amplitude here.
@@ -1232,23 +1366,25 @@ pub const Kobold = struct {
             aR = -118.0 + 22.0 * mathx.sinf(w);
             yR = 34.0 * mathx.cosf(w);
             eR = 26.0;
-        } else if (self.state == .bite) {
-            const snap = self.biteLunge();
-            aR = shR - 46.0 * snap; // arms sweep back and WIDE as it throws its head at you
-            eR = elR + 26.0 * snap;
         }
         var aL = shL;
         var eL = elL;
+        // THE FORELIMBS GET OUT OF THE WAY. They were swung the other way (−46 rx is FORWARD in this
+        // rig, whatever the old comment claimed) and splayed 22 deg WIDE — arms up and out to the
+        // sides over a still pelvis, which is half of why the snap read as squatting. Drawn back and
+        // TUCKED instead: the head is the weapon and nothing should be out in front of the teeth.
+        const snap = self.biteLunge();
         if (self.state == .bite) {
-            const snap = self.biteLunge();
-            aL = shL - 46.0 * snap;
-            eL = elL + 26.0 * snap;
+            aR = shR + BITE_ARM_BACK * snap;
+            eR = elR + 34.0 * snap;
+            aL = shL + BITE_ARM_BACK * snap;
+            eL = elL + 34.0 * snap;
         }
         const flail = 46.0 * stunAmt + 36.0 * dk;
-        setLocal(wx, SHL, self.rest, mul3(rx(aL - flail * 0.78), ry(-6.0 - 12.0 * stunAmt), rz(abd + 18.0 * stunAmt + 22.0 * self.biteLunge())));
+        setLocal(wx, SHL, self.rest, mul3(rx(aL - flail * 0.78), ry(-6.0 - 12.0 * stunAmt), rz(abd + 18.0 * stunAmt - BITE_ARM_TUCK * snap)));
         setLocal(wx, ELL, self.rest, rx(-eL - 16.0 * stunAmt));
         setLocal(wx, WRL, self.rest, rx(-6.0));
-        setLocal(wx, SHR, self.rest, mul3(rx(aR - flail), ry(yR + 16.0 * stunAmt), rz(-abd - 24.0 * stunAmt - 22.0 * self.biteLunge())));
+        setLocal(wx, SHR, self.rest, mul3(rx(aR - flail), ry(yR + 16.0 * stunAmt), rz(-abd - 24.0 * stunAmt + BITE_ARM_TUCK * snap)));
         setLocal(wx, ELR, self.rest, rx(-eR - 22.0 * stunAmt));
         setLocal(wx, WRR, self.rest, rx(-8.0));
         setLocal(wx, KIT, self.rest, rx(if (self.state == .whirl) -40.0 else 10.0));
@@ -1962,7 +2098,7 @@ pub const Warband = struct {
         blade: foe.Blade,
         ctx: anytype,
         comptime loose: fn (@TypeOf(ctx), rl.Vector3) void,
-    ) ?combat.Hit {
+    ) ?foe.Blow {
         // Tell each priest whether there is anything worth casting for, BEFORE any of them decides.
         // Read off the pre-update state on purpose: every priest in a band then answers the same
         // picture, instead of the second one seeing the first one's heal already applied.
@@ -1970,7 +2106,7 @@ pub const Warband = struct {
             if (k.role != .priest) continue;
             k.healWanted = self.neediest(k.pos) != null;
         }
-        var blow: ?combat.Hit = null;
+        var blow: ?foe.Blow = null;
         for (self.live()) |*k| {
             switch (k.update(dt, hero, bounds, blade)) {
                 .none => {},
@@ -1993,9 +2129,12 @@ pub const Warband = struct {
             }
             // A live hurt window that reaches the hero: one blow per swing, latched. It PLAYS NOTHING —
             // the swing already sounded at `enter` and the hero's own `.hurt` is the impact.
+            // …and it carries WHO threw it, because the hero's shield covers an arc and a band's whole
+            // trick is getting round it (foe.Blow). Strongest wins, so a berserker's axe is not
+            // displaced by a bite landing later in the same loop.
             if (k.hurtOpen() and mathx.distXZ(k.pos, hero) <= k.hurtReach()) {
                 k.markDealt();
-                blow = k.hurtBlow();
+                foe.worseBlow(&blow, k.hurtBlow(), k.pos);
             }
         }
         return blow;

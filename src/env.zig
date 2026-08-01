@@ -2257,9 +2257,21 @@ test "replaying the SHIPPED map produces a stable world" {
     // `git diff worlds/` BEFORE SUSPECTING THE CODE: the owner edits the map while playing, and a world
     // edit's counts add up exactly (two cliffs = +4 solids, `cliffParts` being 2 each) where a code
     // fault's do not.
-    try std.testing.expectEqual(@as(usize, 17205), props0);
-    try std.testing.expectEqual(@as(usize, 1864), solids0);
-    try std.testing.expectEqual(@as(usize, 37), lights0);
+    try std.testing.expectEqual(@as(usize, 16884), props0);
+    try std.testing.expectEqual(@as(usize, 1687), solids0);
+    try std.testing.expectEqual(@as(usize, 35), lights0);
+
+    // …and THE CHEST IS STOCKED. The only loot in the shipped world, and the whole reason `Op.loot`
+    // exists — a chest whose contents silently failed to parse still opens, still plays its sound and
+    // still hands back an empty list, so nothing about the loop says the map lost them.
+    var jerky: usize = 0;
+    for (m.ops[0..m.nops]) |op| {
+        if (op.kind != .chest) continue;
+        for (op.loot[0..op.nloot]) |it| {
+            if (it == .mushroom_jerky) jerky += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 2), jerky);
 }
 
 test "the flat-map plant shortcut is EXACT, not an approximation" {

@@ -25,6 +25,14 @@ pub const hit_light = Event{ .low = 0.22, .high = 0.42, .dur = 0.10 }; // your l
 pub const hit_heavy = Event{ .low = 0.48, .high = 0.60, .dur = 0.17 }; // your heavy crunches home
 pub const hurt = Event{ .low = 0.55, .high = 0.32, .dur = 0.22 }; // a chomp catches you
 pub const hurt_heavy = Event{ .low = 0.90, .high = 0.45, .dur = 0.34 }; // the lunge SLAMs you
+// CAUGHT ON THE SHIELD. A block has to be FELT — it is the payoff for standing there — but it is a
+// crack through the arm, not a wound: shorter than `hurt` and weighted toward the high motor, where
+// being hit sits in the low one. The heavy is a giant's club arriving on a small shield.
+pub const guard_block = Event{ .low = 0.30, .high = 0.42, .dur = 0.09 };
+pub const guard_block_heavy = Event{ .low = 0.62, .high = 0.55, .dur = 0.18 };
+// …and the shield knocked aside: the worst thing that can happen to you short of dying, and it says
+// so — longer than `hurt_heavy`, because what you are being told is that the NEXT one is free.
+pub const guard_break = Event{ .low = 0.95, .high = 0.52, .dur = 0.42 };
 pub const roll = Event{ .low = 0.16, .high = 0.40, .dur = 0.10 }; // the dodge whump
 pub const kill = Event{ .low = 0.34, .high = 0.20, .dur = 0.14 }; // a toad falls
 pub const death = Event{ .low = 1.00, .high = 0.60, .dur = 0.70 }; // you die

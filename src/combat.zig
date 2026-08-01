@@ -14,6 +14,13 @@ pub const StunKind = enum { none, light, heavy };
 // What the victim reacts to THIS frame.
 pub const HitResult = enum { none, light, heavy, death };
 
+/// WHAT BECAME OF A BLOW aimed at the hero, which is not the same question as what his vitals did
+/// with it — a hit can be rolled through, or caught on the shield, and neither reaches `Vitals.hit`.
+/// Returned by `hero.takeHit` because the CALLER has to know: the felt beat for a blocked blow is a
+/// different rumble, a different shake and a different voice from one that landed, and before this
+/// existed game.zig played the hurt grunt for every blow a foe reported — i-framed ones included.
+pub const HitOutcome = enum { ignored, taken, blocked, guardBroken };
+
 // One landed blow, as plain data (attacker/victim stay decoupled). `stance` is DIRECT stance damage:
 // heavies set it to break stance faster, lights leave it 0 and lean on the light-break chip.
 pub const Hit = struct {
@@ -248,6 +255,40 @@ pub const Stamina = struct {
     }
 };
 
+// ── GUARDING: the plain Dark Souls block, and a SMALL SHIELD to do it with ───────────────
+// Hold the shield up and a blow from the front is caught on it instead of on you: almost no HP,
+// but it is paid for out of STAMINA, and running the bar out under a blow is a GUARD BREAK — a
+// heavy stagger, wide open. No parry, no guard counter (docs/ELDEN_RING.md §3 has both; neither is
+// built). That is the whole system, and it is deliberately the DS1 shape rather than ER's: block,
+// pay, and either punish the gap or lose your footing.
+//
+// THE SHIELD IS SMALL, and every number here says so. A greatshield trades mobility for a wall you
+// can stand behind; a small one buys you a beat, and what it cannot do is soak a giant. So:
+//   - it does NOT reach 100% physical negation (ER's medium/greatshield rule), and the chip that
+//     gets through CAN kill you, exactly as it can in DS,
+//   - its STABILITY is poor, which in this model is the stamina it costs per blow, and it costs by
+//     the WEIGHT OF THE BLOW: a kobold's teeth are nothing and the ogre's club breaks you in three.
+// Both are one-line dials, and they are the two that decide whether guarding is a crutch.
+pub const GUARD_NEGATE: f32 = 0.85; // fraction of a blocked blow's HP damage the shield eats…
+pub const GUARD_STAM_FLAT: f32 = 5.0; // …stamina every blocked blow costs…
+pub const GUARD_STAM_PER_DMG: f32 = 1.10; // …plus this per point of the blow's RAW damage (stability)
+/// How far off his facing the shield covers, in degrees EITHER SIDE. A shield is a direction, not a
+/// bubble: getting round it is the counterplay a warband already knows how to do, and it is why
+/// guarding cannot answer a group the way rolling can. Wide enough not to punish a fight where the
+/// camera and the foe disagree by a few degrees, nowhere near a hemisphere.
+pub const GUARD_ARC: f32 = 65.0;
+
+/// A BLOCKED BLOW STILL COSTS POISE — none of it. It costs STAMINA, and this is the whole stability
+/// model: flat bite plus the weight of what hit you.
+pub fn guardStamina(h: Hit) f32 {
+    return GUARD_STAM_FLAT + GUARD_STAM_PER_DMG * h.dmg;
+}
+/// …and the CHIP: what gets past a shield that is not a wall. Kept as real damage on purpose — chip
+/// you cannot die to is a number, and DS lets it kill you.
+pub fn guardChip(h: Hit) f32 {
+    return h.dmg * (1.0 - GUARD_NEGATE);
+}
+
 // ── FOCUS (FP): the hero's alone, like Stamina ──────────────────────────────────────────
 // ER's blue bar. NOTHING SPENDS IT YET — there are no spells or skills — so it sits full, exactly
 // as it does in a build with no catalyst equipped. It is a real meter rather than the HUD's old
@@ -344,6 +385,50 @@ pub const Flasks = struct {
     pub fn refill(self: *Flasks) void {
         self.crimson = FLASK_CRIMSON;
         self.cerulean = FLASK_CERULEAN;
+    }
+};
+
+// ── REGEN: HP back over TIME, and the first thing in the game that is not a flask ────────
+// `Vitals.tick` refills poise and stance and deliberately never HP ("flasks only"), and `heal` is an
+// instant pour. This is the third shape: a slow drip you set going and then have to SURVIVE, which
+// is a different decision from a flask. A flask is an answer to being hurt NOW; a drip is a bet that
+// the next twenty seconds go well.
+//
+// MUSHROOM JERKY is the first item to use it. THE POTENCY IS NOT HERE — it rides `item.Use.regen`
+// with the item it belongs to, because "how much, over how long" is what tells one edible from the
+// next, and a second one reading its numbers off a constant named after the first is a bug waiting
+// to be written. This file owns the MECHANISM; the item owns the dose.
+
+pub const Regen = struct {
+    left: f32 = 0, // seconds still to run
+    rate: f32 = 0, // HP a second while it does
+
+    pub fn active(self: *const Regen) bool {
+        return self.left > 0;
+    }
+    /// Start (or RESTART) a drip of `total` HP spread over `dur`. Eating a second one refreshes
+    /// rather than stacking: two overlapping drips at different rates is a thing no player can read
+    /// off a bar, and the bar is the only place this is visible.
+    pub fn start(self: *Regen, total: f32, dur: f32) void {
+        if (dur <= 0) return;
+        self.left = dur;
+        self.rate = total / dur;
+    }
+    /// Per frame. Pours through `Vitals.heal`, so it tops out at max and CANNOT raise the dead —
+    /// the same door the kobold priest uses, for the same reason.
+    pub fn tick(self: *Regen, dt: f32, v: *Vitals) void {
+        if (!self.active()) return;
+        if (v.dead) return self.reset(); // …and dying ends it: a corpse is not still digesting
+        const step = minF(dt, self.left);
+        self.left -= step;
+        _ = v.heal(self.rate * step);
+    }
+    // (A `fracLeft` for a HUD bar was written here and DELETED: nothing drew it, and its own
+    // doc-comment said "what a bar would draw" about a bar that does not exist. Second time in two
+    // passes — the shield's `blocks` counter was the first. Write the reader, then the accessor.)
+    pub fn reset(self: *Regen) void {
+        self.left = 0;
+        self.rate = 0;
     }
 };
 
@@ -584,6 +669,69 @@ test "the pool refills far faster than any one action drains it" {
     try std.testing.expect(STAM_REGEN > 2.0 * STAM_HEAVY);
     try std.testing.expect(STAM_HEAVY > STAM_LIGHT and STAM_LIGHT < STAM_ROLL);
     try std.testing.expect(STAM_MAX / STAM_ROLL > 6.0); // ER's "~8 rolls from full"
+}
+
+test "the small shield costs stamina by the WEIGHT of the blow, and lets a little through" {
+    // The two dials that decide whether guarding is a crutch, asserted against the two ends of the
+    // game's damage range rather than against themselves.
+    const teeth = Hit{ .dmg = 9, .poise = 7 }; // a kobold's bite
+    const club = Hit{ .dmg = 36, .poise = 44, .stance = 20 }; // the ogre's slam
+    // …but not PROPORTIONALLY: the flat bite means every block costs something, so a blow four
+    // times the damage is under three times the stamina, and that is deliberate.
+    try std.testing.expect(guardStamina(club) > 2.5 * guardStamina(teeth));
+    try std.testing.expect(guardStamina(club) < 4.0 * guardStamina(teeth));
+    // …and the chip is a bite, not a scratch and not the blow.
+    try std.testing.expect(guardChip(club) > 3.0 and guardChip(club) < 0.25 * club.dmg);
+}
+
+test "a small shield holds off the small stuff and CANNOT hold a giant" {
+    // The design in one test: the same full bar buys a long exchange with the little ones and three
+    // swings of the club. Blocking is a beat you buy, never a wall you stand behind.
+    var s = Stamina{};
+    var bites: u32 = 0;
+    while (s.cur > 0) : (bites += 1) s.spend(guardStamina(.{ .dmg = 9 }));
+    var t = Stamina{};
+    var slams: u32 = 0;
+    while (t.cur > 0) : (slams += 1) t.spend(guardStamina(.{ .dmg = 36 }));
+    try std.testing.expect(bites >= 6);
+    try std.testing.expect(slams >= 2 and slams <= 3);
+}
+
+test "the jerky's drip pours its whole meal, and no more" {
+    var v = Vitals.init(100, 20, 40);
+    _ = v.hit(.{ .dmg = 80 });
+    var r = Regen{};
+    r.start(60, 20.0);
+    try std.testing.expect(r.active());
+    var t: f32 = 0;
+    while (t < 10.0) : (t += 1.0 / 60.0) r.tick(1.0 / 60.0, &v);
+    try std.testing.expectApproxEqAbs(@as(f32, 50), v.hp, 0.5); // …half the meal at half time
+    while (t < 25.0) : (t += 1.0 / 60.0) r.tick(1.0 / 60.0, &v);
+    try std.testing.expectApproxEqAbs(@as(f32, 80), v.hp, 0.5); // …all of it, and it STOPS
+    try std.testing.expect(!r.active());
+}
+
+test "a drip tops out at max, cannot raise the dead, and REFRESHES rather than stacking" {
+    var v = Vitals.init(100, 20, 40);
+    _ = v.hit(.{ .dmg = 10 });
+    var r = Regen{};
+    r.start(60, 20.0);
+    var t: f32 = 0;
+    while (t < 25.0) : (t += 1.0 / 60.0) r.tick(1.0 / 60.0, &v);
+    try std.testing.expectApproxEqAbs(@as(f32, 100), v.hp, 1e-3); // capped, not overflowed
+    // A second one RESTARTS: two overlapping drips at different rates is a thing no bar can show.
+    r.start(60, 20.0);
+    r.tick(1.0, &v);
+    r.start(30, 10.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 10), r.left, 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 3), r.rate, 1e-4);
+    // …and dying ends it on the spot rather than digesting through the death anim.
+    var d = Vitals.init(100, 20, 40);
+    var dr = Regen{};
+    dr.start(60, 20.0);
+    _ = d.hit(.{ .dmg = 500 });
+    dr.tick(1.0 / 60.0, &d);
+    try std.testing.expect(!dr.active() and d.hp <= 0);
 }
 
 test "runes roll UP to a kill's payout and never overshoot it" {

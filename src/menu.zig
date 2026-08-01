@@ -17,7 +17,9 @@ const PAD = rumblemod.PAD;
 // Filters is a slider list over gfx.Retro.values. All chrome is primitive rects + hud text (Balthazar,
 // ASCII only), drawn crisp AFTER the retro pass so menus never crunch.
 
-pub const Action = enum { none, quit, editor };
+/// `use` carries WHICH item, because the menu owns the cursor and the loop owns the hero — this file
+/// has no business reaching into either the bag or his vitals (the same split `chest.Opened` uses).
+pub const Action = union(enum) { none, quit, editor, use: item.Kind };
 
 // TWO OVERLAYS, TWO BUTTONS: SELECT/Esc the GAME menu (Continue/Editor/Debug/Quit), START the CHARACTER
 // one (Inventory/Equipment). Both here because they are the same widget and share `isOpen`, which is what
@@ -249,14 +251,19 @@ pub const Menu = struct {
                 CHR_CLOSE => self.screen = .closed,
                 else => {},
             },
-            // Nothing to confirm on either list yet — no item DOES anything, and inventing a "Use" that
-            // silently did nothing would be worse than a list you only read. So ONLY the Back row acts,
-            // and it is the last one either list draws.
+            // The Back row acts on both lists, and on the INVENTORY a row whose kind actually does
+            // something is now usable — `item.usable` is the one place that question is answered, so
+            // the list can never offer a Use that turns out to be a no-op (which is why it offered
+            // nothing at all until the first item with an effect existed).
             .inventory, .equipment => {
                 const last = (if (self.screen == .inventory) @max(1, bag.distinct()) + 1 else EQP_COUNT) - 1;
                 if (self.cursor == last) {
                     self.screen = .character;
                     self.cursor = 0;
+                } else if (self.screen == .inventory) {
+                    if (bag.nth(self.cursor)) |k| {
+                        if (item.usable(k)) return .{ .use = k };
+                    }
                 }
             },
             .retro => switch (self.cursor) {
@@ -407,7 +414,13 @@ fn bagLabels(bag: *const item.Bag) [][:0]const u8 {
     while (bag.nth(n)) |k| : (n += 1) {
         // Name then count, columns aligned — a list of things you own is read down the left and totted up
         // down the right, and a ragged right edge makes it unscannable.
-        bagLabelBuf[n] = std.fmt.bufPrintZ(&bagRowBuf[n], "{s: <26}{d}", .{ item.displayName(k), bag.count(k) }) catch "?";
+        //
+        // …and a row you can DO something with says so. Most of this list is trophies and keys with
+        // nothing behind them, so without the mark every row looks equally pressable and all but one
+        // of them silently is not — the exact failure that kept Confirm off this list until the first
+        // item with an effect existed. Off `item.usable`, the same question `confirm` asks.
+        const mark: []const u8 = if (item.usable(k)) "  USE" else "";
+        bagLabelBuf[n] = std.fmt.bufPrintZ(&bagRowBuf[n], "{s: <24}{d: <4}{s}", .{ item.displayName(k), bag.count(k), mark }) catch "?";
     }
     if (n == 0) {
         // An EMPTY bag says so. A menu that opens onto one row reading "Back" looks broken.

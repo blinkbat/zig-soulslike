@@ -586,6 +586,12 @@ pub const CHEST_HINGE_Z: f32 = -CHEST_HALF_Z;
 /// silhouette the shadow cull is sizing.
 pub const CHEST_LID_R: f32 = CHEST_HALF_Z * 0.84;
 const CHEST_LID_SLAB: f32 = 0.10; // …seated on a slab this thick, so the drum's axis rides here
+/// The inside of the box and the lining under its lid — the surfaces that only exist once it is OPEN.
+/// NEARLY BLACK ON PAPER, and solved rather than guessed (AGENTS.md: screen ∝ albedo^(1/2.2)). At
+/// 22/17/12 — already "dark" by eye, two thirds of TIMBER_DK — it came back only 17% down on the
+/// planks around it and the lid's belly still read as a metre of bare board. Reading at ~55% of the
+/// timber needs 0.55^2.2 = 0.26 of its albedo, which is this.
+const CHEST_INSIDE = mathx.rgba(9, 7, 5, 255);
 /// How far the highest thing riding the drum stands off it — the IRON STRAPS, not the boards (they are
 /// the thicker of the two, so they are what sets the silhouette).
 const CHEST_RELIEF_PROUD: f32 = 0.065;
@@ -607,9 +613,27 @@ pub fn chestMesh(shader: rl.Shader) rl.Model {
             b.addCube(v3(sx * (hx - 0.07), CHEST_FOOT_H * 0.5, sz * (hz - 0.06)), v3(0.13, CHEST_FOOT_H, 0.12), TIMBER_DK);
         }
     }
-    // The carcase, as ONE solid mass — the boards below are only the facing, the same rule the well's
-    // drum and every coursed wall here follow. Without a core the plank joints leak daylight.
-    b.addCube(v3(0, CHEST_FOOT_H + CHEST_BODY_H * 0.5, 0), v3(hx * 2.0 - 0.03, CHEST_BODY_H, hz * 2.0 - 0.03), TIMBER_DK);
+    // THE CARCASE IS HOLLOW, and it has to be: this was ONE SOLID CUBE, so throwing the lid back
+    // revealed a sealed timber top — you opened a chest and found a block. The whole beat is walking
+    // up to a box and looking INTO it.
+    //
+    // Four walls and a floor, and the outer faces sit exactly where the solid mass's did (the boards
+    // below are the facing and still overlap them, so no joint leaks daylight — the same rule the
+    // well's drum follows). The cavity that leaves is 44 cm deep, which is what the eye reads as a
+    // chest with something in it rather than a lipped tray.
+    const mid = CHEST_FOOT_H + CHEST_BODY_H * 0.5;
+    const wall = 0.075;
+    const inX = hx - 0.015; // the carcase's own outer faces, unchanged from the solid version
+    const inZ = hz - 0.015;
+    for ([_]f32{ -1, 1 }) |sz| { // front and back…
+        b.addCube(v3(0, mid, sz * (inZ - wall * 0.5)), v3(inX * 2.0, CHEST_BODY_H, wall), TIMBER_DK);
+    }
+    for ([_]f32{ -1, 1 }) |sx2| { // …and the two ends, run full depth so the corners overlap
+        b.addCube(v3(sx2 * (inX - wall * 0.5), mid, 0), v3(wall, CHEST_BODY_H, inZ * 2.0), TIMBER_DK);
+    }
+    // The floor sits low, and DARKER: an interior lit only by ambient still wants its own value, or the
+    // cavity reads as a shallow dish. Above the feet, so nothing shows through from underneath.
+    b.addCube(v3(0, CHEST_FOOT_H + 0.055, 0), v3(inX * 2.0, 0.11, inZ * 2.0), CHEST_INSIDE);
     // BOARDS across the front and back, uneven widths and a hair proud (RELIEF IS SUBTLE — a few percent
     // of the mass, or they read as slats nailed onto a crate).
     var x = -hx + 0.04;
@@ -638,8 +662,9 @@ pub fn chestMesh(shader: rl.Shader) rl.Model {
 }
 
 /// THE LID, authored about its HINGE — origin at the back edge of the rim, so `chest.zig` opens it with
-/// one `rx` and no offset arithmetic. A domed coffer top: banded to match, and hollow-looking underneath
-/// (a slab lid thrown back shows a flat white belly and reads as a plank).
+/// one `rx` and no offset arithmetic. A domed coffer top: a CLOSED drum (the slab lives inside it),
+/// banded over the crown and LINED under the belly — and the belly is the half that matters, because
+/// thrown back past vertical that is the only side of it the player ever sees.
 pub fn chestLidMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2113);
@@ -687,6 +712,39 @@ pub fn chestLidMesh(shader: rl.Shader) rl.Model {
             b.addCube(v3(bx, axis + mathx.cosf(a) * r, d * 0.5 + mathx.sinf(a) * r), v3(0.10, 0.052, d * 0.24), if (rng.float() < 0.35) RUST else IRON);
         }
     }
-    b.addCube(v3(0, axis * 0.75, d - 0.015), v3(0.28, 0.20, 0.06), IRON); // the hasp eye, off the front lip
+    // THE HASP EYE, off the front lip — a STRAP folded over it, not the 28 x 20 cm plate that was
+    // here. Thrown open, that plate ends up on TOP of the lid pointing straight at the sun, and a flat
+    // steel face square to this light blows to pure white: the open chest wore a white sticker. A
+    // strap turns the same iron through two angles, so no one facet ever takes the sun head-on.
+    b.addCube(v3(0, axis * 0.62, d - 0.010), v3(0.17, 0.13, 0.045), IRON);
+    b.addCube(v3(0, axis * 0.30, d - 0.055), v3(0.13, 0.055, 0.10), RUST); // …the fold, back under the lip
+    // ── THE UNDERSIDE, which is THE FACE YOU ACTUALLY LOOK AT ────────────────────────────
+    // Thrown back past vertical, the lid presents its BELLY to the player and everything above —
+    // the dome, the boards, both iron straps — is pointing away. This side had nothing on it at all:
+    // one flat rectangle, so an opened chest grew a blank plank standing behind it. (The
+    // doc-comment on this function has claimed since it was written that the lid is "hollow-looking
+    // underneath"; it never was. Fixed rather than the comment deleted.)
+    //
+    // THE BELLY IS THE DRUM'S LOWER ARC, not the slab's flat bottom — this lid is a CLOSED cylinder
+    // and the slab lives inside it. A flat lining panel under the slab was tried first and was
+    // invisible for exactly that reason: at 11 cm below the axis it is 17 cm inside a 29 cm radius.
+    // So the belly gets dressed the way the crown already is, boards walked round the arc — the far
+    // side of the SAME loop, half a turn on.
+    b.setMat(.wood);
+    var u: i32 = 0;
+    while (u < 6) : (u += 1) {
+        const a = (std.math.pi - 0.95) + @as(f32, @floatFromInt(u)) * 0.38;
+        const r = R * 1.02;
+        b.addCube(
+            v3(0, axis + mathx.cosf(a) * r, d * 0.5 + mathx.sinf(a) * r),
+            v3(hx * 2.0 - 0.05, 0.030, d * 0.20),
+            CHEST_INSIDE,
+        );
+    }
+    // …and the BATTENS across them, the light timber, standing proud of the arc. On the dark lining
+    // they are the only thing that says this is the inside of a made object rather than a shadow.
+    for ([_]f32{ -1, 1 }) |sx| {
+        b.addCube(v3(sx * (hx * 0.56), axis - R * 1.045, d * 0.5), v3(0.12, 0.055, d * 0.66), TIMBER);
+    }
     return b.toModel(shader);
 }

@@ -391,10 +391,11 @@ const STEEL = rgba(232, 234, 238, 255);
 const STEEL_DK = rgba(126, 132, 140, 255);
 const BRASS = rgba(182, 146, 78, 255);
 const GRIP = rgba(112, 82, 56, 255); // …light enough to READ against the well, not true leather
+const BOARD_JOINT = rgba(78, 56, 38, 255); // the shield icon's plank seams — a shade under GRIP
 
 /// What is in a slot. The cross has exactly four and only two of them hold anything, so this is an
 /// exhaustive little enum rather than an icon-id system for a game with two icons.
-pub const Slot = enum { empty, sword, flask };
+pub const Slot = enum { empty, sword, shield, flask };
 
 /// WHICH flask is in the quick-item slot. Its own enum for the same reason `Slot` is one, and
 /// deliberately NOT `combat.FlaskKind`: this file takes plain values and knows nothing about the
@@ -416,7 +417,7 @@ pub fn equipment(tint: FlaskTint, charges: u8) void {
     const midX = left + stepX; // the centre cell of the three
     const midY = bottom - SLOT_H - PITCH_Y; // …the side arms' top edge
     slot(midX, midY - PITCH_Y, .empty, .crimson, 0); // UP — sorcery/incantation
-    slot(left, midY, .empty, .crimson, 0); // LEFT — left hand
+    slot(left, midY, .shield, .crimson, 0); // LEFT — left hand, the small shield
     slot(midX + stepX, midY, .sword, .crimson, 0); // RIGHT — right hand, the sword
     slot(midX, midY + PITCH_Y, .flask, tint, charges); // DOWN — the quick item
 }
@@ -439,6 +440,7 @@ fn slot(x: i32, y: i32, holds: Slot, tint: FlaskTint, charges: u8) void {
     switch (holds) {
         .empty => {},
         .sword => sword(cx, cy),
+        .shield => shield(cx, cy),
         .flask => {
             flask(cx, cy, tint, charges > 0);
             // The charge count, bottom-right of the slot like ER's. Small, and it goes RED-dim at
@@ -528,4 +530,34 @@ fn sword(cx: f32, cy: f32) void {
     rl.drawLineEx(guard, pom, 3.0 * k, GRIP); // grip UNDER the guard, so the cross reads on top
     rl.drawLineEx(.{ .x = gx + u * q, .y = gy - u * q }, .{ .x = gx - u * q, .y = gy + u * q }, 3.2 * k, BRASS);
     rl.drawCircleV(pom, 2.6 * k, BRASS);
+}
+
+// THE SMALL SHIELD, in the left hand's slot. A ROUND MASS where the sword is a diagonal STROKE —
+// which is the whole reason it is legible beside it at 66 px: the two icons differ in silhouette
+// before you have read either. Built from discs, largest first, so the rim is simply the iron one
+// showing round the edge of the boards (no ring primitive, and nothing to leave a seam).
+fn shield(cx: f32, cy: f32) void {
+    const s: f32 = @floatFromInt(ICON);
+    const k = s / 34.0; // the icon set's shared stroke scale (see `sword`)
+    const c = rl.Vector2{ .x = cx, .y = cy };
+    const r = s * 0.40; // ~80% of the slot's width, matching the sword's own fill
+    const boards = r - 2.4 * k;
+    rl.drawCircleV(c, r, STEEL_DK); // the iron binding…
+    rl.drawCircleV(c, boards, GRIP); // …with the boards inside it
+    // Two plank joints across the face, chord-clipped so they stop at the rim rather than crossing
+    // it. Dark, thin: at this size they are texture, not drawing.
+    for ([_]f32{ -0.42, 0.42 }) |f| {
+        const dy = boards * f;
+        const half = @sqrt(@max(boards * boards - dy * dy, 1.0));
+        rl.drawLineEx(
+            .{ .x = cx - half, .y = cy + dy },
+            .{ .x = cx + half, .y = cy + dy },
+            1.6 * k,
+            BOARD_JOINT,
+        );
+    }
+    // The BOSS: a dark iron ring with a lit cap sitting a hair up-left inside it. The ring has to
+    // show ALL the way round or the cap reads as an off-centre dot rather than as a dome.
+    rl.drawCircleV(c, s * 0.115, STEEL_DK);
+    rl.drawCircleV(.{ .x = cx - 0.5 * k, .y = cy - 0.6 * k }, s * 0.115 - 2.4 * k, STEEL);
 }

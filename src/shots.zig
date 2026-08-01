@@ -374,6 +374,53 @@ pub fn runShots(g: *Game) void {
     advanceAttack(g, dt, 999);
     g.menu.hitboxes = false;
 
+    // ── THE GUARD (the plain block) ── three things have to read here, and each has its own frame:
+    // the shield is BETWEEN him and the threat, the sword is OUT OF THE WAY (a guard still
+    // presenting the blade reads as a wind-up), and a caught blow drives him back rather than
+    // through him. Shot on the SUN's bearing with him facing the camera, or the whole front of him —
+    // which is the entire subject — comes back as a silhouette in his own shadow.
+    {
+        var k: i32 = 0;
+        while (k < 45) : (k += 1) stepWorld(g, dt, 0); // out of the last swing's recovery first
+        g.hero.pos = mathx.ground(0, 4);
+        g.hero.stam.reset();
+        g.hero.facing = mathx.headingXZ(LIT_BACK); // …looking down the lens: this is the FRONT view
+        g.hero.setGuard(true);
+        k = 0;
+        while (k < 16) : (k += 1) { // let the stance blend settle (guardB eases in over ~0.1 s)
+            g.hero.update(dt, 0, 0, null);
+            g.hero.pose();
+        }
+        shootPortrait(g, "shots/20a_guard_front.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        shootPortrait(g, "shots/20b_guard_3q.png", g.hero.shoulderPoint(), LIT_YAW + 42, 0.09, 3.0);
+        shootPortrait(g, "shots/20c_guard_side.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.09, 3.0);
+        // A BLOW CAUGHT, straight into the shield: the frame right after the recoil fires, which is
+        // the one that has to say HELD rather than hurt.
+        _ = g.hero.takeHit(ogremod.SWIPE_HIT, mathx.headingDir(g.hero.facing));
+        g.hero.update(dt, 0, 0, null);
+        g.hero.pose();
+        shootPortrait(g, "shots/20d_guard_block.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        // …and the shield's own BACK: the grip bar and the arm pad, which only ever show from here.
+        g.hero.facing = mathx.headingXZ(LIT_BACK) + std.math.pi;
+        k = 0;
+        while (k < 30) : (k += 1) {
+            g.hero.update(dt, 0, 0, null);
+            g.hero.pose();
+        }
+        shootPortrait(g, "shots/20e_guard_back.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        // PUT IT AWAY. Every shot after this one is of a hero who is not guarding, and a stance left
+        // half-raised would turn up in the world tour and the foe portraits alike.
+        g.hero.setGuard(false);
+        g.hero.stam.reset();
+        // …and the damage flash with it. `tickFlash` hangs off the LIVE loop, not off `update`, so
+        // nothing in the harness ever decays it — the lick of red a block leaves rode all the way
+        // into the world tour and reddened every shot after this one.
+        g.hero.hurtFlash = 0;
+        g.hero.vit = heromod.freshVitals();
+        k = 0;
+        while (k < 30) : (k += 1) stepWorld(g, dt, 0);
+    }
+
     // The carry: settle to a stand and frame the sword side — the held low-ready.
     var idleK: i32 = 0;
     while (idleK < 55) : (idleK += 1) stepWorld(g, dt, 0);
@@ -492,7 +539,10 @@ pub fn runShots(g: *Game) void {
         // HERO — force each reaction with a synthetic blow, framed from the sword 3/4.
         g.hero.pos = mathx.ground(0, 4);
         g.hero.facing = std.math.pi;
-        g.hero.takeHit(.{ .poise = 999 }); // empty poise → the light flinch
+        // …UNDIRECTED (a zero `fromDir`), which is what the harness wants: these photograph the
+        // REACTIONS, and a blow with no direction cannot be caught on the shield however he is
+        // standing (hero.guardCovers), so the flinch is guaranteed to be the thing in frame.
+        _ = g.hero.takeHit(.{ .poise = 999 }, mathx.zero3); // empty poise → the light flinch
         var sk: i32 = 0;
         while (sk < 13) : (sk += 1) g.hero.updateStun(dt); // flinch PEAK
         g.rig.yaw = mathx.radians(60);
@@ -502,14 +552,14 @@ pub fn runShots(g: *Game) void {
         shoot(g, "shots/34_hero_flinch.png");
         while (g.hero.staggered()) g.hero.updateStun(dt);
 
-        g.hero.takeHit(.{ .stance = 999 }); // empty stance → the heavy stagger
+        _ = g.hero.takeHit(.{ .stance = 999 }, mathx.zero3); // empty stance → the heavy stagger
         sk = 0;
         while (sk < 26) : (sk += 1) g.hero.updateStun(dt);
         g.rig.follow(g.hero.shoulderPoint());
         shoot(g, "shots/35_hero_stagger.png");
         while (g.hero.staggered()) g.hero.updateStun(dt);
 
-        g.hero.takeHit(.{ .dmg = 999 }); // lethal → the death collapse
+        _ = g.hero.takeHit(.{ .dmg = 999 }, mathx.zero3); // lethal → the death collapse
         sk = 0;
         while (sk < 130) : (sk += 1) g.hero.updateDeath(dt); // deep into the card: heap + YOU DIED full
         g.rig.pitch = 0.22;
@@ -840,6 +890,30 @@ pub fn runShots(g: *Game) void {
         stepFoe(zerk, 12, near); // …into the hold, where the fold is deepest
         shootFoe(g, zerk, "shots/66_kobold_heave.png", LIT_YAW + 62, 0.04, 3.6); // side-on: a FOLD is a profile read
 
+        // …and THE POUNCE, in PROFILE and in three beats, because a leap is a shape over TIME and no
+        // single frame can show that the coil happens before the launch. It had no shots at all, which
+        // is how it shipped with both knees tucked symmetrically in mid-air and no anticipation
+        // whatever — a hop. Subject turned side-on rather than the camera orbited (AGENTS.md), and
+        // spawned already facing, since it commits before it can turn.
+        {
+            const dside = v3(kc.x - litB.z * 5.0, 0, kc.z + litB.x * 5.0); // inside the dash band
+            const dyaw = mathx.headingXZ(mathx.subV(dside, kc));
+            const beats = [_]struct { name: [:0]const u8, at: f32 }{
+                .{ .name = "shots/66d_kobold_dash_coil.png", .at = 0.10 }, // the gather: both knees loaded
+                .{ .name = "shots/66e_kobold_dash_fly.png", .at = 0.30 }, // the leap: ONE knee up, one leg trailing
+                .{ .name = "shots/66f_kobold_dash_land.png", .at = 0.56 }, // arriving: knees giving under him
+            };
+            for (beats) |b| {
+                zerk.* = koboldmod.Kobold.spawnAs(.berserker, kc, dyaw, 1.0, 0.15);
+                zerk.dashCd = 0;
+                var df: i32 = 0;
+                while (zerk.state != .dash and df < 600) : (df += 1) _ = zerk.update(SHOT_DT, dside, game.PLAY_HALF, .{});
+                // …then to the beat itself, in whole harness frames off the state clock.
+                while (zerk.t < b.at) _ = zerk.update(SHOT_DT, dside, game.PLAY_HALF, .{});
+                shootPortrait(g, b.name, zerk.centerWorld(), LIT_YAW, 0.06, 5.0);
+            }
+        }
+
         // …and THE REACTIONS, which had no shots at all — which is how six leg bones came to be handed to
         // `drawMesh` as UNDEFINED matrices on every death in the game without anybody seeing it. A flinch
         // and a death are the two poses the player looks at most and neither was ever photographed.
@@ -882,6 +956,28 @@ pub fn runShots(g: *Game) void {
         while (sling.state != .bite and g3 < 600) : (g3 += 1) _ = sling.update(SHOT_DT, near, game.PLAY_HALF, .{});
         stepFoe(sling, 10, near); // …inside the snap, where the jaw is open
         shootFoe(g, sling, "shots/69_kobold_bite.png", LIT_YAW + 14, 0.04, 2.6);
+        // …and the SAME beat in PROFILE, which is the only angle that shows what a snap is made of:
+        // the waist folding over planted legs and the muzzle leading it. Head-on, a body doubling over
+        // and a body squatting are the same silhouette — and for a while this one was squatting.
+        //
+        // TURN THE SUBJECT, DON'T ORBIT THE CAMERA (AGENTS.md): a foe faces the sensed hero, so the
+        // profile is bought by putting that hero 90 deg off the lit bearing and leaving the camera on
+        // it. Orbiting to LIT_YAW+82 instead is how the first cut of this shot came back as a dark
+        // brown mass filling the frame.
+        const side = v3(kc.x - litB.z * 1.2, 0, kc.z + litB.x * 1.2);
+        // SPAWNED ALREADY FACING IT. With `biteCd` zeroed and the hero 1.2 m away it enters `.bite` on
+        // the FIRST frame — before it has turned a degree — so a subject spawned at yaw 0 gets
+        // photographed from behind however the camera is placed.
+        sling.* = koboldmod.Kobold.spawnAs(.slinger, kc, mathx.headingXZ(mathx.subV(side, kc)), 1.0, 0.85);
+        sling.biteCd = 0;
+        var g4: i32 = 0;
+        while (sling.state != .bite and g4 < 600) : (g4 += 1) _ = sling.update(SHOT_DT, side, game.PLAY_HALF, .{});
+        stepFoe(sling, 4, side); // the CHAMBER — the rock back that gives the snap its crack
+        // …CENTRED (`shootPortrait`), not `shootFoe`: the rig's shoulder offset is 0.55 m and this
+        // subject is 1.3 m tall, so a followed framing at snap distance puts half of it out of frame.
+        shootPortrait(g, "shots/69d_kobold_bite_coil.png", sling.centerWorld(), LIT_YAW, 0.06, 4.4);
+        stepFoe(sling, 6, side); // …and the snap itself, a tenth of a second later
+        shootPortrait(g, "shots/69c_kobold_bite_side.png", sling.centerWorld(), LIT_YAW, 0.06, 4.4);
         // …and the OPEN JAW itself, head-on and close. This is the shot that would have caught `gape`
         // never being called: the mouth is the whole attack, and at band range it is four pixels.
         shootPortrait(g, "shots/69e_kobold_bite_jaw.png", sling.lockPoint(), LIT_YAW, 0.02, 1.9);
@@ -1091,8 +1187,8 @@ fn chestShots(g: *Game) void {
     op.yaw = 233;
     op.loot[0] = .golden_seed;
     op.loot[1] = .rune_arc;
-    op.loot[2] = .rune_arc;
-    op.loot[3] = .kobold_fang;
+    op.loot[2] = .mushroom_jerky; // …the one item in the game that DOES anything, so the inventory
+    op.loot[3] = .kobold_fang; //     shot below is of a list with a usable row in it and not just names
     op.nloot = 4;
     g.map.ops[g.map.nops] = op;
     g.map.nops += 1;

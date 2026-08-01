@@ -63,6 +63,12 @@ const ERASE_STEP: f32 = 0.6;
 /// the whole reason the markers exist is to tell you what a generator you are dialling has grown.
 const MAX_MARKERS: usize = 500;
 
+/// WHAT THE CURSOR IS OVER in SELECT mode — the thing a click would take, lit before you click it.
+/// Without it the editor gave no answer to "what am I about to select" until after you had selected
+/// it, which in a wood of eight thousand instances is how you pick the wrong tree three times.
+/// `prop` is a PROP index (the instance the ray hit); `foe` a spawn index.
+const Hover = union(enum) { none, prop: usize, foe: usize };
+
 /// Most things one marquee can hold, and most one clipboard can carry.
 const MAX_MARKED: usize = 512;
 
@@ -660,6 +666,10 @@ pub const Editor = struct {
     marked: [MAX_MARKED]usize = undefined,
     nMarked: usize = 0,
     marquee: bool = false, // Shift+drag box in progress
+    /// What the cursor is over THIS FRAME while Select is armed (see `Hover`). Recomputed every
+    /// frame and never latched: a stale hover box is worse than none, because it points at the
+    /// wrong thing with the same confidence.
+    hover: Hover = .none,
     moving: bool = false, // dragging the marked set bodily
     moveFrom: rl.Vector3 = mathx.zero3,
 
@@ -1141,6 +1151,12 @@ pub const Editor = struct {
             self.dragging = false;
             self.marquee = false;
             self.moving = false;
+            // …and the HOVER goes with them, for exactly the same reason: it is recomputed in
+            // `worldMouse`, which does not run under a modal, so it would LATCH — a box left lit
+            // behind the dialog, pointing at whatever the cursor happened to be over when the dialog
+            // opened. A stale hover is worse than none: it answers "what would this click take" with
+            // confidence and the wrong object.
+            self.hover = .none;
             if (self.wipe.on) self.wipeEnd();
             // The jukebox is the one modal with a keyboard of its own (step + replay). Safe here
             // because arrows and space only pan and act on the WORLD, which no modal reaches.
@@ -1354,6 +1370,23 @@ pub const Editor = struct {
         // the pointer is over a panel is what left `panning`/`dragging`/`marquee`/`rmbDown` latched on.
         const blocked = self.hotFrame or self.menuOpen;
         const ground = self.groundAt();
+
+        // ── WHAT WOULD THIS CLICK TAKE? ── answered every frame while Select is armed, and drawn on
+        // the thing itself (see drawOverlay). Only in Select, because that is the only mode where the
+        // left button PICKS: lighting things up under a stamp brush would promise a selection the
+        // click is not going to make.
+        //
+        // MEASURED AND LEFT: `env.pickIf` is a LINEAR scan of all ~17k props, and this promotes it
+        // from once-per-click to once-per-frame. It is affordable because its first act per prop is
+        // the LAYER FILTER, which rejects everything not on the active layer before any of the
+        // geometry runs — so the per-frame cost is ~17k predicate calls plus real work on the few
+        // hundred that pass, the same order as `rehomeChests`'s full-list scan two branches up, and
+        // paid only while the editor is open where there is no combat loop to starve. Caching it
+        // behind "did the mouse move" would need the world's rebuilds to invalidate it too, and a
+        // hover that is stale for one frame after an undo is the bug this is meant to prevent.
+        //
+        // Set BEFORE every early return below, or the box vanishes the moment a gesture starts.
+        self.hover = if (self.selecting and !blocked) self.hoverInLayer(m, env) else .none;
 
         // A HELD STROKE ENDS THE MOMENT THE BUTTON IS UP, whatever branch is live: its own branch can be
         // skipped mid-stroke (Shift hands the button to the marquee), and a stroke left latched would let
@@ -1621,25 +1654,22 @@ pub const Editor = struct {
     }
 
     /// Pick something in the ACTIVE layer only. Returns whether anything was selected.
-    fn pickInLayer(self: *Editor, m: *wf.Map, env: *envmod.Env) bool {
+    /// WHAT THE CURSOR IS OVER on the ACTIVE layer, asked WITHOUT changing anything — `pickInLayer`
+    /// is the same question asked destructively, and the two share this so a hover can never
+    /// highlight something a click would not take. `.prop` carries the PROP index (the instance the
+    /// ray actually hit), not the op's, because that is the thing to draw a box round.
+    fn hoverInLayer(self: *Editor, m: *wf.Map, env: *envmod.Env) Hover {
         if (self.layer.opLayer()) {
             const ray = self.cursorRay();
-            if (env.pickIf(ray.position, ray.direction, self.filter(m), OpFilter.inLayer)) |pi| {
-                const o = env.props[pi].op;
-                self.sel = o;
-                self.selFoe = null;
-                const op = m.ops[o];
-                self.sayFmt("#{d} {s} {s}", .{ o, @tagName(op.op), @tagName(op.kind) });
-                return true;
-            }
-            return false;
+            if (env.pickIf(ray.position, ray.direction, self.filter(m), OpFilter.inLayer)) |pi| return .{ .prop = pi };
+            return .none;
         }
         if (self.layer == .units) {
-            // A spawn has no mesh for the ray to hit, so it is picked by proximity on the ground —
+            // A spawn has no mesh for a ray to hit, so it is found by PROXIMITY on the ground —
             // NEAREST inside the marker's own footprint, not the first one in the table. Without
             // this branch the Units layer had no single-click selection at all, while its own
             // inspector said "click one to edit it".
-            const g = self.groundAt() orelse return false;
+            const g = self.groundAt() orelse return .none;
             var best: ?usize = null;
             var bestD2: f32 = FOE_PICK_R * FOE_PICK_R;
             for (m.foes[0..m.nfoes], 0..) |f, i| {
@@ -1649,11 +1679,32 @@ pub const Editor = struct {
                     best = i;
                 }
             }
-            const i = best orelse return false;
-            self.selFoe = i;
-            self.sel = null;
-            self.sayFmt("#{d} {s}", .{ i, @tagName(m.foes[i].kind) });
-            return true;
+            return if (best) |i| .{ .foe = i } else .none;
+        }
+        return .none;
+    }
+
+    /// TAKE what the cursor is over. The pick itself is `hoverInLayer` — this is the same question
+    /// asked destructively, and routing both through one answer is what stops a hover box lighting
+    /// something a click then fails to take. (The two DID diverge for a moment: the units branch's
+    /// nearest-spawn search was written out twice.)
+    fn pickInLayer(self: *Editor, m: *wf.Map, env: *envmod.Env) bool {
+        switch (self.hoverInLayer(m, env)) {
+            .prop => |pi| {
+                const o = env.props[pi].op;
+                self.sel = o;
+                self.selFoe = null;
+                const op = m.ops[o];
+                self.sayFmt("#{d} {s} {s}", .{ o, @tagName(op.op), @tagName(op.kind) });
+                return true;
+            },
+            .foe => |i| {
+                self.selFoe = i;
+                self.sel = null;
+                self.sayFmt("#{d} {s}", .{ i, @tagName(m.foes[i].kind) });
+                return true;
+            },
+            .none => {},
         }
         if (self.layer == .cover) {
             const g = self.groundAt() orelse return false;
@@ -2433,6 +2484,31 @@ pub const Editor = struct {
                 ringSeg(p.x, p.z, MARK_RING_R, y, ui.TRIM, MARK_RING_SEG);
             }
         }
+        // ── THE HOVER ── the thing a click would take, boxed before you click it. Drawn LAST of the
+        // three so it sits over the selection and the marked set: it is the only one of them that
+        // answers a question about the NEXT action rather than the last one.
+        switch (self.hover) {
+            .none => {},
+            .prop => |pi| {
+                if (pi < env.nprops) {
+                    const pr = env.props[pi];
+                    const nfo = props.info(pr.kind);
+                    const h = @max(nfo.top * pr.scale, 0.4);
+                    const w = @max(nfo.bound * pr.scale, 0.3) * 1.6;
+                    // Tipped with a leaning instance, off env's own trig — a plumb box beside a
+                    // tilted trunk reads as highlighting the ground next to it (see the sel marker).
+                    const sw = envmod.leanOffsetAt(pr.lean, pr.leanDir, h * 0.5);
+                    rl.drawCubeWires(v3(pr.pos.x + sw.x, pr.pos.y + h * 0.5, pr.pos.z + sw.z), w, h, w, ui.HOT);
+                }
+            },
+            .foe => |i| {
+                if (i < m.nfoes) {
+                    const f = m.foes[i];
+                    rl.drawCubeWires(liftAt(f.x, f.z, y + MARK_BOX_H * 0.5), MARK_BOX_W * 1.2, MARK_BOX_H * 1.1, MARK_BOX_W * 1.2, ui.HOT);
+                }
+            },
+        }
+
         // The marquee box, and the live offset while dragging the set.
         if (self.marquee) {
             outlineOf(normRect(self.dragFrom, self.dragTo), y, ui.HOT);
@@ -3469,11 +3545,15 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
         hud.mono(msg[0..len :0], CHROME_PAD, ty, hud.MONO, ui.HOT);
         return;
     }
+    // SHIFT+LMB DRAG IS IN HERE NOW, and its absence is worth recording: the marquee has worked on
+    // every op layer since it was written, was drawn while you dragged it, and was still asked for
+    // as a missing feature — because nothing on screen ever said it existed. A control that is not
+    // in the crib is a control nobody has.
     const cribs = [_][:0]const u8{
-        "LMB applies the brush   RMB menu / deselect, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   Esc back",
-        "LMB brush   RMB menu, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   Esc back",
-        "LMB brush   RMB menu/rotate   wheel zoom   WASD pan   Tab layer",
-        "LMB brush   Tab layer   Esc back",
+        "LMB brush   Shift+LMB drag marquee   RMB menu / deselect, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   Esc back",
+        "LMB brush   Shift+LMB marquee   RMB menu, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   Esc back",
+        "LMB brush   Shift+LMB marquee   RMB menu/rotate   wheel zoom   WASD pan   Tab layer",
+        "LMB brush   Shift marquee   Tab layer   Esc back",
     };
     for (cribs) |c| {
         if (CHROME_PAD + hud.monoW(c, hud.MONO) <= room) {

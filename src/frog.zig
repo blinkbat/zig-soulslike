@@ -997,15 +997,9 @@ pub const Knot = struct {
         self.model.setShader(sh);
     }
     // Advance the whole knot; returns the STRONGEST blow any toad landed on the hero this
-    // frame (null if none), for game.zig to apply to the hero's vitals.
-    pub fn update(self: *Knot, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
-        var worst: ?combat.Hit = null;
-        for (self.live()) |*f| {
-            if (f.update(dt, hero, bounds, blade)) |h| {
-                if (worst == null or h.dmg > worst.?.dmg) worst = h;
-            }
-        }
-        return worst;
+    // frame (null if none) AND which toad threw it, for game.zig to apply to the hero's vitals.
+    pub fn update(self: *Knot, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
+        return foe.groupBlow(self.live(), dt, hero, bounds, blade);
     }
     // `scene` non-null (the lit pass) flares each struck toad blood-red via the shared
     // hitFlash uniform; pass null from paths without per-actor flash (none today — the

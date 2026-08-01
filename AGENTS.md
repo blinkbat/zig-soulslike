@@ -55,8 +55,10 @@ hunt him — **gaping toads**, **skeletal archers**, a lone **one-eyed ogre**, a
 friends: berserker / priest / slinger) — with ER lock-on and
 a full combat layer: HP + two-tier poise/stance stagger + death, both sides (`combat.zig`, and
 **`docs/ELDEN_RING.md`** as the systems reference). **STAMINA IS FULLY LIVE, LOCKOUT INCLUDED** —
-an empty bar means no roll, no swing, no sprint (see STAMINA below). No criticals, guarding or
-jump yet. The bar for "human" is anatomy + real gaits, not polygon count.
+an empty bar means no roll, no swing, no sprint (see STAMINA below). He carries a **SMALL ROUND
+SHIELD** in the left hand and **GUARDS** with it — Dark Souls' plain block, paid for in stamina,
+with a GUARD BREAK when the bar runs out under a blow (see GUARDING). No criticals, guard counter
+or jump yet. The bar for "human" is anatomy + real gaits, not polygon count.
 
 **THE GROUND HAS ELEVATION**, sculpted in the editor and walked with a real slope limit and a step
 height — hills, banks, terraces and cliffs you cannot climb (see ELEVATION). The SHIPPED map is
@@ -65,7 +67,16 @@ deliberately flat, and a flat map is byte-for-byte the world that existed before
 **THE HUD IS ELDEN RING'S**, in ER's three places and nowhere else: HP/FP/stamina bars top-left,
 the four-slot equipment CROSS bottom-left, the debug readout top-right (menu >
 Debug > Stats). It hides behind the menu and under the YOU DIED card. FP is a full static bar —
-there is nothing to spend it on until spells exist.
+there is nothing to spend it on until spells exist. The cross's LEFT slot holds the small shield
+and its RIGHT the sword; UP (sorcery) stays empty, because an empty ER slot is a real part of that
+HUD and inventing something to put in it would be a lie in the corner of every screenshot.
+
+**A CHEST IS HOLLOW.** Its carcase was one solid cube, so throwing the lid back revealed a sealed
+timber top — you opened a box and found a block. Four walls and a floor now, with the outer faces
+exactly where the solid mass's were. And the lid's BELLY is the face you actually look at once it is
+open (the dome and both iron straps are pointing away by then): it is the drum's lower arc, dressed
+with dark lining boards and light battens. A flat lining panel under the slab was tried first and was
+invisible — this lid is a CLOSED cylinder and the slab lives inside it.
 
 **THE WORLD IS DATA, AND THE EDITOR OWNS IT.** `worlds/01_fallen_plain.world` is a versioned
 text file of authoring OPS (`worldfmt.zig`); `env.materialize` replays it into props. Nothing
@@ -147,7 +158,7 @@ and the map's own `half:` is the only source), holding five regions
 | west | **the Old Wood** | great trees (3 variants), ferns/brambles/bushes, boulders, a **standing-stone circle**, a woodcutter's **cottage** + campfire |
 | south | **the Windswept Downs** | open and sparse — lone trees, field stones, graves, a watchtower |
 
-**81 prop kinds**, **17,205 instances, 1,864 colliders and 37 fires**, of which a frame draws **~975**
+**81 prop kinds**, **16,884 instances, 1,687 colliders and 35 fires**, of which a frame draws **~975**
 across both passes (measured in the city; the wood is comparable). See **PERFORMANCE** — that ratio is
 why the world is affordable, and the debug Stats overlay prints it live so it stays checkable. The three
 numbers are also PINNED by `env`'s "replaying the SHIPPED map produces a stable world" test, so a
@@ -180,7 +191,10 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
   `..\.zigtoolchain\zig-x86_64-windows-0.14.1\zig.exe`. `zig build test` runs unit tests.
 - Verify rendering/animation changes by RUNNING `zig-out\bin\zig-soulslike.exe --shot` (or
   `shot.cmd`) and INSPECTING the PNGs in `shots\`. `--shot` hides the window: it scripts a walk→
-  run→sprint and a roll at several angles, then every foe's states, then the **WORLD TOUR**
+  run→sprint and a roll at several angles, the sword swings, the GUARD (`20a..20e` — the stance from
+  three bearings, a caught blow mid-recoil, and the shield's own back), then every foe's states —
+  including the kobold POUNCE in three beats (`66d..66f`) and the BITE in profile (`69c`/`69d`), both
+  of which shipped unjudged because neither had a shot — then the **WORLD TOUR**
   (`70..92`): one framing per region, the chapel/watchtower interiors under torchlight, the tarn,
   the cliffs, five overhead MAP shots and two Stats readouts, then the EDITOR (`95..99g`) — layers,
   a marquee, the ground brush, PAINTED WATER from low down and overhead, the OBJECT VIEWER's two
@@ -244,7 +258,9 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  Stats / Wireframe / Time Scale and the Retro Filters list (15 filters + presets).
 - `hero.zig`   — THE HERO. Anthropometric FK skeleton + every animation, the swept blade hit
                  capsule (rides the SWORD bone's dummy points, active only in the strike's window,
-                 FAT on purpose for vertical forgiveness) and the swing trail. The light slash is a
+                 FAT on purpose for vertical forgiveness), the swing trail, and the GUARD — the
+                 stance, the caught-blow recoil and the small round SHIELD (which is not a bone: it
+                 rides the left wrist through `shieldFit`). See GUARDING. The light slash is a
                  REAL cut — the horizontal pair (sabre Cuts III/IV), LEVEL and OUTWARD for the
                  whole hit window (never a dirt-stab, never hilt-first). Start here.
 - `camera.zig` — over-the-shoulder orbit rig (yaw + clamped pitch, zoom, shoulder offset,
@@ -298,6 +314,11 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  hides it because there the mouse IS the camera.
                  SELECT MODE exists because "click to select" and "click to paint" cannot share
                  the left button: it is armed by default, any brush disarms it, Esc re-arms it.
+                 **IT LIGHTS WHAT A CLICK WOULD TAKE** (`Editor.hover`, drawn on the object itself),
+                 recomputed every frame and never latched — in a wood of eight thousand instances,
+                 "which one am I about to get" was a question you could only answer by getting the
+                 wrong one first. `hoverInLayer` is the same pick `pickInLayer` makes, asked without
+                 changing anything, so the box can never lie about what the click will do.
                  Tab cycles layers, 1-9 pick a brush, [ ] size it, G snaps. **HAND TOOLS LEAD EVERY
                  STRIP** (owner's rule): the brush that puts exactly one thing where you clicked is
                  first and the scatters follow it — Decor opens on `Single`, Props on `Stamp`, Ground
@@ -310,6 +331,10 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  The CLIPBOARD is file-scope and outlives a map load on purpose, so a stand of
                  trees can be carried from one map into another; its contents are stored
                  relative to the selection's centre, so a paste lands under the cursor.
+                 **A CONTROL THAT IS NOT IN THE CRIB IS A CONTROL NOBODY HAS.** The SHIFT+DRAG
+                 marquee worked on every op layer from the day it was written, drew its box while you
+                 dragged it, and was still reported as a missing feature — because the status line's
+                 control crib never mentioned it. It does now, in all four fitted lengths.
                  It draws with the RETRO PASS BYPASSED and in a real SYSTEM MONOSPACE face
                  (Consolas, then the other stock fixed-pitch faces — `hud.mono`, NOT Balthazar,
                  and NOT raylib's bitmap font): you cannot dress a world through a lens that is
@@ -417,15 +442,36 @@ lines where the concerns genuinely part company, and each new file is named so t
                  something has to see the whole band, and `Warband.update` resolves the heal (the priest
                  owns the animation, never the targeting). Three things ride matrices rather than bones —
                  the off-hand axe, the hinged JAW (`gape`) and the TAIL chain — which is the pattern for
-                 anything the 18-bone scaffold has no slot for. **EVERY BONE NEEDS A MATRIX EVERY FRAME:**
+                 anything the 18-bone scaffold has no slot for. **A BITE IS A WAIST AND A SNAP IS A
+                 REVERSAL:** the bite folds at the waist and the neck EXTENDS through that fold so the
+                 muzzle leads it — pitched nose-DOWN instead (which is how it shipped, 49 deg of it
+                 over a pelvis that never moved, with both arms flung up and out) an animal biting you
+                 reads as one squatting to relieve itself. **AND A LEAP IS ONE KNEE UP** (owner's law):
+                 the dash coils on the ground, throws the lead knee to the chest with the trail leg
+                 left extended, and absorbs on landing. Both legs tucked to one shared amount is a hop,
+                 and tucking them off `dashU` — which is clamped to 0 through the whole gather — puts
+                 the anticipation AFTER the thing it anticipates. **EVERY BONE NEEDS A MATRIX EVERY FRAME:**
                  the death pose skipped the six leg bones and handed `drawMesh` UNDEFINED matrices for a
                  whole release, which is what `66c_kobold_death.png` exists to catch.
 - `foe.zig`    — THE FOE STANDARD: the shared contract + behaviours every enemy plugs into, so
                  lock-on, HP bars, collision, the blade hit-test and the combat beats are written
-                 ONCE. Holds `Blade` and `strike()`, the telegraph PARTICLE pool (plus the two burst
+                 ONCE. Holds `Blade` and `strike()`, `Blow` (a landed hit AND where it came from —
+                 the hero's shield covers an arc, so a bare Hit cannot be answered), the telegraph
+                 PARTICLE pool (plus the two burst
                  colours that are the WORLD's and not one creature's — `DUST` and the grace-gold
                  `MOTE` every corpse dissipates into), and the Group plumbing: `resetGroup` /
                  `drawGroup` / `anyDied` / `totalHits` / `runesDropped` / `aliveCount`.
+- `combat.zig` — …also GUARDING's rules (negation, stability, the arc) and `HitOutcome`, the answer
+                 to "what became of that blow" that the whole felt-beat layer switches on. And
+                 `Regen` — HP back over TIME, the third healing shape after `tick` (never HP) and
+                 `heal` (instant): a drip you set going and then have to SURVIVE. **MUSHROOM JERKY**
+                 is the first item to use it, and the first item in the game that does anything at
+                 all — more total healing than a Crimson at a fifth of the rate, so it is worth
+                 eating BEFORE a fight and nearly worthless inside one. Used from the INVENTORY
+                 (`item.Use` names the effect, `game.useItem` performs it, `item.usable` is the one
+                 test that decides whether a row may be pressed — so the list cannot offer a Use
+                 that turns out to be a no-op, which is why it offered nothing until now). Two sit
+                 in the chest by the kobolds, and a test pins that they are still in the map.
 - `combat.zig` — SHARED `Vitals`: HP + the two-tier stagger + regen + death + `heal`/`needsHeal` (the
                  one path that moves a foe's HP UP — `tick` never does, "flasks only" — and it CANNOT
                  raise the dead, because `dead` is a latch the whole foe standard reads). Plus `Stamina`,
@@ -664,6 +710,56 @@ and the mesh). This section is the part that decides how it PLAYS.
   photographs animations, not the economy — seven attack shots back to back would otherwise
   drain the bar and the last ones would silently become pictures of a hero standing still.
 
+## GUARDING (`combat.zig`, `hero.zig`) — the plain Dark Souls block
+
+Hold L1 / RMB and a blow from the FRONT is caught on a small round shield. No parry, no guard
+counter (`docs/ELDEN_RING.md` §3 describes both; neither is built) — block, pay, and either punish
+the gap or lose your footing. Deliberately the DS1 shape rather than ER's.
+
+- **IT IS A HELD STATE, NOT A COMMITTED ACTION.** `hero.setGuard(want)` is called EVERY frame with
+  the button's level and re-derives `guarding` from scratch (`canGuard`). So an attack, a roll, a
+  draught, a sprint, a stagger, a death or an empty bar all drop the shield with no bookkeeping
+  anywhere — the alternative is a flag six transitions have to remember to clear, which is exactly
+  how the draught once resumed out of a roll. **Call it AFTER `sprinting` is settled** for the frame.
+- **THE SHIELD IS A DIRECTION** (`combat.GUARD_ARC`, 65 deg either side of his facing), not a bubble.
+  Getting round it is the counterplay, and it is why guarding cannot answer a warband the way rolling
+  can. A blow with NO direction (a zero `fromDir`) is never blocked — which is what lets the `--shot`
+  harness force the flinch/stagger/death reactions with synthetic hits.
+- **SO A BLOW HAS TO CARRY WHERE IT CAME FROM.** Every Group's update returns `?foe.Blow` (the hit
+  PLUS the attacker's `pos`), not a bare `?combat.Hit`. It used to throw the attacker away at the one
+  place that still knew it, leaving the caller to guess from the nearest live foe — and "usually the
+  right one" is not a mechanic. An ARROW's direction comes off its own velocity reversed: by the
+  frame it connects the shaft is standing in the hero, so its position says nothing.
+- **IT COSTS STAMINA, NOT POISE.** A blocked blow deals no poise and no stance — the impulse went
+  into the boards, and a block that still flinched you would be strictly worse than standing there.
+  The cost is `GUARD_STAM_FLAT + GUARD_STAM_PER_DMG × dmg` (stability), and the refill is PAUSED the
+  whole time the shield is up, which is what stops a held guard being free.
+- **THE SHIELD IS SMALL AND EVERY NUMBER SAYS SO.** It does not reach 100% negation, so CHIP gets
+  through (`GUARD_NEGATE` 0.85) and chip CAN KILL — which is why it goes through `Vitals.hit` rather
+  than straight at `hp`, so death latches the same way. And its stability is poor: a kobold's teeth
+  cost ~15 of 105, the ogre's club ~45, so the same full bar is a long exchange with the little ones
+  and THREE swings of the club.
+- **EMPTY THE BAR UNDER A BLOW AND THE GUARD BREAKS** — a heavy stagger, and because the break left
+  the pool at zero the shield cannot come back up until it refills. The danger is never that hit; it
+  is the next one, landing on a man with no shield and no stamina.
+- **`takeHit` RETURNS WHAT BECAME OF THE BLOW** (`combat.HitOutcome`: ignored / taken / blocked /
+  guardBroken) and `game.heroTakes` is the ONE place that turns that into a felt beat. Before this,
+  every caller fired the hurt beat the moment a foe REPORTED a blow — so rolling cleanly through a
+  slam still grunted, shook the camera and kicked the pad, which is the one thing a dodge must never
+  do.
+- **THE STANCE LAGS, THE BLOCK NEVER DOES.** `guarding` is live the frame the button goes down;
+  `guardB` is a VISUAL blend easing in over ~0.1 s (the FEEL RULES' ceiling on a posture change).
+  Nothing mechanical may read `guardB`.
+- **THE MAN MOVES, THE SHIELD HOLDS.** A caught blow's recoil goes into the BODY — a deep sink, a
+  real step back (visual, like the stagger's), the camera and the pad — and only a little into the
+  arm. Spending it on the arm instead carried the boards off the centreline and down to his hip, and
+  a blow he CAUGHT looked exactly like one that had knocked his guard aside. REACTIONS ARE HUGE still
+  holds; the size just belongs somewhere that does not contradict what happened.
+- **The shield is not a bone** — it rides the left wrist's matrix through `hero.shieldFit`, the
+  pattern `kobold.zig` set for anything the 18-bone scaffold has no slot for. And that fit is
+  DERIVED from the stance angles (it is their inverse), or the first retune swings the shield off
+  its own arm.
+
 ## Foe pacing
 
 - **The archer's BACKSTEP** is a committed jump straight back, triggered inside sword reach, on a
@@ -692,6 +788,8 @@ sword carry, the deep lean) belongs to the hold-B RUN only — gate run-only flo
   attack/roll buffers in ONE slot (last press wins; a same-frame roll press outranks attack) and
   fires at the earliest exit — the attack's chain knot or the roll's end. A queued roll leaves in
   the direction HELD at fire time, not pressed.
+- **Guard:** hold **L1/LB** or the **RIGHT MOUSE BUTTON** (ER's own keyboard default for the left
+  hand). HELD, never toggled, and never buffered — see GUARDING.
 - **Camera:** mouse / right stick; scroll or D-pad zoom. **Esc** opens/backs out of the menu (pad
   **Start** toggles). Quitting is a menu row. The menu opens at launch; while it's up gameplay
   input is held and the world idles.
@@ -700,7 +798,7 @@ sword carry, the deep lean) belongs to the hold-B RUN only — gate run-only flo
   strafe/backpedal footing, a glowing white dot marks it, and a stick/mouse **flick** cycles
   targets. Two deliberate ER exceptions: a hold-B SPRINT while locked faces TRAVEL (no sideways
   sprint exists), and an attack's recovery tail re-squares onto the target (`ATK_RETRACK`).
-- Reserved, matching ER: Cross/A = jump, L1/L2 = guard/skill.
+- Reserved, matching ER: Cross/A = jump, L2 = skill.
 
 ## PERFORMANCE: how a 560 m world stays cheap (`env.zig`)
 
@@ -846,9 +944,10 @@ Placement is deterministic: if it fits once it fits.
 ## Next steps (not yet built)
 
 **Criticals** off a stance break (the stagger already exists), hyper-armor windows during the
-hero's own attacks, guarding + **guard counter** — which is also the last piece of stamina ER has
-and this doesn't: blocked hits cost stamina by Guard Boost, and emptying the bar while guarding is
-a GUARD BREAK. AR × motion-value × defense damage (today it's flat constants), **status buildup**,
+hero's own attacks, and the **GUARD COUNTER** (block → immediate R2: modest bonus damage, stance
+damage like a charged heavy — the "block, punish, stagger" loop). Plain guarding, its stamina cost
+and the guard break are BUILT (see GUARDING); the counter and the parry are what is left of ER's
+left hand. AR × motion-value × defense damage (today it's flat constants), **status buildup**,
 jump, distinct combo follow-up anims, bonfires, real level geometry. See `docs/ELDEN_RING.md` for
 the target mechanics behind each.
 

@@ -1436,15 +1436,10 @@ pub const Grief = struct {
     pub fn setShader(self: *Grief, sh: rl.Shader) void {
         self.model.setShader(sh);
     }
-    // Advance the group; returns the STRONGEST blow any ogre landed on the hero this frame.
-    pub fn update(self: *Grief, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
-        var worst: ?combat.Hit = null;
-        for (self.live()) |*o| {
-            if (o.update(dt, hero, bounds, blade)) |h| {
-                if (worst == null or h.dmg > worst.?.dmg) worst = h;
-            }
-        }
-        return worst;
+    // Advance the group; returns the STRONGEST blow any ogre landed on the hero this frame, and
+    // which ogre threw it (the hero's shield covers an arc — see foe.Blow).
+    pub fn update(self: *Grief, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
+        return foe.groupBlow(self.live(), dt, hero, bounds, blade);
     }
     pub fn draw(self: *const Grief, scene: ?*gfx.Scene) void {
         foe.drawGroup(self.liveConst(), &self.model, scene);

@@ -207,6 +207,30 @@ pub fn smoothstep(a: f32, b: f32, x: f32) f32 {
     return t * t * (3.0 - 2.0 * t);
 }
 
+/// A RISE-HOLD-FALL PULSE, 0 → 1 → 0: in across [a, b], held to `c`, out across [c, d]. Every
+/// animation beat in this codebase that is not a cycle has this shape — a coil, a lunge, a heave, a
+/// leap's flight, a landing — and each one was written out as `smoothstep(a,b,x) * (1 -
+/// smoothstep(c,d,x))`, which is easy to get backwards and impossible to grep for.
+///
+/// Set b == c for a spike with no hold. Distinct from `hero.bump`, which is the SYMMETRIC version
+/// over a single span and cannot hold.
+pub fn pulse(x: f32, a: f32, b: f32, c: f32, d: f32) f32 {
+    return smoothstep(a, b, x) * (1.0 - smoothstep(c, d, x));
+}
+
+test "pulse rises, holds and falls, and is flat outside its span" {
+    try std.testing.expectApproxEqAbs(@as(f32, 0), pulse(-1, 0, 0.2, 0.8, 1.0), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), pulse(0, 0, 0.2, 0.8, 1.0), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), pulse(0.5, 0, 0.2, 0.8, 1.0), 1e-6); // the HOLD
+    try std.testing.expectApproxEqAbs(@as(f32, 1), pulse(0.3, 0, 0.2, 0.8, 1.0), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), pulse(1.0, 0, 0.2, 0.8, 1.0), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), pulse(9, 0, 0.2, 0.8, 1.0), 1e-6);
+    // …and b == c is a SPIKE: it peaks exactly at the knot and holds nowhere.
+    try std.testing.expectApproxEqAbs(@as(f32, 1), pulse(0.5, 0, 0.5, 0.5, 1.0), 1e-6);
+    try std.testing.expect(pulse(0.4, 0, 0.5, 0.5, 1.0) < 1.0);
+    try std.testing.expect(pulse(0.6, 0, 0.5, 0.5, 1.0) < 1.0);
+}
+
 /// Ease `cur` toward `target` by a rate-limited step of `rate*dt` (frame-rate independent
 /// enough for smoothing camera/gait blends). Not an exponential — a linear approach.
 pub fn approach(cur: f32, target: f32, maxStep: f32) f32 {

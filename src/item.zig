@@ -16,6 +16,7 @@ pub const Kind = enum(u8) {
     bloodgrass, // wayside pickings — the common, worthless drop
     kobold_fang, // …and a trophy off the warband
     iron_key,
+    mushroom_jerky, // THE FIRST ITEM THAT DOES ANYTHING — see `Use`
 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
@@ -32,7 +33,51 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .bloodgrass => "Bloodgrass",
         .kobold_fang => "Kobold Fang",
         .iron_key => "Iron Key",
+        .mushroom_jerky => "Mushroom Jerky",
     };
+}
+
+/// WHAT USING IT DOES — named here, done elsewhere. This file is the vocabulary and the counts and
+/// it knows nothing about HP, so it says WHICH effect and `combat`/`game` own what that means; the
+/// same split `props.stock` uses to shelve a kind without knowing what a brush is.
+///
+/// EXHAUSTIVE, like `displayName`: a new kind is a compile error until somebody has decided whether
+/// it does anything, which is the question that is easiest to forget and worst to get wrong.
+pub const Use = union(enum) {
+    /// Nothing yet. Most of the list — trophies, keys, upgrade material with nothing to upgrade.
+    none,
+    /// HP back slowly over time (`combat.Regen` is the mechanism): `frac` of MAX HP spread over
+    /// `secs` seconds.
+    ///
+    /// THE NUMBERS RIDE THE EFFECT, not the mechanism, and that is the point of the payload: as a
+    /// bare `.regen` tag with the dials kept next to `Regen`, the second edible anybody adds gets
+    /// the jerky's potency in silence — the mapping from kind to numbers lived in one `switch` arm
+    /// that never mentioned the kind. Potency is what tells one consumable from another, so it
+    /// belongs where the name does.
+    regen: struct { frac: f32, secs: f32 },
+};
+
+pub fn use(k: Kind) Use {
+    return switch (k) {
+        // More total than a Crimson flask (0.45, instant) at a fifth of the rate — worth eating
+        // BEFORE a fight and close to worthless inside one.
+        .mushroom_jerky => .{ .regen = .{ .frac = 0.60, .secs = 20.0 } },
+        .crimson_flask,
+        .cerulean_flask,
+        .rune_arc,
+        .golden_seed,
+        .smithing_stone,
+        .bloodgrass,
+        .kobold_fang,
+        .iron_key,
+        => .none,
+    };
+}
+
+/// Is this row worth pressing Confirm on? The inventory asks exactly this — a "Use" that silently
+/// does nothing is worse than a list you can only read (which is what this list WAS).
+pub fn usable(k: Kind) bool {
+    return std.meta.activeTag(use(k)) != .none;
 }
 
 /// The SHORT tag the map file writes, and the only name a hand-edited world has to get right. The enum
@@ -124,6 +169,27 @@ test "a tag round-trips, and a bad one is rejected rather than guessed" {
     }
     try std.testing.expect(fromTag("no_such_item") == null);
     try std.testing.expect(fromTag("") == null);
+}
+
+test "every usable kind carries its OWN dose, and the rest do nothing" {
+    // The guard against the next edible: `usable` and `use` must agree (they are one expression, and
+    // the inventory offers Confirm off the first while `game.useItem` acts on the second), and a
+    // regen's numbers must be real — a 0-second drip divides by zero in `Regen.start`'s rate and a
+    // 0-fraction one is a row you can press that heals nothing.
+    var found: usize = 0;
+    for (0..NK) |i| {
+        const k: Kind = @enumFromInt(i);
+        switch (use(k)) {
+            .none => try std.testing.expect(!usable(k)),
+            .regen => |r| {
+                found += 1;
+                try std.testing.expect(usable(k));
+                try std.testing.expect(r.frac > 0 and r.frac <= 1.0);
+                try std.testing.expect(r.secs > 0);
+            },
+        }
+    }
+    try std.testing.expect(found >= 1); // …and at least one item in the game still does something
 }
 
 test "the bag counts, caps, and never wraps" {

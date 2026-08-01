@@ -206,6 +206,35 @@ pub const Blade = struct {
     hit: combat.Hit = .{}, // HP/poise/stance the swing deals (light vs heavy, set by game.zig)
 };
 
+// ONE BLOW A GROUP LANDED ON THE HERO, and WHERE IT CAME FROM. The position is the load-bearing
+// half: the hero's shield covers an ARC (combat.GUARD_ARC), so "was that blocked?" cannot be
+// answered without knowing which side of him it arrived on. Every Group used to hand back a bare
+// `?combat.Hit` — the strongest of its instances' — which threw the attacker away at the one place
+// that still knew it, leaving the caller to guess (the nearest live foe is *usually* the one that
+// hit you, and usually is not a mechanic).
+pub const Blow = struct {
+    hit: combat.Hit,
+    from: rl.Vector3, // the attacker's own `pos`, in world space
+};
+
+/// Keep the STRONGEST blow of a frame. The comparison is on `.dmg` and a copy that drifted would
+/// silently let a nibble outrank a slam, so it is written once. Called directly only by the WARBAND,
+/// whose update walks its members for its own reasons; every other Group goes through `groupBlow`.
+pub fn worseBlow(worst: *?Blow, h: combat.Hit, from: rl.Vector3) void {
+    if (worst.* == null or h.dmg > worst.*.?.hit.dmg) worst.* = .{ .hit = h, .from = from };
+}
+
+/// ADVANCE A GROUP AND RETURN THE STRONGEST BLOW IT LANDED. The whole body of `Knot.update` and
+/// `Grief.update`, which were byte-identical down to the loop variable — the same WET failure
+/// `resetGroup`/`drawGroup` live here to prevent, and one a third foe would have copied again.
+pub fn groupBlow(foes: anytype, dt: f32, hero: rl.Vector3, bounds: f32, blade: Blade) ?Blow {
+    var worst: ?Blow = null;
+    for (foes) |*f| {
+        if (f.update(dt, hero, bounds, blade)) |h| worseBlow(&worst, h, f.pos);
+    }
+    return worst;
+}
+
 // What a landed blow yields: WHERE it connected, the sweep direction (blood/knockback), and the
 // reaction the vitals decided. The caller lays its own FX + state transition on top; the geometry,
 // the one-hit LATCH and the damage are handled here.

@@ -438,6 +438,8 @@ pub const Id = enum {
     hurt,
     hurt_heavy,
     stagger,
+    guard_block, // …and NOT taking it: a blow caught on the boards
+    guard_break, // …until they are knocked aside
     refused,
     death,
     respawn,
@@ -481,6 +483,7 @@ pub const Id = enum {
     // the flasks
     flask_drink,
     flask_cycle,
+    eat, // …and the other kind of mouthful: something dried, torn and chewed
     chest_open, // a lid coming up: the lock giving, the hinge turning, the boards settling back
     item_get, // …and something going into the bag
     // the world and the chrome
@@ -593,13 +596,16 @@ fn mkStepSprint(r: *Rack) void {
 }
 
 fn mkRoll(r: *Rack) void {
-    // The dodge: cloth and body over dirt. One long dark sweep DOWN for the tumble, a whump where
-    // the shoulder takes it, and a scuff coming out of the rise.
-    r.air(0.0, 0.42, 0.40, 2600, 260, 0.3, 2.4);
-    r.body(0.03, 0.22, 96, 44, 0.75, 4.0);
-    r.grit(0.02, 0.34, 0.30, 1400, 0.6, 2.8);
-    r.grit(0.30, 0.14, 0.22, 2200, 0.5, 4.5); // the plant coming out of it
-    r.master(1.7, 3000);
+    // CLOTH AND GRIT OVER DIRT, and NOTHING THAT SWEEPS. This led with a 2600→260 air glide over 0.42 s,
+    // which is a whoosh — it read as something being SWUNG rather than a body going over its own
+    // shoulder, and it was the loudest layer in the voice. So the tumble is GRIT, which is what is
+    // actually in contact with the ground, with a dull low thump under it where the shoulder takes the
+    // weight and a smaller scuff on the rise. Kept DARK (a low master cut): a bright roll is a swish.
+    r.grit(0.0, 0.20, 0.34, 1100, 0.55, 3.0);
+    r.body(0.05, 0.16, 78, 40, 0.42, 4.5); // …the shoulder taking it
+    r.grit(0.24, 0.13, 0.20, 1700, 0.45, 4.0); // …and the plant coming out of it
+    r.air(0.0, 0.16, 0.10, 900, 480, 0.10, 3.2); // a breath of cloth, resonance nearly shut — no glide
+    r.master(1.15, 2600);
 }
 
 fn mkSwingLight(r: *Rack) void {
@@ -686,6 +692,32 @@ fn mkStagger(r: *Rack) void {
     r.air(0.0, 0.32, 0.30, 1200, 320, 0.34, 2.6);
     r.body(0.14, 0.18, 70, 38, 0.42, 3.6);
     r.master(1.35, 2000);
+}
+
+fn mkGuardBlock(r: *Rack) void {
+    // A BLOW CAUGHT ON WOOD, with iron round the edge of it. The whole voice is the difference
+    // between this and `mkHurt`: no throat in it at all, because nothing went into HIM — a grunt
+    // here would tell the player he had been hit, which is the one thing that did not happen.
+    // Bright and short where a wound is low and long: boards CRACK, flesh thumps.
+    r.tick(0.0, 0.42, 3400); // the strike itself…
+    r.body(0.0, 0.13, 190, 78, 0.95, 5.0); // …the boards taking it, dry and quick
+    r.grit(0.0, 0.07, 0.30, 2400, 0.4, 6.0); // …a splintery edge on the impact
+    r.ring(0.003, 0.09, 940, 0.16, 8.0, 2); // …and the iron rim, a hint of it and nothing more
+    r.master(1.6, 4200);
+}
+
+fn mkGuardBreak(r: *Rack) void {
+    // THE SHIELD KNOCKED ASIDE — the loudest thing that can happen to you short of dying, and the
+    // cue that the next blow is free. Everything the block has, an octave down and three times as
+    // long, then the boards ringing off and his boots losing the floor under it (the stagger's own
+    // scuff, which is what says his FOOTING went and not just his guard).
+    r.tick(0.0, 0.46, 1700);
+    r.body(0.0, 0.34, 132, 40, 1.30, 2.6);
+    r.grit(0.0, 0.22, 0.50, 1300, 0.7, 3.2);
+    r.ring(0.004, 0.30, 470, 0.22, 3.4, 3); // the rim, swinging away and still ringing
+    r.grit(0.10, 0.34, 0.40, 1100, 0.8, 2.6); // …and the feet going
+    r.air(0.08, 0.30, 0.24, 1300, 300, 0.32, 2.8);
+    r.master(1.7, 2400);
 }
 
 fn mkRefused(r: *Rack) void {
@@ -994,26 +1026,29 @@ fn mkKoboldHeave(r: *Rack) void {
 }
 
 fn mkKoboldCast(r: *Rack) void {
-    // THE PRIEST'S TELL, and it is the one kobold sound that is not an animal: a rising ring with a
-    // chanted throat under it. It has to be legible across a plaza and it has to say STOP THIS.
-    r.ring(0.0, 0.95, 330, 0.34, 1.4, 5); // …rising by being joined, not by sliding
-    r.ring(0.30, 0.70, 495, 0.26, 1.6, 4);
-    r.ring(0.60, 0.50, 660, 0.20, 2.0, 3);
-    r.growl(0.0, 0.90, 300, 400, 0.34, 0.26, 0.30); // the chant itself, climbing
-    r.air(0.45, 0.55, 0.14, 900, 3400, 0.5, 1.2); // …and light gathering
-    r.master(2.0, 4600);
+    // THE PRIEST'S TELL — A THROAT, NOT A BELL (owner: "should not be a weird bell sound"). It was three
+    // overlapping `ring`s: twelve partials spaced at 1.48x and sustained for a second, and that spacing
+    // is what a struck METAL object does — so a dog-thing chanting came out as a dissonant chime cluster
+    // ringing over itself. `ring` is for steel, a bowstring, a chime; a CHANT is a voice.
+    //
+    // So it is his own larynx, like every other kobold voice: a rough growl CLIMBING (low, where a throat
+    // actually lives), a hollow tone rising under it with no vibrato of its own, and the bone charms on
+    // the staff rattling as he lifts it — which is what gives the tell an ONSET instead of a fade-in.
+    // Kept dark on purpose: brightness is most of what read as metal.
+    r.grit(0.0, 0.10, 0.20, 2600, 0.7, 5.0); // the charms — the attack
+    r.growl(0.02, 0.85, 190, 300, 0.40, 0.34, 0.55); // the chant itself, climbing
+    r.body(0.10, 0.75, 128, 190, 0.24, 1.6); // …a hollow tone rising with it (`body` has no vibrato)
+    r.grit(0.58, 0.30, 0.10, 1500, 0.5, 2.0); // …and the charms again as it gathers
+    r.master(1.5, 3200);
 }
 
 fn mkKoboldHeal(r: *Rack) void {
-    // It LANDED. A HIGH SOFT CHIME (owner's call — it was a low bell, which is a church, not a trinket):
-    // a small bright thing struck once, two octaves up from where it was, with the fundamental thin and
-    // the partials doing the work. Hearing this means you were too slow, so it stays quiet and short —
-    // the game should not celebrate that at you.
-    r.ring(0.0, 0.30, 2112, 0.34, 4.2, 3);
-    r.ring(0.012, 0.24, 3168, 0.20, 5.0, 2);
-    r.ring(0.0, 0.16, 1584, 0.10, 5.5, 2); // just enough body to be a chime and not a sine beep
-    r.air(0.0, 0.13, 0.07, 6200, 3000, 0.5, 3.4);
-    r.master(1.6, 9000); // the low-pass opened up: a chime that is rolled off at 5k is a bell again
+    // JUST A GENTLE CHIME (owner, twice — it was a low bell, then three stacked rings and a breath of
+    // air, which is a sparkle). ONE struck note with a soft tail and nothing else: every extra layer
+    // here turns a chime into an event, and hearing this means you were too slow, so the game must not
+    // celebrate it at you. Drive 1.0 = no saturation, and the cut stays low enough to keep the top off.
+    r.ring(0.0, 0.30, 1568, 0.30, 3.4, 2);
+    r.master(1.0, 6500);
 }
 
 fn mkKoboldWhirl(r: *Rack) void {
@@ -1083,6 +1118,22 @@ fn mkFlaskDrink(r: *Rack) void {
     r.grit(0.10, 0.45, 0.10, 900, 0.5, 2.2); // the liquid moving between them
     r.body(0.58, 0.42, 90, 150, 0.5, 1.7); // …and the warmth arriving
     r.master(1.8, 2800);
+}
+
+fn mkEat(r: *Rack) void {
+    // DRIED MEAT: a tear, then chewing. The opposite of the flask beside it — that voice is glass
+    // and liquid and this one has no ring in it anywhere, because nothing here is hard. The tear is
+    // grit with the grain size up (fibres letting go one at a time, not a hiss), and the three
+    // chews are unevenly spaced for the same reason the flask's glugs are.
+    r.grit(0.0, 0.16, 0.42, 1700, 0.85, 3.0); // …the strip torn off
+    r.air(0.0, 0.12, 0.14, 1200, 500, 0.25, 3.4);
+    r.body(0.14, 0.09, 116, 74, 0.42, 5.5); // …and three soft mouthfuls, unevenly
+    r.grit(0.14, 0.10, 0.26, 1100, 0.7, 4.5);
+    r.body(0.31, 0.09, 104, 66, 0.38, 5.5);
+    r.grit(0.31, 0.09, 0.22, 1000, 0.7, 4.8);
+    r.body(0.50, 0.10, 96, 60, 0.34, 5.0);
+    r.grit(0.50, 0.10, 0.20, 950, 0.65, 4.8);
+    r.master(1.4, 2200); // dark: a bright chew is a crisp, and this is leather
 }
 
 fn mkChestOpen(r: *Rack) void {
@@ -1385,7 +1436,9 @@ const BANK = [NV]Row{
     .{ .make = mkStepSoft, .gain = 0.075, .jit = 0.13, .vjit = 0.30, .vars = 4, .poly = 3 },
     .{ .make = mkStepHard, .gain = 0.100, .jit = 0.12, .vjit = 0.26, .vars = 4, .poly = 3 },
     .{ .make = mkStepSprint, .gain = 0.120, .jit = 0.11, .vjit = 0.24, .vars = 4, .poly = 3 },
-    .{ .make = mkRoll, .gain = 0.55, .jit = 0.09, .vjit = 0.14, .vars = 2 },
+    // A ROLL IS QUIET. You make it constantly and it is your own body on the ground, not an impact —
+    // at 0.55 it was competing with the sword (owner: "too loud").
+    .{ .make = mkRoll, .gain = 0.30, .jit = 0.09, .vjit = 0.14, .vars = 2 },
     // SUBTLE (owner's call). `master` normalizes every voice's peak, so a swing's LEVEL is only ever
     // this number — reshaping the whoosh made it stop sounding silly, and this is what makes it stop
     // shouting. It now sits under the hit it leads into, which is the sound that should land.
@@ -1398,6 +1451,13 @@ const BANK = [NV]Row{
     .{ .make = mkHurt, .gain = 0.70, .jit = 0.17, .vjit = 0.20, .vars = 5 },
     .{ .make = mkHurtHeavy, .gain = 0.86, .jit = 0.13, .vjit = 0.16, .vars = 4 },
     .{ .make = mkStagger, .gain = 0.55, .jit = 0.16, .vjit = 0.20, .vars = 4 },
+    // A BLOCK IS HEARD OFTEN, so it takes the footsteps' treatment: many takes, wide jitter, and a
+    // level under the hit it is answering. `poly` because a warband lands three of these on you in
+    // the same second and each one has to sound.
+    .{ .make = mkGuardBlock, .gain = 0.62, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 4 },
+    // The BREAK is once a fight at most, and it is the cue to get out. Loud, and no jitter worth
+    // the name — this one is allowed to sound like itself every time.
+    .{ .make = mkGuardBreak, .gain = 0.92, .jit = 0.05, .vjit = 0.06, .vars = 2, .poly = 1 },
     .{ .make = mkRefused, .gain = 0.34, .jit = 0.06, .vjit = 0.08, .vars = 2 },
     .{ .make = mkDeath, .gain = 0.95, .jit = 0.0, .vjit = 0.0, .poly = 1 },
     .{ .make = mkRespawn, .gain = 0.55, .jit = 0.0, .vjit = 0.0, .poly = 1 },
@@ -1453,11 +1513,14 @@ const BANK = [NV]Row{
     .{ .make = mkKoboldHeave, .gain = 0.58, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 2, .reach = 62 },
     // …and so must the CAST, for the same reason and more so — it is a thing you have to cross a
     // field to stop, so it has to be audible from where you would have to leave.
-    .{ .make = mkKoboldCast, .gain = 0.62, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 2, .reach = 78 },
-    // The heal LANDING is quieter than the cast on purpose (see mkKoboldHeal), and quieter again on the
-    // owner's call now that it is a high chime: high frequencies read as louder at the same level, so
-    // the same number would have been an increase.
-    .{ .make = mkKoboldHeal, .gain = 0.22, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 3, .reach = 54 },
+    // The REACH stays long — it is the cue to rush the back line and must read across a plaza — but the
+    // level comes well down (owner: "too loud"). Those are separate dials on purpose: `reach` decides how
+    // far it is still audible, `gain` how loud it is when you are standing next to him.
+    .{ .make = mkKoboldCast, .gain = 0.30, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 2, .reach = 78 },
+    // The quietest positive cue in the game, and lowered twice on the owner's call. A chime is a narrow
+    // tone with nothing masking it, so it carries at a level that would be inaudible on a broadband
+    // voice — the number has to go further down than it looks like it should.
+    .{ .make = mkKoboldHeal, .gain = 0.11, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 3, .reach = 54 },
     .{ .make = mkKoboldWhirl, .gain = 0.42, .jit = 0.20, .vjit = 0.24, .vars = 5, .poly = 3, .reach = 44 },
     .{ .make = mkKoboldSling, .gain = 0.50, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 4, .reach = 52 },
     .{ .make = mkKoboldBite, .gain = 0.56, .jit = 0.20, .vjit = 0.26, .vars = 6, .poly = 3, .reach = 40 },
@@ -1465,6 +1528,8 @@ const BANK = [NV]Row{
     .{ .make = mkKoboldDie, .gain = 0.68, .jit = 0.18, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 58 },
     .{ .make = mkFlaskDrink, .gain = 0.52, .jit = 0.06, .vjit = 0.10, .vars = 2, .poly = 2 },
     .{ .make = mkFlaskCycle, .gain = 0.30, .jit = 0.07, .vjit = 0.08, .vars = 2, .poly = 3 },
+    // Quieter than the flask: eating is not an emergency, and the sound of it should not be one.
+    .{ .make = mkEat, .gain = 0.40, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 2 },
     // A CHEST CARRIES: it is a landmark event and you will be standing over it, but somebody across the
     // plaza should hear the hinge. Almost no jitter on either — a chest opens the same way every time,
     // and this is one of the few voices in the bank that is not one of a crowd.

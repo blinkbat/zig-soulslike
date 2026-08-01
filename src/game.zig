@@ -86,6 +86,19 @@ const SHAKE_HIT_HEAVY = 0.26;
 const SHAKE_KILL = 0.38;
 const SHAKE_HURT = 0.42;
 const SHAKE_HURT_HEAVY = 0.62;
+// A CAUGHT blow cracks the frame less than one that lands — he HELD, and the shake says so. Scaled
+// at the call site by the weight of what was caught, so this is the ogre's club and a toad's bite is
+// a quarter of it.
+const SHAKE_BLOCK = 0.40;
+// …and the guard BREAKING is worse than any single hit bar the last one: it is the moment you find
+// out the next blow is free.
+const SHAKE_GUARD_BREAK = 0.72;
+// THE HEAVIEST BLOW IN THE GAME, which is what a caught one is weighed against — read off the ogre's
+// own table rather than typed as a number, so re-tuning his club re-scales the block feedback with
+// it instead of quietly pinning every block at full weight.
+const BLOW_HEAVIEST = ogremod.SLAM_HIT.dmg;
+const BLOCK_FELT_MIN = 0.25; // …even the smallest blow is FELT: a block you cannot feel reads as a whiff
+const BLOCK_FELT_HEAVY = 0.5; // …and past half the club, the pad's heavier signature takes over
 const SHAKE_DEATH = 0.85;
 // …and the ONE non-combat beat: a chest coming open. Here with the rest of the ladder rather than as a
 // literal at the call site, because that ladder is how the whole game's impact weight is read against
@@ -1082,6 +1095,12 @@ pub fn run(mode: Mode) void {
                 },
             }
             g.hero.held = true;
+            // …and the shield comes DOWN. `setGuard` only runs on the live path, so a hero who was
+            // guarding when Editor was opened stands in the dressing scene braced behind a shield —
+            // and then F5s into a playtest still holding it. Nothing here gives him input; he should
+            // not be holding a stance either. It comes straight back on the first live frame, since
+            // the guard is read as a LEVEL and not an edge.
+            g.hero.setGuard(false);
             g.hero.pose();
             // Re-home the foes from the map every frame the editor is up, so moving a spawn
             // moves the thing you can SEE. They are not updated while editing, so re-spawning
@@ -1123,6 +1142,10 @@ pub fn run(mode: Mode) void {
                     g.lock = null;
                     g.editor.enter(g.hero.pos);
                 },
+                // AN ITEM USED FROM THE BAG. The menu decides WHICH and this decides what that means
+                // — it is the loop that owns both the bag and the hero. Spent only if a charge
+                // actually came out, and the menu stays open, so eating two is two presses.
+                .use => |k| useItem(g, k),
                 .none => {},
             }
             // Poison the pad-B tap window: B both backs out of the menu AND rolls, so without
@@ -1287,6 +1310,13 @@ pub fn run(mode: Mode) void {
         }
         bWasDown = bDown;
 
+        // ── GUARD (ER/DS layout) ── L1/LB, or the RIGHT MOUSE BUTTON, which is ER's own keyboard
+        // default for the left hand. HELD, not toggled, and read as a level rather than an edge: the
+        // shield is up exactly while the button is down and the hero decides whether he may have it
+        // (hero.setGuard, called once below after the sprint is settled).
+        var guardHeld = rl.isMouseButtonDown(.right);
+        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, .left_trigger_1)) guardHeld = true;
+
         // Sword attacks (ER layout): R1/RB or LMB = light, R2/RT or Shift+LMB = heavy.
         // Committed (no mid-swing cancels), but input BUFFERS ER-style: a mid-action press
         // queues in the hero's one slot and fires at the earliest exit.
@@ -1309,6 +1339,9 @@ pub fn run(mode: Mode) void {
         if (!g.hero.stam.canSprint()) mv.speed = @min(mv.speed, RUN_SPEED);
         // Poise/stance regenerate every frame (relent and pressure resets — Elden Ring).
         g.hero.vit.tick(dt);
+        // …and anything he ATE drips HP back. Here beside `vit.tick` and not in `hero.tickClocks`
+        // for the reason the field says: it is a combat clock and it must hold under the menu.
+        g.hero.regen.tick(dt, &g.hero.vit);
         g.hero.tickFlash(dt); // fade the red damage flash
         // Action input is dead while staggered or dead (a reaction is committed). Otherwise a
         // roll press wins a same-frame conflict, and a queued roll re-steers every frame so it
@@ -1334,6 +1367,14 @@ pub fn run(mode: Mode) void {
         // anything that fired this frame.
         g.hero.sprinting = sprintingMove(mv) and
             !g.hero.rolling and !g.hero.attacking and !g.hero.dead and !g.hero.staggered();
+        // …and the shield, AFTER the sprint (there is no running block — see hero.setGuard). Nothing
+        // here has to un-set it: an attack, a roll, a sprint or a stagger all fail `canGuard` on the
+        // frame they start, so the guard drops itself.
+        g.hero.setGuard(guardHeld);
+        // BEHIND THE SHIELD HE SHUFFLES. Capped at the source like the sprint denial above, so the
+        // one Move every downstream reader sees already knows about it — and the cap is on the WALK,
+        // never a zero: guarding slows you, it does not root you.
+        if (g.hero.guarding) mv.speed = @min(mv.speed, WALK_SPEED * heromod.GUARD_SPEED);
 
         // While locked the hero faces the foe (so it strafes/backpedals around it), ER-style.
         const lockYaw: ?f32 = if (g.lock) |li| blk: {
@@ -1383,17 +1424,15 @@ pub fn run(mode: Mode) void {
         // ONE snapshot of the blade for every group this frame — the hero's pose is already
         // resolved above, so re-deriving it per group only invited the three to disagree.
         const bladeNow = heroBlade(g);
-        if (g.warren.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |h| {
-            g.hero.takeHit(h);
+        if (g.warren.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             // The lunge carries stance damage; the chomp doesn't — split the felt blow by that.
-            heroHurtBeat(g, h.stance > 0, true);
+            _ = heroTakes(g, b, b.hit.stance > 0, true);
         }
         // The lone ogre hunts, slams and side-swipes. The overhead crush is the full heavy beat; the
         // faster swipe hurts less and is FELT less, so the two read apart through the pad and camera
         // as well as on screen (split off the blow's own stance damage, like the toad's above).
-        if (g.grief.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |h| {
-            g.hero.takeHit(h);
-            heroHurtBeat(g, h.stance >= ogremod.SLAM_HIT.stance, true);
+        if (g.grief.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.stance >= ogremod.SLAM_HIT.stance, true);
         }
         // Blade lands on the skeletons; then they act — kite and loose from the nock at the
         // hero's centre of mass (arrow homing + arc finish the job). A blade hit mid-draw
@@ -1407,11 +1446,10 @@ pub fn run(mode: Mode) void {
         // kobold.Warband). It hands back at most one blow a frame — a berserker's axe or a slinger's
         // teeth, both already latched to land once per swing — and looses its stones through
         // `spawnStone`, passed as the comptime callback so kobold.zig never learns what a pool is.
-        if (g.band.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnStone)) |h| {
-            g.hero.takeHit(h);
+        if (g.band.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnStone)) |b| {
             // A chop is the heavier of the two, and it is the one that carries poise — split the felt
             // weight on the blow's own numbers rather than on which creature threw it.
-            heroHurtBeat(g, h.poise >= koboldmod.ZERK_HIT.poise, true);
+            _ = heroTakes(g, b, b.hit.poise >= koboldmod.ZERK_HIT.poise, true);
         }
         // The lids swing and the "which one is in reach" answer is recomputed — once, here, so the prompt
         // the player reads and the button they then press cannot disagree about which box they mean.
@@ -1433,16 +1471,22 @@ pub fn run(mode: Mode) void {
             // archer shooting up a bank aims at the hero's knees.
             archermod.stepArrow(ar, g.hero.pos, heroCenterY(g), g.env.groundAt(ar.pos.x, ar.pos.z), g.hero.iFramed(), arrowCover(g, ar, dt), dt);
             if (ar.hit) {
-                // It found the hero. The BEAT is skipped on a corpse but the SOUND is not — the shaft
-                // still landed in flesh, and testing `!dead` on the whole branch dropped a hit on a
-                // dying hero into the world-impact arm below, which scuffed DIRT for an arrow standing
-                // in his chest.
-                if (!g.hero.dead) {
-                    // A STONE IS NOT AN ARROW: `Arrow.stone` decides which blow it deals.
-                    g.hero.takeHit(if (ar.stone) koboldmod.STONE_HIT else archermod.ARROW_HIT);
-                    heroHurtBeat(g, false, false); // …the rip below is this blow's own voice
-                }
-                sfx.play(.arrow_hit);
+                // It found the hero. A STONE IS NOT AN ARROW: `Arrow.stone` decides which blow it deals. A shaft's
+                // direction comes off its own FLIGHT, reversed — by the frame it connects the arrow
+                // is standing in him, so its POSITION says nothing about where it was shot from, and
+                // the shield has to answer exactly that.
+                const blow = foemod.Blow{
+                    .hit = if (ar.stone) koboldmod.STONE_HIT else archermod.ARROW_HIT,
+                    .from = mathx.addV(g.hero.pos, mathx.scaleV(ar.vel, -1)),
+                };
+                // The BEAT is skipped on a corpse. It takes the grip and the camera and no grunt — the
+                // rip IS this blow's voice (heroTakes' `voice`).
+                const out: combat.HitOutcome = if (g.hero.dead) .ignored else heroTakes(g, blow, false, false);
+                // …and WHAT IT STRUCK picks that voice: boards if the shield caught it, flesh if not.
+                // The SOUND is never skipped on a corpse — the shaft still landed in him, and testing
+                // `!dead` on the whole branch once dropped a hit on a dying hero into the world-impact
+                // arm below, which scuffed DIRT for an arrow standing in his chest.
+                if (out == .taken or out == .ignored) sfx.play(.arrow_hit);
             } else if (ar.stuck and ar.age == 0) {
                 // It STUCK without connecting — into cover or into the earth, and that gets its own
                 // sound: a shaft thunking off the pillar you ducked behind is the game telling you the
@@ -1586,6 +1630,61 @@ fn heroHurtBeat(g: *Game, heavy: bool, voice: bool) void {
     g.rumble.play(if (heavy) rumblemod.hurt_heavy else rumblemod.hurt);
     g.rig.addShake(if (heavy) SHAKE_HURT_HEAVY else SHAKE_HURT);
     if (voice) sfx.play(if (heavy) .hurt_heavy else .hurt);
+}
+
+/// ── EAT SOMETHING ── the bag's side of `item.Use`. The kind names an EFFECT and this is where the
+/// effect happens, so item.zig can stay a vocabulary that knows nothing about HP.
+///
+/// The charge goes only if one actually came out (`Bag.take` reports it) — the same "ask by doing"
+/// shape as `Flasks.take` and `Vitals.heal`, and the reason a dry row cannot be eaten twice.
+fn useItem(g: *Game, k: item.Kind) void {
+    if (g.hero.dead) return;
+    switch (item.use(k)) {
+        .none => {}, // the menu will not offer it (item.usable), so this is unreachable in practice
+        // The POTENCY comes off the effect, so a second edible brings its own (see `item.Use`).
+        .regen => |r| {
+            if (g.bag.take(k, 1) == 0) return;
+            g.hero.regen.start(g.hero.vit.hpMax * r.frac, r.secs);
+            sfx.play(.eat);
+        },
+    }
+}
+
+/// ── A BLOW ARRIVES ── apply it and feel it, in ONE place, because what a blow FEELS like now
+/// depends on what became of it and there are four callers who must not each decide that for
+/// themselves. Returns the outcome so a caller with its own impact voice (the arrow) can pick the
+/// right one.
+///
+/// The i-framed case is why this returns anything at all: every caller used to fire the hurt beat
+/// the moment a foe REPORTED a blow, so rolling cleanly through a slam still grunted, shook the
+/// camera and kicked the pad — the one thing a dodge must never do.
+fn heroTakes(g: *Game, b: foemod.Blow, heavy: bool, voice: bool) combat.HitOutcome {
+    const out = g.hero.takeHit(b.hit, mathx.dirXZ(g.hero.pos, b.from));
+    switch (out) {
+        .ignored => {}, // rolled through it, or he was already gone
+        .taken => heroHurtBeat(g, heavy, voice),
+        .blocked => heroBlockBeat(g, b.hit),
+        .guardBroken => {
+            // The break is a stagger and gets the stagger's weight — plus the boards going, which is
+            // the sound that says WHY you are suddenly wide open. `.stagger` itself still plays off
+            // the stun's rising edge in the loop, so this is not doubled.
+            g.rumble.play(rumblemod.guard_break);
+            g.rig.addShake(SHAKE_GUARD_BREAK);
+            sfx.play(.guard_break);
+        },
+    }
+    return out;
+}
+
+/// ── HELD ── the felt weight of a caught blow. It has to land HARD (owner's law: reactions are
+/// huge) and read as a WIN: a woody crack instead of a grunt, a real shake, and a shorter pad kick
+/// than being hit. Scaled by what was caught, so a kobold's teeth and an ogre's club do not feel
+/// the same through the shield — which is the only warning you get that the next one breaks you.
+fn heroBlockBeat(g: *Game, h: combat.Hit) void {
+    const w = mathx.clampF(h.dmg / BLOW_HEAVIEST, BLOCK_FELT_MIN, 1.0);
+    g.rumble.play(if (w >= BLOCK_FELT_HEAVY) rumblemod.guard_block_heavy else rumblemod.guard_block);
+    g.rig.addShake(SHAKE_BLOCK * w);
+    sfx.play(.guard_block);
 }
 
 // ── THE FOE ROLL-UPS ── the three groups, summed in ONE place each. Every one of these was written

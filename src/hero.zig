@@ -29,6 +29,10 @@ pub const SPRINT_SPEED: f32 = 5.1; // hold-B RUN — a touch faster than a full-
 /// game.zig because the sidestep CADENCE is a property of this rig (`STRAFE_CYCLE`) and its test cannot
 /// import game.zig without a cycle.
 pub const STRAFE_SPEED: f32 = 0.85;
+/// …and behind the shield, as a fraction of the WALK. Guarding trades mobility for cover — that
+/// trade IS the mechanic, and a hero who guards at walking pace has given up nothing for it. Never
+/// zero: souls guarding is a shuffling advance, not a plant (see `Hero.setGuard`).
+pub const GUARD_SPEED: f32 = 0.55;
 
 // Body-segment lengths as a fraction of stature H (Drillis & Contini 1966; Winter). The joint HEIGHTS
 // they imply, for sanity: ankle .039, knee .285, hip .530, wrist .485, elbow .630, shoulder .818,
@@ -372,6 +376,13 @@ pub const STANCE_MAX = 90.0;
 pub const ATK_LIGHT_HIT = combat.Hit{ .dmg = 13, .poise = 10 };
 pub const ATK_HEAVY_HIT = combat.Hit{ .dmg = 27, .poise = 22, .stance = 14 };
 
+/// THE HERO'S VITALS, FRESH. One expression, because there were about to be three copies of the
+/// triple — the field default, `respawn`, and the shot harness undoing the damage a capture did —
+/// and a fourth would be whoever adds a rest-at-grace.
+pub fn freshVitals() combat.Vitals {
+    return combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX);
+}
+
 // ── stagger + death anims (the reactions; committed like attacks/rolls) ──────────────────
 // A flinch is a BIG, unmistakable jolt — the whole upper body snaps back, the head whips,
 // the arms fly up, the knees buckle and he stagger-steps back off the blow. Not a lean.
@@ -382,6 +393,102 @@ const STAG_LEAN = 42.0; // heavy stagger: a deep reeling arch back (deg)
 const DEATH_SINK = 0.30; // death: pelvis sinks to this fraction of stance height
 pub const DEATH_DUR = 3.6; // collapse + lie still before the hero respawns — long enough for
 //   the full YOU DIED choreography (game.zig's overlay reads deathT against this)
+
+// ── GUARDING: the stance, the recoil off a caught blow, and the shield itself ────────────
+// The MECHANIC is combat.zig's (negation, stability, the arc, the break); this is what it looks
+// like. Two things it must read as, from any angle and in one frame: the shield is BETWEEN him and
+// the threat, and the sword is out of the way — a guard that still presents the blade reads as a
+// wind-up, and the player will think he can swing out of it.
+//
+// The trunk BLADES — left shoulder toward the threat, right hip back — which is most of what says
+// "guarding" rather than "carrying a shield". The lean/counter-rotation of whatever gait is running
+// underneath is kept and this is added on top, so guarding while walking is still a walk.
+const GUARD_SH_FLEX = 24.0; // left shoulder forward of the body line (deg)…
+const GUARD_SH_CROSS = 40.0; // …then swung ACROSS the chest, which is what puts the shield on the centreline
+const GUARD_SH_ABD = 2.0; // elbow tucked IN, near the ribs — a shield held out on a straight arm is a target
+const GUARD_ELBOW = 96.0; // …and folded hard, which brings the boards UP to the chest and IN toward it
+const GUARD_BLADE = 9.0; // trunk yaw toward the shield side (deg, PER SEGMENT over spine + chest)
+const GUARD_CROUCH = 0.022 * H; // and settled onto the knees — braced, not standing to attention
+const GUARD_SWORD_BACK = 40.0; // the sword arm draws back and low, blade out of the shield's way…
+const GUARD_SWORD_ELBOW = 46.0;
+const GUARD_SWORD_WRIST = 30.0; // …and the wrist cancels most of the grip's forward cant (GRIP_PITCH),
+//   so the blade lies BACK along the drawn-back forearm instead of hanging across his own shins
+const GUARD_HEAD = 6.0; // chin tucked down behind the rim
+/// How fast the STANCE blends in and out. A VISUAL blend only — the block itself is live the frame
+/// the button goes down (ZERO INPUT LAG), and at this rate the pose is there in ~0.1 s, the ceiling
+/// the FEEL RULES put on a posture change.
+const GUARD_BLEND_RATE = 11.0;
+// ── the block RECOIL ── a caught blow is not a flinch and must not read as one: he HELD. So the
+// shield drives back into him and the whole frame compresses over it — big (owner's law: reactions
+// are HUGE) but SHORT, and out of it he is still guarding, which a flinch never is.
+const BLOCK_RECOIL_DUR = 0.24; // seconds — over before the next swing, so blocking never costs tempo
+// The shield is driven BACK into him, and that has to come off the SHOULDER: folding the elbow
+// harder raises the wrist (the fold is what lifts the boards in the first place), so spending the
+// recoil there sent the shield climbing over his own face — a cower, not a block.
+// THE MAN MOVES, THE SHIELD HOLDS — which is the whole difference between a block and a break, and
+// getting the split wrong is what the first cut did: a 26 deg retraction under a 36 deg trunk turn
+// carried the boards off the centreline and down to his hip, so a blow he CAUGHT looked exactly like
+// one that had knocked his guard aside. REACTIONS ARE HUGE still holds; the size just belongs in the
+// body (a deep sink, a real step back) and in the camera, not in the arm.
+const BLOCK_SHIELD_BACK = 15.0; // the arm retracts, taking the boards toward the chest (deg off the flex)
+const BLOCK_SHIELD_FOLD = 10.0; // …with a little more elbow under it, so the arm collapses rather than swings
+const BLOCK_TRUNK = 9.0; // …and the trunk gives a little behind it (deg, per segment)
+const BLOCK_STEP = 0.14 * H; // …while he is driven back off the blow (VISUAL, like the stagger's — see poseStun)
+const BLOCK_SINK = 0.048 * H; // …and takes the rest of it through the knees
+const BLOCK_FLASH = 0.22; // a LICK of red, well under `takeHit`'s 0.35 for a blow that got through:
+//   the screen must not say "wounded" for a hit that cost you nothing but stamina
+// The SHIELD — a small round one: dished boards, an iron rim and a boss. Radius in units of H, so
+// it scales with the man; 0.115 is ~41 cm across, a buckler's big brother and no more.
+const SHIELD_R = 0.115 * H;
+const SHIELD_THICK = 0.020 * H;
+const SHIELD_WOOD = rgba(56, 41, 29, 255); // dark limewood boards…
+const SHIELD_WOOD_LT = rgba(82, 62, 44, 255); // …the seams between them, a course lighter so they READ
+// THE RIM IS ALMOST BLACK ON PAPER AND READS AS IRON ON SCREEN — solved, not eyeballed (AGENTS.md:
+// screen ∝ albedo^(1/2.2) through a hot key). At the sword's own STEEL (98,104,114) the binding came
+// back at 205 and CLIPPED: the loudest thing on the model, brighter than the boards it is supposed
+// to hold together, and with its own hue burned off by the warm sun. A 0.40 factor on the albedo
+// (0.66 on screen) lands it at 161/152/142 against boards of 170/133/94 — DARKER in red and far
+// cooler, which is what reads as iron. Separated on HUE as well as value on purpose: everything
+// outdoors here is warm, so a metal that is only darker still reads as wood in shadow.
+const SHIELD_IRON = rgba(26, 28, 34, 255);
+// The BOSS is the one polished thing on it and stays a stop brighter — a shield needs somewhere for
+// the light to land or the whole disc is a flat brown coin.
+const SHIELD_BOSS = rgba(46, 49, 58, 255);
+const SHIELD_STANDOFF = 0.045 * H; // the boards ride this far off the fist — a CENTRE GRIP, hand behind the boss
+// ── WHERE THE SHIELD SITS ON THE ARM, DERIVED AND NOT TYPED IN ──────────────────────────
+// The mesh is authored FACE-ON (a disc in XY, face along +Z) and this turns it into the left
+// WRIST's frame. It is exactly the INVERSE of what the guard does to that arm: the shoulder folds
+// the limb forward by GUARD_SH_FLEX and the elbow by GUARD_ELBOW (one fold, about the same axis)
+// and then swings the whole thing across the chest by GUARD_SH_CROSS — so undoing the fold and then
+// the cross leaves the boards square to the world's forward, whatever those three angles are.
+//
+// Which is the point of deriving it. Typed as literals, the first retune of the stance swings the
+// shield off its own arm — and the first cut of this DID hard-code `rx(90)`, which was right only
+// while the forearm happened to be horizontal.
+const GUARD_ARM_FOLD = GUARD_SH_FLEX + GUARD_ELBOW; // both flex about the same axis, so they add
+const SH_FOLD_S = @sin(radians(GUARD_ARM_FOLD));
+const SH_FOLD_C = @cos(radians(GUARD_ARM_FOLD));
+const SH_CROSS_S = @sin(radians(GUARD_SH_CROSS));
+const SH_CROSS_C = @cos(radians(GUARD_SH_CROSS));
+/// The face's own normal, expressed in the WRIST's frame — which is where the standoff has to be
+/// measured, since the hand grips BEHIND the boss.
+const SHIELD_N = v3(SH_CROSS_S, -SH_CROSS_C * SH_FOLD_S, SH_CROSS_C * SH_FOLD_C);
+/// MEASURED AND LEFT: every input here is a compile-time constant, so this rebuilds the same matrix
+/// twice a frame (the depth pass and the lit pass both go through `draw`). It is three matrix
+/// constructions and two multiplies against a hero who draws nineteen meshes — and it cannot be a
+/// comptime const, because these wrap raylib's matrix calls. Caching it on the Hero would trade a
+/// field and an init step for nothing measurable.
+fn shieldFit() rl.Matrix {
+    return mul3(
+        ry(GUARD_SH_CROSS),
+        rx(GUARD_ARM_FOLD),
+        tr(
+            SHIELD_STANDOFF * SHIELD_N.x,
+            FIST_Y + SHIELD_STANDOFF * SHIELD_N.y,
+            FIST_Z + SHIELD_STANDOFF * SHIELD_N.z,
+        ),
+    );
+}
 
 // ── the grip (how the sword is HELD) ────────────────────────────────────────────────
 // A hammer grip cants the blade GRIP_PITCH forward of the forearm line — held at an angle,
@@ -656,6 +763,12 @@ pub const Queued = union(enum) { attack: Attack, roll: rl.Vector3 };
 
 pub const Hero = struct {
     mesh: [N]rl.Mesh,
+    /// THE SHIELD, which is not a bone. It rides the left wrist's matrix through `shieldFit` — the
+    /// pattern kobold.zig set for anything the 18-bone scaffold has no slot for (its off-hand axe,
+    /// jaw and tail do the same). A 19th bone would have to be threaded through `PARENT`, every
+    /// pose's `setLocal` list and every foe that borrows the scaffold, to carry a thing that never
+    /// articulates.
+    shield: rl.Mesh,
     mat: rl.Material,
     rest: [N]rl.Vector3,
     xf: [N]rl.Matrix = undefined, // per-bone world matrix, recomputed each frame by pose()
@@ -702,11 +815,15 @@ pub const Hero = struct {
     trail: [TRAIL_N]TrailSample = [_]TrailSample{.{}} ** TRAIL_N, // swing-trail ring (newest at trailHead)
     trailHead: usize = 0,
     // combat
-    vit: combat.Vitals = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX),
+    vit: combat.Vitals = freshVitals(),
     stam: combat.Stamina = .{}, // ER's third bar — the hero's alone; foes don't carry one
     fp: combat.Focus = .{}, // …the blue one, likewise. Nothing spends it yet; the Cerulean fills it
     runes: combat.Runes = .{}, // …and ER's currency, likewise his alone (souls, by ER's name)
     flasks: combat.Flasks = .{}, // Crimson + Cerulean, sharing the quick-item slot
+    /// HP coming back over TIME (Mushroom Jerky). Ticked from the live loop and NOT from
+    /// `tickClocks`: it is a combat clock, so it must stop under the pause card like `vit` does —
+    /// a drip that ran while the menu was up would make the menu the best place to heal.
+    regen: combat.Regen = .{},
     // THE DRINK, committed like an attack (see combat.Flasks): the charge is spent at the START,
     // the restore lands at FLASK_POUR_AT, and a stagger mid-draught costs you the flask.
     drinking: bool = false,
@@ -719,6 +836,17 @@ pub const Hero = struct {
     /// Set it through `refuse()`, never by hand — see there.
     stamRefused: f32 = 0,
     sprinting: bool = false, // hold-B RUN, resolved by the caller — the only CONTINUOUS drain
+    // ── THE GUARD ── a HELD state, not a committed action: re-decided every frame from the button
+    // and from what else he is doing (see setGuard), so starting an attack, a roll or a sprint drops
+    // the shield with no bookkeeping anywhere. `guardB` is the STANCE's visual blend and lags it by
+    // ~0.1 s; nothing mechanical may read `guardB`, or the block would arrive late.
+    guarding: bool = false,
+    guardB: f32 = 0,
+    /// Seconds since the last blow caught on the shield — the recoil clock, and the ONLY record a
+    /// block leaves. A `blocks` counter was here too, mirroring `swings`, and it was deleted: the
+    /// reason `swings` has to be counted is that a caller cannot otherwise see a chained swing
+    /// BEGIN, where a block's edge is already handed to the caller by `takeHit`'s return.
+    blockT: f32 = mathx.LONG_AGO,
     // THE WORLD IS HELD (menu up). He keeps breathing, but his COMBAT clocks must not run:
     // the live loop already freezes vit/hurtFlash by simply not ticking them, and stamina rides
     // tickClocks instead, so without this it is the one meter that keeps moving under a pause —
@@ -742,6 +870,7 @@ pub const Hero = struct {
         mat.shader = shader;
         return .{
             .mesh = buildMeshes(),
+            .shield = shieldMesh(),
             .mat = mat,
             .rest = restPositions(),
         };
@@ -768,8 +897,16 @@ pub const Hero = struct {
         // ER pauses the refill while attacking, sprinting or blocking. ROLLING counts too: the
         // bite is charged at the dive and the pool must not start climbing back before he is on
         // his feet, or a roll chain costs less than the sum of its rolls.
-        if (!self.held) self.stam.tick(dt, self.sprinting, self.attacking or self.rolling);
+        // GUARDING PAUSES THE REFILL TOO (ER's rule, docs/ELDEN_RING.md §3), and it is what stops a
+        // held shield being free: standing behind it, the bar you are about to need is not coming
+        // back. Same arm as attacking and rolling — a state you are IN, not a spend.
+        if (!self.held) self.stam.tick(dt, self.sprinting, self.attacking or self.rolling or self.guarding);
         self.stamRefused = @max(0, self.stamRefused - dt);
+        // The stance blend and the recoil clock, in the prologue with the rest: exactly one advance
+        // path runs each frame and both have to move under all of them, or the shield hangs mid-raise
+        // through a stagger and the recoil freezes on whatever frame the block landed.
+        self.guardB = mathx.approach(self.guardB, if (self.guarding) 1.0 else 0.0, dt * GUARD_BLEND_RATE);
+        self.blockT = @min(self.blockT + dt, mathx.LONG_AGO);
         // The rune counter's ROLL. In the prologue for the same reason as the rest: it must advance
         // exactly once per frame whichever path is running. NOT gated on `held` — it is a display
         // animation, not a combat clock, and a counter frozen mid-tally under the pause menu reads
@@ -865,6 +1002,24 @@ pub const Hero = struct {
     /// exactly the failure the flash exists to prevent.
     fn refuse(self: *Hero) void {
         self.stamRefused = combat.STAM_REFUSE_FLASH;
+    }
+
+    /// ── RAISE OR LOWER THE SHIELD ── call EVERY frame with the button's state; the hero decides
+    /// whether he may have it. A HELD state re-derived from scratch each frame, deliberately: the
+    /// alternative is a `guarding` flag that four other transitions have to remember to clear, which
+    /// is exactly how the draught ended up resuming out of a roll (see `committed`).
+    ///
+    /// CALL IT AFTER `sprinting` IS SETTLED for the frame — a sprint drops the guard (there is no
+    /// running block in this genre), and asking before the sprint is resolved reads last frame's.
+    pub fn setGuard(self: *Hero, want: bool) void {
+        self.guarding = want and self.canGuard();
+    }
+
+    /// AN EMPTY BAR CANNOT HOLD A SHIELD UP — ER's own rule and the reason a guard break is a real
+    /// punishment rather than an interruption: the break empties the pool, so the shield stays down
+    /// until the regen has bought it back and you are open for all of it.
+    pub fn canGuard(self: *const Hero) bool {
+        return !self.committed() and !self.staggered() and !self.dead and !self.sprinting and self.stam.canAct();
     }
 
     pub fn requestAttack(self: *Hero, kind: Attack) void {
@@ -1089,11 +1244,26 @@ pub const Hero = struct {
         return self.rolling and self.rollT < ROLL_IFRAME_END;
     }
 
+    /// IS THE SHIELD BETWEEN HIM AND THIS? `fromDir` is the world XZ direction from the hero TOWARD
+    /// whatever hit him (zero = a blow with no direction, which nothing can be guarded against).
+    /// A shield is a DIRECTION, not a bubble — see combat.GUARD_ARC.
+    pub fn guardCovers(self: *const Hero, fromDir: rl.Vector3) bool {
+        if (!self.guarding or mathx.lenXZ(fromDir) < 1e-4) return false;
+        const off = mathx.wrapPi(mathx.headingXZ(fromDir) - self.facing);
+        return @abs(mathx.degrees(off)) <= combat.GUARD_ARC;
+    }
+
     // Apply a blow: HP drains, poise/stance drive the flinch/stagger. Any reaction INTERRUPTS
     // the current action — souls commitment cuts both ways; call from game.zig after the knot resolves its attacks.
-    pub fn takeHit(self: *Hero, h: combat.Hit) void {
-        if (self.dead) return;
-        if (self.iFramed()) return; // rolled through it — no damage, no flinch, nothing
+    //
+    // `fromDir` is where it came FROM (see guardCovers) and it decides whether the shield is in the
+    // way. RETURNS WHAT BECAME OF THE BLOW, because three of the four outcomes are things the caller
+    // has to sound and shake differently — and because a blow swallowed by i-frames used to be
+    // indistinguishable from one that landed, so game.zig grunted through every rolled-through hit.
+    pub fn takeHit(self: *Hero, h: combat.Hit, fromDir: rl.Vector3) combat.HitOutcome {
+        if (self.dead) return .ignored;
+        if (self.iFramed()) return .ignored; // rolled through it — no damage, no flinch, nothing
+        if (self.guardCovers(fromDir)) return self.blockHit(h);
         const r = self.vit.hit(h);
         // Red damage-flash on ANY blow, punchier the harder the reaction (peripheral feedback).
         const flash: f32 = switch (r) {
@@ -1112,6 +1282,38 @@ pub const Hero = struct {
             },
             .none => {},
         }
+        return .taken;
+    }
+
+    /// ── CAUGHT ON THE SHIELD ── the plain Dark Souls block. NO POISE AND NO STANCE reach him: the
+    /// impulse went into the boards, and a blocked blow that still flinched you would make guarding
+    /// strictly worse than standing there. What it costs is STAMINA, by the weight of the blow, and
+    /// what gets past is CHIP — which is real damage and can kill, exactly as it does in DS.
+    ///
+    /// EMPTY THE BAR UNDER A BLOW AND THE GUARD BREAKS: a heavy stagger, and since the pool is now
+    /// at zero the shield cannot come back up until it refills (`canGuard`). The danger is never
+    /// that hit — it is the next one, landing on a man with no shield and no stamina.
+    fn blockHit(self: *Hero, h: combat.Hit) combat.HitOutcome {
+        self.blockT = 0;
+        self.stam.spend(combat.guardStamina(h));
+        // The chip goes through `Vitals.hit` with its poise/stance stripped, rather than straight at
+        // `hp`: it is the one path that can still KILL through a guard, and death has to latch the
+        // same way it does for a blow that landed.
+        const r = self.vit.hit(.{ .dmg = combat.guardChip(h) });
+        self.hurtFlash = mathx.maxF(self.hurtFlash, BLOCK_FLASH);
+        if (r == .death) {
+            self.enterDeath();
+            return .taken; // chipped to death behind the shield — that is a death, not a block
+        }
+        // THE BREAK TESTS THE POOL, NOT `canAct()`. `canAct` is `!STAM_LOCKOUT or cur > 0`, so with
+        // the lockout switched off — which is a live switch this file's own test pins — it is always
+        // true and the guard could NEVER break: infinite free blocking, from one flag flipped in
+        // another file. Emptying the bar under a blow breaks your guard whether or not empty-bar
+        // LOCKOUTS are on; the two are different rules and only one of them is behind that switch.
+        if (self.stam.cur > 0) return .blocked;
+        self.guarding = false;
+        self.enterStun(.heavy);
+        return .guardBroken;
     }
     // Decay the damage-flash. Call every frame (independent of which update path runs).
     pub fn tickFlash(self: *Hero, dt: f32) void {
@@ -1131,6 +1333,10 @@ pub const Hero = struct {
         // sharpest edge on the whole system: drink in the wrong window and you lose the flask AND
         // the health it was going to give you.
         self.drinking = false;
+        // …and the shield comes down. `setGuard` would clear it next frame anyway (a staggered hero
+        // cannot guard), but a second blow landing later in the SAME frame would otherwise still be
+        // caught on a shield that is already on the floor.
+        self.guarding = false;
         self.queued = null;
         self.stun = kind;
         self.stunT = 0;
@@ -1141,6 +1347,7 @@ pub const Hero = struct {
         self.attacking = false;
         self.rolling = false;
         self.drinking = false;
+        self.guarding = false;
         self.stun = .none;
         self.queued = null;
         self.dead = true;
@@ -1178,14 +1385,18 @@ pub const Hero = struct {
         self.deathT = 0;
         self.stun = .none;
         self.hurtFlash = 0;
-        self.vit = combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX);
+        self.vit = freshVitals();
         self.stam.reset();
         self.fp.reset();
+        self.regen.reset(); // …and nothing is still digesting from the last life
         // FLASKS REFILL AT THE GRACE, and a death IS a return to one — same event, same rule as ER.
         self.flasks.refill();
         self.drinking = false;
         self.stamRefused = 0; // a respawn must not inherit the last life's refusal flash
         self.sprinting = false;
+        self.guarding = false;
+        self.guardB = 0; // …nor wake at the grace holding a shield up
+        self.blockT = mathx.LONG_AGO;
         self.pos = self.spawnPos;
         self.facing = self.spawnFacing;
         self.moving = 0;
@@ -1215,8 +1426,16 @@ pub const Hero = struct {
         // Both gated by FORWARDNESS: the run/sprint presentation belongs to forward travel — a fast strafe/backpedal stays an upright walk.
         const runB = mathx.clampF((self.speedS - RUN_SPEED_LO) / (RUN_SPEED_HI - RUN_SPEED_LO), 0, 1) * fwPos;
         const sprintB = mathx.clampF((self.speedS - RUN_SPEED_HI) / (SPRINT_REF_SPEED - RUN_SPEED_HI), 0, 1) * fwPos;
+        // Behind the shield he SETTLES onto his knees, and a caught blow drives him back and down
+        // into it. Both ride the ROOT and so are computed here rather than in the guard overlay: the
+        // legs are chained off the pelvis further down, and a settle applied after them is a body
+        // sinking through its own feet.
+        const gB = mathx.clampF(self.guardB, 0, 1);
+        const rec = self.blockRecoil();
+        const guardBack = BLOCK_STEP * rec;
         const crouch = (RUN_CROUCH * runB + 0.5 * RUN_CROUCH * sprintB) * m +
-            STRAFE_DIP * @abs(lat) * m; // low centre of gravity; strafing settles onto its soft knees
+            STRAFE_DIP * @abs(lat) * m + // low centre of gravity; strafing settles onto its soft knees
+            GUARD_CROUCH * gB + BLOCK_SINK * rec;
 
         // ── pelvis oscillations (walk bob — run airtime bounce) ──
         const walkBob = -0.5 * A_BOB * mathx.cosf(2.0 * twoPi * ph); // twice/stride, symmetric
@@ -1253,7 +1472,7 @@ pub const Hero = struct {
         const pelvY = hipY - crouch + bob;
         wx[ROOT] = mul3(
             mul(rz(list), ry(prot)), // tilt/rotate pelvis about its centre
-            mul(tr(sway, pelvY, 0), mul(rx(bodyPitch), ry(facingDeg))), // crouch, pitch whole body forward about the feet, then face
+            mul(tr(sway, pelvY, -guardBack), mul(rx(bodyPitch), ry(facingDeg))), // crouch, driven back off a caught blow, pitch whole body forward about the feet, then face
             rootAt(self.pos), // place in the world, ON the ground under him
         );
 
@@ -1287,8 +1506,54 @@ pub const Hero = struct {
         armChain(&wx, self.rest, armR, m, runB, sprintB, -1.0, 1.0, SHR, ELR, WRR); // right hand carries the sword
         setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity()); // blade rides the fist
 
+        // …and the shield goes up OVER all of it (see poseGuard) — the gait keeps running underneath.
+        if (gB > 0.001) self.poseGuard(&wx, gB, rec, lean, prot, bank);
+
         self.applyXfade(&wx);
         self.xf = wx;
+    }
+
+    /// The pulse a caught blow puts through the frame: full on the frame it lands and gone inside
+    /// BLOCK_RECOIL_DUR. Instant, because the impact is — an eased-IN recoil reads as the hero
+    /// deciding to flinch a moment later.
+    fn blockRecoil(self: *const Hero) f32 {
+        if (self.blockT >= BLOCK_RECOIL_DUR) return 0;
+        const u = mathx.clampF(self.blockT / BLOCK_RECOIL_DUR, 0, 1);
+        return (1.0 - u) * (1.0 - u);
+    }
+
+    /// THE GUARD STANCE, laid over whatever gait is running underneath and blended in by `k`
+    /// (`guardB`). Upper body only: the settle and the knock-back ride the ROOT, back in `pose()`
+    /// where the pelvis is built.
+    ///
+    /// It takes the walk's own `lean`/`prot`/`bank` and ADDS to them rather than replacing the
+    /// trunk, which is the difference between guarding while walking and sliding along in a statue's
+    /// pose. The blend is on the WORLD matrices (`lerpM`), the same way `applyXfade` blends a pose
+    /// discontinuity — over ~0.1 s the small chain-length wobble that costs is invisible, and the
+    /// alternative is plumbing every gait angle back out of `armChain`.
+    fn poseGuard(self: *const Hero, wx: *[N]rl.Matrix, k: f32, rec: f32, lean: f32, prot: f32, bank: f32) void {
+        var gp = wx.*;
+        // The trunk BLADES — left shoulder toward the threat, and further round as a blow lands.
+        // NEGATIVE about Y: the left shoulder sits at +X, and it is the one that has to come FORWARD.
+        const blade = -(GUARD_BLADE + BLOCK_TRUNK * rec);
+        setLocal(&gp, SPINE, self.rest, mul3(rx(lean * 0.5), ry(-0.3 * prot + blade), rz(0.5 * bank)));
+        setLocal(&gp, CHEST, self.rest, mul3(rx(lean * 0.5 + 5.0 * rec), ry(-0.5 * prot + blade), rz(0.5 * bank)));
+        // …and the head UNWINDS all of it: he is looking at the thing he is blocking, over the rim.
+        setLocal(&gp, NECK, self.rest, ry(-blade));
+        setLocal(&gp, HEAD, self.rest, mul(rx(GUARD_HEAD), ry(-blade)));
+        // The shield arm: forward, across the chest, folded — and punched back INTO him by a blow.
+        setLocal(&gp, SHL, self.rest, mul3(rx(-(GUARD_SH_FLEX - BLOCK_SHIELD_BACK * rec)), rz(GUARD_SH_ABD), ry(-GUARD_SH_CROSS)));
+        setLocal(&gp, ELL, self.rest, rx(-(GUARD_ELBOW + BLOCK_SHIELD_FOLD * rec)));
+        setLocal(&gp, WRL, self.rest, rl.math.matrixIdentity());
+        // The sword arm draws BACK and low, out of the shield's line. A guard that still presents the
+        // blade reads as a wind-up, and the player will believe he can swing out of it.
+        setLocal(&gp, SHR, self.rest, mul(rx(GUARD_SWORD_BACK), rz(-ARM_ABD)));
+        setLocal(&gp, ELR, self.rest, rx(-GUARD_SWORD_ELBOW));
+        setLocal(&gp, WRR, self.rest, rx(GUARD_SWORD_WRIST));
+        setLocal(&gp, SWORD, self.rest, rl.math.matrixIdentity());
+        for ([_]usize{ SPINE, CHEST, NECK, HEAD, SHL, ELL, WRL, SHR, ELR, WRR, SWORD }) |i| {
+            wx[i] = lerpM(wx[i], gp[i], k);
+        }
     }
 
 
@@ -1650,6 +1915,10 @@ pub const Hero = struct {
 
     pub fn draw(self: *const Hero) void {
         for (0..N) |i| rl.drawMesh(self.mesh[i], self.mat, self.xf[i]);
+        // The shield rides the left wrist rather than a bone of its own (see the field). Drawn here
+        // and not by the caller, so BOTH passes get it off one call — a shield missing from the
+        // depth pass is a man casting the shadow of an empty arm.
+        rl.drawMesh(self.shield, self.mat, mul(shieldFit(), self.xf[WRL]));
     }
 
     /// Eye/target point for the camera: the base of the neck, measured from `pos.y` — THE GROUND HE IS
@@ -1906,6 +2175,90 @@ fn swordMesh() rl.Mesh {
     return b.toMesh();
 }
 
+// THE SMALL ROUND SHIELD, authored FACE-ON — a disc in XY with its face along +Z, centred on the
+// grip — and turned onto the arm by `shieldFit`. Authoring it flat is the whole reason the fit can
+// be derived from the stance angles instead of hand-matched.
+//
+// It is boards, iron and leather, so boxes and a ring belong here (FLESH IS ROUND governs organic
+// mass, not a shield). Two things keep it from reading as a poker chip: the face is DISHED — a lens,
+// not a plate — and the planks and rim bindings are laid on with a seeded Rng, so no two are the
+// same width and the rim does not close on a neat polygon. RELIEF IS SUBTLE applies: the planks
+// stand a few millimetres proud of a 41 cm disc, and the rim's own body is half sunk into the edge.
+fn shieldMesh() rl.Mesh {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x5C1E1D);
+    b.setMat(.wood);
+    b.addBlob(v3(0, 0, 0), v3(SHIELD_R, SHIELD_R, SHIELD_THICK), 5, 16, SHIELD_WOOD);
+    // The BOARD SEAMS. Laid ON the dish and following it, as two tapering runs out from the centre
+    // line — the dome's height falls to nothing at the rim, so one straight bar across the whole
+    // chord floats off the boards at both ends.
+    //
+    // THE FIRST CUT OF THIS HAD THEM AS PROUD PLANKS and it is the mistake worth recording: square
+    // boxes clipped to the chord at their CENTRE height still hang their corners out past the rim,
+    // and six of those turned a round shield into a serrated hexagon that read as blocky from every
+    // angle but the edge-on one. RELIEF IS SUBTLE, and a seam is a line, not a slab.
+    const dome = struct {
+        fn at(rho: f32) f32 { // the dish's height above the equator plane at radius `rho`
+            const t = mathx.clampF(rho / SHIELD_R, 0, 1);
+            return SHIELD_THICK * @sqrt(mathx.maxF(1.0 - t * t, 0));
+        }
+    }.at;
+    const seams = 3;
+    var i: i32 = 0;
+    while (i < seams) : (i += 1) {
+        const f = (@as(f32, @floatFromInt(i)) + 1.0) / (@as(f32, seams) + 1.0);
+        const y = mathx.lerpF(-SHIELD_R, SHIELD_R, f) * rng.range(0.90, 1.10);
+        // Stopped SHORT of the rim (0.84), because a seam run out to the edge has its cap sticking
+        // through the binding — which showed up as little pale dashes all round the rim.
+        const half = @sqrt(mathx.maxF(SHIELD_R * SHIELD_R - y * y, 1e-4)) * 0.84;
+        const rEnd = @sqrt(half * half + y * y);
+        for ([_]f32{ -1, 1 }) |side| {
+            // Centre-line ON the dish, so half the capsule stands proud and half is buried: at 0.66
+            // of the dome height they were swallowed whole and the face came back blank.
+            b.addCapsule(
+                v3(0, y, dome(@abs(y))),
+                v3(side * half, y, dome(rEnd)),
+                0.0050 * H,
+                0.0038 * H,
+                5,
+                SHIELD_WOOD_LT,
+            );
+        }
+    }
+    // The RIM: iron binding round the edge, laid as an odd number of straps so the ring never closes
+    // on a tidy polygon, each one half sunk into the boards.
+    b.setMat(.steel);
+    const straps = 13;
+    var k: i32 = 0;
+    while (k < straps) : (k += 1) {
+        const a0 = std.math.tau * @as(f32, @floatFromInt(k)) / @as(f32, straps);
+        const a1 = a0 + std.math.tau / @as(f32, straps) * rng.range(0.90, 1.06);
+        const r0 = SHIELD_R * rng.range(0.985, 1.005);
+        b.addCapsule(
+            v3(r0 * mathx.cosf(a0), r0 * mathx.sinf(a0), 0),
+            v3(r0 * mathx.cosf(a1), r0 * mathx.sinf(a1), 0),
+            0.0090 * H,
+            0.0082 * H,
+            6,
+            SHIELD_IRON,
+        );
+    }
+    // The BOSS, sunk most of the way in so only its cap breaks the face, and a shade off centre.
+    b.addBlob(
+        v3(0.004 * H, -0.002 * H, SHIELD_THICK * 0.55),
+        v3(0.034 * H, 0.033 * H, 0.030 * H),
+        4,
+        11,
+        SHIELD_BOSS,
+    );
+    // …and behind it the GRIP BAR he actually holds — a centre-grip shield, which is why the fist
+    // sits on the boss line and not up the forearm (see shieldFit).
+    b.setMat(.leather);
+    b.addCube(v3(0, 0, -SHIELD_THICK * 1.15), v3(0.090 * H, 0.026 * H, 0.014 * H), LEATHER);
+    b.addCube(v3(0, 0, -SHIELD_THICK * 0.9), v3(0.034 * H, 0.052 * H, 0.010 * H), LEATHER_DK); // the arm pad
+    return b.toMesh();
+}
+
 const scaleV = mathx.scaleV; // shared vector scale (was a local re-implementation)
 
 fn pelvisMesh() rl.Mesh {
@@ -2056,7 +2409,7 @@ fn handMesh() rl.Mesh {
 /// draws — but `rest` is real, because `pose()` reads it and a pose over undefined joints is
 /// arithmetic on garbage.
 fn testHero() Hero {
-    return .{ .mesh = undefined, .mat = undefined, .rest = restPositions() };
+    return .{ .mesh = undefined, .shield = undefined, .mat = undefined, .rest = restPositions() };
 }
 
 test "the DRAUGHT is committed like the other two: inputs buffer, they do not fire through it" {
@@ -2148,6 +2501,142 @@ test "roll travel: the brake profile integrates to ROLL_DIST" {
         dist += peak * (1.0 - mathx.smoothstep(ROLL_BRAKE_A, ROLL_BRAKE_B, u)) * (ROLL_DUR / steps);
     }
     try std.testing.expectApproxEqAbs(@as(f64, ROLL_DIST), dist, 1e-3);
+}
+
+// ── GUARDING (the plain block) ───────────────────────────────────────────────────────────────────
+// The rules combat.zig owns are tested there; these are the ones that only exist once a blow, a
+// facing and a shield are in the same place.
+
+/// A hero facing +Z with the shield already up.
+fn testGuarded() Hero {
+    var h = testHero();
+    h.facing = 0; // +Z
+    h.guarding = true;
+    return h;
+}
+
+/// The world direction a blow `deg` off his facing comes FROM (facing 0 = +Z).
+fn fromAngle(deg: f32) rl.Vector3 {
+    return v3(mathx.sinf(radians(deg)), 0, mathx.cosf(radians(deg)));
+}
+
+test "the shield is a DIRECTION: it catches the front and not the flank" {
+    var h = testGuarded();
+    try std.testing.expect(h.guardCovers(fromAngle(0))); // dead ahead
+    try std.testing.expect(h.guardCovers(fromAngle(combat.GUARD_ARC - 1)));
+    try std.testing.expect(h.guardCovers(fromAngle(-(combat.GUARD_ARC - 1)))); // …both sides of it
+    try std.testing.expect(!h.guardCovers(fromAngle(combat.GUARD_ARC + 1))); // …round the edge
+    try std.testing.expect(!h.guardCovers(fromAngle(180))); // …and from behind, never
+    // A blow with NO direction cannot be guarded — the harness's synthetic reaction hits rely on it.
+    try std.testing.expect(!h.guardCovers(mathx.zero3));
+    // …and a lowered shield covers nothing, however square he is standing.
+    h.guarding = false;
+    try std.testing.expect(!h.guardCovers(fromAngle(0)));
+}
+
+test "a blocked blow costs STAMINA and chip, and never poise" {
+    var h = testGuarded();
+    const club = combat.Hit{ .dmg = 36, .poise = 44, .stance = 20 };
+    const stam0 = h.stam.cur;
+    try std.testing.expectEqual(combat.HitOutcome.blocked, h.takeHit(club, fromAngle(10)));
+    try std.testing.expectApproxEqAbs(HP_MAX - combat.guardChip(club), h.vit.hp, 1e-3);
+    try std.testing.expectApproxEqAbs(stam0 - combat.guardStamina(club), h.stam.cur, 1e-3);
+    // The whole point: no flinch, no stance chip, still guarding, still in control.
+    try std.testing.expect(!h.staggered() and h.guarding);
+    try std.testing.expectApproxEqAbs(POISE_MAX, h.vit.poise, 1e-4);
+    try std.testing.expectApproxEqAbs(STANCE_MAX, h.vit.stance, 1e-4);
+    // …and the SAME blow round the side is simply a hit: full damage, and it eats poise.
+    const hp0 = h.vit.hp;
+    try std.testing.expectEqual(combat.HitOutcome.taken, h.takeHit(club, fromAngle(140)));
+    try std.testing.expectApproxEqAbs(hp0 - club.dmg, h.vit.hp, 1e-3);
+    try std.testing.expectApproxEqAbs(POISE_MAX - club.poise, h.vit.poise, 1e-3);
+    try std.testing.expect(h.vit.stance < STANCE_MAX);
+}
+
+test "running the bar out under a blow BREAKS the guard, and it stays down" {
+    var h = testGuarded();
+    const club = combat.Hit{ .dmg = 36, .poise = 44, .stance = 20 };
+    var out = combat.HitOutcome.blocked;
+    var n: u32 = 0;
+    while (out == .blocked and n < 10) : (n += 1) out = h.takeHit(club, fromAngle(0));
+    try std.testing.expectEqual(combat.HitOutcome.guardBroken, out);
+    try std.testing.expect(h.stun == .heavy and !h.guarding);
+    // …and it broke because the POOL was empty, not because `canAct` said so — which is what keeps
+    // the break independent of the STAM_LOCKOUT switch (see blockHit).
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.stam.cur, 1e-4);
+    // THE PUNISHMENT IS WHAT COMES NEXT: the pool is empty, so the shield cannot come back up…
+    try std.testing.expect(!h.canGuard());
+    h.setGuard(true);
+    try std.testing.expect(!h.guarding);
+    // …and the next blow lands on a man with no shield, whatever he presses.
+    try std.testing.expectEqual(combat.HitOutcome.taken, h.takeHit(club, fromAngle(0)));
+}
+
+test "chip CAN kill through a raised shield" {
+    // DS's own rule, and the reason the chip goes through `Vitals.hit` rather than at `hp`: death
+    // has to latch the same way it does for a blow that landed, or a corpse keeps blocking.
+    var h = testGuarded();
+    h.vit.hp = 1.0;
+    try std.testing.expectEqual(combat.HitOutcome.taken, h.takeHit(.{ .dmg = 36 }, fromAngle(0)));
+    try std.testing.expect(h.dead and !h.guarding);
+}
+
+test "i-frames beat the shield, and a committed action drops it" {
+    var h = testGuarded();
+    h.rolling = true;
+    h.rollT = 0.1; // inside ROLL_IFRAME_END
+    // Rolled through it: no chip, no stamina, no beat — the outcome a dodge must produce.
+    const stam0 = h.stam.cur;
+    try std.testing.expectEqual(combat.HitOutcome.ignored, h.takeHit(.{ .dmg = 36 }, fromAngle(0)));
+    try std.testing.expectApproxEqAbs(HP_MAX, h.vit.hp, 1e-4);
+    try std.testing.expectApproxEqAbs(stam0, h.stam.cur, 1e-4);
+    // …and while he is doing something ELSE he may not raise it at all. Every one of these is a
+    // state that drops the shield for free, which is the reason `guarding` is re-derived from
+    // scratch each frame instead of being a flag five transitions have to remember to clear.
+    var free = testHero();
+    free.setGuard(true);
+    try std.testing.expect(free.guarding);
+    inline for (.{ "rolling", "attacking", "drinking", "sprinting", "dead" }) |field| {
+        var busy = testHero();
+        @field(busy, field) = true;
+        busy.setGuard(true);
+        try std.testing.expect(!busy.guarding);
+    }
+    var reeling = testHero();
+    reeling.stun = .light;
+    reeling.setGuard(true);
+    try std.testing.expect(!reeling.guarding);
+    // …and an EMPTY BAR cannot hold one up, which is what makes a guard break a real punishment.
+    var spent = testHero();
+    spent.stam.spend(combat.STAM_MAX);
+    spent.setGuard(true);
+    try std.testing.expect(!spent.guarding);
+}
+
+test "the guard PAUSES the refill — a held shield is not free" {
+    var h = testHero();
+    h.stam.cur = 40;
+    h.guarding = true;
+    var t: f32 = 0;
+    while (t < 2.0) : (t += 1.0 / 60.0) h.tickClocks(1.0 / 60.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 40), h.stam.cur, 1e-3); // …nothing came back
+    // …and lowering it lets the pool fill again.
+    h.guarding = false;
+    t = 0;
+    while (t < 1.0) : (t += 1.0 / 60.0) h.tickClocks(1.0 / 60.0);
+    try std.testing.expect(h.stam.cur > 60);
+}
+
+test "the STANCE lags the block, and the block never lags the stance" {
+    // The shield is live the frame the button goes down (ZERO INPUT LAG); only the POSE eases in.
+    var h = testHero();
+    h.setGuard(true);
+    try std.testing.expect(h.guarding); // …mechanically up already
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.guardB, 1e-6); // …visually not yet
+    try std.testing.expect(h.guardCovers(fromAngle(0))); // …and it CATCHES on that frame
+    var t: f32 = 0;
+    while (t < 0.10) : (t += 1.0 / 60.0) h.tickClocks(1.0 / 60.0);
+    try std.testing.expect(h.guardB > 0.6); // …the FEEL RULES' ~0.1 s ceiling on a posture change
 }
 
 // ── THE CROSSING SIDESTEP, measured off the posed rig ───────────────────────────────────────────

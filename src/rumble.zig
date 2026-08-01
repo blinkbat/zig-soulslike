@@ -2,36 +2,21 @@ const std = @import("std");
 const builtin = @import("builtin");
 const rl = @import("raylib");
 
-// ── CONTROLLER RUMBLE ───────────────────────────────────────────────────────────────────
-// raylib's GLFW desktop backend STUBS OUT SetGamepadVibration, so on Windows this drives XInput
-// directly, resolving XInputSetState at runtime from whichever xinput DLL is present (cached) — no
-// import lib, no build.zig change. Elsewhere it falls back to raylib's API.
-//
-// Each combat beat is an `Event`: a peak per motor plus a duration. Motors fade linearly and overlaps
-// blend STRONGEST-WINS, so a big slam takes over a lingering buzz and a weak tick never cuts a strong
-// one short. Every beat has its own SIGNATURE, so the grip teaches the fight — pattern memory through
-// the hands. XInput's two motors are low ("heavy") and high ("buzz"): the player's own actions lean on
-// buzz, blows SUFFERED lean on heavy, death swells both.
 
-// input polling (game.zig) and this module's XInput calls must target the SAME pad.
 pub const PAD = 0;
 
 pub const Event = struct { low: f32 = 0, high: f32 = 0, dur: f32 = 0 };
 
-// ── the combat vocabulary (distinct signatures → pattern memory) ────────────────────────
 pub const swing_light = Event{ .low = 0.08, .high = 0.20, .dur = 0.06 }; // your R1 whips out — a light tick
 pub const swing_heavy = Event{ .low = 0.30, .high = 0.34, .dur = 0.13 }; // the committed R2 effort — a heavy wind
 pub const hit_light = Event{ .low = 0.22, .high = 0.42, .dur = 0.10 }; // your light slash lands
 pub const hit_heavy = Event{ .low = 0.48, .high = 0.60, .dur = 0.17 }; // your heavy crunches home
 pub const hurt = Event{ .low = 0.55, .high = 0.32, .dur = 0.22 }; // a chomp catches you
 pub const hurt_heavy = Event{ .low = 0.90, .high = 0.45, .dur = 0.34 }; // the lunge SLAMs you
-// CAUGHT ON THE SHIELD. A block has to be FELT — it is the payoff for standing there — but it is a
-// crack through the arm, not a wound: shorter than `hurt` and weighted toward the high motor, where
-// being hit sits in the low one. The heavy is a giant's club arriving on a small shield.
+// CAUGHT ON THE SHIELD.
 pub const guard_block = Event{ .low = 0.30, .high = 0.42, .dur = 0.09 };
 pub const guard_block_heavy = Event{ .low = 0.62, .high = 0.55, .dur = 0.18 };
-// …and the shield knocked aside: the worst thing that can happen to you short of dying, and it says
-// so — longer than `hurt_heavy`, because what you are being told is that the NEXT one is free.
+// …and the shield knocked aside: the worst thing that can happen to you short of dying, and it says so — longer than `hurt_heavy`, because what you are being told is that the NEXT one is free.
 pub const guard_break = Event{ .low = 0.95, .high = 0.52, .dur = 0.42 };
 pub const roll = Event{ .low = 0.16, .high = 0.40, .dur = 0.10 }; // the dodge whump
 pub const kill = Event{ .low = 0.34, .high = 0.20, .dur = 0.14 }; // a toad falls
@@ -47,8 +32,7 @@ const Motor = struct {
         if (m.dur <= 0 or m.t <= 0) return 0;
         return m.peak * (m.t / m.dur);
     }
-    // Takes over only if at least as strong RIGHT NOW as what is still playing: a big impact overrides
-    // a fading buzz, a small tick never truncates a bigger event.
+    // Takes over only if at least as strong RIGHT NOW as what is still playing: a big impact overrides a fading buzz, a small tick never truncates a bigger event.
     fn pulse(m: *Motor, peak: f32, dur: f32) void {
         if (dur <= 0) return;
         if (peak >= m.level()) {
@@ -71,8 +55,7 @@ pub const Rumble = struct {
         self.high.pulse(e.high, e.dur);
     }
 
-    // `active` gates OUTPUT only: pass false with no controller or while paused, so the grip is silent
-    // while envelopes keep decaying in the background (unpausing doesn't replay a stale buzz).
+    // `active` gates OUTPUT only: pass false with no controller or while paused, so the grip is silent while envelopes keep decaying in the background (unpausing doesn't replay a stale buzz).
     pub fn update(self: *Rumble, dt: f32, active: bool) void {
         self.low.tick(dt);
         self.high.tick(dt);
@@ -98,7 +81,7 @@ fn setMotors(low: f32, high: f32) void {
     }
 }
 
-// Windows / XInput backend. Resolved lazily from the first xinput DLL that loads.
+// Windows / XInput backend.
 const win = struct {
     const WINAPI = std.os.windows.WINAPI;
     const XINPUT_VIBRATION = extern struct { wLeftMotor: u16 = 0, wRightMotor: u16 = 0 };

@@ -3,9 +3,14 @@
 A third-person **soulslike** prototype in native **Zig 0.14.1 + raylib**, founded on the sibling
 `../zig-rts` rendering engine (procedural-mesh `Builder`, single-sun shadow-map pipeline).
 
-Keep this file lean. Prefer no comments in code; write succinct ones for novel/edge cases.
-Reuse existing helpers before adding new code. Don't make ad-hoc product/design decisions —
-ask. The owner (David) drives the design; implement what's asked and nothing extra.
+IMPORTANT!!! IMPORTANT!!!
+-
+
+Keep this file lean!!! Prefer no comments in code!!! write succinct ones for novel/edge cases ONLY.
+Reuse existing helpers before adding new code ALWAYS. Don't make ad-hoc product/design decisions.
+ask. The owner drives the design; implement what's asked and nothing extra.
+
+-
 
 ## The laws (owner's, non-negotiable)
 

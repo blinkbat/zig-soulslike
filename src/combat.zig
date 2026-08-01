@@ -1,74 +1,40 @@
 const std = @import("std");
 const mathx = @import("mathx.zig");
 
-// ── COMBAT VITALS: HP + the two-tier ELDEN RING stagger model ───────────────────────────
-// Every character embeds one. Both meters RESET on the break they cause (docs/ELDEN_RING.md):
-//   POISE  — flinch resistance → LIGHT STUN. Regens, so lights only interrupt if landed fast
-//            enough. Frogs get LOW poise.
-//   STANCE — chipped by each light break and directly by heavies → HEAVY STUN. Regens SLOWER, so
-//            the heavy demands sustained PRESSURE. (ER's stance break, minus the riposte.)
-// Pure logic. Stun ANIMATIONS live in each character; this only decides WHAT a hit triggers.
+// Every character embeds one.
 
 pub const StunKind = enum { none, light, heavy };
 
 // What the victim reacts to THIS frame.
 pub const HitResult = enum { none, light, heavy, death };
 
-/// WHAT BECAME OF A BLOW aimed at the hero, which is not the same question as what his vitals did
-/// with it — a hit can be rolled through, or caught on the shield, and neither reaches `Vitals.hit`.
-/// Returned by `hero.takeHit` because the CALLER has to know: the felt beat for a blocked blow is a
-/// different rumble, a different shake and a different voice from one that landed, and before this
-/// existed game.zig played the hurt grunt for every blow a foe reported — i-framed ones included.
+/// WHAT BECAME OF A BLOW aimed at the hero, which is not the same question as what his vitals did with it — a hit can be rolled through, or caught on the shield, and neither reaches `Vitals.hit`.
 pub const HitOutcome = enum { ignored, taken, blocked, guardBroken };
 
-// One landed blow, as plain data (attacker/victim stay decoupled). `stance` is DIRECT stance damage:
-// heavies set it to break stance faster, lights leave it 0 and lean on the light-break chip.
+// One landed blow, as plain data (attacker/victim stay decoupled).
 pub const Hit = struct {
     dmg: f32 = 0,
     poise: f32 = 0,
     stance: f32 = 0,
 };
 
-// ── tuning ──────────────────────────────────────────────────────────────────────────────
-// THE TWO SIDES ARE TUNED SEPARATELY (owner's call): a stagger you INFLICT is a punish window you
-// must be able to walk into, one you SUFFER is time taken off the player. Foe numbers sit beside the
-// hero's so the gap is visible.
+// THE TWO SIDES ARE TUNED SEPARATELY (owner's call): a stagger you INFLICT is a punish window you must be able to walk into, one you SUFFER is time taken off the player.
 const REGEN_DELAY = 0.8; // seconds after the last hit before the HERO's meters refill
 const POISE_REFILL = 1.3; // seconds to refill poise from empty
 const STANCE_REFILL = 4.6; // …stance slower — the "keep pressure on" meter
 const LIGHT_BREAK_STANCE = 0.40; // fraction of max stance one LIGHT break chips off
-// Chip damage must PERSIST, or a foe recovered before your next swing can only be staggered by a
-// burst and every fight collapses into "land two fast or don't bother".
+// Chip damage must PERSIST, or a foe recovered before your next swing can only be staggered by a burst and every fight collapses into "land two fast or don't bother".
 const FOE_REGEN_DELAY = 2.2;
 const FOE_REGEN_RATE = 0.45;
-// Stun durations. The foe's are what a stance break is FOR — long enough to close and take a free
-// swing, or breaking it bought nothing but a noise.
+// Stun durations.
 pub const LIGHT_STUN_DUR = 0.46;
 pub const HEAVY_STUN_DUR = 1.15;
 pub const FOE_LIGHT_STUN_DUR = 0.78;
 pub const FOE_HEAVY_STUN_DUR = 2.40;
-// Since-last-event clocks start SATURATED, so an untouched meter is already past its gate. The value
-// is `mathx`'s now: the hero rig and the archer's arrows keep the same kind of clock and were writing
-// the bare literal, and one sentinel with one meaning belongs in one place.
+// Since-last-event clocks start SATURATED, so an untouched meter is already past its gate.
 const LONG_AGO = mathx.LONG_AGO;
 
-// ── NOBODY IS POISE-DAMAGED WHILE ALREADY REELING (owner's call) ─────────────────────────
-// A reaction is a beat you are already paying for; chipping poise through it means the blow that
-// staggered you also sets up the next stagger, and a warband or a chained R1 can hold either side in
-// one unbroken flinch. So for as long as a stun runs, incoming poise is DROPPED — and when it ends,
-// poise goes back to FULL, both tiers. Two consequences worth stating because they are the mechanic:
-//
-//   - HP AND DIRECT STANCE DAMAGE STILL LAND. The window you opened is still a punish window: land a
-//     heavy inside a light stun and its stance damage counts, exactly as before. What you cannot do
-//     is re-flinch something that is already flinching.
-//   - THE REFILL AT THE END IS WHAT MAKES IT SYMMETRIC. A light break already reset poise, but a
-//     HEAVY break resets STANCE and leaves poise wherever the blow left it — so without this, coming
-//     out of the bigger reaction left you more fragile than coming out of the small one.
-//
-// `Vitals` owns the clock rather than reading each rig's, because `foe.strike` applies a blow through
-// `hit()` knowing nothing about the creature it belongs to. The DURATIONS are the same two constants
-// the rigs pose against, carried per-side by init/initFoe and pinned by a test below — one clock, two
-// readers, no third number to drift.
+// A reaction is a beat you are already paying for; chipping poise through it means the blow that staggered you also sets up the next stagger, and a warband or a chained R1 can hold either side in one unbroken flinch.
 
 pub const Vitals = struct {
     hp: f32,
@@ -81,8 +47,7 @@ pub const Vitals = struct {
     dead: bool = false,
     regenDelay: f32 = REGEN_DELAY, // …how long that gate holds
     regenRate: f32 = 1.0, // …and the multiplier on the refill speed once it opens
-    /// Seconds of stun still to run. Above zero = poise-immune (see the block above). Seeded by `hit`
-    /// from the two durations below and counted down by `tick`.
+    /// Seconds of stun still to run.
     stunLeft: f32 = 0,
     lightStun: f32 = LIGHT_STUN_DUR, // …how long each tier's reaction lasts for THIS character
     heavyStun: f32 = HEAVY_STUN_DUR,
@@ -98,9 +63,7 @@ pub const Vitals = struct {
         };
     }
 
-    /// A FOE's regen schedule — slow to start, slow to fill — and its LONGER stun windows, which are
-    /// also how long its poise immunity lasts. Every enemy builds through here; only the hero uses
-    /// plain `init`.
+    /// A FOE's regen schedule — slow to start, slow to fill — and its LONGER stun windows, which are also how long its poise immunity lasts.
     pub fn initFoe(hpMax: f32, poiseMax: f32, stanceMax: f32) Vitals {
         var v = init(hpMax, poiseMax, stanceMax);
         v.regenDelay = FOE_REGEN_DELAY;
@@ -110,17 +73,12 @@ pub const Vitals = struct {
         return v;
     }
 
-    /// Is a reaction still running — and therefore poise still immune? The rigs keep their own clocks
-    /// for the ANIMATION; this is the mechanical one.
+    /// Is a reaction still running — and therefore poise still immune?
     pub fn stunned(self: *const Vitals) bool {
         return self.stunLeft > 0;
     }
 
-    /// ARM A REACTION'S IMMUNITY WINDOW. `hit` calls this for every stun IT decides, which covers every
-    /// foe — they can only be staggered through a blow. The hero has one other door: a GUARD BREAK is a
-    /// heavy stagger that `hit` never returned (the chip that emptied the bar was a plain damage hit),
-    /// so `hero.enterStun` calls this as well. Idempotent on purpose, so pairing it with a stun the hit
-    /// already armed is harmless rather than something the caller has to reason about.
+    /// ARM A REACTION'S IMMUNITY WINDOW.
     pub fn beginStun(self: *Vitals, kind: StunKind) void {
         self.stunLeft = switch (kind) {
             .none => 0,
@@ -133,18 +91,7 @@ pub const Vitals = struct {
         return if (self.hpMax > 0) mathx.clampF(self.hp / self.hpMax, 0, 1) else 0;
     }
 
-    /// PUT HP BACK. The kobold priest's whole reason to exist, and the first thing in the game that
-    /// moves this meter UPWARD on a foe — `tick` deliberately regenerates poise and stance and never
-    /// HP ("flasks only"), so a healer needs its own door.
-    ///
-    /// IT CANNOT RAISE THE DEAD, and that is the load-bearing line rather than a nicety: `dead` is a
-    /// LATCH the whole foe standard reads (`alive`, the dissipation, `justDied`), so healing a corpse
-    /// past 0 would hand back a foe with hp on the clock and `dead` still true — a thing with a health
-    /// bar that cannot be hit and never finishes dying. A priest watching a friend fall has missed its
-    /// window; that IS the counterplay.
-    ///
-    /// Returns how much it actually restored, so a caster can tell a real save from a wasted cast and
-    /// only pay for the one that landed.
+    /// PUT HP BACK.
     pub fn heal(self: *Vitals, amt: f32) f32 {
         if (self.dead or amt <= 0) return 0;
         const before = self.hp;
@@ -152,23 +99,18 @@ pub const Vitals = struct {
         return self.hp - before;
     }
 
-    /// Is this one worth healing — alive, and actually missing something? What a priest picks its
-    /// target by, and the same test `heal` makes, so the choice and the pour cannot disagree.
+    /// Is this one worth healing — alive, and actually missing something?
     pub fn needsHeal(self: *const Vitals, slack: f32) bool {
         return !self.dead and self.hp < self.hpMax - slack;
     }
 
-    // Per frame. Nothing regens until `regenDelay` after the last hit; HP never does (flasks only).
+    // Per frame.
     pub fn tick(self: *Vitals, dt: f32) void {
         self.sinceHit += dt;
-        // THE STUN CLOCK RUNS BEFORE THE REGEN GATE, and that ordering is load-bearing: the hit that
-        // started the stun also zeroed `sinceHit`, and a foe's `regenDelay` (2.2 s) is longer than
-        // either of its stun windows — so behind the gate the clock would never reach zero and the
-        // poise immunity would never lift.
+        // THE STUN CLOCK RUNS BEFORE THE REGEN GATE, and that ordering is load-bearing: the hit that started the stun also zeroed `sinceHit`, and a foe's `regenDelay` (2.2 s) is longer than either of its stun windows — so behind the gate the clock would never reach zero and the poise immunity would never lift.
         if (self.stunLeft > 0) {
             self.stunLeft -= dt;
-            // THE REACTION IS OVER: poise back to full, whichever tier it was. This is the "recharges
-            // when the stun ends" half — see the block above for why the heavy tier needs it.
+            // THE REACTION IS OVER: poise back to full, whichever tier it was.
             if (self.stunLeft <= 0) {
                 self.stunLeft = 0;
                 self.poise = self.poiseMax;
@@ -179,12 +121,7 @@ pub const Vitals = struct {
         self.stance = mathx.minF(self.stanceMax, self.stance + self.stanceMax / STANCE_REFILL * self.regenRate * dt);
     }
 
-    // A killing blow latches `dead`; otherwise the tiers cascade (poise empties → light; that break
-    // or direct stance damage empties stance → heavy), heavy outranking light on the same hit.
-    //
-    // POISE IS IMMUNE WHILE A STUN RUNS (see the block above the struct). HP and direct STANCE damage
-    // are not: a heavy landed inside a light stun still breaks stance, which is the punish window
-    // doing its job.
+    // A killing blow latches `dead`; otherwise the tiers cascade (poise empties → light; that break or direct stance damage empties stance → heavy), heavy outranking light on the same hit.
     pub fn hit(self: *Vitals, h: Hit) HitResult {
         if (self.dead) return .none;
         self.hp = mathx.maxF(0, self.hp - h.dmg);
@@ -216,11 +153,7 @@ pub const Vitals = struct {
     }
 };
 
-// ── STAMINA: the hero's alone ───────────────────────────────────────────────────────────
-// ER's shallow, fast-refilling pool (docs/ELDEN_RING.md §3 — these ARE its Endurance-15 numbers): a
-// flat bite per action, pouring back ~4x as fast as a roll spends it, so it paces a FLURRY without
-// becoming a resource you manage between fights. Deliberately NOT on `Vitals`, which every foe
-// shares — a foe meter nothing reads would rot. Enemies pay for commitment in recovery frames.
+// ER's shallow, fast-refilling pool (docs/ELDEN_RING.md §3 — these ARE its Endurance-15 numbers): a flat bite per action, pouring back ~4x as fast as a roll spends it, so it paces a FLURRY without becoming a resource you manage between fights.
 pub const STAM_MAX = 105.0; // ER's Endurance-15 pool — about eight rolls from full
 pub const STAM_ROLL = 12.0; // ER's flat, load-independent roll cost: the anchor for the rest
 pub const STAM_LIGHT = 10.0; // R1, ER's straight-sword band
@@ -228,65 +161,44 @@ pub const STAM_HEAVY = 16.0; // R2 — ER heavies run ~1.3-1.8x their own light
 pub const STAM_SPRINT = 9.0; // …per second held
 const STAM_REGEN = 45.0; // …per second, once the delay is out
 const STAM_DELAY = 0.55; // seconds after the last spend before it refills
-/// How long the bar flags a refused action — long enough to read as deliberate, short enough that it
-/// never lingers past the pool coming back.
+/// How long the bar flags a refused action — long enough to read as deliberate, short enough that it never lingers past the pool coming back.
 pub const STAM_REFUSE_FLASH: f32 = 0.35;
 
 // An empty bar locks out roll / attack / sprint (owner's call) — the genre's primary death window.
-// NOT a no-time-theft violation: that law forbids taking control away DURING the player's own action,
-// where this is the consequence of a choice made a second earlier, readable off a bar, and WALKING is
-// never gated. It was deliberately OFF once (pure time taken off the player); switching it on was a
-// combat-feel call and the owner's. Kept as a CONSTANT because it is the one switch that turns the
-// whole economy off, and every gate asks `canAct`/`canSprint` rather than the pool.
 pub const STAM_LOCKOUT = true;
 
-/// WINDED: run the pool ALL THE WAY OUT and the sprint stays denied until the bar is back to this
-/// fraction of full (owner's call). Without it, sprint on an empty bar is a stutter — the first
-/// milligram of regen buys a frame of running that empties it again, so a spent player mashing Shift
-/// travels at a walk anyway while the bar strobes at zero. A latch that has to be paid back to half
-/// makes running dry a decision with a cost you can see, and the cost is the thing that makes the
-/// sprint worth spending in the first place.
-///
-/// SPRINT ONLY. Roll and attack keep the PANIC rule (`canAct` — any stamina above zero), because
-/// deleting the panic roll is exactly what that rule exists to prevent.
+/// WINDED: run the pool ALL THE WAY OUT and the sprint stays denied until the bar is back to this fraction of full (owner's call).
 pub const STAM_WIND_CLEAR: f32 = 0.5;
 
 pub const Stamina = struct {
     cur: f32 = STAM_MAX,
     max: f32 = STAM_MAX,
     sinceSpend: f32 = LONG_AGO, // gates the refill delay
-    /// Latched the moment the pool hits 0, held until it has refilled to `STAM_WIND_CLEAR`. A LATCH
-    /// and not a `cur == 0` test, which is the whole point: the denial has to outlive the emptiness.
+    /// Latched the moment the pool hits 0, held until it has refilled to `STAM_WIND_CLEAR`.
     winded: bool = false,
 
     pub fn frac(self: *const Stamina) f32 {
         return if (self.max > 0) mathx.clampF(self.cur / self.max, 0, 1) else 0;
     }
 
-    /// Can a committed action START? Not "can you pay for it" but "have you got ANY left": a roll costs
-    /// 12 and you may take it on 1, emptying the bar and locking yourself out after. That asymmetry is
-    /// the PANIC ROLL, the genre's most important move — gating on `cur >= cost` turns the bottom tenth
-    /// of the bar into something that looks like stamina and behaves like nothing.
+    /// Can a committed action START?
     pub fn canAct(self: *const Stamina) bool {
         return !STAM_LOCKOUT or self.cur > 0;
     }
 
-    /// Charge a one-off action. Floors at 0 — a committed action is never refunded or cut short.
+    /// Charge a one-off action.
     pub fn spend(self: *Stamina, cost: f32) void {
         self.cur = mathx.maxF(0, self.cur - cost);
         self.sinceSpend = 0;
         self.settleWind();
     }
 
-    /// A sprint is asked separately from `canAct` for two reasons: it is CONTINUOUS, so it must stop
-    /// the instant the bar empties (the caller drops the hero to a WALK, never freezes him), and it is
-    /// the one action the WINDED latch gates.
+    /// A sprint is asked separately from `canAct` for two reasons: it is CONTINUOUS, so it must stop the instant the bar empties (the caller drops the hero to a WALK, never freezes him), and it is the one action the WINDED latch gates.
     pub fn canSprint(self: *const Stamina) bool {
         return self.canAct() and (!STAM_LOCKOUT or !self.winded);
     }
 
-    /// Per frame. `sprinting` bleeds continuously; `committed` (mid-swing / mid-roll) only PAUSES the
-    /// refill, ER-style. Neither ever touches the player's input.
+    /// Per frame.
     pub fn tick(self: *Stamina, dt: f32, sprinting: bool, committed: bool) void {
         if (sprinting) {
             self.cur = mathx.maxF(0, self.cur - STAM_SPRINT * dt);
@@ -301,14 +213,11 @@ pub const Stamina = struct {
     }
 
     /// The fill the bar owes before the sprint comes back, as a fraction, or 0 when it owes nothing.
-    /// The HUD's only question — it draws the mark, it does not know the rule.
     pub fn windedTo(self: *const Stamina) f32 {
         return if (self.canSprint()) 0 else STAM_WIND_CLEAR;
     }
 
-    /// The winded latch, set and cleared in ONE place and called from every path that moves `cur`. Two
-    /// copies of "did that empty me?" is how the drain from a sprint and the drain from a roll end up
-    /// disagreeing about whether the player is spent.
+    /// The winded latch, set and cleared in ONE place and called from every path that moves `cur`.
     fn settleWind(self: *Stamina) void {
         if (self.cur <= 0) {
             self.winded = true;
@@ -324,45 +233,23 @@ pub const Stamina = struct {
     }
 };
 
-// ── GUARDING: the plain Dark Souls block, and a SMALL SHIELD to do it with ───────────────
-// Hold the shield up and a blow from the front is caught on it instead of on you: almost no HP,
-// but it is paid for out of STAMINA, and running the bar out under a blow is a GUARD BREAK — a
-// heavy stagger, wide open. No parry, no guard counter (docs/ELDEN_RING.md §3 has both; neither is
-// built). That is the whole system, and it is deliberately the DS1 shape rather than ER's: block,
-// pay, and either punish the gap or lose your footing.
-//
-// THE SHIELD IS SMALL, and every number here says so. A greatshield trades mobility for a wall you
-// can stand behind; a small one buys you a beat, and what it cannot do is soak a giant. So:
-//   - it does NOT reach 100% physical negation (ER's medium/greatshield rule), and the chip that
-//     gets through CAN kill you, exactly as it can in DS,
-//   - its STABILITY is poor, which in this model is the stamina it costs per blow, and it costs by
-//     the WEIGHT OF THE BLOW: a kobold's teeth are nothing and the ogre's club breaks you in three.
-// Both are one-line dials, and they are the two that decide whether guarding is a crutch.
+// Hold the shield up and a blow from the front is caught on it instead of on you: almost no HP, but it is paid for out of STAMINA, and running the bar out under a blow is a GUARD BREAK — a heavy stagger, wide open.
 pub const GUARD_NEGATE: f32 = 0.85; // fraction of a blocked blow's HP damage the shield eats…
 pub const GUARD_STAM_FLAT: f32 = 5.0; // …stamina every blocked blow costs…
 pub const GUARD_STAM_PER_DMG: f32 = 1.10; // …plus this per point of the blow's RAW damage (stability)
-/// How far off his facing the shield covers, in degrees EITHER SIDE. A shield is a direction, not a
-/// bubble: getting round it is the counterplay a warband already knows how to do, and it is why
-/// guarding cannot answer a group the way rolling can. Wide enough not to punish a fight where the
-/// camera and the foe disagree by a few degrees, nowhere near a hemisphere.
+/// How far off his facing the shield covers, in degrees EITHER SIDE.
 pub const GUARD_ARC: f32 = 65.0;
 
-/// A BLOCKED BLOW STILL COSTS POISE — none of it. It costs STAMINA, and this is the whole stability
-/// model: flat bite plus the weight of what hit you.
+/// A BLOCKED BLOW STILL COSTS POISE — none of it.
 pub fn guardStamina(h: Hit) f32 {
     return GUARD_STAM_FLAT + GUARD_STAM_PER_DMG * h.dmg;
 }
-/// …and the CHIP: what gets past a shield that is not a wall. Kept as real damage on purpose — chip
-/// you cannot die to is a number, and DS lets it kill you.
+/// …and the CHIP: what gets past a shield that is not a wall.
 pub fn guardChip(h: Hit) f32 {
     return h.dmg * (1.0 - GUARD_NEGATE);
 }
 
-// ── FOCUS (FP): the hero's alone, like Stamina ──────────────────────────────────────────
-// ER's blue bar. NOTHING SPENDS IT YET — there are no spells or skills — so it sits full, exactly
-// as it does in a build with no catalyst equipped. It is a real meter rather than the HUD's old
-// hardcoded 1.0 for one reason: the Cerulean flask has to pour into SOMETHING, and a flask whose
-// target is a literal cannot be tested, tuned, or seen to work.
+// ER's blue bar.
 pub const FP_MAX = 60.0;
 
 pub const Focus = struct {
@@ -372,14 +259,11 @@ pub const Focus = struct {
     pub fn frac(self: *const Focus) f32 {
         return if (self.max > 0) mathx.clampF(self.cur / self.max, 0, 1) else 0;
     }
-    /// Is there room for a pour? Asked BEFORE the charge is spent — a flask whose restore would be
-    /// a no-op must be refused at the press, not discovered a second later when the liquid lands
-    /// and the charge is already gone (see `hero.startDrink`).
+    /// Is there room for a pour?
     pub fn canTake(self: *const Focus) bool {
         return self.cur < self.max - 1e-3;
     }
-    /// Returns whether it actually took any. The same test `canTake` makes, kept here so the pour
-    /// can never disagree with the gate that let it through.
+    /// Returns whether it actually took any.
     pub fn restore(self: *Focus, amt: f32) bool {
         if (!self.canTake()) return false;
         self.cur = minF(self.max, self.cur + amt);
@@ -390,19 +274,7 @@ pub const Focus = struct {
     }
 };
 
-// ── FLASKS (Elden Ring's, both of them) ─────────────────────────────────────────────────
-// The Flask of CRIMSON Tears restores HP, the Flask of CERULEAN Tears restores FP, they share the
-// quick-item slot, and D-pad down cycles which one is up. Charges refill at the grace — here, on
-// the respawn, which is the same event.
-//
-// THE DRINK IS COMMITTED, and that is the whole design. A heal you can take for free mid-combo is
-// not a resource, it is a button; ER makes you find a gap, and the gap is what turns "I am hurt"
-// into a decision. So it takes FLASK_DRINK_DUR of standing still, the restore lands PART WAY IN
-// (raise the flask, then drink — a heal that fires on frame one lets you cancel out of your own
-// commitment), and a blow that staggers you interrupts it AND spends the charge, ER-style.
-//
-// (ER lets you walk while drinking. This one plants you, because walking-and-drinking needs the
-// flask arm blended onto the live walk and the hero has no upper-body layer yet — see poseDrink.)
+// The Flask of CRIMSON Tears restores HP, the Flask of CERULEAN Tears restores FP, they share the quick-item slot, and D-pad down cycles which one is up.
 pub const FlaskKind = enum { crimson, cerulean };
 
 pub const FLASK_CRIMSON: u8 = 4; // charges of each at a fresh grace…
@@ -427,16 +299,14 @@ pub const Flasks = struct {
     pub fn ready(self: *const Flasks) u8 {
         return self.charges(self.sel);
     }
-    /// D-pad down. Cycles regardless of whether the other one has anything left — an empty flask
-    /// you can still SEE in the slot is how you know to go and rest, and skipping it would make
-    /// the cycle silently do nothing when you are dry.
+    /// D-pad down.
     pub fn cycle(self: *Flasks) void {
         self.sel = switch (self.sel) {
             .crimson => .cerulean,
             .cerulean => .crimson,
         };
     }
-    /// Spend one charge of the selected flask. Callers gate on this: false = nothing was drunk.
+    /// Spend one charge of the selected flask.
     pub fn take(self: *Flasks) bool {
         switch (self.sel) {
             .crimson => {
@@ -457,16 +327,7 @@ pub const Flasks = struct {
     }
 };
 
-// ── REGEN: HP back over TIME, and the first thing in the game that is not a flask ────────
-// `Vitals.tick` refills poise and stance and deliberately never HP ("flasks only"), and `heal` is an
-// instant pour. This is the third shape: a slow drip you set going and then have to SURVIVE, which
-// is a different decision from a flask. A flask is an answer to being hurt NOW; a drip is a bet that
-// the next twenty seconds go well.
-//
-// MUSHROOM JERKY is the first item to use it. THE POTENCY IS NOT HERE — it rides `item.Use.regen`
-// with the item it belongs to, because "how much, over how long" is what tells one edible from the
-// next, and a second one reading its numbers off a constant named after the first is a bug waiting
-// to be written. This file owns the MECHANISM; the item owns the dose.
+// `Vitals.tick` refills poise and stance and deliberately never HP ("flasks only"), and `heal` is an instant pour.
 
 pub const Regen = struct {
     left: f32 = 0, // seconds still to run
@@ -475,16 +336,13 @@ pub const Regen = struct {
     pub fn active(self: *const Regen) bool {
         return self.left > 0;
     }
-    /// Start (or RESTART) a drip of `total` HP spread over `dur`. Eating a second one refreshes
-    /// rather than stacking: two overlapping drips at different rates is a thing no player can read
-    /// off a bar, and the bar is the only place this is visible.
+    /// Start (or RESTART) a drip of `total` HP spread over `dur`.
     pub fn start(self: *Regen, total: f32, dur: f32) void {
         if (dur <= 0) return;
         self.left = dur;
         self.rate = total / dur;
     }
-    /// Per frame. Pours through `Vitals.heal`, so it tops out at max and CANNOT raise the dead —
-    /// the same door the kobold priest uses, for the same reason.
+    /// Per frame.
     pub fn tick(self: *Regen, dt: f32, v: *Vitals) void {
         if (!self.active()) return;
         if (v.dead) return self.reset(); // …and dying ends it: a corpse is not still digesting
@@ -492,22 +350,16 @@ pub const Regen = struct {
         self.left -= step;
         _ = v.heal(self.rate * step);
     }
-    // (A `fracLeft` for a HUD bar was written here and DELETED: nothing drew it, and its own
-    // doc-comment said "what a bar would draw" about a bar that does not exist. Second time in two
-    // passes — the shield's `blocks` counter was the first. Write the reader, then the accessor.)
+    // (A `fracLeft` for a HUD bar was written here and DELETED: nothing drew it, and its own doc-comment said "what a bar would draw" about a bar that does not exist.
     pub fn reset(self: *Regen) void {
         self.left = 0;
         self.rate = 0;
     }
 };
 
-// ── RUNES: the run's currency — the HERO'S ALONE, like Stamina ───────────────────────────
-// Souls / blood echoes / runes: same mechanic, ER's name (ER is the north star). A kill pays out the
-// instant it lands but the COUNTER never jumps — it ROLLS up over a beat, which is the difference
-// between a readout and a reward. Pure logic, so the roll is testable without a HUD to look at.
+// Souls / blood echoes / runes: same mechanic, ER's name (ER is the north star).
 pub const RUNE_ROLL_RATE = 7.0; // …of the remaining gap, per second — a big haul counts up fast
 pub const RUNE_ROLL_FLOOR = 26.0; // …but never slower, or the last few runes crawl for a second and a
-//   half after the number has visually stopped moving.
 
 pub const Runes = struct {
     total: u32 = 0,
@@ -517,8 +369,7 @@ pub const Runes = struct {
         self.total += n;
     }
 
-    /// Per frame. EXPONENTIAL with a floor: proportional so a 900-rune giant counts up fast, floored
-    /// so a 60-rune toad doesn't take longer to tally than the fight did.
+    /// Per frame.
     pub fn tick(self: *Runes, dt: f32) void {
         const goal: f32 = @floatFromInt(self.total);
         if (self.shown >= goal) {
@@ -528,7 +379,7 @@ pub const Runes = struct {
         self.shown = minF(goal, self.shown + maxF((goal - self.shown) * RUNE_ROLL_RATE, RUNE_ROLL_FLOOR) * dt);
     }
 
-    /// What to print. FLOORED, not rounded: a counter mid-roll must never show more than is banked.
+    /// What to print.
     pub fn display(self: *const Runes) u32 {
         return @intFromFloat(@floor(maxF(self.shown, 0)));
     }
@@ -537,7 +388,6 @@ pub const Runes = struct {
 const minF = mathx.minF;
 const maxF = mathx.maxF;
 
-// ── invariants under test (pure logic) ──────────────────────────────────────────────────
 test "a small hit chips poise without a stun" {
     var v = Vitals.init(100, 20, 40);
     try std.testing.expectEqual(HitResult.none, v.hit(.{ .dmg = 5, .poise = 8 }));
@@ -557,10 +407,7 @@ test "enough light breaks cascade into a heavy stun (keep pressure on)" {
     var v = Vitals.init(100, 10, 20); // low poise + low stance = a frog; breaks fast
     var heavies: u32 = 0;
     var i: u32 = 0;
-    // Each pair breaks poise once, and each break's own stun is RUN OUT before the next pair — poise
-    // is immune while a reaction plays, so pressure now means landing between the flinches rather
-    // than through them. Stance never regens across it (its delay is far longer than the stun), which
-    // is what still lets the chip accumulate into the heavy.
+    // Each pair breaks poise once, and each break's own stun is RUN OUT before the next pair — poise is immune while a reaction plays, so pressure now means landing between the flinches rather than through them.
     while (i < 12) : (i += 1) {
         if (v.hit(.{ .poise = 6 }) == .heavy) heavies += 1;
         while (v.stunned()) v.tick(1.0 / 60.0);
@@ -569,16 +416,13 @@ test "enough light breaks cascade into a heavy stun (keep pressure on)" {
 }
 
 test "NOBODY IS POISE-DAMAGED WHILE REELING, and poise is full again when the stun ends" {
-    // The owner's rule, and the chain-flinch it exists to kill: before this, the blow that staggered
-    // you also set up the next stagger, so a warband or a mashed R1 could hold either side in one
-    // unbroken reaction.
+    // The owner's rule, and the chain-flinch it exists to kill: before this, the blow that staggered you also set up the next stagger, so a warband or a mashed R1 could hold either side in one unbroken reaction.
     var v = Vitals.init(100, 20, 500); // huge stance, so nothing here cascades to a heavy
     _ = v.hit(.{ .poise = 12 });
     try std.testing.expectEqual(HitResult.light, v.hit(.{ .poise = 12 }));
     try std.testing.expect(v.stunned());
     const poiseAt = v.poise;
-    // Ten more blows through the reel: HP lands every time, poise does not move at all, and not one
-    // of them re-flinches him.
+    // Ten more blows through the reel: HP lands every time, poise does not move at all, and not one of them re-flinches him.
     var i: u32 = 0;
     while (i < 10) : (i += 1) {
         try std.testing.expectEqual(HitResult.none, v.hit(.{ .dmg = 1, .poise = 99 }));
@@ -593,23 +437,19 @@ test "NOBODY IS POISE-DAMAGED WHILE REELING, and poise is full again when the st
 }
 
 test "the immunity is POISE only: a heavy landed inside a light stun still breaks stance" {
-    // The punish window has to survive the fix. You opened it; landing the big one in it must still
-    // count, or "stagger it, then hit it" stops paying.
+    // The punish window has to survive the fix.
     var v = Vitals.initFoe(100, 10, 30);
     _ = v.hit(.{ .poise = 6 });
     try std.testing.expectEqual(HitResult.light, v.hit(.{ .poise = 6 }));
     try std.testing.expect(v.stunned());
-    // Stance is already chipped by the light break (LIGHT_BREAK_STANCE); one heavy's direct stance
-    // damage finishes it, mid-flinch.
+    // Stance is already chipped by the light break (LIGHT_BREAK_STANCE); one heavy's direct stance damage finishes it, mid-flinch.
     try std.testing.expectEqual(HitResult.heavy, v.hit(.{ .poise = 1, .stance = 20 }));
     // …and the bigger reaction re-armed the window at the HEAVY length, not the light one.
     try std.testing.expectApproxEqAbs(FOE_HEAVY_STUN_DUR, v.stunLeft, 1e-5);
 }
 
 test "the immunity window IS the reaction the rig poses, on both sides" {
-    // Two clocks for one thing is a drift waiting to happen: the rigs run their own `t` against these
-    // constants for the ANIMATION and Vitals runs `stunLeft` for the MECHANIC, so they have to be
-    // seeded from the same pair — and the hero's pair is not the foes'.
+    // Two clocks for one thing is a drift waiting to happen: the rigs run their own `t` against these constants for the ANIMATION and Vitals runs `stunLeft` for the MECHANIC, so they have to be seeded from the same pair — and the hero's pair is not the foes'.
     var hero = Vitals.init(100, 10, 999);
     var foeV = Vitals.initFoe(100, 10, 999);
     hero.beginStun(.light);
@@ -626,9 +466,7 @@ test "the immunity window IS the reaction the rig poses, on both sides" {
 }
 
 test "a HEAVY break refills poise when it ends, which is the tier that needed it" {
-    // A light break resets poise on the spot; a heavy one resets STANCE and leaves poise wherever the
-    // blow left it. Without the refill at the end, coming out of the bigger reaction left you more
-    // fragile than coming out of the small one — the wrong way round.
+    // A light break resets poise on the spot; a heavy one resets STANCE and leaves poise wherever the blow left it.
     var v = Vitals.init(100, 40, 20);
     v.poise = 3; // most of the way to a flinch already
     try std.testing.expectEqual(HitResult.heavy, v.hit(.{ .poise = 1, .stance = 30 }));
@@ -638,9 +476,7 @@ test "a HEAVY break refills poise when it ends, which is the tier that needed it
 }
 
 test "the stun clock is not held behind the regen gate" {
-    // THE ordering bug this guards: the hit that starts a stun also zeroes `sinceHit`, and a foe's
-    // regen delay (2.2 s) is longer than either of its stun windows. Counted down after that gate,
-    // `stunLeft` would never reach zero and a stunned foe would be poise-immune for ever.
+    // THE ordering bug this guards: the hit that starts a stun also zeroes `sinceHit`, and a foe's regen delay (2.2 s) is longer than either of its stun windows.
     try std.testing.expect(FOE_REGEN_DELAY > FOE_LIGHT_STUN_DUR);
     var v = Vitals.initFoe(100, 10, 999);
     _ = v.hit(.{ .poise = 6 });
@@ -665,17 +501,14 @@ test "lethal damage returns death and latches dead" {
 }
 
 test "a healer puts HP back, tops out, and CANNOT raise the dead" {
-    // The kobold priest's mechanic. The dead check is the one that matters: `dead` is a latch every
-    // part of the foe standard reads, so healing a corpse would produce a thing with health and no
-    // way to die.
+    // The kobold priest's mechanic.
     var v = Vitals.initFoe(100, 20, 40);
     _ = v.hit(.{ .dmg = 60 });
     try std.testing.expectApproxEqAbs(@as(f32, 40), v.hp, 1e-4);
     try std.testing.expect(v.needsHeal(1.0));
     try std.testing.expectApproxEqAbs(@as(f32, 25), v.heal(25), 1e-4); // …reports what it restored
     try std.testing.expectApproxEqAbs(@as(f32, 65), v.hp, 1e-4);
-    // Tops out rather than overflowing, and reports only the part that landed — so a caster can tell
-    // a real save from a wasted cast.
+    // Tops out rather than overflowing, and reports only the part that landed — so a caster can tell a real save from a wasted cast.
     try std.testing.expectApproxEqAbs(@as(f32, 35), v.heal(999), 1e-4);
     try std.testing.expectApproxEqAbs(v.hpMax, v.hp, 1e-4);
     try std.testing.expect(!v.needsHeal(1.0));
@@ -700,8 +533,7 @@ test "regen waits out the delay, then refills; HP never regens" {
 }
 
 test "a foe's chip damage PERSISTS far longer than the hero's" {
-    // The point of the split: two seconds on, the hero is fully recovered and the foe has not started
-    // refilling at all, so pressure actually accrues.
+    // The point of the split: two seconds on, the hero is fully recovered and the foe has not started refilling at all, so pressure actually accrues.
     var hero = Vitals.init(100, 20, 40);
     var foeV = Vitals.initFoe(100, 20, 40);
     _ = hero.hit(.{ .poise = 15 });
@@ -716,8 +548,7 @@ test "a foe's chip damage PERSISTS far longer than the hero's" {
 }
 
 test "the punish window a foe gives you outlasts the one you give it" {
-    // A break must be worth causing — long enough to walk in on. The hero's stays short: the FEEL
-    // RULES spend as little of the player's time as they can.
+    // A break must be worth causing — long enough to walk in on.
     try std.testing.expect(FOE_HEAVY_STUN_DUR > 2.0 * HEAVY_STUN_DUR);
     try std.testing.expect(FOE_LIGHT_STUN_DUR > LIGHT_STUN_DUR);
     try std.testing.expect(FOE_REGEN_DELAY > REGEN_DELAY and FOE_REGEN_RATE < 1.0);
@@ -755,8 +586,7 @@ test "running the bar dry costs the sprint until it is back to half" {
     while (s.cur > 0) : (t += 1.0 / 60.0) s.tick(1.0 / 60.0, true, false);
     try std.testing.expect(s.winded);
     try std.testing.expect(!s.canSprint());
-    // A sliver back is enough to ROLL again — the panic roll is untouched by this — and not nearly
-    // enough to run on, which is the whole difference the latch makes.
+    // A sliver back is enough to ROLL again — the panic roll is untouched by this — and not nearly enough to run on, which is the whole difference the latch makes.
     var u: f32 = 0;
     while (u < STAM_DELAY + 0.10) : (u += 1.0 / 60.0) s.tick(1.0 / 60.0, false, false);
     try std.testing.expect(s.cur > 0 and s.cur < STAM_WIND_CLEAR * s.max);
@@ -777,8 +607,7 @@ test "running the bar dry costs the sprint until it is back to half" {
 }
 
 test "THE PANIC ROLL: a sliver of stamina still buys a full-cost action" {
-    // The genre's defining asymmetry: act on ANY stamina above zero, pay what you have, be locked out
-    // after. Gating on `cur >= cost` would turn the bottom tenth of the bar into decoration.
+    // The genre's defining asymmetry: act on ANY stamina above zero, pay what you have, be locked out after.
     var s = Stamina{};
     s.cur = 1.0;
     try std.testing.expect(s.canAct());
@@ -788,8 +617,7 @@ test "THE PANIC ROLL: a sliver of stamina still buys a full-cost action" {
 }
 
 test "a roll chain costs the sum of its rolls — the refill cannot pay for it" {
-    // Committed actions pause the refill, so three rolls back to back cost 3x — not 3x minus whatever
-    // leaked back in between them.
+    // Committed actions pause the refill, so three rolls back to back cost 3x — not 3x minus whatever leaked back in between them.
     var s = Stamina{};
     var i: usize = 0;
     while (i < 3) : (i += 1) {
@@ -819,20 +647,17 @@ test "a swing PAUSES the refill rather than draining it" {
 }
 
 test "the pool refills far faster than any one action drains it" {
-    // Why stamina paces a flurry instead of gating a fight: the heaviest single spend is back inside
-    // half a second of standing still, once the delay is out.
+    // Why stamina paces a flurry instead of gating a fight: the heaviest single spend is back inside half a second of standing still, once the delay is out.
     try std.testing.expect(STAM_REGEN > 2.0 * STAM_HEAVY);
     try std.testing.expect(STAM_HEAVY > STAM_LIGHT and STAM_LIGHT < STAM_ROLL);
     try std.testing.expect(STAM_MAX / STAM_ROLL > 6.0); // ER's "~8 rolls from full"
 }
 
 test "the small shield costs stamina by the WEIGHT of the blow, and lets a little through" {
-    // The two dials that decide whether guarding is a crutch, asserted against the two ends of the
-    // game's damage range rather than against themselves.
+    // The two dials that decide whether guarding is a crutch, asserted against the two ends of the game's damage range rather than against themselves.
     const teeth = Hit{ .dmg = 9, .poise = 7 }; // a kobold's bite
     const club = Hit{ .dmg = 36, .poise = 44, .stance = 20 }; // the ogre's slam
-    // …but not PROPORTIONALLY: the flat bite means every block costs something, so a blow four
-    // times the damage is under three times the stamina, and that is deliberate.
+    // …but not PROPORTIONALLY: the flat bite means every block costs something, so a blow four times the damage is under three times the stamina, and that is deliberate.
     try std.testing.expect(guardStamina(club) > 2.5 * guardStamina(teeth));
     try std.testing.expect(guardStamina(club) < 4.0 * guardStamina(teeth));
     // …and the chip is a bite, not a scratch and not the blow.
@@ -840,8 +665,7 @@ test "the small shield costs stamina by the WEIGHT of the blow, and lets a littl
 }
 
 test "a small shield holds off the small stuff and CANNOT hold a giant" {
-    // The design in one test: the same full bar buys a long exchange with the little ones and three
-    // swings of the club. Blocking is a beat you buy, never a wall you stand behind.
+    // The design in one test: the same full bar buys a long exchange with the little ones and three swings of the club.
     var s = Stamina{};
     var bites: u32 = 0;
     while (s.cur > 0) : (bites += 1) s.spend(guardStamina(.{ .dmg = 9 }));
@@ -897,8 +721,7 @@ test "runes roll UP to a kill's payout and never overshoot it" {
     var t: f32 = 0;
     while (t < 3.0) : (t += 1.0 / 60.0) r.tick(1.0 / 60.0);
     try std.testing.expectEqual(@as(u32, 900), r.display()); // …and it lands EXACTLY on the total
-    // Never more than is banked, at ANY point in the roll: a counter that overshoots and settles back
-    // is worse than one that snaps.
+    // Never more than is banked, at ANY point in the roll: a counter that overshoots and settles back is worse than one that snaps.
     var r2 = Runes{};
     r2.gain(60);
     t = 0;
@@ -910,8 +733,7 @@ test "runes roll UP to a kill's payout and never overshoot it" {
 }
 
 test "a rune payout mid-roll retargets instead of restarting" {
-    // A second kill mid-tally adds to the GOAL rather than resetting the roll — otherwise a flurry
-    // leaves the counter permanently behind.
+    // A second kill mid-tally adds to the GOAL rather than resetting the roll — otherwise a flurry leaves the counter permanently behind.
     var r = Runes{};
     r.gain(120);
     var t: f32 = 0;
@@ -945,8 +767,7 @@ test "flasks: a drink spends exactly one charge, and an empty flask refuses" {
 }
 
 test "flasks: the cycle still moves when the other one is empty" {
-    // Otherwise being dry on blue would silently make D-pad down do nothing, and an input that
-    // does nothing with no feedback is the exact thing the stamina refusal flash exists to stop.
+    // Otherwise being dry on blue would silently make D-pad down do nothing, and an input that does nothing with no feedback is the exact thing the stamina refusal flash exists to stop.
     var f = Flasks{};
     f.cerulean = 0;
     f.cycle();
@@ -955,9 +776,7 @@ test "flasks: the cycle still moves when the other one is empty" {
 }
 
 test "focus refuses a pour it cannot take, so a full bar never eats a charge" {
-    // The one deliberate step away from ER: nothing spends FP in this build, so a Cerulean flask
-    // that consumed a charge into a permanently-full bar would be a button that can only ever be
-    // wasted. Restoring nothing reports false and the caller keeps the charge.
+    // The one deliberate step away from ER: nothing spends FP in this build, so a Cerulean flask that consumed a charge into a permanently-full bar would be a button that can only ever be wasted.
     var fp = Focus{};
     try std.testing.expect(!fp.restore(10));
     fp.cur = 10;
@@ -976,7 +795,6 @@ test "the lockout switch is what decides whether an empty pool bites" {
     var s = Stamina{};
     s.spend(STAM_MAX); // bone dry
     try std.testing.expectApproxEqAbs(@as(f32, 0), s.cur, 1e-4);
-    // Against the CONSTANT, not `false`, so flipping STAM_LOCKOUT off stays a one-line change instead
-    // of a one-line change plus a failing test.
+    // Against the CONSTANT, not `false`, so flipping STAM_LOCKOUT off stays a one-line change instead of a one-line change plus a failing test.
     try std.testing.expectEqual(!STAM_LOCKOUT, s.canAct());
 }

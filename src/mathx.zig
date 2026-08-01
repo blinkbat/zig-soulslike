@@ -1,8 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 
-// Gameplay math on the XZ ground plane (Y up); the *XZ helpers ignore Y. Copied verbatim
-// from zig-rts, extended with the vector/angle helpers the movement + FK rig need.
+// Gameplay math on the XZ ground plane (Y up); the *XZ helpers ignore Y.
 
 /// Vector3 constructor shorthand: v3(x, y, z).
 pub const v3 = rl.Vector3.init;
@@ -11,8 +10,7 @@ pub const rgba = rl.Color.init;
 /// The zero vector — used as a struct-field default (Go's zero value).
 pub const zero3 = rl.Vector3{ .x = 0, .y = 0, .z = 0 };
 
-/// Fixed-capacity inline string: stored in-struct (no alloc, no dangle when the owner
-/// moves). set() truncates to cap; slice() is the live view.
+/// Fixed-capacity inline string: stored in-struct (no alloc, no dangle when the owner moves). set() truncates to cap; slice() is the live view.
 pub fn StrBuf(comptime cap: usize) type {
     return struct {
         buf: [cap]u8 = [_]u8{0} ** cap,
@@ -29,20 +27,11 @@ pub fn StrBuf(comptime cap: usize) type {
     };
 }
 
-/// A SINCE-LAST-EVENT CLOCK THAT STARTS SATURATED, so an untouched one is already past every gate it
-/// feeds and nothing has to carry a separate "has this happened yet" bool. Big enough that a frame's
-/// dt leaves it unchanged in f32 — it never creeps and never overflows, which is why every user pins
-/// it with `@min(clock + dt, LONG_AGO)`.
-///
-/// Here rather than in one owner: `combat.Vitals.sinceHit` / `Stamina.sinceSpend` named it privately
-/// while `hero.blendT`, the hero's swing-trail ages and the archer's arrow-trail ages all wrote the
-/// bare `1e9` for the same meaning. (`collision.Solid.h` and `env`'s distance-transform FAR are a
-/// different idea — an unreachable DISTANCE, not a clock — and deliberately keep their own literals.)
+/// A SINCE-LAST-EVENT CLOCK THAT STARTS SATURATED, so an untouched one is already past every gate it feeds and nothing has to carry a separate "has this happened yet" bool.
 pub const LONG_AGO: f32 = 1e9;
 
 pub fn clampF(v: f32, lo: f32, hi: f32) f32 {
-    // NaN passes both `<` and `>`, so it'd escape unclamped and blow up a downstream
-    // @intFromFloat; pin it to lo (safe, no meaningful clamp position for NaN).
+    // NaN passes both `<` and `>`, so it'd escape unclamped and blow up a downstream @intFromFloat; pin it to lo (safe, no meaningful clamp position for NaN).
     if (std.math.isNan(v)) return lo;
     if (v < lo) return lo;
     if (v > hi) return hi;
@@ -53,9 +42,7 @@ pub fn maxF(a: f32, b: f32) f32 {
     return if (a > b) a else b;
 }
 
-/// `clampF`'s integer counterpart. Here rather than in the two UI files that wanted it: `ui.zig` and
-/// `objview.zig` each carried a private copy of this one line, which is one copy more than a thing
-/// this small has any business having.
+/// `clampF`'s integer counterpart.
 pub fn clampI(v: i32, lo: i32, hi: i32) i32 {
     return @max(lo, @min(hi, v));
 }
@@ -97,13 +84,6 @@ pub fn lenXZ(v: rl.Vector3) f32 {
 }
 
 /// TAKE A STEP ON XZ, CLAMPED TO ±`bounds`, leaving `pos.y` (the ground height under the actor) alone.
-/// Every rig that moves itself owes this, and every one of them wrote it out as the same pair of
-/// `clampF(pos.x + dir.x * dist, -bounds, bounds)` lines: the hero's roll and his attack lunge, the
-/// archer's kite and its backstep, the ogre's lumber, the toad's hop, and `foe.applyShove`'s knockback —
-/// seven copies of two lines, over a bound (`game.PLAY_HALF`) that moves with the map's `half:`.
-///
-/// Deliberately NOT the terrain rule: `env.walkStep` decides whether a step happens at all and
-/// `game.gateTerrain` re-takes each foe's through it. This is only the world's edge.
 pub fn stepXZ(pos: *rl.Vector3, dir: rl.Vector3, dist: f32, bounds: f32) void {
     pos.x = clampF(pos.x + dir.x * dist, -bounds, bounds);
     pos.z = clampF(pos.z + dir.z * dist, -bounds, bounds);
@@ -114,14 +94,12 @@ pub fn perpXZ(f: rl.Vector3) rl.Vector3 {
     return v3(f.z, 0, -f.x);
 }
 
-/// Unit forward direction on the ground for a yaw angle (yaw 0 → +Z) — the single source for
-/// the `v3(sinf, 0, cosf)` idiom, and the inverse of headingXZ.
+/// Unit forward direction on the ground for a yaw angle (yaw 0 → +Z) — the single source for the `v3(sinf, 0, cosf)` idiom, and the inverse of headingXZ.
 pub fn headingDir(yaw: f32) rl.Vector3 {
     return v3(sinf(yaw), 0, cosf(yaw));
 }
 
 /// Yaw angle of a ground direction (`atan2(x, z)`); the inverse of headingDir, Y ignored.
-/// A zero vector yields 0 (call sites that care guard the length first).
 pub fn headingXZ(v: rl.Vector3) f32 {
     return std.math.atan2(v.x, v.z);
 }
@@ -146,7 +124,6 @@ pub fn closestOnSegV(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     return v3(a.x + ab.x * t, a.y + ab.y * t, a.z + ab.z * t);
 }
 
-// ── full 3D vector helpers (FK rig, camera) ───────────────────────────────────────────
 pub fn addV(a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     return v3(a.x + b.x, a.y + b.y, a.z + b.z);
 }
@@ -164,8 +141,7 @@ pub fn normV(a: rl.Vector3) rl.Vector3 {
     if (l < 1e-6) return v3(0, 0, 0);
     return v3(a.x / l, a.y / l, a.z / l);
 }
-/// Cross product. env.zig and gfx.zig each carry a private copy for their own frustum/axis-frame
-/// work; this is the one every OTHER caller should reach for.
+/// Cross product. env.zig and gfx.zig each carry a private copy for their own frustum/axis-frame work; this is the one every OTHER caller should reach for.
 pub fn crossV(a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     return v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 }
@@ -176,9 +152,7 @@ pub fn lerpF(a: f32, b: f32, t: f32) f32 {
     return a + (b - a) * t;
 }
 
-// ── raylib TRS matrix shorthand (MatrixMultiply(a,b) applies a FIRST then b) ─────────────
-// The FK rigs (hero, frog) build every bone/part transform from these; centralised here so
-// the "a-first" convention lives in ONE place instead of a duplicated set per rig file.
+// The FK rigs (hero, frog) build every bone/part transform from these; centralised here so the "a-first" convention lives in ONE place instead of a duplicated set per rig file.
 pub fn rx(deg: f32) rl.Matrix {
     return rl.math.matrixRotateX(radians(deg));
 }
@@ -207,13 +181,7 @@ pub fn smoothstep(a: f32, b: f32, x: f32) f32 {
     return t * t * (3.0 - 2.0 * t);
 }
 
-/// A RISE-HOLD-FALL PULSE, 0 → 1 → 0: in across [a, b], held to `c`, out across [c, d]. Every
-/// animation beat in this codebase that is not a cycle has this shape — a coil, a lunge, a heave, a
-/// leap's flight, a landing — and each one was written out as `smoothstep(a,b,x) * (1 -
-/// smoothstep(c,d,x))`, which is easy to get backwards and impossible to grep for.
-///
-/// Set b == c for a spike with no hold. Distinct from `hero.bump`, which is the SYMMETRIC version
-/// over a single span and cannot hold.
+/// A RISE-HOLD-FALL PULSE, 0 → 1 → 0: in across [a, b], held to `c`, out across [c, d].
 pub fn pulse(x: f32, a: f32, b: f32, c: f32, d: f32) f32 {
     return smoothstep(a, b, x) * (1.0 - smoothstep(c, d, x));
 }
@@ -231,17 +199,14 @@ test "pulse rises, holds and falls, and is flat outside its span" {
     try std.testing.expect(pulse(0.6, 0, 0.5, 0.5, 1.0) < 1.0);
 }
 
-/// Ease `cur` toward `target` by a rate-limited step of `rate*dt` (frame-rate independent
-/// enough for smoothing camera/gait blends). Not an exponential — a linear approach.
+/// Ease `cur` toward `target` by a rate-limited step of `rate*dt` (frame-rate independent enough for smoothing camera/gait blends).
 pub fn approach(cur: f32, target: f32, maxStep: f32) f32 {
     const d = target - cur;
     if (@abs(d) <= maxStep) return target;
     return cur + std.math.sign(d) * maxStep;
 }
 
-/// Move `cur` toward `target` by at most `maxStep` (full 3D), reaching it outright when within
-/// a step. EASEs large collision depenetrations over a few frames (a slide) instead of snapping
-/// there in one (a choppy warp).
+/// Move `cur` toward `target` by at most `maxStep` (full 3D), reaching it outright when within a step.
 pub fn approachV(cur: rl.Vector3, target: rl.Vector3, maxStep: f32) rl.Vector3 {
     const dx = target.x - cur.x;
     const dy = target.y - cur.y;
@@ -254,8 +219,7 @@ pub fn approachV(cur: rl.Vector3, target: rl.Vector3, maxStep: f32) rl.Vector3 {
 
 /// Wrap a radian angle into (-pi, pi].
 pub fn wrapPi(a: f32) f32 {
-    // Guard non-finite: +inf/-inf would spin the reduction loops forever (inf±tau==inf),
-    // and there's no meaningful wrapped angle for them (matches clampF's NaN guard).
+    // Guard non-finite: +inf/-inf would spin the reduction loops forever (inf±tau==inf), and there's no meaningful wrapped angle for them (matches clampF's NaN guard).
     if (!std.math.isFinite(a)) return 0;
     var x = a;
     while (x > std.math.pi) x -= std.math.tau;
@@ -263,9 +227,7 @@ pub fn wrapPi(a: f32) f32 {
     return x;
 }
 
-/// Wrap a DEGREE angle into (-180, 180] — `wrapPi`'s counterpart for the bearings the foes
-/// reason in. A difference of two wrapped bearings is NOT itself wrapped (it spans ±360), so
-/// any "is this bearing inside that arc" test owes this before it takes an absolute value.
+/// Wrap a DEGREE angle into (-180, 180] — `wrapPi`'s counterpart for the bearings the foes reason in.
 pub fn wrapDeg(a: f32) f32 {
     return degrees(wrapPi(radians(a)));
 }
@@ -295,7 +257,6 @@ pub fn u8f(v: f32) u8 {
     return @intFromFloat(clampF(v, 0, 255));
 }
 
-/// sin/cos on f32, computed via f64 (mirrors Go's float32(math.Sin(float64(x)))).
 pub fn sinf(x: f32) f32 {
     return @floatCast(@sin(@as(f64, x)));
 }
@@ -385,9 +346,7 @@ test "approachAngle takes the shortest arc across the seam" {
 }
 
 test "closestOnSegV clamps to the ENDS, which is what makes the swept blade test honest" {
-    // The swept-capsule hit test (foe.strike) is entirely this helper: an unclamped projection would
-    // report a hit off the far end of the blade's LINE rather than off the blade. (These assertions
-    // lived in frog.zig behind a one-line wrapper with no caller; they belong beside the helper.)
+    // The swept-capsule hit test (foe.strike) is entirely this helper: an unclamped projection would report a hit off the far end of the blade's LINE rather than off the blade.
     const a = v3(0, 0, 0);
     const b = v3(2, 0, 0);
     const d = struct {

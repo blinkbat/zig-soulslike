@@ -3,8 +3,7 @@ const game = @import("game.zig");
 const bake = @import("bake.zig");
 const wf = @import("worldfmt.zig");
 
-// Entry point. Default launches the game; `--shot` renders headless into shots/ for offline visual
-// checks; `--bake` re-emits the first map from bake.zig and exits (a one-way door — see that file).
+// Entry point.
 pub fn main() void {
     const alloc = std.heap.c_allocator;
     const argv = std.process.argsAlloc(alloc) catch {
@@ -34,14 +33,10 @@ fn runBake(alloc: std.mem.Allocator) !void {
     defer alloc.destroy(m);
     bake.build(m);
 
-    // THROUGH `wf.save` AND `wf.START_MAP`, not a hand-rolled write to a literal path. This was
-    // makePath + createFile + bufferedWriter + write + flush — i.e. `wf.save`'s body again — with the
-    // shipped map's name spelled out three times. `--bake` OVERWRITES the map the game loads, so a
-    // rename would have left it writing and verifying the old file while the game read the new one.
+    // THROUGH `wf.save` AND `wf.START_MAP`, not a hand-rolled write to a literal path.
     try wf.save(wf.START_MAP, m);
 
-    // Re-read what was just written: a bake that emits a file the loader rejects is worse than one
-    // that fails, because the failure surfaces later as an empty world.
+    // Re-read what was just written: a bake that emits a file the loader rejects is worse than one that fails, because the failure surfaces later as an empty world.
     const text = try std.fs.cwd().readFileAlloc(alloc, wf.START_MAP, 1 << 22);
     defer alloc.free(text);
     const back = try alloc.create(wf.Map);
@@ -57,9 +52,7 @@ fn runBake(alloc: std.mem.Allocator) !void {
     );
 }
 
-// EVERY module carrying tests must be named here — Zig only collects from files the test ROOT reaches,
-// and this is the root. env.zig and props.zig hang off game.zig alone, so leaving them out silently
-// dropped 12 tests, the culler sweep and the INFO table's checks among them.
+// EVERY module carrying tests must be named here — Zig only collects from files the test ROOT reaches, and this is the root. env.zig and props.zig hang off game.zig alone, so leaving them out silently dropped 12 tests, the culler sweep and the INFO table's checks among them.
 test {
     _ = @import("hero.zig");
     _ = @import("camera.zig");
@@ -76,9 +69,6 @@ test {
     _ = @import("worldfmt.zig");
     _ = @import("editor.zig"); // hangs off game.zig, which this root does not reach for tests
     _ = @import("audio.zig"); // …likewise: the sound bank's synthesis tests need no device
-    // …AND game.zig ITSELF, which this list said was unreachable and then never named. `main()` is not
-    // referenced in a test build, so nothing pulled it in: its three tests — the radial stick's angle,
-    // the look curve, and the drifting-stick latch — had never run ONCE. The block's own comment
-    // describes exactly this failure and the file it points at was the file missing from it.
+    // …AND game.zig ITSELF, which this list said was unreachable and then never named.
     _ = @import("game.zig");
 }

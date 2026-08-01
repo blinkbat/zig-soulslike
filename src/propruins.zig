@@ -1,10 +1,3 @@
-// ── PROPS: THE RUINED KINGDOM ── the fallen avenue's own set: columns whole and snapped, ruin
-// blocks, the gate arch, wall runs, graves, planted swords, the bonfire camp, the horizon towers and
-// the colossal gate, banners, sentinel statues, rubble. What they share is DRESSED MASONRY gone
-// over: same stone, same weathering moves (see propart.zig), same centuries.
-//
-// One kind is one `pub fn <name>Mesh(shader) rl.Model`, named in props.zig's INFO table and nowhere
-// else. Nothing here is called from anywhere but that table.
 const std = @import("std");
 const rl = @import("raylib");
 const gfx = @import("gfx.zig");
@@ -13,14 +6,11 @@ const art = @import("propart.zig");
 
 const v3 = mathx.v3;
 const Builder = gfx.Builder;
-// The shared vocabulary this file draws on, aliased so a mesh body still reads as a recipe
-// (`art.STONE_DK` in front of every colour buries the shape in namespace). GENERATED from what
-// the file actually references — the list IS the dependency, so it is worth reading.
+// The shared vocabulary this file draws on, aliased so a mesh body still reads as a recipe (`art.STONE_DK` in front of every colour buries the shape in namespace).
 const ASH = art.ASH;
 const ASH_DK = art.ASH_DK;
 const ASH_LT = art.ASH_LT;
 const BARK_DK = art.BARK_DK;
-const BONE = art.BONE;
 const BRASS = art.BRASS;
 const CLOTH = art.CLOTH;
 const CLOTH_DK = art.CLOTH_DK;
@@ -39,7 +29,6 @@ const STONE_DK = art.STONE_DK;
 const STONE_LT = art.STONE_LT;
 const STONE_MOSS = art.STONE_MOSS;
 const THATCH_DK = art.THATCH_DK;
-const TIMBER = art.TIMBER;
 const TIMBER_DK = art.TIMBER_DK;
 const WISP = art.WISP;
 const blade = art.blade;
@@ -52,7 +41,6 @@ const lichenInto = art.lichenInto;
 const quoinsInto = art.quoinsInto;
 const tuftInto = art.tuftInto;
 
-// ── the original ruined-kingdom set ────────────────────────────────────────────────────
 
 pub fn pillarWhole(shader: rl.Shader) rl.Model {
     return pillarMesh(shader, false);
@@ -61,15 +49,7 @@ pub fn pillarBroken(shader: rl.Shader) rl.Model {
     return pillarMesh(shader, true);
 }
 
-// A stone column — the most-seen prop in the world (the avenue is a colonnade of them, and it
-// is where you start). Stepped plinth, torus base, a shaft of stacked DRUMS with FLUTES up
-// them, necking ring, flared capital, and three centuries of weather over the lot.
-//
-// THE FLUTES ARE THE FIDELITY. A smooth 5 m cylinder is the biggest plain surface on the
-// avenue, and the great trees' bark ridges taught the rule: a big smooth mass needs FORM BREAKS
-// or it reads as plastic however dark you author it. Sixteen arrises cost ~130 triangles and
-// turn a grey pipe into a column. Drums settle off-axis, joints step, the whole thing leans a
-// degree off plumb — a machined column is the one thing a ruin can't be.
+// A stone column — the most-seen prop in the world (the avenue is a colonnade of them, and it is where you start).
 pub fn pillarMesh(shader: rl.Shader, broken: bool) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(if (broken) 4801 else 4802);
@@ -90,7 +70,6 @@ pub fn pillarMesh(shader: rl.Shader, broken: bool) rl.Model {
         }
     }.r;
 
-    // ── the base ── two stepped slabs of rough footing STONE, then the column proper in MARBLE.
     // Dressed-and-glossed against the rubble wall behind it is the point of having two stones.
     b.addBox(v3(0, 0.18, 0), v3(0.85, rng.signed() * 0.012, 0.03), v3(0, 0.18, 0), v3(0.04, 0, 0.85), STONE_DK);
     b.addBox(v3(rng.signed() * 0.04, 0.46, rng.signed() * 0.04), v3(0.72, rng.signed() * 0.014, 0.02), v3(0, 0.12, 0), v3(0.03, 0, 0.72), STONE);
@@ -98,8 +77,7 @@ pub fn pillarMesh(shader: rl.Shader, broken: bool) rl.Model {
     b.addCylinder(v3(0, 0.56, 0), v3(0, 0.72, 0), 0.74, 0.66, 10, MARBLE_LT); // torus base
     b.addCylinder(v3(0, 0.70, 0), v3(0, 0.80, 0), 0.66, 0.63, 10, MARBLE_DK); // the fillet above it
 
-    // ── the shaft ── four drums, each with its own radius jog and lateral shift, so the joints
-    // step and catch the low sun. A flush stack of identical cylinders reads as one pipe.
+    // step and catch the low sun.
     const nd: i32 = if (broken) 2 else 4;
     var d: i32 = 0;
     while (d < nd) : (d += 1) {
@@ -108,9 +86,7 @@ pub fn pillarMesh(shader: rl.Shader, broken: bool) rl.Model {
         const off = v3(rng.signed() * 0.022, 0, rng.signed() * 0.022); // the drum has slipped
         const p0 = axisAt(y0, leanX, leanZ);
         const p1 = axisAt(y1, leanX, leanZ);
-        // TWELVE sides, not nine. The shaft is the biggest curved surface in the world and the one
-        // you stand next to; at nine the flats were wide enough that an arris landing mid-facet
-        // read as a strip glued on rather than as an edge of the stone itself.
+        // TWELVE sides, not nine.
         b.addCylinder(
             v3(p0.x + off.x, y0, p0.z + off.z),
             v3(p1.x + off.x, y1, p1.z + off.z),
@@ -119,23 +95,10 @@ pub fn pillarMesh(shader: rl.Shader, broken: bool) rl.Model {
             12,
             if (@mod(d, 2) == 0) MARBLE else MARBLE_LT,
         );
-        // The bed joint: a thin proud ring of mortar-line stone at every drum seam. 1.015, not
-        // 1.03 — a joint is a line you notice, not a collar standing off the shaft.
+        // The bed joint: a thin proud ring of mortar-line stone at every drum seam. 1.015, not 1.03 — a joint is a line you notice, not a collar standing off the shaft.
         if (d > 0) b.addCylinder(v3(p0.x + off.x, y0 - 0.02, p0.z + off.z), v3(p0.x + off.x, y0 + 0.02, p0.z + off.z), radAt(y0) * 1.015, radAt(y0) * 1.015, 12, MARBLE_DK);
     }
     // FLUTING: sixteen arrises up the shaft, following its taper and lean; a fifth spalled away.
-    // Keep them the SAME STONE as the drum. Tinting a ridge lighter turns fluting into a
-    // BARCODE — the eye stops reading a round column and reads stripes painted on a cylinder.
-    // The ridge's own shading is the whole effect; the colour must not help.
-    //
-    // THEY ARE ARRISES, NOT RODS. Real fluting is a groove cut INTO the shaft and the arris is the
-    // sliver of original surface left between two of them, so the relief is a few millimetres of a
-    // 60 cm shaft. Approximating it with proud cylinders inverts that, and at the old numbers the
-    // inversion showed: a 4-SIDED rod is a square bar, and at radius 0.040 sitting on 0.985 of the
-    // radius it stood ~11% of the shaft's own radius clear of the 9-gon's flats — sixteen strips
-    // visibly stuck ON the column instead of cut into it. Now SUNK to 0.955 so most of the rod is
-    // buried and only the arris breaks the surface, thinner, and 5-sided so it has no square corner
-    // to catch the light along its whole length.
     var fl: i32 = 0;
     while (fl < 16) : (fl += 1) {
         if (rng.float() < 0.20) continue;
@@ -157,12 +120,7 @@ pub fn pillarMesh(shader: rl.Shader, broken: bool) rl.Model {
     }
 
     if (broken) {
-        // THE FRACTURE: a snapped column does not end flat. Half a dozen angular shards of
-        // unequal height standing out of the break — but STANDING OUT is the part that was
-        // overdone: at up to 0.34 tall and skewed ±0.07 on both in-plane axes they were a crown of
-        // spikes, and the eye read them before it read the column. A break is a JAGGED PLANE, so
-        // the shards keep their unequal heights and random bearings and lose two thirds of their
-        // rise and half their tilt.
+        // THE FRACTURE: a snapped column does not end flat.
         const c = axisAt(shaftTop, leanX, leanZ);
         var s: i32 = 0;
         while (s < 7) : (s += 1) {
@@ -177,9 +135,7 @@ pub fn pillarMesh(shader: rl.Shader, broken: bool) rl.Model {
                 if (rng.float() < 0.35) MARBLE_LT else MARBLE_DK,
             );
         }
-        // The drums it shed. Both run along a WORLD axis on purpose: a cylinder is capless, so
-        // an open end shows its culled interior (you see straight THROUGH it), and the only
-        // cheap flat cap is an axis-flattened blob. Instance yaw varies their bearing.
+        // The drums it shed.
         const dz = rng.range(1.02, 1.32);
         const dx = rng.signed() * 0.5;
         b.addCylinder(v3(dx, 0.52, dz - 0.42), v3(dx + rng.signed() * 0.05, 0.50, dz + 0.42), 0.54, 0.51, 9, MARBLE);
@@ -192,9 +148,7 @@ pub fn pillarMesh(shader: rl.Shader, broken: bool) rl.Model {
         b.addBlob(v3(ex - 0.30, 0.26, ez), v3(0.02, 0.47, 0.47), 3, 8, MARBLE_DK);
         lichenInto(&b, &rng, v3(dx, 1.02, dz), v3(0.30, 0.03, 0.34), 4);
     } else {
-        // ── the capital ── necking ring, echinus flare, abacus. The thin slab under the flare
-        // closes the cone's open underside (cylinders are capless; from below you would see
-        // straight through to striped interior backfaces).
+        // closes the cone's open underside (cylinders are capless; from below you would see straight through to striped interior backfaces).
         const c = axisAt(shaftTop, leanX, leanZ);
         b.addCylinder(v3(c.x, shaftTop - 0.14, c.z), v3(c.x, shaftTop, c.z), 0.50, 0.53, 9, MARBLE_DK); // necking
         b.addCube(v3(c.x, shaftTop + 0.02, c.z), v3(1.12, 0.06, 1.12), MARBLE_LT);
@@ -213,7 +167,6 @@ pub fn pillarMesh(shader: rl.Shader, broken: bool) rl.Model {
         b.addBlob(v3(rng.signed() * 1.2, 0.16, rng.signed() * 1.2), v3(0.26, 0.15, 0.22), 3, 5, MARBLE);
     }
 
-    // ── the weather ── a crack up the lowest drum, spalled chips shed round the plinth, a moss
     // streak down the shaded side, and grass coming up through the joints of the base.
     crackInto(&b, v3(mathx.cosf(0.7) * 0.60, 0.95, mathx.sinf(0.7) * 0.60), v3(0.10, 0.99, 0.02), v3(-mathx.sinf(0.7), 0, mathx.cosf(0.7)), rng.range(0.5, 1.1), 0.022, 0.03);
     chipsInto(&b, &rng, 0, 0, 1.45, 0.09, 0.24, 6);
@@ -226,11 +179,6 @@ pub fn pillarMesh(shader: rl.Shader, broken: bool) rl.Model {
 }
 
 // A fallen ENTABLATURE BLOCK — dressed stone off a cornice, settled into the turf at a list.
-// Twenty-six are scattered through the city, so it earns real detail: a moulded end (the
-// profile it was cut with), tooled faces, a split, and the corner it lost on landing.
-//
-// Built SKEW on purpose. An axis-aligned cube half-sunk in grass is the most artificial thing
-// a ruin can contain, because nothing that FELL lands square.
 pub fn blockMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4803);
@@ -245,8 +193,7 @@ pub fn blockMesh(shader: rl.Shader) rl.Model {
         v3(0.03, tipZ, 0.80),
         MARBLE,
     );
-    // The MOULDING: a projecting fillet and cyma along one end — what says "off a building"
-    // rather than "a rock".
+    // The MOULDING: a projecting fillet and cyma along one end — what says "off a building" rather than "a rock".
     for ([_]f32{ 0.86, 0.98 }) |t| {
         b.addBox(
             v3(t * 1.02, 0.48 + tipX * t * 1.02, 0),
@@ -256,8 +203,7 @@ pub fn blockMesh(shader: rl.Shader) rl.Model {
             if (t < 0.9) MARBLE_LT else MARBLE_DK,
         );
     }
-    // TOOL MARKS: claw-chisel runs across the top face — they catch the raking sun and stop a
-    // 2 m flat reading as poured concrete.
+    // TOOL MARKS: claw-chisel runs across the top face — they catch the raking sun and stop a 2 m flat reading as poured concrete.
     var tm: i32 = 0;
     while (tm < 6) : (tm += 1) {
         const u = -0.86 + @as(f32, @floatFromInt(tm)) * 0.30 + rng.signed() * 0.05;
@@ -310,13 +256,7 @@ pub fn blockMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// THE GATE ARCH — the threshold you run through on the avenue. A REAL arch: coursed piers
-// carrying an impost, and a ring of wedge-cut VOUSSOIRS springing from one to the other with a
-// keystone. Two boxes and a lintel is a door frame; an arch is the one piece of stonework whose
-// point is that the geometry holds itself up, and you can see whether it does.
-//
-// BROKEN on the near haunch — three voussoirs gone, the stone lying under the gap. A complete
-// arch reads as maintained, and nothing here is.
+// THE GATE ARCH — the threshold you run through on the avenue.
 pub fn archMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4804);
@@ -332,9 +272,7 @@ pub fn archMesh(shader: rl.Shader) rl.Model {
         b.addBox(v3(x, spring - 0.10, 0), v3(0.70, rng.signed() * 0.012, 0), v3(0, 0.13, 0), v3(0, 0, 0.70), MARBLE_LT); // impost
         b.setMat(.stone);
     }
-    // THE RING. a runs 0 (left springing) → pi (right); radial is (−cos a, sin a, 0) and the
-    // tangent is (sin a, cos a, 0). Get that pair wrong and it's the watchtower's skewed-masonry
-    // bug again — addBox accepts a non-perpendicular triple and never complains.
+    // THE RING. a runs 0 (left springing) → pi (right); radial is (−cos a, sin a, 0) and the tangent is (sin a, cos a, 0).
     const NV = 15;
     b.setMat(.marble);
     var i: i32 = 0;
@@ -356,8 +294,7 @@ pub fn archMesh(shader: rl.Shader) rl.Model {
             if (key) MARBLE_LT else if (rng.float() < 0.26) MARBLE_LT else if (rng.float() < 0.45) MARBLE_DK else MARBLE,
         );
     }
-    // The SOFFIT closes the ring's inner face — look up through the arch and you see dressed
-    // stone, not the gaps between wedges.
+    // The SOFFIT closes the ring's inner face — look up through the arch and you see dressed stone, not the gaps between wedges.
     var s: i32 = 0;
     while (s < NV) : (s += 1) {
         if (s >= 3 and s <= 5) continue;
@@ -378,23 +315,19 @@ pub fn archMesh(shader: rl.Shader) rl.Model {
     // Above the crown: the stub of the parapet that once ran across, most of it gone.
     b.setMat(.stone);
     // SPANDREL stubs first — the fill that carried the parapet over the ring's shoulders.
-    // Without them the slab's ends hang over daylight where the ring curves away below.
     b.addCube(v3(1.30, spring + px + ringR - 0.26, -0.02), v3(0.56, 0.52, 0.56), STONE);
     b.addCube(v3(-0.76, spring + px + ringR - 0.18, 0.03), v3(0.50, 0.44, 0.60), STONE_DK);
     b.addBox(v3(0.3, spring + px + ringR + 0.20, 0), v3(1.35, rng.signed() * 0.02, 0), v3(0, 0.22, 0), v3(0, 0, 0.62), STONE_DK);
     b.addCube(v3(-0.5, spring + px + ringR + 0.56, 0.02), v3(0.62, 0.44, 0.86), STONE);
     b.addCube(v3(1.15, spring + px + ringR + 0.40, -0.04), v3(0.5, 0.26, 0.72), STONE_DK);
-    // The weather: lichen in the shade under the arch, a crack up the near pier, chips and
-    // grass at both feet.
+    // The weather: lichen in the shade under the arch, a crack up the near pier, chips and grass at both feet.
     for ([_]f32{ -px, px }) |x| {
         crackInto(&b, v3(x + 0.53, rng.range(0.6, 1.2), rng.signed() * 0.3), v3(rng.signed() * 0.18, 0.98, 0.05), v3(0, 0, 1), rng.range(0.8, 1.6), 0.020, 0.03);
         chipsInto(&b, &rng, x, 0, 1.5, 0.08, 0.22, 5);
         lichenInto(&b, &rng, v3(x, rng.range(0.5, 1.3), 0.56), v3(0.30, 0.30, 0.02), 3);
         tuftInto(&b, &rng, x + rng.signed() * 1.1, rng.signed() * 1.2, 0.8);
     }
-    // The damp soffit: lichen ON the ring's inner face, half-sunk into the stone — the old
-    // version floated a patch mid-opening. Both spots sit clear of the collapsed haunch
-    // (t 0.23..0.37), flanking the keystone where the drip line runs.
+    // The damp soffit: lichen ON the ring's inner face, half-sunk into the stone — the old version floated a patch mid-opening.
     for ([_]f32{ 0.47, 0.62 }) |t| {
         const a = std.math.pi * t;
         const rIn = px - 0.30;
@@ -403,10 +336,7 @@ pub fn archMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A ruined WALL run — the city perimeter and the downs' boundaries, so more of these are drawn
-// than of anything else built by hand. Laid course by course over a packed core, in THREE spans
-// of different height so the top line BREAKS: one shoulder-high with a surviving merlon, one
-// worn to waist, one collapsed to a stub. A wall with a level top is a fence.
+// A ruined WALL run — the city perimeter and the downs' boundaries, so more of these are drawn than of anything else built by hand.
 pub fn wallMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4805);
@@ -415,8 +345,7 @@ pub fn wallMesh(shader: rl.Shader) rl.Model {
     courseInto(&b, &rng, -3.55, 0, -0.85, 0, .{ .thick = th, .height = 2.55, .courses = 8, .blockW = 0.62, .crumbleTop = 0.52 });
     courseInto(&b, &rng, -1.05, 0.02, 1.95, -0.02, .{ .thick = th, .height = 3.00, .courses = 9, .blockW = 0.66, .crumbleTop = 0.42 });
     courseInto(&b, &rng, 1.75, 0, 3.55, 0, .{ .thick = th * 1.06, .height = 1.35, .courses = 4, .blockW = 0.58, .crumbleTop = 0.55 });
-    // THROUGH-STONES: the long blocks tying the two faces together, proud of the facing every
-    // few courses. Real walls show them; models never do.
+    // THROUGH-STONES: the long blocks tying the two faces together, proud of the facing every few courses.
     var ts: i32 = 0;
     while (ts < 5) : (ts += 1) {
         const x = rng.range(-3.3, 3.2);
@@ -428,8 +357,7 @@ pub fn wallMesh(shader: rl.Shader) rl.Model {
     b.setMat(.stone);
     b.addBox(v3(0.35, 3.28, 0), v3(0.52, rng.signed() * 0.02, 0), v3(0, 0.32, 0), v3(0, 0, th * 0.9), STONE);
     b.addBox(v3(1.45, 3.08, rng.signed() * 0.04), v3(0.34, rng.signed() * 0.03, 0), v3(0, 0.12, 0), v3(0, 0, th * 0.86), STONE_DK);
-    // A PUTLOG HOLE — the socket a scaffold beam sat in. One dark rectangle, and the wall
-    // acquires a construction history.
+    // A PUTLOG HOLE — the socket a scaffold beam sat in.
     b.addCube(v3(-2.05, 1.62, 0), v3(0.20, 0.17, th * 1.6), IRON);
     crackInto(&b, v3(-0.35, 0.15, th * 1.02), v3(rng.signed() * 0.3, 0.95, 0), v3(1, 0, 0), rng.range(1.0, 2.0), 0.024, 0.04);
     // Shed stone heaped along both faces — also what hides the line where masonry meets terrain.
@@ -449,8 +377,7 @@ pub fn gravesMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4807);
     const spots = [_][2]f32{ .{ 0, 0 }, .{ 0.95, -0.55 }, .{ -0.85, 0.42 }, .{ 1.62, 0.38 }, .{ -0.35, -0.95 }, .{ 0.55, 0.95 } };
-    // The first round-topped stone's placement, kept so the face lichen below has a real
-    // stone to grow on (it used to float at head height over an empty plot).
+    // The first round-topped stone's placement, kept so the face lichen below has a real stone to grow on (it used to float at head height over an empty plot).
     var lx: f32 = 0;
     var lz: f32 = 0;
     var lh: f32 = 0.6;
@@ -513,10 +440,6 @@ pub fn gravesMesh(shader: rl.Shader) rl.Model {
 }
 
 // A SWORD left standing in the earth, blade down — a grave marker for somebody nobody buried.
-// Nine are strewn across the battlefield, and they are the only STEEL you meet outside a fight,
-// so they carry the shader's blinding metal glint and want detail worthy of it: a fullered
-// blade nicked and rusting, a wrapped grip you can count the turns of, a drooping crossguard
-// with one quillon snapped, heaped earth and a cairn stone at its foot.
 pub fn swordMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4808);
@@ -530,8 +453,7 @@ pub fn swordMesh(shader: rl.Shader) rl.Model {
         }
     }.p;
     b.setMat(.steel);
-    // Two tapers, wide at the shoulder to the buried point, with a FULLER down the flat. That
-    // single dark stripe is what turns a steel plank into a sword.
+    // Two tapers, wide at the shoulder to the buried point, with a FULLER down the flat.
     b.addBox(off(d, p1, p2, 0.30, 0, 0), v3(p1.x * 0.062, p1.y * 0.062, p1.z * 0.062), at(d, 0.30), v3(p2.x * 0.013, p2.y * 0.013, p2.z * 0.013), STEEL);
     b.addBox(off(d, p1, p2, 0.72, 0, 0), v3(p1.x * 0.052, p1.y * 0.052, p1.z * 0.052), at(d, 0.16), v3(p2.x * 0.011, p2.y * 0.011, p2.z * 0.011), STEEL);
     for ([_]f32{ 1, -1 }) |sgn| {
@@ -569,29 +491,12 @@ pub fn swordMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// ── THE BONFIRE CAMP ── SOMEBODY LIVES HERE, and everything in it says so: a stacked fire big enough
-// to see from the far side of the plain, a bedroll, and a guitar propped against a rock. (The enum tag
-// is still `grace`, because that is the word in every world file; it has been neither a grace nor an
-// ember for a long time.)
-//
-// It went through an iron bowl of coals and then a coiled sword driven into the ash before this. Both
-// were MONUMENTS — a place marked out — and the note that ended them was that a resting place should
-// read as somebody's, which is warmth and belongings rather than iron. So: no sword in it.
-//
-// Three things carry it at distance: the SMOKE (a real particle plume, see `smokeInto`), the pale ash
-// bed (`art.ASH` is the palest albedo in the world, and that is deliberate), and a point light warm
-// and bright enough to pool on the ground around it (INFO).
 pub fn graceMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4809);
-    // THE SITE. A camp is a place people came BACK to, so it gets the one piece of tended
-    // ground in the world: set kerbstones and a worn marble pave. Nothing else in this file is
-    // deliberate — that contrast is the whole read.
+    // THE SITE.
     b.setMat(.stone);
-    // …and the ring is HAND-LAID, not machined. Eleven stones at even spacing, matched radii and a
-    // matched stand-off came out as a COG: a gear tooth every 33 degrees round a pale disc. The
-    // wabi-sabi law covers this exactly — the cure is a wide size band, a wide distance band and
-    // real angular jitter, not fewer stones.
+    // …and the ring is HAND-LAID, not machined.
     var k: i32 = 0;
     while (k < 10) : (k += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(k)) / 10.0 + rng.signed() * 0.30;
@@ -605,9 +510,7 @@ pub fn graceMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.3) STONE_MOSS else if (rng.float() < 0.5) ROCK_DEEP else STONE_DK,
         );
     }
-    // THE ASH BED filling the ring — a shallow pale mound, raked flatter in the middle where
-    // people have knelt at it. Sunk at its rim so it reads as lying IN the ring of stones rather
-    // than as a disc set on top of them.
+    // THE ASH BED filling the ring — a shallow pale mound, raked flatter in the middle where people have knelt at it.
     b.setMat(.plain);
     b.addBlob(v3(0, 0.055, 0), v3(0.82, 0.070, 0.82), 3, 12, ASH_DK);
     b.addBlob(v3(rng.signed() * 0.06, 0.095, rng.signed() * 0.06), v3(0.66, 0.070, 0.64), 3, 11, ASH);
@@ -626,11 +529,7 @@ pub fn graceMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.4) ASH_LT else if (rng.float() < 0.6) ASH_DK else ASH,
         );
     }
-    // ── THE FUEL ── a proper stacked fire, which is the thing that says CAMP rather than shrine. A
-    // leaning teepee of split logs over the coals, plus a couple of long ones fed in from outside
-    // that nobody has pushed all the way in yet. Charred at the ends that are IN it and bark at the
-    // ends that are not — that difference is most of what makes a stack read as burning rather than
-    // as firewood arranged around a light.
+    // leaning teepee of split logs over the coals, plus a couple of long ones fed in from outside that nobody has pushed all the way in yet.
     b.setMat(.wood);
     var lg: i32 = 0;
     while (lg < 6) : (lg += 1) {
@@ -661,46 +560,33 @@ pub fn graceMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.4) BARK_DK else TIMBER_DK,
         );
     }
-    // …and THE FIRE in the middle of it. BIG — this is the one fire in the world you are meant to
-    // find from the far side of the plain, so it is roughly twice the campfire's and licks up
-    // through the stack rather than sitting under it. Through `flameInto`, so it gets the vertex
-    // writhe and the same tongue vocabulary as every other flame in the world.
-    flameInto(&b, &rng, rng.signed() * 0.04, 0.16, rng.signed() * 0.04, 1.55);
-    flameInto(&b, &rng, rng.signed() * 0.22, 0.13, rng.signed() * 0.22, 1.00);
-    flameInto(&b, &rng, rng.signed() * 0.26, 0.12, rng.signed() * 0.26, 0.72);
-    smokeInto(&b, &rng);
-    // ── SOMEBODY LIVES HERE ── and these two are the whole reason the sword is gone. A bonfire with a
-    // blade in it is a monument; a bedroll and an instrument make it a place a person came back to,
-    // which is the same job done with warmth instead of iron.
+    // …and THE FIRE in the middle of it.
+    flameInto(&b, &rng, rng.signed() * 0.05, 0.16, rng.signed() * 0.05, 2.20);
+    flameInto(&b, &rng, rng.signed() * 0.30, 0.13, rng.signed() * 0.30, 1.45);
+    flameInto(&b, &rng, rng.signed() * 0.34, 0.12, rng.signed() * 0.34, 1.05);
+    // blade in it is a monument; a bedroll and an instrument make it a place a person came back to, which is the same job done with warmth instead of iron.
     bedrollInto(&b, &rng, 1.28, -0.62, 2.42);
-    guitarRockInto(&b, &rng, -1.16, 0.86, 0.62);
+    guitarRockInto(&b, &rng, GUITAR_CX, GUITAR_CZ);
     b.setMat(.plant);
     tuftInto(&b, &rng, rng.signed() * 1.05, rng.signed() * 1.05, 0.55);
     lichenInto(&b, &rng, v3(rng.signed() * 0.6, 0.07, rng.signed() * 0.6), v3(0.24, 0.02, 0.22), 3);
     return b.toModel(shader);
 }
 
-/// ── THE SMOKE COLUMN ── the bonfire's real signal, and the one piece of this prop authored for a
-/// viewer half a kilometre away rather than for someone standing at it.
-///
-/// A column of lobes that RISES, WIDENS AND LEANS, cooling through the three smoke tones as it goes
-/// (see art.SMOKE_*). All three properties matter: a plume of constant width is a pillar, one that
-/// does not lean is a chimney on a windless day, and one that does not cool is steam.
-///
-/// It is allowed to own the silhouette. The old wisp was deliberately stunted because it was stealing
-/// the coiled sword's read — with the sword gone, the tall thing standing over the fire IS the prop,
-/// and its whole job is to be the first thing you pick out of the horizon.
+/// THE CAMP'S VEIL — the smoke column, as its OWN model rather than as part of `graceMesh`, and the reason `props.Info.veil` exists at all.
+pub fn graceVeilMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(4811);
+    smokeInto(&b, &rng);
+    return b.toModel(shader);
+}
+
 fn smokeInto(b: *Builder, rng: *mathx.Rng) void {
     b.setMat(.plain);
-    // The heat shimmer off the flame itself, under the plume proper — this is where the column is
-    // still fire-coloured rather than smoke-coloured. Static, and it should be: this is the one part
-    // that really is welded to the fire.
+    // The heat shimmer off the flame itself, under the plume proper — this is where the column is still fire-coloured rather than smoke-coloured.
     b.addCylinder(v3(0, 0.62, 0), v3(rng.signed() * 0.06, 1.15, rng.signed() * 0.06), 0.055, 0.012, 6, WISP);
 
-    // ── THE PLUME, AS PUFFS ── every one authored down at the source and flown by the shader (see
-    // gfx.smokeAnim). Phases are spread EVENLY across the cycle with only a little jitter, because
-    // rolling them at random leaves clumps and gaps in the column — the eye reads a gap in a smoke
-    // trail as the fire having gone out for a second.
+    // gfx.smokeAnim).
     const SRC: f32 = 1.0; // the source height the shader billows each puff about
     const PUFFS = 14;
     b.setMat(.smoke);
@@ -718,25 +604,21 @@ fn smokeInto(b: *Builder, rng: *mathx.Rng) void {
         );
     }
 
-    // ── THE EMBERS ── on the same material, so they rise and wink out on the same clock (owner:
-    // "rising up randomly and flickering out like the braziers"). They keep the EMISSIVE vertex alpha,
-    // which is independent of the material — so a mote glows on its way up and the fade takes it.
-    //
-    // MANY, and small. Embers are a scatter, not a string; the count is what makes the fire read as
-    // throwing them off rather than as having four attached to it.
+    // climb 5.6 m against the plume's 3.3, they do not billow, and they are nearly opaque and WINK OUT instead of dissolving (owner: "rising up randomly and flickering out like the braziers", then brighter and higher again).
+    b.setMat(.ember);
     var e: i32 = 0;
     while (e < 26) : (e += 1) {
         const phase = (@as(f32, @floatFromInt(e)) + rng.range(0, 0.9)) / 26.0;
         b.setAnimY(gfx.smokeAnim(SRC, phase));
         const a = rng.angle();
         const dd = rng.range(0.04, 0.30);
-        const sz = rng.range(0.014, 0.030);
+        const sz = rng.range(0.018, 0.038);
         b.addBlob(
             v3(mathx.cosf(a) * dd, SRC - rng.range(0.18, 0.34), mathx.sinf(a) * dd),
             v3(sz, sz, sz),
             2,
             5,
-            if (rng.float() < 0.45) art.EMBER else WISP,
+            if (rng.float() < 0.75) art.EMBER else WISP,
         );
     }
     b.setAnimY(0);
@@ -744,14 +626,11 @@ fn smokeInto(b: *Builder, rng: *mathx.Rng) void {
 }
 
 /// A BEDROLL beside the fire: a rolled mat with a blanket thrown half off it, pegged down one side.
-/// Small on purpose (owner: "a little bedroll") — it is a piece of evidence, not furniture, and a
-/// full camp bed beside a fire this size would read as a market stall.
 fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) void {
     const ux = mathx.cosf(yaw);
     const uz = mathx.sinf(yaw);
     b.setMat(.cloth);
-    // THE MAT, unrolled: a long low pad. Built as overlapping lobes rather than one stretched
-    // ellipsoid so it sags and creases along its length instead of reading as a pill.
+    // THE MAT, unrolled: a long low pad.
     var i: i32 = 0;
     while (i < 5) : (i += 1) {
         const t = (@as(f32, @floatFromInt(i)) / 4.0 - 0.5) * 0.92;
@@ -764,8 +643,7 @@ fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) void {
             if (rng.float() < 0.4) THATCH_DK else TIMBER_DK,
         );
     }
-    // THE BLANKET over it, rucked up — a shade warmer and thrown to one side, which is what stops
-    // the pair reading as one symmetrical sausage.
+    // THE BLANKET over it, rucked up — a shade warmer and thrown to one side, which is what stops the pair reading as one symmetrical sausage.
     var k: i32 = 0;
     while (k < 4) : (k += 1) {
         const t = (@as(f32, @floatFromInt(k)) / 3.0 - 0.55) * 0.70;
@@ -777,7 +655,7 @@ fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) void {
             if (rng.float() < 0.5) CLOTH_DK else CLOTH,
         );
     }
-    // …and the ROLLED end doubling as a pillow, at the head. Fatter, and across the mat's axis.
+    // …and the ROLLED end doubling as a pillow, at the head.
     b.addCapsule(
         v3(cx + ux * 0.50 - uz * 0.15, 0.115, cz + uz * 0.50 + ux * 0.15),
         v3(cx + ux * 0.50 + uz * 0.15, 0.115, cz + uz * 0.50 - ux * 0.15),
@@ -788,100 +666,45 @@ fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) void {
     );
 }
 
-/// A ROCK WITH A GUITAR LYING ON IT — the one deliberately human object in the world, and the reason
-/// this camp reads as somebody's rather than as a set piece.
-///
-/// The instrument is built AXIS-FREE: both bouts are near-circular in plan, so the whole thing can be
-/// laid at any yaw without rotating an ellipsoid's axes (which `addBlob`, being world-aligned, cannot
-/// do). That is not a shortcut — a guitar's bouts really are two overlapping circles, and the waist
-/// between them falls out of the overlap for free.
-fn guitarRockInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) void {
-    // THE ROCK: a low seat-height boulder. It is here to be sat on as much as to hold the guitar, so
-    // it is broad and flat-topped rather than a lump.
+/// A ROCK WITH A GUITAR PROPPED AGAINST IT — the one deliberately human object in the world, and the reason this camp reads as somebody's rather than as a set piece.
+fn guitarRockInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32) void {
+    // THE ROCK: a low seat-height boulder.
     b.setMat(.stone);
     b.addBlob(v3(cx, 0.22, cz), v3(0.52, 0.235, 0.46), 4, 9, if (rng.float() < 0.4) STONE_MOSS else STONE_DK);
     b.addBlob(v3(cx + rng.signed() * 0.16, 0.30, cz + rng.signed() * 0.16), v3(0.34, 0.115, 0.31), 3, 8, ROCK_DEEP);
     lichenInto(b, rng, v3(cx + rng.signed() * 0.2, 0.40, cz + rng.signed() * 0.2), v3(0.16, 0.015, 0.15), 3);
-
-    // ── THE GUITAR, STOOD AGAINST THE ROCK — the way a player actually puts one down. Not flat on
-    // its back: you rest it on its lower bout with the neck leaning back on something, because that
-    // is the position you can pick it up from in one movement. It also reads from three times as far,
-    // since the body is now presented face-on to anyone standing at the fire instead of edge-on.
-    //
-    // BIG (owner's call). A guitar is 1 m end to end and the first pass had it at 0.6 — beside a rock
-    // half a metre high that read as a mandolin somebody had dropped.
-    const ux = mathx.cosf(yaw);
-    const uz = mathx.sinf(yaw); // …the direction the neck leans off in, on the ground plane
-    const FOOT: f32 = 0.30; // how far out from the rock the bottom of the body sits
-    const LEAN: f32 = 0.46; // horizontal travel from the body's foot to the headstock…
-    const RISE: f32 = 0.95; // …against this much height. A steep lean — it is propped, not lying down
-    const fx = cx + ux * (FOOT + 0.34);
-    const fz = cz + uz * (FOOT + 0.34);
-    // Everything below is placed at a fraction `t` up that leaning axis, so the whole instrument
-    // tilts as one piece and nothing has to be rotated by hand.
-    const px = fx - ux * LEAN;
-    const pz = fz - uz * LEAN;
-    b.setMat(.wood);
-    // THE BODY: two overlapping near-circular bouts, which is what a guitar's outline actually is —
-    // and being round in plan they need no rotation to sit at any yaw (addBlob is world-aligned).
-    const b0 = v3(fx - ux * LEAN * 0.10, 0.255, fz - uz * LEAN * 0.10); // lower bout, on the ground
-    const b1 = v3(fx - ux * LEAN * 0.34, 0.255 + RISE * 0.26, fz - uz * LEAN * 0.34); // upper bout
-    b.addBlob(b0, v3(0.255, 0.235, 0.255), 3, 11, TIMBER_DK);
-    b.addBlob(b1, v3(0.200, 0.185, 0.200), 3, 11, TIMBER_DK);
-    // THE SOUNDBOARD, a shade paler and proud of the face — without it the two bouts read as a gourd.
-    // Offset toward the viewer's side of the lean, which is the face that is presented.
-    const fnx = -ux * 0.055;
-    const fnz = -uz * 0.055;
-    b.addBlob(v3(b0.x + fnx, b0.y, b0.z + fnz), v3(0.225, 0.208, 0.225), 3, 11, TIMBER);
-    b.addBlob(v3(b1.x + fnx, b1.y, b1.z + fnz), v3(0.174, 0.162, 0.174), 3, 11, TIMBER);
-    // The SOUND HOLE, between the bouts and proud of the board — the one feature that names the shape.
-    const hx = (b0.x + b1.x) * 0.5 + fnx * 1.7;
-    const hy = (b0.y + b1.y) * 0.5;
-    const hz = (b0.z + b1.z) * 0.5 + fnz * 1.7;
-    b.addBlob(v3(hx, hy, hz), v3(0.072, 0.068, 0.072), 3, 9, BARK_DK);
-    b.addBox(v3(b0.x + fnx * 1.5, b0.y - 0.115, b0.z + fnz * 1.5), v3(-uz * 0.090, 0, ux * 0.090), v3(0, 0.016, 0), v3(ux * 0.016, 0, uz * 0.016), BARK_DK); // bridge
-    // THE NECK, running on up the lean and back over the rock, and the head at the top of it.
-    const nk0 = v3(b1.x + fnx * 0.6, b1.y + 0.10, b1.z + fnz * 0.6);
-    const nk1 = v3(px + fnx * 0.4, 0.255 + RISE, pz + fnz * 0.4);
-    b.addCapsule(nk0, nk1, 0.046, 0.040, 7, TIMBER_DK);
-    const hd = v3(nk1.x - ux * 0.075, nk1.y + 0.145, nk1.z - uz * 0.075);
-    b.addBox(hd, v3(-uz * 0.058, 0, ux * 0.058), v3(0, 0.085, 0), v3(ux * 0.020, 0, uz * 0.020), BARK_DK); // headstock
-    // FRET MARKERS, because a bare neck at this length is a stick. Three pale dots is all it takes.
-    var f: i32 = 0;
-    while (f < 3) : (f += 1) {
-        const t = 0.30 + @as(f32, @floatFromInt(f)) * 0.22;
-        b.addBlob(
-            v3(mathx.lerpF(nk0.x, nk1.x, t) + fnx * 0.7, mathx.lerpF(nk0.y, nk1.y, t), mathx.lerpF(nk0.z, nk1.z, t) + fnz * 0.7),
-            v3(0.015, 0.015, 0.015),
-            2,
-            5,
-            BONE,
-        );
-    }
-    // THE STRINGS, bridge to head. Three rather than six, and that is a legibility call not a lazy
-    // one: at this scale six alias into a single grey smear, where three read as strings.
-    b.setMat(.steel);
-    var s: i32 = 0;
-    while (s < 3) : (s += 1) {
-        const off = (@as(f32, @floatFromInt(s)) - 1.0) * 0.026;
-        b.addCapsule(
-            v3(b0.x + fnx * 1.7 - uz * off, b0.y - 0.115, b0.z + fnz * 1.7 + ux * off),
-            v3(hd.x + fnx * 0.9 - uz * off, hd.y + 0.055, hd.z + fnz * 0.9 + ux * off),
-            0.006,
-            0.006,
-            4,
-            STEEL,
-        );
-    }
 }
 
-// A colossal broken KEEP for the horizon. Eight stand around the world's edge at `view = FAR`,
-// so they are on screen almost always and from almost everywhere.
-//
-// At that distance you cannot see a single block, so the fidelity must survive two hundred
-// metres of haze: horizontal COURSE BANDING (the only cue that reads "built" and not
-// "outcrop"), a battered plinth, BUTTRESSES breaking the flat faces into light and shade, a
-// corbelled parapet, and a genuinely broken crown. Cheap, too — a course is one box.
+/// THE PROPPED GUITAR, ON ITS OWN MODEL — because at a rest the hero PICKS IT UP, and a camp that shows one in his arms and a second still leaning on the rock is a camp with two guitars in it (owner).
+pub fn graceGuitarMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    guitarPropInto(&b, GUITAR_CX, GUITAR_CZ, GUITAR_YAW);
+    return b.toModel(shader);
+}
+
+/// Where the rock and its guitar sit in the camp's local frame — read by BOTH meshes, so the guitar cannot drift off the rock it is supposed to be leaning on.
+const GUITAR_CX: f32 = -1.62;
+const GUITAR_CZ: f32 = 1.18;
+const GUITAR_YAW: f32 = -1.56;
+
+fn guitarPropInto(b: *Builder, cx: f32, cz: f32, yaw: f32) void {
+    // lower bout with the neck leaning back on something, because that is the position you can pick it up from in one movement.
+    const LEAN: f32 = 0.50;
+    const FOOT: f32 = 0.70;
+    const cy = mathx.cosf(yaw);
+    const sy = mathx.sinf(yaw);
+    const cl = mathx.cosf(LEAN);
+    const sl = mathx.sinf(LEAN);
+    art.guitarInto(b, .{
+        .o = v3(cx + cy * FOOT, 0.020, cz + sy * FOOT),
+        .w = v3(sy, 0, -cy), // across the strings, level
+        .a = v3(-cy * sl, cl, -sy * sl), // up the neck, leaning BACK over the rock
+        .n = v3(cy * cl, sl, sy * cl), // out through the soundboard, tipped UP by the lean
+        .s = 1.5,
+    });
+}
+
+// A colossal broken KEEP for the horizon.
 pub fn towerMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4810);
@@ -906,8 +729,7 @@ pub fn towerMesh(shader: rl.Shader) rl.Model {
         );
         b.addBlob(v3(f[0] * W * 0.52, h + 0.12, f[1] * W * 0.52), v3(0.95, 0.22, 0.95), 3, 6, STONE); // its weathered set-off
     }
-    // ARROW SLITS: dark recesses punched through the faces. At range they are the only thing
-    // giving the mass a SCALE — without them it could be six metres or sixty.
+    // ARROW SLITS: dark recesses punched through the faces.
     var sl: i32 = 0;
     while (sl < 9) : (sl += 1) {
         const face = rng.intn(4);
@@ -926,8 +748,7 @@ pub fn towerMesh(shader: rl.Shader) rl.Model {
         b.addCube(v3(p.x, p.y, p.z), v3(if (across) 0.34 else wide, tall, if (across) wide else 0.34), IRON);
         b.addCube(v3(p.x, p.y + tall * 0.62, p.z), v3(if (across) 0.30 else wide * 1.9, 0.14, if (across) wide * 1.9 else 0.30), STONE_LT); // its lintel
     }
-    // The CORBEL TABLE under the parapet — the one silhouette detail that says "castle" from
-    // two hundred metres.
+    // The CORBEL TABLE under the parapet — the one silhouette detail that says "castle" from two hundred metres.
     for ([_][2]f32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } }) |f| {
         var cb: i32 = 0;
         while (cb < 5) : (cb += 1) {
@@ -938,8 +759,7 @@ pub fn towerMesh(shader: rl.Shader) rl.Model {
             b.addBox(v3(px, yTop - 0.25, pz), v3(0.28, rng.signed() * 0.03, 0), v3(0, 0.20, 0), v3(0, 0, 0.28), STONE_DK);
         }
     }
-    // THE CROWN, genuinely broken: merlons missing in runs along two sides, standing in others,
-    // and one corner sheared clean off.
+    // THE CROWN, genuinely broken: merlons missing in runs along two sides, standing in others, and one corner sheared clean off.
     var m: i32 = 0;
     while (m < 16) : (m += 1) {
         const side = @divTrunc(m, 4);
@@ -975,8 +795,7 @@ pub fn towerMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.35) STONE else STONE_DK,
         );
     }
-    // TALUS heaped against one flank, big blocks nearest the wall — it hides the line where the
-    // keep meets flat terrain.
+    // TALUS heaped against one flank, big blocks nearest the wall — it hides the line where the keep meets flat terrain.
     var t: i32 = 0;
     while (t < 12) : (t += 1) {
         const a = rng.range(0.2, 1.7);
@@ -996,13 +815,7 @@ pub fn towerMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// THE COLOSSAL HORIZON GATE — what the avenue points at, and the landmark the whole opening
-// view is composed around, so it gets more than anything else in the file.
-//
-// Twin coursed towers, and between them a REAL arched portal: sixteen wedge-cut voussoirs on a
-// five-metre radius with a keystone, the stumps of a portcullis still hanging in it, the
-// corbelled fighting platform above. Its crest is broken open — a gate that still shuts is a
-// gate somebody is holding.
+// THE COLOSSAL HORIZON GATE — what the avenue points at, and the landmark the whole opening view is composed around, so it gets more than anything else in the file.
 pub fn gateMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4811);
@@ -1019,12 +832,9 @@ pub fn gateMesh(shader: rl.Shader) rl.Model {
         quoinsInto(&b, &rng, x - 2.4, -2.4, 1.4, 0.92, 14, 0.9, 0.42);
         quoinsInto(&b, &rng, x + 2.4, 2.4, 1.4, 0.92, 14, 0.9, 0.42);
     }
-    // THE CURTAIN between the towers, with the portal cut through it — coursed, so its face
-    // bands like the towers do.
+    // THE CURTAIN between the towers, with the portal cut through it — coursed, so its face bands like the towers do.
     courseInto(&b, &rng, -TX + 1.0, 0, TX - 1.0, 0, .{ .thick = DEP, .height = 15.6, .courses = 17, .blockW = 1.15, .crumbleTop = 0.40, .crumble = 0.03, .gapLo = -R - 0.3, .gapHi = R + 0.3, .sillY = -1, .headY = SPR + R + 0.7 });
-    // THE VOUSSOIRS. Radial is (−cos a, sin a, 0), tangent (sin a, cos a, 0). Pass a
-    // non-perpendicular pair and addBox silently builds skewed blocks with daylight between —
-    // the watchtower's lesson, and at this scale it costs you the whole landmark.
+    // THE VOUSSOIRS.
     const NV = 16;
     var i: i32 = 0;
     while (i < NV) : (i += 1) {
@@ -1073,8 +883,7 @@ pub fn gateMesh(shader: rl.Shader) rl.Model {
         }
     }
     b.addBox(v3(0, 14.25, 0), v3(TX - 0.6, rng.signed() * 0.02, 0), v3(0, 0.55, 0), v3(0, 0, DEP * 1.14), STONE); // the platform slab
-    // THE BROKEN CREST: merlons across the span, a run gone on the near side, and the crack
-    // that took them running down into the parapet.
+    // THE BROKEN CREST: merlons across the span, a run gone on the near side, and the crack that took them running down into the parapet.
     var m: i32 = 0;
     while (m < 11) : (m += 1) {
         if (m >= 3 and m <= 5) continue;
@@ -1099,8 +908,7 @@ pub fn gateMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A leaning war banner: bent pole, crossarm, and two ragged strips of faded crimson —
-// the fallen army's colors, matching the hero's cape.
+// A leaning war banner: bent pole, crossarm, and two ragged strips of faded crimson — the fallen army's colors, matching the hero's cape.
 pub fn bannerMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4812);
@@ -1121,9 +929,7 @@ pub fn bannerMesh(shader: rl.Shader) rl.Model {
     b.setMat(.steel);
     b.addBlob(top, v3(0.048, 0.07, 0.048), 3, 6, RUST); // the socket
     b.addCylinder(v3(top.x, 3.24, top.z), v3(top.x + tilt.x * 0.08, 3.62, top.z), 0.042, 0.004, 5, IRON); // a spear finial
-    // THE STANDARD, in ribbons: eleven strips to their own torn-off lengths, all drifting the
-    // same way — it has hung in one prevailing wind a long time. The ragged hem IS the prop;
-    // two flat quads read as a For Sale sign.
+    // THE STANDARD, in ribbons: eleven strips to their own torn-off lengths, all drifting the same way — it has hung in one prevailing wind a long time.
     b.setMat(.cloth);
     var s: i32 = 0;
     while (s < 11) : (s += 1) {
@@ -1160,13 +966,7 @@ pub fn bannerMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A weathered headless SENTINEL — marble on a plinth, one arm lost, the neck snapped and the
-// head lying face-down in the grass at its feet. It watched the road once.
-//
-// The fidelity here is DRAPERY. A robe modelled as a bare tapered cylinder is a traffic cone
-// and no albedo noise fixes it: cloth reads through the vertical folds that catch and lose the
-// light, so the robe gets eleven plus a mantle. And the plinth gets a carved inscription band,
-// because what every ruined statue has is a name nobody can read any more.
+// A weathered headless SENTINEL — marble on a plinth, one arm lost, the neck snapped and the head lying face-down in the grass at its feet.
 pub fn statueMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4813);
@@ -1185,8 +985,7 @@ pub fn statueMesh(shader: rl.Shader) rl.Model {
     const sway = v3(rng.signed() * 0.06, 0, rng.signed() * 0.05);
     const shoulderY: f32 = 2.36;
     b.addCapsule(v3(0, 0.66, 0), v3(sway.x, shoulderY, sway.z), 0.46, 0.29, 9, MARBLE);
-    // DRAPERY: folds the height of the robe, each its own depth and drift, gathering to one
-    // side the way cloth hangs off a contrapposto hip.
+    // DRAPERY: folds the height of the robe, each its own depth and drift, gathering to one side the way cloth hangs off a contrapposto hip.
     var f: i32 = 0;
     while (f < 11) : (f += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(f)) / 11.0 + rng.signed() * 0.18;
@@ -1221,7 +1020,7 @@ pub fn statueMesh(shader: rl.Shader) rl.Model {
     b.addCapsule(ea, v3(sway.x + 0.60, shoulderY - 0.46, sway.z + 0.34), 0.078, 0.055, 6, MARBLE);
     b.addBlob(v3(sway.x + 0.64, shoulderY - 0.52, sway.z + 0.38), v3(0.075, 0.055, 0.070), 3, 6, MARBLE_LT); // the hand
     b.addBlob(v3(sway.x - 0.30, shoulderY - 0.10, sway.z), v3(0.11, 0.10, 0.11), 3, 6, MARBLE_DK); // the lost arm's break
-    // THE HEAD, lying face-down in the grass where it came off. This is the prop.
+    // THE HEAD, lying face-down in the grass where it came off.
     const hx = rng.range(-1.05, -0.62);
     const hz = rng.range(-0.5, 0.75);
     b.addBlob(v3(hx, 0.20, hz), v3(0.21, 0.19, 0.24), 4, 8, MARBLE);
@@ -1240,9 +1039,7 @@ pub fn statueMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// Low RUBBLE scatter — what a building leaves on the ground. Mixed on purpose: blocks worn
-// shapeless, a couple of fresh-broken pieces that still have edges, a drum shard, a fragment of
-// carved moulding, grit between. A heap of same-size anything reads as a texture swatch.
+// Low RUBBLE scatter — what a building leaves on the ground.
 pub fn rubbleMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4814);
@@ -1261,9 +1058,7 @@ pub fn rubbleMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.26) STONE_MOSS else if (rng.float() < 0.5) STONE_LT else STONE_DK,
         );
     }
-    // Two angular pieces that broke recently enough to still have corners on them. Each gets a
-    // real TIPPED orthonormal frame (yaw + a hard lean about it) and sits low — the old ones
-    // stood square and pale, and a dressed block sitting flat reads as delivered, not fallen.
+    // Two angular pieces that broke recently enough to still have corners on them.
     var g: i32 = 0;
     while (g < 2) : (g += 1) {
         const a = rng.angle();
@@ -1286,8 +1081,7 @@ pub fn rubbleMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.5) STONE_DK else STONE,
         );
     }
-    // A DRUM SHARD and a scrap of carved moulding — the pieces that say this came off something
-    // built rather than off a hill.
+    // A DRUM SHARD and a scrap of carved moulding — the pieces that say this came off something built rather than off a hill.
     b.setMat(.marble);
     b.addCylinder(v3(-0.15, 0.15, 0.62), v3(0.42, 0.13, 0.92), 0.17, 0.15, 7, MARBLE);
     b.addBlob(v3(-0.15, 0.15, 0.62), v3(0.03, 0.17, 0.17), 3, 7, MARBLE_DK);

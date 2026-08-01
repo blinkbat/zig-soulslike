@@ -2,19 +2,6 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 
-// ── EDITOR ICONS ── drawn from primitives, like the HUD's sword and flask, and for the same three
-// reasons: the repo ships no image assets and is not about to start for twenty-eight glyphs; a
-// drawn icon scales to any button height without a second atlas; and a pack downloaded off the
-// internet arrives with a licence, an attribution line and a house style that is not this one.
-//
-// THEY ARE A SET, and the whole value is in that — an icon strip only builds a visual flow if the
-// pieces obviously belong together. So every one is authored on the same notional 16x16 grid,
-// scaled by `size`, in ONE colour, at ONE stroke weight, with the same rounded ends. Nothing here
-// is filled except where fill IS the meaning (a painted soil swatch, a placed instance).
-//
-// The rule for reading them: a SHAPE is what the brush lays down (a box, a ring, a line), and DOTS
-// are instances. So `scatter` is dots loose in a box, `ring` is dots on a circle, `single` is one
-// dot — you can tell the placement brushes apart without reading a word, which is the point.
 
 pub const Icon = enum {
     // layers
@@ -44,9 +31,7 @@ pub const Icon = enum {
     toad,
     archer,
     ogre,
-    // …and the kobold warband. Each is drawn as its KIT rather than as its face: at 20 px three
-    // doglike heads would be three identical smudges, where two axes, a staff and a sling are three
-    // different shapes you can tell apart at a glance.
+    // …and the kobold warband.
     berserker,
     priest,
     slinger,
@@ -60,23 +45,20 @@ pub const Icon = enum {
     redo,
 };
 
-/// Draw `ic` centred on (cx, cy), sized to fit a `size`-square box. `col` is the only colour it
-/// uses — callers tint by state (hot / active / disabled) exactly as the text beside them does.
+/// Draw `ic` centred on (cx, cy), sized to fit a `size`-square box.
 pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
     const s = size;
     const w = @max(1.4, s / 11.0); // ONE stroke weight for the whole set, scaled off the box
     const d = dim(col);
     switch (ic) {
-        // ── LAYERS ──────────────────────────────────────────────────────────────────────
-        // Ground: strata. Three stacked bands, the top one broken — soil you can paint through.
+        // Ground: strata.
         .ground => {
             hline(cx, cy - s * 0.22, s * 0.72, w, col);
             hline(cx - s * 0.12, cy, s * 0.48, w, col);
             hline(cx + s * 0.22, cy, s * 0.20, w, d);
             hline(cx, cy + s * 0.22, s * 0.72, w, col);
         },
-        // Cover: the flora carpet — a bounded field with growth loose inside it. The dashed top
-        // edge says the boundary is authored and the contents are not.
+        // Cover: the flora carpet — a bounded field with growth loose inside it.
         .cover => {
             box(cx, cy, s * 0.78, s * 0.62, w, d);
             var i: i32 = -1;
@@ -86,8 +68,7 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
                 dot(x, cy - s * 0.06, w * 1.1, col);
             }
         },
-        // Decor: a fern sprig. TWO frond pairs, not three, and long ones — at 20 px a third pair
-        // just fills the gaps in and the whole thing collapses into a blob.
+        // Decor: a fern sprig.
         .decor => {
             line(cx + s * 0.10, cy + s * 0.40, cx - s * 0.04, cy - s * 0.34, w, col); // a leaning stem
             var i: i32 = 0;
@@ -101,9 +82,7 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             }
             dot(cx - s * 0.04, cy - s * 0.34, w * 0.9, col); // the curled tip
         },
-        // Props: a column — a WIDE capital and base with a narrow shaft between them. The contrast
-        // between those widths is the entire read; at anything less than this it came out as two
-        // parallel bars, which is a Roman numeral, not a ruin.
+        // Props: a column — a WIDE capital and base with a narrow shaft between them.
         .props => {
             hline(cx, cy - s * 0.34, s * 0.74, w * 1.3, col); // the abacus, proud of everything
             hline(cx, cy - s * 0.25, s * 0.52, w, col); //      …on its echinus
@@ -112,23 +91,21 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             hline(cx, cy + s * 0.28, s * 0.52, w, col);
             hline(cx, cy + s * 0.38, s * 0.74, w * 1.3, col); // …and a plinth to match the abacus
         },
-        // Interactables: a chest. The DOMED lid over a band is the whole read — drawn as a plain box
-        // it is the `zone` glyph, and the hasp is what says the thing opens.
+        // Interactables: a chest.
         .interact => {
             box(cx, cy + s * 0.15, s * 0.72, s * 0.42, w, col); // the carcase
             arc(cx, cy - s * 0.06, s * 0.36, 180, 360, w, col); // …under a barrel lid
             hline(cx, cy - s * 0.06, s * 0.72, w, col); //         …resting on its rim
             dot(cx, cy + s * 0.06, w * 1.2, col); //               the hasp, over the joint
         },
-        // Units: a figure. Head and shoulders — spawns are people-shaped things.
+        // Units: a figure.
         .units => {
             ring2(cx, cy - s * 0.20, s * 0.16, w, col);
             arc(cx, cy + s * 0.36, s * 0.30, 180, 360, w, col);
             vline(cx, cy + s * 0.14, s * 0.20, w, col);
         },
 
-        // ── MODES ───────────────────────────────────────────────────────────────────────
-        // Select: a pointer. The one icon that is FILLED, because a cursor is a solid thing.
+        // Select: a pointer.
         .select => {
             const p = [_]rl.Vector2{
                 .{ .x = cx - s * 0.20, .y = cy - s * 0.36 },
@@ -143,8 +120,7 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             while (i + 1 < p.len) : (i += 1) rl.drawLineEx(p[i], p[i + 1], w, col);
             rl.drawLineEx(p[p.len - 1], p[0], w, col);
         },
-        // Erase: an eraser held at an angle, its working end shaded. Not an X — an X means "close"
-        // everywhere else in software, and this brush removes rather than dismisses.
+        // Erase: an eraser held at an angle, its working end shaded.
         .erase => {
             const a = rl.Vector2{ .x = cx - s * 0.30, .y = cy + s * 0.26 };
             const b = rl.Vector2{ .x = cx + s * 0.18, .y = cy - s * 0.30 };
@@ -153,7 +129,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             hline(cx + s * 0.06, cy + s * 0.40, s * 0.62, w, d); // the surface it works on
         },
 
-        // ── COVER BRUSHES ───────────────────────────────────────────────────────────────
         .zone => {
             box(cx, cy, s * 0.68, s * 0.56, w, col);
             // A corner handle, so it reads as a draggable rect and not as a picture frame.
@@ -165,7 +140,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             dot(cx, cy, w * 1.2, col);
         },
 
-        // ── DECOR / PROP BRUSHES ── shape = what is laid down, dots = the instances in it.
         .scatter => {
             box(cx, cy, s * 0.74, s * 0.60, w, d);
             scatterDots(cx, cy, s * 0.28, s * 0.20, w, col, 5);
@@ -206,9 +180,7 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
                 dot(cx + mathx.cosf(a) * s * 0.34, cy + mathx.sinf(a) * s * 0.34, w * 1.5, col);
             }
         },
-        // Cluster: a BAND of instances — an annulus, so it reads against `patch` (a filled disc)
-        // and `ring` (a single line of them). Six dots at one radius, not eight at three: the
-        // scattered version came out as a smudge with a circle round it.
+        // Cluster: a BAND of instances — an annulus, so it reads against `patch` (a filled disc) and `ring` (a single line of them).
         .cluster => {
             ring2(cx, cy, s * 0.40, w * 0.8, d);
             ring2(cx, cy, s * 0.16, w * 0.8, d);
@@ -218,10 +190,7 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
                 dot(cx + mathx.cosf(a) * s * 0.28, cy + mathx.sinf(a) * s * 0.28, w * 1.5, col);
             }
         },
-        // Ivy: leaves climbing a WALL, and the wall is half the meaning — this op only sows on
-        // stonework already standing. A fat dim upright on the left says "wall"; three leaves
-        // stepping up it on alternating sides say "climber". The old zigzag stem read as a
-        // lightning bolt, which is what happens when the connecting line is louder than the leaves.
+        // Ivy: leaves climbing a WALL, and the wall is half the meaning — this op only sows on stonework already standing.
         .ivy => {
             vline(cx - s * 0.26, cy, s * 0.84, w * 2.6, d); // the wall face
             var i: i32 = 0;
@@ -236,7 +205,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             vline(cx - s * 0.14, cy, s * 0.66, w * 0.9, col); // the runner itself, straight up
         },
 
-        // ── UNITS ── three creature silhouettes, told apart at a glance by WIDTH and EYES.
         .toad => {
             arc(cx, cy + s * 0.22, s * 0.38, 180, 360, w, col); // squat and wide
             hline(cx, cy + s * 0.22, s * 0.72, w, col);
@@ -274,7 +242,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             dot(cx, cy + s * 0.24, w * 1.7, col); // …and the stone
         },
 
-        // ── FILES ───────────────────────────────────────────────────────────────────────
         .new => {
             page(cx, cy, s, w, col);
         },
@@ -313,13 +280,9 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
     }
 }
 
-// ── the primitive kit ───────────────────────────────────────────────────────────────────
-// Deliberately tiny. Every icon above is built from these six, which is what keeps the set looking
-// like a set: one stroke weight, one cap style, one way of drawing a circle.
+// Deliberately tiny.
 
-/// The set's SECOND value — the same hue at a third of the weight, for the parts of an icon that
-/// are context rather than subject (the surface a stamp lands on, the box a scatter fills). Two
-/// weights of one colour is what gives a 16 px glyph depth without a second colour to manage.
+/// The set's SECOND value — the same hue at a third of the weight, for the parts of an icon that are context rather than subject (the surface a stamp lands on, the box a scatter fills).
 fn dim(c: rl.Color) rl.Color {
     return rl.Color.init(c.r, c.g, c.b, @intCast(@as(u16, c.a) * 42 / 100));
 }
@@ -339,8 +302,7 @@ fn dot(cx: f32, cy: f32, r: f32, c: rl.Color) void {
 fn box(cx: f32, cy: f32, bw: f32, bh: f32, w: f32, c: rl.Color) void {
     rl.drawRectangleLinesEx(.{ .x = cx - bw * 0.5, .y = cy - bh * 0.5, .width = bw, .height = bh }, w, c);
 }
-/// An outline circle. `drawCircleLines` is a hairline whatever the icon size, so this is drawn as a
-/// swept polyline instead — the set has ONE stroke weight and a ring that ignores it stands out.
+/// An outline circle.
 fn ring2(cx: f32, cy: f32, r: f32, w: f32, c: rl.Color) void {
     arc(cx, cy, r, 0, 360, w, c);
 }
@@ -358,12 +320,10 @@ fn arrowHead(cx: f32, cy: f32, r: f32, dirDeg: f32, c: rl.Color) void {
     const tip = rl.Vector2{ .x = cx + mathx.cosf(a) * r, .y = cy + mathx.sinf(a) * r };
     const l = rl.Vector2{ .x = cx + mathx.cosf(a + 2.5) * r, .y = cy + mathx.sinf(a + 2.5) * r };
     const rr = rl.Vector2{ .x = cx + mathx.cosf(a - 2.5) * r, .y = cy + mathx.sinf(a - 2.5) * r };
-    // Winding matters: raylib culls a back-facing 2D triangle, so the three go anticlockwise in
-    // SCREEN space (y down) or the head simply is not there.
+    // Winding matters: raylib culls a back-facing 2D triangle, so the three go anticlockwise in SCREEN space (y down) or the head simply is not there.
     rl.drawTriangle(tip, l, rr, c);
 }
-/// Deterministically scattered dots — a fixed seed, so the icon is identical every frame. A
-/// re-rolled scatter would shimmer under the cursor, which is the one thing a static glyph must not do.
+/// Deterministically scattered dots — a fixed seed, so the icon is identical every frame.
 fn scatterDots(cx: f32, cy: f32, rx: f32, ry: f32, w: f32, c: rl.Color, n: u32) void {
     var rng = mathx.Rng.init(0xC0FFEE);
     var i: u32 = 0;
@@ -385,8 +345,7 @@ fn page(cx: f32, cy: f32, s: f32, w: f32, c: rl.Color) void {
 }
 fn disk(cx: f32, cy: f32, s: f32, w: f32, c: rl.Color, d: rl.Color) void {
     box(cx, cy, s * 0.62, s * 0.62, w, c);
-    // The shutter at the top and the label at the bottom — the two details that make a square read
-    // as a disk rather than as an empty box.
+    // The shutter at the top and the label at the bottom — the two details that make a square read as a disk rather than as an empty box.
     rl.drawRectangleRec(.{ .x = cx - s * 0.16, .y = cy - s * 0.31, .width = s * 0.32, .height = s * 0.20 }, d);
     box(cx, cy + s * 0.18, s * 0.40, s * 0.22, w * 0.8, c);
 }

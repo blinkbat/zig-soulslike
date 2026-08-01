@@ -1,10 +1,3 @@
-// ── PROPS: STRUCTURES YOU ENTER ── the chapel, the watchtowers, the cottages, plus the two surfaces
-// you walk on (the causeway and flagstone paving). These are the reason point lights exist: a roof
-// stops the sun dead, and without a torch inside the room is a black hole.
-//
-// They are together because they share a PROBLEM the small props don't have — an interior. Walls
-// carry courses (propart.courseInto), roofs pitch, and a doorway has to land where env's brazier and
-// the --shot framings expect it (art.towerDoorway).
 const std = @import("std");
 const rl = @import("raylib");
 const gfx = @import("gfx.zig");
@@ -13,9 +6,7 @@ const art = @import("propart.zig");
 
 const v3 = mathx.v3;
 const Builder = gfx.Builder;
-// The shared vocabulary this file draws on, aliased so a mesh body still reads as a recipe
-// (`art.STONE_DK` in front of every colour buries the shape in namespace). GENERATED from what
-// the file actually references — the list IS the dependency, so it is worth reading.
+// The shared vocabulary this file draws on, aliased so a mesh body still reads as a recipe (`art.STONE_DK` in front of every colour buries the shape in namespace).
 const IRON = art.IRON;
 const MORTAR = art.MORTAR;
 const PAVE = art.PAVE;
@@ -37,13 +28,8 @@ const lichenInto = art.lichenInto;
 const towerDoorway = art.towerDoorway;
 const tuftInto = art.tuftInto;
 
-// ── STRUCTURES YOU ENTER ── these are the reason point lights exist: a roof stops the sun
-// dead, and without a torch inside the room is a black hole.
 
-// A ruined wayside CHAPEL: 5 x 7 m nave with a doorway in the south wall, window openings
-// down both sides, an altar at the north end, two rows of stub columns, and a broken roof
-// that still covers the northern half — so the altar end sits in real darkness and the
-// torches (placed as separate props by env) are what let you see it.
+// A ruined wayside CHAPEL: 5 x 7 m nave with a doorway in the south wall, window openings down both sides, an altar at the north end, two rows of stub columns, and a broken roof that still covers the northern half — so the altar end sits in real darkness and the torches (placed as separate props by env) are what let you see it.
 pub fn chapelMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(5150);
@@ -66,7 +52,6 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
         }
     }
     // The four walls, laid course by course by the shared masonry builder (`courseInto`).
-    // South wall with the DOORWAY (a 2.3 m opening, full height to a lintel at 2.9).
     courseInto(&b, &rng, -hw, -hl, hw, -hl, .{ .thick = wt, .height = wh, .gapLo = -1.15, .gapHi = 1.15, .sillY = -0.1, .headY = 2.9 });
     b.addCube(v3(0, 3.05, -hl), v3(2.9, 0.30, 2 * wt + 0.06), STONE_LT); // door lintel
     // North (altar) wall, unbroken but for a high slot window.
@@ -85,15 +70,12 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
             }
         }
     }
-    // The ROOF over the northern half only: rafters plus sloped slabs, with the southern
-    // rafters left bare and snapped. This is what makes the altar end dark.
+    // The ROOF over the northern half only: rafters plus sloped slabs, with the southern rafters left bare and snapped.
     var rf: i32 = 0;
     while (rf < 7) : (rf += 1) {
         const z = -hl + 0.55 + @as(f32, @floatFromInt(rf)) * 1.05;
         b.setMat(.wood);
-        // A COUPLE of rafters per bay, each running from its OWN wall head up to the ridge. Written as
-        // two full-span planks tilted opposite ways they crossed over the middle of the nave, and the
-        // roof read as scaffolding — an X lattice, not a pitch.
+        // A COUPLE of rafters per bay, each running from its OWN wall head up to the ridge.
         for ([_]f32{ -1, 1 }) |sgn| {
             b.addBox(v3(sgn * (hw + 0.15) * 0.5, wh + 0.55, z), v3(sgn * (hw + 0.15) * 0.5, -0.42, 0), v3(0, 0.10, 0), v3(0, 0, 0.10), TIMBER_DK);
         }
@@ -103,9 +85,7 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
             const run = (hw + 0.25) * 0.5;
             b.addBox(
                 v3(sgn * run, wh + 0.48, z),
-                // DOWN and OUT from the ridge. At +0.48 the slab climbed as it went out, which put the
-                // eaves ABOVE the ridge line: a valley roof, and the reason the covering read as flat
-                // panels lying over the walls.
+                // DOWN and OUT from the ridge.
                 v3(sgn * run, -0.42, 0),
                 v3(0, 0.09, 0),
                 v3(0, 0, 0.55 * rng.range(0.94, 1.04)),
@@ -143,10 +123,7 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A WATCHTOWER: a masonry drum you can walk into, built as real courses of blocks (a bare
-// cylinder is a shell — from inside you would see straight through its culled back faces),
-// with a doorway on local −Z, arrow slits above, a timber floor overhead that keeps the
-// ground room dark, and a broken crenellated crown.
+// A WATCHTOWER: a masonry drum you can walk into, built as real courses of blocks (a bare cylinder is a shell — from inside you would see straight through its culled back faces), with a doorway on local −Z, arrow slits above, a timber floor overhead that keeps the ground room dark, and a broken crenellated crown.
 pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7788);
@@ -155,11 +132,7 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     const R: f32 = TOWER_R;
     const courses: i32 = 15;
     const ch: f32 = 0.76;
-    // A block on the drum at angle `a`: its RADIAL axis is (sin a, 0, −cos a) — the direction of
-    // the position itself — and its TANGENTIAL axis must be perpendicular to that, which is
-    // (cos a, 0, sin a). Getting the tangent's z sign wrong (an easy −sin a) makes every block a
-    // SKEWED parallelepiped instead of a masonry unit, and the drum ends up with gaps you can see
-    // daylight through. addBox happily builds the skewed version, so nothing complains.
+    // A block on the drum at angle `a`: its RADIAL axis is (sin a, 0, −cos a) — the direction of the position itself — and its TANGENTIAL axis must be perpendicular to that, which is (cos a, 0, sin a).
     const radial = struct {
         fn v(a: f32, len: f32) rl.Vector3 {
             return v3(mathx.sinf(a) * len, 0, -mathx.cosf(a) * len);
@@ -177,9 +150,7 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
         const base = radial(a, R + 0.28);
         b.addBox(v3(base.x, 0.22, base.z), tangent(a, 0.58), v3(0, 0.22, 0), radial(a, 0.42), STONE_DK);
     }
-    // THE CORE: wide dark blocks bedded inside the facing, offset half a block so the joints
-    // never line up. Without it every gap in the drum shows daylight — or the far wall of the
-    // room — and the tower reads as a palisade of loose stones.
+    // THE CORE: wide dark blocks bedded inside the facing, offset half a block so the joints never line up.
     var cr: i32 = 0;
     while (cr < 12) : (cr += 1) {
         var ci: i32 = 0;
@@ -207,8 +178,7 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
         while (i < sides) : (i += 1) {
             const fi = @as(f32, @floatFromInt(i)) + skew;
             const a = std.math.tau * fi / @as(f32, @floatFromInt(sides));
-            // The DOORWAY: three columns omitted for the lowest four courses. Tested on the
-            // UNSKEWED index so the opening keeps straight jambs course to course.
+            // The DOORWAY: three columns omitted for the lowest four courses.
             if (c < 4 and towerDoorway(i)) continue;
             // Arrow slits: single columns omitted at two heights, on two different bearings.
             if ((c == 7 or c == 8) and (i == 2 or i == 9)) continue;
@@ -261,18 +231,14 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A COTTAGE gone to ruin: three standing walls of rough field stone (the fourth fallen to
-// knee height), a gable end, the charred stubs of roof timbers, a chimney breast still
-// standing proud, and shreds of thatch caught on the purlins.
+// A COTTAGE gone to ruin: three standing walls of rough field stone (the fourth fallen to knee height), a gable end, the charred stubs of roof timbers, a chimney breast still standing proud, and shreds of thatch caught on the purlins.
 pub fn cottageMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2626);
     b.setMat(.stone);
     const hw: f32 = 2.3;
     const hl: f32 = 1.9;
-    // Field-stone walls: rounded stones bedded in a packed core, not cut blocks. The CORE goes
-    // first (see the packed-stone note above `courseInto`) or the gaps between rounded stones
-    // show daylight; stones then overlap their slot ~35% so they bed instead of butting.
+    // Field-stone walls: rounded stones bedded in a packed core, not cut blocks.
     const run = struct {
         fn go(bb: *Builder, r: *mathx.Rng, ax: f32, az: f32, bx: f32, bz: f32, height: f32, gapLo: f32, gapHi: f32) void {
             const dx = bx - ax;
@@ -372,10 +338,7 @@ pub fn cottageMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A low stone CAUSEWAY over the tarn's shallows — flat flagstones a hand's breadth above the
-// water with kerbs either side, worn, subsiding, one span collapsed into a gap you stride
-// over. Deliberately NOT an arched bridge: the world is a flat plane and the hero walks at
-// y=0, so a raised deck would be a lie you could walk through.
+// A low stone CAUSEWAY over the tarn's shallows — flat flagstones a hand's breadth above the water with kerbs either side, worn, subsiding, one span collapsed into a gap you stride over.
 pub fn causewayMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3939);
@@ -414,34 +377,21 @@ pub fn causewayMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A patch of worn PAVING — the city's old road surface coming through the grass. Flat, cheap,
-// and it is what stops the ruins reading as props dropped on a lawn.
-//
-// Kept DARK and TIGHT on purpose: the first pass used bright stone spaced out over 2.5 m and
-// read as scattered white litter dropped on the field rather than as a buried surface. Paving
-// is a road you can just make out, not a feature.
+// A patch of worn PAVING — the city's old road surface coming through the grass.
 pub fn pavingMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(1234);
-    // THE ROAD BED first — packed earth the setts are laid INTO. Without it the gaps are lit
-    // grass, every sett reads as a tile dropped on a lawn, and a street looks like spilled
-    // paper. (Packed stone has a substrate; a road is packed stone laid flat.)
+    // THE ROAD BED first — packed earth the setts are laid INTO.
     b.setMat(.stone);
     b.addCylinder(v3(0, 0.006, 0), v3(0, 0.020, 0), 2.35, 2.20, 14, SOIL);
-    // Worn hollows of bare bed the setts skip round — a road with no holes in it is a road
-    // somebody is maintaining.
+    // Worn hollows of bare bed the setts skip round — a road with no holes in it is a road somebody is maintaining.
     var holes: [3][3]f32 = undefined;
     for (&holes) |*h| {
         const a = rng.angle();
         const d = rng.range(0.4, 1.7);
         h.* = .{ mathx.cosf(a) * d, mathx.sinf(a) * d, rng.range(0.30, 0.62) };
     }
-    // A ROAD IS LAID, NOT SCATTERED. A random-angle strew of flat boxes reads as tiles dropped
-    // on a lawn whatever their size or colour, because every stone shows four edges at its own
-    // angle and the eye counts TILES instead of seeing a SURFACE. The fix is the LAYING: a
-    // lattice of courses, each row offset half a pitch like brickwork, every sett on the patch's
-    // axes with a few degrees of wander. Wabi-sabi still lives in the sizes, cants, tone and the
-    // ones that are missing — but the COURSES have to be there, or it is gravel.
+    // A ROAD IS LAID, NOT SCATTERED.
     const PITCH: f32 = 0.30;
     const HALFN: i32 = 8; // cells each way from centre — covers the 2.2 m disc
     var gz: i32 = -HALFN;
@@ -462,8 +412,7 @@ pub fn pavingMesh(shader: rl.Shader) rl.Model {
             const w = PITCH * rng.range(1.02, 1.20); // butted, then some — the joint is a shadow
             const l = PITCH * rng.range(0.95, 1.25);
             const wob = rng.signed() * 0.09; // a few degrees of wander off the course line
-            // Setts CANT: frost does not leave a road level, and those tilts are what catch the
-            // low sun and make it read as a surface at all.
+            // Setts CANT: frost does not leave a road level, and those tilts are what catch the low sun and make it read as a surface at all.
             b.addBox(
                 v3(px, rng.range(0.010, 0.026), pz),
                 v3(w * 0.5, rng.signed() * 0.012, wob * w * 0.5),

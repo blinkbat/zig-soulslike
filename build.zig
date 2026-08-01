@@ -1,20 +1,11 @@
 const std = @import("std");
 
-// Consumer build for zig-soulslike: link the static raylib artifact built from C source
-// by raylib-zig (Zig's bundled clang compiles it — no MSVC, no raylib.dll), and import
-// the raylib + raygui Zig binding modules. Mirrors the zig-rts / zig-diablo wiring.
+// Consumer build for zig-soulslike: link the static raylib artifact built from C source by raylib-zig (Zig's bundled clang compiles it — no MSVC, no raylib.dll), and import the raylib + raygui Zig binding modules.
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // X11, NOT WAYLAND, on Linux — and this is what makes a Linux build possible from a Windows box at
-    // all. raylib's default there is `Both`, and Wayland means running `wayland-scanner` to generate
-    // protocol glue, which is a LINUX HOST BINARY: cross-compiling panics with "`wayland-scanner` not
-    // found" before it reaches a single line of this game's code. X11 needs no codegen step, and every
-    // Wayland desktop ships XWayland, so an X11 binary runs on both.
-    //
-    // Windows and macOS ignore the option entirely, so it is set unconditionally rather than behind a
-    // target test — one build that cross-compiles is worth more than a branch nobody exercises.
+    // X11, NOT WAYLAND, on Linux — and this is what makes a Linux build possible from a Windows box at all. raylib's default there is `Both`, and Wayland means running `wayland-scanner` to generate protocol glue, which is a LINUX HOST BINARY: cross-compiling panics with "`wayland-scanner` not found" before it reaches a single line of this game's code.
     const raylib_dep = b.dependency("raylib_zig", .{
         .target = target,
         .optimize = optimize,
@@ -35,6 +26,8 @@ pub fn build(b: *std.Build) void {
     exe.linkLibrary(raylib_artifact);
     exe.root_module.addImport("raylib", raylib);
     exe.root_module.addImport("raygui", raygui);
+    // The one recorded sound in the game, reachable from `@embedFile` — `assets/` is outside the root module's package path (src/), and Zig will not let a file cross that line without an import.
+    exe.root_module.addAnonymousImport("campfire_wav", .{ .root_source_file = b.path("assets/campfire.wav") });
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -53,6 +46,7 @@ pub fn build(b: *std.Build) void {
     unit_tests.linkLibrary(raylib_artifact);
     unit_tests.root_module.addImport("raylib", raylib);
     unit_tests.root_module.addImport("raygui", raygui);
+    unit_tests.root_module.addAnonymousImport("campfire_wav", .{ .root_source_file = b.path("assets/campfire.wav") });
     const run_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);

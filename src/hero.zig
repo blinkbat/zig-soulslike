@@ -3,75 +3,40 @@ const rl = @import("raylib");
 const gfx = @import("gfx.zig");
 const mathx = @import("mathx.zig");
 const combat = @import("combat.zig");
+const art = @import("propart.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 const radians = mathx.radians;
 
-// ── THE HERO ────────────────────────────────────────────────────────────────────────
-// He reads as human because of two tables, not polygon count: ANATOMY (every bone a fixed fraction of
-// stature H, Drillis & Contini 1966 as tabulated in Winter) and GAIT (normative sagittal joint curves,
-// Perry / Winter, plus contralateral arm swing, a twice-per-stride bob, sway and pelvic rotation under
-// torso counter-rotation). Invariants of human walking, not keyframes.
-//
-// FK skeleton: each bone is a mesh in its joint's local frame; `pose()` chains matrices once per frame
-// and `draw()` replays them, so the depth pass and the lit pass cannot disagree.
+// He reads as human because of two tables, not polygon count: ANATOMY (every bone a fixed fraction of stature H, Drillis & Contini 1966 as tabulated in Winter) and GAIT (normative sagittal joint curves, Perry / Winter, plus contralateral arm swing, a twice-per-stride bob, sway and pelvic rotation under torso counter-rotation).
 
 pub const H: f32 = 1.8; // stature (world units ≈ metres)
 
-// Locomotion speeds (world units/sec) — the SINGLE source of truth, shared with game.zig
-// and the gait blends below. Elden-Ring analog feel: light stick = walk, full = run, hold sprint = dash.
+// Locomotion speeds (world units/sec) — the SINGLE source of truth, shared with game.zig and the gait blends below.
 pub const WALK_SPEED: f32 = 1.7;
 pub const RUN_SPEED: f32 = 3.4;
 pub const SPRINT_SPEED: f32 = 5.1; // hold-B RUN — a touch faster than a full-stick walk-sprint
-/// LOCKED-ON sideways travel, as a fraction of forward (ER is anisotropic too). Here rather than in
-/// game.zig because the sidestep CADENCE is a property of this rig (`STRAFE_CYCLE`) and its test cannot
-/// import game.zig without a cycle.
+/// LOCKED-ON sideways travel, as a fraction of forward (ER is anisotropic too).
 pub const STRAFE_SPEED: f32 = 0.85;
-/// …and behind the shield, as a fraction of the WALK. Guarding trades mobility for cover — that
-/// trade IS the mechanic, and a hero who guards at walking pace has given up nothing for it. Never
-/// zero: souls guarding is a shuffling advance, not a plant (see `Hero.setGuard`).
-///
-/// RAISED from 0.55 (owner: "you can walk a bit faster while blocking w shield"). At just over half
-/// the walk you could not reposition behind the shield at all — closing or backing off meant dropping
-/// it, so the block only ever answered a blow you had already decided to stand still for. DS's own
-/// shielded walk is around three quarters, which still costs you the sprint and the roll's distance
-/// while leaving you able to WALK a fight down. The floor is what matters here, not the ceiling: it
-/// must stay clearly under 1.0, or the shield is free.
+/// …and behind the shield, as a fraction of the WALK.
 pub const GUARD_SPEED: f32 = 0.75;
 
-// Body-segment lengths as a fraction of stature H (Drillis & Contini 1966; Winter). The joint HEIGHTS
-// they imply, for sanity: ankle .039, knee .285, hip .530, wrist .485, elbow .630, shoulder .818,
-// chin .870, crown 1.0 — each length below is the difference between two of those.
-//
-// ALL FOUR ARE PUB AND MUST BE READ, NEVER RE-STATED. Every humanoid foe keeps the hero's leg
-// fractions (`legChain`'s strafe geometry is measured off LEG_LEN, and a test re-asserts it), so a
-// local copy that drifted is a foe whose planted feet skate. Arms may be genuinely per-creature — the
-// ogre's are heavier — but a rig documented as carrying the hero's anthropometry reads these.
+// Body-segment lengths as a fraction of stature H (Drillis & Contini 1966; Winter).
 pub const SEG_THIGH = 0.245; // hip → knee   (femur)
 pub const SEG_SHANK = 0.246; // knee → ankle (tibia)
 pub const SEG_UPARM = 0.188; // shoulder → elbow
 pub const SEG_FOREARM = 0.145; // elbow → wrist
 
-// ── THE SHARED HUMANOID SCAFFOLD ────────────────────────────────────────────────────────
-// The 18-bone layout, its parent table and its rest pose — the model every biped is founded on, PUBLIC
-// so no creature transcribes it again. Do not re-state these seventeen Y values in a new rig.
-//
-// BONE 17 IS THE WEAPON SLOT on the right wrist, whatever hangs off it: sword, bow, axe, staff, sling.
-// Only the mesh differs, which is why the scaffold is shareable at all.
-//
-// The OGRE is deliberately off it — 24 bones with three inserted ABOVE existing joints is a different
-// layout, not a wider one. It still keeps the leg indices, which `legChain` requires of everything.
+// The 18-bone layout, its parent table and its rest pose — the model every biped is founded on, PUBLIC so no creature transcribes it again.
 pub const N = 18;
 pub const ROOT = 0; // pelvis
 pub const SPINE = 1; // lumbar / mid-torso pivot
 pub const CHEST = 2; // thorax / shoulder girdle
 pub const NECK = 3;
 pub const HEAD = 4;
-// THE LEG INDICES ARE FIXED AT 5..10 for every humanoid, ogre included (AGENTS.md's rule): a foe rig
-// may carry MORE bones than these 18, but it must keep its legs here or `legChain` drives the wrong
-// joints.
+// THE LEG INDICES ARE FIXED AT 5..10 for every humanoid, ogre included (AGENTS.md's rule): a foe rig may carry MORE bones than these 18, but it must keep its legs here or `legChain` drives the wrong joints.
 pub const HIPL = 5;
 pub const KNEEL = 6;
 pub const ANKL = 7;
@@ -84,23 +49,14 @@ pub const WRL = 13; // wrist L
 pub const SHR = 14;
 pub const ELR = 15;
 pub const WRR = 16;
-/// The WEAPON slot — whatever this creature holds in its right hand, parented to that wrist so it
-/// rides every pose for free. `SWORD` is the hero's name for it.
+/// The WEAPON slot — whatever this creature holds in its right hand, parented to that wrist so it rides every pose for free.
 pub const HELD = 17;
 const SWORD = HELD;
 
 pub const PARENT = [N]i32{ -1, ROOT, SPINE, CHEST, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CHEST, SHL, ELL, CHEST, SHR, ELR, WRR };
 const parent = PARENT;
 
-/// THE REST POSE for any humanoid on this scaffold: joint positions in the creature's own standing
-/// frame (X = its left, Y up, Z forward), as fractions of stature scaled by `stature`. Limbs hang
-/// straight down — A-pose splay and stance width come from pose abduction, not from here, so a bone
-/// mesh and its child joint can never separate.
-///
-/// `hx` / `sx` are the hip and shoulder half-separations, in the SAME fractional units, because that
-/// pair is the one honest per-creature difference in a humanoid's proportions: a kobold is narrower
-/// across the shoulders than the Tarnished and it should not have to restate seventeen other numbers
-/// to say so.
+/// THE REST POSE for any humanoid on this scaffold: joint positions in the creature's own standing frame (X = its left, Y up, Z forward), as fractions of stature scaled by `stature`.
 pub fn restHumanoid(hx: f32, sx: f32, stature: f32) [N]rl.Vector3 {
     var r: [N]rl.Vector3 = undefined;
     r[ROOT] = v3(0, 0.530, 0);
@@ -133,9 +89,7 @@ fn restPositions() [N]rl.Vector3 {
     return restHumanoid(HIP_HALF, SHOULDER_HALF, H);
 }
 
-// ── palette (pre-gamma dark: the scene shader gammas output, so these lift a lot) ──────
-// A worn Tarnished: dark iron-blue wool under oxblood leather, a faded crimson tabard and
-// short cape, steel at the guard/pauldron, brass at buckle and pommel.
+// A worn Tarnished: dark iron-blue wool under oxblood leather, a faded crimson tabard and short cape, steel at the guard/pauldron, brass at buckle and pommel.
 const SKIN = rgba(150, 112, 86, 255);
 const SKIN_DK = rgba(120, 88, 66, 255);
 const TUNIC = rgba(38, 40, 50, 255); // dark iron-blue wool
@@ -151,48 +105,15 @@ const STEEL = rgba(98, 104, 114, 255);
 const STEEL_DK = rgba(58, 62, 70, 255);
 const BRASS = rgba(122, 92, 40, 255);
 
-// ── ANIMATION ART DIRECTION — the intent every knob below is tuned to hit. AGENTS.md carries the
-// locomotion look; CARRY and ATTACK live only here.
-//
-//  IDLE   : upright, still, alive — a breathing bob and nothing else.
-//  WALK   : near-upright (~3°), RESTRAINED arms (never both forearms front — "zombie arms"), low hip
-//           sway, heel→toe with a slight toe-out.
-//  RUN    : deep lean over a crouched pelvis, pitched about the FEET so the COG leads the base. Arms
-//           pump at ~90°, NOT swept back ("naruto" — tried, rejected). Real flight phase.
-//  SPRINT : the run deeper, lower, longer, faster.
-//  ROLL   : dive into a tuck → ONE front-loaded somersault about a low ball centre → a spin-free rise.
-//           Over one shoulder, banked, limbs uneven and drifting roll to roll. Travel DEAD STRAIGHT:
-//           the imperfection is entirely in the body.
-//  CARRY  : the sword is HELD, not splinted to the arm — the hammer grip cants it ~34° forward of the
-//           forearm (souls low-ready, tip clear of the ground). A damped carry, not a mirror of the
-//           free arm; a RUN opens it out to the side and pitches the blade level.
-//  ATTACK : KINETIC-CHAIN sequenced — pelvis → trunk rotation → trunk flexion → shoulder → elbow →
-//           wrist, each a beat late, so the arm WHIPS rather than moving as one block.
-//           LIGHT (R1): the HORIZONTAL cut — sabre Cuts III/IV, level and outward across the front
-//           (see CUT MECHANICS above the AL_* block). Never a downward poke. Chained lights ALTERNATE
-//           backhand, ER-style. (This line said "descending diagonal / Cut One" and contradicted both
-//           that block and AGENTS.md — the swipe replaced the diagonal and only one of the three moved.)
-//           HEAVY (R2): a slow overhead whose EDGE lands vertical, over a staggered load, buried low
-//           and biting through the follow-through. Nothing parks dead at an end pose.
-//  BLENDS : by `moving` into walk, by ground SPEED above it (posture chases an eased `speedS`, so it
-//           never steps when speed does). Only the VISIBLE pose smooths; mechanics stay instant.
-//
-// ── gait: normative sagittal joint angles over one stride, sampled every 12.5% (deg) ──
-// phase 0 = heel strike; stance ≈ 0..0.60, swing ≈ 0.60..1.0 (signs: hip/knee +flexion,
-// ankle +dorsiflexion). pub so the skeletal archer walks the SAME tables — the shared humanoid model.
 pub const HIP_FLEX = [8]f32{ 25, 13, 3, -5, -10, -3, 12, 22 };
 pub const KNEE_FLEX = [8]f32{ 5, 18, 10, 4, 10, 38, 62, 30 };
 pub const ANK_DORSI = [8]f32{ -2, -6, 2, 9, 6, -14, -6, -1 };
 
-// ── running gait (a distinct cycle, not a sped-up walk) ────────────────────────────
-// Sagittal angles after Novacheck (1998) / Physiopedia running normatives: much larger
-// ranges than walking, forefoot contact, stance ≈ 40% (toe-off near phase 0.4), big
-// swing-knee flexion (heel toward buttock), a genuine flight phase (both feet airborne).
+// Sagittal angles after Novacheck (1998) / Physiopedia running normatives: much larger ranges than walking, forefoot contact, stance ≈ 40% (toe-off near phase 0.4), big swing-knee flexion (heel toward buttock), a genuine flight phase (both feet airborne).
 pub const RUN_HIP = [8]f32{ 42, 25, 8, -8, 5, 35, 60, 55 };
 pub const RUN_KNEE = [8]f32{ 26, 48, 40, 28, 62, 98, 80, 44 }; // deeper bend throughout — coiled + low
 pub const RUN_ANK = [8]f32{ -3, 10, 22, 2, -18, -6, 0, -2 };
-// The run reads low + aggressive: a deep forward tilt over a low centre of gravity, with
-// normal pumping arms (bent ~90°).
+// The run reads low + aggressive: a deep forward tilt over a low centre of gravity, with normal pumping arms (bent ~90°).
 const RUN_LEAN = 24.0; // deep forward trunk lean when running (deg)
 const RUN_ARM_SWING = 30.0; // shoulder swing amplitude when running (deg)
 const RUN_ELBOW = 85.0; // elbows bent ~90° and pumping
@@ -208,37 +129,21 @@ const RUN_SPEED_HI = RUN_SPEED; // …saturating exactly at run speed (sprintB t
 const SPRINT_LEAN = 40.0; // near-horizontal forward tilt at full sprint (deg)
 const SPRINT_REF_SPEED = SPRINT_SPEED; // speed the extra sprint lean/crouch saturate at
 
-// ── THE SLOPE LEAN ── standing on or walking up sculpted ground, the whole body folds toward the hill
-// (`Hero.slopePitch`, added to the run lean because it is the same motion about the same hinge — the
-// feet). Without it a climb is an upright body sliding up a ramp, and a descent is the same thing
-// backwards; the lean is most of what makes a hill read as a hill you are ON rather than in front of.
-//
-// A FRACTION of the slope, not a match. A body that pitched the full angle would be normal to the
-// ground, i.e. leaning the same amount whether it is climbing or standing still, which reads as the
-// character being welded to the terrain. Half of it is the posture of someone taking a hill on.
 const SLOPE_LEAN: f32 = 0.55;
-/// …capped, because the hero can stand on ground far steeper than he can walk up (`env.MAX_SLOPE`
-/// governs travel, not standing), and a 40 deg fold at the waist reads as a stumble.
+/// …capped, because the hero can stand on ground far steeper than he can walk up (`env.MAX_SLOPE` governs travel, not standing), and a 40 deg fold at the waist reads as a stumble.
 const SLOPE_LEAN_MAX: f32 = 16.0;
-/// How fast the lean chases the ground, in degrees a second. Fast enough to be honest about a ridge,
-/// slow enough that the 2.5 m lattice's slope changes do not step — and a VISUAL blend only, so the
-/// FEEL RULES' ~0.1 s ceiling applies: at this rate the full 16 deg takes 0.13 s and any real change
-/// in ground far less.
+/// How fast the lean chases the ground, in degrees a second.
 pub const SLOPE_LEAN_RATE: f32 = 120.0;
 
-/// The body pitch a given uphill gradient asks for, in degrees. `rise` is metres of climb per metre
-/// travelled along the facing (`env.slopeAlong`), so it is signed: downhill leans back.
+/// The body pitch a given uphill gradient asks for, in degrees.
 pub fn slopeLean(rise: f32) f32 {
     const deg = mathx.degrees(std.math.atan(rise)) * SLOPE_LEAN;
     return mathx.clampF(deg, -SLOPE_LEAN_MAX, SLOPE_LEAN_MAX);
 }
 
-// ── dodge roll (committed tuck-and-somersault) ────────────────────────────────────
-// Phased like FromSoft rolls: dive + somersault up front, then a spin-free recovery — NOT
-// one linear spin/tuck/lunge smeared over the duration. Knots below are u = rollT / ROLL_DUR.
+// Phased like FromSoft rolls: dive + somersault up front, then a spin-free recovery — NOT one linear spin/tuck/lunge smeared over the duration.
 const ROLL_DUR = 0.70; // seconds, start to finish (souls medium-roll pacing, recovery included)
 const ROLL_IFRAME_END = 0.46; // invulnerable from the FIRST frame to here (~ER medium, a shade
-//   generous). The recovery tail stays vulnerable, so roll-catching still works on the hero.
 const ROLL_DIST = 3.5; // ground units travelled
 const ROLL_BALL_Y = 0.50; // pelvis/pivot height at mid-roll (the tucked "ball" centre)
 const ROLL_TUCK_IN = 0.16; // dive: crouched + balled by here, spin barely begun
@@ -259,9 +164,7 @@ const ROLL_SPINE = 30.0; // forward spine curl per segment (deg)
 const ROLL_HEAD = 32.0; // chin to chest (deg)
 const ROLL_SHOULDER = 45.0; // arms tuck forward (deg)
 const ROLL_ELBOW = 100.0; // elbows tucked (deg)
-// Wabi-sabi: the somersault is imperfect like a real one — over ONE shoulder, banked and
-// briefly off-square, limbs uneven, magnitudes drifting roll to roll. COSMETIC ONLY: none
-// touch duration/distance/heading/timing — the dodge FEELS identical every time.
+// Wabi-sabi: the somersault is imperfect like a real one — over ONE shoulder, banked and briefly off-square, limbs uneven, magnitudes drifting roll to roll.
 const ROLL_LEAN = 8.0; // bank toward the roll-side shoulder while balled (deg)
 const ROLL_SKEW = 7.0; // peak off-square yaw through the recovery, squared up by the end (deg)
 const ROLL_ARM_GUIDE = 1.25; // roll-side arm tucks harder across the body…
@@ -272,14 +175,9 @@ const ROLL_VAR_LO = 0.7; // per-roll drift of the imperfection magnitudes (never
 const ROLL_VAR_HI = 1.3; //   duration/distance/heading — mechanics stay exact)
 const ROLL_YAW_RATE = 22.0; // rad/s — the body whips onto the roll heading instead of teleport-snapping
 
-// ── sword attacks (committed, one-handed) ───────────────────────────────────────────
-// A cut is a KINETIC CHAIN released proximal → distal (pelvis → trunk rotation → trunk
-// flexion → shoulder → elbow → wrist last, Bunn's summation-of-speed); each segment's strike
-// span fires one LAG beat after the one before, so the arm WHIPS. Souls pacing: R1 fast/light
-// (contact ~0.2s in, quick recovery), R2 a slow committed overhead — big windup, violent drop, blade BURIED through a held follow-through.
+// A cut is a KINETIC CHAIN released proximal → distal (pelvis → trunk rotation → trunk flexion → shoulder → elbow → wrist last, Bunn's summation-of-speed); each segment's strike span fires one LAG beat after the one before, so the arm WHIPS.
 const ATK_LIGHT_DUR = 0.60; // R1: diagonal high-right → low-left slash (seconds)
 const ATK_HEAVY_DUR = 1.00; // R2: overhead chop (seconds)
-// light knots (u = atkT / dur)
 const AL_WIND_B = 0.28; // a READABLE windup — long enough to register as anticipation
 const AL_STRIKE_A = 0.28; // pelvis fires; chest/shoulder/elbow/wrist each lag AL_LAG more
 const AL_STRIKE_B = 0.48;
@@ -289,8 +187,6 @@ const AL_HIT_A = 0.32; // TAE-style ACTIVE window — the blade only hits inside
 const AL_HIT_B = 0.56;
 const AL_LUNGE = 0.55; // ground units stepped into the cut — a real committed step-in (ER R1 pressure)
 const AL_CHAIN = 0.80; // u where a BUFFERED action may take over: the swing has visually
-//   resolved but the stand-down tail is skippable, so mashed R1s flow into a combo.
-// heavy knots
 const AH_WIND_B = 0.34; // slow raise to overhead — the R2 anticipation "tell"
 const AH_STRIKE_A = 0.38; // …a beat of hang at the top, then the drop
 const AH_STRIKE_B = 0.52;
@@ -301,44 +197,23 @@ const AH_HIT_B = 0.58;
 const AH_LUNGE = 1.05; // the chop LEAPS forward through the drop — committed reach, ER-style
 const AH_CHAIN = 0.86; // the heavy earns a longer commitment before a buffered exit
 const ATK_RETRACK = 9.0; // rad/s — LOCKED-ON only: past RECOV_A the hero re-squares onto the
-//   lock target through the tail, so a WHIFF doesn't leave him facing empty air. The cut itself stays fully committed.
-// ── CUT MECHANICS (the light slash) — from period cutting instruction ────────────────
-// The R1 is the HORIZONTAL cut: sabre Cuts III/IV (Roworth 1798; kendo's dō-giri), a one-handed LEVEL
-// swipe across the front at chest height. Owner's law: a swipe, never a downward poke. Four rules:
-//  - THE ARC IS ROTATION, NOT ELEVATION — hips/trunk rotate and the shoulder YAWS about the body's
-//    vertical axis (~125° plus ~50° of trunk). The forward-raise only holds the plane at chest height.
-//  - THE BLADE LIES FLAT, EDGE LEADING (Hutton 1889). The SWORD bone cancels the baked grip cant
-//    exactly, then the wrist rolls a quarter-turn about the blade's own axis — cone-free BECAUSE of
-//    that cancel. Ramped in with the raise and drained through recovery, so the carry never changes.
-//  - PROXIMAL → DISTAL, WRIST LAST (Bunn's summation of speed): the AL_LAG chain, pelvis → wrist.
-//  - IT ARRESTS, NEVER PARKS (tenouchi). A chained light comes BACKHAND out of the finish (Cut IV out
-//    of Cut III), chambering shallow where the forehand landed.
-// light amplitudes (deg unless noted)
 const AL_BODY_YAW = 26.0; // trunk winds HARD toward the sword side (the exaggerated tell)…
 const AL_BODY_YAW_THRU = 24.0; // …and releases through past neutral (rotation IS the cut's width)
 const AL_SH_ELEV_WIND = 55.0; // forward-raise at the chamber: fist at shoulder height…
 const AL_SH_ELEV = 79.0; // …rising to hold the sword OUT near-horizontal through the strike —
-//   the swipe plane (the fat BLADE_R pill supplies the low-toad reach below it)
 const AL_SWEEP_WIND = 72.0; // shoulder yaw wound around BEHIND the sword shoulder at the chamber…
 const AL_SWEEP_END = 64.0; // …released to past the OFF shoulder — ~136° of pure horizontal sweep
 const AL_ALT_WIND = 0.62; // the backhand return chambers SHALLOWER (a cross-body wind out of the forehand's finish — full depth would bury the fist in the chest)
 const AL_ELBOW_WIND = 96.0; // deep fold — the blade lies back over the shoulder at the chamber
 const AL_ELBOW_STRIKE = 8.0; // arm out LONG for the whole pass (fires with the raise): the blade
-//   rides the OUTER EDGE of the swipe radius, tip farthest out — never hilt-first
 const AL_WRIST_LAY = 18.0; // wrist deviation: the blade trails back at the CHAMBER only, released
-//   early in the pass so the window sweeps near-RADIAL (blade in line with the long arm)…
 const AL_WRIST_WHIP = 12.0; // …whipping to lead a touch past straight at the exit
 const AL_EDGE_ROLL = 90.0; // the swipe RE-GRIPS: roll the blade a quarter-turn about its OWN
-//   axis so the EDGE LEADS and the FLAT lies in the swipe plane (owner's law + Hutton's rule).
-//   Cone-free because the SWORD bone first cancels the grip cant exactly, putting the blade dead on the wrist's roll axis.
 const AL_TIP_UP = 10.0; // then a whisker of tip-high (applied -^'rx: more-negative = higher in the
-//   chain's pitch sum) so the line sits just above level after the body's forward commit
 const AL_SPINE_CRUNCH = 2.5; // a horizontal cut ROTATES — barely any forward commit (keeps the
-//   swipe PLANE flat instead of tipping it toward the ground mid-strike)
 const AL_OVER = 6.0; // follow-through overshoot past the end pose, settling through recovery (the arrest, not a park)
 const AL_LOAD = 0.016 * H; // the knees coil DOWN under the windup (anticipation you can feel)…
 const AL_DIP = 0.015 * H; // …and a slight settle into the stance on release
-// heavy amplitudes
 const AH_BODY_YAW = 11.0; // an overhead is mostly sagittal — modest wind/release
 const AH_LEAN_BACK = 10.0; // spine extension under the raised blade (per segment)
 const AH_SPINE_CRUNCH = 16.0; // violent trunk flexion driving the chop (per segment)
@@ -354,62 +229,39 @@ const AH_RECOIL = 7.0; // impact judder: the buried blade bites, bounces a hair,
 const AH_LOAD = 0.02 * H; // the staggered stance loads under the windup…
 const AH_DIP = 0.05 * H; // …and the weight drops into the impact
 const AH_PITCH = 9.0; // whole-body forward pitch about the feet through the strike
-// Blade hitbox, souls-style: a capsule on the SWORD bone's dummy points (guard → tip),
-// ACTIVE only inside the HIT window, with last-frame endpoints kept for swept tests so a
-// fast arc can't tunnel between frames. One hit per swing per target: the (future) hit list clears on the activation edge, where the sweep history also resets.
+// Blade hitbox, souls-style: a capsule on the SWORD bone's dummy points (guard → tip), ACTIVE only inside the HIT window, with last-frame endpoints kept for swept tests so a fast arc can't tunnel between frames.
 pub const BLADE_R = 0.34; // capsule radius (world units) — a FAT hit volume, far past the
-// visible mesh (invisible in play, debug-wired only). VERTICAL forgiveness: the chest-height
-// arc (~1.25m) must reach well below the blade to land LOW enemies (a toad's hurt sphere tops ~1.1m) and above for tall ones — thin pills read as whiffs on clean-looking hits.
 
-// ── the swing trail (juice: a fading steel ribbon the blade paints through a cut) ──────
-// Samples the outer blade span each frame the TIP moves; drawn as unlit alpha strips in
-// the lit pass only (no shadow, never the depth pass). Short-lived — a crack of motion, not a smoke plume.
+// Samples the outer blade span each frame the TIP moves; drawn as unlit alpha strips in the lit pass only (no shadow, never the depth pass).
 const TRAIL_N = 20; // ring capacity (~0.3 s of samples at 60 fps)
 const TRAIL_LIFE = 0.20; // seconds a sample persists (long enough that the full level arc
-//   still reads as one sheet at the swing's exit)
 const TRAIL_MIN_SWEEP = 0.05; // world units the tip must move in a frame to leave a sample
 const TRAIL_ROOT = 0.35; // ribbon spans this fraction down the blade → the tip
 const TRAIL_COL = rgba(224, 230, 244, 255); // pale steel flash (alpha set per segment)
 const TrailSample = struct { a: rl.Vector3 = mathx.zero3, b: rl.Vector3 = mathx.zero3, age: f32 = mathx.LONG_AGO };
 
-// ── combat vitals + what the hero's cuts deal (Elden Ring model, see docs/ELDEN_RING.md) ─
-// The hero is sturdier than a toad: mid-weight poise (~ER's Knight-set 51) so a couple of
-// bites shrug off, but sustained pressure still flinches then staggers him.
+// The hero is sturdier than a toad: mid-weight poise (~ER's Knight-set 51) so a couple of bites shrug off, but sustained pressure still flinches then staggers him.
 pub const HP_MAX = 70.0; // lowered from 100 — a few solid blows now kill (owner: raise the stakes)
 pub const POISE_MAX = 55.0;
 pub const STANCE_MAX = 90.0;
-// Poise/stance dealt by the cuts (HP damage rides alongside). The R2 is the heavier hit and
-// chips STANCE directly (ER: heavies break stance far faster than lights).
+// Poise/stance dealt by the cuts (HP damage rides alongside).
 pub const ATK_LIGHT_HIT = combat.Hit{ .dmg = 13, .poise = 10 };
 pub const ATK_HEAVY_HIT = combat.Hit{ .dmg = 27, .poise = 22, .stance = 14 };
 
-/// THE HERO'S VITALS, FRESH. One expression, because there were about to be three copies of the
-/// triple — the field default, `respawn`, and the shot harness undoing the damage a capture did —
-/// and a fourth would be whoever adds a rest-at-grace.
+/// THE HERO'S VITALS, FRESH.
 pub fn freshVitals() combat.Vitals {
     return combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX);
 }
 
-// ── stagger + death anims (the reactions; committed like attacks/rolls) ──────────────────
-// A flinch is a BIG, unmistakable jolt — the whole upper body snaps back, the head whips,
-// the arms fly up, the knees buckle and he stagger-steps back off the blow. Not a lean.
+// A flinch is a BIG, unmistakable jolt — the whole upper body snaps back, the head whips, the arms fly up, the knees buckle and he stagger-steps back off the blow.
 const HURT_LEAN = 40.0; // light flinch: torso snaps back this far (deg)
 const HURT_HEAD = 52.0; // …head whips back with it
 const HURT_STEP = 0.18 * H; // …and he's knocked a step back off the blow
 const STAG_LEAN = 42.0; // heavy stagger: a deep reeling arch back (deg)
 const DEATH_SINK = 0.30; // death: pelvis sinks to this fraction of stance height
 pub const DEATH_DUR = 3.6; // collapse + lie still before the hero respawns — long enough for
-//   the full YOU DIED choreography (game.zig's overlay reads deathT against this)
 
-// ── GUARDING: the stance, the recoil off a caught blow, and the shield itself ────────────
-// The MECHANIC is combat.zig's (negation, stability, the arc, the break); this is what it looks
-// like. Two things it must read as, from any angle and in one frame: the shield is BETWEEN him and
-// the threat, and the sword is out of the way — a guard that still presents the blade reads as a
-// wind-up, and the player will think he can swing out of it.
-//
-// The trunk BLADES — left shoulder toward the threat, right hip back — which is most of what says
-// "guarding" rather than "carrying a shield". The lean/counter-rotation of whatever gait is running
-// underneath is kept and this is added on top, so guarding while walking is still a walk.
+// The MECHANIC is combat.zig's (negation, stability, the arc, the break); this is what it looks like.
 const GUARD_SH_FLEX = 24.0; // left shoulder forward of the body line (deg)…
 const GUARD_SH_CROSS = 40.0; // …then swung ACROSS the chest, which is what puts the shield on the centreline
 const GUARD_SH_ABD = 2.0; // elbow tucked IN, near the ribs — a shield held out on a straight arm is a target
@@ -419,72 +271,35 @@ const GUARD_CROUCH = 0.022 * H; // and settled onto the knees — braced, not st
 const GUARD_SWORD_BACK = 40.0; // the sword arm draws back and low, blade out of the shield's way…
 const GUARD_SWORD_ELBOW = 46.0;
 const GUARD_SWORD_WRIST = 30.0; // …and the wrist cancels most of the grip's forward cant (GRIP_PITCH),
-//   so the blade lies BACK along the drawn-back forearm instead of hanging across his own shins
 const GUARD_HEAD = 6.0; // chin tucked down behind the rim
-/// How fast the STANCE blends in and out. A VISUAL blend only — the block itself is live the frame
-/// the button goes down (ZERO INPUT LAG), and at this rate the pose is there in ~0.1 s, the ceiling
-/// the FEEL RULES put on a posture change.
+/// How fast the STANCE blends in and out.
 const GUARD_BLEND_RATE = 11.0;
-// ── the block RECOIL ── a caught blow is not a flinch and must not read as one: he HELD. So the
-// shield drives back into him and the whole frame compresses over it — big (owner's law: reactions
-// are HUGE) but SHORT, and out of it he is still guarding, which a flinch never is.
 const BLOCK_RECOIL_DUR = 0.24; // seconds — over before the next swing, so blocking never costs tempo
-// The shield is driven BACK into him, and that has to come off the SHOULDER: folding the elbow
-// harder raises the wrist (the fold is what lifts the boards in the first place), so spending the
-// recoil there sent the shield climbing over his own face — a cower, not a block.
-// THE MAN MOVES, THE SHIELD HOLDS — which is the whole difference between a block and a break, and
-// getting the split wrong is what the first cut did: a 26 deg retraction under a 36 deg trunk turn
-// carried the boards off the centreline and down to his hip, so a blow he CAUGHT looked exactly like
-// one that had knocked his guard aside. REACTIONS ARE HUGE still holds; the size just belongs in the
-// body (a deep sink, a real step back) and in the camera, not in the arm.
+// The shield is driven BACK into him, and that has to come off the SHOULDER: folding the elbow harder raises the wrist (the fold is what lifts the boards in the first place), so spending the recoil there sent the shield climbing over his own face — a cower, not a block.
 const BLOCK_SHIELD_BACK = 15.0; // the arm retracts, taking the boards toward the chest (deg off the flex)
 const BLOCK_SHIELD_FOLD = 10.0; // …with a little more elbow under it, so the arm collapses rather than swings
 const BLOCK_TRUNK = 9.0; // …and the trunk gives a little behind it (deg, per segment)
 const BLOCK_STEP = 0.14 * H; // …while he is driven back off the blow (VISUAL, like the stagger's — see poseStun)
 const BLOCK_SINK = 0.048 * H; // …and takes the rest of it through the knees
 const BLOCK_FLASH = 0.22; // a LICK of red, well under `takeHit`'s 0.35 for a blow that got through:
-//   the screen must not say "wounded" for a hit that cost you nothing but stamina
-// The SHIELD — a small round one: dished boards, an iron rim and a boss. Radius in units of H, so
-// it scales with the man; 0.115 is ~41 cm across, a buckler's big brother and no more.
 const SHIELD_R = 0.115 * H;
 const SHIELD_THICK = 0.020 * H;
 const SHIELD_WOOD = rgba(56, 41, 29, 255); // dark limewood boards…
 const SHIELD_WOOD_LT = rgba(82, 62, 44, 255); // …the seams between them, a course lighter so they READ
-// THE RIM IS ALMOST BLACK ON PAPER AND READS AS IRON ON SCREEN — solved, not eyeballed (AGENTS.md:
-// screen ∝ albedo^(1/2.2) through a hot key). At the sword's own STEEL (98,104,114) the binding came
-// back at 205 and CLIPPED: the loudest thing on the model, brighter than the boards it is supposed
-// to hold together, and with its own hue burned off by the warm sun. A 0.40 factor on the albedo
-// (0.66 on screen) lands it at 161/152/142 against boards of 170/133/94 — DARKER in red and far
-// cooler, which is what reads as iron. Separated on HUE as well as value on purpose: everything
-// outdoors here is warm, so a metal that is only darker still reads as wood in shadow.
+// THE RIM IS ALMOST BLACK ON PAPER AND READS AS IRON ON SCREEN — solved, not eyeballed (AGENTS.md: screen ∝ albedo^(1/2.2) through a hot key).
 const SHIELD_IRON = rgba(26, 28, 34, 255);
-// The BOSS is the one polished thing on it and stays a stop brighter — a shield needs somewhere for
-// the light to land or the whole disc is a flat brown coin.
+// The BOSS is the one polished thing on it and stays a stop brighter — a shield needs somewhere for the light to land or the whole disc is a flat brown coin.
 const SHIELD_BOSS = rgba(46, 49, 58, 255);
 const SHIELD_STANDOFF = 0.045 * H; // the boards ride this far off the fist — a CENTRE GRIP, hand behind the boss
-// ── WHERE THE SHIELD SITS ON THE ARM, DERIVED AND NOT TYPED IN ──────────────────────────
-// The mesh is authored FACE-ON (a disc in XY, face along +Z) and this turns it into the left
-// WRIST's frame. It is exactly the INVERSE of what the guard does to that arm: the shoulder folds
-// the limb forward by GUARD_SH_FLEX and the elbow by GUARD_ELBOW (one fold, about the same axis)
-// and then swings the whole thing across the chest by GUARD_SH_CROSS — so undoing the fold and then
-// the cross leaves the boards square to the world's forward, whatever those three angles are.
-//
-// Which is the point of deriving it. Typed as literals, the first retune of the stance swings the
-// shield off its own arm — and the first cut of this DID hard-code `rx(90)`, which was right only
-// while the forearm happened to be horizontal.
+// The mesh is authored FACE-ON (a disc in XY, face along +Z) and this turns it into the left WRIST's frame.
 const GUARD_ARM_FOLD = GUARD_SH_FLEX + GUARD_ELBOW; // both flex about the same axis, so they add
 const SH_FOLD_S = @sin(radians(GUARD_ARM_FOLD));
 const SH_FOLD_C = @cos(radians(GUARD_ARM_FOLD));
 const SH_CROSS_S = @sin(radians(GUARD_SH_CROSS));
 const SH_CROSS_C = @cos(radians(GUARD_SH_CROSS));
-/// The face's own normal, expressed in the WRIST's frame — which is where the standoff has to be
-/// measured, since the hand grips BEHIND the boss.
+/// The face's own normal, expressed in the WRIST's frame — which is where the standoff has to be measured, since the hand grips BEHIND the boss.
 const SHIELD_N = v3(SH_CROSS_S, -SH_CROSS_C * SH_FOLD_S, SH_CROSS_C * SH_FOLD_C);
-/// MEASURED AND LEFT: every input here is a compile-time constant, so this rebuilds the same matrix
-/// twice a frame (the depth pass and the lit pass both go through `draw`). It is three matrix
-/// constructions and two multiplies against a hero who draws nineteen meshes — and it cannot be a
-/// comptime const, because these wrap raylib's matrix calls. Caching it on the Hero would trade a
-/// field and an init step for nothing measurable.
+/// MEASURED AND LEFT: every input here is a compile-time constant, so this rebuilds the same matrix twice a frame (the depth pass and the lit pass both go through `draw`).
 fn shieldFit() rl.Matrix {
     return mul3(
         ry(GUARD_SH_CROSS),
@@ -497,9 +312,7 @@ fn shieldFit() rl.Matrix {
     );
 }
 
-// ── the grip (how the sword is HELD) ────────────────────────────────────────────────
-// A hammer grip cants the blade GRIP_PITCH forward of the forearm line — held at an angle,
-// never splinted straight along it. Baked into the sword MESH (about the fist centre) and the capsule dummy points, so every pose and swing inherits the cant.
+// A hammer grip cants the blade GRIP_PITCH forward of the forearm line — held at an angle, never splinted straight along it.
 const GRIP_PITCH = 34.0; // deg the blade leads forward of the forearm line
 const GRIP_OUT = 8.0; // deg the tip eases outward, so the low-ready hangs beside the leg, not across the shin
 const GRIP_CA = @cos(radians(GRIP_PITCH));
@@ -512,9 +325,7 @@ const FIST_Z = 0.005 * H;
 fn bladeAt(t: f32) rl.Vector3 {
     return v3(-GRIP_SA * OUT_SA * t * H, FIST_Y - GRIP_CA * t * H, FIST_Z + GRIP_SA * OUT_CA * t * H);
 }
-// HIT capsule endpoints — extended PAST the visible blade for reach forgiveness (the mesh is
-// unchanged): the base pulls back through the fist so close-in swipes connect, and the tip
-// reaches beyond the point so the far end of the arc lands.
+// HIT capsule endpoints — extended PAST the visible blade for reach forgiveness (the mesh is unchanged): the base pulls back through the fist so close-in swipes connect, and the tip reaches beyond the point so the far end of the arc lands.
 const BLADE_BASE = bladeAt(-0.06); // guard end, pulled back toward/through the fist
 const BLADE_TIP = bladeAt(0.64); // point, extended past the visible tip for reach (the far end of the arc lands)
 
@@ -528,96 +339,55 @@ const CARRY_ABD_RUN = 12.0; // only a small extra abduction at a run — the ARM
 const CARRY_WRIST_YAW = -48.0; // at a run, YAW the wrist so the BLADE alone angles out to the RIGHT off the flank (the "ninja run" read) — the arm doesn't move
 const CARRY_SWING_STILL = 0.6; // damp — but don't kill — the carry arm's fore/aft pump at a run: it still swings a bit (he's only human), just less than the free arm
 
-// ── short transition blends (nothing snaps between stances) ────────────────────────
 const POSE_XFADE = 0.09; // seconds — cross-fade over any pose discontinuity (roll start/end)
 const SPEED_SMOOTH = 80.0; // units/s² — posture-blend speed chases ground speed, so
-//   lean/crouch/arm-pump glide instead of stepping. Movement + stride phase stay on RAW
-//   speed (responsiveness untouched). Owner's call: VERY fast (~0.04s) — the stick IS the speed; the glide only kills the step.
 
-// ── locked-on footing: strafe + backpedal (the gait follows travel RELATIVE TO FACING) ──
-// Gait splits by travel in the BODY frame: the forward component scales the sagittal
-// leg/arm work (TIME-REVERSED for a backpedal, Thorstensson 1986), the lateral component
-// drives a real CROSSING SIDESTEP (the grapevine below). Direction blends ease fast (visuals
-// only, ~0.1s; position answers the stick raw, same frame).
+// Gait splits by travel in the BODY frame: the forward component scales the sagittal leg/arm work (TIME-REVERSED for a backpedal, Thorstensson 1986), the lateral component drives a real CROSSING SIDESTEP (the grapevine below).
 const GAIT_DIR_EASE = 22.0; // 1/s — fwdB/latB chase the body-frame travel direction
-//
-// ── THE CROSSING SIDESTEP (grapevine): GEOMETRY, NOT TUNED ANGLES ──────────────────────────
-// Two facts drive it, and either one wrong is what makes a sidestep slide:
-//
-// 1. A PLANTED FOOT IS WORLD-FIXED. Its offset from the pelvis sweeps backward through stance LINEAR
-//    IN DISTANCE. A constant joint angle is only still in JOINT space; in world space the foot is
-//    dragged under the body, and that skate — not the amplitude — is the bug.
-// 2. THE CROSS IS FREE, out of the HIP OFFSETS. Both legs take the SAME symmetric ±STRAFE_ABD sweep
-//    half a cycle apart; because each hip sits `hx` off the midline the far leg lands PAST the near
-//    foot. No lead/trail split — giving the crossing leg less reach is backwards, since it has ~2·hx
-//    further to go.
-//
-// Peak hip abduction through a lateral shuffle is ~17-20 deg (Sinclair et al. 2016), so STRAFE_ABD is
-// a measured range, not a splay.
+// Two facts drive it, and either one wrong is what makes a sidestep slide: 1.
 const STRAFE_ABD = 22.0; // peak frontal hip swing either side of the hip (deg) — the sweep is
-//   symmetric, so this is BOTH the out-step's abduction and the cross's adduction
 const STRAFE_STANCE = 0.52; // fraction of the cycle each foot is planted (~4% double support)
-//   CADENCE HAS EXACTLY ONE DIAL: phase is driven by DISTANCE, so cadence = speed / STRAFE_CYCLE.
-//   Pace it any other way and the planted foot skates. Slowing a too-fast sidestep means LENGTHENING
-//   the cycle — and the cycle is capped by hip ROM with no double support left to trade, so pure
-//   lateral travel still costs ~20% more steps/sec than walking forward. That residue is geometry.
+// CADENCE HAS EXACTLY ONE DIAL: phase is driven by DISTANCE, so cadence = speed / STRAFE_CYCLE.
 const STRAFE_CROSS = 38.0; // the crossing leg's hip FLEXION peak — it must pass IN FRONT of the stance
-//   leg, and this big because the knee flexion that buys clearance drags the ankle BACKWARDS (~24 left
-//   the foot trailing while the thigh crossed in front of it).
 const STRAFE_BEHIND = 10.0; // …and its partner's hip EXTENSION peak, passing BEHIND on the uncross.
-//   One leg front-crossing plus one passing behind IS the grapevine, structurally.
+// One leg front-crossing plus one passing behind IS the grapevine, structurally.
 const STRAFE_LAND = 7.0; // fore/aft hip offset at plant (deg), swept out linearly through stance:
-//   a front cross lands a little AHEAD of the stance foot, then the body travels past it
 const STRAFE_CLEAR = 0.035 * H; // DAYLIGHT under the swing foot at mid-swing. Asked for as a
-//   HEIGHT and solved for (see legChain), not tuned as a knee angle: hip flexion and knee flexion
-//   fight each other vertically, so a "knee lift" constant does not mean a foot leaves the ground.
+// HEIGHT and solved for (see legChain), not tuned as a knee angle: hip flexion and knee flexion fight each other vertically, so a "knee lift" constant does not mean a foot leaves the ground.
 const STRAFE_SINK = 0.0055 * H; // how much SHORTER than dead-straight the leg is left at full
-//   abduction — i.e. the residual knee bend at the widest point of the step (~12 deg). Feeds
-//   STRAFE_DIP, and it is what keeps the stance springy rather than locked out on straight poles
-//   (owner's note); the knee opens up further as the leg comes back under the body.
 const STRAFE_PROT = 7.0; // pelvic TRANSVERSE rotation (deg): the crossing hip swings FORWARD to
-//   carry that leg around the stance leg. Real crossovers are pelvis-driven, not hip-driven.
 const STRAFE_SWAY = 0.012 * H; // pelvis rides ONTO each planting foot (the weight transfer
-//   is what makes a sidestep read as steps, not a slide) — a bit above the walk's sway
 const STRAFE_LEAN = 2.5; // torso banks gently INTO the travel side (deg, cosmetic)
 const BACK_STRIDE = 0.85; // backpedal steps shorten a touch too (cautious, toe-reaching)
 
 // Rest hip→ankle span: the strafe geometry is all measured off this, so it scales with the rig.
-// (`unit_leg_len_matches_rig` re-asserts it against restPositions, and the archer/ogre keep the
-// hero's leg fractions on purpose, so their rest-derived leg length agrees — scale aside.)
 pub const LEG_LEN = (0.530 - 0.039) * H;
-// ── derived, so a retune of STRAFE_ABD/STANCE can never silently desync the three of them ──
 const STRAFE_REACH = LEG_LEN * @sin(mathx.radians(STRAFE_ABD)); // half the stance sweep, in units
 const STRAFE_CYCLE = 2.0 * STRAFE_REACH / STRAFE_STANCE; // body travel per FULL cycle. advanceGait
-//   MUST use this as the stride length for a pure sidestep: phase and sweep are two views of the
-//   same distance, and if they disagree by any factor the skate comes straight back.
-// Pelvis drop, SOLVED not picked: at full abduction the foot is STRAFE_REACH out to the side and
-// still has to touch the floor, so the pelvis must sit low enough that a near-straight leg spans
-// the hypotenuse. Falls out as ~4% of H — which is also where the soft knee comes from. legChain's
-// vertical solve assumes the caller dropped the pelvis by exactly this much; that is the contract,
-// and `strafe: planted feet stay ON the ground` holds both ends to it. pub because every humanoid
-// that strafes owes the same drop, scaled by its own rig (the archer once had none, and hovered).
+// MUST use this as the stride length for a pure sidestep: phase and sweep are two views of the same distance, and if they disagree by any factor the skate comes straight back.
 pub const STRAFE_DIP = LEG_LEN - @sqrt((LEG_LEN - STRAFE_SINK) * (LEG_LEN - STRAFE_SINK) - STRAFE_REACH * STRAFE_REACH);
 
 const STRIDE = 0.85 * H; // ground distance per full (two-step) cycle at walk pace — ties phase to travel, no foot-skate
 const WALK_REF_SPEED = WALK_SPEED; // reference walk speed the stride is tuned for
 const ARM_SWING = 9.0; // shoulder flex amplitude (deg) at walk — restrained, contralateral to the legs
-/// Vertical pelvis travel (peak-to-peak ~ realistic 4-5 cm at H=1.8). pub for the same reason
-/// SEG_THIGH/SEG_SHANK and HIP_ADDUCT are: a humanoid foe that wants the hero's walk needs the
-/// hero's AMPLITUDE too, and archer.zig held a byte-identical copy under a comment saying so —
-/// which is a number that must agree, written down twice, waiting for the first retune. (The
-/// OGRE's 0.030 is deliberately its own: a giant's swagger, like its wider A_PROT.)
+/// Vertical pelvis travel (peak-to-peak ~ realistic 4-5 cm at H=1.8). pub for the same reason SEG_THIGH/SEG_SHANK and HIP_ADDUCT are: a humanoid foe that wants the hero's walk needs the hero's AMPLITUDE too, and archer.zig held a byte-identical copy under a comment saying so — which is a number that must agree, written down twice, waiting for the first retune.
 pub const A_BOB = 0.024 * H;
 const A_SWAY = 0.009 * H; // lateral pelvis sway toward the stance foot (subtle — no waddle)
 const A_PROT = 3.5; // pelvic transverse rotation (deg)
 const A_LIST = 2.0; // pelvic frontal drop toward the swing leg (deg)
 const TORSO_LEAN = 3.0; // forward torso lean while walking (deg) — walking is near-upright
-// pub: humanoid enemies (the ogre's braced idle stance) reuse these so their standing legs
-// line up EXACTLY with the shared walk (legChain) at the hand-off — no silent drift.
 pub const HIP_ADDUCT = 2.0; // constant leg-toward-midline angle so the stance narrows (deg)
 pub const FOOT_TOEOUT = 6.0; // feet splay slightly outward (Fick angle) — a real standing/gait detail
 const ARM_ABD = 9.0; // constant arm abduction so arms clear the torso (deg)
 pub const IDLE_KNEE = 4.0;
+const SIT_Y = 0.115; // pelvis height in units of H — on the ground, not perched
+const SIT_PITCH = 3.0;
+const SIT_SPINE = 8.0; // he curls over the instrument from the waist up
+const SIT_CHEST = 4.0;
+const SIT_HIP_FLEX = 52.0; // a THIGH ON THE FLOOR, not a knee at the chest
+const SIT_HIP_ABD = 62.0; // …rolled right out to the side, which is the whole read
+const SIT_KNEE = 118.0; // …and the shin folded back across the front
+const SIT_ANKLE = 6.0;
 const IDLE_ELBOW = 6.0;
 const MOVING_EASE = 10.0; // idle—walk blend rate (1/s) — the `moving` fade in update(); fast, so gait answers the stick NOW
 
@@ -631,11 +401,7 @@ pub fn sampleCurve(tbl: [8]f32, phase: f32) f32 {
     return tbl[a] + (tbl[b] - tbl[a]) * f;
 }
 
-// Advance the shared humanoid GAIT STATE one frame — the single source of walk/strafe for the
-// hero AND every humanoid enemy (AGENTS.md humanoid rule); eases the posture blends (`moving`,
-// `speedS`) and body-frame travel direction (`fwdB`/`latB`, splitting sagittal walk from the
-// strafe in legChain), and accumulates stride `phase` by DISTANCE (never time) so feet never
-// skate. Pointers, not a struct, so a caller's gait fields plug in with no refactor.
+// Advance the shared humanoid GAIT STATE one frame — the single source of walk/strafe for the hero AND every humanoid enemy (AGENTS.md humanoid rule); eases the posture blends (`moving`, `speedS`) and body-frame travel direction (`fwdB`/`latB`, splitting sagittal walk from the strafe in legChain), and accumulates stride `phase` by DISTANCE (never time) so feet never skate.
 pub fn advanceGait(phase: *f32, moving: *f32, fwdB: *f32, latB: *f32, speedS: *f32, dt: f32, movedDist: f32, speed: f32, moveYaw: ?f32, facing: f32) void {
     speedS.* = mathx.approach(speedS.*, speed, dt * SPEED_SMOOTH);
     const target: f32 = if (speed > 0.05) 1.0 else 0.0;
@@ -649,10 +415,7 @@ pub fn advanceGait(phase: *f32, moving: *f32, fwdB: *f32, latB: *f32, speedS: *f
         latB.* = mathx.approach(latB.*, 0.0, dt * GAIT_DIR_EASE);
     }
     if (movedDist > 0) {
-        // Sagittal strides lengthen with speed; the SIDESTEP's cycle is FIXED at STRAFE_CYCLE,
-        // because legChain's stance sweep is measured in UNITS off the leg — scale one without the
-        // other and the planted foot skates again. So a faster sidestep raises the CADENCE, not the
-        // step length, which is also how a real shuffle answers speed once abduction is maxed out.
+        // Sagittal strides lengthen with speed; the SIDESTEP's cycle is FIXED at STRAFE_CYCLE, because legChain's stance sweep is measured in UNITS off the leg — scale one without the other and the planted foot skates again.
         const sagLen = STRIDE * mathx.clampF(0.55 + 0.45 * speed / WALK_REF_SPEED, 0.8, 2.0) *
             mathx.lerpF(1.0, BACK_STRIDE, mathx.maxF(0, -fwdB.*));
         const strideLen = mathx.lerpF(sagLen, STRAFE_CYCLE, @abs(latB.*));
@@ -661,23 +424,7 @@ pub fn advanceGait(phase: *f32, moving: *f32, fwdB: *f32, latB: *f32, speedS: *f
     phase.* -= @floor(phase.*);
 }
 
-// ── FOOT PLANT: keep soles ON the ground instead of through it ─────────────────────────────────
-// An FK gait drives JOINT ANGLES, so pelvis height and feet only relate through the bob curve, and
-// wherever they disagree the sole goes under the world. Worst where a rotating foot digs a corner in:
-// the boot is ~0.19·H long, so 15 deg of ankle pitch buries a toe 4 cm with the ankle sitting right.
-//
-// LEVEL THE ANKLE, NEVER LIFT THE BODY (`legChain`, and AGENTS.md's law). Measure the deepest sole
-// corner against the rig's patch and rotate the ANKLE just enough to clear it. Both whole-body fixes
-// were tried and reverted: translating the skeleton judders, because which corner is deepest changes
-// frame to frame, and holding the pelvis up cancels RUN_CROUCH. A whole-body correction to a local
-// problem always reads as a tremor.
-//
-// A rig declares each ground-contact bone as a sole PATCH — the rectangle its sole occupies in that
-// bone's local frame. MEASURE it off the mesh (`addCube` takes a FULL size, `addCapsule`/`addBlob`
-// take true RADII — mixing those up put the ogre's foot pad 0.036·H below its own sole plane).
-//
-// Soles are authored at y = 0 while the ground surface sits a hair above at `env.GROUND_Y`, so
-// planting to 0 keeps the deliberate ~1 cm embed: planted, never floating.
+// An FK gait drives JOINT ANGLES, so pelvis height and feet only relate through the bob curve, and wherever they disagree the sole goes under the world.
 pub const SOLE_Y: f32 = 0.0;
 
 pub const SolePatch = struct {
@@ -688,7 +435,7 @@ pub const SolePatch = struct {
     drop: f32, // how far BELOW the bone origin the sole plane sits (the ankle joint height)
 };
 
-// The deepest point any of these soles reaches. Measurement only — nothing is moved.
+// The deepest point any of these soles reaches.
 pub fn soleDepth(wx: []const rl.Matrix, patches: []const SolePatch) f32 {
     var lowest: f32 = std.math.floatMax(f32);
     for (patches) |p| {
@@ -701,42 +448,29 @@ pub fn soleDepth(wx: []const rl.Matrix, patches: []const SolePatch) f32 {
     return lowest;
 }
 
-// The hero's own boot footprint, measured off `footMesh`: the sole cube spans z −0.05·H…+0.14·H and
-// x ±0.0425·H, and its underside lands exactly on the ankle-height plane.
+// The hero's own boot footprint, measured off `footMesh`: the sole cube spans z −0.05·H…+0.14·H and x ±0.0425·H, and its underside lands exactly on the ankle-height plane.
 pub const BOOT_SOLE = [_]SolePatch{
     .{ .bone = ANKL, .heel = 0.05 * H, .toe = 0.14 * H, .halfW = 0.0425 * H, .drop = 0.039 * H },
     .{ .bone = ANKR, .heel = 0.05 * H, .toe = 0.14 * H, .halfW = 0.0425 * H, .drop = 0.039 * H },
 };
 
-// The sidestep's PELVIS drive — pub so the hero and every humanoid foe counter-rotate identically
-// (AGENTS.md's humanoid rule covers the TRUNK, not just the legs). A real crossover is pelvis-led:
-// the CROSSING hip swings FORWARD to carry that leg around the stance leg, and legs alone under a
-// square pelvis is what leaves a sidestep looking like the feet are doing it by themselves.
-// Returns degrees of pelvic ry, peaking on the crossing foot's plant. It needs no `lat` sign flip:
-// the crossing leg swaps sides at exactly the phase where cos(tau·ph) swaps sign, so one
-// expression covers both directions (left leg crosses travelling right, right leg travelling left).
+// The sidestep's PELVIS drive — pub so the hero and every humanoid foe counter-rotate identically (AGENTS.md's humanoid rule covers the TRUNK, not just the legs).
 pub fn strafeProt(ph: f32, lat: f32, m: f32) f32 {
     return -STRAFE_PROT * mathx.cosf(std.math.tau * ph) * @abs(lat) * m;
 }
 
-// The sidestep's pelvic SWAY amplitude. Weight has to sit over whichever foot is in single support,
-// and which leg that is does NOT depend on travel direction — so a strafe keeps the walk's sway
-// PHASE and only opens the amplitude up. (The old term was `lat`-signed and cos-phased, i.e. it
-// leaned the wrong way half the cycle and peaked in double support, when the weight is centred.)
+// The sidestep's pelvic SWAY amplitude.
 pub fn strafeSway(latW: f32, runB: f32) f32 {
     return mathx.lerpF(A_SWAY * (1.0 - 0.6 * runB), STRAFE_SWAY, latW);
 }
 
-// matrix shorthand — the shared raylib TRS helpers (MatrixMultiply(a,b) applies a FIRST
-// then b); defined once in mathx so the convention can't drift between the rigs.
 const rx = mathx.rx;
 const ry = mathx.ry;
 const rz = mathx.rz;
 const tr = mathx.tr;
 const mul = mathx.mul;
 const mul3 = mathx.mul3;
-// Component-wise matrix blend — fine for the few frames of a POSE_XFADE cross-fade (the
-// tiny mid-blend shear is invisible that briefly, and both endpoints are exact poses).
+// Component-wise matrix blend — fine for the few frames of a POSE_XFADE cross-fade (the tiny mid-blend shear is invisible that briefly, and both endpoints are exact poses).
 fn lerpM(a: rl.Matrix, b: rl.Matrix, t: f32) rl.Matrix {
     var out: rl.Matrix = undefined;
     inline for (@typeInfo(rl.Matrix).@"struct".fields) |f| {
@@ -745,18 +479,12 @@ fn lerpM(a: rl.Matrix, b: rl.Matrix, t: f32) rl.Matrix {
     return out;
 }
 
-/// WHERE THE FEET ARE, as the last matrix of every root chain. It was `tr(pos.x, 0, pos.z)` written out
-/// in all seven poses (walk, roll, attack, drink, stun, death…), which is seven places to forget when
-/// the ground stopped being flat — and a rig that misses one sinks into the hill in exactly one state.
-/// Any rig whose actor stands on terrain uses this; there is nothing hero-specific about it.
+/// WHERE THE FEET ARE, as the last matrix of every root chain.
 pub fn rootAt(pos: rl.Vector3) rl.Matrix {
     return tr(pos.x, pos.y, pos.z);
 }
 
-// A smooth 0→1→0 pulse over [a, b] — the overshoot/recoil grace notes that keep a strike
-// from parking dead at its end pose (the wooden-mannequin failure). The SYMMETRIC, hold-free
-// case of `mathx.pulse`, and expressed as one so the two cannot drift: this is the shape every
-// animation beat in the repo has, and it was written out longhand in fourteen places.
+// A smooth 0→1→0 pulse over [a, b] — the overshoot/recoil grace notes that keep a strike from parking dead at its end pose (the wooden-mannequin failure).
 fn bump(u: f32, a: f32, b: f32) f32 {
     const mid = 0.5 * (a + b);
     return mathx.pulse(u, a, mid, mid, b);
@@ -764,32 +492,22 @@ fn bump(u: f32, a: f32, b: f32) f32 {
 
 pub const Attack = enum { light, heavy };
 
-// One buffered action, ER-style: an attack/roll pressed while mid-action QUEUES here —
-// ONE slot, the LAST press wins (a new press replaces the old) — and fires at the
-// current action's earliest legal exit (the attack's chain knot, or the roll's end).
-// Nothing cancels mid-flight: souls commitment, souls leniency.
+// One buffered action, ER-style: an attack/roll pressed while mid-action QUEUES here — ONE slot, the LAST press wins (a new press replaces the old) — and fires at the current action's earliest legal exit (the attack's chain knot, or the roll's end).
 pub const Queued = union(enum) { attack: Attack, roll: rl.Vector3 };
 
 pub const Hero = struct {
     mesh: [N]rl.Mesh,
-    /// THE SHIELD, which is not a bone. It rides the left wrist's matrix through `shieldFit` — the
-    /// pattern kobold.zig set for anything the 18-bone scaffold has no slot for (its off-hand axe,
-    /// jaw and tail do the same). A 19th bone would have to be threaded through `PARENT`, every
-    /// pose's `setLocal` list and every foe that borrows the scaffold, to carry a thing that never
-    /// articulates.
+    /// THE SHIELD, which is not a bone.
     shield: rl.Mesh,
+    /// The guitar he picks up at a rest, riding the PELVIS the way the shield rides the wrist — an instrument in the lap belongs to the body, not to a hand.
+    guitar: rl.Mesh,
     mat: rl.Material,
     rest: [N]rl.Vector3,
     xf: [N]rl.Matrix = undefined, // per-bone world matrix, recomputed each frame by pose()
 
-    // gameplay/anim state
-    /// Feet on the GROUND: x/z where he stands, y the terrain height under him (0 on a flat map, so
-    /// this is unchanged for an unsculpted world). Every pose translates the root by all three — see
-    /// `rootAt` — and the camera, the blade capsule and every world point follow from that.
+    // gameplay/anim state Feet on the GROUND: x/z where he stands, y the terrain height under him (0 on a flat map, so this is unchanged for an unsculpted world).
     pos: rl.Vector3 = mathx.zero3,
-    /// Whole-body pitch from the SLOPE he is standing on, in degrees, + = uphill ahead (lean into the
-    /// climb). Set by the loop from the terrain gradient along his facing and eased there, not here:
-    /// the rig is told what the ground is doing, it does not go looking.
+    /// Whole-body pitch from the SLOPE he is standing on, in degrees, + = uphill ahead (lean into the climb).
     slopePitch: f32 = 0,
     facing: f32 = 0, // yaw radians, 0 = +Z
     phase: f32 = 0, // stride phase [0,1) (left-leg reference)
@@ -811,10 +529,7 @@ pub const Hero = struct {
     queued: ?Queued = null, // the ER-style input buffer (see Queued)
     atkHeavy: bool = false, // which cut: R1 slash (false) or R2 overhead (true)
     atkAlt: bool = false, // light-combo alternator: false = forehand slash, true = the RETURN backhand
-    /// HOW MANY SWINGS HE HAS THROWN, ever. Wraps, and nothing minds — it exists so a caller can see
-    /// a swing BEGIN, which the `attacking` flag cannot tell it: a chained combo clears that flag and
-    /// sets it again inside ONE frame (see `updateAttack`'s buffered exit), so watching its rising
-    /// edge heard the first R1 of a mashed combo and none of the rest. Counted, like `stamRefused`.
+    /// HOW MANY SWINGS HE HAS THROWN, ever.
     swings: u32 = 0,
     bladeA: rl.Vector3 = mathx.zero3, // blade capsule endpoints in WORLD space (guard → tip)
     bladeB: rl.Vector3 = mathx.zero3,
@@ -823,43 +538,25 @@ pub const Hero = struct {
     hitWasActive: bool = false, // edge detector: sweep history (+ future hit list) resets on activation
     trail: [TRAIL_N]TrailSample = [_]TrailSample{.{}} ** TRAIL_N, // swing-trail ring (newest at trailHead)
     trailHead: usize = 0,
-    // combat
     vit: combat.Vitals = freshVitals(),
     stam: combat.Stamina = .{}, // ER's third bar — the hero's alone; foes don't carry one
     fp: combat.Focus = .{}, // …the blue one, likewise. Nothing spends it yet; the Cerulean fills it
     runes: combat.Runes = .{}, // …and ER's currency, likewise his alone (souls, by ER's name)
     flasks: combat.Flasks = .{}, // Crimson + Cerulean, sharing the quick-item slot
-    /// HP coming back over TIME (Mushroom Jerky). Ticked from the live loop and NOT from
-    /// `tickClocks`: it is a combat clock, so it must stop under the pause card like `vit` does —
-    /// a drip that ran while the menu was up would make the menu the best place to heal.
+    /// HP coming back over TIME (Mushroom Jerky).
     regen: combat.Regen = .{},
-    // THE DRINK, committed like an attack (see combat.Flasks): the charge is spent at the START,
-    // the restore lands at FLASK_POUR_AT, and a stagger mid-draught costs you the flask.
+    // THE DRINK, committed like an attack (see combat.Flasks): the charge is spent at the START, the restore lands at FLASK_POUR_AT, and a stagger mid-draught costs you the flask.
     drinking: bool = false,
     drinkT: f32 = 0,
     poured: bool = false,
-    /// Seconds left on the "that was refused" flash. An empty-bar input does NOTHING in ER, and
-    /// nothing is indistinguishable from a dropped frame — which, under a ZERO INPUT LAG law, is
-    /// the one thing the player must never have to wonder about. So the refusal is SHOWN, on the
-    /// bar that caused it. It changes no mechanics: this is a light on the dashboard.
-    /// Set it through `refuse()`, never by hand — see there.
+    /// Seconds left on the "that was refused" flash.
     stamRefused: f32 = 0,
     sprinting: bool = false, // hold-B RUN, resolved by the caller — the only CONTINUOUS drain
-    // ── THE GUARD ── a HELD state, not a committed action: re-decided every frame from the button
-    // and from what else he is doing (see setGuard), so starting an attack, a roll or a sprint drops
-    // the shield with no bookkeeping anywhere. `guardB` is the STANCE's visual blend and lags it by
-    // ~0.1 s; nothing mechanical may read `guardB`, or the block would arrive late.
     guarding: bool = false,
     guardB: f32 = 0,
-    /// Seconds since the last blow caught on the shield — the recoil clock, and the ONLY record a
-    /// block leaves. A `blocks` counter was here too, mirroring `swings`, and it was deleted: the
-    /// reason `swings` has to be counted is that a caller cannot otherwise see a chained swing
-    /// BEGIN, where a block's edge is already handed to the caller by `takeHit`'s return.
+    /// Seconds since the last blow caught on the shield — the recoil clock, and the ONLY record a block leaves.
     blockT: f32 = mathx.LONG_AGO,
-    // THE WORLD IS HELD (menu up). He keeps breathing, but his COMBAT clocks must not run:
-    // the live loop already freezes vit/hurtFlash by simply not ticking them, and stamina rides
-    // tickClocks instead, so without this it is the one meter that keeps moving under a pause —
-    // bleeding on a sprint you paused mid-stride, and refilling for free the rest of the time.
+    // THE WORLD IS HELD (menu up).
     held: bool = false,
     stun: combat.StunKind = .none, // .light flinch / .heavy stagger (a committed reaction)
     stunT: f32 = 0, // seconds into the current stagger
@@ -873,6 +570,9 @@ pub const Hero = struct {
     speedS: f32 = 0, // short-eased ground speed driving POSTURE blends only
     blendT: f32 = mathx.LONG_AGO, // seconds since the last pose discontinuity (… POSE_XFADE = no blend)
     blendXf: [N]rl.Matrix = undefined, // frozen source pose for the cross-fade
+    /// At a bonfire: `poseRest` drives him instead of the gait, the sword and shield are not drawn, and the guitar is.
+    resting: bool = false,
+    restT: f32 = 0,
 
     pub fn init(shader: rl.Shader) Hero {
         var mat = rl.loadMaterialDefault() catch @panic("hero material");
@@ -880,6 +580,7 @@ pub const Hero = struct {
         return .{
             .mesh = buildMeshes(),
             .shield = shieldMesh(),
+            .guitar = guitarMesh(),
             .mat = mat,
             .rest = restPositions(),
         };
@@ -889,51 +590,57 @@ pub const Hero = struct {
         self.mat.shader = sh;
     }
 
-    // Advance the walk. `movedDist` = ground distance travelled this frame; `speed` its
-    // rate; `moveYaw` the world heading of travel (null when idle) — against `facing` it
-    // shapes the locked-on strafe/backpedal gait. Phase is driven by DISTANCE (not time)
-    // so the feet never skate.
-    // The prologue EVERY per-frame advance path owes: the clock, the swing trail's fade, and the
-    // cross-fade timer. Exactly one of update/updateRoll/updateAttack/updateStun/updateDeath runs
-    // each frame, and each had its own copy of these three lines.
+    /// SIT DOWN at `pos` facing `yaw`, or stand back up.
+    pub fn sit(self: *Hero, on: bool, pos: rl.Vector3, yaw: f32) void {
+        self.resting = on;
+        self.restT = 0;
+        // Only on the way OUT: standing up eases out of the sit through the ordinary gait blend, where sitting down is a hard cut behind full black (see poseRest).
+        if (!on) self.startXfade();
+        if (!on) return;
+        self.pos = pos;
+        self.facing = yaw;
+        self.speed = 0;
+        self.speedS = 0;
+        self.moving = 0;
+        self.attacking = false;
+        self.rolling = false;
+        self.drinking = false;
+        self.sprinting = false;
+        self.guarding = false;
+        self.guardB = 0;
+        self.stun = .none;
+        self.hurtFlash = 0;
+        // Whole again, and the same restoration a respawn makes — ER's rule, and a death already counts as arriving at one of these.
+        self.vit = freshVitals();
+        self.stam.reset();
+        self.fp.reset();
+        self.regen.reset();
+        self.flasks.refill();
+    }
+
+    // Advance the walk.
     fn tickClocks(self: *Hero, dt: f32) void {
         self.elapsed += dt;
         self.ageTrail(dt);
         self.blendT = @min(self.blendT + dt, mathx.LONG_AGO);
-        // Stamina belongs in the prologue for the same reason the others do: it must advance
-        // exactly ONCE per frame whichever path is running, and hanging it off the live loop
-        // instead would leave --shot draining every swing it takes and never refilling.
-        // ER pauses the refill while attacking, sprinting or blocking. ROLLING counts too: the
-        // bite is charged at the dive and the pool must not start climbing back before he is on
-        // his feet, or a roll chain costs less than the sum of its rolls.
-        // GUARDING PAUSES THE REFILL TOO (ER's rule, docs/ELDEN_RING.md §3), and it is what stops a
-        // held shield being free: standing behind it, the bar you are about to need is not coming
-        // back. Same arm as attacking and rolling — a state you are IN, not a spend.
+        // Stamina belongs in the prologue for the same reason the others do: it must advance exactly ONCE per frame whichever path is running, and hanging it off the live loop instead would leave --shot draining every swing it takes and never refilling.
         if (!self.held) self.stam.tick(dt, self.sprinting, self.attacking or self.rolling or self.guarding);
         self.stamRefused = @max(0, self.stamRefused - dt);
-        // The stance blend and the recoil clock, in the prologue with the rest: exactly one advance
-        // path runs each frame and both have to move under all of them, or the shield hangs mid-raise
-        // through a stagger and the recoil freezes on whatever frame the block landed.
+        // The stance blend and the recoil clock, in the prologue with the rest: exactly one advance path runs each frame and both have to move under all of them, or the shield hangs mid-raise through a stagger and the recoil freezes on whatever frame the block landed.
         self.guardB = mathx.approach(self.guardB, if (self.guarding) 1.0 else 0.0, dt * GUARD_BLEND_RATE);
         self.blockT = @min(self.blockT + dt, mathx.LONG_AGO);
-        // The rune counter's ROLL. In the prologue for the same reason as the rest: it must advance
-        // exactly once per frame whichever path is running. NOT gated on `held` — it is a display
-        // animation, not a combat clock, and a counter frozen mid-tally under the pause menu reads
-        // as the payout having been dropped.
+        // The rune counter's ROLL.
         self.runes.tick(dt);
     }
 
     pub fn update(self: *Hero, dt: f32, movedDist: f32, speed: f32, moveYaw: ?f32) void {
         self.tickClocks(dt);
         self.speed = speed;
-        // The shared humanoid gait engine drives phase + the posture/direction blends (also
-        // used by the skeletal archer + any humanoid foe — one source of walk/strafe feel).
+        // The shared humanoid gait engine drives phase + the posture/direction blends (also used by the skeletal archer + any humanoid foe — one source of walk/strafe feel).
         advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist, speed, moveYaw, self.facing);
     }
 
-    // Begin a dodge roll in world direction `dir` (falls back to current facing). Ignored
-    // while already rolling OR mid-attack — both are committed (mirrors startAttack's guard,
-    // so a stray call can't leave rolling+attacking latched together).
+    // Begin a dodge roll in world direction `dir` (falls back to current facing).
     pub fn startRoll(self: *Hero, dir: rl.Vector3) void {
         if (self.committed()) return;
         if (!self.stam.canAct()) {
@@ -948,9 +655,7 @@ pub const Hero = struct {
         self.rollT = 0;
         self.rollDir = d;
         self.rollYaw = mathx.headingXZ(d); // heading committed NOW; the visible yaw whips onto it
-        // Wabi-sabi, cosmetic only: roll over the shoulder of whichever leg is leading
-        // (as a real forward roll does; right by habit from a standstill), and drift the
-        // imperfection magnitudes so no two rolls read identical.
+        // Wabi-sabi, cosmetic only: roll over the shoulder of whichever leg is leading (as a real forward roll does; right by habit from a standstill), and drift the imperfection magnitudes so no two rolls read identical.
         const leadL = sampleCurve(HIP_FLEX, self.phase) > sampleCurve(HIP_FLEX, self.phase + 0.5);
         self.rollSide = if (self.moving > 0.5 and leadL) 1.0 else -1.0;
         // elapsed in the mix so standstill rolls (frozen phase) still vary roll to roll.
@@ -959,15 +664,12 @@ pub const Hero = struct {
         self.startXfade(); // last frame's pose cross-fades into the dive — no snap
     }
 
-    // Advance an in-progress roll: committed ease-out travel + pose. Call in place of the
-    // normal move/update while `rolling` is true; `bounds` clamps position like moveHero.
+    // Advance an in-progress roll: committed ease-out travel + pose.
     pub fn updateRoll(self: *Hero, dt: f32, bounds: f32) void {
         self.tickClocks(dt);
         self.facing = mathx.approachAngle(self.facing, self.rollYaw, dt * ROLL_YAW_RATE); // whip, don't teleport
         const u = mathx.clampF(self.rollT / ROLL_DUR, 0, 1);
-        // Lunge: full speed through the dive + somersault, smooth-braked through the
-        // recovery. The profile's integral over u is (BRAKE_A+BRAKE_B)/2, so the peak
-        // normalizes to keep total travel = ROLL_DIST.
+        // Lunge: full speed through the dive + somersault, smooth-braked through the recovery.
         const peak = ROLL_DIST / (ROLL_DUR * 0.5 * (ROLL_BRAKE_A + ROLL_BRAKE_B));
         const speed = peak * (1.0 - mathx.smoothstep(ROLL_BRAKE_A, ROLL_BRAKE_B, u));
         const moved = speed * dt;
@@ -975,58 +677,34 @@ pub const Hero = struct {
         self.speed = speed;
         self.speedS = mathx.approach(self.speedS, speed, dt * SPEED_SMOOTH);
         self.rollT += dt;
-        // Pose BEFORE clearing `rolling`: on the frame the roll completes, poseRoll (with u
-        // clamped to 1 = a fully-risen stand) must still run, else pose() falls to the
-        // walk branch and pops a stale-phase stance for one frame.
+        // Pose BEFORE clearing `rolling`: on the frame the roll completes, poseRoll (with u clamped to 1 = a fully-risen stand) must still run, else pose() falls to the walk branch and pops a stale-phase stance for one frame.
         self.pose();
         if (self.rollT >= ROLL_DUR) {
             self.rolling = false;
-            // `moving` is deliberately NOT reset: held input keeps trucking straight out
-            // of the rise (update() eases it down naturally if the stick is free).
+            // `moving` is deliberately NOT reset: held input keeps trucking straight out of the rise (update() eases it down naturally if the stick is free).
             self.startXfade(); // the rise cross-fades into whatever comes next
             self.fireQueued(); // a buffered attack/roll chains straight off the rise
         }
     }
 
-    // ── ER-style input queue ─────────────────────────────────────────────────────────
-    // The public entry for player action input: act NOW if free, else buffer the press
-    // (one slot, last press wins). game.zig routes a same-frame roll press here INSTEAD
-    // of the attack press (rolls win the frame), and steers a queued roll every frame so
-    // it leaves in the direction held when it fires — both Elden Ring behaviors.
+    // The public entry for player action input: act NOW if free, else buffer the press (one slot, last press wins). game.zig routes a same-frame roll press here INSTEAD of the attack press (rolls win the frame), and steers a queued roll every frame so it leaves in the direction held when it fires — both Elden Ring behaviors.
 
-    /// IS HE COMMITTED TO SOMETHING? The one place that answers it, because the three committed
-    /// actions have to be asked about together or one of them gets forgotten — and the DRAUGHT was.
-    /// It was absent from every guard below, so an attack or roll pressed mid-drink skipped the
-    /// buffer and started immediately: the swing charged its stamina and sat latched behind the
-    /// drink, and a ROLL actually ran (the frame dispatch tries `rolling` first) with `drinking`
-    /// still set, so the draught silently resumed — and could still pour — once the roll ended.
-    /// `updateDrink` calling `fireQueued` was the tell: nothing could ever be in the queue.
+    /// IS HE COMMITTED TO SOMETHING?
     pub fn committed(self: *const Hero) bool {
         return self.rolling or self.attacking or self.drinking;
     }
 
-    /// THAT INPUT DID NOTHING, and the player is told so. Four call sites were each re-stating
-    /// `self.stamRefused = combat.STAM_REFUSE_FLASH`, which is the sort of line that gets copied
-    /// into a fifth refusal and then quietly left out of a sixth — and a refusal nobody can see is
-    /// exactly the failure the flash exists to prevent.
+    /// THAT INPUT DID NOTHING, and the player is told so.
     fn refuse(self: *Hero) void {
         self.stamRefused = combat.STAM_REFUSE_FLASH;
     }
 
-    /// ── RAISE OR LOWER THE SHIELD ── call EVERY frame with the button's state; the hero decides
-    /// whether he may have it. A HELD state re-derived from scratch each frame, deliberately: the
-    /// alternative is a `guarding` flag that four other transitions have to remember to clear, which
-    /// is exactly how the draught ended up resuming out of a roll (see `committed`).
-    ///
-    /// CALL IT AFTER `sprinting` IS SETTLED for the frame — a sprint drops the guard (there is no
-    /// running block in this genre), and asking before the sprint is resolved reads last frame's.
+    /// whether he may have it.
     pub fn setGuard(self: *Hero, want: bool) void {
         self.guarding = want and self.canGuard();
     }
 
-    /// AN EMPTY BAR CANNOT HOLD A SHIELD UP — ER's own rule and the reason a guard break is a real
-    /// punishment rather than an interruption: the break empties the pool, so the shield stays down
-    /// until the regen has bought it back and you are open for all of it.
+    /// AN EMPTY BAR CANNOT HOLD A SHIELD UP — ER's own rule and the reason a guard break is a real punishment rather than an interruption: the break empties the pool, so the shield stays down until the regen has bought it back and you are open for all of it.
     pub fn canGuard(self: *const Hero) bool {
         return !self.committed() and !self.staggered() and !self.dead and !self.sprinting and self.stam.canAct();
     }
@@ -1047,8 +725,7 @@ pub const Hero = struct {
             else => {},
         };
     }
-    // Fire whatever is buffered the moment an exit opens. Callers clear their own
-    // action flag first, so start* sees a free hero.
+    // Fire whatever is buffered the moment an exit opens.
     fn fireQueued(self: *Hero) void {
         const q = self.queued orelse return;
         self.queued = null;
@@ -1058,8 +735,7 @@ pub const Hero = struct {
         }
     }
 
-    // Begin a committed sword attack in the current facing. Ignored while committed to anything
-    // else (player input goes through requestAttack, which buffers instead).
+    // Begin a committed sword attack in the current facing.
     pub fn startAttack(self: *Hero, kind: Attack) void {
         if (self.committed()) return;
         const cost: f32 = if (kind == .heavy) combat.STAM_HEAVY else combat.STAM_LIGHT;
@@ -1076,9 +752,7 @@ pub const Hero = struct {
         self.startXfade(); // whatever pose we were in cross-fades into the windup
     }
 
-    // Advance an in-progress attack (committed step into the cut + pose + blade refresh);
-    // call in place of move/update while `attacking` (`bounds` clamps like moveHero), movement
-    // ignored. `faceYaw` (lock target heading, null unlocked) re-squares through the RECOVERY tail only (ATK_RETRACK), so a locked whiff recovers its turning fast.
+    // Advance an in-progress attack (committed step into the cut + pose + blade refresh); call in place of move/update while `attacking` (`bounds` clamps like moveHero), movement ignored.
     pub fn updateAttack(self: *Hero, dt: f32, bounds: f32, faceYaw: ?f32) void {
         self.tickClocks(dt);
         const dur: f32 = if (self.atkHeavy) ATK_HEAVY_DUR else ATK_LIGHT_DUR;
@@ -1097,8 +771,7 @@ pub const Hero = struct {
             if (u >= recovA) self.facing = mathx.approachAngle(self.facing, ty, dt * ATK_RETRACK);
         }
         self.atkT += dt;
-        // Buffered exit: past the chain knot the stand-down tail is skippable — a queued
-        // action takes over NOW (this is what makes mashed inputs FLOW, souls-style).
+        // Buffered exit: past the chain knot the stand-down tail is skippable — a queued action takes over NOW (this is what makes mashed inputs FLOW, souls-style).
         const chain: f32 = if (self.atkHeavy) AH_CHAIN else AL_CHAIN;
         const wasLight = !self.atkHeavy;
         const wasAlt = self.atkAlt;
@@ -1122,32 +795,23 @@ pub const Hero = struct {
         }
     }
 
-    // ER combo naturalism: a light chained off a light ALTERNATES — the return swipe comes
-    // backhand out of where the last one landed. Call right after fireQueued() (both exits
-    // — the chain knot and the anim's end — owe it, and startAttack has just zeroed atkAlt).
+    // ER combo naturalism: a light chained off a light ALTERNATES — the return swipe comes backhand out of where the last one landed.
     fn alternateChain(self: *Hero, wasLight: bool, wasAlt: bool) void {
         if (self.attacking and !self.atkHeavy and wasLight) self.atkAlt = !wasAlt;
     }
 
-    // ── THE FLASK ───────────────────────────────────────────────────────────────────────
-    // ER's quick item, committed. The charge goes the instant you commit — that is what makes a
-    // panicked drink a real mistake rather than something you can back out of — and the restore
-    // arrives partway through, so the window is a cost you pay before you get anything.
+    // ER's quick item, committed.
 
-    /// Swap which flask is up (D-pad down). Free, and legal at any time except mid-draught: it is
-    /// a belt gesture, not an action, and gating it behind combat state would make it feel sticky.
+    /// Swap which flask is up (D-pad down).
     pub fn cycleFlask(self: *Hero) void {
         if (self.dead or self.drinking) return;
         self.flasks.cycle();
     }
 
-    /// Start a draught. Refused (and flagged, like an empty stamina bar) when the flask is dry;
-    /// ignored outright while committed to something else, exactly as `startAttack` is.
+    /// Start a draught.
     pub fn startDrink(self: *Hero) bool {
         if (self.committed() or self.dead or self.staggered()) return false;
         // THE CHARGE MUST NOT GO INTO A BAR THAT CANNOT TAKE IT — and only the CERULEAN is gated.
-        // Wasting a Crimson at full health is ER's own behaviour and stays; the blue one is the
-        // exception because nothing spends FP yet, so it could only EVER be wasted.
         if (self.flasks.sel == .cerulean and !self.fp.canTake()) {
             self.refuse();
             return false;
@@ -1163,9 +827,7 @@ pub const Hero = struct {
         return true;
     }
 
-    /// Advance the draught; call in place of move/attack/roll while `drinking`. The pour lands once,
-    /// at FLASK_POUR_AT — before that you have spent the charge and got nothing, which is the whole
-    /// shape of the decision.
+    /// Advance the draught; call in place of move/attack/roll while `drinking`.
     pub fn updateDrink(self: *Hero, dt: f32) void {
         self.tickClocks(dt);
         self.drinkT += dt;
@@ -1195,17 +857,14 @@ pub const Hero = struct {
         return if (self.atkHeavy) (u >= AH_HIT_A and u < AH_HIT_B) else (u >= AL_HIT_A and u < AL_HIT_B);
     }
 
-    // Refresh the blade capsule from the SWORD bone. Keeps last frame's endpoints for
-    // swept tests; the sweep history resets on the activation edge (which is also where
-    // the per-swing hit list will clear once there are targets to record).
+    // Refresh the blade capsule from the SWORD bone.
     fn updateBlade(self: *Hero) void {
         self.bladeA0 = self.bladeA;
         self.bladeB0 = self.bladeB;
         self.bladeA = rl.math.vector3Transform(BLADE_BASE, self.xf[SWORD]);
         self.bladeB = rl.math.vector3Transform(BLADE_TIP, self.xf[SWORD]);
         const act = self.hitActive(); // sampled ONCE — both the trail and the edge test read it
-        // Trail sample — only inside the strike's ACTIVE window (the cut paints its arc;
-        // the windup/recovery leave nothing) and only while the tip is really sweeping.
+        // Trail sample — only inside the strike's ACTIVE window (the cut paints its arc; the windup/recovery leave nothing) and only while the tip is really sweeping.
         if (act and mathx.lenV(mathx.subV(self.bladeB, self.bladeB0)) > TRAIL_MIN_SWEEP) {
             self.trailHead = (self.trailHead + 1) % TRAIL_N;
             self.trail[self.trailHead] = .{ .a = mathx.lerpV(self.bladeA, self.bladeB, TRAIL_ROOT), .b = self.bladeB, .age = 0 };
@@ -1217,9 +876,7 @@ pub const Hero = struct {
         self.hitWasActive = act;
     }
 
-    // The swing trail: unlit alpha ribbon between consecutive blade samples, newest →
-    // oldest, each strip fading with its samples' age. Call INSIDE the 3D lit pass,
-    // after the opaque geometry (it never casts — draw() stays trail-free on purpose).
+    // The swing trail: unlit alpha ribbon between consecutive blade samples, newest → oldest, each strip fading with its samples' age.
     pub fn drawTrail(self: *const Hero) void {
         rl.gl.rlDisableBackfaceCulling(); // the ribbon must read from both sides of the arc
         defer rl.gl.rlEnableBackfaceCulling();
@@ -1234,7 +891,6 @@ pub const Hero = struct {
         }
     }
 
-    // ── taking a hit (HP + the two-tier Elden Ring stagger) ─────────────────────────────
     // The poise/stance dealt by the hero's own cuts, handed to the toads' hit test.
     pub fn attackHit(self: *const Hero) combat.Hit {
         return if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT;
@@ -1253,22 +909,14 @@ pub const Hero = struct {
         return self.rolling and self.rollT < ROLL_IFRAME_END;
     }
 
-    /// IS THE SHIELD BETWEEN HIM AND THIS? `fromDir` is the world XZ direction from the hero TOWARD
-    /// whatever hit him (zero = a blow with no direction, which nothing can be guarded against).
-    /// A shield is a DIRECTION, not a bubble — see combat.GUARD_ARC.
+    /// IS THE SHIELD BETWEEN HIM AND THIS?
     pub fn guardCovers(self: *const Hero, fromDir: rl.Vector3) bool {
         if (!self.guarding or mathx.lenXZ(fromDir) < 1e-4) return false;
         const off = mathx.wrapPi(mathx.headingXZ(fromDir) - self.facing);
         return @abs(mathx.degrees(off)) <= combat.GUARD_ARC;
     }
 
-    // Apply a blow: HP drains, poise/stance drive the flinch/stagger. Any reaction INTERRUPTS
-    // the current action — souls commitment cuts both ways; call from game.zig after the knot resolves its attacks.
-    //
-    // `fromDir` is where it came FROM (see guardCovers) and it decides whether the shield is in the
-    // way. RETURNS WHAT BECAME OF THE BLOW, because three of the four outcomes are things the caller
-    // has to sound and shake differently — and because a blow swallowed by i-frames used to be
-    // indistinguishable from one that landed, so game.zig grunted through every rolled-through hit.
+    // Apply a blow: HP drains, poise/stance drive the flinch/stagger.
     pub fn takeHit(self: *Hero, h: combat.Hit, fromDir: rl.Vector3) combat.HitOutcome {
         if (self.dead) return .ignored;
         if (self.iFramed()) return .ignored; // rolled through it — no damage, no flinch, nothing
@@ -1294,66 +942,44 @@ pub const Hero = struct {
         return .taken;
     }
 
-    /// ── CAUGHT ON THE SHIELD ── the plain Dark Souls block. NO POISE AND NO STANCE reach him: the
-    /// impulse went into the boards, and a blocked blow that still flinched you would make guarding
-    /// strictly worse than standing there. What it costs is STAMINA, by the weight of the blow, and
-    /// what gets past is CHIP — which is real damage and can kill, exactly as it does in DS.
-    ///
-    /// EMPTY THE BAR UNDER A BLOW AND THE GUARD BREAKS: a heavy stagger, and since the pool is now
-    /// at zero the shield cannot come back up until it refills (`canGuard`). The danger is never
-    /// that hit — it is the next one, landing on a man with no shield and no stamina.
+    /// impulse went into the boards, and a blocked blow that still flinched you would make guarding strictly worse than standing there.
     fn blockHit(self: *Hero, h: combat.Hit) combat.HitOutcome {
         self.blockT = 0;
         self.stam.spend(combat.guardStamina(h));
-        // The chip goes through `Vitals.hit` with its poise/stance stripped, rather than straight at
-        // `hp`: it is the one path that can still KILL through a guard, and death has to latch the
-        // same way it does for a blow that landed.
+        // The chip goes through `Vitals.hit` with its poise/stance stripped, rather than straight at `hp`: it is the one path that can still KILL through a guard, and death has to latch the same way it does for a blow that landed.
         const r = self.vit.hit(.{ .dmg = combat.guardChip(h) });
         self.hurtFlash = mathx.maxF(self.hurtFlash, BLOCK_FLASH);
         if (r == .death) {
             self.enterDeath();
             return .taken; // chipped to death behind the shield — that is a death, not a block
         }
-        // THE BREAK TESTS THE POOL, NOT `canAct()`. `canAct` is `!STAM_LOCKOUT or cur > 0`, so with
-        // the lockout switched off — which is a live switch this file's own test pins — it is always
-        // true and the guard could NEVER break: infinite free blocking, from one flag flipped in
-        // another file. Emptying the bar under a blow breaks your guard whether or not empty-bar
-        // LOCKOUTS are on; the two are different rules and only one of them is behind that switch.
+        // THE BREAK TESTS THE POOL, NOT `canAct()`.
         if (self.stam.cur > 0) return .blocked;
         self.guarding = false;
         self.enterStun(.heavy);
         return .guardBroken;
     }
-    // Decay the damage-flash. Call every frame (independent of which update path runs).
+    // Decay the damage-flash.
     pub fn tickFlash(self: *Hero, dt: f32) void {
         self.hurtFlash = mathx.maxF(0, self.hurtFlash - dt * 2.6);
     }
 
-    // Age the swing trail. Called by EVERY per-frame advance path (update/attack/roll/
-    // stun/death — exactly one runs each frame), so samples fade for the --shot harness
-    // too, not just the live loop (stale ribbons otherwise haunt later captures).
+    // Age the swing trail.
     fn ageTrail(self: *Hero, dt: f32) void {
         for (&self.trail) |*s| s.age = mathx.minF(s.age + dt, mathx.LONG_AGO);
     }
     fn enterStun(self: *Hero, kind: combat.StunKind) void {
         self.attacking = false; // the reaction drops whatever he was committed to
         self.rolling = false;
-        // …the draught included, AND THE CHARGE IS ALREADY GONE. That is ER's rule and it is the
-        // sharpest edge on the whole system: drink in the wrong window and you lose the flask AND
-        // the health it was going to give you.
+        // …the draught included, AND THE CHARGE IS ALREADY GONE.
         self.drinking = false;
-        // …and the shield comes down. `setGuard` would clear it next frame anyway (a staggered hero
-        // cannot guard), but a second blow landing later in the SAME frame would otherwise still be
-        // caught on a shield that is already on the floor.
+        // …and the shield comes down.
         self.guarding = false;
         self.queued = null;
         self.stun = kind;
         self.stunT = 0;
         self.speed = 0;
-        // …and the poise immunity that comes with a reaction (combat.Vitals). `vit.hit` already armed
-        // it for a stagger IT decided; this is the line that covers the GUARD BREAK, which is a heavy
-        // stagger the vitals never returned — without it the one reaction you are most exposed in was
-        // the only one you could still be poise-chipped through.
+        // …and the poise immunity that comes with a reaction (combat.Vitals).
         self.vit.beginStun(kind);
         self.startXfade();
     }
@@ -1370,8 +996,7 @@ pub const Hero = struct {
         self.startXfade();
     }
 
-    // Advance a stagger; clears back to normal control when it finishes. Call in place of
-    // move/attack/roll while `staggered()`.
+    // Advance a stagger; clears back to normal control when it finishes.
     pub fn updateStun(self: *Hero, dt: f32) void {
         self.tickClocks(dt);
         self.stunT += dt;
@@ -1419,7 +1044,7 @@ pub const Hero = struct {
         self.startXfade();
     }
 
-    // Compute every bone's world matrix for this frame's pose. Call once before drawing.
+    // Compute every bone's world matrix for this frame's pose.
     pub fn pose(self: *Hero) void {
         if (self.dead) return self.poseDeath();
         if (self.stun != .none) return self.poseStun();
@@ -1429,21 +1054,14 @@ pub const Hero = struct {
         const m = self.moving;
         const ph = self.phase;
         const twoPi = std.math.tau;
-        // Travel direction in the body frame (locked-on strafe/backpedal — see the
-        // locked-on footing note above STRIDE). fw signs the sagittal gait (negative =
-        // the time-reversed backpedal), lat drives the sidestep.
+        // Travel direction in the body frame (locked-on strafe/backpedal — see the locked-on footing note above STRIDE). fw signs the sagittal gait (negative = the time-reversed backpedal), lat drives the sidestep.
         const fw = self.fwdB;
         const lat = self.latB;
         const fwPos = mathx.clampF(fw, 0, 1);
-        // Walk→run blend from the short-EASED ground speed (speedS) so posture glides across
-        // stance changes instead of stepping; sprintB adds extra lean/crouch past full run.
-        // Both gated by FORWARDNESS: the run/sprint presentation belongs to forward travel — a fast strafe/backpedal stays an upright walk.
+        // Walk→run blend from the short-EASED ground speed (speedS) so posture glides across stance changes instead of stepping; sprintB adds extra lean/crouch past full run.
         const runB = mathx.clampF((self.speedS - RUN_SPEED_LO) / (RUN_SPEED_HI - RUN_SPEED_LO), 0, 1) * fwPos;
         const sprintB = mathx.clampF((self.speedS - RUN_SPEED_HI) / (SPRINT_REF_SPEED - RUN_SPEED_HI), 0, 1) * fwPos;
-        // Behind the shield he SETTLES onto his knees, and a caught blow drives him back and down
-        // into it. Both ride the ROOT and so are computed here rather than in the guard overlay: the
-        // legs are chained off the pelvis further down, and a settle applied after them is a body
-        // sinking through its own feet.
+        // Behind the shield he SETTLES onto his knees, and a caught blow drives him back and down into it.
         const gB = mathx.clampF(self.guardB, 0, 1);
         const rec = self.blockRecoil();
         const guardBack = BLOCK_STEP * rec;
@@ -1451,38 +1069,24 @@ pub const Hero = struct {
             STRAFE_DIP * @abs(lat) * m + // low centre of gravity; strafing settles onto its soft knees
             GUARD_CROUCH * gB + BLOCK_SINK * rec;
 
-        // ── pelvis oscillations (walk bob — run airtime bounce) ──
         const walkBob = -0.5 * A_BOB * mathx.cosf(2.0 * twoPi * ph); // twice/stride, symmetric
         const runBounce = A_RUN_BOUNCE * (0.5 - 0.5 * mathx.cosf(2.0 * twoPi * (ph - 0.2))); // up-only, peaks at flight
-        // Both the bob and the pelvic list belong to the SAGITTAL compass gait, so they fade out with
-        // forwardness. A pure sidestep has its own vertical story — legChain solves those feet against
-        // an assumed pelvis height (STRAFE_DIP) and knows nothing about a bob laid on top, so leaving
-        // the walk's ±0.012·H running through a strafe drove the planted foot ~7 cm under.
+        // Both the bob and the pelvic list belong to the SAGITTAL compass gait, so they fade out with forwardness.
         const fwAbs = @abs(fw);
         const bob = mathx.lerpF(walkBob, runBounce, runB) * m * fwAbs + 0.006 * H * mathx.sinf(self.elapsed * 2.2) * (1.0 - m);
         const latW = @abs(lat) * m;
         const sway = strafeSway(latW, runB) * mathx.sinf(twoPi * ph) * m; // weight sits over the single-support foot; a strafe just opens the amplitude
-        // Pelvic transverse rotation: the walk's, plus the sidestep's own crossing drive (which
-        // peaks on the crossing foot's plant). Both counter-rotate up the spine below.
+        // Pelvic transverse rotation: the walk's, plus the sidestep's own crossing drive (which peaks on the crossing foot's plant).
         const prot = A_PROT * mathx.sinf(twoPi * ph) * m * @abs(fw) + strafeProt(ph, lat, m);
         const list = A_LIST * mathx.sinf(twoPi * ph) * m * fwAbs; // pelvic frontal drop (sagittal gait's)
 
-        // Root: place at world pos, at hip height (crouched when running), swayed/bobbed in
-        // body frame, PITCHED FORWARD ABOUT THE FEET (so the centre of gravity leads the
-        // base — the driving, falling-forward run), then faced.
+        // Root: place at world pos, at hip height (crouched when running), swayed/bobbed in body frame, PITCHED FORWARD ABOUT THE FEET (so the centre of gravity leads the base — the driving, falling-forward run), then faced.
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
-        // …plus the SLOPE he is standing on. Same rx term as the run lean because it is the same
-        // motion — the trunk folding forward over planted feet — and it hinges about the FEET here
-        // (the rx is applied before the world translate), which is what a climb actually looks like.
-        // Set by the loop and already eased, so nothing snaps as the ground changes under him.
+        // …plus the SLOPE he is standing on.
         const bodyPitch = (BODY_PITCH_RUN * runB + (BODY_PITCH_SPRINT - BODY_PITCH_RUN) * sprintB) * m + self.slopePitch;
         var wx: [N]rl.Matrix = undefined;
-        // Pelvis height. NOTE: a "pelvis floor" that held this up off the legs' own reach was tried
-        // here and REVERTED — it is arithmetically right and wrong for the character. The run's crouch
-        // is deliberately deeper than the legs can pay for, so the floor cancelled most of RUN_CROUCH
-        // and the run stood up and read slow and floaty (owner's verdict). The remaining sink is NOT
-        // this term anyway: see the bodyPitch note below.
+        // Pelvis height.
         const pelvY = hipY - crouch + bob;
         wx[ROOT] = mul3(
             mul(rz(list), ry(prot)), // tilt/rotate pelvis about its centre
@@ -1491,15 +1095,11 @@ pub const Hero = struct {
         );
 
         // Spine chain — lean deepens through run into sprint + counter-rotation vs pelvis.
-        // The walk lean follows the SIGNED forward blend (a backpedal leans slightly back,
-        // a pure strafe stays upright), and the torso banks gently INTO a sidestep.
         const lean = (mathx.lerpF(TORSO_LEAN * fw, RUN_LEAN, runB) + sprintB * (SPRINT_LEAN - RUN_LEAN)) * m;
         const bank = STRAFE_LEAN * lat * m;
         setLocal(&wx, SPINE, self.rest, mul3(rx(lean * 0.5), ry(-0.3 * prot), rz(0.5 * bank)));
         setLocal(&wx, CHEST, self.rest, mul3(rx(lean * 0.5), ry(-0.5 * prot), rz(0.5 * bank)));
-        // Idle/walk carries a gentle downward gaze (HEAD_WALK). Running, the body pitch + spine
-        // lean would drive the face at the floor, so counter that tilt toward ~GAZE_AHEAD (a few
-        // metres ahead, NOT level/up, capped so the neck never hyperextends), split across neck + head so the lift curves naturally.
+        // Idle/walk carries a gentle downward gaze (HEAD_WALK).
         const fwdTilt = bodyPitch + lean;
         const gazeCounter = mathx.clampF(fwdTilt - GAZE_AHEAD, 0, NECK_EXT_MAX);
         setLocal(&wx, NECK, self.rest, mul(rx(-0.45 * gazeCounter), ry(-0.2 * prot)));
@@ -1509,10 +1109,7 @@ pub const Hero = struct {
         legChain(&wx, &self.rest, ph, m, runB, fw, lat, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
         legChain(&wx, &self.rest, ph + 0.5, m, runB, fw, lat, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
 
-        // Arms — contralateral swing (cos: same-side arm is BACK when its leg is forward);
-        // bigger swing + ~90° elbows when running. The swing follows the SIGNED forward
-        // blend: it flips for a backpedal (counter-swing stays honest against the
-        // reversed legs) and quiets to a guarded stillness across a strafe.
+        // Arms — contralateral swing (cos: same-side arm is BACK when its leg is forward); bigger swing + ~90° elbows when running.
         const armAmp = mathx.lerpF(ARM_SWING, RUN_ARM_SWING, runB);
         const armL = -armAmp * mathx.cosf(twoPi * ph) * m * fw;
         const armR = armAmp * mathx.cosf(twoPi * ph) * m * fw;
@@ -1527,28 +1124,17 @@ pub const Hero = struct {
         self.xf = wx;
     }
 
-    /// The pulse a caught blow puts through the frame: full on the frame it lands and gone inside
-    /// BLOCK_RECOIL_DUR. Instant, because the impact is — an eased-IN recoil reads as the hero
-    /// deciding to flinch a moment later.
+    /// The pulse a caught blow puts through the frame: full on the frame it lands and gone inside BLOCK_RECOIL_DUR.
     fn blockRecoil(self: *const Hero) f32 {
         if (self.blockT >= BLOCK_RECOIL_DUR) return 0;
         const u = mathx.clampF(self.blockT / BLOCK_RECOIL_DUR, 0, 1);
         return (1.0 - u) * (1.0 - u);
     }
 
-    /// THE GUARD STANCE, laid over whatever gait is running underneath and blended in by `k`
-    /// (`guardB`). Upper body only: the settle and the knock-back ride the ROOT, back in `pose()`
-    /// where the pelvis is built.
-    ///
-    /// It takes the walk's own `lean`/`prot`/`bank` and ADDS to them rather than replacing the
-    /// trunk, which is the difference between guarding while walking and sliding along in a statue's
-    /// pose. The blend is on the WORLD matrices (`lerpM`), the same way `applyXfade` blends a pose
-    /// discontinuity — over ~0.1 s the small chain-length wobble that costs is invisible, and the
-    /// alternative is plumbing every gait angle back out of `armChain`.
+    /// THE GUARD STANCE, laid over whatever gait is running underneath and blended in by `k` (`guardB`).
     fn poseGuard(self: *const Hero, wx: *[N]rl.Matrix, k: f32, rec: f32, lean: f32, prot: f32, bank: f32) void {
         var gp = wx.*;
         // The trunk BLADES — left shoulder toward the threat, and further round as a blow lands.
-        // NEGATIVE about Y: the left shoulder sits at +X, and it is the one that has to come FORWARD.
         const blade = -(GUARD_BLADE + BLOCK_TRUNK * rec);
         setLocal(&gp, SPINE, self.rest, mul3(rx(lean * 0.5), ry(-0.3 * prot + blade), rz(0.5 * bank)));
         setLocal(&gp, CHEST, self.rest, mul3(rx(lean * 0.5 + 5.0 * rec), ry(-0.5 * prot + blade), rz(0.5 * bank)));
@@ -1559,8 +1145,7 @@ pub const Hero = struct {
         setLocal(&gp, SHL, self.rest, mul3(rx(-(GUARD_SH_FLEX - BLOCK_SHIELD_BACK * rec)), rz(GUARD_SH_ABD), ry(-GUARD_SH_CROSS)));
         setLocal(&gp, ELL, self.rest, rx(-(GUARD_ELBOW + BLOCK_SHIELD_FOLD * rec)));
         setLocal(&gp, WRL, self.rest, rl.math.matrixIdentity());
-        // The sword arm draws BACK and low, out of the shield's line. A guard that still presents the
-        // blade reads as a wind-up, and the player will believe he can swing out of it.
+        // The sword arm draws BACK and low, out of the shield's line.
         setLocal(&gp, SHR, self.rest, mul(rx(GUARD_SWORD_BACK), rz(-ARM_ABD)));
         setLocal(&gp, ELR, self.rest, rx(-GUARD_SWORD_ELBOW));
         setLocal(&gp, WRR, self.rest, rx(GUARD_SWORD_WRIST));
@@ -1571,8 +1156,7 @@ pub const Hero = struct {
     }
 
 
-    // Freeze the current pose as the source of a short cross-fade — call at any pose
-    // DISCONTINUITY (roll start/end). pose()/poseRoll() blend out of it over POSE_XFADE.
+    // Freeze the current pose as the source of a short cross-fade — call at any pose DISCONTINUITY (roll start/end). pose()/poseRoll() blend out of it over POSE_XFADE.
     fn startXfade(self: *Hero) void {
         self.blendXf = self.xf;
         self.blendT = 0;
@@ -1584,10 +1168,7 @@ pub const Hero = struct {
         for (0..N) |i| wx[i] = lerpM(self.blendXf[i], wx[i], k);
     }
 
-    // Roll pose, three overlapping beats (the knots above): DIVE (crouch + ball up fast),
-    // SOMERSAULT (tucked body tumbles forward about a ball-height pivot, front-loaded, 360°
-    // landing early), RECOVERY (legs extend to plant, pelvis rises to stance); wabi-sabi rides
-    // on top, all cosmetic. After facing, the body's +Z is rollDir, so a +X-axis rotation is a forward roll along it.
+    // Roll pose, three overlapping beats (the knots above): DIVE (crouch + ball up fast), SOMERSAULT (tucked body tumbles forward about a ball-height pivot, front-loaded, 360° landing early), RECOVERY (legs extend to plant, pelvis rises to stance); wabi-sabi rides on top, all cosmetic.
     fn poseRoll(self: *Hero) void {
         const u = mathx.clampF(self.rollT / ROLL_DUR, 0, 1);
         const tuckIn = mathx.smoothstep(0, ROLL_TUCK_IN, u);
@@ -1631,27 +1212,20 @@ pub const Hero = struct {
         self.poseLight();
     }
 
-    // R1 — the LEVEL SWIPE (see CUT MECHANICS above), kinetic-chain sequenced: trunk winds
-    // toward the sword side, then pelvis → chest → shoulder → elbow → wrist release (each
-    // AL_LAG late), the blade sweeping one wide horizontal arc across the front at chest height.
-    // Chained lights ALTERNATE (atkAlt): forehand right → left, the RETURN backhand left → right by mirroring the yaw/sweep terms (chambered shallower — the body blocks a full cross windup).
+    // R1 — the LEVEL SWIPE (see CUT MECHANICS above), kinetic-chain sequenced: trunk winds toward the sword side, then pelvis → chest → shoulder → elbow → wrist release (each AL_LAG late), the blade sweeping one wide horizontal arc across the front at chest height.
     fn poseLight(self: *Hero) void {
         const u = mathx.clampF(self.atkT / ATK_LIGHT_DUR, 0, 1);
         const rec = 1.0 - mathx.smoothstep(AL_RECOV_A, 1.0, u); // 1 until recovery, draining to 0
         const wind = mathx.smoothstep(0, AL_WIND_B, u) * rec;
         const sPelv = mathx.smoothstep(AL_STRIKE_A, AL_STRIKE_B, u) * rec;
         const sChest = mathx.smoothstep(AL_STRIKE_A + AL_LAG, AL_STRIKE_B + AL_LAG, u) * rec;
-        // The elbow shoots out WITH the raise, fully long right as the hit window opens:
-        // the blade must ride the OUTER EDGE of the swipe radius for the whole pass — a
-        // bent arm sweeps hilt-first (the "hitting them with the hilt" fail).
+        // The elbow shoots out WITH the raise, fully long right as the hit window opens: the blade must ride the OUTER EDGE of the swipe radius for the whole pass — a bent arm sweeps hilt-first (the "hitting them with the hilt" fail).
         const sElb = mathx.smoothstep(AL_WIND_B, AL_HIT_A + 0.04, u) * rec;
         const sWr = mathx.smoothstep(AL_STRIKE_A + 2 * AL_LAG, AL_STRIKE_B + 2 * AL_LAG, u) * rec;
         const sw: f32 = if (self.atkAlt) -1.0 else 1.0; // swing side: +1 forehand, -1 backhand return
         const amp: f32 = if (self.atkAlt) 0.8 else 1.0; // the cross-body windup can't coil as deep
 
         // Trunk: wind toward the swing's origin side, release through past neutral.
-        // `os` is the follow-through overshoot — the swing whips a few degrees PAST the
-        // end pose just as recovery starts pulling home, so it settles instead of parking.
         const os = AL_OVER * bump(u, AL_STRIKE_B + 2 * AL_LAG, AL_RECOV_A + 0.15);
         const yawP = sw * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sPelv);
         const yawC = sw * (1.35 * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sChest) + os);
@@ -1684,28 +1258,17 @@ pub const Hero = struct {
         setLocal(&wx, SHL, self.rest, mul(rx(-10.0 * wind + 24.0 * sChest), rz(ARM_ABD)));
         setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 12.0 * wind)));
         setLocal(&wx, WRL, self.rest, rl.math.matrixIdentity());
-        // Sword arm, the swipe (per CUT MECHANICS). rx RAISES the arm into the chest-height
-        // plane on its OWN early ramp (sRaise), fully arrived BEFORE the hit window so the
-        // ENTIRE active arc is level; ry is the star — hand wound behind the sword shoulder,
-        // then SWEPT around the front past the off shoulder (overshoot rides it), rz just
-        // clears the torso, the elbow extends late and the wrist fires LAST.
+        // Sword arm, the swipe (per CUT MECHANICS). rx RAISES the arm into the chest-height plane on its OWN early ramp (sRaise), fully arrived BEFORE the hit window so the ENTIRE active arc is level; ry is the star — hand wound behind the sword shoulder, then SWEPT around the front past the off shoulder (overshoot rides it), rz just clears the torso, the elbow extends late and the wrist fires LAST.
         const windAmp: f32 = if (self.atkAlt) AL_ALT_WIND else 1.0;
         const sRaise = mathx.smoothstep(AL_WIND_B - 0.06, AL_HIT_A - 0.02, u) * rec;
         const elev = AL_SH_ELEV_WIND * wind + (AL_SH_ELEV - AL_SH_ELEV_WIND) * sRaise;
-        // The sweep fires ONE lag after the pelvis (with the chest, not after it) and runs
-        // to the END of the hit window — the blade is flying for every active frame: no
-        // pre-window hang, no dead beat at the tail.
+        // The sweep fires ONE lag after the pelvis (with the chest, not after it) and runs to the END of the hit window — the blade is flying for every active frame: no pre-window hang, no dead beat at the tail.
         const sSweep = mathx.smoothstep(AL_STRIKE_A + AL_LAG, AL_HIT_B - 0.01, u) * rec;
         const sweep = sw * (-AL_SWEEP_WIND * windAmp * wind + (AL_SWEEP_WIND * windAmp + AL_SWEEP_END) * sSweep + 0.9 * os);
         setLocal(&wx, SHR, self.rest, mul3(rx(-elev), ry(sweep), rz(-ARM_ABD - 10.0 * amp * wind)));
         const elb = IDLE_ELBOW + (AL_ELBOW_WIND - IDLE_ELBOW) * wind - (AL_ELBOW_WIND - AL_ELBOW_STRIKE) * sElb;
         setLocal(&wx, ELR, self.rest, rx(-elb));
-        // Wrist + blade, the RE-GRIP (ramped by lvl through the raise, drained by rec — the
-        // low-ready carry is untouched): the SWORD bone cancels the baked grip cant EXACTLY
-        // (blade dead on the wrist's roll axis), then the wrist rolls it a quarter-turn
-        // (EDGE_ROLL, edge leading, no cone), tips it a whisker high (TIP_UP), and the
-        // LAY→WHIP deviation trails the blade through the chamber only, releasing early so
-        // the window sweeps near-RADIAL, whipping past straight at the exit. All in the swipe plane.
+        // Wrist + blade, the RE-GRIP (ramped by lvl through the raise, drained by rec — the low-ready carry is untouched): the SWORD bone cancels the baked grip cant EXACTLY (blade dead on the wrist's roll axis), then the wrist rolls it a quarter-turn (EDGE_ROLL, edge leading, no cone), tips it a whisker high (TIP_UP), and the LAY→WHIP deviation trails the blade through the chamber only, releasing early so the window sweeps near-RADIAL, whipping past straight at the exit.
         const lvl = mathx.smoothstep(0.05, AL_STRIKE_A, u) * rec;
         const lay = sw * (AL_WRIST_LAY * wind - (AL_WRIST_LAY + AL_WRIST_WHIP) * sWr);
         setLocal(&wx, WRR, self.rest, mul3(ry(sw * AL_EDGE_ROLL * lvl), rx(-AL_TIP_UP * lvl), rz(lay)));
@@ -1714,9 +1277,7 @@ pub const Hero = struct {
         self.xf = wx;
     }
 
-    // R2 — the overhead chop: a slow raise past vertical (the tell), knees loading,
-    // then trunk flexion drives the drop (chain-sequenced like the light), the weight
-    // falling into a buried impact that HOLDS before the slow rise.
+    // R2 — the overhead chop: a slow raise past vertical (the tell), knees loading, then trunk flexion drives the drop (chain-sequenced like the light), the weight falling into a buried impact that HOLDS before the slow rise.
     fn poseHeavy(self: *Hero) void {
         const u = mathx.clampF(self.atkT / ATK_HEAVY_DUR, 0, 1);
         const rec = 1.0 - mathx.smoothstep(AH_RECOV_A, 1.0, u);
@@ -1727,10 +1288,7 @@ pub const Hero = struct {
         const sElb = mathx.smoothstep(AH_STRIKE_A + 3 * AH_LAG, AH_STRIKE_B + 3 * AH_LAG, u) * rec;
         const sWr = mathx.smoothstep(AH_STRIKE_A + 4 * AH_LAG, AH_STRIKE_B + 4 * AH_LAG, u) * rec;
 
-        // Grace notes that keep the chop ORGANIC: `gather` drifts the blade a touch
-        // further back through the top-of-raise hang (a breath before the violence, gone
-        // once the shoulder fires); `rcl` is the impact judder inside the buried hold —
-        // the blade bites, the body bounces a hair, and it re-settles.
+        // Grace notes that keep the chop ORGANIC: `gather` drifts the blade a touch further back through the top-of-raise hang (a breath before the violence, gone once the shoulder fires); `rcl` is the impact judder inside the buried hold — the blade bites, the body bounces a hair, and it re-settles.
         const gather = mathx.smoothstep(AH_WIND_B - 0.05, AH_STRIKE_A + 2 * AH_LAG, u) * (1.0 - sSh) * rec;
         const rcl = bump(u, AH_STRIKE_B + 2 * AH_LAG, AH_RECOV_A) * rec;
 
@@ -1752,8 +1310,7 @@ pub const Hero = struct {
         setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * spineX), rz(0.5 * tilt)));
         setLocal(&wx, NECK, self.rest, rx(-0.3 * spineX)); // head counters the lean-back, tucks on the drop
         setLocal(&wx, HEAD, self.rest, mul(rx(HEAD_WALK + 4.0 * sChest), ry(-0.4 * yaw)));
-        // Staggered load, not a symmetric squat: the off-side (left) leg steps up to
-        // brace while the sword-side leg sits BACK and loads under the raise.
+        // Staggered load, not a symmetric squat: the off-side (left) leg steps up to brace while the sword-side leg sits BACK and loads under the raise.
         setLocal(&wx, HIPL, self.rest, mul(rx(-14.0 * wind - 8.0 * sPelv), rz(-HIP_ADDUCT)));
         setLocal(&wx, KNEEL, self.rest, rx(IDLE_KNEE + 8.0 * wind + 6.0 * sPelv));
         setLocal(&wx, ANKL, self.rest, ry(FOOT_TOEOUT));
@@ -1764,8 +1321,7 @@ pub const Hero = struct {
         setLocal(&wx, SHL, self.rest, mul(rx(-22.0 * wind + 30.0 * sChest), rz(ARM_ABD + 6.0 * wind)));
         setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 16.0 * wind)));
         setLocal(&wx, WRL, self.rest, rl.math.matrixIdentity());
-        // Sword arm: up past vertical, blade hanging back (sinking further through the
-        // gather) — then the chop, recoiling a few degrees off the bite before settling.
+        // Sword arm: up past vertical, blade hanging back (sinking further through the gather) — then the chop, recoiling a few degrees off the bite before settling.
         const shX = -AH_SH_UP * wind - AH_GATHER * gather + (AH_SH_UP - AH_SH_DOWN) * sSh + AH_RECOIL * rcl;
         setLocal(&wx, SHR, self.rest, mul(rx(shX), rz(-ARM_ABD - 8.0 * wind)));
         const elb = IDLE_ELBOW + (AH_ELBOW_WIND - IDLE_ELBOW) * wind + 5.0 * gather - (AH_ELBOW_WIND - AH_ELBOW_STRIKE) * sElb;
@@ -1776,19 +1332,12 @@ pub const Hero = struct {
         self.xf = wx;
     }
 
-    // THE DRAUGHT — the OFF hand does all of it. The sword stays in the right fist at its low-ready
-    // the whole time, which is the read that matters: he is drinking WITH HIS GUARD DOWN but he has
-    // not put the weapon away, and that is why the window is dangerous rather than merely slow.
-    //
-    // Three beats out of one `lift` curve — raise, tip and drink, lower — so the pour (which lands
-    // on the game's clock at FLASK_POUR_AT) coincides with the head being back. The legs hold the
-    // idle stance: he plants to drink.
+    // THE DRAUGHT — the OFF hand does all of it.
     fn poseDrink(self: *Hero) void {
         const u = mathx.clampF(self.drinkT / combat.FLASK_DRINK_DUR, 0, 1);
         // Up fast, HOLD at the mouth through the pour, down slower — a flask is emptied, not waved.
         const lift = mathx.pulse(u, 0, 0.26, 0.72, 1.0);
-        // …and the tip is a separate, later curve riding on top, so the wrist rolls the bottle up
-        // only once it has arrived. Both peaking together reads as one stiff gesture.
+        // …and the tip is a separate, later curve riding on top, so the wrist rolls the bottle up only once it has arrived.
         const tip = mathx.pulse(u, 0.22, 0.46, 0.66, 0.92);
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
@@ -1804,20 +1353,17 @@ pub const Hero = struct {
         );
         setLocal(&wx, SPINE, self.rest, rx(lean * 0.35));
         setLocal(&wx, CHEST, self.rest, rx(lean * 0.30));
-        // The head tips BACK to drink — the single most legible part of the whole action, and the
-        // reason this reads at all from the over-the-shoulder camera.
+        // The head tips BACK to drink — the single most legible part of the whole action, and the reason this reads at all from the over-the-shoulder camera.
         setLocal(&wx, NECK, self.rest, rx(-14.0 * tip));
         setLocal(&wx, HEAD, self.rest, rx(HEAD_WALK - 30.0 * tip));
-        // Legs: the standing stance, knees soft. A drink is not a squat.
+        // Legs: the standing stance, knees soft.
         setLocal(&wx, HIPL, self.rest, mul(rx(-2.0 * lift), rz(-HIP_ADDUCT)));
         setLocal(&wx, KNEEL, self.rest, rx(IDLE_KNEE + 4.0 * lift));
         setLocal(&wx, ANKL, self.rest, ry(FOOT_TOEOUT));
         setLocal(&wx, HIPR, self.rest, mul(rx(-1.0 * lift), rz(HIP_ADDUCT)));
         setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 3.0 * lift));
         setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
-        // THE FLASK ARM (left): shoulder forward and across, elbow folded hard so the hand comes to
-        // the face rather than out in front of it — an unfolded elbow is what makes a "drink" read
-        // as a salute.
+        // THE FLASK ARM (left): shoulder forward and across, elbow folded hard so the hand comes to the face rather than out in front of it — an unfolded elbow is what makes a "drink" read as a salute.
         setLocal(&wx, SHL, self.rest, mul(rx(-58.0 * lift - 14.0 * tip), rz(ARM_ABD + 16.0 * lift)));
         setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 96.0 * lift + 22.0 * tip)));
         setLocal(&wx, WRL, self.rest, rx(-28.0 * tip)); // the wrist rolls the bottle up at the lips
@@ -1830,9 +1376,45 @@ pub const Hero = struct {
         self.xf = wx;
     }
 
-    // Stagger — the reaction when poise (light) or stance (heavy) breaks: torso RECOILS back,
-    // head snaps, arms fly out, balance goes. LIGHT is a quick sin pulse, HEAVY a deep sustained
-    // reel (trailing leg thrown back) with a wobble — wide open, souls-committed, easing out (nothing parks).
+    /// Cross-legged, which on this rig is hips flexed AND abducted hard with the knees folded past a right angle: flexion alone gives a man sitting on a chair that is not there.
+    pub fn poseRest(self: *Hero, dt: f32) void {
+        self.restT += dt;
+        const t = self.restT;
+        const phrase = 0.5 - 0.5 * mathx.cosf(t * 0.55);
+        // SLOW AND SOFT (owner, twice: too violent).
+        const strum = mathx.sinf((t * 1.15 - @floor(t * 1.15)) * std.math.tau) * (0.55 + 0.45 * phrase);
+        const breathe = 0.010 * H * mathx.sinf(t * 1.05);
+        // THE LILT — he rocks with the phrase, not the strum.
+        const lilt = 5.2 * mathx.sinf(t * 0.62) + 1.8 * mathx.sinf(t * 0.29 + 1.1);
+        const facingDeg = mathx.degrees(self.facing);
+
+        var wx: [N]rl.Matrix = undefined;
+        wx[ROOT] = mul3(
+            rz(lilt * 0.18),
+            mul(tr(0, SIT_Y * H + breathe, 0), mul(rx(SIT_PITCH), ry(facingDeg))),
+            rootAt(self.pos),
+        );
+        setLocal(&wx, SPINE, self.rest, mul(rx(SIT_SPINE + 0.6 * strum), rz(lilt * 0.45)));
+        setLocal(&wx, CHEST, self.rest, mul(rx(SIT_CHEST), rz(lilt * 0.37)));
+        setLocal(&wx, NECK, self.rest, mul(rx(5.0), rz(-lilt * 0.30)));
+        setLocal(&wx, HEAD, self.rest, mul3(rx(HEAD_WALK + 13.0 - 4.0 * phrase), ry(11.0), rz(-lilt * 0.40)));
+        sitLeg(&wx, self.rest, 1.0, HIPL, KNEEL, ANKL);
+        sitLeg(&wx, self.rest, -1.0, HIPR, KNEER, ANKR);
+        // FRETTING HAND (left): reaching out along the neck, which runs up and across to his left.
+        const fret = 6.0 * phrase;
+        setLocal(&wx, SHL, self.rest, mul(rx(-14.0 - fret), rz(ARM_ABD + 46.0)));
+        setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 52.0 + fret)));
+        setLocal(&wx, WRL, self.rest, rz(-26.0));
+        // STRUMMING HAND (right): forearm draped over the lower bout, hand at the sound hole.
+        setLocal(&wx, SHR, self.rest, mul(rx(-48.0 + 1.2 * strum), rz(-ARM_ABD - 34.0)));
+        setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + 88.0 + 3.5 * strum)));
+        setLocal(&wx, WRR, self.rest, rz(9.0 * strum));
+        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity()); // not drawn while resting
+        // NO CROSS-FADE, and this is the bug worth recording: `applyXfade` reads `blendT`, which only `tickClocks` advances — and no rest path ticks it, so every frame lerped at k = 0 and the hero was drawn in the STANDING pose captured where he had been standing, several metres off camera.
+        self.xf = wx;
+    }
+
+    // Stagger — the reaction when poise (light) or stance (heavy) breaks: torso RECOILS back, head snaps, arms fly out, balance goes.
     fn poseStun(self: *Hero) void {
         const heavy = self.stun == .heavy;
         const dur: f32 = if (heavy) combat.HEAVY_STUN_DUR else combat.LIGHT_STUN_DUR;
@@ -1848,8 +1430,7 @@ pub const Hero = struct {
         const hipY = self.rest[ROOT].y;
         const sinkMag: f32 = if (heavy) 0.06 else 0.05;
         const sink = sinkMag * H * amt;
-        // Knocked back off the blow: the body shifts along -^'facing (the flinch reads as impact,
-        // not a lean). +Z in the pre-facing frame is the facing dir, so a -^'Z offset = backward.
+        // Knocked back off the blow: the body shifts along -^'facing (the flinch reads as impact, not a lean). +Z in the pre-facing frame is the facing dir, so a -^'Z offset = backward.
         const backMag: f32 = if (heavy) 0.10 * H else HURT_STEP;
         const back = backMag * amt;
 
@@ -1888,8 +1469,7 @@ pub const Hero = struct {
         self.xf = wx;
     }
 
-    // Death — a crumple: the pelvis SINKS as the legs buckle under, the trunk folds and
-    // topples forward, the head hangs, arms splay. Holds the heap until respawn.
+    // Death — a crumple: the pelvis SINKS as the legs buckle under, the trunk folds and topples forward, the head hangs, arms splay.
     fn poseDeath(self: *Hero) void {
         const u = mathx.clampF(self.deathT / DEATH_DUR, 0, 1);
         const k = mathx.smoothstep(0, 0.5, u); // the collapse
@@ -1928,24 +1508,25 @@ pub const Hero = struct {
     }
 
     pub fn draw(self: *const Hero) void {
-        for (0..N) |i| rl.drawMesh(self.mesh[i], self.mat, self.xf[i]);
-        // The shield rides the left wrist rather than a bone of its own (see the field). Drawn here
-        // and not by the caller, so BOTH passes get it off one call — a shield missing from the
-        // depth pass is a man casting the shadow of an empty arm.
+        // AT A REST HE IS UNARMED.
+        for (0..N) |i| {
+            if (self.resting and i == SWORD) continue;
+            rl.drawMesh(self.mesh[i], self.mat, self.xf[i]);
+        }
+        if (self.resting) {
+            rl.drawMesh(self.guitar, self.mat, self.xf[ROOT]);
+            return;
+        }
+        // The shield rides the left wrist rather than a bone of its own (see the field).
         rl.drawMesh(self.shield, self.mat, mul(shieldFit(), self.xf[WRL]));
     }
 
-    /// Eye/target point for the camera: the base of the neck, measured from `pos.y` — THE GROUND HE IS
-    /// STANDING ON, not the datum, or the rig frames the bottom of the hill he is up. The REST height
-    /// rather than the posed bone, so the camera does not bob with the gait or dip through a roll.
+    /// Eye/target point for the camera: the base of the neck, measured from `pos.y` — THE GROUND HE IS STANDING ON, not the datum, or the rig frames the bottom of the hill he is up.
     pub fn shoulderPoint(self: *const Hero) rl.Vector3 {
         return v3(self.pos.x, self.pos.y + self.rest[CHEST].y, self.pos.z);
     }
 };
 
-// offset(child) in the parent's frame = restPos(child) - restPos(parent), since all rest
-// orientations are identity. world(child) = local(child) -^~ world(parent), where
-// local = animRot -^~ translate(offset) (animRot applied first, about the joint).
 fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix) void {
     const p: usize = @intCast(parent[i]);
     const off = mathx.subV(rest[i], rest[p]);
@@ -1953,36 +1534,21 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
     wx[i] = mul(local, wx[p]);
 }
 
-// A joint set that names its PARENT explicitly and takes SLICES, so a rig with more bones than the
-// hero's 18 can still drive its legs through `legChain`. The only layout it assumes is bone 0 = pelvis.
-//
-// THE one statement of the matrix convention (`mul(a, b)` applies a FIRST — backwards and the skeleton
-// explodes). Every rig's own `setLocal` delegates here with its own `parent[i]`, so there is exactly
-// one place the convention can be got wrong.
+// A joint set that names its PARENT explicitly and takes SLICES, so a rig with more bones than the hero's 18 can still drive its legs through `legChain`.
 pub fn setJoint(wx: []rl.Matrix, rest: []const rl.Vector3, i: usize, p: usize, animRot: rl.Matrix) void {
     const off = mathx.subV(rest[i], rest[p]);
     wx[i] = mul(mul(animRot, tr(off.x, off.y, off.z)), wx[p]);
 }
 
-// pub: humanoid enemies drive their legs through this same walk + locked-on strafe/backpedal
-// footing (AGENTS.md humanoid rule). Rig-size agnostic — the caller passes its own hip/knee/ankle
-// indices and its whole bone array; only "pelvis is bone 0" is assumed.
-// `sole` carries BOTH the ankle bone index and that foot's sole footprint, because the ankle's pitch
-// has to be clamped against the ground (see ankleLimits) and only the rig knows how long its own boot
-// is. Each humanoid passes its own measured patch.
 pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, ph: f32, m: f32, runB: f32, sag: f32, lat: f32, side: f32, hip: usize, knee: usize, sole: SolePatch) void {
     const ank = sole.bone;
-    // Sagittal gait weighted by the forward blend `sag`; a backpedal (sag < 0) samples
-    // the SAME normative tables with phase run backward — reversed walking. The lateral
-    // blend `lat` drives the CROSSING sidestep instead (the scissor below).
+    // Sagittal gait weighted by the forward blend `sag`; a backpedal (sag < 0) samples the SAME normative tables with phase run backward — reversed walking.
     const phS = if (sag >= 0) ph else -ph;
     const sagW = @abs(sag) * m;
     const hipFlex = mathx.lerpF(sampleCurve(HIP_FLEX, phS), sampleCurve(RUN_HIP, phS), runB) * sagW;
     const kneeWR = mathx.lerpF(sampleCurve(KNEE_FLEX, phS), sampleCurve(RUN_KNEE, phS), runB);
     const ankDorsi = mathx.lerpF(sampleCurve(ANK_DORSI, phS), sampleCurve(RUN_ANK, phS), runB) * sagW;
-    // ── THE CROSSING SIDESTEP. See the geometry note above STRAFE_ABD for WHY it is shaped this
-    // way: ONE symmetric sweep per leg, half a cycle apart, and the hip offsets alone turn that
-    // into a front cross followed by an outside uncross. Nothing here is a tuned amplitude.
+    // way: ONE symmetric sweep per leg, half a cycle apart, and the hip offsets alone turn that into a front cross followed by an outside uncross.
     const latW = @abs(lat) * m;
     const thigh = rest[hip].y - rest[knee].y;
     const shank = rest[knee].y - rest[ank].y;
@@ -1990,10 +1556,7 @@ pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, ph: f32, m: f32, runB
     const rigS = legLen / LEG_LEN; // rig-relative, so the 2x ogre would get a 2x sidestep
     const reach = STRAFE_REACH * rigS; // the measured sweep, scaled onto THIS rig
     const q = ph - @floor(ph); // leg-local phase; q = 0 is the instant this foot PLANTS
-    // Foot travel along the travel direction, -^'reach..+reach. Through STANCE it is LINEAR in phase
-    // (= linear in distance = the foot stays put while the body passes over it — the whole point).
-    // Through SWING a Hermite carries it back, LEAVING at the stance velocity (so toe-off keeps
-    // drifting back a beat, as a real foot does) and ARRIVING at rest (a landing foot is still).
+    // Foot travel along the travel direction, -^'reach..+reach.
     const swingLen = 1.0 - STRAFE_STANCE;
     var s: f32 = undefined;
     var w: f32 = -1.0; // swing progress 0..1; negative while planted
@@ -2006,72 +1569,43 @@ pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, ph: f32, m: f32, runB
         const w3 = w2 * w;
         s = -reach * (2.0 * w3 - 3.0 * w2 + 1.0) + v0 * (w3 - 2.0 * w2 + w) + reach * (3.0 * w2 - 2.0 * w3);
     }
-    // The foot's world +X displacement from directly under its OWN hip: rz(+) swings a leg toward
-    // +X, and lat > 0 is travel to his RIGHT, which is world -^'X. Note `dx` (a DISTANCE) is what the
-    // sweep keeps linear, never an angle — that is what stops the planted foot creeping.
+    // The foot's world +X displacement from directly under its OWN hip: rz(+) swings a leg toward +X, and lat > 0 is travel to his RIGHT, which is world -^'X.
     const dx = -lat * s * m;
-    // Which leg CROSSES: the one whose hip is on the far side from travel has further to go, so it
-    // comes around the other IN FRONT (hip flexion) while its partner passes BEHIND it on the
-    // uncross. That front/behind pairing is the grapevine — it isn't optional, a leg cannot
-    // adduct THROUGH the leg it is standing next to.
+    // Which leg CROSSES: the one whose hip is on the far side from travel has further to go, so it comes around the other IN FRONT (hip flexion) while its partner passes BEHIND it on the uncross.
     const crossing = side * lat > 0;
     const inSwing = w >= 0;
     const arc = if (inSwing) mathx.sinf(std.math.pi * w) else 0.0; // 0→1→0, swing only
     const passF = (if (crossing) @as(f32, STRAFE_CROSS) else -STRAFE_BEHIND) * arc * latW;
-    // A front cross lands a little AHEAD of the stance foot; that offset then sweeps out linearly
-    // through stance for exactly the same no-skate reason as the frontal sweep above.
+    // A front cross lands a little AHEAD of the stance foot; that offset then sweeps out linearly through stance for exactly the same no-skate reason as the frontal sweep above.
     const landF = if (inSwing or !crossing) 0.0 else STRAFE_LAND * (1.0 - 2.0 * q / STRAFE_STANCE) * latW;
     const latHip = passF + landF; // this leg's sagittal angle, LATERAL contribution only
-    // ── THE VERTICAL SOLVE: ask for a foot HEIGHT, solve the knee for it ────────────────────────
-    // The one part of a sidestep that cannot be constants. Hip and knee flexion fight each other
-    // vertically, so a "knee lift" angle does NOT lift a foot — 17 deg over 13 deg of hip netted
-    // about a CENTIMETRE and the swing foot skimmed the grass. So state the heights that matter
-    // (planted feet ON the ground, swing foot STRAFE_CLEAR above it) and solve the knee that puts
-    // the ankle there. Feet then stay planted at EVERY abduction angle, not just the tuned one.
+    // The one part of a sidestep that cannot be constants.
     const clear = STRAFE_CLEAR * rigS * arc * latW;
-    // MEASURE the hip's real height rather than assuming the caller dropped the pelvis by exactly
-    // STRAFE_DIP. That held for a pure sidestep and broke on a DIAGONAL, where the sagittal bob and
-    // the run crouch move the pelvis too. Reading it makes the plant exact under any pelvis motion,
-    // and turns STRAFE_DIP from a contract into advice about giving the leg room.
+    // MEASURE the hip's real height rather than assuming the caller dropped the pelvis by exactly STRAFE_DIP.
     const rootS = mathx.maxF(1e-4, @sqrt(wx[ROOT].m0 * wx[ROOT].m0 + wx[ROOT].m1 * wx[ROOT].m1 + wx[ROOT].m2 * wx[ROOT].m2));
     const hipW = rl.math.vector3Transform(mathx.subV(rest[hip], rest[ROOT]), wx[ROOT]);
     // …down to the ANKLE JOINT, which rides rest[ank].y above the sole plane — not down to the floor.
     const vert = mathx.maxF(0.1 * legLen, (hipW.y - SOLE_Y) / rootS - rest[ank].y - clear);
-    // The hip composes rx (sagittal) FIRST then rz (frontal), so the frontal swing acts on the
-    // ALREADY-SHORTENED leg: abduction is atan(sideways / height), NOT asin over the full leg,
-    // and the links span the HYPOTENUSE. Get it wrong and the planted foot floats a centimetre.
+    // The hip composes rx (sagittal) FIRST then rz (frontal), so the frontal swing acts on the ALREADY-SHORTENED leg: abduction is atan(sideways / height), NOT asin over the full leg, and the links span the HYPOTENUSE.
     const span = @sqrt(vert * vert + dx * dx); // hip→ankle length the two links must make up
     const abd = mathx.degrees(std.math.atan2(dx, vert));
-    // Solve against the leg's FULL sagittal angle, not just the lateral part: on a DIAGONAL the walk's
-    // own hip flexion is in there too, and ignoring it left the foot 14 cm under.
+    // Solve against the leg's FULL sagittal angle, not just the lateral part: on a DIAGONAL the walk's own hip flexion is in there too, and ignoring it left the foot 14 cm under.
     const totalHip = hipFlex + latHip;
     const cosK = mathx.clampF((span - thigh * mathx.cosf(mathx.radians(totalHip))) / shank, -1.0, 1.0);
     const latKnee = totalHip + mathx.degrees(std.math.acos(cosK));
-    // Blend to the normative sagittal knee as the sidestep fades out, so a forward walk is untouched —
-    // but hand over EARLY, because a half-and-half knee satisfies neither the gait tables nor the
-    // ground. Past ~half-lateral the solve owns it outright.
+    // Blend to the normative sagittal knee as the sidestep fades out, so a forward walk is untouched — but hand over EARLY, because a half-and-half knee satisfies neither the gait tables nor the ground.
     const kneeW = mathx.smoothstep(0.10, 0.55, latW);
     const kneeFlex = mathx.lerpF(mathx.lerpF(IDLE_KNEE, kneeWR, sagW), mathx.maxF(0, latKnee), kneeW);
-    // Ankle levels the SOLE in BOTH planes — rz undoes the frontal swing, rx undoes the shank's
-    // pitch — so a strafing foot lands flat instead of on a corner. Both release through mid-swing,
-    // where a real foot is free to hang.
+    // Ankle levels the SOLE in BOTH planes — rz undoes the frontal swing, rx undoes the shank's pitch — so a strafing foot lands flat instead of on a corner.
     const held = if (inSwing) 1.0 - arc else 1.0;
     const flat = (latHip - kneeFlex) * held * latW;
-    // The solved `abd` REPLACES the walk's constant adduction rather than adding to it — the solve
-    // already accounts for every degree of frontal rotation, so leaving HIP_ADDUCT on top
-    // double-counts it and lifts the planted foot about a centimetre off the floor at full stride.
+    // The solved `abd` REPLACES the walk's constant adduction rather than adding to it — the solve already accounts for every degree of frontal rotation, so leaving HIP_ADDUCT on top double-counts it and lifts the planted foot about a centimetre off the floor at full stride.
     const frontal = mathx.lerpF(-side * HIP_ADDUCT, abd, latW);
     const roll = -frontal * held;
-    // hip: sagittal flexion (-^'rx = thigh forward; the cross/behind pass and the plant offset add
-    // their own), then the frontal angle — the walk's adduction, or the sidestep's swept swing.
+    // hip: sagittal flexion (-^'rx = thigh forward; the cross/behind pass and the plant offset add their own), then the frontal angle — the walk's adduction, or the sidestep's swept swing.
     setJoint(wx, rest, hip, ROOT, mul(rx(-hipFlex - latHip), rz(frontal)));
     setJoint(wx, rest, knee, hip, rx(kneeFlex)); // +rx = knee bends (shank swings back/up)
-    // ── Ankle: dorsiflex + toe-out splay + keep the sole out of the dirt ────────────────────────
-    // LEVELLED BY MEASURING, because the foot's world pitch is not just this joint's — body pitch,
-    // spine lean and pelvis roll all stack on top, so a clamp on the LOCAL angle misses every one of
-    // them and changes nothing. Pose the foot, find its deepest sole corner, rotate the ankle just
-    // enough to lift it to the floor. Two passes converge, and the correction is zero the moment the
-    // foot is clear, so swing, flight and roll are untouched.
+    // LEVELLED BY MEASURING, because the foot's world pitch is not just this joint's — body pitch, spine lean and pelvis roll all stack on top, so a clamp on the LOCAL angle misses every one of them and changes nothing.
     const wscale = mathx.maxF(1e-4, @sqrt(wx[knee].m0 * wx[knee].m0 + wx[knee].m1 * wx[knee].m1 + wx[knee].m2 * wx[knee].m2));
     var pitch = -ankDorsi + flat;
     var pass: u8 = 0;
@@ -2091,11 +1625,7 @@ pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, ph: f32, m: f32, runB
             }
         }
         if (deepest >= SOLE_Y) break;
-        // Rotating about the ankle's own X lifts that corner at a rate set by its HORIZONTAL distance
-        // from the joint — measured, not taken from the foot's length, because an already steeply
-        // pitched foot (toe-off plantarflexion) has most of that length pointing DOWN and a
-        // length-based step then badly undershoots. A corner ahead of the ankle rises as the toe
-        // comes up, one behind as it goes down.
+        // Rotating about the ankle's own X lifts that corner at a rate set by its HORIZONTAL distance from the joint — measured, not taken from the foot's length, because an already steeply pitched foot (toe-off plantarflexion) has most of that length pointing DOWN and a length-based step then badly undershoots.
         const ankW = rl.math.vector3Transform(v3(0, 0, 0), wx[ank]);
         const lever = mathx.maxF(0.02 * wscale, mathx.lenXZ(mathx.subV(worst, ankW)));
         const step = mathx.degrees(std.math.asin(mathx.clampF((SOLE_Y - deepest) / lever, -1, 1)));
@@ -2104,11 +1634,7 @@ pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, ph: f32, m: f32, runB
 }
 
 fn armChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, swing: f32, m: f32, runB: f32, sprintB: f32, side: f32, carry: f32, sh: usize, el: usize, wr: usize) void {
-    // Contralateral fore/aft swing; the walking elbow tracks the FORWARD swing only (back arm
-    // nearly straight — no "zombie arms"), running bends both to ~90° pumping. The sword arm
-    // (carry=1) CARRIES instead of mirroring (swing damped, readier elbow): the low tip-LIFT
-    // rides on `carryMove` (any stick = WALK), the "ninja" open-up (fuller lift, blade yawed
-    // right, wider abduction, stilled pump) rides on `sprint` (RUN = hold-B), so all stick speeds keep the walk carry and only hold-B RUN opens it out (AGENTS.md: WALK = all stick, RUN = hold-B).
+    // Contralateral fore/aft swing; the walking elbow tracks the FORWARD swing only (back arm nearly straight — no "zombie arms"), running bends both to ~90° pumping.
     const carryMove = carry * m; // any stick movement (WALK)
     const sprint = carry * mathx.clampF(sprintB, 0, 1) * m; // hold-B RUN only
     const sw = swing * (1.0 - CARRY_DAMP * carry) * (1.0 - CARRY_SWING_STILL * sprint);
@@ -2118,22 +1644,22 @@ fn armChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, swing: f32, m: f32, runB: f3
     const abd = ARM_ABD + CARRY_ABD_RUN * sprint; // arm eases out to the side only on a hold-B RUN
     setLocal(wx, sh, rest, mul(rx(-sw), rz(side * abd))); // -^'rx forward, ±side rz outward
     setLocal(wx, el, rest, rx(-elbow)); // -^'rx = forearm forward (elbow flexes)
-    // Wrist shapes the BLADE only (the arm stays put): a WALK holds it LOW off the floor;
-    // a hold-B RUN raises it to the full angle AND yaws it out to the right off the flank
-    // (the ninja read). Off the floor either way, but only the RUN reads higher/out.
+    // Wrist shapes the BLADE only (the arm stays put): a WALK holds it LOW off the floor; a hold-B RUN raises it to the full angle AND yaws it out to the right off the flank (the ninja read).
     const lift = CARRY_WRIST_LIFT * mathx.lerpF(CARRY_LIFT_WALK, 1.0, mathx.clampF(sprintB, 0, 1)) * carryMove;
     setLocal(wx, wr, rest, mul(rx(lift), ry(CARRY_WRIST_YAW * sprint)));
 }
 
-// Roll tuck: thighs to chest, heels toward glutes, arms hugged in front — all scaled by
-// `tuck` so the crouch eases in and the stand eases out, and by a per-limb wabi-sabi
-// factor `f` (lead/trail leg, guide/push arm) so the ball is never mirror-perfect.
-// Knee/elbow blend to their IDLE micro-bends (not dead-straight zero) so the plant/rise
-// flows into the standing pose.
+// Roll tuck: thighs to chest, heels toward glutes, arms hugged in front — all scaled by `tuck` so the crouch eases in and the stand eases out, and by a per-limb wabi-sabi factor `f` (lead/trail leg, guide/push arm) so the ball is never mirror-perfect.
 fn rollLeg(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, tuck: f32, f: f32, side: f32, hip: usize, knee: usize, ank: usize) void {
     setLocal(wx, hip, rest, mul(rx(-ROLL_HIP * f * tuck), rz(-side * HIP_ADDUCT)));
     setLocal(wx, knee, rest, rx(mathx.lerpF(IDLE_KNEE, ROLL_KNEE * f, tuck)));
     setLocal(wx, ank, rest, ry(side * FOOT_TOEOUT));
+}
+// One folded leg of the cross-legged sit.
+fn sitLeg(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, side: f32, hip: usize, knee: usize, ank: usize) void {
+    setLocal(wx, hip, rest, mul(rx(-SIT_HIP_FLEX), rz(side * SIT_HIP_ABD)));
+    setLocal(wx, knee, rest, rx(SIT_KNEE));
+    setLocal(wx, ank, rest, mul(rx(SIT_ANKLE), ry(side * FOOT_TOEOUT * 2.0)));
 }
 fn rollArm(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, tuck: f32, f: f32, side: f32, sh: usize, el: usize, wr: usize) void {
     setLocal(wx, sh, rest, mul(rx(-ROLL_SHOULDER * f * tuck), rz(side * ARM_ABD)));
@@ -2141,7 +1667,6 @@ fn rollArm(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, tuck: f32, f: f32, side: f32,
     setLocal(wx, wr, rest, rl.math.matrixIdentity());
 }
 
-// ── bone meshes (authored at the joint origin, hero-local axes; lengths in units of H) ──
 fn buildMeshes() [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
     mesh[ROOT] = pelvisMesh();
@@ -2165,17 +1690,10 @@ fn buildMeshes() [N]rl.Mesh {
     return mesh;
 }
 
-// The drawn arming sword, authored in the RIGHT-WRIST frame about the fist centre
-// (0, FIST_Y, FIST_Z), blade canted GRIP_PITCH forward of the forearm line (held at an
-// angle, never straight along it); at rest the tip leads down-forward, clear of the ground
-// (souls low-ready), and attacks whip the wrist/arm while the blade just rides.
-// Keep BLADE_BASE/BLADE_TIP (the hit capsule dummy points) matched to this geometry.
+// The drawn arming sword, authored in the RIGHT-WRIST frame about the fist centre (0, FIST_Y, FIST_Z), blade canted GRIP_PITCH forward of the forearm line (held at an angle, never straight along it); at rest the tip leads down-forward, clear of the ground (souls low-ready), and attacks whip the wrist/arm while the blade just rides.
 fn swordMesh() rl.Mesh {
     var b = Builder.init();
-    // EDGE ORIENTATION matters: a hammer grip carries the cutting edges FORWARD/BACK
-    // (knuckles forward), so the wide edge-to-edge plane is the SAGITTAL `n` axis and the
-    // flats face the sides (`s`). An overhead chop then leads with the edge coming down
-    // vertically — never a flat "blade smack" — and the quillons lie along the edge line.
+    // EDGE ORIENTATION matters: a hammer grip carries the cutting edges FORWARD/BACK (knuckles forward), so the wide edge-to-edge plane is the SAGITTAL `n` axis and the flats face the sides (`s`).
     const s = v3(0.5 * OUT_CA, 0, 0.5 * OUT_SA); // half-unit flat-side axis of the canted frame
     const n = v3(-0.5 * GRIP_CA * OUT_SA, 0.5 * GRIP_SA, 0.5 * GRIP_CA * OUT_CA); // half-unit edge-side axis
     const a = v3(-0.5 * GRIP_SA * OUT_SA, -0.5 * GRIP_CA, 0.5 * GRIP_SA * OUT_CA); // half-unit blade axis
@@ -2189,28 +1707,29 @@ fn swordMesh() rl.Mesh {
     return b.toMesh();
 }
 
-// THE SMALL ROUND SHIELD, authored FACE-ON — a disc in XY with its face along +Z, centred on the
-// grip — and turned onto the arm by `shieldFit`. Authoring it flat is the whole reason the fit can
-// be derived from the stance angles instead of hand-matched.
-//
-// It is boards, iron and leather, so boxes and a ring belong here (FLESH IS ROUND governs organic
-// mass, not a shield). Two things keep it from reading as a poker chip: the face is DISHED — a lens,
-// not a plate — and the planks and rim bindings are laid on with a seeded Rng, so no two are the
-// same width and the rim does not close on a neat polygon. RELIEF IS SUBTLE applies: the planks
-// stand a few millimetres proud of a 41 cm disc, and the rim's own body is half sunk into the edge.
+// THE SMALL ROUND SHIELD, authored FACE-ON — a disc in XY with its face along +Z, centred on the grip — and turned onto the arm by `shieldFit`.
+fn guitarMesh() rl.Mesh {
+    var b = Builder.init();
+    const a = mathx.normV(v3(0.74, 0.62, 0.26)); // up the neck: out to his left and well UP
+    const d = v3(0, 0.40, 0.92);
+    const n = mathx.normV(mathx.subV(d, mathx.scaleV(a, d.x * a.x + d.y * a.y + d.z * a.z)));
+    art.guitarInto(&b, .{
+        .o = v3(-0.30, -0.09, 0.14), // the body's tail, out past his right hip
+        .w = mathx.crossV(a, n),
+        .a = a,
+        .n = n,
+        // BIGGER (owner's call).
+        .s = 1.35,
+    });
+    return b.toMesh();
+}
+
 fn shieldMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5C1E1D);
     b.setMat(.wood);
     b.addBlob(v3(0, 0, 0), v3(SHIELD_R, SHIELD_R, SHIELD_THICK), 5, 16, SHIELD_WOOD);
-    // The BOARD SEAMS. Laid ON the dish and following it, as two tapering runs out from the centre
-    // line — the dome's height falls to nothing at the rim, so one straight bar across the whole
-    // chord floats off the boards at both ends.
-    //
-    // THE FIRST CUT OF THIS HAD THEM AS PROUD PLANKS and it is the mistake worth recording: square
-    // boxes clipped to the chord at their CENTRE height still hang their corners out past the rim,
-    // and six of those turned a round shield into a serrated hexagon that read as blocky from every
-    // angle but the edge-on one. RELIEF IS SUBTLE, and a seam is a line, not a slab.
+    // The BOARD SEAMS.
     const dome = struct {
         fn at(rho: f32) f32 { // the dish's height above the equator plane at radius `rho`
             const t = mathx.clampF(rho / SHIELD_R, 0, 1);
@@ -2222,13 +1741,11 @@ fn shieldMesh() rl.Mesh {
     while (i < seams) : (i += 1) {
         const f = (@as(f32, @floatFromInt(i)) + 1.0) / (@as(f32, seams) + 1.0);
         const y = mathx.lerpF(-SHIELD_R, SHIELD_R, f) * rng.range(0.90, 1.10);
-        // Stopped SHORT of the rim (0.84), because a seam run out to the edge has its cap sticking
-        // through the binding — which showed up as little pale dashes all round the rim.
+        // Stopped SHORT of the rim (0.84), because a seam run out to the edge has its cap sticking through the binding — which showed up as little pale dashes all round the rim.
         const half = @sqrt(mathx.maxF(SHIELD_R * SHIELD_R - y * y, 1e-4)) * 0.84;
         const rEnd = @sqrt(half * half + y * y);
         for ([_]f32{ -1, 1 }) |side| {
-            // Centre-line ON the dish, so half the capsule stands proud and half is buried: at 0.66
-            // of the dome height they were swallowed whole and the face came back blank.
+            // Centre-line ON the dish, so half the capsule stands proud and half is buried: at 0.66 of the dome height they were swallowed whole and the face came back blank.
             b.addCapsule(
                 v3(0, y, dome(@abs(y))),
                 v3(side * half, y, dome(rEnd)),
@@ -2239,8 +1756,7 @@ fn shieldMesh() rl.Mesh {
             );
         }
     }
-    // The RIM: iron binding round the edge, laid as an odd number of straps so the ring never closes
-    // on a tidy polygon, each one half sunk into the boards.
+    // The RIM: iron binding round the edge, laid as an odd number of straps so the ring never closes on a tidy polygon, each one half sunk into the boards.
     b.setMat(.steel);
     const straps = 13;
     var k: i32 = 0;
@@ -2265,8 +1781,7 @@ fn shieldMesh() rl.Mesh {
         11,
         SHIELD_BOSS,
     );
-    // …and behind it the GRIP BAR he actually holds — a centre-grip shield, which is why the fist
-    // sits on the boss line and not up the forearm (see shieldFit).
+    // …and behind it the GRIP BAR he actually holds — a centre-grip shield, which is why the fist sits on the boss line and not up the forearm (see shieldFit).
     b.setMat(.leather);
     b.addCube(v3(0, 0, -SHIELD_THICK * 1.15), v3(0.090 * H, 0.026 * H, 0.014 * H), LEATHER);
     b.addCube(v3(0, 0, -SHIELD_THICK * 0.9), v3(0.034 * H, 0.052 * H, 0.010 * H), LEATHER_DK); // the arm pad
@@ -2289,9 +1804,7 @@ fn pelvisMesh() rl.Mesh {
     b.addCube(v3(-0.095 * H, -0.055 * H, 0.05 * H), v3(0.07 * H, 0.085 * H, 0.016 * H), LEATHER);
     b.addCube(v3(-0.115 * H, -0.045 * H, -0.03 * H), v3(0.05 * H, 0.06 * H, 0.045 * H), LEATHER_DK); // pouch
     b.addCube(v3(-0.115 * H, -0.028 * H, -0.03 * H), v3(0.054 * H, 0.02 * H, 0.05 * H), LEATHER); // pouch flap
-    // EMPTY scabbard at the left hip, riding the pelvis bone, raked down-and-back — the
-    // sword itself is DRAWN (the SWORD bone in the right fist), so no hilt shows here.
-    // d = unit lean of the scabbard; p1/p2 its cross-section axes.
+    // EMPTY scabbard at the left hip, riding the pelvis bone, raked down-and-back — the sword itself is DRAWN (the SWORD bone in the right fist), so no hilt shows here. d = unit lean of the scabbard; p1/p2 its cross-section axes.
     const d = v3(0.10, -0.90, -0.42);
     const p1 = v3(0.995, 0.090, 0.042);
     const p2 = v3(0, -0.422, 0.9045);
@@ -2317,8 +1830,7 @@ fn abdomenMesh() rl.Mesh {
 fn chestMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.cloth);
-    // Thorax topping out AT the shoulder line (~0.815 H) so the neck stays clear — the
-    // broad-shouldered read comes from the pauldrons on the arms, not a tall chest block.
+    // Thorax topping out AT the shoulder line (~0.815 H) so the neck stays clear — the broad-shouldered read comes from the pauldrons on the arms, not a tall chest block.
     b.addCube(v3(0, -0.005 * H, 0), v3(0.285 * H, 0.12 * H, 0.165 * H), TUNIC); // 0.695—0.815 H
     b.setMat(.leather);
     b.addCube(v3(0, 0.035 * H, -0.005 * H), v3(0.305 * H, 0.06 * H, 0.18 * H), LEATHER_DK); // collar/mantle at the shoulders
@@ -2340,8 +1852,7 @@ fn neckMesh() rl.Mesh {
 fn headMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    // Cranium, jaw, nose (facing cue), swept-back hair with a nape knot, and a thin
-    // leather headband. Head joint sits at the chin line (~0.875 H); crown lands ~1.0 H.
+    // Cranium, jaw, nose (facing cue), swept-back hair with a nape knot, and a thin leather headband.
     b.addCube(v3(0, 0.075 * H, -0.005 * H), v3(0.135 * H, 0.115 * H, 0.15 * H), SKIN); // cranium
     b.addCube(v3(0, 0.018 * H, 0.012 * H), v3(0.10 * H, 0.055 * H, 0.125 * H), SKIN); // jaw
     b.addCube(v3(0, 0.05 * H, 0.082 * H), v3(0.028 * H, 0.03 * H, 0.03 * H), SKIN_DK); // nose
@@ -2383,9 +1894,7 @@ fn footMesh() rl.Mesh {
     return b.toMesh();
 }
 
-// Asymmetric pauldrons, souls-style: the LEFT (shield/off-hand) shoulder carries the big
-// layered leather + steel-rim pauldron; the right (the sword hand — SWORD rides WRR) makes
-// do with a plain cap, leaving the cutting arm freer.
+// Asymmetric pauldrons, souls-style: the LEFT (shield/off-hand) shoulder carries the big layered leather + steel-rim pauldron; the right (the sword hand — SWORD rides WRR) makes do with a plain cap, leaving the cutting arm freer.
 fn upperArmMesh(big: bool) rl.Mesh {
     var b = Builder.init();
     b.setMat(.leather);
@@ -2417,19 +1926,14 @@ fn handMesh() rl.Mesh {
     return b.toMesh();
 }
 
-// ── invariants under test (pure math only — meshes/poses need a GPU window) ──────────
 
-/// A Hero for the STATE tests. `mesh`/`mat` are GPU handles and stay `undefined` — nothing here
-/// draws — but `rest` is real, because `pose()` reads it and a pose over undefined joints is
-/// arithmetic on garbage.
+/// A Hero for the STATE tests.
 fn testHero() Hero {
-    return .{ .mesh = undefined, .shield = undefined, .mat = undefined, .rest = restPositions() };
+    return .{ .mesh = undefined, .shield = undefined, .guitar = undefined, .mat = undefined, .rest = restPositions() };
 }
 
 test "the DRAUGHT is committed like the other two: inputs buffer, they do not fire through it" {
-    // The bug: `drinking` was missing from every committed-action guard, so an attack pressed
-    // mid-drink skipped the buffer and started on the spot (charging its stamina), and a roll
-    // actually RAN while the draught stayed latched behind it.
+    // The bug: `drinking` was missing from every committed-action guard, so an attack pressed mid-drink skipped the buffer and started on the spot (charging its stamina), and a roll actually RAN while the draught stayed latched behind it.
     var h = testHero();
     try std.testing.expect(h.startDrink());
     const stamAtDrink = h.stam.cur;
@@ -2444,8 +1948,7 @@ test "the DRAUGHT is committed like the other two: inputs buffer, they do not fi
     h.requestRoll(v3(0, 0, 1));
     try std.testing.expect(!h.rolling and h.drinking);
 
-    // …and it leaves the instant the draught ends — which is what `updateDrink`'s fireQueued is
-    // for, a call nothing could reach before this fix.
+    // …and it leaves the instant the draught ends — which is what `updateDrink`'s fireQueued is for, a call nothing could reach before this fix.
     var guard: u32 = 0;
     while (h.drinking and guard < 500) : (guard += 1) h.updateDrink(0.016);
     try std.testing.expect(!h.drinking);
@@ -2454,10 +1957,7 @@ test "the DRAUGHT is committed like the other two: inputs buffer, they do not fi
 }
 
 test "a Cerulean is refused into a full bar rather than pouring a charge away" {
-    // Nothing spends FP in this build, so the blue bar is permanently full: taking the charge at
-    // the press and only discovering the pour was a no-op a second later meant EVERY Cerulean
-    // draught was wasted. `combat.Focus`'s own test states the contract as "the caller keeps the
-    // charge" — this is the caller actually keeping it.
+    // Nothing spends FP in this build, so the blue bar is permanently full: taking the charge at the press and only discovering the pour was a no-op a second later meant EVERY Cerulean draught was wasted.
     var h = testHero();
     h.flasks.sel = .cerulean;
     const before = h.flasks.ready();
@@ -2483,19 +1983,16 @@ test "roll knots are ordered and the somersault lands exactly 360 before the ris
         std.debug.assert(ROLL_SPIN_B < ROLL_UNTUCK_B and ROLL_UNTUCK_A < ROLL_UNTUCK_B);
         std.debug.assert(ROLL_RISE_A < ROLL_RISE_B and ROLL_RISE_B <= 1.0);
         std.debug.assert(ROLL_BRAKE_A < ROLL_BRAKE_B and ROLL_BRAKE_B <= 1.0);
-        // Attack chains: every lagged strike span lands before its recovery begins, and
-        // the hit window sits inside the swing.
+        // Attack chains: every lagged strike span lands before its recovery begins, and the hit window sits inside the swing.
         std.debug.assert(AL_WIND_B <= AL_STRIKE_A and AL_STRIKE_B + 4 * AL_LAG <= AL_RECOV_A);
         std.debug.assert(AH_WIND_B <= AH_STRIKE_A and AH_STRIKE_B + 4 * AH_LAG <= AH_RECOV_A);
         std.debug.assert(AL_HIT_A >= AL_STRIKE_A and AL_HIT_B <= AL_RECOV_A);
         std.debug.assert(AH_HIT_A >= AH_STRIKE_A and AH_HIT_B <= AH_RECOV_A);
-        // Buffered-exit chain knots live in the skippable tail: after recovery starts
-        // AND after the overshoot/recoil pulses have died, before the anim ends.
+        // Buffered-exit chain knots live in the skippable tail: after recovery starts AND after the overshoot/recoil pulses have died, before the anim ends.
         std.debug.assert(AL_CHAIN >= AL_RECOV_A + 0.15 and AL_CHAIN < 1.0);
         std.debug.assert(AH_CHAIN >= AH_RECOV_A and AH_CHAIN < 1.0);
     }
-    // The two overlapped spin eases must sum to one full revolution at ROLL_SPIN_B and
-    // STAY there — a spin-free stand-up is the roll's core promise.
+    // The two overlapped spin eases must sum to one full revolution at ROLL_SPIN_B and STAY there — a spin-free stand-up is the roll's core promise.
     inline for (.{ ROLL_SPIN_B, 0.9, 1.0 }) |u| {
         const spin = ROLL_SPIN_OVER * mathx.smoothstep(ROLL_SPIN_A, ROLL_SPIN_M1, u) +
             (360.0 - ROLL_SPIN_OVER) * mathx.smoothstep(ROLL_SPIN_M0, ROLL_SPIN_B, u);
@@ -2504,8 +2001,7 @@ test "roll knots are ordered and the somersault lands exactly 360 before the ris
 }
 
 test "roll travel: the brake profile integrates to ROLL_DIST" {
-    // Numeric check of updateRoll's normalization claim (profile integral over u is
-    // (BRAKE_A+BRAKE_B)/2, so peak * integral * DUR == DIST).
+    // Numeric check of updateRoll's normalization claim (profile integral over u is (BRAKE_A+BRAKE_B)/2, so peak * integral * DUR == DIST).
     const peak = ROLL_DIST / (ROLL_DUR * 0.5 * (ROLL_BRAKE_A + ROLL_BRAKE_B));
     const steps: f32 = 20000;
     var dist: f64 = 0;
@@ -2517,9 +2013,7 @@ test "roll travel: the brake profile integrates to ROLL_DIST" {
     try std.testing.expectApproxEqAbs(@as(f64, ROLL_DIST), dist, 1e-3);
 }
 
-// ── GUARDING (the plain block) ───────────────────────────────────────────────────────────────────
-// The rules combat.zig owns are tested there; these are the ones that only exist once a blow, a
-// facing and a shield are in the same place.
+// The rules combat.zig owns are tested there; these are the ones that only exist once a blow, a facing and a shield are in the same place.
 
 /// A hero facing +Z with the shield already up.
 fn testGuarded() Hero {
@@ -2575,8 +2069,7 @@ test "running the bar out under a blow BREAKS the guard, and it stays down" {
     while (out == .blocked and n < 10) : (n += 1) out = h.takeHit(club, fromAngle(0));
     try std.testing.expectEqual(combat.HitOutcome.guardBroken, out);
     try std.testing.expect(h.stun == .heavy and !h.guarding);
-    // …and it broke because the POOL was empty, not because `canAct` said so — which is what keeps
-    // the break independent of the STAM_LOCKOUT switch (see blockHit).
+    // …and it broke because the POOL was empty, not because `canAct` said so — which is what keeps the break independent of the STAM_LOCKOUT switch (see blockHit).
     try std.testing.expectApproxEqAbs(@as(f32, 0), h.stam.cur, 1e-4);
     // THE PUNISHMENT IS WHAT COMES NEXT: the pool is empty, so the shield cannot come back up…
     try std.testing.expect(!h.canGuard());
@@ -2587,8 +2080,7 @@ test "running the bar out under a blow BREAKS the guard, and it stays down" {
 }
 
 test "chip CAN kill through a raised shield" {
-    // DS's own rule, and the reason the chip goes through `Vitals.hit` rather than at `hp`: death
-    // has to latch the same way it does for a blow that landed, or a corpse keeps blocking.
+    // DS's own rule, and the reason the chip goes through `Vitals.hit` rather than at `hp`: death has to latch the same way it does for a blow that landed, or a corpse keeps blocking.
     var h = testGuarded();
     h.vit.hp = 1.0;
     try std.testing.expectEqual(combat.HitOutcome.taken, h.takeHit(.{ .dmg = 36 }, fromAngle(0)));
@@ -2604,9 +2096,7 @@ test "i-frames beat the shield, and a committed action drops it" {
     try std.testing.expectEqual(combat.HitOutcome.ignored, h.takeHit(.{ .dmg = 36 }, fromAngle(0)));
     try std.testing.expectApproxEqAbs(HP_MAX, h.vit.hp, 1e-4);
     try std.testing.expectApproxEqAbs(stam0, h.stam.cur, 1e-4);
-    // …and while he is doing something ELSE he may not raise it at all. Every one of these is a
-    // state that drops the shield for free, which is the reason `guarding` is re-derived from
-    // scratch each frame instead of being a flag five transitions have to remember to clear.
+    // …and while he is doing something ELSE he may not raise it at all.
     var free = testHero();
     free.setGuard(true);
     try std.testing.expect(free.guarding);
@@ -2653,13 +2143,7 @@ test "the STANCE lags the block, and the block never lags the stance" {
     try std.testing.expect(h.guardB > 0.6); // …the FEEL RULES' ~0.1 s ceiling on a posture change
 }
 
-// ── THE CROSSING SIDESTEP, measured off the posed rig ───────────────────────────────────────────
-// Each of these guards a failure the old sidestep actually shipped — invisible in review, obvious
-// on screen. They pose the real legChain and read the real ankle matrices: the same "measure it,
-// don't guess it" discipline as ogre.zig's club tests.
-//
-// Pose ONE leg mid-sidestep and return its ankle in the PELVIS-CENTRED frame (+x = his LEFT,
-// +z = forward, y = height above ground), with the pelvis lowered by exactly STRAFE_DIP.
+// Each of these guards a failure the old sidestep actually shipped — invisible in review, obvious on screen.
 fn testStrafeAnkle(ph: f32, lat: f32, side: f32, hip: usize, knee: usize, sole: SolePatch) rl.Vector3 {
     const rest = restPositions();
     var wx: [N]rl.Matrix = undefined;
@@ -2672,7 +2156,6 @@ test "strafe: the legs really CROSS, then UNCROSS (the whole point of the grapev
     const rest = restPositions();
     const hx = rest[HIPL].x; // his LEFT hip sits at +x
     // Sidestepping to his RIGHT (lat > 0 → travel is world -^'x), so the LEFT leg is the crosser.
-    // Its foot must end up PAST the right foot — i.e. further -^'x than the right foot — at its plant.
     const crossedL = testStrafeAnkle(0.0, 1.0, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
     const crossedR = testStrafeAnkle(0.0 + 0.5, 1.0, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
     try std.testing.expect(crossedL.x < crossedR.x - 0.05); // genuinely crossed, not merely touching
@@ -2687,9 +2170,7 @@ test "strafe: the legs really CROSS, then UNCROSS (the whole point of the grapev
 }
 
 test "strafe: the crossing leg passes IN FRONT and its partner passes BEHIND" {
-    // A leg cannot adduct THROUGH the leg it is standing beside, so the cross has to go around one
-    // side or the other. Mid-swing (peak clearance) the crosser's ankle must be forward of the
-    // pelvis and the uncrosser's behind it — that pairing IS the grapevine.
+    // A leg cannot adduct THROUGH the leg it is standing beside, so the cross has to go around one side or the other.
     const crossMid = testStrafeAnkle(0.52 + 0.48 * 0.5, 1.0, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
     const behindMid = testStrafeAnkle(0.52 + 0.48 * 0.5 + 0.5, 1.0, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
     try std.testing.expect(crossMid.z > 0.05);
@@ -2698,11 +2179,7 @@ test "strafe: the crossing leg passes IN FRONT and its partner passes BEHIND" {
 }
 
 test "strafe: planted feet stay ON the ground and the swing foot actually leaves it" {
-    // The failure this catches is the one that shipped: 17 deg of "knee lift" over 13 deg of hip
-    // flex netted ~1 cm of clearance once the pelvis dip was subtracted, so the swing foot skimmed
-    // the grass and the sidestep read as a slide. It also holds the STRAFE_DIP contract: legChain's
-    // vertical solve assumes the caller dropped the pelvis by exactly STRAFE_DIP, and if the two
-    // ever disagree the planted feet hover or sink at some abduction angle.
+    // The failure this catches is the one that shipped: 17 deg of "knee lift" over 13 deg of hip flex netted ~1 cm of clearance once the pelvis dip was subtracted, so the swing foot skimmed the grass and the sidestep read as a slide.
     const restFootY = restPositions()[ANKL].y;
     var worstPlanted: f32 = 0;
     var bestSwing: f32 = 0;
@@ -2725,10 +2202,7 @@ test "strafe: planted feet stay ON the ground and the swing foot actually leaves
 }
 
 test "strafe: the planted foot does NOT skate — it holds still while the body passes it" {
-    // THE headline bug. Phase advances by DISTANCE, so over a slice of stance the body travels
-    // (dPhase · STRAFE_CYCLE) and the planted foot must slide back through the pelvis frame by
-    // exactly that much, leaving it fixed in the world. Holding a constant joint angle instead —
-    // what "planted dead still" used to mean — drags the foot along under the body.
+    // THE headline bug.
     const step = 0.01;
     var q: f32 = 0.06;
     while (q < STRAFE_STANCE - 0.06) : (q += step) {
@@ -2740,14 +2214,10 @@ test "strafe: the planted foot does NOT skate — it holds still while the body 
 }
 
 test "strafe: cadence lands near the forward walk's — no coffeed-up patter" {
-    // Step rate = speed / cycle length, and the sidestep is the SHORTER cycle, so without help it
-    // patters. Two things close the gap: STRAFE_CYCLE pushed to the hip-ROM ceiling, and game.zig's
-    // mild locked-on lateral speed factor. Pin the result so a retune of either can't quietly
-    // reintroduce the patter (or overcorrect into a moonwalk).
+    // Step rate = speed / cycle length, and the sidestep is the SHORTER cycle, so without help it patters.
     const walkCycle = STRIDE; // at the reference walk speed the stride scale is exactly 1
     const walkCadence = 1.0 / walkCycle; // cycles per unit time at unit speed
-    // Off the SHARED constant, not a re-stated literal: this test and `moveHero` have to be talking
-    // about the same lateral factor or the ratio it pins is a ratio nothing in the game runs at.
+    // Off the SHARED constant, not a re-stated literal: this test and `moveHero` have to be talking about the same lateral factor or the ratio it pins is a ratio nothing in the game runs at.
     const strafeCadence = STRAFE_SPEED / STRAFE_CYCLE;
     try std.testing.expect(strafeCadence < 1.15 * walkCadence);
     try std.testing.expect(strafeCadence > 0.75 * walkCadence);
@@ -2761,8 +2231,7 @@ test "the rig's rest leg length matches the LEG_LEN the strafe geometry is measu
 
 // The deepest any sole corner reaches, over a full stride at `speed` travelling `lat`-ward.
 fn deepestSole(speed: f32, lat: f32) f32 {
-    // Bare rig, through the shared `testHero()` — `init` wants a live shader, and pose() only ever
-    // touches `rest`. (This was a second copy of that literal five lines below the helper.)
+    // Bare rig, through the shared `testHero()` — `init` wants a live shader, and pose() only ever touches `rest`.
     var h = testHero();
     h.moving = 1;
     h.speedS = speed;
@@ -2779,28 +2248,14 @@ fn deepestSole(speed: f32, lat: f32) f32 {
 }
 
 test "feet do not RAKE through the floor — walking, running, sprinting or sidestepping" {
-    // The owner's report, pinned. An FK gait has no idea where the ground is: the pelvis rides a bob
-    // curve while the feet ride joint angles, and every disagreement between them buries a sole.
-    // legChain's ankle levelling takes out the big one — a long boot pitching its toe or heel under —
-    // so hold it to a shallow residue rather than the several centimetres it used to dig.
-    // The WALK is the case the owner reported and the one now genuinely fixed: it used to rake 8.6 cm
-    // under; the ankle levelling brings it inside the deliberate hair of embed. Sidesteps are held to
-    // the same bar, since legChain's vertical solve pins those feet outright.
+    // The owner's report, pinned.
     try std.testing.expect(deepestSole(WALK_SPEED, 0.0) > SOLE_Y - 0.015);
     try std.testing.expect(deepestSole(WALK_SPEED, 1.0) > SOLE_Y - 0.015);
     try std.testing.expect(deepestSole(WALK_SPEED, -1.0) > SOLE_Y - 0.015);
-    // A DIAGONAL keeps a larger residue: there the normative sagittal gait and the sidestep solve are
-    // both driving one leg, and no single knee angle satisfies the gait tables AND the ground. Down
-    // from 14 cm by solving against the full hip angle; the rest waits on real foot IK.
+    // A DIAGONAL keeps a larger residue: there the normative sagittal gait and the sidestep solve are both driving one leg, and no single knee angle satisfies the gait tables AND the ground.
     try std.testing.expect(deepestSole(WALK_SPEED, 0.7) > SOLE_Y - 0.08);
     try std.testing.expect(deepestSole(WALK_SPEED, -0.7) > SOLE_Y - 0.08); // …and diagonally
-    // RUN and SPRINT keep a KNOWN, larger clip, and its cause is not the feet at all: `rx(bodyPitch)`
-    // in pose() rotates the whole body about the WORLD ORIGIN, not about the support foot as its own
-    // comment claims, so under a deep run lean any foot swung forward is levered straight down. No
-    // ankle angle can undo that — the foot is not mis-angled, it is in the wrong PLACE. Fixing it
-    // means pitching about the stance foot, which reshapes the run's signature pose, so it is left
-    // alone deliberately (AGENTS.md already records the run-crouch clip as a known gap, and the owner
-    // has called a small clip preferable to any float). This bound only stops it getting WORSE.
+    // RUN and SPRINT keep a KNOWN, larger clip, and its cause is not the feet at all: `rx(bodyPitch)` in pose() rotates the whole body about the WORLD ORIGIN, not about the support foot as its own comment claims, so under a deep run lean any foot swung forward is levered straight down.
     try std.testing.expect(deepestSole(RUN_SPEED, 0.0) > SOLE_Y - 0.10);
     try std.testing.expect(deepestSole(SPRINT_SPEED, 0.0) > SOLE_Y - 0.30);
 }

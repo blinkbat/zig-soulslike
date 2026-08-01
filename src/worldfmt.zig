@@ -6,76 +6,45 @@ const item = @import("item.zig");
 
 const Kind = props.Kind;
 
-// ── THE MAP ── the world is DATA: a versioned text file of authoring OPS, replayed in order by
-// env.zig; the editor is the only thing that writes one.
-//
-// The ops are the AUTHORING, not its output. A wood is one `belt` of 260 attempts with a mix and an
-// edge gradient, not 260 coordinates — so the file stays readable in a diff and a density dial
-// re-expands it instead of stamping instances.
-//
-// EVERY GENERATOR OP CARRIES ITS OWN SEED and gets its own Rng. That is the load-bearing difference
-// from the code-authored world it replaces, which drew every op from ONE shared stream: there,
-// inserting a belt re-rolled every op after it, so no edit was ever local. The world is deterministic
-// either way; independent seeds are what make it EDITABLE.
-//
-// FORMAT — one record per line, `#` comments, blank lines ignored:
-//     <name> <required positionals, in fieldsOf() order> [key=value ...]
-// The positionals come from ONE table both the writer and the parser walk, so a field added to one
-// can't go missing from the other; the optional tail carries the sparse dials, matched by field name.
-// An unknown key, a missing positional or a value that only LOOKS parseable is a LOAD ERROR, never a
-// silent default — a map that half-loads is a world with a hole in it, a long way from the typo.
 
 pub const VERSION: u32 = 1;
 
-/// Playable half-extent when a map doesn't say otherwise; the world spans 2x this per axis. THE MAP IS
-/// THE ONLY SOURCE — the movement clamp, the cliff ring, the cover extent and the soil grid all read
-/// `Map.half`. `env.MAX_HALF` is the ceiling the fixed grid can index and env's tests pin this default
-/// under it. Lives here because env imports this file, not the other way round.
+/// Playable half-extent when a map doesn't say otherwise; the world spans 2x this per axis.
 pub const DEFAULT_HALF: f32 = 280.0;
 
-/// Sanity bound on a `half:` record, and a POSITIVE one. Not the design limit (`env.MAX_HALF` is), but
-/// the cover lattice is O((half/pitch)²) candidates, so an absurd value is a HANG at load rather than
-/// a big world — and a zero or negative half inverts every derived extent.
+/// Sanity bound on a `half:` record, and a POSITIVE one.
 pub const MAX_DECLARED_HALF: f32 = 4096.0;
 
 pub const MAX_OPS: usize = 2048;
 pub const MAX_MIX: usize = 24; // a scatter's weighted kind mix (weight = repetition)
-/// How many items one chest holds. Small on purpose: a chest in a soulslike is one or two things you
-/// remember finding, not a container. Weight BY REPETITION like `mix`, so two Golden Seeds is the tag
-/// twice — no count column to parse, and the file still reads as a sentence.
+/// How many items one chest holds.
 pub const MAX_LOOT: usize = 8;
 pub const MAX_ZONES: usize = 16;
 pub const MAX_CLEARINGS: usize = 32;
 pub const MAX_FOES: usize = 256;
 pub const NAME_CAP: usize = 48;
 
-// ── ops ────────────────────────────────────────────────────────────────────────────────
 
 pub const OpKind = enum(u8) {
-    /// One prop, placed exactly. No RNG, no seed — what the editor stamps and drags.
+    /// One prop, placed exactly.
     at,
     /// Rect scatter: `n` ATTEMPTS in a box, rejected against the avoid set and the cover field.
-    /// Attempts, not a guarantee — rejection is what keeps a scatter from reading sown.
     belt,
     /// Annulus scatter about a centre, r0..r1 — shorelines, reed beds, talus, drowned ruin.
     disc,
     /// Evenly spaced ring facing its centre, one position left out (`skip`): a full ring reads as a fence.
     ring,
-    /// A broken run from a→b: segments nose to tail, some collapsed. City walls.
+    /// A broken run from a→b: segments nose to tail, some collapsed.
     line,
-    /// Sow a climber at the FEET of stonework already standing in a box — ivy needs a wall behind it,
-    /// so this walks the props that are THERE rather than scattering over ground.
+    /// Sow a climber at the FEET of stonework already standing in a box — ivy needs a wall behind it, so this walks the props that are THERE rather than scattering over ground.
     ivy,
-    /// The world's rock rim: four walls of overlapping cliff segments, height from two long waves so
-    /// the crest reads as topography rather than jitter.
+    /// The world's rock rim: four walls of overlapping cliff segments, height from two long waves so the crest reads as topography rather than jitter.
     edge,
-    /// The lattice ground cover over the whole world: one candidate per cell, kind and density from the
-    /// zone it lands in, scaled by the cover field. Exactly one per map.
+    /// The lattice ground cover over the whole world: one candidate per cell, kind and density from the zone it lands in, scaled by the cover field.
     cover,
 };
 
-/// What a scatter refuses to grow through. Defaults differ per op kind, and the editor exposes them as
-/// tick boxes — a belt that ignores water is how you sow lilies.
+/// What a scatter refuses to grow through.
 pub const Avoid = struct {
     runway: bool = false, // the hero's start lane, kept clear so a straight walk out is never blocked
     water: bool = false, // open water
@@ -86,8 +55,7 @@ pub const Avoid = struct {
 /// Which axis a belt's density gradient runs along; `.none` is a flat belt.
 pub const Axis = enum(u8) { none, x, z };
 
-/// One authoring operation. FLAT rather than a tagged union: the properties panel pokes fields by name,
-/// `fieldsOf` decides which ones a kind uses, and the unused ones cost a few bytes and no ceremony.
+/// One authoring operation.
 pub const Op = struct {
     op: OpKind = .at,
     kind: Kind = .pillar, // the prop placed, or the mix's fallback when `nmix` is 0
@@ -99,12 +67,7 @@ pub const Op = struct {
     r1: f32 = 0, // disc outer radius
     yaw: f32 = 0,
     scale: f32 = 1,
-    /// TIP THE PROP OFF PLUMB: `lean` degrees, toward the compass direction `leanDir` (measured
-    /// like yaw). A literal `at` leans exactly this much and in exactly that direction; a SCATTER
-    /// reads `lean` as the MOST any one instance gets and rolls both amount and direction per
-    /// instance, so a wood leans every which way instead of as one hurricane-struck block. 0 =
-    /// plumb, which is every op's default — nothing in a map without these keys draws from its
-    /// stream, so adding the field cannot reshuffle a world.
+    /// TIP THE PROP OFF PLUMB: `lean` degrees, toward the compass direction `leanDir` (measured like yaw).
     lean: f32 = 0,
     leanDir: f32 = 0,
     sLo: f32 = 0.85, // scale band the instances draw from
@@ -113,28 +76,20 @@ pub const Op = struct {
     skip: i32 = -1, // ring: the position left empty; -1 = none
     seed: u64 = 0,
     chance: f32 = 1.0, // per-candidate acceptance (ivy takes, line segment survives)
-    /// Disc radial bias: 0 spreads evenly across the annulus, 1 is area-uniform (sqrt), clustering
-    /// toward the inner edge — how a lily raft sits on its rootstock.
+    /// Disc radial bias: 0 spreads evenly across the annulus, 1 is area-uniform (sqrt), clustering toward the inner edge — how a lily raft sits on its rootstock.
     bias: f32 = 0,
-    /// Respect the world's COVER FIELD (the noise that carves clearings, so a clearing is a clearing for
-    /// everything standing in it)? On for belts. OFF for a scatter that carries its own shaping (the
-    /// canopy's gradient) or has no business thinning (a shoreline reed bed): double-dipping thins it
-    /// twice and the second one is invisible in the numbers.
+    /// Respect the world's COVER FIELD (the noise that carves clearings, so a clearing is a clearing for everything standing in it)?
     field: bool = false,
-    /// Belt density gradient: acceptance ramps `gFloor`→1 as the axis runs gA→gB. What stops a wood
-    /// ending in a hard tree line that reads as a wall of scenery.
+    /// Belt density gradient: acceptance ramps `gFloor`→1 as the axis runs gA→gB.
     gAxis: Axis = .none,
     gA: f32 = 0,
     gB: f32 = 0,
     gFloor: f32 = 0,
     avoid: Avoid = .{},
-    /// Weighted kind mix, weight BY REPETITION — the cheapest honest weighting for a small set, and it
-    /// keeps a region's character readable as one line of text. Empty = use `kind`.
+    /// Weighted kind mix, weight BY REPETITION — the cheapest honest weighting for a small set, and it keeps a region's character readable as one line of text.
     mix: [MAX_MIX]Kind = undefined,
     nmix: u8 = 0,
-    /// What is in the chest this op placed. Only an `at` of kind `.chest` reads it, and it is never
-    /// written when empty, so adding the field moved no existing world. Serialized like `mix`: a `loot=`
-    /// tail of comma-separated tags.
+    /// What is in the chest this op placed.
     loot: [MAX_LOOT]item.Kind = undefined,
     nloot: u8 = 0,
 
@@ -160,11 +115,7 @@ pub const Op = struct {
     }
 };
 
-// The REQUIRED positionals per op kind, in the order written and read. ONE table, both directions —
-// the whole defence against a writer and a parser that agree today and disagree after the next field.
-// A comptime function because the walk must run at COMPTIME to index the struct by name. Driving it off
-// `std.meta.fields(Op)` reads the STRUCT's order instead, silently ignoring this table and writing `n`
-// in the wrong column the moment the two disagree.
+// The REQUIRED positionals per op kind, in the order written and read.
 fn fieldsOf(comptime k: OpKind) []const []const u8 {
     return switch (k) {
         .at => &.{ "kind", "x", "z", "yaw", "scale" },
@@ -179,8 +130,7 @@ fn fieldsOf(comptime k: OpKind) []const []const u8 {
 }
 
 comptime {
-    // Every name in the table must BE a field of Op. A typo here would otherwise surface as a
-    // compile error deep inside @field, pointing at the walk rather than at the table.
+    // Every name in the table must BE a field of Op.
     @setEvalBranchQuota(20000);
     for (@typeInfo(OpKind).@"enum".fields) |ek| {
         const k: OpKind = @enumFromInt(ek.value);
@@ -190,8 +140,7 @@ comptime {
     }
 }
 
-// Per-kind defaults for the non-positional fields, so a hand-written line behaves the way that op is
-// meant to without spelling out every dial.
+// Per-kind defaults for the non-positional fields, so a hand-written line behaves the way that op is meant to without spelling out every dial.
 pub fn defaults(k: OpKind) Op {
     var o = Op{ .op = k };
     switch (k) {
@@ -210,11 +159,8 @@ pub fn defaults(k: OpKind) Op {
     return o;
 }
 
-// ── the tables an op is read against ───────────────────────────────────────────────────
 
-/// What the lattice scatter grows inside this rect, and how thickly WHERE IT IS THICKEST: `density` is
-/// the PEAK and the cover field scales it down to nothing in the clearings. Tested in order, FIRST
-/// containing rect wins — so a small zone laid after a large one cuts a hole in it.
+/// What the lattice scatter grows inside this rect, and how thickly WHERE IT IS THICKEST: `density` is the PEAK and the cover field scales it down to nothing in the clearings.
 pub const Zone = struct {
     name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
     x: f32 = 0,
@@ -228,10 +174,7 @@ pub const Zone = struct {
     pub fn contains(self: *const Zone, px: f32, pz: f32) bool {
         return px >= self.x and px <= self.x1 and pz >= self.z and pz <= self.z1;
     }
-    /// OPTIONAL, not a fallback kind: `mix` is `undefined` until filled and `Rng.intn(0)` returns 0, so
-    /// an unguarded version read raw heap bytes as a `props.Kind` — an out-of-range enum, illegal
-    /// whatever those bytes are. `parseZone` rejects an empty mix too; this is the second lock on the
-    /// same door, since the editor can hold a zone in that state between a drag and its seeding.
+    /// OPTIONAL, not a fallback kind: `mix` is `undefined` until filled and `Rng.intn(0)` returns 0, so an unguarded version read raw heap bytes as a `props.Kind` — an out-of-range enum, illegal whatever those bytes are.
     pub fn pick(self: *const Zone, rng: *mathx.Rng) ?Kind {
         if (self.nmix == 0) return null;
         return self.mix[@intCast(rng.intn(@intCast(self.nmix)))];
@@ -242,21 +185,12 @@ pub const Zone = struct {
 };
 
 /// A circle the canopy and the cover scatter keep out of — the stone circle's glade, the cottage yard.
-/// A clearing you authored is worth more than one the noise happened to leave.
 pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 
-/// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at
-/// comptime and `kobold.roleOf` reads the three kobold entries as a contiguous run off `berserker`, so
-/// inserting a kind in the middle silently renumbers both. Add at the end.
+/// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at comptime and `kobold.roleOf` reads the three kobold entries as a contiguous run off `berserker`, so inserting a kind in the middle silently renumbers both.
 pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger };
 
 /// WHAT EACH FOE IS CALLED — the owner's names, and the only strings any UI should ever show for one.
-/// The enum TAG is the file format's word (`foe: priest …`) and must never be shown to anybody: `ogre`
-/// is not the thing's name, and three rows reading "berserker / priest / slinger" say nothing about
-/// their all being kobolds.
-///
-/// Beside the enum rather than in the editor, because the HUD's lock-on plate and the editor's palette
-/// are two places that would otherwise each keep their own list and drift.
 pub fn foeName(k: FoeKind) [:0]const u8 {
     return switch (k) {
         .toad => "Giant Toad",
@@ -268,9 +202,7 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
     };
 }
 
-/// One posted spawn. `yaw` is DEGREES like every yaw in the format (the rigs take radians; the loader
-/// converts). `seed` is the per-instance animation phase in 0..1 — what stops a knot of toads breathing
-/// and hopping as one body.
+/// One posted spawn.
 pub const Foe = struct {
     kind: FoeKind = .toad,
     x: f32 = 0,
@@ -280,16 +212,13 @@ pub const Foe = struct {
     seed: f32 = 0,
 };
 
-/// How many of ONE kind a map may post. Each group keeps a fixed array this size.
+/// How many of ONE kind a map may post.
 pub const MAX_PER_KIND: usize = 24;
 
-/// The hero's start lane, kept clear of every scatter (the `--shot` corridor and the live start), so
-/// walking straight out of the grace is never blocked by something that grew.
+/// The hero's start lane, kept clear of every scatter (the `--shot` corridor and the live start), so walking straight out of the grace is never blocked by something that grew.
 pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 = 30 };
 
-// ── the painted soil ───────────────────────────────────────────────────────────────────
-// A material id per grid cell, 0 = UNPAINTED, meaning "leave the procedural ground exactly as it is" —
-// so the authored look survives painting by construction and a fresh map's grid is empty.
+// A material id per grid cell, 0 = UNPAINTED, meaning "leave the procedural ground exactly as it is" — so the authored look survives painting by construction and a fresh map's grid is empty.
 
 pub const SOIL_N: usize = @intCast(gfx.SOIL_N);
 pub const SOIL_CELLS: usize = SOIL_N * SOIL_N;
@@ -305,31 +234,20 @@ pub const Soil = enum(u8) {
 
     pub const N = @typeInfo(Soil).@"enum".fields.len;
 
-    /// DOES THIS MATERIAL CUT, OR DOES IT BLEND? A property of the STUFF, which is why it lives on the
-    /// enum rather than on a brush: dirt fades into turf because that is what dirt does at the edge of a
-    /// path, and a flagged floor stops where the masons stopped it. See the shader's `soilHard`, which
-    /// carries the same answer and is pinned to this one by the comptime block below.
-    ///
-    /// The only thing it changes is how the COVERAGE grid is read (see `Map.soilCov`): a hard material
-    /// samples it per cell, a soft one lets it interpolate and adds a further ring of cross-fade. Both
-    /// honour the painted level, so a hard material can still be laid down at half strength.
+    /// DOES THIS MATERIAL CUT, OR DOES IT BLEND?
     pub fn hardEdge(s: Soil) bool {
         return s == .stone;
     }
 };
 
 comptime {
-    // The shader's soilColor() hard-codes ids 1..6 and falls through to moss. Adding a soil
-    // without extending it would paint the new material as moss, silently.
+    // The shader's soilColor() hard-codes ids 1..6 and falls through to moss.
     std.debug.assert(Soil.N == 7);
-    // …and its `soilHard` hard-codes the id below, for the same reason and with the same trap: a
-    // reordered enum would give the crisp edge to whichever material inherited the number.
+    // …and its `soilHard` hard-codes the id below, for the same reason and with the same trap: a reordered enum would give the crisp edge to whichever material inherited the number.
     std.debug.assert(@intFromEnum(Soil.stone) == 3);
 }
 
-/// FULL COVERAGE — what an unpainted-with-opacity cell holds, and the value the whole grid defaults to.
-/// 255 rather than 0 on purpose: every map authored before coverage existed has no `soilcov` record, so
-/// it loads as "every cell fully covered" and renders exactly as it always did.
+/// FULL COVERAGE — what an unpainted-with-opacity cell holds, and the value the whole grid defaults to. 255 rather than 0 on purpose: every map authored before coverage existed has no `soilcov` record, so it loads as "every cell fully covered" and renders exactly as it always did.
 pub const COV_FULL: u8 = 255;
 
 pub fn covF(v: u8) f32 {
@@ -340,16 +258,10 @@ pub fn covByte(v: f32) u8 {
     return @intFromFloat(std.math.clamp(v, 0, 1) * 255.0 + 0.5);
 }
 
-/// How much of the brush's radius is laid down at FULL strength before the margin starts. A pure cone
-/// (core 0) was tried first and it is wrong at this grid's scale: the soil lattice is 5 m a cell, so a
-/// radius-5 stroke is one cell across and a cone gives every one of those cells a partial value —
-/// painting at 100% came out translucent everywhere and there was no way to lay down a solid floor.
-/// With a core, the dial means what it says in the middle and the feathering is confined to the rim.
+/// How much of the brush's radius is laid down at FULL strength before the margin starts.
 const BRUSH_CORE: f32 = 0.55;
 
-/// THE BRUSH'S SHAPE: 1 out to `BRUSH_CORE` of the radius, easing to 0 at the rim. Smooth rather than
-/// linear over that margin because a linear ramp leaves a visible crease where the stroke ends, and the
-/// whole point of the coverage grid is that a margin is something you cannot pick out.
+/// THE BRUSH'S SHAPE: 1 out to `BRUSH_CORE` of the radius, easing to 0 at the rim.
 fn brushFalloff(d: f32, radius: f32) f32 {
     if (radius <= 0) return 1;
     const core = radius * BRUSH_CORE;
@@ -358,31 +270,11 @@ fn brushFalloff(d: f32, radius: f32) f32 {
     return u * u * (3.0 - 2.0 * u);
 }
 
-// ── the painted WATER ───────────────────────────────────────────────────────────────────
-// A second painted grid, and a much simpler one: one BIT per cell — wet or dry. Everything that
-// makes water read as water (where the coast is, how the shallows fade into the deep, where the sand
-// is soaked) is DERIVED from this mask by env's signed distance field, never painted by hand. That
-// is the whole design: painting a lake is painting its OUTLINE, and the gradient is arithmetic.
-//
-// Finer than the soil grid, because a shoreline is a shape you read and a material patch is not.
+// A second painted grid, and a much simpler one: one BIT per cell — wet or dry.
 pub const WATER_N: usize = @intCast(gfx.WATER_N);
 pub const WATER_CELLS: usize = WATER_N * WATER_N;
 
-// ── the sculpted ELEVATION ───────────────────────────────────────────────────────────────
-// The third painted grid, and the only one with a datum: one QUANTISED HEIGHT per lattice point,
-// `HEIGHT_STEP` metres a step, biased so byte `HEIGHT_ZERO` is the old flat ground. A fresh map is
-// every cell at that datum, which is byte-identical in behaviour to the world before elevation
-// existed — and RLEs to a single run, so a flat map's file does not grow at all.
-//
-// QUANTISED because the file is TEXT and the writer is a run-length encoder. A float grid would be
-// 50,176 unique values, i.e. an unreadable megabyte with no runs in it; a 0.25 m step is finer than
-// a foot and lets a plateau, a bank and a flat valley floor each collapse to one run. It is also the
-// visible limit on smoothness — a long shallow ramp is a staircase of 0.25 m risers 2.5 m apart,
-// which at 5.7 degrees is under the mesh's own faceting.
-//
-// SAMPLED AT LATTICE POINTS, NOT CELL CENTRES (unlike soil and water, which are cell PAINT). A
-// height is a corner of the terrain mesh: N points span -half..+half inclusive, so the field's edge
-// lands exactly on the world's edge and there is no half-cell of unexplained ground at the rim.
+// The third painted grid, and the only one with a datum: one QUANTISED HEIGHT per lattice point, `HEIGHT_STEP` metres a step, biased so byte `HEIGHT_ZERO` is the old flat ground.
 pub const HEIGHT_N: usize = @intCast(gfx.HEIGHT_N);
 pub const HEIGHT_CELLS: usize = HEIGHT_N * HEIGHT_N;
 /// Metres per quantisation step.
@@ -393,7 +285,7 @@ pub const HEIGHT_ZERO: u8 = 64;
 pub const HEIGHT_MIN: f32 = -@as(f32, @floatFromInt(HEIGHT_ZERO)) * HEIGHT_STEP;
 pub const HEIGHT_MAX: f32 = @as(f32, @floatFromInt(255 - HEIGHT_ZERO)) * HEIGHT_STEP;
 
-/// Byte → metres, and the inverse. The only two places the encoding is spelled out.
+/// Byte → metres, and the inverse.
 pub fn heightOf(b: u8) f32 {
     return (@as(f32, @floatFromInt(b)) - @as(f32, @floatFromInt(HEIGHT_ZERO))) * HEIGHT_STEP;
 }
@@ -403,16 +295,11 @@ pub fn heightByte(m: f32) u8 {
 }
 
 /// THE ONE HEIGHT SAMPLER — bilinear over an `HEIGHT_N` lattice spanning `-half..+half` inclusive.
-/// Free function over a slice rather than a method, because the field has two owners that must agree
-/// to the millimetre: the MAP holds the authored grid and the editor sculpts it, while `env` keeps
-/// the live copy the terrain mesh was built from and every actor stands on. Two implementations of
-/// this is a hero who walks a centimetre off the mesh he can see.
 pub fn sampleHeight(field: []const u8, half: f32, px: f32, pz: f32) f32 {
     std.debug.assert(field.len == HEIGHT_CELLS);
     const last: f32 = @floatFromInt(HEIGHT_N - 1);
     const step = 2 * half / last; // POINT pitch: N points, N-1 gaps
-    // Clamped rather than zeroed outside: past the rim the ground continues at the edge's height,
-    // which is what the terrain skirt draws and what keeps an actor at the bound from falling.
+    // Clamped rather than zeroed outside: past the rim the ground continues at the edge's height, which is what the terrain skirt draws and what keeps an actor at the bound from falling.
     const fx = mathx.clampF((px + half) / step, 0, last);
     const fz = mathx.clampF((pz + half) / step, 0, last);
     const x0: usize = @intFromFloat(@floor(fx));
@@ -428,12 +315,7 @@ pub fn sampleHeight(field: []const u8, half: f32, px: f32, pz: f32) f32 {
     return mathx.lerpF(mathx.lerpF(h00, h10, tx), mathx.lerpF(h01, h11, tx), tz);
 }
 
-/// The terrain's GRADIENT at a point: (dh/dx, dh/dz), i.e. metres of rise per metre travelled. Its
-/// length is the tangent of the slope angle, which is what the walkable test and the hero's lean read.
-///
-/// Measured over a whole cell either side rather than at the sample: the field is bilinear, so its
-/// true derivative is piecewise-constant and JUMPS at every lattice line — a lean driven off that
-/// steps visibly as you cross one, and a slope limit driven off it turns a smooth bank into stripes.
+/// The terrain's GRADIENT at a point: (dh/dx, dh/dz), i.e. metres of rise per metre travelled.
 pub fn sampleGrad(field: []const u8, half: f32, px: f32, pz: f32) [2]f32 {
     const step = 2 * half / @as(f32, @floatFromInt(HEIGHT_N - 1));
     const hx1 = sampleHeight(field, half, px + step, pz);
@@ -443,13 +325,10 @@ pub fn sampleGrad(field: []const u8, half: f32, px: f32, pz: f32) [2]f32 {
     return .{ (hx1 - hx0) / (2 * step), (hz1 - hz0) / (2 * step) };
 }
 
-/// A touched-lattice rect that contains nothing, as `lo > hi` on both axes — what `Map.sculpt` reports
-/// for a stroke that missed the grid, so a caller's rebuild loops simply do not run.
+/// A touched-lattice rect that contains nothing, as `lo > hi` on both axes — what `Map.sculpt` reports for a stroke that missed the grid, so a caller's rebuild loops simply do not run.
 pub const EMPTY_SPAN: [4]usize = .{ 1, 1, 0, 0 };
 
-/// The lattice-point index range a brush of radius `r` centred at `c` reaches on one axis, INCLUSIVE,
-/// or null when it misses the grid entirely. Signed internally on purpose: clamping first would turn a
-/// brush a hundred metres off the map into a hit on point 0.
+/// The lattice-point index range a brush of radius `r` centred at `c` reaches on one axis, INCLUSIVE, or null when it misses the grid entirely.
 fn pointSpan(c: f32, r: f32, half: f32, step: f32) ?[2]usize {
     const last: f32 = @floatFromInt(HEIGHT_N - 1);
     const a = @ceil((c - r + half) / step);
@@ -467,18 +346,16 @@ pub const Sculpt = enum {
     raise,
     /// …and down.
     lower,
-    /// Pull every point toward the average of its neighbours — the dial that turns a lumpy raise
-    /// into a bank you can walk. Without it a brush stroke is all cliffs.
+    /// Pull every point toward the average of its neighbours — the dial that turns a lumpy raise into a bank you can walk.
     smooth,
     /// Flatten toward the height under the brush's centre — terraces, building pads, a road.
     flatten,
 };
 
-// ── the map ────────────────────────────────────────────────────────────────────────────
 
 pub const Map = struct {
     name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
-    /// Playable half-extent. The movement clamp and the cliff rim are derived from it.
+    /// Playable half-extent.
     half: f32 = DEFAULT_HALF,
     runway: Runway = .{},
 
@@ -490,22 +367,13 @@ pub const Map = struct {
     nclearings: usize = 0,
     foes: [MAX_FOES]Foe = undefined,
     nfoes: usize = 0,
-    /// The painted soil, row-major from -half to +half on both axes. All zero = nothing painted.
+    /// The painted soil, row-major from -half to +half on both axes.
     soil: [SOIL_CELLS]u8 = [_]u8{0} ** SOIL_CELLS,
-    /// HOW STRONGLY that material covers its cell, 0..255 — the same grid, one number deeper. It is the
-    /// whole of the blending system: an edge fades because the cells there hold a low number, and a
-    /// patch reads faint in the middle for exactly the same reason and by the same means. One value
-    /// rather than a separate "edge softness" dial, because an edge is not a special place — it is
-    /// simply where the coverage happens to be low (owner: "opacity of the edges — or wherever really").
-    ///
-    /// Meaningless where `soil` is 0, and defaulted to `COV_FULL` so a map with no record renders as it
-    /// always did (see COV_FULL).
+    /// HOW STRONGLY that material covers its cell, 0..255 — the same grid, one number deeper.
     soilCov: [SOIL_CELLS]u8 = [_]u8{COV_FULL} ** SOIL_CELLS,
-    /// The painted WATER MASK, same layout, 1 = wet. Depth, shoreline and wet sand are all derived
-    /// from it (see env.uploadWater) — this is only the outline.
+    /// The painted WATER MASK, same layout, 1 = wet.
     water: [WATER_CELLS]u8 = [_]u8{0} ** WATER_CELLS,
     /// THE SCULPTED GROUND: one quantised height per lattice POINT (see the HEIGHT block above).
-    /// Defaults to the DATUM, not to zero — an all-zero grid would sink the whole world 16 m.
     height: [HEIGHT_CELLS]u8 = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS,
 
     pub fn label(self: *const Map) []const u8 {
@@ -530,9 +398,7 @@ pub const Map = struct {
         self.height = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS;
     }
 
-    /// The smallest VALID map: a world-spanning fallback zone plus the cover op that reads it. A truly
-    /// empty map fails its own loader (`NoCoverOp`) and shows as bare terrain, so "New" must hand back
-    /// something that loads and grows grass.
+    /// The smallest VALID map: a world-spanning fallback zone plus the cover op that reads it.
     pub fn blank(self: *Map, name: []const u8) void {
         self.* = .{};
         self.setName(name);
@@ -562,15 +428,13 @@ pub const Map = struct {
         rim.seed = 1002;
         for (props.CLIFFS, 0..) |k, i| rim.mix[i] = k;
         rim.nmix = props.CLIFFS.len;
-        // Before the cover op: the ground cover queries the solid grid, so the rim has to exist
-        // by then or grass grows through the cliffs.
+        // Before the cover op: the ground cover queries the solid grid, so the rim has to exist by then or grass grows through the cliffs.
         self.ops[1] = self.ops[0];
         self.ops[0] = rim;
         self.nops = 2;
     }
 
-    /// Append an op, returning its index. Capacity overflow is a hard error rather than a
-    /// silent drop: a dropped op is a missing region, and nothing downstream would say so.
+    /// Append an op, returning its index.
     pub fn add(self: *Map, o: Op) !usize {
         if (self.nops >= MAX_OPS) return error.TooManyOps;
         self.ops[self.nops] = o;
@@ -584,8 +448,7 @@ pub const Map = struct {
         self.nops -= 1;
     }
 
-    /// Move an op to a new position in the replay order. Order is meaningful — `ivy` reads the
-    /// stonework placed before it, and the cover scatter must run after everything solid.
+    /// Move an op to a new position in the replay order.
     pub fn reorder(self: *Map, from: usize, to: usize) void {
         if (from >= self.nops or to >= self.nops or from == to) return;
         const moved = self.ops[from];
@@ -615,10 +478,7 @@ pub const Map = struct {
         return px >= r.x and px <= r.x1 and pz >= r.z and pz <= r.z1;
     }
 
-    /// The world size of one cell of an `n`-a-side painted grid. Both grids span `-half..+half`, so
-    /// this one expression is the SOIL grid's pitch, the WATER grid's pitch, and what the properties
-    /// panel prints as "cell N m" — it was written out at each of those sites, and a pitch that
-    /// disagreed with the grid it indexes puts a brush stroke in the wrong cells.
+    /// The world size of one cell of an `n`-a-side painted grid.
     pub fn cellSize(self: *const Map, n: usize) f32 {
         return 2 * self.half / @as(f32, @floatFromInt(n));
     }
@@ -634,23 +494,6 @@ pub const Map = struct {
     }
 
     /// Paint a disc of soil at `opacity` (0..1 — how strongly the material ends up covering the ground).
-    /// Returns whether anything actually changed, so a stroke that lands on ground already exactly like
-    /// this doesn't bank an undo step or raise the dirty flag.
-    ///
-    /// THE STROKE IS A MASK, AND INSIDE IT THE COVERAGE MOVES TOWARD THE DIAL — `lerp(here, opacity,
-    /// falloff)`, with `falloff` 1 at the centre of the disc and 0 at its rim. That one rule is what
-    /// makes the whole thing behave:
-    ///
-    ///   - painting at full strength drives the middle to solid and leaves a soft margin at the rim;
-    ///   - painting at 40% over your own solid patch pulls it DOWN to 40%, so opacity is adjustable
-    ///     anywhere and not only where an edge happens to be;
-    ///   - two overlapping strokes do not carve each other, because a rim moves a cell by almost
-    ///     nothing rather than writing zero over it;
-    ///   - and passing over the same ground repeatedly converges on the dial instead of running away.
-    ///
-    /// A cell holding a DIFFERENT material is contested rather than overwritten: the stroke wins it only
-    /// where it would end up covering more of it than the incumbent does. So a faint stroke does not
-    /// eat a solid floor — dial up, or erase — while a solid one takes ground immediately.
     pub fn paintSoil(self: *Map, px: f32, pz: f32, radius: f32, id: Soil, opacity: f32) bool {
         const cell = self.cellSize(SOIL_N);
         const r2 = radius * radius;
@@ -669,8 +512,7 @@ pub const Map = struct {
                 if (d2 > r2) continue;
                 const i = cz * SOIL_N + cx;
                 const v: u8 = @intFromEnum(id);
-                // ERASING is not a weak paint and must not be contested — `none` clears the cell
-                // outright wherever the disc touches it, which is what an eraser is.
+                // ERASING is not a weak paint and must not be contested — `none` clears the cell outright wherever the disc touches it, which is what an eraser is.
                 if (id == .none) {
                     if (self.soil[i] != 0 or self.soilCov[i] != COV_FULL) {
                         self.soil[i] = 0;
@@ -683,11 +525,7 @@ pub const Map = struct {
                 const here: f32 = if (self.soil[i] == v) covF(self.soilCov[i]) else 0;
                 const next = here + (want - here) * t;
                 const nv = covByte(next);
-                // Contest: an incumbent material only loses a cell to coverage that MATCHES OR beats
-                // its own. Strictly-greater was the first cut and it had a hole exactly where it hurt
-                // most: over a patch already at full strength, a full-strength stroke computes 255
-                // against an incumbent 255 and lost the tie, so painting solid over solid did nothing
-                // at all in the middle of the brush. A tie goes to the newer stroke.
+                // Contest: an incumbent material only loses a cell to coverage that MATCHES OR beats its own.
                 if (self.soil[i] != v and self.soil[i] != 0 and nv < self.soilCov[i]) continue;
                 if (self.soil[i] != v or self.soilCov[i] != nv) {
                     self.soil[i] = v;
@@ -699,9 +537,7 @@ pub const Map = struct {
         return changed;
     }
 
-    /// Paint (or wipe) a disc of the WATER MASK. Same shape as `paintSoil` — and deliberately the
-    /// same shape, because they are the same gesture on two grids — but on the finer lattice and with
-    /// only two values. Returns whether anything changed.
+    /// Paint (or wipe) a disc of the WATER MASK.
     pub fn paintWater(self: *Map, px: f32, pz: f32, radius: f32, wet: bool) bool {
         const cell = self.cellSize(WATER_N);
         const r2 = radius * radius;
@@ -727,7 +563,7 @@ pub const Map = struct {
         return changed;
     }
 
-    /// Is this cell of the mask wet? Out-of-grid is dry.
+    /// Is this cell of the mask wet?
     pub fn waterAt(self: *const Map, px: f32, pz: f32) bool {
         const t = (px + self.half) / (2 * self.half);
         const u = (pz + self.half) / (2 * self.half);
@@ -737,7 +573,7 @@ pub const Map = struct {
         return self.water[cz * WATER_N + cx] != 0;
     }
 
-    /// Has anything been painted wet at all? What lets the renderer skip the sheet entirely.
+    /// Has anything been painted wet at all?
     pub fn anyWater(self: *const Map) bool {
         for (self.water) |v| {
             if (v != 0) return true;
@@ -755,7 +591,7 @@ pub const Map = struct {
         return sampleGrad(&self.height, self.half, px, pz);
     }
 
-    /// Has the ground been sculpted at all? What lets the renderer keep the old single-quad plane.
+    /// Has the ground been sculpted at all?
     pub fn anyHeight(self: *const Map) bool {
         for (self.height) |v| {
             if (v != HEIGHT_ZERO) return true;
@@ -769,19 +605,7 @@ pub const Map = struct {
         return .{ -self.half + @as(f32, @floatFromInt(ix)) * step, -self.half + @as(f32, @floatFromInt(iz)) * step };
     }
 
-    /// SCULPT the ground under a brush. `amount` is metres for raise/lower and a 0..1 strength for
-    /// smooth/flatten; returns whether anything changed (so a stroke that achieves nothing banks no
-    /// undo step, exactly like `paintSoil`).
-    ///
-    /// The falloff is a SMOOTHSTEP over the radius, not a disc: a flat-topped brush leaves a cylinder
-    /// with a vertical wall around it — unwalkable by construction, so every stroke would need
-    /// smoothing afterwards to be usable at all. Cosine-shouldered, the raise brush alone already
-    /// produces banks you can climb.
-    ///
-    /// `out` receives the rect of lattice points touched (lo x, lo z, hi x, hi z inclusive) so the
-    /// caller can rebuild just those terrain chunks; it is the whole grid's worth of nothing when the
-    /// stroke misses. Reported even when nothing CHANGED — a caller that only rebuilt on a change
-    /// would be right, but the rect is also what the editor draws its brush ring from.
+    /// SCULPT the ground under a brush.
     pub fn sculpt(self: *Map, px: f32, pz: f32, radius: f32, mode: Sculpt, amount: f32, out: *[4]usize) bool {
         const step = 2 * self.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
         const r = mathx.maxF(radius, step * 0.5);
@@ -793,13 +617,7 @@ pub const Map = struct {
         const hi = xs[1];
         const zlo = zs[0];
         const zhi = zs[1];
-        // FLATTEN's target and SMOOTH's source are both read BEFORE anything is written: a flatten
-        // that re-read its own output would creep the target as the brush moved, and a smooth done in
-        // place is a directional blur that drags the terrain toward the direction the loops run.
-        // BOTH AXES need a pre-pass, and only x used to have one: the row above (iz−1) has ALREADY
-        // been rewritten by this same stroke, so reading `self.height` for `zm` fed the smooth its own
-        // output and dragged the terrain toward +z — the exact fault `before` exists to prevent, one
-        // axis over. `above` carries that row's pre-values forward instead.
+        // FLATTEN's target and SMOOTH's source are both read BEFORE anything is written: a flatten that re-read its own output would creep the target as the brush moved, and a smooth done in place is a directional blur that drags the terrain toward the direction the loops run.
         const target = self.heightAt(px, pz);
         var before: [HEIGHT_N]f32 = undefined; // row iz's heights as they were before this stroke…
         var above: [HEIGHT_N]f32 = undefined; // …and row iz−1's, which the loop has since overwritten
@@ -807,8 +625,7 @@ pub const Map = struct {
         var iz = zlo;
         while (iz <= zhi) : (iz += 1) {
             if (mode == .smooth) {
-                // The first row's neighbour above is outside the stroke and so still untouched; every
-                // later row takes the copy the previous iteration left in `before`.
+                // The first row's neighbour above is outside the stroke and so still untouched; every later row takes the copy the previous iteration left in `before`.
                 if (iz == zlo) {
                     if (iz > 0) {
                         for (0..HEIGHT_N) |ix| above[ix] = heightOf(self.height[(iz - 1) * HEIGHT_N + ix]);
@@ -831,10 +648,7 @@ pub const Map = struct {
                     .raise => cur + amount * fall,
                     .lower => cur - amount * fall,
                     .flatten => mathx.lerpF(cur, target, mathx.clampF(amount, 0, 1) * fall),
-                    // The 4-neighbour mean, entirely from PRE-STROKE values: this row and the one
-                    // above out of the two pre-pass buffers, the row below straight from the field
-                    // (the loop has not reached it yet). Edge points reuse themselves, which leaves
-                    // the rim where it is instead of pulling it toward a neighbour that does not exist.
+                    // The 4-neighbour mean, entirely from PRE-STROKE values: this row and the one above out of the two pre-pass buffers, the row below straight from the field (the loop has not reached it yet).
                     .smooth => blk: {
                         const xm = if (ix > 0) before[ix - 1] else cur;
                         const xp = if (ix + 1 < HEIGHT_N) before[ix + 1] else cur;
@@ -863,7 +677,6 @@ pub const Map = struct {
     }
 };
 
-// ── writing ────────────────────────────────────────────────────────────────────────────
 
 pub fn write(m: *const Map, w: anytype) !void {
     try w.print("version: {d}\n", .{VERSION});
@@ -884,9 +697,7 @@ pub fn write(m: *const Map, w: anytype) !void {
 
     for (m.ops[0..m.nops]) |*o| try writeOp(o, w);
 
-    // The soil grid, RUN-LENGTH encoded: 4096 cells that are almost all the same value, so
-    // runs turn a 4 KB wall of digits into a handful of readable lines. Omitted entirely when
-    // nothing is painted, which is the common case and keeps a fresh map clean.
+    // The soil grid, RUN-LENGTH encoded: 4096 cells that are almost all the same value, so runs turn a 4 KB wall of digits into a handful of readable lines.
     var anyPaint = false;
     for (m.soil) |v| {
         if (v != 0) {
@@ -897,9 +708,7 @@ pub fn write(m: *const Map, w: anytype) !void {
     if (anyPaint) {
         try w.writeAll("\n");
         try writeGrid(w, "soil", &m.soil);
-        // …and its COVERAGE, only when some of it is not solid. A map painted entirely at full strength
-        // RLEs to a single run of 255 and gains nothing by carrying it, so the common case writes no
-        // record at all and an older reader loses nothing by not knowing about this one.
+        // …and its COVERAGE, only when some of it is not solid.
         for (m.soilCov) |c| {
             if (c != COV_FULL) {
                 try writeGrid(w, "soilcov", &m.soilCov);
@@ -907,16 +716,12 @@ pub fn write(m: *const Map, w: anytype) !void {
             }
         }
     }
-    // …and the water mask the same way. All three grids are RLE because all three are mostly one
-    // value; the shared writer is what keeps the records from drifting into different encodings.
+    // …and the water mask the same way.
     if (m.anyWater()) {
         try w.writeAll("\n");
         try writeGrid(w, "water", &m.water);
     }
-    // …and the SCULPTED GROUND. Omitted for a flat map, which is why adding elevation did not touch a
-    // single existing world file. A sculpted one is the biggest record in the format by far — heights
-    // vary continuously, so the runs are short — and that is the honest cost of storing a shape
-    // instead of the ops that made it.
+    // …and the SCULPTED GROUND.
     if (m.anyHeight()) {
         try w.writeAll("\n");
         try writeGrid(w, "hgt", &m.height);
@@ -937,9 +742,7 @@ fn writeOp(o: *const Op, w: anytype) !void {
                 try w.writeAll(" ");
                 try writeTail(w, @field(o, name));
             }
-            // The tail carries only what differs from this kind's DEFAULTS, so a plain belt stays one
-            // short line and every key in a file is a decision somebody made. Positionals are excluded
-            // per-kind — emitting one here too would write `kind=fern` after the fern in column one.
+            // The tail carries only what differs from this kind's DEFAULTS, so a plain belt stays one short line and every key in a file is a decision somebody made.
             inline for (@typeInfo(Op).@"struct".fields) |f| {
                 if (comptime canTail(k, f.name)) {
                     if (!eqlVal(@field(o, f.name), @field(d, f.name))) {
@@ -964,9 +767,7 @@ fn writeOp(o: *const Op, w: anytype) !void {
     try w.writeAll("\n");
 }
 
-/// One painted grid, RUN-LENGTH encoded: thousands of cells that are almost all the same value, so
-/// runs turn a wall of digits into a handful of readable lines. Wrapped at 16 runs a line; the reader
-/// carries a running cursor, so where it wraps is not part of the format.
+/// One painted grid, RUN-LENGTH encoded: thousands of cells that are almost all the same value, so runs turn a wall of digits into a handful of readable lines.
 fn writeGrid(w: anytype, label: []const u8, cells: []const u8) !void {
     var i: usize = 0;
     var perLine: usize = 0;
@@ -1015,7 +816,6 @@ fn writeTail(w: anytype, v: anytype) !void {
     }
 }
 
-// ── reading ────────────────────────────────────────────────────────────────────────────
 
 pub const ParseError = error{
     BadVersion,
@@ -1032,8 +832,7 @@ pub const ParseError = error{
     NoCoverOp,
 };
 
-/// Parse a whole map. `lineOut` receives the 1-based line number a failure landed on, so the
-/// editor's load error can point at it instead of just saying the file is bad.
+/// Parse a whole map.
 pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     m.* = .{};
     var seenVersion = false;
@@ -1070,21 +869,16 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             m.clearings[m.nclearings] = .{ .x = try nextFloat(&it), .z = try nextFloat(&it), .r = try nextFloat(&it) };
             m.nclearings += 1;
         } else if (std.mem.eql(u8, rec, "soil")) {
-            // Runs continue ACROSS lines — `soilAt` is a running cursor over the whole grid, so
-            // the writer can wrap wherever it likes and a hand-edited file can too.
+            // Runs continue ACROSS lines — `soilAt` is a running cursor over the whole grid, so the writer can wrap wherever it likes and a hand-edited file can too.
             soilAt = try readGrid(&it, &m.soil, soilAt, Soil.N);
         } else if (std.mem.eql(u8, rec, "soilcov")) {
-            // Every byte is a legal coverage, so 256 like the heights. A map with no such record keeps
-            // the field's `COV_FULL` default and paints solid, which is what every world written before
-            // this record existed means (see COV_FULL).
+            // Every byte is a legal coverage, so 256 like the heights.
             covAt = try readGrid(&it, &m.soilCov, covAt, 256);
         } else if (std.mem.eql(u8, rec, "water")) {
-            // The mask is one bit wide, so the ceiling is 2 — anything else in the file is a typo,
-            // and a stray 7 would otherwise become "very wet" in whatever reads it next.
+            // The mask is one bit wide, so the ceiling is 2 — anything else in the file is a typo, and a stray 7 would otherwise become "very wet" in whatever reads it next.
             waterAt = try readGrid(&it, &m.water, waterAt, 2);
         } else if (std.mem.eql(u8, rec, "hgt")) {
-            // EVERY byte is a legal height, so the ceiling is 256 — which is why `readGrid` takes a
-            // u16 limit rather than the u8 the other two grids need.
+            // EVERY byte is a legal height, so the ceiling is 256 — which is why `readGrid` takes a u16 limit rather than the u8 the other two grids need.
             hgtAt = try readGrid(&it, &m.height, hgtAt, 256);
         } else if (std.mem.eql(u8, rec, "foe")) {
             if (m.nfoes >= MAX_FOES) return ParseError.TooManyFoes;
@@ -1106,17 +900,14 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
         }
     }
     if (!seenVersion) return ParseError.BadVersion;
-    // A map with no cover op has no ground cover, which LOOKS like a load failure and isn't — so it is
-    // one. Same reasoning as env's caps: fail loudly at the cause.
+    // A map with no cover op has no ground cover, which LOOKS like a load failure and isn't — so it is one.
     for (m.ops[0..m.nops]) |o| {
         if (o.op == .cover) return;
     }
     return ParseError.NoCoverOp;
 }
 
-/// One RLE grid record, continuing from `at` and returning the new cursor. `lim` is the exclusive
-/// ceiling on a cell value — a value past it is a corrupt file, not a new material. A u16, because the
-/// height grid's ceiling is 256: every byte is a legal elevation, and a u8 limit cannot say so.
+/// One RLE grid record, continuing from `at` and returning the new cursor.
 fn readGrid(it: *std.mem.TokenIterator(u8, .any), cells: []u8, at: usize, lim: u16) !usize {
     var cur = at;
     while (it.next()) |tok| {
@@ -1124,9 +915,7 @@ fn readGrid(it: *std.mem.TokenIterator(u8, .any), cells: []u8, at: usize, lim: u
         const v = std.fmt.parseInt(u8, tok[0..xi], 10) catch return ParseError.BadNumber;
         const run = std.fmt.parseInt(usize, tok[xi + 1 ..], 10) catch return ParseError.BadNumber;
         if (v >= lim) return ParseError.BadKind;
-        // SUBTRACT, never add: `run` is a usize parsed straight out of the file, so `cur + run`
-        // overflows on any run near usize's ceiling — an integer-overflow panic in Debug, and in
-        // ReleaseFast a wrapped comparison that passes and then @memsets a wrapped range.
+        // SUBTRACT, never add: `run` is a usize parsed straight out of the file, so `cur + run` overflows on any run near usize's ceiling — an integer-overflow panic in Debug, and in ReleaseFast a wrapped comparison that passes and then @memsets a wrapped range.
         if (run > cells.len - cur) return ParseError.ExtraField;
         @memset(cells[cur .. cur + run], v);
         cur += run;
@@ -1145,8 +934,7 @@ fn parseZone(it: *std.mem.TokenIterator(u8, .any)) !Zone {
     z.z1 = try nextFloat(it);
     z.density = try nextFloat(it);
     z.nmix = try parseMix(it.next() orelse return ParseError.MissingField, &z.mix);
-    // A zone with no mix grows NOTHING, and `zoneAt` hands it out as the fallback for every point it
-    // covers — a bald region, a long way from the line. (A token of pure separators parses to 0.)
+    // A zone with no mix grows NOTHING, and `zoneAt` hands it out as the fallback for every point it covers — a bald region, a long way from the line.
     if (z.nmix == 0) return ParseError.MissingField;
     if (it.next() != null) return ParseError.ExtraField;
     return z;
@@ -1190,9 +978,7 @@ fn parseOp(kind: OpKind, it: *std.mem.TokenIterator(u8, .any)) !Op {
     return o;
 }
 
-/// A chest's contents. `parseMix`'s shape over `item.Kind` — and an UNKNOWN TAG IS A LOAD ERROR, like
-/// every other unknown name in this format: silently dropping an item you cannot spell means the chest
-/// you authored quietly holds less than the file says.
+/// A chest's contents.
 fn parseLoot(s: []const u8, out: *[MAX_LOOT]item.Kind) !u8 {
     var n: u8 = 0;
     var parts = std.mem.splitScalar(u8, s, ',');
@@ -1224,9 +1010,7 @@ fn parseVal(comptime T: type, tok: []const u8) !T {
         .@"enum" => try enumFromName(T, tok),
         .float => try finiteFloat(T, tok),
         .int => std.fmt.parseInt(T, tok, 10) catch ParseError.BadNumber,
-        // Anything else is a LOAD ERROR, not `false`: leniency here meant `field=yes` or a typo like
-        // `field=ture` read as OFF, silently taking a belt off the cover field with nothing pointing at
-        // the line. Same rule as an unknown key.
+        // Anything else is a LOAD ERROR, not `false`: leniency here meant `field=yes` or a typo like `field=ture` read as OFF, silently taking a belt off the cover field with nothing pointing at the line.
         .bool => blk: {
             if (std.mem.eql(u8, tok, "1") or std.mem.eql(u8, tok, "true")) break :blk true;
             if (std.mem.eql(u8, tok, "0") or std.mem.eql(u8, tok, "false")) break :blk false;
@@ -1254,20 +1038,15 @@ fn parseVal(comptime T: type, tok: []const u8) !T {
     };
 }
 
-// ── files ──────────────────────────────────────────────────────────────────────────────
 
 pub const DIR = "worlds";
-/// BUILT from `DIR` and `EXT` rather than re-spelling them: the shipped map's path had the directory
-/// written out a second time, so moving the maps meant finding both.
+/// BUILT from `DIR` and `EXT` rather than re-spelling them: the shipped map's path had the directory written out a second time, so moving the maps meant finding both.
 pub const START_MAP = DIR ++ "/01_fallen_plain" ++ EXT;
 
-// One scratch buffer for whole-file reads — a map is a few tens of KB, and a file-level buffer keeps
-// load/save off the allocator like everything else here.
+// One scratch buffer for whole-file reads — a map is a few tens of KB, and a file-level buffer keeps load/save off the allocator like everything else here.
 var textBuf: [1 << 20]u8 = undefined;
 
-/// `load` parses HERE and copies out only on SUCCESS. `parse` blanks its destination on the first line,
-/// so parsing straight into the caller's map left a half-loaded world behind on any error — and the
-/// editor went on editing a map that no longer matched the one on screen.
+/// `load` parses HERE and copies out only on SUCCESS.
 var loadScratch: Map = undefined;
 
 pub fn load(path: []const u8, m: *Map, lineOut: *usize) !void {
@@ -1279,9 +1058,7 @@ pub fn load(path: []const u8, m: *Map, lineOut: *usize) !void {
     m.* = loadScratch;
 }
 
-/// Load the world or DIE, printing the file and the line. Deliberately NOT a fallback to a built-in
-/// default: the map IS the world, so quietly running a different one hides the fault behind a world
-/// nobody authored. Same rule as env's caps — fail at the cause.
+/// Load the world or DIE, printing the file and the line.
 pub fn loadOrPanic(path: []const u8, m: *Map) void {
     var line: usize = 0;
     load(path, m, &line) catch |e| {
@@ -1294,20 +1071,17 @@ pub const EXT = ".world";
 pub const MAX_FILES: usize = 64;
 pub const PATH_CAP: usize = 96;
 
-/// The maps on disk. Fixed storage like everything else here; a directory with more than MAX_FILES maps
-/// lists the first MAX_FILES rather than failing.
+/// The maps on disk.
 pub const Listing = struct {
     names: [MAX_FILES][PATH_CAP]u8 = undefined,
     n: usize = 0,
 
-    /// NUL-terminated, because the UI list wants `[:0]const u8`. Safe because `scan` zeroes each slot
-    /// before copying and always leaves the final byte clear.
+    /// NUL-terminated, because the UI list wants `[:0]const u8`.
     pub fn name(self: *const Listing, i: usize) [:0]const u8 {
         return std.mem.span(@as([*:0]const u8, @ptrCast(&self.names[i])));
     }
 
-    /// Rescan `worlds/`. A missing directory is an EMPTY listing, not an error — just a project that
-    /// hasn't saved a map yet.
+    /// Rescan `worlds/`.
     pub fn scan(self: *Listing) void {
         self.n = 0;
         var dir = std.fs.cwd().openDir(DIR, .{ .iterate = true }) catch return;
@@ -1322,8 +1096,7 @@ pub const Listing = struct {
             @memcpy(self.names[self.n][0..len], e.name[0..len]);
             self.n += 1;
         }
-        // Lexicographic, so the list is stable between scans instead of following whatever
-        // order the filesystem happens to hand back.
+        // Lexicographic, so the list is stable between scans instead of following whatever order the filesystem happens to hand back.
         std.mem.sort([PATH_CAP]u8, self.names[0..self.n], {}, struct {
             fn lt(_: void, a: [PATH_CAP]u8, b: [PATH_CAP]u8) bool {
                 return std.mem.order(u8, std.mem.sliceTo(&a, 0), std.mem.sliceTo(&b, 0)) == .lt;
@@ -1332,8 +1105,7 @@ pub const Listing = struct {
     }
 };
 
-/// Build `worlds/<slug>.world` from a typed name. Anything non-alphanumeric becomes an underscore, so a
-/// name with a slash or a colon can neither escape the directory nor produce a path the OS refuses.
+/// Build `worlds/<slug>.world` from a typed name.
 pub fn pathFor(dst: []u8, name: []const u8) []const u8 {
     var n: usize = 0;
     for (DIR) |c| {
@@ -1347,8 +1119,7 @@ pub fn pathFor(dst: []u8, name: []const u8) []const u8 {
         n += 1;
     }
     const stem = n; // where the NAME starts. The emptiness test below is against THIS, not 0: `n`
-    // already carries "worlds/", and a name of pure punctuation would otherwise slip past the fallback
-    // and produce the hidden file "worlds/.world".
+    // already carries "worlds/", and a name of pure punctuation would otherwise slip past the fallback and produce the hidden file "worlds/.world".
     var lastUnderscore = true; // also trims leading separators
     for (name) |c| {
         if (n + EXT.len >= dst.len) break;
@@ -1360,11 +1131,7 @@ pub fn pathFor(dst: []u8, name: []const u8) []const u8 {
     }
     if (n > stem and dst[n - 1] == '_') n -= 1; // no trailing separator
     if (n == stem) { // a name of pure punctuation still has to land somewhere
-        // BOUNDED, like the loops either side of it. This was the one unchecked write in the
-        // function whose whole job is making an untrusted typed name safe: on a `dst` too short to
-        // hold "worlds/" + "untitled" + ".world" it ran straight off the end. Every caller passes a
-        // PATH_CAP buffer today, so nothing has ever hit it — which is exactly why it would have
-        // stayed until something passed a smaller one.
+        // BOUNDED, like the loops either side of it.
         for ("untitled") |c| {
             if (n + EXT.len >= dst.len) break;
             dst[n] = c;
@@ -1388,12 +1155,10 @@ pub fn save(path: []const u8, m: *const Map) !void {
     try buf.flush();
 }
 
-// ── shared plumbing ────────────────────────────────────────────────────────────────────
 
 /// Is `name` one of this kind's required positionals?
 fn isPositional(comptime k: OpKind, comptime name: []const u8) bool {
-    // The field walk is O(op kinds x Op fields x name length) string compares at comptime, and
-    // the default 1000-branch budget is spent well before it finishes.
+    // The field walk is O(op kinds x Op fields x name length) string compares at comptime, and the default 1000-branch budget is spent well before it finishes.
     @setEvalBranchQuota(20000);
     for (fieldsOf(k)) |f| {
         if (std.mem.eql(u8, f, name)) return true;
@@ -1401,13 +1166,10 @@ fn isPositional(comptime k: OpKind, comptime name: []const u8) bool {
     return false;
 }
 
-/// May `name` appear in this kind's optional key=value tail? Everything except the
-/// discriminator, the mix (written as one `mix=` key) and the kind's own positionals — so
-/// exactly one place in the line can ever set a given field, in both directions.
+/// May `name` appear in this kind's optional key=value tail?
 fn canTail(comptime k: OpKind, comptime name: []const u8) bool {
     @setEvalBranchQuota(20000);
-    // The array-plus-count pairs are written by hand as their own `key=` tail (see writeOp), so the
-    // generic field walk must not also try to emit them — an `[8]item.Kind` has no `writeTail` form.
+    // The array-plus-count pairs are written by hand as their own `key=` tail (see writeOp), so the generic field walk must not also try to emit them — an `[8]item.Kind` has no `writeTail` form.
     const never = [_][]const u8{ "op", "mix", "nmix", "loot", "nloot" };
     for (never) |n| {
         if (std.mem.eql(u8, n, name)) return false;
@@ -1426,10 +1188,7 @@ fn enumFromName(comptime T: type, s: []const u8) !T {
     return std.meta.stringToEnum(T, s) orelse ParseError.BadKind;
 }
 
-/// REFUSE a non-finite float. `parseFloat` accepts "nan" and "inf" and neither survives the world: a
-/// NaN x/z walks straight through `env.cellCoord`'s `f <= 0` guard into `@intFromFloat` (illegal
-/// behaviour), a NaN `seed` does the same in `frog.spawn`, and an infinite `half:` overflows the cover
-/// lattice's count — all a long way from the line that caused it.
+/// REFUSE a non-finite float.
 fn finiteFloat(comptime T: type, tok: []const u8) !T {
     const v = std.fmt.parseFloat(T, tok) catch return ParseError.BadNumber;
     if (!std.math.isFinite(v)) return ParseError.BadNumber;
@@ -1454,7 +1213,6 @@ fn trim(s: []const u8) []const u8 {
     return std.mem.trim(u8, s, " \t\r\n");
 }
 
-// ── tests ──────────────────────────────────────────────────────────────────────────────
 
 test "an op round-trips through write and parse" {
     var m = Map{};
@@ -1507,8 +1265,7 @@ test "the soil grid and foe records survive a round trip" {
     m.blank("Round Trip");
     // A painted patch plus a lone cell, so both a long run and a one-cell run are exercised.
     _ = m.paintSoil(0, 0, 30, .stone, 1);
-    // …and a FAINT patch beside it, so the coverage grid gets a round trip of its own rather than
-    // riding along as a single run of 255 that would pass whether it were written or not.
+    // …and a FAINT patch beside it, so the coverage grid gets a round trip of its own rather than riding along as a single run of 255 that would pass whether it were written or not.
     _ = m.paintSoil(-60, 40, 20, .moss, 0.4);
     m.soil[SOIL_CELLS - 1] = @intFromEnum(Soil.ash);
     m.foes[0] = .{ .kind = .ogre, .x = 3, .z = -50, .yaw = 90, .scale = 1.2, .seed = 0.4 };
@@ -1533,9 +1290,7 @@ test "COVERAGE: an untouched grid costs no record, and the four rules the brush 
     defer std.testing.allocator.destroy(m);
     m.blank("Floors");
 
-    // A MAP THAT NEVER USED THE BRUSH CARRIES NO `soilcov` RECORD — the same rule the flat map's heights
-    // follow, and what keeps a world authored before coverage existed byte-identical after a re-save.
-    // Written into the id grid directly, which is exactly what such a file parses to.
+    // A MAP THAT NEVER USED THE BRUSH CARRIES NO `soilcov` RECORD — the same rule the flat map's heights follow, and what keeps a world authored before coverage existed byte-identical after a re-save.
     m.soil[10] = @intFromEnum(Soil.dirt);
     {
         var buf: [1 << 18]u8 = undefined;
@@ -1544,8 +1299,7 @@ test "COVERAGE: an untouched grid costs no record, and the four rules the brush 
         try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "soilcov:") == null);
     }
 
-    // …but a STROKE always writes one, because a stroke always has a soft rim. That is the feature,
-    // not an accident: paint at full strength and the margin is still a margin.
+    // …but a STROKE always writes one, because a stroke always has a soft rim.
     _ = m.paintSoil(0, 0, 40, .stone, 1);
     {
         var buf: [1 << 18]u8 = undefined;
@@ -1554,34 +1308,26 @@ test "COVERAGE: an untouched grid costs no record, and the four rules the brush 
         try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "soilcov:") != null);
     }
 
-    // SOLID IN THE MIDDLE — the brush's core, and the thing a pure cone could not give at a 5 m
-    // lattice (see BRUSH_CORE). "Paint at 100%" has to mean it somewhere.
+    // SOLID IN THE MIDDLE — the brush's core, and the thing a pure cone could not give at a 5 m lattice (see BRUSH_CORE).
     const mid = m.soilIndex(0, 0).?;
     try std.testing.expectEqual(COV_FULL, m.soilCov[mid]);
 
-    // 1. PAINTING BELOW WHAT IS THERE PULLS IT DOWN — opacity is adjustable anywhere, not just at an
-    //    edge, which is the whole of "or wherever really".
     _ = m.paintSoil(0, 0, 40, .stone, 0.4);
     try std.testing.expect(m.soilCov[mid] < 200);
-    // 2. …and passing over repeatedly CONVERGES ON THE DIAL rather than running away from it, which is
-    //    the property that makes a hold-and-sweep brush usable at all.
+    // 2. …and passing over repeatedly CONVERGES ON THE DIAL rather than running away from it, which is the property that makes a hold-and-sweep brush usable at all.
     for (0..8) |_| _ = m.paintSoil(0, 0, 40, .stone, 0.4);
     try std.testing.expectApproxEqAbs(@as(f32, 0.4), covF(m.soilCov[mid]), 0.01);
 
-    // 3. A FAINT STROKE DOES NOT EAT A SOLID FLOOR. The centre cell is 40% stone; moss at 10% loses it.
     _ = m.paintSoil(0, 0, 40, .moss, 0.1);
     try std.testing.expectEqual(@intFromEnum(Soil.stone), m.soil[mid]);
     // …while a solid one takes it immediately.
     _ = m.paintSoil(0, 0, 40, .moss, 1);
     try std.testing.expectEqual(@intFromEnum(Soil.moss), m.soil[mid]);
-    // …AND SOLID OVER SOLID STILL TAKES IT. Both sides compute full coverage here, so this is the tie
-    // the contest has to give to the newer stroke — losing it meant a full-strength brush was a no-op
-    // over ground already painted full strength, which is the single most ordinary thing to try.
+    // …AND SOLID OVER SOLID STILL TAKES IT.
     _ = m.paintSoil(0, 0, 40, .dirt, 1);
     try std.testing.expectEqual(@intFromEnum(Soil.dirt), m.soil[mid]);
     try std.testing.expectEqual(COV_FULL, m.soilCov[mid]);
 
-    // 4. THE ERASER IS NOT A WEAK PAINT — it clears outright, coverage and all, and is never contested.
     _ = m.paintSoil(0, 0, 40, .none, 1);
     try std.testing.expectEqual(@as(u8, 0), m.soil[mid]);
     try std.testing.expectEqual(COV_FULL, m.soilCov[mid]);
@@ -1599,16 +1345,13 @@ test "the height field round-trips, and a FLAT map writes no height record at al
     defer std.testing.allocator.destroy(back);
     m.blank("Hills");
 
-    // A FLAT map must not carry the record. This is what kept every existing world file byte-identical
-    // when elevation arrived, and it is also 50 KB of RLE nobody wants in a diff for a plain.
+    // A FLAT map must not carry the record.
     {
         var buf: [1 << 18]u8 = undefined;
         var fbs = std.io.fixedBufferStream(&buf);
         try write(m, fbs.writer());
         try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "hgt:") == null);
-        // …and it loads back FLAT, not at the bottom of the encoding's range. The grid's default is the
-        // datum byte, so a `.{}`-initialised map is ground level; defaulting to 0 would sink the world
-        // HEIGHT_MIN metres and every prop with it.
+        // …and it loads back FLAT, not at the bottom of the encoding's range.
         var line: usize = 0;
         try parse(fbs.getWritten(), back, &line);
         try std.testing.expect(!back.anyHeight());
@@ -1616,8 +1359,7 @@ test "the height field round-trips, and a FLAT map writes no height record at al
         try std.testing.expectApproxEqAbs(@as(f32, 0), back.heightAt(-190, 77), 1e-6);
     }
 
-    // Now sculpt: a hill, a hollow beside it, and one lattice point set by hand at the far corner so a
-    // one-cell run is exercised as well as long ones.
+    // Now sculpt: a hill, a hollow beside it, and one lattice point set by hand at the far corner so a one-cell run is exercised as well as long ones.
     var span: [4]usize = undefined;
     try std.testing.expect(m.sculpt(-40, 20, 30, .raise, 9.0, &span));
     try std.testing.expect(m.sculpt(30, -10, 18, .lower, 4.0, &span));
@@ -1630,8 +1372,7 @@ test "the height field round-trips, and a FLAT map writes no height record at al
     var line: usize = 0;
     try parse(fbs.getWritten(), back, &line);
     try std.testing.expectEqualSlices(u8, &m.height, &back.height);
-    // …and the SHAPE survived, not just the bytes: the hill is up, the hollow is down, and untouched
-    // ground between them is still exactly zero.
+    // …and the SHAPE survived, not just the bytes: the hill is up, the hollow is down, and untouched ground between them is still exactly zero.
     try std.testing.expect(back.heightAt(-40, 20) > 8.0);
     try std.testing.expect(back.heightAt(30, -10) < -3.0);
     try std.testing.expectApproxEqAbs(@as(f32, 0), back.heightAt(0, 200), 1e-6);
@@ -1643,8 +1384,7 @@ test "sculpt: the brush tapers, respects its radius, and cannot leave the encodi
     m.blank("Sculpt");
     var span: [4]usize = undefined;
 
-    // A single raise: full bite in the middle, LESS at the rim, nothing outside it. The taper is what
-    // makes a stroke walkable at all — a flat-topped brush leaves a vertical wall round a cylinder.
+    // A single raise: full bite in the middle, LESS at the rim, nothing outside it.
     _ = m.sculpt(0, 0, 20, .raise, 6.0, &span);
     const mid = m.heightAt(0, 0);
     const edge = m.heightAt(17, 0);
@@ -1657,22 +1397,17 @@ test "sculpt: the brush tapers, respects its radius, and cannot leave the encodi
     const spike = m.heightAt(60, 0);
     _ = m.sculpt(60, 0, 7, .smooth, 1.0, &span);
     try std.testing.expect(m.heightAt(60, 0) < spike - 0.5);
-    // …and a PLATEAU is left where it is, because its neighbours are already at its own height. That
-    // asymmetry is the whole reason smoothing is safe to sweep over ground you have already shaped:
-    // it takes the lumps out of a bank without eroding the terrace beside it.
+    // …and a PLATEAU is left where it is, because its neighbours are already at its own height.
     const plateau = m.heightAt(0, 0);
     _ = m.sculpt(0, 0, 20, .smooth, 1.0, &span);
     try std.testing.expectApproxEqAbs(plateau, m.heightAt(0, 0), HEIGHT_STEP);
 
-    // FLATTEN takes the ground toward the height under the brush CENTRE — so a stroke started on the
-    // dome's top pulls its shoulder UP to that height rather than cutting the top off. A few passes,
-    // because one pass moves each point most of the way and the taper leaves the rim behind.
+    // FLATTEN takes the ground toward the height under the brush CENTRE — so a stroke started on the dome's top pulls its shoulder UP to that height rather than cutting the top off.
     var f: usize = 0;
     while (f < 6) : (f += 1) _ = m.sculpt(0, 0, 20, .flatten, 1.0, &span);
     try std.testing.expectApproxEqAbs(m.heightAt(0, 0), m.heightAt(10, 0), 0.3);
 
-    // …and no amount of digging can leave the byte range. A clamp that wrapped would put a pit at the
-    // top of a mountain.
+    // …and no amount of digging can leave the byte range.
     var i: usize = 0;
     while (i < 40) : (i += 1) _ = m.sculpt(0, 0, 20, .lower, 12.0, &span);
     try std.testing.expect(m.heightAt(0, 0) >= HEIGHT_MIN - 1e-4);
@@ -1680,8 +1415,7 @@ test "sculpt: the brush tapers, respects its radius, and cannot leave the encodi
     while (i < 80) : (i += 1) _ = m.sculpt(0, 0, 20, .raise, 12.0, &span);
     try std.testing.expect(m.heightAt(0, 0) <= HEIGHT_MAX + 1e-4);
 
-    // A stroke that MISSES the grid changes nothing and reports an empty rect, so a caller's rebuild
-    // loops don't run (and don't index a wild range).
+    // A stroke that MISSES the grid changes nothing and reports an empty rect, so a caller's rebuild loops don't run (and don't index a wild range).
     var out: [4]usize = undefined;
     try std.testing.expect(!m.sculpt(9000, 9000, 5, .raise, 4, &out));
     try std.testing.expect(out[0] > out[2] and out[1] > out[3]);
@@ -1691,9 +1425,7 @@ test "the height sampler is bilinear, edge-clamped, and its gradient points UPHI
     const m = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(m);
     m.blank("Ramp");
-    // A ramp built by hand: height rises with the x index, nothing varies in z. Every sampled value in
-    // between must land ON that ramp — a nearest-neighbour lookup would give a staircase instead, and
-    // the hero would climb 2.5 m-wide steps up a slope that is supposed to be smooth.
+    // A ramp built by hand: height rises with the x index, nothing varies in z.
     for (0..HEIGHT_N) |iz| {
         for (0..HEIGHT_N) |ix| {
             m.height[iz * HEIGHT_N + ix] = heightByte(@as(f32, @floatFromInt(ix)) * 0.25);
@@ -1702,23 +1434,20 @@ test "the height sampler is bilinear, edge-clamped, and its gradient points UPHI
     const step = 2 * m.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
     const x0 = -m.half + 10 * step;
     try std.testing.expectApproxEqAbs(@as(f32, 2.5), m.heightAt(x0, 0), 1e-3);
-    // …and half a cell along is half a step up. THE bilinear claim.
+    // …and half a cell along is half a step up.
     try std.testing.expectApproxEqAbs(@as(f32, 2.625), m.heightAt(x0 + step * 0.5, 0), 1e-3);
-    // Off the grid entirely, the edge height CONTINUES rather than dropping to zero: an actor at the
-    // world's bound must not fall off a lip that only exists because the field ran out.
+    // Off the grid entirely, the edge height CONTINUES rather than dropping to zero: an actor at the world's bound must not fall off a lip that only exists because the field ran out.
     try std.testing.expectApproxEqAbs(m.heightAt(-m.half, 0), m.heightAt(-m.half - 60, 0), 1e-4);
     try std.testing.expectApproxEqAbs(m.heightAt(m.half, 0), m.heightAt(m.half + 60, 0), 1e-4);
 
-    // The gradient: +x is uphill here, z is flat. Its LENGTH is the tangent of the slope angle, which
-    // is what the walkable test compares against — 0.25 m per 2.5 m cell is 0.1.
+    // The gradient: +x is uphill here, z is flat.
     const g = m.gradAt(0, 0);
     try std.testing.expectApproxEqAbs(@as(f32, 0.1), g[0], 1e-3);
     try std.testing.expectApproxEqAbs(@as(f32, 0), g[1], 1e-4);
 }
 
 test "blank() produces a map its own loader accepts" {
-    // `New` must hand back something that LOADS: an empty map trips NoCoverOp and shows as bare terrain,
-    // which reads as a rendering bug rather than an empty document.
+    // `New` must hand back something that LOADS: an empty map trips NoCoverOp and shows as bare terrain, which reads as a rendering bug rather than an empty document.
     const m = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(m);
     const back = try std.testing.allocator.create(Map);
@@ -1761,8 +1490,7 @@ test "a value that only LOOKS parseable is a load error too" {
     var m = Map{};
     var ln: usize = 0;
     const cover = "version: 1\ncover: 3.3 0.7 1.4\n";
-    // `field=ture` used to load as OFF and quietly take the belt off the cover field — a whole region
-    // thinning differently, five hundred lines from the typo.
+    // `field=ture` used to load as OFF and quietly take the belt off the cover field — a whole region thinning differently, five hundred lines from the typo.
     try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=ture\n", &m, &ln));
     try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=yes\n", &m, &ln));
     // …and `0`/`false` still mean off, so the writer's own output round-trips.

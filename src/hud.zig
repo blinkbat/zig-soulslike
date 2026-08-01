@@ -4,40 +4,23 @@ const mathx = @import("mathx.zig");
 
 const rgba = mathx.rgba;
 
-// ALL UI text goes through here, in BALTHAZAR (assets/, OFL alongside). Never call rl.drawText or
-// measureText directly, or layout drifts between the font and the fallback. Two atlases of the same face,
-// both sized ABOVE the largest type drawn at them so every draw DOWNscales (an upscaled glyph is the
-// jagged one). Falls back to raylib's default font if the asset is missing; the path is CWD-relative.
+// ALL UI text goes through here, in BALTHAZAR (assets/, OFL alongside).
 var haveFont = false;
 var font: rl.Font = undefined;
 var haveBig = false;
 var fontBig: rl.Font = undefined;
 
 const FONT_PATH = "assets/Balthazar-Regular.ttf";
-// Atlas resolution, comfortably ABOVE the largest size drawn (TITLE). It was 44, sized for a HUD topping
-// out at 24; at the current sizes that was being magnified and this face's thin strokes broke into
-// stair-steps.
+// Atlas resolution, comfortably ABOVE the largest size drawn (TITLE).
 const ATLAS_PX = 96;
 const ATLAS_BIG_PX = 160; // the cinematic caption atlas (YOU DIED draws near 90 px)
 
-// ── THE TYPE SCALE ── every size comes from here. Scattered literals drift, and "make the text bigger"
-// becomes fifteen edits with no consistency at the end. Balthazar is a light serif, so it wants to be set
-// LARGER than a UI sans would — below ~18 px its detail falls apart.
 pub const TITLE: i32 = 34; // menu card headings (the HUD carries no title — see THE ELDEN RING HUD)
 pub const BODY: i32 = 22; // primary readouts — the debug gait/speed line, menu rows
 pub const SMALL: i32 = 20; // secondary readouts — the debug corner's rows
 pub const HINT: i32 = 19; // the least important line on screen (the menu's control crib)
 
-// MIPMAP THE ATLAS. This is what "jagged" actually was, and the old comment had exactly half the
-// rule: an UPscaled glyph is jagged, yes — but a 96 px glyph drawn at 20 is a 4.8x DOWNscale, and a
-// bilinear fetch only ever reads the four texels nearest one sample point. At that ratio it is
-// skipping four texels out of five, so which part of a thin serif stroke survives is luck, and it
-// changes when the text moves a pixel. That is the shimmer, and it is the same undersampling the
-// scene shader's detail-LOD block exists to fix — a procedural pattern and a font atlas alias for
-// one reason.
-//
-// The fix is the same one too: give it a mip chain and let the hardware pick the level that matches
-// the footprint. Trilinear then blends between levels so a size between two mips doesn't pop.
+// MIPMAP THE ATLAS.
 fn atlas(path: [:0]const u8, px: i32) ?rl.Font {
     var f = rl.loadFontEx(path, px, null) catch return null;
     if (f.glyphCount == 0) return null;
@@ -80,28 +63,19 @@ fn drawStr(s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
     rl.drawTextEx(font, s, .{ .x = @floatFromInt(x), .y = @floatFromInt(y) }, @floatFromInt(size), 0, col);
 }
 
-// Drop shadow for legibility over the 3D scene. It tracks the face alpha, so fading text leaves no black
-// ghost, and its OFFSET SCALES with the size — a fixed 1 px shadow under 30 px type reads as a smudge on
-// the glyph edge rather than depth, which is half of what "jagged" looks like at a glance.
+// Drop shadow for legibility over the 3D scene.
 pub fn text(s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
     const off: i32 = @max(@divTrunc(size, 14), 1);
     drawStr(s, x + off, y + off, size, mathx.withAlpha(rl.Color.black, @intCast(@as(u16, 200) * col.a / 255)));
     drawStr(s, x, y, size, col);
 }
 
-/// Line height for a given size — the vertical step between stacked lines of text. One place, so
-/// a size change doesn't leave the debug overlay's rows overlapping.
+/// Line height for a given size — the vertical step between stacked lines of text.
 pub fn lineH(size: i32) i32 {
     return size + @divTrunc(size, 3);
 }
 
-// ── MONOSPACE (the EDITOR only) ────────────────────────────────────────────────────────
-// A REAL system monospace face — Consolas, then the other Windows-stock fixed-pitch faces, then whatever
-// a non-Windows box has. Numbers line up in a column and a value that grows a digit doesn't shove its row
-// about, which is what an editor needs and what Balthazar (a proportional display serif) is exactly wrong
-// for. Kept OUT of the game's own UI, which stays Balthazar by owner's pick. One atlas well above the
-// drawn size, same rule as the HUD face. raylib's built-in bitmap font is the LAST resort: it is a 10 px
-// pixel font and smears at anything other than an exact integer multiple of its cell.
+// A REAL system monospace face — Consolas, then the other Windows-stock fixed-pitch faces, then whatever a non-Windows box has.
 const MONO_CANDIDATES = [_][:0]const u8{
     "C:/Windows/Fonts/consola.ttf", // Consolas — the good one
     "C:/Windows/Fonts/lucon.ttf", // Lucida Console
@@ -114,14 +88,12 @@ const MONO_ATLAS_PX = 40; // >= 2x MONO, so the editor's text always downscales
 var haveMono = false;
 var monoFont: rl.Font = undefined;
 
-/// The editor's one type size. A TTF now, so this is a free choice rather than a multiple of a
-/// bitmap cell — 18 is where Consolas is dense enough for a panel and still crisp.
+/// The editor's one type size.
 pub const MONO: i32 = 18;
 
 fn initMono() void {
     for (MONO_CANDIDATES) |path| {
-        // `atlas` also rejects a face that "loaded" as raylib's 0-glyph default — take one of those
-        // and every string in the editor measures as nothing.
+        // `atlas` also rejects a face that "loaded" as raylib's 0-glyph default — take one of those and every string in the editor measures as nothing.
         if (atlas(path, MONO_ATLAS_PX)) |f| {
             monoFont = f;
             haveMono = true;
@@ -148,14 +120,12 @@ pub fn monoLineH(size: i32) i32 {
     return size + @divTrunc(size, 4);
 }
 
-/// Right-aligned text ending `pad` px from the right screen edge — the debug corner's row
-/// idiom. Measuring at the call site is how a right-aligned column ends up ragged.
+/// Right-aligned text ending `pad` px from the right screen edge — the debug corner's row idiom.
 pub fn textRight(s: [:0]const u8, pad: i32, y: i32, size: i32, col: rl.Color) void {
     text(s, rl.getScreenWidth() - textW(s, size) - pad, y, size, col);
 }
 
 // Huge letter-spaced caption, CENTERED on (cx, cy) — the cinematic text path (YOU DIED).
-// Drawn from the big atlas; `spacing` is extra px between glyphs at this size.
 pub fn bigCentered(s: [:0]const u8, cx: f32, cy: f32, size: f32, spacing: f32, col: rl.Color) void {
     if (!haveBig) {
         const si: i32 = @intFromFloat(size);
@@ -167,21 +137,9 @@ pub fn bigCentered(s: [:0]const u8, cx: f32, cy: f32, size: f32, spacing: f32, c
     rl.drawTextEx(fontBig, s, .{ .x = cx - m.x * 0.5, .y = cy - m.y * 0.5 }, size, spacing, col);
 }
 
-// ══ THE ELDEN RING HUD ═══════════════════════════════════════════════════════════════════
-// ER puts its furniture in three corners and nowhere else: the vitals bars TOP-LEFT, the armament slot
-// grid BOTTOM-LEFT, and (ours, in place of ER's boss bar and compass) the debug readout TOP-RIGHT. No
-// title, no subtitle, no control crib — the game names itself in the menu.
-//
-// Colours here are LITERAL screen values: the HUD draws after the retro blit and outside the scene
-// shader, so the author-dark / gamma rules governing every mesh colour do not apply.
-//
-// Widths are ER's PROPORTIONS, not its pixels — HP longest and thickest, FP shortest, stamina between.
-// That silhouette is most of what makes the corner read as Elden Ring, so the three must stay different
-// lengths even if the numbers are retuned.
+// ══ THE ELDEN RING HUD ═══════════════════════════════════════════════════════════════════ ER puts its furniture in three corners and nowhere else: the vitals bars TOP-LEFT, the armament slot grid BOTTOM-LEFT, and (ours, in place of ER's boss bar and compass) the debug readout TOP-RIGHT.
 
-/// How far every HUD corner sits off the screen edge. Public because game.zig draws the debug corner and
-/// insets it by the same amount — two separately-tuned margins is how one corner stops lining up with the
-/// other.
+/// How far every HUD corner sits off the screen edge.
 pub const MARGIN: i32 = 30;
 const BAR_TOP: i32 = 24;
 const BAR_GAP: i32 = 6;
@@ -192,15 +150,10 @@ const FP_H: i32 = 11;
 const ST_W: i32 = 232;
 const ST_H: i32 = 11;
 
-// ALPHAS ARE DELIBERATELY SHORT OF OPAQUE (owner's call — the bars and the rune plate read as
-// solid furniture sat on top of the game). ER's own HUD lets the world through its chrome, which is
-// most of why it feels like part of the frame rather than a layer above it. Everything below is
-// pulled back about a fifth: still legible against dry grass, no longer a sticker.
+// ALPHAS ARE DELIBERATELY SHORT OF OPAQUE (owner's call — the bars and the rune plate read as solid furniture sat on top of the game).
 const TRACK = rgba(16, 13, 11, 186); // the empty channel behind every fill
 const FRAME = rgba(116, 104, 84, 210); // the tarnished-metal rim, a hairline outside the track
-// Each bar is THREE values: a flat body, a shaded bottom third, a lit hairline on top. One flat colour is
-// the tell that a bar was drawn rather than designed; a fat centred gradient is the other, reading as a
-// plastic tube.
+// Each bar is THREE values: a flat body, a shaded bottom third, a lit hairline on top.
 const HP_HI = rgba(158, 36, 28, 255);
 const HP_LO = rgba(96, 20, 16, 255);
 const HP_TP = rgba(204, 66, 52, 255);
@@ -212,23 +165,14 @@ const ST_LO = rgba(60, 78, 28, 255);
 const ST_TP = rgba(154, 178, 88, 255);
 const CHIP = rgba(180, 98, 58, 226); // the recent-damage trail behind the HP fill
 
-// THE CHIP BAR, the most ER-identifying thing on screen: the red fill snaps to the new HP the instant you
-// are hit and a paler bar hangs at the OLD value for a beat before draining to meet it, so you read what
-// the blow cost after it has landed. Cosmetic and frame-local, hence module state, not the hero's.
+// THE CHIP BAR, the most ER-identifying thing on screen: the red fill snaps to the new HP the instant you are hit and a paler bar hangs at the OLD value for a beat before draining to meet it, so you read what the blow cost after it has landed.
 var chip: f32 = 1;
 var chipHold: f32 = 0;
 var chipLast: f32 = 1;
 const CHIP_HOLD = 0.42; // seconds the trail hangs before it starts draining
 const CHIP_RATE = 0.55; // …then drains this fraction of the bar per second
 
-/// The three vitals bars, top-left. `dt` drives the chip trail only — pass the fixed shot timestep under
-/// --shot and it stays reproducible. `stamRefused` in 0..1 is how hot the "that action was refused" flag
-/// burns: an empty-bar input does nothing at all in ER, and nothing is indistinguishable from a DROPPED
-/// input, so this is the one place that can say which it was.
-///
-/// `windedTo` is the fraction the bar must reach before a sprint is allowed again, or 0 when it may
-/// sprint now. A HELD state rather than a press-triggered flash, because that is the question the
-/// player is actually asking — "can I run YET" — and it has an answer whether or not a key is down.
+/// The three vitals bars, top-left.
 pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, windedTo: f32) void {
     if (hp > chip) {
         chip = hp; // healing (and a respawn) snaps it — never strand a trail across the bar
@@ -244,9 +188,7 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, windedTo: 
     bar(MARGIN, y, FP_W, FP_H, fp, 0, FP_HI, FP_LO, FP_TP);
     y += FP_H + BAR_GAP;
     bar(MARGIN, y, ST_W, ST_H, stam, 0, ST_HI, ST_LO, ST_TP);
-    // WINDED: the bar carries the mark it has to refill PAST before the sprint comes back, and the
-    // track behind it reads as owed rather than as spare. Drawn under the refusal frame so a refused
-    // input still wins the eye.
+    // WINDED: the bar carries the mark it has to refill PAST before the sprint comes back, and the track behind it reads as owed rather than as spare.
     if (windedTo > 0.001) {
         const wf: f32 = @floatFromInt(ST_W);
         const owed: i32 = @intFromFloat(wf * mathx.clampF(windedTo, 0, 1));
@@ -254,8 +196,7 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, windedTo: 
         if (owed > fill) rl.drawRectangle(MARGIN + fill, y, owed - fill, ST_H, rgba(232, 96, 72, 46));
         rl.drawRectangle(MARGIN + owed - 1, y - 1, 2, ST_H + 2, rgba(240, 150, 120, 210)); // the threshold
     }
-    // The refusal flag lights the stamina bar's own FRAME, over the finished bar and outside its fill —
-    // so an empty bar, which is exactly when this fires and has no fill to tint, still reads loudly.
+    // The refusal flag lights the stamina bar's own FRAME, over the finished bar and outside its fill — so an empty bar, which is exactly when this fires and has no fill to tint, still reads loudly.
     const k = mathx.clampF(stamRefused, 0, 1);
     if (k > 0.001) {
         const a: u8 = @intFromFloat(230 * k);
@@ -265,8 +206,7 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, windedTo: 
 }
 
 fn bar(x: i32, y: i32, w: i32, h: i32, frac: f32, chipFrac: f32, hi: rl.Color, lo: rl.Color, tp: rl.Color) void {
-    // The rim goes OUTSIDE the fill, between the black edge and the track: over the fill it muddies the
-    // lit hairline below and the bar loses its top edge.
+    // The rim goes OUTSIDE the fill, between the black edge and the track: over the fill it muddies the lit hairline below and the bar loses its top edge.
     rl.drawRectangle(x - 3, y - 3, w + 6, h + 6, rgba(0, 0, 0, 50)); // a soft seat off the sky…
     rl.drawRectangle(x - 2, y - 2, w + 4, h + 4, rgba(0, 0, 0, 165)); // …the hard black edge…
     rl.drawRectangle(x - 1, y - 1, w + 2, h + 2, FRAME); // …and one warm metal hairline
@@ -280,16 +220,12 @@ fn bar(x: i32, y: i32, w: i32, h: i32, frac: f32, chipFrac: f32, hi: rl.Color, l
         rl.drawRectangle(x, y, fw, h - third, hi); // a flat body…
         rl.drawRectangleGradientV(x, y + h - third, fw, third, hi, lo); // …shaded into its floor
         rl.drawRectangle(x, y, fw, 1, tp); // …under one lit hairline
-        // The leading edge catches the light — what makes a draining bar read as MOVING rather than as a
-        // rectangle that got shorter.
+        // The leading edge catches the light — what makes a draining bar read as MOVING rather than as a rectangle that got shorter.
         if (fw > 2 and frac < 0.999) rl.drawRectangle(x + fw - 2, y, 2, h, rgba(255, 244, 226, 64));
     }
 }
 
-// ── the floating HP bar over a hurt foe ─────────────────────────────────────────────────
-// Here with the rest of the HUD so there is ONE blood red in the game: this and the hero's bar were
-// separately-authored near-identical values, a drift waiting for the first retune. Its TRACK stays its
-// own — 5 px of bar over a head wants more contrast than 15 px against the sky.
+// Here with the rest of the HUD so there is ONE blood red in the game: this and the hero's bar were separately-authored near-identical values, a drift waiting for the first retune.
 const FOE_W: i32 = 54;
 const FOE_H: i32 = 5;
 const FOE_LIFT: i32 = 16; // …how far above the projected crown it rides
@@ -308,21 +244,14 @@ pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool) void {
     if (staggered) rl.drawRectangleLines(x - 1, y - 1, FOE_W + 2, FOE_H + 2, STAGGER_RIM);
 }
 
-// ── THE RUNE COUNTER, bottom-right ──────────────────────────────────────────────────────
-// ER's fourth and last piece of furniture, in ER's own corner — also the last FREE corner, so the HUD's
-// "three places and nowhere else" becomes four and stops there. The number ROLLS (combat.Runes owns that;
-// this prints what it is handed) on a plate dark enough to hold digits against dry grass, hairlined in the
-// vitals frames' metal, RIGHT-ALIGNED — a counter that grows a digit and shoves itself sideways is the one
-// thing you cannot read at a glance mid-fight. Seated off the bottom by `BOTTOM`, the equipment cross's
-// own margin, so the two bottom corners sit on one line.
+// ER's fourth and last piece of furniture, in ER's own corner — also the last FREE corner, so the HUD's "three places and nowhere else" becomes four and stops there.
 const RUNE_W: i32 = 122;
 const RUNE_H: i32 = 32;
 const RUNE_FILL = rgba(14, 12, 10, 170); // …pulled back with the bars (see TRACK) — owner's call
 const RUNE_EDGE = rgba(116, 104, 84, 186); // …the vitals bars' FRAME colour, deliberately
 const RUNE_TEXT = rgba(228, 216, 190, 255);
 
-/// `n` is the ROLLING value (`combat.Runes.display()`), not the banked total: a number that snaps is a
-/// readout where one that counts up is a reward.
+/// `n` is the ROLLING value (`combat.Runes.display()`), not the banked total: a number that snaps is a readout where one that counts up is a reward.
 pub fn runes(n: u32) void {
     var buf: [16]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "{d}", .{n}) catch return;
@@ -334,13 +263,10 @@ pub fn runes(n: u32) void {
     text(s, x + RUNE_W - textW(s, BODY) - 11, y + @divTrunc(RUNE_H - lineH(BODY), 2) + 1, BODY, RUNE_TEXT);
 }
 
-/// How far the interact prompt rides ABOVE the bottom-corner furniture's line — clear of the equipment
-/// cross and the rune plate, which both seat at `BOTTOM`. Named with the other HUD offsets: it is the
-/// one number that decides whether the prompt collides with the cross when the type scale grows.
+/// How far the interact prompt rides ABOVE the bottom-corner furniture's line — clear of the equipment cross and the rune plate, which both seat at `BOTTOM`.
 const PROMPT_LIFT: i32 = 76;
 
-/// An INTERACT prompt, low centre. Not in the world over the thing — a floating label is another game's
-/// UI language, and this HUD is ER's.
+/// An INTERACT prompt, low centre.
 pub fn prompt(s: [:0]const u8) void {
     const w = textW(s, BODY);
     const x = @divTrunc(rl.getScreenWidth() - w, 2);
@@ -349,22 +275,7 @@ pub fn prompt(s: [:0]const u8) void {
     text(s, x, y, BODY, rgba(226, 214, 186, 240));
 }
 
-// ── the equipment cross, bottom-left ────────────────────────────────────────────────────
-// ER's bottom-left is a D-PAD CROSS of exactly four slots: sorcery UP, left hand LEFT, right hand RIGHT,
-// quick item DOWN. Only the right hand's is filled — the hero carries one sword and there are no spells or
-// consumables, and an empty ER slot is a real part of that HUD, where inventing a flask count for flasks
-// that don't exist would be a lie in the corner of every screenshot.
-//
-// A slot is PORTRAIT, ER's own proportion (an armament icon is a long thing stood on end); square slots
-// read as a keypad rather than as equipment. The GAP has to be readable as a gap at a glance, or the four
-// arms close back into a block.
-//
-// THE WHOLE CROSS SCALES OFF ONE NUMBER. Every size below is a TUNED PROPORTION with a reason — the
-// portrait slot, the readable gap, a vertical pitch deliberately tighter than a slot is tall — so resizing
-// by editing them individually is how those relationships get lost. Change EQ_SCALE. (A PERCENTAGE, not an
-// integer multiplier: as `2` it could only say 1x or 2x, so "a bit smaller" was not expressible through it
-// at all. 150 is the owner's 2x eased back a quarter.) The sword icon needs nothing — it sizes off SLOT_W
-// and carries its stroke widths up.
+// ER's bottom-left is a D-PAD CROSS of exactly four slots: sorcery UP, left hand LEFT, right hand RIGHT, quick item DOWN.
 const EQ_SCALE: i32 = 150; // percent
 fn eq(v: i32) i32 {
     return @divTrunc(v * EQ_SCALE, 100);
@@ -372,17 +283,12 @@ fn eq(v: i32) i32 {
 const SLOT_W: i32 = eq(44);
 const SLOT_H: i32 = eq(60);
 const SLOT_GAP: i32 = eq(8); // between the LEFT/RIGHT arms and the centre column
-// The vertical pitch is DELIBERATELY LESS THAN A SLOT IS TALL, and it is not derived from
-// SLOT_GAP. A full slot plus a gap leaves a void up the middle taller than the slots themselves and the
-// four read as scattered; pulled in, top and bottom overlap the side slots' rows and the group closes into
-// one shape.
+// The vertical pitch is DELIBERATELY LESS THAN A SLOT IS TALL, and it is not derived from SLOT_GAP.
 const PITCH_Y: i32 = eq(48);
-// The seat off the bottom does NOT scale — it is a screen margin like MARGIN, and doubling it would just
-// push the cross inward.
+// The seat off the bottom does NOT scale — it is a screen margin like MARGIN, and doubling it would just push the cross inward.
 const BOTTOM: i32 = 26;
 
-// An ER slot is a faint WELL under a visible thin rim. The other way round, the cross reads as solid black
-// tiles stamped on the corner.
+// An ER slot is a faint WELL under a visible thin rim.
 const WELL_ON: u8 = 148;
 const WELL_OFF: u8 = 68;
 const SLOT_ON = rgba(180, 168, 140, 240); // an occupied slot's brighter rim
@@ -393,24 +299,15 @@ const BRASS = rgba(182, 146, 78, 255);
 const GRIP = rgba(112, 82, 56, 255); // …light enough to READ against the well, not true leather
 const BOARD_JOINT = rgba(78, 56, 38, 255); // the shield icon's plank seams — a shade under GRIP
 
-/// What is in a slot. The cross has exactly four and only two of them hold anything, so this is an
-/// exhaustive little enum rather than an icon-id system for a game with two icons.
+/// What is in a slot.
 pub const Slot = enum { empty, sword, shield, flask };
 
-/// WHICH flask is in the quick-item slot. Its own enum for the same reason `Slot` is one, and
-/// deliberately NOT `combat.FlaskKind`: this file takes plain values and knows nothing about the
-/// hero or the combat layer (AGENTS.md), so the caller does the one-line translation. It replaces a
-/// `crimson: bool` threaded through three functions — a two-variant type flattened to a boolean,
-/// where every `false` silently means "the other one" and a third flask would land as Cerulean
-/// everywhere without a single compile error.
+/// WHICH flask is in the quick-item slot.
 pub const FlaskTint = enum { crimson, cerulean };
 
-/// `tint` picks which flask is drawn in the DOWN slot, `charges` how many are left — the cross is
-/// where ER shows both, and a charge count you have to open a menu for is a charge count you play
-/// without.
+/// `tint` picks which flask is drawn in the DOWN slot, `charges` how many are left — the cross is where ER shows both, and a charge count you have to open a menu for is a charge count you play without.
 pub fn equipment(tint: FlaskTint, charges: u8) void {
-    // Three columns wide, corners left out. The two axes pitch SEPARATELY (see PITCH_Y) — one shared step
-    // either splays the cross apart vertically or crushes the side arms together.
+    // Three columns wide, corners left out.
     const stepX = SLOT_W + SLOT_GAP;
     const left = MARGIN;
     const bottom = rl.getScreenHeight() - BOTTOM;
@@ -423,9 +320,7 @@ pub fn equipment(tint: FlaskTint, charges: u8) void {
 }
 
 fn slot(x: i32, y: i32, holds: Slot, tint: FlaskTint, charges: u8) void {
-    // A slot with a DRY flask in it is still occupied — it lights as a filled slot and the flask is
-    // drawn dim, because "empty flask" and "no flask" have to look different or you cannot tell
-    // whether to go and rest.
+    // A slot with a DRY flask in it is still occupied — it lights as a filled slot and the flask is drawn dim, because "empty flask" and "no flask" have to look different or you cannot tell whether to go and rest.
     const on = holds != .empty;
     rl.drawRectangle(x, y, SLOT_W, SLOT_H, rgba(8, 7, 6, if (on) WELL_ON else WELL_OFF)); // the well
     const r = rl.Rectangle{
@@ -443,8 +338,7 @@ fn slot(x: i32, y: i32, holds: Slot, tint: FlaskTint, charges: u8) void {
         .shield => shield(cx, cy),
         .flask => {
             flask(cx, cy, tint, charges > 0);
-            // The charge count, bottom-right of the slot like ER's. Small, and it goes RED-dim at
-            // zero rather than vanishing — a missing number reads as a HUD fault.
+            // The charge count, bottom-right of the slot like ER's.
             var buf: [8]u8 = undefined;
             const s = std.fmt.bufPrintZ(&buf, "{d}", .{charges}) catch return;
             const col = if (charges > 0) rgba(232, 224, 202, 255) else rgba(150, 96, 88, 220);
@@ -453,9 +347,6 @@ fn slot(x: i32, y: i32, holds: Slot, tint: FlaskTint, charges: u8) void {
     }
 }
 
-// ── THE FLASK ICON ── a round-shouldered bottle with a stopper: ER's own silhouette, and the one
-// shape that cannot be mistaken for the sword in the slot above it. Drawn from primitives at the
-// same stroke scale the sword uses, so the two read as one icon set.
 const CRIMSON = rgba(196, 46, 40, 255); // Flask of Crimson Tears
 const CRIMSON_DK = rgba(104, 24, 22, 255);
 const CERULEAN = rgba(64, 128, 200, 255); // …of Cerulean Tears
@@ -478,8 +369,7 @@ fn flask(cx: f32, cy: f32, tint: FlaskTint, full: bool) void {
     const fill = if (full) lit else rgba(dk.r, dk.g, dk.b, 150);
     const body = s * 0.30; // half-width of the bulb
     const bodyY = cy + s * 0.10;
-    // The BULB, as three stacked rounded bands — a circle alone reads as a bauble, and the taper
-    // into the neck is most of what says "bottle".
+    // The BULB, as three stacked rounded bands — a circle alone reads as a bauble, and the taper into the neck is most of what says "bottle".
     rl.drawCircleV(.{ .x = cx, .y = bodyY }, body, fill);
     rl.drawRectangleRounded(.{
         .x = cx - body * 0.86,
@@ -493,8 +383,7 @@ fn flask(cx: f32, cy: f32, tint: FlaskTint, full: bool) void {
         .{ .x = s * 0.17, .y = s * 0.30 },
         fill,
     );
-    // A lit highlight down the left of the glass — one stroke, and it is what stops the icon
-    // reading as a flat blob at 66 px.
+    // A lit highlight down the left of the glass — one stroke, and it is what stops the icon reading as a flat blob at 66 px.
     rl.drawLineEx(
         .{ .x = cx - body * 0.52, .y = bodyY - body * 0.55 },
         .{ .x = cx - body * 0.62, .y = bodyY + body * 0.35 },
@@ -509,10 +398,7 @@ fn flask(cx: f32, cy: f32, tint: FlaskTint, full: bool) void {
     );
 }
 
-// The one armament he carries, on ER's icon diagonal (tip up-left, pommel down-right). STROKES, not boxes:
-// a slot this size wants a legible silhouette and a little model of a sword turns to mud. Sized off the
-// slot's WIDTH, the narrow axis, because a diagonal icon spans the same distance both ways — off the height
-// it would push the tip and pommel out through the sides.
+// The one armament he carries, on ER's icon diagonal (tip up-left, pommel down-right).
 const ICON = SLOT_W; // …the square the diagonal is drawn in
 fn sword(cx: f32, cy: f32) void {
     const s: f32 = @floatFromInt(ICON);
@@ -532,10 +418,7 @@ fn sword(cx: f32, cy: f32) void {
     rl.drawCircleV(pom, 2.6 * k, BRASS);
 }
 
-// THE SMALL SHIELD, in the left hand's slot. A ROUND MASS where the sword is a diagonal STROKE —
-// which is the whole reason it is legible beside it at 66 px: the two icons differ in silhouette
-// before you have read either. Built from discs, largest first, so the rim is simply the iron one
-// showing round the edge of the boards (no ring primitive, and nothing to leave a seam).
+// THE SMALL SHIELD, in the left hand's slot.
 fn shield(cx: f32, cy: f32) void {
     const s: f32 = @floatFromInt(ICON);
     const k = s / 34.0; // the icon set's shared stroke scale (see `sword`)
@@ -544,8 +427,7 @@ fn shield(cx: f32, cy: f32) void {
     const boards = r - 2.4 * k;
     rl.drawCircleV(c, r, STEEL_DK); // the iron binding…
     rl.drawCircleV(c, boards, GRIP); // …with the boards inside it
-    // Two plank joints across the face, chord-clipped so they stop at the rim rather than crossing
-    // it. Dark, thin: at this size they are texture, not drawing.
+    // Two plank joints across the face, chord-clipped so they stop at the rim rather than crossing it.
     for ([_]f32{ -0.42, 0.42 }) |f| {
         const dy = boards * f;
         const half = @sqrt(@max(boards * boards - dy * dy, 1.0));
@@ -556,8 +438,7 @@ fn shield(cx: f32, cy: f32) void {
             BOARD_JOINT,
         );
     }
-    // The BOSS: a dark iron ring with a lit cap sitting a hair up-left inside it. The ring has to
-    // show ALL the way round or the cap reads as an off-centre dot rather than as a dome.
+    // The BOSS: a dark iron ring with a lit cap sitting a hair up-left inside it.
     rl.drawCircleV(c, s * 0.115, STEEL_DK);
     rl.drawCircleV(.{ .x = cx - 0.5 * k, .y = cy - 0.6 * k }, s * 0.115 - 2.4 * k, STEEL);
 }

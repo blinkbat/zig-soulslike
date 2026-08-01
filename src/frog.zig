@@ -11,29 +11,8 @@ const v3 = mathx.v3;
 const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
-// ── THE GAPING TOAD ───────────────────────────────────────────────────────────────────
-// A squat warty bog-toad, ~2/3 the hero's mass, all mouth and teeth. It doesn't walk — it HOPS,
-// coiling low then firing off its haunches; it closes the last gap with a committed LUNGE that
-// leaves it winded and wide open; up close it gapes its throat sac and CHOMPS.
-//
-// Where the hero is an anthropometric FK skeleton, the toad is a shallow 9-part rig whose LIFE
-// is SQUASH & STRETCH — the coil, the airborne stretch, the landing splat, the throat balloon —
-// plus a hinged jaw and folding haunches.
-//
-// ART DIRECTION (exaggerated + readable):
-//   IDLE  : low and breathing, throat pulsing, the odd twitch. Alive, waiting.
-//   HOP   : the frog verb. COIL (squash, knees over the back, a beat of anticipation) → LAUNCH
-//           (haunches fire, body STRETCHES thin, nose up) → ballistic arc → LAND (front legs
-//           reach, body SPLATS wide). It keeps bounding, small settles between.
-//   LUNGE : a big committed leap — a DEEP readable coil, a long flat arc, then a heavy landing
-//           into a RECOVERY where it lies splayed and spent. That beat is the opening.
-//   CHOMP : it rears, the sac BALLOONS and the jaw gapes (the tell), then a fast SNAP.
-//   Nothing parks dead: hops overshoot into a splat, the chomp recoils, idle keeps breathing.
-//
-// Combat is the SHARED path — foe.strike for the hero's blade, combat.Vitals for the meters,
-// death into a grace-mote dissipation. See foe.zig's contract.
+// A squat warty bog-toad, ~2/3 the hero's mass, all mouth and teeth.
 
-// ── matrix shorthand (raylib TRS: mul(a,b) applies a FIRST then b) ──────────────────────
 // The shared helpers from mathx (single source for the "a-first" convention across rigs).
 const rx = mathx.rx;
 const ry = mathx.ry;
@@ -41,16 +20,12 @@ const tr = mathx.tr;
 const scaleM = mathx.scaleM;
 const mul = mathx.mul;
 const mul3 = mathx.mul3;
-// Place a part authored at its joint origin: rotate/scale (`anim`) about that origin, shift
-// to the joint's rest offset in the parent frame, then into the parent's world. Mirrors the
-// hero's setLocal (world = animRot ∘ translate(offset) ∘ parentWorld).
+// Place a part authored at its joint origin: rotate/scale (`anim`) about that origin, shift to the joint's rest offset in the parent frame, then into the parent's world.
 fn place(off: rl.Vector3, anim: rl.Matrix, parent: rl.Matrix) rl.Matrix {
     return mul3(anim, tr(off.x, off.y, off.z), parent);
 }
 
-// ── palette (pre-gamma dark — the scene shader gammas output, so these lift a lot) ──────
-// A bog thing tuned to the dry-gold/scrub Limgrave palette: dark olive hide, a pale sickly
-// belly + throat, a blood-dark maw, pale bone teeth that POP, and faintly grace-gold eyes.
+// A bog thing tuned to the dry-gold/scrub Limgrave palette: dark olive hide, a pale sickly belly + throat, a blood-dark maw, pale bone teeth that POP, and faintly grace-gold eyes.
 const HIDE = rgba(34, 38, 23, 255); // dark bog olive (a night thing)
 const HIDE_DK = rgba(20, 23, 14, 255); // warts, shadow, mottling — near-black
 const HIDE_LT = rgba(52, 55, 34, 255); // ridge / caught-light humps
@@ -60,18 +35,13 @@ const MAW = rgba(104, 34, 28, 255); // mouth interior — a sickly oxblood RED, 
 const TONGUE = rgba(126, 56, 48, 255);
 const TOOTH = rgba(166, 156, 126, 255); // pale bone — pops hard against the dark hide
 const TOOTH_DK = rgba(126, 116, 90, 255);
-// The eyes GLOW: a low alpha drives the shader's emissive channel hard, so this bright
-// amber-gold burns through shadow and haze like the grace ember — lamp-eyes in the dark.
+// The eyes GLOW: a low alpha drives the shader's emissive channel hard, so this bright amber-gold burns through shadow and haze like the grace ember — lamp-eyes in the dark.
 const EYE = rgba(252, 196, 84, 96);
-/// …and the same lamp turned RED for the lunge (owner's call): the tell arrives with the coil and leaves
-/// on the landing, so the one thing on the toad you were already watching is what announces the pounce.
-/// HOTTER as well as redder — a lower alpha drives the emissive harder, so it flares rather than just
-/// changing hue, which is what makes it read across a field.
+/// …and the same lamp turned RED for the lunge (owner's call): the tell arrives with the coil and leaves on the landing, so the one thing on the toad you were already watching is what announces the pounce.
 const EYE_HOT = rgba(255, 62, 34, 62);
 const PUPIL = rgba(10, 8, 6, 255);
 const CLAW = rgba(28, 26, 20, 255);
 
-// ── rig parts (each = one mesh + one world matrix) ──────────────────────────────────────
 const NP = 9;
 const BODY = 0; // trunk + fused upper head/jaw + brow + eyes + warts (squashes about the seat)
 const LJAW = 1; // lower jaw (hinges open at the back of the mouth)
@@ -90,14 +60,11 @@ const P_HIP = v3(0.40, 0.24, -0.06); // back-leg hip — OUT on the flank, clear
 const P_KNEE = v3(0.47, 0.46, 0.00); // back-leg knee — HIGH and OUT, so the folded haunch bulges in silhouette
 const P_SHOULDER = v3(0.22, 0.26, 0.22); // front-leg shoulder
 
-// ── dimensions / tuning ─────────────────────────────────────────────────────────────
 const BODY_CY = 0.34; // body-centre height (for the camera focus + hurt sphere)
 const HURT_R = 0.46; // hurt-sphere radius (world units, pre per-toad scale)
 const BODY_R = 0.55; // ground-footprint radius for collision (pre per-toad scale) — matches the
-//   broad body + splayed haunches so toads don't interpenetrate (frog-on-frog was too forgiving)
 
-// Global size multiplier for the whole knot (each toad's own `scale` rides on top). Bumped
-// so they read BIG and heavy — broad, roughly waist-high, a real threat rather than a pet.
+// Global size multiplier for the whole knot (each toad's own `scale` rides on top).
 pub const SCALE = 1.4;
 
 // Locomotion & senses (world units / seconds).
@@ -126,11 +93,8 @@ const CHOMP_SAC = 1.95; // throat-sac inflate at full gape (scale)
 const LUNGE_CD = 2.1; // cooldowns keep it from spamming
 const CHOMP_CD = 0.7;
 const TURN_RATE = 5.0; // rad/s (~285°/s) — the toad's MAX TURNING SPEED everywhere (idle
-//   tracking, coil steering; THE turn-feel knob). Hops/lunges LAUNCH ALONG THE BODY, never
-//   snapping onto the hero — so a tight strafe still beats the committed leaps.
 
-// Leg fold: legExt 0 = fully coiled, 1 = fully extended; the sit pose is REST_EXT. Hip &
-// knee rotate away from the authored sit pose by these swings across the 0..1 range.
+// Leg fold: legExt 0 = fully coiled, 1 = fully extended; the sit pose is REST_EXT.
 const REST_EXT = 0.34;
 const HIP_SWING = 66.0; // + extends the thigh back-and-down (push-off)
 const KNEE_STRAIGHTEN = 104.0; // + straightens the knee out of its tuck
@@ -138,49 +102,35 @@ const FLASH_DUR = foe.FLASH_DUR; // how long a landed hit flares the toad blood-
 const SHOVE_DECAY = 7.0; // 1/s — the hit shove bleeds off fast (a jolt off the blow, not a slide)
 const DISS_DUR = 0.95; // seconds the corpse takes to dissipate into motes once the collapse is done
 
-// ── telegraph FX ────────────────────────────────────────────────────────────────────
-// A tiny per-toad particle pool (unlit spheres drawn in the lit pass) that SELLS the tells:
-// dust dug up as the lunge loads, an amber charge glow gathering at the maw, drool flung on
-// the gape, and a big radial dust SLAM at the impact point on a lunge landing.
+// A tiny per-toad particle pool (unlit spheres drawn in the lit pass) that SELLS the tells: dust dug up as the lunge loads, an amber charge glow gathering at the maw, drool flung on the gape, and a big radial dust SLAM at the impact point on a lunge landing.
 const FX_MAX = 40; // per-toad budget (ring buffer — the oldest particle is overwritten)
 const DUST = foe.DUST; // kicked-up bog dust — the SHARED one (see foe.zig: it was two copies)
 const EMBER = rgba(252, 196, 84, 150); // amber charge glow — the lamp-eye colour, gathering (kept sheer so glints layer, not blob)
 const SPIT = rgba(176, 190, 150, 140); // pale sickly drool / spit fling
 const BLOOD = rgba(112, 22, 16, 235); // hit spray — dark oxblood, kin to the maw (unlit droplets). The
-//   toad's OWN: the ogre bleeds a darker ichor, which is why this one stays local.
 const MOTE = foe.MOTE; // death dissipation — the shared grace-gold every corpse goes out in
 
-// ── vitals (LOW poise, per the brief: "frogs have low poise") ──────────────────────────
 const HP_MAX = 46.0;
 const POISE_MAX = 8.0; // BELOW the hero's light poise damage (10): every landed light
-//   FLINCHES a full-poise toad, so a clean hit on a coil/gape windup always interrupts and
-//   RESETS the attack (the cooldown set at attack start keeps it from instantly resuming).
+// FLINCHES a full-poise toad, so a clean hit on a coil/gape windup always interrupts and RESETS the attack (the cooldown set at attack start keeps it from instantly resuming).
 const STANCE_MAX = 26.0; // low — a few flinches cascade into the heavy stagger (3rd chained light crumples)
-// What the toad's own attacks do to the HERO (guard→tip data flows the other way; these
-// are handed out when a chomp SNAP / lunge SLAM connects). The lunge is a heavy body-blow.
+// What the toad's own attacks do to the HERO (guard→tip data flows the other way; these are handed out when a chomp SNAP / lunge SLAM connects).
 const CHOMP_HIT = combat.Hit{ .dmg = 13, .poise = 15 }; // eased down from 16 (owner: lower dmg a bit)
 const LUNGE_HIT = combat.Hit{ .dmg = 19, .poise = 26, .stance = 8 }; // eased down from 24 — still a real slam
 const HERO_REACH = foe.HERO_REACH; // hero footprint added to the toad's attack range for the hit test
-// The lunge is a body-SLAM that crashes down in FRONT of the toad: only a hero inside the
-// frontal impact zone is crushed (one beside or behind is clear), matching the forward dust
-// burst. Reach is from the seat; the arc gate is what makes it front-only.
+// The lunge is a body-SLAM that crashes down in FRONT of the toad: only a hero inside the frontal impact zone is crushed (one beside or behind is clear), matching the forward dust burst.
 const LUNGE_IMPACT_R = 1.9; // frontal slam reach from the seat
 const LUNGE_FRONT_DOT = 0.25; // hero must lie within the frontal arc (~±76°) to be caught
 const LUNGE_IMPACT_FWD = 0.6; // dust-burst / impact-zone centre, this far ahead of the seat (pre-scale)
-/// Embers a second dragged off the body through the lunge's flight (`emitLungeTrail`). High, because the
-/// flight is `LUNGE_FLIGHT` long — a rate that reads as continuous over a third of a second has to be.
+/// Embers a second dragged off the body through the lunge's flight (`emitLungeTrail`).
 const TRAIL_RATE: f32 = 150.0;
 const DEATH_DUR = 1.25; // collapse-and-still before the corpse is removed from play
-/// RUNES a toad is worth. The cheapest kill in the world and the yardstick the other two are set
-/// against: an archer is two of these, the giant fifteen.
+/// RUNES a toad is worth.
 pub const RUNES: u32 = 60;
 
-// idle, hop, lunge, recover, chomp are the live behaviours; the last three are REACTIONS
-// (interrupts) — a light flinch, the heavy stance-break stagger, and death.
 const State = enum { idle, hop, lunge, recover, chomp, stunlight, stunheavy, dead };
 
-// What the toad decides to do when it's free to act — a PURE function of range + cooldowns,
-// so the decision logic is unit-testable without a GPU/world.
+// What the toad decides to do when it's free to act — a PURE function of range + cooldowns, so the decision logic is unit-testable without a GPU/world.
 const Choice = enum { rest, hop, lunge, chomp, wait };
 fn classify(dist: f32, lungeReady: bool, chompReady: bool) Choice {
     if (dist > AGGRO_R) return .rest;
@@ -189,18 +139,13 @@ fn classify(dist: f32, lungeReady: bool, chompReady: bool) Choice {
     return .hop;
 }
 
-// One telegraph particle — the SHARED shape + integrator + draw (foe.zig); only the AUTHORING of
-// the bursts below (dust / charge / drool / blood / motes) is the toad's own.
+// One telegraph particle — the SHARED shape + integrator + draw (foe.zig); only the AUTHORING of the bursts below (dust / charge / drool / blood / motes) is the toad's own.
 const Particle = foe.Particle;
 
-// The shared toad meshes + material (built once, like env.models); every Frog draws these
-// with its own per-part matrices. Meshes live the whole program (leak at exit — fine).
+// The shared toad meshes + material (built once, like env.models); every Frog draws these with its own per-part matrices.
 pub const Model = struct {
     mesh: [NP]rl.Mesh,
-    /// THE IRISES, twice: calm amber and hot RED. Their own mesh rather than part of the head because a
-    /// baked vertex colour cannot change, and the eyes going red is a TELL — it has to arrive with the
-    /// wind-up and leave with the landing. Two small meshes and an index is the whole mechanism; the
-    /// alternative was a per-draw tint uniform, which would redden the warts and the teeth with them.
+    /// THE IRISES, twice: calm amber and hot RED.
     eyes: [2]rl.Mesh,
     mat: rl.Material,
 
@@ -253,7 +198,6 @@ pub const Frog = struct {
     jaw: f32 = 0, // lower-jaw open (deg)
     sac: f32 = 1, // throat-sac inflate scale
 
-    // combat
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX),
     hits: u32 = 0, // total blows landed (debug read-out)
     hitLatch: bool = false, // one hit per swing: set on contact, cleared when the blade goes inactive
@@ -265,8 +209,7 @@ pub const Frog = struct {
     fade: f32 = 0, // death dissipation 0..1 — pose() shrinks + sinks the corpse by it
     gone: bool = false, // corpse removed from play (dissipation finished) — skipped everywhere
 
-    // telegraph FX (see the FX tuning block): a ring buffer of particles, a rate-based emit
-    // carry so trickles are frame-rate independent, and a seeded RNG for the scatter.
+    // telegraph FX (see the FX tuning block): a ring buffer of particles, a rate-based emit carry so trickles are frame-rate independent, and a seeded RNG for the scatter.
     fx: [FX_MAX]Particle = [_]Particle{.{}} ** FX_MAX,
     fxHead: usize = 0,
     fxAccum: f32 = 0,
@@ -276,9 +219,7 @@ pub const Frog = struct {
 
     pub fn spawn(home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Frog {
         var f = Frog{ .pos = home, .home = home, .facing = faceYaw, .scale = scale * SCALE, .seed = seed };
-        // @abs first: @intFromFloat into an UNSIGNED type is illegal behaviour for a negative
-        // input, and `spawn` is public with no documented seed sign (a -0.5 wabi-sabi seed would
-        // panic in Debug/ReleaseSafe). Every current seed is >= 0, so the field is unchanged.
+        // @abs first: @intFromFloat into an UNSIGNED type is illegal behaviour for a negative input, and `spawn` is public with no documented seed sign (a -0.5 wabi-sabi seed would panic in Debug/ReleaseSafe).
         f.fxRng = mathx.Rng.init(@as(u64, @intFromFloat(@abs(seed) * 104729.0)) +% 1); // per-toad scatter, deterministic
         f.idleWait = 1.0 + seed * 2.0;
         f.resolveIdle();
@@ -286,8 +227,7 @@ pub const Frog = struct {
         return f;
     }
 
-    // Heights measured from `pos.y` — THE GROUND UNDER IT — plus `lift`, which is the hop's height above
-    // that ground. Pinned to the datum instead, a toad on a bank keeps its hurt sphere down in the field.
+    // Heights measured from `pos.y` — THE GROUND UNDER IT — plus `lift`, which is the hop's height above that ground.
     pub fn centerWorld(self: *const Frog) rl.Vector3 {
         return v3(self.pos.x, self.pos.y + BODY_CY * self.scale + self.lift, self.pos.z);
     }
@@ -297,8 +237,7 @@ pub const Frog = struct {
     pub fn bodyR(self: *const Frog) f32 {
         return BODY_R * self.scale;
     }
-    // The point the lock-on reticle rides — the centre of the body mass (not the head), so
-    // the dot sits on the bulk of the toad.
+    // The point the lock-on reticle rides — the centre of the body mass (not the head), so the dot sits on the bulk of the toad.
     pub fn lockPoint(self: *const Frog) rl.Vector3 {
         return v3(self.pos.x, self.pos.y + 0.30 * self.scale + self.lift, self.pos.z);
     }
@@ -327,14 +266,11 @@ pub const Frog = struct {
         return foe.flashFrac(self.flash);
     }
 
-    // ── actions ─────────────────────────────────────────────────────────────────────
     fn faceToward(self: *Frog, target: rl.Vector3, dt: f32) void {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt); // shared — see foe.zig
     }
 
     // Begin a hop toward `to` (clamped to bounds); `lunge` = the big committed leap.
-    // NO snap-turn: the intent point is only an AIM — the toad steers onto it through the coil
-    // and the leap LAUNCHES ALONG THE BODY at takeoff, so circling a coiled toad gets around it.
     pub fn startHop(self: *Frog, to: rl.Vector3, bounds: f32, lunge: bool) void {
         self.hopAim = v3(mathx.clampF(to.x, -bounds, bounds), 0, mathx.clampF(to.z, -bounds, bounds));
         self.hopReach = mathx.distXZ(self.pos, self.hopAim);
@@ -347,8 +283,7 @@ pub const Frog = struct {
         self.state = if (lunge) .lunge else .hop;
         self.t = 0;
         self.heroLatch = false; // a fresh action gets one chance to land on the hero
-        // The LUNGE announces itself at the top of its long coil — that croak IS the tell, and it
-        // has to arrive with the wind-up rather than with the leap or it teaches nothing.
+        // The LUNGE announces itself at the top of its long coil — that croak IS the tell, and it has to arrive with the wind-up rather than with the leap or it teaches nothing.
         sfx.world(if (lunge) .toad_lunge else .toad_hop, self.pos);
     }
     pub fn startChomp(self: *Frog) void {
@@ -375,8 +310,7 @@ pub const Frog = struct {
     pub fn debugKill(self: *Frog) void {
         self.enterDeath();
     }
-    // Land the toad's OWN attack on the hero, once per action: if the hero is within reach,
-    // stash the blow in heroHit for game.zig to apply to the hero's vitals.
+    // Land the toad's OWN attack on the hero, once per action: if the hero is within reach, stash the blow in heroHit for game.zig to apply to the hero's vitals.
     fn tryBite(self: *Frog, hero: rl.Vector3, range: f32, h: combat.Hit) void {
         if (self.heroLatch) return;
         if (mathx.distXZ(self.pos, hero) <= range + HERO_REACH) {
@@ -384,9 +318,7 @@ pub const Frog = struct {
             self.heroLatch = true;
         }
     }
-    // The lunge SLAM: like tryBite, but FRONT-only — the hero must be inside the reach AND
-    // within the toad's frontal arc. A hero beside or behind the landing is clear (unless
-    // they're standing right on top of it), matching the dust burst thrown out front.
+    // The lunge SLAM: like tryBite, but FRONT-only — the hero must be inside the reach AND within the toad's frontal arc.
     fn tryImpact(self: *Frog, hero: rl.Vector3, h: combat.Hit) void {
         if (self.heroLatch) return;
         const d = mathx.distXZ(self.pos, hero);
@@ -399,9 +331,7 @@ pub const Frog = struct {
         self.heroLatch = true;
     }
 
-    // ── per-frame update ──────────────────────────────────────────────────────────────
     // Advance AI + animation for one frame; `hero` drives senses, `blade` the hero's swing.
-    // Returns the blow this toad landed on the HERO this frame (null if none / it's a corpse).
     pub fn update(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         if (self.gone) {
             self.updateFx(dt); // a removed corpse's last motes keep drifting out
@@ -427,7 +357,6 @@ pub const Frog = struct {
                 if (self.t >= RECOVER_DUR) self.enterIdle(0.02);
             },
             .chomp => self.updateChomp(dt, hero),
-            // ── reactions (interrupts) ──
             .stunlight => {
                 self.resolveStunLight();
                 if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enterIdle(0.02);
@@ -438,9 +367,7 @@ pub const Frog = struct {
             },
             .dead => {
                 self.resolveDeath();
-                // The corpse DISSIPATES, ER-style: once the collapse settles it breaks
-                // into rising grace-gold motes while pose() shrinks + sinks it away —
-                // never a hard vanish. Only then is the slot retired.
+                // The corpse DISSIPATES, ER-style: once the collapse settles it breaks into rising grace-gold motes while pose() shrinks + sinks it away — never a hard vanish.
                 if (self.t >= DEATH_DUR) {
                     self.fade = mathx.smoothstep(DEATH_DUR, DEATH_DUR + DISS_DUR, self.t);
                     self.emitDissolve(dt);
@@ -460,9 +387,7 @@ pub const Frog = struct {
         self.idleWait = wait;
     }
 
-    // Decide what to do next (called when a hop/chomp/recovery finishes, and on the idle
-    // timer). Chomp when close, lunge to close the gap, else keep bounding in; drift home
-    // and rest when the hero is out of range.
+    // Decide what to do next (called when a hop/chomp/recovery finishes, and on the idle timer).
     fn decide(self: *Frog, hero: rl.Vector3, bounds: f32) void {
         const d = mathx.distXZ(self.pos, hero);
         switch (classify(d, self.lungeCd <= 0, self.chompCd <= 0)) {
@@ -472,13 +397,7 @@ pub const Frog = struct {
             },
             .lunge => {
                 self.lungeCd = LUNGE_CD;
-                // Land just short of the hero (don't leap past them). FLOORED AT 0 like the hop
-                // below it: `classify` only returns `.lunge` past BITE_R and KEEP_OFF is inside
-                // that, so the difference is positive today — but the two branches computing the
-                // same "stop short of him" distance with only one of them guarded means a retune
-                // that lifted KEEP_OFF to BITE_R would make the toad lunge BACKWARDS, away from
-                // the hero, with nothing in the code to say so (the relation is asserted in a test
-                // and nowhere else).
+                // Land just short of the hero (don't leap past them).
                 const dir = mathx.dirXZ(self.pos, hero);
                 const reach = mathx.minF(mathx.maxF(0, d - KEEP_OFF), LUNGE_R);
                 self.startHop(v3(self.pos.x + dir.x * reach, 0, self.pos.z + dir.z * reach), bounds, true);
@@ -512,16 +431,13 @@ pub const Frog = struct {
         const total = coil + flight + land;
         if (self.t < coil) {
             // COIL: hold at the takeoff spot, steering at the CAPPED turn rate, and load.
-            // A hop tracks the live hero; a lunge steers only onto its COMMITTED aim point
-            // (where you WERE at the decision) — the long tell stays honestly dodgeable.
             if (self.isLunge) self.faceToward(self.hopAim, dt) else self.faceToward(hero, dt);
             const k = mathx.smoothstep(0, coil, self.t);
             self.resolveCoil(k, self.isLunge);
             if (self.isLunge) self.emitCoil(dt, k); // dust dug up + amber charge — the big tell
         } else if (self.t < coil + flight) {
             if (!self.launched) {
-                // TAKEOFF: the leap goes where the BODY points (however far the coil's
-                // capped steering actually got), with the reach committed at decision.
+                // TAKEOFF: the leap goes where the BODY points (however far the coil's capped steering actually got), with the reach committed at decision.
                 self.launched = true;
                 self.hopFrom = self.pos;
                 const f = self.fdir();
@@ -532,17 +448,14 @@ pub const Frog = struct {
                 );
             }
             const s = (self.t - coil) / flight; // 0..1 across the arc
-            // Advance horizontally by an INCREMENT (velocity·dt), NOT an absolute lerp from a
-            // stale hopFrom: this way a collision nudge mid-arc just deflects the leap instead
-            // of the next frame snapping the toad back to its takeoff point (the "warp" bug).
+            // Advance horizontally by an INCREMENT (velocity·dt), NOT an absolute lerp from a stale hopFrom: this way a collision nudge mid-arc just deflects the leap instead of the next frame snapping the toad back to its takeoff point (the "warp" bug).
             const inv = 1.0 / flight;
             self.pos.x += (self.hopTo.x - self.hopFrom.x) * inv * dt;
             self.pos.z += (self.hopTo.z - self.hopFrom.z) * inv * dt;
             self.resolveFlight(s);
             if (self.isLunge) self.emitLungeTrail(dt, s);
         } else {
-            // Landed: hold wherever we ended up (collision may still adjust it) and splat —
-            // do NOT re-snap to hopTo, which would clobber a collision push on touchdown.
+            // Landed: hold wherever we ended up (collision may still adjust it) and splat — do NOT re-snap to hopTo, which would clobber a collision push on touchdown.
             const k = mathx.smoothstep(0, land, self.t - coil - flight);
             self.resolveLand(k);
             // Fire the impact dust ONCE, the frame we touch down (a big front-slam telegraph).
@@ -583,7 +496,6 @@ pub const Frog = struct {
         }
     }
 
-    // ── animation channel resolvers (each sets the pose fields for its beat) ────────────
     fn base(self: *Frog) void {
         self.sy = 1;
         self.sxz = 1;
@@ -642,7 +554,7 @@ pub const Frog = struct {
         self.sac = 1.0;
     }
     fn resolveRecover(self: *Frog) void {
-        // Winded + wide open: belly-low, splayed, panting. Eases back to a sit at the end.
+        // Winded + wide open: belly-low, splayed, panting.
         const u = mathx.clampF(self.t / RECOVER_DUR, 0, 1);
         const out = 1.0 - mathx.smoothstep(0.7, 1.0, u); // spent for most of it, gathers at the end
         const pant = mathx.sinf(self.elapsed * 9.0);
@@ -689,10 +601,8 @@ pub const Frog = struct {
         self.arm = 0.2 * (1.0 - k);
     }
 
-    // ── reaction poses (the two-tier stagger + death) ──────────────────────────────────
     fn resolveStunLight(self: *Frog) void {
-        // A big, unmistakable FLINCH: the toad REARS back and UP off the blow, jaw gaping,
-        // recoiling clear of the ground, then slams back down as it eases home.
+        // A big, unmistakable FLINCH: the toad REARS back and UP off the blow, jaw gaping, recoiling clear of the ground, then slams back down as it eases home.
         self.base();
         const u = mathx.clampF(self.t / combat.FOE_LIGHT_STUN_DUR, 0, 1);
         const j = mathx.sinf(u * std.math.pi); // 0 → 1 → 0 over the flinch
@@ -705,8 +615,7 @@ pub const Frog = struct {
         self.sac = 1.0 + 0.14 * j;
     }
     fn resolveStunHeavy(self: *Frog) void {
-        // STANCE BROKEN — it CRUMPLES: slams flat and wide, splayed and reeling, jaw lolling,
-        // wide open the whole beat (ER's stance break; the critical/riposte comes later).
+        // STANCE BROKEN — it CRUMPLES: slams flat and wide, splayed and reeling, jaw lolling, wide open the whole beat (ER's stance break; the critical/riposte comes later).
         self.base();
         const u = mathx.clampF(self.t / combat.FOE_HEAVY_STUN_DUR, 0, 1);
         const down = mathx.pulse(u, 0, 0.16, 0.74, 1.0); // slam, gather at the end
@@ -733,11 +642,9 @@ pub const Frog = struct {
         self.sac = mathx.lerpF(1.0, 0.85, k);
     }
 
-    // ── the hero's blade lands on the toad (latched one-per-swing) ───────────────────────
     fn tryHit(self: *Frog, blade: foe.Blade) void {
         if (self.state == .dead) return; // no hitting a corpse
-        // The SHARED strike behaviour (foe.zig): swept hurt-sphere test + one-hit latch +
-        // damage; returns the contact + sweep dir + reaction. The toad lays ITS FX on top.
+        // The SHARED strike behaviour (foe.zig): swept hurt-sphere test + one-hit latch + damage; returns the contact + sweep dir + reaction.
         const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
         self.hits += 1;
         self.flash = FLASH_DUR;
@@ -758,17 +665,7 @@ pub const Frog = struct {
         }
     }
 
-    /// THE LUNGE'S WAKE — the thing that makes a leap read as dangerous rather than as a jump. Two layers,
-    /// emitted every frame of the flight and NOT rate-gated: a leap is a third of a second, and a trail
-    /// with gaps in it is a trail you do not see at all.
-    ///
-    ///  - CHARGE, dragged off the body: amber embers with a NEGATIVE gravity, so the wake hangs in the air
-    ///    behind it and marks the path the slam is coming down.
-    ///  - DUST, torn off the ground under it, thrown backwards along the arc — that back-spray is what
-    ///    says "this is being propelled" instead of "this is falling".
-    ///
-    /// Heaviest at the START of the arc (`1 - s`), where the speed is: a wake that thickened on the way
-    /// down would read as braking.
+    /// THE LUNGE'S WAKE — the thing that makes a leap read as dangerous rather than as a jump.
     fn emitLungeTrail(self: *Frog, dt: f32, s: f32) void {
         const c = self.centerWorld();
         const back = mathx.scaleV(self.fdir(), -1);
@@ -802,9 +699,7 @@ pub const Frog = struct {
         }
     }
 
-    // A burst of dark blood flung from the CONTACT POINT, biased along the blade's sweep
-    // (with a little radial scatter and lob) — gravity brings it down fast so the ground
-    // catches the spatter. Unlit, like all the telegraph FX.
+    // A burst of dark blood flung from the CONTACT POINT, biased along the blade's sweep (with a little radial scatter and lob) — gravity brings it down fast so the ground catches the spatter.
     fn bloodBurst(self: *Frog, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
         var i: i32 = 0;
         while (i < n) : (i += 1) {
@@ -819,8 +714,7 @@ pub const Frog = struct {
         }
     }
 
-    // Death dissipation trickle: grace-gold motes rising off the sinking corpse, cut with
-    // a little settling dust. Runs every frame of the fade (rate-based, like emitCoil).
+    // Death dissipation trickle: grace-gold motes rising off the sinking corpse, cut with a little settling dust.
     fn emitDissolve(self: *Frog, dt: f32) void {
         self.fxAccum += 44.0 * (1.0 - 0.6 * self.fade) * dt;
         while (self.fxAccum >= 1.0) {
@@ -836,7 +730,6 @@ pub const Frog = struct {
         }
     }
 
-    // ── telegraph FX (emit / integrate / draw) ─────────────────────────────────────────
     // Unit facing vector on the ground (matches startHop's atan2(x, z) convention).
     fn fdir(self: *const Frog) rl.Vector3 {
         return mathx.headingDir(self.facing);
@@ -858,8 +751,7 @@ pub const Frog = struct {
     fn updateFx(self: *Frog, dt: f32) void {
         foe.tickParticles(&self.fx, dt, self.pos.y); // dust settles on the ground IT is standing on
     }
-    // A radial fan of dust from `c` (the lunge slam / a hop's smaller landing puff). `spd`
-    // scales the outward throw, `big` the puff radius — both ×scale for a heavy toad.
+    // A radial fan of dust from `c` (the lunge slam / a hop's smaller landing puff).
     fn dustBurst(self: *Frog, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
         var i: i32 = 0;
         while (i < n) : (i += 1) {
@@ -869,8 +761,7 @@ pub const Frog = struct {
             self.emit(v3(c.x, 0.05, c.z), vel, self.fxRng.range(0.35, 0.62), self.fxRng.range(0.06, 0.12) * self.scale, big * self.fxRng.range(0.8, 1.3) * self.scale, DUST, 4.5);
         }
     }
-    // Lunge COIL trickle: dust dug up around the haunches (ramps with the load `k`) + amber
-    // charge embers gathering + rising at the maw. Rate-based so it's frame-rate independent.
+    // Lunge COIL trickle: dust dug up around the haunches (ramps with the load `k`) + amber charge embers gathering + rising at the maw.
     fn emitCoil(self: *Frog, dt: f32, k: f32) void {
         self.fxAccum += (12.0 + 40.0 * k) * dt;
         while (self.fxAccum >= 1.0) {
@@ -913,14 +804,11 @@ pub const Frog = struct {
         foe.drawParticles(&self.fx);
     }
 
-    // ── pose: build the 9 world matrices from the resolved channels ─────────────────────
     pub fn pose(self: *Frog) void {
-        // Death dissipation: the whole rig shrinks about the seat and sinks into the
-        // ground while the motes rise — the corpse melts away rather than blinking out.
+        // Death dissipation: the whole rig shrinks about the seat and sinks into the ground while the motes rise — the corpse melts away rather than blinking out.
         const fs = self.scale * (1.0 - 0.85 * self.fade);
         const sink = -0.30 * self.scale * self.fade;
         // Body frame → world (per-toad uniform scale, pitch, face, then place at the seat).
-        // NO squash here — the legs hang off this so they keep their size; squash rides BODY.
         const bframe = mul(
             scaleM(fs, fs, fs),
             // `pos.y` is the ground under it, `lift` the hop above that ground.
@@ -951,9 +839,7 @@ pub const Frog = struct {
         self.xf = wx;
     }
 
-    /// EYES UP: the lunge's wind-up and its flight, and nothing else. Not the hop (a hop is travel, not an
-    /// attack) and not the chomp (already inside your guard — a tell you cannot act on is decoration).
-    /// So the red is exactly the window in which "get out of the way" is still useful advice.
+    /// EYES UP: the lunge's wind-up and its flight, and nothing else.
     pub fn eyesHot(self: *const Frog) bool {
         return self.state == .lunge;
     }
@@ -963,12 +849,7 @@ pub const Frog = struct {
     }
 };
 
-// ── a KNOT of toads (a group of toads is literally a "knot") ────────────────────────────
-// The shared model + the live instances. game.zig owns one of these; the meadow is dressed
-// with the knot the way env.zig dresses it with props.
-// WHERE the toads stand is the MAP's business now (`foe: toad …` records, placed with the
-// editor's Foe tool) — the knot only knows how one behaves. The array is a fixed cap and `n`
-// is how many the map actually posted.
+// The shared model + the live instances. game.zig owns one of these; the meadow is dressed with the knot the way env.zig dresses it with props.
 const CAP: usize = wf.MAX_PER_KIND;
 
 pub const Knot = struct {
@@ -979,13 +860,11 @@ pub const Knot = struct {
     pub fn init(shader: rl.Shader) Knot {
         return .{ .model = Model.init(shader) };
     }
-    // Re-home every toad, alive and fresh (a hero death reloads the world, ER-style). The
-    // shared Model is untouched — instances only. Body in foe.zig, like the roll-ups.
+    // Re-home every toad, alive and fresh (a hero death reloads the world, ER-style).
     pub fn reset(self: *Knot, m: *const wf.Map) void {
         foe.resetGroup(Frog, &self.frogs, &self.n, m, .toad);
     }
-    /// The toads this map actually posted. Every caller iterates THIS, never the whole array —
-    /// the tail is `undefined` and reading it is a crash waiting for a quiet afternoon.
+    /// The toads this map actually posted.
     pub fn live(self: *Knot) []Frog {
         return self.frogs[0..self.n];
     }
@@ -996,20 +875,15 @@ pub const Knot = struct {
     pub fn setShader(self: *Knot, sh: rl.Shader) void {
         self.model.setShader(sh);
     }
-    // Advance the whole knot; returns the STRONGEST blow any toad landed on the hero this
-    // frame (null if none) AND which toad threw it, for game.zig to apply to the hero's vitals.
+    // Advance the whole knot; returns the STRONGEST blow any toad landed on the hero this frame (null if none) AND which toad threw it, for game.zig to apply to the hero's vitals.
     pub fn update(self: *Knot, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
         return foe.groupBlow(self.live(), dt, hero, bounds, blade);
     }
-    // `scene` non-null (the lit pass) flares each struck toad blood-red via the shared
-    // hitFlash uniform; pass null from paths without per-actor flash (none today — the
-    // depth pass reuses this too, where the uniform write is simply inert).
+    // `scene` non-null (the lit pass) flares each struck toad blood-red via the shared hitFlash uniform; pass null from paths without per-actor flash (none today — the depth pass reuses this too, where the uniform write is simply inert).
     pub fn draw(self: *const Knot, scene: ?*gfx.Scene) void {
         foe.drawGroup(self.liveConst(), &self.model, scene);
     }
-    // Telegraph particles — drawn AFTER the meshes (unlit, semi-transparent), in the lit pass
-    // only (never the shadow depth pass), so dust/charge/spit reads over the toads. Drawn for
-    // GONE toads too: a dissipated corpse's last motes drift out instead of popping off.
+    // Telegraph particles — drawn AFTER the meshes (unlit, semi-transparent), in the lit pass only (never the shadow depth pass), so dust/charge/spit reads over the toads.
     pub fn drawFx(self: *const Knot) void {
         for (self.liveConst()) |*f| f.drawFx();
     }
@@ -1028,7 +902,6 @@ pub const Knot = struct {
     }
 };
 
-// ── the toad mesh (authored in the body frame; joints authored at their own origin) ─────
 fn buildMeshes() [NP]rl.Mesh {
     var mesh: [NP]rl.Mesh = undefined;
     mesh[BODY] = bodyMesh();
@@ -1048,9 +921,7 @@ fn tooth(b: *Builder, bpos: rl.Vector3, dir: rl.Vector3, len: f32, r: f32, col: 
     b.addCylinder(bpos, v3(bpos.x + dir.x * len, bpos.y + dir.y * len, bpos.z + dir.z * len), r, 0.004, 5, col);
 }
 
-// One ragged row of nine teeth — uneven size/lean/spacing, the odd gap and snapped stub,
-// bigger tusks at the corners (seeded, deterministic). Shared by the upper (body) and lower
-// (jaw) rows, differing ONLY in these params; `shift` rebases into the jaw's frame (P_JAW).
+// One ragged row of nine teeth — uneven size/lean/spacing, the odd gap and snapped stub, bigger tusks at the corners (seeded, deterministic).
 const ToothRow = struct {
     seed: u64,
     tuskLen: f32,
@@ -1078,12 +949,7 @@ fn toothRow(b: *Builder, cfg: ToothRow) void {
     }
 }
 
-// A squat, hunched toad: a fat vertical dome (belly widening to a humped back) with a broad
-// warty head + bulging eyes at the mouth line, wider than long. The lower jaw + throat sac
-// are separate (animated) parts.
-/// THE IRISES ALONE, in whatever colour they are burning. Authored in the BODY's own space and at the same
-/// coordinates the sockets in `bodyMesh` were cut for, so the two cannot drift apart. `.plain` because a
-/// hide blotch over an emissive dome reads as a dirty lamp.
+// A squat, hunched toad: a fat vertical dome (belly widening to a humped back) with a broad warty head + bulging eyes at the mouth line, wider than long.
 fn eyeMesh(col: rl.Color) rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
@@ -1098,9 +964,7 @@ fn eyeMesh(col: rl.Color) rl.Mesh {
 fn bodyMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
-    // Body: a fat dome — belly (bottom) widening up to the midsection, then humping up and
-    // narrowing to the back crown (apex set a touch REAR so the profile leans forward). Many
-    // sides so it reads round from every angle (no lizard tail).
+    // Body: a fat dome — belly (bottom) widening up to the midsection, then humping up and narrowing to the back crown (apex set a touch REAR so the profile leans forward).
     b.addCylinder(v3(0, 0.02, -0.02), v3(0, 0.28, -0.03), 0.24, 0.42, 14, HIDE); // lower/mid
     b.addCylinder(v3(0, 0.28, -0.03), v3(0, 0.60, -0.10), 0.42, 0.15, 14, HIDE); // humped back
     b.setMat(.skin);
@@ -1115,8 +979,7 @@ fn bodyMesh() rl.Mesh {
     b.addCube(v3(0, 0.25, 0.18), v3(0.42, 0.16, 0.14), MAW); // gullet — a dark cavern behind the teeth when agape
     b.setMat(.hide);
 
-    // Bulging eyes on top of the head, set wide — bony brow and mound HERE, the IRIS in its own mesh
-    // (`eyeMesh`) so it can change colour with the toad's state. See `Model.draw`.
+    // Bulging eyes on top of the head, set wide — bony brow and mound HERE, the IRIS in its own mesh (`eyeMesh`) so it can change colour with the toad's state.
     for ([_]f32{ -1, 1 }) |sgn| {
         const ex = 0.19 * sgn;
         b.addCube(v3(ex, 0.46, 0.30), v3(0.24, 0.13, 0.24), HIDE_DK); // brow socket
@@ -1126,8 +989,7 @@ fn bodyMesh() rl.Mesh {
     b.addCube(v3(0.08, 0.40, 0.54), v3(0.035, 0.035, 0.035), HIDE_DK);
     b.addCube(v3(-0.08, 0.40, 0.54), v3(0.035, 0.035, 0.035), HIDE_DK);
 
-    // Upper teeth: a RAGGED row hanging from the lip — uneven size / lean / spacing, the odd gap
-    // and snapped stub, big tusks near the corners (seeded, deterministic; no two alike).
+    // Upper teeth: a RAGGED row hanging from the lip — uneven size / lean / spacing, the odd gap and snapped stub, big tusks near the corners (seeded, deterministic; no two alike).
     toothRow(&b, .{ .seed = 9173, .tuskLen = 0.21, .toothLen = 0.13, .tuskRad = 0.046, .toothRad = 0.030, .dirY = -1, .zlean = 0.10, .z0 = 0.50 });
 
     // Warty humps scattered over the domed back (deterministic seed, like the flora clumps).
@@ -1144,8 +1006,7 @@ fn bodyMesh() rl.Mesh {
     return b.toMesh();
 }
 
-// Lower jaw — authored about the hinge (P_JAW) at the origin, extending forward. Slab, gum,
-// upward teeth, a tongue; opens by rotating about X.
+// Lower jaw — authored about the hinge (P_JAW) at the origin, extending forward.
 fn lowerJawMesh() rl.Mesh {
     var b = Builder.init();
     // Author in body-frame targets, shifted so the hinge sits at the origin.
@@ -1161,8 +1022,7 @@ fn lowerJawMesh() rl.Mesh {
     b.addCube(j(0, 0.225, 0.34), v3(0.48, 0.03, 0.30), TONGUE); // fleshy floor / tongue
     b.setMat(.hide);
     b.addCube(j(0, 0.235, 0.49), v3(0.50, 0.05, 0.09), HIDE_DK); // lower lip rim
-    // Lower teeth point UP from the rim — the same ragged wabi-sabi treatment, a different
-    // seed so they don't mirror the uppers (they interlock unevenly).
+    // Lower teeth point UP from the rim — the same ragged wabi-sabi treatment, a different seed so they don't mirror the uppers (they interlock unevenly).
     toothRow(&b, .{ .seed = 6421, .tuskLen = 0.19, .toothLen = 0.115, .tuskRad = 0.042, .toothRad = 0.028, .dirY = 1, .zlean = 0.08, .z0 = 0.49, .shift = P_JAW });
     return b.toMesh();
 }
@@ -1178,8 +1038,6 @@ fn throatMesh() rl.Mesh {
 }
 
 // Back-leg thigh — authored at the hip origin, a fat haunch reaching up to the folded knee.
-// `side` mirrors the outward lean so the RIGHT thigh reaches its own mirrored knee — else an
-// unmirrored +x lean points it inward, short of the shank (matches shankMesh(side)).
 fn thighMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
@@ -1189,13 +1047,11 @@ fn thighMesh(side: f32) rl.Mesh {
     return b.toMesh();
 }
 
-// Back-leg shank + webbed foot — authored at the knee origin, dropping down-forward to the
-// ground; `side` mirrors the toe splay. The long foot is the frog read.
+// Back-leg shank + webbed foot — authored at the knee origin, dropping down-forward to the ground; `side` mirrors the toe splay.
 fn shankMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
-    // Foot target relative to the knee (knee sits at P_KNEE in the body frame; foot ~ground,
-    // forward + slightly out).
+    // Foot target relative to the knee (knee sits at P_KNEE in the body frame; foot ~ground, forward + slightly out).
     const foot = v3(-0.10 * side, 0.0 - P_KNEE.y, 0.16 - P_KNEE.z);
     b.addCylinder(v3(0, 0, 0), foot, 0.115, 0.05, 8, HIDE); // shin
     // Webbed foot: a flat pad + three splayed toes fanning forward.
@@ -1209,8 +1065,7 @@ fn shankMesh(side: f32) rl.Mesh {
     return b.toMesh();
 }
 
-// Front leg — authored at the shoulder origin; small, splayed, planting forward. `side`
-// mirrors the outward-x lean so the RIGHT arm isn't flipped inward (as thighMesh/shankMesh).
+// Front leg — authored at the shoulder origin; small, splayed, planting forward.
 fn armMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
@@ -1223,11 +1078,7 @@ fn armMesh(side: f32) rl.Mesh {
     return b.toMesh();
 }
 
-// (A `distPointSeg` wrapper over `mathx.closestOnSegV` sat here with no caller but its own test —
-// the blade test itself goes through `foe.strike`, which rides the mathx helper directly. The three
-// assertions it carried were really about that helper, so they moved to mathx.zig, beside it.)
 
-// ── invariants under test (pure logic only — meshes/poses need a GPU window) ────────────
 test "classify: ranges pick chomp < lunge < hop < rest, and cooldowns gate" {
     try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1, true, true));
     try std.testing.expectEqual(Choice.hop, classify((LUNGE_R + AGGRO_R) * 0.5, true, true));

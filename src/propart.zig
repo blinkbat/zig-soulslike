@@ -70,6 +70,19 @@ pub const FLAME_CORE = rgba(226, 190, 128, 25); // pale heart of a torch — no 
 pub const FLAME_MID = rgba(214, 138, 48, 40);
 pub const FLAME_TIP = rgba(176, 82, 24, 90); // the cooler tongue — and now the most transparent of them
 pub const COAL = rgba(196, 78, 22, 70);
+// ── SMOKE ── the one thing in the world authored to be read from HALF A KILOMETRE.
+//
+// OPAQUE (alpha 255), and that is the correction that matters here: in this renderer a vertex alpha
+// under 255 does NOT mean see-through, it means SELF-LIT (see EMBER above). Authored translucent, the
+// plume came back as a column of solid white marshmallows — the one value in the frame brighter than
+// the sky, lit from inside, and casting a hard shadow across the camp.
+//
+// So smoke is lit like everything else and gets its read the honest way: DARK against a bright sky.
+// Near-black like every other albedo out here, because the hot key and the 1/2.2 lift bring mid-dark
+// back as a soft grey — and warm at the bottom, where it is still carrying the fire's own light.
+pub const SMOKE_HOT = rgba(64, 54, 46, 255);
+pub const SMOKE_MID = rgba(58, 55, 52, 255);
+pub const SMOKE_COLD = rgba(52, 52, 55, 255); // …cooling to the blue-grey of the sky it is joining
 pub const CLOTH = rgba(76, 20, 12, 255); // faded war-banner crimson (matches the hero's cape)
 pub const CLOTH_DK = rgba(48, 14, 10, 255); // …in the folds, and where the rain got into it
 pub const CLOTH_SUN = rgba(96, 46, 32, 255); // …and at the frayed hem, where the sun ate the dye out

@@ -357,7 +357,7 @@ const DASH_TOE: f32 = 24.0; // toes pointed in the air, both legs. Flat paws in 
 const DASH_LEAN: f32 = 20.0; // …and the trunk pitches INTO it, through the waist like everything else
 const DASH_ARM_BACK: f32 = 44.0; // the axes drawn back through the flight, ready to arrive swinging
 
-/// The pelvis drop a `crouch` of hip flexion costs. `legCrouch` bends the knee TWICE the hip, so the
+/// The pelvis drop a `crouch` of hip flexion costs. `legDash` bends the knee TWICE the hip, so the
 /// shank's angle is equal and opposite to the thigh's and the leg simply shortens by cos(crouch). Drop it
 /// by anything else and the paws float or sink — there is no foot IK here.
 fn legSink(crouch: f32) f32 {
@@ -966,7 +966,7 @@ pub const Kobold = struct {
         const heave = self.heaveAmt();
         // THE CROUCH — how far the knees are folded, and therefore how far the pelvis drops. A heaving
         // berserker sags into his own legs, and a stagger buckles them; on straight poles both beats
-        // read as a tip of a plank. `legCrouch` below owns the geometry, this is just the amount.
+        // read as a tip of a plank. `legDash` below owns the geometry, this is just the amount.
         // …and a DASH loads the legs before it and absorbs on the far end. Only the SYMMETRIC part is
         // here, because only that moves the pelvis; the one-knee-up half of the leap is `legDash`,
         // and in the air the pelvis is wherever `hop` puts it.
@@ -1133,7 +1133,7 @@ pub const Kobold = struct {
     fn chopThrow(self: *const Kobold) f32 {
         if (self.state != .chop) return 0;
         const u = mathx.clampF(self.t / ZERK_CHOP, 0, 1);
-        return 22.0 * mathx.smoothstep(ZERK_HIT_A * 0.6, ZERK_HIT_B, u) * (1.0 - mathx.smoothstep(ZERK_HIT_B, 1.0, u)) -
+        return 22.0 * mathx.pulse(u, ZERK_HIT_A * 0.6, ZERK_HIT_B, ZERK_HIT_B, 1.0) -
             9.0 * (1.0 - mathx.smoothstep(0, ZERK_HIT_A, u)); // …arching back on the raise first
     }
 
@@ -1400,7 +1400,7 @@ pub const Kobold = struct {
         // gaping muzzle mid-flurry is the cheapest ferocity in the file.
         if (self.state == .chop) {
             const u = mathx.clampF(self.t / ZERK_CHOP, 0, 1);
-            return 0.62 * mathx.smoothstep(0, ZERK_HIT_A, u) * (1.0 - mathx.smoothstep(ZERK_HIT_B, 1.0, u));
+            return 0.62 * mathx.pulse(u, 0, ZERK_HIT_A, ZERK_HIT_B, 1.0);
         }
         // A LUNGE ARRIVES MOUTH OPEN. Widest through the flight, shut by the time he lands.
         if (self.state == .dash) return 0.75 * mathx.sinf(dashU(self.t) * std.math.pi);

@@ -5,3 +5,4 @@ zig-out/
 *.png
 shots/
 *.bak
+settings.cfg

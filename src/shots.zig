@@ -695,11 +695,20 @@ pub fn runShots(g: *Game) void {
     }
 
     // ── the one-eyed ogre: scale, the overhead-slam beats, and the reactions ────────────────
-    // Framed out on the OPEN plain north-east of the start (oc), clear of the x≈0 colonnade so
-    // the columns don't block the giant. `far` keeps its AI holding the forced state (facing +Z).
+    // A PORTRAIT SPOT NEEDS THE CAMERA'S ROOM, NOT JUST THE SUBJECT'S. This block stood the giant at a
+    // hardcoded (24, 30) commented "open ground, off the ruins" — true when written, false the moment
+    // the owner built a rocky spur there in the editor: `cliff6` at (25.7, 23.9) and `cliff5` at
+    // (33.4, 32.5) sit on it now, and four ogre shots came back as a brown mass wedged in a crevice
+    // in full shade. The RUNWAY was tried as the fix (clear by contract — every scatter avoids the
+    // hero's start lane) and was worse: it guarantees the SUBJECT clear ground and says nothing about
+    // where a 13 m boom ends up, which was inside the same cliff.
+    //
+    // So it shares the KOBOLD block's centre, which is the one staging area in this file with proven
+    // clearance in every direction at portrait range — offset along the lit bearing so the two blocks
+    // do not stand their subjects in the same footprints. `far` keeps the AI holding its forced state.
     {
         const o = &g.grief.ogres[0];
-        const oc = mathx.ground(24.0, 30.0); // portrait spot — open ground, off the ruins
+        const oc = mathx.ground(-26.0, 14.0);
         const far = v3(oc.x, 0, oc.z + 80.0); // sensed hero far ahead → holds state, faces +Z
 
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
@@ -1296,13 +1305,16 @@ fn editorShots(g: *Game) void {
     // apron at the arch, so the shader's soil override is captured rather than assumed. Painted
     // into the LIVE map, then undone, so the shot never leaves the world dirty.
     const before = g.map.soil;
+    const beforeCov = g.map.soilCov;
     g.editor.setLayer(.ground);
     g.editor.brush[@intFromEnum(editormod.Layer.ground)] = @intFromEnum(editormod.GroundBrush.dirt);
     g.editor.radius = 5;
     var z: f32 = 22;
-    while (z > -40) : (z -= 3) _ = g.map.paintSoil(0.6, z, 4.5, .dirt);
-    _ = g.map.paintSoil(0, -30, 9, .stone);
-    _ = g.map.paintSoil(-13.5, 3, 6, .moss);
+    while (z > -40) : (z -= 3) _ = g.map.paintSoil(0.6, z, 4.5, .dirt, 1);
+    _ = g.map.paintSoil(0, -30, 9, .stone, 1);
+    // …and the moss at HALF strength, so the capture carries the coverage system as well as the ids:
+    // a patch laid down faint is the thing a screenshot can prove and a comment cannot.
+    _ = g.map.paintSoil(-13.5, 3, 6, .moss, 0.5);
     g.env.uploadSoil(&g.map);
     g.editor.focus = mathx.ground(0, -10);
     g.editor.pitch = -0.85;
@@ -1314,6 +1326,7 @@ fn editorShots(g: *Game) void {
     snap("shots/98_editor_ground.png");
 
     g.map.soil = before;
+    g.map.soilCov = beforeCov;
     g.env.uploadSoil(&g.map);
 
     // PAINTED WATER, the same way: a pond swept in with the brush and shot from low down, which is the

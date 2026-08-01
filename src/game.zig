@@ -69,11 +69,16 @@ const MOUSE_WAKE: f32 = 2.0;
 // end (camera.PITCH_MIN..PITCH_MAX), so running it at the yaw rate slams the camera from the sky to
 // the dirt in half a second — the stick has no fine vertical range at all. Every third-person
 // console camera, ER included, runs vertical appreciably slower than horizontal for exactly this.
-const LOOK_RATE_YAW = 2.7; // rad/sec orbit at full right-stick deflection
-const LOOK_RATE_PITCH = 1.6; // …and vertical, deliberately slower (see above)
+const LOOK_RATE_YAW = 3.4; // rad/sec orbit at full right-stick deflection
+const LOOK_RATE_PITCH = 2.0; // …and vertical, deliberately slower (see above)
 // Response shape past the deadzone: 1 = linear, >1 = fine aim near the centre with the SAME top
 // rate still reached at the rim. A linear look stick has one usable speed — its fastest.
-const LOOK_CURVE = 1.5;
+//
+// RAISED WITH THE RATES (owner: full deflection should turn faster — "higher ceil on that"). The two
+// move together on purpose: a rate rise on its own scales the WHOLE curve, so the fine aim at quarter
+// throw would have got coarser by the same 26% the rim got faster. Steepening the curve hands the
+// increase to the rim and leaves the near-centre rate almost exactly where it was.
+const LOOK_CURVE = 1.7;
 const ROLL_TAP_MAX = 0.22; // Circle/B released before this (real seconds) = a dodge tap; longer = a sprint hold
 // NO run-unlock hold, ever (owner's rule, see AGENTS.md): the stick IS the speed — tilt
 // maps straight to ground speed every frame, and keyboard movement runs immediately.
@@ -81,9 +86,15 @@ const ROLL_TAP_MAX = 0.22; // Circle/B released before this (real seconds) = a d
 // Impact shake fed to the camera rig (trauma² response in camera.zig), sized so a light
 // reads as a tick and a slam cracks the frame. NO hitstop — impact weight is shake +
 // rumble + reaction anims only.
-const SHAKE_HIT_LIGHT = 0.16;
-const SHAKE_HIT_HEAVY = 0.26;
-const SHAKE_KILL = 0.38;
+//
+// LANDING ONE SHAKES THE FRAME LESS THAN TAKING ONE (owner's call), and the gap below is deliberately
+// wide: you swing constantly and are hit rarely, so the same trauma on both ends means the camera is
+// jolting for most of every fight and a blow that actually lands on YOU has nothing left to say. The
+// weight of a hit you land is carried by the rumble, the hit flash and the foe's own reaction — the
+// three channels that are about the foe — rather than by moving the player's own view.
+const SHAKE_HIT_LIGHT = 0.09;
+const SHAKE_HIT_HEAVY = 0.15;
+const SHAKE_KILL = 0.26;
 const SHAKE_HURT = 0.42;
 const SHAKE_HURT_HEAVY = 0.62;
 // A CAUGHT blow cracks the frame less than one that lands — he HELD, and the shake says so. Scaled
@@ -380,6 +391,38 @@ fn gatherMove() Move {
 // bleed both go through it, and they must never disagree about what a sprint is.
 fn sprintingMove(mv: Move) bool {
     return mv.speed > RUN_SPEED + 0.01 and (mv.fx * mv.fx + mv.fz * mv.fz) > 1e-6;
+}
+
+// ── WADING ── the two things deep water changes, and deliberately only those two: he cannot RUN in it,
+// and the deeper it gets the slower the walk. Nothing about his ACTIONS is touched — a swing costs the
+// same in a lake as on the plain, for now (owner's call).
+//
+// SHALLOWS ARE FREE. Everything up to the knee is full speed, because a shoreline you cannot cross at a
+// run reads as glue rather than as water, and a fringe of shallows is most of the water on a map.
+const WADE_KNEE: f32 = 0.5; // knee on the H=1.8 rig — where a leg starts pushing instead of swinging
+const WADE_DEEP: f32 = 1.15; // …about chest, where the walk is as slow as it gets
+const WADE_SLOWEST: f32 = 0.35; // …as a fraction of the WALK, not of the run he has already lost
+
+/// How much the water is holding him back, as a fraction of the walk. 1.0 means it is not.
+fn wadeDrag(g: *const Game) f32 {
+    return wadeDragAt(g.env.wadeDepth(g.hero.pos.x, g.hero.pos.z));
+}
+
+test "wading costs the run first and never roots him" {
+    // Ankle-deep is FREE — the shallows must not read as glue.
+    try std.testing.expectEqual(@as(f32, 1.0), wadeDragAt(0.2));
+    // …and past the knee the WALK is what is left, dragged down but never to nothing.
+    try std.testing.expect(wadeDragAt(WADE_DEEP) * WALK_SPEED < WALK_SPEED);
+    try std.testing.expect(wadeDragAt(WADE_DEEP * 3) * WALK_SPEED > 0.1);
+    // MONOTONIC: deeper is never faster.
+    try std.testing.expect(wadeDragAt(0.7) > wadeDragAt(0.9));
+}
+
+/// The drag curve alone, off a depth — `wadeDrag` is that plus the world lookup, which a test has no
+/// Env to do.
+fn wadeDragAt(d: f32) f32 {
+    if (d <= WADE_KNEE) return 1.0;
+    return mathx.lerpF(1.0, WADE_SLOWEST, mathx.smoothstep(WADE_KNEE, WADE_DEEP, d));
 }
 
 /// PLANT AN ACTOR ON THE GROUND: ease `pos.y` toward the terrain height under its feet. See the rate
@@ -772,7 +815,7 @@ fn drawDeathOverlay(g: *Game) void {
         rl.drawRectangleGradientV(0, by, w, third, bclear, bcol); // feathered band edges
         rl.drawRectangle(0, by + third, w, bh - 2 * third, bcol);
         rl.drawRectangleGradientV(0, by + bh - third, w, third, bcol, bclear);
-        const ta = mathx.smoothstep(0.16, 0.48, u) * (1.0 - mathx.smoothstep(0.90, 1.0, u));
+        const ta = mathx.pulse(u, 0.16, 0.48, 0.90, 1.0);
         if (ta > 0.01) {
             const size = 0.115 * hf * (0.97 + 0.06 * u); // the letters swell, barely
             const spacing = 0.22 * size; // ER's wide tracking (between glyphs only — measured exactly)
@@ -1205,7 +1248,6 @@ pub fn run(mode: Mode) void {
         // need the untouched number: how far the stick is actually pushed is the only thing that can
         // tell a resting deflection apart from a real one.
         const padMag = @sqrt(padRX * padRX + padRY * padRY);
-        var lookMag: f32 = 0;
         if (g.lock) |li| {
             const dir = mathx.dirXZ(g.hero.pos, foePos(g, li));
             if (mathx.lenXZ(dir) > 0.001) {
@@ -1226,7 +1268,6 @@ pub fn run(mode: Mode) void {
             // device must not add to the other. The last device to give a REAL look input owns the
             // camera and the other is dead until it gives one of its own — a latch, not a lockout.
             const look = stickRadial(padRX, padRY, LOOK_DEADZONE, LOOK_CURVE);
-            lookMag = padMag;
             // MOUSE_WAKE, not zero: a hidden-but-uncaptured cursor picks up a pixel of jitter from
             // the desk, and one pixel used to be enough to take the camera off the stick.
             const mouseLook = inside and wasInside and (@abs(md.x) + @abs(md.y)) > MOUSE_WAKE;
@@ -1262,7 +1303,11 @@ pub fn run(mode: Mode) void {
             .mdy = md.y,
             .rx = padRX,
             .ry = padRY,
-            .mag = lookMag,
+            // …the RAW magnitude, not the unlocked path's local copy of it. That copy stayed 0 through
+            // the whole locked branch, so locking on froze the one number that separates hardware drift
+            // from a real push at zero — while the line above claimed the readout tracks both devices on
+            // either path. A diagnostic that lies is worse than no diagnostic.
+            .mag = padMag,
             // Wrapped: yaw lives in (−pi, pi] so a turn across the seam is a small delta, not a full
             // circle. This is the line that says whether the camera moved AT ALL.
             .dyaw = mathx.degrees(mathx.wrapPi(g.rig.yaw - yawBefore)),
@@ -1337,6 +1382,11 @@ pub fn run(mode: Mode) void {
         // running out of stamina drops you to a walk, it does not root you to the spot.
         var mv = gatherMove();
         if (!g.hero.stam.canSprint()) mv.speed = @min(mv.speed, RUN_SPEED);
+        // …and WATER caps it the same way, for the same reason: past the knee a leg stops swinging and
+        // starts pushing. CAPPED, never zeroed — water you can be rooted in is a trap rather than
+        // terrain, exactly as with the stamina gate above.
+        const wade = wadeDrag(g);
+        if (wade < 1.0) mv.speed = @min(mv.speed, WALK_SPEED * wade);
         // Poise/stance regenerate every frame (relent and pressure resets — Elden Ring).
         g.hero.vit.tick(dt);
         // …and anything he ATE drips HP back. Here beside `vit.tick` and not in `hero.tickClocks`
@@ -1612,7 +1662,26 @@ fn footsteps(g: *Game, last: *f32) void {
     };
     // Quieter the slower he goes, on top of the voice change — a careful walk should not land as
     // hard as a sprint that happens to be crossing the same phase.
-    sfx.playAt(id, mathx.clampF(0.45 + 0.55 * h.speed / SPRINT_SPEED, 0.35, 1.0));
+    const vol = mathx.clampF(0.45 + 0.55 * h.speed / SPRINT_SPEED, 0.35, 1.0);
+    sfx.playAt(id, vol);
+    if (stepOverlay(g, h.pos.x, h.pos.z)) |over| sfx.playAt(over, vol);
+}
+
+/// WHAT HE IS STANDING ON, as an extra voice STACKED on the boot rather than a boot of its own. Turf
+/// is the tuned sound and stays the reference — the surfaces that differ differ by what the contact
+/// adds, so a stone floor is the same walk with a clop in it and the gait never has to be re-tuned per
+/// material (see `sfx.step_stone`). Null is the common answer and means the boot alone.
+fn stepOverlay(g: *const Game, x: f32, z: f32) ?sfx.Id {
+    // WATER FIRST, and whatever is painted under it loses: you are standing in the lake, not on its
+    // bed. `inWater` is the one test that answers for both the authored pools and the painted mask.
+    if (g.env.inWater(x, z, 1.0)) return .step_water;
+    const i = g.map.soilIndex(x, z) orelse return null;
+    const v = g.map.soil[i];
+    if (v >= worldfmt.Soil.N) return null;
+    return switch (@as(worldfmt.Soil, @enumFromInt(v))) {
+        .stone => .step_stone,
+        else => null, // dirt, turf, silt, ash, moss and unpainted ground are all the plain boot
+    };
 }
 
 // ── THE HERO WAS HURT ── the rumble + camera crack + voice for one blow landing on him, in ONE place,

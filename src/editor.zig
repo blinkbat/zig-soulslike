@@ -191,11 +191,17 @@ const propBrushes = [_][:0]const u8{ "Stamp", "Row", "Ring", "Cluster", "Ivy", "
 // INTERACTABLES place ONE AT A TIME, and deliberately have no scatter: a chest's contents are the op's
 // own (`Op.loot`), so a generator would put the identical list in every box it grew.
 const interactBrushes = [_][:0]const u8{ "Stamp", "Erase" };
-// The three kobold roles read as their own words rather than as "kobold_x": the family is obvious from
-// the icons and the models, and these labels have to match `wf.FoeKind`'s tags EXACTLY (the comptime
-// block below compares them byte for byte, so the map file's `foe: priest …` and this button are one
-// name).
-const unitBrushes = [_][:0]const u8{ "toad", "archer", "ogre", "berserker", "priest", "slinger", "Erase" };
+// THE FOES' REAL NAMES, off `wf.foeName` — not their enum tags. The tag is the file format's word and
+// nobody should ever be shown it: "ogre" is not what that thing is called, and "berserker / priest /
+// slinger" as three bare rows never says they are all kobolds. Built rather than typed, so the palette
+// cannot drift from the names the rest of the game uses.
+const unitBrushes = blk: {
+    const N = @typeInfo(wf.FoeKind).@"enum".fields.len;
+    var out: [N + 1][:0]const u8 = undefined;
+    for (0..N) |i| out[i] = wf.foeName(@enumFromInt(i));
+    out[N] = "Erase";
+    break :blk out;
+};
 
 /// Where the SOIL ids start in `groundBrushes`, since the sculpt tools now come first. The paint path
 /// decodes a soil by ordinal (`brushIdx() - GROUND_SOIL_0 + 1`), so this one constant is what keeps the
@@ -365,8 +371,8 @@ comptime {
     std.debug.assert(unitBrushes.len == @typeInfo(wf.FoeKind).@"enum".fields.len + 1);
     for (0..@typeInfo(wf.FoeKind).@"enum".fields.len) |i| {
         const tag = @tagName(@as(wf.FoeKind, @enumFromInt(i)));
-        std.debug.assert(std.mem.eql(u8, unitBrushes[i], tag));
-        // …AND SO ARE THEIR ICONS, by NAME and not just by count. The length check above cannot see a
+        // (The LABELS are `wf.foeName` by construction now, so there is nothing left to pin there.)
+        // …but THEIR ICONS still are, by NAME and not just by count. The length check above cannot see a
         // reordering, and this is the one strip whose glyphs are all the same KIND of thing — three
         // doglike kobolds with different kits — so a swapped pair would show the priest's staff over
         // the berserker and read as a drawing bug rather than as a table out of step. The icon set
@@ -400,7 +406,17 @@ comptime {
     pinBrushes(PropBrush, &propBrushes);
     pinBrushes(InteractBrush, &interactBrushes);
     pinBrushes(GroundBrush, &groundBrushes);
-    pinBrushes(UnitBrush, &unitBrushes);
+    // UNITS ARE PINNED TO `wf.FoeKind` INSTEAD, and that is the stronger statement of the two: its
+    // labels are the foes' real NAMES now (`wf.foeName`), so a label-to-tag comparison would only be
+    // asserting that "Giant Toad" is spelled "toad" — which is exactly what this layer stopped doing.
+    // What actually has to hold is that the brush enum walks the foe kinds in their own order.
+    const foeFields = @typeInfo(wf.FoeKind).@"enum".fields;
+    const unitFields = @typeInfo(UnitBrush).@"enum".fields;
+    if (unitFields.len != foeFields.len + 1) @compileError("editor: UnitBrush is not the foe kinds plus an eraser");
+    for (foeFields, unitFields[0..foeFields.len]) |f, u| {
+        if (!std.mem.eql(u8, f.name, u.name)) @compileError("editor: UnitBrush." ++ u.name ++ " is not wf.FoeKind." ++ f.name);
+    }
+    if (!std.mem.eql(u8, unitFields[unitFields.len - 1].name, "erase")) @compileError("editor: UnitBrush must end in `erase`");
 }
 
 fn pinBrushes(comptime E: type, comptime names: []const [:0]const u8) void {
@@ -629,6 +645,11 @@ pub const Editor = struct {
     interactKind: Kind = .chest,
     groupSel: props.Group = .ruins, // which palette shelf is open
     radius: f32 = 6.0,
+    /// HOW STRONGLY A SOIL STROKE COVERS. The one dial the blending system needs: the stroke's own
+    /// falloff shapes the margin, and this says what the middle settles at. Painting BELOW what is
+    /// already there pulls it down, so this doubles as the way to thin a patch you have already laid
+    /// (see `wf.Map.paintSoil`).
+    soilOpacity: f32 = 1.0,
     snap: bool = false,
 
     sel: ?usize = null, // selected op
@@ -1037,19 +1058,22 @@ pub const Editor = struct {
     /// The index space just moved under us (a removal shifted everything after it down, or an
     /// undo swapped the whole document): repair what points into it.
     ///
-    /// THE MARKED SET GOES WHOLESALE, and that is not laziness. `marked` holds raw op indices
-    /// (Decor/Props) or foe indices (Units), and a removal renumbers them — so an index that is
-    /// still in range now names a DIFFERENT thing, and the next Del / drag / Ctrl+C silently acts
-    /// on it. `removeOp`'s own comment already spells this hazard out for the pick path; the
-    /// marquee had the same one and no guard, because bounds-checking `i >= m.nops` at every use
-    /// only catches the entries that fell off the END.
+    /// EVERYTHING GOES WHOLESALE, and that is not laziness. `marked`, `sel` and `selFoe` all hold
+    /// raw op indices (Decor/Props) or foe indices (Units), and a removal renumbers them — so an
+    /// index that is STILL IN RANGE now names a DIFFERENT thing, and the next Del / drag / Ctrl+C /
+    /// properties stepper silently acts on it. An undo is worse again: the whole document is
+    /// swapped, so nearly every surviving index means something else.
+    ///
+    /// `marked` was cleared here from the start and `sel` was only RANGE-CLAMPED, which is the half
+    /// of the hazard bounds-checking cannot see — it catches the entries that fell off the END and
+    /// nothing else. `deleteMarked` had already worked around it by nulling both by hand; that is
+    /// now the rule rather than one caller's precaution. The cost is that Ctrl+Z closes the
+    /// properties panel, which is the correct answer to "whose dials are these?" after the document
+    /// underneath them was replaced.
     fn clampSel(self: *Editor, m: *const wf.Map) void {
-        if (self.sel) |s| {
-            if (s >= m.nops) self.sel = if (m.nops == 0) null else m.nops - 1;
-        }
-        if (self.selFoe) |s| {
-            if (s >= m.nfoes) self.selFoe = null;
-        }
+        _ = m;
+        self.sel = null;
+        self.selFoe = null;
         self.nMarked = 0;
     }
 
@@ -1239,10 +1263,9 @@ pub const Editor = struct {
         // → the menu, and a brush of any kind is one Esc from being able to pick things up again —
         // which is also what AGENTS.md has always said Esc does.
         //
-        // IT NO LONGER DESELECTS. That step sat between the brush and the menu, so backing out of
-        // Stamp threw away the selection you were backing out to work on, and Esc from Select with
-        // something picked took two presses to reach the menu. Right-click on nothing is the deselect
-        // (and always was the discoverable one), so nothing is lost.
+        // Deselect sits AFTER the brush→Select step and not before it, which is what keeps a brush one
+        // Esc from picking things up again: backing out of Stamp reaches Select with the selection you
+        // were backing out to work on still intact, and only the next Esc drops it.
         if (rl.isKeyPressed(.escape)) {
             if (self.menuOpen) {
                 self.menuOpen = false;
@@ -1251,6 +1274,13 @@ pub const Editor = struct {
             if (!self.selecting) {
                 self.selecting = true;
                 self.say("select");
+                return .none;
+            }
+            if (self.sel != null or self.selFoe != null or self.nMarked > 0) {
+                self.sel = null;
+                self.selFoe = null;
+                self.nMarked = 0;
+                self.say("deselect");
                 return .none;
             }
             self.request(.leave);
@@ -1498,7 +1528,8 @@ pub const Editor = struct {
                             self.wetStroke = true;
                         },
                         .erase => {
-                            if (m.paintSoil(g.x, g.z, self.radius, .none)) env.uploadSoil(m);
+                            // Opacity is not passed: an eraser clears outright (see `paintSoil`).
+                            if (m.paintSoil(g.x, g.z, self.radius, .none, 1)) env.uploadSoil(m);
                             if (m.paintWater(g.x, g.z, self.radius, false)) {
                                 env.uploadWater(m);
                                 self.wetStroke = true;
@@ -1506,7 +1537,7 @@ pub const Editor = struct {
                         },
                         else => {
                             const id: wf.Soil = @enumFromInt(self.brushIdx() - GROUND_SOIL_0 + 1);
-                            if (m.paintSoil(g.x, g.z, self.radius, id)) env.uploadSoil(m);
+                            if (m.paintSoil(g.x, g.z, self.radius, id, self.soilOpacity)) env.uploadSoil(m);
                         },
                     }
                 }
@@ -1701,7 +1732,7 @@ pub const Editor = struct {
             .foe => |i| {
                 self.selFoe = i;
                 self.sel = null;
-                self.sayFmt("#{d} {s}", .{ i, @tagName(m.foes[i].kind) });
+                self.sayFmt("#{d} {s}", .{ i, wf.foeName(m.foes[i].kind) });
                 return true;
             },
             .none => {},
@@ -1944,7 +1975,7 @@ pub const Editor = struct {
         m.foes[m.nfoes] = .{ .kind = kind, .x = at.x, .z = at.z, .yaw = 0, .scale = 1, .seed = seed };
         self.selFoe = m.nfoes;
         m.nfoes += 1;
-        self.sayFmt("+{s} ({d:.0}, {d:.0})", .{ @tagName(kind), at.x, at.z });
+        self.sayFmt("+{s} ({d:.0}, {d:.0})", .{ wf.foeName(kind), at.x, at.z });
     }
 
     /// ONE tick of the held eraser: remove at most one thing, and only when the cursor has TRAVELLED
@@ -2989,6 +3020,12 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         y += ROW_H + 4;
         _ = ui.slider(ctx, x, y, w, "radius", &ed.radius, 1, 60);
         y += ROW_H + SLIDER_DROP;
+        // THE BLEND DIAL, and only on the soil brush — the sculpt tools have their own strength and the
+        // water mask is one bit wide, so neither has an opacity to offer.
+        if (!sculpting and !wet) {
+            _ = ui.slider(ctx, x, y, w, "opacity", &ed.soilOpacity, 0, 1);
+            y += ROW_H + SLIDER_DROP;
+        }
         if (sculpting) {
             _ = ui.slider(ctx, x, y, w, "strength", &ed.sculptRate, 0.5, 12);
             y += ROW_H + SLIDER_DROP;
@@ -3072,6 +3109,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 ed.say("water cleared");
             } else {
                 m.soil = [_]u8{0} ** wf.SOIL_CELLS;
+                m.soilCov = [_]u8{wf.COV_FULL} ** wf.SOIL_CELLS;
                 env.uploadSoil(m);
                 ed.say("paint cleared");
             }

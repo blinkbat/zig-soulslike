@@ -631,7 +631,7 @@ pub const Frog = struct {
     }
     fn resolveLand(self: *Frog, k: f32) void {
         // SPLAT then rebound: absorb wide + low, settle back toward the sit.
-        const splat = mathx.smoothstep(0, 0.45, k) * (1.0 - mathx.smoothstep(0.45, 1.0, k));
+        const splat = mathx.pulse(k, 0, 0.45, 0.45, 1.0);
         self.lift = 0;
         self.sy = 1.0 - 0.26 * splat;
         self.sxz = 1.0 + 0.16 * splat;
@@ -709,7 +709,7 @@ pub const Frog = struct {
         // wide open the whole beat (ER's stance break; the critical/riposte comes later).
         self.base();
         const u = mathx.clampF(self.t / combat.FOE_HEAVY_STUN_DUR, 0, 1);
-        const down = mathx.smoothstep(0, 0.16, u) * (1.0 - mathx.smoothstep(0.74, 1.0, u)); // slam, gather at the end
+        const down = mathx.pulse(u, 0, 0.16, 0.74, 1.0); // slam, gather at the end
         const reel = mathx.sinf(self.elapsed * 8.0);
         self.lift = 0;
         self.sy = mathx.lerpF(1.0, 0.56, down); // flattened

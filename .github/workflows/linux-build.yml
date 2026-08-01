@@ -1,0 +1,55 @@
+# Build the Linux binary, on Linux, and hand back something a friend can download and run.
+#
+# WHY THIS EXISTS RATHER THAN A CROSS-COMPILE FROM THE WINDOWS BOX: `zig build -Dtarget=x86_64-linux-gnu`
+# gets all the way through compiling raylib's C and then dies at the LINK step, because it needs the X11
+# shared libraries (X11, GLX, Xcursor, Xrandr, …) and Zig does not ship those — they are files that only
+# exist on a Linux install. Running the build on a Linux runner is the short way round that.
+#
+# Run it from the repo's Actions tab ("Run workflow"), then download `zig-soulslike-linux` from the run's
+# artifacts. It also runs on a push to main so there is usually a fresh one already waiting.
+name: linux-build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The X11 development packages the link step was missing. GLX comes from the mesa dev package.
+      # Audio needs nothing here: raylib's miniaudio backend dlopens ALSA/PulseAudio at RUNTIME, so
+      # there is no library to link against at build time.
+      - name: Install X11 development libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxcursor-dev libxext-dev libxfixes-dev libxi-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev libgl1-mesa-dev
+
+      # The SAME Zig the Windows build uses. A version drift here would be a different compiler
+      # producing the binary nobody can reproduce locally.
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+
+      - name: Build
+        run: zig build -Doptimize=ReleaseFast
+
+      # THE BINARY IS NOT ENOUGH ON ITS OWN. The game opens `assets/Balthazar-Regular.ttf` and
+      # `worlds/01_fallen_plain.world` by paths RELATIVE TO THE WORKING DIRECTORY, so it has to be run
+      # from a folder that has both beside it — ship the folder, not the file.
+      - name: Package
+        run: |
+          mkdir -p dist/zig-soulslike
+          cp zig-out/bin/zig-soulslike dist/zig-soulslike/
+          cp -r assets worlds dist/zig-soulslike/
+          cd dist && tar -czf zig-soulslike-linux.tar.gz zig-soulslike
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zig-soulslike-linux
+          path: dist/zig-soulslike-linux.tar.gz

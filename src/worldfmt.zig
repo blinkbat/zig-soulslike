@@ -250,6 +250,24 @@ pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 /// inserting a kind in the middle silently renumbers both. Add at the end.
 pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger };
 
+/// WHAT EACH FOE IS CALLED — the owner's names, and the only strings any UI should ever show for one.
+/// The enum TAG is the file format's word (`foe: priest …`) and must never be shown to anybody: `ogre`
+/// is not the thing's name, and three rows reading "berserker / priest / slinger" say nothing about
+/// their all being kobolds.
+///
+/// Beside the enum rather than in the editor, because the HUD's lock-on plate and the editor's palette
+/// are two places that would otherwise each keep their own list and drift.
+pub fn foeName(k: FoeKind) [:0]const u8 {
+    return switch (k) {
+        .toad => "Giant Toad",
+        .archer => "Skeleton Archer",
+        .ogre => "Cyclops",
+        .berserker => "Kobold Berserker",
+        .priest => "Kobold Priest",
+        .slinger => "Kobold Slinger",
+    };
+}
+
 /// One posted spawn. `yaw` is DEGREES like every yaw in the format (the rigs take radians; the loader
 /// converts). `seed` is the per-instance animation phase in 0..1 — what stops a knot of toads breathing
 /// and hopping as one body.
@@ -286,12 +304,58 @@ pub const Soil = enum(u8) {
     moss,
 
     pub const N = @typeInfo(Soil).@"enum".fields.len;
+
+    /// DOES THIS MATERIAL CUT, OR DOES IT BLEND? A property of the STUFF, which is why it lives on the
+    /// enum rather than on a brush: dirt fades into turf because that is what dirt does at the edge of a
+    /// path, and a flagged floor stops where the masons stopped it. See the shader's `soilHard`, which
+    /// carries the same answer and is pinned to this one by the comptime block below.
+    ///
+    /// The only thing it changes is how the COVERAGE grid is read (see `Map.soilCov`): a hard material
+    /// samples it per cell, a soft one lets it interpolate and adds a further ring of cross-fade. Both
+    /// honour the painted level, so a hard material can still be laid down at half strength.
+    pub fn hardEdge(s: Soil) bool {
+        return s == .stone;
+    }
 };
 
 comptime {
     // The shader's soilColor() hard-codes ids 1..6 and falls through to moss. Adding a soil
     // without extending it would paint the new material as moss, silently.
     std.debug.assert(Soil.N == 7);
+    // …and its `soilHard` hard-codes the id below, for the same reason and with the same trap: a
+    // reordered enum would give the crisp edge to whichever material inherited the number.
+    std.debug.assert(@intFromEnum(Soil.stone) == 3);
+}
+
+/// FULL COVERAGE — what an unpainted-with-opacity cell holds, and the value the whole grid defaults to.
+/// 255 rather than 0 on purpose: every map authored before coverage existed has no `soilcov` record, so
+/// it loads as "every cell fully covered" and renders exactly as it always did.
+pub const COV_FULL: u8 = 255;
+
+pub fn covF(v: u8) f32 {
+    return @as(f32, @floatFromInt(v)) / 255.0;
+}
+
+pub fn covByte(v: f32) u8 {
+    return @intFromFloat(std.math.clamp(v, 0, 1) * 255.0 + 0.5);
+}
+
+/// How much of the brush's radius is laid down at FULL strength before the margin starts. A pure cone
+/// (core 0) was tried first and it is wrong at this grid's scale: the soil lattice is 5 m a cell, so a
+/// radius-5 stroke is one cell across and a cone gives every one of those cells a partial value —
+/// painting at 100% came out translucent everywhere and there was no way to lay down a solid floor.
+/// With a core, the dial means what it says in the middle and the feathering is confined to the rim.
+const BRUSH_CORE: f32 = 0.55;
+
+/// THE BRUSH'S SHAPE: 1 out to `BRUSH_CORE` of the radius, easing to 0 at the rim. Smooth rather than
+/// linear over that margin because a linear ramp leaves a visible crease where the stroke ends, and the
+/// whole point of the coverage grid is that a margin is something you cannot pick out.
+fn brushFalloff(d: f32, radius: f32) f32 {
+    if (radius <= 0) return 1;
+    const core = radius * BRUSH_CORE;
+    if (d <= core) return 1;
+    const u = std.math.clamp((radius - d) / (radius - core), 0, 1);
+    return u * u * (3.0 - 2.0 * u);
 }
 
 // ── the painted WATER ───────────────────────────────────────────────────────────────────
@@ -428,6 +492,15 @@ pub const Map = struct {
     nfoes: usize = 0,
     /// The painted soil, row-major from -half to +half on both axes. All zero = nothing painted.
     soil: [SOIL_CELLS]u8 = [_]u8{0} ** SOIL_CELLS,
+    /// HOW STRONGLY that material covers its cell, 0..255 — the same grid, one number deeper. It is the
+    /// whole of the blending system: an edge fades because the cells there hold a low number, and a
+    /// patch reads faint in the middle for exactly the same reason and by the same means. One value
+    /// rather than a separate "edge softness" dial, because an edge is not a special place — it is
+    /// simply where the coverage happens to be low (owner: "opacity of the edges — or wherever really").
+    ///
+    /// Meaningless where `soil` is 0, and defaulted to `COV_FULL` so a map with no record renders as it
+    /// always did (see COV_FULL).
+    soilCov: [SOIL_CELLS]u8 = [_]u8{COV_FULL} ** SOIL_CELLS,
     /// The painted WATER MASK, same layout, 1 = wet. Depth, shoreline and wet sand are all derived
     /// from it (see env.uploadWater) — this is only the outline.
     water: [WATER_CELLS]u8 = [_]u8{0} ** WATER_CELLS,
@@ -451,6 +524,7 @@ pub const Map = struct {
         self.nclearings = 0;
         self.nfoes = 0;
         self.soil = [_]u8{0} ** SOIL_CELLS;
+        self.soilCov = [_]u8{COV_FULL} ** SOIL_CELLS;
         self.water = [_]u8{0} ** WATER_CELLS;
         // To the DATUM, not to zero: `@memset(.., 0)` here would drop the ground to HEIGHT_MIN.
         self.height = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS;
@@ -559,11 +633,28 @@ pub const Map = struct {
         return @min(cz, SOIL_N - 1) * SOIL_N + @min(cx, SOIL_N - 1);
     }
 
-    /// Paint a disc of soil. Returns whether anything actually changed, so a stroke that lands
-    /// on ground already that material doesn't bank an undo step or raise the dirty flag.
-    pub fn paintSoil(self: *Map, px: f32, pz: f32, radius: f32, id: Soil) bool {
+    /// Paint a disc of soil at `opacity` (0..1 — how strongly the material ends up covering the ground).
+    /// Returns whether anything actually changed, so a stroke that lands on ground already exactly like
+    /// this doesn't bank an undo step or raise the dirty flag.
+    ///
+    /// THE STROKE IS A MASK, AND INSIDE IT THE COVERAGE MOVES TOWARD THE DIAL — `lerp(here, opacity,
+    /// falloff)`, with `falloff` 1 at the centre of the disc and 0 at its rim. That one rule is what
+    /// makes the whole thing behave:
+    ///
+    ///   - painting at full strength drives the middle to solid and leaves a soft margin at the rim;
+    ///   - painting at 40% over your own solid patch pulls it DOWN to 40%, so opacity is adjustable
+    ///     anywhere and not only where an edge happens to be;
+    ///   - two overlapping strokes do not carve each other, because a rim moves a cell by almost
+    ///     nothing rather than writing zero over it;
+    ///   - and passing over the same ground repeatedly converges on the dial instead of running away.
+    ///
+    /// A cell holding a DIFFERENT material is contested rather than overwritten: the stroke wins it only
+    /// where it would end up covering more of it than the incumbent does. So a faint stroke does not
+    /// eat a solid floor — dial up, or erase — while a solid one takes ground immediately.
+    pub fn paintSoil(self: *Map, px: f32, pz: f32, radius: f32, id: Soil, opacity: f32) bool {
         const cell = self.cellSize(SOIL_N);
         const r2 = radius * radius;
+        const want = std.math.clamp(opacity, 0, 1);
         var changed = false;
         var cz: usize = 0;
         while (cz < SOIL_N) : (cz += 1) {
@@ -574,11 +665,33 @@ pub const Map = struct {
                 const wx = -self.half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
                 const dx = wx - px;
                 const dz = wz - pz;
-                if (dx * dx + dz * dz > r2) continue;
+                const d2 = dx * dx + dz * dz;
+                if (d2 > r2) continue;
                 const i = cz * SOIL_N + cx;
                 const v: u8 = @intFromEnum(id);
-                if (self.soil[i] != v) {
+                // ERASING is not a weak paint and must not be contested — `none` clears the cell
+                // outright wherever the disc touches it, which is what an eraser is.
+                if (id == .none) {
+                    if (self.soil[i] != 0 or self.soilCov[i] != COV_FULL) {
+                        self.soil[i] = 0;
+                        self.soilCov[i] = COV_FULL;
+                        changed = true;
+                    }
+                    continue;
+                }
+                const t = brushFalloff(@sqrt(d2), radius);
+                const here: f32 = if (self.soil[i] == v) covF(self.soilCov[i]) else 0;
+                const next = here + (want - here) * t;
+                const nv = covByte(next);
+                // Contest: an incumbent material only loses a cell to coverage that MATCHES OR beats
+                // its own. Strictly-greater was the first cut and it had a hole exactly where it hurt
+                // most: over a patch already at full strength, a full-strength stroke computes 255
+                // against an incumbent 255 and lost the tie, so painting solid over solid did nothing
+                // at all in the middle of the brush. A tie goes to the newer stroke.
+                if (self.soil[i] != v and self.soil[i] != 0 and nv < self.soilCov[i]) continue;
+                if (self.soil[i] != v or self.soilCov[i] != nv) {
                     self.soil[i] = v;
+                    self.soilCov[i] = nv;
                     changed = true;
                 }
             }
@@ -784,6 +897,15 @@ pub fn write(m: *const Map, w: anytype) !void {
     if (anyPaint) {
         try w.writeAll("\n");
         try writeGrid(w, "soil", &m.soil);
+        // …and its COVERAGE, only when some of it is not solid. A map painted entirely at full strength
+        // RLEs to a single run of 255 and gains nothing by carrying it, so the common case writes no
+        // record at all and an older reader loses nothing by not knowing about this one.
+        for (m.soilCov) |c| {
+            if (c != COV_FULL) {
+                try writeGrid(w, "soilcov", &m.soilCov);
+                break;
+            }
+        }
     }
     // …and the water mask the same way. All three grids are RLE because all three are mostly one
     // value; the shared writer is what keeps the records from drifting into different encodings.
@@ -916,6 +1038,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     m.* = .{};
     var seenVersion = false;
     var soilAt: usize = 0; // running cursor, so soil runs may wrap across lines
+    var covAt: usize = 0; // …and its coverage's
     var waterAt: usize = 0; // …and the water mask's own
     var hgtAt: usize = 0; // …and the sculpted ground's
     var lines = std.mem.splitScalar(u8, text, '\n');
@@ -950,6 +1073,11 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             // Runs continue ACROSS lines — `soilAt` is a running cursor over the whole grid, so
             // the writer can wrap wherever it likes and a hand-edited file can too.
             soilAt = try readGrid(&it, &m.soil, soilAt, Soil.N);
+        } else if (std.mem.eql(u8, rec, "soilcov")) {
+            // Every byte is a legal coverage, so 256 like the heights. A map with no such record keeps
+            // the field's `COV_FULL` default and paints solid, which is what every world written before
+            // this record existed means (see COV_FULL).
+            covAt = try readGrid(&it, &m.soilCov, covAt, 256);
         } else if (std.mem.eql(u8, rec, "water")) {
             // The mask is one bit wide, so the ceiling is 2 — anything else in the file is a typo,
             // and a stray 7 would otherwise become "very wet" in whatever reads it next.
@@ -1378,7 +1506,10 @@ test "the soil grid and foe records survive a round trip" {
     defer std.testing.allocator.destroy(back);
     m.blank("Round Trip");
     // A painted patch plus a lone cell, so both a long run and a one-cell run are exercised.
-    _ = m.paintSoil(0, 0, 30, .stone);
+    _ = m.paintSoil(0, 0, 30, .stone, 1);
+    // …and a FAINT patch beside it, so the coverage grid gets a round trip of its own rather than
+    // riding along as a single run of 255 that would pass whether it were written or not.
+    _ = m.paintSoil(-60, 40, 20, .moss, 0.4);
     m.soil[SOIL_CELLS - 1] = @intFromEnum(Soil.ash);
     m.foes[0] = .{ .kind = .ogre, .x = 3, .z = -50, .yaw = 90, .scale = 1.2, .seed = 0.4 };
     m.nfoes = 1;
@@ -1390,10 +1521,75 @@ test "the soil grid and foe records survive a round trip" {
     try parse(fbs.getWritten(), back, &line);
 
     try std.testing.expectEqualSlices(u8, &m.soil, &back.soil);
+    try std.testing.expectEqualSlices(u8, &m.soilCov, &back.soilCov);
     try std.testing.expectEqual(@as(usize, 1), back.nfoes);
     try std.testing.expectEqual(FoeKind.ogre, back.foes[0].kind);
     try std.testing.expectApproxEqAbs(@as(f32, 1.2), back.foes[0].scale, 1e-4);
     try std.testing.expectApproxEqAbs(@as(f32, 0.4), back.foes[0].seed, 1e-4);
+}
+
+test "COVERAGE: an untouched grid costs no record, and the four rules the brush is built on" {
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("Floors");
+
+    // A MAP THAT NEVER USED THE BRUSH CARRIES NO `soilcov` RECORD — the same rule the flat map's heights
+    // follow, and what keeps a world authored before coverage existed byte-identical after a re-save.
+    // Written into the id grid directly, which is exactly what such a file parses to.
+    m.soil[10] = @intFromEnum(Soil.dirt);
+    {
+        var buf: [1 << 18]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        try write(m, fbs.writer());
+        try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "soilcov:") == null);
+    }
+
+    // …but a STROKE always writes one, because a stroke always has a soft rim. That is the feature,
+    // not an accident: paint at full strength and the margin is still a margin.
+    _ = m.paintSoil(0, 0, 40, .stone, 1);
+    {
+        var buf: [1 << 18]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        try write(m, fbs.writer());
+        try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "soilcov:") != null);
+    }
+
+    // SOLID IN THE MIDDLE — the brush's core, and the thing a pure cone could not give at a 5 m
+    // lattice (see BRUSH_CORE). "Paint at 100%" has to mean it somewhere.
+    const mid = m.soilIndex(0, 0).?;
+    try std.testing.expectEqual(COV_FULL, m.soilCov[mid]);
+
+    // 1. PAINTING BELOW WHAT IS THERE PULLS IT DOWN — opacity is adjustable anywhere, not just at an
+    //    edge, which is the whole of "or wherever really".
+    _ = m.paintSoil(0, 0, 40, .stone, 0.4);
+    try std.testing.expect(m.soilCov[mid] < 200);
+    // 2. …and passing over repeatedly CONVERGES ON THE DIAL rather than running away from it, which is
+    //    the property that makes a hold-and-sweep brush usable at all.
+    for (0..8) |_| _ = m.paintSoil(0, 0, 40, .stone, 0.4);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.4), covF(m.soilCov[mid]), 0.01);
+
+    // 3. A FAINT STROKE DOES NOT EAT A SOLID FLOOR. The centre cell is 40% stone; moss at 10% loses it.
+    _ = m.paintSoil(0, 0, 40, .moss, 0.1);
+    try std.testing.expectEqual(@intFromEnum(Soil.stone), m.soil[mid]);
+    // …while a solid one takes it immediately.
+    _ = m.paintSoil(0, 0, 40, .moss, 1);
+    try std.testing.expectEqual(@intFromEnum(Soil.moss), m.soil[mid]);
+    // …AND SOLID OVER SOLID STILL TAKES IT. Both sides compute full coverage here, so this is the tie
+    // the contest has to give to the newer stroke — losing it meant a full-strength brush was a no-op
+    // over ground already painted full strength, which is the single most ordinary thing to try.
+    _ = m.paintSoil(0, 0, 40, .dirt, 1);
+    try std.testing.expectEqual(@intFromEnum(Soil.dirt), m.soil[mid]);
+    try std.testing.expectEqual(COV_FULL, m.soilCov[mid]);
+
+    // 4. THE ERASER IS NOT A WEAK PAINT — it clears outright, coverage and all, and is never contested.
+    _ = m.paintSoil(0, 0, 40, .none, 1);
+    try std.testing.expectEqual(@as(u8, 0), m.soil[mid]);
+    try std.testing.expectEqual(COV_FULL, m.soilCov[mid]);
+
+    // …and the RIM of a stroke really is softer than its middle, which is what an edge fading is.
+    _ = m.paintSoil(0, 0, 40, .dirt, 1);
+    const rim = m.soilIndex(0, 38).?;
+    try std.testing.expect(m.soilCov[rim] < m.soilCov[mid]);
 }
 
 test "the height field round-trips, and a FLAT map writes no height record at all" {

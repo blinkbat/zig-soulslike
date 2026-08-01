@@ -42,8 +42,10 @@ pub const sceneVS =
     \\out vec3 fragNormal;
     \\out vec2 fragUV;
     \\out float fragMatF;
+    \\out float fragLife;   // smoke only: 0 = the puff has just been born, 1 = it is gone
     \\void main() {
     \\    vec3 p = vertexPosition;
+    \\    fragLife = 0.0;
     \\    if (windAmt > 0.0) {
     \\        // Flora sway: bend grows with height^2 so bases stay planted while tips lean;
     \\        // phase keys off the clump's WORLD origin so neighbours move as one gust field.
@@ -79,7 +81,34 @@ pub const sceneVS =
     \\    //     tongue lashes in place, and a thing that lashes in place is a flag, not a flame.
     \\    //  4. IT PINCHES AND LEAPS. Motion that only translates reads as a solid being shaken,
     \\    //     however fast you shake it; fire necks, swells and shoots.
-    \\    if (vertexTexCoord2.x > 10.5) {
+    \\    // ---- SMOKE RISES ---- and this is where a static mesh becomes a particle system. Each
+    \\    // `.smoke` shape is ONE PUFF authored down at the fire (see gfx.smokeAnim for the packing);
+    \\    // every cycle the shader grows it, lifts it, leans it downwind and hands the fragment stage a
+    \\    // life value to fade it out on. Nothing models the column — the column is a dozen puffs
+    \\    // caught at different points of the same loop, which is why they never march in step.
+    \\    //
+    \\    // TESTED BEFORE THE FLAME BRANCH and with its own range, because the flame's test is a bare
+    \\    // `> 10.5` and smoke is 12: left as it was, every puff would have been fed through the
+    \\    // tongue writhe as well.
+    \\    if (vertexTexCoord2.x > 11.5) {
+    \\        vec3 baseW = vec3(matModel*vec4(0.0, 0.0, 0.0, 1.0));
+    \\        float oy   = floor(vertexTexCoord2.y);   // the source height…
+    \\        float seed = fract(vertexTexCoord2.y);   // …and this puff's own place in the cycle
+    \\        // No two FIRES smoke in lockstep either — same argument the flame's `seed` makes.
+    \\        float life = fract(uTime*0.20 + seed + baseW.x*0.031 + baseW.z*0.027);
+    \\        fragLife = life;
+    \\        // BILLOW: the puff swells about its own source as it climbs. A plume that rises without
+    \\        // growing is a smoke signal going up a pipe — the widening IS the thing that reads as
+    \\        // air getting into it.
+    \\        vec3 c = vec3(0.0, oy, 0.0);
+    \\        p = c + (p - c)*(0.42 + 2.30*life);
+    \\        // RISE, and LEAN once it has slowed: the lateral term is life-squared because smoke goes
+    \\        // up first and sideways later — it is climbing fastest while it is still hottest.
+    \\        p.y += life*3.30;
+    \\        float sway = sin(uTime*0.63 + seed*23.0)*0.34*life;
+    \\        p.x += life*life*1.45 + sway;
+    \\        p.z += life*life*0.55 - sway*0.4;
+    \\    } else if (vertexTexCoord2.x > 10.5) {
     \\        vec3 baseW = vec3(matModel*vec4(0.0, 0.0, 0.0, 1.0));
     \\        // CLAMPED: the drifting wisps are authored up to a whole unit above the fuel, and an
     \\        // h-squared term would fling those across the room.
@@ -149,6 +178,7 @@ pub const sceneFS =
     \\in vec3 fragNormal;
     \\in vec2 fragUV;
     \\in float fragMatF;
+    \\in float fragLife;        // smoke only — see the vertex shader's rise block
     \\uniform vec3 sunDir;      // normalized, surface -> sun
     \\uniform int groundMode;   // 1 = terrain (procedural grain), 0 = props/hero
     \\uniform vec3 camPos;      // for distance haze
@@ -170,6 +200,7 @@ pub const sceneFS =
     \\// where a core is deep enough to hide what it stands in front of.
     \\const float FLAME_A_CORE = 0.86;
     \\const float FLAME_A_TIP = 0.42;
+    \\const float SMOKE_A = 0.26;   // the ceiling on a puff — see the fade at the bottom of main()
     \\float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
     \\float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
     \\  return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x), mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y); }
@@ -236,6 +267,25 @@ pub const sceneFS =
     \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0;
     \\  return int(texture(soilMap, uv).r*255.0 + 0.5);
     \\}
+    \\// ---- COVERAGE ---- how strongly the painted material holds its cell, authored per cell by the
+    \\// brush (wf.Map.soilCov). This is the whole blending system: an edge is not a special case, it is
+    \\// simply where the author left the number low.
+    \\uniform sampler2D soilCovMap;
+    \\// DOES THIS MATERIAL CUT OR BLEND? Pinned to wf.Soil by a comptime assert on the Zig side, which
+    \\// is what stops a reordered enum handing the crisp edge to whichever material inherits the number.
+    \\bool soilHard(int id){ return id==3; }   // stone: masons stop where they stopped
+    \\float soilCovAt(vec2 w, bool hard){
+    \\  vec2 uv = w/(2.0*soilHalf) + 0.5;
+    \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
+    \\  // A HARD MATERIAL SNAPS THE UV TO THE TEXEL CENTRE — point sampling out of the same bilinear
+    \\  // texture, which is the trick that lets one texture serve both policies. Sampled normally the
+    \\  // coverage ramps over a whole 5 m cell, and there is no such thing as a flagstone floor with a
+    \\  // five-metre fade on it. Snapped, the transition is exactly one cell wide, and the jitter the
+    \\  // caller already applied to `w` is what keeps that from reading as a grid.
+    \\  // It also leaves the authored LEVEL untouched, so hard-edged does not mean always-opaque.
+    \\  if (hard){ float n = 2.0*soilHalf/soilCell; uv = (floor(uv*n) + 0.5)/n; }
+    \\  return texture(soilCovMap, uv).r;
+    \\}
     \\// ---- PAINTED WATER ---- one SIGNED field, bilinear, and everything about the coast comes out
     \\// of it: 0.5 is the waterline, above it depth, below it the walk back to dry land. The mask the
     \\// author paints is only the outline (see wf.Map.water); this is what turns an outline into a
@@ -285,7 +335,18 @@ pub const sceneFS =
     \\  }
     \\  if (id == 0) return c;
     \\  vec3 s = soilColor(id)*(0.80 + 0.50*blades + 0.20*f3);
-    \\  return mix(c, s, (cov/5.0)*0.92);
+    \\  // THE TWO COVERAGES MULTIPLY, and they answer different questions. The ring above is STRUCTURAL
+    \\  // — how much of the neighbourhood is this same material — and it exists to stop a cell boundary
+    \\  // reading as a cliff. The authored one is the AUTHOR's, and it is what a low number in the
+    \\  // coverage grid actually means on screen.
+    \\  //
+    \\  // A HARD MATERIAL SKIPS THE RING ENTIRELY. The ring's whole job is to soften a boundary, which
+    \\  // is exactly what stone must not do — with it applied a flagged floor still dissolved over a
+    \\  // cell however crisply it was painted. Its edge is then whatever the author painted, no softer.
+    \\  bool hard = soilHard(id);
+    \\  float a = soilCovAt(q, hard);
+    \\  if (!hard) a *= cov/5.0;
+    \\  return mix(c, s, a*0.92);
     \\}
     \\vec3 terrainAlbedo(vec2 p, float px){
     \\  float f1 = fvn(p, 0.055, vec2(0.0), px);
@@ -453,6 +514,11 @@ pub const sceneFS =
     \\    // which is what stops twelve columns reading as twelve copies of one column.
     \\    base *= 0.94 + 0.12*fvn(q, 0.22, vec2(53.7), px);
     \\    base = weather(base, q, n, px);   // …and the kingdom's own stone has stood out here just as long
+    \\  } else if (m == 12){ // SMOKE: no surface texture either, for the flame's reason — the generic
+    \\    // grain mottles the one thing here that is supposed to have no surface at all. What it gets
+    \\    // instead is a slow roil, an order of magnitude below the flame's flicker: smoke churns, it
+    \\    // does not gutter, and anything faster reads as static on a distant plume.
+    \\    base *= 0.90 + 0.16*fvn(q, 0.9, vec2(31.0), px) + 0.05*sin(uTime*1.7 + q.x*1.3 + q.y*0.9);
     \\  } else if (m == 11){ // FLAME: no surface texture at all — but it GUTTERS.
     \\    // A fire has no SURFACE to weather, and the generic grain the default branch applies was
     \\    // mottling the one thing in the scene that is pure emitted light (flameInto's own comment,
@@ -687,6 +753,14 @@ pub const sceneFS =
     \\  // prop drawn after it and standing behind it is still occluded, which at a torch's size reads
     \\  // as nothing; sorting the whole prop pass to fix that would cost far more than it buys.
     \\  float outA = (mi == 11) ? mix(FLAME_A_TIP, FLAME_A_CORE, smoothstep(0.62, 0.90, emis)) : 1.0;
+    \\  // SMOKE IS THIN, AND IT THINS OUT. Two curves on the puff's own life: a quick fade IN so it
+    \\  // does not pop into existence at the fire, and a long fade OUT over most of the climb, which is
+    \\  // both what makes it dissipate and what recycles the puff invisibly.
+    \\  //
+    \\  // SMOKE_A is the ceiling and it is deliberately LOW (owner: the first version was far too
+    \\  // opaque). Woodsmoke is something you see the world THROUGH; at anything near solid it stops
+    \\  // being smoke and becomes a shape, and the shape it most resembles is a bone.
+    \\  if (mi == 12) outA = SMOKE_A*smoothstep(0.0, 0.10, fragLife)*(1.0 - smoothstep(0.30, 1.0, fragLife));
     \\  finalColor = vec4(outc, outA);
     \\}
 ;

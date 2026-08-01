@@ -52,6 +52,24 @@ pub const FOE_HEAVY_STUN_DUR = 2.40;
 // the bare literal, and one sentinel with one meaning belongs in one place.
 const LONG_AGO = mathx.LONG_AGO;
 
+// ── NOBODY IS POISE-DAMAGED WHILE ALREADY REELING (owner's call) ─────────────────────────
+// A reaction is a beat you are already paying for; chipping poise through it means the blow that
+// staggered you also sets up the next stagger, and a warband or a chained R1 can hold either side in
+// one unbroken flinch. So for as long as a stun runs, incoming poise is DROPPED — and when it ends,
+// poise goes back to FULL, both tiers. Two consequences worth stating because they are the mechanic:
+//
+//   - HP AND DIRECT STANCE DAMAGE STILL LAND. The window you opened is still a punish window: land a
+//     heavy inside a light stun and its stance damage counts, exactly as before. What you cannot do
+//     is re-flinch something that is already flinching.
+//   - THE REFILL AT THE END IS WHAT MAKES IT SYMMETRIC. A light break already reset poise, but a
+//     HEAVY break resets STANCE and leaves poise wherever the blow left it — so without this, coming
+//     out of the bigger reaction left you more fragile than coming out of the small one.
+//
+// `Vitals` owns the clock rather than reading each rig's, because `foe.strike` applies a blow through
+// `hit()` knowing nothing about the creature it belongs to. The DURATIONS are the same two constants
+// the rigs pose against, carried per-side by init/initFoe and pinned by a test below — one clock, two
+// readers, no third number to drift.
+
 pub const Vitals = struct {
     hp: f32,
     hpMax: f32,
@@ -63,6 +81,11 @@ pub const Vitals = struct {
     dead: bool = false,
     regenDelay: f32 = REGEN_DELAY, // …how long that gate holds
     regenRate: f32 = 1.0, // …and the multiplier on the refill speed once it opens
+    /// Seconds of stun still to run. Above zero = poise-immune (see the block above). Seeded by `hit`
+    /// from the two durations below and counted down by `tick`.
+    stunLeft: f32 = 0,
+    lightStun: f32 = LIGHT_STUN_DUR, // …how long each tier's reaction lasts for THIS character
+    heavyStun: f32 = HEAVY_STUN_DUR,
 
     pub fn init(hpMax: f32, poiseMax: f32, stanceMax: f32) Vitals {
         return .{
@@ -75,13 +98,35 @@ pub const Vitals = struct {
         };
     }
 
-    /// A FOE's regen schedule — slow to start, slow to fill. Every enemy builds through here; only
-    /// the hero uses plain `init`.
+    /// A FOE's regen schedule — slow to start, slow to fill — and its LONGER stun windows, which are
+    /// also how long its poise immunity lasts. Every enemy builds through here; only the hero uses
+    /// plain `init`.
     pub fn initFoe(hpMax: f32, poiseMax: f32, stanceMax: f32) Vitals {
         var v = init(hpMax, poiseMax, stanceMax);
         v.regenDelay = FOE_REGEN_DELAY;
         v.regenRate = FOE_REGEN_RATE;
+        v.lightStun = FOE_LIGHT_STUN_DUR;
+        v.heavyStun = FOE_HEAVY_STUN_DUR;
         return v;
+    }
+
+    /// Is a reaction still running — and therefore poise still immune? The rigs keep their own clocks
+    /// for the ANIMATION; this is the mechanical one.
+    pub fn stunned(self: *const Vitals) bool {
+        return self.stunLeft > 0;
+    }
+
+    /// ARM A REACTION'S IMMUNITY WINDOW. `hit` calls this for every stun IT decides, which covers every
+    /// foe — they can only be staggered through a blow. The hero has one other door: a GUARD BREAK is a
+    /// heavy stagger that `hit` never returned (the chip that emptied the bar was a plain damage hit),
+    /// so `hero.enterStun` calls this as well. Idempotent on purpose, so pairing it with a stun the hit
+    /// already armed is harmless rather than something the caller has to reason about.
+    pub fn beginStun(self: *Vitals, kind: StunKind) void {
+        self.stunLeft = switch (kind) {
+            .none => 0,
+            .light => self.lightStun,
+            .heavy => self.heavyStun,
+        };
     }
 
     pub fn hpFrac(self: *const Vitals) f32 {
@@ -116,6 +161,19 @@ pub const Vitals = struct {
     // Per frame. Nothing regens until `regenDelay` after the last hit; HP never does (flasks only).
     pub fn tick(self: *Vitals, dt: f32) void {
         self.sinceHit += dt;
+        // THE STUN CLOCK RUNS BEFORE THE REGEN GATE, and that ordering is load-bearing: the hit that
+        // started the stun also zeroed `sinceHit`, and a foe's `regenDelay` (2.2 s) is longer than
+        // either of its stun windows — so behind the gate the clock would never reach zero and the
+        // poise immunity would never lift.
+        if (self.stunLeft > 0) {
+            self.stunLeft -= dt;
+            // THE REACTION IS OVER: poise back to full, whichever tier it was. This is the "recharges
+            // when the stun ends" half — see the block above for why the heavy tier needs it.
+            if (self.stunLeft <= 0) {
+                self.stunLeft = 0;
+                self.poise = self.poiseMax;
+            }
+        }
         if (self.dead or self.sinceHit < self.regenDelay) return;
         self.poise = mathx.minF(self.poiseMax, self.poise + self.poiseMax / POISE_REFILL * self.regenRate * dt);
         self.stance = mathx.minF(self.stanceMax, self.stance + self.stanceMax / STANCE_REFILL * self.regenRate * dt);
@@ -123,6 +181,10 @@ pub const Vitals = struct {
 
     // A killing blow latches `dead`; otherwise the tiers cascade (poise empties → light; that break
     // or direct stance damage empties stance → heavy), heavy outranking light on the same hit.
+    //
+    // POISE IS IMMUNE WHILE A STUN RUNS (see the block above the struct). HP and direct STANCE damage
+    // are not: a heavy landed inside a light stun still breaks stance, which is the punish window
+    // doing its job.
     pub fn hit(self: *Vitals, h: Hit) HitResult {
         if (self.dead) return .none;
         self.hp = mathx.maxF(0, self.hp - h.dmg);
@@ -133,17 +195,24 @@ pub const Vitals = struct {
         self.sinceHit = 0;
         self.stance -= h.stance; // direct stance damage lands regardless
         var light = false;
-        self.poise -= h.poise;
-        if (self.poise <= 0) {
-            self.poise = self.poiseMax;
-            self.stance -= LIGHT_BREAK_STANCE * self.stanceMax;
-            light = true;
+        if (!self.stunned()) {
+            self.poise -= h.poise;
+            if (self.poise <= 0) {
+                self.poise = self.poiseMax;
+                self.stance -= LIGHT_BREAK_STANCE * self.stanceMax;
+                light = true;
+            }
         }
         if (self.stance <= 0) {
             self.stance = self.stanceMax;
+            self.beginStun(.heavy); // a fresh reaction, and its immunity, from this frame
             return .heavy;
         }
-        return if (light) .light else .none;
+        if (light) {
+            self.beginStun(.light);
+            return .light;
+        }
+        return .none;
     }
 };
 
@@ -488,12 +557,98 @@ test "enough light breaks cascade into a heavy stun (keep pressure on)" {
     var v = Vitals.init(100, 10, 20); // low poise + low stance = a frog; breaks fast
     var heavies: u32 = 0;
     var i: u32 = 0;
-    // Each pair breaks poise once; no tick() between them, so stance never regens — sustained
-    // pressure reaches the heavy.
+    // Each pair breaks poise once, and each break's own stun is RUN OUT before the next pair — poise
+    // is immune while a reaction plays, so pressure now means landing between the flinches rather
+    // than through them. Stance never regens across it (its delay is far longer than the stun), which
+    // is what still lets the chip accumulate into the heavy.
     while (i < 12) : (i += 1) {
         if (v.hit(.{ .poise = 6 }) == .heavy) heavies += 1;
+        while (v.stunned()) v.tick(1.0 / 60.0);
     }
     try std.testing.expect(heavies >= 1);
+}
+
+test "NOBODY IS POISE-DAMAGED WHILE REELING, and poise is full again when the stun ends" {
+    // The owner's rule, and the chain-flinch it exists to kill: before this, the blow that staggered
+    // you also set up the next stagger, so a warband or a mashed R1 could hold either side in one
+    // unbroken reaction.
+    var v = Vitals.init(100, 20, 500); // huge stance, so nothing here cascades to a heavy
+    _ = v.hit(.{ .poise = 12 });
+    try std.testing.expectEqual(HitResult.light, v.hit(.{ .poise = 12 }));
+    try std.testing.expect(v.stunned());
+    const poiseAt = v.poise;
+    // Ten more blows through the reel: HP lands every time, poise does not move at all, and not one
+    // of them re-flinches him.
+    var i: u32 = 0;
+    while (i < 10) : (i += 1) {
+        try std.testing.expectEqual(HitResult.none, v.hit(.{ .dmg = 1, .poise = 99 }));
+    }
+    try std.testing.expectApproxEqAbs(poiseAt, v.poise, 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 90), v.hp, 1e-4); // …the damage was never in question
+    // …and it lifts on its own, with poise full.
+    v.poise = 1;
+    while (v.stunned()) v.tick(1.0 / 60.0);
+    try std.testing.expectApproxEqAbs(v.poiseMax, v.poise, 1e-5);
+    try std.testing.expectEqual(HitResult.light, v.hit(.{ .poise = 99 })); // flinchable again
+}
+
+test "the immunity is POISE only: a heavy landed inside a light stun still breaks stance" {
+    // The punish window has to survive the fix. You opened it; landing the big one in it must still
+    // count, or "stagger it, then hit it" stops paying.
+    var v = Vitals.initFoe(100, 10, 30);
+    _ = v.hit(.{ .poise = 6 });
+    try std.testing.expectEqual(HitResult.light, v.hit(.{ .poise = 6 }));
+    try std.testing.expect(v.stunned());
+    // Stance is already chipped by the light break (LIGHT_BREAK_STANCE); one heavy's direct stance
+    // damage finishes it, mid-flinch.
+    try std.testing.expectEqual(HitResult.heavy, v.hit(.{ .poise = 1, .stance = 20 }));
+    // …and the bigger reaction re-armed the window at the HEAVY length, not the light one.
+    try std.testing.expectApproxEqAbs(FOE_HEAVY_STUN_DUR, v.stunLeft, 1e-5);
+}
+
+test "the immunity window IS the reaction the rig poses, on both sides" {
+    // Two clocks for one thing is a drift waiting to happen: the rigs run their own `t` against these
+    // constants for the ANIMATION and Vitals runs `stunLeft` for the MECHANIC, so they have to be
+    // seeded from the same pair — and the hero's pair is not the foes'.
+    var hero = Vitals.init(100, 10, 999);
+    var foeV = Vitals.initFoe(100, 10, 999);
+    hero.beginStun(.light);
+    foeV.beginStun(.light);
+    try std.testing.expectApproxEqAbs(LIGHT_STUN_DUR, hero.stunLeft, 1e-6);
+    try std.testing.expectApproxEqAbs(FOE_LIGHT_STUN_DUR, foeV.stunLeft, 1e-6);
+    hero.beginStun(.heavy);
+    foeV.beginStun(.heavy);
+    try std.testing.expectApproxEqAbs(HEAVY_STUN_DUR, hero.stunLeft, 1e-6);
+    try std.testing.expectApproxEqAbs(FOE_HEAVY_STUN_DUR, foeV.stunLeft, 1e-6);
+    // …and `.none` disarms rather than leaving a window open behind a cleared reaction.
+    hero.beginStun(.none);
+    try std.testing.expect(!hero.stunned());
+}
+
+test "a HEAVY break refills poise when it ends, which is the tier that needed it" {
+    // A light break resets poise on the spot; a heavy one resets STANCE and leaves poise wherever the
+    // blow left it. Without the refill at the end, coming out of the bigger reaction left you more
+    // fragile than coming out of the small one — the wrong way round.
+    var v = Vitals.init(100, 40, 20);
+    v.poise = 3; // most of the way to a flinch already
+    try std.testing.expectEqual(HitResult.heavy, v.hit(.{ .poise = 1, .stance = 30 }));
+    try std.testing.expect(v.poise < v.poiseMax); // the heavy break did NOT touch it…
+    while (v.stunned()) v.tick(1.0 / 60.0);
+    try std.testing.expectApproxEqAbs(v.poiseMax, v.poise, 1e-5); // …the end of the reaction does
+}
+
+test "the stun clock is not held behind the regen gate" {
+    // THE ordering bug this guards: the hit that starts a stun also zeroes `sinceHit`, and a foe's
+    // regen delay (2.2 s) is longer than either of its stun windows. Counted down after that gate,
+    // `stunLeft` would never reach zero and a stunned foe would be poise-immune for ever.
+    try std.testing.expect(FOE_REGEN_DELAY > FOE_LIGHT_STUN_DUR);
+    var v = Vitals.initFoe(100, 10, 999);
+    _ = v.hit(.{ .poise = 6 });
+    try std.testing.expectEqual(HitResult.light, v.hit(.{ .poise = 6 }));
+    var t: f32 = 0;
+    while (t < FOE_LIGHT_STUN_DUR + 0.05) : (t += 1.0 / 60.0) v.tick(1.0 / 60.0);
+    try std.testing.expect(!v.stunned()); // …still well inside the regen delay
+    try std.testing.expect(v.sinceHit < v.regenDelay);
 }
 
 test "a heavy attack's direct stance damage reaches the heavy faster" {

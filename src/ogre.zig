@@ -1059,7 +1059,7 @@ pub const Ogre = struct {
             return mathx.sinf(u * std.math.pi);
         } else if (self.state == .stunheavy) {
             const u = mathx.clampF(self.t / combat.FOE_HEAVY_STUN_DUR, 0, 1);
-            return mathx.smoothstep(0, 0.12, u) * (1.0 - mathx.smoothstep(0.78, 1.0, u));
+            return mathx.pulse(u, 0, 0.12, 0.78, 1.0);
         }
         return 0;
     }
@@ -1078,7 +1078,7 @@ pub const Ogre = struct {
         const du = if (dead) mathx.clampF(self.t / DEATH_DUR, 0, 1) else 0;
         const dk1 = mathx.smoothstep(0, 0.32, du);
         const dk2 = mathx.smoothstep(0.22, 0.62, du);
-        const settle = mathx.smoothstep(0.62, 0.72, du) * (1.0 - mathx.smoothstep(0.72, 0.88, du)); // the bounce
+        const settle = mathx.pulse(du, 0.62, 0.72, 0.72, 0.88); // the bounce
         const stun = self.stunAmount();
         const light = self.state == .stunlight;
         const heavy = self.state == .stunheavy;

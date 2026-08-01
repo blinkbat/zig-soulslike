@@ -7,9 +7,18 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // X11, NOT WAYLAND, on Linux — and this is what makes a Linux build possible from a Windows box at
+    // all. raylib's default there is `Both`, and Wayland means running `wayland-scanner` to generate
+    // protocol glue, which is a LINUX HOST BINARY: cross-compiling panics with "`wayland-scanner` not
+    // found" before it reaches a single line of this game's code. X11 needs no codegen step, and every
+    // Wayland desktop ships XWayland, so an X11 binary runs on both.
+    //
+    // Windows and macOS ignore the option entirely, so it is set unconditionally rather than behind a
+    // target test — one build that cross-compiles is worth more than a branch nobody exercises.
     const raylib_dep = b.dependency("raylib_zig", .{
         .target = target,
         .optimize = optimize,
+        .linux_display_backend = .X11,
     });
     const raylib = raylib_dep.module("raylib"); // Zig bindings
     const raygui = raylib_dep.module("raygui"); // GUI bindings (may be unused)

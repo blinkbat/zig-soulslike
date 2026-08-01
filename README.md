@@ -34,7 +34,7 @@ cliff at all. Foes are held to the same rules, so nothing chases you up a wall. 
 deliberately flat; the elevation is there for the worlds you build next.
 
 - **centre / south — the fallen avenue.** Where you start: colonnade, gate arch, ruined walls,
-  dead trees, graves, war banners, a glowing grace ember.
+  dead trees, graves, war banners, a bonfire camp with a smoke plume you can see from across the plain.
 - **north — the Fallen City.** A processional way to a paved plaza, broken perimeter walls, a
   quarter of ruined house shells, two **watchtowers** with dark ground rooms, abandoned carts,
   and a **wayside chapel you can walk into** — still roofed over its altar end, so the inside is

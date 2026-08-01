@@ -35,6 +35,7 @@ const alloc = std.heap.raw_c_allocator;
 const SLOT_SHADOW: i32 = 12;
 const SLOT_SOIL: i32 = 13;
 const SLOT_WATER: i32 = 14;
+const SLOT_SOILCOV: i32 = 15;
 
 /// THE SOIL GRID's resolution across the whole world. 112 cells over a 560 m map is 5 m a cell,
 /// which is about the smallest patch of ground worth painting by hand — and the sample position
@@ -465,6 +466,7 @@ pub const Scene = struct {
     loc_lightRad: i32,
     loc_nLights: i32,
     soilTex: rl.Texture2D,
+    soilCovTex: rl.Texture2D,
     loc_soilOn: i32,
     loc_soilHalf: i32,
     loc_soilCell: i32,
@@ -489,6 +491,8 @@ pub const Scene = struct {
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "soilMap"), &slotSoil, .int);
         var slotWater = SLOT_WATER;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterMap"), &slotWater, .int);
+        var slotSoilCov = SLOT_SOILCOV;
+        rl.setShaderValue(shader, rl.getShaderLocation(shader, "soilCovMap"), &slotSoilCov, .int);
         var waterOff: i32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterOn"), &waterOff, .int);
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterSheet"), &waterOff, .int);
@@ -510,6 +514,12 @@ pub const Scene = struct {
             // that difference is explained (and where the soil's own one-line wrapper's duplicate copy
             // of the explanation used to sit).
             .soilTex = loadFieldTexture(SOIL_N, .point),
+            // …and its COVERAGE, BILINEAR where the ids are point-sampled — the opposite choice for the
+            // opposite reason. An id must never be interpolated (2 and 4 average to a material nobody
+            // painted); a coverage is a level, and interpolating it is precisely how a margin becomes a
+            // fade instead of a staircase. A material that wants a crisp edge reads the same texture
+            // with the uv snapped to the texel centre — see `soilCovAt` in the shader.
+            .soilCovTex = loadFieldTexture(SOIL_N, .bilinear),
             .loc_soilOn = rl.getShaderLocation(shader, "soilOn"),
             .loc_soilHalf = rl.getShaderLocation(shader, "soilHalf"),
             .loc_soilCell = rl.getShaderLocation(shader, "soilCell"),
@@ -659,10 +669,12 @@ pub const Scene = struct {
     /// NEAREST filtering on purpose: the ids are enum values, and a bilinear fetch between 2
     /// and 4 returns 3 — a material nobody painted, appearing as a seam of the wrong ground
     /// along every boundary. The shader jitters its sample position instead.
-    pub fn setSoil(self: *Scene, ids: []const u8, half: f32) void {
+    pub fn setSoil(self: *Scene, ids: []const u8, cov: []const u8, half: f32) void {
         const n: usize = @intCast(SOIL_N);
         std.debug.assert(ids.len == n * n);
+        std.debug.assert(cov.len == ids.len);
         rl.updateTexture(self.soilTex, ids.ptr);
+        rl.updateTexture(self.soilCovTex, cov.ptr);
         var painted: i32 = 0;
         for (ids) |v| {
             if (v != 0) {
@@ -683,6 +695,8 @@ pub const Scene = struct {
         rl.gl.rlEnableTexture(self.soilTex.id);
         rl.gl.rlActiveTextureSlot(SLOT_WATER);
         rl.gl.rlEnableTexture(self.waterTex.id);
+        rl.gl.rlActiveTextureSlot(SLOT_SOILCOV);
+        rl.gl.rlEnableTexture(self.soilCovTex.id);
         rl.gl.rlActiveTextureSlot(0);
     }
 
@@ -704,15 +718,33 @@ pub const Scene = struct {
 // Per-fragment surface material for the scene shader's texturing pass (see matAlbedo).
 // Rides vertexTexCoord2.x; .plain is the generic grain every untagged shape gets. The ORDER is
 // the shader's `m ==` ladder — append only, never reorder.
-pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame };
+pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke };
 comptime {
     // The shader hard-codes 9 for water in three places (albedo, ripple normal, spec/fresnel),
-    // 10 for marble in two (albedo, gloss) and 11 for flame in two (the VERTEX shader's writhe and
-    // the albedo's leave-it-alone branch); fail the build rather than silently texture the tarn as
-    // marble if the enum ever shifts. APPEND-ONLY past this point.
+    // 10 for marble in two (albedo, gloss), 11 for flame in two (the VERTEX shader's writhe and
+    // the albedo's leave-it-alone branch) and 12 for smoke in three (the VERTEX shader's rise, the
+    // albedo branch and the alpha that fades it out); fail the build rather than silently texture
+    // the tarn as marble if the enum ever shifts. APPEND-ONLY past this point.
     std.debug.assert(@intFromEnum(Mat.water) == 9);
     std.debug.assert(@intFromEnum(Mat.marble) == 10);
     std.debug.assert(@intFromEnum(Mat.flame) == 11);
+    std.debug.assert(@intFromEnum(Mat.smoke) == 12);
+}
+
+/// ── SMOKE IS A PARTICLE SYSTEM MADE OF STATIC GEOMETRY ── and this is the contract between the puffs
+/// a mesh authors and the vertex shader that flies them.
+///
+/// A `.smoke` shape is ONE PUFF. It is authored AT ITS SOURCE (a blob about the fire, not up the
+/// column where it will be seen), and the shader gives it a whole life every cycle: it grows, rises,
+/// leans downwind and fades out, then wraps and does it again. So the column you see is not modelled
+/// anywhere — it is a dozen puffs at different points in the same loop.
+///
+/// `setAnimY` carries BOTH numbers the shader needs, packed: the WHOLE part is the source height in
+/// metres and the FRACTION is the puff's phase offset, 0..1. One float, because texcoords2 has only
+/// the two lanes and the material id already owns the other. A metre of resolution on a smoke
+/// source's height is plenty; a puff's phase needs all the precision it can get, and gets it.
+pub fn smokeAnim(originY: f32, phase01: f32) f32 {
+    return @floor(originY) + std.math.clamp(phase01, 0, 0.999);
 }
 
 // Procedural-mesh Builder (from zig-rts, plus toMesh for the FK-rigged hero which needs bare

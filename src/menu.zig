@@ -13,9 +13,11 @@ const rgba = mathx.rgba;
 // vibration calls do, so it reads the shared constant rather than repeating a literal 0.
 const PAD = rumblemod.PAD;
 
-// The pause/debug menu, OPEN AT LAUNCH (it doubles as the start screen). Debug holds the dev toggles; Retro
-// Filters is a slider list over gfx.Retro.values. All chrome is primitive rects + hud text (Balthazar,
-// ASCII only), drawn crisp AFTER the retro pass so menus never crunch.
+// The pause/debug menu, OPEN AT LAUNCH (it doubles as the start screen). OPTIONS holds the three sound
+// levels, which are the only settings here that PERSIST (sfx.saveSettings); Debug holds the dev toggles,
+// and Retro Filters is a slider list over gfx.Retro.values. Both slider screens share one gauge column
+// and one adjust feel — see `drawCard`'s `gauges` and `adjustDelta`. All chrome is primitive rects + hud
+// text (Balthazar, ASCII only), drawn crisp AFTER the retro pass so menus never crunch.
 
 /// `use` carries WHICH item, because the menu owns the cursor and the loop owns the hero — this file
 /// has no business reaching into either the bag or his vitals (the same split `chest.Opened` uses).
@@ -28,6 +30,7 @@ pub const Action = union(enum) { none, quit, editor, use: item.Kind };
 const Screen = enum {
     closed,
     main, // ── the GAME menu (Select) …
+    options,
     debug,
     retro,
     character, // ── and the CHARACTER menu (Start) …
@@ -38,7 +41,7 @@ const Screen = enum {
     fn root(s: Screen) Screen {
         return switch (s) {
             .closed => .closed,
-            .main, .debug, .retro => .main,
+            .main, .options, .debug, .retro => .main,
             .character, .inventory, .equipment => .character,
         };
     }
@@ -59,6 +62,17 @@ const EQP_SPELL = 2;
 const EQP_QUICK = 3;
 const EQP_CLOSE = 4;
 const EQP_COUNT = EQP_CLOSE + 1;
+
+// ── OPTIONS ── the sound levels, one row per audio family, then Back. Listed loudest-context-last
+// (background, then the chrome, then the fight) rather than in the enum's order, which is the order you
+// reach for them in. The comptime check is the point of the list: a family added to the bank with no row
+// here is one the player can never move, and nothing else would say so.
+const OPT_MIX = [_]sfx.Submix{ .ambience, .sfx, .combat };
+comptime {
+    if (OPT_MIX.len != @typeInfo(sfx.Submix).@"enum".fields.len) @compileError("Options is missing a submix row");
+}
+const OPT_CLOSE = OPT_MIX.len;
+const OPT_COUNT = OPT_CLOSE + 1;
 
 // Debug rows (Retro Filters gets a submenu; the rest toggle/cycle in place).
 const DBG_RETRO = 0;
@@ -92,9 +106,10 @@ const ADJ_GLIDE_RATE: f32 = 0.25; // intensity per second while gliding
 // Main rows — mainLabels() keys each label by its row index (like DBG_*/RET_*), so the
 // labels can't drift out of lockstep with these constants.
 const MAIN_CONTINUE = 0;
-const MAIN_EDITOR = 1;
-const MAIN_DEBUG = 2;
-const MAIN_QUIT = 3;
+const MAIN_OPTIONS = 1;
+const MAIN_EDITOR = 2;
+const MAIN_DEBUG = 3;
+const MAIN_QUIT = 4;
 const MAIN_COUNT = MAIN_QUIT + 1;
 
 // ── palette (display-space; menus draw over the finished frame) ──
@@ -124,11 +139,20 @@ pub const Menu = struct {
     }
 
     /// Esc, and pad SELECT. Backs out one level, and opens the GAME menu when nothing is up.
+    /// THE DIALS ARE WRITTEN WHEN OPTIONS CLOSES, not on every nudge: a held Left glides the value at
+    /// frame rate, and one file write per frame to persist something the player has not finished
+    /// choosing yet is the wrong trade. Every exit from the screen passes through here.
+    fn leavingOptions(self: *Menu) void {
+        if (self.screen == .options) sfx.saveSettings();
+    }
+
     pub fn onEscape(self: *Menu) void {
+        self.leavingOptions();
         self.cursor = 0;
         self.screen = switch (self.screen) {
             .closed => .main,
             .main, .character => .closed, // …a root closes rather than backing out of nothing
+            .options => .main,
             .debug, .retro => if (self.screen == .retro) .debug else .main,
             .inventory, .equipment => .character,
         };
@@ -138,6 +162,7 @@ pub const Menu = struct {
     /// menu is what is up, this swaps to the game menu rather than closing: pressing the button for the
     /// thing you want should always get you that thing.
     pub fn onSelectButton(self: *Menu) void {
+        self.leavingOptions();
         self.cursor = 0;
         self.screen = if (self.screen.root() == .main) .closed else .main;
     }
@@ -145,6 +170,7 @@ pub const Menu = struct {
     /// Pad START — the CHARACTER menu (owner's call: "start menu will be character-driven"). Same shape as
     /// Select's, mirrored: it toggles its own root and takes over from the other one.
     pub fn onStartButton(self: *Menu) void {
+        self.leavingOptions();
         self.cursor = 0;
         self.screen = if (self.screen.root() == .character) .closed else .character;
     }
@@ -154,6 +180,7 @@ pub const Menu = struct {
         const rows: usize = switch (self.screen) {
             .closed => return .none,
             .main => MAIN_COUNT,
+            .options => OPT_COUNT,
             .debug => DBG_COUNT,
             .retro => RET_COUNT,
             .character => CHR_COUNT,
@@ -173,22 +200,16 @@ pub const Menu = struct {
             sfx.play(.menu_move);
         }
 
-        // Slider adjust (retro screen, filter rows only): tap = fine step, Shift/LB-tap
-        // = coarse step, hold = continuous glide after a short delay.
+        // Slider adjust, on the two screens that have sliders — the retro filters and the sound levels.
         if (self.screen == .retro and self.cursor < gfx.RETRO_COUNT) {
             const v = &retro.values[self.cursor];
-            const step: f32 = if (coarseHeld()) ADJ_COARSE else ADJ_TAP;
-            if (adjTapped(.left)) v.* = mathx.clampF(v.* - step, 0, 1);
-            if (adjTapped(.right)) v.* = mathx.clampF(v.* + step, 0, 1);
-            const dir = adjHeldDir();
-            if (dir != 0) {
-                self.adjHoldT += dt;
-                if (self.adjHoldT > ADJ_GLIDE_DELAY) {
-                    v.* = mathx.clampF(v.* + @as(f32, @floatFromInt(dir)) * ADJ_GLIDE_RATE * dt, 0, 1);
-                }
-            } else {
-                self.adjHoldT = 0;
-            }
+            v.* = mathx.clampF(v.* + self.adjustDelta(dt), 0, 1);
+        } else if (self.screen == .options and self.cursor < OPT_MIX.len) {
+            // Through the SETTER, not a pointer into the bank: a level change has to reach the beds that
+            // are already playing, and only `sfx.setVolume` knows how to do that (see its own note).
+            const m = OPT_MIX[self.cursor];
+            const d = self.adjustDelta(dt);
+            if (d != 0) sfx.setVolume(m, sfx.volume(m) + d);
         } else {
             self.adjHoldT = 0;
         }
@@ -212,6 +233,10 @@ pub const Menu = struct {
             .closed => {},
             .main => switch (self.cursor) {
                 MAIN_CONTINUE => self.screen = .closed,
+                MAIN_OPTIONS => {
+                    self.screen = .options;
+                    self.cursor = 0;
+                },
                 MAIN_EDITOR => {
                     self.screen = .closed; // the editor is its own scene; the menu gets out of the way
                     return .editor;
@@ -222,6 +247,14 @@ pub const Menu = struct {
                 },
                 MAIN_QUIT => return .quit,
                 else => {},
+            },
+            .options => {
+                // Confirm on a level row does nothing (Left/Right adjust it) — only Back acts.
+                if (self.cursor == OPT_CLOSE) {
+                    self.leavingOptions();
+                    self.screen = .main;
+                    self.cursor = 0;
+                }
             },
             .debug => switch (self.cursor) {
                 DBG_RETRO => {
@@ -283,6 +316,25 @@ pub const Menu = struct {
         return .none;
     }
 
+    /// How far the adjust inputs want the value under the cursor to move THIS FRAME: a TAP steps fine,
+    /// Shift/LB-tap steps coarse, and holding a direction glides continuously after a short delay.
+    /// Returned as a delta rather than applied, because the two slider screens store their numbers in
+    /// different places — the retro values are a plain array, a sound level goes through a setter.
+    fn adjustDelta(self: *Menu, dt: f32) f32 {
+        const step: f32 = if (coarseHeld()) ADJ_COARSE else ADJ_TAP;
+        var d: f32 = 0;
+        if (adjTapped(.left)) d -= step;
+        if (adjTapped(.right)) d += step;
+        const dir = adjHeldDir();
+        if (dir != 0) {
+            self.adjHoldT += dt;
+            if (self.adjHoldT > ADJ_GLIDE_DELAY) d += @as(f32, @floatFromInt(dir)) * ADJ_GLIDE_RATE * dt;
+        } else {
+            self.adjHoldT = 0;
+        }
+        return d;
+    }
+
     fn cycleTimeScale(self: *Menu) void {
         self.timeScale = if (self.timeScale > 0.75) 0.5 else if (self.timeScale > 0.35) 0.25 else 1.0;
     }
@@ -307,8 +359,9 @@ pub const Menu = struct {
         switch (self.screen) {
             .closed => {},
             .main => self.drawCard("SOULSLIKE", &mainLabels(), null),
+            .options => self.drawCard("SOUND", &optionLabels(), &soundLevels()),
             .debug => self.drawCard("DEBUG", &self.debugLabels(), null),
-            .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), retro),
+            .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), retro.values[0..gfx.RETRO_COUNT]),
             .character => self.drawCard("CHARACTER", &characterLabels(), null),
             // A SLICE, not a fixed array: the inventory is as long as the bag is, and `bagLabels` fills a
             // file-scope buffer it hands back the used part of.
@@ -323,7 +376,10 @@ pub const Menu = struct {
         hud.text(hint, @divTrunc(sw - hw, 2), sh - hud.lineH(hud.HINT) - 12, hud.HINT, HINT_COL);
     }
 
-    fn drawCard(self: *const Menu, title: [:0]const u8, labels: []const [:0]const u8, sliders: ?*const gfx.Retro) void {
+    /// `gauges`, when present, draws a bar on each of its own rows — so a screen says how many of its
+    /// rows are sliders by how long the slice is, and the retro card and the sound card share one
+    /// widget instead of the second one growing its own.
+    fn drawCard(self: *const Menu, title: [:0]const u8, labels: []const [:0]const u8, gauges: ?[]const f32) void {
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
         // Row height and card size are DERIVED from the font size, so growing the type scale
@@ -334,7 +390,7 @@ pub const Menu = struct {
         const rowGap: i32 = if (compact) 2 else 8;
         const headerH: i32 = hud.lineH(hud.TITLE) + 22;
         const footH: i32 = 20;
-        const cardW: i32 = if (sliders != null) 620 else 470;
+        const cardW: i32 = if (gauges != null) 620 else 470;
         const cardH: i32 = headerH + (rowH + rowGap) * @as(i32, @intCast(labels.len)) + footH;
         const cx = @divTrunc(sw - cardW, 2);
         const cy = @divTrunc(sh - cardH, 2);
@@ -350,11 +406,8 @@ pub const Menu = struct {
             if (selected) rl.drawRectangle(cx + 14, y - 3, cardW - 28, rowH, ROW_HILITE);
             hud.text(label, cx + 40, y, fontSize, col);
             if (selected) hud.text(">", cx + 20, y, fontSize, TEXT_HOT);
-            // Intensity gauge on filter rows of the retro card.
-            if (sliders) |r| {
-                if (i < gfx.RETRO_COUNT) {
-                    drawGauge(cx + cardW - 40 - 130, y + @divTrunc(fontSize, 2) - 3, 130, 10, r.values[i], selected);
-                }
+            if (gauges) |g| {
+                if (i < g.len) drawGauge(cx + cardW - 40 - 130, y + @divTrunc(fontSize, 2) - 3, 130, 10, g[i], selected);
             }
         }
     }
@@ -375,6 +428,7 @@ fn drawGauge(x: i32, y: i32, w: i32, h: i32, v: f32, selected: bool) void {
 fn mainLabels() [MAIN_COUNT][:0]const u8 {
     var out: [MAIN_COUNT][:0]const u8 = undefined;
     out[MAIN_CONTINUE] = "Continue";
+    out[MAIN_OPTIONS] = "Options >";
     out[MAIN_EDITOR] = "Editor";
     out[MAIN_DEBUG] = "Debug";
     out[MAIN_QUIT] = "Quit";
@@ -430,6 +484,37 @@ fn bagLabels(bag: *const item.Bag) [][:0]const u8 {
     }
     bagLabelBuf[n] = "Back";
     return bagLabelBuf[0 .. n + 1];
+}
+
+/// The sound rows. Named for what the player hears rather than for the enum tag — "Combat" is a thing
+/// you can decide about, `combat` is a field name.
+fn optionName(m: sfx.Submix) [:0]const u8 {
+    return switch (m) {
+        .ambience => "Ambient",
+        .sfx => "Sound Effects",
+        .combat => "Combat",
+    };
+}
+
+fn optionLabels() [OPT_COUNT][:0]const u8 {
+    var out: [OPT_COUNT][:0]const u8 = undefined;
+    for (OPT_MIX, 0..) |m, i| {
+        const v = sfx.volume(m);
+        out[i] = if (v <= 0.001)
+            std.fmt.bufPrintZ(&optBufs[i], "{s}: Off", .{optionName(m)}) catch "?"
+        else
+            std.fmt.bufPrintZ(&optBufs[i], "{s}: {d:.0}%", .{ optionName(m), v * 100 }) catch "?";
+    }
+    out[OPT_CLOSE] = "Back";
+    return out;
+}
+var optBufs: [OPT_MIX.len][48]u8 = undefined;
+
+/// The same three numbers as bars, for `drawCard`'s gauge column.
+fn soundLevels() [OPT_MIX.len]f32 {
+    var out: [OPT_MIX.len]f32 = undefined;
+    for (OPT_MIX, 0..) |m, i| out[i] = sfx.volume(m);
+    return out;
 }
 
 var dbgTimeBuf: [48]u8 = undefined;

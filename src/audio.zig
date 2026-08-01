@@ -428,6 +428,11 @@ pub const Id = enum {
     step_soft,
     step_hard,
     step_sprint,
+    // …and WHAT HE IS WALKING ON, as two OVERLAYS played on top of whichever boot fired (see
+    // `game.footsteps`). Overlays and not a full set per surface: the boot already carries the mass
+    // and the gait, only the contact changes, and three gaits x N materials is a bank nobody can tune.
+    step_stone,
+    step_water,
     roll,
     // the hero's sword
     swing_light,
@@ -522,21 +527,26 @@ const NV = @typeInfo(Id).@"enum".fields.len;
 //
 // NO TRIM FOR THE COMBAT VOICES. A `.creature` family over the toads and the ogre was tried and REVERTED
 // (owner: "I meant ambient sounds not combat sounds") — a fight is what the player is listening TO, and
-// quietening the animal eating him is the opposite of the note.
+// quietening the animal eating him is the opposite of the note. `combat` is a family here so the PLAYER
+// can move it from Options; its author-side trim stays 1.0, which is what keeps that revert standing.
 pub const Submix = enum {
-    /// Everything that is not background: the hero, his steel, his flasks, the arrows, the foes he is
-    /// fighting, the chrome. The reference level — trim 1.0 by definition.
-    game,
+    /// The chrome and the hero's ordinary business: his boots, the roll, his flasks, a chest, the menu.
+    /// The reference level — trim 1.0 by definition.
+    sfx,
+    /// THE FIGHT and everyone in it: his steel, the blows either way, the guard, every foe voice and
+    /// every arrow. Also trim 1.0 — see above.
+    combat,
     /// THE BACKGROUND: both beds and all three sparse calls. Its whole job is to be noticed only
     /// when it stops, which is a level, not a mix position.
     ambience,
 };
+const NMIX = @typeInfo(Submix).@"enum".fields.len;
 
 const TRIM_AMBIENCE: f32 = 0.55; // the canopy pushed a real 5 dB into the back of the room
 
 fn submixTrim(m: Submix) f32 {
     return switch (m) {
-        .game => 1.0,
+        .sfx, .combat => 1.0,
         .ambience => TRIM_AMBIENCE,
     };
 }
@@ -544,9 +554,9 @@ fn submixTrim(m: Submix) f32 {
 const Row = struct {
     make: *const fn (*Rack) void,
     gain: f32 = 0.7,
-    /// Which family's trim this row pays (see `Submix`). Defaults to the reference level, so a voice
-    /// that is neither a creature nor background needs no ceremony.
-    mix: Submix = .game,
+    /// Which family's trim this row pays, and which Options slider moves it (see `Submix`). Defaults to
+    /// the reference level, so a voice that is neither a fight nor background needs no ceremony.
+    mix: Submix = .sfx,
     jit: f32 = 0.06,
     vjit: f32 = 0.12,
     vars: u8 = 1,
@@ -593,6 +603,30 @@ fn mkStepSprint(r: *Rack) void {
     r.grit(0.002, 0.17, 0.46, 2600 + r.rng.signed() * 600, 0.5, 3.9);
     r.air(0.012, 0.11, 0.22, 2400, 500, 0.45, 4.0);
     r.master(2.2, 3600);
+}
+
+fn mkStepStone(r: *Rack) void {
+    // A CLOP, and ONLY the clop — this rides on top of a boot that already has the weight, so it
+    // carries nothing low at all. What makes a heel on flagstone sound like flagstone is that the
+    // ground gives NOTHING back: a hard bright knock that is over almost before it starts. The ring
+    // is kept to a sliver for that reason; let it run and the plaza turns into a bell.
+    r.tick(0.0, 0.55, 6500);
+    r.body(0.0, 0.045, 660, 300, 0.5, 9.5);
+    r.ring(0.001, 0.05, 2400, 0.16, 10.0, 2);
+    r.grit(0.0, 0.05, 0.30, 3800, 0.35, 7.0);
+    r.master(1.8, 5400);
+}
+
+fn mkStepWater(r: *Rack) void {
+    // THE PLUNK IS A RISING BODY, and that is the whole voice. A cavity closing behind something
+    // entering water rises in pitch as it shrinks — every other impact in this bank falls, and that
+    // inversion is what the ear reads as LIQUID rather than as a wet-sounding thud. Two of them,
+    // unevenly spaced, because the foot going in and the water closing over it are not one event.
+    r.air(0.0, 0.11, 0.34, 700, 3200, 0.30, 4.0); // the sheet thrown up
+    r.body(0.008, 0.07, 380, 820, 0.42, 6.5);
+    r.body(0.052, 0.05, 620, 1180, 0.22, 7.5);
+    r.grit(0.02, 0.13, 0.16, 2600, 0.25, 3.4); // …and the droplets coming back down
+    r.master(1.7, 4200);
 }
 
 fn mkRoll(r: *Rack) void {
@@ -1423,6 +1457,25 @@ fn mkCrickets(r: *Rack) void {
 
 
 // ── THE BANK ── one row per voice, in `Id` order.
+//
+// EVERY BATTLE VOICE IS COMPRESSED INTO ONE BAND (owner's call: "some battle sfx is much louder than
+// others… normalize to the softer ones"). The fight used to span 0.26 to 1.00 — nearly 12 dB, so an
+// ogre's slam arrived four times the size of the swing that answered it and the quiet half of the
+// mix was simply inaudible next to it. Every combat row above `BATTLE_FLOOR` is now
+// `sqrt(BATTLE_FLOOR * old)`: a geometric pull toward the soft end that HALVES the spread in dB and
+// leaves the floor exactly where it was. Two properties make it the right shape rather than a flat
+// level — the soft voices do not move at all (a normalize that raised them would be a volume knob),
+// and every ORDERING survives, so the slam is still the biggest thing in the game and the snarl still
+// sits over the axe it precedes. Retune by moving the FLOOR, not by pushing one row back up.
+//
+// The exclusions are the rows whose level is load-bearing against something OTHER than the fight's
+// own dynamics, and each already sits at or under the floor: the boots (under everything, by ratio),
+// the roll, both swings, `refused`, `arrow_dirt`, the priest's cast and its heal chime.
+const BATTLE_FLOOR: f32 = 0.34;
+fn battle(old: f32) f32 {
+    return @sqrt(BATTLE_FLOOR * old);
+}
+
 const BANK = [NV]Row{
     // The three boots get the full four takes and the widest level jitter in the bank: they are the
     // most-repeated sound in the game by an order of magnitude, and they are the one that grates first.
@@ -1436,6 +1489,13 @@ const BANK = [NV]Row{
     .{ .make = mkStepSoft, .gain = 0.075, .jit = 0.13, .vjit = 0.30, .vars = 4, .poly = 3 },
     .{ .make = mkStepHard, .gain = 0.100, .jit = 0.12, .vjit = 0.26, .vars = 4, .poly = 3 },
     .{ .make = mkStepSprint, .gain = 0.120, .jit = 0.11, .vjit = 0.24, .vars = 4, .poly = 3 },
+    // The two SURFACE overlays. Both take the boots' treatment — many takes, wide jitter — for the same
+    // reason and more so: they only ever play stacked on a boot, so a repeating overlay is a repeat you
+    // hear on top of a sound you already know. The clop sits UNDER the boot it dresses (it is a detail,
+    // owner: "slight"); the splash is allowed over, because a foot going into water is a real event and
+    // quietening it is what would make the lake read as painted on.
+    .{ .make = mkStepStone, .gain = 0.055, .jit = 0.14, .vjit = 0.28, .vars = 4, .poly = 3 },
+    .{ .make = mkStepWater, .gain = 0.130, .jit = 0.13, .vjit = 0.26, .vars = 4, .poly = 3 },
     // A ROLL IS QUIET. You make it constantly and it is your own body on the ground, not an impact —
     // at 0.55 it was competing with the sword (owner: "too loud").
     .{ .make = mkRoll, .gain = 0.30, .jit = 0.09, .vjit = 0.14, .vars = 2 },
@@ -1444,60 +1504,62 @@ const BANK = [NV]Row{
     // shouting. It now sits under the hit it leads into, which is the sound that should land.
     // `poly` on the heavy too: a chained R2 must not cut its own predecessor off mid-whoosh.
     // MORE TAKES + WIDER JITTER on everything a fight repeats: repetition is its own kind of abrasive.
-    .{ .make = mkSwingLight, .gain = 0.26, .jit = 0.16, .vjit = 0.22, .vars = 5, .poly = 3 },
-    .{ .make = mkSwingHeavy, .gain = 0.34, .jit = 0.12, .vjit = 0.16, .vars = 4, .poly = 2 },
-    .{ .make = mkHitLight, .gain = 0.68, .jit = 0.19, .vjit = 0.24, .vars = 6, .poly = 4 },
-    .{ .make = mkHitHeavy, .gain = 0.82, .jit = 0.15, .vjit = 0.20, .vars = 5, .poly = 3 },
-    .{ .make = mkHurt, .gain = 0.70, .jit = 0.17, .vjit = 0.20, .vars = 5 },
-    .{ .make = mkHurtHeavy, .gain = 0.86, .jit = 0.13, .vjit = 0.16, .vars = 4 },
-    .{ .make = mkStagger, .gain = 0.55, .jit = 0.16, .vjit = 0.20, .vars = 4 },
+    .{ .make = mkSwingLight, .gain = 0.26, .mix = .combat, .jit = 0.16, .vjit = 0.22, .vars = 5, .poly = 3 },
+    .{ .make = mkSwingHeavy, .gain = 0.34, .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 4, .poly = 2 },
+    .{ .make = mkHitLight, .gain = battle(0.68), .mix = .combat, .jit = 0.19, .vjit = 0.24, .vars = 6, .poly = 4 },
+    .{ .make = mkHitHeavy, .gain = battle(0.82), .mix = .combat, .jit = 0.15, .vjit = 0.20, .vars = 5, .poly = 3 },
+    .{ .make = mkHurt, .gain = battle(0.70), .mix = .combat, .jit = 0.17, .vjit = 0.20, .vars = 5 },
+    .{ .make = mkHurtHeavy, .gain = battle(0.86), .mix = .combat, .jit = 0.13, .vjit = 0.16, .vars = 4 },
+    .{ .make = mkStagger, .gain = battle(0.55), .mix = .combat, .jit = 0.16, .vjit = 0.20, .vars = 4 },
     // A BLOCK IS HEARD OFTEN, so it takes the footsteps' treatment: many takes, wide jitter, and a
     // level under the hit it is answering. `poly` because a warband lands three of these on you in
     // the same second and each one has to sound.
-    .{ .make = mkGuardBlock, .gain = 0.62, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 4 },
-    // The BREAK is once a fight at most, and it is the cue to get out. Loud, and no jitter worth
-    // the name — this one is allowed to sound like itself every time.
-    .{ .make = mkGuardBreak, .gain = 0.92, .jit = 0.05, .vjit = 0.06, .vars = 2, .poly = 1 },
+    .{ .make = mkGuardBlock, .gain = battle(0.62), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 4 },
+    // The BREAK is once a fight at most, and it is the cue to get out. The loudest thing he can hear
+    // happen to himself, and no jitter worth the name — this one sounds like itself every time.
+    .{ .make = mkGuardBreak, .gain = battle(0.92), .mix = .combat, .jit = 0.05, .vjit = 0.06, .vars = 2, .poly = 1 },
     .{ .make = mkRefused, .gain = 0.34, .jit = 0.06, .vjit = 0.08, .vars = 2 },
-    .{ .make = mkDeath, .gain = 0.95, .jit = 0.0, .vjit = 0.0, .poly = 1 },
-    .{ .make = mkRespawn, .gain = 0.55, .jit = 0.0, .vjit = 0.0, .poly = 1 },
+    .{ .make = mkDeath, .gain = battle(0.95), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
+    .{ .make = mkRespawn, .gain = battle(0.55), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
     // THE TOADS ARE SMALL AND CLOSE. Their aggro radius is 11 m and they bite at 1.45, so 30 m of
     // reach covers everything a toad can do to you with room over — and stops a knot you cannot see
     // filling the plain with wet noises, which is what the old shared 46 m did.
-    .{ .make = mkToadHop, .gain = 0.40, .jit = 0.15, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 30 },
-    .{ .make = mkToadLunge, .gain = 0.62, .jit = 0.12, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 34 },
-    .{ .make = mkToadGape, .gain = 0.46, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 26 },
-    .{ .make = mkToadChomp, .gain = 0.62, .jit = 0.13, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 30 },
-    .{ .make = mkToadHurt, .gain = 0.58, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 30 },
-    .{ .make = mkToadDie, .gain = 0.66, .jit = 0.11, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 34 },
+    .{ .make = mkToadHop, .gain = battle(0.40), .mix = .combat, .jit = 0.15, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 30 },
+    .{ .make = mkToadLunge, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 34 },
+    .{ .make = mkToadGape, .gain = battle(0.46), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 26 },
+    .{ .make = mkToadChomp, .gain = battle(0.62), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 30 },
+    .{ .make = mkToadHurt, .gain = battle(0.58), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 30 },
+    .{ .make = mkToadDie, .gain = battle(0.66), .mix = .combat, .jit = 0.11, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 34 },
     // The nock/draw creak sits WELL under the loose (owner's call): it is a tell you register at
     // the edge of hearing, and the twang is the one that has to cut through.
-    .{ .make = mkBowDraw, .gain = 0.17, .jit = 0.10, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 44 },
+    .{ .make = mkBowDraw, .gain = 0.17, .mix = .combat, .jit = 0.10, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 44 },
     // THE TWANG REACHES FURTHEST OF THE TWO, and by design: it is the one cue in the fight that means
     // MOVE, and an archer shoots from 8-20 m — so its range carries well past its own band, where the
     // creak of the draw only has to be heard from inside it.
-    .{ .make = mkBowLoose, .gain = 0.58, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 64 },
-    .{ .make = mkArrowHit, .gain = 0.72, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3 },
+    .{ .make = mkBowLoose, .gain = battle(0.58), .mix = .combat, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 64 },
+    .{ .make = mkArrowHit, .gain = battle(0.72), .mix = .combat, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3 },
     // The earth is the miss and therefore the one you hear most — quietest of the four, widest
     // variance, so a volley into the dirt never reads as one sample on repeat.
     // An arrow thunking off the pillar you ducked behind is the game telling you cover WORKED, so the
     // four impacts have to reach past the range they were loosed from.
-    .{ .make = mkArrowDirt, .gain = 0.34, .jit = 0.15, .vjit = 0.28, .vars = 4, .poly = 4, .reach = 38 },
-    .{ .make = mkArrowWood, .gain = 0.56, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 4, .reach = 44 },
-    .{ .make = mkArrowStone, .gain = 0.50, .jit = 0.13, .vjit = 0.22, .vars = 4, .poly = 4, .reach = 48 },
-    .{ .make = mkArrowMetal, .gain = 0.52, .jit = 0.11, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 52 },
-    .{ .make = mkBoneHurt, .gain = 0.62, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 44 },
-    .{ .make = mkBoneDie, .gain = 0.68, .jit = 0.09, .vjit = 0.12, .vars = 3, .reach = 54 },
+    .{ .make = mkArrowDirt, .gain = 0.34, .mix = .combat, .jit = 0.15, .vjit = 0.28, .vars = 4, .poly = 4, .reach = 38 },
+    .{ .make = mkArrowWood, .gain = battle(0.56), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 4, .reach = 44 },
+    .{ .make = mkArrowStone, .gain = battle(0.50), .mix = .combat, .jit = 0.13, .vjit = 0.22, .vars = 4, .poly = 4, .reach = 48 },
+    .{ .make = mkArrowMetal, .gain = battle(0.52), .mix = .combat, .jit = 0.11, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 52 },
+    .{ .make = mkBoneHurt, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 44 },
+    .{ .make = mkBoneDie, .gain = battle(0.68), .mix = .combat, .jit = 0.09, .vjit = 0.12, .vars = 3, .reach = 54 },
     // ── THE GIANT IS THE FURTHEST-CARRYING THING IN THE WORLD, and that IS his presence. Everything
     // about him is an octave down and half a second longer (see the ogre block above); low frequencies
     // are also what survive a couple of hundred metres of air, so the physics and the character agree
     // for once. You should hear him walking long before you can see which ruin he is behind.
-    .{ .make = mkOgreStep, .gain = 0.60, .jit = 0.08, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 115 },
-    .{ .make = mkOgreRoar, .gain = 0.80, .jit = 0.06, .vjit = 0.10, .vars = 3, .reach = 135 },
-    .{ .make = mkOgreSlam, .gain = 1.00, .jit = 0.06, .vjit = 0.08, .vars = 3, .reach = 135 },
-    .{ .make = mkOgreSwipe, .gain = 0.72, .jit = 0.07, .vjit = 0.12, .vars = 3, .reach = 85 },
-    .{ .make = mkOgreHurt, .gain = 0.66, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 80 },
-    .{ .make = mkOgreDie, .gain = 0.92, .jit = 0.0, .vjit = 0.0, .poly = 1, .reach = 135 },
+    // …and his LEVEL is compressed with everybody else's while his REACH is not: the two dials answer
+    // different questions, and "hear him from the next region" was always the reach's job.
+    .{ .make = mkOgreStep, .gain = battle(0.60), .mix = .combat, .jit = 0.08, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 115 },
+    .{ .make = mkOgreRoar, .gain = battle(0.80), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .reach = 135 },
+    .{ .make = mkOgreSlam, .gain = battle(1.00), .mix = .combat, .jit = 0.06, .vjit = 0.08, .vars = 3, .reach = 135 },
+    .{ .make = mkOgreSwipe, .gain = battle(0.72), .mix = .combat, .jit = 0.07, .vjit = 0.12, .vars = 3, .reach = 85 },
+    .{ .make = mkOgreHurt, .gain = battle(0.66), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 80 },
+    .{ .make = mkOgreDie, .gain = battle(0.92), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1, .reach = 135 },
     // ── THE KOBOLDS ── WIDE pitch jitter and four takes on everything you hear often, because a pack
     // is the worst case for repetition: five of them yipping the same recording is the single most
     // obviously fake noise a game can make, and there are up to seventy-two of these. Short reaches
@@ -1506,26 +1568,27 @@ const BANK = [NV]Row{
     // the swing it precedes, because it is a cue and the swing is only a noise. SIX takes and the widest
     // pitch jitter in the bank: a warband is the worst case in the game for repetition, and this is the
     // voice you hear most of.
-    .{ .make = mkKoboldSnarl, .gain = 0.62, .jit = 0.22, .vjit = 0.24, .vars = 6, .poly = 3, .reach = 58 },
-    .{ .make = mkKoboldChop, .gain = 0.38, .jit = 0.22, .vjit = 0.28, .vars = 6, .poly = 4, .reach = 40 },
+    .{ .make = mkKoboldSnarl, .gain = battle(0.62), .mix = .combat, .jit = 0.22, .vjit = 0.24, .vars = 6, .poly = 3, .reach = 58 },
+    .{ .make = mkKoboldChop, .gain = battle(0.38), .mix = .combat, .jit = 0.22, .vjit = 0.28, .vars = 6, .poly = 4, .reach = 40 },
     // The HEAVE has to carry: it is the cue that says come back in, and you will often have backed
-    // off to hear it. Loudest and furthest of the family, deliberately.
-    .{ .make = mkKoboldHeave, .gain = 0.58, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 2, .reach = 62 },
+    // off to hear it. FURTHEST of the family, deliberately — and it is the reach that says so, not the
+    // level. (This line claimed "loudest" too, which the snarl beside it has been beating all along.)
+    .{ .make = mkKoboldHeave, .gain = battle(0.58), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 2, .reach = 62 },
     // …and so must the CAST, for the same reason and more so — it is a thing you have to cross a
     // field to stop, so it has to be audible from where you would have to leave.
     // The REACH stays long — it is the cue to rush the back line and must read across a plaza — but the
     // level comes well down (owner: "too loud"). Those are separate dials on purpose: `reach` decides how
     // far it is still audible, `gain` how loud it is when you are standing next to him.
-    .{ .make = mkKoboldCast, .gain = 0.30, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 2, .reach = 78 },
+    .{ .make = mkKoboldCast, .gain = 0.30, .mix = .combat, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 2, .reach = 78 },
     // The quietest positive cue in the game, and lowered twice on the owner's call. A chime is a narrow
     // tone with nothing masking it, so it carries at a level that would be inaudible on a broadband
     // voice — the number has to go further down than it looks like it should.
-    .{ .make = mkKoboldHeal, .gain = 0.11, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 3, .reach = 54 },
-    .{ .make = mkKoboldWhirl, .gain = 0.42, .jit = 0.20, .vjit = 0.24, .vars = 5, .poly = 3, .reach = 44 },
-    .{ .make = mkKoboldSling, .gain = 0.50, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 4, .reach = 52 },
-    .{ .make = mkKoboldBite, .gain = 0.56, .jit = 0.20, .vjit = 0.26, .vars = 6, .poly = 3, .reach = 40 },
-    .{ .make = mkKoboldHurt, .gain = 0.60, .jit = 0.24, .vjit = 0.30, .vars = 6, .poly = 4, .reach = 48 },
-    .{ .make = mkKoboldDie, .gain = 0.68, .jit = 0.18, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 58 },
+    .{ .make = mkKoboldHeal, .gain = 0.11, .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 3, .reach = 54 },
+    .{ .make = mkKoboldWhirl, .gain = battle(0.42), .mix = .combat, .jit = 0.20, .vjit = 0.24, .vars = 5, .poly = 3, .reach = 44 },
+    .{ .make = mkKoboldSling, .gain = battle(0.50), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 4, .reach = 52 },
+    .{ .make = mkKoboldBite, .gain = battle(0.56), .mix = .combat, .jit = 0.20, .vjit = 0.26, .vars = 6, .poly = 3, .reach = 40 },
+    .{ .make = mkKoboldHurt, .gain = battle(0.60), .mix = .combat, .jit = 0.24, .vjit = 0.30, .vars = 6, .poly = 4, .reach = 48 },
+    .{ .make = mkKoboldDie, .gain = battle(0.68), .mix = .combat, .jit = 0.18, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 58 },
     .{ .make = mkFlaskDrink, .gain = 0.52, .jit = 0.06, .vjit = 0.10, .vars = 2, .poly = 2 },
     .{ .make = mkFlaskCycle, .gain = 0.30, .jit = 0.07, .vjit = 0.08, .vars = 2, .poly = 3 },
     // Quieter than the flask: eating is not an emergency, and the sound of it should not be one.
@@ -1535,7 +1598,7 @@ const BANK = [NV]Row{
     // and this is one of the few voices in the bank that is not one of a crowd.
     .{ .make = mkChestOpen, .gain = 0.72, .jit = 0.04, .vjit = 0.06, .vars = 2, .poly = 2, .reach = 70 },
     .{ .make = mkItemGet, .gain = 0.44, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 4 },
-    .{ .make = mkKill, .gain = 0.55, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 4 },
+    .{ .make = mkKill, .gain = battle(0.55), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 4 },
     .{ .make = mkMenuMove, .gain = 0.30, .jit = 0.06, .vjit = 0.08, .vars = 2, .poly = 3 },
     .{ .make = mkMenuPick, .gain = 0.38, .jit = 0.03, .vjit = 0.05 },
     .{ .make = mkMenuBack, .gain = 0.32, .jit = 0.03, .vjit = 0.05 },
@@ -1705,6 +1768,7 @@ fn panFor(side: f32, width: f32) f32 {
 /// synthesis at launch, once. Silently does nothing if the audio device refuses to open, so a box
 /// with no sound card runs the game rather than failing to start.
 pub fn init() void {
+    loadSettings(); // before the device: the dials are data, and they are what the first bed is mixed at
     rl.initAudioDevice();
     if (!rl.isAudioDeviceReady()) return;
     rl.setMasterVolume(MASTER_VOL);
@@ -1784,6 +1848,80 @@ pub fn voiceInfo(id: Id) VoiceInfo {
     return .{ .gain = r.gain, .mix = r.mix, .jit = r.jit, .vjit = r.vjit, .vars = r.vars, .poly = r.poly, .reach = r.reach };
 }
 
+// ── THE PLAYER'S THREE DIALS (Menu > Options) ───────────────────────────────────────────────────
+// One number per `Submix`, multiplied in alongside the author-side trim. Deliberately NOT folded into
+// `submixTrim`: that function is the MIX as authored and a test pins it, while these are the player's
+// and change under his hands. 1.0 is the tuned mix, and it is also the ceiling — every row's gain is
+// balanced against a master of 0.85, so anything above 1 is asking for clipping rather than volume.
+var userVol: [NMIX]f32 = [_]f32{1.0} ** NMIX;
+
+pub fn volume(m: Submix) f32 {
+    return userVol[@intFromEnum(m)];
+}
+
+/// A ROW PLUS A LEVEL BECOMES A RAYLIB VOLUME HERE AND NOWHERE ELSE. The row's own gain is its balance
+/// inside its family, the family trim is where it sits in the authored mix, and the player's dial rides
+/// on top — three numbers that have to be composed in one place or one of the forty-seven rows quietly
+/// misses out on one of them (see `Submix`; the wind bed was already levelled outside this path once).
+fn levelFor(row: Row, vol: f32, vj: f32) f32 {
+    return mathx.clampF(row.gain * submixTrim(row.mix) * userVol[@intFromEnum(row.mix)] * vol * vj, 0, 1);
+}
+
+pub fn setVolume(m: Submix, v: f32) void {
+    userVol[@intFromEnum(m)] = mathx.clampF(v, 0, 1);
+    // …AND THE BEDS, WHICH ARE ALREADY PLAYING. Every other voice picks the new number up at its next
+    // trigger, but a bed is re-triggered only when it runs out — so without this, dragging Ambient to
+    // zero left the wind blowing for the rest of its eight seconds and the slider read as broken.
+    if (ready and m == .ambience) {
+        for (BEDS) |b| {
+            const s = &slots[@intFromEnum(b)];
+            const lvl = bedLevel(BANK[@intFromEnum(b)]);
+            rl.setSoundVolume(s.snd[0][0], lvl);
+            if (BANK[@intFromEnum(b)].vars > 1) rl.setSoundVolume(s.snd[1][0], lvl);
+        }
+    }
+}
+
+/// A bed's steady level — exact rather than approximate, because it goes through the same arithmetic
+/// `trigger` used to start it and both beds carry `vjit = 0`, so their wobble really is 1.0.
+fn bedLevel(row: Row) f32 {
+    return levelFor(row, 1.0, 1.0);
+}
+
+/// Where the dials live between runs. Beside the exe's working directory like `worlds/`, and PER
+/// MACHINE — it is a comfort setting, not part of the game, so it is gitignored rather than shipped.
+pub const SETTINGS_PATH = "settings.cfg";
+
+/// Best-effort both ways: a missing, truncated or garbled file leaves the defaults standing rather than
+/// refusing to start. There is nothing in here worth failing a launch over, and a player who has never
+/// opened Options has no file at all.
+pub fn loadSettings() void {
+    var buf: [256]u8 = undefined;
+    const f = std.fs.cwd().openFile(SETTINGS_PATH, .{}) catch return;
+    defer f.close();
+    const n = f.readAll(&buf) catch return;
+    var lines = std.mem.tokenizeAny(u8, buf[0..n], "\r\n");
+    while (lines.next()) |line| {
+        var it = std.mem.tokenizeScalar(u8, line, ' ');
+        const key = it.next() orelse continue;
+        const val = it.next() orelse continue;
+        const v = std.fmt.parseFloat(f32, val) catch continue;
+        inline for (@typeInfo(Submix).@"enum".fields) |fld| {
+            if (std.mem.eql(u8, key, fld.name)) setVolume(@enumFromInt(fld.value), v);
+        }
+    }
+}
+
+pub fn saveSettings() void {
+    const f = std.fs.cwd().createFile(SETTINGS_PATH, .{}) catch return;
+    defer f.close();
+    // Keyed by `@tagName`, so renaming a submix renames its key and an old file's line simply falls
+    // through `loadSettings` unmatched — one enum, no second list of names to drift.
+    inline for (@typeInfo(Submix).@"enum".fields) |fld| {
+        f.writer().print("{s} {d:.3}\n", .{ fld.name, userVol[fld.value] }) catch return;
+    }
+}
+
 /// Silence the world without tearing the device down — the editor uses it, since a map you are
 /// dressing should not be croaking at you.
 pub fn mute(on: bool) void {
@@ -1856,10 +1994,7 @@ fn trigger(snd: rl.Sound, row: Row, vol: f32, pan: f32, pitchScale: f32) void {
     // only ever takes away) so a jittered step can never be LOUDER than the tuned gain — variance
     // must not turn into the occasional bang.
     const vj = 1.0 - @abs(rng.signed()) * row.vjit;
-    // …and the FAMILY trim, here rather than baked into each row's gain: this is the one place a
-    // row's number becomes a raylib volume, so it is the only place the two can be composed without
-    // one of the forty-seven rows quietly missing out (see `Submix`).
-    rl.setSoundVolume(snd, mathx.clampF(row.gain * submixTrim(row.mix) * vol * vj, 0, 1));
+    rl.setSoundVolume(snd, levelFor(row, vol, vj));
     rl.setSoundPitch(snd, (1.0 + rng.signed() * row.jit) * pitchScale);
     rl.setSoundPan(snd, pan);
     rl.playSound(snd);
@@ -2106,7 +2241,7 @@ test "every sparse call is rolled INSIDE its own reach, and none of them is roll
 }
 
 test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience" {
-    // Every bed and every sparse call pays the trim: an ambient voice left on `.game` is the one that
+    // Every bed and every sparse call pays the trim: an ambient voice left on `.sfx` is the one that
     // ends up loudest in its own group with nothing to compare it against.
     for (BEDS) |b| try std.testing.expectEqual(Submix.ambience, BANK[@intFromEnum(b)].mix);
     for (CALLS) |c| try std.testing.expectEqual(Submix.ambience, BANK[@intFromEnum(c.id)].mix);
@@ -2120,7 +2255,8 @@ test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience"
     }
     try std.testing.expectEqual(BEDS.len + CALLS.len, trimmed);
     for ([_]Id{ .toad_chomp, .toad_die, .ogre_slam, .ogre_roar, .bone_die, .hit_heavy, .hurt }) |id| {
-        try std.testing.expectEqual(Submix.game, BANK[@intFromEnum(id)].mix);
+        try std.testing.expect(BANK[@intFromEnum(id)].mix != .ambience);
+        try std.testing.expectEqual(@as(f32, 1.0), submixTrim(BANK[@intFromEnum(id)].mix));
     }
 
     // THE BEDS SIT UNDER THE CALLS, which is what makes one a floor and the other an event: a bed you
@@ -2128,6 +2264,79 @@ test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience"
     var loudBed: f32 = 0;
     for (BEDS) |b| loudBed = mathx.maxF(loudBed, BANK[@intFromEnum(b)].gain);
     for (CALLS) |c| try std.testing.expect(BANK[@intFromEnum(c.id)].gain > loudBed);
+}
+
+test "THE OPTIONS DIALS — three families, and the fight is one of them" {
+    // The player's slider is `Submix`, so a voice's family is now a thing he can hear the effect of.
+    // Every FIGHT voice on `.combat` and nothing else, because the ones that landed on the default by
+    // omission are exactly the ones his Combat slider would silently fail to move.
+    for ([_]Id{ .swing_light, .hit_heavy, .hurt, .guard_block, .toad_chomp, .bow_loose, .arrow_dirt, .bone_die, .ogre_slam, .kobold_snarl, .kobold_heal, .kill, .death }) |id| {
+        try std.testing.expectEqual(Submix.combat, BANK[@intFromEnum(id)].mix);
+    }
+    for ([_]Id{ .step_soft, .roll, .refused, .flask_drink, .eat, .chest_open, .item_get, .menu_move }) |id| {
+        try std.testing.expectEqual(Submix.sfx, BANK[@intFromEnum(id)].mix);
+    }
+
+    // A DIAL SCALES ITS OWN FAMILY AND NOTHING ELSE. `levelFor` is the one place the three numbers meet,
+    // so this is the whole contract: halve a family and its rows halve, everybody else holds still.
+    const combatRow = BANK[@intFromEnum(Id.ogre_slam)];
+    const sfxRow = BANK[@intFromEnum(Id.menu_move)];
+    const before = levelFor(sfxRow, 1.0, 1.0);
+    setVolume(.combat, 0.5);
+    defer setVolume(.combat, 1.0);
+    try std.testing.expectApproxEqAbs(levelFor(combatRow, 1.0, 1.0), combatRow.gain * 0.5, 1e-6);
+    try std.testing.expectEqual(before, levelFor(sfxRow, 1.0, 1.0));
+
+    // …and a dial cannot become a boost. Every gain in the bank is balanced against a 0.85 master.
+    setVolume(.combat, 4.0);
+    try std.testing.expectEqual(@as(f32, 1.0), volume(.combat));
+}
+
+test "THE FIGHT IS ONE BAND — no battle voice towers over the rest of them" {
+    // Owner's call, and the shape of the fix (see BATTLE_FLOOR): the spread used to be 0.26 → 1.00,
+    // nearly 12 dB, so the ogre's slam arrived four times the size of the swing answering it. Pinned as
+    // a RATIO over the whole combat set rather than per row, because the point was never any one
+    // number — it is that no single voice runs away from the others.
+    const battleIds = [_]Id{
+        .hit_light,    .hit_heavy,     .hurt,          .hurt_heavy,   .stagger,      .guard_block,
+        .guard_break,  .death,         .respawn,       .toad_hop,     .toad_lunge,   .toad_gape,
+        .toad_chomp,   .toad_hurt,     .toad_die,      .bow_loose,    .arrow_hit,    .arrow_wood,
+        .arrow_stone,  .arrow_metal,   .bone_hurt,     .bone_die,     .ogre_step,    .ogre_roar,
+        .ogre_slam,    .ogre_swipe,    .ogre_hurt,     .ogre_die,     .kobold_snarl, .kobold_chop,
+        .kobold_heave, .kobold_whirl,  .kobold_sling,  .kobold_bite,  .kobold_hurt,  .kobold_die,
+        .kill,
+    };
+    var lo: f32 = 1e9;
+    var hi: f32 = 0;
+    for (battleIds) |id| {
+        const g = BANK[@intFromEnum(id)].gain;
+        lo = mathx.minF(lo, g);
+        hi = mathx.maxF(hi, g);
+    }
+    // Under 6 dB end to end. It was 8.4 dB across this same set before the compression, and 11.7 with
+    // the swings in it.
+    try std.testing.expect(hi / lo < 2.0);
+    // …and the floor did NOT move up to meet it. A "normalize" that raised the quiet voices is a volume
+    // knob wearing a fix's clothes, so the soft end stays where the owner already put it.
+    try std.testing.expect(lo >= BATTLE_FLOOR - 1e-4 and lo < BATTLE_FLOOR * 1.15);
+    try std.testing.expect(hi < 0.62);
+
+    // THE ORDERINGS THAT CARRY MEANING SURVIVE IT — a geometric pull cannot invert any pair, and these
+    // are the ones a flat level would have destroyed.
+    const g = struct {
+        fn of(id: Id) f32 {
+            return BANK[@intFromEnum(id)].gain;
+        }
+    }.of;
+    try std.testing.expect(g(.ogre_slam) > g(.kobold_chop)); // the giant still lands hardest…
+    try std.testing.expect(g(.swing_light) < g(.hit_light)); // …the swing still sits under its hit…
+    try std.testing.expect(g(.bow_draw) < g(.bow_loose)); // …the creak under the twang…
+    try std.testing.expect(g(.kobold_snarl) > g(.kobold_chop)); // …and the cue over the noise
+    // The EXCLUSIONS are excluded: each is at or under the floor already, so compressing them would
+    // have RAISED them (see the BANK block's exclusion list).
+    for ([_]Id{ .step_soft, .step_hard, .step_sprint, .roll, .swing_light, .swing_heavy, .refused, .arrow_dirt, .kobold_cast, .kobold_heal }) |id| {
+        try std.testing.expect(g(id) <= BATTLE_FLOOR + 1e-6);
+    }
 }
 
 test "every BED has two takes to pan, and they do not loop in lockstep" {

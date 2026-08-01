@@ -32,7 +32,14 @@ pub const STRAFE_SPEED: f32 = 0.85;
 /// …and behind the shield, as a fraction of the WALK. Guarding trades mobility for cover — that
 /// trade IS the mechanic, and a hero who guards at walking pace has given up nothing for it. Never
 /// zero: souls guarding is a shuffling advance, not a plant (see `Hero.setGuard`).
-pub const GUARD_SPEED: f32 = 0.55;
+///
+/// RAISED from 0.55 (owner: "you can walk a bit faster while blocking w shield"). At just over half
+/// the walk you could not reposition behind the shield at all — closing or backing off meant dropping
+/// it, so the block only ever answered a blow you had already decided to stand still for. DS's own
+/// shielded walk is around three quarters, which still costs you the sprint and the roll's distance
+/// while leaving you able to WALK a fight down. The floor is what matters here, not the ceiling: it
+/// must stay clearly under 1.0, or the shield is free.
+pub const GUARD_SPEED: f32 = 0.75;
 
 // Body-segment lengths as a fraction of stature H (Drillis & Contini 1966; Winter). The joint HEIGHTS
 // they imply, for sanity: ankle .039, knee .285, hip .530, wrist .485, elbow .630, shoulder .818,
@@ -747,10 +754,12 @@ pub fn rootAt(pos: rl.Vector3) rl.Matrix {
 }
 
 // A smooth 0→1→0 pulse over [a, b] — the overshoot/recoil grace notes that keep a strike
-// from parking dead at its end pose (the wooden-mannequin failure).
+// from parking dead at its end pose (the wooden-mannequin failure). The SYMMETRIC, hold-free
+// case of `mathx.pulse`, and expressed as one so the two cannot drift: this is the shape every
+// animation beat in the repo has, and it was written out longhand in fourteen places.
 fn bump(u: f32, a: f32, b: f32) f32 {
     const mid = 0.5 * (a + b);
-    return mathx.smoothstep(a, mid, u) * (1.0 - mathx.smoothstep(mid, b, u));
+    return mathx.pulse(u, a, mid, mid, b);
 }
 
 pub const Attack = enum { light, heavy };
@@ -1341,6 +1350,11 @@ pub const Hero = struct {
         self.stun = kind;
         self.stunT = 0;
         self.speed = 0;
+        // …and the poise immunity that comes with a reaction (combat.Vitals). `vit.hit` already armed
+        // it for a stagger IT decided; this is the line that covers the GUARD BREAK, which is a heavy
+        // stagger the vitals never returned — without it the one reaction you are most exposed in was
+        // the only one you could still be poise-chipped through.
+        self.vit.beginStun(kind);
         self.startXfade();
     }
     fn enterDeath(self: *Hero) void {
@@ -1585,7 +1599,7 @@ pub const Hero = struct {
         const v = self.rollVar;
         const lean = ROLL_LEAN * self.rollSide * v * tuck;
         const skew = ROLL_SKEW * self.rollSide * v *
-            mathx.smoothstep(0.30, 0.75, u) * (1.0 - mathx.smoothstep(0.85, 1.0, u));
+            mathx.pulse(u, 0.30, 0.75, 0.85, 1.0);
         const facingDeg = mathx.degrees(self.facing);
 
         var wx: [N]rl.Matrix = undefined;
@@ -1772,10 +1786,10 @@ pub const Hero = struct {
     fn poseDrink(self: *Hero) void {
         const u = mathx.clampF(self.drinkT / combat.FLASK_DRINK_DUR, 0, 1);
         // Up fast, HOLD at the mouth through the pour, down slower — a flask is emptied, not waved.
-        const lift = mathx.smoothstep(0, 0.26, u) * (1.0 - mathx.smoothstep(0.72, 1.0, u));
+        const lift = mathx.pulse(u, 0, 0.26, 0.72, 1.0);
         // …and the tip is a separate, later curve riding on top, so the wrist rolls the bottle up
         // only once it has arrived. Both peaking together reads as one stiff gesture.
-        const tip = mathx.smoothstep(0.22, 0.46, u) * (1.0 - mathx.smoothstep(0.66, 0.92, u));
+        const tip = mathx.pulse(u, 0.22, 0.46, 0.66, 0.92);
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
         // He settles onto his heels to drink, and rocks back a touch as the flask goes up.
@@ -1824,7 +1838,7 @@ pub const Hero = struct {
         const dur: f32 = if (heavy) combat.HEAVY_STUN_DUR else combat.LIGHT_STUN_DUR;
         const u = mathx.clampF(self.stunT / dur, 0, 1);
         const amt = if (heavy)
-            mathx.smoothstep(0, 0.12, u) * (1.0 - mathx.smoothstep(0.68, 1.0, u)) // ramp, hold, release
+            mathx.pulse(u, 0, 0.12, 0.68, 1.0) // ramp, hold, release
         else
             mathx.sinf(u * std.math.pi); // a single flinch pulse
         const leanMag: f32 = if (heavy) STAG_LEAN else HURT_LEAN;

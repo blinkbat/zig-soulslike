@@ -49,7 +49,7 @@ pub const Kind = enum(u8) {
     tree, // dead tree
     graves,
     sword,
-    grace, // the grace ember
+    grace, // the BONFIRE CAMP — the tag is the world files' word, not a description (see ruins.graceMesh)
     tower, // colossal horizon keep
     gate, // colossal horizon gate
     rubble,
@@ -194,7 +194,7 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .tree => "Dead Tree",
         .graves => "Graves",
         .sword => "Planted Sword",
-        .grace => "Grace Ember",
+        .grace => "Bonfire Camp",
         .tower => "Horizon Keep",
         .gate => "Colossal Gate",
         .rubble => "Rubble",
@@ -429,9 +429,16 @@ pub const INFO = [NK]Info{
     .{ .kind = .tree, .build = wood.treeMesh, .bound = 5.3, .top = 4.9, .view = 240, .parts = circleParts(0.38, 3.6), .surf = .wood },
     .{ .kind = .graves, .build = ruins.gravesMesh, .bound = 2.3, .top = 1.05, .view = 150, .parts = circleParts(0.80, 0.9) },
     .{ .kind = .sword, .build = ruins.swordMesh, .bound = 1.6, .top = 1.35, .view = 120 },
-    // A BONFIRE now, not an ember in a bowl — so its light is a fire's: warmer, brighter, and it
-    // GUTTERS (0.10 was an ember's steady glow, and the flame above it is no longer standing still).
-    .{ .kind = .grace, .build = ruins.graceMesh, .bound = 1.9, .top = 1.6, .view = 300, .light = .{ .y = 0.45, .col = v3(0.80, 0.45, 0.17), .radius = 9.0, .flicker = 0.17 } },
+    // A CAMP now, not an ember in a bowl nor a sword in a fire — so its light is a fire's: warmer,
+    // brighter, and it GUTTERS (0.10 was an ember's steady glow, and the flame is no longer still).
+    // `bound` covers the bedroll and the rock out at the edges of the camp; `top` is the SMOKE, which
+    // is the tallest thing here by a factor of three and the whole reason the prop can be seen at all
+    // from where its `view` says it should be (see ruins.smokeInto).
+    // …and the bound has to cover where the shader FLIES the smoke to, not where the puffs are
+    // authored. They are built as a knot of blobs at the fire and end their cycle ~3.3 m up and ~1.8 m
+    // downwind, so a bound measured off the mesh would pop the whole camp out of view whenever the
+    // plume alone was on screen.
+    .{ .kind = .grace, .build = ruins.graceMesh, .bound = 6.3, .top = 5.4, .view = 300, .light = .{ .y = 0.45, .col = v3(0.86, 0.48, 0.18), .radius = 11.0, .flicker = 0.17 } },
     .{ .kind = .tower, .build = ruins.towerMesh, .bound = 17.5, .top = 17.2, .view = FAR, .parts = circleParts(3.40, 14.0) },
     .{ .kind = .gate, .build = ruins.gateMesh, .bound = 19.6, .top = 16.4, .view = FAR, .parts = &.{
         .{ .ax = -7.5, .bx = -7.5, .r = 3.20, .h = 16.0 },

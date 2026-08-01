@@ -916,7 +916,7 @@ pub const Archer = struct {
             return mathx.sinf(u * std.math.pi);
         } else if (self.state == .stunheavy) {
             const u = mathx.clampF(self.t / combat.FOE_HEAVY_STUN_DUR, 0, 1);
-            return mathx.smoothstep(0, 0.14, u) * (1.0 - mathx.smoothstep(0.7, 1.0, u));
+            return mathx.pulse(u, 0, 0.14, 0.7, 1.0);
         }
         return 0;
     }

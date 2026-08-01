@@ -1,5 +1,5 @@
 // ── PROPS: THE RUINED KINGDOM ── the fallen avenue's own set: columns whole and snapped, ruin
-// blocks, the gate arch, wall runs, graves, planted swords, the grace ember, the horizon towers and
+// blocks, the gate arch, wall runs, graves, planted swords, the bonfire camp, the horizon towers and
 // the colossal gate, banners, sentinel statues, rubble. What they share is DRESSED MASONRY gone
 // over: same stone, same weathering moves (see propart.zig), same centuries.
 //
@@ -39,6 +39,7 @@ const STONE_DK = art.STONE_DK;
 const STONE_LT = art.STONE_LT;
 const STONE_MOSS = art.STONE_MOSS;
 const THATCH_DK = art.THATCH_DK;
+const TIMBER = art.TIMBER;
 const TIMBER_DK = art.TIMBER_DK;
 const WISP = art.WISP;
 const blade = art.blade;
@@ -568,14 +569,22 @@ pub fn swordMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// The grace ember: an iron bowl on a stone foot, banked gold coals, and a thin rising
-// wisp — the coals and wisp ride the EMISSIVE vertex-alpha channel, so they burn through
-// shadow and haze like a beacon. It also carries a real point light (INFO), so the ground
-// around it now catches the glow instead of the ember floating in its own brightness.
+// ── THE BONFIRE CAMP ── SOMEBODY LIVES HERE, and everything in it says so: a stacked fire big enough
+// to see from the far side of the plain, a bedroll, and a guitar propped against a rock. (The enum tag
+// is still `grace`, because that is the word in every world file; it has been neither a grace nor an
+// ember for a long time.)
+//
+// It went through an iron bowl of coals and then a coiled sword driven into the ash before this. Both
+// were MONUMENTS — a place marked out — and the note that ended them was that a resting place should
+// read as somebody's, which is warmth and belongings rather than iron. So: no sword in it.
+//
+// Three things carry it at distance: the SMOKE (a real particle plume, see `smokeInto`), the pale ash
+// bed (`art.ASH` is the palest albedo in the world, and that is deliberate), and a point light warm
+// and bright enough to pool on the ground around it (INFO).
 pub fn graceMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4809);
-    // THE SITE. A grace is a place people came BACK to, so it gets the one piece of tended
+    // THE SITE. A camp is a place people came BACK to, so it gets the one piece of tended
     // ground in the world: set kerbstones and a worn marble pave. Nothing else in this file is
     // deliberate — that contrast is the whole read.
     b.setMat(.stone);
@@ -617,99 +626,253 @@ pub fn graceMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.4) ASH_LT else if (rng.float() < 0.6) ASH_DK else ASH,
         );
     }
-    // BONES in the ash. Whoever kindled it, and everyone who tried before them — the one piece of
-    // narrative the prop carries, and the reason it is a bonfire and not a fire pit.
-    var bn: i32 = 0;
-    while (bn < 6) : (bn += 1) {
-        const a = rng.angle();
-        const dd = rng.range(0.20, 0.62);
-        const ln = rng.range(0.10, 0.22);
-        const a2 = a + rng.signed() * 1.4;
+    // ── THE FUEL ── a proper stacked fire, which is the thing that says CAMP rather than shrine. A
+    // leaning teepee of split logs over the coals, plus a couple of long ones fed in from outside
+    // that nobody has pushed all the way in yet. Charred at the ends that are IN it and bark at the
+    // ends that are not — that difference is most of what makes a stack read as burning rather than
+    // as firewood arranged around a light.
+    b.setMat(.wood);
+    var lg: i32 = 0;
+    while (lg < 6) : (lg += 1) {
+        const a = std.math.tau * @as(f32, @floatFromInt(lg)) / 6.0 + rng.signed() * 0.34;
+        const foot = rng.range(0.42, 0.56);
+        const apex = rng.range(0.10, 0.19); // …they lean IN, but not onto one point: that is a wigwam
+        const top = rng.range(0.62, 0.88);
         b.addCapsule(
-            v3(mathx.cosf(a) * dd, 0.135, mathx.sinf(a) * dd),
-            v3(mathx.cosf(a) * dd + mathx.cosf(a2) * ln, 0.135 + rng.range(0, 0.05), mathx.sinf(a) * dd + mathx.sinf(a2) * ln),
-            rng.range(0.016, 0.028),
-            rng.range(0.014, 0.024),
-            4,
-            BONE,
+            v3(mathx.cosf(a) * foot, 0.10, mathx.sinf(a) * foot),
+            v3(mathx.cosf(a) * apex + rng.signed() * 0.05, top, mathx.sinf(a) * apex + rng.signed() * 0.05),
+            rng.range(0.055, 0.082),
+            rng.range(0.042, 0.065),
+            5,
+            if (rng.float() < 0.45) IRON else if (rng.float() < 0.5) BARK_DK else TIMBER_DK,
         );
     }
-    b.addBlob(v3(rng.signed() * 0.4, 0.17, rng.signed() * 0.4), v3(0.075, 0.065, 0.080), 3, 6, BONE); // a skull, half sunk
-    // ── THE COILED SWORD ── the whole silhouette, and the one thing that names this a bonfire
-    // rather than a brazier: a straight blade driven POINT-DOWN into the ash, hilt up, its blade
-    // TWISTED down its length. The twist is not decoration — a straight flat blade at this size
-    // reads as a stick from ten metres, and the coil is what catches the sun differently every few
-    // centimetres so the eye reads a sword.
-    //
-    // Canted a few degrees off plumb, because nothing organic here is machined (wabi-sabi) and
-    // because a sword somebody DROVE into the ground would not land true.
-    b.setMat(.steel);
-    const tilt = rng.signed() * 0.05; // radians off vertical, carried up the blade
-    const BLADE_TOP: f32 = 1.12;
-    const SEGS: i32 = 10;
-    var sg: i32 = 0;
-    while (sg < SEGS) : (sg += 1) {
-        const t0 = @as(f32, @floatFromInt(sg)) / @as(f32, @floatFromInt(SEGS));
-        const y = 0.09 + t0 * (BLADE_TOP - 0.09);
-        // BROAD, and only half-twisted. At 0.07 half-width over a metre of height the blade was a
-        // 4 cm sliver — the twist had no facet wide enough to catch the light differently, so the
-        // whole thing read as a thin white SPIKE and the coil was invisible. A coiled sword is a
-        // big flat blade; widen it and the twist does its job.
-        const a = t0 * 2.6 + 0.35; // ~150 deg from point to shoulder — fewer, wider facets
-        const hw = mathx.lerpF(0.030, 0.115, t0); // narrow at the point, broad at the shoulder
-        const th = mathx.lerpF(0.011, 0.021, t0); // …and thicker edge-to-edge as it widens
-        // ax = the flat (twisting), ay = up the blade, az = edge-to-edge. Perpendicular BY
-        // CONSTRUCTION — addBox happily builds a skewed parallelepiped out of a sloppy triple.
-        b.addBox(
-            v3(tilt * y * 3.0, y, tilt * y * 1.2),
-            v3(mathx.cosf(a) * hw, 0, mathx.sinf(a) * hw),
-            v3(0, (BLADE_TOP - 0.09) / @as(f32, @floatFromInt(SEGS)) * 0.66, 0),
-            v3(-mathx.sinf(a) * th, 0, mathx.cosf(a) * th),
-            // DARK IRON with steel only as a glint. Mostly-STEEL came back near-white under the
-            // hot key and the blade lost its edges against the sky (the big-mass albedo rule again,
-            // on a small mass that happens to be the brightest thing in the prop).
-            if (@mod(sg, 2) == 0) IRON else if (rng.float() < 0.35) STEEL else RUST,
+    var fd: i32 = 0;
+    while (fd < 3) : (fd += 1) {
+        // …the ones fed in from outside, lying almost flat with their far ends still out on the grass.
+        const a = rng.angle();
+        const far = rng.range(1.05, 1.45);
+        b.addCapsule(
+            v3(mathx.cosf(a) * far, rng.range(0.07, 0.11), mathx.sinf(a) * far),
+            v3(mathx.cosf(a) * 0.20, rng.range(0.20, 0.30), mathx.sinf(a) * 0.20),
+            rng.range(0.058, 0.086),
+            rng.range(0.045, 0.062),
+            5,
+            if (rng.float() < 0.4) BARK_DK else TIMBER_DK,
         );
     }
-    // The HILT: crossguard, bound grip, pommel. From behind, the hilt is the whole read.
-    const hx = tilt * BLADE_TOP * 3.0;
-    const hz = tilt * BLADE_TOP * 1.2;
-    b.addBox(v3(hx, BLADE_TOP + 0.03, hz), v3(0.185, 0, 0.02), v3(0, 0.020, 0), v3(-0.012, 0, 0.032), IRON); // quillons
-    b.addBlob(v3(hx + 0.185, BLADE_TOP + 0.03, hz), v3(0.030, 0.030, 0.030), 3, 5, RUST); // …a knop at each end
-    b.addBlob(v3(hx - 0.185, BLADE_TOP + 0.03, hz), v3(0.028, 0.028, 0.028), 3, 5, RUST);
-    b.setMat(.leather);
-    b.addCylinder(v3(hx, BLADE_TOP + 0.05, hz), v3(hx + tilt * 0.1, BLADE_TOP + 0.20, hz), 0.030, 0.028, 6, TIMBER_DK); // bound grip
-    b.setMat(.steel);
-    b.addBlob(v3(hx + tilt * 0.12, BLADE_TOP + 0.235, hz), v3(0.046, 0.040, 0.046), 3, 6, RUST); // pommel
-    // …and THE FIRE at its base, low and broad, licking up the blade. Through `flameInto`, so it
-    // gets the vertex writhe and the same tongue vocabulary as every other fire in the world.
-    // …and kept LOW. At scale 1.05 the tongues reached 0.64 and swallowed the lower two thirds of
-    // the blade: the fire won the silhouette the sword is supposed to own, which is the whole point
-    // of a bonfire being a sword and not a campfire. Round its base, not up its length.
-    flameInto(&b, &rng, rng.signed() * 0.04, 0.13, rng.signed() * 0.04, 0.70);
-    flameInto(&b, &rng, rng.signed() * 0.20, 0.11, rng.signed() * 0.20, 0.44);
-    b.setMat(.plain);
-    // The rising WISP + drifting motes: the bonfire's tell from across the plain, kept from the
-    // grace it replaces because that read was the one thing about it that worked.
-    //
-    // SHORTER AND THINNER than the grace's were. WISP is strongly emissive (alpha 120), and a
-    // 1.6 m tapered cylinder of it stood BEHIND the sword and read as a white spike taller than
-    // the blade — it was winning the silhouette the sword is supposed to own. At this length it
-    // goes back to being heat-shimmer coming off the fire.
-    b.addCylinder(v3(0, 0.60, 0), v3(rng.signed() * 0.05, 1.02, rng.signed() * 0.05), 0.018, 0.002, 5, WISP);
-    b.addCylinder(v3(0.07, 0.58, -0.05), v3(0.15, 0.86, -0.11), 0.014, 0.002, 5, WISP);
-    var m: i32 = 0;
-    while (m < 9) : (m += 1) {
-        const t = @as(f32, @floatFromInt(m)) / 9.0;
-        const a = t * 7.4 + rng.signed() * 0.5;
-        const dd = 0.08 + t * rng.range(0.22, 0.46);
-        const sz = 0.024 * (1.0 - 0.55 * t);
-        b.addBlob(v3(mathx.cosf(a) * dd, 0.70 + t * 0.86 + rng.signed() * 0.06, mathx.sinf(a) * dd), v3(sz, sz, sz), 3, 5, WISP);
-    }
+    // …and THE FIRE in the middle of it. BIG — this is the one fire in the world you are meant to
+    // find from the far side of the plain, so it is roughly twice the campfire's and licks up
+    // through the stack rather than sitting under it. Through `flameInto`, so it gets the vertex
+    // writhe and the same tongue vocabulary as every other flame in the world.
+    flameInto(&b, &rng, rng.signed() * 0.04, 0.16, rng.signed() * 0.04, 1.55);
+    flameInto(&b, &rng, rng.signed() * 0.22, 0.13, rng.signed() * 0.22, 1.00);
+    flameInto(&b, &rng, rng.signed() * 0.26, 0.12, rng.signed() * 0.26, 0.72);
+    smokeInto(&b, &rng);
+    // ── SOMEBODY LIVES HERE ── and these two are the whole reason the sword is gone. A bonfire with a
+    // blade in it is a monument; a bedroll and an instrument make it a place a person came back to,
+    // which is the same job done with warmth instead of iron.
+    bedrollInto(&b, &rng, 1.28, -0.62, 2.42);
+    guitarRockInto(&b, &rng, -1.16, 0.86, 0.62);
     b.setMat(.plant);
     tuftInto(&b, &rng, rng.signed() * 1.05, rng.signed() * 1.05, 0.55);
     lichenInto(&b, &rng, v3(rng.signed() * 0.6, 0.07, rng.signed() * 0.6), v3(0.24, 0.02, 0.22), 3);
     return b.toModel(shader);
+}
+
+/// ── THE SMOKE COLUMN ── the bonfire's real signal, and the one piece of this prop authored for a
+/// viewer half a kilometre away rather than for someone standing at it.
+///
+/// A column of lobes that RISES, WIDENS AND LEANS, cooling through the three smoke tones as it goes
+/// (see art.SMOKE_*). All three properties matter: a plume of constant width is a pillar, one that
+/// does not lean is a chimney on a windless day, and one that does not cool is steam.
+///
+/// It is allowed to own the silhouette. The old wisp was deliberately stunted because it was stealing
+/// the coiled sword's read — with the sword gone, the tall thing standing over the fire IS the prop,
+/// and its whole job is to be the first thing you pick out of the horizon.
+fn smokeInto(b: *Builder, rng: *mathx.Rng) void {
+    b.setMat(.plain);
+    // The heat shimmer off the flame itself, under the plume proper — this is where the column is
+    // still fire-coloured rather than smoke-coloured. Static, and it should be: this is the one part
+    // that really is welded to the fire.
+    b.addCylinder(v3(0, 0.62, 0), v3(rng.signed() * 0.06, 1.15, rng.signed() * 0.06), 0.055, 0.012, 6, WISP);
+
+    // ── THE PLUME, AS PUFFS ── every one authored down at the source and flown by the shader (see
+    // gfx.smokeAnim). Phases are spread EVENLY across the cycle with only a little jitter, because
+    // rolling them at random leaves clumps and gaps in the column — the eye reads a gap in a smoke
+    // trail as the fire having gone out for a second.
+    const SRC: f32 = 1.0; // the source height the shader billows each puff about
+    const PUFFS = 14;
+    b.setMat(.smoke);
+    var s: i32 = 0;
+    while (s < PUFFS) : (s += 1) {
+        const phase = (@as(f32, @floatFromInt(s)) + rng.range(0, 0.55)) / @as(f32, @floatFromInt(PUFFS));
+        b.setAnimY(gfx.smokeAnim(SRC, phase));
+        const r = rng.range(0.135, 0.235);
+        b.addBlob(
+            v3(rng.signed() * 0.10, SRC + rng.signed() * 0.06, rng.signed() * 0.10),
+            v3(r, r * rng.range(0.72, 0.98), r * rng.range(0.85, 1.20)),
+            3,
+            7,
+            if (phase < 0.3) art.SMOKE_HOT else if (phase < 0.65) art.SMOKE_MID else art.SMOKE_COLD,
+        );
+    }
+
+    // ── THE EMBERS ── on the same material, so they rise and wink out on the same clock (owner:
+    // "rising up randomly and flickering out like the braziers"). They keep the EMISSIVE vertex alpha,
+    // which is independent of the material — so a mote glows on its way up and the fade takes it.
+    //
+    // MANY, and small. Embers are a scatter, not a string; the count is what makes the fire read as
+    // throwing them off rather than as having four attached to it.
+    var e: i32 = 0;
+    while (e < 26) : (e += 1) {
+        const phase = (@as(f32, @floatFromInt(e)) + rng.range(0, 0.9)) / 26.0;
+        b.setAnimY(gfx.smokeAnim(SRC, phase));
+        const a = rng.angle();
+        const dd = rng.range(0.04, 0.30);
+        const sz = rng.range(0.014, 0.030);
+        b.addBlob(
+            v3(mathx.cosf(a) * dd, SRC - rng.range(0.18, 0.34), mathx.sinf(a) * dd),
+            v3(sz, sz, sz),
+            2,
+            5,
+            if (rng.float() < 0.45) art.EMBER else WISP,
+        );
+    }
+    b.setAnimY(0);
+    b.setMat(.plain);
+}
+
+/// A BEDROLL beside the fire: a rolled mat with a blanket thrown half off it, pegged down one side.
+/// Small on purpose (owner: "a little bedroll") — it is a piece of evidence, not furniture, and a
+/// full camp bed beside a fire this size would read as a market stall.
+fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) void {
+    const ux = mathx.cosf(yaw);
+    const uz = mathx.sinf(yaw);
+    b.setMat(.cloth);
+    // THE MAT, unrolled: a long low pad. Built as overlapping lobes rather than one stretched
+    // ellipsoid so it sags and creases along its length instead of reading as a pill.
+    var i: i32 = 0;
+    while (i < 5) : (i += 1) {
+        const t = (@as(f32, @floatFromInt(i)) / 4.0 - 0.5) * 0.92;
+        const r = 0.185 * (1.0 - 0.18 * @abs(t) / 0.46);
+        b.addBlob(
+            v3(cx + ux * t, 0.055 + rng.range(0, 0.012), cz + uz * t),
+            v3(r, 0.052, r),
+            3,
+            7,
+            if (rng.float() < 0.4) THATCH_DK else TIMBER_DK,
+        );
+    }
+    // THE BLANKET over it, rucked up — a shade warmer and thrown to one side, which is what stops
+    // the pair reading as one symmetrical sausage.
+    var k: i32 = 0;
+    while (k < 4) : (k += 1) {
+        const t = (@as(f32, @floatFromInt(k)) / 3.0 - 0.55) * 0.70;
+        b.addBlob(
+            v3(cx + ux * t - uz * 0.055, 0.105 + rng.range(0, 0.03), cz + uz * t + ux * 0.055),
+            v3(rng.range(0.130, 0.175), rng.range(0.045, 0.070), rng.range(0.130, 0.175)),
+            3,
+            6,
+            if (rng.float() < 0.5) CLOTH_DK else CLOTH,
+        );
+    }
+    // …and the ROLLED end doubling as a pillow, at the head. Fatter, and across the mat's axis.
+    b.addCapsule(
+        v3(cx + ux * 0.50 - uz * 0.15, 0.115, cz + uz * 0.50 + ux * 0.15),
+        v3(cx + ux * 0.50 + uz * 0.15, 0.115, cz + uz * 0.50 - ux * 0.15),
+        0.105,
+        0.095,
+        7,
+        CLOTH_SUN,
+    );
+}
+
+/// A ROCK WITH A GUITAR LYING ON IT — the one deliberately human object in the world, and the reason
+/// this camp reads as somebody's rather than as a set piece.
+///
+/// The instrument is built AXIS-FREE: both bouts are near-circular in plan, so the whole thing can be
+/// laid at any yaw without rotating an ellipsoid's axes (which `addBlob`, being world-aligned, cannot
+/// do). That is not a shortcut — a guitar's bouts really are two overlapping circles, and the waist
+/// between them falls out of the overlap for free.
+fn guitarRockInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) void {
+    // THE ROCK: a low seat-height boulder. It is here to be sat on as much as to hold the guitar, so
+    // it is broad and flat-topped rather than a lump.
+    b.setMat(.stone);
+    b.addBlob(v3(cx, 0.22, cz), v3(0.52, 0.235, 0.46), 4, 9, if (rng.float() < 0.4) STONE_MOSS else STONE_DK);
+    b.addBlob(v3(cx + rng.signed() * 0.16, 0.30, cz + rng.signed() * 0.16), v3(0.34, 0.115, 0.31), 3, 8, ROCK_DEEP);
+    lichenInto(b, rng, v3(cx + rng.signed() * 0.2, 0.40, cz + rng.signed() * 0.2), v3(0.16, 0.015, 0.15), 3);
+
+    // ── THE GUITAR, STOOD AGAINST THE ROCK — the way a player actually puts one down. Not flat on
+    // its back: you rest it on its lower bout with the neck leaning back on something, because that
+    // is the position you can pick it up from in one movement. It also reads from three times as far,
+    // since the body is now presented face-on to anyone standing at the fire instead of edge-on.
+    //
+    // BIG (owner's call). A guitar is 1 m end to end and the first pass had it at 0.6 — beside a rock
+    // half a metre high that read as a mandolin somebody had dropped.
+    const ux = mathx.cosf(yaw);
+    const uz = mathx.sinf(yaw); // …the direction the neck leans off in, on the ground plane
+    const FOOT: f32 = 0.30; // how far out from the rock the bottom of the body sits
+    const LEAN: f32 = 0.46; // horizontal travel from the body's foot to the headstock…
+    const RISE: f32 = 0.95; // …against this much height. A steep lean — it is propped, not lying down
+    const fx = cx + ux * (FOOT + 0.34);
+    const fz = cz + uz * (FOOT + 0.34);
+    // Everything below is placed at a fraction `t` up that leaning axis, so the whole instrument
+    // tilts as one piece and nothing has to be rotated by hand.
+    const px = fx - ux * LEAN;
+    const pz = fz - uz * LEAN;
+    b.setMat(.wood);
+    // THE BODY: two overlapping near-circular bouts, which is what a guitar's outline actually is —
+    // and being round in plan they need no rotation to sit at any yaw (addBlob is world-aligned).
+    const b0 = v3(fx - ux * LEAN * 0.10, 0.255, fz - uz * LEAN * 0.10); // lower bout, on the ground
+    const b1 = v3(fx - ux * LEAN * 0.34, 0.255 + RISE * 0.26, fz - uz * LEAN * 0.34); // upper bout
+    b.addBlob(b0, v3(0.255, 0.235, 0.255), 3, 11, TIMBER_DK);
+    b.addBlob(b1, v3(0.200, 0.185, 0.200), 3, 11, TIMBER_DK);
+    // THE SOUNDBOARD, a shade paler and proud of the face — without it the two bouts read as a gourd.
+    // Offset toward the viewer's side of the lean, which is the face that is presented.
+    const fnx = -ux * 0.055;
+    const fnz = -uz * 0.055;
+    b.addBlob(v3(b0.x + fnx, b0.y, b0.z + fnz), v3(0.225, 0.208, 0.225), 3, 11, TIMBER);
+    b.addBlob(v3(b1.x + fnx, b1.y, b1.z + fnz), v3(0.174, 0.162, 0.174), 3, 11, TIMBER);
+    // The SOUND HOLE, between the bouts and proud of the board — the one feature that names the shape.
+    const hx = (b0.x + b1.x) * 0.5 + fnx * 1.7;
+    const hy = (b0.y + b1.y) * 0.5;
+    const hz = (b0.z + b1.z) * 0.5 + fnz * 1.7;
+    b.addBlob(v3(hx, hy, hz), v3(0.072, 0.068, 0.072), 3, 9, BARK_DK);
+    b.addBox(v3(b0.x + fnx * 1.5, b0.y - 0.115, b0.z + fnz * 1.5), v3(-uz * 0.090, 0, ux * 0.090), v3(0, 0.016, 0), v3(ux * 0.016, 0, uz * 0.016), BARK_DK); // bridge
+    // THE NECK, running on up the lean and back over the rock, and the head at the top of it.
+    const nk0 = v3(b1.x + fnx * 0.6, b1.y + 0.10, b1.z + fnz * 0.6);
+    const nk1 = v3(px + fnx * 0.4, 0.255 + RISE, pz + fnz * 0.4);
+    b.addCapsule(nk0, nk1, 0.046, 0.040, 7, TIMBER_DK);
+    const hd = v3(nk1.x - ux * 0.075, nk1.y + 0.145, nk1.z - uz * 0.075);
+    b.addBox(hd, v3(-uz * 0.058, 0, ux * 0.058), v3(0, 0.085, 0), v3(ux * 0.020, 0, uz * 0.020), BARK_DK); // headstock
+    // FRET MARKERS, because a bare neck at this length is a stick. Three pale dots is all it takes.
+    var f: i32 = 0;
+    while (f < 3) : (f += 1) {
+        const t = 0.30 + @as(f32, @floatFromInt(f)) * 0.22;
+        b.addBlob(
+            v3(mathx.lerpF(nk0.x, nk1.x, t) + fnx * 0.7, mathx.lerpF(nk0.y, nk1.y, t), mathx.lerpF(nk0.z, nk1.z, t) + fnz * 0.7),
+            v3(0.015, 0.015, 0.015),
+            2,
+            5,
+            BONE,
+        );
+    }
+    // THE STRINGS, bridge to head. Three rather than six, and that is a legibility call not a lazy
+    // one: at this scale six alias into a single grey smear, where three read as strings.
+    b.setMat(.steel);
+    var s: i32 = 0;
+    while (s < 3) : (s += 1) {
+        const off = (@as(f32, @floatFromInt(s)) - 1.0) * 0.026;
+        b.addCapsule(
+            v3(b0.x + fnx * 1.7 - uz * off, b0.y - 0.115, b0.z + fnz * 1.7 + ux * off),
+            v3(hd.x + fnx * 0.9 - uz * off, hd.y + 0.055, hd.z + fnz * 0.9 + ux * off),
+            0.006,
+            0.006,
+            4,
+            STEEL,
+        );
+    }
 }
 
 // A colossal broken KEEP for the horizon. Eight stand around the world's edge at `view = FAR`,

@@ -375,7 +375,7 @@ pub const Env = struct {
     /// purpose: nothing about the prop list depends on the paint, so a brush stroke re-uploads
     /// 4 KB instead of re-expanding eight thousand props.
     pub fn uploadSoil(self: *Env, m: *const wf.Map) void {
-        if (self.scene) |sc| sc.setSoil(&m.soil, m.half);
+        if (self.scene) |sc| sc.setSoil(&m.soil, &m.soilCov, m.half);
     }
 
     /// TAKE THE MAP'S SCULPTED GROUND and build the terrain from it: copy the field, then rebuild every
@@ -997,6 +997,22 @@ pub const Env = struct {
         const shore: f32 = @floatFromInt(gfx.WATER_SHORE);
         if (v <= shore) return 0;
         return (v - shore) / (255.0 - shore);
+    }
+
+    /// HOW DEEP THE WATER IS AT A POINT, in METRES — what wading reads, and a different question from
+    /// `paintedDepth`, which is a distance from the shore and says nothing about the dig.
+    ///
+    /// The painted sheet is a flat plane at one fixed height (`WATER_Y`), so the depth anywhere is just
+    /// how far the ground has been sculpted below it. IT TAKES BOTH FACTS: paint a lake on flat ground
+    /// and it is ankle-deep everywhere, dig a basin and leave it dry and there is nothing to wade — you
+    /// are only in deep water where the tile and the hole agree.
+    ///
+    /// Authored `water` PROPS are deliberately not counted. Each is a sheet laid on the ground where it
+    /// was placed, so it is ankle-deep by construction and there is no basin under it to be up to your
+    /// knees in.
+    pub fn wadeDepth(self: *const Env, x: f32, z: f32) f32 {
+        if (self.paintedDepth(x, z) <= 0) return 0;
+        return mathx.maxF(0, WATER_Y - self.groundAt(x, z));
     }
 
     /// The prop a ray hits first — the editor's world picking. A plain linear ray/sphere sweep: ~8k

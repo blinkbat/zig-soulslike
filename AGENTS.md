@@ -152,13 +152,13 @@ and the map's own `half:` is the only source), holding five regions
 
 | Direction | Region | What's there |
 | --- | --- | --- |
-| centre / south | the fallen avenue | colonnade, gate arch, grace ember, the start |
+| centre / south | the fallen avenue | colonnade, gate arch, the bonfire camp, the start |
 | north | **the Fallen City** | plaza, walls, ruined house shells, a torchlit **chapel you walk into**, two **watchtowers** with dark ground rooms, carts, the colossal horizon gate |
 | east | **the Tarn** | a shallow lake you **wade**, drowned columns, a collapsed causeway, willows, reeds |
 | west | **the Old Wood** | great trees (3 variants), ferns/brambles/bushes, boulders, a **standing-stone circle**, a woodcutter's **cottage** + campfire |
 | south | **the Windswept Downs** | open and sparse — lone trees, field stones, graves, a watchtower |
 
-**81 prop kinds**, **16,884 instances, 1,687 colliders and 35 fires**, of which a frame draws **~975**
+**81 prop kinds**, **16,884 instances, 1,687 colliders and 35 fires**, of which a frame draws **~633**
 across both passes (measured in the city; the wood is comparable). See **PERFORMANCE** — that ratio is
 why the world is affordable, and the debug Stats overlay prints it live so it stays checkable. The three
 numbers are also PINNED by `env`'s "replaying the SHIPPED map produces a stable world" test, so a
@@ -254,8 +254,14 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  orchestration (sun depth pass → retro capture → lit pass → filter blit →
                  vignette/HUD/menu), sky, HUD, combat-beat feedback (rumble + shake + hit flash;
                  NO hitstop), the YOU DIED card, and the `--shot` harness.
-- `menu.zig`   — the pause/debug menu (OPEN AT LAUNCH: Continue / Debug / Quit). Debug holds
-                 Stats / Wireframe / Time Scale and the Retro Filters list (15 filters + presets).
+- `menu.zig`   — the pause/debug menu (OPEN AT LAUNCH: Continue / Options / Editor / Debug / Quit).
+                 OPTIONS holds the three SOUND LEVELS — Ambient / Sound Effects / Combat, one per
+                 `sfx.Submix` (`OPT_MIX`, comptime-checked to cover every family, or a voice would be
+                 one the player can never move). They PERSIST in `settings.cfg` beside the exe, written
+                 when the screen closes rather than per nudge (a held Left glides at frame rate) and
+                 read back in `sfx.init`. Debug holds Stats / Wireframe / Time Scale and the Retro
+                 Filters list (15 filters + presets). Both slider screens share one gauge column
+                 (`drawCard`'s `gauges` slice) and one adjust feel (`adjustDelta`).
 - `hero.zig`   — THE HERO. Anthropometric FK skeleton + every animation, the swept blade hit
                  capsule (rides the SWORD bone's dummy points, active only in the strike's window,
                  FAT on purpose for vertical forgiveness), the swing trail, and the GUARD — the
@@ -275,6 +281,24 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  Also the shadow depth pass, the fullscreen `Sky`, and the `Vignette`.
 - `worldfmt.zig` — THE MAP FORMAT: the op vocabulary, the zone/clearing/runway/foe tables, and
                  one comptime field table driving both the writer and the parser. Load/save.
+                 **FLOORING IS TWO GRIDS, NOT ONE.** `soil` is the material id per cell; `soilCov` is
+                 how strongly it covers, 0..255. An edge is NOT a special case — it is simply where the
+                 author left the coverage low, which is why one number buys both "fade this margin" and
+                 "make this whole patch faint" (owner: "opacity of the edges — or wherever really").
+                 THE PAINT RULE is `lerp(here, opacity, falloff)` inside the stroke: painting below what
+                 is there THINS it, overlapping strokes don't carve each other, and repeated passes
+                 converge on the dial instead of running away. A cell holding a DIFFERENT material is
+                 CONTESTED — the stroke wins it only where it would cover more than the incumbent —
+                 so a faint pass can't eat a solid floor; the eraser is exempt and clears outright.
+                 `BRUSH_CORE` (0.55) keeps the middle solid: a pure cone made "paint at 100%" come out
+                 translucent everywhere, because the lattice is 5 m and a small brush is one cell wide.
+                 **HARD vs SOFT EDGES ARE A PROPERTY OF THE MATERIAL** (`Soil.hardEdge`, stone only for
+                 now), pinned to the shader's `soilHard` by a comptime assert on the enum value. Hard
+                 materials snap the coverage uv to the texel centre (point sampling out of a bilinear
+                 texture) and skip the shader's structural blend ring — a crisp cell-wide edge, still
+                 ragged from the existing jitter, and the authored LEVEL is untouched so hard-edged
+                 never means always-opaque. Coverage defaults to `COV_FULL`, so a map written before it
+                 existed carries no `soilcov` record and renders exactly as it always did.
 - `editor.zig` — THE EDITOR (Menu > Editor). Organised in LAYERS the StarEdit way — GROUND
                  (SHAPE the land, then paint the soil, then flood it — the strip is sectioned
                  `shape` / `surface` because those are two different jobs), COVER (zone density +
@@ -305,9 +329,10 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  WASD and the arrows pan; Enter confirms, and **Esc backs out one level, where one
                  level up is SELECT MODE** (owner's rule: Select is "back out and let me grab
                  something", then Esc again is "back out fully"). So the ladder is context menu →
-                 Select → the menu, and it does NOT deselect on the way — that step used to throw away
-                 the selection you were backing out of a brush to work on. Right-click on nothing is
-                 the deselect. The camera is an ORBIT rig
+                 Select → DESELECT → the menu. Deselect sits after the brush→Select step and not
+                 before it, so backing out of a brush still reaches Select with the selection you were
+                 backing out to work on intact; the next Esc is what drops it. Right-click on nothing
+                 deselects too. The camera is an ORBIT rig
                  (ground focus + yaw/pitch/dist), not a free-fly, and the pan works by re-aiming
                  at the point the cursor GRABBED — so terrain stays under the pointer at any
                  zoom or angle. THE CURSOR IS SHOWN here and re-hidden on the way out; gameplay
@@ -484,7 +509,26 @@ lines where the concerns genuinely part company, and each new file is named so t
                  shared tape-style `master`, which is what makes separately-authored sounds feel
                  recorded in the same room. Read it as recipes. Three things to know before retuning:
                  **`master` NORMALIZES each voice** (`norm`), so a layer's `amp` sets its BALANCE
-                 inside the voice and only `BANK.gain` sets how loud the thing is; **`vars`/`jit`/
+                 inside the voice and only `BANK.gain` sets how loud the thing is; **THE FIGHT IS ONE
+                 BAND** — every combat row above `BATTLE_FLOOR` (0.34) is `sqrt(BATTLE_FLOOR × old)`,
+                 a geometric pull toward the soft end that HALVES the spread in dB (owner: "some battle
+                 sfx is much louder than others… normalize to the softer ones"). It was 0.26–1.00,
+                 nearly 12 dB, so an ogre's slam arrived four times the size of the swing answering it.
+                 Two properties make it a compression and not a volume knob: the soft voices do NOT
+                 move (a normalize that raised them would be one), and every ORDERING survives, so the
+                 slam is still the biggest thing in the game. **Retune by moving the FLOOR**, not by
+                 pushing one row back up; a test pins the band's ratio and the orderings that carry
+                 meaning. Excluded rows sit at or under the floor already and would have been RAISED:
+                 the boots, the roll, both swings, `refused`, `arrow_dirt`, the priest's cast and heal.
+                 **THREE FAMILIES** (`Submix`: `sfx` / `combat` / `ambience`) — a row's `mix` is both
+                 where it sits in the AUTHORED mix (`submixTrim`: only ambience is trimmed, 0.55) and
+                 which OPTIONS SLIDER the player moves it with. Combat exists as a family for the
+                 slider's sake and keeps trim 1.0, which is what leaves the reverted `.creature` trim
+                 reverted. Row gain × family trim × player dial meet in `levelFor` and nowhere else;
+                 `setVolume` also re-levels the BEDS mid-flight, since those re-trigger only every
+                 eight seconds and would otherwise ignore the slider until then.
+                 **`gain` and `reach` are separate dials** — the ogre's LEVEL is compressed with
+                 everybody's, his 135 m reach is not; **`vars`/`jit`/
                  `vjit`** are the anti-grate dials (different takes, then pitch, then level); and a
                  voice's shape is judged by EAR — the tests only prove it renders, stays in range and
                  is not silence. An arrow's impact is chosen by the SURFACE it struck
@@ -677,6 +721,25 @@ and the mesh). This section is the part that decides how it PLAYS.
   well past the hero's, and `FOE_REGEN_DELAY` / `FOE_REGEN_RATE` far slower — a foe whose poise is
   back before your next swing can only be staggered by a burst, and every fight collapses into
   "land two fast or don't bother".
+- **NOBODY IS POISE-DAMAGED WHILE ALREADY REELING, EITHER SIDE** (owner's law). For as long as a stun
+  runs, incoming **poise is dropped**, and when it ends **poise goes back to FULL** — both tiers.
+  Without it the blow that staggered you also set up the next stagger, so a warband or a mashed R1
+  held either side in one unbroken flinch, which is the time-theft the FEEL RULES exist to forbid.
+  Three parts of it are load-bearing:
+  - **HP AND DIRECT STANCE DAMAGE STILL LAND.** The window you opened is still a punish window —
+    land a heavy inside a light stun and its stance damage counts. What you cannot do is RE-FLINCH
+    something that is already flinching.
+  - **THE REFILL AT THE END IS WHAT MAKES IT SYMMETRIC.** A light break already reset poise; a HEAVY
+    break resets STANCE and leaves poise where the blow left it, so without this the bigger reaction
+    left you the more fragile of the two.
+  - **`combat.Vitals` OWNS THE CLOCK** (`stunLeft`, armed by `beginStun`, seeded from the same
+    `*_STUN_DUR` pair the rigs pose against and carried per-side by `init`/`initFoe`). `foe.strike`
+    applies a blow knowing nothing about the creature it belongs to, so the rule cannot live in the
+    rigs. It ticks BEFORE the regen gate in `Vitals.tick` — behind it, a foe's `regenDelay` (2.2 s)
+    outlasts both its stun windows and the immunity would never lift. The rigs keep their own `t`
+    for the ANIMATION; a test pins the two clocks to one pair of constants.
+  - The one door `hit()` does not cover is a **GUARD BREAK** — a heavy stagger the vitals never
+    returned, since the chip that emptied the bar was a plain damage hit. `hero.enterStun` arms it.
 
 ## STAMINA (`combat.zig`) — the soulslike rules, all of them
 
@@ -747,6 +810,13 @@ the gap or lose your footing. Deliberately the DS1 shape rather than ER's.
   every caller fired the hurt beat the moment a foe REPORTED a blow — so rolling cleanly through a
   slam still grunted, shook the camera and kicked the pad, which is the one thing a dodge must never
   do.
+- **HE CAN WALK A FIGHT DOWN BEHIND IT** — `hero.GUARD_SPEED` is 0.75 of the WALK (owner's call,
+  raised from 0.55). At just over half you could not reposition behind the shield at all: closing or
+  backing off meant dropping it, so the block only ever answered a blow you had already decided to
+  stand still for. It is the FLOOR that matters, not the ceiling — clearly under 1.0, or the shield
+  is free — and it stays capped against the WALK, never zeroed (guarding slows you, it does not root
+  you). Denied at the SOURCE in game.zig, like the sprint, so the one `Move` every reader sees
+  already knows about it.
 - **THE STANCE LAGS, THE BLOCK NEVER DOES.** `guarding` is live the frame the button goes down;
   `guardB` is a VISUAL blend easing in over ~0.1 s (the FEEL RULES' ceiling on a posture change).
   Nothing mechanical may read `guardB`.

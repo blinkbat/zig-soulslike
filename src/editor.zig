@@ -20,10 +20,11 @@ const LOOK_SENS: f32 = 0.0032;
 const UNDO_CAP: usize = 24;
 const DRAG_PX = ui.DRAG_PX; // the shared click-vs-drag threshold (see there)
 const SNAP: f32 = 1.0; // grid pitch when snap is on
-/// How often a held slider may re-expand the world.
-const REBUILD_HZ: f32 = 5.0;
+/// How long a held dial must go QUIET before the world re-expands. A DEBOUNCE, not a throttle: at 5 Hz a stepper on key-repeat re-materialized all 17k props five times a second, and every one of those was thrown away by the next nudge. The gizmo reads the MAP, so the dial still answers instantly (see `drawOpGizmo`) — it is only the expansion that waits, and `endGesture` flushes it on release so the world always settles on the value you let go of.
+const REBUILD_QUIET: f32 = 0.9;
 
-const ERASE_HZ: f32 = REBUILD_HZ;
+/// How often the held eraser may remove something — its own rate, not the rebuild's.
+const ERASE_HZ: f32 = 5.0;
 /// …and how far the cursor must travel between two removals.
 const ERASE_STEP: f32 = 0.6;
 /// Most instance markers drawn for one selected generator.
@@ -1071,15 +1072,16 @@ pub const Editor = struct {
         env.materialize(m);
     }
 
-    /// Ask for a rebuild, THROTTLED.
+    /// Ask for a rebuild, DEBOUNCED — see `REBUILD_QUIET`, which is the distinction this used to say the opposite of.
     fn requestRebuild(self: *Editor) void {
         self.rebuildDue = true;
+        self.rebuildT = 0; // …and RESTART the quiet clock, so a held dial costs ONE expansion instead of one per tick
     }
 
     fn tickRebuild(self: *Editor, m: *const wf.Map, env: *envmod.Env, dt: f32) void {
         if (!self.rebuildDue) return;
         self.rebuildT += dt;
-        if (self.rebuildT >= 1.0 / REBUILD_HZ) self.rebuild(m, env);
+        if (self.rebuildT >= REBUILD_QUIET) self.rebuild(m, env);
     }
 
     /// Called when a widget gesture ends: flush any coalesced rebuild immediately, so the world always settles on the value you let go of.
@@ -1565,7 +1567,8 @@ pub const Editor = struct {
     fn freshSeed(self: *Editor, m: *const wf.Map) u64 {
         _ = self;
         var s: u64 = 1000;
-        for (m.slice()) |o| s = @max(s, o.seed);
+        // BY POINTER: an `Op` carries a 24-kind mix and an 8-item loot list, so a by-value walk memcpy'd a couple of hundred kilobytes to read one u64 out of each.
+        for (m.slice()) |*o| s = @max(s, o.seed);
         return s + 1;
     }
 
@@ -2148,7 +2151,12 @@ pub const Editor = struct {
 
 fn drawOpGizmo(o: *const wf.Op, y: f32) void {
     switch (o.op) {
-        .at => ringXZ(o.x, o.z, GIZMO_R, y, ui.HOT),
+        .at => {
+            ringXZ(o.x, o.z, GIZMO_R, y, ui.HOT);
+            // A HEADING SPOKE, because a circle cannot show yaw. This is the cheap live answer the debounced rebuild leaves you without: it reads the OP, so it swings on the frame you press the stepper while the props behind it are still standing at the old angle.
+            const d = mathx.headingDir(mathx.radians(o.yaw));
+            groundLine(o.x, o.z, o.x + d.x * GIZMO_SPOKE, o.z + d.z * GIZMO_SPOKE, y, ui.HOT);
+        },
         .belt, .ivy => outline(o.x, o.z, o.x1, o.z1, y, ui.HOT),
         .disc => {
             ringXZ(o.x, o.z, o.r1, y, ui.HOT);
@@ -2167,6 +2175,7 @@ const MARK_BOX_H: f32 = 2.0;
 const MARK_RING_R: f32 = 1.8; // marked op anchors, and their ghosts while the set is dragged
 const MARK_RING_SEG: i32 = 12; // coarse on purpose — see ringSeg
 const GIZMO_R: f32 = 1.2; // one literal prop's own gizmo
+const GIZMO_SPOKE: f32 = GIZMO_R * 1.9; // …and how far its heading spoke reaches past the ring
 const CURSOR_R: f32 = 0.9; // the plain cursor ring, where no brush radius applies
 
 /// Marker colours per foe kind — a green toad, bone-pale archer, orange-lit ogre, and the kobold warband on ONE dust-brown hue so a pack reads as a pack at a glance, separated only by value (the berserker brightest, the priest gold-lit, the slinger dark).

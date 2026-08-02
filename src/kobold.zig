@@ -167,6 +167,11 @@ pub fn roleOf(k: wf.FoeKind) ?Role {
     return @enumFromInt(i - lo);
 }
 
+/// …and back. HERE, beside its inverse and under the comptime block that pins the shift — game.zig carried its own copy of this arithmetic, out of reach of that guarantee.
+pub fn kindOf(r: Role) wf.FoeKind {
+    return @enumFromInt(@intFromEnum(wf.FoeKind.berserker) + @intFromEnum(r));
+}
+
 const AGGRO_R = 16.0; // it notices you from here
 const TURN_RATE = 5.2; // rad/s — quicker than the ogre, slower than the hero
 const WALK_SPEED = heromod.WALK_SPEED;
@@ -1794,6 +1799,11 @@ test "the role table, the enum and the map's foe kinds agree" {
     try std.testing.expect(roleOf(.toad) == null);
     try std.testing.expect(roleOf(.archer) == null);
     try std.testing.expect(roleOf(.ogre) == null);
+    // …and `kindOf` is its INVERSE, which is the direction the lock-on takes: game.zig used to spell this arithmetic out a second time, where the comptime block above could not reach it.
+    for (0..SPEC.len) |i| {
+        const r: Role = @enumFromInt(i);
+        try std.testing.expectEqual(r, roleOf(kindOf(r)).?);
+    }
 }
 
 test "a kobold is a man's height and BROADER than he is" {

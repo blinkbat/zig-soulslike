@@ -163,13 +163,14 @@ and the map's own `half:` is the only source), holding five regions
 | west | **the Old Wood** | great trees (3 variants), ferns/brambles/bushes, boulders, a **standing-stone circle**, a woodcutter's **cottage** + campfire |
 | south | **the Windswept Downs** | open and sparse — lone trees, field stones, graves, a watchtower |
 
-**81 prop kinds**, **16,884 instances, 1,687 colliders and 35 fires**, of which a frame draws **~633**
+**81 prop kinds**, **17,104 instances, 1,739 colliders and 37 fires**, of which a frame draws **~633**
 across both passes (measured in the city; the wood is comparable). See **PERFORMANCE** — that ratio is
 why the world is affordable, and the debug Stats overlay prints it live so it stays checkable. The three
 numbers are also PINNED by `env`'s "replaying the SHIPPED map produces a stable world" test, so a
 scatter that quietly gains or loses instances fails the build instead of drifting in a screenshot.
 **Move them here and in that test together**: the props rework left the test pinning 17,292/1,836/34
-and this line repeating it, so the guard sat red for two commits — and a pin that always fails cannot
+and this line repeating it, and `9dea3c0`'s world edit left both at 16,884/1,687/35, so the guard sat red
+for two commits each time — and a pin that always fails cannot
 catch the next drift, which is the only thing it is for. **AND `git diff worlds/` BEFORE SUSPECTING THE
 CODE** — the owner edits the map in the editor while playing, so the commonest reason this pin goes red is
 that the WORLD changed, not the engine. The three numbers tell you which: a world edit's counts add up

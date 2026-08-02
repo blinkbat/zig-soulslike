@@ -174,10 +174,7 @@ pub const Game = struct {
         g.band = koboldmod.Warband.init(g.scene.shader);
         g.chests = chestmod.Chests.init(g.scene.shader);
         // Foes come from the MAP, so the groups can only be homed once it is loaded — init builds the shared meshes and nothing else.
-        g.warren.reset(&g.map);
-        g.line.reset(&g.map);
-        g.grief.reset(&g.map);
-        g.band.reset(&g.map);
+        rehomeFoes(g);
         // …and the chests come from the PROPS, so this goes after `materialize` rather than beside the foe groups: a chest's position is where env actually planted it (see `env.chestSites`).
         g.rest = .{};
         rehomeChests(g);
@@ -196,6 +193,14 @@ pub const Game = struct {
         g.probe = .{};
     }
 };
+
+/// THE FOE GROUPS, WRITTEN DOWN ONCE. Every "do this to every group" walks this list, so a fifth creature is one entry here rather than a line in eleven places — and the old layout's failure mode was SILENT (miss the re-home and that group simply never comes back).
+const FOE_GROUPS = [_][]const u8{ "warren", "line", "grief", "band" };
+
+/// RE-HOME EVERY GROUP FROM THE MAP.
+fn rehomeFoes(g: *Game) void {
+    inline for (FOE_GROUPS) |f| @field(g, f).reset(&g.map);
+}
 
 const Move = struct { fx: f32 = 0, fz: f32 = 0, speed: f32 = 0 };
 
@@ -283,9 +288,9 @@ fn sprintingMove(mv: Move) bool {
     return mv.speed > RUN_SPEED + 0.01 and (mv.fx * mv.fx + mv.fz * mv.fz) > 1e-6;
 }
 
-const WADE_KNEE: f32 = 0.5; // knee on the H=1.8 rig — where a leg starts pushing instead of swinging
-const WADE_DEEP: f32 = 1.15; // …about chest, where the walk is as slow as it gets
-const WADE_SLOWEST: f32 = 0.35; // …as a fraction of the WALK, not of the run he has already lost
+const WADE_KNEE: f32 = 0.75; // mid-thigh on the H=1.8 rig — where a leg starts pushing instead of swinging
+const WADE_DEEP: f32 = 1.5; // …shoulder, where the walk is as slow as it gets
+const WADE_SLOWEST: f32 = 0.8; // …as a fraction of the WALK, not of the run he has already lost
 
 /// How much the water is holding him back, as a fraction of the walk. 1.0 means it is not.
 fn wadeDrag(g: *const Game) f32 {
@@ -414,19 +419,13 @@ fn drawCasters(g: *Game, cull: envmod.Cull) void {
     g.scene.setFlash(0.6 * g.hero.hurtFlash);
     g.hero.draw();
     g.scene.setFlash(0);
-    g.warren.draw(&g.scene);
-    g.line.draw(&g.scene);
-    g.grief.draw(&g.scene);
-    g.band.draw(&g.scene);
+    inline for (FOE_GROUPS) |f| @field(g, f).draw(&g.scene);
 }
 
 fn setCasterShaders(g: *Game, sh: rl.Shader) void {
     g.env.setShader(sh);
     g.hero.setShader(sh);
-    g.warren.setShader(sh);
-    g.line.setShader(sh);
-    g.grief.setShader(sh);
-    g.band.setShader(sh);
+    inline for (FOE_GROUPS) |f| @field(g, f).setShader(sh);
     // THE CHEST LIDS TOO.
     g.chests.setShader(sh);
 }
@@ -481,10 +480,7 @@ pub fn endRestForShot(g: *Game) void {
     sfx.restFireOn(false);
     var fires: [restmod.CAP]restmod.Site = undefined;
     g.rest.reset(fires[0..g.env.restSites(&fires)]);
-    g.warren.reset(&g.map);
-    g.line.reset(&g.map);
-    g.grief.reset(&g.map);
-    g.band.reset(&g.map);
+    rehomeFoes(g);
 }
 pub fn openChestForShot(g: *Game) bool {
     const had = g.chests.near != null;
@@ -506,10 +502,9 @@ fn interact(g: *Game) void {
 fn tickRest(g: *Game, dt: f32) void {
     g.rest.update(dt);
     if (g.rest.justEntered) {
-        g.warren.n = 0;
-        g.line.n = 0;
-        g.grief.n = 0;
-        g.band.n = 0;
+        inline for (FOE_GROUPS) |f| {
+            @field(g, f).n = 0;
+        }
         for (&g.arrows) |*a| a.live = false;
         g.lock = null;
         // THE PLAYER'S OWN FILTERS STAY (owner: keep our normal retro filters here, amp up warmth only).
@@ -524,10 +519,7 @@ fn tickRest(g: *Game, dt: f32) void {
         g.retro.values = g.restRetro;
         g.hero.sit(false, g.hero.pos, g.hero.facing);
         // EVERY FOE BACK, whole, from the map — the groups are re-homed rather than healed in place, which is also what makes the ones you killed return.
-        g.warren.reset(&g.map);
-        g.line.reset(&g.map);
-        g.grief.reset(&g.map);
-        g.band.reset(&g.map);
+        rehomeFoes(g);
     }
     // ANY BUTTON GETS YOU UP.
     if (rl.isKeyPressed(.escape) or rl.getKeyPressed() != .null or rl.isMouseButtonPressed(.left) or
@@ -584,10 +576,12 @@ fn poolPut(g: *Game, a: archermod.Arrow) void {
     g.arrows[0] = a;
 }
 
-// The world solids one arrow could hit THIS frame: everything within its own travel distance, pulled from the prop grid. stepArrow samples the midpoint and endpoint of the step, so the query radius has to cover a whole frame of flight plus the fattest margin it tests with.
+// The world solids one arrow could hit THIS frame: everything within its own travel distance, pulled from the prop grid. stepArrow samples the midpoint and endpoint of the step, so the query has to cover a whole frame of flight plus enough slop that a capsule whose CENTRE LINE sits in the next cell along is still handed back.
+/// …and that slop, which is a solid's own half-width and NOT `archer.ARROW_COVER_MARGIN` — the comment here used to call it "the fattest margin it tests with", which is the shaft's 4 cm and thirty times too small a number to be doing this job.
+const ARROW_QUERY_PAD: f32 = 1.5;
 var arrow_cover_buf: [envmod.MAX_NEAR]collision.Solid = undefined;
 pub fn arrowCover(g: *const Game, ar: *const archermod.Arrow, dt: f32) []const collision.Solid {
-    return g.env.nearSolids(ar.pos, mathx.lenV(ar.vel) * dt + 1.5, &arrow_cover_buf);
+    return g.env.nearSolids(ar.pos, mathx.lenV(ar.vel) * dt + ARROW_QUERY_PAD, &arrow_cover_buf);
 }
 
 // Draw every live/stuck arrow, oriented along its flight (shrinking as a stuck one fades).
@@ -688,10 +682,8 @@ pub fn drawScene(g: *Game) void {
     g.vignette.draw(); // the vignette darkens the corners the chrome lives in
     drawRestFade(g); // …and the rest's black, under the HUD so the prompt is never on top of it
     drawHurtFlash(g); // red screen-edge pulse when the hero is hit (peripheral feedback)
-    drawFoeBars(g, g.warren.live()); // floating foe HP bars, crisp over the finished frame…
-    drawFoeBars(g, g.line.live()); // …one shared path for every foe group…
-    drawFoeBars(g, g.grief.live()); // …the ogre included (a regular foe, not a boss — owner's call)
-    drawFoeBars(g, g.band.live()); // …and the whole warband, roles mixed in one array
+    // Floating foe HP bars, crisp over the finished frame — one shared path for every group, the ogre included (a regular foe, not a boss — owner's call) and the whole warband with its roles mixed in one array.
+    inline for (FOE_GROUPS) |f| drawFoeBars(g, @field(g, f).live());
     drawLockDot(g); // the ER lock-on reticle
     drawDeathOverlay(g); // the YOU DIED card + respawn fade, over everything
 }
@@ -977,10 +969,7 @@ pub fn run(mode: Mode) void {
             g.hero.setGuard(false);
             g.hero.pose();
             // Re-home the foes from the map every frame the editor is up, so moving a spawn moves the thing you can SEE.
-            g.warren.reset(&g.map);
-            g.line.reset(&g.map);
-            g.grief.reset(&g.map);
-            g.band.reset(&g.map);
+            rehomeFoes(g);
             // …and the chests with them, for the same reason and off the same source of truth: moving, adding or deleting a box has to move the box you can SEE.
             rehomeChests(g);
             // …AND THE GRIP GOES QUIET, envelopes still decaying — the same call the pause card makes, for the same reason.
@@ -1202,16 +1191,10 @@ pub fn run(mode: Mode) void {
         } else null;
         // The slope under him, eased into the rig BEFORE it poses — every branch below ends in a `pose()`, so this has to be settled first or the lean is always one frame stale.
         leanToGround(g, dt);
-        // WHERE EVERY FOE STOOD BEFORE IT ACTED.
-        var wasToad: [worldfmt.MAX_PER_KIND]rl.Vector3 = undefined;
-        var wasArcher: [worldfmt.MAX_PER_KIND]rl.Vector3 = undefined;
-        var wasOgre: [worldfmt.MAX_PER_KIND]rl.Vector3 = undefined;
-        // The warband is THREE kinds in one array, so its snapshot is three times the per-kind cap — sized off `kobold.CAP` rather than restating the arithmetic.
-        var wasBand: [koboldmod.CAP]rl.Vector3 = undefined;
-        snapshotPos(g.warren.live(), &wasToad);
-        snapshotPos(g.line.live(), &wasArcher);
-        snapshotPos(g.grief.live(), &wasOgre);
-        snapshotPos(g.band.live(), &wasBand);
+        // WHERE EVERY FOE STOOD BEFORE IT ACTED — one row per group, walked off FOE_GROUPS like every other per-group pass here. Four buffers named by hand and eight calls kept in lockstep is exactly the shape FOE_GROUPS exists to kill, and this one's failure mode is the silent one: a group whose snapshot nobody took is a group the slope limit never gates, so it walks up cliffs.
+        // Every row is sized to the WIDEST group (the warband carries three kinds in one array); `snapshotPos` and `gateTerrain` both stop at the buffer's own length.
+        var wasPos: [FOE_GROUPS.len][koboldmod.CAP]rl.Vector3 = undefined;
+        inline for (FOE_GROUPS, 0..) |f, gi| snapshotPos(@field(g, f).live(), &wasPos[gi]);
         if (g.hero.dead) {
             g.hero.updateDeath(dt); // collapse → respawn
             // The frame he returns, the WORLD reloads with him (ER-style): every foe re-homed at full health, arrows cleared, lock dropped.
@@ -1254,10 +1237,7 @@ pub fn run(mode: Mode) void {
         // The lids swing and the "which one is in reach" answer is recomputed — once, here, so the prompt the player reads and the button they then press cannot disagree about which box they mean.
         g.chests.update(dt, g.hero.pos);
         // …and the ground has its say about all of them: every step a foe just took is re-taken through the slope limit, so none of them walks up anything the hero couldn't.
-        gateTerrain(g, g.warren.live(), &wasToad);
-        gateTerrain(g, g.line.live(), &wasArcher);
-        gateTerrain(g, g.grief.live(), &wasOgre);
-        gateTerrain(g, g.band.live(), &wasBand);
+        inline for (FOE_GROUPS, 0..) |f, gi| gateTerrain(g, @field(g, f).live(), &wasPos[gi]);
         // Arrows in flight: gentle homing + arc, then a strike lands a chomp-weight blow.
         for (&g.arrows) |*ar| {
             if (!ar.live) continue;
@@ -1300,10 +1280,9 @@ pub fn run(mode: Mode) void {
         collideActors(g, dt);
         // …and EVERYTHING SETTLES ONTO THE GROUND, last: collision moves actors in XZ (out of walls, off each other), so their height is only known once that is done.
         groundActor(g, &g.hero.pos, dt);
-        for (g.warren.live()) |*f| groundActor(g, &f.pos, dt);
-        for (g.line.live()) |*a| groundActor(g, &a.pos, dt);
-        for (g.grief.live()) |*o| groundActor(g, &o.pos, dt);
-        for (g.band.live()) |*k| groundActor(g, &k.pos, dt);
+        inline for (FOE_GROUPS) |f| {
+            for (@field(g, f).live()) |*a| groundActor(g, &a.pos, dt);
+        }
         g.rig.tickShake(rawDt); // impact shake decays on wall-clock time (bakes this frame's jitter)
         // …and the boom shortens rather than burying the eye in the hillside behind him (see camera.followClear).
         g.rig.followClear(g.hero.shoulderPoint(), &g.env, envGroundAt);
@@ -1428,17 +1407,26 @@ fn heroBlockBeat(g: *Game, h: combat.Hit) void {
 }
 
 fn allHits(g: *const Game) u32 {
-    return g.warren.totalHits() + g.line.totalHits() + g.grief.totalHits() + g.band.totalHits();
+    var n: u32 = 0;
+    inline for (FOE_GROUPS) |f| n += @field(g, f).totalHits();
+    return n;
 }
 fn allAlive(g: *const Game) u32 {
-    return g.warren.aliveCount() + g.line.aliveCount() + g.grief.aliveCount() + g.band.aliveCount();
+    var n: u32 = 0;
+    inline for (FOE_GROUPS) |f| n += @field(g, f).aliveCount();
+    return n;
 }
 fn anyFoeDied(g: *const Game) bool {
-    return g.warren.anyDied() or g.line.anyDied() or g.grief.anyDied() or g.band.anyDied();
+    inline for (FOE_GROUPS) |f| {
+        if (@field(g, f).anyDied()) return true;
+    }
+    return false;
 }
 fn allRunes(g: *const Game) u32 {
     // The band's payout is PER ROLE (a priest is worth the most), so its own `runesDropped` does the summing rather than taking a flat per-group figure like the other three.
-    return g.warren.runesDropped() + g.line.runesDropped() + g.grief.runesDropped() + g.band.runesDropped();
+    var n: u32 = 0;
+    inline for (FOE_GROUPS) |f| n += @field(g, f).runesDropped();
+    return n;
 }
 
 // The hero's blade this frame as plain data for the foe hit test (endpoints guard→tip, plus last frame's for the swept test; active only inside the strike window).
@@ -1586,7 +1574,7 @@ fn acquireLock(g: *Game) ?FoeRef {
     // The band's members carry DIFFERENT kinds in one array, so each contributes under its own role's kind rather than the group's — `considerLock`'s single-kind signature cannot say that.
     for (g.band.live(), 0..) |*k, i| {
         if (!k.alive() or k.dying() or mathx.distXZ(g.hero.pos, k.pos) > MAX_LOCK_R) continue;
-        const r = FoeRef{ .kind = kindOfRole(k.role), .idx = i };
+        const r = FoeRef{ .kind = koboldmod.kindOf(k.role), .idx = i };
         const sx = lockScreenX(g, r) orelse continue;
         const score = @abs(sx - cx);
         if (score < bestScore) {
@@ -1597,10 +1585,6 @@ fn acquireLock(g: *Game) ?FoeRef {
     return best;
 }
 
-/// A kobold role → the map foe kind that posts it.
-fn kindOfRole(r: koboldmod.Role) FoeKind {
-    return @enumFromInt(@intFromEnum(FoeKind.berserker) + @intFromEnum(r));
-}
 // One group's contribution to acquireLock — generic over the foe type (the shared contract).
 fn considerLock(g: *Game, foes: anytype, kind: FoeKind, cx: f32, best: *?FoeRef, bestScore: *f32) void {
     for (foes, 0..) |*f, i| {
@@ -1626,7 +1610,7 @@ fn cycleLock(g: *Game, dir: f32) void {
     considerCycle(g, g.grief.live(), .ogre, cur, curX, dir, &best, &bestGap);
     // …and the band, per member's own role kind (see acquireLock).
     for (g.band.live(), 0..) |*k, i| {
-        const r = FoeRef{ .kind = kindOfRole(k.role), .idx = i };
+        const r = FoeRef{ .kind = koboldmod.kindOf(k.role), .idx = i };
         if ((koboldmod.roleOf(cur.kind) != null and cur.idx == i) or !k.alive() or k.dying()) continue;
         if (mathx.distXZ(g.hero.pos, k.pos) > MAX_LOCK_R) continue;
         const sx = lockScreenX(g, r) orelse continue;
@@ -1654,10 +1638,7 @@ fn considerCycle(g: *Game, foes: anytype, kind: FoeKind, cur: FoeRef, curX: f32,
 
 // The world-reload half of a hero death (ER: dying resets the field).
 fn resetFoes(g: *Game) void {
-    g.warren.reset(&g.map);
-    g.line.reset(&g.map);
-    g.grief.reset(&g.map);
-    g.band.reset(&g.map);
+    rehomeFoes(g);
     g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
     g.lock = null;
 }

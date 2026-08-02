@@ -68,10 +68,6 @@ pub const Rest = struct {
     pub fn active(self: *const Rest) bool {
         return self.phase != .off;
     }
-    /// True while the world must not simulate: everything from the first frame of the fade to the last frame of it.
-    pub fn frozen(self: *const Rest) bool {
-        return self.phase != .off;
-    }
     /// True while the rest scene — not the field — is what is being drawn.
     pub fn scene(self: *const Rest) bool {
         return self.phase == .sit or self.phase == .out;

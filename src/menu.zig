@@ -130,7 +130,9 @@ pub const Menu = struct {
             .closed => .main,
             .main, .character => .closed, // …a root closes rather than backing out of nothing
             .options => .main,
-            .debug, .retro => if (self.screen == .retro) .debug else .main,
+            // One prong each: folded together they had to re-test the discriminant the switch had just matched on, and the next screen added to that prong would silently inherit the wrong `else`.
+            .debug => .main,
+            .retro => .debug,
             .inventory, .equipment => .character,
         };
     }

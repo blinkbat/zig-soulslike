@@ -777,6 +777,8 @@ pub const Hero = struct {
         const wasAlt = self.atkAlt;
         if (self.atkT / dur >= chain and self.queued != null) {
             self.attacking = false;
+            // ARMED HERE, not left to `start*`: a queued action the empty bar REFUSES returns without arming one, and the recovery pose then snapped straight to the stand — the pose discontinuity the FEEL RULES cap at POSE_XFADE. A successful chain re-arms it from the same `xf` a line later, so this is a no-op there.
+            self.startXfade();
             self.fireQueued(); // start* runs its own cross-fade out of this pose
             self.alternateChain(wasLight, wasAlt);
             self.pose(); // first frame of the new action (windup or dive)
@@ -837,7 +839,7 @@ pub const Hero = struct {
         if (!self.poured and u >= combat.FLASK_POUR_AT) {
             self.poured = true;
             switch (self.flasks.sel) {
-                .crimson => self.vit.hp = mathx.minF(self.vit.hpMax, self.vit.hp + self.vit.hpMax * combat.FLASK_HP_FRAC),
+                .crimson => _ = self.vit.heal(self.vit.hpMax * combat.FLASK_HP_FRAC),
                 .cerulean => _ = self.fp.restore(self.fp.max * combat.FLASK_FP_FRAC),
             }
         }

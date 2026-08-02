@@ -197,6 +197,11 @@ pub const Env = struct {
     /// Which placed props carry a veil, in prop order — see `drawVeils`.
     veilItems: [MAX_VEILS]u32 = undefined,
     nveils: usize = 0,
+    // …and the two OTHER "which props are these" answers, on the same list for the same reason. The editor re-homes both EVERY FRAME so a dragged box moves the box you can see, and answering by scanning all 17k props twice a frame is ~1.4 MB of memory traffic to find three things. The prop list only changes in `materialize`/`stageOne`, and both end in `indexProps` — so the answer is settled there, once, with the veils.
+    chestItems: [chestmod.CAP]u32 = undefined,
+    nchests: usize = 0,
+    restItems: [restmod.CAP]u32 = undefined,
+    nrests: usize = 0,
     // The scene this world draws through, kept so the painted soil can be pushed to its shader without threading a Scene pointer through every editor call that touches the map.
     scene: ?*gfx.Scene = null,
     props: [MAX_PROPS]Prop = undefined,
@@ -783,16 +788,9 @@ pub const Env = struct {
         return mathx.maxF(0, WATER_Y - self.groundAt(x, z));
     }
 
-    /// The prop a ray hits first — the editor's world picking.
-    pub fn pick(self: *const Env, origin: rl.Vector3, dir: rl.Vector3) ?usize {
-        return self.pickIf(origin, dir, {}, struct {
-            fn all(_: void, _: u16) bool {
-                return true;
-            }
-        }.all);
-    }
+    // (An unfiltered `pick` wrapping this lived here and had no caller — the editor's every pick is layer-scoped and goes through the predicate. Removed for the same reason `solids()` above it was.
 
-    /// `pick`, but only over the props whose OP the predicate accepts.
+    /// THE PROP A RAY HITS FIRST, over the props whose OP the predicate accepts — the editor's world picking.
     pub fn pickIf(
         self: *const Env,
         origin: rl.Vector3,
@@ -802,8 +800,8 @@ pub const Env = struct {
     ) ?usize {
         var best: ?usize = null;
         var bestT: f32 = std.math.floatMax(f32);
+        // THE RAY REJECTS FIRST, THE PREDICATE SECOND, and the order is worth a note: `accept` reads the OP the prop came from, which is a random index into a quarter-megabyte table — a cache miss per prop, paid 17,000 times a frame while Select is armed, to answer a question the ray was about to make moot for all but a handful of them. Both conditions still have to hold, so the winner is unchanged.
         for (self.props[0..self.nprops], 0..) |pr, i| {
-            if (!accept(ctx, pr.op)) continue;
             const nfo = props.info(pr.kind);
             // Half way up the mesh — and half way up its LEAN when it has one, so a click lands on a tipped tree where you SEE it rather than where it would have stood plumb.
             const sw = leanSwing(pr, nfo.top * pr.scale * 0.5);
@@ -811,10 +809,10 @@ pub const Env = struct {
             const rad = @max(nfo.bound * pr.scale * 0.5, 0.35);
             const oc = mathx.subV(c, origin);
             const along = oc.x * dir.x + oc.y * dir.y + oc.z * dir.z;
-            if (along <= 0) continue; // behind the eye
+            if (along <= 0 or along >= bestT) continue; // behind the eye, or already beaten
             const perp2 = (oc.x * oc.x + oc.y * oc.y + oc.z * oc.z) - along * along;
             if (perp2 > rad * rad) continue;
-            if (along < bestT) {
+            if (accept(ctx, pr.op)) {
                 bestT = along;
                 best = i;
             }
@@ -898,12 +896,12 @@ pub const Env = struct {
         return self.nprops;
     }
 
-    /// EVERY CHEST THAT WAS ACTUALLY PLACED, in prop order.
+    /// EVERY CHEST THAT WAS ACTUALLY PLACED, in prop order — off the list `indexProps` settled, not a fresh sweep of the world (the editor asks every frame).
     pub fn chestSites(self: *const Env, out: []chestmod.Site) usize {
         var n: usize = 0;
-        for (self.props[0..self.nprops]) |pr| {
-            if (pr.kind != .chest) continue;
+        for (self.chestItems[0..self.nchests]) |pi| {
             if (n >= out.len) break;
+            const pr = &self.props[pi];
             out[n] = .{ .pos = pr.pos, .yaw = pr.yaw, .scale = pr.scale, .op = pr.op };
             n += 1;
         }
@@ -912,9 +910,9 @@ pub const Env = struct {
     /// EVERY BONFIRE THAT WAS ACTUALLY PLACED, in prop order — the rest sites, filled off the planted props for the same reason `chestSites` is: a prop's final position is env's answer, not the op's.
     pub fn restSites(self: *const Env, out: []restmod.Site) usize {
         var n: usize = 0;
-        for (self.props[0..self.nprops]) |pr| {
-            if (!restmod.isRestKind(pr.kind)) continue;
+        for (self.restItems[0..self.nrests]) |pi| {
             if (n >= out.len) break;
+            const pr = &self.props[pi];
             out[n] = restmod.siteFromProp(pr.pos, pr.yaw);
             n += 1;
         }
@@ -1481,13 +1479,24 @@ const SolidCells = struct {
 fn indexProps(e: *Env) void {
     fillIndex(e, &e.stx, false);
     fillIndex(e, &e.flx, true);
-    // The veil list, filled from the one place both `materialize` and `stageOne` end up — so a prop cannot be in the world with its plume missing.
+    // The three "which props are these" lists, filled in the one place both `materialize` and `stageOne` end up — so a prop cannot be in the world with its plume missing, and neither the chests nor the bonfires cost a pass over the whole world to find (see the fields).
     e.nveils = 0;
+    e.nchests = 0;
+    e.nrests = 0;
     for (e.props[0..e.nprops], 0..) |pr, pi| {
-        if (props.info(pr.kind).veil == null) continue;
-        if (e.nveils >= MAX_VEILS) break;
-        e.veilItems[e.nveils] = @intCast(pi);
-        e.nveils += 1;
+        const i: u32 = @intCast(pi);
+        if (props.info(pr.kind).veil != null and e.nveils < MAX_VEILS) {
+            e.veilItems[e.nveils] = i;
+            e.nveils += 1;
+        }
+        if (pr.kind == .chest and e.nchests < chestmod.CAP) {
+            e.chestItems[e.nchests] = i;
+            e.nchests += 1;
+        }
+        if (restmod.isRestKind(pr.kind) and e.nrests < restmod.CAP) {
+            e.restItems[e.nrests] = i;
+            e.nrests += 1;
+        }
     }
 }
 
@@ -1866,19 +1875,27 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(lights0, e.lightCount());
 
     // …and the numbers themselves, so a scatter that quietly gains or loses instances fails the build instead of drifting in a screenshot.
-    try std.testing.expectEqual(@as(usize, 16884), props0);
-    try std.testing.expectEqual(@as(usize, 1687), solids0);
-    try std.testing.expectEqual(@as(usize, 35), lights0);
+    try std.testing.expectEqual(@as(usize, 17104), props0);
+    try std.testing.expectEqual(@as(usize, 1739), solids0);
+    try std.testing.expectEqual(@as(usize, 37), lights0);
 
     // …and THE CHEST IS STOCKED.
     var jerky: usize = 0;
-    for (m.ops[0..m.nops]) |op| {
+    var chestOps: usize = 0;
+    for (m.ops[0..m.nops]) |*op| {
         if (op.kind != .chest) continue;
+        chestOps += 1;
         for (op.loot[0..op.nloot]) |it| {
             if (it == .mushroom_jerky) jerky += 1;
         }
     }
     try std.testing.expectEqual(@as(usize, 2), jerky);
+
+    // …AND EVERY BOX AND CAMP IN THE MAP BECAME ONE THE GAME CAN REACH. Both lists are CACHED by `indexProps` rather than swept out of the prop array on demand, so this is what pins the cache to what was actually planted — asked after the SECOND materialize, which is the refill a caching bug would skip.
+    var boxes: [chestmod.CAP]chestmod.Site = undefined;
+    try std.testing.expectEqual(chestOps, e.chestSites(&boxes));
+    var fires: [restmod.CAP]restmod.Site = undefined;
+    try std.testing.expect(e.restSites(&fires) > 0);
 }
 
 test "the flat-map plant shortcut is EXACT, not an approximation" {

@@ -901,7 +901,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     }
     if (!seenVersion) return ParseError.BadVersion;
     // A map with no cover op has no ground cover, which LOOKS like a load failure and isn't — so it is one.
-    for (m.ops[0..m.nops]) |o| {
+    for (m.ops[0..m.nops]) |*o| {
         if (o.op == .cover) return;
     }
     return ParseError.NoCoverOp;

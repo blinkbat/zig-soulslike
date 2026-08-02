@@ -156,6 +156,8 @@ const ARROW_GRAV: f32 = 3.0; // gentle drop so long shots arc
 const STONE_GRAV: f32 = 9.0;
 const ARROW_LIFE = 3.5; // seconds airborne before it gives up (falls + sticks)
 const ARROW_STICK_FADE = 1.4; // seconds a stuck arrow lingers, then fades
+/// How fat the shaft is against the WORLD when it tests cover — a name because `game.arrowCover` sizes its grid query around "the fattest margin it tests with" and was pointing at a bare literal in another file.
+pub const ARROW_COVER_MARGIN: f32 = 0.04;
 const ARROW_HIT_R = 0.5; // hero footprint the arrow must reach to connect…
 const ARROW_HIT_HALF_H = 0.85; // …and how far above/below his centre of mass still counts. It was a
 
@@ -234,6 +236,8 @@ fn heroReached(p: rl.Vector3, hero: rl.Vector3, heroCenterY: f32) bool {
 
 pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, heroDodging: bool, solids: []const collision.Solid, dt: f32) void {
     if (!a.live) return;
+    // THE STREAK AGES WHETHER THE SHAFT IS FLYING OR PLANTED. Behind the stuck branch's return it stopped ageing the moment the arrow hit, so `drawArrowTrail` — which only asks whether the arrow is `live` — kept redrawing a full-alpha tube hanging in the air behind every embedded shaft for the whole `ARROW_STICK_FADE`.
+    for (&a.trailAge) |*ag| ag.* = @min(ag.* + dt, mathx.LONG_AGO);
     if (a.stuck) {
         a.age += dt;
         if (a.age >= ARROW_STICK_FADE) a.live = false;
@@ -259,14 +263,13 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, he
     const prev = a.pos;
     a.pos = mathx.addV(a.pos, mathx.scaleV(a.vel, dt));
     // Push this frame's position onto the trail ring.
-    for (&a.trailAge) |*ag| ag.* = @min(ag.* + dt, mathx.LONG_AGO);
     a.trailHead = (a.trailHead + 1) % TRAIL_N;
     a.trail[a.trailHead] = a.pos;
     a.trailAge[a.trailHead] = 0;
     // COVER first (a wall between archer and hero beats a hero hugging its far side): sample the frame's travel at midpoint + endpoint so a fast shaft can't tunnel a thin trunk.
     const mid = mathx.lerpV(prev, a.pos, 0.5);
-    const midSurf = collision.blockerAt(mid, 0.04, solids);
-    const endSurf = collision.blockerAt(a.pos, 0.04, solids);
+    const midSurf = collision.blockerAt(mid, ARROW_COVER_MARGIN, solids);
+    const endSurf = collision.blockerAt(a.pos, ARROW_COVER_MARGIN, solids);
     const midBlocked = midSurf != null;
     if (midBlocked or endSurf != null) {
         a.struck = midSurf orelse endSurf; // …what it went into, for the impact sound

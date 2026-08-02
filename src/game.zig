@@ -1515,33 +1515,37 @@ const FoeRef = struct { kind: FoeKind, idx: usize };
 fn bandIdx(r: FoeRef) ?usize {
     return if (koboldmod.roleOf(r.kind) != null) r.idx else null;
 }
-fn foePos(g: *const Game, r: FoeRef) rl.Vector3 {
-    if (bandIdx(r)) |i| return g.band.band[i].pos;
+/// ASK ONE QUESTION OF WHATEVER A `FoeRef` POINTS AT. The three accessors below were this same `bandIdx` + four-arm switch written out three times over, differing only in the method they called — so a fifth creature was three identical edits in three places, which is exactly the silent-miss shape `FOE_GROUPS` exists to kill for the per-group passes above.
+fn askFoe(comptime T: type, g: *const Game, r: FoeRef, comptime ask: anytype) T {
+    if (bandIdx(r)) |i| return ask(&g.band.band[i]);
     return switch (r.kind) {
-        .toad => g.warren.frogs[r.idx].pos,
-        .archer => g.line.archers[r.idx].pos,
-        .ogre => g.grief.ogres[r.idx].pos,
+        .toad => ask(&g.warren.frogs[r.idx]),
+        .archer => ask(&g.line.archers[r.idx]),
+        .ogre => ask(&g.grief.ogres[r.idx]),
         .berserker, .priest, .slinger => unreachable, // handled above
     };
 }
+fn foePos(g: *const Game, r: FoeRef) rl.Vector3 {
+    return askFoe(rl.Vector3, g, r, struct {
+        fn ask(f: anytype) rl.Vector3 {
+            return f.pos;
+        }
+    }.ask);
+}
 fn foeLockPoint(g: *const Game, r: FoeRef) rl.Vector3 {
-    if (bandIdx(r)) |i| return g.band.band[i].lockPoint();
-    return switch (r.kind) {
-        .toad => g.warren.frogs[r.idx].lockPoint(),
-        .archer => g.line.archers[r.idx].lockPoint(),
-        .ogre => g.grief.ogres[r.idx].lockPoint(),
-        .berserker, .priest, .slinger => unreachable,
-    };
+    return askFoe(rl.Vector3, g, r, struct {
+        fn ask(f: anytype) rl.Vector3 {
+            return f.lockPoint();
+        }
+    }.ask);
 }
 // A live, non-dissipating foe (both a fresh acquire and a held lock require this).
 fn foeLockable(g: *const Game, r: FoeRef) bool {
-    if (bandIdx(r)) |i| return g.band.band[i].alive() and !g.band.band[i].dying();
-    return switch (r.kind) {
-        .toad => g.warren.frogs[r.idx].alive() and !g.warren.frogs[r.idx].dying(),
-        .archer => g.line.archers[r.idx].alive() and !g.line.archers[r.idx].dying(),
-        .ogre => g.grief.ogres[r.idx].alive() and !g.grief.ogres[r.idx].dying(),
-        .berserker, .priest, .slinger => unreachable,
-    };
+    return askFoe(bool, g, r, struct {
+        fn ask(f: anytype) bool {
+            return f.alive() and !f.dying();
+        }
+    }.ask);
 }
 fn lockValid(g: *const Game, r: FoeRef) bool {
     return foeLockable(g, r) and mathx.distXZ(g.hero.pos, foePos(g, r)) <= MAX_LOCK_R + 2.0;
@@ -1571,25 +1575,22 @@ fn acquireLock(g: *Game) ?FoeRef {
     considerLock(g, g.warren.live(), .toad, cx, &best, &bestScore);
     considerLock(g, g.line.live(), .archer, cx, &best, &bestScore);
     considerLock(g, g.grief.live(), .ogre, cx, &best, &bestScore);
-    // The band's members carry DIFFERENT kinds in one array, so each contributes under its own role's kind rather than the group's — `considerLock`'s single-kind signature cannot say that.
-    for (g.band.live(), 0..) |*k, i| {
-        if (!k.alive() or k.dying() or mathx.distXZ(g.hero.pos, k.pos) > MAX_LOCK_R) continue;
-        const r = FoeRef{ .kind = koboldmod.kindOf(k.role), .idx = i };
-        const sx = lockScreenX(g, r) orelse continue;
-        const score = @abs(sx - cx);
-        if (score < bestScore) {
-            bestScore = score;
-            best = r;
-        }
-    }
+    // …and the band through the SAME helper, on a null group kind (see `memberKind`) — it used to be a hand-copied inline loop here and a second one in `cycleLock`, because the helpers took one kind for a whole group.
+    considerLock(g, g.band.live(), null, cx, &best, &bestScore);
     return best;
 }
 
+/// WHICH KIND ONE MEMBER OF A GROUP IS. The warband carries three kinds in ONE array (the priest has to see its friends), so for it the member answers and not the group; every other array holds one kind and passes it in.
+fn memberKind(f: anytype, group: ?FoeKind) FoeKind {
+    if (comptime @hasField(std.meta.Child(@TypeOf(f)), "role")) return koboldmod.kindOf(f.role);
+    return group.?;
+}
+
 // One group's contribution to acquireLock — generic over the foe type (the shared contract).
-fn considerLock(g: *Game, foes: anytype, kind: FoeKind, cx: f32, best: *?FoeRef, bestScore: *f32) void {
+fn considerLock(g: *Game, foes: anytype, kind: ?FoeKind, cx: f32, best: *?FoeRef, bestScore: *f32) void {
     for (foes, 0..) |*f, i| {
         if (!f.alive() or f.dying() or mathx.distXZ(g.hero.pos, f.pos) > MAX_LOCK_R) continue;
-        const r = FoeRef{ .kind = kind, .idx = i };
+        const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
         const sx = lockScreenX(g, r) orelse continue;
         const score = @abs(sx - cx);
         if (score < bestScore.*) {
@@ -1608,24 +1609,14 @@ fn cycleLock(g: *Game, dir: f32) void {
     considerCycle(g, g.warren.live(), .toad, cur, curX, dir, &best, &bestGap);
     considerCycle(g, g.line.live(), .archer, cur, curX, dir, &best, &bestGap);
     considerCycle(g, g.grief.live(), .ogre, cur, curX, dir, &best, &bestGap);
-    // …and the band, per member's own role kind (see acquireLock).
-    for (g.band.live(), 0..) |*k, i| {
-        const r = FoeRef{ .kind = koboldmod.kindOf(k.role), .idx = i };
-        if ((koboldmod.roleOf(cur.kind) != null and cur.idx == i) or !k.alive() or k.dying()) continue;
-        if (mathx.distXZ(g.hero.pos, k.pos) > MAX_LOCK_R) continue;
-        const sx = lockScreenX(g, r) orelse continue;
-        const gap = (sx - curX) * dir;
-        if (gap > 5.0 and gap < bestGap) {
-            bestGap = gap;
-            best = r;
-        }
-    }
+    considerCycle(g, g.band.live(), null, cur, curX, dir, &best, &bestGap);
     if (best) |b| g.lock = b;
 }
-fn considerCycle(g: *Game, foes: anytype, kind: FoeKind, cur: FoeRef, curX: f32, dir: f32, best: *?FoeRef, bestGap: *f32) void {
+fn considerCycle(g: *Game, foes: anytype, kind: ?FoeKind, cur: FoeRef, curX: f32, dir: f32, best: *?FoeRef, bestGap: *f32) void {
     for (foes, 0..) |*f, i| {
-        const r = FoeRef{ .kind = kind, .idx = i };
-        if ((cur.kind == kind and cur.idx == i) or !f.alive() or f.dying()) continue;
+        const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
+        // Against the MEMBER's own kind, which is what makes one test serve the warband too: a slot in the band array is one creature of one role, so `cur` naming that role at that index is `cur` naming that creature.
+        if ((cur.kind == r.kind and cur.idx == i) or !f.alive() or f.dying()) continue;
         if (mathx.distXZ(g.hero.pos, f.pos) > MAX_LOCK_R) continue;
         const sx = lockScreenX(g, r) orelse continue;
         const gap = (sx - curX) * dir;

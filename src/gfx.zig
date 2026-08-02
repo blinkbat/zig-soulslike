@@ -240,8 +240,7 @@ pub const PRESET_PS1 = [_]Preset{ .{ .idx = RF_PIXELATE, .val = 0.35 }, .{ .idx 
 pub const PRESET_CRT = [_]Preset{ .{ .idx = RF_SCANLINES, .val = 0.6 }, .{ .idx = RF_CHROMA, .val = 0.45 }, .{ .idx = RF_CURVE, .val = 0.55 }, .{ .idx = RF_GRAIN, .val = 0.25 } };
 pub const PRESET_VHS = [_]Preset{ .{ .idx = RF_VHS, .val = 0.65 }, .{ .idx = RF_CHROMA, .val = 0.55 }, .{ .idx = RF_GRAIN, .val = 0.35 }, .{ .idx = RF_SEPIA, .val = 0.15 } };
 pub const PRESET_GB = [_]Preset{ .{ .idx = RF_GAMEBOY, .val = 1.0 }, .{ .idx = RF_PIXELATE, .val = 0.45 }, .{ .idx = RF_DITHER, .val = 0.4 } };
-/// THE REST SCENE'S LOOK, and the numbers are the point: A LITTLE DREAMIER THAN NORMAL PLAY, nothing more (owner, twice).
-pub const PRESET_REST = [_]Preset{ .{ .idx = RF_GRAIN, .val = 0.10 }, .{ .idx = RF_SEPIA, .val = 0.09 }, .{ .idx = RF_CHROMA, .val = 0.05 } };
+// (A `PRESET_REST` sat here and had no reader: the rest scene KEEPS the player's own filters and only warms them (owner: "keep our normal retro filters here, amp up warmth only"), which `game.tickRest` does with one `RF_SEPIA` bump. A preset still captioned "the rest scene's look" is worse than none — it is where the next person would go to retune it.
 
 
 pub const Retro = struct {

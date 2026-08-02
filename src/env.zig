@@ -300,7 +300,8 @@ pub const Env = struct {
             var tx = lo;
             while (tx <= hi) : (tx += 1) self.buildTile(tz * TILES + tx);
         }
-        self.buildSkirt(); // its inner edge follows the terrain's rim, which a stroke there moves
+        // …AND THE SKIRT ONLY IF THE STROKE REACHED THE RIM. Its inner edge follows the border lattice row/column and NOTHING else, so a stroke in the middle of the map cannot move it — and rebuilding it anyway was the majority of a sculpt frame's mesh churn (896 quads torn down and re-uploaded against the two or three tiles that actually changed, every frame of every drag).
+        if (span[0] == 0 or span[1] == 0 or span[2] >= wf.HEIGHT_N - 1 or span[3] >= wf.HEIGHT_N - 1) self.buildSkirt();
     }
 
     /// Drop and rebuild every terrain tile (and the skirt) from the live field.
@@ -868,7 +869,7 @@ pub const Env = struct {
         self.drawStows(cull);
     }
 
-    /// The stowable parts, drawn WITH the props in both passes so one that is on screen also casts — and skipped entirely while `stowed`.
+    /// The stowable parts, drawn WITH the props in both passes so one that is on screen also casts — and skipped entirely while `stowed`. Walks the VEIL list rather than one of its own, which a comptime assert in `props.zig` is what makes safe: a kind with a `stow` and no `veil` is not in this list at all.
     fn drawStows(self: *Env, cull: Cull) void {
         if (self.stowed) return;
         for (self.veilItems[0..self.nveils]) |pi| {

@@ -370,8 +370,7 @@ pub const Ogre = struct {
     pub fn spawn(home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Ogre {
         var o = Ogre{ .pos = home, .home = home, .facing = faceYaw, .scale = scale * SCALE, .seed = seed };
         o.rest = restPositions();
-        // @abs first — @intFromFloat into an unsigned type traps on a negative seed (see frog.zig).
-        o.fxRng = mathx.Rng.init(@as(u64, @intFromFloat(@abs(seed) * 88883.0)) +% 7);
+        o.fxRng = foe.fxStream(seed, 88883.0, 7);
         o.pose();
         return o;
     }

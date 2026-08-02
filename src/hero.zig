@@ -605,6 +605,8 @@ pub const Hero = struct {
         self.attacking = false;
         self.rolling = false;
         self.drinking = false;
+        // …AND THE INPUT BUFFER, or a swing queued in the second before you pressed E sits in the slot through the whole rest and fires off the end of some later action (`fireQueued` is only reached from a committed action's exit, and sitting down clears all three of those).
+        self.queued = null;
         self.sprinting = false;
         self.guarding = false;
         self.guardB = 0;

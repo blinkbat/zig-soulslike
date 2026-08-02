@@ -1774,6 +1774,8 @@ pub const Editor = struct {
         if (self.nMarked == 0) return mathx.zero3;
         var sx: f32 = 0;
         var sz: f32 = 0;
+        // Counted as they are SUMMED, not off `nMarked`: the loop skips an index the map has since shrunk past, and dividing by the full mark count then drags the anchor toward the origin — a paste that lands nowhere near what was copied.
+        var n: usize = 0;
         for (self.marked[0..self.nMarked]) |i| {
             if (self.layer == .units) {
                 if (i >= m.nfoes) continue;
@@ -1785,9 +1787,11 @@ pub const Editor = struct {
                 sx += p.x;
                 sz += p.z;
             }
+            n += 1;
         }
-        const n: f32 = @floatFromInt(self.nMarked);
-        return v3(sx / n, 0, sz / n);
+        if (n == 0) return mathx.zero3;
+        const nf: f32 = @floatFromInt(n);
+        return v3(sx / nf, 0, sz / nf);
     }
 
     fn moveMarked(self: *Editor, m: *wf.Map, env: *envmod.Env, dx: f32, dz: f32) void {

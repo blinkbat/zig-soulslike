@@ -480,6 +480,8 @@ comptime {
     // A bound smaller than the mesh pops geometry at the frustum edge; catch the obvious cases.
     for (INFO) |row| std.debug.assert(row.bound >= row.top);
     for (INFO) |row| std.debug.assert(!(row.flora and row.casts)); // flora must stay out of the shadow map
+    // A STOW RIDES THE VEIL LIST. `env.drawStows` finds the placed instances that carry a stowable part by walking `veilItems`, so a kind declaring `stow` and no `veil` would simply never draw its stow — invisibly, with the row looking correct. One kind (`grace`) declares either, and this is what keeps that assumption true rather than merely accidental.
+    for (INFO) |row| std.debug.assert(!(row.stow != null and row.veil == null));
 }
 
 test "every kind row sits at its own index and carries a mesh builder" {

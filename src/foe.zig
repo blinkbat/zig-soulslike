@@ -44,6 +44,11 @@ pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32,
 pub const DUST = mathx.rgba(150, 132, 96, 175);
 pub const MOTE = mathx.rgba(252, 198, 92, 170);
 
+/// A CREATURE'S PRIVATE FX STREAM off its spawn `seed`, spread by a per-species `mul` and offset by `salt` so two creatures sharing a map seed never share a scatter. Three files carried this expression, two of them under a comment pointing at the third for the WHY, which is the shape of a rule nobody can find. The why: `seed` is an f32 dial out of the map and `@intFromFloat` into an UNSIGNED type is illegal behaviour for a negative one, so the `@abs` is load-bearing and not tidiness — and `worldfmt` bounds the dial to 0..1, which is what keeps the multiply inside a u64.
+pub fn fxStream(seed: f32, mul: f32, salt: u64) mathx.Rng {
+    return mathx.Rng.init(@as(u64, @intFromFloat(@abs(seed) * mul)) +% salt);
+}
+
 /// One telegraph particle: integrates ballistically, lerps r0→r1, fades out as its life runs down.
 pub const Particle = struct {
     p: rl.Vector3 = mathx.zero3,

@@ -472,9 +472,7 @@ const GUITAR_BODY = [_][3]f32{
     .{ 0.520, 0.070, 0.042 }, // the heel the neck goes into
 };
 
-/// The instrument's whole length up `fr.a`, so a caller can seat it or prop it without re-deriving where the headstock ends up.
-pub const GUITAR_LEN: f32 = 1.0;
-
+// (A `GUITAR_LEN` sat here offering the instrument's length "so a caller can seat it or prop it". Both callers place it by frame and scale (`hero.guitarMesh`, `propruins.guitarPropInto`) and neither ever wanted a length, so it was a constant that only looked load-bearing.
 /// ONE GUITAR, in `fr`: `fr.o` is where the body's TAIL sits, `fr.a` runs up the neck and `fr.n` is the soundboard's outward normal.
 pub fn guitarInto(b: *Builder, fr: Frame) void {
     b.setMat(.wood);

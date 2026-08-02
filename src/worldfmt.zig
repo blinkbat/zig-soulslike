@@ -888,7 +888,8 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
                 .z = try nextFloat(&it),
                 .yaw = try nextFloat(&it),
                 .scale = try nextFloat(&it),
-                .seed = try nextFloat(&it),
+                // BOUNDED HERE, where every rig inherits it: each creature turns this into an RNG stream with `@intFromFloat(@abs(seed) * ~1e5)` into a u64, so a seed past ~1e14 is not a strange-looking foe but an out-of-range cast.
+                .seed = try band(&it, 0, 1),
             };
             m.nfoes += 1;
         } else if (enumFromName(OpKind, rec)) |k| {
@@ -1200,6 +1201,13 @@ fn nextFloat(it: *std.mem.TokenIterator(u8, .any)) !f32 {
     return finiteFloat(f32, t);
 }
 
+/// …and one that must also land inside `lo..hi`, because something downstream cannot cope with it otherwise. A LOAD ERROR like every other bad field, not a clamp: silently pulling a value into range hides the typo that produced it.
+fn band(it: *std.mem.TokenIterator(u8, .any), lo: f32, hi: f32) !f32 {
+    const v = try nextFloat(it);
+    if (v < lo or v > hi) return ParseError.BadNumber;
+    return v;
+}
+
 fn nextInt(it: *std.mem.TokenIterator(u8, .any)) !u32 {
     const t = it.next() orelse return ParseError.MissingField;
     return std.fmt.parseInt(u32, t, 10) catch ParseError.BadNumber;
@@ -1505,6 +1513,13 @@ test "a value that only LOOKS parseable is a load error too" {
     try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 99999\n" ++ cover[11..], &m, &ln));
     try parse("version: 1\nhalf: 280\n" ++ cover[11..], &m, &ln);
     try std.testing.expectApproxEqAbs(DEFAULT_HALF, m.half, 1e-4);
+    // A FOE'S SEED IS A 0..1 DIAL, and out of that band it is not an odd-looking foe: every rig turns it into an RNG stream with `@intFromFloat(@abs(seed) * ~1e5)` into a u64, which past ~1e14 is an out-of-range cast — illegal behaviour, not a big number.
+    try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "foe: toad 0 0 0 1 1e20\n", &m, &ln));
+    try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "foe: toad 0 0 0 1 -0.5\n", &m, &ln));
+    try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "foe: toad 0 0 0 1 1.5\n", &m, &ln));
+    // …and both ENDS of the band still load, or the guard has eaten part of what it was protecting.
+    try parse(cover ++ "foe: toad 0 0 0 1 0\nfoe: ogre 1 1 0 1 1\n", &m, &ln);
+    try std.testing.expectEqual(@as(usize, 2), m.nfoes);
 }
 
 test "each op gets its own stream, so editing one cannot re-roll another" {

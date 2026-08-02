@@ -219,8 +219,7 @@ pub const Frog = struct {
 
     pub fn spawn(home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Frog {
         var f = Frog{ .pos = home, .home = home, .facing = faceYaw, .scale = scale * SCALE, .seed = seed };
-        // @abs first: @intFromFloat into an UNSIGNED type is illegal behaviour for a negative input, and `spawn` is public with no documented seed sign (a -0.5 wabi-sabi seed would panic in Debug/ReleaseSafe).
-        f.fxRng = mathx.Rng.init(@as(u64, @intFromFloat(@abs(seed) * 104729.0)) +% 1); // per-toad scatter, deterministic
+        f.fxRng = foe.fxStream(seed, 104729.0, 1); // per-toad scatter, deterministic
         f.idleWait = 1.0 + seed * 2.0;
         f.resolveIdle();
         f.pose();

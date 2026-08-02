@@ -372,8 +372,7 @@ pub const Kobold = struct {
             .vit = combat.Vitals.initFoe(s.hp, s.poise, s.stance),
         };
         k.rest = restPositions();
-        // @abs first — @intFromFloat into an unsigned type traps on a negative seed (see frog.zig).
-        k.fxRng = mathx.Rng.init(@as(u64, @intFromFloat(@abs(seed) * 96337.0)) +% 11);
+        k.fxRng = foe.fxStream(seed, 96337.0, 11);
         k.slingCd = 0.3 + seed; // stagger the volley so a pack doesn't loose in lockstep
         k.castCd = seed * 2.0;
         k.whirlPh = seed;
@@ -462,7 +461,11 @@ pub const Kobold = struct {
 
     // Returns what the BAND must do about this frame (a stone loosed, a heal completed).
     pub fn update(self: *Kobold, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) Act {
-        if (self.gone) return .none;
+        if (self.gone) {
+            // A removed corpse's last motes keep drifting out — `emitMotes` runs right up to the frame `gone` is set and they carry most of a second of life, and `Warband.drawFx` draws every slot.
+            foe.tickParticles(&self.parts, dt, self.pos.y);
+            return .none;
+        }
         self.justDied = false;
         self.elapsed += dt;
         self.t += dt;

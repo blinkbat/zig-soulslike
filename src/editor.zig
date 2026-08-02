@@ -51,7 +51,7 @@ const NEW_ZONE_DENSITY: f32 = 0.7;
 /// How near the cursor has to be to a foe spawn to count as ON it.
 const FOE_PICK_R: f32 = 1.6;
 
-// Undo ring at file scope: a Map is ~230 KB and 24 of them is ~5.5 MB, which belongs in BSS rather than inside Game (already ~2 MB) or on an allocator this codebase otherwise avoids.
+// Undo ring at file scope: a Map is ~386 KB (measured — the figure here said 230 KB, from before `soilCov` and the height lattice were added) and 24 of them is ~9.1 MB, which belongs in BSS rather than inside Game (~1.7 MB of Env alone) or on an allocator this codebase otherwise avoids. Three quarters of a snapshot is the four painted grids, and most edits touch none of them — if the ring ever has to shrink, DEPTH is the dial, not the snapshot.
 var undoRing: [UNDO_CAP]wf.Map = undefined;
 var undoBase: usize = 0; // ring slot of the OLDEST live snapshot
 var undoN: usize = 0; // how many snapshots are live
@@ -1573,6 +1573,8 @@ pub const Editor = struct {
     }
 
     fn addFoe(self: *Editor, m: *wf.Map, at: rl.Vector3) void {
+        // The eraser sits one PAST the last foe kind (see `pinBrushes`), so with it armed the cast below is an out-of-range enum rather than an odd spawn. `worldMouse` routes the eraser elsewhere before it gets here, but that is an ordering of guards in another function, not a property of this one.
+        if (self.erasing()) return;
         if (m.nfoes >= wf.MAX_FOES) {
             self.say("foe cap reached");
             return;

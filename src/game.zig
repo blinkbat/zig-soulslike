@@ -195,11 +195,18 @@ pub const Game = struct {
 };
 
 /// THE FOE GROUPS, WRITTEN DOWN ONCE. Every "do this to every group" walks this list, so a fifth creature is one entry here rather than a line in eleven places — and the old layout's failure mode was SILENT (miss the re-home and that group simply never comes back).
-const FOE_GROUPS = [_][]const u8{ "warren", "line", "grief", "band" };
+/// The row carries the group's KIND as well as its field, because the lock-on needs it and kept its own hand-written copy of the pairing — a second list, in the one place a wrong answer points the reticle at a different creature. `kind` is null for the WARBAND alone: it holds three kinds in one array, so there the member answers (see `memberKind`).
+const FoeGroup = struct { field: []const u8, kind: ?FoeKind };
+const FOE_GROUPS = [_]FoeGroup{
+    .{ .field = "warren", .kind = .toad },
+    .{ .field = "line", .kind = .archer },
+    .{ .field = "grief", .kind = .ogre },
+    .{ .field = "band", .kind = null },
+};
 
 /// RE-HOME EVERY GROUP FROM THE MAP.
 fn rehomeFoes(g: *Game) void {
-    inline for (FOE_GROUPS) |f| @field(g, f).reset(&g.map);
+    inline for (FOE_GROUPS) |f| @field(g, f.field).reset(&g.map);
 }
 
 const Move = struct { fx: f32 = 0, fz: f32 = 0, speed: f32 = 0 };
@@ -419,13 +426,13 @@ fn drawCasters(g: *Game, cull: envmod.Cull) void {
     g.scene.setFlash(0.6 * g.hero.hurtFlash);
     g.hero.draw();
     g.scene.setFlash(0);
-    inline for (FOE_GROUPS) |f| @field(g, f).draw(&g.scene);
+    inline for (FOE_GROUPS) |f| @field(g, f.field).draw(&g.scene);
 }
 
 fn setCasterShaders(g: *Game, sh: rl.Shader) void {
     g.env.setShader(sh);
     g.hero.setShader(sh);
-    inline for (FOE_GROUPS) |f| @field(g, f).setShader(sh);
+    inline for (FOE_GROUPS) |f| @field(g, f.field).setShader(sh);
     // THE CHEST LIDS TOO.
     g.chests.setShader(sh);
 }
@@ -503,7 +510,7 @@ fn tickRest(g: *Game, dt: f32) void {
     g.rest.update(dt);
     if (g.rest.justEntered) {
         inline for (FOE_GROUPS) |f| {
-            @field(g, f).n = 0;
+            @field(g, f.field).n = 0;
         }
         for (&g.arrows) |*a| a.live = false;
         g.lock = null;
@@ -659,17 +666,14 @@ pub fn drawScene(g: *Game) void {
         const col = if (g.hero.hitActive()) rl.Color.red else mathx.withAlpha(rl.Color.red, 90);
         rl.drawCapsuleWires(g.hero.bladeA, g.hero.bladeB, heromod.BLADE_R, 6, 3, col);
     }
-    // Frog hurt spheres (menu > Debug > Hitboxes): dim normally, flaring on a tracked hit.
+    // Foe hurt spheres (menu > Debug > Hitboxes): dim normally, flaring on a tracked hit. Off FOE_GROUPS, so a creature cannot be missing from the one overlay you turn on to find out why your blade is passing through it — this drew the toads and the ogre and silently skipped the archers and the whole warband.
     if (g.menu.hitboxes) {
-        for (g.warren.live()) |*f| {
-            if (!f.alive()) continue;
-            const col = if (f.flash > 0) rl.Color.orange else mathx.withAlpha(rl.Color.yellow, 80);
-            rl.drawSphereWires(f.centerWorld(), f.hurtRadius(), 6, 8, col);
-        }
-        for (g.grief.live()) |*o| {
-            if (!o.alive()) continue;
-            const col = if (o.flash > 0) rl.Color.orange else mathx.withAlpha(rl.Color.yellow, 80);
-            rl.drawSphereWires(o.centerWorld(), o.hurtRadius(), 8, 10, col);
+        inline for (FOE_GROUPS) |gr| {
+            for (@field(g, gr.field).live()) |*f| {
+                if (!f.alive()) continue;
+                const col = if (f.flash > 0) rl.Color.orange else mathx.withAlpha(rl.Color.yellow, 80);
+                rl.drawSphereWires(f.centerWorld(), f.hurtRadius(), 8, 10, col);
+            }
         }
     }
     // Editor gizmos: op outlines, the selection's instances, the drag in progress.
@@ -683,7 +687,7 @@ pub fn drawScene(g: *Game) void {
     drawRestFade(g); // …and the rest's black, under the HUD so the prompt is never on top of it
     drawHurtFlash(g); // red screen-edge pulse when the hero is hit (peripheral feedback)
     // Floating foe HP bars, crisp over the finished frame — one shared path for every group, the ogre included (a regular foe, not a boss — owner's call) and the whole warband with its roles mixed in one array.
-    inline for (FOE_GROUPS) |f| drawFoeBars(g, @field(g, f).live());
+    inline for (FOE_GROUPS) |f| drawFoeBars(g, @field(g, f.field).live());
     drawLockDot(g); // the ER lock-on reticle
     drawDeathOverlay(g); // the YOU DIED card + respawn fade, over everything
 }
@@ -907,8 +911,8 @@ pub fn run(mode: Mode) void {
     // Which device owns the camera.
     var lookPad = false;
     // Rising-edge trackers for rumble: pulse the frame an action BEGINS.
-    var wasRolling = false;
-    // The swing COUNT, not the `attacking` flag: a chained combo clears that flag and sets it again within one frame, so its rising edge missed every cut after the first (see hero.swings).
+    // COUNTS, not the `rolling`/`attacking` flags: a chained action clears its flag and sets it again within one frame, so a rising edge on the flag missed every one after the first (see hero.swings / hero.rolls).
+    var wasRolls: u32 = 0;
     var wasSwings: u32 = 0;
     var wasDead = false;
     var wasRefused: f32 = 0; // …and the refusal flash, whose rising edge IS the ignored input
@@ -1194,7 +1198,7 @@ pub fn run(mode: Mode) void {
         // WHERE EVERY FOE STOOD BEFORE IT ACTED — one row per group, walked off FOE_GROUPS like every other per-group pass here. Four buffers named by hand and eight calls kept in lockstep is exactly the shape FOE_GROUPS exists to kill, and this one's failure mode is the silent one: a group whose snapshot nobody took is a group the slope limit never gates, so it walks up cliffs.
         // Every row is sized to the WIDEST group (the warband carries three kinds in one array); `snapshotPos` and `gateTerrain` both stop at the buffer's own length.
         var wasPos: [FOE_GROUPS.len][koboldmod.CAP]rl.Vector3 = undefined;
-        inline for (FOE_GROUPS, 0..) |f, gi| snapshotPos(@field(g, f).live(), &wasPos[gi]);
+        inline for (FOE_GROUPS, 0..) |f, gi| snapshotPos(@field(g, f.field).live(), &wasPos[gi]);
         if (g.hero.dead) {
             g.hero.updateDeath(dt); // collapse → respawn
             // The frame he returns, the WORLD reloads with him (ER-style): every foe re-homed at full health, arrows cleared, lock dropped.
@@ -1237,7 +1241,7 @@ pub fn run(mode: Mode) void {
         // The lids swing and the "which one is in reach" answer is recomputed — once, here, so the prompt the player reads and the button they then press cannot disagree about which box they mean.
         g.chests.update(dt, g.hero.pos);
         // …and the ground has its say about all of them: every step a foe just took is re-taken through the slope limit, so none of them walks up anything the hero couldn't.
-        inline for (FOE_GROUPS, 0..) |f, gi| gateTerrain(g, @field(g, f).live(), &wasPos[gi]);
+        inline for (FOE_GROUPS, 0..) |f, gi| gateTerrain(g, @field(g, f.field).live(), &wasPos[gi]);
         // Arrows in flight: gentle homing + arc, then a strike lands a chomp-weight blow.
         for (&g.arrows) |*ar| {
             if (!ar.live) continue;
@@ -1281,7 +1285,7 @@ pub fn run(mode: Mode) void {
         // …and EVERYTHING SETTLES ONTO THE GROUND, last: collision moves actors in XZ (out of walls, off each other), so their height is only known once that is done.
         groundActor(g, &g.hero.pos, dt);
         inline for (FOE_GROUPS) |f| {
-            for (@field(g, f).live()) |*a| groundActor(g, &a.pos, dt);
+            for (@field(g, f.field).live()) |*a| groundActor(g, &a.pos, dt);
         }
         g.rig.tickShake(rawDt); // impact shake decays on wall-clock time (bakes this frame's jitter)
         // …and the boom shortens rather than burying the eye in the hillside behind him (see camera.followClear).
@@ -1292,9 +1296,11 @@ pub fn run(mode: Mode) void {
         footsteps(g, &lastPhase);
 
         // Rising-edge action pulses: roll whump, swing effort (heavy > light), death swell.
-        if (g.hero.rolling and !wasRolling) {
+        // EVERY roll is heard, chained ones included: the counter ticks in hero.startRoll, which is the one door a roll can come through.
+        if (g.hero.rolls != wasRolls) {
             g.rumble.play(rumblemod.roll);
             sfx.play(.roll);
+            wasRolls = g.hero.rolls;
         }
         // EVERY cut is heard, chained ones included: the counter ticks in hero.startAttack, which is the one door a swing can come through.
         if (g.hero.swings != wasSwings) {
@@ -1320,7 +1326,6 @@ pub fn run(mode: Mode) void {
         } else if (g.deathFade > 0) {
             g.deathFade -= rawDt;
         }
-        wasRolling = g.hero.rolling;
         wasDead = g.hero.dead;
         g.rumble.update(rawDt, rl.isGamepadAvailable(PAD));
 
@@ -1358,9 +1363,10 @@ fn stepOverlay(g: *const Game, x: f32, z: f32) ?sfx.Id {
     const i = g.map.soilIndex(x, z) orelse return null;
     const v = g.map.soil[i];
     if (v >= worldfmt.Soil.N) return null;
+    // EXHAUSTIVE, so a seventh material is a compile error here rather than a floor that silently sounds like every other one.
     return switch (@as(worldfmt.Soil, @enumFromInt(v))) {
         .stone => .step_stone,
-        else => null, // dirt, turf, silt, ash, moss and unpainted ground are all the plain boot
+        .none, .dirt, .turf, .silt, .ash, .moss => null, // the plain boot carries all of these
     };
 }
 
@@ -1408,24 +1414,24 @@ fn heroBlockBeat(g: *Game, h: combat.Hit) void {
 
 fn allHits(g: *const Game) u32 {
     var n: u32 = 0;
-    inline for (FOE_GROUPS) |f| n += @field(g, f).totalHits();
+    inline for (FOE_GROUPS) |f| n += @field(g, f.field).totalHits();
     return n;
 }
 fn allAlive(g: *const Game) u32 {
     var n: u32 = 0;
-    inline for (FOE_GROUPS) |f| n += @field(g, f).aliveCount();
+    inline for (FOE_GROUPS) |f| n += @field(g, f.field).aliveCount();
     return n;
 }
 fn anyFoeDied(g: *const Game) bool {
     inline for (FOE_GROUPS) |f| {
-        if (@field(g, f).anyDied()) return true;
+        if (@field(g, f.field).anyDied()) return true;
     }
     return false;
 }
 fn allRunes(g: *const Game) u32 {
     // The band's payout is PER ROLE (a priest is worth the most), so its own `runesDropped` does the summing rather than taking a flat per-group figure like the other three.
     var n: u32 = 0;
-    inline for (FOE_GROUPS) |f| n += @field(g, f).runesDropped();
+    inline for (FOE_GROUPS) |f| n += @field(g, f.field).runesDropped();
     return n;
 }
 
@@ -1450,15 +1456,13 @@ fn inBounds(p: rl.Vector3) rl.Vector3 {
 fn collideActors(g: *Game, dt: f32) void {
     const step = COLLIDE_RATE * dt; // max correction this frame — bigger pushes ease in (no warp)
     // Each actor resolves against the solids in its OWN neighbourhood (env.resolveActor queries the prop grid).
+    // THE HERO YIELDS TO EVERY GROUP, walked off FOE_GROUPS: naming three of the four by hand is how the WARBAND came to be left out — the kobolds yield to him below, so nothing ever overlapped and the miss was invisible, while a hero nothing pushes back walks THROUGH a pack, shoving it aside at the depenetration rate. Being surrounded is the whole encounter.
+    // AIRBORNE foes are exempt, the same rule `gateTerrain` applies for the same reason: a toad's lunge, an archer's backstep and a berserker's dash are committed leaps and pass over him.
     var hp = g.env.resolveActor(g.hero.pos, HERO_R);
-    for (g.warren.live()) |*f| {
-        if (f.alive() and !f.airborne()) hp = collision.pushOutCircle(hp, HERO_R, f.pos, f.bodyR());
-    }
-    for (g.line.live()) |*a| {
-        if (a.alive()) hp = collision.pushOutCircle(hp, HERO_R, a.pos, a.bodyR());
-    }
-    for (g.grief.live()) |*o| {
-        if (o.alive()) hp = collision.pushOutCircle(hp, HERO_R, o.pos, o.bodyR());
+    inline for (FOE_GROUPS) |gr| {
+        for (@field(g, gr.field).live()) |*a| {
+            if (a.alive() and !a.airborne()) hp = collision.pushOutCircle(hp, HERO_R, a.pos, a.bodyR());
+        }
     }
     g.hero.pos = mathx.approachV(g.hero.pos, inBounds(hp), step);
 
@@ -1572,11 +1576,8 @@ fn acquireLock(g: *Game) ?FoeRef {
     const cx = @as(f32, @floatFromInt(rl.getScreenWidth())) * 0.5;
     var best: ?FoeRef = null;
     var bestScore: f32 = 1e9;
-    considerLock(g, g.warren.live(), .toad, cx, &best, &bestScore);
-    considerLock(g, g.line.live(), .archer, cx, &best, &bestScore);
-    considerLock(g, g.grief.live(), .ogre, cx, &best, &bestScore);
-    // …and the band through the SAME helper, on a null group kind (see `memberKind`) — it used to be a hand-copied inline loop here and a second one in `cycleLock`, because the helpers took one kind for a whole group.
-    considerLock(g, g.band.live(), null, cx, &best, &bestScore);
+    // Off FOE_GROUPS, kind and all: naming the four groups here (and again in `cycleLock`) was the last hand-kept parallel list in this file, and a fifth creature that reached the reticle in one of them and not the other is a foe you can lock but never cycle to.
+    inline for (FOE_GROUPS) |gr| considerLock(g, @field(g, gr.field).live(), gr.kind, cx, &best, &bestScore);
     return best;
 }
 
@@ -1606,10 +1607,7 @@ fn cycleLock(g: *Game, dir: f32) void {
     const curX = lockScreenX(g, cur) orelse return;
     var best: ?FoeRef = null;
     var bestGap: f32 = 1e9;
-    considerCycle(g, g.warren.live(), .toad, cur, curX, dir, &best, &bestGap);
-    considerCycle(g, g.line.live(), .archer, cur, curX, dir, &best, &bestGap);
-    considerCycle(g, g.grief.live(), .ogre, cur, curX, dir, &best, &bestGap);
-    considerCycle(g, g.band.live(), null, cur, curX, dir, &best, &bestGap);
+    inline for (FOE_GROUPS) |gr| considerCycle(g, @field(g, gr.field).live(), gr.kind, cur, curX, dir, &best, &bestGap);
     if (best) |b| g.lock = b;
 }
 fn considerCycle(g: *Game, foes: anytype, kind: ?FoeKind, cur: FoeRef, curX: f32, dir: f32, best: *?FoeRef, bestGap: *f32) void {

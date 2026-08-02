@@ -64,10 +64,8 @@ const SEG_SHANK = heromod.SEG_SHANK;
 const SEG_UPARM = heromod.SEG_UPARM;
 const SEG_FOREARM = heromod.SEG_FOREARM;
 
-fn restPositions() [N]rl.Vector3 {
-    // A skeleton has the Tarnished's own frame — same stature, same hips, same shoulders.
-    return heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF, H);
-}
+// A skeleton has the Tarnished's own frame — same stature, same hips, same shoulders. Solved at COMPTIME because every input is a constant and `spawn` runs it per instance: the editor re-homes every posted foe on every frame it is up, so this was 18 vector scales per foe per frame to arrive at the same table.
+const REST = heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF, H);
 
 const rx = mathx.rx;
 const ry = mathx.ry;
@@ -78,9 +76,7 @@ const mul3 = mathx.mul3;
 const scaleV = mathx.scaleV;
 const scaleM = mathx.scaleM;
 
-fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix) void {
-    heromod.setJoint(wx, &rest, i, @intCast(parent[i]), animRot);
-}
+const setLocal = heromod.setHumanoid; // the shared scaffold's own setter — see there
 
 const BOW_FY = -0.05 * H; // fist centre in the wrist frame (the hero's grip anchor)
 const BOW_FZ = 0.02 * H; // held a touch out front of the palm
@@ -399,7 +395,7 @@ pub const Archer = struct {
 
     pub fn spawn(home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Archer {
         var a = Archer{ .pos = home, .home = home, .facing = faceYaw, .scale = scale * SCALE, .seed = seed };
-        a.rest = restPositions();
+        a.rest = REST;
         a.reloadCd = 0.4 + seed; // stagger the volley so a line doesn't fire in lockstep
         a.pose();
         return a;
@@ -435,7 +431,7 @@ pub const Archer = struct {
     }
     // Off the ground only during the backstep's flight — the one time it leaves the earth.
     pub fn airborne(self: *const Archer) bool {
-        return self.state == .backstep and self.hop > 0.04;
+        return self.state == .backstep and self.hop > foe.AIRBORNE_LIFT;
     }
 
     fn faceToward(self: *Archer, target: rl.Vector3, dt: f32) void {

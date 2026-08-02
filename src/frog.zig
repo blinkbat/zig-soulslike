@@ -242,7 +242,7 @@ pub const Frog = struct {
     }
     // Airborne mid-hop/lunge — ground collision leaves it be while it's in the air.
     pub fn airborne(self: *const Frog) bool {
-        return self.lift > 0.04;
+        return self.lift > foe.AIRBORNE_LIFT;
     }
     // Top of the domed back in world space — where the floating HP bar rides.
     pub fn topWorld(self: *const Frog) rl.Vector3 {

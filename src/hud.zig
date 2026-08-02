@@ -164,6 +164,9 @@ const ST_HI = rgba(112, 136, 58, 255);
 const ST_LO = rgba(60, 78, 28, 255);
 const ST_TP = rgba(154, 178, 88, 255);
 const CHIP = rgba(180, 98, 58, 226); // the recent-damage trail behind the HP fill
+// THE BAR'S ONE WARNING RED, named like every other colour in this file: the WINDED mark and the REFUSED ring are the same cue said twice (this bar owes you something), and they were three inline literals — a drift waiting for the first retune.
+const WARN = rgba(232, 96, 72, 255);
+const WARN_LT = rgba(240, 150, 120, 255); // …the threshold tick itself, a stop brighter
 
 // THE CHIP BAR, the most ER-identifying thing on screen: the red fill snaps to the new HP the instant you are hit and a paler bar hangs at the OLD value for a beat before draining to meet it, so you read what the blow cost after it has landed.
 var chip: f32 = 1;
@@ -193,15 +196,15 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, windedTo: 
         const wf: f32 = @floatFromInt(ST_W);
         const owed: i32 = @intFromFloat(wf * mathx.clampF(windedTo, 0, 1));
         const fill: i32 = @intFromFloat(wf * mathx.clampF(stam, 0, 1));
-        if (owed > fill) rl.drawRectangle(MARGIN + fill, y, owed - fill, ST_H, rgba(232, 96, 72, 46));
-        rl.drawRectangle(MARGIN + owed - 1, y - 1, 2, ST_H + 2, rgba(240, 150, 120, 210)); // the threshold
+        if (owed > fill) rl.drawRectangle(MARGIN + fill, y, owed - fill, ST_H, mathx.withAlpha(WARN, 46));
+        rl.drawRectangle(MARGIN + owed - 1, y - 1, 2, ST_H + 2, mathx.withAlpha(WARN_LT, 210)); // the threshold
     }
     // The refusal flag lights the stamina bar's own FRAME, over the finished bar and outside its fill — so an empty bar, which is exactly when this fires and has no fill to tint, still reads loudly.
     const k = mathx.clampF(stamRefused, 0, 1);
     if (k > 0.001) {
         const a: u8 = @intFromFloat(230 * k);
-        rl.drawRectangleLines(MARGIN - 2, y - 2, ST_W + 4, ST_H + 4, rgba(232, 96, 72, a));
-        rl.drawRectangleLines(MARGIN - 3, y - 3, ST_W + 6, ST_H + 6, rgba(232, 96, 72, a / 2));
+        rl.drawRectangleLines(MARGIN - 2, y - 2, ST_W + 4, ST_H + 4, mathx.withAlpha(WARN, a));
+        rl.drawRectangleLines(MARGIN - 3, y - 3, ST_W + 6, ST_H + 6, mathx.withAlpha(WARN, a / 2));
     }
 }
 

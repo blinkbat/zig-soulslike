@@ -93,9 +93,8 @@ const SHOULDER_HALF = 0.168;
 /// HOW WIDE THE RIBCAGE IS, derived from the shoulder separation instead of authored beside it: the trunk's job is to REACH the joints the arms hang from, so the one number that may not drift out of step with `SHOULDER_HALF` is this one.
 const RIB_HALF = SHOULDER_HALF - 0.018;
 
-fn restPositions() [N]rl.Vector3 {
-    return heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
-}
+// COMPTIME, like the archer's: `spawnAs` runs per instance and the editor re-homes the whole band on every frame it is up.
+const REST = heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
 
 const rx = mathx.rx;
 const ry = mathx.ry;
@@ -105,9 +104,7 @@ const mul = mathx.mul;
 const mul3 = mathx.mul3;
 const scaleM = mathx.scaleM;
 
-fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix) void {
-    heromod.setJoint(wx, &rest, i, @intCast(parent[i]), animRot);
-}
+const setLocal = heromod.setHumanoid; // the shared scaffold's own setter — see there
 
 /// The kobold's PAW footprint, measured off `footMesh` below: the pad spans z −0.041·H…+0.206·H and x ±0.052·H, its underside on the ankle plane.
 const solePatches = [_]heromod.SolePatch{
@@ -371,7 +368,7 @@ pub const Kobold = struct {
             .role = role,
             .vit = combat.Vitals.initFoe(s.hp, s.poise, s.stance),
         };
-        k.rest = restPositions();
+        k.rest = REST;
         k.fxRng = foe.fxStream(seed, 96337.0, 11);
         k.slingCd = 0.3 + seed; // stagger the volley so a pack doesn't loose in lockstep
         k.castCd = seed * 2.0;

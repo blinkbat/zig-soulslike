@@ -19,6 +19,9 @@ pub fn closestApproach(bodyR: f32) f32 {
     return bodyR + HERO_R;
 }
 
+/// HOW FAR OFF THE GROUND COUNTS AS AIRBORNE — the height a rig's own lift has to clear before `airborne()` says so, and with it the collision push-out and the terrain gate stop applying. Here rather than in each creature because it is one question with one answer, and the toad and the archer each carried the literal.
+pub const AIRBORNE_LIFT: f32 = 0.04;
+
 /// TURN TOWARD A POINT at `rate` rad/s, shortest arc, ignoring a target you are standing on.
 pub fn faceToward(pos: rl.Vector3, facing: *f32, target: rl.Vector3, rate: f32, dt: f32) void {
     const d = mathx.dirXZ(pos, target);

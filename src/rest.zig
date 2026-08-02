@@ -1,4 +1,3 @@
-const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 const props = @import("props.zig");

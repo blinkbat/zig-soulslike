@@ -77,6 +77,9 @@ const SEG_SHANK = heromod.SEG_SHANK; //   these, so they must never drift from t
 const SEG_UPARM = 0.194; // heavy arms, but no longer knuckle-draggers
 const SEG_FOREARM = 0.153;
 
+// COMPTIME, like the other two rigs': `spawn` runs it per instance and the editor re-homes every posted foe on every frame it is up.
+const REST = restPositions();
+
 fn restPositions() [N]rl.Vector3 {
     const hx = 0.135; // wide hip half-separation (a broad base)
     const sx = 0.235; // wide, slumped shoulders
@@ -369,7 +372,7 @@ pub const Ogre = struct {
 
     pub fn spawn(home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Ogre {
         var o = Ogre{ .pos = home, .home = home, .facing = faceYaw, .scale = scale * SCALE, .seed = seed };
-        o.rest = restPositions();
+        o.rest = REST;
         o.fxRng = foe.fxStream(seed, 88883.0, 7);
         o.pose();
         return o;

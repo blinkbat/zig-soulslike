@@ -286,7 +286,7 @@ const Rack = struct {
     }
 };
 
-// `BITS` is the amplitude quantizer (fewer = grittier — the audio posterize) and `HOLD` divides the effective sample rate (2 = 11 kHz — the audio pixelate).
+// `CRUSH_BITS` is the amplitude quantizer (fewer = grittier — the audio posterize) and `CRUSH_HOLD` divides the effective sample rate (2 = 11 kHz — the audio pixelate).
 const CRUSH_BITS: f32 = 7.5; // was 5.5 — +2 bits is −12 dB of floor, and 180 levels still staircases
 /// DITHER DEPTH IN LSB, and the textbook ±1 is a SIXTEEN-BIT rule.
 const DITHER_LSB: f32 = 0.4; // …another −8 dB. MEASURED: the chain's tail floor goes −34.7 → −50.8 dBFS

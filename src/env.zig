@@ -546,7 +546,7 @@ pub const Env = struct {
         if (!self.waterAny) return;
         if (self.scene) |sc| {
             // The sheet's three tones come from the PROP PALETTE, so a painted lake and the authored water prop beside it are the same water by construction rather than by coincidence.
-            sc.setWaterSheet(true, props.waterTones());
+            sc.setWaterSheet(true, props.WATER_TONES);
             // Scaled to the painted extent (Y left at 1 so the surface height is untouched).
             rl.drawModelEx(self.waterSheet, self.waterMid, v3(0, 1, 0), 0, self.waterSpan, rl.Color.white);
             sc.setWaterSheet(false, undefined);
@@ -1876,8 +1876,8 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(lights0, e.lightCount());
 
     // …and the numbers themselves, so a scatter that quietly gains or loses instances fails the build instead of drifting in a screenshot.
-    try std.testing.expectEqual(@as(usize, 17104), props0);
-    try std.testing.expectEqual(@as(usize, 1739), solids0);
+    try std.testing.expectEqual(@as(usize, 17107), props0);
+    try std.testing.expectEqual(@as(usize, 1744), solids0);
     try std.testing.expectEqual(@as(usize, 37), lights0);
 
     // …and THE CHEST IS STOCKED.
@@ -1897,6 +1897,36 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(chestOps, e.chestSites(&boxes));
     var fires: [restmod.CAP]restmod.Site = undefined;
     try std.testing.expect(e.restSites(&fires) > 0);
+}
+
+test "no grid query can overflow MAX_NEAR, which is the one cap here that drops SILENTLY" {
+    // `nearSolids` stops at `out.len` and returns what it has — the only cap in this file that is not an init-time panic, and its failure mode is a wall you walk through. A query's radius is small (an actor's footprint plus a metre, an arrow's frame of flight plus its slop), so it never spans more than two cells per axis: the bound to watch is the densest 2x2 block, measured against the real map rather than asserted from a comment.
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    var line: usize = 0;
+    wf.load(wf.START_MAP, m, &line) catch |e| {
+        if (e == error.FileNotFound) return error.SkipZigTest; // run from another cwd
+        return e;
+    };
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.materialize(m);
+    var worst: u32 = 0;
+    for (0..GRID_N - 1) |cz| {
+        for (0..GRID_N - 1) |cx| {
+            var sum: u32 = 0;
+            for (0..2) |dz| {
+                for (0..2) |dx| {
+                    const k = (cz + dz) * GRID_N + (cx + dx);
+                    sum += e.sgrid_start[k + 1] - e.sgrid_start[k];
+                }
+            }
+            worst = @max(worst, sum);
+        }
+    }
+    try std.testing.expect(worst > 0); // …and the measurement is actually looking at a world
+    try std.testing.expect(worst <= MAX_NEAR);
 }
 
 test "the flat-map plant shortcut is EXACT, not an approximation" {

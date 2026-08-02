@@ -11,7 +11,6 @@ const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
 const koboldmod = @import("kobold.zig");
 const mathx = @import("mathx.zig");
-const objview = @import("objview.zig");
 const props = @import("props.zig");
 const worldfmt = @import("worldfmt.zig");
 

@@ -163,7 +163,7 @@ and the map's own `half:` is the only source), holding five regions
 | west | **the Old Wood** | great trees (3 variants), ferns/brambles/bushes, boulders, a **standing-stone circle**, a woodcutter's **cottage** + campfire |
 | south | **the Windswept Downs** | open and sparse — lone trees, field stones, graves, a watchtower |
 
-**81 prop kinds**, **17,104 instances, 1,739 colliders and 37 fires**, of which a frame draws **~633**
+**81 prop kinds**, **17,107 instances, 1,744 colliders and 37 fires**, of which a frame draws **~633**
 across both passes (measured in the city; the wood is comparable). See **PERFORMANCE** — that ratio is
 why the world is affordable, and the debug Stats overlay prints it live so it stays checkable. The three
 numbers are also PINNED by `env`'s "replaying the SHIPPED map produces a stable world" test, so a

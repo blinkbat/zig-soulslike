@@ -1,4 +1,3 @@
-const std = @import("std");
 const props = @import("props.zig");
 const mathx = @import("mathx.zig");
 const wf = @import("worldfmt.zig");

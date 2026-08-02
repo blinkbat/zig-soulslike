@@ -517,9 +517,8 @@ test "fires carry a light above their base and inside their own bound" {
 }
 
 /// THE WATER'S THREE TONES — shallow, mid, deep — as the linear vec3s the shader works in, straight off the palette the authored water prop is built from (`propart.WATER_*`).
-pub fn waterTones() [3]rl.Vector3 {
-    return .{ linear(art.WATER_SHALLOW), linear(art.WATER_MID), linear(art.WATER_DEEP) };
-}
+/// A CONSTANT, not a call: every input is a palette colour, and the painted sheet asked for these three linear conversions on every frame it drew.
+pub const WATER_TONES = [3]rl.Vector3{ linear(art.WATER_SHALLOW), linear(art.WATER_MID), linear(art.WATER_DEEP) };
 
 fn linear(c: rl.Color) rl.Vector3 {
     const f = 1.0 / 255.0;

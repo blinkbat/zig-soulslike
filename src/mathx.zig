@@ -10,22 +10,7 @@ pub const rgba = rl.Color.init;
 /// The zero vector — used as a struct-field default (Go's zero value).
 pub const zero3 = rl.Vector3{ .x = 0, .y = 0, .z = 0 };
 
-/// Fixed-capacity inline string: stored in-struct (no alloc, no dangle when the owner moves). set() truncates to cap; slice() is the live view.
-pub fn StrBuf(comptime cap: usize) type {
-    return struct {
-        buf: [cap]u8 = [_]u8{0} ** cap,
-        len: usize = 0,
-        const Self = @This();
-        pub fn set(self: *Self, s: []const u8) void {
-            const n = @min(s.len, cap);
-            @memcpy(self.buf[0..n], s[0..n]);
-            self.len = n;
-        }
-        pub fn slice(self: *const Self) []const u8 {
-            return self.buf[0..self.len];
-        }
-    };
-}
+// (A `StrBuf(cap)` inline-string type lived here and had no caller: every fixed string in the codebase is a bare `[N]u8` plus its own length, written where it is used. Deleted for the reason `env.solids()` and `combat.Regen.fracLeft` were — a helper nobody reaches for is a second way to do something, waiting to be found.
 
 /// A SINCE-LAST-EVENT CLOCK THAT STARTS SATURATED, so an untouched one is already past every gate it feeds and nothing has to carry a separate "has this happened yet" bool.
 pub const LONG_AGO: f32 = 1e9;
@@ -239,12 +224,6 @@ pub fn approachAngle(cur: f32, target: f32, maxStep: f32) f32 {
     return cur + std.math.sign(d) * maxStep;
 }
 
-/// Returns f if it has a horizontal heading, else the fallback (fx, fz).
-pub fn orFacing(f: rl.Vector3, fx: f32, fz: f32) rl.Vector3 {
-    if (lenXZ(f) < 1e-3) return v3(fx, 0, fz);
-    return f;
-}
-
 /// A copy of col with the given alpha (0..255).
 pub fn withAlpha(col: rl.Color, a: u8) rl.Color {
     var out = col;
@@ -319,11 +298,7 @@ pub fn degrees(rad: f32) f32 {
     return rad * 180.0 / std.math.pi;
 }
 
-/// A time-based seed (Go's time.Now().UnixNano()).
-pub fn timeSeed() u64 {
-    const ns: u128 = @bitCast(std.time.nanoTimestamp());
-    return @truncate(ns);
-}
+// (A `timeSeed()` off the wall clock lived here and has no caller left: every stream in the game is seeded from the MAP now — an op's own `seed`, a foe's `seed` dial — because the determinism law says a build has to replay identically. A wall-clock seed is the one thing that cannot.
 
 test "clampF pins NaN to lo and clamps both ends" {
     try std.testing.expectEqual(@as(f32, 1), clampF(std.math.nan(f32), 1, 5));

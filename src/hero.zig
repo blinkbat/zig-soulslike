@@ -299,7 +299,7 @@ const SH_CROSS_S = @sin(radians(GUARD_SH_CROSS));
 const SH_CROSS_C = @cos(radians(GUARD_SH_CROSS));
 /// The face's own normal, expressed in the WRIST's frame — which is where the standoff has to be measured, since the hand grips BEHIND the boss.
 const SHIELD_N = v3(SH_CROSS_S, -SH_CROSS_C * SH_FOLD_S, SH_CROSS_C * SH_FOLD_C);
-/// MEASURED AND LEFT: every input here is a compile-time constant, so this rebuilds the same matrix twice a frame (the depth pass and the lit pass both go through `draw`).
+/// MEASURED AND LEFT: every input here is a compile-time constant, so this rebuilds the same matrix twice a frame (the depth pass and the lit pass both go through `draw`). It cannot be hoisted to comptime — `mathx.ry`/`rx` bottom out in raylib's `MatrixRotate*`, which are EXTERN C, and Zig will not call one at comptime.
 fn shieldFit() rl.Matrix {
     return mul3(
         ry(GUARD_SH_CROSS),
@@ -518,6 +518,8 @@ pub const Hero = struct {
     elapsed: f32 = 0,
     // dodge roll
     rolling: bool = false,
+    /// HOW MANY ROLLS HE HAS TAKEN, ever — the same counter `swings` is, for the same reason: a chained roll clears `rolling` and sets it again inside ONE frame, so a rising edge on the flag misses every roll after the first.
+    rolls: u32 = 0,
     rollT: f32 = 0, // seconds into the current roll
     rollDir: rl.Vector3 = mathx.zero3, // world XZ unit direction of the roll
     rollYaw: f32 = 0, // committed heading of the roll; the visible yaw eases onto it fast
@@ -654,6 +656,7 @@ pub const Hero = struct {
         if (mathx.lenXZ(d) < 0.1) d = mathx.headingDir(self.facing);
         d = mathx.normV(d);
         self.rolling = true;
+        self.rolls +%= 1; // every roll, chained ones included — see the field
         self.rollT = 0;
         self.rollDir = d;
         self.rollYaw = mathx.headingXZ(d); // heading committed NOW; the visible yaw whips onto it
@@ -722,9 +725,10 @@ pub const Hero = struct {
         } else self.startRoll(dir);
     }
     pub fn steerQueuedRoll(self: *Hero, dir: rl.Vector3) void {
+        // EXHAUSTIVE, not `else`: a third buffered action has to be asked whether it steers.
         if (self.queued) |*q| switch (q.*) {
             .roll => |*d| d.* = dir,
-            else => {},
+            .attack => {},
         };
     }
     // Fire whatever is buffered the moment an exit opens.
@@ -1531,12 +1535,11 @@ pub const Hero = struct {
     }
 };
 
-fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix) void {
-    const p: usize = @intCast(parent[i]);
-    const off = mathx.subV(rest[i], rest[p]);
-    const local = mul(animRot, tr(off.x, off.y, off.z));
-    wx[i] = mul(local, wx[p]);
+/// SET ONE BONE ON THE SHARED 18-BONE SCAFFOLD — the parent comes off `PARENT`, so a humanoid foe does not carry its own copy of "look the parent up and call setJoint". Three files did, byte for byte, and this file inlined `setJoint`'s body for a fourth: `archer.zig` and `kobold.zig` alias this now, and the OGRE keeps its own because its 24-bone layout is a different parent table, not a wider one.
+pub fn setHumanoid(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix) void {
+    setJoint(wx, &rest, i, @intCast(PARENT[i]), animRot);
 }
+const setLocal = setHumanoid;
 
 // A joint set that names its PARENT explicitly and takes SLICES, so a rig with more bones than the hero's 18 can still drive its legs through `legChain`.
 pub fn setJoint(wx: []rl.Matrix, rest: []const rl.Vector3, i: usize, p: usize, animRot: rl.Matrix) void {

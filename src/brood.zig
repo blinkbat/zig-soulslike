@@ -124,7 +124,12 @@ pub const MAX_SACS: usize = 3;
 /// …and what comes out of one: ONE (owner's call).
 pub const PER_SAC: usize = 1;
 
-pub const M_SPIT_HIT = combat.Hit{ .dmg = 5, .poise = 5 };
+/// BOTH AGES OF HER, because they are one creature at two ages (see the file header): chitin over a
+/// body that makes and carries its own acid, hung about with silk that catches. See `frog.RESISTS` on
+/// why fire is the only one of the four anything deals yet.
+const RESISTS = combat.resists(.{ .fire = -25, .cold = 35, .chaos = 75 });
+/// THE SPIT IS POISON, NOT A STONE: all of its damage is CHAOS, and the poise is the only physical thing about it — a caustic glob still rocks you when it lands. Her POOLS burn with the same element (`ACID_HIT`), because they are the same fluid.
+pub const M_SPIT_HIT = combat.Hit{ .poise = 5, .elem = combat.elems(.{ .chaos = 5 }) };
 pub const M_BITE_HIT = combat.Hit{ .dmg = 19, .poise = 22, .stance = 7 };
 /// The glob's flight, handed to the shared launcher (`archer.launchVenom`).
 pub const SPIT_SPEED: f32 = 15.0;
@@ -141,6 +146,11 @@ const ACID_THIN: f32 = 2.0;
 pub const ACID_TICK: f32 = 0.42;
 /// …and this is the linger tax: ~15 HP/s, so a hero at full (70) has about four and a half seconds of standing in one.
 pub const ACID_TICK_DMG: f32 = 6.4;
+
+/// ONE PULSE OF THE FLOOR, as a typed blow — CHAOS, the same element as the spit that made the pool. The AMOUNT still comes from `Brood.burn` (the pulse clock is its own), so this is only what the pulse IS.
+pub fn acidPulse(amt: f32) combat.Hit {
+    return .{ .elem = combat.elems(.{ .chaos = amt }) };
+}
 const POOL_CAP: usize = 12;
 
 // THE BROODLING'S.
@@ -190,6 +200,9 @@ const SAC_BURST_DUR = 0.55;
 const SAC_PULSE_HZ = 1.6;
 /// A SAC HAS NO POISE AND NO STANCE: it does not flinch, it bursts.
 const SAC_UNFLINCHING: f32 = 1e9;
+/// DRY SILK OVER A MEMBRANE — the one thing in her nest that really goes up, and the reason a scarce
+/// fire arrow spent on a clutch is worth more than one spent on her.
+const SAC_RESISTS = combat.resists(.{ .fire = -70, .chaos = 75 });
 
 const FX_MAX = 26;
 const Particle = foe.Particle;
@@ -766,7 +779,7 @@ pub const Sac = struct {
     pos: rl.Vector3 = mathx.zero3,
     seed: f32 = 0,
     scale: f32 = 1,
-    vit: combat.Vitals = combat.Vitals.initFoe(SAC_HP, SAC_UNFLINCHING, SAC_UNFLINCHING),
+    vit: combat.Vitals = combat.Vitals.initFoe(SAC_HP, SAC_UNFLINCHING, SAC_UNFLINCHING).withRes(SAC_RESISTS),
     t: f32 = 0, // seconds since it was laid
     hits: u32 = 0,
     hitLatch: bool = false,
@@ -783,7 +796,7 @@ pub const Sac = struct {
             .pos = at,
             .seed = seed,
             .scale = scale,
-            .vit = combat.Vitals.initFoe(SAC_HP, SAC_UNFLINCHING, SAC_UNFLINCHING),
+            .vit = combat.Vitals.initFoe(SAC_HP, SAC_UNFLINCHING, SAC_UNFLINCHING).withRes(SAC_RESISTS),
             .fxRng = foe.fxStream(seed, 74209.0, 5),
         };
     }
@@ -959,7 +972,7 @@ pub const Spider = struct {
     settle: f32 = 0, // death-only world-Y shift: the flipped back finding the ground the legs no longer hold it off
     legCurl: f32 = 0, // death-only: femurs drawn in + knees clamped — the dead spider's leg basket
 
-    vit: combat.Vitals = combat.Vitals.initFoe(M_HP, M_POISE, M_STANCE),
+    vit: combat.Vitals = combat.Vitals.initFoe(M_HP, M_POISE, M_STANCE).withRes(RESISTS),
     hits: u32 = 0,
     hitLatch: bool = false,
     flash: f32 = 0,
@@ -986,7 +999,7 @@ pub const Spider = struct {
             .facing = faceYaw,
             .scale = scale * sp.scale,
             .seed = seed,
-            .vit = combat.Vitals.initFoe(sp.hp, sp.poise, sp.stance),
+            .vit = combat.Vitals.initFoe(sp.hp, sp.poise, sp.stance).withRes(RESISTS),
         };
         s.fxRng = foe.fxStream(seed, 92821.0, @as(u64, @intFromEnum(role)) + 3);
         s.idleWait = 0.4 + seed * 1.4;
@@ -2167,13 +2180,38 @@ test "a sac takes a few blows, not one — it is a target, not a balloon" {
 }
 
 test "THE GLOB IS NOT THE WEAPON, THE FLOOR IS: a hit is cheap, standing in it is not" {
-    try std.testing.expect(M_SPIT_HIT.dmg < M_BITE_HIT.dmg * 0.35);
+    try std.testing.expect(M_SPIT_HIT.raw() < M_BITE_HIT.raw() * 0.35);
     try std.testing.expect(M_SPIT_HIT.stance == 0);
     // …and lingering has to be the thing that kills: a full-health hero (70) dies in a few seconds of it, where crossing one costs a pulse.
     const dps = ACID_TICK_DMG / ACID_TICK;
-    try std.testing.expect(dps > M_SPIT_HIT.dmg * 2.0);
+    try std.testing.expect(dps > M_SPIT_HIT.raw() * 2.0);
     try std.testing.expect(heromod.HP_MAX / dps < 6.0);
     try std.testing.expect(ACID_TICK_DMG < heromod.HP_MAX * 0.15);
+}
+
+test "HER POISON IS CHAOS, spit and puddle alike — one fluid, one element" {
+    try std.testing.expectApproxEqAbs(@as(f32, 0), M_SPIT_HIT.dmg, 1e-6); // no physical bite: it is a caustic glob
+    try std.testing.expectApproxEqAbs(M_SPIT_HIT.raw(), M_SPIT_HIT.elem.at(.chaos), 1e-6);
+    try std.testing.expectApproxEqAbs(ACID_TICK_DMG, acidPulse(ACID_TICK_DMG).elem.at(.chaos), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), acidPulse(ACID_TICK_DMG).dmg, 1e-6);
+    // A hero with no chaos resistance takes exactly what he always took, which is why this retyping moved no balance.
+    var bare = combat.Vitals.init(70, 55, 90);
+    try std.testing.expectApproxEqAbs(ACID_TICK_DMG, bare.damageFrom(acidPulse(ACID_TICK_DMG)), 1e-4);
+    // …and she is proof against her own fluid, at the cap, both ways it can reach anybody.
+    var mother = Spider.spawnAs(.mother, mathx.ground(0, 0), 0, 1.0, 0.5);
+    try std.testing.expect(mother.vit.damageFrom(M_SPIT_HIT) < 0.3 * M_SPIT_HIT.raw());
+    try std.testing.expect(mother.vit.damageFrom(acidPulse(ACID_TICK_DMG)) < 0.3 * ACID_TICK_DMG);
+}
+
+test "A FIRE ARROW IS FOR THE CLUTCH: silk burns where the mother mostly shrugs it off" {
+    const tipped = heromod.fireTipped(heromod.BOW_AIMED_HIT);
+    var sac = Sac.lay(mathx.ground(0, 0), 0.5, 1.0);
+    var mother = Spider.spawnAs(.mother, mathx.ground(0, 0), 0, 1.0, 0.5);
+    try std.testing.expect(sac.vit.damageFrom(tipped) > mother.vit.damageFrom(tipped));
+    // …and a plain shaft cannot tell them apart at all, which is what makes the choice a choice.
+    try std.testing.expectApproxEqAbs(sac.vit.damageFrom(heromod.BOW_AIMED_HIT), mother.vit.damageFrom(heromod.BOW_AIMED_HIT), 1e-5);
+    // She is proof against her OWN weapon, at the cap — a pool she laid cannot take her with it.
+    try std.testing.expectApproxEqAbs(combat.RES_CAP, mother.vit.res.at(.chaos), 1e-5);
 }
 
 test "a pool spreads, burns in PULSES, thins out and stops" {

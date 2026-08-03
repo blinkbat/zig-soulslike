@@ -168,6 +168,10 @@ const SHOVE_DECAY = 6.0;
 const HP_MAX = 300.0;
 const POISE_MAX = 30.0; // 3 fast hero-lights (poise 10) to flinch once; a lone light is shrugged off
 const STANCE_MAX = 90.0; // keep the pressure on to reach the heavy stance-break
+/// A QUARTER TON OF HIDE AND FAT: too much mass for any one element to get through quickly, and the
+/// broadest resistances in the game — but it stands a giant in an open field, so lightning finds it.
+/// See `frog.RESISTS` on why only fire is exercised yet.
+const RESISTS = combat.resists(.{ .fire = 30, .cold = 30, .lightning = -15, .chaos = 20 });
 pub const SLAM_HIT = combat.Hit{ .dmg = 36, .poise = 44, .stance = 20 }; // a crushing body-blow (heavy).
 pub const SWIPE_HIT = combat.Hit{ .dmg = 23, .poise = 30, .stance = 11 }; // the swipe trades weight for
 const DEATH_DUR = 1.7; // a slow, weighty topple — a giant falls hard (and sadly)
@@ -344,7 +348,7 @@ pub const Ogre = struct {
     speedS: f32 = 0,
     prevPhase: f32 = 0, // for footfall dust on the stride half-cycles
 
-    vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX),
+    vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
     hits: u32 = 0,
     hitLatch: bool = false,
     flash: f32 = 0,

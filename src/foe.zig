@@ -230,7 +230,7 @@ pub const Blow = struct {
 };
 
 pub fn worseBlow(worst: *?Blow, h: combat.Hit, from: rl.Vector3) void {
-    if (worst.* == null or h.dmg > worst.*.?.hit.dmg) worst.* = .{ .hit = h, .from = from };
+    if (worst.* == null or h.raw() > worst.*.?.hit.raw()) worst.* = .{ .hit = h, .from = from };
 }
 
 pub fn groupBlow(foes: anytype, dt: f32, hero: rl.Vector3, bounds: f32, blade: Blade) ?Blow {

@@ -52,7 +52,13 @@ const CLAW = rgba(150, 142, 122, 255);
 const BONE_CHARM = rgba(140, 130, 106, 255);
 const HEAL_GLOW = rgba(196, 156, 60, 150); // self-lit: the cast's tell has to read from across a plaza
 const SLING_CORD = rgba(92, 78, 58, 255);
-const STONE_COL = rgba(96, 92, 86, 255);
+/// What the sling throws: a charred lump of pitch-soaked rag. DARK, so the fire on it is the read.
+const CLUMP_CHAR = rgba(38, 32, 28, 255);
+/// Its embers — self-lit, and hot enough to carry against golden-hour grass (see AGENTS: albedo is arithmetic).
+const EMBER = rgba(238, 122, 30, 205);
+const EMBER_HOT = rgba(255, 214, 132, 225);
+/// …and the OPAQUE hot core, for the places a `.flame` tongue is too small to read (see `slingMesh`).
+const EMBER_CORE = rgba(255, 168, 52, 255);
 
 const N = heromod.N;
 const ROOT = heromod.ROOT;
@@ -223,8 +229,18 @@ const BITE_GAZE = 26.0;
 const BITE_ARM_BACK = 30.0; // the forelimbs drawn back…
 const BITE_ARM_TUCK = 14.0;
 pub const BITE_HIT = combat.Hit{ .dmg = 9, .poise = 7 };
-pub const STONE_SPEED = 11.0;
-pub const STONE_HIT = combat.Hit{ .dmg = 10, .poise = 8 };
+/// ONE TABLE FOR ALL THREE ROLES, because they are one creature (see the file header): a dry-furred
+/// scavenger, and fur GOES UP. That is what makes the fire arrow the answer to a warband, and it is the
+/// only one of the four anything deals today — see `frog.RESISTS`.
+const RESISTS = combat.resists(.{ .fire = -45, .cold = 20 });
+pub const CLUMP_SPEED = 11.0;
+/// Embers off the release, and off wherever it lands. The IMPACT is the bigger of the two on purpose: the throw is a tell you are meant to read, the landing is a thing that just happened to you.
+const SLING_SPARKS: u32 = 12;
+const CLUMP_SPARKS: u32 = 18;
+/// A BURNING CLUMP, NOT A STONE (owner's call): the sling throws a lump of pitch-soaked rag, so all of
+/// its damage is FIRE. The total is the stone's own 10 and the poise is unchanged, so nothing about the
+/// slinger's threat moved — what moved is what answers it.
+pub const CLUMP_HIT = combat.Hit{ .poise = 8, .elem = combat.elems(.{ .fire = 10 }) };
 
 const REPOSITION_DUR = 1.3;
 
@@ -249,6 +265,10 @@ fn legSink(crouch: f32) f32 {
     return (SEG_THIGH + SEG_SHANK) * H * (1.0 - mathx.cosf(mathx.radians(crouch)));
 }
 
+// PERF: the sling FX changed how FULL this stays, not how big it is. A slinger used to hold particles only
+// while hurt or dying; now it sheds embers through every whirl, so ~16 of the 22 are live most of a fight.
+// Each is a `drawSphereEx` (6×8 ≈ 96 tris, immediate mode), so the WORST case is what a blood burst already
+// cost — the pool is a ring buffer and cannot grow past it. Bound the FX by editing the emitters' counts.
 const NPART = 22; // a modest per-kobold pool: a warband is up to 72 of these
 const BLOOD = rgba(104, 26, 22, 200); // a kobold bleeds thin and dark
 
@@ -271,7 +291,7 @@ const State = enum {
 /// What the band has to do about this kobold THIS FRAME.
 pub const Act = union(enum) {
     none: void,
-    /// A stone left the sling, from this point.
+    /// A burning clump left the sling, from this point.
     sling: rl.Vector3,
     /// A cast completed.
     healed: void,
@@ -309,7 +329,7 @@ pub const Kobold = struct {
     whirlPh: f32 = 0,
     moveDir: rl.Vector3 = mathx.zero3,
 
-    vit: combat.Vitals = combat.Vitals.initFoe(76, 13, 34),
+    vit: combat.Vitals = combat.Vitals.initFoe(76, 13, 34).withRes(RESISTS),
     hits: u32 = 0,
     justDied: bool = false,
     hitLatch: bool = false,
@@ -351,7 +371,7 @@ pub const Kobold = struct {
             .scale = scale * SCALE,
             .seed = seed,
             .role = role,
-            .vit = combat.Vitals.initFoe(s.hp, s.poise, s.stance),
+            .vit = combat.Vitals.initFoe(s.hp, s.poise, s.stance).withRes(RESISTS),
         };
         k.rest = REST;
         k.fxRng = foe.fxStream(seed, 96337.0, 11);
@@ -405,7 +425,7 @@ pub const Kobold = struct {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt);
     }
 
-    /// Where a stone leaves the sling: the pouch, out at arm's length past the head.
+    /// Where the clump leaves the sling: the pouch, out at arm's length past the head. It is also where the whirl sheds its embers from, so it is read every frame of the tell, not just at the release.
     pub fn slingPoint(self: *const Kobold) rl.Vector3 {
         return rl.math.vector3Transform(v3(0, 0, SLING_LEN * H), self.xf[KIT]);
     }
@@ -445,7 +465,7 @@ pub const Kobold = struct {
         self.leash.noteCombat(); // a blow landed is a fight in progress — the tether waits
     }
 
-    // Returns what the BAND must do about this frame (a stone loosed, a heal completed).
+    // Returns what the BAND must do about this frame (a clump loosed, a heal completed).
     pub fn update(self: *Kobold, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) Act {
         if (self.gone) {
             // A removed corpse's last motes keep drifting out
@@ -528,10 +548,12 @@ pub const Kobold = struct {
             .whirl => {
                 self.faceToward(hero, dt);
                 self.whirlPh += dt * 3.4; // the pouch really goes round: the tell is the motion
+                self.emitWhirlEmbers(dt);
                 if (self.t >= WHIRL_DUR) {
                     act = .{ .sling = self.slingPoint() };
                     self.slingCd = SLING_CD;
                     sfx.world(.kobold_sling, self.pos);
+                    self.releaseSparks(); // the clump goes, and it leaves half its fire behind
                     self.decide(d);
                 }
             },
@@ -671,6 +693,79 @@ pub const Kobold = struct {
             HEAL_GLOW,
             -0.4, // negative gravity: they float UP into the staff
         );
+    }
+
+    /// THE WHIRL IS THE TELL, AND FIRE IS WHAT MAKES IT ONE: a lit clump going round overhead sheds
+    /// embers the whole time it is winding up, so the read arrives before the throw does. They drop
+    /// (real gravity, unlike the priest's motes, which float up into his staff) and they are thrown OFF
+    /// the circle — tangentially, at the speed the pouch is actually travelling.
+    fn emitWhirlEmbers(self: *Kobold, dt: f32) void {
+        // Both hoisted out of the loop: they are the same for either ember, and `slingPoint` is a matrix transform.
+        const at = self.slingPoint();
+        const tangent = mathx.headingDir(self.facing + std.math.pi * 0.5 + self.whirlPh);
+        var n: u32 = 0;
+        while (n < 2) : (n += 1) { // two chances a frame: one gave a dotted line at 60 fps
+            if (self.fxRng.float() > dt * 26.0) continue;
+            const sp = self.fxRng.range(1.4, 3.2);
+            foe.emitParticle(
+                &self.parts,
+                &self.head,
+                v3(at.x + self.fxRng.signed() * 0.05, at.y + self.fxRng.signed() * 0.05, at.z + self.fxRng.signed() * 0.05),
+                v3(tangent.x * sp, self.fxRng.range(0.2, 1.1), tangent.z * sp),
+                self.fxRng.range(0.30, 0.62),
+                self.fxRng.range(0.020, 0.036),
+                0.004,
+                if (self.fxRng.float() < 0.4) EMBER_HOT else EMBER,
+                5.5,
+            );
+        }
+    }
+
+    /// THE LOOSE — a hard puff of embers off the release point, so the throw has a muzzle flash of its own.
+    fn releaseSparks(self: *Kobold) void {
+        const at = self.slingPoint();
+        const away = mathx.headingDir(self.facing);
+        var i: u32 = 0;
+        while (i < SLING_SPARKS) : (i += 1) {
+            const a = self.fxRng.angle();
+            const spread = self.fxRng.range(0.6, 2.4);
+            foe.emitParticle(
+                &self.parts,
+                &self.head,
+                v3(at.x + mathx.cosf(a) * 0.06, at.y + self.fxRng.signed() * 0.06, at.z + mathx.sinf(a) * 0.06),
+                v3(
+                    away.x * self.fxRng.range(0.8, 3.4) + mathx.cosf(a) * spread,
+                    self.fxRng.range(0.4, 2.2),
+                    away.z * self.fxRng.range(0.8, 3.4) + mathx.sinf(a) * spread,
+                ),
+                self.fxRng.range(0.26, 0.60),
+                self.fxRng.range(0.024, 0.044),
+                0.004,
+                if (self.fxRng.float() < 0.5) EMBER_HOT else EMBER,
+                6.5,
+            );
+        }
+    }
+
+    /// WHERE IT LANDED, whether that was the hero, a wall or the dirt — the burst is the same, because
+    /// what burst is the clump. Driven from `game.zig`'s arrow loop through `Warband.splash`.
+    pub fn impactSparks(self: *Kobold, at: rl.Vector3) void {
+        var i: u32 = 0;
+        while (i < CLUMP_SPARKS) : (i += 1) {
+            const a = self.fxRng.angle();
+            const out = self.fxRng.range(1.2, 4.6);
+            foe.emitParticle(
+                &self.parts,
+                &self.head,
+                v3(at.x + mathx.cosf(a) * 0.08, at.y + self.fxRng.range(0, 0.12), at.z + mathx.sinf(a) * 0.08),
+                v3(mathx.cosf(a) * out, self.fxRng.range(1.2, 4.0), mathx.sinf(a) * out),
+                self.fxRng.range(0.34, 0.78),
+                self.fxRng.range(0.026, 0.050),
+                0.004,
+                if (self.fxRng.float() < 0.55) EMBER_HOT else EMBER,
+                7.5,
+            );
+        }
     }
 
     /// Where the priest's magic gathers, and where it leaves from.
@@ -1517,19 +1612,48 @@ fn slingMesh() rl.Mesh {
             SLING_CORD,
         );
     }
-    // The pouch, and a stone sitting in it — the loaded sling is the readable one.
+    // The pouch, and the CLUMP sitting in it, ALREADY ALIGHT — the loaded sling is the readable one, and
+    // what it is loaded with is the whole tell now (a grey pebble here promised a rock and threw a fire).
     b.addBlob(pouch, v3(0.024 * s, 0.015 * s, 0.021 * s), 4, 7, HIDE);
-    b.addBlob(v3(pouch.x, pouch.y + 0.008 * s, pouch.z), v3(0.014 * s, 0.013 * s, 0.014 * s), 3, 6, STONE_COL);
+    const lump = v3(pouch.x, pouch.y + 0.008 * s, pouch.z);
+    b.addBlob(lump, v3(0.014 * s, 0.013 * s, 0.014 * s), 3, 6, CLUMP_CHAR);
+    // THE CORE IS OPAQUE, NOT `.flame`. A torch's tongues read because they are 20 cm of layered
+    // translucency; this is THREE, and at that size `.flame` (alpha 90, halved again by the shader) is a
+    // tint on the leather. So the hot part is a solid self-lit blob and only the tongue over it burns.
+    b.addBlob(lump, v3(0.017 * s, 0.017 * s, 0.017 * s), 3, 8, EMBER_CORE);
+    b.setMat(.flame);
+    b.setAnimY(lump.y);
+    b.addBlob(v3(lump.x, lump.y + 0.016 * s, lump.z), v3(0.014 * s, 0.026 * s, 0.014 * s), 3, 7, propart.FLAME_MID);
+    b.setMat(.plain); // …and OFF it again: the fist below is leather, and left on `.flame` it gutters
     b.addCube(grip, v3(0.030 * s, 0.038 * s, 0.030 * s), HIDE_LT);
     return b.toMesh();
 }
 
-/// The sling STONE, as a projectile mesh — game.zig draws it where an arrow would go.
-pub fn stoneMesh(shader: rl.Shader) rl.Model {
+/// The sling's BURNING CLUMP, as a projectile mesh — game.zig draws it where an arrow would go. The core
+/// is a charred lump and the fire is `propart`'s own (see `archer.fireArrowMesh` for why it is shared and
+/// why it is tongues); unlike the arrow's, this flame has no flight axis to stream down — a slung lump
+/// tumbles — so the tongues go out in every direction from the middle of it.
+const CLUMP_TONGUES = 8;
+pub fn clumpMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x570E);
-    // Irregular, because a slung stone is a stone off the ground and not a ball bearing.
-    b.addBlob(mathx.zero3, v3(0.055 * rng.range(0.9, 1.2), 0.050 * rng.range(0.9, 1.2), 0.058), 4, 7, STONE_COL);
+    // Irregular, because a slung lump is torn off a bigger one and not moulded.
+    b.addBlob(mathx.zero3, v3(0.055 * rng.range(0.9, 1.2), 0.050 * rng.range(0.9, 1.2), 0.058), 4, 7, CLUMP_CHAR);
+    b.addBlob(mathx.zero3, v3(0.062, 0.058, 0.065), 3, 8, EMBER_CORE); // the opaque hot heart — see slingMesh
+    b.setMat(.flame);
+    b.setAnimY(0);
+    b.addBlob(mathx.zero3, v3(0.082, 0.078, 0.086), 3, 9, propart.COAL);
+    var t: i32 = 0;
+    while (t < CLUMP_TONGUES) : (t += 1) {
+        const a = rng.angle();
+        const p = rng.range(-0.9, 0.9); // …and out of the whole ball, not a ring round its equator
+        const len = rng.range(0.055, 0.135);
+        const w = rng.range(0.016, 0.028);
+        const dir = v3(mathx.cosf(a) * (1.0 - @abs(p)), p, mathx.sinf(a) * (1.0 - @abs(p)));
+        const root = mathx.scaleV(dir, 0.045);
+        b.addCapsule(root, mathx.scaleV(dir, 0.045 + len * 0.55), w, w * 0.80, 7, if (rng.float() < 0.5) propart.FLAME_MID else propart.FLAME_TIP);
+        b.addCapsule(mathx.scaleV(dir, 0.045 + len * 0.52), mathx.scaleV(dir, 0.045 + len), w * 0.78, w * 0.22, 6, propart.FLAME_TIP);
+    }
     return b.toModel(shader);
 }
 
@@ -1670,6 +1794,25 @@ pub const Warband = struct {
     pub fn aliveCount(self: *const Warband) u32 {
         return foe.aliveCount(self.liveConst());
     }
+    /// A CLUMP BURST HERE — the band's answer to `brood.splash`, and for the brood's reason: the thing
+    /// that landed belongs to the group, not to the arrow pool that flew it. The embers go in the pool of
+    /// whichever member is NEAREST the impact, because a pool is only drawn while its owner is (a dead
+    /// slinger's last clump would otherwise land silently) — and if the whole band is down, nothing is
+    /// still in the air to land.
+    pub fn splash(self: *Warband, at: rl.Vector3) void {
+        var best: ?*Kobold = null;
+        var bestD: f32 = 1e9;
+        for (self.live()) |*k| {
+            if (k.gone) continue;
+            const d = mathx.distXZ(k.pos, at);
+            if (d < bestD) {
+                bestD = d;
+                best = k;
+            }
+        }
+        if (best) |k| k.impactSparks(at);
+    }
+
     /// RUNES paid out this frame.
     pub fn runesDropped(self: *const Warband) u32 {
         var n: u32 = 0;
@@ -1784,8 +1927,12 @@ test "the priest is the priority target, and the numbers say so" {
 test "the slinger has exactly two answers, and they do not overlap" {
     // Bite range must sit INSIDE the band it wants to hold, or there is a ring where it does nothing.
     try std.testing.expect(BITE_R < spec(.slinger).wantMin);
-    // …and its stone is slower than an arrow: a lobbed pebble you walk out of, not a shaft you roll.
-    try std.testing.expect(STONE_SPEED < 15.0);
+    // …and its clump is slower than an arrow: a lobbed lump you walk out of, not a shaft you roll.
+    try std.testing.expect(CLUMP_SPEED < 15.0);
+    // IT BURNS, and all of it burns: the slinger is the one foe a fire resistance would answer.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), CLUMP_HIT.dmg, 1e-6);
+    try std.testing.expectApproxEqAbs(CLUMP_HIT.raw(), CLUMP_HIT.elem.at(.fire), 1e-6);
+    try std.testing.expect(CLUMP_HIT.raw() < ZERK_HIT.raw() + BITE_HIT.raw()); // still the weakest of the three
 }
 
 test "a hurt window latches, so one swing lands once" {

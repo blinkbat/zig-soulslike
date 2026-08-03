@@ -8,6 +8,7 @@ const foe = @import("foe.zig");
 const collision = @import("collision.zig");
 const wf = @import("worldfmt.zig");
 const sfx = @import("audio.zig");
+const art = @import("propart.zig"); // the world's ONE fire palette (see fireArrowMesh)
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -29,6 +30,10 @@ const QUIVER_LT = rgba(64, 49, 34, 255);
 const ARROW_SHAFT = rgba(118, 102, 76, 255); // pale ash shaft
 const ARROW_HEAD = rgba(158, 166, 178, 170); // bright steel pile (glints, slightly self-lit)
 const ARROW_FLETCH = rgba(176, 166, 140, 150); // bone-white feathers, self-lit — the tracer
+// THE FIRE ARROW's own palette; the FLAME's is `propart`'s, shared with every other fire in the world.
+const PITCH_SHAFT = rgba(74, 58, 40, 255); // the shaft, dark with soaked pitch
+const HEAT_IRON = rgba(44, 40, 48, 255); // heat-blued head — DARK, so the flame off it is the read
+const FLETCH_CHAR = rgba(120, 86, 62, 170); // scorched vanes
 
 const N = heromod.N;
 const ROOT = heromod.ROOT;
@@ -159,6 +164,9 @@ const BACKSTEP_RISE = 0.34; // peak hop height (world units)
 const HP_MAX = 58.0;
 const POISE_MAX = 14.0; // a clean light hit still flinches it out of a draw
 const STANCE_MAX = 30.0;
+/// DRY BONE AND NOTHING ELSE: it burns, and there is no flesh in it for cold to bite or for a poison
+/// to find. See `frog.RESISTS` on why only fire is exercised yet.
+const RESISTS = combat.resists(.{ .fire = -35, .cold = 60, .chaos = 45 });
 pub const ARROW_HIT = combat.Hit{ .dmg = 16, .poise = 10 }; // eased down from 20 (owner: lower dmg a bit)
 const DEATH_DUR = 1.15; // collapse-and-still before the corpse dissipates
 /// RUNES a skeletal archer is worth — twice a toad.
@@ -171,7 +179,7 @@ const ARROW_SPEED = 15.0; // world units/s — slowish, dodgeable
 const ARROW_HOMING = 0.85; // rad/s the heading may bend toward the hero — a NUDGE, not a lock
 const ARROW_HOME_FADE = 0.45;
 const ARROW_GRAV: f32 = 3.0; // gentle drop so long shots arc
-const STONE_GRAV: f32 = 9.0;
+const CLUMP_GRAV: f32 = 9.0; // the sling's lob — heavier drop than a shaft, and the tell you dodge
 const VENOM_GRAV: f32 = 11.0;
 const ARROW_LIFE = 3.5; // seconds airborne before it gives up (falls + sticks)
 const ARROW_STICK_FADE = 1.4; // seconds a stuck arrow lingers, then fades
@@ -183,14 +191,23 @@ pub const TRAIL_N = 10;
 const TRAIL_LIFE = 0.17; // seconds a sample lingers
 const TRAIL_W = 0.055; // half-width at the head, tapering to nothing at the tail
 const TRAIL_COL = rgba(214, 198, 158, 255); // pale, kin to the fletching — alpha set per segment
+const TRAIL_FIRE = rgba(255, 146, 40, 255); // the pitched head's ember streak: the read that says which arrow that was
 
-/// The three things that fly.
-pub const Shot = enum { arrow, stone, venom };
+/// EVERYTHING BURNING GETS THE EMBER STREAK, and it is the streak — not the mesh — that reads at range.
+fn trailCol(s: Shot) rl.Color {
+    return switch (s) {
+        .firearrow, .clump => TRAIL_FIRE,
+        .arrow, .venom => TRAIL_COL,
+    };
+}
+
+/// The things that fly. `firearrow` is the hero's own pitched shaft — the same ballistics as a plain one, drawn and streaked as its own thing so you can see which one you loosed. `clump` is the kobold sling's burning lump (it was a bare stone; nothing slings a plain one any more, so the tag went with the thing).
+pub const Shot = enum { arrow, clump, venom, firearrow };
 
 pub fn dropOf(s: Shot) f32 {
     return switch (s) {
-        .arrow => ARROW_GRAV,
-        .stone => STONE_GRAV,
+        .arrow, .firearrow => ARROW_GRAV,
+        .clump => CLUMP_GRAV,
         .venom => VENOM_GRAV,
     };
 }
@@ -218,6 +235,7 @@ pub fn drawArrowTrails(arrows: []const Arrow) void {
 
 fn drawArrowTrail(a: *const Arrow) void {
     if (!a.live) return;
+    const col = trailCol(a.shot);
     var i: usize = 0;
     while (i + 1 < TRAIL_N) : (i += 1) {
         const ia = (a.trailHead + TRAIL_N - i) % TRAIL_N;
@@ -233,7 +251,7 @@ fn drawArrowTrail(a: *const Arrow) void {
         const w0 = TRAIL_W * (0.35 + 0.65 * (1.0 - g0 / TRAIL_LIFE));
         const w1 = TRAIL_W * (0.35 + 0.65 * (1.0 - g1 / TRAIL_LIFE));
         const f = 1.0 - 0.5 * (g0 + g1) / TRAIL_LIFE;
-        rl.drawCylinderEx(p0, p1, w0, w1, 4, mathx.withAlpha(TRAIL_COL, mathx.u8f(190.0 * f)));
+        rl.drawCylinderEx(p0, p1, w0, w1, 4, mathx.withAlpha(col, mathx.u8f(190.0 * f)));
     }
 }
 
@@ -252,8 +270,8 @@ pub fn launchArrow(from: rl.Vector3, target: rl.Vector3) Arrow {
     return a;
 }
 
-pub fn launchStone(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: combat.Hit) Arrow {
-    var a = launchAt(from, target, speed, .stone, true);
+pub fn launchClump(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: combat.Hit) Arrow {
+    var a = launchAt(from, target, speed, .clump, true);
     a.blow = blow;
     return a;
 }
@@ -264,8 +282,8 @@ pub fn launchVenom(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: comba
     return a;
 }
 
-pub fn launchShaft(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: combat.Hit, loft: bool) Arrow {
-    var a = launchAt(from, target, speed, .arrow, loft);
+pub fn launchShaft(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: combat.Hit, loft: bool, shot: Shot) Arrow {
+    var a = launchAt(from, target, speed, shot, loft);
     a.blow = blow;
     return a;
 }
@@ -473,7 +491,7 @@ pub const Archer = struct {
     latB: f32 = 0,
     speedS: f32 = 0,
 
-    vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX),
+    vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
     hits: u32 = 0,
     hitLatch: bool = false,
     flash: f32 = 0,
@@ -1229,6 +1247,53 @@ pub fn arrowMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
+// THE FIRE ARROW — the plain shaft with a pitch-soaked wad burning behind the head. Same gauge and
+// same fletching, because it is the same arrow. THE FLAME IS THE PROPS' FLAME (`.flame` — emissive,
+// translucent, guttering) AND ITS PALETTE, because a second kind of fire in the same world would read as
+// a different substance. Two things are its own: it streams BACKWARD down the flight axis instead of
+// climbing +Y, and it is authored off a fixed seed, so the wabi-sabi is baked in and every shaft matches.
+const FIRE_TONGUES = 7;
+pub fn fireArrowMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(80421);
+    b.setMat(.wood);
+    b.addCylinder(v3(0, 0, -0.3525), v3(0, 0, 0.285), 0.0128, 0.0113, 5, PITCH_SHAFT);
+    b.setMat(.steel);
+    b.addCylinder(v3(0, 0, 0.285), v3(0, 0, 0.39), 0.0255, 0.001, 5, HEAT_IRON);
+    b.setMat(.flame);
+    b.setAnimY(0); // the wind term climbs in +Y; a flame lying along Z sits at its own anchor and holds still
+    b.addBlob(v3(0, 0, 0.243), v3(0.030, 0.030, 0.055), 3, 9, art.COAL);
+    b.addBlob(v3(0, 0, 0.207), v3(0.020, 0.020, 0.038), 3, 8, art.FLAME_CORE);
+    // TONGUES, tapered to nothing and trailing off the wad — a blob here read as a faceted fruit.
+    var t: i32 = 0;
+    while (t < FIRE_TONGUES) : (t += 1) {
+        const a = rng.angle();
+        const off = rng.range(0.004, 0.026);
+        const len = rng.range(0.085, 0.230);
+        const w = rng.range(0.014, 0.026);
+        const splay = rng.range(0.004, 0.020);
+        const x0 = mathx.cosf(a) * off;
+        const y0 = mathx.sinf(a) * off;
+        const z0 = 0.255 - rng.range(0, 0.03);
+        const mx = x0 + mathx.cosf(a) * splay;
+        const my = y0 + mathx.sinf(a) * splay;
+        b.addCapsule(v3(x0, y0, z0), v3(mx, my, z0 - len * 0.55), w, w * 0.80, 7, if (t == 0) art.FLAME_MID else if (rng.float() < 0.55) art.FLAME_MID else art.FLAME_TIP);
+        b.addCapsule(
+            v3(mx, my, z0 - len * 0.52),
+            v3(mx + mathx.cosf(a) * splay * 1.6 + rng.signed() * 0.008, my + mathx.sinf(a) * splay * 1.6 + rng.signed() * 0.008, z0 - len),
+            w * 0.78,
+            w * 0.22,
+            6,
+            art.FLAME_TIP,
+        );
+    }
+    b.setMat(.cloth);
+    b.addBox(v3(0, 0.0285, -0.2925), v3(0.0012, 0, 0), v3(0, 0.045, 0), v3(0, 0, 0.075), FLETCH_CHAR);
+    b.addBox(v3(0.0255, -0.0173, -0.2925), v3(0.0012, 0, 0), v3(0.039, -0.0255, 0), v3(0, 0, 0.075), FLETCH_CHAR);
+    b.addBox(v3(-0.0255, -0.0173, -0.2925), v3(0.0012, 0, 0), v3(-0.039, -0.0255, 0), v3(0, 0, 0.075), FLETCH_CHAR);
+    return b.toModel(shader);
+}
+
 test "kite AI: too close backs off, too far closes, in-band shoots when reloaded" {
     try std.testing.expectEqual(Choice.hold_ground, classify(AGGRO_R + 1, true)); // disengaged
     try std.testing.expectEqual(Choice.back_off, classify(RANGE_MIN - 1, true)); // crowded
@@ -1323,13 +1388,13 @@ test "a shot that is aimed at a standing hero HITS him, at every range and eithe
         const aim = v3(0, heroY, range);
         for ([_]f32{ 1.4, 2.1, 0.4 }) |fromY| {
             var shaft = launchArrow(v3(0, fromY, 0), aim);
-            var stone = launchStone(v3(0, fromY, 0), aim, 11.0, .{ .dmg = 7 });
+            var clump = launchClump(v3(0, fromY, 0), aim, 11.0, .{ .dmg = 7 });
             var i: u32 = 0;
             while (i < 600 and !shaft.stuck) : (i += 1) stepArrow(&shaft, hero, heroY, 0, false, &.{}, dt);
             i = 0;
-            while (i < 600 and !stone.stuck) : (i += 1) stepArrow(&stone, hero, heroY, 0, false, &.{}, dt);
+            while (i < 600 and !clump.stuck) : (i += 1) stepArrow(&clump, hero, heroY, 0, false, &.{}, dt);
             try std.testing.expect(shaft.hit);
-            try std.testing.expect(stone.hit);
+            try std.testing.expect(clump.hit);
         }
     }
 }
@@ -1356,36 +1421,40 @@ test "a FLAT launch adds no loft, so a reticle-aimed shaft goes where the reticl
     // THE bug: the loft solve is only right for a REAL target distance.
     const from = v3(0, 1.5, 0);
     const far = v3(0, 1.5, 60);
-    const flat = launchShaft(from, far, 40.0, .{}, false);
+    const flat = launchShaft(from, far, 40.0, .{}, false, .arrow);
     try std.testing.expectApproxEqAbs(@as(f32, 0), flat.vel.y, 1e-5); // dead level out of the muzzle
-    const lofted = launchShaft(from, far, 40.0, .{}, true);
+    const lofted = launchShaft(from, far, 40.0, .{}, true, .arrow);
     try std.testing.expect(lofted.vel.y > 0.5);
     // The loft is the ONLY difference: same speed, same bearing.
     try std.testing.expectApproxEqAbs(@as(f32, 40), mathx.lenXZ(flat.vel), 1e-4);
     try std.testing.expectApproxEqAbs(mathx.lenXZ(flat.vel), mathx.lenXZ(lofted.vel), 1e-4);
     try std.testing.expectEqual(ARROW_HIT.dmg, launchArrow(from, far).blow.dmg);
-    try std.testing.expectEqual(@as(f32, 9), launchStone(from, far, 11.0, .{ .dmg = 9 }).blow.dmg);
+    try std.testing.expectEqual(@as(f32, 9), launchClump(from, far, 11.0, .{ .dmg = 9 }).blow.dmg);
+    // A FIRE SHAFT FLIES LIKE A PLAIN ONE — it is the same arrow with a burning head, so only the drawing and the damage differ.
+    const pitched = launchShaft(from, far, 40.0, .{}, true, .firearrow);
+    try std.testing.expectApproxEqAbs(lofted.vel.y, pitched.vel.y, 1e-5);
+    try std.testing.expectApproxEqAbs(dropOf(.arrow), dropOf(.firearrow), 1e-6);
 }
 
-test "the stone LOBS and the shaft does not — the arc is the slinger's tell" {
-    // Same launcher, same aim, and the stone must still be the one that goes over a wall.
+test "the CLUMP LOBS and the shaft does not — the arc is the slinger's tell" {
+    // Same launcher, same aim, and the slung lump must still be the one that goes over a wall.
     const dt: f32 = 1.0 / 60.0;
     const aim = v3(0, 1.0, 14.0);
     var shaft = launchArrow(v3(0, 1.4, 0), aim);
-    var stone = launchStone(v3(0, 1.4, 0), aim, 11.0, .{ .dmg = 7 });
+    var clump = launchClump(v3(0, 1.4, 0), aim, 11.0, .{ .dmg = 7 });
     var peakShaft: f32 = 0;
-    var peakStone: f32 = 0;
+    var peakClump: f32 = 0;
     var i: u32 = 0;
     while (i < 600 and !shaft.stuck) : (i += 1) {
         stepArrow(&shaft, v3(0, 0, 14.0), 1.0, 0, false, &.{}, dt);
         peakShaft = @max(peakShaft, shaft.pos.y - 1.4);
     }
     i = 0;
-    while (i < 600 and !stone.stuck) : (i += 1) {
-        stepArrow(&stone, v3(0, 0, 14.0), 1.0, 0, false, &.{}, dt);
-        peakStone = @max(peakStone, stone.pos.y - 1.4);
+    while (i < 600 and !clump.stuck) : (i += 1) {
+        stepArrow(&clump, v3(0, 0, 14.0), 1.0, 0, false, &.{}, dt);
+        peakClump = @max(peakClump, clump.pos.y - 1.4);
     }
-    try std.testing.expect(peakStone > peakShaft * 2.0);
+    try std.testing.expect(peakClump > peakShaft * 2.0);
 }
 
 test "a SIDESTEP beats an arrow: the homing is a launch nudge, not a lock" {

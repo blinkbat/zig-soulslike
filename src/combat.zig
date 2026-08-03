@@ -9,10 +9,110 @@ pub const HitResult = enum { none, light, heavy, death };
 
 pub const HitOutcome = enum { ignored, taken, blocked, guardBroken };
 
+
+/// THE FOUR NON-PHYSICAL DAMAGE TYPES, PoE2's. Physical is deliberately NOT one of them: it is the damage everything in the game already deals, it is the one type nothing resists, and what mitigates it there is ARMOUR, which does not exist here yet.
+pub const Elem = enum(u8) { fire, cold, lightning, chaos };
+
+pub const NELEM = @typeInfo(Elem).@"enum".fields.len;
+
+pub fn elemName(e: Elem) [:0]const u8 {
+    return switch (e) {
+        .fire => "Fire",
+        .cold => "Cold",
+        .lightning => "Lightning",
+        .chaos => "Chaos",
+    };
+}
+
+/// WHAT DEALS IT — and for the two nothing deals yet, that nothing does. Same rule as `stats.governs`: a number on the character sheet the player cannot tell is inert is a lie on that sheet. THIS LINE GOES STALE THE DAY A NEW SOURCE LANDS — the fire arrow and the kobold sling both deal fire, and the brood mother's spit and pools both deal chaos, so retype anything and come back here. Read by the RESISTANCES screen.
+pub fn elemSays(e: Elem) [:0]const u8 {
+    return switch (e) {
+        .fire => "Burning. Fire arrows, and the kobolds' slings.",
+        .cold => "Chill and frostbite. Nothing deals cold yet.",
+        .lightning => "Storm and shock. Nothing deals lightning yet.",
+        .chaos => "Rot and acid. The brood mother's spit and her pools.",
+    };
+}
+
+/// A number per element, WRITTEN BY NAME — damage on a `Hit`, percent on a `Resists`. Authoring through this rather than an array literal is what stops a four-wide row from silently shifting when the enum gains a fifth: the field names are matched against the enum at comptime, so a rename is a compile error and an omitted element is a 0.
+pub const Spread = struct { fire: f32 = 0, cold: f32 = 0, lightning: f32 = 0, chaos: f32 = 0 };
+
+fn pack(s: Spread) [NELEM]f32 {
+    var out = [_]f32{0} ** NELEM;
+    inline for (@typeInfo(Elem).@"enum".fields) |f| out[f.value] = @field(s, f.name);
+    return out;
+}
+
+/// ELEMENTAL DAMAGE RIDING ON A BLOW, on top of its physical `dmg` — PoE2's "adds X fire damage".
+pub const Elems = struct {
+    v: [NELEM]f32 = [_]f32{0} ** NELEM,
+
+    pub fn at(self: Elems, e: Elem) f32 {
+        return self.v[@intFromEnum(e)];
+    }
+    pub fn total(self: Elems) f32 {
+        var n: f32 = 0;
+        for (self.v) |x| n += x;
+        return n;
+    }
+    pub fn any(self: Elems) bool {
+        return self.total() > 0;
+    }
+    pub fn scaled(self: Elems, k: f32) Elems {
+        var out = self;
+        for (&out.v) |*x| x.* *= k;
+        return out;
+    }
+};
+
+pub fn elems(s: Spread) Elems {
+    return .{ .v = pack(s) };
+}
+
+/// PoE2's MAXIMUM RESISTANCE: 75%, however much is stacked on top.
+pub const RES_CAP: f32 = 75.0;
+/// …and a floor, because a NEGATIVE resistance amplifies the hit instead and there is no natural stop on that side. -100 is exactly double damage.
+pub const RES_FLOOR: f32 = -100.0;
+
+/// WHAT A BODY SHRUGS OFF, per element, as a percentage. Stored UNCAPPED and capped on the way out, so a creature authored at 90 still reads as 90 on a sheet while taking damage at 75 — the same split PoE2 shows.
+pub const Resists = struct {
+    v: [NELEM]f32 = [_]f32{0} ** NELEM,
+
+    /// What is stacked (uncapped) — for display.
+    pub fn raw(self: Resists, e: Elem) f32 {
+        return self.v[@intFromEnum(e)];
+    }
+    /// What actually applies.
+    pub fn at(self: Resists, e: Elem) f32 {
+        return mathx.clampF(self.raw(e), RES_FLOOR, RES_CAP);
+    }
+    pub fn taken(self: Resists, e: Elem, amt: f32) f32 {
+        return amt * (1.0 - self.at(e) / 100.0);
+    }
+    /// The whole elemental half of a blow, each part through its own resistance.
+    pub fn takenAll(self: Resists, es: Elems) f32 {
+        var n: f32 = 0;
+        for (es.v, 0..) |amt, i| {
+            if (amt != 0) n += self.taken(@enumFromInt(i), amt);
+        }
+        return n;
+    }
+};
+
+pub fn resists(s: Spread) Resists {
+    return .{ .v = pack(s) };
+}
+
 pub const Hit = struct {
-    dmg: f32 = 0,
+    dmg: f32 = 0, // PHYSICAL — nothing resists it
     poise: f32 = 0,
     stance: f32 = 0,
+    elem: Elems = .{},
+
+    /// THE WHOLE BLOW BEFORE ANYBODY'S RESISTANCES. What a shield's stamina bill and "which of two blows was worse" are measured on: those are about the weight of the thing that hit you, not about what you happen to resist.
+    pub fn raw(self: Hit) f32 {
+        return self.dmg + self.elem.total();
+    }
 };
 
 const REGEN_DELAY = 0.8; // seconds after the last hit before the HERO's meters refill
@@ -42,6 +142,7 @@ pub const Vitals = struct {
     stunLeft: f32 = 0,
     lightStun: f32 = LIGHT_STUN_DUR,
     heavyStun: f32 = HEAVY_STUN_DUR,
+    res: Resists = .{},
 
     pub fn init(hpMax: f32, poiseMax: f32, stanceMax: f32) Vitals {
         return .{
@@ -61,6 +162,18 @@ pub const Vitals = struct {
         v.lightStun = FOE_LIGHT_STUN_DUR;
         v.heavyStun = FOE_HEAVY_STUN_DUR;
         return v;
+    }
+
+    /// The creature's own resistances, bolted on where it is declared (`initFoe(..).withRes(..)`) so a foe's nature sits in one expression beside its HP.
+    pub fn withRes(self: Vitals, r: Resists) Vitals {
+        var v = self;
+        v.res = r;
+        return v;
+    }
+
+    /// WHAT THIS BODY WOULD ACTUALLY LOSE to that blow: the physical straight through, each element through its own resistance.
+    pub fn damageFrom(self: *const Vitals, h: Hit) f32 {
+        return h.dmg + self.res.takenAll(h.elem);
     }
 
     pub fn stunned(self: *const Vitals) bool {
@@ -107,7 +220,7 @@ pub const Vitals = struct {
 
     pub fn hit(self: *Vitals, h: Hit) HitResult {
         if (self.dead) return .none;
-        self.hp = mathx.maxF(0, self.hp - h.dmg);
+        self.hp = mathx.maxF(0, self.hp - self.damageFrom(h));
         if (self.hp <= 0) {
             self.dead = true;
             return .death;
@@ -214,11 +327,14 @@ pub const GUARD_STAM_FLAT: f32 = 5.0;
 pub const GUARD_STAM_PER_DMG: f32 = 1.10;
 pub const GUARD_ARC: f32 = 65.0;
 
+/// Billed on the RAW weight of the blow: the arm behind a burning arrow does not know what you resist.
 pub fn guardStamina(h: Hit) f32 {
-    return GUARD_STAM_FLAT + GUARD_STAM_PER_DMG * h.dmg;
+    return GUARD_STAM_FLAT + GUARD_STAM_PER_DMG * h.raw();
 }
-pub fn guardChip(h: Hit) f32 {
-    return h.dmg * (1.0 - GUARD_NEGATE);
+/// WHAT GETS THROUGH — still a `Hit`, so the chip's elemental share meets the blocker's resistances instead of arriving as raw HP. DAMAGE ONLY: poise and stance are what the shield is FOR, and a chip that carried the blow's stagger through would flinch him behind his own guard.
+pub fn guardChip(h: Hit) Hit {
+    const k = 1.0 - GUARD_NEGATE;
+    return .{ .dmg = h.dmg * k, .elem = h.elem.scaled(k) };
 }
 
 pub const FP_MAX = stats.fpFor(stats.START); // 60 — MIND owns it (`stats.zig`)
@@ -292,24 +408,61 @@ pub const Flasks = struct {
 };
 
 pub const ARROWS_MAX: u8 = 10;
+/// FIRE ARROWS ARE THE SCARCE ONES — half a plain quiver, so the fire rider is a shot you pick a target for rather than the one you open with.
+pub const FIRE_ARROWS_MAX: u8 = 5;
+
+pub const ArrowKind = enum { plain, fire };
 
 pub const Quiver = struct {
     arrows: u8 = ARROWS_MAX,
+    fire: u8 = FIRE_ARROWS_MAX,
+    sel: ArrowKind = .plain,
 
-    pub fn ready(self: *const Quiver) u8 {
-        return self.arrows;
+    pub fn cap(k: ArrowKind) u8 {
+        return switch (k) {
+            .plain => ARROWS_MAX,
+            .fire => FIRE_ARROWS_MAX,
+        };
     }
-    /// Spend one, reporting whether there WAS one — the caller refuses the shot on false.
+    pub fn count(self: *const Quiver, k: ArrowKind) u8 {
+        return switch (k) {
+            .plain => self.arrows,
+            .fire => self.fire,
+        };
+    }
+    pub fn ready(self: *const Quiver) u8 {
+        return self.count(self.sel);
+    }
+    /// THE SELECTED KIND IS THE ONE THAT FLIES, empty or not: a dry fire quiver refuses the shot rather than quietly loosing a plain shaft you did not ask for.
+    pub fn cycle(self: *Quiver) void {
+        self.sel = switch (self.sel) {
+            .plain => .fire,
+            .fire => .plain,
+        };
+    }
+    /// Spend one of the SELECTED kind, reporting whether there WAS one — the caller refuses the shot on false.
     pub fn take(self: *Quiver) bool {
-        if (self.arrows == 0) return false;
-        self.arrows -= 1;
+        switch (self.sel) {
+            .plain => {
+                if (self.arrows == 0) return false;
+                self.arrows -= 1;
+            },
+            .fire => {
+                if (self.fire == 0) return false;
+                self.fire -= 1;
+            },
+        }
         return true;
     }
-    pub fn add(self: *Quiver, n: u8) void {
-        self.arrows = @min(ARROWS_MAX, self.arrows +| n);
+    pub fn add(self: *Quiver, k: ArrowKind, n: u8) void {
+        switch (k) {
+            .plain => self.arrows = @min(ARROWS_MAX, self.arrows +| n),
+            .fire => self.fire = @min(FIRE_ARROWS_MAX, self.fire +| n),
+        }
     }
     pub fn refill(self: *Quiver) void {
         self.arrows = ARROWS_MAX;
+        self.fire = FIRE_ARROWS_MAX;
     }
 };
 
@@ -627,7 +780,7 @@ test "the small shield costs stamina by the WEIGHT of the blow, and lets a littl
     try std.testing.expect(guardStamina(club) > 2.5 * guardStamina(teeth));
     try std.testing.expect(guardStamina(club) < 4.0 * guardStamina(teeth));
     // …and the chip is a bite, not a scratch and not the blow.
-    try std.testing.expect(guardChip(club) > 3.0 and guardChip(club) < 0.25 * club.dmg);
+    try std.testing.expect(guardChip(club).dmg > 3.0 and guardChip(club).dmg < 0.25 * club.dmg);
 }
 
 test "a small shield holds off the small stuff and CANNOT hold a giant" {
@@ -750,6 +903,139 @@ test "focus refuses a pour it cannot take, so a full bar never eats a charge" {
 test "the flask heals a real bite of the bar, and the pour lands inside the commitment" {
     try std.testing.expect(FLASK_HP_FRAC > 0.25 and FLASK_HP_FRAC < 0.75); // meaningful, not a full heal
     try std.testing.expect(FLASK_POUR_AT > 0.2 and FLASK_POUR_AT < 1.0);
+}
+
+test "a spread is written by NAME, and lands on the element it names" {
+    const e = elems(.{ .fire = 7, .chaos = 3 });
+    try std.testing.expectApproxEqAbs(@as(f32, 7), e.at(.fire), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 3), e.at(.chaos), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), e.at(.cold), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), e.at(.lightning), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 10), e.total(), 1e-5);
+    try std.testing.expect(e.any() and !(Elems{}).any());
+    for (0..NELEM) |i| try std.testing.expect(elemName(@enumFromInt(i)).len > 0);
+}
+
+test "PHYSICAL IS WHAT WE ALREADY DEAL, and no resistance touches it" {
+    // Every blow authored before elements existed is one of these, and its arithmetic must not have moved.
+    var v = Vitals.init(100, 20, 40);
+    v.res = resists(.{ .fire = 75, .cold = 75, .lightning = 75, .chaos = 75 });
+    _ = v.hit(.{ .dmg = 30 });
+    try std.testing.expectApproxEqAbs(@as(f32, 70), v.hp, 1e-4);
+}
+
+test "a resistance takes its percentage off its OWN element and nothing else" {
+    var v = Vitals.init(100, 20, 40);
+    v.res = resists(.{ .fire = 50 });
+    // 20 physical + 40 fire at 50% = 20 + 20.
+    _ = v.hit(.{ .dmg = 20, .elem = elems(.{ .fire = 40 }) });
+    try std.testing.expectApproxEqAbs(@as(f32, 60), v.hp, 1e-4);
+    // …and the same blow's COLD half is unresisted, at full weight.
+    try std.testing.expectApproxEqAbs(@as(f32, 40), v.damageFrom(.{ .elem = elems(.{ .cold = 40 }) }), 1e-4);
+}
+
+test "75 IS THE CAP however much is stacked, and the raw number is still there to show" {
+    const r = resists(.{ .fire = 140 });
+    try std.testing.expectApproxEqAbs(@as(f32, 140), r.raw(.fire), 1e-4);
+    try std.testing.expectApproxEqAbs(RES_CAP, r.at(.fire), 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 25), r.taken(.fire, 100), 1e-4);
+    // A body at the cap and one stacked past it take the same damage — that is what a cap means.
+    try std.testing.expectApproxEqAbs(resists(.{ .fire = RES_CAP }).taken(.fire, 100), r.taken(.fire, 100), 1e-4);
+}
+
+test "NEGATIVE RESISTANCE AMPLIFIES — that is what makes a fire arrow worth aiming" {
+    const dry = resists(.{ .fire = -50 });
+    try std.testing.expectApproxEqAbs(@as(f32, 150), dry.taken(.fire, 100), 1e-4);
+    // …and the floor is exactly double, not unbounded.
+    try std.testing.expectApproxEqAbs(@as(f32, 200), resists(.{ .fire = -900 }).taken(.fire, 100), 1e-4);
+    try std.testing.expectApproxEqAbs(RES_FLOOR, resists(.{ .fire = -900 }).at(.fire), 1e-4);
+}
+
+test "the SAME blow costs two creatures different HP, by their resistances alone" {
+    const arrow = Hit{ .dmg = 20, .elem = elems(.{ .fire = 20 }) };
+    var tinder = Vitals.initFoe(100, 20, 40).withRes(resists(.{ .fire = -50 }));
+    var damp = Vitals.initFoe(100, 20, 40).withRes(resists(.{ .fire = 50 }));
+    _ = tinder.hit(arrow);
+    _ = damp.hit(arrow);
+    try std.testing.expectApproxEqAbs(@as(f32, 50), tinder.hp, 1e-4); // 20 + 30
+    try std.testing.expectApproxEqAbs(@as(f32, 70), damp.hp, 1e-4); // 20 + 10
+    try std.testing.expect(tinder.hp < damp.hp);
+    // The blow itself is one number either way — the difference is entirely in the body it lands on.
+    try std.testing.expectApproxEqAbs(@as(f32, 40), arrow.raw(), 1e-4);
+}
+
+test "poise and stance are the BLOW's, not the body's — an element cannot buy stagger immunity" {
+    var soak = Vitals.init(100, 20, 40).withRes(resists(.{ .fire = RES_CAP }));
+    try std.testing.expectEqual(HitResult.light, soak.hit(.{ .poise = 99, .elem = elems(.{ .fire = 50 }) }));
+    try std.testing.expect(soak.hp > 80); // most of the fire was shrugged off…
+    try std.testing.expect(soak.stunned()); // …and the flinch happened anyway
+}
+
+test "the shield eats the WHOLE blow, and the chip meets the resistances on its way through" {
+    const burning = Hit{ .dmg = 20, .elem = elems(.{ .fire = 20 }) };
+    // Billed on the raw weight: a burning arrow costs more stamina to hold off than a bare one.
+    try std.testing.expect(guardStamina(burning) > guardStamina(.{ .dmg = 20 }));
+    try std.testing.expectApproxEqAbs(GUARD_STAM_FLAT + GUARD_STAM_PER_DMG * 40.0, guardStamina(burning), 1e-4);
+    const chip = guardChip(.{ .dmg = 20, .poise = 44, .stance = 20, .elem = elems(.{ .fire = 20 }) });
+    try std.testing.expectApproxEqAbs(20.0 * (1.0 - GUARD_NEGATE), chip.dmg, 1e-4);
+    try std.testing.expectApproxEqAbs(20.0 * (1.0 - GUARD_NEGATE), chip.elem.at(.fire), 1e-4);
+    // …and NOTHING of the stagger: a caught blow is paid for in stamina, never in poise.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), chip.poise, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), chip.stance, 1e-6);
+    // …and a fire-proof blocker takes less of that chip than a bare one, because it is still a typed hit.
+    var proof = Vitals.init(100, 20, 40).withRes(resists(.{ .fire = RES_CAP }));
+    var bare = Vitals.init(100, 20, 40);
+    _ = proof.hit(chip);
+    _ = bare.hit(chip);
+    try std.testing.expect(proof.hp > bare.hp);
+}
+
+test "a healer, a drip and a corpse are all indifferent to what type killed you" {
+    var v = Vitals.initFoe(100, 20, 40).withRes(resists(.{ .cold = -100 }));
+    try std.testing.expectEqual(HitResult.death, v.hit(.{ .elem = elems(.{ .cold = 51 }) })); // 102 taken
+    try std.testing.expect(v.dead);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), v.heal(80), 1e-4);
+}
+
+test "the quiver holds two kinds, and the SELECTED one is the one that flies" {
+    var q = Quiver{};
+    try std.testing.expectEqual(ArrowKind.plain, q.sel);
+    try std.testing.expectEqual(ARROWS_MAX, q.ready());
+    q.cycle();
+    try std.testing.expectEqual(ArrowKind.fire, q.sel);
+    try std.testing.expectEqual(FIRE_ARROWS_MAX, q.ready());
+    try std.testing.expect(q.take());
+    try std.testing.expectEqual(FIRE_ARROWS_MAX - 1, q.count(.fire));
+    try std.testing.expectEqual(ARROWS_MAX, q.count(.plain)); // spending one did NOT touch the other
+    // A DRY FIRE QUIVER REFUSES rather than falling back on a plain shaft you did not ask for.
+    var i: u8 = 0;
+    while (i < FIRE_ARROWS_MAX) : (i += 1) _ = q.take();
+    try std.testing.expectEqual(@as(u8, 0), q.ready());
+    try std.testing.expect(!q.take());
+    try std.testing.expectEqual(ARROWS_MAX, q.count(.plain));
+    q.cycle();
+    try std.testing.expect(q.take()); // …and the plain ones were there all along
+    // Both cap, neither wraps, and a rest fills both.
+    q.add(.fire, 200);
+    q.add(.plain, 200);
+    try std.testing.expectEqual(FIRE_ARROWS_MAX, q.count(.fire));
+    try std.testing.expectEqual(ARROWS_MAX, q.count(.plain));
+    q.fire = 0;
+    q.arrows = 0;
+    q.refill();
+    try std.testing.expectEqual(FIRE_ARROWS_MAX, q.count(.fire));
+    try std.testing.expectEqual(ARROWS_MAX, q.count(.plain));
+    for (0..2) |_| q.cycle();
+    try std.testing.expectEqual(ArrowKind.plain, q.sel); // the cycle is a round trip
+}
+
+test "fire arrows are the SCARCE ones" {
+    try std.testing.expect(FIRE_ARROWS_MAX < ARROWS_MAX and FIRE_ARROWS_MAX > 0);
+    const full = Quiver{};
+    for (0..2) |i| {
+        const k: ArrowKind = @enumFromInt(i);
+        try std.testing.expectEqual(Quiver.cap(k), full.count(k)); // a fresh quiver IS full of both
+    }
 }
 
 test "the lockout switch is what decides whether an empty pool bites" {

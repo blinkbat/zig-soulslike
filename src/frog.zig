@@ -106,6 +106,10 @@ const MOTE = foe.MOTE; // death dissipation — the shared grace-gold every corp
 const HP_MAX = 46.0;
 const POISE_MAX = 8.0; // BELOW the hero's light poise damage (10): every landed light
 const STANCE_MAX = 26.0; // low — a few flinches cascade into the heavy stagger (3rd chained light crumples)
+/// A WET THING OUT OF A BOG: fire has to boil the water off it first, and cold-blooded means the cold
+/// bites and the wet hide conducts. Fire is the only one of the four anything deals today (the hero's
+/// fire arrow); the rest are the creature's nature, waiting on a source.
+const RESISTS = combat.resists(.{ .fire = 40, .cold = -30, .lightning = -25 });
 const CHOMP_HIT = combat.Hit{ .dmg = 13, .poise = 15 }; // eased down from 16 (owner: lower dmg a bit)
 const LUNGE_HIT = combat.Hit{ .dmg = 19, .poise = 26, .stance = 8 }; // eased down from 24 — still a real slam
 const HERO_REACH = foe.HERO_REACH; // hero footprint added to the toad's attack range for the hit test
@@ -186,7 +190,7 @@ pub const Frog = struct {
     jaw: f32 = 0, // lower-jaw open (deg)
     sac: f32 = 1, // throat-sac inflate scale
 
-    vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX),
+    vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
     hits: u32 = 0, // total blows landed (debug read-out)
     hitLatch: bool = false, // one hit per swing: set on contact, cleared when the blade goes inactive
     flash: f32 = 0, // blood-red body flash after a registered hit (fades over FLASH_DUR)

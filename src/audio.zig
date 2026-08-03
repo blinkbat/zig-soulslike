@@ -12,17 +12,36 @@ var tape: [MAX_N]f32 = undefined;
 var pcm: [MAX_N]i16 = undefined;
 
 /// A resonant state-variable filter (Chamberlin), the workhorse of the whole bank.
+/// What a cutoff and a resonance boil down to. SEPARABLE from the filter step because for a FIXED filter
+/// they never change: `choir` runs two formants over ~86k samples apiece, and recomputing a `sin` per
+/// sample for a cutoff that does not move was most of the heal's bake time (90 ms of it, measured).
+const SvfCoef = struct { f: f32, q: f32 };
+
+fn svfCoef(cut: f32, res: f32) SvfCoef {
+    return .{
+        .f = 2.0 * mathx.sinf(std.math.pi * mathx.clampF(cut, 20.0, SRF / 6.0) / SRF),
+        .q = mathx.clampF(1.6 - 1.55 * res, 0.05, 2.0),
+    };
+}
+
+/// Named, because the two entry points below must share ONE return type: two identically-shaped anonymous
+/// structs are two distinct types to Zig, and `step` forwarding to `stepAt` will not compile.
+const SvfOut = struct { lp: f32, bp: f32, hp: f32 };
+
 const Svf = struct {
     lp: f32 = 0,
     bp: f32 = 0,
 
-    fn step(s: *Svf, x: f32, cut: f32, res: f32) struct { lp: f32, bp: f32, hp: f32 } {
-        const f = 2.0 * mathx.sinf(std.math.pi * mathx.clampF(cut, 20.0, SRF / 6.0) / SRF);
-        const q = mathx.clampF(1.6 - 1.55 * res, 0.05, 2.0);
-        const hp = x - s.lp - q * s.bp;
-        s.bp += f * hp;
-        s.lp += f * s.bp;
+    /// ONE filter implementation, entered two ways — `step` for a SWEEPING cutoff (`air`, `growl`), this for a fixed one.
+    fn stepAt(s: *Svf, x: f32, c: SvfCoef) SvfOut {
+        const hp = x - s.lp - c.q * s.bp;
+        s.bp += c.f * hp;
+        s.lp += c.f * s.bp;
         return .{ .lp = s.lp, .bp = s.bp, .hp = hp };
+    }
+
+    fn step(s: *Svf, x: f32, cut: f32, res: f32) SvfOut {
+        return s.stepAt(x, svfCoef(cut, res));
     }
 };
 
@@ -151,6 +170,82 @@ const Rack = struct {
     /// A TICK — the transient at the front of a hit.
     fn tick(r: *Rack, t0: f32, amp: f32, cut: f32) void {
         r.grit(t0, 0.012, amp, cut, 0.0, 5.0);
+    }
+
+    /// A CHOIR — `voices` detuned unison "ahh"s on one note. What makes it read as VOICES and not as an
+    /// organ is two things: FORMANTS (a vowel is two resonant peaks, ~730 and ~1090 Hz for "ah"), and the
+    /// fact that no two singers are in tune or in phase — each voice gets its own detune, its own vibrato
+    /// rate and its own entry, so the beating between them IS the choral sound. One voice is an oscillator.
+    /// COST: this is the most expensive layer in the bank — ~70 ms of the heal's bake (Debug, 3 takes),
+    /// which is the price of five of these over a 2 s buffer. What is left after the formant coefficients
+    /// were hoisted is one `sin` per sample for each voice's vibrato, and that is DELIBERATE: it happens
+    /// once at launch, it is under what the crickets bed already costs, and a table-lookup LFO would trade
+    /// a real thing (the beating between voices, which is the choral sound) for launch time nobody waits on.
+    fn choir(r: *Rack, t0: f32, dur: f32, f0: f32, amp: f32, voices: u32, peak: f32) void {
+        const a = r.at(t0);
+        const b = @min(a + r.at(dur), r.n);
+        if (a >= b) return;
+        const span: f32 = @floatFromInt(b - a);
+        var v: u32 = 0;
+        while (v < voices) : (v += 1) {
+            const detune = 1.0 + r.rng.signed() * 0.006; // ±10 cents: a choir, not a chorus pedal
+            const hz = f0 * detune;
+            if (hz > SRF * 0.45) continue;
+            const vrate = r.rng.range(4.2, 6.4);
+            const vdepth = r.rng.range(0.004, 0.010);
+            const enter = r.rng.range(0, 0.10); // …and they do not all open their mouths together
+            // The two formants are FIXED, so their coefficients are solved once per voice, not per sample.
+            const c1 = svfCoef(730, 0.86);
+            const c2 = svfCoef(1090, 0.82);
+            var f1 = Svf{};
+            var f2 = Svf{};
+            var ph: f32 = r.rng.float();
+            var vib: f32 = r.rng.angle();
+            var i = a;
+            while (i < b) : (i += 1) {
+                const u = @as(f32, @floatFromInt(i - a)) / span;
+                vib += std.math.tau * vrate / SRF;
+                ph += hz * (1.0 + vdepth * mathx.sinf(vib)) / SRF;
+                ph -= @floor(ph);
+                const saw = 2.0 * ph - 1.0;
+                const o1 = f1.stepAt(saw, c1);
+                const o2 = f2.stepAt(saw, c2);
+                const env = swell(mathx.clampF((u - enter) / (1.0 - enter), 0, 1), peak);
+                work[i] += (o1.bp * 0.72 + o2.bp * 0.42) * amp / @as(f32, @floatFromInt(voices)) * env;
+            }
+        }
+    }
+
+    /// SPARKLE — a scatter of short high bells on a pentatonic ladder, so a shimmer never lands on a note
+    /// that fights the chord under it. Random pitches here read as a broken wind chime.
+    fn sparkle(r: *Rack, t0: f32, dur: f32, amp: f32, base: f32, n: u32) void {
+        const PENT = [_]f32{ 0, 2, 4, 7, 9, 12, 14, 16, 19, 24 };
+        var k: u32 = 0;
+        while (k < n) : (k += 1) {
+            const when = t0 + r.rng.float() * dur;
+            const semis = PENT[@intCast(r.rng.intn(@intCast(PENT.len)))];
+            const f = base * std.math.pow(f32, 2.0, semis / 12.0);
+            r.ring(when, r.rng.range(0.10, 0.26), f, amp * r.rng.range(0.45, 1.0), r.rng.range(5.0, 9.0), 2);
+        }
+    }
+
+    /// A ROOM, cheap: three feedback combs in series, each fed back through a one-pole so the tail gets
+    /// darker as it dies (which is the whole difference between a reverb and a stack of echoes). In place
+    /// and feed-forward in time — sample i only ever reads samples before it — so it cannot blow up for
+    /// `fb` under 1, and it needs no second buffer.
+    fn hall(r: *Rack, secs: f32, cut: f32) void {
+        const taps = [_]f32{ 0.0297, 0.0371, 0.0411 }; // prime-ish, so their echoes never line up
+        for (taps) |d| {
+            const lag = @max(r.at(d), 1);
+            if (lag >= r.n) continue;
+            // THE GAIN *IS* THE DECAY TIME: g^(secs/d) = -60 dB. Trimming it by a separate "wet" factor
+            // shortens the tail instead of quieting it — the first pass did that and bought a 0.3 s room
+            // out of a 1.35 s ask. Level is `norm`'s job at the end of the master chain, not this one's.
+            const g = mathx.clampF(std.math.pow(f32, 0.001, d / @max(secs, 0.05)), 0, 0.92);
+            var p = Pole{};
+            var i = lag;
+            while (i < r.n) : (i += 1) work[i] += p.step(work[i - lag], cut) * g;
+        }
     }
 
     /// A DIGITAL BIRDCALL — two to four short pulse blips at STEPPED pitches.
@@ -805,9 +900,25 @@ fn mkKoboldCast(r: *Rack) void {
     r.master(1.5, 3200);
 }
 
+/// THE HEAL LANDING — CHORAL AND HEAVENLY (owner's call), and the one voice in the game that is meant to
+/// sound like it arrived from somewhere else. A single high ring was all it used to be, which read as a
+/// UI ping in the middle of a dog fight. Four things make it:
+///   an open CHORD sung rather than played (root / fifth / octave / tenth, entering in that order, so it
+///   RESOLVES upward); a low octave under it for weight; a SPARKLE of little pentatonic bells over the
+///   top; and a REVERB long enough to be a room the kobolds are not standing in.
+/// Still lo-fi: it goes through the same 7.5-bit crush, wow and hiss as everything else, and the master
+/// lowpass sits low enough that the sparkle is bandlimited rather than glassy.
 fn mkKoboldHeal(r: *Rack) void {
-    r.ring(0.0, 0.30, 1568, 0.30, 3.4, 2);
-    r.master(1.0, 6500);
+    const ROOT: f32 = 330.0; // E4 — high enough to cut a fight, low enough not to shriek
+    r.choir(0.00, 1.55, ROOT * 0.5, 0.30, 2, 0.30); // the octave below, for a floor under the chord
+    r.choir(0.00, 1.60, ROOT, 0.46, 3, 0.26);
+    r.choir(0.10, 1.50, ROOT * 1.5, 0.38, 3, 0.28); // the fifth…
+    r.choir(0.22, 1.38, ROOT * 2.0, 0.30, 2, 0.30); // …the octave…
+    r.choir(0.34, 1.24, ROOT * 2.5, 0.20, 2, 0.32); // …and the tenth on top: the chord OPENS as it lands
+    r.sparkle(0.06, 1.10, 0.085, ROOT * 4.0, 11);
+    r.ring(0.0, 0.34, ROOT * 4.0, 0.10, 4.2, 2); // one bell ON the beat, so it still has an attack
+    r.hall(1.30, 3400);
+    r.master(0.95, 5200); // driven gently: the room is already doing the work, and saturation muddies it
 }
 
 fn mkKoboldWhirl(r: *Rack) void {
@@ -1010,6 +1121,9 @@ fn mkFlaskDrink(r: *Rack) void {
     r.body(0.46, 0.13, 118, 72, 0.65, 4.4);
     r.grit(0.10, 0.45, 0.10, 900, 0.5, 2.2); // the liquid moving between them
     r.body(0.58, 0.42, 90, 150, 0.5, 1.7);
+    // A SLIGHT SPARKLE on the bloom (owner's call) — the drink itself is right, it just needed the moment
+    // it takes hold to glint. Four bells, quiet, and UNDER the master's 2.8 kHz, so it is felt not heard.
+    r.sparkle(0.56, 0.34, 0.035, 1320, 4);
     r.master(1.8, 2800);
 }
 
@@ -1316,6 +1430,7 @@ fn seconds(id: Id) f32 {
         .respawn => 1.4,
         .bone_die, .toad_die, .ogre_roar => 1.1,
         .kobold_cast => 1.35,
+        .kobold_heal => 1.95, // the chord has to finish opening, and its room has to finish emptying
         .kobold_die => 1.15,
         .kobold_heave => 0.85, // three ragged breaths, quickening
         .kobold_whirl => 0.75,
@@ -1976,6 +2091,36 @@ test "the BED's two takes are decorrelated — that IS its width, and it is chec
     const corr = @abs(dot) / @sqrt(ea * eb);
     try std.testing.expect(corr < 0.2); // independent noise; identical buffers would read 1.0
     try std.testing.expect(BANK[idx].vars >= 2);
+}
+
+test "THE HEAL IS CHORAL AND IT IS IN A ROOM — the parts of that a render can be asked about" {
+    const idx: usize = @intFromEnum(Id.kobold_heal);
+    var r = Rack.init(0x9E3779B9 *% (idx + 1), seconds(.kobold_heal));
+    BANK[idx].make(&r);
+    const n = r.n;
+    try std.testing.expect(n > @as(usize, @intFromFloat(SRF * 1.5))); // long enough to be a chord, not a ping
+    const rms = struct {
+        fn of(from: usize, to: usize) f32 {
+            var e: f64 = 0;
+            for (work[from..to]) |s| e += @as(f64, s) * @as(f64, s);
+            return @floatCast(@sqrt(e / @as(f64, @floatFromInt(@max(to - from, 1)))));
+        }
+    }.of;
+    // IT SWELLS: the middle of it is louder than its first 40 ms, which is what "sung" means as opposed to "struck".
+    const attack = rms(0, @intFromFloat(SRF * 0.04));
+    const middle = rms(n / 3, n * 2 / 3);
+    try std.testing.expect(middle > attack * 1.5);
+    // …AND IT HAS A TAIL: real energy is still there at 90% through, where an unreverbed chord has stopped.
+    const tail = rms(n * 9 / 10, n);
+    try std.testing.expect(tail > middle * 0.02);
+    try std.testing.expect(tail < middle); // …but dying, not sustaining: a room, not a drone
+    // THE SPARKLE IS ACTUAL HIGH CONTENT, measured as zero crossings against the chord's own root.
+    var cross: f32 = 0;
+    var i: usize = 1;
+    while (i < n) : (i += 1) {
+        if ((work[i] >= 0) != (work[i - 1] >= 0)) cross += 1;
+    }
+    try std.testing.expect(cross / (@as(f32, @floatFromInt(n)) / SRF) > 700.0);
 }
 
 test "hard-panning the bed does not smuggle the level back up" {

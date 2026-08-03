@@ -233,6 +233,42 @@ const BOW_SHOT_AT: f32 = 0.22;
 const BOW_SNAP: f32 = 0.06; // as a fraction of the shot's own duration
 pub const BOW_QUICK_HIT = combat.Hit{ .dmg = 10, .poise = 5 };
 pub const BOW_AIMED_HIT = combat.Hit{ .dmg = 23, .poise = 11, .stance = 8 };
+/// THE FIRE ARROW: a pitched head that adds FIRE damage on top of the shaft's own physical, PoE2's "adds X fire damage" on an armament. Carried as a FRACTION of that shaft's physical so it rides the quick shot and the aimed one in proportion instead of making the snapshot the better of the two — and it is the one dial for how much the scarce ammunition is worth (`combat.FIRE_ARROWS_MAX` is the other).
+pub const FIRE_ARROW_FRAC: f32 = 0.5;
+
+pub fn fireTipped(h: combat.Hit) combat.Hit {
+    var out = h;
+    out.elem = combat.elems(.{ .fire = h.dmg * FIRE_ARROW_FRAC });
+    return out;
+}
+
+/// WHAT AN ARROW KIND IS, in the two terms the rest of the game needs: the BLOW it lands and the PROJECTILE
+/// that carries it. Both live here, both EXHAUSTIVE, because the alternative was three `== .fire` tests in
+/// three files — the loose, the shot harness and the HUD — and a third kind of arrow would have compiled
+/// against every one of them and quietly flown as a plain shaft.
+pub fn arrowBlow(k: combat.ArrowKind, aimed: bool) combat.Hit {
+    const base = if (aimed) BOW_AIMED_HIT else BOW_QUICK_HIT;
+    return switch (k) {
+        .plain => base,
+        .fire => fireTipped(base),
+    };
+}
+
+pub fn arrowShot(k: combat.ArrowKind) archer.Shot {
+    return switch (k) {
+        .plain => .arrow,
+        .fire => .firearrow,
+    };
+}
+
+/// …and whether the HUD should draw its ammo box alight. The cross takes a plain bool on purpose — `hud.zig` knows nothing about the hero — so the enum is resolved HERE rather than there.
+pub fn arrowBurns(k: combat.ArrowKind) bool {
+    return switch (k) {
+        .plain => false,
+        .fire => true,
+    };
+}
+
 pub const BOW_QUICK_SPEED: f32 = 26.0;
 pub const BOW_AIMED_SPEED: f32 = 40.0;
 pub const BOW_AIM_REACH: f32 = 60.0;
@@ -578,6 +614,8 @@ pub const Hero = struct {
     shooting: bool = false, // a committed loose is running
     shotT: f32 = 0,
     shotAimed: bool = false,
+    /// WHICH ARROW THIS SHOT SPENT, latched when it was drawn rather than read at the loose: the shaft leaves a few frames later, and cycling the quiver in between must not change what is already on the string.
+    shotArrow: combat.ArrowKind = .plain,
     /// ONE FRAME, the frame the shaft leaves — game.zig looses it from `nockWorld()`.
     loosed: bool = false,
     /// Counted like `swings`/`rolls`: a chained shot clears `shooting` and sets it again inside one frame.
@@ -651,7 +689,9 @@ pub const Hero = struct {
 
     /// WHOLE AGAIN — a grace, and a death is a return to one. The three bars take their SIZE from the sheet here and nowhere else, so a raised attribute cannot leave one at its old length.
     fn makeWhole(self: *Hero) void {
+        const res = self.vit.res; // …but NOT his resistances: those are what he IS, not a meter to refill
         self.vit = freshVitals(self.sheet);
+        self.vit.res = res;
         self.stam.max = self.sheet.stamina();
         self.fp.max = self.sheet.fp();
         self.stam.reset();
@@ -791,6 +831,7 @@ pub const Hero = struct {
             self.refuse();
             return;
         }
+        self.shotArrow = self.quiver.sel;
         self.stam.spend(if (aimed) combat.STAM_AIMED else combat.STAM_SHOT);
         self.shooting = true;
         self.shotAimed = aimed;
@@ -949,6 +990,22 @@ pub const Hero = struct {
         self.flasks.cycle();
     }
 
+    /// WHICH ARROW IS NOCKED NEXT. Refused mid-loose for the reason `shotArrow` exists — and it does not need the bow to be out, because choosing your ammunition is not an action.
+    pub fn cycleArrow(self: *Hero) bool {
+        if (self.dead or self.shooting) return false;
+        self.quiver.cycle();
+        return true;
+    }
+
+    /// The blow the shaft on the string will land, its fire rider included…
+    pub fn shotBlow(self: *const Hero) combat.Hit {
+        return arrowBlow(self.shotArrow, self.shotAimed);
+    }
+    /// …and which projectile carries it.
+    pub fn shotShaft(self: *const Hero) archer.Shot {
+        return arrowShot(self.shotArrow);
+    }
+
     pub fn startDrink(self: *Hero) bool {
         if (self.committed() or self.dead or self.staggered()) return false;
         // THE CHARGE MUST NOT GO INTO A BAR THAT CANNOT TAKE IT — and only the CERULEAN is gated.
@@ -1085,10 +1142,10 @@ pub const Hero = struct {
         return .taken;
     }
 
-    /// THE GROUND HURTING HIM — the brood mother's acid today, and whatever else the floor does later.
-    pub fn burn(self: *Hero, dmg: f32) combat.HitOutcome {
-        if (self.dead or dmg <= 0) return .ignored;
-        const r = self.vit.hit(.{ .dmg = dmg });
+    /// THE GROUND HURTING HIM — the brood mother's acid today, and whatever else the floor does later. It takes a whole `Hit` because a floor has an ELEMENT (hers is chaos): a bare number would be the one damage path in the game that could not say what it was.
+    pub fn burn(self: *Hero, h: combat.Hit) combat.HitOutcome {
+        if (self.dead or h.raw() <= 0) return .ignored;
+        const r = self.vit.hit(h);
         self.hurtFlash = mathx.maxF(self.hurtFlash, 0.45);
         if (r == .death) self.enterDeath();
         return .taken;
@@ -1097,7 +1154,7 @@ pub const Hero = struct {
     fn blockHit(self: *Hero, h: combat.Hit) combat.HitOutcome {
         self.blockT = 0;
         self.stam.spend(combat.guardStamina(h));
-        const r = self.vit.hit(.{ .dmg = combat.guardChip(h) });
+        const r = self.vit.hit(combat.guardChip(h));
         self.hurtFlash = mathx.maxF(self.hurtFlash, BLOCK_FLASH);
         if (r == .death) {
             self.enterDeath();
@@ -2290,6 +2347,67 @@ test "AN EMPTY QUIVER REFUSES THE SHOT, and it does not bill him for the one tha
     try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.ready());
 }
 
+test "THE FIRE ARROW ADDS FIRE and takes nothing off the shaft's own physical" {
+    for ([_]combat.Hit{ BOW_QUICK_HIT, BOW_AIMED_HIT }) |base| {
+        const tipped = fireTipped(base);
+        try std.testing.expectApproxEqAbs(base.dmg, tipped.dmg, 1e-5); // physical UNTOUCHED — it is added damage
+        try std.testing.expectApproxEqAbs(base.poise, tipped.poise, 1e-5);
+        try std.testing.expectApproxEqAbs(base.stance, tipped.stance, 1e-5);
+        try std.testing.expectApproxEqAbs(base.dmg * FIRE_ARROW_FRAC, tipped.elem.at(.fire), 1e-4);
+        try std.testing.expectApproxEqAbs(@as(f32, 0), tipped.elem.at(.cold), 1e-6);
+        try std.testing.expect(tipped.raw() > base.raw());
+    }
+    // IT RIDES BOTH SHOTS IN PROPORTION, so the snapshot never becomes the better of the two.
+    try std.testing.expect(fireTipped(BOW_QUICK_HIT).raw() < BOW_AIMED_HIT.raw());
+    // …and on a fire-vulnerable body it is worth more than on a fire-proof one, which is the whole point.
+    const tipped = fireTipped(BOW_AIMED_HIT);
+    var dry = combat.Vitals.initFoe(200, 99, 999).withRes(combat.resists(.{ .fire = -50 }));
+    var wet = combat.Vitals.initFoe(200, 99, 999).withRes(combat.resists(.{ .fire = 50 }));
+    try std.testing.expect(dry.damageFrom(tipped) > wet.damageFrom(tipped));
+    try std.testing.expect(wet.damageFrom(tipped) > BOW_AIMED_HIT.dmg); // still better than a plain shaft
+}
+
+test "the arrow he DREW is the arrow that flies, whatever he cycles to mid-shot" {
+    var h = testHero();
+    _ = h.swapArm();
+    try std.testing.expect(h.cycleArrow());
+    try std.testing.expectEqual(combat.ArrowKind.fire, h.quiver.sel);
+    h.stam.reset();
+    h.requestShot(false);
+    try std.testing.expect(h.shooting);
+    try std.testing.expectEqual(combat.ArrowKind.fire, h.shotArrow);
+    try std.testing.expectEqual(combat.FIRE_ARROWS_MAX - 1, h.quiver.count(.fire));
+    try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.count(.plain)); // it spent the RIGHT quiver
+    // Cycling is refused mid-loose, so the shaft on the string cannot change type under the shot.
+    try std.testing.expect(!h.cycleArrow());
+    try std.testing.expectEqual(combat.ArrowKind.fire, h.shotArrow);
+    try std.testing.expect(h.shotBlow().elem.any());
+    while (h.shooting) h.updateShot(1.0 / 60.0, null);
+    // …and back on plain shafts there is no fire on the blow at all.
+    try std.testing.expect(h.cycleArrow());
+    h.stam.reset();
+    h.requestShot(false);
+    try std.testing.expectEqual(combat.ArrowKind.plain, h.shotArrow);
+    try std.testing.expect(!h.shotBlow().elem.any());
+}
+
+test "A DRY FIRE QUIVER REFUSES, with plain shafts still on his back" {
+    var h = testHero();
+    _ = h.swapArm();
+    h.quiver.fire = 0;
+    try std.testing.expect(h.cycleArrow());
+    h.stam.reset();
+    const stamBefore = h.stam.cur;
+    h.requestShot(false);
+    try std.testing.expect(!h.shooting and h.stamRefused > 0);
+    try std.testing.expectApproxEqAbs(stamBefore, h.stam.cur, 1e-5);
+    try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.count(.plain));
+    // …and a grace restocks BOTH.
+    h.respawnForTest();
+    try std.testing.expectEqual(combat.FIRE_ARROWS_MAX, h.quiver.count(.fire));
+    try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.count(.plain));
+}
+
 test "the two shots are a jab and a payoff, and every number says which is which" {
     // A quick shot is what you open a gap with; the aimed one is what you stood still for.
     try std.testing.expect(combat.STAM_SHOT < combat.STAM_LIGHT); // cheaper than a slash…
@@ -2409,7 +2527,7 @@ test "a blocked blow costs STAMINA and chip, and never poise" {
     const club = combat.Hit{ .dmg = 36, .poise = 44, .stance = 20 };
     const stam0 = h.stam.cur;
     try std.testing.expectEqual(combat.HitOutcome.blocked, h.takeHit(club, fromAngle(10)));
-    try std.testing.expectApproxEqAbs(HP_MAX - combat.guardChip(club), h.vit.hp, 1e-3);
+    try std.testing.expectApproxEqAbs(HP_MAX - combat.guardChip(club).dmg, h.vit.hp, 1e-3);
     try std.testing.expectApproxEqAbs(stam0 - combat.guardStamina(club), h.stam.cur, 1e-3);
     // The whole point: no flinch, no stance chip, still guarding, still in control.
     try std.testing.expect(!h.staggered() and h.guarding);

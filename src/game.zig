@@ -60,7 +60,7 @@ const SHAKE_HURT_HEAVY = 0.62;
 // A CAUGHT blow cracks the frame less than one that lands — he HELD, and the shake says so.
 const SHAKE_BLOCK = 0.40;
 const SHAKE_GUARD_BREAK = 0.72;
-const BLOW_HEAVIEST = ogremod.SLAM_HIT.dmg;
+const BLOW_HEAVIEST = ogremod.SLAM_HIT.raw(); // the whole blow, elements included — see `heroBlockBeat`
 const BLOCK_FELT_MIN = 0.25;
 const BLOCK_FELT_HEAVY = 0.5;
 const SHAKE_DEATH = 0.85;
@@ -131,8 +131,9 @@ pub const Game = struct {
     restRetro: [gfx.RETRO_COUNT]f32 = [_]f32{0} ** gfx.RETRO_COUNT,
     bag: item.Bag = .{},
     arrowModel: rl.Model, // shared arrow mesh, drawn per live/stuck arrow with its own matrix
-    stoneModel: rl.Model,
+    clumpModel: rl.Model,
     venomModel: rl.Model,
+    fireArrowModel: rl.Model,
     arrows: [MAX_ARROWS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_ARROWS,
     /// …and the ones HE loosed (see MAX_SHAFTS).
     shafts: [MAX_SHAFTS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_SHAFTS,
@@ -176,8 +177,9 @@ pub const Game = struct {
         rehomeChests(g);
         g.bag = .{};
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
-        g.stoneModel = koboldmod.stoneMesh(g.scene.shader);
+        g.clumpModel = koboldmod.clumpMesh(g.scene.shader);
         g.venomModel = broodmod.venomMesh(g.scene.shader);
+        g.fireArrowModel = archermod.fireArrowMesh(g.scene.shader);
         g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
         g.shafts = [_]archermod.Arrow{.{}} ** MAX_SHAFTS;
@@ -467,8 +469,8 @@ fn spawnArrow(g: *Game, from: rl.Vector3, target: rl.Vector3) void {
     poolPut(g, archermod.launchArrow(from, target));
 }
 
-pub fn spawnStone(g: *Game, from: rl.Vector3) void {
-    poolPut(g, archermod.launchStone(from, heroAimPoint(g), koboldmod.STONE_SPEED, koboldmod.STONE_HIT));
+pub fn spawnClump(g: *Game, from: rl.Vector3) void {
+    poolPut(g, archermod.launchClump(from, heroAimPoint(g), koboldmod.CLUMP_SPEED, koboldmod.CLUMP_HIT));
 }
 
 pub fn spawnVenom(g: *Game, from: rl.Vector3) void {
@@ -504,11 +506,30 @@ pub fn rehomeFoesForShot(g: *Game) void {
 }
 
 /// …and the BOW's three, so the harness flies a real shaft rather than parking a mesh in the air.
-pub fn shootShaftForShot(g: *Game, at: rl.Vector3) void {
-    putIn(&g.shafts, archermod.launchShaft(g.hero.nockWorld(), at, heromod.BOW_AIMED_SPEED, heromod.BOW_AIMED_HIT, false));
+pub fn shootShaftForShot(g: *Game, at: rl.Vector3, kind: combat.ArrowKind) void {
+    const blow = heromod.arrowBlow(kind, true);
+    putIn(&g.shafts, archermod.launchShaft(g.hero.nockWorld(), at, heromod.BOW_AIMED_SPEED, blow, false, heromod.arrowShot(kind)));
 }
 pub fn stepShaftsForShot(g: *Game, dt: f32) void {
     stepShafts(g, dt);
+}
+/// Where something in flight actually IS — a crop of a burning head or a slung clump has to be aimed at it, not guessed. Both quivers, because the hero's shafts are in one and everything thrown AT him is in the other.
+pub fn flyingPointForShot(g: *Game, kind: archermod.Shot) ?rl.Vector3 {
+    for (quivers(g)) |pool| {
+        for (pool) |*ar| {
+            if (ar.live and ar.shot == kind) return ar.pos;
+        }
+    }
+    return null;
+}
+
+/// One frame of flight for everything thrown AT him — the harness's own hook, since the game does this inline.
+pub fn stepArrowsForShot(g: *Game, dt: f32) void {
+    for (&g.arrows) |*ar| {
+        if (!ar.live) continue;
+        ar.hit = false;
+        archermod.stepArrow(ar, g.hero.pos, heroCenterY(g), g.env.groundAt(ar.pos.x, ar.pos.z), g.hero.iFramed(), arrowCover(g, ar, dt), dt);
+    }
 }
 pub fn clearShaftsForShot(g: *Game) void {
     clearQuivers(g);
@@ -626,8 +647,8 @@ fn looseShaft(g: *Game) void {
     const target = locked orelse if (aimed) camAimPoint(g) else forwardAimPoint(g);
     const loft = locked != null or aimed;
     const speed: f32 = if (aimed) heromod.BOW_AIMED_SPEED else heromod.BOW_QUICK_SPEED;
-    const blow = if (aimed) heromod.BOW_AIMED_HIT else heromod.BOW_QUICK_HIT;
-    putIn(&g.shafts, archermod.launchShaft(from, target, speed, blow, loft));
+    // The blow AND the shaft that carries it both come off what he actually drew (see `Hero.shotArrow`).
+    putIn(&g.shafts, archermod.launchShaft(from, target, speed, g.hero.shotBlow(), loft, g.hero.shotShaft()));
     sfx.play(.bow_loose);
     g.rumble.play(rumblemod.swing_light); // the string going is a tick in the grip, not a swing
 }
@@ -726,14 +747,27 @@ fn quivers(g: *Game) [2][]archermod.Arrow {
     return .{ &g.arrows, &g.shafts };
 }
 
+/// WHAT A LANDED PROJECTILE LEAVES BEHIND, asked in ONE place because the two callers (it reached him /
+/// it reached anything else) were already drifting apart: the acid glob pours a POOL, the sling's clump
+/// throws EMBERS, and a shaft leaves only itself.
+fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
+    const ground = v3(ar.pos.x, g.env.groundAt(ar.pos.x, ar.pos.z), ar.pos.z);
+    switch (ar.shot) {
+        .venom => g.brood.splash(ground),
+        .clump => g.band.splash(ar.pos), // at the CONTACT, not the floor: it can burst against a chest
+        .arrow, .firearrow => {},
+    }
+}
+
 fn drawArrows(g: *Game) void {
     for (quivers(g)) |pool| {
         for (pool) |*ar| {
             if (!ar.live) continue;
             const m = switch (ar.shot) {
                 .arrow => &g.arrowModel,
-                .stone => &g.stoneModel,
+                .clump => &g.clumpModel,
                 .venom => &g.venomModel,
+                .firearrow => &g.fireArrowModel,
             };
             rl.drawMesh(m.meshes[0], m.materials[0], archermod.arrowXform(ar));
         }
@@ -899,7 +933,7 @@ pub fn hud(g: *Game, dt: f32) void {
                 .cerulean => hud_.FlaskTint.cerulean,
             },
             g.hero.flasks.ready(),
-            if (bowUp) g.hero.quiver.ready() else null,
+            if (bowUp) hud_.Ammo{ .n = g.hero.quiver.ready(), .fire = heromod.arrowBurns(g.hero.quiver.sel) } else null,
         );
         hud_.reticle(g.hero.aimB);
         hud_.runes(g.hero.runes.display()); // the ROLLING value, not the banked total
@@ -954,6 +988,24 @@ fn debugCorner(g: *Game) void {
         h.vit.hp,   h.vit.hpMax, h.vit.poise, h.vit.poiseMax, h.vit.stance, h.vit.stanceMax,
         h.stam.cur, h.stam.max,  foesLeft,    foeHits,
     }) catch "", y, hud_.SMALL, rgba(150, 180, 190, 255));
+    y += step;
+
+    // THE ARROW ON THE STRING, and — while something is locked — WHAT IT WOULD LAND ON. The four
+    // resistances are only legible against a named target, so the row reads the lock rather than the hero
+    // (nothing grants HIM any: there is no gear yet).
+    const sel = h.quiver.sel;
+    const rider: [:0]const u8 = if (sel == .fire) "  +fire" else "";
+    if (g.lock) |li| {
+        const r = foeResists(g, li);
+        dbgRow(std.fmt.bufPrintZ(&buf, "arrow  {s} {d}/{d}{s}   lock res  fire {d:.0}  cold {d:.0}  lgt {d:.0}  chaos {d:.0}", .{
+            @tagName(sel), h.quiver.ready(), combat.Quiver.cap(sel), rider,
+            r.raw(.fire),  r.raw(.cold),     r.raw(.lightning),      r.raw(.chaos),
+        }) catch "", y, hud_.SMALL, rgba(206, 150, 110, 255));
+    } else {
+        dbgRow(std.fmt.bufPrintZ(&buf, "arrow  {s} {d}/{d}{s}", .{
+            @tagName(sel), h.quiver.ready(), combat.Quiver.cap(sel), rider,
+        }) catch "", y, hud_.SMALL, rgba(206, 150, 110, 255));
+    }
     y += step;
 
     dbgRow(std.fmt.bufPrintZ(&buf, "world  props {d}  solids {d}  fires {d}   drawn {d} in {d} cells (both passes)", .{
@@ -1132,7 +1184,7 @@ pub fn run(mode: Mode) void {
             sfx.ambience(rawDt);
             drawScene(g);
             hud(g, rawDt);
-            g.menu.draw(&g.retro, &g.bag, &g.hero.sheet);
+            g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
             rl.endDrawing();
             continue;
         }
@@ -1241,6 +1293,12 @@ pub fn run(mode: Mode) void {
             g.hero.cycleFlask();
             sfx.play(.flask_cycle);
         }
+
+        // D-PAD UP / Y: cycle the ARROW — plain or fire. Up because it is the cross's one empty slot,
+        // and it mirrors D-pad Down cycling the quick item.
+        var arrowReq = rl.isKeyPressed(.y);
+        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .left_face_up)) arrowReq = true;
+        if (arrowReq and g.hero.cycleArrow()) sfx.play(.flask_cycle);
 
         // free face button and the one every soulslike puts this on.
         var useReq = rl.isKeyPressed(.e);
@@ -1379,7 +1437,7 @@ pub fn run(mode: Mode) void {
                 spawnArrow(g, a.nockWorld(), heroAimPoint(g));
             }
         }
-        if (g.band.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnStone)) |b| {
+        if (g.band.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnClump)) |b| {
             _ = heroTakes(g, b, b.hit.poise >= koboldmod.ZERK_HIT.poise, true);
         }
         const hatchesBefore = g.brood.hatches;
@@ -1398,7 +1456,7 @@ pub fn run(mode: Mode) void {
         }
         // …and the floor she left.
         const burn = g.brood.burn(dt, g.hero.pos);
-        if (burn > 0 and g.hero.burn(burn) == .taken) sfx.play(.acid_burn);
+        if (burn > 0 and g.hero.burn(broodmod.acidPulse(burn)) == .taken) sfx.play(.acid_burn);
         g.chests.update(dt, g.hero.pos);
         inline for (FOE_GROUPS, 0..) |f, gi| gateTerrain(g, @field(g, f.field).live(), wasPos[gi][0..wasN[gi]]);
         // Arrows in flight: gentle homing + arc, then a strike lands a chomp-weight blow.
@@ -1417,11 +1475,12 @@ pub fn run(mode: Mode) void {
                 const out: combat.HitOutcome = if (g.hero.dead) .ignored else heroTakes(g, blow, false, false);
                 // …and WHAT IT STRUCK picks that voice: boards if the shield caught it, flesh if not.
                 if (out == .taken or out == .ignored) sfx.play(.arrow_hit);
-                if (ar.shot == .venom) g.brood.splash(v3(ar.pos.x, g.env.groundAt(ar.pos.x, ar.pos.z), ar.pos.z));
+                splashOf(g, ar);
             } else if (ar.stuck and ar.age == 0) {
-                if (ar.shot == .venom) {
-                    g.brood.splash(v3(ar.pos.x, g.env.groundAt(ar.pos.x, ar.pos.z), ar.pos.z));
-                } else sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
+                // ONLY THE GLOB IS SILENT HERE, because `brood.splash` plays its own voice. A clump keeps
+                // the thunk the stone it replaced had — dropping it lost the landing its sound entirely.
+                if (ar.shot != .venom) sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
+                splashOf(g, ar);
             }
         }
         // Blade connected this frame (a foe's hit count climbed) → hit pulse + frame crack sized to the swing; a kill adds the thunk (via justDied, since dissipation delays the aliveCount drop).
@@ -1562,7 +1621,10 @@ fn heroTakes(g: *Game, b: foemod.Blow, heavy: bool, voice: bool) combat.HitOutco
 }
 
 fn heroBlockBeat(g: *Game, h: combat.Hit) void {
-    const w = mathx.clampF(h.dmg / BLOW_HEAVIEST, BLOCK_FELT_MIN, 1.0);
+    // OFF THE RAW BLOW, like the stamina bill it is paid beside (`combat.guardStamina`): a blow with no
+    // physical half at all — the mother's spit, the sling's burning clump — read as the lightest thing in
+    // the game the moment those two were retyped, because this measured `dmg` alone.
+    const w = mathx.clampF(h.raw() / BLOW_HEAVIEST, BLOCK_FELT_MIN, 1.0);
     g.rumble.play(if (w >= BLOCK_FELT_HEAVY) rumblemod.guard_block_heavy else rumblemod.guard_block);
     g.rig.addShake(SHAKE_BLOCK * w);
     sfx.play(.guard_block);
@@ -1721,6 +1783,13 @@ fn foePos(g: *const Game, r: FoeRef) rl.Vector3 {
     return askFoe(rl.Vector3, g, r, struct {
         fn ask(f: anytype) rl.Vector3 {
             return f.pos;
+        }
+    }.ask);
+}
+fn foeResists(g: *const Game, r: FoeRef) combat.Resists {
+    return askFoe(combat.Resists, g, r, struct {
+        fn ask(f: anytype) combat.Resists {
+            return f.vit.res;
         }
     }.ask);
 }

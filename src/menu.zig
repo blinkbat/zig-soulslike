@@ -7,6 +7,7 @@ const rumblemod = @import("rumble.zig");
 const sfx = @import("audio.zig");
 const item = @import("item.zig"); // the CHARACTER menu lists what the hero carries…
 const stats = @import("stats.zig"); // …and what he IS
+const combat = @import("combat.zig"); // …including what he shrugs off (the RESISTANCES screen)
 const uiart = @import("uiart.zig");
 
 const rgba = mathx.rgba;
@@ -25,6 +26,7 @@ const Screen = enum {
     retro,
     character, // ── and the CHARACTER menu (Start) …
     attributes,
+    resistances,
     inventory,
     equipment,
 
@@ -32,21 +34,27 @@ const Screen = enum {
         return switch (s) {
             .closed => .closed,
             .main, .options, .debug, .retro => .main,
-            .character, .attributes, .inventory, .equipment => .character,
+            .character, .attributes, .resistances, .inventory, .equipment => .character,
         };
     }
+
 };
 
 // Character rows.
 const CHR_ATTRIBUTES = 0;
-const CHR_INVENTORY = 1;
-const CHR_EQUIPMENT = 2;
-const CHR_CLOSE = 3;
+const CHR_RESISTANCES = 1;
+const CHR_INVENTORY = 2;
+const CHR_EQUIPMENT = 3;
+const CHR_CLOSE = 4;
 const CHR_COUNT = CHR_CLOSE + 1;
 
 // Attribute rows — the seven, then Back. Read-only: there is no leveling yet, so nothing here adjusts.
 const ATR_CLOSE = stats.NA;
 const ATR_COUNT = ATR_CLOSE + 1;
+
+// Resistance rows — the four elements, then Back. Read-only for a harder reason than the attributes': there is nothing in the game that grants any.
+const RES_CLOSE = combat.NELEM;
+const RES_COUNT = RES_CLOSE + 1;
 
 // Equipment rows — the four ER slots, then Back.
 const EQP_RIGHT = 0;
@@ -133,7 +141,7 @@ pub const Menu = struct {
             .options => .main,
             .debug => .main,
             .retro => .debug,
-            .attributes, .inventory, .equipment => .character,
+            .attributes, .resistances, .inventory, .equipment => .character,
         };
     }
 
@@ -163,6 +171,7 @@ pub const Menu = struct {
             .retro => RET_COUNT,
             .character => CHR_COUNT,
             .attributes => ATR_COUNT,
+            .resistances => RES_COUNT,
             .inventory => @max(1, bag.distinct()) + 1,
             .equipment => EQP_COUNT,
         };
@@ -255,6 +264,10 @@ pub const Menu = struct {
                     self.screen = .attributes;
                     self.cursor = 0;
                 },
+                CHR_RESISTANCES => {
+                    self.screen = .resistances;
+                    self.cursor = 0;
+                },
                 CHR_INVENTORY => {
                     self.screen = .inventory;
                     self.cursor = 0;
@@ -266,16 +279,10 @@ pub const Menu = struct {
                 CHR_CLOSE => self.screen = .closed,
                 else => {},
             },
-            .attributes => {
-                // Read-only: the only row that does anything is the last one.
-                if (self.cursor == ATR_CLOSE) {
-                    self.screen = .character;
-                    self.cursor = 0;
-                }
-            },
-            .inventory, .equipment => {
-                const last = self.rowCount(bag) - 1;
-                if (self.cursor == last) {
+            // THE READ-ONLY LISTS, in one arm: every row is a readout and the only one that ACTS is the
+            // last (Back), found off the ONE row count rather than each screen's own `_CLOSE` constant.
+            .attributes, .resistances, .inventory, .equipment => {
+                if (self.cursor == self.rowCount(bag) - 1) {
                     self.screen = .character;
                     self.cursor = 0;
                 } else if (self.screen == .inventory) {
@@ -332,7 +339,7 @@ pub const Menu = struct {
         return out;
     }
 
-    pub fn draw(self: *const Menu, retro: *const gfx.Retro, bag: *const item.Bag, sheet: *const stats.Sheet) void {
+    pub fn draw(self: *const Menu, retro: *const gfx.Retro, bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.Resists) void {
         if (self.screen == .closed) return;
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
@@ -350,6 +357,10 @@ pub const Menu = struct {
             .attributes => self.drawCard("ATTRIBUTES", &attrLabels(), .{
                 .values = attrValues(sheet),
                 .note = attrNote(sheet, self.cursor),
+            }),
+            .resistances => self.drawCard("RESISTANCES", &resLabels(), .{
+                .values = resValues(res),
+                .note = resNote(res, self.cursor),
             }),
             .inventory => self.drawCard("INVENTORY", bagLabels(bag), .{}),
             .equipment => self.drawCard("EQUIPMENT", &equipLabels(), .{}),
@@ -377,7 +388,10 @@ pub const Menu = struct {
         const headerH: i32 = hud.lineH(hud.TITLE) + 22;
         const noteH: i32 = if (card.note != null) hud.lineH(hud.HINT) + 14 else 0;
         const footH: i32 = 20 + noteH;
-        const cardW: i32 = if (card.gauges != null or card.note != null) 620 else 470;
+        // THE CARD IS AT LEAST AS WIDE AS ITS FOOTNOTE. The note is centred on the plate, so one longer
+        // than the plate spills out over the world on BOTH sides — measure it rather than hoping.
+        const noteW: i32 = if (card.note) |n| hud.textW(n, hud.HINT) else 0;
+        const cardW: i32 = @max(if (card.gauges != null or card.note != null) @as(i32, 620) else @as(i32, 470), noteW + 72);
         const cardH: i32 = headerH + (rowH + rowGap) * @as(i32, @intCast(labels.len)) + footH;
         const cx = @divTrunc(sw - cardW, 2);
         const cy = @divTrunc(sh - cardH, 2);
@@ -466,6 +480,7 @@ fn mainLabels() [MAIN_COUNT][:0]const u8 {
 fn characterLabels() [CHR_COUNT][:0]const u8 {
     var out: [CHR_COUNT][:0]const u8 = undefined;
     out[CHR_ATTRIBUTES] = "Attributes >";
+    out[CHR_RESISTANCES] = "Resistances >";
     out[CHR_INVENTORY] = "Inventory";
     out[CHR_EQUIPMENT] = "Equipment";
     out[CHR_CLOSE] = "Close";
@@ -500,6 +515,44 @@ fn attrNote(sheet: *const stats.Sheet, cursor: usize) [:0]const u8 {
     // The attribute→bar binding lives in `stats.barFor` and nowhere else.
     if (sheet.barFor(a)) |t| return std.fmt.bufPrintZ(&attrNoteBuf, "{s}   Yours: {d:.0}.", .{ says, t }) catch says;
     return says;
+}
+
+/// WHAT HE SHRUGS OFF — the four of `combat.Elem`, walked off the enum for the reason the attributes are: a fifth element is on this screen the moment it has a name.
+fn resLabels() [RES_COUNT][:0]const u8 {
+    var out: [RES_COUNT][:0]const u8 = undefined;
+    for (0..combat.NELEM) |i| out[i] = combat.elemName(@enumFromInt(i));
+    out[RES_CLOSE] = "Back";
+    return out;
+}
+
+var resValBufs: [combat.NELEM][16]u8 = undefined;
+var resValRows: [combat.NELEM][:0]const u8 = undefined;
+
+/// THE STACKED NUMBER, and the CAP beside it when they differ (PoE2's own display): 90% (75%) says both that the gear is working and that only 75 of it is.
+fn resValues(res: *const combat.Resists) []const [:0]const u8 {
+    for (0..combat.NELEM) |i| {
+        const e: combat.Elem = @enumFromInt(i);
+        const raw = res.raw(e);
+        const eff = res.at(e);
+        resValRows[i] = if (@abs(raw - eff) < 0.05)
+            std.fmt.bufPrintZ(&resValBufs[i], "{d:.0}%", .{raw}) catch "?"
+        else
+            std.fmt.bufPrintZ(&resValBufs[i], "{d:.0}% ({d:.0}%)", .{ raw, eff }) catch "?";
+    }
+    return &resValRows;
+}
+
+var resNoteBuf: [160]u8 = undefined;
+
+fn resNote(res: *const combat.Resists, cursor: usize) [:0]const u8 {
+    if (cursor >= combat.NELEM) return "";
+    const e: combat.Elem = @enumFromInt(cursor);
+    const says = combat.elemSays(e);
+    const eff = res.at(e);
+    // WHAT THE NUMBER DOES TO A BLOW, said in the only terms that matter — and NOTHING GRANTS ANY YET says so on its own row, the way an inert attribute does.
+    if (@abs(eff) < 0.05) return std.fmt.bufPrintZ(&resNoteBuf, "{s} Nothing grants any yet.", .{says}) catch says;
+    if (eff < 0) return std.fmt.bufPrintZ(&resNoteBuf, "{s} It hits you {d:.0}% HARDER.", .{ says, -eff }) catch says;
+    return std.fmt.bufPrintZ(&resNoteBuf, "{s} You shrug off {d:.0}% (cap {d:.0}%).", .{ says, eff, combat.RES_CAP }) catch says;
 }
 
 fn equipLabels() [EQP_COUNT][:0]const u8 {

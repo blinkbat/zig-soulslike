@@ -73,8 +73,9 @@ an empty bar means no roll, no swing, no sprint (see STAMINA below). He carries 
 SHIELD** in the left hand and **GUARDS** with it — Dark Souls' plain block, paid for in stamina,
 with a GUARD BREAK when the bar runs out under a blow (see GUARDING). His right hand also holds a
 **BOW** (D-pad Right swaps to it — quick shot on R1, hold L2 to aim and R2 to loose), and because the
-left hand goes to the string it takes the shield with it (see THE BOW). No criticals, guard counter
-or jump yet. The bar for "human" is anatomy + real gaits, not polygon count.
+left hand goes to the string it takes the shield with it (see THE BOW) — with a scarce **FIRE ARROW** on
+D-pad Up that is the game's one source of non-physical damage, against four PoE2 **RESISTANCES** every
+creature carries (see RESISTANCES). No criticals, guard counter or jump yet. The bar for "human" is anatomy + real gaits, not polygon count.
 
 **THE GROUND HAS ELEVATION**, sculpted in the editor and walked with a real slope limit and a step
 height — hills, banks, terraces and cliffs you cannot climb (see ELEVATION). The SHIPPED map is
@@ -289,7 +290,7 @@ meadow's (`shaders.terrainAlbedo`'s region drift — the GLSL, not the Zig).
                  read back in `sfx.init`. Debug holds Stats / Wireframe / Time Scale and the Retro
                  Filters list (15 filters + presets). Both slider screens share one gauge column
                  (`drawCard`'s `gauges` slice) and one adjust feel (`adjustDelta`).
-                 **START OPENS THE CHARACTER MENU** (Attributes / Inventory / Equipment), a second root
+                 **START OPENS THE CHARACTER MENU** (Attributes / Resistances / Inventory / Equipment), a second root
                  the whole screen stack hangs off (`Screen.root`) so SELECT and START toggle their own
                  side and nothing else. ATTRIBUTES is the character sheet — the seven of `stats.zig`,
                  rows walked off the enum, each with its points right-aligned and a FOOTNOTE saying what
@@ -537,7 +538,16 @@ lines where the concerns genuinely part company, and each new file is named so t
                  something has to see the whole band, and `Warband.update` resolves the heal (the priest
                  owns the animation, never the targeting). Three things ride matrices rather than bones —
                  the off-hand axe, the hinged JAW (`gape`) and the TAIL chain — which is the pattern for
-                 anything the 18-bone scaffold has no slot for. **A BITE IS A WAIST AND A SNAP IS A
+                 anything the 18-bone scaffold has no slot for.
+                 **THE SLING THROWS FIRE** (owner's call): a pitch-soaked rag clump, all of whose damage is
+                 FIRE (`CLUMP_HIT` — the stone's own 10, retyped, so the threat did not move; `archer.Shot`
+                 calls it `.clump` because nothing slings a plain stone any more). The tell is the FX and
+                 they are the whole point of it: embers shed off the pouch the entire time the sling goes
+                 round (`emitWhirlEmbers`), a puff at the release (`releaseSparks`), and a bigger burst
+                 wherever it lands (`impactSparks`, reached through `Warband.splash` the way the venom
+                 reaches `brood.splash`, because what landed belongs to the GROUP and not to the arrow pool
+                 that flew it). The loaded pouch is drawn ALIGHT — a grey pebble in it promised a rock and
+                 threw a fire. **A BITE IS A WAIST AND A SNAP IS A
                  REVERSAL:** the bite folds at the waist and the neck EXTENDS through that fold so the
                  muzzle leads it — pitched nose-DOWN instead (which is how it shipped, 49 deg of it
                  over a pelvis that never moved, with both arms flung up and out) an animal biting you
@@ -561,6 +571,10 @@ lines where the concerns genuinely part company, and each new file is named so t
                  in past the spit. The hatchlings are fast, leap, and die to a single light. Everything
                  hangs off one rig, parameterized by a `Skin` (colours, abdomen, claw length) so a
                  hatchling is its mother at a different age rather than a second creature to keep in step.
+                 **HER POISON IS CHAOS, SPIT AND PUDDLE ALIKE** (owner's call) — one fluid, one element, so
+                 `M_SPIT_HIT` carries no physical at all (its poise is the only physical thing about a
+                 caustic glob) and the floor's pulses go through `acidPulse`. A hero with no chaos
+                 resistance takes exactly what he always took, which is why the retyping moved no balance.
                  **AND THE CLAWS ARE THE SILHOUETTE:** flat blades standing on EDGE, carried up and
                  forward on arms mounted above the leg line — authored flat or slung at leg height they
                  are two more of the eight legs, which is what the first three passes of this looked like.
@@ -588,6 +602,10 @@ lines where the concerns genuinely part company, and each new file is named so t
                  raise the dead, because `dead` is a latch the whole foe standard reads). Plus `Stamina`,
                  the HERO'S ALONE (a foe meter nothing reads would only rot). Pure logic,
                  unit-tested. THE place to retune damage/poise/stamina feel.
+- `combat.zig` — …and DAMAGE TYPES: `Elem` (PoE2's fire / cold / lightning / chaos), the `Elems` bundle a
+                 `Hit` carries beside its physical `dmg`, and the `Resists` every `Vitals` mitigates it
+                 with. See RESISTANCES — physical is deliberately not one of the four, 75 is the cap,
+                 negative amplifies, and each foe's table is authored in its own file.
 - `item.zig`   — THE ITEM VOCABULARY: `Kind`, its display name, its map `tag`, and `Use` — what
                  using one DOES, named here and performed in `game.useItem`. Plus the `Bag`, a
                  saturating count per kind (`nth` walks only the rows that hold something, so a
@@ -625,9 +643,26 @@ lines where the concerns genuinely part company, and each new file is named so t
 - `collision.zig` — 2D XZ capsule/circle footprint collision (push-out).
 - `mathx.zig`  — ground-plane + vector/angle helpers.
 - `audio.zig`  — THE SOUND BANK: ~80 voices, every one SYNTHESIZED at launch from the same handful of
-                 layers (`body` / `air` / `grit` / `ring` / `tick` / `growl` / `chirp`) through one
+                 layers (`body` / `air` / `grit` / `ring` / `tick` / `growl` / `chirp` / `choir` /
+                 `sparkle`, plus `hall`) through one
                  shared tape-style `master`, which is what makes separately-authored sounds feel
-                 recorded in the same room. Read it as recipes. Three things to know before retuning:
+                 recorded in the same room. Read it as recipes.
+                 **THE HEAL IS CHORAL** (owner: choral and heavenly, reverby and sparkly, still lo-fi) —
+                 `mkKoboldHeal` is an open chord SUNG rather than played: root / fifth / octave / tenth
+                 entering in that order so it RESOLVES upward, a low octave under it, a `sparkle` of
+                 pentatonic bells over the top, and a `hall` long enough to be a room the kobolds are not
+                 standing in. It used to be one high `ring`, which read as a UI ping mid-fight. Three
+                 things the new ops get right and can be checked by a test on the render:
+                 - **A CHOIR IS FORMANTS PLUS DISAGREEMENT.** Two resonant peaks (~730/~1090 Hz) make the
+                   vowel; per-voice detune, vibrato rate and entry make it VOICES. One of each is an organ.
+                 - **`hall`'s GAIN *IS* ITS DECAY TIME.** Trimming a comb's coefficient by a separate
+                   "wet" factor shortens the tail instead of quieting it — the first pass did exactly that
+                   and bought a 0.3 s room out of a 1.35 s ask. Level is `norm`'s job, at the end.
+                 - **A SPARKLE IS ON A LADDER.** Scattered high bells are picked off a pentatonic set, so a
+                   shimmer never lands on a note fighting the chord under it; random pitches read as a
+                   broken wind chime. The FLASK gets four of them, quiet, on the bloom (owner: the drink
+                   itself is fine, just a slight sparkle).
+                 Three more things to know before retuning:
                  **`master` NORMALIZES each voice** (`norm`), so a layer's `amp` sets its BALANCE
                  inside the voice and only `BANK.gain` sets how loud the thing is; **THE FIGHT IS ONE
                  BAND** — every combat row above `BATTLE_FLOOR` (0.34) is `sqrt(BATTLE_FLOOR × old)`,
@@ -693,6 +728,23 @@ lines where the concerns genuinely part company, and each new file is named so t
                  fractions, so it knows nothing about the hero. Colours here are LITERAL screen
                  values (drawn after the retro blit, outside the scene shader), so the
                  author-dark rules do not apply.
+                 **THE EQUIPMENT ICONS ARE DRAWN AS OBJECTS, NOT GLYPHS** (owner: cooler, classier, more
+                 fidelity, more wabi). A blade has a taper, a fuller, a lit edge and a shadowed one; a
+                 shield has planks with grain, an iron binding, rivets and a domed boss; a flask has
+                 shaded glass, a liquid line, a wax seal and a cord tie; a bow's upper limb is the longer
+                 one, with horn nocks and a served string. Three things are load-bearing:
+                 - **WABI-SABI, BUT DETERMINISTIC.** Unequal guard arms, planks of different widths, a
+                   nicked edge, a stopper off plumb, a lost rivet — every offset comes out of a
+                   FIXED-SEED `mathx.Rng` re-seeded on each call, so the icon is imperfect and *the same
+                   imperfection every frame*. A live stream would make the HUD crawl.
+                 - **THERE IS NO CLIPPING**, and that is what decides how anything round is shaded. The
+                   flask's body is the DARK tone at full size with the lit fill inset up-left inside it,
+                   so what shows of the dark is a crescent along the far rim. The three obvious ways all
+                   failed: a concentric dark circle is a bubble, a sector leaves a straight chord across
+                   the glass, and a big offset circle spills its far side over the world.
+                 - **OVERLAP SHAPES THAT SHARE AN EDGE.** The sword's point is its own triangle and it
+                   runs well into the body: butted exactly edge-to-edge it came back with a 3 px hole
+                   across the blade — found by SAMPLING the render, not by eye.
 
 ## The hero rig (`hero.zig`)
 
@@ -1047,6 +1099,9 @@ sword carry, the deep lean) belongs to the hold-B RUN only — gate run-only flo
 - **Swap right-hand armament:** **D-pad RIGHT** / **Q** — sword ↔ bow. That is ER's own binding for the
   right-hand slot, and taking it back is why **the pad has no camera zoom any more** (owner's call; ER
   has none either, its D-pad being four armament and item cycles). The wheel still zooms on kb+m.
+- **Cycle the arrow:** **D-pad UP** / **Y** — plain ↔ fire (see THE BOW). Up is the cross's one empty
+  slot, and it mirrors D-pad DOWN / **T** cycling the quick item. Not gated on the bow being out:
+  choosing your ammunition is not an action.
 - **Guard:** hold **L1/LB** or the **RIGHT MOUSE BUTTON** (ER's own keyboard default for the left
   hand). HELD, never toggled, and never buffered — see GUARDING.
 - **Aim:** hold **L2** or — with the bow out — the **RIGHT MOUSE BUTTON**, which is free to take it
@@ -1109,6 +1164,24 @@ go to the string.
   the same red flash a dry flask gets, and the quiver is checked BEFORE the stamina is charged — a loose
   that never happened must not bill him for it. The count lives in its own short box under the right-hand
   slot (ER's own place for it), and only while the bow is what he is holding.
+- **AND THERE ARE TWO KINDS OF THEM** — plain, and the **FIRE ARROW**, cycled on **D-pad Up / Y** (Up
+  because it is the cross's one empty slot, mirroring Down cycling the quick item). It is the game's ONLY
+  source of non-physical damage: `hero.fireTipped` hangs fire damage worth `FIRE_ARROW_FRAC` (0.5) of the
+  shaft's own physical ON TOP of it, PoE2's "adds X fire damage" — the physical is untouched, and the
+  fraction rides the quick shot and the aimed one in proportion so the snapshot never becomes the better
+  of the two. Five of them to ten plain (`combat.FIRE_ARROWS_MAX`), so it is a shot you choose a target
+  for. See RESISTANCES.
+  - **THE SELECTED KIND IS THE ONE THAT FLIES**, empty or not: a dry fire quiver refuses rather than
+    quietly loosing a plain shaft you did not ask for.
+  - **THE ARROW HE DREW IS THE ARROW THAT FLIES** (`Hero.shotArrow`). The shaft leaves a few frames after
+    the draw, so the kind is LATCHED at `startShot` rather than read at the loose, and cycling is refused
+    mid-loose besides.
+  - **THE FLAME IS THE PROPS' FLAME** — `.flame` (emissive, translucent, guttering) and `propart`'s own
+    fire palette, because a second kind of fire in one world reads as a different substance. Two things are
+    its own: it streams BACKWARD down the flight axis instead of climbing +Y, and it is authored off a
+    fixed seed so every shaft matches. **AND IT IS TONGUES, NOT A BLOB** — the first pass was two blobs and
+    came back a faceted yellow lemon stuck on a stick; the HUD icon made the same mistake with a disc
+    behind the pile and read as a ball. Both are tapered tongues trailing off the head now.
 - **THE AIM PUSHES THE EYE IN PAST HIM** (`camera.AIM_DIST`, blended by `CamRig.aimB` off the hero's own
   stance blend) and **FADES HIM OUT** while it does (`game.AIM_FADE` → `gfx.Scene.setFade`). Two rules:
   the player's own `dist` is never written, so dropping L2 returns to the zoom HE chose rather than to a
@@ -1136,6 +1209,59 @@ go to the string.
 - Shots `20f`..`20r`: the carry (no shield on that arm), the aim from three bearings, a CROP of the string
   and nocked shaft, the loose on the frame the string snaps home, the quick shot's own raise, a shaft in
   flight, the HUD cross, the AIM CAMERA with him faded out under it, and the quiver both full and dry.
+  `20s`..`20u`: a FIRE shaft in flight in the plain one's exact framing so the two streaks are comparable,
+  the burning head cropped from the FRONT QUARTER (side-on is mostly trail, with the head buried in it),
+  and the ammo box carrying the other arrow.
+
+## RESISTANCES (`combat.zig`) — PoE2's four, and physical is what we already deal
+
+Damage is TYPED. A `Hit` carries physical `dmg` plus an optional `elem` bundle (`combat.Elems`), and
+`Vitals.hit` puts each element through the body's own `Resists` on the way in. Every blow authored before
+this exists is pure physical and its arithmetic did not move.
+
+- **PHYSICAL IS NOT ONE OF THE FOUR.** `Elem` is fire / cold / lightning / chaos, exactly PoE2's, and what
+  mitigates physical there is ARMOUR — which does not exist here yet, so physical arrives whole. Do not
+  quietly add a "physical resistance" to the table; the day armour lands it is its own curve
+  (`A/(A + 5*dmg)`), not a fifth percentage.
+- **75 IS THE CAP, AND NEGATIVE AMPLIFIES.** `RES_CAP` 75 % however much is stacked, `RES_FLOOR` −100
+  (exactly double damage). Stored UNCAPPED and capped on READ (`Resists.at` vs `.raw`), so a creature
+  authored at 90 still reads 90 on a sheet while taking damage at 75 — PoE2's own split.
+- **A SPREAD IS WRITTEN BY NAME** — `combat.resists(.{ .fire = -45, .cold = 20 })`. The field names are
+  matched against the enum at comptime, so a rename is a compile error and an omitted element is a 0. An
+  array literal in enum order is how a four-wide row silently shifts the day there is a fifth element.
+- **POISE AND STANCE BELONG TO THE BLOW, NOT THE BODY.** A creature that shrugs off the fire still flinches
+  from the arrow. And the shield's chip (`guardChip`) is DAMAGE ONLY for the same reason from the other
+  side — it returns a `Hit` now, so the chip's elemental share meets the blocker's resistances instead of
+  arriving as raw HP, but it carries none of the stagger the guard exists to eat. That is what the block
+  test caught: scaling the whole hit put the blow's full poise through a raised shield.
+- **A SHIELD IS BILLED ON THE RAW BLOW** (`Hit.raw`, physical + every element, unresisted) — the arm behind
+  a burning arrow does not know what you resist. Same for `foe.worseBlow`'s "which of these was worse".
+- **TWO OF THE FOUR ARE LIVE.** **FIRE** — the hero's fire arrow, and the kobold sling's burning clump.
+  **CHAOS** — the brood mother's spit AND her pools, which are one fluid and so one element (owner's
+  call). Cold and lightning have no source yet and every table that carries them says so.
+- **EVERY FOE CARRIES ITS OWN, AUTHORED WHERE ITS HP IS** (`initFoe(..).withRes(..)`), one table per
+  creature and per FILE — the kobold's three roles share one because they are one creature, and so do the
+  brood mother and her hatchlings, at two ages:
+
+  | creature | fire | cold | lightning | chaos | why |
+  | --- | --- | --- | --- | --- | --- |
+  | gaping toad | +40 | −30 | −25 | 0 | wet out of a bog; cold-blooded, and wet conducts |
+  | skeletal archer | −35 | +60 | 0 | +45 | dry bone burns; no flesh to freeze or to poison |
+  | one-eyed ogre | +30 | +30 | −15 | +20 | too much mass for any of it, but it stands in an open field |
+  | kobold (all three) | −45 | +20 | 0 | 0 | fur goes up — the fire arrow IS the answer to a warband, and they throw it themselves |
+  | brood mother / broodling | −25 | +35 | 0 | +75 | chitin and its own acid, hung about with silk |
+  | egg sac | −70 | 0 | 0 | +75 | dry silk over a membrane: the one thing in her nest that really burns |
+
+- **NOTHING GRANTS THE HERO ANY YET, AND THE SHEET SAYS SO ON ITS OWN ROWS** — Character menu >
+  **RESISTANCES**, a second read-only list beside ATTRIBUTES, rows walked off `combat.Elem` so a fifth
+  element is on it the moment it has a name. It shows all four at **0%** on purpose (owner's call: show
+  them even at 0), each with a footnote saying what deals that element and that nothing grants any yet —
+  `combat.elemSays`, which is `stats.governs` for damage types and rots the same honest way. The value
+  column prints the STACKED number with the CAP beside it when they differ (`90% (75%)`), PoE2's own
+  display. `makeWhole` CARRIES RESISTANCES ACROSS a grace: they are what he is, not a meter to refill, and
+  rebuilding the vitals from the sheet would silently wipe the first ring that ever grants one.
+- **AND THE DEBUG ROW READS THE LOCKED FOE'S** (`game.foeResists`), alongside which arrow is on the
+  string — the four are most legible against a named target.
 
 ## PERFORMANCE: how a 560 m world stays cheap (`env.zig`)
 

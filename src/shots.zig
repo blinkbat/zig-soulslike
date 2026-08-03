@@ -79,6 +79,16 @@ fn stepFoe(f: anytype, frames: i32, hero: rl.Vector3) void {
     while (k < frames) : (k += 1) _ = f.update(SHOT_DT, hero, game.PLAY_HALF, .{});
 }
 
+/// `stepFoe` for a WARBAND AND WHAT IT THREW: the band drives its own projectiles through `spawnClump`, so
+/// a shot of one in flight has to advance both together or the clump never leaves the pouch.
+fn stepBandAndShots(g: *Game, frames: i32, hero: rl.Vector3) void {
+    var k: i32 = 0;
+    while (k < frames) : (k += 1) {
+        _ = g.band.update(SHOT_DT, hero, game.PLAY_HALF, .{}, g, game.spawnClump);
+        game.stepArrowsForShot(g, SHOT_DT);
+    }
+}
+
 /// A STAGE THAT DID NOT TAKE IS A SHOT OF THE WRONG THING, and silently: a `swapArm` the harness refused leaves every "bow" frame below it photographing a man with a sword.
 fn must(ok: bool, what: []const u8) void {
     if (ok) return;
@@ -397,10 +407,21 @@ pub fn runShots(g: *Game) void {
             g.hero.update(dt, 0, 0, null);
             g.hero.pose();
         }
-        game.shootShaftForShot(g, mathx.ground(0, -22));
+        game.shootShaftForShot(g, mathx.ground(0, -22), .plain);
         k = 0;
         while (k < 7) : (k += 1) game.stepShaftsForShot(g, dt);
         shootPortrait(g, "shots/20n_bow_shaft.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.06, 6.0);
+        // THE FIRE ARROW, in the SAME framing as the plain shaft above so the two are comparable, and
+        // then cropped onto the head itself — the flame wad is 10 cm of the frame at 6 m.
+        game.clearShaftsForShot(g);
+        game.shootShaftForShot(g, mathx.ground(0, -22), .fire);
+        k = 0;
+        while (k < 7) : (k += 1) game.stepShaftsForShot(g, dt);
+        shootPortrait(g, "shots/20s_fire_shaft.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.06, 6.0);
+        // …from the FRONT QUARTER, not side-on: the streak lies down the flight line, so a broadside crop
+        // is mostly trail with the head buried in it.
+        if (game.flyingPointForShot(g, .firearrow)) |at| shootPortrait(g, "shots/20t_fire_head.png", at, LIT_YAW + 20, 0.04, 1.3);
+        game.clearShaftsForShot(g);
         shootClear(g, "shots/20o_bow_hud.png", LIT_YAW + 150, 0.18, 4.6);
         g.hero.setAim(true);
         k = 0;
@@ -418,6 +439,12 @@ pub fn runShots(g: *Game) void {
         g.hero.pose();
         shootClear(g, "shots/20r_bow_ammo_dry.png", LIT_YAW + 150, 0.18, 4.6);
         g.hero.quiver.arrows = hadArrows;
+        // …and the ammo box carrying the OTHER arrow: the count is the fire quiver's and the icon burns.
+        must(g.hero.cycleArrow(), "the arrow would not cycle");
+        g.hero.update(dt, 0, 0, null);
+        g.hero.pose();
+        shootClear(g, "shots/20u_fire_ammo.png", LIT_YAW + 150, 0.18, 4.6);
+        must(g.hero.cycleArrow(), "the arrow would not cycle back");
         g.rig.aimB = 0;
         // PUT IT AWAY, and leave the field as the rest of the harness expects to find it.
         g.hero.setAim(false);
@@ -838,7 +865,7 @@ pub fn runShots(g: *Game) void {
         priest.healWanted = true;
         priest.castCd = 0;
         var cf: i32 = 0;
-        while (cf < 64) : (cf += 1) _ = g.band.update(SHOT_DT, far, game.PLAY_HALF, .{}, g, game.spawnStone);
+        while (cf < 64) : (cf += 1) _ = g.band.update(SHOT_DT, far, game.PLAY_HALF, .{}, g, game.spawnClump);
         shootFoe(g, priest, "shots/67_kobold_cast.png", LIT_YAW + 16, 0.10, 4.4);
         shootFoe(g, priest, "shots/67b_kobold_cast_far.png", LIT_YAW + 16, 0.14, 13.0);
 
@@ -852,6 +879,17 @@ pub fn runShots(g: *Game) void {
         while (sling.state != .whirl and g2 < 600) : (g2 += 1) _ = sling.update(SHOT_DT, band8, game.PLAY_HALF, .{});
         stepFoe(sling, 16, band8);
         shootFoe(g, sling, "shots/68_kobold_whirl.png", LIT_YAW + 18, 0.10, 3.8);
+        // …and a CROP of the loaded pouch, because a 3 cm flame is unjudgeable in a whole-body frame.
+        shootPortrait(g, "shots/68b_kobold_sling_lit.png", sling.slingPoint(), LIT_YAW + 18, 0.04, 1.1);
+        // THE THROW ITSELF: run the band until the clump is in the air, then fly it clear of the pouch, so
+        // the shot holds the burning lump, its ember streak AND the sparks the release left behind.
+        var g5: i32 = 0;
+        while (game.flyingPointForShot(g, .clump) == null and g5 < 900) : (g5 += 1) stepBandAndShots(g, 1, band8);
+        must(game.flyingPointForShot(g, .clump) != null, "the slinger never threw a clump");
+        stepBandAndShots(g, 5, band8); // …far enough out of the pouch to be its own subject
+        if (game.flyingPointForShot(g, .clump)) |at| shootPortrait(g, "shots/68c_kobold_clump.png", at, LIT_YAW + 18, 0.05, 1.6);
+        shootFoe(g, sling, "shots/68d_kobold_sling_sparks.png", LIT_YAW + 18, 0.10, 4.2);
+        game.clearShaftsForShot(g); // clears BOTH pools — see `clearQuivers`
         sling.* = koboldmod.Kobold.spawnAs(.slinger, kc, 0, 1.0, 0.85);
         sling.biteCd = 0;
         var g3: i32 = 0;
@@ -1015,7 +1053,7 @@ pub fn runShots(g: *Game) void {
     g.menu.cursor = 0;
     drawScene(g);
     hud(g, SHOT_DT);
-    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet);
+    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
     snap("shots/12_menu_main.png");
 
     g.retro.values[gfx.RF_GAMEBOY] = 1.0; // show a live gauge on the retro card
@@ -1023,7 +1061,7 @@ pub fn runShots(g: *Game) void {
     g.menu.cursor = gfx.RF_GAMEBOY;
     drawScene(g);
     hud(g, SHOT_DT);
-    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet);
+    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
     snap("shots/13_menu_retro.png");
     g.menu.screen = .closed;
 
@@ -1170,19 +1208,26 @@ fn chestShots(g: *Game) void {
     g.menu.cursor = 0;
     _ = g.menu.update(&g.retro, SHOT_DT, &g.bag);
     drawScene(g);
-    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet);
+    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
     snap("shots/106e_character_menu.png");
     g.menu.screen = .inventory;
     g.menu.cursor = 0;
     drawScene(g);
-    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet);
+    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
     snap("shots/106f_inventory.png");
     // THE CHARACTER SHEET, on a row that HAS a footnote — the blank-footed rows prove nothing.
     g.menu.screen = .attributes;
     g.menu.cursor = @intFromEnum(stats.Attr.endurance);
     drawScene(g);
-    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet);
+    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
     snap("shots/106g_attributes.png");
+    // …and the four RESISTANCES, on a row whose footnote has something to say — fire is the only one of
+    // them anything in the world deals.
+    g.menu.screen = .resistances;
+    g.menu.cursor = @intFromEnum(combat.Elem.fire);
+    drawScene(g);
+    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
+    snap("shots/106h_resistances.png");
     g.menu.screen = .closed;
 
     // …and PUT THE WORLD BACK.

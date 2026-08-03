@@ -222,8 +222,6 @@ const BOW_QUICK_DUR: f32 = 0.62; // R1: snap it up, loose, drop it — the shot 
 const BOW_QUICK_AT: f32 = 0.55;
 const BOW_SHOT_DUR: f32 = 0.34; // R2 out of a HELD aim: the string is already back…
 const BOW_SHOT_AT: f32 = 0.22;
-/// How fast the bow comes up and the string reaches full draw once L2 goes down.
-const BOW_AIM_RATE: f32 = 5.5;
 const BOW_SNAP: f32 = 0.06; // as a fraction of the shot's own duration
 pub const BOW_QUICK_HIT = combat.Hit{ .dmg = 10, .poise = 5 };
 pub const BOW_AIMED_HIT = combat.Hit{ .dmg = 23, .poise = 11, .stance = 8 };
@@ -648,6 +646,8 @@ pub const Hero = struct {
     }
 
     fn tickClocks(self: *Hero, dt: f32) void {
+        // The one-frame loose flag is cleared HERE, not in `updateShot`: a frame long enough to cross both the release knot and the end of the shot sets it and drops `shooting` in the same call, and nothing would ever run `updateShot` again to clear it — so game.zig loosed a fresh shaft every frame after. Every advance path passes through this prologue.
+        self.loosed = false;
         self.elapsed += dt;
         self.ageTrail(dt);
         self.blendT = @min(self.blendT + dt, mathx.LONG_AGO);
@@ -785,8 +785,7 @@ pub const Hero = struct {
 
     /// Call in place of move/attack while `shooting`.
     pub fn updateShot(self: *Hero, dt: f32, faceYaw: ?f32) void {
-        self.tickClocks(dt);
-        self.loosed = false;
+        self.tickClocks(dt); // clears `loosed`
         self.speed = 0;
         self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
         if (faceYaw) |ty| self.facing = mathx.approachAngle(self.facing, ty, TURN_TO_SHOT * dt);

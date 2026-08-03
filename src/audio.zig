@@ -16,7 +16,6 @@ const Svf = struct {
     lp: f32 = 0,
     bp: f32 = 0,
 
-    /// One sample.
     fn step(s: *Svf, x: f32, cut: f32, res: f32) struct { lp: f32, bp: f32, hp: f32 } {
         const f = 2.0 * mathx.sinf(std.math.pi * mathx.clampF(cut, 20.0, SRF / 6.0) / SRF);
         const q = mathx.clampF(1.6 - 1.55 * res, 0.05, 2.0);
@@ -291,19 +290,16 @@ const AIR_NEAR_GRASS: f32 = 4200;
 
 // Order is the BANK table's order below; the two are pinned at comptime.
 pub const Id = enum {
-    // the hero on his feet
     step_soft,
     step_hard,
     step_sprint,
     step_stone,
     step_water,
     roll,
-    // the hero's sword
     swing_light,
     swing_heavy,
     hit_light,
     hit_heavy,
-    // the hero taking it
     hurt,
     hurt_heavy,
     stagger,
@@ -312,14 +308,12 @@ pub const Id = enum {
     refused,
     death,
     respawn,
-    // the gaping toad
     toad_hop,
     toad_lunge,
     toad_gape,
     toad_chomp,
     toad_hurt,
     toad_die,
-    // the skeletal archer
     bow_draw,
     bow_loose,
     arrow_hit,
@@ -347,7 +341,6 @@ pub const Id = enum {
     kobold_bite, // teeth: a snap with a wet click in it
     kobold_hurt,
     kobold_die, // a yelp that falls apart
-    // THE BROOD.
     spider_hiss, // the rear, and the squat before she lays: air forced out through something clenched
     spider_spit,
     spider_bite, // two fangs and the horn claws crossing behind them
@@ -360,7 +353,7 @@ pub const Id = enum {
     brood_die, // a wet pop, and it is done
     sac_lay, // something heavy and soft arriving on the ground
     sac_hit,
-    sac_hatch, // the membrane splitting and three of them coming out at once
+    sac_hatch, // the membrane splitting and what was inside it coming out
     sac_burst,
     acid_splash, // the glob landing and spreading
     acid_burn,
@@ -396,10 +389,7 @@ const TRIM_AMBIENCE: f32 = 0.625;
 const TRIM_COMBAT: f32 = 0.55;
 const TRIM_SFX: f32 = 0.65;
 
-/// THE AUTHOR-SIDE LEVEL of each family, paid before the player's dial ever sees it. Ambience has always
-/// had one; the fight and the chrome sat at unity, which made every voice in them as loud as it was
-/// written and left the dial as the only way down (owner's call: quieter at the SOURCE, so a player who
-/// has never touched the sliders hears the mix as intended).
+/// THE AUTHOR-SIDE LEVEL of each family, paid before the player's dial sees it. No family ships at unity (owner's call: quieter at the SOURCE, so an untouched slider still hears the intended mix).
 fn submixTrim(m: Submix) f32 {
     return switch (m) {
         .sfx => TRIM_SFX,
@@ -1094,7 +1084,6 @@ fn mkMenuBack(r: *Rack) void {
 }
 
 fn mkWind(r: *Rack) void {
-    // THE BED.
     var body = Svf{};
     var whistle = Svf{};
     var top = Pole{};
@@ -1117,7 +1106,7 @@ fn mkWind(r: *Rack) void {
         const s = top.step(nz, 5200) * mathx.smoothstep(0.55, 1.0, g3);
         const m = moan.step(nz, 52.0 + 34.0 * g3, 0.55).bp;
 
-        // `norm` sets the LEVEL, so this is purely about WHERE the wind is, and the answer is spectral: air absorbs high frequencies far faster than low ones (ISO 9613-2 puts 4 kHz at roughly fifteen times the loss per hundred metres that 250 Hz takes), so near air is bright and distant air is nothing but weight.
+        // Distance is SPECTRAL, not level (`norm` owns the level): ISO 9613-2 puts 4 kHz at ~15x the loss per 100 m that 250 Hz takes, so far air is nothing but weight.
         work[i] = b * (0.30 + 0.70 * g2) * 0.94 +
             w * (0.10 + 0.50 * g1) * 0.20 +
             s * 0.05 +
@@ -1228,7 +1217,6 @@ const BANK = [NV]Row{
     .{ .make = mkStepSoft, .gain = 0.075, .jit = 0.13, .vjit = 0.30, .vars = 4, .poly = 3 },
     .{ .make = mkStepHard, .gain = 0.100, .jit = 0.12, .vjit = 0.26, .vars = 4, .poly = 3 },
     .{ .make = mkStepSprint, .gain = 0.120, .jit = 0.11, .vjit = 0.24, .vars = 4, .poly = 3 },
-    // The two SURFACE overlays.
     .{ .make = mkStepStone, .gain = 0.055, .jit = 0.14, .vjit = 0.28, .vars = 4, .poly = 3 },
     .{ .make = mkStepWater, .gain = 0.130, .jit = 0.13, .vjit = 0.26, .vars = 4, .poly = 3 },
     // A ROLL IS QUIET.
@@ -1281,7 +1269,6 @@ const BANK = [NV]Row{
     .{ .make = mkKoboldBite, .gain = battle(0.56), .mix = .combat, .jit = 0.20, .vjit = 0.26, .vars = 6, .poly = 3, .reach = 40 },
     .{ .make = mkKoboldHurt, .gain = battle(0.60), .mix = .combat, .jit = 0.24, .vjit = 0.30, .vars = 6, .poly = 4, .reach = 48 },
     .{ .make = mkKoboldDie, .gain = battle(0.68), .mix = .combat, .jit = 0.18, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 58 },
-    // THE BROOD.
     .{ .make = mkSpiderHiss, .gain = battle(0.56), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 66 },
     .{ .make = mkSpiderSpit, .gain = battle(0.58), .mix = .combat, .jit = 0.12, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 62 },
     .{ .make = mkSpiderBite, .gain = battle(0.64), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 34 },
@@ -1389,7 +1376,7 @@ fn panFor(side: f32, width: f32) f32 {
     return mathx.clampF(0.5 - width * side, 0.04, 0.96);
 }
 
-/// Build the whole bank. ~40 voices, most under half a second — a few hundred milliseconds of synthesis at launch, once.
+/// Build the whole bank at launch — a few hundred milliseconds of synthesis, once.
 pub fn init() void {
     loadSettings(); // before the device: the dials are data, and they are what the first bed is mixed at
     rl.initAudioDevice();
@@ -1508,13 +1495,12 @@ pub fn restFireOn(on: bool) void {
     }
 }
 
-/// The bed's level, 0..1, set per frame by whatever is running the rest — it pays the AMBIENCE dial like every other background voice, because a player who has turned the background down means it.
+/// The bed's level, 0..1, set per frame — it pays the AMBIENCE dial like every other background voice.
 pub fn restFireLevel(v: f32) void {
     const m = restFire orelse return;
     rl.setMusicVolume(m, mathx.clampF(v, 0, 1) * userVol[@intFromEnum(Submix.ambience)]);
 }
 
-/// PUMP THE STREAM.
 pub fn tickStreams() void {
     const m = restFire orelse return;
     if (rl.isMusicStreamPlaying(m)) rl.updateMusicStream(m);
@@ -1551,7 +1537,6 @@ pub fn deinit() void {
     rl.closeAudioDevice();
 }
 
-/// Where the ears are.
 pub fn listen(pos: rl.Vector3, right: rl.Vector3) void {
     lisPos = pos;
     lisRight = right;
@@ -1608,7 +1593,6 @@ fn bedLevel(row: Row) f32 {
     return levelFor(row, 1.0, 1.0);
 }
 
-/// Where the dials live between runs.
 pub const SETTINGS_PATH = "settings.cfg";
 
 pub fn loadSettings() void {
@@ -1681,7 +1665,6 @@ fn emit(id: Id, vol: f32, pan: f32, pitchScale: f32) void {
     trigger(s.snd[pick % row.vars][pick / row.vars % row.poly], row, vol, pan, pitchScale);
 }
 
-/// Set one alias up and start it.
 fn trigger(snd: rl.Sound, row: Row, vol: f32, pan: f32, pitchScale: f32) void {
     // Pitch AND level wobble, both per trigger.
     const vj = 1.0 - @abs(rng.signed()) * row.vjit;

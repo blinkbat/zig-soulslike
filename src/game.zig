@@ -201,6 +201,17 @@ fn rehomeFoes(g: *Game) void {
     inline for (FOE_GROUPS) |f| @field(g, f.field).reset(&g.map);
 }
 
+/// EVERY LIST THE GAME TARGETS, walked ONCE: the five `FOE_GROUPS`, plus any SECOND list a group keeps on the field (`liveExtraConst` — the brood's sacs, which are real targets with their own HP). Spliced in by hand per site instead, the answers drift apart: four sites had the sacs and `rayFoeDist` never did, so an aimed shaft converged straight past a clutch.
+fn eachTarget(g: *const Game, ctx: anytype, comptime visit: anytype) void {
+    inline for (FOE_GROUPS) |gr| {
+        visit(ctx, @field(g, gr.field).liveConst(), gr.kind);
+        // The extra list answers for its own members' kinds (`Sac.kind()`), so the row carries none.
+        if (comptime @hasDecl(@FieldType(Game, gr.field), "liveExtraConst")) {
+            visit(ctx, @field(g, gr.field).liveExtraConst(), @as(?FoeKind, null));
+        }
+    }
+}
+
 fn groupCap(comptime field: []const u8) usize {
     const G = @FieldType(Game, field);
     for (@typeInfo(G).@"struct".fields) |f| {
@@ -472,12 +483,17 @@ pub fn rehomeChestsForShot(g: *Game) void {
     rehomeChests(g);
 }
 
-/// Empty the field, and put it back FROM THE MAP — both off FOE_GROUPS.
-pub fn clearFoesForShot(g: *Game) void {
+/// EMPTY THE FIELD — through each group's own `clear()` where it has one, because zeroing `n` leaves everything a group owns BESIDES its members (the brood's sacs and acid) standing on the ground.
+fn clearFoes(g: *Game) void {
     inline for (FOE_GROUPS) |f| {
         const G = @FieldType(Game, f.field);
         if (comptime @hasDecl(G, "clear")) @field(g, f.field).clear() else @field(g, f.field).n = 0;
     }
+}
+
+/// …and put it back FROM THE MAP — both off FOE_GROUPS.
+pub fn clearFoesForShot(g: *Game) void {
+    clearFoes(g);
 }
 pub fn rehomeFoesForShot(g: *Game) void {
     rehomeFoes(g);
@@ -528,9 +544,7 @@ fn interact(g: *Game) void {
 fn tickRest(g: *Game, dt: f32) void {
     g.rest.update(dt);
     if (g.rest.justEntered) {
-        inline for (FOE_GROUPS) |f| {
-            @field(g, f.field).n = 0;
-        }
+        clearFoes(g);
         clearQuivers(g);
         g.lock = null;
         // THE PLAYER'S OWN FILTERS STAY (owner: keep our normal retro filters here, amp up warmth only).
@@ -631,21 +645,31 @@ fn camAimPoint(g: *const Game) rl.Vector3 {
 
 const AIM_CONVERGE_MIN: f32 = 3.0;
 
-/// Nearest live foe along `dir`, or null.
-fn rayFoeDist(g: *const Game, origin: rl.Vector3, dir: rl.Vector3) ?f32 {
-    var best: ?f32 = null;
-    inline for (FOE_GROUPS) |gr| {
-        for (@field(g, gr.field).liveConst()) |*f| {
+/// Nearest live target along `dir`, or null.
+const RayCtx = struct {
+    origin: rl.Vector3,
+    dir: rl.Vector3,
+    best: ?f32 = null,
+
+    fn visit(self: *RayCtx, foes: anytype, _: ?FoeKind) void {
+        for (foes) |*f| {
             if (!f.alive() or f.dying()) continue;
-            const oc = mathx.subV(f.centerWorld(), origin);
-            const along = oc.x * dir.x + oc.y * dir.y + oc.z * dir.z;
+            const oc = mathx.subV(f.centerWorld(), self.origin);
+            const along = oc.x * self.dir.x + oc.y * self.dir.y + oc.z * self.dir.z;
             if (along <= 0) continue; // behind the eye
             const r = f.hurtRadius();
-            if (mathx.lenV(oc) * mathx.lenV(oc) - along * along > r * r) continue; // the ray misses it
-            if (best == null or along < best.?) best = along;
+            // The perpendicular gap, SQUARED throughout — `lenV(oc)*lenV(oc)` took two square roots to arrive back at the dot product it started from.
+            const oc2 = oc.x * oc.x + oc.y * oc.y + oc.z * oc.z;
+            if (oc2 - along * along > r * r) continue; // the ray misses it
+            if (self.best == null or along < self.best.?) self.best = along;
         }
     }
-    return best;
+};
+
+fn rayFoeDist(g: *const Game, origin: rl.Vector3, dir: rl.Vector3) ?f32 {
+    var ctx = RayCtx{ .origin = origin, .dir = dir };
+    eachTarget(g, &ctx, RayCtx.visit);
+    return ctx.best;
 }
 
 fn forwardAimPoint(g: *const Game) rl.Vector3 {
@@ -789,8 +813,7 @@ pub fn drawScene(g: *Game) void {
     g.vignette.draw(); // the vignette darkens the corners the chrome lives in
     drawRestFade(g);
     drawHurtFlash(g); // red screen-edge pulse when the hero is hit (peripheral feedback)
-    inline for (FOE_GROUPS) |f| drawFoeBars(g, @field(g, f.field).live());
-    drawFoeBars(g, g.brood.liveSacs());
+    drawFoeBars(g);
     drawLockDot(g); // the ER lock-on reticle
     drawDeathOverlay(g); // the YOU DIED card + respawn fade, over everything
 }
@@ -1558,30 +1581,32 @@ const MELEE_AIM_DOT: f32 = 0.35;
 /// The eye line the pitch is measured FROM — his shoulders, which is roughly where the flat arc lives.
 const MELEE_AIM_EYE: f32 = 1.35;
 
-fn markIn(g: *const Game, foes: anytype, fwd: rl.Vector3, best: *?rl.Vector3, bestD: *f32) void {
-    for (foes) |*f| {
-        if (!f.alive() or f.dying()) continue;
-        const d = mathx.distXZ(g.hero.pos, f.pos);
-        if (d >= bestD.*) continue;
-        const to = mathx.dirXZ(g.hero.pos, f.pos);
-        if (d > 0.2 and to.x * fwd.x + to.z * fwd.z < MELEE_AIM_DOT) continue;
-        bestD.* = d;
-        best.* = f.lockPoint();
+const MarkCtx = struct {
+    g: *const Game,
+    fwd: rl.Vector3,
+    best: ?rl.Vector3 = null,
+    bestD: f32 = MELEE_AIM_R,
+
+    fn visit(self: *MarkCtx, foes: anytype, _: ?FoeKind) void {
+        for (foes) |*f| {
+            if (!f.alive() or f.dying()) continue;
+            const d = mathx.distXZ(self.g.hero.pos, f.pos);
+            if (d >= self.bestD) continue;
+            const to = mathx.dirXZ(self.g.hero.pos, f.pos);
+            if (d > 0.2 and to.x * self.fwd.x + to.z * self.fwd.z < MELEE_AIM_DOT) continue;
+            self.bestD = d;
+            self.best = f.lockPoint();
+        }
     }
-}
+};
 
 fn meleeMark(g: *const Game) ?rl.Vector3 {
     if (activeLock(g)) |li| {
         if (mathx.distXZ(g.hero.pos, foePos(g, li)) <= MELEE_AIM_R * 2.0) return foeLockPoint(g, li);
     }
-    const fwd = mathx.headingDir(g.hero.facing);
-    var best: ?rl.Vector3 = null;
-    var bestD: f32 = MELEE_AIM_R;
-    inline for (FOE_GROUPS) |gr| {
-        markIn(g, @field(g, gr.field).liveConst(), fwd, &best, &bestD);
-    }
-    markIn(g, g.brood.liveSacsConst(), fwd, &best, &bestD);
-    return best;
+    var ctx = MarkCtx{ .g = g, .fwd = mathx.headingDir(g.hero.facing) };
+    eachTarget(g, &ctx, MarkCtx.visit);
+    return ctx.best;
 }
 
 fn meleePitch(g: *const Game) ?f32 {
@@ -1712,13 +1737,10 @@ fn lockScreenX(g: *const Game, r: FoeRef) ?f32 {
     return s.x;
 }
 
-fn acquireLock(g: *Game) ?FoeRef {
-    const cx = @as(f32, @floatFromInt(rl.getScreenWidth())) * 0.5;
-    var best: ?FoeRef = null;
-    var bestScore: f32 = 1e9;
-    inline for (FOE_GROUPS) |gr| considerLock(g, @field(g, gr.field).live(), gr.kind, cx, &best, &bestScore);
-    considerLock(g, g.brood.liveSacs(), .brood_sac, cx, &best, &bestScore);
-    return best;
+fn acquireLock(g: *const Game) ?FoeRef {
+    var ctx = LockCtx{ .g = g, .cx = @as(f32, @floatFromInt(rl.getScreenWidth())) * 0.5 };
+    eachTarget(g, &ctx, LockCtx.visit);
+    return ctx.best;
 }
 
 fn memberKind(f: anytype, group: ?FoeKind) FoeKind {
@@ -1726,41 +1748,60 @@ fn memberKind(f: anytype, group: ?FoeKind) FoeKind {
     return group.?;
 }
 
-// One group's contribution to acquireLock — generic over the foe type (the shared contract).
-fn considerLock(g: *Game, foes: anytype, kind: ?FoeKind, cx: f32, best: *?FoeRef, bestScore: *f32) void {
-    for (foes, 0..) |*f, i| {
-        if (!f.alive() or f.dying() or mathx.distXZ(g.hero.pos, f.pos) > MAX_LOCK_R) continue;
-        const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
-        const sx = lockScreenX(g, r) orelse continue;
-        const score = @abs(sx - cx);
-        if (score < bestScore.*) {
-            bestScore.* = score;
-            best.* = r;
+// A fresh acquire: nearest to screen-centre, across every target list.
+const LockCtx = struct {
+    g: *const Game,
+    cx: f32,
+    best: ?FoeRef = null,
+    bestScore: f32 = 1e9,
+
+    fn visit(self: *LockCtx, foes: anytype, kind: ?FoeKind) void {
+        for (foes, 0..) |*f, i| {
+            if (!f.alive() or f.dying() or mathx.distXZ(self.g.hero.pos, f.pos) > MAX_LOCK_R) continue;
+            const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
+            const sx = lockScreenX(self.g, r) orelse continue;
+            const score = @abs(sx - self.cx);
+            if (score < self.bestScore) {
+                self.bestScore = score;
+                self.best = r;
+            }
         }
     }
-}
+};
+
+// …and the flick: the nearest target PAST the current one, in the flicked direction.
+const CycleCtx = struct {
+    g: *const Game,
+    cur: FoeRef,
+    curX: f32,
+    dir: f32,
+    best: ?FoeRef = null,
+    bestGap: f32 = 1e9,
+
+    fn visit(self: *CycleCtx, foes: anytype, kind: ?FoeKind) void {
+        for (foes, 0..) |*f, i| {
+            const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
+            if ((self.cur.kind == r.kind and self.cur.idx == i) or !f.alive() or f.dying()) continue;
+            if (mathx.distXZ(self.g.hero.pos, f.pos) > MAX_LOCK_R) continue;
+            const sx = lockScreenX(self.g, r) orelse continue;
+            const gap = (sx - self.curX) * self.dir;
+            if (gap > CYCLE_MIN_GAP and gap < self.bestGap) {
+                self.bestGap = gap;
+                self.best = r;
+            }
+        }
+    }
+};
+
+/// Screen pixels a candidate must sit PAST the current target to count as "the next one".
+const CYCLE_MIN_GAP: f32 = 5.0;
 
 fn cycleLock(g: *Game, dir: f32) void {
     const cur = g.lock orelse return;
     const curX = lockScreenX(g, cur) orelse return;
-    var best: ?FoeRef = null;
-    var bestGap: f32 = 1e9;
-    inline for (FOE_GROUPS) |gr| considerCycle(g, @field(g, gr.field).live(), gr.kind, cur, curX, dir, &best, &bestGap);
-    considerCycle(g, g.brood.liveSacs(), .brood_sac, cur, curX, dir, &best, &bestGap);
-    if (best) |b| g.lock = b;
-}
-fn considerCycle(g: *Game, foes: anytype, kind: ?FoeKind, cur: FoeRef, curX: f32, dir: f32, best: *?FoeRef, bestGap: *f32) void {
-    for (foes, 0..) |*f, i| {
-        const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
-        if ((cur.kind == r.kind and cur.idx == i) or !f.alive() or f.dying()) continue;
-        if (mathx.distXZ(g.hero.pos, f.pos) > MAX_LOCK_R) continue;
-        const sx = lockScreenX(g, r) orelse continue;
-        const gap = (sx - curX) * dir;
-        if (gap > 5.0 and gap < bestGap.*) {
-            bestGap.* = gap;
-            best.* = r;
-        }
-    }
+    var ctx = CycleCtx{ .g = g, .cur = cur, .curX = curX, .dir = dir };
+    eachTarget(g, &ctx, CycleCtx.visit);
+    if (ctx.best) |b| g.lock = b;
 }
 
 // The world-reload half of a hero death (ER: dying resets the field).
@@ -1772,15 +1813,23 @@ fn resetFoes(g: *Game) void {
 
 const HURT_BAR_WINDOW = 5.0;
 
-// Floating HP bars over ANY foe group (shared foe contract, one loop for all).
-fn drawFoeBars(g: *Game, foes: anytype) void {
-    const cam = g.rig.cam;
-    for (foes) |*f| {
-        if (!f.alive() or f.dying()) continue; // no bar over a corpse dissolving out
-        if (f.vit.sinceHit > HURT_BAR_WINDOW) continue; // only after a recent hit
-        const s = projectToScreen(cam, f.topWorld()) orelse continue; // skip if behind the camera
-        hud_.foeBar(s.x, s.y, f.vit.hpFrac(), f.staggered()); // size/colour/lift all live in hud
+// Floating HP bars over EVERY target (shared foe contract, one walk for all).
+const BarCtx = struct {
+    cam: rl.Camera3D,
+
+    fn visit(self: *const BarCtx, foes: anytype, _: ?FoeKind) void {
+        for (foes) |*f| {
+            if (!f.alive() or f.dying()) continue; // no bar over a corpse dissolving out
+            if (f.vit.sinceHit > HURT_BAR_WINDOW) continue; // only after a recent hit
+            const s = projectToScreen(self.cam, f.topWorld()) orelse continue; // skip if behind the camera
+            hud_.foeBar(s.x, s.y, f.vit.hpFrac(), f.staggered()); // size/colour/lift all live in hud
+        }
     }
+};
+
+fn drawFoeBars(g: *const Game) void {
+    const ctx = BarCtx{ .cam = g.rig.cam };
+    eachTarget(g, &ctx, BarCtx.visit);
 }
 
 // The glowing white reticle on the locked foe (ER's dot) — 2D + crisp, drawn after the 3D pass.

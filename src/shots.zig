@@ -1235,6 +1235,7 @@ fn editorShots(g: *Game) void {
 
     g.map.water = beforeWater;
     g.env.uploadWater(&g.map);
+    g.env.materialize(&g.map); // the paint re-sowed the world against a lake that is no longer there
 
     g.editor.setLayer(.props);
     g.editor.focus = mathx.ground(0, -12);

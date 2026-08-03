@@ -122,7 +122,7 @@ pub fn normV(a: rl.Vector3) rl.Vector3 {
     if (l < 1e-6) return v3(0, 0, 0);
     return v3(a.x / l, a.y / l, a.z / l);
 }
-/// Cross product. env.zig and gfx.zig each carry a private copy for their own frustum/axis-frame work; this is the one every OTHER caller should reach for.
+/// Cross product — the ONE copy, frustum planes and axis frames included.
 pub fn crossV(a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     return v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 }
@@ -153,6 +153,11 @@ pub fn mul(a: rl.Matrix, b: rl.Matrix) rl.Matrix {
 }
 pub fn mul3(a: rl.Matrix, b: rl.Matrix, c: rl.Matrix) rl.Matrix {
     return mul(mul(a, b), c);
+}
+
+/// Place a part authored at its own joint origin: rotate/scale (`anim`) about that origin, shift to the joint's rest offset in the parent frame, then into the parent's world. The non-bone rigs' counterpart to `hero.setJoint` — the toad and the spider each carried a byte-identical copy of it.
+pub fn placeAt(off: rl.Vector3, anim: rl.Matrix, parent: rl.Matrix) rl.Matrix {
+    return mul3(anim, tr(off.x, off.y, off.z), parent);
 }
 
 /// Hermite smoothstep of x across [a, b] → 0..1 (clamped; the GLSL smoothstep).

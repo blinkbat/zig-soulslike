@@ -986,9 +986,7 @@ fn castsInto(focus: rl.Vector3, pos: rl.Vector3, bound: f32, top: f32) bool {
     return mathx.dist2XZ(focus, pos) <= reach * reach;
 }
 
-fn cross(a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
-    return v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
-}
+const cross = mathx.crossV;
 
 fn inward(a: rl.Vector3, b: rl.Vector3, inside: rl.Vector3) rl.Vector3 {
     const n = mathx.normV(cross(a, b));
@@ -1450,13 +1448,15 @@ fn fillIndex(e: *Env, idx: *Index, want_flora: bool) void {
         const nfo = props.info(pr.kind);
         if (nfo.flora != want_flora) continue;
         const c = cellOf(pr.pos.x, pr.pos.z);
+        // THE VERTICAL EXTENT IS SEEDED FROM THE CELL'S OWN FIRST PROP, not from the datum: seeded at 0, a cell of props twenty metres up a hill reported the span 0..20, so its cull sphere grew ten metres and its centre sat ten metres below anything in it. Correct but needlessly fat — every cell on high or dug ground accepted a wider frustum than it owns.
+        const first = cursor[c] == idx.start[c];
         idx.items[cursor[c]] = @intCast(pi);
         cursor[c] += 1;
         idx.bound[c] = mathx.maxF(idx.bound[c], nfo.bound * pr.scale);
         idx.view[c] = mathx.maxF(idx.view[c], nfo.view);
         idx.top[c] = mathx.maxF(idx.top[c], nfo.top * pr.scale);
-        idx.ylo[c] = mathx.minF(idx.ylo[c], pr.pos.y);
-        idx.yhi[c] = mathx.maxF(idx.yhi[c], pr.pos.y);
+        idx.ylo[c] = if (first) pr.pos.y else mathx.minF(idx.ylo[c], pr.pos.y);
+        idx.yhi[c] = if (first) pr.pos.y else mathx.maxF(idx.yhi[c], pr.pos.y);
     }
 }
 

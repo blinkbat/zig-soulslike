@@ -20,10 +20,7 @@ const tr = mathx.tr;
 const scaleM = mathx.scaleM;
 const mul = mathx.mul;
 const mul3 = mathx.mul3;
-// Place a part authored at its joint origin: rotate/scale (`anim`) about that origin, shift to the joint's rest offset in the parent frame, then into the parent's world.
-fn place(off: rl.Vector3, anim: rl.Matrix, parent: rl.Matrix) rl.Matrix {
-    return mul3(anim, tr(off.x, off.y, off.z), parent);
-}
+const place = mathx.placeAt; // the shared joint placer — see mathx
 
 const HIDE = rgba(34, 38, 23, 255); // dark bog olive (a night thing)
 const HIDE_DK = rgba(20, 23, 14, 255); // warts, shadow, mottling — near-black

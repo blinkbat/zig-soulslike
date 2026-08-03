@@ -853,6 +853,4 @@ fn norm3(a: rl.Vector3) rl.Vector3 {
     if (l < 1e-6) return v3(0, 1, 0);
     return v3(a.x / l, a.y / l, a.z / l);
 }
-fn cross(a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
-    return v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
-}
+const cross = mathx.crossV;

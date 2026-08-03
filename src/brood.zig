@@ -20,9 +20,7 @@ const scaleM = mathx.scaleM;
 const mul = mathx.mul;
 const mul3 = mathx.mul3;
 
-fn place(off: rl.Vector3, anim: rl.Matrix, parent: rl.Matrix) rl.Matrix {
-    return mul3(anim, tr(off.x, off.y, off.z), parent);
-}
+const place = mathx.placeAt; // the shared joint placer — see mathx
 
 
 // PALETTE.
@@ -83,9 +81,6 @@ const STEP_SWING = 26.0; // deg the femur sweeps fore/aft
 const STEP_LIFT = 20.0;
 const KNEE_REST = 96.0; // the standing knee angle (deg) — high and folded
 const IDLE_BOB = 0.028; // a slow breathing rise/fall at rest
-
-/// HOW HIGH THE CLAW ARMS ARE CARRIED at rest (deg above the horizontal), before the spread adds more.
-const ARM_REST_LIFT = 24.0;
 
 const TURN_RATE = 2.4; // rad/s — she is SLOW to come round, and that is a real opening
 const TURN_RATE_B = 7.0;
@@ -829,6 +824,8 @@ pub const Sac = struct {
             return false;
         }
         self.flash = mathx.maxF(0, self.flash - dt);
+        // A SAC IS A TARGET, so its vitals run like every other target's — `sinceHit` is what the floating HP bar is gated on, and left frozen at 0 the bar never goes away again.
+        self.vit.tick(dt);
         self.t += dt;
         foe.tickParticles(&self.fx, dt, self.pos.y);
         if (self.killed or self.hatched) {
@@ -1189,7 +1186,9 @@ pub const Spider = struct {
     fn windupDur(self: *const Spider) f32 {
         return if (self.throwing) SPIT_WINDUP else BITE_WINDUP;
     }
+    /// PER ROLE, like every other duration here: `resolveRecover` scales its pose to this, so a broodling given the mother's window plays half a recovery and then snaps to idle.
     fn recoverDur(self: *const Spider) f32 {
+        if (self.role == .broodling) return B_BITE_RECOVER;
         return if (self.throwing) SPIT_RECOVER else BITE_RECOVER;
     }
 
@@ -1253,7 +1252,7 @@ pub const Spider = struct {
             .recover => {
                 self.faceToward(hero, dt);
                 self.resolveRecover();
-                if (self.t >= B_BITE_RECOVER) self.enterIdle(0.02);
+                if (self.t >= self.recoverDur()) self.enterIdle(0.02);
             },
             .leap => self.updateLeap(dt, hero, bounds),
             .stunlight => {
@@ -1748,6 +1747,10 @@ pub const Brood = struct {
     pub fn liveSacsConst(self: *const Brood) []const Sac {
         return self.sacs[0..self.nsacs];
     }
+    /// THE SECOND LIST, under the foe standard's own name: everything this group keeps on the field BESIDES its members, and which is still a target. `game.eachTarget` asks for this decl and nothing else, so the lock-on, the melee mark, the aim ray and the HP bars all see the clutch without any of them naming the brood.
+    pub fn liveExtraConst(self: *const Brood) []const Sac {
+        return self.liveSacsConst();
+    }
 
     pub fn reset(self: *Brood, m: *const wf.Map) void {
         self.n = 0;
@@ -2084,6 +2087,34 @@ test "A SAC IS A TARGET, and answers everything a target has to answer" {
     try std.testing.expect(s.hurtRadius() > SAC_R);
     s.killed = true;
     try std.testing.expect(s.dying());
+}
+
+test "A STRUCK SAC'S BAR GOES AWAY AGAIN — its vitals actually run" {
+    // THE bug: `Sac.update` was the one `combat.Vitals` owner in the game that never ticked, so `sinceHit` stayed pinned at 0 after the first blow and `game.drawFoeBars`' recent-hit window — which is a `sinceHit` test — never closed again.
+    var s = Sac.lay(mathx.ground(0, 0), 0.5, 1.0);
+    try std.testing.expect(s.vit.sinceHit > 100.0); // never hit: no bar
+    s.tryHit(.{
+        .active = true,
+        .pierce = true,
+        .r = 0.3,
+        .a = mathx.addV(s.centerWorld(), v3(0, 0, 1)),
+        .b = mathx.addV(s.centerWorld(), v3(0, 0, -0.1)),
+        .hit = heromod.ATK_LIGHT_HIT,
+    });
+    try std.testing.expect(s.standing() and s.vit.sinceHit == 0);
+    var t: f32 = 0;
+    while (t < 1.0) : (t += 1.0 / 60.0) _ = s.update(1.0 / 60.0, .{});
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), s.vit.sinceHit, 0.05);
+}
+
+test "a hatchling's recovery is its OWN length, not its mother's" {
+    // `resolveRecover` scales the pose to `recoverDur`, and the state exits on the same number — given the mother's 0.50 s a broodling played half a recovery and then snapped to idle.
+    var b = Spider.spawnAs(.broodling, mathx.ground(0, 0), 0, 1.0, 0.4);
+    try std.testing.expectApproxEqAbs(B_BITE_RECOVER, b.recoverDur(), 1e-6);
+    var m = Spider.spawnAs(.mother, mathx.ground(0, 0), 0, 1.0, 0.4);
+    try std.testing.expectApproxEqAbs(BITE_RECOVER, m.recoverDur(), 1e-6);
+    m.throwing = true; // …and hers still splits by which attack she is coming out of
+    try std.testing.expectApproxEqAbs(SPIT_RECOVER, m.recoverDur(), 1e-6);
 }
 
 test "a sac takes a few blows, not one — it is a target, not a balloon" {

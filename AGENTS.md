@@ -42,7 +42,7 @@ ask. The owner drives the design; implement what's asked and nothing extra.
 - **PACKED STONE HAS A CORE.** A wall laid as a row of blocks is only the FACING; behind it a
   real wall is packed solid. Without a substrate the joints leak sky (or the far side of the
   room) and it reads as loose stones balanced on each other. And overlap the facing well past
-  its slot — butted blocks show a seam round every one, like a model kit. `props.courseInto` /
+  its slot — butted blocks show a seam round every one, like a model kit. `propart.courseInto` /
   `courseStack` do both; every coursed prop goes through them.
 - **BIG BODIES HINGE AT THE WAIST, LEGS STAY PLANTED.** A swing is the trunk folding over feet
   that don't move. Route lean through SPINE/CHEST and leave the pelvis nearly upright
@@ -59,7 +59,7 @@ hunt him — **gaping toads**, **skeletal archers**, a lone **one-eyed ogre**, a
 (`kobold.zig` — three roles of one doglike creature in ONE group, because the priest heals its
 friends: berserker / priest / slinger) and a **BROOD MOTHER** with her egg sacs and **BROODLINGS**
 (`brood.zig` — a slow, claw-armed spider who spits ACID POOLS to hold you off a clutch she keeps
-laying; the sacs are killable and hatch three fast hatchlings each if they are not) — with ER lock-on and
+laying; the sacs are killable and each hatches one fast hatchling if they are not) — with ER lock-on and
 a full combat layer: HP + two-tier poise/stance stagger + death, both sides (`combat.zig`, and
 **`docs/ELDEN_RING.md`** as the systems reference). **STAMINA IS FULLY LIVE, LOCKOUT INCLUDED** —
 an empty bar means no roll, no swing, no sprint (see STAMINA below). He carries a **SMALL ROUND
@@ -169,16 +169,19 @@ and the map's own `half:` is the only source), holding five regions
 | west | **the Old Wood** | great trees (3 variants), ferns/brambles/bushes, boulders, a **standing-stone circle**, a woodcutter's **cottage** + campfire |
 | south | **the Windswept Downs** | open and sparse — lone trees, field stones, graves, a watchtower |
 
-**81 prop kinds**, **17,107 instances, 1,744 colliders and 37 fires**, of which a frame draws **732 in
-245 cells in the CITY and 1,282 in 305 in the WOOD**, both passes together — read off
+**81 prop kinds**, **17,083 instances, 1,791 colliders and 40 fires**, of which a frame draws **763 in
+250 cells in the CITY and 1,335 in 313 in the WOOD**, both passes together — read off
 `91_stats_city.png` / `92_stats_wood.png`, which is the only honest way to state it. (This said "~633
 … the wood is comparable": the figure predates the last two world edits and the wood was never
 comparable — it is nearly twice the city, because a wood is canopy standing in front of canopy.)
 See **PERFORMANCE** — 7.5% of the world is
-why it is affordable, and the debug Stats overlay prints it live so it stays checkable. The three
-numbers are also PINNED by `env`'s "replaying the SHIPPED map produces a stable world" test, so a
-scatter that quietly gains or loses instances fails the build instead of drifting in a screenshot.
-**Move them here and in that test together**: the props rework left the test pinning 17,292/1,836/34
+why it is affordable, and the debug Stats overlay prints it live so it stays checkable. `env`'s
+"replaying the SHIPPED map produces a stable world" test PINS the same three, so a scatter that quietly
+gains or loses instances fails the build instead of drifting in a screenshot — but **its prop count is
+the HIGHER of the two on purpose** and the two must not be reconciled: the test calls `materialize`
+without `uploadWater`, so the painted tarn rejects nothing and it pins **17,197** where the running
+game shows 17,083. Solids and fires do not read the water and so match exactly.
+**Move both together when either moves**: the props rework left the test pinning 17,292/1,836/34
 and this line repeating it, and `9dea3c0`'s world edit left both at 16,884/1,687/35, so the guard sat red
 for two commits each time — and a pin that always fails cannot
 catch the next drift, which is the only thing it is for. **AND `git diff worlds/` BEFORE SUSPECTING THE
@@ -199,7 +202,7 @@ many props you place: a GROUND-HUGGER between the standing plants (clover / moss
 UNDERSTOREY at knee-to-chest height (fern, bramble, thicket, sapling), and the CANOPY. Dead
 growth (bracken, snags, stumps, logs) is what stops it looking like a garden. And the SOIL
 changes with the region too — the wood's floor is a different colour, not a green tint over the
-meadow's (`gfx.terrainAlbedo`'s region drift).
+meadow's (`shaders.terrainAlbedo`'s region drift — the GLSL, not the Zig).
 
 ## Build & verify
 
@@ -208,7 +211,7 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
 - Verify rendering/animation changes by RUNNING `zig-out\bin\zig-soulslike.exe --shot` (or
   `shot.cmd`) and INSPECTING the PNGs in `shots\`. `--shot` hides the window: it scripts a walk→
   run→sprint and a roll at several angles, the sword swings, the GUARD (`20a..20e` — the stance from
-  three bearings, a caught blow mid-recoil, and the shield's own back), the BOW (`20f..20o` — see THE
+  three bearings, a caught blow mid-recoil, and the shield's own back), the BOW (`20f..20r` — see THE
   BOW), then every foe's states —
   including the kobold POUNCE in three beats (`66d..66f`) and the BITE in profile (`69c`/`69d`), both
   of which shipped unjudged because neither had a shot — then the **WORLD TOUR**
@@ -452,9 +455,10 @@ lines where the concerns genuinely part company, and each new file is named so t
 - `props.zig`  — EVERY static model, plus ONE table (`INFO`) holding all the rest of the engine
                  needs per kind: mesh builder, bounding radius, top height, view distance, casts /
                  sways, footprint colliders, any fire. A kind is ONE ROW; the old layout spread
-                 that across four places and forgetting one failed SILENTLY. Shared weathering
+                 that across four places and forgetting one failed SILENTLY. The shared weathering
                  helpers (`courseInto`, `courseStack`, `quoinsInto`, `lichenInto`, `chipsInto`,
-                 `crackInto`, `tuftInto`) so every ruin ages the same way. Big props with many
+                 `crackInto`, `tuftInto`) live one file over in `propart.zig` with the palette, and
+                 every ruin ages through them. Big props with many
                  instances come in VARIANTS — the great trees (`bigtree`/`bigtree2`/`bigtree3`) and
                  the six `CLIFFS`. A wood picks among them through its op's WEIGHTED `mix=`, which is
                  why only the rim has a `Kind` set here to seed from.
@@ -508,8 +512,8 @@ lines where the concerns genuinely part company, and each new file is named so t
                  her eggs by `M_GUARD_R`, spitting at anything in the band and biting anything that
                  reaches her. **THE GLOB IS NOT THE WEAPON, THE FLOOR IS** (owner's call): a hit is 5 HP
                  and where it lands becomes a `Pool` of acid that burns in PULSES (`ACID_TICK`) for ~15
-                 HP/s, so crossing one is cheap and standing in one kills. **THREE SACS AT A TIME, THREE
-                 HATCHLINGS EACH**, and a sac is a real target — its own HP through the same `foe.strike`
+                 HP/s, so crossing one is cheap and standing in one kills. **THREE SACS AT A TIME, ONE
+                 HATCHLING EACH** (`MAX_SACS` / `PER_SAC`, owner's call), and a sac is a real target — its own HP through the same `foe.strike`
                  everything else uses, and one cut open hatches NOTHING, which is the whole reason to push
                  in past the spit. The hatchlings are fast, leap, and die to a single light. Everything
                  hangs off one rig, parameterized by a `Skin` (colours, abdomen, claw length) so a
@@ -541,9 +545,24 @@ lines where the concerns genuinely part company, and each new file is named so t
                  raise the dead, because `dead` is a latch the whole foe standard reads). Plus `Stamina`,
                  the HERO'S ALONE (a foe meter nothing reads would only rot). Pure logic,
                  unit-tested. THE place to retune damage/poise/stamina feel.
+- `item.zig`   — THE ITEM VOCABULARY: `Kind`, its display name, its map `tag`, and `Use` — what
+                 using one DOES, named here and performed in `game.useItem`. Plus the `Bag`, a
+                 saturating count per kind (`nth` walks only the rows that hold something, so a
+                 menu cursor can never land in a hole). MUSHROOM JERKY is the only kind with a
+                 `Use` today; `usable` is the one test the inventory presses a row on.
+- `chest.zig`  — THE OPENABLE BOXES: a `Site` per `.chest` prop the world placed, a `near` pick
+                 inside `REACH`, an eased lid `swing`, and `openNear` — which reads the contents
+                 off the PLACING OP (`Op.loot`), so a chest's stock is authored in the map and
+                 not in the code. Opening is once-only and an out-of-range op index yields an
+                 empty list rather than reading past the map.
+- `rest.zig`   — SITTING AT THE BONFIRE: the four-phase state machine (`off`/`in`/`sit`/`out`),
+                 the fades either side of it, the dusk `dim` and the fire bed's level, and the
+                 `seat` the hero takes (a spot off the fire, three-quarters on to the lens). The
+                 EDGES (`justEntered`/`justLeft`) are one-frame flags `game.tickRest` hangs the
+                 world reload off.
 - `collision.zig` — 2D XZ capsule/circle footprint collision (push-out).
 - `mathx.zig`  — ground-plane + vector/angle helpers.
-- `audio.zig`  — THE SOUND BANK: ~45 voices, every one SYNTHESIZED at launch from the same handful of
+- `audio.zig`  — THE SOUND BANK: ~80 voices, every one SYNTHESIZED at launch from the same handful of
                  layers (`body` / `air` / `grit` / `ring` / `tick` / `growl` / `chirp`) through one
                  shared tape-style `master`, which is what makes separately-authored sounds feel
                  recorded in the same room. Read it as recipes. Three things to know before retuning:

@@ -285,35 +285,60 @@ fn coverHit(prev: rl.Vector3, to: rl.Vector3, solids: []const collision.Solid) ?
     return null;
 }
 
-/// FLY ONE OF THE HERO'S SHAFTS A FRAME — the archer's ballistics with the two hero-specific halves taken out.
-pub fn stepShaft(a: *Arrow, groundY: f32, solids: []const collision.Solid, dt: f32) ?[2]rl.Vector3 {
-    if (!a.live) return null;
+/// HOW DEEP A HEAD BURIES in whatever stopped it — the shaft and its fletching stay proud.
+const EMBED: f32 = 0.26;
+/// …and how far into the earth one that simply fell lands.
+const GROUND_BITE: f32 = 0.02;
+
+/// THE PROLOGUE BOTH QUIVERS SHARE: the streak ages whether the shaft is flying or planted, and a planted one counts down its fade. False = there is nothing more to do with it this frame.
+fn flying(a: *Arrow, dt: f32) bool {
+    if (!a.live) return false;
     for (&a.trailAge) |*ag| ag.* = @min(ag.* + dt, mathx.LONG_AGO);
     if (a.stuck) {
         a.age += dt;
         if (a.age >= ARROW_STICK_FADE) a.live = false;
-        return null;
+        return false;
     }
     a.age += dt;
-    a.vel.y -= ARROW_GRAV * dt;
+    return true;
+}
+
+/// Gravity, one frame of travel, and the trail sample it leaves — returns where it came FROM.
+fn advance(a: *Arrow, dt: f32) rl.Vector3 {
+    a.vel.y -= dropOf(a.shot) * dt;
     const prev = a.pos;
     a.pos = mathx.addV(a.pos, mathx.scaleV(a.vel, dt));
     a.trailHead = (a.trailHead + 1) % TRAIL_N;
     a.trail[a.trailHead] = a.pos;
     a.trailAge[a.trailHead] = 0;
+    return prev;
+}
+
+/// It hit COVER: bury the head at the contact and remember what it went into.
+fn plantIn(a: *Arrow, at: rl.Vector3, surf: collision.Surface) void {
+    a.struck = surf;
+    // Normalize the CURRENT velocity: one sampled before homing + gravity touched it leaves the embed offset a frame of gravity out of true.
+    a.pos = mathx.subV(at, mathx.scaleV(mathx.normV(a.vel), EMBED));
+    plantShaft(a);
+}
+
+/// …or it ran out of air / found the earth.
+fn plantGround(a: *Arrow, groundY: f32) bool {
+    if (a.pos.y > groundY + GROUND_BITE and a.age < ARROW_LIFE) return false;
+    a.pos.y = mathx.maxF(a.pos.y, groundY + GROUND_BITE); // stuck in the earth where it landed
+    plantShaft(a);
+    return true;
+}
+
+/// FLY ONE OF THE HERO'S SHAFTS A FRAME — the archer's ballistics with the two hero-specific halves taken out.
+pub fn stepShaft(a: *Arrow, groundY: f32, solids: []const collision.Solid, dt: f32) ?[2]rl.Vector3 {
+    if (!flying(a, dt)) return null;
+    const prev = advance(a, dt);
     if (coverHit(prev, a.pos, solids)) |c| {
-        a.struck = c.surf;
-        a.pos = mathx.subV(c.at, mathx.scaleV(mathx.normV(a.vel), 0.26)); // head embedded, shaft + fletch proud
-        a.stuck = true;
-        a.age = 0;
+        plantIn(a, c.at, c.surf);
         return null;
     }
-    if (a.pos.y <= groundY + 0.02 or a.age >= ARROW_LIFE) {
-        a.pos.y = mathx.maxF(a.pos.y, groundY + 0.02);
-        a.stuck = true;
-        a.age = 0;
-        return null;
-    }
+    if (plantGround(a, groundY)) return null;
     return .{ prev, a.pos };
 }
 
@@ -328,15 +353,7 @@ fn heroReached(p: rl.Vector3, hero: rl.Vector3, heroCenterY: f32) bool {
 }
 
 pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, heroDodging: bool, solids: []const collision.Solid, dt: f32) void {
-    if (!a.live) return;
-    // THE STREAK AGES WHETHER THE SHAFT IS FLYING OR PLANTED.
-    for (&a.trailAge) |*ag| ag.* = @min(ag.* + dt, mathx.LONG_AGO);
-    if (a.stuck) {
-        a.age += dt;
-        if (a.age >= ARROW_STICK_FADE) a.live = false;
-        return;
-    }
-    a.age += dt;
+    if (!flying(a, dt)) return;
     const target = v3(hero.x, heroCenterY, hero.z);
     // HOMING IS HORIZONTAL ONLY, and the vertical is left strictly to the launch and to gravity.
     const hs = mathx.lenXZ(a.vel);
@@ -351,33 +368,15 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, he
             a.vel.z = bent.z * hs;
         }
     }
-    a.vel.y -= dropOf(a.shot) * dt;
-    const prev = a.pos;
-    a.pos = mathx.addV(a.pos, mathx.scaleV(a.vel, dt));
-    // Push this frame's position onto the trail ring.
-    a.trailHead = (a.trailHead + 1) % TRAIL_N;
-    a.trail[a.trailHead] = a.pos;
-    a.trailAge[a.trailHead] = 0;
+    const prev = advance(a, dt);
     // COVER first (a wall between archer and hero beats a hero hugging its far side): sampled the LENGTH of the frame's travel so a fast shaft cannot tunnel a thin trunk — see `coverHit`, which both quivers share rather than each carrying this block.
-    if (coverHit(prev, a.pos, solids)) |c| {
-        a.struck = c.surf;
-        // Normalize the CURRENT velocity: `spd` was sampled before homing + gravity touched it, so using it as the divisor left the embed offset a frame of gravity out of true.
-        a.pos = mathx.subV(c.at, mathx.scaleV(mathx.normV(a.vel), 0.26)); // head embedded, shaft + fletch proud
-        a.stuck = true;
-        a.age = 0;
-        return;
-    }
+    if (coverHit(prev, a.pos, solids)) |c| return plantIn(a, c.at, c.surf);
     // …and the HERO, over the endpoint and the midpoint.
     const mid = mathx.lerpV(prev, a.pos, 0.5);
     if (!heroDodging and (heroReached(a.pos, hero, heroCenterY) or heroReached(mid, hero, heroCenterY))) {
         a.hit = true;
-        a.stuck = true;
-        a.age = 0;
-    } else if (a.pos.y <= groundY + 0.02 or a.age >= ARROW_LIFE) {
-        a.pos.y = mathx.maxF(a.pos.y, groundY + 0.02); // stuck in the earth where it landed
-        a.stuck = true;
-        a.age = 0;
-    }
+        plantShaft(a);
+    } else _ = plantGround(a, groundY);
 }
 
 // The draw matrix for one arrow: orient the mesh's +Z (its flight axis) along the velocity (yaw + pitch), placed at pos, shrinking over the back half of a stuck arrow's fade.

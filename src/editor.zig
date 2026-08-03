@@ -14,16 +14,12 @@ const sfx = @import("audio.zig"); // the jukebox
 const Kind = props.Kind;
 const v3 = mathx.v3;
 
-// EDITOR — an in-game scene over the live world.
 
 const LOOK_SENS: f32 = 0.0032;
 const UNDO_CAP: usize = 24;
 const DRAG_PX = ui.DRAG_PX; // the shared click-vs-drag threshold (see there)
 const SNAP: f32 = 1.0; // grid pitch when snap is on
 /// How long a held dial must go QUIET before the world re-expands.
-/// Seconds of no edits before the world is re-derived. SHORT, because it is now the ONLY thing that
-/// rebuilds during editing (see `endGesture`): long enough that a burst of stepper clicks costs one
-/// materialize instead of one each, short enough that a single nudge appears to happen immediately.
 const REBUILD_QUIET: f32 = 0.28;
 
 /// How often the held eraser may remove something — its own rate, not the rebuild's.
@@ -53,7 +49,7 @@ const NEW_ZONE_DENSITY: f32 = 0.7;
 /// How near the cursor has to be to a foe spawn to count as ON it.
 const FOE_PICK_R: f32 = 1.6;
 
-// Undo ring at file scope: a Map is ~386 KB (measured — the figure here said 230 KB, from before `soilCov` and the height lattice were added) and 24 of them is ~9.1 MB, which belongs in BSS rather than inside Game (~1.7 MB of Env alone) or on an allocator this codebase otherwise avoids.
+// File scope: a Map measures ~386 KB, so 24 of them is ~9.1 MB — BSS, not inside Game and not on an allocator this codebase avoids.
 var undoRing: [UNDO_CAP]wf.Map = undefined;
 var undoBase: usize = 0; // ring slot of the OLDEST live snapshot
 var undoN: usize = 0; // how many snapshots are live
@@ -63,14 +59,12 @@ fn undoSlot(i: usize) *wf.Map {
     return &undoRing[(undoBase + i) % UNDO_CAP];
 }
 
-/// Forget everything banked.
 fn undoReset() void {
     undoBase = 0;
     undoN = 0;
     undoAt = 0;
 }
 
-/// Make room for one more snapshot when the ring is already full: the oldest is dropped.
 fn undoDropOldest() void {
     undoBase = (undoBase + 1) % UNDO_CAP;
     undoN -= 1;
@@ -105,7 +99,6 @@ pub const Layer = enum(u8) {
         };
     }
 
-    /// THE LAYERS WHOSE CONTENT IS OPS.
     fn opLayer(l: Layer) bool {
         return switch (l) {
             .decor, .props, .interact => true,
@@ -123,7 +116,6 @@ const layerTips = [Layer.N][:0]const u8{
     "Foe spawns",
 };
 
-// Brush tables.
 const groundBrushes = [_][:0]const u8{ "Raise", "Lower", "Smooth", "Flat", "dirt", "turf", "stone", "silt", "ash", "moss", "Water", "Erase" };
 const coverBrushes = [_][:0]const u8{ "Clearing", "Zone", "Erase" };
 const decorBrushes = [_][:0]const u8{ "Single", "Patch", "Scatter", "Erase" };
@@ -290,7 +282,6 @@ comptime {
     }
 }
 
-// Positional brush indices, matching the tables above.
 pub const GroundBrush = enum { raise, lower, smooth, flat, dirt, turf, stone, silt, ash, moss, water, erase };
 const CoverBrush = enum { clearing, zone, erase };
 pub const DecorBrush = enum { single, patch, scatter, erase };
@@ -305,7 +296,7 @@ comptime {
     pinBrushes(PropBrush, &propBrushes);
     pinBrushes(InteractBrush, &interactBrushes);
     pinBrushes(GroundBrush, &groundBrushes);
-    // UNITS ARE PINNED TO `wf.FoeKind` INSTEAD, and that is the stronger statement of the two: its labels are the foes' real NAMES now (`wf.foeName`), so a label-to-tag comparison would only be asserting that "Giant Toad" is spelled "toad" — which is exactly what this layer stopped doing.
+    // UNITS pin to `wf.FoeKind` itself instead: their labels are the foes' real NAMES (`wf.foeName`), so a label-to-tag compare would only assert that "Giant Toad" is spelled "toad".
     const foeFields = @typeInfo(wf.FoeKind).@"enum".fields;
     const unitFields = @typeInfo(UnitBrush).@"enum".fields;
     if (unitFields.len != foeFields.len + 1) @compileError("editor: UnitBrush is not the foe kinds plus an eraser");
@@ -327,12 +318,11 @@ fn pinBrushes(comptime E: type, comptime names: []const [:0]const u8) void {
     if (!std.mem.eql(u8, fields[fields.len - 1].name, "erase")) @compileError("editor: " ++ @typeName(E) ++ " must end in `erase`");
 }
 
-// THE KIND PALETTES live in props.zig now, beside the INFO table they are derived from — the object viewer needs the same lists, and a second comptime copy of "which shelf is this on" is how a fern ends up offered under Ruins in one place and not the other.
+// THE KIND PALETTES live in props.zig beside the INFO table they derive from — the object viewer needs the same lists, and a second copy is how a fern ends up on two different shelves.
 const floraKinds = props.FLORA_KINDS;
 const solidKinds = props.SOLID_KINDS;
 const interactKinds = props.INTERACT_KINDS;
 
-/// The kinds an op layer stocks.
 fn kindPool(l: Layer) ?[]const Kind {
     return switch (l) {
         .decor => &floraKinds,
@@ -361,7 +351,6 @@ fn firstGroup(l: Layer) props.Group {
     return .ruins;
 }
 
-/// Does this layer have any kind on that shelf?
 fn layerHasGroup(l: Layer, g: props.Group) bool {
     return layerGroups[@intFromEnum(l)][@intFromEnum(g)];
 }
@@ -425,13 +414,11 @@ fn hasSpan(k: wf.OpKind) bool {
     };
 }
 
-/// Where an op sits, for marquee hit-testing and for translating a paste.
 fn opAnchor(o: *const wf.Op) rl.Vector3 {
     if (hasSpan(o.op)) return v3((o.x + o.x1) * 0.5, 0, (o.z + o.z1) * 0.5);
     return v3(o.x, 0, o.z);
 }
 
-/// Move an op bodily.
 fn translateOp(o: *wf.Op, dx: f32, dz: f32) void {
     o.x += dx;
     o.z += dz;
@@ -446,7 +433,6 @@ fn isMovable(o: *const wf.Op) bool {
     return o.op != .cover and o.op != .edge;
 }
 
-/// What an erase stroke says when it finds nothing of the active layer under the cursor.
 fn eraseMiss(l: Layer) [:0]const u8 {
     return switch (l) {
         .ground => "",
@@ -568,7 +554,6 @@ pub const Editor = struct {
         if (rl.isKeyPressed(.space)) self.jukePlay();
     }
 
-    /// Scroll the selected row back into view.
     fn jukeReveal(self: *Editor) void {
         const rows = ui.listRows(JUKE_LIST_H);
         const sel: i32 = @intCast(self.juke);
@@ -584,7 +569,6 @@ pub const Editor = struct {
         self.sayFmt("played {s}", .{VOICE_NAMES[self.juke]});
     }
 
-    /// Enter the editor, parking the camera above wherever the hero is standing.
     pub fn enter(self: *Editor, at: rl.Vector3) void {
         self.on = true;
         self.yaw = 0;
@@ -649,7 +633,6 @@ pub const Editor = struct {
     fn setBrush(self: *Editor, i: usize) void {
         self.brush[@intFromEnum(self.layer)] = @min(i, brushesFor(self.layer).len - 1);
     }
-    /// Is the active brush this layer's eraser?
     fn erasing(self: *const Editor) bool {
         return self.brushIdx() == brushesFor(self.layer).len - 1;
     }
@@ -688,7 +671,6 @@ pub const Editor = struct {
         return mathx.normV(v3(-f.z, 0, f.x));
     }
 
-    /// Rebuild the camera from the orbit state.
     fn applyCam(self: *Editor) void {
         const f = self.forward();
         self.cam.target = self.focus;
@@ -737,7 +719,6 @@ pub const Editor = struct {
         return v3(f.x / l, 0, f.z / l);
     }
 
-    /// Drag the ground itself.
     fn dragPan(self: *Editor) void {
         const now = self.groundAt() orelse return;
         self.focus.x += self.panGrab.x - now.x;
@@ -769,7 +750,6 @@ pub const Editor = struct {
         return envmod.groundY();
     }
 
-    /// Drop the camera's focus onto the ground under it.
     fn focusToGround(self: *Editor) void {
         self.focus.y = self.groundHeight(self.focus.x, self.focus.z);
     }
@@ -856,7 +836,6 @@ pub const Editor = struct {
         self.objects.grabbed = null;
     }
 
-    /// Fly to an op.
     fn focusOn(self: *Editor, m: *const wf.Map, i: usize) void {
         if (i >= m.nops) return;
         const o = m.ops[i];
@@ -1022,7 +1001,6 @@ pub const Editor = struct {
         return .none;
     }
 
-    /// Re-derive EVERYTHING the map feeds — props and painted soil.
     fn rebuild(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
         self.rebuildDue = false;
         self.rebuildT = 0;
@@ -1044,17 +1022,12 @@ pub const Editor = struct {
         if (self.rebuildT >= REBUILD_QUIET) self.rebuild(m, env);
     }
 
-    /// A widget gesture finished. It does NOT rebuild: `tickRebuild`'s quiet window owns that, and forcing
-    /// one here is what made the property panel unusable. A stepper click is press-then-RELEASE, and the
-    /// release lands on this — so every single click on `yaw` re-materialized seventeen thousand props
-    /// before the next click could be registered, and the coalescer that exists to prevent exactly that
-    /// never got to run. Anything that needs the world current NOW calls `flushRebuild` instead.
+    /// Deliberately does NOT rebuild — `tickRebuild`'s quiet window owns that, or one stepper click re-materializes 17k props before the next can register. Paths that need the world current NOW call `flushRebuild`.
     fn endGesture(self: *Editor, _: *const wf.Map, _: *envmod.Env) void {
         self.editing = false;
     }
 
-    /// Bring the world up to date immediately — for the paths that are about to READ it (leaving the
-    /// editor, a playtest, a save) rather than draw one more frame of it.
+    /// For the paths about to READ the world (leaving, a playtest, a save) rather than draw one more frame of it.
     pub fn flushRebuild(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
         if (self.rebuildDue) self.rebuild(m, env);
     }
@@ -1127,7 +1100,6 @@ pub const Editor = struct {
                         self.painting = true;
                     }
                     switch (@as(GroundBrush, @enumFromInt(self.brushIdx()))) {
-                        // SCULPTING the land.
                         .raise, .lower, .smooth, .flat => |b| {
                             const mode: wf.Sculpt = switch (b) {
                                 .raise => .raise,
@@ -1143,7 +1115,7 @@ pub const Editor = struct {
                             };
                             var span: [4]usize = wf.EMPTY_SPAN;
                             if (m.sculpt(g.x, g.z, self.radius, mode, amt, &span)) {
-                                // The MESH first (so what you see is what you just did), then the world ON it — but only on the release: re-expanding 17k props every frame of a drag is a slideshow, the same reason a water stroke waits.
+                                // The MESH now, the world ON it only on RELEASE: re-expanding 17k props every frame of a drag is a slideshow.
                                 env.sculptHeight(m, span);
                                 self.heightStroke = true;
                             }
@@ -1236,7 +1208,6 @@ pub const Editor = struct {
         }
     }
 
-    /// End a ground stroke.
     fn endPaint(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
         self.painting = false;
         if (self.wetStroke or self.heightStroke) {
@@ -1252,11 +1223,9 @@ pub const Editor = struct {
         return .{ .position = ray.position, .direction = mathx.normV(ray.direction) };
     }
 
-    /// A pick filter.
     const OpFilter = struct {
         ed: *const Editor,
         m: *const wf.Map,
-        /// Placed by an op the ACTIVE layer owns.
         fn inLayer(f: OpFilter, op: u16) bool {
             const i: usize = op;
             return i < f.m.nops and layerOf(&f.m.ops[i]) == f.ed.layer;
@@ -1267,7 +1236,6 @@ pub const Editor = struct {
         return .{ .ed = self, .m = m };
     }
 
-    /// Is the cursor over something in the marked set?
     fn overMarked(self: *Editor, m: *const wf.Map, env: *envmod.Env) bool {
         if (self.layer == .units) {
             const g = self.groundAt() orelse return false;
@@ -1954,12 +1922,10 @@ pub const Editor = struct {
 
     pub fn draw3D(self: *Editor, m: *const wf.Map, env: *const envmod.Env) void {
         gizmoWorld = env; // every wireframe below rides the ground — see liftAt
-        // A LIFT above the ground now, not an absolute height.
         const y: f32 = 0.05;
         rl.drawCubeWires(v3(0, envmod.groundY() + y, 0), m.half * 2, 0.02, m.half * 2, ui.alpha(ui.TRIM, 90));
         outline(m.runway.x, m.runway.z, m.runway.x1, m.runway.z1, y, ui.alpha(ui.HOT, 70));
 
-        // OTHER LAYERS DRAW DIM.
         const coverA: u8 = if (self.layer == .cover) 200 else 45;
         for (m.zones[0..m.nzones]) |*z| {
             // The world-spanning fallback zone has no meaningful outline to draw.
@@ -1976,7 +1942,6 @@ pub const Editor = struct {
             rl.drawCubeWires(at, FOE_BOX_W, FOE_BOX_H, FOE_BOX_W, col);
         }
 
-        // The SELECTED op: its own shape, plus a marker on every instance it placed.
         self.selOwned = 0;
         self.selMarked = 0;
         if (self.sel) |s| {
@@ -1995,7 +1960,6 @@ pub const Editor = struct {
             }
         }
 
-        // THE MARKED SET, boxed.
         for (self.marked[0..self.nMarked]) |i| {
             if (self.layer == .units) {
                 if (i >= m.nfoes) continue;
@@ -2027,7 +1991,6 @@ pub const Editor = struct {
             },
         }
 
-        // The marquee box, and the live offset while dragging the set.
         if (self.marquee) {
             outlineOf(normRect(self.dragFrom, self.dragTo), y, ui.HOT);
         }
@@ -2047,7 +2010,6 @@ pub const Editor = struct {
             }
         }
 
-        // The drag in progress, drawn as the op it is about to become.
         if (self.dragging) {
             const a = self.dragFrom;
             const b = self.dragTo;
@@ -2170,7 +2132,6 @@ fn ringXZ(cx: f32, cz: f32, r: f32, y: f32, col: rl.Color) void {
     ringSeg(cx, cz, r, y, col, 48);
 }
 
-/// A ring at a chosen resolution.
 fn ringSeg(cx: f32, cz: f32, r: f32, y: f32, col: rl.Color, seg: i32) void {
     if (r < 0.02) return;
     var i: i32 = 0;
@@ -2214,7 +2175,6 @@ pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene,
     const sh = rl.getScreenHeight();
     var ctx = ui.Ctx.begin(t);
 
-    // A MODAL — or the context menu
     const overlaid = ed.modal != .none or ed.menuOpen;
     if (overlaid) ctx.setLive(false);
 
@@ -2235,7 +2195,6 @@ pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene,
     ed.hotFrame = ctx.anyHot;
 }
 
-/// A left-to-right run of buttons along the top bar.
 const BarRow = struct {
     ctx: *ui.Ctx,
     x: i32,
@@ -2306,13 +2265,11 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
         ed.menuOpen = false;
         ed.modal = .objects;
     }
-    // …and its counterpart for the EARS.
     if (row.button("Sounds", ed.modal == .jukebox, "Jukebox — play any sound in the bank on demand")) {
         ed.menuOpen = false;
         ed.modal = .jukebox;
     }
 
-    // Just the UNSAVED marker up here.
     if (ed.dirty) hud.mono("*", row.x + 8, 8, hud.MONO, ui.HOT);
 }
 
@@ -2466,7 +2423,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             }
             return;
         }
-        // COUNTED EVERY FRAME, and left that way DELIBERATELY: this is a full scan of the armed brush's grid — 12,544 bytes for the soil, 50,176 for the water — to print one number.
+        // A full scan of the armed brush's grid every frame (12,544 bytes soil / 50,176 water) to print one number — measured, and deliberately left.
         var painted: usize = 0;
         if (wet) {
             for (m.water) |v| {
@@ -2488,7 +2445,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         hud.mono(s2, x, y, hud.MONO, ui.LABEL);
         y += ROW_H;
         if (wet) {
-            // The two numbers that explain what the brush is deciding FOR you.
             const s3 = std.fmt.bufPrintZ(&buf, "deep at {d:.0} m in", .{gfx.WATER_DEEP_AT}) catch "";
             hud.mono(s3, x, y, hud.MONO, ui.alpha(ui.LABEL, 190));
             y += ROW_H;
@@ -2558,7 +2514,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         hud.mono("ZONES", x, y, hud.MONO, ui.TITLE);
         y += ROW_H + 4;
         var changed = false;
-        // Snapshot BEFORE any slider runs, so the gesture's undo step can be banked from the pre-edit densities — the earlier version only raised `dirty` and left zone edits as the one mutation in the editor that Ctrl+Z could not take back.
+        // Snapshot BEFORE any slider runs, or the gesture banks post-edit densities and Ctrl+Z cannot take a zone edit back.
         var before: [wf.MAX_ZONES]f32 = undefined;
         for (m.zones[0..m.nzones], 0..) |*z, i| before[i] = z.density;
         for (m.zones[0..m.nzones], 0..) |*z, i| {
@@ -2587,7 +2543,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         return;
     }
 
-    // DECOR / PROPS: the selected op's dials.
     const s = ed.sel orelse {
         hud.mono("nothing selected", x, y, hud.MONO, ui.LABEL);
         y += ROW_H;
@@ -2635,7 +2590,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             y += ROW_H;
             changed = ui.stepperF(ctx, x, y, w, "scale", &o.scale, 0.05, 0.1, 4) or changed;
             y += ROW_H;
-            // OFF PLUMB, exactly as dialled: how far it tips, and which way it falls.
             changed = ui.stepperF(ctx, x, y, w, "lean", &o.lean, 1, 0, LEAN_LIM) or changed;
             y += ROW_H;
             changed = ui.stepperF(ctx, x, y, w, "lean dir", &o.leanDir, 15, -360, 720) or changed;
@@ -2783,7 +2737,6 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, ctx: *ui.Ctx, sw: i32, sh: i32) vo
     const py = y0 + 4;
     rl.drawRectangle(px, py, MINI_W - 8, MINI_W - 8, ui.col(18, 20, 14, 255));
 
-    // Painted soil first, as the backdrop
     const cellPx = inner / @as(f32, @floatFromInt(wf.SOIL_N));
     for (0..wf.SOIL_N) |cz| {
         const row = m.soil[cz * wf.SOIL_N ..][0..wf.SOIL_N];
@@ -2827,7 +2780,6 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, ctx: *ui.Ctx, sw: i32, sh: i32) vo
             }
         }
     }
-    // …then the WATER over it, run-lengthed the same way.
     const wCellPx = inner / @as(f32, @floatFromInt(wf.WATER_N));
     for (0..wf.WATER_N) |cz| {
         const row = m.water[cz * wf.WATER_N ..][0..wf.WATER_N];
@@ -2858,7 +2810,6 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, ctx: *ui.Ctx, sw: i32, sh: i32) vo
         }
     }.f;
 
-    // Every op that has a place, as a dot; the active layer's at full strength.
     for (m.ops[0..m.nops]) |*o| {
         if (o.op == .cover or o.op == .edge) continue;
         const p = toMini(o.x, o.z, m.half, px, py, inner);
@@ -2870,7 +2821,6 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, ctx: *ui.Ctx, sw: i32, sh: i32) vo
         const p = toMini(f.x, f.z, m.half, px, py, inner);
         rl.drawCircleV(p, 2.5, ui.col(220, 120, 90, if (ed.layer == .units) 255 else 110));
     }
-    // Where the camera is and which way it looks.
     const cp = toMini(ed.cam.position.x, ed.cam.position.z, m.half, px, py, inner);
     const f = ed.forward();
     rl.drawLineV(cp, .{ .x = cp.x + f.x * 12, .y = cp.y + f.z * 12 }, ui.HOT);
@@ -2926,7 +2876,6 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
     const rightX = sw - hud.monoW(right, hud.MONO) - CHROME_PAD;
     hud.mono(right, rightX, ty, hud.MONO, if (ed.dirty) ui.HOT else ui.LABEL);
 
-    // LEFT, fitted into whatever is left over.
     const room = rightX - GUTTER; // px the left side may use before it touches the readout
     if (ed.statusT > 0 and ed.statusLen > 0) {
         var msg: [ui.MSG_CAP]u8 = undefined;
@@ -2957,7 +2906,6 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
 
 
 fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) void {
-    // ENTER CONFIRMS, everywhere.
     const alt = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
     const confirm = rl.isKeyPressed(.enter) and !alt;
     switch (ed.modal) {
@@ -3009,13 +2957,14 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
                 var nbuf: [8]u8 = undefined;
                 const ns = std.fmt.bufPrintZ(&nbuf, "{d}", .{n}) catch "0";
                 hud.mono(ns, box.x + 340, y + 5, hud.MONO, if (n > 0) ui.VALUE else ui.LABEL);
-                if (ui.button(ctx, ui.rect(box.x + 368, y, 24, 22), "-", hud.MONO, false)) {
+                // Guarded on the row actually changing, so a click on a full (or empty) row costs no undo step.
+                if (ui.button(ctx, ui.rect(box.x + 368, y, 24, 22), "-", hud.MONO, false) and n > 0) {
+                    ed.bank(m);
                     lootRemove(o, k);
-                    ed.dirty = true;
                 }
-                if (ui.button(ctx, ui.rect(box.x + 396, y, 24, 22), "+", hud.MONO, false)) {
+                if (ui.button(ctx, ui.rect(box.x + 396, y, 24, 22), "+", hud.MONO, false) and o.nloot < wf.MAX_LOOT) {
+                    ed.bank(m);
                     lootAdd(o, k);
-                    ed.dirty = true;
                 }
             }
             if (ui.button(ctx, ui.rect(box.x + 24, box.y + 84 + rows * 26 + 8, 120, 28), "Done", hud.MONO, false) or confirm) {
@@ -3028,7 +2977,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
                 ed.juke = i;
                 ed.jukePlay(); // a click IS the audition — this is a listen tool, not a chooser
             }
-            // The selected voice's own numbers, which are the ones you would be retuning.
             const nfo = sfx.voiceInfo(@enumFromInt(@min(ed.juke, VOICE_NAMES.len - 1)));
             const cx = box.x + 40 + JUKE_LIST_W;
             var cy = box.y + 56;
@@ -3051,7 +2999,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
                 cy += ROW_H;
             }
             cy += 10;
-            // WHERE it plays from.
             _ = ui.checkbox(ctx, cx, cy, "play out in the world", &ed.jukeWorld);
             cy += ROW_H;
             const ds = if (ed.jukeWorld)
@@ -3121,7 +3068,6 @@ const menuRows = [_]struct { act: MenuItem, label: [:0]const u8 }{
 const MENU_W: i32 = 150; // the FLOOR; the menu grows to fit its widest row (see drawContextMenu)
 const MENU_EDGE: i32 = 4; // clear space kept between the menu and the screen edge
 
-/// Can this row do anything to what is selected right now?
 
 fn lootCount(o: *const wf.Op, k: item.Kind) u8 {
     var n: u8 = 0;
@@ -3160,7 +3106,6 @@ fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
     };
 }
 
-/// The `view` row's label, naming the model it opens.
 fn viewLabel(ed: *const Editor, m: *const wf.Map, buf: []u8) [:0]const u8 {
     const s = ed.sel orelse return "View…";
     if (s >= m.nops or m.ops[s].op == .cover) return "View…";
@@ -3205,12 +3150,10 @@ fn drawContextMenu(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx) void
         }
         return;
     }
-    // A click anywhere else dismisses it.
     if (ctx.pressed and !rl.checkCollisionPointRec(ctx.mouse, box)) ed.menuOpen = false;
 }
 
 
-/// A bare Env for the erase tests.
 fn testEnv(alloc: std.mem.Allocator) !*envmod.Env {
     const e = try alloc.create(envmod.Env);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -3242,14 +3185,13 @@ test "a held eraser sweeps, and holding still erases exactly once" {
     }
     try std.testing.expectEqual(@as(usize, 3), m.nfoes);
 
-    // SWEEPING: moving onto each of the others takes them, one per step.
     for ([_]f32{ 4, 8, 12 }) |x| {
         ed.wipe.t = 1.0;
         ed.wipeStep(m, env, v3(x, 0, 0));
     }
     try std.testing.expectEqual(@as(usize, 0), m.nfoes);
 
-    // ONE undo step for the whole stroke, and it restores every spawn — four separate steps would have filled a sixth of the ring and made the sweep four Ctrl+Zs to take back.
+    // ONE undo step for the whole stroke, restoring every spawn.
     try std.testing.expectEqual(@as(usize, 1), undoN);
     ed.wipeEnd();
     try std.testing.expect(ed.undo(m));

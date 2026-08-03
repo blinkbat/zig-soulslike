@@ -41,7 +41,10 @@ pub const sceneVS =
     \\        p.z += bend*sway*0.4;
     \\    }
     \\    // writhe has to happen HERE.
-    \\    if (vertexTexCoord2.x > 11.5) {
+    \\    // BOUNDED AT THE TOP, and that is load-bearing: the vertex-animated materials are 11, 12 and 13
+    \\    // and nothing else, so an open-ended `> 11.5` claims every id ADDED AFTER THEM. `bark` (14) went
+    \\    // in and every trunk in the wood started billowing and climbing like an ember.
+    \\    if (vertexTexCoord2.x > 11.5 && vertexTexCoord2.x < 13.5) {
     \\        vec3 baseW = vec3(matModel*vec4(0.0, 0.0, 0.0, 1.0));
     \\        float oy   = floor(vertexTexCoord2.y);   // the source height…
     \\        float seed = fract(vertexTexCoord2.y);   // …and this puff's own place in the cycle
@@ -57,7 +60,7 @@ pub const sceneVS =
     \\        float sway = sin(uTime*0.63 + seed*23.0)*0.34*life;
     \\        p.x += life*life*1.45 + sway;
     \\        p.z += life*life*0.55 - sway*0.4;
-    \\    } else if (vertexTexCoord2.x > 10.5) {
+    \\    } else if (vertexTexCoord2.x > 10.5 && vertexTexCoord2.x < 11.5) {
     \\        vec3 baseW = vec3(matModel*vec4(0.0, 0.0, 0.0, 1.0));
     \\        // CLAMPED: the drifting wisps are authored up to a whole unit above the fuel, and an h-squared term would fling those across the room.
     \\        float hh = clamp(p.y - vertexTexCoord2.y, 0.0, 0.6);
@@ -276,6 +279,26 @@ pub const sceneFS =
     \\    // Timber comes in PIECES.
     \\    float board = fvn2(q, vec2(0.35, 2.6), vec2(31.1), px);
     \\    base *= (0.82 + 0.30*grain)*(0.94 + 0.12*fvn(q, 2.9, vec2(5.1), px))*(0.95 + 0.10*board);
+    \\    // KNOTS: sparse dark rounds where a branch was — the one thing bare grain cannot say.
+    \\    base *= 1.0 - 0.24*smoothstep(0.80, 0.97, fvn(q, 3.6, vec2(47.9), px));
+    \\  } else if (m == 14){ // BARK: FISSURES up the trunk, in PLATES, over the close grain.
+    \\    // The furrows ARE the read, and a two-octave value field is too soft to be one on its own: the
+    \\    // ridge function pow(1-|2f-1|, n) spends most of its range near 0 and dives to 1 in a narrow
+    \\    // crack, which is the shape of a furrow rather than of a blotch.
+    \\    // COARSE on purpose: at 13 cycles/unit the furrows came out as fine even pinstripes and the
+    \\    // trunk read as brushed timber. Bark is a few centimetres of relief every hand's width.
+    \\    float fis = fvn2(q, vec2(7.0, 0.90), vec2(0.0), px)*0.60 + fvn2(q, vec2(17.0, 2.00), vec2(7.3), px)*0.40;
+    \\    // Banded on the COARSE octave: once even that is unresolvable `fis` sits at 0.5, and an unbanded
+    \\    // ridge would read 1.0 there — every far trunk uniformly dark. 1/4 is this term's own mean.
+    \\    float furrow = mix(pow(1.0 - abs(fis*2.0 - 1.0), 3.0), 0.25, band(7.0, px));
+    \\    // MEAN-PRESERVING on purpose (1.22 - 0.88*0.25 = 1.0): the ridges come up as far as the cracks
+    \\    // go down, so pushing the contrast does not quietly re-darken every trunk in the wood.
+    \\    base *= 1.22 - 0.88*furrow;
+    \\    // Bark comes off in PLATES, each weathered its own amount…
+    \\    base *= 0.82 + 0.36*fvn2(q, vec2(1.3, 0.7), vec2(23.7), px);
+    \\    // …and where one has dropped off, the sapwood under it is pale and smooth.
+    \\    base *= 1.0 + 0.34*smoothstep(0.88, 0.99, fvn(q, 2.4, vec2(51.3), px));
+    \\    base *= 0.93 + 0.14*fvn(q, 7.0, vec2(3.1), px);
     \\  } else if (m == 3){ // CLOTH: soft anisotropic weave + broad wrinkle shading + FOLDS
     \\    float weave = fvn2(q, vec2(30.0, 3.2), vec2(0.0), px)*0.5 + fvn2(q, vec2(3.2, 30.0), vec2(9.7), px)*0.5;
     \\    // Broad banding along the hang, anisotropic the OTHER way from the weave: a banner has to read as cloth carrying its own weight, not as a painted board.
@@ -299,8 +322,14 @@ pub const sceneFS =
     \\    base *= (0.72 + 0.26*blotch)*(0.88 + 0.12*fvn(q, 8.2, vec2(3.3), px));
     \\  } else if (m == 8){ // PLANT: broad value drift so clumps read as many blades
     \\    base *= 0.87 + 0.22*fmot(q, 2.2, px);
-    \\    // …and a LEAF-scale octave on top.
-    \\    base *= 0.93 + 0.14*fvn(q, 9.0, vec2(13.1), px);
+    \\    // …a LEAF-scale octave with real contrast, and a SINGLE-LEAF one over it (which bands itself
+    \\    // out by ~20 m, so it costs nothing at the distance most of the wood is seen from)…
+    \\    base *= 0.86 + 0.28*fvn(q, 9.0, vec2(13.1), px);
+    \\    base *= 0.94 + 0.12*fvn(q, 22.0, vec2(63.7), px);
+    \\    // …and sparse DARK POCKETS between leaf clusters at two scales, so a big lobe reads as
+    \\    // foliage with holes in it — the metre-scale one is what breaks a flat facet seen from under the canopy.
+    \\    base *= 1.0 - 0.24*smoothstep(0.62, 0.94, fvn(q, 4.6, vec2(41.3), px));
+    \\    base *= 1.0 - 0.15*smoothstep(0.58, 0.90, fvn(q, 1.6, vec2(71.7), px));
     \\  } else if (m == 10){ // MARBLE: a cool body crossed by wandering VEINS, plus the crazing
     \\    // and dull weathered patches a thousand years outdoors puts on burnished stone.
     \\    float wob  = fvn(q, 0.9, vec2(0.0), px)*1.7 + fvn(q, 2.7, vec2(3.1), px)*0.55;

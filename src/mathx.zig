@@ -133,6 +133,13 @@ pub fn lerpF(a: f32, b: f32, t: f32) f32 {
     return a + (b - a) * t;
 }
 
+/// `cur` moved at most `step` of the way toward `to`, landing exactly ON it — a RATE-limited ease, where
+/// `lerpF(cur, to, k)` is an exponential one that never quite arrives.
+pub fn approachF(cur: f32, to: f32, step: f32) f32 {
+    if (cur < to) return minF(to, cur + @abs(step));
+    return maxF(to, cur - @abs(step));
+}
+
 pub fn rx(deg: f32) rl.Matrix {
     return rl.math.matrixRotateX(radians(deg));
 }

@@ -62,7 +62,10 @@ test {
     _ = @import("brood.zig");
     _ = @import("foe.zig");
     _ = @import("combat.zig");
+    _ = @import("stats.zig");
+    _ = @import("item.zig");
     _ = @import("collision.zig");
+    _ = @import("gfx.zig"); // the mesh `Builder` is pure CPU, and addRoundBox has invariants worth pinning
     _ = @import("env.zig");
     _ = @import("props.zig");
     _ = @import("worldfmt.zig");

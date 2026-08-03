@@ -1,6 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
+const uiart = @import("uiart.zig");
 
 const rgba = mathx.rgba;
 
@@ -68,6 +69,23 @@ pub fn text(s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
 
 pub fn lineH(size: i32) i32 {
     return size + @divTrunc(size, 3);
+}
+
+/// Metal-leaf engraving: the same string re-drawn through two scissored bands so
+/// the grade rides the letterforms. Collapses below ~20 px — titles only.
+pub fn engraved(s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
+    text(s, x, y, size, col);
+    const w = textW(s, size);
+    var lit = mathx.lerpColor(col, rgba(255, 246, 218, 255), 0.34);
+    lit.a = col.a;
+    rl.beginScissorMode(x - 2, y, w + 4, @divTrunc(size * 45, 100));
+    drawStr(s, x, y, size, lit);
+    rl.endScissorMode();
+    var deep = mathx.lerpColor(col, rl.Color.black, 0.38);
+    deep.a = col.a;
+    rl.beginScissorMode(x - 2, y + @divTrunc(size * 72, 100), w + 4, size);
+    drawStr(s, x, y, size, deep);
+    rl.endScissorMode();
 }
 
 // A REAL system monospace face
@@ -141,7 +159,10 @@ const ST_W: i32 = 232;
 const ST_H: i32 = 11;
 
 const TRACK = rgba(16, 13, 11, 186); // the empty channel behind every fill
-const FRAME = rgba(116, 104, 84, 210); // the tarnished-metal rim, a hairline outside the track
+/// The tarnished-metal rim, one tone at whatever alpha the surface wants — the bars' hairline and the
+/// rune plate's edge were two names for the same three channels.
+const RIM = rgba(116, 104, 84, 255);
+const FRAME = mathx.withAlpha(RIM, 210);
 // Each bar is THREE values: a flat body, a shaded bottom third, a lit hairline on top.
 const HP_HI = rgba(158, 36, 28, 255);
 const HP_LO = rgba(96, 20, 16, 255);
@@ -193,22 +214,34 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, windedTo: 
     }
 }
 
+/// THE FILL ITSELF — three values (a flat body, a shaded bottom band, a lit hairline on top) plus the
+/// catchlight on the leading edge while the bar is short of full. The ONE copy: the vitals bars and the
+/// floating foe bars each grew their own, which is three constants and a `< 0.999` test kept in step by
+/// hand. `shade` is how deep the bottom band runs; `tipW`/`tipA` size the leading edge.
+fn fillThree(x: i32, y: i32, fw: i32, h: i32, frac: f32, hi: rl.Color, lo: rl.Color, tp: rl.Color, shade: i32, tipW: i32, tipA: u8) void {
+    if (fw <= 0) return;
+    rl.drawRectangle(x, y, fw, h - shade, hi); // a flat body…
+    rl.drawRectangleGradientV(x, y + h - shade, fw, shade, hi, lo);
+    rl.drawRectangle(x, y, fw, 1, tp);
+    if (fw > tipW and frac < 0.999) rl.drawRectangle(x + fw - tipW, y, tipW, h, mathx.withAlpha(uiart.CATCH, tipA));
+}
+
 fn bar(x: i32, y: i32, w: i32, h: i32, frac: f32, chipFrac: f32, hi: rl.Color, lo: rl.Color, tp: rl.Color) void {
     rl.drawRectangle(x - 3, y - 3, w + 6, h + 6, rgba(0, 0, 0, 50)); // a soft seat off the sky…
     rl.drawRectangle(x - 2, y - 2, w + 4, h + 4, rgba(0, 0, 0, 165));
     rl.drawRectangle(x - 1, y - 1, w + 2, h + 2, FRAME);
+    // Lit top rim, shadowed bottom — the channel reads carved, not printed.
+    rl.drawRectangle(x - 1, y - 1, w + 2, 1, mathx.withAlpha(uiart.GILT, 130));
+    rl.drawRectangle(x - 1, y + h, w + 2, 1, rgba(0, 0, 0, 140));
+    rl.drawRectangle(x + w + 1, y - 2, 2, h + 4, uiart.IRON); // the far end post
     rl.drawRectangle(x, y, w, h, TRACK);
     const wf: f32 = @floatFromInt(w);
     const fw: i32 = @intFromFloat(wf * mathx.clampF(frac, 0, 1));
     const cw: i32 = @intFromFloat(wf * mathx.clampF(chipFrac, 0, 1));
     if (cw > fw) rl.drawRectangle(x + fw, y, cw - fw, h, CHIP);
-    if (fw > 0) {
-        const third = @max(@divTrunc(h, 3), 1);
-        rl.drawRectangle(x, y, fw, h - third, hi); // a flat body…
-        rl.drawRectangleGradientV(x, y + h - third, fw, third, hi, lo);
-        rl.drawRectangle(x, y, fw, 1, tp);
-        if (fw > 2 and frac < 0.999) rl.drawRectangle(x + fw - 2, y, 2, h, rgba(255, 244, 226, 64));
-    }
+    fillThree(x, y, fw, h, frac, hi, lo, tp, @max(@divTrunc(h, 3), 1), 2, 64);
+    const hf: f32 = @floatFromInt(h);
+    uiart.finial(@floatFromInt(x - 2), @as(f32, @floatFromInt(y)) + hf * 0.5, hf * 0.36 + 2.0, uiart.GILT_DIM);
 }
 
 const FOE_W: i32 = 54;
@@ -221,17 +254,18 @@ pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool) void {
     const wf: f32 = @floatFromInt(FOE_W);
     const x: i32 = @intFromFloat(sx - wf * 0.5);
     const y: i32 = @as(i32, @intFromFloat(sy)) - FOE_LIFT;
+    rl.drawRectangle(x - 2, y - 2, FOE_W + 4, FOE_H + 4, rgba(0, 0, 0, 90)); // a soft seat
     rl.drawRectangle(x - 1, y - 1, FOE_W + 2, FOE_H + 2, rgba(0, 0, 0, 170)); // backing
     rl.drawRectangle(x, y, FOE_W, FOE_H, FOE_TRACK);
     const fw: i32 = @intFromFloat(wf * mathx.clampF(frac, 0, 1));
-    if (fw > 0) rl.drawRectangle(x, y, fw, FOE_H, HP_HI);
+    // 5 px tall, so the shade band is 2 rather than the vitals bars' third and the tip is a single column.
+    fillThree(x, y, fw, FOE_H, frac, HP_HI, HP_LO, mathx.withAlpha(HP_TP, 200), 2, 1, 120);
     if (staggered) rl.drawRectangleLines(x - 1, y - 1, FOE_W + 2, FOE_H + 2, STAGGER_RIM);
 }
 
 const RUNE_W: i32 = 122;
 const RUNE_H: i32 = 32;
-const RUNE_FILL = rgba(14, 12, 10, 170);
-const RUNE_EDGE = rgba(116, 104, 84, 186);
+const RUNE_FILL_A: u8 = 170;
 const RUNE_TEXT = rgba(228, 216, 190, 255);
 
 pub fn runes(n: u32) void {
@@ -240,8 +274,11 @@ pub fn runes(n: u32) void {
     const x = rl.getScreenWidth() - RUNE_W - MARGIN;
     const y = rl.getScreenHeight() - RUNE_H - BOTTOM;
     rl.drawRectangle(x - 2, y - 2, RUNE_W + 4, RUNE_H + 4, rgba(0, 0, 0, 128)); // the hard black seat
-    rl.drawRectangle(x, y, RUNE_W, RUNE_H, RUNE_FILL);
-    rl.drawRectangleLines(x, y, RUNE_W, RUNE_H, RUNE_EDGE);
+    uiart.plate(x, y, RUNE_W, RUNE_H, RUNE_FILL_A);
+    rl.drawRectangleLines(x, y, RUNE_W, RUNE_H, mathx.withAlpha(RIM, 186));
+    rl.drawRectangle(x + 1, y + 1, RUNE_W - 2, 1, mathx.withAlpha(uiart.GILT, 90)); // lit top rim
+    uiart.cornerJewels(x + 1, y + 1, RUNE_W - 2, RUNE_H - 2, 2.0, mathx.withAlpha(uiart.GILT_DIM, 200));
+    uiart.diamond(@floatFromInt(x + 12), @floatFromInt(y + @divTrunc(RUNE_H, 2)), 2.8, mathx.withAlpha(uiart.GILT_DIM, 220));
     text(s, x + RUNE_W - textW(s, BODY) - 11, y + @divTrunc(RUNE_H - lineH(BODY), 2) + 1, BODY, RUNE_TEXT);
 }
 
@@ -251,7 +288,21 @@ pub fn prompt(s: [:0]const u8) void {
     const w = textW(s, BODY);
     const x = @divTrunc(rl.getScreenWidth() - w, 2);
     const y = rl.getScreenHeight() - lineH(BODY) - BOTTOM - PROMPT_LIFT;
-    rl.drawRectangle(x - 14, y - 6, w + 28, lineH(BODY) + 12, rgba(0, 0, 0, 132));
+    const bh = lineH(BODY) + 12;
+    const by = y - 6;
+    const ear: i32 = 34; // the band and its gilt rules fade out, never end square
+    const ink = rgba(0, 0, 0, 150);
+    const clear = rgba(0, 0, 0, 0);
+    rl.drawRectangle(x - 14, by, w + 28, bh, ink);
+    rl.drawRectangleGradientH(x - 14 - ear, by, ear, bh, clear, ink);
+    rl.drawRectangleGradientH(x + w + 14, by, ear, bh, ink, clear);
+    const gilt = mathx.withAlpha(uiart.GILT, 120);
+    const gclear = mathx.withAlpha(uiart.GILT, 0);
+    for ([_]i32{ by, by + bh - 1 }) |ly| {
+        rl.drawRectangle(x - 14, ly, w + 28, 1, gilt);
+        rl.drawRectangleGradientH(x - 14 - ear, ly, ear, 1, gclear, gilt);
+        rl.drawRectangleGradientH(x + w + 14, ly, ear, 1, gilt, gclear);
+    }
     text(s, x, y, BODY, rgba(226, 214, 186, 240));
 }
 
@@ -298,16 +349,27 @@ const AMMO_H: i32 = eq(26);
 const AMMO_GAP: i32 = eq(5);
 const AMMO_DRY = rgba(150, 96, 88, 220);
 
-fn ammoBox(x: i32, y: i32, n: u8) void {
-    const on = n > 0;
-    rl.drawRectangle(x, y, SLOT_W, AMMO_H, rgba(8, 7, 6, if (on) WELL_ON else WELL_OFF));
+/// A HARD SEAT, A SUNK WELL AND A RIM — the socket every cross cell and the ammo box sit in, written
+/// once because there were two copies differing only in which height they passed.
+fn socket(x: i32, y: i32, w: i32, h: i32, on: bool) void {
+    rl.drawRectangle(x - 1, y - 1, w + 2, h + 2, rgba(0, 0, 0, if (on) 150 else 80));
+    uiart.well(x, y, w, h, if (on) WELL_ON else WELL_OFF);
+}
+
+fn socketRim(x: i32, y: i32, w: i32, h: i32, on: bool) void {
     const r = rl.Rectangle{
         .x = @floatFromInt(x),
         .y = @floatFromInt(y),
-        .width = @floatFromInt(SLOT_W),
-        .height = @floatFromInt(AMMO_H),
+        .width = @floatFromInt(w),
+        .height = @floatFromInt(h),
     };
     rl.drawRectangleLinesEx(r, 1, if (on) SLOT_ON else SLOT_OFF);
+}
+
+fn ammoBox(x: i32, y: i32, n: u8) void {
+    const on = n > 0;
+    socket(x, y, SLOT_W, AMMO_H, on);
+    socketRim(x, y, SLOT_W, AMMO_H, on);
     const cy: f32 = @floatFromInt(y + @divTrunc(AMMO_H, 2));
     arrowIcon(@floatFromInt(x + eq(13)), cy, on);
     var buf: [8]u8 = undefined;
@@ -341,14 +403,10 @@ fn arrowIcon(cx: f32, cy: f32, on: bool) void {
 
 fn slot(x: i32, y: i32, holds: Slot, tint: FlaskTint, charges: u8) void {
     const on = holds != .empty;
-    rl.drawRectangle(x, y, SLOT_W, SLOT_H, rgba(8, 7, 6, if (on) WELL_ON else WELL_OFF)); // the well
-    const r = rl.Rectangle{
-        .x = @floatFromInt(x),
-        .y = @floatFromInt(y),
-        .width = @floatFromInt(SLOT_W),
-        .height = @floatFromInt(SLOT_H),
-    };
-    rl.drawRectangleLinesEx(r, 1, if (on) SLOT_ON else SLOT_OFF);
+    socket(x, y, SLOT_W, SLOT_H, on);
+    if (on) uiart.candle(x + @divTrunc(SLOT_W, 2), y + @divTrunc(SLOT_H, 2), @as(f32, @floatFromInt(SLOT_W)) * 0.55, 16);
+    socketRim(x, y, SLOT_W, SLOT_H, on);
+    if (on) uiart.cornerJewels(x, y, SLOT_W, SLOT_H, 2.4, mathx.withAlpha(uiart.GILT_DIM, 220));
     const cx: f32 = @floatFromInt(x + @divTrunc(SLOT_W, 2));
     const cy: f32 = @floatFromInt(y + @divTrunc(SLOT_H, 2));
     switch (holds) {

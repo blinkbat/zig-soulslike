@@ -130,7 +130,10 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
     heromod.setJoint(wx, &rest, i, @intCast(parent[i]), animRot);
 }
 
-pub const SCALE = 2.1; // a hulking giant — ~1.9x the hero to the crown (owner: shrunk from 2.5)
+// A hulking giant — ~2.2x the hero to the crown. It went 2.5 → 2.1 once (too big) and the owner has now
+// asked for bigger again, so this is deliberately SHORT of the 2.5 that was rejected: judge it off
+// `108_brood_scale`'s ogre framings before pushing it further.
+pub const SCALE = 2.4;
 const WALK_SPEED = heromod.WALK_SPEED * 0.72; // a slow, ground-eating lumber (long legs cover it)
 const AGGRO_R = 18.0; // it sees you coming from far off (it's huge)
 const SLAM_R = 2.3; // starts the overhead slam within this — kept INSIDE the crush strip's true end

@@ -949,30 +949,43 @@ pub fn statueMesh(shader: rl.Shader) rl.Model {
     }
     b.setMat(.marble);
     b.addBox(v3(0, 0.62, 0), v3(0.56, rng.signed() * 0.01, 0), v3(0, 0.08, 0), v3(0, 0, 0.56), MARBLE_LT); // the statue's own base
-    // The figure: a robe narrowing to the shoulders, LEANING a couple of degrees off true.
+    // The figure: a robed BODY — hips, a waist, a chest — leaning a couple of degrees off true.
+    // One smooth taper read as an obelisk however good the folds on it.
     const sway = v3(rng.signed() * 0.06, 0, rng.signed() * 0.05);
     const shoulderY: f32 = 2.36;
-    b.addCapsule(v3(0, 0.66, 0), v3(sway.x, shoulderY, sway.z), 0.46, 0.29, 9, MARBLE);
+    b.addCapsule(v3(0, 0.72, 0), v3(sway.x * 0.4, 1.34, sway.z * 0.4), 0.455, 0.385, 10, MARBLE); // the skirt over the hips
+    b.addCapsule(v3(sway.x * 0.4, 1.34, sway.z * 0.4), v3(sway.x * 0.75, 1.80, sway.z * 0.75), 0.385, 0.295, 10, MARBLE); // drawn in through the waist
+    b.addCapsule(v3(sway.x * 0.75, 1.80, sway.z * 0.75), v3(sway.x, shoulderY - 0.08, sway.z), 0.295, 0.33, 10, MARBLE); // the chest filling back out
+    // The robe's FOLDS — few, uneven, sunk to a few centimetres of relief.
+    const rOf = struct {
+        fn go(y: f32) f32 {
+            if (y < 1.34) return mathx.lerpF(0.455, 0.385, (y - 0.72) / 0.62);
+            if (y < 1.80) return mathx.lerpF(0.385, 0.295, (y - 1.34) / 0.46);
+            return mathx.lerpF(0.295, 0.33, (y - 1.80) / 0.48);
+        }
+    }.go;
     var f: i32 = 0;
-    while (f < 11) : (f += 1) {
-        const a = std.math.tau * @as(f32, @floatFromInt(f)) / 11.0 + rng.signed() * 0.18;
-        const y0 = rng.range(0.68, 0.92);
-        const y1 = rng.range(1.9, 2.32);
-        const r0 = 0.455 - 0.16 * (y0 - 0.66) / 1.7;
-        const r1 = 0.455 - 0.16 * (y1 - 0.66) / 1.7;
+    while (f < 7) : (f += 1) {
+        const a = std.math.tau * @as(f32, @floatFromInt(f)) / 7.0 + rng.signed() * 0.55;
+        const y0 = rng.range(0.70, 1.10);
+        const y1 = rng.range(1.45, 2.20);
+        const fr = rng.range(0.055, 0.085);
+        const a1 = a + rng.signed() * 0.30;
+        const in0 = rOf(y0) - fr * 0.55;
+        const in1 = rOf(y1) - fr * 0.55;
         b.addCapsule(
-            v3(mathx.cosf(a) * r0, y0, mathx.sinf(a) * r0),
-            v3(sway.x * 0.8 + mathx.cosf(a + rng.signed() * 0.25) * r1 * 0.72, y1, sway.z * 0.8 + mathx.sinf(a + rng.signed() * 0.25) * r1 * 0.72),
-            rng.range(0.040, 0.072),
-            rng.range(0.022, 0.048),
-            4,
+            v3(mathx.cosf(a) * in0 + sway.x * (y0 - 0.66) / 1.7, y0, mathx.sinf(a) * in0 + sway.z * (y0 - 0.66) / 1.7),
+            v3(mathx.cosf(a1) * in1 + sway.x * (y1 - 0.66) / 1.7, y1, mathx.sinf(a1) * in1 + sway.z * (y1 - 0.66) / 1.7),
+            fr,
+            fr * rng.range(0.55, 0.8),
+            5,
             if (rng.float() < 0.32) MARBLE_LT else if (rng.float() < 0.55) MARBLE_DK else MARBLE,
         );
     }
     // The hem, flared where it pools on the base.
     b.addCylinder(v3(0, 0.64, 0), v3(0, 0.84, 0), 0.52, 0.455, 10, MARBLE_DK);
-    // A MANTLE over the shoulders, and the shoulders themselves.
-    b.addBlob(v3(sway.x, shoulderY - 0.10, sway.z), v3(0.40, 0.20, 0.30), 4, 8, MARBLE_LT);
+    // A MANTLE over the shoulders, and the shoulder line itself.
+    b.addBlob(v3(sway.x, shoulderY - 0.04, sway.z), v3(0.42, 0.17, 0.29), 6, 10, MARBLE_LT);
     b.addBox(v3(sway.x, shoulderY + 0.06, sway.z), v3(0.38, rng.signed() * 0.02, 0), v3(0, 0.11, 0), v3(0, 0, 0.21), MARBLE);
     // The SNAPPED NECK — a jagged stub, not a clean cut.
     b.addCylinder(v3(sway.x, shoulderY + 0.14, sway.z), v3(sway.x + 0.03, shoulderY + 0.26, sway.z + 0.02), 0.115, 0.095, 7, MARBLE_DK);
@@ -981,18 +994,22 @@ pub fn statueMesh(shader: rl.Shader) rl.Model {
         const a = rng.angle();
         b.addBlob(v3(sway.x + mathx.cosf(a) * 0.06, shoulderY + 0.28 + rng.range(0, 0.05), sway.z + mathx.sinf(a) * 0.06), v3(0.045, 0.035, 0.045), 3, 5, MARBLE_LT);
     }
-    // THE SURVIVING ARM, reaching; the other lost at the shoulder, its break left rough.
-    const ea = v3(sway.x + 0.38, shoulderY - 0.28, sway.z + 0.16);
-    b.addCapsule(v3(sway.x + 0.26, shoulderY - 0.06, sway.z + 0.04), ea, 0.105, 0.078, 6, MARBLE);
-    b.addCapsule(ea, v3(sway.x + 0.60, shoulderY - 0.46, sway.z + 0.34), 0.078, 0.055, 6, MARBLE);
-    b.addBlob(v3(sway.x + 0.64, shoulderY - 0.52, sway.z + 0.38), v3(0.075, 0.055, 0.070), 3, 6, MARBLE_LT); // the hand
-    b.addBlob(v3(sway.x - 0.30, shoulderY - 0.10, sway.z), v3(0.11, 0.10, 0.11), 3, 6, MARBLE_DK); // the lost arm's break
+    // THE SURVIVING ARM, robed and reaching — a sleeve thick enough to read at fifty metres; the other lost at the shoulder.
+    const ea = v3(sway.x + 0.40, shoulderY - 0.30, sway.z + 0.18);
+    b.addCapsule(v3(sway.x + 0.24, shoulderY - 0.04, sway.z + 0.02), ea, 0.155, 0.115, 8, MARBLE); // the sleeve
+    b.addCapsule(ea, v3(sway.x + 0.34, shoulderY - 0.64, sway.z + 0.10), 0.095, 0.05, 6, MARBLE_DK); // its cloth hanging off the elbow
+    b.addCapsule(ea, v3(sway.x + 0.62, shoulderY - 0.44, sway.z + 0.36), 0.085, 0.062, 7, MARBLE); // the bare forearm
+    b.addBlob(v3(sway.x + 0.68, shoulderY - 0.49, sway.z + 0.41), v3(0.085, 0.058, 0.078), 4, 7, MARBLE_LT); // the open hand
+    b.addBlob(v3(sway.x - 0.32, shoulderY - 0.08, sway.z + 0.02), v3(0.15, 0.12, 0.13), 4, 7, MARBLE_DK); // the lost arm's break, rough
     // THE HEAD, lying face-down in the grass where it came off.
     const hx = rng.range(-1.05, -0.62);
     const hz = rng.range(-0.5, 0.75);
     b.addBlob(v3(hx, 0.20, hz), v3(0.21, 0.19, 0.24), 4, 8, MARBLE);
     b.addBlob(v3(hx + 0.06, 0.13, hz - 0.16), v3(0.13, 0.10, 0.11), 3, 6, MARBLE_DK); // the jaw, half in the turf
     b.addBlob(v3(hx - 0.12, 0.30, hz + 0.10), v3(0.13, 0.09, 0.14), 3, 6, MARBLE_LT); // the crown of it, catching the sun
+    // Cheek to the turf, and enough of a FACE that it reads as a head and not an egg.
+    b.addCapsule(v3(hx - 0.06, 0.245, hz + 0.19), v3(hx + 0.10, 0.235, hz + 0.17), 0.035, 0.030, 5, MARBLE_DK); // the brow line
+    b.addBlob(v3(hx + 0.03, 0.185, hz + 0.235), v3(0.032, 0.045, 0.036), 3, 6, MARBLE_LT); // the nose
     // The forearm it also dropped, and the rubble round the plinth.
     b.addCapsule(v3(rng.range(0.5, 0.9), 0.09, rng.range(0.2, 0.8)), v3(rng.range(0.9, 1.3), 0.07, rng.range(-0.1, 0.5)), 0.075, 0.055, 5, MARBLE_DK);
     chipsInto(&b, &rng, 0, 0, 1.45, 0.07, 0.18, 6);

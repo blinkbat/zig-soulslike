@@ -1,5 +1,6 @@
 const std = @import("std");
 const mathx = @import("mathx.zig");
+const stats = @import("stats.zig");
 
 
 pub const StunKind = enum { none, light, heavy };
@@ -136,7 +137,7 @@ pub const Vitals = struct {
 };
 
 // ER's shallow, fast-refilling pool (docs/ELDEN_RING.md §3 — these ARE its Endurance-15 numbers): a flat bite per action, pouring back ~4x as fast as a roll spends it, so it paces a FLURRY without becoming a resource you manage between fights.
-pub const STAM_MAX = 105.0; // ER's Endurance-15 pool — about eight rolls from full
+pub const STAM_MAX = stats.staminaFor(stats.START); // 105 — ENDURANCE owns the pool size now (`stats.zig`); about eight rolls from full
 pub const STAM_ROLL = 12.0; // ER's flat, load-independent roll cost: the anchor for the rest
 pub const STAM_LIGHT = 10.0; // R1, ER's straight-sword band
 pub const STAM_HEAVY = 16.0; // R2
@@ -220,7 +221,7 @@ pub fn guardChip(h: Hit) f32 {
     return h.dmg * (1.0 - GUARD_NEGATE);
 }
 
-pub const FP_MAX = 60.0;
+pub const FP_MAX = stats.fpFor(stats.START); // 60 — MIND owns it (`stats.zig`)
 
 pub const Focus = struct {
     cur: f32 = FP_MAX,

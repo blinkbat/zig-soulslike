@@ -913,6 +913,7 @@ const ToothRow = struct {
     dirY: f32, // -1 = hang down (uppers), +1 = point up (lowers)
     zlean: f32, // base forward lean of each tooth
     z0: f32, // row's z origin at the lip line
+    zCurve: f32 = 0, // the row follows the mouth's ARC — end teeth root back into the jowls, not in the air
     shift: rl.Vector3 = mathx.zero3,
 };
 fn toothRow(b: *Builder, cfg: ToothRow) void {
@@ -920,14 +921,15 @@ fn toothRow(b: *Builder, cfg: ToothRow) void {
     var i: i32 = -4;
     while (i <= 4) : (i += 1) {
         if (trng.float() < 0.14) continue; // a missing tooth
-        const fx = @as(f32, @floatFromInt(i)) * 0.072 + trng.range(-0.016, 0.016); // uneven spacing
+        const fx = @as(f32, @floatFromInt(i)) * 0.064 + trng.range(-0.016, 0.016); // uneven spacing
         const tusk = @abs(i) >= 3 and trng.float() < 0.8;
         const broken = trng.float() < 0.15; // a snapped-off stub
         const len = (if (tusk) cfg.tuskLen else cfg.toothLen) * (if (broken) trng.range(0.3, 0.5) else trng.range(0.72, 1.25));
         const rad = (if (tusk) cfg.tuskRad else cfg.toothRad) * trng.range(0.8, 1.2);
         const dir = v3(trng.range(-0.13, 0.13), cfg.dirY, cfg.zlean + trng.range(-0.05, 0.10)); // each leans its own way
         const y = 0.235 + trng.range(-0.008, 0.012);
-        tooth(b, v3(fx - cfg.shift.x, y - cfg.shift.y, cfg.z0 - cfg.shift.z), dir, len, rad, if (trng.float() < 0.5) TOOTH else TOOTH_DK);
+        const z = cfg.z0 - cfg.zCurve * fx * fx;
+        tooth(b, v3(fx - cfg.shift.x, y - cfg.shift.y, z - cfg.shift.z), dir, len, rad, if (trng.float() < 0.5) TOOTH else TOOTH_DK);
     }
 }
 
@@ -935,52 +937,62 @@ fn eyeMesh(col: rl.Color) rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
     for ([_]f32{ -1, 1 }) |sgn| {
+        const k: f32 = if (sgn < 0) 1.0 else 0.92; // uneven pair, matching the mounds — the left lamp is the big one
         const ex = 0.19 * sgn;
-        b.addCylinder(v3(ex, 0.575, 0.315), v3(ex, 0.645, 0.32), 0.10, 0.05, 9, col);
-        b.addCube(v3(ex, 0.62, 0.36), v3(0.038, 0.07, 0.038), PUPIL); // slit pupil, facing forward
+        const cy = mathx.lerpF(0.525, 0.585, k); // sunk into the lid — the glow shows FORWARD, a glint over the crown, never a bare bulb behind
+        b.addBlob(v3(ex, cy, 0.34), v3(0.10 * k, 0.055 * k, 0.095 * k), 7, 12, col); // the lamp, doming out of its turret
+        b.addBlob(v3(ex, cy + 0.002, 0.34 + 0.095 * k - 0.008), v3(0.018, 0.038, 0.017), 5, 8, PUPIL); // slit pupil breaking the glass
     }
     return b.toMesh();
 }
 
 fn bodyMesh() rl.Mesh {
     var b = Builder.init();
+    var rng = mathx.Rng.init(4207);
     b.setMat(.hide);
-    // Body: a fat dome — belly (bottom) widening up to the midsection, then humping up and narrowing to the back crown (apex set a touch REAR so the profile leans forward).
-    b.addCylinder(v3(0, 0.02, -0.02), v3(0, 0.28, -0.03), 0.24, 0.42, 14, HIDE); // lower/mid
-    b.addCylinder(v3(0, 0.28, -0.03), v3(0, 0.60, -0.10), 0.42, 0.15, 14, HIDE); // humped back
+    // Trunk: a squat dome — wide at the seat, humping up and back to the crown (apex set REAR so the profile leans forward).
+    b.addBlob(v3(0, 0.26, -0.02), v3(0.42, 0.27, 0.45), 9, 15, HIDE);
+    b.addBlob(v3(0.02, 0.43, -0.13), v3(0.29, 0.20, 0.29), 8, 13, HIDE); // the humped crown, a shade off-line
+    b.addBlob(v3(-0.03, 0.28, -0.36), v3(0.19, 0.15, 0.15), 7, 12, HIDE_DK); // shadowed rump
     b.setMat(.skin);
-    b.addCube(v3(0, 0.10, 0.08), v3(0.46, 0.16, 0.44), BELLY); // pale sickly belly, low + front
+    b.addBlob(v3(0, 0.13, 0.10), v3(0.27, 0.13, 0.27), 8, 13, BELLY); // pale sickly belly, low + front
     b.setMat(.hide);
 
-    // Broad head jutting forward at the mouth line (~y0.24), warty brow above.
-    b.addCube(v3(0, 0.34, 0.34), v3(0.62, 0.24, 0.34), HIDE); // head block / brow
-    b.addCube(v3(0, 0.255, 0.46), v3(0.58, 0.09, 0.16), HIDE_DK); // upper lip / snout rim
+    // The head: one broad jowled mass jutting at the mouth line (~y0.24), never a slab.
+    b.addBlob(v3(0, 0.345, 0.30), v3(0.33, 0.13, 0.22), 9, 15, HIDE);
+    for ([_]f32{ -1, 1 }) |sgn| {
+        const k: f32 = if (sgn < 0) 1.06 else 0.96; // jowls uneven
+        b.addBlob(v3(sgn * 0.215, 0.315, 0.34), v3(0.145 * k, 0.10 * k, 0.15 * k), 7, 12, HIDE);
+    }
+    b.addBlob(v3(0, 0.26, 0.44), v3(0.32, 0.05, 0.10), 8, 14, HIDE_DK); // upper lip roll over the tooth line
     b.setMat(.skin); // moist mouth tissue — soft mottle, not warty
-    b.addCube(v3(0, 0.30, 0.32), v3(0.48, 0.06, 0.34), MAW); // roof of the mouth (gape not hollow)
-    b.addCube(v3(0, 0.25, 0.18), v3(0.42, 0.16, 0.14), MAW); // gullet — a dark cavern behind the teeth when agape
+    b.addBlob(v3(0, 0.30, 0.30), v3(0.24, 0.035, 0.17), 6, 12, MAW); // roof of the mouth (gape not hollow)
+    b.addBlob(v3(0, 0.25, 0.16), v3(0.21, 0.085, 0.10), 6, 11, MAW); // gullet — a dark cavern behind the teeth when agape
     b.setMat(.hide);
 
     for ([_]f32{ -1, 1 }) |sgn| {
+        const k: f32 = if (sgn < 0) 1.0 else 0.92; // the left turret bigger and higher
         const ex = 0.19 * sgn;
-        b.addCube(v3(ex, 0.46, 0.30), v3(0.24, 0.13, 0.24), HIDE_DK); // brow socket
-        b.addCylinder(v3(ex, 0.43, 0.31), v3(ex, 0.63, 0.31), 0.135, 0.085, 9, HIDE_LT); // eye mound
+        b.addBlob(v3(ex, 0.45, 0.30), v3(0.135 * k, 0.075, 0.125), 7, 12, HIDE_DK); // brow socket
+        b.addBlob(v3(ex, mathx.lerpF(0.44, 0.50, k), 0.31), v3(0.125 * k, 0.115 * k, 0.115 * k), 8, 13, HIDE_LT); // eye mound
+        b.addBlob(v3(ex, mathx.lerpF(0.515, 0.575, k), 0.285), v3(0.115 * k, 0.055, 0.095 * k), 7, 12, HIDE_LT); // the heavy lid hooding the lamp's rear — glow faces FORWARD
     }
-    // Nostrils at the snout tip.
-    b.addCube(v3(0.08, 0.40, 0.54), v3(0.035, 0.035, 0.035), HIDE_DK);
-    b.addCube(v3(-0.08, 0.40, 0.54), v3(0.035, 0.035, 0.035), HIDE_DK);
+    // Nostrils at the snout tip — an unmatched pair.
+    b.addBlob(v3(0.085, 0.395, 0.495), v3(0.023, 0.018, 0.023), 5, 8, HIDE_DK);
+    b.addBlob(v3(-0.072, 0.402, 0.50), v3(0.019, 0.016, 0.020), 5, 8, HIDE_DK);
 
-    toothRow(&b, .{ .seed = 9173, .tuskLen = 0.21, .toothLen = 0.13, .tuskRad = 0.046, .toothRad = 0.030, .dirY = -1, .zlean = 0.10, .z0 = 0.50 });
+    toothRow(&b, .{ .seed = 9173, .tuskLen = 0.21, .toothLen = 0.13, .tuskRad = 0.046, .toothRad = 0.030, .dirY = -1, .zlean = 0.10, .z0 = 0.50, .zCurve = 0.55 });
 
     // Warty humps scattered over the domed back (deterministic seed, like the flora clumps).
-    var rng = mathx.Rng.init(4207);
     var w: i32 = 0;
-    while (w < 13) : (w += 1) {
+    while (w < 17) : (w += 1) {
         const a = rng.angle();
-        const h = rng.range(0.30, 0.56);
-        const rr = mathx.lerpF(0.40, 0.16, (h - 0.28) / 0.32) - 0.015; // ride the dome surface
+        const h = rng.range(0.30, 0.50);
+        const rr = mathx.lerpF(0.40, 0.16, (h - 0.28) / 0.32) - 0.02; // ride the dome surface, sunk most of the way in
         const wx = mathx.cosf(a) * rr;
         const wz = -0.05 + mathx.sinf(a) * rr;
-        b.addCube(v3(wx, h, wz), v3(rng.range(0.05, 0.09), rng.range(0.03, 0.055), rng.range(0.05, 0.09)), if (rng.float() < 0.5) HIDE_DK else HIDE_LT);
+        const ws = rng.range(0.026, 0.050);
+        b.addBlob(v3(wx, h, wz), v3(ws, ws * rng.range(0.45, 0.7), ws * rng.range(0.8, 1.25)), 5, 9, if (rng.float() < 0.5) HIDE_DK else HIDE_LT);
     }
     return b.toMesh();
 }
@@ -995,13 +1007,18 @@ fn lowerJawMesh() rl.Mesh {
         }
     }.at;
     b.setMat(.hide);
-    b.addCube(j(0, 0.185, 0.28), v3(0.58, 0.09, 0.46), HIDE); // jaw slab
+    b.addBlob(j(0, 0.18, 0.26), v3(0.31, 0.055, 0.25), 8, 14, HIDE); // the jaw's shovel mass
+    for ([_]f32{ -1, 1 }) |sgn| {
+        const k: f32 = if (sgn < 0) 1.05 else 0.95; // rami uneven
+        b.addBlob(j(sgn * 0.20, 0.19, 0.18), v3(0.12 * k, 0.05, 0.16 * k), 6, 11, HIDE);
+    }
     b.setMat(.skin);
-    b.addCube(j(0, 0.14, 0.26), v3(0.52, 0.07, 0.42), BELLY); // pale chin underside
-    b.addCube(j(0, 0.225, 0.34), v3(0.48, 0.03, 0.30), TONGUE); // fleshy floor / tongue
+    b.addBlob(j(0, 0.145, 0.26), v3(0.28, 0.05, 0.22), 7, 12, BELLY); // pale chin underside
+    b.addBlob(j(0, 0.225, 0.30), v3(0.24, 0.025, 0.16), 6, 12, TONGUE); // fleshy floor
+    b.addBlob(j(0, 0.235, 0.36), v3(0.10, 0.022, 0.09), 5, 9, TONGUE); // the tongue's fat root hump
     b.setMat(.hide);
-    b.addCube(j(0, 0.235, 0.49), v3(0.50, 0.05, 0.09), HIDE_DK); // lower lip rim
-    toothRow(&b, .{ .seed = 6421, .tuskLen = 0.19, .toothLen = 0.115, .tuskRad = 0.042, .toothRad = 0.028, .dirY = 1, .zlean = 0.08, .z0 = 0.49, .shift = P_JAW });
+    b.addBlob(j(0, 0.235, 0.47), v3(0.30, 0.032, 0.062), 8, 14, HIDE_DK); // lower lip rim
+    toothRow(&b, .{ .seed = 6421, .tuskLen = 0.19, .toothLen = 0.115, .tuskRad = 0.042, .toothRad = 0.028, .dirY = 1, .zlean = 0.08, .z0 = 0.49, .zCurve = 0.55, .shift = P_JAW });
     return b.toMesh();
 }
 
@@ -1009,35 +1026,39 @@ fn lowerJawMesh() rl.Mesh {
 fn throatMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin); // stretched membrane — soft mottle, no warts
-    b.addCylinder(v3(0, 0.06, 0), v3(0, -0.04, 0.01), 0.19, 0.24, 10, SAC);
-    b.addCylinder(v3(0, -0.04, 0.01), v3(0, -0.13, 0.01), 0.24, 0.12, 10, SAC);
-    b.addCube(v3(0, -0.02, 0.05), v3(0.34, 0.18, 0.24), SAC); // fill the pouch out front
+    b.addBlob(v3(0, -0.025, 0.01), v3(0.24, 0.11, 0.20), 8, 13, SAC);
+    b.addBlob(v3(0.015, -0.075, 0.07), v3(0.165, 0.065, 0.14), 7, 11, SAC); // the droop, slung a shade off-centre
     return b.toMesh();
 }
 
 // Back-leg thigh — authored at the hip origin, a fat haunch reaching up to the folded knee.
 fn thighMesh(side: f32) rl.Mesh {
     var b = Builder.init();
+    var rng = mathx.Rng.init(if (side > 0) 0xF60601 else 0xF60602);
     b.setMat(.hide);
     const knee = v3((P_KNEE.x - P_HIP.x) * side, P_KNEE.y - P_HIP.y, P_KNEE.z - P_HIP.z);
-    b.addCylinder(v3(0, 0, 0), knee, 0.20, 0.13, 10, HIDE);
-    b.addCylinder(v3(0, 0.03, -0.02), v3(knee.x * 0.55, knee.y * 0.55, knee.z * 0.55 - 0.03), 0.225, 0.17, 10, HIDE_LT); // big muscle bulge
+    b.addCapsule(v3(0, 0, 0), knee, 0.19, 0.125, 12, HIDE);
+    const bulge = v3(knee.x * 0.42, knee.y * 0.42 + 0.02, knee.z * 0.42 - 0.03);
+    b.addBlob(bulge, v3(0.215 * rng.range(0.95, 1.05), 0.185, 0.20 * rng.range(0.95, 1.06)), 8, 13, HIDE_LT); // the great haunch muscle, its own size each side
+    b.addBlob(knee, v3(0.135, 0.125, 0.13), 7, 12, HIDE); // knee knuckle
     return b.toMesh();
 }
 
 fn shankMesh(side: f32) rl.Mesh {
     var b = Builder.init();
+    var rng = mathx.Rng.init(if (side > 0) 0x5A4E01 else 0x5A4E02);
     b.setMat(.hide);
     // Foot target relative to the knee (knee sits at P_KNEE in the body frame; foot ~ground, forward + slightly out).
     const foot = v3(-0.10 * side, 0.0 - P_KNEE.y, 0.16 - P_KNEE.z);
-    b.addCylinder(v3(0, 0, 0), foot, 0.115, 0.05, 8, HIDE); // shin
-    // Webbed foot: a flat pad + three splayed toes fanning forward.
+    b.addCapsule(v3(0, 0, 0), foot, 0.11, 0.05, 10, HIDE); // shin
+    // Webbed foot: a soft pad + three splayed toes fanning forward, each its own length.
     const heel = foot;
-    b.addCube(v3(heel.x, heel.y + 0.015, heel.z + 0.05), v3(0.17, 0.035, 0.15), HIDE_DK);
+    b.addBlob(v3(heel.x, heel.y + 0.015, heel.z + 0.05), v3(0.16, 0.028, 0.15), 6, 11, HIDE_DK);
     for ([_]f32{ -1, 0, 1 }) |t| {
-        const toe = v3(heel.x + t * 0.12, heel.y + 0.005, heel.z + 0.20);
-        b.addCylinder(v3(heel.x + t * 0.05, heel.y + 0.02, heel.z + 0.05), toe, 0.032, 0.012, 5, HIDE_DK);
-        b.addCube(v3(toe.x, toe.y, toe.z + 0.01), v3(0.03, 0.015, 0.045), CLAW); // little claw tip
+        const tl = rng.range(0.17, 0.215);
+        const toe = v3(heel.x + t * (0.115 + rng.range(-0.01, 0.015)), heel.y + 0.005, heel.z + tl);
+        b.addCapsule(v3(heel.x + t * 0.05, heel.y + 0.02, heel.z + 0.05), toe, 0.030, 0.014, 6, HIDE_DK);
+        b.addBlob(v3(toe.x, toe.y, toe.z + 0.015), v3(0.014, 0.011, 0.026), 4, 7, CLAW); // little claw tip
     }
     return b.toMesh();
 }
@@ -1045,12 +1066,15 @@ fn shankMesh(side: f32) rl.Mesh {
 // Front leg — authored at the shoulder origin; small, splayed, planting forward.
 fn armMesh(side: f32) rl.Mesh {
     var b = Builder.init();
+    var rng = mathx.Rng.init(if (side > 0) 0xA2601 else 0xA2602);
     b.setMat(.hide);
     const hand = v3(0.02 * side, -0.26, 0.16);
-    b.addCylinder(v3(0, 0, 0), hand, 0.075, 0.045, 8, HIDE);
-    b.addCube(v3(hand.x, hand.y - 0.005, hand.z + 0.03), v3(0.12, 0.03, 0.11), HIDE_DK); // splayed hand
+    b.addCapsule(v3(0, 0, 0), hand, 0.072, 0.043, 9, HIDE);
+    b.addBlob(v3(hand.x, hand.y - 0.006, hand.z + 0.03), v3(0.105, 0.026, 0.10), 5, 9, HIDE_DK); // splayed hand pad
     for ([_]f32{ -1, 0, 1 }) |t| {
-        b.addCube(v3(hand.x + t * 0.05, hand.y - 0.005, hand.z + 0.10), v3(0.022, 0.02, 0.06), CLAW);
+        const fl = rng.range(0.05, 0.075);
+        b.addCapsule(v3(hand.x + t * 0.045, hand.y - 0.004, hand.z + 0.06), v3(hand.x + t * 0.055, hand.y - 0.008, hand.z + 0.06 + fl), 0.014, 0.008, 5, HIDE_DK);
+        b.addBlob(v3(hand.x + t * 0.056, hand.y - 0.008, hand.z + 0.065 + fl), v3(0.010, 0.009, 0.016), 4, 7, CLAW);
     }
     return b.toMesh();
 }

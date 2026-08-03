@@ -79,8 +79,15 @@ pub fn shrubMesh(shader: rl.Shader) rl.Model {
         const lobeR = rng.range(0.11, 0.20) * (1.0 - 0.5 * rr / 0.36); // fuller toward the centre
         const top = base + lobeR * rng.range(1.5, 2.4) * (1.0 - 0.4 * rr / 0.36); // domed profile
         const col = if (rng.float() < 0.5) SCRUB else SCRUB_DK;
-        // a fat, short, slightly-leaning tapered cylinder = one rounded leafy lobe
-        b.addCylinder(v3(x, base, z), v3(x + rng.signed() * 0.05, top, z + rng.signed() * 0.05), lobeR, lobeR * 0.45, 6, col);
+        // a fat, short, slightly-leaning capsule = one rounded leafy lobe (a cylinder leaves an open rim at the top)
+        b.addCapsule(v3(x, base, z), v3(x + rng.signed() * 0.05, top, z + rng.signed() * 0.05), lobeR, lobeR * 0.45, 6, col);
+    }
+    var f: i32 = 0;
+    while (f < 8) : (f += 1) { // small leaf clusters breaking the domed profile
+        const a = rng.angle();
+        const d = rng.range(0.18, 0.42);
+        const r = rng.range(0.055, 0.10);
+        b.addBlob(v3(mathx.cosf(a) * d, rng.range(0.12, 0.44) * (1.0 - 0.5 * d / 0.42), mathx.sinf(a) * d), v3(r, r * 0.7, r * 1.1), 3, 6, if (rng.float() < 0.5) SCRUB_DK else SCRUB);
     }
     b.addCylinder(v3(0.06, 0.0, 0.03), v3(0.20, 0.54, 0.12), 0.018, 0.004, 4, BARK_DK); // bare twigs poking through
     b.addCylinder(v3(-0.05, 0.0, -0.02), v3(-0.24, 0.48, -0.20), 0.018, 0.004, 4, BARK_DK);
@@ -167,6 +174,15 @@ pub fn bushMesh(shader: rl.Shader) rl.Model {
         const y = rng.range(0.30, 0.88) * (1.0 - 0.30 * t);
         const col = if (i == 0 or rng.float() < 0.22) LEAF_GOLD else if (rng.float() < 0.5) LEAF else LEAF_DK;
         b.addBlob(v3(mathx.cosf(a) * d, y, mathx.sinf(a) * d), v3(r, r * rng.range(0.62, 0.9), r * rng.range(0.85, 1.15)), 4, 7, col);
+    }
+    var f: i32 = 0;
+    while (f < 10) : (f += 1) { // small leaf clusters over the shell — the silhouette stops being balls
+        const a = rng.angle();
+        const d = rng.range(0.32, 0.60);
+        const r = rng.range(0.07, 0.13);
+        const y = rng.range(0.20, 0.74) * (1.0 - 0.30 * d / 0.62);
+        const col = if (rng.float() < 0.16) LEAF_GOLD else if (rng.float() < 0.55) LEAF_DK else LEAF;
+        b.addBlob(v3(mathx.cosf(a) * d, y, mathx.sinf(a) * d), v3(r, r * 0.7, r * 1.1), 3, 6, col);
     }
     tuftInto(&b, &rng, rng.signed() * 0.55, rng.signed() * 0.55, 0.7);
     return b.toModel(shader);

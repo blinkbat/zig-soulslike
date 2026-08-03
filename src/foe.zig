@@ -18,6 +18,14 @@ pub fn closestApproach(bodyR: f32) f32 {
 
 pub const AIRBORNE_LIFT: f32 = 0.04;
 
+/// STILL A BODY IN THE WAY. A CORPSE IS NOT ONE (owner's call, and the genre's rule): the frame a foe
+/// dies you must be able to walk straight through it, and `alive()` stays true for the whole death
+/// collapse plus its dissipation — seconds of a dead thing you were shouldering past. `pierceGroup`
+/// already asked the question this way; this is the one place it is written.
+pub fn corporeal(f: anytype) bool {
+    return f.alive() and !f.dying();
+}
+
 // THE LEASH — and the provocation that overrides it.
 
 /// Drawn THIS far from where it was posted and it starts thinking about going back…
@@ -276,6 +284,25 @@ pub fn strike(vit: *combat.Vitals, hitLatch: *bool, center: rl.Vector3, hurtR: f
     sweep.y = 0;
     const dir = if (mathx.lenXZ(sweep) > 0.03) mathx.normV(sweep) else mathx.dirXZ(contact, center);
     return .{ .contact = contact, .dir = dir, .reaction = vit.hit(blade.hit) };
+}
+
+test "a CORPSE is not a body in the way, from the frame it starts to fall" {
+    const Dummy = struct {
+        gone: bool = false,
+        down: bool = false,
+        fn alive(self: *const @This()) bool {
+            return !self.gone;
+        }
+        fn dying(self: *const @This()) bool {
+            return self.down;
+        }
+    };
+    var d = Dummy{};
+    try std.testing.expect(corporeal(&d));
+    d.down = true; // the collapse has begun, and `alive()` stays true for seconds yet
+    try std.testing.expect(!corporeal(&d));
+    d.gone = true;
+    try std.testing.expect(!corporeal(&d));
 }
 
 test "THE LEASH: a foe drawn far from home walks back once the fight has gone quiet" {

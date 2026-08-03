@@ -80,6 +80,13 @@ const STRIDE = 0.62; // ground covered per full leg cycle
 const STEP_SWING = 26.0; // deg the femur sweeps fore/aft
 const STEP_LIFT = 20.0;
 const KNEE_REST = 96.0; // the standing knee angle (deg) — high and folded
+// THE DEAD LEG BASKET. A spider ends on its BACK, so the legs' own ventral swing is what carries
+// them UP: the femur drives the knee down THROUGH the body's frame (+, the step-lift's sign) and
+// the tibia folds back the other way, and the pair arch over the belly. Curling the femur the
+// other way instead folds each leg flat against the trunk, which on an upturned body buries all
+// eight feet and leaves a bare lump — measure any retune against 112d, not against the standing pose.
+const CURL_FEMUR = 70.0;
+const CURL_KNEE = -95.0;
 const IDLE_BOB = 0.028; // a slow breathing rise/fall at rest
 
 const TURN_RATE = 2.4; // rad/s — she is SLOW to come round, and that is a real opening
@@ -137,7 +144,7 @@ pub const ACID_TICK_DMG: f32 = 6.4;
 const POOL_CAP: usize = 12;
 
 // THE BROODLING'S.
-const B_SCALE = 0.62;
+const B_SCALE = 0.72; // a shade bigger (owner's call) — still well under the mother's M_SCALE
 const B_STAND = 1.22;
 const B_HP = 18.0;
 const B_POISE = 1.0;
@@ -301,6 +308,11 @@ fn rideDropSkin(sk: Skin) f32 {
 }
 fn rideDrop(r: Role) f32 {
     return rideDropSkin(skinOf(r));
+}
+/// Where a flipped corpse's back finds the ground (author units): the standing crown, mirrored about the BODY_Y roll hinge, less the ride the legs no longer provide.
+fn deadRest(sk: Skin) f32 {
+    const crown: f32 = if (sk.matron) 1.05 else 1.02; // a hatchling rests on its slung abdomen, higher than its carapace
+    return rideDropSkin(sk) - (2.0 * BODY_Y - crown);
 }
 
 /// THE ABDOMEN'S HALF-HEIGHT and where its centre has to sit, both derived.
@@ -943,6 +955,9 @@ pub const Spider = struct {
     bladeOpen: f32 = 0,
     abdoPump: f32 = 0, // the abdomen swelling/pumping through a lay or a spit
     fangs: f32 = 0,
+    roll: f32 = 0, // the death KEEL — degrees about the body's long axis, hinged at BODY_Y
+    settle: f32 = 0, // death-only world-Y shift: the flipped back finding the ground the legs no longer hold it off
+    legCurl: f32 = 0, // death-only: femurs drawn in + knees clamped — the dead spider's leg basket
 
     vit: combat.Vitals = combat.Vitals.initFoe(M_HP, M_POISE, M_STANCE),
     hits: u32 = 0,
@@ -1625,16 +1640,31 @@ pub const Spider = struct {
         self.lift = 0;
     }
     fn resolveDeath(self: *Spider, dt: f32) void {
-        // A dead spider CURLS: the legs draw in under the body and it settles onto them.
-        const k = mathx.smoothstep(0, 0.55, mathx.clampF(self.t / DEATH_DUR, 0, 1));
-        self.crouch = 0.85 * k;
+        // A dead spider ends on its BACK, and the CAUSE reads in the order: the legs CRAMP first,
+        // the stance fails, it FALLS sideways — accelerating, past flat — rocks back once, and clenches.
+        const u = mathx.clampF(self.t / DEATH_DUR, 0, 1);
+        const rearK = mathx.smoothstep(0, 0.10, u) * (1.0 - mathx.smoothstep(0.10, 0.30, u)); // one fast convulsion
+        const cramp = mathx.smoothstep(0.03, 0.30, u);
+        const clench = mathx.smoothstep(0.55, 0.85, u);
+        const f = mathx.clampF((u - 0.20) / 0.35, 0, 1);
+        const fall = f * f; // gravity's ease-in: slow past the balance point, arriving HOT
+        const sk = skinOf(self.role);
+        const dir: f32 = if (self.seed > 0.5) 1.0 else -1.0; // which shoulder it keels over — per spider, cosmetic
+        const rollMax = 186.0 + 10.0 * self.seed; // the crash carries PAST flat…
+        const rollRest = 168.0 + 14.0 * self.seed; // …and the rock-back settles short of it
+        self.roll = dir * (rollMax * fall - (rollMax - rollRest) * mathx.smoothstep(0.55, 0.74, u));
+        self.pitch = 26.0 * rearK + 5.0 * clench; // the head end stays out of the dirt
         self.rear = 0;
-        self.pitch = 20.0 * k;
-        self.armSpread = -28.0 * k;
-        self.armDrive = -0.8 * k;
-        self.bladeOpen = -0.6 * k;
-        self.abdoPump = -0.3 * k;
-        self.fangs = 0;
+        self.crouch = 0.35 * cramp;
+        self.legCurl = 0.55 * cramp + 0.45 * clench; // the cramp is what tips it; the clench is the corpse
+        // The ground arrives WITH the fall, not eased under it — and bodyDrop inverts with the frame,
+        // so the cramp's -0.30·crouch lifts the flipped body; the settle pays it back.
+        self.settle = (deadRest(sk) * mathx.smoothstep(0.30, 0.54, u) - 0.30 * 0.35 * cramp * fall) * self.scale;
+        self.armSpread = 46.0 * rearK - 30.0 * clench;
+        self.armDrive = -0.4 * cramp - 0.5 * clench;
+        self.bladeOpen = 0.9 * rearK - 0.6 * clench;
+        self.abdoPump = 0.25 * rearK - 0.3 * clench;
+        self.fangs = rearK;
         self.lift = 0;
         if (self.t >= DEATH_DUR) {
             self.fade = mathx.smoothstep(DEATH_DUR, DEATH_DUR + DISS_DUR, self.t);
@@ -1658,9 +1688,11 @@ pub const Spider = struct {
         // The BODY rides up and down on its legs (`crouch`) and tips its front up (`rear`) — the legs are placed off the same frame, so the whole animal squats over feet that stay where they were put.
         const bodyDrop = -self.crouch * 0.30;
         // …and the whole animal rides at whatever its own leg length can hold it at (see `rideDrop`), in WORLD units because the frame's translate happens after the scale.
-        const ride = self.pos.y + self.lift + sink - rideDrop(self.role) * fs;
+        const ride = self.pos.y + self.lift + sink + self.settle - rideDrop(self.role) * fs;
+        // The death KEEL: a barrel roll about the body's own long axis, hinged at BODY_Y, so the trunk spins in place and the legs sweep overhead. rz(0) makes it the exact identity — no living pose moves.
+        const keel = mul3(tr(0, -BODY_Y, 0), rz(self.roll), tr(0, BODY_Y, 0));
         const frame = mul(
-            scaleM(fs, fs, fs),
+            mul(keel, scaleM(fs, fs, fs)),
             mul3(
                 rx(self.pitch - self.rear * 22.0),
                 ry(mathx.degrees(self.facing)),
@@ -1668,7 +1700,7 @@ pub const Spider = struct {
             ),
         );
         const legFrame = mul(
-            scaleM(fs, fs, fs),
+            mul(keel, scaleM(fs, fs, fs)),
             mul3(ry(mathx.degrees(self.facing)), tr(0, 0, 0), tr(self.pos.x, ride, self.pos.z)),
         );
 
@@ -1702,9 +1734,9 @@ pub const Spider = struct {
                 const fan = 34.0 - @as(f32, @floatFromInt(i)) * 22.0;
                 const swing = fan + c * STEP_SWING;
                 const knee = KNEE_REST - 26.0 * lift - 16.0 * self.crouch;
-                wx[FEMUR_0 + base + i] = place(hip, mul(ry(-sgn * swing), rz(-sgn * (STEP_LIFT * lift - 26.0 * self.crouch))), legFrame);
+                wx[FEMUR_0 + base + i] = place(hip, mul(ry(-sgn * swing), rz(-sgn * (STEP_LIFT * lift - 26.0 * self.crouch + CURL_FEMUR * self.legCurl))), legFrame);
                 const kneeOff = v3(sgn * FEMUR_OUT * sk.legScale, FEMUR_UP * sk.legScale, 0);
-                wx[TIBIA_0 + base + i] = place(kneeOff, rz(sgn * knee * 0.42), wx[FEMUR_0 + base + i]);
+                wx[TIBIA_0 + base + i] = place(kneeOff, rz(sgn * (knee * 0.42 + CURL_KNEE * self.legCurl)), wx[FEMUR_0 + base + i]);
             }
         }
         self.xf = wx;

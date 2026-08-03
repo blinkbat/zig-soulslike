@@ -28,6 +28,13 @@ ask. The owner drives the design; implement what's asked and nothing extra.
 - **FLESH IS ROUND.** Organic mass = `addBlob`/`addCapsule`; `addCube`/`addBox` is for iron,
   blades, cloth, masonry. A bare `addCylinder` leaves an open cut-pipe end and a hard rim, and
   those rims + boxes are what read as BLOCKY however good the animation on top is.
+- **NOTHING DEAD IS STRAIGHT, AND NOTHING ENDS IN A POINT** (owner: the leafless trees' "branches are
+  all floating"). A limb drawn as ONE capsule to a needle tip is a SPEAR, and a rosette of them is a
+  hub of spokes — which is what read as detached, not the placement. A dead limb leaves the bole on the
+  bole's own AXIS, rises to an elbow, then DROOPS and bends off the line to a blunt SNAP of pale
+  heartwood; its twigs root on that outer half and carry ON outward. Struck off across the limb instead
+  they cross their own parent and read as loose needles lying near a branch. `propwood.deadLimbInto`
+  is the one of these both leafless trees (`tree`, `snag`) call.
 - **RELIEF IS SUBTLE.** Protruding detail — flutes, bark ridges, bedding bands, coursing, fracture
   shards — exists to BREAK UP a big mass, and it does that with a few centimetres. Stand it further
   off than that and it reads DISHEVELED: strips stuck onto a column, slates hung off a cliff, a wall
@@ -282,6 +289,14 @@ meadow's (`shaders.terrainAlbedo`'s region drift — the GLSL, not the Zig).
                  read back in `sfx.init`. Debug holds Stats / Wireframe / Time Scale and the Retro
                  Filters list (15 filters + presets). Both slider screens share one gauge column
                  (`drawCard`'s `gauges` slice) and one adjust feel (`adjustDelta`).
+                 **START OPENS THE CHARACTER MENU** (Attributes / Inventory / Equipment), a second root
+                 the whole screen stack hangs off (`Screen.root`) so SELECT and START toggle their own
+                 side and nothing else. ATTRIBUTES is the character sheet — the seven of `stats.zig`,
+                 rows walked off the enum, each with its points right-aligned and a FOOTNOTE saying what
+                 the selected one governs and how much of that bar it is buying. Read-only: there is no
+                 leveling, so no row adjusts. One `drawCard` draws every screen and its optional columns
+                 are one `Card` struct (`gauges` / `values` / `note`); a column slice SHORTER than the
+                 row list simply leaves the tail bare, which is how Back gets no number.
 - `hero.zig`   — THE HERO. Anthropometric FK skeleton + every animation, the swept blade hit
                  capsule (rides the SWORD bone's dummy points, active only in the strike's window,
                  FAT on purpose for vertical forgiveness), the swing trail, and the GUARD — the
@@ -413,6 +428,9 @@ meadow's (`shaders.terrainAlbedo`'s region drift — the GLSL, not the Zig).
                  the GAME camera last stood.
 - `ui.zig`     — the editor's immediate-mode widget kit, lifted from `../zig-diablo/src/ui.zig`
                  and re-backed onto `hud.zig`. `Ctx.anyHot` gates world clicks NEXT frame.
+- `uiart.zig`  — the chrome's DRESSING (stone plates, gilt frames, jewels, dividers, sheen),
+                 shared by hud/menu/ui the way `propart.zig` is shared by the props. Adapted from
+                 `../zig-diablo/src/hudx.zig` and `../crawler`'s theme kit.
 - `icons.zig`  — the editor's GLYPH SET, drawn from primitives (`ui.Icon` re-exports it). Vector, not
                  an atlas: the buttons scale off `hud.MONO` and a bitmap icon would be the one thing in
                  the chrome that blurs when the type size moves.
@@ -428,6 +446,26 @@ meadow's (`shaders.terrainAlbedo`'s region drift — the GLSL, not the Zig).
                  `coverField`, and the three systems that make this size affordable —
                  the UNIFORM GRID, the CULLERS (`View`/`Cull`), the grid-local solid queries.
                  Also gathers each fire's `gfx.Light` and uploads the nearest per frame.
+                 **AND THE OCCLUDER FADE** (`markOccluders`): a prop of a kind that `fades`, standing
+                 between the lens and him, goes THIN — plain per-draw opacity, lit pass only, depth mask
+                 off (the same path the aim camera's own fade takes). Never invisible (`OCCL_FLOOR`), and
+                 keyed to HOW MUCH OF HIM IT HIDES, measured against the COLLIDERS rather than the bound,
+                 because a bound is a canopy's whole spread and every tree within seven metres of the line
+                 was thinning off it. Three rules keep it from reading as a switch, which is the whole
+                 difficulty — a fade you notice happening is worse than no fade:
+                 - **THE GEOMETRY SETS A TARGET, TIME GETS YOU THERE.** `fadeTo` is a pure function of
+                   the sight line; `fade` is what draws, walked toward it at a fixed rate (`OCCL_IN` 0.16 s
+                   in, `OCCL_OUT` 0.34 s back — OUT IS SLOWER because a trunk hardening over the hero is
+                   the uglier half). Cover can cross the whole `OCCL_MIN`..`OCCL_FULL` window in two frames
+                   when the camera whips, so a target-only fade IS a switch however smooth its curve.
+                 - **IT STOPS BEING IN THE WAY OVER A BAND, NOT AT A PLANE** (`OCCL_DEPTH_BAND`). Cut at
+                   the plane through him, a trunk he walks past went fully thinned → fully solid in one
+                   frame, and it happened right over him where it shows worst.
+                 - **`OCCL_MAX` COUNTS WHAT IS IN FLIGHT**, thinning and recovering both, so it is bigger
+                   than any one sight line needs; full, a prop simply stays solid. And `materialize` clears
+                   the list, because those are prop INDICES into a world about to be replaced.
+                 - The clock is `game.drawDt` — the REAL frame time, not the time-scaled one, and `--shot`
+                   parks it at `shots.SETTLE_DT` so a single-frame capture shows the fade's END state.
 **HOW THE FILES ARE DIVIDED** (and why, because the rule is not "keep files short"): the thing being
 minimised is HOW MANY TOKENS IT TAKES TO MAKE A CORRECT CHANGE. That favours COHESION, not size — a
 900-line file whose contents all change together is fine, and splitting it into forty files makes the
@@ -437,7 +475,10 @@ lines where the concerns genuinely part company, and each new file is named so t
   seven `prop*.zig` files by family — `propart.zig` (the palette + shared weathering moves),
   `propruins`, `propbuild`, `propvillage`, `proprock`, `propwood`, `propflora`, `propfx`. The
   qualifier in each row (`.build = wood.snagMesh`) IS the pointer to the file. Bark reads pale? That
-  is one file, and it is the file holding every other thing made of wood.
+  is one file, and it is the file holding every other thing made of wood. It also holds
+  `deadLimbInto` — see NOTHING DEAD IS STRAIGHT — and the reason the peeling bark on `tree` is SUNK: a
+  strip stood off along its whole length (it was up to 0.16 clear of a bole of radius 0.2) is a dark tube
+  floating beside the trunk, and that plus the spoke branches was the whole of "the branches are floating".
 - `shaders.zig` is every line of GLSL and nothing else; `gfx.zig` is the Zig that compiles it, feeds
   it uniforms and binds it. The contract between them (uniform names, material ids, texture slots) is
   written at the top of `shaders.zig`.
@@ -464,7 +505,8 @@ lines where the concerns genuinely part company, and each new file is named so t
                  why only the rim has a `Kind` set here to seed from.
 - `frog.zig`   — THE GAPING TOAD + the `Knot`. Squash-&-stretch rig, hop/lunge/chomp AI, huge
                  reactions, death → a grace-gold mote DISSIPATION (never a hard vanish).
-- `archer.zig` — THE SKELETAL ARCHER + the `Line`. A bare-bones humanoid FOUNDED ON THE HERO RIG.
+- `archer.zig` — THE SKELETAL ARCHER + the `Line`. A bare-bones humanoid FOUNDED ON THE HERO RIG, and
+                 **A FOOT TALLER THAN HIM** (`SCALE` is DERIVED off `hero.H`, not a magic 1.17).
                  KITE-only AI (holds a range band, never melees) plus one panic **BACKSTEP** on a
                  long cooldown — see below. Slowish arrows that STICK and fade; their homing is a
                  LAUNCH NUDGE that fades out over `ARROW_HOME_FADE`, so a sidestep beats a shot.
@@ -477,7 +519,8 @@ lines where the concerns genuinely part company, and each new file is named so t
                  slow frame — a fence post fits in that. NOT a
                  whole-list `env.solids()`: that accessor was removed for having no caller, and every
                  real path goes through the prop grid on purpose).
-- `ogre.zig`   — THE ONE-EYED OGRE + the `Grief`. A giant (~2x hero), hunched, hefting a knotted
+- `ogre.zig`   — THE ONE-EYED OGRE + the `Grief`. A giant (`SCALE` 2.4, ~2.2x the hero to the crown —
+                 it went 2.5 → 2.1 as too big and back up on the owner's call), hunched, hefting a knotted
                  CLUB, one dull-amber eye. FOUNDED ON THE HERO RIG but grown to 24 bones (a hinged
                  JAW, TOES, a HUMP, a shoulder GIRDLE); three are inserted ABOVE existing bones, so
                  `poseUpper` sets bones in DEPENDENCY order, not index order. HIGH POISE + two
@@ -550,6 +593,25 @@ lines where the concerns genuinely part company, and each new file is named so t
                  saturating count per kind (`nth` walks only the rows that hold something, so a
                  menu cursor can never land in a hole). MUSHROOM JERKY is the only kind with a
                  `Use` today; `usable` is the one test the inventory presses a row on.
+- `stats.zig`  — THE CHARACTER SHEET: seven attributes (Vitality / Mind / Endurance / Strength /
+                 Dexterity / Intelligence / Luck), a name and a says-what-it-does line each, and the
+                 CURVES that turn three of them into the bars — `hpFor` (Vitality), `fpFor` (Mind),
+                 `staminaFor` (Endurance), each `base` at one point then a rate per point that falls off
+                 at ER's own documented SOFT CAPS (`docs/ELDEN_RING.md` §2/§3; the stamina curve IS ER's
+                 table, 1 → 80 … 99 → 170). Three things are load-bearing:
+                 - **THE STARTING SHEET REPRODUCES THE TUNED BARS EXACTLY.** Every attribute starts at
+                   **15**, and 15 is where each curve yields the 70 HP / 60 FP / 105 stamina the game was
+                   already balanced around — so `hero.HP_MAX`, `combat.FP_MAX` and `combat.STAM_MAX` are
+                   now *derived* (`stats.hpFor(stats.START)` and friends) and nothing moved. A test pins
+                   all three, because a curve retune that quietly shifts the hero's HP silently invalidates
+                   every foe's damage, which is measured against `HP_MAX`.
+                 - **THE BARS TAKE THEIR SIZE FROM THE SHEET IN ONE PLACE** — `hero.makeWhole`, the grace /
+                   respawn / bonfire restoration. It is the only moment a sheet could have changed and the
+                   only moment a bar may resize; the alternative is three maxima updated at four sites,
+                   one of which is always forgotten.
+                 - **THE FOUR NOTHING READS YET SAY SO** on their own row. An inert attribute the player
+                   cannot tell is inert is the same lie as inventing a sorcery for the HUD's empty slot.
+                   There is no leveling and no criticals, so nothing spends points and Luck is drops only.
 - `chest.zig`  — THE OPENABLE BOXES: a `Site` per `.chest` prop the world placed, a `near` pick
                  inside `REACH`, an eased lid `swing`, and `openNear` — which reads the contents
                  off the PLACING OP (`Op.loot`), so a chest's stock is authored in the map and
@@ -712,6 +774,10 @@ cross-fade ~0.09 s; stances never snap while mechanics stay instant.
 - **`justDied` is a ONE-FRAME flag.** Reset it at the TOP of `update`, set it in `enterDeath`,
   and apply the blade at the END of `update`. Applying the blade externally WITHOUT the reset
   latches it on → a nonstop rumble/shake until you quit. Mirror the frog exactly.
+- **A CORPSE IS NOT A COLLIDER** (owner's call, and the genre's rule): from the frame a foe dies you walk
+  straight through it. `alive()` is only false once `gone`, so it stays true through the whole collapse
+  AND the dissipation — seconds of a dead thing you were shouldering past. Every collision site asks
+  `foe.corporeal` (`alive() and !dying()`) instead, which is also what `pierceGroup` always asked.
 - **Humanoids reuse the hero's walk/strafe** (see the rig rules). Never author a second walk.
 - **Group + register.** Wrap instances in a `Group` (`Knot`/`Line`/`Grief`) exposing `anyDied` /
   `totalHits` / `aliveCount`; game.zig iterates groups generically. Its `reset` and `draw` are
@@ -754,7 +820,11 @@ and the mesh). This section is the part that decides how it PLAYS.
   `STEP_UP` you would be held a metre off every rock face by a wall you cannot see.
 - **FOES GET THE SAME RULES**, applied as a POST-STEP GATE (`game.gateTerrain`): each moved itself
   knowing nothing about the world, and its displacement is re-taken through `walkStep`. AIRBORNE foes
-  are exempt — a toad's lunge and an archer's backstep are committed leaps and may cross anything.
+  are exempt — a toad's lunge and an archer's backstep are committed leaps and may cross any GROUND.
+  **BUT NOT THE MASONRY** (`game.settleGroup`): airborne exempts a leap from the terrain rule and from
+  being shouldered by other bodies, never from `env.resolveActor`, or a pounce crosses a wall and the
+  foe has left the arena through it. That push-out is NOT rate-limited the way the grounded one is —
+  the correction is one frame of travel, and a leap into stone has to stop at the stone.
 - **`pos.y` IS THE GROUND UNDER AN ACTOR**, written in ONE place (`game.groundActor`) for the hero and
   every foe; the rigs only read it. It is **EASED, NOT SNAPPED** (`GROUND_RISE_RATE` /
   `GROUND_FALL_RATE`), and that is the anti-jank measure: a step is a discontinuity the moment you

@@ -17,6 +17,7 @@ const FLAME_TIP = art.FLAME_TIP;
 const IRON = art.IRON;
 const MARBLE = art.MARBLE;
 const MARBLE_DK = art.MARBLE_DK;
+const MARBLE_LT = art.MARBLE_LT;
 const MORTAR = art.MORTAR;
 const MOSS_SOFT = art.MOSS_SOFT;
 const PETAL_WHITE = art.PETAL_WHITE;
@@ -46,7 +47,23 @@ pub fn cartMesh(shader: rl.Shader) rl.Model {
     }
     b.addCapsule(v3(-1.05, 0.60, 0), v3(1.05, 0.44, 0), 0.09, 0.08, 6, TIMBER_DK); // axle beam
     b.addCapsule(v3(1.0, 0.50, 0.1), v3(2.15, 0.95, 0.25), 0.075, 0.05, 5, TIMBER_DK); // shaft, snapped upward
-    // Wheels: a rim of short chords + spokes.
+    // SIDE RAILS on stakes, riding the bed's tilt — the near one broken short where it went over.
+    for ([_]f32{ -1, 1 }) |sz| {
+        const zr = sz * 0.80;
+        var st: i32 = 0;
+        while (st < 3) : (st += 1) {
+            const sx = -0.85 + @as(f32, @floatFromInt(st)) * 0.85 + rng.signed() * 0.06;
+            const by = 0.72 - 0.20 * (sx / 1.05);
+            b.addCapsule(v3(sx, by - 0.06, zr), v3(sx + rng.signed() * 0.04, by + 0.34, zr + rng.signed() * 0.04), 0.042, 0.034, 4, TIMBER_DK); // stake
+        }
+        if (sz > 0) {
+            b.addBox(v3(0.0, 0.72 + 0.36, zr), v3(1.02, -0.195, 0), v3(0, 0.045, 0), v3(0, 0, 0.035), TIMBER); // full rail
+        } else {
+            b.addBox(v3(-0.55, 0.72 + 0.105 + 0.36, zr), v3(0.48, -0.09, 0), v3(0, 0.045, 0), v3(0, 0, 0.035), TIMBER); // the surviving length
+            b.addBox(v3(0.42, 0.60, zr + 0.10), v3(0.34, -0.16, 0.05), v3(0, 0.04, 0.02), v3(0, 0.015, 0.032), TIMBER_DK); // …and the rest, dropped and askew
+        }
+    }
+    // Wheels: a rim of short chords + spokes, under an IRON TYRE, on a real hub.
     const wheel = struct {
         fn go(bb: *Builder, cx: f32, cy: f32, cz: f32, rad: f32, flat: bool, r: *mathx.Rng) void {
             const seg: i32 = 10;
@@ -60,13 +77,36 @@ pub fn cartMesh(shader: rl.Shader) rl.Model {
                 bb.addCapsule(p0, p1, 0.075, 0.075, 5, BARK_DK);
                 if (@mod(i, 2) == 0) bb.addCapsule(v3(cx, cy, cz), p0, 0.035, 0.028, 4, TIMBER_DK); // spoke
             }
+            bb.setMat(.steel);
+            i = 0;
+            while (i < seg) : (i += 1) { // the tyre runs the FULL circle — iron outlasts the felloes it was shrunk onto
+                const a0 = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(seg));
+                const a1 = std.math.tau * @as(f32, @floatFromInt(i + 1)) / @as(f32, @floatFromInt(seg));
+                const tr2 = rad + 0.075;
+                const p0 = if (flat) v3(cx + mathx.cosf(a0) * tr2, cy, cz + mathx.sinf(a0) * tr2) else v3(cx + mathx.cosf(a0) * tr2, cy + mathx.sinf(a0) * tr2, cz);
+                const p1 = if (flat) v3(cx + mathx.cosf(a1) * tr2, cy, cz + mathx.sinf(a1) * tr2) else v3(cx + mathx.cosf(a1) * tr2, cy + mathx.sinf(a1) * tr2, cz);
+                bb.addCapsule(p0, p1, 0.030, 0.030, 4, if (r.float() < 0.35) RUST else IRON);
+            }
+            // The hub, and the axle stub through it.
+            bb.setMat(.wood);
+            bb.addBlob(v3(cx, cy, cz), if (flat) v3(0.13, 0.09, 0.13) else v3(0.13, 0.13, 0.09), 4, 8, TIMBER_DK);
+            bb.setMat(.steel);
+            bb.addBlob(v3(cx, cy, cz), if (flat) v3(0.055, 0.115, 0.055) else v3(0.055, 0.055, 0.115), 3, 6, RUST);
+            bb.setMat(.wood);
         }
     }.go;
     wheel(&b, -0.9, 0.62, 0.95, 0.60, false, &rng);
     wheel(&b, 0.85, 0.09, -1.0, 0.58, true, &rng);
+    // An iron strap over the bed where the axle took its load, bled with rust.
+    b.setMat(.steel);
+    b.addBox(v3(0.0, 0.79, 0.02), v3(0.05, -0.01, 0), v3(0, 0.014, 0), v3(0, 0, 0.72), IRON);
     b.setMat(.cloth);
-    b.addBlob(v3(0.2, 0.84, 0.2), v3(0.45, 0.09, 0.35), 3, 5, CANVAS);
+    // The load's canvas, slumped half off the low corner, roped to a stake.
+    b.addBlob(v3(0.2, 0.84, 0.2), v3(0.45, 0.10, 0.36), 4, 7, CLOTH_DK);
+    b.addBlob(v3(0.52, 0.72, 0.42), v3(0.24, 0.07, 0.20), 3, 6, CANVAS); // where it spills over the rail
     b.addBlob(v3(0.42, 0.78, -0.04), v3(0.17, 0.045, 0.14), 3, 5, CLOTH_DK);
+    b.setMat(.leather);
+    b.addCapsule(v3(0.55, 0.80, 0.35), v3(0.86, 0.52, 0.78), 0.016, 0.014, 4, BARK_DK); // the lashing rope, gone slack
     b.setMat(.plant);
     tuftInto(&b, &rng, rng.signed() * 1.2, rng.signed() * 1.2, 0.7);
     return b.toModel(shader);
@@ -300,18 +340,40 @@ pub fn barrelsMesh(shader: rl.Shader) rl.Model {
     barrel(&b, &rng, 0, 0, 0.02, 0.82, false);
     barrel(&b, &rng, 0.62, 0.28, -0.04, 0.76, true);
     barrel(&b, &rng, -0.35, 0.66, 0.05, 0.70, true);
-    // A crate, and one broken open.
+    // A crate of BOARDS — a dark carcase behind slats with daylight in the gaps, corner posts,
+    // the lid loose and skewed. The naked cube read as a die.
     b.setMat(.wood);
-    b.addCube(v3(-0.75, 0.26, -0.45), v3(0.62, 0.52, 0.58), TIMBER_DK);
-    var p: i32 = 0;
-    while (p < 4) : (p += 1) {
-        const y = 0.08 + @as(f32, @floatFromInt(p)) * 0.14;
-        b.addCube(v3(-0.75, y, -0.75), v3(0.64, 0.055, 0.03), TIMBER);
+    b.addCube(v3(-0.75, 0.25, -0.45), v3(0.56, 0.48, 0.52), BARK_OLD); // the shadowed carcase the slats hang on
+    for ([_]f32{ -1, 1 }) |sx| {
+        for ([_]f32{ -1, 1 }) |sz| {
+            b.addCube(v3(-0.75 + sx * 0.29, 0.27 + rng.signed() * 0.015, -0.45 + sz * 0.27), v3(0.06, 0.54, 0.06), TIMBER_DK); // corner post
+        }
     }
-    b.addBox(v3(0.55, 0.10, -0.72), v3(0.34, 0.06, 0), v3(0, 0.05, 0), v3(0, 0, 0.28), TIMBER); // a lid slid off
+    var p: i32 = 0;
+    while (p < 3) : (p += 1) {
+        const y = 0.11 + @as(f32, @floatFromInt(p)) * 0.16 + rng.signed() * 0.012;
+        if (p == 1 and rng.float() < 0.6) { // the sprung slat, nosed out of its nails
+            b.addBox(v3(-0.75, y, -0.76), v3(0.31, 0.02, 0.03), v3(0.02, 0.06, 0.015), v3(0.01, 0, 0.024), TIMBER);
+        } else {
+            b.addCube(v3(-0.75 + rng.signed() * 0.01, y, -0.76), v3(0.62, 0.115, 0.045), if (@mod(p, 2) == 0) TIMBER else TIMBER_DK);
+        }
+        b.addCube(v3(-0.44, y + rng.signed() * 0.01, -0.45), v3(0.045, 0.115, 0.56), if (@mod(p, 2) == 0) TIMBER_DK else TIMBER); // the end face's slats
+    }
+    b.addBox(v3(-0.72, 0.545, -0.42), v3(0.33, 0.015, 0.03), v3(0.02, 0.035, 0), v3(-0.05, 0, 0.31), TIMBER); // the lid, resting skewed
+    b.addBox(v3(0.55, 0.10, -0.72), v3(0.34, 0.06, 0), v3(0, 0.05, 0), v3(0, 0, 0.28), TIMBER); // a lid slid clean off
+    // The SACK: a slumped belly cinched at the neck, bleeding grain — not one pale pebble.
     b.setMat(.cloth);
-    b.addBlob(v3(-0.2, 0.18, -0.9), v3(0.3, 0.16, 0.22), 3, 6, THATCH_DK); // a spilled sack
+    b.addBlob(v3(-0.20, 0.15, -0.92), v3(0.27, 0.16, 0.21), 5, 9, THATCH_DK);
+    b.addBlob(v3(-0.06, 0.10, -0.76), v3(0.18, 0.11, 0.15), 4, 8, THATCH_DK);
+    // The neck is the SAME SACKCLOTH, cinched with a cord: in the banner crimson it read as a spike of
+    // meat standing out of the grain.
+    b.addCapsule(v3(-0.36, 0.22, -1.05), v3(-0.46, 0.10, -1.13), 0.065, 0.035, 5, THATCH_DK);
+    b.setMat(.leather);
+    b.addCapsule(v3(-0.39, 0.195, -1.07), v3(-0.42, 0.165, -1.10), 0.056, 0.056, 5, BARK_DK); // the cinch
     b.setMat(.plant);
+    b.addBlob(v3(-0.52, 0.022, -1.18), v3(0.10, 0.024, 0.085), 3, 6, THATCH); // the grain it bled…
+    b.addBlob(v3(-0.61, 0.018, -1.26), v3(0.055, 0.018, 0.05), 3, 5, THATCH); // …thinning out away from the mouth
+    b.addBlob(v3(-0.44, 0.016, -1.24), v3(0.04, 0.014, 0.045), 3, 5, THATCH);
     tuftInto(&b, &rng, rng.signed() * 1.1, rng.signed() * 1.1, 0.7);
     return b.toModel(shader);
 }
@@ -400,15 +462,29 @@ pub fn sarcophagusMesh(shader: rl.Shader) rl.Model {
     b.addCube(v3(0.87, 0.52, 0), v3(0.16, 0.64, 0.75), STONE);
     b.addCube(v3(-0.87, 0.52, 0), v3(0.16, 0.64, 0.75), STONE);
     b.addCube(v3(0, 0.36, 0), v3(1.6, 0.34, 0.6), MORTAR);
+    // Dressed-stone MOULDINGS: a base torus and a cornice lip, a few centimetres proud, one corner spalled off.
+    b.addCube(v3(0, 0.245, 0), v3(1.98, 0.09, 1.13), STONE_DK);
+    b.addCube(v3(0.10, 0.80, 0), v3(1.80, 0.075, 1.11), STONE); // the cornice, its broken WEST end simply missing
+    // A RAISED PANEL sunk into each long face — the frame a relief carving would have sat in.
+    for ([_]f32{ -1, 1 }) |sz| {
+        b.addCube(v3(-0.08, 0.50, sz * 0.525), v3(1.35, 0.34, 0.045), STONE_LT);
+        b.addCube(v3(-0.08, 0.50, sz * 0.545), v3(1.05, 0.22, 0.03), STONE_DK); // the field, weathered back
+    }
     // The lid, dragged off and canted against the side
     b.setMat(.marble);
     b.addBox(v3(-0.35, 0.92, 0.30), v3(1.0, 0.10, 0), v3(-0.04, 0.11, 0), v3(0, 0, 0.5), MARBLE);
     b.addBox(v3(1.35, 0.30, 0.5), v3(0.55, 0.42, 0), v3(0.16, 0.20, 0), v3(0, 0, 0.42), MARBLE_DK);
+    // The RECUMBENT EFFIGY worn to a suggestion: the swell of a figure under a shroud, feet and folded hands just legible.
+    b.addBlob(v3(-0.55, 1.09, 0.28), v3(0.24, 0.12, 0.20), 4, 8, MARBLE_LT); // the head end's pillow swell
+    b.addCapsule(v3(-0.45, 1.09, 0.29), v3(0.30, 1.01, 0.335), 0.175, 0.125, 8, MARBLE); // the body's long swell
+    b.addBlob(v3(-0.02, 1.13, 0.30), v3(0.10, 0.055, 0.09), 3, 6, MARBLE_LT); // the folded hands
+    b.addBlob(v3(0.38, 1.02, 0.34), v3(0.09, 0.06, 0.11), 3, 6, MARBLE_DK); // the feet, almost gone
     b.setMat(.stone);
-    // A worn effigy line down the lid, and moss where the rain sits.
-    b.addBox(v3(-0.35, 1.00, 0.30), v3(0.7, 0.07, 0), v3(0, 0.03, 0), v3(0, 0, 0.10), STONE_MOSS);
+    // …and moss where the rain sits along it — BESIDE the figure and hugging the slab. A pad standing
+    // proud of the lid beside the effigy reads as a cushion, and it was the only thing on it you saw.
+    b.addBox(v3(-0.30, 0.995, 0.62), v3(0.62, 0.055, 0), v3(0, 0.018, 0), v3(0, 0, 0.09), STONE_MOSS);
     b.setMat(.plant);
-    b.addBlob(v3(rng.signed() * 0.6, 0.98, -0.2), v3(0.35, 0.07, 0.22), 3, 6, MOSS_SOFT);
+    b.addBlob(v3(0.10 + rng.signed() * 0.3, 1.055, 0.70), v3(0.26, 0.035, 0.13), 3, 6, MOSS_SOFT);
     tuftInto(&b, &rng, rng.range(-1.6, 1.6), rng.signed() * 1.0, 0.8);
     return b.toModel(shader);
 }

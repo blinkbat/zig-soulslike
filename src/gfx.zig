@@ -566,7 +566,8 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_flash, &a, .float);
     }
 
-    /// HOW SOLID WHATEVER DRAWS NEXT IS — 1 opaque, 0 gone.
+    /// HOW SOLID WHATEVER DRAWS NEXT IS — 1 opaque, 0 gone. Plain alpha, so a caller thinning
+    /// something has to drop the depth mask for it (see drawCasters and Env.drawIndexed).
     pub fn setFade(self: *Scene, amt: f32) void {
         var a = mathx.clampF(amt, 0, 1);
         rl.setShaderValue(self.shader, self.loc_fade, &a, .float);
@@ -579,13 +580,17 @@ pub const Scene = struct {
 };
 
 // Per-fragment surface material for the scene shader's texturing pass (see matAlbedo).
-pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke, ember };
+// BARK IS NOT TIMBER, and one id could not carry both: bark's whole read is deep fissures running the
+// trunk, and a plank pushed that far reads as corrugated iron. New ids APPEND — the tail is pinned to
+// the shader's own branches below.
+pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke, ember, bark };
 comptime {
     std.debug.assert(@intFromEnum(Mat.water) == 9);
     std.debug.assert(@intFromEnum(Mat.marble) == 10);
     std.debug.assert(@intFromEnum(Mat.flame) == 11);
     std.debug.assert(@intFromEnum(Mat.smoke) == 12);
     std.debug.assert(@intFromEnum(Mat.ember) == 13);
+    std.debug.assert(@intFromEnum(Mat.bark) == 14);
 }
 
 pub fn smokeAnim(originY: f32, phase01: f32) f32 {
@@ -795,6 +800,51 @@ pub const Builder = struct {
         }
     }
 
+    /// A BOX WITH FILLETED EDGES — a superquadric, and the point of it is what it does NOT move: the six
+    /// faces stay flat and in exactly the planes `addCube`'s were, so a part's measured extents (and on
+    /// the hero, its anthropometry) are unchanged while every edge and corner is rounded off. `round` is
+    /// 0..1 — 1 is a plain ellipsoid, ~0.3 reads as a block someone took a file to, and toward 0 it walks
+    /// back to the hard cube. Takes a FULL `size` like `addCube` and UNLIKE `addBlob`, so substituting one
+    /// for the other is exact rather than a silent doubling.
+    pub fn addRoundBox(self: *Builder, c: rl.Vector3, size: rl.Vector3, round: f32, segs: i32, sides: i32, col: rl.Color) void {
+        const h = v3(@abs(size.x) * 0.5, @abs(size.y) * 0.5, @abs(size.z) * 0.5);
+        if (h.x < 1e-5 or h.y < 1e-5 or h.z < 1e-5) return;
+        const e = mathx.clampF(round, 0.02, 1.0);
+        const o = self.shapeOff();
+        const sf: f32 = @floatFromInt(@max(sides, 4));
+        const gf: f32 = @floatFromInt(@max(segs, 2));
+        const nseg = @max(segs, 2);
+        const nside = @max(sides, 4);
+        var j: i32 = 0;
+        while (j < nseg) : (j += 1) {
+            const t0 = std.math.pi * @as(f32, @floatFromInt(j)) / gf; // 0 = bottom pole, pi = top — addBlob's own sweep, so the winding matches
+            const t1 = std.math.pi * @as(f32, @floatFromInt(j + 1)) / gf;
+            var s: i32 = 0;
+            while (s < nside) : (s += 1) {
+                const a0 = std.math.tau * @as(f32, @floatFromInt(s)) / sf;
+                const a1 = std.math.tau * @as(f32, @floatFromInt(s + 1)) / sf;
+                const p0 = onSquircle(c, h, e, t0, a0);
+                const p1 = onSquircle(c, h, e, t0, a1);
+                const p2 = onSquircle(c, h, e, t1, a1);
+                const p3 = onSquircle(c, h, e, t1, a0);
+                // The IMPLICIT gradient at the patch centre, which is outward by construction — deriving
+                // the parametric normal by hand is where a superquadric gets its faces inside out.
+                const mid = v3(
+                    0.25 * (p0.x + p1.x + p2.x + p3.x) - c.x,
+                    0.25 * (p0.y + p1.y + p2.y + p3.y) - c.y,
+                    0.25 * (p0.z + p1.z + p2.z + p3.z) - c.z,
+                );
+                const n = squircleNormal(h, e, mid);
+                // BOX-PROJECTED UVs, not the sphere's arc walk. The surface materials are read in world
+                // units off the uv, and a spherical walk pinches hard toward the poles — which came back
+                // as smeared, hatchy grain across the hero's chest and shoulders where the flat cube it
+                // replaced had clean planar UVs. Projecting on the face the normal points at IS what
+                // `quad` does for a cube face, so a filleted box now textures like the box it replaced.
+                self.quadUV(p0, p1, p2, p3, n, col, boxUV(p0, c, n, o), boxUV(p1, c, n, o), boxUV(p2, c, n, o), boxUV(p3, c, n, o));
+            }
+        }
+    }
+
     // Upload to the GPU as a bare Mesh (CPU arrays stay attached; the mesh lives the whole program).
     pub fn toMesh(self: *Builder) rl.Mesh {
         const pos = self.pos.toOwnedSlice() catch @panic("oom");
@@ -840,6 +890,52 @@ fn onBlob(c: rl.Vector3, r: rl.Vector3, t: f32, ang: f32) rl.Vector3 {
     const st = mathx.sinf(t);
     return v3(c.x - r.x * mathx.sinf(ang) * st, c.y - r.y * mathx.cosf(t), c.z - r.z * mathx.cosf(ang) * st);
 }
+
+/// |t|^p carrying t's sign — the superquadric's whole trick, and 0 at the seams rather than a NaN.
+fn sgnPow(t: f32, p: f32) f32 {
+    const a = @abs(t);
+    if (a < 1e-6) return 0;
+    const m = std.math.pow(f32, a, p);
+    return if (t < 0) -m else m;
+}
+
+/// `onBlob`'s superquadric twin: the SAME (t, ang) sweep, with each trig term raised to `e`, so the
+/// winding and the UV walk carry over unchanged. e = 1 is exactly `onBlob`; smaller pushes the surface
+/// out toward the box's own faces and corners.
+fn onSquircle(c: rl.Vector3, h: rl.Vector3, e: f32, t: f32, ang: f32) rl.Vector3 {
+    const ring = sgnPow(mathx.sinf(t), e);
+    return v3(
+        c.x - h.x * sgnPow(mathx.sinf(ang), e) * ring,
+        c.y - h.y * sgnPow(mathx.cosf(t), e),
+        c.z - h.z * sgnPow(mathx.cosf(ang), e) * ring,
+    );
+}
+
+/// TRIPLANAR UV off the face the normal points at, in the same world units `quad` uses — so a filleted
+/// box's texture matches the hard cube's instead of pinching toward a sphere's poles. Picking the plane
+/// off the QUAD's normal (not the vertex's) keeps all four corners on one projection, which is what stops
+/// a seam appearing along every fillet.
+fn boxUV(p: rl.Vector3, c: rl.Vector3, n: rl.Vector3, o: rl.Vector2) rl.Vector2 {
+    const d = v3(p.x - c.x, p.y - c.y, p.z - c.z);
+    const ax = @abs(n.x);
+    const ay = @abs(n.y);
+    const az = @abs(n.z);
+    if (ax >= ay and ax >= az) return .{ .x = d.z + o.x, .y = d.y + o.y }; // facing ±X → the ZY plane
+    if (ay >= az) return .{ .x = d.x + o.x, .y = d.z + o.y }; // facing ±Y → the XZ plane
+    return .{ .x = d.x + o.x, .y = d.y + o.y }; // facing ±Z → the XY plane
+}
+
+/// The outward normal of the superquadric (h, e) at an offset `d` from its centre, taken off the implicit
+/// form's gradient — outward BY CONSTRUCTION, which is what keeps the faces from coming out inside out
+/// (deriving the parametric normal by hand is where that happens, and a black hero is the symptom).
+fn squircleNormal(h: rl.Vector3, e: f32, d: rl.Vector3) rl.Vector3 {
+    const k = 2.0 / e - 1.0;
+    return norm3(v3(
+        sgnPow(d.x / h.x, k) / h.x,
+        sgnPow(d.y / h.y, k) / h.y,
+        sgnPow(d.z / h.z, k) / h.z,
+    ));
+}
 fn dirOn(u: rl.Vector3, w: rl.Vector3, ang: f32) rl.Vector3 {
     const c = mathx.cosf(ang);
     const s = mathx.sinf(ang);
@@ -854,3 +950,42 @@ fn norm3(a: rl.Vector3) rl.Vector3 {
     return v3(a.x / l, a.y / l, a.z / l);
 }
 const cross = mathx.crossV;
+
+test "a FILLETED BOX stays inside the cube it replaces, and its normals point out" {
+    // The substitution's whole safety property: swapping addCube for addRoundBox may round a part's
+    // edges off, and must never grow it — the hero's proportions are anthropometry, not styling.
+    const size = v3(0.4, 0.9, 0.3);
+    const c = v3(1, 2, -3);
+    var b = Builder.init();
+    b.addRoundBox(c, size, 0.30, 6, 12, mathx.rgba(255, 255, 255, 255));
+    try std.testing.expect(b.pos.items.len > 0);
+    try std.testing.expectEqual(b.pos.items.len, b.nrm.items.len);
+    var i: usize = 0;
+    var reachX: f32 = 0;
+    while (i < b.pos.items.len) : (i += 3) {
+        const d = v3(b.pos.items[i] - c.x, b.pos.items[i + 1] - c.y, b.pos.items[i + 2] - c.z);
+        try std.testing.expect(@abs(d.x) <= size.x * 0.5 + 1e-4);
+        try std.testing.expect(@abs(d.y) <= size.y * 0.5 + 1e-4);
+        try std.testing.expect(@abs(d.z) <= size.z * 0.5 + 1e-4);
+        reachX = @max(reachX, @abs(d.x));
+        const n = v3(b.nrm.items[i], b.nrm.items[i + 1], b.nrm.items[i + 2]);
+        try std.testing.expectApproxEqAbs(@as(f32, 1), @sqrt(n.x * n.x + n.y * n.y + n.z * n.z), 1e-3);
+        // OUTWARD: a superquadric whose parametric normal was derived by hand is how a mesh comes back
+        // inside out, and the symptom is a black hero rather than a compile error.
+        try std.testing.expect(n.x * d.x + n.y * d.y + n.z * d.z > -1e-3);
+    }
+    // …and it really does reach the face plane, so the silhouette is still a block and not an egg.
+    try std.testing.expect(reachX > size.x * 0.5 * 0.93);
+}
+
+test "the fillet dial spans ellipsoid to hard box" {
+    const h = v3(1, 1, 1);
+    // A corner direction: round = 1 is a sphere (radius 1), and a small round reaches for the cube's
+    // own corner at sqrt(3). The dial has to actually move that distance.
+    const t = std.math.pi * 0.25;
+    const soft = onSquircle(mathx.zero3, h, 1.0, t, std.math.pi * 0.25);
+    const hard = onSquircle(mathx.zero3, h, 0.08, t, std.math.pi * 0.25);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), mathx.lenV(soft), 1e-3);
+    try std.testing.expect(mathx.lenV(hard) > 1.5);
+    try std.testing.expect(mathx.lenV(hard) < @sqrt(3.0) + 1e-3);
+}

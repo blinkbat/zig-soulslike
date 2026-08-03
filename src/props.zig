@@ -323,6 +323,10 @@ pub const Info = struct {
     view: f32,
     flora: bool = false,
     interact: bool = false,
+    /// MAY THIN OUT WHEN IT STANDS IN THE CAMERA'S WAY — trunks, canopies, shafts, the things you
+    /// lose the fight behind. Buildings, walls and cliffs are deliberately NOT in it: losing sight of
+    /// the hero behind architecture is the geometry doing its job, and ER keeps those solid too.
+    fades: bool = false,
     /// Included in the sun depth pass.
     casts: bool = true,
     parts: []const Part = &.{},
@@ -342,15 +346,15 @@ const cliffParts = [_]Part{
 };
 
 pub const INFO = [NK]Info{
-    .{ .kind = .pillar, .build = ruins.pillarWhole, .bound = 6.2, .top = 5.8, .view = 240, .parts = circleParts(0.80, 5.8) },
-    .{ .kind = .broken, .build = ruins.pillarBroken, .bound = 3.6, .top = 3.3, .view = 200, .parts = circleParts(0.80, 2.9) },
+    .{ .kind = .pillar, .build = ruins.pillarWhole, .bound = 6.2, .top = 5.8, .view = 240, .fades = true, .parts = circleParts(0.80, 5.8) },
+    .{ .kind = .broken, .build = ruins.pillarBroken, .bound = 3.6, .top = 3.3, .view = 200, .fades = true, .parts = circleParts(0.80, 2.9) },
     .{ .kind = .block, .build = ruins.blockMesh, .bound = 2.6, .top = 1.85, .view = 180, .parts = &.{.{ .ax = -0.35, .bx = 0.35, .r = 0.80, .h = 1.65 }} },
-    .{ .kind = .arch, .build = ruins.archMesh, .bound = 7.9, .top = 7.2, .view = 260, .parts = &.{
+    .{ .kind = .arch, .build = ruins.archMesh, .bound = 7.9, .top = 7.2, .view = 260, .fades = true, .parts = &.{
         .{ .ax = -2.7, .bx = -2.7, .r = 0.78, .h = 4.8 },
         .{ .ax = 2.7, .bx = 2.7, .r = 0.78, .h = 4.8 },
     } },
     .{ .kind = .wall, .build = ruins.wallMesh, .bound = 5.0, .top = 3.6, .view = 220, .parts = &.{.{ .ax = -2.8, .bx = 2.8, .r = 0.60, .h = 3.0 }} },
-    .{ .kind = .tree, .build = wood.treeMesh, .bound = 5.3, .top = 4.9, .view = 240, .parts = circleParts(0.38, 3.6), .surf = .wood },
+    .{ .kind = .tree, .build = wood.treeMesh, .bound = 5.3, .top = 4.9, .view = 240, .fades = true, .parts = circleParts(0.38, 3.6), .surf = .wood },
     .{ .kind = .graves, .build = ruins.gravesMesh, .bound = 2.3, .top = 1.05, .view = 150, .parts = circleParts(0.80, 0.9) },
     .{ .kind = .sword, .build = ruins.swordMesh, .bound = 1.6, .top = 1.35, .view = 120 },
     .{ .kind = .grace, .build = ruins.graceMesh, .veil = ruins.graceVeilMesh, .stow = ruins.graceGuitarMesh, .bound = 7.2, .top = 5.4, .view = 300, .light = .{ .y = 0.45, .col = v3(0.86, 0.48, 0.18), .radius = 11.0, .flicker = 0.17 } },
@@ -439,13 +443,13 @@ pub const INFO = [NK]Info{
     .{ .kind = .thicket, .build = flora.thicketMesh, .bound = 2.8, .top = 1.9, .view = 160, .flora = true, .casts = false },
     .{ .kind = .wildflowers, .build = flora.wildflowersMesh, .bound = 1.5, .top = 0.65, .view = 105, .flora = true, .casts = false },
     .{ .kind = .ivy, .build = flora.ivyMesh, .bound = 2.4, .top = 2.0, .view = 150, .flora = true, .casts = false },
-    .{ .kind = .bigtree, .build = wood.bigTree1, .bound = 13.5, .top = 11.0, .view = FAR, .parts = circleParts(0.95, 6.0), .surf = .wood },
-    .{ .kind = .bigtree2, .build = wood.bigTree2, .bound = 13.0, .top = 8.5, .view = FAR, .parts = circleParts(0.95, 5.0), .surf = .wood },
-    .{ .kind = .bigtree3, .build = wood.bigTree3, .bound = 14.0, .top = 13.5, .view = FAR, .parts = circleParts(0.90, 6.5), .surf = .wood },
-    .{ .kind = .willow, .build = wood.willowMesh, .bound = 8.0, .top = 7.1, .view = 300, .parts = circleParts(0.72, 4.4), .surf = .wood },
-    .{ .kind = .conifer, .build = wood.coniferMesh, .bound = 12.5, .top = 12.0, .view = FAR, .parts = circleParts(0.58, 5.0), .surf = .wood },
-    .{ .kind = .birch, .build = wood.birchMesh, .bound = 10.0, .top = 9.4, .view = 340, .parts = circleParts(0.44, 5.0), .surf = .wood },
-    .{ .kind = .snag, .build = wood.snagMesh, .bound = 8.2, .top = 7.8, .view = 320, .parts = circleParts(0.42, 6.0), .surf = .wood },
+    .{ .kind = .bigtree, .build = wood.bigTree1, .bound = 13.5, .top = 11.0, .view = FAR, .fades = true, .parts = circleParts(0.95, 6.0), .surf = .wood },
+    .{ .kind = .bigtree2, .build = wood.bigTree2, .bound = 13.0, .top = 8.5, .view = FAR, .fades = true, .parts = circleParts(0.95, 5.0), .surf = .wood },
+    .{ .kind = .bigtree3, .build = wood.bigTree3, .bound = 14.0, .top = 13.5, .view = FAR, .fades = true, .parts = circleParts(0.90, 6.5), .surf = .wood },
+    .{ .kind = .willow, .build = wood.willowMesh, .bound = 8.0, .top = 7.1, .view = 300, .fades = true, .parts = circleParts(0.72, 4.4), .surf = .wood },
+    .{ .kind = .conifer, .build = wood.coniferMesh, .bound = 12.5, .top = 12.0, .view = FAR, .fades = true, .parts = circleParts(0.58, 5.0), .surf = .wood },
+    .{ .kind = .birch, .build = wood.birchMesh, .bound = 10.0, .top = 9.4, .view = 340, .fades = true, .parts = circleParts(0.44, 5.0), .surf = .wood },
+    .{ .kind = .snag, .build = wood.snagMesh, .bound = 8.2, .top = 7.8, .view = 320, .fades = true, .parts = circleParts(0.42, 6.0), .surf = .wood },
     // A sapling CASTS (it is 3 m of tree, and a 3 m thing with no shadow reads as a decal) and so must not sway — the depth pass has no wind term.
     .{ .kind = .sapling, .build = wood.saplingMesh, .bound = 3.8, .top = 3.4, .view = 220, .parts = circleParts(0.16, 2.2), .surf = .wood },
 };

@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const gfx = @import("gfx.zig");
 const mathx = @import("mathx.zig");
 const combat = @import("combat.zig");
+const statsmod = @import("stats.zig");
 const art = @import("propart.zig");
 const archer = @import("archer.zig");
 
@@ -21,6 +22,13 @@ pub const SPRINT_SPEED: f32 = 5.1; // hold-B RUN — a touch faster than a full-
 pub const STRAFE_SPEED: f32 = 0.85;
 /// …and behind the shield, as a fraction of the WALK.
 pub const GUARD_SPEED: f32 = 0.75;
+/// A DRAUGHT IS COMMITTED, NOT PLANTED (owner's call) — he shuffles it down at this fraction of the
+/// WALK. Clearly under the shield's 0.75, because tipping a flask back is the more awkward of the two,
+/// and never zero: rooting him was the old behaviour and it read as a dropped input.
+pub const DRINK_SPEED: f32 = 0.35;
+/// How far he settles onto his heels as the flask goes up — folded into the gait's own `crouch` now that
+/// the draught rides OVER the walk rather than replacing it.
+const DRINK_SINK: f32 = 0.012;
 
 // Body-segment lengths as a fraction of stature H (Drillis & Contini 1966; Winter).
 pub const SEG_THIGH = 0.245; // hip → knee   (femur)
@@ -269,14 +277,14 @@ const TRAIL_ROOT = 0.35; // ribbon spans this fraction down the blade → the ti
 const TRAIL_COL = rgba(224, 230, 244, 255); // pale steel flash (alpha set per segment)
 const TrailSample = struct { a: rl.Vector3 = mathx.zero3, b: rl.Vector3 = mathx.zero3, age: f32 = mathx.LONG_AGO };
 
-pub const HP_MAX = 70.0; // lowered from 100 — a few solid blows now kill (owner: raise the stakes)
+pub const HP_MAX = statsmod.hpFor(statsmod.START); // 70 — VITALITY owns it (`stats.zig`); the balance anchor every foe's damage is measured against
 pub const POISE_MAX = 55.0;
 pub const STANCE_MAX = 90.0;
 pub const ATK_LIGHT_HIT = combat.Hit{ .dmg = 13, .poise = 10 };
 pub const ATK_HEAVY_HIT = combat.Hit{ .dmg = 27, .poise = 22, .stance = 14 };
 
-pub fn freshVitals() combat.Vitals {
-    return combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX);
+pub fn freshVitals(sheet: statsmod.Sheet) combat.Vitals {
+    return combat.Vitals.init(sheet.hp(), POISE_MAX, STANCE_MAX);
 }
 
 const HURT_LEAN = 40.0; // light flinch: torso snaps back this far (deg)
@@ -544,7 +552,9 @@ pub const Hero = struct {
     hitWasActive: bool = false, // edge detector: sweep history (+ future hit list) resets on activation
     trail: [TRAIL_N]TrailSample = [_]TrailSample{.{}} ** TRAIL_N, // swing-trail ring (newest at trailHead)
     trailHead: usize = 0,
-    vit: combat.Vitals = freshVitals(),
+    /// THE CHARACTER SHEET, and the source of the three maxima below — re-read wherever he is made whole (`makeWhole`), which is the only moment a sheet can have changed and the only moment a bar may resize.
+    sheet: statsmod.Sheet = .{},
+    vit: combat.Vitals = freshVitals(.{}),
     stam: combat.Stamina = .{}, // ER's third bar — the hero's alone; foes don't carry one
     fp: combat.Focus = .{},
     runes: combat.Runes = .{},
@@ -636,11 +646,18 @@ pub const Hero = struct {
         self.dropAim();
         self.stun = .none;
         self.hurtFlash = 0;
-        // Whole again, and the same restoration a respawn makes
-        self.vit = freshVitals();
+        self.makeWhole(); // the same restoration a respawn makes
+    }
+
+    /// WHOLE AGAIN — a grace, and a death is a return to one. The three bars take their SIZE from the sheet here and nowhere else, so a raised attribute cannot leave one at its old length.
+    fn makeWhole(self: *Hero) void {
+        self.vit = freshVitals(self.sheet);
+        self.stam.max = self.sheet.stamina();
+        self.fp.max = self.sheet.fp();
         self.stam.reset();
         self.fp.reset();
         self.regen.reset();
+        // FLASKS REFILL AT THE GRACE, and a death IS a return to one — same event, same rule as ER.
         self.flasks.refill();
         self.quiver.refill();
     }
@@ -950,12 +967,11 @@ pub const Hero = struct {
         return true;
     }
 
-    /// Advance the draught; call in place of move/attack/roll while `drinking`.
-    pub fn updateDrink(self: *Hero, dt: f32) void {
-        self.tickClocks(dt);
+    /// THE DRAUGHT'S OWN CLOCK, and nothing else — the caller still MOVES him (`DRINK_SPEED`) and poses
+    /// him, because he walks through a draught now and the gait owns the legs. Do not tick the shared
+    /// clocks here: `update` does that on the way through the move, and both would double-advance them.
+    pub fn tickDrink(self: *Hero, dt: f32) void {
         self.drinkT += dt;
-        self.speed = 0;
-        self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
         const u = self.drinkT / combat.FLASK_DRINK_DUR;
         if (!self.poured and u >= combat.FLASK_POUR_AT) {
             self.poured = true;
@@ -964,12 +980,20 @@ pub const Hero = struct {
                 .cerulean => _ = self.fp.restore(self.fp.max * combat.FLASK_FP_FRAC),
             }
         }
-        self.pose();
         if (self.drinkT >= combat.FLASK_DRINK_DUR) {
             self.drinking = false;
             self.startXfade();
             self.fireQueued(); // anything buffered during the draught leaves the moment it ends
         }
+    }
+
+    /// HOW FAR THE FLASK IS UP AND HOW FAR IT IS TIPPED, 0 unless he is drinking — `bowLevels`' twin, so
+    /// the gait can read the draught's shape without knowing its clock.
+    fn drinkLevels(self: *const Hero) struct { lift: f32, tip: f32 } {
+        if (!self.drinking) return .{ .lift = 0, .tip = 0 };
+        const u = mathx.clampF(self.drinkT / combat.FLASK_DRINK_DUR, 0, 1);
+        // Up fast, HOLD at the mouth through the pour, down slower — a flask is emptied, not waved.
+        return .{ .lift = mathx.pulse(u, 0, 0.26, 0.72, 1.0), .tip = mathx.pulse(u, 0.22, 0.46, 0.66, 0.92) };
     }
 
     // TAE-events equivalent: the blade only HITS inside the strike's active window.
@@ -1148,13 +1172,7 @@ pub const Hero = struct {
         self.deathT = 0;
         self.stun = .none;
         self.hurtFlash = 0;
-        self.vit = freshVitals();
-        self.stam.reset();
-        self.fp.reset();
-        self.regen.reset();
-        // FLASKS REFILL AT THE GRACE, and a death IS a return to one — same event, same rule as ER.
-        self.flasks.refill();
-        self.quiver.refill();
+        self.makeWhole();
         self.drinking = false;
         self.stamRefused = 0; // a respawn must not inherit the last life's refusal flash
         self.sprinting = false;
@@ -1181,7 +1199,6 @@ pub const Hero = struct {
         if (self.dead) return self.poseDeath();
         if (self.stun != .none) return self.poseStun();
         if (self.rolling) return self.poseRoll();
-        if (self.drinking) return self.poseDrink();
         if (self.attacking) return self.poseAttack();
         const m = self.moving;
         const ph = self.phase;
@@ -1195,9 +1212,10 @@ pub const Hero = struct {
         const gB = mathx.clampF(self.guardB, 0, 1);
         const rec = self.blockRecoil();
         const guardBack = BLOCK_STEP * rec;
+        const dk = self.drinkLevels(); // zero unless he has a flask up — see poseDrinkArm
         const crouch = (RUN_CROUCH * runB + 0.5 * RUN_CROUCH * sprintB) * m +
             STRAFE_DIP * @abs(lat) * m + // low centre of gravity; strafing settles onto its soft knees
-            GUARD_CROUCH * gB + BLOCK_SINK * rec;
+            GUARD_CROUCH * gB + BLOCK_SINK * rec + DRINK_SINK * H * dk.lift;
 
         const walkBob = -0.5 * A_BOB * mathx.cosf(2.0 * twoPi * ph); // twice/stride, symmetric
         const runBounce = A_RUN_BOUNCE * (0.5 - 0.5 * mathx.cosf(2.0 * twoPi * (ph - 0.2))); // up-only, peaks at flight
@@ -1248,6 +1266,8 @@ pub const Hero = struct {
         if (gB > 0.001) self.poseGuard(&wx, gB, rec, lean, prot, bank);
 
         if (self.bowOut()) self.poseBowArms(&wx, lean, prot, bank);
+        // LAST, so the flask wins the off hand off a raised bow — that hand was on the string.
+        if (self.drinking) self.poseDrinkArm(&wx, dk.lift, dk.tip);
         self.applyXfade(&wx);
         self.xf = wx;
     }
@@ -1502,44 +1522,19 @@ pub const Hero = struct {
         self.xf = wx;
     }
 
-    // THE DRAUGHT — the OFF hand does all of it.
-    fn poseDrink(self: *Hero) void {
-        const u = mathx.clampF(self.drinkT / combat.FLASK_DRINK_DUR, 0, 1);
-        // Up fast, HOLD at the mouth through the pour, down slower — a flask is emptied, not waved.
-        const lift = mathx.pulse(u, 0, 0.26, 0.72, 1.0);
-        const tip = mathx.pulse(u, 0.22, 0.46, 0.66, 0.92);
-        const facingDeg = mathx.degrees(self.facing);
-        const hipY = self.rest[ROOT].y;
-        // He settles onto his heels to drink, and rocks back a touch as the flask goes up.
-        const sink = 0.012 * H * lift;
-        const lean = -6.0 * tip;
-
-        var wx: [N]rl.Matrix = undefined;
-        wx[ROOT] = mul3(
-            ry(4.0 * lift),
-            mul(tr(0, hipY - sink, 0), mul(rx(lean * 0.35), ry(facingDeg))),
-            rootAt(self.pos),
-        );
-        setLocal(&wx, SPINE, self.rest, rx(lean * 0.35));
-        setLocal(&wx, CHEST, self.rest, rx(lean * 0.30));
-        setLocal(&wx, NECK, self.rest, rx(-14.0 * tip));
-        setLocal(&wx, HEAD, self.rest, rx(HEAD_WALK - 30.0 * tip));
-        // Legs: the standing stance, knees soft.
-        setLocal(&wx, HIPL, self.rest, mul(rx(-2.0 * lift), rz(-HIP_ADDUCT)));
-        setLocal(&wx, KNEEL, self.rest, rx(IDLE_KNEE + 4.0 * lift));
-        setLocal(&wx, ANKL, self.rest, ry(FOOT_TOEOUT));
-        setLocal(&wx, HIPR, self.rest, mul(rx(-1.0 * lift), rz(HIP_ADDUCT)));
-        setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 3.0 * lift));
-        setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
-        setLocal(&wx, SHL, self.rest, mul(rx(-58.0 * lift - 14.0 * tip), rz(ARM_ABD + 16.0 * lift)));
-        setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 96.0 * lift + 22.0 * tip)));
-        setLocal(&wx, WRL, self.rest, rx(-28.0 * tip)); // the wrist rolls the bottle up at the lips
-        setLocal(&wx, SHR, self.rest, mul(rx(2.0 * lift), rz(-ARM_ABD)));
-        setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + CARRY_ELBOW)));
-        setLocal(&wx, WRR, self.rest, rl.math.matrixIdentity());
-        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
-        self.applyXfade(&wx);
-        self.xf = wx;
+    /// THE DRAUGHT — the OFF hand does all of it, laid OVER whatever gait just ran, which is the pattern
+    /// the guard and the bow arms already use. It replaced the whole body once, and that is why he could
+    /// not take a step with a flask up: the legs were a standing stance, so travel would have SKATED them.
+    /// Only the off arm and the head are the flask's; the legs, the pelvis and the sword arm stay the
+    /// walk's, so the phase is still driven by the distance he actually covered.
+    fn poseDrinkArm(self: *const Hero, wx: *[N]rl.Matrix, lift: f32, tip: f32) void {
+        var dp = wx.*;
+        setLocal(&dp, NECK, self.rest, rx(-14.0 * tip));
+        setLocal(&dp, HEAD, self.rest, rx(HEAD_WALK - 30.0 * tip));
+        setLocal(&dp, SHL, self.rest, mul(rx(-58.0 * lift - 14.0 * tip), rz(ARM_ABD + 16.0 * lift)));
+        setLocal(&dp, ELL, self.rest, rx(-(IDLE_ELBOW + 96.0 * lift + 22.0 * tip)));
+        setLocal(&dp, WRL, self.rest, rx(-28.0 * tip)); // the wrist rolls the bottle up at the lips
+        for ([_]usize{ NECK, HEAD, SHL, ELL, WRL }) |i| wx[i] = dp[i];
     }
 
     pub fn poseRest(self: *Hero, dt: f32) void {
@@ -1818,6 +1813,34 @@ fn rollArm(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, tuck: f32, f: f32, side: f32,
     setLocal(wx, wr, rest, rl.math.matrixIdentity());
 }
 
+// THE HERO'S EDGES ARE FILLETED, AND THE OLD HERO IS ONE CONSTANT AWAY (owner: keep it around in case).
+// Every body part's box goes through `slab`, so `ROUND_EDGES = false` restores the hard-edged mesh
+// EXACTLY — `addRoundBox` takes the same FULL size `addCube` does and keeps the six face planes where
+// they were, so the anthropometry (which is measured, not styled) does not move either way.
+// THE BLADES STAY SHARP: `swordMesh`'s oriented boxes are steel with an edge on them, which is the one
+// thing in here that is supposed to read as a hard rim (see AGENTS.md's FLESH IS ROUND).
+const ROUND_EDGES = true;
+/// 1 is a plain ellipsoid, 0 the hard cube. Low enough that a shoulder cap still reads as a plate and
+/// the head still reads as a skull rather than an egg — the flats have to survive the fillet.
+const ROUND_E: f32 = 0.34;
+/// A fillet costs a box 6 quads → segs×sides, so the TESSELLATION IS SIZED TO THE PART. The head, torso
+/// and thighs are what a fillet is for and they get the fine grid; a buckle, a nose or a pouch flap is a
+/// couple of centimetres across, where the same grid is a dozen quads a pixel. Measured off the part's
+/// largest dimension in units of stature, so it holds if the rig is ever rescaled.
+fn roundGrid(size: rl.Vector3) struct { segs: i32, sides: i32 } {
+    const big = @max(@max(@abs(size.x), @abs(size.y)), @abs(size.z)) / H;
+    if (big >= 0.12) return .{ .segs = 6, .sides = 12 };
+    if (big >= 0.05) return .{ .segs = 5, .sides = 10 };
+    return .{ .segs = 3, .sides = 6 };
+}
+
+/// One body box. The ONE place the hero chooses between a filleted and a hard edge.
+fn slab(b: *Builder, c: rl.Vector3, size: rl.Vector3, col: rl.Color) void {
+    if (!ROUND_EDGES) return b.addCube(c, size, col);
+    const g = roundGrid(size);
+    b.addRoundBox(c, size, ROUND_E, g.segs, g.sides, col);
+}
+
 fn buildMeshes() [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
     mesh[ROOT] = pelvisMesh();
@@ -1929,8 +1952,8 @@ fn shieldMesh() rl.Mesh {
         SHIELD_BOSS,
     );
     b.setMat(.leather);
-    b.addCube(v3(0, 0, -SHIELD_THICK * 1.15), v3(0.090 * H, 0.026 * H, 0.014 * H), LEATHER);
-    b.addCube(v3(0, 0, -SHIELD_THICK * 0.9), v3(0.034 * H, 0.052 * H, 0.010 * H), LEATHER_DK); // the arm pad
+    slab(&b, v3(0, 0, -SHIELD_THICK * 1.15), v3(0.090 * H, 0.026 * H, 0.014 * H), LEATHER);
+    slab(&b, v3(0, 0, -SHIELD_THICK * 0.9), v3(0.034 * H, 0.052 * H, 0.010 * H), LEATHER_DK); // the arm pad
     return b.toMesh();
 }
 
@@ -1939,17 +1962,17 @@ const scaleV = mathx.scaleV; // shared vector scale (was a local re-implementati
 fn pelvisMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.leather);
-    b.addCube(v3(0, -0.01 * H, 0), v3(0.235 * H, 0.16 * H, 0.175 * H), BELT);
+    slab(&b, v3(0, -0.01 * H, 0), v3(0.235 * H, 0.16 * H, 0.175 * H), BELT);
     b.setMat(.cloth);
-    b.addCube(v3(0, 0.055 * H, 0), v3(0.215 * H, 0.07 * H, 0.16 * H), TUNIC_DK); // hip skirt of the tunic
+    slab(&b, v3(0, 0.055 * H, 0), v3(0.215 * H, 0.07 * H, 0.16 * H), TUNIC_DK); // hip skirt of the tunic
     b.setMat(.steel);
-    b.addCube(v3(0, -0.005 * H, 0.0925 * H), v3(0.035 * H, 0.035 * H, 0.012 * H), BRASS); // buckle
+    slab(&b, v3(0, -0.005 * H, 0.0925 * H), v3(0.035 * H, 0.035 * H, 0.012 * H), BRASS); // buckle
     b.setMat(.leather);
     // leather tassets over the hips + a supply pouch on the right
-    b.addCube(v3(0.095 * H, -0.055 * H, 0.05 * H), v3(0.07 * H, 0.085 * H, 0.016 * H), LEATHER);
-    b.addCube(v3(-0.095 * H, -0.055 * H, 0.05 * H), v3(0.07 * H, 0.085 * H, 0.016 * H), LEATHER);
-    b.addCube(v3(-0.115 * H, -0.045 * H, -0.03 * H), v3(0.05 * H, 0.06 * H, 0.045 * H), LEATHER_DK); // pouch
-    b.addCube(v3(-0.115 * H, -0.028 * H, -0.03 * H), v3(0.054 * H, 0.02 * H, 0.05 * H), LEATHER); // pouch flap
+    slab(&b, v3(0.095 * H, -0.055 * H, 0.05 * H), v3(0.07 * H, 0.085 * H, 0.016 * H), LEATHER);
+    slab(&b, v3(-0.095 * H, -0.055 * H, 0.05 * H), v3(0.07 * H, 0.085 * H, 0.016 * H), LEATHER);
+    slab(&b, v3(-0.115 * H, -0.045 * H, -0.03 * H), v3(0.05 * H, 0.06 * H, 0.045 * H), LEATHER_DK); // pouch
+    slab(&b, v3(-0.115 * H, -0.028 * H, -0.03 * H), v3(0.054 * H, 0.02 * H, 0.05 * H), LEATHER); // pouch flap
     const d = v3(0.10, -0.90, -0.42);
     const p1 = v3(0.995, 0.090, 0.042);
     const p2 = v3(0, -0.422, 0.9045);
@@ -1965,24 +1988,24 @@ fn abdomenMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.cloth);
     // Slight waist taper: a lower belly block under a broader ribcage base.
-    b.addCube(v3(0, -0.01 * H, 0), v3(0.205 * H, 0.13 * H, 0.145 * H), TUNIC);
-    b.addCube(v3(0, 0.075 * H, 0), v3(0.235 * H, 0.09 * H, 0.16 * H), TUNIC);
+    slab(&b, v3(0, -0.01 * H, 0), v3(0.205 * H, 0.13 * H, 0.145 * H), TUNIC);
+    slab(&b, v3(0, 0.075 * H, 0), v3(0.235 * H, 0.09 * H, 0.16 * H), TUNIC);
     // tabard front — hangs over the belly, bends with the spine
-    b.addCube(v3(0, -0.012 * H, 0.079 * H), v3(0.135 * H, 0.155 * H, 0.014 * H), CAPE);
+    slab(&b, v3(0, -0.012 * H, 0.079 * H), v3(0.135 * H, 0.155 * H, 0.014 * H), CAPE);
     return b.toMesh();
 }
 
 fn chestMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.cloth);
-    b.addCube(v3(0, -0.005 * H, 0), v3(0.285 * H, 0.12 * H, 0.165 * H), TUNIC); // 0.695—0.815 H
+    slab(&b, v3(0, -0.005 * H, 0), v3(0.285 * H, 0.12 * H, 0.165 * H), TUNIC); // 0.695—0.815 H
     b.setMat(.leather);
-    b.addCube(v3(0, 0.035 * H, -0.005 * H), v3(0.305 * H, 0.06 * H, 0.18 * H), LEATHER_DK); // collar/mantle at the shoulders
+    slab(&b, v3(0, 0.035 * H, -0.005 * H), v3(0.305 * H, 0.06 * H, 0.18 * H), LEATHER_DK); // collar/mantle at the shoulders
     b.setMat(.cloth);
-    b.addCube(v3(0, -0.01 * H, 0.086 * H), v3(0.135 * H, 0.11 * H, 0.012 * H), CAPE); // tabard chest panel
-    b.addCube(v3(0, -0.035 * H, -0.098 * H), v3(0.24 * H, 0.115 * H, 0.016 * H), CAPE); // short cape at the back
+    slab(&b, v3(0, -0.01 * H, 0.086 * H), v3(0.135 * H, 0.11 * H, 0.012 * H), CAPE); // tabard chest panel
+    slab(&b, v3(0, -0.035 * H, -0.098 * H), v3(0.24 * H, 0.115 * H, 0.016 * H), CAPE); // short cape at the back
     b.setMat(.leather);
-    b.addCube(v3(0, 0.042 * H, -0.10 * H), v3(0.25 * H, 0.035 * H, 0.02 * H), LEATHER); // cape yoke
+    slab(&b, v3(0, 0.042 * H, -0.10 * H), v3(0.25 * H, 0.035 * H, 0.02 * H), LEATHER); // cape yoke
     return b.toMesh();
 }
 
@@ -1997,14 +2020,14 @@ fn headMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
     // Cranium, jaw, nose (facing cue), swept-back hair with a nape knot, and a thin leather headband.
-    b.addCube(v3(0, 0.075 * H, -0.005 * H), v3(0.135 * H, 0.115 * H, 0.15 * H), SKIN); // cranium
-    b.addCube(v3(0, 0.018 * H, 0.012 * H), v3(0.10 * H, 0.055 * H, 0.125 * H), SKIN); // jaw
-    b.addCube(v3(0, 0.05 * H, 0.082 * H), v3(0.028 * H, 0.03 * H, 0.03 * H), SKIN_DK); // nose
+    slab(&b, v3(0, 0.075 * H, -0.005 * H), v3(0.135 * H, 0.115 * H, 0.15 * H), SKIN); // cranium
+    slab(&b, v3(0, 0.018 * H, 0.012 * H), v3(0.10 * H, 0.055 * H, 0.125 * H), SKIN); // jaw
+    slab(&b, v3(0, 0.05 * H, 0.082 * H), v3(0.028 * H, 0.03 * H, 0.03 * H), SKIN_DK); // nose
     b.setMat(.leather); // hair reads through the leather pore stipple (strand-ish, not plastic)
-    b.addCube(v3(0, 0.118 * H, -0.025 * H), v3(0.145 * H, 0.05 * H, 0.15 * H), HAIR); // hair cap
-    b.addCube(v3(0, 0.055 * H, -0.078 * H), v3(0.135 * H, 0.125 * H, 0.035 * H), HAIR); // back of hair
-    b.addCube(v3(0, 0.012 * H, -0.092 * H), v3(0.05 * H, 0.05 * H, 0.035 * H), HAIR); // nape knot
-    b.addCube(v3(0, 0.092 * H, 0.0 * H), v3(0.142 * H, 0.018 * H, 0.152 * H), LEATHER_DK); // headband
+    slab(&b, v3(0, 0.118 * H, -0.025 * H), v3(0.145 * H, 0.05 * H, 0.15 * H), HAIR); // hair cap
+    slab(&b, v3(0, 0.055 * H, -0.078 * H), v3(0.135 * H, 0.125 * H, 0.035 * H), HAIR); // back of hair
+    slab(&b, v3(0, 0.012 * H, -0.092 * H), v3(0.05 * H, 0.05 * H, 0.035 * H), HAIR); // nape knot
+    slab(&b, v3(0, 0.092 * H, 0.0 * H), v3(0.142 * H, 0.018 * H, 0.152 * H), LEATHER_DK); // headband
     return b.toMesh();
 }
 
@@ -2024,7 +2047,7 @@ fn shankMesh() rl.Mesh {
     b.addCylinder(v3(0, 0, 0), v3(0, -0.09 * H, 0), 0.058 * H, 0.062 * H, 10, CLOTHDK);
     b.setMat(.leather);
     b.addCylinder(v3(0, -0.09 * H, 0), v3(0, -SEG_SHANK * H, 0), 0.064 * H, 0.036 * H, 10, BOOT);
-    b.addCube(v3(0, -0.02 * H, 0.052 * H), v3(0.062 * H, 0.06 * H, 0.026 * H), LEATHER); // kneecap
+    slab(&b, v3(0, -0.02 * H, 0.052 * H), v3(0.062 * H, 0.06 * H, 0.026 * H), LEATHER); // kneecap
     return b.toMesh();
 }
 
@@ -2033,8 +2056,8 @@ fn footMesh() rl.Mesh {
     b.setMat(.leather);
     // Boot: sole rests on the ground (ankle joint is ANKLE_Y=0.039 H up), toes forward +Z.
     const ay = 0.039 * H;
-    b.addCube(v3(0, -ay + 0.028 * H, 0.045 * H), v3(0.085 * H, 0.056 * H, 0.19 * H), BOOT);
-    b.addCube(v3(0, -ay + 0.075 * H, -0.02 * H), v3(0.075 * H, 0.05 * H, 0.09 * H), BOOT); // ankle cuff
+    slab(&b, v3(0, -ay + 0.028 * H, 0.045 * H), v3(0.085 * H, 0.056 * H, 0.19 * H), BOOT);
+    slab(&b, v3(0, -ay + 0.075 * H, -0.02 * H), v3(0.075 * H, 0.05 * H, 0.09 * H), BOOT); // ankle cuff
     return b.toMesh();
 }
 
@@ -2042,11 +2065,11 @@ fn upperArmMesh(big: bool) rl.Mesh {
     var b = Builder.init();
     b.setMat(.leather);
     if (big) {
-        b.addCube(v3(0, -0.005 * H, 0), v3(0.125 * H, 0.10 * H, 0.13 * H), LEATHER);
+        slab(&b, v3(0, -0.005 * H, 0), v3(0.125 * H, 0.10 * H, 0.13 * H), LEATHER);
         b.setMat(.steel);
-        b.addCube(v3(0, 0.048 * H, 0), v3(0.105 * H, 0.045 * H, 0.115 * H), STEEL_DK); // steel rim cap
+        slab(&b, v3(0, 0.048 * H, 0), v3(0.105 * H, 0.045 * H, 0.115 * H), STEEL_DK); // steel rim cap
     } else {
-        b.addCube(v3(0, 0.005 * H, 0), v3(0.105 * H, 0.085 * H, 0.115 * H), LEATHER);
+        slab(&b, v3(0, 0.005 * H, 0), v3(0.105 * H, 0.085 * H, 0.115 * H), LEATHER);
     }
     b.setMat(.cloth);
     b.addCylinder(v3(0, 0, 0), v3(0, -SEG_UPARM * H, 0), 0.052 * H, 0.044 * H, 9, TUNIC);
@@ -2065,7 +2088,7 @@ fn forearmMesh() rl.Mesh {
 fn handMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.leather);
-    b.addCube(v3(0, -0.05 * H, 0.005 * H), v3(0.05 * H, 0.10 * H, 0.045 * H), BOOT); // glove
+    slab(&b, v3(0, -0.05 * H, 0.005 * H), v3(0.05 * H, 0.10 * H, 0.045 * H), BOOT); // glove
     return b.toMesh();
 }
 
@@ -2100,10 +2123,26 @@ test "the DRAUGHT is committed like the other two: inputs buffer, they do not fi
     try std.testing.expect(!h.rolling and h.drinking);
 
     var guard: u32 = 0;
-    while (h.drinking and guard < 500) : (guard += 1) h.updateDrink(0.016);
+    while (h.drinking and guard < 500) : (guard += 1) h.tickDrink(0.016);
     try std.testing.expect(!h.drinking);
     try std.testing.expect(h.rolling);
     try std.testing.expect(h.queued == null);
+}
+
+test "A DRAUGHT IS A SHUFFLE, and the legs stay the gait's" {
+    // The old draught replaced the whole body with a standing stance, so travelling through one would
+    // have skated the feet. It is an overlay now: only the off arm and head are the flask's.
+    try std.testing.expect(DRINK_SPEED > 0.0 and DRINK_SPEED < GUARD_SPEED);
+    var h = testHero();
+    try std.testing.expect(h.startDrink());
+    h.tickDrink(combat.FLASK_DRINK_DUR * 0.4); // flask at the lips
+    const dk = h.drinkLevels();
+    try std.testing.expect(dk.lift > 0.5 and dk.tip > 0.0);
+    // …and it is zero the moment he is not drinking, so the gait pays nothing for it.
+    h.drinking = false;
+    const dry = h.drinkLevels();
+    try std.testing.expectEqual(@as(f32, 0), dry.lift);
+    try std.testing.expectEqual(@as(f32, 0), dry.tip);
 }
 
 test "THE BOW TAKES THE SHIELD, and it takes it by being asked rather than by clearing a flag" {

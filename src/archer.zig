@@ -118,7 +118,12 @@ fn stretchZ(a: rl.Vector3, b: rl.Vector3) rl.Matrix {
     return mul(scaleM(1, 1, len), mul(orientZ(mathx.scaleV(d, 1.0 / len)), tr(a.x, a.y, a.z)));
 }
 
-pub const SCALE = 1.0; // archers stand at the hero's height — no global bump (unlike the toads)
+/// A FOOT TALLER THAN THE HERO (owner's call). DERIVED rather than a magic 1.17, so it stays a foot if
+/// the hero's stature ever moves. The two scale-sensitive parts of a shared-rig humanoid are already
+/// right here, which is why the bump is only this line: the pelvis HEIGHT is scaled (`pelvY * fs` in
+/// `pose` — without it the legs sink and it reads as a crouching blob) and the stride is fed a
+/// scale-corrected distance (`movedDist / self.scale`), without which a taller skeleton's foot skates.
+pub const SCALE = (H + 0.305) / H; // 0.305 m = one foot over the hero's stature
 const WALK_SPEED = heromod.WALK_SPEED * 0.95; // a wary, unhurried reposition
 const AGGRO_R = 24.0; // notices + engages the hero within this (ranged, so wider than the toad)
 const RANGE_MIN = 8.0; // too close → back off to re-open the shot
@@ -1073,28 +1078,29 @@ fn skullMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
     // Head joint ~0.885 H (chin line); cranium lands ~1.0 H.
-    b.addCylinder(v3(0, 0.06 * H, -0.008 * H), v3(0, 0.114 * H, -0.010 * H), 0.066 * H, 0.048 * H, 9, BONE); // crown (inside the box line — no hat-brim ledge)
-    b.addCube(v3(0, 0.058 * H, -0.004 * H), v3(0.140 * H, 0.082 * H, 0.138 * H), BONE); // cranium box
-    b.addCube(v3(0.020 * H, 0.098 * H, 0.010 * H), v3(0.014 * H, 0.030 * H, 0.11 * H), STAIN); // the old cleft, stained dark
-    b.addCube(v3(0, 0.075 * H, 0.062 * H), v3(0.126 * H, 0.026 * H, 0.030 * H), BONE_LT); // brow ridge
-    // eye sockets
-    b.addCube(v3(0.043 * H, 0.048 * H, 0.064 * H), v3(0.054 * H, 0.048 * H, 0.028 * H), SOCKET);
-    b.addCube(v3(-0.041 * H, 0.046 * H, 0.064 * H), v3(0.048 * H, 0.044 * H, 0.028 * H), SOCKET);
-    b.addCube(v3(0, 0.028 * H, 0.070 * H), v3(0.022 * H, 0.042 * H, 0.026 * H), SOCKET); // nasal cavity
-    b.addCube(v3(0.058 * H, 0.026 * H, 0.048 * H), v3(0.030 * H, 0.028 * H, 0.042 * H), BONE_DK); // L cheekbone
-    b.addCube(v3(-0.056 * H, 0.024 * H, 0.046 * H), v3(0.024 * H, 0.022 * H, 0.038 * H), STAIN); // R cheekbone — chipped smaller
+    b.addBlob(v3(0, 0.058 * H, -0.004 * H), v3(0.072 * H, 0.062 * H, 0.071 * H), 9, 14, BONE); // cranium dome
+    b.addBlob(v3(0, 0.042 * H, -0.034 * H), v3(0.062 * H, 0.050 * H, 0.052 * H), 7, 12, BONE); // occiput swell
+    b.addBlob(v3(0.020 * H, 0.102 * H, 0.008 * H), v3(0.010 * H, 0.019 * H, 0.055 * H), 5, 9, STAIN); // the old cleft, stained dark, sunk to a groove
+    b.addCapsule(v3(-0.055 * H, 0.074 * H, 0.056 * H), v3(0.057 * H, 0.076 * H, 0.056 * H), 0.016 * H, 0.015 * H, 9, BONE_LT); // brow ridge
+    // eye sockets — dark hollows, the left the bigger
+    b.addBlob(v3(0.042 * H, 0.048 * H, 0.062 * H), v3(0.027 * H, 0.024 * H, 0.015 * H), 6, 10, SOCKET);
+    b.addBlob(v3(-0.040 * H, 0.046 * H, 0.061 * H), v3(0.024 * H, 0.021 * H, 0.014 * H), 6, 10, SOCKET);
+    b.addBlob(v3(0, 0.028 * H, 0.064 * H), v3(0.013 * H, 0.022 * H, 0.013 * H), 5, 9, SOCKET); // nasal cavity
+    b.addBlob(v3(0.056 * H, 0.028 * H, 0.048 * H), v3(0.018 * H, 0.015 * H, 0.024 * H), 6, 10, BONE_DK); // L cheekbone
+    b.addBlob(v3(-0.054 * H, 0.025 * H, 0.046 * H), v3(0.014 * H, 0.012 * H, 0.020 * H), 6, 10, STAIN); // R cheekbone — chipped smaller
     // upper jaw over a dark GAPE, the mandible slung low (an undead skull hangs open a little)
-    b.addCube(v3(0, 0.008 * H, 0.052 * H), v3(0.082 * H, 0.028 * H, 0.058 * H), BONE); // maxilla
-    b.addCube(v3(0, -0.020 * H, 0.048 * H), v3(0.070 * H, 0.026 * H, 0.052 * H), SOCKET); // the gape
-    b.addCube(v3(0, -0.038 * H, 0.046 * H), v3(0.078 * H, 0.020 * H, 0.056 * H), BONE_DK); // mandible
+    b.addBlob(v3(0, 0.008 * H, 0.048 * H), v3(0.044 * H, 0.017 * H, 0.034 * H), 7, 12, BONE); // maxilla
+    b.addBlob(v3(0, -0.020 * H, 0.044 * H), v3(0.037 * H, 0.015 * H, 0.029 * H), 6, 11, SOCKET); // the gape
+    b.addBlob(v3(0, -0.038 * H, 0.043 * H), v3(0.041 * H, 0.012 * H, 0.031 * H), 7, 12, BONE_DK); // mandible
     var trng = mathx.Rng.init(4801);
     var i: i32 = -3;
     while (i <= 3) : (i += 1) {
-        const tx = @as(f32, @floatFromInt(i)) * 0.019 * H;
+        const txf = @as(f32, @floatFromInt(i)) * 0.014; // dental arch wraps the jaw's curve (fractions of H)
+        const tx = txf * H;
         if (trng.float() >= 0.14) // upper row (the odd tooth missing)
-            b.addCube(v3(tx, -0.006 * H, 0.082 * H), v3(0.010 * H, 0.020 * H * trng.range(0.7, 1.25), 0.009 * H), TEETH);
+            b.addCube(v3(tx, -0.004 * H, (0.080 - 10.0 * txf * txf) * H), v3(0.010 * H, 0.020 * H * trng.range(0.7, 1.25), 0.009 * H), TEETH);
         if (trng.float() >= 0.25) // lower row — more gaps, shorter pegs
-            b.addCube(v3(tx + 0.004 * H, -0.030 * H, 0.078 * H), v3(0.009 * H, 0.013 * H * trng.range(0.6, 1.1), 0.008 * H), TEETH);
+            b.addCube(v3(tx + 0.004 * H, -0.029 * H, (0.072 - 10.0 * txf * txf) * H), v3(0.009 * H, 0.013 * H * trng.range(0.6, 1.1), 0.008 * H), TEETH);
     }
     return b.toMesh();
 }

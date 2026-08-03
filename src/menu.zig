@@ -5,7 +5,9 @@ const hud = @import("hud.zig");
 const mathx = @import("mathx.zig");
 const rumblemod = @import("rumble.zig");
 const sfx = @import("audio.zig");
-const item = @import("item.zig"); // the CHARACTER menu lists what the hero carries
+const item = @import("item.zig"); // the CHARACTER menu lists what the hero carries…
+const stats = @import("stats.zig"); // …and what he IS
+const uiart = @import("uiart.zig");
 
 const rgba = mathx.rgba;
 
@@ -22,6 +24,7 @@ const Screen = enum {
     debug,
     retro,
     character, // ── and the CHARACTER menu (Start) …
+    attributes,
     inventory,
     equipment,
 
@@ -29,16 +32,21 @@ const Screen = enum {
         return switch (s) {
             .closed => .closed,
             .main, .options, .debug, .retro => .main,
-            .character, .inventory, .equipment => .character,
+            .character, .attributes, .inventory, .equipment => .character,
         };
     }
 };
 
 // Character rows.
-const CHR_INVENTORY = 0;
-const CHR_EQUIPMENT = 1;
-const CHR_CLOSE = 2;
+const CHR_ATTRIBUTES = 0;
+const CHR_INVENTORY = 1;
+const CHR_EQUIPMENT = 2;
+const CHR_CLOSE = 3;
 const CHR_COUNT = CHR_CLOSE + 1;
+
+// Attribute rows — the seven, then Back. Read-only: there is no leveling yet, so nothing here adjusts.
+const ATR_CLOSE = stats.NA;
+const ATR_COUNT = ATR_CLOSE + 1;
 
 // Equipment rows — the four ER slots, then Back.
 const EQP_RIGHT = 0;
@@ -89,7 +97,6 @@ const MAIN_COUNT = MAIN_QUIT + 1;
 
 const VEIL = rgba(6, 6, 9, 150);
 const CARD = rgba(16, 15, 13, 232);
-const CARD_EDGE = rgba(146, 124, 82, 130);
 const TEXT_DIM = rgba(150, 146, 138, 255);
 const TEXT_HOT = rgba(236, 210, 150, 255);
 const TITLE_COL = rgba(232, 222, 198, 255);
@@ -126,7 +133,7 @@ pub const Menu = struct {
             .options => .main,
             .debug => .main,
             .retro => .debug,
-            .inventory, .equipment => .character,
+            .attributes, .inventory, .equipment => .character,
         };
     }
 
@@ -144,18 +151,27 @@ pub const Menu = struct {
         self.screen = if (self.screen.root() == .character) .closed else .character;
     }
 
-    // dt is the REAL frame time (not time-scaled) so the glide speed never changes.
-    pub fn update(self: *Menu, retro: *gfx.Retro, dt: f32, bag: *const item.Bag) Action {
-        const rows: usize = switch (self.screen) {
-            .closed => return .none,
+    /// HOW MANY ROWS THE LIVE SCREEN HAS — asked by the cursor wrap AND by "is the cursor on Back",
+    /// which each carried their own copy of the inventory's `distinct() + 1`. Two copies of a row count
+    /// is two chances for Back to stop being the last row.
+    fn rowCount(self: *const Menu, bag: *const item.Bag) usize {
+        return switch (self.screen) {
+            .closed => 0,
             .main => MAIN_COUNT,
             .options => OPT_COUNT,
             .debug => DBG_COUNT,
             .retro => RET_COUNT,
             .character => CHR_COUNT,
+            .attributes => ATR_COUNT,
             .inventory => @max(1, bag.distinct()) + 1,
             .equipment => EQP_COUNT,
         };
+    }
+
+    // dt is the REAL frame time (not time-scaled) so the glide speed never changes.
+    pub fn update(self: *Menu, retro: *gfx.Retro, dt: f32, bag: *const item.Bag) Action {
+        if (self.screen == .closed) return .none;
+        const rows = self.rowCount(bag);
         if (navPressed(.up)) {
             self.cursor = (self.cursor + rows - 1) % rows;
             sfx.play(.menu_move);
@@ -235,6 +251,10 @@ pub const Menu = struct {
                 else => {},
             },
             .character => switch (self.cursor) {
+                CHR_ATTRIBUTES => {
+                    self.screen = .attributes;
+                    self.cursor = 0;
+                },
                 CHR_INVENTORY => {
                     self.screen = .inventory;
                     self.cursor = 0;
@@ -246,8 +266,15 @@ pub const Menu = struct {
                 CHR_CLOSE => self.screen = .closed,
                 else => {},
             },
+            .attributes => {
+                // Read-only: the only row that does anything is the last one.
+                if (self.cursor == ATR_CLOSE) {
+                    self.screen = .character;
+                    self.cursor = 0;
+                }
+            },
             .inventory, .equipment => {
-                const last = (if (self.screen == .inventory) @max(1, bag.distinct()) + 1 else EQP_COUNT) - 1;
+                const last = self.rowCount(bag) - 1;
                 if (self.cursor == last) {
                     self.screen = .character;
                     self.cursor = 0;
@@ -305,30 +332,42 @@ pub const Menu = struct {
         return out;
     }
 
-    pub fn draw(self: *const Menu, retro: *const gfx.Retro, bag: *const item.Bag) void {
+    pub fn draw(self: *const Menu, retro: *const gfx.Retro, bag: *const item.Bag, sheet: *const stats.Sheet) void {
         if (self.screen == .closed) return;
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
         rl.drawRectangle(0, 0, sw, sh, VEIL);
+        const lb = @divTrunc(sh, 8); // dusk gathers at the frame's edges
+        rl.drawRectangleGradientV(0, 0, sw, lb, rgba(0, 0, 0, 140), rgba(0, 0, 0, 0));
+        rl.drawRectangleGradientV(0, sh - lb, sw, lb, rgba(0, 0, 0, 0), rgba(0, 0, 0, 140));
         switch (self.screen) {
             .closed => {},
-            .main => self.drawCard("SOULSLIKE", &mainLabels(), null),
-            .options => self.drawCard("SOUND", &optionLabels(), &soundLevels()),
-            .debug => self.drawCard("DEBUG", &self.debugLabels(), null),
-            .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), retro.values[0..gfx.RETRO_COUNT]),
-            .character => self.drawCard("CHARACTER", &characterLabels(), null),
-            .inventory => self.drawCard("INVENTORY", bagLabels(bag), null),
-            .equipment => self.drawCard("EQUIPMENT", &equipLabels(), null),
+            .main => self.drawCard("SOULSLIKE", &mainLabels(), .{}),
+            .options => self.drawCard("SOUND", &optionLabels(), .{ .gauges = &soundLevels() }),
+            .debug => self.drawCard("DEBUG", &self.debugLabels(), .{}),
+            .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), .{ .gauges = retro.values[0..gfx.RETRO_COUNT] }),
+            .character => self.drawCard("CHARACTER", &characterLabels(), .{}),
+            .attributes => self.drawCard("ATTRIBUTES", &attrLabels(), .{
+                .values = attrValues(sheet),
+                .note = attrNote(sheet, self.cursor),
+            }),
+            .inventory => self.drawCard("INVENTORY", bagLabels(bag), .{}),
+            .equipment => self.drawCard("EQUIPMENT", &equipLabels(), .{}),
         }
         const hint: [:0]const u8 = if (rl.isGamepadAvailable(PAD))
             "D-pad move / adjust (hold glides, LB coarse)   A select   B back   Select game   Start character"
         else
             "Up/Down move   Left/Right adjust (hold glides, Shift coarse)   Enter select   Esc back";
         const hw = hud.textW(hint, hud.HINT);
-        hud.text(hint, @divTrunc(sw - hw, 2), sh - hud.lineH(hud.HINT) - 12, hud.HINT, HINT_COL);
+        const hx = @divTrunc(sw - hw, 2);
+        const hy = sh - hud.lineH(hud.HINT) - 12;
+        hud.text(hint, hx, hy, hud.HINT, HINT_COL);
+        const hcy: f32 = @floatFromInt(hy + @divTrunc(hud.lineH(hud.HINT), 2));
+        uiart.diamond(@floatFromInt(hx - 16), hcy, 2.2, mathx.withAlpha(uiart.GILT_DIM, 130));
+        uiart.diamond(@floatFromInt(hx + hw + 16), hcy, 2.2, mathx.withAlpha(uiart.GILT_DIM, 130));
     }
 
-    fn drawCard(self: *const Menu, title: [:0]const u8, labels: []const [:0]const u8, gauges: ?[]const f32) void {
+    fn drawCard(self: *const Menu, title: [:0]const u8, labels: []const [:0]const u8, card: Card) void {
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
         const compact = labels.len > 8; // the long retro list packs tighter than the short menus
@@ -336,37 +375,81 @@ pub const Menu = struct {
         const rowH: i32 = hud.lineH(fontSize) + (if (compact) @as(i32, 2) else @as(i32, 14));
         const rowGap: i32 = if (compact) 2 else 8;
         const headerH: i32 = hud.lineH(hud.TITLE) + 22;
-        const footH: i32 = 20;
-        const cardW: i32 = if (gauges != null) 620 else 470;
+        const noteH: i32 = if (card.note != null) hud.lineH(hud.HINT) + 14 else 0;
+        const footH: i32 = 20 + noteH;
+        const cardW: i32 = if (card.gauges != null or card.note != null) 620 else 470;
         const cardH: i32 = headerH + (rowH + rowGap) * @as(i32, @intCast(labels.len)) + footH;
         const cx = @divTrunc(sw - cardW, 2);
         const cy = @divTrunc(sh - cardH, 2);
-        rl.drawRectangle(cx, cy, cardW, cardH, CARD);
-        rl.drawRectangleLines(cx, cy, cardW, cardH, CARD_EDGE);
-        rl.drawRectangle(cx + 18, cy + hud.lineH(hud.TITLE) + 10, cardW - 36, 1, CARD_EDGE); // rule under the title
+        uiart.seat(cx, cy, cardW, cardH);
+        uiart.plate(cx, cy, cardW, cardH, CARD.a);
+        uiart.frame(cx, cy, cardW, cardH, uiart.flick(200, cx));
+        uiart.divider(cx + @divTrunc(cardW, 2), cy + hud.lineH(hud.TITLE) + 10, @divTrunc(cardW, 2) - 24, 180);
         const tw = hud.textW(title, hud.TITLE);
-        hud.text(title, cx + @divTrunc(cardW - tw, 2), cy + 12, hud.TITLE, TITLE_COL);
+        hud.engraved(title, cx + @divTrunc(cardW - tw, 2), cy + 12, hud.TITLE, TITLE_COL);
         for (labels, 0..) |label, i| {
             const y = cy + headerH + (rowH + rowGap) * @as(i32, @intCast(i));
             const selected = self.cursor == i;
             const col = if (selected) TEXT_HOT else TEXT_DIM;
-            if (selected) rl.drawRectangle(cx + 14, y - 3, cardW - 28, rowH, ROW_HILITE);
+            if (selected) {
+                rl.drawRectangle(cx + 14, y - 3, cardW - 28, rowH, ROW_HILITE);
+                rl.drawRectangle(cx + 14, y - 3, cardW - 28, 1, mathx.withAlpha(uiart.GILT, 70));
+                rl.drawRectangle(cx + 14, y - 4 + rowH, cardW - 28, 1, mathx.withAlpha(uiart.GILT, 46));
+                const spineH = rowH - 8;
+                rl.drawRectangle(cx + 15, y + 1, 3, spineH, mathx.withAlpha(uiart.GILT_BRIGHT, uiart.flick(230, y)));
+                uiart.diamond(@floatFromInt(cx + 16), @floatFromInt(y), 2.6, uiart.GILT_BRIGHT);
+                uiart.diamond(@floatFromInt(cx + 16), @floatFromInt(y + 2 + spineH), 2.6, uiart.GILT_BRIGHT);
+                uiart.sheen(.{
+                    .x = @floatFromInt(cx + 14),
+                    .y = @floatFromInt(y - 3),
+                    .width = @floatFromInt(cardW - 28),
+                    .height = @floatFromInt(rowH),
+                }, 3.8, 26);
+            }
             hud.text(label, cx + 40, y, fontSize, col);
-            if (selected) hud.text(">", cx + 20, y, fontSize, TEXT_HOT);
-            if (gauges) |g| {
+            if (selected) hud.text(">", cx + 24, y, fontSize, TEXT_HOT);
+            if (card.gauges) |g| {
                 if (i < g.len) drawGauge(cx + cardW - 40 - 130, y + @divTrunc(fontSize, 2) - 3, 130, 10, g[i], selected);
+            }
+            if (card.values) |v| {
+                if (i < v.len) hud.text(v[i], cx + cardW - 40 - hud.textW(v[i], fontSize), y, fontSize, col);
+            }
+        }
+        // The footnote about the row under the cursor — its own compartment, below a rule.
+        if (card.note) |n| {
+            if (n.len > 0) {
+                const ny = cy + cardH - noteH - 4;
+                uiart.divider(cx + @divTrunc(cardW, 2), ny - 8, @divTrunc(cardW, 2) - 40, 120);
+                const nw = hud.textW(n, hud.HINT);
+                hud.text(n, cx + @divTrunc(cardW - nw, 2), ny, hud.HINT, HINT_COL);
             }
         }
     }
 };
 
+/// The optional columns a card can carry: a GAUGE per row (the two slider screens), a right-aligned VALUE per row (the character sheet), and a footnote about whichever row the cursor is on. A slice shorter than the row list simply leaves the tail bare, which is how Back gets no number.
+const Card = struct {
+    gauges: ?[]const f32 = null,
+    values: ?[]const [:0]const u8 = null,
+    note: ?[:0]const u8 = null,
+};
+
 fn drawGauge(x: i32, y: i32, w: i32, h: i32, v: f32, selected: bool) void {
+    rl.drawRectangle(x, y, w, h, rgba(6, 5, 4, 200));
     rl.drawRectangleLines(x, y, w, h, BAR_EDGE);
+    rl.drawRectangle(x + 1, y + 1, w - 2, 1, rgba(0, 0, 0, 130)); // sunk top lip
     const fill: i32 = @intFromFloat(@as(f32, @floatFromInt(w - 2)) * mathx.clampF(v, 0, 1));
-    if (fill > 0) rl.drawRectangle(x + 1, y + 1, fill, h - 2, BAR_FILL);
+    if (fill > 0) {
+        rl.drawRectangleGradientH(x + 1, y + 1, fill, h - 2, mathx.lerpColor(BAR_FILL, rl.Color.black, 0.45), BAR_FILL);
+        rl.drawRectangle(x + 1, y + 1, fill, 1, mathx.withAlpha(uiart.GILT_BRIGHT, 90));
+        if (v < 0.999 and fill > 4) rl.drawRectangle(x + fill - 1, y + 2, 2, h - 4, mathx.withAlpha(uiart.CATCH, 150));
+    }
     if (selected) {
         hud.text("<", x - 20, y - 7, hud.SMALL, TEXT_HOT);
         hud.text(">", x + w + 7, y - 7, hud.SMALL, TEXT_HOT);
+    } else {
+        uiart.diamond(@floatFromInt(x - 7), @floatFromInt(y + @divTrunc(h, 2)), 2.0, mathx.withAlpha(uiart.GILT_DIM, 150));
+        uiart.diamond(@floatFromInt(x + w + 7), @floatFromInt(y + @divTrunc(h, 2)), 2.0, mathx.withAlpha(uiart.GILT_DIM, 150));
     }
 }
 
@@ -382,10 +465,41 @@ fn mainLabels() [MAIN_COUNT][:0]const u8 {
 
 fn characterLabels() [CHR_COUNT][:0]const u8 {
     var out: [CHR_COUNT][:0]const u8 = undefined;
+    out[CHR_ATTRIBUTES] = "Attributes >";
     out[CHR_INVENTORY] = "Inventory";
     out[CHR_EQUIPMENT] = "Equipment";
     out[CHR_CLOSE] = "Close";
     return out;
+}
+
+/// THE CHARACTER SHEET — the seven attributes walked off `stats.Attr` itself, so a new one is on this screen the moment it has a name.
+fn attrLabels() [ATR_COUNT][:0]const u8 {
+    var out: [ATR_COUNT][:0]const u8 = undefined;
+    for (0..stats.NA) |i| out[i] = stats.displayName(@enumFromInt(i));
+    out[ATR_CLOSE] = "Back";
+    return out;
+}
+
+var attrValBufs: [stats.NA][8]u8 = undefined;
+var attrValRows: [stats.NA][:0]const u8 = undefined;
+
+fn attrValues(sheet: *const stats.Sheet) []const [:0]const u8 {
+    for (0..stats.NA) |i| {
+        attrValRows[i] = std.fmt.bufPrintZ(&attrValBufs[i], "{d}", .{sheet.at(@enumFromInt(i))}) catch "?";
+    }
+    return &attrValRows;
+}
+
+/// What the selected attribute is FOR, and — for the three that feed a bar — how much of that bar it is buying right now.
+var attrNoteBuf: [128]u8 = undefined;
+
+fn attrNote(sheet: *const stats.Sheet, cursor: usize) [:0]const u8 {
+    if (cursor >= stats.NA) return "";
+    const a: stats.Attr = @enumFromInt(cursor);
+    const says = stats.governs(a);
+    // The attribute→bar binding lives in `stats.barFor` and nowhere else.
+    if (sheet.barFor(a)) |t| return std.fmt.bufPrintZ(&attrNoteBuf, "{s}   Yours: {d:.0}.", .{ says, t }) catch says;
+    return says;
 }
 
 fn equipLabels() [EQP_COUNT][:0]const u8 {

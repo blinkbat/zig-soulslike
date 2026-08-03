@@ -31,10 +31,43 @@ const crackInto = art.crackInto;
 const lichenInto = art.lichenInto;
 const tuftInto = art.tuftInto;
 
+/// A DEAD LIMB, and the reason it is one function both leafless trees call: a branch drawn as ONE
+/// straight capsule to a needle point is a SPEAR, and that — not the placement — is what made these read
+/// as a hub of spokes with twigs floating beside it. Nothing in a dead tree is straight and nothing ends
+/// in a point. So: leave the bole on the bole's own AXIS, rise to an elbow, and let the outer half DROOP
+/// and bend off the line to a blunt SNAP of pale heartwood. The twigs root ON that outer half and carry
+/// ON outward; struck off across the limb instead (which is how the old ones ran, from a point halfway
+/// along to a tip measured off the primary's own tip) a twig crosses its parent and reads as a loose
+/// needle lying near a branch rather than as a fork in it.
+fn deadLimbInto(b: *Builder, rng: *mathx.Rng, root: rl.Vector3, a: f32, reach: f32, rise: f32, r0: f32, twigs: i32) void {
+    const elbow = v3(root.x + mathx.cosf(a) * reach * 0.58, root.y + rise, root.z + mathx.sinf(a) * reach * 0.58);
+    const r1 = r0 * 0.52;
+    b.addCapsule(root, elbow, r0, r1, 5, BARK_DK);
+    const oa = a + rng.signed() * 0.55;
+    const drop = rise * rng.range(-0.7, 0.05); // its own weight has taken it back down
+    const tip = v3(elbow.x + mathx.cosf(oa) * reach * 0.42, elbow.y + drop, elbow.z + mathx.sinf(oa) * reach * 0.42);
+    const r2 = r1 * 0.5;
+    b.addCapsule(elbow, tip, r1, r2, 5, BARK_DK);
+    b.addBlob(tip, v3(r2 * 1.7, r2 * 1.3, r2 * 1.7), 3, 5, TIMBER); // where it broke off
+    var t: i32 = 0;
+    while (t < twigs) : (t += 1) {
+        const u = rng.range(0.05, 0.6);
+        const from = mathx.lerpV(elbow, tip, u);
+        // Sized off the PARENT's radius where it leaves it, or the fork bulges out of the branch growing it.
+        const tr = mathx.lerpF(r1, r2, u) * 0.75;
+        const ta = oa + rng.signed() * 0.85;
+        const tl = reach * rng.range(0.24, 0.44);
+        // Its droop is capped against its own REACH, or a twig off a steeply-drooping limb hangs plumb
+        // and reads as something suspended from the tree rather than a part of it.
+        const dy = mathx.clampF(rise * 0.12 + drop * rng.range(0.2, 0.7), -tl * 0.6, tl * 0.6);
+        b.addCapsule(from, v3(from.x + mathx.cosf(ta) * tl, from.y + dy, from.z + mathx.sinf(ta) * tl), tr, tr * 0.4, 5, BARK_DK);
+    }
+}
+
 pub fn treeMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4806);
-    b.setMat(.wood);
+    b.setMat(.bark);
     const bend = v3(rng.range(0.08, 0.24), 0, rng.signed() * 0.14);
     const j1 = v3(bend.x, 1.70, bend.z);
     const j2 = v3(bend.x * 2.8, 3.05, bend.z * 2.4);
@@ -45,54 +78,46 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
             return v3(bd.x * (y / 1.7) + mathx.cosf(a) * rr, y, bd.z * (y / 1.7) + mathx.sinf(a) * rr);
         }
     }.go;
+    const j3 = v3(j2.x + rng.signed() * 0.3, 4.05, j2.z + rng.signed() * 0.25);
     b.addCapsule(v3(0, 0, 0), j1, 0.26, 0.165, 8, BARK_OLD);
     b.addCapsule(j1, j2, 0.165, 0.095, 7, BARK_OLD);
-    b.addCapsule(j2, v3(j2.x + rng.signed() * 0.3, 4.05, j2.z + rng.signed() * 0.25), 0.095, 0.012, 6, BARK_DK); // the snapped leader
-    // PEELING BARK: slim strips up the bole, a couple standing away from it.
+    b.addCapsule(j2, j3, 0.095, 0.035, 6, BARK_DK); // the snapped leader — SNAPPED, so blunt…
+    b.addBlob(j3, v3(0.045, 0.030, 0.045), 3, 5, TIMBER); // …and showing its heartwood
+    // PEELING BARK: slim strips up the bole, SUNK so only an edge breaks the surface (RELIEF IS SUBTLE),
+    // and the one that has come away curls off at its TOP only. Stood clear of the bark along its whole
+    // length — which is how these ran, up to 0.16 off a bole of radius 0.2 — a strip is a dark tube
+    // floating beside the trunk, and it was the loudest of the things that read as detached here.
     var s: i32 = 0;
     while (s < 7) : (s += 1) {
         const a = rng.angle();
         const y0 = rng.range(0.05, 1.1);
         const y1 = y0 + rng.range(0.5, 1.5);
-        const r0 = 0.235 - 0.055 * y0;
-        const r1 = 0.235 - 0.055 * y1;
-        const lift: f32 = if (rng.float() < 0.3) rng.range(0.04, 0.10) else 0.0; // one has come away
-        b.addCylinder(
-            v3(bend.x * (y0 / 1.7) + mathx.cosf(a) * (r0 + lift), y0, bend.z * (y0 / 1.7) + mathx.sinf(a) * (r0 + lift)),
-            v3(bend.x * (y1 / 1.7) + mathx.cosf(a + rng.signed() * 0.2) * (r1 + lift * 1.6), y1, bend.z * (y1 / 1.7) + mathx.sinf(a + rng.signed() * 0.2) * (r1 + lift * 1.6)),
-            rng.range(0.030, 0.055),
+        const rr = rng.range(0.030, 0.055);
+        const curl: f32 = if (rng.float() < 0.3) rr * rng.range(0.9, 1.8) else 0.0;
+        b.addCapsule(
+            onBole(bend, y0, a, rr * 0.6 / (0.26 - 0.056 * y0)),
+            onBole(bend, y1, a + rng.signed() * 0.2, (rr * 0.6 - curl) / (0.26 - 0.056 * y1)),
+            rr,
             rng.range(0.018, 0.040),
-            4,
+            5,
             if (rng.float() < 0.45) BARK_DK else if (rng.float() < 0.7) TIMBER else BARK_OLD,
         );
     }
     // A SPLIT up the heartwood, and the hollow where a limb rotted out of it.
     crackInto(&b, v3(mathx.cosf(1.9) * 0.22, 0.30, mathx.sinf(1.9) * 0.22), v3(0.06, 0.99, 0.02), v3(-mathx.sinf(1.9), 0, mathx.cosf(1.9)), rng.range(0.9, 1.5), 0.026, 0.05);
-    b.setMat(.wood);
+    b.setMat(.bark);
     b.addBlob(v3(bend.x * 0.7 + 0.20, 1.25, bend.z * 0.7 - 0.06), v3(0.09, 0.14, 0.09), 3, 6, IRON); // the rot hollow, dark
-    // BRANCHES, each forking again — six primaries off the two joints, two or three twigs each.
+    // BRANCHES: six, each rooted at its OWN height on the real bole (j1→j2 low, j2→j3 above, alternating
+    // so the low ones are not all on one side) and thinner than the bole it leaves — a limb fatter than
+    // the stem above it is a thing no tree does. Six off two exact joints was two rosettes of spokes.
     var br: i32 = 0;
     while (br < 6) : (br += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(br)) / 6.0 + rng.signed() * 0.6;
-        const from = if (rng.float() < 0.45) j1 else j2;
-        const out = rng.range(0.8, 1.55);
-        const up = rng.range(0.5, 1.15);
-        const tip = v3(from.x + mathx.cosf(a) * out, from.y + up, from.z + mathx.sinf(a) * out);
-        b.addCapsule(from, tip, rng.range(0.055, 0.085), rng.range(0.014, 0.026), 5, BARK_DK);
-        const nt: i32 = 2 + rng.intn(2);
-        var t: i32 = 0;
-        while (t < nt) : (t += 1) {
-            const ta = a + rng.signed() * 1.3;
-            const tl = rng.range(0.35, 0.85);
-            b.addCapsule(
-                v3(from.x + (tip.x - from.x) * rng.range(0.5, 0.9), from.y + (tip.y - from.y) * rng.range(0.5, 0.9), from.z + (tip.z - from.z) * rng.range(0.5, 0.9)),
-                v3(tip.x + mathx.cosf(ta) * tl, tip.y + rng.range(0.1, 0.65), tip.z + mathx.sinf(ta) * tl),
-                0.026,
-                0.006,
-                4,
-                BARK_DK,
-            );
-        }
+        const low = @rem(br, 2) == 0;
+        const u = rng.range(0.05, 0.85);
+        const root = mathx.lerpV(if (low) j1 else j2, if (low) j2 else j3, u);
+        const boleR = if (low) mathx.lerpF(0.165, 0.095, u) else mathx.lerpF(0.095, 0.035, u);
+        deadLimbInto(&b, &rng, root, a, rng.range(0.9, 1.7) * (if (low) @as(f32, 1.0) else 0.72), rng.range(0.45, 1.0), boleR * rng.range(0.5, 0.78), 1 + rng.intn(2));
     }
     // ROOT FLARE: five roots splaying onto the ground, one LIFTED where the earth gave under it.
     var r: i32 = 0;
@@ -119,7 +144,7 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
 pub fn stumpMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(313);
-    b.setMat(.wood);
+    b.setMat(.bark);
     b.addCapsule(v3(0, 0, 0), v3(rng.signed() * 0.08, 1.05, rng.signed() * 0.08), 0.46, 0.40, 8, BARK_OLD);
     var rb: i32 = 0;
     while (rb < 7) : (rb += 1) {
@@ -161,7 +186,7 @@ pub fn stumpMesh(shader: rl.Shader) rl.Model {
 pub fn logMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(818);
-    b.setMat(.wood);
+    b.setMat(.bark);
     // BARK_OLD + ridges run ALONG the barrel — same plastic-loaf correction as the stump.
     b.addCapsule(v3(-1.85, 0.36, rng.signed() * 0.1), v3(1.9, 0.30, rng.signed() * 0.12), 0.36, 0.25, 8, BARK_OLD);
     var rb: i32 = 0;
@@ -229,14 +254,39 @@ pub fn canopyInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, rx: f
         const py = cy + yt * ry * (1.0 - 0.45 * t);
         const size = rx * rng.range(0.34, 0.56) * (1.0 - 0.20 * t);
         const col = if (yt > 0.35 and rng.float() < gold) LEAF_GOLD else if (yt > 0.0) (if (rng.float() < 0.4) LEAF_LT else LEAF) else if (rng.float() < 0.55) LEAF_DK else LEAF;
-        b.addBlob(v3(px, py, pz), v3(size, size * rng.range(0.62, 0.92), size * rng.range(0.82, 1.18)), 5, 7, col);
+        // The biggest lobes are the ones a hero walks under — they get the segments; small filler stays cheap.
+        const big = size > 1.0;
+        b.addBlob(v3(px, py, pz), v3(size, size * rng.range(0.62, 0.92), size * rng.range(0.82, 1.18)), if (big) 6 else 5, if (big) 9 else 7, col);
+    }
+    // The FRINGE: small leaf-cluster lobes riding the outer shell, radially squashed — what breaks
+    // the gumdrop silhouette into foliage. Crown catches light, the underside hangs dark.
+    var f: i32 = 0;
+    const nf = @divTrunc(n * 4, 5);
+    while (f < nf) : (f += 1) {
+        const a = rng.angle();
+        const yt = rng.signed();
+        const t = rng.range(0.86, 1.04);
+        const flat = 1.0 - 0.55 * @abs(yt); // shell radius pinches toward the poles
+        const rr = rx * t * flat;
+        const px = cx + mathx.cosf(a) * rr;
+        const pz = cz + mathx.sinf(a) * rr;
+        const py = cy + yt * ry * rng.range(0.85, 1.05);
+        const size = rx * rng.range(0.14, 0.26);
+        const col = if (yt > 0.30 and rng.float() < gold * 1.3) LEAF_GOLD else if (yt > 0.0) (if (rng.float() < 0.5) LEAF_LT else LEAF) else if (rng.float() < 0.7) LEAF_DK else LEAF_DAMP;
+        b.addBlob(
+            v3(px, py, pz),
+            v3(size * (1.0 - 0.35 * @abs(mathx.cosf(a))), size * rng.range(0.55, 0.8), size * (1.0 - 0.35 * @abs(mathx.sinf(a)))),
+            4,
+            6,
+            col,
+        );
     }
 }
 
 pub fn bigTreeMesh(shader: rl.Shader, spec: TreeSpec) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(spec.seed);
-    b.setMat(.wood);
+    b.setMat(.bark);
     const leanX = rng.signed() * 0.55;
     const leanZ = rng.signed() * 0.45;
     // Buttress roots: fat capsules splaying from the trunk foot out onto the ground.
@@ -323,7 +373,7 @@ pub fn bigTreeMesh(shader: rl.Shader, spec: TreeSpec) rl.Model {
 pub fn willowMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7002);
-    b.setMat(.wood);
+    b.setMat(.bark);
     var r: i32 = 0;
     while (r < 5) : (r += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(r)) / 5.0 + rng.signed() * 0.3;
@@ -359,10 +409,16 @@ pub fn willowMesh(shader: rl.Shader) rl.Model {
             const wz = fallTo.z + rng.signed() * 0.5;
             b.addCylinder(v3(wx, fallTo.y - 0.1, wz), v3(wx + rng.signed() * 0.2, rng.range(0.15, 0.7), wz + rng.signed() * 0.2), 0.035, 0.008, 4, LEAF_PALE);
         }
-        b.setMat(.wood);
+        b.setMat(.bark);
     }
     b.setMat(.plant);
     b.addBlob(crown, v3(1.9, 1.15, 1.85), 5, 8, LEAF_DK); // the dense heart of the crown
+    var fh: i32 = 0;
+    while (fh < 8) : (fh += 1) { // leaf clusters breaking the heart's shell
+        const a = rng.angle();
+        const rr = rng.range(0.16, 0.30);
+        b.addBlob(v3(crown.x + mathx.cosf(a) * 1.75, crown.y + rng.signed() * 0.8, crown.z + mathx.sinf(a) * 1.70), v3(rr, rr * 0.7, rr), 4, 6, if (rng.float() < 0.4) LEAF_PALE else LEAF);
+    }
     var g: i32 = 0;
     while (g < 3) : (g += 1) {
         const a = rng.angle();
@@ -375,7 +431,7 @@ pub fn willowMesh(shader: rl.Shader) rl.Model {
 pub fn coniferMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7101);
-    b.setMat(.wood);
+    b.setMat(.bark);
     const H: f32 = rng.range(9.5, 11.5);
     b.addCapsule(v3(0, 0, 0), v3(rng.signed() * 0.25, H * 0.55, rng.signed() * 0.2), 0.52, 0.32, 8, BARK_OLD);
     b.addCapsule(v3(rng.signed() * 0.25, H * 0.55, rng.signed() * 0.2), v3(rng.signed() * 0.3, H, rng.signed() * 0.25), 0.32, 0.05, 7, BARK_DK);
@@ -399,7 +455,7 @@ pub fn coniferMesh(shader: rl.Shader) rl.Model {
             const a = std.math.tau * @as(f32, @floatFromInt(f)) / @as(f32, @floatFromInt(nf)) + @as(f32, @floatFromInt(w)) * 0.7;
             const px = mathx.cosf(a) * reach;
             const pz = mathx.sinf(a) * reach;
-            b.setMat(.wood);
+            b.setMat(.bark);
             b.addCapsule(v3(0, y, 0), v3(px, y - reach * 0.22, pz), 0.055, 0.02, 4, BARK_DK);
             b.setMat(.plant);
             // Two masses per fan, the outer one lower — a drooping bough of needles.
@@ -420,7 +476,7 @@ pub fn coniferMesh(shader: rl.Shader) rl.Model {
 pub fn birchMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7102);
-    b.setMat(.wood);
+    b.setMat(.wood); // birch bark is SMOOTH — the fissures belong to the oaks
     const H: f32 = rng.range(7.0, 8.6);
     const lean = rng.signed() * 0.5;
     const mid = v3(lean * 0.4, H * 0.5, rng.signed() * 0.3);
@@ -445,7 +501,7 @@ pub fn birchMesh(shader: rl.Shader) rl.Model {
         const up = rng.range(1.0, 2.2);
         const base = if (rng.float() < 0.4) mid else fork;
         const tip = v3(base.x + mathx.cosf(a) * out, base.y + up, base.z + mathx.sinf(a) * out);
-        b.setMat(.wood);
+        b.setMat(.bark);
         b.addCapsule(base, tip, 0.09, 0.025, 5, BIRCH_SCAR);
         b.setMat(.plant);
         var c: i32 = 0;
@@ -470,7 +526,7 @@ pub fn birchMesh(shader: rl.Shader) rl.Model {
 pub fn snagMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7103);
-    b.setMat(.wood);
+    b.setMat(.wood); // stripped of its bark, by its own description
     const H: f32 = rng.range(6.0, 7.6);
     const lean = rng.signed() * 0.4;
     b.addCapsule(v3(0, 0, 0), v3(lean * 0.5, H * 0.6, lean * 0.3), 0.55, 0.36, 8, BARK_OLD);
@@ -513,25 +569,25 @@ pub fn snagMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.45) TIMBER else BARK_DK,
         );
     }
-    // A couple of broken limb stubs, and one long bare branch still on.
+    // Broken limb stubs, and one long branch still on — all through `deadLimbInto`, so they elbow, droop
+    // and snap blunt instead of standing out as horizontal spears, and all rooted on the trunk's OWN axis
+    // (`onTrunk` at full sink), which is the point the lean already knows about and `lean * 0.4` guessed at.
     var l: i32 = 0;
     while (l < 4) : (l += 1) {
-        const a = rng.angle();
         const y = rng.range(H * 0.35, H * 0.9);
-        const reach = rng.range(0.45, 0.95);
-        const tip = v3(lean * 0.4 + mathx.cosf(a) * reach, y + rng.range(-0.1, 0.4), lean * 0.2 + mathx.sinf(a) * reach);
-        b.addCapsule(v3(lean * 0.4, y, lean * 0.2), tip, 0.17, 0.065, 5, BARK_DK);
-        b.addBlob(tip, v3(0.065, 0.055, 0.065), 3, 5, TIMBER);
+        deadLimbInto(&b, &rng, onTrunk(H, lean, y, 0, 1.0), rng.angle(), rng.range(0.7, 1.3), rng.range(0.1, 0.4), 0.15, rng.intn(2));
     }
-    const ba = rng.angle();
-    b.addCapsule(v3(lean * 0.5, H * 0.7, lean * 0.3), v3(lean * 0.5 + mathx.cosf(ba) * 2.6, H * 0.85, lean * 0.3 + mathx.sinf(ba) * 2.6), 0.16, 0.03, 5, BARK_DK);
+    deadLimbInto(&b, &rng, onTrunk(H, lean, H * 0.7, 0, 1.0), rng.angle(), 2.6, 0.5, 0.16, 2);
     var r: i32 = 0;
     while (r < 5) : (r += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(r)) / 5.0 + rng.signed() * 0.3;
         b.addCapsule(v3(0, 0.5, 0), v3(mathx.cosf(a) * rng.range(0.7, 1.2), 0.03, mathx.sinf(a) * rng.range(0.7, 1.2)), 0.15, 0.05, 5, BARK_OLD);
     }
     b.setMat(.plant);
-    b.addBlob(v3(rng.signed() * 0.3, rng.range(0.6, 2.2), rng.signed() * 0.5), v3(0.28, 0.35, 0.24), 3, 6, MOSS_DK); // moss up the weather side
+    // Moss up the weather side, SEATED on the trunk with only a cushion of it proud. Parked at a random
+    // offset from the AXIS instead it was a green hexagon bolted to the bark — the offset can exceed the
+    // trunk's own radius, and even inside it a 0.28 blob on a 0.48 trunk stands most of the way clear.
+    b.addBlob(onTrunk(H, lean, rng.range(0.6, 2.2), rng.angle(), 0.55), v3(0.26, 0.34, 0.22), 3, 6, MOSS_DK);
     var g: i32 = 0;
     while (g < 3) : (g += 1) tuftInto(&b, &rng, rng.signed() * 1.2, rng.signed() * 1.2, 0.85);
     return b.toModel(shader);
@@ -541,7 +597,7 @@ pub fn snagMesh(shader: rl.Shader) rl.Model {
 pub fn saplingMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7104);
-    b.setMat(.wood);
+    b.setMat(.bark);
     const H: f32 = rng.range(2.2, 3.1);
     const nstems: i32 = 1 + rng.intn(2);
     var st: i32 = 0;
@@ -579,7 +635,7 @@ pub fn saplingMesh(shader: rl.Shader) rl.Model {
                 if (rng.float() < 0.25) LEAF_GOLD else if (rng.float() < 0.5) LEAF_LT else if (rng.float() < 0.75) LEAF else LEAF_DAMP,
             );
         }
-        b.setMat(.wood);
+        b.setMat(.bark);
     }
     b.setMat(.plant);
     tuftInto(&b, &rng, rng.signed() * 0.5, rng.signed() * 0.5, 0.8);

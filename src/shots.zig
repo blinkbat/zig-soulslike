@@ -13,6 +13,7 @@ const koboldmod = @import("kobold.zig");
 const broodmod = @import("brood.zig");
 const mathx = @import("mathx.zig");
 const props = @import("props.zig");
+const stats = @import("stats.zig");
 const worldfmt = @import("worldfmt.zig");
 
 const Game = game.Game;
@@ -29,6 +30,9 @@ const RUN_SPEED = heromod.RUN_SPEED;
 const SPRINT_SPEED = heromod.SPRINT_SPEED;
 
 pub const SHOT_DT: f32 = 1.0 / 60.0;
+/// The DRAWING clock, one shot at a time: every camera here TELEPORTS, and a still frame cannot show a
+/// fade — so the occluder fade is handed a step big enough to arrive within the one frame we capture.
+pub const SETTLE_DT: f32 = 10.0;
 fn stepWorld(g: *Game, dt: f32, speed: f32) void {
     const moved = speed * dt;
     g.hero.pos.z = mathx.clampF(g.hero.pos.z - moved, -game.PLAY_HALF, game.PLAY_HALF); // travel −Z
@@ -143,6 +147,7 @@ fn stagedRoll(g: *Game, dir: rl.Vector3) void {
 // The world tour judges REGIONS; retuning one MODEL needs the model by itself.
 pub fn runPropShots(g: *Game) void {
     std.fs.cwd().makePath("shots/props") catch {};
+    g.drawDt = SETTLE_DT;
     g.menu.screen = .closed;
     g.retro.allOff();
     // No foes in the portraits — a toad idling into a wide framing reads as part of the model.
@@ -169,6 +174,7 @@ pub fn runShots(g: *Game) void {
         @panic("shot harness: the map posts no foes to photograph");
     }
     const dt: f32 = SHOT_DT;
+    g.drawDt = SETTLE_DT;
     g.menu.screen = .closed;
     g.retro.allOff();
 
@@ -325,7 +331,7 @@ pub fn runShots(g: *Game) void {
         g.hero.stam.reset();
         // …and the damage flash with it.
         g.hero.hurtFlash = 0;
-        g.hero.vit = heromod.freshVitals();
+        g.hero.vit = heromod.freshVitals(g.hero.sheet);
         k = 0;
         while (k < 30) : (k += 1) stepWorld(g, dt, 0);
     }
@@ -419,7 +425,7 @@ pub fn runShots(g: *Game) void {
         must(g.hero.swapArm(), "the sword would not come back");
         game.clearShaftsForShot(g);
         g.hero.stam.reset();
-        g.hero.vit = heromod.freshVitals();
+        g.hero.vit = heromod.freshVitals(g.hero.sheet);
         k = 0;
         while (k < 30) : (k += 1) stepWorld(g, dt, 0);
     }
@@ -970,6 +976,22 @@ pub fn runShots(g: *Game) void {
         standHero(g, -88.0, 8.0, -std.math.pi * 0.5);
         shootAt(g, "shots/92_stats_wood.png", g.hero.shoulderPoint(), 265, 0.20, 8.0);
         g.menu.stats = false;
+
+        // THE OCCLUDER FADE: him seen THROUGH a great tree, which is the only framing that shows it.
+        // Twice, since the retro pass is where most of the game is actually looked at.
+        const trunk = g.env.nearestFading(v3(-118.0, 0, -14.0), 600.0);
+        must(trunk != null, "no fadeable prop in the world to stand behind");
+        const tp = trunk.?;
+        // Him 2.4 m the far side of the trunk on a 7 m boom: any longer and the camera is up inside the
+        // canopy, where what you photograph is foliage rather than the thing standing in the way.
+        standHero(g, tp.x - LIT_BACK.x * 2.4, tp.z - LIT_BACK.z * 2.4, mathx.radians(LIT_YAW + 180.0));
+        shootAt(g, "shots/93_occlude_fade.png", g.hero.shoulderPoint(), LIT_YAW, 0.06, 7.0);
+        g.retro.values = gfx.RETRO_DEFAULTS;
+        shootAt(g, "shots/93b_occlude_filtered.png", g.hero.shoulderPoint(), LIT_YAW, 0.06, 7.0);
+        g.retro.allOff();
+        // …and the same tree with the line clear of it, which is what proves it goes back to solid.
+        standHero(g, tp.x + 7.0, tp.z + 7.0, mathx.radians(LIT_YAW + 180.0));
+        shootAt(g, "shots/94_occlude_clear.png", g.hero.shoulderPoint(), LIT_YAW, 0.06, 7.0);
     }
 
     // Restore the idle-hold framing for the filter/menu verification shots below.
@@ -993,7 +1015,7 @@ pub fn runShots(g: *Game) void {
     g.menu.cursor = 0;
     drawScene(g);
     hud(g, SHOT_DT);
-    g.menu.draw(&g.retro, &g.bag);
+    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet);
     snap("shots/12_menu_main.png");
 
     g.retro.values[gfx.RF_GAMEBOY] = 1.0; // show a live gauge on the retro card
@@ -1001,7 +1023,7 @@ pub fn runShots(g: *Game) void {
     g.menu.cursor = gfx.RF_GAMEBOY;
     drawScene(g);
     hud(g, SHOT_DT);
-    g.menu.draw(&g.retro, &g.bag);
+    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet);
     snap("shots/13_menu_retro.png");
     g.menu.screen = .closed;
 
@@ -1066,6 +1088,27 @@ fn broodShots(g: *Game) void {
         shootFoe(g, b, "shots/111b_broodling.png", 40, 0.08, 3.4); // one alone: her young, not a beetle
     }
 
+    // THE DEATH — the legs cramp, the stance fails, it FALLS onto its back and clenches: four beats.
+    // Staged CLEAR of the cliff ring's shadow: a corpse is a low, dark thing, and lying inside that
+    // wedge it had a black ground behind it and no silhouette at all. The offset runs ACROSS the
+    // shadow's long axis (which follows the sun's own bearing away from the cliffs), not along it.
+    const dc = mathx.ground(bc.x + 6.0, bc.z - 8.0);
+    m.* = broodmod.Spider.spawnAs(.mother, dc, std.math.pi, 1.0, 0.3);
+    g.brood.n = 1;
+    m.debugKill();
+    stepFoe(m, 9, near); // the convulsion, legs starting to cramp
+    shootFoe(g, m, "shots/112a_brood_death_rear.png", 55, 0.14, 9.0);
+    stepFoe(m, 17, near); // mid-fall, past the balance point
+    shootFoe(g, m, "shots/112b_brood_death_flip.png", 55, 0.14, 9.0);
+    stepFoe(m, 10, near); // the crash — carried past flat, about to rock back
+    shootFoe(g, m, "shots/112c_brood_death_crash.png", 55, 0.12, 9.0);
+    stepFoe(m, 26, near); // settled and clenched, a beat before the motes take it
+    shootFoe(g, m, "shots/112d_brood_death_curl.png", 55, 0.12, 9.0);
+    g.brood.band[0] = broodmod.Spider.spawnAs(.broodling, dc, std.math.pi, 1.0, 0.55);
+    g.brood.band[0].debugKill();
+    stepFoe(&g.brood.band[0], 62, near);
+    shootFoe(g, &g.brood.band[0], "shots/112e_broodling_death.png", 45, 0.10, 3.6);
+
     // THE FLOOR SHE TAKES AWAY.
     game.clearFoesForShot(g);
     g.brood.splash(bc);
@@ -1127,13 +1170,19 @@ fn chestShots(g: *Game) void {
     g.menu.cursor = 0;
     _ = g.menu.update(&g.retro, SHOT_DT, &g.bag);
     drawScene(g);
-    g.menu.draw(&g.retro, &g.bag);
+    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet);
     snap("shots/106e_character_menu.png");
     g.menu.screen = .inventory;
     g.menu.cursor = 0;
     drawScene(g);
-    g.menu.draw(&g.retro, &g.bag);
+    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet);
     snap("shots/106f_inventory.png");
+    // THE CHARACTER SHEET, on a row that HAS a footnote — the blank-footed rows prove nothing.
+    g.menu.screen = .attributes;
+    g.menu.cursor = @intFromEnum(stats.Attr.endurance);
+    drawScene(g);
+    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet);
+    snap("shots/106g_attributes.png");
     g.menu.screen = .closed;
 
     // …and PUT THE WORLD BACK.

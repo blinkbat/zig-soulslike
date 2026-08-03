@@ -141,6 +141,10 @@ pub const Game = struct {
     rumble: rumblemod.Rumble = .{}, // controller vibration, keyed to combat beats
     deathFade: f32 = 0, // post-respawn fade-from-black seconds remaining (armed while dead)
     probe: LookProbe = .{},
+    /// The REAL frame time the DRAWING layer needs — the occluder fade's clock, and nothing else, since a
+    /// fade paced off the time-scaled dt would crawl in slow motion. `--shot` parks it at a settle-size
+    /// step (`shots.SETTLE_DT`): a still frame cannot show a fade, so a capture wants its END state.
+    drawDt: f32 = 1.0 / 60.0,
 
     fn init(g: *Game) void {
         g.scene = gfx.Scene.init();
@@ -756,6 +760,9 @@ pub fn drawScene(g: *Game) void {
     g.env.resetStats(); // culling counters for the debug overlay, both passes together
     applyDim(g); // before the depth pass: the uniform is read by every draw below it
     const cam = sceneCam(g);
+    // WHAT STANDS BETWEEN THE LENS AND HIM, before either pass, since the marks are read by the draw
+    // loop both of them go through. In the editor the line is degenerate on purpose — see markOccluders.
+    g.env.markOccluders(cam.position, if (g.editor.on) cam.position else heroAimPoint(g), g.drawDt);
     const focus = sunFocus(g);
     g.scene.beginShadowPass(focus);
     setCasterShaders(g, g.scene.depthShader);
@@ -1040,6 +1047,7 @@ pub fn run(mode: Mode) void {
     while (!rl.windowShouldClose()) {
         const rawDt = rl.getFrameTime(); // wall-clock dt: feel systems (shake, rumble, fades, tap windows)
         const dt = rawDt * g.menu.timeScale;
+        g.drawDt = rawDt; // …including the occluder fade, which every branch below draws through
         PLAY_HALF = g.map.half - envmod.PLAY_INSET;
         // THE WORLD GOES QUIET IN THE EDITOR.
         sfx.mute(g.editor.on and !g.editor.auditioning());
@@ -1124,7 +1132,7 @@ pub fn run(mode: Mode) void {
             sfx.ambience(rawDt);
             drawScene(g);
             hud(g, rawDt);
-            g.menu.draw(&g.retro, &g.bag);
+            g.menu.draw(&g.retro, &g.bag, &g.hero.sheet);
             rl.endDrawing();
             continue;
         }
@@ -1299,8 +1307,10 @@ pub fn run(mode: Mode) void {
             g.hero.steerQueuedRoll(rollDir(g, mv));
             if (drinkReq and g.hero.startDrink()) sfx.play(.flask_drink);
         }
+        // …and a DRAUGHT is not a sprint either: without it, Shift held through a flask drained the pool
+        // at the sprint rate and denied him the shield for the whole shuffle, off a sprint he never got.
         g.hero.sprinting = sprintingMove(mv) and
-            !g.hero.rolling and !g.hero.attacking and !g.hero.dead and !g.hero.staggered();
+            !g.hero.rolling and !g.hero.attacking and !g.hero.drinking and !g.hero.dead and !g.hero.staggered();
         // …and the shield, AFTER the sprint (there is no running block — see hero.setGuard).
         g.hero.setGuard(guardHeld);
         g.hero.setAim(aimHeld);
@@ -1308,6 +1318,8 @@ pub fn run(mode: Mode) void {
         if (g.hero.guarding) mv.speed = @min(mv.speed, WALK_SPEED * heromod.GUARD_SPEED);
         // …AND BEHIND A RAISED BOW HE BARELY MOVES AT ALL.
         if (g.hero.aiming) mv.speed = @min(mv.speed, WALK_SPEED * heromod.BOW_AIM_SPEED);
+        // …AND A DRAUGHT IS A SHUFFLE, not a stop (owner's call). Denied at the SOURCE like the other two.
+        if (g.hero.drinking) mv.speed = @min(mv.speed, WALK_SPEED * heromod.DRINK_SPEED);
 
         // While locked the hero faces the foe (so it strafes/backpedals around it), ER-style.
         const lockYaw: ?f32 = if (g.lock) |li| blk: {
@@ -1336,7 +1348,12 @@ pub fn run(mode: Mode) void {
         } else if (g.hero.rolling) {
             g.hero.updateRoll(dt, PLAY_HALF); // committed — ignores move input
         } else if (g.hero.drinking) {
-            g.hero.updateDrink(dt); // committed, and planted — the flask's whole cost
+            // COMMITTED, NOT PLANTED: the clock first, then the shuffle. Either way it goes through
+            // `moveHero`, so the shared clocks still advance exactly ONCE this frame (see tickClocks) —
+            // and on the frame the draught ends, whatever it buffered is already armed, so he takes no
+            // travel rather than one stray walk step into the roll.
+            g.hero.tickDrink(dt);
+            moveHero(g, dt, if (g.hero.drinking) mv else .{}, faceYaw);
         } else if (g.hero.attacking) {
             g.hero.updateAttack(dt, PLAY_HALF, faceYaw);
         } else if (g.hero.shooting) {
@@ -1638,7 +1655,7 @@ fn collideActors(g: *Game, dt: f32) void {
     var hp = g.env.resolveActor(g.hero.pos, HERO_R);
     inline for (FOE_GROUPS) |gr| {
         for (@field(g, gr.field).live()) |*a| {
-            if (a.alive() and !a.airborne()) hp = collision.pushOutCircle(hp, HERO_R, a.pos, a.bodyR());
+            if (foemod.corporeal(a) and !a.airborne()) hp = collision.pushOutCircle(hp, HERO_R, a.pos, a.bodyR());
         }
     }
     g.hero.pos = mathx.approachV(g.hero.pos, inBounds(hp), step);
@@ -1652,17 +1669,26 @@ fn collideActors(g: *Game, dt: f32) void {
 
 fn settleGroup(g: *Game, foes: anytype, others: anytype, step: f32, toHero: bool) void {
     for (foes, 0..) |*a, i| {
-        if (!a.alive() or a.airborne()) continue;
+        if (!foemod.corporeal(a)) continue;
         const r = a.bodyR();
+        // THE MASONRY STOPS A LEAP TOO (owner's call). Being airborne exempts a committed jump from the
+        // terrain step rule and from being shouldered by other bodies — never from the world's solids. A
+        // pounce or a backstep that crossed a wall was a foe leaving the arena through it. Applied at
+        // FULL STRENGTH rather than eased: the correction is only ever the one frame of travel that put
+        // it inside, and a leap into stone has to stop at the stone or it grinds its way through anyway.
+        if (a.airborne()) {
+            a.pos = inBounds(g.env.resolveActor(a.pos, r));
+            continue;
+        }
         var p = g.env.resolveActor(a.pos, r);
         if (toHero) p = collision.pushOutCircle(p, r, g.hero.pos, HERO_R);
         for (foes, 0..) |*o, j| {
-            if (i == j or !o.alive() or o.airborne()) continue;
+            if (i == j or !foemod.corporeal(o) or o.airborne()) continue;
             p = collision.pushOutCircle(p, r, o.pos, o.bodyR());
         }
         inline for (others) |grp| {
             for (grp) |*o| {
-                if (o.alive() and !o.airborne()) p = collision.pushOutCircle(p, r, o.pos, o.bodyR());
+                if (foemod.corporeal(o) and !o.airborne()) p = collision.pushOutCircle(p, r, o.pos, o.bodyR());
             }
         }
         a.pos = mathx.approachV(a.pos, inBounds(p), step);

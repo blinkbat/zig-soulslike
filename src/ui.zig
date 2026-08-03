@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const hud = @import("hud.zig");
 const mathx = @import("mathx.zig");
 const icons = @import("icons.zig");
+const uiart = @import("uiart.zig");
 
 pub const Icon = icons.Icon;
 
@@ -112,8 +113,9 @@ pub fn drawTip(ctx: *Ctx) void {
 /// A panel that also CLAIMS its rect as chrome.
 pub fn panel(ctx: *Ctx, r: rl.Rectangle, title: ?[:0]const u8) void {
     _ = ctx.hot(r);
-    rl.drawRectangleRec(r, PANEL_FILL);
+    uiart.plate(@intFromFloat(r.x), @intFromFloat(r.y), @intFromFloat(r.width), @intFromFloat(r.height), PANEL_FILL.a);
     rl.drawRectangleLinesEx(r, 1, alpha(TRIM, 110));
+    rl.drawRectangle(@intFromFloat(r.x + 1), @intFromFloat(r.y + 1), @intFromFloat(r.width - 2), 1, alpha(TRIM, 60)); // lit top rim
     if (title) |t| {
         hud.mono(t, @intFromFloat(r.x + 10), @intFromFloat(r.y + 6), hud.MONO, alpha(TRIM, 235));
     }
@@ -366,10 +368,10 @@ pub fn beginModal(ctx: *Ctx, w: i32, h: i32, title: [:0]const u8) ModalBox {
     ctx.anyHot = true;
     const x = @divTrunc(sw - w, 2);
     const y = @divTrunc(sh - h, 2);
-    const r = rect(x, y, w, h);
-    rl.drawRectangleRec(r, PANEL_FILL);
-    rl.drawRectangleLinesEx(r, 1, alpha(TRIM, 160));
+    uiart.seat(x, y, w, h);
+    uiart.plate(x, y, w, h, PANEL_FILL.a);
+    uiart.frame(x, y, w, h, 170);
     hud.mono(title, x + @divTrunc(w - hud.monoW(title, hud.MONO), 2), y + 12, hud.MONO, TITLE);
-    rl.drawRectangle(x + 16, y + hud.monoLineH(hud.MONO) + 18, w - 32, 1, alpha(TRIM, 90));
+    uiart.divider(x + @divTrunc(w, 2), y + hud.monoLineH(hud.MONO) + 18, @divTrunc(w, 2) - 20, 140);
     return .{ .x = x, .y = y, .w = w, .h = h };
 }

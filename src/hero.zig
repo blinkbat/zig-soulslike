@@ -4,6 +4,9 @@ const gfx = @import("gfx.zig");
 const mathx = @import("mathx.zig");
 const combat = @import("combat.zig");
 const art = @import("propart.zig");
+// Against the grain (creatures found themselves on THIS file, not the reverse): the hero carries the
+// skeletons' bow, and archer.zig is where a bow retune belongs. Runtime only, so the cycle is import-only.
+const archer = @import("archer.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -14,7 +17,6 @@ const radians = mathx.radians;
 
 pub const H: f32 = 1.8; // stature (world units ≈ metres)
 
-// Locomotion speeds (world units/sec) — the SINGLE source of truth, shared with game.zig and the gait blends below.
 pub const WALK_SPEED: f32 = 1.7;
 pub const RUN_SPEED: f32 = 3.4;
 pub const SPRINT_SPEED: f32 = 5.1; // hold-B RUN — a touch faster than a full-stick walk-sprint
@@ -29,7 +31,6 @@ pub const SEG_SHANK = 0.246; // knee → ankle (tibia)
 pub const SEG_UPARM = 0.188; // shoulder → elbow
 pub const SEG_FOREARM = 0.145; // elbow → wrist
 
-// The 18-bone layout, its parent table and its rest pose — the model every biped is founded on, PUBLIC so no creature transcribes it again.
 pub const N = 18;
 pub const ROOT = 0; // pelvis
 pub const SPINE = 1; // lumbar / mid-torso pivot
@@ -81,7 +82,6 @@ pub fn restHumanoid(hx: f32, sx: f32, stature: f32) [N]rl.Vector3 {
     return r;
 }
 
-/// The HERO's own proportions on the shared scaffold above.
 pub const HIP_HALF = 0.090; // hip half-separation (a touch under half the bi-iliac breadth so the stance isn't splayed)
 pub const SHOULDER_HALF = 0.150; // shoulder half-separation (~half the biacromial breadth, plus pauldron room)
 
@@ -89,7 +89,6 @@ fn restPositions() [N]rl.Vector3 {
     return restHumanoid(HIP_HALF, SHOULDER_HALF, H);
 }
 
-// A worn Tarnished: dark iron-blue wool under oxblood leather, a faded crimson tabard and short cape, steel at the guard/pauldron, brass at buckle and pommel.
 const SKIN = rgba(150, 112, 86, 255);
 const SKIN_DK = rgba(120, 88, 66, 255);
 const TUNIC = rgba(38, 40, 50, 255); // dark iron-blue wool
@@ -113,7 +112,6 @@ pub const ANK_DORSI = [8]f32{ -2, -6, 2, 9, 6, -14, -6, -1 };
 pub const RUN_HIP = [8]f32{ 42, 25, 8, -8, 5, 35, 60, 55 };
 pub const RUN_KNEE = [8]f32{ 26, 48, 40, 28, 62, 98, 80, 44 }; // deeper bend throughout — coiled + low
 pub const RUN_ANK = [8]f32{ -3, 10, 22, 2, -18, -6, 0, -2 };
-// The run reads low + aggressive: a deep forward tilt over a low centre of gravity, with normal pumping arms (bent ~90°).
 const RUN_LEAN = 24.0; // deep forward trunk lean when running (deg)
 const RUN_ARM_SWING = 30.0; // shoulder swing amplitude when running (deg)
 const RUN_ELBOW = 85.0; // elbows bent ~90° and pumping
@@ -141,7 +139,6 @@ pub fn slopeLean(rise: f32) f32 {
     return mathx.clampF(deg, -SLOPE_LEAN_MAX, SLOPE_LEAN_MAX);
 }
 
-// Phased like FromSoft rolls: dive + somersault up front, then a spin-free recovery — NOT one linear spin/tuck/lunge smeared over the duration.
 const ROLL_DUR = 0.70; // seconds, start to finish (souls medium-roll pacing, recovery included)
 const ROLL_IFRAME_END = 0.46; // invulnerable from the FIRST frame to here (~ER medium, a shade
 const ROLL_DIST = 3.5; // ground units travelled
@@ -164,7 +161,6 @@ const ROLL_SPINE = 30.0; // forward spine curl per segment (deg)
 const ROLL_HEAD = 32.0; // chin to chest (deg)
 const ROLL_SHOULDER = 45.0; // arms tuck forward (deg)
 const ROLL_ELBOW = 100.0; // elbows tucked (deg)
-// Wabi-sabi: the somersault is imperfect like a real one — over ONE shoulder, banked and briefly off-square, limbs uneven, magnitudes drifting roll to roll.
 const ROLL_LEAN = 8.0; // bank toward the roll-side shoulder while balled (deg)
 const ROLL_SKEW = 7.0; // peak off-square yaw through the recovery, squared up by the end (deg)
 const ROLL_ARM_GUIDE = 1.25; // roll-side arm tucks harder across the body…
@@ -229,10 +225,50 @@ const AH_RECOIL = 7.0; // impact judder: the buried blade bites, bounces a hair,
 const AH_LOAD = 0.02 * H; // the staggered stance loads under the windup…
 const AH_DIP = 0.05 * H; // …and the weight drops into the impact
 const AH_PITCH = 9.0; // whole-body forward pitch about the feet through the strike
+// Drawn with the LEFT hand, which is why it takes the shield away: one hand cannot haul a string and hold
+// boards. Same `HELD` slot as the sword.
+const BOW_QUICK_DUR: f32 = 0.62; // R1: snap it up, loose, drop it — the shot you take mid-fight
+const BOW_QUICK_AT: f32 = 0.55; // …and the fraction of that where the shaft actually leaves
+const BOW_SHOT_DUR: f32 = 0.34; // R2 out of a HELD aim: the string is already back…
+const BOW_SHOT_AT: f32 = 0.22; // …so the release comes early and the rest of it is the recovery
+/// How fast the bow comes up and the string reaches full draw once L2 goes down.
+const BOW_AIM_RATE: f32 = 5.5;
+/// …and how fast the string snaps home after a loose, which is the whole read of a shot leaving.
+const BOW_SNAP: f32 = 0.06; // as a fraction of the shot's own duration
+pub const BOW_QUICK_HIT = combat.Hit{ .dmg = 7, .poise = 3 };
+pub const BOW_AIMED_HIT = combat.Hit{ .dmg = 18, .poise = 9, .stance = 6 };
+pub const BOW_QUICK_SPEED: f32 = 26.0;
+pub const BOW_AIMED_SPEED: f32 = 40.0;
+/// How far down the aim ray a shot is thrown when the ray reaches nothing — the loft solve needs a distance.
+pub const BOW_AIM_REACH: f32 = 60.0;
+pub const BOW_AIM_SPEED: f32 = 0.45;
+// Angles lifted from `archer.poseUpper`, a working full draw on this same rig. Bow arm RIGHT, draw arm LEFT.
+const BOW_SH_FLEX = 88.0; // the bow punched out toward the target, arm near-straight…
+const BOW_SH_ABD = 9.0; // …and just off the body, so the string clears his chest
+const BOW_ELBOW = 13.0; // the bow arm stays LONG — a folded bow arm is a bow held at your own face
+const BOW_WRIST = 6.0; // …with the fist rolled a touch under it
+const BOW_DRAW_SH = 84.0; // the draw arm hauls right back to the anchor…
+const BOW_DRAW_ELBOW = 152.0; // …folding hard, which is what puts the hand at the jaw
+const BOW_DRAW_ABD = 33.0; // …with the elbow riding HIGH, the archer's signature line
+const BOW_DRAW_YAW = 16.0; // …and drawn IN across the body at the anchor rather than straight back
+const BOW_BLADE = 7.0; // the trunk turns side-on to the target (deg, PER SEGMENT over spine + chest)
+const BOW_HEAD_NOD = 6.0; // …and the head comes round it and CANTS onto the shaft (the cheek-weld)
+const BOW_HEAD_YAW = 8.0; // …craned IN over the string at full draw — its own angle, not the nod's reused
+const BOW_HEAD_CANT = 9.0;
+const BOW_STOOP = 4.0; // a ready stoop that straightens as the draw comes back (the counterweight)
+const BOW_CARRY_SH = 26.0; // the LOW CARRY, bow not presented: down at his side
+const BOW_CARRY_ELBOW = 8.0;
+/// Where the DRAW arm rests. Its own constant despite matching the bow arm's carry — the agreement is chance.
+const BOW_DRAW_REST = 26.0;
+const BOW_KICK = 7.0; // the bow arm bounces forward off the release (the follow-through)
+/// How fast the stance blends in and out — the FEEL RULES' ceiling on a posture change, same as the guard's.
+const BOW_BLEND_RATE = 11.0;
+/// rad/s onto the aim line through a loose — faster than `ATK_RETRACK`: a shaft off the line just misses.
+const TURN_TO_SHOT = 11.0;
+
 // Blade hitbox, souls-style: a capsule on the SWORD bone's dummy points (guard → tip), ACTIVE only inside the HIT window, with last-frame endpoints kept for swept tests so a fast arc can't tunnel between frames.
 pub const BLADE_R = 0.34; // capsule radius (world units) — a FAT hit volume, far past the
 
-// Samples the outer blade span each frame the TIP moves; drawn as unlit alpha strips in the lit pass only (no shadow, never the depth pass).
 const TRAIL_N = 20; // ring capacity (~0.3 s of samples at 60 fps)
 const TRAIL_LIFE = 0.20; // seconds a sample persists (long enough that the full level arc
 const TRAIL_MIN_SWEEP = 0.05; // world units the tip must move in a frame to leave a sample
@@ -240,20 +276,16 @@ const TRAIL_ROOT = 0.35; // ribbon spans this fraction down the blade → the ti
 const TRAIL_COL = rgba(224, 230, 244, 255); // pale steel flash (alpha set per segment)
 const TrailSample = struct { a: rl.Vector3 = mathx.zero3, b: rl.Vector3 = mathx.zero3, age: f32 = mathx.LONG_AGO };
 
-// The hero is sturdier than a toad: mid-weight poise (~ER's Knight-set 51) so a couple of bites shrug off, but sustained pressure still flinches then staggers him.
 pub const HP_MAX = 70.0; // lowered from 100 — a few solid blows now kill (owner: raise the stakes)
 pub const POISE_MAX = 55.0;
 pub const STANCE_MAX = 90.0;
-// Poise/stance dealt by the cuts (HP damage rides alongside).
 pub const ATK_LIGHT_HIT = combat.Hit{ .dmg = 13, .poise = 10 };
 pub const ATK_HEAVY_HIT = combat.Hit{ .dmg = 27, .poise = 22, .stance = 14 };
 
-/// THE HERO'S VITALS, FRESH.
 pub fn freshVitals() combat.Vitals {
     return combat.Vitals.init(HP_MAX, POISE_MAX, STANCE_MAX);
 }
 
-// A flinch is a BIG, unmistakable jolt — the whole upper body snaps back, the head whips, the arms fly up, the knees buckle and he stagger-steps back off the blow.
 const HURT_LEAN = 40.0; // light flinch: torso snaps back this far (deg)
 const HURT_HEAD = 52.0; // …head whips back with it
 const HURT_STEP = 0.18 * H; // …and he's knocked a step back off the blow
@@ -261,7 +293,6 @@ const STAG_LEAN = 42.0; // heavy stagger: a deep reeling arch back (deg)
 const DEATH_SINK = 0.30; // death: pelvis sinks to this fraction of stance height
 pub const DEATH_DUR = 3.6; // collapse + lie still before the hero respawns — long enough for
 
-// The MECHANIC is combat.zig's (negation, stability, the arc, the break); this is what it looks like.
 const GUARD_SH_FLEX = 24.0; // left shoulder forward of the body line (deg)…
 const GUARD_SH_CROSS = 40.0; // …then swung ACROSS the chest, which is what puts the shield on the centreline
 const GUARD_SH_ABD = 2.0; // elbow tucked IN, near the ribs — a shield held out on a straight arm is a target
@@ -272,7 +303,6 @@ const GUARD_SWORD_BACK = 40.0; // the sword arm draws back and low, blade out of
 const GUARD_SWORD_ELBOW = 46.0;
 const GUARD_SWORD_WRIST = 30.0; // …and the wrist cancels most of the grip's forward cant (GRIP_PITCH),
 const GUARD_HEAD = 6.0; // chin tucked down behind the rim
-/// How fast the STANCE blends in and out.
 const GUARD_BLEND_RATE = 11.0;
 const BLOCK_RECOIL_DUR = 0.24; // seconds — over before the next swing, so blocking never costs tempo
 // The shield is driven BACK into him, and that has to come off the SHOULDER: folding the elbow harder raises the wrist (the fold is what lifts the boards in the first place), so spending the recoil there sent the shield climbing over his own face — a cower, not a block.
@@ -288,7 +318,6 @@ const SHIELD_WOOD = rgba(56, 41, 29, 255); // dark limewood boards…
 const SHIELD_WOOD_LT = rgba(82, 62, 44, 255); // …the seams between them, a course lighter so they READ
 // THE RIM IS ALMOST BLACK ON PAPER AND READS AS IRON ON SCREEN — solved, not eyeballed (AGENTS.md: screen ∝ albedo^(1/2.2) through a hot key).
 const SHIELD_IRON = rgba(26, 28, 34, 255);
-// The BOSS is the one polished thing on it and stays a stop brighter — a shield needs somewhere for the light to land or the whole disc is a flat brown coin.
 const SHIELD_BOSS = rgba(46, 49, 58, 255);
 const SHIELD_STANDOFF = 0.045 * H; // the boards ride this far off the fist — a CENTRE GRIP, hand behind the boss
 // The mesh is authored FACE-ON (a disc in XY, face along +Z) and this turns it into the left WRIST's frame.
@@ -329,7 +358,6 @@ fn bladeAt(t: f32) rl.Vector3 {
 const BLADE_BASE = bladeAt(-0.06); // guard end, pulled back toward/through the fist
 const BLADE_TIP = bladeAt(0.64); // point, extended past the visible tip for reach (the far end of the arc lands)
 
-// The sword arm is a CARRY, not a mirror of the free arm (see armChain).
 const CARRY_DAMP = 0.45; // fraction of the gait swing the sword arm gives up
 const CARRY_ELBOW = 14.0; // readier standing/walking elbow on the sword side
 const CARRY_ELBOW_RUN = 30.0; // at a run the carry arm keeps a readier bend (kept close to the body, not folded to the chest)
@@ -342,15 +370,12 @@ const CARRY_SWING_STILL = 0.6; // damp — but don't kill — the carry arm's fo
 const POSE_XFADE = 0.09; // seconds — cross-fade over any pose discontinuity (roll start/end)
 const SPEED_SMOOTH = 80.0; // units/s² — posture-blend speed chases ground speed, so
 
-// Gait splits by travel in the BODY frame: the forward component scales the sagittal leg/arm work (TIME-REVERSED for a backpedal, Thorstensson 1986), the lateral component drives a real CROSSING SIDESTEP (the grapevine below).
 const GAIT_DIR_EASE = 22.0; // 1/s — fwdB/latB chase the body-frame travel direction
-// Two facts drive it, and either one wrong is what makes a sidestep slide: 1.
 const STRAFE_ABD = 22.0; // peak frontal hip swing either side of the hip (deg) — the sweep is
 const STRAFE_STANCE = 0.52; // fraction of the cycle each foot is planted (~4% double support)
 // CADENCE HAS EXACTLY ONE DIAL: phase is driven by DISTANCE, so cadence = speed / STRAFE_CYCLE.
 const STRAFE_CROSS = 38.0; // the crossing leg's hip FLEXION peak — it must pass IN FRONT of the stance
 const STRAFE_BEHIND = 10.0; // …and its partner's hip EXTENSION peak, passing BEHIND on the uncross.
-// One leg front-crossing plus one passing behind IS the grapevine, structurally.
 const STRAFE_LAND = 7.0; // fore/aft hip offset at plant (deg), swept out linearly through stance:
 const STRAFE_CLEAR = 0.035 * H; // DAYLIGHT under the swing foot at mid-swing. Asked for as a
 // HEIGHT and solved for (see legChain), not tuned as a knee angle: hip flexion and knee flexion fight each other vertically, so a "knee lift" constant does not mean a foot leaves the ground.
@@ -360,7 +385,6 @@ const STRAFE_SWAY = 0.012 * H; // pelvis rides ONTO each planting foot (the weig
 const STRAFE_LEAN = 2.5; // torso banks gently INTO the travel side (deg, cosmetic)
 const BACK_STRIDE = 0.85; // backpedal steps shorten a touch too (cautious, toe-reaching)
 
-// Rest hip→ankle span: the strafe geometry is all measured off this, so it scales with the rig.
 pub const LEG_LEN = (0.530 - 0.039) * H;
 const STRAFE_REACH = LEG_LEN * @sin(mathx.radians(STRAFE_ABD)); // half the stance sweep, in units
 const STRAFE_CYCLE = 2.0 * STRAFE_REACH / STRAFE_STANCE; // body travel per FULL cycle. advanceGait
@@ -435,7 +459,6 @@ pub const SolePatch = struct {
     drop: f32, // how far BELOW the bone origin the sole plane sits (the ankle joint height)
 };
 
-// The deepest point any of these soles reaches.
 pub fn soleDepth(wx: []const rl.Matrix, patches: []const SolePatch) f32 {
     var lowest: f32 = std.math.floatMax(f32);
     for (patches) |p| {
@@ -454,12 +477,10 @@ pub const BOOT_SOLE = [_]SolePatch{
     .{ .bone = ANKR, .heel = 0.05 * H, .toe = 0.14 * H, .halfW = 0.0425 * H, .drop = 0.039 * H },
 };
 
-// The sidestep's PELVIS drive — pub so the hero and every humanoid foe counter-rotate identically (AGENTS.md's humanoid rule covers the TRUNK, not just the legs).
 pub fn strafeProt(ph: f32, lat: f32, m: f32) f32 {
     return -STRAFE_PROT * mathx.cosf(std.math.tau * ph) * @abs(lat) * m;
 }
 
-// The sidestep's pelvic SWAY amplitude.
 pub fn strafeSway(latW: f32, runB: f32) f32 {
     return mathx.lerpF(A_SWAY * (1.0 - 0.6 * runB), STRAFE_SWAY, latW);
 }
@@ -479,7 +500,6 @@ fn lerpM(a: rl.Matrix, b: rl.Matrix, t: f32) rl.Matrix {
     return out;
 }
 
-/// WHERE THE FEET ARE, as the last matrix of every root chain.
 pub fn rootAt(pos: rl.Vector3) rl.Matrix {
     return tr(pos.x, pos.y, pos.z);
 }
@@ -492,11 +512,21 @@ fn bump(u: f32, a: f32, b: f32) f32 {
 
 pub const Attack = enum { light, heavy };
 
+/// WHICH RIGHT-HAND ARMAMENT IS IN THE FIST. Not a "primary and secondary" pair he holds at once: the
+/// bow REPLACES the sword in the right hand, and the left hand leaves the shield to go to the string.
+/// D-pad Right cycles it, which is ER's own binding for the right-hand slot.
+pub const Arm = enum { sword, bow };
+
 // One buffered action, ER-style: an attack/roll pressed while mid-action QUEUES here — ONE slot, the LAST press wins (a new press replaces the old) — and fires at the current action's earliest legal exit (the attack's chain knot, or the roll's end).
 pub const Queued = union(enum) { attack: Attack, roll: rl.Vector3 };
 
 pub const Hero = struct {
     mesh: [N]rl.Mesh,
+    /// The bow and its two live parts, all from `archer.zig`. Shares the `HELD` slot with the sword, so
+    /// exactly one of the two is ever drawn.
+    bow: rl.Mesh,
+    bowString: rl.Mesh,
+    bowNock: rl.Mesh,
     /// THE SHIELD, which is not a bone.
     shield: rl.Mesh,
     /// The guitar he picks up at a rest, riding the PELVIS the way the shield rides the wrist — an instrument in the lap belongs to the body, not to a hand.
@@ -516,7 +546,6 @@ pub const Hero = struct {
     fwdB: f32 = 1, // eased travel-vs-facing FORWARD component (+1 ahead … -^'1 backpedal)
     latB: f32 = 0, // eased travel-vs-facing LATERAL component (+1 = stepping to his RIGHT)
     elapsed: f32 = 0,
-    // dodge roll
     rolling: bool = false,
     /// HOW MANY ROLLS HE HAS TAKEN, ever — the same counter `swings` is, for the same reason: a chained roll clears `rolling` and sets it again inside ONE frame, so a rising edge on the flag misses every roll after the first.
     rolls: u32 = 0,
@@ -525,13 +554,11 @@ pub const Hero = struct {
     rollYaw: f32 = 0, // committed heading of the roll; the visible yaw eases onto it fast
     rollSide: f32 = -1, // +1 = over the LEFT shoulder, -1 = the RIGHT (picked from the leading leg)
     rollVar: f32 = 1, // this roll's imperfection magnitude (ROLL_VAR_LO..HI, cosmetic only)
-    // sword attack
     attacking: bool = false,
     atkT: f32 = 0, // seconds into the current swing
     queued: ?Queued = null, // the ER-style input buffer (see Queued)
     atkHeavy: bool = false, // which cut: R1 slash (false) or R2 overhead (true)
     atkAlt: bool = false, // light-combo alternator: false = forehand slash, true = the RETURN backhand
-    /// HOW MANY SWINGS HE HAS THROWN, ever.
     swings: u32 = 0,
     bladeA: rl.Vector3 = mathx.zero3, // blade capsule endpoints in WORLD space (guard → tip)
     bladeB: rl.Vector3 = mathx.zero3,
@@ -545,7 +572,8 @@ pub const Hero = struct {
     fp: combat.Focus = .{}, // …the blue one, likewise. Nothing spends it yet; the Cerulean fills it
     runes: combat.Runes = .{}, // …and ER's currency, likewise his alone (souls, by ER's name)
     flasks: combat.Flasks = .{}, // Crimson + Cerulean, sharing the quick-item slot
-    /// HP coming back over TIME (Mushroom Jerky).
+    /// …and the ARROWS, which are finite: an empty quiver refuses the shot (see `startShot`).
+    quiver: combat.Quiver = .{},
     regen: combat.Regen = .{},
     // THE DRINK, committed like an attack (see combat.Flasks): the charge is spent at the START, the restore lands at FLASK_POUR_AT, and a stagger mid-draught costs you the flask.
     drinking: bool = false,
@@ -554,11 +582,29 @@ pub const Hero = struct {
     /// Seconds left on the "that was refused" flash.
     stamRefused: f32 = 0,
     sprinting: bool = false, // hold-B RUN, resolved by the caller — the only CONTINUOUS drain
+    // Shaped like the GUARD, not like an attack: `aiming` is re-derived from the button every frame, and
+    // only the LOOSE is committed.
+    arm: Arm = .sword,
+    aiming: bool = false,
+    aimB: f32 = 0, // …the VISUAL blend of the stance; nothing mechanical may read it
+    shooting: bool = false, // a committed loose is running
+    shotT: f32 = 0,
+    shotAimed: bool = false, // …which of the two it is (out of a held aim, or the snap shot)
+    /// ONE FRAME, the frame the shaft leaves — game.zig looses it from `nockWorld()`.
+    loosed: bool = false,
+    /// Counted like `swings`/`rolls`: a chained shot clears `shooting` and sets it again inside one frame.
+    shots: u32 = 0,
+    /// 0 = string home, 1 = full draw.
+    drawAmt: f32 = 0,
+    stringXf: [2]rl.Matrix = undefined,
+    nockXf: rl.Matrix = undefined,
+    nockVis: bool = false,
+    /// …and where that nock IS: the true release point, so the shaft leaves the string and not the fist.
+    lastNock: rl.Vector3 = mathx.zero3,
     guarding: bool = false,
     guardB: f32 = 0,
     /// Seconds since the last blow caught on the shield — the recoil clock, and the ONLY record a block leaves.
     blockT: f32 = mathx.LONG_AGO,
-    // THE WORLD IS HELD (menu up).
     held: bool = false,
     stun: combat.StunKind = .none, // .light flinch / .heavy stagger (a committed reaction)
     stunT: f32 = 0, // seconds into the current stagger
@@ -568,7 +614,6 @@ pub const Hero = struct {
     spawnPos: rl.Vector3 = mathx.zero3, // where a death respawns the hero
     spawnFacing: f32 = 0,
 
-    // transition smoothing
     speedS: f32 = 0, // short-eased ground speed driving POSTURE blends only
     blendT: f32 = mathx.LONG_AGO, // seconds since the last pose discontinuity (… POSE_XFADE = no blend)
     blendXf: [N]rl.Matrix = undefined, // frozen source pose for the cross-fade
@@ -581,6 +626,9 @@ pub const Hero = struct {
         mat.shader = shader;
         return .{
             .mesh = buildMeshes(),
+            .bow = archer.bowMesh(),
+            .bowString = archer.stringMesh(),
+            .bowNock = archer.nockArrowMesh(),
             .shield = shieldMesh(),
             .guitar = guitarMesh(),
             .mat = mat,
@@ -592,7 +640,6 @@ pub const Hero = struct {
         self.mat.shader = sh;
     }
 
-    /// SIT DOWN at `pos` facing `yaw`, or stand back up.
     pub fn sit(self: *Hero, on: bool, pos: rl.Vector3, yaw: f32) void {
         self.resting = on;
         self.restT = 0;
@@ -612,6 +659,7 @@ pub const Hero = struct {
         self.sprinting = false;
         self.guarding = false;
         self.guardB = 0;
+        self.dropAim(); // …and the bow with it: at a rest he is unarmed
         self.stun = .none;
         self.hurtFlash = 0;
         // Whole again, and the same restoration a respawn makes — ER's rule, and a death already counts as arriving at one of these.
@@ -620,9 +668,9 @@ pub const Hero = struct {
         self.fp.reset();
         self.regen.reset();
         self.flasks.refill();
+        self.quiver.refill(); // …and the quiver, on the same rule: a grace restocks you
     }
 
-    // Advance the walk.
     fn tickClocks(self: *Hero, dt: f32) void {
         self.elapsed += dt;
         self.ageTrail(dt);
@@ -632,19 +680,20 @@ pub const Hero = struct {
         self.stamRefused = @max(0, self.stamRefused - dt);
         // The stance blend and the recoil clock, in the prologue with the rest: exactly one advance path runs each frame and both have to move under all of them, or the shield hangs mid-raise through a stagger and the recoil freezes on whatever frame the block landed.
         self.guardB = mathx.approach(self.guardB, if (self.guarding) 1.0 else 0.0, dt * GUARD_BLEND_RATE);
+        // …and the AIM's blend beside it, in the prologue for the same reason: exactly one advance path
+        // runs per frame and the bow has to keep coming up (or going down) under all of them, or it hangs
+        // half-raised through a stagger.
+        self.aimB = mathx.approach(self.aimB, if (self.aiming) 1.0 else 0.0, dt * BOW_BLEND_RATE);
         self.blockT = @min(self.blockT + dt, mathx.LONG_AGO);
-        // The rune counter's ROLL.
         self.runes.tick(dt);
     }
 
     pub fn update(self: *Hero, dt: f32, movedDist: f32, speed: f32, moveYaw: ?f32) void {
         self.tickClocks(dt);
         self.speed = speed;
-        // The shared humanoid gait engine drives phase + the posture/direction blends (also used by the skeletal archer + any humanoid foe — one source of walk/strafe feel).
         advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist, speed, moveYaw, self.facing);
     }
 
-    // Begin a dodge roll in world direction `dir` (falls back to current facing).
     pub fn startRoll(self: *Hero, dir: rl.Vector3) void {
         if (self.committed()) return;
         if (!self.stam.canAct()) {
@@ -669,7 +718,6 @@ pub const Hero = struct {
         self.startXfade(); // last frame's pose cross-fades into the dive — no snap
     }
 
-    // Advance an in-progress roll: committed ease-out travel + pose.
     pub fn updateRoll(self: *Hero, dt: f32, bounds: f32) void {
         self.tickClocks(dt);
         self.facing = mathx.approachAngle(self.facing, self.rollYaw, dt * ROLL_YAW_RATE); // whip, don't teleport
@@ -692,26 +740,132 @@ pub const Hero = struct {
         }
     }
 
-    // The public entry for player action input: act NOW if free, else buffer the press (one slot, last press wins). game.zig routes a same-frame roll press here INSTEAD of the attack press (rolls win the frame), and steers a queued roll every frame so it leaves in the direction held when it fires — both Elden Ring behaviors.
 
-    /// IS HE COMMITTED TO SOMETHING?
     pub fn committed(self: *const Hero) bool {
-        return self.rolling or self.attacking or self.drinking;
+        return self.rolling or self.attacking or self.drinking or self.shooting;
     }
 
-    /// THAT INPUT DID NOTHING, and the player is told so.
+    pub fn bowOut(self: *const Hero) bool {
+        return self.arm == .bow;
+    }
+
+    /// D-pad Right. Clears no bow state on purpose: `canAim` asks the arm, so the sword going in puts the
+    /// aim away for free. Reports whether it swapped.
+    pub fn swapArm(self: *Hero) bool {
+        if (self.committed() or self.staggered() or self.dead or self.resting) return false;
+        self.arm = if (self.arm == .bow) .sword else .bow;
+        self.drawAmt = 0; // the string goes home whichever way the swap went
+        self.startXfade(); // …and the stance cross-fades, like every other pose discontinuity
+        return true;
+    }
+
+    /// L2, HELD — called EVERY frame with the button's level, re-deriving the stance from scratch.
+    pub fn setAim(self: *Hero, want: bool) void {
+        self.aiming = want and self.canAim();
+    }
+
+    /// Everything the bow was doing, down — but never the ARM. One call, so the transitions that drop the
+    /// shield cannot each forget a different field.
+    fn dropAim(self: *Hero) void {
+        self.aiming = false;
+        self.aimB = 0;
+        self.shooting = false;
+        self.loosed = false;
+        self.drawAmt = 0;
+        self.nockVis = false;
+    }
+
+    /// `shooting` is the ONE committed action this allows: a loose out of a held aim must not cost the aim,
+    /// or the second shot of a pair is a different action from the first.
+    pub fn canAim(self: *const Hero) bool {
+        return self.bowOut() and !self.rolling and !self.attacking and !self.drinking and
+            !self.staggered() and !self.dead and !self.sprinting and self.stam.canAct();
+    }
+
+    /// R1 quick, or R2 out of an aim — which is refused unless he IS aiming, so L2 is a stance not a modifier.
+    pub fn requestShot(self: *Hero, aimed: bool) void {
+        if (!self.bowOut() or self.dead or self.staggered()) return;
+        if (aimed and !self.aiming) return;
+        if (self.committed()) return; // a loose is not buffered: see the note on the draught
+        self.startShot(aimed);
+    }
+
+    fn startShot(self: *Hero, aimed: bool) void {
+        if (!self.stam.canAct()) {
+            self.refuse();
+            return;
+        }
+        // Checked BEFORE the stamina is charged: a loose that never happened must not bill him for it.
+        if (!self.quiver.take()) {
+            self.refuse();
+            return;
+        }
+        self.stam.spend(if (aimed) combat.STAM_AIMED else combat.STAM_SHOT);
+        self.shooting = true;
+        self.shotAimed = aimed;
+        self.shotT = 0;
+        self.loosed = false;
+        self.shots +%= 1; // every shaft, chained ones included — see the field
+        self.startXfade();
+    }
+
+    /// Call in place of move/attack while `shooting`. `faceYaw` squares him onto the aim line for the WHOLE
+    /// shot, not just its tail.
+    pub fn updateShot(self: *Hero, dt: f32, faceYaw: ?f32) void {
+        self.tickClocks(dt);
+        self.loosed = false;
+        self.speed = 0;
+        self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
+        if (faceYaw) |ty| self.facing = mathx.approachAngle(self.facing, ty, TURN_TO_SHOT * dt);
+        const dur: f32 = if (self.shotAimed) BOW_SHOT_DUR else BOW_QUICK_DUR;
+        const at: f32 = if (self.shotAimed) BOW_SHOT_AT else BOW_QUICK_AT;
+        const was = self.shotT / dur;
+        self.shotT += dt;
+        // A one-frame EDGE: a long frame cannot fire twice, a short one cannot miss the knot.
+        if (was < at and self.shotT / dur >= at) self.loosed = true;
+        self.pose();
+        if (self.shotT >= dur) {
+            self.shooting = false;
+            self.startXfade();
+            self.fireQueued(); // anything buffered during the loose leaves the moment it ends
+        }
+    }
+
+    /// WHERE THE SHAFT LEAVES — the live string's own nock, not the fist (see `archer.poseBow`).
+    pub fn nockWorld(self: *const Hero) rl.Vector3 {
+        return self.lastNock;
+    }
+
+    /// The pose's two dials, 0..1 — derived from the state rather than stored, so they cannot disagree.
+    fn bowLevels(self: *const Hero) struct { up: f32, pull: f32 } {
+        if (!self.bowOut()) return .{ .up = 0, .pull = 0 };
+        if (self.shooting) {
+            const dur: f32 = if (self.shotAimed) BOW_SHOT_DUR else BOW_QUICK_DUR;
+            const at: f32 = if (self.shotAimed) BOW_SHOT_AT else BOW_QUICK_AT;
+            const u = mathx.clampF(self.shotT / dur, 0, 1);
+            const up = if (self.shotAimed)
+                mathx.maxF(self.aimB, mathx.smoothstep(0, at, u))
+            else
+                mathx.smoothstep(0, at * 0.7, u);
+            // …and the string is HOME the instant the shaft leaves. That snap is the whole read of a shot.
+            return .{ .up = up, .pull = up * (1.0 - mathx.smoothstep(at, at + BOW_SNAP, u)) };
+        }
+        return .{ .up = self.aimB, .pull = self.aimB };
+    }
+
     fn refuse(self: *Hero) void {
         self.stamRefused = combat.STAM_REFUSE_FLASH;
     }
 
-    /// whether he may have it.
     pub fn setGuard(self: *Hero, want: bool) void {
         self.guarding = want and self.canGuard();
     }
 
     /// AN EMPTY BAR CANNOT HOLD A SHIELD UP — ER's own rule and the reason a guard break is a real punishment rather than an interruption: the break empties the pool, so the shield stays down until the regen has bought it back and you are open for all of it.
     pub fn canGuard(self: *const Hero) bool {
-        return !self.committed() and !self.staggered() and !self.dead and !self.sprinting and self.stam.canAct();
+        // The bow takes it away, ASKED here rather than cleared on the swap — so the shield can never come
+        // back up while the bow is out, however the swap happened.
+        return self.arm == .sword and !self.committed() and !self.staggered() and !self.dead and !self.sprinting and self.stam.canAct();
     }
 
     pub fn requestAttack(self: *Hero, kind: Attack) void {
@@ -731,7 +885,6 @@ pub const Hero = struct {
             .attack => {},
         };
     }
-    // Fire whatever is buffered the moment an exit opens.
     fn fireQueued(self: *Hero) void {
         const q = self.queued orelse return;
         self.queued = null;
@@ -741,7 +894,6 @@ pub const Hero = struct {
         }
     }
 
-    // Begin a committed sword attack in the current facing.
     pub fn startAttack(self: *Hero, kind: Attack) void {
         if (self.committed()) return;
         const cost: f32 = if (kind == .heavy) combat.STAM_HEAVY else combat.STAM_LIGHT;
@@ -808,7 +960,6 @@ pub const Hero = struct {
         if (self.attacking and !self.atkHeavy and wasLight) self.atkAlt = !wasAlt;
     }
 
-    // ER's quick item, committed.
 
     /// Swap which flask is up (D-pad down).
     pub fn cycleFlask(self: *Hero) void {
@@ -816,7 +967,6 @@ pub const Hero = struct {
         self.flasks.cycle();
     }
 
-    /// Start a draught.
     pub fn startDrink(self: *Hero) bool {
         if (self.committed() or self.dead or self.staggered()) return false;
         // THE CHARGE MUST NOT GO INTO A BAR THAT CANNOT TAKE IT — and only the CERULEAN is gated.
@@ -865,7 +1015,6 @@ pub const Hero = struct {
         return if (self.atkHeavy) (u >= AH_HIT_A and u < AH_HIT_B) else (u >= AL_HIT_A and u < AL_HIT_B);
     }
 
-    // Refresh the blade capsule from the SWORD bone.
     fn updateBlade(self: *Hero) void {
         self.bladeA0 = self.bladeA;
         self.bladeB0 = self.bladeB;
@@ -899,11 +1048,9 @@ pub const Hero = struct {
         }
     }
 
-    // The poise/stance dealt by the hero's own cuts, handed to the toads' hit test.
     pub fn attackHit(self: *const Hero) combat.Hit {
         return if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT;
     }
-    // Remember where a death respawns the hero (called once after init sets his start pose).
     pub fn setSpawn(self: *Hero, pos: rl.Vector3, facing: f32) void {
         self.spawnPos = pos;
         self.spawnFacing = facing;
@@ -911,20 +1058,21 @@ pub const Hero = struct {
     pub fn staggered(self: *const Hero) bool {
         return self.stun != .none;
     }
+    /// The grace's restock, reachable from a test without running the whole death animation.
+    pub fn respawnForTest(self: *Hero) void {
+        self.respawn();
+    }
 
-    // True through the roll's front-loaded invulnerability window — blows pass clean through.
     pub fn iFramed(self: *const Hero) bool {
         return self.rolling and self.rollT < ROLL_IFRAME_END;
     }
 
-    /// IS THE SHIELD BETWEEN HIM AND THIS?
     pub fn guardCovers(self: *const Hero, fromDir: rl.Vector3) bool {
         if (!self.guarding or mathx.lenXZ(fromDir) < 1e-4) return false;
         const off = mathx.wrapPi(mathx.headingXZ(fromDir) - self.facing);
         return @abs(mathx.degrees(off)) <= combat.GUARD_ARC;
     }
 
-    // Apply a blow: HP drains, poise/stance drive the flinch/stagger.
     pub fn takeHit(self: *Hero, h: combat.Hit, fromDir: rl.Vector3) combat.HitOutcome {
         if (self.dead) return .ignored;
         if (self.iFramed()) return .ignored; // rolled through it — no damage, no flinch, nothing
@@ -967,12 +1115,10 @@ pub const Hero = struct {
         self.enterStun(.heavy);
         return .guardBroken;
     }
-    // Decay the damage-flash.
     pub fn tickFlash(self: *Hero, dt: f32) void {
         self.hurtFlash = mathx.maxF(0, self.hurtFlash - dt * 2.6);
     }
 
-    // Age the swing trail.
     fn ageTrail(self: *Hero, dt: f32) void {
         for (&self.trail) |*s| s.age = mathx.minF(s.age + dt, mathx.LONG_AGO);
     }
@@ -983,6 +1129,8 @@ pub const Hero = struct {
         self.drinking = false;
         // …and the shield comes down.
         self.guarding = false;
+        // …AND THE BOW, on the same line as the shield and for the same reason: a reaction drops the lot.
+        self.dropAim();
         self.queued = null;
         self.stun = kind;
         self.stunT = 0;
@@ -996,6 +1144,7 @@ pub const Hero = struct {
         self.rolling = false;
         self.drinking = false;
         self.guarding = false;
+        self.dropAim();
         self.stun = .none;
         self.queued = null;
         self.dead = true;
@@ -1004,7 +1153,6 @@ pub const Hero = struct {
         self.startXfade();
     }
 
-    // Advance a stagger; clears back to normal control when it finishes.
     pub fn updateStun(self: *Hero, dt: f32) void {
         self.tickClocks(dt);
         self.stunT += dt;
@@ -1018,7 +1166,6 @@ pub const Hero = struct {
         }
     }
 
-    // Advance the death collapse; respawns the hero at full vitals when it completes.
     pub fn updateDeath(self: *Hero, dt: f32) void {
         self.tickClocks(dt);
         self.deathT += dt;
@@ -1038,11 +1185,15 @@ pub const Hero = struct {
         self.regen.reset(); // …and nothing is still digesting from the last life
         // FLASKS REFILL AT THE GRACE, and a death IS a return to one — same event, same rule as ER.
         self.flasks.refill();
+        self.quiver.refill(); // …and the arrows with them
         self.drinking = false;
         self.stamRefused = 0; // a respawn must not inherit the last life's refusal flash
         self.sprinting = false;
         self.guarding = false;
         self.guardB = 0; // …nor wake at the grace holding a shield up
+        // …nor at full draw. The ARM itself is kept: which weapon he chose survives a death the way the
+        // flask he had selected does.
+        self.dropAim();
         self.blockT = mathx.LONG_AGO;
         self.pos = self.spawnPos;
         self.facing = self.spawnFacing;
@@ -1052,8 +1203,13 @@ pub const Hero = struct {
         self.startXfade();
     }
 
-    // Compute every bone's world matrix for this frame's pose.
     pub fn pose(self: *Hero) void {
+        self.poseBody();
+        // …then the bow's live string, which rides WHICHEVER body pose just ran (see poseBowString).
+        self.poseBowString();
+    }
+
+    fn poseBody(self: *Hero) void {
         if (self.dead) return self.poseDeath();
         if (self.stun != .none) return self.poseStun();
         if (self.rolling) return self.poseRoll();
@@ -1094,7 +1250,6 @@ pub const Hero = struct {
         // …plus the SLOPE he is standing on.
         const bodyPitch = (BODY_PITCH_RUN * runB + (BODY_PITCH_SPRINT - BODY_PITCH_RUN) * sprintB) * m + self.slopePitch;
         var wx: [N]rl.Matrix = undefined;
-        // Pelvis height.
         const pelvY = hipY - crouch + bob;
         wx[ROOT] = mul3(
             mul(rz(list), ry(prot)), // tilt/rotate pelvis about its centre
@@ -1128,11 +1283,72 @@ pub const Hero = struct {
         // …and the shield goes up OVER all of it (see poseGuard) — the gait keeps running underneath.
         if (gB > 0.001) self.poseGuard(&wx, gB, rec, lean, prot, bank);
 
+        // THE BOW OVER ALL OF IT, before the cross-fade so a swap eases in like every other stance change.
+        if (self.bowOut()) self.poseBowArms(&wx, lean, prot, bank);
         self.applyXfade(&wx);
         self.xf = wx;
     }
 
-    /// The pulse a caught blow puts through the frame: full on the frame it lands and gone inside BLOCK_RECOIL_DUR.
+    /// An OVERLAY like the guard, not a pose of its own, so he still walks and strafes with a drawn bow.
+    fn poseBowArms(self: *const Hero, wx: *[N]rl.Matrix, lean: f32, prot: f32, bank: f32) void {
+        const lvl = self.bowLevels();
+        // The FOLLOW-THROUGH: the bow arm bounces forward off the release, drained over the tail.
+        const kick: f32 = if (self.loosedAlready()) BOW_KICK * (1.0 - self.shotU()) else 0;
+        // The overlay owns the arms outright, so the gait's swing is folded INTO the carry rather than
+        // blended against it — and fades out as the bow comes up, since nobody swings their arms at full draw.
+        const swing = ARM_SWING * mathx.cosf(std.math.tau * self.phase) * self.moving * self.fwdB * (1.0 - lvl.up);
+        var bp = wx.*;
+        // Blades side-on, straightening out of its stoop as the draw comes back; the head cants on: cheek-weld.
+        const blade = BOW_BLADE * lvl.up;
+        const stoop = BOW_STOOP * (1.0 - 0.75 * lvl.pull);
+        setLocal(&bp, SPINE, self.rest, mul3(rx(lean * 0.5 + stoop * 0.5), ry(-0.3 * prot + blade), rz(0.5 * bank)));
+        setLocal(&bp, CHEST, self.rest, mul3(rx(lean * 0.5 + stoop * 0.5), ry(-0.5 * prot + blade), rz(0.5 * bank)));
+        setLocal(&bp, NECK, self.rest, ry(-blade * 0.6));
+        setLocal(&bp, HEAD, self.rest, mul3(rx(BOW_HEAD_NOD * lvl.up), ry(-blade * 0.5 + BOW_HEAD_YAW * lvl.pull), rz(BOW_HEAD_CANT * lvl.pull)));
+        // The bow arm stays LONG — a folded one is a bow held at your own face.
+        const shFlex = mathx.lerpF(BOW_CARRY_SH, BOW_SH_FLEX, lvl.up) - kick - swing;
+        const shElbow = mathx.lerpF(BOW_CARRY_ELBOW, BOW_ELBOW, lvl.up);
+        setLocal(&bp, SHR, self.rest, mul(rx(-shFlex), rz(-BOW_SH_ABD)));
+        setLocal(&bp, ELR, self.rest, rx(-shElbow));
+        setLocal(&bp, WRR, self.rest, rz(-BOW_WRIST - 4.0 * kick));
+        // rx(100) stands the bow VERTICAL, ry(180) faces it: string toward him, limbs bowing out at the target.
+        setLocal(&bp, HELD, self.rest, mul(ry(180.0), rx(100.0 - 3.0 * kick)));
+        // The draw arm: back to the anchor, folded hard, elbow high. The hand the shield was in.
+        setLocal(&bp, SHL, self.rest, mul3(
+            rx(-mathx.lerpF(BOW_DRAW_REST, BOW_DRAW_SH, lvl.pull) + swing),
+            ry(-BOW_DRAW_YAW * lvl.pull),
+            rz(mathx.lerpF(ARM_ABD, BOW_DRAW_ABD, lvl.pull)),
+        ));
+        setLocal(&bp, ELL, self.rest, rx(-mathx.lerpF(IDLE_ELBOW, BOW_DRAW_ELBOW, lvl.pull)));
+        setLocal(&bp, WRL, self.rest, rl.math.matrixIdentity());
+        for ([_]usize{ SPINE, CHEST, NECK, HEAD, SHL, ELL, WRL, SHR, ELR, WRR, HELD }) |i| wx[i] = bp[i];
+    }
+
+    /// Rides the FINISHED matrices, so it is its own step after every body pose — posed inside the walk
+    /// branch it hung in mid-air through every roll and stagger.
+    fn poseBowString(self: *Hero) void {
+        self.drawAmt = self.bowLevels().pull;
+        self.nockVis = false;
+        if (!self.bowOut() or self.resting) return;
+        const p = archer.poseBow(self.xf[HELD], self.xf[WRL], self.drawAmt);
+        self.stringXf = p.string;
+        self.nockXf = p.nock;
+        self.lastNock = p.at;
+        // The nocked shaft shows while there is a real draw on it, and the release takes it away.
+        self.nockVis = self.drawAmt > 0.03 and !self.loosedAlready();
+    }
+
+    /// How far through the current loose, 0..1 (0 when there is none).
+    fn shotU(self: *const Hero) f32 {
+        if (!self.shooting) return 0;
+        return mathx.clampF(self.shotT / (if (self.shotAimed) BOW_SHOT_DUR else BOW_QUICK_DUR), 0, 1);
+    }
+    /// Has THIS shot already let the shaft go? (`loosed` is the one FRAME it happened on.)
+    fn loosedAlready(self: *const Hero) bool {
+        if (!self.shooting) return false;
+        return self.shotU() >= (if (self.shotAimed) BOW_SHOT_AT else BOW_QUICK_AT);
+    }
+
     fn blockRecoil(self: *const Hero) f32 {
         if (self.blockT >= BLOCK_RECOIL_DUR) return 0;
         const u = mathx.clampF(self.blockT / BLOCK_RECOIL_DUR, 0, 1);
@@ -1516,14 +1732,24 @@ pub const Hero = struct {
     }
 
     pub fn draw(self: *const Hero) void {
-        // AT A REST HE IS UNARMED.
+        // AT A REST HE IS UNARMED — and the WEAPON SLOT holds one of two things, so the sword's mesh is
+        // skipped whenever the bow is the thing in his hand. Exactly one of them is ever drawn.
+        const stowSword = self.resting or self.bowOut();
         for (0..N) |i| {
-            if (self.resting and i == SWORD) continue;
+            if (stowSword and i == SWORD) continue;
             rl.drawMesh(self.mesh[i], self.mat, self.xf[i]);
         }
         if (self.resting) {
             rl.drawMesh(self.guitar, self.mat, self.xf[ROOT]);
             return;
+        }
+        if (self.bowOut()) {
+            // The bow on the weapon slot, plus its two LIVE parts: the string really hauls back off the
+            // draw hand and snaps home, and the nocked shaft rides it until the release.
+            rl.drawMesh(self.bow, self.mat, self.xf[HELD]);
+            for (self.stringXf) |sm| rl.drawMesh(self.bowString, self.mat, sm);
+            if (self.nockVis) rl.drawMesh(self.bowNock, self.mat, self.nockXf);
+            return; // …and NO SHIELD, because the hand holding it is on the string
         }
         // The shield rides the left wrist rather than a bone of its own (see the field).
         rl.drawMesh(self.shield, self.mat, mul(shieldFit(), self.xf[WRL]));
@@ -1936,7 +2162,16 @@ fn handMesh() rl.Mesh {
 
 /// A Hero for the STATE tests.
 fn testHero() Hero {
-    return .{ .mesh = undefined, .shield = undefined, .guitar = undefined, .mat = undefined, .rest = restPositions() };
+    return .{
+        .mesh = undefined,
+        .bow = undefined,
+        .bowString = undefined,
+        .bowNock = undefined,
+        .shield = undefined,
+        .guitar = undefined,
+        .mat = undefined,
+        .rest = restPositions(),
+    };
 }
 
 test "the DRAUGHT is committed like the other two: inputs buffer, they do not fire through it" {
@@ -1961,6 +2196,198 @@ test "the DRAUGHT is committed like the other two: inputs buffer, they do not fi
     try std.testing.expect(!h.drinking);
     try std.testing.expect(h.rolling);
     try std.testing.expect(h.queued == null);
+}
+
+test "THE BOW TAKES THE SHIELD, and it takes it by being asked rather than by clearing a flag" {
+    // The mechanic in one test: the left hand is on the string, so there is no hand for the boards. Asked
+    // in `canGuard` rather than cleared on the swap, which is what makes it impossible for the shield to
+    // come back up while the bow is out however the swap happened.
+    var h = testHero();
+    h.setGuard(true);
+    try std.testing.expect(h.guarding); // sword out: the shield goes up as always
+
+    try std.testing.expect(h.swapArm());
+    try std.testing.expect(h.bowOut());
+    h.setGuard(true); // …the button is still held, and it now does NOTHING
+    try std.testing.expect(!h.guarding);
+    try std.testing.expect(!h.canGuard());
+
+    // …and back again puts it in his hand, with no bookkeeping in between.
+    try std.testing.expect(h.swapArm());
+    h.setGuard(true);
+    try std.testing.expect(h.guarding);
+}
+
+test "the swap is refused mid-action, so a weapon cannot change hands inside a swing" {
+    var h = testHero();
+    h.startAttack(.light);
+    try std.testing.expect(!h.swapArm());
+    try std.testing.expect(!h.bowOut());
+    var g = testHero();
+    g.startRoll(v3(0, 0, 1));
+    try std.testing.expect(!g.swapArm());
+    var d = testHero();
+    d.enterStun(.heavy);
+    try std.testing.expect(!d.swapArm());
+    // …and a corpse does not go shopping either.
+    var k = testHero();
+    k.enterDeath();
+    try std.testing.expect(!k.swapArm());
+}
+
+test "AIMING NEEDS THE BOW, and a LOOSE does not cost him the aim" {
+    // The one committed action `canAim` deliberately allows is `shooting` — otherwise every aimed shot
+    // drops the bow and re-raises it, and the second shot of a pair is a different action from the first.
+    var h = testHero();
+    h.setAim(true);
+    try std.testing.expect(!h.aiming); // sword out — L2 is not an aim button, it is a bow's
+
+    _ = h.swapArm();
+    h.setAim(true);
+    try std.testing.expect(h.aiming);
+    // The loose: it commits, and the aim is STILL up underneath it.
+    h.requestShot(true);
+    try std.testing.expect(h.shooting and h.shotAimed);
+    h.setAim(true);
+    try std.testing.expect(h.aiming);
+    try std.testing.expect(h.canAim());
+
+    // …and everything else takes it away. Each on a fresh hero, since these are one-way doors.
+    var r = testHero();
+    _ = r.swapArm();
+    r.startRoll(v3(0, 0, 1));
+    r.setAim(true);
+    try std.testing.expect(!r.aiming);
+    var s = testHero();
+    _ = s.swapArm();
+    s.sprinting = true;
+    s.setAim(true);
+    try std.testing.expect(!s.aiming); // no running full draw, same as the guard
+    var e = testHero();
+    _ = e.swapArm();
+    e.stam.cur = 0;
+    e.setAim(true);
+    try std.testing.expect(!e.aiming); // you cannot hold a draw on an empty bar
+}
+
+test "an AIMED shot is refused without an aim, which is what makes L2 a stance and not a modifier" {
+    var h = testHero();
+    _ = h.swapArm();
+    h.requestShot(true);
+    try std.testing.expect(!h.shooting); // R2 alone does nothing…
+    h.setAim(true);
+    h.requestShot(true);
+    try std.testing.expect(h.shooting and h.shotAimed); // …and behind a raised bow it fires
+
+    // The QUICK shot needs no aim at all — that is the whole point of it.
+    var q = testHero();
+    _ = q.swapArm();
+    q.requestShot(false);
+    try std.testing.expect(q.shooting and !q.shotAimed);
+
+    // …and neither fires with the SWORD in hand, whichever button asked.
+    var w = testHero();
+    w.requestShot(false);
+    w.requestShot(true);
+    try std.testing.expect(!w.shooting);
+}
+
+test "THE SHAFT LEAVES EXACTLY ONCE, on the frame the loose crosses its own knot" {
+    // `loosed` is a ONE-FRAME edge, and both halves matter: a long frame must not fire twice and a short
+    // one must not skip the knot and never fire at all.
+    for ([_]bool{ false, true }) |aimed| {
+        var h = testHero();
+        _ = h.swapArm();
+        if (aimed) h.setAim(true);
+        h.requestShot(aimed);
+        try std.testing.expect(h.shooting);
+        var fired: u32 = 0;
+        var guard: u32 = 0;
+        while (h.shooting and guard < 2000) : (guard += 1) {
+            h.updateShot(1.0 / 240.0, null); // a fast machine, where an edge is easiest to miss
+            if (h.loosed) fired += 1;
+        }
+        try std.testing.expectEqual(@as(u32, 1), fired);
+        try std.testing.expect(!h.shooting); // …and it ends rather than running on
+    }
+    // …and at a terrible frame rate, where one step crosses the whole knot.
+    var c = testHero();
+    _ = c.swapArm();
+    c.requestShot(false);
+    var fired: u32 = 0;
+    var guard: u32 = 0;
+    while (c.shooting and guard < 100) : (guard += 1) {
+        c.updateShot(0.25, null);
+        if (c.loosed) fired += 1;
+    }
+    try std.testing.expectEqual(@as(u32, 1), fired);
+}
+
+test "AN EMPTY QUIVER REFUSES THE SHOT, and it does not bill him for the one that never left" {
+    var h = testHero();
+    _ = h.swapArm();
+    try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.ready());
+    // Ten shots is ten arrows, and the eleventh is refused.
+    var fired: u32 = 0;
+    while (fired < combat.ARROWS_MAX) : (fired += 1) {
+        h.stam.reset();
+        h.requestShot(false);
+        try std.testing.expect(h.shooting);
+        while (h.shooting) h.updateShot(1.0 / 60.0, null);
+    }
+    try std.testing.expectEqual(@as(u8, 0), h.quiver.ready());
+    h.stam.reset();
+    const stamBefore = h.stam.cur;
+    h.requestShot(false);
+    try std.testing.expect(!h.shooting); // …nothing left to loose
+    try std.testing.expect(h.stamRefused > 0); // …and it SAYS so, like a dry flask
+    // The quiver is checked BEFORE the stamina is charged: a loose that never happened must not bill him.
+    try std.testing.expectApproxEqAbs(stamBefore, h.stam.cur, 1e-5);
+    // …and a grace restocks him, the same event that refills the flasks.
+    h.respawnForTest();
+    try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.ready());
+}
+
+test "the two shots are a jab and a payoff, and every number says which is which" {
+    // A quick shot is what you open a gap with; the aimed one is what you stood still for.
+    try std.testing.expect(combat.STAM_SHOT < combat.STAM_LIGHT); // cheaper than a slash…
+    try std.testing.expect(combat.STAM_AIMED > combat.STAM_HEAVY); // …and dearer than a heavy
+    // A BOW CHIPS; IT DOES NOT WIN (owner's call). Both shots come in UNDER the melee they compare to, and
+    // the poise on them is slighter still — a shaft that staggered like a sword would make closing the
+    // distance optional, and being paid for closing it is the shape of the whole game.
+    try std.testing.expect(BOW_QUICK_HIT.dmg < ATK_LIGHT_HIT.dmg);
+    try std.testing.expect(BOW_AIMED_HIT.dmg < ATK_HEAVY_HIT.dmg);
+    try std.testing.expect(BOW_QUICK_HIT.poise < ATK_LIGHT_HIT.poise);
+    try std.testing.expect(BOW_AIMED_HIT.poise < ATK_HEAVY_HIT.poise);
+    // …and poise is given up MORE readily than damage: the aimed shot keeps most of a heavy's damage ratio
+    // and less than half its stagger, which is what makes it a wound rather than an opening.
+    try std.testing.expect(BOW_AIMED_HIT.poise * 2 <= ATK_HEAVY_HIT.poise);
+    try std.testing.expect(BOW_AIMED_HIT.stance > 0 and BOW_QUICK_HIT.stance == 0); // only one breaks stance
+    // The aimed shot flies FLATTER and FURTHER, and both outrange a skeleton's 15 — the reason to carry it.
+    try std.testing.expect(BOW_AIMED_SPEED > BOW_QUICK_SPEED and BOW_QUICK_SPEED > 15.0);
+    // A raised bow is slower than a raised shield: one you walk a fight down behind, one you stand for.
+    try std.testing.expect(BOW_AIM_SPEED < GUARD_SPEED and BOW_AIM_SPEED > 0.2);
+    // The quick shot is the SLOWER of the two to get off, because the aimed one is already at full draw.
+    try std.testing.expect(BOW_QUICK_DUR > BOW_SHOT_DUR);
+}
+
+test "a stagger drops the bow but never the CHOICE of weapon" {
+    // `dropAim` is the one call the five transitions that drop the shield share, and what it must not
+    // touch is the arm: which weapon he picked survives a reaction, and survives a death.
+    var h = testHero();
+    _ = h.swapArm();
+    h.setAim(true);
+    h.requestShot(true);
+    h.enterStun(.heavy);
+    try std.testing.expect(!h.aiming and !h.shooting);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.drawAmt, 1e-6);
+    try std.testing.expect(h.bowOut()); // …still HIS bow
+    // …and through a death and back out of it.
+    h.enterDeath();
+    var guard: u32 = 0;
+    while (h.dead and guard < 2000) : (guard += 1) h.updateDeath(1.0 / 60.0);
+    try std.testing.expect(h.bowOut());
+    try std.testing.expect(!h.aiming and h.drawAmt == 0);
 }
 
 test "a Cerulean is refused into a full bar rather than pouring a charge away" {

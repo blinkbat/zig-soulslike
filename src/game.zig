@@ -39,7 +39,6 @@ const SPRINT_SPEED = heromod.SPRINT_SPEED; // hold Circle/B (or Shift): dash/spr
 const TURN_RATE = 12.0; // rad/sec the hero yaws toward its heading (souls turn briskly)
 const STRAFE_SPEED = heromod.STRAFE_SPEED; // LOCKED-ON sideways travel, as a fraction of forward —
 const STICK_DEADZONE = 0.16; // left-stick move deadzone — RADIAL, see stickRadial
-// Right-stick LOOK deadzone.
 const LOOK_DEADZONE = 0.14;
 /// How hard the right stick must be pushed to TAKE THE CAMERA off the mouse — a different question from how hard it must be pushed to turn (`LOOK_DEADZONE`), and keeping them the same number is what let a worn pad kill mouse look outright (see the latch in run()).
 const LOOK_CLAIM = 0.40;
@@ -68,20 +67,18 @@ const BLOW_HEAVIEST = ogremod.SLAM_HIT.dmg;
 const BLOCK_FELT_MIN = 0.25; // …even the smallest blow is FELT: a block you cannot feel reads as a whiff
 const BLOCK_FELT_HEAVY = 0.5; // …and past half the club, the pad's heavier signature takes over
 const SHAKE_DEATH = 0.85;
-// …and the ONE non-combat beat: a chest coming open.
 const SHAKE_CHEST = 0.12;
-// The YOU DIED tail, in two beats.
 const RESPAWN_HOLD = 0.55; // seconds of FULL black after the respawn…
 const RESPAWN_FADE = 0.9; // …then this long fading up into the fresh world
 
-// Hero movement clamp: the MAP's bounds inset so travel and rolls cannot reach the edge.
 pub var PLAY_HALF: f32 = worldfmt.DEFAULT_HALF - envmod.PLAY_INSET;
 
-// Hero footprint radius for ground collision (see collision.zig).
 const HERO_R = foemod.HERO_R;
 
-// Skeletal-archer arrows: shared pool of in-flight + stuck shafts, plus the hero centre-of- mass height archers aim at and arrows test strikes against.
 const MAX_ARROWS = 24;
+/// His own quiver in flight. Separate from theirs because the two are swept against opposite ends of the
+/// fight — one pool would mean asking every shaft every frame whose it was.
+const MAX_SHAFTS = 12;
 /// The hero's centre of mass ABOVE HIS OWN FEET — not a world height.
 pub const HERO_CENTER_Y = 1.0;
 
@@ -139,11 +136,12 @@ pub const Game = struct {
     arrowModel: rl.Model, // shared arrow mesh, drawn per live/stuck arrow with its own matrix
     stoneModel: rl.Model, // …and the slingers' stone, drawn from the SAME pool (see Arrow.stone)
     arrows: [MAX_ARROWS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_ARROWS,
+    /// …and the ones HE loosed (see MAX_SHAFTS).
+    shafts: [MAX_SHAFTS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_SHAFTS,
     rig: cameramod.CamRig,
     lock: ?FoeRef = null, // ER lock-on: which foe (toad or skeleton) is locked, or null
     rumble: rumblemod.Rumble = .{}, // controller vibration, keyed to combat beats
     deathFade: f32 = 0, // post-respawn fade-from-black seconds remaining (armed while dead)
-    /// THE LOOK-INPUT PROBE — raw, per frame, straight onto the debug readout.
     probe: LookProbe = .{},
 
     // Built IN PLACE rather than returned by value: Env alone is ~450 KB of flat prop/grid arrays, and a by-value Game would copy all of it across the stack on the way out.
@@ -156,7 +154,6 @@ pub const Game = struct {
         worldfmt.loadOrPanic(worldfmt.START_MAP, &g.map);
         PLAY_HALF = g.map.half - envmod.PLAY_INSET; // before anything spawns against it
         g.env.build(&g.scene); // meshes once…
-        // THE PAINTED FIELDS GO UP FIRST.
         g.env.uploadSoil(&g.map);
         g.env.uploadWater(&g.map);
         // …AND THE SCULPTED GROUND, which `materialize` needs even more urgently than the water: every prop is planted at the height under it, so replaying the ops against a flat field stands the whole world at the wrong elevation.
@@ -184,6 +181,7 @@ pub const Game = struct {
         g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
         // Fields that would otherwise take their struct-literal defaults; set explicitly because there is no literal to default from any more.
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
+        g.shafts = [_]archermod.Arrow{.{}} ** MAX_SHAFTS;
         g.editor = .{};
         g.lock = null;
         g.rumble = .{};
@@ -204,10 +202,28 @@ const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "band", .kind = null },
 };
 
-/// RE-HOME EVERY GROUP FROM THE MAP.
 fn rehomeFoes(g: *Game) void {
     inline for (FOE_GROUPS) |f| @field(g, f.field).reset(&g.map);
 }
+
+/// Read off the group's own foe array rather than named by hand: `snapshotPos` and `gateTerrain` both stop
+/// at the row's length, so a group that outgrew a hand-written guess would silently lose the slope limit.
+fn groupCap(comptime field: []const u8) usize {
+    const G = @FieldType(Game, field);
+    for (@typeInfo(G).@"struct".fields) |f| {
+        const info = @typeInfo(f.type);
+        if (info != .array) continue;
+        if (@typeInfo(info.array.child) != .@"struct") continue;
+        if (@hasField(info.array.child, "pos")) return info.array.len;
+    }
+    @compileError("game: " ++ field ++ " has no foe array to size a position snapshot from");
+}
+
+const FOE_CAP = blk: {
+    var w: usize = 0;
+    for (FOE_GROUPS) |f| w = @max(w, groupCap(f.field));
+    break :blk w;
+};
 
 const Move = struct { fx: f32 = 0, fz: f32 = 0, speed: f32 = 0 };
 
@@ -261,7 +277,6 @@ test "the look curve is fine near centre and still reaches full rate at the rim"
 
 fn gatherMove() Move {
     var sprint = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
-    // Gamepad first (analog left stick; Circle/B held = dash/sprint).
     if (rl.isGamepadAvailable(PAD)) {
         if (rl.isGamepadButtonDown(PAD, .right_face_right)) sprint = true;
         // LINEAR curve here, and that is the FEEL RULE, not an oversight: the move stick's tilt maps STRAIGHT to ground speed with nothing shaping it in between.
@@ -276,7 +291,6 @@ fn gatherMove() Move {
             return .{ .fx = s.x, .fz = -s.y, .speed = sp }; // stick up (−y) = forward
         }
     }
-    // Keyboard (digital → an immediate run; walking is the stick's analog privilege).
     var kx: f32 = 0;
     var kz: f32 = 0;
     if (rl.isKeyDown(.w) or rl.isKeyDown(.up)) kz += 1;
@@ -290,7 +304,6 @@ fn gatherMove() Move {
     return .{};
 }
 
-// THE hold-B/Shift SPRINT test, read straight off the raw Move: a real heading plus a speed past a full-tilt walk.
 fn sprintingMove(mv: Move) bool {
     return mv.speed > RUN_SPEED + 0.01 and (mv.fx * mv.fx + mv.fz * mv.fz) > 1e-6;
 }
@@ -299,7 +312,6 @@ const WADE_KNEE: f32 = 0.75; // mid-thigh on the H=1.8 rig — where a leg start
 const WADE_DEEP: f32 = 1.5; // …shoulder, where the walk is as slow as it gets
 const WADE_SLOWEST: f32 = 0.8; // …as a fraction of the WALK, not of the run he has already lost
 
-/// How much the water is holding him back, as a fraction of the walk. 1.0 means it is not.
 fn wadeDrag(g: *const Game) f32 {
     return wadeDragAt(g.env.wadeDepth(g.hero.pos.x, g.hero.pos.z));
 }
@@ -320,7 +332,6 @@ fn wadeDragAt(d: f32) f32 {
     return mathx.lerpF(1.0, WADE_SLOWEST, mathx.smoothstep(WADE_KNEE, WADE_DEEP, d));
 }
 
-/// PLANT AN ACTOR ON THE GROUND: ease `pos.y` toward the terrain height under its feet.
 fn groundActor(g: *const Game, pos: *rl.Vector3, dt: f32) void {
     const want = g.env.groundAt(pos.x, pos.z);
     const d = want - pos.y;
@@ -332,7 +343,6 @@ fn groundActor(g: *const Game, pos: *rl.Vector3, dt: f32) void {
     pos.y = mathx.approach(pos.y, want, rate * dt);
 }
 
-/// …and PLANT ONE NOW, with no ease: a spawn, a respawn, an editor playtest drop.
 fn plantActor(g: *const Game, pos: *rl.Vector3) void {
     pos.y = g.env.groundAt(pos.x, pos.z);
 }
@@ -342,7 +352,6 @@ pub fn envGroundAt(e: *const envmod.Env, x: f32, z: f32) f32 {
     return e.groundAt(x, z);
 }
 
-/// Where each live foe stands, for the terrain gate below.
 fn snapshotPos(foes: anytype, out: []rl.Vector3) void {
     for (foes, 0..) |*f, i| {
         if (i >= out.len) return;
@@ -350,7 +359,6 @@ fn snapshotPos(foes: anytype, out: []rl.Vector3) void {
     }
 }
 
-/// THE FOES GET THE SAME GROUND RULES THE HERO DOES.
 fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3) void {
     for (foes, 0..) |*f, i| {
         if (i >= was.len or !f.alive() or f.airborne()) continue;
@@ -364,7 +372,6 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3) void {
     }
 }
 
-// Move + steer the hero from a camera-relative Move, advance the walk anim, and pose the skeleton.
 fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
     const fwd = g.rig.forwardXZ();
     const right = g.rig.rightXZ();
@@ -391,7 +398,6 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
         g.hero.pos.x = mathx.clampF(stepped.x, -PLAY_HALF, PLAY_HALF);
         g.hero.pos.z = mathx.clampF(stepped.z, -PLAY_HALF, PLAY_HALF);
     }
-    // Facing: toward the LOCKED foe (hero strafes/backpedals facing it, ER-style), else toward travel.
     if (faceYaw != null and !sprinting) {
         g.hero.facing = mathx.approachAngle(g.hero.facing, faceYaw.?, TURN_RATE * dt);
     } else if (isMoving) {
@@ -401,14 +407,12 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
     g.hero.pose();
 }
 
-/// The hero's posture on the ground he is standing on: ease the whole-body lean toward what the slope under him asks for.
 fn leanToGround(g: *Game, dt: f32) void {
     const face = mathx.headingDir(g.hero.facing);
     const want = heromod.slopeLean(g.env.slopeAlong(g.hero.pos.x, g.hero.pos.z, face));
     g.hero.slopePitch = mathx.approach(g.hero.slopePitch, want, heromod.SLOPE_LEAN_RATE * dt);
 }
 
-// World direction to roll: the camera-relative move intent if any, else the hero's facing (a forward roll).
 fn rollDir(g: *Game, mv: Move) rl.Vector3 {
     const fwd = g.rig.forwardXZ();
     const right = g.rig.rightXZ();
@@ -417,14 +421,32 @@ fn rollDir(g: *Game, mv: Move) rl.Vector3 {
     return mathx.headingDir(g.hero.facing);
 }
 
-// Casters = the hero + the stone props.
+/// Off the VISUAL stance blend, so he dissolves over the ~0.1 s the bow takes to come up. GONE at a full
+/// draw (owner's call).
+const AIM_FADE: f32 = 0.0;
+fn heroFade(g: *const Game) f32 {
+    return mathx.lerpF(1.0, AIM_FADE, mathx.clampF(g.hero.aimB, 0, 1));
+}
+
 fn drawCasters(g: *Game, cull: envmod.Cull) void {
     g.env.drawProps(cull);
     // THE CHEST LIDS, with the props and not after them: a lid is a caster like the box under it, and drawn outside this function it would be missing from the shadow map — a chest with its lid thrown back would cast the shadow of a closed one.
     g.chests.draw();
     // Combat flash rides the scene shader's per-actor hitFlash uniform: the hero reddens on a suffered blow, and every struck FOE on a landed one (each Group's draw sets it per instance from foe.FLASH_GAIN).
     g.scene.setFlash(0.6 * g.hero.hurtFlash);
+    // LIT PASS ONLY — the depth pass has no alpha, and his shadow is still his. Depth WRITE goes off with
+    // him: a translucent draw that still wrote depth would punch a hole in the flora behind him.
+    const fade = heroFade(g);
+    const seeThrough = cull == .view and fade < 0.999;
+    if (seeThrough) {
+        g.scene.setFade(fade);
+        rl.gl.rlDisableDepthMask();
+    }
     g.hero.draw();
+    if (seeThrough) {
+        rl.gl.rlEnableDepthMask();
+        g.scene.setFade(1); // …PUT IT BACK, or everything after him is thinned too
+    }
     g.scene.setFlash(0);
     inline for (FOE_GROUPS) |f| @field(g, f.field).draw(&g.scene);
 }
@@ -433,31 +455,25 @@ fn setCasterShaders(g: *Game, sh: rl.Shader) void {
     g.env.setShader(sh);
     g.hero.setShader(sh);
     inline for (FOE_GROUPS) |f| @field(g, f.field).setShader(sh);
-    // THE CHEST LIDS TOO.
     g.chests.setShader(sh);
 }
 
-/// The WORLD height of the hero's centre of mass — his feet plus `HERO_CENTER_Y`.
 pub fn heroCenterY(g: *const Game) f32 {
     return g.hero.pos.y + HERO_CENTER_Y;
 }
 
-/// …and that centre as a point, which is what a loose is aimed at.
 fn heroAimPoint(g: *const Game) rl.Vector3 {
     return v3(g.hero.pos.x, heroCenterY(g), g.hero.pos.z);
 }
 
-// Launch an arrow from a free pool slot (the loose event).
 fn spawnArrow(g: *Game, from: rl.Vector3, target: rl.Vector3) void {
     poolPut(g, archermod.launchArrow(from, target));
 }
 
-/// A SLINGER'S STONE into the SAME pool — see `archer.Arrow.stone`.
 pub fn spawnStone(g: *Game, from: rl.Vector3) void {
-    poolPut(g, archermod.launchStone(from, heroAimPoint(g), koboldmod.STONE_SPEED));
+    poolPut(g, archermod.launchStone(from, heroAimPoint(g), koboldmod.STONE_SPEED, koboldmod.STONE_HIT));
 }
 
-// A chest is a PROP with a lid and a state, so the list is rebuilt from the props whenever the world is.
 fn rehomeChests(g: *Game) void {
     var sites: [chestmod.CAP]chestmod.Site = undefined;
     const n = g.env.chestSites(&sites);
@@ -467,9 +483,30 @@ fn rehomeChests(g: *Game) void {
     g.rest.reset(fires[0..g.env.restSites(&fires)]);
 }
 
-/// Shims for the shot harness, so it drives the same two calls the loop does.
 pub fn rehomeChestsForShot(g: *Game) void {
     rehomeChests(g);
+}
+
+/// Empty the field, and put it back FROM THE MAP — both off FOE_GROUPS. Restoring foes by re-typing their
+/// `foe:` records as Zig literals is what left the ogre 60 m from where the map puts it.
+pub fn clearFoesForShot(g: *Game) void {
+    inline for (FOE_GROUPS) |f| {
+        @field(g, f.field).n = 0;
+    }
+}
+pub fn rehomeFoesForShot(g: *Game) void {
+    rehomeFoes(g);
+}
+
+/// …and the BOW's three, so the harness flies a real shaft rather than parking a mesh in the air.
+pub fn shootShaftForShot(g: *Game, at: rl.Vector3) void {
+    putIn(&g.shafts, archermod.launchShaft(g.hero.nockWorld(), at, heromod.BOW_AIMED_SPEED, heromod.BOW_AIMED_HIT, false));
+}
+pub fn stepShaftsForShot(g: *Game, dt: f32) void {
+    stepShafts(g, dt);
+}
+pub fn clearShaftsForShot(g: *Game) void {
+    clearQuivers(g);
 }
 
 /// …and the same for a REST: the harness runs the real state machine rather than staging a pose, so a shot cannot flatter a scene the game does not actually produce.
@@ -495,7 +532,6 @@ pub fn openChestForShot(g: *Game) bool {
     return had;
 }
 
-/// OPEN THE CHEST IN REACH.
 fn interact(g: *Game) void {
     if (g.rest.begin()) return; // a bonfire beats a chest — you cannot be in reach of both
     const got = g.chests.openNear(&g.map) orelse return;
@@ -512,7 +548,7 @@ fn tickRest(g: *Game, dt: f32) void {
         inline for (FOE_GROUPS) |f| {
             @field(g, f.field).n = 0;
         }
-        for (&g.arrows) |*a| a.live = false;
+        clearQuivers(g); // …both quivers, so a rest does not leave one hanging in the air
         g.lock = null;
         // THE PLAYER'S OWN FILTERS STAY (owner: keep our normal retro filters here, amp up warmth only).
         g.restRetro = g.retro.values;
@@ -528,7 +564,6 @@ fn tickRest(g: *Game, dt: f32) void {
         // EVERY FOE BACK, whole, from the map — the groups are re-homed rather than healed in place, which is also what makes the ones you killed return.
         rehomeFoes(g);
     }
-    // ANY BUTTON GETS YOU UP.
     if (rl.isKeyPressed(.escape) or rl.getKeyPressed() != .null or rl.isMouseButtonPressed(.left) or
         (rl.isGamepadAvailable(PAD) and rl.getGamepadButtonPressed() != .unknown))
     {
@@ -544,7 +579,6 @@ fn tickRest(g: *Game, dt: f32) void {
     g.rumble.update(dt, false);
 }
 
-/// The dusk dial, pushed to BOTH shaders that read it — see gfx.Scene.setDim.
 fn applyDim(g: *Game) void {
     const d = g.rest.dim();
     g.scene.setDim(d);
@@ -553,7 +587,6 @@ fn applyDim(g: *Game) void {
     g.env.stowed = g.hero.resting;
 }
 
-/// THE REST'S CAMERA — a fixed low three-quarter on the seated hero with the fire between him and the lens, drifting a couple of degrees so it breathes without becoming a shot of the scenery.
 const REST_WARMTH: f32 = 0.14;
 
 /// THE REST'S CAMERA, laid out to the owner's own plan sketch: hero bonfire ^ cam ^ The lens stands PAST the fire and off to one side, so the fire is the near thing on one half of the frame and the man is the far thing on the other — and because he is looking at the fire, that puts him three-quarters on to the camera rather than in profile.
@@ -572,18 +605,117 @@ fn restCamera(g: *Game) void {
     g.rig.cam.up = v3(0, 1, 0);
 }
 
-// Pool-full is rare (24 slots against a ~1.5 s reload); overwrite slot 0 rather than silently drop the shot.
 fn poolPut(g: *Game, a: archermod.Arrow) void {
-    for (&g.arrows) |*ar| {
+    putIn(&g.arrows, a);
+}
+
+fn putIn(pool: []archermod.Arrow, a: archermod.Arrow) void {
+    for (pool) |*ar| {
         if (!ar.live) {
             ar.* = a;
             return;
         }
     }
-    g.arrows[0] = a;
+    pool[0] = a;
 }
 
-// The world solids one arrow could hit THIS frame: everything within its own travel distance, pulled from the prop grid. stepArrow samples the midpoint and endpoint of the step, so the query has to cover a whole frame of flight plus enough slop that a capsule whose CENTRE LINE sits in the next cell along is still handed back.
+/// A QUICK shot goes at the locked foe; an AIMED one goes where the reticle is pointing (`camAimPoint`).
+fn looseShaft(g: *Game) void {
+    const aimed = g.hero.shotAimed;
+    const from = g.hero.nockWorld();
+    // LOFT only where the target is a REAL point at a real distance — a locked foe, or what the aim ray
+    // reaches. A bare bearing lofted over-corrects for everything nearer than the mark (archer.launchAt).
+    const locked: ?rl.Vector3 = if (aimed) null else if (g.lock) |li| foeLockPoint(g, li) else null;
+    const target = locked orelse if (aimed) camAimPoint(g) else forwardAimPoint(g);
+    const loft = locked != null or aimed;
+    const speed: f32 = if (aimed) heromod.BOW_AIMED_SPEED else heromod.BOW_QUICK_SPEED;
+    const blow = if (aimed) heromod.BOW_AIMED_HIT else heromod.BOW_QUICK_HIT;
+    putIn(&g.shafts, archermod.launchShaft(from, target, speed, blow, loft));
+    sfx.play(.bow_loose);
+    g.rumble.play(rumblemod.swing_light); // the string going is a tick in the grip, not a swing
+}
+
+/// A point ON the camera's centre ray, at the distance the ray REACHES. Aiming along the camera's forward
+/// FROM THE NOCK instead gives a parallel line, offset from the reticle by however far the bow is from the
+/// eye — a constant sideways miss at every range.
+fn camAimPoint(g: *const Game) rl.Vector3 {
+    const ray = g.rig.centreRay();
+    var reach = heromod.BOW_AIM_REACH;
+    // The nearest FOE the ray runs into wins — that is what the player is lining up on.
+    if (rayFoeDist(g, ray.origin, ray.dir)) |d| {
+        reach = d;
+    } else if (g.env.rayGround(ray.origin, ray.dir)) |hitPoint| {
+        // …else the ground it would land on, so a shot at the earth in front of you lands there.
+        reach = mathx.minF(reach, mathx.lenV(mathx.subV(hitPoint, ray.origin)));
+    }
+    // Never converge INSIDE him: a target closer than the bow is a shaft aimed backwards.
+    reach = mathx.maxF(reach, AIM_CONVERGE_MIN);
+    return mathx.addV(ray.origin, mathx.scaleV(ray.dir, reach));
+}
+
+const AIM_CONVERGE_MIN: f32 = 3.0;
+
+/// Nearest live foe along `dir`, or null. A plain ray-vs-sphere sweep: there are eleven of them.
+fn rayFoeDist(g: *const Game, origin: rl.Vector3, dir: rl.Vector3) ?f32 {
+    var best: ?f32 = null;
+    inline for (FOE_GROUPS) |gr| {
+        for (@field(g, gr.field).liveConst()) |*f| {
+            if (!f.alive() or f.dying()) continue;
+            const oc = mathx.subV(f.centerWorld(), origin);
+            const along = oc.x * dir.x + oc.y * dir.y + oc.z * dir.z;
+            if (along <= 0) continue; // behind the eye
+            const r = f.hurtRadius();
+            if (mathx.lenV(oc) * mathx.lenV(oc) - along * along > r * r) continue; // the ray misses it
+            if (best == null or along < best.?) best = along;
+        }
+    }
+    return best;
+}
+
+fn forwardAimPoint(g: *const Game) rl.Vector3 {
+    const d = mathx.headingDir(g.hero.facing);
+    const from = v3(g.hero.pos.x, heroCenterY(g), g.hero.pos.z);
+    return mathx.addV(from, mathx.scaleV(d, heromod.BOW_AIM_REACH));
+}
+
+/// The segment each shaft crossed goes to every group as a PIERCING blade, so it bleeds, flinches and kills
+/// through each creature's own `tryHit` rather than a second reaction path per creature.
+fn stepShafts(g: *Game, dt: f32) void {
+    for (&g.shafts) |*ar| {
+        if (!ar.live) continue;
+        // The same query theirs makes — the two quivers never step in the same loop, so one buffer serves.
+        const seg = archermod.stepShaft(ar, g.env.groundAt(ar.pos.x, ar.pos.z), arrowCover(g, ar, dt), dt) orelse {
+            // It STOPPED this frame — into cover or into the earth, and that gets the surface's own voice.
+            if (ar.stuck and ar.age == 0) sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
+            continue;
+        };
+        const blade = foemod.Blade{
+            .active = true,
+            .pierce = true,
+            .r = archermod.SHAFT_R,
+            .a = seg[0],
+            .b = seg[1],
+            .a0 = seg[0],
+            .b0 = seg[1],
+            .hit = ar.blow,
+        };
+        if (!pierceFoes(g, blade)) continue;
+        archermod.plantShaft(ar); // spent on the first thing it reached — stands in it and fades
+        sfx.world(.arrow_hit, ar.pos);
+        g.rumble.play(rumblemod.hit_light);
+        g.rig.addShake(SHAKE_HIT_LIGHT);
+    }
+}
+
+/// The first member the shaft reaches takes it — off FOE_GROUPS, so a fifth creature is shootable at once.
+fn pierceFoes(g: *Game, blade: foemod.Blade) bool {
+    var hit = false;
+    inline for (FOE_GROUPS) |f| {
+        if (!hit and @field(g, f.field).pierce(blade)) hit = true;
+    }
+    return hit;
+}
+
 /// …and that slop, which is a solid's own half-width and NOT `archer.ARROW_COVER_MARGIN` — the comment here used to call it "the fattest margin it tests with", which is the shaft's 4 cm and thirty times too small a number to be doing this job.
 const ARROW_QUERY_PAD: f32 = 1.5;
 var arrow_cover_buf: [envmod.MAX_NEAR]collision.Solid = undefined;
@@ -591,21 +723,32 @@ pub fn arrowCover(g: *const Game, ar: *const archermod.Arrow, dt: f32) []const c
     return g.env.nearSolids(ar.pos, mathx.lenV(ar.vel) * dt + ARROW_QUERY_PAD, &arrow_cover_buf);
 }
 
-// Draw every live/stuck arrow, oriented along its flight (shrinking as a stuck one fades).
+/// Both quivers, written down ONCE: four separate sites had the pair spelled out, and a third pool would
+/// have been four lines to remember.
+fn quivers(g: *Game) [2][]archermod.Arrow {
+    return .{ &g.arrows, &g.shafts };
+}
+
 fn drawArrows(g: *Game) void {
-    for (&g.arrows) |*ar| {
-        if (!ar.live) continue;
-        const m = if (ar.stone) &g.stoneModel else &g.arrowModel;
-        rl.drawMesh(m.meshes[0], m.materials[0], archermod.arrowXform(ar));
+    for (quivers(g)) |pool| {
+        for (pool) |*ar| {
+            if (!ar.live) continue;
+            const m = if (ar.stone) &g.stoneModel else &g.arrowModel;
+            rl.drawMesh(m.meshes[0], m.materials[0], archermod.arrowXform(ar));
+        }
     }
 }
 
-// The camera the frame is rendered from.
+fn clearQuivers(g: *Game) void {
+    for (quivers(g)) |pool| {
+        for (pool) |*ar| ar.* = .{};
+    }
+}
+
 fn sceneCam(g: *const Game) rl.Camera3D {
     return if (g.editor.on) g.editor.cam else g.rig.cam;
 }
 
-// What the sun's ortho box tracks.
 fn sunFocus(g: *const Game) rl.Vector3 {
     // The GROUND under the editor's aim, not the datum: the shadow box tracks its focus in all three axes now (gfx.beginShadowPass), and dressing a hilltop with the box 20 m below it drops every cast shadow up there.
     if (!g.editor.on) return g.hero.pos;
@@ -618,7 +761,6 @@ pub fn drawScene(g: *Game) void {
     applyDim(g); // before the depth pass: the uniform is read by every draw below it
     const cam = sceneCam(g);
     const focus = sunFocus(g);
-    // Sun depth pass into the shadow map (before beginDrawing).
     g.scene.beginShadowPass(focus);
     setCasterShaders(g, g.scene.depthShader);
     drawCasters(g, .{ .sun = focus });
@@ -626,7 +768,6 @@ pub fn drawScene(g: *Game) void {
     g.scene.endShadowPass();
 
     rl.beginDrawing();
-    // With any filter live, sky + 3D render into the capture RT and blit back through the filter shader; vignette/HUD/menu stay crisp on top.
     const filtered = if (g.editor.on) false else g.retro.begin();
     rl.clearBackground(CLEAR);
     g.sky.draw(cam);
@@ -637,7 +778,6 @@ pub fn drawScene(g: *Game) void {
 
     rl.beginMode3D(cam);
     g.scene.bind(cam.position);
-    // Torchlight: the fires whose pool is ON SCREEN, nearest first, guttering.
     g.env.uploadLights(&g.scene, &view, @floatCast(rl.getTime()));
     g.scene.setGround(true);
     g.env.drawGround(&view); // sculpted terrain is tiled, so it culls against the same frustum
@@ -646,27 +786,23 @@ pub fn drawScene(g: *Game) void {
     g.env.drawWater();
     if (g.menu.wireframe) rl.gl.rlEnableWireMode();
     drawCasters(g, .{ .view = view });
-    // Flora last: non-casting, and swayed by the scene shader's wind term (props/hero rigid).
     g.scene.setWind(true);
     g.env.drawFlora(&view);
     g.scene.setWind(false);
     drawArrows(g); // in-flight + stuck arrows (lit, rigid, non-casting)
     if (g.menu.wireframe) rl.gl.rlDisableWireMode();
-    // THE VEILS — the bonfire smoke, and the first thing after the last opaque draw.
     g.env.drawVeils(&view);
-    // Toad telegraph FX (dust / charge / spit / blood / death motes) — unlit spheres over the opaque geometry.
-    g.warren.drawFx();
-    g.grief.drawFx();
-    g.band.drawFx(); // kobold blood, death motes, and the priest's cast gathering into its staff
+    // Unlit spheres over the opaque geometry. Off FOE_GROUPS with a `@hasDecl`, so a creature without a
+    // particle pool needs no row and a fifth creature's FX cannot be forgotten.
+    inline for (FOE_GROUPS) |f| {
+        if (comptime @hasDecl(@FieldType(Game, f.field), "drawFx")) @field(g, f.field).drawFx();
+    }
     g.hero.drawTrail();
-    // Arrow flight streaks — alpha ribbons like the swing trail, so they belong in this unlit group after the opaque geometry, not up with the shafts themselves.
-    archermod.drawArrowTrails(&g.arrows);
-    // Debug: the blade hit capsule (menu > Debug > Hitboxes) — red while ACTIVE, dim otherwise.
+    for (quivers(g)) |pool| archermod.drawArrowTrails(pool);
     if (g.menu.hitboxes and g.hero.attacking) {
         const col = if (g.hero.hitActive()) rl.Color.red else mathx.withAlpha(rl.Color.red, 90);
         rl.drawCapsuleWires(g.hero.bladeA, g.hero.bladeB, heromod.BLADE_R, 6, 3, col);
     }
-    // Foe hurt spheres (menu > Debug > Hitboxes): dim normally, flaring on a tracked hit. Off FOE_GROUPS, so a creature cannot be missing from the one overlay you turn on to find out why your blade is passing through it — this drew the toads and the ogre and silently skipped the archers and the whole warband.
     if (g.menu.hitboxes) {
         inline for (FOE_GROUPS) |gr| {
             for (@field(g, gr.field).live()) |*f| {
@@ -676,23 +812,19 @@ pub fn drawScene(g: *Game) void {
             }
         }
     }
-    // Editor gizmos: op outlines, the selection's instances, the drag in progress.
     if (g.editor.on) g.editor.draw3D(&g.map, &g.env);
     rl.endMode3D();
 
     if (filtered) g.retro.end();
-    // THE GAMEPLAY OVERLAY IS GAMEPLAY'S.
     if (g.editor.on) return;
     g.vignette.draw(); // the vignette darkens the corners the chrome lives in
     drawRestFade(g); // …and the rest's black, under the HUD so the prompt is never on top of it
     drawHurtFlash(g); // red screen-edge pulse when the hero is hit (peripheral feedback)
-    // Floating foe HP bars, crisp over the finished frame — one shared path for every group, the ogre included (a regular foe, not a boss — owner's call) and the whole warband with its roles mixed in one array.
     inline for (FOE_GROUPS) |f| drawFoeBars(g, @field(g, f.field).live());
     drawLockDot(g); // the ER lock-on reticle
     drawDeathOverlay(g); // the YOU DIED card + respawn fade, over everything
 }
 
-// The rest's fade to and from black.
 fn drawRestFade(g: *Game) void {
     const a = g.rest.fade();
     if (a <= 0.004) return;
@@ -734,13 +866,11 @@ fn drawDeathOverlay(g: *Game) void {
         const blackK = mathx.smoothstep(0.82, 0.94, u);
         if (blackK > 0.001) rl.drawRectangle(0, 0, w, h, rgba(0, 0, 0, mathx.u8f(255.0 * blackK)));
     } else if (g.deathFade > 0) {
-        // HOLD, then fade.
         const k = if (g.deathFade > RESPAWN_FADE) 1.0 else mathx.clampF(g.deathFade / RESPAWN_FADE, 0, 1);
         rl.drawRectangle(0, 0, w, h, rgba(0, 0, 0, mathx.u8f(255.0 * k))); // wake at the bonfire
     }
 }
 
-// A red damage flash bleeding in from the screen edges, scaled by hero.hurtFlash — Elden Ring's "you got hit" cue.
 fn drawHurtFlash(g: *Game) void {
     const f = g.hero.hurtFlash;
     if (f <= 0.001) return;
@@ -756,27 +886,30 @@ fn drawHurtFlash(g: *Game) void {
     rl.drawRectangleGradientH(w - t, 0, t, h, clear, edge); // right
 }
 
-// THE HUD IS ELDEN RING'S, and only in ER's places: vitals bars top-left, the armament grid bottom-left, the debug readout top-right (where ER keeps its compass).
 pub fn hud(g: *Game, dt: f32) void {
-    // NO HUD INSIDE A REST.
     if (g.rest.active()) return;
-    // ER hides the HUD behind its menus and under the death card, and both want the corners clear — a chip trail hanging across an empty HP bar under YOU DIED reads as a fault.
     if (!g.menu.isOpen() and !g.hero.dead) {
-        // All three bars are LIVE now.
         hud_.vitals(dt, g.hero.vit.hpFrac(), g.hero.fp.frac(), g.hero.stam.frac(), g.hero.stamRefused / combat.STAM_REFUSE_FLASH, g.hero.stam.windedTo());
-        // The one-line translation combat.FlaskKind → hud.FlaskTint: hud takes plain values and knows nothing about the combat layer, so the mapping belongs on this side of the fence.
-        hud_.equipment(switch (g.hero.flasks.sel) {
-            .crimson => hud_.FlaskTint.crimson,
-            .cerulean => hud_.FlaskTint.cerulean,
-        }, g.hero.flasks.ready());
+        // …and the same for the two HANDS: hud draws what is in them, and the bow emptying the left one is
+        // this side's fact to state (hero.canGuard), not a rule the HUD gets to know about.
+        const bowUp = g.hero.bowOut();
+        hud_.equipment(
+            if (bowUp) .empty else .shield,
+            if (bowUp) .bow else .sword,
+            switch (g.hero.flasks.sel) {
+                .crimson => hud_.FlaskTint.crimson,
+                .cerulean => hud_.FlaskTint.cerulean,
+            },
+            g.hero.flasks.ready(),
+            if (bowUp) g.hero.quiver.ready() else null,
+        );
+        hud_.reticle(g.hero.aimB);
         hud_.runes(g.hero.runes.display()); // the ROLLING value, not the banked total
-        // …and the INTERACT prompt, when there is something to interact with.
         if (g.rest.near != null) hud_.prompt("E / A  Rest") else if (g.chests.near != null) hud_.prompt("E / A  Open");
     }
     if (g.menu.stats) debugCorner(g);
 }
 
-// The debug readout, top-right, toggled by menu > Debug > Stats.
 const DBG_ROW = 200; // …the widest debug row, in bytes
 
 fn debugCorner(g: *Game) void {
@@ -793,6 +926,10 @@ fn debugCorner(g: *Game) void {
         "rolling"
     else if (g.hero.attacking)
         (if (g.hero.atkHeavy) "striking" else "slashing")
+    else if (g.hero.shooting)
+        (if (g.hero.shotAimed) "loosing" else "snapshot")
+    else if (g.hero.aiming)
+        "aiming"
     else
         gaitLabel(g.hero.moving, g.hero.speed);
     dbgRow(std.fmt.bufPrintZ(&buf, "{s}   {d:.1} m/s", .{ label, g.hero.speed }) catch "", y, hud_.BODY, rgba(150, 156, 164, 255));
@@ -813,7 +950,6 @@ fn debugCorner(g: *Game) void {
     }) catch "", y, hud_.SMALL, rgba(170, 190, 150, 255));
     y += step;
 
-    // Foe counts span EVERY group (the combat beats already do) — a toads-only "hits" read silently ignored every blow landed on a skeleton or the giant.
     const h = &g.hero;
     const foesLeft = allAlive(g);
     const foeHits = allHits(g);
@@ -823,13 +959,11 @@ fn debugCorner(g: *Game) void {
     }) catch "", y, hud_.SMALL, rgba(150, 180, 190, 255));
     y += step;
 
-    // World + culling line: how much of the world EXISTS vs how much of it this frame drew.
     dbgRow(std.fmt.bufPrintZ(&buf, "world  props {d}  solids {d}  fires {d}   drawn {d} in {d} cells (both passes)", .{
         g.env.propCount(), g.env.solidCount(), g.env.lightCount(), g.env.stat_draws, g.env.stat_cells,
     }) catch "", y, hud_.SMALL, rgba(150, 175, 195, 255));
     y += step;
 
-    // screen.
     dbgRow(std.fmt.bufPrintZ(&buf, "look  {s}   mouse {d:.1},{d:.1}   stick {d:.3},{d:.3}   mag {d:.3}   dyaw {d:.2}", .{
         if (g.probe.pad) "PAD" else "MOUSE",
         g.probe.mdx,
@@ -841,12 +975,10 @@ fn debugCorner(g: *Game) void {
     }) catch "", y, hud_.SMALL, rgba(196, 170, 130, 255));
 }
 
-// One right-aligned debug row, inset by the HUD's own margin so the corner lines up with the bars opposite it.
 fn dbgRow(s: [:0]const u8, y: i32, size: i32, col: rl.Color) void {
     hud_.textRight(s, hud_.MARGIN, y, size, col);
 }
 
-/// WHICH GAIT A GROUND SPEED IS, in one place.
 const GAIT_SLACK: f32 = 0.3;
 const Gait = enum { walk, run, sprint };
 fn gaitOf(speed: f32) Gait {
@@ -916,6 +1048,7 @@ pub fn run(mode: Mode) void {
     var wasSwings: u32 = 0;
     var wasDead = false;
     var wasRefused: f32 = 0; // …and the refusal flash, whose rising edge IS the ignored input
+    var wasAiming = false; // …and the bow coming up, which is a creak of limbs and happens once
     var wasStun: combat.StunKind = .none;
     // Footfalls key off the stride phase, not a timer: `hero.phase` is driven by DISTANCE travelled, so a step lands exactly when a foot does at any speed, and slowing down lengthens the gap between them for free.
     var lastPhase: f32 = 0.75;
@@ -1052,7 +1185,7 @@ pub fn run(mode: Mode) void {
         // Camera look.
         const inside = rl.isWindowFocused() and rl.isCursorOnScreen();
         const md = rl.getMouseDelta();
-        var wheel = rl.getMouseWheelMove();
+        const wheel = rl.getMouseWheelMove(); // …the ONLY zoom input now the pad's D-pad is armaments
         const padRX: f32 = if (rl.isGamepadAvailable(PAD)) rl.getGamepadAxisMovement(PAD, .right_x) else @as(f32, 0);
         // Both look axes are read HERE, before the lock branch, because the PROBE is written for both paths below.
         const padRY: f32 = if (rl.isGamepadAvailable(PAD)) rl.getGamepadAxisMovement(PAD, .right_y) else @as(f32, 0);
@@ -1107,12 +1240,16 @@ pub fn run(mode: Mode) void {
             .pad = lookPad,
         };
         wasInside = inside;
-        // PAD ZOOM MOVED TO D-PAD LEFT/RIGHT.
-        if (rl.isGamepadAvailable(PAD)) {
-            if (rl.isGamepadButtonPressed(PAD, .left_face_right)) wheel += 1; // D-pad right = zoom in
-            if (rl.isGamepadButtonPressed(PAD, .left_face_left)) wheel -= 1; // D-pad left = zoom out
-        }
+        // ZOOM IS THE WHEEL'S, AND THE PAD HAS NONE — which is ER, whose D-pad is four armament and item
+        // cycles and nothing else. It sat on D-pad Left/Right here, and D-pad RIGHT is the right-hand
+        // slot: the one button the second armament had to have (owner's call).
         if (wheel != 0) g.rig.zoom(wheel);
+
+        // D-PAD RIGHT / Q: cycle the right-hand armament. The bow takes the shield with it — see
+        // hero.canGuard, which asks the arm rather than having the swap clear a flag.
+        var swapReq = rl.isKeyPressed(.q);
+        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .left_face_right)) swapReq = true;
+        if (swapReq and g.hero.swapArm()) sfx.play(.flask_cycle); // the same D-pad click the flask gets
 
         var drinkReq = rl.isKeyPressed(.r);
         var cycleReq = rl.isKeyPressed(.t);
@@ -1145,16 +1282,30 @@ pub fn run(mode: Mode) void {
         var guardHeld = rl.isMouseButtonDown(.right);
         if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, .left_trigger_1)) guardHeld = true;
 
-        // Sword attacks (ER layout): R1/RB or LMB = light, R2/RT or Shift+LMB = heavy.
-        var lightReq = false;
-        var heavyReq = false;
+        // AIM: hold L2, or the RIGHT MOUSE BUTTON — which is the guard's own button, free to take this on
+        // because the bow has already taken the shield away. One button, and which hand it belongs to is
+        // decided by what is in the other one.
+        var aimHeld = rl.isMouseButtonDown(.right);
+        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, .left_trigger_2)) aimHeld = true;
+
+        // R1/RB or LMB, and R2/RT or Shift+LMB. WHICH ACTION THOSE ARE IS THE ARM'S ANSWER: with the sword
+        // they are the light and heavy cuts, with the bow the quick shot and the aimed loose. Read once
+        // here as the two BUTTONS and routed below, so neither weapon can end up with a press the other
+        // one swallowed.
+        var r1 = false;
+        var r2 = false;
         if (rl.isMouseButtonPressed(.left)) {
-            if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift)) heavyReq = true else lightReq = true;
+            if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift)) r2 = true else r1 = true;
         }
         if (rl.isGamepadAvailable(PAD)) {
-            if (rl.isGamepadButtonPressed(PAD, .right_trigger_1)) lightReq = true;
-            if (rl.isGamepadButtonPressed(PAD, .right_trigger_2)) heavyReq = true;
+            if (rl.isGamepadButtonPressed(PAD, .right_trigger_1)) r1 = true;
+            if (rl.isGamepadButtonPressed(PAD, .right_trigger_2)) r2 = true;
         }
+        const bow = g.hero.bowOut();
+        const lightReq = r1 and !bow;
+        const heavyReq = r2 and !bow;
+        const quickReq = r1 and bow; // …at whatever is LOCKED, else straight down his facing
+        const aimedReq = r2 and bow; // …and this one only fires out of a held aim (hero.requestShot)
 
         // STAMINA GATES THE SPRINT AT THE SOURCE.
         var mv = gatherMove();
@@ -1175,6 +1326,10 @@ pub fn run(mode: Mode) void {
                 g.hero.requestAttack(.heavy);
             } else if (lightReq) {
                 g.hero.requestAttack(.light);
+            } else if (aimedReq) {
+                g.hero.requestShot(true);
+            } else if (quickReq) {
+                g.hero.requestShot(false);
             }
             g.hero.steerQueuedRoll(rollDir(g, mv));
             // The draught is NOT buffered — it is the one action you should never find yourself committed to because of a press you made a second ago in a panic.
@@ -1185,19 +1340,30 @@ pub fn run(mode: Mode) void {
             !g.hero.rolling and !g.hero.attacking and !g.hero.dead and !g.hero.staggered();
         // …and the shield, AFTER the sprint (there is no running block — see hero.setGuard).
         g.hero.setGuard(guardHeld);
+        // …and the AIM beside it, for the same reason and on the same contract: held, re-derived, and
+        // settled after the sprint because there is no running full draw either.
+        g.hero.setAim(aimHeld);
         // BEHIND THE SHIELD HE SHUFFLES.
         if (g.hero.guarding) mv.speed = @min(mv.speed, WALK_SPEED * heromod.GUARD_SPEED);
+        // …AND BEHIND A RAISED BOW HE BARELY MOVES AT ALL. Denied at the SOURCE like the sprint and the
+        // guard, so the one `Move` everything downstream reads already knows about it.
+        if (g.hero.aiming) mv.speed = @min(mv.speed, WALK_SPEED * heromod.BOW_AIM_SPEED);
 
         // While locked the hero faces the foe (so it strafes/backpedals around it), ER-style.
         const lockYaw: ?f32 = if (g.lock) |li| blk: {
             const d = mathx.dirXZ(g.hero.pos, foePos(g, li));
             break :blk if (mathx.lenXZ(d) > 0.001) mathx.headingXZ(d) else null;
         } else null;
+        // AIMING SQUARES HIM ONTO THE CAMERA and outranks the lock, because that is what aiming IS: the
+        // stick is doing the pointing, and a hero who kept facing a locked foe while you lined up on
+        // something behind it would be shooting where he was looking a moment ago. With no aim up, the
+        // lock decides as before.
+        const faceYaw: ?f32 = if (g.hero.aiming) g.rig.yaw else lockYaw;
         // The slope under him, eased into the rig BEFORE it poses — every branch below ends in a `pose()`, so this has to be settled first or the lean is always one frame stale.
         leanToGround(g, dt);
         // WHERE EVERY FOE STOOD BEFORE IT ACTED — one row per group, walked off FOE_GROUPS like every other per-group pass here. Four buffers named by hand and eight calls kept in lockstep is exactly the shape FOE_GROUPS exists to kill, and this one's failure mode is the silent one: a group whose snapshot nobody took is a group the slope limit never gates, so it walks up cliffs.
-        // Every row is sized to the WIDEST group (the warband carries three kinds in one array); `snapshotPos` and `gateTerrain` both stop at the buffer's own length.
-        var wasPos: [FOE_GROUPS.len][koboldmod.CAP]rl.Vector3 = undefined;
+        // Every row is sized to the WIDEST group, taken off the groups themselves (`FOE_CAP`) rather than named by hand; `snapshotPos` and `gateTerrain` both stop at the buffer's own length.
+        var wasPos: [FOE_GROUPS.len][FOE_CAP]rl.Vector3 = undefined;
         inline for (FOE_GROUPS, 0..) |f, gi| snapshotPos(@field(g, f.field).live(), &wasPos[gi]);
         if (g.hero.dead) {
             g.hero.updateDeath(dt); // collapse → respawn
@@ -1211,10 +1377,17 @@ pub fn run(mode: Mode) void {
             g.hero.updateDrink(dt); // committed, and planted — the flask's whole cost
         } else if (g.hero.attacking) {
             // Committed — a short step into the cut; while LOCKED the recovery tail re-squares onto the target (a whiffed swing recovers turning fast).
-            g.hero.updateAttack(dt, PLAY_HALF, lockYaw);
+            g.hero.updateAttack(dt, PLAY_HALF, faceYaw);
+        } else if (g.hero.shooting) {
+            // Committed and PLANTED — the shot squares him onto the aim line for the whole of it. (`faceYaw
+            // orelse lockYaw` stood here and could only ever yield `lockYaw` twice: faceYaw IS lockYaw
+            // whenever he is not aiming.)
+            g.hero.updateShot(dt, faceYaw);
         } else {
-            moveHero(g, dt, mv, lockYaw);
+            moveHero(g, dt, mv, faceYaw);
         }
+        // THE SHAFT LEAVES on the one frame the loose says so.
+        if (g.hero.loosed) looseShaft(g);
         // Knot hunts, skeletons kite + loose; the hero's swept blade damages/staggers both sides, and a connecting chomp/lunge/arrow returns its blow to the hero.
         const hitsBefore = allHits(g);
         // ONE snapshot of the blade for every group this frame — the hero's pose is already resolved above, so re-deriving it per group only invited the three to disagree.
@@ -1251,7 +1424,9 @@ pub fn run(mode: Mode) void {
             if (ar.hit) {
                 // It found the hero.
                 const blow = foemod.Blow{
-                    .hit = if (ar.stone) koboldmod.STONE_HIT else archermod.ARROW_HIT,
+                    // WHAT IT DEALS RODE IN ON IT (`Arrow.blow`, set at the launch), rather than being
+                    // re-derived from `stone` here — one projectile, one answer, decided where it was fired.
+                    .hit = ar.blow,
                     .from = mathx.addV(g.hero.pos, mathx.scaleV(ar.vel, -1)),
                 };
                 // The BEAT is skipped on a corpse.
@@ -1269,6 +1444,11 @@ pub fn run(mode: Mode) void {
             g.rig.addShake(if (g.hero.atkHeavy) SHAKE_HIT_HEAVY else SHAKE_HIT_LIGHT);
             sfx.play(if (g.hero.atkHeavy) .hit_heavy else .hit_light);
         }
+        // HIS OWN SHAFTS FLY AFTER THAT BEAT, deliberately: they land by climbing the same `hits` counters
+        // the sword does, so swept in before the test above every arrow would have played the SWORD's hit
+        // sound at the weight of whichever cut he happened to throw last. It carries its own beat instead
+        // (see stepShafts), and a shaft that KILLS is still picked up by `anyFoeDied` just below.
+        stepShafts(g, dt);
         if (anyFoeDied(g)) {
             g.rumble.play(rumblemod.kill);
             g.rig.addShake(SHAKE_KILL);
@@ -1288,6 +1468,9 @@ pub fn run(mode: Mode) void {
             for (@field(g, f.field).live()) |*a| groundActor(g, &a.pos, dt);
         }
         g.rig.tickShake(rawDt); // impact shake decays on wall-clock time (bakes this frame's jitter)
+        // THE AIM PULLS THE EYE IN PAST HIM, off the hero's own stance blend — a VISUAL read of a visual, and
+        // set before the follow so the boom this frame is already the aim's (see camera.boom).
+        g.rig.aimB = g.hero.aimB;
         // …and the boom shortens rather than burying the eye in the hillside behind him (see camera.followClear).
         g.rig.followClear(g.hero.shoulderPoint(), &g.env, envGroundAt);
         // THE EARS RIDE THE CAMERA, not the hero — the pan has to agree with what is on screen, and the camera is the eye.
@@ -1308,6 +1491,11 @@ pub fn run(mode: Mode) void {
             sfx.play(if (g.hero.atkHeavy) .swing_heavy else .swing_light);
             wasSwings = g.hero.swings;
         }
+        // …and the BOW COMING UP is heard once, on the edge — the creak of loading limbs, the same tell a
+        // skeleton gives before it shoots at you. (The string GOING is voiced by `looseShaft`, where the
+        // shaft actually leaves.)
+        if (g.hero.aiming and !wasAiming) sfx.play(.bow_draw);
+        wasAiming = g.hero.aiming;
         // A REFUSED action is heard as well as seen.
         if (g.hero.stamRefused > wasRefused) sfx.play(.refused);
         wasRefused = g.hero.stamRefused;
@@ -1466,49 +1654,43 @@ fn collideActors(g: *Game, dt: f32) void {
     }
     g.hero.pos = mathx.approachV(g.hero.pos, inBounds(hp), step);
 
-    for (g.warren.live(), 0..) |*f, i| {
-        if (!f.alive() or f.airborne()) continue;
-        var fp = g.env.resolveActor(f.pos, f.bodyR());
-        fp = collision.pushOutCircle(fp, f.bodyR(), g.hero.pos, HERO_R);
-        for (g.warren.live(), 0..) |*o, j| {
-            if (i == j or !o.alive() or o.airborne()) continue;
-            fp = collision.pushOutCircle(fp, f.bodyR(), o.pos, o.bodyR());
-        }
-        f.pos = mathx.approachV(f.pos, inBounds(fp), step);
-    }
-
-    // Archers yield last: each pushed out of world, hero, every grounded toad, and fellow archers (same easing so a kite step into a wall slides, not warps).
-    for (g.line.live(), 0..) |*a, i| {
-        if (!a.alive()) continue;
-        var ap = g.env.resolveActor(a.pos, a.bodyR());
-        ap = collision.pushOutCircle(ap, a.bodyR(), g.hero.pos, HERO_R);
-        for (g.warren.live()) |*f| {
-            if (f.alive() and !f.airborne()) ap = collision.pushOutCircle(ap, a.bodyR(), f.pos, f.bodyR());
-        }
-        for (g.line.live(), 0..) |*o, j| {
-            if (i == j or !o.alive()) continue;
-            ap = collision.pushOutCircle(ap, a.bodyR(), o.pos, o.bodyR());
-        }
-        a.pos = mathx.approachV(a.pos, inBounds(ap), step);
-    }
-
-    // The ogre yields to the WORLD (walls/columns) only, never to the tiny hero (who yields above), so it reads as immovable bulk.
-    for (g.grief.live()) |*o| {
-        if (!o.alive()) continue;
-        const op = g.env.resolveActor(o.pos, o.bodyR());
-        o.pos = mathx.approachV(o.pos, inBounds(op), step);
-    }
-
+    // Each group settles through the SAME body, differing only in the two things that genuinely
+    // differ — see settleGroup. Four hand-written loops here shared every line but those two, which
+    // is how the airborne rule the block above states came to be honoured by one of them.
+    settleGroup(g, g.warren.live(), .{}, step, true);
+    // The archers owe one CROSS-GROUP pass (they yield to the toads); nothing else does, which is an
+    // asymmetry rather than a rule — a kobold and a toad still share a square metre quite happily.
+    settleGroup(g, g.line.live(), .{g.warren.live()}, step, true);
+    // The ogre yields to the WORLD (walls/columns) and to other ogres, never to the tiny hero (who
+    // yields above), so it reads as immovable bulk.
+    settleGroup(g, g.grief.live(), .{}, step, false);
     // THE WARBAND yields to everything, itself included — a pack that walked through each other would stack three kobolds on one spot, and a knot of them is the whole point of the encounter.
-    for (g.band.live(), 0..) |*k, i| {
-        if (!k.alive()) continue;
-        var kp = g.env.resolveActor(k.pos, k.bodyR());
-        kp = collision.pushOutCircle(kp, k.bodyR(), g.hero.pos, HERO_R);
-        for (g.band.live(), 0..) |*o, j| {
-            if (i == j or !o.alive()) continue;
-            kp = collision.pushOutCircle(kp, k.bodyR(), o.pos, o.bodyR());
+    settleGroup(g, g.band.live(), .{}, step, true);
+}
+
+/// PUSH ONE GROUP OUT OF THE WORLD, THE HERO AND EACH OTHER, then ease every member there at the
+/// depenetration rate (so a kite step into a wall slides rather than warps). Two things vary per
+/// group and both are arguments: `toHero` is false for the ogre alone, and `others` is the extra
+/// cross-group pass only the archers owe.
+/// AIRBORNE IS EXEMPT ON BOTH SIDES OF EVERY TEST — a toad's lunge, an archer's backstep and a
+/// berserker's dash are committed leaps and pass over anything, which is the rule `gateTerrain`
+/// applies for the same reason.
+fn settleGroup(g: *Game, foes: anytype, others: anytype, step: f32, toHero: bool) void {
+    for (foes, 0..) |*a, i| {
+        if (!a.alive() or a.airborne()) continue;
+        const r = a.bodyR();
+        var p = g.env.resolveActor(a.pos, r);
+        if (toHero) p = collision.pushOutCircle(p, r, g.hero.pos, HERO_R);
+        for (foes, 0..) |*o, j| {
+            if (i == j or !o.alive() or o.airborne()) continue;
+            p = collision.pushOutCircle(p, r, o.pos, o.bodyR());
         }
-        k.pos = mathx.approachV(k.pos, inBounds(kp), step);
+        inline for (others) |grp| {
+            for (grp) |*o| {
+                if (o.alive() and !o.airborne()) p = collision.pushOutCircle(p, r, o.pos, o.bodyR());
+            }
+        }
+        a.pos = mathx.approachV(a.pos, inBounds(p), step);
     }
 }
 
@@ -1628,7 +1810,7 @@ fn considerCycle(g: *Game, foes: anytype, kind: ?FoeKind, cur: FoeRef, curX: f32
 // The world-reload half of a hero death (ER: dying resets the field).
 fn resetFoes(g: *Game) void {
     rehomeFoes(g);
-    g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
+    clearQuivers(g);
     g.lock = null;
 }
 

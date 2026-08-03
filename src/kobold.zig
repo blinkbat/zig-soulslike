@@ -294,6 +294,8 @@ pub const Act = union(enum) {
 pub const Kobold = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
+    /// ITS TETHER to `home`, and how hard the player has provoked it (see foe.Leash).
+    leash: foe.Leash = .{},
     facing: f32 = 0,
     scale: f32 = 1.0,
     seed: f32 = 0,
@@ -387,9 +389,13 @@ pub const Kobold = struct {
     pub fn staggered(self: *const Kobold) bool {
         return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
     }
-    /// OFF THE GROUND only during the berserker's dash.
+    /// OFF THE GROUND only during the berserker's dash — and only for the FLIGHT of it, measured off
+    /// the same `hop` the pelvis rides and against the shared threshold the toad and the archer use.
+    /// Against the STATE alone this was true for the whole 0.66 s, gather and landing absorb included
+    /// — 0.36 s of it spent visibly planted, exempt from the slope gate and from being pushed out of
+    /// the world (`foe.AIRBORNE_LIFT` exists precisely so this is one answer and not three).
     pub fn airborne(self: *const Kobold) bool {
-        return self.state == .dash;
+        return self.state == .dash and self.hop > foe.AIRBORNE_LIFT;
     }
     pub fn bodyR(self: *const Kobold) f32 {
         return spec(self.role).bodyR * self.scale;
@@ -454,6 +460,7 @@ pub const Kobold = struct {
     /// Mark this window spent (the caller landed it) — the latch that stops one swing hitting twice.
     pub fn markDealt(self: *Kobold) void {
         self.dealt = true;
+        self.leash.noteCombat(); // a blow landed is a fight in progress — the tether waits
     }
 
     // Returns what the BAND must do about this frame (a stone loosed, a heal completed).
@@ -468,6 +475,8 @@ pub const Kobold = struct {
         self.t += dt;
         self.vit.tick(dt);
         self.flash = mathx.maxF(0, self.flash - dt);
+        // THE TETHER: drawn a long way from where it was posted and left alone, it walks back (foe.Leash).
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home));
         self.castCd = mathx.maxF(0, self.castCd - dt);
         self.slingCd = mathx.maxF(0, self.slingCd - dt);
         self.biteCd = mathx.maxF(0, self.biteCd - dt);
@@ -480,7 +489,8 @@ pub const Kobold = struct {
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
         foe.tickParticles(&self.parts, dt, self.pos.y);
 
-        const d = mathx.distXZ(self.pos, hero);
+        // …SENSED through the leash (foe.sensedDist): walking home it reads him as gone, roused it reads him as here.
+        const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
         switch (self.state) {
             .idle => {
                 self.faceToward(hero, dt);
@@ -729,10 +739,21 @@ pub const Kobold = struct {
         foe.drawParticles(&self.parts);
     }
 
-    fn tryHit(self: *Kobold, blade: foe.Blade) void {
+    /// THE DAMAGE ENTRY, public because a loosed shaft comes through it too (`foe.pierceGroup`) — an
+    /// arrow has to bleed, flinch and kill exactly the way the sword does, and this is where that lives.
+    pub fn tryHit(self: *Kobold, blade: foe.Blade) void {
         if (self.state == .dead) return;
         const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
         self.hits += 1;
+        // ANY BLOW IS A FIGHT IN PROGRESS, so the tether waits (foe.Leash) — and one of the PLAYER'S
+        // PROJECTILES also rouses it: it turns to face back down the shaft and comes for him from wherever
+        // it was standing, whatever its own aggro range says. Keep shooting a foe that is walking home and
+        // it stops trying to leave at all.
+        self.leash.noteCombat();
+        if (blade.pierce) {
+            self.leash.provoke();
+            self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1)); // …look back the way it came
+        }
         self.flash = FLASH_DUR;
         const heavyBlow = blade.hit.stance > 0;
         self.shove = mathx.scaleV(s.dir, if (heavyBlow) 2.1 else 1.35);
@@ -1709,6 +1730,10 @@ pub const Warband = struct {
     }
 
     // The shared Group roll-ups (foe.zig).
+    /// ONE OF THE HERO'S SHAFTS through the group — the first member it reaches takes it.
+    pub fn pierce(self: *Warband, blade: foe.Blade) bool {
+        return foe.pierceGroup(self.live(), blade);
+    }
     pub fn anyDied(self: *const Warband) bool {
         return foe.anyDied(self.liveConst());
     }

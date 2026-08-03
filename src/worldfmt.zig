@@ -12,8 +12,12 @@ pub const VERSION: u32 = 1;
 /// Playable half-extent when a map doesn't say otherwise; the world spans 2x this per axis.
 pub const DEFAULT_HALF: f32 = 280.0;
 
-/// Sanity bound on a `half:` record, and a POSITIVE one.
-pub const MAX_DECLARED_HALF: f32 = 4096.0;
+/// Sanity bound on a `half:` record, and a POSITIVE one. It is THE UNIFORM GRID'S CEILING, not a
+/// round number: past `env.MAX_HALF` every prop, collider and cull cell beyond the grid's last row
+/// is CLAMPED into it (`env.cellCoord`), so a bigger world loads without complaint and then answers
+/// collision and culling queries for the wrong region. A comptime assert in `env.zig` pins the two
+/// together, so shrinking the grid is a compile error rather than a silently wrong map.
+pub const MAX_DECLARED_HALF: f32 = 312.0;
 
 pub const MAX_OPS: usize = 2048;
 pub const MAX_MIX: usize = 24; // a scatter's weighted kind mix (weight = repetition)
@@ -243,8 +247,13 @@ pub const Soil = enum(u8) {
 comptime {
     // The shader's soilColor() hard-codes ids 1..6 and falls through to moss.
     std.debug.assert(Soil.N == 7);
-    // …and its `soilHard` hard-codes the id below, for the same reason and with the same trap: a reordered enum would give the crisp edge to whichever material inherited the number.
-    std.debug.assert(@intFromEnum(Soil.stone) == 3);
+    // …and its `soilHard` hard-codes ONE id, with the same trap: a reordered enum would give the crisp
+    // edge to whichever material inherited the number. Pinned to `hardEdge`'s answer for EVERY
+    // material rather than to stone's ordinal, because the two used to state "stone is the crisp one"
+    // INDEPENDENTLY — `hardEdge` had no caller at all, so a second hard material added to it would
+    // have left the shader blending that one, silently and visible only as a soft margin.
+    const SHADER_HARD_ID = 3; // `shaders.zig`: soilHard(id) is `id == 3`
+    for (0..Soil.N) |i| std.debug.assert(Soil.hardEdge(@enumFromInt(i)) == (i == SHADER_HARD_ID));
 }
 
 /// FULL COVERAGE — what an unpainted-with-opacity cell holds, and the value the whole grid defaults to. 255 rather than 0 on purpose: every map authored before coverage existed has no `soilcov` record, so it loads as "every cell fully covered" and renders exactly as it always did.
@@ -506,6 +515,10 @@ pub const Map = struct {
             var cx: usize = 0;
             while (cx < SOIL_N) : (cx += 1) {
                 const wx = -self.half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
+                // The COLUMN reject the row above already had: a stroke runs every frame the mouse
+                // moves, and without it every cell of every in-range row paid the full distance, the
+                // incumbent-material contest and a `covByte` round-trip to be told it was 100 m away.
+                if (@abs(wx - px) > radius + cell) continue;
                 const dx = wx - px;
                 const dz = wz - pz;
                 const d2 = dx * dx + dz * dz;
@@ -550,6 +563,7 @@ pub const Map = struct {
             var cx: usize = 0;
             while (cx < WATER_N) : (cx += 1) {
                 const wx = -self.half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
+                if (@abs(wx - px) > radius + cell) continue; // …and the column reject, as in paintSoil
                 const dx = wx - px;
                 const dz = wz - pz;
                 if (dx * dx + dz * dz > r2) continue;
@@ -1511,8 +1525,14 @@ test "a value that only LOOKS parseable is a load error too" {
     // An absurd or non-positive `half` is a hang / an inverted world, not a big map.
     try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 0\n" ++ cover[11..], &m, &ln));
     try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 99999\n" ++ cover[11..], &m, &ln));
+    // …and the ceiling is the PROP GRID's, not a round number: one metre past it every prop and
+    // collider out there is clamped into the rim cells and collision answers for the wrong region.
+    try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 313\n" ++ cover[11..], &m, &ln));
+    try parse("version: 1\nhalf: 312\n" ++ cover[11..], &m, &ln); // …and the last legal one loads
+    try std.testing.expectApproxEqAbs(MAX_DECLARED_HALF, m.half, 1e-4);
     try parse("version: 1\nhalf: 280\n" ++ cover[11..], &m, &ln);
     try std.testing.expectApproxEqAbs(DEFAULT_HALF, m.half, 1e-4);
+    try std.testing.expect(DEFAULT_HALF <= MAX_DECLARED_HALF); // the shipped world fits its own ceiling
     // A FOE'S SEED IS A 0..1 DIAL, and out of that band it is not an odd-looking foe: every rig turns it into an RNG stream with `@intFromFloat(@abs(seed) * ~1e5)` into a u64, which past ~1e14 is an out-of-range cast — illegal behaviour, not a big number.
     try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "foe: toad 0 0 0 1 1e20\n", &m, &ln));
     try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "foe: toad 0 0 0 1 -0.5\n", &m, &ln));

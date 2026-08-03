@@ -362,6 +362,7 @@ pub const Scene = struct {
     loc_windAmt: i32,
     loc_time: i32,
     loc_flash: i32,
+    loc_fade: i32,
     loc_dim: i32,
     loc_lightPos: i32,
     loc_lightCol: i32,
@@ -406,6 +407,9 @@ pub const Scene = struct {
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "windAmt"), &windOff, .float);
         var flashOff: f32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "hitFlash"), &flashOff, .float);
+        // SOLID until something asks otherwise — a uniform left at 0 would make the whole world invisible.
+        var fadeOff: f32 = 1;
+        rl.setShaderValue(shader, rl.getShaderLocation(shader, "fade"), &fadeOff, .float);
         var noLights: i32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "nLights"), &noLights, .int);
         var dimOff: f32 = 0;
@@ -433,6 +437,7 @@ pub const Scene = struct {
             .loc_windAmt = rl.getShaderLocation(shader, "windAmt"),
             .loc_time = rl.getShaderLocation(shader, "uTime"),
             .loc_flash = rl.getShaderLocation(shader, "hitFlash"),
+            .loc_fade = rl.getShaderLocation(shader, "fade"),
             .loc_dim = rl.getShaderLocation(shader, "dim"),
             .loc_lightPos = rl.getShaderLocation(shader, "lightPos"),
             .loc_lightCol = rl.getShaderLocation(shader, "lightCol"),
@@ -578,6 +583,17 @@ pub const Scene = struct {
     pub fn setFlash(self: *Scene, amt: f32) void {
         var a = mathx.clampF(amt, 0, 1);
         rl.setShaderValue(self.shader, self.loc_flash, &a, .float);
+    }
+
+    /// HOW SOLID WHATEVER DRAWS NEXT IS — 1 opaque, 0 gone. Per-draw like `setFlash`, and the SECOND thing
+    /// in the game allowed to be semi-transparent after the flame (owner's call): the hero fades out under
+    /// an aim, because at that boom length he is standing in front of the thing being aimed at.
+    /// **PUT IT BACK TO 1.** A fade left hot thins everything drawn after it, exactly as `setFlash` reddens.
+    /// Blending and the DEPTH MASK are the caller's (see game.drawCasters): a translucent draw that still
+    /// wrote depth would punch a hole in the flora behind it.
+    pub fn setFade(self: *Scene, amt: f32) void {
+        var a = mathx.clampF(amt, 0, 1);
+        rl.setShaderValue(self.shader, self.loc_fade, &a, .float);
     }
 
     /// THE DUSK DIAL, 0..1: pulls the sun key, the sky ambient and the haze down while leaving the POINT LIGHTS untouched, so a bonfire that was lost in the golden hour becomes the only thing lighting the camp.

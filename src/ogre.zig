@@ -309,6 +309,8 @@ pub const Model = struct {
 pub const Ogre = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
+    /// ITS TETHER to `home`, and how hard the player has provoked it (see foe.Leash).
+    leash: foe.Leash = .{},
     facing: f32 = 0,
     scale: f32 = SCALE,
     seed: f32 = 0,
@@ -320,7 +322,11 @@ pub const Ogre = struct {
     elapsed: f32 = 0,
     slammed: bool = false, // one crush per slam/swipe (the impact burst + hero hit are latched)
     swiped: bool = false, // the recovery being served belongs to a SWIPE (short) not a slam (long)
-    returning: bool = false, // .approach is trudging back HOME (disengaged), not chasing the hero
+    /// `.approach` is trudging back HOME rather than chasing. This is the MOVEMENT half of going home —
+    /// which state walks where — where `leash.returning` is the DECISION half. Both routes end up here:
+    /// the hero simply leaving sets it, and so does the leash, because a leashing ogre senses him as
+    /// infinitely far and `classify` therefore lands on `.idle` exactly as if he had walked off.
+    homing: bool = false,
 
     // posture channels (degrees) resolved each frame by the state, read by pose().
     clubShoulder: f32 = CARRY_SH,
@@ -440,6 +446,8 @@ pub const Ogre = struct {
         self.slamCd = mathx.maxF(0, self.slamCd - dt);
         self.swipeCd = mathx.maxF(0, self.swipeCd - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
+        // THE TETHER: drawn a long way from where it was posted and left alone, it walks back (foe.Leash).
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home));
         self.t += dt;
         self.updateFx(dt);
         var movedDist: f32 = 0;
@@ -448,7 +456,8 @@ pub const Ogre = struct {
         // Hit shove — a jolt off a landed blow (a giant barely budges, so it decays fast).
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
-        const d = mathx.distXZ(self.pos, hero);
+        // …SENSED through the leash (foe.sensedDist): walking home it reads him as gone, roused it reads him as here.
+        const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
         const bearing = self.bearingTo(hero);
         self.trackHead(hero, d, dt); // the eye leads the body — every state, not just the idle
         switch (self.state) {
@@ -459,7 +468,7 @@ pub const Ogre = struct {
             },
             .approach => {
                 // Chasing → face/move toward the HERO; disengaged (returning) → toward HOME.
-                const tgt = if (self.returning) self.home else hero;
+                const tgt = if (self.homing) self.home else hero;
                 self.faceToward(tgt, dt);
                 const f = self.fdir();
                 const moved = WALK_SPEED * dt;
@@ -467,10 +476,10 @@ pub const Ogre = struct {
                 movedDist = moved;
                 moveYaw = mathx.headingXZ(f); // travels along facing → forward gait
                 self.setCarry(dt);
-                if (self.returning) {
+                if (self.homing) {
                     // Re-aggro if the hero wanders back into range; else stop once home.
                     if (d <= AGGRO_R) {
-                        self.returning = false;
+                        self.homing = false;
                         self.decide(d, bearing);
                     } else if (mathx.distXZ(self.pos, self.home) <= 2.0) self.enterIdle();
                 } else if (d <= SWIPE_R or d > AGGRO_R) self.decide(d, bearing);
@@ -578,19 +587,19 @@ pub const Ogre = struct {
     fn enterIdle(self: *Ogre) void {
         self.state = .idle;
         self.t = 0;
-        self.returning = false;
+        self.homing = false;
     }
     fn enterStun(self: *Ogre, s: State) void {
         self.state = s; // the interrupt drops any in-progress slam (nothing lands)
         self.t = 0;
         self.slammed = false;
-        self.returning = false;
+        self.homing = false;
     }
     fn enterDeath(self: *Ogre) void {
         self.state = .dead;
         self.t = 0;
         self.justDied = true;
-        self.returning = false;
+        self.homing = false;
     }
 
     // The hero's bearing off his facing, in degrees (0 = dead ahead, ±180 = behind) — what decides whether he can simply drop the club on you or has to SWEEP round to reach you.
@@ -606,23 +615,34 @@ pub const Ogre = struct {
             .slam => self.enter(.windup),
             .swipe => self.enter(.swipewind),
             .approach => {
-                self.returning = false; // chasing the hero
+                self.homing = false; // chasing the hero
                 self.enter(.approach);
             },
             .wait => self.enterIdle(),
             .idle => {
                 if (mathx.distXZ(self.pos, self.home) > 3.0) {
-                    self.returning = true; // wandered — trudge back toward HOME (approach handles it)
+                    self.homing = true; // wandered — trudge back toward HOME (approach handles it)
                     self.enter(.approach);
                 } else self.enterIdle();
             },
         }
     }
 
-    fn tryHit(self: *Ogre, blade: foe.Blade) void {
+    /// THE DAMAGE ENTRY, public because a loosed shaft comes through it too (`foe.pierceGroup`) — an
+    /// arrow has to bleed, flinch and kill exactly the way the sword does, and this is where that lives.
+    pub fn tryHit(self: *Ogre, blade: foe.Blade) void {
         if (self.state == .dead) return;
         const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
         self.hits += 1;
+        // ANY BLOW IS A FIGHT IN PROGRESS, so the tether waits (foe.Leash) — and one of the PLAYER'S
+        // PROJECTILES also rouses it: it turns to face back down the shaft and comes for him from wherever
+        // it was standing, whatever its own aggro range says. Keep shooting a foe that is walking home and
+        // it stops trying to leave at all.
+        self.leash.noteCombat();
+        if (blade.pierce) {
+            self.leash.provoke();
+            self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1)); // …look back the way it came
+        }
         self.flash = FLASH_DUR;
         const heavyBlow = blade.hit.stance > 0;
         self.bloodBurst(s.contact, s.dir, if (heavyBlow) 16 else 10, if (heavyBlow) 2.8 else 2.0);
@@ -652,6 +672,7 @@ pub const Ogre = struct {
         if (lateral > SLAM_HALF_W * self.scale + HERO_REACH) return;
         self.heroHit = h;
         self.heroLatch = true;
+        self.leash.noteCombat(); // a blow landed is a fight in progress — the tether waits
     }
 
     // The SWIPE's hurt shape: a SECTOR — the band the club scythes through, centred on SWIPE_ARC_MID (his CLUB side, not his facing: the swing starts cocked behind his right shoulder and finishes past his left, so the swept bearings are offset — see that constant).
@@ -665,6 +686,7 @@ pub const Ogre = struct {
         if (@abs(mathx.wrapDeg(self.bearingTo(hero) - SWIPE_ARC_MID)) > SWIPE_ARC * 0.5 + slack) return;
         self.heroHit = h;
         self.heroLatch = true;
+        self.leash.noteCombat(); // a blow landed is a fight in progress — the tether waits
     }
 
     // Debug hooks for the --shot harness (force a pose in isolation).
@@ -1158,6 +1180,10 @@ pub const Grief = struct {
         for (self.liveConst()) |*o| o.drawFx();
     }
     // The shared Group roll-ups (foe.zig).
+    /// ONE OF THE HERO'S SHAFTS through the group — the first member it reaches takes it.
+    pub fn pierce(self: *Grief, blade: foe.Blade) bool {
+        return foe.pierceGroup(self.live(), blade);
+    }
     pub fn anyDied(self: *const Grief) bool {
         return foe.anyDied(self.liveConst());
     }

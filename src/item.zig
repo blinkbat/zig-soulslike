@@ -179,12 +179,16 @@ test "the bag counts, caps, and never wraps" {
 test "nth walks only the rows that have something in them" {
     var b = Bag{};
     b.add(.golden_seed, 1);
-    b.add(.iron_key, 1); // the LAST kind, so a broken walk would run off the end
+    // The LAST kind, so a broken walk runs off the end — by index, not by name: this said `iron_key`
+    // and stopped being the last one the moment `mushroom_jerky` was appended, so the case it exists
+    // to cover quietly stopped being covered.
+    const last: Kind = @enumFromInt(NK - 1);
+    b.add(last, 1);
     try std.testing.expectEqual(Kind.golden_seed, b.nth(0).?);
-    try std.testing.expectEqual(Kind.iron_key, b.nth(1).?);
+    try std.testing.expectEqual(last, b.nth(1).?);
     try std.testing.expect(b.nth(2) == null);
     // Emptying a row closes the gap rather than leaving a hole a cursor can land in.
     _ = b.take(.golden_seed, 1);
-    try std.testing.expectEqual(Kind.iron_key, b.nth(0).?);
+    try std.testing.expectEqual(last, b.nth(0).?);
     try std.testing.expectEqual(@as(usize, 1), b.distinct());
 }

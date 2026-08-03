@@ -168,6 +168,8 @@ pub const Frog = struct {
     // placement / heading
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
+    /// ITS TETHER to `home`, and how hard the player has provoked it (see foe.Leash).
+    leash: foe.Leash = .{},
     facing: f32 = 0,
     scale: f32 = 1.0, // per-toad size jitter
     seed: f32 = 0, // per-toad phase offset so a knot never moves in lockstep
@@ -315,6 +317,7 @@ pub const Frog = struct {
         if (mathx.distXZ(self.pos, hero) <= range + HERO_REACH) {
             self.heroHit = h;
             self.heroLatch = true;
+            self.leash.noteCombat(); // a blow landed is a fight in progress — the tether waits
         }
     }
     // The lunge SLAM: like tryBite, but FRONT-only — the hero must be inside the reach AND within the toad's frontal arc.
@@ -328,6 +331,7 @@ pub const Frog = struct {
         if (d > 0.35 and front < LUNGE_FRONT_DOT) return; // off to the side / behind the slam
         self.heroHit = h;
         self.heroLatch = true;
+        self.leash.noteCombat();
     }
 
     // Advance AI + animation for one frame; `hero` drives senses, `blade` the hero's swing.
@@ -344,6 +348,8 @@ pub const Frog = struct {
         self.chompCd = mathx.maxF(0, self.chompCd - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
         self.t += dt;
+        // THE TETHER: drawn a long way from its lily patch and left alone, it goes back (foe.Leash).
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home));
         self.updateFx(dt); // advance live particles (bursts from any state keep animating)
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt); // the knockback off a landed blow
 
@@ -388,7 +394,8 @@ pub const Frog = struct {
 
     // Decide what to do next (called when a hop/chomp/recovery finishes, and on the idle timer).
     fn decide(self: *Frog, hero: rl.Vector3, bounds: f32) void {
-        const d = mathx.distXZ(self.pos, hero);
+        // …through the leash, so a return reads as "he is miles away" and a provoked toad as "he is here".
+        const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
         switch (classify(d, self.lungeCd <= 0, self.chompCd <= 0)) {
             .chomp => {
                 self.chompCd = CHOMP_CD;
@@ -418,7 +425,7 @@ pub const Frog = struct {
     }
 
     fn updateIdle(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32) void {
-        const d = mathx.distXZ(self.pos, hero);
+        const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
         if (d <= AGGRO_R) self.faceToward(hero, dt); // lock eyes the moment it wakes
         self.resolveIdle();
         // React fast when the hero is in range; laze otherwise.
@@ -641,11 +648,22 @@ pub const Frog = struct {
         self.sac = mathx.lerpF(1.0, 0.85, k);
     }
 
-    fn tryHit(self: *Frog, blade: foe.Blade) void {
+    /// THE DAMAGE ENTRY, public because a loosed shaft comes through it too (`foe.pierceGroup`) — an
+    /// arrow has to bleed, flinch and kill exactly the way the sword does, and this is where that lives.
+    pub fn tryHit(self: *Frog, blade: foe.Blade) void {
         if (self.state == .dead) return; // no hitting a corpse
         // The SHARED strike behaviour (foe.zig): swept hurt-sphere test + one-hit latch + damage; returns the contact + sweep dir + reaction.
         const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
         self.hits += 1;
+        // ANY BLOW IS A FIGHT IN PROGRESS, so the tether waits (foe.Leash) — and one of the PLAYER'S
+        // PROJECTILES also rouses it: it turns to face back down the shaft and comes for him from wherever
+        // it was standing, whatever its own aggro range says. Keep shooting a foe that is walking home and
+        // it stops trying to leave at all.
+        self.leash.noteCombat();
+        if (blade.pierce) {
+            self.leash.provoke();
+            self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1)); // …look back the way it came
+        }
         self.flash = FLASH_DUR;
         const heavyBlow = blade.hit.stance > 0;
         // The blow READS at the wound: blood flung along the sweep, body knocked the same way.
@@ -887,6 +905,10 @@ pub const Knot = struct {
         for (self.liveConst()) |*f| f.drawFx();
     }
     // The shared Group roll-ups (foe.zig) — identical for every foe, so they live there.
+    /// ONE OF THE HERO'S SHAFTS through the group — the first member it reaches takes it.
+    pub fn pierce(self: *Knot, blade: foe.Blade) bool {
+        return foe.pierceGroup(self.live(), blade);
+    }
     pub fn anyDied(self: *const Knot) bool {
         return foe.anyDied(self.liveConst());
     }
@@ -1113,6 +1135,48 @@ test "lunge impact catches the front zone, not the sides or behind" {
     var far = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     far.tryImpact(v3(0, 0, 99), LUNGE_HIT); // out front but way out of reach
     try std.testing.expect(far.heroHit == null);
+}
+
+test "AN ARROW AGGROS IT FROM OUTSIDE ITS OWN SENSES, and it comes for him" {
+    // The whole chain, end to end and through the real entry point rather than the pieces: a PLAYER
+    // projectile lands (`foe.Blade.pierce` → `tryHit` → `Leash.provoke`), which rouses the toad, which
+    // clamps the range its AI reasons with (`foe.sensedDist`) so it stops behaving as if he were not there.
+    // Any projectile of his does this — an arrow today, a spell when there is one; the blade says `pierce`
+    // and nothing here asks what threw it.
+    var f = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    const hero = mathx.ground(0, AGGRO_R + 30); // FAR outside what it can see
+    // Left alone it does not care.
+    var k: u32 = 0;
+    while (k < 120) : (k += 1) _ = f.update(1.0 / 60.0, hero, 200, .{});
+    try std.testing.expect(!f.leash.roused());
+    try std.testing.expect(mathx.distXZ(f.pos, hero) > AGGRO_R);
+    // …and it reasons as if he were not there, because he is not.
+    try std.testing.expect(foe.sensedDist(&f.leash, mathx.distXZ(f.pos, hero), AGGRO_R) > AGGRO_R);
+
+    // ONE SHAFT, arriving from his direction.
+    const shaftAt = f.centerWorld();
+    const blade = foe.Blade{
+        .active = true,
+        .pierce = true,
+        .r = 0.4,
+        .a = mathx.addV(shaftAt, mathx.v3(0, 0, 2)), // …travelling toward −Z, i.e. from where he stands
+        .b = mathx.addV(shaftAt, mathx.v3(0, 0, -0.2)),
+        .a0 = mathx.addV(shaftAt, mathx.v3(0, 0, 2)),
+        .b0 = mathx.addV(shaftAt, mathx.v3(0, 0, -0.2)),
+        .hit = .{ .dmg = 5, .poise = 1 },
+    };
+    const before = f.hits;
+    f.tryHit(blade);
+    try std.testing.expect(f.hits > before); // …it landed
+    try std.testing.expect(f.leash.roused()); // …and that is enough, from any range
+    // …so its AI now reads him as within reach and closes, and the FACING snapped back down the shaft.
+    try std.testing.expect(foe.sensedDist(&f.leash, mathx.distXZ(f.pos, hero), AGGRO_R) <= AGGRO_R);
+    try std.testing.expect(@abs(mathx.wrapPi(f.facing - mathx.headingXZ(mathx.v3(0, 0, 1)))) < 0.2);
+    // …and it actually CLOSES the ground rather than merely being annoyed.
+    const startD = mathx.distXZ(f.pos, hero);
+    k = 0;
+    while (k < 240) : (k += 1) _ = f.update(1.0 / 60.0, hero, 200, .{});
+    try std.testing.expect(mathx.distXZ(f.pos, hero) < startD - 1.0);
 }
 
 test "a hop's flight parabola starts and ends on the ground and peaks at the apex" {

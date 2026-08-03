@@ -62,7 +62,9 @@ a full combat layer: HP + two-tier poise/stance stagger + death, both sides (`co
 **`docs/ELDEN_RING.md`** as the systems reference). **STAMINA IS FULLY LIVE, LOCKOUT INCLUDED** —
 an empty bar means no roll, no swing, no sprint (see STAMINA below). He carries a **SMALL ROUND
 SHIELD** in the left hand and **GUARDS** with it — Dark Souls' plain block, paid for in stamina,
-with a GUARD BREAK when the bar runs out under a blow (see GUARDING). No criticals, guard counter
+with a GUARD BREAK when the bar runs out under a blow (see GUARDING). His right hand also holds a
+**BOW** (D-pad Right swaps to it — quick shot on R1, hold L2 to aim and R2 to loose), and because the
+left hand goes to the string it takes the shield with it (see THE BOW). No criticals, guard counter
 or jump yet. The bar for "human" is anatomy + real gaits, not polygon count.
 
 **THE GROUND HAS ELEVATION**, sculpted in the editor and walked with a real slope limit and a step
@@ -72,9 +74,11 @@ deliberately flat, and a flat map is byte-for-byte the world that existed before
 **THE HUD IS ELDEN RING'S**, in ER's three places and nowhere else: HP/FP/stamina bars top-left,
 the four-slot equipment CROSS bottom-left, the debug readout top-right (menu >
 Debug > Stats). It hides behind the menu and under the YOU DIED card. FP is a full static bar —
-there is nothing to spend it on until spells exist. The cross's LEFT slot holds the small shield
-and its RIGHT the sword; UP (sorcery) stays empty, because an empty ER slot is a real part of that
-HUD and inventing something to put in it would be a lie in the corner of every screenshot.
+there is nothing to spend it on until spells exist. The cross's two hand slots draw **WHAT IS IN HIS
+HANDS**, not what he owns: RIGHT is the sword or the bow, LEFT is the small shield or — behind a bow —
+EMPTY, which is exactly what the bow costs him. UP (sorcery) stays empty too, because an empty ER slot
+is a real part of that HUD and inventing something to put in it would be a lie in the corner of every
+screenshot. Four slots, and it stays four however many armaments exist.
 
 **A CHEST IS HOLLOW.** Its carcase was one solid cube, so throwing the lid back revealed a sealed
 timber top — you opened a box and found a block. Four walls and a floor now, with the outer faces
@@ -163,9 +167,13 @@ and the map's own `half:` is the only source), holding five regions
 | west | **the Old Wood** | great trees (3 variants), ferns/brambles/bushes, boulders, a **standing-stone circle**, a woodcutter's **cottage** + campfire |
 | south | **the Windswept Downs** | open and sparse — lone trees, field stones, graves, a watchtower |
 
-**81 prop kinds**, **17,107 instances, 1,744 colliders and 37 fires**, of which a frame draws **~633**
-across both passes (measured in the city; the wood is comparable). See **PERFORMANCE** — that ratio is
-why the world is affordable, and the debug Stats overlay prints it live so it stays checkable. The three
+**81 prop kinds**, **17,107 instances, 1,744 colliders and 37 fires**, of which a frame draws **732 in
+245 cells in the CITY and 1,282 in 305 in the WOOD**, both passes together — read off
+`91_stats_city.png` / `92_stats_wood.png`, which is the only honest way to state it. (This said "~633
+… the wood is comparable": the figure predates the last two world edits and the wood was never
+comparable — it is nearly twice the city, because a wood is canopy standing in front of canopy.)
+See **PERFORMANCE** — 7.5% of the world is
+why it is affordable, and the debug Stats overlay prints it live so it stays checkable. The three
 numbers are also PINNED by `env`'s "replaying the SHIPPED map produces a stable world" test, so a
 scatter that quietly gains or loses instances fails the build instead of drifting in a screenshot.
 **Move them here and in that test together**: the props rework left the test pinning 17,292/1,836/34
@@ -198,7 +206,8 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
 - Verify rendering/animation changes by RUNNING `zig-out\bin\zig-soulslike.exe --shot` (or
   `shot.cmd`) and INSPECTING the PNGs in `shots\`. `--shot` hides the window: it scripts a walk→
   run→sprint and a roll at several angles, the sword swings, the GUARD (`20a..20e` — the stance from
-  three bearings, a caught blow mid-recoil, and the shield's own back), then every foe's states —
+  three bearings, a caught blow mid-recoil, and the shield's own back), the BOW (`20f..20o` — see THE
+  BOW), then every foe's states —
   including the kobold POUNCE in three beats (`66d..66f`) and the BITE in profile (`69c`/`69d`), both
   of which shipped unjudged because neither had a shot — then the **WORLD TOUR**
   (`70..92`): one framing per region, the chapel/watchtower interiors under torchlight, the tarn,
@@ -272,7 +281,9 @@ meadow's (`gfx.terrainAlbedo`'s region drift).
                  capsule (rides the SWORD bone's dummy points, active only in the strike's window,
                  FAT on purpose for vertical forgiveness), the swing trail, and the GUARD — the
                  stance, the caught-blow recoil and the small round SHIELD (which is not a bone: it
-                 rides the left wrist through `shieldFit`). See GUARDING. The light slash is a
+                 rides the left wrist through `shieldFit`), and THE BOW — the second right-hand
+                 armament, in the same `HELD` slot, with the live string and nocked shaft borrowed
+                 whole from `archer.zig` (see THE BOW). See GUARDING. The light slash is a
                  REAL cut — the horizontal pair (sabre Cuts III/IV), LEVEL and OUTWARD for the
                  whole hit window (never a dirt-stab, never hilt-first). Start here.
 - `camera.zig` — over-the-shoulder orbit rig (yaw + clamped pitch, zoom, shoulder offset,
@@ -453,7 +464,11 @@ lines where the concerns genuinely part company, and each new file is named so t
                  LAUNCH NUDGE that fades out over `ARROW_HOME_FADE`, so a sidestep beats a shot.
                  Arrows are a pool owned by `game.zig` and they respect COVER (each flight-steps
                  against the solids in its own travel neighbourhood — `game.arrowCover` →
-                 `env.nearSolids` — thunking into stone while still arcing over low kerbs. NOT a
+                 `env.nearSolids` — thunking into stone while still arcing over low kerbs. That
+                 flight is sampled by the LENGTH of the step (`coverHit`, `COVER_STEP`) and not at two
+                 fixed points: two were honest at a skeleton's 15 m/s and stopped being honest at the
+                 hero's 40 m/s aimed shaft, which opens the gaps to 0.33 m at 60 fps and 0.67 m on a
+                 slow frame — a fence post fits in that. NOT a
                  whole-list `env.solids()`: that accessor was removed for having no caller, and every
                  real path goes through the prop grid on purpose).
 - `ogre.zig`   — THE ONE-EYED OGRE + the `Grief`. A giant (~2x hero), hunched, hefting a knotted
@@ -836,6 +851,35 @@ the gap or lose your footing. Deliberately the DS1 shape rather than ER's.
   DERIVED from the stance angles (it is their inverse), or the first retune swings the shield off
   its own arm.
 
+## LEASHING (`foe.zig`) — a foe's tether, and the provocation that cuts it
+
+A foe drawn a long way from where the map posted it walks back and loses interest until something rouses it
+again. One struct (`foe.Leash`) every creature embeds, because all four want the identical rule and four
+copies of a hysteresis is four chances to get one of them subtly wrong.
+
+- **START FAR, STOP NEAR.** It turns for home past `LEASH_R` (30 m) and stops only inside `LEASH_HOME_R`
+  (3 m). That gap IS the debounce: a foe hovering at the boundary cannot flap between chasing and returning
+  every other frame, which a single radius guarantees it would.
+- **AND ONLY AFTER `LEASH_CALM` (4.5 s) WITH NO BLOW GIVEN OR TAKEN.** A fight in progress is never
+  abandoned — every path that lands a hit or takes one calls `noteCombat`.
+- **ONE PLAYER PROJECTILE ROUSES IT FROM ANY RANGE.** A blade marked `pierce` (an arrow today, a spell when
+  there is one — nothing asks what threw it) calls `Leash.provoke`: the creature snaps its facing back down
+  the shaft and then HUNTS HIM DOWN, whatever its own `AGGRO_R` says. Shoot something across the plaza and
+  it comes.
+- **KEEP AT IT AND THE LEASH BREAKS** (`PROVOKE_BREAK`, held `PROVOKE_HOLD` = 14 s). THE ANTI-CHEESE: standing
+  at the end of a foe's tether, poking it, and watching it turn round and walk away is free damage at no
+  risk. A single hit deliberately does NOT cancel a return in progress — that is the other half of the
+  debounce, and it is what stops one arrow a second flipping a foe's mind forever — but continued aggression
+  makes it stop trying to leave at all and prioritise fighting you.
+- **IT REACHES FOUR STATE MACHINES BY BENDING THE SENSED RANGE** (`foe.sensedDist`), not by bolting a second
+  decision tree onto each. Every creature already knows what to do when the hero is FAR (drift back to where
+  it was posted) and what to do when he is NEAR (fight), so walking home reads him as infinitely far and
+  being roused reads him as within reach. Only the DECISION sees the bent number — movement still uses his
+  real position, so a roused foe fifty metres off walks the right way. The archer is the one that needed a
+  homeward walk ADDING (its out-of-range answer was to stand still and scan); the toad, ogre and kobold
+  already had one, and the leash just drives it. The ogre's own `homing` is the MOVEMENT half of that — which
+  state walks where — where `leash.returning` is the decision.
+
 ## Foe pacing
 
 - **The archer's BACKSTEP** is a committed jump straight back, triggered inside sword reach, on a
@@ -859,14 +903,25 @@ sword carry, the deep lean) belongs to the hold-B RUN only — gate run-only flo
   mouse outside the game; do NOT reintroduce `disableCursor`/pointer-lock.
 - **Move:** WASD / left stick, camera-relative; the hero turns to face travel. **Sprint:** hold
   Shift / Circle-B. **Dodge roll:** Space / TAP Circle-B (tap-vs-hold on the same button, like
-  ER). **Attacks:** R1/RB or LMB = light slash; R2/RT or Shift+LMB = heavy overhead. Actions are
+  ER). Actions are
   committed (no mid-swing cancels) with an **ER-style input queue**: pressed mid-action, an
   attack/roll buffers in ONE slot (last press wins; a same-frame roll press outranks attack) and
   fires at the earliest exit — the attack's chain knot or the roll's end. A queued roll leaves in
   the direction HELD at fire time, not pressed.
+- **R1 AND R2 ARE THE ARM'S, NOT THE SWORD'S.** The two attack buttons (**R1/RB or LMB**, **R2/RT or
+  Shift+LMB**) are read as BUTTONS and routed by which armament is in the right hand — light slash /
+  heavy overhead with the sword, quick shot / aimed loose with the bow. Neither weapon can end up with
+  a press the other swallowed.
+- **Swap right-hand armament:** **D-pad RIGHT** / **Q** — sword ↔ bow. That is ER's own binding for the
+  right-hand slot, and taking it back is why **the pad has no camera zoom any more** (owner's call; ER
+  has none either, its D-pad being four armament and item cycles). The wheel still zooms on kb+m.
 - **Guard:** hold **L1/LB** or the **RIGHT MOUSE BUTTON** (ER's own keyboard default for the left
   hand). HELD, never toggled, and never buffered — see GUARDING.
-- **Camera:** mouse / right stick; scroll or D-pad zoom. **Esc** opens/backs out of the menu (pad
+- **Aim:** hold **L2** or — with the bow out — the **RIGHT MOUSE BUTTON**, which is free to take it
+  because the bow has already taken the shield away. One button, and which hand it belongs to is
+  decided by what is in the other one. See THE BOW.
+- **Camera:** mouse / right stick; **scroll** zooms (kb+m only, see the swap above). **Esc**
+  opens/backs out of the menu (pad
   **Start** toggles). Quitting is a menu row. The menu opens at launch; while it's up gameplay
   input is held and the world idles.
 - **Lock-on (ER):** **R3** / **middle-mouse** toggles onto the foe nearest screen-centre; with
@@ -874,7 +929,74 @@ sword carry, the deep lean) belongs to the hold-B RUN only — gate run-only flo
   strafe/backpedal footing, a glowing white dot marks it, and a stick/mouse **flick** cycles
   targets. Two deliberate ER exceptions: a hold-B SPRINT while locked faces TRAVEL (no sideways
   sprint exists), and an attack's recovery tail re-squares onto the target (`ATK_RETRACK`).
-- Reserved, matching ER: Cross/A = jump, L2 = skill.
+- Reserved, matching ER: Cross/A = jump. (**L2 is the AIM now**, owner's call — ER puts the skill there,
+  and this build has no skills to put on it.)
+
+## THE BOW (`hero.zig`) — the second right-hand armament
+
+D-pad Right cycles the right hand between the sword and a bow. It is a straight SWAP, not a second thing
+he holds: the bow goes in the same `HELD` slot on the right wrist, and the LEFT hand leaves the shield to
+go to the string.
+
+- **THE SHIELD GOING IS THE ANATOMY, NOT A BALANCE DIAL.** One hand cannot haul a string and hold boards.
+  So it is `hero.canGuard` ASKING the arm rather than the swap clearing a flag — same shape as the guard
+  itself, and it means the shield can never come back up while the bow is out however the swap happened.
+  The HUD says so: the cross's RIGHT slot draws whichever armament is in hand and the LEFT one goes EMPTY,
+  which is exactly what a raised bow costs you.
+- **IT IS THE SKELETONS' BOW, down to the string.** `archer.bowMesh`/`stringMesh`/`nockArrowMesh` and
+  `archer.poseBow` are shared, so a bow retune is still one file — and every angle of the hero's own stance
+  is lifted from `archer.poseUpper`, which is a working full draw on this same 18-bone rig. Guessing them
+  instead was the first attempt: it came back with the bow held across his chest and the string hauled
+  down-and-forward, because the draw shoulder was half the angle it needed and the elbow a third short, so
+  `poseBow` was lerping the nock toward a hand that had never left his hip. This is the one import that
+  runs against the grain (hero.zig → archer.zig) and the reason is written at it.
+- **THE AIM IS A HELD STATE, THE LOOSE IS THE ONLY COMMITTED ONE** — `setAim` is called every frame with
+  the button's level and re-derives from `canAim`, so a roll, a stagger, a swap, a sprint or an empty bar
+  drop it with no bookkeeping. The one committed action `canAim` deliberately ALLOWS is `shooting`: a loose
+  out of a held aim must not cost him the aim, or the second shot of a pair is a different action from the
+  first.
+- **AIMING OUTRANKS THE LOCK for facing**, because that is what aiming IS — the stick is doing the
+  pointing. An aimed shaft is thrown down the CAMERA's own forward (`BOW_AIM_REACH`), and a reticle marks
+  it. A QUICK shot needs no aim and goes at the locked foe, else down his facing.
+- **A BOW CHIPS; IT DOES NOT WIN** (owner's call). BOTH shots come in under the melee they compare to —
+  the quick under a light slash, the aimed under a heavy — and the POISE on them is slighter still (an
+  aimed shot staggers less than half what a heavy does). A shaft that hit like a sword would make closing
+  the distance optional, and being paid for closing it is the shape of the whole game. Only the aimed shot
+  touches stance at all. Behind a raised bow he moves at `BOW_AIM_SPEED` (0.45 of the walk,
+  under the shield's 0.75): a shield is something you walk a fight down behind, an aim is something you
+  stand still for.
+- **ARROWS ARE FINITE** — `combat.Quiver`, ten of them, shaped like `Flasks` because it is the same thing:
+  a small counted stack you spend in a fight and get back at a grace. An empty quiver REFUSES the shot with
+  the same red flash a dry flask gets, and the quiver is checked BEFORE the stamina is charged — a loose
+  that never happened must not bill him for it. The count lives in its own short box under the right-hand
+  slot (ER's own place for it), and only while the bow is what he is holding.
+- **THE AIM PUSHES THE EYE IN PAST HIM** (`camera.AIM_DIST`, blended by `CamRig.aimB` off the hero's own
+  stance blend) and **FADES HIM OUT** while it does (`game.AIM_FADE` → `gfx.Scene.setFade`). Two rules:
+  the player's own `dist` is never written, so dropping L2 returns to the zoom HE chose rather than to a
+  default; and the fade is LIT-PASS ONLY with the depth MASK off under it, because a translucent draw that
+  still wrote depth would punch a hole in the flora behind him. It is the SECOND thing in the game allowed
+  to be semi-transparent, after the flame.
+- **THE SHOT CONVERGES ON THE RETICLE, it does not run parallel to it.** An aimed shaft is thrown at a point
+  ON the camera's centre ray (`camera.centreRay` → `game.camAimPoint`), at the distance that ray actually
+  REACHES — the nearest foe it crosses, else the ground it would land on. Aimed along the camera's FORWARD
+  from the nock instead, the shaft flies a line parallel to the reticle's and offset from it by however far
+  the bow is from the eye: the bow sits out on his right and the boom is shoulder-offset besides, so every
+  shot ran a constant half-metre-odd to one side at every range. And the LOFT is only added when the target
+  is a real point, because it is solved against that distance (see `archer.launchAt`).
+- **HIS SHAFTS ARE A PIERCING BLADE** (`foe.Blade.pierce`). The segment one crossed this frame goes
+  through each creature's own `tryHit`, so an arrow bleeds, flinches, staggers and kills exactly the way
+  the sword does instead of a second reaction path written four more times. It neither reads nor writes
+  the swing LATCH, and both halves matter: reading it would let a foe still latched from the last cut
+  swallow an arrow, writing it would let an arrow eat the sword's next hit. It needs no latch of its own —
+  the shaft is spent on the first thing it reaches.
+- **`archer.stepShaft` is `stepArrow` with the two hero-specific halves removed**: no homing (it goes
+  where he aimed it; a shaft that curved onto a target would make aiming decoration) and no target test,
+  because what this one flies at is a field of foes rather than the one hero. It hands back the SEGMENT and
+  the caller sweeps it. Cover, gravity, the ground and expiry are the same, so his arrows thunk into the
+  pillar he shoots past exactly as theirs thunk into the one he ducks behind.
+- Shots `20f`..`20r`: the carry (no shield on that arm), the aim from three bearings, a CROP of the string
+  and nocked shaft, the loose on the frame the string snaps home, the quick shot's own raise, a shaft in
+  flight, the HUD cross, the AIM CAMERA with him faded out under it, and the quiver both full and dry.
 
 ## PERFORMANCE: how a 560 m world stays cheap (`env.zig`)
 
@@ -923,7 +1045,7 @@ Placement is deterministic: if it fits once it fits.
 - **The hero is per-bone matrices, not `drawModelEx`.**
 - **The scene shader gammas output (`pow 1/2.2`): author dark colours near-black.**
 - **Vertex alpha is the EMISSIVE channel** (255 = fully lit; lower = self-lit).
-- **THE FLAME MATERIAL IS THE ONE THING DRAWN SEMI-TRANSPARENT** (owner's call), and its opacity is
+- **THE FLAME MATERIAL IS THE ONE THING DRAWN SEMI-TRANSPARENT BY ITS MATERIAL** (owner's call; the HERO under an aim is the one thing drawn semi-transparent by a per-draw `fade` uniform — see THE BOW), and its opacity is
   GRADED off that same emissive: `FLAME_A_CORE` where a tongue is hot enough to hide what is behind it
   down to `FLAME_A_TIP` at the cool tip, which is already the ramp `flameInto` authors. Depth WRITE
   stays on, so a flame blends over what was drawn BEFORE it (ground, water, its own ironwork) and its

@@ -7,14 +7,12 @@ const wf = @import("worldfmt.zig");
 
 const v3 = mathx.v3;
 
-// The contract + behaviours every enemy plugs into, so lock-on, HP bars, collision, the blade hit test and the combat beats are written ONCE.
 
 pub const FLASH_DUR: f32 = 0.20; // seconds a struck foe pops on the shared gfx `hitFlash` uniform
 pub const FLASH_GAIN: f32 = 0.85; // …and how hard it drives it, applied by every Group's draw()
 // THE HERO'S FOOTPRINT, where both sides can see it: `HERO_R` is what game.zig pushes him out of the world with, `HERO_REACH` the forgiveness every foe adds to its own attack reach.
 pub const HERO_R: f32 = 0.36;
 pub const HERO_REACH: f32 = 0.55;
-/// The nearest the hero can stand to a foe of footprint `bodyR`.
 pub fn closestApproach(bodyR: f32) f32 {
     return bodyR + HERO_R;
 }
@@ -22,14 +20,96 @@ pub fn closestApproach(bodyR: f32) f32 {
 /// HOW FAR OFF THE GROUND COUNTS AS AIRBORNE — the height a rig's own lift has to clear before `airborne()` says so, and with it the collision push-out and the terrain gate stop applying. Here rather than in each creature because it is one question with one answer, and the toad and the archer each carried the literal.
 pub const AIRBORNE_LIFT: f32 = 0.04;
 
-/// TURN TOWARD A POINT at `rate` rad/s, shortest arc, ignoring a target you are standing on.
+// THE LEASH — and the provocation that overrides it. One struct every creature embeds, because all four want
+// exactly the same rule and four copies of a hysteresis is four chances to get one of them subtly wrong.
+
+/// Drawn THIS far from where it was posted and it starts thinking about going back…
+pub const LEASH_R: f32 = 30.0;
+/// …and it is home again only this close, which is the hysteresis: start far, stop near, so a foe hovering
+/// at the boundary cannot flap between chasing and returning every other frame.
+pub const LEASH_HOME_R: f32 = 3.0;
+/// …and only after this long with no blow given OR taken. A fight in progress is never abandoned.
+pub const LEASH_CALM: f32 = 4.5;
+
+/// WHAT ONE BLOW IS WORTH as provocation…
+pub const PROVOKE_PER_HIT: f32 = 1.0;
+/// …how much of it makes a foe ignore its own aggro range and come for you wherever you are (one hit does:
+pub const PROVOKE_AGGRO: f32 = 0.9;
+/// …and how much BREAKS it outright. THE ANTI-CHEESE: poking a foe at the end of its tether and watching
+/// it walk away is free damage at no risk, so continued aggression makes it stop trying to leave.
+pub const PROVOKE_BREAK: f32 = 2.5;
+/// …and once broken it STAYS broken this long, so the break is not something one calm second undoes.
+pub const PROVOKE_HOLD: f32 = 14.0;
+pub const PROVOKE_DECAY: f32 = 0.35;
+
+/// A foe's interest in you, and its tether to where it was posted. Tracks the DECISION only — every
+/// creature owns its own `home`, and a second copy here would be a point to keep in step.
+pub const Leash = struct {
+    sinceCombat: f32 = mathx.LONG_AGO,
+    provoked: f32 = 0,
+    breakLeft: f32 = 0,
+    returning: bool = false,
+
+    /// Per frame, BEFORE the state machine decides anything. `out` is how far it currently is from home.
+    pub fn tick(self: *Leash, dt: f32, out: f32) void {
+        self.sinceCombat += dt;
+        self.provoked = mathx.maxF(0, self.provoked - PROVOKE_DECAY * dt);
+        self.breakLeft = mathx.maxF(0, self.breakLeft - dt);
+        if (self.breakLeft > 0) {
+            self.returning = false; // committed to the fight; the tether does not exist for now
+            return;
+        }
+        if (self.returning) {
+            // …and it only stops when it is actually HOME, not the moment it is back inside LEASH_R.
+            if (out <= LEASH_HOME_R) self.returning = false;
+            return;
+        }
+        if (out > LEASH_R and self.sinceCombat >= LEASH_CALM) self.returning = true;
+    }
+
+    pub fn noteCombat(self: *Leash) void {
+        self.sinceCombat = 0;
+    }
+
+    /// SOMETHING OF THE PLAYER'S LANDED ON IT. One hit is enough to make it come for him wherever he is;
+    /// enough of them and it will not go home at all. A single hit deliberately does NOT cancel a return in
+    /// progress — that is the debounce, and it is what stops one arrow flipping a foe's mind every second.
+    pub fn provoke(self: *Leash) void {
+        self.noteCombat();
+        self.provoked += PROVOKE_PER_HIT;
+        if (self.provoked >= PROVOKE_BREAK) {
+            self.breakLeft = PROVOKE_HOLD;
+            self.returning = false;
+        }
+    }
+
+    pub fn goingHome(self: *const Leash) bool {
+        return self.returning;
+    }
+
+    /// Is it coming for him whatever the range? (A shot from outside aggro range still starts a fight.)
+    pub fn roused(self: *const Leash) bool {
+        return self.breakLeft > 0 or self.provoked >= PROVOKE_AGGRO;
+    }
+};
+
+/// The distance a foe's AI should REASON with, which is not always the real one — and the whole of how the
+/// leash and the provocation reach four state machines without a second decision tree in each. Every
+/// creature already knows what to do when he is far (go back to where it was posted) and when he is near
+/// (fight), so both rules bend the sensed range: walking home reads him as infinitely far, being roused
+/// reads him as within reach. Only the DECISION sees this — movement still uses his real position.
+pub fn sensedDist(l: *const Leash, real: f32, aggroR: f32) f32 {
+    if (l.goingHome()) return mathx.LONG_AGO;
+    if (l.roused()) return mathx.minF(real, aggroR);
+    return real;
+}
+
 pub fn faceToward(pos: rl.Vector3, facing: *f32, target: rl.Vector3, rate: f32, dt: f32) void {
     const d = mathx.dirXZ(pos, target);
     if (mathx.lenXZ(d) < 1e-3) return;
     facing.* = mathx.approachAngle(facing.*, mathx.headingXZ(d), rate * dt);
 }
 
-/// A struck foe's 0..1 flash strength for the shared `gfx` hitFlash uniform (see FLASH_DUR / FLASH_GAIN).
 pub fn flashFrac(flash: f32) f32 {
     return mathx.clampF(flash / FLASH_DUR, 0, 1);
 }
@@ -41,7 +121,6 @@ pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32,
     shove.* = mathx.scaleV(shove.*, mathx.maxF(0, 1.0 - decay * dt));
 }
 
-// The unlit specks that SELL a foe's tells.
 
 // Two burst COLOURS belong here for the same reason FLASH_* do (they were byte-identical copies in frog.zig and ogre.zig): they are the WORLD's, not one creature's.
 pub const DUST = mathx.rgba(150, 132, 96, 175);
@@ -52,7 +131,6 @@ pub fn fxStream(seed: f32, mul: f32, salt: u64) mathx.Rng {
     return mathx.Rng.init(@as(u64, @intFromFloat(@abs(seed) * mul)) +% salt);
 }
 
-/// One telegraph particle: integrates ballistically, lerps r0→r1, fades out as its life runs down.
 pub const Particle = struct {
     p: rl.Vector3 = mathx.zero3,
     v: rl.Vector3 = mathx.zero3,
@@ -64,13 +142,11 @@ pub const Particle = struct {
     grav: f32 = 0, // downward accel (world/s²); negative floats up
 };
 
-/// Push one particle into the ring, overwriting the oldest slot and advancing `head`.
 pub fn emitParticle(pool: []Particle, head: *usize, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
     pool[head.*] = .{ .p = p, .v = vel, .life = life, .max = life, .r0 = r0, .r1 = r1, .col = col, .grav = grav };
     head.* = (head.* + 1) % pool.len;
 }
 
-/// Integrate every live particle a frame.
 pub fn tickParticles(pool: []Particle, dt: f32, floor: f32) void {
     for (pool) |*q| {
         if (q.life <= 0) continue;
@@ -94,7 +170,6 @@ pub fn drawParticles(pool: []const Particle) void {
     }
 }
 
-// Every Group's bodies for these were identical, so they live here once and each Group's method is a one-line delegate.
 
 /// RE-HOME from the map: every spawn of `want`, built fresh (full HP, home position, slain restored) — what a hero death does to the field, ER-style.
 pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want: wf.FoeKind) void {
@@ -107,7 +182,6 @@ pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want:
     }
 }
 
-/// Draw the live instances, each flaring by its OWN hit flash on the shared `hitFlash` uniform, then put the uniform back to 0.
 pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
     for (foes) |*f| {
         if (!f.alive()) continue;
@@ -117,7 +191,6 @@ pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
     if (scene) |sc| sc.setFlash(0);
 }
 
-/// Died THIS frame?
 pub fn anyDied(foes: anytype) bool {
     for (foes) |*f| {
         if (f.justDied) return true;
@@ -125,14 +198,12 @@ pub fn anyDied(foes: anytype) bool {
     return false;
 }
 
-/// Total blows landed across the group (drives the combat beats + the debug read-out).
 pub fn totalHits(foes: anytype) u32 {
     var n: u32 = 0;
     for (foes) |*f| n += f.hits;
     return n;
 }
 
-/// RUNES paid out THIS FRAME: `per` per instance whose one-frame `justDied` is set.
 pub fn runesDropped(foes: anytype, per: u32) u32 {
     var n: u32 = 0;
     for (foes) |*f| {
@@ -141,7 +212,6 @@ pub fn runesDropped(foes: anytype, per: u32) u32 {
     return n;
 }
 
-/// How many foes are still standing.
 pub fn aliveCount(foes: anytype) u32 {
     var n: u32 = 0;
     for (foes) |*f| {
@@ -150,7 +220,6 @@ pub fn aliveCount(foes: anytype) u32 {
     return n;
 }
 
-// The hero's blade this frame as plain data — keeps every foe decoupled from the hero rig.
 pub const Blade = struct {
     active: bool = false,
     r: f32 = 0,
@@ -159,20 +228,21 @@ pub const Blade = struct {
     a0: rl.Vector3 = mathx.zero3,
     b0: rl.Vector3 = mathx.zero3,
     hit: combat.Hit = .{}, // HP/poise/stance the swing deals (light vs heavy, set by game.zig)
+    /// A PROJECTILE, NOT A SWING: one of the player's own, presented as the segment it crossed this frame so
+    /// it goes through the same `strike` and gets each creature's own reactions. It is its own one-hit
+    /// guarantee, because the shaft is spent on the first thing it reaches.
+    pierce: bool = false,
 };
 
-// ONE BLOW A GROUP LANDED ON THE HERO, and WHERE IT CAME FROM.
 pub const Blow = struct {
     hit: combat.Hit,
     from: rl.Vector3, // the attacker's own `pos`, in world space
 };
 
-/// Keep the STRONGEST blow of a frame.
 pub fn worseBlow(worst: *?Blow, h: combat.Hit, from: rl.Vector3) void {
     if (worst.* == null or h.dmg > worst.*.?.hit.dmg) worst.* = .{ .hit = h, .from = from };
 }
 
-/// ADVANCE A GROUP AND RETURN THE STRONGEST BLOW IT LANDED.
 pub fn groupBlow(foes: anytype, dt: f32, hero: rl.Vector3, bounds: f32, blade: Blade) ?Blow {
     var worst: ?Blow = null;
     for (foes) |*f| {
@@ -181,33 +251,154 @@ pub fn groupBlow(foes: anytype, dt: f32, hero: rl.Vector3, bounds: f32, blade: B
     return worst;
 }
 
-// What a landed blow yields: WHERE it connected, the sweep direction (blood/knockback), and the reaction the vitals decided.
+/// The FIRST member the shaft reaches takes it, through that creature's own `tryHit` — so an arrow bleeds
+/// and kills the way the sword does. Reports the hit, which is the caller's signal to stick the shaft.
+pub fn pierceGroup(foes: anytype, blade: Blade) bool {
+    for (foes) |*f| {
+        if (!f.alive() or f.dying()) continue;
+        const before = f.hits;
+        f.tryHit(blade);
+        if (f.hits != before) return true;
+    }
+    return false;
+}
+
 pub const Strike = struct {
     contact: rl.Vector3,
     dir: rl.Vector3,
     reaction: combat.HitResult,
 };
 
-// THE shared hit behaviour: swept blade vs hurt sphere; on a landed un-latched blow, LATCH it (one hit per swing), apply HP/poise/stance and return the Strike.
 pub fn strike(vit: *combat.Vitals, hitLatch: *bool, center: rl.Vector3, hurtR: f32, blade: Blade) ?Strike {
-    if (!blade.active) {
-        hitLatch.* = false; // window closed → the next swing may land again
-        return null;
+    if (blade.pierce) {
+        // A SHAFT NEITHER READS NOR WRITES THE SWING LATCH, and both halves matter: reading it would let a
+        // foe still latched from the last cut swallow an arrow, writing it would let an arrow eat the
+        // sword's next hit. It needs no latch — it is spent on the first thing it reaches.
+        if (!blade.active) return null;
+    } else {
+        if (!blade.active) {
+            hitLatch.* = false; // window closed → the next swing may land again
+            return null;
+        }
+        if (hitLatch.*) return null;
     }
-    if (hitLatch.*) return null;
     const reach = hurtR + blade.r;
     // Swept: test THIS frame's blade segment AND last frame's, so a fast arc can't skip the foe.
     const q1 = mathx.closestOnSegV(center, blade.a, blade.b);
     const hit1 = mathx.lenV(mathx.subV(center, q1)) <= reach;
     const q0 = mathx.closestOnSegV(center, blade.a0, blade.b0);
     if (!(hit1 or mathx.lenV(mathx.subV(center, q0)) <= reach)) return null;
-    hitLatch.* = true;
+    if (!blade.pierce) hitLatch.* = true;
     // The blow reads at the wound: blood/knockback fly along the blade's sweep at the contact.
     const contact = if (hit1) q1 else q0;
-    var sweep = mathx.subV(mathx.lerpV(blade.a, blade.b, 0.7), mathx.lerpV(blade.a0, blade.b0, 0.7));
+    // A SHAFT'S OWN LENGTH *IS* ITS TRAVEL (`a`→`b` is this frame's segment), where a swing's sweep is the
+    // difference between two FRAMES of blade — which for a shaft subtracts to zero and used to fall through
+    // to "contact toward centre", i.e. square across the shaft.
+    var sweep = if (blade.pierce)
+        mathx.subV(blade.b, blade.a)
+    else
+        mathx.subV(mathx.lerpV(blade.a, blade.b, 0.7), mathx.lerpV(blade.a0, blade.b0, 0.7));
     sweep.y = 0;
     const dir = if (mathx.lenXZ(sweep) > 0.03) mathx.normV(sweep) else mathx.dirXZ(contact, center);
     return .{ .contact = contact, .dir = dir, .reaction = vit.hit(blade.hit) };
+}
+
+test "THE LEASH: a foe drawn far from home walks back once the fight has gone quiet" {
+    var l = Leash{};
+    const far = LEASH_R + 8.0; // …how far from home it has been drawn
+    l.noteCombat();
+    l.tick(1.0 / 60.0, far);
+    try std.testing.expect(!l.goingHome());
+    var t: f32 = 0;
+    while (t < LEASH_CALM + 0.1) : (t += 1.0 / 60.0) l.tick(1.0 / 60.0, far);
+    try std.testing.expect(l.goingHome());
+    // THE HYSTERESIS: back inside LEASH_R is NOT "home" — it keeps walking until it is actually there, so a
+    // foe hovering at the boundary cannot flap between chasing and returning every other frame.
+    l.tick(1.0 / 60.0, LEASH_R - 1.0);
+    try std.testing.expect(l.goingHome());
+    l.tick(1.0 / 60.0, LEASH_HOME_R - 0.5);
+    try std.testing.expect(!l.goingHome()); // …arrived, and interested again
+    var near = Leash{};
+    t = 0;
+    while (t < 30.0) : (t += 1.0 / 60.0) near.tick(1.0 / 60.0, 2.0);
+    try std.testing.expect(!near.goingHome());
+}
+
+test "ONE PLAYER HIT ROUSES IT FROM ANY RANGE, and KEEPING AT IT breaks the leash" {
+    var l = Leash{};
+    try std.testing.expect(!l.roused());
+    l.provoke();
+    try std.testing.expect(l.roused());
+
+    // Second, THE ANTI-CHEESE: a foe already walking home shrugs off ONE hit and keeps walking (the
+    // debounce — otherwise a single arrow a second flips its mind forever)…
+    var c = Leash{};
+    const far = LEASH_R + 8.0;
+    var t: f32 = 0;
+    while (t < LEASH_CALM + 0.1) : (t += 1.0 / 60.0) c.tick(1.0 / 60.0, far);
+    try std.testing.expect(c.goingHome());
+    c.provoke();
+    c.tick(1.0 / 60.0, far);
+    try std.testing.expect(c.goingHome()); // …still leaving
+    c.provoke();
+    c.provoke();
+    c.tick(1.0 / 60.0, far);
+    try std.testing.expect(!c.goingHome());
+    try std.testing.expect(c.roused());
+    // …and the break OUTLASTS a quiet spell, so poking it once more later is not needed and one calm second
+    // does not undo it: this is the window in which it hunts you down.
+    t = 0;
+    while (t < LEASH_CALM + 2.0) : (t += 1.0 / 60.0) c.tick(1.0 / 60.0, far);
+    try std.testing.expect(!c.goingHome());
+    t = 0;
+    while (t < PROVOKE_HOLD + LEASH_CALM + 1.0) : (t += 1.0 / 60.0) c.tick(1.0 / 60.0, far);
+    try std.testing.expect(c.goingHome());
+    try std.testing.expect(!c.roused());
+}
+
+test "the leash constants say what the rule is" {
+    // Start FAR, stop NEAR — the gap between them IS the debounce, and a zero gap is the flapping.
+    try std.testing.expect(LEASH_HOME_R < LEASH_R * 0.5);
+    // One hit rouses; it takes more than one to break a tether in progress.
+    try std.testing.expect(PROVOKE_AGGRO <= PROVOKE_PER_HIT);
+    try std.testing.expect(PROVOKE_BREAK > PROVOKE_PER_HIT);
+    // …and a break has to outlive the calm window, or it lapses before the foe has crossed the ground.
+    try std.testing.expect(PROVOKE_HOLD > LEASH_CALM * 2.0);
+}
+
+test "A SHAFT'S blood and shove run ALONG its flight, and it never touches the swing latch" {
+    // THE bug: a pierce passes one segment as BOTH `a`/`b` and `a0`/`b0`, so the swing's two-frame sweep
+    // subtracted to zero and `dir` came out square across the shaft — which is where blood and shove go.
+    var vit = combat.Vitals.init(100, 999, 999); // huge poise/stance: no reaction to muddy this
+    var latch = false;
+    const shaft = mathx.v3(-1, 1, 0.3);
+    const tip = mathx.v3(1, 1, 0.3);
+    const s = strike(&vit, &latch, mathx.v3(0, 1, 0), 0.5, .{
+        .active = true,
+        .pierce = true,
+        .r = 0.16,
+        .a = shaft,
+        .b = tip,
+        .a0 = shaft,
+        .b0 = tip,
+        .hit = .{ .dmg = 5 },
+    }).?;
+    try std.testing.expect(s.dir.x > 0.95); // down the TRAVEL (+X)…
+    try std.testing.expect(@abs(s.dir.z) < 0.2); // …and not down the shaft-to-centre line (−Z)
+    // …and the SWING latch is untouched, both ways: an arrow may not be swallowed by a foe still latched
+    // from the last cut, and may not eat the sword's next hit either.
+    try std.testing.expect(!latch);
+    const again = strike(&vit, &latch, mathx.v3(0, 1, 0), 0.5, .{
+        .active = true,
+        .pierce = true,
+        .r = 0.16,
+        .a = shaft,
+        .b = tip,
+        .a0 = shaft,
+        .b0 = tip,
+        .hit = .{ .dmg = 5 },
+    });
+    try std.testing.expect(again != null); // …a SECOND shaft lands; the caller's job is to spend the first
 }
 
 test "strike: latches one hit per swing, re-arms when the window closes, applies the reaction" {
@@ -215,16 +406,12 @@ test "strike: latches one hit per swing, re-arms when the window closes, applies
     var latch = false;
     const c = mathx.v3(0, 1, 0);
     const active = Blade{ .active = true, .r = 0.4, .a = mathx.v3(0, 1, -1), .b = mathx.v3(0, 1, 1), .a0 = mathx.v3(0, 1, -1), .b0 = mathx.v3(0, 1, 1), .hit = .{ .dmg = 10, .poise = 20 } };
-    // First contact lands + latches + flinches.
     const s = strike(&vit, &latch, c, 0.5, active);
     try std.testing.expect(s != null);
     try std.testing.expectEqual(combat.HitResult.light, s.?.reaction);
     try std.testing.expect(latch);
-    // Same active swing again: latched → no second hit.
     try std.testing.expect(strike(&vit, &latch, c, 0.5, active) == null);
-    // Window closes → latch re-arms for the next swing.
     _ = strike(&vit, &latch, c, 0.5, .{ .active = false });
     try std.testing.expect(!latch);
-    // Out of reach → no hit.
     try std.testing.expect(strike(&vit, &latch, mathx.v3(9, 1, 0), 0.5, active) == null);
 }

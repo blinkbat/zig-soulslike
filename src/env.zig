@@ -18,6 +18,13 @@ pub const RIM_OUT: f32 = 6.0;
 pub const PLAY_INSET: f32 = 2.0;
 /// The largest `half` the grid can index without cells clamping together.
 pub const MAX_HALF: f32 = GRID_HALF + CELL - RIM_OUT - CLIFF_BOUND;
+
+comptime {
+    // …AND THE LOADER REFUSES ANYTHING BIGGER. The parser cannot import env (env imports it), so the
+    // ceiling is declared there and pinned here: shrink the grid below what a map may declare and
+    // this fails the build instead of clamping half a world into the rim cells at load time.
+    std.debug.assert(MAX_HALF >= wf.MAX_DECLARED_HALF);
+}
 /// The cliff mesh's own bounding radius, which sticks out past the rim it is placed on.
 const CLIFF_BOUND: f32 = 18.0;
 // The ground QUAD runs far past the bounds so terrain dissolves into full haze with no visible plane edge from anywhere.

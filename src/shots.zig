@@ -78,6 +78,14 @@ fn stepFoe(f: anytype, frames: i32, hero: rl.Vector3) void {
     while (k < frames) : (k += 1) _ = f.update(SHOT_DT, hero, game.PLAY_HALF, .{});
 }
 
+/// A STAGE THAT DID NOT TAKE IS A SHOT OF THE WRONG THING, and silently: a `swapArm` the harness refused
+/// leaves every "bow" frame below it photographing a man with a sword. Loud, like the missing-foes panic.
+fn must(ok: bool, what: []const u8) void {
+    if (ok) return;
+    std.debug.print("--shot: {s}\n", .{what});
+    @panic("shot harness: a staged action was refused");
+}
+
 /// THE CAMERA YAW WITH THE SUN BEHIND IT — `gfx.SUN_DIR` in the rig's terms, so ~233 shoots into it.
 pub const LIT_YAW: f32 = 53.0;
 pub const LIT_BACK = v3(-0.794, 0, -0.608);
@@ -142,10 +150,10 @@ pub fn runPropShots(g: *Game) void {
     std.fs.cwd().makePath("shots/props") catch {};
     g.menu.screen = .closed;
     g.retro.allOff();
-    // No foes in the portraits — a toad idling into a wide framing reads as part of the model.
-    g.warren.n = 0;
-    g.line.n = 0;
-    g.grief.n = 0;
+    // No foes in the portraits — a toad idling into a wide framing reads as part of the model. EVERY
+    // group, off game.FOE_GROUPS: named by hand this cleared three of the four and left the WARBAND
+    // standing 42 m north of the origin, inside the framing of every wide prop.
+    game.clearFoesForShot(g);
     for (props.INFO, 0..) |row, i| {
         g.env.stageOne(row.kind);
         const r = mathx.maxF(row.bound, 0.9);
@@ -330,6 +338,120 @@ pub fn runShots(g: *Game) void {
         g.hero.stam.reset();
         // …and the damage flash with it.
         g.hero.hurtFlash = 0;
+        g.hero.vit = heromod.freshVitals();
+        k = 0;
+        while (k < 30) : (k += 1) stepWorld(g, dt, 0);
+    }
+
+    // THE BOW — the second right-hand armament, and every state it has. It goes here, straight after the
+    // guard, because the two are the same question asked of the two hands: the shield is what the left one
+    // does with the sword out, and the string is what it does instead.
+    {
+        var k: i32 = 0;
+        while (k < 30) : (k += 1) stepWorld(g, dt, 0);
+        g.hero.pos = mathx.ground(0, 4);
+        g.hero.stam.reset();
+        g.hero.facing = mathx.headingXZ(LIT_BACK); // looking down the lens — the FRONT view
+        must(g.hero.swapArm(), "the bow would not come out");
+        // THE LOW CARRY first: bow in the right fist, string slack, and NO SHIELD on the left arm — which
+        // is the whole mechanic, and the one thing a single frame can prove.
+        k = 0;
+        while (k < 20) : (k += 1) {
+            g.hero.update(dt, 0, 0, null);
+            g.hero.pose();
+        }
+        shootPortrait(g, "shots/20f_bow_carry.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        shootPortrait(g, "shots/20g_bow_carry_side.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.09, 3.0);
+        // THE AIM, from three bearings: the bow punched out on a long right arm, the LEFT hand at the
+        // anchor, the string really hauled back off it and the nocked shaft riding it.
+        g.hero.setAim(true);
+        k = 0;
+        while (k < 24) : (k += 1) { // let the stance blend settle (aimB eases in, like guardB)
+            g.hero.setAim(true);
+            g.hero.update(dt, 0, 0, null);
+            g.hero.pose();
+        }
+        shootPortrait(g, "shots/20h_bow_aim_front.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        shootPortrait(g, "shots/20i_bow_aim_3q.png", g.hero.shoulderPoint(), LIT_YAW + 42, 0.09, 3.0);
+        // The SIDE is the one that shows the draw length — how far back the hand actually is.
+        shootPortrait(g, "shots/20j_bow_aim_side.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.08, 3.2);
+        // …and a CROP of the string and the nocked shaft, because at 1:1 a 3 mm string is unjudgeable
+        // (AGENTS.md: thin geometry needs a crop, and this is the thinnest thing in the game).
+        shootPortrait(g, "shots/20k_bow_string.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.02, 1.5);
+        // THE AIMED LOOSE, caught on the frame the string snaps home: the shaft is gone, the bow arm has
+        // bounced forward off the release, and the nocked arrow is no longer drawn.
+        g.hero.requestShot(true);
+        var fired = false;
+        k = 0;
+        while (k < 90 and !fired) : (k += 1) {
+            g.hero.setAim(true);
+            g.hero.updateShot(dt, null);
+            if (g.hero.loosed) fired = true;
+        }
+        must(fired, "the aimed loose never let the shaft go");
+        g.hero.updateShot(dt, null); // …one frame PAST the release, which is the snap
+        shootPortrait(g, "shots/20l_bow_loose.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.08, 3.2);
+        // THE QUICK SHOT is a different animation, not the same one hurried: the bow snaps UP into it from
+        // the low carry. Caught mid-raise, before the string is home.
+        g.hero.setAim(false);
+        k = 0;
+        while (k < 40) : (k += 1) {
+            g.hero.setAim(false);
+            g.hero.update(dt, 0, 0, null);
+            g.hero.pose();
+        }
+        g.hero.stam.reset();
+        g.hero.requestShot(false);
+        k = 0;
+        while (k < 5) : (k += 1) g.hero.updateShot(dt, null);
+        shootPortrait(g, "shots/20m_bow_snap.png", g.hero.shoulderPoint(), LIT_YAW + 60, 0.09, 3.2);
+        // …and a SHAFT IN FLIGHT, side on, so the arc and the streak behind it can be judged: loosed at a
+        // toad out ahead and stepped a few frames into its travel.
+        while (g.hero.shooting) g.hero.updateShot(dt, null);
+        g.hero.stam.reset();
+        g.hero.setAim(true);
+        k = 0;
+        while (k < 24) : (k += 1) {
+            g.hero.setAim(true);
+            g.hero.update(dt, 0, 0, null);
+            g.hero.pose();
+        }
+        game.shootShaftForShot(g, mathx.ground(0, -22));
+        k = 0;
+        while (k < 7) : (k += 1) game.stepShaftsForShot(g, dt);
+        shootPortrait(g, "shots/20n_bow_shaft.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.06, 6.0);
+        // …AND THE HUD, which is the other half of the swap: the RIGHT slot is a bow and the LEFT one has
+        // gone empty, because the hand that held the shield is on the string.
+        shootClear(g, "shots/20o_bow_hud.png", LIT_YAW + 150, 0.18, 4.6);
+        // …AND THE AIM CAMERA, which is the other half of L2: the same framing with the aim UP, so the two
+        // can be compared. It goes through `followClear` like the live loop, so the boom this shot uses is
+        // the aim's own (camera.boom) and not the zoom the line above it was taken at.
+        g.hero.setAim(true);
+        k = 0;
+        while (k < 24) : (k += 1) {
+            g.hero.setAim(true);
+            g.hero.update(dt, 0, 0, null);
+            g.hero.pose();
+        }
+        g.rig.aimB = g.hero.aimB;
+        shootClear(g, "shots/20p_bow_aimcam.png", LIT_YAW + 150, 0.18, 4.6);
+        // …and the QUIVER running down: nine left after the shots above, and the box under the weapon slot
+        // is where you read it. Emptied outright for the second one, because "0" and "9" are different
+        // pictures and the dry one is the one you need to recognise in a fight.
+        shootClear(g, "shots/20q_bow_ammo.png", LIT_YAW + 150, 0.18, 4.6);
+        const hadArrows = g.hero.quiver.ready();
+        g.hero.quiver.arrows = 0;
+        g.hero.update(dt, 0, 0, null);
+        g.hero.pose();
+        shootClear(g, "shots/20r_bow_ammo_dry.png", LIT_YAW + 150, 0.18, 4.6);
+        g.hero.quiver.arrows = hadArrows;
+        g.rig.aimB = 0;
+        // PUT IT AWAY, and leave the field as the rest of the harness expects to find it.
+        g.hero.setAim(false);
+        while (g.hero.shooting) g.hero.updateShot(dt, null);
+        must(g.hero.swapArm(), "the sword would not come back");
+        game.clearShaftsForShot(g);
+        g.hero.stam.reset();
         g.hero.vit = heromod.freshVitals();
         k = 0;
         while (k < 30) : (k += 1) stepWorld(g, dt, 0);
@@ -574,9 +696,10 @@ pub fn runShots(g: *Game) void {
         g.rig.follow(g.hero.shoulderPoint());
         shoot(g, "shots/46_archer_lockon.png");
         g.lock = null;
-        // Restore both foes near their homes so they don't intrude on the retro/menu shots below.
-        a.* = archermod.Archer.spawn(mathx.ground(-16.0, -22.0), mathx.radians(60), 1.0, 0.2);
-        g.warren.frogs[0] = frogmod.Frog.spawn(mathx.ground(13.5, -14.0), mathx.radians(215), 1.08, 0.0);
+        // Every foe back to its home so none intrudes on the shots below — FROM THE MAP, not from its
+        // `foe:` record re-typed here as a Zig literal (which is what these two lines were, and which
+        // put a toad back where the map used to have it every time the owner moved one in the editor).
+        game.rehomeFoesForShot(g);
     }
 
     // A PORTRAIT SPOT NEEDS THE CAMERA'S ROOM, NOT JUST THE SUBJECT'S.
@@ -801,7 +924,12 @@ pub fn runShots(g: *Game) void {
             stepFoe(zerk, adv, walkTo); // hero far ahead on the sun's bearing → walks toward it, LIT
             shootFoe(g, zerk, walkNames[wi], LIT_YAW + 58, 0.06, 4.6);
         }
-        g.band.n = 0; // …and the field is empty again: the band is not on the shipped map
+        // …and the whole field back from the map, which is the LAST foe portrait so everything after
+        // this — the entire world tour — is finally photographed in the world the game actually loads.
+        // This line used to read `g.band.n = 0` under "the band is not on the shipped map": it IS (a
+        // berserker, a priest and a slinger, north in the city), so the tour was deleting three foes
+        // and leaving the ogre parked where the portrait block staged it.
+        game.rehomeFoesForShot(g);
     }
 
     // the scene shader grew point lights.

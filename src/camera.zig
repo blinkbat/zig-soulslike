@@ -20,6 +20,12 @@ const TARGET_RAISE = 0.15; // lift the look-at a touch above the shoulder point
 /// How far the eye stays clear of the ground (see `followClear`).
 const GROUND_CLEAR = 0.7;
 
+// AIMING PUSHES THE EYE IN PAST HIM (L2 / RMB with the bow). A separate blend rather than a change to
+// `dist`, so letting go of L2 returns to the zoom the player chose and not to a default.
+const AIM_DIST = 0.7; // right up past his head — near enough that he is behind the lens, not in front of it
+const AIM_SHOULDER = 0.30; // …the frame swung almost square, since there is nobody left to look around…
+const AIM_RAISE = 0.42; // …and the look-at at eye height rather than the chest
+
 const SHAKE_MAX = 0.13; // world-unit jitter amplitude at full trauma
 const SHAKE_DECAY = 2.6; // trauma drained per second — shakes die fast (a crack, not a wobble)
 const SHAKE_FREQ = 33.0; // base jitter frequency (layered sines, incommensurate)
@@ -29,31 +35,28 @@ pub const CamRig = struct {
     yaw: f32, // azimuth (radians); 0 = camera behind a +Z-facing hero
     pitch: f32, // elevation (radians); + looks down
     dist: f32,
+    /// HOW FAR THE AIM VIEW IS BLENDED IN, 0..1 — pushed in from the hero's own stance blend every frame.
+    aimB: f32 = 0,
     trauma: f32 = 0, // 0..1 impact charge; addShake() feeds it, tickShake() drains it
     shakeT: f32 = 0, // running phase for the jitter noise
     shakeOff: rl.Vector3 = mathx.zero3, // this frame's world-space jitter (zero when calm)
 
-    // Ground-plane forward the camera looks along (for camera-relative movement).
     pub fn forwardXZ(c: *const CamRig) rl.Vector3 {
         return mathx.headingDir(c.yaw);
     }
-    // Screen-right on the ground.
     pub fn rightXZ(c: *const CamRig) rl.Vector3 {
         return v3(-mathx.cosf(c.yaw), 0, mathx.sinf(c.yaw));
     }
 
-    // Add to yaw/pitch in radians (clamped).
     pub fn orbit(c: *CamRig, dYaw: f32, dPitch: f32) void {
         c.yaw = mathx.wrapPi(c.yaw + dYaw);
         c.pitch = clampF(c.pitch + dPitch, PITCH_MIN, PITCH_MAX);
     }
 
-    // Mouse look (per-pixel).
     pub fn rotate(c: *CamRig, dxPx: f32, dyPx: f32) void {
         c.orbit(-dxPx * LOOK_SENS, dyPx * LOOK_SENS);
     }
 
-    // Snap the camera back behind the hero (Elden Ring R3 with no lock-on target).
     pub fn recenter(c: *CamRig, heroFacing: f32) void {
         c.yaw = heroFacing;
         c.pitch = DEFAULT_PITCH;
@@ -70,12 +73,10 @@ pub const CamRig = struct {
         c.dist = clampF(c.dist - wheel * ZOOM_STEP, MIN_DIST, MAX_DIST);
     }
 
-    // Feed an impact into the shake (amt ~0.2 = a landed light, ~0.8 = getting slammed).
     pub fn addShake(c: *CamRig, amt: f32) void {
         c.trauma = clampF(c.trauma + amt, 0, 1);
     }
 
-    // Decay the trauma and bake this frame's jitter.
     pub fn tickShake(c: *CamRig, dt: f32) void {
         c.trauma = clampF(c.trauma - SHAKE_DECAY * dt, 0, 1);
         c.shakeT += dt;
@@ -93,42 +94,55 @@ pub const CamRig = struct {
         );
     }
 
-    /// The unit vector from the look-at point toward the eye — behind the hero and above him by the pitch.
     pub fn backDir(c: *const CamRig) rl.Vector3 {
         const cp = mathx.cosf(c.pitch);
         return v3(-mathx.sinf(c.yaw) * cp, mathx.sinf(c.pitch), -mathx.cosf(c.yaw) * cp);
     }
 
-    /// What the camera looks AT: the shoulder point, offset to frame the hero off-centre and lifted a touch.
     pub fn targetFor(c: *const CamRig, shoulder: rl.Vector3) rl.Vector3 {
         const right = c.rightXZ();
+        const k = mathx.clampF(c.aimB, 0, 1);
+        const off = mathx.lerpF(SHOULDER, AIM_SHOULDER, k);
         return v3(
-            shoulder.x + right.x * SHOULDER,
-            shoulder.y + TARGET_RAISE,
-            shoulder.z + right.z * SHOULDER,
+            shoulder.x + right.x * off,
+            shoulder.y + mathx.lerpF(TARGET_RAISE, AIM_RAISE, k),
+            shoulder.z + right.z * off,
         );
     }
 
-    // Re-aim at the hero's shoulder point.
-    pub fn follow(c: *CamRig, shoulder: rl.Vector3) void {
-        c.place(c.targetFor(shoulder), c.dist);
+    /// The player's own zoom, pulled in past the hero by the aim blend. His `dist` is never written.
+    pub fn boom(c: *const CamRig) f32 {
+        return mathx.lerpF(c.dist, AIM_DIST, mathx.clampF(c.aimB, 0, 1));
     }
 
-    /// Re-aim with `at` DEAD CENTRE — the over-the-shoulder offset cancelled.
+    fn boomFloor(c: *const CamRig) f32 {
+        return mathx.minF(MIN_DIST, c.boom());
+    }
+
+    pub fn follow(c: *CamRig, shoulder: rl.Vector3) void {
+        c.place(c.targetFor(shoulder), c.boom());
+    }
+
     pub fn followCentred(c: *CamRig, at: rl.Vector3) void {
         c.place(v3(at.x, at.y + TARGET_RAISE, at.z), c.dist);
     }
 
-    /// FOLLOW WITHOUT BURYING THE EYE IN A HILLSIDE.
+    /// From the eye through the middle of the screen — where the reticle is, and so where an aimed shot has
+    /// to CONVERGE: thrown merely parallel to this it misses sideways by however far the bow is from the eye.
+    pub fn centreRay(c: *const CamRig) struct { origin: rl.Vector3, dir: rl.Vector3 } {
+        return .{ .origin = c.cam.position, .dir = mathx.normV(mathx.subV(c.cam.target, c.cam.position)) };
+    }
+
     pub fn followClear(c: *CamRig, shoulder: rl.Vector3, ctx: anytype, comptime groundAt: fn (@TypeOf(ctx), f32, f32) f32) void {
         const target = c.targetFor(shoulder);
         const back = c.backDir();
-        var d = c.dist;
+        const shortest = c.boomFloor();
+        var d = c.boom();
         // Walked in from the requested distance rather than solved: the ground under the boom is a bilinear patchwork, so there is no closed form, and a step of a quarter metre is finer than the eye can read at any zoom.
-        while (d > MIN_DIST) {
+        while (d > shortest) {
             const p = mathx.addV(target, mathx.scaleV(back, d));
             if (p.y >= groundAt(ctx, p.x, p.z) + GROUND_CLEAR) break;
-            d = mathx.maxF(d - 0.25, MIN_DIST);
+            d = mathx.maxF(d - 0.25, shortest);
         }
         c.place(target, d);
         // …and if even the closest boom is inside the hill (standing in a hollow, or against a face steeper than the pitch), LIFT as the last resort.
@@ -136,13 +150,44 @@ pub const CamRig = struct {
         if (c.cam.position.y < floor) c.cam.position.y = floor;
     }
 
-    /// Put the eye `dist` back along the boom from `target`, jitter included.
     fn place(c: *CamRig, target: rl.Vector3, dist: f32) void {
         // Impact jitter rides BOTH ends so the whole frame kicks (a shake, not a re-aim).
         c.cam.target = mathx.addV(target, c.shakeOff);
         c.cam.position = mathx.addV(mathx.addV(target, mathx.scaleV(c.backDir(), dist)), c.shakeOff);
     }
 };
+
+test "THE AIM PUSHES THE EYE IN PAST HIM, and gives the player's own zoom back afterwards" {
+    var rig = CamRig{ .cam = undefined, .yaw = 0, .pitch = 0.2, .dist = 7.0 };
+    try std.testing.expectApproxEqAbs(@as(f32, 7.0), rig.boom(), 1e-5);
+    rig.aimB = 1.0;
+    try std.testing.expect(rig.boom() < MIN_DIST);
+    try std.testing.expectApproxEqAbs(AIM_DIST, rig.boom(), 1e-5);
+    const shoulder = v3(0, 1.4, 0);
+    rig.aimB = 0;
+    const wide = rig.targetFor(shoulder);
+    rig.aimB = 1.0;
+    const tight = rig.targetFor(shoulder);
+    try std.testing.expect(mathx.distXZ(tight, shoulder) < mathx.distXZ(wide, shoulder));
+    try std.testing.expect(tight.y > wide.y);
+    // THE PLAYER'S ZOOM IS NEVER WRITTEN: dropping the aim returns to the distance HE chose, not a default.
+    rig.aimB = 0;
+    try std.testing.expectApproxEqAbs(@as(f32, 7.0), rig.boom(), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 7.0), rig.dist, 1e-5);
+    rig.aimB = 1.0;
+    try std.testing.expect(rig.boomFloor() <= rig.boom());
+}
+
+test "the centre ray is the line the reticle marks" {
+    // An aimed shot converges on THIS rather than running parallel to it: the bow is off to one side, so a
+    // parallel shaft misses by that offset at every range.
+    var rig = CamRig{ .cam = undefined, .yaw = 0, .pitch = 0, .dist = 4 };
+    rig.cam.position = v3(1, 2, -5);
+    rig.cam.target = v3(1, 2, 0);
+    const ray = rig.centreRay();
+    try std.testing.expectApproxEqAbs(@as(f32, 1), ray.dir.z, 1e-5); // …straight down +Z
+    try std.testing.expectApproxEqAbs(@as(f32, 1), ray.origin.x, 1e-5); // …from the EYE, not the hero
+}
 
 test "ground basis holds the strafe-sign invariant" {
     // AGENTS.md hard invariant: at yaw 0 the camera looks +Z from behind, so screen-right is world −X.
@@ -155,7 +200,6 @@ test "ground basis holds the strafe-sign invariant" {
     try std.testing.expectApproxEqAbs(@as(f32, 0), r.z, 1e-6);
 }
 
-// `yaw0` should match the hero's initial facing so the camera starts BEHIND them (camera-forward aligned with the hero's heading), souls-style.
 pub fn newCamRig(shoulder: rl.Vector3, yaw0: f32) CamRig {
     var c = CamRig{
         .cam = .{

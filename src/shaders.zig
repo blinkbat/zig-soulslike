@@ -102,6 +102,7 @@ pub const sceneFS =
     \\uniform float hazeDensity;
     \\uniform float dim;        // 0 = full daylight, 1 = dusk (the rest scene) — see Scene.setDim
     \\uniform float hitFlash;   // 0..1 blood-red combat flash on the CURRENT draw (per-actor)
+    \\uniform float fade;       // 1 = solid, <1 = see THROUGH the current draw — see Scene.setFade
     \\uniform float uTime;      // seconds — water ripple phase (shared with the VS wind term)
     \\uniform mat4 lightVP;     // sun's ortho view-projection (captured in the depth pass)
     \\uniform sampler2D shadowMap;
@@ -480,7 +481,10 @@ pub const sceneFS =
     \\  // AN EMBER IS THE OPPOSITE OF SMOKE: nearly solid, and it does not dissolve — it WINKS OUT.
     \\  if (mi == 13) outA = EMBER_A*smoothstep(0.0, 0.05, fragLife)*(1.0 - smoothstep(0.55, 1.0, fragLife))
     \\                     *(0.55 + 0.45*sin(uTime*17.0 + fragLife*29.0));
-    \\  finalColor = vec4(outc, outA);
+    \\  // …and the CURRENT DRAW may be asked to go see-through on top of all that (the hero under an aim,
+    \\  // who otherwise fills the frame at that boom length). Per-draw like `hitFlash`, and multiplied in
+    \\  // LAST so it thins the flame and the smoke by the same fraction rather than replacing their own.
+    \\  finalColor = vec4(outc, outA*fade);
     \\}
 ;
 

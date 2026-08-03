@@ -1,17 +1,14 @@
 const std = @import("std");
 const mathx = @import("mathx.zig");
 
-// Every character embeds one.
 
 pub const StunKind = enum { none, light, heavy };
 
-// What the victim reacts to THIS frame.
 pub const HitResult = enum { none, light, heavy, death };
 
 /// WHAT BECAME OF A BLOW aimed at the hero, which is not the same question as what his vitals did with it — a hit can be rolled through, or caught on the shield, and neither reaches `Vitals.hit`.
 pub const HitOutcome = enum { ignored, taken, blocked, guardBroken };
 
-// One landed blow, as plain data (attacker/victim stay decoupled).
 pub const Hit = struct {
     dmg: f32 = 0,
     poise: f32 = 0,
@@ -26,12 +23,10 @@ const LIGHT_BREAK_STANCE = 0.40; // fraction of max stance one LIGHT break chips
 // Chip damage must PERSIST, or a foe recovered before your next swing can only be staggered by a burst and every fight collapses into "land two fast or don't bother".
 const FOE_REGEN_DELAY = 2.2;
 const FOE_REGEN_RATE = 0.45;
-// Stun durations.
 pub const LIGHT_STUN_DUR = 0.46;
 pub const HEAVY_STUN_DUR = 1.15;
 pub const FOE_LIGHT_STUN_DUR = 0.78;
 pub const FOE_HEAVY_STUN_DUR = 2.40;
-// Since-last-event clocks start SATURATED, so an untouched meter is already past its gate.
 const LONG_AGO = mathx.LONG_AGO;
 
 // A reaction is a beat you are already paying for; chipping poise through it means the blow that staggered you also sets up the next stagger, and a warband or a chained R1 can hold either side in one unbroken flinch.
@@ -47,7 +42,6 @@ pub const Vitals = struct {
     dead: bool = false,
     regenDelay: f32 = REGEN_DELAY, // …how long that gate holds
     regenRate: f32 = 1.0, // …and the multiplier on the refill speed once it opens
-    /// Seconds of stun still to run.
     stunLeft: f32 = 0,
     lightStun: f32 = LIGHT_STUN_DUR, // …how long each tier's reaction lasts for THIS character
     heavyStun: f32 = HEAVY_STUN_DUR,
@@ -73,12 +67,10 @@ pub const Vitals = struct {
         return v;
     }
 
-    /// Is a reaction still running — and therefore poise still immune?
     pub fn stunned(self: *const Vitals) bool {
         return self.stunLeft > 0;
     }
 
-    /// ARM A REACTION'S IMMUNITY WINDOW.
     pub fn beginStun(self: *Vitals, kind: StunKind) void {
         self.stunLeft = switch (kind) {
             .none => 0,
@@ -91,7 +83,6 @@ pub const Vitals = struct {
         return if (self.hpMax > 0) mathx.clampF(self.hp / self.hpMax, 0, 1) else 0;
     }
 
-    /// PUT HP BACK.
     pub fn heal(self: *Vitals, amt: f32) f32 {
         if (self.dead or amt <= 0) return 0;
         const before = self.hp;
@@ -99,12 +90,10 @@ pub const Vitals = struct {
         return self.hp - before;
     }
 
-    /// Is this one worth healing — alive, and actually missing something?
     pub fn needsHeal(self: *const Vitals, slack: f32) bool {
         return !self.dead and self.hp < self.hpMax - slack;
     }
 
-    // Per frame.
     pub fn tick(self: *Vitals, dt: f32) void {
         self.sinceHit += dt;
         // THE STUN CLOCK RUNS BEFORE THE REGEN GATE, and that ordering is load-bearing: the hit that started the stun also zeroed `sinceHit`, and a foe's `regenDelay` (2.2 s) is longer than either of its stun windows — so behind the gate the clock would never reach zero and the poise immunity would never lift.
@@ -121,7 +110,6 @@ pub const Vitals = struct {
         self.stance = mathx.minF(self.stanceMax, self.stance + self.stanceMax / STANCE_REFILL * self.regenRate * dt);
     }
 
-    // A killing blow latches `dead`; otherwise the tiers cascade (poise empties → light; that break or direct stance damage empties stance → heavy), heavy outranking light on the same hit.
     pub fn hit(self: *Vitals, h: Hit) HitResult {
         if (self.dead) return .none;
         self.hp = mathx.maxF(0, self.hp - h.dmg);
@@ -158,10 +146,13 @@ pub const STAM_MAX = 105.0; // ER's Endurance-15 pool — about eight rolls from
 pub const STAM_ROLL = 12.0; // ER's flat, load-independent roll cost: the anchor for the rest
 pub const STAM_LIGHT = 10.0; // R1, ER's straight-sword band
 pub const STAM_HEAVY = 16.0; // R2 — ER heavies run ~1.3-1.8x their own light
+// THE BOW: a quick shot is CHEAPER than a light slash (a jab, not a trade) and an aimed one dearer than a
+// heavy — you stood still for it.
+pub const STAM_SHOT = 8.0;
+pub const STAM_AIMED = 18.0;
 pub const STAM_SPRINT = 9.0; // …per second held
 const STAM_REGEN = 45.0; // …per second, once the delay is out
 const STAM_DELAY = 0.55; // seconds after the last spend before it refills
-/// How long the bar flags a refused action — long enough to read as deliberate, short enough that it never lingers past the pool coming back.
 pub const STAM_REFUSE_FLASH: f32 = 0.35;
 
 // An empty bar locks out roll / attack / sprint (owner's call) — the genre's primary death window.
@@ -174,19 +165,16 @@ pub const Stamina = struct {
     cur: f32 = STAM_MAX,
     max: f32 = STAM_MAX,
     sinceSpend: f32 = LONG_AGO, // gates the refill delay
-    /// Latched the moment the pool hits 0, held until it has refilled to `STAM_WIND_CLEAR`.
     winded: bool = false,
 
     pub fn frac(self: *const Stamina) f32 {
         return if (self.max > 0) mathx.clampF(self.cur / self.max, 0, 1) else 0;
     }
 
-    /// Can a committed action START?
     pub fn canAct(self: *const Stamina) bool {
         return !STAM_LOCKOUT or self.cur > 0;
     }
 
-    /// Charge a one-off action.
     pub fn spend(self: *Stamina, cost: f32) void {
         self.cur = mathx.maxF(0, self.cur - cost);
         self.sinceSpend = 0;
@@ -198,7 +186,6 @@ pub const Stamina = struct {
         return self.canAct() and (!STAM_LOCKOUT or !self.winded);
     }
 
-    /// Per frame.
     pub fn tick(self: *Stamina, dt: f32, sprinting: bool, committed: bool) void {
         if (sprinting) {
             self.cur = mathx.maxF(0, self.cur - STAM_SPRINT * dt);
@@ -212,7 +199,6 @@ pub const Stamina = struct {
         self.settleWind();
     }
 
-    /// The fill the bar owes before the sprint comes back, as a fraction, or 0 when it owes nothing.
     pub fn windedTo(self: *const Stamina) f32 {
         return if (self.canSprint()) 0 else STAM_WIND_CLEAR;
     }
@@ -237,19 +223,15 @@ pub const Stamina = struct {
 pub const GUARD_NEGATE: f32 = 0.85; // fraction of a blocked blow's HP damage the shield eats…
 pub const GUARD_STAM_FLAT: f32 = 5.0; // …stamina every blocked blow costs…
 pub const GUARD_STAM_PER_DMG: f32 = 1.10; // …plus this per point of the blow's RAW damage (stability)
-/// How far off his facing the shield covers, in degrees EITHER SIDE.
 pub const GUARD_ARC: f32 = 65.0;
 
-/// A BLOCKED BLOW STILL COSTS POISE — none of it.
 pub fn guardStamina(h: Hit) f32 {
     return GUARD_STAM_FLAT + GUARD_STAM_PER_DMG * h.dmg;
 }
-/// …and the CHIP: what gets past a shield that is not a wall.
 pub fn guardChip(h: Hit) f32 {
     return h.dmg * (1.0 - GUARD_NEGATE);
 }
 
-// ER's blue bar.
 pub const FP_MAX = 60.0;
 
 pub const Focus = struct {
@@ -259,11 +241,9 @@ pub const Focus = struct {
     pub fn frac(self: *const Focus) f32 {
         return if (self.max > 0) mathx.clampF(self.cur / self.max, 0, 1) else 0;
     }
-    /// Is there room for a pour?
     pub fn canTake(self: *const Focus) bool {
         return self.cur < self.max - 1e-3;
     }
-    /// Returns whether it actually took any.
     pub fn restore(self: *Focus, amt: f32) bool {
         if (!self.canTake()) return false;
         self.cur = minF(self.max, self.cur + amt);
@@ -295,18 +275,15 @@ pub const Flasks = struct {
             .cerulean => self.cerulean,
         };
     }
-    /// Charges of the one currently in the slot.
     pub fn ready(self: *const Flasks) u8 {
         return self.charges(self.sel);
     }
-    /// D-pad down.
     pub fn cycle(self: *Flasks) void {
         self.sel = switch (self.sel) {
             .crimson => .cerulean,
             .cerulean => .crimson,
         };
     }
-    /// Spend one charge of the selected flask.
     pub fn take(self: *Flasks) bool {
         switch (self.sel) {
             .crimson => {
@@ -320,14 +297,36 @@ pub const Flasks = struct {
         }
         return true;
     }
-    /// Back to full — resting at the grace, which for this build is the respawn.
     pub fn refill(self: *Flasks) void {
         self.crimson = FLASK_CRIMSON;
         self.cerulean = FLASK_CERULEAN;
     }
 };
 
-// `Vitals.tick` refills poise and stance and deliberately never HP ("flasks only"), and `heal` is an instant pour.
+/// Shaped like `Flasks` because it is the same thing: a counted stack you spend in a fight and get back at a
+/// grace. Arrows being FINITE is what stops the bow answering everything.
+pub const ARROWS_MAX: u8 = 10;
+
+pub const Quiver = struct {
+    arrows: u8 = ARROWS_MAX,
+
+    pub fn ready(self: *const Quiver) u8 {
+        return self.arrows;
+    }
+    /// Spend one, reporting whether there WAS one — the caller refuses the shot on false.
+    pub fn take(self: *Quiver) bool {
+        if (self.arrows == 0) return false;
+        self.arrows -= 1;
+        return true;
+    }
+    pub fn add(self: *Quiver, n: u8) void {
+        self.arrows = @min(ARROWS_MAX, self.arrows +| n);
+    }
+    pub fn refill(self: *Quiver) void {
+        self.arrows = ARROWS_MAX;
+    }
+};
+
 
 pub const Regen = struct {
     left: f32 = 0, // seconds still to run
@@ -336,13 +335,11 @@ pub const Regen = struct {
     pub fn active(self: *const Regen) bool {
         return self.left > 0;
     }
-    /// Start (or RESTART) a drip of `total` HP spread over `dur`.
     pub fn start(self: *Regen, total: f32, dur: f32) void {
         if (dur <= 0) return;
         self.left = dur;
         self.rate = total / dur;
     }
-    /// Per frame.
     pub fn tick(self: *Regen, dt: f32, v: *Vitals) void {
         if (!self.active()) return;
         if (v.dead) return self.reset(); // …and dying ends it: a corpse is not still digesting
@@ -357,7 +354,6 @@ pub const Regen = struct {
     }
 };
 
-// Souls / blood echoes / runes: same mechanic, ER's name (ER is the north star).
 pub const RUNE_ROLL_RATE = 7.0; // …of the remaining gap, per second — a big haul counts up fast
 pub const RUNE_ROLL_FLOOR = 26.0; // …but never slower, or the last few runes crawl for a second and a
 
@@ -369,7 +365,6 @@ pub const Runes = struct {
         self.total += n;
     }
 
-    /// Per frame.
     pub fn tick(self: *Runes, dt: f32) void {
         const goal: f32 = @floatFromInt(self.total);
         if (self.shown >= goal) {

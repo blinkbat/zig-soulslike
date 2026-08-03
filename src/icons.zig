@@ -35,6 +35,9 @@ pub const Icon = enum {
     berserker,
     priest,
     slinger,
+    // …and the brood.
+    brood_mother,
+    broodling,
     // files
     new,
     open,
@@ -240,6 +243,32 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             line(cx + s * 0.24, cy - s * 0.32, cx + s * 0.05, cy + s * 0.26, w * 0.8, col);
             arc(cx, cy + s * 0.26, s * 0.10, 0, 180, w, col); // …the leather pouch
             dot(cx, cy + s * 0.24, w * 1.7, col); // …and the stone
+        },
+
+        .brood_mother => {
+            // A body slung between legs, with the two claws thrown forward — read it claws-first, which
+            // is how you meet her.
+            arc(cx, cy + s * 0.10, s * 0.26, 180, 360, w, col); // the carapace
+            hline(cx, cy + s * 0.10, s * 0.48, w, col);
+            for ([_]f32{ -1, 1 }) |side| {
+                // three legs a side, high-kneed
+                for ([_]f32{ -0.16, 0.02, 0.20 }) |dy| {
+                    line(cx + side * s * 0.20, cy + s * (0.06 + dy * 0.5), cx + side * s * 0.40, cy - s * 0.16 + s * dy, w * 0.7, col);
+                    line(cx + side * s * 0.40, cy - s * 0.16 + s * dy, cx + side * s * 0.46, cy + s * 0.30, w * 0.7, col);
+                }
+                line(cx + side * s * 0.14, cy - s * 0.06, cx + side * s * 0.26, cy - s * 0.34, w, col); // …and a CLAW, forward
+            }
+        },
+        .broodling => {
+            // The same animal, small and off the ground — a body, four legs, and the leap under it.
+            arc(cx, cy - s * 0.04, s * 0.17, 180, 360, w, col);
+            hline(cx, cy - s * 0.04, s * 0.32, w, col);
+            for ([_]f32{ -1, 1 }) |side| {
+                for ([_]f32{ -0.06, 0.10 }) |dy| {
+                    line(cx + side * s * 0.13, cy - s * 0.08 + s * dy, cx + side * s * 0.30, cy - s * 0.24 + s * dy, w * 0.7, col);
+                }
+            }
+            hline(cx, cy + s * 0.32, s * 0.36, w * 0.6, d); // the ground it is above
         },
 
         .new => {

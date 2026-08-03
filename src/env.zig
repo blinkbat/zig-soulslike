@@ -1857,6 +1857,24 @@ test "the cliff ring stands outside the movement clamp, and inside the grid" {
     try std.testing.expect(GROUND_HALF > wf.DEFAULT_HALF + 200);
 }
 
+test "THE BROOD ARENA LOADS — a scratch map is only useful if it is known to still parse" {
+    // A second world exists purely to test the brood in (`worlds/02_brood_arena.world`), which means
+    // nothing in the normal run ever opens it: a rename or a format change would rot it silently and it
+    // would be found by someone trying to use it, mid-debug, when a panic is the last thing they want.
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    var line: usize = 0;
+    wf.load(wf.DIR ++ "/02_brood_arena" ++ wf.EXT, m, &line) catch |e| {
+        if (e == error.FileNotFound) return error.SkipZigTest; // run from another cwd
+        return e;
+    };
+    var mothers: usize = 0;
+    for (m.foes[0..m.nfoes]) |f| {
+        if (f.kind == .brood_mother) mothers += 1;
+    }
+    try std.testing.expect(mothers > 0); // …or it is not an arena for anything
+}
+
 test "replaying the SHIPPED map produces a stable world" {
     // That `materialize` expands the real map, and expands it the SAME way every time.
     const m = try std.testing.allocator.create(wf.Map);
@@ -1883,9 +1901,9 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(lights0, e.lightCount());
 
     // …and the numbers themselves, so a scatter that quietly gains or loses instances fails the build instead of drifting in a screenshot.
-    try std.testing.expectEqual(@as(usize, 17107), props0);
-    try std.testing.expectEqual(@as(usize, 1744), solids0);
-    try std.testing.expectEqual(@as(usize, 37), lights0);
+    try std.testing.expectEqual(@as(usize, 17161), props0);
+    try std.testing.expectEqual(@as(usize, 1782), solids0);
+    try std.testing.expectEqual(@as(usize, 40), lights0);
 
     // …and THE CHEST IS STOCKED.
     var jerky: usize = 0;

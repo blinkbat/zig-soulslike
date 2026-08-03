@@ -1172,11 +1172,14 @@ test "AN ARROW AGGROS IT FROM OUTSIDE ITS OWN SENSES, and it comes for him" {
     // …so its AI now reads him as within reach and closes, and the FACING snapped back down the shaft.
     try std.testing.expect(foe.sensedDist(&f.leash, mathx.distXZ(f.pos, hero), AGGRO_R) <= AGGRO_R);
     try std.testing.expect(@abs(mathx.wrapPi(f.facing - mathx.headingXZ(mathx.v3(0, 0, 1)))) < 0.2);
-    // …and it actually CLOSES the ground rather than merely being annoyed.
+    // …and it actually CLOSES the ground rather than merely being annoyed — and KEEPS closing. One hop and
+    // a shrug is the bug this guards: the rouse used to lapse mid-flight, so a sniped toad landed once,
+    // decided he was miles away again, and sat down.
     const startD = mathx.distXZ(f.pos, hero);
     k = 0;
     while (k < 240) : (k += 1) _ = f.update(1.0 / 60.0, hero, 200, .{});
-    try std.testing.expect(mathx.distXZ(f.pos, hero) < startD - 1.0);
+    try std.testing.expect(f.leash.roused());
+    try std.testing.expect(mathx.distXZ(f.pos, hero) < startD - 5.0);
 }
 
 test "a hop's flight parabola starts and ends on the ground and peaks at the apex" {

@@ -18,6 +18,7 @@ const rumblemod = @import("rumble.zig");
 const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
 const koboldmod = @import("kobold.zig"); // THE WARBAND — three roles in one group (the priest heals)
+const broodmod = @import("brood.zig"); // THE BROOD — a mother, her sacs and what comes out of them
 const chestmod = @import("chest.zig"); // the openable boxes
 const restmod = @import("rest.zig"); // sitting at a bonfire
 const item = @import("item.zig"); // …and what is in them
@@ -49,6 +50,10 @@ const LOOK_RATE_YAW = 3.4; // rad/sec orbit at full right-stick deflection
 const LOOK_RATE_PITCH = 2.0; // …and vertical, deliberately slower (see above)
 // Response shape past the deadzone: 1 = linear, >1 = fine aim near the centre with the SAME top rate still reached at the rim.
 const LOOK_CURVE = 1.7;
+/// WHAT THE LOOK IS WORTH WITH THE BOW UP, mouse and stick alike. Aiming is the one place the ordinary rate
+/// reads as twitchy, and it is not the rate that changed: the eye sits at his head (`camera.AIM_DIST`) and
+/// the mark is thirty metres out, so a nudge that was a glance unaimed swings the shaft clean past a foe.
+const AIM_LOOK_SCALE = 0.42;
 const ROLL_TAP_MAX = 0.22; // Circle/B released before this (real seconds) = a dodge tap; longer = a sprint hold
 // NO run-unlock hold, ever (owner's rule, see AGENTS.md): the stick IS the speed — tilt maps straight to ground speed every frame, and keyboard movement runs immediately.
 
@@ -68,6 +73,10 @@ const BLOCK_FELT_MIN = 0.25; // …even the smallest blow is FELT: a block you c
 const BLOCK_FELT_HEAVY = 0.5; // …and past half the club, the pad's heavier signature takes over
 const SHAKE_DEATH = 0.85;
 const SHAKE_CHEST = 0.12;
+// A SAC SPLITTING is bad news arriving; a sac BURST is you having stopped it. Same weight class, opposite
+// meaning — both are events you should feel across the field, and neither is a blow that landed on you.
+const SHAKE_HATCH = 0.30;
+const SHAKE_SAC_BURST = 0.34;
 const RESPAWN_HOLD = 0.55; // seconds of FULL black after the respawn…
 const RESPAWN_FADE = 0.9; // …then this long fading up into the fresh world
 
@@ -128,13 +137,15 @@ pub const Game = struct {
     line: archermod.Line, // the skeletal archers perched in the ruins
     grief: ogremod.Grief, // the lone one-eyed ogre, deep in the ruins
     band: koboldmod.Warband, // the kobold warband — berserkers, priests and slingers, mixed
+    brood: broodmod.Brood, // the brood mothers, their egg sacs, their hatchlings and their acid
     chests: chestmod.Chests, // the openable boxes — props with a lid and a state (chest.zig)
     rest: restmod.Rest = .{}, // sitting at a bonfire: the state machine and the fade (rest.zig)
     /// The player's own retro stack, parked while a rest borrows the screen for its VHS look.
     restRetro: [gfx.RETRO_COUNT]f32 = [_]f32{0} ** gfx.RETRO_COUNT,
     bag: item.Bag = .{}, // …and what came out of them. The hero's, but held here with the rest of the run
     arrowModel: rl.Model, // shared arrow mesh, drawn per live/stuck arrow with its own matrix
-    stoneModel: rl.Model, // …and the slingers' stone, drawn from the SAME pool (see Arrow.stone)
+    stoneModel: rl.Model, // …and the slingers' stone, drawn from the SAME pool (see Arrow.shot)
+    venomModel: rl.Model, // …and the brood mother's glob, likewise
     arrows: [MAX_ARROWS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_ARROWS,
     /// …and the ones HE loosed (see MAX_SHAFTS).
     shafts: [MAX_SHAFTS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_SHAFTS,
@@ -169,6 +180,7 @@ pub const Game = struct {
         g.line = archermod.Line.init(g.scene.shader);
         g.grief = ogremod.Grief.init(g.scene.shader);
         g.band = koboldmod.Warband.init(g.scene.shader);
+        g.brood = broodmod.Brood.init(g.scene.shader);
         g.chests = chestmod.Chests.init(g.scene.shader);
         // Foes come from the MAP, so the groups can only be homed once it is loaded — init builds the shared meshes and nothing else.
         rehomeFoes(g);
@@ -178,6 +190,7 @@ pub const Game = struct {
         g.bag = .{};
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
         g.stoneModel = koboldmod.stoneMesh(g.scene.shader);
+        g.venomModel = broodmod.venomMesh(g.scene.shader);
         g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
         // Fields that would otherwise take their struct-literal defaults; set explicitly because there is no literal to default from any more.
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
@@ -200,6 +213,7 @@ const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "line", .kind = .archer },
     .{ .field = "grief", .kind = .ogre },
     .{ .field = "band", .kind = null },
+    .{ .field = "brood", .kind = null }, // …and this one holds two ages of one animal, for the same reason
 };
 
 fn rehomeFoes(g: *Game) void {
@@ -474,6 +488,16 @@ pub fn spawnStone(g: *Game, from: rl.Vector3) void {
     poolPut(g, archermod.launchStone(from, heroAimPoint(g), koboldmod.STONE_SPEED, koboldmod.STONE_HIT));
 }
 
+/// A BROOD MOTHER'S MOUTHFUL — aimed at his FEET, not his chest, because the glob is not the weapon: what
+/// it is trying to do is put acid on the ground he is standing on (see brood.Pool).
+pub fn spawnVenom(g: *Game, from: rl.Vector3) void {
+    // At his CENTRE OF MASS like every other thrown thing, not at his feet: the hero hit test is a sphere
+    // about that centre (`archer.heroReached`), so a glob solved onto the ground under him arrives a metre
+    // BELOW the only place it could connect — its impact damage would have been unreachable by
+    // construction. What it is really aiming at is the floor either way; a miss lands there anyway.
+    poolPut(g, archermod.launchVenom(from, heroAimPoint(g), broodmod.SPIT_SPEED, broodmod.M_SPIT_HIT));
+}
+
 fn rehomeChests(g: *Game) void {
     var sites: [chestmod.CAP]chestmod.Site = undefined;
     const n = g.env.chestSites(&sites);
@@ -491,7 +515,10 @@ pub fn rehomeChestsForShot(g: *Game) void {
 /// `foe:` records as Zig literals is what left the ogre 60 m from where the map puts it.
 pub fn clearFoesForShot(g: *Game) void {
     inline for (FOE_GROUPS) |f| {
-        @field(g, f.field).n = 0;
+        // A group with anything on the field BESIDES its members clears itself (the brood's sacs and its
+        // acid): zeroing `n` would leave a clutch nobody laid standing in the next portrait.
+        const G = @FieldType(Game, f.field);
+        if (comptime @hasDecl(G, "clear")) @field(g, f.field).clear() else @field(g, f.field).n = 0;
     }
 }
 pub fn rehomeFoesForShot(g: *Game) void {
@@ -625,7 +652,7 @@ fn looseShaft(g: *Game) void {
     const from = g.hero.nockWorld();
     // LOFT only where the target is a REAL point at a real distance — a locked foe, or what the aim ray
     // reaches. A bare bearing lofted over-corrects for everything nearer than the mark (archer.launchAt).
-    const locked: ?rl.Vector3 = if (aimed) null else if (g.lock) |li| foeLockPoint(g, li) else null;
+    const locked: ?rl.Vector3 = if (aimed) null else if (activeLock(g)) |li| foeLockPoint(g, li) else null;
     const target = locked orelse if (aimed) camAimPoint(g) else forwardAimPoint(g);
     const loft = locked != null or aimed;
     const speed: f32 = if (aimed) heromod.BOW_AIMED_SPEED else heromod.BOW_QUICK_SPEED;
@@ -733,7 +760,11 @@ fn drawArrows(g: *Game) void {
     for (quivers(g)) |pool| {
         for (pool) |*ar| {
             if (!ar.live) continue;
-            const m = if (ar.stone) &g.stoneModel else &g.arrowModel;
+            const m = switch (ar.shot) {
+                .arrow => &g.arrowModel,
+                .stone => &g.stoneModel,
+                .venom => &g.venomModel,
+            };
             rl.drawMesh(m.meshes[0], m.materials[0], archermod.arrowXform(ar));
         }
     }
@@ -1167,9 +1198,11 @@ pub fn run(mode: Mode) void {
         g.rest.look(g.hero.pos);
         sfx.tickStreams();
 
-        // Lock-on toggle: R3 (pad) / middle-mouse (kb+m).
-        const lockPressed = rl.isMouseButtonPressed(.middle) or
-            (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .right_thumb));
+        // Lock-on toggle: R3 (pad) / middle-mouse (kb+m) — and DEAD while the bow is up, since the lock it
+        // would toggle is suspended anyway (see activeLock) and a press that changes nothing you can see is
+        // worse than one that does nothing at all.
+        const lockPressed = !g.hero.aiming and (rl.isMouseButtonPressed(.middle) or
+            (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .right_thumb)));
         if (lockPressed) {
             if (g.lock != null) {
                 g.lock = null;
@@ -1193,7 +1226,9 @@ pub fn run(mode: Mode) void {
         const yawBefore = g.rig.yaw;
         // RAW stick magnitude, before any deadzone.
         const padMag = @sqrt(padRX * padRX + padRY * padRY);
-        if (g.lock) |li| {
+        // …and the whole look SLOWS as the bow comes up, eased on the same blend the view rides in on.
+        const lookScale = mathx.lerpF(1.0, AIM_LOOK_SCALE, mathx.clampF(g.rig.aimB, 0, 1));
+        if (activeLock(g)) |li| {
             const dir = mathx.dirXZ(g.hero.pos, foePos(g, li));
             if (mathx.lenXZ(dir) > 0.001) {
                 g.rig.aim(mathx.headingXZ(dir), LOCK_PITCH, dt, LOCK_CAM_EASE); // quick, snap-free swing
@@ -1220,11 +1255,11 @@ pub fn run(mode: Mode) void {
             if (lookPad) {
                 // rawDt, NOT dt: looking around is a FEEL system like the shake and the rumble, and it lives on the wall clock.
                 g.rig.orbit(
-                    -look.x * look.mag * LOOK_RATE_YAW * rawDt,
-                    look.y * look.mag * LOOK_RATE_PITCH * rawDt,
+                    -look.x * look.mag * LOOK_RATE_YAW * lookScale * rawDt,
+                    look.y * look.mag * LOOK_RATE_PITCH * lookScale * rawDt,
                 );
             } else if (inside and wasInside) {
-                g.rig.rotate(md.x, md.y);
+                g.rig.rotate(md.x * lookScale, md.y * lookScale);
             }
         }
         // …and record what BOTH devices said, deadzone or no, for the debug readout — on EITHER path, so the readout still tracks the sticks while locked on.
@@ -1359,12 +1394,26 @@ pub fn run(mode: Mode) void {
         // something behind it would be shooting where he was looking a moment ago. With no aim up, the
         // lock decides as before.
         const faceYaw: ?f32 = if (g.hero.aiming) g.rig.yaw else lockYaw;
+        // …AND HOW FAR DOWN (or up) THE THING HE IS SWINGING AT ACTUALLY IS. His cuts are authored at chest
+        // height, so a knee-high foe is a foe the blade passes over — he folds at the waist to put the arc
+        // through it (hero.aimAtPitch). Held and re-derived every frame like the guard, so a target that
+        // dies or walks off simply stops being one.
+        g.hero.aimAtPitch(meleePitch(g));
         // The slope under him, eased into the rig BEFORE it poses — every branch below ends in a `pose()`, so this has to be settled first or the lean is always one frame stale.
         leanToGround(g, dt);
         // WHERE EVERY FOE STOOD BEFORE IT ACTED — one row per group, walked off FOE_GROUPS like every other per-group pass here. Four buffers named by hand and eight calls kept in lockstep is exactly the shape FOE_GROUPS exists to kill, and this one's failure mode is the silent one: a group whose snapshot nobody took is a group the slope limit never gates, so it walks up cliffs.
         // Every row is sized to the WIDEST group, taken off the groups themselves (`FOE_CAP`) rather than named by hand; `snapshotPos` and `gateTerrain` both stop at the buffer's own length.
         var wasPos: [FOE_GROUPS.len][FOE_CAP]rl.Vector3 = undefined;
-        inline for (FOE_GROUPS, 0..) |f, gi| snapshotPos(@field(g, f.field).live(), &wasPos[gi]);
+        // …AND HOW MANY OF EACH ROW IS REAL. The buffer is a fixed FOE_CAP and only the first `n` slots get
+        // written, so handing the whole array to `gateTerrain` makes its own `i >= was.len` guard useless —
+        // and a group that GROWS mid-frame (the brood's sacs hatch during its update) then has its new
+        // arrivals gated against undefined memory, which walks them out of the world on their first frame.
+        var wasN: [FOE_GROUPS.len]usize = undefined;
+        inline for (FOE_GROUPS, 0..) |f, gi| {
+            const row = @field(g, f.field).live();
+            wasN[gi] = row.len;
+            snapshotPos(row, &wasPos[gi]);
+        }
         if (g.hero.dead) {
             g.hero.updateDeath(dt); // collapse → respawn
             // The frame he returns, the WORLD reloads with him (ER-style): every foe re-homed at full health, arrows cleared, lock dropped.
@@ -1411,10 +1460,32 @@ pub fn run(mode: Mode) void {
             // A chop is the heavier of the two, and it is the one that carries poise — split the felt weight on the blow's own numbers rather than on which creature threw it.
             _ = heroTakes(g, b, b.hit.poise >= koboldmod.ZERK_HIT.poise, true);
         }
+        // THE BROOD acts as one group for the reason the warband does: the mother has to see her own
+        // clutch to know whether to lay, and the clutch is what turns into the hatchlings.
+        const hatchesBefore = g.brood.hatches;
+        const burstsBefore = g.brood.bursts;
+        if (g.brood.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnVenom)) |b| {
+            _ = heroTakes(g, b, b.hit.stance > 0, true);
+        }
+        // THE TWO MOMENTS OF HERS THAT THE FRAME SHOULD FEEL. A sac splitting is bad news arriving and a
+        // sac BURSTING is you having stopped it — same weight class, opposite meaning, and the sound
+        // already tells them apart (see the brood block in audio.zig).
+        if (g.brood.hatches != hatchesBefore) {
+            g.rumble.play(rumblemod.hit_heavy);
+            g.rig.addShake(SHAKE_HATCH);
+        }
+        if (g.brood.bursts != burstsBefore) {
+            g.rumble.play(rumblemod.kill);
+            g.rig.addShake(SHAKE_SAC_BURST);
+        }
+        // …and the floor she left. It pulses (brood.ACID_TICK) and it is NOT a blow — no guard, no
+        // i-frames, no flinch, just the bar going down for as long as he stands there.
+        const burn = g.brood.burn(dt, g.hero.pos);
+        if (burn > 0 and g.hero.burn(burn) == .taken) sfx.play(.acid_burn);
         // The lids swing and the "which one is in reach" answer is recomputed — once, here, so the prompt the player reads and the button they then press cannot disagree about which box they mean.
         g.chests.update(dt, g.hero.pos);
         // …and the ground has its say about all of them: every step a foe just took is re-taken through the slope limit, so none of them walks up anything the hero couldn't.
-        inline for (FOE_GROUPS, 0..) |f, gi| gateTerrain(g, @field(g, f.field).live(), &wasPos[gi]);
+        inline for (FOE_GROUPS, 0..) |f, gi| gateTerrain(g, @field(g, f.field).live(), wasPos[gi][0..wasN[gi]]);
         // Arrows in flight: gentle homing + arc, then a strike lands a chomp-weight blow.
         for (&g.arrows) |*ar| {
             if (!ar.live) continue;
@@ -1425,7 +1496,7 @@ pub fn run(mode: Mode) void {
                 // It found the hero.
                 const blow = foemod.Blow{
                     // WHAT IT DEALS RODE IN ON IT (`Arrow.blow`, set at the launch), rather than being
-                    // re-derived from `stone` here — one projectile, one answer, decided where it was fired.
+                    // re-derived from its kind here — one projectile, one answer, decided where it was fired.
                     .hit = ar.blow,
                     .from = mathx.addV(g.hero.pos, mathx.scaleV(ar.vel, -1)),
                 };
@@ -1433,9 +1504,16 @@ pub fn run(mode: Mode) void {
                 const out: combat.HitOutcome = if (g.hero.dead) .ignored else heroTakes(g, blow, false, false);
                 // …and WHAT IT STRUCK picks that voice: boards if the shield caught it, flesh if not.
                 if (out == .taken or out == .ignored) sfx.play(.arrow_hit);
+                // A GLOB PUTS ITS POOL DOWN WHEREVER IT STOPPED, and catching it on the shield does not
+                // stop that: he blocked the mouthful, not the acid, and it is at his feet either way.
+                // …ON THE GROUND THERE, which the height field decides — `mathx.ground` is the y=0 DATUM,
+                // so on anything sculpted the pool floated in the air or sank out of sight.
+                if (ar.shot == .venom) g.brood.splash(v3(ar.pos.x, g.env.groundAt(ar.pos.x, ar.pos.z), ar.pos.z));
             } else if (ar.stuck and ar.age == 0) {
                 // It STUCK without connecting — into cover or into the earth, and that gets its own sound: a shaft thunking off the pillar you ducked behind is the game telling you the cover WORKED.
-                sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
+                if (ar.shot == .venom) {
+                    g.brood.splash(v3(ar.pos.x, g.env.groundAt(ar.pos.x, ar.pos.z), ar.pos.z));
+                } else sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
             }
         }
         // Blade connected this frame (a foe's hit count climbed) → hit pulse + frame crack sized to the swing; a kill adds the thunk (via justDied, since dissipation delays the aliveCount drop).
@@ -1624,6 +1702,47 @@ fn allRunes(g: *const Game) u32 {
 }
 
 // The hero's blade this frame as plain data for the foe hit test (endpoints guard→tip, plus last frame's for the swept test; active only inside the strike window).
+/// HOW FAR THE HERO MUST FOLD TO PUT A FLAT CUT THROUGH WHAT IS IN FRONT OF HIM — degrees below his own
+/// eye line, or null for "nothing worth stooping for". The locked foe is the mark when there is one;
+/// otherwise the nearest live foe inside `MELEE_AIM_R` and roughly ahead of him, so stooping over a
+/// broodling works without demanding the player lock onto it first.
+const MELEE_AIM_R: f32 = 3.6;
+/// …and it must be in FRONT: cos of the half-angle off his facing. A foe behind him is not his mark, and
+/// bending backwards over one would be the animation lying about where his sword is going.
+const MELEE_AIM_DOT: f32 = 0.35;
+/// The eye line the pitch is measured FROM — his shoulders, which is roughly where the flat arc lives.
+const MELEE_AIM_EYE: f32 = 1.35;
+
+fn meleeMark(g: *const Game) ?rl.Vector3 {
+    if (activeLock(g)) |li| {
+        if (mathx.distXZ(g.hero.pos, foePos(g, li)) <= MELEE_AIM_R * 2.0) return foeLockPoint(g, li);
+    }
+    const fwd = mathx.headingDir(g.hero.facing);
+    var best: ?rl.Vector3 = null;
+    var bestD: f32 = MELEE_AIM_R;
+    inline for (FOE_GROUPS) |gr| {
+        for (@field(g, gr.field).liveConst()) |*f| {
+            if (!f.alive() or f.dying()) continue;
+            const d = mathx.distXZ(g.hero.pos, f.pos);
+            if (d >= bestD) continue;
+            const to = mathx.dirXZ(g.hero.pos, f.pos);
+            if (d > 0.2 and to.x * fwd.x + to.z * fwd.z < MELEE_AIM_DOT) continue;
+            bestD = d;
+            best = f.lockPoint();
+        }
+    }
+    return best;
+}
+
+fn meleePitch(g: *const Game) ?f32 {
+    const mark = meleeMark(g) orelse return null;
+    const flat = mathx.distXZ(g.hero.pos, mark);
+    // Straight over the top of him there is no direction to fold in, and atan2 of a near-zero run is a
+    // pitch that snaps between extremes as he shuffles.
+    if (flat < 0.35) return null;
+    return mathx.degrees(std.math.atan2(g.hero.pos.y + MELEE_AIM_EYE - mark.y, flat));
+}
+
 pub fn heroBlade(g: *const Game) foemod.Blade {
     return .{
         .active = g.hero.hitActive(),
@@ -1666,6 +1785,9 @@ fn collideActors(g: *Game, dt: f32) void {
     settleGroup(g, g.grief.live(), .{}, step, false);
     // THE WARBAND yields to everything, itself included — a pack that walked through each other would stack three kobolds on one spot, and a knot of them is the whole point of the encounter.
     settleGroup(g, g.band.live(), .{}, step, true);
+    // …and the BROOD likewise, for the same reason twice over: nine hatchlings on one square metre is one
+    // hatchling with a hitbox, and being swarmed is the encounter.
+    settleGroup(g, g.brood.live(), .{}, step, true);
 }
 
 /// PUSH ONE GROUP OUT OF THE WORLD, THE HERO AND EACH OTHER, then ease every member there at the
@@ -1701,14 +1823,20 @@ const FoeRef = struct { kind: FoeKind, idx: usize };
 fn bandIdx(r: FoeRef) ?usize {
     return if (koboldmod.roleOf(r.kind) != null) r.idx else null;
 }
+/// …and the BROOD is the same shape: mother and hatchling both index `g.brood.band`.
+fn broodIdx(r: FoeRef) ?usize {
+    return if (broodmod.roleOf(r.kind) != null) r.idx else null;
+}
 /// ASK ONE QUESTION OF WHATEVER A `FoeRef` POINTS AT. The three accessors below were this same `bandIdx` + four-arm switch written out three times over, differing only in the method they called — so a fifth creature was three identical edits in three places, which is exactly the silent-miss shape `FOE_GROUPS` exists to kill for the per-group passes above.
 fn askFoe(comptime T: type, g: *const Game, r: FoeRef, comptime ask: anytype) T {
     if (bandIdx(r)) |i| return ask(&g.band.band[i]);
+    if (broodIdx(r)) |i| return ask(&g.brood.band[i]);
     return switch (r.kind) {
         .toad => ask(&g.warren.frogs[r.idx]),
         .archer => ask(&g.line.archers[r.idx]),
         .ogre => ask(&g.grief.ogres[r.idx]),
         .berserker, .priest, .slinger => unreachable, // handled above
+        .brood_mother, .broodling => unreachable, // …likewise
     };
 }
 fn foePos(g: *const Game, r: FoeRef) rl.Vector3 {
@@ -1737,6 +1865,14 @@ fn lockValid(g: *const Game, r: FoeRef) bool {
     return foeLockable(g, r) and mathx.distXZ(g.hero.pos, foePos(g, r)) <= MAX_LOCK_R + 2.0;
 }
 
+/// THE LOCK THE GAME IS ACTING ON — none of it while the bow is up. A raised bow SUSPENDS the lock rather
+/// than dropping it: aiming IS the pointing (the same reason it outranks the lock for his facing), so
+/// nothing may swing the camera, the reticle or a shot onto a foe you are no longer the one choosing —
+/// and lowering the bow hands the same target straight back without a second press.
+fn activeLock(g: *const Game) ?FoeRef {
+    return if (g.hero.aiming) null else g.lock;
+}
+
 // A world point projected to the screen, or null if nearer than the near-clip plane — the shared front-of-camera cull for the lock reticle, foe HP bars, and lock-screen-x.
 const PROJECT_NEAR = CLIP_NEAR; // must equal the near clip plane set in run()
 fn projectToScreen(cam: rl.Camera3D, p: rl.Vector3) ?rl.Vector2 {
@@ -1763,9 +1899,14 @@ fn acquireLock(g: *Game) ?FoeRef {
     return best;
 }
 
-/// WHICH KIND ONE MEMBER OF A GROUP IS. The warband carries three kinds in ONE array (the priest has to see its friends), so for it the member answers and not the group; every other array holds one kind and passes it in.
+/// WHICH KIND ONE MEMBER OF A GROUP IS. Two groups carry several kinds in ONE array — the warband (the
+/// priest has to see its friends) and the brood (the mother has to see her clutch) — so for those the
+/// MEMBER answers, through a `kind()` of its own; every other array holds one kind and passes it in.
+/// Asked as "does this creature answer for itself", not "does it have a `role` field": the second one is
+/// the same question with kobold.zig's answer wired into it, and it silently gave the brood's roles kobold
+/// kinds the moment a second creature grew a `role`.
 fn memberKind(f: anytype, group: ?FoeKind) FoeKind {
-    if (comptime @hasField(std.meta.Child(@TypeOf(f)), "role")) return koboldmod.kindOf(f.role);
+    if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "kind")) return f.kind();
     return group.?;
 }
 
@@ -1830,7 +1971,7 @@ fn drawFoeBars(g: *Game, foes: anytype) void {
 
 // The glowing white reticle on the locked foe (ER's dot) — 2D + crisp, drawn after the 3D pass.
 fn drawLockDot(g: *Game) void {
-    const li = g.lock orelse return;
+    const li = activeLock(g) orelse return;
     const s = projectToScreen(g.rig.cam, foeLockPoint(g, li)) orelse return; // skip if behind the camera
     const x: i32 = @intFromFloat(s.x);
     const y: i32 = @intFromFloat(s.y);

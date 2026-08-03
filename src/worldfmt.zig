@@ -192,7 +192,7 @@ pub const Zone = struct {
 pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 
 /// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at comptime and `kobold.roleOf` reads the three kobold entries as a contiguous run off `berserker`, so inserting a kind in the middle silently renumbers both.
-pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger };
+pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling };
 
 /// WHAT EACH FOE IS CALLED — the owner's names, and the only strings any UI should ever show for one.
 pub fn foeName(k: FoeKind) [:0]const u8 {
@@ -203,6 +203,8 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
         .berserker => "Kobold Berserker",
         .priest => "Kobold Priest",
         .slinger => "Kobold Slinger",
+        .brood_mother => "Brood Mother",
+        .broodling => "Broodling",
     };
 }
 

@@ -10,6 +10,7 @@ const frogmod = @import("frog.zig");
 const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
 const koboldmod = @import("kobold.zig");
+const broodmod = @import("brood.zig");
 const mathx = @import("mathx.zig");
 const props = @import("props.zig");
 const worldfmt = @import("worldfmt.zig");
@@ -1072,8 +1073,85 @@ pub fn runShots(g: *Game) void {
     shoot(g, "shots/14_retro_default.png");
     g.retro.allOff();
 
+    broodShots(g);
     chestShots(g);
     editorShots(g);
+}
+
+/// THE BROOD, which is four things to judge and not one: her silhouette (the claws have to read first),
+/// her rear-back tell, a clutch at both ends of its clock, and the floor she takes away from you.
+fn broodShots(g: *Game) void {
+    const bc = mathx.ground(-30.0, 14.0);
+    // The sensed hero is put BEHIND her in +Z terms, so she turns to face −Z and the lit camera band (yaw
+    // ~55, the sun over its shoulder) is looking at her FRONT — which on this creature is the whole point.
+    const far = v3(bc.x, 0, bc.z - 80.0);
+    game.clearFoesForShot(g);
+    g.hero.pos = mathx.ground(bc.x - 26.0, bc.z); // …and the hero out of frame for the portraits
+    g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pose();
+
+    g.brood.band[0] = broodmod.Spider.spawnAs(.mother, bc, std.math.pi, 1.0, 0.3);
+    g.brood.n = 1;
+    const m = &g.brood.band[0];
+    stepFoe(m, 40, far);
+    shootFoe(g, m, "shots/107_brood_mother.png", 55, 0.12, 9.0);
+    shootFoe(g, m, "shots/107b_brood_mother_3q.png", 20, 0.16, 8.0); // front-left 3/4, lit
+    shootFoe(g, m, "shots/107c_brood_mother_side.png", 300, 0.10, 8.5);
+
+    // SCALE — the hero beside her, which is the only shot that says how big she actually is.
+    g.hero.pos = mathx.ground(bc.x + 3.4, bc.z + 1.2);
+    g.hero.facing = std.math.atan2(bc.x - g.hero.pos.x, bc.z - g.hero.pos.z);
+    g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pose();
+    shootFoe(g, m, "shots/108_brood_scale.png", 30, 0.14, 11.0);
+    g.hero.pos = mathx.ground(bc.x - 26.0, bc.z);
+    g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pose();
+
+    // THE SPIT TELL at its peak: reared, claws thrown wide, abdomen pumping, eyes burning. If this is not
+    // readable from across a field the whole creature does not work.
+    m.* = broodmod.Spider.spawnAs(.mother, bc, std.math.pi, 1.0, 0.3);
+    stepFoe(m, 34, v3(bc.x, 0, bc.z - 11.0)); // …a hero in her spit band, so she rears
+    shootFoe(g, m, "shots/109_brood_spit_wind.png", 40, 0.10, 8.0);
+    stepFoe(m, 8, v3(bc.x, 0, bc.z - 11.0));
+    shootFoe(g, m, "shots/109b_brood_spit_throw.png", 40, 0.10, 8.0);
+
+    // THE CLUTCH, at both ends of its clock: freshly laid, and ripe a beat before it splits.
+    m.* = broodmod.Spider.spawnAs(.mother, bc, std.math.pi, 1.0, 0.3);
+    const near = v3(bc.x, 0, bc.z - 8.0); // a sensed hero in her lay band, held for the whole sequence
+    var k: i32 = 0;
+    while (k < 260) : (k += 1) _ = g.brood.update(SHOT_DT, near, game.PLAY_HALF, .{}, g, game.spawnVenom);
+    shootFoe(g, m, "shots/110_brood_laying.png", 45, 0.12, 9.5);
+    while (k < 560) : (k += 1) _ = g.brood.update(SHOT_DT, near, game.PLAY_HALF, .{}, g, game.spawnVenom);
+    shootFoe(g, m, "shots/110b_brood_clutch.png", 45, 0.16, 10.5);
+    // …and what comes out of it — the hatch runs on its own clock, so this is simply later.
+    // …and PAST the gestation, whatever it is set to: the hatch is the thing being photographed, and a
+    // budget in bare frames stops photographing it the moment the clock is retuned.
+    const hatched = 240 + @as(i32, @intFromFloat((broodmod.SAC_HATCH + 1.0) / SHOT_DT));
+    while (k < hatched) : (k += 1) _ = g.brood.update(SHOT_DT, near, game.PLAY_HALF, .{}, g, game.spawnVenom);
+    // …framed on THE HATCHLINGS, not on her: by now they have scattered off her and a shot centred on the
+    // mother is a shot of the mother with something out of frame.
+    if (g.brood.n > 1) {
+        const b = &g.brood.band[g.brood.n - 1];
+        shootFoe(g, b, "shots/111_broodlings.png", 45, 0.14, 8.0);
+        shootFoe(g, b, "shots/111b_broodling.png", 40, 0.08, 3.4); // one alone: her young, not a beetle
+    }
+
+    // THE FLOOR SHE TAKES AWAY. Laid by hand rather than by waiting for a glob to land, so the frame is of
+    // the pool and not of whatever she was doing when it did.
+    game.clearFoesForShot(g);
+    g.brood.splash(bc);
+    var p: i32 = 0;
+    while (p < 40) : (p += 1) {
+        for (&g.brood.pools) |*pool| pool.update(SHOT_DT);
+    }
+    g.hero.pos = mathx.ground(bc.x, bc.z + 0.6); // …with him standing in it, which is the mistake
+    g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pose();
+    shootAt(g, "shots/112_acid_pool.png", g.hero.shoulderPoint(), 45, 0.34, 7.0);
+
+    game.clearFoesForShot(g);
+    game.rehomeFoesForShot(g);
 }
 
 fn chestShots(g: *Game) void {

@@ -418,6 +418,11 @@ pub const Kobold = struct {
     pub fn runeValue(self: *const Kobold) u32 {
         return spec(self.role).runes;
     }
+    /// WHICH FOE KIND THIS SLOT IS — a group holding several kinds in one array has to be able to say, and
+    /// the lock-on asks the member rather than the group (see `game.memberKind`).
+    pub fn kind(self: *const Kobold) wf.FoeKind {
+        return kindOf(self.role);
+    }
 
     fn faceToward(self: *Kobold, target: rl.Vector3, dt: f32) void {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt);

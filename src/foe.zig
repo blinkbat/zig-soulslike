@@ -33,8 +33,10 @@ pub const LEASH_CALM: f32 = 4.5;
 
 /// WHAT ONE BLOW IS WORTH as provocation…
 pub const PROVOKE_PER_HIT: f32 = 1.0;
-/// …how much of it makes a foe ignore its own aggro range and come for you wherever you are (one hit does:
-pub const PROVOKE_AGGRO: f32 = 0.9;
+/// …how long one makes a foe ignore its own aggro range and come for you wherever you are. A COUNTDOWN, not
+/// a threshold on `provoked`: the rouse has to outlast the WALK across the tether, and a threshold one hit
+/// cleared by 0.1 held for 0.29 s at PROVOKE_DECAY — one step toward you, then back to grazing.
+pub const PROVOKE_ROUSE: f32 = 14.0;
 /// …and how much BREAKS it outright. THE ANTI-CHEESE: poking a foe at the end of its tether and watching
 /// it walk away is free damage at no risk, so continued aggression makes it stop trying to leave.
 pub const PROVOKE_BREAK: f32 = 2.5;
@@ -47,6 +49,7 @@ pub const PROVOKE_DECAY: f32 = 0.35;
 pub const Leash = struct {
     sinceCombat: f32 = mathx.LONG_AGO,
     provoked: f32 = 0,
+    rouseLeft: f32 = 0,
     breakLeft: f32 = 0,
     returning: bool = false,
 
@@ -54,6 +57,7 @@ pub const Leash = struct {
     pub fn tick(self: *Leash, dt: f32, out: f32) void {
         self.sinceCombat += dt;
         self.provoked = mathx.maxF(0, self.provoked - PROVOKE_DECAY * dt);
+        self.rouseLeft = mathx.maxF(0, self.rouseLeft - dt);
         self.breakLeft = mathx.maxF(0, self.breakLeft - dt);
         if (self.breakLeft > 0) {
             self.returning = false; // committed to the fight; the tether does not exist for now
@@ -76,6 +80,7 @@ pub const Leash = struct {
     /// progress — that is the debounce, and it is what stops one arrow flipping a foe's mind every second.
     pub fn provoke(self: *Leash) void {
         self.noteCombat();
+        self.rouseLeft = PROVOKE_ROUSE;
         self.provoked += PROVOKE_PER_HIT;
         if (self.provoked >= PROVOKE_BREAK) {
             self.breakLeft = PROVOKE_HOLD;
@@ -89,7 +94,7 @@ pub const Leash = struct {
 
     /// Is it coming for him whatever the range? (A shot from outside aggro range still starts a fight.)
     pub fn roused(self: *const Leash) bool {
-        return self.breakLeft > 0 or self.provoked >= PROVOKE_AGGRO;
+        return self.breakLeft > 0 or self.rouseLeft > 0;
     }
 };
 
@@ -329,12 +334,22 @@ test "ONE PLAYER HIT ROUSES IT FROM ANY RANGE, and KEEPING AT IT breaks the leas
     try std.testing.expect(!l.roused());
     l.provoke();
     try std.testing.expect(l.roused());
+    // …AND IT STAYS ROUSED LONG ENOUGH TO WALK THE GROUND. It used to lapse after 0.29 s (one hit's worth of
+    // `provoked` over the old threshold), so a foe shot from across the plaza took one step and went back to
+    // grazing — which read in play as "shooting them from afar does nothing".
+    var t: f32 = 0;
+    while (t < PROVOKE_ROUSE - 0.5) : (t += 1.0 / 60.0) {
+        l.tick(1.0 / 60.0, 0);
+        try std.testing.expect(l.roused());
+    }
+    while (t < PROVOKE_ROUSE + 0.5) : (t += 1.0 / 60.0) l.tick(1.0 / 60.0, 0);
+    try std.testing.expect(!l.roused()); // …and it does lapse: left alone, it forgets
 
     // Second, THE ANTI-CHEESE: a foe already walking home shrugs off ONE hit and keeps walking (the
     // debounce — otherwise a single arrow a second flips its mind forever)…
     var c = Leash{};
     const far = LEASH_R + 8.0;
-    var t: f32 = 0;
+    t = 0;
     while (t < LEASH_CALM + 0.1) : (t += 1.0 / 60.0) c.tick(1.0 / 60.0, far);
     try std.testing.expect(c.goingHome());
     c.provoke();
@@ -359,10 +374,11 @@ test "ONE PLAYER HIT ROUSES IT FROM ANY RANGE, and KEEPING AT IT breaks the leas
 test "the leash constants say what the rule is" {
     // Start FAR, stop NEAR — the gap between them IS the debounce, and a zero gap is the flapping.
     try std.testing.expect(LEASH_HOME_R < LEASH_R * 0.5);
-    // One hit rouses; it takes more than one to break a tether in progress.
-    try std.testing.expect(PROVOKE_AGGRO <= PROVOKE_PER_HIT);
+    // It takes more than one hit to break a tether in progress.
     try std.testing.expect(PROVOKE_BREAK > PROVOKE_PER_HIT);
-    // …and a break has to outlive the calm window, or it lapses before the foe has crossed the ground.
+    // …and a rouse and a break both have to outlive the calm window, or they lapse before the foe has
+    // crossed the ground and the shot that started the fight buys one step.
+    try std.testing.expect(PROVOKE_ROUSE > LEASH_CALM * 2.0);
     try std.testing.expect(PROVOKE_HOLD > LEASH_CALM * 2.0);
 }
 

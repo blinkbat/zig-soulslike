@@ -361,6 +361,24 @@ pub const Id = enum {
     kobold_bite, // teeth: a snap with a wet click in it
     kobold_hurt,
     kobold_die, // a yelp that falls apart
+    // THE BROOD. Everything of hers is WET — chitin over fluid — where the kobold is dry and the skeleton
+    // is hollow. That is the whole family resemblance, and it is what a player will name her by.
+    spider_hiss, // the rear, and the squat before she lays: air forced out through something clenched
+    spider_spit, // …and the throw: a heave and a wet launch
+    spider_bite, // two fangs and the horn claws crossing behind them
+    spider_hurt,
+    spider_die, // the big one going over: legs rattling on the ground, then nothing
+    brood_screech, // IT IS BORN — the highest thing in the game, straight over the sac splitting
+    brood_leap, // a hatchling committing — a thin shriek, and the only warning you get
+    brood_bite,
+    brood_hurt,
+    brood_die, // a wet pop, and it is done
+    sac_lay, // something heavy and soft arriving on the ground
+    sac_hit, // …and a blade going into it, which does NOT sound like hitting a body
+    sac_hatch, // the membrane splitting and three of them coming out at once
+    sac_burst, // …or the same thing killed: a burst, and nothing comes out
+    acid_splash, // the glob landing and spreading
+    acid_burn, // …and standing in it, once per pulse
     // the flasks
     flask_drink,
     flask_cycle,
@@ -869,6 +887,168 @@ fn mkKoboldDie(r: *Rack) void {
     r.master(1.35, 1900);
 }
 
+// ── THE BROOD ────────────────────────────────────────────────────────────────────────────────────────
+// EVERY VOICE HERE IS WET, and that is the family: air forced through fluid, chitin knocking on chitin,
+// and nothing with a proper chest behind it. Where the kobold barks and the skeleton clatters, she seeps.
+
+fn mkSpiderHiss(r: *Rack) void {
+    // THE REAR. Not a snake's hiss — air squeezed out of something that has to clench to do it, so it
+    // comes in two pushes and there is liquid in the second.
+    r.air(0.0, 0.38, 0.46, 2600, 5200, 0.42, 1.5); // …climbing, which is what makes it a THREAT and not an exhale
+    r.grit(0.06, 0.34, 0.16, 2200, 0.35, 1.8); // the wet in it
+    r.growl(0.02, 0.30, 96, 132, 0.20, 0.55, 0.40); // a low seething under the air
+    r.air(0.30, 0.30, 0.34, 4200, 2400, 0.38, 2.2); // …and the second push, falling away
+    r.master(1.5, 5200);
+}
+
+fn mkSpiderSpit(r: *Rack) void {
+    // THE THROW: the body heaving behind it, then the glob actually leaving — a wet slap, not a hiss.
+    r.growl(0.0, 0.10, 150, 90, 0.42, 0.40, 0.10); // the heave
+    r.grit(0.07, 0.09, 0.52, 1500, 0.55, 5.0); // the launch — thick and granular
+    r.air(0.07, 0.14, 0.40, 1900, 700, 0.40, 3.6); // …and it going away from you
+    r.body(0.07, 0.07, 210, 96, 0.34, 6.0);
+    r.master(1.8, 3600);
+}
+
+fn mkSpiderBite(r: *Rack) void {
+    // TWO FANGS, and the horn claws crossing behind them — the clack is doubled and unevenly spaced,
+    // because nothing on her closes at once.
+    r.air(0.0, 0.08, 0.30, 1000, 2000, 0.34, 3.4);
+    r.tick(0.05, 0.42, 2400);
+    r.tick(0.072, 0.30, 3100); // …the second fang, a hair behind the first
+    r.ring(0.05, 0.09, 480, 0.20, 8.0, 3); // horn, not bone: lower and deader than the kobold's clack
+    r.body(0.05, 0.12, 112, 60, 0.52, 4.2); // the mass of the head behind it
+    r.grit(0.05, 0.14, 0.20, 800, 0.6, 3.2); // …and it is a WET mouth
+    r.master(1.4, 2200);
+}
+
+fn mkSpiderHurt(r: *Rack) void {
+    // A shriek through a spiracle, with the shell cracking under it.
+    r.grit(0.0, 0.07, 0.44, 2800, 0.5, 5.5); // the shell
+    r.air(0.0, 0.26, 0.44, 3400, 1500, 0.52, 2.6);
+    r.growl(0.0, 0.22, 340, 190, 0.44, 0.42, 0.14);
+    r.body(0.0, 0.11, 130, 70, 0.40, 4.4);
+    r.master(1.4, 3400);
+}
+
+fn mkSpiderDie(r: *Rack) void {
+    // THE BIG ONE GOING OVER: the shriek collapsing, the body arriving, and eight legs rattling on the
+    // ground after it has stopped — which is the part that says spider.
+    r.growl(0.0, 0.30, 360, 120, 0.70, 0.44, 0.10);
+    r.air(0.0, 0.42, 0.44, 3000, 900, 0.46, 1.9);
+    r.body(0.22, 0.30, 104, 40, 0.66, 3.0); // it comes down
+    r.grit(0.30, 0.52, 0.26, 1300, 0.85, 1.7); // …and the legs go on moving without it
+    r.grit(0.62, 0.34, 0.14, 1000, 0.9, 2.2);
+    r.master(1.35, 2000);
+}
+
+fn mkBroodScreech(r: *Rack) void {
+    // THE BIRTH CRY, and the highest voice in the bank by a long way (owner: higher than the hatch it
+    // rides over). Two throats a hair apart so it beats and never sounds like one clean tone, climbing
+    // hard and breaking at the top — a thing announcing itself, not a thing warning you.
+    r.growl(0.0, 0.30, 900, 1750, 0.72, 0.26, 0.16);
+    r.growl(0.015, 0.28, 940, 1690, 0.44, 0.40, 0.20); // …the beat against it
+    r.air(0.0, 0.30, 0.34, 4200, 8000, 0.55, 2.0); // the hiss of it, climbing with the pitch
+    r.growl(0.24, 0.16, 1600, 820, 0.42, 0.55, 0.30); // …and the break at the top
+    r.grit(0.0, 0.07, 0.26, 5200, 0.35, 5.0); // the membrane letting go under it
+    r.master(1.7, 8200); // …and the brightest master in the bank, because that is the whole point
+}
+
+fn mkBroodLeap(r: *Rack) void {
+    // A HATCHLING COMMITTING — thin, high and short. It is the only warning the pounce gives, so it has
+    // to cut through a fight rather than sit under it.
+    r.growl(0.0, 0.13, 620, 980, 0.70, 0.30, 0.10);
+    r.air(0.0, 0.10, 0.24, 3000, 6000, 0.45, 3.0);
+    r.tick(0.0, 0.24, 5200); // the legs leaving the ground
+    r.master(1.5, 6200);
+}
+
+fn mkBroodBite(r: *Rack) void {
+    // The same mouth as hers, a third the size: brighter, faster, and hardly any body behind it.
+    r.tick(0.02, 0.34, 4200);
+    r.tick(0.036, 0.24, 5000);
+    r.ring(0.02, 0.05, 1050, 0.16, 10.0, 2);
+    r.air(0.0, 0.05, 0.22, 1800, 3200, 0.34, 4.2);
+    r.body(0.02, 0.05, 220, 130, 0.24, 6.0);
+    r.master(1.3, 4400);
+}
+
+fn mkBroodHurt(r: *Rack) void {
+    r.grit(0.0, 0.05, 0.40, 4200, 0.4, 6.0); // the shell, and there is not much of it
+    r.growl(0.0, 0.13, 760, 420, 0.52, 0.36, 0.10);
+    r.air(0.0, 0.12, 0.26, 4000, 2200, 0.44, 3.4);
+    r.master(1.3, 5200);
+}
+
+fn mkBroodDie(r: *Rack) void {
+    // A WET POP. It does not have a death, it has an end.
+    r.grit(0.0, 0.06, 0.62, 2200, 0.6, 6.0);
+    r.body(0.0, 0.09, 300, 90, 0.50, 5.5);
+    r.growl(0.0, 0.10, 820, 300, 0.44, 0.40, 0.08);
+    r.grit(0.05, 0.14, 0.20, 1200, 0.8, 3.0); // …the spill
+    r.master(1.5, 3200);
+}
+
+fn mkSacLay(r: *Rack) void {
+    // Something heavy and soft arriving on the ground, out of something that had to push.
+    r.growl(0.0, 0.34, 120, 84, 0.34, 0.50, 0.45); // the strain
+    r.grit(0.24, 0.20, 0.34, 900, 0.7, 3.0); // …it coming away
+    r.body(0.32, 0.16, 96, 44, 0.60, 4.0); // …and landing: soft, and with weight
+    r.grit(0.34, 0.16, 0.20, 620, 0.55, 3.4);
+    r.master(1.4, 1800);
+}
+
+fn mkSacHit(r: *Rack) void {
+    // A BLADE INTO A MEMBRANE, which must not sound like hitting a body: no crack, no bone — a taut
+    // surface giving and fluid moving behind it.
+    r.grit(0.0, 0.09, 0.44, 1300, 0.5, 4.5);
+    r.body(0.0, 0.10, 168, 76, 0.44, 5.0);
+    r.air(0.0, 0.13, 0.20, 900, 400, 0.30, 3.4);
+    r.master(1.4, 2000);
+}
+
+fn mkSacHatch(r: *Rack) void {
+    // THE SPLIT, then three of them coming out at once — a tear, a wash of fluid, and a scatter of small
+    // dry legs finding the ground.
+    r.grit(0.0, 0.20, 0.50, 1800, 0.55, 3.0); // the membrane opening
+    r.air(0.0, 0.30, 0.34, 2400, 1000, 0.40, 2.4);
+    r.body(0.04, 0.18, 130, 58, 0.42, 3.6);
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) { // …and the three of them, unevenly
+        const t = 0.20 + @as(f32, @floatFromInt(i)) * 0.10 + r.rng.range(-0.03, 0.03);
+        r.grit(t, 0.16, 0.18, 3200, 0.9, 3.2);
+        r.growl(t, 0.09, 700 + r.rng.signed() * 120, 460, 0.24, 0.34, 0.12);
+    }
+    r.master(1.5, 4200);
+}
+
+fn mkSacBurst(r: *Rack) void {
+    // THE SAME THING KILLED, and it has to read as a DENIAL: one hard wet burst and no legs after it.
+    r.grit(0.0, 0.08, 0.72, 1600, 0.5, 5.5);
+    r.body(0.0, 0.16, 190, 52, 0.72, 4.0);
+    r.air(0.0, 0.22, 0.44, 2000, 600, 0.42, 2.8);
+    r.grit(0.07, 0.30, 0.26, 800, 0.8, 2.2); // …the spill, and that is all
+    r.master(1.7, 2600);
+}
+
+fn mkAcidSplash(r: *Rack) void {
+    // The glob landing: a flat wet slap, then the spread, then the first of the fizz.
+    r.grit(0.0, 0.07, 0.60, 1200, 0.45, 5.5);
+    r.body(0.0, 0.11, 150, 58, 0.50, 4.5);
+    r.air(0.04, 0.30, 0.30, 1600, 3600, 0.30, 1.8); // spreading OUT, so the cut climbs
+    r.grit(0.10, 0.34, 0.22, 4200, 0.25, 1.6); // …and it starts to eat
+    r.master(1.6, 5000);
+}
+
+fn mkAcidBurn(r: *Rack) void {
+    // ONE PULSE OF STANDING IN IT. Deliberately not a hurt voice — the hero already has one, and this is
+    // the FLOOR doing it: fizz and a shallow bite, so a tick never competes with a blow landing.
+    r.grit(0.0, 0.22, 0.34, 5200, 0.20, 2.2);
+    r.air(0.0, 0.18, 0.22, 3000, 6000, 0.34, 2.6);
+    r.body(0.0, 0.07, 190, 110, 0.20, 5.0);
+    r.master(1.3, 6000);
+}
+
 fn mkFlaskDrink(r: *Rack) void {
     // Cork, then three glugs, then the warm bloom of it taking hold.
     r.ring(0.0, 0.20, 2450, 0.55, 9.0, 2);
@@ -1154,6 +1334,31 @@ const BANK = [NV]Row{
     .{ .make = mkKoboldBite, .gain = battle(0.56), .mix = .combat, .jit = 0.20, .vjit = 0.26, .vars = 6, .poly = 3, .reach = 40 },
     .{ .make = mkKoboldHurt, .gain = battle(0.60), .mix = .combat, .jit = 0.24, .vjit = 0.30, .vars = 6, .poly = 4, .reach = 48 },
     .{ .make = mkKoboldDie, .gain = battle(0.68), .mix = .combat, .jit = 0.18, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 58 },
+    // THE BROOD. Her tell has to carry the length of her spit (19 m) with room over it, or the one cue
+    // that says get out of the open arrives after the glob does.
+    .{ .make = mkSpiderHiss, .gain = battle(0.56), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 66 },
+    .{ .make = mkSpiderSpit, .gain = battle(0.58), .mix = .combat, .jit = 0.12, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 62 },
+    .{ .make = mkSpiderBite, .gain = battle(0.64), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 34 },
+    .{ .make = mkSpiderHurt, .gain = battle(0.60), .mix = .combat, .jit = 0.15, .vjit = 0.22, .vars = 4, .poly = 3, .reach = 40 },
+    .{ .make = mkSpiderDie, .gain = battle(0.80), .mix = .combat, .jit = 0.08, .vjit = 0.10, .vars = 2, .poly = 2, .reach = 70 },
+    // …and the hatchlings are the repetition risk in this family (nine of them), so they take the
+    // footsteps' treatment: many takes and wide jitter.
+    // THE BIRTH CRY carries: it is the moment a sac you did not deal with becomes a thing that is coming.
+    .{ .make = mkBroodScreech, .gain = battle(0.62), .mix = .combat, .jit = 0.22, .vjit = 0.24, .vars = 5, .poly = 4, .reach = 76 },
+    .{ .make = mkBroodLeap, .gain = battle(0.52), .mix = .combat, .jit = 0.26, .vjit = 0.28, .vars = 6, .poly = 4, .reach = 46 },
+    .{ .make = mkBroodBite, .gain = battle(0.44), .mix = .combat, .jit = 0.26, .vjit = 0.30, .vars = 6, .poly = 4, .reach = 30 },
+    .{ .make = mkBroodHurt, .gain = battle(0.46), .mix = .combat, .jit = 0.28, .vjit = 0.32, .vars = 6, .poly = 4, .reach = 34 },
+    .{ .make = mkBroodDie, .gain = battle(0.52), .mix = .combat, .jit = 0.24, .vjit = 0.28, .vars = 6, .poly = 4, .reach = 40 },
+    .{ .make = mkSacLay, .gain = battle(0.50), .mix = .combat, .jit = 0.12, .vjit = 0.18, .vars = 3, .poly = 2, .reach = 44 },
+    .{ .make = mkSacHit, .gain = battle(0.54), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 4, .poly = 4, .reach = 34 },
+    // THE HATCH IS A CUE, and one you may be across the plaza from when it fires.
+    .{ .make = mkSacHatch, .gain = battle(0.66), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 72 },
+    // …and so is DENYING one, which is the reward for having gone in: it should be heard and unmistakable.
+    .{ .make = mkSacBurst, .gain = battle(0.74), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 68 },
+    .{ .make = mkAcidSplash, .gain = battle(0.58), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 4, .poly = 4, .reach = 50 },
+    // The QUIETEST thing in the fight, deliberately: it fires every 0.42 s while he stands in one, and a
+    // tick that shouted would drown the blow that was actually killing him.
+    .{ .make = mkAcidBurn, .gain = 0.26, .mix = .combat, .jit = 0.20, .vjit = 0.26, .vars = 5, .poly = 3, .reach = 24 },
     .{ .make = mkFlaskDrink, .gain = 0.52, .jit = 0.06, .vjit = 0.10, .vars = 2, .poly = 2 },
     .{ .make = mkFlaskCycle, .gain = 0.30, .jit = 0.07, .vjit = 0.08, .vars = 2, .poly = 3 },
     // Quieter than the flask: eating is not an emergency, and the sound of it should not be one.
@@ -1200,6 +1405,14 @@ fn seconds(id: Id) f32 {
         .birds => 1.3, // long enough for a phrase plus the answer that can start at 0.72
         .birdsong => 1.0, // …up-slur, down-slur, and the third note that sometimes lands at 0.56
         .roll, .swing_heavy, .ogre_swipe, .ogre_step => 0.7,
+        // HER TELL RUNS THE LENGTH OF HER OWN WIND-UP (brood.SPIT_WINDUP is 0.62) — a cue that stopped
+        // halfway would stop being a cue halfway, which is the same rule the priest's cast is cut to.
+        .spider_hiss => 0.7,
+        .spider_die => 1.15, // …the legs go on after the body has stopped
+        .sac_lay => 0.62, // the push, then it arriving on the ground
+        .sac_hatch, .brood_screech => 0.55, // the membrane going, and the cry straight over it
+        .sac_burst => 0.45,
+        .acid_splash => 0.42,
         else => 0.5,
     };
 }
@@ -1269,7 +1482,7 @@ pub fn init() void {
         }
         slots[idx].next = 0;
     }
-    restFire = rl.loadMusicStreamFromMemory(".wav", CAMPFIRE_WAV) catch null;
+    restFire = rl.loadMusicStreamFromMemory(".wav", dressedFire()) catch null;
     if (restFire) |*m| {
         m.looping = true;
         rl.setMusicVolume(m.*, 0);
@@ -1279,6 +1492,91 @@ pub fn init() void {
 
 // Everything else here is synthesized, and the note at the top of this file says so in as many words.
 const CAMPFIRE_WAV = @embedFile("campfire_wav");
+
+// ── THE ONE RECORDED SOUND, PUT THROUGH THE SAME MACHINE AS THE REST ─────────────────────────────────
+// It arrived clean, thin and plainly from a different room than everything around it — which is exactly
+// what the bank's master chain exists to stop. So the take gets that chain too (saturation, the bit crush,
+// the tape's bandwidth and its noise floor) plus a LOW SHELF, because a fire you are sitting at is felt in
+// the chest and the recording had no bottom in it at all.
+// No `wow` here, and that is not an omission: flutter is a PITCH wobble, and a crackle bed has no pitch to
+// wobble — it would cost a second buffer the size of the file to hear nothing.
+
+const FIRE_BASS_HZ: f32 = 190.0; // …everything under this comes up
+const FIRE_BASS: f32 = 1.35; // …by about 7 dB
+const FIRE_DRIVE: f32 = 1.55; // tape saturation, which is also what stops the shelf clipping
+const FIRE_BITS: f32 = 6.5; // crushed HARDER than the synth bank's 7.5: it is the one voice with real
+const FIRE_HOLD: u32 = 2; // material in it, so it is the one where the grain actually reads
+const FIRE_CUT: f32 = 3400.0; // the tape's top end — a fire is bottom and crackle, no air
+const FIRE_HISS: f32 = 0.010;
+const FIRE_OUT: f32 = 0.92;
+
+/// The re-encoded take. 16-bit PCM out of 16-bit PCM in, so the source file's own length is a safe bound
+/// (it carries a `LIST` chunk this header does not) — and it re-sizes itself if the asset is ever swapped.
+var fireWav: [CAMPFIRE_WAV.len + 64]u8 = undefined;
+
+fn put32(b: []u8, at: usize, v: u32) void {
+    std.mem.writeInt(u32, b[at..][0..4], v, .little);
+}
+fn put16(b: []u8, at: usize, v: u16) void {
+    std.mem.writeInt(u16, b[at..][0..2], v, .little);
+}
+
+/// Decode the take, run it through the finish, and hand back a canonical WAV — raylib streams from encoded
+/// bytes, so the only way to loop a PROCESSED bed is to write one back out.
+fn dressedFire() []const u8 {
+    const w = rl.loadWaveFromMemory(".wav", CAMPFIRE_WAV) catch return CAMPFIRE_WAV;
+    defer rl.unloadWave(w);
+    // Only the shape this asset actually is — 16-bit PCM. Anything else goes through untouched rather than
+    // being reinterpreted, because a silently mis-decoded bed is worse than an undressed one.
+    if (w.sampleSize != 16) return CAMPFIRE_WAV;
+    const frames: usize = @intCast(w.frameCount);
+    const chans: usize = @intCast(w.channels);
+    const n = frames * chans;
+    const bytes = 44 + n * 2;
+    if (n == 0 or bytes > fireWav.len) return CAMPFIRE_WAV;
+    const src: [*]i16 = @ptrCast(@alignCast(w.data));
+
+    var low = Pole{};
+    var lp = Pole{};
+    var hp = Pole{};
+    var hq = Pole{};
+    var r = mathx.Rng.init(0xF12E9A);
+    const levels = std.math.pow(f32, 2.0, FIRE_BITS) * 0.5;
+    var held: f32 = 0;
+    var k: u32 = 0;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        var x = @as(f32, @floatFromInt(src[i])) / 32768.0;
+        x += FIRE_BASS * low.step(x, FIRE_BASS_HZ); // the shelf: the body a fire has and the take did not
+        const d = x * FIRE_DRIVE;
+        x = d / (1.0 + @abs(d)); // …and the same cheap tanh the rack finishes with
+        if (k == 0) held = x;
+        k = (k + 1) % @max(FIRE_HOLD, 1);
+        const dith = (r.signed() + r.signed()) * 0.5 / levels * DITHER_LSB;
+        x = @round((held + dith) * levels) / levels;
+        x = lp.step(x, FIRE_CUT);
+        x += hq.step(hp.step(r.signed(), 5200), 2600) * FIRE_HISS;
+        const s = mathx.clampF(x * FIRE_OUT, -1, 1) * 32000.0;
+        std.mem.writeInt(i16, fireWav[44 + i * 2 ..][0..2], @intFromFloat(s), .little);
+    }
+
+    const rate: u32 = w.sampleRate;
+    const align16: u16 = @intCast(chans * 2);
+    @memcpy(fireWav[0..4], "RIFF");
+    put32(&fireWav, 4, @intCast(bytes - 8));
+    @memcpy(fireWav[8..12], "WAVE");
+    @memcpy(fireWav[12..16], "fmt ");
+    put32(&fireWav, 16, 16);
+    put16(&fireWav, 20, 1); // PCM
+    put16(&fireWav, 22, @intCast(chans));
+    put32(&fireWav, 24, rate);
+    put32(&fireWav, 28, rate * align16);
+    put16(&fireWav, 32, align16);
+    put16(&fireWav, 34, 16);
+    @memcpy(fireWav[36..40], "data");
+    put32(&fireWav, 40, @intCast(n * 2));
+    return fireWav[0..bytes];
+}
 
 /// A STREAM, not a `Sound`, because it is twelve seconds long and has to loop — `Sound` has no loop and would need re-triggering on a timer that would drift audibly.
 var restFire: ?rl.Music = null;
@@ -1361,9 +1659,13 @@ pub fn voiceInfo(id: Id) VoiceInfo {
     return .{ .gain = r.gain, .mix = r.mix, .jit = r.jit, .vjit = r.vjit, .vars = r.vars, .poly = r.poly, .reach = r.reach };
 }
 
-// One number per `Submix`, multiplied in alongside the author-side trim.
+// One number per `Submix`, multiplied in alongside the author-side trim. NONE OF THE THREE STARTS AT FULL
+// (owner's call): the dial's job is headroom above the level you actually want, not a ceiling you are
+// already sitting on — so every family launches with somewhere to go up as well as down.
 const DEFAULT_VOL = blk: {
     var d = [_]f32{1.0} ** NMIX;
+    d[@intFromEnum(Submix.sfx)] = 0.90;
+    d[@intFromEnum(Submix.combat)] = 0.80;
     d[@intFromEnum(Submix.ambience)] = 0.80;
     break :blk d;
 };
@@ -1725,6 +2027,10 @@ test "THE FIGHT IS ONE BAND — no battle voice towers over the rest of them" {
         .arrow_stone,  .arrow_metal,   .bone_hurt,     .bone_die,     .ogre_step,    .ogre_roar,
         .ogre_slam,    .ogre_swipe,    .ogre_hurt,     .ogre_die,     .kobold_snarl, .kobold_chop,
         .kobold_heave, .kobold_whirl,  .kobold_sling,  .kobold_bite,  .kobold_hurt,  .kobold_die,
+        .spider_hiss,  .spider_spit,   .spider_bite,   .spider_hurt,  .spider_die,   .brood_screech,
+        .brood_leap,
+        .brood_bite,   .brood_hurt,    .brood_die,     .sac_lay,      .sac_hit,      .sac_hatch,
+        .sac_burst,    .acid_splash,
         .kill,
     };
     var lo: f32 = 1e9;

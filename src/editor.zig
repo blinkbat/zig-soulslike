@@ -197,6 +197,8 @@ const unitTips = [_][:0]const u8{
     "Post a kobold berserker — two axes, a wild flurry, then a long opening",
     "Post a kobold priest — no attack, heals the hurt one; break the cast",
     "Post a kobold slinger — stones at range, teeth up close",
+    "Post a brood mother — slow, spits acid pools, lays up to three sacs",
+    "Post a lone broodling — fast, one hit kills it, leaps",
     "Hold and sweep to remove spawns ([ ] sets radius)",
 };
 
@@ -216,7 +218,7 @@ const coverIcons = [_]ui.Icon{ .clearing, .zone, .erase };
 const decorIcons = [_]ui.Icon{ .single, .patch, .scatter, .erase };
 const propIcons = [_]ui.Icon{ .stamp, .row, .ring, .cluster, .ivy, .erase };
 const interactIcons = [_]ui.Icon{ .stamp, .erase };
-const unitIcons = [_]ui.Icon{ .toad, .archer, .ogre, .berserker, .priest, .slinger, .erase };
+const unitIcons = [_]ui.Icon{ .toad, .archer, .ogre, .berserker, .priest, .slinger, .brood_mother, .broodling, .erase };
 
 comptime {
     std.debug.assert(coverIcons.len == coverBrushes.len);
@@ -300,7 +302,7 @@ const CoverBrush = enum { clearing, zone, erase };
 pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
 const InteractBrush = enum { stamp, erase };
-const UnitBrush = enum { toad, archer, ogre, berserker, priest, slinger, erase };
+const UnitBrush = enum { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, erase };
 
 comptime {
     // Every brush enum pinned to the table it indexes, case-insensitively so "Erase"/"Zone" read the way a button should while the tag stays Zig-shaped.
@@ -2193,6 +2195,10 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .berserker => ui.col(206, 150, 96, 255),
         .priest => ui.col(228, 190, 104, 255), // …the gold it casts with
         .slinger => ui.col(152, 116, 78, 255),
+        // The brood on one venom-green hue, mother and young separated by value — a clutch reads as a
+        // clutch on the map the same way the warband does.
+        .brood_mother => ui.col(146, 186, 84, 255),
+        .broodling => ui.col(104, 132, 68, 255),
     };
 }
 

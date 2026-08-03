@@ -57,7 +57,9 @@ third-person over-the-shoulder camera, in a lit 3D world with cast shadows (warm
 slate sky, cloud deck, haze, vignette, plus point-light torch/brazier/campfire fire). Four foes
 hunt him — **gaping toads**, **skeletal archers**, a lone **one-eyed ogre**, and a **kobold WARBAND**
 (`kobold.zig` — three roles of one doglike creature in ONE group, because the priest heals its
-friends: berserker / priest / slinger) — with ER lock-on and
+friends: berserker / priest / slinger) and a **BROOD MOTHER** with her egg sacs and **BROODLINGS**
+(`brood.zig` — a slow, claw-armed spider who spits ACID POOLS to hold you off a clutch she keeps
+laying; the sacs are killable and hatch three fast hatchlings each if they are not) — with ER lock-on and
 a full combat layer: HP + two-tier poise/stance stagger + death, both sides (`combat.zig`, and
 **`docs/ELDEN_RING.md`** as the systems reference). **STAMINA IS FULLY LIVE, LOCKOUT INCLUDED** —
 an empty bar means no roll, no swing, no sprint (see STAMINA below). He carries a **SMALL ROUND
@@ -499,6 +501,22 @@ lines where the concerns genuinely part company, and each new file is named so t
                  the anticipation AFTER the thing it anticipates. **EVERY BONE NEEDS A MATRIX EVERY FRAME:**
                  the death pose skipped the six leg bones and handed `drawMesh` UNDEFINED matrices for a
                  whole release, which is what `66c_kobold_death.png` exists to catch.
+- `brood.zig`  — THE BROOD MOTHER, HER SACS AND HER BROODLINGS + the `Brood`. Two ages of ONE spider in
+                 one struct and one array, the warband's pattern for the warband's reason: the mother has
+                 to see her own clutch to know whether to lay, and the clutch is what turns into the
+                 hatchlings. **SHE IS A GUARD, NOT A HUNTER** — slow (0.52 of the hero's walk), tethered to
+                 her eggs by `M_GUARD_R`, spitting at anything in the band and biting anything that
+                 reaches her. **THE GLOB IS NOT THE WEAPON, THE FLOOR IS** (owner's call): a hit is 5 HP
+                 and where it lands becomes a `Pool` of acid that burns in PULSES (`ACID_TICK`) for ~15
+                 HP/s, so crossing one is cheap and standing in one kills. **THREE SACS AT A TIME, THREE
+                 HATCHLINGS EACH**, and a sac is a real target — its own HP through the same `foe.strike`
+                 everything else uses, and one cut open hatches NOTHING, which is the whole reason to push
+                 in past the spit. The hatchlings are fast, leap, and die to a single light. Everything
+                 hangs off one rig, parameterized by a `Skin` (colours, abdomen, claw length) so a
+                 hatchling is its mother at a different age rather than a second creature to keep in step.
+                 **AND THE CLAWS ARE THE SILHOUETTE:** flat blades standing on EDGE, carried up and
+                 forward on arms mounted above the leg line — authored flat or slung at leg height they
+                 are two more of the eight legs, which is what the first three passes of this looked like.
 - `foe.zig`    — THE FOE STANDARD: the shared contract + behaviours every enemy plugs into, so
                  lock-on, HP bars, collision, the blade hit-test and the combat beats are written
                  ONCE. Holds `Blade` and `strike()`, `Blow` (a landed hit AND where it came from —
@@ -681,6 +699,19 @@ cross-fade ~0.09 s; stances never snap while mechanics stay instant.
   ONE-LINE DELEGATES to `foe.resetGroup` / `foe.drawGroup` — don't re-write either body. The draw's
   `setFlash(0)` tail is the line a fourth copy would forget, and a Group that leaves the uniform hot
   reddens whatever draws next.
+- **A GROUP HOLDING SEVERAL KINDS ANSWERS FOR ITS OWN MEMBERS.** The warband and the brood each keep
+  two or three foe kinds in one array (something has to see the whole set — the priest's heal, the
+  mother's clutch), so their row in `FOE_GROUPS` carries `kind = null` and each member exposes
+  `kind()`. `game.memberKind` asks for that method and nothing else: it used to ask whether the
+  struct had a `role` FIELD and then hand it to `kobold.kindOf`, which silently labelled the brood's
+  roles as kobolds the moment a second creature grew a `role`.
+- **A group with anything on the field BESIDES its members exposes `clear()`** (the brood's sacs and
+  acid). The shot harness empties the field by zeroing `n`, which leaves everything else standing.
+- **Anything the map must be able to post is a `wf.FoeKind`,** appended (never inserted — the editor's
+  unit brushes are pinned to that enum's ORDER at comptime), plus a `foeName`, a `unitTips` line, a
+  `unitIcons` entry with an `icons.zig` glyph, and a `foeSwatch` colour. Several kinds of one creature
+  go in as a CONTIGUOUS RUN so `roleOf`/`kindOf` stay an ordinal shift, and the run is pinned at
+  comptime where it is declared.
 
 ## ELEVATION — the ground has a shape (`env.zig`, `worldfmt.zig`)
 
@@ -851,6 +882,16 @@ the gap or lose your footing. Deliberately the DS1 shape rather than ER's.
   DERIVED from the stance angles (it is their inverse), or the first retune swings the shield off
   its own arm.
 
+## THE ONE RECORDED SOUND (`audio.zig`)
+
+Everything in the bank is synthesized except the campfire bed, and it arrived sounding like it: clean,
+thin and from a different room. It goes through the SAME finish the synth voices do (`dressedFire`) —
+saturation, the bit crush, the tape's bandwidth and its noise floor — plus a LOW SHELF, because a fire you
+are sitting at is felt in the chest and the take had no bottom in it. raylib streams from ENCODED bytes,
+so a processed loop has to be written back out as a canonical WAV; the source file's own length bounds the
+buffer, which keeps it right if the asset is ever swapped. No `wow` on it: flutter is a pitch wobble and a
+crackle bed has no pitch to wobble.
+
 ## LEASHING (`foe.zig`) — a foe's tether, and the provocation that cuts it
 
 A foe drawn a long way from where the map posted it walks back and loses interest until something rouses it
@@ -862,10 +903,12 @@ copies of a hysteresis is four chances to get one of them subtly wrong.
   every other frame, which a single radius guarantees it would.
 - **AND ONLY AFTER `LEASH_CALM` (4.5 s) WITH NO BLOW GIVEN OR TAKEN.** A fight in progress is never
   abandoned — every path that lands a hit or takes one calls `noteCombat`.
-- **ONE PLAYER PROJECTILE ROUSES IT FROM ANY RANGE.** A blade marked `pierce` (an arrow today, a spell when
-  there is one — nothing asks what threw it) calls `Leash.provoke`: the creature snaps its facing back down
-  the shaft and then HUNTS HIM DOWN, whatever its own `AGGRO_R` says. Shoot something across the plaza and
-  it comes.
+- **ONE PLAYER PROJECTILE ROUSES IT FROM ANY RANGE, FOR `PROVOKE_ROUSE` (14 s).** A blade marked `pierce` (an
+  arrow today, a spell when there is one — nothing asks what threw it) calls `Leash.provoke`: the creature
+  snaps its facing back down the shaft and then HUNTS HIM DOWN, whatever its own `AGGRO_R` says. Shoot
+  something across the plaza and it comes. The rouse is a COUNTDOWN, not a level of `provoked`, because it
+  has to outlast the WALK — as a threshold it lapsed 0.29 s after the hit, so a sniped foe took one step and
+  went back to grazing and sniping read as doing nothing. The tether is still what ends the chase.
 - **KEEP AT IT AND THE LEASH BREAKS** (`PROVOKE_BREAK`, held `PROVOKE_HOLD` = 14 s). THE ANTI-CHEESE: standing
   at the end of a foe's tether, poking it, and watching it turn round and walk away is free damage at no
   risk. A single hit deliberately does NOT cancel a return in progress — that is the other half of the
@@ -927,8 +970,9 @@ sword carry, the deep lean) belongs to the hold-B RUN only — gate run-only flo
 - **Lock-on (ER):** **R3** / **middle-mouse** toggles onto the foe nearest screen-centre; with
   none available R3 recenters. While locked the camera swings on, the hero faces it with REAL
   strafe/backpedal footing, a glowing white dot marks it, and a stick/mouse **flick** cycles
-  targets. Two deliberate ER exceptions: a hold-B SPRINT while locked faces TRAVEL (no sideways
-  sprint exists), and an attack's recovery tail re-squares onto the target (`ATK_RETRACK`).
+  targets — none of which happens while the bow is up (see THE BOW: aiming suspends it). Two deliberate ER
+  exceptions: a hold-B SPRINT while locked faces TRAVEL (no sideways sprint exists), and an attack's
+  recovery tail re-squares onto the target (`ATK_RETRACK`).
 - Reserved, matching ER: Cross/A = jump. (**L2 is the AIM now**, owner's call — ER puts the skill there,
   and this build has no skills to put on it.)
 
@@ -955,9 +999,15 @@ go to the string.
   drop it with no bookkeeping. The one committed action `canAim` deliberately ALLOWS is `shooting`: a loose
   out of a held aim must not cost him the aim, or the second shot of a pair is a different action from the
   first.
-- **AIMING OUTRANKS THE LOCK for facing**, because that is what aiming IS — the stick is doing the
-  pointing. An aimed shaft is thrown down the CAMERA's own forward (`BOW_AIM_REACH`), and a reticle marks
-  it. A QUICK shot needs no aim and goes at the locked foe, else down his facing.
+- **AIMING SUSPENDS THE LOCK OUTRIGHT** (`game.activeLock`), because that is what aiming IS — the stick is
+  doing the pointing, and nothing may swing the camera, the reticle, his facing or a shot onto a foe you are
+  no longer the one choosing. SUSPENDED, not dropped: the target is still there when the bow comes down, so
+  aiming out of a locked fight costs no second press. R3 is dead while the bow is up for the same reason.
+  An aimed shaft is thrown down the CAMERA's own forward (`BOW_AIM_REACH`), and a reticle marks it. A QUICK
+  shot needs no aim and goes at the locked foe, else down his facing.
+- **AND IT SLOWS THE LOOK** (`game.AIM_LOOK_SCALE`, eased on the same `aimB` blend, mouse and stick alike).
+  The rate is not what changed: the eye sits at his head and the mark is thirty metres out, so a nudge that
+  was a glance unaimed swings the shaft clean past a foe.
 - **A BOW CHIPS; IT DOES NOT WIN** (owner's call). BOTH shots come in under the melee they compare to —
   the quick under a light slash, the aimed under a heavy — and the POISE on them is slighter still (an
   aimed shot staggers less than half what a heavy does). A shaft that hit like a sword would make closing

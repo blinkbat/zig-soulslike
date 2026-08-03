@@ -176,6 +176,9 @@ const ARROW_HOME_FADE = 0.45; // …and it decays to nothing over this much flig
 const ARROW_GRAV: f32 = 3.0; // gentle drop so long shots arc
 /// A STONE DROPS HARDER THAN A SHAFT — which this file has always claimed and never did, because one gravity served both.
 const STONE_GRAV: f32 = 9.0;
+/// …and a mouthful of venom is the heaviest thing thrown in the game: a high, slow arc you are meant to
+/// see coming and step out from under.
+const VENOM_GRAV: f32 = 11.0;
 const ARROW_LIFE = 3.5; // seconds airborne before it gives up (falls + sticks)
 const ARROW_STICK_FADE = 1.4; // seconds a stuck arrow lingers, then fades
 /// How fat the shaft is against the WORLD when it tests cover — a name because `game.arrowCover` sizes its grid query around "the fattest margin it tests with" and was pointing at a bare literal in another file.
@@ -188,6 +191,20 @@ const TRAIL_LIFE = 0.17; // seconds a sample lingers
 const TRAIL_W = 0.055; // half-width at the head, tapering to nothing at the tail
 const TRAIL_COL = rgba(214, 198, 158, 255); // pale, kin to the fletching — alpha set per segment
 
+/// The three things that fly. Everything a projectile does differently from the others hangs off this and
+/// nothing else: `dropOf` its gravity, game.zig its mesh, and the venom its pool.
+pub const Shot = enum { arrow, stone, venom };
+
+/// A STONE DROPS HARDER THAN A SHAFT, and a mouthful of venom harder still — the lob you can walk out from
+/// under IS the tell, and it is the only reason the mother's spit is dodgeable at all.
+pub fn dropOf(s: Shot) f32 {
+    return switch (s) {
+        .arrow => ARROW_GRAV,
+        .stone => STONE_GRAV,
+        .venom => VENOM_GRAV,
+    };
+}
+
 pub const Arrow = struct {
     pos: rl.Vector3 = mathx.zero3,
     vel: rl.Vector3 = mathx.zero3,
@@ -197,8 +214,10 @@ pub const Arrow = struct {
     hit: bool = false, // it connected with the hero this frame (game.zig reads + clears)
     /// WHAT IT STUCK IN, set on the frame it plants. null = the bare earth (a miss), which is the commonest case by far and wants its own duller, fizzier impact. game.zig reads it to pick the sound; nothing else cares.
     struck: ?collision.Surface = null,
-    /// A SLINGER'S STONE rather than an arrow.
-    stone: bool = false,
+    /// WHICH PROJECTILE THIS IS — the one thing that decides its drop, its mesh, and what it leaves behind.
+    /// A bool named `stone` served while there were two; a third (the brood mother's venom, which puts a
+    /// pool on the ground where it lands) would have made it two bools that must never both be set.
+    shot: Shot = .arrow,
     /// WHAT IT DEALS if it connects — carried on the SHAFT rather than looked up by the thing it hits,
     /// because the hero's quick shot and his aimed shot are the same projectile with different weight
     /// behind it, and by the time one lands nothing else remembers which it was.
@@ -242,26 +261,34 @@ fn drawArrowTrail(a: *const Arrow) void {
 /// solved at 60 m flew half a metre high at 10 m, which on a reticle-aimed shot is the reticle lying. So
 /// `loft` is a parameter and not a constant — false fires FLAT out of the muzzle and lets gravity do the
 /// rest, which is what a fast bow should do and what the player can actually learn to lead with.
-fn launchAt(from: rl.Vector3, target: rl.Vector3, speed: f32, grav: f32, stone: bool, loft: bool) Arrow {
+fn launchAt(from: rl.Vector3, target: rl.Vector3, speed: f32, shot: Shot, loft: bool) Arrow {
     var d = mathx.subV(target, from);
     const dist = mathx.lenV(d);
     d = if (dist < 1e-3) v3(0, 0, 1) else mathx.scaleV(d, 1.0 / dist);
     var vel = mathx.scaleV(d, speed);
-    if (loft) vel.y += 0.5 * grav * (dist / speed);
-    return .{ .pos = from, .vel = vel, .live = true, .stone = stone };
+    if (loft) vel.y += 0.5 * dropOf(shot) * (dist / speed);
+    return .{ .pos = from, .vel = vel, .live = true, .shot = shot };
 }
 
-/// Both of theirs are aimed at a real point (the hero), so both are lofted — and what each DEALS rides on
-/// the shaft from here, rather than being re-derived from `stone` at the far end where it lands.
+/// All of theirs are aimed at a real point (the hero), so all are lofted — and what each DEALS rides on
+/// the shaft from here, rather than being re-derived from its kind at the far end where it lands.
 pub fn launchArrow(from: rl.Vector3, target: rl.Vector3) Arrow {
-    var a = launchAt(from, target, ARROW_SPEED, ARROW_GRAV, false, true);
+    var a = launchAt(from, target, ARROW_SPEED, .arrow, true);
     a.blow = ARROW_HIT;
     return a;
 }
 
 /// A SLINGER'S STONE, off the same launcher: slower, and it DROPS HARDER (`STONE_GRAV`), which is where the visible lob comes from now that the loft is solved rather than piled on.
 pub fn launchStone(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: combat.Hit) Arrow {
-    var a = launchAt(from, target, speed, STONE_GRAV, true, true);
+    var a = launchAt(from, target, speed, .stone, true);
+    a.blow = blow;
+    return a;
+}
+
+/// …AND A MOUTHFUL OF VENOM, which is the same launcher again — the pool it leaves is game.zig's business
+/// (it is what owns the brood), and nothing about the flight knows about it.
+pub fn launchVenom(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: combat.Hit) Arrow {
+    var a = launchAt(from, target, speed, .venom, true);
     a.blow = blow;
     return a;
 }
@@ -270,7 +297,7 @@ pub fn launchStone(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: comba
 /// rather than the thing being shot at you). `loft` is the caller's to decide, and the rule is whether it
 /// is aimed at a REAL point — a locked foe is, a mark 60 m down the camera ray is not (see `launchAt`).
 pub fn launchShaft(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: combat.Hit, loft: bool) Arrow {
-    var a = launchAt(from, target, speed, ARROW_GRAV, false, loft);
+    var a = launchAt(from, target, speed, .arrow, loft);
     a.blow = blow;
     return a;
 }
@@ -380,7 +407,7 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, he
         }
     }
     // …and the drop, which is per-PROJECTILE: `launchAt` solved the loft against this exact number, so integrating a shaft's gravity under a stone would put the stone back off the aim line.
-    a.vel.y -= (if (a.stone) STONE_GRAV else ARROW_GRAV) * dt;
+    a.vel.y -= dropOf(a.shot) * dt;
     const prev = a.pos;
     a.pos = mathx.addV(a.pos, mathx.scaleV(a.vel, dt));
     // Push this frame's position onto the trail ring.

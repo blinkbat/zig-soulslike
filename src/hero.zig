@@ -267,6 +267,16 @@ const BOW_BLEND_RATE = 11.0;
 const TURN_TO_SHOT = 11.0;
 
 // Blade hitbox, souls-style: a capsule on the SWORD bone's dummy points (guard → tip), ACTIVE only inside the HIT window, with last-frame endpoints kept for swept tests so a fast arc can't tunnel between frames.
+/// HOW FAR THE WAIST WILL FOLD ONTO A MARK (deg, total across SPINE + CHEST). Down is generous — the
+/// things worth stooping for are ankle-high and the flat cut has to reach them — where UP is small,
+/// because arching back over a tall foe is a lean and not a limbo.
+pub const AIM_LEAN_DOWN = 34.0;
+pub const AIM_LEAN_UP = 12.0;
+/// …and how fast he gets there (deg/s). Quick, but not a snap: the fold is a posture, not an input.
+const AIM_LEAN_RATE = 190.0;
+/// THE STANDING BIAS, added to every mark and applied with none: he swings DOWN more often than up.
+const AIM_LEAN_BIAS = 7.0;
+
 pub const BLADE_R = 0.34; // capsule radius (world units) — a FAT hit volume, far past the
 
 const TRAIL_N = 20; // ring capacity (~0.3 s of samples at 60 fps)
@@ -584,6 +594,13 @@ pub const Hero = struct {
     sprinting: bool = false, // hold-B RUN, resolved by the caller — the only CONTINUOUS drain
     // Shaped like the GUARD, not like an attack: `aiming` is re-derived from the button every frame, and
     // only the LOOSE is committed.
+    /// HOW FAR HE IS FOLDED ONTO WHAT HE IS SWINGING AT (deg, + = down over a low mark, − = arched back
+    /// under a high one), eased toward `aimLeanWant`. Routed through SPINE and CHEST only — a swing is the
+    /// trunk folding over feet that stay planted, and the same fold at the ROOT would rotate his legs and
+    /// read as a lurch. It is what lets a flat horizontal cut reach something at ankle height: the arc is
+    /// authored at chest level, so against a broodling the blade otherwise passes clean over it.
+    aimLean: f32 = 0,
+    aimLeanWant: f32 = 0,
     arm: Arm = .sword,
     aiming: bool = false,
     aimB: f32 = 0, // …the VISUAL blend of the stance; nothing mechanical may read it
@@ -684,6 +701,10 @@ pub const Hero = struct {
         // runs per frame and the bow has to keep coming up (or going down) under all of them, or it hangs
         // half-raised through a stagger.
         self.aimB = mathx.approach(self.aimB, if (self.aiming) 1.0 else 0.0, dt * BOW_BLEND_RATE);
+        // …and the WAIST FOLD onto a low or high mark, in the prologue with them and for their reason: it
+        // has to keep easing under every path, or a stoop taken to reach a broodling stays folded through
+        // the stagger after it.
+        self.aimLean = mathx.approach(self.aimLean, self.aimLeanWant, dt * AIM_LEAN_RATE);
         self.blockT = @min(self.blockT + dt, mathx.LONG_AGO);
         self.runes.tick(dt);
     }
@@ -762,6 +783,16 @@ pub const Hero = struct {
     /// L2, HELD — called EVERY frame with the button's level, re-deriving the stance from scratch.
     pub fn setAim(self: *Hero, want: bool) void {
         self.aiming = want and self.canAim();
+    }
+
+    /// WHAT HE IS SWINGING AT, in degrees off his own eye line (+ = below him). Called every frame with
+    /// the mark or with null, the same held-and-re-derived shape as the guard and the aim, so nothing has
+    /// to remember to clear it when the target dies. The value is CLAMPED here rather than by the caller:
+    /// game.zig knows where the foe is, this file knows how far a spine bends.
+    pub fn aimAtPitch(self: *Hero, deg: ?f32) void {
+        // THE BASELINE IS ALREADY A LITTLE DOWN (owner's call): he fights things that stand below his own
+        // eye line far more often than above it, so neutral is a slight fold and a mark only deepens it.
+        self.aimLeanWant = mathx.clampF(AIM_LEAN_BIAS + (deg orelse 0), -AIM_LEAN_UP, AIM_LEAN_DOWN);
     }
 
     /// Everything the bow was doing, down — but never the ARM. One call, so the transitions that drop the
@@ -1098,6 +1129,18 @@ pub const Hero = struct {
         return .taken;
     }
 
+    /// THE GROUND HURTING HIM — the brood mother's acid today, and whatever else the floor does later.
+    /// NOT a blow, and so it goes nowhere near `takeHit`: there is nothing to guard, nothing to roll
+    /// through (i-frames dodge an attack, not the puddle he is standing in) and NO FLINCH, or a pool would
+    /// stun-lock him for as long as he was in it. It still kills, and death still latches the same way.
+    pub fn burn(self: *Hero, dmg: f32) combat.HitOutcome {
+        if (self.dead or dmg <= 0) return .ignored;
+        const r = self.vit.hit(.{ .dmg = dmg });
+        self.hurtFlash = mathx.maxF(self.hurtFlash, 0.45);
+        if (r == .death) self.enterDeath();
+        return .taken;
+    }
+
     /// impulse went into the boards, and a blocked blow that still flinched you would make guarding strictly worse than standing there.
     fn blockHit(self: *Hero, h: combat.Hit) combat.HitOutcome {
         self.blockT = 0;
@@ -1260,8 +1303,9 @@ pub const Hero = struct {
         // Spine chain — lean deepens through run into sprint + counter-rotation vs pelvis.
         const lean = (mathx.lerpF(TORSO_LEAN * fw, RUN_LEAN, runB) + sprintB * (SPRINT_LEAN - RUN_LEAN)) * m;
         const bank = STRAFE_LEAN * lat * m;
-        setLocal(&wx, SPINE, self.rest, mul3(rx(lean * 0.5), ry(-0.3 * prot), rz(0.5 * bank)));
-        setLocal(&wx, CHEST, self.rest, mul3(rx(lean * 0.5), ry(-0.5 * prot), rz(0.5 * bank)));
+        const aim = self.aimLean; // …and the fold onto a low/high mark (see `aimLean`)
+        setLocal(&wx, SPINE, self.rest, mul3(rx(lean * 0.5 + aim * 0.5), ry(-0.3 * prot), rz(0.5 * bank)));
+        setLocal(&wx, CHEST, self.rest, mul3(rx(lean * 0.5 + aim * 0.5), ry(-0.5 * prot), rz(0.5 * bank)));
         // Idle/walk carries a gentle downward gaze (HEAD_WALK).
         const fwdTilt = bodyPitch + lean;
         const gazeCounter = mathx.clampF(fwdTilt - GAZE_AHEAD, 0, NECK_EXT_MAX);
@@ -1463,8 +1507,10 @@ pub const Hero = struct {
             mul(tr(0, hipY - AL_LOAD * wind - AL_DIP * sPelv, 0), mul(rx(1.5 * sChest), ry(facingDeg))), // knees coil under the windup; only a WHISKER of forward pitch (the swipe plane stays flat)
             rootAt(self.pos),
         );
-        setLocal(&wx, SPINE, self.rest, mul(rx(crunch), ry(0.35 * yawC)));
-        setLocal(&wx, CHEST, self.rest, mul(rx(crunch), ry(0.65 * yawC)));
+        // …plus the AIM FOLD, which is what puts this flat arc through something at ankle height (or over
+        // a shoulder). The pelvis is untouched by it: a swing is the trunk folding over feet that stay put.
+        setLocal(&wx, SPINE, self.rest, mul(rx(crunch + self.aimLean * 0.5), ry(0.35 * yawC)));
+        setLocal(&wx, CHEST, self.rest, mul(rx(crunch + self.aimLean * 0.5), ry(0.65 * yawC)));
         setLocal(&wx, NECK, self.rest, ry(-0.4 * (yawP + yawC)));
         setLocal(&wx, HEAD, self.rest, mul(rx(HEAD_WALK), ry(-0.35 * (yawP + yawC)))); // eyes stay on the target
         // Stance brace: the leg opposite the swing's LANDING side steps up as the cut releases.
@@ -1530,8 +1576,8 @@ pub const Hero = struct {
             mul(tr(0, hipY - dip, 0), mul(rx(AH_PITCH * sPelv), ry(facingDeg))),
             rootAt(self.pos),
         );
-        setLocal(&wx, SPINE, self.rest, mul(rx(0.5 * spineX), rz(0.5 * tilt)));
-        setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * spineX), rz(0.5 * tilt)));
+        setLocal(&wx, SPINE, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), rz(0.5 * tilt)));
+        setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), rz(0.5 * tilt)));
         setLocal(&wx, NECK, self.rest, rx(-0.3 * spineX)); // head counters the lean-back, tucks on the drop
         setLocal(&wx, HEAD, self.rest, mul(rx(HEAD_WALK + 4.0 * sChest), ry(-0.4 * yaw)));
         // Staggered load, not a symmetric squat: the off-side (left) leg steps up to brace while the sword-side leg sits BACK and loads under the raise.

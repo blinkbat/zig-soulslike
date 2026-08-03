@@ -51,7 +51,6 @@ fn ease(u: f32) f32 {
     return 1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t);
 }
 
-/// What opening a chest did, handed back rather than applied: the BAG belongs to the hero and this file has no business reaching into him — the same reason `kobold.Kobold.update` returns an `Act` instead of loosing its own stones.
 pub const Opened = struct {
     at: rl.Vector3,
     loot: []const item.Kind,
@@ -61,7 +60,6 @@ pub const Chests = struct {
     lid: rl.Model = undefined,
     list: [CAP]Chest = undefined,
     n: usize = 0,
-    /// Which one the hero could open right now, recomputed each frame — the prompt and the button press must agree, and they only can if there is one answer computed once.
     near: ?usize = null,
 
     pub fn init(shader: rl.Shader) Chests {
@@ -135,11 +133,9 @@ pub const Site = struct {
 };
 
 comptime {
-    // The lid is authored about the hinge and posed by `lidXf` alone, so the two files must agree that the hinge is on the BACK edge at the rim.
     std.debug.assert(village.CHEST_HINGE_Z < 0);
     // …and the hinge must be at the RIM, i.e. clear of the feet the carcase stands on.
     std.debug.assert(village.CHEST_HINGE_Y > village.CHEST_BODY_H);
-    // The crown has to be above the rim by at least the dome that makes it, or `INFO.top` is describing a silhouette the lid does not have.
     std.debug.assert(village.CHEST_TOP >= village.CHEST_HINGE_Y + village.CHEST_LID_R);
 }
 
@@ -148,13 +144,11 @@ test "the lid eases open and stops fully open" {
     var c = Chest{};
     try std.testing.expectEqual(@as(f32, 0), c.swing);
     c.opened = true;
-    // Driven past its own duration: the swing clamps at 1 rather than running on, or a chest left alone for a minute has its lid a hundred turns round the hinge.
     var t: f32 = 0;
     while (t < OPEN_DUR * 3.0) : (t += 1.0 / 60.0) {
         if (c.swing < 1.0) c.swing = @min(1.0, c.swing + (1.0 / 60.0) / OPEN_DUR);
     }
     try std.testing.expectEqual(@as(f32, 1.0), c.swing);
-    // …and the ease is monotone from shut to open, which is what stops the lid backing up mid-swing.
     try std.testing.expect(ease(0) == 0 and ease(1) == 1);
     try std.testing.expect(ease(0.5) > 0.5); // ease-OUT: most of the travel is early
 }
@@ -172,7 +166,6 @@ test "only a shut chest in reach is the one you can open" {
     // In reach of the first.
     cs.update(1.0 / 60.0, v3(1.0, 0, 0));
     try std.testing.expectEqual(@as(usize, 0), cs.near.?);
-    // Opened, it stops being a candidate however close you stand — otherwise the prompt never leaves and the button keeps firing on an empty box.
     cs.list[0].opened = true;
     cs.update(1.0 / 60.0, v3(1.0, 0, 0));
     try std.testing.expect(cs.near == null);

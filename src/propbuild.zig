@@ -6,7 +6,6 @@ const art = @import("propart.zig");
 
 const v3 = mathx.v3;
 const Builder = gfx.Builder;
-// The shared vocabulary this file draws on, aliased so a mesh body still reads as a recipe (`art.STONE_DK` in front of every colour buries the shape in namespace).
 const IRON = art.IRON;
 const MORTAR = art.MORTAR;
 const PAVE = art.PAVE;
@@ -29,7 +28,6 @@ const towerDoorway = art.towerDoorway;
 const tuftInto = art.tuftInto;
 
 
-// A ruined wayside CHAPEL: 5 x 7 m nave with a doorway in the south wall, window openings down both sides, an altar at the north end, two rows of stub columns, and a broken roof that still covers the northern half — so the altar end sits in real darkness and the torches (placed as separate props by env) are what let you see it.
 pub fn chapelMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(5150);
@@ -70,7 +68,6 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
             }
         }
     }
-    // The ROOF over the northern half only: rafters plus sloped slabs, with the southern rafters left bare and snapped.
     var rf: i32 = 0;
     while (rf < 7) : (rf += 1) {
         const z = -hl + 0.55 + @as(f32, @floatFromInt(rf)) * 1.05;
@@ -123,7 +120,6 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A WATCHTOWER: a masonry drum you can walk into, built as real courses of blocks (a bare cylinder is a shell — from inside you would see straight through its culled back faces), with a doorway on local −Z, arrow slits above, a timber floor overhead that keeps the ground room dark, and a broken crenellated crown.
 pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7788);
@@ -132,7 +128,6 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     const R: f32 = TOWER_R;
     const courses: i32 = 15;
     const ch: f32 = 0.76;
-    // A block on the drum at angle `a`: its RADIAL axis is (sin a, 0, −cos a) — the direction of the position itself — and its TANGENTIAL axis must be perpendicular to that, which is (cos a, 0, sin a).
     const radial = struct {
         fn v(a: f32, len: f32) rl.Vector3 {
             return v3(mathx.sinf(a) * len, 0, -mathx.cosf(a) * len);
@@ -150,7 +145,6 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
         const base = radial(a, R + 0.28);
         b.addBox(v3(base.x, 0.22, base.z), tangent(a, 0.58), v3(0, 0.22, 0), radial(a, 0.42), STONE_DK);
     }
-    // THE CORE: wide dark blocks bedded inside the facing, offset half a block so the joints never line up.
     var cr: i32 = 0;
     while (cr < 12) : (cr += 1) {
         var ci: i32 = 0;
@@ -231,7 +225,6 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A COTTAGE gone to ruin: three standing walls of rough field stone (the fourth fallen to knee height), a gable end, the charred stubs of roof timbers, a chimney breast still standing proud, and shreds of thatch caught on the purlins.
 pub fn cottageMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2626);
@@ -260,7 +253,7 @@ pub fn cottageMesh(shader: rl.Shader) rl.Model {
                     MORTAR,
                 );
             }
-            if (height > openTop + 0.02) { // …and spans the full run above the opening
+            if (height > openTop + 0.02) {
                 bb.addBox(
                     v3(ax + ux * L * 0.5, (openTop + height) * 0.5, az + uz * L * 0.5),
                     v3(ux * L * 0.5, 0, uz * L * 0.5),
@@ -338,7 +331,6 @@ pub fn cottageMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A low stone CAUSEWAY over the tarn's shallows — flat flagstones a hand's breadth above the water with kerbs either side, worn, subsiding, one span collapsed into a gap you stride over.
 pub fn causewayMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3939);
@@ -384,7 +376,6 @@ pub fn pavingMesh(shader: rl.Shader) rl.Model {
     // THE ROAD BED first — packed earth the setts are laid INTO.
     b.setMat(.stone);
     b.addCylinder(v3(0, 0.006, 0), v3(0, 0.020, 0), 2.35, 2.20, 14, SOIL);
-    // Worn hollows of bare bed the setts skip round — a road with no holes in it is a road somebody is maintaining.
     var holes: [3][3]f32 = undefined;
     for (&holes) |*h| {
         const a = rng.angle();
@@ -412,7 +403,6 @@ pub fn pavingMesh(shader: rl.Shader) rl.Model {
             const w = PITCH * rng.range(1.02, 1.20); // butted, then some — the joint is a shadow
             const l = PITCH * rng.range(0.95, 1.25);
             const wob = rng.signed() * 0.09; // a few degrees of wander off the course line
-            // Setts CANT: frost does not leave a road level, and those tilts are what catch the low sun and make it read as a surface at all.
             b.addBox(
                 v3(px, rng.range(0.010, 0.026), pz),
                 v3(w * 0.5, rng.signed() * 0.012, wob * w * 0.5),

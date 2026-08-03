@@ -6,7 +6,7 @@ const collision = @import("collision.zig");
 const props = @import("props.zig");
 const wf = @import("worldfmt.zig");
 const chestmod = @import("chest.zig"); // for `Site` alone — env finds the boxes, chest.zig runs them
-const restmod = @import("rest.zig"); // …and the bonfires, on the same split
+const restmod = @import("rest.zig");
 
 const v3 = mathx.v3;
 const Kind = props.Kind;
@@ -14,23 +14,18 @@ const Kind = props.Kind;
 
 // THE WORLD'S SIZE IS THE MAP'S (`wf.Map.half`), never a constant here.
 pub const RIM_OUT: f32 = 6.0;
-/// How far INSIDE the map's half the movement clamp sits, so the hero stops short of the rock rather than clipping into it.
 pub const PLAY_INSET: f32 = 2.0;
 /// The largest `half` the grid can index without cells clamping together.
 pub const MAX_HALF: f32 = GRID_HALF + CELL - RIM_OUT - CLIFF_BOUND;
 
 comptime {
-    // …AND THE LOADER REFUSES ANYTHING BIGGER. The parser cannot import env (env imports it), so the
-    // ceiling is declared there and pinned here: shrink the grid below what a map may declare and
-    // this fails the build instead of clamping half a world into the rim cells at load time.
+    // …AND THE LOADER REFUSES ANYTHING BIGGER.
     std.debug.assert(MAX_HALF >= wf.MAX_DECLARED_HALF);
 }
 /// The cliff mesh's own bounding radius, which sticks out past the rim it is placed on.
 const CLIFF_BOUND: f32 = 18.0;
-// The ground QUAD runs far past the bounds so terrain dissolves into full haze with no visible plane edge from anywhere.
 const GROUND_HALF: f32 = wf.DEFAULT_HALF + 220.0;
 
-// Storage caps, all fixed: Env is one flat block inside the heap-allocated Game and never allocates.
 const MAX_PROPS = 24576;
 const MAX_SOLIDS = 8192;
 const MAX_SOLID_REFS = 4 * MAX_SOLIDS; // a long solid's bbox spans several cells, one ref each
@@ -48,9 +43,7 @@ const NCELL: usize = GRID_N * GRID_N;
 const HALF_DIAG: f32 = @sqrt(0.5);
 const CELL_CIRCUM: f32 = CELL * HALF_DIAG; // centre-to-corner of a cell, for sphere tests
 
-// Horizontal distance a shadow travels per unit of caster height, derived from THE one sun direction so retuning the light can't leave it stale.
 const SUN_REACH: f32 = @sqrt(gfx.SUN_DIR.x * gfx.SUN_DIR.x + gfx.SUN_DIR.z * gfx.SUN_DIR.z) / gfx.SUN_DIR.y;
-// Half-diagonal of the sun's ortho box: a caster outside this plus its reach cannot put a single texel into the shadow map.
 const SHADOW_BOX: f32 = gfx.SHADOW_ORTHO * HALF_DIAG;
 
 // How far a fire's pool of light still reads.
@@ -59,7 +52,6 @@ const LIGHT_REACH: f32 = 90.0;
 // Largest number of solids one grid query can hand back.
 pub const MAX_NEAR = 160;
 
-// The ground sits a HAIR ABOVE Y=0, where soles and prop bases are authored, so content is planted-to-slightly-embedded and nothing ever reads as FLOATING.
 const GROUND_Y: f32 = 0.01;
 
 // The ground is a HEIGHTFIELD (`wf.Map.height`, 2.5 m lattice, sculpted in the editor).
@@ -68,21 +60,18 @@ const TCHUNK: usize = 16;
 const TILES: usize = (wf.HEIGHT_N - 2) / (TCHUNK - 1) + 1;
 const NTILES: usize = TILES * TILES;
 
-/// How steep the ground may be and still be walked, as the TANGENT of the slope angle (rise over run). tan 40 deg — ER's own limit is in this region, and it is the angle at which a scramble stops being a walk.
+/// How steep the ground may be and still be walked, as the TANGENT of the slope angle (rise over run). tan 40 deg
 pub const MAX_SLOPE: f32 = 0.839;
-/// A rise this small is ALWAYS steppable, however steep the face carrying it — the "slight step" rule.
 pub const STEP_UP: f32 = 0.55;
 /// The fixed distance the walkable test looks AHEAD, and the reason the rule is frame-rate independent.
 pub const STEP_PROBE: f32 = 0.5;
 
-/// The painted sheet's surface height — the same ankle-deep 0.055 the authored water prop uses, so a painted lake and a placed one wade identically and cannot z-fight where they meet.
 const WATER_Y: f32 = 0.055;
 
 // The distance transform's two working grids.
 var scratchIn: [wf.WATER_CELLS]f32 = undefined;
 var scratchOut: [wf.WATER_CELLS]f32 = undefined;
 
-// `op` is the map op that placed this instance — what lets a click on a rock select the generator that grew it.
 const Prop = struct { kind: Kind, pos: rl.Vector3, yaw: f32, scale: f32, lean: f32 = 0, leanDir: f32 = 0, op: u16 = 0 };
 
 // A prop can stand OFF PLUMB: `lean` degrees, tipped toward the compass direction `leanDir`, which is measured the same way as every yaw here (direction (cos d, −sin d) — see the yaw note in `line`).
@@ -93,7 +82,6 @@ fn leanToward(dirDeg: f32) rl.Vector3 {
     return v3(mathx.cosf(a), 0, -mathx.sinf(a));
 }
 
-/// The rotation AXIS for that lean: horizontal and square to the tip direction, signed so a POSITIVE angle about it carries the top over the way `leanToward` points (right-hand rule, which is what raylib's MatrixRotate builds).
 fn leanAxis(dirDeg: f32) rl.Vector3 {
     const d = leanToward(dirDeg);
     return v3(d.z, 0, -d.x);
@@ -111,13 +99,11 @@ fn leanSwing(pr: Prop, up: f32) rl.Vector3 {
     return leanOffsetAt(pr.lean, pr.leanDir, up);
 }
 
-/// The cover field's gate FLOOR: a scatter that respects the field still places this fraction of its attempts in a total clearing, so a clearing THINS what stands in it without emptying it.
 const FIELD_FLOOR: f32 = 0.35;
 
-// THE "may something grow here" PROBE, in one place: the `avoid.solid` test and the ground cover's own are the same question, and were the same three literals written twice.
 const SOLID_PROBE_Y: f32 = 0.2; // ankle height — under a causeway kerb's top, inside a wall's
-const SOLID_PROBE_M: f32 = 0.35; // …a clump's own half-width, so leaves don't poke through masonry
-const SOLID_PROBE_R: f32 = 1.4; // …and how far out the grid is asked for candidates
+const SOLID_PROBE_M: f32 = 0.35;
+const SOLID_PROBE_R: f32 = 1.4;
 
 /// The ground plane's height, for anything that has to draw ON it (the editor's gizmos).
 pub fn groundY() f32 {
@@ -127,7 +113,6 @@ pub fn groundY() f32 {
 // A fire's static description; the per-frame guttering is applied in uploadLights.
 const WorldLight = struct { base: gfx.Light, flicker: f32, phase: f32 };
 
-// A water sheet, remembered so the scatter doesn't grow grass in the middle of the lake and so future systems (wading FX, sound) have somewhere to ask.
 const Pool = struct { pos: rl.Vector3, radius: f32 };
 
 // One CSR spatial index over a subset of the prop list.
@@ -159,7 +144,6 @@ pub const View = struct {
         const sv = mathx.sinf(vf);
         const chz = mathx.cosf(hf);
         const shz = mathx.sinf(hf);
-        // Each boundary DIRECTION (a ray along one edge of the frustum's cross-section), then the plane it spans with the axis it hinges about.
         const dl = mathx.addV(mathx.scaleV(fwd, chz), mathx.scaleV(right, -shz));
         const dr = mathx.addV(mathx.scaleV(fwd, chz), mathx.scaleV(right, shz));
         const dt = mathx.addV(mathx.scaleV(fwd, cv), mathx.scaleV(up, sv));
@@ -184,7 +168,6 @@ pub const View = struct {
     }
 };
 
-/// Which set of props a draw call wants, and the test that decides.
 pub const Cull = union(enum) {
     /// The lit pass: the camera frustum + each kind's own view distance.
     view: View,
@@ -195,16 +178,12 @@ pub const Cull = union(enum) {
 pub const Env = struct {
     ground: rl.Model,
     models: [props.NK]rl.Model,
-    /// One VEIL mesh per kind that declares one (`props.Info.veil`) — the big alpha-blended geometry, held apart from `models` because it draws in a different pass.
     veils: [props.NK]?rl.Model = [_]?rl.Model{null} ** props.NK,
-    /// …and the STOWABLE parts (`props.Info.stow`): ordinary casters held apart only so `stowed` can take them away.
     stows: [props.NK]?rl.Model = [_]?rl.Model{null} ** props.NK,
     /// Hide every stowable part this frame.
     stowed: bool = false,
-    /// Which placed props carry a veil, in prop order — see `drawVeils`.
     veilItems: [MAX_VEILS]u32 = undefined,
     nveils: usize = 0,
-    // …and the two OTHER "which props are these" answers, on the same list for the same reason. The editor re-homes both EVERY FRAME so a dragged box moves the box you can see, and answering by scanning all 17k props twice a frame is ~1.4 MB of memory traffic to find three things. The prop list only changes in `materialize`/`stageOne`, and both end in `indexProps` — so the answer is settled there, once, with the veils.
     chestItems: [chestmod.CAP]u32 = undefined,
     nchests: usize = 0,
     restItems: [restmod.CAP]u32 = undefined,
@@ -215,7 +194,6 @@ pub const Env = struct {
     nprops: usize = 0,
     solid_buf: [MAX_SOLIDS]collision.Solid = undefined,
     nsolids: usize = 0,
-    // Structures and flora are indexed separately: the two draw passes then share nothing and neither pays to skip the other's props.
     stx: Index = .{},
     flx: Index = .{},
     // Solid grid: refs into solid_buf, a solid appearing in every cell its footprint touches.
@@ -225,12 +203,10 @@ pub const Env = struct {
     nlights: usize = 0,
     pools: [8]Pool = undefined,
     npools: usize = 0,
-    /// THE PAINTED WATER: the sheet drawn over the whole world, and the signed field that decides where it exists (see uploadWater).
     waterSheet: rl.Model = undefined,
     waterField: [wf.WATER_CELLS]u8 = [_]u8{gfx.WATER_SHORE} ** wf.WATER_CELLS,
     waterAny: bool = false,
     waterHalf: f32 = 0,
-    /// Where the painted water actually IS: the sheet is drawn at this centre, scaled by this fraction of the world quad, so a pond costs a pond's worth of fill instead of a full screen of it.
     waterMid: rl.Vector3 = mathx.zero3,
     waterSpan: rl.Vector3 = mathx.zero3,
     /// THE SCULPTED GROUND: the live copy of the map's height lattice, and the mesh built from it.
@@ -255,7 +231,6 @@ pub const Env = struct {
         const shader = scene.shader;
         // Index each mesh by its own kind so the array and the kinds can't drift out of lockstep (props.INFO's comptime block already pins the table; this pins the models).
         for (&self.models, props.INFO) |*m, row| m.* = row.build(shader);
-        // …and the veils beside them, on the SCENE shader for good: they never draw in the depth pass, so `setShader`'s swap deliberately does not reach them.
         for (&self.veils, props.INFO) |*m, row| m.* = if (row.veil) |mesh| mesh(shader) else null;
         for (&self.stows, props.INFO) |*m, row| m.* = if (row.stow) |mesh| mesh(shader) else null;
         self.ground = terrain(shader, GROUND_HALF);
@@ -279,7 +254,6 @@ pub const Env = struct {
         if (self.scene) |sc| sc.setSoil(&m.soil, &m.soilCov, m.half);
     }
 
-    /// TAKE THE MAP'S SCULPTED GROUND and build the terrain from it: copy the field, then rebuild every tile.
     pub fn uploadHeight(self: *Env, m: *const wf.Map) void {
         self.heightField = m.height;
         self.heightHalf = m.half;
@@ -287,17 +261,14 @@ pub const Env = struct {
         self.rebuildTerrain();
     }
 
-    /// A SCULPT STROKE: take the map's field again but rebuild only the tiles the brush's lattice rect (`wf.Map.sculpt`'s `out`) actually reached.
     pub fn sculptHeight(self: *Env, m: *const wf.Map, span: [4]usize) void {
         self.heightField = m.height;
         self.heightHalf = m.half;
         const wasAny = self.heightAny;
         self.heightAny = m.anyHeight();
-        // First sculpt on a flat map, or the last undo back to flat: the whole terrain changes representation (quad ↔ tiles), so there is nothing partial about it.
         if (wasAny != self.heightAny) return self.rebuildTerrain();
         if (!self.heightAny) return;
         if (span[0] > span[2] or span[1] > span[3]) return; // the stroke missed the grid
-        // A tile shares its edge points with its neighbour, so a point at a seam belongs to BOTH: the range is widened by one point either way or a stroke on a boundary leaves a visible crack.
         const lo = tileOf(if (span[0] > 0) span[0] - 1 else 0);
         const hi = tileOf(@min(span[2] + 1, wf.HEIGHT_N - 1));
         const zlo = tileOf(if (span[1] > 0) span[1] - 1 else 0);
@@ -307,7 +278,7 @@ pub const Env = struct {
             var tx = lo;
             while (tx <= hi) : (tx += 1) self.buildTile(tz * TILES + tx);
         }
-        // …AND THE SKIRT ONLY IF THE STROKE REACHED THE RIM. Its inner edge follows the border lattice row/column and NOTHING else, so a stroke in the middle of the map cannot move it — and rebuilding it anyway was the majority of a sculpt frame's mesh churn (896 quads torn down and re-uploaded against the two or three tiles that actually changed, every frame of every drag).
+        // …AND THE SKIRT ONLY IF THE STROKE REACHED THE RIM.
         if (span[0] == 0 or span[1] == 0 or span[2] >= wf.HEIGHT_N - 1 or span[3] >= wf.HEIGHT_N - 1) self.buildSkirt();
     }
 
@@ -334,7 +305,6 @@ pub const Env = struct {
         self.tileBuilt[i] = false;
     }
 
-    /// ONE TERRAIN TILE: the quads between lattice points [x0..x1] x [z0..z1], with SHARED per-point normals so the surface reads smooth across a tile and across the seam into the next one (the normal at a point is computed from the FIELD, not from this tile's triangles, which is what lets two independently-built tiles agree at their shared edge).
     fn buildTile(self: *Env, i: usize) void {
         self.dropTile(i);
         const tx = i % TILES;
@@ -379,7 +349,6 @@ pub const Env = struct {
         }
         self.tiles[i] = b.toModel(if (self.scene) |sc| sc.shader else self.ground.materials[0].shader);
         self.tileBuilt[i] = true;
-        // The cull sphere about the tile's real extent, vertical span included — a tile 20 m up is not where a flat-bottomed bound would say it is.
         const cx = -half + (@as(f32, @floatFromInt(x0)) + @as(f32, @floatFromInt(x1))) * 0.5 * step;
         const cz = -half + (@as(f32, @floatFromInt(z0)) + @as(f32, @floatFromInt(z1))) * 0.5 * step;
         const spanX = @as(f32, @floatFromInt(x1 - x0)) * step;
@@ -388,7 +357,6 @@ pub const Env = struct {
         self.tileRad[i] = 0.5 * @sqrt(spanX * spanX + spanZ * spanZ + (yHi - yLo) * (yHi - yLo));
     }
 
-    /// THE SKIRT: a ring of ground from the height field's rim out to the haze, so a sculpted world still dissolves into distance with no visible plane edge (the flat map's one big quad does this job by simply being enormous).
     fn buildSkirt(self: *Env) void {
         if (self.skirtBuilt) {
             unloadTerrain(self.skirt);
@@ -421,7 +389,6 @@ pub const Env = struct {
             const xo = s[0] * out;
             const zi = s[1] * half;
             const zo = s[1] * out;
-            // Wound off the inner corner outward in a fixed order and flipped by the quadrant's sign product, so all four faces point UP (a corner built by one recipe faces down in two of the four quadrants, and a downward-facing patch of ground is simply not there).
             if (s[0] * s[1] > 0) {
                 b.quadSmooth(v3(xi, hy, zi), v3(xi, 0, zo), v3(xo, 0, zo), v3(xo, 0, zi), up, up, up, up, rl.Color.white);
             } else {
@@ -444,7 +411,6 @@ pub const Env = struct {
         const xp = self.pointY(ix + 1, iz);
         const zm = self.pointY(ix, if (iz > 0) iz - 1 else 0);
         const zp = self.pointY(ix, iz + 1);
-        // A one-sided difference at the rim spans one step, not two: dividing by 2·step there would halve the edge's slope and put a soft lip round the whole map.
         const xSpan: f32 = if (ix > 0 and ix + 1 < wf.HEIGHT_N) 2.0 else 1.0;
         const zSpan: f32 = if (iz > 0 and iz + 1 < wf.HEIGHT_N) 2.0 else 1.0;
         const dx = (xp - xm) / (step * xSpan);
@@ -462,7 +428,6 @@ pub const Env = struct {
             if (self.scene) |sc| sc.setWater(&self.waterField, m.half, false);
             return;
         }
-        // THE PAINTED EXTENT, so the sheet can be drawn at the size of the water instead of the size of the world.
         var lo: [2]usize = .{ N - 1, N - 1 };
         var hi: [2]usize = .{ 0, 0 };
         for (m.water, 0..) |wet, i| {
@@ -552,7 +517,6 @@ pub const Env = struct {
     pub fn drawWater(self: *Env) void {
         if (!self.waterAny) return;
         if (self.scene) |sc| {
-            // The sheet's three tones come from the PROP PALETTE, so a painted lake and the authored water prop beside it are the same water by construction rather than by coincidence.
             sc.setWaterSheet(true, props.WATER_TONES);
             // Scaled to the painted extent (Y left at 1 so the surface height is untouched).
             rl.drawModelEx(self.waterSheet, self.waterMid, v3(0, 1, 0), 0, self.waterSpan, rl.Color.white);
@@ -560,7 +524,6 @@ pub const Env = struct {
         }
     }
 
-    /// Turn a map into the world, IN PLACE — not an `init()` returning a value, since Env is ~450 KB of flat arrays and a by-value return would copy that through the stack twice.
     pub fn materialize(self: *Env, m: *const wf.Map) void {
         self.nprops = 0;
         self.nsolids = 0;
@@ -570,7 +533,6 @@ pub const Env = struct {
         @memset(&self.sgrid_start, 0);
 
         var p = Placer{ .e = self, .m = m, .flat = !m.anyHeight() };
-        // Everything except the ground cover, in file order — later ops read what earlier ones placed (ivy climbs standing stone; a belt rejects water already poured).
         for (m.slice(), 0..) |*o, i| {
             p.cur = @intCast(i);
             if (o.op != .cover) p.expand(o);
@@ -594,7 +556,6 @@ pub const Env = struct {
         indexProps(self);
     }
 
-    /// DEV HARNESS ONLY (`--shot-props`): stage exactly ONE prop at the origin on bare ground — plus its light, if the kind carries one — and index it, so every kind can be photographed in isolation.
     pub fn stageOne(self: *Env, kind: Kind) void {
         self.nprops = 0;
         self.nsolids = 0;
@@ -610,7 +571,6 @@ pub const Env = struct {
         indexProps(self);
     }
 
-    // (A `solids()` accessor handing back the WHOLE list lived here and had no caller — the "tests, tooling" its doc claimed it was for never materialized, and every real path goes through `nearSolids` / `blockedNear` / `resolveActor` on purpose.
 
     /// The solids that could touch a circle of radius `r` about `p`, written into `out`.
     pub fn nearSolids(self: *const Env, p: rl.Vector3, r: f32, out: []collision.Solid) []const collision.Solid {
@@ -655,13 +615,11 @@ pub const Env = struct {
         return false;
     }
 
-    /// Push an actor's footprint out of the nearby world solids (the grid-local counterpart of collision.resolve).
     pub fn resolveActor(self: *const Env, p: rl.Vector3, r: f32) rl.Vector3 {
         var buf: [MAX_NEAR]collision.Solid = undefined;
         return collision.resolve(p, r, self.nearSolids(p, r + 1.0, &buf));
     }
 
-    // Everything that touches the earth reads these three: the hero, every foe, arrows, prop planting, the editor's cursor and its camera.
 
     /// The ground's world Y under a point — the datum plus whatever the map was sculpted to.
     pub fn groundAt(self: *const Env, x: f32, z: f32) f32 {
@@ -681,7 +639,6 @@ pub const Env = struct {
         return @sqrt(g[0] * g[0] + g[1] * g[1]);
     }
 
-    /// How much the ground rises along `dir` — the slope an actor FACING that way is climbing (negative descending).
     pub fn slopeAlong(self: *const Env, x: f32, z: f32, dir: rl.Vector3) f32 {
         const g = self.gradAt(x, z);
         return g[0] * dir.x + g[1] * dir.z;
@@ -697,7 +654,6 @@ pub const Env = struct {
         const to = v3(from.x + dir.x * dist, from.y, from.z + dir.z * dist);
         if (!self.heightAny or dist <= 0) return to;
         if (self.stepOk(from, dir, dist)) return to;
-        // The horizontal direction the ground rises fastest, and what is left of the move once its uphill part is taken out.
         const g = self.gradAt(from.x, from.z);
         const gl = @sqrt(g[0] * g[0] + g[1] * g[1]);
         if (gl < 1e-5) return to;
@@ -709,9 +665,7 @@ pub const Env = struct {
         const tz = dir.z - uz * along;
         const tl = @sqrt(tx * tx + tz * tz);
         if (tl < 1e-5) return v3(from.x, from.y, from.z);
-        // The tangent keeps the step's LENGTH, not just its direction, so sliding along a wall travels at walking pace instead of quietly slowing to nothing as you square up to it.
         const slide = v3(from.x + tx / tl * dist, from.y, from.z + tz / tl * dist);
-        // …and it has to be walkable itself, or a tangent that runs onto a steeper part of the same face would let you climb it sideways.
         if (self.stepOk(from, v3(tx / tl, 0, tz / tl), dist)) return slide;
         return v3(from.x, from.y, from.z);
     }
@@ -735,7 +689,6 @@ pub const Env = struct {
         }
         const step = 2 * self.heightHalf / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
         const horiz = @sqrt(dir.x * dir.x + dir.z * dir.z);
-        // Advance half a lattice cell of GROUND distance per step (or a fixed slab when looking almost straight down, where the horizontal march is nearly zero and would never terminate).
         const dt = if (horiz > 1e-4) step * 0.5 / horiz else step * 0.5;
         const MAX_T: f32 = 4.0 * GROUND_HALF;
         var t: f32 = 0;
@@ -796,9 +749,7 @@ pub const Env = struct {
         return mathx.maxF(0, WATER_Y - self.groundAt(x, z));
     }
 
-    // (An unfiltered `pick` wrapping this lived here and had no caller — the editor's every pick is layer-scoped and goes through the predicate. Removed for the same reason `solids()` above it was.
 
-    /// THE PROP A RAY HITS FIRST, over the props whose OP the predicate accepts — the editor's world picking.
     pub fn pickIf(
         self: *const Env,
         origin: rl.Vector3,
@@ -808,10 +759,9 @@ pub const Env = struct {
     ) ?usize {
         var best: ?usize = null;
         var bestT: f32 = std.math.floatMax(f32);
-        // THE RAY REJECTS FIRST, THE PREDICATE SECOND, and the order is worth a note: `accept` reads the OP the prop came from, which is a random index into a quarter-megabyte table — a cache miss per prop, paid 17,000 times a frame while Select is armed, to answer a question the ray was about to make moot for all but a handful of them. Both conditions still have to hold, so the winner is unchanged.
+        // THE RAY REJECTS FIRST, THE PREDICATE SECOND, and the order is worth a note: `accept` reads the OP the prop came from, which is a random index into a quarter-megabyte table — a cache miss per prop, paid 17,000 times a frame while Select is armed, to answer a question the ray was about to make moot for all but a handful of them.
         for (self.props[0..self.nprops], 0..) |pr, i| {
             const nfo = props.info(pr.kind);
-            // Half way up the mesh — and half way up its LEAN when it has one, so a click lands on a tipped tree where you SEE it rather than where it would have stood plumb.
             const sw = leanSwing(pr, nfo.top * pr.scale * 0.5);
             const c = v3(pr.pos.x + sw.x, pr.pos.y + nfo.top * pr.scale * 0.5, pr.pos.z + sw.z);
             const rad = @max(nfo.bound * pr.scale * 0.5, 0.35);
@@ -833,7 +783,6 @@ pub const Env = struct {
         return self.models[@intFromEnum(kind)];
     }
 
-    /// …and its veil, for the same reason and the same viewer.
     pub fn veil(self: *const Env, kind: Kind) ?rl.Model {
         return self.veils[@intFromEnum(kind)];
     }
@@ -860,7 +809,6 @@ pub const Env = struct {
         }
         for (self.tiles[0..], self.tileBuilt[0..], self.tileMid[0..], self.tileRad[0..]) |t, built, mid, rad| {
             if (!built) continue;
-            // The terrain has no per-kind view distance to cull by, so the frustum sides alone decide; GROUND_HALF is past the haze's own opacity, i.e.
             if (view) |vw| {
                 if (!vw.visible(mid, rad, GROUND_HALF)) continue;
             }
@@ -870,13 +818,11 @@ pub const Env = struct {
         if (self.skirtBuilt) rl.drawModel(self.skirt, mathx.zero3, 1.0, rl.Color.white);
     }
 
-    /// The stone/structure props — the shadow casters, drawn in BOTH passes through this ONE function so their transforms can never drift between the depth pass and the lit pass (only the SET differs, which is the whole point of culling).
     pub fn drawProps(self: *Env, cull: Cull) void {
         self.drawIndexed(&self.stx, cull);
         self.drawStows(cull);
     }
 
-    /// The stowable parts, drawn WITH the props in both passes so one that is on screen also casts — and skipped entirely while `stowed`. Walks the VEIL list rather than one of its own, which a comptime assert in `props.zig` is what makes safe: a kind with a `stow` and no `veil` is not in this list at all.
     fn drawStows(self: *Env, cull: Cull) void {
         if (self.stowed) return;
         for (self.veilItems[0..self.nveils]) |pi| {
@@ -915,7 +861,6 @@ pub const Env = struct {
         }
         return n;
     }
-    /// EVERY BONFIRE THAT WAS ACTUALLY PLACED, in prop order — the rest sites, filled off the planted props for the same reason `chestSites` is: a prop's final position is env's answer, not the op's.
     pub fn restSites(self: *const Env, out: []restmod.Site) usize {
         var n: usize = 0;
         for (self.restItems[0..self.nrests]) |pi| {
@@ -934,7 +879,6 @@ pub const Env = struct {
         return self.nlights;
     }
 
-    /// The flora — non-casters (thin blades sparkle in a shadow map), drawn only in the lit pass with the wind term on.
     pub fn drawFlora(self: *Env, view: *const View) void {
         self.drawIndexed(&self.flx, .{ .view = view.* });
     }
@@ -953,7 +897,6 @@ pub const Env = struct {
 
     // Walk one index cell by cell, rejecting whole cells before touching their props.
     fn drawIndexed(self: *Env, idx: *const Index, cull: Cull) void {
-        // The depth pass wants CASTERS only; the lit pass wants everything, non-casters (the water sheet) included — skipping them there would simply delete the tarn.
         const casters_only = cull == .sun;
         var c: usize = 0;
         while (c < NCELL) : (c += 1) {
@@ -990,7 +933,6 @@ pub const Env = struct {
                 if (pr.lean == 0) {
                     rl.drawModelEx(self.models[@intFromEnum(pr.kind)], pr.pos, v3(0, 1, 0), pr.yaw, sc, rl.Color.white);
                 } else {
-                    // A LEANING instance needs two rotations, and raylib's DrawModelEx only takes one — so the YAW rides in the model transform (applied FIRST, in the mesh's own space) and the LEAN is the axis-angle it does take: the prop spins on its base, then tips over toward leanDir in WORLD space.
                     var mdl = self.models[@intFromEnum(pr.kind)];
                     mdl.transform = rl.math.matrixRotateY(mathx.radians(pr.yaw));
                     rl.drawModelEx(mdl, pr.pos, leanAxis(pr.leanDir), pr.lean, sc, rl.Color.white);
@@ -1039,7 +981,6 @@ fn gutter(t: f32, phase: f32) f32 {
     return 0.30 * mathx.sinf(t * 4.3 + phase) + 0.14 * mathx.sinf(t * 8.9 + phase * 2.3) + 0.56 * mathx.sinf(t * 1.7 + phase * 0.6);
 }
 
-// Does a caster at `pos` (bounding radius `bound`, height `top`) reach the sun's ortho box around `focus`?
 fn castsInto(focus: rl.Vector3, pos: rl.Vector3, bound: f32, top: f32) bool {
     const reach = SHADOW_BOX + bound + top * SUN_REACH;
     return mathx.dist2XZ(focus, pos) <= reach * reach;
@@ -1049,14 +990,12 @@ fn cross(a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     return v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 }
 
-// The unit normal of the plane spanned by `a` and `b`, flipped to point to the side `inside` is on.
 fn inward(a: rl.Vector3, b: rl.Vector3, inside: rl.Vector3) rl.Vector3 {
     const n = mathx.normV(cross(a, b));
     const d = n.x * inside.x + n.y * inside.y + n.z * inside.z;
     return if (d < 0) mathx.scaleV(n, -1) else n;
 }
 
-/// DROP A TERRAIN MESH — the ONE safe way, and the terrain is the only geometry here ever unloaded. raylib's `unloadModel` calls `UnloadMaterial`, which UNLOADS THE MATERIAL'S SHADER — and a tile's shader is the SCENE shader every other draw uses, so unloading one tile deletes the program out from under the renderer and the next tile frees the same pointer again.
 fn unloadTerrain(model: rl.Model) void {
     var m = model;
     m.materials[0].shader.id = rl.gl.rlGetShaderIdDefault();
@@ -1103,7 +1042,6 @@ fn waterQuad(shader: rl.Shader, half: f32) rl.Model {
     return b.toModel(shader);
 }
 
-// The world was once authored here as five paragraphs of Zig; it lives in a MAP FILE now, and this is the other half of that — the expansion of each op into props.
 
 const Placer = struct {
     e: *Env,
@@ -1121,13 +1059,11 @@ const Placer = struct {
         self.atY(kind, x, self.groundY(x, z), z, yaw, scale, rng);
     }
 
-    /// The sculpted ground height for a prop about to be placed — read off the MAP being replayed, not off `env.groundAt`, because `materialize` may be running before the field has been uploaded (the `--shot-props` harness stages props with no map at all).
     fn groundY(self: *const Placer, x: f32, z: f32) f32 {
         if (self.flat) return 0;
         return self.m.heightAt(x, z);
     }
 
-    // With an explicit Y — water (staggering overlapping sheets out of z-fighting) and the ground plant above.
     fn atY(self: *Placer, kind: Kind, x: f32, y: f32, z: f32, yaw: f32, scale: f32, rng: *mathx.Rng) void {
         if (self.e.nprops >= MAX_PROPS) @panic("env: MAX_PROPS exceeded — raise the cap");
         // NOTHING is drawn from `rng` unless the op actually asked for a lean.
@@ -1137,7 +1073,6 @@ const Placer = struct {
             if (self.leanExact) {
                 lean = self.lean;
             } else {
-                // A dial as a MAXIMUM: never dead plumb (authored variation is the point) and reaching the full figure at the top, each instance falling its own way.
                 lean = self.lean * rng.range(0.15, 1.0);
                 leanDir = rng.range(0, 360);
             }
@@ -1163,7 +1098,6 @@ const Placer = struct {
         self.e.nlights += 1;
     }
 
-    /// The full accept test for one scatter candidate: the op's `avoid` set, then the cover field, then any density gradient.
     fn accepts(self: *Placer, o: *const wf.Op, x: f32, z: f32, rng: *mathx.Rng) bool {
         if (self.rejects(o, x, z)) return false;
         // The cover field, mixed toward 1 so structures THIN where the flora does without vanishing.
@@ -1193,7 +1127,6 @@ const Placer = struct {
         self.leanDir = o.leanDir;
         self.leanExact = o.op == .at;
         switch (o.op) {
-            // `r1` on a literal is a Y OFFSET ABOVE THE GROUND, not an absolute height — the only user is the authored water sheet, staggering overlapping pools out of z-fighting, and an absolute would leave a tarn hanging in the air over a raised valley floor.
             .at => self.atY(o.kind, o.x, self.groundY(o.x, o.z) + o.r1, o.z, o.yaw, o.scale, &rng),
             .belt => self.belt(o, &rng),
             .disc => self.disc(o, &rng),
@@ -1288,10 +1221,8 @@ const Placer = struct {
         }
     }
 
-    // The movement clamp sits just inside a rock face, so the world's edge reads as terrain rather than an invisible wall in open grass.
     fn edge(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
         if (o.r0 < 1e-4) return;
-        // Through RIM_OUT, not a literal 6.0: that constant IS this offset (it says so) and it also feeds MAX_HALF, so a copy here lets the grid's ceiling stop describing the ring it is sized for — silently, since the world still looks fine right up to the edge cells.
         const rim = self.m.half + RIM_OUT; // the rock wall stands just outside the movement clamp
         var t: f32 = -rim;
         while (t <= rim) : (t += o.r0) {
@@ -1317,7 +1248,6 @@ const Placer = struct {
         }
     }
 
-    // Segment scale as a function of WHERE ALONG the wall it sits: two long sines (~90 m and ~37 m) plus a little noise.
     fn ridge(self: *Placer, o: *const wf.Op, along: f32, rng: *mathx.Rng) f32 {
         _ = self;
         const mid = (o.sLo + o.sHi) * 0.5;
@@ -1325,7 +1255,6 @@ const Placer = struct {
         return mid + amp * (0.62 * mathx.sinf(along * 0.070) + 0.31 * mathx.sinf(along * 0.170 + 1.9)) + rng.signed() * amp * 0.16;
     }
 
-    // A stratified scatter over the whole world: one candidate per LATTICE cell at a jittered position, so coverage is even without the O(n·m) rejection sampling the small world used.
     fn cover(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
         const pitch = o.r0;
         if (pitch < 0.1) return;
@@ -1342,12 +1271,10 @@ const Placer = struct {
                 const zone = self.m.zoneAt(x, z) orelse continue;
                 if (rng.float() > zone.density * coverField(x, z)) continue;
                 if (self.m.inClearing(x, z)) continue;
-                // Water uses a TIGHTER inset than a belt's: reeds may stand at the rim, but nothing grows mid-lake.
                 if (self.e.inWater(x, z, 0.97)) continue;
                 if (self.m.onRunway(x, z)) continue;
                 // The grid, walked IN PLACE — see `blockedNear`.
                 if (self.blockedHere(x, z)) continue;
-                // A mix-less zone grows nothing (the accessor says so rather than indexing an `undefined` slot — see wf.Zone.pick).
                 const kind = zone.pick(rng) orelse continue;
                 self.at(kind, x, z, rng.range(0, 360), rng.range(o.sLo, o.sHi), rng);
             }
@@ -1356,7 +1283,6 @@ const Placer = struct {
 };
 
 
-// A per-region density CONSTANT gives every square metre the same cover, and the result is a carpet: uniformly thick, nowhere to walk, nothing to notice.
 fn hash2(ix: i32, iz: i32) f32 {
     var h: u32 = @bitCast(ix *% 374761393 +% iz *% 668265263);
     h = (h ^ (h >> 13)) *% 1274126177;
@@ -1389,9 +1315,7 @@ pub fn coverField(x: f32, z: f32) f32 {
 }
 
 
-// Footprint colliders for every solid prop: each kind's local Part list, rotated by the instance yaw and scaled.
 fn buildSolids(e: *Env) void {
-    // RESET, so this is idempotent: materialize runs it twice (once for the cover scatter to query, once after, in case a later op added colliders) and an appending version silently doubled every footprint in the world.
     e.nsolids = 0;
     for (e.props[0..e.nprops]) |pr| {
         const nfo = props.info(pr.kind);
@@ -1408,10 +1332,8 @@ fn buildSolids(e: *Env) void {
                 pr.pos.z + s * (-part.bx * sn + part.bz * c),
                 part.r * s,
             );
-            // A WORLD Y, not the part's local one: `collision.Solid.h` is the height a projectile clears, tested against the shaft's world y (`blocksPoint`).
             sol.h = pr.pos.y + part.h * s;
-            sol.surf = nfo.surf; // …and what it is made of, for whatever hits it (see collision.Surface)
-            // A LEANING prop's footprint goes WITH it, or you bump into air beside a tipped trunk and walk through the trunk itself.
+            sol.surf = nfo.surf;
             if (pr.lean != 0) {
                 var off = leanSwing(pr, part.h * s * 0.5);
                 const lim = part.r * s;
@@ -1483,11 +1405,9 @@ const SolidCells = struct {
     }
 };
 
-// Bucket every prop into its cell, twice: once into the structure index, once into the flora index.
 fn indexProps(e: *Env) void {
     fillIndex(e, &e.stx, false);
     fillIndex(e, &e.flx, true);
-    // The three "which props are these" lists, filled in the one place both `materialize` and `stageOne` end up — so a prop cannot be in the world with its plume missing, and neither the chests nor the bonfires cost a pass over the whole world to find (see the fields).
     e.nveils = 0;
     e.nchests = 0;
     e.nrests = 0;
@@ -1509,11 +1429,9 @@ fn indexProps(e: *Env) void {
 }
 
 fn fillIndex(e: *Env, idx: *Index, want_flora: bool) void {
-    // ZERO the per-cell maxima first: they are `max`-folded below so they must start low, and they do NOT arrive zeroed — Env is built IN PLACE inside a Game from `alloc.create`, so `Index`'s struct-literal defaults never run and these three arrays are raw heap bytes.
     idx.bound = [_]f32{0} ** NCELL;
     idx.view = [_]f32{0} ** NCELL;
     idx.top = [_]f32{0} ** NCELL;
-    // The vertical extent folds the OTHER way (a min and a max about the datum), so it starts at the datum rather than at zero-the-sentinel — an empty cell then has an empty span, not a 20 m one.
     idx.ylo = [_]f32{0} ** NCELL;
     idx.yhi = [_]f32{0} ** NCELL;
     var counts = [_]u32{0} ** NCELL;
@@ -1542,7 +1460,6 @@ fn fillIndex(e: *Env, idx: *Index, want_flora: bool) void {
     }
 }
 
-// These cover the pure geometry — the culler and the grid — which is where a silent mistake costs the most (a prop that vanishes on screen, or a wall you walk through).
 
 fn viewLooking(eye: rl.Vector3, at: rl.Vector3) View {
     return View.fromCamera(.{
@@ -1555,7 +1472,6 @@ fn viewLooking(eye: rl.Vector3, at: rl.Vector3) View {
 }
 
 test "the view culler keeps what is ahead and rejects what is behind or wide" {
-    // EVERY orientation, because the first version of fromCamera assumed a handedness for the camera basis, was right for the pencil-and-paper case and inverted for the real one — and an inverted culler draws an EMPTY WORLD.
     const headings = [_]rl.Vector3{
         v3(0, 0, 1), v3(0, 0, -1), v3(1, 0, 0), v3(-1, 0, 0), // the four cardinals
         v3(0.7, -0.25, 0.7), v3(-0.6, -0.3, 0.74), // pitched down, like the real over-shoulder rig
@@ -1569,8 +1485,7 @@ test "the view culler keeps what is ahead and rejects what is behind or wide" {
         try std.testing.expect(vw.visible(ahead, 0.5, 100)); // dead ahead
         try std.testing.expect(!vw.visible(behind, 0.5, 100)); // straight behind
         try std.testing.expect(!vw.visible(ahead, 0.5, 5)); // ahead but past the view distance
-        try std.testing.expect(vw.visible(ahead, 0.5, 250)); // …same prop, longer view distance
-        // A colossus centred outside the frustum still has geometry inside it — the case a naive centre-point test drops, which shows as a cliff face popping at the screen edge.
+        try std.testing.expect(vw.visible(ahead, 0.5, 250));
         const wide = mathx.addV(ahead, mathx.scaleV(mathx.normV(cross(h, v3(0, 1, 0))), 30));
         try std.testing.expect(!vw.visible(wide, 0.5, 100));
         try std.testing.expect(vw.visible(wide, 26.0, 100));
@@ -1583,14 +1498,12 @@ test "the culler accepts the full width of the screen, not just the axis" {
     const hf = std.math.atan(@tan(mathx.radians(45.0) * 0.5) * 1.6);
     const edge = v3(@tan(hf * 0.94) * 40.0, 0, 40); // 94% of the way to the edge, dead centre vertically
     try std.testing.expect(vw.visible(edge, 0.0, 100));
-    try std.testing.expect(vw.visible(v3(-edge.x, 0, edge.z), 0.0, 100)); // …and the other side
+    try std.testing.expect(vw.visible(v3(-edge.x, 0, edge.z), 0.0, 100));
 }
 
 test "the shadow cull keeps a distant TALL caster whose shadow still reaches the box" {
     const focus = v3(0, 0, 0);
-    // Distances DERIVED from SHADOW_BOX, not literals: this said "60 m out" when SHADOW_ORTHO was 44 (half-diagonal ~31 m).
     const outside = SHADOW_BOX + 10.0; // just beyond the box's own corner
-    // A 15 m cliff out there is outside the box, but at this sun elevation its shadow travels ~23 m — plus its own bulk, that reaches in.
     try std.testing.expect(castsInto(focus, v3(outside, 0, 0), 18.0, 15.5));
     // A grass-height prop the same distance out cannot possibly reach.
     try std.testing.expect(!castsInto(focus, v3(outside, 0, 0), 0.9, 0.8));
@@ -1612,7 +1525,6 @@ test "grid cells round-trip a world position" {
 }
 
 test "a solid's cell iterator covers its whole footprint" {
-    // A cliff-sized capsule spanning a cell boundary must be inserted into every cell it touches, or a query from the neighbouring cell misses it and you walk through rock.
     var s = collision.capsule(-9, 0, 9, 0, 3);
     s.h = 15;
     var seen: usize = 0;
@@ -1629,7 +1541,6 @@ test "a solid's cell iterator covers its whole footprint" {
 }
 
 test "a solid's blocking height is a WORLD height, so cover still works up a bank" {
-    // THE bug: `collision.Solid.h` is tested against a projectile's WORLD y (`blocksPoint`), and it was filled with the part's PROP-LOCAL height.
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -1685,10 +1596,9 @@ test "walkStep: an incline inside the limit is taken, a cliff face is refused" {
         // …but DOWNHILL is never refused.
         const down = e.walkStep(v3(0, 0, 0), v3(-1, 0, 0), 0.1);
         try std.testing.expectApproxEqAbs(@as(f32, -0.1), down.x, 1e-4);
-        // …and ACROSS the face slides at full pace rather than sticking: walking into a cliff at an angle has to leave you moving, or a hillside reads as a set of invisible corners.
         const across = e.walkStep(v3(0, 0, 0), mathx.normV(v3(1, 0, 1)), 0.1);
         try std.testing.expect(@abs(across.z - 0.1) < 0.02); // kept the step's LENGTH along z
-        try std.testing.expect(across.x < 0.02); // …and gave up the uphill part of it
+        try std.testing.expect(across.x < 0.02);
     }
 }
 
@@ -1724,8 +1634,7 @@ test "a SLIGHT STEP is always taken, however steep the face carrying it" {
     var i: usize = 0;
     while (i < 120) : (i += 1) p = e.walkStep(p, v3(1, 0, 0), 6.0 / 60.0);
     try std.testing.expect(p.x > x0 + 4.0); // he is well past it
-    try std.testing.expectApproxEqAbs(LEDGE, e.groundAt(p.x, p.z) - GROUND_Y, 1e-3); // …and UP it
-    // …and it is `STEP_UP` doing the work, not the slope limit having a lucky day: the riser is one lattice cell, so as a pure gradient question it is right on the edge, and a rule that only asked about slope would hold at the lip depending on where in the cell the probe landed.
+    try std.testing.expectApproxEqAbs(LEDGE, e.groundAt(p.x, p.z) - GROUND_Y, 1e-3);
     try std.testing.expect(LEDGE <= STEP_UP);
 
     // A THREE-STEP ledge (0.75 m) is a wall.
@@ -1741,7 +1650,6 @@ test "a SLIGHT STEP is always taken, however steep the face carrying it" {
 }
 
 test "env's ground agrees with the MAP's to the millimetre" {
-    // Two owners, one field: the map holds what the editor sculpts, env holds the copy the terrain mesh was built from and every actor stands on.
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     m.blank("Agree");
@@ -1756,7 +1664,6 @@ test "env's ground agrees with the MAP's to the millimetre" {
     e.heightHalf = m.half;
     e.heightAny = m.anyHeight();
     for ([_][2]f32{ .{ -30, 40 }, .{ 20, -20 }, .{ 0, 0 }, .{ -117.3, 88.6 }, .{ 279, -279 } }) |p| {
-        // env adds the DATUM (the 1 cm the old flat plane sat at) and the map does not, which is the only difference there may ever be between them.
         try std.testing.expectApproxEqAbs(m.heightAt(p[0], p[1]) + GROUND_Y, e.groundAt(p[0], p[1]), 1e-5);
     }
     // A FLAT map is the old world exactly: the datum, everywhere, with no field consulted at all.
@@ -1768,11 +1675,9 @@ test "rayGround finds the surface of a hill, not the plane under it" {
     // The editor aims every click with this.
     const e = try envWithRamp(0.5); // a steady 26 deg slope rising with x
     defer std.testing.allocator.destroy(e);
-    // Straight down from high above a point 40 m along the ramp: the hit must be that point, at its own height (40 * 0.5 = 20 m, plus the datum).
     const hit = e.rayGround(v3(40, 200, 0), v3(0, -1, 0)) orelse return error.NoHit;
     try std.testing.expectApproxEqAbs(@as(f32, 40), hit.x, 0.05);
     try std.testing.expectApproxEqAbs(@as(f32, 20) + GROUND_Y, hit.y, 0.05);
-    // An OBLIQUE ray hits the near face of the slope, so its x is short of where the flat-plane solve would have put it — that difference IS the bug this fixes.
     const flatT = (GROUND_Y - 60.0) / -0.5; // the plane answer for the ray below
     const oblique = e.rayGround(v3(-60, 60, 0), mathx.normV(v3(1, -0.5, 0))) orelse return error.NoHit;
     try std.testing.expect(oblique.x < -60 + flatT * 0.9);
@@ -1801,7 +1706,7 @@ test "the cover field actually varies — real clearings and real thickets" {
     try std.testing.expect(lo <= 0.02); // somewhere is bare
     try std.testing.expect(hi >= 1.15); // somewhere is choked
     const mean = sum / n;
-    try std.testing.expect(mean > 0.45 and mean < 0.80); // …and it is not secretly a constant
+    try std.testing.expect(mean > 0.45 and mean < 0.80);
 }
 
 test "the SHIPPED map parses, and its zones cover every reachable position" {
@@ -1829,7 +1734,6 @@ test "the SHIPPED map parses, and its zones cover every reachable position" {
 }
 
 test "every generator op in the shipped map has its own seed" {
-    // Two ops sharing a seed AND a shape would place the same instances twice, and a seed left at zero is an op nobody gave a stream to.
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     var line: usize = 0;
@@ -1847,20 +1751,14 @@ test "every generator op in the shipped map has its own seed" {
 }
 
 test "the cliff ring stands outside the movement clamp, and inside the grid" {
-    // PLAY_HALF (game.zig) insets the map's half; the rock must be beyond that or the player is stopped by air with the cliff still ahead of them.
     try std.testing.expect(RIM_OUT > 0);
     // CLIFF_BOUND is a hand-copied mirror of the mesh's own bound, because MAX_HALF has to be a comptime value and `props.info` is a runtime lookup.
     try std.testing.expectApproxEqAbs(CLIFF_BOUND, props.info(.cliff).bound, 1e-4);
-    // The DEFAULT map must fit inside what the grid can index, or everything past the boundary piles into the edge cells and a cell that cannot be rejected is thirty props tested one by one — the culling still works, it just stops being cheap.
     try std.testing.expect(wf.DEFAULT_HALF <= MAX_HALF);
-    // …and the ground quad has to clear the far corner plus the haze reach, or the plane's own edge shows as a hard line under the sky from the corners of the world.
     try std.testing.expect(GROUND_HALF > wf.DEFAULT_HALF + 200);
 }
 
 test "THE BROOD ARENA LOADS — a scratch map is only useful if it is known to still parse" {
-    // A second world exists purely to test the brood in (`worlds/02_brood_arena.world`), which means
-    // nothing in the normal run ever opens it: a rename or a format change would rot it silently and it
-    // would be found by someone trying to use it, mid-debug, when a panic is the last thing they want.
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     var line: usize = 0;
@@ -1872,7 +1770,7 @@ test "THE BROOD ARENA LOADS — a scratch map is only useful if it is known to s
     for (m.foes[0..m.nfoes]) |f| {
         if (f.kind == .brood_mother) mothers += 1;
     }
-    try std.testing.expect(mothers > 0); // …or it is not an arena for anything
+    try std.testing.expect(mothers > 0);
 }
 
 test "replaying the SHIPPED map produces a stable world" {
@@ -1900,9 +1798,8 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(solids0, e.solidCount());
     try std.testing.expectEqual(lights0, e.lightCount());
 
-    // …and the numbers themselves, so a scatter that quietly gains or loses instances fails the build instead of drifting in a screenshot.
-    try std.testing.expectEqual(@as(usize, 17161), props0);
-    try std.testing.expectEqual(@as(usize, 1782), solids0);
+    try std.testing.expectEqual(@as(usize, 17197), props0);
+    try std.testing.expectEqual(@as(usize, 1791), solids0);
     try std.testing.expectEqual(@as(usize, 40), lights0);
 
     // …and THE CHEST IS STOCKED.
@@ -1917,7 +1814,7 @@ test "replaying the SHIPPED map produces a stable world" {
     }
     try std.testing.expectEqual(@as(usize, 2), jerky);
 
-    // …AND EVERY BOX AND CAMP IN THE MAP BECAME ONE THE GAME CAN REACH. Both lists are CACHED by `indexProps` rather than swept out of the prop array on demand, so this is what pins the cache to what was actually planted — asked after the SECOND materialize, which is the refill a caching bug would skip.
+    // …AND EVERY BOX AND CAMP IN THE MAP BECAME ONE THE GAME CAN REACH.
     var boxes: [chestmod.CAP]chestmod.Site = undefined;
     try std.testing.expectEqual(chestOps, e.chestSites(&boxes));
     var fires: [restmod.CAP]restmod.Site = undefined;
@@ -1925,7 +1822,6 @@ test "replaying the SHIPPED map produces a stable world" {
 }
 
 test "no grid query can overflow MAX_NEAR, which is the one cap here that drops SILENTLY" {
-    // `nearSolids` stops at `out.len` and returns what it has — the only cap in this file that is not an init-time panic, and its failure mode is a wall you walk through. A query's radius is small (an actor's footprint plus a metre, an arrow's frame of flight plus its slop), so it never spans more than two cells per axis: the bound to watch is the densest 2x2 block, measured against the real map rather than asserted from a comment.
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     var line: usize = 0;
@@ -1950,12 +1846,11 @@ test "no grid query can overflow MAX_NEAR, which is the one cap here that drops 
             worst = @max(worst, sum);
         }
     }
-    try std.testing.expect(worst > 0); // …and the measurement is actually looking at a world
+    try std.testing.expect(worst > 0);
     try std.testing.expect(worst <= MAX_NEAR);
 }
 
 test "the flat-map plant shortcut is EXACT, not an approximation" {
-    // `Placer.groundY` returns a literal 0 for an unsculpted map instead of sampling — which is only legal because the sampler returns a bit-identical 0 there.
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     m.blank("Flat");

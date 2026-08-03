@@ -33,10 +33,8 @@ fn runBake(alloc: std.mem.Allocator) !void {
     defer alloc.destroy(m);
     bake.build(m);
 
-    // THROUGH `wf.save` AND `wf.START_MAP`, not a hand-rolled write to a literal path.
     try wf.save(wf.START_MAP, m);
 
-    // Re-read what was just written: a bake that emits a file the loader rejects is worse than one that fails, because the failure surfaces later as an empty world.
     const text = try std.fs.cwd().readFileAlloc(alloc, wf.START_MAP, 1 << 22);
     defer alloc.free(text);
     const back = try alloc.create(wf.Map);
@@ -52,7 +50,7 @@ fn runBake(alloc: std.mem.Allocator) !void {
     );
 }
 
-// EVERY module carrying tests must be named here — Zig only collects from files the test ROOT reaches, and this is the root. env.zig and props.zig hang off game.zig alone, so leaving them out silently dropped 12 tests, the culler sweep and the INFO table's checks among them.
+// EVERY module carrying tests must be named here
 test {
     _ = @import("hero.zig");
     _ = @import("camera.zig");
@@ -69,7 +67,7 @@ test {
     _ = @import("props.zig");
     _ = @import("worldfmt.zig");
     _ = @import("editor.zig"); // hangs off game.zig, which this root does not reach for tests
-    _ = @import("audio.zig"); // …likewise: the sound bank's synthesis tests need no device
+    _ = @import("audio.zig");
     // …AND game.zig ITSELF, which this list said was unreachable and then never named.
     _ = @import("game.zig");
 }

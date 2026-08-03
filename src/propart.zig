@@ -38,7 +38,6 @@ pub const STEEL = rgba(100, 106, 116, 255);
 pub const BRASS = rgba(122, 92, 40, 255);
 pub const TIMBER = rgba(48, 37, 25, 255);
 pub const TIMBER_DK = rgba(33, 26, 18, 255);
-// A GUITAR'S SPRUCE TOP — the one manufactured surface out here, and the palest warm wood in the set.
 pub const SPRUCE = rgba(59, 46, 30, 255);
 pub const THATCH = rgba(74, 60, 30, 255);
 pub const THATCH_DK = rgba(52, 42, 22, 255);
@@ -50,17 +49,16 @@ pub const FLAME_CORE = rgba(226, 190, 128, 25); // pale heart of a torch — no 
 pub const FLAME_MID = rgba(214, 138, 48, 40);
 pub const FLAME_TIP = rgba(176, 82, 24, 90); // the cooler tongue — and now the most transparent of them
 pub const COAL = rgba(196, 78, 22, 70);
-// OPAQUE (alpha 255), and that is the correction that matters here: in this renderer a vertex alpha under 255 does NOT mean see-through, it means SELF-LIT (see EMBER above).
 pub const SMOKE_HOT = rgba(64, 54, 46, 255);
 pub const SMOKE_MID = rgba(58, 55, 52, 255);
-pub const SMOKE_COLD = rgba(52, 52, 55, 255); // …cooling to the blue-grey of the sky it is joining
+pub const SMOKE_COLD = rgba(52, 52, 55, 255);
 pub const CLOTH = rgba(76, 20, 12, 255); // faded war-banner crimson (matches the hero's cape)
-pub const CLOTH_DK = rgba(48, 14, 10, 255); // …in the folds, and where the rain got into it
-pub const CLOTH_SUN = rgba(96, 46, 32, 255); // …and at the frayed hem, where the sun ate the dye out
+pub const CLOTH_DK = rgba(48, 14, 10, 255);
+pub const CLOTH_SUN = rgba(96, 46, 32, 255);
 // Undyed CANVAS for tarps and sacking.
 pub const CANVAS = rgba(42, 36, 28, 255);
 
-// Plant palette (pre-gamma dark) — Limgrave gold over scrub green.
+// Plant palette (pre-gamma dark)
 pub const GRASS_GOLD = rgba(96, 76, 34, 255);
 pub const GRASS_DRY = rgba(78, 64, 30, 255);
 pub const GRASS_GRN = rgba(50, 56, 28, 255);
@@ -77,7 +75,6 @@ pub const LEAF_LT = rgba(52, 58, 28, 255);
 pub const LEAF_GOLD = rgba(74, 66, 30, 255);
 pub const LEAF_PALE = rgba(58, 64, 34, 255); // willow: silvered, thirstier green
 pub const BERRY = rgba(58, 14, 18, 255);
-// The lush layer: a meadow needs more than gold grass, so there are damp greens, a couple of flower hues, and the browns of things that have died back.
 pub const LEAF_DAMP = rgba(30, 44, 26, 255); // shade-grown: greener and cooler than the sunlit gold
 pub const CLOVER_GRN = rgba(40, 54, 30, 255);
 pub const MOSS_SOFT = rgba(44, 56, 32, 255);
@@ -110,10 +107,8 @@ pub const WATER_MID = rgba(18, 25, 26, 255);
 pub const WATER_SHALLOW = rgba(30, 35, 31, 255);
 pub const WATER_MUD = rgba(40, 35, 25, 255); // the wet margin the sheet sits in
 
-/// One footprint collider in a kind's LOCAL space (a capsule a→b with radius r; a==b is a plain circle). env rotates it by the instance yaw and multiplies by its scale.
 pub const Part = struct { ax: f32 = 0, az: f32 = 0, bx: f32 = 0, bz: f32 = 0, r: f32, h: f32 };
 
-// The watchtower's collider ring: 11 of 14 positions around the drum, the other 3 left open as the doorway.
 pub const TOWER_R: f32 = 2.35; // wall centre-line radius
 pub const TOWER_SIDES: i32 = 14;
 pub const TOWER_DOOR: i32 = 3; // masonry columns omitted for the door, centred on local −Z (index 0)
@@ -147,7 +142,7 @@ pub const Course = struct {
     courses: i32 = 9,
     blockW: f32 = 0.72, // nominal block length along the run
     crumbleTop: f32 = 0.45, // the top two courses have not been pointed in three centuries
-    crumble: f32 = 0.04, // …every course below them
+    crumble: f32 = 0.04,
     gapLo: f32 = 9, // no opening by default (the run is only ever a few metres)
     gapHi: f32 = 9,
     sillY: f32 = 0,
@@ -155,7 +150,6 @@ pub const Course = struct {
     core: f32 = 0.80, // substrate thickness as a fraction of `thick` (0 = facing only)
 };
 
-// Surface detail — bedding bands, arrises, quoins, joints, coursing, fracture shards — exists to BREAK UP a big dark mass so it doesn't read as plastic.
 
 pub fn courseInto(bb: *Builder, r: *mathx.Rng, ax: f32, az: f32, bx: f32, bz: f32, spec: Course) void {
     bb.setMat(.stone);
@@ -202,7 +196,6 @@ pub fn courseInto(bb: *Builder, r: *mathx.Rng, ax: f32, az: f32, bx: f32, bz: f3
             const s = (t - 0.5) * runLen; // signed distance along the run from its centre
             if (s > spec.gapLo and s < spec.gapHi and yc > spec.sillY and yc < spec.headY) continue; // the opening
             if (r.float() < crumble) continue;
-            // The OVERLAP stays generous — butted blocks show a seam round every one, and the facing has to run well past its slot.
             const bw = (runLen / @as(f32, @floatFromInt(nb))) * r.range(1.20, 1.50); // BEDDED, not butted
             const col = if (r.float() < 0.15) STONE_LT else if (r.float() < 0.32) STONE_DK else STONE;
             bb.addBox(
@@ -216,7 +209,6 @@ pub fn courseInto(bb: *Builder, r: *mathx.Rng, ax: f32, az: f32, bx: f32, bz: f3
     }
 }
 
-/// A SQUARE coursed mass (a pier, a keep, a gate tower): a solid core with `n` facing slabs `w` x `d` over it, each nudged off axis and tilted a hair, alternating tint, tapering by `taper`.
 pub fn courseStack(bb: *Builder, r: *mathx.Rng, cx: f32, y0: f32, cz: f32, w: f32, d: f32, ch: f32, n: i32, taper: f32) f32 {
     bb.setMat(.stone);
     const total = ch * @as(f32, @floatFromInt(n));
@@ -225,7 +217,6 @@ pub fn courseStack(bb: *Builder, r: *mathx.Rng, cx: f32, y0: f32, cz: f32, w: f3
     var i: i32 = 0;
     while (i < n) : (i += 1) {
         const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n));
-        // Same rule as `courseInto`: the courses still overlap (a butted stack shows every seam) but each slab sits far closer to the one under it.
         const sw = w * (1.0 - taper * t) * r.range(0.99, 1.014);
         const sd = d * (1.0 - taper * t) * r.range(0.99, 1.014);
         const h = ch * r.range(1.0, 1.08); // courses OVERLAP
@@ -234,7 +225,6 @@ pub fn courseStack(bb: *Builder, r: *mathx.Rng, cx: f32, y0: f32, cz: f32, w: f3
             v3(sw * 0.5, r.signed() * 0.008, r.signed() * 0.007),
             v3(0, h * 0.5, 0),
             v3(r.signed() * 0.007, 0, sd * 0.5),
-            // The banding stays — it is the form break a big dark mass needs — but every OTHER course being the darkest stone was a zebra.
             if (r.float() < (if (@mod(i, 2) == 0) @as(f32, 0.5) else 0.24)) STONE_DK else if (r.float() < 0.16) STONE_LT else STONE,
         );
         y += ch;
@@ -310,10 +300,8 @@ pub fn crackInto(bb: *Builder, a: rl.Vector3, dir: rl.Vector3, side: rl.Vector3,
 
 // One flame: emissive TONGUES, not a cone.
 pub fn flameInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, s: f32) void {
-    // `.flame` gets two things `.plain` could not: the vertex shader's WRITHE (so the thing actually moves — the light has been guttering since it was written, over a flame standing perfectly still) and no surface grain at all, which is what the old comment here asked for.
     b.setMat(.flame);
     b.setAnimY(cy);
-    // THE HEART: a low pool at the fuel, and a BROAD one — a fire sits in its bed, it does not balance on it.
     b.addBlob(v3(cx, cy + 0.015 * s, cz), v3(0.175 * s, 0.045 * s, 0.175 * s), 3, 9, COAL);
     b.addBlob(v3(cx, cy + 0.055 * s, cz), v3(0.078 * s, 0.048 * s, 0.078 * s), 3, 8, FLAME_CORE);
     // TONGUES: TAPERED SPIRES, not stacked blobs.
@@ -322,7 +310,7 @@ pub fn flameInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, s: f32
         const a = rng.angle();
         const off = rng.range(0.02, 0.115) * s; // a BROAD base — the lobes sit beside each other
         const h = rng.range(0.17, 0.44) * s; // the tallest tongue sets the flame's height
-        const w = rng.range(0.058, 0.100) * s; // …and they are FAT relative to it now
+        const w = rng.range(0.058, 0.100) * s;
         const lean = rng.range(0.01, 0.05) * s;
         const y0 = cy + 0.02 * s;
         const x0 = cx + mathx.cosf(a) * off;
@@ -385,7 +373,6 @@ pub fn tuftInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, s: f32) void {
     }
 }
 
-// Up here in the art kit rather than in propruins because TWO things hold this instrument now: the bonfire camp props one against its rock, and the HERO picks one up to play at a rest (see hero.poseRest).
 
 /// AN ORIENTED FRAME for a flat object: `w` across it, `a` along it, `n` out through its face, with n = w x a.
 pub const Frame = struct {
@@ -464,7 +451,7 @@ const GUITAR_BODY = [_][3]f32{
     .{ 0.152, 0.198, 0.056 }, // lower bout, at its widest
     .{ 0.208, 0.191, 0.055 },
     .{ 0.258, 0.164, 0.053 },
-    .{ 0.300, 0.135, 0.051 }, // THE WAIST — 0.68 of the bout, which is what names the silhouette
+    .{ 0.300, 0.135, 0.051 },
     .{ 0.344, 0.145, 0.049 },
     .{ 0.394, 0.165, 0.047 },
     .{ 0.444, 0.166, 0.045 }, // upper bout
@@ -472,12 +459,10 @@ const GUITAR_BODY = [_][3]f32{
     .{ 0.520, 0.070, 0.042 }, // the heel the neck goes into
 };
 
-// (A `GUITAR_LEN` sat here offering the instrument's length "so a caller can seat it or prop it". Both callers place it by frame and scale (`hero.guitarMesh`, `propruins.guitarPropInto`) and neither ever wanted a length, so it was a constant that only looked load-bearing.
-/// ONE GUITAR, in `fr`: `fr.o` is where the body's TAIL sits, `fr.a` runs up the neck and `fr.n` is the soundboard's outward normal.
+// (A `GUITAR_LEN` sat here offering the instrument's length "so a caller can seat it or prop it".
 pub fn guitarInto(b: *Builder, fr: Frame) void {
     b.setMat(.wood);
     plateInto(b, fr, &GUITAR_BODY, SPRUCE, TIMBER_DK);
-    // THE SOUND HOLE at 0.63 of the body — over the waist, where it belongs — ringed by a rosette, because at this albedo nothing in this renderer goes black and a bare dark disc reads as a stain.
     faceDiscInto(b, fr, 0, 0.330, 0.052, 0.070, 14, BONE);
     faceDiscInto(b, fr, 0, 0.330, 0.054, 0.055, 14, BARK_OLD);
     // THE BRIDGE and its saddle, a quarter of the way up the lower bout — and both kept LOW.
@@ -486,13 +471,11 @@ pub fn guitarInto(b: *Builder, fr: Frame) void {
     // THE NECK, flush at the front with the soundboard, and its fretboard laid on top.
     b.addBox(fr.at(0, 0.690, 0.026), fr.axis(0.029, 0, 0), fr.axis(0, 0.175, 0), fr.axis(0, 0, 0.016), TIMBER_DK);
     b.addBox(fr.at(0, 0.700, 0.048), fr.axis(0.027, 0, 0), fr.axis(0, 0.165, 0), fr.axis(0, 0, 0.006), BARK_OLD);
-    // FRETS at the real equal-temperament positions off the 0.737 m nut-to-saddle scale — the spacing CLOSING as it runs down toward the body is what makes a neck read as a neck instead of a stick.
     for ([_]f32{ 1, 3, 5, 7, 9 }) |semis| {
         const t = 0.865 - 0.737 * (1.0 - std.math.pow(f32, 2.0, -semis / 12.0));
         b.addBox(fr.at(0, t, 0.0555), fr.axis(0.027, 0, 0), fr.axis(0, 0.0025, 0), fr.axis(0, 0, 0.0015), BONE);
     }
     b.addBox(fr.at(0, 0.868, 0.0555), fr.axis(0.028, 0, 0), fr.axis(0, 0.004, 0), fr.axis(0, 0, 0.004), BONE); // the nut
-    // THE HEADSTOCK, broken back off the neck the way a real one is — a head in line with the fretboard is the single detail that makes a guitar look like a toy.
     const hc = mathx.cosf(0.22);
     const hs = mathx.sinf(0.22);
     const hd = Frame{
@@ -509,7 +492,6 @@ pub fn guitarInto(b: *Builder, fr: Frame) void {
         b.addCapsule(hd.at(0.030, t, 0), hd.at(0.060, t, 0), 0.005, 0.005, 5, BRASS);
         b.addBox(hd.at(0.072, t, 0), hd.axis(0.011, 0, 0), hd.axis(0, 0.014, 0), hd.axis(0, 0, 0.004), BONE);
     }
-    // THE STRINGS, saddle to tuner in two runs so the second one fans out to the pegs, and fanning WIDER at the bridge than at the nut the way a real set does.
     for ([_]f32{ -0.026, 0, 0.026 }, [_]f32{ -0.019, 0, 0.019 }, [_]f32{ 0.030, 0.072, 0.114 }) |low, high, peg| {
         b.addCapsule(fr.at(low, 0.130, 0.0725), fr.at(high, 0.866, 0.058), 0.0022, 0.0022, 4, IRON);
         b.addCapsule(fr.at(high, 0.866, 0.058), hd.at(0.034, peg, 0.006), 0.0022, 0.0022, 4, IRON);

@@ -45,9 +45,9 @@ pub const Kind = enum(u8) {
     cliff, // the world's rock wall (six variants — see CLIFFS)
     cliff2,
     cliff3,
-    cliff4, // …ivy-laced: creeper curtains down the face, moss packed into the seams
-    cliff5, // …collapsed: a gully torn out of it, fresh rock at the scar, the apron at its foot
-    cliff6, // …both — an old collapse gone green
+    cliff4,
+    cliff5,
+    cliff6,
     // rock + wood litter
     boulder,
     rocks,
@@ -175,7 +175,6 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .paving => "Flagstones",
         .cart => "Broken Cart",
         .monolith => "Standing Stone",
-        // Named for the CHARACTER each one carries, not numbered: the palette's job is to say what the thing is, and "Cliff Face II" tells you nothing about which rock you are about to stand up.
         .cliff => "Cliff Face (Weathered)",
         .cliff2 => "Cliff Face (Blocky)",
         .cliff3 => "Cliff Face (Ragged)",
@@ -239,7 +238,6 @@ pub fn displayName(k: Kind) [:0]const u8 {
     };
 }
 
-/// Which shelf a kind sits on in the palette.
 pub fn group(k: Kind) Group {
     return switch (k) {
         .pillar, .broken, .block, .arch, .wall, .statue, .monolith, .paving, .stairs, .rubble, .banner, .sword, .graves, .sarcophagus, .bones, .gibbet, .cairn => .ruins,
@@ -263,7 +261,6 @@ pub const CLIFFS = [_]Kind{ .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6 
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
 
-/// WHICH EDITOR LAYER STOCKS A KIND — the palette shelves, read off INFO's own flags rather than listed a second time: `flora` is the swaying non-casters (Decor), `interact` is the things that answer the interact button (Interactables), and everything else stands still (Props).
 pub const Stock = enum { decor, props, interact };
 
 pub fn stock(k: Kind) Stock {
@@ -299,12 +296,10 @@ fn countOn(comptime s: Stock) usize {
 }
 
 comptime {
-    // The three shelves PARTITION the kinds: every kind is offered on exactly one of them, so a new row cannot be unreachable from the palette and cannot turn up on two.
     std.debug.assert(FLORA_KINDS.len + SOLID_KINDS.len + INTERACT_KINDS.len == NK);
     // …and the two flags must not both be set, since `stock` resolves flora first and the kind would silently shelve as Decor.
     for (INFO) |row| std.debug.assert(!(row.interact and row.flora));
 }
-/// One footprint collider in the kind`s LOCAL space — the type lives in the art kit, beside the tower ring that is built out of it, and is re-exported here because every caller says `props.Part`.
 pub const Part = art.Part;
 
 /// A fire this kind carries: a gfx.Light at a local offset.
@@ -318,36 +313,29 @@ pub const LightSpec = struct {
 pub const Info = struct {
     kind: Kind, // self-check: must equal its own row index (see the comptime block below)
     build: *const fn (rl.Shader) rl.Model,
-    /// A VEIL: a second mesh for this kind, drawn in a LATE pass — after every opaque pass and NEVER in the sun depth pass (see `env.drawVeils`).
     veil: ?*const fn (rl.Shader) rl.Model = null,
     /// A STOWABLE PART: an ordinary caster in its own model, so the game can take it away.
     stow: ?*const fn (rl.Shader) rl.Model = null,
-    /// Radius of a sphere about the prop's GROUND ORIGIN that encloses the whole mesh — the culling bound.
     bound: f32,
     /// Mesh top height.
     top: f32,
     /// Beyond this many world units the instance stops being drawn.
     view: f32,
-    /// Drawn in the flora pass: NOT in the shadow map (thin blades sparkle in it) and swayed by the shader's wind term.
     flora: bool = false,
-    /// AN INTERACTABLE: a prop the player does something to rather than walks around, so it carries state and a second owner beside the prop grid (`chest.zig`).
     interact: bool = false,
     /// Included in the sun depth pass.
     casts: bool = true,
     parts: []const Part = &.{},
     light: ?LightSpec = null,
-    /// What this kind's colliders are MADE of, for whatever hits them — today, the arrow's impact sound.
     surf: collision.Surface = .stone,
 };
 
-/// "Never distance-cull this" — past the camera's far clip plane, so only the frustum can reject it.
 const FAR: f32 = 400.0;
 
 fn circleParts(comptime r: f32, comptime h: f32) []const Part {
     return &.{.{ .r = r, .h = h }};
 }
 
-// Shared by all three cliff variants: a long capsule down the face plus one bulge, sized to the rock MASS rather than to any one variant's crest (they differ only in height and seed).
 const cliffParts = [_]Part{
     .{ .ax = -5.4, .bx = 5.4, .r = 2.9, .h = 15.5 },
     .{ .ax = -2.2, .az = 2.1, .bx = 2.6, .bz = 2.4, .r = 2.2, .h = 15.5 },
@@ -365,7 +353,6 @@ pub const INFO = [NK]Info{
     .{ .kind = .tree, .build = wood.treeMesh, .bound = 5.3, .top = 4.9, .view = 240, .parts = circleParts(0.38, 3.6), .surf = .wood },
     .{ .kind = .graves, .build = ruins.gravesMesh, .bound = 2.3, .top = 1.05, .view = 150, .parts = circleParts(0.80, 0.9) },
     .{ .kind = .sword, .build = ruins.swordMesh, .bound = 1.6, .top = 1.35, .view = 120 },
-    // A CAMP now, not an ember in a bowl nor a sword in a fire — so its light is a fire's: warmer, brighter, and it GUTTERS (0.10 was an ember's steady glow, and the flame is no longer still).
     .{ .kind = .grace, .build = ruins.graceMesh, .veil = ruins.graceVeilMesh, .stow = ruins.graceGuitarMesh, .bound = 7.2, .top = 5.4, .view = 300, .light = .{ .y = 0.45, .col = v3(0.86, 0.48, 0.18), .radius = 11.0, .flicker = 0.17 } },
     .{ .kind = .tower, .build = ruins.towerMesh, .bound = 17.5, .top = 17.2, .view = FAR, .parts = circleParts(3.40, 14.0) },
     .{ .kind = .gate, .build = ruins.gateMesh, .bound = 19.6, .top = 16.4, .view = FAR, .parts = &.{
@@ -381,10 +368,9 @@ pub const INFO = [NK]Info{
         .{ .ax = 2.6, .az = -3.6, .bx = 2.6, .bz = 3.6, .r = 0.42, .h = 4.4 }, // east wall
         .{ .ax = -2.6, .az = 3.6, .bx = 2.6, .bz = 3.6, .r = 0.42, .h = 4.4 }, // north (altar) wall
         .{ .ax = -2.6, .az = -3.6, .bx = -1.15, .bz = -3.6, .r = 0.42, .h = 4.4 }, // south wall, west of the door
-        .{ .ax = 1.15, .az = -3.6, .bx = 2.6, .bz = -3.6, .r = 0.42, .h = 4.4 }, // …and east of it
+        .{ .ax = 1.15, .az = -3.6, .bx = 2.6, .bz = -3.6, .r = 0.42, .h = 4.4 },
         .{ .ax = -1.5, .az = 2.9, .bx = 1.5, .bz = 2.9, .r = 0.55, .h = 1.1 }, // the altar
     } },
-    // The watchtower drum: a ring of small colliders with a gap at the door (collision is capsules-only, so a hollow round tower is approximated by its own masonry).
     .{ .kind = .watchtower, .build = build.watchtowerMesh, .bound = 13.0, .top = 12.4, .view = FAR, .parts = &art.towerRing },
     .{ .kind = .cottage, .build = build.cottageMesh, .bound = 5.6, .top = 4.0, .view = 280, .parts = &.{
         .{ .ax = -2.3, .az = -1.9, .bx = -2.3, .bz = 1.9, .r = 0.34, .h = 2.6 },
@@ -400,11 +386,9 @@ pub const INFO = [NK]Info{
     .{ .kind = .paving, .build = build.pavingMesh, .bound = 3.2, .top = 0.15, .view = 150 },
     .{ .kind = .cart, .build = village.cartMesh, .bound = 3.4, .top = 1.7, .view = 170, .parts = &.{.{ .ax = -1.1, .bx = 1.1, .r = 0.55, .h = 1.3 }}, .surf = .wood },
     .{ .kind = .monolith, .build = rock.monolithMesh, .bound = 5.2, .top = 4.9, .view = FAR, .parts = circleParts(0.62, 4.6) },
-    // THREE cliff variants, for the same reason the great trees have three: the ring repeats a segment every 6.5 m (the shipped map's `edge` step) for 1.3 km, and one silhouette repeated at that pitch reads as a periodic TOOTHED pattern along the horizon — unmistakably manufactured.
     .{ .kind = .cliff, .build = rock.cliff1, .bound = 18.0, .top = 15.5, .view = FAR, .parts = &cliffParts },
     .{ .kind = .cliff2, .build = rock.cliff2, .bound = 17.0, .top = 14.0, .view = FAR, .parts = &cliffParts },
     .{ .kind = .cliff3, .build = rock.cliff3, .bound = 19.0, .top = 16.8, .view = FAR, .parts = &cliffParts },
-    // …and three MORE, because six characters alternating along the rim (and around the start arc) is what pushes the repeat past where the eye looks for it.
     .{ .kind = .cliff4, .build = rock.cliff4, .bound = 17.5, .top = 14.9, .view = FAR, .parts = &cliffParts },
     .{ .kind = .cliff5, .build = rock.cliff5, .bound = 17.0, .top = 13.3, .view = FAR, .parts = &cliffParts },
     .{ .kind = .cliff6, .build = rock.cliff6, .bound = 18.0, .top = 14.5, .view = FAR, .parts = &cliffParts },
@@ -414,7 +398,6 @@ pub const INFO = [NK]Info{
     .{ .kind = .log, .build = wood.logMesh, .bound = 3.0, .top = 0.75, .view = 160, .parts = &.{.{ .ax = -1.9, .bx = 1.9, .r = 0.36, .h = 0.75 }}, .surf = .wood },
     .{ .kind = .well, .build = village.wellMesh, .bound = 2.6, .top = 2.4, .view = 240, .parts = circleParts(1.05, 1.15) },
     .{ .kind = .shrine, .build = village.shrineMesh, .bound = 2.8, .top = 2.5, .view = 240, .parts = circleParts(0.72, 1.9), .light = .{ .y = 1.20, .col = v3(0.56, 0.32, 0.13), .radius = 5.5, .flicker = 0.19 } },
-    // …a step UNDER the brazier (owner's ladder — see the fire block below): it is a caged wick on a post, not an open bowl of coals, so it lights a stretch of road rather than a plaza.
     .{ .kind = .lantern, .build = village.lanternMesh, .bound = 3.4, .top = 3.1, .view = 230, .parts = circleParts(0.17, 3.0), .light = .{ .y = 2.62, .col = v3(1.05, 0.60, 0.25), .radius = 11.5, .flicker = 0.08 }, .surf = .metal },
     .{ .kind = .fence, .build = village.fenceMesh, .bound = 3.6, .top = 1.25, .view = 180, .parts = &.{.{ .ax = -3.0, .bx = 3.0, .r = 0.16, .h = 1.25 }}, .surf = .wood },
     .{ .kind = .barrels, .build = village.barrelsMesh, .bound = 1.8, .top = 1.35, .view = 170, .parts = circleParts(0.78, 1.2), .surf = .wood },
@@ -427,11 +410,9 @@ pub const INFO = [NK]Info{
     .{ .kind = .chest, .build = village.chestMesh, .bound = 1.6, .top = village.CHEST_TOP + 0.34, .view = 150, .interact = true, .parts = &.{.{ .r = 0.56, .h = village.CHEST_HINGE_Y }}, .surf = .wood },
     .{ .kind = .outcrop, .build = rock.outcropMesh, .bound = 3.4, .top = 1.1, .view = 200, .parts = &.{.{ .ax = -1.4, .bx = 1.4, .r = 1.1, .h = 1.05 }} },
     .{ .kind = .scree, .build = rock.screeMesh, .bound = 2.6, .top = 0.35, .view = 160 },
-    // The BRAZIER is the brightest fire in the world — it is the one you site to light a place, and it now reads that way from across the plaza.
     .{ .kind = .torch, .build = fx.torchMesh, .bound = 2.6, .top = 2.35, .view = 200, .parts = circleParts(0.18, 2.0), .light = .{ .y = 1.98, .col = v3(0.64, 0.34, 0.13), .radius = 6.0, .flicker = 0.15 }, .surf = .metal },
     .{ .kind = .brazier, .build = fx.brazierMesh, .bound = 1.9, .top = 1.55, .view = 210, .parts = circleParts(0.50, 1.2), .light = .{ .y = 1.14, .col = v3(1.55, 0.84, 0.29), .radius = 16.0, .flicker = 0.13 }, .surf = .metal },
     .{ .kind = .campfire, .build = fx.campfireMesh, .bound = 1.5, .top = 1.0, .view = 200, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
-    // The tarn sheet: wadeable (no parts — owner's call, there is no swim and an invisible wall on open water feels worse than shallow water) and NOT a caster (a flat film casts nothing, and putting it in the shadow map would only shadow the lakebed it is sitting on).
     .{ .kind = .water, .build = fx.waterMesh, .bound = 30.0, .top = 0.1, .view = FAR, .casts = false },
     .{ .kind = .tuft, .build = flora.tuftMesh, .bound = 0.9, .top = 0.8, .view = 85, .flora = true, .casts = false },
     .{ .kind = .patch, .build = flora.patchMesh, .bound = 2.2, .top = 0.8, .view = 95, .flora = true, .casts = false },
@@ -458,7 +439,6 @@ pub const INFO = [NK]Info{
     .{ .kind = .thicket, .build = flora.thicketMesh, .bound = 2.8, .top = 1.9, .view = 160, .flora = true, .casts = false },
     .{ .kind = .wildflowers, .build = flora.wildflowersMesh, .bound = 1.5, .top = 0.65, .view = 105, .flora = true, .casts = false },
     .{ .kind = .ivy, .build = flora.ivyMesh, .bound = 2.4, .top = 2.0, .view = 150, .flora = true, .casts = false },
-    // Great trees CAST (they are half the western skyline) and therefore do NOT sway — the depth pass has no wind term, so a swaying caster's shadow would crawl away from it.
     .{ .kind = .bigtree, .build = wood.bigTree1, .bound = 13.5, .top = 11.0, .view = FAR, .parts = circleParts(0.95, 6.0), .surf = .wood },
     .{ .kind = .bigtree2, .build = wood.bigTree2, .bound = 13.0, .top = 8.5, .view = FAR, .parts = circleParts(0.95, 5.0), .surf = .wood },
     .{ .kind = .bigtree3, .build = wood.bigTree3, .bound = 14.0, .top = 13.5, .view = FAR, .parts = circleParts(0.90, 6.5), .surf = .wood },
@@ -475,12 +455,11 @@ pub fn info(k: Kind) *const Info {
 }
 
 comptime {
-    // Every row must sit at its own kind's index — a positional table silently desyncs the moment either side is reordered, and the symptom (a chapel with a grass tuft's colliders) is far from the cause.
     for (INFO, 0..) |row, i| std.debug.assert(@intFromEnum(row.kind) == i);
     // A bound smaller than the mesh pops geometry at the frustum edge; catch the obvious cases.
     for (INFO) |row| std.debug.assert(row.bound >= row.top);
     for (INFO) |row| std.debug.assert(!(row.flora and row.casts)); // flora must stay out of the shadow map
-    // A STOW RIDES THE VEIL LIST. `env.drawStows` finds the placed instances that carry a stowable part by walking `veilItems`, so a kind declaring `stow` and no `veil` would simply never draw its stow — invisibly, with the row looking correct. One kind (`grace`) declares either, and this is what keeps that assumption true rather than merely accidental.
+    // A STOW RIDES THE VEIL LIST.
     for (INFO) |row| std.debug.assert(!(row.stow != null and row.veil == null));
 }
 
@@ -491,7 +470,6 @@ test "every kind row sits at its own index and carries a mesh builder" {
 }
 
 test "collider parts stay inside their kind's bounding sphere" {
-    // A part reaching past `bound` means the culling sphere doesn't contain the thing the player can actually bump into — geometry would pop while still blocking movement.
     for (INFO) |row| {
         for (row.parts) |part| {
             const ra = @sqrt(part.ax * part.ax + part.az * part.az) + part.r;
@@ -503,7 +481,6 @@ test "collider parts stay inside their kind's bounding sphere" {
 
 test "the watchtower's collider ring leaves exactly one doorway gap" {
     try std.testing.expectEqual(@as(usize, art.TOWER_SIDES - art.TOWER_DOOR), art.towerRing.len);
-    // The gap must face local −Z (a tower placed at yaw 0 is entered from the south), so no ring collider may sit on the −Z side of the drum's centre line.
     for (art.towerRing) |part| try std.testing.expect(part.az > -art.TOWER_R * 0.85);
 }
 
@@ -516,8 +493,6 @@ test "fires carry a light above their base and inside their own bound" {
     }
 }
 
-/// THE WATER'S THREE TONES — shallow, mid, deep — as the linear vec3s the shader works in, straight off the palette the authored water prop is built from (`propart.WATER_*`).
-/// A CONSTANT, not a call: every input is a palette colour, and the painted sheet asked for these three linear conversions on every frame it drew.
 pub const WATER_TONES = [3]rl.Vector3{ linear(art.WATER_SHALLOW), linear(art.WATER_MID), linear(art.WATER_DEEP) };
 
 fn linear(c: rl.Color) rl.Vector3 {

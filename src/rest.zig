@@ -14,12 +14,10 @@ pub const CAP: usize = 32;
 pub const REACH: f32 = 3.2;
 
 const FADE_DOWN: f32 = 0.75; // to black, on the way in
-const FADE_UP: f32 = 1.10; // …and back out of it, which is slower — you arrive somewhere gently
+const FADE_UP: f32 = 1.10;
 const FADE_OUT: f32 = 0.60; // to black again on the way back to the field
-const FADE_RETURN: f32 = 0.90; // …and the field fading up under your feet
-/// You cannot leave before this — a rest that ends on the button you were still holding from opening it is a rest nobody sees.
+const FADE_RETURN: f32 = 0.90;
 const MIN_SIT: f32 = 2.2;
-/// The fire bed's own fade in and out, which is longer than the picture's on purpose: sound arriving with the image reads as a cut, sound arriving after it reads as a place.
 const BED_IN: f32 = 2.6;
 const BED_OUT: f32 = 0.55;
 /// A nudge OFF the fire, toward the lens.
@@ -40,13 +38,11 @@ pub const Phase = enum {
 pub const Rest = struct {
     list: [CAP]Site = undefined,
     n: usize = 0,
-    /// Which bonfire is in reach right now, recomputed every frame — the prompt and the button press have to agree, and they only can if there is one answer computed once.
     near: ?usize = null,
 
     phase: Phase = .off,
     /// Seconds INTO the current phase.
     t: f32 = mathx.LONG_AGO,
-    /// Which site the current rest is at, held across the phases (`near` is recomputed and would be null the moment the hero is teleported to the seat).
     site: Site = .{},
 
     /// EDGES, true for exactly the one frame the transition happens on.
@@ -170,7 +166,6 @@ pub const Rest = struct {
         const yaw = mathx.radians(self.site.yaw);
         const c = mathx.cosf(yaw);
         const s = mathx.sinf(yaw);
-        // FURTHER OUT than the first pass: at 1.3 m from the flames he and the fire overlapped into one mass in the broadside framing, and it is also simply too close to sit to a bonfire this size.
         const lx: f32 = 1.25;
         const lz: f32 = -1.95;
         const pos = v3(self.site.pos.x + c * lx + s * lz, self.site.pos.y, self.site.pos.z - s * lx + c * lz);
@@ -180,7 +175,7 @@ pub const Rest = struct {
     }
 };
 
-/// Every bonfire that was actually planted, in prop order — `env` fills this the way it fills `chestSites`.
+/// Every bonfire that was actually planted, in prop order
 pub fn siteFromProp(pos: rl.Vector3, yaw: f32) Site {
     return .{ .pos = pos, .yaw = yaw };
 }

@@ -5,9 +5,7 @@ const glsl = @import("shaders.zig"); // the GLSL source text — see there for t
 
 const v3 = mathx.v3;
 
-// GFX — the render layer: the Scene that drives one lit shader, the Sky/Vignette/Retro passes, and a small procedural-mesh Builder.
 
-// Every Builder mesh hands its CPU arrays to raylib, which frees them with libc `free()` in `UnloadMesh`.
 const alloc = std.heap.raw_c_allocator;
 
 // Shadow sampler lives on a high texture slot raylib's default material never binds (it only uses slot 0 for albedo), so the per-frame bind survives drawModel/drawMesh.
@@ -16,16 +14,13 @@ const SLOT_SOIL: i32 = 13;
 const SLOT_WATER: i32 = 14;
 const SLOT_SOILCOV: i32 = 15;
 
-/// THE SOIL GRID's resolution across the whole world. 112 cells over a 560 m map is 5 m a cell, which is about the smallest patch of ground worth painting by hand — and the sample position is noise-jittered in the shader, so a cell edge never reads as a 5 m step.
 pub const SOIL_N: i32 = 112;
 
 /// THE WATER FIELD's resolution — finer than the soil's, because a coastline is a SHAPE you read and a patch of dirt is not. 224 over a 560 m map is 2.5 m a cell, and the field is BILINEAR (unlike the soil's ids, which must not interpolate), so the shoreline the shader draws is smooth well under a cell.
 pub const WATER_N: i32 = 224;
 
-/// THE HEIGHT FIELD's resolution — the same 2.5 m pitch as the water, and for the same reason: it is a shape you read, not a patch you tint.
 pub const HEIGHT_N: i32 = 224;
 
-/// The field's byte encoding, and the one place it is written down. 128 is the WATERLINE: above it the value is depth (how far inside the lake), below it the distance back out to dry land.
 pub const WATER_SHORE: u8 = 128;
 /// Metres from the shore at which the water reads FULLY DEEP, and metres of soaked sand outside it.
 pub const WATER_DEEP_AT: f32 = 11.0;
@@ -35,21 +30,19 @@ pub const WATER_WET_OUT: f32 = 3.4;
 pub const SUN_DIR = norm3(v3(-0.60, 0.50, -0.46));
 
 pub const SHADOWMAP_RES = 8192;
-// PUBLIC because env's depth-pass cull must know how big the box is to decide what can throw a shadow into it — one source, so changing the box can't leave the cull wrong in either direction (too small pops shadows, too large re-drops the perf you just bought).
 pub const SHADOW_ORTHO = 108.0;
 const SUN_DIST = 120.0; // shadow camera distance along SUN_DIR
 // Depth slab around the casters, kept as TIGHT as the box allows.
 const SHADOW_CLIP_NEAR = SUN_DIST - SHADOW_ORTHO * 0.78;
 const SHADOW_CLIP_FAR = SUN_DIST + SHADOW_ORTHO * 0.78;
 
-// The haze color the world fades into with distance (authored pre-gamma — the shader gammas output, so dark values lift).
 pub const HAZE = v3(0.078, 0.070, 0.056);
 // Haze falloff: 1-exp(-density*dist).
 const HAZE_DENSITY: f32 = 0.013;
 
 pub const MAX_LIGHTS = 16;
 comptime {
-    // The scene FS declares `lightPos/lightCol/lightRad[16]` as literals — GLSL array sizes can't read a Zig constant.
+    // The scene FS declares `lightPos/lightCol/lightRad[16]` as literals
     @setEvalBranchQuota(200_000); // scanning a ~9 KB shader source three times at comptime
     std.debug.assert(MAX_LIGHTS == 16);
     std.debug.assert(std.mem.indexOf(u8, glsl.sceneFS, "lightPos[16]") != null);
@@ -118,12 +111,11 @@ pub const Sky = struct {
 pub const Vignette = struct {
     tex: rl.Texture2D,
 
-    // Authored PER-PIXEL in normalized screen space (not genImageGradientRadial, whose radius is the short dimension — on 16:9 that saturates to full dark and reads as a contracted ring).
     pub fn init() Vignette {
         const W = 256;
         const H = 256;
         const START = 0.62; // radius (0=centre, 1=edge-midpoint, ~1.41=corner) where the fade BEGINS — big clean centre
-        const ENDR = 1.34; // …and reaches full strength by here (the corners)
+        const ENDR = 1.34;
         const MAX_A: f32 = 120.0; // corner darkness (0..255)
         var img = rl.genImageColor(W, H, rl.Color.init(0, 0, 0, 0));
         var y: i32 = 0;
@@ -153,7 +145,6 @@ pub const Vignette = struct {
 };
 
 pub const RETRO_COUNT = 15;
-// A filter at or below this intensity is treated as OFF everywhere: anyActive() bypasses the whole pass, and the menu shows "Off" — one threshold so the label can't claim a live percentage for a value that renders nothing.
 pub const RETRO_EPS: f32 = 0.001;
 pub const RF_PIXELATE = 0;
 pub const RF_CHROMA = 1;
@@ -174,7 +165,6 @@ pub const RF_GRAIN = 14;
 // SINGLE SOURCE OF TRUTH — one row per filter in RF_* index order; the menu labels, uniform names, and owner-tuned launch defaults are DERIVED at comptime so they can't drift out of positional lockstep.
 const RetroFilter = struct { name: [:0]const u8, uniform: [:0]const u8, default: f32 };
 const RETRO_FILTERS = [RETRO_COUNT]RetroFilter{
-    // Blocks snap to whole pixels (see retroFS), so what matters is where the rounding lands: 0.03 rounds to 1 px and is a no-op, 0.05 is the first intensity that buys a real, steady 2x2 block.
     .{ .name = "Pixelate", .uniform = "fPixelate", .default = 0.05 },
     .{ .name = "Chroma Fringe", .uniform = "fChroma", .default = 0.09 },
     .{ .name = "Posterize", .uniform = "fPosterize", .default = 0.24 },
@@ -207,7 +197,7 @@ pub const RETRO_DEFAULTS = blk: {
     break :blk out;
 };
 
-// The RF_* index constants must line up with RETRO_FILTERS' rows — EVERY ONE OF THEM.
+// The RF_* index constants must line up with RETRO_FILTERS' rows
 comptime {
     const PINS = [_]struct { i: usize, u: [:0]const u8 }{
         .{ .i = RF_PIXELATE, .u = "fPixelate" },
@@ -226,7 +216,6 @@ comptime {
         .{ .i = RF_VHS, .u = "fVHS" },
         .{ .i = RF_GRAIN, .u = "fGrain" },
     };
-    // …and the pin list itself has to be EXHAUSTIVE and in order, or a filter added without a row here would simply be unpinned again — the fault this block is being widened to close.
     std.debug.assert(PINS.len == RETRO_COUNT);
     for (PINS, 0..) |row, k| {
         std.debug.assert(row.i == k);
@@ -234,13 +223,11 @@ comptime {
     }
 }
 
-// Retro filter PRESETS — the SINGLE source for the menu's Preset rows AND the --shot verification stacks (which previously re-hardcoded these values).
 pub const Preset = struct { idx: usize, val: f32 };
 pub const PRESET_PS1 = [_]Preset{ .{ .idx = RF_PIXELATE, .val = 0.35 }, .{ .idx = RF_DITHER, .val = 0.55 }, .{ .idx = RF_POSTERIZE, .val = 0.25 } };
 pub const PRESET_CRT = [_]Preset{ .{ .idx = RF_SCANLINES, .val = 0.6 }, .{ .idx = RF_CHROMA, .val = 0.45 }, .{ .idx = RF_CURVE, .val = 0.55 }, .{ .idx = RF_GRAIN, .val = 0.25 } };
 pub const PRESET_VHS = [_]Preset{ .{ .idx = RF_VHS, .val = 0.65 }, .{ .idx = RF_CHROMA, .val = 0.55 }, .{ .idx = RF_GRAIN, .val = 0.35 }, .{ .idx = RF_SEPIA, .val = 0.15 } };
 pub const PRESET_GB = [_]Preset{ .{ .idx = RF_GAMEBOY, .val = 1.0 }, .{ .idx = RF_PIXELATE, .val = 0.45 }, .{ .idx = RF_DITHER, .val = 0.4 } };
-// (A `PRESET_REST` sat here and had no reader: the rest scene KEEPS the player's own filters and only warms them (owner: "keep our normal retro filters here, amp up warmth only"), which `game.tickRest` does with one `RF_SEPIA` bump. A preset still captioned "the rest scene's look" is worse than none — it is where the next person would go to retune it.
 
 
 pub const Retro = struct {
@@ -264,7 +251,6 @@ pub const Retro = struct {
         };
     }
 
-    // Rebuild the capture RT + resolution uniform for a new window size — the filtered path renders into this RT and blits at its own size, so it must track the backbuffer or it fills only a corner. w/h ≤ 0 (a minimized window) is ignored.
     pub fn resize(self: *Retro, w: i32, h: i32) void {
         if (w <= 0 or h <= 0) return;
         if (self.rt.texture.width == w and self.rt.texture.height == h) return;
@@ -296,7 +282,6 @@ pub const Retro = struct {
         return true;
     }
 
-    // Blit the captured scene to the backbuffer through the filter shader (flipping the RT upright via the negative source height).
     pub fn end(self: *Retro) void {
         rl.endTextureMode();
         var t: f32 = @floatCast(rl.getTime());
@@ -407,7 +392,6 @@ pub const Scene = struct {
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "windAmt"), &windOff, .float);
         var flashOff: f32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "hitFlash"), &flashOff, .float);
-        // SOLID until something asks otherwise — a uniform left at 0 would make the whole world invisible.
         var fadeOff: f32 = 1;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "fade"), &fadeOff, .float);
         var noLights: i32 = 0;
@@ -418,9 +402,7 @@ pub const Scene = struct {
             .shader = shader,
             .depthShader = depthShader,
             .shadowMap = loadShadowmap(SHADOWMAP_RES),
-            // POINT filtering on the soil, BILINEAR on the water — see loadFieldTexture, which is where that difference is explained (and where the soil's own one-line wrapper's duplicate copy of the explanation used to sit).
             .soilTex = loadFieldTexture(SOIL_N, .point),
-            // …and its COVERAGE, BILINEAR where the ids are point-sampled — the opposite choice for the opposite reason.
             .soilCovTex = loadFieldTexture(SOIL_N, .bilinear),
             .loc_soilOn = rl.getShaderLocation(shader, "soilOn"),
             .loc_soilHalf = rl.getShaderLocation(shader, "soilHalf"),
@@ -532,7 +514,6 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_waterHalf, &h, .float);
     }
 
-    /// Mark the draws that follow as the PAINTED SHEET (field-coloured) or as ordinary authored water (vertex-coloured).
     pub fn setWaterSheet(self: *Scene, on: bool, tones: [3]rl.Vector3) void {
         var v: i32 = if (on) 1 else 0;
         rl.setShaderValue(self.shader, self.loc_waterSheet, &v, .int);
@@ -585,18 +566,12 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_flash, &a, .float);
     }
 
-    /// HOW SOLID WHATEVER DRAWS NEXT IS — 1 opaque, 0 gone. Per-draw like `setFlash`, and the SECOND thing
-    /// in the game allowed to be semi-transparent after the flame (owner's call): the hero fades out under
-    /// an aim, because at that boom length he is standing in front of the thing being aimed at.
-    /// **PUT IT BACK TO 1.** A fade left hot thins everything drawn after it, exactly as `setFlash` reddens.
-    /// Blending and the DEPTH MASK are the caller's (see game.drawCasters): a translucent draw that still
-    /// wrote depth would punch a hole in the flora behind it.
+    /// HOW SOLID WHATEVER DRAWS NEXT IS — 1 opaque, 0 gone.
     pub fn setFade(self: *Scene, amt: f32) void {
         var a = mathx.clampF(amt, 0, 1);
         rl.setShaderValue(self.shader, self.loc_fade, &a, .float);
     }
 
-    /// THE DUSK DIAL, 0..1: pulls the sun key, the sky ambient and the haze down while leaving the POINT LIGHTS untouched, so a bonfire that was lost in the golden hour becomes the only thing lighting the camp.
     pub fn setDim(self: *Scene, amt: f32) void {
         var a = mathx.clampF(amt, 0, 1);
         rl.setShaderValue(self.shader, self.loc_dim, &a, .float);
@@ -606,7 +581,6 @@ pub const Scene = struct {
 // Per-fragment surface material for the scene shader's texturing pass (see matAlbedo).
 pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke, ember };
 comptime {
-    // The shader hard-codes 9 for water in three places (albedo, ripple normal, spec/fresnel), 10 for marble in two (albedo, gloss), 11 for flame in two (the VERTEX shader's writhe and the albedo's leave-it-alone branch), 12 for smoke in three (the VERTEX shader's rise, the albedo branch and the alpha that fades it out) and 13 for embers, which share smoke's particle contract and nothing else — they climb further, do not billow and wink out bright rather than dissolving.
     std.debug.assert(@intFromEnum(Mat.water) == 9);
     std.debug.assert(@intFromEnum(Mat.marble) == 10);
     std.debug.assert(@intFromEnum(Mat.flame) == 11);
@@ -618,7 +592,6 @@ pub fn smokeAnim(originY: f32, phase01: f32) f32 {
     return @floor(originY) + std.math.clamp(phase01, 0, 0.999);
 }
 
-// Procedural-mesh Builder (from zig-rts, plus toMesh for the FK-rigged hero which needs bare Meshes, not Models).
 pub const Builder = struct {
     pos: std.ArrayList(f32),
     nrm: std.ArrayList(f32),
@@ -812,7 +785,6 @@ pub const Builder = struct {
             while (s < sides) : (s += 1) {
                 const a0 = std.math.tau * @as(f32, @floatFromInt(s)) / sf;
                 const a1 = std.math.tau * @as(f32, @floatFromInt(s + 1)) / sf;
-                // Vertex order matches addCylinder's proven CCW-from-outside winding (lower ring first, sweeping +angle, then the upper ring back).
                 const p0 = onBlob(c, r, t0, a0);
                 const p1 = onBlob(c, r, t0, a1);
                 const p2 = onBlob(c, r, t1, a1);

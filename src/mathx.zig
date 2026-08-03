@@ -10,13 +10,10 @@ pub const rgba = rl.Color.init;
 /// The zero vector — used as a struct-field default (Go's zero value).
 pub const zero3 = rl.Vector3{ .x = 0, .y = 0, .z = 0 };
 
-// (A `StrBuf(cap)` inline-string type lived here and had no caller: every fixed string in the codebase is a bare `[N]u8` plus its own length, written where it is used. Deleted for the reason `env.solids()` and `combat.Regen.fracLeft` were — a helper nobody reaches for is a second way to do something, waiting to be found.
 
-/// A SINCE-LAST-EVENT CLOCK THAT STARTS SATURATED, so an untouched one is already past every gate it feeds and nothing has to carry a separate "has this happened yet" bool.
 pub const LONG_AGO: f32 = 1e9;
 
 pub fn clampF(v: f32, lo: f32, hi: f32) f32 {
-    // NaN passes both `<` and `>`, so it'd escape unclamped and blow up a downstream @intFromFloat; pin it to lo (safe, no meaningful clamp position for NaN).
     if (std.math.isNan(v)) return lo;
     if (v < lo) return lo;
     if (v > hi) return hi;
@@ -68,7 +65,6 @@ pub fn lenXZ(v: rl.Vector3) f32 {
     return @sqrt(v.x * v.x + v.z * v.z);
 }
 
-/// TAKE A STEP ON XZ, CLAMPED TO ±`bounds`, leaving `pos.y` (the ground height under the actor) alone.
 pub fn stepXZ(pos: *rl.Vector3, dir: rl.Vector3, dist: f32, bounds: f32) void {
     pos.x = clampF(pos.x + dir.x * dist, -bounds, bounds);
     pos.z = clampF(pos.z + dir.z * dist, -bounds, bounds);
@@ -137,7 +133,6 @@ pub fn lerpF(a: f32, b: f32, t: f32) f32 {
     return a + (b - a) * t;
 }
 
-// The FK rigs (hero, frog) build every bone/part transform from these; centralised here so the "a-first" convention lives in ONE place instead of a duplicated set per rig file.
 pub fn rx(deg: f32) rl.Matrix {
     return rl.math.matrixRotateX(radians(deg));
 }
@@ -191,7 +186,6 @@ pub fn approach(cur: f32, target: f32, maxStep: f32) f32 {
     return cur + std.math.sign(d) * maxStep;
 }
 
-/// Move `cur` toward `target` by at most `maxStep` (full 3D), reaching it outright when within a step.
 pub fn approachV(cur: rl.Vector3, target: rl.Vector3, maxStep: f32) rl.Vector3 {
     const dx = target.x - cur.x;
     const dy = target.y - cur.y;
@@ -204,7 +198,6 @@ pub fn approachV(cur: rl.Vector3, target: rl.Vector3, maxStep: f32) rl.Vector3 {
 
 /// Wrap a radian angle into (-pi, pi].
 pub fn wrapPi(a: f32) f32 {
-    // Guard non-finite: +inf/-inf would spin the reduction loops forever (inf±tau==inf), and there's no meaningful wrapped angle for them (matches clampF's NaN guard).
     if (!std.math.isFinite(a)) return 0;
     var x = a;
     while (x > std.math.pi) x -= std.math.tau;
@@ -212,7 +205,7 @@ pub fn wrapPi(a: f32) f32 {
     return x;
 }
 
-/// Wrap a DEGREE angle into (-180, 180] — `wrapPi`'s counterpart for the bearings the foes reason in.
+/// Wrap a DEGREE angle into (-180, 180]
 pub fn wrapDeg(a: f32) f32 {
     return degrees(wrapPi(radians(a)));
 }
@@ -298,7 +291,6 @@ pub fn degrees(rad: f32) f32 {
     return rad * 180.0 / std.math.pi;
 }
 
-// (A `timeSeed()` off the wall clock lived here and has no caller left: every stream in the game is seeded from the MAP now — an op's own `seed`, a foe's `seed` dial — because the determinism law says a build has to replay identically. A wall-clock seed is the one thing that cannot.
 
 test "clampF pins NaN to lo and clamps both ends" {
     try std.testing.expectEqual(@as(f32, 1), clampF(std.math.nan(f32), 1, 5));
@@ -321,7 +313,6 @@ test "approachAngle takes the shortest arc across the seam" {
 }
 
 test "closestOnSegV clamps to the ENDS, which is what makes the swept blade test honest" {
-    // The swept-capsule hit test (foe.strike) is entirely this helper: an unclamped projection would report a hit off the far end of the blade's LINE rather than off the blade.
     const a = v3(0, 0, 0);
     const b = v3(2, 0, 0);
     const d = struct {
@@ -332,7 +323,7 @@ test "closestOnSegV clamps to the ENDS, which is what makes the swept blade test
     try std.testing.expectApproxEqAbs(@as(f32, 1), d(v3(1, 1, 0), a, b), 1e-5); // perpendicular
     try std.testing.expectApproxEqAbs(@as(f32, 1), d(v3(-1, 0, 0), a, b), 1e-5); // past the end → to the endpoint
     try std.testing.expectApproxEqAbs(@as(f32, 0), d(v3(1, 0, 0), a, b), 1e-5); // on the segment
-    try std.testing.expectApproxEqAbs(@as(f32, 3), d(v3(5, 0, 0), a, b), 1e-5); // …and past the OTHER end
+    try std.testing.expectApproxEqAbs(@as(f32, 3), d(v3(5, 0, 0), a, b), 1e-5);
     // A degenerate segment is a point, not a divide-by-zero.
     try std.testing.expectApproxEqAbs(@as(f32, 5), d(v3(5, 0, 0), a, a), 1e-5);
 }

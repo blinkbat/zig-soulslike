@@ -11,7 +11,6 @@ const ui = @import("ui.zig");
 const v3 = mathx.v3;
 const Kind = props.Kind;
 
-// A GALLERY of every prop the editor can place — each cell a live 3D thumbnail of the REAL model through the REAL scene shader, not an icon — and behind a click, ONE object filling the screen that you can turn over and zoom.
 
 /// The layer shelves the gallery offers — one per layer that places props, off `props.Stock`.
 pub const Shelf = enum {
@@ -59,14 +58,12 @@ const MAX_PITCH: f32 = 1.35;
 const MIN_ZOOM: f32 = 0.45;
 const MAX_ZOOM: f32 = 4.0;
 const ROT_RATE: f32 = 0.008; // radians per pixel of drag
-/// Click-vs-drag travel — the SAME threshold the map's right-button gesture uses, so "pressed without moving" means one thing everywhere in the editor.
 const CLICK_SLOP = ui.DRAG_PX;
 const ZOOM_RATE: f32 = 0.12; // per wheel notch
 
 /// How far back "fit" is, as a multiple of the kind's own bounding radius.
 const FIT: f32 = 2.05;
 
-/// Preview backdrop: the haze colour the world's own distance fog fades to, so an object sits against the same nothing it sits against out on the plain at range.
 const BACKDROP = mathx.rgba(52, 48, 40, 255);
 
 // The off-screen targets, at FIXED sizes and shared by every cell: the gallery blits the same texture once per cell, and a fixed size is what keeps a window resize from unloading and reloading a render texture mid-frame (which is a crash, not a hiccup).
@@ -99,7 +96,6 @@ pub const State = struct {
     open: ?Kind = null,
     /// Per-kind pose, so turning something over and coming back to it later finds it as you left it.
     pose: [props.NK]Pose = [_]Pose{.{}} ** props.NK,
-    /// The cell a left-drag grabbed (index into the shelf's kind list), and how far it has travelled — under the slop it is a CLICK (open this object), over it a drag (spin this thumbnail).
     grabbed: ?usize = null,
     travel: f32 = 0,
 
@@ -107,7 +103,6 @@ pub const State = struct {
         return &self.pose[@intFromEnum(k)];
     }
 
-    /// Point the gallery at the shelf that owns `k` and put the big viewer on it — how the properties panel's "view model" button gets you to the selected op's kind.
     pub fn show(self: *State, k: Kind) void {
         self.shelf = Shelf.of(k);
         self.open = k;
@@ -123,11 +118,9 @@ pub const State = struct {
 };
 
 
-/// The camera for one preview: orbit the object at the distance that FITS it, then let the pose dolly in.
 fn camFor(nfo: *const props.Info, pose: Pose, aspect: f32) rl.Camera3D {
     // Framed off the kind's HEIGHT as well as its bound.
     const reach = mathx.maxF(mathx.maxF(nfo.top * 0.8, nfo.bound * 0.5), 0.45);
-    // A WIDE object needs the horizontal room, and at a 16:9 aspect the vertical FOV is the binding one — so the fit distance is taken against the tighter of the two.
     const fit = reach * FIT / mathx.maxF(mathx.minF(aspect, 1.0), 0.55);
     const dist = fit / mathx.clampF(pose.zoom, MIN_ZOOM, MAX_ZOOM);
     const focus = v3(0, nfo.top * 0.42, 0);
@@ -154,9 +147,8 @@ fn render(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, kind: Kin
     rl.clearBackground(BACKDROP);
     rl.beginMode3D(cam);
     scene.bind(cam.position);
-    // NO CAST SHADOWS: a preview runs no depth pass of its own, so left as it is every fragment would be tested against the WORLD's shadow map through the world's light matrix — the object coming back arbitrarily dark depending on where the hero happens to be standing.
     scene.shadowsOff();
-    scene.setLights(&.{}); // …and no torches: a preview is lit by the sun and the sky, like a field
+    scene.setLights(&.{});
     scene.setGround(true);
     // CULLED AGAINST THIS PREVIEW'S OWN FRUSTUM.
     const view = envmod.View.fromCamera(cam, aspect);
@@ -165,14 +157,12 @@ fn render(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, kind: Kin
     // FLORA SWAYS in the world, so it sways here — a fern judged rigid is a fern judged wrong.
     scene.setWind(nfo.flora);
     rl.drawModel(env.model(kind), mathx.zero3, 1.0, rl.Color.white);
-    // …and its VEIL after it, in the same order the world draws them — the bonfire without its smoke column is two thirds of a prop, and this viewer's whole claim is that it shows what the game does.
     if (env.veil(kind)) |v| rl.drawModel(v, mathx.zero3, 1.0, rl.Color.white);
     scene.setWind(false);
     rl.endMode3D();
     rl.endTextureMode();
 }
 
-/// Blit a render target into a screen rect, upright (the negative source height is the flip) and scaled to fit whatever the layout gave us.
 fn blit(rt: rl.RenderTexture2D, dst: rl.Rectangle) void {
     const w: f32 = @floatFromInt(rt.texture.width);
     const h: f32 = @floatFromInt(rt.texture.height);
@@ -219,12 +209,12 @@ fn pageCount(n: usize) i32 {
     return @max(1, @divTrunc(total + perPage() - 1, perPage()));
 }
 
-/// One row pitch for the readout column — THE editor's, not a private one off the same font metric.
+/// One row pitch for the readout column
 fn lineH() i32 {
     return ui.ROW_H;
 }
 
-const clampI = mathx.clampI; // the shared one — this file used to carry its own copy
+const clampI = mathx.clampI;
 
 /// Draw + drive the GALLERY.
 fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
@@ -252,7 +242,6 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
     const gridX = box.x + 16;
     const gridY = box.y + HEADER;
 
-    // Which cell is the pointer over?
     var hover: ?usize = null;
     var hoverRect: rl.Rectangle = undefined;
     var i = start;
@@ -359,7 +348,6 @@ fn big(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, kind: Kind
     );
     const p = st.poseOf(kind);
 
-    // Wheel zooms and drag spins ANYWHERE over the view — the whole panel is the object here, so there is nothing else in it to compete for the gesture.
     const overView = rl.checkCollisionPointRec(ctx.mouse, viewR);
     if (overView and ctx.wheel != 0) p.zoom = mathx.clampF(p.zoom * (1.0 + ZOOM_RATE * ctx.wheel), MIN_ZOOM, MAX_ZOOM);
     if (ctx.pressed and overView) st.grabbed = 0; // any non-null: this panel has one object
@@ -400,7 +388,6 @@ fn big(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, kind: Kind
     }) catch "";
     hud.mono(flags, x, y, hud.MONO, ui.alpha(ui.VALUE, 220));
     y += line;
-    // ASCII only in the readout: the editor's system monospace face has no middle dot, and a missing glyph draws as a question mark — which reads as a bug in the number beside it.
     const solids = std.fmt.bufPrintZ(&buf, "{d} collider{s}, {s}", .{
         nfo.parts.len,
         if (nfo.parts.len == 1) "" else "s",
@@ -415,7 +402,6 @@ fn big(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, kind: Kind
     y += line;
     hud.mono("wheel zooms", x, y, hud.MONO, ui.alpha(ui.LABEL, 170));
 
-    // Walking the shelf from HERE is the fix-a-prop loop: judge one, step to the next, no round trip through the gallery.
     const list = st.shelf.kinds();
     var at: usize = 0;
     for (list, 0..) |k, idx| {
@@ -441,7 +427,6 @@ fn big(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, kind: Kind
 pub fn draw(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
     if (st.open) |k| {
         if (big(st, env, scene, ctx, k)) return true;
-        // Out of the big viewer and back to the gallery, which is a level of "back" of its own — dismissing straight to the map would lose the shelf and page you were working through.
         st.open = null;
         st.grabbed = null;
         return true;

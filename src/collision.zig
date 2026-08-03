@@ -13,7 +13,6 @@ pub const Solid = struct {
     a: rl.Vector3, // segment start (XZ; Y ignored)
     b: rl.Vector3, // segment end
     r: f32, // capsule radius
-    // Blocking HEIGHT for projectiles (world Y of the top): an arrow above flies clear, below thunks in.
     h: f32 = 1e9,
     surf: Surface = .stone,
 };
@@ -28,7 +27,6 @@ pub fn capsule(ax: f32, az: f32, bx: f32, bz: f32, r: f32) Solid {
     return .{ .a = v3(ax, 0, az), .b = v3(bx, 0, bz), .r = r };
 }
 
-/// Push a circle (centre `p`, radius `pr`) out of one solid; returns the corrected centre (Y preserved).
 pub fn pushOut(p: rl.Vector3, pr: f32, s: Solid) rl.Vector3 {
     const q = mathx.closestOnSegXZ(p, s.a, s.b);
     const dx = p.x - q.x;
@@ -47,7 +45,6 @@ pub fn pushOutCircle(p: rl.Vector3, pr: f32, c: rl.Vector3, cr: f32) rl.Vector3 
     return pushOut(p, pr, .{ .a = c, .b = c, .r = cr });
 }
 
-/// Two passes settle the common case of overlapping two solids at once (an inside corner) without a full iterative solver.
 pub fn resolve(p: rl.Vector3, pr: f32, solids: []const Solid) rl.Vector3 {
     var out = p;
     var pass: u32 = 0;

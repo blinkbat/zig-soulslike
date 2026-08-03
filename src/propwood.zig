@@ -6,7 +6,6 @@ const art = @import("propart.zig");
 
 const v3 = mathx.v3;
 const Builder = gfx.Builder;
-// The shared vocabulary this file draws on, aliased so a mesh body still reads as a recipe (`art.STONE_DK` in front of every colour buries the shape in namespace).
 const BARK = art.BARK;
 const BARK_DK = art.BARK_DK;
 const BARK_LIVE = art.BARK_LIVE;
@@ -32,7 +31,6 @@ const crackInto = art.crackInto;
 const lichenInto = art.lichenInto;
 const tuftInto = art.tuftInto;
 
-// A DEAD TREE — the Lands Between silhouette against the haze, and the most repeated tree in the world.
 pub fn treeMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4806);
@@ -47,7 +45,6 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
             return v3(bd.x * (y / 1.7) + mathx.cosf(a) * rr, y, bd.z * (y / 1.7) + mathx.sinf(a) * rr);
         }
     }.go;
-    // BARK_OLD, not BARK — the same correction the great trees, the stump and the log all needed: this bole takes the low sun square on, and at BARK's value the shader's hot key plus its gamma lift handed back a smooth PALE TAN post.
     b.addCapsule(v3(0, 0, 0), j1, 0.26, 0.165, 8, BARK_OLD);
     b.addCapsule(j1, j2, 0.165, 0.095, 7, BARK_OLD);
     b.addCapsule(j2, v3(j2.x + rng.signed() * 0.3, 4.05, j2.z + rng.signed() * 0.25), 0.095, 0.012, 6, BARK_DK); // the snapped leader
@@ -66,7 +63,6 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
             rng.range(0.030, 0.055),
             rng.range(0.018, 0.040),
             4,
-            // The VALUE INVERSION that says "peeling": strips still holding are dark bark, and where one has lifted or gone, the wood UNDER it is bare and pale.
             if (rng.float() < 0.45) BARK_DK else if (rng.float() < 0.7) TIMBER else BARK_OLD,
         );
     }
@@ -106,7 +102,6 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
         const heave: f32 = if (r == 2) rng.range(0.14, 0.26) else 0.0;
         b.addCapsule(v3(0, 0.26, 0), v3(mathx.cosf(a) * d, 0.02 + heave, mathx.sinf(a) * d), rng.range(0.09, 0.13), rng.range(0.025, 0.05), 5, BARK_OLD);
     }
-    // BRACKET FUNGUS on the shaded side: a dead trunk with fungus has been dead for years; one without has been dead since Tuesday.
     b.setMat(.plant);
     const fa = rng.angle();
     const fy1 = rng.range(0.7, 1.5);
@@ -121,14 +116,11 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
 
 // A GRAVE CLUSTER — a family plot the wood took back.
 
-// A broken stump: splintered barrel, a couple of standing splinters, root flare, and a mossy cap where the heartwood is rotting out.
 pub fn stumpMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(313);
     b.setMat(.wood);
-    // BARK_OLD, not BARK — the barrel takes the sun face-on and came back a pale smooth loaf (same correction as the great tree's trunk).
     b.addCapsule(v3(0, 0, 0), v3(rng.signed() * 0.08, 1.05, rng.signed() * 0.08), 0.46, 0.40, 8, BARK_OLD);
-    // Bark ridges, mostly buried (RELIEF IS SUBTLE) — the texture that stops the barrel reading as plastic however dark it starts.
     var rb: i32 = 0;
     while (rb < 7) : (rb += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(rb)) / 7.0 + rng.signed() * 0.25;
@@ -143,7 +135,6 @@ pub fn stumpMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.5) BARK_DK else BARK_OLD,
         );
     }
-    // The broken top reads as WOOD: a pale heartwood face just proud of the bark, the moss cap riding it off-centre where the rot got in.
     b.addBlob(v3(0.02, 1.06, -0.03), v3(0.36, 0.055, 0.34), 4, 8, TIMBER);
     var i: i32 = 0;
     while (i < 3) : (i += 1) {
@@ -167,7 +158,6 @@ pub fn stumpMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A fallen trunk gone over in some old storm: one long tapered barrel lying along local X, stubs of snapped branches, a torn root plate at the butt, moss along the upper face.
 pub fn logMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(818);
@@ -187,7 +177,6 @@ pub fn logMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.5) BARK_DK else BARK_OLD,
         );
     }
-    // The snapped tip shows pale heartwood — the one bright note, and what says "broken", not "moulded with a round end".
     b.addBlob(v3(1.94, 0.30, 0.02), v3(0.07, 0.20, 0.17), 4, 7, TIMBER);
     var i: i32 = 0;
     while (i < 4) : (i += 1) {
@@ -228,11 +217,9 @@ pub fn bigTree3(shader: rl.Shader) rl.Model {
     return bigTreeMesh(shader, .{ .seed = 7023, .trunk = 5.6, .spread = 0.82, .lift = 0.85, .gold = 0.22 }); // tall + narrow
 }
 
-// A soft, LUMPY canopy mass — many interpenetrating blobs on a rough ellipsoid shell rather than one big flattened dome.
 pub fn canopyInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, rx: f32, ry: f32, gold: f32, n: i32) void {
     var i: i32 = 0;
     while (i < n) : (i += 1) {
-        // Distribute over the SHELL, biased outward, so the mass is hollow-ish and its silhouette is made of many bumps instead of one curve.
         const a = rng.angle();
         const t = rng.range(0.30, 0.88);
         const yt = rng.signed(); // -1 = underside, +1 = crown
@@ -246,7 +233,6 @@ pub fn canopyInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, rx: f
     }
 }
 
-// A GREAT TREE: buttressed root flare, a trunk that leans and forks LOW, boughs reaching out and up, and a canopy of interpenetrating foliage masses that clothes those boughs all the way in — deep and near-black underneath, gold on the crown where the low sun rakes it.
 pub fn bigTreeMesh(shader: rl.Shader, spec: TreeSpec) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(spec.seed);
@@ -309,7 +295,7 @@ pub fn bigTreeMesh(shader: rl.Shader, spec: TreeSpec) rl.Model {
     const da = rng.angle();
     b.addCapsule(t2, v3(t2.x + mathx.cosf(da) * 3.4 * spec.spread, t2.y + 0.9, t2.z + mathx.sinf(da) * 3.4), 0.26, 0.05, 6, BARK_DK);
 
-    // THE CANOPY, in three layers so the silhouette is lumpy from every side:
+    // THE CANOPY, in three layers so the silhouette is lumpy from every side
     b.setMat(.plant);
     const crownY = spec.trunk + 2.5 * spec.lift + 1.5;
     const crownR = 3.7 * spec.spread;
@@ -334,7 +320,6 @@ pub fn bigTreeMesh(shader: rl.Shader, spec: TreeSpec) rl.Model {
     return b.toModel(shader);
 }
 
-// A WILLOW at the water's edge: short thick bole, boughs that go UP then break and pour back down, with narrow pale foliage strung along the falls.
 pub fn willowMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7002);
@@ -442,7 +427,6 @@ pub fn birchMesh(shader: rl.Shader) rl.Model {
     const fork = v3(lean, H * 0.72, rng.signed() * 0.4);
     b.addCapsule(v3(0, 0, 0), mid, 0.30, 0.24, 8, BIRCH_BARK);
     b.addCapsule(mid, fork, 0.24, 0.17, 7, BIRCH_BARK);
-    // The scars: short dark bands round the trunk, which is what makes it read as birch and not as a dead pale stick.
     var s: i32 = 0;
     while (s < 12) : (s += 1) {
         const t = rng.range(0.05, 0.70);
@@ -491,7 +475,6 @@ pub fn snagMesh(shader: rl.Shader) rl.Model {
     const lean = rng.signed() * 0.4;
     b.addCapsule(v3(0, 0, 0), v3(lean * 0.5, H * 0.6, lean * 0.3), 0.55, 0.36, 8, BARK_OLD);
     b.addCapsule(v3(lean * 0.5, H * 0.6, lean * 0.3), v3(lean, H, lean * 0.6), 0.36, 0.26, 7, BARK_DK);
-    // A point on the TRUNK's surface at height y and angle a: taper and lean both, so what is dressed onto it stays on it all the way up.
     const onTrunk = struct {
         fn go(hh: f32, ln: f32, y: f32, a: f32, sink: f32) rl.Vector3 {
             const t = y / hh;
@@ -516,7 +499,6 @@ pub fn snagMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.72) BARK_DK else TIMBER,
         );
     }
-    // The snapped crown: pale HEARTWOOD across the break — the one bright note, and what says "snapped" rather than "moulded to a point" — with splinters of unequal length out of it.
     b.addBlob(v3(lean, H - 0.02, lean * 0.6), v3(0.235, 0.055, 0.235), 3, 7, TIMBER);
     var s: i32 = 0;
     while (s < 5) : (s += 1) {

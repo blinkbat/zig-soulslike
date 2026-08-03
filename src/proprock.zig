@@ -6,7 +6,6 @@ const art = @import("propart.zig");
 
 const v3 = mathx.v3;
 const Builder = gfx.Builder;
-// The shared vocabulary this file draws on, aliased so a mesh body still reads as a recipe (`art.STONE_DK` in front of every colour buries the shape in namespace).
 const BARK_DK = art.BARK_DK;
 const CLIFF_DK = art.CLIFF_DK;
 const CLIFF_LT = art.CLIFF_LT;
@@ -20,7 +19,6 @@ const STONE_MOSS = art.STONE_MOSS;
 const tuftInto = art.tuftInto;
 
 
-// A CLIFF segment — the world's edge, so the movement clamp reads as terrain instead of as an invisible wall in open grass.
 pub const CliffKind = struct {
     H: f32,
     /// Body half-width band.
@@ -43,7 +41,6 @@ const CLIFF_BLOCKY = CliffKind{ .H = 12.2, .wLo = 2.4, .wHi = 4.2, .cleft = 1.15
 const CLIFF_RAGGED = CliffKind{ .H = 14.6, .wLo = 3.2, .wHi = 5.6, .cleft = 0.85, .blocky = 0.5, .bands = 8 };
 // A damp, weathered face that the wood has got into: rounded rock under creeper.
 const CLIFF_IVIED = CliffKind{ .H = 13.0, .wLo = 3.0, .wHi = 5.2, .cleft = 0.70, .blocky = 0.22, .bands = 8, .ivy = 1.0 };
-// The one that came down: angular, freshly broken, LOWER than its neighbours (it lost its crest) and standing in its own rubble.
 const CLIFF_SHATTERED = CliffKind{ .H = 11.6, .wLo = 2.2, .wHi = 4.6, .cleft = 1.35, .blocky = 0.90, .bands = 5, .broken = 1.0 };
 // An OLD collapse: the scar has softened and gone green.
 const CLIFF_OVERGROWN = CliffKind{ .H = 12.6, .wLo = 2.7, .wHi = 4.8, .cleft = 0.95, .blocky = 0.45, .bands = 7, .ivy = 0.8, .broken = 0.55 };
@@ -70,7 +67,6 @@ pub fn cliff6(shader: rl.Shader) rl.Model {
 /// One rock body of a cliff segment — an ellipsoid, as `addBlob` builds it.
 pub const CliffBody = struct { x: f32, y: f32, z: f32, rx: f32, ry: f32, rz: f32 };
 
-/// The FRONTMOST rock surface at (x, y): the smallest z any of the segment's bodies reaches there, or null when no body covers the point at all — in which case nothing gets placed, which is the whole point.
 pub fn cliffFaceZ(bs: []const CliffBody, x: f32, y: f32) ?f32 {
     var best: ?f32 = null;
     for (bs) |bd| {
@@ -84,7 +80,6 @@ pub fn cliffFaceZ(bs: []const CliffBody, x: f32, y: f32) ?f32 {
     return best;
 }
 
-/// …the same query for something with a FOOTPRINT rather than a point: the REARMOST surface across a grid over (halfW, halfH), so a flat pad or plate is seated behind the shallowest rock it spans instead of behind its own centre.
 pub fn cliffSeatZ(bs: []const CliffBody, x: f32, y: f32, halfW: f32, halfH: f32) ?f32 {
     var back = cliffFaceZ(bs, x, y) orelse return null;
     for ([_]f32{ -1, 0, 1 }) |dx| {
@@ -108,21 +103,17 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
     // THE REAL SUMMIT of each body, recorded as it is built.
     const Summit = struct { x: f32, z: f32, y: f32, rx: f32, rz: f32 };
     var top: [NM]Summit = undefined;
-    // EVERY BODY, recorded the same way and for the same reason one step further on: the OVERGROWTH and COLLAPSE blocks below have to know where the face IS, not just where its summits are.
     var bodies: [NM * 2]CliffBody = undefined;
     var nbody: usize = 0;
     var m: i32 = 0;
     while (m < NM) : (m += 1) {
         const u = @as(f32, @floatFromInt(m)) / @as(f32, NM - 1); // 0..1 across the segment
         const cx = (u * 2.0 - 1.0) * 5.2;
-        // A shallow arch across the segment plus a small wobble: high in the middle, lower at the shoulders, so segments read as one ridge line running along.
         const hgt = H * (0.93 + 0.07 * mathx.sinf(u * std.math.pi)) * rng.range(0.88, 1.12);
-        // Bodies are WIDE relative to their spacing (they span ±9 over a ±5.2 layout), so a segment's mass runs well past its own footprint and interpenetrates its neighbours in the ring.
         const rx = rng.range(k.wLo, k.wHi);
         const rz = rng.range(2.0, 3.4);
         // …and this is the CLEFT: how far this body sits in or out of the face.
         const inOut = rng.signed() * k.cleft;
-        // Facet counts follow `blocky`, and they VARY body to body — a face of mixed chunky and worn masses reads as rock, where one tessellation for all of them reads as one material extruded.
         const sides: i32 = @intFromFloat(@round(10.0 - 4.0 * k.blocky + rng.signed() * 1.4));
         const rings: i32 = @intFromFloat(@round(6.0 - 2.0 * k.blocky + rng.signed() * 0.8));
         // Two stacked bodies per position: a broad foot and a narrower shoulder, so the profile tapers the way weathered rock does instead of standing up like a column.
@@ -191,18 +182,20 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
             CLIFF_DK,
         );
     }
-    // TALUS: blocks shed off the face and piled at its foot — round, because a scree block that has fallen 14 m is not a cube any more.
+    // FALLEN ROCK AT THE FOOT, and it stays AT the foot (owner's call): fewer of them, tucked against the
+    // wall. Fanned four metres out they stopped reading as debris off this cliff and started reading as a
+    // boulder field the cliff happens to stand in — and they were the things you kept catching a boot on
+    // while walking the base.
     var t: i32 = 0;
-    while (t < 16) : (t += 1) {
-        const cx = rng.range(-6.8, 6.8);
-        const cz = rng.range(-4.2, -1.0);
-        const r = rng.range(0.35, 1.30) * (1.0 - 0.4 * @abs(cz + 1.0) / 3.2); // biggest against the wall
+    while (t < 9) : (t += 1) {
+        const cx = rng.range(-6.4, 6.4);
+        const cz = rng.range(-2.1, -0.7);
+        const r = rng.range(0.35, 1.25) * (1.0 - 0.4 * @abs(cz + 0.7) / 1.4); // biggest against the wall
         b.addBlob(v3(cx, r * 0.55, cz), v3(r, r * 0.7, r * rng.range(0.8, 1.2)), 4, 6, if (rng.float() < 0.3) CLIFF_LT else CLIFF_ROCK);
     }
-    // the Builder, so the void is made the way the `cleft` dial already makes one: a near-black mass sunk INTO the face where the rock should be, which reads as depth.
     if (k.broken > 0) {
         const gx = frng.range(-3.0, 3.0); // where the gully comes down
-        const gTop = H * frng.range(0.58, 0.84); // …and how far up it reaches
+        const gTop = H * frng.range(0.58, 0.84);
         const gW = frng.range(0.75, 1.25) * (0.6 + 0.4 * k.broken); // half-width of the GAP itself
         // THE GULLY IS MADE OF ROCK AND SHADOW, NOT OF A DARK COLOUR.
         b.setMat(.stone);
@@ -216,7 +209,6 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
             var st: i32 = 0;
             while (st <= rSegs) : (st += 1) {
                 const rt = @as(f32, @floatFromInt(st)) / @as(f32, @floatFromInt(rSegs));
-                // Barely tapered overall (a spine, not a horn) but it SWELLS AND PINCHES on the way up — an even-width capsule run is a pilaster, which the fracture note above already says a rock rib is not.
                 const rw = frng.range(0.48, 1.02) * rGirth * (1.0 - 0.34 * rt);
                 const cx = gx + sgn * (gW + rw * 0.9);
                 const y = rTop * (0.04 + 0.94 * rt);
@@ -224,7 +216,6 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
                     prev = null;
                     continue;
                 };
-                // …and the LAST segment is sunk nearly flush, so the rib DIES INTO the face instead of ending on a smooth dome standing clear of it (two of those read as thumbs).
                 const proud: f32 = if (st == rSegs) 0.85 else 0.25;
                 const p = v3(cx, y, fz + rw * proud);
                 if (prev) |q| b.addCapsule(q, p, prevR, rw, 9, if (frng.float() < 0.3) CLIFF_DK else CLIFF_ROCK);
@@ -232,7 +223,6 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
                 prevR = rw;
             }
         }
-        // FRESH ROCK in the FLOOR of the channel: the pale scar the fall exposed, nearly flush, so it is a tonal step and not another lump.
         var e: i32 = 0;
         while (e < 7) : (e += 1) {
             const w = frng.range(0.20, 0.45);
@@ -250,16 +240,15 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
             );
         }
         // THE APRON: the volume that left the face, fanned out from under the gully.
-        const nApron: i32 = @intFromFloat(@round(14.0 + 10.0 * k.broken));
+        const nApron: i32 = @intFromFloat(@round(8.0 + 6.0 * k.broken));
         var ap: i32 = 0;
         while (ap < nApron) : (ap += 1) {
             const out = frng.float(); // 0 = against the wall, 1 = the toe of the fan
-            const cx = gx + frng.signed() * (1.6 + 4.4 * out);
-            const cz = -1.2 - out * frng.range(2.0, 5.4);
+            const cx = gx + frng.signed() * (1.3 + 2.6 * out);
+            const cz = -1.0 - out * frng.range(1.2, 2.8);
             const r = frng.range(0.30, 1.15) * (1.0 - 0.45 * out);
             b.addBlob(v3(cx, r * 0.5, cz), v3(r, r * frng.range(0.55, 0.80), r * frng.range(0.80, 1.25)), 4, 6, if (frng.float() < 0.28) CLIFF_LT else CLIFF_ROCK);
         }
-        // …and two TOPPLED SLABS leaning on the foot, which is what a collapse leaves that a scree slope does not: pieces still recognisable as pieces of the face.
         var sl: i32 = 0;
         while (sl < 3) : (sl += 1) {
             const hh = frng.range(1.1, 2.0);
@@ -279,7 +268,6 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
         const a = top[@intCast(c)];
         const d = top[@intCast(c + 1)];
         const lo = @min(a.y, d.y);
-        // Wide enough to reach into both summits, and seated so its crown sits just under the lower of the two.
         b.addBlob(
             v3((a.x + d.x) * 0.5, lo - H * rng.range(0.05, 0.10), (a.z + d.z) * 0.5 + rng.signed() * 0.4),
             v3(@abs(d.x - a.x) * 0.5 + @min(a.rx, d.rx) * 0.75, H * rng.range(0.07, 0.12), @min(a.rz, d.rz) * rng.range(0.85, 1.05)),
@@ -288,7 +276,6 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
             if (rng.float() < 0.25) CLIFF_LT else CLIFF_ROCK,
         );
     }
-    // SCRUB on the crest — placed against the real summit, and sitting a little BELOW it so it hugs the rock.
     b.setMat(.plant);
     var g: i32 = 0;
     while (g < 6) : (g += 1) {
@@ -308,7 +295,6 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
         var cu: i32 = 0;
         while (cu < nCurtain) : (cu += 1) {
             var cx = frng.range(-5.4, 5.4);
-            // It starts PARTWAY UP and hangs down from there: ivy climbs off the ground and the growing tip is at the top, so the mass belongs low and the runner thins as it rises.
             const y0 = H * frng.range(0.34, 0.86);
             const drop = y0 * frng.range(0.60, 0.95);
             const steps: i32 = 8;
@@ -329,7 +315,6 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
                     b.addCapsule(q, p, 0.030, 0.045, 5, BARK_DK); // thickening downward, toward the root
                 }
                 prev = p;
-                // LEAVES: small, many, and SUNK most of the way into the rock so only the front cap breaks the surface — about 25% of the radius.
                 b.setMat(.plant);
                 const nLeaf: i32 = 2 + frng.intn(3);
                 var lf: i32 = 0;
@@ -383,7 +368,6 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
     return b.toModel(shader);
 }
 
-// A BOULDER: three or four interpenetrating rounded masses (a single blob reads as an egg), faceted by a low side count, with chips at the base and moss on whatever faces the sky.
 pub fn boulderMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4242);
@@ -411,7 +395,6 @@ pub fn boulderMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A cluster of smaller field stones, half-sunk — the litter that makes a rock field read as a field rather than a few props on a lawn.
 pub fn rocksMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(1717);
@@ -434,12 +417,10 @@ pub fn rocksMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A standing stone: one rough monolith leaning off vertical, tapering, with shallow carved bands worn nearly smooth and lichen up the weather side.
 pub fn monolithMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(606);
     b.setMat(.stone);
-    // Guaranteed VISIBLE lean — signed() can roll near plumb, and a plumb monolith reads as set by a crane yesterday.
     const leanSX: f32 = if (rng.float() < 0.5) 1 else -1;
     const leanSZ: f32 = if (rng.float() < 0.5) 1 else -1;
     const lean = v3(leanSX * rng.range(0.14, 0.32), 4.55, leanSZ * rng.range(0.10, 0.26));
@@ -475,7 +456,6 @@ pub fn cairnMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2111);
     b.setMat(.stone);
-    // A tapered core: a hand-built cairn has smaller stones wedged into its middle, and without them you see clean through the stack.
     b.addCylinder(v3(0, 0.0, 0), v3(0, 1.34, 0), 0.34, 0.10, 7, MORTAR);
     var y: f32 = 0.0;
     var i: i32 = 0;
@@ -500,7 +480,6 @@ pub fn cairnMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// An OUTCROP: bedrock breaking through the turf — a low shelf with a stepped face and grass growing over its back.
 pub fn outcropMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2112);

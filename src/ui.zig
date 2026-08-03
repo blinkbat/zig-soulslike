@@ -8,7 +8,6 @@ pub const Icon = icons.Icon;
 
 const rgba = mathx.rgba;
 
-// UI — a tiny immediate-mode widget kit for the editor: each widget hit-tests AND draws in one call.
 
 pub const MSG_CAP = 120; // shared cap for short UI strings (tips, toasts, prompts)
 
@@ -136,7 +135,6 @@ pub fn button(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, active
 const ICON_PAD: i32 = 8;
 const ICON_GAP: i32 = 7;
 
-/// How wide `iconButton` needs to be for this label — so a row of them can lay itself out without each call site re-deriving the same sum and drifting from it.
 pub fn iconButtonW(label: [:0]const u8, size: i32) i32 {
     return ICON_PAD * 2 + size + ICON_GAP + hud.monoW(label, size);
 }
@@ -245,7 +243,6 @@ pub fn stepperI(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *i32,
     return stepper(i32, ctx, x, y, w, label, v, step, lo, hi);
 }
 
-/// For the dials you want to FEEL (density, radius), where one notch at a time tells you nothing about the shape of the range.
 pub fn slider(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, lo: f32, hi: f32) bool {
     hud.mono(label, x, y, hud.MONO, LABEL);
     const barY = y + hud.monoLineH(hud.MONO) + 3;
@@ -259,7 +256,6 @@ pub fn slider(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, l
     var buf: [24]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "{d:.2}", .{v.*}) catch "?";
     hud.mono(s, x + w - hud.monoW(s, hud.MONO), y, hud.MONO, VALUE);
-    // Driven by the drag that GRABBED this bar, not "hovered while held": a press that began elsewhere can't set it, and a grab that wanders off the bar keeps hold of it.
     if (ctx.owns(r) and ctx.down) {
         const t = mathx.clampF((ctx.mouse.x - r.x) / r.width, 0, 1);
         const nv = lo + t * (hi - lo);
@@ -321,7 +317,7 @@ pub fn list(ctx: *Ctx, r: rl.Rectangle, labels: []const [:0]const u8, sel: usize
     _ = ctx.hot(r);
     rl.drawRectangleRec(r, rgba(12, 11, 10, 240));
     rl.drawRectangleLinesEx(r, 1, alpha(TRIM, 90));
-    const rowH: i32 = ROW_H; // was a second copy of ROW_H's own expression
+    const rowH: i32 = ROW_H;
     const rows: i32 = listRows(@intFromFloat(r.height));
     const maxScroll = @max(0, @as(i32, @intCast(labels.len)) - rows);
     if (rl.checkCollisionPointRec(ctx.mouse, r)) {

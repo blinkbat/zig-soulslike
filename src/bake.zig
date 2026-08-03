@@ -28,7 +28,6 @@ pub const Emit = struct {
         self.atY(kind, x, 0, z, yaw, scale);
     }
 
-    // Y is carried on the op only for water, which staggers overlapping sheets out of z-fighting; everything else is authored on the ground.
     fn atY(self: *Emit, kind: Kind, x: f32, y: f32, z: f32, yaw: f32, scale: f32) void {
         var o = wf.defaults(.at);
         o.kind = kind;
@@ -40,7 +39,6 @@ pub const Emit = struct {
         self.push(o);
     }
 
-    // A jittered single stamp RESOLVES here: it was one prop then and it is one prop now, so it becomes a literal rather than a one-instance generator nobody would ever want to dial.
     fn jit(self: *Emit, kind: Kind, x: f32, z: f32, spread: f32, sLo: f32, sHi: f32) void {
         self.at(
             kind,
@@ -65,7 +63,6 @@ pub const Emit = struct {
         self.push(o);
     }
 
-    // A belt of MIXED kinds, optionally thinned along an axis — the wood's canopy, which the old code wrote as a bespoke loop because the Placer had no way to say either thing.
     fn beltMix(self: *Emit, mix: []const Kind, x0: f32, z0: f32, x1: f32, z1: f32, n: i32, sLo: f32, sHi: f32) *Op {
         var o = wf.defaults(.belt);
         o.x = x0;
@@ -82,7 +79,6 @@ pub const Emit = struct {
         return &self.m.ops[self.m.nops - 1];
     }
 
-    // An annulus scatter about a centre: the shoreline forms the old code spelled out as `angle + range(r0, r1)` loops, four times over, once per bed.
     fn disc(self: *Emit, mix: []const Kind, cx: f32, cz: f32, r0: f32, r1: f32, n: i32, sLo: f32, sHi: f32) *Op {
         var o = wf.defaults(.disc);
         o.kind = mix[0];
@@ -175,7 +171,6 @@ fn setMix(dst: *[wf.MAX_MIX]Kind, n: *u8, src: []const Kind) void {
     n.* = @intCast(src.len);
 }
 
-// A prop-local (x, z) offset carried through an instance's yaw + scale into world offsets — the same convention the colliders use.
 fn localToWorld(lx: f32, lz: f32, yaw: f32, scale: f32) [2]f32 {
     const th = mathx.radians(yaw);
     const c = mathx.cosf(th);
@@ -206,9 +201,7 @@ pub fn build(m: *wf.Map) void {
     foes(&p);
 }
 
-// The three foe groups' old hard-coded `homes` tables, moved into the map where the editor can reach them.
 fn foes(p: *Emit) void {
-    // THE KNOT — homes sit >=12 m off the x~0 avenue so a straight run down the path doesn't wake them, and so the hero-gait --shot stays clean: they guard the flanks and the graveyard.
     p.foe(.toad, 13.5, -14.0, 215, 1.08, 0.0);
     p.foe(.toad, -13.0, -20.0, 70, 0.94, 0.37);
     p.foe(.toad, 14.5, -8.0, 250, 1.0, 0.61);
@@ -331,7 +324,6 @@ fn fallenCity(p: *Emit) void {
     p.at(.monolith, 0, -80, p.rng.range(0, 360), 1.35);
     p.belt(.rubble, -18, -94, 18, -66, 16, 0.8, 1.4);
 
-    // THE CHAPEL — roofed over its altar end, doorway facing the processional way (yaw 270 opens EAST).
     const cx: f32 = -30.0;
     const cz: f32 = -66.0;
     p.at(.chapel, cx, cz, 270, 1.0);
@@ -353,7 +345,6 @@ fn fallenCity(p: *Emit) void {
     p.line(&.{.wall}, -46, -120, -46, -58, 7.4, 0.78, 0.9, 1.25); // west face
     p.line(&.{.wall}, 46, -120, 46, -62, 7.4, 0.78, 0.9, 1.25); // east face
 
-    // A RUINED QUARTER either side of the way: the shells of houses, close-packed the way a city is, so the place reads as somewhere people lived and not only as monuments.
     const quarter = [_][3]f32{
         .{ 20, -58, 84 },   .{ 27, -64, 12 },   .{ 19, -70, 96 },  .{ 28, -76, 4 },
         .{ -18, -92, 270 }, .{ -25, -99, 186 }, .{ -16, -105, 8 }, .{ 24, -100, 200 },
@@ -421,7 +412,6 @@ fn theTarn(p: *Emit) void {
     p.at(.causeway, 86.5, 9.4, 10, 1.35);
     p.belt(.rocks, 66, 0, 82, 16, 8, 0.8, 1.3);
 
-    // Drowned ruin standing IN the sheet, reed beds straddling the shoreline, willows leaning over the margin.
     _ = p.disc(&.{ .broken, .broken, .broken, .block, .block }, lx, lz, 6.0, 34.0, 9, 0.8, 1.2);
     _ = p.disc(&.{.willow}, lx, lz, 36.0, 46.0, 11, 0.85, 1.3);
     _ = p.disc(&.{ .reeds, .reeds, .cattails, .cattails }, lx, lz, 26.0, 54.0, 420, 0.9, 1.55);
@@ -472,10 +462,8 @@ fn oldWood(p: *Emit) void {
     canopy.gB = -84;
     canopy.gFloor = 0.18;
     canopy.avoid = .{ .runway = true, .water = true, .clear = true };
-    // The canopy does its OWN shaping, so it opts out of the cover field: gating on both thins the wood twice, and the second thinning is invisible in the numbers.
     canopy.field = false;
 
-    // The understorey: what turns a stand of trees into a WOOD — without it you see straight through to the far edge.
     p.belt(.sapling, -152, -125, -54, 132, 150, 0.8, 1.35);
     p.belt(.thicket, -152, -125, -54, 132, 110, 0.85, 1.45);
     p.belt(.stump, -150, -120, -56, 130, 60, 0.8, 1.3);
@@ -523,7 +511,6 @@ fn oldWood(p: *Emit) void {
     p.belt(.mushrooms, hx - 8, hz - 8, hx + 8, hz + 8, 10, 0.9, 1.3);
 }
 
-// The SPARSEST region on purpose — it is what makes the wood and the city feel dense — but sparse means "few tall things", not "empty ground": the heath cover underfoot is thick.
 fn theDowns(p: *Emit) void {
     p.belt(.bigtree, -120, 52, 40, 150, 18, 0.7, 1.05);
     p.belt(.tree, -130, 48, 60, 152, 32, 0.8, 1.25);
@@ -568,7 +555,6 @@ fn cliffRing(p: *Emit) void {
     p.push(o);
 }
 
-// The zone rects reproduce env.zig's `region(x, z)` half-plane chain, in the same order — it tested x first, then z, and fell through to the home plain.
 fn groundCover(p: *Emit) void {
     const F: f32 = 400; // past the world's own extent — these are half-planes, not boxes
     p.zone("wood", -F, -F, -52, F, 0.98, &.{
@@ -580,7 +566,6 @@ fn groundCover(p: *Emit) void {
         .reeds, .reeds,   .cattails, .cattails, .cattails,  .patch,
         .bush,  .nettles, .moss,     .moss,     .grasstall, .wildflowers,
     });
-    // NB no ivy in the city's cover even though it belongs to the city: ivy is a CLIMBER, and dropped on open ground its runners stand up unsupported like beanstalks.
     p.zone("city", -F, -F, F, -46, 0.44, &.{
         .tuft,   .tuft, .patch, .nettles, .nettles,     .thistle,
         .clover, .moss, .shrub, .shrub,   .wildflowers, .grasstall,

@@ -9,7 +9,7 @@ pub const Kind = enum(u8) {
     golden_seed,
     smithing_stone,
     bloodgrass, // wayside pickings — the common, worthless drop
-    kobold_fang, // …and a trophy off the warband
+    kobold_fang,
     iron_key,
     mushroom_jerky, // THE FIRST ITEM THAT DOES ANYTHING — see `Use`
 };
@@ -41,7 +41,6 @@ pub const Use = union(enum) {
 
 pub fn use(k: Kind) Use {
     return switch (k) {
-        // More total than a Crimson flask (0.45, instant) at a fifth of the rate — worth eating BEFORE a fight and close to worthless inside one.
         .mushroom_jerky => .{ .regen = .{ .frac = 0.60, .secs = 20.0 } },
         .crimson_flask,
         .cerulean_flask,
@@ -80,7 +79,6 @@ pub const Bag = struct {
         self.counts[i] = @min(CAP, self.counts[i] +| n);
     }
 
-    /// Take up to `n` and report how many actually came out — a caller that wants "did this work" checks the count rather than asking first, which is the same shape `combat.Vitals.heal` uses.
     pub fn take(self: *Bag, k: Kind, n: u16) u16 {
         const i = @intFromEnum(k);
         const got = @min(self.counts[i], n);
@@ -125,7 +123,6 @@ pub const Bag = struct {
 
 
 test "every kind has a name, and no two share one" {
-    // The exhaustive switch already forces a name to EXIST; this catches the copy-paste that gives two kinds the same one, which a switch cannot see.
     for (0..NK) |i| {
         const a: Kind = @enumFromInt(i);
         try std.testing.expect(displayName(a).len > 0);
@@ -145,7 +142,6 @@ test "a tag round-trips, and a bad one is rejected rather than guessed" {
 }
 
 test "every usable kind carries its OWN dose, and the rest do nothing" {
-    // The guard against the next edible: `usable` and `use` must agree (they are one expression, and the inventory offers Confirm off the first while `game.useItem` acts on the second), and a regen's numbers must be real — a 0-second drip divides by zero in `Regen.start`'s rate and a 0-fraction one is a row you can press that heals nothing.
     var found: usize = 0;
     for (0..NK) |i| {
         const k: Kind = @enumFromInt(i);
@@ -159,7 +155,7 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
             },
         }
     }
-    try std.testing.expect(found >= 1); // …and at least one item in the game still does something
+    try std.testing.expect(found >= 1);
 }
 
 test "the bag counts, caps, and never wraps" {
@@ -179,9 +175,6 @@ test "the bag counts, caps, and never wraps" {
 test "nth walks only the rows that have something in them" {
     var b = Bag{};
     b.add(.golden_seed, 1);
-    // The LAST kind, so a broken walk runs off the end — by index, not by name: this said `iron_key`
-    // and stopped being the last one the moment `mushroom_jerky` was appended, so the case it exists
-    // to cover quietly stopped being covered.
     const last: Kind = @enumFromInt(NK - 1);
     b.add(last, 1);
     try std.testing.expectEqual(Kind.golden_seed, b.nth(0).?);

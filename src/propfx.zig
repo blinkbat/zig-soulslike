@@ -6,7 +6,6 @@ const art = @import("propart.zig");
 
 const v3 = mathx.v3;
 const Builder = gfx.Builder;
-// The shared vocabulary this file draws on, aliased so a mesh body still reads as a recipe (`art.STONE_DK` in front of every colour buries the shape in namespace).
 const BARK_DK = art.BARK_DK;
 const CLIFF_LT = art.CLIFF_LT;
 const CLIFF_ROCK = art.CLIFF_ROCK;
@@ -21,7 +20,6 @@ const flameInto = art.flameInto;
 
 
 
-// A standing iron TORCH: three splayed feet, a twisted shaft, a cage of iron straps holding the pitch head, and the flame above it.
 pub fn torchMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(9001);
@@ -46,7 +44,6 @@ pub fn torchMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A BRAZIER: a wide iron bowl on three raking legs, banked coals under a broad flame — the biggest of the fires, for a courtyard or a gateway.
 pub fn brazierMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(9002);
@@ -67,14 +64,12 @@ pub fn brazierMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A CAMPFIRE: a ring of hearth stones, crossed half-burnt logs, embers between them, and a low flame.
 pub fn campfireMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(9003);
     b.setMat(.stone);
     var i: i32 = 0;
     while (i < 9) : (i += 1) {
-        // One stone MISSING and one kicked out of the ring — a complete even circle of same-sized hexagonal gumdrops read as placed by a compass.
         if (i == 3) continue;
         const kicked = i == 6;
         const a = std.math.tau * @as(f32, @floatFromInt(i)) / 9.0 + rng.signed() * 0.22;
@@ -109,8 +104,7 @@ pub fn waterMesh(shader: rl.Shader) rl.Model {
     const SEG = 30;
     const RINGS = 5;
     const Y = 0.055; // a hair over env.GROUND_Y — you wade in ankle-deep
-    const MUD_Y = 0.030; // …and the wet margin sits BETWEEN the two, so nothing z-fights
-    // An irregular shoreline: per-spoke radius wobble, smoothed by averaging neighbours so the outline undulates in bays instead of jittering vertex to vertex.
+    const MUD_Y = 0.030;
     var rad: [SEG]f32 = undefined;
     for (&rad) |*r| r.* = rng.range(0.78, 1.0);
     var smooth: [SEG]f32 = undefined;
@@ -133,7 +127,6 @@ pub fn waterMesh(shader: rl.Shader) rl.Model {
                         return v3(mathx.cosf(ang) * r * ww, yy, mathx.sinf(ang) * r * ww);
                     }
                 }.p;
-                // The innermost ring collapses to the centre, so its quad is a triangle (the duplicated corner contributes a zero-area tri — harmless, and it keeps ONE code path for the whole sheet).
                 const w0 = if (r0 <= 0.001) 1.0 else w[i];
                 const w1 = if (r0 <= 0.001) 1.0 else w[j];
                 bb.quad(at(a0, r0, w0, y), at(a1, r0, w1, y), at(a1, r1, w[j], y), at(a0, r1, w[i], y), v3(0, 1, 0), col);
@@ -141,7 +134,6 @@ pub fn waterMesh(shader: rl.Shader) rl.Model {
         }
     }.go;
 
-    // The WET MARGIN first, a little wider than the sheet and a little lower: dark saturated mud that the water's edge dies into, so the shoreline isn't a hard line ruled across dry grass.
     b.setMat(.stone);
     band(&b, &smooth, 12.4, 14.3, MUD_Y, WATER_MUD);
 

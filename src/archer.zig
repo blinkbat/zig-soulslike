@@ -13,7 +13,6 @@ const v3 = mathx.v3;
 const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
-// A bare-bones skeleton that KITES: it holds a range band, looses slowish lightly-homing arrows that stick and fade, and never melees — the opening is closing the gap.
 
 const BONE = rgba(126, 116, 92, 255); // weathered ivory, yellowed with the centuries
 const BONE_DK = rgba(78, 70, 55, 255); // shadowed recesses / old bone
@@ -27,18 +26,16 @@ const GRIP_WRAP = rgba(50, 38, 27, 255); // cracked leather grip wrap
 const STRINGCOL = rgba(170, 162, 140, 255); // pale sinew string
 const QUIVER_HIDE = rgba(46, 34, 24, 255); // the back quiver's cracked leather
 const QUIVER_LT = rgba(64, 49, 34, 255);
-// The arrow reads as a THREAT first (owner: "arrows need to be easier to see") — pale shaft, big bone-white fletching + bright pile, both partly SELF-LIT (vertex alpha < 255 = emissive) so a shot pops in shade and against the ground.
 const ARROW_SHAFT = rgba(118, 102, 76, 255); // pale ash shaft
 const ARROW_HEAD = rgba(158, 166, 178, 170); // bright steel pile (glints, slightly self-lit)
 const ARROW_FLETCH = rgba(176, 166, 140, 150); // bone-white feathers, self-lit — the tracer
 
-// Bow rides the RIGHT wrist (a left-hand-draw archer) — the shared weapon-on-right convention, so the FK scaffold lines up.
 const N = heromod.N;
 const ROOT = heromod.ROOT;
 const SPINE = heromod.SPINE;
 const CHEST = heromod.CHEST;
 const NECK = heromod.NECK;
-const SKULL = heromod.HEAD; // …the archer's name for it: this one is a bare skull
+const SKULL = heromod.HEAD;
 const HIPL = heromod.HIPL;
 const KNEEL = heromod.KNEEL;
 const ANKL = heromod.ANKL;
@@ -64,7 +61,7 @@ const SEG_SHANK = heromod.SEG_SHANK;
 const SEG_UPARM = heromod.SEG_UPARM;
 const SEG_FOREARM = heromod.SEG_FOREARM;
 
-// A skeleton has the Tarnished's own frame — same stature, same hips, same shoulders. Solved at COMPTIME because every input is a constant and `spawn` runs it per instance: the editor re-homes every posted foe on every frame it is up, so this was 18 vector scales per foe per frame to arrive at the same table.
+// A skeleton has the Tarnished's own frame — same stature, same hips, same shoulders.
 const REST = heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF, H);
 
 const rx = mathx.rx;
@@ -81,18 +78,14 @@ const setLocal = heromod.setHumanoid; // the shared scaffold's own setter — se
 const BOW_FY = -0.05 * H; // fist centre in the wrist frame (the hero's grip anchor)
 const BOW_FZ = 0.02 * H; // held a touch out front of the palm
 const TIP_UP = 0.40 * H; // upper limb reach above the fist…
-const TIP_DN = 0.37 * H; // …lower limb a touch shorter (war bows are uneven — wabi-sabi)
+const TIP_DN = 0.37 * H;
 const TIP_Z = 0.06 * H; // the recurved tips kick forward of the grip line
 const FIST_L = v3(0, -0.05 * H, 0.02 * H); // the DRAW hand's fist centre (left-wrist frame)
 
-/// THE LIVE STRING AND THE NOCKED SHAFT, for anything that holds this bow. Two things do now — the
-/// skeleton and the HERO — so the geometry that hauls a string off a draw hand is written once instead
-/// of transcribed into hero.zig, which is the same rule the 18-bone scaffold itself follows. Everything
-/// it needs is the two matrices and the pull: the bow bone's world transform, the DRAW hand's, and how
-/// far back the string is (0 = home, 1 = full draw).
+/// THE LIVE STRING AND THE NOCKED SHAFT, for anything that holds this bow.
 pub const BowPose = struct {
     string: [2]rl.Matrix, // tip→nock and nock→tip, the two live halves
-    nock: rl.Matrix, // …and the shaft riding the nock
+    nock: rl.Matrix,
     at: rl.Vector3, // where that nock actually IS — the true release point a loose leaves from
 };
 
@@ -151,10 +144,10 @@ const RELOAD_CD = 1.1; // beat between shots (nock the next)
 const REPOSITION_DUR = 1.6; // how long a kite step lasts before re-deciding
 
 const BACKSTEP_R = 3.9; // hero this close and it bails (well inside RANGE_MIN's walking kite)
-const BACKSTEP_CD = 7.0; // …but only this often
-const BACKSTEP_GATHER = 0.13; // the coil. Short — it is a flinch, not a wind-up
+const BACKSTEP_CD = 7.0;
+const BACKSTEP_GATHER = 0.13; // the coil.
 const BACKSTEP_FLIGHT = 0.44; // the leap itself
-const BACKSTEP_LAND = 0.30; // …and the landing, wide open (the price of using it)
+const BACKSTEP_LAND = 0.30;
 const BACKSTEP_DIST = 4.7; // ground covered, straight away from the hero — back into the band
 const BACKSTEP_RISE = 0.34; // peak hop height (world units)
 
@@ -169,34 +162,26 @@ const DISS_DUR = 0.9; // dissipation into bone-dust + grace motes
 const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 7.0;
 
-// Slowish flight with LIGHT homing toward the hero (a gentle curve, not a lock-on), then it STICKS where it lands (ground / near the hero) and fades.
 const ARROW_SPEED = 15.0; // world units/s — slowish, dodgeable
 const ARROW_HOMING = 0.85; // rad/s the heading may bend toward the hero — a NUDGE, not a lock
-const ARROW_HOME_FADE = 0.45; // …and it decays to nothing over this much flight (see stepArrow):
+const ARROW_HOME_FADE = 0.45;
 const ARROW_GRAV: f32 = 3.0; // gentle drop so long shots arc
-/// A STONE DROPS HARDER THAN A SHAFT — which this file has always claimed and never did, because one gravity served both.
 const STONE_GRAV: f32 = 9.0;
-/// …and a mouthful of venom is the heaviest thing thrown in the game: a high, slow arc you are meant to
-/// see coming and step out from under.
 const VENOM_GRAV: f32 = 11.0;
 const ARROW_LIFE = 3.5; // seconds airborne before it gives up (falls + sticks)
 const ARROW_STICK_FADE = 1.4; // seconds a stuck arrow lingers, then fades
-/// How fat the shaft is against the WORLD when it tests cover — a name because `game.arrowCover` sizes its grid query around "the fattest margin it tests with" and was pointing at a bare literal in another file.
 pub const ARROW_COVER_MARGIN: f32 = 0.04;
 const ARROW_HIT_R = 0.5; // hero footprint the arrow must reach to connect…
-const ARROW_HIT_HALF_H = 0.85; // …and how far above/below his centre of mass still counts. It was a
+const ARROW_HIT_HALF_H = 0.85;
 
 pub const TRAIL_N = 10;
 const TRAIL_LIFE = 0.17; // seconds a sample lingers
 const TRAIL_W = 0.055; // half-width at the head, tapering to nothing at the tail
 const TRAIL_COL = rgba(214, 198, 158, 255); // pale, kin to the fletching — alpha set per segment
 
-/// The three things that fly. Everything a projectile does differently from the others hangs off this and
-/// nothing else: `dropOf` its gravity, game.zig its mesh, and the venom its pool.
+/// The three things that fly.
 pub const Shot = enum { arrow, stone, venom };
 
-/// A STONE DROPS HARDER THAN A SHAFT, and a mouthful of venom harder still — the lob you can walk out from
-/// under IS the tell, and it is the only reason the mother's spit is dodgeable at all.
 pub fn dropOf(s: Shot) f32 {
     return switch (s) {
         .arrow => ARROW_GRAV,
@@ -214,13 +199,7 @@ pub const Arrow = struct {
     hit: bool = false, // it connected with the hero this frame (game.zig reads + clears)
     /// WHAT IT STUCK IN, set on the frame it plants. null = the bare earth (a miss), which is the commonest case by far and wants its own duller, fizzier impact. game.zig reads it to pick the sound; nothing else cares.
     struck: ?collision.Surface = null,
-    /// WHICH PROJECTILE THIS IS — the one thing that decides its drop, its mesh, and what it leaves behind.
-    /// A bool named `stone` served while there were two; a third (the brood mother's venom, which puts a
-    /// pool on the ground where it lands) would have made it two bools that must never both be set.
     shot: Shot = .arrow,
-    /// WHAT IT DEALS if it connects — carried on the SHAFT rather than looked up by the thing it hits,
-    /// because the hero's quick shot and his aimed shot are the same projectile with different weight
-    /// behind it, and by the time one lands nothing else remembers which it was.
     blow: combat.Hit = .{},
     // The trail ring.
     trail: [TRAIL_N]rl.Vector3 = [_]rl.Vector3{mathx.zero3} ** TRAIL_N,
@@ -228,7 +207,6 @@ pub const Arrow = struct {
     trailHead: usize = 0,
 };
 
-/// The streak behind a shaft in flight — a tapering tube down the last few positions, fading with age.
 pub fn drawArrowTrails(arrows: []const Arrow) void {
     for (arrows) |*a| drawArrowTrail(a);
 }
@@ -237,7 +215,6 @@ fn drawArrowTrail(a: *const Arrow) void {
     if (!a.live) return;
     var i: usize = 0;
     while (i + 1 < TRAIL_N) : (i += 1) {
-        // `ia`/`ib`, not `i0`/`i1` — those are real Zig integer TYPE names and shadowing a primitive is a compile error.
         const ia = (a.trailHead + TRAIL_N - i) % TRAIL_N;
         const ib = (a.trailHead + TRAIL_N - i - 1) % TRAIL_N;
         const g0 = a.trailAge[ia];
@@ -255,12 +232,6 @@ fn drawArrowTrail(a: *const Arrow) void {
     }
 }
 
-// Loose an arrow from `from` toward `target`, with a little loft so the shot ARCS toward a (usually lower) target over distance — the light homing in stepArrow refines the rest.
-/// **THE LOFT IS SOLVED AGAINST THE DISTANCE TO `target`, so it is only right if that is a REAL point.**
-/// Aimed down a camera ray at an arbitrary far mark it over-corrects for everything nearer: an aimed shot
-/// solved at 60 m flew half a metre high at 10 m, which on a reticle-aimed shot is the reticle lying. So
-/// `loft` is a parameter and not a constant — false fires FLAT out of the muzzle and lets gravity do the
-/// rest, which is what a fast bow should do and what the player can actually learn to lead with.
 fn launchAt(from: rl.Vector3, target: rl.Vector3, speed: f32, shot: Shot, loft: bool) Arrow {
     var d = mathx.subV(target, from);
     const dist = mathx.lenV(d);
@@ -270,59 +241,41 @@ fn launchAt(from: rl.Vector3, target: rl.Vector3, speed: f32, shot: Shot, loft: 
     return .{ .pos = from, .vel = vel, .live = true, .shot = shot };
 }
 
-/// All of theirs are aimed at a real point (the hero), so all are lofted — and what each DEALS rides on
-/// the shaft from here, rather than being re-derived from its kind at the far end where it lands.
 pub fn launchArrow(from: rl.Vector3, target: rl.Vector3) Arrow {
     var a = launchAt(from, target, ARROW_SPEED, .arrow, true);
     a.blow = ARROW_HIT;
     return a;
 }
 
-/// A SLINGER'S STONE, off the same launcher: slower, and it DROPS HARDER (`STONE_GRAV`), which is where the visible lob comes from now that the loft is solved rather than piled on.
 pub fn launchStone(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: combat.Hit) Arrow {
     var a = launchAt(from, target, speed, .stone, true);
     a.blow = blow;
     return a;
 }
 
-/// …AND A MOUTHFUL OF VENOM, which is the same launcher again — the pool it leaves is game.zig's business
-/// (it is what owns the brood), and nothing about the flight knows about it.
 pub fn launchVenom(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: combat.Hit) Arrow {
     var a = launchAt(from, target, speed, .venom, true);
     a.blow = blow;
     return a;
 }
 
-/// THE HERO'S OWN SHAFT: his bow is faster and flatter than a skeleton's (that is what makes it a weapon
-/// rather than the thing being shot at you). `loft` is the caller's to decide, and the rule is whether it
-/// is aimed at a REAL point — a locked foe is, a mark 60 m down the camera ray is not (see `launchAt`).
 pub fn launchShaft(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: combat.Hit, loft: bool) Arrow {
     var a = launchAt(from, target, speed, .arrow, loft);
     a.blow = blow;
     return a;
 }
 
-/// HOW FAT A SHAFT IS AGAINST A FOE — the hurt-sphere test's own forgiveness, the counterpart of
-/// `ARROW_HIT_R` on the hero's side of the exchange. Well under the sword's `BLADE_R`: a bow is a
-/// precision weapon and the arc is the price of the range.
 pub const SHAFT_R: f32 = 0.16;
 
-/// HOW FINELY A FRAME OF FLIGHT IS SAMPLED AGAINST COVER — in METRES, so the sample COUNT follows the step
-/// rather than being fixed at two. Midpoint-plus-endpoint is what this was, and two samples were honest at
-/// a skeleton's 15 m/s (0.12 m gaps at 60 fps); the hero's 40 m/s aimed shaft opens the same two samples to
-/// 0.33 m gaps, and 0.67 m on a 30 fps frame — wide enough for a fence post or a thin column to pass clean
-/// between them, which is exactly the tunnelling the two samples were there to stop.
+/// HOW FINELY A FRAME OF FLIGHT IS SAMPLED AGAINST COVER — in METRES, so the sample COUNT follows the step rather than being fixed at two.
 const COVER_STEP: f32 = 0.18;
-/// …and a ceiling, so a hitched frame cannot turn one shaft into a thousand point tests. At `COVER_STEP`
-/// this still covers 4.3 m of travel in one frame, which is 0.1 s of an aimed shot.
+/// …and a ceiling, so a hitched frame cannot turn one shaft into a thousand point tests.
 const COVER_SAMPLES_MAX: f32 = 24;
 
-/// THE FIRST THING THIS FRAME'S TRAVEL RUNS INTO, and where. Walked forward from `prev`, so what it reports
-/// is the EARLIEST contact rather than whichever of two fixed samples happened to land inside something.
+/// THE FIRST THING THIS FRAME'S TRAVEL RUNS INTO, and where.
 fn coverHit(prev: rl.Vector3, to: rl.Vector3, solids: []const collision.Solid) ?struct { at: rl.Vector3, surf: collision.Surface } {
     const span = mathx.lenV(mathx.subV(to, prev));
-    // CLAMPED IN FLOAT, BEFORE THE CAST — `span` comes off a velocity times a frame time, neither of which
-    // this function gets to bound.
+    // CLAMPED IN FLOAT, BEFORE THE CAST
     const n: usize = @intFromFloat(mathx.clampF(@ceil(span / COVER_STEP), 1, COVER_SAMPLES_MAX));
     var i: usize = 1;
     while (i <= n) : (i += 1) {
@@ -332,11 +285,7 @@ fn coverHit(prev: rl.Vector3, to: rl.Vector3, solids: []const collision.Solid) ?
     return null;
 }
 
-/// FLY ONE OF THE HERO'S SHAFTS A FRAME — the archer's ballistics with the two hero-specific halves
-/// taken out. No HOMING (it goes where he aimed it; a shot that curved onto a target would make aiming
-/// decoration) and no target test, because what this one is flying at is a whole field of foes rather
-/// than the one hero. Returns the SEGMENT it crossed so the caller can sweep that against whatever it
-/// owns, or null if the shaft stopped this frame — planted in cover, in the earth, or spent.
+/// FLY ONE OF THE HERO'S SHAFTS A FRAME — the archer's ballistics with the two hero-specific halves taken out.
 pub fn stepShaft(a: *Arrow, groundY: f32, solids: []const collision.Solid, dt: f32) ?[2]rl.Vector3 {
     if (!a.live) return null;
     for (&a.trailAge) |*ag| ag.* = @min(ag.* + dt, mathx.LONG_AGO);
@@ -352,8 +301,6 @@ pub fn stepShaft(a: *Arrow, groundY: f32, solids: []const collision.Solid, dt: f
     a.trailHead = (a.trailHead + 1) % TRAIL_N;
     a.trail[a.trailHead] = a.pos;
     a.trailAge[a.trailHead] = 0;
-    // COVER FIRST, sampled the length of the step (see `coverHit`), so his own arrows thunk into the pillar
-    // he is shooting past exactly as theirs thunk into the one he ducks behind — at his shaft's speed too.
     if (coverHit(prev, a.pos, solids)) |c| {
         a.struck = c.surf;
         a.pos = mathx.subV(c.at, mathx.scaleV(mathx.normV(a.vel), 0.26)); // head embedded, shaft + fletch proud
@@ -370,8 +317,6 @@ pub fn stepShaft(a: *Arrow, groundY: f32, solids: []const collision.Solid, dt: f
     return .{ prev, a.pos };
 }
 
-/// STICK A SHAFT IN WHAT IT JUST HIT — the caller's half of `stepShaft`, since only it knows whether the
-/// segment reached anything.
 pub fn plantShaft(a: *Arrow) void {
     a.stuck = true;
     a.age = 0;
@@ -384,7 +329,7 @@ fn heroReached(p: rl.Vector3, hero: rl.Vector3, heroCenterY: f32) bool {
 
 pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, heroDodging: bool, solids: []const collision.Solid, dt: f32) void {
     if (!a.live) return;
-    // THE STREAK AGES WHETHER THE SHAFT IS FLYING OR PLANTED. Behind the stuck branch's return it stopped ageing the moment the arrow hit, so `drawArrowTrail` — which only asks whether the arrow is `live` — kept redrawing a full-alpha tube hanging in the air behind every embedded shaft for the whole `ARROW_STICK_FADE`.
+    // THE STREAK AGES WHETHER THE SHAFT IS FLYING OR PLANTED.
     for (&a.trailAge) |*ag| ag.* = @min(ag.* + dt, mathx.LONG_AGO);
     if (a.stuck) {
         a.age += dt;
@@ -406,7 +351,6 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, he
             a.vel.z = bent.z * hs;
         }
     }
-    // …and the drop, which is per-PROJECTILE: `launchAt` solved the loft against this exact number, so integrating a shaft's gravity under a stone would put the stone back off the aim line.
     a.vel.y -= dropOf(a.shot) * dt;
     const prev = a.pos;
     a.pos = mathx.addV(a.pos, mathx.scaleV(a.vel, dt));
@@ -414,20 +358,16 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, he
     a.trailHead = (a.trailHead + 1) % TRAIL_N;
     a.trail[a.trailHead] = a.pos;
     a.trailAge[a.trailHead] = 0;
-    // COVER first (a wall between archer and hero beats a hero hugging its far side): sampled the LENGTH of
-    // the frame's travel so a fast shaft cannot tunnel a thin trunk — see `coverHit`, which both quivers
-    // share rather than each carrying this block.
+    // COVER first (a wall between archer and hero beats a hero hugging its far side): sampled the LENGTH of the frame's travel so a fast shaft cannot tunnel a thin trunk — see `coverHit`, which both quivers share rather than each carrying this block.
     if (coverHit(prev, a.pos, solids)) |c| {
-        a.struck = c.surf; // …what it went into, for the impact sound
+        a.struck = c.surf;
         // Normalize the CURRENT velocity: `spd` was sampled before homing + gravity touched it, so using it as the divisor left the embed offset a frame of gravity out of true.
         a.pos = mathx.subV(c.at, mathx.scaleV(mathx.normV(a.vel), 0.26)); // head embedded, shaft + fletch proud
         a.stuck = true;
         a.age = 0;
         return;
     }
-    // …and the HERO, over the endpoint and the midpoint. Two samples are enough HERE and not for cover: a
-    // hero is a 0.5 m footprint where a fence post is a 0.15 m one, and the gaps that let a shaft past a
-    // post are far too small to let it past a man.
+    // …and the HERO, over the endpoint and the midpoint.
     const mid = mathx.lerpV(prev, a.pos, 0.5);
     if (!heroDodging and (heroReached(a.pos, hero, heroCenterY) or heroReached(mid, hero, heroCenterY))) {
         a.hit = true;
@@ -473,7 +413,6 @@ fn wantsBackstep(dist: f32, cd: f32, s: State) bool {
 fn leapU(t: f32) f32 {
     return mathx.clampF((t - BACKSTEP_GATHER) / BACKSTEP_FLIGHT, 0, 1);
 }
-// Distance covered by time t — front-loaded, so it explodes off the coil and coasts to a stop instead of ending on a hard stop.
 fn leapTravel(t: f32) f32 {
     const u = leapU(t);
     const e = 1.0 - (1.0 - u) * (1.0 - u);
@@ -524,7 +463,6 @@ pub const Archer = struct {
     leapDone: f32 = 0, // ground already covered by the current leap (so travel integrates once)
     hop: f32 = 0, // world-space height off the ground mid-leap (rides the ROOT translate)
 
-    // Shared humanoid GAIT STATE — hero.advanceGait drives these, hero.legChain animates the legs (the player's walk + strafe/backpedal). fwdB/latB = travel direction vs facing.
     phase: f32 = 0,
     moving: f32 = 0,
     fwdB: f32 = 1,
@@ -606,7 +544,6 @@ pub const Archer = struct {
         self.reloadCd = mathx.maxF(0, self.reloadCd - dt);
         self.backstepCd = mathx.maxF(0, self.backstepCd - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
-        // THE TETHER: drawn a long way from where it was posted and left alone, it walks back (foe.Leash).
         self.leash.tick(dt, mathx.distXZ(self.pos, self.home));
         self.t += dt;
         var loosed = false;
@@ -615,7 +552,6 @@ pub const Archer = struct {
 
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt); // the bone-clatter jolt off a blow
 
-        // …SENSED through the leash (foe.sensedDist): walking home it reads him as gone, roused it reads him as here.
         const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
         // THE PANIC LEAP interrupts whatever it was doing — checked before the state machine so a hero who closes mid-draw gets leapt away from on the same frame he arrives.
         if (wantsBackstep(d, self.backstepCd, self.state)) self.enterBackstep();
@@ -650,14 +586,14 @@ pub const Archer = struct {
                 if (first) {
                     self.looseFired = true;
                     loosed = true; // game.zig spawns the arrow at nockWorld toward the hero
-                    self.leash.noteCombat(); // …and shooting at him IS the fight, so the tether waits
+                    self.leash.noteCombat();
                     sfx.world(.bow_loose, self.pos); // the twang: the one cue that says MOVE
                 }
                 // The string only starts snapping AFTER the release frame.
                 if (!first) {
                     const u = mathx.clampF(self.t / LOOSE_DUR, 0, 1);
                     self.drawAmt = 1.0 - mathx.smoothstep(0, 0.38, u); // the string SNAPS home ahead of the arm…
-                    self.kick = mathx.smoothstep(0, 0.5, u); // …while the hand flies back off the release
+                    self.kick = mathx.smoothstep(0, 0.5, u);
                 }
                 if (self.t >= LOOSE_DUR) {
                     self.reloadCd = RELOAD_CD;
@@ -673,10 +609,6 @@ pub const Archer = struct {
             .reposition => {
                 self.armT = mathx.approach(self.armT, 0.15, dt * 3.0); // a wary half-ready carry
                 self.drawAmt = mathx.approach(self.drawAmt, 0, dt * 6.0);
-                // Step along the committed kite direction while FACING the hero — so travel-vs- facing feeds the shared gait as a STRAFE (lateral) or BACKPEDAL (kiting out).
-                // …unless it is going HOME, where it faces its travel instead: a skeleton strolling back to
-                // its perch while still staring at you reads as a backpedal it never breaks off, which is the
-                // opposite of the "lost interest" the leash is there to show.
                 if (self.leash.goingHome()) {
                     foe.faceToward(self.pos, &self.facing, mathx.addV(self.pos, self.kiteDir), TURN_RATE, dt);
                 } else self.faceToward(hero, dt);
@@ -687,7 +619,7 @@ pub const Archer = struct {
                 if (self.t >= REPOSITION_DUR) self.decide(d);
             },
             .backstep => {
-                // Coil, leap, land — FACING the hero the whole way (retreating, not fleeing: the bow comes straight back up on landing).
+                // Coil, leap, land
                 self.faceToward(hero, dt);
                 self.armT = mathx.approach(self.armT, 0.15, dt * 5.0);
                 self.drawAmt = mathx.approach(self.drawAmt, 0, dt * 12.0); // the half-drawn shot is abandoned
@@ -739,10 +671,6 @@ pub const Archer = struct {
 
     // Pick the next action from range + reload (kite AI).
     fn decide(self: *Archer, dist: f32) void {
-        // THE TETHER FIRST, and it is the one creature that needed a homeward walk ADDING rather than
-        // repurposing: the toad hops home, the ogre trudges and the kobold drifts, but a skeleton's
-        // out-of-range answer was to stand exactly where it was and scan. `reposition` is already its walk,
-        // so going home is a direction handed to it — see foe.Leash.
         if (self.leash.goingHome()) {
             self.kiteDir = mathx.dirXZ(self.pos, self.home);
             return self.enter(.reposition);
@@ -760,7 +688,6 @@ pub const Archer = struct {
             .hold_ground => self.enter(.idle),
         }
     }
-    // Unit direction pointing straight away from the hero, from the archer's facing (it faces the hero, so −facing is "away"); a little seeded skew so a line doesn't retreat as one.
     fn awayDir(self: *const Archer) rl.Vector3 {
         const skew = (self.seed - 0.5) * 0.7;
         const yaw = self.facing + std.math.pi + skew;
@@ -792,7 +719,6 @@ pub const Archer = struct {
         self.justDied = true;
     }
 
-    // The leap's PELVIS: it coils, extends as it flies, gathers again to meet the ground, and absorbs.
     fn leapCrouch(self: *const Archer) f32 {
         if (self.state != .backstep) return 0;
         if (self.t < BACKSTEP_GATHER) return 0.11 * H * mathx.smoothstep(0, BACKSTEP_GATHER, self.t);
@@ -804,20 +730,14 @@ pub const Archer = struct {
         return 0.14 * H * (1.0 - mathx.smoothstep(0, 1, mathx.clampF(land, 0, 1)));
     }
 
-    /// THE DAMAGE ENTRY, public because a loosed shaft comes through it too (`foe.pierceGroup`) — an
-    /// arrow has to bleed, flinch and kill exactly the way the sword does, and this is where that lives.
     pub fn tryHit(self: *Archer, blade: foe.Blade) void {
         if (self.state == .dead) return;
         const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
         self.hits += 1;
-        // ANY BLOW IS A FIGHT IN PROGRESS, so the tether waits (foe.Leash) — and one of the PLAYER'S
-        // PROJECTILES also rouses it: it turns to face back down the shaft and comes for him from wherever
-        // it was standing, whatever its own aggro range says. Keep shooting a foe that is walking home and
-        // it stops trying to leave at all.
         self.leash.noteCombat();
         if (blade.pierce) {
             self.leash.provoke();
-            self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1)); // …look back the way it came
+            self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
         }
         self.flash = FLASH_DUR;
         const heavyBlow = blade.hit.stance > 0;
@@ -846,12 +766,10 @@ pub const Archer = struct {
         // Stagger: a big recoil back off the blow (light = a pulse, heavy = a sustained reel).
         const stunAmt = self.stunAmount();
 
-        // Shared humanoid WALK: a bob + weight-sway ride the pelvis (quieting on collapse), and the legs animate via hero.legChain below — the player's walk + strafe/backpedal footing.
         const m = self.moving * (1.0 - dk);
         const twoPi = std.math.tau;
         const bob = -0.5 * A_BOB * mathx.cosf(2.0 * twoPi * self.phase) * m;
         const latW = @abs(self.latB) * m;
-        // Sway/prot/dip all come from hero.zig so the sidestep reads IDENTICALLY on every humanoid (AGENTS.md's rule covers the trunk, not just legChain).
         const sway = heromod.strafeSway(latW, 0) * mathx.sinf(twoPi * self.phase) * m;
         const prot = A_PROT * mathx.sinf(twoPi * self.phase) * m * @abs(self.fwdB) +
             heromod.strafeProt(self.phase, self.latB, m);
@@ -860,13 +778,11 @@ pub const Archer = struct {
         var wx: [N]rl.Matrix = undefined;
         const collapse = mathx.lerpF(hipY, 0.22 * H, dk); // pelvis drops on death
         const pitchBody = 20.0 * dk - 26.0 * stunAmt; // topple forward dead / arch back stunned
-        // scaleM FIRST → the whole skeleton scales about its pelvis (per-archer size + the shrink `fs`); the world placement `tr(pos)` stays unscaled.
         const pelvY = if (dead) collapse else hipY + bob - dip - self.leapCrouch();
-        // `self.hop` is WORLD units and rides outside the ×fs terms: the leap lifts the whole rig off the earth, and rig-local legChain neither knows nor needs to — its feet come up with the body, which is what airborne looks like.
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul3(rz(10.0 * dk), rx(pitchBody), ry(prot)),
             mul(tr(sway * fs, pelvY * fs + sink + self.hop, 0), ry(facingDeg)),
-            heromod.rootAt(self.pos), // …on the sculpted ground under him, not on y = 0
+            heromod.rootAt(self.pos),
         ));
 
         // Legs: the SHARED walk/strafe (runB = 0 — the archer only walks).
@@ -888,7 +804,6 @@ pub const Archer = struct {
         self.nockVis = (self.state == .draw or self.state == .hold) and self.drawAmt > 0.03;
     }
 
-    // How much the trunk is folded over the leap right now (0..1): it builds through the coil, holds through the flight, and unwinds over the landing.
     fn leapLean(self: *const Archer) f32 {
         if (self.state != .backstep) return 0;
         const inAir = BACKSTEP_GATHER + BACKSTEP_FLIGHT;
@@ -907,23 +822,19 @@ pub const Archer = struct {
         return 0;
     }
 
-    // Spine, head, the archery arms, and (only when DEAD) the buckling legs (`dk` = death collapse, `stun` = recoil).
     fn poseUpper(self: *Archer, wx: *[N]rl.Matrix, dk: f32, stun: f32, dead: bool, prot: f32) void {
         const rest = self.rest;
         const at = self.armT;
         const dr = self.drawAmt;
-        // The draw-arm arc in two beats: REACH over the shoulder for a shaft from the quiver (at 0→0.45), then sweep down and PULL to the cheek anchor (at 0.45→1).
         const reach = mathx.smoothstep(0.0, 0.45, at);
         const pull = mathx.smoothstep(0.45, 1.0, at);
         // Seeded wonk — each archer stands a little crooked (cosmetic only; wabi-sabi).
         const wonk = (self.seed - 0.5) * 6.0;
 
-        // Spine: a slight ready-stoop that blades side-on through the pull, leaning back a hair at full draw (the counterweight); curls on death, arches back when stunned.
         const spineX = 4.0 - 3.0 * dr + 22.0 * dk - 20.0 * stun + 26.0 * self.leapLean();
         setLocal(wx, SPINE, rest, mul3(rx(spineX * 0.5), ry(-0.35 * prot), rz(wonk * 0.5)));
         setLocal(wx, CHEST, rest, mul3(rx(spineX * 0.5), ry(-0.5 * prot - 5.0 * reach - 9.0 * pull), rz(-wonk * 0.3)));
         setLocal(wx, NECK, rest, rx(3.0 + 12.0 * dk - 8.0 * stun));
-        // Head: sentry-scans at rest, sights down the shaft as the pull anchors — craned in and CANTED onto the arrow (the archer's cheek-weld); lolls aside as it dies.
         setLocal(wx, SKULL, rest, mul3(
             rx(6.0 + 4.0 * pull + 20.0 * dk - 30.0 * stun),
             ry(self.headScan + 8.0 * pull),
@@ -939,7 +850,6 @@ pub const Archer = struct {
             setLocal(wx, KNEER, rest, rx(8.0 + 92.0 * dk));
             setLocal(wx, ANKR, rest, ry(-7.0));
         }
-        // …and the OTHER time legChain is wrong: mid-leap the ground is a third of a metre below the feet and legChain's job is putting them ON it.
         if (self.state == .backstep) {
             const u = leapU(self.t);
             const w = mathx.sinf(mathx.clampF(u, 0, 1) * std.math.pi);
@@ -957,16 +867,13 @@ pub const Archer = struct {
         }
 
         const armStun = -70.0 * stun; // arms fly up when hit
-        // Right arm = the BOW arm: rises early in the draw from a low carry, punching the bow out toward the target, elbow near-straight; a small forward BOUNCE off the release.
         const bowT = mathx.clampF(at * 1.7, 0, 1);
         const bowShFwd = mathx.lerpF(-26.0, -88.0, bowT) + 5.0 * self.kick + armStun;
         setLocal(wx, SHR, rest, mul(rx(bowShFwd - 30.0 * dk), rz(-9.0 + wonk * 0.4)));
         setLocal(wx, ELR, rest, rx(-(8.0 + 5.0 * bowT)));
         setLocal(wx, WRR, rest, rz(-6.0 - 4.0 * self.kick));
-        // rx(100) stands the bow VERTICAL, ry(180) faces it — string toward the archer, limbs bowing out to the target; the whole bow rocks forward a touch off the loose.
         setLocal(wx, BOW, rest, mul(ry(180.0), rx(100.0 - 3.0 * self.kick)));
 
-        // Left arm = the DRAW arm: beat one plucks a shaft from the back quiver (hand up-and-back over the shoulder), beat two hauls to the cheek with the elbow riding HIGH (the signature silhouette).
         const wob = (mathx.sinf(self.elapsed * 9.0 + self.seed * 7.0) + 0.5 * mathx.sinf(self.elapsed * 23.0)) * 1.1 * dr;
         const drawSh = -26.0 - 102.0 * reach + 44.0 * pull + armStun - 30.0 * dk + wob;
         const drawYaw = -26.0 * reach + 10.0 * pull; // out-and-back at the quiver, in at the anchor
@@ -1054,7 +961,6 @@ fn buildMeshes() [N]rl.Mesh {
     return mesh;
 }
 
-// A bone: a kinked, waisted shaft with a fatter articular knob at each joint end — never machine-straight.
 fn bone(b: *Builder, rng: *mathx.Rng, a: rl.Vector3, e: rl.Vector3, r: f32, col: rl.Color) void {
     const mid = v3(
         (a.x + e.x) * 0.5 + rng.range(-0.007, 0.007) * H,
@@ -1071,7 +977,6 @@ fn bone(b: *Builder, rng: *mathx.Rng, a: rl.Vector3, e: rl.Vector3, r: f32, col:
 fn pelvisMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
-    // An OPEN bony girdle, not a solid block: sacrum wedge, two flared iliac blades (the left runs bigger — wabi-sabi), a thin pubic bar, hip-socket knobs — and dark void within.
     b.addCube(v3(0, 0.0, -0.02 * H), v3(0.085 * H, 0.10 * H, 0.075 * H), BONE_DK); // sacrum wedge
     b.addCube(v3(0, -0.045 * H, -0.005 * H), v3(0.11 * H, 0.055 * H, 0.055 * H), SOCKET); // the hollow within
     b.addBox(v3(0.082 * H, 0.022 * H, 0.0), v3(0.05 * H, 0.024 * H, 0.0), v3(0.014 * H, 0.062 * H, 0.0), v3(0, 0, 0.055 * H), BONE); // L ilium blade
@@ -1085,7 +990,6 @@ fn pelvisMesh() rl.Mesh {
 fn lumbarMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
-    // A short CROOKED stack of lumbar vertebrae — each drifts a hair off plumb (old spines settle; nothing machined) — spinous processes poking back.
     var rng = mathx.Rng.init(2203);
     var i: i32 = 0;
     while (i < 4) : (i += 1) {
@@ -1100,7 +1004,6 @@ fn lumbarMesh() rl.Mesh {
 fn ribcageMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
-    // Thorax joint ~0.76 H; a near-black CORE fills the chest so the rib gaps read as hollow void, not daylight.
     b.addCube(v3(0, 0.015 * H, -0.005 * H), v3(0.13 * H, 0.185 * H, 0.10 * H), SOCKET); // the hollow core
     b.addCube(v3(0, 0.02 * H, -0.07 * H), v3(0.05 * H, 0.17 * H, 0.05 * H), BONE_DK); // thoracic spine
     b.addCube(v3(0, 0.032 * H, 0.078 * H), v3(0.036 * H, 0.125 * H, 0.016 * H), BONE_LT); // sternum
@@ -1163,7 +1066,7 @@ fn neckMesh() rl.Mesh {
     b.setMat(.plain);
     b.addCylinder(v3(0, 0, 0), v3(0, 0.070 * H, 0), 0.026 * H, 0.024 * H, 7, BONE_DK); // cervical column
     b.addCube(v3(0, 0.020 * H, 0), v3(0.032 * H, 0.018 * H, 0.032 * H), BONE); // a vertebra ring
-    b.addCube(v3(0, 0.048 * H, -0.004 * H), v3(0.028 * H, 0.014 * H, 0.028 * H), STAIN); // and another, askew
+    b.addCube(v3(0, 0.048 * H, -0.004 * H), v3(0.028 * H, 0.014 * H, 0.028 * H), STAIN);
     return b.toMesh();
 }
 
@@ -1175,7 +1078,7 @@ fn skullMesh() rl.Mesh {
     b.addCube(v3(0, 0.058 * H, -0.004 * H), v3(0.140 * H, 0.082 * H, 0.138 * H), BONE); // cranium box
     b.addCube(v3(0.020 * H, 0.098 * H, 0.010 * H), v3(0.014 * H, 0.030 * H, 0.11 * H), STAIN); // the old cleft, stained dark
     b.addCube(v3(0, 0.075 * H, 0.062 * H), v3(0.126 * H, 0.026 * H, 0.030 * H), BONE_LT); // brow ridge
-    // eye sockets — DEEP black wells under the brow (the read at any distance), uneven
+    // eye sockets
     b.addCube(v3(0.043 * H, 0.048 * H, 0.064 * H), v3(0.054 * H, 0.048 * H, 0.028 * H), SOCKET);
     b.addCube(v3(-0.041 * H, 0.046 * H, 0.064 * H), v3(0.048 * H, 0.044 * H, 0.028 * H), SOCKET);
     b.addCube(v3(0, 0.028 * H, 0.070 * H), v3(0.022 * H, 0.042 * H, 0.026 * H), SOCKET); // nasal cavity
@@ -1283,7 +1186,6 @@ pub fn bowMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// …and its string and nocked shaft, for the same reason.
 // A unit string segment: hair-thin, 0→+Z, length 1 — poseString stretches two of these tip→nock→tip every frame, so the string really hauls back, kinks, and snaps home.
 pub fn stringMesh() rl.Mesh {
     var b = Builder.init();
@@ -1336,7 +1238,7 @@ test "range band is ordered and sits inside aggro" {
 
 test "the backstep fires only when crowded, off cooldown, and interruptible" {
     try std.testing.expect(wantsBackstep(BACKSTEP_R - 0.5, 0, .draw)); // crowded mid-draw: bail
-    try std.testing.expect(wantsBackstep(BACKSTEP_R - 0.5, 0, .reposition)); // …even while kiting
+    try std.testing.expect(wantsBackstep(BACKSTEP_R - 0.5, 0, .reposition));
     try std.testing.expect(!wantsBackstep(BACKSTEP_R + 0.5, 0, .draw)); // not crowded yet
     try std.testing.expect(!wantsBackstep(BACKSTEP_R - 0.5, 3.0, .draw)); // still on cooldown
     try std.testing.expect(!wantsBackstep(0.5, 0, .loose)); // the arrow is already leaving
@@ -1346,7 +1248,6 @@ test "the backstep fires only when crowded, off cooldown, and interruptible" {
 }
 
 test "the leap clears sword reach, lands where its curve says, and never overshoots" {
-    // It must actually ESCAPE: starting at the trigger radius, the landing has to put the archer back inside its shooting band, or the evade buys nothing and the hero just walks after it.
     try std.testing.expect(BACKSTEP_R + BACKSTEP_DIST > RANGE_MIN);
     // The travel curve is monotonic, starts at nothing, and finishes at exactly BACKSTEP_DIST — the position is integrated from it frame by frame, so a curve that overshot would teleport.
     try std.testing.expectApproxEqAbs(@as(f32, 0), leapTravel(0), 1e-5);
@@ -1358,7 +1259,6 @@ test "the leap clears sword reach, lands where its curve says, and never oversho
         try std.testing.expect(d >= prev - 1e-5 and d <= BACKSTEP_DIST + 1e-4);
         prev = d;
     }
-    // And the cooldown has to outlast the move several times over, or it is a kite, not a panic.
     try std.testing.expect(BACKSTEP_CD > 4.0 * (BACKSTEP_GATHER + BACKSTEP_FLIGHT + BACKSTEP_LAND));
 }
 
@@ -1376,7 +1276,6 @@ test "an arrow in flight lays a trail, and a pooled one never inherits the last 
         if (g < TRAIL_LIFE) live += 1;
     }
     try std.testing.expectEqual(@as(u32, 6), live);
-    // …and they are DISTINCT positions marching along the flight, or the ribbon has no length and every segment collapses to a degenerate quad.
     const newest = a.trail[a.trailHead];
     const prev = a.trail[(a.trailHead + TRAIL_N - 1) % TRAIL_N];
     try std.testing.expect(mathx.lenV(mathx.subV(newest, prev)) > 0.05);
@@ -1390,7 +1289,6 @@ test "an arrow in flight lays a trail, and a pooled one never inherits the last 
 }
 
 test "arrows thunk into cover instead of piercing it; tall shots clear a LOW blocker" {
-    // A chest-high wall dead on the flight line: the flat shot must stick in it, short of the target — cover answers the archers.
     var low = collision.circle(0, 5.0, 0.8);
     low.h = 0.9;
     var tall = low;
@@ -1413,13 +1311,11 @@ test "arrows thunk into cover instead of piercing it; tall shots clear a LOW blo
 }
 
 test "a shot that is aimed at a standing hero HITS him, at every range and either weight" {
-    // The solved loft is an EQUALITY, so this is not a tolerance check on a feel dial: a target that does not move must be struck whatever the distance, and it was the slinger sailing over the hero's head at every range that said the loft was being guessed.
     const dt: f32 = 1.0 / 60.0;
     const heroY: f32 = 1.0;
     for ([_]f32{ 3, 8, 14, 20 }) |range| {
         const hero = v3(0, 0, range);
         const aim = v3(0, heroY, range);
-        // From a launch point ABOVE the target (a bow at the chest, a sling pouch over the head) and from BELOW it, since the aim line's own slope is what the old loft was fighting.
         for ([_]f32{ 1.4, 2.1, 0.4 }) |fromY| {
             var shaft = launchArrow(v3(0, fromY, 0), aim);
             var stone = launchStone(v3(0, fromY, 0), aim, 11.0, .{ .dmg = 7 });
@@ -1434,11 +1330,7 @@ test "a shot that is aimed at a standing hero HITS him, at every range and eithe
 }
 
 test "COVER IS SAMPLED BY LENGTH, so a fast shaft cannot tunnel a thin post" {
-    // THE bug: midpoint + endpoint was honest at a skeleton's 15 m/s and stopped being honest at the hero's
-    // 40 m/s aimed shaft, which opens the gaps to 0.33 m at 60 fps and 0.67 m on a slow frame — a fence post
-    // fits in that. The sample COUNT follows the step now.
-    // A thin post, well under the old gaps, sitting a QUARTER of the way along the step — which is exactly
-    // where the two fixed samples (halfway and the end) never look.
+    // THE bug: midpoint + endpoint was honest at a skeleton's 15 m/s and stopped being honest at the hero's 40 m/s aimed shaft, which opens the gaps to 0.33 m at 60 fps and 0.67 m on a slow frame — a fence post fits in that.
     var post = [_]collision.Solid{collision.circle(-0.5, 0, 0.09)};
     post[0].h = 4.0;
     const prev = v3(-1, 1, 0);
@@ -1448,7 +1340,6 @@ test "COVER IS SAMPLED BY LENGTH, so a fast shaft cannot tunnel a thin post" {
     try std.testing.expectEqual(collision.Surface.stone, c.?.surf);
     // …and it reports the EARLIEST contact — the post's near face, not somewhere past it.
     try std.testing.expect(c.?.at.x > -0.7 and c.?.at.x < -0.35);
-    // The old two samples, for the record — this is the case that used to pass straight through.
     try std.testing.expect(collision.blockerAt(mathx.lerpV(prev, to, 0.5), ARROW_COVER_MARGIN, &post) == null);
     try std.testing.expect(collision.blockerAt(to, ARROW_COVER_MARGIN, &post) == null);
     // A clear lane is still clear, and a zero-length step does not divide by anything.
@@ -1457,19 +1348,16 @@ test "COVER IS SAMPLED BY LENGTH, so a fast shaft cannot tunnel a thin post" {
 }
 
 test "a FLAT launch adds no loft, so a reticle-aimed shaft goes where the reticle is" {
-    // THE bug: the loft solve is only right for a REAL target distance. Aimed down a camera ray at an
-    // arbitrary far mark it over-corrects for everything nearer — solved at 60 m, an aimed shot flew half a
-    // metre high at 10 m, which on a reticle-aimed weapon is the reticle lying about where the shot goes.
+    // THE bug: the loft solve is only right for a REAL target distance.
     const from = v3(0, 1.5, 0);
     const far = v3(0, 1.5, 60);
     const flat = launchShaft(from, far, 40.0, .{}, false);
     try std.testing.expectApproxEqAbs(@as(f32, 0), flat.vel.y, 1e-5); // dead level out of the muzzle
     const lofted = launchShaft(from, far, 40.0, .{}, true);
-    try std.testing.expect(lofted.vel.y > 0.5); // …where a shot at a real point is thrown UP to arc onto it
+    try std.testing.expect(lofted.vel.y > 0.5);
     // The loft is the ONLY difference: same speed, same bearing.
     try std.testing.expectApproxEqAbs(@as(f32, 40), mathx.lenXZ(flat.vel), 1e-4);
     try std.testing.expectApproxEqAbs(mathx.lenXZ(flat.vel), mathx.lenXZ(lofted.vel), 1e-4);
-    // …and WHAT IT DEALS rides on the shaft from the launch, so nothing has to re-derive it where it lands.
     try std.testing.expectEqual(ARROW_HIT.dmg, launchArrow(from, far).blow.dmg);
     try std.testing.expectEqual(@as(f32, 9), launchStone(from, far, 11.0, .{ .dmg = 9 }).blow.dmg);
 }

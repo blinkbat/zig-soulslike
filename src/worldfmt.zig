@@ -12,11 +12,7 @@ pub const VERSION: u32 = 1;
 /// Playable half-extent when a map doesn't say otherwise; the world spans 2x this per axis.
 pub const DEFAULT_HALF: f32 = 280.0;
 
-/// Sanity bound on a `half:` record, and a POSITIVE one. It is THE UNIFORM GRID'S CEILING, not a
-/// round number: past `env.MAX_HALF` every prop, collider and cull cell beyond the grid's last row
-/// is CLAMPED into it (`env.cellCoord`), so a bigger world loads without complaint and then answers
-/// collision and culling queries for the wrong region. A comptime assert in `env.zig` pins the two
-/// together, so shrinking the grid is a compile error rather than a silently wrong map.
+/// Sanity bound on a `half:` record, and a POSITIVE one.
 pub const MAX_DECLARED_HALF: f32 = 312.0;
 
 pub const MAX_OPS: usize = 2048;
@@ -36,15 +32,11 @@ pub const OpKind = enum(u8) {
     belt,
     /// Annulus scatter about a centre, r0..r1 — shorelines, reed beds, talus, drowned ruin.
     disc,
-    /// Evenly spaced ring facing its centre, one position left out (`skip`): a full ring reads as a fence.
     ring,
     /// A broken run from a→b: segments nose to tail, some collapsed.
     line,
-    /// Sow a climber at the FEET of stonework already standing in a box — ivy needs a wall behind it, so this walks the props that are THERE rather than scattering over ground.
     ivy,
-    /// The world's rock rim: four walls of overlapping cliff segments, height from two long waves so the crest reads as topography rather than jitter.
     edge,
-    /// The lattice ground cover over the whole world: one candidate per cell, kind and density from the zone it lands in, scaled by the cover field.
     cover,
 };
 
@@ -56,7 +48,6 @@ pub const Avoid = struct {
     solid: bool = false, // anything with a footprint collider (queried against the solid grid)
 };
 
-/// Which axis a belt's density gradient runs along; `.none` is a flat belt.
 pub const Axis = enum(u8) { none, x, z };
 
 /// One authoring operation.
@@ -80,9 +71,7 @@ pub const Op = struct {
     skip: i32 = -1, // ring: the position left empty; -1 = none
     seed: u64 = 0,
     chance: f32 = 1.0, // per-candidate acceptance (ivy takes, line segment survives)
-    /// Disc radial bias: 0 spreads evenly across the annulus, 1 is area-uniform (sqrt), clustering toward the inner edge — how a lily raft sits on its rootstock.
     bias: f32 = 0,
-    /// Respect the world's COVER FIELD (the noise that carves clearings, so a clearing is a clearing for everything standing in it)?
     field: bool = false,
     /// Belt density gradient: acceptance ramps `gFloor`→1 as the axis runs gA→gB.
     gAxis: Axis = .none,
@@ -90,7 +79,6 @@ pub const Op = struct {
     gB: f32 = 0,
     gFloor: f32 = 0,
     avoid: Avoid = .{},
-    /// Weighted kind mix, weight BY REPETITION — the cheapest honest weighting for a small set, and it keeps a region's character readable as one line of text.
     mix: [MAX_MIX]Kind = undefined,
     nmix: u8 = 0,
     /// What is in the chest this op placed.
@@ -144,7 +132,6 @@ comptime {
     }
 }
 
-// Per-kind defaults for the non-positional fields, so a hand-written line behaves the way that op is meant to without spelling out every dial.
 pub fn defaults(k: OpKind) Op {
     var o = Op{ .op = k };
     switch (k) {
@@ -164,7 +151,6 @@ pub fn defaults(k: OpKind) Op {
 }
 
 
-/// What the lattice scatter grows inside this rect, and how thickly WHERE IT IS THICKEST: `density` is the PEAK and the cover field scales it down to nothing in the clearings.
 pub const Zone = struct {
     name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
     x: f32 = 0,
@@ -178,7 +164,6 @@ pub const Zone = struct {
     pub fn contains(self: *const Zone, px: f32, pz: f32) bool {
         return px >= self.x and px <= self.x1 and pz >= self.z and pz <= self.z1;
     }
-    /// OPTIONAL, not a fallback kind: `mix` is `undefined` until filled and `Rng.intn(0)` returns 0, so an unguarded version read raw heap bytes as a `props.Kind` — an out-of-range enum, illegal whatever those bytes are.
     pub fn pick(self: *const Zone, rng: *mathx.Rng) ?Kind {
         if (self.nmix == 0) return null;
         return self.mix[@intCast(rng.intn(@intCast(self.nmix)))];
@@ -188,13 +173,11 @@ pub const Zone = struct {
     }
 };
 
-/// A circle the canopy and the cover scatter keep out of — the stone circle's glade, the cottage yard.
 pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 
 /// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at comptime and `kobold.roleOf` reads the three kobold entries as a contiguous run off `berserker`, so inserting a kind in the middle silently renumbers both.
-pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling };
+pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac };
 
-/// WHAT EACH FOE IS CALLED — the owner's names, and the only strings any UI should ever show for one.
 pub fn foeName(k: FoeKind) [:0]const u8 {
     return switch (k) {
         .toad => "Giant Toad",
@@ -205,6 +188,7 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
         .slinger => "Kobold Slinger",
         .brood_mother => "Brood Mother",
         .broodling => "Broodling",
+        .brood_sac => "Egg Sac",
     };
 }
 
@@ -221,10 +205,8 @@ pub const Foe = struct {
 /// How many of ONE kind a map may post.
 pub const MAX_PER_KIND: usize = 24;
 
-/// The hero's start lane, kept clear of every scatter (the `--shot` corridor and the live start), so walking straight out of the grace is never blocked by something that grew.
 pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 = 30 };
 
-// A material id per grid cell, 0 = UNPAINTED, meaning "leave the procedural ground exactly as it is" — so the authored look survives painting by construction and a fresh map's grid is empty.
 
 pub const SOIL_N: usize = @intCast(gfx.SOIL_N);
 pub const SOIL_CELLS: usize = SOIL_N * SOIL_N;
@@ -249,16 +231,10 @@ pub const Soil = enum(u8) {
 comptime {
     // The shader's soilColor() hard-codes ids 1..6 and falls through to moss.
     std.debug.assert(Soil.N == 7);
-    // …and its `soilHard` hard-codes ONE id, with the same trap: a reordered enum would give the crisp
-    // edge to whichever material inherited the number. Pinned to `hardEdge`'s answer for EVERY
-    // material rather than to stone's ordinal, because the two used to state "stone is the crisp one"
-    // INDEPENDENTLY — `hardEdge` had no caller at all, so a second hard material added to it would
-    // have left the shader blending that one, silently and visible only as a soft margin.
     const SHADER_HARD_ID = 3; // `shaders.zig`: soilHard(id) is `id == 3`
     for (0..Soil.N) |i| std.debug.assert(Soil.hardEdge(@enumFromInt(i)) == (i == SHADER_HARD_ID));
 }
 
-/// FULL COVERAGE — what an unpainted-with-opacity cell holds, and the value the whole grid defaults to. 255 rather than 0 on purpose: every map authored before coverage existed has no `soilcov` record, so it loads as "every cell fully covered" and renders exactly as it always did.
 pub const COV_FULL: u8 = 255;
 
 pub fn covF(v: u8) f32 {
@@ -310,7 +286,6 @@ pub fn sampleHeight(field: []const u8, half: f32, px: f32, pz: f32) f32 {
     std.debug.assert(field.len == HEIGHT_CELLS);
     const last: f32 = @floatFromInt(HEIGHT_N - 1);
     const step = 2 * half / last; // POINT pitch: N points, N-1 gaps
-    // Clamped rather than zeroed outside: past the rim the ground continues at the edge's height, which is what the terrain skirt draws and what keeps an actor at the bound from falling.
     const fx = mathx.clampF((px + half) / step, 0, last);
     const fz = mathx.clampF((pz + half) / step, 0, last);
     const x0: usize = @intFromFloat(@floor(fx));
@@ -336,10 +311,8 @@ pub fn sampleGrad(field: []const u8, half: f32, px: f32, pz: f32) [2]f32 {
     return .{ (hx1 - hx0) / (2 * step), (hz1 - hz0) / (2 * step) };
 }
 
-/// A touched-lattice rect that contains nothing, as `lo > hi` on both axes — what `Map.sculpt` reports for a stroke that missed the grid, so a caller's rebuild loops simply do not run.
 pub const EMPTY_SPAN: [4]usize = .{ 1, 1, 0, 0 };
 
-/// The lattice-point index range a brush of radius `r` centred at `c` reaches on one axis, INCLUSIVE, or null when it misses the grid entirely.
 fn pointSpan(c: f32, r: f32, half: f32, step: f32) ?[2]usize {
     const last: f32 = @floatFromInt(HEIGHT_N - 1);
     const a = @ceil((c - r + half) / step);
@@ -357,7 +330,6 @@ pub const Sculpt = enum {
     raise,
     /// …and down.
     lower,
-    /// Pull every point toward the average of its neighbours — the dial that turns a lumpy raise into a bank you can walk.
     smooth,
     /// Flatten toward the height under the brush's centre — terraces, building pads, a road.
     flatten,
@@ -439,7 +411,6 @@ pub const Map = struct {
         rim.seed = 1002;
         for (props.CLIFFS, 0..) |k, i| rim.mix[i] = k;
         rim.nmix = props.CLIFFS.len;
-        // Before the cover op: the ground cover queries the solid grid, so the rim has to exist by then or grass grows through the cliffs.
         self.ops[1] = self.ops[0];
         self.ops[0] = rim;
         self.nops = 2;
@@ -504,7 +475,6 @@ pub const Map = struct {
         return @min(cz, SOIL_N - 1) * SOIL_N + @min(cx, SOIL_N - 1);
     }
 
-    /// Paint a disc of soil at `opacity` (0..1 — how strongly the material ends up covering the ground).
     pub fn paintSoil(self: *Map, px: f32, pz: f32, radius: f32, id: Soil, opacity: f32) bool {
         const cell = self.cellSize(SOIL_N);
         const r2 = radius * radius;
@@ -517,9 +487,7 @@ pub const Map = struct {
             var cx: usize = 0;
             while (cx < SOIL_N) : (cx += 1) {
                 const wx = -self.half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
-                // The COLUMN reject the row above already had: a stroke runs every frame the mouse
-                // moves, and without it every cell of every in-range row paid the full distance, the
-                // incumbent-material contest and a `covByte` round-trip to be told it was 100 m away.
+                // The COLUMN reject the row above already had: a stroke runs every frame the mouse moves, and without it every cell of every in-range row paid the full distance, the incumbent-material contest and a `covByte` round-trip to be told it was 100 m away.
                 if (@abs(wx - px) > radius + cell) continue;
                 const dx = wx - px;
                 const dz = wz - pz;
@@ -527,7 +495,7 @@ pub const Map = struct {
                 if (d2 > r2) continue;
                 const i = cz * SOIL_N + cx;
                 const v: u8 = @intFromEnum(id);
-                // ERASING is not a weak paint and must not be contested — `none` clears the cell outright wherever the disc touches it, which is what an eraser is.
+                // ERASING is not a weak paint and must not be contested
                 if (id == .none) {
                     if (self.soil[i] != 0 or self.soilCov[i] != COV_FULL) {
                         self.soil[i] = 0;
@@ -565,7 +533,7 @@ pub const Map = struct {
             var cx: usize = 0;
             while (cx < WATER_N) : (cx += 1) {
                 const wx = -self.half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
-                if (@abs(wx - px) > radius + cell) continue; // …and the column reject, as in paintSoil
+                if (@abs(wx - px) > radius + cell) continue;
                 const dx = wx - px;
                 const dz = wz - pz;
                 if (dx * dx + dz * dz > r2) continue;
@@ -633,15 +601,13 @@ pub const Map = struct {
         const hi = xs[1];
         const zlo = zs[0];
         const zhi = zs[1];
-        // FLATTEN's target and SMOOTH's source are both read BEFORE anything is written: a flatten that re-read its own output would creep the target as the brush moved, and a smooth done in place is a directional blur that drags the terrain toward the direction the loops run.
         const target = self.heightAt(px, pz);
         var before: [HEIGHT_N]f32 = undefined; // row iz's heights as they were before this stroke…
-        var above: [HEIGHT_N]f32 = undefined; // …and row iz−1's, which the loop has since overwritten
+        var above: [HEIGHT_N]f32 = undefined;
         var changed = false;
         var iz = zlo;
         while (iz <= zhi) : (iz += 1) {
             if (mode == .smooth) {
-                // The first row's neighbour above is outside the stroke and so still untouched; every later row takes the copy the previous iteration left in `before`.
                 if (iz == zlo) {
                     if (iz > 0) {
                         for (0..HEIGHT_N) |ix| above[ix] = heightOf(self.height[(iz - 1) * HEIGHT_N + ix]);
@@ -664,7 +630,6 @@ pub const Map = struct {
                     .raise => cur + amount * fall,
                     .lower => cur - amount * fall,
                     .flatten => mathx.lerpF(cur, target, mathx.clampF(amount, 0, 1) * fall),
-                    // The 4-neighbour mean, entirely from PRE-STROKE values: this row and the one above out of the two pre-pass buffers, the row below straight from the field (the loop has not reached it yet).
                     .smooth => blk: {
                         const xm = if (ix > 0) before[ix - 1] else cur;
                         const xp = if (ix + 1 < HEIGHT_N) before[ix + 1] else cur;
@@ -713,7 +678,6 @@ pub fn write(m: *const Map, w: anytype) !void {
 
     for (m.ops[0..m.nops]) |*o| try writeOp(o, w);
 
-    // The soil grid, RUN-LENGTH encoded: 4096 cells that are almost all the same value, so runs turn a 4 KB wall of digits into a handful of readable lines.
     var anyPaint = false;
     for (m.soil) |v| {
         if (v != 0) {
@@ -758,7 +722,6 @@ fn writeOp(o: *const Op, w: anytype) !void {
                 try w.writeAll(" ");
                 try writeTail(w, @field(o, name));
             }
-            // The tail carries only what differs from this kind's DEFAULTS, so a plain belt stays one short line and every key in a file is a decision somebody made.
             inline for (@typeInfo(Op).@"struct".fields) |f| {
                 if (comptime canTail(k, f.name)) {
                     if (!eqlVal(@field(o, f.name), @field(d, f.name))) {
@@ -783,7 +746,6 @@ fn writeOp(o: *const Op, w: anytype) !void {
     try w.writeAll("\n");
 }
 
-/// One painted grid, RUN-LENGTH encoded: thousands of cells that are almost all the same value, so runs turn a wall of digits into a handful of readable lines.
 fn writeGrid(w: anytype, label: []const u8, cells: []const u8) !void {
     var i: usize = 0;
     var perLine: usize = 0;
@@ -853,9 +815,9 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     m.* = .{};
     var seenVersion = false;
     var soilAt: usize = 0; // running cursor, so soil runs may wrap across lines
-    var covAt: usize = 0; // …and its coverage's
-    var waterAt: usize = 0; // …and the water mask's own
-    var hgtAt: usize = 0; // …and the sculpted ground's
+    var covAt: usize = 0;
+    var waterAt: usize = 0;
+    var hgtAt: usize = 0;
     var lines = std.mem.splitScalar(u8, text, '\n');
     var ln: usize = 0;
     while (lines.next()) |raw| {
@@ -885,16 +847,14 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             m.clearings[m.nclearings] = .{ .x = try nextFloat(&it), .z = try nextFloat(&it), .r = try nextFloat(&it) };
             m.nclearings += 1;
         } else if (std.mem.eql(u8, rec, "soil")) {
-            // Runs continue ACROSS lines — `soilAt` is a running cursor over the whole grid, so the writer can wrap wherever it likes and a hand-edited file can too.
+            // Runs continue ACROSS lines
             soilAt = try readGrid(&it, &m.soil, soilAt, Soil.N);
         } else if (std.mem.eql(u8, rec, "soilcov")) {
             // Every byte is a legal coverage, so 256 like the heights.
             covAt = try readGrid(&it, &m.soilCov, covAt, 256);
         } else if (std.mem.eql(u8, rec, "water")) {
-            // The mask is one bit wide, so the ceiling is 2 — anything else in the file is a typo, and a stray 7 would otherwise become "very wet" in whatever reads it next.
             waterAt = try readGrid(&it, &m.water, waterAt, 2);
         } else if (std.mem.eql(u8, rec, "hgt")) {
-            // EVERY byte is a legal height, so the ceiling is 256 — which is why `readGrid` takes a u16 limit rather than the u8 the other two grids need.
             hgtAt = try readGrid(&it, &m.height, hgtAt, 256);
         } else if (std.mem.eql(u8, rec, "foe")) {
             if (m.nfoes >= MAX_FOES) return ParseError.TooManyFoes;
@@ -904,7 +864,6 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
                 .z = try nextFloat(&it),
                 .yaw = try nextFloat(&it),
                 .scale = try nextFloat(&it),
-                // BOUNDED HERE, where every rig inherits it: each creature turns this into an RNG stream with `@intFromFloat(@abs(seed) * ~1e5)` into a u64, so a seed past ~1e14 is not a strange-looking foe but an out-of-range cast.
                 .seed = try band(&it, 0, 1),
             };
             m.nfoes += 1;
@@ -917,7 +876,6 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
         }
     }
     if (!seenVersion) return ParseError.BadVersion;
-    // A map with no cover op has no ground cover, which LOOKS like a load failure and isn't — so it is one.
     for (m.ops[0..m.nops]) |*o| {
         if (o.op == .cover) return;
     }
@@ -932,7 +890,6 @@ fn readGrid(it: *std.mem.TokenIterator(u8, .any), cells: []u8, at: usize, lim: u
         const v = std.fmt.parseInt(u8, tok[0..xi], 10) catch return ParseError.BadNumber;
         const run = std.fmt.parseInt(usize, tok[xi + 1 ..], 10) catch return ParseError.BadNumber;
         if (v >= lim) return ParseError.BadKind;
-        // SUBTRACT, never add: `run` is a usize parsed straight out of the file, so `cur + run` overflows on any run near usize's ceiling — an integer-overflow panic in Debug, and in ReleaseFast a wrapped comparison that passes and then @memsets a wrapped range.
         if (run > cells.len - cur) return ParseError.ExtraField;
         @memset(cells[cur .. cur + run], v);
         cur += run;
@@ -951,7 +908,6 @@ fn parseZone(it: *std.mem.TokenIterator(u8, .any)) !Zone {
     z.z1 = try nextFloat(it);
     z.density = try nextFloat(it);
     z.nmix = try parseMix(it.next() orelse return ParseError.MissingField, &z.mix);
-    // A zone with no mix grows NOTHING, and `zoneAt` hands it out as the fallback for every point it covers — a bald region, a long way from the line.
     if (z.nmix == 0) return ParseError.MissingField;
     if (it.next() != null) return ParseError.ExtraField;
     return z;
@@ -1027,7 +983,6 @@ fn parseVal(comptime T: type, tok: []const u8) !T {
         .@"enum" => try enumFromName(T, tok),
         .float => try finiteFloat(T, tok),
         .int => std.fmt.parseInt(T, tok, 10) catch ParseError.BadNumber,
-        // Anything else is a LOAD ERROR, not `false`: leniency here meant `field=yes` or a typo like `field=ture` read as OFF, silently taking a belt off the cover field with nothing pointing at the line.
         .bool => blk: {
             if (std.mem.eql(u8, tok, "1") or std.mem.eql(u8, tok, "true")) break :blk true;
             if (std.mem.eql(u8, tok, "0") or std.mem.eql(u8, tok, "false")) break :blk false;
@@ -1057,10 +1012,8 @@ fn parseVal(comptime T: type, tok: []const u8) !T {
 
 
 pub const DIR = "worlds";
-/// BUILT from `DIR` and `EXT` rather than re-spelling them: the shipped map's path had the directory written out a second time, so moving the maps meant finding both.
 pub const START_MAP = DIR ++ "/01_fallen_plain" ++ EXT;
 
-// One scratch buffer for whole-file reads — a map is a few tens of KB, and a file-level buffer keeps load/save off the allocator like everything else here.
 var textBuf: [1 << 20]u8 = undefined;
 
 /// `load` parses HERE and copies out only on SUCCESS.
@@ -1113,7 +1066,6 @@ pub const Listing = struct {
             @memcpy(self.names[self.n][0..len], e.name[0..len]);
             self.n += 1;
         }
-        // Lexicographic, so the list is stable between scans instead of following whatever order the filesystem happens to hand back.
         std.mem.sort([PATH_CAP]u8, self.names[0..self.n], {}, struct {
             fn lt(_: void, a: [PATH_CAP]u8, b: [PATH_CAP]u8) bool {
                 return std.mem.order(u8, std.mem.sliceTo(&a, 0), std.mem.sliceTo(&b, 0)) == .lt;
@@ -1135,9 +1087,8 @@ pub fn pathFor(dst: []u8, name: []const u8) []const u8 {
         dst[n] = '/';
         n += 1;
     }
-    const stem = n; // where the NAME starts. The emptiness test below is against THIS, not 0: `n`
-    // already carries "worlds/", and a name of pure punctuation would otherwise slip past the fallback and produce the hidden file "worlds/.world".
-    var lastUnderscore = true; // also trims leading separators
+    const stem = n; // where the NAME starts.
+    var lastUnderscore = true;
     for (name) |c| {
         if (n + EXT.len >= dst.len) break;
         const ok = std.ascii.isAlphanumeric(c);
@@ -1217,7 +1168,6 @@ fn nextFloat(it: *std.mem.TokenIterator(u8, .any)) !f32 {
     return finiteFloat(f32, t);
 }
 
-/// …and one that must also land inside `lo..hi`, because something downstream cannot cope with it otherwise. A LOAD ERROR like every other bad field, not a clamp: silently pulling a value into range hides the typo that produced it.
 fn band(it: *std.mem.TokenIterator(u8, .any), lo: f32, hi: f32) !f32 {
     const v = try nextFloat(it);
     if (v < lo or v > hi) return ParseError.BadNumber;
@@ -1289,7 +1239,6 @@ test "the soil grid and foe records survive a round trip" {
     m.blank("Round Trip");
     // A painted patch plus a lone cell, so both a long run and a one-cell run are exercised.
     _ = m.paintSoil(0, 0, 30, .stone, 1);
-    // …and a FAINT patch beside it, so the coverage grid gets a round trip of its own rather than riding along as a single run of 255 that would pass whether it were written or not.
     _ = m.paintSoil(-60, 40, 20, .moss, 0.4);
     m.soil[SOIL_CELLS - 1] = @intFromEnum(Soil.ash);
     m.foes[0] = .{ .kind = .ogre, .x = 3, .z = -50, .yaw = 90, .scale = 1.2, .seed = 0.4 };
@@ -1314,7 +1263,6 @@ test "COVERAGE: an untouched grid costs no record, and the four rules the brush 
     defer std.testing.allocator.destroy(m);
     m.blank("Floors");
 
-    // A MAP THAT NEVER USED THE BRUSH CARRIES NO `soilcov` RECORD — the same rule the flat map's heights follow, and what keeps a world authored before coverage existed byte-identical after a re-save.
     m.soil[10] = @intFromEnum(Soil.dirt);
     {
         var buf: [1 << 18]u8 = undefined;
@@ -1332,13 +1280,11 @@ test "COVERAGE: an untouched grid costs no record, and the four rules the brush 
         try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "soilcov:") != null);
     }
 
-    // SOLID IN THE MIDDLE — the brush's core, and the thing a pure cone could not give at a 5 m lattice (see BRUSH_CORE).
     const mid = m.soilIndex(0, 0).?;
     try std.testing.expectEqual(COV_FULL, m.soilCov[mid]);
 
     _ = m.paintSoil(0, 0, 40, .stone, 0.4);
     try std.testing.expect(m.soilCov[mid] < 200);
-    // 2. …and passing over repeatedly CONVERGES ON THE DIAL rather than running away from it, which is the property that makes a hold-and-sweep brush usable at all.
     for (0..8) |_| _ = m.paintSoil(0, 0, 40, .stone, 0.4);
     try std.testing.expectApproxEqAbs(@as(f32, 0.4), covF(m.soilCov[mid]), 0.01);
 
@@ -1356,7 +1302,6 @@ test "COVERAGE: an untouched grid costs no record, and the four rules the brush 
     try std.testing.expectEqual(@as(u8, 0), m.soil[mid]);
     try std.testing.expectEqual(COV_FULL, m.soilCov[mid]);
 
-    // …and the RIM of a stroke really is softer than its middle, which is what an edge fading is.
     _ = m.paintSoil(0, 0, 40, .dirt, 1);
     const rim = m.soilIndex(0, 38).?;
     try std.testing.expect(m.soilCov[rim] < m.soilCov[mid]);
@@ -1383,7 +1328,6 @@ test "the height field round-trips, and a FLAT map writes no height record at al
         try std.testing.expectApproxEqAbs(@as(f32, 0), back.heightAt(-190, 77), 1e-6);
     }
 
-    // Now sculpt: a hill, a hollow beside it, and one lattice point set by hand at the far corner so a one-cell run is exercised as well as long ones.
     var span: [4]usize = undefined;
     try std.testing.expect(m.sculpt(-40, 20, 30, .raise, 9.0, &span));
     try std.testing.expect(m.sculpt(30, -10, 18, .lower, 4.0, &span));
@@ -1396,7 +1340,6 @@ test "the height field round-trips, and a FLAT map writes no height record at al
     var line: usize = 0;
     try parse(fbs.getWritten(), back, &line);
     try std.testing.expectEqualSlices(u8, &m.height, &back.height);
-    // …and the SHAPE survived, not just the bytes: the hill is up, the hollow is down, and untouched ground between them is still exactly zero.
     try std.testing.expect(back.heightAt(-40, 20) > 8.0);
     try std.testing.expect(back.heightAt(30, -10) < -3.0);
     try std.testing.expectApproxEqAbs(@as(f32, 0), back.heightAt(0, 200), 1e-6);
@@ -1426,7 +1369,6 @@ test "sculpt: the brush tapers, respects its radius, and cannot leave the encodi
     _ = m.sculpt(0, 0, 20, .smooth, 1.0, &span);
     try std.testing.expectApproxEqAbs(plateau, m.heightAt(0, 0), HEIGHT_STEP);
 
-    // FLATTEN takes the ground toward the height under the brush CENTRE — so a stroke started on the dome's top pulls its shoulder UP to that height rather than cutting the top off.
     var f: usize = 0;
     while (f < 6) : (f += 1) _ = m.sculpt(0, 0, 20, .flatten, 1.0, &span);
     try std.testing.expectApproxEqAbs(m.heightAt(0, 0), m.heightAt(10, 0), 0.3);
@@ -1439,7 +1381,6 @@ test "sculpt: the brush tapers, respects its radius, and cannot leave the encodi
     while (i < 80) : (i += 1) _ = m.sculpt(0, 0, 20, .raise, 12.0, &span);
     try std.testing.expect(m.heightAt(0, 0) <= HEIGHT_MAX + 1e-4);
 
-    // A stroke that MISSES the grid changes nothing and reports an empty rect, so a caller's rebuild loops don't run (and don't index a wild range).
     var out: [4]usize = undefined;
     try std.testing.expect(!m.sculpt(9000, 9000, 5, .raise, 4, &out));
     try std.testing.expect(out[0] > out[2] and out[1] > out[3]);
@@ -1471,7 +1412,6 @@ test "the height sampler is bilinear, edge-clamped, and its gradient points UPHI
 }
 
 test "blank() produces a map its own loader accepts" {
-    // `New` must hand back something that LOADS: an empty map trips NoCoverOp and shows as bare terrain, which reads as a rendering bug rather than an empty document.
     const m = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(m);
     const back = try std.testing.allocator.create(Map);
@@ -1514,7 +1454,6 @@ test "a value that only LOOKS parseable is a load error too" {
     var m = Map{};
     var ln: usize = 0;
     const cover = "version: 1\ncover: 3.3 0.7 1.4\n";
-    // `field=ture` used to load as OFF and quietly take the belt off the cover field — a whole region thinning differently, five hundred lines from the typo.
     try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=ture\n", &m, &ln));
     try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=yes\n", &m, &ln));
     // …and `0`/`false` still mean off, so the writer's own output round-trips.
@@ -1527,10 +1466,8 @@ test "a value that only LOOKS parseable is a load error too" {
     // An absurd or non-positive `half` is a hang / an inverted world, not a big map.
     try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 0\n" ++ cover[11..], &m, &ln));
     try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 99999\n" ++ cover[11..], &m, &ln));
-    // …and the ceiling is the PROP GRID's, not a round number: one metre past it every prop and
-    // collider out there is clamped into the rim cells and collision answers for the wrong region.
     try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 313\n" ++ cover[11..], &m, &ln));
-    try parse("version: 1\nhalf: 312\n" ++ cover[11..], &m, &ln); // …and the last legal one loads
+    try parse("version: 1\nhalf: 312\n" ++ cover[11..], &m, &ln);
     try std.testing.expectApproxEqAbs(MAX_DECLARED_HALF, m.half, 1e-4);
     try parse("version: 1\nhalf: 280\n" ++ cover[11..], &m, &ln);
     try std.testing.expectApproxEqAbs(DEFAULT_HALF, m.half, 1e-4);
@@ -1579,6 +1516,6 @@ test "reorder preserves every other op's position" {
     m.reorder(0, 3); // 0,1,2,3,4 -> 1,2,3,0,4
     const want = [_]i32{ 1, 2, 3, 0, 4 };
     for (want, 0..) |v, i| try std.testing.expectEqual(v, m.ops[i].n);
-    m.reorder(3, 0); // and back
+    m.reorder(3, 0);
     for (0..5) |i| try std.testing.expectEqual(@as(i32, @intCast(i)), m.ops[i].n);
 }

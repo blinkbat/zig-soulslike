@@ -86,7 +86,6 @@ pub const sceneVS =
     \\    gl_Position = mvp*vec4(p, 1.0);
     \\}
 ;
-// Lighting model (softness tricks ported from zig-diablo/zig-rts): - BARELY-WRAPPED LAMBERT: (N.L + 0.12)/1.12 clamped — shaded faces roll off gently. - HEMISPHERE AMBIENT: cool sky from above, warm dirt bounce from below. - CAST SHADOW (3x3 PCF): the shadow term kills the sun AND eats the ambient, so shadow pools run deep and cool without collapsing to black. - EMISSIVE CHANNEL: vertex alpha < 255 marks self-lit material (embers, glints). - POINT LIGHTS: up to MAX_LIGHTS warm torch/fire lights, quadratic falloff to zero at their radius, HEAVILY wrapped (+0.35) so a torch fills a room instead of spotlighting the one wall it faces.
 pub const sceneFS =
     \\#version 330
     \\in vec3 fragPosition;
@@ -481,14 +480,13 @@ pub const sceneFS =
     \\  // AN EMBER IS THE OPPOSITE OF SMOKE: nearly solid, and it does not dissolve — it WINKS OUT.
     \\  if (mi == 13) outA = EMBER_A*smoothstep(0.0, 0.05, fragLife)*(1.0 - smoothstep(0.55, 1.0, fragLife))
     \\                     *(0.55 + 0.45*sin(uTime*17.0 + fragLife*29.0));
-    \\  // …and the CURRENT DRAW may be asked to go see-through on top of all that (the hero under an aim,
+    \\  // …and the CURRENT DRAW may be asked to go see-through on top of all that (the hero under an aim
     \\  // who otherwise fills the frame at that boom length). Per-draw like `hitFlash`, and multiplied in
     \\  // LAST so it thins the flame and the smoke by the same fraction rather than replacing their own.
     \\  finalColor = vec4(outc, outA*fade);
     \\}
 ;
 
-// 2D gradient): vertical slate gradient, a golden bank + aureole + disc around the sun, and a streaky fbm cloud deck with warm sunward rims.
 pub const skyVS =
     \\#version 330
     \\in vec3 vertexPosition;

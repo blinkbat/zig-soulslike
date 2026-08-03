@@ -6,7 +6,6 @@ const art = @import("propart.zig");
 
 const v3 = mathx.v3;
 const Builder = gfx.Builder;
-// The shared vocabulary this file draws on, aliased so a mesh body still reads as a recipe (`art.STONE_DK` in front of every colour buries the shape in namespace).
 const BARK = art.BARK;
 const BARK_DK = art.BARK_DK;
 const BERRY = art.BERRY;
@@ -66,7 +65,6 @@ pub fn patchMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A low scrub bush: a rounded mound of many small leafy lobes (overlapping fat little tapered cylinders, domed — fuller/taller toward the middle), a couple of bare twigs poking through, grass at the skirt.
 pub fn shrubMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     b.setMat(.plant);
@@ -150,7 +148,6 @@ pub fn glowMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A BUSH — bigger and rounder than the scrub shrub: a dome of overlapping leaf masses on a few woody stems, the crown catching gold where the sun would hit it.
 pub fn bushMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(6161);
@@ -175,11 +172,9 @@ pub fn bushMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A BRAMBLE tangle: thin arcing canes crossing each other every which way, small dark leaves clustered along them, a few berries.
 pub fn brambleMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(6262);
-    // Canes stay LOW and mostly buried in leaf: at full height with bare dark stems they read as a black spiky star on the grass — visual noise rather than undergrowth.
     b.setMat(.wood);
     var i: i32 = 0;
     while (i < 10) : (i += 1) {
@@ -212,7 +207,6 @@ pub fn brambleMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A FERN clump: arching fronds — a long tapered midrib with leaflets stepped down both sides, shrinking toward the tip.
 pub fn fernMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(6363);
@@ -268,7 +262,6 @@ pub fn grassTallMesh(shader: rl.Shader) rl.Model {
         const h = rng.range(0.55, 1.10);
         blade(&b, x, z, h, mathx.cosf(la) * lean, mathx.sinf(la) * lean, 0.020, if (rng.float() < 0.35) GRASS_GRN else bladeColor(&rng));
     }
-    // A few seed stalks over the top, which is what gives a clump its outline at distance.
     var s: i32 = 0;
     while (s < 3) : (s += 1) {
         const la = rng.angle();
@@ -293,7 +286,6 @@ pub fn cloverMesh(shader: rl.Shader) rl.Model {
         const z = mathx.sinf(a) * d;
         const h = rng.range(0.05, 0.13);
         b.addCylinder(v3(x, 0, z), v3(x, h, z), 0.008, 0.006, 4, STEM);
-        // Three leaflets per stem, which is what makes it read as clover and not as pebbles.
         var l: i32 = 0;
         while (l < 3) : (l += 1) {
             const la = a + std.math.tau * @as(f32, @floatFromInt(l)) / 3.0 + rng.signed() * 0.3;
@@ -310,7 +302,6 @@ pub fn cloverMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A MOSS patch: a damp low swell of soft green creeping over the ground, a couple of shades of it.
 pub fn mossMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3003);
@@ -332,7 +323,6 @@ pub fn mossMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// MUSHROOMS: a cluster of caps of differing ages on the wood's floor — domed, pale-stalked, a couple flattened out and one still a button.
 pub fn mushroomsMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3004);
@@ -366,7 +356,6 @@ pub fn nettlesMesh(shader: rl.Shader) rl.Model {
         const z = mathx.sinf(a) * d;
         const h = rng.range(0.45, 0.88);
         b.addCylinder(v3(x, 0, z), v3(x + rng.signed() * 0.07, h, z + rng.signed() * 0.07), 0.013, 0.008, 4, NETTLE);
-        // Leaves are BROAD and have thickness, and there are more of them: at 1.4 cm thick and half this width the plant read as a bare stick with antennae on it, not as foliage.
         const pairs: i32 = 4 + rng.intn(3);
         var p: i32 = 0;
         while (p < pairs) : (p += 1) {
@@ -430,7 +419,6 @@ pub fn foxgloveMesh(shader: rl.Shader) rl.Model {
         const lx = mathx.cosf(la) * lean;
         const lz = mathx.sinf(la) * lean;
         b.addCylinder(v3(x, 0, z), v3(x + lx, h, z + lz), 0.016, 0.009, 4, STEM);
-        // Bells down the top half of the spire, hanging on ONE side (that's the flower's tell), biggest at the bottom.
         const nb: i32 = 5 + rng.intn(3);
         var f: i32 = 0;
         while (f < nb) : (f += 1) {
@@ -527,7 +515,6 @@ pub fn cattailsMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// LILY PADS: flat discs floating with a notch cut out of each, a couple of white blooms among them.
 pub fn lilypadsMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3011);
@@ -539,9 +526,7 @@ pub fn lilypadsMesh(shader: rl.Shader) rl.Model {
         const d = rng.range(0.0, 1.7) * @sqrt(rng.float());
         const x = mathx.cosf(a) * d;
         const z = mathx.sinf(a) * d;
-        // Pads are BIG — a real lily pad is a couple of hand-spans across, and at the old 0.16..0.34 m they were a few pixels of speckle on the water from any useful height.
         const r = rng.range(0.30, 0.58);
-        // The pad, as a very flattened blob (a disc with thickness reads better on water than a zero-thickness quad, which vanishes edge-on).
         b.addBlob(v3(x, Y, z), v3(r, 0.016, r * rng.range(0.88, 1.1)), 3, 7, if (rng.float() < 0.35) LEAF_DAMP else LILY_GRN);
         if (rng.float() < 0.22) {
             b.addBlob(v3(x + rng.signed() * 0.08, Y + 0.055, z + rng.signed() * 0.08), v3(0.055, 0.045, 0.055), 3, 6, PETAL_WHITE);
@@ -579,7 +564,6 @@ pub fn brackenMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A THICKET: chest-high tangled brush — the densest single flora prop, for filling the wood's middle distance where individual plants stop reading.
 pub fn thicketMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3013);
@@ -599,7 +583,6 @@ pub fn thicketMesh(shader: rl.Shader) rl.Model {
         const ky = h * rng.range(0.6, 0.82);
         const col = if (rng.float() < 0.5) BARK_DK else BARK;
         b.addCapsule(v3(x0, 0.0, z0), v3(kx, ky, kz), rng.range(0.030, 0.055), rng.range(0.022, 0.038), 4, col);
-        // The fall-away is SHORT: reaching far past the mass, a cane is a dowel sticking out of a bush rather than part of it.
         const tx = kx + mathx.cosf(a) * rng.range(0.12, 0.34) + rng.signed() * 0.10;
         const tz = kz + mathx.sinf(a) * rng.range(0.12, 0.34) + rng.signed() * 0.10;
         const ty = h * rng.range(0.94, 1.06);
@@ -607,7 +590,6 @@ pub fn thicketMesh(shader: rl.Shader) rl.Model {
         tips[@intCast(s)] = .{ tx, ty, tz };
     }
     b.setMat(.plant);
-    // MORE clumps and SMALLER ones, and rounder: 30 wide six-sided blobs squashed to 0.6 of their width read as hexagonal DINNER PLATES floating on the canes.
     var i: i32 = 0;
     while (i < 46) : (i += 1) {
         const a = rng.angle();
@@ -650,7 +632,6 @@ pub fn wildflowersMesh(shader: rl.Shader) rl.Model {
         b.addCylinder(v3(x, 0, z), v3(tx, h, tz), 0.009, 0.005, 4, STEM);
         const roll = rng.float();
         const col = if (roll < 0.38) PETAL_WHITE else if (roll < 0.62) PETAL_BLUE else if (roll < 0.82) PETAL else PURPLE;
-        // A little corolla of petals rather than one cube — at this size it costs 5 blobs and reads as a flower instead of a coloured speck.
         const pr = rng.range(0.024, 0.040);
         b.addBlob(v3(tx, h + 0.012, tz), v3(pr * 0.5, 0.012, pr * 0.5), 3, 5, SEED);
         var p: i32 = 0;
@@ -662,7 +643,6 @@ pub fn wildflowersMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// IVY: a creeper mound with runners climbing out of it. env sets these at the feet of walls and columns, where the runners read as going UP the stone.
 pub fn ivyMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3015);
@@ -675,7 +655,6 @@ pub fn ivyMesh(shader: rl.Shader) rl.Model {
         const r = rng.range(0.16, 0.32) * (1.0 - 0.25 * d);
         b.addBlob(v3(mathx.cosf(a) * d, rng.range(0.06, 0.30), mathx.sinf(a) * d), v3(r, r * 0.6, r), 3, 6, if (rng.float() < 0.5) IVY_GRN else LEAF_DK);
     }
-    // Runners: near-vertical stems with leaves stepped up them, all leaning the same way (they are climbing something).
     const face = rng.angle();
     var s: i32 = 0;
     while (s < 5) : (s += 1) {

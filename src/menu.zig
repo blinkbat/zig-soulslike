@@ -9,15 +9,12 @@ const item = @import("item.zig"); // the CHARACTER menu lists what the hero carr
 
 const rgba = mathx.rgba;
 
-// THE pad index (rumble.PAD) — the menu must poll the same controller the game loop and the vibration calls do, so it reads the shared constant rather than repeating a literal 0.
 const PAD = rumblemod.PAD;
 
 // The pause/debug menu, OPEN AT LAUNCH (it doubles as the start screen).
 
-/// `use` carries WHICH item, because the menu owns the cursor and the loop owns the hero — this file has no business reaching into either the bag or his vitals (the same split `chest.Opened` uses).
 pub const Action = union(enum) { none, quit, editor, use: item.Kind };
 
-// TWO OVERLAYS, TWO BUTTONS: SELECT/Esc the GAME menu (Continue/Editor/Debug/Quit), START the CHARACTER one (Inventory/Equipment).
 const Screen = enum {
     closed,
     main, // ── the GAME menu (Select) …
@@ -28,7 +25,6 @@ const Screen = enum {
     inventory,
     equipment,
 
-    /// Which button owns this screen — the screen its `back` chain bottoms out at.
     fn root(s: Screen) Screen {
         return switch (s) {
             .closed => .closed,
@@ -66,7 +62,6 @@ const DBG_WIREFRAME = 2;
 const DBG_HITBOX = 3;
 const DBG_TIMESCALE = 4;
 const DBG_CLOSE = 5;
-// Every _COUNT is DERIVED from its last row, never counted by hand: typed separately, a count and its list drift the first time a row is inserted — the labels array stays one short and the cursor wraps before it, so the new row is drawn nowhere and reachable never, silently.
 const DBG_COUNT = DBG_CLOSE + 1;
 
 // Retro rows: the filter sliders, then presets, then Reset / All Off / Close.
@@ -85,7 +80,6 @@ const ADJ_COARSE: f32 = 0.10;
 const ADJ_GLIDE_DELAY: f32 = 0.35; // seconds held before the glide kicks in
 const ADJ_GLIDE_RATE: f32 = 0.25; // intensity per second while gliding
 
-// Main rows — mainLabels() keys each label by its row index (like DBG_*/RET_*), so the labels can't drift out of lockstep with these constants.
 const MAIN_CONTINUE = 0;
 const MAIN_OPTIONS = 1;
 const MAIN_EDITOR = 2;
@@ -128,9 +122,8 @@ pub const Menu = struct {
         self.cursor = 0;
         self.screen = switch (self.screen) {
             .closed => .main,
-            .main, .character => .closed, // …a root closes rather than backing out of nothing
+            .main, .character => .closed,
             .options => .main,
-            // One prong each: folded together they had to re-test the discriminant the switch had just matched on, and the next screen added to that prong would silently inherit the wrong `else`.
             .debug => .main,
             .retro => .debug,
             .inventory, .equipment => .character,
@@ -160,7 +153,6 @@ pub const Menu = struct {
             .debug => DBG_COUNT,
             .retro => RET_COUNT,
             .character => CHR_COUNT,
-            // …and the LISTS are as long as they are: the inventory has a row per thing you carry plus a Back, so an empty bag is one row and the cursor cannot leave it.
             .inventory => @max(1, bag.distinct()) + 1,
             .equipment => EQP_COUNT,
         };
@@ -178,7 +170,6 @@ pub const Menu = struct {
             const v = &retro.values[self.cursor];
             v.* = mathx.clampF(v.* + self.adjustDelta(dt), 0, 1);
         } else if (self.screen == .options and self.cursor < OPT_MIX.len) {
-            // Through the SETTER, not a pointer into the bank: a level change has to reach the beds that are already playing, and only `sfx.setVolume` knows how to do that (see its own note).
             const m = OPT_MIX[self.cursor];
             const d = self.adjustDelta(dt);
             if (d != 0) sfx.setVolume(m, sfx.volume(m) + d);
@@ -255,7 +246,6 @@ pub const Menu = struct {
                 CHR_CLOSE => self.screen = .closed,
                 else => {},
             },
-            // The Back row acts on both lists, and on the INVENTORY a row whose kind actually does something is now usable — `item.usable` is the one place that question is answered, so the list can never offer a Use that turns out to be a no-op (which is why it offered nothing at all until the first item with an effect existed).
             .inventory, .equipment => {
                 const last = (if (self.screen == .inventory) @max(1, bag.distinct()) + 1 else EQP_COUNT) - 1;
                 if (self.cursor == last) {
@@ -327,7 +317,6 @@ pub const Menu = struct {
             .debug => self.drawCard("DEBUG", &self.debugLabels(), null),
             .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), retro.values[0..gfx.RETRO_COUNT]),
             .character => self.drawCard("CHARACTER", &characterLabels(), null),
-            // A SLICE, not a fixed array: the inventory is as long as the bag is, and `bagLabels` fills a file-scope buffer it hands back the used part of.
             .inventory => self.drawCard("INVENTORY", bagLabels(bag), null),
             .equipment => self.drawCard("EQUIPMENT", &equipLabels(), null),
         }
@@ -339,11 +328,9 @@ pub const Menu = struct {
         hud.text(hint, @divTrunc(sw - hw, 2), sh - hud.lineH(hud.HINT) - 12, hud.HINT, HINT_COL);
     }
 
-    /// `gauges`, when present, draws a bar on each of its own rows — so a screen says how many of its rows are sliders by how long the slice is, and the retro card and the sound card share one widget instead of the second one growing its own.
     fn drawCard(self: *const Menu, title: [:0]const u8, labels: []const [:0]const u8, gauges: ?[]const f32) void {
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
-        // Row height and card size are DERIVED from the font size, so growing the type scale doesn't leave rows overlapping or labels running off the card edge.
         const compact = labels.len > 8; // the long retro list packs tighter than the short menus
         const fontSize: i32 = if (compact) hud.SMALL else hud.BODY;
         const rowH: i32 = hud.lineH(fontSize) + (if (compact) @as(i32, 2) else @as(i32, 14));
@@ -419,7 +406,6 @@ var bagLabelBuf: [item.NK + 1][:0]const u8 = undefined;
 fn bagLabels(bag: *const item.Bag) [][:0]const u8 {
     var n: usize = 0;
     while (bag.nth(n)) |k| : (n += 1) {
-        // Name then count, columns aligned — a list of things you own is read down the left and totted up down the right, and a ragged right edge makes it unscannable. …and a row you can DO something with says so.
         const mark: []const u8 = if (item.usable(k)) "  USE" else "";
         bagLabelBuf[n] = std.fmt.bufPrintZ(&bagRowBuf[n], "{s: <24}{d: <4}{s}", .{ item.displayName(k), bag.count(k), mark }) catch "?";
     }
@@ -497,7 +483,6 @@ fn keyNav(dir: NavDir) struct { a: rl.KeyboardKey, b: rl.KeyboardKey } {
     };
 }
 
-// The gamepad D-pad face button for a nav direction — the pad counterpart of keyNav, so the dir→button map lives in ONE place (navPressed, adjTapped, adjHeldDir all read it).
 fn padNav(dir: NavDir) rl.GamepadButton {
     return switch (dir) {
         .up => .left_face_up,
@@ -507,7 +492,6 @@ fn padNav(dir: NavDir) rl.GamepadButton {
     };
 }
 
-// A fresh press of a direction on EITHER device — the one place the key/pad pair for a NavDir is read.
 fn dirPressed(dir: NavDir, autoRepeat: bool) bool {
     const k = keyNav(dir);
     if (rl.isKeyPressed(k.a) or rl.isKeyPressed(k.b)) return true;
@@ -522,7 +506,6 @@ fn navPressed(dir: NavDir) bool {
     return dirPressed(dir, true);
 }
 
-// Slider adjust inputs: a TAP (no key-repeat), the held direction for the glide, and the coarse-step modifier (Shift / LB).
 fn adjTapped(dir: NavDir) bool {
     return dirPressed(dir, false);
 }

@@ -24,27 +24,18 @@ fn place(off: rl.Vector3, anim: rl.Matrix, parent: rl.Matrix) rl.Matrix {
     return mul3(anim, tr(off.x, off.y, off.z), parent);
 }
 
-// A BROOD MOTHER and her BROODLINGS — one spider in two sizes (see `Role`), because they are the same
-// creature at two ages and a second rig would be the same eight legs written twice. She is slow, egg-heavy
-// and armed with two great frontward claws; she spits to hold you off her sacs and bites what reaches her.
-// They hatch three to a sac, and they are what actually crosses the ground.
 
-// PALETTE. ALBEDO IS ARITHMETIC, not taste: this sun is warm and strong, so a colour typed to look right
-// in the editor lands a whole stop light and PINK on screen (measured: albedo 58 → 173 in full sun, and
-// the red channel gains ~1.9x where the blue gains ~1.1x). Everything here is solved backwards from what
-// it must READ as — which is why a near-black chitin is authored blue-dominant, to spend the sun's warmth
-// getting back to neutral. Two things are deliberately pale, because they are what you must see first: the
-// claws (what kills you) and the venom (what she takes the floor away with).
+// PALETTE.
 const CHITIN = rgba(19, 20, 22, 255); // → ~(102,96,88): a cold near-black shell
 const CHITIN_DK = rgba(11, 12, 14, 255);
 const CHITIN_LT = rgba(30, 31, 33, 255);
 const ABDO = rgba(22, 23, 24, 255);
 const MARK = rgba(78, 58, 22, 255); // dull gold chevrons down the abdomen — lit, not luminous
 const CLAW_H = rgba(74, 74, 66, 255); // → ~(195,176,143): HORN, and the first thing you should see
-const CLAW_EDGE = rgba(110, 112, 104, 255); // …and the honed inner edge, paler still
+const CLAW_EDGE = rgba(110, 112, 104, 255);
 const FANG = rgba(70, 70, 62, 255);
 const EYE = rgba(226, 108, 40, 92); // the cluster, lit like an ember (low ALPHA drives the emissive, so
-const EYE_HOT = rgba(255, 58, 30, 58); // …these two are not on the albedo rule above) — and burning IS the tell
+const EYE_HOT = rgba(255, 58, 30, 58);
 const VENOM = rgba(42, 104, 18, 235); // → ~(150,205,80): sickly acid green
 const VENOM_DK = rgba(26, 62, 12, 255);
 const SAC_MEM = rgba(67, 93, 62, 220);
@@ -52,36 +43,31 @@ const SAC_EGG = rgba(48, 70, 38, 255);
 const SAC_VEIN = rgba(26, 22, 16, 255);
 const GORE = rgba(46, 9, 7, 235);
 
-// A HATCHLING IS THE SAME ANIMAL, PALER AND UNFINISHED: soft grey-green chitin that has not darkened, no
-// gold on it yet, and claws that are still buds.
 const B_CHITIN = rgba(42, 52, 54, 255);
 const B_CHITIN_DK = rgba(24, 30, 32, 255);
 const B_CHITIN_LT = rgba(58, 70, 70, 255);
 const B_ABDO = rgba(50, 62, 52, 255);
 
 const NP = 22;
-const CEPHALO = 0; // fused head + thorax: the eight-eye cluster and the fangs. THE ROOT.
+const CEPHALO = 0; // fused head + thorax: the eight-eye cluster and the fangs.
 const ABDOMEN = 1; // the egg-heavy bulb, hinged at the pedicel — it swells and pumps as she lays
 const ARM_L = 2; // claw arm (shoulder pivot)
 const ARM_R = 3;
-const BLADE_L = 4; // …and the scythe claw on the end of it (wrist pivot)
+const BLADE_L = 4;
 const BLADE_R = 5;
 const FEMUR_0 = 6; // 8 legs: L0..L3 then R0..R3, front to back
 const TIBIA_0 = 14;
 const NLEG = 4; // per side
 
 // Rest joints in the cephalothorax frame (origin at the GROUND SEAT under her, +Y up, +Z forward).
-const BODY_Y = 0.52; // …how high the body rides on those legs
+const BODY_Y = 0.52;
 const P_PEDICEL = v3(0, BODY_Y + 0.12, -0.28);
-/// THE CLAW ARMS ARE MOUNTED HIGH AND FORWARD, above the walking legs and clear of them: they are the
-/// silhouette, and slung at leg height they simply disappear into the other eight.
 const P_SHOULDER = v3(0.23, BODY_Y + 0.15, 0.34);
 const P_WRIST = v3(0.26, 0.00, 0.62); // in the ARM's frame, out along its length
 const HIP_X = 0.32;
 const HIP_Z0 = 0.30; // front hip…
-const HIP_DZ = 0.23; // …and the spacing back along the flank
+const HIP_DZ = 0.23;
 
-// Leg geometry — the KNEE STANDS ABOVE THE BODY, which is the whole spider silhouette.
 const FEMUR_OUT = 0.54;
 const FEMUR_UP = 0.36;
 const TIBIA_OUT = 0.40;
@@ -91,12 +77,10 @@ const HURT_R = 0.52; // hurt sphere (pre per-spider scale)
 const BODY_R = 0.62; // ground footprint for collision
 const BODY_CY = 0.56; // body centre height (camera focus + hurt sphere)
 
-// Gait: two alternating tetrapods, the way a real spider walks — 1 and 3 on one side move with 2 and 4 on
-// the other. A table rather than a formula because the PAIRING is the read, and a formula hides it.
 const LEG_PHASE = [NLEG]f32{ 0.0, 0.5, 0.0, 0.5 };
 const STRIDE = 0.62; // ground covered per full leg cycle
 const STEP_SWING = 26.0; // deg the femur sweeps fore/aft
-const STEP_LIFT = 20.0; // …and rises on the recovery half
+const STEP_LIFT = 20.0;
 const KNEE_REST = 96.0; // the standing knee angle (deg) — high and folded
 const IDLE_BOB = 0.028; // a slow breathing rise/fall at rest
 
@@ -104,13 +88,11 @@ const IDLE_BOB = 0.028; // a slow breathing rise/fall at rest
 const ARM_REST_LIFT = 24.0;
 
 const TURN_RATE = 2.4; // rad/s — she is SLOW to come round, and that is a real opening
-const TURN_RATE_B = 7.0; // …a hatchling is not
+const TURN_RATE_B = 7.0;
 
 // THE MOTHER'S NUMBERS.
 const M_SCALE = 1.55;
 const M_HP = 150.0;
-/// SHE TAKES A LOT OF STOPPING (owner's call): a heavy (22) no longer flinches her on its own, so the way
-/// through her is chained pressure and the stance break behind it, not one big swing.
 const M_POISE = 34.0;
 const M_STANCE = 58.0;
 const M_SPEED = heromod.WALK_SPEED * 0.52; // SHE CANNOT MOVE QUICKLY (owner's rule)
@@ -118,15 +100,12 @@ const M_AGGRO = 22.0;
 const M_SPIT_MIN = 4.6; // inside this she stops spitting and uses her mouth
 const M_SPIT_MAX = 19.0;
 const M_BITE_R = 2.3;
-/// HOW FAR SHE WILL LEAVE HER EGGS. She is a guard, not a hunter: past this from the clutch (or from where
-/// she was posted, before she has laid) she stops closing and holds, spitting. It is what makes the sacs
-/// worth killing rather than something to walk away from.
+/// HOW FAR SHE WILL LEAVE HER EGGS.
 const M_GUARD_R = 7.5;
 
-/// SHE REARS, THE ABDOMEN PUMPS, THE EYES BURN — and she holds it (owner's call). This is the one cue
-/// that says get out of the open, and it has to arrive early enough to be worth acting on.
+/// SHE REARS, THE ABDOMEN PUMPS, THE EYES BURN — and she holds it (owner's call).
 const SPIT_WINDUP = 1.05;
-const SPIT_THROW = 0.16; // …then the head snaps down and it leaves
+const SPIT_THROW = 0.16;
 const SPIT_RECOVER = 0.52;
 const SPIT_CD = 2.4;
 const BITE_WINDUP = 0.40; // claws fly wide, fangs come up
@@ -138,23 +117,16 @@ const LAY_DROP = 0.72; // the fraction of the lay at which the sac actually leav
 const LAY_CD = 6.5;
 const LAY_BACK = 0.95; // how far behind the seat the sac lands (pre-scale)
 
-/// HOW MANY UNHATCHED SACS SHE WILL KEEP STANDING. Killing them buys the slot back, so the fight has one
-/// answer and it is her (owner's call).
+/// HOW MANY UNHATCHED SACS SHE WILL KEEP STANDING.
 pub const MAX_SACS: usize = 3;
-/// …and what comes out of one: ONE (owner's call). Three apiece put nine hatchlings on the field off a
-/// clutch she refills, which is a swarm and not a brood.
+/// …and what comes out of one: ONE (owner's call).
 pub const PER_SAC: usize = 1;
 
-/// THE GLOB ITSELF BARELY HURTS (owner's call) — being hit by it is not the threat, and it is not meant
-/// to be. What it leaves on the ground is.
 pub const M_SPIT_HIT = combat.Hit{ .dmg = 5, .poise = 5 };
 pub const M_BITE_HIT = combat.Hit{ .dmg = 19, .poise = 22, .stance = 7 };
 /// The glob's flight, handed to the shared launcher (`archer.launchVenom`).
 pub const SPIT_SPEED: f32 = 15.0;
 
-// ── THE ACID SHE LEAVES ──────────────────────────────────────────────────────────────────────────────
-// A glob that lands puts a pool on the ground, and THAT is the weapon: she is not shooting at you, she is
-// taking the floor away from you. Standing in it is the mistake; walking through it costs almost nothing.
 
 /// A pool's full radius…
 pub const ACID_R: f32 = 1.55;
@@ -162,25 +134,18 @@ pub const ACID_R: f32 = 1.55;
 const ACID_SPREAD: f32 = 0.22;
 /// …and how long it lies there before it has eaten itself out.
 pub const ACID_LIFE: f32 = 7.5;
-/// The last of that spent visibly thinning, so "nearly gone" is a thing you can read rather than guess.
 const ACID_THIN: f32 = 2.0;
-/// IT BURNS IN PULSES, not as a drain — ER's rot does, and a smooth trickle of damage reads as a bug.
+/// IT BURNS IN PULSES, not as a drain
 pub const ACID_TICK: f32 = 0.42;
-/// …and this is the linger tax: ~15 HP/s, so a hero at full (70) has about four and a half seconds of
-/// standing in one. Crossing it costs a pulse or two.
+/// …and this is the linger tax: ~15 HP/s, so a hero at full (70) has about four and a half seconds of standing in one.
 pub const ACID_TICK_DMG: f32 = 6.4;
 const POOL_CAP: usize = 12;
 
 // THE BROODLING'S.
-/// Bigger and TALLER than the first pass (owner's call): at 0.44 a hatchling was an insect underfoot, and
-/// a thing you cannot see coming is not a threat, it is a surprise. `B_STAND` stretches it upward on top
-/// of that, so it stands over its own legs rather than sprawling like its mother.
 const B_SCALE = 0.62;
 const B_STAND = 1.22;
-/// A BIT MORE THAN THE FIRST PASS (owner's call): one light slash no longer wipes it, two do, and a heavy
-/// still ends it outright. Fragile, but no longer something that dies by being looked at.
 const B_HP = 18.0;
-const B_POISE = 1.0; // …and flinches at everything, always
+const B_POISE = 1.0;
 const B_STANCE = 6.0;
 const B_SPEED = heromod.RUN_SPEED * 0.95; // you can outrun it, but not while looking away
 const B_AGGRO = 16.0;
@@ -199,9 +164,6 @@ const B_LEAP_CD = 1.9;
 const B_LEAP_IMPACT_R = 1.25;
 const B_LEAP_FRONT_DOT = 0.20;
 
-// WHAT A HATCHLING IS WORTH, which is very little (owner's call): it is a thing that arrives in numbers
-// and takes your attention, not a thing that takes your health bar. Its pounce is still the bigger of the
-// two, or there would be no reason to respect the tell.
 pub const B_BITE_HIT = combat.Hit{ .dmg = 3, .poise = 4 };
 pub const B_LEAP_HIT = combat.Hit{ .dmg = 5, .poise = 8 };
 
@@ -217,14 +179,14 @@ pub const B_RUNES: u32 = 25;
 
 // THE SAC.
 const SAC_HP = 18.0;
-const SAC_R = 0.44; // hurt sphere / drawn radius
-/// SECONDS OF VISIBLE SWELLING BEFORE IT SPLITS — long (owner's call), because the whole point of a sac is
-/// that it is a problem you can go and solve, and six seconds was not enough time to decide to.
-pub const SAC_HATCH = 14.0;
-const SAC_BURST_DUR = 0.55; // …and how long the wreck of one lies there before it is gone
+const SAC_R = 0.44; // the drawn radius…
+/// …and a FATTER one to hit, deliberately.
+const SAC_HURT_R = 0.62;
+/// SECONDS OF VISIBLE SWELLING BEFORE IT SPLITS — long (owner's call), because the whole point of a sac is that it is a problem you can go and solve, and six seconds was not enough time to decide to.
+pub const SAC_HATCH = 11.5;
+const SAC_BURST_DUR = 0.55;
 const SAC_PULSE_HZ = 1.6;
-/// A SAC HAS NO POISE AND NO STANCE: it does not flinch, it bursts. Named rather than a bare `1e9` typed
-/// twice, because what it means is "this meter is not part of the design", not "a big number".
+/// A SAC HAS NO POISE AND NO STANCE: it does not flinch, it bursts.
 const SAC_UNFLINCHING: f32 = 1e9;
 
 const FX_MAX = 26;
@@ -232,10 +194,8 @@ const Particle = foe.Particle;
 const DUST = foe.DUST;
 const MOTE = foe.MOTE;
 
-// ── ROLES ────────────────────────────────────────────────────────────────────────────────────────────
 
-/// The two ages of one animal. As with the kobold's roles they are a CONTIGUOUS RUN of map foe kinds, so
-/// `wf.FoeKind` → `Role` is an ordinal shift rather than a switch that can quietly disagree with the enum.
+/// The two ages of one animal.
 pub const Role = enum { mother, broodling };
 
 /// …and the run is written down once and pinned, because the shift is only sound while it holds.
@@ -277,19 +237,15 @@ fn spec(r: Role) Spec {
     };
 }
 
-// ── THE DECISIONS, as pure functions of range + cooldowns (testable without a world) ────────────────
 
 const MChoice = enum { hold, close, spit, bite, lay };
-/// `tether` is her distance from the clutch she is guarding — she will not walk past `M_GUARD_R` of it.
 fn classifyMother(dist: f32, tether: f32, spitReady: bool, biteReady: bool, layWanted: bool) MChoice {
     if (dist > M_AGGRO) return .hold;
     if (dist <= M_BITE_R) return if (biteReady) .bite else .hold;
-    // THE EGGS COME FIRST, and only out of reach of his sword: laying is a long open commitment and she
-    // will not take it with him on top of her.
     if (layWanted and dist > M_BITE_R * 1.6) return .lay;
     if (dist <= M_SPIT_MAX and dist >= M_SPIT_MIN) return if (spitReady) .spit else .hold;
     if (dist < M_SPIT_MIN) return .close; // between her spit and her teeth — walk in and use them
-    if (tether >= M_GUARD_R) return .hold; // …at the end of her guard: she holds the clutch and spits
+    if (tether >= M_GUARD_R) return .hold;
     return .close;
 }
 
@@ -303,10 +259,8 @@ fn classifyBroodling(dist: f32, leapReady: bool, biteReady: bool) BChoice {
 
 const State = enum { idle, walk, windup, strike, recover, lay, leap, stunlight, stunheavy, dead };
 
-// ── MESHES ───────────────────────────────────────────────────────────────────────────────────────────
 
-/// One age's colours and proportions. Everything below is authored through this, so the hatchling is the
-/// same eight legs at a different age rather than a second rig to keep in step.
+/// One age's colours and proportions.
 const Skin = struct {
     chitin: rl.Color,
     dark: rl.Color,
@@ -314,28 +268,18 @@ const Skin = struct {
     abdo: rl.Color,
     mark: rl.Color,
     abdoR: f32, // she is EGG-HEAVY; a hatchling is not
-    clawLen: f32, // …and its claws are still buds
+    clawLen: f32,
     legR: f32,
-    /// HOW LONG THE WALKING LEGS ARE, against the authored length. Hers are SHORT (owner's call): a swollen
-    /// body slung low between stubby legs is a thing that laboured to get here, where the same body up on
-    /// full-length legs is a thing that could run you down.
+    /// HOW LONG THE WALKING LEGS ARE, against the authored length.
     legScale: f32,
     /// …and how far the abdomen hangs BELOW the pedicel, so hers drags on the ground behind her.
     abdoDrop: f32,
-    /// How high the pose CARRIES the arms. Hers is near zero because the arch is authored into the mesh
-    /// (see `armMesh`); a hatchling's straight little arm needs the pose to raise it.
+    /// How high the pose CARRIES the arms.
     armLift: f32,
-    /// Ground covered per full leg cycle. LONGER means the legs cycle less often for the same speed —
-    /// which is the whole of "its legs move too fast" (owner's call): a short stride on a quick creature
-    /// is a sewing machine.
+    /// Ground covered per full leg cycle.
     stride: f32,
     marks: bool,
-    /// SHE IS BUILT TO A DIFFERENT DRAWING (owner's sketch): a great round abdomen, a BALL of a head
-    /// carrying its eyes as scattered dots, a segmented pedipalp slung under it, and two thin arms that
-    /// arch high OVER the whole thing. A hatchling keeps the flat-carapace body it already had.
     matron: bool,
-    /// …and she is FURRED — bristles over the abdomen and shoulders, which is the other half of why a
-    /// spider reads as an animal rather than as a machine (owner's call).
     fur: bool,
     seed: u64,
 };
@@ -352,16 +296,11 @@ fn skinOf(r: Role) Skin {
 
 /// The clearance a standing foot keeps under the hip, at the authored leg length.
 const FOOT_CLEAR = 0.07;
-/// …and the clearance a DRAGGING abdomen keeps: it rides ON the ground, so this is just enough to stop it
-/// z-fighting the grass.
 const DRAG_CLEAR = 0.03;
-/// WHERE THE HIPS HAVE TO SIT for feet of THIS length to reach the ground — derived, not typed, so
-/// shortening a skin's legs lowers the body that carries them instead of leaving it hovering.
 fn hipHeight(sk: Skin) f32 {
     return (TIBIA_DOWN - FEMUR_UP) * sk.legScale + FOOT_CLEAR;
 }
-/// …and how far the whole animal therefore rides below where the meshes were authored. Zero at full leg
-/// length, which is what keeps the hatchling byte-identical to the rig everything was drawn against.
+/// …and how far the whole animal therefore rides below where the meshes were authored.
 fn rideDropSkin(sk: Skin) f32 {
     return (P_SHOULDER.y - 0.02) - hipHeight(sk);
 }
@@ -369,11 +308,7 @@ fn rideDrop(r: Role) f32 {
     return rideDropSkin(skinOf(r));
 }
 
-/// THE ABDOMEN'S HALF-HEIGHT and where its centre has to sit, both derived. A dragging abdomen RESTS on
-/// the ground, which means its centre is one radius up from the earth — and the earth is `rideDropSkin`
-/// below the pedicel this part hangs off, because shortening her legs lowered everything with them.
-/// Typing the offset by hand instead is what buried a metre of her: the ball, the drop and the leg length
-/// were three numbers that each had to be re-guessed whenever any other one moved.
+/// THE ABDOMEN'S HALF-HEIGHT and where its centre has to sit, both derived.
 fn abdoHalfY(sk: Skin) f32 {
     return sk.abdoR * (if (sk.matron) @as(f32, 0.96) else 0.86);
 }
@@ -382,18 +317,15 @@ fn abdoCentreY(sk: Skin) f32 {
     return abdoHalfY(sk) + DRAG_CLEAR - (P_PEDICEL.y - rideDropSkin(sk));
 }
 
-/// THE ARMS NEVER STOP MOVING (owner's call): two limbs waving out of time with each other, which is what
-/// separates a thing that is agitated from a statue with blades on it. Per-side phase, so they never
-/// mirror — a matched pair reads as a mechanism.
 const FLAIL_HZ = 2.3;
 const FLAIL_SPREAD = 15.0; // deg of yaw…
-const FLAIL_LIFT = 11.0; // …and of raise, out of phase with it
+const FLAIL_LIFT = 11.0;
 
 pub const Model = struct {
     mesh: [2][NP]rl.Mesh, // [role][part]
     eyes: [2][2]rl.Mesh, // [role][burning]
     sac: rl.Mesh,
-    wreck: rl.Mesh, // …and what is left of one that was cut open
+    wreck: rl.Mesh,
     pool: rl.Mesh,
     mat: rl.Material,
 
@@ -442,10 +374,6 @@ fn buildMeshes(sk: Skin) [NP]rl.Mesh {
     return mesh;
 }
 
-/// The fused head-and-thorax: a low domed carapace over a pale sternum, with the fangs slung under the
-/// front of it. FLESH IS ROUND — the carapace is a blob, and only the fangs and the claw edges are cut.
-/// FUR: fine bristles standing off a mass, scattered over its surface with a seeded rng. Thin, short, and
-/// leaning every which way — cut the AMPLITUDE, never the irregularity, or it reads as a hairbrush.
 fn furOver(b: *Builder, rng: *mathx.Rng, c: rl.Vector3, r: rl.Vector3, n: u32, len: f32, col: rl.Color) void {
     var i: u32 = 0;
     while (i < n) : (i += 1) {
@@ -472,9 +400,7 @@ fn cephaloMesh(sk: Skin) rl.Mesh {
     b.setMat(.hide);
     var rng = mathx.Rng.init(sk.seed);
     if (sk.matron) {
-        // HER HEAD IS A BALL (owner's drawing) — a whole second mass carried in front of the abdomen, not
-        // a flat shield. It is the thing the eyes are scattered over and the arms hang off.
-        const hz = 0.46; // …how far forward the ball sits
+        const hz = 0.46;
         b.addBlob(v3(0, BODY_Y + 0.10, hz), v3(0.44, 0.42, 0.42), 11, 15, sk.chitin);
         b.addBlob(v3(0, BODY_Y - 0.02, hz - 0.30), v3(0.34, 0.28, 0.28), 8, 11, sk.dark); // the neck into the trunk
         b.addBlob(v3(0, BODY_Y - 0.06, 0.02), v3(0.34, 0.24, 0.34), 8, 11, sk.dark); // the low trunk the legs hang off
@@ -497,11 +423,11 @@ fn cephaloMesh(sk: Skin) rl.Mesh {
         return b.toMesh();
     }
     b.addBlob(v3(0, BODY_Y + 0.02, 0.02), v3(0.44, 0.26, 0.50), 9, 14, sk.chitin); // the carapace
-    b.addBlob(v3(0, BODY_Y - 0.10, 0.06), v3(0.38, 0.16, 0.42), 7, 12, sk.dark); // …and the sternum under it
+    b.addBlob(v3(0, BODY_Y - 0.10, 0.06), v3(0.38, 0.16, 0.42), 7, 12, sk.dark);
     // The head end drops and juts: the eye shelf, and the fang bases below it.
     b.addBlob(v3(0, BODY_Y + 0.02, 0.40), v3(0.30, 0.20, 0.22), 7, 12, sk.chitin);
     b.addBlob(v3(0, BODY_Y - 0.12, 0.44), v3(0.24, 0.15, 0.20), 6, 10, sk.dark); // the chelicerae block
-    // A ridge down the carapace, and a few plates off it — RELIEF IS SUBTLE, so these sink most of the way in.
+    // A ridge down the carapace, and a few plates off it
     b.addBlob(v3(0, BODY_Y + 0.20, 0.02), v3(0.09, 0.05, 0.40), 6, 8, sk.light);
     var i: u32 = 0;
     while (i < 9) : (i += 1) {
@@ -523,14 +449,10 @@ fn cephaloMesh(sk: Skin) rl.Mesh {
     return b.toMesh();
 }
 
-/// The eight-eye cluster, in its own mesh so it can BURN through a wind-up (the same trick the toad's
-/// irises use, and for the same reason: it is the one thing on her you are already looking at).
 fn eyeMesh(sk: Skin, col: rl.Color) rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
     if (sk.matron) {
-        // SCATTERED OVER THE BALL, not set in two tidy rows (owner's drawing): a dozen lamps of uneven size
-        // strewn across the front of the head, which is the single most unsettling thing about her.
         var rng = mathx.Rng.init(sk.seed +% 313);
         var i: u32 = 0;
         while (i < 13) : (i += 1) {
@@ -545,7 +467,6 @@ fn eyeMesh(sk: Skin, col: rl.Color) rl.Mesh {
         }
         return b.toMesh();
     }
-    // Two rows of four, the inner pair of the front row biggest — uneven, because nothing here is machined.
     const row = [_][3]f32{
         .{ 0.055, 0.055, 0.052 }, .{ 0.145, 0.030, 0.046 },
         .{ 0.055, -0.020, 0.040 }, .{ 0.160, -0.045, 0.034 },
@@ -558,13 +479,11 @@ fn eyeMesh(sk: Skin, col: rl.Color) rl.Mesh {
     return b.toMesh();
 }
 
-/// The egg-heavy abdomen, authored about the pedicel — a sagging bulb, marked with dull gold chevrons that
-/// go crooked down its length (seeded; a mirrored pair would read as printed on).
 fn abdomenMesh(sk: Skin) rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
     const r = sk.abdoR;
-    const dy = abdoCentreY(sk); // …solved so hers RESTS on the ground rather than sinking through it
+    const dy = abdoCentreY(sk);
     // A near-SPHERE on her (owner's drawing), where a hatchling keeps the longer teardrop.
     const ax: rl.Vector3 = if (sk.matron) v3(r * 0.98, abdoHalfY(sk), r * 0.98) else v3(r * 0.92, abdoHalfY(sk), r);
     b.addBlob(v3(0, dy, -r * 0.72), ax, 12, 16, sk.abdo);
@@ -594,10 +513,7 @@ fn armMesh(sk: Skin, sgn: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
     if (sk.matron) {
-        // HER ARMS ARE LONG AND THIN AND SHARPLY CROOKED (owner's drawing): they go a long way OUT and UP
-        // to a hard angular elbow and then come back down and in, so the pair arch right over the whole
-        // body. Thin — the mass in this animal is all abdomen, and the arms read against it by contrast.
-        const el = v3(sgn * 0.62, 0.74, 0.10); // …the elbow, high and wide
+        const el = v3(sgn * 0.62, 0.74, 0.10);
         b.addCapsule(v3(0, 0, 0), el, 0.075, 0.055, 8, sk.chitin);
         b.addCapsule(el, v3(sgn * P_WRIST.x, P_WRIST.y, P_WRIST.z), 0.055, 0.044, 8, sk.chitin);
         b.addBlob(el, v3(0.085, 0.085, 0.085), 6, 9, sk.light); // the angular knuckle at the top of the arch
@@ -612,20 +528,12 @@ fn armMesh(sk: Skin, sgn: f32) rl.Mesh {
         }
         return b.toMesh();
     }
-    // Out to the elbow, then FORWARD — the crook is what makes it a raptorial limb held ready rather than
-    // a leg with something on the end.
     b.addCapsule(v3(0, 0, 0), v3(sgn * 0.26, 0.02, 0.24), 0.115, 0.092, 9, sk.chitin);
     b.addCapsule(v3(sgn * 0.26, 0.02, 0.24), v3(sgn * P_WRIST.x, P_WRIST.y, P_WRIST.z), 0.092, 0.074, 9, sk.chitin);
     b.addBlob(v3(sgn * 0.26, 0.02, 0.24), v3(0.10, 0.085, 0.10), 6, 9, sk.light); // the elbow knuckle
     return b.toMesh();
 }
 
-/// One FLATTENED segment of a blade: a slab from `p0` to `p1`, `h` deep top-to-bottom and `t` thick across.
-/// A blade is the one organic-adjacent thing on her authored square rather than round — a capsule scythe is
-/// a stick, and a stick is what the eight walking legs already are.
-/// IT STANDS ON EDGE, deep in Y and thin across: a blade lying flat is a paddle from every angle a player
-/// ever sees her from (the camera is always somewhat above), and a paddle does not read as something that
-/// cuts. Deep and thin reads as a knife held edge-down from anywhere on the horizon.
 fn bladeSeg(b: *Builder, p0: rl.Vector3, p1: rl.Vector3, h: f32, t: f32, col: rl.Color) void {
     const d = mathx.subV(p1, p0);
     const len = mathx.lenV(d);
@@ -637,14 +545,12 @@ fn bladeSeg(b: *Builder, p0: rl.Vector3, p1: rl.Vector3, h: f32, t: f32, col: rl
     b.addBox(
         mathx.lerpV(p0, p1, 0.5),
         mathx.scaleV(side, t * 0.5), // thin ACROSS…
-        v3(0, h * 0.5, 0), // …deep DOWN, which is where the edge is
+        v3(0, h * 0.5, 0),
         mathx.scaleV(dir, len * 0.5),
         col,
     );
 }
 
-/// …and the SCYTHE on the end of the arm: a long curved horn blade, honed on the inside, tapering to a
-/// point. This is the silhouette the whole creature is read by, so it is pale, flat and BIG.
 fn bladeMesh(sk: Skin, sgn: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide); // horn is not steel: the flat stays matt, and only the honed edge below catches light
@@ -661,10 +567,7 @@ fn bladeMesh(sk: Skin, sgn: f32) rl.Mesh {
     for (0..4) |i| {
         bladeSeg(&b, p[i], p[i + 1], depth[i] * L, 0.055 * L, CLAW_H);
     }
-    // A knuckle where it meets the wrist, so the blade grows out of something rather than being stuck on.
     b.addBlob(v3(0, 0, 0), v3(0.09 * L, 0.085 * L, 0.09 * L), 6, 9, sk.light);
-    // THE HONED EDGE, a bright line down the inside — sunk most of the way in (RELIEF IS SUBTLE): what
-    // shows is the line, not a strip glued to the flat.
     b.setMat(.steel);
     for (0..4) |i| {
         const e0 = v3(p[i].x, p[i].y - depth[i] * 0.42 * L, p[i].z);
@@ -691,8 +594,7 @@ fn bladeMesh(sk: Skin, sgn: f32) rl.Mesh {
     return b.toMesh();
 }
 
-/// A leg's upper segment, authored from the hip going OUT and UP to the knee. Every leg gets its own
-/// length and droop off the skin's seed, so no two of the eight are the same stick.
+/// A leg's upper segment, authored from the hip going OUT and UP to the knee.
 fn femurMesh(sk: Skin, sgn: f32, i: usize) rl.Mesh {
     var rng = mathx.Rng.init(sk.seed +% @as(u64, @intCast(i)) *% 131 +% (if (sgn > 0) @as(u64, 7) else 19));
     var b = Builder.init();
@@ -705,8 +607,7 @@ fn femurMesh(sk: Skin, sgn: f32, i: usize) rl.Mesh {
     return b.toMesh();
 }
 
-/// …and the lower segment, from that knee down and out to a point. The foot is a TIP, not a pad — the
-/// whole weight of a spider comes down on eight full stops.
+/// …and the lower segment, from that knee down and out to a point.
 fn tibiaMesh(sk: Skin, sgn: f32, i: usize) rl.Mesh {
     var rng = mathx.Rng.init(sk.seed +% @as(u64, @intCast(i)) *% 271 +% (if (sgn > 0) @as(u64, 23) else 41));
     var b = Builder.init();
@@ -728,8 +629,6 @@ fn tibiaMesh(sk: Skin, sgn: f32, i: usize) rl.Mesh {
     return b.toMesh();
 }
 
-/// AN EGG SAC — a knot of pale eggs in a slack membrane, veined and lumpy, authored about its own base.
-/// `wrecked` is the same knot cut open: the membrane collapsed and the eggs spilled and dark.
 fn sacMesh(wrecked: bool) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
@@ -772,8 +671,6 @@ pub fn venomMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// A POOL OF IT: a ragged splat authored at unit radius on the ground, so one mesh serves every pool at
-/// whatever it has spread to. Lobed rather than round — a thrown liquid lands in a shape.
 fn poolMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
@@ -786,7 +683,6 @@ fn poolMesh() rl.Mesh {
         const s = rng.range(0.22, 0.46);
         b.addBlob(v3(mathx.cosf(a) * rr, 0.014, mathx.sinf(a) * rr), v3(s, rng.range(0.022, 0.040), s * rng.range(0.8, 1.3)), 7, 10, if (rng.float() < 0.5) VENOM else VENOM_DK);
     }
-    // …and a few flung droplets outside the body of it, which is what says THROWN.
     while (i < 13) : (i += 1) {
         const a = rng.angle();
         const rr = rng.range(0.85, 1.05);
@@ -808,12 +704,9 @@ pub const Pool = struct {
     pub fn splash(at: rl.Vector3, seed: f32) Pool {
         return .{ .pos = at, .seed = seed, .live = true, .fxRng = foe.fxStream(seed, 58067.0, 11) };
     }
-    /// What it covers right now — it spreads fast, holds, and never shrinks: a pool that pulled its edge
-    /// back in would move the danger under a player who had already decided where the danger was.
     pub fn radius(self: *const Pool) f32 {
         return ACID_R * mathx.smoothstep(0, ACID_SPREAD, self.t);
     }
-    /// …but it THINS, and that is the honest tell for how long is left.
     pub fn strength(self: *const Pool) f32 {
         return 1.0 - mathx.smoothstep(ACID_LIFE - ACID_THIN, ACID_LIFE, self.t);
     }
@@ -832,8 +725,6 @@ pub const Pool = struct {
             self.live = false;
             return;
         }
-        // It BOILS while it is dangerous, and the boil dies with the pool — the read is at the surface,
-        // not in a bar.
         self.fxAccum += (26.0 * self.strength() + 4.0) * dt;
         while (self.fxAccum >= 1.0) {
             self.fxAccum -= 1.0;
@@ -863,7 +754,6 @@ pub const Pool = struct {
     }
 };
 
-// ── THE EGG SAC ──────────────────────────────────────────────────────────────────────────────────────
 
 pub const Sac = struct {
     pos: rl.Vector3 = mathx.zero3,
@@ -874,7 +764,6 @@ pub const Sac = struct {
     hits: u32 = 0,
     hitLatch: bool = false,
     flash: f32 = 0,
-    /// CUT OPEN rather than hatched — nothing comes out of it, and that is the whole reason to shoot one.
     killed: bool = false,
     hatched: bool = false,
     gone: bool = false,
@@ -903,18 +792,37 @@ pub const Sac = struct {
         return v3(self.pos.x, self.pos.y + SAC_R * 0.9 * self.scale, self.pos.z);
     }
     pub fn hurtRadius(self: *const Sac) f32 {
+        return SAC_HURT_R * self.scale;
+    }
+    /// THE TARGET CONTRACT.
+    pub fn dying(self: *const Sac) bool {
+        return self.killed or self.hatched;
+    }
+    pub fn staggered(_: *const Sac) bool {
+        return false; // it has no reaction to be in — it either holds or it bursts
+    }
+    pub fn lockPoint(self: *const Sac) rl.Vector3 {
+        return self.centerWorld();
+    }
+    pub fn topWorld(self: *const Sac) rl.Vector3 {
+        return v3(self.pos.x, self.pos.y + SAC_R * 1.9 * self.scale, self.pos.z);
+    }
+    pub fn bodyR(self: *const Sac) f32 {
         return SAC_R * self.scale;
+    }
+    pub fn kind(self: *const Sac) wf.FoeKind {
+        _ = self;
+        return .brood_sac;
     }
     pub fn flashFrac(self: *const Sac) f32 {
         return foe.flashFrac(self.flash);
     }
-    /// SWELLING, 0..1 — the tell. It rides the whole hatch clock, so how close a sac is to splitting is
-    /// legible from across the field without a bar over it.
+    /// SWELLING, 0..1 — the tell.
     pub fn swell(self: *const Sac) f32 {
         return mathx.clampF(self.t / SAC_HATCH, 0, 1);
     }
 
-    /// Advance one sac. Returns true on THE frame it splits — the group's cue to put broodlings out.
+    /// Advance one sac.
     pub fn update(self: *Sac, dt: f32, blade: foe.Blade) bool {
         if (self.gone) {
             foe.tickParticles(&self.fx, dt, self.pos.y);
@@ -940,7 +848,6 @@ pub const Sac = struct {
         return false;
     }
 
-    /// The damage entry — the SAME `foe.strike` the creatures use, so a sword and a shaft both open one.
     pub fn tryHit(self: *Sac, blade: foe.Blade) void {
         if (self.killed or self.hatched or self.gone) return;
         const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
@@ -999,14 +906,12 @@ pub const Sac = struct {
     }
 };
 
-// ── THE SPIDER ───────────────────────────────────────────────────────────────────────────────────────
 
 pub const Spider = struct {
     role: Role = .mother,
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
-    /// WHERE THE EGGS ARE, pushed in by the group each frame — her tether is the clutch, not her post
-    /// (see M_GUARD_R). Null before she has laid, and always null for a hatchling.
+    /// WHERE THE EGGS ARE, pushed in by the group each frame — her tether is the clutch, not her post (see M_GUARD_R).
     guard: ?rl.Vector3 = null,
     /// …and whether she may lay another, likewise the group's answer (it owns the sacs).
     layWanted: bool = false,
@@ -1023,10 +928,6 @@ pub const Spider = struct {
     layCd: f32 = 0,
     elapsed: f32 = 0,
     fired: bool = false, // this action's one-shot (the glob leaving, the sac dropping) has happened
-    /// WHICH ATTACK THE SHARED WIND-UP IS FOR, decided once when it starts. It was read back out of
-    /// `spitCd` (">= a spit's cooldown means this is a spit"), which is wrong twice over: the countdown
-    /// ticks DOWN under the action, so the answer changed halfway through the recovery it was timing, and
-    /// forcing it to read false for a bite meant a bite had to shorten the spit cooldown to say so.
     throwing: bool = false,
     moveDir: rl.Vector3 = mathx.zero3,
 
@@ -1038,10 +939,10 @@ pub const Spider = struct {
     gait: f32 = 0, // leg cycle phase, advanced by ground covered
     lift: f32 = 0, // world-Y above its own ground (the leap)
     crouch: f32 = 0, // body drop toward the legs (coil, lay)
-    rear: f32 = 0, // …and the opposite: the front lifted, claws up (the tells)
+    rear: f32 = 0,
     pitch: f32 = 0,
     armSpread: f32 = 0, // claws thrown wide (deg)
-    armDrive: f32 = 0, // …and driven forward through a strike
+    armDrive: f32 = 0,
     bladeOpen: f32 = 0,
     abdoPump: f32 = 0, // the abdomen swelling/pumping through a lay or a spit
     fangs: f32 = 0,
@@ -1119,7 +1020,7 @@ pub const Spider = struct {
     pub fn flashFrac(self: *const Spider) f32 {
         return foe.flashFrac(self.flash);
     }
-    /// EYES UP: every wind-up she has, and the pounce. The one part of her you were already watching.
+    /// EYES UP: every wind-up she has, and the pounce.
     pub fn eyesHot(self: *const Spider) bool {
         return self.state == .windup or self.state == .strike or self.state == .leap;
     }
@@ -1174,8 +1075,8 @@ pub const Spider = struct {
     /// WHAT SHE ASKED THE WORLD FOR THIS FRAME — the two things a spider cannot do to itself.
     pub const Act = union(enum) {
         none,
-        spit: rl.Vector3, // …from here, at whatever the caller decides is the hero
-        lay: rl.Vector3, // …put a sac down there
+        spit: rl.Vector3,
+        lay: rl.Vector3,
     };
 
     pub fn update(self: *Spider, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) Act {
@@ -1207,7 +1108,6 @@ pub const Spider = struct {
         return act;
     }
 
-    // ── HER ──────────────────────────────────────────────────────────────────────────────────────────
 
     fn updateMother(self: *Spider, dt: f32, hero: rl.Vector3, bounds: f32, d: f32) Act {
         var act: Act = .none;
@@ -1228,8 +1128,6 @@ pub const Spider = struct {
                 if (self.t >= 0.28) self.decideMother(d, bounds);
             },
             .windup => {
-                // Both of her attacks share the wind-up state and differ in what `fired` releases — one
-                // long tell, so a player learns ONE shape and reads the range for which it is.
                 self.faceToward(hero, dt * (if (self.spitting()) @as(f32, 1.0) else 0.5));
                 if (self.throwing) self.resolveSpitWind(dt) else self.resolveBiteWind(dt);
                 if (self.t >= self.windupDur()) self.enter(.strike);
@@ -1279,9 +1177,6 @@ pub const Spider = struct {
                 self.resolveStun(true);
                 if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enterIdle(0.05);
             },
-            // Hers is a body that cannot leave the ground, and a hatchling has nothing to lay — but a
-            // state machine answers for every state it can hold. `unreachable` here is a crash (or worse,
-            // in a release build) bought in exchange for nothing.
             .leap => self.enterIdle(0.05),
             .dead => self.resolveDeath(dt),
         }
@@ -1324,7 +1219,6 @@ pub const Spider = struct {
         }
     }
 
-    // ── IT ───────────────────────────────────────────────────────────────────────────────────────────
 
     fn updateBroodling(self: *Spider, dt: f32, hero: rl.Vector3, bounds: f32, d: f32) void {
         switch (self.state) {
@@ -1370,7 +1264,7 @@ pub const Spider = struct {
                 self.resolveStun(true);
                 if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enterIdle(0.02);
             },
-            .lay => self.enterIdle(0.05), // …see the mother's `.leap` above
+            .lay => self.enterIdle(0.05),
             .dead => self.resolveDeath(dt),
         }
     }
@@ -1399,7 +1293,7 @@ pub const Spider = struct {
     fn startLeap(self: *Spider, hero: rl.Vector3) void {
         self.spitCd = B_LEAP_CD;
         self.enter(.leap);
-        self.dustBurst(self.pos, 9, 1.9, 0.17); // …it shoves off the ground and the ground says so
+        self.dustBurst(self.pos, 9, 1.9, 0.17);
         self.leapFrom = self.pos;
         const dir = mathx.dirXZ(self.pos, hero);
         const reach = mathx.minF(mathx.distXZ(self.pos, hero) - B_BITE_R * 0.5, B_LEAP_MAX);
@@ -1448,19 +1342,16 @@ pub const Spider = struct {
         if (self.t >= total) {
             if (!self.fired) {
                 self.fired = true;
-                self.dustBurst(self.pos, 12, 2.4, 0.20); // …and ARRIVES, hard
+                self.dustBurst(self.pos, 12, 2.4, 0.20);
             }
-            self.biteCd = mathx.minF(self.biteCd, 0.12); // …and it is straight back on you with the teeth
+            self.biteCd = mathx.minF(self.biteCd, 0.12);
             self.enterIdle(0.02);
         }
     }
 
-    // ── DAMAGE, BOTH WAYS ────────────────────────────────────────────────────────────────────────────
 
     fn tryReach(self: *Spider, hero: rl.Vector3, range: f32, h: combat.Hit) void {
         if (self.heroLatch) return;
-        // Against the RAW range, which is what `classifyMother`/`classifyBroodling` decided on — scaling it
-        // here and not there means the range she commits at and the range she connects at are two numbers.
         if (mathx.distXZ(self.pos, hero) <= range + HERO_REACH) {
             self.heroHit = h;
             self.heroLatch = true;
@@ -1507,7 +1398,6 @@ pub const Spider = struct {
         }
     }
 
-    // ── FX ───────────────────────────────────────────────────────────────────────────────────────────
 
     fn emit(self: *Spider, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
         foe.emitParticle(&self.fx, &self.fxHead, p, vel, life, r0, r1, col, grav);
@@ -1528,8 +1418,7 @@ pub const Spider = struct {
             );
         }
     }
-    /// THE DRAG TRAIL. Her abdomen rides on the earth (see `abdoCentreY`), so it scrapes one — a low fan
-    /// of dust from BEHIND her, which is both the juice and the proof that the body is really touching.
+    /// THE DRAG TRAIL.
     fn emitDrag(self: *Spider, dt: f32) void {
         if (self.role != .mother) return;
         const back = mathx.scaleV(self.fdir(), -1);
@@ -1620,19 +1509,14 @@ pub const Spider = struct {
         foe.drawParticles(&self.fx);
     }
 
-    // ── ANIMATION CHANNELS ───────────────────────────────────────────────────────────────────────────
 
-    /// `dt`, NOT a baked 1/60: every `approach` here is a rate per SECOND, so a fixed step makes the
-    /// settle twice as fast on a 120 Hz machine as on a 60 Hz one — the same class of bug the FEEL RULES
-    /// ban for input, and it is just as visible on a creature easing back to rest.
+    /// `dt`, NOT a baked 1/60: every `approach` here is a rate per SECOND, so a fixed step makes the settle twice as fast on a 120 Hz machine as on a 60 Hz one — the same class of bug the FEEL RULES ban for input, and it is just as visible on a creature easing back to rest.
     fn resolveIdle(self: *Spider, dt: f32) void {
         const breathe = mathx.sinf(self.elapsed * 1.3 + self.seed * 6.0);
         self.crouch = -IDLE_BOB * breathe;
         self.rear = 0;
         self.pitch = 0;
         self.lift = 0;
-        // …and the claws are never FOLDED at rest: held a little out and ready, or the silhouette that is
-        // the whole animal only exists during an attack.
         self.armSpread = mathx.approach(self.armSpread, 20.0 + 4.0 * breathe, 60.0 * dt);
         self.armDrive = mathx.approach(self.armDrive, 0, 3.0 * dt);
         self.bladeOpen = mathx.approach(self.bladeOpen, 0.12, 2.0 * dt);
@@ -1650,8 +1534,7 @@ pub const Spider = struct {
         self.abdoPump = 0.05 * mathx.sinf(self.gait * std.math.tau);
         self.fangs = 0;
     }
-    /// She REARS: front legs off the ground, claws thrown wide, abdomen pumping. Huge, and it has to be —
-    /// this is the read that says get behind cover.
+    /// She REARS: front legs off the ground, claws thrown wide, abdomen pumping.
     fn resolveSpitWind(self: *Spider, dt: f32) void {
         const u = mathx.smoothstep(0, 1, mathx.clampF(self.t / SPIT_WINDUP, 0, 1));
         self.rear = u;
@@ -1695,7 +1578,7 @@ pub const Spider = struct {
         self.rear = 0.45 * (1.0 - u);
         self.crouch = 0.14 * u;
         self.pitch = -8.0 + 22.0 * u;
-        self.armSpread = 74.0 - 66.0 * u; // …and they SHUT, both claws crossing the middle
+        self.armSpread = 74.0 - 66.0 * u;
         self.armDrive = -0.35 + 1.35 * u;
         self.bladeOpen = 1.0 - 0.95 * u;
         self.fangs = 1.0;
@@ -1713,8 +1596,6 @@ pub const Spider = struct {
         self.fangs = 1.0 - u;
         self.abdoPump = 0;
     }
-    /// THE LAY: she squats over the ground, the abdomen swells and pumps, and the sac comes out behind her.
-    /// Legs planted and wide the whole way — she is anchored, and that is what makes it an opening.
     fn resolveLay(self: *Spider) void {
         const u = mathx.clampF(self.t / LAY_DUR, 0, 1);
         const swell = mathx.smoothstep(0, LAY_DROP, u);
@@ -1727,13 +1608,9 @@ pub const Spider = struct {
         self.bladeOpen = 0.15;
         self.fangs = 0.2 * swell;
         // The pump: slow through the swell, then three hard contractions as it goes.
-        // A CONTRACTION, NOT AN INFLATION (owner's call): it was swelling by half its own size, which
-        // reads as a balloon rather than as a body pushing something out. The PULSE does the work now.
         self.abdoPump = 0.14 * swell + 0.09 * swell * mathx.sinf(self.t * 13.0) - 0.14 * after;
     }
     fn resolveStun(self: *Spider, heavy: bool) void {
-        // REACTIONS ARE HUGE: a struck spider throws its legs out and slams its body down, and a heavy one
-        // nearly turns over — no polite lean.
         const dur: f32 = if (heavy) combat.FOE_HEAVY_STUN_DUR else combat.FOE_LIGHT_STUN_DUR;
         const u = mathx.clampF(self.t / dur, 0, 1);
         const k = (1.0 - u) * (1.0 - u);
@@ -1770,22 +1647,18 @@ pub const Spider = struct {
     fn resolvePlanted(self: *Spider) void {
         self.armDrive = 0;
     }
-    /// …and in flight they are thrown BACK and out, which is what a pounce looks like from in front of it.
     fn resolveFlung(self: *Spider, u: f32) void {
         _ = u;
         self.armDrive = 0.6;
     }
 
-    // ── POSE ─────────────────────────────────────────────────────────────────────────────────────────
 
     pub fn pose(self: *Spider) void {
         const fs = self.scale * (1.0 - 0.8 * self.fade);
         const sink = -0.24 * self.scale * self.fade;
-        // The BODY rides up and down on its legs (`crouch`) and tips its front up (`rear`) — the legs are
-        // placed off the same frame, so the whole animal squats over feet that stay where they were put.
+        // The BODY rides up and down on its legs (`crouch`) and tips its front up (`rear`) — the legs are placed off the same frame, so the whole animal squats over feet that stay where they were put.
         const bodyDrop = -self.crouch * 0.30;
-        // …and the whole animal rides at whatever its own leg length can hold it at (see `rideDrop`), in
-        // WORLD units because the frame's translate happens after the scale.
+        // …and the whole animal rides at whatever its own leg length can hold it at (see `rideDrop`), in WORLD units because the frame's translate happens after the scale.
         const ride = self.pos.y + self.lift + sink - rideDrop(self.role) * fs;
         const frame = mul(
             scaleM(fs, fs, fs),
@@ -1795,7 +1668,6 @@ pub const Spider = struct {
                 tr(self.pos.x, ride, self.pos.z),
             ),
         );
-        // …and the LEGS off an untipped copy of it, or rearing would swing all eight feet through the earth.
         const legFrame = mul(
             scaleM(fs, fs, fs),
             mul3(ry(mathx.degrees(self.facing)), tr(0, 0, 0), tr(self.pos.x, ride, self.pos.z)),
@@ -1809,25 +1681,18 @@ pub const Spider = struct {
 
         for ([_]f32{ 1, -1 }, [_]usize{ ARM_L, ARM_R }, [_]usize{ BLADE_L, BLADE_R }) |sgn, ai, bi| {
             const sh = v3(sgn * P_SHOULDER.x, P_SHOULDER.y + bodyDrop, P_SHOULDER.z);
-            // THE FLAIL, per side and out of phase (see FLAIL_HZ) — never mirrored, or two arms waving in
-            // step read as a windscreen wiper.
             const ph = self.elapsed * FLAIL_HZ + (if (sgn > 0) @as(f32, 0.0) else 1.9) + self.seed * 5.0;
             const wave = mathx.sinf(ph);
             const wave2 = mathx.sinf(ph * 1.37 + 0.7);
-            // THE CLAWS ARE HELD UP, not out flat. Spread alone is a yaw, and a yaw-only arm on a creature
-            // whose legs are also yawing reads as a tenth leg lying on the grass — the LIFT is what makes
-            // it a raised weapon. It rides the spread, so throwing them wide also throws them high.
+            // THE CLAWS ARE HELD UP, not out flat.
             const spread = self.armSpread + FLAIL_SPREAD * wave;
             const lift = sk.armLift + 0.55 * spread - 34.0 * self.armDrive + FLAIL_LIFT * wave2;
             wx[ai] = place(sh, mul3(rz(sgn * lift), ry(-sgn * spread * 0.7), rx(-14.0 * self.armDrive)), frame);
-            // OPEN IS OPEN: 0 crosses the tips in front of her head, 1 throws them wide. At rest that puts
-            // both blades pointing very nearly straight down her facing, which is where they have to be for
-            // the front-on read to be two scythes framing a mouth.
+            // OPEN IS OPEN: 0 crosses the tips in front of her head, 1 throws them wide.
             wx[bi] = place(v3(sgn * P_WRIST.x, P_WRIST.y, P_WRIST.z), ry(sgn * (-8.0 + 46.0 * self.bladeOpen)), wx[ai]);
         }
 
-        // EIGHT LEGS, two alternating tetrapods (see LEG_PHASE). Each foot swings fore/aft about Y and
-        // lifts on its recovery half; the knee straightens as the leg reaches and folds as it takes weight.
+        // EIGHT LEGS, two alternating tetrapods (see LEG_PHASE).
         for ([_]f32{ 1, -1 }, [_]usize{ 0, NLEG }) |sgn, base| {
             for (0..NLEG) |i| {
                 const ph = self.gait + LEG_PHASE[i] + (if (sgn < 0) @as(f32, 0.5) else 0.0);
@@ -1835,8 +1700,6 @@ pub const Spider = struct {
                 const s = mathx.sinf(ph * std.math.tau);
                 const lift = mathx.maxF(0, s);
                 const hip = v3(sgn * HIP_X, P_SHOULDER.y - 0.02 + bodyDrop, HIP_Z0 - @as(f32, @floatFromInt(i)) * HIP_DZ);
-                // A resting spread that fans front legs forward and back legs back, so it is a SPIDER and
-                // not a table: ±34° across the four.
                 const fan = 34.0 - @as(f32, @floatFromInt(i)) * 22.0;
                 const swing = fan + c * STEP_SWING;
                 const knee = KNEE_REST - 26.0 * lift - 16.0 * self.crouch;
@@ -1853,29 +1716,20 @@ pub const Spider = struct {
     }
 };
 
-// ── THE GROUP ────────────────────────────────────────────────────────────────────────────────────────
 
-/// Mothers and hatchlings share ONE array for the same reason the warband's three roles do: the mother has
-/// to see her own clutch, and the clutch turns into the hatchlings. Room for a full posting of both plus
-/// everything three sacs apiece can put on the field.
 pub const CAP = 2 * wf.MAX_PER_KIND;
 pub const SAC_CAP = 3 * 8;
 
 pub const Brood = struct {
     model: Model,
-    /// FIRST, deliberately: `game.groupCap` sizes its position snapshot off the first array of things with
-    /// a `pos`, and the sacs have one too.
     band: [CAP]Spider = undefined,
     n: usize = 0,
     sacs: [SAC_CAP]Sac = undefined,
     nsacs: usize = 0,
     pools: [POOL_CAP]Pool = [_]Pool{.{}} ** POOL_CAP,
-    /// TWO EVENTS THE FRAME SHOULD FEEL, counted rather than flagged so game.zig edge-detects them the
-    /// way it already does hits and kills — a bool would need somebody to remember to clear it.
+    /// TWO EVENTS THE FRAME SHOULD FEEL, counted rather than flagged so game.zig edge-detects them the way it already does hits and kills — a bool would need somebody to remember to clear it.
     hatches: u32 = 0,
     bursts: u32 = 0,
-    /// The burn clock, ONE for the whole field rather than one per pool: two overlapping pools are still
-    /// one floor, and stacking their pulses would make a corner of the fight instantly lethal by accident.
     burnT: f32 = 0,
     hatchRng: mathx.Rng = mathx.Rng.init(6113),
 
@@ -1899,6 +1753,14 @@ pub const Brood = struct {
         self.n = 0;
         self.clearSacs();
         for (m.foes[0..m.nfoes]) |h| {
+            // A CLUTCH THE MAP AUTHORED, standing before anything has laid it — a nest you walk into.
+            if (h.kind == .brood_sac) {
+                if (self.nsacs < SAC_CAP) {
+                    self.sacs[self.nsacs] = Sac.lay(v3(h.x, m.heightAt(h.x, h.z), h.z), h.seed, h.scale);
+                    self.nsacs += 1;
+                }
+                continue;
+            }
             const role = roleOf(h.kind) orelse continue;
             if (self.n >= CAP) continue;
             self.band[self.n] = Spider.spawnAs(role, v3(h.x, m.heightAt(h.x, h.z), h.z), mathx.radians(h.yaw), h.scale, h.seed);
@@ -1913,8 +1775,6 @@ pub const Brood = struct {
         self.burnT = 0;
         self.hatchRng = mathx.Rng.init(6113);
     }
-    /// The shot harness empties the field by hand; the sacs and the acid have to go with it or a portrait
-    /// keeps a clutch nobody laid.
     pub fn clear(self: *Brood) void {
         self.n = 0;
         self.clearSacs();
@@ -1935,8 +1795,7 @@ pub const Brood = struct {
         sfx.world(.acid_splash, at);
     }
 
-    /// STANDING IN IT COSTS, and in pulses (see ACID_TICK). Returns the HP to take off him this frame —
-    /// zero on every frame between pulses, and on every frame he is clear.
+    /// STANDING IN IT COSTS, and in pulses (see ACID_TICK).
     pub fn burn(self: *Brood, dt: f32, hero: rl.Vector3) f32 {
         var inside = false;
         for (&self.pools) |*p| {
@@ -1986,8 +1845,6 @@ pub const Brood = struct {
         for (&self.pools) |*p| p.drawFx();
     }
 
-    /// ONE OF THE HERO'S SHAFTS — the SACS are asked first, because they stand between him and her and a
-    /// shaft that passed through one to reach her would make shooting them impossible.
     pub fn pierce(self: *Brood, blade: foe.Blade) bool {
         for (self.liveSacs()) |*s| {
             if (!s.standing()) continue;
@@ -2074,8 +1931,7 @@ pub const Brood = struct {
         comptime spit: fn (@TypeOf(ctx), rl.Vector3) void,
     ) ?foe.Blow {
         for (&self.pools) |*p| p.update(dt);
-        // THE SACS next, so a clutch that split this frame is already on the field when she decides
-        // whether to lay another.
+        // THE SACS next, so a clutch that split this frame is already on the field when she decides whether to lay another.
         var s: usize = 0;
         while (s < self.nsacs) : (s += 1) {
             const sac = &self.sacs[s];
@@ -2092,13 +1948,10 @@ pub const Brood = struct {
                 const rr = self.hatchRng.range(0.35, 0.8);
                 const born = v3(at.x + mathx.cosf(a) * rr, at.y, at.z + mathx.sinf(a) * rr);
                 self.addBroodling(born, a, seed + @as(f32, @floatFromInt(k)) * 0.137);
-                // IT SCREECHES ON THE WAY OUT — over the membrane splitting, and pitched well above it, so
-                // what you hear is a thing being born and not a bag popping.
                 sfx.world(.brood_screech, born);
             }
         }
 
-        // …then tell every mother what she is guarding and whether she may lay, BEFORE any of them decides.
         for (self.live()) |*m| {
             if (m.role != .mother) continue;
             m.guard = self.clutchOf(m.pos);
@@ -2120,7 +1973,6 @@ pub const Brood = struct {
     }
 };
 
-// ── TESTS ────────────────────────────────────────────────────────────────────────────────────────────
 
 test "the roles ARE the map's foe kinds, by name" {
     try std.testing.expectEqual(Role.mother, roleOf(.brood_mother).?);
@@ -2131,9 +1983,7 @@ test "the roles ARE the map's foe kinds, by name" {
 }
 
 test "SHE HOLDS THE CLUTCH: past her guard radius she stops closing and spits" {
-    // At the end of her tether with the hero out past her spit band but still inside her senses, walking
-    // further would abandon the eggs — which is the whole of what she is for.
-    try std.testing.expect(M_SPIT_MAX + 2 < M_AGGRO); // …the band this test needs to exist at all
+    try std.testing.expect(M_SPIT_MAX + 2 < M_AGGRO);
     try std.testing.expectEqual(MChoice.hold, classifyMother(M_SPIT_MAX + 2,M_GUARD_R + 1, true, true, false));
     // …but inside the band she throws, tether or no.
     try std.testing.expectEqual(MChoice.spit, classifyMother(M_SPIT_MAX - 1, M_GUARD_R + 1, true, true, false));
@@ -2164,17 +2014,13 @@ test "range bands are ordered and sit inside her senses" {
 }
 
 test "A HATCHLING IS WIMPY AND FAST, and she is neither" {
-    // One light slash kills it outright — that is what "wimpy" has to MEAN in numbers.
-    const light = heromod.ATK_LIGHT_HIT; // …HIS actual light slash, not a copy of its numbers
-    // TWO light slashes, not one, and a heavy outright (owner's retune) — still fragile, no longer a thing
-    // that dies by being looked at.
+    const light = heromod.ATK_LIGHT_HIT;
     try std.testing.expect(B_HP > light.dmg and B_HP <= light.dmg * 2);
     try std.testing.expect(B_HP < heromod.ATK_HEAVY_HIT.dmg);
     // …and it flinches at anything, where she shrugs a light off.
     try std.testing.expect(B_POISE < light.poise);
     try std.testing.expect(M_POISE > light.poise);
-    // A HATCHLING BARELY HURTS (owner's call): it is a thing that takes your attention, not your bar. Both
-    // of its blows come in under a tenth of the hero's health, and the pounce is still the bigger one.
+    // A HATCHLING BARELY HURTS (owner's call): it is a thing that takes your attention, not your bar.
     try std.testing.expect(B_LEAP_HIT.dmg > B_BITE_HIT.dmg);
     try std.testing.expect(B_LEAP_HIT.dmg < heromod.HP_MAX * 0.1);
     // SHE CANNOT MOVE QUICKLY (owner's rule): slower than the hero's WALK, where they outrun it.
@@ -2200,13 +2046,13 @@ test "A SAC RIPENS, THEN SPLITS — and a cut one never does" {
     while (t < SAC_HATCH - 0.1) : (t += 1.0 / 60.0) {
         if (s.update(1.0 / 60.0, .{})) split = true;
     }
-    try std.testing.expect(!split); // …not yet, and the swelling says so
+    try std.testing.expect(!split);
     try std.testing.expect(s.swell() > 0.95);
     while (t < SAC_HATCH + 0.2) : (t += 1.0 / 60.0) {
         if (s.update(1.0 / 60.0, .{})) split = true;
     }
     try std.testing.expect(split);
-    try std.testing.expect(!s.standing()); // …and it no longer holds a slot against her cap
+    try std.testing.expect(!s.standing());
 
     // THE POINT OF SHOOTING ONE: killed, it hatches nothing, ever.
     var k = Sac.lay(mathx.ground(0, 0), 0.5, 1.0);
@@ -2228,6 +2074,18 @@ test "A SAC RIPENS, THEN SPLITS — and a cut one never does" {
     try std.testing.expect(!k.hatched);
 }
 
+test "A SAC IS A TARGET, and answers everything a target has to answer" {
+    var s = Sac.lay(mathx.ground(0, 0), 0.5, 1.0);
+    try std.testing.expectEqual(wf.FoeKind.brood_sac, s.kind());
+    try std.testing.expect(s.alive() and !s.dying() and !s.staggered());
+    try std.testing.expect(s.lockPoint().y > s.pos.y);
+    try std.testing.expect(s.topWorld().y > s.lockPoint().y);
+    try std.testing.expect(s.bodyR() > 0);
+    try std.testing.expect(s.hurtRadius() > SAC_R);
+    s.killed = true;
+    try std.testing.expect(s.dying());
+}
+
 test "a sac takes a few blows, not one — it is a target, not a balloon" {
     var s = Sac.lay(mathx.ground(0, 0), 0.5, 1.0);
     const light = foe.Blade{
@@ -2246,26 +2104,21 @@ test "a sac takes a few blows, not one — it is a target, not a balloon" {
 }
 
 test "THE GLOB IS NOT THE WEAPON, THE FLOOR IS: a hit is cheap, standing in it is not" {
-    // The impact has to come in well under her own teeth, or "low impact" is a caption rather than a
-    // number. (Against a HATCHLING's bite is the wrong anchor: that one is tuned to be nearly free.)
     try std.testing.expect(M_SPIT_HIT.dmg < M_BITE_HIT.dmg * 0.35);
-    try std.testing.expect(M_SPIT_HIT.stance == 0); // …and it does not touch stance at all
-    // …and lingering has to be the thing that kills: a full-health hero (70) dies in a few seconds of it,
-    // where crossing one costs a pulse.
+    try std.testing.expect(M_SPIT_HIT.stance == 0);
+    // …and lingering has to be the thing that kills: a full-health hero (70) dies in a few seconds of it, where crossing one costs a pulse.
     const dps = ACID_TICK_DMG / ACID_TICK;
     try std.testing.expect(dps > M_SPIT_HIT.dmg * 2.0);
     try std.testing.expect(heromod.HP_MAX / dps < 6.0);
-    try std.testing.expect(ACID_TICK_DMG < heromod.HP_MAX * 0.15); // …but no single pulse is a disaster
+    try std.testing.expect(ACID_TICK_DMG < heromod.HP_MAX * 0.15);
 }
 
 test "a pool spreads, burns in PULSES, thins out and stops" {
     var b = Brood{ .model = undefined };
     b.clear();
     const at = mathx.ground(0, 0);
-    // `splash` voices a sound, which needs no device — but the pool bookkeeping is what is under test, so
-    // it is built directly here.
     b.pools[0] = Pool.splash(at, 0.5);
-    try std.testing.expect(b.pools[0].radius() < ACID_R); // …a splash, then it spreads
+    try std.testing.expect(b.pools[0].radius() < ACID_R);
     var t: f32 = 0;
     while (t < ACID_SPREAD * 2) : (t += 1.0 / 60.0) b.pools[0].update(1.0 / 60.0);
     try std.testing.expectApproxEqAbs(ACID_R, b.pools[0].radius(), 1e-4);
@@ -2283,7 +2136,6 @@ test "a pool spreads, burns in PULSES, thins out and stops" {
     }
     try std.testing.expectEqual(@as(u32, 3), pulses);
     try std.testing.expectApproxEqAbs(ACID_TICK_DMG * 3, dealt, 1e-4);
-    // STEPPING OUT RESETS THE CLOCK: crossing a pool repeatedly must never be cheaper than standing in it.
     _ = b.burn(ACID_TICK * 0.9, at);
     _ = b.burn(1.0 / 60.0, mathx.ground(50, 50));
     try std.testing.expectEqual(@as(f32, 0), b.burn(ACID_TICK * 0.9, at));

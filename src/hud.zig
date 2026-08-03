@@ -70,7 +70,7 @@ pub fn lineH(size: i32) i32 {
     return size + @divTrunc(size, 3);
 }
 
-// A REAL system monospace face — Consolas, then the other Windows-stock fixed-pitch faces, then whatever a non-Windows box has.
+// A REAL system monospace face
 const MONO_CANDIDATES = [_][:0]const u8{
     "C:/Windows/Fonts/consola.ttf", // Consolas — the good one
     "C:/Windows/Fonts/lucon.ttf", // Lucida Console
@@ -87,7 +87,6 @@ pub const MONO: i32 = 18;
 
 fn initMono() void {
     for (MONO_CANDIDATES) |path| {
-        // `atlas` also rejects a face that "loaded" as raylib's 0-glyph default — take one of those and every string in the editor measures as nothing.
         if (atlas(path, MONO_ATLAS_PX)) |f| {
             monoFont = f;
             haveMono = true;
@@ -141,7 +140,6 @@ const FP_H: i32 = 11;
 const ST_W: i32 = 232;
 const ST_H: i32 = 11;
 
-// ALPHAS ARE DELIBERATELY SHORT OF OPAQUE (owner's call — the bars and the rune plate read as solid furniture sat on top of the game).
 const TRACK = rgba(16, 13, 11, 186); // the empty channel behind every fill
 const FRAME = rgba(116, 104, 84, 210); // the tarnished-metal rim, a hairline outside the track
 // Each bar is THREE values: a flat body, a shaded bottom third, a lit hairline on top.
@@ -155,16 +153,14 @@ const ST_HI = rgba(112, 136, 58, 255);
 const ST_LO = rgba(60, 78, 28, 255);
 const ST_TP = rgba(154, 178, 88, 255);
 const CHIP = rgba(180, 98, 58, 226); // the recent-damage trail behind the HP fill
-// THE BAR'S ONE WARNING RED, named like every other colour in this file: the WINDED mark and the REFUSED ring are the same cue said twice (this bar owes you something), and they were three inline literals — a drift waiting for the first retune.
 const WARN = rgba(232, 96, 72, 255);
-const WARN_LT = rgba(240, 150, 120, 255); // …the threshold tick itself, a stop brighter
+const WARN_LT = rgba(240, 150, 120, 255);
 
-// THE CHIP BAR, the most ER-identifying thing on screen: the red fill snaps to the new HP the instant you are hit and a paler bar hangs at the OLD value for a beat before draining to meet it, so you read what the blow cost after it has landed.
 var chip: f32 = 1;
 var chipHold: f32 = 0;
 var chipLast: f32 = 1;
 const CHIP_HOLD = 0.42; // seconds the trail hangs before it starts draining
-const CHIP_RATE = 0.55; // …then drains this fraction of the bar per second
+const CHIP_RATE = 0.55;
 
 pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, windedTo: f32) void {
     if (hp > chip) {
@@ -181,7 +177,6 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, windedTo: 
     bar(MARGIN, y, FP_W, FP_H, fp, 0, FP_HI, FP_LO, FP_TP);
     y += FP_H + BAR_GAP;
     bar(MARGIN, y, ST_W, ST_H, stam, 0, ST_HI, ST_LO, ST_TP);
-    // WINDED: the bar carries the mark it has to refill PAST before the sprint comes back, and the track behind it reads as owed rather than as spare.
     if (windedTo > 0.001) {
         const wf: f32 = @floatFromInt(ST_W);
         const owed: i32 = @intFromFloat(wf * mathx.clampF(windedTo, 0, 1));
@@ -199,10 +194,9 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, windedTo: 
 }
 
 fn bar(x: i32, y: i32, w: i32, h: i32, frac: f32, chipFrac: f32, hi: rl.Color, lo: rl.Color, tp: rl.Color) void {
-    // The rim goes OUTSIDE the fill, between the black edge and the track: over the fill it muddies the lit hairline below and the bar loses its top edge.
     rl.drawRectangle(x - 3, y - 3, w + 6, h + 6, rgba(0, 0, 0, 50)); // a soft seat off the sky…
-    rl.drawRectangle(x - 2, y - 2, w + 4, h + 4, rgba(0, 0, 0, 165)); // …the hard black edge…
-    rl.drawRectangle(x - 1, y - 1, w + 2, h + 2, FRAME); // …and one warm metal hairline
+    rl.drawRectangle(x - 2, y - 2, w + 4, h + 4, rgba(0, 0, 0, 165));
+    rl.drawRectangle(x - 1, y - 1, w + 2, h + 2, FRAME);
     rl.drawRectangle(x, y, w, h, TRACK);
     const wf: f32 = @floatFromInt(w);
     const fw: i32 = @intFromFloat(wf * mathx.clampF(frac, 0, 1));
@@ -211,16 +205,15 @@ fn bar(x: i32, y: i32, w: i32, h: i32, frac: f32, chipFrac: f32, hi: rl.Color, l
     if (fw > 0) {
         const third = @max(@divTrunc(h, 3), 1);
         rl.drawRectangle(x, y, fw, h - third, hi); // a flat body…
-        rl.drawRectangleGradientV(x, y + h - third, fw, third, hi, lo); // …shaded into its floor
-        rl.drawRectangle(x, y, fw, 1, tp); // …under one lit hairline
-        // The leading edge catches the light — what makes a draining bar read as MOVING rather than as a rectangle that got shorter.
+        rl.drawRectangleGradientV(x, y + h - third, fw, third, hi, lo);
+        rl.drawRectangle(x, y, fw, 1, tp);
         if (fw > 2 and frac < 0.999) rl.drawRectangle(x + fw - 2, y, 2, h, rgba(255, 244, 226, 64));
     }
 }
 
 const FOE_W: i32 = 54;
 const FOE_H: i32 = 5;
-const FOE_LIFT: i32 = 16; // …how far above the projected crown it rides
+const FOE_LIFT: i32 = 16;
 const FOE_TRACK = rgba(38, 12, 10, 230);
 const STAGGER_RIM = rgba(232, 196, 90, 255); // ER's gold crit-opening cue on a stance break
 
@@ -237,8 +230,8 @@ pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool) void {
 
 const RUNE_W: i32 = 122;
 const RUNE_H: i32 = 32;
-const RUNE_FILL = rgba(14, 12, 10, 170); // …pulled back with the bars (see TRACK) — owner's call
-const RUNE_EDGE = rgba(116, 104, 84, 186); // …the vitals bars' FRAME colour, deliberately
+const RUNE_FILL = rgba(14, 12, 10, 170);
+const RUNE_EDGE = rgba(116, 104, 84, 186);
 const RUNE_TEXT = rgba(228, 216, 190, 255);
 
 pub fn runes(n: u32) void {
@@ -262,7 +255,6 @@ pub fn prompt(s: [:0]const u8) void {
     text(s, x, y, BODY, rgba(226, 214, 186, 240));
 }
 
-// ER's bottom-left is a D-PAD CROSS of exactly four slots: sorcery UP, left hand LEFT, right hand RIGHT, quick item DOWN.
 const EQ_SCALE: i32 = 150; // percent
 fn eq(v: i32) i32 {
     return @divTrunc(v * EQ_SCALE, 100);
@@ -270,9 +262,7 @@ fn eq(v: i32) i32 {
 const SLOT_W: i32 = eq(44);
 const SLOT_H: i32 = eq(60);
 const SLOT_GAP: i32 = eq(8); // between the LEFT/RIGHT arms and the centre column
-// The vertical pitch is DELIBERATELY LESS THAN A SLOT IS TALL, and it is not derived from SLOT_GAP.
 const PITCH_Y: i32 = eq(48);
-// The seat off the bottom does NOT scale — it is a screen margin like MARGIN, and doubling it would just push the cross inward.
 const BOTTOM: i32 = 26;
 
 const WELL_ON: u8 = 148;
@@ -282,35 +272,31 @@ const SLOT_OFF = rgba(124, 115, 98, 122);
 const STEEL = rgba(232, 234, 238, 255);
 const STEEL_DK = rgba(126, 132, 140, 255);
 const BRASS = rgba(182, 146, 78, 255);
-const GRIP = rgba(112, 82, 56, 255); // …light enough to READ against the well, not true leather
+const GRIP = rgba(112, 82, 56, 255);
 const BOARD_JOINT = rgba(78, 56, 38, 255); // the shield icon's plank seams — a shade under GRIP
 
 pub const Slot = enum { empty, sword, bow, shield, flask };
 
 pub const FlaskTint = enum { crimson, cerulean };
 
-/// `left`/`right` are what is IN HIS HANDS this frame, not what he owns — the cross is four slots and it
-/// `tint` picks which flask is drawn in the DOWN slot, `charges` how many are left — the cross is where ER shows both, and a charge count you have to open a menu for is a charge count you play without.
+/// `left`/`right` are what is IN HIS HANDS this frame, not what he owns — the cross is four slots and it `tint` picks which flask is drawn in the DOWN slot, `charges` how many are left — the cross is where ER shows both, and a charge count you have to open a menu for is a charge count you play without.
 pub fn equipment(left_hand: Slot, right_hand: Slot, tint: FlaskTint, charges: u8, ammo: ?u8) void {
     // Three columns wide, corners left out.
     const stepX = SLOT_W + SLOT_GAP;
     const left = MARGIN;
     const bottom = rl.getScreenHeight() - BOTTOM;
     const midX = left + stepX; // the centre cell of the three
-    const midY = bottom - SLOT_H - PITCH_Y; // …the side arms' top edge
+    const midY = bottom - SLOT_H - PITCH_Y;
     slot(midX, midY - PITCH_Y, .empty, .crimson, 0); // UP — sorcery/incantation
     slot(left, midY, left_hand, .crimson, 0); // LEFT — left hand: the shield, or nothing behind a bow
     slot(midX + stepX, midY, right_hand, .crimson, 0); // RIGHT — right hand: the sword or the bow
     slot(midX, midY + PITCH_Y, .flask, tint, charges); // DOWN — the quick item
-    // …and the AMMO the armament above it eats, in a short box UNDER that slot (ER's own place for it), only
-    // when something is loaded.
     if (ammo) |n| ammoBox(midX + stepX, midY + SLOT_H + AMMO_GAP, n);
 }
 
-// HALF-HEIGHT, so it reads as a subordinate of the weapon slot rather than a fifth slot in a cross of four.
 const AMMO_H: i32 = eq(26);
 const AMMO_GAP: i32 = eq(5);
-const AMMO_DRY = rgba(150, 96, 88, 220); // …the dry flask's own red, so "out of it" reads the same everywhere
+const AMMO_DRY = rgba(150, 96, 88, 220);
 
 fn ammoBox(x: i32, y: i32, n: u8) void {
     const on = n > 0;
@@ -342,8 +328,7 @@ fn arrowIcon(cx: f32, cy: f32, on: bool) void {
         .{ .x = cx + half - 1.2 * k, .y = cy + 2.2 * k },
         head,
     );
-    // Fletches splay BACKWARD. Drawn the other way they open toward the head and the icon reads as a
-    // double-headed arrow.
+    // Fletches splay BACKWARD.
     for ([_]f32{ -1, 1 }) |sy| {
         rl.drawLineEx(
             .{ .x = cx - half + 3.2 * k, .y = cy },
@@ -355,7 +340,6 @@ fn arrowIcon(cx: f32, cy: f32, on: bool) void {
 }
 
 fn slot(x: i32, y: i32, holds: Slot, tint: FlaskTint, charges: u8) void {
-    // A slot with a DRY flask in it is still occupied — it lights as a filled slot and the flask is drawn dim, because "empty flask" and "no flask" have to look different or you cannot tell whether to go and rest.
     const on = holds != .empty;
     rl.drawRectangle(x, y, SLOT_W, SLOT_H, rgba(8, 7, 6, if (on) WELL_ON else WELL_OFF)); // the well
     const r = rl.Rectangle{
@@ -384,7 +368,7 @@ fn slot(x: i32, y: i32, holds: Slot, tint: FlaskTint, charges: u8) void {
 
 const CRIMSON = rgba(196, 46, 40, 255); // Flask of Crimson Tears
 const CRIMSON_DK = rgba(104, 24, 22, 255);
-const CERULEAN = rgba(64, 128, 200, 255); // …of Cerulean Tears
+const CERULEAN = rgba(64, 128, 200, 255);
 const CERULEAN_DK = rgba(28, 62, 118, 255);
 const GLASS = rgba(206, 202, 192, 255);
 const CORK = rgba(150, 118, 74, 255);
@@ -403,7 +387,6 @@ fn flask(cx: f32, cy: f32, tint: FlaskTint, full: bool) void {
     const fill = if (full) lit else rgba(dk.r, dk.g, dk.b, 150);
     const body = s * 0.30; // half-width of the bulb
     const bodyY = cy + s * 0.10;
-    // The BULB, as three stacked rounded bands — a circle alone reads as a bauble, and the taper into the neck is most of what says "bottle".
     rl.drawCircleV(.{ .x = cx, .y = bodyY }, body, fill);
     rl.drawRectangleRounded(.{
         .x = cx - body * 0.86,
@@ -416,7 +399,6 @@ fn flask(cx: f32, cy: f32, tint: FlaskTint, full: bool) void {
         .{ .x = s * 0.17, .y = s * 0.30 },
         fill,
     );
-    // A lit highlight down the left of the glass — one stroke, and it is what stops the icon reading as a flat blob at 66 px.
     rl.drawLineEx(
         .{ .x = cx - body * 0.52, .y = bodyY - body * 0.55 },
         .{ .x = cx - body * 0.62, .y = bodyY + body * 0.35 },
@@ -430,34 +412,33 @@ fn flask(cx: f32, cy: f32, tint: FlaskTint, full: bool) void {
     );
 }
 
-const ICON = SLOT_W; // …the square the diagonal is drawn in
+const ICON = SLOT_W;
 fn sword(cx: f32, cy: f32) void {
     const s: f32 = @floatFromInt(ICON);
     const k = s / 34.0; // stroke widths were tuned at a 34 px slot; carry them up with the size
     const d = s * 0.55; // half the icon's diagonal — ~78% of the slot's width, ER's own fill
     const u = 0.70711; // the diagonal axis, pommel-ward…
     const tip = rl.Vector2{ .x = cx - u * d, .y = cy - u * d };
-    const gx = cx + u * d * 0.34; // …the guard sits low on it
+    const gx = cx + u * d * 0.34;
     const gy = cy + u * d * 0.34;
     const guard = rl.Vector2{ .x = gx, .y = gy };
     const pom = rl.Vector2{ .x = cx + u * d * 0.92, .y = cy + u * d * 0.92 };
     const q = s * 0.22; // crossguard half-width, ACROSS the axis — the BLADE has to dominate
     rl.drawLineEx(tip, guard, 3.6 * k, STEEL_DK); // blade body…
-    rl.drawLineEx(tip, guard, 1.4 * k, STEEL); // …with a lit core down the middle
+    rl.drawLineEx(tip, guard, 1.4 * k, STEEL);
     rl.drawLineEx(guard, pom, 3.0 * k, GRIP); // grip UNDER the guard, so the cross reads on top
     rl.drawLineEx(.{ .x = gx + u * q, .y = gy - u * q }, .{ .x = gx - u * q, .y = gy + u * q }, 3.2 * k, BRASS);
     rl.drawCircleV(pom, 2.6 * k, BRASS);
 }
 
-/// Dead screen centre, because that is literally where an aimed shot goes. Four ticks and a GAP: the middle
-/// is the part of the screen you are trying to look at. `k` grows it in with the stance.
+/// Dead screen centre, because that is literally where an aimed shot goes.
 pub fn reticle(k: f32) void {
     const a = mathx.clampF(k, 0, 1);
     if (a <= 0.02) return;
     const cx = @divTrunc(rl.getScreenWidth(), 2);
     const cy = @divTrunc(rl.getScreenHeight(), 2);
     const gap: i32 = 5;
-    const len: i32 = @intFromFloat(3.0 + 7.0 * a); // …the ticks reach out as the bow comes up
+    const len: i32 = @intFromFloat(3.0 + 7.0 * a);
     const col = rgba(236, 228, 206, mathx.u8f(210.0 * a));
     const dim = rgba(0, 0, 0, mathx.u8f(120.0 * a)); // a seat, so it reads over pale ground too
     for ([_][4]i32{
@@ -471,21 +452,17 @@ pub fn reticle(k: f32) void {
     }
 }
 
-// THE BOW, in the right hand's slot when it is the bow he is holding — on the SAME diagonal as the sword,
-// Its OWN two values, NOT the mesh's in `archer.zig`: these are literal screen values drawn after the retro
-// blit, where the mesh's are albedos bound for a 1.72 key and a 1/2.2 gamma.
 const BOWWOOD = rgba(96, 68, 44, 255);
 const BOWSTRING = rgba(214, 206, 184, 255);
 fn bowIcon(cx: f32, cy: f32) void {
     const s: f32 = @floatFromInt(ICON);
     const k = s / 34.0; // the icon set's shared stroke scale (see `sword`)
-    const d = s * 0.55; // …and its diagonal reach, so bow and sword fill the slot alike
+    const d = s * 0.55;
     const u = 0.70711;
     const tx = cx - u * d;
     const ty = cy - u * d;
     const bx = cx + u * d;
     const by = cy + u * d;
-    // The LIMBS, as two short chords off the belly point — rounder at this size than a real curve costs.
     const belly = s * 0.17; // how far the grip stands off the string line, across the axis
     const mx = cx - u * belly;
     const my = cy + u * belly;
@@ -511,7 +488,7 @@ fn shield(cx: f32, cy: f32) void {
     const r = s * 0.40; // ~80% of the slot's width, matching the sword's own fill
     const boards = r - 2.4 * k;
     rl.drawCircleV(c, r, STEEL_DK); // the iron binding…
-    rl.drawCircleV(c, boards, GRIP); // …with the boards inside it
+    rl.drawCircleV(c, boards, GRIP);
     for ([_]f32{ -0.42, 0.42 }) |f| {
         const dy = boards * f;
         const half = @sqrt(@max(boards * boards - dy * dy, 1.0));

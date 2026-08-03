@@ -16,7 +16,6 @@ pub const hurt_heavy = Event{ .low = 0.90, .high = 0.45, .dur = 0.34 }; // the l
 // CAUGHT ON THE SHIELD.
 pub const guard_block = Event{ .low = 0.30, .high = 0.42, .dur = 0.09 };
 pub const guard_block_heavy = Event{ .low = 0.62, .high = 0.55, .dur = 0.18 };
-// …and the shield knocked aside: the worst thing that can happen to you short of dying, and it says so — longer than `hurt_heavy`, because what you are being told is that the NEXT one is free.
 pub const guard_break = Event{ .low = 0.95, .high = 0.52, .dur = 0.42 };
 pub const roll = Event{ .low = 0.16, .high = 0.40, .dur = 0.10 }; // the dodge whump
 pub const kill = Event{ .low = 0.34, .high = 0.20, .dur = 0.14 }; // a toad falls
@@ -32,7 +31,6 @@ const Motor = struct {
         if (m.dur <= 0 or m.t <= 0) return 0;
         return m.peak * (m.t / m.dur);
     }
-    // Takes over only if at least as strong RIGHT NOW as what is still playing: a big impact overrides a fading buzz, a small tick never truncates a bigger event.
     fn pulse(m: *Motor, peak: f32, dur: f32) void {
         if (dur <= 0) return;
         if (peak >= m.level()) {
@@ -55,7 +53,6 @@ pub const Rumble = struct {
         self.high.pulse(e.high, e.dur);
     }
 
-    // `active` gates OUTPUT only: pass false with no controller or while paused, so the grip is silent while envelopes keep decaying in the background (unpausing doesn't replay a stale buzz).
     pub fn update(self: *Rumble, dt: f32, active: bool) void {
         self.low.tick(dt);
         self.high.tick(dt);

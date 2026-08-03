@@ -5,7 +5,6 @@ const mathx = @import("mathx.zig");
 const v3 = mathx.v3;
 const clampF = mathx.clampF;
 
-// Third-person OVER-THE-SHOULDER camera: orbits a point near the hero's shoulders at a fixed distance (yaw + clamped pitch, scroll zoom), framing him off-centre so the view ahead is unobstructed.
 
 pub const MIN_DIST = 2.4;
 pub const MAX_DIST = 9.0;
@@ -20,11 +19,10 @@ const TARGET_RAISE = 0.15; // lift the look-at a touch above the shoulder point
 /// How far the eye stays clear of the ground (see `followClear`).
 const GROUND_CLEAR = 0.7;
 
-// AIMING PUSHES THE EYE IN PAST HIM (L2 / RMB with the bow). A separate blend rather than a change to
-// `dist`, so letting go of L2 returns to the zoom the player chose and not to a default.
+// AIMING PUSHES THE EYE IN PAST HIM (L2 / RMB with the bow).
 const AIM_DIST = 0.7; // right up past his head — near enough that he is behind the lens, not in front of it
-const AIM_SHOULDER = 0.30; // …the frame swung almost square, since there is nobody left to look around…
-const AIM_RAISE = 0.42; // …and the look-at at eye height rather than the chest
+const AIM_SHOULDER = 0.30;
+const AIM_RAISE = 0.42;
 
 const SHAKE_MAX = 0.13; // world-unit jitter amplitude at full trauma
 const SHAKE_DECAY = 2.6; // trauma drained per second — shakes die fast (a crack, not a wobble)
@@ -62,7 +60,6 @@ pub const CamRig = struct {
         c.pitch = DEFAULT_PITCH;
     }
 
-    // Ease the orbit toward (yaw, pitch) with exponential smoothing — a quick, SNAP-FREE transition (used by lock-on to swing onto the foe).
     pub fn aim(c: *CamRig, targetYaw: f32, targetPitch: f32, dt: f32, rate: f32) void {
         const k = 1.0 - @exp(-rate * dt);
         c.yaw = mathx.wrapPi(c.yaw + mathx.wrapPi(targetYaw - c.yaw) * k);
@@ -110,7 +107,7 @@ pub const CamRig = struct {
         );
     }
 
-    /// The player's own zoom, pulled in past the hero by the aim blend. His `dist` is never written.
+    /// The player's own zoom, pulled in past the hero by the aim blend.
     pub fn boom(c: *const CamRig) f32 {
         return mathx.lerpF(c.dist, AIM_DIST, mathx.clampF(c.aimB, 0, 1));
     }
@@ -127,8 +124,6 @@ pub const CamRig = struct {
         c.place(v3(at.x, at.y + TARGET_RAISE, at.z), c.dist);
     }
 
-    /// From the eye through the middle of the screen — where the reticle is, and so where an aimed shot has
-    /// to CONVERGE: thrown merely parallel to this it misses sideways by however far the bow is from the eye.
     pub fn centreRay(c: *const CamRig) struct { origin: rl.Vector3, dir: rl.Vector3 } {
         return .{ .origin = c.cam.position, .dir = mathx.normV(mathx.subV(c.cam.target, c.cam.position)) };
     }
@@ -138,14 +133,12 @@ pub const CamRig = struct {
         const back = c.backDir();
         const shortest = c.boomFloor();
         var d = c.boom();
-        // Walked in from the requested distance rather than solved: the ground under the boom is a bilinear patchwork, so there is no closed form, and a step of a quarter metre is finer than the eye can read at any zoom.
         while (d > shortest) {
             const p = mathx.addV(target, mathx.scaleV(back, d));
             if (p.y >= groundAt(ctx, p.x, p.z) + GROUND_CLEAR) break;
             d = mathx.maxF(d - 0.25, shortest);
         }
         c.place(target, d);
-        // …and if even the closest boom is inside the hill (standing in a hollow, or against a face steeper than the pitch), LIFT as the last resort.
         const floor = groundAt(ctx, c.cam.position.x, c.cam.position.z) + GROUND_CLEAR;
         if (c.cam.position.y < floor) c.cam.position.y = floor;
     }
@@ -170,7 +163,6 @@ test "THE AIM PUSHES THE EYE IN PAST HIM, and gives the player's own zoom back a
     const tight = rig.targetFor(shoulder);
     try std.testing.expect(mathx.distXZ(tight, shoulder) < mathx.distXZ(wide, shoulder));
     try std.testing.expect(tight.y > wide.y);
-    // THE PLAYER'S ZOOM IS NEVER WRITTEN: dropping the aim returns to the distance HE chose, not a default.
     rig.aimB = 0;
     try std.testing.expectApproxEqAbs(@as(f32, 7.0), rig.boom(), 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 7.0), rig.dist, 1e-5);
@@ -179,14 +171,12 @@ test "THE AIM PUSHES THE EYE IN PAST HIM, and gives the player's own zoom back a
 }
 
 test "the centre ray is the line the reticle marks" {
-    // An aimed shot converges on THIS rather than running parallel to it: the bow is off to one side, so a
-    // parallel shaft misses by that offset at every range.
     var rig = CamRig{ .cam = undefined, .yaw = 0, .pitch = 0, .dist = 4 };
     rig.cam.position = v3(1, 2, -5);
     rig.cam.target = v3(1, 2, 0);
     const ray = rig.centreRay();
-    try std.testing.expectApproxEqAbs(@as(f32, 1), ray.dir.z, 1e-5); // …straight down +Z
-    try std.testing.expectApproxEqAbs(@as(f32, 1), ray.origin.x, 1e-5); // …from the EYE, not the hero
+    try std.testing.expectApproxEqAbs(@as(f32, 1), ray.dir.z, 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), ray.origin.x, 1e-5);
 }
 
 test "ground basis holds the strafe-sign invariant" {

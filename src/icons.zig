@@ -38,6 +38,7 @@ pub const Icon = enum {
     // …and the brood.
     brood_mother,
     broodling,
+    brood_sac,
     // files
     new,
     open,
@@ -88,18 +89,18 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
         // Props: a column — a WIDE capital and base with a narrow shaft between them.
         .props => {
             hline(cx, cy - s * 0.34, s * 0.74, w * 1.3, col); // the abacus, proud of everything
-            hline(cx, cy - s * 0.25, s * 0.52, w, col); //      …on its echinus
+            hline(cx, cy - s * 0.25, s * 0.52, w, col);
             vline(cx - s * 0.10, cy + s * 0.02, s * 0.52, w, col);
             vline(cx + s * 0.10, cy + s * 0.02, s * 0.52, w, col);
             hline(cx, cy + s * 0.28, s * 0.52, w, col);
-            hline(cx, cy + s * 0.38, s * 0.74, w * 1.3, col); // …and a plinth to match the abacus
+            hline(cx, cy + s * 0.38, s * 0.74, w * 1.3, col);
         },
         // Interactables: a chest.
         .interact => {
             box(cx, cy + s * 0.15, s * 0.72, s * 0.42, w, col); // the carcase
-            arc(cx, cy - s * 0.06, s * 0.36, 180, 360, w, col); // …under a barrel lid
-            hline(cx, cy - s * 0.06, s * 0.72, w, col); //         …resting on its rim
-            dot(cx, cy + s * 0.06, w * 1.2, col); //               the hasp, over the joint
+            arc(cx, cy - s * 0.06, s * 0.36, 180, 360, w, col);
+            hline(cx, cy - s * 0.06, s * 0.72, w, col);
+            dot(cx, cy + s * 0.06, w * 1.2, col); // the hasp, over the joint
         },
         // Units: a figure.
         .units => {
@@ -183,7 +184,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
                 dot(cx + mathx.cosf(a) * s * 0.34, cy + mathx.sinf(a) * s * 0.34, w * 1.5, col);
             }
         },
-        // Cluster: a BAND of instances — an annulus, so it reads against `patch` (a filled disc) and `ring` (a single line of them).
         .cluster => {
             ring2(cx, cy, s * 0.40, w * 0.8, d);
             ring2(cx, cy, s * 0.16, w * 0.8, d);
@@ -193,7 +193,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
                 dot(cx + mathx.cosf(a) * s * 0.28, cy + mathx.sinf(a) * s * 0.28, w * 1.5, col);
             }
         },
-        // Ivy: leaves climbing a WALL, and the wall is half the meaning — this op only sows on stonework already standing.
         .ivy => {
             vline(cx - s * 0.26, cy, s * 0.84, w * 2.6, d); // the wall face
             var i: i32 = 0;
@@ -203,7 +202,7 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
                 const side: f32 = if (@mod(i, 2) == 0) 1.0 else 0.45;
                 const x = cx - s * 0.10 + s * 0.22 * side;
                 line(cx - s * 0.14, y + s * 0.06, x, y, w, col); // a short stalk off the wall
-                dot(x, y, w * 2.0, col); // …and the leaf
+                dot(x, y, w * 2.0, col);
             }
             vline(cx - s * 0.14, cy, s * 0.66, w * 0.9, col); // the runner itself, straight up
         },
@@ -216,8 +215,8 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
         },
         .archer => {
             arc(cx - s * 0.04, cy, s * 0.34, 300, 420, w, col); // the bow's limb…
-            line(cx + s * 0.12, cy - s * 0.29, cx + s * 0.12, cy + s * 0.29, w * 0.7, col); // …its string
-            line(cx - s * 0.26, cy, cx + s * 0.30, cy, w * 0.9, col); // …and the nocked shaft
+            line(cx + s * 0.12, cy - s * 0.29, cx + s * 0.12, cy + s * 0.29, w * 0.7, col);
+            line(cx - s * 0.26, cy, cx + s * 0.30, cy, w * 0.9, col);
         },
         .ogre => {
             arc(cx, cy + s * 0.28, s * 0.42, 180, 360, w, col); // a great hunched mass
@@ -228,26 +227,24 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             // TWO axes, crossed — the whole character, and it cannot be mistaken for one weapon.
             for ([_]f32{ -1, 1 }) |side| {
                 line(cx + side * s * 0.26, cy + s * 0.34, cx - side * s * 0.20, cy - s * 0.30, w, col); // the haft
-                arc(cx - side * s * 0.20, cy - s * 0.30, s * 0.15, if (side < 0) 200 else 340, if (side < 0) 340 else 480, w, col); // …its blade
+                arc(cx - side * s * 0.20, cy - s * 0.30, s * 0.15, if (side < 0) 200 else 340, if (side < 0) 340 else 480, w, col);
             }
         },
         .priest => {
             line(cx - s * 0.06, cy + s * 0.40, cx - s * 0.06, cy - s * 0.20, w, col); // a tall crooked staff
-            arc(cx - s * 0.06, cy - s * 0.26, s * 0.13, 180, 360, w, col); // …forked at the head
-            dot(cx - s * 0.06, cy - s * 0.28, w * 1.9, col); // …holding the light
+            arc(cx - s * 0.06, cy - s * 0.26, s * 0.13, 180, 360, w, col);
+            dot(cx - s * 0.06, cy - s * 0.28, w * 1.9, col);
             line(cx + s * 0.14, cy + s * 0.06, cx + s * 0.14, cy + s * 0.26, w * 0.7, col); // a charm on a thong
         },
         .slinger => {
             // The pouch at the bottom of two cords, mid-whirl: a V with a stone in it.
             line(cx - s * 0.24, cy - s * 0.32, cx - s * 0.05, cy + s * 0.26, w * 0.8, col);
             line(cx + s * 0.24, cy - s * 0.32, cx + s * 0.05, cy + s * 0.26, w * 0.8, col);
-            arc(cx, cy + s * 0.26, s * 0.10, 0, 180, w, col); // …the leather pouch
-            dot(cx, cy + s * 0.24, w * 1.7, col); // …and the stone
+            arc(cx, cy + s * 0.26, s * 0.10, 0, 180, w, col);
+            dot(cx, cy + s * 0.24, w * 1.7, col);
         },
 
         .brood_mother => {
-            // A body slung between legs, with the two claws thrown forward — read it claws-first, which
-            // is how you meet her.
             arc(cx, cy + s * 0.10, s * 0.26, 180, 360, w, col); // the carapace
             hline(cx, cy + s * 0.10, s * 0.48, w, col);
             for ([_]f32{ -1, 1 }) |side| {
@@ -256,7 +253,7 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
                     line(cx + side * s * 0.20, cy + s * (0.06 + dy * 0.5), cx + side * s * 0.40, cy - s * 0.16 + s * dy, w * 0.7, col);
                     line(cx + side * s * 0.40, cy - s * 0.16 + s * dy, cx + side * s * 0.46, cy + s * 0.30, w * 0.7, col);
                 }
-                line(cx + side * s * 0.14, cy - s * 0.06, cx + side * s * 0.26, cy - s * 0.34, w, col); // …and a CLAW, forward
+                line(cx + side * s * 0.14, cy - s * 0.06, cx + side * s * 0.26, cy - s * 0.34, w, col);
             }
         },
         .broodling => {
@@ -269,6 +266,17 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
                 }
             }
             hline(cx, cy + s * 0.32, s * 0.36, w * 0.6, d); // the ground it is above
+        },
+
+        .brood_sac => {
+            // A lumpy bag on the ground with the eggs showing through, and a web guy either side.
+            arc(cx, cy + s * 0.26, s * 0.34, 180, 360, w, col);
+            hline(cx, cy + s * 0.26, s * 0.66, w, col);
+            dot(cx - s * 0.12, cy + s * 0.10, w * 1.5, col);
+            dot(cx + s * 0.11, cy + s * 0.04, w * 1.5, col);
+            dot(cx - s * 0.01, cy + s * 0.16, w * 1.3, col);
+            line(cx - s * 0.30, cy + s * 0.26, cx - s * 0.42, cy - s * 0.06, w * 0.6, d);
+            line(cx + s * 0.30, cy + s * 0.26, cx + s * 0.42, cy - s * 0.06, w * 0.6, d);
         },
 
         .new => {
@@ -311,7 +319,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
 
 // Deliberately tiny.
 
-/// The set's SECOND value — the same hue at a third of the weight, for the parts of an icon that are context rather than subject (the surface a stamp lands on, the box a scatter fills).
 fn dim(c: rl.Color) rl.Color {
     return rl.Color.init(c.r, c.g, c.b, @intCast(@as(u16, c.a) * 42 / 100));
 }
@@ -374,7 +381,6 @@ fn page(cx: f32, cy: f32, s: f32, w: f32, c: rl.Color) void {
 }
 fn disk(cx: f32, cy: f32, s: f32, w: f32, c: rl.Color, d: rl.Color) void {
     box(cx, cy, s * 0.62, s * 0.62, w, c);
-    // The shutter at the top and the label at the bottom — the two details that make a square read as a disk rather than as an empty box.
     rl.drawRectangleRec(.{ .x = cx - s * 0.16, .y = cy - s * 0.31, .width = s * 0.32, .height = s * 0.20 }, d);
     box(cx, cy + s * 0.18, s * 0.40, s * 0.22, w * 0.8, c);
 }

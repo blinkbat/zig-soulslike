@@ -1640,7 +1640,7 @@ fn bake(r: *Rack) rl.Sound {
 /// unloading a voice the mixer is still reading frees the buffer out from under the audio thread, and
 /// what that looks like is the WINDOW CLOSING WHILE THE PROCESS STAYS UP — no window, no way to quit
 /// it, and its icon still in the taskbar. It is not a rare race either: the ambience beds LOOP (they
-/// are re-triggered the moment they stop, see `tickBeds`) and the rest fire is a live STREAM, so on any
+/// are re-triggered the moment they stop, see `ambience`) and the rest fire is a live STREAM, so on any
 /// ordinary quit several voices are mid-playback.
 pub fn deinit() void {
     if (!ready) return;

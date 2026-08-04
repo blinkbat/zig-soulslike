@@ -58,7 +58,6 @@ pub const HELD = 17;
 const SWORD = HELD;
 
 pub const PARENT = [N]i32{ -1, ROOT, SPINE, CHEST, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CHEST, SHL, ELL, CHEST, SHR, ELR, WRR };
-const parent = PARENT;
 
 /// THE REST POSE for any humanoid on this scaffold: joint positions in the creature's own standing frame (X = its left, Y up, Z forward), as fractions of stature scaled by `stature`.
 pub fn restHumanoid(hx: f32, sx: f32, stature: f32) [N]rl.Vector3 {

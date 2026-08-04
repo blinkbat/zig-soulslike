@@ -66,6 +66,8 @@ const BLOCK_FELT_MIN = 0.25;
 const BLOCK_FELT_HEAVY = 0.5;
 const SHAKE_DEATH = 0.85;
 const SHAKE_CHEST = 0.12;
+/// The debug corner's AMMO row, in its own warmer ink so the count reads apart from the stats above it.
+const STAT_WARN = mathx.rgba(206, 150, 110, 255);
 // A SAC SPLITTING is bad news arriving; a sac BURST is you having stopped it.
 const SHAKE_HATCH = 0.30;
 const SHAKE_SAC_BURST = 0.34;
@@ -1004,11 +1006,11 @@ fn debugCorner(g: *Game) void {
         dbgRow(std.fmt.bufPrintZ(&buf, "arrow  {s} {d}/{d}{s}   lock res  fire {d:.0}  cold {d:.0}  lgt {d:.0}  chaos {d:.0}", .{
             @tagName(sel), h.quiver.ready(), combat.Quiver.cap(sel), rider,
             r.raw(.fire),  r.raw(.cold),     r.raw(.lightning),      r.raw(.chaos),
-        }) catch "", y, hud_.SMALL, rgba(206, 150, 110, 255));
+        }) catch "", y, hud_.SMALL, STAT_WARN);
     } else {
         dbgRow(std.fmt.bufPrintZ(&buf, "arrow  {s} {d}/{d}{s}", .{
             @tagName(sel), h.quiver.ready(), combat.Quiver.cap(sel), rider,
-        }) catch "", y, hud_.SMALL, rgba(206, 150, 110, 255));
+        }) catch "", y, hud_.SMALL, STAT_WARN);
     }
     y += step;
 
@@ -1823,7 +1825,26 @@ fn foeLockable(g: *const Game, r: FoeRef) bool {
         }
     }.ask);
 }
+/// IS THE REF STILL POINTING AT SOMETHING THAT EXISTS? Every group is fixed-size storage plus a LIVE
+/// COUNT, so its tail is `undefined` — an index that outlived a re-home is a read of undefined memory,
+/// not a stale target. `rehomeFoes` runs on a world reload, a respawn, a rest and every editor frame,
+/// and only three of those four drop the lock. The bound belongs here, where the whole game asks
+/// whether the lock is still good, rather than at each of them.
+fn refInBounds(g: *const Game, r: FoeRef) bool {
+    if (bandIdx(r)) |i| return i < g.band.liveConst().len;
+    if (broodIdx(r)) |i| return i < g.brood.liveConst().len;
+    if (musterIdx(r)) |i| return i < g.muster.liveConst().len;
+    if (r.kind == .brood_sac) return r.idx < g.brood.liveSacsConst().len;
+    return switch (r.kind) {
+        .toad => r.idx < g.warren.liveConst().len,
+        .archer => r.idx < g.line.liveConst().len,
+        .ogre => r.idx < g.grief.liveConst().len,
+        // …every kind handled by the three group checks above, named so a new one cannot slip past.
+        .berserker, .priest, .slinger, .brood_mother, .broodling, .brood_sac, .shieldman, .greatsword => false,
+    };
+}
 fn lockValid(g: *const Game, r: FoeRef) bool {
+    if (!refInBounds(g, r)) return false;
     return foeLockable(g, r) and mathx.distXZ(g.hero.pos, foePos(g, r)) <= MAX_LOCK_R + 2.0;
 }
 

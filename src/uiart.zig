@@ -1,4 +1,3 @@
-const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 
@@ -20,6 +19,9 @@ pub const GILT_BRIGHT = rgba(240, 212, 146, 255);
 /// THE CATCHLIGHT — the near-white every lit leading edge and fill tip is struck with. One tone,
 /// carried at whatever alpha the surface wants, so a bar, a foe bar and a menu gauge agree.
 pub const CATCH = rgba(255, 244, 226, 255);
+/// THE HIGHLIGHTED ROW'S INK, wherever a cursor sits — the game menu and the editor's widgets each
+/// held their own copy of it, which is two highlights one repaint apart.
+pub const HOT = rgba(236, 210, 150, 255);
 
 fn fi(v: i32) f32 {
     return @floatFromInt(v);
@@ -159,6 +161,7 @@ pub fn well(x: i32, y: i32, w: i32, h: i32, a: u8) void {
 }
 
 /// A warm candle pool, for the heart of an occupied slot.
+const CANDLE = rgba(255, 176, 90, 255);
 pub fn candle(cx: i32, cy: i32, r: f32, a: u8) void {
-    rl.drawCircleGradient(cx, cy, r, withAlpha(rgba(255, 176, 90, 255), a), withAlpha(rgba(255, 176, 90, 255), 0));
+    rl.drawCircleGradient(cx, cy, r, withAlpha(CANDLE, a), withAlpha(CANDLE, 0));
 }

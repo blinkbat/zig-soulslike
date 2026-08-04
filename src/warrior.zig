@@ -147,8 +147,8 @@ pub fn kindOf(r: Role) wf.FoeKind {
 /// ONE MOVE. A role's whole moveset is a slice of these, and the state machine reads nothing else —
 /// which is what lets the greatsword carry two answers without a second state machine to keep in step.
 const Attack = struct {
-    /// HOW FAR THE WEAPON ITSELF GETS, pre-scale and MEASURED off the posed kit (`kitSweep`, and the
-    /// tests that re-assert it). It is the AI's trigger range and nothing else: what the blow HITS is
+    /// HOW FAR THE WEAPON ITSELF GETS, pre-scale and MEASURED off the posed kit (`weaponSeg`, and the
+    /// `swung` tests that re-assert it). It is the AI's trigger range and nothing else: what the blow HITS is
     /// the swept weapon (`tryReach`), so this number cannot quietly grow a hurt box the swing never
     /// enters. It shipped that way once — a mace whose head never left 0.6 m of his own axis, firing a
     /// 2.8 m sector.

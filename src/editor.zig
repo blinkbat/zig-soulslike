@@ -213,6 +213,14 @@ const interactIcons = [_]ui.Icon{ .stamp, .erase };
 const unitIcons = [_]ui.Icon{ .toad, .archer, .ogre, .berserker, .priest, .slinger, .brood_mother, .broodling, .brood_sac, .shieldman, .greatsword, .erase };
 
 comptime {
+    // …AND PINNED BY NAME, not just by length: every one of these lists is the brush enum's own tags in
+    // the enum's own order, so a length check passes two entries swapped and the toolbar draws an ogre
+    // on the toad brush.
+    pinIcons(CoverBrush, &coverIcons);
+    pinIcons(DecorBrush, &decorIcons);
+    pinIcons(PropBrush, &propIcons);
+    pinIcons(InteractBrush, &interactIcons);
+    pinIcons(UnitBrush, &unitIcons);
     std.debug.assert(coverIcons.len == coverBrushes.len);
     std.debug.assert(decorIcons.len == decorBrushes.len);
     std.debug.assert(propIcons.len == propBrushes.len);
@@ -306,6 +314,16 @@ comptime {
         if (!std.mem.eql(u8, f.name, u.name)) @compileError("editor: UnitBrush." ++ u.name ++ " is not wf.FoeKind." ++ f.name);
     }
     if (!std.mem.eql(u8, unitFields[unitFields.len - 1].name, "erase")) @compileError("editor: UnitBrush must end in `erase`");
+}
+
+fn pinIcons(comptime E: type, comptime row: []const ui.Icon) void {
+    const fields = @typeInfo(E).@"enum".fields;
+    if (fields.len != row.len) @compileError("editor: " ++ @typeName(E) ++ " and its icon row are different lengths");
+    for (fields, row) |f, ic| {
+        if (!std.mem.eql(u8, f.name, @tagName(ic))) {
+            @compileError("editor: icon " ++ @tagName(ic) ++ " is not " ++ @typeName(E) ++ "." ++ f.name);
+        }
+    }
 }
 
 fn pinBrushes(comptime E: type, comptime names: []const [:0]const u8) void {

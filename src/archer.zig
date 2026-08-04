@@ -55,7 +55,6 @@ const ELR = heromod.ELR;
 const WRR = heromod.WRR;
 const BOW = heromod.HELD; // the drawn bow, in the shared weapon slot
 
-const parent = heromod.PARENT;
 
 // Stature + segment lengths: the hero's exact anthropometry (Drillis & Contini 1966 / Winter).
 const H: f32 = heromod.H;

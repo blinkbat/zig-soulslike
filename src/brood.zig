@@ -76,7 +76,6 @@ const BODY_R = 0.62; // ground footprint for collision
 const BODY_CY = 0.56; // body centre height (camera focus + hurt sphere)
 
 const LEG_PHASE = [NLEG]f32{ 0.0, 0.5, 0.0, 0.5 };
-const STRIDE = 0.62; // ground covered per full leg cycle
 const STEP_SWING = 26.0; // deg the femur sweeps fore/aft
 const STEP_LIFT = 20.0;
 const KNEE_REST = 96.0; // the standing knee angle (deg) — high and folded
@@ -128,7 +127,7 @@ pub const PER_SAC: usize = 1;
 /// body that makes and carries its own acid, hung about with silk that catches. See `frog.RESISTS` on
 /// why fire is the only one of the four anything deals yet.
 const RESISTS = combat.resists(.{ .fire = -25, .cold = 35, .chaos = 75 });
-/// THE SPIT IS POISON, NOT A STONE: all of its damage is CHAOS, and the poise is the only physical thing about it — a caustic glob still rocks you when it lands. Her POOLS burn with the same element (`ACID_HIT`), because they are the same fluid.
+/// THE SPIT IS POISON, NOT A STONE: all of its damage is CHAOS, and the poise is the only physical thing about it — a caustic glob still rocks you when it lands. Her POOLS burn with the same element (`acidPulse`), because they are the same fluid.
 pub const M_SPIT_HIT = combat.Hit{ .poise = 5, .elem = combat.elems(.{ .chaos = 5 }) };
 pub const M_BITE_HIT = combat.Hit{ .dmg = 19, .poise = 22, .stance = 7 };
 /// The glob's flight, handed to the shared launcher (`archer.launchVenom`).

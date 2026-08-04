@@ -80,7 +80,6 @@ const ELR = heromod.ELR;
 const WRR = heromod.WRR;
 const KIT = heromod.HELD; // the right hand's weapon: an axe, a staff, or a sling
 
-const parent = heromod.PARENT;
 
 const H: f32 = heromod.H;
 // The LEGS and ARMS take the hero's fractions from the shared source, like the archer's: `legChain`'s strafe geometry is measured off the leg pair, so a local copy that drifted would make a kobold's planted feet skate.
@@ -151,6 +150,18 @@ comptime {
     for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
         const fk: wf.FoeKind = @enumFromInt(@intFromEnum(wf.FoeKind.berserker) + i);
         std.debug.assert(std.mem.eql(u8, f.name, @tagName(fk)));
+    }
+}
+
+comptime {
+    // A CONTIGUOUS RUN off `berserker`, in role order — `roleOf`/`kindOf` are an ordinal shift, and
+    // warrior.zig and brood.zig both pin theirs. Unpinned, a kind inserted into the middle of the run
+    // silently posts the wrong role: the priest spawns as a berserker and nothing fails to compile.
+    for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
+        const fk: wf.FoeKind = @enumFromInt(@intFromEnum(wf.FoeKind.berserker) + i);
+        if (!std.mem.eql(u8, f.name, @tagName(fk))) {
+            @compileError("kobold: wf.FoeKind." ++ @tagName(fk) ++ " is not in the warband's contiguous run");
+        }
     }
 }
 

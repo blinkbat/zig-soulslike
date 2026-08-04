@@ -180,12 +180,26 @@ pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want:
 }
 
 pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
+    // THE FLASH UNIFORM IS A DRIVER CALL (`gfx.Scene.setFlash` uploads every time it is asked), and all
+    // but the one foe mid-flinch want the same 0 as the foe before them — a group of 24 paid 24 of them
+    // per pass, twice a frame. Uploaded only when it CHANGES; `lit` starts outside 0..1 so the first
+    // member always pays for one and nothing is assumed about what drew before this group.
+    var lit: f32 = -1;
     for (foes) |*f| {
         if (!f.alive()) continue;
-        if (scene) |sc| sc.setFlash(FLASH_GAIN * f.flashFrac());
+        if (scene) |sc| {
+            const want = FLASH_GAIN * f.flashFrac();
+            if (want != lit) {
+                sc.setFlash(want);
+                lit = want;
+            }
+        }
         f.draw(model);
     }
-    if (scene) |sc| sc.setFlash(0);
+    // …and a group never leaves its flash on for whatever draws next.
+    if (scene) |sc| {
+        if (lit > 0) sc.setFlash(0);
+    }
 }
 
 pub fn anyDied(foes: anytype) bool {

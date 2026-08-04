@@ -22,6 +22,13 @@ pub const MAX_LOOT: usize = 8;
 pub const MAX_ZONES: usize = 16;
 pub const MAX_CLEARINGS: usize = 32;
 pub const MAX_FOES: usize = 256;
+/// THE BAND A SPAWN'S SCALE MULTIPLIER MAY SIT IN, and the editor's own stepper limits (the foe
+/// row of `editor.drawProperties`) — one set, because a hand-edited file is the only way past that stepper.
+/// A ZERO IS NOT COSMETIC: every humanoid feeds its gait `movedDist / scale` (the scale-corrected
+/// stride, without which a taller rig's foot skates), so 0 makes the stride phase inf, then NaN, and
+/// `hero.sampleCurve` casts that NaN to an index.
+pub const FOE_SCALE_LO: f32 = 0.5;
+pub const FOE_SCALE_HI: f32 = 2.0;
 pub const NAME_CAP: usize = 48;
 
 
@@ -865,7 +872,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
                 .x = try nextFloat(&it),
                 .z = try nextFloat(&it),
                 .yaw = try nextFloat(&it),
-                .scale = try nextFloat(&it),
+                .scale = try band(&it, FOE_SCALE_LO, FOE_SCALE_HI),
                 .seed = try band(&it, 0, 1),
             };
             m.nfoes += 1;
@@ -1520,4 +1527,19 @@ test "reorder preserves every other op's position" {
     for (want, 0..) |v, i| try std.testing.expectEqual(v, m.ops[i].n);
     m.reorder(3, 0);
     for (0..5) |i| try std.testing.expectEqual(@as(i32, @intCast(i)), m.ops[i].n);
+}
+
+test "A SPAWN'S SCALE IS VALIDATED ON LOAD, because zero is a NaN rig and not a small skeleton" {
+    const head = "version: 1\nhalf: 100.0\ncover: 3.3 0.72 1.38\n";
+    var m: Map = .{};
+    var line: usize = 0;
+    try parse(head ++ "foe: toad 0 0 0 1.0 0.5\n", &m, &line);
+    try std.testing.expectEqual(@as(usize, 1), m.nfoes);
+    // A hand-edited file is the only way past the editor's own stepper, so the LOAD has to hold the band.
+    inline for (.{ "0", "0.0", "-1.0", "99.0" }) |bad| {
+        try std.testing.expectError(
+            ParseError.BadNumber,
+            parse(head ++ "foe: toad 0 0 0 " ++ bad ++ " 0.5\n", &m, &line),
+        );
+    }
 }

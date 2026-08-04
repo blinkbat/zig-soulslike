@@ -352,7 +352,10 @@ pub fn equipment(left_hand: Slot, right_hand: Slot, tint: FlaskTint, charges: u8
 
 const AMMO_H: i32 = eq(26);
 const AMMO_GAP: i32 = eq(5);
-const AMMO_DRY = rgba(150, 96, 88, 220);
+/// A TALLY THAT HAS RUN OUT, and one that has not — the ammo box and the flask charges are the same
+/// question asked twice, so they read the same two tones.
+const TALLY_DRY = rgba(150, 96, 88, 220);
+const TALLY_OK = rgba(232, 224, 202, 255);
 const AMMO_FIRE = rgba(255, 158, 62, 255);
 const AMMO_FIRE_DIM = rgba(226, 108, 30, 150);
 
@@ -384,7 +387,7 @@ fn ammoBox(x: i32, y: i32, a: Ammo) void {
     arrowIcon(@floatFromInt(x + eq(13)), cy, on, a.fire);
     var buf: [8]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "{d}", .{a.n}) catch return;
-    const col = if (!on) AMMO_DRY else if (a.fire) AMMO_FIRE else rgba(232, 224, 202, 255);
+    const col = if (!on) TALLY_DRY else if (a.fire) AMMO_FIRE else TALLY_OK;
     text(s, x + SLOT_W - textW(s, HINT) - 6, y + @divTrunc(AMMO_H - lineH(HINT), 2), HINT, col);
 }
 
@@ -451,7 +454,7 @@ fn slot(x: i32, y: i32, holds: Slot, tint: FlaskTint, charges: u8) void {
             flask(cx, cy, tint, charges > 0);
             var buf: [8]u8 = undefined;
             const s = std.fmt.bufPrintZ(&buf, "{d}", .{charges}) catch return;
-            const col = if (charges > 0) rgba(232, 224, 202, 255) else rgba(150, 96, 88, 220);
+            const col = if (charges > 0) TALLY_OK else TALLY_DRY;
             text(s, x + SLOT_W - textW(s, HINT) - 5, y + SLOT_H - lineH(HINT) + 1, HINT, col);
         },
     }

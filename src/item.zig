@@ -1,6 +1,5 @@
 const std = @import("std");
 
-// A vocabulary of kinds, a name each, and counts.
 
 pub const Kind = enum(u8) {
     crimson_flask, // the ones the HUD already draws
@@ -16,7 +15,6 @@ pub const Kind = enum(u8) {
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
 
-/// What an item is CALLED.
 pub fn displayName(k: Kind) [:0]const u8 {
     return switch (k) {
         .crimson_flask => "Flask of Crimson Tears",
@@ -68,7 +66,6 @@ pub fn fromTag(s: []const u8) ?Kind {
     return std.meta.stringToEnum(Kind, s);
 }
 
-/// THE BAG.
 pub const CAP: u16 = 999;
 
 pub const Bag = struct {

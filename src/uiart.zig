@@ -37,7 +37,6 @@ pub fn diamond(cx: f32, cy: f32, r: f32, col: rl.Color) void {
     rl.drawPoly(.{ .x = cx, .y = cy }, 4, r, 0, col);
 }
 
-/// A gilt jewel: dark seat, gold body, bright heart.
 pub fn finial(cx: f32, cy: f32, r: f32, col: rl.Color) void {
     diamond(cx, cy, r + 1.6, withAlpha(INK, @intCast(@as(u16, 210) * col.a / 255)));
     diamond(cx, cy, r, col);
@@ -59,7 +58,6 @@ pub fn seat(x: i32, y: i32, w: i32, h: i32) void {
     rl.drawRectangle(x + 1, y + 2, w, h, withAlpha(rl.Color.black, 72));
 }
 
-/// A stone slab: lit top falling to dark, scorched edges, faint bedding courses.
 pub fn plate(x: i32, y: i32, w: i32, h: i32, a: u8) void {
     rl.drawRectangleGradientV(x, y, w, h, withAlpha(STONE_LT, a), withAlpha(STONE_DK, a));
     const n = @max(@divTrunc(h, 26), 2);
@@ -125,7 +123,6 @@ pub fn frame(x: i32, y: i32, w: i32, h: i32, a: u8) void {
     }
 }
 
-/// A gilt rule fading at both ends, a jewel at its heart, two attendants beside it.
 pub fn divider(cx: i32, y: i32, halfW: i32, a: u8) void {
     const gap: i32 = 30;
     if (halfW > gap + 8) {
@@ -160,7 +157,6 @@ pub fn well(x: i32, y: i32, w: i32, h: i32, a: u8) void {
     rl.drawRectangle(x + 2, y + h - 2, w - 4, 1, withAlpha(GILT_DIM, 56));
 }
 
-/// A warm candle pool, for the heart of an occupied slot.
 const CANDLE = rgba(255, 176, 90, 255);
 pub fn candle(cx: i32, cy: i32, r: f32, a: u8) void {
     rl.drawCircleGradient(cx, cy, r, withAlpha(CANDLE, a), withAlpha(CANDLE, 0));

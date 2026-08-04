@@ -63,7 +63,9 @@ light slash / R2 heavy overhead, kinetic-chain sequenced, swept blade hit-capsul
 third-person over-the-shoulder camera, in a lit 3D world with cast shadows (warm low sun vs cool
 slate sky, cloud deck, haze, vignette, plus point-light torch/brazier/campfire fire). Four foes
 hunt him — **gaping toads**, **skeletal archers**, **skeletal WARRIORS** (`warrior.zig` — a shieldman who
-BLOCKS you until you break his guard and a greatsword with an uninterruptible diagonal slam), a lone
+BLOCKS you until you break his guard and a greatsword with an uninterruptible diagonal slam; both of them
+**RUN THE GAP DOWN AND WALK THE LAST OF IT IN** — the run is for CLOSING and drops back to a walk outside
+their own longest reach, so no melee skeleton ever arrives at a sprint. The ARCHERS never run), a lone
 **one-eyed ogre**, and a **kobold WARBAND**
 (`kobold.zig` — three roles of one doglike creature in ONE group, because the priest heals its
 friends: berserker / priest / slinger) and a **BROOD MOTHER** with her egg sacs and **BROODLINGS**
@@ -238,7 +240,11 @@ meadow's (`shaders.terrainAlbedo`'s region drift — the GLSL, not the Zig).
   including the kobold POUNCE in three beats (`66d..66f`) and the BITE in profile (`69c`/`69d`), both
   of which shipped unjudged because neither had a shot, and the SKELETAL WARRIORS (`113…` — the pair, the
   shieldman's guard and a crop of his boards, the mace in four beats, the KNEEL with the shield broken off
-  him, the diagonal slam and the leaping LUNGE in four each) and the two CAMPFIRES side by side (`114…`)
+  him, the diagonal slam and the leaping LUNGE in four each, and the WALK and the RUN in profile —
+  `113v..113z`, whose sensed hero must sit inside the aggro range or he simply holds and the "gait" shots
+  are of a skeleton standing still), the two CAMPFIRES side by side (`114…`) and the SOUND FILTER cards
+  (`115a`/`115b` — the only MENU screens the harness shoots, because a 17-row card carrying a centred
+  FOOTNOTE is the one `drawCard` layout that can outgrow the window)
   — then the **WORLD TOUR**
   (`70..92`): one framing per region, the chapel/watchtower interiors under torchlight, the tarn,
   the cliffs, five overhead MAP shots and two Stats readouts, then the EDITOR (`95..99g`) — layers,
@@ -304,9 +310,14 @@ meadow's (`shaders.terrainAlbedo`'s region drift — the GLSL, not the Zig).
                  `sfx.Submix` (`OPT_MIX`, comptime-checked to cover every family, or a voice would be
                  one the player can never move). They PERSIST in `settings.cfg` beside the exe, written
                  when the screen closes rather than per nudge (a held Left glides at frame rate) and
-                 read back in `sfx.init`. Debug holds Stats / Wireframe / Time Scale and the Retro
-                 Filters list (15 filters + presets). Both slider screens share one gauge column
-                 (`drawCard`'s `gauges` slice) and one adjust feel (`adjustDelta`).
+                 read back in `sfx.init`. Debug holds Stats / Wireframe / Time Scale, the Retro
+                 Filters list (15 filters + presets) and its EAR-SIDE TWIN, **SOUND FILTERS** — a lo-fi
+                 rack (drive / crush / sample-hold / muffle / telephone / wow / room / hiss / crackle,
+                 plus five presets) **PER CONCERN GROUP**, which is `sfx.Submix` because that is the
+                 grouping the game already has: the family a voice sits in, the slider that moves it and
+                 the chain it renders through are ONE question. Two screens (pick the family, then turn
+                 its rack) off the same `OPT_MIX` table the volume sliders walk. Every slider screen
+                 shares one gauge column (`drawCard`'s `gauges` slice) and one adjust feel (`adjustDelta`).
                  **START OPENS THE CHARACTER MENU** (Attributes / Resistances / Inventory / Equipment), a second root
                  the whole screen stack hangs off (`Screen.root`) so SELECT and START toggle their own
                  side and nothing else. ATTRIBUTES is the character sheet — the seven of `stats.zig`,
@@ -317,7 +328,8 @@ meadow's (`shaders.terrainAlbedo`'s region drift — the GLSL, not the Zig).
                  row list simply leaves the tail bare, which is how Back gets no number.
 - `hero.zig`   — THE HERO. Anthropometric FK skeleton + every animation, the swept blade hit
                  capsule (rides the SWORD bone's dummy points, active only in the strike's window,
-                 FAT on purpose for vertical forgiveness), the swing trail, and the GUARD — the
+                 FAT on purpose for vertical forgiveness), his swing ribbon's own tuning (the ribbon itself is
+                 `foe.Trail`, shared with every other blade in the game), and the GUARD — the
                  stance, the caught-blow recoil and the small round SHIELD (which is not a bone: it
                  rides the left wrist through `shieldFit`), and THE BOW — the second right-hand
                  armament, in the same `HELD` slot, with the live string and nocked shaft borrowed
@@ -663,7 +675,10 @@ lines where the concerns genuinely part company, and each new file is named so t
                  `weaponReaches()` (a FOE's swung kit into the hero — the segment it swept across one
                  frame against the COLUMN the hero stands in, `HERO_LOW`/`HERO_HIGH`, so a blow over his
                  skull or into the dirt at his boots misses), `Blow` (a landed hit AND where it came from —
-                 the hero's shield covers an arc, so a bare Hit cannot be answered), the telegraph
+                 the hero's shield covers an arc, so a bare Hit cannot be answered), the SWING RIBBON
+                 (`Trail` — a ring of the segments an edge occupied, drawn as a strip; the hero's own,
+                 promoted here the day the greatsword's thrust needed one, because a stroke aimed down the
+                 camera is foreshortened to a dot and a ribbon is the only thing that reads), the telegraph
                  PARTICLE pool (plus the two burst
                  colours that are the WORLD's and not one creature's — `DUST` and the grace-gold
                  `MOTE` every corpse dissipates into), and the Group plumbing: `resetGroup` /
@@ -740,6 +755,31 @@ lines where the concerns genuinely part company, and each new file is named so t
                  `sparkle`, plus `hall`) through one
                  shared tape-style `master`, which is what makes separately-authored sounds feel
                  recorded in the same room. Read it as recipes.
+                 **THE PLAYER'S FILTER RACK IS BAKE-TIME, AND IT HAS TO BE** (Menu > Debug > Sound
+                 Filters). raylib hands us volume / pitch / pan per PLAYING sound and nothing else, so
+                 there is no way to filter a voice already sounding — but every voice here is synthesized,
+                 so a filter is just more of the finish `master` already applies (`applyFx`, one rack per
+                 `Submix`), and moving a dial RE-RENDERS that family. Four things are load-bearing:
+                 `bakeRow`/`stopRow`/`freeRow` are ONE body each, shared by `init`, `rebakeMix` and
+                 `deinit`, so a voice cannot come back built differently from the one it launched as;
+                 the re-bake is COALESCED (`FX_SETTLE`), because a held slider glides at frame rate and a
+                 bake is tens of ms a family; a bake STOPS every take before freeing any of it (`deinit`'s
+                 law — freeing a buffer the mixer is reading takes the window with it), and the looping
+                 beds heal themselves because `ambience` re-fires whatever is not playing; and an ALL-OFF
+                 rack is an early return, so All Off really is off and bakes byte-for-byte what the bank
+                 always did (a test pins that).
+                 **THE HOUSE SOUND IS WORN TAPE** (owner's call), on all three families: `AFX_DEFAULTS` is
+                 DERIVED from `FX_TAPE` rather than authored beside it, so "Reset to Default" and
+                 "Preset: Worn Tape" are one set of numbers. `settings.cfg` is the whole truth about a rack
+                 once it has an `fx.` line, so an existing file overrides the new default until Reset.
+                 **AND THE CAMPFIRE TAKES IT TOO** — the bank's ONE recorded sound is an `.ambience` voice
+                 like the wind, so `dressedFire` leaves its take in `work` and `applyFx` runs over the top,
+                 the same recipe-then-rack order every synthesized voice takes. It is a COPY (the
+                 `@embedFile` asset is rodata and never written), it is why `MAX_N` is 13 s rather than 9,
+                 and because it is a streamed `Music` rather than a baked `Sound` an ambience change
+                 re-dresses it through `redressFire` — unload BEFORE re-dressing, since the live stream
+                 reads out of the very buffer `dressedFire` overwrites. It is the one voice NO unit test
+                 reaches: decoding the asset needs a raylib device and doing it in a test process hangs.
                  **THE HEAL IS CHORAL** (owner: choral and heavenly, reverby and sparkly, still lo-fi) —
                  `mkKoboldHeal` is an open chord SUNG rather than played: root / fifth / octave / tenth
                  entering in that order so it RESOLVES upward, a low octave under it, a `sparkle` of
@@ -1123,8 +1163,10 @@ thin and from a different room. It goes through the SAME finish the synth voices
 saturation, the bit crush, the tape's bandwidth and its noise floor — plus a LOW SHELF, because a fire you
 are sitting at is felt in the chest and the take had no bottom in it. raylib streams from ENCODED bytes,
 so a processed loop has to be written back out as a canonical WAV; the source file's own length bounds the
-buffer, which keeps it right if the asset is ever swapped. No `wow` on it: flutter is a pitch wobble and a
-crackle bed has no pitch to wobble.
+buffer, which keeps it right if the asset is ever swapped. No `wow` in its OWN chain: flutter is a pitch
+wobble and a crackle bed has no pitch to wobble — but the PLAYER's ambience rack now runs over that
+dressing and the worn-tape default puts one there anyway (owner's call, and the point of it: the fire is in
+the same room as everything else). See the `audio.zig` module entry for the rack.
 
 ## LEASHING (`foe.zig`) — a foe's tether, and the provocation that cuts it
 

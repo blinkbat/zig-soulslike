@@ -3,11 +3,8 @@ const rl = @import("raylib");
 
 // Gameplay math on the XZ ground plane (Y up); the *XZ helpers ignore Y.
 
-/// Vector3 constructor shorthand: v3(x, y, z).
 pub const v3 = rl.Vector3.init;
-/// Color constructor shorthand: rgba(r, g, b, a).
 pub const rgba = rl.Color.init;
-/// The zero vector — used as a struct-field default (Go's zero value).
 pub const zero3 = rl.Vector3{ .x = 0, .y = 0, .z = 0 };
 
 
@@ -24,7 +21,6 @@ pub fn maxF(a: f32, b: f32) f32 {
     return if (a > b) a else b;
 }
 
-/// `clampF`'s integer counterpart.
 pub fn clampI(v: i32, lo: i32, hi: i32) i32 {
     return @max(lo, @min(hi, v));
 }
@@ -33,7 +29,6 @@ pub fn minF(a: f32, b: f32) f32 {
     return if (a < b) a else b;
 }
 
-/// A position on the floor plane.
 pub fn ground(x: f32, z: f32) rl.Vector3 {
     return v3(x, 0, z);
 }
@@ -133,13 +128,6 @@ pub fn lerpF(a: f32, b: f32, t: f32) f32 {
     return a + (b - a) * t;
 }
 
-/// `cur` moved at most `step` of the way toward `to`, landing exactly ON it — a RATE-limited ease, where
-/// `lerpF(cur, to, k)` is an exponential one that never quite arrives.
-pub fn approachF(cur: f32, to: f32, step: f32) f32 {
-    if (cur < to) return minF(to, cur + @abs(step));
-    return maxF(to, cur - @abs(step));
-}
-
 pub fn rx(deg: f32) rl.Matrix {
     return rl.math.matrixRotateX(radians(deg));
 }
@@ -191,7 +179,10 @@ test "pulse rises, holds and falls, and is flat outside its span" {
     try std.testing.expect(pulse(0.6, 0, 0.5, 0.5, 1.0) < 1.0);
 }
 
-/// Ease `cur` toward `target` by a rate-limited step of `rate*dt` (frame-rate independent enough for smoothing camera/gait blends).
+/// Ease `cur` toward `target` by a rate-limited step of `rate*dt` (frame-rate independent enough for
+/// smoothing camera/gait blends), landing exactly ON it — where `lerpF(cur, target, k)` is an exponential
+/// ease that never quite arrives. THE ONE COPY: an `approachF` with the identical contract sat beside this
+/// for one caller, which is one more place for a rate-limited ease to acquire its own edge case.
 pub fn approach(cur: f32, target: f32, maxStep: f32) f32 {
     const d = target - cur;
     if (@abs(d) <= maxStep) return target;
@@ -254,7 +245,6 @@ fn lerpU8(a: u8, b: u8, t: f32) u8 {
     return u8f(af + (bf - af) * t);
 }
 
-/// Linearly interpolate between two colors.
 pub fn lerpColor(a: rl.Color, b: rl.Color, t: f32) rl.Color {
     const tt = clampF(t, 0, 1);
     return rgba(
@@ -293,12 +283,10 @@ pub const Rng = struct {
     }
 };
 
-/// Degrees → radians.
 pub fn radians(deg: f32) f32 {
     return deg * std.math.pi / 180.0;
 }
 
-/// Radians → degrees.
 pub fn degrees(rad: f32) f32 {
     return rad * 180.0 / std.math.pi;
 }

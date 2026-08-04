@@ -483,7 +483,6 @@ pub const Editor = struct {
     panning: bool = false,
     panGrab: rl.Vector3 = mathx.zero3, // the ground point the pan grabbed
 
-    /// SELECT MODE
     selecting: bool = false,
     layer: Layer = .props,
     brush: [Layer.N]usize = [_]usize{0} ** Layer.N,
@@ -518,7 +517,6 @@ pub const Editor = struct {
     rebuildDue: bool = false, // a coalesced rebuild is owed (see requestRebuild)
     rebuildT: f32 = 0,
 
-    // MARQUEE selection.
     marked: [MAX_MARKED]usize = undefined,
     nMarked: usize = 0,
     marquee: bool = false, // Shift+drag box in progress
@@ -527,7 +525,6 @@ pub const Editor = struct {
     moving: bool = false, // dragging the marked set bodily
     moveFrom: rl.Vector3 = mathx.zero3,
 
-    // File dialogs.
     modal: Modal = .none,
     pending: Pending = .none,
     /// THE OBJECT VIEWER's own state (gallery page, shelf, per-kind pose).
@@ -539,7 +536,6 @@ pub const Editor = struct {
     nameLen: usize = 0,
     fileSel: usize = 0,
     fileScroll: i32 = 0,
-    /// The map this editor is writing to.
     path: [wf.PATH_CAP]u8 = undefined,
     pathLen: usize = 0,
     hotFrame: bool = false, // chrome owned the pointer LAST frame (gates world clicks)
@@ -551,7 +547,6 @@ pub const Editor = struct {
     statusLen: usize = 0,
     statusT: f32 = 0,
 
-    /// IS THE JUKEBOX AUDITIONING?
     pub fn auditioning(self: *const Editor) bool {
         return self.modal == .jukebox;
     }
@@ -1643,7 +1638,6 @@ pub const Editor = struct {
         self.removeOp(m, env, s);
     }
 
-    /// Drop op `s` and re-derive the world.
     fn removeOp(self: *Editor, m: *wf.Map, env: *envmod.Env, s: usize) void {
         m.remove(s);
         self.clampSel(m);
@@ -1682,7 +1676,6 @@ pub const Editor = struct {
         self.nMarked += 1;
     }
 
-    /// Collect everything of the ACTIVE layer inside the dragged box.
     fn marqueeSelect(self: *Editor, m: *const wf.Map, a: rl.Vector3, b: rl.Vector3) void {
         const box = normRect(a, b);
         self.nMarked = 0;
@@ -2230,7 +2223,6 @@ const BarRow = struct {
         return ui.buttonTip(r.ctx, ui.rect(r.x, 5, w, BAR_H - 10), label, hud.MONO, active, tip);
     }
 
-    /// A LAYER: picture AND name.
     fn layer(r: *BarRow, ic: ui.Icon, label: [:0]const u8, active: bool, tip: [:0]const u8) bool {
         const w = ui.iconButtonW(label, hud.MONO);
         defer r.x += w + GAP;
@@ -2239,7 +2231,6 @@ const BarRow = struct {
         return ui.iconButton(r.ctx, rect, ic, label, hud.MONO, active);
     }
 
-    /// A VERB: picture only, square, explained on hover.
     fn verb(r: *BarRow, ic: ui.Icon, tip: [:0]const u8) bool {
         const w = BAR_H - 10;
         defer r.x += w + GAP;

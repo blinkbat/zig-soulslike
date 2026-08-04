@@ -42,7 +42,6 @@ const bladeColor = art.bladeColor;
 const tuftInto = art.tuftInto;
 
 
-// One grass blade: a thin 4-sided tapered cylinder leaning outward.
 pub fn tuftMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     b.setMat(.plant);
@@ -51,7 +50,6 @@ pub fn tuftMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A wide swathe: several clumps strewn across ~2.5 m.
 pub fn patchMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     b.setMat(.plant);
@@ -95,7 +93,6 @@ pub fn shrubMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// Pale erdleaf-like blooms nodding over a grass clump.
 pub fn flowersMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     b.setMat(.plant);
@@ -114,7 +111,6 @@ pub fn flowersMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// Tall dry sedge, seed heads riding the tips.
 pub fn reedsMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     b.setMat(.plant);
@@ -136,7 +132,6 @@ pub fn reedsMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// Grace-side blooms: taller pale flowers with a faint emissive glow.
 pub fn glowMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     b.setMat(.plant);
@@ -200,12 +195,10 @@ pub fn brambleMesh(shader: rl.Shader) rl.Model {
         const z0 = mathx.sinf(a) * d0;
         const arc = rng.range(0.5, 0.95);
         const b2 = a + rng.signed() * 1.5;
-        // Each cane rises then falls back to the ground — two segments make the arch.
         const apex = v3(x0 + mathx.cosf(b2) * arc * 0.5, rng.range(0.24, 0.46), z0 + mathx.sinf(b2) * arc * 0.5);
         b.addCapsule(v3(x0, 0.02, z0), apex, 0.030, 0.024, 4, BARK_DK);
         b.addCapsule(apex, v3(x0 + mathx.cosf(b2) * arc, 0.03, z0 + mathx.sinf(b2) * arc), 0.024, 0.016, 4, BARK_DK);
     }
-    // MANY SMALL leaves, not few big ones.
     b.setMat(.plant);
     var l: i32 = 0;
     while (l < 44) : (l += 1) {
@@ -240,13 +233,11 @@ pub fn fernMesh(shader: rl.Shader) rl.Model {
         var l: i32 = 0;
         while (l < nl) : (l += 1) {
             const t = (@as(f32, @floatFromInt(l)) + 1.0) / (@as(f32, @floatFromInt(nl)) + 1.0);
-            // The frond arches: it climbs fast then flattens out (sqrt-ish), so height is not linear in t.
             const y = 0.03 + rise * @sqrt(t) * 0.72;
             const px = ux * reach * t;
             const pz = uz * reach * t;
             const leafLen = rng.range(0.10, 0.19) * (1.0 - 0.55 * t);
             for ([_]f32{ -1, 1 }) |sgn| {
-                // Leaflets have real THICKNESS and sit a little above the midrib.
                 b.addBlob(
                     v3(px - uz * sgn * leafLen, y + 0.035, pz + ux * sgn * leafLen),
                     v3(@abs(uz) * leafLen + 0.03, 0.055, @abs(ux) * leafLen + 0.03),
@@ -262,7 +253,6 @@ pub fn fernMesh(shader: rl.Shader) rl.Model {
 }
 
 
-// A TALL grass clump — the meadow's workhorse.
 pub fn grassTallMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3001);
@@ -289,7 +279,6 @@ pub fn grassTallMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A CLOVER mat: broad low trefoil leaves on short stems, hugging the ground.
 pub fn cloverMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3002);
@@ -329,7 +318,6 @@ pub fn mossMesh(shader: rl.Shader) rl.Model {
         const r = rng.range(0.22, 0.48) * (1.0 - 0.3 * d);
         b.addBlob(v3(mathx.cosf(a) * d, rng.range(0.02, 0.06), mathx.sinf(a) * d), v3(r, rng.range(0.035, 0.075), r * rng.range(0.8, 1.2)), 3, 6, if (rng.float() < 0.45) MOSS_DK else MOSS_SOFT);
     }
-    // A handful of tiny upright shoots, so it isn't a flat decal from ground level.
     var s: i32 = 0;
     while (s < 8) : (s += 1) {
         const a = rng.angle();
@@ -352,14 +340,12 @@ pub fn mushroomsMesh(shader: rl.Shader) rl.Model {
         const h = rng.range(0.07, 0.28);
         const capR = rng.range(0.045, 0.135) * (0.5 + 0.6 * h / 0.28); // older = taller AND broader
         b.addCylinder(v3(x, 0, z), v3(x + rng.signed() * 0.02, h, z + rng.signed() * 0.02), capR * 0.30, capR * 0.24, 5, CAP_PALE);
-        // The cap: a squashed dome, flatter the older it is.
         b.addBlob(v3(x + rng.signed() * 0.02, h + capR * 0.22, z + rng.signed() * 0.02), v3(capR, capR * rng.range(0.42, 0.72), capR), 3, 6, if (rng.float() < 0.6) CAP_BROWN else CAP_PALE);
     }
     b.addBlob(v3(0, 0.02, 0), v3(0.36, 0.035, 0.32), 3, 6, MOSS_DK); // the damp patch they came up in
     return b.toModel(shader);
 }
 
-// NETTLES: a dense bed of upright stems with paired leaves all the way up.
 pub fn nettlesMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3005);
@@ -387,7 +373,6 @@ pub fn nettlesMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// THISTLE: spined stems, deep-cut leaves at the base, and purple heads on top.
 pub fn thistleMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3006);
@@ -402,10 +387,8 @@ pub fn thistleMesh(shader: rl.Shader) rl.Model {
         const tipX = x + rng.signed() * 0.09;
         const tipZ = z + rng.signed() * 0.09;
         b.addCylinder(v3(x, 0, z), v3(tipX, h, tipZ), 0.017, 0.011, 4, SCRUB);
-        // The head: a green cup with a purple tuft out of it.
         b.addBlob(v3(tipX, h + 0.03, tipZ), v3(0.038, 0.045, 0.038), 3, 6, SCRUB_DK);
         b.addBlob(v3(tipX, h + 0.095, tipZ), v3(0.040, 0.052, 0.040), 3, 6, if (rng.float() < 0.7) PURPLE else PURPLE_DK);
-        // Spiny basal leaves: long, deep-cut, splayed low.
         var l: i32 = 0;
         while (l < 5) : (l += 1) {
             const la = rng.angle();
@@ -418,7 +401,6 @@ pub fn thistleMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// FOXGLOVE: tall one-sided spires of bells, tallest flowers in the meadow.
 pub fn foxgloveMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3007);
@@ -454,7 +436,6 @@ pub fn foxgloveMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// HEATHER: a low woody mat of tiny leaves with a purple-brown flush over it.
 pub fn heatherMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3008);
@@ -472,14 +453,12 @@ pub fn heatherMesh(shader: rl.Shader) rl.Model {
         const d = rng.range(0.0, 0.82) * @sqrt(rng.float());
         const r = rng.range(0.07, 0.15) * (1.0 - 0.25 * d);
         const y = rng.range(0.09, 0.34) * (1.0 - 0.35 * d);
-        // Two thirds foliage, one third bloom — a heath in flower, not a bed of flowers.
         const col = if (rng.float() < 0.34) (if (rng.float() < 0.6) PURPLE else PURPLE_DK) else if (rng.float() < 0.5) SCRUB_DK else BRACKEN_BRN;
         b.addBlob(v3(mathx.cosf(a) * d, y, mathx.sinf(a) * d), v3(r, r * 0.7, r * rng.range(0.85, 1.15)), 3, 5, col);
     }
     return b.toModel(shader);
 }
 
-// GORSE: a spiny dome, half bare thorn and half hard yellow bloom.
 pub fn gorseMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3009);
@@ -503,7 +482,6 @@ pub fn gorseMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// CATTAILS: bulrushes — straight blades and the brown sausage heads on stiff stems.
 pub fn cattailsMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3010);
@@ -518,7 +496,6 @@ pub fn cattailsMesh(shader: rl.Shader) rl.Model {
         const lean = rng.range(0.03, 0.13);
         const h = rng.range(0.9, 1.55);
         blade(&b, x, z, h, mathx.cosf(la) * lean, mathx.sinf(la) * lean, 0.022, if (rng.float() < 0.5) GRASS_GRN else GRASS_DRY);
-        // Only some blades carry a head — a bed of them all in flower looks planted.
         if (rng.float() < 0.55) {
             const sx = x + mathx.cosf(la) * lean * 0.6;
             const sz = z + mathx.sinf(la) * lean * 0.6;
@@ -552,7 +529,6 @@ pub fn lilypadsMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// BRACKEN: last year's ferns, collapsed and rust-brown.
 pub fn brackenMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3012);
@@ -563,7 +539,6 @@ pub fn brackenMesh(shader: rl.Shader) rl.Model {
         const reach = rng.range(0.35, 0.85);
         const ux = mathx.cosf(a);
         const uz = mathx.sinf(a);
-        // Collapsed: it rises barely at all and then lies over.
         const rise = rng.range(0.12, 0.36);
         b.addCylinder(v3(0, 0.03, 0), v3(ux * reach, rise, uz * reach), 0.018, 0.006, 4, BRACKEN_BRN);
         const nl: i32 = 4 + rng.intn(3);
@@ -584,7 +559,6 @@ pub fn thicketMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3013);
     b.setMat(.wood);
-    // The canes ARCH: up in one segment, then over and OUT in a second.
     var tips: [14][3]f32 = undefined;
     var s: i32 = 0;
     while (s < 14) : (s += 1) {
@@ -593,7 +567,6 @@ pub fn thicketMesh(shader: rl.Shader) rl.Model {
         const h = rng.range(0.7, 1.6);
         const x0 = mathx.cosf(a) * d;
         const z0 = mathx.sinf(a) * d;
-        // The knee: where it stops climbing and starts falling away.
         const kx = x0 + mathx.cosf(a) * rng.range(0.05, 0.3) + rng.signed() * 0.12;
         const kz = z0 + mathx.sinf(a) * rng.range(0.05, 0.3) + rng.signed() * 0.12;
         const ky = h * rng.range(0.6, 0.82);
@@ -617,7 +590,6 @@ pub fn thicketMesh(shader: rl.Shader) rl.Model {
         const col = if (rng.float() < 0.07) LEAF_GOLD else if (rng.float() < 0.12) BRACKEN_BRN else if (rng.float() < 0.5) LEAF_DK else if (rng.float() < 0.72) LEAF else LEAF_DAMP;
         b.addBlob(v3(mathx.cosf(a) * d, y, mathx.sinf(a) * d), v3(r, r * rng.range(0.78, 1.0), r * rng.range(0.9, 1.15)), 4, 7, col);
     }
-    // Growth ON the cane tips, so most of them end in leaf instead of in air.
     for (tips) |t| {
         if (rng.float() < 0.3) continue; // a couple stay bare and dead — that is the wabi-sabi
         const r = rng.range(0.075, 0.135);
@@ -627,7 +599,6 @@ pub fn thicketMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// WILDFLOWERS: a mixed drift — white, blue and pale heads on thin stems over grass.
 pub fn wildflowersMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3014);
@@ -663,7 +634,6 @@ pub fn ivyMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3015);
     b.setMat(.plant);
-    // The mound at the base.
     var m: i32 = 0;
     while (m < 10) : (m += 1) {
         const a = rng.angle();

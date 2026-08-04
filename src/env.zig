@@ -30,7 +30,6 @@ const MAX_PROPS = 24576;
 const MAX_SOLIDS = 8192;
 const MAX_SOLID_REFS = 4 * MAX_SOLIDS; // a long solid's bbox spans several cells, one ref each
 const MAX_LIGHTS = 192; // fires in the world; gfx.MAX_LIGHTS of them reach the GPU per frame
-// Veil-carrying props (bonfires).
 const MAX_VEILS = 64;
 
 // CELL is a compromise: small enough to be a meaningful cull unit, large enough that walking every cell per pass stays trivial. 40 a side = 640 m, covering a 280 m map's cliff ring (286 + 18 of cliff bound) with room over — the arrays are BSS and the per-frame cost is one loop of four plane tests, so 1,600 cells is not measurable next to the prop work it saves.
@@ -46,7 +45,6 @@ const CELL_CIRCUM: f32 = CELL * HALF_DIAG; // centre-to-corner of a cell, for sp
 const SUN_REACH: f32 = @sqrt(gfx.SUN_DIR.x * gfx.SUN_DIR.x + gfx.SUN_DIR.z * gfx.SUN_DIR.z) / gfx.SUN_DIR.y;
 const SHADOW_BOX: f32 = gfx.SHADOW_ORTHO * HALF_DIAG;
 
-// How far a fire's pool of light still reads.
 const LIGHT_REACH: f32 = 90.0;
 
 // THE OCCLUDERS — the props the camera has to see the hero THROUGH, thinned by the shader's sieve.
@@ -85,7 +83,6 @@ const OCCL_REACH: f32 = CELL;
 /// frame, which is the pop that shows worst because it happens right over him.
 const OCCL_DEPTH_BAND: f32 = 1.6;
 
-// Largest number of solids one grid query can hand back.
 pub const MAX_NEAR = 160;
 
 const GROUND_Y: f32 = 0.01;
@@ -194,7 +191,6 @@ pub const View = struct {
         } };
     }
 
-    /// Is the sphere (c, rad) worth drawing — inside all four side planes and within maxDist?
     pub fn visible(self: *const View, c: rl.Vector3, rad: f32, maxDist: f32) bool {
         const d = mathx.subV(c, self.pos);
         const far = maxDist + rad;
@@ -218,7 +214,6 @@ pub const Env = struct {
     models: [props.NK]rl.Model,
     veils: [props.NK]?rl.Model = [_]?rl.Model{null} ** props.NK,
     stows: [props.NK]?rl.Model = [_]?rl.Model{null} ** props.NK,
-    /// Hide every stowable part this frame.
     stowed: bool = false,
     veilItems: [MAX_VEILS]u32 = undefined,
     nveils: usize = 0,
@@ -266,7 +261,6 @@ pub const Env = struct {
     stat_draws: u32 = 0,
     stat_cells: u32 = 0,
 
-    /// Load the meshes ONCE.
     pub fn build(self: *Env, scene: *gfx.Scene) void {
         self.scene = scene;
         const shader = scene.shader;
@@ -284,7 +278,6 @@ pub const Env = struct {
         // and every count this struct keeps has to be said HERE — an undefined `noccl` hands the mark
         // list heap garbage to index with on the first frame.
         self.noccl = 0;
-        // THE TERRAIN TILES START EMPTY, said explicitly.
         self.tileBuilt = [_]bool{false} ** NTILES;
         self.tileRad = [_]f32{0} ** NTILES;
         self.tileMid = [_]rl.Vector3{mathx.zero3} ** NTILES;
@@ -294,7 +287,6 @@ pub const Env = struct {
         self.heightAny = false;
     }
 
-    /// Push the map's painted soil to the terrain shader.
     pub fn uploadSoil(self: *Env, m: *const wf.Map) void {
         if (self.scene) |sc| sc.setSoil(&m.soil, &m.soilCov, m.half);
     }
@@ -327,7 +319,6 @@ pub const Env = struct {
         if (span[0] == 0 or span[1] == 0 or span[2] >= wf.HEIGHT_N - 1 or span[3] >= wf.HEIGHT_N - 1) self.buildSkirt();
     }
 
-    /// Drop and rebuild every terrain tile (and the skirt) from the live field.
     fn rebuildTerrain(self: *Env) void {
         for (0..NTILES) |i| {
             if (!self.heightAny) {
@@ -463,7 +454,6 @@ pub const Env = struct {
         return mathx.normV(v3(-dx, 1.0, -dz));
     }
 
-    /// TURN THE PAINTED MASK INTO A SHORE.
     pub fn uploadWater(self: *Env, m: *const wf.Map) void {
         const N = wf.WATER_N;
         self.waterAny = m.anyWater();
@@ -543,7 +533,6 @@ pub const Env = struct {
                 }
             }
         }
-        // ENCODE.
         const shoreF: f32 = @floatFromInt(gfx.WATER_SHORE);
         for (m.water, 0..) |wet, i| {
             const enc: f32 = if (wet != 0) blk: {
@@ -558,7 +547,6 @@ pub const Env = struct {
         if (self.scene) |sc| sc.setWater(&self.waterField, m.half, true);
     }
 
-    /// The painted sheet, drawn with the field driving its colour.
     pub fn drawWater(self: *Env) void {
         if (!self.waterAny) return;
         if (self.scene) |sc| {
@@ -689,7 +677,7 @@ pub const Env = struct {
             const pr = &self.props[self.occl[i]];
             const secs = if (pr.fadeTo < pr.fade) OCCL_IN else OCCL_OUT;
             const step = if (secs > 0) (1.0 - OCCL_FLOOR) * dt / secs else 1.0;
-            pr.fade = mathx.approachF(pr.fade, pr.fadeTo, step);
+            pr.fade = mathx.approach(pr.fade, pr.fadeTo, step);
             if (pr.fade >= 1.0 and pr.fadeTo >= 1.0) {
                 self.noccl -= 1;
                 self.occl[i] = self.occl[self.noccl]; // swap the last one down into the hole
@@ -737,7 +725,6 @@ pub const Env = struct {
         return out[0..n];
     }
 
-    /// Is `p` blocked by any solid near it?
     pub fn blockedNear(self: *const Env, p: rl.Vector3, margin: f32, r: f32) bool {
         const x0 = cellCoord(p.x - r);
         const x1 = cellCoord(p.x + r);
@@ -786,7 +773,6 @@ pub const Env = struct {
         return g[0] * dir.x + g[1] * dir.z;
     }
 
-    /// CAN AN ACTOR STAND HERE — is the ground walkable rather than a cliff face?
     pub fn walkableAt(self: *const Env, x: f32, z: f32) bool {
         return self.slopeAt(x, z) <= MAX_SLOPE;
     }
@@ -857,7 +843,6 @@ pub const Env = struct {
         return null;
     }
 
-    /// Water depth-ish test: is this ground position inside a pool?
     pub fn inWater(self: *const Env, x: f32, z: f32, inset: f32) bool {
         for (self.pools[0..self.npools]) |w| {
             const dx = x - w.pos.x;
@@ -920,7 +905,6 @@ pub const Env = struct {
         return best;
     }
 
-    /// One kind's built model.
     pub fn model(self: *const Env, kind: Kind) rl.Model {
         return self.models[@intFromEnum(kind)];
     }
@@ -1102,7 +1086,6 @@ pub const Env = struct {
         var dist: [gfx.MAX_LIGHTS]f32 = undefined;
         var n: usize = 0;
         for (self.lights[0..self.nlights]) |wl| {
-            // Off screen → it lights nothing you can see.
             if (!view.visible(wl.base.pos, wl.base.radius, LIGHT_REACH)) continue;
             const d2 = mathx.dist2XZ(wl.base.pos, view.pos);
             const k = 1.0 + wl.flicker * gutter(t, wl.phase);
@@ -1117,7 +1100,6 @@ pub const Env = struct {
                 n += 1;
                 continue;
             }
-            // Full: replace the furthest, if this one is nearer.
             var worst: usize = 0;
             for (dist[0..n], 0..) |dd, i| {
                 if (dd > dist[worst]) worst = i;
@@ -1254,7 +1236,6 @@ fn waterQuad(shader: rl.Shader, half: f32) rl.Model {
 const Placer = struct {
     e: *Env,
     m: *const wf.Map,
-    /// Is this map UNSCULPTED?
     flat: bool,
     cur: u16 = 0, // the op being expanded, stamped onto every prop it places
     // The LEAN the op being expanded asks for, held here rather than threaded through `at` — every scatter would otherwise grow a parameter it does nothing with.
@@ -1324,7 +1305,6 @@ const Placer = struct {
         return false;
     }
 
-    /// IS THERE MASONRY WHERE THIS CANDIDATE WANTS TO STAND?
     fn blockedHere(self: *Placer, x: f32, z: f32) bool {
         return self.e.blockedNear(v3(x, self.groundY(x, z) + SOLID_PROBE_Y, z), SOLID_PROBE_M, SOLID_PROBE_R);
     }
@@ -1715,9 +1695,7 @@ test "the shadow cull keeps a distant TALL caster whose shadow still reaches the
     const focus = v3(0, 0, 0);
     const outside = SHADOW_BOX + 10.0; // just beyond the box's own corner
     try std.testing.expect(castsInto(focus, v3(outside, 0, 0), 18.0, 15.5));
-    // A grass-height prop the same distance out cannot possibly reach.
     try std.testing.expect(!castsInto(focus, v3(outside, 0, 0), 0.9, 0.8));
-    // …and a tall one far enough out is genuinely irrelevant.
     try std.testing.expect(!castsInto(focus, v3(SHADOW_BOX + 60.0, 0, 0), 18.0, 15.5));
     // The sanity floor the whole cull rests on: anything INSIDE the box casts, whatever its size.
     try std.testing.expect(castsInto(focus, v3(SHADOW_BOX - 10.0, 0, 0), 0.2, 0.2));
@@ -1756,7 +1734,6 @@ test "the sight line thins the tree standing in it, and only that tree" {
     e.markOccluders(v3(2.6, eyeY, -4), v3(2.6, 1.0, 4), 10.0);
     try std.testing.expectEqual(@as(f32, 1), e.props[0].fade);
     try std.testing.expectEqual(@as(usize, 0), e.noccl); // …and discharged, which is what the list is for
-    // The mark is handed back the moment it stops covering him.
     e.markOccluders(v3(60, eyeY, -4), v3(60, 1.0, 4), 10.0);
     try std.testing.expectEqual(@as(f32, 1), e.props[0].fade);
     try std.testing.expectEqual(@as(usize, 0), e.noccl);
@@ -1773,7 +1750,6 @@ test "THE FADE TAKES TIME, both ways, and never overshoots either end" {
     const hero = v3(0, 1.0, 4);
     const step = 1.0 / 60.0;
 
-    // ONE frame in the way is not a switch: it has barely started to go.
     e.markOccluders(eye, hero, step);
     try std.testing.expect(e.props[0].fade > 0.9 and e.props[0].fade < 1.0);
     try std.testing.expectApproxEqAbs(OCCL_FLOOR, e.props[0].fadeTo, 0.001);
@@ -1783,7 +1759,6 @@ test "THE FADE TAKES TIME, both ways, and never overshoots either end" {
     e.markOccluders(eye, hero, step);
     try std.testing.expectApproxEqAbs(OCCL_FLOOR, e.props[0].fade, 0.001);
 
-    // …and COMING BACK is slower than going in, which is the asymmetry the constants exist for.
     const clear = v3(60, 2.2, -4);
     e.markOccluders(clear, v3(60, 1.0, 4), step);
     try std.testing.expect(e.props[0].fade > OCCL_FLOOR and e.props[0].fade < 1.0);
@@ -1818,15 +1793,12 @@ test "what covers him thins, what merely stands near the sight line does not" {
     const hero = v3(0, 1.0, 0);
     // A great trunk 2 m in front of him, dead on the line: most of him.
     try std.testing.expect(coverFrac(eye, hero, v3(0, 0, -2), 6.0, 1.85) > OCCL_FULL);
-    // The same trunk stood off to the side: a sliver at most.
     try std.testing.expect(coverFrac(eye, hero, v3(3.0, 0, -2), 6.0, 1.85) < OCCL_MIN);
-    // A knee-high stump dead on the line covers his boots and nothing else.
     try std.testing.expect(coverFrac(eye, hero, v3(0, 0, -2), 0.5, 0.6) < OCCL_MIN);
     // Something chest-high across the line takes a real share of him without hiding him — the case the
     // ramp between the two thresholds exists for.
     const part = coverFrac(eye, hero, v3(0, 0, -2), 1.3, 1.85);
     try std.testing.expect(part > OCCL_MIN and part < OCCL_FULL);
-    // …and what is BEHIND him is never in the way, however big it is.
     try std.testing.expectEqual(@as(f32, 0), coverFrac(eye, hero, v3(0, 0, 4), 6.0, 1.85));
 }
 
@@ -1856,11 +1828,9 @@ test "a solid's blocking height is a WORLD height, so cover still works up a ban
     e.nprops = 2;
     buildSolids(e);
     var buf: [MAX_NEAR]collision.Solid = undefined;
-    // On the flat, unchanged: chest-high is blocked, well over the parapet is not.
     const flat = e.nearSolids(v3(0, 0, 0), 1.0, &buf);
     try std.testing.expect(collision.blockedBy(v3(0, top - 0.5, 0), 0.04, flat));
     try std.testing.expect(!collision.blockedBy(v3(0, top + 0.5, 0), 0.04, flat));
-    // …and 12 m up, the SAME wall blocks at ITS chest height rather than at the datum's.
     const up = e.nearSolids(v3(60, 12, 0), 1.0, &buf);
     try std.testing.expect(collision.blockedBy(v3(60, 12 + top - 0.5, 0), 0.04, up));
     try std.testing.expect(!collision.blockedBy(v3(60, 12 + top + 0.5, 0), 0.04, up));
@@ -1899,7 +1869,6 @@ test "walkStep: an incline inside the limit is taken, a cliff face is refused" {
         try std.testing.expect(!e.walkableAt(0, 0));
         const up = e.walkStep(v3(0, 0, 0), v3(1, 0, 0), 0.1);
         try std.testing.expectApproxEqAbs(@as(f32, 0), up.x, 1e-4);
-        // …but DOWNHILL is never refused.
         const down = e.walkStep(v3(0, 0, 0), v3(-1, 0, 0), 0.1);
         try std.testing.expectApproxEqAbs(@as(f32, -0.1), down.x, 1e-4);
         const across = e.walkStep(v3(0, 0, 0), mathx.normV(v3(1, 0, 1)), 0.1);
@@ -1909,7 +1878,6 @@ test "walkStep: an incline inside the limit is taken, a cliff face is refused" {
 }
 
 test "THE STEP RULE IS FRAME-RATE INDEPENDENT — a wall cannot be ratcheted up 0.4 m at a time" {
-    // THE bug this exists for.
     const e = try envWithRamp(1.73); // 60 deg: not walkable at any dt
     defer std.testing.allocator.destroy(e);
     for ([_]f32{ 1.0 / 30.0, 1.0 / 60.0, 1.0 / 144.0, 1.0 / 1000.0 }) |dt| {
@@ -1943,7 +1911,6 @@ test "a SLIGHT STEP is always taken, however steep the face carrying it" {
     try std.testing.expectApproxEqAbs(LEDGE, e.groundAt(p.x, p.z) - GROUND_Y, 1e-3);
     try std.testing.expect(LEDGE <= STEP_UP);
 
-    // A THREE-STEP ledge (0.75 m) is a wall.
     for (0..wf.HEIGHT_N) |iz| {
         for (0..wf.HEIGHT_N) |ix| {
             e.heightField[iz * wf.HEIGHT_N + ix] = wf.heightByte(if (ix >= mid) 6.0 else 0.0);
@@ -1972,13 +1939,11 @@ test "env's ground agrees with the MAP's to the millimetre" {
     for ([_][2]f32{ .{ -30, 40 }, .{ 20, -20 }, .{ 0, 0 }, .{ -117.3, 88.6 }, .{ 279, -279 } }) |p| {
         try std.testing.expectApproxEqAbs(m.heightAt(p[0], p[1]) + GROUND_Y, e.groundAt(p[0], p[1]), 1e-5);
     }
-    // A FLAT map is the old world exactly: the datum, everywhere, with no field consulted at all.
     e.heightAny = false;
     try std.testing.expectApproxEqAbs(GROUND_Y, e.groundAt(-30, 40), 1e-6);
 }
 
 test "rayGround finds the surface of a hill, not the plane under it" {
-    // The editor aims every click with this.
     const e = try envWithRamp(0.5); // a steady 26 deg slope rising with x
     defer std.testing.allocator.destroy(e);
     const hit = e.rayGround(v3(40, 200, 0), v3(0, -1, 0)) orelse return error.NoHit;
@@ -1988,12 +1953,10 @@ test "rayGround finds the surface of a hill, not the plane under it" {
     const oblique = e.rayGround(v3(-60, 60, 0), mathx.normV(v3(1, -0.5, 0))) orelse return error.NoHit;
     try std.testing.expect(oblique.x < -60 + flatT * 0.9);
     try std.testing.expectApproxEqAbs(e.groundAt(oblique.x, oblique.z), oblique.y, 0.05);
-    // Aimed at the sky: nothing, rather than a point behind the eye.
     try std.testing.expect(e.rayGround(v3(0, 10, 0), mathx.normV(v3(0, 1, 0))) == null);
 }
 
 test "the cover field actually varies — real clearings and real thickets" {
-    // The point of the field is VARIANCE.
     var lo: f32 = 9;
     var hi: f32 = -9;
     var sum: f32 = 0;
@@ -2016,7 +1979,6 @@ test "the cover field actually varies — real clearings and real thickets" {
 }
 
 test "the SHIPPED map parses, and its zones cover every reachable position" {
-    // Against the real file, not a fixture.
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     var line: usize = 0;
@@ -2110,7 +2072,6 @@ test "replaying the SHIPPED map produces a stable world" {
     // one to `campfire_lit` in the editor and this goes back up by one — and gains a rest site with it.
     try std.testing.expectEqual(@as(usize, 37), lights0);
 
-    // …and THE CHEST IS STOCKED.
     var jerky: usize = 0;
     var chestOps: usize = 0;
     for (m.ops[0..m.nops]) |*op| {
@@ -2122,7 +2083,6 @@ test "replaying the SHIPPED map produces a stable world" {
     }
     try std.testing.expectEqual(@as(usize, 2), jerky);
 
-    // …AND EVERY BOX AND CAMP IN THE MAP BECAME ONE THE GAME CAN REACH.
     var boxes: [chestmod.CAP]chestmod.Site = undefined;
     try std.testing.expectEqual(chestOps, e.chestSites(&boxes));
     var fires: [restmod.CAP]restmod.Site = undefined;
@@ -2158,7 +2118,6 @@ test "EVERY SHIPPED MAP LOADS AND MATERIALIZES, not just the one the game starts
         seen += 1;
     }
     try std.testing.expect(seen >= 3); // the plain and the two arenas, at least — or the walk found nothing
-    // …and the BONE COURT is the skeletal warriors' proving ground: both kits, and more than one of each.
     var line: usize = 0;
     try wf.load(wf.DIR ++ "/03_bone_court.world", m, &line);
     var shields: usize = 0;
@@ -2181,10 +2140,8 @@ test "EVERY SHIPPED MAP LOADS AND MATERIALIZES, not just the one the game starts
     try std.testing.expectEqual(@as(usize, 2), e.restSites(&sites)); // the grace AND the campfire
     try std.testing.expect(restmod.isRestKind(.campfire_lit));
     try std.testing.expect(!restmod.isRestKind(.campfire));
-    // The lit one is an INTERACTABLE and the dead one is not — that is what shelves it in the editor.
     try std.testing.expect(props.info(.campfire_lit).interact);
     try std.testing.expect(!props.info(.campfire).interact);
-    // …and only the lit one carries a fire.
     try std.testing.expect(props.info(.campfire_lit).light != null);
     try std.testing.expect(props.info(.campfire).light == null);
 }
@@ -2237,7 +2194,6 @@ test "the map's half drives the world, not a constant in this file" {
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     m.blank("sized");
-    // `blank` writes the default, and a map that says something else is obeyed.
     try std.testing.expectApproxEqAbs(wf.DEFAULT_HALF, m.half, 1e-4);
     m.half = 120;
     try std.testing.expectApproxEqAbs(@as(f32, 118), m.half - PLAY_INSET, 1e-4);

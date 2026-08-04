@@ -6,6 +6,7 @@ const combat = @import("combat.zig");
 const statsmod = @import("stats.zig");
 const art = @import("propart.zig");
 const archer = @import("archer.zig");
+const foemod = @import("foe.zig"); // the shared swing ribbon lives here, with the other FX every actor shares
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -288,7 +289,6 @@ const BOW_HEAD_CANT = 9.0;
 const BOW_STOOP = 4.0; // a ready stoop that straightens as the draw comes back (the counterweight)
 const BOW_CARRY_SH = 26.0; // the LOW CARRY, bow not presented: down at his side
 const BOW_CARRY_ELBOW = 8.0;
-/// Where the DRAW arm rests.
 const BOW_DRAW_REST = 26.0;
 const BOW_KICK = 7.0; // the bow arm bounces forward off the release (the follow-through)
 const BOW_BLEND_RATE = 11.0;
@@ -307,10 +307,8 @@ pub const BLADE_R = 0.34; // capsule radius (world units) — a FAT hit volume, 
 
 const TRAIL_N = 20; // ring capacity (~0.3 s of samples at 60 fps)
 const TRAIL_LIFE = 0.20; // seconds a sample persists (long enough that the full level arc
-const TRAIL_MIN_SWEEP = 0.05; // world units the tip must move in a frame to leave a sample
 const TRAIL_ROOT = 0.35; // ribbon spans this fraction down the blade → the tip
-const TRAIL_COL = rgba(224, 230, 244, 255); // pale steel flash (alpha set per segment)
-const TrailSample = struct { a: rl.Vector3 = mathx.zero3, b: rl.Vector3 = mathx.zero3, age: f32 = mathx.LONG_AGO };
+const TRAIL_PEAK = 84.0;
 
 pub const HP_MAX = statsmod.hpFor(statsmod.START); // 70 — VITALITY owns it (`stats.zig`); the balance anchor every foe's damage is measured against
 pub const POISE_MAX = 55.0;
@@ -545,7 +543,6 @@ pub const Queued = union(enum) { attack: Attack, roll: rl.Vector3 };
 
 pub const Hero = struct {
     mesh: [N]rl.Mesh,
-    /// The bow and its two live parts, all from `archer.zig`.
     bow: rl.Mesh,
     bowString: rl.Mesh,
     bowNock: rl.Mesh,
@@ -585,8 +582,7 @@ pub const Hero = struct {
     bladeA0: rl.Vector3 = mathx.zero3,
     bladeB0: rl.Vector3 = mathx.zero3,
     hitWasActive: bool = false, // edge detector: sweep history (+ future hit list) resets on activation
-    trail: [TRAIL_N]TrailSample = [_]TrailSample{.{}} ** TRAIL_N, // swing-trail ring (newest at trailHead)
-    trailHead: usize = 0,
+    trail: foemod.Trail(TRAIL_N) = .{}, // the shared swing ribbon (foe.zig), which every blade in the game draws
     /// THE CHARACTER SHEET, and the source of the three maxima below — re-read wherever he is made whole (`makeWhole`), which is the only moment a sheet can have changed and the only moment a bar may resize.
     sheet: statsmod.Sheet = .{},
     vit: combat.Vitals = freshVitals(.{}),
@@ -705,14 +701,13 @@ pub const Hero = struct {
         // The one-frame loose flag is cleared HERE, not in `updateShot`: a frame long enough to cross both the release knot and the end of the shot sets it and drops `shooting` in the same call, and nothing would ever run `updateShot` again to clear it — so game.zig loosed a fresh shaft every frame after. Every advance path passes through this prologue.
         self.loosed = false;
         self.elapsed += dt;
-        self.ageTrail(dt);
+        self.trail.age(dt);
         self.blendT = @min(self.blendT + dt, mathx.LONG_AGO);
         // Stamina belongs in the prologue for the same reason the others do: it must advance exactly ONCE per frame whichever path is running, and hanging it off the live loop instead would leave --shot draining every swing it takes and never refilling.
         if (!self.held) self.stam.tick(dt, self.sprinting, self.attacking or self.rolling or self.guarding);
         self.stamRefused = @max(0, self.stamRefused - dt);
         // The stance blend and the recoil clock, in the prologue with the rest: exactly one advance path runs each frame and both have to move under all of them, or the shield hangs mid-raise through a stagger and the recoil freezes on whatever frame the block landed.
         self.guardB = mathx.approach(self.guardB, if (self.guarding) 1.0 else 0.0, dt * GUARD_BLEND_RATE);
-        // …and the AIM's blend beside it, in the prologue for the same reason: exactly one advance path runs per frame and the bow has to keep coming up (or going down) under all of them, or it hangs half-raised through a stagger.
         self.aimB = mathx.approach(self.aimB, if (self.aiming) 1.0 else 0.0, dt * BOW_BLEND_RATE);
         self.aimLean = mathx.approach(self.aimLean, self.aimLeanWant, dt * AIM_LEAN_RATE);
         self.blockT = @min(self.blockT + dt, mathx.LONG_AGO);
@@ -752,7 +747,6 @@ pub const Hero = struct {
         self.tickClocks(dt);
         self.facing = mathx.approachAngle(self.facing, self.rollYaw, dt * ROLL_YAW_RATE); // whip, don't teleport
         const u = mathx.clampF(self.rollT / ROLL_DUR, 0, 1);
-        // Lunge: full speed through the dive + somersault, smooth-braked through the recovery.
         const peak = ROLL_DIST / (ROLL_DUR * 0.5 * (ROLL_BRAKE_A + ROLL_BRAKE_B));
         const speed = peak * (1.0 - mathx.smoothstep(ROLL_BRAKE_A, ROLL_BRAKE_B, u));
         const moved = speed * dt;
@@ -875,7 +869,6 @@ pub const Hero = struct {
                 mathx.maxF(self.aimB, mathx.smoothstep(0, at, u))
             else
                 mathx.smoothstep(0, at * 0.7, u);
-            // …and the string is HOME the instant the shaft leaves.
             return .{ .up = up, .pull = up * (1.0 - mathx.smoothstep(at, at + BOW_SNAP, u)) };
         }
         return .{ .up = self.aimB, .pull = self.aimB };
@@ -996,11 +989,9 @@ pub const Hero = struct {
         return true;
     }
 
-    /// The blow the shaft on the string will land, its fire rider included…
     pub fn shotBlow(self: *const Hero) combat.Hit {
         return arrowBlow(self.shotArrow, self.shotAimed);
     }
-    /// …and which projectile carries it.
     pub fn shotShaft(self: *const Hero) archer.Shot {
         return arrowShot(self.shotArrow);
     }
@@ -1066,10 +1057,7 @@ pub const Hero = struct {
         self.bladeA = rl.math.vector3Transform(BLADE_BASE, self.xf[SWORD]);
         self.bladeB = rl.math.vector3Transform(BLADE_TIP, self.xf[SWORD]);
         const act = self.hitActive(); // sampled ONCE — both the trail and the edge test read it
-        if (act and mathx.lenV(mathx.subV(self.bladeB, self.bladeB0)) > TRAIL_MIN_SWEEP) {
-            self.trailHead = (self.trailHead + 1) % TRAIL_N;
-            self.trail[self.trailHead] = .{ .a = mathx.lerpV(self.bladeA, self.bladeB, TRAIL_ROOT), .b = self.bladeB, .age = 0 };
-        }
+        if (act) self.trail.push(self.bladeA, self.bladeB, self.bladeB0, TRAIL_ROOT);
         if (act and !self.hitWasActive) {
             self.bladeA0 = self.bladeA;
             self.bladeB0 = self.bladeB;
@@ -1078,17 +1066,7 @@ pub const Hero = struct {
     }
 
     pub fn drawTrail(self: *const Hero) void {
-        rl.gl.rlDisableBackfaceCulling(); // the ribbon must read from both sides of the arc
-        defer rl.gl.rlEnableBackfaceCulling();
-        var i: usize = 0;
-        while (i + 1 < TRAIL_N) : (i += 1) {
-            const s0 = &self.trail[(self.trailHead + TRAIL_N - i) % TRAIL_N];
-            const s1 = &self.trail[(self.trailHead + TRAIL_N - i - 1) % TRAIL_N];
-            if (s0.age >= TRAIL_LIFE or s1.age >= TRAIL_LIFE) break; // the rest is older still
-            const f = 1.0 - 0.5 * (s0.age + s1.age) / TRAIL_LIFE;
-            const strip = [4]rl.Vector3{ s0.a, s0.b, s1.a, s1.b };
-            rl.drawTriangleStrip3D(&strip, mathx.withAlpha(TRAIL_COL, mathx.u8f(84.0 * f * f)));
-        }
+        self.trail.draw(TRAIL_LIFE, foemod.WAKE, TRAIL_PEAK);
     }
 
     pub fn attackHit(self: *const Hero) combat.Hit {
@@ -1121,7 +1099,6 @@ pub const Hero = struct {
         if (self.iFramed()) return .ignored; // rolled through it — no damage, no flinch, nothing
         if (self.guardCovers(fromDir)) return self.blockHit(h);
         const r = self.vit.hit(h);
-        // Red damage-flash on ANY blow, punchier the harder the reaction (peripheral feedback).
         const flash: f32 = switch (r) {
             .death => 1.0,
             .heavy => 0.9,
@@ -1169,15 +1146,11 @@ pub const Hero = struct {
         self.hurtFlash = mathx.maxF(0, self.hurtFlash - dt * 2.6);
     }
 
-    fn ageTrail(self: *Hero, dt: f32) void {
-        for (&self.trail) |*s| s.age = mathx.minF(s.age + dt, mathx.LONG_AGO);
-    }
     fn enterStun(self: *Hero, kind: combat.StunKind) void {
         self.attacking = false; // the reaction drops whatever he was committed to
         self.rolling = false;
         // …the draught included, AND THE CHARGE IS ALREADY GONE.
         self.drinking = false;
-        // …and the shield comes down.
         self.guarding = false;
         self.dropAim();
         self.queued = null;
@@ -1234,7 +1207,6 @@ pub const Hero = struct {
         self.sprinting = false;
         self.guarding = false;
         self.guardB = 0;
-        // …nor at full draw.
         self.dropAim();
         self.blockT = mathx.LONG_AGO;
         self.pos = self.spawnPos;
@@ -1285,7 +1257,6 @@ pub const Hero = struct {
         // Root: place at world pos, at hip height (crouched when running), swayed/bobbed in body frame, PITCHED FORWARD ABOUT THE FEET (so the centre of gravity leads the base — the driving, falling-forward run), then faced.
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
-        // …plus the SLOPE he is standing on.
         const bodyPitch = (BODY_PITCH_RUN * runB + (BODY_PITCH_SPRINT - BODY_PITCH_RUN) * sprintB) * m + self.slopePitch;
         var wx: [N]rl.Matrix = undefined;
         const pelvY = hipY - crouch + bob;
@@ -1295,19 +1266,16 @@ pub const Hero = struct {
             rootAt(self.pos), // place in the world, ON the ground under him
         );
 
-        // Spine chain — lean deepens through run into sprint + counter-rotation vs pelvis.
         const lean = (mathx.lerpF(TORSO_LEAN * fw, RUN_LEAN, runB) + sprintB * (SPRINT_LEAN - RUN_LEAN)) * m;
         const bank = STRAFE_LEAN * lat * m;
         const aim = self.aimLean;
         setLocal(&wx, SPINE, self.rest, mul3(rx(lean * 0.5 + aim * 0.5), ry(-0.3 * prot), rz(0.5 * bank)));
         setLocal(&wx, CHEST, self.rest, mul3(rx(lean * 0.5 + aim * 0.5), ry(-0.5 * prot), rz(0.5 * bank)));
-        // Idle/walk carries a gentle downward gaze (HEAD_WALK).
         const fwdTilt = bodyPitch + lean;
         const gazeCounter = mathx.clampF(fwdTilt - GAZE_AHEAD, 0, NECK_EXT_MAX);
         setLocal(&wx, NECK, self.rest, mul(rx(-0.45 * gazeCounter), ry(-0.2 * prot)));
         setLocal(&wx, HEAD, self.rest, rx(HEAD_WALK - 0.55 * gazeCounter)); // +rx = gaze down (walk); the counter lifts it toward ahead when running
 
-        // Legs — left uses phase, right is half a stride out.
         legChain(&wx, &self.rest, ph, m, runB, fw, lat, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
         legChain(&wx, &self.rest, ph + 0.5, m, runB, fw, lat, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
 
@@ -1330,7 +1298,6 @@ pub const Hero = struct {
 
     fn poseBowArms(self: *const Hero, wx: *[N]rl.Matrix, lean: f32, prot: f32, bank: f32) void {
         const lvl = self.bowLevels();
-        // The FOLLOW-THROUGH: the bow arm bounces forward off the release, drained over the tail.
         const kick: f32 = if (self.loosedAlready()) BOW_KICK * (1.0 - self.shotU()) else 0;
         const swing = ARM_SWING * mathx.cosf(std.math.tau * self.phase) * self.moving * self.fwdB * (1.0 - lvl.up);
         var bp = wx.*;
@@ -1347,7 +1314,6 @@ pub const Hero = struct {
         setLocal(&bp, ELR, self.rest, rx(-shElbow));
         setLocal(&bp, WRR, self.rest, rz(-BOW_WRIST - 4.0 * kick));
         setLocal(&bp, HELD, self.rest, mul(ry(180.0), rx(100.0 - 3.0 * kick)));
-        // The draw arm: back to the anchor, folded hard, elbow high.
         setLocal(&bp, SHL, self.rest, mul3(
             rx(-mathx.lerpF(BOW_DRAW_REST, BOW_DRAW_SH, lvl.pull) + swing),
             ry(-BOW_DRAW_YAW * lvl.pull),
@@ -1389,18 +1355,14 @@ pub const Hero = struct {
 
     fn poseGuard(self: *const Hero, wx: *[N]rl.Matrix, k: f32, rec: f32, lean: f32, prot: f32, bank: f32) void {
         var gp = wx.*;
-        // The trunk BLADES — left shoulder toward the threat, and further round as a blow lands.
         const blade = -(GUARD_BLADE + BLOCK_TRUNK * rec);
         setLocal(&gp, SPINE, self.rest, mul3(rx(lean * 0.5), ry(-0.3 * prot + blade), rz(0.5 * bank)));
         setLocal(&gp, CHEST, self.rest, mul3(rx(lean * 0.5 + 5.0 * rec), ry(-0.5 * prot + blade), rz(0.5 * bank)));
-        // …and the head UNWINDS all of it: he is looking at the thing he is blocking, over the rim.
         setLocal(&gp, NECK, self.rest, ry(-blade));
         setLocal(&gp, HEAD, self.rest, mul(rx(GUARD_HEAD), ry(-blade)));
-        // The shield arm: forward, across the chest, folded — and punched back INTO him by a blow.
         setLocal(&gp, SHL, self.rest, mul3(rx(-(GUARD_SH_FLEX - BLOCK_SHIELD_BACK * rec)), rz(GUARD_SH_ABD), ry(-GUARD_SH_CROSS)));
         setLocal(&gp, ELL, self.rest, rx(-(GUARD_ELBOW + BLOCK_SHIELD_FOLD * rec)));
         setLocal(&gp, WRL, self.rest, rl.math.matrixIdentity());
-        // The sword arm draws BACK and low, out of the shield's line.
         setLocal(&gp, SHR, self.rest, mul(rx(GUARD_SWORD_BACK), rz(-ARM_ABD)));
         setLocal(&gp, ELR, self.rest, rx(-GUARD_SWORD_ELBOW));
         setLocal(&gp, WRR, self.rest, rx(GUARD_SWORD_WRIST));
@@ -1476,7 +1438,6 @@ pub const Hero = struct {
         const sw: f32 = if (self.atkAlt) -1.0 else 1.0; // swing side: +1 forehand, -1 backhand return
         const amp: f32 = if (self.atkAlt) 0.8 else 1.0; // the cross-body windup can't coil as deep
 
-        // Trunk: wind toward the swing's origin side, release through past neutral.
         const os = AL_OVER * bump(u, AL_STRIKE_B + 2 * AL_LAG, AL_RECOV_A + 0.15);
         const yawP = sw * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sPelv);
         const yawC = sw * (1.35 * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sChest) + os);
@@ -1494,7 +1455,6 @@ pub const Hero = struct {
         setLocal(&wx, CHEST, self.rest, mul(rx(crunch + self.aimLean * 0.5), ry(0.65 * yawC)));
         setLocal(&wx, NECK, self.rest, ry(-0.4 * (yawP + yawC)));
         setLocal(&wx, HEAD, self.rest, mul(rx(HEAD_WALK), ry(-0.35 * (yawP + yawC)))); // eyes stay on the target
-        // Stance brace: the leg opposite the swing's LANDING side steps up as the cut releases.
         const braceL: f32 = if (self.atkAlt) 6.0 else -10.0;
         const braceR: f32 = if (self.atkAlt) -10.0 else 6.0;
         const kneeL: f32 = if (self.atkAlt) 5.0 else 8.0;
@@ -1505,7 +1465,6 @@ pub const Hero = struct {
         setLocal(&wx, HIPR, self.rest, mul(rx(braceR * sPelv), rz(HIP_ADDUCT)));
         setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + kneeR * sPelv + 6.0 * wind));
         setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
-        // Left arm counterbalances: drifts forward on the wind, sweeps back through.
         setLocal(&wx, SHL, self.rest, mul(rx(-10.0 * wind + 24.0 * sChest), rz(ARM_ABD)));
         setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 12.0 * wind)));
         setLocal(&wx, WRL, self.rest, rl.math.matrixIdentity());
@@ -1541,7 +1500,6 @@ pub const Hero = struct {
 
         const yaw = -AH_BODY_YAW * wind + 2.0 * AH_BODY_YAW * sPelv;
         const spineX = -AH_LEAN_BACK * wind + (AH_LEAN_BACK + AH_SPINE_CRUNCH) * sChest;
-        // Frontal coil: bend toward the sword side under the raise, whip past on the drop.
         const tilt = -AH_SPINE_TILT * wind + 1.5 * AH_SPINE_TILT * sChest;
         const dip = AH_LOAD * wind + (AH_DIP - AH_LOAD) * sPelv - 0.008 * H * rcl;
         const facingDeg = mathx.degrees(self.facing);
@@ -1563,11 +1521,9 @@ pub const Hero = struct {
         setLocal(&wx, HIPR, self.rest, mul(rx(2.0 * wind + 5.0 * sPelv), rz(HIP_ADDUCT)));
         setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 17.0 * wind + 4.0 * sPelv));
         setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
-        // Left arm rises for balance under the raise, drops with the blow.
         setLocal(&wx, SHL, self.rest, mul(rx(-22.0 * wind + 30.0 * sChest), rz(ARM_ABD + 6.0 * wind)));
         setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 16.0 * wind)));
         setLocal(&wx, WRL, self.rest, rl.math.matrixIdentity());
-        // Sword arm: up past vertical, blade hanging back (sinking further through the gather) — then the chop, recoiling a few degrees off the bite before settling.
         const shX = -AH_SH_UP * wind - AH_GATHER * gather + (AH_SH_UP - AH_SH_DOWN) * sSh + AH_RECOIL * rcl;
         setLocal(&wx, SHR, self.rest, mul(rx(shX), rz(-ARM_ABD - 8.0 * wind)));
         const elb = IDLE_ELBOW + (AH_ELBOW_WIND - IDLE_ELBOW) * wind + 5.0 * gather - (AH_ELBOW_WIND - AH_ELBOW_STRIKE) * sElb;
@@ -1857,7 +1813,6 @@ fn rollLeg(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, tuck: f32, f: f32, side: f32,
     setLocal(wx, knee, rest, rx(mathx.lerpF(IDLE_KNEE, ROLL_KNEE * f, tuck)));
     setLocal(wx, ank, rest, ry(side * FOOT_TOEOUT));
 }
-// One folded leg of the cross-legged sit.
 fn sitLeg(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, side: f32, hip: usize, knee: usize, ank: usize) void {
     setLocal(wx, hip, rest, mul(rx(-SIT_HIP_FLEX), rz(side * SIT_HIP_ABD)));
     setLocal(wx, knee, rest, rx(SIT_KNEE));
@@ -1947,7 +1902,6 @@ fn guitarMesh() rl.Mesh {
         .w = mathx.crossV(a, n),
         .a = a,
         .n = n,
-        // BIGGER (owner's call).
         .s = 1.35,
     });
     return b.toMesh();
@@ -1958,7 +1912,6 @@ fn shieldMesh() rl.Mesh {
     var rng = mathx.Rng.init(0x5C1E1D);
     b.setMat(.wood);
     b.addBlob(v3(0, 0, 0), v3(SHIELD_R, SHIELD_R, SHIELD_THICK), 5, 16, SHIELD_WOOD);
-    // The BOARD SEAMS.
     const dome = struct {
         fn at(rho: f32) f32 { // the dish's height above the equator plane at radius `rho`
             const t = mathx.clampF(rho / SHIELD_R, 0, 1);
@@ -2024,7 +1977,6 @@ fn pelvisMesh() rl.Mesh {
     b.setMat(.steel);
     slab(&b, v3(0, -0.005 * H, 0.0925 * H), v3(0.035 * H, 0.035 * H, 0.012 * H), BRASS); // buckle
     b.setMat(.leather);
-    // leather tassets over the hips + a supply pouch on the right
     slab(&b, v3(0.095 * H, -0.055 * H, 0.05 * H), v3(0.07 * H, 0.085 * H, 0.016 * H), LEATHER);
     slab(&b, v3(-0.095 * H, -0.055 * H, 0.05 * H), v3(0.07 * H, 0.085 * H, 0.016 * H), LEATHER);
     slab(&b, v3(-0.115 * H, -0.045 * H, -0.03 * H), v3(0.05 * H, 0.06 * H, 0.045 * H), LEATHER_DK); // pouch
@@ -2043,10 +1995,8 @@ fn pelvisMesh() rl.Mesh {
 fn abdomenMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.cloth);
-    // Slight waist taper: a lower belly block under a broader ribcage base.
     slab(&b, v3(0, -0.01 * H, 0), v3(0.205 * H, 0.13 * H, 0.145 * H), TUNIC);
     slab(&b, v3(0, 0.075 * H, 0), v3(0.235 * H, 0.09 * H, 0.16 * H), TUNIC);
-    // tabard front — hangs over the belly, bends with the spine
     slab(&b, v3(0, -0.012 * H, 0.079 * H), v3(0.135 * H, 0.155 * H, 0.014 * H), CAPE);
     return b.toMesh();
 }
@@ -2075,7 +2025,6 @@ fn neckMesh() rl.Mesh {
 fn headMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    // Cranium, jaw, nose (facing cue), swept-back hair with a nape knot, and a thin leather headband.
     slab(&b, v3(0, 0.075 * H, -0.005 * H), v3(0.135 * H, 0.115 * H, 0.15 * H), SKIN); // cranium
     slab(&b, v3(0, 0.018 * H, 0.012 * H), v3(0.10 * H, 0.055 * H, 0.125 * H), SKIN); // jaw
     slab(&b, v3(0, 0.05 * H, 0.082 * H), v3(0.028 * H, 0.03 * H, 0.03 * H), SKIN_DK); // nose
@@ -2098,7 +2047,6 @@ fn thighMesh() rl.Mesh {
 
 fn shankMesh() rl.Mesh {
     var b = Builder.init();
-    // Calf bulge, then a leather boot shaft tapering to the ankle.
     b.setMat(.cloth);
     b.addCylinder(v3(0, 0, 0), v3(0, -0.09 * H, 0), 0.058 * H, 0.062 * H, 10, CLOTHDK);
     b.setMat(.leather);
@@ -2174,7 +2122,6 @@ test "the DRAUGHT is committed like the other two: inputs buffer, they do not fi
     try std.testing.expectEqual(stamAtDrink, h.stam.cur);
     try std.testing.expect(h.queued != null); // it went where it belongs: the queue
 
-    // A roll press replaces it in the one slot (last press wins) and likewise waits.
     h.requestRoll(v3(0, 0, 1));
     try std.testing.expect(!h.rolling and h.drinking);
 
@@ -2194,7 +2141,6 @@ test "A DRAUGHT IS A SHUFFLE, and the legs stay the gait's" {
     h.tickDrink(combat.FLASK_DRINK_DUR * 0.4); // flask at the lips
     const dk = h.drinkLevels();
     try std.testing.expect(dk.lift > 0.5 and dk.tip > 0.0);
-    // …and it is zero the moment he is not drinking, so the gait pays nothing for it.
     h.drinking = false;
     const dry = h.drinkLevels();
     try std.testing.expectEqual(@as(f32, 0), dry.lift);
@@ -2213,7 +2159,6 @@ test "THE BOW TAKES THE SHIELD, and it takes it by being asked rather than by cl
     try std.testing.expect(!h.guarding);
     try std.testing.expect(!h.canGuard());
 
-    // …and back again puts it in his hand, with no bookkeeping in between.
     try std.testing.expect(h.swapArm());
     h.setGuard(true);
     try std.testing.expect(h.guarding);
@@ -2230,7 +2175,6 @@ test "the swap is refused mid-action, so a weapon cannot change hands inside a s
     var d = testHero();
     d.enterStun(.heavy);
     try std.testing.expect(!d.swapArm());
-    // …and a corpse does not go shopping either.
     var k = testHero();
     k.enterDeath();
     try std.testing.expect(!k.swapArm());
@@ -2244,14 +2188,12 @@ test "AIMING NEEDS THE BOW, and a LOOSE does not cost him the aim" {
     _ = h.swapArm();
     h.setAim(true);
     try std.testing.expect(h.aiming);
-    // The loose: it commits, and the aim is STILL up underneath it.
     h.requestShot(true);
     try std.testing.expect(h.shooting and h.shotAimed);
     h.setAim(true);
     try std.testing.expect(h.aiming);
     try std.testing.expect(h.canAim());
 
-    // …and everything else takes it away.
     var r = testHero();
     _ = r.swapArm();
     r.startRoll(v3(0, 0, 1));
@@ -2278,13 +2220,11 @@ test "an AIMED shot is refused without an aim, which is what makes L2 a stance a
     h.requestShot(true);
     try std.testing.expect(h.shooting and h.shotAimed);
 
-    // The QUICK shot needs no aim at all — that is the whole point of it.
     var q = testHero();
     _ = q.swapArm();
     q.requestShot(false);
     try std.testing.expect(q.shooting and !q.shotAimed);
 
-    // …and neither fires with the SWORD in hand, whichever button asked.
     var w = testHero();
     w.requestShot(false);
     w.requestShot(true);
@@ -2308,7 +2248,6 @@ test "THE SHAFT LEAVES EXACTLY ONCE, on the frame the loose crosses its own knot
         try std.testing.expectEqual(@as(u32, 1), fired);
         try std.testing.expect(!h.shooting);
     }
-    // …and at a terrible frame rate, where one step crosses the whole knot.
     var c = testHero();
     _ = c.swapArm();
     c.requestShot(false);
@@ -2325,7 +2264,6 @@ test "AN EMPTY QUIVER REFUSES THE SHOT, and it does not bill him for the one tha
     var h = testHero();
     _ = h.swapArm();
     try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.ready());
-    // Ten shots is ten arrows, and the eleventh is refused.
     var fired: u32 = 0;
     while (fired < combat.ARROWS_MAX) : (fired += 1) {
         h.stam.reset();
@@ -2341,7 +2279,6 @@ test "AN EMPTY QUIVER REFUSES THE SHOT, and it does not bill him for the one tha
     try std.testing.expect(h.stamRefused > 0);
     // The quiver is checked BEFORE the stamina is charged: a loose that never happened must not bill him.
     try std.testing.expectApproxEqAbs(stamBefore, h.stam.cur, 1e-5);
-    // …and a grace restocks him, the same event that refills the flasks.
     h.respawnForTest();
     try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.ready());
 }
@@ -2358,7 +2295,6 @@ test "THE FIRE ARROW ADDS FIRE and takes nothing off the shaft's own physical" {
     }
     // IT RIDES BOTH SHOTS IN PROPORTION, so the snapshot never becomes the better of the two.
     try std.testing.expect(fireTipped(BOW_QUICK_HIT).raw() < BOW_AIMED_HIT.raw());
-    // …and on a fire-vulnerable body it is worth more than on a fire-proof one, which is the whole point.
     const tipped = fireTipped(BOW_AIMED_HIT);
     var dry = combat.Vitals.initFoe(200, 99, 999).withRes(combat.resists(.{ .fire = -50 }));
     var wet = combat.Vitals.initFoe(200, 99, 999).withRes(combat.resists(.{ .fire = 50 }));
@@ -2377,12 +2313,10 @@ test "the arrow he DREW is the arrow that flies, whatever he cycles to mid-shot"
     try std.testing.expectEqual(combat.ArrowKind.fire, h.shotArrow);
     try std.testing.expectEqual(combat.FIRE_ARROWS_MAX - 1, h.quiver.count(.fire));
     try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.count(.plain)); // it spent the RIGHT quiver
-    // Cycling is refused mid-loose, so the shaft on the string cannot change type under the shot.
     try std.testing.expect(!h.cycleArrow());
     try std.testing.expectEqual(combat.ArrowKind.fire, h.shotArrow);
     try std.testing.expect(h.shotBlow().elem.any());
     while (h.shooting) h.updateShot(1.0 / 60.0, null);
-    // …and back on plain shafts there is no fire on the blow at all.
     try std.testing.expect(h.cycleArrow());
     h.stam.reset();
     h.requestShot(false);
@@ -2401,14 +2335,12 @@ test "A DRY FIRE QUIVER REFUSES, with plain shafts still on his back" {
     try std.testing.expect(!h.shooting and h.stamRefused > 0);
     try std.testing.expectApproxEqAbs(stamBefore, h.stam.cur, 1e-5);
     try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.count(.plain));
-    // …and a grace restocks BOTH.
     h.respawnForTest();
     try std.testing.expectEqual(combat.FIRE_ARROWS_MAX, h.quiver.count(.fire));
     try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.count(.plain));
 }
 
 test "the two shots are a jab and a payoff, and every number says which is which" {
-    // A quick shot is what you open a gap with; the aimed one is what you stood still for.
     try std.testing.expect(combat.STAM_SHOT < combat.STAM_LIGHT); // cheaper than a slash…
     try std.testing.expect(combat.STAM_AIMED > combat.STAM_HEAVY);
     // A BOW CHIPS; IT DOES NOT WIN (owner's call).
@@ -2433,7 +2365,6 @@ test "a stagger drops the bow but never the CHOICE of weapon" {
     try std.testing.expect(!h.aiming and !h.shooting);
     try std.testing.expectApproxEqAbs(@as(f32, 0), h.drawAmt, 1e-6);
     try std.testing.expect(h.bowOut());
-    // …and through a death and back out of it.
     h.enterDeath();
     var guard: u32 = 0;
     while (h.dead and guard < 2000) : (guard += 1) h.updateDeath(1.0 / 60.0);
@@ -2449,7 +2380,6 @@ test "a Cerulean is refused into a full bar rather than pouring a charge away" {
     try std.testing.expectEqual(before, h.flasks.ready());
     try std.testing.expect(h.stamRefused > 0);
 
-    // Spend some, and it is a normal drink again.
     h.fp.cur = 10;
     try std.testing.expect(h.startDrink());
     try std.testing.expectEqual(before - 1, h.flasks.ready());
@@ -2516,7 +2446,6 @@ test "the shield is a DIRECTION: it catches the front and not the flank" {
     try std.testing.expect(!h.guardCovers(fromAngle(180)));
     // A blow with NO direction cannot be guarded — the harness's synthetic reaction hits rely on it.
     try std.testing.expect(!h.guardCovers(mathx.zero3));
-    // …and a lowered shield covers nothing, however square he is standing.
     h.guarding = false;
     try std.testing.expect(!h.guardCovers(fromAngle(0)));
 }
@@ -2528,11 +2457,9 @@ test "a blocked blow costs STAMINA and chip, and never poise" {
     try std.testing.expectEqual(combat.HitOutcome.blocked, h.takeHit(club, fromAngle(10)));
     try std.testing.expectApproxEqAbs(HP_MAX - combat.guardChip(club).dmg, h.vit.hp, 1e-3);
     try std.testing.expectApproxEqAbs(stam0 - combat.guardStamina(club), h.stam.cur, 1e-3);
-    // The whole point: no flinch, no stance chip, still guarding, still in control.
     try std.testing.expect(!h.staggered() and h.guarding);
     try std.testing.expectApproxEqAbs(POISE_MAX, h.vit.poise, 1e-4);
     try std.testing.expectApproxEqAbs(STANCE_MAX, h.vit.stance, 1e-4);
-    // …and the SAME blow round the side is simply a hit: full damage, and it eats poise.
     const hp0 = h.vit.hp;
     try std.testing.expectEqual(combat.HitOutcome.taken, h.takeHit(club, fromAngle(140)));
     try std.testing.expectApproxEqAbs(hp0 - club.dmg, h.vit.hp, 1e-3);
@@ -2553,7 +2480,6 @@ test "running the bar out under a blow BREAKS the guard, and it stays down" {
     try std.testing.expect(!h.canGuard());
     h.setGuard(true);
     try std.testing.expect(!h.guarding);
-    // …and the next blow lands on a man with no shield, whatever he presses.
     try std.testing.expectEqual(combat.HitOutcome.taken, h.takeHit(club, fromAngle(0)));
 }
 
@@ -2568,12 +2494,10 @@ test "i-frames beat the shield, and a committed action drops it" {
     var h = testGuarded();
     h.rolling = true;
     h.rollT = 0.1; // inside ROLL_IFRAME_END
-    // Rolled through it: no chip, no stamina, no beat — the outcome a dodge must produce.
     const stam0 = h.stam.cur;
     try std.testing.expectEqual(combat.HitOutcome.ignored, h.takeHit(.{ .dmg = 36 }, fromAngle(0)));
     try std.testing.expectApproxEqAbs(HP_MAX, h.vit.hp, 1e-4);
     try std.testing.expectApproxEqAbs(stam0, h.stam.cur, 1e-4);
-    // …and while he is doing something ELSE he may not raise it at all.
     var free = testHero();
     free.setGuard(true);
     try std.testing.expect(free.guarding);
@@ -2600,7 +2524,6 @@ test "the guard PAUSES the refill — a held shield is not free" {
     var t: f32 = 0;
     while (t < 2.0) : (t += 1.0 / 60.0) h.tickClocks(1.0 / 60.0);
     try std.testing.expectApproxEqAbs(@as(f32, 40), h.stam.cur, 1e-3);
-    // …and lowering it lets the pool fill again.
     h.guarding = false;
     t = 0;
     while (t < 1.0) : (t += 1.0 / 60.0) h.tickClocks(1.0 / 60.0);
@@ -2630,15 +2553,12 @@ fn testStrafeAnkle(ph: f32, lat: f32, side: f32, hip: usize, knee: usize, sole: 
 test "strafe: the legs really CROSS, then UNCROSS (the whole point of the grapevine)" {
     const rest = restPositions();
     const hx = rest[HIPL].x; // his LEFT hip sits at +x
-    // Sidestepping to his RIGHT (lat > 0 → travel is world -^'x), so the LEFT leg is the crosser.
     const crossedL = testStrafeAnkle(0.0, 1.0, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
     const crossedR = testStrafeAnkle(0.0 + 0.5, 1.0, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
     try std.testing.expect(crossedL.x < crossedR.x - 0.05); // genuinely crossed, not merely touching
-    // …and half a cycle later the same pair must be UNCROSSED and wide: left back on his left side.
     const openL = testStrafeAnkle(0.5, 1.0, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
     const openR = testStrafeAnkle(0.5 + 0.5, 1.0, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
     try std.testing.expect(openL.x > openR.x + 2.0 * hx); // uncrossed AND wider than the hips
-    // Mirror it: sidestepping LEFT must cross the other way, or the gait only works one direction.
     const mCrossR = testStrafeAnkle(0.5 + 0.5, -1.0, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
     const mCrossL = testStrafeAnkle(0.5, -1.0, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
     try std.testing.expect(mCrossR.x > mCrossL.x + 0.05);
@@ -2676,7 +2596,6 @@ test "strafe: planted feet stay ON the ground and the swing foot actually leaves
 }
 
 test "strafe: the planted foot does NOT skate — it holds still while the body passes it" {
-    // THE headline bug.
     const step = 0.01;
     var q: f32 = 0.06;
     while (q < STRAFE_STANCE - 0.06) : (q += step) {
@@ -2703,7 +2622,6 @@ test "the rig's rest leg length matches the LEG_LEN the strafe geometry is measu
 
 // The deepest any sole corner reaches, over a full stride at `speed` travelling `lat`-ward.
 fn deepestSole(speed: f32, lat: f32) f32 {
-    // Bare rig, through the shared `testHero()`
     var h = testHero();
     h.moving = 1;
     h.speedS = speed;
@@ -2720,7 +2638,6 @@ fn deepestSole(speed: f32, lat: f32) f32 {
 }
 
 test "feet do not RAKE through the floor — walking, running, sprinting or sidestepping" {
-    // The owner's report, pinned.
     try std.testing.expect(deepestSole(WALK_SPEED, 0.0) > SOLE_Y - 0.015);
     try std.testing.expect(deepestSole(WALK_SPEED, 1.0) > SOLE_Y - 0.015);
     try std.testing.expect(deepestSole(WALK_SPEED, -1.0) > SOLE_Y - 0.015);

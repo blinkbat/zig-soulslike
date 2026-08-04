@@ -5,7 +5,10 @@ const mathx = @import("mathx.zig");
 
 pub const SR: usize = 22050;
 const SRF: f32 = @floatFromInt(SR);
-const MAX_N: usize = 9 * SR; // the longest a single voice may be (the wind bed is the only long one)
+/// The longest thing that passes through `work`. The synthesized voices top out at the 8 s wind bed; the
+/// ceiling is the CAMPFIRE take (12.8 s), which goes through the same filter rack as everything else and
+/// so has to fit in the same buffer — see `dressedFire`.
+const MAX_N: usize = 13 * SR;
 
 var work: [MAX_N]f32 = undefined;
 var tape: [MAX_N]f32 = undefined;
@@ -45,7 +48,6 @@ const Svf = struct {
     }
 };
 
-/// One-pole lowpass — the gentle one, for warmth rather than shape.
 const Pole = struct {
     y: f32 = 0,
     fn step(p: *Pole, x: f32, cut: f32) f32 {
@@ -81,7 +83,6 @@ const Rack = struct {
         return @min(@as(usize, @intFromFloat(mathx.maxF(t, 0) * SRF)), r.n);
     }
 
-    /// THE FAT LOW END.
     fn body(r: *Rack, t0: f32, dur: f32, f0: f32, f1: f32, amp: f32, curve: f32) void {
         const a = r.at(t0);
         const b = @min(a + r.at(dur), r.n);
@@ -127,7 +128,6 @@ const Rack = struct {
         }
     }
 
-    /// RING — a stack of detuned decaying partials.
     fn ring(r: *Rack, t0: f32, dur: f32, f0: f32, amp: f32, curve: f32, parts: u32) void {
         const a = r.at(t0);
         const b = @min(a + r.at(dur), r.n);
@@ -147,7 +147,6 @@ const Rack = struct {
         }
     }
 
-    /// VOICE — a driven saw with vibrato, swept through a resonant lowpass.
     fn growl(r: *Rack, t0: f32, dur: f32, f0: f32, f1: f32, amp: f32, rough: f32, shape: f32) void {
         const a = r.at(t0);
         const b = @min(a + r.at(dur), r.n);
@@ -167,20 +166,14 @@ const Rack = struct {
         }
     }
 
-    /// A TICK — the transient at the front of a hit.
     fn tick(r: *Rack, t0: f32, amp: f32, cut: f32) void {
         r.grit(t0, 0.012, amp, cut, 0.0, 5.0);
     }
 
-    /// A CHOIR — `voices` detuned unison "ahh"s on one note. What makes it read as VOICES and not as an
-    /// organ is two things: FORMANTS (a vowel is two resonant peaks, ~730 and ~1090 Hz for "ah"), and the
-    /// fact that no two singers are in tune or in phase — each voice gets its own detune, its own vibrato
-    /// rate and its own entry, so the beating between them IS the choral sound. One voice is an oscillator.
-    /// COST: this is the most expensive layer in the bank — ~70 ms of the heal's bake (Debug, 3 takes),
-    /// which is the price of five of these over a 2 s buffer. What is left after the formant coefficients
-    /// were hoisted is one `sin` per sample for each voice's vibrato, and that is DELIBERATE: it happens
-    /// once at launch, it is under what the crickets bed already costs, and a table-lookup LFO would trade
-    /// a real thing (the beating between voices, which is the choral sound) for launch time nobody waits on.
+    /// `voices` detuned unison "ahh"s. Two things make it VOICES rather than an organ: FORMANTS (~730 and
+    /// ~1090 Hz for "ah") and per-voice detune/vibrato/entry, whose beating IS the choral sound.
+    /// The bank's most expensive layer, ~70 ms of the heal's bake (Debug, 3 takes). The remaining `sin` per
+    /// sample per voice is DELIBERATE: a table LFO would trade that beating for launch time nobody waits on.
     fn choir(r: *Rack, t0: f32, dur: f32, f0: f32, amp: f32, voices: u32, peak: f32) void {
         const a = r.at(t0);
         const b = @min(a + r.at(dur), r.n);
@@ -229,10 +222,9 @@ const Rack = struct {
         }
     }
 
-    /// A ROOM, cheap: three feedback combs in series, each fed back through a one-pole so the tail gets
-    /// darker as it dies (which is the whole difference between a reverb and a stack of echoes). In place
-    /// and feed-forward in time — sample i only ever reads samples before it — so it cannot blow up for
-    /// `fb` under 1, and it needs no second buffer.
+    /// Three feedback combs in series, each fed back through a one-pole so the tail darkens as it dies —
+    /// that darkening is the difference between a reverb and a stack of echoes. Feed-forward in time
+    /// (sample i only reads earlier samples), so it cannot blow up for `fb` under 1 and needs no 2nd buffer.
     fn hall(r: *Rack, secs: f32, cut: f32) void {
         const taps = [_]f32{ 0.0297, 0.0371, 0.0411 }; // prime-ish, so their echoes never line up
         for (taps) |d| {
@@ -277,7 +269,6 @@ const Rack = struct {
 
     // separately-authored sounds feel like they were recorded in the same room on the same machine.
 
-    /// Soft saturation.
     fn sat(r: *Rack, drive: f32) void {
         for (work[0..r.n]) |*s| {
             const x = s.* * drive;
@@ -285,13 +276,11 @@ const Rack = struct {
         }
     }
 
-    /// The tape's own bandwidth.
     fn warm(r: *Rack, cut: f32) void {
         var p = Pole{};
         for (work[0..r.n]) |*s| s.* = p.step(s.*, cut);
     }
 
-    /// WOW & FLUTTER — a slow, drifting pitch wobble read out of a fractional delay.
     fn wow(r: *Rack, depth: f32, rate: f32) void {
         if (r.n < 64) return;
         @memcpy(tape[0..r.n], work[0..r.n]);
@@ -310,7 +299,6 @@ const Rack = struct {
         }
     }
 
-    /// THE NOISE FLOOR.
     fn hiss(r: *Rack, amt: f32) void {
         var p = Pole{};
         var q = Pole{};
@@ -336,6 +324,34 @@ const Rack = struct {
         }
     }
 
+    /// A THIN, BOXY BAND — the telephone / transistor-radio read, which is not a lowpass: it is losing the
+    /// BOTTOM as well as the top, and the bottom going is the half the ear hears as "through a speaker".
+    /// Mixed rather than replaced, so the dial sweeps INTO it instead of switching.
+    fn band(r: *Rack, cut: f32, res: f32, amt: f32) void {
+        const c = svfCoef(cut, res);
+        var f = Svf{};
+        for (work[0..r.n]) |*s| {
+            const out = f.stepAt(s.*, c);
+            s.* = mathx.lerpF(s.*, out.bp, mathx.clampF(amt, 0, 1));
+        }
+    }
+
+    /// VINYL CRACKLE — sparse impulsive POPS, and the sparseness is the whole point: a dense one is just
+    /// `hiss` with a worse spectrum, where what reads as age is the silence between the clicks.
+    fn crackle(r: *Rack, amt: f32, perSec: f32) void {
+        const chance = perSec / SRF; // …that a given sample is where a pop starts
+        const life = @max(r.at(0.0022), 2); // a pop is a couple of milliseconds and nothing more
+        var i: usize = 0;
+        while (i < r.n) : (i += 1) {
+            if (r.rng.float() > chance) continue;
+            const a = amt * r.rng.range(0.3, 1.0) * (if (r.rng.float() < 0.5) @as(f32, -1.0) else 1.0);
+            var k: usize = 0;
+            while (k < life and i + k < r.n) : (k += 1) {
+                work[i + k] += a * decay(@as(f32, @floatFromInt(k)) / @as(f32, @floatFromInt(life)), 5.0);
+            }
+        }
+    }
+
     fn norm(r: *Rack, peak: f32) void {
         var hi: f32 = 1e-6;
         for (work[0..r.n]) |s| hi = mathx.maxF(hi, @abs(s));
@@ -343,7 +359,6 @@ const Rack = struct {
         for (work[0..r.n]) |*s| s.* *= k;
     }
 
-    /// Ramp the ends to zero.
     fn ends(r: *Rack, inS: f32, outS: f32) void {
         const ni = @max(r.at(inS), 1);
         const no = @max(r.at(outS), 1);
@@ -352,12 +367,10 @@ const Rack = struct {
         while (i < @min(no, r.n)) : (i += 1) work[r.n - 1 - i] *= @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(no));
     }
 
-    /// The finish every voice ends on.
     fn master(r: *Rack, drive: f32, cut: f32) void {
         r.masterX(drive, cut, CRUSH_BITS, CRUSH_HOLD);
     }
 
-    /// …and the same finish with the CRUSH dialled per voice.
     fn masterX(r: *Rack, drive: f32, cut: f32, bits: f32, hold: u32) void {
         r.sat(drive);
         r.crush(bits, hold);
@@ -418,7 +431,7 @@ pub const Id = enum {
     arrow_metal,
     bone_hurt,
     bone_die,
-    // the one-eyed ogre
+    skel_lunge, // THE GREATSWORD COMMITTING — dry bones gathering, then two metres of steel coming at you
     ogre_step,
     ogre_roar,
     ogre_slam,
@@ -452,13 +465,11 @@ pub const Id = enum {
     sac_burst,
     acid_splash, // the glob landing and spreading
     acid_burn,
-    // the flasks
     flask_drink,
     flask_cycle,
     eat,
     chest_open, // a lid coming up: the lock giving, the hinge turning, the boards settling back
     item_get,
-    // the world and the chrome
     kill,
     menu_move,
     menu_pick,
@@ -493,6 +504,167 @@ fn submixTrim(m: Submix) f32 {
     };
 }
 
+// THE PLAYER'S FILTER RACK, one per `Submix` (Menu > Debug > Sound Filters).
+//
+// BAKE-TIME, NOT PLAYBACK-TIME, and it has to be: raylib gives volume/pitch/pan per playing sound and
+// nothing else, so a voice already sounding cannot be filtered. Every voice here is synthesized, so a
+// filter is more of the finish `master` applies and moving a dial re-renders that family (`tickFx`).
+
+pub const AFX_COUNT = 9;
+pub const AFX_EPS: f32 = 0.001;
+pub const AF_DRIVE = 0;
+pub const AF_CRUSH = 1;
+pub const AF_ALIAS = 2;
+pub const AF_MUFFLE = 3;
+pub const AF_TELEPHONE = 4;
+pub const AF_WOBBLE = 5;
+pub const AF_ROOM = 6;
+pub const AF_HISS = 7;
+pub const AF_CRACKLE = 8;
+
+/// One row per filter in AF_* order (`gfx.RETRO_FILTERS`' shape), so the menu labels are DERIVED.
+const AudioFilter = struct { name: [:0]const u8 };
+const AUDIO_FILTERS = [AFX_COUNT]AudioFilter{
+    .{ .name = "Drive" },
+    .{ .name = "Bit Crush" },
+    .{ .name = "Sample Hold" }, // the aliasing whistle, where Bit Crush is the quantise rasp
+    .{ .name = "Muffle" },
+    .{ .name = "Telephone" }, // loses the BOTTOM too, which is what says "through a speaker"
+    .{ .name = "Wow & Flutter" },
+    .{ .name = "Room" },
+    .{ .name = "Tape Hiss" },
+    .{ .name = "Vinyl Crackle" },
+};
+pub const AFX_NAMES = blk: {
+    var out: [AFX_COUNT][:0]const u8 = undefined;
+    for (&out, AUDIO_FILTERS) |*o, f| o.* = f.name;
+    break :blk out;
+};
+
+comptime {
+    // AF_* must line up with AUDIO_FILTERS' rows, or a dial moves the wrong filter.
+    const PINS = [_]struct { i: usize, n: []const u8 }{
+        .{ .i = AF_DRIVE, .n = "Drive" },
+        .{ .i = AF_CRUSH, .n = "Bit Crush" },
+        .{ .i = AF_ALIAS, .n = "Sample Hold" },
+        .{ .i = AF_MUFFLE, .n = "Muffle" },
+        .{ .i = AF_TELEPHONE, .n = "Telephone" },
+        .{ .i = AF_WOBBLE, .n = "Wow & Flutter" },
+        .{ .i = AF_ROOM, .n = "Room" },
+        .{ .i = AF_HISS, .n = "Tape Hiss" },
+        .{ .i = AF_CRACKLE, .n = "Vinyl Crackle" },
+    };
+    if (PINS.len != AFX_COUNT) @compileError("audio: a filter with no pin");
+    for (PINS) |p| {
+        if (!std.mem.eql(u8, AUDIO_FILTERS[p.i].name, p.n)) @compileError("audio: AF_ index/row mismatch at " ++ p.n);
+    }
+}
+
+pub const FxPreset = struct { idx: usize, val: f32 };
+pub const FX_VINYL = [_]FxPreset{ .{ .idx = AF_CRACKLE, .val = 0.55 }, .{ .idx = AF_HISS, .val = 0.30 }, .{ .idx = AF_WOBBLE, .val = 0.35 }, .{ .idx = AF_MUFFLE, .val = 0.22 } };
+pub const FX_RADIO = [_]FxPreset{ .{ .idx = AF_TELEPHONE, .val = 0.85 }, .{ .idx = AF_DRIVE, .val = 0.40 }, .{ .idx = AF_HISS, .val = 0.22 } };
+/// **THE HOUSE SOUND** (owner's call): worn tape is what the game LAUNCHES as, on all three families.
+/// `AFX_DEFAULTS` is DERIVED from this row rather than authored beside it, so "Reset to Default" and
+/// "Preset: Worn Tape" are one set of numbers and cannot come to mean two different things.
+pub const FX_TAPE = [_]FxPreset{ .{ .idx = AF_WOBBLE, .val = 0.55 }, .{ .idx = AF_HISS, .val = 0.35 }, .{ .idx = AF_MUFFLE, .val = 0.30 }, .{ .idx = AF_DRIVE, .val = 0.25 } };
+pub const FX_CRUSHED = [_]FxPreset{ .{ .idx = AF_CRUSH, .val = 0.70 }, .{ .idx = AF_ALIAS, .val = 0.55 }, .{ .idx = AF_DRIVE, .val = 0.30 } };
+pub const FX_BROKEN = [_]FxPreset{ .{ .idx = AF_DRIVE, .val = 0.85 }, .{ .idx = AF_TELEPHONE, .val = 0.50 }, .{ .idx = AF_CRACKLE, .val = 0.40 }, .{ .idx = AF_ALIAS, .val = 0.35 } };
+
+pub const AFX_DEFAULTS = blk: {
+    var out = [_]f32{0} ** AFX_COUNT;
+    for (FX_TAPE) |p| out[p.idx] = p.val;
+    break :blk out;
+};
+
+var fxVals: [NMIX][AFX_COUNT]f32 = [_][AFX_COUNT]f32{AFX_DEFAULTS} ** NMIX;
+
+pub fn fxValues(m: Submix) []const f32 {
+    return &fxVals[@intFromEnum(m)];
+}
+
+fn anyFxIn(m: Submix) bool {
+    for (fxVals[@intFromEnum(m)]) |v| {
+        if (v > AFX_EPS) return true;
+    }
+    return false;
+}
+
+pub fn setFx(m: Submix, i: usize, v: f32) void {
+    if (i >= AFX_COUNT) return;
+    const want = mathx.clampF(v, 0, 1);
+    const slot = &fxVals[@intFromEnum(m)][i];
+    if (slot.* == want) return;
+    slot.* = want;
+    markFxDirty(m);
+}
+
+pub fn allFxOff(m: Submix) void {
+    fxVals[@intFromEnum(m)] = [_]f32{0} ** AFX_COUNT;
+    markFxDirty(m);
+}
+
+pub fn resetFx(m: Submix) void {
+    fxVals[@intFromEnum(m)] = AFX_DEFAULTS;
+    markFxDirty(m);
+}
+
+pub fn applyFxPreset(m: Submix, preset: []const FxPreset) void {
+    fxVals[@intFromEnum(m)] = [_]f32{0} ** AFX_COUNT;
+    for (preset) |p| {
+        if (p.idx < AFX_COUNT) fxVals[@intFromEnum(m)][p.idx] = mathx.clampF(p.val, 0, 1);
+    }
+    markFxDirty(m);
+}
+
+/// Over the voice `make` rendered and `master` finished, in signal-path order: distort, quantise,
+/// band-limit, warp, place in a room, then the medium's own noise. Re-normalises, because everything above
+/// can push past ±1.
+fn applyFx(r: *Rack, m: Submix) void {
+    if (!anyFxIn(m)) return; // an all-off rack bakes the bank exactly as it did before filters existed
+    const v = fxVals[@intFromEnum(m)];
+    if (v[AF_DRIVE] > AFX_EPS) r.sat(1.0 + 7.0 * v[AF_DRIVE]);
+    if (v[AF_CRUSH] > AFX_EPS) r.crush(mathx.lerpF(CRUSH_BITS, 2.0, v[AF_CRUSH]), 1);
+    // 16 bits = no audible quantise, so this dial is the HOLD alone: the sample rate coming down.
+    if (v[AF_ALIAS] > AFX_EPS) r.crush(16, 1 + @as(u32, @intFromFloat(v[AF_ALIAS] * 15.0)));
+    if (v[AF_MUFFLE] > AFX_EPS) r.warm(mathx.lerpF(SRF * 0.45, 320.0, v[AF_MUFFLE]));
+    if (v[AF_TELEPHONE] > AFX_EPS) r.band(1450.0, 0.35, v[AF_TELEPHONE]);
+    if (v[AF_WOBBLE] > AFX_EPS) r.wow(0.0016 + 0.010 * v[AF_WOBBLE], 1.7 + 3.0 * v[AF_WOBBLE]);
+    if (v[AF_ROOM] > AFX_EPS) r.hall(0.12 + 1.5 * v[AF_ROOM], 2600.0);
+    if (v[AF_HISS] > AFX_EPS) r.hiss(0.012 + 0.09 * v[AF_HISS]);
+    if (v[AF_CRACKLE] > AFX_EPS) r.crackle(0.05 + 0.30 * v[AF_CRACKLE], 6.0 + 340.0 * v[AF_CRACKLE]);
+    r.norm(0.92);
+    r.ends(0.002, 0.012);
+}
+
+/// Seconds a dial must sit still before its family is re-rendered — a held slider glides at frame rate and
+/// a re-bake is tens of ms a family, so only the last value asked for is paid for.
+const FX_SETTLE: f32 = 0.22;
+var fxDirty: [NMIX]bool = [_]bool{false} ** NMIX;
+var fxSettle: f32 = 0;
+
+fn markFxDirty(m: Submix) void {
+    fxDirty[@intFromEnum(m)] = true;
+    fxSettle = FX_SETTLE;
+}
+
+/// True while a re-render is owed, so the menu can say so rather than look like it did nothing.
+pub fn fxPending() bool {
+    return fxSettle > 0;
+}
+
+/// Ticked once a frame from the live loop (REAL time — this is a UI settle, not a game clock).
+pub fn tickFx(dt: f32) void {
+    if (fxSettle <= 0) return;
+    fxSettle -= dt;
+    if (fxSettle > 0) return;
+    fxSettle = 0;
+    for (&fxDirty, 0..) |*d, mi| {
+        if (!d.*) continue;
+        d.* = false;
+        rebakeMix(@enumFromInt(mi));
+    }
+}
+
 const Row = struct {
     make: *const fn (*Rack) void,
     gain: f32 = 0.7,
@@ -505,7 +677,6 @@ const Row = struct {
     reach: f32 = FALLOFF,
 };
 
-// Each is a handful of layers plus the master.
 
 fn mkStepSoft(r: *Rack) void {
     // A walk: a soft heel body, a scuff of grit, and nothing else.
@@ -638,14 +809,12 @@ fn mkGuardBreak(r: *Rack) void {
 }
 
 fn mkRefused(r: *Rack) void {
-    // AN EMPTY BAR.
     r.body(0.0, 0.055, 190, 120, 0.5, 7.0);
     r.grit(0.0, 0.04, 0.25, 700, 0.3, 8.0);
     r.master(1.4, 1400);
 }
 
 fn mkDeath(r: *Rack) void {
-    // YOU DIED.
     r.growl(0.0, 1.5, 165, 62, 0.9, 0.2, 0.06);
     r.body(0.0, 2.2, 82, 33, 0.8, 1.1);
     r.body(0.10, 1.9, 41, 22, 0.6, 1.0);
@@ -802,6 +971,17 @@ fn mkBoneDie(r: *Rack) void {
     r.master(2.1, 4400);
 }
 
+/// THE COMMIT. Bone first — a dry rattle as he coils and kicks off the earth — and the STEEL over the
+/// top of it, sweeping down and out. The bones are what say WHICH thing is coming; the steel is why.
+fn mkSkelLunge(r: *Rack) void {
+    r.grit(0.0, 0.17, 0.85, 3400, 0.9, 4.6);
+    r.ring(0.0, 0.20, 820, 0.22, 5.5, 3); // iron somewhere in the ribs
+    r.body(0.01, 0.15, 124, 52, 0.75, 4.2); // the push off the ground
+    r.air(0.09, 0.32, 0.95, 1600, 300, 0.42, 1.9); // and the blade, sweeping DOWN at you
+    r.air(0.13, 0.20, 0.32, 5000, 1900, 0.16, 3.0); // the edge riding the front of it
+    r.master(2.2, 3600);
+}
+
 
 fn mkOgreStep(r: *Rack) void {
     // A footfall you feel: a very low body with a long tail, and gravel thrown off it.
@@ -812,7 +992,6 @@ fn mkOgreStep(r: *Rack) void {
 }
 
 fn mkOgreRoar(r: *Rack) void {
-    // The windup tell.
     r.growl(0.0, 0.85, 68, 104, 1.0, 0.28, 0.35);
     r.growl(0.02, 0.80, 102, 152, 0.5, 0.4, 0.4); // an upper throat layer, for size
     r.body(0.0, 0.7, 46, 34, 0.6, 1.4);
@@ -821,7 +1000,6 @@ fn mkOgreRoar(r: *Rack) void {
 }
 
 fn mkOgreSlam(r: *Rack) void {
-    // The club meeting the earth.
     r.tick(0.0, 0.9, 3000);
     r.body(0.0, 0.62, 96, 22, 1.5, 1.9);
     r.body(0.0, 0.20, 210, 55, 0.7, 3.6);
@@ -847,7 +1025,6 @@ fn mkOgreHurt(r: *Rack) void {
 }
 
 fn mkOgreDie(r: *Rack) void {
-    // The topple.
     r.growl(0.0, 1.0, 92, 34, 1.0, 0.35, 0.06);
     r.body(0.62, 0.75, 74, 20, 1.3, 1.7); // he lands
     r.grit(0.62, 0.55, 0.6, 1300, 0.9, 2.0);
@@ -862,10 +1039,8 @@ fn mkOgreDie(r: *Rack) void {
 
 
 
-// THE BARKS, and they go LOW.
 
 fn mkKoboldSnarl(r: *Rack) void {
-    // HE COMMITS.
     r.body(0.0, 0.12, 132, 84, 0.75, 4.0); // the chest behind the bark
     r.growl(0.0, 0.14, 176, 236, 0.85, 0.14, 0.06);
     r.growl(0.10, 0.26, 208, 118, 0.60, 0.26, 0.16);
@@ -874,7 +1049,6 @@ fn mkKoboldSnarl(r: *Rack) void {
 }
 
 fn mkKoboldChop(r: *Rack) void {
-    // JUST THE AXE.
     r.air(0.0, 0.21, 0.46, 1700, 420, 0.34, 2.6); // DOWN-sweeping, so it reads as travelling past you
     r.grit(0.02, 0.10, 0.08, 1000, 0.4, 3.0);
     r.growl(0.0, 0.15, 148, 116, 0.26, 0.24, 0.30); // a low grunt of effort under it, not a bark
@@ -892,7 +1066,6 @@ fn mkKoboldHeave(r: *Rack) void {
 }
 
 fn mkKoboldCast(r: *Rack) void {
-    // THE PRIEST'S TELL
     r.grit(0.0, 0.10, 0.20, 2600, 0.7, 5.0); // the charms — the attack
     r.growl(0.02, 0.85, 190, 300, 0.40, 0.34, 0.55); // the chant itself, climbing
     r.body(0.10, 0.75, 128, 190, 0.24, 1.6);
@@ -900,14 +1073,9 @@ fn mkKoboldCast(r: *Rack) void {
     r.master(1.5, 3200);
 }
 
-/// THE HEAL LANDING — CHORAL AND HEAVENLY (owner's call), and the one voice in the game that is meant to
-/// sound like it arrived from somewhere else. A single high ring was all it used to be, which read as a
-/// UI ping in the middle of a dog fight. Four things make it:
-///   an open CHORD sung rather than played (root / fifth / octave / tenth, entering in that order, so it
-///   RESOLVES upward); a low octave under it for weight; a SPARKLE of little pentatonic bells over the
-///   top; and a REVERB long enough to be a room the kobolds are not standing in.
-/// Still lo-fi: it goes through the same 7.5-bit crush, wow and hiss as everything else, and the master
-/// lowpass sits low enough that the sparkle is bandlimited rather than glassy.
+/// CHORAL AND HEAVENLY (owner's call). It used to be one high ring, which read as a UI ping mid-fight.
+/// Four parts: an open chord SUNG (root/fifth/octave/tenth entering in that order, so it resolves upward),
+/// a low octave under it, a pentatonic SPARKLE over the top, and a room the kobolds are not standing in.
 fn mkKoboldHeal(r: *Rack) void {
     const ROOT: f32 = 330.0; // E4 — high enough to cut a fight, low enough not to shriek
     r.choir(0.00, 1.55, ROOT * 0.5, 0.30, 2, 0.30); // the octave below, for a floor under the chord
@@ -940,7 +1108,6 @@ fn mkKoboldSling(r: *Rack) void {
 }
 
 fn mkKoboldBite(r: *Rack) void {
-    // TEETH.
     r.air(0.0, 0.07, 0.26, 900, 1700, 0.32, 3.5);
     r.tick(0.06, 0.34, 2600); // the clack — and 7 kHz of it was the ice-pick in the mix
     r.ring(0.06, 0.06, 620, 0.14, 9.0, 2);
@@ -968,7 +1135,6 @@ fn mkKoboldDie(r: *Rack) void {
 
 
 fn mkSpiderHiss(r: *Rack) void {
-    // THE REAR.
     r.air(0.0, 0.38, 0.46, 2600, 5200, 0.42, 1.5);
     r.grit(0.06, 0.34, 0.16, 2200, 0.35, 1.8); // the wet in it
     r.growl(0.02, 0.30, 96, 132, 0.20, 0.55, 0.40); // a low seething under the air
@@ -1048,7 +1214,6 @@ fn mkBroodHurt(r: *Rack) void {
 }
 
 fn mkBroodDie(r: *Rack) void {
-    // A WET POP.
     r.grit(0.0, 0.06, 0.62, 2200, 0.6, 6.0);
     r.body(0.0, 0.09, 300, 90, 0.50, 5.5);
     r.growl(0.0, 0.10, 820, 300, 0.44, 0.40, 0.08);
@@ -1105,7 +1270,6 @@ fn mkAcidSplash(r: *Rack) void {
 }
 
 fn mkAcidBurn(r: *Rack) void {
-    // ONE PULSE OF STANDING IN IT.
     r.grit(0.0, 0.22, 0.34, 5200, 0.20, 2.2);
     r.air(0.0, 0.18, 0.22, 3000, 6000, 0.34, 2.6);
     r.body(0.0, 0.07, 190, 110, 0.20, 5.0);
@@ -1151,7 +1315,6 @@ fn mkChestOpen(r: *Rack) void {
 }
 
 fn mkItemGet(r: *Rack) void {
-    // SOMETHING GAINED.
     r.ring(0.0, 0.34, 784, 0.46, 3.2, 3);
     r.ring(0.02, 0.28, 1176, 0.22, 4.4, 2);
     r.air(0.0, 0.20, 0.12, 2400, 5200, 0.45, 2.6);
@@ -1209,7 +1372,6 @@ fn mkWind(r: *Rack) void {
     var i: usize = 0;
     while (i < r.n) : (i += 1) {
         const t = @as(f32, @floatFromInt(i)) / SRF;
-        // The gusts.
         const g1 = 0.5 + 0.5 * mathx.sinf(std.math.tau * 0.083 * t + q1);
         const g2 = 0.5 + 0.5 * mathx.sinf(std.math.tau * 0.031 * t + 2.1 + q2);
         const g3 = 0.5 + 0.5 * mathx.sinf(std.math.tau * 0.157 * t + 4.4 + q3);
@@ -1239,7 +1401,6 @@ fn mkWind(r: *Rack) void {
 
 fn mkBirds(r: *Rack) void {
     r.chirp(0.04, r.rng.range(0.55, 0.85), r.rng.range(1550, 2500));
-    // …and now and then another one answers it, a little further off.
     if (r.rng.float() < 0.45) r.chirp(r.rng.range(0.42, 0.72), r.rng.range(0.28, 0.48), r.rng.range(1700, 2700));
     // 2100, not the old 4200.
     r.masterX(1.1, AIR_FAR_CALL, CRUSH_BITS + 1.0, CRUSH_HOLD);
@@ -1256,11 +1417,9 @@ fn mkBirdsong(r: *Rack) void {
 }
 
 fn mkOwl(r: *Rack) void {
-    // "hoo…" — short, and already breath-led.
     r.body(0.0, 0.22, 330, 316, 0.60, 2.6);
     r.body(0.0, 0.20, 495, 474, 0.16, 3.4);
     r.air(0.0, 0.20, 0.34, 1000, 560, 0.42, 2.6);
-    // "…hu-hoooo" — falling away.
     r.body(0.60, 0.52, 352, 268, 0.95, 1.9);
     r.body(0.60, 0.46, 528, 402, 0.22, 2.6);
     r.air(0.60, 0.44, 0.40, 1150, 520, 0.42, 2.0);
@@ -1333,9 +1492,7 @@ const BANK = [NV]Row{
     .{ .make = mkStepSprint, .gain = 0.120, .jit = 0.11, .vjit = 0.24, .vars = 4, .poly = 3 },
     .{ .make = mkStepStone, .gain = 0.055, .jit = 0.14, .vjit = 0.28, .vars = 4, .poly = 3 },
     .{ .make = mkStepWater, .gain = 0.130, .jit = 0.13, .vjit = 0.26, .vars = 4, .poly = 3 },
-    // A ROLL IS QUIET.
     .{ .make = mkRoll, .gain = 0.30, .jit = 0.09, .vjit = 0.14, .vars = 2 },
-    // SUBTLE (owner's call).
     .{ .make = mkSwingLight, .gain = 0.26, .mix = .combat, .jit = 0.16, .vjit = 0.22, .vars = 5, .poly = 3 },
     .{ .make = mkSwingHeavy, .gain = 0.34, .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 4, .poly = 2 },
     .{ .make = mkHitLight, .gain = battle(0.68), .mix = .combat, .jit = 0.19, .vjit = 0.24, .vars = 6, .poly = 4 },
@@ -1349,7 +1506,6 @@ const BANK = [NV]Row{
     .{ .make = mkRefused, .gain = 0.34, .jit = 0.06, .vjit = 0.08, .vars = 2 },
     .{ .make = mkDeath, .gain = battle(0.95), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
     .{ .make = mkRespawn, .gain = battle(0.55), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
-    // THE TOADS ARE SMALL AND CLOSE.
     .{ .make = mkToadHop, .gain = battle(0.40), .mix = .combat, .jit = 0.15, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 30 },
     .{ .make = mkToadLunge, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 34 },
     .{ .make = mkToadGape, .gain = battle(0.46), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 26 },
@@ -1365,6 +1521,8 @@ const BANK = [NV]Row{
     .{ .make = mkArrowMetal, .gain = battle(0.52), .mix = .combat, .jit = 0.11, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 52 },
     .{ .make = mkBoneHurt, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 44 },
     .{ .make = mkBoneDie, .gain = battle(0.68), .mix = .combat, .jit = 0.09, .vjit = 0.12, .vars = 3, .reach = 54 },
+    // THE ONE WARNING THE LEAP GIVES YOU, so it carries as far as the leap can reach and then some.
+    .{ .make = mkSkelLunge, .gain = battle(0.86), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 4, .poly = 3, .reach = 62 },
     // about him is an octave down and half a second longer (see the ogre block above); low frequencies are also what survive a couple of hundred metres of air, so the physics and the character agree for once.
     .{ .make = mkOgreStep, .gain = battle(0.60), .mix = .combat, .jit = 0.08, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 115 },
     .{ .make = mkOgreRoar, .gain = battle(0.80), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .reach = 135 },
@@ -1419,7 +1577,6 @@ const BANK = [NV]Row{
     .{ .make = mkCrickets, .gain = 0.010, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
 };
 
-/// How long each voice renders for.
 fn seconds(id: Id) f32 {
     return switch (id) {
         .wind => 8.0,
@@ -1452,11 +1609,9 @@ fn seconds(id: Id) f32 {
 }
 
 
-/// HOW MANY SEPARATE TAKES a voice may be rendered as.
 const MAX_VARS = 6;
 const MAX_POLY = 4;
 
-/// THE OUTPUT LEVEL, in one place.
 const MASTER_VOL: f32 = 0.85;
 
 const Slot = struct {
@@ -1491,26 +1646,85 @@ fn panFor(side: f32, width: f32) f32 {
     return mathx.clampF(0.5 - width * side, 0.04, 0.96);
 }
 
+/// Every take of one row, plus its polyphony aliases. The ONE copy, shared by `init` and `rebakeMix`, so a
+/// voice cannot come back from a filter change built differently from the one it launched as.
+fn bakeRow(id: Id, idx: usize) void {
+    const row = BANK[idx];
+    var v: u8 = 0;
+    while (v < row.vars) : (v += 1) {
+        var r = Rack.init(0x9E3779B9 *% (idx + 1) +% v, seconds(id));
+        row.make(&r);
+        applyFx(&r, row.mix);
+        slots[idx].snd[v][0] = bake(&r);
+        slots[idx].owned[v] = slots[idx].snd[v][0];
+        var p: u8 = 1;
+        while (p < row.poly) : (p += 1) slots[idx].snd[v][p] = rl.loadSoundAlias(slots[idx].owned[v]);
+    }
+    slots[idx].next = 0;
+}
+
+/// From take 0, not 1: index 0 is the OWNER and the one the looping beds play on.
+fn stopRow(idx: usize) void {
+    const row = BANK[idx];
+    var v: u8 = 0;
+    while (v < row.vars) : (v += 1) {
+        var p: u8 = 0;
+        while (p < row.poly) : (p += 1) rl.stopSound(slots[idx].snd[v][p]);
+    }
+}
+
+/// Aliases before the owner whose samples they borrow.
+fn freeRow(idx: usize) void {
+    const row = BANK[idx];
+    var v: u8 = 0;
+    while (v < row.vars) : (v += 1) {
+        var p: u8 = 1;
+        while (p < row.poly) : (p += 1) rl.unloadSoundAlias(slots[idx].snd[v][p]);
+        rl.unloadSound(slots[idx].owned[v]);
+    }
+}
+
+/// Silence always before free (see `deinit`).
+fn dropRow(idx: usize) void {
+    stopRow(idx);
+    freeRow(idx);
+}
+
+/// The looping beds heal themselves: `ambience` re-fires whatever is not playing, so a bed stopped here
+/// comes back next frame as the new take.
+fn rebakeMix(m: Submix) void {
+    if (!ready) return;
+    inline for (@typeInfo(Id).@"enum".fields, 0..) |f, idx| {
+        if (BANK[idx].mix == m) {
+            dropRow(idx);
+            bakeRow(@enumFromInt(f.value), idx);
+        }
+    }
+    // The campfire is an ambience voice too, and the only one that is a STREAM rather than a baked Sound.
+    if (m == .ambience) redressFire();
+}
+
+/// Unload BEFORE re-dressing: `dressedFire` overwrites `fireWav` in place and the live stream reads it.
+fn redressFire() void {
+    const old = restFire orelse return;
+    const wasPlaying = rl.isMusicStreamPlaying(old);
+    rl.stopMusicStream(old);
+    rl.unloadMusicStream(old);
+    restFire = rl.loadMusicStreamFromMemory(".wav", dressedFire()) catch null;
+    if (restFire) |*m| {
+        m.looping = true;
+        rl.setMusicVolume(m.*, 0); // `restFireLevel` owns the level, and it re-sets it every frame
+        if (wasPlaying) rl.playMusicStream(m.*);
+    }
+}
+
 /// Build the whole bank at launch — a few hundred milliseconds of synthesis, once.
 pub fn init() void {
     loadSettings(); // before the device: the dials are data, and they are what the first bed is mixed at
     rl.initAudioDevice();
     if (!rl.isAudioDeviceReady()) return;
     rl.setMasterVolume(MASTER_VOL);
-    inline for (@typeInfo(Id).@"enum".fields, 0..) |f, idx| {
-        const id: Id = @enumFromInt(f.value);
-        const row = BANK[idx];
-        var v: u8 = 0;
-        while (v < row.vars) : (v += 1) {
-            var r = Rack.init(0x9E3779B9 *% (idx + 1) +% v, seconds(id));
-            row.make(&r);
-            slots[idx].snd[v][0] = bake(&r);
-            slots[idx].owned[v] = slots[idx].snd[v][0];
-            var p: u8 = 1;
-            while (p < row.poly) : (p += 1) slots[idx].snd[v][p] = rl.loadSoundAlias(slots[idx].owned[v]);
-        }
-        slots[idx].next = 0;
-    }
+    inline for (@typeInfo(Id).@"enum".fields, 0..) |f, idx| bakeRow(@enumFromInt(f.value), idx);
     restFire = rl.loadMusicStreamFromMemory(".wav", dressedFire()) catch null;
     if (restFire) |*m| {
         m.looping = true;
@@ -1549,7 +1763,9 @@ fn dressedFire() []const u8 {
     const chans: usize = @intCast(w.channels);
     const n = frames * chans;
     const bytes = 44 + n * 2;
-    if (n == 0 or bytes > fireWav.len) return CAMPFIRE_WAV;
+    // …and short enough to go through `work`, which is what lets the filter rack reach it. A longer take
+    // swapped in later degrades to the RAW asset rather than running off the end of the buffer.
+    if (n == 0 or bytes > fireWav.len or n > MAX_N) return CAMPFIRE_WAV;
     const src: [*]i16 = @ptrCast(@alignCast(w.data));
 
     var low = Pole{};
@@ -1572,8 +1788,16 @@ fn dressedFire() []const u8 {
         x = @round((held + dith) * levels) / levels;
         x = lp.step(x, FIRE_CUT);
         x += hq.step(hp.step(r.signed(), 5200), 2600) * FIRE_HISS;
-        const s = mathx.clampF(x * FIRE_OUT, -1, 1) * 32000.0;
-        std.mem.writeInt(i16, fireWav[44 + i * 2 ..][0..2], @intFromFloat(s), .little);
+        // INTO `work`, not straight out to bytes: the player's rack runs over it below.
+        work[i] = mathx.clampF(x * FIRE_OUT, -1, 1);
+    }
+
+    // …and the ambience rack over the top, the same recipe-then-`applyFx` order every voice takes. A COPY:
+    // the embedded asset is never touched.
+    var fr = Rack{ .n = n, .rng = mathx.Rng.init(0xF12E9A ^ 0x5EED) };
+    applyFx(&fr, .ambience);
+    for (work[0..n], 0..) |s, si| {
+        std.mem.writeInt(i16, fireWav[44 + si * 2 ..][0..2], @intFromFloat(s * 32000.0), .little);
     }
 
     const rate: u32 = w.sampleRate;
@@ -1597,7 +1821,6 @@ fn dressedFire() []const u8 {
 /// A STREAM, not a `Sound`, because it is twelve seconds long and has to loop
 var restFire: ?rl.Music = null;
 
-/// Start / stop the rest scene's fire bed.
 pub fn restFireOn(on: bool) void {
     const m = restFire orelse return;
     if (!ready) return;
@@ -1621,7 +1844,6 @@ pub fn tickStreams() void {
     if (rl.isMusicStreamPlaying(m)) rl.updateMusicStream(m);
 }
 
-/// Upload the rack as a mono 16-bit Sound.
 fn bake(r: *Rack) rl.Sound {
     for (work[0..r.n], 0..) |s, i| {
         pcm[i] = @intFromFloat(mathx.clampF(s, -1, 1) * 32000.0);
@@ -1636,34 +1858,16 @@ fn bake(r: *Rack) rl.Sound {
     return rl.loadSoundFromWave(wave);
 }
 
-/// SILENCE EVERYTHING FIRST, THEN FREE IT. This is the whole of `deinit` and the order is the point:
-/// unloading a voice the mixer is still reading frees the buffer out from under the audio thread, and
-/// what that looks like is the WINDOW CLOSING WHILE THE PROCESS STAYS UP — no window, no way to quit
-/// it, and its icon still in the taskbar. It is not a rare race either: the ambience beds LOOP (they
-/// are re-triggered the moment they stop, see `ambience`) and the rest fire is a live STREAM, so on any
-/// ordinary quit several voices are mid-playback.
+/// SILENCE EVERYTHING FIRST, THEN FREE IT. Freeing a buffer the mixer is still reading presents as the
+/// WINDOW CLOSING WHILE THE PROCESS STAYS UP — no window, no way to quit, icon still in the taskbar. Not a
+/// rare race: the beds loop and the rest fire streams, so several voices are mid-playback on any quit.
 pub fn deinit() void {
     if (!ready) return;
     if (restFire) |m| rl.stopMusicStream(m);
-    for (&slots, 0..) |*s, idx| {
-        const row = BANK[idx];
-        var v: u8 = 0;
-        while (v < row.vars) : (v += 1) {
-            // From 0, not 1: index 0 is the OWNER (`owned[v]` is the same handle) and it is the one the
-            // looping beds are actually played on — stopping only the aliases would miss every bed.
-            var p: u8 = 0;
-            while (p < row.poly) : (p += 1) rl.stopSound(s.snd[v][p]);
-        }
-    }
-    for (&slots, 0..) |*s, idx| {
-        const row = BANK[idx];
-        var v: u8 = 0;
-        while (v < row.vars) : (v += 1) {
-            var p: u8 = 1;
-            while (p < row.poly) : (p += 1) rl.unloadSoundAlias(s.snd[v][p]);
-            rl.unloadSound(s.owned[v]); // …the owner LAST: the aliases borrow its samples
-        }
-    }
+    // TWO WHOLE-BANK PASSES, not one per row: on an ordinary quit several voices are mid-playback, so
+    // EVERYTHING goes quiet before ANYTHING is freed.
+    for (0..NV) |idx| stopRow(idx);
+    for (0..NV) |idx| freeRow(idx);
     if (restFire) |m| rl.unloadMusicStream(m);
     ready = false;
     rl.closeAudioDevice();
@@ -1727,8 +1931,12 @@ fn bedLevel(row: Row) f32 {
 
 pub const SETTINGS_PATH = "settings.cfg";
 
+/// `fx.<family> a b c …`, one value per AF_* in table order. A file written before the rack existed carries
+/// no `fx.` line and loads every family at `AFX_DEFAULTS`.
+const FX_KEY = "fx.";
+
 pub fn loadSettings() void {
-    var buf: [256]u8 = undefined;
+    var buf: [1024]u8 = undefined; // the three volume lines plus the three racks
     const f = std.fs.cwd().openFile(SETTINGS_PATH, .{}) catch return;
     defer f.close();
     const n = f.readAll(&buf) catch return;
@@ -1736,6 +1944,23 @@ pub fn loadSettings() void {
     while (lines.next()) |line| {
         var it = std.mem.tokenizeScalar(u8, line, ' ');
         const key = it.next() orelse continue;
+        if (std.mem.startsWith(u8, key, FX_KEY)) {
+            const fam = key[FX_KEY.len..];
+            inline for (@typeInfo(Submix).@"enum".fields) |fld| {
+                if (std.mem.eql(u8, fam, fld.name)) {
+                    // A short line leaves the tail at zero, not at its default: the file is the whole truth
+                    // about a rack once it has one.
+                    var row = [_]f32{0} ** AFX_COUNT;
+                    var i: usize = 0;
+                    while (i < AFX_COUNT) : (i += 1) {
+                        const tok = it.next() orelse break;
+                        row[i] = mathx.clampF(std.fmt.parseFloat(f32, tok) catch 0, 0, 1);
+                    }
+                    fxVals[fld.value] = row;
+                }
+            }
+            continue;
+        }
         const val = it.next() orelse continue;
         const v = std.fmt.parseFloat(f32, val) catch continue;
         inline for (@typeInfo(Submix).@"enum".fields) |fld| {
@@ -1747,8 +1972,14 @@ pub fn loadSettings() void {
 pub fn saveSettings() void {
     const f = std.fs.cwd().createFile(SETTINGS_PATH, .{}) catch return;
     defer f.close();
+    var w = f.writer();
     inline for (@typeInfo(Submix).@"enum".fields) |fld| {
-        f.writer().print("{s} {d:.3}\n", .{ fld.name, userVol[fld.value] }) catch return;
+        w.print("{s} {d:.3}\n", .{ fld.name, userVol[fld.value] }) catch return;
+    }
+    inline for (@typeInfo(Submix).@"enum".fields) |fld| {
+        w.print(FX_KEY ++ "{s}", .{fld.name}) catch return;
+        for (fxVals[fld.value]) |v| w.print(" {d:.3}", .{v}) catch return;
+        w.writeAll("\n") catch return;
     }
 }
 
@@ -1758,17 +1989,14 @@ pub fn mute(on: bool) void {
     if (ready) rl.setMasterVolume(if (on) 0.0 else MASTER_VOL);
 }
 
-/// Trigger a voice at the listener (UI, and anything that happens TO the player).
 pub fn play(id: Id) void {
     emit(id, 1.0, 0.5, 1.0);
 }
 
-/// …with an explicit strength, for the beats that come in degrees (a light vs a heavy).
 pub fn playAt(id: Id, vol: f32) void {
     emit(id, vol, 0.5, 1.0);
 }
 
-/// Trigger a voice somewhere in the WORLD: attenuated by distance and panned across the camera.
 pub fn world(id: Id, at: rl.Vector3) void {
     if (!ready) return;
     const row = BANK[@intFromEnum(id)];
@@ -1798,7 +2026,6 @@ fn emit(id: Id, vol: f32, pan: f32, pitchScale: f32) void {
 }
 
 fn trigger(snd: rl.Sound, row: Row, vol: f32, pan: f32, pitchScale: f32) void {
-    // Pitch AND level wobble, both per trigger.
     const vj = 1.0 - @abs(rng.signed()) * row.vjit;
     rl.setSoundVolume(snd, levelFor(row, vol, vj));
     rl.setSoundPitch(snd, (1.0 + rng.signed() * row.jit) * pitchScale);
@@ -1806,7 +2033,6 @@ fn trigger(snd: rl.Sound, row: Row, vol: f32, pan: f32, pitchScale: f32) void {
     rl.playSound(snd);
 }
 
-/// Play a voice's first two takes at once, one pushed left and one right.
 fn bed(id: Id, vol: f32) void {
     if (!ready or muted) return;
     const idx = @intFromEnum(id);
@@ -1825,7 +2051,6 @@ const Call = struct {
     gapHi: f32,
     distLo: f32,
     distHi: f32,
-    /// How long the FIRST one holds off.
     first: f32,
 };
 
@@ -1858,7 +2083,6 @@ pub fn ambience(dt: f32) void {
     }
 }
 
-/// WHAT AN ARROW ENDED UP IN → which impact you hear.
 pub fn arrowImpact(surf: ?@import("collision.zig").Surface) Id {
     const s = surf orelse return .arrow_dirt;
     return switch (s) {
@@ -1900,6 +2124,141 @@ test "every voice renders, stays in range, and is not silence" {
         try std.testing.expect(peak <= 1.0);
         try std.testing.expect(energy / @as(f32, @floatFromInt(r.n)) > 0.002); // not a lone click
     }
+}
+
+/// Total rectified energy of what is in `work`, which is enough to say "this render moved".
+fn workEnergy(n: usize) f64 {
+    var s: f64 = 0;
+    for (work[0..n]) |x| s += @abs(x);
+    return s;
+}
+
+test "AN ALL-OFF RACK IS A NO-OP — the bank bakes exactly as it did before filters existed" {
+    const mi = @intFromEnum(Submix.combat);
+    const was = fxVals[mi];
+    defer fxVals[mi] = was;
+    fxVals[mi] = [_]f32{0} ** AFX_COUNT;
+    var r = Rack.init(4242, seconds(.hit_light));
+    mkHitLight(&r);
+    const clean = workEnergy(r.n);
+    applyFx(&r, .combat);
+    // Not "close to": `applyFx` must not have entered the chain at all, or All Off is not really off —
+    // and `norm` alone would move this.
+    try std.testing.expectEqual(clean, workEnergy(r.n));
+}
+
+test "THE HOUSE SOUND IS WORN TAPE, on all three families, and it is the preset's own numbers" {
+    // Derived, not copied: the launch state and the "Worn Tape" row are one set of numbers.
+    var want = [_]f32{0} ** AFX_COUNT;
+    for (FX_TAPE) |p| want[p.idx] = p.val;
+    try std.testing.expectEqualSlices(f32, &want, &AFX_DEFAULTS);
+    try std.testing.expect(AFX_DEFAULTS[AF_WOBBLE] > AFX_EPS); // …and it really is ON at launch
+    // ALL THREE, so nothing launches clean while its neighbours are tape (owner's call).
+    inline for (@typeInfo(Submix).@"enum".fields) |fld| {
+        try std.testing.expectEqualSlices(f32, &AFX_DEFAULTS, fxValues(@enumFromInt(fld.value)));
+    }
+}
+
+// THE CAMPFIRE IS NOT UNIT-TESTED, and it is the one voice that cannot be: `dressedFire` has to DECODE
+// the asset first (`rl.loadWaveFromMemory`), and doing that in a test process with no raylib device hangs
+// it. What a test could reach is the arithmetic, which is `applyFx` — already pinned above — so the fire
+// rides the same covered path every other ambience voice does and its wiring is judged by ear.
+
+test "EVERY VOICE SURVIVES THE HOUSE RACK — in range, still a sound, and never NaN" {
+    const keep = fxVals;
+    defer fxVals = keep;
+    for (&fxVals) |*rack| rack.* = AFX_DEFAULTS;
+    inline for (@typeInfo(Id).@"enum".fields, 0..) |f, idx| {
+        const id: Id = @enumFromInt(f.value);
+        var r = Rack.init(0x9E3779B9 *% (idx + 1), seconds(id));
+        BANK[idx].make(&r);
+        applyFx(&r, BANK[idx].mix);
+        var peak: f32 = 0;
+        var energy: f32 = 0;
+        for (work[0..r.n]) |s| {
+            try std.testing.expect(std.math.isFinite(s));
+            peak = mathx.maxF(peak, @abs(s));
+            energy += @abs(s);
+        }
+        try std.testing.expect(peak > 0.2);
+        try std.testing.expect(peak <= 1.0);
+        try std.testing.expect(energy / @as(f32, @floatFromInt(r.n)) > 0.002);
+    }
+}
+
+test "EVERY FILTER RENDERS: each dial alone changes the voice and none of them blows it up" {
+    const mi = @intFromEnum(Submix.combat);
+    const was = fxVals[mi];
+    defer fxVals[mi] = was;
+    // THE PROBE IS PER-SAMPLE, not total energy: the chain ends on `norm`, so a pure pitch warp
+    // (`wow`) comes back at the same peak AND very nearly the same rectified sum — it moves every
+    // sample without moving the total, and an energy test called it decoration.
+    const clean = try std.testing.allocator.alloc(f32, MAX_N);
+    defer std.testing.allocator.free(clean);
+    var r0 = Rack.init(4242, seconds(.hit_light));
+    mkHitLight(&r0);
+    @memcpy(clean[0..r0.n], work[0..r0.n]);
+
+    for (0..AFX_COUNT) |i| {
+        fxVals[mi] = [_]f32{0} ** AFX_COUNT;
+        fxVals[mi][i] = 0.8;
+        var r = Rack.init(4242, seconds(.hit_light));
+        mkHitLight(&r);
+        applyFx(&r, .combat);
+        var peak: f32 = 0;
+        var diff: f64 = 0;
+        for (work[0..r.n], clean[0..r.n]) |s, c| {
+            try std.testing.expect(std.math.isFinite(s)); // a filter that blew up says NaN here
+            peak = mathx.maxF(peak, @abs(s));
+            diff += @abs(s - c);
+        }
+        try std.testing.expect(peak > 0.2); // …still a sound, not a filter that ate the voice
+        try std.testing.expect(peak <= 1.0);
+        try std.testing.expect(diff / @as(f64, @floatFromInt(r.n)) > 1e-4);
+    }
+}
+
+test "EVERY PRESET IS REACHABLE AND IN RANGE, and names a filter that exists" {
+    const mi = @intFromEnum(Submix.sfx);
+    const was = fxVals[mi];
+    defer fxVals[mi] = was;
+    for ([_][]const FxPreset{ &FX_VINYL, &FX_RADIO, &FX_TAPE, &FX_CRUSHED, &FX_BROKEN }) |p| {
+        try std.testing.expect(p.len > 0);
+        for (p) |row| {
+            try std.testing.expect(row.idx < AFX_COUNT); // an out-of-range idx would silently do nothing
+            try std.testing.expect(row.val > AFX_EPS and row.val <= 1.0);
+        }
+        applyFxPreset(.sfx, p);
+        var on: usize = 0;
+        for (fxValues(.sfx)) |v| {
+            if (v > AFX_EPS) on += 1;
+        }
+        try std.testing.expectEqual(p.len, on);
+    }
+    allFxOff(.combat);
+    applyFxPreset(.sfx, &FX_VINYL);
+    for (fxValues(.combat)) |v| try std.testing.expect(v <= AFX_EPS);
+}
+
+test "A MOVED DIAL OWES A RE-RENDER, and only the family it belongs to" {
+    const keep = fxVals;
+    defer fxVals = keep;
+    fxSettle = 0;
+    fxDirty = [_]bool{false} ** NMIX;
+    setFx(.ambience, AF_HISS, 0.5);
+    try std.testing.expect(fxPending());
+    try std.testing.expect(fxDirty[@intFromEnum(Submix.ambience)]);
+    try std.testing.expect(!fxDirty[@intFromEnum(Submix.combat)]);
+    // Setting a dial to the value it already holds is not a change and must not owe a bake.
+    fxSettle = 0;
+    setFx(.ambience, AF_HISS, 0.5);
+    try std.testing.expect(!fxPending());
+    // …and the settle has to outlast a frame, or a held slider re-renders at frame rate.
+    setFx(.ambience, AF_HISS, 0.6);
+    try std.testing.expect(FX_SETTLE > 4.0 / 60.0);
+    // `tickFx` is a no-op without an audio device (`ready`), so the flag survives to be checked here.
+    tickFx(FX_SETTLE + 0.01);
+    try std.testing.expect(!fxPending());
 }
 
 test "the buffer never starts or ends on a step (that is the click you cannot un-hear)" {
@@ -2025,26 +2384,20 @@ test "THE OPTIONS DIALS — three families, and the fight is one of them" {
 }
 
 test "THE FIGHT IS ONE BAND — no battle voice towers over the rest of them" {
-    const battleIds = [_]Id{
-        .hit_light,    .hit_heavy,     .hurt,          .hurt_heavy,   .stagger,      .guard_block,
-        .guard_break,  .death,         .respawn,       .toad_hop,     .toad_lunge,   .toad_gape,
-        .toad_chomp,   .toad_hurt,     .toad_die,      .bow_loose,    .arrow_hit,    .arrow_wood,
-        .arrow_stone,  .arrow_metal,   .bone_hurt,     .bone_die,     .ogre_step,    .ogre_roar,
-        .ogre_slam,    .ogre_swipe,    .ogre_hurt,     .ogre_die,     .kobold_snarl, .kobold_chop,
-        .kobold_heave, .kobold_whirl,  .kobold_sling,  .kobold_bite,  .kobold_hurt,  .kobold_die,
-        .spider_hiss,  .spider_spit,   .spider_bite,   .spider_hurt,  .spider_die,   .brood_screech,
-        .brood_leap,
-        .brood_bite,   .brood_hurt,    .brood_die,     .sac_lay,      .sac_hit,      .sac_hatch,
-        .sac_burst,    .acid_splash,
-        .kill,
-    };
+    // WALKED OFF THE BANK, not off a hand-kept list of fifty ids. `.combat` at or under `BATTLE_FLOOR` is
+    // the DELIBERATELY quiet half (the swings, the steps, the priest's chant — named below, because each of
+    // those is a decision); everything else in the family is the band, and derived like this a new combat
+    // voice is inside the guard the moment it has a row instead of the day somebody remembers the list.
     var lo: f32 = 1e9;
     var hi: f32 = 0;
-    for (battleIds) |id| {
-        const g = BANK[@intFromEnum(id)].gain;
-        lo = mathx.minF(lo, g);
-        hi = mathx.maxF(hi, g);
+    var n: usize = 0;
+    for (BANK) |row| {
+        if (row.mix != .combat or row.gain <= BATTLE_FLOOR + 1e-6) continue;
+        lo = mathx.minF(lo, row.gain);
+        hi = mathx.maxF(hi, row.gain);
+        n += 1;
     }
+    try std.testing.expect(n > 40); // …and it really did walk the whole family, not two rows of it
     // Under 6 dB end to end.
     try std.testing.expect(hi / lo < 2.0);
     // …and the floor did NOT move up to meet it.

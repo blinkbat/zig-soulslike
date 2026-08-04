@@ -4,7 +4,6 @@ const gfx = @import("gfx.zig");
 const mathx = @import("mathx.zig");
 const collision = @import("collision.zig");
 
-// THE MESH FILES.
 const art = @import("propart.zig");
 const ruins = @import("propruins.zig");
 const build = @import("propbuild.zig");
@@ -17,9 +16,7 @@ const fx = @import("propfx.zig");
 const v3 = mathx.v3;
 
 
-// Append new kinds at the END of their section.
 pub const Kind = enum(u8) {
-    // ruined kingdom — the original set
     pillar,
     broken, // a snapped column
     block,
@@ -34,7 +31,6 @@ pub const Kind = enum(u8) {
     rubble,
     banner,
     statue,
-    // structures you move through / around
     chapel, // ROOFED + enterable: the torchlit interior
     watchtower, // ROOFED + enterable: masonry drum with a door
     cottage, // ruined shell, open to the sky
@@ -48,12 +44,10 @@ pub const Kind = enum(u8) {
     cliff4,
     cliff5,
     cliff6,
-    // rock + wood litter
     boulder,
     rocks,
     stump,
     log,
-    // village + wayside dressing — the things that say people lived here
     well,
     shrine, // a wayside shrine, candles still lit (carries a light)
     lantern, // a post lantern (carries a light)
@@ -67,16 +61,13 @@ pub const Kind = enum(u8) {
     cairn,
     /// THE TREASURE CHEST — the one prop with a moving part and the only one that HOLDS anything.
     chest,
-    // more rock
     outcrop, // a low shelf of bedrock breaking the turf
     scree,
-    // fire (each carries a gfx.Light)
     torch, // standing iron torch — interiors
     brazier, // wide fire bowl on a tripod
     campfire, // stone ring + crossed logs, BURNT OUT — dressing, no flame and no light
     campfire_lit, // …and the one still going, which you can sit at (see rest.isRestKind)
     water, // the tarn surface
-    // FLORA (non-casters, wind-swayed)
     tuft,
     patch,
     shrub,
@@ -101,7 +92,6 @@ pub const Kind = enum(u8) {
     thicket, // a dense tangle of brush, chest high
     wildflowers, // a mixed-colour drift
     ivy, // a creeper mound, for the feet of ruins
-    // big flora — casters, no sway (a swaying caster desyncs from the shadow map)
     bigtree,
     bigtree2,
     bigtree3,
@@ -152,7 +142,6 @@ pub const Group = enum {
     }
 };
 
-/// The name shown in the editor.
 pub fn displayName(k: Kind) [:0]const u8 {
     return switch (k) {
         .pillar => "Column",
@@ -319,9 +308,7 @@ pub const Info = struct {
     /// A STOWABLE PART: an ordinary caster in its own model, so the game can take it away.
     stow: ?*const fn (rl.Shader) rl.Model = null,
     bound: f32,
-    /// Mesh top height.
     top: f32,
-    /// Beyond this many world units the instance stops being drawn.
     view: f32,
     flora: bool = false,
     interact: bool = false,
@@ -329,7 +316,6 @@ pub const Info = struct {
     /// lose the fight behind. Buildings, walls and cliffs are deliberately NOT in it: losing sight of
     /// the hero behind architecture is the geometry doing its job, and ER keeps those solid too.
     fades: bool = false,
-    /// Included in the sun depth pass.
     casts: bool = true,
     parts: []const Part = &.{},
     light: ?LightSpec = null,

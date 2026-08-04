@@ -43,7 +43,6 @@ pub const Shelf = enum {
     }
 };
 
-/// One object's view pose.
 const Pose = struct {
     yaw: f32 = BASE_YAW,
     pitch: f32 = BASE_PITCH,
@@ -80,7 +79,6 @@ fn target(slot: *?rl.RenderTexture2D, w: i32, h: i32) rl.RenderTexture2D {
     return slot.*.?;
 }
 
-/// Free the two targets.
 pub fn unload() void {
     if (thumbRT) |t| rl.unloadRenderTexture(t);
     if (bigRT) |t| rl.unloadRenderTexture(t);
@@ -88,7 +86,6 @@ pub fn unload() void {
     bigRT = null;
 }
 
-/// The viewer's whole state.
 pub const State = struct {
     shelf: Shelf = .props,
     page: i32 = 0,
@@ -138,7 +135,6 @@ fn camFor(nfo: *const props.Info, pose: Pose, aspect: f32) rl.Camera3D {
     };
 }
 
-/// Render one object into `rt`.
 fn render(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, kind: Kind, pose: Pose) void {
     const nfo = props.info(kind);
     const aspect = @as(f32, @floatFromInt(rt.texture.width)) / @as(f32, @floatFromInt(rt.texture.height));
@@ -216,14 +212,12 @@ fn lineH() i32 {
 
 const clampI = mathx.clampI;
 
-/// Draw + drive the GALLERY.
 fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
     const list = st.shelf.kinds();
     const pages = pageCount(list.len);
     st.page = clampI(st.page, 0, pages - 1);
     const box = ui.beginModal(ctx, modalW(), modalH(), "Object viewer");
 
-    // SHELF TABS.
     var tx = box.x + 16;
     const ty = box.y + 44;
     inline for (@typeInfo(Shelf).@"enum".fields) |f| {
@@ -317,7 +311,6 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
         );
     }
 
-    // FOOTER: paging, the count, and the two gestures spelled out.
     const by = box.y + modalH() - 34;
     if (ui.button(ctx, ui.rect(box.x + 16, by, 44, 24), "<", hud.MONO, false)) st.page = @max(0, st.page - 1);
     if (ui.button(ctx, ui.rect(box.x + 64, by, 44, 24), ">", hud.MONO, false)) st.page = @min(pages - 1, st.page + 1);
@@ -332,7 +325,6 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
 const BIG_PAD: i32 = 16;
 const INFO_W: i32 = 250; // the readout column beside the object
 
-/// Draw + drive the SINGLE-OBJECT viewer.
 fn big(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, kind: Kind) bool {
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
@@ -423,7 +415,6 @@ fn big(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, kind: Kind
 }
 
 
-/// Draw whichever of the two is up, and drive it.
 pub fn draw(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
     if (st.open) |k| {
         if (big(st, env, scene, ctx, k)) return true;

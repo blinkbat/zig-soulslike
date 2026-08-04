@@ -163,7 +163,6 @@ const TRACK = rgba(16, 13, 11, 186); // the empty channel behind every fill
 /// rune plate's edge were two names for the same three channels.
 const RIM = rgba(116, 104, 84, 255);
 const FRAME = mathx.withAlpha(RIM, 210);
-// Each bar is THREE values: a flat body, a shaded bottom third, a lit hairline on top.
 const HP_HI = rgba(158, 36, 28, 255);
 const HP_LO = rgba(96, 20, 16, 255);
 const HP_TP = rgba(204, 66, 52, 255);
@@ -230,7 +229,6 @@ fn bar(x: i32, y: i32, w: i32, h: i32, frac: f32, chipFrac: f32, hi: rl.Color, l
     rl.drawRectangle(x - 3, y - 3, w + 6, h + 6, rgba(0, 0, 0, 50)); // a soft seat off the sky…
     rl.drawRectangle(x - 2, y - 2, w + 4, h + 4, rgba(0, 0, 0, 165));
     rl.drawRectangle(x - 1, y - 1, w + 2, h + 2, FRAME);
-    // Lit top rim, shadowed bottom — the channel reads carved, not printed.
     rl.drawRectangle(x - 1, y - 1, w + 2, 1, mathx.withAlpha(uiart.GILT, 130));
     rl.drawRectangle(x - 1, y + h, w + 2, 1, rgba(0, 0, 0, 140));
     rl.drawRectangle(x + w + 1, y - 2, 2, h + 4, uiart.IRON); // the far end post
@@ -262,7 +260,6 @@ pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool) void {
     fillThree(x, y, fw, FOE_H, frac, HP_HI, HP_LO, mathx.withAlpha(HP_TP, 200), 2, 1, 120);
     if (staggered) rl.drawRectangleLines(x - 1, y - 1, FOE_W + 2, FOE_H + 2, STAGGER_RIM);
 }
-
 const RUNE_W: i32 = 122;
 const RUNE_H: i32 = 32;
 const RUNE_FILL_A: u8 = 170;
@@ -337,7 +334,6 @@ pub const FlaskTint = enum { crimson, cerulean };
 
 /// `left`/`right` are what is IN HIS HANDS this frame, not what he owns — the cross is four slots and it `tint` picks which flask is drawn in the DOWN slot, `charges` how many are left — the cross is where ER shows both, and a charge count you have to open a menu for is a charge count you play without.
 pub fn equipment(left_hand: Slot, right_hand: Slot, tint: FlaskTint, charges: u8, ammo: ?Ammo) void {
-    // Three columns wide, corners left out.
     const stepX = SLOT_W + SLOT_GAP;
     const left = MARGIN;
     const bottom = rl.getScreenHeight() - BOTTOM;
@@ -416,7 +412,6 @@ fn arrowIcon(cx: f32, cy: f32, on: bool, fire: bool) void {
     }
     rl.drawLineEx(.{ .x = cx - half, .y = cy }, .{ .x = cx + half, .y = cy }, 2.0 * k, shaft);
     rl.drawLineEx(.{ .x = cx - half, .y = cy - 0.7 * k }, .{ .x = cx + half * 0.7, .y = cy - 0.7 * k }, 0.7 * k, rgba(GRIP_LT.r, GRIP_LT.g, GRIP_LT.b, if (on) 160 else 70)); // the lit top of the shaft
-    // THE PILE: a long bodkin, and a SOCKET behind it where it is bound to the shaft.
     rl.drawTriangle(
         .{ .x = cx + half + 3.0 * k, .y = cy },
         .{ .x = cx + half - 1.6 * k, .y = cy - 2.3 * k },
@@ -424,7 +419,6 @@ fn arrowIcon(cx: f32, cy: f32, on: bool, fire: bool) void {
         head,
     );
     rl.drawLineEx(.{ .x = cx + half - 2.2 * k, .y = cy }, .{ .x = cx + half - 1.0 * k, .y = cy }, 3.0 * k, rgba(head.r / 2, head.g / 2, head.b / 2, head.a));
-    // Fletches splay BACKWARD, and the two are not the same length.
     for ([_]f32{ -1, 1 }) |sy| {
         rl.drawLineEx(
             .{ .x = cx - half + 3.4 * k, .y = cy },
@@ -464,7 +458,6 @@ const CRIMSON = rgba(196, 46, 40, 255); // Flask of Crimson Tears
 const CRIMSON_DK = rgba(104, 24, 22, 255);
 const CERULEAN = rgba(64, 128, 200, 255);
 const CERULEAN_DK = rgba(28, 62, 118, 255);
-// (the flask's own highlight is GLASS_LIT, up with the rest of the icon palette)
 const CORK = rgba(150, 118, 74, 255);
 
 fn flask(cx: f32, cy: f32, tint: FlaskTint, full: bool) void {
@@ -505,14 +498,12 @@ fn flask(cx: f32, cy: f32, tint: FlaskTint, full: bool) void {
         .{ .x = cx - body * 0.88, .y = shoulderY },
         fill,
     );
-    // THE NECK, taller than it was and leaning with the rest of it…
     rl.drawLineEx(
         .{ .x = cx + lean * 0.4, .y = cy + s * 0.02 },
         .{ .x = cx + lean, .y = cy - s * 0.31 },
         neckHalf * 2.0,
         fill,
     );
-    // …and the COLLAR where it flares out to take the stopper.
     rl.drawLineEx(
         .{ .x = cx + lean - s * 0.070, .y = cy - s * 0.295 },
         .{ .x = cx + lean + s * 0.070, .y = cy - s * 0.295 },
@@ -538,7 +529,6 @@ fn flask(cx: f32, cy: f32, tint: FlaskTint, full: bool) void {
         rgba(GLASS_LIT.r, GLASS_LIT.g, GLASS_LIT.b, if (full) 200 else 90),
     );
 
-    // THE STOPPER: cork, and a blob of WAX over it that ran down one side further than the other.
     const sx = cx + lean * 1.15;
     rl.drawRectangleV(.{ .x = sx - s * 0.062, .y = cy - s * 0.395 }, .{ .x = s * 0.124, .y = s * 0.105 }, CORK);
     rl.drawCircleV(.{ .x = sx, .y = cy - s * 0.335 }, s * 0.075, WAX);
@@ -548,7 +538,6 @@ fn flask(cx: f32, cy: f32, tint: FlaskTint, full: bool) void {
         WAX, // the run
     );
     rl.drawCircleV(.{ .x = sx - 1.2 * k, .y = cy - s * 0.355 }, 1.0 * k, rgba(255, 210, 190, 120)); // its gloss
-    // AND A TIE round the neck, ends uneven.
     const ty = cy - s * 0.245;
     rl.drawLineEx(.{ .x = sx - s * 0.075, .y = ty }, .{ .x = sx + s * 0.075, .y = ty - 0.6 * k }, 1.4 * k, CORD);
     rl.drawLineEx(
@@ -651,7 +640,6 @@ fn sword(cx: f32, cy: f32) void {
             col,
         );
     }
-    // …the FULLER and the two edges, over the part of the steel that is still solid enough to show them.
     const solid = runTo * (1.0 - FADE_FROM); // the near end of the fade: no detail survives past it
     rl.drawLineEx(onAxis(gone, pom, solid + 0.01, 0), onAxis(shoulder, pom, -0.02, 0), 1.1 * k, rgba(64, 68, 74, 170));
     rl.drawLineEx(onAxis(gone, pom, solid, -wBase * 0.84), onAxis(shoulder, pom, 0, -wBase * 0.88), 1.1 * k, mathx.withAlpha(STEEL, 215));
@@ -694,7 +682,6 @@ fn sword(cx: f32, cy: f32) void {
     }
     rl.drawCircleV(guard, 1.35 * k, uiart.GILT); // the block the arms leave from
 
-    // THE POMMEL: a wheel with its highlight up and left, and a shadow under it.
     rl.drawCircleV(.{ .x = pom.x + 0.6 * k, .y = pom.y + 0.7 * k }, pomR, rgba(0, 0, 0, 150));
     rl.drawCircleV(pom, pomR, BRASS);
     rl.drawCircleV(.{ .x = pom.x - 0.8 * k, .y = pom.y - 0.9 * k }, 1.1 * k, uiart.GILT_BRIGHT);
@@ -743,7 +730,6 @@ fn bowIcon(cx: f32, cy: f32) void {
     const mx = cx - u * belly;
     const my = cy + u * belly;
 
-    // Each limb in THREE segments, tapering out to the nock, with the recurve kicking back at the tip.
     for ([_][3]f32{ .{ tx, ty, 1 }, .{ bx, by, -1 } }) |limb| {
         const tip = rl.Vector2{ .x = limb[0], .y = limb[1] };
         const grip = rl.Vector2{ .x = mx, .y = my };
@@ -753,14 +739,11 @@ fn bowIcon(cx: f32, cy: f32) void {
         rl.drawLineEx(grip, knee, 3.5 * k, BOWWOOD);
         rl.drawLineEx(knee, outer, 2.7 * k, BOWWOOD);
         rl.drawLineEx(outer, tip, 2.0 * k, BOWWOOD); // the recurve, thinnest at the tip…
-        // …a lit back along the bending part, so the limb has a front and a back…
         rl.drawLineEx(onAxis(grip, knee, 0.25, -1.1 * k), onAxis(knee, outer, 0.7, -0.9 * k), 0.9 * k, BOWWOOD_LT);
-        // …and a HORN NOCK: a small knob the string sits in.
         rl.drawCircleV(tip, 1.7 * k, BOWNOCK);
         rl.drawCircleV(.{ .x = tip.x - 0.4 * k, .y = tip.y - 0.5 * k }, 0.7 * k, uiart.CATCH);
     }
 
-    // THE GRIP: leather over the belly, with two wrap turns, unevenly placed.
     rl.drawLineEx(
         .{ .x = mx - u * s * 0.075, .y = my - u * s * 0.075 },
         .{ .x = mx + u * s * 0.085, .y = my + u * s * 0.085 },
@@ -782,7 +765,6 @@ fn bowIcon(cx: f32, cy: f32) void {
         );
     }
 
-    // THE STRING: nock to nock, and a SERVING at its centre — the bound patch the arrow nocks onto.
     rl.drawLineEx(.{ .x = tx, .y = ty }, .{ .x = bx, .y = by }, 1.2 * k, BOWSTRING);
     const serveA = onAxis(.{ .x = tx, .y = ty }, .{ .x = bx, .y = by }, 0.44, 0);
     const serveB = onAxis(.{ .x = tx, .y = ty }, .{ .x = bx, .y = by }, 0.58, 0);
@@ -819,7 +801,6 @@ fn shield(cx: f32, cy: f32) void {
             rgba(GRIP_LT.r, GRIP_LT.g, GRIP_LT.b, 150),
         );
     }
-    // GRAIN — a few short strokes along the planks, nowhere near evenly spaced.
     var gi: u32 = 0;
     while (gi < 5) : (gi += 1) {
         const gy = boards * rng.range(-0.78, 0.78);
@@ -845,8 +826,6 @@ fn shield(cx: f32, cy: f32) void {
         rl.drawCircleV(.{ .x = px - 0.4 * k, .y = py - 0.5 * k }, 0.6 * k, uiart.CATCH);
     }
 
-    // THE BOSS: a dome, off-centre because the hand behind it is, with a shadow crescent under it and a
-    // catch of light up and left.
     const bx = cx + rng.range(-1.2, 1.2) * k;
     const by = cy + rng.range(-1.2, 1.2) * k;
     const br = s * 0.125;

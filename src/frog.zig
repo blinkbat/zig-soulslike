@@ -11,7 +11,6 @@ const v3 = mathx.v3;
 const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
-// A squat warty bog-toad, ~2/3 the hero's mass, all mouth and teeth.
 
 // The shared helpers from mathx (single source for the "a-first" convention across rigs).
 const rx = mathx.rx;
@@ -63,6 +62,11 @@ pub const SCALE = 1.4;
 
 // Locomotion & senses (world units / seconds).
 const AGGRO_R = 11.0; // notices the hero within this
+/// CLOSE ENOUGH TO ITS OWN PATCH to stop hopping back to it. Deliberately TIGHTER than the tether's
+/// `foe.LEASH_HOME_R` — that is the radius a leash stops pulling at, this is a small animal's idea of
+/// having got home — and named rather than left a bare literal inside `decide`, which is where every
+/// other creature's copy of this question also sat.
+const HOME_R = 2.2;
 const LUNGE_R = 5.6; // will commit a lunge inside this (but outside bite range)
 const BITE_R = 1.45; // chomps inside this
 const HOP_REACH = 1.95; // ground covered by an approach hop
@@ -155,10 +159,8 @@ pub const Model = struct {
 };
 
 pub const Frog = struct {
-    // placement / heading
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
-    /// ITS TETHER to `home`, and how hard the player has provoked it (see foe.Leash).
     leash: foe.Leash = .{},
     facing: f32 = 0,
     scale: f32 = 1.0, // per-toad size jitter
@@ -180,7 +182,6 @@ pub const Frog = struct {
     hopDur: f32 = 0, // this hop's flight time (scales with reach)
     isLunge: bool = false, // the in-flight hop is a lunge (→ recovery on landing)
 
-    // resolved animation channels (read by pose())
     sy: f32 = 1, // body vertical scale (squash<1 / stretch>1)
     sxz: f32 = 1, // body horizontal scale (volume-ish conserved)
     lift: f32 = 0, // world-Y hop height
@@ -400,7 +401,7 @@ pub const Frog = struct {
             .wait => self.enterIdle(0.12), // in bite range, chomp cooling down — hold a beat
             .rest => {
                 // Out of aggro: hop home if we've wandered, else sit and wait.
-                if (mathx.distXZ(self.pos, self.home) > 2.2) {
+                if (mathx.distXZ(self.pos, self.home) > HOME_R) {
                     const dir = mathx.dirXZ(self.pos, self.home);
                     self.startHop(v3(self.pos.x + dir.x * HOP_REACH, 0, self.pos.z + dir.z * HOP_REACH), bounds, false);
                 } else self.enterIdle(1.4 + self.seed * 2.2);
@@ -496,7 +497,6 @@ pub const Frog = struct {
     }
     fn resolveIdle(self: *Frog) void {
         self.base();
-        // Alive at rest: a slow breathing bob in the body + a pulsing throat.
         const br = mathx.sinf(self.elapsed * 1.8 + self.seed * 6.28);
         self.sy = 1.0 + 0.03 * br;
         self.sxz = 1.0 - 0.02 * br;
@@ -518,7 +518,6 @@ pub const Frog = struct {
     }
     fn resolveFlight(self: *Frog, s: f32) void {
         self.lift = self.hopApex * 4.0 * s * (1.0 - s); // parabola, peak at s=0.5
-        // Explosive extend off the launch, trailing long, tucking a touch before landing.
         const launch = 1.0 - mathx.smoothstep(0.0, 0.32, s);
         const preland = mathx.smoothstep(0.72, 1.0, s);
         self.legExt = mathx.clampF(1.0 - 0.35 * preland, 0.0, 1.0);
@@ -530,7 +529,6 @@ pub const Frog = struct {
         self.sac = 1.0;
     }
     fn resolveLand(self: *Frog, k: f32) void {
-        // SPLAT then rebound: absorb wide + low, settle back toward the sit.
         const splat = mathx.pulse(k, 0, 0.45, 0.45, 1.0);
         self.lift = 0;
         self.sy = 1.0 - 0.26 * splat;
@@ -542,7 +540,6 @@ pub const Frog = struct {
         self.sac = 1.0;
     }
     fn resolveRecover(self: *Frog) void {
-        // Winded + wide open: belly-low, splayed, panting.
         const u = mathx.clampF(self.t / RECOVER_DUR, 0, 1);
         const out = 1.0 - mathx.smoothstep(0.7, 1.0, u); // spent for most of it, gathers at the end
         const pant = mathx.sinf(self.elapsed * 9.0);
@@ -566,7 +563,6 @@ pub const Frog = struct {
         self.arm = 0.2 * k;
     }
     fn resolveSnap(self: *Frog, s: f32) void {
-        // Jaws SLAM and the whole head thrusts forward.
         self.jaw = mathx.lerpF(CHOMP_JAW, 0.0, mathx.smoothstep(0, 0.55, s));
         self.pitch = mathx.lerpF(-13.0, 14.0, s); // whips down into the bite
         self.sac = mathx.lerpF(CHOMP_SAC, 0.9, s); // deflates as it clamps
@@ -577,7 +573,6 @@ pub const Frog = struct {
         self.arm = 0.2;
     }
     fn resolveChompRecover(self: *Frog, k: f32) void {
-        // Ease everything back to the sit; a touch of recoil so it doesn't park dead.
         const rc = mathx.sinf(k * std.math.pi) * (1.0 - k);
         self.sy = 1.0 - 0.03 * rc;
         self.sxz = 1.0 + 0.02 * rc;
@@ -616,7 +611,6 @@ pub const Frog = struct {
         self.arm = 0.7 * down;
     }
     fn resolveDeath(self: *Frog) void {
-        // Collapse and go still — flattens right out, jaw agape, no recovery.
         self.base();
         const k = mathx.smoothstep(0, 0.4, mathx.clampF(self.t / DEATH_DUR, 0, 1));
         self.lift = 0;
@@ -709,7 +703,7 @@ pub const Frog = struct {
             self.fxAccum -= 1.0;
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.05, 0.55) * self.scale * (1.0 - 0.6 * self.fade);
-            const p = v3(self.pos.x + mathx.cosf(a) * rr, self.fxRng.range(0.03, 0.35) * self.scale, self.pos.z + mathx.sinf(a) * rr);
+            const p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + self.fxRng.range(0.03, 0.35) * self.scale, self.pos.z + mathx.sinf(a) * rr);
             if (self.fxRng.float() < 0.75) {
                 self.emit(p, v3(self.fxRng.signed() * 0.25, self.fxRng.range(0.5, 1.3), self.fxRng.signed() * 0.25), self.fxRng.range(0.5, 1.0), self.fxRng.range(0.025, 0.06) * self.scale, 0.003, MOTE, -0.7);
             } else {
@@ -725,12 +719,12 @@ pub const Frog = struct {
     // The front-slam / dust-burst centre, a short reach ahead of the seat (rides the lift).
     fn impactWorld(self: *const Frog) rl.Vector3 {
         const d = self.fdir();
-        return v3(self.pos.x + d.x * LUNGE_IMPACT_FWD * self.scale, 0.04, self.pos.z + d.z * LUNGE_IMPACT_FWD * self.scale);
+        return v3(self.pos.x + d.x * LUNGE_IMPACT_FWD * self.scale, self.pos.y + 0.04, self.pos.z + d.z * LUNGE_IMPACT_FWD * self.scale);
     }
     // Roughly the mouth/throat in world space (where charge gathers + drool strings from).
     fn mouthWorld(self: *const Frog) rl.Vector3 {
         const d = self.fdir();
-        return v3(self.pos.x + d.x * 0.52 * self.scale, 0.32 * self.scale + self.lift, self.pos.z + d.z * 0.52 * self.scale);
+        return v3(self.pos.x + d.x * 0.52 * self.scale, self.pos.y + 0.32 * self.scale + self.lift, self.pos.z + d.z * 0.52 * self.scale);
     }
     // The pool plumbing is the shared one (foe.zig) — these just name the toad's own ring.
     fn emit(self: *Frog, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
@@ -746,7 +740,7 @@ pub const Frog = struct {
             const a = self.fxRng.angle();
             const s = self.fxRng.range(0.5, 1.0) * spd * self.scale;
             const vel = v3(mathx.cosf(a) * s, self.fxRng.range(0.6, 2.2), mathx.sinf(a) * s);
-            self.emit(v3(c.x, 0.05, c.z), vel, self.fxRng.range(0.35, 0.62), self.fxRng.range(0.06, 0.12) * self.scale, big * self.fxRng.range(0.8, 1.3) * self.scale, DUST, 4.5);
+            self.emit(v3(c.x, self.pos.y + 0.05, c.z), vel, self.fxRng.range(0.35, 0.62), self.fxRng.range(0.06, 0.12) * self.scale, big * self.fxRng.range(0.8, 1.3) * self.scale, DUST, 4.5);
         }
     }
     fn emitCoil(self: *Frog, dt: f32, k: f32) void {
@@ -755,7 +749,7 @@ pub const Frog = struct {
             self.fxAccum -= 1.0;
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.18, 0.5) * self.scale;
-            const bp = v3(self.pos.x + mathx.cosf(a) * rr, 0.04, self.pos.z + mathx.sinf(a) * rr);
+            const bp = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.04, self.pos.z + mathx.sinf(a) * rr);
             self.emit(bp, v3(self.fxRng.signed() * 0.4, self.fxRng.range(0.5, 1.5), self.fxRng.signed() * 0.4), self.fxRng.range(0.3, 0.5), self.fxRng.range(0.05, 0.10) * self.scale, self.fxRng.range(0.14, 0.24) * self.scale, DUST, 3.0);
             if (self.fxRng.float() < 0.6) { // an amber charge ember, gathering + drifting up
                 const m = self.mouthWorld();
@@ -1167,4 +1161,11 @@ test "a hop's flight parabola starts and ends on the ground and peaks at the ape
     try std.testing.expectApproxEqAbs(@as(f32, 0), f.lift, 1e-5);
     f.resolveFlight(0.5);
     try std.testing.expectApproxEqAbs(HOP_APEX, f.lift, 1e-5);
+}
+
+test "NO ATTACK COMES OUT OF NOWHERE: the gape and the coil are both real tells" {
+    try std.testing.expect(CHOMP_GAPE >= foe.TELL_MIN);
+    try std.testing.expect(LUNGE_COIL >= foe.TELL_MIN);
+    // The lunge is the committed one, so it announces itself for longer than the bite does.
+    try std.testing.expect(LUNGE_COIL > CHOMP_GAPE);
 }

@@ -13,7 +13,6 @@ pub const hit_light = Event{ .low = 0.22, .high = 0.42, .dur = 0.10 }; // your l
 pub const hit_heavy = Event{ .low = 0.48, .high = 0.60, .dur = 0.17 }; // your heavy crunches home
 pub const hurt = Event{ .low = 0.55, .high = 0.32, .dur = 0.22 }; // a chomp catches you
 pub const hurt_heavy = Event{ .low = 0.90, .high = 0.45, .dur = 0.34 }; // the lunge SLAMs you
-// CAUGHT ON THE SHIELD.
 pub const guard_block = Event{ .low = 0.30, .high = 0.42, .dur = 0.09 };
 pub const guard_block_heavy = Event{ .low = 0.62, .high = 0.55, .dur = 0.18 };
 pub const guard_break = Event{ .low = 0.95, .high = 0.52, .dur = 0.42 };

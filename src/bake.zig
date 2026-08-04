@@ -215,7 +215,6 @@ fn foes(p: *Emit) void {
 
 const P = struct { x: f32, z: f32, yaw: f32, s: f32, kind: Kind };
 const avenue_layout = [_]P{
-    // colonnade avenue flanking the path
     .{ .x = -6, .z = 14, .yaw = 8, .s = 0.9, .kind = .broken },
     .{ .x = 6, .z = 12, .yaw = 0, .s = 1.0, .kind = .pillar },
     .{ .x = -6, .z = -6, .yaw = 0, .s = 1.0, .kind = .pillar },
@@ -226,7 +225,6 @@ const avenue_layout = [_]P{
     .{ .x = 6, .z = -26, .yaw = 0, .s = 1.05, .kind = .broken },
     .{ .x = -6, .z = -36, .yaw = -6, .s = 1.05, .kind = .pillar },
     .{ .x = 6, .z = -36, .yaw = 20, .s = 0.95, .kind = .broken },
-    // the gate arch over the path
     .{ .x = 0, .z = -31, .yaw = 0, .s = 1.0, .kind = .arch },
     // the grace ember, just off the path by the start
     .{ .x = 3.0, .z = 6.5, .yaw = 0, .s = 1.0, .kind = .grace },

@@ -33,7 +33,6 @@ pub fn torchMesh(shader: rl.Shader) rl.Model {
         b.addCapsule(v3(0, 0.30, 0), v3(mathx.cosf(a) * 0.34, 0.015, mathx.sinf(a) * 0.34), 0.045, 0.03, 5, IRON);
     }
     b.addCapsule(v3(0, 0.12, 0), v3(rng.signed() * 0.04, 1.72, rng.signed() * 0.04), 0.055, 0.042, 6, IRON); // shaft
-    // The basket: four uprights curving out, plus two hoops.
     var u: i32 = 0;
     while (u < 4) : (u += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(u)) / 4.0;
@@ -120,11 +119,9 @@ pub fn deadCampfireMesh(shader: rl.Shader) rl.Model {
     var rng = mathx.Rng.init(9003); // …the SAME seed: it is the same ring of stones
     hearthInto(&b, &rng, true);
     b.setMat(.stone);
-    // The ash drift, and it is not a disc: rain and wind have pulled it out one side of the ring.
     b.addBlob(v3(rng.signed() * 0.06, 0.035, rng.signed() * 0.06), v3(0.36, 0.035, 0.33), 3, 8, ASH);
     b.addBlob(v3(0.13, 0.052, -0.08), v3(0.17, 0.028, 0.15), 3, 7, ASH_LT); // raked over, paler
     b.addBlob(v3(-0.16, 0.030, 0.14), v3(0.20, 0.022, 0.17), 3, 7, ASH_DK); // trodden, or rained on
-    // …and the ends of the logs that did not burn, sticking out of it.
     b.setMat(.wood);
     var e: i32 = 0;
     while (e < 3) : (e += 1) {
@@ -157,7 +154,6 @@ pub fn waterMesh(shader: rl.Shader) rl.Model {
         const d = rad[(i + 1) % SEG];
         smooth[i] = (a + 2 * c + d) * 0.25;
     }
-    // A flat annulus of `SEG` quads between two radii, at height `y`.
     const band = struct {
         fn go(bb: *Builder, w: *const [SEG]f32, r0: f32, r1: f32, y: f32, col: rl.Color) void {
             var i: usize = 0;

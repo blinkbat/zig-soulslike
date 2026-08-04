@@ -68,6 +68,10 @@ const SHAKE_DEATH = 0.85;
 const SHAKE_CHEST = 0.12;
 /// The debug corner's AMMO row, in its own warmer ink so the count reads apart from the stats above it.
 const STAT_WARN = mathx.rgba(206, 150, 110, 255);
+/// A GREATSWORD SKELETON LEAVING THE GROUND at you (owner: the lunge does not look as dangerous as it
+/// is). It has to be FELT before it lands, or the only cue is the blow itself — but it is a whiff until
+/// it connects, so it cracks the frame well under a blow that actually lands.
+const SHAKE_SKEL_LEAP = 0.24;
 // A SAC SPLITTING is bad news arriving; a sac BURST is you having stopped it.
 const SHAKE_HATCH = 0.30;
 const SHAKE_SAC_BURST = 0.34;
@@ -79,7 +83,6 @@ pub var PLAY_HALF: f32 = worldfmt.DEFAULT_HALF - envmod.PLAY_INSET;
 const HERO_R = foemod.HERO_R;
 
 const MAX_ARROWS = 24;
-/// His own quiver in flight.
 const MAX_SHAFTS = 12;
 /// The hero's centre of mass ABOVE HIS OWN FEET — not a world height.
 pub const HERO_CENTER_Y = 1.0;
@@ -91,7 +94,6 @@ const GROUND_FALL_RATE = 16.0;
 /// Past this the ease is abandoned and the actor is planted: a teleport (respawn, F5 playtest, the shot harness) must not spend a second sliding up out of the earth, and no real step is anywhere near it.
 const GROUND_SNAP: f32 = 2.5;
 
-// Depth clip planes, set once in run().
 const CLIP_NEAR = 0.55;
 const CLIP_FAR = 320.0;
 
@@ -139,7 +141,6 @@ pub const Game = struct {
     venomModel: rl.Model,
     fireArrowModel: rl.Model,
     arrows: [MAX_ARROWS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_ARROWS,
-    /// …and the ones HE loosed (see MAX_SHAFTS).
     shafts: [MAX_SHAFTS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_SHAFTS,
     rig: cameramod.CamRig,
     lock: ?FoeRef = null, // ER lock-on: which foe (toad or skeleton) is locked, or null
@@ -257,11 +258,9 @@ test "a radial stick keeps the thumb's ANGLE and does not favour the cardinals" 
     const ang = 0.26;
     const s = stickRadial(mathx.cosf(ang), mathx.sinf(ang), LOOK_DEADZONE, 1.0);
     try std.testing.expectApproxEqAbs(ang, std.math.atan2(s.y, s.x), 1e-5);
-    // …and a full-deflection DIAGONAL is as fast as a full-deflection cardinal.
     const diag = stickRadial(0.7071, 0.7071, LOOK_DEADZONE, 1.0);
     const card = stickRadial(1.0, 0.0, LOOK_DEADZONE, 1.0);
     try std.testing.expectApproxEqAbs(card.mag, diag.mag, 1e-4);
-    // Dead centre is dead, and a pad reading past 1 on the gate corners still clamps to 1.
     try std.testing.expectEqual(@as(f32, 0), stickRadial(0.05, -0.05, LOOK_DEADZONE, 1.0).mag);
     try std.testing.expectApproxEqAbs(@as(f32, 1), stickRadial(1.0, 1.0, LOOK_DEADZONE, 1.0).mag, 1e-4);
 }
@@ -271,11 +270,9 @@ test "A DRIFTING STICK CANNOT CLAIM THE CAMERA — the two look thresholds are n
     // …and the gap has to clear a real resting deflection.
     const WORN_STICK_REST: f32 = 0.25;
     try std.testing.expect(LOOK_CLAIM > WORN_STICK_REST);
-    // …while staying nowhere near a deliberate push, or reaching for the stick stops working.
     try std.testing.expect(LOOK_CLAIM < 0.7);
     const drift = stickRadial(WORN_STICK_REST, 0, LOOK_DEADZONE, LOOK_CURVE);
     try std.testing.expect(drift.mag < 0.10);
-    // …and dead centre still claims nothing at all.
     try std.testing.expectEqual(@as(f32, 0), stickRadial(0, 0, LOOK_DEADZONE, LOOK_CURVE).mag);
 }
 
@@ -330,14 +327,11 @@ fn wadeDrag(g: *const Game) f32 {
 test "wading costs the run first and never roots him" {
     // Ankle-deep is FREE — the shallows must not read as glue.
     try std.testing.expectEqual(@as(f32, 1.0), wadeDragAt(0.2));
-    // …and past the knee the WALK is what is left, dragged down but never to nothing.
     try std.testing.expect(wadeDragAt(WADE_DEEP) * WALK_SPEED < WALK_SPEED);
     try std.testing.expect(wadeDragAt(WADE_DEEP * 3) * WALK_SPEED > 0.1);
-    // MONOTONIC: deeper is never faster.
     try std.testing.expect(wadeDragAt(0.7) > wadeDragAt(0.9));
 }
 
-/// The drag curve alone, off a depth
 fn wadeDragAt(d: f32) f32 {
     if (d <= WADE_KNEE) return 1.0;
     return mathx.lerpF(1.0, WADE_SLOWEST, mathx.smoothstep(WADE_KNEE, WADE_DEEP, d));
@@ -503,7 +497,6 @@ fn clearFoes(g: *Game) void {
     }
 }
 
-/// …and put it back FROM THE MAP — both off FOE_GROUPS.
 pub fn clearFoesForShot(g: *Game) void {
     clearFoes(g);
 }
@@ -511,7 +504,6 @@ pub fn rehomeFoesForShot(g: *Game) void {
     rehomeFoes(g);
 }
 
-/// …and the BOW's three, so the harness flies a real shaft rather than parking a mesh in the air.
 pub fn shootShaftForShot(g: *Game, at: rl.Vector3, kind: combat.ArrowKind) void {
     const blow = heromod.arrowBlow(kind, true);
     putIn(&g.shafts, archermod.launchShaft(g.hero.nockWorld(), at, heromod.BOW_AIMED_SPEED, blow, false, heromod.arrowShot(kind)));
@@ -659,7 +651,6 @@ fn looseShaft(g: *Game) void {
     g.rumble.play(rumblemod.swing_light); // the string going is a tick in the grip, not a swing
 }
 
-/// A point ON the camera's centre ray, at the distance the ray REACHES.
 fn camAimPoint(g: *const Game) rl.Vector3 {
     const ray = g.rig.centreRay();
     var reach = heromod.BOW_AIM_REACH;
@@ -676,7 +667,6 @@ fn camAimPoint(g: *const Game) rl.Vector3 {
 
 const AIM_CONVERGE_MIN: f32 = 3.0;
 
-/// Nearest live target along `dir`, or null.
 const RayCtx = struct {
     origin: rl.Vector3,
     dir: rl.Vector3,
@@ -1109,6 +1099,9 @@ pub fn run(mode: Mode) void {
         PLAY_HALF = g.map.half - envmod.PLAY_INSET;
         // THE WORLD GOES QUIET IN THE EDITOR.
         sfx.mute(g.editor.on and !g.editor.auditioning());
+        // …and a moved SOUND FILTER dial re-renders its family once it has settled (Menu > Debug > Sound
+        // Filters). Before every branch, because the settle has to run out under the menu that armed it.
+        sfx.tickFx(rawDt);
 
         // Pad SELECT opens the GAME menu, pad START the CHARACTER one; TAB is START's keyboard twin.
         if (!g.editor.on and !g.rest.active()) {
@@ -1127,7 +1120,6 @@ pub fn run(mode: Mode) void {
         if (rl.isWindowResized()) g.retro.resize(rl.getScreenWidth(), rl.getScreenHeight());
 
         if (g.editor.on) {
-            // THE CURSOR COMES BACK.
             rl.showCursor();
             switch (g.editor.update(&g.map, &g.env, rawDt)) {
                 .none => {},
@@ -1449,6 +1441,11 @@ pub fn run(mode: Mode) void {
         // The skeletal warriors. Only the greatsword's diagonal carries stance, so that is the split.
         if (g.muster.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.stance > 0, true);
+        }
+        // …and the one moment of theirs the frame should feel BEFORE it is hit by it.
+        if (g.muster.anyLeapt()) {
+            g.rumble.play(rumblemod.swing_heavy);
+            g.rig.addShake(SHAKE_SKEL_LEAP);
         }
         const hatchesBefore = g.brood.hatches;
         const burstsBefore = g.brood.bursts;

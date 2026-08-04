@@ -61,7 +61,6 @@ const H: f32 = heromod.H;
 // The LEGS take the hero's fractions from the shared source — legChain's strafe geometry is measured off them, so a local copy that drifted would make this skeleton's planted feet skate.
 const SEG_THIGH = heromod.SEG_THIGH;
 const SEG_SHANK = heromod.SEG_SHANK;
-// …and so do the ARMS, from the same source.
 const SEG_UPARM = heromod.SEG_UPARM;
 const SEG_FOREARM = heromod.SEG_FOREARM;
 
@@ -230,7 +229,6 @@ pub const Arrow = struct {
     struck: ?collision.Surface = null,
     shot: Shot = .arrow,
     blow: combat.Hit = .{},
-    // The trail ring.
     trail: [TRAIL_N]rl.Vector3 = [_]rl.Vector3{mathx.zero3} ** TRAIL_N,
     trailAge: [TRAIL_N]f32 = [_]f32{mathx.LONG_AGO} ** TRAIL_N,
     trailHead: usize = 0,
@@ -302,7 +300,6 @@ const COVER_STEP: f32 = 0.18;
 /// …and a ceiling, so a hitched frame cannot turn one shaft into a thousand point tests.
 const COVER_SAMPLES_MAX: f32 = 24;
 
-/// THE FIRST THING THIS FRAME'S TRAVEL RUNS INTO, and where.
 fn coverHit(prev: rl.Vector3, to: rl.Vector3, solids: []const collision.Solid) ?struct { at: rl.Vector3, surf: collision.Surface } {
     const span = mathx.lenV(mathx.subV(to, prev));
     // CLAMPED IN FLOAT, BEFORE THE CAST
@@ -333,7 +330,6 @@ fn flying(a: *Arrow, dt: f32) bool {
     return true;
 }
 
-/// Gravity, one frame of travel, and the trail sample it leaves — returns where it came FROM.
 fn advance(a: *Arrow, dt: f32) rl.Vector3 {
     a.vel.y -= dropOf(a.shot) * dt;
     const prev = a.pos;
@@ -344,7 +340,6 @@ fn advance(a: *Arrow, dt: f32) rl.Vector3 {
     return prev;
 }
 
-/// It hit COVER: bury the head at the contact and remember what it went into.
 fn plantIn(a: *Arrow, at: rl.Vector3, surf: collision.Surface) void {
     a.struck = surf;
     // Normalize the CURRENT velocity: one sampled before homing + gravity touched it leaves the embed offset a frame of gravity out of true.
@@ -352,7 +347,6 @@ fn plantIn(a: *Arrow, at: rl.Vector3, surf: collision.Surface) void {
     plantShaft(a);
 }
 
-/// …or it ran out of air / found the earth.
 fn plantGround(a: *Arrow, groundY: f32) bool {
     if (a.pos.y > groundY + GROUND_BITE and a.age < ARROW_LIFE) return false;
     a.pos.y = mathx.maxF(a.pos.y, groundY + GROUND_BITE); // stuck in the earth where it landed
@@ -401,7 +395,6 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, he
     const prev = advance(a, dt);
     // COVER first (a wall between archer and hero beats a hero hugging its far side): sampled the LENGTH of the frame's travel so a fast shaft cannot tunnel a thin trunk — see `coverHit`, which both quivers share rather than each carrying this block.
     if (coverHit(prev, a.pos, solids)) |c| return plantIn(a, c.at, c.surf);
-    // …and the HERO, over the endpoint and the midpoint.
     const mid = mathx.lerpV(prev, a.pos, 0.5);
     if (!heroDodging and (heroReached(a.pos, hero, heroCenterY) or heroReached(mid, hero, heroCenterY))) {
         a.hit = true;
@@ -472,7 +465,6 @@ pub const Model = struct {
 pub const Archer = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
-    /// ITS TETHER to `home`, and how hard the player has provoked it (see foe.Leash).
     leash: foe.Leash = .{},
     facing: f32 = 0,
     scale: f32 = 1.0,
@@ -550,7 +542,6 @@ pub const Archer = struct {
     pub fn flashFrac(self: *const Archer) f32 {
         return foe.flashFrac(self.flash);
     }
-    // Off the ground only during the backstep's flight — the one time it leaves the earth.
     pub fn airborne(self: *const Archer) bool {
         return self.state == .backstep and self.hop > foe.AIRBORNE_LIFT;
     }
@@ -592,7 +583,6 @@ pub const Archer = struct {
                     self.faceToward(hero, dt);
                     self.headScan = mathx.approach(self.headScan, 0, dt * 70.0);
                 } else {
-                    // a slow sentry sweep — the empty skull scans the ruins for trespass
                     self.headScan = mathx.approach(self.headScan, 32.0 * mathx.sinf(self.elapsed * 0.55 + self.seed * 9.0), dt * 45.0);
                 }
                 self.decide(d);
@@ -648,7 +638,6 @@ pub const Archer = struct {
                 if (self.t >= REPOSITION_DUR) self.decide(d);
             },
             .backstep => {
-                // Coil, leap, land
                 self.faceToward(hero, dt);
                 self.armT = mathx.approach(self.armT, 0.15, dt * 5.0);
                 self.drawAmt = mathx.approach(self.drawAmt, 0, dt * 12.0); // the half-drawn shot is abandoned
@@ -686,7 +675,6 @@ pub const Archer = struct {
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, gaitSpeed, moveYaw, self.facing);
         self.pose();
         self.tryHit(blade); // hero's blade AFTER the state machine (like the toad); a kill here
-        // flags justDied for this frame's kill beat, cleared at the top of the next update.
         return loosed;
     }
 
@@ -698,7 +686,6 @@ pub const Archer = struct {
         if (s == .draw) sfx.world(.bow_draw, self.pos);
     }
 
-    // Pick the next action from range + reload (kite AI).
     fn decide(self: *Archer, dist: f32) void {
         if (self.leash.goingHome()) {
             self.kiteDir = mathx.dirXZ(self.pos, self.home);
@@ -789,10 +776,8 @@ pub const Archer = struct {
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
 
-        // Death crumple: fold + topple as it collapses (reaction pose lives entirely here).
         const dead = self.state == .dead;
         const dk = if (dead) mathx.smoothstep(0, 0.45, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
-        // Stagger: a big recoil back off the blow (light = a pulse, heavy = a sustained reel).
         const stunAmt = self.stunAmount();
 
         const m = self.moving * (1.0 - dk);
@@ -814,7 +799,6 @@ pub const Archer = struct {
             heromod.rootAt(self.pos),
         ));
 
-        // Legs: the SHARED walk/strafe (runB = 0 — the archer only walks).
         if (!dead) {
             heromod.legChain(&wx, &self.rest, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
             heromod.legChain(&wx, &self.rest, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, solePatches[1]);
@@ -824,7 +808,6 @@ pub const Archer = struct {
         self.poseString();
     }
 
-    // The LIVE string + nocked arrow.
     fn poseString(self: *Archer) void {
         const p = poseBow(self.xf[BOW], self.xf[WRL], self.drawAmt);
         self.stringXf = p.string;
@@ -933,11 +916,9 @@ pub const Line = struct {
     pub fn live(self: *Line) []Archer {
         return self.archers[0..self.n];
     }
-    /// Read-only view, for the `*const Line` paths (draw, the roll-ups).
     pub fn liveConst(self: *const Line) []const Archer {
         return self.archers[0..self.n];
     }
-    // Re-perch every archer, alive and fresh (a hero death reloads the world, ER-style).
     pub fn reset(self: *Line, m: *const wf.Map) void {
         foe.resetGroup(Archer, &self.archers, &self.n, m, .archer);
     }
@@ -947,8 +928,6 @@ pub const Line = struct {
     pub fn draw(self: *const Line, scene: ?*gfx.Scene) void {
         foe.drawGroup(self.liveConst(), &self.model, scene);
     }
-    // The shared Group roll-ups (foe.zig).
-    /// ONE OF THE HERO'S SHAFTS through the group — the first member it reaches takes it.
     pub fn pierce(self: *Line, blade: foe.Blade) bool {
         return foe.pierceGroup(self.live(), blade);
     }
@@ -1044,7 +1023,6 @@ fn ribcageMesh() rl.Mesh {
     b.addCube(v3(0, 0.015 * H, -0.005 * H), v3(0.13 * H, 0.185 * H, 0.10 * H), SOCKET); // the hollow core
     b.addCube(v3(0, 0.02 * H, -0.07 * H), v3(0.05 * H, 0.17 * H, 0.05 * H), BONE_DK); // thoracic spine
     b.addCube(v3(0, 0.032 * H, 0.078 * H), v3(0.036 * H, 0.125 * H, 0.016 * H), BONE_LT); // sternum
-    // shoulder girdle: clavicles (uneven pair) so the arms hang off real bone
     b.addBox(v3(0.07 * H, 0.10 * H, 0.02 * H), v3(0.075 * H, 0.012 * H, 0.0), v3(0, 0.012 * H, 0), v3(0, 0, 0.02 * H), BONE); // L clavicle
     b.addBox(v3(-0.07 * H, 0.10 * H, 0.02 * H), v3(0.075 * H, 0.015 * H, 0.0), v3(0, 0.010 * H, 0), v3(0, 0, 0.02 * H), STAIN); // R clavicle — thicker, stained
     var rng = mathx.Rng.init(911);
@@ -1064,7 +1042,6 @@ fn ribcageMesh() rl.Mesh {
             const frontPt = v3(sgn * 0.02 * H, y - 0.014 * H - droop, fz);
             b.addCylinder(spinePt, sidePt, rr, rr, 5, col);
             if (li == 3 and sgn > 0) {
-                // the snapped rib: its front run dies at a jagged stub short of the sternum
                 const stub = mathx.lerpV(sidePt, frontPt, 0.38);
                 b.addCylinder(sidePt, stub, rr, rr * 0.25, 5, STAIN);
             } else {
@@ -1072,7 +1049,6 @@ fn ribcageMesh() rl.Mesh {
             }
         }
     }
-    // fan of spare shafts at odd heights.
     b.setMat(.leather);
     const qBase = v3(0.010 * H, -0.095 * H, -0.105 * H);
     const qMouth = v3(0.125 * H, 0.115 * H, -0.120 * H);
@@ -1115,13 +1091,11 @@ fn skullMesh() rl.Mesh {
     b.addBlob(v3(0, 0.042 * H, -0.034 * H), v3(0.062 * H, 0.050 * H, 0.052 * H), 7, 12, BONE); // occiput swell
     b.addBlob(v3(0.020 * H, 0.102 * H, 0.008 * H), v3(0.010 * H, 0.019 * H, 0.055 * H), 5, 9, STAIN); // the old cleft, stained dark, sunk to a groove
     b.addCapsule(v3(-0.055 * H, 0.074 * H, 0.056 * H), v3(0.057 * H, 0.076 * H, 0.056 * H), 0.016 * H, 0.015 * H, 9, BONE_LT); // brow ridge
-    // eye sockets — dark hollows, the left the bigger
     b.addBlob(v3(0.042 * H, 0.048 * H, 0.062 * H), v3(0.027 * H, 0.024 * H, 0.015 * H), 6, 10, SOCKET);
     b.addBlob(v3(-0.040 * H, 0.046 * H, 0.061 * H), v3(0.024 * H, 0.021 * H, 0.014 * H), 6, 10, SOCKET);
     b.addBlob(v3(0, 0.028 * H, 0.064 * H), v3(0.013 * H, 0.022 * H, 0.013 * H), 5, 9, SOCKET); // nasal cavity
     b.addBlob(v3(0.056 * H, 0.028 * H, 0.048 * H), v3(0.018 * H, 0.015 * H, 0.024 * H), 6, 10, BONE_DK); // L cheekbone
     b.addBlob(v3(-0.054 * H, 0.025 * H, 0.046 * H), v3(0.014 * H, 0.012 * H, 0.020 * H), 6, 10, STAIN); // R cheekbone — chipped smaller
-    // upper jaw over a dark GAPE, the mandible slung low (an undead skull hangs open a little)
     b.addBlob(v3(0, 0.008 * H, 0.048 * H), v3(0.044 * H, 0.017 * H, 0.034 * H), 7, 12, BONE); // maxilla
     b.addBlob(v3(0, -0.020 * H, 0.044 * H), v3(0.037 * H, 0.015 * H, 0.029 * H), 6, 11, SOCKET); // the gape
     b.addBlob(v3(0, -0.038 * H, 0.043 * H), v3(0.041 * H, 0.012 * H, 0.031 * H), 7, 12, BONE_DK); // mandible
@@ -1181,7 +1155,6 @@ fn forearmMesh(seed: u64) rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
     var rng = mathx.Rng.init(seed);
-    // Radius + ulna: two thin parallel bones for the skeletal read.
     bone(&b, &rng, v3(0.008 * H, 0, 0), v3(0.008 * H, -SEG_FOREARM * H, 0), 0.013 * H, BONE);
     b.addCylinder(v3(-0.012 * H, -0.004 * H, 0.004 * H), v3(-0.006 * H, -SEG_FOREARM * H, 0.002 * H), 0.011 * H, 0.008 * H, 6, STAIN);
     return b.toMesh();
@@ -1218,7 +1191,6 @@ pub fn bowMesh() rl.Mesh {
         b.addCylinder(v3(0, fy - ly[seg] * H, fz + zz[seg] * H), v3(0, fy - ly[seg + 1] * H, fz + zz[seg + 1] * H), rr[seg] * H, rr[seg + 1] * H, 6, BOWWOOD);
     }
     b.setMat(.plain);
-    // horn nocks capping the tips (where the live string ties on)
     b.addCylinder(v3(0, fy + 0.385 * H, fz + 0.054 * H), v3(0, fy + 0.406 * H, fz + 0.062 * H), 0.008 * H, 0.004 * H, 5, TEETH);
     b.addCylinder(v3(0, fy - 0.352 * H, fz + 0.054 * H), v3(0, fy - 0.376 * H, fz + 0.062 * H), 0.008 * H, 0.004 * H, 5, TEETH);
     return b.toMesh();
@@ -1255,7 +1227,6 @@ pub fn arrowMesh(shader: rl.Shader) rl.Model {
     b.setMat(.steel);
     b.addCylinder(v3(0, 0, 0.285), v3(0, 0, 0.39), 0.0255, 0.001, 5, ARROW_HEAD); // pile / head
     b.setMat(.cloth);
-    // fletching: three big pale vanes at the tail (the tracer the eye tracks)
     b.addBox(v3(0, 0.0285, -0.2925), v3(0.0012, 0, 0), v3(0, 0.045, 0), v3(0, 0, 0.075), ARROW_FLETCH);
     b.addBox(v3(0.0255, -0.0173, -0.2925), v3(0.0012, 0, 0), v3(0.039, -0.0255, 0), v3(0, 0, 0.075), ARROW_FLETCH);
     b.addBox(v3(-0.0255, -0.0173, -0.2925), v3(0.0012, 0, 0), v3(-0.039, -0.0255, 0), v3(0, 0, 0.075), ARROW_FLETCH);
@@ -1354,7 +1325,6 @@ test "an arrow in flight lays a trail, and a pooled one never inherits the last 
     for (a.trailAge) |g| try std.testing.expect(g >= TRAIL_LIFE);
     var i: u32 = 0;
     while (i < 6) : (i += 1) stepArrow(&a, v3(0, 0, 14.0), 1.0, 0, false, &.{}, dt);
-    // Six frames of flight → six live samples, the newest at `trailHead` with age 0.
     try std.testing.expectApproxEqAbs(@as(f32, 0), a.trailAge[a.trailHead], 1e-6);
     var live: u32 = 0;
     for (a.trailAge) |g| {
@@ -1387,7 +1357,6 @@ test "arrows thunk into cover instead of piercing it; tall shots clear a LOW blo
     try std.testing.expect(blocked.stuck and !blocked.hit);
     try std.testing.expect(blocked.pos.z < 5.5); // it died AT the wall, not at the target
 
-    // The same shot over a knee-high grave sails past it (arrows arc honestly over low cover).
     var over = launchArrow(v3(0, 1.3, 0), v3(0, 1.0, 12.0));
     i = 0;
     while (i < 240 and !over.stuck) : (i += 1)
@@ -1427,7 +1396,6 @@ test "COVER IS SAMPLED BY LENGTH, so a fast shaft cannot tunnel a thin post" {
     try std.testing.expect(c.?.at.x > -0.7 and c.?.at.x < -0.35);
     try std.testing.expect(collision.blockerAt(mathx.lerpV(prev, to, 0.5), ARROW_COVER_MARGIN, &post) == null);
     try std.testing.expect(collision.blockerAt(to, ARROW_COVER_MARGIN, &post) == null);
-    // A clear lane is still clear, and a zero-length step does not divide by anything.
     try std.testing.expect(coverHit(v3(-1, 5.0, 0), v3(1, 5.0, 0), &post) == null); // over the top of it
     try std.testing.expect(coverHit(prev, prev, &post) == null);
 }
@@ -1440,7 +1408,6 @@ test "a FLAT launch adds no loft, so a reticle-aimed shaft goes where the reticl
     try std.testing.expectApproxEqAbs(@as(f32, 0), flat.vel.y, 1e-5); // dead level out of the muzzle
     const lofted = launchShaft(from, far, 40.0, .{}, true, .arrow);
     try std.testing.expect(lofted.vel.y > 0.5);
-    // The loft is the ONLY difference: same speed, same bearing.
     try std.testing.expectApproxEqAbs(@as(f32, 40), mathx.lenXZ(flat.vel), 1e-4);
     try std.testing.expectApproxEqAbs(mathx.lenXZ(flat.vel), mathx.lenXZ(lofted.vel), 1e-4);
     try std.testing.expectEqual(ARROW_HIT.dmg, launchArrow(from, far).blow.dmg);
@@ -1452,7 +1419,6 @@ test "a FLAT launch adds no loft, so a reticle-aimed shaft goes where the reticl
 }
 
 test "the CLUMP LOBS and the shaft does not — the arc is the slinger's tell" {
-    // Same launcher, same aim, and the slung lump must still be the one that goes over a wall.
     const dt: f32 = 1.0 / 60.0;
     const aim = v3(0, 1.0, 14.0);
     var shaft = launchArrow(v3(0, 1.4, 0), aim);
@@ -1474,7 +1440,6 @@ test "the CLUMP LOBS and the shaft does not — the arc is the slinger's tell" {
 
 test "a SIDESTEP beats an arrow: the homing is a launch nudge, not a lock" {
     const dt: f32 = 1.0 / 60.0;
-    // Loosed at a hero 12 out; he then steps three body-widths off the flight line and holds.
     var shot = launchArrow(v3(0, 1.3, 0), v3(0, 1.0, 12.0));
     const dodged = v3(2.6, 0, 12.0);
     var i: u32 = 0;

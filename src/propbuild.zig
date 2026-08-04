@@ -37,7 +37,6 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
     const wt: f32 = 0.42; // wall half-thickness
     const wh: f32 = 4.4; // wall height
 
-    // Flagstone floor, a hair proud of the terrain so the interior reads as a built surface.
     b.addCube(v3(0, 0.06, 0), v3(2 * hw + 0.5, 0.12, 2 * hl + 0.5), STONE_DK);
     var fx: i32 = 0;
     while (fx < 4) : (fx += 1) {
@@ -49,12 +48,9 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
             b.addCube(v3(x + rng.signed() * 0.05, 0.13, z + rng.signed() * 0.05), v3(rng.range(1.0, 1.2), 0.06, rng.range(0.95, 1.14)), if (rng.float() < 0.4) STONE else STONE_DK);
         }
     }
-    // The four walls, laid course by course by the shared masonry builder (`courseInto`).
     courseInto(&b, &rng, -hw, -hl, hw, -hl, .{ .thick = wt, .height = wh, .gapLo = -1.15, .gapHi = 1.15, .sillY = -0.1, .headY = 2.9 });
     b.addCube(v3(0, 3.05, -hl), v3(2.9, 0.30, 2 * wt + 0.06), STONE_LT); // door lintel
-    // North (altar) wall, unbroken but for a high slot window.
     courseInto(&b, &rng, -hw, hl, hw, hl, .{ .thick = wt, .height = wh, .gapLo = -0.45, .gapHi = 0.45, .sillY = 2.5, .headY = 3.7 });
-    // Side walls, each with a window opening set off-centre from the other (wabi-sabi).
     courseInto(&b, &rng, -hw, -hl, -hw, hl, .{ .thick = wt, .height = wh, .gapLo = -0.7, .gapHi = 0.8, .sillY = 1.5, .headY = 3.1 });
     courseInto(&b, &rng, hw, -hl, hw, hl, .{ .thick = wt, .height = wh, .gapLo = 0.2, .gapHi = 1.7, .sillY = 1.6, .headY = 3.2 });
     // Corner quoins tie the runs together (four bare wall ends read as a flat-pack kit).
@@ -72,7 +68,6 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
     while (rf < 7) : (rf += 1) {
         const z = -hl + 0.55 + @as(f32, @floatFromInt(rf)) * 1.05;
         b.setMat(.wood);
-        // A COUPLE of rafters per bay, each running from its OWN wall head up to the ridge.
         for ([_]f32{ -1, 1 }) |sgn| {
             b.addBox(v3(sgn * (hw + 0.15) * 0.5, wh + 0.55, z), v3(sgn * (hw + 0.15) * 0.5, -0.42, 0), v3(0, 0.10, 0), v3(0, 0, 0.10), TIMBER_DK);
         }
@@ -82,7 +77,6 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
             const run = (hw + 0.25) * 0.5;
             b.addBox(
                 v3(sgn * run, wh + 0.48, z),
-                // DOWN and OUT from the ridge.
                 v3(sgn * run, -0.42, 0),
                 v3(0, 0.09, 0),
                 v3(0, 0, 0.55 * rng.range(0.94, 1.04)),
@@ -91,12 +85,10 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
         }
     }
     b.setMat(.stone);
-    // The altar: a heavy slab on two blocks, chipped, with a stone bowl worn hollow.
     b.addCube(v3(0, 0.55, 2.9), v3(2.5, 0.85, 1.0), STONE_DK);
     b.addCube(v3(0, 1.02, 2.9), v3(2.9, 0.20, 1.25), STONE_LT);
     b.addCylinder(v3(0.65, 1.12, 2.9), v3(0.65, 1.34, 2.9), 0.26, 0.30, 8, STONE);
     b.addCube(v3(-0.75, 1.20, 2.86), v3(0.35, 0.16, 0.35), STONE_DK); // a fallen fragment on the mensa
-    // Two rows of stub columns down the nave — most snapped, one still carrying a capital.
     for ([_]f32{ -1.55, 1.55 }) |cx| {
         var ci: i32 = 0;
         while (ci < 3) : (ci += 1) {
@@ -106,7 +98,6 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.4) b.addCube(v3(cx, 0.16 + h + 0.08, z), v3(0.6, 0.16, 0.6), STONE_LT);
         }
     }
-    // Fallen masonry across the floor, and the roof slabs that came down with it.
     var d: i32 = 0;
     while (d < 9) : (d += 1) {
         const x = rng.range(-hw + 0.5, hw - 0.5);
@@ -164,17 +155,13 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     var c: i32 = 0;
     while (c < courses) : (c += 1) {
         const yc = 0.44 + (@as(f32, @floatFromInt(c)) + 0.5) * ch;
-        // Alternate courses are rotated half a block so the joints stagger like real masonry.
         const skew: f32 = if (@mod(c, 2) == 0) 0.0 else 0.5;
-        // Above the 12th course the crown is broken — blocks go missing in runs.
         const crumble: f32 = if (c >= 12) 0.42 else 0.03;
         var i: i32 = 0;
         while (i < sides) : (i += 1) {
             const fi = @as(f32, @floatFromInt(i)) + skew;
             const a = std.math.tau * fi / @as(f32, @floatFromInt(sides));
-            // The DOORWAY: three columns omitted for the lowest four courses.
             if (c < 4 and towerDoorway(i)) continue;
-            // Arrow slits: single columns omitted at two heights, on two different bearings.
             if ((c == 7 or c == 8) and (i == 2 or i == 9)) continue;
             if (rng.float() < crumble) continue;
             const at = radial(a, R);
@@ -188,10 +175,8 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
             );
         }
     }
-    // Door lintel + jambs, so the opening reads as built rather than as missing blocks.
     b.addBox(v3(0, 3.55, -R), v3(1.30, 0, 0), v3(0, 0.28, 0), v3(0, 0, 0.42), STONE_LT);
     for ([_]f32{ -1.18, 1.18 }) |jx| b.addBox(v3(jx, 1.85, -R), v3(0.22, 0, 0), v3(0, 1.85, 0), v3(0, 0, 0.40), STONE_DK);
-    // Ground-floor slab + the timber floor overhead (the roof of the dark room).
     b.addCylinder(v3(0, 0.02, 0), v3(0, 0.16, 0), R + 0.1, R + 0.1, sides, STONE_DK);
     b.setMat(.wood);
     var pl: i32 = 0;
@@ -203,7 +188,6 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     }
     b.addCylinder(v3(0, 4.42, 0), v3(0, 4.54, 0), R * 0.94, R * 0.94, sides, TIMBER_DK); // ring beam
     b.setMat(.stone);
-    // Crenellations on the surviving arc of the crown.
     var m: i32 = 0;
     while (m < sides) : (m += 1) {
         if (rng.float() < 0.45) continue;
@@ -212,7 +196,6 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
         const h = rng.range(0.4, 0.95);
         b.addBox(v3(at.x, 11.9 + h * 0.5, at.z), tangent(a, 0.42), v3(0, h * 0.5, 0), radial(a, 0.34), STONE_DK);
     }
-    // Spill of collapsed masonry heaped against one flank.
     var s: i32 = 0;
     while (s < 7) : (s += 1) {
         const a = rng.range(0.6, 2.0);
@@ -231,7 +214,6 @@ pub fn cottageMesh(shader: rl.Shader) rl.Model {
     b.setMat(.stone);
     const hw: f32 = 2.3;
     const hl: f32 = 1.9;
-    // Field-stone walls: rounded stones bedded in a packed core, not cut blocks.
     const run = struct {
         fn go(bb: *Builder, r: *mathx.Rng, ax: f32, az: f32, bx: f32, bz: f32, height: f32, gapLo: f32, gapHi: f32) void {
             const dx = bx - ax;
@@ -240,7 +222,6 @@ pub fn cottageMesh(shader: rl.Shader) rl.Model {
             const ux = dx / L;
             const uz = dz / L;
             const openTop: f32 = @min(2.05, height);
-            // Substrate, split around the opening: below the sill height it flanks the gap.
             for ([_][2]f32{ .{ -L * 0.5, gapLo }, .{ gapHi, L * 0.5 } }) |sp| {
                 const w = @min(sp[1], L * 0.5) - @max(sp[0], -L * 0.5);
                 if (w <= 0.02) continue;
@@ -288,17 +269,14 @@ pub fn cottageMesh(shader: rl.Shader) rl.Model {
     run(&b, &rng, -hw, -hl, -hw, hl, 2.55, -0.4, 0.7); // west wall, window
     run(&b, &rng, hw, -hl, hw, hl, 2.55, 9, 9); // east wall
     run(&b, &rng, -hw, -hl, hw, -hl, 1.15, -0.85, 0.85); // front wall, tumbled + a doorway gap
-    // Gable: the back wall carries up to a peak.
     var g: i32 = 0;
     while (g < 5) : (g += 1) {
         const t = @as(f32, @floatFromInt(g)) / 5.0;
         b.addCube(v3(0, 2.6 + t * 1.2, hl), v3((2 * hw) * (1.0 - t) * 0.92, 0.3, 0.42), if (@mod(g, 2) == 0) STONE else STONE_DK);
     }
-    // Chimney breast on the gable end, its stack broken off short.
     b.addCube(v3(1.35, 1.7, hl + 0.34), v3(1.1, 3.4, 0.62), STONE_DK);
     b.addCube(v3(1.35, 3.55, hl + 0.34), v3(0.86, 0.5, 0.5), STONE);
     b.addCube(v3(1.35, 0.55, hl - 0.1), v3(0.72, 1.1, 0.5), IRON); // the sooted hearth opening
-    // Roof timbers: a ridge and a few surviving rafters, charred.
     b.setMat(.wood);
     b.addCapsule(v3(0, 3.66, hl - 0.1), v3(0, 3.30, -hl + 0.6), 0.10, 0.08, 6, TIMBER_DK);
     var rf: i32 = 0;
@@ -308,7 +286,6 @@ pub fn cottageMesh(shader: rl.Shader) rl.Model {
         const sgn: f32 = if (@mod(rf, 2) == 0) 1 else -1;
         b.addCapsule(v3(0, 3.5, z), v3(sgn * hw * rng.range(0.7, 1.02), rng.range(2.1, 2.7), z + rng.signed() * 0.2), 0.075, 0.055, 5, TIMBER_DK);
     }
-    // Thatch shreds still caught up there — organic, so blobs, not slabs.
     var th: i32 = 0;
     while (th < 5) : (th += 1) {
         b.addBlob(
@@ -348,7 +325,6 @@ pub fn causewayMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.3) STONE_LT else if (rng.float() < 0.5) STONE_MOSS else STONE,
         );
     }
-    // Kerb stones, gappy — a few knocked into the water.
     for ([_]f32{ -1.45, 1.45 }) |z| {
         var k: i32 = 0;
         while (k < 16) : (k += 1) {
@@ -357,7 +333,6 @@ pub fn causewayMesh(shader: rl.Shader) rl.Model {
             b.addBox(v3(x, 0.30, z + rng.signed() * 0.04), v3(0.30, rng.signed() * 0.02, 0), v3(0, rng.range(0.14, 0.22), 0), v3(0, 0, 0.22), if (rng.float() < 0.35) STONE_DK else STONE);
         }
     }
-    // Fallen kerb + pier stones lying in the shallows around the gap.
     var f: i32 = 0;
     while (f < 6) : (f += 1) {
         const r = rng.range(0.16, 0.34);
@@ -369,11 +344,9 @@ pub fn causewayMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A patch of worn PAVING — the city's old road surface coming through the grass.
 pub fn pavingMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(1234);
-    // THE ROAD BED first — packed earth the setts are laid INTO.
     b.setMat(.stone);
     b.addCylinder(v3(0, 0.006, 0), v3(0, 0.020, 0), 2.35, 2.20, 14, SOIL);
     var holes: [3][3]f32 = undefined;
@@ -412,7 +385,6 @@ pub fn pavingMesh(shader: rl.Shader) rl.Model {
             );
         }
     }
-    // A CART RUT — two grooves of polished stone; the detail that says road, not floor.
     const ra = rng.angle();
     for ([_]f32{ -0.42, 0.42 }) |o| {
         var r: i32 = 0;
@@ -427,7 +399,6 @@ pub fn pavingMesh(shader: rl.Shader) rl.Model {
             );
         }
     }
-    // KERB stones at the edge — the scale break that stops one grain size everywhere.
     var k: i32 = 0;
     while (k < 3) : (k += 1) {
         const a = rng.angle();
@@ -440,7 +411,6 @@ pub fn pavingMesh(shader: rl.Shader) rl.Model {
         );
     }
     b.setMat(.plant);
-    // Grass and moss through the joints, and thickest in the holes where the bed is exposed.
     for (holes) |h| tuftInto(&b, &rng, h[0], h[1], 0.5);
     lichenInto(&b, &rng, v3(rng.signed() * 1.5, 0.045, rng.signed() * 1.5), v3(0.42, 0.012, 0.38), 4);
     b.setMat(.plant);

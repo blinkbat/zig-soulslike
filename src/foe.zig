@@ -23,6 +23,16 @@ pub fn closestApproach(bodyR: f32) f32 {
 
 pub const AIRBORNE_LIFT: f32 = 0.04;
 
+/// **NO ATTACK COMES OUT OF NOWHERE** (owner's law). Seconds a creature's kit must be VISIBLY MOVING
+/// before it can deal damage — a windup, or a swing slow enough that watching it IS the warning. The two
+/// are interchangeable and every attack in the game owes one of them; each creature's file has a test
+/// measuring its own moves against this, because the shapes differ too much for one place to check.
+/// 0.30 s is ~18 frames at 60 fps, and it is derived from what already shipped and reads: the ogre's
+/// swipe (0.46), the brood mother's bite (0.40), the toad's gape (0.42), the shieldman's mace (0.64).
+/// The two that were UNDER it were the two that read as instant — the berserker's chop at 0.14 and the
+/// broodling's bite at 0.20.
+pub const TELL_MIN: f32 = 0.30;
+
 /// STILL A BODY IN THE WAY. A CORPSE IS NOT ONE (owner's call, and the genre's rule): the frame a foe
 /// dies you must be able to walk straight through it, and `alive()` stays true for the whole death
 /// collapse plus its dissipation — seconds of a dead thing you were shouldering past. `pierceGroup`
@@ -31,7 +41,6 @@ pub fn corporeal(f: anytype) bool {
     return f.alive() and !f.dying();
 }
 
-// THE LEASH — and the provocation that overrides it.
 
 /// Drawn THIS far from where it was posted and it starts thinking about going back…
 pub const LEASH_R: f32 = 30.0;
@@ -49,7 +58,6 @@ pub const PROVOKE_BREAK: f32 = 2.5;
 pub const PROVOKE_HOLD: f32 = 14.0;
 pub const PROVOKE_DECAY: f32 = 0.35;
 
-/// A foe's interest in you, and its tether to where it was posted.
 pub const Leash = struct {
     sinceCombat: f32 = mathx.LONG_AGO,
     provoked: f32 = 0,
@@ -79,7 +87,6 @@ pub const Leash = struct {
         self.sinceCombat = 0;
     }
 
-    /// SOMETHING OF THE PLAYER'S LANDED ON IT.
     pub fn provoke(self: *Leash) void {
         self.noteCombat();
         self.rouseLeft = PROVOKE_ROUSE;
@@ -125,6 +132,9 @@ pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32,
 
 pub const DUST = mathx.rgba(150, 132, 96, 175);
 pub const MOTE = mathx.rgba(252, 198, 92, 170);
+/// …and the pale flash a moving EDGE leaves (`Trail`). The world's, like the two above: steel is steel
+/// whoever is swinging it, and authored per creature it had already drifted into two near-identical greys.
+pub const WAKE = mathx.rgba(224, 230, 244, 255);
 
 pub fn fxStream(seed: f32, mul: f32, salt: u64) mathx.Rng {
     return mathx.Rng.init(@as(u64, @intFromFloat(@abs(seed) * mul)) +% salt);
@@ -156,6 +166,57 @@ pub fn tickParticles(pool: []Particle, dt: f32, floor: f32) void {
         q.v.y -= q.grav * dt;
         if (q.p.y < floor) q.p.y = floor;
     }
+}
+
+/// A SWEPT BLADE'S RIBBON — the hero's swing trail, promoted here so anything that swings steel can have
+/// one. It is a ring of the last N segments the edge occupied, drawn as a triangle strip between
+/// consecutive samples: the ONE thing that makes a fast stroke read as fast, and the only thing that makes
+/// a stroke aimed straight down the camera read at all (a level thrust is foreshortened to a dot).
+const TrailSample = struct { a: rl.Vector3 = mathx.zero3, b: rl.Vector3 = mathx.zero3, age: f32 = mathx.LONG_AGO };
+
+/// HOW FAR THE POINT MUST TRAVEL IN A FRAME to be worth a sample. A DEGENERACY GUARD and not a per-weapon
+/// dial — 0.05 m at 60 fps is 3 m/s of tip, and nothing slower than that is a swing — so it lives here
+/// rather than being an argument each caller picks its own drifted value for.
+pub const TRAIL_SWEEP_MIN: f32 = 0.05;
+
+pub fn Trail(comptime N: usize) type {
+    return struct {
+        const Self = @This();
+        s: [N]TrailSample = [_]TrailSample{.{}} ** N,
+        head: usize = 0,
+
+        /// The segment `root`..1 of `base`→`tip`, kept only if the tip actually MOVED — a stationary blade
+        /// laying down samples fills the ring with a stack of identical quads and the ribbon never fades.
+        pub fn push(self: *Self, base: rl.Vector3, tip: rl.Vector3, prevTip: rl.Vector3, root: f32) void {
+            if (mathx.lenV(mathx.subV(tip, prevTip)) <= TRAIL_SWEEP_MIN) return;
+            self.head = (self.head + 1) % N;
+            self.s[self.head] = .{ .a = mathx.lerpV(base, tip, root), .b = tip, .age = 0 };
+        }
+        pub fn age(self: *Self, dt: f32) void {
+            for (&self.s) |*q| q.age = mathx.minF(q.age + dt, mathx.LONG_AGO);
+        }
+        pub fn reset(self: *Self) void {
+            for (&self.s) |*q| q.age = mathx.LONG_AGO;
+        }
+        pub fn draw(self: *const Self, life: f32, col: rl.Color, peak: f32) void {
+            // NOTHING TO DRAW COSTS NOTHING, and it is the usual case: a ribbon exists for the fraction of a
+            // second a stroke is travelling, where `drawFx` asks every member of a muster every frame. The
+            // early-out is before the GL state, because two cull toggles around a draw that emits no
+            // triangles is the whole cost of an idle skeleton's trail.
+            if (self.s[self.head].age >= life) return; // newest is stale → all of them are
+            rl.gl.rlDisableBackfaceCulling(); // the ribbon must read from both sides of the arc
+            defer rl.gl.rlEnableBackfaceCulling();
+            var i: usize = 0;
+            while (i + 1 < N) : (i += 1) {
+                const s0 = &self.s[(self.head + N - i) % N];
+                const s1 = &self.s[(self.head + N - i - 1) % N];
+                if (s0.age >= life or s1.age >= life) break; // the rest is older still
+                const f = 1.0 - 0.5 * (s0.age + s1.age) / life;
+                const strip = [4]rl.Vector3{ s0.a, s0.b, s1.a, s1.b };
+                rl.drawTriangleStrip3D(&strip, mathx.withAlpha(col, mathx.u8f(peak * f * f)));
+            }
+        }
+    };
 }
 
 pub fn drawParticles(pool: []const Particle) void {
@@ -372,7 +433,6 @@ test "ONE PLAYER HIT ROUSES IT FROM ANY RANGE, and KEEPING AT IT breaks the leas
     try std.testing.expect(!l.roused());
     l.provoke();
     try std.testing.expect(l.roused());
-    // …AND IT STAYS ROUSED LONG ENOUGH TO WALK THE GROUND.
     var t: f32 = 0;
     while (t < PROVOKE_ROUSE - 0.5) : (t += 1.0 / 60.0) {
         l.tick(1.0 / 60.0, 0);
@@ -406,7 +466,6 @@ test "ONE PLAYER HIT ROUSES IT FROM ANY RANGE, and KEEPING AT IT breaks the leas
 test "the leash constants say what the rule is" {
     // Start FAR, stop NEAR — the gap between them IS the debounce, and a zero gap is the flapping.
     try std.testing.expect(LEASH_HOME_R < LEASH_R * 0.5);
-    // It takes more than one hit to break a tether in progress.
     try std.testing.expect(PROVOKE_BREAK > PROVOKE_PER_HIT);
     try std.testing.expect(PROVOKE_ROUSE > LEASH_CALM * 2.0);
     try std.testing.expect(PROVOKE_HOLD > LEASH_CALM * 2.0);
@@ -463,10 +522,8 @@ test "A SWUNG WEAPON REACHES WHAT IT CROSSED, and nothing it went over" {
     const hero = v3(0, 0, 2.0);
     const level = [2]rl.Vector3{ v3(0, 1.1, 0.4), v3(0, 1.1, 2.1) }; // a blade laid through his chest
     try std.testing.expect(weaponReaches(level, level, hero, 0.6));
-    // …the same blade a metre over his skull is a MISS, which an XZ-only test could never say.
     const over = [2]rl.Vector3{ v3(0, 2.9, 0.4), v3(0, 2.9, 2.1) };
     try std.testing.expect(!weaponReaches(over, over, hero, 0.6));
-    // …and one buried in the dirt short of him is a miss too.
     const short = [2]rl.Vector3{ v3(0, 1.1, -0.6), v3(0, 1.1, 0.8) };
     try std.testing.expect(!weaponReaches(short, short, hero, 0.6));
     // THE SWEEP IS THE POINT: a head that was one side of him last frame and the other side this frame
@@ -476,4 +533,21 @@ test "A SWUNG WEAPON REACHES WHAT IT CROSSED, and nothing it went over" {
     try std.testing.expect(!weaponReaches(a, a, hero, 0.15));
     try std.testing.expect(!weaponReaches(b, b, hero, 0.15));
     try std.testing.expect(weaponReaches(a, b, hero, 0.15));
+}
+
+test "THE SWING RIBBON ONLY RECORDS A BLADE THAT MOVED, and it expires" {
+    var t = Trail(4){};
+    const base = v3(0, 1.1, 0.2);
+    // A blade sitting still lays nothing — samples of an unmoving edge stack into a quad that never fades.
+    t.push(base, v3(0, 1.1, 1.4), v3(0, 1.1, 1.4 + TRAIL_SWEEP_MIN * 0.5), 0.3);
+    try std.testing.expect(t.s[t.head].age >= mathx.LONG_AGO);
+    t.push(base, v3(0, 1.1, 1.4), v3(0.9, 1.1, 1.4), 0.3);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), t.s[t.head].age, 1e-6);
+    // The ribbon's inner edge sits `root` of the way down the blade, and its outer edge IS the point.
+    try std.testing.expectApproxEqAbs(@as(f32, 0.2 + 0.3 * 1.2), t.s[t.head].a.z, 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.4), t.s[t.head].b.z, 1e-6);
+    t.age(0.4);
+    try std.testing.expect(t.s[t.head].age > 0.39);
+    t.reset();
+    for (t.s) |s| try std.testing.expect(s.age >= mathx.LONG_AGO);
 }

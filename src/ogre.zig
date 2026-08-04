@@ -12,7 +12,6 @@ const v3 = mathx.v3;
 const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
-// A GIANT, ~2x the hero: hunched, misshapen, hefting a knotted club.
 
 const HIDE = rgba(39, 34, 28, 255); // ashen grey-tan hide — earthen, darker than bone
 const HIDE_DK = rgba(24, 20, 17, 255); // shadowed folds / warts — near-black
@@ -283,7 +282,6 @@ fn classify(dist: f32, bearingDeg: f32, slamReady: bool, swipeReady: bool) Choic
     return .approach; // close the gap
 }
 
-// The shared ogre meshes + material (built once, like the toad's / archer's).
 pub const Model = struct {
     mesh: [N]rl.Mesh,
     mat: rl.Material,
@@ -304,7 +302,6 @@ pub const Model = struct {
 pub const Ogre = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
-    /// ITS TETHER to `home`, and how hard the player has provoked it (see foe.Leash).
     leash: foe.Leash = .{},
     facing: f32 = 0,
     scale: f32 = SCALE,
@@ -359,7 +356,6 @@ pub const Ogre = struct {
     fade: f32 = 0,
     gone: bool = false,
 
-    // telegraph FX
     fx: [FX_MAX]Particle = [_]Particle{.{}} ** FX_MAX,
     fxHead: usize = 0,
     fxAccum: f32 = 0,
@@ -425,7 +421,6 @@ pub const Ogre = struct {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt); // shared — see foe.zig
     }
 
-    // none / corpse).
     pub fn update(self: *Ogre, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         if (self.gone) {
             self.updateFx(dt);
@@ -471,7 +466,7 @@ pub const Ogre = struct {
                     if (d <= AGGRO_R) {
                         self.homing = false;
                         self.decide(d, bearing);
-                    } else if (mathx.distXZ(self.pos, self.home) <= 2.0) self.enterIdle();
+                    } else if (mathx.distXZ(self.pos, self.home) <= foe.LEASH_HOME_R) self.enterIdle();
                 } else if (d <= SWIPE_R or d > AGGRO_R) self.decide(d, bearing);
             },
             .windup => {
@@ -546,13 +541,11 @@ pub const Ogre = struct {
         self.jolt = mathx.maxF(0, self.jolt - dt * 7.0); // the footfall catch releases fast
         self.judder = mathx.maxF(0, self.judder - dt * 3.2); // the club-bounce rings ~0.3 s
 
-        // Drive the SHARED humanoid gait.
         const gaitSpeed: f32 = if (movedDist > 0) WALK_SPEED else 0;
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, gaitSpeed, moveYaw, self.facing);
         self.footfalls(); // heavy dust puffs + the pelvis CATCH as each foot plants
         self.pose();
         self.tryHit(blade); // hero's blade AFTER the state machine (like the toad); a kill here
-        // flags justDied for this frame's kill beat, cleared at the top of the next update.
         return self.heroHit;
     }
 
@@ -592,7 +585,6 @@ pub const Ogre = struct {
         return mathx.degrees(mathx.wrapPi(mathx.headingXZ(d) - self.facing));
     }
 
-    // Pick the next action from range + bearing + cooldowns.
     fn decide(self: *Ogre, dist: f32, bearingDeg: f32) void {
         switch (classify(dist, bearingDeg, self.slamCd <= 0, self.swipeCd <= 0)) {
             .slam => self.enter(.windup),
@@ -603,7 +595,10 @@ pub const Ogre = struct {
             },
             .wait => self.enterIdle(),
             .idle => {
-                if (mathx.distXZ(self.pos, self.home) > 3.0) {
+                // ONE RADIUS DECIDES "AM I AT MY POST", and it is the LEASH's own (`foe.LEASH_HOME_R`),
+                // because that is where the tether stops caring. Setting off at 3 m and arriving at 2 m —
+                // which is how this read — leaves him trudging a metre past the boundary that sent him.
+                if (mathx.distXZ(self.pos, self.home) > foe.LEASH_HOME_R) {
                     self.homing = true; // wandered — trudge back toward HOME (approach handles it)
                     self.enter(.approach);
                 } else self.enterIdle();
@@ -657,7 +652,6 @@ pub const Ogre = struct {
         const d = mathx.distXZ(self.pos, hero);
         if (d < SWIPE_INNER * self.scale - HERO_REACH or d > SWIPE_OUTER * self.scale + HERO_REACH) return;
         const slack = mathx.degrees(std.math.atan2(HERO_REACH, mathx.maxF(0.5, d)));
-        // WRAPPED.
         if (@abs(mathx.wrapDeg(self.bearingTo(hero) - SWIPE_ARC_MID)) > SWIPE_ARC * 0.5 + slack) return;
         self.heroHit = h;
         self.heroLatch = true;
@@ -896,7 +890,6 @@ pub const Ogre = struct {
             heromod.rootAt(self.pos),
         ));
 
-        // Legs.
         if (!dead) {
             if (self.moving > 0.25) {
                 // NO LATERAL GAIT (owner's call): a giant does not cross its legs.
@@ -938,7 +931,6 @@ pub const Ogre = struct {
         const rest = self.rest;
         const m = self.moving * (1.0 - dk1);
         const armPh = std.math.tau * self.phase;
-        // Is the club HANGING (carried) or committed to a swing?
         const hung: f32 = switch (self.state) {
             .windup, .slam, .swipewind, .swipe, .recover => 0,
             else => 1,
@@ -946,7 +938,6 @@ pub const Ogre = struct {
         const nod = TRUNK_NOD * (0.5 - 0.5 * mathx.cosf(2.0 * armPh)) * m + 1.6 * self.jolt * m;
         // Curl the spine into the hunch; a stance-break folds it further, a flinch throws it back.
         const spineFlex = 6.0 + 26.0 * dk1 + 12.0 * hstun - 14.0 * lstun;
-        // THE WAIST HINGE.
         setLocal(wx, SPINE, rest, mul3(rx(spineFlex * 0.40 + waist * 0.46 + nod * 0.45), ry(self.twist * 0.4 - 0.45 * prot), rz(-0.30 * lumber)));
         setLocal(wx, CHEST, rest, mul3(rx(spineFlex * 0.32 + waist * 0.34 + nod * 0.55), ry(self.twist * 0.6 - 0.75 * prot), rz(-0.45 * lumber)));
         // The HUMP: the mass between his shoulders, on its own hinge.
@@ -990,12 +981,10 @@ pub const Ogre = struct {
         // +rz lifts a LEFT-side point and −rz a right-side one; −ry protracts the left shoulder.
         setLocal(wx, CLAVL, rest, mul(rz(shrugL), ry(-GIRDLE_PROT * prot)));
         setLocal(wx, CLAVR, rest, mul(rz(-shrugR), ry(GIRDLE_PROT * prot)));
-        // Off arm (left): rests low, flings out for balance on the windup, thrown up on a flinch.
         const armFly = -66.0 * lstun;
         setLocal(wx, SHL, rest, mul(rx(self.offShoulder + armFly * 0.6 - 18.0 * dk2 + freeSwing), rz(OFF_ABD + ARM_ABD_SWING * freeSwing)));
         setLocal(wx, ELL, rest, rx(self.offElbow - freeFlex));
         setLocal(wx, WRL, rest, rx(-WRIST_FLOP * freeSwing)); // the empty hand lags — dead weight
-        // Club arm (right): the whole slam arc rides this shoulder + elbow; the flinch flings it up.
         setLocal(wx, SHR, rest, mul3(rx(self.clubShoulder + armFly - 22.0 * dk2 - clubSwing), rz(-self.clubAbd - ARM_ABD_SWING * clubSwing), ry(self.clubSweep)));
         setLocal(wx, ELR, rest, rx(self.clubElbow - clubFlex));
         setLocal(wx, WRR, rest, rl.math.matrixIdentity());
@@ -1015,28 +1004,27 @@ pub const Ogre = struct {
     fn updateFx(self: *Ogre, dt: f32) void {
         foe.tickParticles(&self.fx, dt, self.pos.y); // dust settles on the ground HE is standing on
     }
-    // A radial fan of dust from `c` (the slam crush; scaled up for the giant).
     fn dustBurst(self: *Ogre, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
         var i: i32 = 0;
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
             const s = self.fxRng.range(0.5, 1.0) * spd * self.scale;
             const vel = v3(mathx.cosf(a) * s, self.fxRng.range(0.8, 3.0), mathx.sinf(a) * s);
-            self.emit(v3(c.x, 0.06, c.z), vel, self.fxRng.range(0.4, 0.7), self.fxRng.range(0.08, 0.16) * self.scale, big * self.fxRng.range(0.8, 1.3) * self.scale, DUST, 4.5);
+            // OFF THE GROUND HE STANDS ON, not off the datum — this used to overwrite the caller's y with
+            // a literal, which threw away the one thing `impactWorld` had already got right.
+            self.emit(v3(c.x, self.pos.y + 0.06, c.z), vel, self.fxRng.range(0.4, 0.7), self.fxRng.range(0.08, 0.16) * self.scale, big * self.fxRng.range(0.8, 1.3) * self.scale, DUST, 4.5);
         }
     }
-    // Windup STRAIN trickle: gravel + dust dug up around the feet as it plants and loads.
     fn emitStrain(self: *Ogre, dt: f32, k: f32) void {
         self.fxAccum += (6.0 + 22.0 * k) * dt;
         while (self.fxAccum >= 1.0) {
             self.fxAccum -= 1.0;
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.3, 0.9) * self.scale;
-            const bp = v3(self.pos.x + mathx.cosf(a) * rr, 0.05, self.pos.z + mathx.sinf(a) * rr);
+            const bp = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.05, self.pos.z + mathx.sinf(a) * rr);
             self.emit(bp, v3(self.fxRng.signed() * 0.3, self.fxRng.range(0.3, 1.0), self.fxRng.signed() * 0.3), self.fxRng.range(0.3, 0.5), self.fxRng.range(0.05, 0.11) * self.scale, self.fxRng.range(0.1, 0.18) * self.scale, DUST, 3.5);
         }
     }
-    // Heavy footfall dust: a puff under the planting foot as the stride phase crosses 0.0 / 0.5.
     fn footfalls(self: *Ogre) void {
         if (self.moving < 0.4) {
             self.prevPhase = self.phase;
@@ -1048,13 +1036,12 @@ pub const Ogre = struct {
             const side: f32 = if (self.phase < 0.5) 1.0 else -1.0;
             const f = self.fdir();
             const rr = 0.13 * H * self.scale;
-            const foot = v3(self.pos.x - f.z * side * rr, 0.05, self.pos.z + f.x * side * rr);
+            const foot = v3(self.pos.x - f.z * side * rr, self.pos.y + 0.05, self.pos.z + f.x * side * rr);
             self.dustBurst(foot, 6, 1.4, 0.14);
             sfx.world(.ogre_step, foot);
         }
         self.prevPhase = self.phase;
     }
-    // Dark ichor flung from the contact point along the blade's sweep.
     fn bloodBurst(self: *Ogre, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
         var i: i32 = 0;
         while (i < n) : (i += 1) {
@@ -1068,14 +1055,13 @@ pub const Ogre = struct {
             self.emit(at, vel, self.fxRng.range(0.3, 0.55), self.fxRng.range(0.04, 0.08) * self.scale, 0.01, BLOOD, 7.5);
         }
     }
-    // Death dissipation: grace-gold motes rising off the sinking corpse (ER-consistent).
     fn emitDissolve(self: *Ogre, dt: f32) void {
         self.fxAccum += 70.0 * (1.0 - 0.6 * self.fade) * dt;
         while (self.fxAccum >= 1.0) {
             self.fxAccum -= 1.0;
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.1, 1.0) * self.scale * (1.0 - 0.6 * self.fade);
-            const p = v3(self.pos.x + mathx.cosf(a) * rr, self.fxRng.range(0.05, 0.7) * self.scale, self.pos.z + mathx.sinf(a) * rr);
+            const p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + self.fxRng.range(0.05, 0.7) * self.scale, self.pos.z + mathx.sinf(a) * rr);
             if (self.fxRng.float() < 0.75) {
                 self.emit(p, v3(self.fxRng.signed() * 0.3, self.fxRng.range(0.5, 1.5), self.fxRng.signed() * 0.3), self.fxRng.range(0.6, 1.1), self.fxRng.range(0.04, 0.09) * self.scale, 0.004, MOTE, -0.7);
             } else {
@@ -1106,11 +1092,9 @@ pub const Grief = struct {
     pub fn live(self: *Grief) []Ogre {
         return self.ogres[0..self.n];
     }
-    /// Read-only view, for the `*const Grief` paths (draw, the roll-ups).
     pub fn liveConst(self: *const Grief) []const Ogre {
         return self.ogres[0..self.n];
     }
-    // Re-home the giant, alive and fresh (a hero death reloads the world, ER-style).
     pub fn reset(self: *Grief, m: *const wf.Map) void {
         foe.resetGroup(Ogre, &self.ogres, &self.n, m, .ogre);
     }
@@ -1127,8 +1111,6 @@ pub const Grief = struct {
     pub fn drawFx(self: *const Grief) void {
         for (self.liveConst()) |*o| o.drawFx();
     }
-    // The shared Group roll-ups (foe.zig).
-    /// ONE OF THE HERO'S SHAFTS through the group — the first member it reaches takes it.
     pub fn pierce(self: *Grief, blade: foe.Blade) bool {
         return foe.pierceGroup(self.live(), blade);
     }
@@ -1175,7 +1157,6 @@ fn buildMeshes() [N]rl.Mesh {
     return mesh;
 }
 
-// FLESH IS ROUND.
 fn limb(b: *Builder, a: rl.Vector3, e: rl.Vector3, r0: f32, r1: f32, col: rl.Color) void {
     const mid = mathx.lerpV(a, e, 0.42);
     b.addCapsule(a, mid, r0, r0 * 1.09, 12, col);
@@ -1186,7 +1167,6 @@ fn limb(b: *Builder, a: rl.Vector3, e: rl.Vector3, r0: f32, r1: f32, col: rl.Col
 fn pelvisMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    // A ROUNDED hip mass — one wide ellipsoid, real glutes swelling behind it, a slung groin.
     b.addBlob(v3(0, 0.002 * H, 0.005 * H), v3(0.152 * H, 0.086 * H, 0.132 * H), 8, 14, HIDE);
     b.addBlob(v3(0.070 * H, -0.010 * H, -0.080 * H), v3(0.082 * H, 0.070 * H, 0.072 * H), 7, 12, HIDE); // L glute
     b.addBlob(v3(-0.067 * H, -0.002 * H, -0.074 * H), v3(0.077 * H, 0.066 * H, 0.068 * H), 7, 12, HIDE); // R glute, a touch higher
@@ -1194,7 +1174,6 @@ fn pelvisMesh() rl.Mesh {
     b.addBlob(v3(0.095 * H, 0.048 * H, 0.020 * H), v3(0.050 * H, 0.032 * H, 0.048 * H), 5, 10, HIDE_LT); // hip crests
     b.addBlob(v3(-0.092 * H, 0.052 * H, 0.016 * H), v3(0.046 * H, 0.030 * H, 0.046 * H), 5, 10, HIDE_LT); // uneven
     b.setMat(.leather);
-    // a plaited rope belt cinched crooked round the hips — the rag hangs off it
     b.addCylinder(v3(0.10 * H, 0.048 * H, 0), v3(-0.10 * H, 0.058 * H, 0), 0.145 * H, 0.145 * H, 9, ROPE);
     b.setMat(.cloth);
     const strips = [_][3]f32{ .{ 0.088, 0.150, 0.128 }, .{ 0.030, 0.155, 0.176 }, .{ -0.036, 0.152, 0.104 }, .{ -0.092, 0.146, 0.150 }, .{ -0.006, -0.148, 0.132 } };
@@ -1286,7 +1265,6 @@ fn headMesh() rl.Mesh {
     b.addBlob(v3(0, 0.055 * H, 0.000 * H), v3(0.120 * H, 0.078 * H, 0.108 * H), 9, 15, HIDE); // cranium
     b.addBlob(v3(0, 0.008 * H, 0.048 * H), v3(0.114 * H, 0.072 * H, 0.098 * H), 9, 15, HIDE); // face mass
     b.addBlob(v3(0.014 * H, 0.098 * H, 0.014 * H), v3(0.050 * H, 0.018 * H, 0.062 * H), 6, 11, SCAR); // old scalp scar
-    // the great brow — one heavy roll over the eye, with a lower lump at one end (the sad frown)
     b.addBlob(v3(0.004 * H, 0.078 * H, 0.084 * H), v3(0.088 * H, 0.026 * H, 0.034 * H), 7, 13, HIDE_DK);
     b.addBlob(v3(-0.060 * H, 0.068 * H, 0.086 * H), v3(0.042 * H, 0.022 * H, 0.030 * H), 6, 11, HIDE_DK); // drooped end
     b.addBlob(v3(0, 0.032 * H, 0.084 * H), v3(0.090 * H, 0.066 * H, 0.030 * H), 7, 13, EYE_RIM); // socket backing
@@ -1294,7 +1272,6 @@ fn headMesh() rl.Mesh {
     b.addBlob(v3(0, 0.030 * H, 0.106 * H), v3(0.046 * H, 0.044 * H, 0.042 * H), 9, 14, EYE); // the amber orb
     b.addBlob(v3(0, 0.020 * H, 0.138 * H), v3(0.024 * H, 0.025 * H, 0.014 * H), 6, 11, PUPIL); // pupil set LOW — downcast
     b.setMat(.skin);
-    // A HEAVY LID hooding the top third of the orb.
     b.addBlob(v3(0, 0.062 * H, 0.100 * H), v3(0.062 * H, 0.024 * H, 0.038 * H), 7, 12, HIDE_DK);
     b.addBlob(v3(0.030 * H, 0.048 * H, 0.114 * H), v3(0.028 * H, 0.014 * H, 0.020 * H), 6, 10, HIDE_DK); // lid corner, uneven
     b.addBlob(v3(0, -0.014 * H, 0.104 * H), v3(0.092 * H, 0.020 * H, 0.026 * H), 6, 12, HIDE_DK); // the weary bag under it
@@ -1309,7 +1286,6 @@ fn headMesh() rl.Mesh {
         b.addCapsule(v3(t * 0.030 * H, -0.046 * H, 0.096 * H), v3(t * 0.032 * H, (-0.046 - tl) * H, 0.098 * H), 0.013 * H, 0.006 * H, 8, if (t < 0) TUSK else TUSK_DK);
     }
     b.setMat(.skin);
-    // drooped little ears, pinned back-and-down (a beaten dog's set)
     b.addBlob(v3(0.126 * H, -0.010 * H, -0.006 * H), v3(0.016 * H, 0.046 * H, 0.030 * H), 7, 10, HIDE);
     b.addBlob(v3(-0.126 * H, -0.002 * H, -0.004 * H), v3(0.015 * H, 0.042 * H, 0.028 * H), 7, 10, HIDE);
     return b.toMesh();
@@ -1459,11 +1435,9 @@ fn clubMesh() rl.Mesh {
     b.setMat(.steel);
     b.addCylinder(v3(0, gy - 0.062 * H, gz + 0.005 * H), v3(0, gy - 0.086 * H, gz + 0.006 * H), 0.072 * H, 0.072 * H, 8, CLUB_IRON); // iron lashing band
     b.addCylinder(v3(0, drumTop + 0.022 * H, gz + 0.013 * H), v3(0, drumTop - 0.004 * H, gz + 0.015 * H), 0.092 * H, 0.094 * H, 8, IRON_RUST); // rusted band
-    // the head: a fat knotted BOULDER — wider than it is tall, so it reads heavy from any angle.
     b.setMat(.stone);
     b.addBlob(v3(0, headY, gz + 0.022 * H), v3(CLUB_HEAD_R * 1.06, CLUB_HEAD_HH, CLUB_HEAD_R * 1.06), 10, 14, CLUB_STONE);
     b.addBlob(v3(0.034 * H, headY + 0.022 * H, gz + 0.004 * H), v3(CLUB_HEAD_R * 0.80, CLUB_HEAD_HH * 0.92, CLUB_HEAD_R * 0.86), 8, 12, CLUB_STONE);
-    // lashed-on stones, rusted iron lumps + DRIVEN SPIKES (seeded scatter — wabi-sabi).
     b.setMat(.steel);
     var rng = mathx.Rng.init(5119);
     var i: i32 = 0;
@@ -1481,7 +1455,6 @@ fn clubMesh() rl.Mesh {
             b.addCylinder(v3(cx, yy, cz), v3(cx * sl, yy + rng.range(-0.02, 0.03) * H, gz + 0.022 * H + (cz - (gz + 0.022 * H)) * sl), 0.027 * H, 0.002 * H, 5, CLUB_IRON);
         }
     }
-    // two snapped sword blades buried in the head — the hunts it walked away from
     b.addBox(v3(0.12 * H, headY + 0.055 * H, gz + 0.10 * H), v3(0.05 * H, 0.014 * H, 0.03 * H), v3(-0.004 * H, 0.05 * H, -0.01 * H), v3(0, 0, 0.006 * H), CLUB_IRON);
     b.addBox(v3(-0.11 * H, headY - 0.04 * H, gz - 0.055 * H), v3(0.055 * H, 0.010 * H, -0.035 * H), v3(0.004 * H, 0.012 * H, 0.0), v3(0, 0, 0.005 * H), IRON_RUST);
     return b.toMesh();
@@ -1572,10 +1545,8 @@ test "attack choice: squared up crushes, flanked SWIPES, cooling looms, far clos
     // OFF HIS FRONT: the swipe is the whole point — it beats the slam even with the slam ready.
     try std.testing.expectEqual(Choice.swipe, classify(SLAM_R - 0.5, 80, true, true));
     try std.testing.expectEqual(Choice.swipe, classify(SWIPE_R - 0.2, -120, true, true));
-    // …and it's also his answer while the slam is cooling, even to a hero standing dead ahead.
     try std.testing.expectEqual(Choice.swipe, classify(SLAM_R - 0.5, 0, false, true));
     try std.testing.expectEqual(Choice.wait, classify(SLAM_R - 0.5, 0, false, false)); // all cooling → loom
-    // Flanked but OUT of swipe reach: close the gap first, don't swing at nothing.
     try std.testing.expectEqual(Choice.approach, classify(SWIPE_R + 1.0, 90, true, true));
     try std.testing.expectEqual(Choice.approach, classify((SWIPE_R + AGGRO_R) * 0.5, 0, true, true));
 }
@@ -1640,4 +1611,11 @@ test "slam crush is the club's LINE: hits ahead on the axis, clears the flanks +
     var far = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     far.tryImpact(v3(0, 0, 99), SLAM_HIT); // on the line but way out of reach
     try std.testing.expect(far.heroHit == null);
+}
+
+test "NO ATTACK COMES OUT OF NOWHERE: both of the giant's moves rear first" {
+    try std.testing.expect(WINDUP_DUR >= foe.TELL_MIN);
+    try std.testing.expect(SWIPE_WIND_DUR >= foe.TELL_MIN);
+    // …and the slam is the one you read from across the plaza, so its tell dwarfs the swipe's.
+    try std.testing.expect(WINDUP_DUR > SWIPE_WIND_DUR * 2.0);
 }

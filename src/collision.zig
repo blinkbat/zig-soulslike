@@ -17,12 +17,10 @@ pub const Solid = struct {
     surf: Surface = .stone,
 };
 
-/// A circular obstacle (a==b).
 pub fn circle(x: f32, z: f32, r: f32) Solid {
     return .{ .a = v3(x, 0, z), .b = v3(x, 0, z), .r = r };
 }
 
-/// A capsule from (ax,az) to (bx,bz) with radius r.
 pub fn capsule(ax: f32, az: f32, bx: f32, bz: f32, r: f32) Solid {
     return .{ .a = v3(ax, 0, az), .b = v3(bx, 0, bz), .r = r };
 }
@@ -64,7 +62,6 @@ pub fn blocksPoint(p: rl.Vector3, margin: f32, s: Solid) bool {
     return dx * dx + dz * dz < rr * rr;
 }
 
-/// Yes/no only.
 pub fn blockedBy(p: rl.Vector3, margin: f32, solids: []const Solid) bool {
     return blockerAt(p, margin, solids) != null;
 }

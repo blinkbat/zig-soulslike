@@ -26,7 +26,6 @@ pub const WATER_SHORE: u8 = 128;
 pub const WATER_DEEP_AT: f32 = 11.0;
 pub const WATER_WET_OUT: f32 = 3.4;
 
-// THE SUN — one hard directional light.
 pub const SUN_DIR = norm3(v3(-0.60, 0.50, -0.46));
 
 pub const SHADOWMAP_RES = 8192;
@@ -79,13 +78,11 @@ pub const Sky = struct {
         };
     }
 
-    /// The scene shader's dusk dial, on the sky.
     pub fn setDim(self: *Sky, amt: f32) void {
         var a = mathx.clampF(amt, 0, 1);
         rl.setShaderValue(self.shader, self.loc_dim, &a, .float);
     }
 
-    // Fullscreen quad through the sky shader.
     pub fn draw(self: *Sky, cam: rl.Camera3D) void {
         const w = rl.getScreenWidth();
         const h = rl.getScreenHeight();
@@ -127,7 +124,6 @@ pub const Vignette = struct {
                 const r = @sqrt(nx * nx + ny * ny);
                 const t = mathx.smoothstep(START, ENDR, r); // 0 in the clean centre → 1 at the corners
                 const a = mathx.u8f(t * MAX_A);
-                // A dark, faintly cool slate — darkens AND cools the rim in one wash.
                 rl.imageDrawPixel(&img, x, y, rl.Color.init(10, 16, 28, a));
             }
         }
@@ -269,7 +265,6 @@ pub const Retro = struct {
         self.values = [_]f32{0} ** RETRO_COUNT;
     }
 
-    // Clear all filters, then enable the given preset's filters.
     pub fn applyPreset(self: *Retro, preset: []const Preset) void {
         self.allOff();
         for (preset) |p| self.values[p.idx] = p.val;
@@ -623,7 +618,6 @@ pub const Builder = struct {
         self.matf = @floatFromInt(@intFromEnum(m));
     }
 
-    /// Datum for the vertex animation of every shape added after this call — see `animY`.
     pub fn setAnimY(self: *Builder, y: f32) void {
         self.animY = y;
     }
@@ -974,7 +968,6 @@ test "a FILLETED BOX stays inside the cube it replaces, and its normals point ou
         // inside out, and the symptom is a black hero rather than a compile error.
         try std.testing.expect(n.x * d.x + n.y * d.y + n.z * d.z > -1e-3);
     }
-    // …and it really does reach the face plane, so the silhouette is still a block and not an egg.
     try std.testing.expect(reachX > size.x * 0.5 * 0.93);
 }
 

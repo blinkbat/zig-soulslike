@@ -76,7 +76,6 @@ pub const Chests = struct {
         return self.list[0..self.n];
     }
 
-    /// RE-HOME from the world.
     pub fn reset(self: *Chests, sites: []const Site) void {
         self.n = 0;
         self.near = null;
@@ -87,7 +86,6 @@ pub const Chests = struct {
         }
     }
 
-    /// Advance every lid and pick the one in reach.
     pub fn update(self: *Chests, dt: f32, heroPos: rl.Vector3) void {
         var best: ?usize = null;
         var bestD: f32 = REACH * REACH;
@@ -103,7 +101,6 @@ pub const Chests = struct {
         self.near = best;
     }
 
-    /// OPEN THE ONE IN REACH.
     pub fn openNear(self: *Chests, m: *const wf.Map) ?Opened {
         const i = self.near orelse return null;
         var c = &self.list[i];
@@ -124,7 +121,6 @@ pub const Chests = struct {
     }
 };
 
-/// One chest found in the world.
 pub const Site = struct {
     pos: rl.Vector3,
     yaw: f32,
@@ -160,10 +156,8 @@ test "only a shut chest in reach is the one you can open" {
         .{ .pos = v3(40, 0, 0), .yaw = 0, .scale = 1, .op = 1 },
     });
     try std.testing.expectEqual(@as(usize, 2), cs.n);
-    // Out of reach of both.
     cs.update(1.0 / 60.0, v3(20, 0, 0));
     try std.testing.expect(cs.near == null);
-    // In reach of the first.
     cs.update(1.0 / 60.0, v3(1.0, 0, 0));
     try std.testing.expectEqual(@as(usize, 0), cs.near.?);
     cs.list[0].opened = true;
@@ -188,7 +182,6 @@ test "opening hands back the placing op's loot, and only once" {
     const got = cs.openNear(m).?;
     try std.testing.expectEqual(@as(usize, 2), got.loot.len);
     try std.testing.expectEqual(item.Kind.golden_seed, got.loot[0]);
-    // A SECOND press gives nothing.
     cs.update(1.0 / 60.0, v3(0.5, 0, 0));
     try std.testing.expect(cs.openNear(m) == null);
 }

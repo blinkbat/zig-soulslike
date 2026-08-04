@@ -38,7 +38,6 @@ pub fn cartMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4747);
     b.setMat(.wood);
-    // The bed, tipped: planks along local X, one end down on the ground.
     var pl: i32 = 0;
     while (pl < 6) : (pl += 1) {
         const z = (@as(f32, @floatFromInt(pl)) - 2.5) * 0.28;
@@ -47,7 +46,6 @@ pub fn cartMesh(shader: rl.Shader) rl.Model {
     }
     b.addCapsule(v3(-1.05, 0.60, 0), v3(1.05, 0.44, 0), 0.09, 0.08, 6, TIMBER_DK); // axle beam
     b.addCapsule(v3(1.0, 0.50, 0.1), v3(2.15, 0.95, 0.25), 0.075, 0.05, 5, TIMBER_DK); // shaft, snapped upward
-    // SIDE RAILS on stakes, riding the bed's tilt — the near one broken short where it went over.
     for ([_]f32{ -1, 1 }) |sz| {
         const zr = sz * 0.80;
         var st: i32 = 0;
@@ -63,7 +61,6 @@ pub fn cartMesh(shader: rl.Shader) rl.Model {
             b.addBox(v3(0.42, 0.60, zr + 0.10), v3(0.34, -0.16, 0.05), v3(0, 0.04, 0.02), v3(0, 0.015, 0.032), TIMBER_DK); // …and the rest, dropped and askew
         }
     }
-    // Wheels: a rim of short chords + spokes, under an IRON TYRE, on a real hub.
     const wheel = struct {
         fn go(bb: *Builder, cx: f32, cy: f32, cz: f32, rad: f32, flat: bool, r: *mathx.Rng) void {
             const seg: i32 = 10;
@@ -87,7 +84,6 @@ pub fn cartMesh(shader: rl.Shader) rl.Model {
                 const p1 = if (flat) v3(cx + mathx.cosf(a1) * tr2, cy, cz + mathx.sinf(a1) * tr2) else v3(cx + mathx.cosf(a1) * tr2, cy + mathx.sinf(a1) * tr2, cz);
                 bb.addCapsule(p0, p1, 0.030, 0.030, 4, if (r.float() < 0.35) RUST else IRON);
             }
-            // The hub, and the axle stub through it.
             bb.setMat(.wood);
             bb.addBlob(v3(cx, cy, cz), if (flat) v3(0.13, 0.09, 0.13) else v3(0.13, 0.13, 0.09), 4, 8, TIMBER_DK);
             bb.setMat(.steel);
@@ -97,11 +93,9 @@ pub fn cartMesh(shader: rl.Shader) rl.Model {
     }.go;
     wheel(&b, -0.9, 0.62, 0.95, 0.60, false, &rng);
     wheel(&b, 0.85, 0.09, -1.0, 0.58, true, &rng);
-    // An iron strap over the bed where the axle took its load, bled with rust.
     b.setMat(.steel);
     b.addBox(v3(0.0, 0.79, 0.02), v3(0.05, -0.01, 0), v3(0, 0.014, 0), v3(0, 0, 0.72), IRON);
     b.setMat(.cloth);
-    // The load's canvas, slumped half off the low corner, roped to a stake.
     b.addBlob(v3(0.2, 0.84, 0.2), v3(0.45, 0.10, 0.36), 4, 7, CLOTH_DK);
     b.addBlob(v3(0.52, 0.72, 0.42), v3(0.24, 0.07, 0.20), 3, 6, CANVAS); // where it spills over the rail
     b.addBlob(v3(0.42, 0.78, -0.04), v3(0.17, 0.045, 0.14), 3, 5, CLOTH_DK);
@@ -117,7 +111,6 @@ pub fn wellMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2101);
     b.setMat(.stone);
-    // The drum: a core cylinder under a COURSED FACING of blocks.
     const R: f32 = 0.80;
     b.addCylinder(v3(0, 0.02, 0), v3(0, 1.04, 0), R, R, 12, MORTAR);
     var c: i32 = 0;
@@ -144,7 +137,6 @@ pub fn wellMesh(shader: rl.Shader) rl.Model {
             a += 2 * dHalf + rng.range(0.015, 0.05) / R;
         }
     }
-    // Moss where a well is actually wet: the bottom course, and the shaded lip under the coping.
     for ([_]f32{ 0.10, 0.94 }) |my| {
         const ma = rng.angle();
         lichenInto(&b, &rng, v3(mathx.cosf(ma) * 0.84, my, mathx.sinf(ma) * 0.84), v3(0.22, 0.09, 0.20), 3);
@@ -167,7 +159,6 @@ pub fn wellMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.22) STONE else STONE_DK,
         );
     }
-    // THE MOUTH, dark.
     b.addBlob(v3(0, 0.62, 0), v3(0.80, 0.26, 0.80), 3, 12, ROCK_DEEP);
     b.setMat(.wood);
     for ([_]f32{ -0.78, 0.78 }) |px| {
@@ -176,7 +167,6 @@ pub fn wellMesh(shader: rl.Shader) rl.Model {
     b.addCapsule(v3(-0.9, 2.02, 0), v3(0.9, 2.06, 0), 0.075, 0.075, 6, TIMBER); // the windlass barrel
     b.addBox(v3(0.95, 2.04, 0.16), v3(0.03, 0, 0), v3(0, 0.02, 0.18), v3(0, 0.16, 0), TIMBER_DK); // crank handle
     b.addCapsule(v3(0.2, 2.0, 0), v3(0.2, 1.25, 0.02), 0.018, 0.018, 4, BARK_DK); // rope
-    // The bucket, on the coping.
     b.addCylinder(v3(0.55, 1.10, 0.55), v3(0.55, 1.38, 0.55), 0.17, 0.19, 8, TIMBER);
     b.addDome(v3(0.55, 1.10, 0.55), v3(0, -1, 0), 0.17, 8, TIMBER_DK);
     b.setMat(.plant);
@@ -191,14 +181,12 @@ pub fn shrineMesh(shader: rl.Shader) rl.Model {
     b.setMat(.stone);
     b.addCube(v3(0, 0.14, 0), v3(1.5, 0.28, 1.2), STONE_DK); // plinth
     b.addCube(v3(0, 0.36, 0), v3(1.2, 0.18, 0.95), STONE);
-    // The housing: two side walls, a back, and a gable — open to the front (local −Z).
     for ([_]f32{ -0.44, 0.44 }) |sx| b.addCube(v3(sx, 1.05, 0.06), v3(0.22, 1.2, 0.82), STONE);
     b.addCube(v3(0, 1.05, 0.42), v3(1.1, 1.2, 0.2), STONE_DK);
     b.addBox(v3(0, 1.735, 0.06), v3(0.70, 0.015, 0), v3(0, 0.045, 0), v3(0, 0, 0.50), STONE_DK);
     for ([_]f32{ -1, 1 }) |sgn| {
         b.addBox(
             v3(sgn * 0.35, 1.97, 0.06),
-            // DOWN the pitch, outward.
             v3(sgn * 0.35, -0.195, 0),
             v3(0, 0.065, 0), // slab thickness
             v3(0, 0, 0.47 * rng.range(0.96, 1.04)),
@@ -210,11 +198,9 @@ pub fn shrineMesh(shader: rl.Shader) rl.Model {
     b.addBlob(v3(0.40, 0.47, -0.30), v3(0.13, 0.05, 0.10), 3, 5, STONE_LT);
     lichenInto(&b, &rng, v3(-0.20, 2.02, -0.02), v3(0.15, 0.05, 0.13), 3); // where the rain sits on the pitch
     b.setMat(.stone);
-    // The figure inside: a small hooded form, face lost.
     b.addCylinder(v3(0, 0.46, 0.06), v3(rng.signed() * 0.03, 1.24, 0.06), 0.26, 0.17, 8, STONE_LT);
     b.addBlob(v3(0, 1.34, 0.06), v3(0.17, 0.19, 0.17), 4, 7, STONE);
     b.setMat(.plain);
-    // Candle stubs on the step, guttering.
     var i: i32 = 0;
     while (i < 3) : (i += 1) {
         const x = -0.34 + @as(f32, @floatFromInt(i)) * 0.34;
@@ -234,7 +220,6 @@ pub fn shrineMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A post LANTERN: an iron cage on a hooked pole, lit.
 pub fn lanternMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2103);
@@ -245,7 +230,6 @@ pub fn lanternMesh(shader: rl.Shader) rl.Model {
     b.setMat(.steel);
     b.addCapsule(v3(0.02, 2.76, 0), v3(0.30, 2.86, 0), 0.03, 0.024, 5, IRON); // the hook arm
     b.addCapsule(v3(0.30, 2.86, 0), v3(0.30, 2.74, 0), 0.02, 0.02, 4, IRON);
-    // The cage: four uprights + two hoops + a little roof.
     var u: i32 = 0;
     while (u < 4) : (u += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(u)) / 4.0 + 0.4;
@@ -264,7 +248,6 @@ pub fn lanternMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A FENCE run: split posts driven at uneven depths with two rails, several posts leaning or gone.
 pub fn fenceMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2104);
@@ -276,7 +259,6 @@ pub fn fenceMesh(shader: rl.Shader) rl.Model {
         const h = rng.range(0.85, 1.22);
         b.addCapsule(v3(x, 0, rng.signed() * 0.05), v3(x + rng.signed() * 0.16, h, rng.signed() * 0.14), 0.075, 0.06, 5, TIMBER_DK);
     }
-    // Rails, in broken lengths rather than one continuous run.
     var r: i32 = 0;
     while (r < 2) : (r += 1) {
         const y = 0.48 + @as(f32, @floatFromInt(r)) * 0.36;
@@ -295,17 +277,14 @@ pub fn fenceMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// BARRELS and crates, stacked and spilled.
 pub fn barrelsMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2105);
     const barrel = struct {
         fn go(bb: *Builder, r: *mathx.Rng, cx: f32, cz: f32, tilt: f32, h: f32, open: bool) void {
             bb.setMat(.wood);
-            // The BODY is solid and bellied — two tapered drums meeting at the bulge.
             bb.addCylinder(v3(cx, 0.01, cz), v3(cx + tilt * 0.5, h * 0.5, cz), 0.26, 0.30, 10, TIMBER_DK);
             bb.addCylinder(v3(cx + tilt * 0.5, h * 0.5, cz), v3(cx + tilt, h, cz), 0.30, 0.26, 10, TIMBER_DK);
-            // Stave seams ride the body, proud at the chimes and sunk at the belly.
             const staves: i32 = 9;
             const staveTop = if (open) h - 0.11 else h - 0.03;
             var i: i32 = 0;
@@ -329,11 +308,9 @@ pub fn barrelsMesh(shader: rl.Shader) rl.Model {
                 bb.addBlob(v3(cx + tilt, h - 0.02, cz), v3(0.27, 0.035, 0.27), 3, 10, TIMBER_DK); // the head
                 return;
             }
-            // EMPTY: no head, and you see down INTO it.
             bb.addCylinder(v3(cx + tilt * 0.42, h * 0.42, cz), v3(cx + tilt, h + 0.006, cz), 0.235, 0.256, 10, BARK_OLD);
             bb.addBlob(v3(cx + tilt * 0.42, h * 0.42, cz), v3(0.235, 0.025, 0.235), 3, 10, BARK_OLD); // the bottom head, seen from above
             bb.setMat(.steel);
-            // The chime hoop sits AT the top edge, capping the stave ends.
             bb.addCylinder(v3(cx + tilt, h - 0.045, cz), v3(cx + tilt, h + 0.012, cz), 0.305, 0.305, 10, RUST);
         }
     }.go;
@@ -361,7 +338,6 @@ pub fn barrelsMesh(shader: rl.Shader) rl.Model {
     }
     b.addBox(v3(-0.72, 0.545, -0.42), v3(0.33, 0.015, 0.03), v3(0.02, 0.035, 0), v3(-0.05, 0, 0.31), TIMBER); // the lid, resting skewed
     b.addBox(v3(0.55, 0.10, -0.72), v3(0.34, 0.06, 0), v3(0, 0.05, 0), v3(0, 0, 0.28), TIMBER); // a lid slid clean off
-    // The SACK: a slumped belly cinched at the neck, bleeding grain — not one pale pebble.
     b.setMat(.cloth);
     b.addBlob(v3(-0.20, 0.15, -0.92), v3(0.27, 0.16, 0.21), 5, 9, THATCH_DK);
     b.addBlob(v3(-0.06, 0.10, -0.76), v3(0.18, 0.11, 0.15), 4, 8, THATCH_DK);
@@ -378,7 +354,6 @@ pub fn barrelsMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A WOODPILE: split billets stacked in courses under a sagging cover, with a few fallen off.
 pub fn woodpileMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2106);
@@ -412,16 +387,13 @@ pub fn woodpileMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// BONES: a scatter of ribs, long bones and a skull, half sunk in the turf.
 pub fn bonesMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2107);
     b.setMat(.plain);
-    // A skull: cranium plus a jaw slipped off it.
     b.addBlob(v3(0, 0.14, 0), v3(0.16, 0.15, 0.19), 4, 7, BONE);
     b.addBlob(v3(0, 0.09, -0.17), v3(0.11, 0.07, 0.09), 3, 6, BONE);
     b.addBlob(v3(0.14, 0.05, -0.22), v3(0.09, 0.04, 0.10), 3, 5, BONE);
-    // Ribs, curved: two capsules each.
     var r: i32 = 0;
     while (r < 6) : (r += 1) {
         const z = 0.34 + @as(f32, @floatFromInt(r)) * 0.13;
@@ -450,31 +422,25 @@ pub fn bonesMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A stone SARCOPHAGUS with its lid shoved aside — whatever was in it isn't now.
 pub fn sarcophagusMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2108);
     b.setMat(.stone);
     b.addCube(v3(0, 0.10, 0), v3(2.1, 0.20, 1.05), STONE_DK); // base slab
-    // The chest: four walls, so the inside is a real void you can see into.
     b.addCube(v3(0, 0.52, 0.44), v3(1.9, 0.64, 0.16), STONE);
     b.addCube(v3(0, 0.52, -0.44), v3(1.9, 0.64, 0.16), STONE);
     b.addCube(v3(0.87, 0.52, 0), v3(0.16, 0.64, 0.75), STONE);
     b.addCube(v3(-0.87, 0.52, 0), v3(0.16, 0.64, 0.75), STONE);
     b.addCube(v3(0, 0.36, 0), v3(1.6, 0.34, 0.6), MORTAR);
-    // Dressed-stone MOULDINGS: a base torus and a cornice lip, a few centimetres proud, one corner spalled off.
     b.addCube(v3(0, 0.245, 0), v3(1.98, 0.09, 1.13), STONE_DK);
     b.addCube(v3(0.10, 0.80, 0), v3(1.80, 0.075, 1.11), STONE); // the cornice, its broken WEST end simply missing
-    // A RAISED PANEL sunk into each long face — the frame a relief carving would have sat in.
     for ([_]f32{ -1, 1 }) |sz| {
         b.addCube(v3(-0.08, 0.50, sz * 0.525), v3(1.35, 0.34, 0.045), STONE_LT);
         b.addCube(v3(-0.08, 0.50, sz * 0.545), v3(1.05, 0.22, 0.03), STONE_DK); // the field, weathered back
     }
-    // The lid, dragged off and canted against the side
     b.setMat(.marble);
     b.addBox(v3(-0.35, 0.92, 0.30), v3(1.0, 0.10, 0), v3(-0.04, 0.11, 0), v3(0, 0, 0.5), MARBLE);
     b.addBox(v3(1.35, 0.30, 0.5), v3(0.55, 0.42, 0), v3(0.16, 0.20, 0), v3(0, 0, 0.42), MARBLE_DK);
-    // The RECUMBENT EFFIGY worn to a suggestion: the swell of a figure under a shroud, feet and folded hands just legible.
     b.addBlob(v3(-0.55, 1.09, 0.28), v3(0.24, 0.12, 0.20), 4, 8, MARBLE_LT); // the head end's pillow swell
     b.addCapsule(v3(-0.45, 1.09, 0.29), v3(0.30, 1.01, 0.335), 0.175, 0.125, 8, MARBLE); // the body's long swell
     b.addBlob(v3(-0.02, 1.13, 0.30), v3(0.10, 0.055, 0.09), 3, 6, MARBLE_LT); // the folded hands
@@ -508,7 +474,6 @@ pub fn stairsMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.28) STONE_LT else if (rng.float() < 0.5) STONE_MOSS else STONE,
         );
     }
-    // The stub wall the flight was built against.
     b.addCube(v3(-0.2, 0.55, 0.86), v3(2.6, 1.1, 0.34), STONE_DK);
     b.addCube(v3(0.9, 1.25, 0.86), v3(0.7, 0.4, 0.30), STONE); // a surviving upstand
     var d: i32 = 0;
@@ -522,7 +487,6 @@ pub fn stairsMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A GIBBET: an iron cage on a leaning post, hanging empty, chain and all.
 pub fn gibbetMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2110);
@@ -534,13 +498,11 @@ pub fn gibbetMesh(shader: rl.Shader) rl.Model {
     b.addCapsule(v3(lean, 3.78, lean * 0.4), v3(lean + 1.05, 3.92, lean * 0.4), 0.075, 0.055, 5, TIMBER_DK); // arm
     b.addCapsule(v3(lean + 0.1, 3.30, lean * 0.4), v3(lean + 0.62, 3.86, lean * 0.4), 0.05, 0.04, 4, TIMBER_DK); // brace
     b.setMat(.steel);
-    // Chain: a short run of alternating links, hanging straight.
     var k: i32 = 0;
     while (k < 4) : (k += 1) {
         const y = 3.86 - @as(f32, @floatFromInt(k)) * 0.11;
         b.addCylinder(v3(lean + 1.0, y, 0), v3(lean + 1.0, y - 0.09, 0), 0.035, 0.035, 5, IRON);
     }
-    // The cage: uprights bowed outward, three hoops, and a spiked base.
     const cx = lean + 1.0;
     const top: f32 = 3.42;
     var u: i32 = 0;
@@ -560,7 +522,6 @@ pub fn gibbetMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// -- THE TREASURE CHEST -- a banded coffer, and the ONE prop with a moving part.
 
 pub const CHEST_HALF_X: f32 = 0.52; // half-width across the front
 pub const CHEST_HALF_Z: f32 = 0.34; // half-depth
@@ -614,7 +575,6 @@ pub fn chestMesh(shader: rl.Shader) rl.Model {
         const y = CHEST_FOOT_H + CHEST_BODY_H * f;
         b.addCube(v3(0, y, 0), v3(hx * 2.0 + 0.02, 0.055, hz * 2.0 + 0.02), if (rng.float() < 0.35) RUST else IRON);
     }
-    // The LOCK PLATE and its hasp, front and centre — the one detail that says "this opens".
     b.addCube(v3(0, CHEST_HINGE_Y - 0.06, hz + 0.012), v3(0.20, 0.19, 0.035), IRON);
     b.addCylinder(v3(0, CHEST_HINGE_Y - 0.10, hz + 0.035), v3(0, CHEST_HINGE_Y - 0.10, hz + 0.075), 0.035, 0.030, 7, RUST);
     b.addDome(v3(0, CHEST_HINGE_Y - 0.10, hz + 0.075), v3(0, 0, 1), 0.035, 7, RUST);
@@ -630,14 +590,12 @@ pub fn chestLidMesh(shader: rl.Shader) rl.Model {
     const d = CHEST_HALF_Z * 2.0;
     const axis = CHEST_LID_SLAB; // the drum's axis height above the hinge
     const R = CHEST_LID_R;
-    // The lid runs FORWARD along +Z from the hinge at the origin, and rises to its crown mid-span.
     b.addCube(v3(0, axis * 0.5, d * 0.5), v3(hx * 2.0 - 0.02, axis, d - 0.02), TIMBER_DK);
     const ex = hx - 0.01;
     b.addCylinder(v3(-ex, axis, d * 0.5), v3(ex, axis, d * 0.5), R, R, 9, TIMBER_DK);
     for ([_]f32{ -1, 1 }) |sx| {
         b.addBlob(v3(sx * ex, axis, d * 0.5), v3(0.012, R, R), 3, 9, TIMBER_DK);
     }
-    // Boards over the dome, following its curve — a few percent proud, uneven widths.
     var i: i32 = 0;
     while (i < 5) : (i += 1) {
         const a = -0.9 + @as(f32, @floatFromInt(i)) * 0.45 + rng.signed() * 0.06;
@@ -649,7 +607,6 @@ pub fn chestLidMesh(shader: rl.Shader) rl.Model {
         );
     }
     b.setMat(.steel);
-    // The bands carry OVER the lid in line with the body's
     for ([_]f32{ -1, 1 }) |sx| {
         const bx = sx * (hx - 0.15);
         var seg: i32 = 0;
@@ -672,7 +629,6 @@ pub fn chestLidMesh(shader: rl.Shader) rl.Model {
             CHEST_INSIDE,
         );
     }
-    // …and the BATTENS across them, the light timber, standing proud of the arc.
     for ([_]f32{ -1, 1 }) |sx| {
         b.addCube(v3(sx * (hx * 0.56), axis - R * 1.045, d * 0.5), v3(0.12, 0.055, d * 0.66), TIMBER);
     }

@@ -39,10 +39,8 @@ pub const CliffKind = struct {
 const CLIFF_ROUND = CliffKind{ .H = 13.5, .wLo = 2.9, .wHi = 5.0, .cleft = 0.55, .blocky = 0.15, .bands = 7 };
 const CLIFF_BLOCKY = CliffKind{ .H = 12.2, .wLo = 2.4, .wHi = 4.2, .cleft = 1.15, .blocky = 0.85, .bands = 10 };
 const CLIFF_RAGGED = CliffKind{ .H = 14.6, .wLo = 3.2, .wHi = 5.6, .cleft = 0.85, .blocky = 0.5, .bands = 8 };
-// A damp, weathered face that the wood has got into: rounded rock under creeper.
 const CLIFF_IVIED = CliffKind{ .H = 13.0, .wLo = 3.0, .wHi = 5.2, .cleft = 0.70, .blocky = 0.22, .bands = 8, .ivy = 1.0 };
 const CLIFF_SHATTERED = CliffKind{ .H = 11.6, .wLo = 2.2, .wHi = 4.6, .cleft = 1.35, .blocky = 0.90, .bands = 5, .broken = 1.0 };
-// An OLD collapse: the scar has softened and gone green.
 const CLIFF_OVERGROWN = CliffKind{ .H = 12.6, .wLo = 2.7, .wHi = 4.8, .cleft = 0.95, .blocky = 0.45, .bands = 7, .ivy = 0.8, .broken = 0.55 };
 
 pub fn cliff1(shader: rl.Shader) rl.Model {
@@ -98,9 +96,7 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
     // The COLLAPSE and OVERGROWTH blocks below draw from their own stream.
     var frng = mathx.Rng.init(seed ^ 0x5C1FF00D);
     b.setMat(.stone);
-    // THE MASS: five overlapping rock bodies along local X.
     const NM = 5;
-    // THE REAL SUMMIT of each body, recorded as it is built.
     const Summit = struct { x: f32, z: f32, y: f32, rx: f32, rz: f32 };
     var top: [NM]Summit = undefined;
     var bodies: [NM * 2]CliffBody = undefined;
@@ -139,7 +135,6 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
         top[@intCast(m)] = .{ .x = sx, .z = sz, .y = sy + sry, .rx = srx, .rz = srz };
     }
     const face = bodies[0..nbody];
-    // BEDDING PLANES: thin wide slabs laid across the face, each stepped back and up.
     var course: i32 = 0;
     while (course < k.bands) : (course += 1) {
         const t = @as(f32, @floatFromInt(course)) / @as(f32, @floatFromInt(k.bands - 1));
@@ -165,7 +160,6 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
             );
         }
     }
-    // FRACTURE: a few near-vertical ribs up the face, breaking the horizontal banding.
     var f: i32 = 0;
     while (f < 6) : (f += 1) {
         const cx = rng.range(-4.6, 4.6);
@@ -197,10 +191,8 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
         const gx = frng.range(-3.0, 3.0); // where the gully comes down
         const gTop = H * frng.range(0.58, 0.84);
         const gW = frng.range(0.75, 1.25) * (0.6 + 0.4 * k.broken); // half-width of the GAP itself
-        // THE GULLY IS MADE OF ROCK AND SHADOW, NOT OF A DARK COLOUR.
         b.setMat(.stone);
         for ([_]f32{ 1, -1 }) |sgn| {
-            // THE TWO SIDES ARE NOT A PAIR.
             const rTop = gTop * frng.range(0.62, 1.0);
             const rGirth = frng.range(0.78, 1.25);
             const rSegs: i32 = 5;
@@ -262,7 +254,6 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
             );
         }
     }
-    // THE CREST fills the SADDLES between the summits — it does not crown them.
     var c: i32 = 0;
     while (c + 1 < NM) : (c += 1) {
         const a = top[@intCast(c)];
@@ -289,7 +280,6 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
             if (rng.float() < 0.5) SCRUB_DK else STONE_MOSS,
         );
     }
-    // crest.
     if (k.ivy > 0) {
         const nCurtain: i32 = @intFromFloat(@round(7.0 + 5.0 * k.ivy));
         var cu: i32 = 0;
@@ -372,7 +362,6 @@ pub fn boulderMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4242);
     b.setMat(.stone);
-    // Bodies use the DARK end of the rock palette.
     const nm = 3 + rng.intn(2);
     var i: i32 = 0;
     while (i < nm) : (i += 1) {
@@ -431,10 +420,8 @@ pub fn monolithMesh(shader: rl.Shader) rl.Model {
         v3(0.03, 0, 0.40),
         CLIFF_ROCK,
     );
-    // A narrower cap slab, snapped a little off-axis, and a shoulder chunk lost.
     b.addBox(v3(lean.x + rng.signed() * 0.1, lean.y + 0.16, lean.z), v3(0.42, 0.05, 0), v3(0, 0.18, 0.04), v3(0, 0, 0.30), CLIFF_DK);
     b.addBlob(v3(lean.x * 0.62 + 0.5, lean.y * 0.6, lean.z * 0.6 + 0.2), v3(0.20, 0.26, 0.18), 3, 5, CLIFF_LT);
-    // Carved bands: three shallow inset courses.
     for ([_]f32{ 0.24, 0.49, 0.76 }, 0..) |t0, bi| {
         const t = t0 + rng.signed() * 0.04;
         const broken = bi == 1;
@@ -490,7 +477,6 @@ pub fn outcropMesh(shader: rl.Shader) rl.Model {
         const h = rng.range(0.45, 0.95);
         b.addBlob(v3(x + rng.signed() * 0.2, h * 0.42, rng.signed() * 0.4), v3(rng.range(0.6, 1.0), h * 0.5, rng.range(0.5, 0.9)), 4, 6, if (@mod(i, 2) == 0) CLIFF_ROCK else CLIFF_DK);
     }
-    // A stepped face on the exposed side — bedding, same as the cliffs.
     var s: i32 = 0;
     while (s < 5) : (s += 1) {
         const y = 0.12 + @as(f32, @floatFromInt(s)) * 0.17;
@@ -514,7 +500,6 @@ pub fn outcropMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A SCREE patch: loose gravel and chips lying flat where water once ran or rock once fell.
 pub fn screeMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2113);

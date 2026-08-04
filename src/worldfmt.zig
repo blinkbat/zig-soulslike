@@ -57,7 +57,6 @@ pub const Avoid = struct {
 
 pub const Axis = enum(u8) { none, x, z };
 
-/// One authoring operation.
 pub const Op = struct {
     op: OpKind = .at,
     kind: Kind = .pillar, // the prop placed, or the mix's fallback when `nmix` is 0
@@ -92,7 +91,6 @@ pub const Op = struct {
     loot: [MAX_LOOT]item.Kind = undefined,
     nloot: u8 = 0,
 
-    /// The kind this op places for one instance.
     pub fn pick(self: *const Op, r: *mathx.Rng) Kind {
         if (self.nmix == 0) return self.kind;
         return self.mix[@intCast(r.intn(@intCast(self.nmix)))];
@@ -201,7 +199,6 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
     };
 }
 
-/// One posted spawn.
 pub const Foe = struct {
     kind: FoeKind = .toad,
     x: f32 = 0,
@@ -333,7 +330,6 @@ fn pointSpan(c: f32, r: f32, half: f32, step: f32) ?[2]usize {
     return .{ @intFromFloat(lo), @intFromFloat(hi) };
 }
 
-/// What a sculpt brush does to the ground under it.
 pub const Sculpt = enum {
     /// Push the ground up by `amount` metres at the centre, tapering to nothing at the rim.
     raise,
@@ -347,7 +343,6 @@ pub const Sculpt = enum {
 
 pub const Map = struct {
     name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
-    /// Playable half-extent.
     half: f32 = DEFAULT_HALF,
     runway: Runway = .{},
 
@@ -425,7 +420,6 @@ pub const Map = struct {
         self.nops = 2;
     }
 
-    /// Append an op, returning its index.
     pub fn add(self: *Map, o: Op) !usize {
         if (self.nops >= MAX_OPS) return error.TooManyOps;
         self.ops[self.nops] = o;
@@ -556,7 +550,6 @@ pub const Map = struct {
         return changed;
     }
 
-    /// Is this cell of the mask wet?
     pub fn waterAt(self: *const Map, px: f32, pz: f32) bool {
         const t = (px + self.half) / (2 * self.half);
         const u = (pz + self.half) / (2 * self.half);
@@ -566,7 +559,6 @@ pub const Map = struct {
         return self.water[cz * WATER_N + cx] != 0;
     }
 
-    /// Has anything been painted wet at all?
     pub fn anyWater(self: *const Map) bool {
         for (self.water) |v| {
             if (v != 0) return true;
@@ -579,12 +571,10 @@ pub const Map = struct {
         return sampleHeight(&self.height, self.half, px, pz);
     }
 
-    /// The terrain gradient there — (dh/dx, dh/dz).
     pub fn gradAt(self: *const Map, px: f32, pz: f32) [2]f32 {
         return sampleGrad(&self.height, self.half, px, pz);
     }
 
-    /// Has the ground been sculpted at all?
     pub fn anyHeight(self: *const Map) bool {
         for (self.height) |v| {
             if (v != HEIGHT_ZERO) return true;
@@ -598,7 +588,6 @@ pub const Map = struct {
         return .{ -self.half + @as(f32, @floatFromInt(ix)) * step, -self.half + @as(f32, @floatFromInt(iz)) * step };
     }
 
-    /// SCULPT the ground under a brush.
     pub fn sculpt(self: *Map, px: f32, pz: f32, radius: f32, mode: Sculpt, amount: f32, out: *[4]usize) bool {
         const step = 2 * self.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
         const r = mathx.maxF(radius, step * 0.5);
@@ -819,7 +808,6 @@ pub const ParseError = error{
     NoCoverOp,
 };
 
-/// Parse a whole map.
 pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     m.* = .{};
     var seenVersion = false;
@@ -960,7 +948,6 @@ fn parseOp(kind: OpKind, it: *std.mem.TokenIterator(u8, .any)) !Op {
     return o;
 }
 
-/// A chest's contents.
 fn parseLoot(s: []const u8, out: *[MAX_LOOT]item.Kind) !u8 {
     var n: u8 = 0;
     var parts = std.mem.splitScalar(u8, s, ',');
@@ -1050,7 +1037,6 @@ pub const EXT = ".world";
 pub const MAX_FILES: usize = 64;
 pub const PATH_CAP: usize = 96;
 
-/// The maps on disk.
 pub const Listing = struct {
     names: [MAX_FILES][PATH_CAP]u8 = undefined,
     n: usize = 0,
@@ -1060,7 +1046,6 @@ pub const Listing = struct {
         return std.mem.span(@as([*:0]const u8, @ptrCast(&self.names[i])));
     }
 
-    /// Rescan `worlds/`.
     pub fn scan(self: *Listing) void {
         self.n = 0;
         var dir = std.fs.cwd().openDir(DIR, .{ .iterate = true }) catch return;
@@ -1083,7 +1068,6 @@ pub const Listing = struct {
     }
 };
 
-/// Build `worlds/<slug>.world` from a typed name.
 pub fn pathFor(dst: []u8, name: []const u8) []const u8 {
     var n: usize = 0;
     for (DIR) |c| {
@@ -1280,7 +1264,6 @@ test "COVERAGE: an untouched grid costs no record, and the four rules the brush 
         try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "soilcov:") == null);
     }
 
-    // …but a STROKE always writes one, because a stroke always has a soft rim.
     _ = m.paintSoil(0, 0, 40, .stone, 1);
     {
         var buf: [1 << 18]u8 = undefined;
@@ -1299,10 +1282,8 @@ test "COVERAGE: an untouched grid costs no record, and the four rules the brush 
 
     _ = m.paintSoil(0, 0, 40, .moss, 0.1);
     try std.testing.expectEqual(@intFromEnum(Soil.stone), m.soil[mid]);
-    // …while a solid one takes it immediately.
     _ = m.paintSoil(0, 0, 40, .moss, 1);
     try std.testing.expectEqual(@intFromEnum(Soil.moss), m.soil[mid]);
-    // …AND SOLID OVER SOLID STILL TAKES IT.
     _ = m.paintSoil(0, 0, 40, .dirt, 1);
     try std.testing.expectEqual(@intFromEnum(Soil.dirt), m.soil[mid]);
     try std.testing.expectEqual(COV_FULL, m.soilCov[mid]);
@@ -1329,7 +1310,6 @@ test "the height field round-trips, and a FLAT map writes no height record at al
         var fbs = std.io.fixedBufferStream(&buf);
         try write(m, fbs.writer());
         try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "hgt:") == null);
-        // …and it loads back FLAT, not at the bottom of the encoding's range.
         var line: usize = 0;
         try parse(fbs.getWritten(), back, &line);
         try std.testing.expect(!back.anyHeight());
@@ -1360,7 +1340,6 @@ test "sculpt: the brush tapers, respects its radius, and cannot leave the encodi
     m.blank("Sculpt");
     var span: [4]usize = undefined;
 
-    // A single raise: full bite in the middle, LESS at the rim, nothing outside it.
     _ = m.sculpt(0, 0, 20, .raise, 6.0, &span);
     const mid = m.heightAt(0, 0);
     const edge = m.heightAt(17, 0);
@@ -1368,12 +1347,10 @@ test "sculpt: the brush tapers, respects its radius, and cannot leave the encodi
     try std.testing.expect(edge > 0.0 and edge < mid * 0.6);
     try std.testing.expectApproxEqAbs(@as(f32, 0), m.heightAt(40, 0), 1e-6); // outside: untouched
 
-    // SMOOTH pulls each point toward its neighbours, so a SPIKE comes down…
     _ = m.sculpt(60, 0, 3, .raise, 8.0, &span);
     const spike = m.heightAt(60, 0);
     _ = m.sculpt(60, 0, 7, .smooth, 1.0, &span);
     try std.testing.expect(m.heightAt(60, 0) < spike - 0.5);
-    // …and a PLATEAU is left where it is, because its neighbours are already at its own height.
     const plateau = m.heightAt(0, 0);
     _ = m.sculpt(0, 0, 20, .smooth, 1.0, &span);
     try std.testing.expectApproxEqAbs(plateau, m.heightAt(0, 0), HEIGHT_STEP);
@@ -1382,7 +1359,6 @@ test "sculpt: the brush tapers, respects its radius, and cannot leave the encodi
     while (f < 6) : (f += 1) _ = m.sculpt(0, 0, 20, .flatten, 1.0, &span);
     try std.testing.expectApproxEqAbs(m.heightAt(0, 0), m.heightAt(10, 0), 0.3);
 
-    // …and no amount of digging can leave the byte range.
     var i: usize = 0;
     while (i < 40) : (i += 1) _ = m.sculpt(0, 0, 20, .lower, 12.0, &span);
     try std.testing.expect(m.heightAt(0, 0) >= HEIGHT_MIN - 1e-4);
@@ -1408,7 +1384,6 @@ test "the height sampler is bilinear, edge-clamped, and its gradient points UPHI
     const step = 2 * m.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
     const x0 = -m.half + 10 * step;
     try std.testing.expectApproxEqAbs(@as(f32, 2.5), m.heightAt(x0, 0), 1e-3);
-    // …and half a cell along is half a step up.
     try std.testing.expectApproxEqAbs(@as(f32, 2.625), m.heightAt(x0 + step * 0.5, 0), 1e-3);
     // Off the grid entirely, the edge height CONTINUES rather than dropping to zero: an actor at the world's bound must not fall off a lip that only exists because the field ran out.
     try std.testing.expectApproxEqAbs(m.heightAt(-m.half, 0), m.heightAt(-m.half - 60, 0), 1e-4);
@@ -1438,7 +1413,6 @@ test "blank() produces a map its own loader accepts" {
 test "pathFor slugifies, and cannot escape the worlds directory" {
     var buf: [PATH_CAP]u8 = undefined;
     try std.testing.expectEqualStrings("worlds/the_fallen_plain.world", pathFor(&buf, "The Fallen Plain"));
-    // Separators and traversal collapse to underscores rather than reaching a parent directory.
     try std.testing.expectEqualStrings("worlds/etc_passwd.world", pathFor(&buf, "../../etc/passwd"));
     try std.testing.expectEqualStrings("worlds/a_b.world", pathFor(&buf, "  a   b  "));
     try std.testing.expectEqualStrings("worlds/untitled.world", pathFor(&buf, "///"));
@@ -1465,7 +1439,6 @@ test "a value that only LOOKS parseable is a load error too" {
     const cover = "version: 1\ncover: 3.3 0.7 1.4\n";
     try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=ture\n", &m, &ln));
     try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=yes\n", &m, &ln));
-    // …and `0`/`false` still mean off, so the writer's own output round-trips.
     try parse(cover ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=0\n", &m, &ln);
     try std.testing.expect(!m.ops[1].field);
     // NON-FINITE floats parse fine in std, then crash deep inside env with no file and no line.
@@ -1499,7 +1472,6 @@ test "each op gets its own stream, so editing one cannot re-roll another" {
     var rb = b.stream();
     const a0 = ra.float();
     _ = rb.float();
-    // Re-running `a` alone reproduces it exactly, whatever `b` has drawn in between.
     var ra2 = a.stream();
     try std.testing.expectEqual(a0, ra2.float());
 }
@@ -1511,7 +1483,6 @@ test "zones resolve first-match-wins with the last as fallback" {
     m.zones[1] = .{ .x = -200, .z = -200, .x1 = 200, .z1 = 200, .density = 0.80 };
     try std.testing.expectApproxEqAbs(@as(f32, 0.98), m.zoneAt(-100, 0).?.density, 1e-6);
     try std.testing.expectApproxEqAbs(@as(f32, 0.80), m.zoneAt(0, 0).?.density, 1e-6);
-    // Outside every rect still resolves — to the fallback, never to null.
     try std.testing.expectApproxEqAbs(@as(f32, 0.80), m.zoneAt(9999, 9999).?.density, 1e-6);
 }
 

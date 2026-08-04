@@ -11,9 +11,7 @@ pub const STONE = rgba(58, 55, 49, 255); // ruin masonry: ochre-grey mineral, no
 pub const STONE_LT = rgba(73, 70, 62, 255);
 pub const STONE_DK = rgba(38, 36, 32, 255);
 pub const STONE_MOSS = rgba(52, 58, 40, 255);
-// The packed core behind every facing.
 pub const MORTAR = rgba(36, 33, 29, 255);
-// MARBLE — dressed stone, against STONE's rubble masonry.
 pub const MARBLE = rgba(54, 54, 52, 255);
 pub const MARBLE_LT = rgba(70, 70, 68, 255); // capitals, abaci, an altar top
 pub const MARBLE_DK = rgba(34, 34, 34, 255); // in shade, or where the soot and rain got in
@@ -21,9 +19,7 @@ pub const MARBLE_DK = rgba(34, 34, 34, 255); // in shade, or where the soot and 
 pub const CLIFF_ROCK = rgba(47, 45, 42, 255);
 pub const CLIFF_DK = rgba(31, 30, 28, 255);
 pub const CLIFF_LT = rgba(62, 59, 55, 255);
-// For rock you stand NEXT to (boulders, field stones).
 pub const ROCK_DEEP = rgba(23, 22, 21, 255);
-// The city's old road surface.
 pub const PAVE = rgba(32, 31, 27, 255);
 pub const PAVE_DK = rgba(22, 21, 19, 255);
 pub const PAVE_LT = rgba(41, 40, 35, 255); // the crown of a sett, worn smooth by feet and cartwheels
@@ -31,7 +27,6 @@ pub const SOIL = rgba(28, 23, 17, 255); // the dirt showing through where the ro
 pub const BARK = rgba(36, 29, 22, 255);
 pub const BARK_DK = rgba(26, 21, 17, 255);
 pub const BARK_LIVE = rgba(44, 36, 27, 255); // a living trunk reads a touch warmer than a dead one
-// For BIG barrels only.
 pub const BARK_OLD = rgba(22, 17, 13, 255);
 pub const IRON = rgba(30, 28, 26, 255);
 pub const STEEL = rgba(100, 106, 116, 255);
@@ -41,7 +36,6 @@ pub const TIMBER_DK = rgba(33, 26, 18, 255);
 pub const SPRUCE = rgba(59, 46, 30, 255);
 pub const THATCH = rgba(74, 60, 30, 255);
 pub const THATCH_DK = rgba(52, 42, 22, 255);
-// Emissive (vertex alpha < 255 = self-lit): the grace ember, its wisp, and every flame.
 pub const EMBER = rgba(252, 184, 80, 14);
 pub const WISP = rgba(250, 196, 110, 120);
 // Eased DOWN across the board (owner: all flames a bit more subtle).
@@ -55,10 +49,8 @@ pub const SMOKE_COLD = rgba(52, 52, 55, 255);
 pub const CLOTH = rgba(76, 20, 12, 255); // faded war-banner crimson (matches the hero's cape)
 pub const CLOTH_DK = rgba(48, 14, 10, 255);
 pub const CLOTH_SUN = rgba(96, 46, 32, 255);
-// Undyed CANVAS for tarps and sacking.
 pub const CANVAS = rgba(42, 36, 28, 255);
 
-// Plant palette (pre-gamma dark)
 pub const GRASS_GOLD = rgba(96, 76, 34, 255);
 pub const GRASS_DRY = rgba(78, 64, 30, 255);
 pub const GRASS_GRN = rgba(50, 56, 28, 255);
@@ -68,7 +60,6 @@ pub const STEM = rgba(44, 54, 28, 255);
 pub const PETAL = rgba(210, 196, 152, 255);
 pub const SEED = rgba(118, 94, 46, 255);
 pub const PETAL_GLOW = rgba(242, 206, 118, 200); // slight emissive — kin to the grace ember
-// Canopy foliage: deep and unlit-looking in the mass, gold-touched where the sun catches it.
 pub const LEAF_DK = rgba(26, 34, 20, 255);
 pub const LEAF = rgba(36, 45, 24, 255);
 pub const LEAF_LT = rgba(52, 58, 28, 255);
@@ -79,7 +70,6 @@ pub const LEAF_DAMP = rgba(30, 44, 26, 255); // shade-grown: greener and cooler 
 pub const CLOVER_GRN = rgba(40, 54, 30, 255);
 pub const MOSS_SOFT = rgba(44, 56, 32, 255);
 pub const MOSS_DK = rgba(30, 40, 24, 255);
-// Dead fern, collapsed.
 pub const BRACKEN_BRN = rgba(50, 35, 19, 255);
 pub const NETTLE = rgba(34, 48, 26, 255);
 pub const PURPLE = rgba(72, 44, 76, 255); // thistle / foxglove / heather bloom
@@ -101,7 +91,6 @@ pub const RUST = rgba(58, 38, 24, 255);
 pub const ASH = rgba(78, 74, 70, 255);
 pub const ASH_LT = rgba(96, 92, 86, 255); // where it has been raked over, or a fresh drift
 pub const ASH_DK = rgba(46, 43, 40, 255); // wet, or trodden into the kerb
-// The tarn: dark peat-water in the middle, silted a little paler at the rim.
 pub const WATER_DEEP = rgba(13, 19, 21, 255);
 pub const WATER_MID = rgba(18, 25, 26, 255);
 pub const WATER_SHALLOW = rgba(30, 35, 31, 255);
@@ -125,13 +114,11 @@ pub const towerRing = blk: {
     break :blk out;
 };
 
-// Is masonry column `i` part of the doorway gap?
 pub fn towerDoorway(i: i32) bool {
     const half = @divTrunc(TOWER_DOOR, 2);
     return @mod(i + half, TOWER_SIDES) < TOWER_DOOR;
 }
 
-// The moves that separate a MODEL from a RUIN — courses, lichen, shed chips, a crack.
 
 // PACKED STONE HAS A CORE (owner's law).
 
@@ -159,14 +146,12 @@ pub fn courseInto(bb: *Builder, r: *mathx.Rng, ax: f32, az: f32, bx: f32, bz: f3
     const ux = dx / runLen;
     const uz = dz / runLen;
     const ch = spec.height / @as(f32, @floatFromInt(spec.courses));
-    // THE SUBSTRATE, course by course so it dodges the same opening the facing does.
     if (spec.core > 0.001) {
         var c: i32 = 0;
         while (c < spec.courses) : (c += 1) {
             const y0 = @as(f32, @floatFromInt(c)) * ch;
             const yc = y0 + ch * 0.5;
             const open = yc > spec.sillY and yc < spec.headY;
-            // Below/above the opening the core spans the whole run; through it, two flanks.
             const lo: f32 = if (open) spec.gapLo else runLen * 0.5;
             const hi: f32 = if (open) spec.gapHi else runLen * 0.5;
             const spans = [2][2]f32{ .{ -runLen * 0.5, @min(lo, runLen * 0.5) }, .{ @max(hi, -runLen * 0.5), runLen * 0.5 } };
@@ -232,7 +217,6 @@ pub fn courseStack(bb: *Builder, r: *mathx.Rng, cx: f32, y0: f32, cz: f32, w: f3
     return y;
 }
 
-/// Alternating corner QUOINS up an edge — long/short blocks tying two faces together.
 pub fn quoinsInto(bb: *Builder, r: *mathx.Rng, cx: f32, cz: f32, y0: f32, ch: f32, n: i32, big: f32, small: f32) void {
     bb.setMat(.stone);
     var i: i32 = 0;
@@ -248,7 +232,6 @@ pub fn quoinsInto(bb: *Builder, r: *mathx.Rng, cx: f32, cz: f32, y0: f32, ch: f3
     }
 }
 
-/// Lichen / moss over a surface.
 pub fn lichenInto(bb: *Builder, r: *mathx.Rng, c: rl.Vector3, ext: rl.Vector3, n: i32) void {
     bb.setMat(.plant);
     var i: i32 = 0;
@@ -264,7 +247,6 @@ pub fn lichenInto(bb: *Builder, r: *mathx.Rng, c: rl.Vector3, ext: rl.Vector3, n
     }
 }
 
-/// Stone SHED at the foot of something — chips, a broken corner, a drum shard.
 pub fn chipsInto(bb: *Builder, r: *mathx.Rng, cx: f32, cz: f32, spread: f32, lo: f32, hi: f32, n: i32) void {
     bb.setMat(.stone);
     var i: i32 = 0;
@@ -282,7 +264,6 @@ pub fn chipsInto(bb: *Builder, r: *mathx.Rng, cx: f32, cz: f32, spread: f32, lo:
     }
 }
 
-/// A fracture across a face: a thin dark sliver sunk into the stone.
 pub fn crackInto(bb: *Builder, a: rl.Vector3, dir: rl.Vector3, side: rl.Vector3, len: f32, w: f32, into: f32) void {
     bb.setMat(.stone);
     const nx = dir.y * side.z - dir.z * side.y;
@@ -298,13 +279,11 @@ pub fn crackInto(bb: *Builder, a: rl.Vector3, dir: rl.Vector3, side: rl.Vector3,
     );
 }
 
-// One flame: emissive TONGUES, not a cone.
 pub fn flameInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, s: f32) void {
     b.setMat(.flame);
     b.setAnimY(cy);
     b.addBlob(v3(cx, cy + 0.015 * s, cz), v3(0.175 * s, 0.045 * s, 0.175 * s), 3, 9, COAL);
     b.addBlob(v3(cx, cy + 0.055 * s, cz), v3(0.078 * s, 0.048 * s, 0.078 * s), 3, 8, FLAME_CORE);
-    // TONGUES: TAPERED SPIRES, not stacked blobs.
     var t: i32 = 0;
     while (t < 6) : (t += 1) {
         const a = rng.angle();
@@ -329,7 +308,6 @@ pub fn flameInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, s: f32
         );
         b.addCapsule(v3(mx, y0 + h * 0.52, mz), v3(tx, y0 + h, tz), w * 0.80, w * 0.26, 6, FLAME_TIP);
     }
-    // …and a few loose EMBERS drifting off the top.
     var i: i32 = 0;
     while (i < 4) : (i += 1) {
         const r = rng.range(0.010, 0.022) * s;
@@ -348,7 +326,6 @@ pub fn bladeColor(rng: *mathx.Rng) rl.Color {
     return GRASS_GRN;
 }
 
-// Grow one clump of blades (plus the odd seed stalk) around (cx, cz) into b.
 pub fn tuftInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, s: f32) void {
     const nb = 6 + rng.intn(3);
     var i: i32 = 0;
@@ -362,7 +339,6 @@ pub fn tuftInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, s: f32) void {
         blade(b, x, z, rng.range(0.26, 0.52) * s, mathx.cosf(la) * lean, mathx.sinf(la) * lean, 0.016 * s, bladeColor(rng));
     }
     if (rng.float() < 0.55) {
-        // a taller seed stalk rising out of the clump
         const la = rng.angle();
         const lean = rng.range(0.04, 0.12) * s;
         const h = rng.range(0.55, 0.8) * s;
@@ -392,11 +368,9 @@ pub const Frame = struct {
             self.o.z + self.w.z * ac + self.a.z * al + self.n.z * ou,
         );
     }
-    // A point on a circle of radius `r` lying IN the face plane, for the round features on it.
     pub fn ring(self: Frame, across: f32, along: f32, out: f32, r: f32, ang: f32) rl.Vector3 {
         return self.at(across + mathx.cosf(ang) * r, along + mathx.sinf(ang) * r, out);
     }
-    // Half-extent vectors for `addBox`, so a box in this frame scales with everything else.
     pub fn axis(self: Frame, across: f32, along: f32, out: f32) rl.Vector3 {
         const ac = across * self.s;
         const al = along * self.s;
@@ -422,14 +396,12 @@ pub fn plateInto(b: *Builder, fr: Frame, prof: []const [3]f32, face: rl.Color, s
         const d1 = prof[i + 1][2];
         b.quad(fr.at(-w0, t0, d0), fr.at(w0, t0, d0), fr.at(w1, t1, d1), fr.at(-w1, t1, d1), fr.n, face);
         b.quad(fr.at(-w0, t0, -d0), fr.at(-w1, t1, -d1), fr.at(w1, t1, -d1), fr.at(w0, t0, -d0), back, side);
-        // The rims.
         const out = mathx.normV(mathx.crossV(mathx.subV(fr.at(w1, t1, 0), fr.at(w0, t0, 0)), fr.n));
         b.quad(fr.at(w0, t0, -d0), fr.at(w1, t1, -d1), fr.at(w1, t1, d1), fr.at(w0, t0, d0), out, side);
         b.quad(fr.at(-w0, t0, -d0), fr.at(-w0, t0, d0), fr.at(-w1, t1, d1), fr.at(-w1, t1, -d1), v3(-out.x, -out.y, -out.z), side);
     }
 }
 
-/// A FLAT ROUND FACE lying ON a plate — the sound hole and its rosette.
 pub fn faceDiscInto(b: *Builder, fr: Frame, across: f32, along: f32, out: f32, r: f32, sides: i32, col: rl.Color) void {
     const c = fr.at(across, along, out);
     const sf: f32 = @floatFromInt(sides);
@@ -459,16 +431,13 @@ const GUITAR_BODY = [_][3]f32{
     .{ 0.520, 0.070, 0.042 }, // the heel the neck goes into
 };
 
-// (A `GUITAR_LEN` sat here offering the instrument's length "so a caller can seat it or prop it".
 pub fn guitarInto(b: *Builder, fr: Frame) void {
     b.setMat(.wood);
     plateInto(b, fr, &GUITAR_BODY, SPRUCE, TIMBER_DK);
     faceDiscInto(b, fr, 0, 0.330, 0.052, 0.070, 14, BONE);
     faceDiscInto(b, fr, 0, 0.330, 0.054, 0.055, 14, BARK_OLD);
-    // THE BRIDGE and its saddle, a quarter of the way up the lower bout — and both kept LOW.
     b.addBox(fr.at(0, 0.128, 0.062), fr.axis(0.058, 0, 0), fr.axis(0, 0.013, 0), fr.axis(0, 0, 0.007), BARK_OLD);
     b.addBox(fr.at(0, 0.132, 0.0715), fr.axis(0.050, 0, 0), fr.axis(0, 0.003, 0), fr.axis(0, 0, 0.0025), BONE);
-    // THE NECK, flush at the front with the soundboard, and its fretboard laid on top.
     b.addBox(fr.at(0, 0.690, 0.026), fr.axis(0.029, 0, 0), fr.axis(0, 0.175, 0), fr.axis(0, 0, 0.016), TIMBER_DK);
     b.addBox(fr.at(0, 0.700, 0.048), fr.axis(0.027, 0, 0), fr.axis(0, 0.165, 0), fr.axis(0, 0, 0.006), BARK_OLD);
     for ([_]f32{ 1, 3, 5, 7, 9 }) |semis| {
@@ -486,7 +455,6 @@ pub fn guitarInto(b: *Builder, fr: Frame) void {
         .s = fr.s,
     };
     b.addBox(hd.at(0, 0.072, 0), hd.axis(0.037, 0, 0), hd.axis(0, 0.072, 0), hd.axis(0, 0, 0.012), TIMBER_DK);
-    // …and its TUNERS, one per string, all down one side like a slotted head.
     b.setMat(.steel);
     for ([_]f32{ 0.030, 0.072, 0.114 }) |t| {
         b.addCapsule(hd.at(0.030, t, 0), hd.at(0.060, t, 0), 0.005, 0.005, 5, BRASS);
@@ -498,4 +466,3 @@ pub fn guitarInto(b: *Builder, fr: Frame) void {
     }
 }
 
-// A single golden grass clump.

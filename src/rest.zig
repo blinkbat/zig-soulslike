@@ -5,7 +5,6 @@ const sfx = @import("audio.zig");
 
 const v3 = mathx.v3;
 
-// Sit at the bonfire.
 
 /// How many bonfires one world may hold.
 pub const CAP: usize = 32;
@@ -49,7 +48,6 @@ pub const Rest = struct {
     justEntered: bool = false,
     justLeft: bool = false,
 
-    /// Rebuild from the world.
     pub fn reset(self: *Rest, sites: []const Site) void {
         self.n = 0;
         self.near = null;
@@ -87,7 +85,6 @@ pub const Rest = struct {
         };
     }
 
-    /// THE FIRE BED'S LEVEL.
     pub fn bedLevel(self: *const Rest) f32 {
         return switch (self.phase) {
             .in, .off => 0,
@@ -96,7 +93,6 @@ pub const Rest = struct {
         };
     }
 
-    /// Pick the bonfire in reach.
     pub fn look(self: *Rest, heroPos: rl.Vector3) void {
         if (self.phase != .off or self.fadeRunning()) {
             self.near = null;
@@ -136,7 +132,6 @@ pub const Rest = struct {
         self.t = 0;
     }
 
-    /// One frame.
     pub fn update(self: *Rest, dt: f32) void {
         self.justEntered = false;
         self.justLeft = false;
@@ -175,7 +170,6 @@ pub const Rest = struct {
     }
 };
 
-/// Every bonfire that was actually planted, in prop order
 pub fn siteFromProp(pos: rl.Vector3, yaw: f32) Site {
     return .{ .pos = pos, .yaw = yaw };
 }

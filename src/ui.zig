@@ -89,7 +89,6 @@ pub fn rect(x: i32, y: i32, w: i32, h: i32) rl.Rectangle {
     return .{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = @floatFromInt(w), .height = @floatFromInt(h) };
 }
 
-/// Attach a tooltip to any rectangle.
 pub fn tipFor(ctx: *Ctx, r: rl.Rectangle, text: [:0]const u8) void {
     if (rl.checkCollisionPointRec(ctx.mouse, r)) ctx.setTip(text);
 }
@@ -141,7 +140,6 @@ pub fn iconButtonW(label: [:0]const u8, size: i32) i32 {
     return ICON_PAD * 2 + size + ICON_GAP + hud.monoW(label, size);
 }
 
-/// Icon on the left, label after it.
 pub fn iconButton(ctx: *Ctx, r: rl.Rectangle, ic: Icon, label: [:0]const u8, size: i32, active: bool) bool {
     const h = ctx.hot(r);
     const face = if (active) ACTIVE_FILL else if (h) HOVER_FILL else IDLE_FILL;
@@ -156,7 +154,6 @@ pub fn iconButton(ctx: *Ctx, r: rl.Rectangle, ic: Icon, label: [:0]const u8, siz
     return h and ctx.pressed;
 }
 
-/// Icon ONLY, square, explaining itself on hover.
 pub fn iconOnly(ctx: *Ctx, r: rl.Rectangle, ic: Icon, active: bool, tip: [:0]const u8) bool {
     tipFor(ctx, r, tip);
     const h = ctx.hot(r);
@@ -194,7 +191,6 @@ pub fn disabled(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32) void
     hud.mono(label, tx, ty, size, alpha(LABEL, 90));
 }
 
-/// A button that explains itself on hover.
 pub fn buttonTip(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, active: bool, tp: [:0]const u8) bool {
     tipFor(ctx, r, tp);
     return button(ctx, r, label, size, active);
@@ -207,7 +203,6 @@ pub fn chip(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, active: bool, usedW:
     return button(ctx, rect(x, y, w, 24), label, hud.MONO, active);
 }
 
-// A [-] value [+] stepper row.
 fn stepper(comptime T: type, ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *T, step: T, lo: T, hi: T) bool {
     const clampfn = comptime if (T == f32) mathx.clampF else mathx.clampI;
     hud.mono(label, x, y + 4, hud.MONO, LABEL);
@@ -269,7 +264,6 @@ pub fn slider(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, l
     return false;
 }
 
-/// A tick box.
 pub fn checkbox(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, v: *bool) bool {
     const box = rect(x, y, 16, 16);
     const h = ctx.hot(box);
@@ -285,7 +279,6 @@ pub fn checkbox(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, v: *bool) bool {
     return false;
 }
 
-/// Single-line text field.
 pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, focused: bool) void {
     _ = ctx.hot(r);
     rl.drawRectangleRec(r, rgba(14, 12, 10, 245));

@@ -522,7 +522,6 @@ pub const Runes = struct {
         self.shown = minF(goal, self.shown + maxF((goal - self.shown) * RUNE_ROLL_RATE, RUNE_ROLL_FLOOR) * dt);
     }
 
-    /// What to print.
     pub fn display(self: *const Runes) u32 {
         return @intFromFloat(@floor(maxF(self.shown, 0)));
     }
@@ -569,7 +568,6 @@ test "NOBODY IS POISE-DAMAGED WHILE REELING, and poise is full again when the st
     }
     try std.testing.expectApproxEqAbs(poiseAt, v.poise, 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 90), v.hp, 1e-4);
-    // …and it lifts on its own, with poise full.
     v.poise = 1;
     while (v.stunned()) v.tick(1.0 / 60.0);
     try std.testing.expectApproxEqAbs(v.poiseMax, v.poise, 1e-5);
@@ -577,13 +575,11 @@ test "NOBODY IS POISE-DAMAGED WHILE REELING, and poise is full again when the st
 }
 
 test "the immunity is POISE only: a heavy landed inside a light stun still breaks stance" {
-    // The punish window has to survive the fix.
     var v = Vitals.initFoe(100, 10, 30);
     _ = v.hit(.{ .poise = 6 });
     try std.testing.expectEqual(HitResult.light, v.hit(.{ .poise = 6 }));
     try std.testing.expect(v.stunned());
     try std.testing.expectEqual(HitResult.heavy, v.hit(.{ .poise = 1, .stance = 20 }));
-    // …and the bigger reaction re-armed the window at the HEAVY length, not the light one.
     try std.testing.expectApproxEqAbs(FOE_HEAVY_STUN_DUR, v.stunLeft, 1e-5);
 }
 
@@ -598,7 +594,6 @@ test "the immunity window IS the reaction the rig poses, on both sides" {
     foeV.beginStun(.heavy);
     try std.testing.expectApproxEqAbs(HEAVY_STUN_DUR, hero.stunLeft, 1e-6);
     try std.testing.expectApproxEqAbs(FOE_HEAVY_STUN_DUR, foeV.stunLeft, 1e-6);
-    // …and `.none` disarms rather than leaving a window open behind a cleared reaction.
     hero.beginStun(.none);
     try std.testing.expect(!hero.stunned());
 }
@@ -637,7 +632,6 @@ test "lethal damage returns death and latches dead" {
 }
 
 test "a healer puts HP back, tops out, and CANNOT raise the dead" {
-    // The kobold priest's mechanic.
     var v = Vitals.initFoe(100, 20, 40);
     _ = v.hit(.{ .dmg = 60 });
     try std.testing.expectApproxEqAbs(@as(f32, 40), v.hp, 1e-4);
@@ -648,7 +642,6 @@ test "a healer puts HP back, tops out, and CANNOT raise the dead" {
     try std.testing.expectApproxEqAbs(v.hpMax, v.hp, 1e-4);
     try std.testing.expect(!v.needsHeal(1.0));
     try std.testing.expectApproxEqAbs(@as(f32, 0), v.heal(50), 1e-4); // nothing missing → nothing poured
-    // …and a corpse stays a corpse.
     var d = Vitals.initFoe(100, 20, 40);
     try std.testing.expectEqual(HitResult.death, d.hit(.{ .dmg = 200 }));
     try std.testing.expectApproxEqAbs(@as(f32, 0), d.heal(80), 1e-4);
@@ -683,7 +676,6 @@ test "a foe's chip damage PERSISTS far longer than the hero's" {
 }
 
 test "the punish window a foe gives you outlasts the one you give it" {
-    // A break must be worth causing — long enough to walk in on.
     try std.testing.expect(FOE_HEAVY_STUN_DUR > 2.0 * HEAVY_STUN_DUR);
     try std.testing.expect(FOE_LIGHT_STUN_DUR > LIGHT_STUN_DUR);
     try std.testing.expect(FOE_REGEN_DELAY > REGEN_DELAY and FOE_REGEN_RATE < 1.0);
@@ -708,7 +700,6 @@ test "an empty pool locks out rolling, attacking and sprinting" {
     try std.testing.expectApproxEqAbs(@as(f32, 0), s.cur, 1e-4);
     try std.testing.expect(!s.canAct()); // no roll, no swing…
     try std.testing.expect(!s.canSprint());
-    // …until the delay is out and something has come back.
     var t: f32 = 0;
     while (t < STAM_DELAY + 0.05) : (t += 1.0 / 60.0) s.tick(1.0 / 60.0, false, false);
     try std.testing.expect(s.canAct());
@@ -727,12 +718,10 @@ test "running the bar dry costs the sprint until it is back to half" {
     try std.testing.expect(s.canAct());
     try std.testing.expect(!s.canSprint());
     try std.testing.expectApproxEqAbs(STAM_WIND_CLEAR, s.windedTo(), 1e-6);
-    // …and it clears at the threshold, not one frame before it.
     while (s.cur < STAM_WIND_CLEAR * s.max) s.tick(1.0 / 60.0, false, false);
     try std.testing.expect(!s.winded);
     try std.testing.expect(s.canSprint());
     try std.testing.expectApproxEqAbs(@as(f32, 0), s.windedTo(), 1e-6);
-    // A RESPAWN is not winded, whatever the last life ended on.
     s.cur = 0;
     s.settleWind();
     try std.testing.expect(s.winded);
@@ -817,7 +806,6 @@ test "A FOE'S GUARD IS A SLOW POOL — its own size, and the winded latch holds 
     try std.testing.expect(s.winded);
     while (t < 20.0) : (t += 1.0 / 60.0) s.tick(1.0 / 60.0, false, false);
     try std.testing.expect(!s.winded); // …and it does come back, given the time
-    // The hero's own pool is untouched by any of this.
     var h = Stamina{};
     try std.testing.expectApproxEqAbs(@as(f32, 1), h.regenRate, 1e-6);
     h.spend(STAM_ROLL);
@@ -854,7 +842,6 @@ test "a drip tops out at max, cannot raise the dead, and REFRESHES rather than s
     r.start(30, 10.0);
     try std.testing.expectApproxEqAbs(@as(f32, 10), r.left, 1e-4);
     try std.testing.expectApproxEqAbs(@as(f32, 3), r.rate, 1e-4);
-    // …and dying ends it on the spot rather than digesting through the death anim.
     var d = Vitals.init(100, 20, 40);
     var dr = Regen{};
     dr.start(60, 20.0);
@@ -903,7 +890,6 @@ test "flasks: a drink spends exactly one charge, and an empty flask refuses" {
     while (i < FLASK_CRIMSON) : (i += 1) try std.testing.expect(f.take());
     try std.testing.expectEqual(@as(u8, 0), f.ready());
     try std.testing.expect(!f.take()); // dry — and it must SAY so rather than heal for free
-    // …and draining one leaves the other untouched: they are separate flasks, not one pool.
     f.cycle();
     try std.testing.expectEqual(FlaskKind.cerulean, f.sel);
     try std.testing.expectEqual(FLASK_CERULEAN, f.ready());
@@ -959,10 +945,8 @@ test "PHYSICAL IS WHAT WE ALREADY DEAL, and no resistance touches it" {
 test "a resistance takes its percentage off its OWN element and nothing else" {
     var v = Vitals.init(100, 20, 40);
     v.res = resists(.{ .fire = 50 });
-    // 20 physical + 40 fire at 50% = 20 + 20.
     _ = v.hit(.{ .dmg = 20, .elem = elems(.{ .fire = 40 }) });
     try std.testing.expectApproxEqAbs(@as(f32, 60), v.hp, 1e-4);
-    // …and the same blow's COLD half is unresisted, at full weight.
     try std.testing.expectApproxEqAbs(@as(f32, 40), v.damageFrom(.{ .elem = elems(.{ .cold = 40 }) }), 1e-4);
 }
 
@@ -978,7 +962,6 @@ test "75 IS THE CAP however much is stacked, and the raw number is still there t
 test "NEGATIVE RESISTANCE AMPLIFIES — that is what makes a fire arrow worth aiming" {
     const dry = resists(.{ .fire = -50 });
     try std.testing.expectApproxEqAbs(@as(f32, 150), dry.taken(.fire, 100), 1e-4);
-    // …and the floor is exactly double, not unbounded.
     try std.testing.expectApproxEqAbs(@as(f32, 200), resists(.{ .fire = -900 }).taken(.fire, 100), 1e-4);
     try std.testing.expectApproxEqAbs(RES_FLOOR, resists(.{ .fire = -900 }).at(.fire), 1e-4);
 }
@@ -992,7 +975,6 @@ test "the SAME blow costs two creatures different HP, by their resistances alone
     try std.testing.expectApproxEqAbs(@as(f32, 50), tinder.hp, 1e-4); // 20 + 30
     try std.testing.expectApproxEqAbs(@as(f32, 70), damp.hp, 1e-4); // 20 + 10
     try std.testing.expect(tinder.hp < damp.hp);
-    // The blow itself is one number either way — the difference is entirely in the body it lands on.
     try std.testing.expectApproxEqAbs(@as(f32, 40), arrow.raw(), 1e-4);
 }
 
@@ -1014,7 +996,6 @@ test "the shield eats the WHOLE blow, and the chip meets the resistances on its 
     // …and NOTHING of the stagger: a caught blow is paid for in stamina, never in poise.
     try std.testing.expectApproxEqAbs(@as(f32, 0), chip.poise, 1e-6);
     try std.testing.expectApproxEqAbs(@as(f32, 0), chip.stance, 1e-6);
-    // …and a fire-proof blocker takes less of that chip than a bare one, because it is still a typed hit.
     var proof = Vitals.init(100, 20, 40).withRes(resists(.{ .fire = RES_CAP }));
     var bare = Vitals.init(100, 20, 40);
     _ = proof.hit(chip);
@@ -1047,7 +1028,6 @@ test "the quiver holds two kinds, and the SELECTED one is the one that flies" {
     try std.testing.expectEqual(ARROWS_MAX, q.count(.plain));
     q.cycle();
     try std.testing.expect(q.take()); // …and the plain ones were there all along
-    // Both cap, neither wraps, and a rest fills both.
     q.add(.fire, 200);
     q.add(.plain, 200);
     try std.testing.expectEqual(FIRE_ARROWS_MAX, q.count(.fire));

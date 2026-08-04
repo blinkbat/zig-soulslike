@@ -4,45 +4,35 @@ const mathx = @import("mathx.zig");
 
 
 pub const Icon = enum {
-    // layers
     ground,
     cover,
     decor,
     props,
     interact,
     units,
-    // modes + edits
     select,
     erase,
-    // cover brushes
     zone,
     clearing,
-    // decor brushes
     scatter,
     patch,
     single,
-    // prop brushes
     stamp,
     row,
     ring,
     cluster,
     ivy,
-    // unit brushes
     toad,
     archer,
     ogre,
-    // …and the kobold warband.
     berserker,
     priest,
     slinger,
-    // …and the brood.
     brood_mother,
     broodling,
     brood_sac,
-    // …and the skeletal warriors.
     shieldman,
     greatsword,
-    // files
     new,
     open,
     save,
@@ -58,14 +48,12 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
     const w = @max(1.4, s / 11.0); // ONE stroke weight for the whole set, scaled off the box
     const d = dim(col);
     switch (ic) {
-        // Ground: strata.
         .ground => {
             hline(cx, cy - s * 0.22, s * 0.72, w, col);
             hline(cx - s * 0.12, cy, s * 0.48, w, col);
             hline(cx + s * 0.22, cy, s * 0.20, w, d);
             hline(cx, cy + s * 0.22, s * 0.72, w, col);
         },
-        // Cover: the flora carpet — a bounded field with growth loose inside it.
         .cover => {
             box(cx, cy, s * 0.78, s * 0.62, w, d);
             var i: i32 = -1;
@@ -75,7 +63,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
                 dot(x, cy - s * 0.06, w * 1.1, col);
             }
         },
-        // Decor: a fern sprig.
         .decor => {
             line(cx + s * 0.10, cy + s * 0.40, cx - s * 0.04, cy - s * 0.34, w, col); // a leaning stem
             var i: i32 = 0;
@@ -89,7 +76,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             }
             dot(cx - s * 0.04, cy - s * 0.34, w * 0.9, col); // the curled tip
         },
-        // Props: a column — a WIDE capital and base with a narrow shaft between them.
         .props => {
             hline(cx, cy - s * 0.34, s * 0.74, w * 1.3, col); // the abacus, proud of everything
             hline(cx, cy - s * 0.25, s * 0.52, w, col);
@@ -98,21 +84,18 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             hline(cx, cy + s * 0.28, s * 0.52, w, col);
             hline(cx, cy + s * 0.38, s * 0.74, w * 1.3, col);
         },
-        // Interactables: a chest.
         .interact => {
             box(cx, cy + s * 0.15, s * 0.72, s * 0.42, w, col); // the carcase
             arc(cx, cy - s * 0.06, s * 0.36, 180, 360, w, col);
             hline(cx, cy - s * 0.06, s * 0.72, w, col);
             dot(cx, cy + s * 0.06, w * 1.2, col); // the hasp, over the joint
         },
-        // Units: a figure.
         .units => {
             ring2(cx, cy - s * 0.20, s * 0.16, w, col);
             arc(cx, cy + s * 0.36, s * 0.30, 180, 360, w, col);
             vline(cx, cy + s * 0.14, s * 0.20, w, col);
         },
 
-        // Select: a pointer.
         .select => {
             const p = [_]rl.Vector2{
                 .{ .x = cx - s * 0.20, .y = cy - s * 0.36 },
@@ -127,7 +110,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             while (i + 1 < p.len) : (i += 1) rl.drawLineEx(p[i], p[i + 1], w, col);
             rl.drawLineEx(p[p.len - 1], p[0], w, col);
         },
-        // Erase: an eraser held at an angle, its working end shaded.
         .erase => {
             const a = rl.Vector2{ .x = cx - s * 0.30, .y = cy + s * 0.26 };
             const b = rl.Vector2{ .x = cx + s * 0.18, .y = cy - s * 0.30 };
@@ -162,7 +144,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             vline(cx, cy, s * 0.66, w * 0.8, d);
         },
         .stamp => {
-            // A thing coming DOWN onto a surface.
             vline(cx, cy - s * 0.16, s * 0.34, w, col);
             const tip = rl.Vector2{ .x = cx, .y = cy + s * 0.16 };
             rl.drawTriangle(
@@ -251,7 +232,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             arc(cx, cy + s * 0.10, s * 0.26, 180, 360, w, col); // the carapace
             hline(cx, cy + s * 0.10, s * 0.48, w, col);
             for ([_]f32{ -1, 1 }) |side| {
-                // three legs a side, high-kneed
                 for ([_]f32{ -0.16, 0.02, 0.20 }) |dy| {
                     line(cx + side * s * 0.20, cy + s * (0.06 + dy * 0.5), cx + side * s * 0.40, cy - s * 0.16 + s * dy, w * 0.7, col);
                     line(cx + side * s * 0.40, cy - s * 0.16 + s * dy, cx + side * s * 0.46, cy + s * 0.30, w * 0.7, col);
@@ -305,7 +285,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             page(cx, cy, s, w, col);
         },
         .open => {
-            // A folder opening: back panel, then a front flap kicked out at an angle.
             box(cx, cy - s * 0.02, s * 0.66, s * 0.44, w, d);
             hline(cx - s * 0.16, cy - s * 0.30, s * 0.32, w, col);
             rl.drawLineEx(.{ .x = cx - s * 0.33, .y = cy + s * 0.20 }, .{ .x = cx - s * 0.20, .y = cy + s * 0.36 }, w, col);
@@ -317,7 +296,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
         },
         .saveas => {
             disk(cx - s * 0.06, cy + s * 0.04, s * 0.86, w, col, d);
-            // …plus a nib, for "under a new name".
             rl.drawLineEx(.{ .x = cx + s * 0.10, .y = cy - s * 0.12 }, .{ .x = cx + s * 0.40, .y = cy - s * 0.42 }, w * 1.4, col);
             dot(cx + s * 0.42, cy - s * 0.44, w * 1.1, col);
         },
@@ -339,7 +317,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
     }
 }
 
-// Deliberately tiny.
 
 fn dim(c: rl.Color) rl.Color {
     return rl.Color.init(c.r, c.g, c.b, @intCast(@as(u16, c.a) * 42 / 100));
@@ -360,7 +337,6 @@ fn dot(cx: f32, cy: f32, r: f32, c: rl.Color) void {
 fn box(cx: f32, cy: f32, bw: f32, bh: f32, w: f32, c: rl.Color) void {
     rl.drawRectangleLinesEx(.{ .x = cx - bw * 0.5, .y = cy - bh * 0.5, .width = bw, .height = bh }, w, c);
 }
-/// An outline circle.
 fn ring2(cx: f32, cy: f32, r: f32, w: f32, c: rl.Color) void {
     arc(cx, cy, r, 0, 360, w, c);
 }

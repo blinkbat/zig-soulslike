@@ -71,7 +71,6 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
     const bend = v3(rng.range(0.08, 0.24), 0, rng.signed() * 0.14);
     const j1 = v3(bend.x, 1.70, bend.z);
     const j2 = v3(bend.x * 2.8, 3.05, bend.z * 2.4);
-    // A point ON the bole: the taper and the BEND both.
     const onBole = struct {
         fn go(bd: rl.Vector3, y: f32, a: f32, sink: f32) rl.Vector3 {
             const rr = (0.26 - 0.056 * y) * (1.0 - sink);
@@ -103,7 +102,6 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.45) BARK_DK else if (rng.float() < 0.7) TIMBER else BARK_OLD,
         );
     }
-    // A SPLIT up the heartwood, and the hollow where a limb rotted out of it.
     crackInto(&b, v3(mathx.cosf(1.9) * 0.22, 0.30, mathx.sinf(1.9) * 0.22), v3(0.06, 0.99, 0.02), v3(-mathx.sinf(1.9), 0, mathx.cosf(1.9)), rng.range(0.9, 1.5), 0.026, 0.05);
     b.setMat(.bark);
     b.addBlob(v3(bend.x * 0.7 + 0.20, 1.25, bend.z * 0.7 - 0.06), v3(0.09, 0.14, 0.09), 3, 6, IRON); // the rot hollow, dark
@@ -119,7 +117,6 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
         const boleR = if (low) mathx.lerpF(0.165, 0.095, u) else mathx.lerpF(0.095, 0.035, u);
         deadLimbInto(&b, &rng, root, a, rng.range(0.9, 1.7) * (if (low) @as(f32, 1.0) else 0.72), rng.range(0.45, 1.0), boleR * rng.range(0.5, 0.78), 1 + rng.intn(2));
     }
-    // ROOT FLARE: five roots splaying onto the ground, one LIFTED where the earth gave under it.
     var r: i32 = 0;
     while (r < 5) : (r += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(r)) / 5.0 + rng.signed() * 0.35;
@@ -139,7 +136,6 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A GRAVE CLUSTER — a family plot the wood took back.
 
 pub fn stumpMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
@@ -209,7 +205,6 @@ pub fn logMesh(shader: rl.Shader) rl.Model {
         const a = rng.angle();
         b.addCapsule(v3(x, 0.34, 0), v3(x + rng.signed() * 0.35, 0.34 + @abs(mathx.sinf(a)) * 0.45, mathx.cosf(a) * 0.62), 0.075, 0.02, 5, BARK_DK);
     }
-    // The root plate: a torn disc of roots and clung earth standing up at the butt end.
     var r: i32 = 0;
     while (r < 5) : (r += 1) {
         const a = rng.angle();
@@ -223,7 +218,6 @@ pub fn logMesh(shader: rl.Shader) rl.Model {
 }
 
 
-// One great tree's proportions.
 pub const TreeSpec = struct {
     seed: u64,
     trunk: f32, // height of the fork — the shorter this is, the more the canopy sits ON the tree
@@ -254,12 +248,9 @@ pub fn canopyInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, rx: f
         const py = cy + yt * ry * (1.0 - 0.45 * t);
         const size = rx * rng.range(0.34, 0.56) * (1.0 - 0.20 * t);
         const col = if (yt > 0.35 and rng.float() < gold) LEAF_GOLD else if (yt > 0.0) (if (rng.float() < 0.4) LEAF_LT else LEAF) else if (rng.float() < 0.55) LEAF_DK else LEAF;
-        // The biggest lobes are the ones a hero walks under — they get the segments; small filler stays cheap.
         const big = size > 1.0;
         b.addBlob(v3(px, py, pz), v3(size, size * rng.range(0.62, 0.92), size * rng.range(0.82, 1.18)), if (big) 6 else 5, if (big) 9 else 7, col);
     }
-    // The FRINGE: small leaf-cluster lobes riding the outer shell, radially squashed — what breaks
-    // the gumdrop silhouette into foliage. Crown catches light, the underside hangs dark.
     var f: i32 = 0;
     const nf = @divTrunc(n * 4, 5);
     while (f < nf) : (f += 1) {
@@ -289,21 +280,18 @@ pub fn bigTreeMesh(shader: rl.Shader, spec: TreeSpec) rl.Model {
     b.setMat(.bark);
     const leanX = rng.signed() * 0.55;
     const leanZ = rng.signed() * 0.45;
-    // Buttress roots: fat capsules splaying from the trunk foot out onto the ground.
     var r: i32 = 0;
     while (r < 7) : (r += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(r)) / 7.0 + rng.signed() * 0.3;
         const d = rng.range(1.1, 1.9);
         b.addCapsule(v3(0, 0.85, 0), v3(mathx.cosf(a) * d, 0.04, mathx.sinf(a) * d), rng.range(0.20, 0.34), rng.range(0.06, 0.12), 6, BARK);
     }
-    // Trunk in three lengths, narrowing and drifting off vertical.
     const t1 = v3(leanX * 0.3, spec.trunk * 0.42, leanZ * 0.3);
     const t2 = v3(leanX * 0.7, spec.trunk * 0.78, leanZ * 0.7);
     const fork = v3(leanX, spec.trunk, leanZ);
     b.addCapsule(v3(0, 0.0, 0), t1, 0.95, 0.80, 9, BARK_OLD);
     b.addCapsule(t1, t2, 0.80, 0.62, 9, BARK_OLD);
     b.addCapsule(t2, fork, 0.62, 0.48, 8, BARK);
-    // Bark RIDGES: slim darker capsules running up the barrel.
     var rb: i32 = 0;
     while (rb < 9) : (rb += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(rb)) / 9.0 + rng.signed() * 0.2;
@@ -319,7 +307,6 @@ pub fn bigTreeMesh(shader: rl.Shader, spec: TreeSpec) rl.Model {
             if (rng.float() < 0.5) BARK_DK else BARK_OLD,
         );
     }
-    // Boughs: six reaching out from the fork zone at wide, uneven bearings.
     const NB = 6;
     var tips: [NB]rl.Vector3 = undefined;
     var i: i32 = 0;
@@ -332,7 +319,6 @@ pub fn bigTreeMesh(shader: rl.Shader, spec: TreeSpec) rl.Model {
         const tip = v3(base.x + mathx.cosf(a) * out, base.y + up, base.z + mathx.sinf(a) * out);
         b.addCapsule(base, mid, 0.34, 0.24, 7, BARK);
         b.addCapsule(mid, tip, 0.24, 0.11, 6, BARK_LIVE);
-        // Twiggy sub-branches off each bough, so the canopy has something inside it.
         var s: i32 = 0;
         while (s < 3) : (s += 1) {
             const sa = a + rng.signed() * 1.1;
@@ -341,15 +327,12 @@ pub fn bigTreeMesh(shader: rl.Shader, spec: TreeSpec) rl.Model {
         }
         tips[@intCast(i)] = tip;
     }
-    // One dead bough, bare and clawing.
     const da = rng.angle();
     b.addCapsule(t2, v3(t2.x + mathx.cosf(da) * 3.4 * spec.spread, t2.y + 0.9, t2.z + mathx.sinf(da) * 3.4), 0.26, 0.05, 6, BARK_DK);
 
-    // THE CANOPY, in three layers so the silhouette is lumpy from every side
     b.setMat(.plant);
     const crownY = spec.trunk + 2.5 * spec.lift + 1.5;
     const crownR = 3.7 * spec.spread;
-    // 1. foliage CLOTHING each bough — this is what removes the bare-trunk/plate-on-top read
     i = 0;
     while (i < NB) : (i += 1) {
         const tip = tips[@intCast(i)];
@@ -357,9 +340,7 @@ pub fn bigTreeMesh(shader: rl.Shader, spec: TreeSpec) rl.Model {
         canopyInto(&b, &rng, tip.x, tip.y + 0.5, tip.z, 1.7 * spec.spread, 1.1, spec.gold, 5);
         canopyInto(&b, &rng, mid.x, mid.y, mid.z, 1.35 * spec.spread, 0.95, spec.gold * 0.5, 3);
     }
-    // 2. the main mass over the whole crown
     canopyInto(&b, &rng, leanX * 1.1, crownY, leanZ * 1.1, crownR, 1.9, spec.gold, 16);
-    // 3. a gold-touched top, where the sun actually lands
     canopyInto(&b, &rng, leanX * 1.2, crownY + 1.5, leanZ * 1.2, crownR * 0.55, 0.9, 0.85, 5);
     var g: i32 = 0;
     while (g < 4) : (g += 1) {
@@ -382,7 +363,6 @@ pub fn willowMesh(shader: rl.Shader) rl.Model {
     const crown = v3(rng.signed() * 0.35, 3.4, rng.signed() * 0.3);
     b.addCapsule(v3(0, 0, 0), v3(crown.x * 0.5, 1.8, crown.z * 0.5), 0.70, 0.52, 8, BARK_OLD);
     b.addCapsule(v3(crown.x * 0.5, 1.8, crown.z * 0.5), crown, 0.52, 0.34, 7, BARK);
-    // Six boughs up-and-over, each ending well out and DOWN — the willow's whole read.
     const NB = 6;
     var i: i32 = 0;
     while (i < NB) : (i += 1) {
@@ -392,7 +372,6 @@ pub fn willowMesh(shader: rl.Shader) rl.Model {
         const fallTo = v3(crown.x + mathx.cosf(a) * out, rng.range(0.9, 2.1), crown.z + mathx.sinf(a) * out);
         b.addCapsule(crown, top, 0.28, 0.18, 6, BARK);
         b.addCapsule(top, fallTo, 0.18, 0.07, 5, BARK_LIVE);
-        // The curtain: narrow foliage masses strung DOWN the fall, plus a few whips below it.
         b.setMat(.plant);
         var c: i32 = 0;
         while (c < 4) : (c += 1) {
@@ -427,7 +406,6 @@ pub fn willowMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A CONIFER: a dark spire.
 pub fn coniferMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7101);
@@ -440,9 +418,7 @@ pub fn coniferMesh(shader: rl.Shader) rl.Model {
         const a = std.math.tau * @as(f32, @floatFromInt(r)) / 5.0;
         b.addCapsule(v3(0, 0.5, 0), v3(mathx.cosf(a) * 0.85, 0.03, mathx.sinf(a) * 0.85), 0.13, 0.05, 5, BARK);
     }
-    // Whorls: each one a ring of fans, narrowing with height.
     b.setMat(.plant);
-    // MANY whorls, closely spaced, and each fan wide enough to reach the one above it.
     const whorls: i32 = 22;
     var w: i32 = 0;
     while (w < whorls) : (w += 1) {
@@ -458,7 +434,6 @@ pub fn coniferMesh(shader: rl.Shader) rl.Model {
             b.setMat(.bark);
             b.addCapsule(v3(0, y, 0), v3(px, y - reach * 0.22, pz), 0.055, 0.02, 4, BARK_DK);
             b.setMat(.plant);
-            // Two masses per fan, the outer one lower — a drooping bough of needles.
             b.addBlob(v3(px * 0.55, y - reach * 0.08, pz * 0.55), v3(reach * 0.42, reach * 0.22, reach * 0.42), 3, 6, if (rng.float() < 0.28) NEEDLE_LT else NEEDLE);
             b.addBlob(v3(px * 0.92, y - reach * 0.20, pz * 0.92), v3(reach * 0.32, reach * 0.17, reach * 0.32), 3, 6, NEEDLE);
         }
@@ -472,7 +447,6 @@ pub fn coniferMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A BIRCH: a slender PALE trunk with dark scars, and a light open crown.
 pub fn birchMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7102);
@@ -491,7 +465,6 @@ pub fn birchMesh(shader: rl.Shader) rl.Model {
         const rr = 0.30 - 0.13 * t;
         b.addBlob(v3(lean * t * 0.55 + mathx.cosf(a) * rr * 0.85, yy, mathx.sinf(a) * rr * 0.85), v3(rr * rng.range(0.25, 0.6), rng.range(0.025, 0.06), rr * rng.range(0.25, 0.6)), 3, 5, BIRCH_SCAR);
     }
-    // Branches: fine, ascending, and few — a birch crown is airy, you see sky through it.
     b.setMat(.plant);
     const NB = 7;
     var i: i32 = 0;
@@ -522,7 +495,6 @@ pub fn birchMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A SNAG: a tall dead trunk stripped of bark and branches, snapped off jagged at the top.
 pub fn snagMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7103);
@@ -539,7 +511,6 @@ pub fn snagMesh(shader: rl.Shader) rl.Model {
             return v3(ax + mathx.cosf(a) * rr, y, ax * 0.6 + mathx.sinf(a) * rr);
         }
     }.go;
-    // GRAIN RIDGES up the trunk, mostly buried.
     var rb: i32 = 0;
     while (rb < 8) : (rb += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(rb)) / 8.0 + rng.signed() * 0.22;
@@ -551,7 +522,6 @@ pub fn snagMesh(shader: rl.Shader) rl.Model {
             rng.range(0.05, 0.085),
             rng.range(0.03, 0.06),
             5,
-            // Bare dead wood: shade grooves, and a couple of ribs the weather has silvered.
             if (rng.float() < 0.72) BARK_DK else TIMBER,
         );
     }
@@ -593,7 +563,6 @@ pub fn snagMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// A SAPLING: a young tree, a couple of whippy stems and a thin crown.
 pub fn saplingMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7104);
@@ -610,7 +579,6 @@ pub fn saplingMesh(shader: rl.Shader) rl.Model {
         const tipX = x0 + rng.signed() * 0.30;
         const tipZ = z0 + rng.signed() * 0.30;
         b.addCapsule(v3(x0, 0, z0), v3(tipX, h, tipZ), 0.075, 0.028, 6, BARK);
-        // Side twigs, and a small crown of leaf masses on top.
         var tw: i32 = 0;
         while (tw < 4) : (tw += 1) {
             const t = rng.range(0.35, 0.95);
@@ -620,7 +588,6 @@ pub fn saplingMesh(shader: rl.Shader) rl.Model {
             const bz = z0 + (tipZ - z0) * t;
             b.addCapsule(v3(bx, h * t, bz), v3(bx + mathx.cosf(ta) * tl, h * t + rng.range(0.15, 0.45), bz + mathx.sinf(ta) * tl), 0.028, 0.010, 4, BARK_DK);
         }
-        // The crown starts LOW on the stem and is made of many small masses.
         b.setMat(.plant);
         var c: i32 = 0;
         while (c < 16) : (c += 1) {

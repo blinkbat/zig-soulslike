@@ -39,6 +39,9 @@ pub const Icon = enum {
     brood_mother,
     broodling,
     brood_sac,
+    // …and the skeletal warriors.
+    shieldman,
+    greatsword,
     // files
     new,
     open,
@@ -277,6 +280,25 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             dot(cx - s * 0.01, cy + s * 0.16, w * 1.3, col);
             line(cx - s * 0.30, cy + s * 0.26, cx - s * 0.42, cy - s * 0.06, w * 0.6, d);
             line(cx + s * 0.30, cy + s * 0.26, cx + s * 0.42, cy - s * 0.06, w * 0.6, d);
+        },
+
+        .shieldman => {
+            // The kite shield IS the character; the mace is behind it, which is where it lives.
+            line(cx + s * 0.12, cy - s * 0.36, cx + s * 0.36, cy + s * 0.10, w * 0.8, d);
+            dot(cx + s * 0.12, cy - s * 0.36, w * 2.1, d);
+            arc(cx - s * 0.06, cy - s * 0.12, s * 0.24, 180, 360, w, col); // the domed shoulders…
+            line(cx - s * 0.30, cy - s * 0.12, cx - s * 0.06, cy + s * 0.42, w, col); // …down to the point
+            line(cx + s * 0.18, cy - s * 0.12, cx - s * 0.06, cy + s * 0.42, w, col);
+            dot(cx - s * 0.06, cy - s * 0.02, w * 1.6, col); // the boss
+        },
+        .greatsword => {
+            // Point UP, and the length of it is the whole read — a long blade over a two-handed grip.
+            vline(cx, cy - s * 0.06, s * 0.62, w, col);
+            line(cx, cy - s * 0.44, cx - s * 0.09, cy - s * 0.26, w * 0.8, col); // the point
+            line(cx, cy - s * 0.44, cx + s * 0.09, cy - s * 0.26, w * 0.8, col);
+            hline(cx, cy + s * 0.20, s * 0.56, w, col); // a crossguard nothing else in the set has
+            vline(cx, cy + s * 0.32, s * 0.20, w * 1.6, d); // the grip, long enough for both hands
+            dot(cx, cy + s * 0.43, w * 1.5, col); // and the pommel
         },
 
         .new => {

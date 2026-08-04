@@ -180,7 +180,9 @@ pub fn siteFromProp(pos: rl.Vector3, yaw: f32) Site {
     return .{ .pos = pos, .yaw = yaw };
 }
 
-/// The kind a rest site is.
+/// THE KINDS YOU CAN SIT AT. The bonfire camp, and the lit campfire — a camp you can pitch anywhere,
+/// and it is a FULL grace (owner's call): the same restore and the same world reload, because the one
+/// thing worse than a second rest kind is a second rest kind with its own half-rules.
 pub fn isRestKind(k: props.Kind) bool {
-    return k == .grace;
+    return k == .grace or k == .campfire_lit;
 }

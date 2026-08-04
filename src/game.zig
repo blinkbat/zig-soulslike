@@ -19,6 +19,7 @@ const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
 const koboldmod = @import("kobold.zig"); // THE WARBAND — three roles in one group (the priest heals)
 const broodmod = @import("brood.zig"); // THE BROOD — a mother, her sacs and what comes out of them
+const warriormod = @import("warrior.zig"); // THE SKELETAL WARRIORS — the archer's bones, armed two ways
 const chestmod = @import("chest.zig"); // the openable boxes
 const restmod = @import("rest.zig"); // sitting at a bonfire
 const item = @import("item.zig");
@@ -125,6 +126,7 @@ pub const Game = struct {
     grief: ogremod.Grief, // the lone one-eyed ogre, deep in the ruins
     band: koboldmod.Warband, // the kobold warband — berserkers, priests and slingers, mixed
     brood: broodmod.Brood, // the brood mothers, their egg sacs, their hatchlings and their acid
+    muster: warriormod.Muster, // the skeletal warriors — shieldmen and greatswords, mixed
     chests: chestmod.Chests, // the openable boxes — props with a lid and a state (chest.zig)
     rest: restmod.Rest = .{}, // sitting at a bonfire: the state machine and the fade (rest.zig)
     /// The player's own retro stack, parked while a rest borrows the screen for its VHS look.
@@ -171,6 +173,7 @@ pub const Game = struct {
         g.grief = ogremod.Grief.init(g.scene.shader);
         g.band = koboldmod.Warband.init(g.scene.shader);
         g.brood = broodmod.Brood.init(g.scene.shader);
+        g.muster = warriormod.Muster.init(g.scene.shader);
         g.chests = chestmod.Chests.init(g.scene.shader);
         rehomeFoes(g);
         g.rest = .{};
@@ -201,6 +204,7 @@ const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "grief", .kind = .ogre },
     .{ .field = "band", .kind = null },
     .{ .field = "brood", .kind = null },
+    .{ .field = "muster", .kind = null },
 };
 
 fn rehomeFoes(g: *Game) void {
@@ -1440,6 +1444,10 @@ pub fn run(mode: Mode) void {
         if (g.band.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnClump)) |b| {
             _ = heroTakes(g, b, b.hit.poise >= koboldmod.ZERK_HIT.poise, true);
         }
+        // The skeletal warriors. Only the greatsword's diagonal carries stance, so that is the split.
+        if (g.muster.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.stance > 0, true);
+        }
         const hatchesBefore = g.brood.hatches;
         const burstsBefore = g.brood.bursts;
         if (g.brood.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnVenom)) |b| {
@@ -1727,6 +1735,7 @@ fn collideActors(g: *Game, dt: f32) void {
     settleGroup(g, g.grief.live(), .{}, step, false);
     settleGroup(g, g.band.live(), .{}, step, true);
     settleGroup(g, g.brood.live(), .{}, step, true);
+    settleGroup(g, g.muster.live(), .{g.line.live()}, step, true);
 }
 
 fn settleGroup(g: *Game, foes: anytype, others: anytype, step: f32, toHero: bool) void {
@@ -1766,10 +1775,15 @@ fn bandIdx(r: FoeRef) ?usize {
 fn broodIdx(r: FoeRef) ?usize {
     return if (broodmod.roleOf(r.kind) != null) r.idx else null;
 }
+/// …and the MUSTER: shieldman and greatsword both index `g.muster.band`.
+fn musterIdx(r: FoeRef) ?usize {
+    return if (warriormod.roleOf(r.kind) != null) r.idx else null;
+}
 /// ASK ONE QUESTION OF WHATEVER A `FoeRef` POINTS AT.
 fn askFoe(comptime T: type, g: *const Game, r: FoeRef, comptime ask: anytype) T {
     if (bandIdx(r)) |i| return ask(&g.band.band[i]);
     if (broodIdx(r)) |i| return ask(&g.brood.band[i]);
+    if (musterIdx(r)) |i| return ask(&g.muster.band[i]);
     if (r.kind == .brood_sac) return ask(&g.brood.sacs[r.idx]);
     return switch (r.kind) {
         .toad => ask(&g.warren.frogs[r.idx]),
@@ -1777,6 +1791,7 @@ fn askFoe(comptime T: type, g: *const Game, r: FoeRef, comptime ask: anytype) T 
         .ogre => ask(&g.grief.ogres[r.idx]),
         .berserker, .priest, .slinger => unreachable, // handled above
         .brood_mother, .broodling, .brood_sac => unreachable,
+        .shieldman, .greatsword => unreachable,
     };
 }
 fn foePos(g: *const Game, r: FoeRef) rl.Vector3 {

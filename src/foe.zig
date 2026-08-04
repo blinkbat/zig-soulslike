@@ -12,6 +12,11 @@ pub const FLASH_DUR: f32 = 0.20; // seconds a struck foe pops on the shared gfx 
 pub const FLASH_GAIN: f32 = 0.85;
 pub const HERO_R: f32 = 0.36;
 pub const HERO_REACH: f32 = 0.55;
+/// THE COLUMN A HERO STANDS IN, off his own feet. A swung weapon has to CROSS it, so a blow that went
+/// over his skull or into the dirt at his boots is a miss. Written out rather than derived off `hero.H`
+/// because foe.zig sits BELOW hero.zig in the import graph (hero → archer → foe) and it stays there.
+pub const HERO_LOW: f32 = -0.10;
+pub const HERO_HIGH: f32 = 1.71; // 0.95 of his 1.8 m stature
 pub fn closestApproach(bodyR: f32) f32 {
     return bodyR + HERO_R;
 }
@@ -210,6 +215,29 @@ pub fn aliveCount(foes: anytype) u32 {
         if (f.alive()) n += 1;
     }
     return n;
+}
+
+/// DOES A SWUNG WEAPON REACH HIM? Answered off the segment a kit swept between last frame and this one
+/// (`was` → `now`, each grip-end → far-end) against the hero's own column, `r` being the weapon's fatness
+/// plus whatever slack the creature is given. SAMPLED along the weapon AND across the sweep rather than
+/// solved: a whipped head covers half a metre in a frame, and a test on two endpoints passes clean
+/// through a body. This is the honest alternative to a hurt sector guessed off the attacker's yaw — see
+/// warrior.zig, whose mace fired at 2.8 m off a head that never left 0.6 m of its own chest.
+pub fn weaponReaches(was: [2]rl.Vector3, now: [2]rl.Vector3, hero: rl.Vector3, r: f32) bool {
+    const lo = v3(hero.x, hero.y + HERO_LOW, hero.z);
+    const hi = v3(hero.x, hero.y + HERO_HIGH, hero.z);
+    const SWEEP = 3;
+    const ALONG = 4;
+    for (0..SWEEP + 1) |si| {
+        const sk = @as(f32, @floatFromInt(si)) / SWEEP;
+        const a0 = mathx.lerpV(was[0], now[0], sk);
+        const a1 = mathx.lerpV(was[1], now[1], sk);
+        for (0..ALONG + 1) |pi| {
+            const p = mathx.lerpV(a0, a1, @as(f32, @floatFromInt(pi)) / ALONG);
+            if (mathx.lenV(mathx.subV(p, mathx.closestOnSegV(p, lo, hi))) <= r) return true;
+        }
+    }
+    return false;
 }
 
 pub const Blade = struct {
@@ -415,4 +443,23 @@ test "strike: latches one hit per swing, re-arms when the window closes, applies
     _ = strike(&vit, &latch, c, 0.5, .{ .active = false });
     try std.testing.expect(!latch);
     try std.testing.expect(strike(&vit, &latch, mathx.v3(9, 1, 0), 0.5, active) == null);
+}
+
+test "A SWUNG WEAPON REACHES WHAT IT CROSSED, and nothing it went over" {
+    const hero = v3(0, 0, 2.0);
+    const level = [2]rl.Vector3{ v3(0, 1.1, 0.4), v3(0, 1.1, 2.1) }; // a blade laid through his chest
+    try std.testing.expect(weaponReaches(level, level, hero, 0.6));
+    // …the same blade a metre over his skull is a MISS, which an XZ-only test could never say.
+    const over = [2]rl.Vector3{ v3(0, 2.9, 0.4), v3(0, 2.9, 2.1) };
+    try std.testing.expect(!weaponReaches(over, over, hero, 0.6));
+    // …and one buried in the dirt short of him is a miss too.
+    const short = [2]rl.Vector3{ v3(0, 1.1, -0.6), v3(0, 1.1, 0.8) };
+    try std.testing.expect(!weaponReaches(short, short, hero, 0.6));
+    // THE SWEEP IS THE POINT: a head that was one side of him last frame and the other side this frame
+    // still hits, where a pair of endpoint tests would have it pass straight through.
+    const a = [2]rl.Vector3{ v3(-1.4, 1.1, 2.0), v3(-0.2, 1.1, 2.0) };
+    const b = [2]rl.Vector3{ v3(0.2, 1.1, 2.0), v3(1.4, 1.1, 2.0) };
+    try std.testing.expect(!weaponReaches(a, a, hero, 0.15));
+    try std.testing.expect(!weaponReaches(b, b, hero, 0.15));
+    try std.testing.expect(weaponReaches(a, b, hero, 0.15));
 }

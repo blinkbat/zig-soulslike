@@ -73,7 +73,8 @@ pub const Kind = enum(u8) {
     // fire (each carries a gfx.Light)
     torch, // standing iron torch — interiors
     brazier, // wide fire bowl on a tripod
-    campfire, // stone ring + crossed logs
+    campfire, // stone ring + crossed logs, BURNT OUT — dressing, no flame and no light
+    campfire_lit, // …and the one still going, which you can sit at (see rest.isRestKind)
     water, // the tarn surface
     // FLORA (non-casters, wind-swayed)
     tuft,
@@ -201,7 +202,8 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .scree => "Scree",
         .torch => "Iron Torch",
         .brazier => "Brazier",
-        .campfire => "Campfire",
+        .campfire => "Extinguished Campfire",
+        .campfire_lit => "Campfire",
         .water => "Water Sheet",
         .tuft => "Grass Tuft",
         .patch => "Grass Patch",
@@ -246,7 +248,7 @@ pub fn group(k: Kind) Group {
         .chest => .treasure,
         .boulder, .rocks, .outcrop, .scree, .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6, .stump, .log => .rock,
         .tree, .bigtree, .bigtree2, .bigtree3, .willow, .conifer, .birch, .snag, .sapling => .trees,
-        .torch, .brazier, .campfire => .fire,
+        .torch, .brazier, .campfire, .campfire_lit => .fire,
         .water => .water,
         .tuft, .patch, .grasstall, .clover, .moss => .grass,
         .flowers, .wildflowers, .foxglove, .thistle, .glow => .flowers,
@@ -416,7 +418,11 @@ pub const INFO = [NK]Info{
     .{ .kind = .scree, .build = rock.screeMesh, .bound = 2.6, .top = 0.35, .view = 160 },
     .{ .kind = .torch, .build = fx.torchMesh, .bound = 2.6, .top = 2.35, .view = 200, .parts = circleParts(0.18, 2.0), .light = .{ .y = 1.98, .col = v3(0.64, 0.34, 0.13), .radius = 6.0, .flicker = 0.15 }, .surf = .metal },
     .{ .kind = .brazier, .build = fx.brazierMesh, .bound = 1.9, .top = 1.55, .view = 210, .parts = circleParts(0.50, 1.2), .light = .{ .y = 1.14, .col = v3(1.55, 0.84, 0.29), .radius = 16.0, .flicker = 0.13 }, .surf = .metal },
-    .{ .kind = .campfire, .build = fx.campfireMesh, .bound = 1.5, .top = 1.0, .view = 200, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
+    // BURNT OUT: no `light`, and that absence is the whole difference between these two rows.
+    .{ .kind = .campfire, .build = fx.deadCampfireMesh, .bound = 1.5, .top = 0.6, .view = 200, .parts = circleParts(0.45, 0.5), .surf = .stone },
+    // …AND ONE YOU CAN SIT AT. `interact` shelves it under the editor's Interactables layer beside the
+    // chests, which is where the things the player USES belong; `rest.isRestKind` is what makes it a grace.
+    .{ .kind = .campfire_lit, .build = fx.campfireMesh, .bound = 1.5, .top = 1.0, .view = 200, .interact = true, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
     .{ .kind = .water, .build = fx.waterMesh, .bound = 30.0, .top = 0.1, .view = FAR, .casts = false },
     .{ .kind = .tuft, .build = flora.tuftMesh, .bound = 0.9, .top = 0.8, .view = 85, .flora = true, .casts = false },
     .{ .kind = .patch, .build = flora.patchMesh, .bound = 2.2, .top = 0.8, .view = 95, .flora = true, .casts = false },

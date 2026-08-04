@@ -1636,15 +1636,32 @@ fn bake(r: *Rack) rl.Sound {
     return rl.loadSoundFromWave(wave);
 }
 
+/// SILENCE EVERYTHING FIRST, THEN FREE IT. This is the whole of `deinit` and the order is the point:
+/// unloading a voice the mixer is still reading frees the buffer out from under the audio thread, and
+/// what that looks like is the WINDOW CLOSING WHILE THE PROCESS STAYS UP — no window, no way to quit
+/// it, and its icon still in the taskbar. It is not a rare race either: the ambience beds LOOP (they
+/// are re-triggered the moment they stop, see `tickBeds`) and the rest fire is a live STREAM, so on any
+/// ordinary quit several voices are mid-playback.
 pub fn deinit() void {
     if (!ready) return;
+    if (restFire) |m| rl.stopMusicStream(m);
+    for (&slots, 0..) |*s, idx| {
+        const row = BANK[idx];
+        var v: u8 = 0;
+        while (v < row.vars) : (v += 1) {
+            // From 0, not 1: index 0 is the OWNER (`owned[v]` is the same handle) and it is the one the
+            // looping beds are actually played on — stopping only the aliases would miss every bed.
+            var p: u8 = 0;
+            while (p < row.poly) : (p += 1) rl.stopSound(s.snd[v][p]);
+        }
+    }
     for (&slots, 0..) |*s, idx| {
         const row = BANK[idx];
         var v: u8 = 0;
         while (v < row.vars) : (v += 1) {
             var p: u8 = 1;
             while (p < row.poly) : (p += 1) rl.unloadSoundAlias(s.snd[v][p]);
-            rl.unloadSound(s.owned[v]);
+            rl.unloadSound(s.owned[v]); // …the owner LAST: the aliases borrow its samples
         }
     }
     if (restFire) |m| rl.unloadMusicStream(m);

@@ -11,6 +11,7 @@ const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
 const koboldmod = @import("kobold.zig");
 const broodmod = @import("brood.zig");
+const warriormod = @import("warrior.zig");
 const mathx = @import("mathx.zig");
 const props = @import("props.zig");
 const stats = @import("stats.zig");
@@ -1071,6 +1072,8 @@ pub fn runShots(g: *Game) void {
     g.retro.allOff();
 
     broodShots(g);
+    warriorShots(g);
+    campfireShots(g);
     chestShots(g);
     editorShots(g);
 }
@@ -1161,6 +1164,195 @@ fn broodShots(g: *Game) void {
 
     game.clearFoesForShot(g);
     game.rehomeFoesForShot(g);
+}
+
+/// THE SKELETAL WARRIORS (`113…`). Everything here is shot from `LIT_YAW` with the sensed hero put out
+/// on the SUN's bearing, because a foe turns to face him — park him anywhere else and both of these
+/// photograph their own shadow (see AGENTS.md, A SUBJECT MUST BE LIT).
+fn warriorShots(g: *Game) void {
+    game.clearFoesForShot(g);
+    const wc = mathx.ground(-24.0, 34.0); // open ground west, the kobolds' patch, clear of ruins
+    const near = v3(wc.x + LIT_BACK.x * 1.4, 0, wc.z + LIT_BACK.z * 1.4);
+    const far = v3(wc.x + LIT_BACK.x * 90.0, 0, wc.z + LIT_BACK.z * 90.0);
+    g.muster.n = 2;
+    const sm = &g.muster.band[0];
+    const gs = &g.muster.band[1];
+    // SPAWNED FACING THE LENS. A foe only turns to face a hero inside its aggro range, so parking the
+    // sensed hero 90 m out on the sun's bearing (which is what makes these shots LIT) leaves it standing
+    // on its spawn yaw — and every reaction portrait comes back photographing its spine.
+    const faceCam = mathx.headingXZ(LIT_BACK);
+    const spawnSm = struct {
+        fn it(w: *warriormod.Warrior, at: rl.Vector3, yaw: f32) void {
+            w.* = warriormod.Warrior.spawnAs(.shieldman, at, yaw, 1.0, 0.25);
+        }
+    }.it;
+    const spawnGs = struct {
+        fn it(w: *warriormod.Warrior, at: rl.Vector3, yaw: f32) void {
+            w.* = warriormod.Warrior.spawnAs(.greatsword, at, yaw, 1.0, 0.65);
+        }
+    }.it;
+    const away = mathx.ground(wc.x - 60.0, wc.z + 60.0); // park the other one out of every portrait
+
+    // THE PAIR, so the two silhouettes can be told apart at a glance — which is the whole point of them.
+    spawnSm(sm, mathx.ground(wc.x - 1.3, wc.z), faceCam);
+    spawnGs(gs, mathx.ground(wc.x + 1.4, wc.z), faceCam);
+    for ([_]*warriormod.Warrior{ sm, gs }) |w| stepFoe(w, 30, far);
+    standHero(g, wc.x + 3.0, wc.z - 3.2, mathx.radians(-140));
+    shootAt(g, "shots/113_warriors_pair.png", v3(wc.x, wc.y + 1.15, wc.z), LIT_YAW, 0.08, 7.4);
+
+    g.hero.pos = mathx.ground(wc.x, wc.z - 30.0); // hero out of the portraits below
+    g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pose();
+
+    // THE SHIELDMAN. His guard is the thing to judge: the boards have to COVER him from the front.
+    spawnGs(gs, away, faceCam);
+    spawnSm(sm, wc, faceCam);
+    stepFoe(sm, 40, near); // in reach, boards up
+    shootFoe(g, sm, "shots/113a_shield_guard.png", LIT_YAW, 0.04, 4.0);
+    shootFoe(g, sm, "shots/113b_shield_guard_side.png", LIT_YAW + 62, 0.04, 4.2); // …and in profile
+    // A CROP of the boards themselves: a kite shield's planks, rim and boss are unjudgeable at 1:1.
+    shootPortrait(g, "shots/113c_shield_boards.png", sm.centerWorld(), LIT_YAW + 16, 0.02, 2.1);
+
+    // THE MACE, in FOUR beats. It was retuned from "too fast" to a real overarm blow, and a swing is a
+    // shape over TIME — the gather is the part a single frame provably cannot show.
+    // AIMED OFF THE MOVE'S OWN CLOCK, never off literal seconds: retune the swing and these four still
+    // photograph the four beats they are named after.
+    const mc = warriormod.moveClock(.shieldman, 0);
+    const maceBeats = [_]struct { name: [:0]const u8, at: f32 }{
+        .{ .name = "shots/113d_mace_gather.png", .at = mc.wind * 0.22 }, // the sink back: anticipation
+        .{ .name = "shots/113e_mace_cock.png", .at = mc.wind * 0.92 }, // over the skull, boards STILL up
+        .{ .name = "shots/113f_mace_strike.png", .at = mc.wind + mc.swing * 0.47 }, // crossing his line
+        .{ .name = "shots/113g_mace_follow.png", .at = mc.wind + mc.swing * 0.88 }, // the overswing
+    };
+    for (maceBeats) |b| {
+        spawnSm(sm, wc, faceCam);
+        var mf: i32 = 0;
+        while (sm.state != .wind and mf < 600) : (mf += 1) _ = sm.update(SHOT_DT, near, game.PLAY_HALF, .{});
+        var clock: f32 = 0;
+        while (clock < b.at) : (clock += SHOT_DT) _ = sm.update(SHOT_DT, near, game.PLAY_HALF, .{});
+        shootPortrait(g, b.name, sm.centerWorld(), LIT_YAW + 18, 0.06, 4.4);
+    }
+
+    // THE GUARD BREAK — the biggest reaction in the file: down on one knee, boards smashed off him.
+    spawnSm(sm, wc, faceCam);
+    sm.debugBreak();
+    stepFoe(sm, 20, far); // on the knee, shield arm flung wide, skull hanging
+    // FRAMED LOW ON PURPOSE: `centerWorld` is chest height on a STANDING man, and he is not standing —
+    // shot off that, a kneel comes back as an empty patch of grass with a skull at the bottom of it.
+    const kneelAt = v3(sm.pos.x, sm.pos.y + 0.55, sm.pos.z);
+    shootPortrait(g, "shots/113h_shield_kneel.png", kneelAt, LIT_YAW + 12, 0.02, 4.0);
+    shootPortrait(g, "shots/113i_shield_kneel_side.png", kneelAt, LIT_YAW + 66, 0.02, 4.0); // a kneel is a PROFILE read
+    // …AND HE FIGHTS ON WITH NO SHIELD, which is the whole point of breaking it.
+    var bf: i32 = 0;
+    while (sm.state == .guardbreak and bf < 900) : (bf += 1) _ = sm.update(SHOT_DT, far, game.PLAY_HALF, .{});
+    stepFoe(sm, 30, near);
+    shootFoe(g, sm, "shots/113j_shield_broken.png", LIT_YAW, 0.06, 4.2);
+
+    // THE GREATSWORD. The blade's LENGTH is the read, so it gets a full-body framing, not a portrait.
+    spawnSm(sm, away, faceCam);
+    spawnGs(gs, wc, faceCam);
+    stepFoe(gs, 40, far);
+    shootFoe(g, gs, "shots/113k_greatsword_carry.png", LIT_YAW, 0.06, 5.2);
+
+    // Drive a greatsword to one beat of one of its own moves and shoot it there.
+    const beat = struct {
+        fn at(gg: *Game, w: *warriormod.Warrior, home: rl.Vector3, face: f32, which: usize, clock: f32, name: [:0]const u8, toward: rl.Vector3, yaw: f32, dist: f32) void {
+            w.* = warriormod.Warrior.spawnAs(.greatsword, home, face, 1.0, 0.65);
+            w.debugSwing(which);
+            var c: f32 = 0;
+            while (c < clock) : (c += SHOT_DT) _ = w.update(SHOT_DT, toward, game.PLAY_HALF, .{});
+            shootPortrait(gg, name, w.centerWorld(), yaw, 0.06, dist);
+        }
+    }.at;
+
+    // THE DIAGONAL SLAM, in three beats, because a diagonal is a shape over TIME: one frame cannot
+    // show that it comes down ACROSS him rather than straight down in front of him.
+    const sc = warriormod.moveClock(.greatsword, 0);
+    beat(g, gs, wc, faceCam, 0, sc.wind * 0.88, "shots/113l_slam_cock.png", near, LIT_YAW + 20, 6.0); // top of the tell
+    beat(g, gs, wc, faceCam, 0, sc.wind + sc.swing * 0.57, "shots/113m_slam_through.png", near, LIT_YAW + 20, 6.0); // crossing his line
+    beat(g, gs, wc, faceCam, 0, sc.wind + sc.swing * 0.97, "shots/113n_slam_end.png", near, LIT_YAW + 20, 6.0); // point in the dirt
+    // …and the SPENT recovery, which is the opening the whole move is paid for with.
+    beat(g, gs, wc, faceCam, 0, sc.wind + sc.swing + sc.recover * 0.32, "shots/113o_slam_spent.png", near, LIT_YAW + 34, 5.6);
+
+    // THE LUNGE — the quick INTERRUPTIBLE combo, and the little LEAP is most of what it is. Four beats:
+    // the coil, the leap (ONE knee up, the other leg trailing), the thrust landing, and the return cut.
+    const lc = warriormod.moveClock(.greatsword, 1);
+    const stroke2 = lc.wind + lc.swing + lc.chain; // …the follow-up runs on `chainWind`, not on a new tell
+    beat(g, gs, wc, faceCam, 1, lc.wind * 0.88, "shots/113p_lunge_coil.png", near, LIT_YAW + 26, 5.6);
+    beat(g, gs, wc, faceCam, 1, lc.wind + lc.swing * 0.38, "shots/113q_lunge_leap.png", near, LIT_YAW + 26, 5.6);
+    beat(g, gs, wc, faceCam, 1, lc.wind + lc.swing * 0.92, "shots/113r_lunge_thrust.png", near, LIT_YAW + 26, 5.6);
+    beat(g, gs, wc, faceCam, 1, stroke2 + lc.swing * 0.5, "shots/113s_lunge_return.png", near, LIT_YAW + 26, 5.6);
+
+    // Reactions and death, both roles — the shieldman flinches easily, the greatsword does not.
+    spawnGs(gs, away, faceCam);
+    spawnSm(sm, wc, faceCam);
+    sm.debugStagger(true);
+    stepFoe(sm, 14, far);
+    shootFoe(g, sm, "shots/113t_shield_stagger.png", LIT_YAW + 22, 0.06, 4.2);
+    spawnSm(sm, away, faceCam);
+    spawnGs(gs, wc, faceCam);
+    gs.debugKill();
+    stepFoe(gs, 34, far);
+    shootFoe(g, gs, "shots/113u_greatsword_death.png", LIT_YAW + 28, 0.14, 5.0);
+
+    // THE WALK, three strides — humanoid foes reuse the hero's gait and a still cannot prove it.
+    spawnGs(gs, away, faceCam);
+    // …and for the WALK he faces where he is going, which is out along the sun's bearing, so he is lit
+    // walking toward the lens rather than lit walking away from it.
+    spawnSm(sm, mathx.ground(wc.x - LIT_BACK.x * 9.0, wc.z - LIT_BACK.z * 9.0), faceCam);
+    const walkTo = v3(wc.x + LIT_BACK.x * 40.0, 0, wc.z + LIT_BACK.z * 40.0);
+    const walkNames = [_][:0]const u8{ "shots/113v_shield_walk.png", "shots/113w_shield_walk.png", "shots/113x_shield_walk.png" };
+    for ([_]i32{ 26, 9, 9 }, 0..) |adv, wi| {
+        stepFoe(sm, adv, walkTo); // hero far along the sun's bearing → he walks toward it, LIT
+        shootFoe(g, sm, walkNames[wi], LIT_YAW + 58, 0.06, 4.8);
+    }
+
+    game.clearFoesForShot(g);
+    game.rehomeFoesForShot(g);
+}
+
+/// THE TWO CAMPFIRES (`114`), side by side and in ONE frame, because the only thing that matters about
+/// them is that you can tell which one you can sit at.
+fn campfireShots(g: *Game) void {
+    const saved = g.map.nops;
+    if (saved + 2 > worldfmt.MAX_OPS) return;
+    // OPEN GROUND, west, the same patch the warriors are shot on. Sited by eye instead, the first
+    // attempt put both fires inside a cliff and came back as a frame of solid rock.
+    const cx: f32 = -24.0;
+    const cz: f32 = 40.0;
+    for ([_]struct { k: props.Kind, dx: f32 }{
+        .{ .k = .campfire, .dx = -1.8 },
+        .{ .k = .campfire_lit, .dx = 1.8 },
+    }) |row| {
+        var op = worldfmt.defaults(.at);
+        op.kind = row.k;
+        op.x = cx + row.dx;
+        op.z = cz;
+        op.scale = 1;
+        g.map.ops[g.map.nops] = op;
+        g.map.nops += 1;
+    }
+    g.env.materialize(&g.map);
+    game.rehomeChestsForShot(g); // …which re-homes the REST SITES too, and that is what we came for
+
+    const gy = mathx.ground(cx, cz).y;
+    g.hero.pos = mathx.ground(cx, cz - 24.0); // out of frame: this shot is about the two fires
+    g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pose();
+    shootPortrait(g, "shots/114_campfires.png", v3(cx, gy + 0.5, cz), LIT_YAW, 0.16, 6.4);
+    // …and a CROP of the dead one, where the ash drift and the unburnt log ends actually read.
+    shootPortrait(g, "shots/114b_campfire_dead.png", v3(cx - 1.8, gy + 0.30, cz), LIT_YAW, 0.20, 2.6);
+    // THE PROMPT: stand him in reach of the LIT one, which is the whole of "it is an interactable".
+    const right = v3(-LIT_BACK.z, 0, LIT_BACK.x);
+    const hx = cx + 1.8 + right.x * 1.7;
+    const hz = cz + right.z * 1.7;
+    standHero(g, hx, hz, mathx.headingXZ(v3(cx + 1.8 - hx, 0, cz - hz)));
+    g.rest.look(g.hero.pos);
+    shootAt(g, "shots/114c_campfire_prompt.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 4.6);
+
+    g.map.nops = saved;
+    g.env.materialize(&g.map);
+    game.rehomeChestsForShot(g); // …which re-homes the REST SITES too, and that is what we came for
 }
 
 fn chestShots(g: *Game) void {

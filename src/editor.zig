@@ -190,6 +190,8 @@ const unitTips = [_][:0]const u8{
     "Post a brood mother — slow, spits acid pools, lays up to three sacs",
     "Post a lone broodling — fast, one hit kills it, leaps",
     "Post an egg sac — hatches on its own clock unless you cut it open",
+    "Post a skeleton shieldman — blocks what comes at his front; break the guard, then punish",
+    "Post a skeleton greatsword — a long diagonal slam you cannot interrupt; walk out of it",
     "Hold and sweep to remove spawns ([ ] sets radius)",
 };
 
@@ -208,7 +210,7 @@ const coverIcons = [_]ui.Icon{ .clearing, .zone, .erase };
 const decorIcons = [_]ui.Icon{ .single, .patch, .scatter, .erase };
 const propIcons = [_]ui.Icon{ .stamp, .row, .ring, .cluster, .ivy, .erase };
 const interactIcons = [_]ui.Icon{ .stamp, .erase };
-const unitIcons = [_]ui.Icon{ .toad, .archer, .ogre, .berserker, .priest, .slinger, .brood_mother, .broodling, .brood_sac, .erase };
+const unitIcons = [_]ui.Icon{ .toad, .archer, .ogre, .berserker, .priest, .slinger, .brood_mother, .broodling, .brood_sac, .shieldman, .greatsword, .erase };
 
 comptime {
     std.debug.assert(coverIcons.len == coverBrushes.len);
@@ -287,7 +289,7 @@ const CoverBrush = enum { clearing, zone, erase };
 pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
 const InteractBrush = enum { stamp, erase };
-const UnitBrush = enum { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, erase };
+const UnitBrush = enum { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, erase };
 
 comptime {
     // Every brush enum pinned to the table it indexes, case-insensitively so "Erase"/"Zone" read the way a button should while the tag stays Zig-shaped.
@@ -2090,6 +2092,8 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .brood_mother => ui.col(146, 186, 84, 255),
         .broodling => ui.col(104, 132, 68, 255),
         .brood_sac => ui.col(190, 208, 130, 255),
+        .shieldman => ui.col(176, 178, 190, 255),
+        .greatsword => ui.col(214, 216, 232, 255),
     };
 }
 

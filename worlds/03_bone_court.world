@@ -1,0 +1,47 @@
+version: 1
+name: Bone Court
+half: 60.0
+runway: -3.40 -30.00 3.40 20.00
+
+zone: plain -400.0 -400.0 400.0 400.0 0.480 grasstall,grasstall,patch,tuft,clover,moss,thistle
+clear: 0.0 -14.0 9.0
+clear: -14.0 -26.0 9.0
+clear: 10.0 -34.0 11.0
+
+at: grace 3 6.5 0 1
+at: glow 2.1 5.5 40 1
+at: campfire_lit -13 -2 0 1
+at: campfire -6 12 0 1
+
+at: wall -20 -6 90 1.1
+at: wall 20 -6 -90 1.1
+at: wall -20 -30 90 1.15
+at: wall 20 -30 -90 1.05
+at: wall -8 -44 0 1.2
+at: wall 8 -44 180 1.1
+at: arch 0 -44 0 1
+at: pillar -9 -18 0 1
+at: pillar 9 -18 24 1
+at: broken -9 -36 -12 0.95
+at: pillar 9 -36 60 1.05
+at: rubble -3 -22 10 1
+at: rubble 5 -39 0 1
+at: block 14 -14 70 1
+at: block -14 -40 30 1
+at: graves -15 -14 15 0.9
+at: graves 15 -38 -25 0.85
+at: sword -2.6 -9 30 1
+at: sword 11 -27 -60 0.95
+at: brazier -4.2 -2.6 0 1
+at: brazier 4.6 -47.0 0 0.95
+at: barrels 13 -6 50 0.95
+
+belt: tuft -34 -52 34 14 54 0.85 1.3 seed=3001
+belt: rocks -36 -54 36 16 20 0.8 1.3 seed=3002
+belt: bush -36 -54 36 16 15 0.8 1.3 seed=3003
+cover: 3.3 0.68 1.34 seed=3004
+
+foe: shieldman 0.00 -14.00 180.0 1.00 0.28
+foe: greatsword -14.00 -26.00 150.0 1.00 0.61
+foe: shieldman 8.00 -32.00 190.0 1.00 0.13
+foe: greatsword 13.00 -36.00 210.0 1.00 0.44

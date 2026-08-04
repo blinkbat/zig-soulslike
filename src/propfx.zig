@@ -6,6 +6,9 @@ const art = @import("propart.zig");
 
 const v3 = mathx.v3;
 const Builder = gfx.Builder;
+const ASH = art.ASH;
+const ASH_DK = art.ASH_DK;
+const ASH_LT = art.ASH_LT;
 const BARK_DK = art.BARK_DK;
 const CLIFF_LT = art.CLIFF_LT;
 const CLIFF_ROCK = art.CLIFF_ROCK;
@@ -64,9 +67,9 @@ pub fn brazierMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-pub fn campfireMesh(shader: rl.Shader) rl.Model {
-    var b = Builder.init();
-    var rng = mathx.Rng.init(9003);
+/// THE HEARTH BOTH CAMPFIRES SHARE: the stone ring and the crossed logs, off ONE seed, so the lit fire
+/// and the dead one are recognisably the SAME fire at two different hours rather than two props.
+fn hearthInto(b: *Builder, rng: *mathx.Rng, cold: bool) void {
     b.setMat(.stone);
     var i: i32 = 0;
     while (i < 9) : (i += 1) {
@@ -82,19 +85,59 @@ pub fn campfireMesh(shader: rl.Shader) rl.Model {
     while (l < 4) : (l += 1) {
         const a = rng.angle();
         const lift = rng.range(0.10, 0.30);
+        // DRAWN UNCONDITIONALLY. `cold or rng.float() < 0.5` SHORT-CIRCUITS, so the cold hearth would
+        // pull one fewer number per log and every stone after it would land somewhere else — which is
+        // the one thing the shared seed exists to prevent.
+        const charred = rng.float() < 0.5;
         b.addCapsule(
             v3(mathx.cosf(a) * 0.55, 0.10, mathx.sinf(a) * 0.55),
-            v3(mathx.cosf(a + 3.0) * 0.30, lift, mathx.sinf(a + 3.0) * 0.30),
+            v3(mathx.cosf(a + 3.0) * 0.30, if (cold) lift * 0.62 else lift, mathx.sinf(a + 3.0) * 0.30),
             0.085,
             0.06,
             5,
-            if (rng.float() < 0.5) BARK_DK else IRON, // half of them burnt to char
+            // Burnt out, they are ALL char; still burning, half of them are.
+            if (cold or charred) BARK_DK else IRON,
         );
     }
+}
+
+pub fn campfireMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(9003);
+    hearthInto(&b, &rng, false);
     b.setMat(.plain);
     b.addBlob(v3(0, 0.06, 0), v3(0.34, 0.06, 0.34), 3, 7, COAL); // the ember bed
     flameInto(&b, &rng, 0, 0.10, 0, 1.15);
     flameInto(&b, &rng, -0.13, 0.08, 0.10, 0.7);
+    return b.toModel(shader);
+}
+
+/// THE SAME FIRE, DAYS LATER: no flame, no embers, no light — a cold drift of ash in a ring of stones
+/// with the logs collapsed into it. It is a piece of DRESSING and nothing more, which is exactly the
+/// difference between it and the one above (see `props.INFO`: this row carries no `light`).
+pub fn deadCampfireMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(9003); // …the SAME seed: it is the same ring of stones
+    hearthInto(&b, &rng, true);
+    b.setMat(.stone);
+    // The ash drift, and it is not a disc: rain and wind have pulled it out one side of the ring.
+    b.addBlob(v3(rng.signed() * 0.06, 0.035, rng.signed() * 0.06), v3(0.36, 0.035, 0.33), 3, 8, ASH);
+    b.addBlob(v3(0.13, 0.052, -0.08), v3(0.17, 0.028, 0.15), 3, 7, ASH_LT); // raked over, paler
+    b.addBlob(v3(-0.16, 0.030, 0.14), v3(0.20, 0.022, 0.17), 3, 7, ASH_DK); // trodden, or rained on
+    // …and the ends of the logs that did not burn, sticking out of it.
+    b.setMat(.wood);
+    var e: i32 = 0;
+    while (e < 3) : (e += 1) {
+        const a = rng.angle();
+        b.addCapsule(
+            v3(mathx.cosf(a) * 0.20, 0.055, mathx.sinf(a) * 0.20),
+            v3(mathx.cosf(a) * rng.range(0.44, 0.60), 0.075, mathx.sinf(a) * rng.range(0.44, 0.60)),
+            0.052,
+            0.040,
+            5,
+            BARK_DK,
+        );
+    }
     return b.toModel(shader);
 }
 

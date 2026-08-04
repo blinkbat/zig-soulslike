@@ -576,11 +576,20 @@ fn strokeK() f32 {
 //   FIXED-SEED `mathx.Rng` re-seeded on each call, so the icon is imperfect and *the same imperfection
 //   every frame*. Drawing from a live stream would make the HUD crawl.
 
-/// Two triangles, in the winding raylib's 2D triangle actually renders (see `arrowIcon`, which is the
-/// one that proved it): a → b → c and a → c → d.
+/// Two triangles making one quad, WOUND WHICHEVER WAY RAYLIB WILL ACTUALLY RASTERISE. It culls a
+/// back-facing 2D triangle (see `arrowIcon`, which is the one that proved it), so a quad handed over the
+/// wrong way round is silently not drawn — and that is exactly how the sword icon's blade body went
+/// missing: the picture was its point triangle plus two hairlines, which is to say a dagger. Callers give
+/// the four corners in order and stop caring.
 fn quad(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2, d: rl.Vector2, col: rl.Color) void {
-    rl.drawTriangle(a, b, c, col);
-    rl.drawTriangle(a, c, d, col);
+    // Signed area of a→b→c in SCREEN space, where y runs down: raylib draws the NEGATIVE one.
+    if ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x) <= 0) {
+        rl.drawTriangle(a, b, c, col);
+        rl.drawTriangle(a, c, d, col);
+    } else {
+        rl.drawTriangle(a, d, c, col);
+        rl.drawTriangle(a, c, b, col);
+    }
 }
 
 /// A point `along` the axis from `from` to `to`, pushed `off` sideways across it.
@@ -593,68 +602,83 @@ fn onAxis(from: rl.Vector2, to: rl.Vector2, along: f32, off: f32) rl.Vector2 {
     return .{ .x = from.x + dx * along + nx * off, .y = from.y + dy * along + ny * off };
 }
 
+/// ELDEN RING'S OWN PATTERN, and the owner's call: MOSTLY HILT, AND THE BLADE FADES OUT. A whole sword
+/// scaled to fit a 44×60 socket is a dagger — that is what it read as — because everything that says
+/// LONG about a longsword is the part there is no room for. So the hilt is drawn big and jewelled down
+/// in the frame and the steel runs off the top losing itself, which reads as a blade that continues.
 fn sword(cx: f32, cy: f32) void {
     const s: f32 = @floatFromInt(ICON);
     const k = strokeK();
     var rng = mathx.Rng.init(0x5B1AD3);
-    const d = s * 0.55; // half the icon's diagonal — ~78% of the slot's width, ER's own fill
+    const d = s * 0.72; // …and the blade's end is the FRAME, which is what says it carries on past it
     const u = 0.70711; // the diagonal axis, pommel-ward…
     // The whole sword leans a degree or so off the true diagonal: nothing forged is square to a grid.
     const lean = rng.range(-0.035, 0.035);
-    const tip = rl.Vector2{ .x = cx - u * d * (1.0 + lean), .y = cy - u * d * (1.0 - lean) };
-    const pom = rl.Vector2{ .x = cx + u * d * 0.94, .y = cy + u * d * 0.94 };
-    const guard = onAxis(tip, pom, 0.615, 0);
-    const shoulder = onAxis(tip, pom, 0.575, 0); // where the blade meets the guard
+    // NOT a tip: where the steel has faded to nothing. The blade has no point in this picture.
+    const gone = rl.Vector2{ .x = cx - u * d * (1.0 + lean), .y = cy - u * d * (1.0 - lean) };
+    // THE POMMEL HAS TO FIT ITS OWN SOCKET, and off the diagonal that is not free: at the shipped 150%
+    // equipment scale the obvious 0.92 of the axis put its far side 3 px out over the rim. Held in off
+    // the wheel's own radius, so it cannot spill again at whatever scale the HUD is next drawn at.
+    const pomR = 2.7 * k;
+    const pomOut = @min(u * d * 0.92, @as(f32, @floatFromInt(@divTrunc(ICON, 2))) - pomR - 1.5);
+    const pom = rl.Vector2{ .x = cx + pomOut, .y = cy + pomOut };
+    const guard = onAxis(gone, pom, 0.60, 0); // the hilt: the bottom 40%, drawn big and jewelled
+    const shoulder = onAxis(gone, pom, 0.565, 0); // where the blade meets the guard
 
-    // THE BLADE, as a body with a taper and a POINT — a line with a cap is a crayon stroke. The BODY is
-    // the bright part: polished steel in a near-black well reads light, and drawing it dark left the lit
-    // edge doing all the work, which is what made the first pass look like a wire.
-    const wBase = 3.0 * k;
-    const wTip = 1.15 * k;
-    // The point is its own triangle and it OVERLAPS the body well past their shared line: butted exactly
-    // edge-to-edge they came back with a 3 px hole across the blade (sampled, not guessed), and a seam
-    // between two shapes of one colour is a rasteriser argument you cannot win. Overlap costs nothing.
-    const near = onAxis(tip, pom, 0.16, 0);
-    quad(
-        onAxis(tip, pom, 0.08, -wTip),
-        onAxis(shoulder, pom, 0, -wBase),
-        onAxis(shoulder, pom, 0, wBase),
-        onAxis(tip, pom, 0.08, wTip),
-        STEEL_MID,
-    );
-    rl.drawTriangle(tip, onAxis(near, pom, 0, wTip * 1.5), onAxis(near, pom, 0, -wTip * 1.5), STEEL_MID);
-    // …the FULLER down the middle, short of both ends…
-    rl.drawLineEx(onAxis(tip, pom, 0.18, 0), onAxis(tip, pom, 0.52, 0), 1.0 * k, rgba(64, 68, 74, 200));
-    // …and the two edges: the upper one catches the light, the lower one is in shadow.
-    rl.drawLineEx(onAxis(tip, pom, 0.10, -wTip * 0.85), onAxis(shoulder, pom, 0, -wBase * 0.88), 1.0 * k, STEEL);
-    rl.drawLineEx(onAxis(tip, pom, 0.12, wTip * 0.85), onAxis(shoulder, pom, 0, wBase * 0.88), 0.9 * k, rgba(88, 92, 98, 220));
-    // A NICK — small, and in the MIDDLE of the edge where a blade actually gets them. Up at the point it
-    // read as a snapped tip.
-    const nickAt = rng.range(0.30, 0.42);
+    // THE BLADE: a stack of segments losing alpha as it climbs, because raylib's 2D triangles are flat and
+    // a gradient is the only thing that says "this goes on past the frame". Widest at the shoulder, and it
+    // does NOT taper to a point — a taper plus a fade reads as a blade that broke.
+    const wBase = 2.7 * k; // a LONGSWORD: any wider over this length and it reads as a cleaver
+    const wFar = 2.1 * k;
+    const SEGS = 18;
+    const runTo = 0.565; // the blade's whole run, as a fraction of the frame's diagonal…
+    const FADE_FROM = 0.28; // …SOLID for this much of it, then losing itself into the corner. Faded from
+    // the GUARD outward instead — which is how the first pass went in — a longsword reads as a lit stub.
+    for (0..SEGS) |i| {
+        const t0 = @as(f32, @floatFromInt(i)) / SEGS; // 0 AT THE GUARD, 1 where the steel has gone
+        const t1 = @as(f32, @floatFromInt(i + 1)) / SEGS;
+        const w0 = mathx.lerpF(wBase, wFar, t0);
+        const w1 = mathx.lerpF(wBase, wFar, t1);
+        const col = mathx.withAlpha(STEEL_MID, mathx.u8f(255.0 * (1.0 - mathx.smoothstep(FADE_FROM, 1.0, (t0 + t1) * 0.5))));
+        quad(
+            onAxis(gone, pom, runTo * (1.0 - t1), w1),
+            onAxis(gone, pom, runTo * (1.0 - t0), w0),
+            onAxis(gone, pom, runTo * (1.0 - t0), -w0),
+            onAxis(gone, pom, runTo * (1.0 - t1), -w1),
+            col,
+        );
+    }
+    // …the FULLER and the two edges, over the part of the steel that is still solid enough to show them.
+    const solid = runTo * (1.0 - FADE_FROM); // the near end of the fade: no detail survives past it
+    rl.drawLineEx(onAxis(gone, pom, solid + 0.01, 0), onAxis(shoulder, pom, -0.02, 0), 1.1 * k, rgba(64, 68, 74, 170));
+    rl.drawLineEx(onAxis(gone, pom, solid, -wBase * 0.84), onAxis(shoulder, pom, 0, -wBase * 0.88), 1.1 * k, mathx.withAlpha(STEEL, 215));
+    rl.drawLineEx(onAxis(gone, pom, solid, wBase * 0.84), onAxis(shoulder, pom, 0, wBase * 0.88), 0.9 * k, rgba(88, 92, 98, 180));
+    // A NICK, low on the edge where the steel is still opaque — up in the fade it is invisible anyway.
+    const nickAt = rng.range(0.33, 0.43);
     rl.drawTriangle(
-        onAxis(tip, pom, nickAt, -wBase * 0.72),
-        onAxis(tip, pom, nickAt + 0.022, -wBase * 0.26),
-        onAxis(tip, pom, nickAt - 0.016, -wBase * 0.26),
+        onAxis(gone, pom, nickAt, -wBase * 0.72),
+        onAxis(gone, pom, nickAt + 0.022, -wBase * 0.26),
+        onAxis(gone, pom, nickAt - 0.016, -wBase * 0.26),
         rgba(20, 18, 16, 190),
     );
 
     // THE GRIP: a leather core with unevenly spaced wrap turns over it — hairline, or they read as segments
-    // of a rod rather than as cord over leather.
-    rl.drawLineEx(guard, pom, 2.7 * k, GRIP);
-    var band: f32 = 0.16;
-    while (band < 0.88) : (band += rng.range(0.19, 0.28)) {
+    // of a rod rather than as cord over leather. It is the LONG grip of a weapon held in two hands.
+    rl.drawLineEx(guard, pom, 3.2 * k, GRIP);
+    var band: f32 = 0.14;
+    while (band < 0.88) : (band += rng.range(0.16, 0.24)) {
         const c = onAxis(guard, pom, band, 0);
         rl.drawLineEx(
-            .{ .x = c.x + u * 1.35 * k, .y = c.y - u * 1.35 * k },
-            .{ .x = c.x - u * 1.35 * k, .y = c.y + u * 1.35 * k },
+            .{ .x = c.x + u * 1.55 * k, .y = c.y - u * 1.55 * k },
+            .{ .x = c.x - u * 1.55 * k, .y = c.y + u * 1.55 * k },
             0.7 * k,
             rgba(66, 48, 33, 230),
         );
     }
 
-    // THE CROSSGUARD — SLENDER, and two arms of different length. The first pass ran it at 0.215·s and
-    // 2.9 px: that is a warhammer's head, and it swallowed the blade it is supposed to frame.
-    const q = s * 0.145;
+    // THE CROSSGUARD — two arms of different length, and WIDE now that it is the read: the hilt is what
+    // this picture is of. The first pass ran it at 0.215·s and 2.9 px, which is a warhammer's head.
+    const q = s * 0.17;
     for ([_]f32{ -1, 1 }) |side| {
         const armLen = q * rng.range(0.84, 1.08);
         const droop = -side * 0.9 * k; // both arms sweep the same way about the axis
@@ -668,8 +692,8 @@ fn sword(cx: f32, cy: f32) void {
     rl.drawCircleV(guard, 1.35 * k, uiart.GILT); // the block the arms leave from
 
     // THE POMMEL: a wheel with its highlight up and left, and a shadow under it.
-    rl.drawCircleV(.{ .x = pom.x + 0.6 * k, .y = pom.y + 0.7 * k }, 2.7 * k, rgba(0, 0, 0, 150));
-    rl.drawCircleV(pom, 2.7 * k, BRASS);
+    rl.drawCircleV(.{ .x = pom.x + 0.6 * k, .y = pom.y + 0.7 * k }, pomR, rgba(0, 0, 0, 150));
+    rl.drawCircleV(pom, pomR, BRASS);
     rl.drawCircleV(.{ .x = pom.x - 0.8 * k, .y = pom.y - 0.9 * k }, 1.1 * k, uiart.GILT_BRIGHT);
 }
 

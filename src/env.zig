@@ -2104,9 +2104,11 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(solids0, e.solidCount());
     try std.testing.expectEqual(lights0, e.lightCount());
 
-    try std.testing.expectEqual(@as(usize, 17197), props0);
-    try std.testing.expectEqual(@as(usize, 1791), solids0);
-    try std.testing.expectEqual(@as(usize, 40), lights0);
+    try std.testing.expectEqual(@as(usize, 17202), props0);
+    try std.testing.expectEqual(@as(usize, 1801), solids0);
+    // 37, not 40: the map's three `campfire`s are the EXTINGUISHED kind now and carry no light. Swap
+    // one to `campfire_lit` in the editor and this goes back up by one — and gains a rest site with it.
+    try std.testing.expectEqual(@as(usize, 37), lights0);
 
     // …and THE CHEST IS STOCKED.
     var jerky: usize = 0;
@@ -2125,6 +2127,66 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(chestOps, e.chestSites(&boxes));
     var fires: [restmod.CAP]restmod.Site = undefined;
     try std.testing.expect(e.restSites(&fires) > 0);
+}
+
+test "EVERY SHIPPED MAP LOADS AND MATERIALIZES, not just the one the game starts on" {
+    // A test arena nobody boots into is a file that rots: the shipped plain is the only map with a
+    // build-time guard, so an op renamed under `02`/`03` would surface as a PANIC in the editor's
+    // Open dialog months later. This is the cheap version of that guard for the rest of them.
+    // WALKED OFF THE DIRECTORY, not off a list: a hardcoded roster silently stops covering the map you
+    // add next, which is exactly the rot this test exists to catch.
+    var dir = std.fs.cwd().openDir(wf.DIR, .{ .iterate = true }) catch return error.SkipZigTest;
+    defer dir.close();
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    var seen: usize = 0;
+    var it = dir.iterate();
+    while (try it.next()) |ent| {
+        if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, wf.EXT)) continue;
+        var buf: [256]u8 = undefined;
+        const path = try std.fmt.bufPrint(&buf, wf.DIR ++ "/{s}", .{ent.name});
+        var line: usize = 0;
+        wf.load(path, m, &line) catch |err| {
+            std.debug.print("{s} failed to load at line {d}\n", .{ path, line });
+            return err;
+        };
+        e.* = .{ .ground = undefined, .models = undefined };
+        e.materialize(m);
+        try std.testing.expect(e.propCount() > 0);
+        seen += 1;
+    }
+    try std.testing.expect(seen >= 3); // the plain and the two arenas, at least — or the walk found nothing
+    // …and the BONE COURT is the skeletal warriors' proving ground: both kits, and more than one of each.
+    var line: usize = 0;
+    try wf.load(wf.DIR ++ "/03_bone_court.world", m, &line);
+    var shields: usize = 0;
+    var blades: usize = 0;
+    for (m.foes[0..m.nfoes]) |f| {
+        switch (f.kind) {
+            .shieldman => shields += 1,
+            .greatsword => blades += 1,
+            else => {},
+        }
+    }
+    try std.testing.expect(shields >= 2 and blades >= 2);
+    try std.testing.expectEqual(m.nfoes, shields + blades); // and nothing else, or it is not a test zone
+
+    // …AND A LIT CAMPFIRE IS A PLACE TO SIT. The court posts one of each campfire on purpose: the cold
+    // one must stay dressing, and the lit one must come back as a real rest site with the bonfire.
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.materialize(m);
+    var sites: [restmod.CAP]restmod.Site = undefined;
+    try std.testing.expectEqual(@as(usize, 2), e.restSites(&sites)); // the grace AND the campfire
+    try std.testing.expect(restmod.isRestKind(.campfire_lit));
+    try std.testing.expect(!restmod.isRestKind(.campfire));
+    // The lit one is an INTERACTABLE and the dead one is not — that is what shelves it in the editor.
+    try std.testing.expect(props.info(.campfire_lit).interact);
+    try std.testing.expect(!props.info(.campfire).interact);
+    // …and only the lit one carries a fire.
+    try std.testing.expect(props.info(.campfire_lit).light != null);
+    try std.testing.expect(props.info(.campfire).light == null);
 }
 
 test "no grid query can overflow MAX_NEAR, which is the one cap here that drops SILENTLY" {

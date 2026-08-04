@@ -139,7 +139,15 @@ const HURT_R = 0.42; // hurt-sphere radius for the hero's blade
 // Pelvis walk oscillation — the hero's amplitude, so the shared gait reads as one humanoid.
 const A_BOB = heromod.A_BOB;
 // Where a skeletal foot meets the earth, MEASURED off footMesh: the metatarsal plate + heel, with the toe bones fanning out to ~0.245·H ahead.
-const solePatches = [_]heromod.SolePatch{
+/// WHERE A SKELETON'S BODY POINTS SIT, as fractions of stature: the hurt sphere's centre, the lock-on
+/// mark and the top the HP bar hangs off. Shared with `warrior.zig` — it is literally the same body, and
+/// three copies of "0.95" is three chances for one of them to be retuned alone.
+pub const CENTER_F: f32 = 0.95;
+pub const LOCK_F: f32 = 0.90;
+pub const TOP_F: f32 = 1.15;
+
+/// Shared with `warrior.zig`: the same skeleton stands on the same feet, and `footMesh` is the one thing these are measured off.
+pub const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKL, .heel = 0.04 * H, .toe = 0.245 * H, .halfW = 0.05 * H, .drop = 0.034 * H },
     .{ .bone = ANKR, .heel = 0.04 * H, .toe = 0.245 * H, .halfW = 0.05 * H, .drop = 0.034 * H },
 };
@@ -517,7 +525,7 @@ pub const Archer = struct {
 
     // All three ride `hop`: the backstep lifts the whole rig off the earth (pose() adds it to the pelvis), so a hurt sphere / reticle / HP bar pinned to ground height DETACHES from the body for the whole 0.44 s leap — the reticle sits at its feet and the blade tests empty air below it.
     pub fn centerWorld(self: *const Archer) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + 0.95 * H * self.scale + self.hop, self.pos.z);
+        return v3(self.pos.x, self.pos.y + CENTER_F * H * self.scale + self.hop, self.pos.z);
     }
     pub fn hurtRadius(self: *const Archer) f32 {
         return HURT_R * self.scale;
@@ -526,10 +534,10 @@ pub const Archer = struct {
         return BODY_R * self.scale;
     }
     pub fn lockPoint(self: *const Archer) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + 0.90 * H * self.scale + self.hop, self.pos.z);
+        return v3(self.pos.x, self.pos.y + LOCK_F * H * self.scale + self.hop, self.pos.z);
     }
     pub fn topWorld(self: *const Archer) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + 1.15 * H * self.scale + self.hop, self.pos.z);
+        return v3(self.pos.x, self.pos.y + TOP_F * H * self.scale + self.hop, self.pos.z);
     }
     pub fn alive(self: *const Archer) bool {
         return !self.gone;
@@ -961,6 +969,15 @@ pub const Line = struct {
 
 // Every bone carries its own seeded wonk — kinks, waists, stains, uneven knobs — so no two
 fn buildMeshes() [N]rl.Mesh {
+    var mesh = boneMeshes();
+    mesh[BOW] = bowMesh();
+    return mesh;
+}
+
+/// THE BARE SKELETON — the same dead man, with the `HELD` slot left EMPTY for whatever is in his fist:
+/// this file's bow, or one of `warrior.zig`'s armaments. `mesh[HELD]` comes back UNDEFINED and every
+/// caller fills it or skips it; there is no such thing as an empty `rl.Mesh` to put there instead.
+pub fn boneMeshes() [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
     mesh[ROOT] = pelvisMesh();
     mesh[SPINE] = lumbarMesh();
@@ -979,7 +996,6 @@ fn buildMeshes() [N]rl.Mesh {
     mesh[SHR] = humerusMesh(110);
     mesh[ELR] = forearmMesh(111);
     mesh[WRR] = handMesh(112);
-    mesh[BOW] = bowMesh();
     return mesh;
 }
 

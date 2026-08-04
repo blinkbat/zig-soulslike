@@ -60,6 +60,7 @@ test {
     _ = @import("ogre.zig");
     _ = @import("kobold.zig");
     _ = @import("brood.zig");
+    _ = @import("warrior.zig");
     _ = @import("foe.zig");
     _ = @import("combat.zig");
     _ = @import("stats.zig");

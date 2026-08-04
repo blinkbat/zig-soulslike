@@ -62,7 +62,9 @@ A convincingly **human** hero that walks / runs / sprints / dodge-rolls and swin
 light slash / R2 heavy overhead, kinetic-chain sequenced, swept blade hit-capsule), under a
 third-person over-the-shoulder camera, in a lit 3D world with cast shadows (warm low sun vs cool
 slate sky, cloud deck, haze, vignette, plus point-light torch/brazier/campfire fire). Four foes
-hunt him — **gaping toads**, **skeletal archers**, a lone **one-eyed ogre**, and a **kobold WARBAND**
+hunt him — **gaping toads**, **skeletal archers**, **skeletal WARRIORS** (`warrior.zig` — a shieldman who
+BLOCKS you until you break his guard and a greatsword with an uninterruptible diagonal slam), a lone
+**one-eyed ogre**, and a **kobold WARBAND**
 (`kobold.zig` — three roles of one doglike creature in ONE group, because the priest heals its
 friends: berserker / priest / slinger) and a **BROOD MOTHER** with her egg sacs and **BROODLINGS**
 (`brood.zig` — a slow, claw-armed spider who spits ACID POOLS to hold you off a clutch she keeps
@@ -101,6 +103,14 @@ invisible — this lid is a CLOSED cylinder and the slab lives inside it.
 text file of authoring OPS (`worldfmt.zig`); `env.materialize` replays it into props. Nothing
 about the world is authored in Zig any more — `env.zig` is the loader, `editor.zig` is the
 author, and **Menu > Editor** is how you get there.
+
+**AND THERE ARE TEST ZONES BESIDE THE SHIPPED MAP.** `02_brood_arena.world` and
+`03_bone_court.world` are small walled courts holding ONE fight each, for judging a creature without
+walking the plain to find it — the Bone Court posts two skeletal shieldmen and two greatswords, plus
+one of each campfire. Reach them the same way: **Menu > Editor > Open**, then **F5** to playtest.
+A test zone nobody boots into is a file that rots, so `env`'s "EVERY SHIPPED MAP LOADS AND
+MATERIALIZES" test loads and replays all of them — an op renamed under `02`/`03` fails the build
+instead of panicking in the Open dialog months later.
 
 **THE MAP STORES THE AUTHORING, NOT ITS OUTPUT.** A wood is one `belt` of 260 attempts with a
 kind mix and an edge gradient, not 260 coordinates — so the file is ~280 lines you can read in
@@ -177,8 +187,8 @@ and the map's own `half:` is the only source), holding five regions
 | west | **the Old Wood** | great trees (3 variants), ferns/brambles/bushes, boulders, a **standing-stone circle**, a woodcutter's **cottage** + campfire |
 | south | **the Windswept Downs** | open and sparse — lone trees, field stones, graves, a watchtower |
 
-**81 prop kinds**, **17,083 instances, 1,791 colliders and 40 fires**, of which a frame draws **763 in
-250 cells in the CITY and 1,335 in 313 in the WOOD**, both passes together — read off
+**82 prop kinds**, **17,088 instances, 1,801 colliders and 37 fires**, of which a frame draws **768 in
+259 cells in the CITY and 1,332 in 312 in the WOOD**, both passes together — read off
 `91_stats_city.png` / `92_stats_wood.png`, which is the only honest way to state it. (This said "~633
 … the wood is comparable": the figure predates the last two world edits and the wood was never
 comparable — it is nearly twice the city, because a wood is canopy standing in front of canopy.)
@@ -187,10 +197,14 @@ why it is affordable, and the debug Stats overlay prints it live so it stays che
 "replaying the SHIPPED map produces a stable world" test PINS the same three, so a scatter that quietly
 gains or loses instances fails the build instead of drifting in a screenshot — but **its prop count is
 the HIGHER of the two on purpose** and the two must not be reconciled: the test calls `materialize`
-without `uploadWater`, so the painted tarn rejects nothing and it pins **17,197** where the running
-game shows 17,083. Solids and fires do not read the water and so match exactly.
+without `uploadWater`, so the painted tarn rejects nothing and it pins **17,202** where the running
+game shows 17,088. Solids and fires do not read the water and so match exactly.
 **Move both together when either moves**: the props rework left the test pinning 17,292/1,836/34
 and this line repeating it, and `9dea3c0`'s world edit left both at 16,884/1,687/35, so the guard sat red
+— and the LAST move of it was two changes at once, which is the case to be careful of: five cliffs the
+owner added in the editor (+5 props, +10 solids, and the counts added up exactly) and the campfire going
+cold in the CODE (−3 fires). Two causes, one red test; read the three numbers separately or you will
+"fix" the world for something the engine did
 for two commits each time — and a pin that always fails cannot
 catch the next drift, which is the only thing it is for. **AND `git diff worlds/` BEFORE SUSPECTING THE
 CODE** — the owner edits the map in the editor while playing, so the commonest reason this pin goes red is
@@ -222,7 +236,10 @@ meadow's (`shaders.terrainAlbedo`'s region drift — the GLSL, not the Zig).
   three bearings, a caught blow mid-recoil, and the shield's own back), the BOW (`20f..20r` — see THE
   BOW), then every foe's states —
   including the kobold POUNCE in three beats (`66d..66f`) and the BITE in profile (`69c`/`69d`), both
-  of which shipped unjudged because neither had a shot — then the **WORLD TOUR**
+  of which shipped unjudged because neither had a shot, and the SKELETAL WARRIORS (`113…` — the pair, the
+  shieldman's guard and a crop of his boards, the mace in four beats, the KNEEL with the shield broken off
+  him, the diagonal slam and the leaping LUNGE in four each) and the two CAMPFIRES side by side (`114…`)
+  — then the **WORLD TOUR**
   (`70..92`): one framing per region, the chapel/watchtower interiors under torchlight, the tarn,
   the cliffs, five overhead MAP shots and two Stats readouts, then the EDITOR (`95..99g`) — layers,
   a marquee, the ground brush, PAINTED WATER from low down and overhead, the OBJECT VIEWER's two
@@ -578,9 +595,74 @@ lines where the concerns genuinely part company, and each new file is named so t
                  **AND THE CLAWS ARE THE SILHOUETTE:** flat blades standing on EDGE, carried up and
                  forward on arms mounted above the leg line — authored flat or slung at leg height they
                  are two more of the eight legs, which is what the first three passes of this looked like.
+- `warrior.zig` — THE SKELETAL WARRIORS + the `Muster`. TWO ROLES OF ONE CORPSE — a SHIELDMAN with mace
+                 and kite shield, and a GREATSWORD — in one file and one struct, the warband's pattern for
+                 the warband's reason: they are `archer.zig`'s skeleton (its `boneMeshes`, its feet) with
+                 something else in the fist, so only the kit and the state machine differ — and A HAND
+                 TALLER AGAIN THAN HIM (`SCALE` is DERIVED off the archer's own, which is derived off the
+                 hero's stature: never a magic 1.26).
+                 **A ROLE'S MOVESET IS DATA** (`Attack`, and a slice of them per role), which is what lets
+                 the greatsword carry two answers without a second state machine to keep in step.
+                 - **THE SHIELDMAN BLOCKS YOU** — `combat.GUARD_ARC` off his facing, the hero's own rule
+                   from the other side, paid for out of his own `combat.Stamina.initFoe` pool. A blocked
+                   blow is NOT a hit: no hit-confirm, no flinch, and `guardChip` is all that gets through.
+                 - **AND HIS BOARDS ARE THIN.** Four hero lights or two heavies empty them, and emptying
+                   them UNDER A BLOW is a GUARD BREAK: he goes **down on one knee** and the shield is
+                   **smashed off him for good** (owner's call). `shieldGone` is a latch nothing clears —
+                   the mesh stops drawing, `guardUp` is false forever, and the rest of that fight is a
+                   different fight. It is the biggest reaction in the file and the whole point of him.
+                 - **WHAT A WARRIOR HITS YOU WITH IS THE POSED WEAPON** — `tryReach` tests the segment
+                   the kit itself swept between last frame and this one (`KIT_SEG` ridden through
+                   `xf[WPN]`, the ogre's `clubLowWorld` law carried all the way) against the COLUMN the
+                   hero stands in, so a blow that never came near you cannot land and one over your skull
+                   or in the dirt at your feet is a miss. `Attack.reachOut` is a MEASUREMENT of that
+                   swing, kept for the AI's trigger range alone (the test itself is shared —
+                   `foe.weaponReaches`; the kit's LENGTHS and WIDTHS are one set of constants the meshes
+                   and the hurt segment both read, or a blade lengthened in the modeller keeps its old
+                   reach — that is how the greatsword's point came to sit 0.12 m inside its own steel). It shipped the other way round — an
+                   annulus sector guessed off his yaw — and the two drifted until the mace fired at 2.8 m
+                   off a head that never left 0.6 m of his own chest, which is exactly what the owner
+                   read as "the weapon barely moves but I get hit". Re-tune a swing and RE-MEASURE: the
+                   tests drive whole strokes through `swung()` and re-assert reach, tell height and that
+                   nothing ploughs the turf.
+                 - **A STROKE KEEPS THE WEAPON'S ATTITUDE SMOOTH, NOT ITS WRIST ANGLE** (`swingTilt`).
+                   `wpnTilt` is a wrist channel; held steady through a 220-degree shoulder sweep it
+                   leaves the weapon radial to the arm at the bottom of the arc, and two metres of steel
+                   on a two-and-a-half-metre skeleton then goes 0.44 m UNDER THE TURF beside its own
+                   boot. So the swings author where the kit POINTS in the world (0 straight down, 90
+                   level, 180 stood on end) and the wrist is handed whatever that costs. Both kits are
+                   authored pointing UP out of the grip (they were built in the archer's bow frame), and
+                   `wpnFit` is the flip that makes a carry a big number and a blow a small one.
+                 - **THE ARM GOES LONG AT THE BLOW.** An elbow still folded at impact keeps the head
+                   inside his own silhouette however far the numbers say it reaches.
+                 - **THE DIAGONAL SLAM IS UNINTERRUPTIBLE** (owner's call) and `hyper` is a property of
+                   the MOVE, not of the creature: damage lands, poise and stance are taken off the blow,
+                   and only death stops it. Long tell, long reach, long recovery.
+                 - **…AND THE LUNGE IS THE ANSWER TO HIM**: a quick two-stroke combo you CAN interrupt,
+                   opening with a little LEAP (`Attack.lunge`/`hop`, travel integrated off a curve like
+                   the archer's backstep, and A LEAP IS ONE KNEE UP — see kobold.zig's law). A combo's
+                   follow-up runs on `chainWind` and does not re-telegraph, or it is two attacks.
+                 - **THE MACE IS NOT FAST** (owner: "swing too fast"). Its windup is a GATHER, a cock and
+                   a held shiver — three beats, not a lerp between two poses. An arm that starts
+                   travelling on frame one has no anticipation in it and reads as weightless however long
+                   the clock says it is.
+                 - **AND A TELL IS A SILHOUETTE** (owner: "windup hard to see"). The cocked kit is carried
+                   clear of the skull — MEASURED 2.35 m for the mace head and 2.83 m for the point,
+                   against a 1.72 m shoulder line — and grit comes up off the load whichever move it is.
+                   The mace cock shipped at 1.34 m, which is chest height on its own owner: a windup
+                   inside the outline is not a windup.
+                 - **THE SHOULDER CHANNELS ARE POSITIVE-IS-FORWARD**, the inverse of the archer's, because
+                   `poseUpper` negates on the way in. Authored the obvious way round, the guard arm swings
+                   BACK and the boards hang at his hip covering his shin. That is how it shipped first.
+                 - Its FX are DUST, BONE and IRON — a skeleton does not bleed. Chips off a landed blow,
+                   sparks off the boards, splinters when they go, a crater under the slam, and plumes at
+                   both ends of the leap.
 - `foe.zig`    — THE FOE STANDARD: the shared contract + behaviours every enemy plugs into, so
                  lock-on, HP bars, collision, the blade hit-test and the combat beats are written
-                 ONCE. Holds `Blade` and `strike()`, `Blow` (a landed hit AND where it came from —
+                 ONCE. Holds `Blade` and `strike()` (the HERO's blade into a foe) and
+                 `weaponReaches()` (a FOE's swung kit into the hero — the segment it swept across one
+                 frame against the COLUMN the hero stands in, `HERO_LOW`/`HERO_HIGH`, so a blow over his
+                 skull or into the dirt at his boots misses), `Blow` (a landed hit AND where it came from —
                  the hero's shield covers an arc, so a bare Hit cannot be answered), the telegraph
                  PARTICLE pool (plus the two burst
                  colours that are the WORLD's and not one creature's — `DUST` and the grace-gold
@@ -635,7 +717,18 @@ lines where the concerns genuinely part company, and each new file is named so t
                  off the PLACING OP (`Op.loot`), so a chest's stock is authored in the map and
                  not in the code. Opening is once-only and an out-of-range op index yields an
                  empty list rather than reading past the map.
-- `rest.zig`   — SITTING AT THE BONFIRE: the four-phase state machine (`off`/`in`/`sit`/`out`),
+- `rest.zig`   — SITTING AT THE BONFIRE, and now at a **CAMPFIRE** too. `isRestKind` is the ONE predicate
+                 that decides what you can sit at, and the lit campfire is a FULL grace (owner's call) —
+                 the same restore and the same world reload, because the one thing worse than a second
+                 rest kind is a second rest kind with its own half-rules. **THERE ARE TWO CAMPFIRE KINDS
+                 AND THE DIFFERENCE IS THE FIRE**: `campfire` is the **Extinguished Campfire**, cold ash
+                 in a ring of stones, dressing only and carrying no `light`; `campfire_lit` is **Campfire**,
+                 which burns, is shelved under the editor's **Interactables** layer beside the chests
+                 (`INFO.interact`), and is a place to sit. Both are built from ONE `hearthInto` off ONE
+                 seed, so they are the same fire at two different hours rather than two props. The shipped
+                 map's three campfires are the EXTINGUISHED kind now, which is why its fire count went
+                 40 → 37; swapping one to `campfire_lit` in the editor puts the fire back and gains a
+                 grace with it. Also the four-phase state machine (`off`/`in`/`sit`/`out`),
                  the fades either side of it, the dusk `dim` and the fire bed's level, and the
                  `seat` the hero takes (a spot off the fire, three-quarters on to the lens). The
                  EDGES (`justEntered`/`justLeft`) are one-frame flags `game.tickRest` hangs the
@@ -1251,6 +1344,7 @@ this exists is pure physical and its arithmetic did not move.
   | kobold (all three) | −45 | +20 | 0 | 0 | fur goes up — the fire arrow IS the answer to a warband, and they throw it themselves |
   | brood mother / broodling | −25 | +35 | 0 | +75 | chitin and its own acid, hung about with silk |
   | egg sac | −70 | 0 | 0 | +75 | dry silk over a membrane: the one thing in her nest that really burns |
+  | skeletal warrior (both) | −35 | +60 | 0 | +45 | THE ARCHER'S OWN TABLE, because it is the archer's body |
 
 - **NOTHING GRANTS THE HERO ANY YET, AND THE SHEET SAYS SO ON ITS OWN ROWS** — Character menu >
   **RESISTANCES**, a second read-only list beside ATTRIBUTES, rows walked off `combat.Elem` so a fifth

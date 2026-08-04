@@ -265,11 +265,21 @@ pub const STAM_LOCKOUT = true;
 
 pub const STAM_WIND_CLEAR: f32 = 0.5;
 
+/// A FOE'S GUARD COMES BACK SLOWLY, the way its poise does (`FOE_REGEN_RATE`): at the hero's rate a
+/// shieldman's boards are back up before the next swing lands and the bar can never be emptied.
+pub const FOE_STAM_RATE: f32 = 0.26;
+
 pub const Stamina = struct {
     cur: f32 = STAM_MAX,
     max: f32 = STAM_MAX,
     sinceSpend: f32 = LONG_AGO, // gates the refill delay
     winded: bool = false,
+    regenRate: f32 = 1.0,
+
+    /// A guard that is NOT the hero's — its own pool, on the slow foe schedule (mirrors `Vitals.initFoe`).
+    pub fn initFoe(max: f32) Stamina {
+        return .{ .cur = max, .max = max, .regenRate = FOE_STAM_RATE };
+    }
 
     pub fn frac(self: *const Stamina) f32 {
         return if (self.max > 0) mathx.clampF(self.cur / self.max, 0, 1) else 0;
@@ -296,7 +306,7 @@ pub const Stamina = struct {
         } else {
             self.sinceSpend += dt;
             if (!committed and self.sinceSpend >= STAM_DELAY) {
-                self.cur = mathx.minF(self.max, self.cur + STAM_REGEN * dt);
+                self.cur = mathx.minF(self.max, self.cur + STAM_REGEN * self.regenRate * dt);
             }
         }
         self.settleWind();
@@ -792,6 +802,28 @@ test "a small shield holds off the small stuff and CANNOT hold a giant" {
     while (t.cur > 0) : (slams += 1) t.spend(guardStamina(.{ .dmg = 36 }));
     try std.testing.expect(bites >= 6);
     try std.testing.expect(slams >= 2 and slams <= 3);
+}
+
+test "A FOE'S GUARD IS A SLOW POOL — its own size, and the winded latch holds the shield down" {
+    var s = Stamina.initFoe(62);
+    try std.testing.expectApproxEqAbs(@as(f32, 62), s.max, 1e-5);
+    try std.testing.expect(s.regenRate < 0.5); // a hero-rate foe guard can never be emptied
+    // Emptied under a blow it is WINDED, and stays winded well past the frame that emptied it —
+    // which is what makes a guard break a real opening instead of a flicker.
+    while (s.cur > 0) s.spend(guardStamina(.{ .dmg = 13 }));
+    try std.testing.expect(s.winded and !s.canSprint());
+    var t: f32 = 0;
+    while (t < 1.5) : (t += 1.0 / 60.0) s.tick(1.0 / 60.0, false, false);
+    try std.testing.expect(s.winded);
+    while (t < 20.0) : (t += 1.0 / 60.0) s.tick(1.0 / 60.0, false, false);
+    try std.testing.expect(!s.winded); // …and it does come back, given the time
+    // The hero's own pool is untouched by any of this.
+    var h = Stamina{};
+    try std.testing.expectApproxEqAbs(@as(f32, 1), h.regenRate, 1e-6);
+    h.spend(STAM_ROLL);
+    h.tick(0.55 + 1.0 / 60.0, false, false);
+    h.tick(1.0 / 60.0, false, false);
+    try std.testing.expect(h.cur > STAM_MAX - STAM_ROLL);
 }
 
 test "the jerky's drip pours its whole meal, and no more" {

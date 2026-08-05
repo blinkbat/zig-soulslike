@@ -23,6 +23,16 @@ pub const CATCH = rgba(255, 244, 226, 255);
 /// held their own copy of it, which is two highlights one repaint apart.
 pub const HOT = rgba(236, 210, 150, 255);
 
+// THE INK, in four weights: a heading, a number, the label beside it, and the crib line nobody reads
+// twice. The menu card and the character book are the same chrome and must not drift into two greys.
+pub const TEXT_TITLE = rgba(232, 222, 198, 255);
+pub const TEXT_VALUE = rgba(216, 206, 184, 255);
+pub const TEXT_DIM = rgba(150, 146, 138, 255);
+pub const TEXT_HINT = rgba(128, 122, 110, 255);
+/// A CHANGE IN YOUR FAVOUR, and one against it — the equipment screen's deltas, and nothing else yet.
+pub const GOOD = rgba(146, 194, 118, 255);
+pub const BAD = rgba(206, 96, 78, 255);
+
 fn fi(v: i32) f32 {
     return @floatFromInt(v);
 }
@@ -160,4 +170,97 @@ pub fn well(x: i32, y: i32, w: i32, h: i32, a: u8) void {
 const CANDLE = rgba(255, 176, 90, 255);
 pub fn candle(cx: i32, cy: i32, r: f32, a: u8) void {
     rl.drawCircleGradient(cx, cy, r, withAlpha(CANDLE, a), withAlpha(CANDLE, 0));
+}
+
+// ── SLOTS ─────────────────────────────────────────────────────────────────────────────────────────
+// THE ONE SOCKET. The HUD's equipment cross and the character book's grids are the same fitting at two
+// sizes, and they were two copies until the book wanted one: a hard black seat, a sunk well, a rim that
+// brightens when something is IN it, and jewelled corners on the occupied ones.
+
+const WELL_ON: u8 = 148;
+const WELL_OFF: u8 = 68;
+const SLOT_ON = rgba(180, 168, 140, 240); // an occupied slot's brighter rim
+const SLOT_OFF = rgba(124, 115, 98, 122);
+
+pub fn socket(x: i32, y: i32, w: i32, h: i32, on: bool) void {
+    rl.drawRectangle(x - 1, y - 1, w + 2, h + 2, withAlpha(rl.Color.black, if (on) 150 else 80));
+    well(x, y, w, h, if (on) WELL_ON else WELL_OFF);
+}
+
+pub fn socketRim(x: i32, y: i32, w: i32, h: i32, on: bool) void {
+    rl.drawRectangleLinesEx(rectF(x, y, w, h), 1, if (on) SLOT_ON else SLOT_OFF);
+}
+
+/// A socket with its warm inner glow and jewels — the whole fitting, for callers with nothing to add.
+pub fn slot(x: i32, y: i32, w: i32, h: i32, on: bool) void {
+    socket(x, y, w, h, on);
+    if (on) candle(x + @divTrunc(w, 2), y + @divTrunc(h, 2), fi(@min(w, h)) * 0.55, 16);
+    socketRim(x, y, w, h, on);
+    if (on) cornerJewels(x, y, w, h, 2.4, withAlpha(GILT_DIM, 220));
+}
+
+/// THE CURSOR — four brackets standing OFF the slot they name, breathing in and out on the candle clock
+/// and squeezing hard onto the rim while a button is held. It is drawn outside the socket rather than as
+/// a border on it, because a cursor that replaces the rim reads as "this slot changed", not "you are here".
+/// `press` is 0…1 of the held-button squeeze; `travel` fades the whole thing while it is still flying in.
+pub fn slotCursor(x: i32, y: i32, w: i32, h: i32, press: f32, travel: f32) void {
+    const a: u8 = u8f(255.0 * mathx.clampF(travel, 0, 1));
+    if (a == 0) return;
+    const t: f32 = @floatCast(rl.getTime());
+    const breathe = 2.2 + 1.1 * mathx.sinf(t * 3.1);
+    const off: i32 = @intFromFloat(mathx.lerpF(breathe, -1.0, mathx.clampF(press, 0, 1)));
+    const bx = x - off;
+    const by = y - off;
+    const bw = w + off * 2;
+    const bh = h + off * 2;
+    const arm: i32 = @max(@divTrunc(@min(bw, bh), 4), 7);
+    const lit = withAlpha(GILT_BRIGHT, a);
+    const under = withAlpha(rl.Color.black, @intCast(@as(u16, 190) * a / 255));
+    for ([_][4]i32{
+        .{ bx, by, 1, 1 },
+        .{ bx + bw, by, -1, 1 },
+        .{ bx, by + bh, 1, -1 },
+        .{ bx + bw, by + bh, -1, -1 },
+    }) |c| {
+        const cx = c[0];
+        const cy = c[1];
+        const dx = c[2];
+        const dy = c[3];
+        const hx = if (dx > 0) cx else cx - arm;
+        const vy = if (dy > 0) cy else cy - arm;
+        rl.drawRectangle(hx + 1, cy + 1, arm, 2, under);
+        rl.drawRectangle(cx + 1, vy + 1, 2, arm, under);
+        rl.drawRectangle(hx, cy, arm, 2, lit);
+        rl.drawRectangle(cx, vy, 2, arm, lit);
+        finial(fi(cx), fi(cy), 2.8, lit);
+    }
+}
+
+/// THE ROW THE CURSOR IS ON, wherever a list has one: a faint warm wash, a lit spine down its left edge
+/// on the candle clock, and a slow gilt sweep across it. The menu card, the book's picker and its
+/// attribute list each struck their own — three washes one repaint apart, which is how a menu ends up
+/// with two highlights that do not match.
+const ROW_WASH = rgba(255, 232, 170, 23);
+
+pub fn rowHilite(x: i32, y: i32, w: i32, h: i32) void {
+    rl.drawRectangle(x, y, w, h, ROW_WASH);
+    rl.drawRectangle(x, y, 3, h, withAlpha(GILT_BRIGHT, flick(230, y)));
+    sheen(rectF(x, y, w, h), 3.8, 24);
+}
+
+/// The scroll rail beside a grid or a list — a track and a nub, so a page that continues says so.
+pub fn rail(x: i32, y: i32, h: i32, shown: f32, at: f32) void {
+    if (shown >= 0.999) return;
+    rl.drawRectangle(x, y, 3, h, withAlpha(rl.Color.black, 150));
+    const nub: i32 = @intFromFloat(@max(fi(h) * mathx.clampF(shown, 0.06, 1.0), 16.0));
+    const top: i32 = @intFromFloat(fi(h - nub) * mathx.clampF(at, 0, 1));
+    rl.drawRectangle(x, y + top, 3, nub, withAlpha(GILT, 190));
+    rl.drawRectangle(x, y + top, 3, 1, withAlpha(CATCH, 160));
+}
+
+/// A COUNT IN THE CORNER OF A SLOT — the bag's stack sizes and the quiver's tally. Right-aligned into a
+/// dark shelf so a two-digit number never smears into the picture behind it.
+pub fn tallyShelf(x: i32, y: i32, w: i32, h: i32) void {
+    rl.drawRectangle(x, y, w, h, withAlpha(rl.Color.black, 170));
+    rl.drawRectangle(x, y, w, 1, withAlpha(GILT_DIM, 70));
 }

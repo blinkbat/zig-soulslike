@@ -72,6 +72,8 @@ test {
     _ = @import("worldfmt.zig");
     _ = @import("editor.zig"); // hangs off game.zig, which this root does not reach for tests
     _ = @import("audio.zig");
+    _ = @import("hud.zig"); // the word wrap the character book's descriptions are laid out with
+    _ = @import("book.zig");
     // …AND game.zig ITSELF, which this list said was unreachable and then never named.
     _ = @import("game.zig");
 }

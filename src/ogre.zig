@@ -134,7 +134,7 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
 // `108_brood_scale`'s ogre framings before pushing it further.
 pub const SCALE = 2.4;
 const WALK_SPEED = heromod.WALK_SPEED * 0.72; // a slow, ground-eating lumber (long legs cover it)
-const AGGRO_R = 18.0; // it sees you coming from far off (it's huge)
+pub const AGGRO_R = 18.0; // it sees you coming from far off (it's huge)
 const SLAM_R = 2.3; // starts the overhead slam within this — kept INSIDE the crush strip's true end
 const SWIPE_R = 4.4; // the side swipe's reach — longer than the slam's, it's a HORIZONTAL arc that
 const TURN_RATE = 3.4; // rad/s (~195 deg/s) — still out-turned by the hero, but no longer a turret
@@ -433,7 +433,7 @@ pub const Ogre = struct {
         self.slamCd = mathx.maxF(0, self.slamCd - dt);
         self.swipeCd = mathx.maxF(0, self.swipeCd - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home));
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
         self.t += dt;
         self.updateFx(dt);
         var movedDist: f32 = 0;
@@ -610,11 +610,8 @@ pub const Ogre = struct {
         if (self.state == .dead) return;
         const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
         self.hits += 1;
-        self.leash.noteCombat();
-        if (blade.pierce) {
-            self.leash.provoke();
-            self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
-        }
+        self.leash.provoke();
+        if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
         self.flash = FLASH_DUR;
         const heavyBlow = blade.hit.stance > 0;
         self.bloodBurst(s.contact, s.dir, if (heavyBlow) 16 else 10, if (heavyBlow) 2.8 else 2.0);

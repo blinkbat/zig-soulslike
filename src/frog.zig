@@ -61,7 +61,7 @@ const BODY_R = 0.55; // ground-footprint radius for collision (pre per-toad scal
 pub const SCALE = 1.4;
 
 // Locomotion & senses (world units / seconds).
-const AGGRO_R = 11.0; // notices the hero within this
+pub const AGGRO_R = 11.0; // notices the hero within this
 /// CLOSE ENOUGH TO ITS OWN PATCH to stop hopping back to it. Deliberately TIGHTER than the tether's
 /// `foe.LEASH_HOME_R` — that is the radius a leash stops pulling at, this is a small animal's idea of
 /// having got home — and named rather than left a bare literal inside `decide`, which is where every
@@ -336,7 +336,7 @@ pub const Frog = struct {
         self.flash = mathx.maxF(0, self.flash - dt);
         self.t += dt;
         // THE TETHER: drawn a long way from its lily patch and left alone, it goes back (foe.Leash).
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home));
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
         self.updateFx(dt); // advance live particles (bursts from any state keep animating)
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt); // the knockback off a landed blow
 
@@ -626,11 +626,8 @@ pub const Frog = struct {
         if (self.state == .dead) return; // no hitting a corpse
         const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
         self.hits += 1;
-        self.leash.noteCombat();
-        if (blade.pierce) {
-            self.leash.provoke();
-            self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
-        }
+        self.leash.provoke();
+        if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
         self.flash = FLASH_DUR;
         const heavyBlow = blade.hit.stance > 0;
         // The blow READS at the wound: blood flung along the sweep, body knocked the same way.

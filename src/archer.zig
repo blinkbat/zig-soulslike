@@ -128,7 +128,7 @@ fn stretchZ(a: rl.Vector3, b: rl.Vector3) rl.Matrix {
 /// scale-corrected distance (`movedDist / self.scale`), without which a taller skeleton's foot skates.
 pub const SCALE = (H + 0.305) / H; // 0.305 m = one foot over the hero's stature
 const WALK_SPEED = heromod.WALK_SPEED * 0.95; // a wary, unhurried reposition
-const AGGRO_R = 24.0; // notices + engages the hero within this (ranged, so wider than the toad)
+pub const AGGRO_R = 24.0; // notices + engages the hero within this (ranged, so wider than the toad)
 const RANGE_MIN = 8.0; // too close → back off to re-open the shot
 const RANGE_MAX = 20.0; // out past here → step in to close to band
 const TURN_RATE = 6.0; // rad/s — tracks the hero (light aim tracking)
@@ -564,7 +564,7 @@ pub const Archer = struct {
         self.reloadCd = mathx.maxF(0, self.reloadCd - dt);
         self.backstepCd = mathx.maxF(0, self.backstepCd - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home));
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
         self.t += dt;
         var loosed = false;
         var movedDist: f32 = 0; // this frame's walk distance + heading → the shared gait
@@ -648,7 +648,8 @@ pub const Archer = struct {
                 self.hop = BACKSTEP_RISE * mathx.sinf(leapU(self.t) * std.math.pi);
                 if (self.t >= BACKSTEP_GATHER + BACKSTEP_FLIGHT + BACKSTEP_LAND) {
                     self.hop = 0;
-                    self.decide(mathx.distXZ(self.pos, hero));
+                    // RE-MEASURED (it leapt), BUT STILL THROUGH THE LEASH — see the kobold's dash.
+                    self.decide(foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R));
                 }
             },
             .stunlight => {
@@ -750,11 +751,8 @@ pub const Archer = struct {
         if (self.state == .dead) return;
         const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
         self.hits += 1;
-        self.leash.noteCombat();
-        if (blade.pierce) {
-            self.leash.provoke();
-            self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
-        }
+        self.leash.provoke();
+        if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
         self.flash = FLASH_DUR;
         const heavyBlow = blade.hit.stance > 0;
         self.shove = mathx.scaleV(s.dir, if (heavyBlow) 1.8 else 1.15); // a bone-clatter jolt off the blow

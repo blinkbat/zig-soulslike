@@ -30,7 +30,8 @@ pub const Chest = struct {
     swing: f32 = 0,
     opened: bool = false,
 
-    /// Where the prompt hangs, and the point a "which chest am I near" test measures from.
+    /// Where the prompt hangs. NOT what `Chests.update` measures reach from — that is the box's own
+    /// origin, as `REACH` says.
     pub fn topWorld(self: *const Chest) rl.Vector3 {
         return v3(self.pos.x, self.pos.y + (village.CHEST_TOP + 0.20) * self.scale, self.pos.z);
     }

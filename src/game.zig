@@ -10,6 +10,7 @@ const heromod = @import("hero.zig");
 const cameramod = @import("camera.zig");
 const hud_ = @import("hud.zig");
 const menumod = @import("menu.zig");
+const bookmod = @import("book.zig");
 const frogmod = @import("frog.zig");
 const foemod = @import("foe.zig"); // THE FOE STANDARD — the shared Blade/strike contract
 const combat = @import("combat.zig");
@@ -77,6 +78,10 @@ const SHAKE_HATCH = 0.30;
 const SHAKE_SAC_BURST = 0.34;
 const RESPAWN_HOLD = 0.55; // seconds of FULL black after the respawn…
 const RESPAWN_FADE = 0.9;
+/// THE YOU DIED CARD'S LETTERBOX BAND, as fractions of screen height — the caption's own centre is derived
+/// off these, not written out again beside them.
+const DEATH_BAND_TOP: f32 = 0.35;
+const DEATH_BAND_H: f32 = 0.30;
 
 pub var PLAY_HALF: f32 = worldfmt.DEFAULT_HALF - envmod.PLAY_INSET;
 
@@ -101,6 +106,10 @@ const MAX_LOCK_R = 17.0; // won't acquire, and drops, a foe beyond this
 const LOCK_CAM_EASE = 9.0; // exponential ease rate for the lock-on camera swing (quick, snap-free)
 const LOCK_PITCH = 0.24; // framing pitch while locked (the toads sit low)
 const LOCK_FLICK = 0.65; // right-stick |x| past this cycles to the next target
+/// HOW LONG A LOCK SURVIVES WITH NO SIGHT OF ITS TARGET. You cannot FIX on what you cannot see, but a
+/// lock that dropped the instant a pillar crossed the line would be unusable anywhere in these ruins —
+/// so it is a fade, not a switch, and it is long enough to cover a foe stepping behind its own cover.
+const LOCK_BLIND_HOLD: f32 = 1.1;
 
 const CLEAR = rgba(80, 76, 69, 255);
 
@@ -144,6 +153,7 @@ pub const Game = struct {
     shafts: [MAX_SHAFTS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_SHAFTS,
     rig: cameramod.CamRig,
     lock: ?FoeRef = null, // ER lock-on: which foe (toad or skeleton) is locked, or null
+    lockBlind: f32 = 0, // …and how long it has been since he could see it (see LOCK_BLIND_HOLD)
     rumble: rumblemod.Rumble = .{}, // controller vibration, keyed to combat beats
     deathFade: f32 = 0, // post-respawn fade-from-black seconds remaining (armed while dead)
     probe: LookProbe = .{},
@@ -178,7 +188,7 @@ pub const Game = struct {
         g.brood = broodmod.Brood.init(g.scene.shader);
         g.muster = warriormod.Muster.init(g.scene.shader);
         g.chests = chestmod.Chests.init(g.scene.shader);
-        rehomeFoes(g);
+        rehomeFoes(g, .blind);
         g.rest = .{};
         rehomeChests(g);
         g.bag = .{};
@@ -196,6 +206,7 @@ pub const Game = struct {
         g.restRetro = [_]f32{0} ** gfx.RETRO_COUNT;
         // …the look probe included: `Game` is built in place from `alloc.create`, so a field this block misses never gets its default at all — and `pad` is a bool, where raw heap bytes are illegal behaviour rather than merely a wrong caption.
         g.probe = .{};
+        g.drawDt = 1.0 / 60.0;
     }
 };
 
@@ -210,8 +221,20 @@ const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "muster", .kind = null },
 };
 
-fn rehomeFoes(g: *Game) void {
-    inline for (FOE_GROUPS) |f| @field(g, f.field).reset(&g.map);
+/// Whether a re-homed field starts with EYES on the hero. A world that has only just loaded starts
+/// `.blind` — nobody has seen him yet, and a foe posted behind a wall must not know he is there until
+/// `markSight` says so. The SHOT HARNESS starts `.seen`: it drives creatures with nothing but air between
+/// them and no game loop to stamp their eyes, and a blind foe stands still, which is not what a portrait
+/// of a charge is a portrait of.
+const Sighted = enum { blind, seen };
+
+fn rehomeFoes(g: *Game, sighted: Sighted) void {
+    inline for (FOE_GROUPS) |f| {
+        @field(g, f.field).reset(&g.map);
+        if (sighted == .blind) {
+            for (@field(g, f.field).live()) |*x| x.leash.blindNow();
+        }
+    }
 }
 
 /// EVERY LIST THE GAME TARGETS, walked ONCE: the five `FOE_GROUPS`, plus any SECOND list a group keeps on the field (`liveExtraConst` — the brood's sacs, which are real targets with their own HP). Spliced in by hand per site instead, the answers drift apart: four sites had the sacs and `rayFoeDist` never did, so an aimed shaft converged straight past a clutch.
@@ -225,15 +248,19 @@ fn eachTarget(g: *const Game, ctx: anytype, comptime visit: anytype) void {
     }
 }
 
+/// HOW WIDE A POSITION SNAPSHOT OF THIS GROUP HAS TO BE — the array `live()` slices, found by MATCHING ITS
+/// ELEMENT TYPE rather than by "the first array of structs with a `pos` field". Off the shape alone it
+/// answered with whichever such array came first in the struct, so re-ordering the brood's fields to put
+/// its `pools` (which carry a `pos`) above its `band` would silently size the snapshot to `POOL_CAP` and a
+/// full clutch would slice past the end of it.
 fn groupCap(comptime field: []const u8) usize {
     const G = @FieldType(Game, field);
+    const Member = @typeInfo(@typeInfo(@TypeOf(G.live)).@"fn".return_type.?).pointer.child;
     for (@typeInfo(G).@"struct".fields) |f| {
         const info = @typeInfo(f.type);
-        if (info != .array) continue;
-        if (@typeInfo(info.array.child) != .@"struct") continue;
-        if (@hasField(info.array.child, "pos")) return info.array.len;
+        if (info == .array and info.array.child == Member) return info.array.len;
     }
-    @compileError("game: " ++ field ++ " has no foe array to size a position snapshot from");
+    @compileError("game: " ++ field ++ " has no [_]" ++ @typeName(Member) ++ " to size a position snapshot from");
 }
 
 const FOE_CAP = blk: {
@@ -501,7 +528,7 @@ pub fn clearFoesForShot(g: *Game) void {
     clearFoes(g);
 }
 pub fn rehomeFoesForShot(g: *Game) void {
-    rehomeFoes(g);
+    rehomeFoes(g, .seen);
 }
 
 pub fn shootShaftForShot(g: *Game, at: rl.Vector3, kind: combat.ArrowKind) void {
@@ -547,7 +574,7 @@ pub fn endRestForShot(g: *Game) void {
     sfx.restFireOn(false);
     var fires: [restmod.CAP]restmod.Site = undefined;
     g.rest.reset(fires[0..g.env.restSites(&fires)]);
-    rehomeFoes(g);
+    rehomeFoes(g, .blind);
 }
 pub fn openChestForShot(g: *Game) bool {
     const had = g.chests.near != null;
@@ -581,7 +608,7 @@ fn tickRest(g: *Game, dt: f32) void {
     if (g.rest.justLeft) {
         g.retro.values = g.restRetro;
         g.hero.sit(false, g.hero.pos, g.hero.facing);
-        rehomeFoes(g);
+        rehomeFoes(g, .blind);
     }
     if (rl.isKeyPressed(.escape) or rl.getKeyPressed() != .null or rl.isMouseButtonPressed(.left) or
         (rl.isGamepadAvailable(PAD) and rl.getGamepadButtonPressed() != .unknown))
@@ -723,6 +750,43 @@ fn stepShafts(g: *Game, dt: f32) void {
         g.rumble.play(rumblemod.hit_light);
         g.rig.addShake(SHAKE_HIT_LIGHT);
     }
+}
+
+// ── SIGHT ─────────────────────────────────────────────────────────────────────────────────────────
+// NOTHING NOTICES WHAT IT CANNOT SEE. The look is taken from the foe's own lock point (its head or its
+// chest — the thing already defined as "where this creature IS" for the reticle) to the hero's eye, and
+// stamped on the foe's leash, which is where every creature already reads its senses (`foe.sensedDist`).
+//
+// IT IS ASKED HERE, ONCE A FRAME, and not by the creatures: the prop grid a look is tested against
+// belongs to `env`, and handing a world to six state machines so each could re-ask the same question is
+// six copies of it. Only foes near enough for the answer to change anything are asked at all.
+
+/// PAST THE WIDEST NOTICE RING IN THE GAME, beyond which a foe reads the hero as far off whatever the
+/// answer is — DERIVED off the rings themselves, because a creature given a wider one later would
+/// otherwise stop being asked the question and quietly see through walls again.
+const SIGHT_R: f32 = 1.0 + @max(
+    @max(frogmod.AGGRO_R, archermod.AGGRO_R),
+    @max(@max(ogremod.AGGRO_R, koboldmod.AGGRO_R), @max(warriormod.AGGRO_R, broodmod.AGGRO_R)),
+);
+
+fn heroEye(g: *const Game) rl.Vector3 {
+    return v3(g.hero.pos.x, g.hero.pos.y + foemod.HERO_EYE, g.hero.pos.z);
+}
+
+fn markSight(g: *Game) void {
+    const eye = heroEye(g);
+    inline for (FOE_GROUPS) |gr| {
+        for (@field(g, gr.field).live()) |*f| {
+            if (!f.alive() or f.dying()) continue;
+            if (mathx.distXZ(g.hero.pos, f.pos) > SIGHT_R) continue;
+            if (g.env.sees(f.lockPoint(), eye)) f.leash.noteSeen();
+        }
+    }
+}
+
+/// …and the same question for the LOCK: you cannot fix on what you cannot see either.
+fn canSee(g: *const Game, r: FoeRef) bool {
+    return g.env.sees(heroEye(g), foeLockPoint(g, r));
 }
 
 fn pierceFoes(g: *Game, blade: foemod.Blade) bool {
@@ -871,8 +935,10 @@ fn drawDeathOverlay(g: *Game) void {
         const dim = mathx.smoothstep(0.03, 0.30, u);
         rl.drawRectangle(0, 0, w, h, rgba(6, 3, 3, mathx.u8f(120.0 * dim))); // the world falls away
         const bandK = mathx.smoothstep(0.10, 0.34, u);
-        const bh: i32 = @intFromFloat(0.30 * hf);
-        const by: i32 = @intFromFloat(0.35 * hf);
+        const bandTop = DEATH_BAND_TOP * hf;
+        const bandH = DEATH_BAND_H * hf;
+        const bh: i32 = @intFromFloat(bandH);
+        const by: i32 = @intFromFloat(bandTop);
         const third = @divTrunc(bh, 3);
         const bcol = rgba(0, 0, 0, mathx.u8f(170.0 * bandK));
         const bclear = rgba(0, 0, 0, 0);
@@ -884,7 +950,7 @@ fn drawDeathOverlay(g: *Game) void {
             const size = 0.115 * hf * (0.97 + 0.06 * u); // the letters swell, barely
             const spacing = 0.22 * size; // ER's wide tracking (between glyphs only — measured exactly)
             const cx = 0.5 * wf;
-            const cy = 0.35 * hf + 0.15 * hf; // band centre
+            const cy = bandTop + bandH * 0.5; // band centre, DERIVED — three literals had to agree for the caption to sit in it
             const glow = rgba(120, 14, 10, mathx.u8f(44.0 * ta));
             hud_.bigCentered("YOU DIED", cx - 3, cy, size, spacing, glow);
             hud_.bigCentered("YOU DIED", cx + 3, cy, size, spacing, glow);
@@ -1060,6 +1126,7 @@ pub fn run(mode: Mode) void {
     if (!shot) sfx.init();
     defer if (!shot) sfx.deinit();
     defer objviewmod.unload();
+    defer bookmod.unload(); // the character book's turntable target
 
     const alloc = std.heap.c_allocator;
     const g = alloc.create(Game) catch return;
@@ -1148,7 +1215,7 @@ pub fn run(mode: Mode) void {
             g.hero.setGuard(false);
             g.hero.pose();
             // Re-home the foes from the map every frame the editor is up, so moving a spawn moves the thing you can SEE.
-            rehomeFoes(g);
+            rehomeFoes(g, .blind);
             rehomeChests(g);
             g.rumble.update(rawDt, false);
             drawScene(g);
@@ -1159,15 +1226,16 @@ pub fn run(mode: Mode) void {
 
         g.hero.held = g.menu.isOpen();
         if (g.menu.isOpen()) {
-            switch (g.menu.update(&g.retro, rawDt, &g.bag)) {
+            switch (g.menu.update(&g.retro, rawDt, bookView(g))) {
                 .quit => break,
                 .editor => {
                     // Drop the lock on the way in: the reticle rides a FoeRef into groups the editor re-homes from the map every frame, so a held lock survives into a world where its index means something else.
                     g.lock = null;
                     g.editor.enter(g.hero.pos);
                 },
-                // AN ITEM USED FROM THE BAG.
+                // AN ITEM USED FROM THE BAG, or a swap made in the character book.
                 .use => |k| useItem(g, k),
+                .arm => |a| bookAct(g, a),
                 .none => {},
             }
             bWasDown = true;
@@ -1182,7 +1250,7 @@ pub fn run(mode: Mode) void {
             sfx.ambience(rawDt);
             drawScene(g);
             hud(g, rawDt);
-            g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
+            g.menu.draw(&g.retro, bookView(g), .{ .hero = &g.hero, .scene = &g.scene });
             rl.endDrawing();
             continue;
         }
@@ -1215,7 +1283,19 @@ pub fn run(mode: Mode) void {
             }
         }
         if (g.lock) |li| {
-            if (!lockValid(g, li)) g.lock = null; // target wandered out of range
+            if (!lockValid(g, li)) {
+                g.lock = null; // target wandered out of range, or died
+            } else if (canSee(g, li)) {
+                g.lockBlind = 0;
+            } else {
+                // SIGHT GOES SOFT, NOT OFF (ER's own feel): a pillar passing between you mid-circle, or a
+                // foe stepping behind its own rubble for half a stride, must not throw the camera off it.
+                // The lock only lets go when he has really been gone for `LOCK_BLIND_HOLD`.
+                g.lockBlind += rawDt;
+                if (g.lockBlind >= LOCK_BLIND_HOLD) g.lock = null;
+            }
+        } else {
+            g.lockBlind = 0;
         }
 
         // Camera look.
@@ -1420,6 +1500,7 @@ pub fn run(mode: Mode) void {
         // THE SHAFT LEAVES on the one frame the loose says so.
         if (g.hero.loosed) looseShaft(g);
         const hitsBefore = allHits(g);
+        markSight(g); // WHO CAN SEE HIM — stamped before anything decides what to do about him
         // ONE snapshot of the blade for every group this frame — the hero's pose is already resolved above, so re-deriving it per group only invited the three to disagree.
         const bladeNow = heroBlade(g);
         if (g.warren.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
@@ -1597,6 +1678,40 @@ fn heroHurtBeat(g: *Game, heavy: bool, voice: bool) void {
     g.rumble.play(if (heavy) rumblemod.hurt_heavy else rumblemod.hurt);
     g.rig.addShake(if (heavy) SHAKE_HURT_HEAVY else SHAKE_HURT);
     if (voice) sfx.play(if (heavy) .hurt_heavy else .hurt);
+}
+
+/// EVERYTHING THE CHARACTER BOOK READS, gathered in one place. It borrows the live state rather than a
+/// copy, so nothing on those pages can be a frame behind what the game is playing with.
+pub fn bookView(g: *Game) bookmod.View {
+    return .{
+        .bag = &g.bag,
+        .sheet = &g.hero.sheet,
+        .res = &g.hero.vit.res,
+        .flasks = &g.hero.flasks,
+        .quiver = &g.hero.quiver,
+        .arm = g.hero.arm,
+        .runes = g.hero.runes.display(),
+    };
+}
+
+/// A SWAP MADE IN THE BOOK. The same three moves the D-pad makes in play, so they go through the same
+/// hero methods and pick up the same refusals — a menu may not put a bow in his hands mid-roll.
+fn bookAct(g: *Game, a: bookmod.Action) void {
+    switch (a) {
+        .none => {},
+        .use => |k| useItem(g, k),
+        .arm => |want| if (g.hero.arm != want) {
+            _ = g.hero.swapArm();
+        },
+        .ammo => |k| while (g.hero.quiver.sel != k) {
+            if (!g.hero.cycleArrow()) break;
+        },
+        .flask => |k| while (g.hero.flasks.sel != k) {
+            const before = g.hero.flasks.sel;
+            g.hero.cycleFlask();
+            if (g.hero.flasks.sel == before) break; // refused (dead, or mid-draught): stop rather than spin
+        },
+    }
 }
 
 fn useItem(g: *Game, k: item.Kind) void {
@@ -1887,6 +2002,7 @@ const LockCtx = struct {
         for (foes, 0..) |*f, i| {
             if (!f.alive() or f.dying() or mathx.distXZ(self.g.hero.pos, f.pos) > MAX_LOCK_R) continue;
             const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
+            if (!canSee(self.g, r)) continue; // no fixing on a shape behind a wall
             const sx = lockScreenX(self.g, r) orelse continue;
             const score = @abs(sx - self.cx);
             if (score < self.bestScore) {
@@ -1911,6 +2027,7 @@ const CycleCtx = struct {
             const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
             if ((self.cur.kind == r.kind and self.cur.idx == i) or !f.alive() or f.dying()) continue;
             if (mathx.distXZ(self.g.hero.pos, f.pos) > MAX_LOCK_R) continue;
+            if (!canSee(self.g, r)) continue; // the flick skips what the acquire would not have taken
             const sx = lockScreenX(self.g, r) orelse continue;
             const gap = (sx - self.curX) * self.dir;
             if (gap > CYCLE_MIN_GAP and gap < self.bestGap) {
@@ -1934,7 +2051,7 @@ fn cycleLock(g: *Game, dir: f32) void {
 
 // The world-reload half of a hero death (ER: dying resets the field).
 fn resetFoes(g: *Game) void {
-    rehomeFoes(g);
+    rehomeFoes(g, .blind);
     clearQuivers(g);
     g.lock = null;
 }

@@ -142,18 +142,13 @@ fn spec(r: Role) *const Spec {
 }
 
 comptime {
-    // The spec table IS the role enum, in order.
-    std.debug.assert(SPEC.len == @typeInfo(Role).@"enum".fields.len);
-    for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
-        const fk: wf.FoeKind = @enumFromInt(@intFromEnum(wf.FoeKind.berserker) + i);
-        std.debug.assert(std.mem.eql(u8, f.name, @tagName(fk)));
-    }
-}
-
-comptime {
-    // A CONTIGUOUS RUN off `berserker`, in role order — `roleOf`/`kindOf` are an ordinal shift, and
-    // warrior.zig and brood.zig both pin theirs. Unpinned, a kind inserted into the middle of the run
-    // silently posts the wrong role: the priest spawns as a berserker and nothing fails to compile.
+    // The spec table IS the role enum, in order…
+    if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("kobold: a Role with no spec row");
+    // …and the kinds are A CONTIGUOUS RUN off `berserker`, in role order, because `roleOf`/`kindOf` are an
+    // ordinal shift (warrior.zig and brood.zig both pin theirs the same way). Unpinned, a kind inserted
+    // into the middle of the run silently posts the wrong role: the priest spawns as a berserker and
+    // nothing fails to compile. ONE walk asks both — it was written out twice, once as an assert and once
+    // as a compileError, over the same fields in the same order.
     for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
         const fk: wf.FoeKind = @enumFromInt(@intFromEnum(wf.FoeKind.berserker) + i);
         if (!std.mem.eql(u8, f.name, @tagName(fk))) {
@@ -173,7 +168,7 @@ pub fn kindOf(r: Role) wf.FoeKind {
     return @enumFromInt(@intFromEnum(wf.FoeKind.berserker) + @intFromEnum(r));
 }
 
-const AGGRO_R = 16.0; // it notices you from here
+pub const AGGRO_R = 16.0; // it notices you from here
 /// …and how near its post counts as back at it — tighter than the tether's own `foe.LEASH_HOME_R` on
 /// purpose (see frog.HOME_R), and named because a bare literal inside `decide` is where this drifted.
 const HOME_R = 1.5;
@@ -490,7 +485,7 @@ pub const Kobold = struct {
         self.t += dt;
         self.vit.tick(dt);
         self.flash = mathx.maxF(0, self.flash - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home));
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
         self.castCd = mathx.maxF(0, self.castCd - dt);
         self.slingCd = mathx.maxF(0, self.slingCd - dt);
         self.biteCd = mathx.maxF(0, self.biteCd - dt);
@@ -542,7 +537,9 @@ pub const Kobold = struct {
                 self.hop = DASH_RISE * mathx.sinf(dashU(self.t) * std.math.pi);
                 if (self.t >= DASH_GATHER + DASH_FLIGHT + DASH_LAND) {
                     self.hop = 0;
-                    self.decide(mathx.distXZ(self.pos, hero));
+                    // RE-MEASURED (it moved), BUT STILL THROUGH THE LEASH: on the raw distance a dash was
+                    // the one exit that re-engaged a foe walking home, or one that cannot see him.
+                    self.decide(foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R));
                 }
             },
             .cast => {
@@ -821,11 +818,8 @@ pub const Kobold = struct {
         if (self.state == .dead) return;
         const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
         self.hits += 1;
-        self.leash.noteCombat();
-        if (blade.pierce) {
-            self.leash.provoke();
-            self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
-        }
+        self.leash.provoke();
+        if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
         self.flash = FLASH_DUR;
         const heavyBlow = blade.hit.stance > 0;
         self.shove = mathx.scaleV(s.dir, if (heavyBlow) 2.1 else 1.35);
@@ -1705,8 +1699,9 @@ pub const Model = struct {
 
 // ALL THREE ROLES IN ONE ARRAY because the PRIEST heals a friend, so something has to see the whole band; split per FoeKind that something would be game.zig threading two groups into a third's update.
 
-/// Room for a full posting of every role (`wf.MAX_PER_KIND` each).
-pub const CAP = 3 * wf.MAX_PER_KIND;
+/// Room for a full posting of every role (`wf.MAX_PER_KIND` each) — off the SPEC table, so a fourth role
+/// widens the array with it rather than overflowing a hand-written 3.
+pub const CAP = SPEC.len * wf.MAX_PER_KIND;
 
 pub const Warband = struct {
     model: Model,
@@ -1725,14 +1720,7 @@ pub const Warband = struct {
     }
 
     pub fn reset(self: *Warband, m: *const wf.Map) void {
-        self.n = 0;
-        for (m.foes[0..m.nfoes]) |h| {
-            const role = roleOf(h.kind) orelse continue;
-            if (self.n >= CAP) continue;
-            // ON THE GROUND the map's own height field decides — a spawn table stores x/z only, so posting one on a sculpted rise and dropping it at y = 0 buries it to the waist.
-            self.band[self.n] = Kobold.spawnAs(role, v3(h.x, m.heightAt(h.x, h.z), h.z), mathx.radians(h.yaw), h.scale, h.seed);
-            self.n += 1;
-        }
+        foe.resetRoles(Kobold, Role, &self.band, &self.n, m, roleOf);
     }
 
     pub fn setShader(self: *Warband, sh: rl.Shader) void {

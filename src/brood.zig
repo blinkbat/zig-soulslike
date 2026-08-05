@@ -249,6 +249,14 @@ const Spec = struct {
     runes: u32,
 };
 
+/// THE WIDEST NOTICE RING IN THE BROOD, off the table itself — read by `game.markSight` to work out how
+/// far out a look at the hero is worth taking at all.
+pub const AGGRO_R = blk: {
+    var w: f32 = 0;
+    for (@typeInfo(Role).@"enum".fields) |f| w = @max(w, spec(@enumFromInt(f.value)).aggro);
+    break :blk w;
+};
+
 fn spec(r: Role) Spec {
     return switch (r) {
         .mother => .{ .scale = M_SCALE, .hp = M_HP, .poise = M_POISE, .stance = M_STANCE, .speed = M_SPEED, .aggro = M_AGGRO, .turn = TURN_RATE, .runes = M_RUNES },
@@ -1105,7 +1113,7 @@ pub const Spider = struct {
         self.spitCd = mathx.maxF(0, self.spitCd - dt);
         self.biteCd = mathx.maxF(0, self.biteCd - dt);
         self.layCd = mathx.maxF(0, self.layCd - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home));
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), spec(self.role).aggro);
         foe.tickParticles(&self.fx, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
@@ -1391,11 +1399,8 @@ pub const Spider = struct {
         if (self.state == .dead) return;
         const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
         self.hits += 1;
-        self.leash.noteCombat();
-        if (blade.pierce) {
-            self.leash.provoke();
-            self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
-        }
+        self.leash.provoke();
+        if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
         self.flash = FLASH_DUR;
         const heavy = blade.hit.stance > 0;
         self.bloodBurst(s.contact, s.dir, if (heavy) 13 else 8, if (heavy) 2.5 else 1.8);
@@ -1744,8 +1749,13 @@ pub const Spider = struct {
 };
 
 
-pub const CAP = 2 * wf.MAX_PER_KIND;
-pub const SAC_CAP = 3 * 8;
+/// Room for a full posting of every role (`wf.MAX_PER_KIND` each), off the pinned run rather than a
+/// hand-written 2 — a third age widens the array with it.
+pub const CAP = ROLE_KIND.len * wf.MAX_PER_KIND;
+/// How many times over a fight her clutch may be re-laid: `MAX_SACS` stand at once, and a finished slot
+/// is reused, so the array only has to outlast the reuse (`addSac`) — not the whole fight.
+const SAC_REUSE: usize = 8;
+pub const SAC_CAP = MAX_SACS * SAC_REUSE;
 
 pub const Brood = struct {
     model: Model,
@@ -1781,22 +1791,16 @@ pub const Brood = struct {
     }
 
     pub fn reset(self: *Brood, m: *const wf.Map) void {
-        self.n = 0;
         self.clearSacs();
+        // A CLUTCH THE MAP AUTHORED, standing before anything has laid it — a nest you walk into. Its own
+        // pass, because `.brood_sac` is not one of the two ROLES and only the spiders go through the
+        // shared reset.
         for (m.foes[0..m.nfoes]) |h| {
-            // A CLUTCH THE MAP AUTHORED, standing before anything has laid it — a nest you walk into.
-            if (h.kind == .brood_sac) {
-                if (self.nsacs < SAC_CAP) {
-                    self.sacs[self.nsacs] = Sac.lay(v3(h.x, m.heightAt(h.x, h.z), h.z), h.seed, h.scale);
-                    self.nsacs += 1;
-                }
-                continue;
-            }
-            const role = roleOf(h.kind) orelse continue;
-            if (self.n >= CAP) continue;
-            self.band[self.n] = Spider.spawnAs(role, v3(h.x, m.heightAt(h.x, h.z), h.z), mathx.radians(h.yaw), h.scale, h.seed);
-            self.n += 1;
+            if (h.kind != .brood_sac or self.nsacs >= SAC_CAP) continue;
+            self.sacs[self.nsacs] = Sac.lay(v3(h.x, m.heightAt(h.x, h.z), h.z), h.seed, h.scale);
+            self.nsacs += 1;
         }
+        foe.resetRoles(Spider, Role, &self.band, &self.n, m, roleOf);
     }
     fn clearSacs(self: *Brood) void {
         self.nsacs = 0;

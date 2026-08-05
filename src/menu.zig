@@ -5,17 +5,24 @@ const hud = @import("hud.zig");
 const mathx = @import("mathx.zig");
 const rumblemod = @import("rumble.zig");
 const sfx = @import("audio.zig");
-const item = @import("item.zig"); // the CHARACTER menu lists what the hero carries…
-const stats = @import("stats.zig"); // …and what he IS
-const combat = @import("combat.zig"); // …including what he shrugs off (the RESISTANCES screen)
+const item = @import("item.zig");
 const uiart = @import("uiart.zig");
+const bookmod = @import("book.zig"); // pad START opens the CHARACTER BOOK, which is its own three pages
 
 const rgba = mathx.rgba;
 
 const PAD = rumblemod.PAD;
 
 
-pub const Action = union(enum) { none, quit, editor, use: item.Kind };
+/// The three swap actions are the BOOK's, passed straight through: the menu owns no game state and never
+/// has, and an equipment screen that reached into the hero would be the first place it did.
+pub const Action = union(enum) {
+    none,
+    quit,
+    editor,
+    use: item.Kind,
+    arm: bookmod.Action,
+};
 
 const Screen = enum {
     closed,
@@ -25,43 +32,16 @@ const Screen = enum {
     retro,
     sfxgroups, // …the EAR-side twin of the retro list: pick a family, then its filter rack
     sfxfilters,
-    character, // ── and the CHARACTER menu (Start) …
-    attributes,
-    resistances,
-    inventory,
-    equipment,
+    character, // …and the CHARACTER BOOK (Start), which is `book.zig` end to end
 
     fn root(s: Screen) Screen {
         return switch (s) {
             .closed => .closed,
             .main, .options, .debug, .retro, .sfxgroups, .sfxfilters => .main,
-            .character, .attributes, .resistances, .inventory, .equipment => .character,
+            .character => .character,
         };
     }
-
 };
-
-const CHR_ATTRIBUTES = 0;
-const CHR_RESISTANCES = 1;
-const CHR_INVENTORY = 2;
-const CHR_EQUIPMENT = 3;
-const CHR_CLOSE = 4;
-const CHR_COUNT = CHR_CLOSE + 1;
-
-// Attribute rows — the seven, then Back. Read-only: there is no leveling yet, so nothing here adjusts.
-const ATR_CLOSE = stats.NA;
-const ATR_COUNT = ATR_CLOSE + 1;
-
-// Resistance rows — the four elements, then Back. Read-only for a harder reason than the attributes': there is nothing in the game that grants any.
-const RES_CLOSE = combat.NELEM;
-const RES_COUNT = RES_CLOSE + 1;
-
-const EQP_RIGHT = 0;
-const EQP_LEFT = 1;
-const EQP_SPELL = 2;
-const EQP_QUICK = 3;
-const EQP_CLOSE = 4;
-const EQP_COUNT = EQP_CLOSE + 1;
 
 const OPT_MIX = [_]sfx.Submix{ .ambience, .sfx, .combat };
 comptime {
@@ -126,7 +106,6 @@ const TITLE_COL = rgba(232, 222, 198, 255);
 const HINT_COL = rgba(128, 122, 110, 255);
 const BAR_EDGE = rgba(120, 104, 74, 160);
 const BAR_FILL = rgba(198, 164, 96, 220);
-const ROW_HILITE = rgba(255, 232, 170, 22); // selected-row wash
 
 pub const Menu = struct {
     screen: Screen = .main, // the menu IS the start screen
@@ -139,6 +118,8 @@ pub const Menu = struct {
     adjHoldT: f32 = 0, // seconds an adjust direction has been held (glide timer)
     /// WHOSE FILTER RACK the `.sfxfilters` screen is turning.
     mixSel: sfx.Submix = .combat,
+    /// The CHARACTER BOOK, which keeps its own cursor per page and its own animation.
+    book: bookmod.Book = .{},
 
     pub fn isOpen(self: *const Menu) bool {
         return self.screen != .closed;
@@ -151,6 +132,8 @@ pub const Menu = struct {
     }
 
     pub fn onEscape(self: *Menu) void {
+        // Inside the book, Back closes an open picker first — one press, one level, like every other screen.
+        if (self.screen == .character and self.book.onBack()) return;
         self.leavingSound();
         self.cursor = 0;
         self.screen = switch (self.screen) {
@@ -160,7 +143,6 @@ pub const Menu = struct {
             .debug => .main,
             .retro, .sfxgroups => .debug,
             .sfxfilters => .sfxgroups,
-            .attributes, .resistances, .inventory, .equipment => .character,
         };
     }
 
@@ -170,37 +152,38 @@ pub const Menu = struct {
         self.screen = if (self.screen.root() == .main) .closed else .main;
     }
 
-    /// Pad START — the CHARACTER menu (owner's call: "start menu will be character-driven").
+    /// Pad START — the CHARACTER BOOK (owner's call: "start menu will be character-driven").
     pub fn onStartButton(self: *Menu) void {
         self.leavingSound();
         self.cursor = 0;
-        self.screen = if (self.screen.root() == .character) .closed else .character;
+        if (self.screen.root() == .character) {
+            self.screen = .closed;
+            return;
+        }
+        self.screen = .character;
+        self.book.opened();
     }
 
-    /// HOW MANY ROWS THE LIVE SCREEN HAS — asked by the cursor wrap AND by "is the cursor on Back",
-    /// which each carried their own copy of the inventory's `distinct() + 1`. Two copies of a row count
-    /// is two chances for Back to stop being the last row.
-    fn rowCount(self: *const Menu, bag: *const item.Bag) usize {
+    /// HOW MANY ROWS THE LIVE SCREEN HAS — asked by the cursor wrap AND by "is the cursor on Back".
+    /// The book is not a row list and answers 0; it is driven whole, below.
+    fn rowCount(self: *const Menu) usize {
         return switch (self.screen) {
-            .closed => 0,
+            .closed, .character => 0,
             .main => MAIN_COUNT,
             .options => OPT_COUNT,
             .debug => DBG_COUNT,
             .retro => RET_COUNT,
             .sfxgroups => SFG_COUNT,
             .sfxfilters => SFF_COUNT,
-            .character => CHR_COUNT,
-            .attributes => ATR_COUNT,
-            .resistances => RES_COUNT,
-            .inventory => @max(1, bag.distinct()) + 1,
-            .equipment => EQP_COUNT,
         };
     }
 
     // dt is the REAL frame time (not time-scaled) so the glide speed never changes.
-    pub fn update(self: *Menu, retro: *gfx.Retro, dt: f32, bag: *const item.Bag) Action {
+    pub fn update(self: *Menu, retro: *gfx.Retro, dt: f32, v: bookmod.View) Action {
         if (self.screen == .closed) return .none;
-        const rows = self.rowCount(bag);
+        if (self.screen == .character) return self.updateBook(dt, v);
+        const rows = self.rowCount();
+        if (rows == 0) return .none; // a screen with no rows has no cursor to wrap (and no modulo to do)
         if (navPressed(.up)) {
             self.cursor = (self.cursor + rows - 1) % rows;
             sfx.play(.menu_move);
@@ -211,8 +194,8 @@ pub const Menu = struct {
         }
 
         if (self.screen == .retro and self.cursor < gfx.RETRO_COUNT) {
-            const v = &retro.values[self.cursor];
-            v.* = mathx.clampF(v.* + self.adjustDelta(dt), 0, 1);
+            const dial = &retro.values[self.cursor];
+            dial.* = mathx.clampF(dial.* + self.adjustDelta(dt), 0, 1);
         } else if (self.screen == .options and self.cursor < OPT_MIX.len) {
             const m = OPT_MIX[self.cursor];
             const d = self.adjustDelta(dt);
@@ -229,7 +212,7 @@ pub const Menu = struct {
 
         if (confirmPressed()) {
             sfx.play(.menu_pick);
-            return self.confirm(retro, bag);
+            return self.confirm(retro);
         }
         if (backPressed()) {
             sfx.play(.menu_back);
@@ -238,7 +221,32 @@ pub const Menu = struct {
         return .none;
     }
 
-    fn confirm(self: *Menu, retro: *gfx.Retro, bag: *const item.Bag) Action {
+    /// THE BOOK'S OWN INPUT. It is a grid, not a row list: four directions move a cursor, the shoulders
+    /// turn the page, and Left/Right doubles as the portrait's turntable — none of which the card
+    /// screens' one-dimensional nav can express.
+    fn updateBook(self: *Menu, dt: f32, v: bookmod.View) Action {
+        if (tabPressed(-1)) self.book.onTab(-1);
+        if (tabPressed(1)) self.book.onTab(1);
+        if (navPressed(.up)) self.book.move(0, -1, v);
+        if (navPressed(.down)) self.book.move(0, 1, v);
+        if (navPressed(.left)) self.book.move(-1, 0, v);
+        if (navPressed(.right)) self.book.move(1, 0, v);
+        self.book.spinBy(adjHeldDir(), dt);
+        var act: Action = .none;
+        if (confirmPressed()) {
+            const a = self.book.confirm(v);
+            act = switch (a) {
+                .none => .none,
+                .use => |k| .{ .use = k },
+                else => .{ .arm = a },
+            };
+        }
+        if (backPressed()) self.onEscape();
+        self.book.tick(dt, confirmHeld(), v);
+        return act;
+    }
+
+    fn confirm(self: *Menu, retro: *gfx.Retro) Action {
         switch (self.screen) {
             .closed => {},
             .main => switch (self.cursor) {
@@ -311,38 +319,7 @@ pub const Menu = struct {
                 },
                 else => {},
             },
-            .character => switch (self.cursor) {
-                CHR_ATTRIBUTES => {
-                    self.screen = .attributes;
-                    self.cursor = 0;
-                },
-                CHR_RESISTANCES => {
-                    self.screen = .resistances;
-                    self.cursor = 0;
-                },
-                CHR_INVENTORY => {
-                    self.screen = .inventory;
-                    self.cursor = 0;
-                },
-                CHR_EQUIPMENT => {
-                    self.screen = .equipment;
-                    self.cursor = 0;
-                },
-                CHR_CLOSE => self.screen = .closed,
-                else => {},
-            },
-            // THE READ-ONLY LISTS, in one arm: every row is a readout and the only one that ACTS is the
-            // last (Back), found off the ONE row count rather than each screen's own `_CLOSE` constant.
-            .attributes, .resistances, .inventory, .equipment => {
-                if (self.cursor == self.rowCount(bag) - 1) {
-                    self.screen = .character;
-                    self.cursor = 0;
-                } else if (self.screen == .inventory) {
-                    if (bag.nth(self.cursor)) |k| {
-                        if (item.usable(k)) return .{ .use = k };
-                    }
-                }
-            },
+            .character => {}, // the book handles its own confirm — see `updateBook`
             .retro => switch (self.cursor) {
                 RET_PRESET_PS1 => retro.applyPreset(&gfx.PRESET_PS1),
                 RET_PRESET_CRT => retro.applyPreset(&gfx.PRESET_CRT),
@@ -392,7 +369,7 @@ pub const Menu = struct {
         return out;
     }
 
-    pub fn draw(self: *const Menu, retro: *const gfx.Retro, bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.Resists) void {
+    pub fn draw(self: *const Menu, retro: *const gfx.Retro, v: bookmod.View, portrait: ?bookmod.Portrait) void {
         if (self.screen == .closed) return;
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
@@ -400,8 +377,14 @@ pub const Menu = struct {
         const lb = @divTrunc(sh, 8); // dusk gathers at the frame's edges
         rl.drawRectangleGradientV(0, 0, sw, lb, rgba(0, 0, 0, 140), rgba(0, 0, 0, 0));
         rl.drawRectangleGradientV(0, sh - lb, sw, lb, rgba(0, 0, 0, 0), rgba(0, 0, 0, 140));
+        // THE BOOK IS NOT A CARD. It fills the frame and carries its own crib line, so it returns here
+        // rather than falling through to the row-list chrome below.
+        if (self.screen == .character) {
+            bookmod.draw(&self.book, v, portrait);
+            return;
+        }
         switch (self.screen) {
-            .closed => {},
+            .closed, .character => {},
             .main => self.drawCard("SOULSLIKE", &mainLabels(), .{}),
             .options => self.drawCard("SOUND", &optionLabels(), .{ .gauges = &soundLevels() }),
             .debug => self.drawCard("DEBUG", &self.debugLabels(), .{}),
@@ -411,17 +394,6 @@ pub const Menu = struct {
                 .gauges = sfx.fxValues(self.mixSel),
                 .note = sfxFilterNote(),
             }),
-            .character => self.drawCard("CHARACTER", &characterLabels(), .{}),
-            .attributes => self.drawCard("ATTRIBUTES", &attrLabels(), .{
-                .values = attrValues(sheet),
-                .note = attrNote(sheet, self.cursor),
-            }),
-            .resistances => self.drawCard("RESISTANCES", &resLabels(), .{
-                .values = resValues(res),
-                .note = resNote(res, self.cursor),
-            }),
-            .inventory => self.drawCard("INVENTORY", bagLabels(bag), .{}),
-            .equipment => self.drawCard("EQUIPMENT", &equipLabels(), .{}),
         }
         const hint: [:0]const u8 = if (rl.isGamepadAvailable(PAD))
             "D-pad move / adjust (hold glides, LB coarse)   A select   B back   Select game   Start character"
@@ -464,19 +436,12 @@ pub const Menu = struct {
             const selected = self.cursor == i;
             const col = if (selected) TEXT_HOT else TEXT_DIM;
             if (selected) {
-                rl.drawRectangle(cx + 14, y - 3, cardW - 28, rowH, ROW_HILITE);
+                uiart.rowHilite(cx + 14, y - 3, cardW - 28, rowH);
+                // …and the card's own two hairlines and jewelled spine-ends on top of the shared wash.
                 rl.drawRectangle(cx + 14, y - 3, cardW - 28, 1, mathx.withAlpha(uiart.GILT, 70));
                 rl.drawRectangle(cx + 14, y - 4 + rowH, cardW - 28, 1, mathx.withAlpha(uiart.GILT, 46));
-                const spineH = rowH - 8;
-                rl.drawRectangle(cx + 15, y + 1, 3, spineH, mathx.withAlpha(uiart.GILT_BRIGHT, uiart.flick(230, y)));
                 uiart.diamond(@floatFromInt(cx + 16), @floatFromInt(y), 2.6, uiart.GILT_BRIGHT);
-                uiart.diamond(@floatFromInt(cx + 16), @floatFromInt(y + 2 + spineH), 2.6, uiart.GILT_BRIGHT);
-                uiart.sheen(.{
-                    .x = @floatFromInt(cx + 14),
-                    .y = @floatFromInt(y - 3),
-                    .width = @floatFromInt(cardW - 28),
-                    .height = @floatFromInt(rowH),
-                }, 3.8, 26);
+                uiart.diamond(@floatFromInt(cx + 16), @floatFromInt(y - 3 + rowH), 2.6, uiart.GILT_BRIGHT);
             }
             hud.text(label, cx + 40, y, fontSize, col);
             if (selected) hud.text(">", cx + 24, y, fontSize, TEXT_HOT);
@@ -532,114 +497,6 @@ fn mainLabels() [MAIN_COUNT][:0]const u8 {
     out[MAIN_DEBUG] = "Debug";
     out[MAIN_QUIT] = "Quit";
     return out;
-}
-
-fn characterLabels() [CHR_COUNT][:0]const u8 {
-    var out: [CHR_COUNT][:0]const u8 = undefined;
-    out[CHR_ATTRIBUTES] = "Attributes >";
-    out[CHR_RESISTANCES] = "Resistances >";
-    out[CHR_INVENTORY] = "Inventory";
-    out[CHR_EQUIPMENT] = "Equipment";
-    out[CHR_CLOSE] = "Close";
-    return out;
-}
-
-/// THE CHARACTER SHEET — the seven attributes walked off `stats.Attr` itself, so a new one is on this screen the moment it has a name.
-fn attrLabels() [ATR_COUNT][:0]const u8 {
-    var out: [ATR_COUNT][:0]const u8 = undefined;
-    for (0..stats.NA) |i| out[i] = stats.displayName(@enumFromInt(i));
-    out[ATR_CLOSE] = "Back";
-    return out;
-}
-
-var attrValBufs: [stats.NA][8]u8 = undefined;
-var attrValRows: [stats.NA][:0]const u8 = undefined;
-
-fn attrValues(sheet: *const stats.Sheet) []const [:0]const u8 {
-    for (0..stats.NA) |i| {
-        attrValRows[i] = std.fmt.bufPrintZ(&attrValBufs[i], "{d}", .{sheet.at(@enumFromInt(i))}) catch "?";
-    }
-    return &attrValRows;
-}
-
-/// What the selected attribute is FOR, and — for the three that feed a bar — how much of that bar it is buying right now.
-var attrNoteBuf: [128]u8 = undefined;
-
-fn attrNote(sheet: *const stats.Sheet, cursor: usize) [:0]const u8 {
-    if (cursor >= stats.NA) return "";
-    const a: stats.Attr = @enumFromInt(cursor);
-    const says = stats.governs(a);
-    // The attribute→bar binding lives in `stats.barFor` and nowhere else.
-    if (sheet.barFor(a)) |t| return std.fmt.bufPrintZ(&attrNoteBuf, "{s}   Yours: {d:.0}.", .{ says, t }) catch says;
-    return says;
-}
-
-/// WHAT HE SHRUGS OFF — the four of `combat.Elem`, walked off the enum for the reason the attributes are: a fifth element is on this screen the moment it has a name.
-fn resLabels() [RES_COUNT][:0]const u8 {
-    var out: [RES_COUNT][:0]const u8 = undefined;
-    for (0..combat.NELEM) |i| out[i] = combat.elemName(@enumFromInt(i));
-    out[RES_CLOSE] = "Back";
-    return out;
-}
-
-var resValBufs: [combat.NELEM][16]u8 = undefined;
-var resValRows: [combat.NELEM][:0]const u8 = undefined;
-
-/// THE STACKED NUMBER, and the CAP beside it when they differ (PoE2's own display): 90% (75%) says both that the gear is working and that only 75 of it is.
-fn resValues(res: *const combat.Resists) []const [:0]const u8 {
-    for (0..combat.NELEM) |i| {
-        const e: combat.Elem = @enumFromInt(i);
-        const raw = res.raw(e);
-        const eff = res.at(e);
-        resValRows[i] = if (@abs(raw - eff) < 0.05)
-            std.fmt.bufPrintZ(&resValBufs[i], "{d:.0}%", .{raw}) catch "?"
-        else
-            std.fmt.bufPrintZ(&resValBufs[i], "{d:.0}% ({d:.0}%)", .{ raw, eff }) catch "?";
-    }
-    return &resValRows;
-}
-
-var resNoteBuf: [160]u8 = undefined;
-
-fn resNote(res: *const combat.Resists, cursor: usize) [:0]const u8 {
-    if (cursor >= combat.NELEM) return "";
-    const e: combat.Elem = @enumFromInt(cursor);
-    const says = combat.elemSays(e);
-    const eff = res.at(e);
-    // WHAT THE NUMBER DOES TO A BLOW, said in the only terms that matter — and NOTHING GRANTS ANY YET says so on its own row, the way an inert attribute does.
-    if (@abs(eff) < 0.05) return std.fmt.bufPrintZ(&resNoteBuf, "{s} Nothing grants any yet.", .{says}) catch says;
-    if (eff < 0) return std.fmt.bufPrintZ(&resNoteBuf, "{s} It hits you {d:.0}% HARDER.", .{ says, -eff }) catch says;
-    return std.fmt.bufPrintZ(&resNoteBuf, "{s} You shrug off {d:.0}% (cap {d:.0}%).", .{ says, eff, combat.RES_CAP }) catch says;
-}
-
-fn equipLabels() [EQP_COUNT][:0]const u8 {
-    var out: [EQP_COUNT][:0]const u8 = undefined;
-    // The four ER slots in the cross's own order, saying what is actually in them.
-    out[EQP_RIGHT] = "Right Hand    Straight Sword";
-    out[EQP_LEFT] = "Left Hand     -";
-    out[EQP_SPELL] = "Sorcery       -";
-    out[EQP_QUICK] = "Quick Item    Flask";
-    out[EQP_CLOSE] = "Back";
-    return out;
-}
-
-var bagRowBuf: [item.NK][40]u8 = undefined;
-var bagLabelBuf: [item.NK + 1][:0]const u8 = undefined;
-
-fn bagLabels(bag: *const item.Bag) [][:0]const u8 {
-    var n: usize = 0;
-    while (bag.nth(n)) |k| : (n += 1) {
-        const mark: []const u8 = if (item.usable(k)) "  USE" else "";
-        bagLabelBuf[n] = std.fmt.bufPrintZ(&bagRowBuf[n], "{s: <24}{d: <4}{s}", .{ item.displayName(k), bag.count(k), mark }) catch "?";
-    }
-    if (n == 0) {
-        // An EMPTY bag says so.
-        bagLabelBuf[0] = "(nothing carried)";
-        bagLabelBuf[1] = "Back";
-        return bagLabelBuf[0..2];
-    }
-    bagLabelBuf[n] = "Back";
-    return bagLabelBuf[0 .. n + 1];
 }
 
 fn optionName(m: sfx.Submix) [:0]const u8 {
@@ -811,6 +668,22 @@ fn adjHeldDir() i32 {
 fn coarseHeld() bool {
     if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift)) return true;
     return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, .left_trigger_1);
+}
+
+/// THE PAGE TURN — the shoulders, and Q/E for the keyboard. It cannot be Left/Right: those move a grid
+/// cursor in the book, and on the stats page they turn him on the spot.
+fn tabPressed(dir: i32) bool {
+    const back = dir < 0;
+    if (rl.isKeyPressed(if (back) .q else .e)) return true;
+    if (!rl.isGamepadAvailable(PAD)) return false;
+    return rl.isGamepadButtonPressed(PAD, if (back) .left_trigger_1 else .right_trigger_1);
+}
+
+/// Confirm HELD, not tapped — the book's slots sink for as long as the button is down.
+fn confirmHeld() bool {
+    const altHeld = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
+    if ((rl.isKeyDown(.enter) and !altHeld) or rl.isKeyDown(.space)) return true;
+    return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, .right_face_down);
 }
 
 fn confirmPressed() bool {

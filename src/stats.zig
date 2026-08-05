@@ -110,6 +110,14 @@ pub const Sheet = struct {
         return staminaFor(self.at(.endurance));
     }
 
+    /// LEVEL IS NOT STORED, IT IS COUNTED: every point spent past the starting sheet, plus one. ER works
+    /// exactly this way, and storing it beside the points is how a sheet and its level drift apart.
+    pub fn level(self: *const Sheet) u32 {
+        var n: u32 = 1;
+        for (self.pts) |p| n += @as(u32, p) -| START;
+        return n;
+    }
+
     /// WHAT THIS ATTRIBUTE IS BUYING RIGHT NOW, or null for the four nothing reads yet. THE one place the
     /// attribute→bar binding is written: the character sheet asked the same question with a switch of its
     /// own, so a fourth curve meant editing two files and forgetting the second showed a bare row. It is
@@ -130,6 +138,18 @@ test "the STARTING sheet reproduces the tuned bars exactly, so nothing moved" {
     try std.testing.expectApproxEqAbs(@as(f32, 60), s.fp(), 1e-3);
     try std.testing.expectApproxEqAbs(@as(f32, 105), s.stamina(), 1e-3);
     for (0..NA) |i| try std.testing.expectEqual(START, s.at(@enumFromInt(i)));
+}
+
+test "level is COUNTED off the points, and a fresh sheet is level 1" {
+    var s = Sheet{};
+    try std.testing.expectEqual(@as(u32, 1), s.level());
+    s.set(.vitality, START + 5);
+    s.set(.luck, START + 2);
+    try std.testing.expectEqual(@as(u32, 8), s.level());
+    // A sheet driven BELOW the start (nothing does, but `set` allows it) may not push the level under 1.
+    s.set(.vitality, 1);
+    s.set(.luck, 1);
+    try std.testing.expectEqual(@as(u32, 1), s.level());
 }
 
 test "the stamina curve IS ER's table, softcaps and all" {

@@ -15,6 +15,8 @@ const warriormod = @import("warrior.zig");
 const mathx = @import("mathx.zig");
 const props = @import("props.zig");
 const stats = @import("stats.zig");
+const item = @import("item.zig");
+const bookmod = @import("book.zig");
 const sfx = @import("audio.zig"); // for the SOUND FILTER cards alone — `--shot` runs with no audio device
 const worldfmt = @import("worldfmt.zig");
 
@@ -831,8 +833,11 @@ pub fn runShots(g: *Game) void {
                 zerk.dashCd = 0;
                 var df: i32 = 0;
                 while (zerk.state != .dash and df < 600) : (df += 1) _ = zerk.update(SHOT_DT, dside, game.PLAY_HALF, .{});
-                // …then to the beat itself, in whole harness frames off the state clock.
-                while (zerk.t < b.at) _ = zerk.update(SHOT_DT, dside, game.PLAY_HALF, .{});
+                // …then to the beat itself, in whole harness frames off the state clock. GUARDED, like the
+                // wait above it: a creature that never entered the state never reaches the beat either, and
+                // an unbounded wait for one turns a behaviour change into a hung build.
+                var bf: i32 = 0;
+                while (zerk.t < b.at and bf < 600) : (bf += 1) _ = zerk.update(SHOT_DT, dside, game.PLAY_HALF, .{});
                 shootPortrait(g, b.name, zerk.centerWorld(), LIT_YAW, 0.06, 5.0);
             }
         }
@@ -1029,7 +1034,7 @@ pub fn runShots(g: *Game) void {
     g.menu.cursor = 0;
     drawScene(g);
     hud(g, SHOT_DT);
-    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
+    g.menu.draw(&g.retro, game.bookView(g), null);
     snap("shots/12_menu_main.png");
 
     g.retro.values[gfx.RF_GAMEBOY] = 1.0; // show a live gauge on the retro card
@@ -1037,7 +1042,7 @@ pub fn runShots(g: *Game) void {
     g.menu.cursor = gfx.RF_GAMEBOY;
     drawScene(g);
     hud(g, SHOT_DT);
-    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
+    g.menu.draw(&g.retro, game.bookView(g), null);
     snap("shots/13_menu_retro.png");
     g.menu.screen = .closed;
 
@@ -1065,7 +1070,7 @@ fn soundFilterShots(g: *Game) void {
     g.menu.screen = .sfxgroups;
     g.menu.cursor = 0;
     drawScene(g);
-    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
+    g.menu.draw(&g.retro, game.bookView(g), null);
     snap("shots/115a_sound_groups.png");
 
     // The rack itself, with a preset ON: an all-zero card proves the layout and nothing about the dials.
@@ -1074,7 +1079,7 @@ fn soundFilterShots(g: *Game) void {
     sfx.applyFxPreset(.combat, &sfx.FX_VINYL);
     g.menu.cursor = 0; // the first dial, so its gauge shows the selected-row arrows
     drawScene(g);
-    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
+    g.menu.draw(&g.retro, game.bookView(g), null);
     snap("shots/115b_sound_filters.png");
 
     // …and put the bank back exactly as it was — the harness must not leave a filtered build behind.
@@ -1404,30 +1409,19 @@ fn chestShots(g: *Game) void {
         shootPortrait(g, names[i], aim, LIT_YAW, 0.16, 4.4);
     }
 
+    // THE CHARACTER BOOK — a frame per page, and the pages are the whole reason it exists, so each one is
+    // staged on the state that has something to show: a picker OPEN over its delta column, a bag with
+    // enough in it to fill a grid, an attribute that owns a bar.
+    for ([_]item.Kind{ .mushroom_jerky, .bloodgrass, .kobold_fang, .rune_arc, .golden_seed, .smithing_stone, .iron_key }) |k| {
+        if (g.bag.count(k) == 0) g.bag.add(k, if (k == .bloodgrass) 12 else 3);
+    }
     g.menu.onStartButton();
-    g.menu.cursor = 0;
-    _ = g.menu.update(&g.retro, SHOT_DT, &g.bag);
-    drawScene(g);
-    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
-    snap("shots/106e_character_menu.png");
-    g.menu.screen = .inventory;
-    g.menu.cursor = 0;
-    drawScene(g);
-    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
-    snap("shots/106f_inventory.png");
-    // THE CHARACTER SHEET, on a row that HAS a footnote — the blank-footed rows prove nothing.
-    g.menu.screen = .attributes;
-    g.menu.cursor = @intFromEnum(stats.Attr.endurance);
-    drawScene(g);
-    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
-    snap("shots/106g_attributes.png");
-    // …and the four RESISTANCES, on a row whose footnote has something to say — fire is the only one of
-    // them anything in the world deals.
-    g.menu.screen = .resistances;
-    g.menu.cursor = @intFromEnum(combat.Elem.fire);
-    drawScene(g);
-    g.menu.draw(&g.retro, &g.bag, &g.hero.sheet, &g.hero.vit.res);
-    snap("shots/106h_resistances.png");
+    bookShot(g, "shots/106e_book_equipment.png", .equipment, 0, null, 0);
+    // THE SWAP PRICED: the bow picked over the sword, with the guard row going to nothing beside it.
+    bookShot(g, "shots/106f_book_swap.png", .equipment, 0, 0, 1);
+    bookShot(g, "shots/106g_book_inventory.png", .inventory, 0, null, 0);
+    // …and the sheet on a row that HAS a footnote — the inert rows prove nothing.
+    bookShot(g, "shots/106h_book_stats.png", .stats, @intFromEnum(stats.Attr.endurance), null, 0);
     g.menu.screen = .closed;
 
     g.map.nops = saved;
@@ -1648,6 +1642,16 @@ fn elevationShots(g: *Game) void {
     g.map.height = before;
     g.env.uploadHeight(&g.map);
     g.env.materialize(&g.map);
+}
+
+/// One page of the character book, staged and photographed. The `update` is what plants the cursor on
+/// the slot before the frame is drawn: in play it is EASED there, and `debugShow` only says where to.
+fn bookShot(g: *Game, name: [:0]const u8, page: bookmod.Page, cursor: usize, pickSlot: ?usize, row: usize) void {
+    g.menu.book.debugShow(page, cursor, pickSlot, row);
+    _ = g.menu.update(&g.retro, SHOT_DT, game.bookView(g));
+    drawScene(g);
+    g.menu.draw(&g.retro, game.bookView(g), .{ .hero = &g.hero, .scene = &g.scene });
+    snap(name);
 }
 
 /// Stand the hero ON the ground, with no easing — the harness has no frame loop to ease across, and a hero left at the datum on a sculpted map is photographed knee-deep in his own hill.

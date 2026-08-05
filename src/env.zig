@@ -130,7 +130,7 @@ pub fn leanOffsetAt(lean: f32, dirDeg: f32, up: f32) rl.Vector3 {
     return v3(d.x * s, 0, d.z * s);
 }
 
-fn leanSwing(pr: Prop, up: f32) rl.Vector3 {
+fn leanSwing(pr: *const Prop, up: f32) rl.Vector3 {
     return leanOffsetAt(pr.lean, pr.leanDir, up);
 }
 
@@ -278,6 +278,13 @@ pub const Env = struct {
         // and every count this struct keeps has to be said HERE — an undefined `noccl` hands the mark
         // list heap garbage to index with on the first frame.
         self.noccl = 0;
+        self.nveils = 0;
+        self.nchests = 0;
+        self.nrests = 0;
+        self.stat_draws = 0;
+        self.stat_cells = 0;
+        self.stowed = false;
+        @memset(&self.sgrid_start, 0);
         self.tileBuilt = [_]bool{false} ** NTILES;
         self.tileRad = [_]f32{0} ** NTILES;
         self.tileMid = [_]rl.Vector3{mathx.zero3} ** NTILES;
@@ -641,7 +648,7 @@ pub const Env = struct {
                     for (nfo.parts) |part| {
                         const hl = 0.5 * mathx.lenXZ(v3(part.bx - part.ax, 0, part.bz - part.az));
                         const r = (part.r + hl) * pr.scale + OCCL_SKIRT;
-                        cover = mathx.maxF(cover, coverFrac(eye, at, partFoot(pr.*, part), part.h * pr.scale, r));
+                        cover = mathx.maxF(cover, coverFrac(eye, at, partFoot(pr, part), part.h * pr.scale, r));
                     }
                     if (nfo.parts.len == 0) { // no colliders: fall back to a share of the bound
                         cover = coverFrac(eye, at, pr.pos, nfo.top * pr.scale, nfo.bound * pr.scale * OCCL_GIRTH);
@@ -692,7 +699,7 @@ pub const Env = struct {
     pub fn nearestFading(self: *const Env, p: rl.Vector3, within: f32) ?rl.Vector3 {
         var best = within * within;
         var out: ?rl.Vector3 = null;
-        for (self.props[0..self.nprops]) |pr| {
+        for (self.props[0..self.nprops]) |*pr| {
             if (!props.info(pr.kind).fades) continue;
             const d2 = mathx.dist2XZ(pr.pos, p);
             if (d2 >= best) continue;
@@ -723,6 +730,29 @@ pub const Env = struct {
             }
         }
         return out[0..n];
+    }
+
+    /// CAN A LOOK FROM `from` REACH `to`? Walked over the prop grid's own cells rather than through
+    /// `nearSolids`, because that copies into a fixed buffer and TRUNCATES at `MAX_NEAR` — over a
+    /// twenty-metre sight line through a wood it would quietly drop the wall it was asked about and
+    /// answer "yes". Cells are visited by bounding box and a solid in two of them is simply tested twice.
+    pub fn sees(self: *const Env, from: rl.Vector3, to: rl.Vector3) bool {
+        const x0 = cellCoord(@min(from.x, to.x));
+        const x1 = cellCoord(@max(from.x, to.x));
+        const z0 = cellCoord(@min(from.z, to.z));
+        const z1 = cellCoord(@max(from.z, to.z));
+        var cz = z0;
+        while (cz <= z1) : (cz += 1) {
+            var cx = x0;
+            while (cx <= x1) : (cx += 1) {
+                const c = cz * GRID_N + cx;
+                var k = self.sgrid_start[c];
+                while (k < self.sgrid_start[c + 1]) : (k += 1) {
+                    if (collision.blocksSight(from, to, self.solid_buf[self.sgrid_items[k]])) return false;
+                }
+            }
+        }
+        return true;
     }
 
     pub fn blockedNear(self: *const Env, p: rl.Vector3, margin: f32, r: f32) bool {
@@ -887,7 +917,7 @@ pub const Env = struct {
         var best: ?usize = null;
         var bestT: f32 = std.math.floatMax(f32);
         // THE RAY REJECTS FIRST, THE PREDICATE SECOND, and the order is worth a note: `accept` reads the OP the prop came from, which is a random index into a quarter-megabyte table — a cache miss per prop, paid 17,000 times a frame while Select is armed, to answer a question the ray was about to make moot for all but a handful of them.
-        for (self.props[0..self.nprops], 0..) |pr, i| {
+        for (self.props[0..self.nprops], 0..) |*pr, i| {
             const nfo = props.info(pr.kind);
             const sw = leanSwing(pr, nfo.top * pr.scale * 0.5);
             const c = v3(pr.pos.x + sw.x, pr.pos.y + nfo.top * pr.scale * 0.5, pr.pos.z + sw.z);
@@ -1154,7 +1184,7 @@ fn cellOf(x: f32, z: f32) usize {
 
 /// The FOOT of one collider part's centre line, in world space — the same local→world turn
 /// `buildSolids` makes, at the prop's own base.
-fn partFoot(pr: Prop, part: props.Part) rl.Vector3 {
+fn partFoot(pr: *const Prop, part: props.Part) rl.Vector3 {
     const th = mathx.radians(pr.yaw);
     const c = mathx.cosf(th);
     const sn = mathx.sinf(th);
@@ -1415,10 +1445,10 @@ const Placer = struct {
         var t: f32 = -rim;
         while (t <= rim) : (t += o.r0) {
             const jitter = rng.signed() * 1.6;
-            self.at(o.pick(rng), t + jitter, -rim - rng.range(0, 2.5), 180 + rng.signed() * 7, self.ridge(o, t, rng), rng);
-            self.at(o.pick(rng), t - jitter, rim + rng.range(0, 2.5), 0 + rng.signed() * 7, self.ridge(o, t + 91, rng), rng);
-            self.at(o.pick(rng), rim + rng.range(0, 2.5), t + jitter, 90 + rng.signed() * 7, self.ridge(o, t + 213, rng), rng);
-            self.at(o.pick(rng), -rim - rng.range(0, 2.5), t - jitter, 270 + rng.signed() * 7, self.ridge(o, t + 347, rng), rng);
+            self.at(o.pick(rng), t + jitter, -rim - rng.range(0, 2.5), 180 + rng.signed() * 7, ridge(o, t, rng), rng);
+            self.at(o.pick(rng), t - jitter, rim + rng.range(0, 2.5), 0 + rng.signed() * 7, ridge(o, t + 91, rng), rng);
+            self.at(o.pick(rng), rim + rng.range(0, 2.5), t + jitter, 90 + rng.signed() * 7, ridge(o, t + 213, rng), rng);
+            self.at(o.pick(rng), -rim - rng.range(0, 2.5), t - jitter, 270 + rng.signed() * 7, ridge(o, t + 347, rng), rng);
         }
         // Talus and scrub spilling off the feet of the walls, so the base isn't a clean line.
         var i: i32 = 0;
@@ -1436,8 +1466,7 @@ const Placer = struct {
         }
     }
 
-    fn ridge(self: *Placer, o: *const wf.Op, along: f32, rng: *mathx.Rng) f32 {
-        _ = self;
+    fn ridge(o: *const wf.Op, along: f32, rng: *mathx.Rng) f32 {
         const mid = (o.sLo + o.sHi) * 0.5;
         const amp = (o.sHi - o.sLo) * 0.5;
         return mid + amp * (0.62 * mathx.sinf(along * 0.070) + 0.31 * mathx.sinf(along * 0.170 + 1.9)) + rng.signed() * amp * 0.16;
@@ -1505,7 +1534,7 @@ pub fn coverField(x: f32, z: f32) f32 {
 
 fn buildSolids(e: *Env) void {
     e.nsolids = 0;
-    for (e.props[0..e.nprops]) |pr| {
+    for (e.props[0..e.nprops]) |*pr| {
         const nfo = props.info(pr.kind);
         const s = pr.scale;
         const th = mathx.radians(pr.yaw);
@@ -1599,7 +1628,7 @@ fn indexProps(e: *Env) void {
     e.nveils = 0;
     e.nchests = 0;
     e.nrests = 0;
-    for (e.props[0..e.nprops], 0..) |pr, pi| {
+    for (e.props[0..e.nprops], 0..) |*pr, pi| {
         const i: u32 = @intCast(pi);
         if (props.info(pr.kind).veil != null and e.nveils < MAX_VEILS) {
             e.veilItems[e.nveils] = i;
@@ -1623,7 +1652,7 @@ fn fillIndex(e: *Env, idx: *Index, want_flora: bool) void {
     idx.ylo = [_]f32{0} ** NCELL;
     idx.yhi = [_]f32{0} ** NCELL;
     var counts = [_]u32{0} ** NCELL;
-    for (e.props[0..e.nprops]) |pr| {
+    for (e.props[0..e.nprops]) |*pr| {
         if (props.info(pr.kind).flora != want_flora) continue;
         counts[cellOf(pr.pos.x, pr.pos.z)] += 1;
     }
@@ -1634,7 +1663,7 @@ fn fillIndex(e: *Env, idx: *Index, want_flora: bool) void {
     }
     idx.start[NCELL] = total;
     var cursor = idx.start;
-    for (e.props[0..e.nprops], 0..) |pr, pi| {
+    for (e.props[0..e.nprops], 0..) |*pr, pi| {
         const nfo = props.info(pr.kind);
         if (nfo.flora != want_flora) continue;
         const c = cellOf(pr.pos.x, pr.pos.z);
@@ -1834,6 +1863,26 @@ test "a solid's blocking height is a WORLD height, so cover still works up a ban
     const up = e.nearSolids(v3(60, 12, 0), 1.0, &buf);
     try std.testing.expect(collision.blockedBy(v3(60, 12 + top - 0.5, 0), 0.04, up));
     try std.testing.expect(!collision.blockedBy(v3(60, 12 + top + 0.5, 0), 0.04, up));
+}
+
+test "A WALL STOPS A LOOK, and the grid is walked far enough out to find one at range" {
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.props[0] = .{ .kind = .wall, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
+    e.nprops = 1;
+    buildSolids(e);
+    const eye: f32 = 1.25;
+    // Straight through it, from far enough out that a fixed-size `nearSolids` copy would have dropped it.
+    try std.testing.expect(!e.sees(v3(0, eye, -22), v3(0, eye, 22)));
+    try std.testing.expect(!e.sees(v3(0, eye, -3), v3(0, eye, 3)));
+    // Along it, and past its ends — the wall is a segment, not a plane.
+    try std.testing.expect(e.sees(v3(-20, eye, -3), v3(20, eye, -3)));
+    try std.testing.expect(e.sees(v3(40, eye, -22), v3(40, eye, 22)));
+    // An empty world hides nothing.
+    e.nprops = 0;
+    buildSolids(e);
+    try std.testing.expect(e.sees(v3(0, eye, -22), v3(0, eye, 22)));
 }
 
 // A test Env is ~1 MB of flat arrays, so these allocate one rather than putting it on the stack.

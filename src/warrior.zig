@@ -179,13 +179,19 @@ const MACE = Attack{
     .step = MACE_STEP,
 };
 
+// THE GREATSWORD IS SLOW, AND HE PAYS FOR EVERY SWING (owner: "he's tough as nails"). He is the hardest
+// thing in the game to trade with — hyper-armour on the slam, 124 HP, 26 poise — so what makes him FAIR
+// is the size of the window either side of a blow, not a smaller number on it. Both moves were retuned
+// together: a longer haul UP so the swing is read from further away, and a longer stand-there AFTER so
+// there is a punish to take rather than a block to hold. The damage is untouched.
+
 const SLAM = Attack{
     .reachOut = 2.18, // MEASURED: near three metres of reach, cocked high and driven down through
-    .windDur = 1.05,
+    .windDur = 1.34, // was 1.05
     .swingDur = 0.30,
     .impactK = 0.24,
-    .recoverDur = 1.15,
-    .cd = 2.20,
+    .recoverDur = 1.62, // was 1.15 — the greatsword's own punish window, and the longest in the game
+    .cd = 3.10, // was 2.20
     .hit = .{ .dmg = 30, .poise = 40, .stance = 18 },
     .hyper = true,
     .crash = true,
@@ -193,14 +199,16 @@ const SLAM = Attack{
 
 const LUNGE = Attack{
     .reachOut = 1.98, // MEASURED: the point driven straight out — shorter than the slam's whole arc
-    .windDur = 0.34,
+    // Was 0.34, which is a two-metre thrust arriving barely over the tell floor. It stays UNDER 0.4 of the
+    // slam's haul, because "the lunge is the quick one" is the pair's whole shape (and a test says so).
+    .windDur = 0.52,
     .swingDur = 0.26,
     .impactK = 0.46,
-    .recoverDur = 0.66,
-    .cd = 3.10,
+    .recoverDur = 1.02, // was 0.66
+    .cd = 3.90, // was 3.10
     .hit = .{ .dmg = 17, .poise = 22 },
     .strokes = 2,
-    .chainWind = 0.19,
+    .chainWind = 0.30, // was 0.19 — the SECOND stab is the one that used to arrive unseen
     .lunge = 1.55,
     .hop = 0.40,
 };
@@ -242,7 +250,7 @@ const MAX_MOVES = blk: {
     break :blk m;
 };
 
-const AGGRO_R = 20.0; // a sentry of the fallen city: it sees you well before it can reach you
+pub const AGGRO_R = 20.0; // a sentry of the fallen city: it sees you well before it can reach you
 const TURN_RATE = 4.6; // rad/s — slower than the hero, quicker than the ogre
 const SWING_TURN = 3.0; // rad/s it keeps pivoting THROUGH the swing, so a stroll sideways is not enough
 const WALK_SPEED = heromod.WALK_SPEED;
@@ -651,7 +659,7 @@ pub const Warrior = struct {
         self.blockT += dt;
         for (&self.cds) |*c| c.* = mathx.maxF(0, c.* - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home));
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         self.trail.age(dt);
 
@@ -973,11 +981,8 @@ pub const Warrior = struct {
             b.hit = .{ .dmg = blade.hit.dmg, .elem = blade.hit.elem };
         }
         const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), b) orelse return;
-        self.leash.noteCombat();
-        if (blade.pierce) {
-            self.leash.provoke();
-            self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
-        }
+        self.leash.provoke();
+        if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
         if (blocked) return self.caught(blade.hit, s);
         self.hits += 1;
         self.flash = FLASH_DUR;
@@ -1597,14 +1602,7 @@ pub const Muster = struct {
     }
 
     pub fn reset(self: *Muster, m: *const wf.Map) void {
-        self.n = 0;
-        for (m.foes[0..m.nfoes]) |h| {
-            const role = roleOf(h.kind) orelse continue;
-            if (self.n >= CAP) continue;
-            // ON THE GROUND the map's own height field decides — a spawn table stores x/z only.
-            self.band[self.n] = Warrior.spawnAs(role, v3(h.x, m.heightAt(h.x, h.z), h.z), mathx.radians(h.yaw), h.scale, h.seed);
-            self.n += 1;
-        }
+        foe.resetRoles(Warrior, Role, &self.band, &self.n, m, roleOf);
     }
 
     pub fn setShader(self: *Muster, sh: rl.Shader) void {

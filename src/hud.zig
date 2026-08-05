@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 const uiart = @import("uiart.zig");
+const itemart = @import("itemart.zig"); // the pictures in the cross — shared with the character book
 
 const rgba = mathx.rgba;
 
@@ -18,6 +19,7 @@ pub const TITLE: i32 = 34; // menu card headings (the HUD carries no title — s
 pub const BODY: i32 = 22; // primary readouts — the debug gait/speed line, menu rows
 pub const SMALL: i32 = 20; // secondary readouts — the debug corner's rows
 pub const HINT: i32 = 19; // the least important line on screen (the menu's control crib)
+pub const TINY: i32 = 16; // the caption UNDER a slot — a name, not a readout
 
 fn atlas(path: [:0]const u8, px: i32) ?rl.Font {
     var f = rl.loadFontEx(path, px, null) catch return null;
@@ -313,24 +315,9 @@ const SLOT_GAP: i32 = eq(8); // between the LEFT/RIGHT arms and the centre colum
 const PITCH_Y: i32 = eq(48);
 const BOTTOM: i32 = 26;
 
-const WELL_ON: u8 = 148;
-const WELL_OFF: u8 = 68;
-const SLOT_ON = rgba(180, 168, 140, 240); // an occupied slot's brighter rim
-const SLOT_OFF = rgba(124, 115, 98, 122);
-const STEEL = rgba(232, 234, 238, 255);
-const STEEL_MID = rgba(178, 184, 192, 255); // a blade's BODY: polished steel in a black well reads light
-const STEEL_DK = rgba(126, 132, 140, 255);
-const BRASS = rgba(182, 146, 78, 255);
-const GRIP = rgba(112, 82, 56, 255);
-const BOARD_JOINT = rgba(78, 56, 38, 255); // the shield icon's plank seams — a shade under GRIP
-const GRIP_LT = rgba(146, 110, 76, 255); // …and the lit lip below one, which is what makes a seam an EDGE
-const WAX = rgba(126, 34, 30, 255); // the flask's seal over its stopper
-const GLASS_LIT = rgba(238, 236, 230, 255);
-const CORD = rgba(158, 142, 108, 255); // the tie round its neck, and the bow's own wrap
-
 pub const Slot = enum { empty, sword, bow, shield, flask };
 
-pub const FlaskTint = enum { crimson, cerulean };
+pub const FlaskTint = itemart.FlaskTint;
 
 /// `left`/`right` are what is IN HIS HANDS this frame, not what he owns — the cross is four slots and it `tint` picks which flask is drawn in the DOWN slot, `charges` how many are left — the cross is where ER shows both, and a charge count you have to open a menu for is a charge count you play without.
 pub fn equipment(left_hand: Slot, right_hand: Slot, tint: FlaskTint, charges: u8, ammo: ?Ammo) void {
@@ -352,340 +339,59 @@ const AMMO_GAP: i32 = eq(5);
 /// question asked twice, so they read the same two tones.
 const TALLY_DRY = rgba(150, 96, 88, 220);
 const TALLY_OK = rgba(232, 224, 202, 255);
-const AMMO_FIRE = rgba(255, 158, 62, 255);
-const AMMO_FIRE_DIM = rgba(226, 108, 30, 150);
 
 /// WHAT IS ON THE STRING, and how many are left of it.
 pub const Ammo = struct { n: u8, fire: bool = false };
 
-/// A HARD SEAT, A SUNK WELL AND A RIM — the socket every cross cell and the ammo box sit in, written
-/// once because there were two copies differing only in which height they passed.
-fn socket(x: i32, y: i32, w: i32, h: i32, on: bool) void {
-    rl.drawRectangle(x - 1, y - 1, w + 2, h + 2, rgba(0, 0, 0, if (on) 150 else 80));
-    uiart.well(x, y, w, h, if (on) WELL_ON else WELL_OFF);
-}
 
-fn socketRim(x: i32, y: i32, w: i32, h: i32, on: bool) void {
-    const r = rl.Rectangle{
-        .x = @floatFromInt(x),
-        .y = @floatFromInt(y),
-        .width = @floatFromInt(w),
-        .height = @floatFromInt(h),
-    };
-    rl.drawRectangleLinesEx(r, 1, if (on) SLOT_ON else SLOT_OFF);
+/// HOW MANY OF IT ARE LEFT, in a slot's bottom-right corner — the flask's charges, the quiver's shafts
+/// and the bag's stack sizes are one question asked in three places, so they are drawn by one function.
+/// Laid off the corner rather than off the text's own height: the glyphs have descenders, and measured
+/// the other way every tally in the book sat on its socket's rim.
+pub fn tally(s: [:0]const u8, rightX: i32, bottomY: i32, size: i32, col: rl.Color) void {
+    const tw = textW(s, size);
+    const h = lineH(size);
+    const x = rightX - tw - 12;
+    const y = bottomY - h - 6;
+    uiart.tallyShelf(x - 5, y - 1, tw + 12, h + 3);
+    text(s, x, y, size, col);
 }
 
 fn ammoBox(x: i32, y: i32, a: Ammo) void {
     const on = a.n > 0;
-    socket(x, y, SLOT_W, AMMO_H, on);
-    socketRim(x, y, SLOT_W, AMMO_H, on);
+    uiart.socket(x, y, SLOT_W, AMMO_H, on);
+    uiart.socketRim(x, y, SLOT_W, AMMO_H, on);
     const cy: f32 = @floatFromInt(y + @divTrunc(AMMO_H, 2));
-    arrowIcon(@floatFromInt(x + eq(13)), cy, on, a.fire);
+    itemart.arrow(@floatFromInt(x + eq(13)), cy, @floatFromInt(ICON), on, a.fire);
     var buf: [8]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "{d}", .{a.n}) catch return;
-    const col = if (!on) TALLY_DRY else if (a.fire) AMMO_FIRE else TALLY_OK;
+    const col = if (!on) TALLY_DRY else if (a.fire) itemart.FIRE else TALLY_OK;
+    // The ammo box is a SHORT slot: its count sits on the middle line, not down in a corner it has none of.
     text(s, x + SLOT_W - textW(s, HINT) - 6, y + @divTrunc(AMMO_H - lineH(HINT), 2), HINT, col);
 }
 
-fn arrowIcon(cx: f32, cy: f32, on: bool, fire: bool) void {
-    const s: f32 = @floatFromInt(ICON);
-    const k = strokeK();
-    const half = s * 0.16;
-    const shaft = if (on) BOWWOOD else rgba(BOWWOOD.r, BOWWOOD.g, BOWWOOD.b, 120);
-    const plainHead = if (on) STEEL else rgba(STEEL_DK.r, STEEL_DK.g, STEEL_DK.b, 140);
-    const head = if (fire) (if (on) AMMO_FIRE else rgba(AMMO_FIRE.r, AMMO_FIRE.g, AMMO_FIRE.b, 140)) else plainHead;
-    // THE PITCHED HEAD IS TONGUES STREAMING BACK OFF THE PILE, as the mesh is — a disc behind the head
-    // swallowed it and read as a ball on a stick.
-    if (fire) {
-        const hot = if (on) AMMO_FIRE else rgba(AMMO_FIRE.r, AMMO_FIRE.g, AMMO_FIRE.b, 90);
-        const dim = if (on) AMMO_FIRE_DIM else rgba(AMMO_FIRE_DIM.r, AMMO_FIRE_DIM.g, AMMO_FIRE_DIM.b, 70);
-        const root = cx + half - 0.8 * k;
-        for ([_]f32{ -1, 0, 1 }) |sy| {
-            const reach = if (sy == 0) 5.6 * k else 4.0 * k;
-            rl.drawTriangle(
-                .{ .x = root - reach, .y = cy + sy * 2.5 * k },
-                .{ .x = root, .y = cy - 1.5 * k },
-                .{ .x = root, .y = cy + 1.5 * k },
-                if (sy == 0) hot else dim,
-            );
-        }
-    }
-    rl.drawLineEx(.{ .x = cx - half, .y = cy }, .{ .x = cx + half, .y = cy }, 2.0 * k, shaft);
-    rl.drawLineEx(.{ .x = cx - half, .y = cy - 0.7 * k }, .{ .x = cx + half * 0.7, .y = cy - 0.7 * k }, 0.7 * k, rgba(GRIP_LT.r, GRIP_LT.g, GRIP_LT.b, if (on) 160 else 70)); // the lit top of the shaft
-    rl.drawTriangle(
-        .{ .x = cx + half + 3.0 * k, .y = cy },
-        .{ .x = cx + half - 1.6 * k, .y = cy - 2.3 * k },
-        .{ .x = cx + half - 1.6 * k, .y = cy + 2.3 * k },
-        head,
-    );
-    rl.drawLineEx(.{ .x = cx + half - 2.2 * k, .y = cy }, .{ .x = cx + half - 1.0 * k, .y = cy }, 3.0 * k, rgba(head.r / 2, head.g / 2, head.b / 2, head.a));
-    for ([_]f32{ -1, 1 }) |sy| {
-        rl.drawLineEx(
-            .{ .x = cx - half + 3.4 * k, .y = cy },
-            .{ .x = cx - half - 0.6 * k, .y = cy + sy * (2.4 + 0.5 * sy) * k },
-            1.5 * k,
-            shaft,
-        );
-    }
-    // …and the NOCK: the notch the string sits in, which is what makes the tail an end and not a stub.
-    rl.drawLineEx(.{ .x = cx - half - 1.0 * k, .y = cy - 1.5 * k }, .{ .x = cx - half - 1.0 * k, .y = cy + 1.5 * k }, 1.2 * k, rgba(CORD.r, CORD.g, CORD.b, if (on) 235 else 110));
-}
-
 fn slot(x: i32, y: i32, holds: Slot, tint: FlaskTint, charges: u8) void {
-    const on = holds != .empty;
-    socket(x, y, SLOT_W, SLOT_H, on);
-    if (on) uiart.candle(x + @divTrunc(SLOT_W, 2), y + @divTrunc(SLOT_H, 2), @as(f32, @floatFromInt(SLOT_W)) * 0.55, 16);
-    socketRim(x, y, SLOT_W, SLOT_H, on);
-    if (on) uiart.cornerJewels(x, y, SLOT_W, SLOT_H, 2.4, mathx.withAlpha(uiart.GILT_DIM, 220));
+    uiart.slot(x, y, SLOT_W, SLOT_H, holds != .empty);
     const cx: f32 = @floatFromInt(x + @divTrunc(SLOT_W, 2));
     const cy: f32 = @floatFromInt(y + @divTrunc(SLOT_H, 2));
+    const px: f32 = @floatFromInt(ICON);
     switch (holds) {
         .empty => {},
-        .sword => sword(cx, cy),
-        .bow => bowIcon(cx, cy),
-        .shield => shield(cx, cy),
+        .sword => itemart.sword(cx, cy, px),
+        .bow => itemart.bow(cx, cy, px),
+        .shield => itemart.shield(cx, cy, px),
         .flask => {
-            flask(cx, cy, tint, charges > 0);
+            itemart.flask(cx, cy, px, tint, charges > 0);
             var buf: [8]u8 = undefined;
             const s = std.fmt.bufPrintZ(&buf, "{d}", .{charges}) catch return;
-            const col = if (charges > 0) TALLY_OK else TALLY_DRY;
-            text(s, x + SLOT_W - textW(s, HINT) - 5, y + SLOT_H - lineH(HINT) + 1, HINT, col);
+            tally(s, x + SLOT_W, y + SLOT_H + 6, HINT, if (charges > 0) TALLY_OK else TALLY_DRY);
         },
     }
 }
 
-const CRIMSON = rgba(196, 46, 40, 255); // Flask of Crimson Tears
-const CRIMSON_DK = rgba(104, 24, 22, 255);
-const CERULEAN = rgba(64, 128, 200, 255);
-const CERULEAN_DK = rgba(28, 62, 118, 255);
-const CORK = rgba(150, 118, 74, 255);
-
-fn flask(cx: f32, cy: f32, tint: FlaskTint, full: bool) void {
-    const s: f32 = @floatFromInt(ICON);
-    const k = strokeK();
-    var rng = mathx.Rng.init(0xF1A5C);
-    const lit = switch (tint) {
-        .crimson => CRIMSON,
-        .cerulean => CERULEAN,
-    };
-    const dk = switch (tint) {
-        .crimson => CRIMSON_DK,
-        .cerulean => CERULEAN_DK,
-    };
-    const fill = if (full) lit else rgba(dk.r, dk.g, dk.b, 150);
-    const deep = if (full) rgba(dk.r, dk.g, dk.b, 255) else rgba(dk.r, dk.g, dk.b, 120);
-    const body = s * 0.265; // half-width of the bulb — narrowed, so the silhouette is a FLASK not a ball
-    const bodyY = cy + s * 0.13;
-    // The whole flask leans: hand-blown glass does not stand plumb, and nor does the way it is carried.
-    const lean = rng.range(-0.9, 0.9) * k;
-
-    rl.drawCircleV(.{ .x = cx + 1.0 * k, .y = bodyY + 1.1 * k }, body, rgba(0, 0, 0, 120)); // off the plate
-    // THE BULB, SHADED FROM THE DARK SIDE OUT: the deep tone is the whole ball and the lit fill is a
-    // slightly smaller one set up and left inside it, so what shows of the deep is a crescent along the
-    // bottom-right rim. THERE IS NO CLIPPING HERE, which is what killed the three attempts before it —
-    // a concentric dark circle is a bubble, a sector cuts the flask in half, and a big offset circle
-    // (the obvious way round) spills its far side across the HUD and the world behind it.
-    rl.drawCircleV(.{ .x = cx, .y = bodyY }, body, deep);
-    rl.drawCircleV(.{ .x = cx - body * 0.11, .y = bodyY - body * 0.13 }, body * 0.90, fill);
-    // THE SHOULDERS as a taper up to the neck. A rounded BOX here (the first pass) pokes its corners out
-    // past the bulb's arc and reads as a flange bolted to the glass; a shoulder is a cone.
-    const neckHalf = s * 0.062;
-    const shoulderY = bodyY - body * 0.42;
-    quad(
-        .{ .x = cx + lean * 0.5 - neckHalf, .y = cy + s * 0.015 },
-        .{ .x = cx + lean * 0.5 + neckHalf, .y = cy + s * 0.015 },
-        .{ .x = cx + body * 0.88, .y = shoulderY },
-        .{ .x = cx - body * 0.88, .y = shoulderY },
-        fill,
-    );
-    rl.drawLineEx(
-        .{ .x = cx + lean * 0.4, .y = cy + s * 0.02 },
-        .{ .x = cx + lean, .y = cy - s * 0.31 },
-        neckHalf * 2.0,
-        fill,
-    );
-    rl.drawLineEx(
-        .{ .x = cx + lean - s * 0.070, .y = cy - s * 0.295 },
-        .{ .x = cx + lean + s * 0.070, .y = cy - s * 0.295 },
-        2.0 * k,
-        deep,
-    );
-    // THE LIQUID LINE sits DOWN IN THE BULB and stops short of the left, because the specular runs there:
-    // laid across the shoulder and full width, the two of them crossed and read as a label on the glass.
-    if (full) {
-        rl.drawLineEx(
-            .{ .x = cx - body * 0.20, .y = bodyY - body * 0.60 },
-            .{ .x = cx + body * 0.72, .y = bodyY - body * 0.68 },
-            1.4 * k,
-            rgba(255, 255, 255, 80),
-        );
-    }
-    // THE SPECULAR: one long streak down the left shoulder of the bulb, and nothing on the neck (a second
-    // highlight there made a cross with the liquid line).
-    rl.drawLineEx(
-        .{ .x = cx - body * 0.52, .y = bodyY - body * 0.62 },
-        .{ .x = cx - body * 0.66, .y = bodyY + body * 0.28 },
-        2.0 * k,
-        rgba(GLASS_LIT.r, GLASS_LIT.g, GLASS_LIT.b, if (full) 200 else 90),
-    );
-
-    const sx = cx + lean * 1.15;
-    rl.drawRectangleV(.{ .x = sx - s * 0.062, .y = cy - s * 0.395 }, .{ .x = s * 0.124, .y = s * 0.105 }, CORK);
-    rl.drawCircleV(.{ .x = sx, .y = cy - s * 0.335 }, s * 0.075, WAX);
-    rl.drawCircleV(
-        .{ .x = sx + rng.range(-0.6, 0.6) * s * 0.05, .y = cy - s * 0.30 },
-        s * 0.048,
-        WAX, // the run
-    );
-    rl.drawCircleV(.{ .x = sx - 1.2 * k, .y = cy - s * 0.355 }, 1.0 * k, rgba(255, 210, 190, 120)); // its gloss
-    const ty = cy - s * 0.245;
-    rl.drawLineEx(.{ .x = sx - s * 0.075, .y = ty }, .{ .x = sx + s * 0.075, .y = ty - 0.6 * k }, 1.4 * k, CORD);
-    rl.drawLineEx(
-        .{ .x = sx + s * 0.055, .y = ty },
-        .{ .x = sx + s * 0.055 + rng.range(1.4, 3.0) * k, .y = ty + rng.range(1.6, 3.4) * k },
-        1.0 * k,
-        CORD,
-    );
-}
-
+/// THE BOX THE CROSS'S PICTURES ARE DRAWN IN — the slot's own width. `itemart` scales every stroke off
+/// whatever it is handed, so this is the HUD's size and nobody else's.
 const ICON = SLOT_W;
-/// THE SLOT WIDTH EVERY ICON'S STROKES WERE TUNED AT. It was written out at five call sites, each with a
-/// comment pointing at the other four — which is four chances to carry the set to a new size unevenly.
-const ICON_TUNED_AT: f32 = 34.0;
-fn strokeK() f32 {
-    return @as(f32, @floatFromInt(ICON)) / ICON_TUNED_AT;
-}
-
-// ── THE EQUIPMENT ICONS ───────────────────────────────────────────────────────────────────────────
-// These are the four pictures a player looks at for the whole game, so they are drawn as OBJECTS rather
-// than as glyphs: a blade has a taper, a fuller and an edge that catches the light; a shield has boards,
-// a binding and rivets; a flask has glass, a liquid line and a wax seal. Two rules hold the set together:
-//
-// - **STROKES SCALE OFF `k`.** Everything was tuned at a 34 px slot and multiplies up, so the HUD stays
-//   itself at any resolution.
-// - **WABI-SABI, BUT DETERMINISTIC.** Nothing in the set is machined: unequal guard arms, planks of
-//   different widths, a nicked edge, a stopper off plumb. Every one of those offsets comes out of a
-//   FIXED-SEED `mathx.Rng` re-seeded on each call, so the icon is imperfect and *the same imperfection
-//   every frame*. Drawing from a live stream would make the HUD crawl.
-
-/// Two triangles making one quad, WOUND WHICHEVER WAY RAYLIB WILL ACTUALLY RASTERISE. It culls a
-/// back-facing 2D triangle (see `arrowIcon`, which is the one that proved it), so a quad handed over the
-/// wrong way round is silently not drawn — and that is exactly how the sword icon's blade body went
-/// missing: the picture was its point triangle plus two hairlines, which is to say a dagger. Callers give
-/// the four corners in order and stop caring.
-fn quad(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2, d: rl.Vector2, col: rl.Color) void {
-    // Signed area of a→b→c in SCREEN space, where y runs down: raylib draws the NEGATIVE one.
-    if ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x) <= 0) {
-        rl.drawTriangle(a, b, c, col);
-        rl.drawTriangle(a, c, d, col);
-    } else {
-        rl.drawTriangle(a, d, c, col);
-        rl.drawTriangle(a, c, b, col);
-    }
-}
-
-/// A point `along` the axis from `from` to `to`, pushed `off` sideways across it.
-fn onAxis(from: rl.Vector2, to: rl.Vector2, along: f32, off: f32) rl.Vector2 {
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const len = @max(@sqrt(dx * dx + dy * dy), 1e-4);
-    const nx = -dy / len;
-    const ny = dx / len;
-    return .{ .x = from.x + dx * along + nx * off, .y = from.y + dy * along + ny * off };
-}
-
-/// ELDEN RING'S OWN PATTERN, and the owner's call: MOSTLY HILT, AND THE BLADE FADES OUT. A whole sword
-/// scaled to fit a 44×60 socket is a dagger — that is what it read as — because everything that says
-/// LONG about a longsword is the part there is no room for. So the hilt is drawn big and jewelled down
-/// in the frame and the steel runs off the top losing itself, which reads as a blade that continues.
-fn sword(cx: f32, cy: f32) void {
-    const s: f32 = @floatFromInt(ICON);
-    const k = strokeK();
-    var rng = mathx.Rng.init(0x5B1AD3);
-    const d = s * 0.72; // …and the blade's end is the FRAME, which is what says it carries on past it
-    const u = 0.70711; // the diagonal axis, pommel-ward…
-    // The whole sword leans a degree or so off the true diagonal: nothing forged is square to a grid.
-    const lean = rng.range(-0.035, 0.035);
-    // NOT a tip: where the steel has faded to nothing. The blade has no point in this picture.
-    const gone = rl.Vector2{ .x = cx - u * d * (1.0 + lean), .y = cy - u * d * (1.0 - lean) };
-    // THE POMMEL HAS TO FIT ITS OWN SOCKET, and off the diagonal that is not free: at the shipped 150%
-    // equipment scale the obvious 0.92 of the axis put its far side 3 px out over the rim. Held in off
-    // the wheel's own radius, so it cannot spill again at whatever scale the HUD is next drawn at.
-    const pomR = 2.7 * k;
-    const pomOut = @min(u * d * 0.92, @as(f32, @floatFromInt(@divTrunc(ICON, 2))) - pomR - 1.5);
-    const pom = rl.Vector2{ .x = cx + pomOut, .y = cy + pomOut };
-    const guard = onAxis(gone, pom, 0.60, 0); // the hilt: the bottom 40%, drawn big and jewelled
-    const shoulder = onAxis(gone, pom, 0.565, 0); // where the blade meets the guard
-
-    // THE BLADE: a stack of segments losing alpha as it climbs, because raylib's 2D triangles are flat and
-    // a gradient is the only thing that says "this goes on past the frame". Widest at the shoulder, and it
-    // does NOT taper to a point — a taper plus a fade reads as a blade that broke.
-    const wBase = 2.7 * k; // a LONGSWORD: any wider over this length and it reads as a cleaver
-    const wFar = 2.1 * k;
-    const SEGS = 18;
-    const runTo = 0.565; // the blade's whole run, as a fraction of the frame's diagonal…
-    const FADE_FROM = 0.28; // …SOLID for this much of it, then losing itself into the corner. Faded from
-    // the GUARD outward instead — which is how the first pass went in — a longsword reads as a lit stub.
-    for (0..SEGS) |i| {
-        const t0 = @as(f32, @floatFromInt(i)) / SEGS; // 0 AT THE GUARD, 1 where the steel has gone
-        const t1 = @as(f32, @floatFromInt(i + 1)) / SEGS;
-        const w0 = mathx.lerpF(wBase, wFar, t0);
-        const w1 = mathx.lerpF(wBase, wFar, t1);
-        const col = mathx.withAlpha(STEEL_MID, mathx.u8f(255.0 * (1.0 - mathx.smoothstep(FADE_FROM, 1.0, (t0 + t1) * 0.5))));
-        quad(
-            onAxis(gone, pom, runTo * (1.0 - t1), w1),
-            onAxis(gone, pom, runTo * (1.0 - t0), w0),
-            onAxis(gone, pom, runTo * (1.0 - t0), -w0),
-            onAxis(gone, pom, runTo * (1.0 - t1), -w1),
-            col,
-        );
-    }
-    const solid = runTo * (1.0 - FADE_FROM); // the near end of the fade: no detail survives past it
-    rl.drawLineEx(onAxis(gone, pom, solid + 0.01, 0), onAxis(shoulder, pom, -0.02, 0), 1.1 * k, rgba(64, 68, 74, 170));
-    rl.drawLineEx(onAxis(gone, pom, solid, -wBase * 0.84), onAxis(shoulder, pom, 0, -wBase * 0.88), 1.1 * k, mathx.withAlpha(STEEL, 215));
-    rl.drawLineEx(onAxis(gone, pom, solid, wBase * 0.84), onAxis(shoulder, pom, 0, wBase * 0.88), 0.9 * k, rgba(88, 92, 98, 180));
-    // A NICK, low on the edge where the steel is still opaque — up in the fade it is invisible anyway.
-    const nickAt = rng.range(0.33, 0.43);
-    rl.drawTriangle(
-        onAxis(gone, pom, nickAt, -wBase * 0.72),
-        onAxis(gone, pom, nickAt + 0.022, -wBase * 0.26),
-        onAxis(gone, pom, nickAt - 0.016, -wBase * 0.26),
-        rgba(20, 18, 16, 190),
-    );
-
-    // THE GRIP: a leather core with unevenly spaced wrap turns over it — hairline, or they read as segments
-    // of a rod rather than as cord over leather. It is the LONG grip of a weapon held in two hands.
-    rl.drawLineEx(guard, pom, 3.2 * k, GRIP);
-    var band: f32 = 0.14;
-    while (band < 0.88) : (band += rng.range(0.16, 0.24)) {
-        const c = onAxis(guard, pom, band, 0);
-        rl.drawLineEx(
-            .{ .x = c.x + u * 1.55 * k, .y = c.y - u * 1.55 * k },
-            .{ .x = c.x - u * 1.55 * k, .y = c.y + u * 1.55 * k },
-            0.7 * k,
-            rgba(66, 48, 33, 230),
-        );
-    }
-
-    // THE CROSSGUARD — two arms of different length, and WIDE now that it is the read: the hilt is what
-    // this picture is of. The first pass ran it at 0.215·s and 2.9 px, which is a warhammer's head.
-    const q = s * 0.17;
-    for ([_]f32{ -1, 1 }) |side| {
-        const armLen = q * rng.range(0.84, 1.08);
-        const droop = -side * 0.9 * k; // both arms sweep the same way about the axis
-        const outer = rl.Vector2{
-            .x = guard.x + side * u * armLen + u * droop,
-            .y = guard.y - side * u * armLen + u * droop,
-        };
-        rl.drawLineEx(guard, outer, 2.1 * k, BRASS);
-        rl.drawCircleV(outer, 1.15 * k, uiart.GILT);
-    }
-    rl.drawCircleV(guard, 1.35 * k, uiart.GILT); // the block the arms leave from
-
-    rl.drawCircleV(.{ .x = pom.x + 0.6 * k, .y = pom.y + 0.7 * k }, pomR, rgba(0, 0, 0, 150));
-    rl.drawCircleV(pom, pomR, BRASS);
-    rl.drawCircleV(.{ .x = pom.x - 0.8 * k, .y = pom.y - 0.9 * k }, 1.1 * k, uiart.GILT_BRIGHT);
-}
 
 /// Dead screen centre, because that is literally where an aimed shot goes.
 pub fn reticle(k: f32) void {
@@ -708,129 +414,88 @@ pub fn reticle(k: f32) void {
     }
 }
 
-const BOWWOOD = rgba(96, 68, 44, 255);
-const BOWWOOD_LT = rgba(140, 102, 66, 255); // the lit BACK of a limb — a bow has a front and a back
-const BOWNOCK = rgba(196, 188, 168, 255); // the horn nock the string sits in
-const BOWSTRING = rgba(214, 206, 184, 255);
-fn bowIcon(cx: f32, cy: f32) void {
-    const s: f32 = @floatFromInt(ICON);
-    const k = strokeK();
-    var rng = mathx.Rng.init(0xB0FF12);
-    const d = s * 0.55;
-    const u = 0.70711;
-    // THE UPPER LIMB IS THE LONGER ONE. That is true of every real bow (the grip sits above centre so the
-    // arrow can pass through it) and it is the cheapest honest asymmetry in the whole set.
-    const upper = d * 1.06;
-    const lower = d * 0.90;
-    const tx = cx - u * upper;
-    const ty = cy - u * upper;
-    const bx = cx + u * lower;
-    const by = cy + u * lower;
-    const belly = s * 0.17; // how far the grip stands off the string line, across the axis
-    const mx = cx - u * belly;
-    const my = cy + u * belly;
-
-    for ([_][3]f32{ .{ tx, ty, 1 }, .{ bx, by, -1 } }) |limb| {
-        const tip = rl.Vector2{ .x = limb[0], .y = limb[1] };
-        const grip = rl.Vector2{ .x = mx, .y = my };
-        const bend = rng.range(0.28, 0.40);
-        const knee = onAxis(grip, tip, 0.52, -belly * bend);
-        const outer = onAxis(grip, tip, 0.84, -belly * bend * 0.55);
-        rl.drawLineEx(grip, knee, 3.5 * k, BOWWOOD);
-        rl.drawLineEx(knee, outer, 2.7 * k, BOWWOOD);
-        rl.drawLineEx(outer, tip, 2.0 * k, BOWWOOD); // the recurve, thinnest at the tip…
-        rl.drawLineEx(onAxis(grip, knee, 0.25, -1.1 * k), onAxis(knee, outer, 0.7, -0.9 * k), 0.9 * k, BOWWOOD_LT);
-        rl.drawCircleV(tip, 1.7 * k, BOWNOCK);
-        rl.drawCircleV(.{ .x = tip.x - 0.4 * k, .y = tip.y - 0.5 * k }, 0.7 * k, uiart.CATCH);
-    }
-
-    rl.drawLineEx(
-        .{ .x = mx - u * s * 0.075, .y = my - u * s * 0.075 },
-        .{ .x = mx + u * s * 0.085, .y = my + u * s * 0.085 },
-        4.4 * k,
-        GRIP,
-    );
-    for ([_]f32{ rng.range(0.22, 0.38), rng.range(0.62, 0.80) }) |f| {
-        const p = onAxis(
-            .{ .x = mx - u * s * 0.075, .y = my - u * s * 0.075 },
-            .{ .x = mx + u * s * 0.085, .y = my + u * s * 0.085 },
-            f,
-            0,
-        );
-        rl.drawLineEx(
-            .{ .x = p.x - u * 2.2 * k, .y = p.y + u * 2.2 * k },
-            .{ .x = p.x + u * 2.2 * k, .y = p.y - u * 2.2 * k },
-            1.0 * k,
-            CORD,
-        );
-    }
-
-    rl.drawLineEx(.{ .x = tx, .y = ty }, .{ .x = bx, .y = by }, 1.2 * k, BOWSTRING);
-    const serveA = onAxis(.{ .x = tx, .y = ty }, .{ .x = bx, .y = by }, 0.44, 0);
-    const serveB = onAxis(.{ .x = tx, .y = ty }, .{ .x = bx, .y = by }, 0.58, 0);
-    rl.drawLineEx(serveA, serveB, 2.0 * k, CORD);
+/// Break `s` to `maxW` pixels at `size`, writing NUL-terminated lines into `buf` and returning the ones
+/// that were filled. MEASURED WITH THE REAL FACE at every candidate word rather than at some
+/// characters-per-line guess — Balthazar is proportional and an `m` is three `i`s wide. A word longer than
+/// the whole column is taken anyway and overhangs, which only a column too narrow for the text can produce;
+/// running out of either buffer stops the wrap cleanly instead of truncating mid-word.
+pub fn wrap(s: []const u8, size: i32, maxW: i32, buf: []u8, lines: [][:0]const u8) [][:0]const u8 {
+    return wrapBy(textW, s, size, maxW, buf, lines);
 }
 
-fn shield(cx: f32, cy: f32) void {
-    const s: f32 = @floatFromInt(ICON);
-    const k = strokeK();
-    var rng = mathx.Rng.init(0x5C1E1D);
-    const c = rl.Vector2{ .x = cx, .y = cy };
-    const r = s * 0.40; // ~80% of the slot's width, matching the sword's own fill
-    const boards = r - 2.6 * k;
-
-    // THE BINDING is a 17-GON, not a circle: this thing was hammered round a wooden disc by hand, and a
-    // perfect circle is the one shape that says machine. 17 sides at a lazy rotation is round at a glance
-    // and hand-cut when you look.
-    rl.drawCircleV(.{ .x = cx + 0.8 * k, .y = cy + 1.0 * k }, r, rgba(0, 0, 0, 130)); // it sits off the plate
-    rl.drawPoly(c, 17, r, rng.range(0, 20), STEEL_DK);
-    rl.drawPoly(c, 17, boards, rng.range(0, 20), GRIP);
-
-    // THE BOARDS: three planks of UNEQUAL width, so the joints are not a symmetric pair.
-    const j1 = rng.range(-0.50, -0.30);
-    const j2 = rng.range(0.24, 0.46);
-    for ([_]f32{ j1, j2 }) |f| {
-        const dy = boards * f;
-        const half = @sqrt(@max(boards * boards - dy * dy, 1.0));
-        rl.drawLineEx(.{ .x = cx - half, .y = cy + dy }, .{ .x = cx + half, .y = cy + dy }, 1.7 * k, BOARD_JOINT);
-        // …and a lit lip under each joint, which is what makes them read as EDGES rather than as lines.
-        rl.drawLineEx(
-            .{ .x = cx - half * 0.94, .y = cy + dy + 1.2 * k },
-            .{ .x = cx + half * 0.94, .y = cy + dy + 1.2 * k },
-            0.8 * k,
-            rgba(GRIP_LT.r, GRIP_LT.g, GRIP_LT.b, 150),
-        );
+/// …measured by whatever is passed in. A test binary opens no window and so loads no font, which makes
+/// every string zero wide and every wrap one line: the algorithm is only checkable against a ruler the
+/// test brings itself.
+fn wrapBy(comptime measure: fn ([:0]const u8, i32) i32, s: []const u8, size: i32, maxW: i32, buf: []u8, lines: [][:0]const u8) [][:0]const u8 {
+    var n: usize = 0;
+    var used: usize = 0; // committed bytes of `buf`…
+    var len: usize = 0; // …and the length of the line being built at buf[used..]
+    var it = std.mem.tokenizeAny(u8, s, " \n\t");
+    while (it.next()) |word| {
+        if (n >= lines.len) break;
+        const sep: usize = if (len > 0) 1 else 0;
+        if (used + len + sep + word.len + 1 > buf.len) break;
+        // The candidate is written into the scratch past the live line, so it costs nothing to reject.
+        if (sep == 1) buf[used + len] = ' ';
+        @memcpy(buf[used + len + sep ..][0..word.len], word);
+        buf[used + len + sep + word.len] = 0;
+        const cand: [:0]const u8 = buf[used .. used + len + sep + word.len :0];
+        if (len == 0 or measure(cand, size) <= maxW) {
+            len += sep + word.len;
+            continue;
+        }
+        buf[used + len] = 0; // it did not fit: the line ends before this word…
+        lines[n] = buf[used .. used + len :0];
+        n += 1;
+        used += len + 1;
+        len = 0;
+        if (n >= lines.len) break;
+        if (used + word.len + 1 > buf.len) break;
+        @memcpy(buf[used..][0..word.len], word); // …and the word opens the next one
+        len = word.len;
     }
-    var gi: u32 = 0;
-    while (gi < 5) : (gi += 1) {
-        const gy = boards * rng.range(-0.78, 0.78);
-        const half = @sqrt(@max(boards * boards - gy * gy, 1.0)) * rng.range(0.35, 0.8);
-        const x0 = cx + rng.range(-0.4, 0.4) * half;
-        rl.drawLineEx(
-            .{ .x = x0 - half * 0.5, .y = cy + gy },
-            .{ .x = x0 + half * 0.5, .y = cy + gy },
-            0.7 * k,
-            rgba(BOARD_JOINT.r, BOARD_JOINT.g, BOARD_JOINT.b, 110),
-        );
+    if (len > 0 and n < lines.len) {
+        buf[used + len] = 0;
+        lines[n] = buf[used .. used + len :0];
+        n += 1;
     }
-
-    // RIVETS round the binding — FIVE, unevenly spaced, and one of them has been lost.
-    var i: u32 = 0;
-    while (i < 5) : (i += 1) {
-        if (i == 3) continue; // the missing one
-        const a = std.math.tau * (@as(f32, @floatFromInt(i)) / 5.0) + rng.range(-0.22, 0.22);
-        const rr = r - 1.4 * k;
-        const px = cx + mathx.cosf(a) * rr;
-        const py = cy + mathx.sinf(a) * rr;
-        rl.drawCircleV(.{ .x = px, .y = py }, 1.35 * k, STEEL);
-        rl.drawCircleV(.{ .x = px - 0.4 * k, .y = py - 0.5 * k }, 0.6 * k, uiart.CATCH);
-    }
-
-    const bx = cx + rng.range(-1.2, 1.2) * k;
-    const by = cy + rng.range(-1.2, 1.2) * k;
-    const br = s * 0.125;
-    rl.drawCircleV(.{ .x = bx + 0.7 * k, .y = by + 0.9 * k }, br, rgba(0, 0, 0, 160));
-    rl.drawCircleV(.{ .x = bx, .y = by }, br, STEEL_DK);
-    rl.drawCircleV(.{ .x = bx - 0.6 * k, .y = by - 0.7 * k }, br - 2.0 * k, STEEL);
-    rl.drawCircleV(.{ .x = bx - 1.5 * k, .y = by - 1.7 * k }, br * 0.30, uiart.CATCH);
+    return lines[0..n];
 }
+
+/// A ruler with no font behind it: every glyph one unit wide, so a column is a character count.
+fn perChar(s: [:0]const u8, size: i32) i32 {
+    _ = size;
+    return @intCast(s.len);
+}
+
+test "wrap breaks on words and keeps every one of them" {
+    var buf: [512]u8 = undefined;
+    var rows: [8][:0]const u8 = undefined;
+    const src = "A tuft of the red grass that grows where something bled. Worthless, and everywhere.";
+    const out = wrapBy(perChar, src, BODY, 24, &buf, &rows);
+    try std.testing.expect(out.len > 1); // it DID break
+    var kept: usize = 0;
+    for (out) |line| {
+        try std.testing.expect(line.len > 0);
+        try std.testing.expect(line.len <= 24); // …and no line is wider than the column it was given
+        kept += line.len;
+    }
+    // Every word survived: the joined lines are the source less the spaces that became breaks.
+    try std.testing.expectEqual(src.len - (out.len - 1), kept);
+}
+
+test "wrap stops at the caller's line count rather than overrunning it" {
+    var buf: [512]u8 = undefined;
+    var rows: [2][:0]const u8 = undefined;
+    const out = wrapBy(perChar, "one two three four five six seven eight nine ten", BODY, 9, &buf, &rows);
+    try std.testing.expectEqual(@as(usize, 2), out.len);
+}
+
+test "a word wider than the whole column is taken rather than dropped" {
+    var buf: [128]u8 = undefined;
+    var rows: [4][:0]const u8 = undefined;
+    const out = wrapBy(perChar, "a supercalifragilistic b", BODY, 4, &buf, &rows);
+    try std.testing.expectEqual(@as(usize, 3), out.len);
+    try std.testing.expectEqualStrings("supercalifragilistic", out[1]);
+}
+

@@ -693,8 +693,7 @@ pub const Editor = struct {
         self.cam.position.y = @max(self.cam.position.y, self.groundHeight(self.cam.position.x, self.cam.position.z) + 0.6);
     }
 
-    fn orbitCam(self: *Editor, dt: f32) void {
-        _ = dt;
+    fn orbitCam(self: *Editor) void {
         // RIGHT-DRAG ROTATES, RIGHT-CLICK is the context menu / deselect.
         if (rl.isMouseButtonPressed(.right)) {
             self.rmbDown = true;
@@ -794,7 +793,7 @@ pub const Editor = struct {
         }
         undoAt += 1;
         m.* = undoSlot(undoN - undoAt).*;
-        self.clampSel(m);
+        self.clampSel();
         return true;
     }
 
@@ -802,12 +801,11 @@ pub const Editor = struct {
         if (undoAt <= 1) return false;
         undoAt -= 1;
         m.* = undoSlot(undoN - undoAt).*;
-        self.clampSel(m);
+        self.clampSel();
         return true;
     }
 
-    fn clampSel(self: *Editor, m: *const wf.Map) void {
-        _ = m;
+    fn clampSel(self: *Editor) void {
         self.sel = null;
         self.selFoe = null;
         self.nMarked = 0;
@@ -905,7 +903,7 @@ pub const Editor = struct {
             }
             return .none;
         }
-        self.orbitCam(dt);
+        self.orbitCam();
         // THE EARS ARE WHERE THE EDITOR'S CAMERA IS.
         sfx.listen(self.cam.position, self.right());
         // Serviced here rather than in commitPending, because leaving is the game loop's call.
@@ -1565,7 +1563,7 @@ pub const Editor = struct {
                     std.mem.copyForwards(wf.Foe, m.foes[i - 1 .. m.nfoes - 1], m.foes[i..m.nfoes]);
                     m.nfoes -= 1;
                     self.selFoe = null;
-                    self.clampSel(m); // the spawn indices just shifted — see there
+                    self.clampSel(); // the spawn indices just shifted — see there
                     self.sayFmt("-foe ({d:.0}, {d:.0})", .{ f.x, f.z });
                     return true;
                 }
@@ -1624,7 +1622,7 @@ pub const Editor = struct {
             std.mem.copyForwards(wf.Foe, m.foes[f .. m.nfoes - 1], m.foes[f + 1 .. m.nfoes]);
             m.nfoes -= 1;
             self.selFoe = null;
-            self.clampSel(m); // the spawn indices just shifted — see there
+            self.clampSel(); // the spawn indices just shifted — see there
             self.say("-foe");
             return;
         }
@@ -1640,7 +1638,7 @@ pub const Editor = struct {
 
     fn removeOp(self: *Editor, m: *wf.Map, env: *envmod.Env, s: usize) void {
         m.remove(s);
-        self.clampSel(m);
+        self.clampSel();
         self.rebuild(m, env);
         self.sayFmt("deleted op #{d}", .{s});
     }

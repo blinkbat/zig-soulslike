@@ -305,7 +305,8 @@ meadow's (`shaders.terrainAlbedo`'s region drift — the GLSL, not the Zig).
                  orchestration (sun depth pass → retro capture → lit pass → filter blit →
                  vignette/HUD/menu), sky, HUD, combat-beat feedback (rumble + shake + hit flash;
                  NO hitstop), the YOU DIED card, and the `--shot` harness.
-- `menu.zig`   — the pause/debug menu (OPEN AT LAUNCH: Continue / Options / Editor / Debug / Quit).
+- `menu.zig`   — the pause/debug menu (OPEN AT LAUNCH: Continue / Options / Editor / Debug / Quit), and
+                 the router for pad START, which opens `book.zig` whole rather than a card of its own.
                  OPTIONS holds the three SOUND LEVELS — Ambient / Sound Effects / Combat, one per
                  `sfx.Submix` (`OPT_MIX`, comptime-checked to cover every family, or a voice would be
                  one the player can never move). They PERSIST in `settings.cfg` beside the exe, written
@@ -458,9 +459,17 @@ meadow's (`shaders.terrainAlbedo`'s region drift — the GLSL, not the Zig).
                  the GAME camera last stood.
 - `ui.zig`     — the editor's immediate-mode widget kit, lifted from `../zig-diablo/src/ui.zig`
                  and re-backed onto `hud.zig`. `Ctx.anyHot` gates world clicks NEXT frame.
-- `uiart.zig`  — the chrome's DRESSING (stone plates, gilt frames, jewels, dividers, sheen),
-                 shared by hud/menu/ui the way `propart.zig` is shared by the props. Adapted from
-                 `../zig-diablo/src/hudx.zig` and `../crawler`'s theme kit.
+- `uiart.zig`  — the chrome's DRESSING (stone plates, gilt frames, jewels, dividers, sheen, the SLOT
+                 socket and the grid CURSOR, the four weights of ink), shared by hud/menu/book/ui the way
+                 `propart.zig` is shared by the props. Adapted from `../zig-diablo/src/hudx.zig` and
+                 `../crawler`'s theme kit.
+- `itemart.zig`— PICTURES OF THINGS: the four armaments in the HUD's cross and every kind in the bag,
+                 drawn as OBJECTS rather than glyphs and SIZED BY THE CALLER — one picture serves a 33 px
+                 bag cell and a 200 px detail plate, because every stroke scales off the box it is handed
+                 (`TUNED_AT`). Deterministic wabi-sabi: fixed-seed `mathx.Rng` per call, so an icon is
+                 imperfect and *the same imperfection every frame*. `draw(kind, …)` is the one place
+                 item→picture is written, and it is exhaustive.
+- `book.zig`   — THE CHARACTER BOOK (pad START): EQUIPMENT / INVENTORY / STATS. See its own section.
 - `icons.zig`  — the editor's GLYPH SET, drawn from primitives (`ui.Icon` re-exports it). Vector, not
                  an atlas: the buttons scale off `hud.MONO` and a bitmap icon would be the one thing in
                  the chrome that blurs when the type size moves.
@@ -650,6 +659,11 @@ lines where the concerns genuinely part company, and each new file is named so t
                  - **THE DIAGONAL SLAM IS UNINTERRUPTIBLE** (owner's call) and `hyper` is a property of
                    the MOVE, not of the creature: damage lands, poise and stance are taken off the blow,
                    and only death stops it. Long tell, long reach, long recovery.
+                 - **AND HE PAYS FOR EVERY SWING** (owner: "he's tough as nails"). He is the hardest thing
+                   in the game to trade with — hyper-armour, 124 HP, 26 poise — so what makes him fair is
+                   the WINDOW either side of a blow, not a smaller number on it: the slam hauls up for
+                   1.34 s and stands there 1.62 s after (the longest recovery in the game), the lunge 0.52
+                   and 1.02, and both cooldowns went up with them. His damage was not touched.
                  - **…AND THE LUNGE IS THE ANSWER TO HIM**: a quick two-stroke combo you CAN interrupt,
                    opening with a little LEAP (`Attack.lunge`/`hop`, travel integrated off a curve like
                    the archer's backstep, and A LEAP IS ONE KNEE UP — see kobold.zig's law). A combo's
@@ -1168,29 +1182,105 @@ wobble and a crackle bed has no pitch to wobble — but the PLAYER's ambience ra
 dressing and the worn-tape default puts one there anyway (owner's call, and the point of it: the fire is in
 the same room as everything else). See the `audio.zig` module entry for the rack.
 
+## THE CHARACTER BOOK (`book.zig`) — pad START, and three pages of it
+
+Elden Ring's own shape: a slot GRID on the left, and a panel on the right that says what the thing under
+the cursor IS. It replaced four card-list screens (Attributes / Resistances / Inventory / Equipment) that
+could show a name and a number and nothing else.
+
+- **THE CURSOR IS A THING THAT MOVES.** Four brackets that FLY to the slot they name and squeeze onto it
+  while the button is held (`uiart.slotCursor`), not a highlight that teleports. The slot sinks under the
+  press, the picture lifts a pixel off its socket under the cursor and goes back down under it, and a
+  landed swap gives the socket a seat THUMP. That is the whole of the "handsy" feel — there is no rumble
+  in it, because the motors are deliberately silent under a pause (`game.run`'s menu branch).
+- **THE RIGHT-HAND PANEL IS THE POINT.** Equipment prices the OTHER armament BEFORE you take it:
+  `derive(Loadout)` is a pure function of what is equipped, so a candidate is priced by calling it again
+  with one field changed, and every row is read from the module that owns it (`hero.ATK_*`,
+  `combat.STAM_*`, `GUARD_NEGATE`, `FLASK_*_FRAC`) rather than retyped. Taking up the bow shows the guard
+  row going to nothing, which is the honest price of it. `DerivedRow.cost` marks the two rows a SMALLER
+  number wins on, so the delta colours cannot lie.
+- **EMPTY IS AN HONEST ANSWER.** The sorcery slot is empty because there are no spells and the left hand
+  empties behind a bow, and both say so in words when you land on them (`locked`) — the same rule as
+  `stats.governs` owning up to an inert attribute.
+- **THE LAYOUT IS WORKED OUT IN ONE PLACE** (`Box`/`Grid`/`panelInner`). The cursor computes where it is
+  flying to independently of the draw pass, so two copies of the grid maths would be a cursor sitting half
+  a slot off the thing it claims to be on. Rows FIT their panel too — the pitch gives way before the
+  content does, because ten rows at a fixed pitch walked off the bottom of the picker's short column.
+- **THE STATS PAGE TURNS HIM ON A TURNTABLE**: the real hero model in his real pose, rendered off-screen
+  and blitted (the editor's object-viewer trick), hung off HIS OWN FACING so he presents the same
+  three-quarter view wherever the fight left him pointing. Left/Right spins it.
+- Pages turn on the shoulders / Q-E, because Left and Right are spent on the grid and the turntable. The
+  four `--shot` frames (`106e`…`106h`) are staged through `Book.debugShow`.
+
+## SIGHT (`env.sees` → `game.markSight` → `foe.Leash`) — nothing notices what it cannot see
+
+- **A LOOK IS A SEGMENT AND IT IS TESTED EXACTLY** (`collision.blocksSight`): one segment-vs-capsule test
+  per solid, not a walk of samples. An arrow's flight is sampled because it is a path being simulated
+  anyway; a sight line is one question, and sampling it means either a step fine enough to cost real time
+  over 20 m or a step a fence post fits through. It passes OVER anything whose blocking height is under
+  both ends of the look, which is what keeps a kerb from hiding a man standing behind it.
+- **THE GRID IS WALKED, NOT COPIED** (`env.sees`). `nearSolids` fills a fixed buffer and truncates at
+  `MAX_NEAR`; over a twenty-metre line through a wood that quietly drops the wall it was asked about and
+  answers "yes". Cells are visited by bounding box (a 25 m line is at most 3×3 of them at `CELL` = 16) and
+  a solid sitting in two of them is simply tested twice.
+- **IT IS ASKED ONCE A FRAME, BY THE GAME** (`game.markSight`), for every foe inside `SIGHT_R` — past the
+  widest notice ring in the game, beyond which a foe reads him as far off whatever the answer is. The look
+  runs from the foe's own `lockPoint` (already defined as "where this creature is" for the reticle) to the
+  hero's chest, and is stamped on that foe's `Leash`. The creatures do not ask it themselves: the prop grid
+  belongs to `env`, and handing a world to six state machines so each could re-ask the same question is six
+  copies of it.
+- **WHAT IT LOSES IS ITS EYES, NOT ITS MEMORY.** `Leash.blind()` needs `SIGHT_MEMORY` (6 s) with no line
+  before the hero reads as infinitely far — which every creature already knows what to do about, so a foe
+  that loses you hunts your last known place and then goes back to its post. A chase that ended the instant
+  you stepped behind a pillar would make every fight in these ruins peekaboo, and the memory is longer than
+  `LEASH_CALM` so breaking sight can never shed a foe faster than walking away from one does.
+- **A BLOW OUTRANKS BLINDNESS.** `roused()` (any landed hit) beats `blind()`, because being shot from
+  somewhere you cannot see is exactly when a creature must come looking.
+
 ## LEASHING (`foe.zig`) — a foe's tether, and the provocation that cuts it
 
 A foe drawn a long way from where the map posted it walks back and loses interest until something rouses it
 again. One struct (`foe.Leash`) every creature embeds, because all four want the identical rule and four
 copies of a hysteresis is four chances to get one of them subtly wrong.
 
-- **START FAR, STOP NEAR.** It turns for home past `LEASH_R` (30 m) and stops only inside `LEASH_HOME_R`
-  (3 m). That gap IS the debounce: a foe hovering at the boundary cannot flap between chasing and returning
-  every other frame, which a single radius guarantees it would.
+- **START FAR, STOP NEAR.** It turns for home past `foe.leashR(AGGRO_R)` and stops only inside
+  `LEASH_HOME_R` (3 m). That gap IS the debounce: a foe hovering at the boundary cannot flap between chasing
+  and returning every other frame, which a single radius guarantees it would.
+- **THE TETHER IS THE CREATURE'S OWN NOTICE RING PLUS `LEASH_SLACK` (6 m)**, not one authored number: a
+  chase allowance, so a toad and an ogre both give up after the same few unproductive metres (toad 17,
+  broodling/kobold 22, ogre 24, warrior 26, mother 28, archer 30). A flat 30 m was 2.7x the toad's aggro and
+  1.25x the archer's, and it was also THE SPACING BETWEEN CAMPS in `worlds/` — the Bone Court ogre is 30.9 m
+  off the shieldmen and the brood mothers are 29–32 m apart — so a tether reached the next encounter.
+  Deriving it also makes `leashR > AGGRO_R` structural: a tether shorter than the ring it belongs to would
+  turn a foe for home mid-stare and yo-yo it forever.
 - **AND ONLY AFTER `LEASH_CALM` (4.5 s) WITH NO BLOW GIVEN OR TAKEN.** A fight in progress is never
   abandoned — every path that lands a hit or takes one calls `noteCombat`.
-- **ONE PLAYER PROJECTILE ROUSES IT FROM ANY RANGE, FOR `PROVOKE_ROUSE` (14 s).** A blade marked `pierce` (an
-  arrow today, a spell when there is one — nothing asks what threw it) calls `Leash.provoke`: the creature
-  snaps its facing back down the shaft and then HUNTS HIM DOWN, whatever its own `AGGRO_R` says. Shoot
-  something across the plaza and it comes. The rouse is a COUNTDOWN, not a level of `provoked`, because it
-  has to outlast the WALK — as a threshold it lapsed 0.29 s after the hit, so a sniped foe took one step and
-  went back to grazing and sniping read as doing nothing. The tether is still what ends the chase.
+- **AND ONLY WITH THE HERO OUT OF ITS RING.** It gives up when he is BOTH far from its post AND outside
+  `AGGRO_R`, because a foe with him in its face has no business turning round over whoever happened not to
+  land a blow that half-second. On the tether alone it did exactly that.
+- **A WALK HOME IS NOT BLIND** (the bug this rule came from): step back inside its notice ring — or land ONE
+  blow, from anywhere — and it turns round on the spot. The state machines could already do this
+  (`ogre`/`warrior`'s `if (d <= AGGRO_R) homing = false`); `sensedDist` reporting `LONG_AGO` for the whole
+  walk is what made it unreachable, so a homing foe walked past a hero stood in front of it.
+- **RE-ENGAGING COSTS HIM `REENGAGE_HOLD` (8 s)** in which it cannot try to leave again. That is what makes
+  the yo-yo expensive — shedding it means actually leaving the ring and waiting it out, not standing still
+  for the quiet window — and it is also the debounce that one hit alone used to need: a hero at the edge of
+  the ring can no longer flip a foe's mind every frame. Longer than `LEASH_CALM`, shorter than the
+  `PROVOKE_HOLD` that three blows buy.
+- **ONE PLAYER BLOW ROUSES IT FROM ANY RANGE, FOR `PROVOKE_ROUSE` (14 s).** Every landed hit calls
+  `Leash.provoke` — nothing asks what threw it — and the creature HUNTS HIM DOWN whatever its own `AGGRO_R`
+  says. Shoot something across the plaza and it comes. Only a blade marked `pierce` (an arrow today, a spell
+  when there is one) also snaps its facing back down the shaft, because a shaft is the one blow that says
+  where the attacker is. The rouse is a COUNTDOWN, not a level of `provoked`, because it has to outlast the
+  WALK — as a threshold it lapsed 0.29 s after the hit, so a sniped foe took one step and went back to
+  grazing and sniping read as doing nothing. The tether is still what ends the chase.
 - **KEEP AT IT AND THE LEASH BREAKS** (`PROVOKE_BREAK`, held `PROVOKE_HOLD` = 14 s). THE ANTI-CHEESE: standing
   at the end of a foe's tether, poking it, and watching it turn round and walk away is free damage at no
-  risk. A single hit deliberately does NOT cancel a return in progress — that is the other half of the
-  debounce, and it is what stops one arrow a second flipping a foe's mind forever — but continued aggression
-  makes it stop trying to leave at all and prioritise fighting you.
-- **IT REACHES FOUR STATE MACHINES BY BENDING THE SENSED RANGE** (`foe.sensedDist`), not by bolting a second
+  risk. One hit already turns it round for `REENGAGE_HOLD`; continued aggression makes it stop trying to
+  leave at all for three times as long and prioritise fighting you. This is why `provoke` is not gated on
+  `pierce`: gated there it was the BOW's anti-cheese only, and the sword — the very "poking" the rule is
+  named for — could beat a homing foe its whole walk back without it ever turning round.
+- **IT REACHES EVERY STATE MACHINE BY BENDING THE SENSED RANGE** (`foe.sensedDist`), not by bolting a second
   decision tree onto each. Every creature already knows what to do when the hero is FAR (drift back to where
   it was posted) and what to do when he is NEAR (fight), so walking home reads him as infinitely far and
   being roused reads him as within reach. Only the DECISION sees the bent number — movement still uses his
@@ -1198,6 +1288,10 @@ copies of a hysteresis is four chances to get one of them subtly wrong.
   homeward walk ADDING (its out-of-range answer was to stand still and scan); the toad, ogre and kobold
   already had one, and the leash just drives it. The ogre's own `homing` is the MOVEMENT half of that — which
   state walks where — where `leash.returning` is the decision.
+  - **EVERY DECISION, INCLUDING THE ONES AFTER A LEAP.** The kobold's dash and the archer's backstep both
+    re-decided on the RAW distance when they landed (they had moved, so they re-measured — and dropped the
+    bend while they were at it). Those were the two exits that re-engaged a foe walking home, and once
+    sight landed they were the two that re-engaged one that cannot see him.
 
 ## Foe pacing
 
@@ -1252,6 +1346,11 @@ sword carry, the deep lean) belongs to the hold-B RUN only — gate run-only flo
   targets — none of which happens while the bow is up (see THE BOW: aiming suspends it). Two deliberate ER
   exceptions: a hold-B SPRINT while locked faces TRAVEL (no sideways sprint exists), and an attack's
   recovery tail re-squares onto the target (`ATK_RETRACK`).
+  - **AND YOU CANNOT FIX ON WHAT YOU CANNOT SEE** (owner's call). A foe behind a wall is not offered to an
+    acquire and is skipped by the flick (`game.canSee`, off the same `env.sees` the AI uses). A HELD lock
+    is different: sight going is a FADE, not a switch — `LOCK_BLIND_HOLD` (1.1 s) of no line at all before
+    it lets go, because a pillar crossing the line mid-circle must not throw the camera off, and in these
+    ruins something crosses it constantly. ER's own fudge, and the reason the number is not zero.
 - Reserved, matching ER: Cross/A = jump. (**L2 is the AIM now**, owner's call — ER puts the skill there,
   and this build has no skills to put on it.)
 
@@ -1388,13 +1487,11 @@ this exists is pure physical and its arithmetic did not move.
   | egg sac | −70 | 0 | 0 | +75 | dry silk over a membrane: the one thing in her nest that really burns |
   | skeletal warrior (both) | −35 | +60 | 0 | +45 | THE ARCHER'S OWN TABLE, because it is the archer's body |
 
-- **NOTHING GRANTS THE HERO ANY YET, AND THE SHEET SAYS SO ON ITS OWN ROWS** — Character menu >
-  **RESISTANCES**, a second read-only list beside ATTRIBUTES, rows walked off `combat.Elem` so a fifth
-  element is on it the moment it has a name. It shows all four at **0%** on purpose (owner's call: show
-  them even at 0), each with a footnote saying what deals that element and that nothing grants any yet —
-  `combat.elemSays`, which is `stats.governs` for damage types and rots the same honest way. The value
-  column prints the STACKED number with the CAP beside it when they differ (`90% (75%)`), PoE2's own
-  display. `makeWhole` CARRIES RESISTANCES ACROSS a grace: they are what he is, not a meter to refill, and
+- **NOTHING GRANTS THE HERO ANY YET, AND THE SHEET SAYS SO** — the character book's STATS page carries
+  them under BODY, rows walked off `combat.Elem` so a fifth element is on it the moment it has a name. It
+  shows all four at **0%** on purpose (owner's call: show them even at 0) under a line saying nothing he
+  owns grants any. The value column prints the STACKED number with the CAP beside it when they differ
+  (`90% (75%)`), PoE2's own display. `makeWhole` CARRIES RESISTANCES ACROSS a grace: they are what he is, not a meter to refill, and
   rebuilding the vitals from the sheet would silently wipe the first ring that ever grants one.
 - **AND THE DEBUG ROW READS THE LOCKED FOE'S** (`game.foeResists`), alongside which arrow is on the
   string — the four are most legible against a named target.

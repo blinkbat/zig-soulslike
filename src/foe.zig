@@ -17,6 +17,9 @@ pub const HERO_REACH: f32 = 0.55;
 /// because foe.zig sits BELOW hero.zig in the import graph (hero → archer → foe) and it stays there.
 pub const HERO_LOW: f32 = -0.10;
 pub const HERO_HIGH: f32 = 1.71; // 0.95 of his 1.8 m stature
+/// …and where a LOOK at him lands: the middle of the chest. Taken at his boots instead, every kerb he
+/// happens to be standing behind hides him (see SIGHT).
+pub const HERO_EYE: f32 = 1.25;
 pub fn closestApproach(bodyR: f32) f32 {
     return bodyR + HERO_R;
 }
@@ -42,12 +45,25 @@ pub fn corporeal(f: anytype) bool {
 }
 
 
-/// Drawn THIS far from where it was posted and it starts thinking about going back…
-pub const LEASH_R: f32 = 30.0;
+/// HOW FAR PAST ITS OWN NOTICE RING a creature follows before turning for home — per-creature, because one flat 30 m was both 2.7x the toad's aggro and the spacing between camps in `worlds/`.
+pub const LEASH_SLACK: f32 = 6.0;
 /// …and it is home again only this close, which is the hysteresis: start far, stop near, so a foe hovering at the boundary cannot flap between chasing and returning every other frame.
 pub const LEASH_HOME_R: f32 = 3.0;
 /// …and only after this long with no blow given OR taken.
 pub const LEASH_CALM: f32 = 4.5;
+/// WHAT WALKING BACK INTO A HOMING FOE COSTS YOU: it turns round, and for this long it cannot try to leave
+/// again. Longer than `LEASH_CALM` so shedding a re-engaged foe is never just standing still for the quiet
+/// window — you have to actually leave its ring and wait it out — and shorter than `PROVOKE_HOLD`, which is
+/// what three blows buy. It is also the debounce on re-engagement: without it a hero sat at the edge of the
+/// ring would flip a foe between chasing and returning every few seconds.
+pub const REENGAGE_HOLD: f32 = 8.0;
+
+/// HOW LONG A FOE KEEPS COMING AFTER IT LOSES SIGHT OF YOU. NOTHING NOTICES WHAT IT CANNOT SEE (owner's
+/// call) — but a chase that ended the instant you stepped behind a pillar would make every fight in these
+/// ruins a game of peekaboo, so what it loses is its EYES, not its memory: it keeps on at your last known
+/// place for this long. Longer than `LEASH_CALM`, because breaking sight must not shed a foe faster than
+/// simply walking away from one does.
+pub const SIGHT_MEMORY: f32 = 6.0;
 
 /// WHAT ONE BLOW IS WORTH as provocation…
 pub const PROVOKE_PER_HIT: f32 = 1.0;
@@ -58,43 +74,88 @@ pub const PROVOKE_BREAK: f32 = 2.5;
 pub const PROVOKE_HOLD: f32 = 14.0;
 pub const PROVOKE_DECAY: f32 = 0.35;
 
+/// Derived off the creature's own aggro so a tether can never come out SHORTER than the range the same
+/// creature notices you at — which would turn it for home mid-stare and yo-yo it in and out forever.
+pub fn leashR(aggroR: f32) f32 {
+    return aggroR + LEASH_SLACK;
+}
+
 pub const Leash = struct {
     sinceCombat: f32 = mathx.LONG_AGO,
+    /// …and since it last had EYES on him. Stamped from outside (`game.markSight`) because the prop grid
+    /// a look is tested against belongs to `env`, and a creature has no business holding a world.
+    /// IT STARTS SEEN, and the GAME is what blinds it: a creature built by hand — a unit test, a shot
+    /// portrait — has nothing but air between it and the hero, and defaulting the other way would leave
+    /// every one of them staring past him. `game.rehomeFoes` blinds the whole field on a fresh world,
+    /// which is the moment nobody has seen him yet.
+    sinceSeen: f32 = 0,
     provoked: f32 = 0,
     rouseLeft: f32 = 0,
     breakLeft: f32 = 0,
+    engagedLeft: f32 = 0,
     returning: bool = false,
 
-    /// Per frame, BEFORE the state machine decides anything.
-    pub fn tick(self: *Leash, dt: f32, out: f32) void {
+    /// Per frame, BEFORE the state machine decides anything. `out` is how far it is from its post, `toHero`
+    /// the REAL distance to the hero — a walk home is never blind to him.
+    pub fn tick(self: *Leash, dt: f32, out: f32, toHero: f32, aggroR: f32) void {
         self.sinceCombat += dt;
+        self.sinceSeen += dt;
         self.provoked = mathx.maxF(0, self.provoked - PROVOKE_DECAY * dt);
         self.rouseLeft = mathx.maxF(0, self.rouseLeft - dt);
         self.breakLeft = mathx.maxF(0, self.breakLeft - dt);
+        self.engagedLeft = mathx.maxF(0, self.engagedLeft - dt);
         if (self.breakLeft > 0) {
             self.returning = false; // committed to the fight; the tether does not exist for now
             return;
         }
         if (self.returning) {
-            // …and it only stops when it is actually HOME, not the moment it is back inside LEASH_R.
-            if (out <= LEASH_HOME_R) self.returning = false;
+            // …and it only stops when it is actually HOME, not the moment it is back inside its tether —
+            // unless the hero puts himself back inside its notice ring, which ends the walk there and then.
+            if (out <= LEASH_HOME_R) {
+                self.returning = false;
+            } else if (toHero <= aggroR) {
+                self.reengage();
+            }
             return;
         }
-        if (out > LEASH_R and self.sinceCombat >= LEASH_CALM) self.returning = true;
+        if (self.engagedLeft > 0) return;
+        // It gives up only when he is BOTH far from its post AND out of its ring: a foe with the hero in its
+        // face has no business turning round, whoever happens not to have landed a blow this half-second.
+        if (out > leashR(aggroR) and toHero > aggroR and self.sinceCombat >= LEASH_CALM) self.returning = true;
     }
 
     pub fn noteCombat(self: *Leash) void {
         self.sinceCombat = 0;
     }
 
+    /// It has eyes on him THIS FRAME.
+    pub fn noteSeen(self: *Leash) void {
+        self.sinceSeen = 0;
+    }
+
+    /// …and it has never had them — a foe posted by a world that has only just loaded.
+    pub fn blindNow(self: *Leash) void {
+        self.sinceSeen = mathx.LONG_AGO;
+    }
+
+    /// It has lost him: no sight for longer than its memory, and nothing has hit it lately. A blind foe
+    /// reads the hero as infinitely far (`sensedDist`), which every creature already knows what to do
+    /// about — it goes back to its post.
+    pub fn blind(self: *const Leash) bool {
+        return self.sinceSeen > SIGHT_MEMORY and !self.roused();
+    }
+
     pub fn provoke(self: *Leash) void {
         self.noteCombat();
         self.rouseLeft = PROVOKE_ROUSE;
         self.provoked += PROVOKE_PER_HIT;
-        if (self.provoked >= PROVOKE_BREAK) {
-            self.breakLeft = PROVOKE_HOLD;
-            self.returning = false;
-        }
+        self.reengage(); // ONE BLOW TURNS A HOMING FOE ROUND…
+        if (self.provoked >= PROVOKE_BREAK) self.breakLeft = PROVOKE_HOLD; // …and keeping at it stops it leaving at all
+    }
+
+    fn reengage(self: *Leash) void {
+        self.returning = false;
+        self.engagedLeft = REENGAGE_HOLD;
     }
 
     pub fn goingHome(self: *const Leash) bool {
@@ -107,6 +168,7 @@ pub const Leash = struct {
 };
 
 pub fn sensedDist(l: *const Leash, real: f32, aggroR: f32) f32 {
+    if (l.blind()) return mathx.LONG_AGO; // it cannot see him, and it is past remembering where he was
     if (l.goingHome()) return mathx.LONG_AGO;
     if (l.roused()) return mathx.minF(real, aggroR);
     return real;
@@ -236,6 +298,28 @@ pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want:
         if (h.kind != want or n.* >= out.len) continue;
         // ON THE GROUND, which the map's own height field decides — a spawn table stores x/z only, so posting a foe on a sculpted rise and dropping it at y = 0 would bury it to the waist.
         out[n.*] = T.spawn(v3(h.x, m.heightAt(h.x, h.z), h.z), mathx.radians(h.yaw), h.scale, h.seed);
+        n.* += 1;
+    }
+}
+
+/// …AND THE SAME RESET FOR A GROUP WHOSE MEMBERS ARE ROLES OF ONE CREATURE (the warband, the muster, the
+/// brood): its own `roleOf` says which role a map kind is, and `T.spawnAs` takes it. Three byte-identical
+/// copies of this body sat in kobold/warrior/brood — the same one-line-delegate rule `resetGroup` above
+/// already gives the single-kind groups.
+pub fn resetRoles(
+    comptime T: type,
+    comptime R: type,
+    out: []T,
+    n: *usize,
+    m: *const wf.Map,
+    comptime roleOf: fn (wf.FoeKind) ?R,
+) void {
+    n.* = 0;
+    for (m.foes[0..m.nfoes]) |h| {
+        const role = roleOf(h.kind) orelse continue;
+        if (n.* >= out.len) continue;
+        // ON THE GROUND, which the map's own height field decides — see `resetGroup`.
+        out[n.*] = T.spawnAs(role, v3(h.x, m.heightAt(h.x, h.z), h.z), mathx.radians(h.yaw), h.scale, h.seed);
         n.* += 1;
     }
 }
@@ -410,22 +494,48 @@ test "a CORPSE is not a body in the way, from the frame it starts to fall" {
 
 test "THE LEASH: a foe drawn far from home walks back once the fight has gone quiet" {
     var l = Leash{};
-    const far = LEASH_R + 8.0;
+    const aggro: f32 = 20.0;
+    const far = leashR(aggro) + 8.0;
+    const gone = aggro + 1.0; // the hero, out of its ring
     l.noteCombat();
-    l.tick(1.0 / 60.0, far);
+    l.tick(1.0 / 60.0, far, gone, aggro);
     try std.testing.expect(!l.goingHome());
     var t: f32 = 0;
-    while (t < LEASH_CALM + 0.1) : (t += 1.0 / 60.0) l.tick(1.0 / 60.0, far);
+    while (t < LEASH_CALM + 0.1) : (t += 1.0 / 60.0) l.tick(1.0 / 60.0, far, gone, aggro);
     try std.testing.expect(l.goingHome());
-    // THE HYSTERESIS: back inside LEASH_R is NOT "home" — it keeps walking until it is actually there, so a foe hovering at the boundary cannot flap between chasing and returning every other frame.
-    l.tick(1.0 / 60.0, LEASH_R - 1.0);
+    // THE HYSTERESIS: back inside the tether is NOT "home" — it keeps walking until it is actually there, so a foe hovering at the boundary cannot flap between chasing and returning every other frame.
+    l.tick(1.0 / 60.0, leashR(aggro) - 1.0, gone, aggro);
     try std.testing.expect(l.goingHome());
-    l.tick(1.0 / 60.0, LEASH_HOME_R - 0.5);
+    l.tick(1.0 / 60.0, LEASH_HOME_R - 0.5, gone, aggro);
     try std.testing.expect(!l.goingHome());
     var near = Leash{};
     t = 0;
-    while (t < 30.0) : (t += 1.0 / 60.0) near.tick(1.0 / 60.0, 2.0);
+    while (t < 30.0) : (t += 1.0 / 60.0) near.tick(1.0 / 60.0, 2.0, gone, aggro);
     try std.testing.expect(!near.goingHome());
+}
+
+test "IT NEVER TURNS ROUND WITH THE HERO IN ITS FACE, and walking back into its ring ends the walk home" {
+    const aggro: f32 = 20.0;
+    const far = leashR(aggro) + 8.0;
+    // Toe to toe a long way from its post, and neither side has landed a blow in a while: it fights on.
+    var toe = Leash{};
+    var t: f32 = 0;
+    while (t < LEASH_CALM * 3.0) : (t += 1.0 / 60.0) toe.tick(1.0 / 60.0, far, 1.2, aggro);
+    try std.testing.expect(!toe.goingHome());
+
+    // THE BUG: it was blind for the whole walk back — the hero could stand in front of it and be ignored.
+    var l = Leash{};
+    t = 0;
+    while (t < LEASH_CALM + 0.1) : (t += 1.0 / 60.0) l.tick(1.0 / 60.0, far, aggro + 1.0, aggro);
+    try std.testing.expect(l.goingHome());
+    l.tick(1.0 / 60.0, far, aggro - 0.5, aggro); // he steps back inside the ring, still nowhere near home
+    try std.testing.expect(!l.goingHome());
+    // …and RE-ENGAGING COSTS HIM: it cannot try to leave again on the next quiet moment, only after the hold.
+    t = 0;
+    while (t < REENGAGE_HOLD - 1.0) : (t += 1.0 / 60.0) l.tick(1.0 / 60.0, far, aggro + 1.0, aggro);
+    try std.testing.expect(!l.goingHome());
+    while (t < REENGAGE_HOLD + 0.2) : (t += 1.0 / 60.0) l.tick(1.0 / 60.0, far, aggro + 1.0, aggro);
+    try std.testing.expect(l.goingHome());
 }
 
 test "ONE PLAYER HIT ROUSES IT FROM ANY RANGE, and KEEPING AT IT breaks the leash" {
@@ -433,42 +543,88 @@ test "ONE PLAYER HIT ROUSES IT FROM ANY RANGE, and KEEPING AT IT breaks the leas
     try std.testing.expect(!l.roused());
     l.provoke();
     try std.testing.expect(l.roused());
+    const aggro: f32 = 20.0;
     var t: f32 = 0;
     while (t < PROVOKE_ROUSE - 0.5) : (t += 1.0 / 60.0) {
-        l.tick(1.0 / 60.0, 0);
+        l.tick(1.0 / 60.0, 0, aggro + 1.0, aggro);
         try std.testing.expect(l.roused());
     }
-    while (t < PROVOKE_ROUSE + 0.5) : (t += 1.0 / 60.0) l.tick(1.0 / 60.0, 0);
+    while (t < PROVOKE_ROUSE + 0.5) : (t += 1.0 / 60.0) l.tick(1.0 / 60.0, 0, aggro + 1.0, aggro);
     try std.testing.expect(!l.roused());
 
     var c = Leash{};
-    const far = LEASH_R + 8.0;
+    const far = leashR(aggro) + 8.0;
+    const sniped = aggro * 2.0; // hit from well outside its own ring — the walk home is all it can see
     t = 0;
-    while (t < LEASH_CALM + 0.1) : (t += 1.0 / 60.0) c.tick(1.0 / 60.0, far);
+    while (t < LEASH_CALM + 0.1) : (t += 1.0 / 60.0) c.tick(1.0 / 60.0, far, sniped, aggro);
     try std.testing.expect(c.goingHome());
+    // ONE BLOW TURNS IT ROUND, and the hold is what stops one arrow a second flipping its mind every frame.
     c.provoke();
-    c.tick(1.0 / 60.0, far);
-    try std.testing.expect(c.goingHome());
-    c.provoke();
-    c.provoke();
-    c.tick(1.0 / 60.0, far);
+    c.tick(1.0 / 60.0, far, sniped, aggro);
     try std.testing.expect(!c.goingHome());
     try std.testing.expect(c.roused());
+    // A single hit's hold LAPSES and the tether takes over again…
     t = 0;
-    while (t < LEASH_CALM + 2.0) : (t += 1.0 / 60.0) c.tick(1.0 / 60.0, far);
+    while (t < REENGAGE_HOLD + LEASH_CALM + 0.2) : (t += 1.0 / 60.0) c.tick(1.0 / 60.0, far, sniped, aggro);
+    try std.testing.expect(c.goingHome());
+    // …but KEEPING AT IT (PROVOKE_BREAK worth of blows) makes it stop trying to leave for far longer.
+    c.provoke();
+    c.provoke();
+    c.provoke();
+    c.tick(1.0 / 60.0, far, sniped, aggro);
     try std.testing.expect(!c.goingHome());
     t = 0;
-    while (t < PROVOKE_HOLD + LEASH_CALM + 1.0) : (t += 1.0 / 60.0) c.tick(1.0 / 60.0, far);
+    while (t < REENGAGE_HOLD + LEASH_CALM + 1.0) : (t += 1.0 / 60.0) c.tick(1.0 / 60.0, far, sniped, aggro);
+    try std.testing.expect(!c.goingHome());
+    t = 0;
+    while (t < PROVOKE_HOLD + LEASH_CALM + 1.0) : (t += 1.0 / 60.0) c.tick(1.0 / 60.0, far, sniped, aggro);
     try std.testing.expect(c.goingHome());
     try std.testing.expect(!c.roused());
 }
 
+test "NOTHING NOTICES WHAT IT CANNOT SEE, and it keeps at him a while after it loses him" {
+    const aggro: f32 = 20.0;
+    var l = Leash{};
+    // Never seen — a foe posted by a world that has just loaded: he might as well not be there, however
+    // close he is standing.
+    l.blindNow();
+    try std.testing.expect(l.blind());
+    try std.testing.expect(sensedDist(&l, 1.0, aggro) > aggro);
+    // Seen: it reads his REAL distance again.
+    l.noteSeen();
+    try std.testing.expect(!l.blind());
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), sensedDist(&l, 1.0, aggro), 1e-4);
+    // …and it keeps coming for `SIGHT_MEMORY` after he breaks the line, which is what stops a pillar
+    // ending a fight.
+    var t: f32 = 0;
+    while (t < SIGHT_MEMORY - 0.5) : (t += 1.0 / 60.0) {
+        l.tick(1.0 / 60.0, 0, 1.0, aggro);
+        try std.testing.expect(!l.blind());
+    }
+    while (t < SIGHT_MEMORY + 0.5) : (t += 1.0 / 60.0) l.tick(1.0 / 60.0, 0, 1.0, aggro);
+    try std.testing.expect(l.blind());
+
+    // A BLOW STILL FINDS IT THROUGH COVER: being shot from somewhere it cannot see is exactly when a foe
+    // must come looking, so the rouse outranks blindness.
+    var shot = Leash{};
+    shot.blindNow();
+    shot.provoke();
+    try std.testing.expect(!shot.blind());
+    try std.testing.expect(sensedDist(&shot, 40.0, aggro) <= aggro);
+}
+
 test "the leash constants say what the rule is" {
     // Start FAR, stop NEAR — the gap between them IS the debounce, and a zero gap is the flapping.
-    try std.testing.expect(LEASH_HOME_R < LEASH_R * 0.5);
+    try std.testing.expect(LEASH_HOME_R < LEASH_SLACK);
+    // …and the slack is POSITIVE whatever the creature, or a tether comes out shorter than the ring it was derived from and turns its owner for home mid-stare.
+    try std.testing.expect(LEASH_SLACK > 0 and leashR(11.0) > 11.0);
     try std.testing.expect(PROVOKE_BREAK > PROVOKE_PER_HIT);
     try std.testing.expect(PROVOKE_ROUSE > LEASH_CALM * 2.0);
     try std.testing.expect(PROVOKE_HOLD > LEASH_CALM * 2.0);
+    // Re-engaging has to cost MORE than simply waiting out the quiet window, and LESS than three blows buy.
+    try std.testing.expect(REENGAGE_HOLD > LEASH_CALM and REENGAGE_HOLD < PROVOKE_HOLD);
+    // …and BREAKING SIGHT must not shed a foe faster than walking away from one does.
+    try std.testing.expect(SIGHT_MEMORY > LEASH_CALM);
 }
 
 test "A SHAFT'S blood and shove run ALONG its flight, and it never touches the swing latch" {

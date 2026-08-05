@@ -29,6 +29,51 @@ pub fn displayName(k: Kind) [:0]const u8 {
     };
 }
 
+/// WHAT SHELF IT BELONGS ON. The bag is one grid and always will be — this is what the detail panel calls
+/// the thing, and what a sort would go on the day the bag is big enough to need one.
+pub const Class = enum {
+    tool, // spent for an effect: the flasks, the jerky
+    treasure, // spent for a permanent gain, or for something the game has not built yet
+    material, // it is worth what a smith or a merchant will give for it
+    key, // it opens exactly one thing
+
+    pub fn label(c: Class) [:0]const u8 {
+        return switch (c) {
+            .tool => "Tool",
+            .treasure => "Treasure",
+            .material => "Material",
+            .key => "Key Item",
+        };
+    }
+};
+
+pub fn class(k: Kind) Class {
+    return switch (k) {
+        .crimson_flask, .cerulean_flask, .mushroom_jerky => .tool,
+        .rune_arc, .golden_seed => .treasure,
+        .smithing_stone, .bloodgrass, .kobold_fang => .material,
+        .iron_key => .key,
+    };
+}
+
+/// WHAT IT IS, IN THE PLAYER'S HANDS — the description the character book prints beside the picture.
+/// Two sentences at most, and the SECOND one is always what it is honestly worth right now: half of
+/// these do nothing yet, and a description that hides that is the same lie as an inert attribute with no
+/// note under it (`stats.governs`). The day one of them gains an effect, its line is edited here.
+pub fn describe(k: Kind) [:0]const u8 {
+    return switch (k) {
+        .crimson_flask => "A flask of clouded red glass, refilled at any grace. The draught it holds closes wounds that ought to have killed you.",
+        .cerulean_flask => "The blue twin of the crimson. It returns the focus a sorcery costs — and there are no sorceries yet, so it returns nothing you can spend.",
+        .rune_arc => "A shard of a shattered great rune, still lit from the inside. Whatever it once carried leaks out of the break; nothing here can catch it yet.",
+        .golden_seed => "A sprout of gilded stalk, pulled up whole. In another age these bought another swallow from the flask. This one is only precious.",
+        .smithing_stone => "A shard off a bigger stone, hard enough to bite steel. No smith has set up in these ruins to grind it against.",
+        .bloodgrass => "A tuft of the red grass that grows thickest where something bled out. Common as dirt, and worth about as much.",
+        .kobold_fang => "A tooth taken out of a jaw that was still using it. The crack across the root says how.",
+        .iron_key => "Cold, heavy, and eaten with rust. It was cut for one lock, and that lock is somewhere in the ruins.",
+        .mushroom_jerky => "Cap flesh, salted and dried until it is more leather than mushroom. Chewing it staunches you slowly, for a long while.",
+    };
+}
+
 /// WHAT USING IT DOES — named here, done elsewhere.
 pub const Use = union(enum) {
     /// Nothing yet.
@@ -126,6 +171,22 @@ test "every kind has a name, and no two share one" {
         for (i + 1..NK) |j| {
             try std.testing.expect(!std.mem.eql(u8, displayName(a), displayName(@enumFromInt(j))));
         }
+    }
+}
+
+test "every kind is described and shelved, and no two share a description" {
+    for (0..NK) |i| {
+        const a: Kind = @enumFromInt(i);
+        try std.testing.expect(describe(a).len > 20); // a stub is worse than no panel at all
+        try std.testing.expect(class(a).label().len > 0);
+        for (i + 1..NK) |j| {
+            try std.testing.expect(!std.mem.eql(u8, describe(a), describe(@enumFromInt(j))));
+        }
+    }
+    // …and the one kind that DOES something is shelved as a tool, which is the promise that row makes.
+    for (0..NK) |i| {
+        const k: Kind = @enumFromInt(i);
+        if (usable(k)) try std.testing.expectEqual(Class.tool, class(k));
     }
 }
 

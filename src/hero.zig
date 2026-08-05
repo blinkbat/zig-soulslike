@@ -295,6 +295,84 @@ const BOW_BLEND_RATE = 11.0;
 /// rad/s onto the aim line through a loose — faster than `ATK_RETRACK`: a shaft off the line just misses.
 const TURN_TO_SHOT = 11.0;
 
+// ── THE WAND ──────────────────────────────────────────────────────────────────────────────────────
+// The LEFT hand's second armament, and the shield's alternative rather than a third thing he carries.
+// A cast is COMMITTED like a swing, not held like the guard or the aim: there is nothing to hold, and the
+// FP is gone the moment it starts.
+
+const CAST_DUR: f32 = 0.66; // between a light slash's 0.60 and a heavy's 1.00
+const CAST_AT: f32 = 0.46; // …and the bolt leaves at the middle of the sweep, not at the end of it
+pub const BOLT_SPEED: f32 = 30.0; // under the aimed shaft's 40, over the quick one's 26
+pub const BOLT_REACH: f32 = 55.0;
+
+// THE ARM GOES OVERHEAD AND SWEEPS ACROSS THE TOP (owner's call), and the sweep ALTERNATES cast to cast
+// the way the light combo's two slashes do. On this rig `rz` swings the left arm through the FRONTAL
+// plane — 90 is straight out to his left, 180 is straight up — so the raise and the side-to-side sweep
+// are ONE channel, and the sweep is just that angle carried either side of overhead.
+const CAST_SH_UP = 172.0; // hand over the crown, a touch outboard of dead plumb
+/// …and tipped FORWARD off the frontal plane. Two jobs, and the second is why it is this big: a stroke left
+/// in the frontal plane is one the over-the-shoulder camera looks straight down the edge of, AND its far end
+/// brings the upper arm back across his own chin. Forward of the shoulder line the sweep passes in FRONT of
+/// the head instead of through it.
+const CAST_SH_FWD = 36.0;
+/// How far either side of overhead the hand travels. Cut from 48: at that amplitude the far end of the
+/// second stroke laid the forearm over his face, which reads as flinching rather than casting. Amplitude
+/// only — the sweep is still a full crossing stroke and still alternates.
+const CAST_SWEEP = 34.0;
+const CAST_CARRY_SH = 16.0; // the LOW CARRY: wand down at his side, out of the way
+const CAST_ELBOW = 30.0; // a raised arm is not a locked one…
+const CAST_ELBOW_SNAP = 18.0; // …and it goes long as the bolt leaves
+const CAST_WRIST = 38.0; // the flick that throws it
+const CAST_TRUNK = 7.0; // trunk yaw toward the casting side (deg, PER SEGMENT over spine + chest)
+const CAST_LEAN = 6.0;
+const CAST_HEAD = 9.0;
+const CAST_DIP = 0.020 * H; // the knees load under the raise and give it back on the throw
+const CAST_WIND_B = 0.32; // the raise, read as anticipation
+const CAST_RECOV_A = 0.70; // …and the unwind back to a stand
+
+/// THE WAND ITSELF — a knotted rod with a bound grip and a chaos-lit stone in its head. Authored in the
+/// LEFT WRIST's frame extending out of the fist along −Y, exactly as the sword is off the right, so the
+/// raised arm carries it up and away from the skull instead of across it.
+const WAND_LEN = 0.30 * H;
+const WAND_R = 0.0155 * H;
+const WAND_STONE_R = 0.030 * H;
+const WAND_WOOD = rgba(41, 30, 24, 255); // dark stained rod — a big smooth mass authored near-black
+const WAND_WOOD_LT = rgba(62, 47, 36, 255);
+const WAND_BIND = rgba(30, 25, 22, 255); // the grip's wrapped cord
+/// THE SHIELD'S OWN IRON, not a second value for the same substance. Authored at 58/62/70 first, which is
+/// only a shade over the boss's, and it came back off the render at a CLIPPED 255,255,255: these are small
+/// curved capsules taking the sun square on with the `.steel` gloss on top, so the ferrule and claws read as
+/// a white cage round the stone rather than a setting for it. Sampled, not eyeballed — see AGENTS.md's
+/// albedo-is-arithmetic rule, and the shield's iron is the value in this file that is already proven.
+const WAND_FERRULE = SHIELD_IRON;
+/// The stone is EMISSIVE (vertex alpha is the emissive channel) so it reads as lit rather than painted.
+const WAND_STONE = rgba(96, 40, 122, 120);
+const WAND_STONE_HOT = rgba(150, 74, 176, 60);
+/// A point t (units of H) out along the wand's axis from the fist centre, wrist frame — `bladeAt`'s twin.
+fn wandAt(t: f32) rl.Vector3 {
+    return v3(0, FIST_Y - t * H, FIST_Z);
+}
+const WAND_TIP_T = 0.30; // where the stone sits, in the same units — the point a bolt leaves from
+
+/// THE CHAOS VIOLET, and it is ONE pair of colours for the whole spell — the stone, the gather, both
+/// bursts and the flight streak. Two substances of one element is what the brood mother's spit-and-pool
+/// rule exists to forbid, and a bolt whose sparks were a different violet from its own trail is that.
+const CHAOS_MOTE = rgba(168, 84, 216, 190);
+const CHAOS_HOT = rgba(224, 176, 250, 210);
+const CAST_MOTE_RATE = 52.0; // motes a second drawn onto the stone through the raise
+const CAST_MOTE_R = 0.17; // …from this far out
+/// SMALL AND SHORT-LIVED, both for the same reason: the stone is travelling through the sweep, so a mote
+/// that outlives its own flight converges on where the stone WAS and is left hanging in the air behind him.
+/// At 0.026 and a third of a second they read as loose purple balls littered across the field — which is
+/// what the first pass looked like — where the ask is a shimmer gathering onto the head.
+const CAST_MOTE_R0 = 0.015;
+const CAST_MOTE_LIFE_LO = 0.09;
+const CAST_MOTE_LIFE_HI = 0.17;
+const CAST_SPARKS = 14; // the puff off the stone as it goes…
+const BOLT_BURST = 22; // …and the bigger one where it lands
+/// Enough for one cast's gather plus both bursts with room over; a ring, so the oldest is simply reused.
+const FX_N = 96;
+
 // Blade hitbox, souls-style: a capsule on the SWORD bone's dummy points (guard → tip), ACTIVE only inside the HIT window, with last-frame endpoints kept for swept tests so a fast arc can't tunnel between frames.
 /// HOW FAR THE WAIST WILL FOLD ONTO A MARK (deg, total across SPINE + CHEST).
 pub const AIM_LEAN_DOWN = 34.0;
@@ -538,6 +616,10 @@ pub const Attack = enum { light, heavy };
 
 pub const Arm = enum { sword, bow };
 
+/// THE LEFT HAND'S ARMAMENT. The wand is the shield's ALTERNATIVE and not a third thing he carries: one
+/// hand does one job, which is the same anatomy that takes the shield away behind a raised bow.
+pub const Off = enum { shield, wand };
+
 // One buffered action, ER-style: an attack/roll pressed while mid-action QUEUES here
 pub const Queued = union(enum) { attack: Attack, roll: rl.Vector3 };
 
@@ -548,6 +630,9 @@ pub const Hero = struct {
     bowNock: rl.Mesh,
     /// THE SHIELD, which is not a bone.
     shield: rl.Mesh,
+    /// …nor is THE WAND. Same route (the left wrist) but no fit matrix: it is authored IN that wrist's
+    /// frame, so a retune of the cast angles cannot swing the rod off its own hand.
+    wand: rl.Mesh,
     guitar: rl.Mesh,
     mat: rl.Material,
     rest: [N]rl.Vector3,
@@ -583,6 +668,9 @@ pub const Hero = struct {
     bladeB0: rl.Vector3 = mathx.zero3,
     hitWasActive: bool = false, // edge detector: sweep history (+ future hit list) resets on activation
     trail: foemod.Trail(TRAIL_N) = .{}, // the shared swing ribbon (foe.zig), which every blade in the game draws
+    /// THE WAND'S OWN SPARKS — the shared particle pool (`foe.zig`), the same one every creature's FX ride.
+    fx: [FX_N]foemod.Particle = [_]foemod.Particle{.{}} ** FX_N,
+    fxHead: usize = 0,
     /// THE CHARACTER SHEET, and the source of the three maxima below — re-read wherever he is made whole (`makeWhole`), which is the only moment a sheet can have changed and the only moment a bar may resize.
     sheet: statsmod.Sheet = .{},
     vit: combat.Vitals = freshVitals(.{}),
@@ -621,6 +709,22 @@ pub const Hero = struct {
     nockXf: rl.Matrix = undefined,
     nockVis: bool = false,
     lastNock: rl.Vector3 = mathx.zero3,
+    off: Off = .shield,
+    /// A cast is running — COMMITTED, so it lives in `committed()` beside the swing and the loose.
+    casting: bool = false,
+    castT: f32 = 0,
+    /// THE SWEEP ALTERNATOR, the light combo's `atkAlt` for the same reason: repeated casts must be a PAIR
+    /// of strokes sweeping opposite ways, not one animation replayed. Flipped at the START of each cast, so
+    /// it never depends on how the last one ended.
+    castAlt: bool = false,
+    /// Counted like `swings`/`shots`: a chained cast clears `casting` and sets it again inside one frame.
+    casts: u32 = 0,
+    /// ONE FRAME, the frame the bolt leaves — game.zig throws it from `wandTipWorld()`.
+    thrown: bool = false,
+    /// Seconds left on the "there was not enough FP for that" flash, the stamina refusal's twin on the
+    /// other bar. Its own field because flashing the stamina frame for a dry FP pool would point at the
+    /// wrong meter, and the player reads the ring to learn WHICH resource said no.
+    fpRefused: f32 = 0,
     guarding: bool = false,
     guardB: f32 = 0,
     /// Seconds since the last blow caught on the shield — the recoil clock, and the ONLY record a block leaves.
@@ -649,6 +753,7 @@ pub const Hero = struct {
             .bowString = archer.stringMesh(),
             .bowNock = archer.nockArrowMesh(),
             .shield = shieldMesh(),
+            .wand = wandMesh(),
             .guitar = guitarMesh(),
             .mat = mat,
             .rest = restPositions(),
@@ -672,6 +777,7 @@ pub const Hero = struct {
         self.attacking = false;
         self.rolling = false;
         self.drinking = false;
+        self.casting = false;
         self.queued = null;
         self.sprinting = false;
         self.guarding = false;
@@ -700,18 +806,25 @@ pub const Hero = struct {
     fn tickClocks(self: *Hero, dt: f32) void {
         // The one-frame loose flag is cleared HERE, not in `updateShot`: a frame long enough to cross both the release knot and the end of the shot sets it and drops `shooting` in the same call, and nothing would ever run `updateShot` again to clear it — so game.zig loosed a fresh shaft every frame after. Every advance path passes through this prologue.
         self.loosed = false;
+        self.thrown = false; // the cast's own one-frame edge, cleared here for the reason `loosed` is
         self.elapsed += dt;
         self.trail.age(dt);
         self.blendT = @min(self.blendT + dt, mathx.LONG_AGO);
         // Stamina belongs in the prologue for the same reason the others do: it must advance exactly ONCE per frame whichever path is running, and hanging it off the live loop instead would leave --shot draining every swing it takes and never refilling.
-        if (!self.held) self.stam.tick(dt, self.sprinting, self.attacking or self.rolling or self.guarding);
+        // The cast is in the PAUSE list beside the swing and the roll: a committed action does not refill the
+        // bar under itself. It is not in the DRAIN argument, because a cast bills FP and never stamina.
+        if (!self.held) self.stam.tick(dt, self.sprinting, self.attacking or self.rolling or self.guarding or self.casting);
         self.stamRefused = @max(0, self.stamRefused - dt);
+        self.fpRefused = @max(0, self.fpRefused - dt);
         // The stance blend and the recoil clock, in the prologue with the rest: exactly one advance path runs each frame and both have to move under all of them, or the shield hangs mid-raise through a stagger and the recoil freezes on whatever frame the block landed.
         self.guardB = mathx.approach(self.guardB, if (self.guarding) 1.0 else 0.0, dt * GUARD_BLEND_RATE);
         self.aimB = mathx.approach(self.aimB, if (self.aiming) 1.0 else 0.0, dt * BOW_BLEND_RATE);
         self.aimLean = mathx.approach(self.aimLean, self.aimLeanWant, dt * AIM_LEAN_RATE);
         self.blockT = @min(self.blockT + dt, mathx.LONG_AGO);
         self.runes.tick(dt);
+        // In the prologue with the other clocks, for the other clocks' reason: exactly one advance path runs
+        // each frame, and sparks that only aged inside `updateCast` would hang in the air after the cast.
+        foemod.tickParticles(&self.fx, dt, self.pos.y);
     }
 
     pub fn update(self: *Hero, dt: f32, movedDist: f32, speed: f32, moveYaw: ?f32) void {
@@ -765,11 +878,31 @@ pub const Hero = struct {
 
 
     pub fn committed(self: *const Hero) bool {
-        return self.rolling or self.attacking or self.drinking or self.shooting;
+        return self.rolling or self.attacking or self.drinking or self.shooting or self.casting;
     }
 
     pub fn bowOut(self: *const Hero) bool {
         return self.arm == .bow;
+    }
+
+    /// IS THE LEFT-HAND ARMAMENT ACTUALLY IN HIS HAND? Not the same question as which one is EQUIPPED: a
+    /// raised bow takes that hand to the string, and one hand cannot haul a string while holding boards or
+    /// a rod. Asked here rather than cleared on the swap, so the answer cannot go stale (the guard's rule).
+    pub fn offInHand(self: *const Hero) bool {
+        return self.arm != .bow;
+    }
+
+    pub fn wandOut(self: *const Hero) bool {
+        return self.off == .wand and self.offInHand();
+    }
+
+    /// D-pad LEFT — ER's own binding for the left-hand slot, and the right hand's `swapArm` from the other
+    /// side. Nothing is cleared: `canGuard` and `canCast` both ASK what is in the hand every frame.
+    pub fn swapOff(self: *Hero) bool {
+        if (self.committed() or self.staggered() or self.dead or self.resting) return false;
+        self.off = if (self.off == .wand) .shield else .wand;
+        self.startXfade();
+        return true;
     }
 
     /// D-pad Right.
@@ -878,13 +1011,88 @@ pub const Hero = struct {
         self.stamRefused = combat.STAM_REFUSE_FLASH;
     }
 
+    fn refuseFp(self: *Hero) void {
+        self.fpRefused = combat.STAM_REFUSE_FLASH;
+    }
+
     pub fn setGuard(self: *Hero, want: bool) void {
         self.guarding = want and self.canGuard();
     }
 
-    /// AN EMPTY BAR CANNOT HOLD A SHIELD UP
+    /// AN EMPTY BAR CANNOT HOLD A SHIELD UP — and neither can a hand with a wand in it. The wand clause is
+    /// the same ANATOMY the bow clause is, asked of the other slot: there is one left hand.
     pub fn canGuard(self: *const Hero) bool {
-        return self.arm == .sword and !self.committed() and !self.staggered() and !self.dead and !self.sprinting and self.stam.canAct();
+        return self.arm == .sword and self.off == .shield and !self.committed() and !self.staggered() and !self.dead and !self.sprinting and self.stam.canAct();
+    }
+
+    /// L1 with a wand in the left hand — the guard's own button, routed by what that hand is holding.
+    /// STAMINA IS NOT ASKED: a cast is billed in FP alone (owner's call), so an empty stamina bar still
+    /// leaves him a spell, which is the whole point of the pool being a second resource.
+    pub fn canCast(self: *const Hero) bool {
+        return self.wandOut() and !self.committed() and !self.staggered() and !self.dead and
+            !self.resting and !self.sprinting;
+    }
+
+    /// L1, PRESSED — a cast is committed, so unlike the guard this is an edge and not a level. Reports
+    /// whether one actually STARTED, so the caller's tell cannot sound for a cast the FP refused.
+    pub fn requestCast(self: *Hero) bool {
+        if (!self.canCast()) return false;
+        return self.startCast();
+    }
+
+    fn startCast(self: *Hero) bool {
+        // PAY OR CAST NOTHING (`combat.Focus.spend`) — and the refusal lights the FP bar, not the stamina
+        // one: a ring on the wrong meter tells the player to go and rest when what he needs is a Cerulean.
+        if (!self.fp.spend(combat.SPELL_FP)) {
+            self.refuseFp();
+            return false;
+        }
+        self.casting = true;
+        self.castT = 0;
+        self.thrown = false;
+        self.castAlt = !self.castAlt; // …so the next one sweeps back the other way
+        self.casts +%= 1;
+        self.startXfade();
+        return true;
+    }
+
+    /// Call in place of move/attack while `casting`.
+    pub fn updateCast(self: *Hero, dt: f32, faceYaw: ?f32) void {
+        self.tickClocks(dt); // clears `thrown`
+        self.speed = 0;
+        self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
+        if (faceYaw) |ty| self.facing = mathx.approachAngle(self.facing, ty, TURN_TO_SHOT * dt);
+        const was = self.castT / CAST_DUR;
+        self.castT += dt;
+        // A one-frame EDGE, `updateShot`'s: a long frame cannot throw twice, a short one cannot miss it.
+        if (was < CAST_AT and self.castT / CAST_DUR >= CAST_AT) self.thrown = true;
+        self.pose();
+        // POSE FIRST: the gather is emitted at the posed stone, so asking before `pose()` would draw this
+        // frame's motes onto last frame's wand. Only while the arm is still coming up — past the throw
+        // there is nothing left to gather.
+        if (self.castT / CAST_DUR < CAST_AT) self.gatherMotes(dt);
+        if (self.castT >= CAST_DUR) {
+            self.casting = false;
+            self.startXfade();
+            self.fireQueued();
+        }
+    }
+
+    /// How far through the current cast, 0..1 (0 when there is none).
+    fn castU(self: *const Hero) f32 {
+        if (!self.casting) return 0;
+        return mathx.clampF(self.castT / CAST_DUR, 0, 1);
+    }
+
+    /// WHERE THE BOLT LEAVES — the stone in the wand's head, ridden off the posed left wrist. Measured off
+    /// the mesh's own constants rather than guessed, the ogre's `clubLowWorld` law: re-shape the wand and
+    /// the bolt still leaves its tip.
+    pub fn wandTipWorld(self: *const Hero) rl.Vector3 {
+        return rl.math.vector3Transform(wandAt(WAND_TIP_T), self.xf[WRL]);
+    }
+
+    pub fn castBlow(_: *const Hero) combat.Hit {
+        return combat.SPELL_HIT;
     }
 
     pub fn requestAttack(self: *Hero, kind: Attack) void {
@@ -1067,6 +1275,53 @@ pub const Hero = struct {
 
     pub fn drawTrail(self: *const Hero) void {
         self.trail.draw(TRAIL_LIFE, foemod.WAKE, TRAIL_PEAK);
+        foemod.drawParticles(&self.fx);
+    }
+
+    /// THE TELL IS THE GATHER (the sling's rule): motes draw INWARD onto the stone the whole time the arm
+    /// is coming up, so a cast is something you can see starting from across the plaza. Emitted from
+    /// `updateCast` rather than the pose, because a pose runs in the shot harness and under the menu too.
+    fn gatherMotes(self: *Hero, dt: f32) void {
+        const at = self.wandTipWorld();
+        var rng = foemod.fxStream(self.castT + @as(f32, @floatFromInt(self.casts)), 977.0, 0x8B01);
+        // Rate-limited by the frame, so a fast machine does not emit a denser gather than a slow one.
+        if (rng.float() > dt * CAST_MOTE_RATE) return;
+        const a = rng.angle();
+        const el = rng.range(-0.5, 1.0);
+        const rr = rng.range(CAST_MOTE_R * 0.5, CAST_MOTE_R);
+        const from = v3(at.x + mathx.cosf(a) * rr, at.y + el * rr, at.z + mathx.sinf(a) * rr);
+        // …and its velocity points BACK at the stone, which is what makes it a gather and not a spray. NO
+        // gravity either way: it is being pulled in, and a float term left it drifting after it arrived.
+        const life = rng.range(CAST_MOTE_LIFE_LO, CAST_MOTE_LIFE_HI);
+        const v = mathx.scaleV(mathx.subV(at, from), 1.0 / life);
+        foemod.emitParticle(&self.fx, &self.fxHead, from, v, life, CAST_MOTE_R0, CAST_MOTE_R0 * 0.25, CHAOS_MOTE, 0);
+    }
+
+    /// …AND THE RELEASE IS A BURST off the stone, thrown forward down the line the bolt took.
+    pub fn castSparks(self: *Hero, dir: rl.Vector3) void {
+        const at = self.wandTipWorld();
+        var rng = foemod.fxStream(@floatFromInt(self.casts), 613.0, 0x8B02);
+        var i: u32 = 0;
+        while (i < CAST_SPARKS) : (i += 1) {
+            const spread = v3(rng.range(-1, 1), rng.range(-1, 1), rng.range(-1, 1));
+            const v = mathx.addV(mathx.scaleV(dir, rng.range(2.6, 7.0)), mathx.scaleV(spread, rng.range(1.0, 3.2)));
+            const life = rng.range(0.20, 0.44);
+            foemod.emitParticle(&self.fx, &self.fxHead, at, v, life, rng.range(0.030, 0.058), 0.008, if (rng.float() < 0.4) CHAOS_HOT else CHAOS_MOTE, 2.0);
+        }
+    }
+
+    /// …and a bigger one WHEREVER IT LANDS, which is the half of it the player is actually looking at.
+    pub fn boltBurst(self: *Hero, at: rl.Vector3, salt: u32) void {
+        var rng = foemod.fxStream(@floatFromInt(salt), 419.0, 0x8B03);
+        var i: u32 = 0;
+        while (i < BOLT_BURST) : (i += 1) {
+            const a = rng.angle();
+            const el = rng.range(-0.3, 1.0);
+            const sp = rng.range(1.8, 6.4);
+            const v = v3(mathx.cosf(a) * sp, el * sp, mathx.sinf(a) * sp);
+            const life = rng.range(0.24, 0.56);
+            foemod.emitParticle(&self.fx, &self.fxHead, at, v, life, rng.range(0.040, 0.086), 0.010, if (rng.float() < 0.45) CHAOS_HOT else CHAOS_MOTE, 3.4);
+        }
     }
 
     pub fn attackHit(self: *const Hero) combat.Hit {
@@ -1151,6 +1406,9 @@ pub const Hero = struct {
         self.rolling = false;
         // …the draught included, AND THE CHARGE IS ALREADY GONE.
         self.drinking = false;
+        // …and the cast, whose FP is already gone for the same reason. A stagger through the sweep is a
+        // spell you paid for and did not get, exactly as it is a flask you paid for and did not drink.
+        self.casting = false;
         self.guarding = false;
         self.dropAim();
         self.queued = null;
@@ -1165,6 +1423,7 @@ pub const Hero = struct {
         self.attacking = false;
         self.rolling = false;
         self.drinking = false;
+        self.casting = false;
         self.guarding = false;
         self.dropAim();
         self.stun = .none;
@@ -1203,7 +1462,9 @@ pub const Hero = struct {
         self.hurtFlash = 0;
         self.makeWhole();
         self.drinking = false;
+        self.casting = false;
         self.stamRefused = 0; // a respawn must not inherit the last life's refusal flash
+        self.fpRefused = 0;
         self.sprinting = false;
         self.guarding = false;
         self.guardB = 0;
@@ -1228,6 +1489,7 @@ pub const Hero = struct {
         if (self.stun != .none) return self.poseStun();
         if (self.rolling) return self.poseRoll();
         if (self.attacking) return self.poseAttack();
+        if (self.casting) return self.poseCast();
         const m = self.moving;
         const ph = self.phase;
         const twoPi = std.math.tau;
@@ -1534,6 +1796,63 @@ pub const Hero = struct {
         self.xf = wx;
     }
 
+    /// THE CAST — a whole-body committed pose, the light slash's shape worked onto the OTHER arm: load,
+    /// throw the wand hand OVERHEAD, sweep it across the top, let the bolt go at the middle of that sweep,
+    /// unwind. It is a full pose and not an over-the-gait overlay like the draught because he is PLANTED
+    /// for it (`updateCast` takes no travel), and `castAlt` is what makes a repeated cast a pair of strokes
+    /// sweeping opposite ways instead of one animation played twice.
+    fn poseCast(self: *Hero) void {
+        const u = self.castU();
+        const rec = 1.0 - mathx.smoothstep(CAST_RECOV_A, 1.0, u); // 1 until recovery, draining to 0
+        const wind = mathx.smoothstep(0, CAST_WIND_B, u) * rec; // the raise, and the anticipation in it
+        const sSweep = mathx.smoothstep(CAST_WIND_B, CAST_RECOV_A, u) * rec;
+        const sThrow = mathx.smoothstep(CAST_AT - 0.08, CAST_AT + 0.06, u) * rec;
+        const kick = bump(u, CAST_AT + 0.06, CAST_RECOV_A) * rec; // the rod bounces off the throw
+        const sw: f32 = if (self.castAlt) -1.0 else 1.0;
+
+        // ONE CHANNEL CARRIES BOTH THE RAISE AND THE SWEEP: `rz` swings this arm through the frontal plane
+        // and 180 is straight up, so overhead ± CAST_SWEEP is the whole side-to-side stroke, and the
+        // alternator only decides which end of it he starts from.
+        const sweep = sw * CAST_SWEEP * (1.0 - 2.0 * sSweep);
+        const shRz = mathx.lerpF(CAST_CARRY_SH, CAST_SH_UP, wind) + sweep * wind;
+        const yaw = sw * (-CAST_TRUNK * wind + 1.6 * CAST_TRUNK * sSweep);
+        const dip = CAST_DIP * wind - 0.4 * CAST_DIP * sThrow;
+        const facingDeg = mathx.degrees(self.facing);
+        const hipY = self.rest[ROOT].y;
+
+        var wx: [N]rl.Matrix = undefined;
+        wx[ROOT] = mul3(
+            ry(yaw),
+            mul(tr(0, hipY - dip, 0), mul(rx(2.0 * sThrow), ry(facingDeg))),
+            rootAt(self.pos),
+        );
+        // He ARCHES under the raised arm and folds back over the throw — the waist hinge, not a root lean.
+        const spineX = -CAST_LEAN * wind + 2.0 * CAST_LEAN * sThrow;
+        setLocal(&wx, SPINE, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), ry(0.35 * yaw)));
+        setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), ry(0.65 * yaw)));
+        setLocal(&wx, NECK, self.rest, rx(-0.35 * spineX));
+        setLocal(&wx, HEAD, self.rest, mul(rx(HEAD_WALK + CAST_HEAD * sThrow), ry(-0.4 * yaw))); // the eyes stay on what he is throwing it at
+        setLocal(&wx, HIPL, self.rest, mul(rx(-6.0 * wind - 4.0 * sThrow), rz(-HIP_ADDUCT)));
+        setLocal(&wx, KNEEL, self.rest, rx(IDLE_KNEE + 12.0 * wind + 4.0 * sThrow));
+        setLocal(&wx, ANKL, self.rest, ry(FOOT_TOEOUT));
+        setLocal(&wx, HIPR, self.rest, mul(rx(4.0 * wind + 3.0 * sThrow), rz(HIP_ADDUCT)));
+        setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 9.0 * wind + 3.0 * sThrow));
+        setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
+        // THE WAND ARM. It goes LONG as the bolt leaves — an elbow still folded at the throw keeps the
+        // stone inside his own silhouette however far overhead the numbers say it is.
+        const elb = IDLE_ELBOW + (CAST_ELBOW - IDLE_ELBOW) * wind - CAST_ELBOW_SNAP * sThrow + 6.0 * kick;
+        setLocal(&wx, SHL, self.rest, mul3(rx(-CAST_SH_FWD * wind), ry(0), rz(shRz)));
+        setLocal(&wx, ELL, self.rest, rx(-elb));
+        setLocal(&wx, WRL, self.rest, rz(CAST_WRIST * wind - (CAST_WRIST + 0.5 * CAST_WRIST) * sThrow - 8.0 * kick));
+        // …and the sword arm keeps out of its way, the guard's own answer to a busy off hand.
+        setLocal(&wx, SHR, self.rest, mul(rx(GUARD_SWORD_BACK * wind), rz(-ARM_ABD)));
+        setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + (GUARD_SWORD_ELBOW - IDLE_ELBOW) * wind)));
+        setLocal(&wx, WRR, self.rest, rx(GUARD_SWORD_WRIST * wind));
+        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        self.applyXfade(&wx);
+        self.xf = wx;
+    }
+
     /// THE DRAUGHT — the OFF hand does all of it, laid OVER whatever gait just ran, which is the pattern
     /// the guard and the bow arms already use. It replaced the whole body once, and that is why he could
     /// not take a step with a flask up: the legs were a standing stance, so travel would have SKATED them.
@@ -1693,8 +2012,12 @@ pub const Hero = struct {
             if (self.nockVis) rl.drawMesh(self.bowNock, self.mat, self.nockXf);
             return;
         }
-        // The shield rides the left wrist rather than a bone of its own (see the field).
-        rl.drawMesh(self.shield, self.mat, mul(shieldFit(), self.xf[WRL]));
+        // WHAT IS IN THE LEFT HAND, and it is one or the other — both ride that wrist rather than a bone of
+        // their own (see the fields), and only the shield needs turning onto the arm.
+        switch (self.off) {
+            .shield => rl.drawMesh(self.shield, self.mat, mul(shieldFit(), self.xf[WRL])),
+            .wand => rl.drawMesh(self.wand, self.mat, self.xf[WRL]),
+        }
     }
 
     /// Eye/target point for the camera: the base of the neck, measured from `pos.y`
@@ -1907,6 +2230,89 @@ fn guitarMesh() rl.Mesh {
     return b.toMesh();
 }
 
+/// THE BOLT IN FLIGHT — a chaos mote, drawn along +Z because `archer.arrowXform` orients that axis down
+/// the flight. Authored as a core inside a cooler shell and STRETCHED along the line of travel, so a
+/// side-on shot reads as a streak rather than a ball; the vertex alpha is the emissive channel, which is
+/// what makes it lit from inside instead of a painted purple pebble.
+pub fn boltMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    b.setMat(.plain);
+    b.addBlob(mathx.zero3, v3(0.070, 0.070, 0.155), 7, 11, CHAOS_MOTE);
+    b.addBlob(v3(0, 0, 0.020), v3(0.040, 0.040, 0.095), 6, 9, CHAOS_HOT);
+    return b.toModel(shader);
+}
+
+/// THE WAND — a knotted rod, iron-ferruled, with a chaos-lit stone caught in three claws at its head.
+/// Authored in the LEFT WRIST's frame extending out of the fist along −Y (the sword's own convention off
+/// the right), so it needs no fit matrix and a raised arm carries it up clear of the skull rather than
+/// across it. Wabi-sabi off a FIXED seed: crooked, and the same crookedness every frame.
+fn wandMesh() rl.Mesh {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x7A4D91);
+    const segs = 5;
+    // NOTHING DEAD IS STRAIGHT — the rod drifts off its own axis as it runs out, and it ends in a BLUNT
+    // capsule cap rather than a point. The drift is small on purpose: a rod bent a third of its length is
+    // a banana, and the read wanted here is "cut from a hedge", not "broken".
+    b.setMat(.wood);
+    var prev = wandAt(-0.03); // started back THROUGH the fist, so no cut end shows inside the hand
+    var i: i32 = 0;
+    while (i < segs) : (i += 1) {
+        const f0 = @as(f32, @floatFromInt(i)) / @as(f32, segs);
+        const f1 = (@as(f32, @floatFromInt(i)) + 1.0) / @as(f32, segs);
+        var to = wandAt(WAND_TIP_T * f1);
+        to.x += WAND_LEN * 0.035 * rng.range(-1.0, 1.0) * f1;
+        to.z += WAND_LEN * 0.030 * rng.range(-1.0, 1.0) * f1;
+        const r0 = WAND_R * mathx.lerpF(1.20, 0.80, f0) * rng.range(0.94, 1.06);
+        const r1 = WAND_R * mathx.lerpF(1.20, 0.80, f1) * rng.range(0.94, 1.06);
+        b.addCapsule(prev, to, r0, r1, 7, if (@mod(i, 2) == 0) WAND_WOOD else WAND_WOOD_LT);
+        // …and the knots the rod was cut back to, sunk most of the way in (RELIEF IS SUBTLE).
+        if (i > 0 and i < segs - 1) {
+            const kn = mathx.lerpV(prev, to, rng.range(0.30, 0.70));
+            b.addBlob(kn, v3(r1 * 1.22, r1 * 0.75, r1 * 1.22), 4, 7, WAND_WOOD_LT);
+        }
+        prev = to;
+    }
+
+    // THE BOUND GRIP — cord wrapped where the fist closes, uneven turns.
+    const gripA = wandAt(0.005);
+    const gripB = wandAt(0.075);
+    const turns = 6;
+    var t: i32 = 0;
+    while (t < turns) : (t += 1) {
+        const f = (@as(f32, @floatFromInt(t)) + 0.5) / @as(f32, turns);
+        const at = mathx.lerpV(gripA, gripB, f * rng.range(0.94, 1.06));
+        b.addBlob(at, v3(WAND_R * 1.30, WAND_R * 0.30, WAND_R * 1.30), 4, 8, WAND_BIND);
+    }
+
+    // THE FERRULE, and the three claws off it holding the stone.
+    b.setMat(.steel);
+    const neck = wandAt(WAND_TIP_T - 0.052);
+    // Barely proud of the rod it bands (RELIEF IS SUBTLE): at 1.15 of the shaft radius over a length this
+    // short it is not a ferrule but a bulge, and against the sky the pair of them read as a lampshade.
+    b.addCapsule(wandAt(WAND_TIP_T - 0.078), neck, WAND_R * 1.02, WAND_R * 0.94, 8, WAND_FERRULE);
+    const stone = wandAt(WAND_TIP_T);
+    var c: i32 = 0;
+    while (c < 3) : (c += 1) {
+        const a = std.math.tau * @as(f32, @floatFromInt(c)) / 3.0 + rng.range(-0.22, 0.22);
+        // THEY CRADLE IT, THEY DO NOT CAGE IT — the tips stop well short of the stone's equator and reach
+        // only two thirds of its radius outward, so what shows is a setting and not three white teeth.
+        const reach = WAND_STONE_R * 0.66 * rng.range(0.86, 1.06);
+        const tipCl = v3(
+            stone.x + reach * mathx.cosf(a),
+            stone.y - WAND_STONE_R * 0.62,
+            stone.z + reach * mathx.sinf(a),
+        );
+        b.addCapsule(neck, tipCl, WAND_R * 0.40, WAND_R * 0.24, 5, WAND_FERRULE);
+    }
+
+    // THE STONE. Vertex alpha is the EMISSIVE channel, so a low one is what makes it read as lit from
+    // inside rather than painted purple — the hot core sunk inside the cooler shell.
+    b.setMat(.marble);
+    b.addBlob(stone, v3(WAND_STONE_R, WAND_STONE_R * 1.18, WAND_STONE_R), 6, 11, WAND_STONE);
+    b.addBlob(stone, v3(WAND_STONE_R * 0.62, WAND_STONE_R * 0.74, WAND_STONE_R * 0.62), 5, 9, WAND_STONE_HOT);
+    return b.toMesh();
+}
+
 fn shieldMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5C1E1D);
@@ -2105,6 +2511,7 @@ fn testHero() Hero {
         .bowString = undefined,
         .bowNock = undefined,
         .shield = undefined,
+        .wand = undefined,
         .guitar = undefined,
         .mat = undefined,
         .rest = restPositions(),
@@ -2540,6 +2947,141 @@ test "the STANCE lags the block, and the block never lags the stance" {
     var t: f32 = 0;
     while (t < 0.10) : (t += 1.0 / 60.0) h.tickClocks(1.0 / 60.0);
     try std.testing.expect(h.guardB > 0.6);
+}
+
+// ── THE WAND ──────────────────────────────────────────────────────────────────────────────────────
+
+test "THERE IS ONE LEFT HAND: the wand and the boards can never both be in it, and a bow takes it outright" {
+    var h = testHero();
+    try std.testing.expect(h.canGuard()); // sword and shield, the default
+    try std.testing.expect(!h.canCast());
+    try std.testing.expect(h.swapOff());
+    try std.testing.expectEqual(Off.wand, h.off);
+    // The wand is in the hand, so the boards cannot be — and this is `canGuard` ASKING, not a flag a swap
+    // remembered to clear, so it cannot go stale.
+    try std.testing.expect(!h.canGuard());
+    h.setGuard(true);
+    try std.testing.expect(!h.guarding);
+    try std.testing.expect(h.canCast());
+    // …AND A RAISED BOW TAKES THAT HAND TO THE STRING, so it holds neither. The wand stays EQUIPPED (`off`
+    // is untouched); it is simply not in his hand, which is what `wandOut` is for.
+    try std.testing.expect(h.swapArm());
+    try std.testing.expect(h.bowOut());
+    try std.testing.expectEqual(Off.wand, h.off);
+    try std.testing.expect(!h.offInHand() and !h.wandOut());
+    try std.testing.expect(!h.canCast() and !h.canGuard());
+    // …and it comes straight back when the sword does.
+    try std.testing.expect(h.swapArm());
+    try std.testing.expect(h.wandOut() and h.canCast());
+}
+
+test "A CAST IS BILLED IN FP AND NOTHING ELSE — and pay-or-nothing, unlike the panic roll" {
+    var h = testHero();
+    h.off = .wand;
+    const stamBefore = h.stam.cur;
+    try std.testing.expect(h.requestCast());
+    try std.testing.expectApproxEqAbs(combat.FP_MAX - combat.SPELL_FP, h.fp.cur, 1e-4);
+    try std.testing.expectApproxEqAbs(stamBefore, h.stam.cur, 1e-4); // the stamina bar is not touched
+    try std.testing.expect(h.casting and h.committed());
+    // A HALF-FULL COST BUYS NOTHING. The roll's asymmetry is deliberate and this is deliberately its
+    // opposite: below the cost the cast is refused outright, and the FP bar is the one that says so.
+    var spent = testHero();
+    spent.off = .wand;
+    spent.fp.cur = combat.SPELL_FP - 0.01;
+    try std.testing.expect(!spent.requestCast());
+    try std.testing.expect(!spent.casting);
+    try std.testing.expect(spent.fpRefused > 0); // …on the FP frame, not the stamina one
+    try std.testing.expectApproxEqAbs(@as(f32, 0), spent.stamRefused, 1e-6);
+    // AND AN EMPTY STAMINA BAR STILL LEAVES HIM A SPELL, which is the whole point of a second resource.
+    var dry = testHero();
+    dry.off = .wand;
+    dry.stam.cur = 0;
+    try std.testing.expect(!dry.stam.canAct());
+    try std.testing.expect(dry.requestCast());
+}
+
+test "A CAST IS COMMITTED: nothing fires through one, and a stagger takes the spell you already paid for" {
+    var h = testHero();
+    h.off = .wand;
+    try std.testing.expect(h.requestCast());
+    // Committed like a swing — a second press is dropped rather than queued (the loose's rule).
+    try std.testing.expect(!h.requestCast());
+    h.requestAttack(.light);
+    try std.testing.expect(h.casting and !h.attacking);
+    var guard: u32 = 0;
+    while (h.casting and guard < 500) : (guard += 1) h.updateCast(1.0 / 60.0, null);
+    try std.testing.expect(!h.casting);
+    try std.testing.expect(h.attacking); // the buffered light left the moment the cast ended
+    // …and a reaction DROPS one mid-sweep. The FP is already gone, exactly as a staggered draught's charge is.
+    var hit = testHero();
+    hit.off = .wand;
+    try std.testing.expect(hit.requestCast());
+    const paid = hit.fp.cur;
+    hit.enterStun(.light);
+    try std.testing.expect(!hit.casting and hit.staggered());
+    try std.testing.expectApproxEqAbs(paid, hit.fp.cur, 1e-4); // no refund
+}
+
+test "REPEATED CASTS SWEEP OPPOSITE WAYS, and the bolt leaves ONCE, from over his head" {
+    var h = testHero();
+    h.off = .wand;
+    h.pose(); // a clean source pose, so the cast's own cross-fade has something real to come out of
+    var sides: [2]bool = undefined;
+    var peak: f32 = -1e9;
+    for (&sides, 0..) |*side, n| {
+        h.fp.cur = combat.FP_MAX; // the economy is not what this test is about
+        try std.testing.expect(h.requestCast());
+        side.* = h.castAlt;
+        var throws: u32 = 0;
+        var guard: u32 = 0;
+        while (h.casting and guard < 500) : (guard += 1) {
+            h.updateCast(1.0 / 60.0, null);
+            if (h.thrown) {
+                throws += 1;
+                // THE ARM IS UP: the stone the bolt leaves is over the CROWN, not out at his chest. Measured
+                // off the posed wrist rather than asserted about an angle, so a retune of the sweep is still
+                // held to "above his head" — which is the whole of what the pose was asked for.
+                const tip = h.wandTipWorld();
+                try std.testing.expect(tip.y > h.pos.y + h.rest[HEAD].y);
+                peak = mathx.maxF(peak, tip.y);
+            }
+        }
+        try std.testing.expectEqual(@as(u32, 1), throws); // one frame, one bolt — never two, never none
+        try std.testing.expectEqual(@as(u32, @intCast(n + 1)), h.casts);
+    }
+    try std.testing.expect(sides[0] != sides[1]); // the second stroke sweeps back the other way
+    try std.testing.expect(peak > 0); // …and the tip was sampled at all
+}
+
+test "THE BOLT IS ALL CHAOS, and it is worth more than a light slash before anything resists it" {
+    // Pure chaos: no physical at all, the brood mother's one-substance-one-element rule.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), combat.SPELL_HIT.dmg, 1e-6);
+    try std.testing.expectApproxEqAbs(combat.SPELL_HIT.raw(), combat.SPELL_HIT.elem.at(.chaos), 1e-6);
+    // "DECENT DAMAGE" (owner's call), sat between the two swings it is spent instead of.
+    try std.testing.expect(combat.SPELL_HIT.raw() > ATK_LIGHT_HIT.dmg);
+    try std.testing.expect(combat.SPELL_HIT.raw() < ATK_HEAVY_HIT.dmg);
+    // …and its poise sits between them too: it rocks a foe, it is not the stagger tool.
+    try std.testing.expect(combat.SPELL_HIT.poise > ATK_LIGHT_HIT.poise);
+    try std.testing.expect(combat.SPELL_HIT.poise < ATK_HEAVY_HIT.poise);
+    // A FULL POOL IS A COUNTABLE NUMBER OF CASTS — if this stops dividing sensibly the wand has become
+    // either a spammable or a one-shot without anybody deciding to change it.
+    const casts = combat.FP_MAX / combat.SPELL_FP;
+    try std.testing.expect(casts >= 4 and casts <= 8);
+}
+
+test "a grace gives the FP back, and a respawn does not inherit the refusal flash" {
+    var h = testHero();
+    h.off = .wand;
+    _ = h.requestCast();
+    h.fp.cur = 0;
+    h.fpRefused = combat.STAM_REFUSE_FLASH;
+    h.makeWhole();
+    try std.testing.expectApproxEqAbs(combat.FP_MAX, h.fp.cur, 1e-4);
+    h.respawn();
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.fpRefused, 1e-6);
+    // The LOADOUT survives a death: what is in his hands is not a meter to refill (`makeWhole`'s rule
+    // about resistances), so he comes back holding the wand he died holding.
+    try std.testing.expectEqual(Off.wand, h.off);
 }
 
 fn testStrafeAnkle(ph: f32, lat: f32, side: f32, hip: usize, knee: usize, sole: SolePatch) rl.Vector3 {

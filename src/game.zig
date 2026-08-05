@@ -149,6 +149,7 @@ pub const Game = struct {
     clumpModel: rl.Model,
     venomModel: rl.Model,
     fireArrowModel: rl.Model,
+    boltModel: rl.Model,
     arrows: [MAX_ARROWS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_ARROWS,
     shafts: [MAX_SHAFTS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_SHAFTS,
     rig: cameramod.CamRig,
@@ -196,6 +197,7 @@ pub const Game = struct {
         g.clumpModel = koboldmod.clumpMesh(g.scene.shader);
         g.venomModel = broodmod.venomMesh(g.scene.shader);
         g.fireArrowModel = archermod.fireArrowMesh(g.scene.shader);
+        g.boltModel = heromod.boltMesh(g.scene.shader);
         g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
         g.shafts = [_]archermod.Arrow{.{}} ** MAX_SHAFTS;
@@ -210,15 +212,26 @@ pub const Game = struct {
     }
 };
 
-/// THE FOE GROUPS, WRITTEN DOWN ONCE.
-const FoeGroup = struct { field: []const u8, kind: ?FoeKind };
+/// THE FOE GROUPS, WRITTEN DOWN ONCE — including the two things the actor-vs-actor settle needs, which
+/// used to be arguments at six hand-written call sites (`collideActors`). A seventh group added there
+/// drew, spawned, could be locked onto and could be shot, and was the only thing in the world nothing
+/// pushed out of a wall.
+const FoeGroup = struct {
+    field: []const u8,
+    kind: ?FoeKind,
+    /// Shouldered by the HERO. The ogre is not: he is too big to be walked out of the way.
+    vsHero: bool = true,
+    /// …and by the members of these OTHER groups. DELIBERATELY ONE-WAY — the group named here yields to
+    /// the one it names, never both ways, or two bodies each half-correcting jitter between them.
+    vs: []const []const u8 = &.{},
+};
 const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "warren", .kind = .toad },
-    .{ .field = "line", .kind = .archer },
-    .{ .field = "grief", .kind = .ogre },
+    .{ .field = "line", .kind = .archer, .vs = &.{"warren"} },
+    .{ .field = "grief", .kind = .ogre, .vsHero = false },
     .{ .field = "band", .kind = null },
     .{ .field = "brood", .kind = null },
-    .{ .field = "muster", .kind = null },
+    .{ .field = "muster", .kind = null, .vs = &.{"line"} },
 };
 
 /// Whether a re-homed field starts with EYES on the hero. A world that has only just loaded starts
@@ -464,14 +477,19 @@ fn drawCasters(g: *Game, cull: envmod.Cull) void {
     // LIT PASS ONLY — the depth pass has no alpha, and his shadow is still his.
     const fade = heroFade(g);
     const seeThrough = cull == .view and fade < 0.999;
-    if (seeThrough) {
-        g.scene.setFade(fade);
-        rl.gl.rlDisableDepthMask();
-    }
-    g.hero.draw();
-    if (seeThrough) {
-        rl.gl.rlEnableDepthMask();
-        g.scene.setFade(1);
+    // …and once the fade has reached the floor there is nothing left to submit: the shader's last line is
+    // `outA*fade`, so at 0 every one of his ~20 meshes draws a fully transparent fragment over a masked-off
+    // depth buffer. Skipped, not drawn invisibly — the sun pass above still has him, so the shadow stays.
+    if (!(seeThrough and fade <= 0.001)) {
+        if (seeThrough) {
+            g.scene.setFade(fade);
+            rl.gl.rlDisableDepthMask();
+        }
+        g.hero.draw();
+        if (seeThrough) {
+            rl.gl.rlEnableDepthMask();
+            g.scene.setFade(1);
+        }
     }
     g.scene.setFlash(0);
     inline for (FOE_GROUPS) |f| @field(g, f.field).draw(&g.scene);
@@ -535,6 +553,11 @@ pub fn shootShaftForShot(g: *Game, at: rl.Vector3, kind: combat.ArrowKind) void 
     const blow = heromod.arrowBlow(kind, true);
     putIn(&g.shafts, archermod.launchShaft(g.hero.nockWorld(), at, heromod.BOW_AIMED_SPEED, blow, false, heromod.arrowShot(kind)));
 }
+/// …and the wand's bolt, from the posed stone, so the harness photographs the real projectile.
+pub fn throwBoltForShot(g: *Game, at: rl.Vector3) void {
+    putIn(&g.shafts, archermod.launchShaft(g.hero.wandTipWorld(), at, heromod.BOLT_SPEED, g.hero.castBlow(), false, .bolt));
+}
+
 pub fn stepShaftsForShot(g: *Game, dt: f32) void {
     stepShafts(g, dt);
 }
@@ -678,6 +701,30 @@ fn looseShaft(g: *Game) void {
     g.rumble.play(rumblemod.swing_light); // the string going is a tick in the grip, not a swing
 }
 
+/// THE BOLT LEAVES THE WAND'S STONE, not his chest — `wandTipWorld` is measured off the mesh, so it comes
+/// out of the thing you can see it come out of. It goes at the LOCKED foe if there is one and down his
+/// facing otherwise, which is the QUICK shot's rule: there is no aimed cast, so there is no camera ray to
+/// converge on and nothing for a reticle to mark.
+fn throwBolt(g: *Game) void {
+    const from = g.hero.wandTipWorld();
+    const locked: ?rl.Vector3 = if (activeLock(g)) |li| foeLockPoint(g, li) else null;
+    const target = locked orelse forwardBoltPoint(g);
+    // Loft only against a REAL point, `looseShaft`'s rule: it is solved against the distance to the target.
+    putIn(&g.shafts, archermod.launchShaft(from, target, heromod.BOLT_SPEED, g.hero.castBlow(), locked != null, .bolt));
+    var dir = mathx.subV(target, from);
+    if (mathx.lenV(dir) > 1e-3) dir = mathx.normV(dir) else dir = mathx.headingDir(g.hero.facing);
+    g.hero.castSparks(dir);
+    // No voice here on purpose: the TELL already sounded at the raise, and the bolt's own impact comes off
+    // the shaft pool (`stepShafts`) exactly as an arrow's does.
+    g.rumble.play(rumblemod.swing_light);
+}
+
+fn forwardBoltPoint(g: *const Game) rl.Vector3 {
+    const d = mathx.headingDir(g.hero.facing);
+    const from = v3(g.hero.pos.x, heroCenterY(g), g.hero.pos.z);
+    return mathx.addV(from, mathx.scaleV(d, heromod.BOLT_REACH));
+}
+
 fn camAimPoint(g: *const Game) rl.Vector3 {
     const ray = g.rig.centreRay();
     var reach = heromod.BOW_AIM_REACH;
@@ -731,7 +778,10 @@ fn stepShafts(g: *Game, dt: f32) void {
         if (!ar.live) continue;
         const seg = archermod.stepShaft(ar, g.env.groundAt(ar.pos.x, ar.pos.z), arrowCover(g, ar, dt), dt) orelse {
             // It STOPPED this frame — into cover or into the earth, and that gets the surface's own voice.
-            if (ar.stuck and ar.age == 0) sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
+            if (ar.stuck and ar.age == 0) {
+                sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
+                splashOf(g, ar); // …and whatever it leaves behind, the foes' pool's own rule
+            }
             continue;
         };
         const blade = foemod.Blade{
@@ -746,6 +796,7 @@ fn stepShafts(g: *Game, dt: f32) void {
         };
         if (!pierceFoes(g, blade)) continue;
         archermod.plantShaft(ar); // spent on the first thing it reached — stands in it and fades
+        splashOf(g, ar);
         sfx.world(.arrow_hit, ar.pos);
         g.rumble.play(rumblemod.hit_light);
         g.rig.addShake(SHAKE_HIT_LIGHT);
@@ -815,6 +866,9 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
     switch (ar.shot) {
         .venom => g.brood.splash(ground),
         .clump => g.band.splash(ar.pos), // at the CONTACT, not the floor: it can burst against a chest
+        // …and the bolt bursts at the CONTACT for the clump's reason — it goes off against a wall at the
+        // height it struck one, not down at that wall's foot.
+        .bolt => g.hero.boltBurst(ar.pos, g.hero.casts),
         .arrow, .firearrow => {},
     }
 }
@@ -828,6 +882,7 @@ fn drawArrows(g: *Game) void {
                 .clump => &g.clumpModel,
                 .venom => &g.venomModel,
                 .firearrow => &g.fireArrowModel,
+                .bolt => &g.boltModel,
             };
             rl.drawMesh(m.meshes[0], m.materials[0], archermod.arrowXform(ar));
         }
@@ -985,11 +1040,17 @@ fn drawHurtFlash(g: *Game) void {
 pub fn hud(g: *Game, dt: f32) void {
     if (g.rest.active()) return;
     if (!g.menu.isOpen() and !g.hero.dead) {
-        hud_.vitals(dt, g.hero.vit.hpFrac(), g.hero.fp.frac(), g.hero.stam.frac(), g.hero.stamRefused / combat.STAM_REFUSE_FLASH, g.hero.stam.windedTo());
+        hud_.vitals(dt, g.hero.vit.hpFrac(), g.hero.fp.frac(), g.hero.stam.frac(), g.hero.stamRefused / combat.STAM_REFUSE_FLASH, g.hero.fpRefused / combat.STAM_REFUSE_FLASH, g.hero.stam.windedTo());
         const bowUp = g.hero.bowOut();
+        const wandUp = g.hero.wandOut();
         hud_.equipment(
-            if (bowUp) .empty else .shield,
+            // LEFT: what that hand actually has — boards, the rod, or nothing at all behind a bow.
+            if (bowUp) .empty else if (wandUp) .wand else .shield,
             if (bowUp) .bow else .sword,
+            // …and UP fills only while something in his hands could cast one. Behind a bow or a shield it
+            // goes back to empty, which is the honest answer and the same one it always gave.
+            if (wandUp) .spell else .empty,
+            g.hero.fp.cur >= combat.SPELL_FP,
             switch (g.hero.flasks.sel) {
                 .crimson => hud_.FlaskTint.crimson,
                 .cerulean => hud_.FlaskTint.cerulean,
@@ -1361,6 +1422,12 @@ pub fn run(mode: Mode) void {
         if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .left_face_right)) swapReq = true;
         if (swapReq and g.hero.swapArm()) sfx.play(.flask_cycle); // the same D-pad click the flask gets
 
+        // D-PAD LEFT / F: cycle the LEFT-hand armament — shield or wand. ER's own binding for that slot,
+        // and the last free direction on the pad's D-pad now that Right, Up and Down are all spent.
+        var offReq = rl.isKeyPressed(.f);
+        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .left_face_left)) offReq = true;
+        if (offReq and g.hero.swapOff()) sfx.play(.flask_cycle);
+
         var drinkReq = rl.isKeyPressed(.r);
         var cycleReq = rl.isKeyPressed(.t);
         if (rl.isGamepadAvailable(PAD)) {
@@ -1394,9 +1461,20 @@ pub fn run(mode: Mode) void {
         }
         bWasDown = bDown;
 
-        // default for the left hand.
-        var guardHeld = rl.isMouseButtonDown(.right);
-        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, .left_trigger_1)) guardHeld = true;
+        // L1 / RMB IS THE LEFT HAND'S BUTTON, NOT THE SHIELD'S — the R1/R2 rule from the other side. Which
+        // action it performs is decided by what that hand is holding: boards BLOCK (a held level) and a wand
+        // CASTS (a pressed edge), so it is read as one button both ways and neither can swallow the other's
+        // press. RMB is unambiguous for the same reason the bow could take it: only one of the three things
+        // that answer to it can be in the hand at a time.
+        var l1Held = rl.isMouseButtonDown(.right);
+        var l1Press = rl.isMouseButtonPressed(.right);
+        if (rl.isGamepadAvailable(PAD)) {
+            if (rl.isGamepadButtonDown(PAD, .left_trigger_1)) l1Held = true;
+            if (rl.isGamepadButtonPressed(PAD, .left_trigger_1)) l1Press = true;
+        }
+        const wandUp = g.hero.wandOut();
+        const guardHeld = l1Held and !wandUp;
+        const castReq = l1Press and wandUp;
 
         var aimHeld = rl.isMouseButtonDown(.right);
         if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, .left_trigger_2)) aimHeld = true;
@@ -1439,14 +1517,21 @@ pub fn run(mode: Mode) void {
                 g.hero.requestShot(true);
             } else if (quickReq) {
                 g.hero.requestShot(false);
+            } else if (castReq) {
+                // THE TELL SOUNDS AT THE RAISE, not at the throw: `kobold_cast` is a RISING voice, so it
+                // belongs on the gather. The wand has no voice of its own yet and borrows the priest's.
+                if (g.hero.requestCast()) sfx.play(.kobold_cast);
             }
             g.hero.steerQueuedRoll(rollDir(g, mv));
             if (drinkReq and g.hero.startDrink()) sfx.play(.flask_drink);
         }
         // …and a DRAUGHT is not a sprint either: without it, Shift held through a flask drained the pool
         // at the sprint rate and denied him the shield for the whole shuffle, off a sprint he never got.
+        // …and A CAST IS NOT A SPRINT either, for the draught's exact reason: he is PLANTED for one, so Shift
+        // held through a cast would have billed him the continuous sprint drain for travel he never took.
         g.hero.sprinting = sprintingMove(mv) and
-            !g.hero.rolling and !g.hero.attacking and !g.hero.drinking and !g.hero.dead and !g.hero.staggered();
+            !g.hero.rolling and !g.hero.attacking and !g.hero.drinking and !g.hero.casting and
+            !g.hero.dead and !g.hero.staggered();
         // …and the shield, AFTER the sprint (there is no running block — see hero.setGuard).
         g.hero.setGuard(guardHeld);
         g.hero.setAim(aimHeld);
@@ -1494,11 +1579,15 @@ pub fn run(mode: Mode) void {
             g.hero.updateAttack(dt, PLAY_HALF, faceYaw);
         } else if (g.hero.shooting) {
             g.hero.updateShot(dt, faceYaw);
+        } else if (g.hero.casting) {
+            g.hero.updateCast(dt, faceYaw); // PLANTED, like a quick shot — both hands are busy
         } else {
             moveHero(g, dt, mv, faceYaw);
         }
         // THE SHAFT LEAVES on the one frame the loose says so.
         if (g.hero.loosed) looseShaft(g);
+        // …and THE BOLT on the one frame the cast does.
+        if (g.hero.thrown) throwBolt(g);
         const hitsBefore = allHits(g);
         markSight(g); // WHO CAN SEE HIM — stamped before anything decides what to do about him
         // ONE snapshot of the blade for every group this frame — the hero's pose is already resolved above, so re-deriving it per group only invited the three to disagree.
@@ -1690,6 +1779,8 @@ pub fn bookView(g: *Game) bookmod.View {
         .flasks = &g.hero.flasks,
         .quiver = &g.hero.quiver,
         .arm = g.hero.arm,
+        .off = g.hero.off,
+        .fp = g.hero.fp.cur,
         .runes = g.hero.runes.display(),
     };
 }
@@ -1702,6 +1793,9 @@ fn bookAct(g: *Game, a: bookmod.Action) void {
         .use => |k| useItem(g, k),
         .arm => |want| if (g.hero.arm != want) {
             _ = g.hero.swapArm();
+        },
+        .off => |want| if (g.hero.off != want) {
+            _ = g.hero.swapOff();
         },
         .ammo => |k| while (g.hero.quiver.sel != k) {
             if (!g.hero.cycleArrow()) break;
@@ -1844,15 +1938,11 @@ fn collideActors(g: *Game, dt: f32) void {
     }
     g.hero.pos = mathx.approachV(g.hero.pos, inBounds(hp), step);
 
-    settleGroup(g, g.warren.live(), .{}, step, true);
-    settleGroup(g, g.line.live(), .{g.warren.live()}, step, true);
-    settleGroup(g, g.grief.live(), .{}, step, false);
-    settleGroup(g, g.band.live(), .{}, step, true);
-    settleGroup(g, g.brood.live(), .{}, step, true);
-    settleGroup(g, g.muster.live(), .{g.line.live()}, step, true);
+    inline for (FOE_GROUPS) |gr| settleGroup(g, gr, step);
 }
 
-fn settleGroup(g: *Game, foes: anytype, others: anytype, step: f32, toHero: bool) void {
+fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
+    const foes = @field(g, gr.field).live();
     for (foes, 0..) |*a, i| {
         if (!foemod.corporeal(a)) continue;
         const r = a.bodyR();
@@ -1866,13 +1956,13 @@ fn settleGroup(g: *Game, foes: anytype, others: anytype, step: f32, toHero: bool
             continue;
         }
         var p = g.env.resolveActor(a.pos, r);
-        if (toHero) p = collision.pushOutCircle(p, r, g.hero.pos, HERO_R);
+        if (gr.vsHero) p = collision.pushOutCircle(p, r, g.hero.pos, HERO_R);
         for (foes, 0..) |*o, j| {
             if (i == j or !foemod.corporeal(o) or o.airborne()) continue;
             p = collision.pushOutCircle(p, r, o.pos, o.bodyR());
         }
-        inline for (others) |grp| {
-            for (grp) |*o| {
+        inline for (gr.vs) |other| {
+            for (@field(g, other).live()) |*o| {
                 if (foemod.corporeal(o) and !o.airborne()) p = collision.pushOutCircle(p, r, o.pos, o.bodyR());
             }
         }

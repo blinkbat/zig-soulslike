@@ -1041,10 +1041,6 @@ pub const Warrior = struct {
         self.stroke = 0;
         self.enter(.wind);
     }
-    pub fn debugBlock(self: *Warrior) void {
-        self.enter(.idle);
-        self.blockT = 0;
-    }
     pub fn debugBreak(self: *Warrior) void {
         self.stam.cur = 0;
         self.stam.winded = true;
@@ -1636,11 +1632,7 @@ pub const Muster = struct {
         return false;
     }
     pub fn runesDropped(self: *const Muster) u32 {
-        var n: u32 = 0;
-        for (self.liveConst()) |*w| {
-            if (w.justDied) n += w.runeValue();
-        }
-        return n;
+        return foe.runesEach(self.liveConst());
     }
 
     pub fn update(self: *Muster, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {

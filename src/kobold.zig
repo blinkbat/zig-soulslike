@@ -1765,11 +1765,7 @@ pub const Warband = struct {
     }
 
     pub fn runesDropped(self: *const Warband) u32 {
-        var n: u32 = 0;
-        for (self.liveConst()) |*k| {
-            if (k.justDied) n += k.runeValue();
-        }
-        return n;
+        return foe.runesEach(self.liveConst());
     }
 
     pub fn update(

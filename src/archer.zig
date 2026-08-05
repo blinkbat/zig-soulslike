@@ -187,6 +187,9 @@ const ARROW_HOME_FADE = 0.45;
 const ARROW_GRAV: f32 = 3.0; // gentle drop so long shots arc
 const CLUMP_GRAV: f32 = 9.0; // the sling's lob — heavier drop than a shaft, and the tell you dodge
 const VENOM_GRAV: f32 = 11.0;
+/// THE WAND'S BOLT BARELY DROPS AT ALL — it has no mass to speak of, and a sorcery that lobbed like a
+/// sling stone would be aimed by arc rather than by pointing, which is the bow's job in this game.
+const BOLT_GRAV: f32 = 0.8;
 const ARROW_LIFE = 3.5; // seconds airborne before it gives up (falls + sticks)
 const ARROW_STICK_FADE = 1.4; // seconds a stuck arrow lingers, then fades
 pub const ARROW_COVER_MARGIN: f32 = 0.04;
@@ -198,23 +201,28 @@ const TRAIL_LIFE = 0.17; // seconds a sample lingers
 const TRAIL_W = 0.055; // half-width at the head, tapering to nothing at the tail
 const TRAIL_COL = rgba(214, 198, 158, 255); // pale, kin to the fletching — alpha set per segment
 const TRAIL_FIRE = rgba(255, 146, 40, 255); // the pitched head's ember streak: the read that says which arrow that was
+/// …and the wand bolt's, which is the CHAOS violet nothing else in the sky is: at range the streak is the
+/// whole read, so the one thing that must not be shared is the colour of it.
+const TRAIL_BOLT = rgba(178, 92, 224, 255);
 
 /// EVERYTHING BURNING GETS THE EMBER STREAK, and it is the streak — not the mesh — that reads at range.
 fn trailCol(s: Shot) rl.Color {
     return switch (s) {
         .firearrow, .clump => TRAIL_FIRE,
+        .bolt => TRAIL_BOLT,
         .arrow, .venom => TRAIL_COL,
     };
 }
 
-/// The things that fly. `firearrow` is the hero's own pitched shaft — the same ballistics as a plain one, drawn and streaked as its own thing so you can see which one you loosed. `clump` is the kobold sling's burning lump (it was a bare stone; nothing slings a plain one any more, so the tag went with the thing).
-pub const Shot = enum { arrow, clump, venom, firearrow };
+/// The things that fly. `firearrow` is the hero's own pitched shaft — the same ballistics as a plain one, drawn and streaked as its own thing so you can see which one you loosed. `clump` is the kobold sling's burning lump (it was a bare stone; nothing slings a plain one any more, so the tag went with the thing). `bolt` is the WAND's chaos sorcery, which flies through this same pool for the same reason the fire arrow does: cover, gravity, expiry and the swept pierce test are one body of code, and a spell with its own copy of them is a spell that stops agreeing with the world.
+pub const Shot = enum { arrow, clump, venom, firearrow, bolt };
 
 pub fn dropOf(s: Shot) f32 {
     return switch (s) {
         .arrow, .firearrow => ARROW_GRAV,
         .clump => CLUMP_GRAV,
         .venom => VENOM_GRAV,
+        .bolt => BOLT_GRAV,
     };
 }
 

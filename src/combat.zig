@@ -24,16 +24,6 @@ pub fn elemName(e: Elem) [:0]const u8 {
     };
 }
 
-/// WHAT DEALS IT — and for the two nothing deals yet, that nothing does. Same rule as `stats.governs`: a number on the character sheet the player cannot tell is inert is a lie on that sheet. THIS LINE GOES STALE THE DAY A NEW SOURCE LANDS — the fire arrow and the kobold sling both deal fire, and the brood mother's spit and pools both deal chaos, so retype anything and come back here. Read by the RESISTANCES screen.
-pub fn elemSays(e: Elem) [:0]const u8 {
-    return switch (e) {
-        .fire => "Burning. Fire arrows, and the kobolds' slings.",
-        .cold => "Chill and frostbite. Nothing deals cold yet.",
-        .lightning => "Storm and shock. Nothing deals lightning yet.",
-        .chaos => "Rot and acid. The brood mother's spit and her pools.",
-    };
-}
-
 /// A number per element, WRITTEN BY NAME — damage on a `Hit`, percent on a `Resists`. Authoring through this rather than an array literal is what stops a four-wide row from silently shifting when the enum gains a fifth: the field names are matched against the enum at comptime, so a rename is a compile error and an omitted element is a 0.
 pub const Spread = struct { fire: f32 = 0, cold: f32 = 0, lightning: f32 = 0, chaos: f32 = 0 };
 
@@ -364,10 +354,31 @@ pub const Focus = struct {
         self.cur = minF(self.max, self.cur + amt);
         return true;
     }
+    /// PAY THE WHOLE COST OR CAST NOTHING — the exact OPPOSITE of `Stamina.canAct`'s panic rule, and the
+    /// difference is deliberate: the bottom of the stamina bar buys a roll you cannot afford because that
+    /// is the genre's most important move, where a half-paid spell would be a spell that half exists. ER
+    /// refuses the cast outright, so an FP bar reading 4 of a 12-cost sorcery is 4 you cannot use.
+    pub fn spend(self: *Focus, amt: f32) bool {
+        if (self.cur < amt) return false;
+        self.cur -= amt;
+        return true;
+    }
     pub fn reset(self: *Focus) void {
         self.cur = self.max;
     }
 };
+
+// ── SORCERY ───────────────────────────────────────────────────────────────────────────────────────
+// The wand's one spell, and the first thing in the game that spends FP.
+
+/// WHAT A CAST COSTS, and the pool is the only thing rationing it — a cast bills NO stamina (owner's
+/// call), so the wand competes with the flask for a grace's worth of resource rather than with the roll.
+pub const SPELL_FP: f32 = 12.0; // five casts of a 60-point pool
+/// THE BOLT, and it is ALL CHAOS — no physical at all, the brood mother's rule for the same reason: one
+/// substance, one element. Its damage sits between a light slash's 13 and a heavy's 27 before anything
+/// resists it, which is the "decent" the owner asked for; the poise is above a light's and under a
+/// heavy's, so it rocks a foe without being the stagger tool the greatsword is.
+pub const SPELL_HIT = Hit{ .poise = 14, .stance = 6, .elem = elems(.{ .chaos = 24 }) };
 
 pub const FlaskKind = enum { crimson, cerulean };
 

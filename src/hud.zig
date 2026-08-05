@@ -184,7 +184,18 @@ var chipLast: f32 = 1;
 const CHIP_HOLD = 0.42; // seconds the trail hangs before it starts draining
 const CHIP_RATE = 0.55;
 
-pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, windedTo: f32) void {
+/// "THAT DID NOTHING, AND HERE IS WHICH METER SAID SO" — the frame of the bar that refused, drawn OVER the
+/// finished bar and OUTSIDE its fill, so an empty bar (which is exactly when this fires, and has no fill
+/// left to tint) still reads loudly. ONE body, because there are two bars that can refuse now and two
+/// copies of it would be two rings drifting apart.
+fn refuseRing(x: i32, y: i32, w: i32, h: i32, k: f32) void {
+    if (k <= 0.001) return;
+    const a: u8 = @intFromFloat(230 * mathx.clampF(k, 0, 1));
+    rl.drawRectangleLines(x - 2, y - 2, w + 4, h + 4, mathx.withAlpha(WARN, a));
+    rl.drawRectangleLines(x - 3, y - 3, w + 6, h + 6, mathx.withAlpha(WARN, a / 2));
+}
+
+pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, fpRefused: f32, windedTo: f32) void {
     if (hp > chip) {
         chip = hp; // healing (and a respawn) snaps it — never strand a trail across the bar
         chipHold = 0;
@@ -197,6 +208,7 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, windedTo: 
     bar(MARGIN, y, HP_W, HP_H, hp, chip, HP_HI, HP_LO, HP_TP);
     y += HP_H + BAR_GAP;
     bar(MARGIN, y, FP_W, FP_H, fp, 0, FP_HI, FP_LO, FP_TP);
+    refuseRing(MARGIN, y, FP_W, FP_H, fpRefused); // a cast the pool could not cover
     y += FP_H + BAR_GAP;
     bar(MARGIN, y, ST_W, ST_H, stam, 0, ST_HI, ST_LO, ST_TP);
     if (windedTo > 0.001) {
@@ -206,13 +218,7 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, windedTo: 
         if (owed > fill) rl.drawRectangle(MARGIN + fill, y, owed - fill, ST_H, mathx.withAlpha(WARN, 46));
         rl.drawRectangle(MARGIN + owed - 1, y - 1, 2, ST_H + 2, mathx.withAlpha(WARN_LT, 210)); // the threshold
     }
-    // The refusal flag lights the stamina bar's own FRAME, over the finished bar and outside its fill — so an empty bar, which is exactly when this fires and has no fill to tint, still reads loudly.
-    const k = mathx.clampF(stamRefused, 0, 1);
-    if (k > 0.001) {
-        const a: u8 = @intFromFloat(230 * k);
-        rl.drawRectangleLines(MARGIN - 2, y - 2, ST_W + 4, ST_H + 4, mathx.withAlpha(WARN, a));
-        rl.drawRectangleLines(MARGIN - 3, y - 3, ST_W + 6, ST_H + 6, mathx.withAlpha(WARN, a / 2));
-    }
+    refuseRing(MARGIN, y, ST_W, ST_H, stamRefused);
 }
 
 /// THE FILL ITSELF — three values (a flat body, a shaded bottom band, a lit hairline on top) plus the
@@ -315,18 +321,20 @@ const SLOT_GAP: i32 = eq(8); // between the LEFT/RIGHT arms and the centre colum
 const PITCH_Y: i32 = eq(48);
 const BOTTOM: i32 = 26;
 
-pub const Slot = enum { empty, sword, bow, shield, flask };
+pub const Slot = enum { empty, sword, bow, shield, wand, flask, spell };
 
 pub const FlaskTint = itemart.FlaskTint;
 
 /// `left`/`right` are what is IN HIS HANDS this frame, not what he owns — the cross is four slots and it `tint` picks which flask is drawn in the DOWN slot, `charges` how many are left — the cross is where ER shows both, and a charge count you have to open a menu for is a charge count you play without.
-pub fn equipment(left_hand: Slot, right_hand: Slot, tint: FlaskTint, charges: u8, ammo: ?Ammo) void {
+/// `up` is the SORCERY slot, and `castable` is whether the pool would cover one — it stays `.empty` while
+/// nothing he is holding could cast, because an empty ER slot is a real part of this HUD.
+pub fn equipment(left_hand: Slot, right_hand: Slot, up: Slot, castable: bool, tint: FlaskTint, charges: u8, ammo: ?Ammo) void {
     const stepX = SLOT_W + SLOT_GAP;
     const left = MARGIN;
     const bottom = rl.getScreenHeight() - BOTTOM;
     const midX = left + stepX; // the centre cell of the three
     const midY = bottom - SLOT_H - PITCH_Y;
-    slot(midX, midY - PITCH_Y, .empty, .crimson, 0); // UP — sorcery/incantation
+    slot(midX, midY - PITCH_Y, up, .crimson, if (castable) 1 else 0); // UP — sorcery/incantation
     slot(left, midY, left_hand, .crimson, 0); // LEFT — left hand: the shield, or nothing behind a bow
     slot(midX + stepX, midY, right_hand, .crimson, 0); // RIGHT — right hand: the sword or the bow
     slot(midX, midY + PITCH_Y, .flask, tint, charges); // DOWN — the quick item
@@ -380,6 +388,10 @@ fn slot(x: i32, y: i32, holds: Slot, tint: FlaskTint, charges: u8) void {
         .sword => itemart.sword(cx, cy, px),
         .bow => itemart.bow(cx, cy, px),
         .shield => itemart.shield(cx, cy, px),
+        .wand => itemart.wand(cx, cy, px),
+        // The sorcery slot's picture greys out when the FP will not cover a cast, which is the ammo box's
+        // own rule: a thing you cannot use has to LOOK like a thing you cannot use.
+        .spell => itemart.spell(cx, cy, px, charges > 0),
         .flask => {
             itemart.flask(cx, cy, px, tint, charges > 0);
             var buf: [8]u8 = undefined;

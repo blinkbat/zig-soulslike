@@ -24,9 +24,10 @@ const sfx = @import("audio.zig");
 //   equipment page is that it prices the OTHER armament before you take it, and the reason to open the
 //   inventory is the description. Both read the live state the game is playing with — nothing here is a
 //   mock-up and no row was invented to fill the column.
-// - **EMPTY IS AN HONEST ANSWER.** The sorcery slot is empty because there are no spells, and the left
-//   hand empties behind a bow because that is what a bow costs him. Both say so in words on the panel,
-//   the way `stats.governs` owns up to an attribute nothing reads yet.
+// - **EMPTY IS AN HONEST ANSWER, AND SO IS "FILLED BUT UNCHANGEABLE".** The left hand is a real choice now
+//   (shield or wand) and the sorcery slot fills whenever a wand is in that hand — but with one spell known
+//   there is nothing to change it to, and the left hand empties outright behind a bow. All three say so in
+//   words on the panel, the way `stats.governs` owns up to an attribute nothing reads yet.
 // - **THE LAYOUT IS WORKED OUT IN ONE PLACE.** Every rectangle comes off the `Box`/`Grid` helpers below,
 //   because the cursor computes where it is flying to independently of the draw pass — two copies of the
 //   grid maths is a cursor sitting half a slot off the thing it claims to be on.
@@ -55,6 +56,7 @@ const NPAGE = @typeInfo(Page).@"enum".fields.len;
 pub const Action = union(enum) {
     none,
     arm: heromod.Arm,
+    off: heromod.Off,
     ammo: combat.ArrowKind,
     flask: combat.FlaskKind,
     use: item.Kind,
@@ -68,6 +70,9 @@ pub const View = struct {
     flasks: *const combat.Flasks,
     quiver: *const combat.Quiver,
     arm: heromod.Arm,
+    off: heromod.Off,
+    /// The live FP pool, so the sorcery slot can say how many casts are actually in it.
+    fp: f32,
     runes: u32,
 };
 
@@ -81,6 +86,7 @@ pub const Portrait = struct { hero: *const heromod.Hero, scene: *gfx.Scene };
 
 const Loadout = struct {
     arm: heromod.Arm,
+    off: heromod.Off,
     ammo: combat.ArrowKind,
     flask: combat.FlaskKind,
 };
@@ -99,6 +105,8 @@ const Der = enum {
     stam_light,
     stam_heavy,
     guard,
+    spell,
+    spell_fp,
     quick,
     ammo,
 };
@@ -121,6 +129,8 @@ const DER = blk: {
     rows[@intFromEnum(Der.stam_light)] = .{ .name = "Stamina, light", .unit = .flat, .cost = true };
     rows[@intFromEnum(Der.stam_heavy)] = .{ .name = "Stamina, heavy", .unit = .flat, .cost = true };
     rows[@intFromEnum(Der.guard)] = .{ .name = "Guard negation", .unit = .pct };
+    rows[@intFromEnum(Der.spell)] = .{ .name = "Chaos bolt", .unit = .flat };
+    rows[@intFromEnum(Der.spell_fp)] = .{ .name = "Focus, per cast", .unit = .flat, .cost = true };
     rows[@intFromEnum(Der.quick)] = .{ .name = "Quick item restores", .unit = .flat };
     rows[@intFromEnum(Der.ammo)] = .{ .name = "Ammunition", .unit = .count };
     break :blk rows;
@@ -138,8 +148,15 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     d[@intFromEnum(Der.stance)] = heavy.stance;
     d[@intFromEnum(Der.stam_light)] = if (bow) combat.STAM_SHOT else combat.STAM_LIGHT;
     d[@intFromEnum(Der.stam_heavy)] = if (bow) combat.STAM_AIMED else combat.STAM_HEAVY;
-    // THE BOW COSTS HIM THE SHIELD, and this is the row where that is a number and not lore.
-    d[@intFromEnum(Der.guard)] = if (bow) 0 else combat.GUARD_NEGATE * 100.0;
+    // THE BOW COSTS HIM THE SHIELD, and so does the WAND — this is the row where that is a number rather
+    // than lore, and it is the same number for both because it is the same left hand being spent.
+    const guards = !bow and l.off == .shield;
+    d[@intFromEnum(Der.guard)] = if (guards) combat.GUARD_NEGATE * 100.0 else 0;
+    // …and what he bought with it. Zero on both rows unless a wand is actually in that hand, because a
+    // spell he cannot cast is not worth a number (`stats.governs`' rule about an inert attribute).
+    const casts = !bow and l.off == .wand;
+    d[@intFromEnum(Der.spell)] = if (casts) combat.SPELL_HIT.raw() else 0;
+    d[@intFromEnum(Der.spell_fp)] = if (casts) combat.SPELL_FP else 0;
     d[@intFromEnum(Der.quick)] = switch (l.flask) {
         .crimson => v.sheet.hp() * combat.FLASK_HP_FRAC,
         .cerulean => v.sheet.fp() * combat.FLASK_FP_FRAC,
@@ -168,11 +185,20 @@ fn slotName(s: SlotId) [:0]const u8 {
 /// only refuses the button is a slot the player decides is broken.
 fn locked(s: SlotId, v: View) ?[:0]const u8 {
     return switch (s) {
-        .left => if (v.arm == .bow)
-            "Both hands are on the bow. The shield comes back when the sword does."
+        // The left hand is a real choice now — boards or a wand — and the only thing that takes the choice
+        // away is a bow, which takes the hand itself.
+        .left => if (v.arm == .bow) "Both hands are on the bow. The left one comes back when the sword does." else null,
+        // …and the sorcery slot is only empty while nothing that could cast is in that hand. It says which
+        // of the two reasons it is, because "locked" with no reason is a slot the player calls broken.
+        .sorcery => if (v.arm == .bow)
+            "Both hands are on the bow. Nothing is free to hold a wand."
+        else if (v.off != .wand)
+            "One sorcery known, and no wand in his hand to cast it with."
         else
-            "One shield, and it is already on his arm.",
-        .sorcery => "No sorcery known, and no staff to cast it with.",
+            // FILLED AND STILL UNCHANGEABLE, which is a different sentence from being empty: there is
+            // exactly one sorcery, so there is nothing to change it TO. The day there is a second, this arm
+            // goes away and the slot grows a picker like every other one.
+            "Chaos Bolt, and the only sorcery he knows.",
         else => null,
     };
 }
@@ -182,7 +208,7 @@ fn slotHas(s: SlotId, v: View) bool {
     return switch (s) {
         .right, .quick => true,
         .left => v.arm != .bow,
-        .sorcery => false,
+        .sorcery => v.arm != .bow and v.off == .wand,
         .arrows => v.quiver.count(v.quiver.sel) > 0,
     };
 }
@@ -197,6 +223,17 @@ fn armName(a: heromod.Arm) [:0]const u8 {
         .bow => "Short Bow",
     };
 }
+
+fn offName(o: heromod.Off) [:0]const u8 {
+    return switch (o) {
+        .shield => "Small Shield",
+        .wand => "Knotted Wand",
+    };
+}
+
+/// The one sorcery, named once. Not walked off an enum yet because there is only one of it — the day there
+/// is a second, that name goes beside this one and the slot grows a picker like the others.
+const SPELL_NAME = "Chaos Bolt";
 
 fn ammoName(k: combat.ArrowKind) [:0]const u8 {
     return switch (k) {
@@ -215,8 +252,8 @@ fn flaskName(k: combat.FlaskKind) [:0]const u8 {
 fn slotFilled(s: SlotId, v: View) [:0]const u8 {
     return switch (s) {
         .right => armName(v.arm),
-        .left => if (v.arm == .bow) EMPTY else "Small Shield",
-        .sorcery => EMPTY,
+        .left => if (v.arm == .bow) EMPTY else offName(v.off),
+        .sorcery => if (slotHas(.sorcery, v)) SPELL_NAME else EMPTY,
         .arrows => ammoName(v.quiver.sel),
         .quick => flaskName(v.flasks.sel),
     };
@@ -226,8 +263,16 @@ fn slotTally(s: SlotId, v: View) ?u8 {
     return switch (s) {
         .arrows => v.quiver.count(v.quiver.sel),
         .quick => v.flasks.charges(v.flasks.sel),
+        // HOW MANY CASTS ARE ACTUALLY IN THE POOL — the same question the arrow tally answers, and the one
+        // thing about a spell the player needs at a glance.
+        .sorcery => if (slotHas(.sorcery, v)) castsLeft(v.fp) else null,
         else => null,
     };
+}
+
+fn castsLeft(fp: f32) u8 {
+    if (combat.SPELL_FP <= 0) return 0;
+    return @intFromFloat(@max(0, @floor(fp / combat.SPELL_FP)));
 }
 
 /// THE CANDIDATES a slot can be filled from — the picker's rows. Names and counts only; what a choice is
@@ -238,13 +283,17 @@ const Cand = struct { name: [:0]const u8, tally: ?u8 = null, act: Action };
 /// hands `candidates` is sized from this, so a third arrow cannot write past the end of one.
 const CAND_MAX = blk: {
     var n: usize = 0;
-    for ([_]type{ heromod.Arm, combat.ArrowKind, combat.FlaskKind }) |T| {
+    for ([_]type{ heromod.Arm, heromod.Off, combat.ArrowKind, combat.FlaskKind }) |T| {
         n = @max(n, @typeInfo(T).@"enum".fields.len);
     }
     break :blk n;
 };
 
 fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
+    // A LOCKED SLOT OFFERS NOTHING, asked ONCE here rather than re-tested inside each branch. The left hand
+    // is the reason it has to be structural: it grew a real picker the day the wand landed, and with a bow
+    // out that picker would have offered two rows for a hand the panel had already said was not free.
+    if (locked(s, v) != null) return out[0..0];
     switch (s) {
         // Each list is walked off the ENUM it offers, so a third arrow or a third armament is a row here
         // the day it exists rather than a row somebody remembered to add.
@@ -254,6 +303,13 @@ fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
                 out[i] = .{ .name = armName(a), .act = .{ .arm = a } };
             }
             return out[0..@typeInfo(heromod.Arm).@"enum".fields.len];
+        },
+        .left => {
+            inline for (@typeInfo(heromod.Off).@"enum".fields, 0..) |f, i| {
+                const o: heromod.Off = @enumFromInt(f.value);
+                out[i] = .{ .name = offName(o), .act = .{ .off = o } };
+            }
+            return out[0..@typeInfo(heromod.Off).@"enum".fields.len];
         },
         .arrows => {
             inline for (@typeInfo(combat.ArrowKind).@"enum".fields, 0..) |f, i| {
@@ -278,6 +334,7 @@ fn withCand(base: Loadout, c: Cand) Loadout {
     var l = base;
     switch (c.act) {
         .arm => |a| l.arm = a,
+        .off => |o| l.off = o,
         .ammo => |a| l.ammo = a,
         .flask => |f| l.flask = f,
         else => {},
@@ -288,6 +345,7 @@ fn withCand(base: Loadout, c: Cand) Loadout {
 fn equipped(c: Cand, v: View) bool {
     return switch (c.act) {
         .arm => |a| a == v.arm,
+        .off => |o| o == v.off,
         .ammo => |a| a == v.quiver.sel,
         .flask => |f| f == v.flasks.sel,
         else => false,
@@ -301,6 +359,7 @@ fn equipped(c: Cand, v: View) bool {
 fn pickIndexOf(s: SlotId, v: View) usize {
     return switch (s) {
         .right => @intFromEnum(v.arm),
+        .left => @intFromEnum(v.off),
         .arrows => @intFromEnum(v.quiver.sel),
         .quick => @intFromEnum(v.flasks.sel),
         else => 0,
@@ -521,13 +580,9 @@ const BAG_COLS: usize = 5;
 const BAG_ROWS: usize = 4;
 const CELL_GAP: i32 = 12;
 
-fn fi(v: i32) f32 {
-    return @floatFromInt(v);
-}
-
-fn rect(x: i32, y: i32, w: i32, h: i32) rl.Rectangle {
-    return .{ .x = fi(x), .y = fi(y), .width = fi(w), .height = fi(h) };
-}
+// The chrome's own two, not a third copy of each: `uiart` is where hud/menu/book/ui share their dressing.
+const fi = uiart.fi;
+const rect = uiart.rect;
 
 const Box = struct {
     x: i32,
@@ -869,8 +924,11 @@ fn drawSlot(self: *const Book, r: rl.Rectangle, s: SlotId, v: View, sel: bool) v
 fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
     switch (s) {
         .right => if (v.arm == .bow) itemart.bow(cx, cy, px) else itemart.sword(cx, cy, px),
-        .left => if (v.arm != .bow) itemart.shield(cx, cy, px),
-        .sorcery => {},
+        .left => if (v.arm != .bow) switch (v.off) {
+            .shield => itemart.shield(cx, cy, px),
+            .wand => itemart.wand(cx, cy, px),
+        },
+        .sorcery => if (slotHas(.sorcery, v)) itemart.spell(cx, cy, px, v.fp >= combat.SPELL_FP),
         // The arrow is drawn LONG for its box (a shaft is 0.3 of what it is handed, where a blade is 1.4),
         // so it is given a bigger one — at the slot's own size it is a twig in a cupboard.
         .arrows => itemart.arrow(cx, cy, px * 1.5, v.quiver.count(v.quiver.sel) > 0, v.quiver.sel == .fire),
@@ -885,13 +943,13 @@ fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
 /// arrow — which is the whole reason the equipment page shows numbers at all.
 fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     const inner = panel(box, if (cand == null) "WHAT IT IS WORTH" else "IF HE TAKES IT UP");
-    const base = Loadout{ .arm = v.arm, .ammo = v.quiver.sel, .flask = v.flasks.sel };
+    const base = Loadout{ .arm = v.arm, .off = v.off, .ammo = v.quiver.sel, .flask = v.flasks.sel };
     const now = derive(base, v);
     const then = if (cand) |c| derive(withCand(base, c), v) else now;
 
     // THE ROWS ARE FITTED TO THE PANEL, not the other way round: with a picker open this column is half
     // the height it has to itself, and ten rows at a fixed pitch walked straight off the bottom of it.
-    const says = if (cand) |c| candSays(c) else armSays(v.arm);
+    const says = if (cand) |c| candSays(c) else armSays(v.arm, v.off);
     const foot = proseH(says, inner.w, hud.HINT) + 22;
     const head: i32 = if (cand == null) 0 else hud.lineH(hud.SMALL) + 4;
     const step = rowStep(inner.h - foot - head, ND);
@@ -923,10 +981,11 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     _ = prose(says, inner.x, footY, inner.w, hud.HINT, uiart.TEXT_HINT);
 }
 
-fn armSays(a: heromod.Arm) []const u8 {
-    return switch (a) {
-        .sword => "Sword and shield: he can guard, and a guard is worth more than any number on this page.",
-        .bow => "The bow takes both hands, so nothing is on his left arm and nothing can be blocked.",
+fn armSays(a: heromod.Arm, o: heromod.Off) []const u8 {
+    if (a == .bow) return "The bow takes both hands, so nothing is on his left arm and nothing can be blocked.";
+    return switch (o) {
+        .shield => "Sword and shield: he can guard, and a guard is worth more than any number on this page.",
+        .wand => "Sword and wand. He casts with the hand that used to block, and pays in Focus instead of stamina.",
     };
 }
 
@@ -935,6 +994,10 @@ fn candSays(c: Cand) []const u8 {
         .arm => |a| switch (a) {
             .sword => "Back to sword and shield, and back to being able to guard.",
             .bow => "Both hands go to the bow, and the shield goes with them.",
+        },
+        .off => |o| switch (o) {
+            .shield => "Boards back on the arm. He can guard again, and the wand goes away with the sorcery.",
+            .wand => "The wand takes the shield's hand, so there is no guarding — and L1 casts instead of blocks.",
         },
         .ammo => |a| switch (a) {
             .plain => "A plain shaft. Ten of them, and nothing in these ruins resists the hole one leaves.",
@@ -1250,7 +1313,11 @@ fn drawPortrait(self: *const Book, col: Box, v: View, portrait: ?Portrait) void 
 // ── TESTS ─────────────────────────────────────────────────────────────────────────────────────────
 
 fn testView(bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.Resists, flasks: *const combat.Flasks, quiver: *const combat.Quiver, arm: heromod.Arm) View {
-    return .{ .bag = bag, .sheet = sheet, .res = res, .flasks = flasks, .quiver = quiver, .arm = arm, .runes = 0 };
+    return testViewOff(bag, sheet, res, flasks, quiver, arm, .shield);
+}
+
+fn testViewOff(bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.Resists, flasks: *const combat.Flasks, quiver: *const combat.Quiver, arm: heromod.Arm, off: heromod.Off) View {
+    return .{ .bag = bag, .sheet = sheet, .res = res, .flasks = flasks, .quiver = quiver, .arm = arm, .off = off, .fp = combat.FP_MAX, .runes = 0 };
 }
 
 test "the grid walk never leaves the slots, and a ragged last row cannot swallow the cursor" {
@@ -1291,21 +1358,21 @@ test "THE SWAP IS PRICED HONESTLY: taking up the bow shows the shield's guard go
     const flasks = combat.Flasks{};
     const quiver = combat.Quiver{};
     const v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
-    const sword = derive(.{ .arm = .sword, .ammo = .plain, .flask = .crimson }, v);
-    const bow = derive(.{ .arm = .bow, .ammo = .plain, .flask = .crimson }, v);
+    const sword = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .flask = .crimson }, v);
+    const bow = derive(.{ .arm = .bow, .off = .shield, .ammo = .plain, .flask = .crimson }, v);
     try std.testing.expect(worth(sword, .guard) > 0 and worth(bow, .guard) == 0); // the bow's real cost
     try std.testing.expect(worth(sword, .light) > worth(bow, .light)); // …and the sword hits harder up close
     // FIRE SHOWS ONLY ON A FIRE ARROW, and it is a fraction of that shaft's own physical.
-    const fire = derive(.{ .arm = .bow, .ammo = .fire, .flask = .crimson }, v);
+    const fire = derive(.{ .arm = .bow, .off = .shield, .ammo = .fire, .flask = .crimson }, v);
     try std.testing.expect(worth(bow, .fire) == 0 and worth(fire, .fire) > 0);
     try std.testing.expectApproxEqAbs(worth(bow, .heavy) * heromod.FIRE_ARROW_FRAC, worth(fire, .fire), 1e-3);
     // The quick-item row follows the flask, and the two draughts do not fill the same bar.
-    const cer = derive(.{ .arm = .sword, .ammo = .plain, .flask = .cerulean }, v);
+    const cer = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .flask = .cerulean }, v);
     try std.testing.expectApproxEqAbs(sheet.hp() * combat.FLASK_HP_FRAC, worth(sword, .quick), 1e-3);
     try std.testing.expectApproxEqAbs(sheet.fp() * combat.FLASK_FP_FRAC, worth(cer, .quick), 1e-3);
     // A ROW MOVES ONLY WHEN THE THING THAT FEEDS IT DOES: behind a sword, choosing the other arrow moves
     // the tally it counts and not one number he swings with.
-    const swordFire = derive(.{ .arm = .sword, .ammo = .fire, .flask = .crimson }, v);
+    const swordFire = derive(.{ .arm = .sword, .off = .shield, .ammo = .fire, .flask = .crimson }, v);
     for (0..ND) |i| {
         const k: Der = @enumFromInt(i);
         if (k == .ammo) continue;
@@ -1321,21 +1388,54 @@ test "every slot either offers a choice or says why it cannot" {
     const flasks = combat.Flasks{};
     const quiver = combat.Quiver{};
     var buf: [CAND_MAX]Cand = undefined;
+    // BOTH HANDS ARE SWEPT, all four combinations: the left hand is a real choice now, and the sorcery slot
+    // answers differently to each of the two reasons it can be empty.
     for ([_]heromod.Arm{ .sword, .bow }) |arm| {
-        const v = testView(&bag, &sheet, &res, &flasks, &quiver, arm);
-        for (0..NSLOT) |i| {
-            const s: SlotId = @enumFromInt(i);
-            const cs = candidates(s, v, &buf);
-            if (locked(s, v)) |why| {
-                try std.testing.expect(why.len > 0);
-                try std.testing.expectEqual(@as(usize, 0), cs.len);
-            } else {
-                try std.testing.expect(cs.len >= 2); // a picker with one row has nothing to offer
+        for ([_]heromod.Off{ .shield, .wand }) |off| {
+            const v = testViewOff(&bag, &sheet, &res, &flasks, &quiver, arm, off);
+            for (0..NSLOT) |i| {
+                const s: SlotId = @enumFromInt(i);
+                const cs = candidates(s, v, &buf);
+                if (locked(s, v)) |why| {
+                    try std.testing.expect(why.len > 0);
+                    try std.testing.expectEqual(@as(usize, 0), cs.len);
+                } else {
+                    try std.testing.expect(cs.len >= 2); // a picker with one row has nothing to offer
+                }
+                try std.testing.expect(slotName(s).len > 0);
+                try std.testing.expect(slotFilled(s, v).len > 0);
             }
-            try std.testing.expect(slotName(s).len > 0);
-            try std.testing.expect(slotFilled(s, v).len > 0);
+            // …and the SORCERY slot is filled exactly when something that can cast is in that hand.
+            try std.testing.expectEqual(arm != .bow and off == .wand, slotHas(.sorcery, v));
         }
     }
+}
+
+test "THE WAND IS PRICED HONESTLY TOO: it buys a bolt and it costs him the guard" {
+    const bag = item.Bag{};
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+    const v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+    const board = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .flask = .crimson }, v);
+    const rod = derive(.{ .arm = .sword, .off = .wand, .ammo = .plain, .flask = .crimson }, v);
+    // The left hand's price, and it is the SAME row the bow is billed on, because it is the same hand.
+    try std.testing.expect(worth(board, .guard) > 0 and worth(rod, .guard) == 0);
+    // …and what he got for it. Zero behind a shield, because a spell he cannot cast is not worth a number.
+    try std.testing.expect(worth(board, .spell) == 0 and worth(rod, .spell) > 0);
+    try std.testing.expect(worth(board, .spell_fp) == 0 and worth(rod, .spell_fp) > 0);
+    // A BOW SILENCES IT WHICHEVER WAY THE LEFT SLOT IS SET — both hands are on the string.
+    const bowRod = derive(.{ .arm = .bow, .off = .wand, .ammo = .plain, .flask = .crimson }, v);
+    try std.testing.expect(worth(bowRod, .spell) == 0 and worth(bowRod, .guard) == 0);
+    // …and the swing rows do not move: taking a wand changes nothing about the sword in the other hand.
+    for ([_]Der{ .light, .heavy, .poise, .stance, .stam_light, .stam_heavy }) |k| {
+        try std.testing.expectEqual(worth(board, k), worth(rod, k));
+    }
+    // THE TALLY IS CASTS, NOT POINTS — a full pool reads as a countable number in the slot.
+    try std.testing.expectEqual(@as(u8, 0), castsLeft(combat.SPELL_FP - 0.01));
+    try std.testing.expectEqual(@as(u8, 1), castsLeft(combat.SPELL_FP));
+    try std.testing.expect(castsLeft(combat.FP_MAX) >= 4);
 }
 
 test "the bag cursor is pulled back onto a real cell when the last of something is drunk" {

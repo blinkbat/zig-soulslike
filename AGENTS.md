@@ -78,8 +78,10 @@ SHIELD** in the left hand and **GUARDS** with it — Dark Souls' plain block, pa
 with a GUARD BREAK when the bar runs out under a blow (see GUARDING). His right hand also holds a
 **BOW** (D-pad Right swaps to it — quick shot on R1, hold L2 to aim and R2 to loose), and because the
 left hand goes to the string it takes the shield with it (see THE BOW) — with a scarce **FIRE ARROW** on
-D-pad Up that is the game's one source of non-physical damage, against four PoE2 **RESISTANCES** every
-creature carries (see RESISTANCES). No criticals, guard counter or jump yet. The bar for "human" is anatomy + real gaits, not polygon count.
+D-pad Up, against four PoE2 **RESISTANCES** every creature carries (see RESISTANCES). And the LEFT hand
+has a second armament of its own: a **KNOTTED WAND** (D-pad Left swaps it for the shield) that **CASTS** —
+one sorcery, a **CHAOS BOLT**, thrown overhead off L1 and paid for in **FP**, which is what that bar was
+built for (see THE WAND). No criticals, guard counter or jump yet. The bar for "human" is anatomy + real gaits, not polygon count.
 
 **THE GROUND HAS ELEVATION**, sculpted in the editor and walked with a real slope limit and a step
 height — hills, banks, terraces and cliffs you cannot climb (see ELEVATION). The SHIPPED map is
@@ -87,12 +89,15 @@ deliberately flat, and a flat map is byte-for-byte the world that existed before
 
 **THE HUD IS ELDEN RING'S**, in ER's three places and nowhere else: HP/FP/stamina bars top-left,
 the four-slot equipment CROSS bottom-left, the debug readout top-right (menu >
-Debug > Stats). It hides behind the menu and under the YOU DIED card. FP is a full static bar —
-there is nothing to spend it on until spells exist. The cross's two hand slots draw **WHAT IS IN HIS
-HANDS**, not what he owns: RIGHT is the sword or the bow, LEFT is the small shield or — behind a bow —
-EMPTY, which is exactly what the bow costs him. UP (sorcery) stays empty too, because an empty ER slot
-is a real part of that HUD and inventing something to put in it would be a lie in the corner of every
-screenshot. Four slots, and it stays four however many armaments exist.
+Debug > Stats). It hides behind the menu and under the YOU DIED card. **FP IS LIVE NOW** — the wand's
+cast is the one thing that spends it, and the bar carries its own REFUSAL RING when a cast is short of the
+cost (`hud.refuseRing`, one body shared with the stamina bar's: a ring on the wrong meter tells the player
+to go and rest when what he needs is a Cerulean). The cross's two hand slots draw **WHAT IS IN HIS
+HANDS**, not what he owns: RIGHT is the sword or the bow, LEFT is the small shield, the wand, or — behind a
+bow — EMPTY, which is exactly what the bow costs him. UP (sorcery) holds the **CHAOS BOLT** while a wand is
+actually in that hand and goes back to EMPTY otherwise, which is the same honesty the empty slot was: it is
+filled by a spell he can really cast and by nothing else. Four slots, and it stays four however many
+armaments exist.
 
 **A CHEST IS HOLLOW.** Its carcase was one solid cube, so throwing the lid back revealed a sealed
 timber top — you opened a box and found a block. Four walls and a floor now, with the outer faces
@@ -189,23 +194,24 @@ and the map's own `half:` is the only source), holding five regions
 | west | **the Old Wood** | great trees (3 variants), ferns/brambles/bushes, boulders, a **standing-stone circle**, a woodcutter's **cottage** + campfire |
 | south | **the Windswept Downs** | open and sparse — lone trees, field stones, graves, a watchtower |
 
-**82 prop kinds**, **17,088 instances, 1,801 colliders and 37 fires**, of which a frame draws **768 in
-259 cells in the CITY and 1,332 in 312 in the WOOD**, both passes together — read off
-`91_stats_city.png` / `92_stats_wood.png`, which is the only honest way to state it. (This said "~633
-… the wood is comparable": the figure predates the last two world edits and the wood was never
-comparable — it is nearly twice the city, because a wood is canopy standing in front of canopy.)
-See **PERFORMANCE** — 7.5% of the world is
+**82 prop kinds**, **17,158 instances, 1,819 colliders and 42 fires**, of which a frame draws **784 in
+262 cells in the CITY and 1,336 in 312 in the WOOD**, both passes together — read off
+`91_stats_city.png` / `92_stats_wood.png`, which is the only honest way to state it. The wood is nearly
+twice the city, because a wood is canopy standing in front of canopy.
+See **PERFORMANCE** — 7.8% of the world is
 why it is affordable, and the debug Stats overlay prints it live so it stays checkable. `env`'s
 "replaying the SHIPPED map produces a stable world" test PINS the same three, so a scatter that quietly
 gains or loses instances fails the build instead of drifting in a screenshot — but **its prop count is
 the HIGHER of the two on purpose** and the two must not be reconciled: the test calls `materialize`
-without `uploadWater`, so the painted tarn rejects nothing and it pins **17,202** where the running
-game shows 17,088. Solids and fires do not read the water and so match exactly.
+without `uploadWater`, so the painted tarn rejects nothing and it pins **17,272** where the running
+game shows 17,158. Solids and fires do not read the water and so match exactly.
 **Move both together when either moves**: the props rework left the test pinning 17,292/1,836/34
 and this line repeating it, and `9dea3c0`'s world edit left both at 16,884/1,687/35, so the guard sat red
-— and the LAST move of it was two changes at once, which is the case to be careful of: five cliffs the
-owner added in the editor (+5 props, +10 solids, and the counts added up exactly) and the campfire going
-cold in the CODE (−3 fires). Two causes, one red test; read the three numbers separately or you will
+— and `847fe16` left them at 17,202/1,801/37 against a map the owner had gone on editing (+2 braziers,
++2 torches and a shrine = exactly the +5 fires, which is what says WORLD and not ENGINE). The case to be
+careful of is two changes at once: five cliffs added in the editor (+5 props, +10 solids, counts adding
+up exactly) and the campfire going cold in the CODE (−3 fires) once landed together.
+Two causes, one red test; read the three numbers separately or you will
 "fix" the world for something the engine did
 for two commits each time — and a pin that always fails cannot
 catch the next drift, which is the only thing it is for. **AND `git diff worlds/` BEFORE SUSPECTING THE
@@ -236,7 +242,9 @@ meadow's (`shaders.terrainAlbedo`'s region drift — the GLSL, not the Zig).
   `shot.cmd`) and INSPECTING the PNGs in `shots\`. `--shot` hides the window: it scripts a walk→
   run→sprint and a roll at several angles, the sword swings, the GUARD (`20a..20e` — the stance from
   three bearings, a caught blow mid-recoil, and the shield's own back), the BOW (`20f..20r` — see THE
-  BOW), then every foe's states —
+  BOW), the WAND (`20v..20zg` — see THE WAND: the carry, the raise, and the SAME instant of two
+  opposite-sweeping casts, which is the only way a still frame can show an alternation), then every foe's
+  states —
   including the kobold POUNCE in three beats (`66d..66f`) and the BITE in profile (`69c`/`69d`), both
   of which shipped unjudged because neither had a shot, and the SKELETAL WARRIORS (`113…` — the pair, the
   shieldman's guard and a crop of his boards, the mace in four beats, the KNEEL with the shield broken off
@@ -319,14 +327,13 @@ meadow's (`shaders.terrainAlbedo`'s region drift — the GLSL, not the Zig).
                  the chain it renders through are ONE question. Two screens (pick the family, then turn
                  its rack) off the same `OPT_MIX` table the volume sliders walk. Every slider screen
                  shares one gauge column (`drawCard`'s `gauges` slice) and one adjust feel (`adjustDelta`).
-                 **START OPENS THE CHARACTER MENU** (Attributes / Resistances / Inventory / Equipment), a second root
-                 the whole screen stack hangs off (`Screen.root`) so SELECT and START toggle their own
-                 side and nothing else. ATTRIBUTES is the character sheet — the seven of `stats.zig`,
-                 rows walked off the enum, each with its points right-aligned and a FOOTNOTE saying what
-                 the selected one governs and how much of that bar it is buying. Read-only: there is no
-                 leveling, so no row adjusts. One `drawCard` draws every screen and its optional columns
-                 are one `Card` struct (`gauges` / `values` / `note`); a column slice SHORTER than the
-                 row list simply leaves the tail bare, which is how Back gets no number.
+                 **START OPENS THE CHARACTER BOOK**, a second root the whole screen stack hangs off
+                 (`Screen.root`) so SELECT and START toggle their own side and nothing else. It is not a
+                 card at all: `.character` hands the frame to `book.zig` whole and returns (see THE
+                 CHARACTER BOOK), which is what replaced the four Attributes / Resistances / Inventory /
+                 Equipment card screens that used to live here. One `drawCard` draws every screen that IS
+                 a card, and its optional columns are one `Card` struct (`gauges` / `note`); a gauge slice
+                 SHORTER than the row list simply leaves the tail bare, which is how Back gets no gauge.
 - `hero.zig`   — THE HERO. Anthropometric FK skeleton + every animation, the swept blade hit
                  capsule (rides the SWORD bone's dummy points, active only in the strike's window,
                  FAT on purpose for vertical forgiveness), his swing ribbon's own tuning (the ribbon itself is
@@ -334,7 +341,9 @@ meadow's (`shaders.terrainAlbedo`'s region drift — the GLSL, not the Zig).
                  stance, the caught-blow recoil and the small round SHIELD (which is not a bone: it
                  rides the left wrist through `shieldFit`), and THE BOW — the second right-hand
                  armament, in the same `HELD` slot, with the live string and nocked shaft borrowed
-                 whole from `archer.zig` (see THE BOW). See GUARDING. The light slash is a
+                 whole from `archer.zig` (see THE BOW) — and THE WAND, the LEFT hand's second
+                 armament, with its overhead alternating cast, its knotted rod (on that same wrist,
+                 fitless) and its chaos FX (see THE WAND). See GUARDING. The light slash is a
                  REAL cut — the horizontal pair (sabre Cuts III/IV), LEVEL and OUTWARD for the
                  whole hit window (never a dirt-stab, never hilt-first). Start here.
 - `camera.zig` — over-the-shoulder orbit rig (yaw + clamped pitch, zoom, shoulder offset,
@@ -463,7 +472,8 @@ meadow's (`shaders.terrainAlbedo`'s region drift — the GLSL, not the Zig).
                  socket and the grid CURSOR, the four weights of ink), shared by hud/menu/book/ui the way
                  `propart.zig` is shared by the props. Adapted from `../zig-diablo/src/hudx.zig` and
                  `../crawler`'s theme kit.
-- `itemart.zig`— PICTURES OF THINGS: the four armaments in the HUD's cross and every kind in the bag,
+- `itemart.zig`— PICTURES OF THINGS: every armament in the HUD's cross (the wand and the chaos bolt included)
+                 and every kind in the bag,
                  drawn as OBJECTS rather than glyphs and SIZED BY THE CALLER — one picture serves a 33 px
                  bag cell and a 200 px detail plate, because every stroke scales off the box it is handed
                  (`TUNED_AT`). Deterministic wabi-sabi: fixed-seed `mathx.Rng` per call, so an icon is
@@ -1199,9 +1209,13 @@ could show a name and a number and nothing else.
   `combat.STAM_*`, `GUARD_NEGATE`, `FLASK_*_FRAC`) rather than retyped. Taking up the bow shows the guard
   row going to nothing, which is the honest price of it. `DerivedRow.cost` marks the two rows a SMALLER
   number wins on, so the delta colours cannot lie.
-- **EMPTY IS AN HONEST ANSWER.** The sorcery slot is empty because there are no spells and the left hand
-  empties behind a bow, and both say so in words when you land on them (`locked`) — the same rule as
-  `stats.governs` owning up to an inert attribute.
+- **EMPTY IS AN HONEST ANSWER, AND SO IS "FILLED BUT UNCHANGEABLE".** The left hand is a real picker now
+  (shield or wand) and the sorcery slot fills whenever a wand is actually in that hand — but with ONE spell
+  known there is nothing to change it TO, so `locked` still returns a reason and says which of the three it
+  is. **A LOCKED SLOT OFFERS NO CANDIDATES, and that is enforced once in `candidates` rather than per
+  branch**: the left hand grew a real picker the day the wand landed, and with a bow out that picker would
+  otherwise have offered two rows for a hand the panel had already said was not free — which is exactly what
+  its unit test caught.
 - **THE LAYOUT IS WORKED OUT IN ONE PLACE** (`Box`/`Grid`/`panelInner`). The cursor computes where it is
   flying to independently of the draw pass, so two copies of the grid maths would be a cursor sitting half
   a slot off the thing it claims to be on. Rows FIT their panel too — the pitch gives way before the
@@ -1269,9 +1283,9 @@ copies of a hysteresis is four chances to get one of them subtly wrong.
   `PROVOKE_HOLD` that three blows buy.
 - **ONE PLAYER BLOW ROUSES IT FROM ANY RANGE, FOR `PROVOKE_ROUSE` (14 s).** Every landed hit calls
   `Leash.provoke` — nothing asks what threw it — and the creature HUNTS HIM DOWN whatever its own `AGGRO_R`
-  says. Shoot something across the plaza and it comes. Only a blade marked `pierce` (an arrow today, a spell
-  when there is one) also snaps its facing back down the shaft, because a shaft is the one blow that says
-  where the attacker is. The rouse is a COUNTDOWN, not a level of `provoked`, because it has to outlast the
+  says. Shoot something across the plaza and it comes. Only a blade marked `pierce` — an arrow, and now the
+  wand's BOLT, which flies as one — also snaps its facing back down the shaft, because a shaft is the one
+  blow that says where the attacker is. The rouse is a COUNTDOWN, not a level of `provoked`, because it has to outlast the
   WALK — as a threshold it lapsed 0.29 s after the hit, so a sniped foe took one step and went back to
   grazing and sniping read as doing nothing. The tether is still what ends the chase.
 - **KEEP AT IT AND THE LEASH BREAKS** (`PROVOKE_BREAK`, held `PROVOKE_HOLD` = 14 s). THE ANTI-CHEESE: standing
@@ -1331,8 +1345,12 @@ sword carry, the deep lean) belongs to the hold-B RUN only — gate run-only flo
 - **Cycle the arrow:** **D-pad UP** / **Y** — plain ↔ fire (see THE BOW). Up is the cross's one empty
   slot, and it mirrors D-pad DOWN / **T** cycling the quick item. Not gated on the bow being out:
   choosing your ammunition is not an action.
-- **Guard:** hold **L1/LB** or the **RIGHT MOUSE BUTTON** (ER's own keyboard default for the left
-  hand). HELD, never toggled, and never buffered — see GUARDING.
+- **Swap left-hand armament:** **D-pad LEFT** / **F** — shield ↔ wand. ER's own binding for that slot, and
+  the last free direction on the D-pad now that Right, Up and Down are all spent. See THE WAND.
+- **Guard, or CAST:** hold **L1/LB** or the **RIGHT MOUSE BUTTON** (ER's own keyboard default for the left
+  hand). **The button belongs to the HAND, not to the shield** — boards BLOCK (held, never toggled, never
+  buffered — see GUARDING), a wand CASTS (a pressed edge, committed — see THE WAND), and which it is comes
+  off what that hand is holding, exactly as R1/R2 are routed by the right hand's armament.
 - **Aim:** hold **L2** or — with the bow out — the **RIGHT MOUSE BUTTON**, which is free to take it
   because the bow has already taken the shield away. One button, and which hand it belongs to is
   decided by what is in the other one. See THE BOW.
@@ -1447,6 +1465,87 @@ go to the string.
   the burning head cropped from the FRONT QUARTER (side-on is mostly trail, with the head buried in it),
   and the ammo box carrying the other arrow.
 
+## THE WAND (`hero.zig`) — the LEFT hand's second armament, and the first thing that spends FP
+
+D-pad Left cycles the left hand between the small shield and a **knotted wand**. It is the same straight
+SWAP the right hand makes, from the other side: one hand, one job, and what it costs him is the guard.
+
+- **L1 IS THE LEFT HAND'S BUTTON, NOT THE SHIELD'S.** With boards on that arm it BLOCKS; with the wand it
+  CASTS. That is the "R1 AND R2 ARE THE ARM'S, NOT THE SWORD'S" law applied to the other hand, and ER's own
+  rule. It is read as one button both ways (a held level for the guard, a pressed edge for the cast), so
+  neither action can swallow the other's press. **RMB stays unambiguous** for the reason it could take the
+  aim in the first place: only one of the three things that answer to it can be in the hand at a time —
+  shield blocks, wand casts, bow aims.
+- **THERE IS ONE LEFT HAND, AND `canGuard`/`canCast` ASK IT EVERY FRAME.** The wand clause in `canGuard` is
+  the same ANATOMY the bow clause is, and nothing is cleared on a swap — the guard's own rule, so the answer
+  cannot go stale. A raised bow takes that hand to the string and holds NEITHER: `off` stays whatever it was
+  (the loadout is not disturbed), and `wandOut` is the question about what is actually in the fist.
+- **A CAST IS COMMITTED, NOT HELD** — the opposite shape to the guard and the aim, because there is nothing
+  to hold: the FP is gone the moment it starts. So it lives in `committed()` beside the swing and the loose,
+  it is not buffered, a second press inside one is dropped, and a stagger or a death drops it with the
+  charge already spent — exactly as a staggered draught's is. He is PLANTED for it (`updateCast` takes no
+  travel), like a quick shot rather than like the shield he can walk a fight down behind.
+- **IT IS BILLED IN FP AND NOTHING ELSE** (owner's call). `combat.SPELL_FP` is 12 of a 60-point pool — five
+  casts to a grace — and the stamina bar is not touched, so an empty stamina bar still leaves him a spell.
+  That is the whole point of a second resource, and it is why the wand competes with the flask rather than
+  with the roll.
+- **PAY OR CAST NOTHING** (`combat.Focus.spend`), and it is deliberately the INVERSE of the stamina bar's
+  panic rule. `Stamina.canAct` is `cur > 0` because the bottom tenth of that bar has to buy the genre's most
+  important move; a half-paid spell would be a spell that half exists, so below the cost the cast is refused
+  outright and the FP bar is the meter that says so (`hero.fpRefused` → `hud.refuseRing`).
+- **THE ARM GOES OVERHEAD AND SWEEPS ACROSS THE TOP** (owner's call), and **REPEATED CASTS SWEEP OPPOSITE
+  WAYS** — `castAlt`, the light combo's own alternator, flipped at the START of each cast so it never depends
+  on how the last one ended. On this rig `rz` swings the left arm through the FRONTAL plane and 180 is
+  straight up, so the raise and the side-to-side stroke are ONE channel: overhead ± `CAST_SWEEP`. Two things
+  were tuned off shots:
+  - **THE SWEEP MUST NOT CROSS HIS FACE.** At 48 degrees the far end of the second stroke laid the forearm
+    over his chin, which reads as flinching rather than casting. It is 34 now, and `CAST_SH_FWD` (36) tips
+    the whole plane FORWARD so the stroke passes in FRONT of the head instead of through it — which also
+    stops the over-the-shoulder camera looking straight down the edge of the plane it happens in.
+  - **THE ARM GOES LONG AT THE THROW** — the warriors' law. An elbow still folded when the bolt leaves keeps
+    the stone inside his own silhouette however far overhead the numbers say it is.
+- **THE ROD IS NOT A BONE.** It rides the left wrist like the shield, but with NO fit matrix: it is authored
+  in that wrist's frame extending out of the fist along −Y (the sword's convention off the right), so a
+  retune of the cast angles cannot swing it off its own hand, and a raised arm carries it up clear of the
+  skull rather than across it. `wandTipWorld` is MEASURED off the mesh's own constants — the ogre's
+  `clubLowWorld` law — so the bolt leaves the thing you can see it leave.
+- **THE BOLT FLIES THROUGH THE ARROW POOL** (`archer.Shot.bolt`, in `game.shafts` with his shafts). Cover,
+  gravity, the ground, expiry and the swept `pierce` test are one body of code; a spell with its own copy of
+  them is a spell that stops agreeing with the world. It barely drops (`BOLT_GRAV` 0.8 — a sorcery aimed by
+  arc rather than by pointing would be the bow's job), goes at the LOCKED foe or else down his facing (the
+  quick shot's rule: there is no aimed cast, so there is no camera ray to converge on and no reticle), and
+  bursts where it lands through `splashOf` — which is why that function is now asked by the HERO's pool too
+  and not only by the foes'.
+- **ALL CHAOS, NO PHYSICAL** — the brood mother's one-substance-one-element rule. `combat.SPELL_HIT` is 24
+  chaos with poise 14 and stance 6: between a light slash's 13 and a heavy's 27 before anything resists it,
+  which is the "decent damage" that was asked for. **And chaos is the most-resisted column in the game**
+  (brood +75, archer and warrior +45), so the wand is the answer to toads and kobolds and close to useless
+  against the skeletons — an honest trade, not an oversight. See RESISTANCES.
+- **ONE VIOLET FOR THE WHOLE SPELL** — the stone, the gather, both bursts and the flight streak. Two
+  substances of one element is what the brood's spit-and-pool rule forbids, and a bolt whose sparks were a
+  different violet from its own trail is exactly that. Its FX are the sling's three beats: a GATHER of motes
+  drawn inward onto the stone through the raise (the tell, so a cast reads as starting from across the
+  plaza), a puff off the stone at the throw, and a bigger burst wherever it lands. The motes are small and
+  short-lived on purpose — the stone is travelling through the sweep, so a mote that outlives its own flight
+  converges on where the stone WAS and hangs in the field behind him, which is what the first pass did.
+- **THE FERRULE AND CLAWS WERE SAMPLED, NOT EYEBALLED.** Authored at 58/62/70 — a shade over the shield
+  boss's — they came back off the render CLIPPED at 255,255,255: small curved capsules taking the sun square
+  on with the `.steel` gloss on top, reading as a white cage round the stone. They use the shield's own
+  already-proven `SHIELD_IRON` now (one iron in his kit, not two values for one substance) and the claws
+  CRADLE the stone instead of caging it. See the albedo-is-arithmetic rule; four passes by feel got nowhere
+  on the pelt that rule came from either.
+- **THE WAND HAS NO VOICE OF ITS OWN YET** and borrows the priest's `kobold_cast`, played at the RAISE
+  because that voice RISES — a tell belongs on the gather. The landing comes off the shaft pool's own impact
+  exactly as an arrow's does. A real pair of voices is the obvious next thing.
+- Shots `20v`..`20zg`: the carry from the front and the side (a rod where the boards were), the raise, the
+  throw from two bearings, the SECOND cast at the same instant of the stroke from the same two bearings —
+  because "it alternates" is the one claim a single frame cannot make — a crop of the rod's head against the
+  sky, the bolt in flight and its head, and the cross both with a cast in the pool and short of one. The
+  bolt is thrown WITHOUT letting the cast finish, so the shaft leaves the stone OVER HIS HEAD; launched out
+  of the low carry it came off a wand hanging at his knee and skidded away at ankle height. The crop is
+  taken overhead for the same reason: off the carry it put the camera 30 cm off the ground with half the
+  frame in dirt and the head in its own shadow.
+
 ## RESISTANCES (`combat.zig`) — PoE2's four, and physical is what we already deal
 
 Damage is TYPED. A `Hit` carries physical `dmg` plus an optional `elem` bundle (`combat.Elems`), and
@@ -1471,8 +1570,10 @@ this exists is pure physical and its arithmetic did not move.
 - **A SHIELD IS BILLED ON THE RAW BLOW** (`Hit.raw`, physical + every element, unresisted) — the arm behind
   a burning arrow does not know what you resist. Same for `foe.worseBlow`'s "which of these was worse".
 - **TWO OF THE FOUR ARE LIVE.** **FIRE** — the hero's fire arrow, and the kobold sling's burning clump.
-  **CHAOS** — the brood mother's spit AND her pools, which are one fluid and so one element (owner's
-  call). Cold and lightning have no source yet and every table that carries them says so.
+  **CHAOS** — the brood mother's spit AND her pools, which are one fluid and so one element (owner's call),
+  and now the HERO'S OWN chaos bolt off the wand (see THE WAND), which is the first thing on his side of the
+  ledger that meets a resistance table rather than only handing one out. Cold and lightning have no source
+  yet and every table that carries them says so.
 - **EVERY FOE CARRIES ITS OWN, AUTHORED WHERE ITS HP IS** (`initFoe(..).withRes(..)`), one table per
   creature and per FILE — the kobold's three roles share one because they are one creature, and so do the
   brood mother and her hatchlings, at two ages:
@@ -1646,6 +1747,15 @@ and the guard break are BUILT (see GUARDING); the counter and the parry are what
 left hand. AR × motion-value × defense damage (today it's flat constants), **status buildup**,
 jump, distinct combo follow-up anims, bonfires, real level geometry. See `docs/ELDEN_RING.md` for
 the target mechanics behind each.
+
+**SORCERY IS ONE SPELL DEEP.** The wand and its chaos bolt are built (see THE WAND) and FP is live, but
+there is exactly one sorcery, so the cross's UP slot has nothing to cycle and `book.zig`'s sorcery picker
+says so instead of offering a list. A SECOND spell is what turns that slot into a real one — and the shape
+is already written down: it goes in beside `SPELL_NAME`, the slot grows a picker off its enum the way the
+other four do, and `locked`'s "the only sorcery he knows" arm goes away. **Nothing scales a cast yet
+either**: `SPELL_HIT` is a flat constant and Intelligence still reads as inert on the stats page, which is
+the same honest gap `stats.governs` owns up to for the other three. The wand also has **no voice of its
+own** and borrows the kobold priest's cast.
 
 Elevation exists but nothing has been AUTHORED with it yet: the shipped map is flat on purpose, and
 there is no FALLING — walk off a lip and you are eased down it at `GROUND_FALL_RATE` rather than

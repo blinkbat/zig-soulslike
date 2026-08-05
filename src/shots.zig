@@ -159,6 +159,24 @@ fn stagedRoll(g: *Game, dir: rl.Vector3) void {
     g.hero.startRoll(dir);
 }
 
+/// A CAST FOR THE CAMERA — the pool is refilled first for `stagedAttack`'s reason: five casts back to back
+/// would drain the FP and the last frames would quietly be pictures of a man standing still.
+fn stagedCast(g: *Game) void {
+    g.hero.fp.reset();
+    must(g.hero.requestCast(), "the cast would not start");
+}
+
+/// Drive a live cast to the frame the bolt leaves and stop there — the one frame that has to prove the arm
+/// is over his head. Returns having ALREADY advanced past the throw, so `thrown` is spent.
+fn castToThrow(g: *Game, dt: f32) void {
+    var k: i32 = 0;
+    while (k < 120) : (k += 1) {
+        g.hero.updateCast(dt, null);
+        if (g.hero.thrown) return;
+    }
+    must(false, "the cast never threw the bolt");
+}
+
 // The world tour judges REGIONS; retuning one MODEL needs the model by itself.
 pub fn runPropShots(g: *Game) void {
     std.fs.cwd().makePath("shots/props") catch {};
@@ -454,6 +472,83 @@ pub fn runShots(g: *Game) void {
         game.clearShaftsForShot(g);
         g.hero.stam.reset();
         g.hero.vit = heromod.freshVitals(g.hero.sheet);
+        k = 0;
+        while (k < 30) : (k += 1) stepWorld(g, dt, 0);
+    }
+
+    // ── THE WAND ──────────────────────────────────────────────────────────────────────────────────
+    // The LEFT hand's other armament. The two frames that matter are the CARRY (a rod where the boards were)
+    // and the THROW (the arm over the crown), and the pair of sweeps, because "it alternates" is the one
+    // claim a single frame cannot make.
+    {
+        var k: i32 = 0;
+        while (k < 30) : (k += 1) stepWorld(g, dt, 0);
+        g.hero.pos = mathx.ground(0, 4);
+        g.hero.facing = mathx.headingXZ(LIT_BACK); // down the lens, and lit from over the camera's shoulder
+        must(g.hero.swapOff(), "the wand would not come out");
+        k = 0;
+        while (k < 20) : (k += 1) {
+            g.hero.update(dt, 0, 0, null);
+            g.hero.pose();
+        }
+        shootPortrait(g, "shots/20v_wand_carry.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        shootPortrait(g, "shots/20w_wand_carry_side.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.09, 3.0);
+        // THE RAISE, caught partway up — the anticipation, which has to read as an arm going somewhere.
+        stagedCast(g);
+        k = 0;
+        while (k < 9) : (k += 1) g.hero.updateCast(dt, null);
+        shootPortrait(g, "shots/20y_wand_raise.png", g.hero.shoulderPoint(), LIT_YAW + 30, 0.12, 3.2);
+        // …AND THE THROW: the arm ABOVE THE HEAD, on the frame the bolt actually leaves the stone.
+        castToThrow(g, dt);
+        shootPortrait(g, "shots/20z_wand_throw.png", g.hero.shoulderPoint(), LIT_YAW + 30, 0.16, 3.4);
+        // THE ROD'S OWN HEAD: the stone, its claws, the ferrule and the bound grip are all a couple of
+        // centimetres and unjudgeable in a full-body frame. Cropped HERE rather than off the low carry —
+        // there the tip hangs at knee height, which put the camera 30 cm off the ground with half the frame
+        // in dirt and the head in its own shadow. Overhead it is against the sky and lit.
+        shootPortrait(g, "shots/20x_wand_crop.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.25);
+        shootPortrait(g, "shots/20za_wand_throw_front.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 3.4);
+        const firstSide = g.hero.castAlt;
+        while (g.hero.casting) g.hero.updateCast(dt, null);
+        // THE SECOND CAST SWEEPS BACK THE OTHER WAY, photographed at the SAME instant of the stroke and from
+        // the same place, so the pair is the comparison and not two unrelated pictures.
+        stagedCast(g);
+        castToThrow(g, dt);
+        must(g.hero.castAlt != firstSide, "the second cast did not sweep the other way");
+        shootPortrait(g, "shots/20zb_wand_throw_alt.png", g.hero.shoulderPoint(), LIT_YAW + 30, 0.16, 3.4);
+        shootPortrait(g, "shots/20zc_wand_throw_alt_front.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 3.4);
+        // THE BOLT IN FLIGHT — thrown WITHOUT letting the cast finish, so the pose is still the throw and the
+        // shaft leaves the stone OVER HIS HEAD. Launched out of the low carry instead (which is what the
+        // first pass did) it came off the tip of a wand hanging at his knee and skidded away at ankle height.
+        game.clearShaftsForShot(g);
+        game.throwBoltForShot(g, mathx.ground(0, -22));
+        k = 0;
+        while (k < 9) : (k += 1) game.stepShaftsForShot(g, dt);
+        // Framed on the BOLT rather than on him: at 30 m/s it is metres downrange by now, and a framing that
+        // tracks the caster is a framing the thing being photographed has already left.
+        if (game.flyingPointForShot(g, .bolt)) |at| {
+            shootPortrait(g, "shots/20zd_wand_bolt.png", at, LIT_YAW + 78, 0.06, 5.0);
+            shootPortrait(g, "shots/20ze_wand_bolt_head.png", at, LIT_YAW + 20, 0.04, 1.1);
+        }
+        game.clearShaftsForShot(g);
+        while (g.hero.casting) g.hero.updateCast(dt, null);
+        // THE CROSS: a rod in the LEFT slot and the bolt in the sorcery slot, which is the first time that
+        // slot has held anything at all — then the same cross with the pool short of a cast in it.
+        k = 0;
+        while (k < 12) : (k += 1) {
+            g.hero.update(dt, 0, 0, null);
+            g.hero.pose();
+        }
+        shootClear(g, "shots/20zf_wand_hud.png", LIT_YAW + 150, 0.18, 4.6);
+        g.hero.fp.cur = combat.SPELL_FP - 1;
+        g.hero.fpRefused = combat.STAM_REFUSE_FLASH; // …and the refusal ring on the FP bar, not the stamina one
+        g.hero.update(dt, 0, 0, null);
+        g.hero.pose();
+        shootClear(g, "shots/20zg_wand_hud_dry.png", LIT_YAW + 150, 0.18, 4.6);
+        // PUT IT AWAY and leave the field as the rest of the harness expects to find it.
+        g.hero.fp.reset();
+        g.hero.fpRefused = 0;
+        must(g.hero.swapOff(), "the shield would not come back");
+        g.hero.stam.reset();
         k = 0;
         while (k < 30) : (k += 1) stepWorld(g, dt, 0);
     }

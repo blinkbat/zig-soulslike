@@ -38,7 +38,7 @@ pub fn governs(a: Attr) [:0]const u8 {
         .endurance => "Governs stamina.",
         .strength => "Skill with heavy weapons. None forged yet.",
         .dexterity => "Skill with light weapons. Nothing scales off it yet.",
-        .intelligence => "Skill with magic. No spells yet.",
+        .intelligence => "Skill with magic. The wand's bolt is a flat number; nothing scales off this yet.",
         .luck => "Drops, and rare finds. Nothing reads it yet.",
     };
 }
@@ -62,7 +62,7 @@ fn yield(pts: u8, base: f32, segs: []const Seg) f32 {
 const HP_BASE: f32 = 28.0;
 const HP_SEGS = [_]Seg{ .{ .upTo = 40, .per = 3.0 }, .{ .upTo = 60, .per = 1.6 }, .{ .upTo = MAX, .per = 0.6 } };
 
-// FP has nothing to spend it on yet, so the curve exists to make Mind mean something the day sorcery does. Mind's caps are ~35/50/60.
+// FP buys CASTS now (`combat.SPELL_FP`, off the wand), so Mind is how many of them a grace is worth — the curve was written for the day sorcery landed and this is that day. Mind's caps are ~35/50/60.
 const FP_BASE: f32 = 32.0;
 const FP_SEGS = [_]Seg{ .{ .upTo = 35, .per = 2.0 }, .{ .upTo = 60, .per = 1.0 }, .{ .upTo = MAX, .per = 0.4 } };
 

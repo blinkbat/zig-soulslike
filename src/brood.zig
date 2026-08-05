@@ -1902,11 +1902,7 @@ pub const Brood = struct {
         return foe.aliveCount(self.liveConst());
     }
     pub fn runesDropped(self: *const Brood) u32 {
-        var n: u32 = 0;
-        for (self.liveConst()) |*s| {
-            if (s.justDied) n += s.runeValue();
-        }
-        return n;
+        return foe.runesEach(self.liveConst());
     }
 
     /// How many of `m`'s sacs are still going to hatch — what her cap counts.

@@ -455,8 +455,6 @@ comptime {
     // A bound smaller than the mesh pops geometry at the frustum edge; catch the obvious cases.
     for (INFO) |row| std.debug.assert(row.bound >= row.top);
     for (INFO) |row| std.debug.assert(!(row.flora and row.casts)); // flora must stay out of the shadow map
-    // A STOW RIDES THE VEIL LIST.
-    for (INFO) |row| std.debug.assert(!(row.stow != null and row.veil == null));
 }
 
 test "every kind row sits at its own index and carries a mesh builder" {

@@ -112,13 +112,6 @@ pub fn blocksSight(a: rl.Vector3, b: rl.Vector3, s: Solid) bool {
     return segDistXZ(a, b, s.a, s.b) < s.r;
 }
 
-pub fn sightBlocked(a: rl.Vector3, b: rl.Vector3, solids: []const Solid) bool {
-    for (solids) |s| {
-        if (blocksSight(a, b, s)) return true;
-    }
-    return false;
-}
-
 test "a look is stopped by what stands in it and by nothing else" {
     const wall = capsule(-3, 0, 3, 0, 0.4); // a run of wall across z = 0
     const eye = v3(0, 1.3, -6);

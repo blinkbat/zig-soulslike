@@ -33,7 +33,7 @@ pub const TEXT_HINT = rgba(128, 122, 110, 255);
 pub const GOOD = rgba(146, 194, 118, 255);
 pub const BAD = rgba(206, 96, 78, 255);
 
-fn fi(v: i32) f32 {
+pub fn fi(v: i32) f32 {
     return @floatFromInt(v);
 }
 
@@ -93,16 +93,16 @@ pub fn plate(x: i32, y: i32, w: i32, h: i32, a: u8) void {
     rl.drawRectangleGradientH(x + w - es, y, es, h, withAlpha(rl.Color.black, 0), withAlpha(rl.Color.black, ea));
 }
 
-fn rectF(x: i32, y: i32, w: i32, h: i32) rl.Rectangle {
+pub fn rect(x: i32, y: i32, w: i32, h: i32) rl.Rectangle {
     return .{ .x = fi(x), .y = fi(y), .width = fi(w), .height = fi(h) };
 }
 
 /// The gilt frame: hard outer edge, tarnished band, inner hairline, jewelled
 /// corners — with the corner brackets gated off small surfaces.
 pub fn frame(x: i32, y: i32, w: i32, h: i32, a: u8) void {
-    rl.drawRectangleLinesEx(rectF(x, y, w, h), 1, withAlpha(INK, 235));
-    rl.drawRectangleLinesEx(rectF(x + 2, y + 2, w - 4, h - 4), 2, withAlpha(GILT_DIM, a));
-    rl.drawRectangleLinesEx(rectF(x + 6, y + 6, w - 12, h - 12), 1, withAlpha(GILT, @intCast(@as(u16, a) * 100 / 255)));
+    rl.drawRectangleLinesEx(rect(x, y, w, h), 1, withAlpha(INK, 235));
+    rl.drawRectangleLinesEx(rect(x + 2, y + 2, w - 4, h - 4), 2, withAlpha(GILT_DIM, a));
+    rl.drawRectangleLinesEx(rect(x + 6, y + 6, w - 12, h - 12), 1, withAlpha(GILT, @intCast(@as(u16, a) * 100 / 255)));
     if (w < 130 or h < 70) {
         cornerJewels(x + 3, y + 3, w - 6, h - 6, 2.6, withAlpha(GILT, a));
         return;
@@ -188,7 +188,7 @@ pub fn socket(x: i32, y: i32, w: i32, h: i32, on: bool) void {
 }
 
 pub fn socketRim(x: i32, y: i32, w: i32, h: i32, on: bool) void {
-    rl.drawRectangleLinesEx(rectF(x, y, w, h), 1, if (on) SLOT_ON else SLOT_OFF);
+    rl.drawRectangleLinesEx(rect(x, y, w, h), 1, if (on) SLOT_ON else SLOT_OFF);
 }
 
 /// A socket with its warm inner glow and jewels — the whole fitting, for callers with nothing to add.
@@ -245,7 +245,7 @@ const ROW_WASH = rgba(255, 232, 170, 23);
 pub fn rowHilite(x: i32, y: i32, w: i32, h: i32) void {
     rl.drawRectangle(x, y, w, h, ROW_WASH);
     rl.drawRectangle(x, y, 3, h, withAlpha(GILT_BRIGHT, flick(230, y)));
-    sheen(rectF(x, y, w, h), 3.8, 24);
+    sheen(rect(x, y, w, h), 3.8, 24);
 }
 
 /// The scroll rail beside a grid or a list — a track and a nub, so a page that continues says so.

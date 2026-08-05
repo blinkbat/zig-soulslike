@@ -368,6 +368,17 @@ pub fn runesDropped(foes: anytype, per: u32) u32 {
     return n;
 }
 
+/// …and the same for a group whose members are ROLES OF ONE CREATURE, where the payout is the MEMBER'S
+/// (`runeValue`) rather than one number for the kind. Three byte-identical copies of this body sat in
+/// kobold/brood/warrior — the one-line-delegate rule `resetGroup`/`drawGroup` already give the rest.
+pub fn runesEach(foes: anytype) u32 {
+    var n: u32 = 0;
+    for (foes) |*f| {
+        if (f.justDied) n += f.runeValue();
+    }
+    return n;
+}
+
 pub fn aliveCount(foes: anytype) u32 {
     var n: u32 = 0;
     for (foes) |*f| {

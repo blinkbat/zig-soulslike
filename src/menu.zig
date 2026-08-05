@@ -448,9 +448,6 @@ pub const Menu = struct {
             if (card.gauges) |g| {
                 if (i < g.len) drawGauge(cx + cardW - 40 - 130, y + @divTrunc(fontSize, 2) - 3, 130, 10, g[i], selected);
             }
-            if (card.values) |v| {
-                if (i < v.len) hud.text(v[i], cx + cardW - 40 - hud.textW(v[i], fontSize), y, fontSize, col);
-            }
         }
         if (card.note) |n| {
             if (n.len > 0) {
@@ -463,10 +460,9 @@ pub const Menu = struct {
     }
 };
 
-/// The optional columns a card can carry: a GAUGE per row (the two slider screens), a right-aligned VALUE per row (the character sheet), and a footnote about whichever row the cursor is on. A slice shorter than the row list simply leaves the tail bare, which is how Back gets no number.
+/// The optional columns a card can carry: a GAUGE per row (the two slider screens) and a footnote about whichever row the cursor is on. A slice shorter than the row list simply leaves the tail bare, which is how Back gets no gauge.
 const Card = struct {
     gauges: ?[]const f32 = null,
-    values: ?[]const [:0]const u8 = null,
     note: ?[:0]const u8 = null,
 };
 

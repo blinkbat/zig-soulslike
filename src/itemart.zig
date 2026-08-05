@@ -31,6 +31,12 @@ pub const GLASS_LIT = rgba(238, 236, 230, 255);
 pub const CORD = rgba(158, 142, 108, 255); // the tie round its neck, and the bow's own wrap
 pub const FIRE = rgba(255, 158, 62, 255);
 const FIRE_DIM = rgba(226, 108, 30, 150);
+/// THE CHAOS VIOLET — the wand's stone and the bolt in the sorcery slot, and the same element the world
+/// draws in `hero.CHAOS_MOTE`. Brighter here because these are LITERAL screen values (the HUD draws after
+/// the retro blit, outside the scene shader), where the mesh's are albedo the shader's hot key lifts.
+pub const CHAOS = rgba(178, 92, 224, 255);
+const CHAOS_LT = rgba(226, 182, 252, 255);
+const CHAOS_DK = rgba(96, 40, 132, 255);
 const BOWWOOD = rgba(96, 68, 44, 255);
 const BOWWOOD_LT = rgba(140, 102, 66, 255); // the lit BACK of a limb — a bow has a front and a back
 const BOWNOCK = rgba(196, 188, 168, 255); // the horn nock the string sits in
@@ -397,6 +403,78 @@ pub fn shield(cx: f32, cy: f32, px: f32) void {
     rl.drawCircleV(v2(bx, by), br, STEEL_DK);
     rl.drawCircleV(v2(bx - 0.6 * k, by - 0.7 * k), br - 2.0 * k, STEEL);
     rl.drawCircleV(v2(bx - 1.5 * k, by - 1.7 * k), br * 0.30, uiart.CATCH);
+}
+
+/// THE WAND — the rod on the diagonal every other armament here uses, with the stone at its high end.
+/// The stone is drawn as a LIT CORE inside a cooler shell, which is the flask's trick for the flask's
+/// reason: there is no clipping in this set, so anything that glows has to be built out of stacked shapes
+/// rather than out of a gradient.
+pub fn wand(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x7A4D91);
+    const u = 0.70711;
+    const d = s * 0.36;
+    // NOTHING DEAD IS STRAIGHT — the rod is three lengths with a knee in each, not one line.
+    const butt = v2(cx + u * d, cy + u * d);
+    const head = v2(cx - u * d * 1.02, cy - u * d * 1.02);
+    const kneeA = onAxis(butt, head, 0.36, s * rng.range(0.014, 0.026));
+    const kneeB = onAxis(butt, head, 0.70, s * rng.range(-0.024, -0.012));
+    rl.drawLineEx(v2(butt.x + 0.9 * k, butt.y + 1.1 * k), v2(head.x + 0.9 * k, head.y + 1.1 * k), 3.4 * k, rgba(0, 0, 0, 120));
+    rl.drawLineEx(butt, kneeA, 3.6 * k, GRIP);
+    rl.drawLineEx(kneeA, kneeB, 3.0 * k, BOWWOOD);
+    rl.drawLineEx(kneeB, head, 2.4 * k, BOWWOOD);
+    // the lit BACK of the rod, the bow limb's own read
+    rl.drawLineEx(onAxis(butt, kneeA, 0.2, -1.1 * k), onAxis(kneeB, head, 0.7, -0.9 * k), 0.8 * k, BOWWOOD_LT);
+    // THE BOUND GRIP: uneven turns of cord over the butt end.
+    for ([_]f32{ rng.range(0.06, 0.14), rng.range(0.19, 0.27), rng.range(0.30, 0.36) }) |f| {
+        const p = onAxis(butt, head, f, 0);
+        rl.drawLineEx(v2(p.x - u * 2.4 * k, p.y + u * 2.4 * k), v2(p.x + u * 2.4 * k, p.y - u * 2.4 * k), 1.1 * k, CORD);
+    }
+    // The ferrule, then the claws, then the stone standing in them.
+    const neck = onAxis(butt, head, 0.80, 0);
+    rl.drawLineEx(onAxis(butt, head, 0.74, 0), neck, 3.8 * k, STEEL_DK);
+    const sr = s * 0.115;
+    for ([_]f32{ -1, 1 }) |side| {
+        rl.drawLineEx(neck, v2(head.x + side * u * sr * 0.95, head.y + side * u * sr * -0.95), 1.5 * k, STEEL_DK);
+    }
+    rl.drawCircleV(v2(head.x + 0.7 * k, head.y + 0.9 * k), sr, rgba(0, 0, 0, 140));
+    rl.drawCircleV(head, sr, CHAOS_DK); // the DARK tone at full size…
+    rl.drawCircleV(v2(head.x - 0.9 * k, head.y - 1.0 * k), sr - 1.8 * k, CHAOS); // …with the lit fill inset up-left inside it
+    rl.drawCircleV(v2(head.x - 1.5 * k, head.y - 1.7 * k), sr * 0.34, CHAOS_LT);
+    rl.drawCircleV(v2(head.x - 1.9 * k, head.y - 2.1 * k), sr * 0.15, uiart.CATCH);
+}
+
+/// THE SPELL in the cross's sorcery slot — the BOLT itself, because what that slot holds is a thing you
+/// throw and not a book you own. A hot core, a violet halo and three tongues streaming back off it, the
+/// fire arrow's own construction: the streak is what says which way it is going.
+pub fn spell(cx: f32, cy: f32, px: f32, on: bool) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x3C0BA1);
+    const a: u8 = if (on) 255 else 120;
+    const halo = rgba(CHAOS.r, CHAOS.g, CHAOS.b, if (on) 90 else 45);
+    const shell = rgba(CHAOS_DK.r, CHAOS_DK.g, CHAOS_DK.b, a);
+    const core = rgba(CHAOS_LT.r, CHAOS_LT.g, CHAOS_LT.b, a);
+    const head = v2(cx + s * 0.13, cy - s * 0.04);
+    const r = s * 0.135;
+    // The tongues first, so the head sits on top of them rather than being cut by them.
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) {
+        const off = (@as(f32, @floatFromInt(i)) - 1.0);
+        const lead: f32 = if (off == 0) 1.25 else 0.85; // the middle tongue is the long one
+        const reach = r * rng.range(2.1, 3.4) * lead;
+        rl.drawTriangle(
+            v2(head.x - reach, head.y + off * r * 0.95 + rng.range(-1.0, 1.0) * k),
+            v2(head.x, head.y - r * 0.52),
+            v2(head.x, head.y + r * 0.52),
+            if (off == 0) rgba(CHAOS.r, CHAOS.g, CHAOS.b, a) else halo,
+        );
+    }
+    rl.drawCircleV(head, r * 1.42, halo);
+    rl.drawCircleV(head, r, shell);
+    rl.drawCircleV(v2(head.x - 0.7 * k, head.y - 0.9 * k), r * 0.58, core);
+    rl.drawCircleV(v2(head.x - 1.2 * k, head.y - 1.5 * k), r * 0.22, if (on) uiart.CATCH else rgba(255, 255, 255, 110));
 }
 
 /// `on` is a quiver that has something in it — a spent one draws the same shaft, greyed.

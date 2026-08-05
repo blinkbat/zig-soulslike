@@ -30,7 +30,7 @@ const MAX_PROPS = 24576;
 const MAX_SOLIDS = 8192;
 const MAX_SOLID_REFS = 4 * MAX_SOLIDS; // a long solid's bbox spans several cells, one ref each
 const MAX_LIGHTS = 192; // fires in the world; gfx.MAX_LIGHTS of them reach the GPU per frame
-const MAX_VEILS = 64;
+const MAX_DRESSED = 64; // instances carrying a veil and/or a stow — see Env.dressItems
 
 // CELL is a compromise: small enough to be a meaningful cull unit, large enough that walking every cell per pass stays trivial. 40 a side = 640 m, covering a 280 m map's cliff ring (286 + 18 of cliff bound) with room over — the arrays are BSS and the per-frame cost is one loop of four plane tests, so 1,600 cells is not measurable next to the prop work it saves.
 const CELL: f32 = 16.0;
@@ -215,8 +215,11 @@ pub const Env = struct {
     veils: [props.NK]?rl.Model = [_]?rl.Model{null} ** props.NK,
     stows: [props.NK]?rl.Model = [_]?rl.Model{null} ** props.NK,
     stowed: bool = false,
-    veilItems: [MAX_VEILS]u32 = undefined,
-    nveils: usize = 0,
+    /// Every instance carrying a SECOND mesh — a veil, a stow, or both. One list, because keying the
+    /// stow pass off the veil list made "has a stow" mean "has a veil": a kind given one without the
+    /// other would silently never draw it. Both draw loops skip a prop that lacks the mesh they want.
+    dressItems: [MAX_DRESSED]u32 = undefined,
+    ndress: usize = 0,
     chestItems: [chestmod.CAP]u32 = undefined,
     nchests: usize = 0,
     restItems: [restmod.CAP]u32 = undefined,
@@ -278,7 +281,7 @@ pub const Env = struct {
         // and every count this struct keeps has to be said HERE — an undefined `noccl` hands the mark
         // list heap garbage to index with on the first frame.
         self.noccl = 0;
-        self.nveils = 0;
+        self.ndress = 0;
         self.nchests = 0;
         self.nrests = 0;
         self.stat_draws = 0;
@@ -981,7 +984,7 @@ pub const Env = struct {
 
     fn drawStows(self: *Env, cull: Cull) void {
         if (self.stowed) return;
-        for (self.veilItems[0..self.nveils]) |pi| {
+        for (self.dressItems[0..self.ndress]) |pi| {
             const pr = &self.props[pi];
             const mdl = self.stows[@intFromEnum(pr.kind)] orelse continue;
             const nfo = props.info(pr.kind);
@@ -1041,13 +1044,14 @@ pub const Env = struct {
 
     /// THE VEILS — today the bonfire's smoke column, and it must come after EVERY opaque pass.
     pub fn drawVeils(self: *Env, view: *const View) void {
-        for (self.veilItems[0..self.nveils]) |pi| {
+        for (self.dressItems[0..self.ndress]) |pi| {
             const pr = &self.props[pi];
+            const mdl = self.veils[@intFromEnum(pr.kind)] orelse continue;
             const nfo = props.info(pr.kind);
             if (!view.visible(pr.pos, nfo.bound * pr.scale, nfo.view)) continue;
             self.stat_draws += 1;
             const sc = v3(pr.scale, pr.scale, pr.scale);
-            rl.drawModelEx(self.veils[@intFromEnum(pr.kind)].?, pr.pos, v3(0, 1, 0), pr.yaw, sc, rl.Color.white);
+            rl.drawModelEx(mdl, pr.pos, v3(0, 1, 0), pr.yaw, sc, rl.Color.white);
         }
     }
 
@@ -1625,14 +1629,15 @@ const SolidCells = struct {
 fn indexProps(e: *Env) void {
     fillIndex(e, &e.stx, false);
     fillIndex(e, &e.flx, true);
-    e.nveils = 0;
+    e.ndress = 0;
     e.nchests = 0;
     e.nrests = 0;
     for (e.props[0..e.nprops], 0..) |*pr, pi| {
         const i: u32 = @intCast(pi);
-        if (props.info(pr.kind).veil != null and e.nveils < MAX_VEILS) {
-            e.veilItems[e.nveils] = i;
-            e.nveils += 1;
+        const nfo = props.info(pr.kind);
+        if ((nfo.veil != null or nfo.stow != null) and e.ndress < MAX_DRESSED) {
+            e.dressItems[e.ndress] = i;
+            e.ndress += 1;
         }
         if (pr.kind == .chest and e.nchests < chestmod.CAP) {
             e.chestItems[e.nchests] = i;
@@ -2115,11 +2120,11 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(solids0, e.solidCount());
     try std.testing.expectEqual(lights0, e.lightCount());
 
-    try std.testing.expectEqual(@as(usize, 17202), props0);
-    try std.testing.expectEqual(@as(usize, 1801), solids0);
-    // 37, not 40: the map's three `campfire`s are the EXTINGUISHED kind now and carry no light. Swap
-    // one to `campfire_lit` in the editor and this goes back up by one — and gains a rest site with it.
-    try std.testing.expectEqual(@as(usize, 37), lights0);
+    try std.testing.expectEqual(@as(usize, 17272), props0);
+    try std.testing.expectEqual(@as(usize, 1819), solids0);
+    // The map's three `campfire`s are the EXTINGUISHED kind and carry no light. Swap one to
+    // `campfire_lit` in the editor and this goes up by one — and gains a rest site with it.
+    try std.testing.expectEqual(@as(usize, 42), lights0);
 
     var jerky: usize = 0;
     var chestOps: usize = 0;

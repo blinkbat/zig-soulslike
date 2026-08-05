@@ -29,9 +29,7 @@ pub const ACTIVE_FILL = rgba(96, 74, 40, 235);
 pub const IDLE_FILL = rgba(26, 22, 18, 228);
 pub const HOVER_FILL = rgba(42, 34, 26, 235);
 
-pub fn alpha(c: rl.Color, a: u8) rl.Color {
-    return rgba(c.r, c.g, c.b, a);
-}
+pub const alpha = mathx.withAlpha;
 
 /// Literal screen colour, for the one-off swatches the editor mixes (minimap soil, op dots).
 pub const col = rgba;
@@ -85,9 +83,7 @@ pub const Ctx = struct {
     }
 };
 
-pub fn rect(x: i32, y: i32, w: i32, h: i32) rl.Rectangle {
-    return .{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = @floatFromInt(w), .height = @floatFromInt(h) };
-}
+pub const rect = uiart.rect;
 
 pub fn tipFor(ctx: *Ctx, r: rl.Rectangle, text: [:0]const u8) void {
     if (rl.checkCollisionPointRec(ctx.mouse, r)) ctx.setTip(text);

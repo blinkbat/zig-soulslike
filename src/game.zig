@@ -759,7 +759,10 @@ fn tickTriggers(g: *Game, dt: f32) void {
     const want = g.trig.tick(&g.map, triggerWorld(g), dt, g.talk.active() or g.rest.active()) orelse return;
     // NO SPEAKER: nobody is standing in front of him, so the panel is named by the node's own `who:` or by
     // nothing at all. A dialog id in the header would be a debug string on screen.
-    _ = g.talk.open(&g.map, &g.trig, want, "", null);
+    // A REFUSED OPEN IS A CONVERSATION THAT CLOSED AT ONCE. The machine latched the trigger behind the dialog
+    // the moment it handed the id up, and only a close lets go — so a tree with no nodes would otherwise wedge
+    // the rest of that action list for the session, silently.
+    if (!g.talk.open(&g.map, &g.trig, want, "", null)) g.trig.dialogClosed();
 }
 
 /// SPEAK TO WHOEVER IS IN REACH. Refused — and the prompt is not offered — when the map gave him no

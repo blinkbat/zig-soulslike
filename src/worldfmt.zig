@@ -322,8 +322,8 @@ pub const CondKind = enum(u8) {
     timer,
     /// Seconds since the world loaded — SC1's Elapsed Time.
     elapsed,
-    /// SC1's Bring: the hero inside a rect. LATCHES on the rising edge, so several conditions of one
-    /// trigger can come true on different frames and still meet.
+    /// SC1's Bring: the hero inside a rect, LIVE — true while he stands in it and false the moment he
+    /// leaves. Two conditions that come true at different moments are what the `flag` switches are for.
     region,
     /// The hero within `r` of NPC `slot`.
     near,
@@ -797,10 +797,10 @@ pub const Map = struct {
         return intern(&self.flagNames, &self.nflags, name, ParseError.TooManyFlags);
     }
     pub fn internCounter(self: *Map, name: []const u8) !u16 {
-        return intern(&self.counterNames, &self.ncounters, name, ParseError.TooManyFlags);
+        return intern(&self.counterNames, &self.ncounters, name, ParseError.TooManyCounters);
     }
     pub fn internTimer(self: *Map, name: []const u8) !u16 {
-        return intern(&self.timerNames, &self.ntimers, name, ParseError.TooManyFlags);
+        return intern(&self.timerNames, &self.ntimers, name, ParseError.TooManyTimers);
     }
 
     /// …and the read-only side of the same tables, for a debug readout and for tests.
@@ -1302,6 +1302,8 @@ pub const ParseError = error{
     TooManyChoices,
     TooManyGates,
     TooManyFlags,
+    TooManyCounters,
+    TooManyTimers,
     TextFull,
     /// A `when:`/`do:` with no `trig:` above it, a `say:` with no `node:`, a `need:` with no `ask:`.
     NoOwner,
@@ -2014,12 +2016,29 @@ fn trim(s: []const u8) []const u8 {
 }
 
 
-const SCRIPT_HEAD =
+/// THE SMALLEST MAP THAT LOADS — a version, a zone and the `cover` op `parse` insists on. Lives here rather
+/// than in each script test's own file: three byte-identical copies of it sat in worldfmt/trigger/dialog, so a
+/// change to what a minimal map must carry broke two of them and nobody knew which.
+pub const TEST_HEAD =
     \\version: 1
     \\zone: plain -4000 -4000 4000 4000 0.7 grasstall
     \\cover: 3.3 0.72 1.38 seed=1
     \\
 ;
+const SCRIPT_HEAD = TEST_HEAD;
+
+/// …and the parse behind it, reporting the LINE a failure landed on. The caller owns the `Map` (it is far too
+/// big for a stack frame) and destroys it.
+pub fn testMap(alloc: std.mem.Allocator, text: []const u8) !*Map {
+    const m = try alloc.create(Map);
+    errdefer alloc.destroy(m);
+    var line: usize = 0;
+    parse(text, m, &line) catch |e| {
+        std.debug.print("test map failed at line {d}: {s}\n", .{ line, @errorName(e) });
+        return e;
+    };
+    return m;
+}
 
 /// Every record and every condition/action kind the script layer has, so a new one that forgets its writer or
 /// its parser fails HERE rather than the first time somebody authors it.

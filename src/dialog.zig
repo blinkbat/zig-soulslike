@@ -23,8 +23,12 @@ const rgba = mathx.rgba;
 // **YOU MAY NOT WALK OUT MID-SENTENCE.** There is no cancel: a conversation is left through one of its own
 // endings, which is what lets `talked` mean "has heard this" rather than "has seen the first line of it".
 
-/// How long the panel takes to come up.
+/// How long the panel takes to come up…
 const RAISE: f32 = 0.14;
+/// …and how far it slides through on the way, in px.
+const RAISE_LIFT: f32 = 40.0;
+/// The plate's own opacity at full raise.
+const PLATE_A: f32 = 235.0;
 
 const SIDE_MARGIN: i32 = 54;
 const BOTTOM_MARGIN: i32 = 44;
@@ -63,8 +67,7 @@ pub const Session = struct {
     /// Who the panel names when a node does not say (`who:`).
     speaker: [wf.ID_CAP * 2]u8 = undefined,
     speakerLen: usize = 0,
-    /// EDGES, true for exactly the frame the transition happens on (`rest.justEntered`'s pattern).
-    justOpened: bool = false,
+    /// An EDGE, true for exactly the frame the conversation ends on (`rest.justLeft`'s pattern).
     justClosed: bool = false,
     /// …and WHICH conversation closed, since `dlg` is already back to nothing by then.
     closed: u16 = wf.NO_DIALOG,
@@ -92,7 +95,7 @@ pub const Session = struct {
     pub fn open(self: *Session, m: *const wf.Map, rt: *trigger.Runtime, dlg: u16, who: []const u8, npc: ?usize) bool {
         const d = m.dialogAt(dlg) orelse return false;
         if (d.nnodes == 0) return false;
-        self.* = .{ .dlg = dlg, .node = d.node0, .npc = npc, .justOpened = true };
+        self.* = .{ .dlg = dlg, .node = d.node0, .npc = npc };
         self.setSpeaker(who);
         self.enter(m, rt);
         return true;
@@ -125,7 +128,6 @@ pub const Session = struct {
     }
 
     pub fn update(self: *Session, m: *const wf.Map, rt: *trigger.Runtime, w: trigger.World, dt: f32, in: Input) void {
-        self.justOpened = false;
         self.justClosed = false;
         if (!self.active()) return;
         self.t += dt;
@@ -225,9 +227,9 @@ pub const Session = struct {
         const hpx = @min(need, capH);
         // It RISES: the panel slides up into place rather than appearing, which is what says a conversation
         // began rather than the frame changing.
-        const lift = @as(i32, @intFromFloat((1.0 - k) * 40.0));
+        const lift = @as(i32, @intFromFloat((1.0 - k) * RAISE_LIFT));
         const y = sh - BOTTOM_MARGIN - hpx + lift;
-        const a: u8 = @intFromFloat(235.0 * k);
+        const a: u8 = @intFromFloat(PLATE_A * k);
         uiart.plate(x, y, wpx, hpx, a);
         uiart.frame(x, y, wpx, hpx, a);
 
@@ -243,12 +245,16 @@ pub const Session = struct {
             cy += RULE_GAP;
         }
 
+        // THE FOOTER IS THE FLOOR EVERYTHING INSIDE THE PLATE IS MEASURED AGAINST — the prose as much as the
+        // rows. `need` asked for the height it wanted and `MAX_FRAC` may have refused it on a short window, and
+        // a line that will not fit is not drawn OUTSIDE the plate.
+        const footer = y + hpx - PAD - hud.lineH(hud.HINT);
         for (lines) |ln| {
+            if (cy + bodyH > footer) break;
             hud.text(ln, innerX, cy, hud.BODY, TEXT);
             cy += bodyH;
         }
 
-        const footer = y + hpx - PAD - hud.lineH(hud.HINT);
         if (shown.len > 0) {
             cy += RULE_GAP;
             uiart.divider(midX, cy, halfW, a);
@@ -288,23 +294,8 @@ fn zterm(buf: []u8, s: []const u8) [:0]const u8 {
 }
 
 
-fn testMap(alloc: std.mem.Allocator, text: []const u8) !*wf.Map {
-    const m = try alloc.create(wf.Map);
-    errdefer alloc.destroy(m);
-    var line: usize = 0;
-    wf.parse(text, m, &line) catch |e| {
-        std.debug.print("dialog test map failed at line {d}: {s}\n", .{ line, @errorName(e) });
-        return e;
-    };
-    return m;
-}
-
-const HEAD =
-    \\version: 1
-    \\zone: plain -4000 -4000 4000 4000 0.7 grasstall
-    \\cover: 3.3 0.72 1.38 seed=1
-    \\
-;
+const testMap = wf.testMap;
+const HEAD = wf.TEST_HEAD;
 
 const TREE = HEAD ++
     \\dlg: hunter

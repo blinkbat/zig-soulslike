@@ -43,12 +43,15 @@ pub fn pushOutCircle(p: rl.Vector3, pr: f32, c: rl.Vector3, cr: f32) rl.Vector3 
     return pushOut(p, pr, .{ .a = c, .b = c, .r = cr });
 }
 
+/// THE SECOND PASS IS WHAT SETTLES A BODY PUSHED OUT OF ONE SOLID AND INTO THE NEXT — and it is only ever
+/// worth anything if the FIRST one moved him. `pushOut` returns its input untouched when nothing overlapped, so
+/// on a frame he is standing clear the second sweep is bit-for-bit a no-op over every capsule in his cells: up
+/// to `env.MAX_NEAR` closest-point-on-segment tests, per actor, per frame, for nothing.
 pub fn resolve(p: rl.Vector3, pr: f32, solids: []const Solid) rl.Vector3 {
     var out = p;
-    var pass: u32 = 0;
-    while (pass < 2) : (pass += 1) {
-        for (solids) |s| out = pushOut(out, pr, s);
-    }
+    for (solids) |s| out = pushOut(out, pr, s);
+    if (out.x == p.x and out.z == p.z) return out;
+    for (solids) |s| out = pushOut(out, pr, s);
     return out;
 }
 
@@ -159,6 +162,18 @@ test "dead-centre push is finite and separates" {
     const s = circle(0, 0, 1.0);
     const out = pushOut(v3(0, 0, 0), 0.5, s);
     try std.testing.expect(std.math.isFinite(out.x) and out.x > 1.0);
+}
+
+test "resolve returns a clear actor UNTOUCHED, and pushes an overlapping one out of everything" {
+    const world = [_]Solid{ circle(0, 0, 1.0), capsule(-6, 8, 6, 8, 0.5), circle(4, 0, 0.8) };
+    // Standing clear of all three: the same bits back, which is what makes skipping the second sweep free.
+    const p = v3(0, 0, -6);
+    const clear = resolve(p, 0.4, &world);
+    try std.testing.expectEqual(p.x, clear.x);
+    try std.testing.expectEqual(p.z, clear.z);
+    // …and overlapping one of them, he comes out clear of every one of them.
+    const out = resolve(v3(0.3, 0, 0.1), 0.4, &world);
+    for (world) |s| try std.testing.expect(!blocksPoint(out, -1e-3, s));
 }
 
 test "blocksPoint respects the blocking height: hits below the top, clears above it" {

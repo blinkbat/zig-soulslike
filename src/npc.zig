@@ -184,7 +184,6 @@ pub const Model = struct {
     bone: [N]rl.Mesh,
     /// HOOD UP and HOOD BACK — the one thing that makes two of these two different people.
     heads: [2]rl.Mesh,
-    staff: rl.Mesh,
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
@@ -211,9 +210,8 @@ pub const Model = struct {
         bone[SHR] = sleeveMesh();
         bone[ELR] = forearmMesh();
         bone[WRR] = handMesh();
-        const st = staffMesh();
-        bone[STAFF] = st;
-        return .{ .bone = bone, .heads = heads, .staff = st, .mat = mat };
+        bone[STAFF] = staffMesh();
+        return .{ .bone = bone, .heads = heads, .mat = mat };
     }
 
     pub fn setShader(self: *Model, sh: rl.Shader) void {
@@ -286,7 +284,9 @@ pub const Wanderer = struct {
             .rec = rec,
             .roamR = roam,
             .target = home,
-            .rng = mathx.Rng.init(@as(u64, @intFromFloat(seed * 65535.0)) ^ (@as(u64, rec) << 20) ^ 0x5EED),
+            // `@abs` for the same reason every rig's stream takes it (`foe.fxStream`): `seed` is a 0..1 dial the
+            // map bands, and a negative one reaching a u64 cast is illegal behaviour rather than an odd stream.
+            .rng = mathx.Rng.init(@as(u64, @intFromFloat(@abs(seed) * 65535.0)) ^ (@as(u64, rec) << 20) ^ 0x5EED),
         };
         // Each one starts somewhere else in its own idle, or a pair posted together breathes in unison.
         p.t = seed * 40.0;
@@ -422,7 +422,7 @@ pub const Wanderer = struct {
         // a centimetre into the ground and there is no foot IK behind it. A stoop is thoracic anyway — it lives
         // in the spine and the chest, which is where the whole of `lean` goes.
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul3(ry(prot), rz(list), rx(0)),
+            mul(ry(prot), rz(list)),
             mul(tr(sway * fs, (hipY + bob + listLift) * fs, 0), ry(facingDeg)),
             heromod.rootAt(self.pos),
         ));

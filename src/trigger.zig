@@ -32,6 +32,13 @@ pub const BANNER_CAP: usize = 120;
 
 const NFOE = @typeInfo(wf.FoeKind).@"enum".fields.len;
 
+comptime {
+    // `order` and `actAt` below are u8 cursors into the map's own tables. Tied to the caps here, or growing
+    // one of them past 256 turns `@intCast` into a runtime panic on a map that merely got bigger.
+    std.debug.assert(wf.MAX_TRIGGERS <= std.math.maxInt(u8) + 1);
+    std.debug.assert(wf.MAX_ACTS <= std.math.maxInt(u8) + 1);
+}
+
 /// What the conditions need to know about the world this frame. Handed IN, because the machine must not
 /// reach into the game to find a foe list — the same rule the creatures' `Leash` follows.
 pub const World = struct {
@@ -255,23 +262,8 @@ pub const Runtime = struct {
 };
 
 
-fn testMap(alloc: std.mem.Allocator, text: []const u8) !*wf.Map {
-    const m = try alloc.create(wf.Map);
-    errdefer alloc.destroy(m);
-    var line: usize = 0;
-    wf.parse(text, m, &line) catch |e| {
-        std.debug.print("trigger test map failed at line {d}: {s}\n", .{ line, @errorName(e) });
-        return e;
-    };
-    return m;
-}
-
-const HEAD =
-    \\version: 1
-    \\zone: plain -4000 -4000 4000 4000 0.7 grasstall
-    \\cover: 3.3 0.72 1.38 seed=1
-    \\
-;
+const testMap = wf.testMap;
+const HEAD = wf.TEST_HEAD;
 
 test "every condition must hold, and an empty when-list never fires" {
     const alloc = std.testing.allocator;

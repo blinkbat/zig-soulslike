@@ -51,6 +51,11 @@ const WEED_DK = rgba(74, 20, 24, 255);
 const CAP_DK = rgba(96, 58, 42, 255); // dried mushroom: the leathery outside…
 const CAP_LT = rgba(158, 108, 72, 255); // …and the pale torn flesh
 const SALT = rgba(226, 208, 176, 255);
+/// THE ROOTS' own three: dead wood, the blunt snap of pale heartwood where a tendril broke, and the earth it
+/// came up through. Darker than `BOWWOOD` — this is wood out of the ground, not a limb somebody oiled.
+const ROOT_BARK = rgba(64, 46, 32, 255);
+const ROOT_HEART = rgba(172, 148, 112, 255);
+const ROOT_SOIL = rgba(52, 40, 30, 255);
 
 /// THE BOX EVERY STROKE WAS TUNED IN. A picture drawn at `px` multiplies each weight by `px / TUNED_AT`.
 pub const TUNED_AT: f32 = 34.0;
@@ -468,6 +473,47 @@ pub fn spell(cx: f32, cy: f32, px: f32, on: bool) void {
     rl.drawCircleV(v2(head.x - 1.2 * k, head.y - 1.5 * k), r * 0.22, if (on) uiart.CATCH else rgba(255, 255, 255, 110));
 }
 
+/// THE ROOTS, the rod's other sorcery: dead wood coming up out of a broken ground line, lit at the tips with
+/// the spell's own violet. NOTHING ENDS IN A POINT — every tendril snaps off blunt — and nothing is straight
+/// or evenly spaced, or a rosette of spikes is what it reads as.
+pub fn roots(cx: f32, cy: f32, px: f32, on: bool) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x600751);
+    const a: u8 = if (on) 255 else 120;
+    const bark = rgba(ROOT_BARK.r, ROOT_BARK.g, ROOT_BARK.b, a);
+    const heart = rgba(ROOT_HEART.r, ROOT_HEART.g, ROOT_HEART.b, a);
+    const lit = rgba(CHAOS.r, CHAOS.g, CHAOS.b, if (on) 210 else 90);
+    const halo = rgba(CHAOS.r, CHAOS.g, CHAOS.b, if (on) 70 else 30);
+    const soil = cy + s * 0.22; // the ground the things are coming through
+    // FIVE, at uneven spacings and uneven heights: a fan of equal tendrils is a garden rake.
+    var i: u32 = 0;
+    while (i < 5) : (i += 1) {
+        const t = (@as(f32, @floatFromInt(i)) + rng.range(-0.22, 0.22)) / 4.0 - 0.5;
+        const foot = v2(cx + t * s * 0.62, soil + rng.range(-0.02, 0.02) * s);
+        const rise = s * rng.range(0.20, 0.40);
+        const lean = rng.range(-0.34, 0.34) * s * 0.5;
+        // Two segments with a KNEE, so it leaves the earth on one line and carries on off it — a single
+        // straight run to the tip is the spear this law exists to forbid.
+        const knee = v2(foot.x + lean * 0.35, foot.y - rise * 0.55);
+        const tip = v2(knee.x + lean, knee.y - rise * 0.45);
+        const w = rng.range(2.2, 3.1) * k;
+        rl.drawLineEx(foot, knee, w, bark);
+        rl.drawLineEx(knee, tip, w * 0.72, bark);
+        rl.drawCircleV(tip, w * 0.44, heart); // the blunt snap of pale heartwood
+        rl.drawCircleV(tip, w * 1.15, halo);
+        rl.drawCircleV(tip, w * 0.30, lit);
+    }
+    // The broken ground itself, drawn OVER the feet so the tendrils read as coming through it.
+    const soilCol = rgba(ROOT_SOIL.r, ROOT_SOIL.g, ROOT_SOIL.b, a);
+    rl.drawLineEx(v2(cx - s * 0.36, soil), v2(cx + s * 0.36, soil), 2.4 * k, soilCol);
+    var j: u32 = 0;
+    while (j < 4) : (j += 1) {
+        const x = cx + rng.range(-0.32, 0.32) * s;
+        rl.drawCircleV(v2(x, soil + rng.range(-0.4, 1.2) * k), rng.range(0.8, 1.7) * k, soilCol);
+    }
+}
+
 /// `on` is a quiver that has something in it — a spent one draws the same shaft, greyed.
 pub fn arrow(cx: f32, cy: f32, px: f32, on: bool, fire: bool) void {
     const s = px;
@@ -616,8 +662,7 @@ fn smithingStone(cx: f32, cy: f32, px: f32) void {
         rl.drawLineEx(a, b, 0.9 * k, rgba(STONE.r, STONE.g, STONE.b, 200)); // the fracture edge
     }
     // ONE facet struck bright, and the cold spark off it — the reason a smith wants the thing.
-    const lit = rng.range(0, N - 1);
-    const li: usize = @intFromFloat(lit);
+    const li: usize = @intCast(rng.intn(N));
     quad(pts[li], pts[(li + 1) % N], core, core, rgba(STONE_LT.r, STONE_LT.g, STONE_LT.b, 235));
     const sp = v2((pts[li].x + core.x) * 0.5, (pts[li].y + core.y) * 0.5);
     rl.drawCircleV(sp, 1.6 * k, rgba(SPARK.r, SPARK.g, SPARK.b, 200));

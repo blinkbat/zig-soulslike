@@ -568,6 +568,38 @@ pub fn runShots(g: *Game) void {
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
         shootClear(g, "shots/20zg_wand_hud_dry.png", LIT_YAW + 150, 0.18, 4.6);
+
+        // THE ROOTS — the rod's other sorcery. Same rod, same sweep, and what changes is what comes out of the
+        // ground `ROOT_THROW` metres down his facing. The mark is DERIVED (`castRootsForShot` hands it back)
+        // rather than written out here, or a retune of the throw distance photographs bare earth.
+        g.hero.fp.cur = g.hero.fp.max; // the dry-HUD shot above emptied him
+        g.hero.fpRefused = 0;
+        must(g.hero.cycleSpell(), "the rod would not change spell");
+        // The cross with ROOTS in the sorcery slot, before anything is cast — the picture has to differ.
+        g.hero.update(dt, 0, 0, null);
+        g.hero.pose();
+        shootClear(g, "shots/20zg2_roots_hud.png", LIT_YAW + 150, 0.18, 4.6);
+        stagedCast(g);
+        castToThrow(g, dt);
+        const rootsAt = game.castRootsForShot(g);
+        // The eruption itself, on the frame the earth goes up.
+        shootPortrait(g, "shots/20zg3_roots_erupt.png", rootsAt, LIT_YAW, 0.10, 5.5);
+        // …and once they are FULLY UP, which is the only frame the tendrils' shape can be judged on: at the
+        // throw they are still scaling out of the dirt. Stepped through `update`, since the sites are aged in
+        // the shared prologue and a cast that has ended stops calling `updateCast`.
+        k = 0;
+        while (k < 26) : (k += 1) {
+            if (g.hero.casting) g.hero.updateCast(dt, null) else g.hero.update(dt, 0, 0, null);
+            g.hero.pose();
+        }
+        shootPortrait(g, "shots/20zg4_roots_stand.png", rootsAt, LIT_YAW, 0.09, 4.2);
+        // Thin geometry needs a CROP (AGENTS.md): a tendril is ~4 cm through, so at 1:1 the blunt tip and the
+        // side stubs are two pixels each and "it reads as spikes" cannot be judged from the wide shot.
+        shootPortrait(g, "shots/20zg5_roots_crop.png", v3(rootsAt.x, rootsAt.y + 0.45, rootsAt.z), LIT_YAW + 34, 0.06, 1.9);
+        // Down on the deck, where the split ground meets the tendrils — the read that says they came THROUGH it.
+        shootPortrait(g, "shots/20zg6_roots_low.png", v3(rootsAt.x, rootsAt.y + 0.25, rootsAt.z), LIT_YAW - 40, 0.02, 3.0);
+        while (g.hero.casting) g.hero.updateCast(dt, null);
+        must(g.hero.cycleSpell(), "the rod would not change back"); // …and the block below expects the bolt
         // Walking, at two points HALF A STRIDE apart: one frame cannot show that the carry damps the arm's swing
         // without welding it. LAST in the block, because `stepWorld` forces travel down −Z and takes the lit
         // facing every shot above depends on. Started at z=6 rather than the gait block's z=26 — that end of the

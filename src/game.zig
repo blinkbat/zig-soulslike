@@ -60,6 +60,9 @@ const SHAKE_KILL = 0.26;
 /// The bolt LEAVING — the one shake here fired by something that has not hit anything, so it sits under the
 /// lightest one that has.
 const SHAKE_CAST = 0.07;
+/// …and the ROOTS closing on something. The ground splitting under a body is heavier than a stone leaving a
+/// rod, and lighter than the blow it is buying you: it holds, it does not hit.
+const SHAKE_ROOTS_BITE = 0.20;
 const SHAKE_HURT = 0.42;
 const SHAKE_HURT_HEAVY = 0.62;
 // A CAUGHT blow cracks the frame less than one that lands — he HELD, and the shake says so.
@@ -221,6 +224,11 @@ pub const Game = struct {
 const FoeGroup = struct {
     field: []const u8,
     kind: ?FoeKind,
+    /// The widest range anything in this group notices him at — what `SIGHT_R` is folded from. No default,
+    /// so a seventh group cannot be added without saying how far it sees: as a hand-written list of six
+    /// modules beside a table of six rows, the two drifted the moment one grew and the new group's members
+    /// quietly stopped being asked `markSight` at all.
+    aggro: f32,
     /// Shouldered by the HERO. The ogre is not: he is too big to be walked out of the way.
     vsHero: bool = true,
     /// …and by the members of these OTHER groups. DELIBERATELY ONE-WAY — the group named here yields to
@@ -228,12 +236,12 @@ const FoeGroup = struct {
     vs: []const []const u8 = &.{},
 };
 const FOE_GROUPS = [_]FoeGroup{
-    .{ .field = "warren", .kind = .toad },
-    .{ .field = "line", .kind = .archer, .vs = &.{"warren"} },
-    .{ .field = "grief", .kind = .ogre, .vsHero = false },
-    .{ .field = "band", .kind = null },
-    .{ .field = "brood", .kind = null },
-    .{ .field = "muster", .kind = null, .vs = &.{"line"} },
+    .{ .field = "warren", .kind = .toad, .aggro = frogmod.AGGRO_R },
+    .{ .field = "line", .kind = .archer, .aggro = archermod.AGGRO_R, .vs = &.{"warren"} },
+    .{ .field = "grief", .kind = .ogre, .aggro = ogremod.AGGRO_R, .vsHero = false },
+    .{ .field = "band", .kind = null, .aggro = koboldmod.AGGRO_R },
+    .{ .field = "brood", .kind = null, .aggro = broodmod.AGGRO_R },
+    .{ .field = "muster", .kind = null, .aggro = warriormod.AGGRO_R, .vs = &.{"line"} },
 };
 
 /// Whether a re-homed field starts with EYES on the hero. A freshly loaded world is `.blind` — a foe behind a
@@ -570,12 +578,20 @@ pub fn flyingPointForShot(g: *Game, kind: archermod.Shot) ?rl.Vector3 {
     return null;
 }
 
+/// ONE FRAME OF FLIGHT for one thing thrown AT him, and the ONE place `stepArrow`'s six arguments are
+/// gathered. The loop and the shot harness both step this pool, and transcribed at each of them a seventh
+/// argument reaches only one — which is a harness photographing ballistics the game does not have.
+fn flyArrow(g: *Game, ar: *archermod.Arrow, dt: f32) void {
+    ar.hit = false;
+    // The GROUND under the shaft, so it plants in a hillside instead of diving through it to find y = 0 — and the hero's centre measured from HIS ground, not from the datum, or an archer shooting up a bank aims at the hero's knees.
+    archermod.stepArrow(ar, g.hero.pos, heroCenterY(g), g.env.groundAt(ar.pos.x, ar.pos.z), g.hero.iFramed(), arrowCover(g, ar, dt), dt);
+}
+
 /// One frame of flight for everything thrown AT him — the harness's own hook, since the game does this inline.
 pub fn stepArrowsForShot(g: *Game, dt: f32) void {
     for (&g.arrows) |*ar| {
         if (!ar.live) continue;
-        ar.hit = false;
-        archermod.stepArrow(ar, g.hero.pos, heroCenterY(g), g.env.groundAt(ar.pos.x, ar.pos.z), g.hero.iFramed(), arrowCover(g, ar, dt), dt);
+        flyArrow(g, ar, dt);
     }
 }
 pub fn clearShaftsForShot(g: *Game) void {
@@ -700,6 +716,15 @@ fn looseShaft(g: *Game) void {
     g.rumble.play(rumblemod.swing_light); // the string going is a tick in the grip, not a swing
 }
 
+/// THE ONE FRAME A CAST LETS GO, routed by which sorcery the rod is set to. EXHAUSTIVE, so a third spell is a
+/// compile error here rather than a cast that plays its whole animation and throws nothing.
+fn releaseSpell(g: *Game) void {
+    switch (g.hero.spell) {
+        .bolt => throwBolt(g),
+        .roots => castRoots(g),
+    }
+}
+
 /// At the LOCKED foe if there is one, down his facing otherwise — the QUICK shot's rule, since there is no
 /// aimed cast and so no camera ray to converge on.
 fn throwBolt(g: *Game) void {
@@ -709,6 +734,58 @@ fn throwBolt(g: *Game) void {
     sfx.play(.wand_cast);
     g.rumble.play(rumblemod.cast_throw);
     g.rig.addShake(SHAKE_CAST);
+}
+
+/// WHERE THE GROUND SPLITS: under the LOCKED foe's own feet, or `ROOT_THROW` metres down his facing when
+/// nothing is fixed — the bolt's own fallback, on the ground rather than at chest height, because roots come
+/// out of the earth and the earth is what the mark has to be on.
+const ROOT_THROW: f32 = 7.0;
+fn rootMark(g: *const Game) rl.Vector3 {
+    if (activeLock(g)) |li| {
+        const p = foePos(g, li);
+        return v3(p.x, g.env.groundAt(p.x, p.z), p.z);
+    }
+    const d = mathx.headingDir(g.hero.facing);
+    const x = g.hero.pos.x + d.x * ROOT_THROW;
+    const z = g.hero.pos.z + d.z * ROOT_THROW;
+    return v3(x, g.env.groundAt(x, z), z);
+}
+
+/// THE ROOTS ERUPT. Everything corporeal standing inside `combat.ROOT_R` of the mark is taken, which is what
+/// makes this the answer to a warband the single-target bolt is not — and it ROUSES what it grabs, because a
+/// foe held by the feet that then strolls home is the anti-cheese rule (`Leash.provoke`) read backwards.
+/// The GRIP ITSELF and the ground it throws up — the part the shot harness reproduces too
+/// (`castRootsForShot`), which is `launchBolt`'s own split: sound, pad and shake stay with the caller because
+/// those are live-loop only and a shake costs `--shot` its determinism. Returns how many it closed on.
+fn seedRoots(g: *Game, at: rl.Vector3) u32 {
+    var caught: u32 = 0;
+    inline for (FOE_GROUPS) |f| {
+        for (@field(g, f.field).live()) |*a| {
+            if (!foemod.corporeal(a) or mathx.distXZ(a.pos, at) > combat.ROOT_R) continue;
+            a.root.grab();
+            a.leash.provoke();
+            caught += 1;
+        }
+    }
+    g.hero.rootsBurst(at, caught > 0);
+    return caught;
+}
+
+fn castRoots(g: *Game) void {
+    const caught = seedRoots(g, rootMark(g));
+    sfx.play(.wand_cast);
+    g.rumble.play(if (caught > 0) rumblemod.hit_heavy else rumblemod.cast_throw);
+    // A GRIP THAT CLOSED ON SOMETHING IS FELT; one that closed on bare earth is the lightest thing the wand
+    // does, and stays under the bolt's own release for the reason that one is under a landed blow.
+    g.rig.addShake(if (caught > 0) SHAKE_ROOTS_BITE else SHAKE_CAST);
+}
+
+/// …and the harness's hook, `throwBoltForShot`'s twin: the pose is driven past the `thrown` edge without going
+/// through `releaseSpell`, so without this every "the roots" still is a man finishing a sweep over bare earth.
+pub fn castRootsForShot(g: *Game) rl.Vector3 {
+    const at = rootMark(g);
+    _ = seedRoots(g, at);
+    return at;
 }
 
 /// The GEOMETRY of a release, which is the part the shot harness reproduces too (`throwBoltForShot`). Sound,
@@ -808,12 +885,14 @@ fn stepShafts(g: *Game, dt: f32) void {
 // The look runs from the foe's own lock point to the hero's eye and is stamped on its leash. Asked HERE, once a
 // frame, not by the creatures: the prop grid it tests against belongs to `env`.
 
-/// Past the widest notice ring in the game. DERIVED off the rings themselves — hard-coded, a creature given a
-/// wider one later stops being asked the question and quietly sees through walls again.
-const SIGHT_R: f32 = 1.0 + @max(
-    @max(frogmod.AGGRO_R, archermod.AGGRO_R),
-    @max(@max(ogremod.AGGRO_R, koboldmod.AGGRO_R), @max(warriormod.AGGRO_R, broodmod.AGGRO_R)),
-);
+/// Past the widest notice ring in the game. FOLDED OVER `FOE_GROUPS` rather than off a hand-written list of
+/// modules — a creature given a wider ring later stops being asked the question and quietly sees through
+/// walls again, and a whole GROUP left off the list does the same to every member of it.
+const SIGHT_R: f32 = blk: {
+    var widest: f32 = 0;
+    for (FOE_GROUPS) |f| widest = @max(widest, f.aggro);
+    break :blk widest + 1.0;
+};
 
 fn heroEye(g: *const Game) rl.Vector3 {
     return v3(g.hero.pos.x, g.hero.pos.y + foemod.HERO_EYE, g.hero.pos.z);
@@ -941,6 +1020,9 @@ pub fn drawScene(g: *Game) void {
     inline for (FOE_GROUPS) |f| {
         if (comptime @hasDecl(@FieldType(Game, f.field), "drawFx")) @field(g, f.field).drawFx();
     }
+    // …and the ROOTS, with the opaque geometry rather than the unlit FX: they are WOOD standing in the
+    // ground, and they have to take the sun the way anything else standing in it does.
+    g.hero.drawRoots();
     g.hero.drawTrail();
     for (quivers(g)) |pool| archermod.drawArrowTrails(pool);
     if (g.menu.hitboxes and g.hero.attacking) {
@@ -1044,8 +1126,11 @@ pub fn hud(g: *Game, dt: f32) void {
             if (bowUp) .bow else .sword,
             // …and UP fills only while something in his hands could cast one. Behind a bow or a shield it
             // goes back to empty, which is the honest answer and the same one it always gave.
-            if (wandUp) .spell else .empty,
-            g.hero.fp.cur >= combat.SPELL_FP,
+            if (wandUp) (switch (g.hero.spell) {
+                .bolt => hud_.Slot.spell,
+                .roots => hud_.Slot.roots,
+            }) else .empty,
+            g.hero.fp.cur >= g.hero.castCost(),
             switch (g.hero.flasks.sel) {
                 .crimson => hud_.FlaskTint.crimson,
                 .cerulean => hud_.FlaskTint.cerulean,
@@ -1434,10 +1519,16 @@ pub fn run(mode: Mode) void {
             sfx.play(.flask_cycle);
         }
 
-        // D-PAD UP / Y: cycle the ARROW — plain or fire. Up because it is the cross's one empty slot,
-        // and it mirrors D-pad Down cycling the quick item.
-        var arrowReq = rl.isKeyPressed(.y);
-        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .left_face_up)) arrowReq = true;
+        // D-PAD UP / G: cycle the SPELL. Up is the cross's SORCERY slot, so the button that changes it is the
+        // slot it is shown in — the D-pad's own "belongs to what it points at" rule, the same one that puts the
+        // arm on Right and the off hand on Left.
+        var spellReq = rl.isKeyPressed(.g);
+        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .left_face_up)) spellReq = true;
+        if (spellReq and g.hero.cycleSpell()) sfx.play(.flask_cycle);
+
+        // …and the ARROW keeps KEYBOARD Y ALONE. The cross is four directions and the spell has taken Up
+        // (owner's call), so on the pad the quiver is changed in the character book's ammo slot instead.
+        const arrowReq = rl.isKeyPressed(.y);
         if (arrowReq and g.hero.cycleArrow()) sfx.play(.flask_cycle);
 
         // free face button and the one every soulslike puts this on.
@@ -1579,8 +1670,8 @@ pub fn run(mode: Mode) void {
         }
         // THE SHAFT LEAVES on the one frame the loose says so.
         if (g.hero.loosed) looseShaft(g);
-        // …and THE BOLT on the one frame the cast does.
-        if (g.hero.thrown) throwBolt(g);
+        // …and THE SPELL on the one frame the cast does — whichever the rod is set to.
+        if (g.hero.thrown) releaseSpell(g);
         const hitsBefore = allHits(g);
         markSight(g); // WHO CAN SEE HIM — stamped before anything decides what to do about him
         // ONE snapshot of the blade for every group this frame — the hero's pose is already resolved above, so re-deriving it per group only invited the three to disagree.
@@ -1632,9 +1723,7 @@ pub fn run(mode: Mode) void {
         // Arrows in flight: gentle homing + arc, then a strike lands a chomp-weight blow.
         for (&g.arrows) |*ar| {
             if (!ar.live) continue;
-            ar.hit = false;
-            // The GROUND under the shaft, so it plants in a hillside instead of diving through it to find y = 0 — and the hero's centre measured from HIS ground, not from the datum, or an archer shooting up a bank aims at the hero's knees.
-            archermod.stepArrow(ar, g.hero.pos, heroCenterY(g), g.env.groundAt(ar.pos.x, ar.pos.z), g.hero.iFramed(), arrowCover(g, ar, dt), dt);
+            flyArrow(g, ar, dt);
             if (ar.hit) {
                 // It found the hero.
                 const blow = foemod.Blow{
@@ -1963,22 +2052,24 @@ fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
 
 const FoeKind = worldfmt.FoeKind;
 const FoeRef = struct { kind: FoeKind, idx: usize };
-fn bandIdx(r: FoeRef) ?usize {
-    return if (koboldmod.roleOf(r.kind) != null) r.idx else null;
-}
-/// …and the BROOD is the same shape: mother and hatchling both index `g.brood.band`.
-fn broodIdx(r: FoeRef) ?usize {
-    return if (broodmod.roleOf(r.kind) != null) r.idx else null;
-}
-/// …and the MUSTER: shieldman and greatsword both index `g.muster.band`.
-fn musterIdx(r: FoeRef) ?usize {
-    return if (warriormod.roleOf(r.kind) != null) r.idx else null;
+/// THE GROUPS WHOSE MEMBERS ARE ROLES OF ONE CREATURE, written down ONCE: its own `roleOf` says whether a
+/// map kind is one of its roles, and every one of them keeps its members in a field called `band`. As three
+/// byte-identical `*Idx` helpers enumerated again at each of the two dispatch sites, a fourth role group was
+/// four edits and forgetting one of them is an index read against the wrong group's array.
+const ROLE_GROUPS = .{
+    .{ "band", koboldmod },
+    .{ "brood", broodmod },
+    .{ "muster", warriormod },
+};
+
+fn roleIdx(comptime mod: type, r: FoeRef) ?usize {
+    return if (mod.roleOf(r.kind) != null) r.idx else null;
 }
 /// ASK ONE QUESTION OF WHATEVER A `FoeRef` POINTS AT.
 fn askFoe(comptime T: type, g: *const Game, r: FoeRef, comptime ask: anytype) T {
-    if (bandIdx(r)) |i| return ask(&g.band.band[i]);
-    if (broodIdx(r)) |i| return ask(&g.brood.band[i]);
-    if (musterIdx(r)) |i| return ask(&g.muster.band[i]);
+    inline for (ROLE_GROUPS) |rg| {
+        if (roleIdx(rg[1], r)) |i| return ask(&@field(g, rg[0]).band[i]);
+    }
     if (r.kind == .brood_sac) return ask(&g.brood.sacs[r.idx]);
     return switch (r.kind) {
         .toad => ask(&g.warren.frogs[r.idx]),
@@ -2022,9 +2113,9 @@ fn foeLockable(g: *const Game, r: FoeRef) bool {
 /// is a read of undefined memory, not a stale target. `rehomeFoes` runs on a reload, a respawn, a rest and every
 /// editor frame, and only three of those drop the lock — so the bound lives here, not at each of them.
 fn refInBounds(g: *const Game, r: FoeRef) bool {
-    if (bandIdx(r)) |i| return i < g.band.liveConst().len;
-    if (broodIdx(r)) |i| return i < g.brood.liveConst().len;
-    if (musterIdx(r)) |i| return i < g.muster.liveConst().len;
+    inline for (ROLE_GROUPS) |rg| {
+        if (roleIdx(rg[1], r)) |i| return i < @field(g, rg[0]).liveConst().len;
+    }
     if (r.kind == .brood_sac) return r.idx < g.brood.liveSacsConst().len;
     return switch (r.kind) {
         .toad => r.idx < g.warren.liveConst().len,

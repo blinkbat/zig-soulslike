@@ -162,6 +162,8 @@ pub const Frog = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
+    root: combat.Root = .{},
     facing: f32 = 0,
     scale: f32 = 1.0, // per-toad size jitter
     seed: f32 = 0, // per-toad phase offset so a knot never moves in lockstep
@@ -329,6 +331,11 @@ pub const Frog = struct {
         }
         self.heroHit = null;
         self.justDied = false;
+        // THE ROOTS HAVE THE FEET AND NOTHING ELSE (foe.grip) — the state machine runs, the jaws still work, and XZ
+        // goes back wherever it tried to travel.
+        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        defer grip.hold(&self.pos);
+        if (grip.killed) self.enterDeath();
         self.vit.tick(dt); // poise/stance regenerate between hits (relent and it recovers)
         self.elapsed += dt;
         self.lungeCd = mathx.maxF(0, self.lungeCd - dt);

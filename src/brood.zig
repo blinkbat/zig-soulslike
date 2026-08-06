@@ -934,6 +934,8 @@ pub const Spider = struct {
     /// …and whether she may lay another, likewise the group's answer (it owns the sacs).
     layWanted: bool = false,
     leash: foe.Leash = .{},
+    /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
+    root: combat.Root = .{},
     facing: f32 = 0,
     scale: f32 = 1.0,
     seed: f32 = 0,
@@ -1104,6 +1106,11 @@ pub const Spider = struct {
         }
         self.heroHit = null;
         self.justDied = false;
+        // THE ROOTS HAVE THE FEET AND NOTHING ELSE (foe.grip) — she still spits, still lays, still bites what is in
+        // reach, and chitin shrugs most of the grip off.
+        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        defer grip.hold(&self.pos);
+        if (grip.killed) self.enterDeath();
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;

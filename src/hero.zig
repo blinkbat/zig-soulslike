@@ -414,14 +414,65 @@ const CAST_COLLAR_SP = 4.4;
 const CAST_FLASH_R = 0.095;
 const CAST_FLASH_LIFE = 0.085;
 const BOLT_BURST = 22; // …and the bigger one where it lands
-const FX_N = 160;
+
+// THE ROOTS — the rod's other sorcery. Dead wood out of the earth, and the ONE substance the spell adds: the
+// chaos violet stays the light ON it and the motes around it, never a second violet thing (the brood's rule).
+/// Sites the ground can be split at AT ONCE. A second cast before the first has sunk is a thing the player can
+/// do, and two holes in the ground is what it should look like when he does.
+const ROOT_SITES = 3;
+/// Tendrils one site throws. Seven, and every one of them differently sized, leaned and DELAYED — a ring of
+/// equal spikes going up on the same frame is the rosette-of-spokes failure, however good the mesh is.
+const ROOT_FANS = 7;
+const ROOT_RISE: f32 = 0.26; // s, tearing up out of the earth…
+const ROOT_SINK: f32 = 0.55; // …and drawn back down once the grip lets go
+/// The stagger between the first tendril and the last, as a fraction of the rise.
+const ROOT_LAG: f32 = 0.55;
+/// Variants of the tendril mesh. One shape yaw-rotated seven times reads as a periodic pattern the moment you
+/// stand still and look at it (the world's `bigtree` rule, at a tenth the scale).
+const ROOT_KINDS = 3;
+const ROOT_SEGS = 7; // enough that the curl reads as a CURVE; at five each segment is a visibly straight stick
+const ROOT_LEN = 0.34 * H; // ~0.6 m — knee height. At 1.1 m they stood as tall as the man who cast them.
+const ROOT_R0 = 0.034 * H;
+const ROOT_R1 = 0.013 * H;
+/// MEASURED, NOT GUESSED (AGENTS.md): at `34,25,18` on `.bark` these sampled 115,94,68 against grass at
+/// 110,97,67 — the same value, so they read as pale timber for want of any separation at all. SOLVED from
+/// there: screen = (albedo/255 × 1.72)^(1/2.2) × 255, so half the ground's 110 is screen 55, and 55 back
+/// through the chain is albedo 5. `.wood` is the material that does not lift it again (it is the rod's own).
+/// The two bark tones are kept CLOSE: pushed apart they band the shaft like a barber's pole.
+const ROOT_BARK = rgba(5, 4, 3, 255);
+const ROOT_BARK_LT = rgba(9, 7, 5, 255);
+/// …and the blunt snap of pale heartwood every one of them ends in (the dead-limb law). Solved to land at the
+/// ground's own value, so it POPS off a near-black shaft — but it is a snap, not a sawn plank end, so it is small.
+const ROOT_HEART = rgba(24, 21, 15, 255);
+const ROOT_SOIL = mathx.rgba(96, 78, 58, 190); // the earth it throws up
+const ROOT_DUST = 18;
+const ROOT_MOTES = 14;
+/// Rise, then the GRIP'S OWN span, then the sink — so what is standing in the ground IS how long the foe in it
+/// has left, rather than a second clock that can disagree with `combat.Root`.
+const ROOT_LIFE: f32 = ROOT_RISE + combat.ROOT_HOLD + ROOT_SINK;
+/// …and the SITE outlives that by the fan's own stagger, because every tendril's clock is set back by up to
+/// `ROOT_RISE * ROOT_LAG` (see `drawRoots`). Cut at `ROOT_LIFE` the last of them is still an eighth of its
+/// height when the site stops drawing, and a root sinks — it is never popped away.
+const ROOT_SITE_LIFE: f32 = ROOT_LIFE + ROOT_RISE * ROOT_LAG;
+
+/// One split in the ground: where, and how long ago. Whether the grip closed on anything is spent at the
+/// eruption (it sizes the earth thrown up) and is not a property of what stands there afterwards.
+const RootSite = struct {
+    at: rl.Vector3 = mathx.zero3,
+    t: f32 = mathx.LONG_AGO, // …so an untouched slot is already spent
+    seed: f32 = 0,
+};
+
+const FX_N = 192;
 
 comptime {
     // The ring overwrites its oldest silently, so the size is arithmetic over the constants above rather than
     // a taste — the failure it guards is a release burst eating the gather that is still on screen.
     const gather = CAST_MOTE_RATE_HI * CAST_MOTE_LIFE_HI;
     const release = CAST_SPARKS + CAST_COLLAR + 1;
-    const worst = gather + @as(f32, release + 2 * BOLT_BURST); // two bolts can land across chained casts
+    // …and the ROOTS' own burst, which shares this one pool and is thrown on the same frame a gather ends.
+    const erupt = ROOT_DUST + ROOT_MOTES;
+    const worst = gather + @as(f32, release + erupt + 2 * BOLT_BURST); // two bolts can land across chained casts
     if (@as(f32, FX_N) < worst) @compileError(std.fmt.comptimePrint(
         "hero: FX_N = {d} but a cast can have {d} particles in the air — raise it",
         .{ FX_N, worst },
@@ -660,6 +711,7 @@ const rx = mathx.rx;
 const ry = mathx.ry;
 const rz = mathx.rz;
 const tr = mathx.tr;
+const scaleM = mathx.scaleM;
 const mul = mathx.mul;
 const mul3 = mathx.mul3;
 fn lerpM(a: rl.Matrix, b: rl.Matrix, t: f32) rl.Matrix {
@@ -700,6 +752,10 @@ pub const Hero = struct {
     /// …nor is THE WAND. Same route (the left wrist) but no fit matrix: it is authored IN that wrist's
     /// frame, so a retune of the cast angles cannot swing the rod off its own hand.
     wand: rl.Mesh,
+    /// THE TENDRILS, authored rising out of the earth at the origin — the roots spell throws `ROOT_FANS` of
+    /// them per site through a seeded transform, the way the world gets sixty trees out of three meshes. THREE
+    /// of them for that same reason: one shape yaw-rotated seven times is a periodic pattern.
+    roots: [ROOT_KINDS]rl.Mesh,
     guitar: rl.Mesh,
     mat: rl.Material,
     rest: [N]rl.Vector3,
@@ -777,6 +833,9 @@ pub const Hero = struct {
     nockVis: bool = false,
     lastNock: rl.Vector3 = mathx.zero3,
     off: Off = .shield,
+    /// WHICH SORCERY THE ROD IS SET TO. NOT latched at `startCast` the way `shotArrow` is, and it does not
+    /// need to be: `cycleSpell` refuses while a cast is running, so what starts is what throws.
+    spell: combat.Spell = .bolt,
     /// A cast is running — COMMITTED, so it lives in `committed()` beside the swing and the loose.
     casting: bool = false,
     castT: f32 = 0,
@@ -788,6 +847,10 @@ pub const Hero = struct {
     casts: u32 = 0,
     /// ONE FRAME, the frame the bolt leaves — game.zig throws it from `wandTipWorld()`.
     thrown: bool = false,
+    /// WHERE THE GROUND IS SPLIT, and for how much longer — a ring, so a second cast before the first has sunk
+    /// leaves two holes in the ground rather than teleporting the first one.
+    rootSites: [ROOT_SITES]RootSite = [_]RootSite{.{}} ** ROOT_SITES,
+    rootHead: usize = 0,
     /// Fractional motes the gather owes, carried between frames so a ramped rate is honest at any frame time.
     moteAcc: f32 = 0,
     /// Last frame's stone, differenced in `gatherMotes` for the tip's velocity. Written and read only there.
@@ -825,6 +888,11 @@ pub const Hero = struct {
             .bowNock = archer.nockArrowMesh(),
             .shield = shieldMesh(),
             .wand = wandMesh(),
+            .roots = blk: {
+                var out: [ROOT_KINDS]rl.Mesh = undefined;
+                for (&out, 0..) |*m, i| m.* = rootTendrilMesh(@intCast(i));
+                break :blk out;
+            },
             .guitar = guitarMesh(),
             .mat = mat,
             .rest = restPositions(),
@@ -896,6 +964,9 @@ pub const Hero = struct {
         // In the prologue with the other clocks, for the other clocks' reason: exactly one advance path runs
         // each frame, and sparks that only aged inside `updateCast` would hang in the air after the cast.
         foemod.tickParticles(&self.fx, dt, self.pos.y);
+        // …and the splits in the ground, in the prologue for the particles' reason: aged only inside
+        // `updateCast` they would freeze at whatever the cast ended on and stand there for good.
+        for (&self.rootSites) |*s| s.t = @min(s.t + dt, mathx.LONG_AGO);
     }
 
     pub fn update(self: *Hero, dt: f32, movedDist: f32, speed: f32, moveYaw: ?f32) void {
@@ -1111,10 +1182,27 @@ pub const Hero = struct {
         return self.startCast();
     }
 
+    /// WHAT THE ROD WOULD BILL FOR THE SPELL IT IS SET TO — the HUD's "could he?" and the cast itself both
+    /// ask this, so a dearer second spell cannot light the slot it is too expensive to cast.
+    pub fn castCost(self: *const Hero) f32 {
+        return combat.spellFp(self.spell);
+    }
+
+    /// D-pad Up — WHICH SORCERY IS SET. Refused mid-cast for the reason `shotArrow` is latched: the FP for the
+    /// one already running is spent, and swapping under it would throw a spell he did not pay for.
+    pub fn cycleSpell(self: *Hero) bool {
+        if (self.dead or self.casting) return false;
+        self.spell = switch (self.spell) {
+            .bolt => .roots,
+            .roots => .bolt,
+        };
+        return true;
+    }
+
     fn startCast(self: *Hero) bool {
         // PAY OR CAST NOTHING (`combat.Focus.spend`) — and the refusal lights the FP bar, not the stamina
         // one: a ring on the wrong meter tells the player to go and rest when what he needs is a Cerulean.
-        if (!self.fp.spend(combat.SPELL_FP)) {
+        if (!self.fp.spend(self.castCost())) {
             self.refuseFp();
             return false;
         }
@@ -1436,6 +1524,66 @@ pub const Hero = struct {
             .radius = WAND_LIT_CARRY_R +
                 (WAND_LIT_CHARGED_R - WAND_LIT_CARRY_R) * held + (WAND_LIT_FLARE_R - WAND_LIT_CHARGED_R) * spike,
         };
+    }
+
+    /// THE GROUND SPLITTING. `bit` is whether the grip closed on anything: it does not change WHAT erupts,
+    /// only how much of the earth goes up with it.
+    pub fn rootsBurst(self: *Hero, at: rl.Vector3, bit: bool) void {
+        self.rootHead = (self.rootHead + 1) % ROOT_SITES;
+        self.rootSites[self.rootHead] = .{ .at = at, .t = 0, .seed = @floatFromInt(self.casts) };
+        var rng = foemod.fxStream(@floatFromInt(self.casts), 331.0, 0x8B04);
+        // The EARTH first — thrown out and up, and it falls back, which is what says something came THROUGH it.
+        const dust: u32 = if (bit) ROOT_DUST else ROOT_DUST / 2;
+        var i: u32 = 0;
+        while (i < dust) : (i += 1) {
+            const a = rng.angle();
+            const rr = rng.range(0.1, combat.ROOT_R * 0.8);
+            const from = v3(at.x + mathx.cosf(a) * rr, at.y + 0.03, at.z + mathx.sinf(a) * rr);
+            const sp = rng.range(0.7, 1.8);
+            const v = v3(mathx.cosf(a) * sp, rng.range(1.6, 3.6), mathx.sinf(a) * sp);
+            foemod.emitParticle(&self.fx, &self.fxHead, from, v, rng.range(0.32, 0.62), rng.range(0.030, 0.062), 0.012, ROOT_SOIL, 7.0);
+        }
+        // …then the element, which is the only thing here that says WHOSE roots these are. They FLOAT off the
+        // wood (a negative grav) rather than arcing like the dirt does — chaos coming off it, not more earth.
+        var j: u32 = 0;
+        while (j < ROOT_MOTES) : (j += 1) {
+            const a = rng.angle();
+            const rr = rng.range(0.2, combat.ROOT_R);
+            const from = v3(at.x + mathx.cosf(a) * rr, at.y + rng.range(0.05, 0.4), at.z + mathx.sinf(a) * rr);
+            const v = v3(rng.signed() * 0.5, rng.range(0.5, 1.5), rng.signed() * 0.5);
+            foemod.emitParticle(&self.fx, &self.fxHead, from, v, rng.range(0.35, 0.75), rng.range(0.026, 0.048), 0.008, if (rng.float() < 0.4) CHAOS_HOT else CHAOS_MOTE, -0.6);
+        }
+    }
+
+    /// THE TENDRILS, standing where the ground was split. ONE mesh thrown `ROOT_FANS` times per site through a
+    /// seeded yaw / offset / scale / lean, each on its OWN delay — the stagger is what stops seven of them
+    /// reading as one welded object coming up on a single frame (the rig's lag law, applied to a prop).
+    pub fn drawRoots(self: *const Hero) void {
+        for (self.rootSites) |s| {
+            if (s.t >= ROOT_SITE_LIFE) continue;
+            var rng = foemod.fxStream(s.seed + 1.0, 613.0, 0x8B05);
+            for (0..ROOT_FANS) |k| {
+                // Drawn from the stream FIRST and unconditionally, so a tendril that is not up yet still
+                // advances it and the fan does not reshuffle itself as the site rises.
+                const jitter = rng.range(-0.34, 0.34);
+                const out = rng.range(0.18, combat.ROOT_R * 0.42);
+                const sc = rng.range(0.72, 1.28);
+                const lean = rng.range(3.0, 13.0); // the mesh already curls; the transform only tips it OFF plumb
+                const kind = @as(usize, @intFromFloat(rng.range(0, ROOT_KINDS)));
+                const u = s.t - ROOT_RISE * ROOT_LAG * (@as(f32, @floatFromInt(k)) / ROOT_FANS);
+                if (u <= 0) continue;
+                // Torn up fast, held, drawn back slower — a root sinks, it is never popped away.
+                const up = mathx.smoothstep(0, ROOT_RISE, u) *
+                    (1.0 - mathx.smoothstep(ROOT_RISE + combat.ROOT_HOLD, ROOT_LIFE, u));
+                if (up <= 0.001) continue;
+                const yaw = std.math.tau * (@as(f32, @floatFromInt(k)) / ROOT_FANS) + jitter;
+                rl.drawMesh(self.roots[@min(kind, ROOT_KINDS - 1)], self.mat, mul3(
+                    mul(scaleM(sc, sc * up, sc), rz(lean)),
+                    ry(mathx.degrees(yaw)),
+                    tr(s.at.x + mathx.cosf(yaw) * out, s.at.y, s.at.z + mathx.sinf(yaw) * out),
+                ));
+            }
+        }
     }
 
     /// …and a bigger one WHEREVER IT LANDS, which is the half of it the player is actually looking at.
@@ -2382,6 +2530,62 @@ pub fn boltMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
+/// ONE ROOT TENDRIL, authored at the origin coming UP out of the earth along +Y with a lean into +Z, so a yaw
+/// about the site fans a ring of them outward. It starts BELOW zero, or a tendril on sloping ground shows the
+/// flat disc of its own bottom cap where it meets the dirt.
+///
+/// NOTHING DEAD IS STRAIGHT AND NOTHING ENDS IN A POINT: it leaves the earth on one line, breaks at a knee,
+/// carries on off that line, and snaps off blunt in pale heartwood. A single tapered run to a needle is a
+/// spear, and seven of those about a point is a hub of spokes.
+fn rootTendrilMesh(variant: u32) rl.Mesh {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x600751 +% variant *% 7919);
+    b.setMat(.wood);
+    // The CURL is drawn ONCE and applied every segment, so the thing arcs. Re-rolled per segment it wanders
+    // instead, and a wander made of straight capsules is a chain of elbows — which is what reads as a caltrop.
+    // BRACKETED FROM BOTH SIDES: at 0.09–0.17 they arced to near-horizontal and read as croquet hoops in the
+    // lawn; at 0.03–0.065 they stood up as posts with a crossbar and read as grave markers. These claw up out
+    // of the earth and turn over through the last third — which is the only band that reads as a root at all.
+    const curl = rng.range(0.055, 0.095);
+    const sway = rng.range(-0.07, 0.07);
+    var p = v3(0, -0.10 * H, 0);
+    var dir = mathx.normV(v3(0, 1.0, rng.range(0.03, 0.11)));
+    var r = ROOT_R0;
+    var i: u32 = 0;
+    while (i < ROOT_SEGS) : (i += 1) {
+        const k = (@as(f32, @floatFromInt(i)) + 1.0) / @as(f32, ROOT_SEGS);
+        const step = ROOT_LEN / @as(f32, ROOT_SEGS) * rng.range(0.84, 1.16);
+        const nr = mathx.lerpF(ROOT_R0, ROOT_R1, k) * rng.range(0.90, 1.10);
+        const to = mathx.addV(p, mathx.scaleV(dir, step));
+        b.addCapsule(p, to, r, nr, 7, if (i % 2 == 0) ROOT_BARK else ROOT_BARK_LT);
+        p = to;
+        r = nr;
+        // It falls away from plumb a little MORE each segment — steep out of the earth, curling over by the
+        // tip, and never straight. The jitter on top is small: it roughens the arc, it does not make it.
+        dir = mathx.normV(v3(
+            dir.x + (sway + rng.range(-0.05, 0.05)) * (0.4 + k),
+            dir.y - curl * (0.4 + k),
+            dir.z + (curl * 0.45 + rng.range(-0.05, 0.05)) * (0.4 + k),
+        ));
+    }
+    // …and the BLUNT SNAP it ends in, a touch fatter than the shaft so it reads as a break and not a taper.
+    b.addBlob(p, v3(r * 1.30, r * 0.95, r * 1.30), 3, 7, ROOT_HEART);
+    // A COUPLE OF STUBS off the outer half — a bare shaft is a cane, and a root that tore up through packed
+    // earth brings its own broken side-growth with it. Blunt too: `addCapsule` domes both ends.
+    var s: u32 = 0;
+    while (s < 2) : (s += 1) {
+        const base = mathx.lerpV(v3(0, 0, 0), p, rng.range(0.40, 0.78));
+        const a = rng.angle();
+        const len = ROOT_LEN * rng.range(0.08, 0.14);
+        // They RUN WITH the shaft, not across it: thrown out level they read as the crossbar of a grave marker,
+        // which is the single thing that turned an upright tendril into a headstone.
+        const out = v3(base.x + mathx.cosf(a) * len * 0.55, base.y + rng.range(0.75, 1.15) * len, base.z + mathx.sinf(a) * len * 0.55);
+        const sr = ROOT_R1 * rng.range(0.7, 1.0);
+        b.addCapsule(base, out, sr * 1.5, sr, 6, ROOT_BARK);
+    }
+    return b.toMesh();
+}
+
 /// THE WAND — a knotted rod, iron-ferruled, with a chaos-lit stone caught in three claws at its head.
 /// Authored in the LEFT WRIST's frame on `WAND_AX` — head leading out of the fist, a stub of butt back out of
 /// it — so it needs no fit matrix. Wabi-sabi off a FIXED seed: crooked, and the same crookedness every frame.
@@ -2644,6 +2848,7 @@ fn testHero() Hero {
         .bowNock = undefined,
         .shield = undefined,
         .wand = undefined,
+        .roots = undefined,
         .guitar = undefined,
         .mat = undefined,
         .rest = restPositions(),

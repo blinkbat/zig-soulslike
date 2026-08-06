@@ -63,7 +63,7 @@ pub fn class(k: Kind) Class {
 pub fn describe(k: Kind) [:0]const u8 {
     return switch (k) {
         .crimson_flask => "A flask of clouded red glass, refilled at any grace. The draught it holds closes wounds that ought to have killed you.",
-        .cerulean_flask => "The blue twin of the crimson. It returns the focus a sorcery costs — and there are no sorceries yet, so it returns nothing you can spend.",
+        .cerulean_flask => "The blue twin of the crimson. It gives back half the focus a rod spends, which is two more casts of the wand before you have to walk back to a grace.",
         .rune_arc => "A shard of a shattered great rune, still lit from the inside. Whatever it once carried leaks out of the break; nothing here can catch it yet.",
         .golden_seed => "A sprout of gilded stalk, pulled up whole. In another age these bought another swallow from the flask. This one is only precious.",
         .smithing_stone => "A shard off a bigger stone, hard enough to bite steel. No smith has set up in these ruins to grind it against.",

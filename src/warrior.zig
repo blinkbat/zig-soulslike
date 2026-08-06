@@ -464,6 +464,8 @@ pub const Warrior = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
+    root: combat.Root = .{},
     facing: f32 = 0,
     scale: f32 = SCALE,
     seed: f32 = 0,
@@ -645,6 +647,11 @@ pub const Warrior = struct {
         }
         self.heroHit = null;
         self.justDied = false; // one-frame flag: re-set below only if this frame's blade kills it
+        // THE ROOTS HAVE THE FEET AND NOTHING ELSE (foe.grip) — the greatsword's lunge still swings, it just covers no
+        // ground, and dry bone shrugs most of the grip off.
+        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        defer grip.hold(&self.pos);
+        if (grip.killed) self.enterDeath();
         self.leapt = false;
         self.live = false;
         self.elapsed += dt;

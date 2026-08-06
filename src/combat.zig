@@ -208,6 +208,18 @@ pub const Vitals = struct {
         self.stance = mathx.minF(self.stanceMax, self.stance + self.stanceMax / STANCE_REFILL * self.regenRate * dt);
     }
 
+    /// A DRIP — damage billed EVERY FRAME by something that holds (`Root`), as opposed to a blow. Identical to
+    /// `hit` but it leaves the REGEN CLOCK where it was: `hit` stamps `sinceHit` at 0, which is what gates the
+    /// poise/stance refill, and stamped afresh every frame for a whole `ROOT_HOLD` that gate never opens — so a
+    /// grip that is documented to carry no poise and no stance would deny most of a poise bar anyway, which is
+    /// the stagger tool it is documented not to be. For POISE-FREE drips only; a blow belongs in `hit`.
+    pub fn drip(self: *Vitals, h: Hit) HitResult {
+        const clock = self.sinceHit;
+        const r = self.hit(h);
+        self.sinceHit = clock;
+        return r;
+    }
+
     pub fn hit(self: *Vitals, h: Hit) HitResult {
         if (self.dead) return .none;
         self.hp = mathx.maxF(0, self.hp - self.damageFrom(h));
@@ -379,6 +391,60 @@ pub const SPELL_FP: f32 = 12.0; // five casts of a 60-point pool
 /// heavy's, so it rocks a foe without being the stagger tool the greatsword is.
 pub const SPELL_HIT = Hit{ .poise = 14, .stance = 6, .elem = elems(.{ .chaos = 24 }) };
 
+/// THE ROOTS — the wand's second spell, and the first thing in the game that takes a foe's FEET rather than
+/// its health. It costs MORE than the bolt and deals LESS: you cast it to buy the ground back, not to kill.
+pub const ROOT_FP: f32 = 18.0; // dearer than the bolt's 12 — three casts to a grace, not five
+pub const ROOT_HOLD: f32 = 3.5; // seconds the feet are held
+pub const ROOT_DPS: f32 = 4.0; // chaos a second while they hold (~14 over a full grip)
+/// How far from the mark the ground splits — everything corporeal inside it is taken, so it answers a warband
+/// the way the single-target bolt cannot.
+pub const ROOT_R: f32 = 2.6;
+
+/// A FOE'S FEET, HELD. Shaped like `Regen` — a clock that bills a little every frame it runs — because that
+/// is what it is, with the sign reversed and somebody else's meter on the other end.
+pub const Root = struct {
+    left: f32 = 0,
+
+    pub fn held(self: *const Root) bool {
+        return self.left > 0;
+    }
+    /// A SECOND CAST REFRESHES RATHER THAN STACKING (the drip's rule, `Regen.start`): two overlapping grips
+    /// at different clocks is a hold no bar and no animation can show.
+    pub fn grab(self: *Root) void {
+        self.left = ROOT_HOLD;
+    }
+    pub fn release(self: *Root) void {
+        self.left = 0;
+    }
+    /// The bite this frame, or null when nothing is holding. NO POISE AND NO STANCE: the roots are not a
+    /// stagger tool, and a hold that also flinched would be the guard-break the owner did not ask for.
+    pub fn tick(self: *Root, dt: f32) ?Hit {
+        if (self.left <= 0) return null;
+        const step = minF(dt, self.left);
+        self.left -= step;
+        return .{ .elem = elems(.{ .chaos = ROOT_DPS * step }) };
+    }
+};
+
+/// WHICH SORCERY THE ROD IS SET TO. Exhaustive everywhere it is read, so a third spell is a compile error
+/// until it has said what it costs and what it does.
+pub const Spell = enum { bolt, roots };
+
+pub fn spellName(s: Spell) [:0]const u8 {
+    return switch (s) {
+        .bolt => "Chaos Bolt",
+        .roots => "Roots",
+    };
+}
+
+/// WHAT EACH ONE BILLS. One place, so the HUD's "could he cast?" and the cast itself cannot disagree.
+pub fn spellFp(s: Spell) f32 {
+    return switch (s) {
+        .bolt => SPELL_FP,
+        .roots => ROOT_FP,
+    };
+}
+
 pub const FlaskKind = enum { crimson, cerulean };
 
 pub const FLASK_CRIMSON: u8 = 2; // …two red to one blue
@@ -539,6 +605,84 @@ pub const Runes = struct {
 
 const minF = mathx.minF;
 const maxF = mathx.maxF;
+
+test "the roots hold for their span, bill chaos the whole way, and let go on their own" {
+    var r = Root{};
+    try std.testing.expect(!r.held());
+    try std.testing.expect(r.tick(1.0 / 60.0) == null); // nothing holding → nothing billed
+    r.grab();
+    try std.testing.expect(r.held());
+    var paid: f32 = 0;
+    var t: f32 = 0;
+    while (t < ROOT_HOLD * 2.0) : (t += 1.0 / 60.0) {
+        if (r.tick(1.0 / 60.0)) |h| paid += h.raw();
+    }
+    try std.testing.expect(!r.held()); // it expires without anybody releasing it
+    try std.testing.expectApproxEqAbs(ROOT_HOLD * ROOT_DPS, paid, 1e-3); // …and bills its span exactly ONCE
+}
+
+test "the grip is ALL CHAOS and carries no stagger — a hold is not a flinch" {
+    var r = Root{};
+    r.grab();
+    const h = r.tick(0.5).?;
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.dmg, 1e-6); // no physical…
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.poise, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.stance, 1e-6);
+    try std.testing.expectApproxEqAbs(ROOT_DPS * 0.5, h.elem.at(.chaos), 1e-5);
+    // …so a body that shrugs chaos off shrugs the roots off, which is the wand's own honest trade.
+    var chitin = Vitals.initFoe(100, 20, 40).withRes(resists(.{ .chaos = RES_CAP }));
+    var bare = Vitals.initFoe(100, 20, 40);
+    try std.testing.expectEqual(HitResult.none, chitin.hit(h)); // and it never flinches either of them
+    _ = bare.hit(h);
+    try std.testing.expect(chitin.hp > bare.hp);
+}
+
+test "THE GRIP DOES NOT DENY THE REFILL — a drip bills HP and leaves the regen clock alone" {
+    // Billed through `hit`, the bite re-stamps `sinceHit` every frame and the gate never opens, so a foe held
+    // for its whole span comes out of the roots with the poise it went in with. That is a stagger tool.
+    var held = Vitals.initFoe(100, 20, 40);
+    var loose = Vitals.initFoe(100, 20, 40);
+    for ([_]*Vitals{ &held, &loose }) |v| _ = v.hit(.{ .poise = 15 }); // chipped by a real blow first
+    var r = Root{};
+    r.grab();
+    var t: f32 = 0;
+    while (t < ROOT_HOLD) : (t += 1.0 / 60.0) {
+        if (r.tick(1.0 / 60.0)) |bite| _ = held.drip(bite);
+        held.tick(1.0 / 60.0);
+        loose.tick(1.0 / 60.0);
+    }
+    try std.testing.expectApproxEqAbs(loose.poise, held.poise, 1e-3); // the grip cost it no poise recovery…
+    try std.testing.expect(held.poise > 5.5);
+    try std.testing.expect(held.hp < loose.hp); // …and took the HP it is entitled to
+    // A REAL BLOW'S OWN DENIAL SURVIVES the drip that lands on the same frame.
+    var struck = Vitals.initFoe(100, 20, 40);
+    _ = struck.hit(.{ .poise = 15 });
+    _ = struck.drip(.{ .elem = elems(.{ .chaos = 1 }) });
+    try std.testing.expectApproxEqAbs(@as(f32, 0), struck.sinceHit, 1e-6);
+}
+
+test "a re-cast REFRESHES the grip rather than stacking a second clock on it" {
+    var r = Root{};
+    r.grab();
+    _ = r.tick(ROOT_HOLD * 0.8);
+    try std.testing.expect(r.left < ROOT_HOLD * 0.3);
+    r.grab();
+    try std.testing.expectApproxEqAbs(ROOT_HOLD, r.left, 1e-6);
+    r.release();
+    try std.testing.expect(!r.held() and r.tick(1.0) == null);
+}
+
+test "THE ROOTS COST MORE THAN THE BOLT AND DEAL LESS — a control tool, not a second bolt" {
+    try std.testing.expect(spellFp(.roots) > spellFp(.bolt));
+    try std.testing.expect(ROOT_HOLD * ROOT_DPS < SPELL_HIT.raw());
+    // …and both are affordable off a full pool, or the sheet's Mind curve is a lie on the character page.
+    try std.testing.expect(spellFp(.roots) <= FP_MAX);
+    for (0..@typeInfo(Spell).@"enum".fields.len) |i| {
+        const s: Spell = @enumFromInt(i);
+        try std.testing.expect(spellName(s).len > 0);
+        try std.testing.expect(spellFp(s) > 0);
+    }
+}
 
 test "a small hit chips poise without a stun" {
     var v = Vitals.init(100, 20, 40);

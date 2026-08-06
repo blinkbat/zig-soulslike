@@ -170,6 +170,40 @@ pub fn flashFrac(flash: f32) f32 {
     return mathx.clampF(flash / FLASH_DUR, 0, 1);
 }
 
+/// ROOTED: THE FEET ARE HELD, AND NOTHING ELSE IS (owner's law) — the state machine runs, the kit swings, the
+/// blow lands, and the body simply does not travel. Taken as a GATE at the end of a creature's own `update`
+/// rather than a guard at each `stepXZ`: a creature grows movements — a dash, a leap, the shove off a blade,
+/// the next one nobody has written — and a per-site list is a list to forget something from. Y is left alone,
+/// since `game.groundActor` owns it and a held foe still stands on its own ground.
+pub const Grip = struct {
+    was: rl.Vector3,
+    on: bool,
+    /// Whether THIS frame's bite finished it. Reported rather than acted on, because only the creature knows
+    /// how to die.
+    killed: bool,
+
+    pub fn hold(self: Grip, pos: *rl.Vector3) void {
+        if (!self.on) return;
+        pos.x = self.was.x;
+        pos.z = self.was.z;
+    }
+};
+
+/// ONE FRAME OF THE WAND'S GRIP, for every creature that can be caught in it. Taken at the TOP of `update`
+/// and held through a `defer` there, so the pin covers whatever the state machine goes on to do:
+///
+///     const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+///     defer grip.hold(&self.pos);
+///     if (grip.killed) self.enterDeath();
+///
+/// Six byte-identical copies of that body sat in the creature files, which is six places to forget that the
+/// bite is billed as a DRIP (`combat.Vitals.drip`) and never as a blow.
+pub fn grip(root: *combat.Root, vit: *combat.Vitals, dt: f32, at: rl.Vector3) Grip {
+    const on = root.held();
+    const killed = if (root.tick(dt)) |bite| vit.drip(bite) == .death else false;
+    return .{ .was = at, .on = on, .killed = killed };
+}
+
 // Carry a landed blow's KNOCKBACK for one frame and bleed it off — a jolt off the blade, not a slide.
 pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32, dt: f32) void {
     if (mathx.lenXZ(shove.*) <= 0.01) return;

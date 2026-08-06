@@ -308,6 +308,8 @@ pub const Kobold = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
+    root: combat.Root = .{},
     facing: f32 = 0,
     scale: f32 = 1.0,
     seed: f32 = 0,
@@ -475,6 +477,11 @@ pub const Kobold = struct {
             return .none;
         }
         self.justDied = false;
+        // THE ROOTS HAVE THE FEET AND NOTHING ELSE (foe.grip) — the dash and the flurry both play out on the spot,
+        // which is what makes this the answer to a warband.
+        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        defer grip.hold(&self.pos);
+        if (grip.killed) self.enterDeath();
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);

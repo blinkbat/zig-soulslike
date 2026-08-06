@@ -317,7 +317,7 @@ const SLOT_GAP: i32 = eq(8); // between the LEFT/RIGHT arms and the centre colum
 const PITCH_Y: i32 = eq(48);
 const BOTTOM: i32 = 26;
 
-pub const Slot = enum { empty, sword, bow, shield, wand, flask, spell };
+pub const Slot = enum { empty, sword, bow, shield, wand, flask, spell, roots };
 
 pub const FlaskTint = itemart.FlaskTint;
 
@@ -386,6 +386,8 @@ fn slot(x: i32, y: i32, holds: Slot, tint: FlaskTint, charges: u8) void {
         // The sorcery slot's picture greys out when the FP will not cover a cast, which is the ammo box's
         // own rule: a thing you cannot use has to LOOK like a thing you cannot use.
         .spell => itemart.spell(cx, cy, px, charges > 0),
+        // …and the rod's other sorcery, greyed by the same rule: a thing you cannot afford has to LOOK it.
+        .roots => itemart.roots(cx, cy, px, charges > 0),
         .flask => {
             itemart.flask(cx, cy, px, tint, charges > 0);
             var buf: [8]u8 = undefined;

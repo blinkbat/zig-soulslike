@@ -471,6 +471,8 @@ pub const Archer = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
+    root: combat.Root = .{},
     facing: f32 = 0,
     scale: f32 = 1.0,
     seed: f32 = 0,
@@ -564,6 +566,11 @@ pub const Archer = struct {
     pub fn update(self: *Archer, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) bool {
         if (self.gone) return false;
         self.justDied = false; // one-frame flag: re-set below only if a blade kills it this frame
+        // THE ROOTS HAVE THE FEET AND NOTHING ELSE (foe.grip) — it still draws, still looses, still backsteps on the
+        // spot; only the travel is taken.
+        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        defer grip.hold(&self.pos);
+        if (grip.killed) self.enterDeath();
         self.elapsed += dt;
         self.vit.tick(dt);
         self.reloadCd = mathx.maxF(0, self.reloadCd - dt);

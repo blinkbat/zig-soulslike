@@ -303,6 +303,8 @@ pub const Ogre = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
+    root: combat.Root = .{},
     facing: f32 = 0,
     scale: f32 = SCALE,
     seed: f32 = 0,
@@ -428,6 +430,11 @@ pub const Ogre = struct {
         }
         self.heroHit = null;
         self.justDied = false;
+        // THE ROOTS HAVE THE FEET AND NOTHING ELSE (foe.grip) — the club still comes down, and on a body this heavy
+        // that is the whole point of holding it.
+        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        defer grip.hold(&self.pos);
+        if (grip.killed) self.enterDeath();
         self.vit.tick(dt);
         self.elapsed += dt;
         self.slamCd = mathx.maxF(0, self.slamCd - dt);

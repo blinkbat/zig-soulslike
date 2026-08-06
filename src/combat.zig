@@ -368,7 +368,6 @@ pub const Focus = struct {
     }
 };
 
-// ── SORCERY ───────────────────────────────────────────────────────────────────────────────────────
 // The wand's one spell, and the first thing in the game that spends FP.
 
 /// WHAT A CAST COSTS, and the pool is the only thing rationing it — a cast bills NO stamina (owner's

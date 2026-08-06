@@ -17,6 +17,13 @@ pub const guard_block = Event{ .low = 0.30, .high = 0.42, .dur = 0.09 };
 pub const guard_block_heavy = Event{ .low = 0.62, .high = 0.55, .dur = 0.18 };
 pub const guard_break = Event{ .low = 0.95, .high = 0.52, .dur = 0.42 };
 pub const roll = Event{ .low = 0.16, .high = 0.40, .dur = 0.10 }; // the dodge whump
+pub const cast_throw = Event{ .low = 0.28, .high = 0.50, .dur = 0.14 }; // the stone lets go — a crack, not a thud
+/// A RISING rumble, which a single `Event` cannot be: `Motor` decays from its peak. Pulse this every frame and
+/// the envelope walks UP, since `pulse` re-arms on any peak at or above the live level. Mostly in the HIGH
+/// motor — a spell building is a fizz in the grip, and the low pair belongs to the ogre's footfalls.
+pub fn castCharge(fill: f32) Event {
+    return .{ .low = 0.10 * fill, .high = 0.34 * fill, .dur = 0.10 };
+}
 pub const kill = Event{ .low = 0.34, .high = 0.20, .dur = 0.14 }; // a toad falls
 pub const death = Event{ .low = 1.00, .high = 0.60, .dur = 0.70 }; // you die
 

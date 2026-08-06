@@ -232,6 +232,13 @@ pub fn u8f(v: f32) u8 {
     return @intFromFloat(clampF(v, 0, 255));
 }
 
+/// An authored `Color` as the 0..1 vec3 the shader uniforms take (`gfx.Light.col`, water tones) — the one
+/// conversion, so a colour that must match between a mesh and a light is written once, not transcribed.
+pub fn colVec(c: rl.Color) rl.Vector3 {
+    const f = 1.0 / 255.0;
+    return v3(@as(f32, @floatFromInt(c.r)) * f, @as(f32, @floatFromInt(c.g)) * f, @as(f32, @floatFromInt(c.b)) * f);
+}
+
 pub fn sinf(x: f32) f32 {
     return @floatCast(@sin(@as(f64, x)));
 }

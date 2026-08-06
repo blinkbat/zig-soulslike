@@ -172,7 +172,6 @@ pub fn candle(cx: i32, cy: i32, r: f32, a: u8) void {
     rl.drawCircleGradient(cx, cy, r, withAlpha(CANDLE, a), withAlpha(CANDLE, 0));
 }
 
-// ── SLOTS ─────────────────────────────────────────────────────────────────────────────────────────
 // THE ONE SOCKET. The HUD's equipment cross and the character book's grids are the same fitting at two
 // sizes, and they were two copies until the book wanted one: a hard black seat, a sunk well, a rim that
 // brightens when something is IN it, and jewelled corners on the occupied ones.
@@ -199,10 +198,9 @@ pub fn slot(x: i32, y: i32, w: i32, h: i32, on: bool) void {
     if (on) cornerJewels(x, y, w, h, 2.4, withAlpha(GILT_DIM, 220));
 }
 
-/// THE CURSOR — four brackets standing OFF the slot they name, breathing in and out on the candle clock
-/// and squeezing hard onto the rim while a button is held. It is drawn outside the socket rather than as
-/// a border on it, because a cursor that replaces the rim reads as "this slot changed", not "you are here".
-/// `press` is 0…1 of the held-button squeeze; `travel` fades the whole thing while it is still flying in.
+/// Four brackets standing OFF the slot they name, drawn outside the socket rather than as a border on it — a
+/// cursor that replaces the rim reads as "this slot changed", not "you are here". `press` is 0…1 of the
+/// held-button squeeze; `travel` fades the whole thing while it is still flying in.
 pub fn slotCursor(x: i32, y: i32, w: i32, h: i32, press: f32, travel: f32) void {
     const a: u8 = u8f(255.0 * mathx.clampF(travel, 0, 1));
     if (a == 0) return;
@@ -236,10 +234,8 @@ pub fn slotCursor(x: i32, y: i32, w: i32, h: i32, press: f32, travel: f32) void 
     }
 }
 
-/// THE ROW THE CURSOR IS ON, wherever a list has one: a faint warm wash, a lit spine down its left edge
-/// on the candle clock, and a slow gilt sweep across it. The menu card, the book's picker and its
-/// attribute list each struck their own — three washes one repaint apart, which is how a menu ends up
-/// with two highlights that do not match.
+/// The row the cursor is on, wherever a list has one. The menu card, the book's picker and its attribute list
+/// each struck their own — three washes one repaint apart is how a menu ends up with two highlights.
 const ROW_WASH = rgba(255, 232, 170, 23);
 
 pub fn rowHilite(x: i32, y: i32, w: i32, h: i32) void {

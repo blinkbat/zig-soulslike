@@ -36,6 +36,9 @@ pub const SHOT_DT: f32 = 1.0 / 60.0;
 /// The DRAWING clock, one shot at a time: every camera here TELEPORTS, and a still frame cannot show a
 /// fade — so the occluder fade is handed a step big enough to arrive within the one frame we capture.
 pub const SETTLE_DT: f32 = 10.0;
+/// Where every projectile here is aimed — down `stepWorld`'s own −Z travel line, far enough to be a flight and
+/// not a lob. Shared by shafts and bolts so the four in-flight stills stay comparable.
+const SHOT_DOWNRANGE = mathx.ground(0, -22);
 fn stepWorld(g: *Game, dt: f32, speed: f32) void {
     const moved = speed * dt;
     g.hero.pos.z = mathx.clampF(g.hero.pos.z - moved, -game.PLAY_HALF, game.PLAY_HALF); // travel −Z
@@ -164,6 +167,24 @@ fn stagedRoll(g: *Game, dir: rl.Vector3) void {
 fn stagedCast(g: *Game) void {
     g.hero.fp.reset();
     must(g.hero.requestCast(), "the cast would not start");
+}
+
+/// Frames on man AND rod: a raised cast is half a body taller than the body, so aiming at the shoulder alone
+/// runs the rod off the top of the picture.
+fn wandFrame(g: *Game) rl.Vector3 {
+    return mathx.lerpV(g.hero.shoulderPoint(), g.hero.wandTipWorld(), 0.5);
+}
+
+/// The last frame BEFORE the bolt leaves — the only one the gather's ramp and the light's swell can be judged
+/// on, since the throw is what spends the charge.
+fn castToCharged(g: *Game, dt: f32) void {
+    var k: i32 = 0;
+    while (k < 120) : (k += 1) {
+        if (g.hero.chargeFill() >= 0.92) return;
+        g.hero.updateCast(dt, null);
+        must(!g.hero.thrown, "the charge never topped out before the throw");
+    }
+    must(false, "the cast never charged");
 }
 
 /// Drive a live cast to the frame the bolt leaves and stop there — the one frame that has to prove the arm
@@ -426,14 +447,14 @@ pub fn runShots(g: *Game) void {
             g.hero.update(dt, 0, 0, null);
             g.hero.pose();
         }
-        game.shootShaftForShot(g, mathx.ground(0, -22), .plain);
+        game.shootShaftForShot(g, SHOT_DOWNRANGE, .plain);
         k = 0;
         while (k < 7) : (k += 1) game.stepShaftsForShot(g, dt);
         shootPortrait(g, "shots/20n_bow_shaft.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.06, 6.0);
         // THE FIRE ARROW, in the SAME framing as the plain shaft above so the two are comparable, and
         // then cropped onto the head itself — the flame wad is 10 cm of the frame at 6 m.
         game.clearShaftsForShot(g);
-        game.shootShaftForShot(g, mathx.ground(0, -22), .fire);
+        game.shootShaftForShot(g, SHOT_DOWNRANGE, .fire);
         k = 0;
         while (k < 7) : (k += 1) game.stepShaftsForShot(g, dt);
         shootPortrait(g, "shots/20s_fire_shaft.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.06, 6.0);
@@ -476,10 +497,7 @@ pub fn runShots(g: *Game) void {
         while (k < 30) : (k += 1) stepWorld(g, dt, 0);
     }
 
-    // ── THE WAND ──────────────────────────────────────────────────────────────────────────────────
-    // The LEFT hand's other armament. The two frames that matter are the CARRY (a rod where the boards were)
-    // and the THROW (the arm over the crown), and the pair of sweeps, because "it alternates" is the one
-    // claim a single frame cannot make.
+    // The pair of sweeps is shot because "it alternates" is the one claim a single frame cannot make.
     {
         var k: i32 = 0;
         while (k < 30) : (k += 1) stepWorld(g, dt, 0);
@@ -492,47 +510,53 @@ pub fn runShots(g: *Game) void {
             g.hero.pose();
         }
         shootPortrait(g, "shots/20v_wand_carry.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
-        shootPortrait(g, "shots/20w_wand_carry_side.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.09, 3.0);
-        // THE RAISE, caught partway up — the anticipation, which has to read as an arm going somewhere.
+        // …from the WAND's side. At +78 the camera is off his sword shoulder and the torso hides the whole arm.
+        shootPortrait(g, "shots/20w_wand_carry_side.png", g.hero.shoulderPoint(), LIT_YAW - 78, 0.09, 3.0);
+        // The raise partway up — the anticipation has to read as an arm going somewhere.
         stagedCast(g);
         k = 0;
         while (k < 9) : (k += 1) g.hero.updateCast(dt, null);
-        shootPortrait(g, "shots/20y_wand_raise.png", g.hero.shoulderPoint(), LIT_YAW + 30, 0.12, 3.2);
-        // …AND THE THROW: the arm ABOVE THE HEAD, on the frame the bolt actually leaves the stone.
+        shootPortrait(g, "shots/20y_wand_raise.png", wandFrame(g), LIT_YAW + 30, 0.12, 3.2);
+        // The charge topped out. WIDE and SHALLOW rather than a portrait: what is judged here is how far the
+        // violet reaches across the ground and whether his front takes it, and a portrait crops the pool off.
+        castToCharged(g, dt);
+        shootPortrait(g, "shots/20y2_wand_charged.png", wandFrame(g), LIT_YAW + 30, 0.05, 6.5);
+        // …and the same instant CLOSE, for the gather itself: the motes are 2 cm across.
+        shootPortrait(g, "shots/20y3_wand_gather.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.25);
         castToThrow(g, dt);
-        shootPortrait(g, "shots/20z_wand_throw.png", g.hero.shoulderPoint(), LIT_YAW + 30, 0.16, 3.4);
-        // THE ROD'S OWN HEAD: the stone, its claws, the ferrule and the bound grip are all a couple of
-        // centimetres and unjudgeable in a full-body frame. Cropped HERE rather than off the low carry —
-        // there the tip hangs at knee height, which put the camera 30 cm off the ground with half the frame
-        // in dirt and the head in its own shadow. Overhead it is against the sky and lit.
+        shootPortrait(g, "shots/20z_wand_throw.png", wandFrame(g), LIT_YAW + 30, 0.16, 3.4);
+        // The release on that same frame, with the flash, the collar and the flare that fire on it.
+        game.clearShaftsForShot(g);
+        game.throwBoltForShot(g, SHOT_DOWNRANGE);
+        shootPortrait(g, "shots/20z3_wand_release.png", wandFrame(g), LIT_YAW + 30, 0.05, 6.5);
+        shootPortrait(g, "shots/20z4_wand_release_head.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.6);
+        game.clearShaftsForShot(g);
+        // The rod's head is a couple of centimetres, so it needs a crop. Taken OVERHEAD rather than off the
+        // carry: down there the tip is at knee height, which buries the camera in dirt and the head in shadow.
         shootPortrait(g, "shots/20x_wand_crop.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.25);
-        shootPortrait(g, "shots/20za_wand_throw_front.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 3.4);
+        shootPortrait(g, "shots/20za_wand_throw_front.png", wandFrame(g), LIT_YAW, 0.16, 3.4);
         const firstSide = g.hero.castAlt;
         while (g.hero.casting) g.hero.updateCast(dt, null);
-        // THE SECOND CAST SWEEPS BACK THE OTHER WAY, photographed at the SAME instant of the stroke and from
-        // the same place, so the pair is the comparison and not two unrelated pictures.
+        // Same instant of the stroke, same camera — the pair IS the comparison.
         stagedCast(g);
         castToThrow(g, dt);
         must(g.hero.castAlt != firstSide, "the second cast did not sweep the other way");
-        shootPortrait(g, "shots/20zb_wand_throw_alt.png", g.hero.shoulderPoint(), LIT_YAW + 30, 0.16, 3.4);
-        shootPortrait(g, "shots/20zc_wand_throw_alt_front.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 3.4);
-        // THE BOLT IN FLIGHT — thrown WITHOUT letting the cast finish, so the pose is still the throw and the
-        // shaft leaves the stone OVER HIS HEAD. Launched out of the low carry instead (which is what the
-        // first pass did) it came off the tip of a wand hanging at his knee and skidded away at ankle height.
+        shootPortrait(g, "shots/20zb_wand_throw_alt.png", wandFrame(g), LIT_YAW + 30, 0.16, 3.4);
+        shootPortrait(g, "shots/20zc_wand_throw_alt_front.png", wandFrame(g), LIT_YAW, 0.16, 3.4);
+        // Thrown WITHOUT letting the cast finish, so the pose is still the throw and the shaft leaves the stone
+        // over his head — out of the carry it comes off a wand at knee height and skids away at ankle height.
         game.clearShaftsForShot(g);
-        game.throwBoltForShot(g, mathx.ground(0, -22));
+        game.throwBoltForShot(g, SHOT_DOWNRANGE);
         k = 0;
         while (k < 9) : (k += 1) game.stepShaftsForShot(g, dt);
-        // Framed on the BOLT rather than on him: at 30 m/s it is metres downrange by now, and a framing that
-        // tracks the caster is a framing the thing being photographed has already left.
+        // Framed on the BOLT, not on him: at 30 m/s it has already left any framing that tracks the caster.
         if (game.flyingPointForShot(g, .bolt)) |at| {
             shootPortrait(g, "shots/20zd_wand_bolt.png", at, LIT_YAW + 78, 0.06, 5.0);
             shootPortrait(g, "shots/20ze_wand_bolt_head.png", at, LIT_YAW + 20, 0.04, 1.1);
         }
         game.clearShaftsForShot(g);
         while (g.hero.casting) g.hero.updateCast(dt, null);
-        // THE CROSS: a rod in the LEFT slot and the bolt in the sorcery slot, which is the first time that
-        // slot has held anything at all — then the same cross with the pool short of a cast in it.
+        // The HUD cross: a rod in the left slot and the bolt in the sorcery slot, then the same short of FP.
         k = 0;
         while (k < 12) : (k += 1) {
             g.hero.update(dt, 0, 0, null);
@@ -544,6 +568,22 @@ pub fn runShots(g: *Game) void {
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
         shootClear(g, "shots/20zg_wand_hud_dry.png", LIT_YAW + 150, 0.18, 4.6);
+        // Walking, at two points HALF A STRIDE apart: one frame cannot show that the carry damps the arm's swing
+        // without welding it. LAST in the block, because `stepWorld` forces travel down −Z and takes the lit
+        // facing every shot above depends on. Started at z=6 rather than the gait block's z=26 — that end of the
+        // runway sits in a cliff's shadow and a warm-up this short never walks out of it.
+        g.hero.pos = mathx.ground(0, 6);
+        k = 0;
+        while (k < 40) : (k += 1) stepWorld(g, dt, heromod.WALK_SPEED);
+        shootPortrait(g, "shots/20zh_wand_walk.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 4.2);
+        // Measured off the phase, which WRAPS — a bare `< 0.5` test can already be satisfied and shoot twice.
+        const ph0 = g.hero.phase;
+        k = 0;
+        while (k < 240) : (k += 1) {
+            stepWorld(g, dt, heromod.WALK_SPEED);
+            if (@mod(g.hero.phase - ph0 + 1.0, 1.0) >= 0.5) break;
+        }
+        shootPortrait(g, "shots/20zi_wand_walk_b.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 4.2);
         // PUT IT AWAY and leave the field as the rest of the harness expects to find it.
         g.hero.fp.reset();
         g.hero.fpRefused = 0;

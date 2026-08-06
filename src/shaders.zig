@@ -109,7 +109,7 @@ pub const sceneFS =
     \\uniform mat4 lightVP;     // sun's ortho view-projection (captured in the depth pass)
     \\uniform sampler2D shadowMap;
     \\uniform int shadowMapResolution;
-    \\uniform vec3 lightPos[16];  // MAX_LIGHTS torch/fire lights, nearest-first
+    \\uniform vec3 lightPos[16];  // MAX_LIGHTS point lights: the nearest world fires, plus any CARRIED one
     \\uniform vec3 lightCol[16];  // colour * intensity (pre-gamma)
     \\uniform float lightRad[16];
     \\uniform int nLights;

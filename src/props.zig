@@ -487,9 +487,8 @@ test "fires carry a light above their base and inside their own bound" {
     }
 }
 
-pub const WATER_TONES = [3]rl.Vector3{ linear(art.WATER_SHALLOW), linear(art.WATER_MID), linear(art.WATER_DEEP) };
-
-fn linear(c: rl.Color) rl.Vector3 {
-    const f = 1.0 / 255.0;
-    return v3(@as(f32, @floatFromInt(c.r)) * f, @as(f32, @floatFromInt(c.g)) * f, @as(f32, @floatFromInt(c.b)) * f);
-}
+pub const WATER_TONES = [3]rl.Vector3{
+    mathx.colVec(art.WATER_SHALLOW),
+    mathx.colVec(art.WATER_MID),
+    mathx.colVec(art.WATER_DEEP),
+};

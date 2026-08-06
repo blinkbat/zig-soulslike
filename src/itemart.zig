@@ -4,18 +4,9 @@ const mathx = @import("mathx.zig");
 const uiart = @import("uiart.zig");
 const item = @import("item.zig");
 
-// PICTURES OF THINGS — the armaments in the HUD's cross and every kind in the bag, shared by the HUD and
-// the character book the way uiart.zig's chrome is. They are drawn as OBJECTS rather than as glyphs: a
-// blade has a taper, a fuller and an edge that catches the light; a shield has boards, a binding and
-// rivets; a flask has glass, a liquid line and a wax seal. Three rules hold the set together:
-//
-// - **EVERY STROKE SCALES OFF `k`.** The set was tuned in a 34 px box (`TUNED_AT`) and multiplies up, so
-//   one picture serves a 33 px bag cell and a 240 px detail plate.
-// - **WABI-SABI, BUT DETERMINISTIC.** Nothing here is machined: unequal guard arms, planks of different
-//   widths, a nicked edge, a stopper off plumb. Every offset comes out of a FIXED-SEED `mathx.Rng`
-//   re-seeded on each call, so the icon is imperfect and *the same imperfection every frame*. Drawing off
-//   a live stream would make the whole HUD crawl.
-// - **ONE PICTURE PER KIND, RESOLVED IN `draw`.** Nothing else asks what an item looks like.
+// Every stroke scales off `k`: the set was tuned in a 34 px box (`TUNED_AT`) and multiplies up, so one picture
+// serves a 33 px bag cell and a 240 px detail plate. Every wabi-sabi offset comes out of a FIXED-SEED
+// `mathx.Rng` re-seeded per call — off a live stream the whole HUD crawls.
 
 const rgba = mathx.rgba;
 

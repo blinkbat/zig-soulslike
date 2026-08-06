@@ -429,6 +429,8 @@ pub const Id = enum {
     arrow_wood,
     arrow_stone,
     arrow_metal,
+    wand_charge, // the gather: something being drawn INTO the stone, climbing
+    wand_cast, // …and the stone letting go
     bone_hurt,
     bone_die,
     skel_lunge, // THE GREATSWORD COMMITTING — dry bones gathering, then two metres of steel coming at you
@@ -504,11 +506,9 @@ fn submixTrim(m: Submix) f32 {
     };
 }
 
-// THE PLAYER'S FILTER RACK, one per `Submix` (Menu > Debug > Sound Filters).
-//
-// BAKE-TIME, NOT PLAYBACK-TIME, and it has to be: raylib gives volume/pitch/pan per playing sound and
-// nothing else, so a voice already sounding cannot be filtered. Every voice here is synthesized, so a
-// filter is more of the finish `master` applies and moving a dial re-renders that family (`tickFx`).
+// The player's filter rack, one per `Submix` (Menu > Debug > Sound Filters). BAKE-TIME, not playback-time, and it
+// has to be: raylib gives volume/pitch/pan per playing sound and nothing else, so a voice already sounding
+// cannot be filtered. Moving a dial re-renders that family (`tickFx`).
 
 pub const AFX_COUNT = 9;
 pub const AFX_EPS: f32 = 0.001;
@@ -666,6 +666,9 @@ pub fn tickFx(dt: f32) void {
 }
 
 const Row = struct {
+    /// Here to be CHECKED, not read. `BANK` is indexed by `@intFromEnum`, so inserting an `Id` without its row
+    /// at the matching line leaves the lengths agreeing while every voice below plays its neighbour's recipe.
+    id: Id,
     make: *const fn (*Rack) void,
     gain: f32 = 0.7,
     mix: Submix = .sfx,
@@ -951,6 +954,30 @@ fn mkArrowMetal(r: *Rack) void {
     r.ring(0.002, 0.30, 1750, 0.55, 4.5, 3); // the shaft and the iron singing together
     r.grit(0.0, 0.05, 0.5, 5000, 0.3, 8.0);
     r.master(2.0, 5600);
+}
+
+
+/// MINERAL, not a throat: something drawn into a stone. `mkBowDraw`'s trick — resonant noise crawling across
+/// the spectrum as the thing loads — run UPWARD, with a tone rising under it so the climb is pitched rather
+/// than a bare filter sweep. It must be OVER by the throw (see `seconds`), or a chained cast leaves the last
+/// gather still climbing under the next crack.
+fn mkWandCharge(r: *Rack) void {
+    r.air(0.0, 0.34, 0.34, 700, 3800, 0.66, 1.1); // the draw-in, sweeping up
+    r.growl(0.02, 0.32, 150, 430, 0.30, 0.26, 0.42); // …and a pitched core climbing with it
+    r.ring(0.05, 0.30, 880, 0.15, 3.0, 3); // a thin harmonic on top: the stone, not the air round it
+    r.grit(0.0, 0.28, 0.12, 3000, 0.30, 1.2); // the shimmer the motes are drawing in
+    r.master(1.5, 4400);
+}
+
+/// A CRACK, not a boom: the bolt is 24 damage of the most-resisted element, and a cannon would promise a hit
+/// the numbers cannot pay for. Struck crystal over a short tear of air.
+fn mkWandCast(r: *Rack) void {
+    r.tick(0.0, 0.44, 5200); // the stone letting go
+    r.ring(0.0, 0.26, 620, 0.24, 5.5, 3); // …ringing after it, which is what makes it mineral
+    r.air(0.0, 0.20, 0.50, 4600, 1100, 0.48, 3.4); // the bolt tearing away
+    r.body(0.0, 0.09, 260, 110, 0.32, 5.5); // just enough mass under it to be felt
+    r.grit(0.02, 0.15, 0.24, 1800, 0.45, 3.0);
+    r.master(2.1, 5000);
 }
 
 fn mkBoneHurt(r: *Rack) void {
@@ -1487,94 +1514,98 @@ fn battle(old: f32) f32 {
 }
 
 const BANK = [NV]Row{
-    .{ .make = mkStepSoft, .gain = 0.075, .jit = 0.13, .vjit = 0.30, .vars = 4, .poly = 3 },
-    .{ .make = mkStepHard, .gain = 0.100, .jit = 0.12, .vjit = 0.26, .vars = 4, .poly = 3 },
-    .{ .make = mkStepSprint, .gain = 0.120, .jit = 0.11, .vjit = 0.24, .vars = 4, .poly = 3 },
-    .{ .make = mkStepStone, .gain = 0.055, .jit = 0.14, .vjit = 0.28, .vars = 4, .poly = 3 },
-    .{ .make = mkStepWater, .gain = 0.130, .jit = 0.13, .vjit = 0.26, .vars = 4, .poly = 3 },
-    .{ .make = mkRoll, .gain = 0.30, .jit = 0.09, .vjit = 0.14, .vars = 2 },
-    .{ .make = mkSwingLight, .gain = 0.26, .mix = .combat, .jit = 0.16, .vjit = 0.22, .vars = 5, .poly = 3 },
-    .{ .make = mkSwingHeavy, .gain = 0.34, .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 4, .poly = 2 },
-    .{ .make = mkHitLight, .gain = battle(0.68), .mix = .combat, .jit = 0.19, .vjit = 0.24, .vars = 6, .poly = 4 },
-    .{ .make = mkHitHeavy, .gain = battle(0.82), .mix = .combat, .jit = 0.15, .vjit = 0.20, .vars = 5, .poly = 3 },
-    .{ .make = mkHurt, .gain = battle(0.70), .mix = .combat, .jit = 0.17, .vjit = 0.20, .vars = 5 },
-    .{ .make = mkHurtHeavy, .gain = battle(0.86), .mix = .combat, .jit = 0.13, .vjit = 0.16, .vars = 4 },
-    .{ .make = mkStagger, .gain = battle(0.55), .mix = .combat, .jit = 0.16, .vjit = 0.20, .vars = 4 },
-    .{ .make = mkGuardBlock, .gain = battle(0.62), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 4 },
+    .{ .id = .step_soft, .make = mkStepSoft, .gain = 0.075, .jit = 0.13, .vjit = 0.30, .vars = 4, .poly = 3 },
+    .{ .id = .step_hard, .make = mkStepHard, .gain = 0.100, .jit = 0.12, .vjit = 0.26, .vars = 4, .poly = 3 },
+    .{ .id = .step_sprint, .make = mkStepSprint, .gain = 0.120, .jit = 0.11, .vjit = 0.24, .vars = 4, .poly = 3 },
+    .{ .id = .step_stone, .make = mkStepStone, .gain = 0.055, .jit = 0.14, .vjit = 0.28, .vars = 4, .poly = 3 },
+    .{ .id = .step_water, .make = mkStepWater, .gain = 0.130, .jit = 0.13, .vjit = 0.26, .vars = 4, .poly = 3 },
+    .{ .id = .roll, .make = mkRoll, .gain = 0.30, .jit = 0.09, .vjit = 0.14, .vars = 2 },
+    .{ .id = .swing_light, .make = mkSwingLight, .gain = 0.26, .mix = .combat, .jit = 0.16, .vjit = 0.22, .vars = 5, .poly = 3 },
+    .{ .id = .swing_heavy, .make = mkSwingHeavy, .gain = 0.34, .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 4, .poly = 2 },
+    .{ .id = .hit_light, .make = mkHitLight, .gain = battle(0.68), .mix = .combat, .jit = 0.19, .vjit = 0.24, .vars = 6, .poly = 4 },
+    .{ .id = .hit_heavy, .make = mkHitHeavy, .gain = battle(0.82), .mix = .combat, .jit = 0.15, .vjit = 0.20, .vars = 5, .poly = 3 },
+    .{ .id = .hurt, .make = mkHurt, .gain = battle(0.70), .mix = .combat, .jit = 0.17, .vjit = 0.20, .vars = 5 },
+    .{ .id = .hurt_heavy, .make = mkHurtHeavy, .gain = battle(0.86), .mix = .combat, .jit = 0.13, .vjit = 0.16, .vars = 4 },
+    .{ .id = .stagger, .make = mkStagger, .gain = battle(0.55), .mix = .combat, .jit = 0.16, .vjit = 0.20, .vars = 4 },
+    .{ .id = .guard_block, .make = mkGuardBlock, .gain = battle(0.62), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 4 },
     // The BREAK is once a fight at most, and it is the cue to get out.
-    .{ .make = mkGuardBreak, .gain = battle(0.92), .mix = .combat, .jit = 0.05, .vjit = 0.06, .vars = 2, .poly = 1 },
-    .{ .make = mkRefused, .gain = 0.34, .jit = 0.06, .vjit = 0.08, .vars = 2 },
-    .{ .make = mkDeath, .gain = battle(0.95), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
-    .{ .make = mkRespawn, .gain = battle(0.55), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
-    .{ .make = mkToadHop, .gain = battle(0.40), .mix = .combat, .jit = 0.15, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 30 },
-    .{ .make = mkToadLunge, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 34 },
-    .{ .make = mkToadGape, .gain = battle(0.46), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 26 },
-    .{ .make = mkToadChomp, .gain = battle(0.62), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 30 },
-    .{ .make = mkToadHurt, .gain = battle(0.58), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 30 },
-    .{ .make = mkToadDie, .gain = battle(0.66), .mix = .combat, .jit = 0.11, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 34 },
-    .{ .make = mkBowDraw, .gain = 0.17, .mix = .combat, .jit = 0.10, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 44 },
-    .{ .make = mkBowLoose, .gain = battle(0.58), .mix = .combat, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 64 },
-    .{ .make = mkArrowHit, .gain = battle(0.72), .mix = .combat, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3 },
-    .{ .make = mkArrowDirt, .gain = 0.34, .mix = .combat, .jit = 0.15, .vjit = 0.28, .vars = 4, .poly = 4, .reach = 38 },
-    .{ .make = mkArrowWood, .gain = battle(0.56), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 4, .reach = 44 },
-    .{ .make = mkArrowStone, .gain = battle(0.50), .mix = .combat, .jit = 0.13, .vjit = 0.22, .vars = 4, .poly = 4, .reach = 48 },
-    .{ .make = mkArrowMetal, .gain = battle(0.52), .mix = .combat, .jit = 0.11, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 52 },
-    .{ .make = mkBoneHurt, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 44 },
-    .{ .make = mkBoneDie, .gain = battle(0.68), .mix = .combat, .jit = 0.09, .vjit = 0.12, .vars = 3, .reach = 54 },
+    .{ .id = .guard_break, .make = mkGuardBreak, .gain = battle(0.92), .mix = .combat, .jit = 0.05, .vjit = 0.06, .vars = 2, .poly = 1 },
+    .{ .id = .refused, .make = mkRefused, .gain = 0.34, .jit = 0.06, .vjit = 0.08, .vars = 2 },
+    .{ .id = .death, .make = mkDeath, .gain = battle(0.95), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
+    .{ .id = .respawn, .make = mkRespawn, .gain = battle(0.55), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
+    .{ .id = .toad_hop, .make = mkToadHop, .gain = battle(0.40), .mix = .combat, .jit = 0.15, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 30 },
+    .{ .id = .toad_lunge, .make = mkToadLunge, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 34 },
+    .{ .id = .toad_gape, .make = mkToadGape, .gain = battle(0.46), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 26 },
+    .{ .id = .toad_chomp, .make = mkToadChomp, .gain = battle(0.62), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 30 },
+    .{ .id = .toad_hurt, .make = mkToadHurt, .gain = battle(0.58), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 30 },
+    .{ .id = .toad_die, .make = mkToadDie, .gain = battle(0.66), .mix = .combat, .jit = 0.11, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 34 },
+    .{ .id = .bow_draw, .make = mkBowDraw, .gain = 0.17, .mix = .combat, .jit = 0.10, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 44 },
+    .{ .id = .bow_loose, .make = mkBowLoose, .gain = battle(0.58), .mix = .combat, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 64 },
+    .{ .id = .arrow_hit, .make = mkArrowHit, .gain = battle(0.72), .mix = .combat, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3 },
+    .{ .id = .arrow_dirt, .make = mkArrowDirt, .gain = 0.34, .mix = .combat, .jit = 0.15, .vjit = 0.28, .vars = 4, .poly = 4, .reach = 38 },
+    .{ .id = .arrow_wood, .make = mkArrowWood, .gain = battle(0.56), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 4, .reach = 44 },
+    .{ .id = .arrow_stone, .make = mkArrowStone, .gain = battle(0.50), .mix = .combat, .jit = 0.13, .vjit = 0.22, .vars = 4, .poly = 4, .reach = 48 },
+    .{ .id = .arrow_metal, .make = mkArrowMetal, .gain = battle(0.52), .mix = .combat, .jit = 0.11, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 52 },
+    // Barely jittered, unlike everything round it: the climb IS the tell, and a pitch that wanders take to
+    // take reads as two different things rather than one thing arriving.
+    .{ .id = .wand_charge, .make = mkWandCharge, .gain = 0.28, .mix = .combat, .jit = 0.04, .vjit = 0.06, .vars = 3, .poly = 2, .reach = 80 },
+    .{ .id = .wand_cast, .make = mkWandCast, .gain = battle(0.60), .mix = .combat, .jit = 0.08, .vjit = 0.12, .vars = 4, .poly = 3, .reach = 72 },
+    .{ .id = .bone_hurt, .make = mkBoneHurt, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 44 },
+    .{ .id = .bone_die, .make = mkBoneDie, .gain = battle(0.68), .mix = .combat, .jit = 0.09, .vjit = 0.12, .vars = 3, .reach = 54 },
     // THE ONE WARNING THE LEAP GIVES YOU, so it carries as far as the leap can reach and then some.
-    .{ .make = mkSkelLunge, .gain = battle(0.86), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 4, .poly = 3, .reach = 62 },
+    .{ .id = .skel_lunge, .make = mkSkelLunge, .gain = battle(0.86), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 4, .poly = 3, .reach = 62 },
     // about him is an octave down and half a second longer (see the ogre block above); low frequencies are also what survive a couple of hundred metres of air, so the physics and the character agree for once.
-    .{ .make = mkOgreStep, .gain = battle(0.60), .mix = .combat, .jit = 0.08, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 115 },
-    .{ .make = mkOgreRoar, .gain = battle(0.80), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .reach = 135 },
-    .{ .make = mkOgreSlam, .gain = battle(1.00), .mix = .combat, .jit = 0.06, .vjit = 0.08, .vars = 3, .reach = 135 },
-    .{ .make = mkOgreSwipe, .gain = battle(0.72), .mix = .combat, .jit = 0.07, .vjit = 0.12, .vars = 3, .reach = 85 },
-    .{ .make = mkOgreHurt, .gain = battle(0.66), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 80 },
-    .{ .make = mkOgreDie, .gain = battle(0.92), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1, .reach = 135 },
-    .{ .make = mkKoboldSnarl, .gain = battle(0.62), .mix = .combat, .jit = 0.22, .vjit = 0.24, .vars = 6, .poly = 3, .reach = 58 },
-    .{ .make = mkKoboldChop, .gain = battle(0.38), .mix = .combat, .jit = 0.22, .vjit = 0.28, .vars = 6, .poly = 4, .reach = 40 },
-    .{ .make = mkKoboldHeave, .gain = battle(0.58), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 2, .reach = 62 },
-    .{ .make = mkKoboldCast, .gain = 0.30, .mix = .combat, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 2, .reach = 78 },
+    .{ .id = .ogre_step, .make = mkOgreStep, .gain = battle(0.60), .mix = .combat, .jit = 0.08, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 115 },
+    .{ .id = .ogre_roar, .make = mkOgreRoar, .gain = battle(0.80), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .reach = 135 },
+    .{ .id = .ogre_slam, .make = mkOgreSlam, .gain = battle(1.00), .mix = .combat, .jit = 0.06, .vjit = 0.08, .vars = 3, .reach = 135 },
+    .{ .id = .ogre_swipe, .make = mkOgreSwipe, .gain = battle(0.72), .mix = .combat, .jit = 0.07, .vjit = 0.12, .vars = 3, .reach = 85 },
+    .{ .id = .ogre_hurt, .make = mkOgreHurt, .gain = battle(0.66), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 80 },
+    .{ .id = .ogre_die, .make = mkOgreDie, .gain = battle(0.92), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1, .reach = 135 },
+    .{ .id = .kobold_snarl, .make = mkKoboldSnarl, .gain = battle(0.62), .mix = .combat, .jit = 0.22, .vjit = 0.24, .vars = 6, .poly = 3, .reach = 58 },
+    .{ .id = .kobold_chop, .make = mkKoboldChop, .gain = battle(0.38), .mix = .combat, .jit = 0.22, .vjit = 0.28, .vars = 6, .poly = 4, .reach = 40 },
+    .{ .id = .kobold_heave, .make = mkKoboldHeave, .gain = battle(0.58), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 2, .reach = 62 },
+    .{ .id = .kobold_cast, .make = mkKoboldCast, .gain = 0.30, .mix = .combat, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 2, .reach = 78 },
     // The quietest positive cue in the game, and lowered twice on the owner's call.
-    .{ .make = mkKoboldHeal, .gain = 0.11, .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 3, .reach = 54 },
-    .{ .make = mkKoboldWhirl, .gain = battle(0.42), .mix = .combat, .jit = 0.20, .vjit = 0.24, .vars = 5, .poly = 3, .reach = 44 },
-    .{ .make = mkKoboldSling, .gain = battle(0.50), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 4, .reach = 52 },
-    .{ .make = mkKoboldBite, .gain = battle(0.56), .mix = .combat, .jit = 0.20, .vjit = 0.26, .vars = 6, .poly = 3, .reach = 40 },
-    .{ .make = mkKoboldHurt, .gain = battle(0.60), .mix = .combat, .jit = 0.24, .vjit = 0.30, .vars = 6, .poly = 4, .reach = 48 },
-    .{ .make = mkKoboldDie, .gain = battle(0.68), .mix = .combat, .jit = 0.18, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 58 },
-    .{ .make = mkSpiderHiss, .gain = battle(0.56), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 66 },
-    .{ .make = mkSpiderSpit, .gain = battle(0.58), .mix = .combat, .jit = 0.12, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 62 },
-    .{ .make = mkSpiderBite, .gain = battle(0.64), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 34 },
-    .{ .make = mkSpiderHurt, .gain = battle(0.60), .mix = .combat, .jit = 0.15, .vjit = 0.22, .vars = 4, .poly = 3, .reach = 40 },
-    .{ .make = mkSpiderDie, .gain = battle(0.80), .mix = .combat, .jit = 0.08, .vjit = 0.10, .vars = 2, .poly = 2, .reach = 70 },
-    .{ .make = mkBroodScreech, .gain = battle(0.62), .mix = .combat, .jit = 0.22, .vjit = 0.24, .vars = 5, .poly = 4, .reach = 76 },
-    .{ .make = mkBroodLeap, .gain = battle(0.52), .mix = .combat, .jit = 0.26, .vjit = 0.28, .vars = 6, .poly = 4, .reach = 46 },
-    .{ .make = mkBroodBite, .gain = battle(0.44), .mix = .combat, .jit = 0.26, .vjit = 0.30, .vars = 6, .poly = 4, .reach = 30 },
-    .{ .make = mkBroodHurt, .gain = battle(0.46), .mix = .combat, .jit = 0.28, .vjit = 0.32, .vars = 6, .poly = 4, .reach = 34 },
-    .{ .make = mkBroodDie, .gain = battle(0.52), .mix = .combat, .jit = 0.24, .vjit = 0.28, .vars = 6, .poly = 4, .reach = 40 },
-    .{ .make = mkSacLay, .gain = battle(0.50), .mix = .combat, .jit = 0.12, .vjit = 0.18, .vars = 3, .poly = 2, .reach = 44 },
-    .{ .make = mkSacHit, .gain = battle(0.54), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 4, .poly = 4, .reach = 34 },
+    .{ .id = .kobold_heal, .make = mkKoboldHeal, .gain = 0.11, .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 3, .reach = 54 },
+    .{ .id = .kobold_whirl, .make = mkKoboldWhirl, .gain = battle(0.42), .mix = .combat, .jit = 0.20, .vjit = 0.24, .vars = 5, .poly = 3, .reach = 44 },
+    .{ .id = .kobold_sling, .make = mkKoboldSling, .gain = battle(0.50), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 4, .reach = 52 },
+    .{ .id = .kobold_bite, .make = mkKoboldBite, .gain = battle(0.56), .mix = .combat, .jit = 0.20, .vjit = 0.26, .vars = 6, .poly = 3, .reach = 40 },
+    .{ .id = .kobold_hurt, .make = mkKoboldHurt, .gain = battle(0.60), .mix = .combat, .jit = 0.24, .vjit = 0.30, .vars = 6, .poly = 4, .reach = 48 },
+    .{ .id = .kobold_die, .make = mkKoboldDie, .gain = battle(0.68), .mix = .combat, .jit = 0.18, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 58 },
+    .{ .id = .spider_hiss, .make = mkSpiderHiss, .gain = battle(0.56), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 66 },
+    .{ .id = .spider_spit, .make = mkSpiderSpit, .gain = battle(0.58), .mix = .combat, .jit = 0.12, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 62 },
+    .{ .id = .spider_bite, .make = mkSpiderBite, .gain = battle(0.64), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 34 },
+    .{ .id = .spider_hurt, .make = mkSpiderHurt, .gain = battle(0.60), .mix = .combat, .jit = 0.15, .vjit = 0.22, .vars = 4, .poly = 3, .reach = 40 },
+    .{ .id = .spider_die, .make = mkSpiderDie, .gain = battle(0.80), .mix = .combat, .jit = 0.08, .vjit = 0.10, .vars = 2, .poly = 2, .reach = 70 },
+    .{ .id = .brood_screech, .make = mkBroodScreech, .gain = battle(0.62), .mix = .combat, .jit = 0.22, .vjit = 0.24, .vars = 5, .poly = 4, .reach = 76 },
+    .{ .id = .brood_leap, .make = mkBroodLeap, .gain = battle(0.52), .mix = .combat, .jit = 0.26, .vjit = 0.28, .vars = 6, .poly = 4, .reach = 46 },
+    .{ .id = .brood_bite, .make = mkBroodBite, .gain = battle(0.44), .mix = .combat, .jit = 0.26, .vjit = 0.30, .vars = 6, .poly = 4, .reach = 30 },
+    .{ .id = .brood_hurt, .make = mkBroodHurt, .gain = battle(0.46), .mix = .combat, .jit = 0.28, .vjit = 0.32, .vars = 6, .poly = 4, .reach = 34 },
+    .{ .id = .brood_die, .make = mkBroodDie, .gain = battle(0.52), .mix = .combat, .jit = 0.24, .vjit = 0.28, .vars = 6, .poly = 4, .reach = 40 },
+    .{ .id = .sac_lay, .make = mkSacLay, .gain = battle(0.50), .mix = .combat, .jit = 0.12, .vjit = 0.18, .vars = 3, .poly = 2, .reach = 44 },
+    .{ .id = .sac_hit, .make = mkSacHit, .gain = battle(0.54), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 4, .poly = 4, .reach = 34 },
     // THE HATCH IS A CUE, and one you may be across the plaza from when it fires.
-    .{ .make = mkSacHatch, .gain = battle(0.66), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 72 },
-    .{ .make = mkSacBurst, .gain = battle(0.74), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 68 },
-    .{ .make = mkAcidSplash, .gain = battle(0.58), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 4, .poly = 4, .reach = 50 },
-    .{ .make = mkAcidBurn, .gain = 0.26, .mix = .combat, .jit = 0.20, .vjit = 0.26, .vars = 5, .poly = 3, .reach = 24 },
-    .{ .make = mkFlaskDrink, .gain = 0.52, .jit = 0.06, .vjit = 0.10, .vars = 2, .poly = 2 },
-    .{ .make = mkFlaskCycle, .gain = 0.30, .jit = 0.07, .vjit = 0.08, .vars = 2, .poly = 3 },
+    .{ .id = .sac_hatch, .make = mkSacHatch, .gain = battle(0.66), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 72 },
+    .{ .id = .sac_burst, .make = mkSacBurst, .gain = battle(0.74), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 68 },
+    .{ .id = .acid_splash, .make = mkAcidSplash, .gain = battle(0.58), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 4, .poly = 4, .reach = 50 },
+    .{ .id = .acid_burn, .make = mkAcidBurn, .gain = 0.26, .mix = .combat, .jit = 0.20, .vjit = 0.26, .vars = 5, .poly = 3, .reach = 24 },
+    .{ .id = .flask_drink, .make = mkFlaskDrink, .gain = 0.52, .jit = 0.06, .vjit = 0.10, .vars = 2, .poly = 2 },
+    .{ .id = .flask_cycle, .make = mkFlaskCycle, .gain = 0.30, .jit = 0.07, .vjit = 0.08, .vars = 2, .poly = 3 },
     // Quieter than the flask: eating is not an emergency, and the sound of it should not be one.
-    .{ .make = mkEat, .gain = 0.40, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 2 },
-    .{ .make = mkChestOpen, .gain = 0.72, .jit = 0.04, .vjit = 0.06, .vars = 2, .poly = 2, .reach = 70 },
-    .{ .make = mkItemGet, .gain = 0.44, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 4 },
-    .{ .make = mkKill, .gain = battle(0.55), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 4 },
-    .{ .make = mkMenuMove, .gain = 0.30, .jit = 0.06, .vjit = 0.08, .vars = 2, .poly = 3 },
-    .{ .make = mkMenuPick, .gain = 0.38, .jit = 0.03, .vjit = 0.05 },
-    .{ .make = mkMenuBack, .gain = 0.32, .jit = 0.03, .vjit = 0.05 },
+    .{ .id = .eat, .make = mkEat, .gain = 0.40, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 2 },
+    .{ .id = .chest_open, .make = mkChestOpen, .gain = 0.72, .jit = 0.04, .vjit = 0.06, .vars = 2, .poly = 2, .reach = 70 },
+    .{ .id = .item_get, .make = mkItemGet, .gain = 0.44, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 4 },
+    .{ .id = .kill, .make = mkKill, .gain = battle(0.55), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 4 },
+    .{ .id = .menu_move, .make = mkMenuMove, .gain = 0.30, .jit = 0.06, .vjit = 0.08, .vars = 2, .poly = 3 },
+    .{ .id = .menu_pick, .make = mkMenuPick, .gain = 0.38, .jit = 0.03, .vjit = 0.05 },
+    .{ .id = .menu_back, .make = mkMenuBack, .gain = 0.32, .jit = 0.03, .vjit = 0.05 },
     // MUCH quieter (owner's call).
-    .{ .make = mkWind, .gain = 0.030, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
-    .{ .make = mkBirds, .gain = 0.20, .mix = .ambience, .jit = 0.14, .vjit = 0.22, .vars = 4, .poly = 2, .reach = 210 },
-    .{ .make = mkBirdsong, .gain = 0.17, .mix = .ambience, .jit = 0.13, .vjit = 0.22, .vars = 4, .poly = 2, .reach = 200 },
+    .{ .id = .wind, .make = mkWind, .gain = 0.030, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
+    .{ .id = .birds, .make = mkBirds, .gain = 0.20, .mix = .ambience, .jit = 0.14, .vjit = 0.22, .vars = 4, .poly = 2, .reach = 210 },
+    .{ .id = .birdsong, .make = mkBirdsong, .gain = 0.17, .mix = .ambience, .jit = 0.13, .vjit = 0.22, .vars = 4, .poly = 2, .reach = 200 },
     // THE OWL IS RARE AND IT IS ALLOWED TO BE HEARD.
-    .{ .make = mkOwl, .gain = 0.24, .mix = .ambience, .jit = 0.08, .vjit = 0.14, .vars = 3, .poly = 2, .reach = 170 },
-    .{ .make = mkCrickets, .gain = 0.010, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
+    .{ .id = .owl, .make = mkOwl, .gain = 0.24, .mix = .ambience, .jit = 0.08, .vjit = 0.14, .vars = 3, .poly = 2, .reach = 170 },
+    .{ .id = .crickets, .make = mkCrickets, .gain = 0.010, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
 };
 
 fn seconds(id: Id) f32 {
@@ -1595,6 +1626,8 @@ fn seconds(id: Id) f32 {
         .chest_open => 0.9, // the lock, the whole hinge turn, and the lid arriving over
         // Every arrow impact is QUICK either way (owner's law) — a third of a second, tops.
         .arrow_hit, .arrow_dirt, .arrow_wood, .arrow_stone, .arrow_metal => 0.36,
+        // The climb has to RESOLVE at the throw, and the raise is CAST_DUR × CAST_AT ≈ 0.30 s.
+        .wand_charge => 0.40,
         .birds => 1.3, // long enough for a phrase plus the answer that can start at 0.72
         .birdsong => 1.0,
         .roll, .swing_heavy, .ogre_swipe, .ogre_step => 0.7,
@@ -2094,6 +2127,13 @@ pub fn arrowImpact(surf: ?@import("collision.zig").Surface) Id {
 
 comptime {
     std.debug.assert(BANK.len == NV);
+    // …and EVERY ROW SITS ON ITS OWN VOICE. The length alone never caught a shifted table (see `Row.id`).
+    for (BANK, 0..) |row, i| {
+        if (@intFromEnum(row.id) != i) @compileError(std.fmt.comptimePrint(
+            "audio: BANK[{d}] is .{s}, which belongs at {d} — the table has shifted against Id",
+            .{ i, @tagName(row.id), @intFromEnum(row.id) },
+        ));
+    }
     // …and a row's `vars`/`poly` INDEX a fixed [MAX_VARS][MAX_POLY] array.
     for (BANK, 0..) |row, i| {
         if (row.vars < 1 or row.vars > MAX_VARS) @compileError(std.fmt.comptimePrint(

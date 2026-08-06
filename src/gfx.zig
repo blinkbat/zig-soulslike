@@ -575,9 +575,7 @@ pub const Scene = struct {
 };
 
 // Per-fragment surface material for the scene shader's texturing pass (see matAlbedo).
-// BARK IS NOT TIMBER, and one id could not carry both: bark's whole read is deep fissures running the
-// trunk, and a plank pushed that far reads as corrugated iron. New ids APPEND — the tail is pinned to
-// the shader's own branches below.
+// New ids APPEND — the tail is pinned to the shader's own branches below.
 pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke, ember, bark };
 comptime {
     std.debug.assert(@intFromEnum(Mat.water) == 9);
@@ -794,12 +792,10 @@ pub const Builder = struct {
         }
     }
 
-    /// A BOX WITH FILLETED EDGES — a superquadric, and the point of it is what it does NOT move: the six
-    /// faces stay flat and in exactly the planes `addCube`'s were, so a part's measured extents (and on
-    /// the hero, its anthropometry) are unchanged while every edge and corner is rounded off. `round` is
-    /// 0..1 — 1 is a plain ellipsoid, ~0.3 reads as a block someone took a file to, and toward 0 it walks
-    /// back to the hard cube. Takes a FULL `size` like `addCube` and UNLIKE `addBlob`, so substituting one
-    /// for the other is exact rather than a silent doubling.
+    /// A superquadric box. The point is what it does NOT move: the six faces stay in exactly `addCube`'s planes,
+    /// so measured extents (on the hero, its anthropometry) are unchanged while the edges round off. `round`
+    /// 0..1 — 1 is a plain ellipsoid, ~0.3 a block taken to with a file. Takes a FULL `size` like `addCube` and
+    /// unlike `addBlob`, so substituting one for the other is exact rather than a silent doubling.
     pub fn addRoundBox(self: *Builder, c: rl.Vector3, size: rl.Vector3, round: f32, segs: i32, sides: i32, col: rl.Color) void {
         const h = v3(@abs(size.x) * 0.5, @abs(size.y) * 0.5, @abs(size.z) * 0.5);
         if (h.x < 1e-5 or h.y < 1e-5 or h.z < 1e-5) return;
@@ -829,11 +825,8 @@ pub const Builder = struct {
                     0.25 * (p0.z + p1.z + p2.z + p3.z) - c.z,
                 );
                 const n = squircleNormal(h, e, mid);
-                // BOX-PROJECTED UVs, not the sphere's arc walk. The surface materials are read in world
-                // units off the uv, and a spherical walk pinches hard toward the poles — which came back
-                // as smeared, hatchy grain across the hero's chest and shoulders where the flat cube it
-                // replaced had clean planar UVs. Projecting on the face the normal points at IS what
-                // `quad` does for a cube face, so a filleted box now textures like the box it replaced.
+                // BOX-PROJECTED UVs, not a sphere's arc walk: materials are read in world units off the uv, and
+                // a spherical walk pinches at the poles — smeared hatchy grain across the hero's chest.
                 self.quadUV(p0, p1, p2, p3, n, col, boxUV(p0, c, n, o), boxUV(p1, c, n, o), boxUV(p2, c, n, o), boxUV(p3, c, n, o));
             }
         }
@@ -905,10 +898,9 @@ fn onSquircle(c: rl.Vector3, h: rl.Vector3, e: f32, t: f32, ang: f32) rl.Vector3
     );
 }
 
-/// TRIPLANAR UV off the face the normal points at, in the same world units `quad` uses — so a filleted
-/// box's texture matches the hard cube's instead of pinching toward a sphere's poles. Picking the plane
-/// off the QUAD's normal (not the vertex's) keeps all four corners on one projection, which is what stops
-/// a seam appearing along every fillet.
+/// Triplanar UV off the face the normal points at, in the world units `quad` uses. Picking the plane off the
+/// QUAD's normal rather than the vertex's keeps all four corners on one projection — otherwise a seam appears
+/// along every fillet.
 fn boxUV(p: rl.Vector3, c: rl.Vector3, n: rl.Vector3, o: rl.Vector2) rl.Vector2 {
     const d = v3(p.x - c.x, p.y - c.y, p.z - c.z);
     const ax = @abs(n.x);

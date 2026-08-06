@@ -87,10 +87,9 @@ const setLocal = heromod.setHumanoid;
 const FIST_Y = -0.05 * H;
 const FIST_Z = 0.02 * H;
 
-/// THE WEAPON IN THE FIST. Both kits are authored pointing UP off the grip (they were built in the
-/// archer's bow frame, whose +Y runs back up the forearm), so the fit FLIPS them — and after it
-/// `wpnTilt` means what the hero's own `GRIP_PITCH` means: degrees the weapon leads FORWARD of the
-/// forearm line, 0 straight down it and away from the elbow.
+/// Both kits are authored pointing UP off the grip (built in the archer's bow frame, whose +Y runs back up the
+/// forearm), so the fit FLIPS them. After it, `wpnTilt` means what `hero.GRIP_PITCH` means: degrees the weapon
+/// leads forward of the forearm line, 0 straight down it and away from the elbow.
 fn wpnFit(tilt: f32) rl.Matrix {
     return mul(ry(180.0), rx(180.0 - tilt));
 }
@@ -179,11 +178,9 @@ const MACE = Attack{
     .step = MACE_STEP,
 };
 
-// THE GREATSWORD IS SLOW, AND HE PAYS FOR EVERY SWING (owner: "he's tough as nails"). He is the hardest
-// thing in the game to trade with — hyper-armour on the slam, 124 HP, 26 poise — so what makes him FAIR
-// is the size of the window either side of a blow, not a smaller number on it. Both moves were retuned
-// together: a longer haul UP so the swing is read from further away, and a longer stand-there AFTER so
-// there is a punish to take rather than a block to hold. The damage is untouched.
+// He is the hardest thing in the game to trade with (hyper-armour on the slam, 124 HP, 26 poise), so what makes
+// him FAIR is the size of the window either side of a blow, not a smaller number on it — a longer haul UP to be
+// read from further off, and a longer stand-there AFTER so there is a punish rather than a block to hold.
 
 const SLAM = Attack{
     .reachOut = 2.18, // MEASURED: near three metres of reach, cocked high and driven down through

@@ -184,10 +184,8 @@ var chipLast: f32 = 1;
 const CHIP_HOLD = 0.42; // seconds the trail hangs before it starts draining
 const CHIP_RATE = 0.55;
 
-/// "THAT DID NOTHING, AND HERE IS WHICH METER SAID SO" — the frame of the bar that refused, drawn OVER the
-/// finished bar and OUTSIDE its fill, so an empty bar (which is exactly when this fires, and has no fill
-/// left to tint) still reads loudly. ONE body, because there are two bars that can refuse now and two
-/// copies of it would be two rings drifting apart.
+/// The FRAME of the bar that refused, drawn over the finished bar and OUTSIDE its fill — this fires exactly
+/// when a bar is empty and has no fill left to tint. One body: two bars can refuse.
 fn refuseRing(x: i32, y: i32, w: i32, h: i32, k: f32) void {
     if (k <= 0.001) return;
     const a: u8 = @intFromFloat(230 * mathx.clampF(k, 0, 1));
@@ -221,10 +219,8 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, fpRefused:
     refuseRing(MARGIN, y, ST_W, ST_H, stamRefused);
 }
 
-/// THE FILL ITSELF — three values (a flat body, a shaded bottom band, a lit hairline on top) plus the
-/// catchlight on the leading edge while the bar is short of full. The ONE copy: the vitals bars and the
-/// floating foe bars each grew their own, which is three constants and a `< 0.999` test kept in step by
-/// hand. `shade` is how deep the bottom band runs; `tipW`/`tipA` size the leading edge.
+/// Three values (flat body, shaded bottom band, lit hairline) plus a catchlight on the leading edge while the
+/// bar is short of full. `shade` is how deep the bottom band runs; `tipW`/`tipA` size the leading edge.
 fn fillThree(x: i32, y: i32, fw: i32, h: i32, frac: f32, hi: rl.Color, lo: rl.Color, tp: rl.Color, shade: i32, tipW: i32, tipA: u8) void {
     if (fw <= 0) return;
     rl.drawRectangle(x, y, fw, h - shade, hi); // a flat body…
@@ -352,10 +348,8 @@ const TALLY_OK = rgba(232, 224, 202, 255);
 pub const Ammo = struct { n: u8, fire: bool = false };
 
 
-/// HOW MANY OF IT ARE LEFT, in a slot's bottom-right corner — the flask's charges, the quiver's shafts
-/// and the bag's stack sizes are one question asked in three places, so they are drawn by one function.
-/// Laid off the corner rather than off the text's own height: the glyphs have descenders, and measured
-/// the other way every tally in the book sat on its socket's rim.
+/// A count in a slot's bottom-right corner (flask charges, quiver shafts, bag stacks). Laid off the CORNER, not
+/// off the text's own height: the glyphs have descenders, and measured that way every tally sat on its rim.
 pub fn tally(s: [:0]const u8, rightX: i32, bottomY: i32, size: i32, col: rl.Color) void {
     const tw = textW(s, size);
     const h = lineH(size);
@@ -426,11 +420,9 @@ pub fn reticle(k: f32) void {
     }
 }
 
-/// Break `s` to `maxW` pixels at `size`, writing NUL-terminated lines into `buf` and returning the ones
-/// that were filled. MEASURED WITH THE REAL FACE at every candidate word rather than at some
-/// characters-per-line guess — Balthazar is proportional and an `m` is three `i`s wide. A word longer than
-/// the whole column is taken anyway and overhangs, which only a column too narrow for the text can produce;
-/// running out of either buffer stops the wrap cleanly instead of truncating mid-word.
+/// Break `s` to `maxW` pixels at `size`, writing NUL-terminated lines into `buf` and returning the filled ones.
+/// MEASURED WITH THE REAL FACE per candidate word, not a characters-per-line guess: Balthazar is proportional.
+/// A word wider than the whole column is taken anyway and overhangs; running out of either buffer stops cleanly.
 pub fn wrap(s: []const u8, size: i32, maxW: i32, buf: []u8, lines: [][:0]const u8) [][:0]const u8 {
     return wrapBy(textW, s, size, maxW, buf, lines);
 }

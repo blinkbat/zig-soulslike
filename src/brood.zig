@@ -78,11 +78,9 @@ const LEG_PHASE = [NLEG]f32{ 0.0, 0.5, 0.0, 0.5 };
 const STEP_SWING = 26.0; // deg the femur sweeps fore/aft
 const STEP_LIFT = 20.0;
 const KNEE_REST = 96.0; // the standing knee angle (deg) — high and folded
-// THE DEAD LEG BASKET. A spider ends on its BACK, so the legs' own ventral swing is what carries
-// them UP: the femur drives the knee down THROUGH the body's frame (+, the step-lift's sign) and
-// the tibia folds back the other way, and the pair arch over the belly. Curling the femur the
-// other way instead folds each leg flat against the trunk, which on an upturned body buries all
-// eight feet and leaves a bare lump — measure any retune against 112d, not against the standing pose.
+// She ends on her BACK, so the femur drives the knee down THROUGH the body's frame (+, the step-lift's sign) and
+// the tibia folds back the other way, arching the pair over the belly. Curling the femur the other way folds
+// each leg flat to the trunk, which on an upturned body buries all eight feet. Retune against 112d, not a stand.
 const CURL_FEMUR = 70.0;
 const CURL_KNEE = -95.0;
 const IDLE_BOB = 0.028; // a slow breathing rise/fall at rest

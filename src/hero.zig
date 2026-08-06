@@ -49,9 +49,9 @@ pub const ANKL = 7;
 pub const HIPR = 8;
 pub const KNEER = 9;
 pub const ANKR = 10;
-pub const SHL = 11; // shoulder L
-pub const ELL = 12; // elbow L
-pub const WRL = 13; // wrist L
+pub const SHL = 11;
+pub const ELL = 12;
+pub const WRL = 13;
 pub const SHR = 14;
 pub const ELR = 15;
 pub const WRR = 16;
@@ -295,34 +295,32 @@ const BOW_BLEND_RATE = 11.0;
 /// rad/s onto the aim line through a loose — faster than `ATK_RETRACK`: a shaft off the line just misses.
 const TURN_TO_SHOT = 11.0;
 
-// ── THE WAND ──────────────────────────────────────────────────────────────────────────────────────
-// The LEFT hand's second armament, and the shield's alternative rather than a third thing he carries.
-// A cast is COMMITTED like a swing, not held like the guard or the aim: there is nothing to hold, and the
-// FP is gone the moment it starts.
-
-const CAST_DUR: f32 = 0.66; // between a light slash's 0.60 and a heavy's 1.00
-const CAST_AT: f32 = 0.46; // …and the bolt leaves at the middle of the sweep, not at the end of it
+const CAST_DUR: f32 = 0.66; // s, between a light slash's 0.60 and a heavy's 1.00
+const CAST_AT: f32 = 0.46; // …and the bolt leaves at the middle of the twirl, not the end of it
 pub const BOLT_SPEED: f32 = 30.0; // under the aimed shaft's 40, over the quick one's 26
 pub const BOLT_REACH: f32 = 55.0;
 
-// THE ARM GOES OVERHEAD AND SWEEPS ACROSS THE TOP (owner's call), and the sweep ALTERNATES cast to cast
-// the way the light combo's two slashes do. On this rig `rz` swings the left arm through the FRONTAL
-// plane — 90 is straight out to his left, 180 is straight up — so the raise and the side-to-side sweep
-// are ONE channel, and the sweep is just that angle carried either side of overhead.
-const CAST_SH_UP = 172.0; // hand over the crown, a touch outboard of dead plumb
-/// …and tipped FORWARD off the frontal plane. Two jobs, and the second is why it is this big: a stroke left
-/// in the frontal plane is one the over-the-shoulder camera looks straight down the edge of, AND its far end
-/// brings the upper arm back across his own chin. Forward of the shoulder line the sweep passes in FRONT of
-/// the head instead of through it.
-const CAST_SH_FWD = 36.0;
-/// How far either side of overhead the hand travels. Cut from 48: at that amplitude the far end of the
-/// second stroke laid the forearm over his face, which reads as flinching rather than casting. Amplitude
-/// only — the sweep is still a full crossing stroke and still alternates.
-const CAST_SWEEP = 34.0;
-const CAST_CARRY_SH = 16.0; // the LOW CARRY: wand down at his side, out of the way
-const CAST_ELBOW = 30.0; // a raised arm is not a locked one…
-const CAST_ELBOW_SNAP = 18.0; // …and it goes long as the bolt leaves
+// Two beats on SEPARATE channels: the lift is `rx`+`rz`, the twirl a transverse `ry`. Welded onto one `rz`
+// the raise WAS the sweep, and `rz` past 90 walks the arm through vertical where the sweep has no two sides.
+/// deg. FLEXION, NOT ABDUCTION: the elbow's hinge axis rides the shoulder, so abducting stands it vertical and
+/// the fold then sweeps the forearm across the chest instead of up past the temple. The rig has no humeral
+/// rotation channel to correct it with.
+const CAST_SH_FWD = 118.0;
+const CAST_LIFT_ABD = 24.0; // just enough to keep the raise off the mid-line and out of his face
+const CAST_ELBOW = 52.0; // opens OUT of the carry's fold as the arm comes up
+const CAST_ELBOW_SNAP = 40.0; // …and goes LONG as the bolt leaves (the warriors' law)
+/// deg either side of centre, in the TRANSVERSE plane — which is why it can exceed the 34 the frontal plane
+/// capped it at without laying the forearm over his own face.
+const CAST_SWEEP = 46.0;
 const CAST_WRIST = 38.0; // the flick that throws it
+// The CARRY (`poseWandArm`), and where the lift starts from: a folded elbow, since the elbow is what gets the
+// lit head up off the ground.
+const WAND_CARRY_FLEX = 14.0;
+const WAND_CARRY_ABD = 6.0;
+const WAND_CARRY_ELBOW = 74.0;
+const WAND_CARRY_WRIST = -12.0;
+const WAND_CARRY_SWING = 0.55; // fraction of the gait's shoulder swing a carried rod leaves the arm…
+const WAND_CARRY_ELBOW_SWING = 0.40; // …and the elbow breathes with it rather than staying welded
 const CAST_TRUNK = 7.0; // trunk yaw toward the casting side (deg, PER SEGMENT over spine + chest)
 const CAST_LEAN = 6.0;
 const CAST_HEAD = 9.0;
@@ -339,39 +337,108 @@ const WAND_STONE_R = 0.030 * H;
 const WAND_WOOD = rgba(41, 30, 24, 255); // dark stained rod — a big smooth mass authored near-black
 const WAND_WOOD_LT = rgba(62, 47, 36, 255);
 const WAND_BIND = rgba(30, 25, 22, 255); // the grip's wrapped cord
-/// THE SHIELD'S OWN IRON, not a second value for the same substance. Authored at 58/62/70 first, which is
-/// only a shade over the boss's, and it came back off the render at a CLIPPED 255,255,255: these are small
-/// curved capsules taking the sun square on with the `.steel` gloss on top, so the ferrule and claws read as
-/// a white cage round the stone rather than a setting for it. Sampled, not eyeballed — see AGENTS.md's
-/// albedo-is-arithmetic rule, and the shield's iron is the value in this file that is already proven.
-const WAND_FERRULE = SHIELD_IRON;
+/// Near-black or it CLIPS: small strongly-curved capsules take the sun over their whole visible face, and both
+/// 58/62/70 and `SHIELD_IRON` sampled at 255,255,255 here — a white cage round the stone, not a setting for it.
+/// Screen ∝ albedo^(1/2.2), so a 0.6× screen value is albedo × 0.6^2.2.
+const WAND_FERRULE = rgba(9, 10, 12, 255);
 /// The stone is EMISSIVE (vertex alpha is the emissive channel) so it reads as lit rather than painted.
 const WAND_STONE = rgba(96, 40, 122, 120);
 const WAND_STONE_HOT = rgba(150, 74, 176, 60);
-/// A point t (units of H) out along the wand's axis from the fist centre, wrist frame — `bladeAt`'s twin.
+/// deg. A rod in a closed fist lies on the OBLIQUE PALMAR AXIS (second metacarpal head → pisiform), not on the
+/// hand's long axis the way a sabre grip pulls a blade (`GRIP_PITCH`'s 34). Do not flatten it back to −Y: that
+/// is collinear with the forearm, same tan and thickness, so shoulder → arm → rod reads as one unbroken taper.
+const WAND_PITCH = 55.0;
+const WAND_ULNAR = 8.0; // deg outboard, little-finger side, clear of his own face
+/// The shaft lies IN the palm, not on the wrist's bone line — half a closed fist's depth off it.
+const WAND_PALM = 0.017 * H;
+const WAND_CA = @cos(radians(WAND_PITCH));
+const WAND_SA = @sin(radians(WAND_PITCH));
+const WAND_UC = @cos(radians(WAND_ULNAR));
+const WAND_US = @sin(radians(WAND_ULNAR));
+/// The head leads DISTALLY, the sword's convention (`bladeAt`). Do not flip it proximal to improve the carry:
+/// the lit end then points at the floor the instant the hand goes above the shoulder, and the rod has one
+/// authored axis for both poses. The carry earns the head's height at the ELBOW instead (`poseWandArm`).
+///
+/// The whole rod is built in this frame, and the shaft is NOT a world axis — so every ring on it (cord turns,
+/// setting claws) has to be swept perpendicular to `WAND_U`/`WAND_V`, never a Y-flattened `addBlob`.
+const WAND_AX = v3(WAND_SA * WAND_US, -WAND_CA, WAND_SA * WAND_UC);
+const WAND_U = mathx.normV(v3(-WAND_AX.z, 0, WAND_AX.x));
+const WAND_V = mathx.normV(mathx.crossV(WAND_AX, WAND_U));
+/// A point t (units of H) along the wand's axis from the fist centre, wrist frame — `bladeAt`'s twin.
 fn wandAt(t: f32) rl.Vector3 {
-    return v3(0, FIST_Y - t * H, FIST_Z);
+    return v3(
+        WAND_AX.x * t * H,
+        FIST_Y + WAND_AX.y * t * H,
+        FIST_Z + WAND_PALM + WAND_AX.z * t * H,
+    );
 }
 const WAND_TIP_T = 0.30; // where the stone sits, in the same units — the point a bolt leaves from
+const WAND_BUTT_T = 0.055; // …and how far the butt stands back out of the fist, same units
+/// `at`, stepped `r` off the shaft at angle `a` round it.
+fn offAxis(at: rl.Vector3, r: f32, a: f32) rl.Vector3 {
+    const c = r * mathx.cosf(a);
+    const s = r * mathx.sinf(a);
+    return v3(at.x + c * WAND_U.x + s * WAND_V.x, at.y + c * WAND_U.y + s * WAND_V.y, at.z + c * WAND_U.z + s * WAND_V.z);
+}
 
 /// THE CHAOS VIOLET, and it is ONE pair of colours for the whole spell — the stone, the gather, both
 /// bursts and the flight streak. Two substances of one element is what the brood mother's spit-and-pool
 /// rule exists to forbid, and a bolt whose sparks were a different violet from its own trail is that.
 const CHAOS_MOTE = rgba(168, 84, 216, 190);
 const CHAOS_HOT = rgba(224, 176, 250, 210);
-const CAST_MOTE_RATE = 52.0; // motes a second drawn onto the stone through the raise
+const CAST_MOTE_RATE = 52.0; // motes a second drawn onto the stone as the raise STARTS…
 const CAST_MOTE_R = 0.17; // …from this far out
-/// SMALL AND SHORT-LIVED, both for the same reason: the stone is travelling through the sweep, so a mote
-/// that outlives its own flight converges on where the stone WAS and is left hanging in the air behind him.
-/// At 0.026 and a third of a second they read as loose purple balls littered across the field — which is
-/// what the first pass looked like — where the ask is a shimmer gathering onto the head.
-const CAST_MOTE_R0 = 0.015;
-const CAST_MOTE_LIFE_LO = 0.09;
-const CAST_MOTE_LIFE_HI = 0.17;
-const CAST_SPARKS = 14; // the puff off the stone as it goes…
+/// Both dials ride the charge so the tell tightens visibly as the throw comes on: a flat rate over a flat
+/// radius gives no way to see from the FX how close the throw is.
+const CAST_MOTE_RATE_HI = 300.0;
+const CAST_MOTE_R_HI = 0.055;
+/// Motes one frame may emit. The ramp needs an accumulator (a per-frame probability test tops out at ~60/s and
+/// the ramp then does nothing), and the accumulator needs a ceiling or one hitch dumps the whole ring.
+const CAST_MOTE_CAP = 8;
+/// s. SHORT, because riding the tip's velocity (`gatherMotes`) cancels the tip's constant motion but not its
+/// ACCELERATION, and the leftover smear is ½·a·life² — so the life is what pays, and it pays quadratically.
+/// At 0.17 the gather was a violet contrail off the rod.
+const CAST_MOTE_LIFE_LO = 0.030;
+const CAST_MOTE_LIFE_HI = 0.055;
+/// …and the radius is what buys that short life back, not the count: `drawParticles` fades radius WITH alpha,
+/// so at 0.04 s a mote is legible on one frame of three and at 0.015 nine motes showed as three.
+const CAST_MOTE_R0 = 0.023;
+const CAST_MOTE_R1 = 0.011;
+const CAST_SPARKS = 26; // the cone off the stone as it goes…
+/// …and the COLLAR sideways out of it, which is what says the stone LET GO — the cone alone is
+/// indistinguishable from the bolt's own first metre of flight.
+const CAST_COLLAR = 12;
+const CAST_COLLAR_SP = 4.4;
+/// One bloom on the stone at the throw. SMALL: it is a solid sphere, not additive, so at 0.30 it rendered as a
+/// translucent balloon hiding the stone, the claws, the cone and the collar all at once.
+const CAST_FLASH_R = 0.095;
+const CAST_FLASH_LIFE = 0.085;
 const BOLT_BURST = 22; // …and the bigger one where it lands
-/// Enough for one cast's gather plus both bursts with room over; a ring, so the oldest is simply reused.
-const FX_N = 96;
+const FX_N = 160;
+
+comptime {
+    // The ring overwrites its oldest silently, so the size is arithmetic over the constants above rather than
+    // a taste — the failure it guards is a release burst eating the gather that is still on screen.
+    const gather = CAST_MOTE_RATE_HI * CAST_MOTE_LIFE_HI;
+    const release = CAST_SPARKS + CAST_COLLAR + 1;
+    const worst = gather + @as(f32, release + 2 * BOLT_BURST); // two bolts can land across chained casts
+    if (@as(f32, FX_N) < worst) @compileError(std.fmt.comptimePrint(
+        "hero: FX_N = {d} but a cast can have {d} particles in the air — raise it",
+        .{ FX_N, worst },
+    ));
+}
+
+/// `CHAOS_MOTE` ITSELF, not a second literal that looks like it — one violet for the whole spell, and a
+/// hand-transcribed shader vec3 holds that only as long as someone remembers to retune both.
+const WAND_LIT = mathx.colVec(CHAOS_MOTE);
+/// Radius matters more than brightness (the chapel's law), so the carry's ember is SHORT as well as dim: at a
+/// torch's 6 m it washed him violet head to foot standing still.
+const WAND_LIT_CARRY = 0.20;
+const WAND_LIT_CARRY_R = 2.6;
+const WAND_LIT_CHARGED = 1.00;
+const WAND_LIT_CHARGED_R = 7.0;
+const WAND_LIT_FLARE = 2.30;
+const WAND_LIT_FLARE_R = 12.0;
 
 // Blade hitbox, souls-style: a capsule on the SWORD bone's dummy points (guard → tip), ACTIVE only inside the HIT window, with last-frame endpoints kept for swept tests so a fast arc can't tunnel between frames.
 /// HOW FAR THE WAIST WILL FOLD ONTO A MARK (deg, total across SPINE + CHEST).
@@ -721,6 +788,10 @@ pub const Hero = struct {
     casts: u32 = 0,
     /// ONE FRAME, the frame the bolt leaves — game.zig throws it from `wandTipWorld()`.
     thrown: bool = false,
+    /// Fractional motes the gather owes, carried between frames so a ramped rate is honest at any frame time.
+    moteAcc: f32 = 0,
+    /// Last frame's stone, differenced in `gatherMotes` for the tip's velocity. Written and read only there.
+    tipPrev: rl.Vector3 = mathx.zero3,
     /// Seconds left on the "there was not enough FP for that" flash, the stamina refusal's twin on the
     /// other bar. Its own field because flashing the stamina frame for a dry FP pool would point at the
     /// wrong meter, and the player reads the ring to learn WHICH resource said no.
@@ -1050,6 +1121,7 @@ pub const Hero = struct {
         self.casting = true;
         self.castT = 0;
         self.thrown = false;
+        self.moteAcc = 0;
         self.castAlt = !self.castAlt; // …so the next one sweeps back the other way
         self.casts +%= 1;
         self.startXfade();
@@ -1067,9 +1139,8 @@ pub const Hero = struct {
         // A one-frame EDGE, `updateShot`'s: a long frame cannot throw twice, a short one cannot miss it.
         if (was < CAST_AT and self.castT / CAST_DUR >= CAST_AT) self.thrown = true;
         self.pose();
-        // POSE FIRST: the gather is emitted at the posed stone, so asking before `pose()` would draw this
-        // frame's motes onto last frame's wand. Only while the arm is still coming up — past the throw
-        // there is nothing left to gather.
+        // AFTER the pose: the gather emits at the posed stone, so earlier draws this frame's motes onto last
+        // frame's wand.
         if (self.castT / CAST_DUR < CAST_AT) self.gatherMotes(dt);
         if (self.castT >= CAST_DUR) {
             self.casting = false;
@@ -1084,9 +1155,15 @@ pub const Hero = struct {
         return mathx.clampF(self.castT / CAST_DUR, 0, 1);
     }
 
-    /// WHERE THE BOLT LEAVES — the stone in the wand's head, ridden off the posed left wrist. Measured off
-    /// the mesh's own constants rather than guessed, the ogre's `clubLowWorld` law: re-shape the wand and
-    /// the bolt still leaves its tip.
+    /// 0..1 across the raise, and 0 EITHER SIDE of it — past the throw as well as before the cast, so a caller
+    /// pulsing on it (`rumble.castCharge`) stops of its own accord when the stone lets go.
+    pub fn chargeFill(self: *const Hero) f32 {
+        if (!self.casting or self.castT / CAST_DUR >= CAST_AT) return 0;
+        return mathx.clampF(self.castT / (CAST_DUR * CAST_AT), 0, 1);
+    }
+
+    /// Where the bolt leaves, off the posed left wrist. MEASURED from the mesh's own constants (the ogre's
+    /// `clubLowWorld` law), so re-shaping the wand keeps the bolt on its tip.
     pub fn wandTipWorld(self: *const Hero) rl.Vector3 {
         return rl.math.vector3Transform(wandAt(WAND_TIP_T), self.xf[WRL]);
     }
@@ -1278,28 +1355,49 @@ pub const Hero = struct {
         foemod.drawParticles(&self.fx);
     }
 
-    /// THE TELL IS THE GATHER (the sling's rule): motes draw INWARD onto the stone the whole time the arm
-    /// is coming up, so a cast is something you can see starting from across the plaza. Emitted from
-    /// `updateCast` rather than the pose, because a pose runs in the shot harness and under the menu too.
+    /// The gather is the TELL (the sling's rule). Emitted from `updateCast` rather than the pose, because a pose
+    /// also runs in the shot harness and under the menu.
     fn gatherMotes(self: *Hero, dt: f32) void {
         const at = self.wandTipWorld();
+        // Each mote is solved to ARRIVE at the stone, and the stone crosses ~5 m/s through the lift — so without
+        // the tip's own velocity they converge on where it WAS, a clump of violet hanging off the rod.
+        // Skipped on the first gather frame: `startCast` cannot prime `tipPrev`, since it runs off an input edge
+        // and `xf` is `undefined` until `pose` has run once. There, `castT` is exactly this call's `dt`.
+        const tipV = if (self.castT > dt and dt > 0)
+            mathx.scaleV(mathx.subV(at, self.tipPrev), 1.0 / dt)
+        else
+            mathx.zero3;
+        self.tipPrev = at;
+        // Squared on the rate: the ramp belongs at the END of the raise, or it reads as one steady stream.
+        const fill = self.chargeFill();
+        self.moteAcc += dt * mathx.lerpF(CAST_MOTE_RATE, CAST_MOTE_RATE_HI, fill * fill);
+        const shell = mathx.lerpF(CAST_MOTE_R, CAST_MOTE_R_HI, fill);
         var rng = foemod.fxStream(self.castT + @as(f32, @floatFromInt(self.casts)), 977.0, 0x8B01);
-        // Rate-limited by the frame, so a fast machine does not emit a denser gather than a slow one.
-        if (rng.float() > dt * CAST_MOTE_RATE) return;
-        const a = rng.angle();
-        const el = rng.range(-0.5, 1.0);
-        const rr = rng.range(CAST_MOTE_R * 0.5, CAST_MOTE_R);
-        const from = v3(at.x + mathx.cosf(a) * rr, at.y + el * rr, at.z + mathx.sinf(a) * rr);
-        // …and its velocity points BACK at the stone, which is what makes it a gather and not a spray. NO
-        // gravity either way: it is being pulled in, and a float term left it drifting after it arrived.
-        const life = rng.range(CAST_MOTE_LIFE_LO, CAST_MOTE_LIFE_HI);
-        const v = mathx.scaleV(mathx.subV(at, from), 1.0 / life);
-        foemod.emitParticle(&self.fx, &self.fxHead, from, v, life, CAST_MOTE_R0, CAST_MOTE_R0 * 0.25, CHAOS_MOTE, 0);
+        var n: u32 = 0;
+        while (self.moteAcc >= 1.0 and n < CAST_MOTE_CAP) : (n += 1) {
+            self.moteAcc -= 1.0;
+            const a = rng.angle();
+            const el = rng.range(-0.5, 1.0);
+            const rr = rng.range(shell * 0.5, shell);
+            const from = v3(at.x + mathx.cosf(a) * rr, at.y + el * rr, at.z + mathx.sinf(a) * rr);
+            // …and its velocity points BACK at the stone, which is what makes it a gather and not a spray. NO
+            // gravity either way: it is being pulled in, and a float term left it drifting after it arrived.
+            const life = rng.range(CAST_MOTE_LIFE_LO, CAST_MOTE_LIFE_HI);
+            const v = mathx.addV(mathx.scaleV(mathx.subV(at, from), 1.0 / life), tipV);
+            foemod.emitParticle(&self.fx, &self.fxHead, from, v, life, CAST_MOTE_R0, CAST_MOTE_R1, CHAOS_MOTE, 0);
+        }
+        if (n == CAST_MOTE_CAP) self.moteAcc = 0; // the frame was long enough to be a hitch: drop the arrears
     }
 
-    /// …AND THE RELEASE IS A BURST off the stone, thrown forward down the line the bolt took.
+    /// The release: a cone down the bolt line, a collar sideways out of it, one flash on the stone.
     pub fn castSparks(self: *Hero, dir: rl.Vector3) void {
         const at = self.wandTipWorld();
+        // The collar's plane is the BOLT LINE's perpendicular pair, not world axes — cast uphill it has to stand
+        // square to the shaft or it reads as a puddle round his hand.
+        var side = mathx.perpXZ(dir);
+        if (mathx.lenV(side) < 1e-3) side = v3(1, 0, 0); // a bolt straight up or down has no horizontal perp
+        side = mathx.normV(side);
+        const up = mathx.normV(mathx.crossV(dir, side));
         var rng = foemod.fxStream(@floatFromInt(self.casts), 613.0, 0x8B02);
         var i: u32 = 0;
         while (i < CAST_SPARKS) : (i += 1) {
@@ -1308,6 +1406,36 @@ pub const Hero = struct {
             const life = rng.range(0.20, 0.44);
             foemod.emitParticle(&self.fx, &self.fxHead, at, v, life, rng.range(0.030, 0.058), 0.008, if (rng.float() < 0.4) CHAOS_HOT else CHAOS_MOTE, 2.0);
         }
+        i = 0;
+        while (i < CAST_COLLAR) : (i += 1) {
+            // Evenly round THEN jittered: random angles clump and gap at this count.
+            const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, CAST_COLLAR) + rng.range(-0.26, 0.26);
+            const sp = rng.range(CAST_COLLAR_SP * 0.7, CAST_COLLAR_SP);
+            const v = mathx.addV(
+                mathx.scaleV(side, mathx.cosf(a) * sp),
+                mathx.addV(mathx.scaleV(up, mathx.sinf(a) * sp), mathx.scaleV(dir, rng.range(0.3, 1.4))),
+            );
+            foemod.emitParticle(&self.fx, &self.fxHead, at, v, rng.range(0.13, 0.26), rng.range(0.022, 0.040), 0.006, CHAOS_HOT, 1.2);
+        }
+        // The flash DRIFTS down the bolt line rather than sitting still, or it reads as a sphere switched on.
+        foemod.emitParticle(&self.fx, &self.fxHead, at, mathx.scaleV(dir, 1.2), CAST_FLASH_LIFE, CAST_FLASH_R, CAST_FLASH_R * 0.30, CHAOS_HOT, 0);
+    }
+
+    /// The stone, wherever the left wrist has it — the one light in the game that MOVES. `env.uploadLights`
+    /// takes it as a RESERVED slot so a torch he stands beside can never evict his own spell.
+    pub fn wandLight(self: *const Hero) ?gfx.Light {
+        if (!self.wandOut() or self.resting) return null; // at a grace the rod is stowed for the guitar
+        const u = self.castU();
+        // The charge fills to the throw and is SPENT by it; the flare is a spike straddling that instant.
+        const held = mathx.smoothstep(0, CAST_AT, u) * (1.0 - mathx.smoothstep(CAST_AT, CAST_RECOV_A, u));
+        const spike = bump(u, CAST_AT - 0.04, CAST_AT + 0.26);
+        return .{
+            .pos = self.wandTipWorld(),
+            .col = mathx.scaleV(WAND_LIT, WAND_LIT_CARRY +
+                (WAND_LIT_CHARGED - WAND_LIT_CARRY) * held + (WAND_LIT_FLARE - WAND_LIT_CHARGED) * spike),
+            .radius = WAND_LIT_CARRY_R +
+                (WAND_LIT_CHARGED_R - WAND_LIT_CARRY_R) * held + (WAND_LIT_FLARE_R - WAND_LIT_CHARGED_R) * spike,
+        };
     }
 
     /// …and a bigger one WHEREVER IT LANDS, which is the half of it the player is actually looking at.
@@ -1551,11 +1679,24 @@ pub const Hero = struct {
         // …and the shield goes up OVER all of it (see poseGuard) — the gait keeps running underneath.
         if (gB > 0.001) self.poseGuard(&wx, gB, rec, lean, prot, bank);
 
+        if (self.wandOut()) self.poseWandArm(&wx);
         if (self.bowOut()) self.poseBowArms(&wx, lean, prot, bank);
         // LAST, so the flask wins the off hand off a raised bow — that hand was on the string.
         if (self.drinking) self.poseDrinkArm(&wx, dk.lift, dk.tip);
         self.applyXfade(&wx);
         self.xf = wx;
+    }
+
+    /// The off arm only, laid over whatever gait just ran (the guard and bow arm's pattern). The head leads AWAY
+    /// from the fist (`WAND_AX`), so an arm hanging at the side aims the lit end at the dirt and reads as a cane
+    /// — the elbow is what lifts it. KEEPS the gait swing, damped: three flat joints is a welded arm.
+    fn poseWandArm(self: *const Hero, wx: *[N]rl.Matrix) void {
+        const swing = ARM_SWING * mathx.cosf(std.math.tau * self.phase) * self.moving * self.fwdB;
+        var p = wx.*;
+        setLocal(&p, SHL, self.rest, mul(rx(-WAND_CARRY_FLEX + WAND_CARRY_SWING * swing), rz(ARM_ABD + WAND_CARRY_ABD)));
+        setLocal(&p, ELL, self.rest, rx(-(WAND_CARRY_ELBOW + WAND_CARRY_ELBOW_SWING * swing)));
+        setLocal(&p, WRL, self.rest, rz(WAND_CARRY_WRIST));
+        for ([_]usize{ SHL, ELL, WRL }) |i| wx[i] = p[i];
     }
 
     fn poseBowArms(self: *const Hero, wx: *[N]rl.Matrix, lean: f32, prot: f32, bank: f32) void {
@@ -1810,11 +1951,10 @@ pub const Hero = struct {
         const kick = bump(u, CAST_AT + 0.06, CAST_RECOV_A) * rec; // the rod bounces off the throw
         const sw: f32 = if (self.castAlt) -1.0 else 1.0;
 
-        // ONE CHANNEL CARRIES BOTH THE RAISE AND THE SWEEP: `rz` swings this arm through the frontal plane
-        // and 180 is straight up, so overhead ± CAST_SWEEP is the whole side-to-side stroke, and the
-        // alternator only decides which end of it he starts from.
-        const sweep = sw * CAST_SWEEP * (1.0 - 2.0 * sSweep);
-        const shRz = mathx.lerpF(CAST_CARRY_SH, CAST_SH_UP, wind) + sweep * wind;
+        // `wind` lifts, `sSweep` twirls — separate channels, so the alternator only picks the twirl's side.
+        // `wind` 0 must be the CARRY (`poseWandArm`) or the cast snaps out of it on frame one.
+        const shRz = mathx.lerpF(ARM_ABD + WAND_CARRY_ABD, CAST_LIFT_ABD, wind);
+        const shRy = sw * CAST_SWEEP * (1.0 - 2.0 * sSweep) * wind;
         const yaw = sw * (-CAST_TRUNK * wind + 1.6 * CAST_TRUNK * sSweep);
         const dip = CAST_DIP * wind - 0.4 * CAST_DIP * sThrow;
         const facingDeg = mathx.degrees(self.facing);
@@ -1838,12 +1978,12 @@ pub const Hero = struct {
         setLocal(&wx, HIPR, self.rest, mul(rx(4.0 * wind + 3.0 * sThrow), rz(HIP_ADDUCT)));
         setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 9.0 * wind + 3.0 * sThrow));
         setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
-        // THE WAND ARM. It goes LONG as the bolt leaves — an elbow still folded at the throw keeps the
-        // stone inside his own silhouette however far overhead the numbers say it is.
-        const elb = IDLE_ELBOW + (CAST_ELBOW - IDLE_ELBOW) * wind - CAST_ELBOW_SNAP * sThrow + 6.0 * kick;
-        setLocal(&wx, SHL, self.rest, mul3(rx(-CAST_SH_FWD * wind), ry(0), rz(shRz)));
+        // The arm goes LONG as the bolt leaves: an elbow still folded at the throw keeps the stone inside his
+        // own silhouette however far overhead the numbers say it is.
+        const elb = mathx.lerpF(WAND_CARRY_ELBOW, CAST_ELBOW, wind) - CAST_ELBOW_SNAP * sThrow + 6.0 * kick;
+        setLocal(&wx, SHL, self.rest, mul3(rx(-mathx.lerpF(WAND_CARRY_FLEX, CAST_SH_FWD, wind)), ry(shRy), rz(shRz)));
         setLocal(&wx, ELL, self.rest, rx(-elb));
-        setLocal(&wx, WRL, self.rest, rz(CAST_WRIST * wind - (CAST_WRIST + 0.5 * CAST_WRIST) * sThrow - 8.0 * kick));
+        setLocal(&wx, WRL, self.rest, rz(mathx.lerpF(WAND_CARRY_WRIST, CAST_WRIST, wind) - 1.5 * CAST_WRIST * sThrow - 8.0 * kick));
         // …and the sword arm keeps out of its way, the guard's own answer to a busy off hand.
         setLocal(&wx, SHR, self.rest, mul(rx(GUARD_SWORD_BACK * wind), rz(-ARM_ABD)));
         setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + (GUARD_SWORD_ELBOW - IDLE_ELBOW) * wind)));
@@ -2243,18 +2383,16 @@ pub fn boltMesh(shader: rl.Shader) rl.Model {
 }
 
 /// THE WAND — a knotted rod, iron-ferruled, with a chaos-lit stone caught in three claws at its head.
-/// Authored in the LEFT WRIST's frame extending out of the fist along −Y (the sword's own convention off
-/// the right), so it needs no fit matrix and a raised arm carries it up clear of the skull rather than
-/// across it. Wabi-sabi off a FIXED seed: crooked, and the same crookedness every frame.
+/// Authored in the LEFT WRIST's frame on `WAND_AX` — head leading out of the fist, a stub of butt back out of
+/// it — so it needs no fit matrix. Wabi-sabi off a FIXED seed: crooked, and the same crookedness every frame.
 fn wandMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x7A4D91);
     const segs = 5;
-    // NOTHING DEAD IS STRAIGHT — the rod drifts off its own axis as it runs out, and it ends in a BLUNT
-    // capsule cap rather than a point. The drift is small on purpose: a rod bent a third of its length is
-    // a banana, and the read wanted here is "cut from a hedge", not "broken".
+    // Nothing dead is straight, and nothing ends in a point. The drift stays SMALL: "cut from a hedge", not
+    // "broken" — a rod bent a third of its length is a banana.
     b.setMat(.wood);
-    var prev = wandAt(-0.03); // started back THROUGH the fist, so no cut end shows inside the hand
+    var prev = wandAt(-WAND_BUTT_T); // the butt below the fist — what says he grips it near the END
     var i: i32 = 0;
     while (i < segs) : (i += 1) {
         const f0 = @as(f32, @floatFromInt(i)) / @as(f32, segs);
@@ -2265,51 +2403,45 @@ fn wandMesh() rl.Mesh {
         const r0 = WAND_R * mathx.lerpF(1.20, 0.80, f0) * rng.range(0.94, 1.06);
         const r1 = WAND_R * mathx.lerpF(1.20, 0.80, f1) * rng.range(0.94, 1.06);
         b.addCapsule(prev, to, r0, r1, 7, if (@mod(i, 2) == 0) WAND_WOOD else WAND_WOOD_LT);
-        // …and the knots the rod was cut back to, sunk most of the way in (RELIEF IS SUBTLE).
+        // Knots, sunk most of the way in. OFF the axis rather than a collar round it: a knot grew on one side.
         if (i > 0 and i < segs - 1) {
-            const kn = mathx.lerpV(prev, to, rng.range(0.30, 0.70));
-            b.addBlob(kn, v3(r1 * 1.22, r1 * 0.75, r1 * 1.22), 4, 7, WAND_WOOD_LT);
+            const kn = offAxis(mathx.lerpV(prev, to, rng.range(0.30, 0.70)), r1 * 0.55, rng.range(0, std.math.tau));
+            b.addBlob(kn, v3(r1 * 0.85, r1 * 0.85, r1 * 0.85), 4, 7, WAND_WOOD_LT);
         }
         prev = to;
     }
 
-    // THE BOUND GRIP — cord wrapped where the fist closes, uneven turns.
-    const gripA = wandAt(0.005);
-    const gripB = wandAt(0.075);
+    // The bound grip. Short fat capsules ALONG the shaft, because a turn has to be perpendicular to the rod and
+    // the rod is not a world axis (`WAND_AX`).
     const turns = 6;
     var t: i32 = 0;
     while (t < turns) : (t += 1) {
-        const f = (@as(f32, @floatFromInt(t)) + 0.5) / @as(f32, turns);
-        const at = mathx.lerpV(gripA, gripB, f * rng.range(0.94, 1.06));
-        b.addBlob(at, v3(WAND_R * 1.30, WAND_R * 0.30, WAND_R * 1.30), 4, 8, WAND_BIND);
+        const f0 = -0.042 + 0.092 * (@as(f32, @floatFromInt(t)) + 0.15) / @as(f32, turns);
+        const f1 = -0.042 + 0.092 * (@as(f32, @floatFromInt(t)) + 0.85) / @as(f32, turns);
+        const rr = WAND_R * rng.range(1.20, 1.34);
+        b.addCapsule(wandAt(f0), wandAt(f1), rr, rr, 8, WAND_BIND);
     }
 
-    // THE FERRULE, and the three claws off it holding the stone.
     b.setMat(.steel);
     const neck = wandAt(WAND_TIP_T - 0.052);
-    // Barely proud of the rod it bands (RELIEF IS SUBTLE): at 1.15 of the shaft radius over a length this
-    // short it is not a ferrule but a bulge, and against the sky the pair of them read as a lampshade.
+    // Barely proud of the rod it bands: at 1.15 of the shaft radius over a length this short it is a bulge, and
+    // against the sky the pair of them read as a lampshade.
     b.addCapsule(wandAt(WAND_TIP_T - 0.078), neck, WAND_R * 1.02, WAND_R * 0.94, 8, WAND_FERRULE);
     const stone = wandAt(WAND_TIP_T);
+    // The claws ring the SHAFT, in `WAND_U`/`WAND_V` — a ring in world XZ hangs askew on a rod off plumb.
+    const behind = wandAt(WAND_TIP_T - 0.020);
     var c: i32 = 0;
     while (c < 3) : (c += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(c)) / 3.0 + rng.range(-0.22, 0.22);
-        // THEY CRADLE IT, THEY DO NOT CAGE IT — the tips stop well short of the stone's equator and reach
-        // only two thirds of its radius outward, so what shows is a setting and not three white teeth.
-        const reach = WAND_STONE_R * 0.66 * rng.range(0.86, 1.06);
-        const tipCl = v3(
-            stone.x + reach * mathx.cosf(a),
-            stone.y - WAND_STONE_R * 0.62,
-            stone.z + reach * mathx.sinf(a),
-        );
+        // They CRADLE it: tips stop short of the stone's equator, else it reads as three white teeth.
+        const tipCl = offAxis(behind, WAND_STONE_R * 0.66 * rng.range(0.86, 1.06), a);
         b.addCapsule(neck, tipCl, WAND_R * 0.40, WAND_R * 0.24, 5, WAND_FERRULE);
     }
 
-    // THE STONE. Vertex alpha is the EMISSIVE channel, so a low one is what makes it read as lit from
-    // inside rather than painted purple — the hot core sunk inside the cooler shell.
+    // Vertex alpha is the EMISSIVE channel, so a LOW one is what reads as lit from inside rather than painted.
     b.setMat(.marble);
-    b.addBlob(stone, v3(WAND_STONE_R, WAND_STONE_R * 1.18, WAND_STONE_R), 6, 11, WAND_STONE);
-    b.addBlob(stone, v3(WAND_STONE_R * 0.62, WAND_STONE_R * 0.74, WAND_STONE_R * 0.62), 5, 9, WAND_STONE_HOT);
+    b.addBlob(stone, v3(WAND_STONE_R * 1.06, WAND_STONE_R * 0.94, WAND_STONE_R), 6, 11, WAND_STONE);
+    b.addBlob(stone, v3(WAND_STONE_R * 0.66, WAND_STONE_R * 0.60, WAND_STONE_R * 0.70), 5, 9, WAND_STONE_HOT);
     return b.toMesh();
 }
 
@@ -2949,7 +3081,6 @@ test "the STANCE lags the block, and the block never lags the stance" {
     try std.testing.expect(h.guardB > 0.6);
 }
 
-// ── THE WAND ──────────────────────────────────────────────────────────────────────────────────────
 
 test "THERE IS ONE LEFT HAND: the wand and the boards can never both be in it, and a bow takes it outright" {
     var h = testHero();

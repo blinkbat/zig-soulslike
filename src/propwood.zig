@@ -31,14 +31,10 @@ const crackInto = art.crackInto;
 const lichenInto = art.lichenInto;
 const tuftInto = art.tuftInto;
 
-/// A DEAD LIMB, and the reason it is one function both leafless trees call: a branch drawn as ONE
-/// straight capsule to a needle point is a SPEAR, and that — not the placement — is what made these read
-/// as a hub of spokes with twigs floating beside it. Nothing in a dead tree is straight and nothing ends
-/// in a point. So: leave the bole on the bole's own AXIS, rise to an elbow, and let the outer half DROOP
-/// and bend off the line to a blunt SNAP of pale heartwood. The twigs root ON that outer half and carry
-/// ON outward; struck off across the limb instead (which is how the old ones ran, from a point halfway
-/// along to a tip measured off the primary's own tip) a twig crosses its parent and reads as a loose
-/// needle lying near a branch rather than as a fork in it.
+/// Nothing dead is straight and nothing ends in a point: one straight capsule to a needle tip is a SPEAR, and a
+/// rosette of them is a hub of spokes. So leave the bole on the bole's own AXIS, rise to an elbow, then droop
+/// off the line to a blunt snap of pale heartwood. Twigs root on that OUTER half and carry on outward — struck
+/// across the limb instead, a twig crosses its parent and reads as a needle lying near a branch.
 fn deadLimbInto(b: *Builder, rng: *mathx.Rng, root: rl.Vector3, a: f32, reach: f32, rise: f32, r0: f32, twigs: i32) void {
     const elbow = v3(root.x + mathx.cosf(a) * reach * 0.58, root.y + rise, root.z + mathx.sinf(a) * reach * 0.58);
     const r1 = r0 * 0.52;
@@ -82,10 +78,8 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
     b.addCapsule(j1, j2, 0.165, 0.095, 7, BARK_OLD);
     b.addCapsule(j2, j3, 0.095, 0.035, 6, BARK_DK); // the snapped leader — SNAPPED, so blunt…
     b.addBlob(j3, v3(0.045, 0.030, 0.045), 3, 5, TIMBER); // …and showing its heartwood
-    // PEELING BARK: slim strips up the bole, SUNK so only an edge breaks the surface (RELIEF IS SUBTLE),
-    // and the one that has come away curls off at its TOP only. Stood clear of the bark along its whole
-    // length — which is how these ran, up to 0.16 off a bole of radius 0.2 — a strip is a dark tube
-    // floating beside the trunk, and it was the loudest of the things that read as detached here.
+    // Peeling bark: strips SUNK so only an edge breaks the surface, and the loose one curls off at its TOP
+    // only. Stood clear along its whole length (0.16 off a bole of radius 0.2) a strip is a dark floating tube.
     var s: i32 = 0;
     while (s < 7) : (s += 1) {
         const a = rng.angle();

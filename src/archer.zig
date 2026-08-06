@@ -121,11 +121,9 @@ fn stretchZ(a: rl.Vector3, b: rl.Vector3) rl.Matrix {
     return mul(scaleM(1, 1, len), mul(orientZ(mathx.scaleV(d, 1.0 / len)), tr(a.x, a.y, a.z)));
 }
 
-/// A FOOT TALLER THAN THE HERO (owner's call). DERIVED rather than a magic 1.17, so it stays a foot if
-/// the hero's stature ever moves. The two scale-sensitive parts of a shared-rig humanoid are already
-/// right here, which is why the bump is only this line: the pelvis HEIGHT is scaled (`pelvY * fs` in
-/// `pose` — without it the legs sink and it reads as a crouching blob) and the stride is fed a
-/// scale-corrected distance (`movedDist / self.scale`), without which a taller skeleton's foot skates.
+/// A foot taller than the hero, DERIVED so it stays a foot if his stature moves. A scale ≠ 1 humanoid on this
+/// rig owes two corrections, both already here: the pelvis HEIGHT is scaled (`pelvY * fs` in `pose`, or the legs
+/// sink into a crouching blob) and the stride is fed `movedDist / self.scale`, or the foot skates.
 pub const SCALE = (H + 0.305) / H; // 0.305 m = one foot over the hero's stature
 const WALK_SPEED = heromod.WALK_SPEED * 0.95; // a wary, unhurried reposition
 pub const AGGRO_R = 24.0; // notices + engages the hero within this (ranged, so wider than the toad)
@@ -137,9 +135,8 @@ const HURT_R = 0.42; // hurt-sphere radius for the hero's blade
 // Pelvis walk oscillation — the hero's amplitude, so the shared gait reads as one humanoid.
 const A_BOB = heromod.A_BOB;
 // Where a skeletal foot meets the earth, MEASURED off footMesh: the metatarsal plate + heel, with the toe bones fanning out to ~0.245·H ahead.
-/// WHERE A SKELETON'S BODY POINTS SIT, as fractions of stature: the hurt sphere's centre, the lock-on
-/// mark and the top the HP bar hangs off. Shared with `warrior.zig` — it is literally the same body, and
-/// three copies of "0.95" is three chances for one of them to be retuned alone.
+/// A skeleton's body points as fractions of stature: hurt-sphere centre, lock-on mark, HP-bar top. Shared with
+/// `warrior.zig` — literally the same body, and three copies of "0.95" is three chances to retune one alone.
 pub const CENTER_F: f32 = 0.95;
 pub const LOCK_F: f32 = 0.90;
 pub const TOP_F: f32 = 1.15;

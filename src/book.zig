@@ -11,26 +11,8 @@ const heromod = @import("hero.zig");
 const gfx = @import("gfx.zig");
 const sfx = @import("audio.zig");
 
-// THE CHARACTER BOOK (pad START) — EQUIPMENT, INVENTORY and STATS, in Elden Ring's own shape: a slot
-// GRID on the left, and a panel on the right that tells you what the thing under the cursor IS.
-//
-// Four rules the whole book is built on:
-//
-// - **THE CURSOR IS A THING THAT MOVES.** It is four brackets that FLY to the slot they name and squeeze
-//   onto it while the button is down (`uiart.slotCursor`), not a highlight that teleports. Everything
-//   else here — the slot sinking under a press, the seat thump when a swap lands, the picture lifting off
-//   its socket under the cursor — is there so a swap feels like it was done with hands.
-// - **THE RIGHT-HAND PANEL IS THE POINT.** A grid of pictures is decoration; the reason to open the
-//   equipment page is that it prices the OTHER armament before you take it, and the reason to open the
-//   inventory is the description. Both read the live state the game is playing with — nothing here is a
-//   mock-up and no row was invented to fill the column.
-// - **EMPTY IS AN HONEST ANSWER, AND SO IS "FILLED BUT UNCHANGEABLE".** The left hand is a real choice now
-//   (shield or wand) and the sorcery slot fills whenever a wand is in that hand — but with one spell known
-//   there is nothing to change it to, and the left hand empties outright behind a bow. All three say so in
-//   words on the panel, the way `stats.governs` owns up to an attribute nothing reads yet.
-// - **THE LAYOUT IS WORKED OUT IN ONE PLACE.** Every rectangle comes off the `Box`/`Grid` helpers below,
-//   because the cursor computes where it is flying to independently of the draw pass — two copies of the
-//   grid maths is a cursor sitting half a slot off the thing it claims to be on.
+// Every rectangle in here comes off the `Box`/`Grid` helpers below: the cursor computes where it is flying to
+// independently of the draw pass, so two copies of the grid maths is a cursor half a slot off its own slot.
 
 const rgba = mathx.rgba;
 const v3 = mathx.v3;
@@ -79,7 +61,6 @@ pub const View = struct {
 /// The live hero and the scene to draw him in, for the stats page's turntable.
 pub const Portrait = struct { hero: *const heromod.Hero, scene: *gfx.Scene };
 
-// ── THE LOADOUT, AND WHAT IT IS WORTH ─────────────────────────────────────────────────────────────
 // The equipment page's reason to exist: `derive` is a pure function of what is equipped, so the
 // candidate under the cursor is priced by calling it again with one field changed. Every number in it is
 // read from the module that owns it — not one is retyped here.
@@ -165,7 +146,6 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     return d;
 }
 
-// ── THE SLOTS ─────────────────────────────────────────────────────────────────────────────────────
 
 const SlotId = enum { right, left, sorcery, arrows, quick };
 const NSLOT = @typeInfo(SlotId).@"enum".fields.len;
@@ -366,7 +346,6 @@ fn pickIndexOf(s: SlotId, v: View) usize {
     };
 }
 
-// ── STATE ─────────────────────────────────────────────────────────────────────────────────────────
 
 const MOVE_EASE: f32 = 17.0; // how hard the cursor is pulled toward the slot it just moved to
 const PRESS_RATE: f32 = 9.0;
@@ -572,7 +551,6 @@ fn grid(cur: usize, n: usize, cols: usize, dx: i32, dy: i32) usize {
     return @min(@as(usize, @intCast(row)) * cols + @as(usize, @intCast(col)), n - 1);
 }
 
-// ── LAYOUT ────────────────────────────────────────────────────────────────────────────────────────
 
 const PAD: i32 = 22;
 const GUTTER: i32 = 18;
@@ -739,7 +717,6 @@ fn attrRow(col: Box, i: usize) rl.Rectangle {
     return rect(inner.x - 10, inner.y + @as(i32, @intCast(i)) * attrStep() - 6, inner.w + 20, attrStep() - 4);
 }
 
-// ── DRAWING ───────────────────────────────────────────────────────────────────────────────────────
 
 var scratch: [16][160]u8 = undefined;
 var scratchAt: usize = 0;
@@ -881,7 +858,6 @@ fn drawTabs(self: *const Book, card: Box, v: View) void {
     uiart.divider(card.x + @divTrunc(card.w, 2), card.y + headH(), @divTrunc(card.w, 2) - 30, 170);
 }
 
-// ── EQUIPMENT ─────────────────────────────────────────────────────────────────────────────────────
 
 fn drawEquipment(self: *const Book, body: Box, v: View) void {
     const cols = equipCols(body);
@@ -1036,7 +1012,6 @@ fn drawPicker(self: *const Book, col: Box, s: SlotId, v: View) void {
     drawDerived(rest, v, if (self.pick < cs.len) cs[self.pick] else null);
 }
 
-// ── INVENTORY ─────────────────────────────────────────────────────────────────────────────────────
 
 fn drawInventory(self: *const Book, body: Box, v: View) void {
     const cols = bagCols(body);
@@ -1118,7 +1093,6 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
     }
 }
 
-// ── STATS ─────────────────────────────────────────────────────────────────────────────────────────
 
 fn drawStats(self: *const Book, body: Box, v: View, portrait: ?Portrait) void {
     const cols = statsCols(body);
@@ -1227,7 +1201,6 @@ fn section(inner: Box, y: i32, title: [:0]const u8) i32 {
     return y + 14 + hud.lineH(hud.TINY) + 6;
 }
 
-// ── THE TURNTABLE ─────────────────────────────────────────────────────────────────────────────────
 // The hero himself, rendered off-screen and blitted into the panel — the trick the editor's object viewer
 // plays, for the same reason: it is the actual model in the actual pose, so it cannot go stale.
 
@@ -1310,7 +1283,6 @@ fn drawPortrait(self: *const Book, col: Box, v: View, portrait: ?Portrait) void 
     );
 }
 
-// ── TESTS ─────────────────────────────────────────────────────────────────────────────────────────
 
 fn testView(bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.Resists, flasks: *const combat.Flasks, quiver: *const combat.Quiver, arm: heromod.Arm) View {
     return testViewOff(bag, sheet, res, flasks, quiver, arm, .shield);

@@ -77,10 +77,8 @@ const OCCL_GIRTH: f32 = 0.55;
 /// How far outside the sight line's own box an occluder's centre can sit — one cell covers the widest
 /// canopy in the table at any scale the editor is likely to stamp.
 const OCCL_REACH: f32 = CELL;
-/// AND IT STOPS BEING IN THE WAY OVER A BAND, NOT AT A PLANE (metres in front of him). A mass level with
-/// the hero hides half of him and a mass behind him hides none, so the changeover has to be a ramp: cut
-/// at his depth exactly, a trunk the camera walks past went from fully thinned to fully solid in ONE
-/// frame, which is the pop that shows worst because it happens right over him.
+/// Metres in front of him over which a mass stops being in the way — a BAND, not a plane. Cut at his depth
+/// exactly, a trunk the camera walks past goes fully thinned to fully solid in one frame, right over him.
 const OCCL_DEPTH_BAND: f32 = 1.6;
 
 pub const MAX_NEAR = 160;
@@ -617,12 +615,10 @@ pub const Env = struct {
     }
 
 
-    /// WHAT THE CAMERA IS LOOKING THROUGH: every prop whose kind `fades` and whose girth the eye→hero
-    /// line passes into, asked for how solid it OUGHT to be (`pr.fadeTo`), after which `easeFades` walks
-    /// what actually draws (`pr.fade`) toward it. The target is a pure function of the sight line — the
-    /// geometry is not remembered, only how far the picture has got in catching up to it, which is the
-    /// whole difference between a fade and a switch. A degenerate line (the editor, which passes
-    /// eye == at) asks for everything back, so the world is never dressed through a thinned lens.
+    /// Sets how solid each prop in the eye→hero line OUGHT to be (`pr.fadeTo`); `easeFades` walks what actually
+    /// draws toward it. The target is a pure function of the sight line — only the CATCHING UP is remembered,
+    /// which is the difference between a fade and a switch. A degenerate line (the editor passes eye == at)
+    /// asks for everything back, so the world is never dressed through a thinned lens.
     pub fn markOccluders(self: *Env, eye: rl.Vector3, at: rl.Vector3, dt: f32) void {
         // Everything in flight is asked to come BACK; the scan below re-asks for whatever is still in the way.
         for (self.occl[0..self.noccl]) |pi| self.props[pi].fadeTo = 1;
@@ -642,11 +638,9 @@ pub const Env = struct {
                     const pr = &self.props[pi];
                     const nfo = props.info(pr.kind);
                     if (!nfo.fades) continue;
-                    // MEASURED AGAINST THE FOOTPRINT, NOT THE BOUND. A kind's bound is a canopy's whole
-                    // spread — 13 m on a great tree — and keying off it thinned every tree within seven
-                    // metres of the sight line, none of which was in front of anything. What blocks the
-                    // view is the STANDING MASS the colliders already describe (a trunk, a shaft, an
-                    // arch's two piers separately), so the test is the one those parts make.
+                    // Against the FOOTPRINT, not the bound: a bound is a canopy's whole 13 m spread, and keying
+                    // off it thinned every tree within seven metres of the line, none of them in the way. What
+                    // blocks the view is the standing mass the colliders already describe.
                     var cover: f32 = 0;
                     for (nfo.parts) |part| {
                         const hl = 0.5 * mathx.lenXZ(v3(part.bx - part.ax, 0, part.bz - part.az));
@@ -1090,10 +1084,9 @@ pub const Env = struct {
                 }
                 self.stat_draws += 1;
                 const sc = v3(pr.scale, pr.scale, pr.scale);
-                // AN OCCLUDER GOES THIN — PLAIN OPACITY (owner's call), the same path the hero's aim
-                // fade takes, which means the same two conditions: the LIT PASS ONLY, since the depth
-                // shader has no alpha and a tree you can see through still has to block the sun, and
-                // the depth MASK off, or it would blend with the sky and then hide everything behind it.
+                // Plain opacity, the hero's aim-fade path, so the same two conditions hold: LIT PASS ONLY (the
+                // depth shader has no alpha, and a see-through tree still blocks the sun) and the depth MASK
+                // off, or it blends with the sky and then hides everything behind it.
                 const thinned = !casters_only and pr.fade < 0.999;
                 if (thinned) {
                     if (self.scene) |s| s.setFade(pr.fade);
@@ -1115,9 +1108,15 @@ pub const Env = struct {
     }
 
     /// This frame's torch/fire lights: the gfx.MAX_LIGHTS nearest the camera whose pool is actually ON SCREEN, guttering applied.
-    pub fn uploadLights(self: *const Env, scene: *gfx.Scene, view: *const View, t: f32) void {
+    ///
+    /// `carried` is a light that is not in the world (`hero.wandLight`). It gets a RESERVED slot rather than
+    /// joining the contest, so a brazier the player stands beside cannot evict the spell he just cast; the
+    /// world's own lights fight over one slot fewer.
+    pub fn uploadLights(self: *const Env, scene: *gfx.Scene, view: *const View, t: f32, carried: ?gfx.Light) void {
+        comptime std.debug.assert(gfx.MAX_LIGHTS > 1); // the reserved slot has to leave the world at least one
         var picked: [gfx.MAX_LIGHTS]gfx.Light = undefined;
         var dist: [gfx.MAX_LIGHTS]f32 = undefined;
+        const cap = picked.len - @as(usize, @intFromBool(carried != null));
         var n: usize = 0;
         for (self.lights[0..self.nlights]) |wl| {
             if (!view.visible(wl.base.pos, wl.base.radius, LIGHT_REACH)) continue;
@@ -1128,7 +1127,7 @@ pub const Env = struct {
                 .col = mathx.scaleV(wl.base.col, mathx.maxF(k, 0.05)),
                 .radius = wl.base.radius,
             };
-            if (n < picked.len) {
+            if (n < cap) {
                 picked[n] = lit;
                 dist[n] = d2;
                 n += 1;
@@ -1142,6 +1141,10 @@ pub const Env = struct {
                 picked[worst] = lit;
                 dist[worst] = d2;
             }
+        }
+        if (carried) |c| {
+            picked[n] = c;
+            n += 1;
         }
         scene.setLights(picked[0..n]);
     }
@@ -1201,11 +1204,9 @@ fn partFoot(pr: *const Prop, part: props.Part) rl.Vector3 {
     );
 }
 
-/// HOW MUCH OF HIM IT ACTUALLY COVERS, 0..1 (owner's rule: nothing thins until it hides a real share
-/// of the hero). Worked as the overlap of two boxes in the EYE'S TANGENT PLANE — the screen, before any
-/// FOV scale, so the answer is in fractions of him and needs no projection matrix. A distance to the
-/// sight line cannot answer this question: a stump dead on the line covers his boots, a trunk covers
-/// him whole, and a canopy fifteen metres up is not in front of anything.
+/// What share of him a mass covers, 0..1. Overlap of two boxes in the EYE'S TANGENT PLANE — before any FOV
+/// scale, so the answer is in fractions of him and needs no projection matrix. Distance to the sight line
+/// cannot answer it: a stump on the line covers his boots, and a canopy fifteen metres up covers nothing.
 fn coverFrac(eye: rl.Vector3, at: rl.Vector3, foot: rl.Vector3, h: f32, r: f32) f32 {
     const toH = mathx.subV(at, eye);
     const dh = mathx.lenV(toH);

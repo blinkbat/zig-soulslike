@@ -26,20 +26,14 @@ pub fn closestApproach(bodyR: f32) f32 {
 
 pub const AIRBORNE_LIFT: f32 = 0.04;
 
-/// **NO ATTACK COMES OUT OF NOWHERE** (owner's law). Seconds a creature's kit must be VISIBLY MOVING
-/// before it can deal damage — a windup, or a swing slow enough that watching it IS the warning. The two
-/// are interchangeable and every attack in the game owes one of them; each creature's file has a test
-/// measuring its own moves against this, because the shapes differ too much for one place to check.
-/// 0.30 s is ~18 frames at 60 fps, and it is derived from what already shipped and reads: the ogre's
-/// swipe (0.46), the brood mother's bite (0.40), the toad's gape (0.42), the shieldman's mace (0.64).
-/// The two that were UNDER it were the two that read as instant — the berserker's chop at 0.14 and the
-/// broodling's bite at 0.20.
+/// **NO ATTACK COMES OUT OF NOWHERE** (owner's law): seconds a creature's kit must be VISIBLY MOVING before it
+/// can deal damage. Derived from what already reads — the ogre's swipe 0.46, the brood bite 0.40, the toad's
+/// gape 0.42 — against the two that read as INSTANT, the berserker's chop at 0.14 and the broodling's at 0.20.
+/// Each creature's file tests its own moves against this; the shapes differ too much for one place to check.
 pub const TELL_MIN: f32 = 0.30;
 
-/// STILL A BODY IN THE WAY. A CORPSE IS NOT ONE (owner's call, and the genre's rule): the frame a foe
-/// dies you must be able to walk straight through it, and `alive()` stays true for the whole death
-/// collapse plus its dissipation — seconds of a dead thing you were shouldering past. `pierceGroup`
-/// already asked the question this way; this is the one place it is written.
+/// A CORPSE IS NOT A COLLIDER (owner's call): `alive()` stays true through the whole death collapse and its
+/// dissipation, so every collision site has to ask this instead.
 pub fn corporeal(f: anytype) bool {
     return f.alive() and !f.dying();
 }
@@ -51,18 +45,13 @@ pub const LEASH_SLACK: f32 = 6.0;
 pub const LEASH_HOME_R: f32 = 3.0;
 /// …and only after this long with no blow given OR taken.
 pub const LEASH_CALM: f32 = 4.5;
-/// WHAT WALKING BACK INTO A HOMING FOE COSTS YOU: it turns round, and for this long it cannot try to leave
-/// again. Longer than `LEASH_CALM` so shedding a re-engaged foe is never just standing still for the quiet
-/// window — you have to actually leave its ring and wait it out — and shorter than `PROVOKE_HOLD`, which is
-/// what three blows buy. It is also the debounce on re-engagement: without it a hero sat at the edge of the
-/// ring would flip a foe between chasing and returning every few seconds.
+/// Walking back into a homing foe turns it round, and for this long it cannot try to leave again. MUST stay
+/// above `LEASH_CALM` (else standing still sheds it) and below `PROVOKE_HOLD` (what three blows buy); it is
+/// also the debounce that stops a hero at the ring's edge flipping a foe between chase and return.
 pub const REENGAGE_HOLD: f32 = 8.0;
 
-/// HOW LONG A FOE KEEPS COMING AFTER IT LOSES SIGHT OF YOU. NOTHING NOTICES WHAT IT CANNOT SEE (owner's
-/// call) — but a chase that ended the instant you stepped behind a pillar would make every fight in these
-/// ruins a game of peekaboo, so what it loses is its EYES, not its memory: it keeps on at your last known
-/// place for this long. Longer than `LEASH_CALM`, because breaking sight must not shed a foe faster than
-/// simply walking away from one does.
+/// It loses its EYES, not its memory: it keeps on at the last known place this long. Above `LEASH_CALM`, or
+/// breaking sight sheds a foe faster than walking away does and every fight becomes peekaboo.
 pub const SIGHT_MEMORY: f32 = 6.0;
 
 /// WHAT ONE BLOW IS WORTH as provocation…
@@ -82,12 +71,9 @@ pub fn leashR(aggroR: f32) f32 {
 
 pub const Leash = struct {
     sinceCombat: f32 = mathx.LONG_AGO,
-    /// …and since it last had EYES on him. Stamped from outside (`game.markSight`) because the prop grid
-    /// a look is tested against belongs to `env`, and a creature has no business holding a world.
-    /// IT STARTS SEEN, and the GAME is what blinds it: a creature built by hand — a unit test, a shot
-    /// portrait — has nothing but air between it and the hero, and defaulting the other way would leave
-    /// every one of them staring past him. `game.rehomeFoes` blinds the whole field on a fresh world,
-    /// which is the moment nobody has seen him yet.
+    /// …and since it last had EYES on him. Stamped from outside (`game.markSight`): the prop grid a look is
+    /// tested against belongs to `env`. STARTS SEEN, so a hand-built creature (a test, a shot portrait) with
+    /// nothing but air in the way is not staring past him; `game.rehomeFoes` blinds the field on a fresh world.
     sinceSeen: f32 = 0,
     provoked: f32 = 0,
     rouseLeft: f32 = 0,
@@ -230,15 +216,12 @@ pub fn tickParticles(pool: []Particle, dt: f32, floor: f32) void {
     }
 }
 
-/// A SWEPT BLADE'S RIBBON — the hero's swing trail, promoted here so anything that swings steel can have
-/// one. It is a ring of the last N segments the edge occupied, drawn as a triangle strip between
-/// consecutive samples: the ONE thing that makes a fast stroke read as fast, and the only thing that makes
-/// a stroke aimed straight down the camera read at all (a level thrust is foreshortened to a dot).
+/// A ring of the last N segments the edge occupied, drawn as a triangle strip between consecutive samples.
+/// The only thing that makes a stroke aimed down the camera read at all: a level thrust foreshortens to a dot.
 const TrailSample = struct { a: rl.Vector3 = mathx.zero3, b: rl.Vector3 = mathx.zero3, age: f32 = mathx.LONG_AGO };
 
-/// HOW FAR THE POINT MUST TRAVEL IN A FRAME to be worth a sample. A DEGENERACY GUARD and not a per-weapon
-/// dial — 0.05 m at 60 fps is 3 m/s of tip, and nothing slower than that is a swing — so it lives here
-/// rather than being an argument each caller picks its own drifted value for.
+/// Metres the point must travel in a frame to be worth a sample. A DEGENERACY GUARD, not a per-weapon dial:
+/// 0.05 m at 60 fps is 3 m/s of tip, and nothing slower is a swing — so callers do not get to pass their own.
 pub const TRAIL_SWEEP_MIN: f32 = 0.05;
 
 pub fn Trail(comptime N: usize) type {
@@ -261,10 +244,8 @@ pub fn Trail(comptime N: usize) type {
             for (&self.s) |*q| q.age = mathx.LONG_AGO;
         }
         pub fn draw(self: *const Self, life: f32, col: rl.Color, peak: f32) void {
-            // NOTHING TO DRAW COSTS NOTHING, and it is the usual case: a ribbon exists for the fraction of a
-            // second a stroke is travelling, where `drawFx` asks every member of a muster every frame. The
-            // early-out is before the GL state, because two cull toggles around a draw that emits no
-            // triangles is the whole cost of an idle skeleton's trail.
+            // The early-out is BEFORE the GL state: two cull toggles around a draw that emits no triangles is
+            // the whole cost of an idle skeleton's trail, asked of every muster member every frame.
             if (self.s[self.head].age >= life) return; // newest is stale → all of them are
             rl.gl.rlDisableBackfaceCulling(); // the ribbon must read from both sides of the arc
             defer rl.gl.rlEnableBackfaceCulling();
@@ -325,10 +306,9 @@ pub fn resetRoles(
 }
 
 pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
-    // THE FLASH UNIFORM IS A DRIVER CALL (`gfx.Scene.setFlash` uploads every time it is asked), and all
-    // but the one foe mid-flinch want the same 0 as the foe before them — a group of 24 paid 24 of them
-    // per pass, twice a frame. Uploaded only when it CHANGES; `lit` starts outside 0..1 so the first
-    // member always pays for one and nothing is assumed about what drew before this group.
+    // `setFlash` is a driver upload every time it is asked, and a group of 24 paid 24 per pass, twice a frame,
+    // for the same 0. Uploaded only on CHANGE; `lit` starts outside 0..1 so nothing is assumed about the
+    // uniform's state before this group.
     var lit: f32 = -1;
     for (foes) |*f| {
         if (!f.alive()) continue;
@@ -387,12 +367,9 @@ pub fn aliveCount(foes: anytype) u32 {
     return n;
 }
 
-/// DOES A SWUNG WEAPON REACH HIM? Answered off the segment a kit swept between last frame and this one
-/// (`was` → `now`, each grip-end → far-end) against the hero's own column, `r` being the weapon's fatness
-/// plus whatever slack the creature is given. SAMPLED along the weapon AND across the sweep rather than
-/// solved: a whipped head covers half a metre in a frame, and a test on two endpoints passes clean
-/// through a body. This is the honest alternative to a hurt sector guessed off the attacker's yaw — see
-/// warrior.zig, whose mace fired at 2.8 m off a head that never left 0.6 m of its own chest.
+/// The segment a kit swept between frames (`was` → `now`, grip-end → far-end) against the hero's column, `r`
+/// being the weapon's fatness plus the creature's slack. SAMPLED along the weapon AND across the sweep, not
+/// solved: a whipped head covers half a metre in a frame and a two-endpoint test passes clean through a body.
 pub fn weaponReaches(was: [2]rl.Vector3, now: [2]rl.Vector3, hero: rl.Vector3, r: f32) bool {
     const lo = v3(hero.x, hero.y + HERO_LOW, hero.z);
     const hi = v3(hero.x, hero.y + HERO_HIGH, hero.z);

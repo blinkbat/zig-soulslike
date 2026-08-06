@@ -57,6 +57,9 @@ const ROLL_TAP_MAX = 0.22; // Circle/B released before this (real seconds) = a d
 const SHAKE_HIT_LIGHT = 0.09;
 const SHAKE_HIT_HEAVY = 0.15;
 const SHAKE_KILL = 0.26;
+/// The bolt LEAVING — the one shake here fired by something that has not hit anything, so it sits under the
+/// lightest one that has.
+const SHAKE_CAST = 0.07;
 const SHAKE_HURT = 0.42;
 const SHAKE_HURT_HEAVY = 0.62;
 // A CAUGHT blow cracks the frame less than one that lands — he HELD, and the shake says so.
@@ -212,10 +215,9 @@ pub const Game = struct {
     }
 };
 
-/// THE FOE GROUPS, WRITTEN DOWN ONCE — including the two things the actor-vs-actor settle needs, which
-/// used to be arguments at six hand-written call sites (`collideActors`). A seventh group added there
-/// drew, spawned, could be locked onto and could be shot, and was the only thing in the world nothing
-/// pushed out of a wall.
+/// The foe groups written down ONCE, including what the actor-vs-actor settle needs (`collideActors`). As six
+/// hand-written call sites, a seventh group drew, spawned, locked and took hits — and was the only thing in the
+/// world nothing pushed out of a wall.
 const FoeGroup = struct {
     field: []const u8,
     kind: ?FoeKind,
@@ -234,11 +236,9 @@ const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "muster", .kind = null, .vs = &.{"line"} },
 };
 
-/// Whether a re-homed field starts with EYES on the hero. A world that has only just loaded starts
-/// `.blind` — nobody has seen him yet, and a foe posted behind a wall must not know he is there until
-/// `markSight` says so. The SHOT HARNESS starts `.seen`: it drives creatures with nothing but air between
-/// them and no game loop to stamp their eyes, and a blind foe stands still, which is not what a portrait
-/// of a charge is a portrait of.
+/// Whether a re-homed field starts with EYES on the hero. A freshly loaded world is `.blind` — a foe behind a
+/// wall must not know he is there until `markSight` says so. The shot harness is `.seen`: no game loop runs to
+/// stamp eyes there, and a blind foe stands still, which is not what a portrait of a charge shows.
 const Sighted = enum { blind, seen };
 
 fn rehomeFoes(g: *Game, sighted: Sighted) void {
@@ -261,11 +261,9 @@ fn eachTarget(g: *const Game, ctx: anytype, comptime visit: anytype) void {
     }
 }
 
-/// HOW WIDE A POSITION SNAPSHOT OF THIS GROUP HAS TO BE — the array `live()` slices, found by MATCHING ITS
-/// ELEMENT TYPE rather than by "the first array of structs with a `pos` field". Off the shape alone it
-/// answered with whichever such array came first in the struct, so re-ordering the brood's fields to put
-/// its `pools` (which carry a `pos`) above its `band` would silently size the snapshot to `POOL_CAP` and a
-/// full clutch would slice past the end of it.
+/// The array `live()` slices, found by MATCHING ITS ELEMENT TYPE, not by "the first array of structs with a
+/// `pos`" — off the shape alone, re-ordering the brood's fields to put `pools` above `band` sizes the snapshot
+/// to `POOL_CAP` and a full clutch slices past the end of it.
 fn groupCap(comptime field: []const u8) usize {
     const G = @FieldType(Game, field);
     const Member = @typeInfo(@typeInfo(@TypeOf(G.live)).@"fn".return_type.?).pointer.child;
@@ -553,9 +551,10 @@ pub fn shootShaftForShot(g: *Game, at: rl.Vector3, kind: combat.ArrowKind) void 
     const blow = heromod.arrowBlow(kind, true);
     putIn(&g.shafts, archermod.launchShaft(g.hero.nockWorld(), at, heromod.BOW_AIMED_SPEED, blow, false, heromod.arrowShot(kind)));
 }
-/// …and the wand's bolt, from the posed stone, so the harness photographs the real projectile.
+/// …and the wand's bolt WITH its release burst. The harness drives the pose past the `thrown` edge without
+/// going through `throwBolt`, so without this every "the throw" still had none of the FX that fire on it.
 pub fn throwBoltForShot(g: *Game, at: rl.Vector3) void {
-    putIn(&g.shafts, archermod.launchShaft(g.hero.wandTipWorld(), at, heromod.BOLT_SPEED, g.hero.castBlow(), false, .bolt));
+    launchBolt(g, at, false);
 }
 
 pub fn stepShaftsForShot(g: *Game, dt: f32) void {
@@ -701,22 +700,25 @@ fn looseShaft(g: *Game) void {
     g.rumble.play(rumblemod.swing_light); // the string going is a tick in the grip, not a swing
 }
 
-/// THE BOLT LEAVES THE WAND'S STONE, not his chest — `wandTipWorld` is measured off the mesh, so it comes
-/// out of the thing you can see it come out of. It goes at the LOCKED foe if there is one and down his
-/// facing otherwise, which is the QUICK shot's rule: there is no aimed cast, so there is no camera ray to
-/// converge on and nothing for a reticle to mark.
+/// At the LOCKED foe if there is one, down his facing otherwise — the QUICK shot's rule, since there is no
+/// aimed cast and so no camera ray to converge on.
 fn throwBolt(g: *Game) void {
-    const from = g.hero.wandTipWorld();
     const locked: ?rl.Vector3 = if (activeLock(g)) |li| foeLockPoint(g, li) else null;
-    const target = locked orelse forwardBoltPoint(g);
     // Loft only against a REAL point, `looseShaft`'s rule: it is solved against the distance to the target.
-    putIn(&g.shafts, archermod.launchShaft(from, target, heromod.BOLT_SPEED, g.hero.castBlow(), locked != null, .bolt));
+    launchBolt(g, locked orelse forwardBoltPoint(g), locked != null);
+    sfx.play(.wand_cast);
+    g.rumble.play(rumblemod.cast_throw);
+    g.rig.addShake(SHAKE_CAST);
+}
+
+/// The GEOMETRY of a release, which is the part the shot harness reproduces too (`throwBoltForShot`). Sound,
+/// pad and shake stay with the caller: those are live-loop only, and a shake in `--shot` costs determinism.
+fn launchBolt(g: *Game, target: rl.Vector3, loft: bool) void {
+    const from = g.hero.wandTipWorld();
+    putIn(&g.shafts, archermod.launchShaft(from, target, heromod.BOLT_SPEED, g.hero.castBlow(), loft, .bolt));
     var dir = mathx.subV(target, from);
     if (mathx.lenV(dir) > 1e-3) dir = mathx.normV(dir) else dir = mathx.headingDir(g.hero.facing);
     g.hero.castSparks(dir);
-    // No voice here on purpose: the TELL already sounded at the raise, and the bolt's own impact comes off
-    // the shaft pool (`stepShafts`) exactly as an arrow's does.
-    g.rumble.play(rumblemod.swing_light);
 }
 
 fn forwardBoltPoint(g: *const Game) rl.Vector3 {
@@ -803,18 +805,11 @@ fn stepShafts(g: *Game, dt: f32) void {
     }
 }
 
-// ── SIGHT ─────────────────────────────────────────────────────────────────────────────────────────
-// NOTHING NOTICES WHAT IT CANNOT SEE. The look is taken from the foe's own lock point (its head or its
-// chest — the thing already defined as "where this creature IS" for the reticle) to the hero's eye, and
-// stamped on the foe's leash, which is where every creature already reads its senses (`foe.sensedDist`).
-//
-// IT IS ASKED HERE, ONCE A FRAME, and not by the creatures: the prop grid a look is tested against
-// belongs to `env`, and handing a world to six state machines so each could re-ask the same question is
-// six copies of it. Only foes near enough for the answer to change anything are asked at all.
+// The look runs from the foe's own lock point to the hero's eye and is stamped on its leash. Asked HERE, once a
+// frame, not by the creatures: the prop grid it tests against belongs to `env`.
 
-/// PAST THE WIDEST NOTICE RING IN THE GAME, beyond which a foe reads the hero as far off whatever the
-/// answer is — DERIVED off the rings themselves, because a creature given a wider one later would
-/// otherwise stop being asked the question and quietly see through walls again.
+/// Past the widest notice ring in the game. DERIVED off the rings themselves — hard-coded, a creature given a
+/// wider one later stops being asked the question and quietly sees through walls again.
 const SIGHT_R: f32 = 1.0 + @max(
     @max(frogmod.AGGRO_R, archermod.AGGRO_R),
     @max(@max(ogremod.AGGRO_R, koboldmod.AGGRO_R), @max(warriormod.AGGRO_R, broodmod.AGGRO_R)),
@@ -929,7 +924,7 @@ pub fn drawScene(g: *Game) void {
 
     rl.beginMode3D(cam);
     g.scene.bind(cam.position);
-    g.env.uploadLights(&g.scene, &view, @floatCast(rl.getTime()));
+    g.env.uploadLights(&g.scene, &view, @floatCast(rl.getTime()), g.hero.wandLight());
     g.scene.setGround(true);
     g.env.drawGround(&view); // sculpted terrain is tiled, so it culls against the same frustum
     g.scene.setGround(false);
@@ -1461,11 +1456,8 @@ pub fn run(mode: Mode) void {
         }
         bWasDown = bDown;
 
-        // L1 / RMB IS THE LEFT HAND'S BUTTON, NOT THE SHIELD'S — the R1/R2 rule from the other side. Which
-        // action it performs is decided by what that hand is holding: boards BLOCK (a held level) and a wand
-        // CASTS (a pressed edge), so it is read as one button both ways and neither can swallow the other's
-        // press. RMB is unambiguous for the same reason the bow could take it: only one of the three things
-        // that answer to it can be in the hand at a time.
+        // L1/RMB belongs to the HAND, not the shield (the R1/R2 rule from the other side): boards block on a
+        // held LEVEL, a wand casts on a pressed EDGE, so both are read here and neither swallows the other.
         var l1Held = rl.isMouseButtonDown(.right);
         var l1Press = rl.isMouseButtonPressed(.right);
         if (rl.isGamepadAvailable(PAD)) {
@@ -1518,9 +1510,8 @@ pub fn run(mode: Mode) void {
             } else if (quickReq) {
                 g.hero.requestShot(false);
             } else if (castReq) {
-                // THE TELL SOUNDS AT THE RAISE, not at the throw: `kobold_cast` is a RISING voice, so it
-                // belongs on the gather. The wand has no voice of its own yet and borrows the priest's.
-                if (g.hero.requestCast()) sfx.play(.kobold_cast);
+                // At the RAISE, not the throw: `wand_charge` climbs, and resolves about where the bolt goes.
+                if (g.hero.requestCast()) sfx.play(.wand_charge);
             }
             g.hero.steerQueuedRoll(rollDir(g, mv));
             if (drinkReq and g.hero.startDrink()) sfx.play(.flask_drink);
@@ -1581,6 +1572,8 @@ pub fn run(mode: Mode) void {
             g.hero.updateShot(dt, faceYaw);
         } else if (g.hero.casting) {
             g.hero.updateCast(dt, faceYaw); // PLANTED, like a quick shot — both hands are busy
+            // Pulsed EVERY frame, since a `rumble.Event` can only decay from its peak (`rumble.castCharge`).
+            g.rumble.play(rumblemod.castCharge(g.hero.chargeFill()));
         } else {
             moveHero(g, dt, mv, faceYaw);
         }
@@ -1946,11 +1939,9 @@ fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
     for (foes, 0..) |*a, i| {
         if (!foemod.corporeal(a)) continue;
         const r = a.bodyR();
-        // THE MASONRY STOPS A LEAP TOO (owner's call). Being airborne exempts a committed jump from the
-        // terrain step rule and from being shouldered by other bodies — never from the world's solids. A
-        // pounce or a backstep that crossed a wall was a foe leaving the arena through it. Applied at
-        // FULL STRENGTH rather than eased: the correction is only ever the one frame of travel that put
-        // it inside, and a leap into stone has to stop at the stone or it grinds its way through anyway.
+        // Airborne exempts a jump from the terrain rule and from being shouldered — NEVER from the world's
+        // solids, or a pounce leaves the arena through a wall. Full strength, not eased: the correction is one
+        // frame of travel, and a leap into stone has to stop at the stone.
         if (a.airborne()) {
             a.pos = inBounds(g.env.resolveActor(a.pos, r));
             continue;
@@ -2027,11 +2018,9 @@ fn foeLockable(g: *const Game, r: FoeRef) bool {
         }
     }.ask);
 }
-/// IS THE REF STILL POINTING AT SOMETHING THAT EXISTS? Every group is fixed-size storage plus a LIVE
-/// COUNT, so its tail is `undefined` — an index that outlived a re-home is a read of undefined memory,
-/// not a stale target. `rehomeFoes` runs on a world reload, a respawn, a rest and every editor frame,
-/// and only three of those four drop the lock. The bound belongs here, where the whole game asks
-/// whether the lock is still good, rather than at each of them.
+/// Every group is fixed storage plus a LIVE COUNT, so its tail is `undefined`: an index that outlived a re-home
+/// is a read of undefined memory, not a stale target. `rehomeFoes` runs on a reload, a respawn, a rest and every
+/// editor frame, and only three of those drop the lock — so the bound lives here, not at each of them.
 fn refInBounds(g: *const Game, r: FoeRef) bool {
     if (bandIdx(r)) |i| return i < g.band.liveConst().len;
     if (broodIdx(r)) |i| return i < g.brood.liveConst().len;

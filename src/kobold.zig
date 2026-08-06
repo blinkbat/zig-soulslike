@@ -144,11 +144,9 @@ fn spec(r: Role) *const Spec {
 comptime {
     // The spec table IS the role enum, in order…
     if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("kobold: a Role with no spec row");
-    // …and the kinds are A CONTIGUOUS RUN off `berserker`, in role order, because `roleOf`/`kindOf` are an
-    // ordinal shift (warrior.zig and brood.zig both pin theirs the same way). Unpinned, a kind inserted
-    // into the middle of the run silently posts the wrong role: the priest spawns as a berserker and
-    // nothing fails to compile. ONE walk asks both — it was written out twice, once as an assert and once
-    // as a compileError, over the same fields in the same order.
+    // …and the kinds are a CONTIGUOUS RUN off `berserker` in role order, since `roleOf`/`kindOf` are an ordinal
+    // shift (warrior.zig and brood.zig pin theirs the same way). Unpinned, a kind inserted mid-run silently
+    // posts the wrong role — the priest spawns as a berserker and nothing fails to compile.
     for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
         const fk: wf.FoeKind = @enumFromInt(@intFromEnum(wf.FoeKind.berserker) + i);
         if (!std.mem.eql(u8, f.name, @tagName(fk))) {
@@ -181,13 +179,10 @@ const SHOVE_DECAY = 8.0;
 
 const ZERK_SWINGS_LO: u32 = 3;
 const ZERK_SWINGS_HI: u32 = 5;
-/// One chop, start to finish. THE AXE HAS TO TRAVEL BEFORE IT BITES (owner's law, `foe.TELL_MIN`): the
-/// flurry stays fast — that is the berserker's whole shape — so the read comes from the SWING rather than
-/// from a tell in front of it, which is the law's second option. `ZERK_HIT_A` is where damage starts, so
-/// `ZERK_CHOP * ZERK_HIT_A` is the raise you get to see. It was 0.42 x 0.34 = 0.14 s, which is 8 frames
-/// from nothing to hurt, three to five times in a row.
-/// Pub for the shot harness ALONE, which aims its two chop beats off these rather than off literal frame
-/// counts — retuning the swing above silently moved both shots into the raise the first time.
+/// One chop. `CHOP_DUR * CHOP_HIT_A` is the raise you get to see, and it must clear `foe.TELL_MIN`: the flurry
+/// stays fast, so the read comes from the SWING rather than a tell in front of it. It was 0.42 × 0.34 = 0.14 s,
+/// eight frames from nothing to hurt, three to five times in a row.
+/// Pub for the SHOT HARNESS alone, which aims its two chop beats off these rather than literal frame counts.
 pub const CHOP_DUR = 0.58;
 pub const CHOP_HIT_A = 0.53;
 const ZERK_CHOP = CHOP_DUR;
@@ -278,10 +273,9 @@ fn legSink(crouch: f32) f32 {
     return (SEG_THIGH + SEG_SHANK) * H * (1.0 - mathx.cosf(mathx.radians(crouch)));
 }
 
-// PERF: the sling FX changed how FULL this stays, not how big it is. A slinger used to hold particles only
-// while hurt or dying; now it sheds embers through every whirl, so ~16 of the 22 are live most of a fight.
-// Each is a `drawSphereEx` (6×8 ≈ 96 tris, immediate mode), so the WORST case is what a blood burst already
-// cost — the pool is a ring buffer and cannot grow past it. Bound the FX by editing the emitters' counts.
+// PERF: the sling FX changed how FULL this stays, not how big it is — ~16 of the 22 are live most of a fight
+// now, where a slinger used to hold particles only while hurt. Each is a `drawSphereEx` (6×8 ≈ 96 tris,
+// immediate mode), so the worst case is still what a blood burst cost. Bound the FX at the emitters' counts.
 const NPART = 22; // a modest per-kobold pool: a warband is up to 72 of these
 const BLOOD = rgba(104, 26, 22, 200); // a kobold bleeds thin and dark
 

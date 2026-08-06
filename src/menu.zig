@@ -610,7 +610,10 @@ fn sfxFilterNote() [:0]const u8 {
     return if (sfx.fxPending()) "Re-rendering..." else "Left/Right to turn a dial. Play a sound to hear it.";
 }
 
-const NavDir = enum { up, down, left, right };
+/// PUBLIC because this file is where full-screen UI navigation lives — the pause card's rows, the character
+/// book's grid, and now the dialog panel's answer list all read the pad and the keyboard through here. A
+/// second private copy of "is Down pressed" is a second thing to drift out of step with this one.
+pub const NavDir = enum { up, down, left, right };
 
 fn keyNav(dir: NavDir) struct { a: rl.KeyboardKey, b: rl.KeyboardKey } {
     return switch (dir) {
@@ -640,7 +643,7 @@ fn dirPressed(dir: NavDir, autoRepeat: bool) bool {
     return false;
 }
 
-fn navPressed(dir: NavDir) bool {
+pub fn navPressed(dir: NavDir) bool {
     return dirPressed(dir, true);
 }
 
@@ -682,7 +685,7 @@ fn confirmHeld() bool {
     return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, .right_face_down);
 }
 
-fn confirmPressed() bool {
+pub fn confirmPressed() bool {
     // ALT+Enter is the game loop's borderless-fullscreen toggle, so Enter must not ALSO confirm the highlighted row while Alt is down.
     const altHeld = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
     if ((rl.isKeyPressed(.enter) and !altHeld) or rl.isKeyPressed(.space)) return true;

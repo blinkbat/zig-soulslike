@@ -307,6 +307,28 @@ pub fn prompt(s: [:0]const u8) void {
     text(s, x, y, BODY, rgba(226, 214, 186, 240));
 }
 
+/// Where a trigger's line sits: high on the screen, clear of the prompt band and of everything in the four
+/// corners. SC1 put its text message top-left; centred reads as narration rather than as a debug log.
+const BANNER_TOP: i32 = 96;
+const BANNER_ROWS: usize = 3;
+const BANNER_WIDE: i32 = 620;
+
+/// A LINE THE WORLD IS SAYING, not a thing you can answer — no frame, no plate, just words with a shadow
+/// under them, so it never reads as a panel you have missed a button on. Wrapped with the real face, since a
+/// script's sentence is written to be read and not to fit.
+pub fn banner(s: []const u8) void {
+    var buf: [320]u8 = undefined;
+    var rows: [BANNER_ROWS][:0]const u8 = undefined;
+    const maxW = @min(BANNER_WIDE, rl.getScreenWidth() - MARGIN * 2);
+    const lines = wrap(s, BODY, maxW, &buf, &rows);
+    var y = BANNER_TOP;
+    for (lines) |ln| {
+        const x = @divTrunc(rl.getScreenWidth() - textW(ln, BODY), 2);
+        engraved(ln, x, y, BODY, rgba(232, 222, 198, 244));
+        y += lineH(BODY);
+    }
+}
+
 const EQ_SCALE: i32 = 150; // percent
 fn eq(v: i32) i32 {
     return @divTrunc(v * EQ_SCALE, 100);

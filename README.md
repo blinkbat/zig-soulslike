@@ -49,18 +49,36 @@ deliberately flat; the elevation is there for the worlds you build next.
 - **south — the Windswept Downs.** Open, dry and nearly empty — the region that makes the others
   feel dense. Lone trees, field stones, old graves, a watchtower on the rise.
 
+## Someone to talk to
+
+At the bonfire where you start there is now a **wanderer** — a hooded traveller with a walking staff who
+looks up when you come near, raises a hand, and has something to say about the road north. He is the first
+body in this world that is not trying to kill you: no health bar, no aggro, a name, and a conversation you
+read off a framed panel with the world dimmed behind it. Answer with the number keys or the stick; some
+answers only appear once you have heard the thing that unlocks them.
+
+Behind him is a **trigger system lifted from StarCraft's map editor**: a trigger is a list of CONDITIONS and a
+list of ACTIONS, every condition must hold, and then the actions run in order. The conditions can ask whether
+a named switch is set, whether a counter has reached a number, whether a timer has run out, how long you have
+been in this world, whether you are standing in a rectangle, whether you are near a particular person,
+whether you have heard a particular conversation through to its end, and how many of a given foe are dead or
+still standing. The actions can open a conversation, put a line of narration on screen, set or flip a switch,
+move a counter, start a timer, wait, or keep themselves alive for next time. All of it — the triggers, the
+conversations and the people — is **written in the `.world` file** alongside the props, so the map still owns
+everything about the map. `AGENTS.md` has the grammar.
+
 Every region is dressed in three layers — ground cover, understorey, canopy — from a registry of
-**80 prop kinds**: great trees in three variants, conifers, birches, dead snags and saplings;
+**82 prop kinds**: great trees in three variants, conifers, birches, dead snags and saplings;
 ferns, brambles, thickets, nettles, thistles, foxgloves, heather, gorse, clover, moss, mushrooms
 and bracken; boulders, outcrops, scree and cairns; wells, shrines, post lanterns, fences, barrels,
 woodpiles, sarcophagi, stair fragments, gibbets and bones; torches, braziers and campfires that
 light what's around them.
 
-**17,253 static props and 1,859 colliders, of which a frame draws about 975 in the city and 1,250 in
+**17,272 static props and 1,819 colliders, of which a frame draws about 975 in the city and 1,250 in
 the wood** (read straight off Debug > Stats in `shots/91_stats_city.png` and `92_stats_wood.png`; the
 first two numbers are pinned by `env`'s "replaying the SHIPPED map produces a stable world" test —
-this paragraph is the copy that went stale when the props rework moved them, so move it together
-with that test and AGENTS.md's own line, all three or none): props are
+this paragraph is the copy that goes stale when a props rework moves them, so move it together
+with that test, all of it or none): props are
 indexed into a uniform grid and culled per cell
 against the view frustum, per-kind view distances, and — for the sun's depth pass — whether a
 caster's shadow can physically reach the shadow box. Collision and arrow flight query the same grid.
@@ -80,8 +98,18 @@ Keyboard + mouse **or** a gamepad (Elden Ring default layout):
 | Light slash | LMB | R1 / RB |
 | Heavy overhead | Shift + LMB | R2 / RT |
 | Lock on / cycle target | Middle mouse / flick | R3 (right-stick click) / flick |
-| Zoom | Scroll wheel | D-pad up / down |
-| Menu (Continue / Debug / Quit) | Esc | Start |
+| Guard (shield) / cast (wand) | Hold RMB | Hold L1 / LB |
+| Aim the bow | Hold RMB | Hold L2 / LT |
+| Sword ↔ bow | Q | D-pad right |
+| Shield ↔ wand | F | D-pad left |
+| Chaos Bolt ↔ Roots | G | D-pad up |
+| Plain ↔ fire arrow | Y | — (character book's ammo slot) |
+| Drink / cycle flask | R / T | Square / X / D-pad down |
+| Rest / speak / open | E | Cross / A |
+| Answer in a conversation | Up / Down or 1-9, Enter or E | D-pad up / down, Cross / A |
+| Zoom | Scroll wheel | — |
+| Menu (Continue / Debug / Quit) | Esc | Select |
+| Character book | Tab | Start |
 | Borderless fullscreen | Alt + Enter | — |
 
 The camera sits over the hero's **right shoulder**; movement is camera-relative and the hero turns
@@ -89,7 +117,7 @@ to face the direction of travel. The mouse is **hidden but never captured** — 
 window edge and it comes back as a normal cursor, so the pointer can always escape. Attacks and the
 roll are committed, with an Elden-Ring-style one-slot input buffer that fires at the earliest exit.
 While locked on, the hero faces the target with real strafe/backpedal footing and R3 cycles targets.
-Reserved for later, matching Elden Ring: Cross/A = jump, L1/L2 = guard / skill.
+Reserved for later, matching Elden Ring: Cross/A = jump.
 
 ## Build & run
 

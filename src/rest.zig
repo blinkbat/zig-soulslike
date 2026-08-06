@@ -98,16 +98,9 @@ pub const Rest = struct {
             self.near = null;
             return;
         }
-        var best: ?usize = null;
-        var bestD: f32 = REACH * REACH;
-        for (self.list[0..self.n], 0..) |*s, i| {
-            const d = mathx.dist2XZ(s.pos, heroPos);
-            if (d < bestD) {
-                bestD = d;
-                best = i;
-            }
-        }
-        self.near = best;
+        var near = mathx.Nearest.within(REACH);
+        for (self.list[0..self.n], 0..) |*s, i| near.offer(i, s.pos, heroPos);
+        self.near = near.best;
     }
 
     fn fadeRunning(self: *const Rest) bool {

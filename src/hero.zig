@@ -420,20 +420,29 @@ const BOLT_BURST = 22; // …and the bigger one where it lands
 /// Sites the ground can be split at AT ONCE. A second cast before the first has sunk is a thing the player can
 /// do, and two holes in the ground is what it should look like when he does.
 const ROOT_SITES = 3;
-/// Tendrils one site throws. Seven, and every one of them differently sized, leaned and DELAYED — a ring of
+/// Tendrils one site throws. Nine, and every one of them differently sized, leaned and DELAYED — a ring of
 /// equal spikes going up on the same frame is the rosette-of-spokes failure, however good the mesh is.
-const ROOT_FANS = 7;
-const ROOT_RISE: f32 = 0.26; // s, tearing up out of the earth…
+const ROOT_FANS = 9;
+const ROOT_RISE: f32 = 0.20; // s, TORN up out of the earth (fast: this is the violent half)…
 const ROOT_SINK: f32 = 0.55; // …and drawn back down once the grip lets go
 /// The stagger between the first tendril and the last, as a fraction of the rise.
 const ROOT_LAG: f32 = 0.55;
-/// Variants of the tendril mesh. One shape yaw-rotated seven times reads as a periodic pattern the moment you
+/// …and how far the tear OVERSHOOTS its own height before settling back onto it. A mass thrown out of the
+/// ground does not glide to a stop, and the settle is what reads as weight (the reactions law, on a prop).
+const ROOT_PUNCH: f32 = 0.20;
+/// Variants of the tendril mesh. One shape yaw-rotated nine times reads as a periodic pattern the moment you
 /// stand still and look at it (the world's `bigtree` rule, at a tenth the scale).
 const ROOT_KINDS = 3;
-const ROOT_SEGS = 7; // enough that the curl reads as a CURVE; at five each segment is a visibly straight stick
-const ROOT_LEN = 0.34 * H; // ~0.6 m — knee height. At 1.1 m they stood as tall as the man who cast them.
-const ROOT_R0 = 0.034 * H;
-const ROOT_R1 = 0.013 * H;
+/// Enough that the curl reads as a CURVE and not a chain of straight sticks, over a shaft this long. The mesh is
+/// built ONCE per variant, so the segment count costs nothing at run time — only the total arc has to come
+/// down with it, since that is `curl` times the count (see `rootTendrilMesh`).
+const ROOT_SEGS = 10;
+/// ~1.05 m — HIP height on the 1.8 m rig, so the thing that has a foe by the feet is a mass you have to look
+/// at rather than scenery round its ankles. Man-height (1.8) is the other failure: the tendrils then hide the
+/// creature they are holding, which is the one thing this spell exists to show you.
+const ROOT_LEN = 0.58 * H;
+const ROOT_R0 = 0.052 * H; // ~9 cm through at the earth, tapering to ~3 at the snap
+const ROOT_R1 = 0.019 * H;
 /// MEASURED, NOT GUESSED (AGENTS.md): at `34,25,18` on `.bark` these sampled 115,94,68 against grass at
 /// 110,97,67 — the same value, so they read as pale timber for want of any separation at all. SOLVED from
 /// there: screen = (albedo/255 × 1.72)^(1/2.2) × 255, so half the ground's 110 is screen 55, and 55 back
@@ -445,8 +454,8 @@ const ROOT_BARK_LT = rgba(9, 7, 5, 255);
 /// ground's own value, so it POPS off a near-black shaft — but it is a snap, not a sawn plank end, so it is small.
 const ROOT_HEART = rgba(24, 21, 15, 255);
 const ROOT_SOIL = mathx.rgba(96, 78, 58, 190); // the earth it throws up
-const ROOT_DUST = 18;
-const ROOT_MOTES = 14;
+const ROOT_DUST = 34;
+const ROOT_MOTES = 26;
 /// Rise, then the GRIP'S OWN span, then the sink — so what is standing in the ground IS how long the foe in it
 /// has left, rather than a second clock that can disagree with `combat.Root`.
 const ROOT_LIFE: f32 = ROOT_RISE + combat.ROOT_HOLD + ROOT_SINK;
@@ -463,7 +472,7 @@ const RootSite = struct {
     seed: f32 = 0,
 };
 
-const FX_N = 192;
+const FX_N = 256;
 
 comptime {
     // The ring overwrites its oldest silently, so the size is arithmetic over the constants above rather than
@@ -1257,7 +1266,7 @@ pub const Hero = struct {
     }
 
     pub fn castBlow(_: *const Hero) combat.Hit {
-        return combat.SPELL_HIT;
+        return combat.BOLT_HIT;
     }
 
     pub fn requestAttack(self: *Hero, kind: Attack) void {
@@ -1539,9 +1548,9 @@ pub const Hero = struct {
             const a = rng.angle();
             const rr = rng.range(0.1, combat.ROOT_R * 0.8);
             const from = v3(at.x + mathx.cosf(a) * rr, at.y + 0.03, at.z + mathx.sinf(a) * rr);
-            const sp = rng.range(0.7, 1.8);
-            const v = v3(mathx.cosf(a) * sp, rng.range(1.6, 3.6), mathx.sinf(a) * sp);
-            foemod.emitParticle(&self.fx, &self.fxHead, from, v, rng.range(0.32, 0.62), rng.range(0.030, 0.062), 0.012, ROOT_SOIL, 7.0);
+            const sp = rng.range(1.1, 3.0);
+            const v = v3(mathx.cosf(a) * sp, rng.range(2.4, 5.4), mathx.sinf(a) * sp);
+            foemod.emitParticle(&self.fx, &self.fxHead, from, v, rng.range(0.38, 0.78), rng.range(0.045, 0.100), 0.014, ROOT_SOIL, 7.0);
         }
         // …then the element, which is the only thing here that says WHOSE roots these are. They FLOAT off the
         // wood (a negative grav) rather than arcing like the dirt does — chaos coming off it, not more earth.
@@ -1549,9 +1558,9 @@ pub const Hero = struct {
         while (j < ROOT_MOTES) : (j += 1) {
             const a = rng.angle();
             const rr = rng.range(0.2, combat.ROOT_R);
-            const from = v3(at.x + mathx.cosf(a) * rr, at.y + rng.range(0.05, 0.4), at.z + mathx.sinf(a) * rr);
-            const v = v3(rng.signed() * 0.5, rng.range(0.5, 1.5), rng.signed() * 0.5);
-            foemod.emitParticle(&self.fx, &self.fxHead, from, v, rng.range(0.35, 0.75), rng.range(0.026, 0.048), 0.008, if (rng.float() < 0.4) CHAOS_HOT else CHAOS_MOTE, -0.6);
+            const from = v3(at.x + mathx.cosf(a) * rr, at.y + rng.range(0.05, 0.6), at.z + mathx.sinf(a) * rr);
+            const v = v3(rng.signed() * 0.9, rng.range(0.8, 2.4), rng.signed() * 0.9);
+            foemod.emitParticle(&self.fx, &self.fxHead, from, v, rng.range(0.45, 1.00), rng.range(0.038, 0.072), 0.010, if (rng.float() < 0.4) CHAOS_HOT else CHAOS_MOTE, -0.6);
         }
     }
 
@@ -1566,15 +1575,18 @@ pub const Hero = struct {
                 // Drawn from the stream FIRST and unconditionally, so a tendril that is not up yet still
                 // advances it and the fan does not reshuffle itself as the site rises.
                 const jitter = rng.range(-0.34, 0.34);
-                const out = rng.range(0.18, combat.ROOT_R * 0.42);
-                const sc = rng.range(0.72, 1.28);
-                const lean = rng.range(3.0, 13.0); // the mesh already curls; the transform only tips it OFF plumb
+                // Out to two thirds of the grab radius, so the ring reads across the ground the spell actually
+                // took rather than as a clump about the mark.
+                const out = rng.range(0.22, combat.ROOT_R * 0.66);
+                const sc = rng.range(0.62, 1.46); // WIDE: nine of one height is a garden rake
+                const lean = rng.range(4.0, 24.0); // the mesh already curls; the transform only tips it OFF plumb
                 const kind = @as(usize, @intFromFloat(rng.range(0, ROOT_KINDS)));
                 const u = s.t - ROOT_RISE * ROOT_LAG * (@as(f32, @floatFromInt(k)) / ROOT_FANS);
                 if (u <= 0) continue;
-                // Torn up fast, held, drawn back slower — a root sinks, it is never popped away.
-                const up = mathx.smoothstep(0, ROOT_RISE, u) *
-                    (1.0 - mathx.smoothstep(ROOT_RISE + combat.ROOT_HOLD, ROOT_LIFE, u));
+                // TORN up, overshooting its own height and settling onto it, held, then drawn back slower —
+                // a root sinks, it is never popped away.
+                const tear = mathx.smoothstep(0, ROOT_RISE, u) + ROOT_PUNCH * bump(u, ROOT_RISE * 0.5, ROOT_RISE * 2.2);
+                const up = tear * (1.0 - mathx.smoothstep(ROOT_RISE + combat.ROOT_HOLD, ROOT_LIFE, u));
                 if (up <= 0.001) continue;
                 const yaw = std.math.tau * (@as(f32, @floatFromInt(k)) / ROOT_FANS) + jitter;
                 rl.drawMesh(self.roots[@min(kind, ROOT_KINDS - 1)], self.mat, mul3(
@@ -2444,20 +2456,22 @@ fn rollArm(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, tuck: f32, f: f32, side: f32,
 const ROUND_EDGES = true;
 /// 1 is a plain ellipsoid, 0 the hard cube. Low enough that a shoulder cap still reads as a plate and
 /// the head still reads as a skull rather than an egg — the flats have to survive the fillet.
-const ROUND_E: f32 = 0.34;
+pub const ROUND_E: f32 = 0.34;
 /// A fillet costs a box 6 quads → segs×sides, so the TESSELLATION IS SIZED TO THE PART. The head, torso
 /// and thighs are what a fillet is for and they get the fine grid; a buckle, a nose or a pouch flap is a
 /// couple of centimetres across, where the same grid is a dozen quads a pixel. Measured off the part's
 /// largest dimension in units of stature, so it holds if the rig is ever rescaled.
-fn roundGrid(size: rl.Vector3) struct { segs: i32, sides: i32 } {
+pub fn roundGrid(size: rl.Vector3) struct { segs: i32, sides: i32 } {
     const big = @max(@max(@abs(size.x), @abs(size.y)), @abs(size.z)) / H;
     if (big >= 0.12) return .{ .segs = 6, .sides = 12 };
     if (big >= 0.05) return .{ .segs = 5, .sides = 10 };
     return .{ .segs = 3, .sides = 6 };
 }
 
-/// One body box. The ONE place the hero chooses between a filleted and a hard edge.
-fn slab(b: *Builder, c: rl.Vector3, size: rl.Vector3, col: rl.Color) void {
+/// One body box. The ONE place ANY body on this rig chooses between a filleted and a hard edge — the folk
+/// build through it too (`npc.zig`), or `ROUND_EDGES` would put the hero back to hard rims and leave every
+/// other human in the world filleted.
+pub fn slab(b: *Builder, c: rl.Vector3, size: rl.Vector3, col: rl.Color) void {
     if (!ROUND_EDGES) return b.addCube(c, size, col);
     const g = roundGrid(size);
     b.addRoundBox(c, size, ROUND_E, g.segs, g.sides, col);
@@ -2541,12 +2555,18 @@ fn rootTendrilMesh(variant: u32) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x600751 +% variant *% 7919);
     b.setMat(.wood);
+    // ONE TONE PER SHAFT, and the two bark values separate the three VARIANTS instead. Alternated per segment
+    // they striped every tendril like a barber's pole — which is the thing the note under them forbids, and it
+    // only showed once the shaft was fat enough to see it. Wabi-sabi belongs BETWEEN the nine, not along one.
+    const bark = mathx.lerpColor(ROOT_BARK, ROOT_BARK_LT, @as(f32, @floatFromInt(variant)) / @as(f32, ROOT_KINDS - 1));
     // The CURL is drawn ONCE and applied every segment, so the thing arcs. Re-rolled per segment it wanders
     // instead, and a wander made of straight capsules is a chain of elbows — which is what reads as a caltrop.
-    // BRACKETED FROM BOTH SIDES: at 0.09–0.17 they arced to near-horizontal and read as croquet hoops in the
-    // lawn; at 0.03–0.065 they stood up as posts with a crossbar and read as grave markers. These claw up out
-    // of the earth and turn over through the last third — which is the only band that reads as a root at all.
-    const curl = rng.range(0.055, 0.095);
+    // BRACKETED FROM BOTH SIDES: at 0.03–0.065 they stood up as posts with a crossbar and read as grave
+    // markers; far past this they arc to near-horizontal and read as croquet hoops in the lawn. These claw up
+    // out of the earth and turn over through the last third — the only band that reads as a root at all.
+    // PER SEGMENT, so it is re-bracketed whenever `ROOT_LEN` moves: the total arc is `curl` × the segment
+    // count, and at 0.055–0.095 over the 1.05 m shaft the same bend spread over 1.7× the run read as a STAKE.
+    const curl = rng.range(0.069, 0.109);
     const sway = rng.range(-0.07, 0.07);
     var p = v3(0, -0.10 * H, 0);
     var dir = mathx.normV(v3(0, 1.0, rng.range(0.03, 0.11)));
@@ -2557,7 +2577,7 @@ fn rootTendrilMesh(variant: u32) rl.Mesh {
         const step = ROOT_LEN / @as(f32, ROOT_SEGS) * rng.range(0.84, 1.16);
         const nr = mathx.lerpF(ROOT_R0, ROOT_R1, k) * rng.range(0.90, 1.10);
         const to = mathx.addV(p, mathx.scaleV(dir, step));
-        b.addCapsule(p, to, r, nr, 7, if (i % 2 == 0) ROOT_BARK else ROOT_BARK_LT);
+        b.addCapsule(p, to, r, nr, 9, bark);
         p = to;
         r = nr;
         // It falls away from plumb a little MORE each segment — steep out of the earth, curling over by the
@@ -2569,19 +2589,19 @@ fn rootTendrilMesh(variant: u32) rl.Mesh {
         ));
     }
     // …and the BLUNT SNAP it ends in, a touch fatter than the shaft so it reads as a break and not a taper.
-    b.addBlob(p, v3(r * 1.30, r * 0.95, r * 1.30), 3, 7, ROOT_HEART);
-    // A COUPLE OF STUBS off the outer half — a bare shaft is a cane, and a root that tore up through packed
+    b.addBlob(p, v3(r * 1.30, r * 0.95, r * 1.30), 4, 9, ROOT_HEART);
+    // THREE STUBS off the outer half — a bare shaft is a cane, and a root that tore up through packed
     // earth brings its own broken side-growth with it. Blunt too: `addCapsule` domes both ends.
     var s: u32 = 0;
-    while (s < 2) : (s += 1) {
+    while (s < 3) : (s += 1) {
         const base = mathx.lerpV(v3(0, 0, 0), p, rng.range(0.40, 0.78));
         const a = rng.angle();
-        const len = ROOT_LEN * rng.range(0.08, 0.14);
+        const len = ROOT_LEN * rng.range(0.11, 0.19);
         // They RUN WITH the shaft, not across it: thrown out level they read as the crossbar of a grave marker,
         // which is the single thing that turned an upright tendril into a headstone.
         const out = v3(base.x + mathx.cosf(a) * len * 0.55, base.y + rng.range(0.75, 1.15) * len, base.z + mathx.sinf(a) * len * 0.55);
-        const sr = ROOT_R1 * rng.range(0.7, 1.0);
-        b.addCapsule(base, out, sr * 1.5, sr, 6, ROOT_BARK);
+        const sr = ROOT_R1 * rng.range(1.0, 1.5);
+        b.addCapsule(base, out, sr * 1.5, sr, 7, bark);
     }
     return b.toMesh();
 }
@@ -3316,14 +3336,14 @@ test "A CAST IS BILLED IN FP AND NOTHING ELSE — and pay-or-nothing, unlike the
     h.off = .wand;
     const stamBefore = h.stam.cur;
     try std.testing.expect(h.requestCast());
-    try std.testing.expectApproxEqAbs(combat.FP_MAX - combat.SPELL_FP, h.fp.cur, 1e-4);
+    try std.testing.expectApproxEqAbs(combat.FP_MAX - combat.BOLT_FP, h.fp.cur, 1e-4);
     try std.testing.expectApproxEqAbs(stamBefore, h.stam.cur, 1e-4); // the stamina bar is not touched
     try std.testing.expect(h.casting and h.committed());
     // A HALF-FULL COST BUYS NOTHING. The roll's asymmetry is deliberate and this is deliberately its
     // opposite: below the cost the cast is refused outright, and the FP bar is the one that says so.
     var spent = testHero();
     spent.off = .wand;
-    spent.fp.cur = combat.SPELL_FP - 0.01;
+    spent.fp.cur = combat.BOLT_FP - 0.01;
     try std.testing.expect(!spent.requestCast());
     try std.testing.expect(!spent.casting);
     try std.testing.expect(spent.fpRefused > 0); // …on the FP frame, not the stamina one
@@ -3391,17 +3411,17 @@ test "REPEATED CASTS SWEEP OPPOSITE WAYS, and the bolt leaves ONCE, from over hi
 
 test "THE BOLT IS ALL CHAOS, and it is worth more than a light slash before anything resists it" {
     // Pure chaos: no physical at all, the brood mother's one-substance-one-element rule.
-    try std.testing.expectApproxEqAbs(@as(f32, 0), combat.SPELL_HIT.dmg, 1e-6);
-    try std.testing.expectApproxEqAbs(combat.SPELL_HIT.raw(), combat.SPELL_HIT.elem.at(.chaos), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), combat.BOLT_HIT.dmg, 1e-6);
+    try std.testing.expectApproxEqAbs(combat.BOLT_HIT.raw(), combat.BOLT_HIT.elem.at(.chaos), 1e-6);
     // "DECENT DAMAGE" (owner's call), sat between the two swings it is spent instead of.
-    try std.testing.expect(combat.SPELL_HIT.raw() > ATK_LIGHT_HIT.dmg);
-    try std.testing.expect(combat.SPELL_HIT.raw() < ATK_HEAVY_HIT.dmg);
+    try std.testing.expect(combat.BOLT_HIT.raw() > ATK_LIGHT_HIT.dmg);
+    try std.testing.expect(combat.BOLT_HIT.raw() < ATK_HEAVY_HIT.dmg);
     // …and its poise sits between them too: it rocks a foe, it is not the stagger tool.
-    try std.testing.expect(combat.SPELL_HIT.poise > ATK_LIGHT_HIT.poise);
-    try std.testing.expect(combat.SPELL_HIT.poise < ATK_HEAVY_HIT.poise);
+    try std.testing.expect(combat.BOLT_HIT.poise > ATK_LIGHT_HIT.poise);
+    try std.testing.expect(combat.BOLT_HIT.poise < ATK_HEAVY_HIT.poise);
     // A FULL POOL IS A COUNTABLE NUMBER OF CASTS — if this stops dividing sensibly the wand has become
     // either a spammable or a one-shot without anybody deciding to change it.
-    const casts = combat.FP_MAX / combat.SPELL_FP;
+    const casts = combat.FP_MAX / combat.BOLT_FP;
     try std.testing.expect(casts >= 4 and casts <= 8);
 }
 

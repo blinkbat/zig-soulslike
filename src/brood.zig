@@ -847,7 +847,7 @@ pub const Sac = struct {
             return false;
         }
         self.flash = mathx.maxF(0, self.flash - dt);
-        // A SAC IS A TARGET, so its vitals run like every other target's — `sinceHit` is what the floating HP bar is gated on, and left frozen at 0 the bar never goes away again.
+        // A SAC IS A TARGET, so its vitals run like every other target's — `sinceHurt` is what the floating HP bar is gated on, and left frozen at 0 the bar never goes away again.
         self.vit.tick(dt);
         self.t += dt;
         foe.tickParticles(&self.fx, dt, self.pos.y);
@@ -2115,9 +2115,9 @@ test "A SAC IS A TARGET, and answers everything a target has to answer" {
 }
 
 test "A STRUCK SAC'S BAR GOES AWAY AGAIN — its vitals actually run" {
-    // THE bug: `Sac.update` was the one `combat.Vitals` owner in the game that never ticked, so `sinceHit` stayed pinned at 0 after the first blow and `game.drawFoeBars`' recent-hit window — which is a `sinceHit` test — never closed again.
+    // THE bug: `Sac.update` was the one `combat.Vitals` owner in the game that never ticked, so its clocks stayed pinned at 0 after the first blow and `game.drawFoeBars`' recent-hit window — which is a `sinceHurt` test — never closed again.
     var s = Sac.lay(mathx.ground(0, 0), 0.5, 1.0);
-    try std.testing.expect(s.vit.sinceHit > 100.0); // never hit: no bar
+    try std.testing.expect(s.vit.sinceHurt > 100.0); // never hit: no bar
     s.tryHit(.{
         .active = true,
         .pierce = true,
@@ -2126,10 +2126,10 @@ test "A STRUCK SAC'S BAR GOES AWAY AGAIN — its vitals actually run" {
         .b = mathx.addV(s.centerWorld(), v3(0, 0, -0.1)),
         .hit = heromod.ATK_LIGHT_HIT,
     });
-    try std.testing.expect(s.standing() and s.vit.sinceHit == 0);
+    try std.testing.expect(s.standing() and s.vit.sinceHurt == 0);
     var t: f32 = 0;
     while (t < 1.0) : (t += 1.0 / 60.0) _ = s.update(1.0 / 60.0, .{});
-    try std.testing.expectApproxEqAbs(@as(f32, 1.0), s.vit.sinceHit, 0.05);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), s.vit.sinceHurt, 0.05);
 }
 
 test "a hatchling's recovery is its OWN length, not its mother's" {

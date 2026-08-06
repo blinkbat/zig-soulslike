@@ -18,7 +18,9 @@ Don't commit, push, or create branches unless explicitly asked.
   comes from shake + rumble + FX + huge reaction anims, never from stealing time from the player.
 - **ZERO INPUT LAG.** The stick maps straight to ground speed every frame. Posture/gait blends may
   smooth the VISUALS only, and only fast (~0.1 s max).
-- **REACTIONS ARE HUGE.** A flinch or stagger must be big and obvious, never a subtle lean.
+- **REACTIONS ARE HUGE.** A flinch or stagger must be big and obvious, never a subtle lean. **A mass in
+  motion OVERSHOOTS its rest and settles back onto it** — props and geometry included; a glide to a stop
+  is what reads as weightless.
 - **FLESH IS ROUND.** Organic mass = `addBlob`/`addCapsule`; `addCube`/`addBox` is for iron, blades,
   cloth, masonry. Bare `addCylinder` leaves an open cut-pipe end — those rims and boxes are what read
   as BLOCKY however good the animation on top.
@@ -28,6 +30,9 @@ Don't commit, push, or create branches unless explicitly asked.
 - **WABI-SABI is the house style for ALL art.** Uneven sizes, asymmetry, leans, gaps. Author the
   variation in with a seeded `mathx.Rng` so builds stay deterministic. When a model or anim reads
   "dumb"/fake it is almost always too REGULAR. Cosmetic only — mechanics stay exact.
+  **AT THE RIGHT SCALE, THOUGH: BETWEEN the instances, not ALONG one.** Two tones alternated segment by
+  segment band a shaft like a barber's pole; the same two tones separating the VARIANTS read as three
+  kinds of wood. Same dial, opposite result.
 - **NOTHING DEAD IS STRAIGHT, AND NOTHING ENDS IN A POINT.** A limb drawn as one capsule to a needle
   tip is a spear, and a rosette of them is a hub of spokes. A dead limb leaves the bole on its axis,
   rises to an elbow, DROOPS off the line to a blunt snap of pale heartwood; twigs root on that outer
@@ -96,7 +101,10 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `camera.zig` | over-the-shoulder orbit rig, ground basis, trauma shake (live-loop only, so `--shot` stays deterministic) |
 | `gfx.zig` | mesh `Builder`, scene shader, shadow depth pass, `Sky`, `Vignette`, `Mat` surface materials |
 | `shaders.zig` | every line of GLSL and nothing else; the contract with `gfx.zig` is written at its top |
-| `worldfmt.zig` | THE MAP FORMAT — op vocabulary, zone/foe tables, one comptime field table driving writer and parser |
+| `worldfmt.zig` | THE MAP FORMAT — op vocabulary, zone/foe/**npc/trigger/dialog** tables, one comptime field table driving writer and parser |
+| `trigger.zig` | THE TRIGGER MACHINE — SC1's conditions + actions, and the switches / counters / timers they compose through |
+| `dialog.zig` | a conversation: the walk through one node tree, and the BG2-style panel it is read off |
+| `npc.zig` | THE FOLK — the wanderer, on the hero's scaffold; idle set, gestures, roam, and the staff that plants with the far foot |
 | `env.zig` | THE WORLD — terrain, op replay, `coverField`, uniform grid, cullers, occluder fade, lights |
 | `editor.zig` | THE EDITOR (Menu > Editor), layered StarEdit-style; biggest file, next split candidate |
 | `objview.zig` | object viewer + the JUKEBOX (sound auditioning) |
@@ -190,6 +198,13 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 - **Group + register.** Wrap instances in a `Group` exposing `anyDied`/`totalHits`/`aliveCount`; its
   `reset` and `draw` are ONE-LINE DELEGATES to `foe.resetGroup`/`foe.drawGroup`. The draw's
   `setFlash(0)` tail is what a fourth copy would forget.
+- **CROSS-CUTTING STATE IS EMBEDDED BY THE CREATURE AND STAMPED BY THE GAME** — its eyes (`Leash`), a
+  hold on its feet (`combat.Root`). The creature reads the field; it never reaches out for the state.
+- **DENYING MOVEMENT IS A POST-STEP GATE, NOT A GUARD AT EACH MOVER** (`foe.grip` + `defer grip.hold`,
+  `game.gateTerrain`) — taken once at the end of `update`, because a creature grows movements (a dash, a
+  leap, a shove off a blade, the next one nobody has written) and a per-site list is a list to forget
+  one from. It takes ONE thing, the feet: the state machine still runs, the kit still swings, blows
+  still land. Y is left alone — `game.groundActor` owns it and a held foe stands on its own ground.
 - **A multi-kind group answers for its own members** — `kind = null` in `FOE_GROUPS`, each member
   exposes `kind()`. A group with anything else on the field (sacs, acid) exposes `clear()`.
 - **Anything the map can post is a `wf.FoeKind`, APPENDED never inserted** (editor unit brushes are
@@ -208,6 +223,29 @@ damage still land — you just cannot re-flinch something already flinching. `co
 clock (`stunLeft`, armed by `beginStun`), and it ticks BEFORE the regen gate or a foe's `regenDelay`
 outlasts the window and the immunity never lifts. A GUARD BREAK is the one door `hit()` misses —
 `hero.enterStun` arms it.
+
+**A DRIP IS NOT A BLOW.** Anything that HOLDS bills damage every frame (`Vitals.drip`), and a blow's
+side effects cannot be billed at that rate: `hit` stamps the clock that gates the poise/stance refill,
+so re-stamped every frame a hold that carries no poise would still deny a whole poise bar. Hence TWO
+clocks — `sinceHit` gates the refill and only a blow moves it, `sinceHurt` is what the floating bar
+reads and anything that takes HP moves it. One field cannot hold a gate shut and show a bar. **A drip
+that KILLS is reported, not acted on** — only the creature knows how to die.
+
+**A TIMED STATUS REFRESHES, IT DOES NOT STACK** (`Root.grab`, `Regen.start`). Two clocks running on one
+body is a state no bar and no animation can show.
+
+**AN EFFECT'S CLOCK IS DERIVED FROM THE MECHANIC'S, NEVER PARALLEL TO IT** — what is standing on the
+ground IS how long the hold has left. Two constants that can disagree eventually will. And when the
+effect STAGGERS its parts, its container outlives the mechanic by that stagger, or the last part is cut
+off mid-finish and pops away.
+
+**FEEDBACK ON A CREATURE IS SIZED BETWEEN TWO FAILURES.** Under, it is scenery round the ankles; over,
+it hides the creature it exists to point at. Judge the size against the CREATURE, never against the
+hero who caused it.
+
+**A FLOATING BAR TIMES OUT; THE FIXED ONE DOES NOT.** The target under the reticle keeps its numbers up
+whether it was hit lately or not. It goes with the RETICLE, not `g.lock`, so a suspended lock takes the
+bar down with the dot.
 
 ### Stamina
 
@@ -293,7 +331,15 @@ their own row.
 
 **R1/R2 (and L1) BELONG TO THE ARM, NOT THE WEAPON.** The attack buttons are read as buttons and
 routed by which armament is in that hand, so neither weapon can swallow the other's press. Swaps:
-D-pad Right / Q = sword ↔ bow; D-pad Left / F = shield ↔ wand; D-pad Up / Y = plain ↔ fire arrow.
+D-pad Right / Q = sword ↔ bow; D-pad Left / F = shield ↔ wand; D-pad Up / G = bolt ↔ roots. The QUIVER keeps
+keyboard Y alone — the cross is four directions and the spell has taken Up, so on the pad the arrow is changed
+in the character book's ammo slot.
+
+**A SELECTED VARIANT IS LATCHED WHERE THE COMMITTED ACTION STARTS**, and the selector REFUSES while one
+is running — what starts is what lands, and a swap cannot reach back into something already in flight.
+**One place answers what it costs** (`combat.spellFp`), or the HUD's "could he?" and the action itself
+disagree. Exhaustive switches over the selection, so a new one is a compile error until it has said what
+it costs and what it does.
 
 ### The bow (`hero.zig`)
 
@@ -331,7 +377,7 @@ D-pad Right / Q = sword ↔ bow; D-pad Left / F = shield ↔ wand; D-pad Up / Y 
 - **A CAST IS COMMITTED, NOT HELD** — the FP is gone the moment it starts, so it lives in `committed()`
   beside the swing and the loose, is not buffered, and a stagger drops it with the charge spent. He is
   PLANTED for it.
-- **BILLED IN FP AND NOTHING ELSE** — `SPELL_FP` 12 of 60, five casts to a grace. An empty stamina bar
+- **BILLED IN FP AND NOTHING ELSE** — `BOLT_FP` 12 of 60, five casts to a grace. An empty stamina bar
   still leaves him a spell; the wand competes with the flask, not with the roll.
 - **PAY OR CAST NOTHING** (`Focus.spend`) — deliberately the INVERSE of stamina's panic rule: a
   half-paid spell would be a spell that half exists. `hero.fpRefused` → `hud.refuseRing`.
@@ -345,7 +391,7 @@ D-pad Right / Q = sword ↔ bow; D-pad Left / F = shield ↔ wand; D-pad Up / Y 
   `wandTipWorld` is MEASURED off the mesh's constants (the ogre's `clubLowWorld` law).
 - **THE BOLT FLIES THROUGH THE ARROW POOL** (`archer.Shot.bolt`) — cover, gravity, ground, expiry and
   the swept `pierce` test are one body of code.
-- **ALL CHAOS, NO PHYSICAL** — `SPELL_HIT` 24 chaos, poise 14, stance 6. Chaos is the most-resisted
+- **ALL CHAOS, NO PHYSICAL** — `BOLT_HIT` 24 chaos, poise 14, stance 6. Chaos is the most-resisted
   column in the game, so the wand answers toads and kobolds and is near useless against skeletons.
   An honest trade, not an oversight.
 - **ONE VIOLET FOR THE WHOLE SPELL** — stone, gather, both bursts, the streak and the LIGHT. Two substances
@@ -406,6 +452,43 @@ them. Nothing about the world is authored in Zig. Ops: `at`, `belt`, `disc`, `ri
 - **`buildSolids` RESETS** — `materialize` runs it twice and an appending version doubles every
   collider in the world.
 - Props carry the index of the op that placed them, which is what makes a generated rock selectable.
+- **A MULTI-LINE RECORD ATTACHES TO THE ONE ABOVE IT** — the same running-cursor idea the RLE grids use, so the
+  grammar stays one line per fact. `when:`/`do:` belong to the last `trig:`, `who:`/`say:`/`act:`/`then:`/`ask:`
+  to the last `node:`, and `need:`/`gets:` to the last `ask:`. A part with nothing above it is a LOAD ERROR.
+  `act:` may not be written after a choice, or its action run would swallow the choices' own.
+- **PROSE LIVES IN ONE ARENA** (`Map.dtext`, `Span`), not in a per-node character cap that would be an
+  arbitrary sentence length. `#` still starts a comment, so no authored line may contain one.
+
+  ```
+  flags: met_wanderer heard_of_gate      # interned at load; the file stays self-describing
+  npc: wanderer -4.50 7.50 128.0 1.00 0.31 roam=1.8 dlg=wanderer
+    call: The Wanderer
+  dlg: wanderer
+    node: root
+    say: Another one walking north.
+    ask: What lies north? -> north
+    ask: Then why do you sit here? -> why
+    need: flag heard_of_gate=1           # gates the ask ABOVE it
+    ask: (say nothing) -> end            # `end` is reserved: it closes the conversation
+    node: north
+    say: A gate the size of a hill, and shut.
+    act: flag heard_of_gate=1            # fires when the node is SHOWN
+    then: root
+  trig: wanderer_seen pri=10             # once=1 by default; once=0 or a `preserve` action keeps it
+    when: near npc=0 r=3.5
+    when: flag met_wanderer=0
+    do: flag met_wanderer=1
+    do: text Someone is sitting at the grace.
+  ```
+
+  **`npc:` RECORDS ARE APPENDED, NEVER INSERTED** — `near npc=0` is an INDEX into that table (SC1's own
+  spawn-index form, and bg2's), so putting a new person above an existing one silently repoints every
+  condition after it. `foe:` and `wf.FoeKind` have the same rule for the same reason.
+
+  Conditions: `always`, `never`, `flag N=0|1`, `counter N <cmp> n`, `timer N=done|running`,
+  `elapsed <cmp> secs`, `region x z x1 z1`, `near npc=i r=m`, `talked dlgId`, `deaths foeKind <cmp> n`,
+  `alive foeKind <cmp> n`. Actions: `dialog dlgId`, `text …`, `flag N=0|1|flip`,
+  `counter N set|add|sub n`, `timer N=secs`, `wait secs`, `preserve`. `<cmp>` is `<` `<=` `=` `>=` `>`.
 
 ### Elevation
 
@@ -463,6 +546,91 @@ The mesh is TILED (`TCHUNK`), with normals from the FIELD so two tiles agree at 
   from reading as a switch: the geometry sets a TARGET and time walks you there (`OCCL_IN` 0.16 s,
   `OCCL_OUT` 0.34 s — out is slower); it stops being in the way over a BAND not a plane
   (`OCCL_DEPTH_BAND`); and `OCCL_MAX` counts what is in flight, both directions.
+
+## Triggers, folk and dialog
+
+**IT IS STARCRAFT'S TRIGGER SYSTEM, ON THIS WORLD.** A trigger is CONDITIONS and ACTIONS; every condition must
+hold, then the action list runs in order. `worldfmt.zig` holds the definitions as map data, `trigger.Runtime`
+holds everything that changes, `dialog.Session` is the one conversation that may be on screen, and `npc.zig` is
+the body you speak to. Nothing about any of it is authored in Zig.
+
+- **THE GENERAL-PURPOSE STATE IS WHAT MAKES IT COMPOSE**, not the condition vocabulary: named switches
+  (`flag`), named integer counters (what SC1's death counts were really for) and countdown timers. Without
+  them every new bit of story state wants a new condition kind.
+- **A NAME IS INTERNED TO A SLOT AT LOAD**, so a condition costs two bytes instead of a string, and the map
+  carries the `flags:`/`counters:`/`timers:` tables so the file stays self-describing.
+- **EVERY OTHER REFERENCE IS RESOLVED AFTER THE WHOLE FILE IS READ** (`link`) — a dialog may be declared below
+  the trigger that opens it, and an `ask:` may point forward at a node. ORDER IS MEANING for ops because each
+  reads what the last one placed; a NAME is not that kind of dependency. An unresolved one is a LOAD ERROR.
+- **EVALUATED EVERY FRAME, NOT ON A CYCLE.** SC1 walked its list on a slow tick, which is the entire reason
+  "hyper triggers" existed. A conversation opening a beat after you crossed the line is a bug here, so a
+  PRESERVED trigger is held off by `REPEAT_GUARD` (0.5 s) instead — without it `always` + `preserve` fires
+  sixty times a second and never lets go of the screen.
+- **A CONDITION IS LIVE, NEVER STICKY.** `region` is SC1's Bring exactly: true while he stands in it. Two
+  conditions that come true at different moments are what the SWITCHES are for, and that indirection is the
+  idiom rather than a shortcoming of it.
+- **AN EMPTY `when:` LIST NEVER FIRES.** `always` is a condition you write down, or a trigger whose conditions
+  were still to come goes off the moment the map loads.
+- **A `dialog` ACTION BLOCKS ITS OWN LIST AND NOTHING ELSE** (SC1's Transmission), and so does `wait`. Every
+  other trigger keeps being asked. Only one conversation may be up, and a trigger that wanted the screen is
+  simply not advanced that frame — deferred, never dropped.
+- **`deaths` IS MAINTAINED BY THE ENGINE**, off `justDied` through `eachTarget` — the foe contract's one-frame
+  edge, because a latch (the sac's `killed`) reads true every frame after and would bill one death sixty
+  times. The egg sac has no such edge, so the brood's own `bursts` counter is what bills it.
+- **THE SCRIPT LAYER IS ARMED WHERE THE MAP CHANGES, NOT WHERE THE HERO DIES** (`game.armScript`): a load and
+  every way out of the editor. The story he has already heard is not undone by dying, any more than his bag is.
+- **ONE BUTTON, ONE WRITTEN PRIORITY ORDER** — bonfire, then whoever is standing there, then a box
+  (`game.interact`). The HUD prompt reads the same order, or it names a button the press will not honour.
+
+### The dialog panel
+
+- **IT IS SIZED TO WHAT IT HOLDS**, growing upward off a fixed bottom edge. Pinned to a fraction of the screen
+  it is half empty on a two-line exchange and cramped on a long one.
+- **A GATE HIDES A LINE, IT DOES NOT GREY IT.** bg2's editor carries a `disabledMessage` for a refused choice;
+  nothing here has one to show, and a greyed row with no reason is worse than a row never offered.
+- **YOU MAY NOT WALK OUT MID-SENTENCE.** There is no cancel — a conversation is left through one of its own
+  endings, which is what lets `talked` mean "has heard this" and not "has seen the first line of it".
+- **THE WORLD'S HUD GOES AWAY BEHIND IT**, as it does at a bonfire: the panel takes the bottom of the screen,
+  which is exactly where the cross and the prompt live.
+- **A NODE'S `act:` FIRES ON ARRIVAL AND A CHOICE'S `gets:` ON THE PICK**, both straight through
+  `trigger.Runtime.apply` — an action means the same thing whichever fired it, and two copies of that switch
+  would eventually disagree.
+
+### The wanderer (`npc.zig`)
+
+Not a foe: no `Vitals`, no `Leash`, no blade. Do not let the foe contract grow into it by accident.
+
+- **A MAN STANDING STILL IS THE HARDEST THING TO ANIMATE.** An idle that is only a breathing bob is a mannequin
+  with a pulse, so THREE clocks run at rates that never line up — breath, a weight shift, a head drift — and
+  because the periods are incommensurate the loop never shows.
+- **THE WEIGHT SHIFT IS A PELVIC LIST, NOT A SLIDE.** Translating the pelvis sideways carries both hips with
+  it and `legChain` solves each leg straight down from its own hip, so both feet travel too — a man skating.
+  A roll about the pelvis raises one hip and drops the other, which is what standing on one leg does.
+- **AND ITS DROP IS PAID BACK AT THE PELVIS.** At rest this rig's leg is EXACTLY straight (pelvis 0.530·H,
+  ankle 0.039·H, thigh + shank 0.491·H), so a pelvis a millimetre below rest has nowhere to put the millimetre
+  and the sole goes through the floor — there is no foot IK, and the STANDING pose has none of the gait's knee
+  flexion to absorb one. Lift by `hx·sin(list)` and the low hip stays on its plane.
+- **NO PITCH AT ALL AT THE ROOT**, and here the waist-hinge law is not a taste call: a root pitch rotates the
+  LEGS, so one degree of stoop levers a just-planted foot half a centimetre into the ground. A stoop is
+  thoracic anyway — the whole of it lives in the spine and the chest.
+- **HE TURNS FIRST, THEN WALKS** (`TURN_GATE`). Stepping off before he is pointed at it makes travel disagree
+  with facing, which IS a sidestep as far as the shared gait is concerned — a crab-walk, and the strafe path
+  carries eight centimetres of foot-clearance tolerance nothing here needs.
+- **THE STAFF IS THE OTHER HALF OF THE GAIT.** A walking staff plants with the OPPOSITE foot, so the staff arm
+  does not swing freely — it drives the pole down once a stride while the free arm swings at full amplitude.
+- **AND WHERE IT POINTS IS AUTHORED IN THE WORLD, NOT IN THE WRIST** (`warrior.swingTilt`'s law,
+  `hero.shieldFit`'s). Built down the wrist's own −Y it inherits the entire arm chain: 46° off plumb at rest,
+  and at the plant it lay out flat in front of him like a lance. The fit BILLS THE ARM for its own abduction
+  and pitch, leaving `STAFF_TILT` to mean degrees off plumb in the world.
+- **THE BOOT IS THE HERO'S FOOTPRINT EXACTLY**, and not as a style choice: the gait curves plantarflex the
+  ankle to a fixed angle at toe-off, so a longer toe is a longer lever below the plane and `legChain` can only
+  level the ankle, never lift the body. Three centimetres of extra toe raked three times as deep.
+- **THE TWO HEAD VARIANTS ARE WHAT MAKES TWO OF THESE TWO PEOPLE** — hood up, hood back, picked by seed.
+  Everything else varies through the POSE, which costs no mesh.
+- **VALUE CONTRAST BETWEEN TWO LARGE AREAS CANNOT SURVIVE FULL DAYLIGHT ON THIS SUN.** A sunward face reads
+  `255·(albedo·1.72/255)^(1/2.2)`, so albedo 40 comes back at 142 and 58 at 168: darken the second mass enough
+  to separate in shade and it blows out beside the first at noon anyway. Layer on HUE, which the sun does not
+  flatten, and spend the value contrast only where the area is small (`LINEN`) or is a hole (`HOOD_IN`).
 
 ## Sight and leashing
 
@@ -562,6 +730,12 @@ not the stick-speed `runB`.
   a ring, radial is the position direction and tangent is `(cos a, 0, sin a)`; for an arch ring at
   angle a, radial is `(−cos a, sin a, 0)`, tangent `(sin a, cos a, 0)`. `addBox` also accepts a
   NON-PERPENDICULAR axis triple and builds a skewed parallelepiped.
+- **A CURVED SHAFT DRAWS ITS CURL ONCE AND APPLIES IT EVERY SEGMENT.** Re-rolled per segment it wanders
+  instead, and a wander made of straight capsules is a chain of elbows. The total arc is the per-segment
+  curl TIMES the segment count, so moving either the length or the count re-brackets the curl — the same
+  bend spread over a longer run straightens into a stake.
+- **A RING THAT OVERWRITES ITS OLDEST DOES IT SILENTLY**, so its size is arithmetic over what feeds it
+  (every emitter's worst frame), asserted at comptime — never a round number that looked big enough.
 - **A cylinder is CAPLESS** — an open end shows its culled interior. Cap with `addDome` or an
   axis-flattened `addBlob`; a flat cap constrains the piece to a world axis.
 - **REPEATED BIG PROPS NEED VARIANTS.** One mesh placed sixty times reads as a periodic pattern; yaw
@@ -617,6 +791,14 @@ not the stick-speed `runB`.
 No criticals, guard counter, parry, jump, status buildup, or AR × motion-value damage (flat constants
 today). No foot IK — `rx(bodyPitch)` rotates about the WORLD ORIGIN, so a deep lean levers a
 forward-swung foot down and feet clip a few cm on slopes. The roll has front-loaded i-frames but no
-collision. One leg-cycle is reused across run and sprint. Sorcery is ONE spell deep and nothing scales a
-cast. Elevation exists but nothing is authored with
+collision. One leg-cycle is reused across run and sprint. Nothing scales a cast — spell damage is flat
+constants like everything else. Elevation exists but nothing is authored with
 it: no falling, terrain casts no shadows, painted water is one level plane.
+
+**The script layer is foundations only.** THE EDITOR CANNOT AUTHOR ANY OF IT YET — no Triggers layer, no NPC
+unit brush; triggers, dialogs and `npc:` records are hand-written in the `.world` file, and the editor
+round-trips them untouched because the writer emits them off the same tables. One `NpcKind` (`wanderer`), so a
+second person in this world is a second head variant away rather than a new creature. No quest log and no
+journal: what a trigger has to say it says through `text` or through a conversation. A roamer wanders inside a
+radius about its post; there are no authored patrol points. `deaths brood_sac` is billed off the brood's own
+`bursts` rather than a `justDied` edge on the sac.

@@ -88,18 +88,13 @@ pub const Chests = struct {
     }
 
     pub fn update(self: *Chests, dt: f32, heroPos: rl.Vector3) void {
-        var best: ?usize = null;
-        var bestD: f32 = REACH * REACH;
+        var near = mathx.Nearest.within(REACH);
         for (self.live(), 0..) |*c, i| {
             if (c.opened and c.swing < 1.0) c.swing = @min(1.0, c.swing + dt / OPEN_DUR);
             if (c.opened) continue; // an open chest is scenery again — no prompt, nothing to press
-            const d = mathx.dist2XZ(c.pos, heroPos);
-            if (d < bestD) {
-                bestD = d;
-                best = i;
-            }
+            near.offer(i, c.pos, heroPos);
         }
-        self.near = best;
+        self.near = near.best;
     }
 
     pub fn openNear(self: *Chests, m: *const wf.Map) ?Opened {

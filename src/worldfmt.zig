@@ -214,6 +214,270 @@ pub const MAX_PER_KIND: usize = 24;
 pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 = 30 };
 
 
+// ── THE TRIGGERS, THE FOLK THEY SPEAK THROUGH, AND THE DIALOG TREES ──────────────────────────────────
+//
+// StarEdit's own shape: a trigger is CONDITIONS and ACTIONS, every condition must hold, and then the
+// action list runs in order. What makes that shape compose is not the condition vocabulary but SC1's
+// general-purpose STATE — named switches (`flag`), named integer counters (what its death counts were
+// really for) and countdown timers. Without them every new bit of story state wants a new condition kind.
+//
+// A NAME IS INTERNED TO A SLOT AT LOAD (`flag`/`counter`/`timer`), so a condition costs two bytes rather
+// than a string, and the map carries the name tables so the file stays self-describing. A reference to
+// something declared LATER in the file (a dialog, a node an `ask:` points at) keeps the written name as a
+// span and is resolved by `link` after the whole file is read — order is meaning for OPS, and must not be
+// for these.
+
+pub const ID_CAP: usize = 24;
+pub const Id = [ID_CAP]u8;
+
+pub const MAX_NPCS: usize = 32;
+pub const MAX_TRIGGERS: usize = 64;
+pub const MAX_CONDS: usize = 8;
+pub const MAX_ACTS: usize = 8;
+pub const MAX_DIALOGS: usize = 32;
+pub const MAX_NODES: usize = 192;
+pub const MAX_CHOICES: usize = 5;
+/// The shared pools an `ask:` line reaches into for its `need:` gate and its `gets:` actions.
+pub const MAX_GATES: usize = 64;
+pub const MAX_DACTS: usize = 128;
+pub const MAX_FLAGS: usize = 48;
+pub const MAX_COUNTERS: usize = 48;
+pub const MAX_TIMERS: usize = 16;
+/// Every line of prose in the map, packed end to end. A per-node text cap would be an arbitrary sentence
+/// length; this is one budget for the whole world.
+pub const DTEXT_CAP: usize = 8192;
+
+/// "Ends the conversation" as a node target, and "nothing resolved" as an index.
+pub const NO_NODE: u16 = 0xFFFF;
+pub const NO_DIALOG: u16 = 0xFFFF;
+/// The reserved `ask: … -> end` target. A node may not be called this.
+pub const END_TARGET = "end";
+
+/// A run of `Map.dtext` — how every piece of authored prose is held.
+pub const Span = struct { at: u32 = 0, len: u16 = 0 };
+
+pub fn setId(dst: *Id, s: []const u8) void {
+    dst.* = [_]u8{0} ** ID_CAP;
+    const n = @min(s.len, ID_CAP - 1);
+    @memcpy(dst[0..n], s[0..n]);
+}
+
+pub fn idText(id: *const Id) []const u8 {
+    return std.mem.sliceTo(id, 0);
+}
+
+pub const Cmp = enum(u8) {
+    lt,
+    le,
+    eq,
+    ge,
+    gt,
+
+    pub fn tok(c: Cmp) []const u8 {
+        return switch (c) {
+            .lt => "<",
+            .le => "<=",
+            .eq => "=",
+            .ge => ">=",
+            .gt => ">",
+        };
+    }
+    pub fn holds(c: Cmp, a: i64, b: i64) bool {
+        return switch (c) {
+            .lt => a < b,
+            .le => a <= b,
+            .eq => a == b,
+            .ge => a >= b,
+            .gt => a > b,
+        };
+    }
+    pub fn holdsF(c: Cmp, a: f32, b: f32) bool {
+        return switch (c) {
+            .lt => a < b,
+            .le => a <= b,
+            .eq => a == b,
+            .ge => a >= b,
+            .gt => a > b,
+        };
+    }
+};
+
+fn cmpFromTok(s: []const u8) !Cmp {
+    inline for (@typeInfo(Cmp).@"enum".fields) |f| {
+        const c: Cmp = @enumFromInt(f.value);
+        if (std.mem.eql(u8, s, c.tok())) return c;
+    }
+    return ParseError.BadKind;
+}
+
+pub const CondKind = enum(u8) {
+    /// SC1's Always / Never — the second is how a draft trigger is parked without deleting it.
+    always,
+    never,
+    /// SC1's Switch.
+    flag,
+    /// SC1's Deaths used as a variable: a named integer.
+    counter,
+    /// SC1's Countdown Timer, asked as "has it run out".
+    timer,
+    /// Seconds since the world loaded — SC1's Elapsed Time.
+    elapsed,
+    /// SC1's Bring: the hero inside a rect. LATCHES on the rising edge, so several conditions of one
+    /// trigger can come true on different frames and still meet.
+    region,
+    /// The hero within `r` of NPC `slot`.
+    near,
+    /// A dialog has been seen through to its end.
+    talked,
+    /// SC1's Deaths proper: how many of one foe kind have died since the world loaded.
+    deaths,
+    /// …and its Bring/Command twin: how many are still standing.
+    alive,
+};
+
+pub const Cond = struct {
+    kind: CondKind = .always,
+    /// The interned flag/counter/timer slot, the NPC index, or the resolved dialog — as `kind` says.
+    slot: u16 = 0,
+    /// The name it was WRITTEN with, kept for the things `link` resolves (and for the writer).
+    ref: Span = .{},
+    foe: FoeKind = .toad,
+    cmp: Cmp = .ge,
+    n: i32 = 0,
+    /// `near` radius, `elapsed` seconds.
+    r: f32 = 0,
+    x: f32 = 0,
+    z: f32 = 0,
+    x1: f32 = 0,
+    z1: f32 = 0,
+    /// What a `flag` must be, and whether a `timer` must be DONE.
+    on: bool = false,
+};
+
+pub const Setop = enum(u8) { off, on, flip };
+pub const Countop = enum(u8) { set, add, sub };
+
+pub const ActKind = enum(u8) {
+    /// SC1's Transmission: open a dialog, and hold the rest of this trigger's list until it closes.
+    dialog,
+    /// SC1's Display Text Message.
+    text,
+    flag,
+    counter,
+    timer,
+    /// SC1's Wait — it blocks THIS trigger's action list and nothing else.
+    wait,
+    /// SC1's Preserve Trigger, spelled its own way. `once=0` is the same thing said in the header.
+    preserve,
+};
+
+pub const Act = struct {
+    kind: ActKind = .preserve,
+    slot: u16 = 0,
+    ref: Span = .{},
+    setop: Setop = .on,
+    countop: Countop = .set,
+    n: i32 = 0,
+    /// Timer seconds, or `wait` seconds.
+    v: f32 = 0,
+    /// The `text` action's line.
+    line: Span = .{},
+};
+
+pub const Trigger = struct {
+    id: Id = [_]u8{0} ** ID_CAP,
+    /// Higher runs first when several are satisfied on one frame.
+    pri: i32 = 0,
+    once: bool = true,
+    /// An unfinished draft, saved on purpose and never evaluated.
+    wip: bool = false,
+    conds: [MAX_CONDS]Cond = undefined,
+    nconds: u8 = 0,
+    acts: [MAX_ACTS]Act = undefined,
+    nacts: u8 = 0,
+
+    pub fn label(self: *const Trigger) []const u8 {
+        return idText(&self.id);
+    }
+    pub fn condSlice(self: *const Trigger) []const Cond {
+        return self.conds[0..self.nconds];
+    }
+    pub fn actSlice(self: *const Trigger) []const Act {
+        return self.acts[0..self.nacts];
+    }
+};
+
+pub const Choice = struct {
+    label: Span = .{},
+    /// The node id it was written with…
+    target: Span = .{},
+    /// …and where that landed. `NO_NODE` closes the conversation.
+    next: u16 = NO_NODE,
+    /// One gate condition in `Map.gates`, or -1 for an always-offered line.
+    gate: i16 = -1,
+    /// A run of `Map.dacts` fired when this line is PICKED.
+    act0: u16 = 0,
+    nact: u8 = 0,
+};
+
+pub const Node = struct {
+    id: Id = [_]u8{0} ** ID_CAP,
+    /// Who is speaking, if not the NPC whose dialog this is.
+    who: Span = .{},
+    text: Span = .{},
+    choices: [MAX_CHOICES]Choice = undefined,
+    nchoices: u8 = 0,
+    /// Where a node with NO choices goes on Continue, written name then resolved.
+    thenRef: Span = .{},
+    next: u16 = NO_NODE,
+    /// A run of `Map.dacts` fired when this node is SHOWN.
+    act0: u16 = 0,
+    nact: u8 = 0,
+
+    pub fn choiceSlice(self: *const Node) []const Choice {
+        return self.choices[0..self.nchoices];
+    }
+};
+
+pub const Dialog = struct {
+    id: Id = [_]u8{0} ** ID_CAP,
+    /// Its nodes are a contiguous run of `Map.nodes`; the first one is where it starts.
+    node0: u16 = 0,
+    nnodes: u16 = 0,
+
+    pub fn label(self: *const Dialog) []const u8 {
+        return idText(&self.id);
+    }
+};
+
+/// APPEND-ONLY, for `FoeKind`'s reason: the editor and `npc.roleOf` will pin to this order.
+pub const NpcKind = enum(u8) { wanderer };
+
+pub fn npcName(k: NpcKind) [:0]const u8 {
+    return switch (k) {
+        .wanderer => "Wanderer",
+    };
+}
+
+/// How far a roaming NPC may be posted to stray from where it stands.
+pub const NPC_ROAM_MAX: f32 = 8.0;
+
+pub const Npc = struct {
+    kind: NpcKind = .wanderer,
+    x: f32 = 0,
+    z: f32 = 0,
+    yaw: f32 = 0,
+    scale: f32 = 1,
+    seed: f32 = 0,
+    /// Metres it wanders about its post. 0 stands still.
+    roam: f32 = 0,
+    /// What the dialog panel calls it — empty falls back to `npcName`.
+    call: Span = .{},
+    /// The dialog its prompt opens, written name then resolved.
+    dlgRef: Span = .{},
+    dlg: u16 = NO_DIALOG,
+};
+
 pub const SOIL_N: usize = @intCast(gfx.SOIL_N);
 pub const SOIL_CELLS: usize = SOIL_N * SOIL_N;
 
@@ -354,6 +618,28 @@ pub const Map = struct {
     nclearings: usize = 0,
     foes: [MAX_FOES]Foe = undefined,
     nfoes: usize = 0,
+    npcs: [MAX_NPCS]Npc = undefined,
+    nnpcs: usize = 0,
+    trigs: [MAX_TRIGGERS]Trigger = undefined,
+    ntrigs: usize = 0,
+    dialogs: [MAX_DIALOGS]Dialog = undefined,
+    ndialogs: usize = 0,
+    /// Every dialog's nodes, flat — a dialog owns a contiguous run of these.
+    nodes: [MAX_NODES]Node = undefined,
+    nnodes: usize = 0,
+    gates: [MAX_GATES]Cond = undefined,
+    ngates: usize = 0,
+    dacts: [MAX_DACTS]Act = undefined,
+    ndacts: usize = 0,
+    flagNames: [MAX_FLAGS]Id = undefined,
+    nflags: usize = 0,
+    counterNames: [MAX_COUNTERS]Id = undefined,
+    ncounters: usize = 0,
+    timerNames: [MAX_TIMERS]Id = undefined,
+    ntimers: usize = 0,
+    /// EVERY LINE OF PROSE IN THE WORLD, packed. `Span`s index it.
+    dtext: [DTEXT_CAP]u8 = undefined,
+    ndtext: u32 = 0,
     /// The painted soil, row-major from -half to +half on both axes.
     soil: [SOIL_CELLS]u8 = [_]u8{0} ** SOIL_CELLS,
     /// HOW STRONGLY that material covers its cell, 0..255 — the same grid, one number deeper.
@@ -378,6 +664,7 @@ pub const Map = struct {
         self.nzones = 0;
         self.nclearings = 0;
         self.nfoes = 0;
+        self.clearScript();
         self.soil = [_]u8{0} ** SOIL_CELLS;
         self.soilCov = [_]u8{COV_FULL} ** SOIL_CELLS;
         self.water = [_]u8{0} ** WATER_CELLS;
@@ -447,6 +734,84 @@ pub const Map = struct {
 
     pub fn slice(self: *const Map) []const Op {
         return self.ops[0..self.nops];
+    }
+
+    /// EVERYTHING THE SCRIPT LAYER OWNS, dropped in one place — `clear` empties the world, and a table it
+    /// forgets is a dialog that outlives the map it was written for.
+    pub fn clearScript(self: *Map) void {
+        self.nnpcs = 0;
+        self.ntrigs = 0;
+        self.ndialogs = 0;
+        self.nnodes = 0;
+        self.ngates = 0;
+        self.ndacts = 0;
+        self.nflags = 0;
+        self.ncounters = 0;
+        self.ntimers = 0;
+        self.ndtext = 0;
+    }
+
+    /// The authored prose a span points at.
+    pub fn spanText(self: *const Map, s: Span) []const u8 {
+        if (s.len == 0 or s.at + s.len > self.ndtext) return "";
+        return self.dtext[s.at .. s.at + s.len];
+    }
+
+    /// Append a line to the arena. Empty in, empty out — an absent field costs no bytes.
+    pub fn addText(self: *Map, s: []const u8) !Span {
+        if (s.len == 0) return Span{};
+        if (s.len > 0xFFFF or self.ndtext + s.len > DTEXT_CAP) return ParseError.TextFull;
+        const at = self.ndtext;
+        @memcpy(self.dtext[at .. at + s.len], s);
+        self.ndtext += @intCast(s.len);
+        return .{ .at = at, .len = @intCast(s.len) };
+    }
+
+    pub fn npcSlice(self: *const Map) []const Npc {
+        return self.npcs[0..self.nnpcs];
+    }
+    pub fn trigSlice(self: *const Map) []const Trigger {
+        return self.trigs[0..self.ntrigs];
+    }
+    pub fn nodesOf(self: *const Map, d: *const Dialog) []const Node {
+        return self.nodes[d.node0 .. d.node0 + d.nnodes];
+    }
+    pub fn dialogAt(self: *const Map, i: u16) ?*const Dialog {
+        return if (i < self.ndialogs) &self.dialogs[i] else null;
+    }
+    pub fn findDialog(self: *const Map, name: []const u8) ?u16 {
+        for (self.dialogs[0..self.ndialogs], 0..) |*d, i| {
+            if (std.mem.eql(u8, d.label(), name)) return @intCast(i);
+        }
+        return null;
+    }
+    /// The actions a node or an `ask:` owns.
+    pub fn dactRun(self: *const Map, at: u16, n: u8) []const Act {
+        if (at + n > self.ndacts) return &.{};
+        return self.dacts[at .. at + n];
+    }
+
+    /// The interned slot for a name, MINTED if it is new — the one path both the parser's declaration
+    /// records and its on-demand uses go through, so a flag used before it is declared is the same flag.
+    pub fn internFlag(self: *Map, name: []const u8) !u16 {
+        return intern(&self.flagNames, &self.nflags, name, ParseError.TooManyFlags);
+    }
+    pub fn internCounter(self: *Map, name: []const u8) !u16 {
+        return intern(&self.counterNames, &self.ncounters, name, ParseError.TooManyFlags);
+    }
+    pub fn internTimer(self: *Map, name: []const u8) !u16 {
+        return intern(&self.timerNames, &self.ntimers, name, ParseError.TooManyFlags);
+    }
+
+    /// …and the read-only side of the same tables, for a debug readout and for tests.
+    pub fn findFlag(self: *const Map, name: []const u8) ?u16 {
+        return found(self.flagNames[0..self.nflags], name);
+    }
+    pub fn findCounter(self: *const Map, name: []const u8) ?u16 {
+        return found(self.counterNames[0..self.ncounters], name);
+    }
+    pub fn findTimer(self: *const Map, name: []const u8) ?u16 {
+        return found(self.timerNames[0..self.ntimers], name);
     }
 
     /// The zone governing a point — first containing rect wins, last zone is the fallback.
@@ -657,6 +1022,22 @@ pub const Map = struct {
 };
 
 
+fn found(table: []const Id, name: []const u8) ?u16 {
+    for (table, 0..) |*id, i| {
+        if (std.mem.eql(u8, idText(id), name)) return @intCast(i);
+    }
+    return null;
+}
+
+fn intern(table: []Id, n: *usize, name: []const u8, full: ParseError) !u16 {
+    if (found(table[0..n.*], name)) |i| return i;
+    if (n.* >= table.len) return full;
+    setId(&table[n.*], name);
+    n.* += 1;
+    return @intCast(n.* - 1);
+}
+
+
 pub fn write(m: *const Map, w: anytype) !void {
     try w.print("version: {d}\n", .{VERSION});
     try w.print("name: {s}\n", .{m.label()});
@@ -708,6 +1089,112 @@ pub fn write(m: *const Map, w: anytype) !void {
     if (m.nfoes > 0) try w.writeAll("\n");
     for (m.foes[0..m.nfoes]) |f| {
         try w.print("foe: {s} {d:.2} {d:.2} {d:.1} {d:.2} {d:.2}\n", .{ @tagName(f.kind), f.x, f.z, f.yaw, f.scale, f.seed });
+    }
+
+    try writeScript(m, w);
+}
+
+/// The name tables FIRST, then the folk, then the dialogs, then the triggers that drive them. Nothing here
+/// depends on the order — `link` resolves after the whole file is read — but a reader does.
+fn writeScript(m: *const Map, w: anytype) !void {
+    if (m.nflags > 0) {
+        try w.writeAll("\nflags:");
+        for (m.flagNames[0..m.nflags]) |*id| try w.print(" {s}", .{idText(id)});
+        try w.writeAll("\n");
+    }
+    if (m.ncounters > 0) {
+        try w.writeAll("counters:");
+        for (m.counterNames[0..m.ncounters]) |*id| try w.print(" {s}", .{idText(id)});
+        try w.writeAll("\n");
+    }
+    if (m.ntimers > 0) {
+        try w.writeAll("timers:");
+        for (m.timerNames[0..m.ntimers]) |*id| try w.print(" {s}", .{idText(id)});
+        try w.writeAll("\n");
+    }
+
+    if (m.nnpcs > 0) try w.writeAll("\n");
+    for (m.npcSlice()) |*p| {
+        try w.print("npc: {s} {d:.2} {d:.2} {d:.1} {d:.2} {d:.2}", .{ @tagName(p.kind), p.x, p.z, p.yaw, p.scale, p.seed });
+        if (p.roam != 0) try w.print(" roam={d}", .{p.roam});
+        if (p.dlgRef.len > 0) try w.print(" dlg={s}", .{m.spanText(p.dlgRef)});
+        try w.writeAll("\n");
+        if (p.call.len > 0) try w.print("  call: {s}\n", .{m.spanText(p.call)});
+    }
+
+    for (m.dialogs[0..m.ndialogs]) |*d| {
+        try w.print("\ndlg: {s}\n", .{d.label()});
+        for (m.nodesOf(d)) |*nd| {
+            try w.print("  node: {s}\n", .{idText(&nd.id)});
+            if (nd.who.len > 0) try w.print("  who: {s}\n", .{m.spanText(nd.who)});
+            if (nd.text.len > 0) try w.print("  say: {s}\n", .{m.spanText(nd.text)});
+            for (m.dactRun(nd.act0, nd.nact)) |*a| {
+                try w.writeAll("  act: ");
+                try writeAct(m, w, a);
+            }
+            for (nd.choiceSlice()) |*c| {
+                // An empty target IS the `end` sentinel, and it has to go back out as the word — a bare
+                // arrow reads back as a missing field.
+                try w.print("  ask: {s} -> {s}\n", .{ m.spanText(c.label), if (c.target.len > 0) m.spanText(c.target) else END_TARGET });
+                if (c.gate >= 0) {
+                    try w.writeAll("  need: ");
+                    try writeCond(m, w, &m.gates[@intCast(c.gate)]);
+                }
+                for (m.dactRun(c.act0, c.nact)) |*a| {
+                    try w.writeAll("  gets: ");
+                    try writeAct(m, w, a);
+                }
+            }
+            if (nd.nchoices == 0) try w.print("  then: {s}\n", .{if (nd.thenRef.len > 0) m.spanText(nd.thenRef) else END_TARGET});
+        }
+    }
+
+    if (m.ntrigs > 0) try w.writeAll("\n");
+    for (m.trigSlice()) |*t| {
+        try w.print("trig: {s}", .{t.label()});
+        if (t.pri != 0) try w.print(" pri={d}", .{t.pri});
+        if (!t.once) try w.writeAll(" once=0");
+        if (t.wip) try w.writeAll(" wip=1");
+        try w.writeAll("\n");
+        for (t.condSlice()) |*c| {
+            try w.writeAll("  when: ");
+            try writeCond(m, w, c);
+        }
+        for (t.actSlice()) |*a| {
+            try w.writeAll("  do: ");
+            try writeAct(m, w, a);
+        }
+    }
+}
+
+fn writeCond(m: *const Map, w: anytype, c: *const Cond) !void {
+    switch (c.kind) {
+        .always, .never => try w.print("{s}\n", .{@tagName(c.kind)}),
+        .flag => try w.print("flag {s}={d}\n", .{ idText(&m.flagNames[c.slot]), @as(u8, if (c.on) 1 else 0) }),
+        .counter => try w.print("counter {s} {s} {d}\n", .{ idText(&m.counterNames[c.slot]), c.cmp.tok(), c.n }),
+        .timer => try w.print("timer {s}={s}\n", .{ idText(&m.timerNames[c.slot]), if (c.on) "done" else "running" }),
+        .elapsed => try w.print("elapsed {s} {d}\n", .{ c.cmp.tok(), c.r }),
+        .region => try w.print("region {d:.1} {d:.1} {d:.1} {d:.1}\n", .{ c.x, c.z, c.x1, c.z1 }),
+        .near => try w.print("near npc={d} r={d}\n", .{ c.slot, c.r }),
+        .talked => try w.print("talked {s}\n", .{m.spanText(c.ref)}),
+        .deaths => try w.print("deaths {s} {s} {d}\n", .{ @tagName(c.foe), c.cmp.tok(), c.n }),
+        .alive => try w.print("alive {s} {s} {d}\n", .{ @tagName(c.foe), c.cmp.tok(), c.n }),
+    }
+}
+
+fn writeAct(m: *const Map, w: anytype, a: *const Act) !void {
+    switch (a.kind) {
+        .dialog => try w.print("dialog {s}\n", .{m.spanText(a.ref)}),
+        .text => try w.print("text {s}\n", .{m.spanText(a.line)}),
+        .flag => try w.print("flag {s}={s}\n", .{ idText(&m.flagNames[a.slot]), switch (a.setop) {
+            .off => "0",
+            .on => "1",
+            .flip => "flip",
+        } }),
+        .counter => try w.print("counter {s} {s} {d}\n", .{ idText(&m.counterNames[a.slot]), @tagName(a.countop), a.n }),
+        .timer => try w.print("timer {s}={d}\n", .{ idText(&m.timerNames[a.slot]), a.v }),
+        .wait => try w.print("wait {d}\n", .{a.v}),
+        .preserve => try w.writeAll("preserve\n"),
     }
 }
 
@@ -806,6 +1293,31 @@ pub const ParseError = error{
     TooManyClearings,
     TooManyFoes,
     NoCoverOp,
+    TooManyNpcs,
+    TooManyTriggers,
+    TooManyConds,
+    TooManyActs,
+    TooManyDialogs,
+    TooManyNodes,
+    TooManyChoices,
+    TooManyGates,
+    TooManyFlags,
+    TextFull,
+    /// A `when:`/`do:` with no `trig:` above it, a `say:` with no `node:`, a `need:` with no `ask:`.
+    NoOwner,
+    /// A dialog id, or an `ask:` target, that names nothing in the file.
+    UnknownRef,
+};
+
+/// The records a multi-line one attaches its parts to. A `when:` belongs to the `trig:` above it, a `say:`
+/// to the `node:` above it, a `need:` to the `ask:` above THAT — the same running-cursor idea the RLE grids
+/// already use, so the grammar stays one line per fact.
+const Cursor = struct {
+    trig: ?usize = null,
+    npc: ?usize = null,
+    dlg: ?usize = null,
+    node: ?usize = null,
+    choice: ?usize = null,
 };
 
 pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
@@ -815,6 +1327,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     var covAt: usize = 0;
     var waterAt: usize = 0;
     var hgtAt: usize = 0;
+    var cur = Cursor{};
     var lines = std.mem.splitScalar(u8, text, '\n');
     var ln: usize = 0;
     while (lines.next()) |raw| {
@@ -824,7 +1337,9 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
         if (line.len == 0) continue;
         const colon = std.mem.indexOfScalar(u8, line, ':') orelse return ParseError.UnknownRecord;
         const rec = trim(line[0..colon]);
+        const rest = trim(line[colon + 1 ..]); // the WHOLE tail, for the records that carry prose
         var it = std.mem.tokenizeAny(u8, line[colon + 1 ..], " \t");
+        if (try parseScript(m, rec, rest, &it, &cur)) continue;
         if (std.mem.eql(u8, rec, "version")) {
             if (try nextInt(&it) != VERSION) return ParseError.BadVersion;
             seenVersion = true;
@@ -873,6 +1388,9 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
         }
     }
     if (!seenVersion) return ParseError.BadVersion;
+    // Line numbers stop meaning anything here: a name resolved at the end failed WHEREVER it was written.
+    lineOut.* = 0;
+    try link(m);
     for (m.ops[0..m.nops]) |*o| {
         if (o.op == .cover) return;
     }
@@ -892,6 +1410,321 @@ fn readGrid(it: *std.mem.TokenIterator(u8, .any), cells: []u8, at: usize, lim: u
         cur += run;
     }
     return cur;
+}
+
+const Toks = std.mem.TokenIterator(u8, .any);
+
+/// Every script record, returning whether it took the line. Splitting it out keeps `parse`'s own chain
+/// readable and puts the whole grammar of triggers/dialogs/folk in one place.
+fn parseScript(m: *Map, rec: []const u8, rest: []const u8, it: *Toks, cur: *Cursor) !bool {
+    if (std.mem.eql(u8, rec, "flags")) {
+        while (it.next()) |t| _ = try m.internFlag(t);
+        return true;
+    }
+    if (std.mem.eql(u8, rec, "counters")) {
+        while (it.next()) |t| _ = try m.internCounter(t);
+        return true;
+    }
+    if (std.mem.eql(u8, rec, "timers")) {
+        while (it.next()) |t| _ = try m.internTimer(t);
+        return true;
+    }
+
+    if (std.mem.eql(u8, rec, "npc")) {
+        if (m.nnpcs >= MAX_NPCS) return ParseError.TooManyNpcs;
+        var p = Npc{
+            .kind = try enumFromName(NpcKind, it.next() orelse return ParseError.MissingField),
+            .x = try nextFloat(it),
+            .z = try nextFloat(it),
+            .yaw = try nextFloat(it),
+            .scale = try band(it, FOE_SCALE_LO, FOE_SCALE_HI),
+            .seed = try band(it, 0, 1),
+        };
+        while (it.next()) |tok| {
+            const eq = std.mem.indexOfScalar(u8, tok, '=') orelse return ParseError.UnknownKey;
+            const key = tok[0..eq];
+            const val = tok[eq + 1 ..];
+            if (std.mem.eql(u8, key, "roam")) {
+                p.roam = try finiteFloat(f32, val);
+                if (p.roam < 0 or p.roam > NPC_ROAM_MAX) return ParseError.BadNumber;
+            } else if (std.mem.eql(u8, key, "dlg")) {
+                p.dlgRef = try m.addText(val);
+            } else return ParseError.UnknownKey;
+        }
+        m.npcs[m.nnpcs] = p;
+        cur.npc = m.nnpcs;
+        m.nnpcs += 1;
+        return true;
+    }
+    if (std.mem.eql(u8, rec, "call")) {
+        const i = cur.npc orelse return ParseError.NoOwner;
+        m.npcs[i].call = try m.addText(rest);
+        return true;
+    }
+
+    if (std.mem.eql(u8, rec, "trig")) {
+        if (m.ntrigs >= MAX_TRIGGERS) return ParseError.TooManyTriggers;
+        var t = Trigger{};
+        setId(&t.id, it.next() orelse return ParseError.MissingField);
+        while (it.next()) |tok| {
+            const eq = std.mem.indexOfScalar(u8, tok, '=') orelse return ParseError.UnknownKey;
+            const key = tok[0..eq];
+            const val = tok[eq + 1 ..];
+            if (std.mem.eql(u8, key, "pri")) {
+                t.pri = std.fmt.parseInt(i32, val, 10) catch return ParseError.BadNumber;
+            } else if (std.mem.eql(u8, key, "once")) {
+                t.once = try parseVal(bool, val);
+            } else if (std.mem.eql(u8, key, "wip")) {
+                t.wip = try parseVal(bool, val);
+            } else return ParseError.UnknownKey;
+        }
+        m.trigs[m.ntrigs] = t;
+        cur.trig = m.ntrigs;
+        m.ntrigs += 1;
+        return true;
+    }
+    if (std.mem.eql(u8, rec, "when")) {
+        const t = &m.trigs[cur.trig orelse return ParseError.NoOwner];
+        if (t.nconds >= MAX_CONDS) return ParseError.TooManyConds;
+        t.conds[t.nconds] = try parseCond(m, it);
+        t.nconds += 1;
+        return true;
+    }
+    if (std.mem.eql(u8, rec, "do")) {
+        const t = &m.trigs[cur.trig orelse return ParseError.NoOwner];
+        if (t.nacts >= MAX_ACTS) return ParseError.TooManyActs;
+        t.acts[t.nacts] = try parseAct(m, rest, it);
+        t.nacts += 1;
+        return true;
+    }
+
+    if (std.mem.eql(u8, rec, "dlg")) {
+        if (m.ndialogs >= MAX_DIALOGS) return ParseError.TooManyDialogs;
+        var d = Dialog{ .node0 = @intCast(m.nnodes) };
+        setId(&d.id, it.next() orelse return ParseError.MissingField);
+        if (it.next() != null) return ParseError.ExtraField;
+        m.dialogs[m.ndialogs] = d;
+        cur.dlg = m.ndialogs;
+        cur.node = null;
+        cur.choice = null;
+        m.ndialogs += 1;
+        return true;
+    }
+    if (std.mem.eql(u8, rec, "node")) {
+        const di = cur.dlg orelse return ParseError.NoOwner;
+        if (m.nnodes >= MAX_NODES) return ParseError.TooManyNodes;
+        var nd = Node{ .act0 = @intCast(m.ndacts) };
+        setId(&nd.id, it.next() orelse return ParseError.MissingField);
+        if (it.next() != null) return ParseError.ExtraField;
+        m.nodes[m.nnodes] = nd;
+        cur.node = m.nnodes;
+        cur.choice = null;
+        m.nnodes += 1;
+        m.dialogs[di].nnodes += 1;
+        return true;
+    }
+    if (std.mem.eql(u8, rec, "who")) {
+        m.nodes[cur.node orelse return ParseError.NoOwner].who = try m.addText(rest);
+        return true;
+    }
+    if (std.mem.eql(u8, rec, "say")) {
+        m.nodes[cur.node orelse return ParseError.NoOwner].text = try m.addText(rest);
+        return true;
+    }
+    if (std.mem.eql(u8, rec, "then")) {
+        const nd = &m.nodes[cur.node orelse return ParseError.NoOwner];
+        nd.thenRef = if (std.mem.eql(u8, rest, END_TARGET)) Span{} else try m.addText(rest);
+        return true;
+    }
+    if (std.mem.eql(u8, rec, "ask")) {
+        const nd = &m.nodes[cur.node orelse return ParseError.NoOwner];
+        if (nd.nchoices >= MAX_CHOICES) return ParseError.TooManyChoices;
+        const arrow = std.mem.lastIndexOf(u8, rest, "->") orelse return ParseError.MissingField;
+        var c = Choice{ .act0 = @intCast(m.ndacts) };
+        c.label = try m.addText(trim(rest[0..arrow]));
+        const tgt = trim(rest[arrow + 2 ..]);
+        if (tgt.len == 0) return ParseError.MissingField;
+        c.target = if (std.mem.eql(u8, tgt, END_TARGET)) Span{} else try m.addText(tgt);
+        nd.choices[nd.nchoices] = c;
+        cur.choice = nd.nchoices;
+        nd.nchoices += 1;
+        return true;
+    }
+    if (std.mem.eql(u8, rec, "need")) {
+        const nd = &m.nodes[cur.node orelse return ParseError.NoOwner];
+        const ci = cur.choice orelse return ParseError.NoOwner;
+        if (m.ngates >= MAX_GATES) return ParseError.TooManyGates;
+        m.gates[m.ngates] = try parseCond(m, it);
+        nd.choices[ci].gate = @intCast(m.ngates);
+        m.ngates += 1;
+        return true;
+    }
+    // `act:` hangs on the NODE, `gets:` on the last `ask:` — the same Act either way, and both runs are
+    // APPEND-ONLY into `dacts`, which is what makes them contiguous without a second pass.
+    if (std.mem.eql(u8, rec, "act") or std.mem.eql(u8, rec, "gets")) {
+        const nd = &m.nodes[cur.node orelse return ParseError.NoOwner];
+        if (m.ndacts >= MAX_DACTS) return ParseError.TooManyActs;
+        m.dacts[m.ndacts] = try parseAct(m, rest, it);
+        m.ndacts += 1;
+        if (std.mem.eql(u8, rec, "act")) {
+            if (nd.nchoices > 0) return ParseError.NoOwner; // …or its run would swallow the choices'
+            nd.nact += 1;
+        } else {
+            nd.choices[cur.choice orelse return ParseError.NoOwner].nact += 1;
+        }
+        return true;
+    }
+    return false;
+}
+
+fn parseCond(m: *Map, it: *Toks) !Cond {
+    var c = Cond{ .kind = try enumFromName(CondKind, it.next() orelse return ParseError.MissingField) };
+    switch (c.kind) {
+        .always, .never => {},
+        .flag => {
+            const kv = try splitKV(it);
+            c.slot = try m.internFlag(kv.key);
+            c.on = try parseVal(bool, kv.val);
+        },
+        .counter => {
+            c.slot = try m.internCounter(it.next() orelse return ParseError.MissingField);
+            c.cmp = try cmpFromTok(it.next() orelse return ParseError.MissingField);
+            c.n = try nextI32(it);
+        },
+        .timer => {
+            const kv = try splitKV(it);
+            c.slot = try m.internTimer(kv.key);
+            c.on = std.mem.eql(u8, kv.val, "done");
+            if (!c.on and !std.mem.eql(u8, kv.val, "running")) return ParseError.BadKind;
+        },
+        .elapsed => {
+            c.cmp = try cmpFromTok(it.next() orelse return ParseError.MissingField);
+            c.r = try nextFloat(it);
+        },
+        .region => {
+            c.x = try nextFloat(it);
+            c.z = try nextFloat(it);
+            c.x1 = try nextFloat(it);
+            c.z1 = try nextFloat(it);
+        },
+        .near => {
+            const npc = try splitKV(it);
+            if (!std.mem.eql(u8, npc.key, "npc")) return ParseError.UnknownKey;
+            c.slot = std.fmt.parseInt(u16, npc.val, 10) catch return ParseError.BadNumber;
+            const r = try splitKV(it);
+            if (!std.mem.eql(u8, r.key, "r")) return ParseError.UnknownKey;
+            c.r = try finiteFloat(f32, r.val);
+        },
+        .talked => c.ref = try m.addText(it.next() orelse return ParseError.MissingField),
+        .deaths, .alive => {
+            c.foe = try enumFromName(FoeKind, it.next() orelse return ParseError.MissingField);
+            c.cmp = try cmpFromTok(it.next() orelse return ParseError.MissingField);
+            c.n = try nextI32(it);
+        },
+    }
+    if (it.next() != null) return ParseError.ExtraField;
+    return c;
+}
+
+/// `rest` is the whole tail, which only `text` wants — every other action is tokens.
+fn parseAct(m: *Map, rest: []const u8, it: *Toks) !Act {
+    const head = it.next() orelse return ParseError.MissingField;
+    var a = Act{ .kind = try enumFromName(ActKind, head) };
+    switch (a.kind) {
+        .dialog => a.ref = try m.addText(it.next() orelse return ParseError.MissingField),
+        .text => {
+            const at = std.mem.indexOf(u8, rest, head) orelse return ParseError.MissingField;
+            a.line = try m.addText(trim(rest[at + head.len ..]));
+            if (a.line.len == 0) return ParseError.MissingField;
+            return a; // the rest of the line IS the message — no tail to reject
+        },
+        .flag => {
+            const kv = try splitKV(it);
+            a.slot = try m.internFlag(kv.key);
+            a.setop = if (std.mem.eql(u8, kv.val, "flip")) .flip else if (try parseVal(bool, kv.val)) .on else .off;
+        },
+        .counter => {
+            a.slot = try m.internCounter(it.next() orelse return ParseError.MissingField);
+            a.countop = try enumFromName(Countop, it.next() orelse return ParseError.MissingField);
+            a.n = try nextI32(it);
+        },
+        .timer => {
+            const kv = try splitKV(it);
+            a.slot = try m.internTimer(kv.key);
+            a.v = try finiteFloat(f32, kv.val);
+            if (a.v < 0) return ParseError.BadNumber;
+        },
+        .wait => {
+            a.v = try nextFloat(it);
+            if (a.v < 0) return ParseError.BadNumber;
+        },
+        .preserve => {},
+    }
+    if (it.next() != null) return ParseError.ExtraField;
+    return a;
+}
+
+const KV = struct { key: []const u8, val: []const u8 };
+
+fn splitKV(it: *Toks) !KV {
+    const tok = it.next() orelse return ParseError.MissingField;
+    const eq = std.mem.indexOfScalar(u8, tok, '=') orelse return ParseError.UnknownKey;
+    if (eq == 0 or eq + 1 == tok.len) return ParseError.MissingField;
+    return .{ .key = tok[0..eq], .val = tok[eq + 1 ..] };
+}
+
+fn nextI32(it: *Toks) !i32 {
+    const t = it.next() orelse return ParseError.MissingField;
+    return std.fmt.parseInt(i32, t, 10) catch ParseError.BadNumber;
+}
+
+/// EVERY NAME RESOLVED AFTER THE WHOLE FILE IS READ, so a dialog may be declared below the trigger that
+/// opens it and an `ask:` may point forward at a node it has not reached. Ops replay in file order because
+/// each reads what the last one placed; a name is not that kind of dependency.
+fn link(m: *Map) !void {
+    for (m.npcs[0..m.nnpcs]) |*p| {
+        if (p.dlgRef.len == 0) continue;
+        p.dlg = m.findDialog(m.spanText(p.dlgRef)) orelse return ParseError.UnknownRef;
+    }
+    for (m.trigs[0..m.ntrigs]) |*t| {
+        for (t.conds[0..t.nconds]) |*c| try linkCond(m, c);
+        for (t.acts[0..t.nacts]) |*a| {
+            if (a.kind != .dialog) continue;
+            a.slot = m.findDialog(m.spanText(a.ref)) orelse return ParseError.UnknownRef;
+        }
+    }
+    // …AND THE `need:` GATES, which are the same `Cond` in a pool of their own. Left out, a `talked` written
+    // on an `ask:` line kept slot 0 and silently gated on whichever dialog happened to be declared first.
+    for (m.gates[0..m.ngates]) |*c| try linkCond(m, c);
+    for (m.dacts[0..m.ndacts]) |*a| {
+        if (a.kind != .dialog) continue;
+        a.slot = m.findDialog(m.spanText(a.ref)) orelse return ParseError.UnknownRef;
+    }
+    for (m.dialogs[0..m.ndialogs]) |*d| {
+        const run = m.nodes[d.node0 .. d.node0 + d.nnodes];
+        for (run) |*nd| {
+            nd.next = if (nd.thenRef.len == 0) NO_NODE else try nodeIn(m, d, m.spanText(nd.thenRef));
+            for (nd.choices[0..nd.nchoices]) |*c| {
+                c.next = if (c.target.len == 0) NO_NODE else try nodeIn(m, d, m.spanText(c.target));
+            }
+        }
+    }
+}
+
+/// One condition's forward references — the only one today is `talked`, which names a dialog. Every pool a
+/// `Cond` can live in goes through here, so a new pool cannot inherit half the resolution.
+fn linkCond(m: *Map, c: *Cond) !void {
+    if (c.kind != .talked) return;
+    c.slot = m.findDialog(m.spanText(c.ref)) orelse return ParseError.UnknownRef;
+}
+
+/// A node name, resolved within ONE dialog — ids are local to their tree, so two dialogs may both have a
+/// `root`. Returns the GLOBAL index, which is what a session walks.
+fn nodeIn(m: *const Map, d: *const Dialog, name: []const u8) !u16 {
+    for (m.nodes[d.node0 .. d.node0 + d.nnodes], 0..) |*nd, i| {
+        if (std.mem.eql(u8, idText(&nd.id), name)) return @intCast(d.node0 + i);
+    }
+    return ParseError.UnknownRef;
 }
 
 fn parseZone(it: *std.mem.TokenIterator(u8, .any)) !Zone {
@@ -1180,6 +2013,214 @@ fn trim(s: []const u8) []const u8 {
     return std.mem.trim(u8, s, " \t\r\n");
 }
 
+
+const SCRIPT_HEAD =
+    \\version: 1
+    \\zone: plain -4000 -4000 4000 4000 0.7 grasstall
+    \\cover: 3.3 0.72 1.38 seed=1
+    \\
+;
+
+/// Every record and every condition/action kind the script layer has, so a new one that forgets its writer or
+/// its parser fails HERE rather than the first time somebody authors it.
+const SCRIPT_ALL = SCRIPT_HEAD ++
+    \\npc: wanderer -6.50 18.00 200.0 1.00 0.31 roam=2.5 dlg=pilgrim
+    \\  call: The Wandering Pilgrim
+    \\dlg: pilgrim
+    \\  node: root
+    \\  who: The Wandering Pilgrim
+    \\  say: You have the look of one who walks a long road alone.
+    \\  act: counter greetings add 1
+    \\  ask: The way north? -> north
+    \\  ask: Through the gate, then. -> end
+    \\  need: flag gate_open=1
+    \\  gets: flag told_of_gate=1
+    \\  node: north
+    \\  say: North the great gate stands shut, and has since before I came.
+    \\  then: root
+    \\trig: greet pri=10
+    \\  when: flag met=0
+    \\  when: near npc=0 r=3
+    \\  do: dialog pilgrim
+    \\  do: flag met=1
+    \\trig: everything once=0 wip=1 pri=-2
+    \\  when: always
+    \\  when: never
+    \\  when: counter greetings >= 2
+    \\  when: timer dusk=done
+    \\  when: elapsed > 30
+    \\  when: region -20 -20 20 20
+    \\  when: talked pilgrim
+    \\  when: deaths toad <= 3
+    \\  do: text The gate grinds open somewhere to the north.
+    \\  do: counter greetings sub 1
+    \\  do: timer dusk=12.5
+    \\  do: flag met=flip
+    \\  do: wait 1.5
+    \\  do: preserve
+    \\trig: cleared
+    \\  when: alive archer < 1
+    \\  do: flag done=1
+;
+
+test "the whole script layer round-trips through write and parse" {
+    const alloc = std.testing.allocator;
+    const m = try alloc.create(Map);
+    defer alloc.destroy(m);
+    const back = try alloc.create(Map);
+    defer alloc.destroy(back);
+    var ln: usize = 0;
+    parse(SCRIPT_ALL, m, &ln) catch |e| {
+        std.debug.print("script parse failed at line {d}: {s}\n", .{ ln, @errorName(e) });
+        return e;
+    };
+
+    var buf: [8192]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    const once = fbs.getWritten();
+    parse(once, back, &ln) catch |e| {
+        std.debug.print("script re-parse failed at line {d}: {s}\n{s}\n", .{ ln, @errorName(e), once });
+        return e;
+    };
+
+    // A SECOND PASS MUST BE BYTE-IDENTICAL. Comparing the two WRITES rather than the source is the only
+    // honest test of a format whose reader normalises (the `-> end` sentinel, an omitted `then:`, a default
+    // `once=1`): source-vs-output would fail on formatting and tell you nothing about the data.
+    var buf2: [8192]u8 = undefined;
+    var fbs2 = std.io.fixedBufferStream(&buf2);
+    try write(back, fbs2.writer());
+    try std.testing.expectEqualStrings(once, fbs2.getWritten());
+
+    try std.testing.expectEqual(@as(usize, 1), m.nnpcs);
+    try std.testing.expectEqual(@as(usize, 3), m.ntrigs);
+    try std.testing.expectEqual(@as(usize, 1), m.ndialogs);
+    try std.testing.expectEqual(@as(usize, 2), m.nnodes);
+    try std.testing.expectEqualStrings("The Wandering Pilgrim", m.spanText(m.npcs[0].call));
+    try std.testing.expectApproxEqAbs(@as(f32, 2.5), m.npcs[0].roam, 1e-6);
+    // …and every one of the three tables holds only what was actually named.
+    try std.testing.expectEqual(@as(usize, 4), m.nflags); // met, gate_open, told_of_gate, done
+    try std.testing.expectEqual(@as(usize, 1), m.ncounters);
+    try std.testing.expectEqual(@as(usize, 1), m.ntimers);
+}
+
+test "a name is resolved wherever it was written, above or below its use" {
+    const alloc = std.testing.allocator;
+    const m = try alloc.create(Map);
+    defer alloc.destroy(m);
+    var ln: usize = 0;
+    // The trigger opens a dialog declared BELOW it, and `root` answers to a node declared below THAT.
+    try parse(SCRIPT_HEAD ++
+        \\trig: t
+        \\  when: always
+        \\  do: dialog late
+        \\dlg: late
+        \\  node: root
+        \\  say: Hm.
+        \\  ask: On. -> tail
+        \\  node: tail
+        \\  say: Well then.
+        \\  then: end
+    , m, &ln);
+    try std.testing.expectEqual(@as(u16, 0), m.trigs[0].acts[0].slot);
+    try std.testing.expectEqual(@as(u16, 1), m.nodes[0].choices[0].next);
+    try std.testing.expectEqual(NO_NODE, m.nodes[1].next);
+}
+
+test "a GATE's own references are resolved too, not just a trigger's" {
+    const alloc = std.testing.allocator;
+    const m = try alloc.create(Map);
+    defer alloc.destroy(m);
+    var ln: usize = 0;
+    // THE bug: `link` walked `m.trigs` only, so a `talked` written on an `ask:` line kept slot 0 and gated
+    // on whichever dialog was declared first — here, the WRONG one, and silently.
+    try parse(SCRIPT_HEAD ++
+        \\dlg: first
+        \\  node: root
+        \\  say: One.
+        \\  then: end
+        \\dlg: second
+        \\  node: root
+        \\  say: Two.
+        \\  ask: go on -> end
+        \\  need: talked second
+    , m, &ln);
+    try std.testing.expectEqual(@as(u16, 1), m.gates[0].slot);
+    // …and a gate naming nothing is the same LOAD ERROR a trigger's would be.
+    try std.testing.expectError(ParseError.UnknownRef, parse(SCRIPT_HEAD ++
+        \\dlg: d
+        \\  node: root
+        \\  ask: go on -> end
+        \\  need: talked missing
+    , m, &ln));
+}
+
+test "node ids are local to their own dialog" {
+    const alloc = std.testing.allocator;
+    const m = try alloc.create(Map);
+    defer alloc.destroy(m);
+    var ln: usize = 0;
+    try parse(SCRIPT_HEAD ++
+        \\dlg: a
+        \\  node: root
+        \\  say: One.
+        \\  then: end
+        \\dlg: b
+        \\  node: root
+        \\  say: Two.
+        \\  ask: again -> root
+    , m, &ln);
+    // `b`'s own `root`, not `a`'s — the second dialog's run starts at node 1.
+    try std.testing.expectEqual(@as(u16, 1), m.dialogs[1].node0);
+    try std.testing.expectEqual(@as(u16, 1), m.nodes[1].choices[0].next);
+}
+
+test "a script record with nothing above it, and a name that resolves to nothing, are LOAD ERRORS" {
+    const alloc = std.testing.allocator;
+    const m = try alloc.create(Map);
+    defer alloc.destroy(m);
+    var ln: usize = 0;
+    try std.testing.expectError(ParseError.NoOwner, parse(SCRIPT_HEAD ++ "  when: always\n", m, &ln));
+    try std.testing.expectError(ParseError.NoOwner, parse(SCRIPT_HEAD ++ "  say: nobody said this\n", m, &ln));
+    try std.testing.expectError(ParseError.NoOwner, parse(SCRIPT_HEAD ++
+        \\dlg: d
+        \\  node: root
+        \\  need: flag x=1
+    , m, &ln));
+    try std.testing.expectError(ParseError.UnknownRef, parse(SCRIPT_HEAD ++
+        \\trig: t
+        \\  when: always
+        \\  do: dialog missing
+    , m, &ln));
+    try std.testing.expectError(ParseError.UnknownRef, parse(SCRIPT_HEAD ++
+        \\dlg: d
+        \\  node: root
+        \\  ask: where -> nowhere
+    , m, &ln));
+    // …and a node's own actions may not be written after its choices, or its run would swallow theirs.
+    try std.testing.expectError(ParseError.NoOwner, parse(SCRIPT_HEAD ++
+        \\dlg: d
+        \\  node: root
+        \\  ask: a -> end
+        \\  act: flag x=1
+    , m, &ln));
+}
+
+test "clear empties the script layer with the world" {
+    const alloc = std.testing.allocator;
+    const m = try alloc.create(Map);
+    defer alloc.destroy(m);
+    var ln: usize = 0;
+    try parse(SCRIPT_ALL, m, &ln);
+    try std.testing.expect(m.ntrigs > 0 and m.ndtext > 0);
+    m.clear();
+    try std.testing.expectEqual(@as(usize, 0), m.ntrigs);
+    try std.testing.expectEqual(@as(usize, 0), m.nnpcs);
+    try std.testing.expectEqual(@as(usize, 0), m.ndialogs);
+    try std.testing.expectEqual(@as(usize, 0), m.nnodes);
+    try std.testing.expectEqual(@as(u32, 0), m.ndtext);
+    try std.testing.expectEqual(@as(usize, 0), m.nflags);
+}
 
 test "an op round-trips through write and parse" {
     var m = Map{};

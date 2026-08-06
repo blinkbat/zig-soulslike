@@ -12,6 +12,8 @@ const ogremod = @import("ogre.zig");
 const koboldmod = @import("kobold.zig");
 const broodmod = @import("brood.zig");
 const warriormod = @import("warrior.zig");
+const npcmod = @import("npc.zig");
+const dialogmod = @import("dialog.zig");
 const mathx = @import("mathx.zig");
 const props = @import("props.zig");
 const stats = @import("stats.zig");
@@ -563,7 +565,7 @@ pub fn runShots(g: *Game) void {
             g.hero.pose();
         }
         shootClear(g, "shots/20zf_wand_hud.png", LIT_YAW + 150, 0.18, 4.6);
-        g.hero.fp.cur = combat.SPELL_FP - 1;
+        g.hero.fp.cur = combat.BOLT_FP - 1;
         g.hero.fpRefused = combat.STAM_REFUSE_FLASH; // …and the refusal ring on the FP bar, not the stamina one
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
@@ -592,12 +594,12 @@ pub fn runShots(g: *Game) void {
             if (g.hero.casting) g.hero.updateCast(dt, null) else g.hero.update(dt, 0, 0, null);
             g.hero.pose();
         }
-        shootPortrait(g, "shots/20zg4_roots_stand.png", rootsAt, LIT_YAW, 0.09, 4.2);
+        shootPortrait(g, "shots/20zg4_roots_stand.png", rootsAt, LIT_YAW, 0.09, 5.8);
         // Thin geometry needs a CROP (AGENTS.md): a tendril is ~4 cm through, so at 1:1 the blunt tip and the
         // side stubs are two pixels each and "it reads as spikes" cannot be judged from the wide shot.
-        shootPortrait(g, "shots/20zg5_roots_crop.png", v3(rootsAt.x, rootsAt.y + 0.45, rootsAt.z), LIT_YAW + 34, 0.06, 1.9);
+        shootPortrait(g, "shots/20zg5_roots_crop.png", v3(rootsAt.x, rootsAt.y + 0.70, rootsAt.z), LIT_YAW + 34, 0.06, 2.7);
         // Down on the deck, where the split ground meets the tendrils — the read that says they came THROUGH it.
-        shootPortrait(g, "shots/20zg6_roots_low.png", v3(rootsAt.x, rootsAt.y + 0.25, rootsAt.z), LIT_YAW - 40, 0.02, 3.0);
+        shootPortrait(g, "shots/20zg6_roots_low.png", v3(rootsAt.x, rootsAt.y + 0.35, rootsAt.z), LIT_YAW - 40, 0.02, 4.0);
         while (g.hero.casting) g.hero.updateCast(dt, null);
         must(g.hero.cycleSpell(), "the rod would not change back"); // …and the block below expects the bolt
         // Walking, at two points HALF A STRIDE apart: one frame cannot show that the carry damps the arm's swing
@@ -759,7 +761,7 @@ pub fn runShots(g: *Game) void {
         g.hero.hurtFlash = 0; // clear any leftover flash from the death shot (harness never ticks it)
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         f.vit.hp = f.vit.hpMax * 0.45;
-        f.vit.sinceHit = 0;
+        f.vit.sinceHurt = 0;
         stepFoe(f, 4, front);
         g.hero.pos = mathx.ground(2.4, 4.2);
         g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
@@ -1222,6 +1224,7 @@ pub fn runShots(g: *Game) void {
     warriorShots(g);
     campfireShots(g);
     chestShots(g);
+    folkShots(g);
     soundFilterShots(g);
     editorShots(g);
 }
@@ -1594,6 +1597,159 @@ fn chestShots(g: *Game) void {
     g.map.nops = saved;
     g.env.materialize(&g.map);
     game.rehomeChestsForShot(g);
+}
+
+/// Turn him to the LENS and re-pose, without stepping his behaviour. A portrait wants his front, and what he
+/// would actually do is look at the hero — who has to be out of the boom for the picture to be of the man at
+/// all. Every "stand the hero on the sun's bearing" framing in here collapses for a body that TURNS: the sun's
+/// bearing IS the camera's, so the hero ends up in the lens.
+fn faceLens(p: *npcmod.Wanderer) void {
+    p.facing = mathx.headingXZ(LIT_BACK);
+    p.wantYaw = p.facing;
+    p.pose();
+}
+
+/// Park the hero far enough out that he is neither in frame nor inside `npc.NOTICE_R`.
+fn heroAside(g: *Game, from: rl.Vector3) void {
+    standHero(g, from.x + 34, from.z + 34, 0);
+    plantHeroForShot(g);
+}
+
+/// THE FOLK AND WHAT THEY SAY. Two things here cannot be judged from one frame and so get several: the staff
+/// PLANT, which happens once a stride, and the panel, which has a different shape for answers and for a plain
+/// Continue. The `need:` gate needs two frames by definition — the same node before and after it opens.
+fn folkShots(g: *Game) void {
+    if (g.folk.n == 0) {
+        std.debug.print("--shot needs at least one npc posted in {s}\n", .{worldfmt.START_MAP});
+        @panic("shot harness: the map posts nobody to photograph");
+    }
+    const p = &g.folk.list[0];
+    const post = p.pos;
+    const eye = v3(post.x, post.y + 1.02, post.z);
+    const face = v3(post.x, post.y + 1.50, post.z);
+
+    heroAside(g, post);
+    var k: i32 = 0;
+    while (k < 90) : (k += 1) game.stepFolkForShot(g, SHOT_DT); // let the idle clocks settle somewhere
+    p.pos = post;
+
+    faceLens(p);
+    shootPortrait(g, "shots/108_npc_hooded.png", eye, LIT_YAW, 0.10, 3.4);
+    // …and the FACE, cropped in: a cowl is the whole identity of this one and it is fifteen centimetres of it.
+    shootPortrait(g, "shots/108b_npc_hood_face.png", face, LIT_YAW, 0.06, 1.30);
+
+    // THE OTHER HEAD. Two variants are what makes two of these two people, so both get looked at.
+    p.variant = 1;
+    shootPortrait(g, "shots/108c_npc_bare.png", eye, LIT_YAW, 0.10, 3.4);
+    shootPortrait(g, "shots/108d_npc_bare_face.png", face, LIT_YAW, 0.06, 1.30);
+    p.variant = 0;
+
+    // THE BECKON at its peak — the one frame that proves the wave is the ELBOW and not a swung shoulder.
+    p.greet();
+    k = 0;
+    while (k < 17) : (k += 1) game.stepFolkForShot(g, SHOT_DT); // ~half of the gesture
+    p.pos = post;
+    faceLens(p);
+    shootPortrait(g, "shots/108e_npc_beckon.png", eye, LIT_YAW, 0.10, 3.7);
+
+    // THE AMBLE, IN PROFILE, at the plant and at the carry. A GAIT IS READ IN PROFILE and nothing else will do,
+    // so his heading is chosen BACKWARD off the framing: `LIT_YAW` less a quarter turn, which puts the sun on
+    // him and the camera square to his travel at the same time. Left to his own errands he walks wherever the
+    // seed sends him, which the first pass proved is into the cliff shadow, where nothing can be judged.
+    const laneYaw = mathx.radians(LIT_YAW - 90.0);
+    // OUT ON THE DOWNS. The framing has to be CLEAR as well as lit: at the grace the boom at four metres ends
+    // up inside the rubble and the frame is a picture of the inside of a rock.
+    const lane = mathx.ground(14, 70);
+    p.home = lane;
+    p.pos = lane;
+    p.roamR = worldfmt.NPC_ROAM_MAX;
+    p.dwell = 0;
+    p.facing = laneYaw;
+    const lead = mathx.headingDir(laneYaw);
+    var seen: i32 = 0;
+    while (seen < 2) : (seen += 1) {
+        const want: f32 = if (seen == 0) 0.50 else 0.02;
+        var guard: i32 = 0;
+        while (guard < 2400) : (guard += 1) {
+            // Held on ONE heading by re-aiming the errand each step, so he neither arrives nor re-decides.
+            p.target = along(p.pos, lead, 8.0);
+            game.stepFolkForShot(g, SHOT_DT);
+            const d = @abs(p.phase - want);
+            if (p.moving > 0.9 and @min(d, 1.0 - d) < 0.02) break;
+        }
+        must(p.moving > 0.9, "the wanderer never set off, so there is no gait to photograph");
+        const at = v3(p.pos.x, p.pos.y + 1.0, p.pos.z);
+        shootPortrait(g, if (seen == 0) "shots/108f_npc_staff_plant.png" else "shots/108g_npc_carry.png", at, LIT_YAW, 0.08, 4.0);
+    }
+
+    // ── THE CONVERSATION. The hero stands OFF the boom by `TALK_OFF` degrees so the camera at `LIT_YAW` has
+    // the pair of them side by side; behind him on the sun's bearing the wanderer is a hood over his shoulder.
+    const TALK_OFF: f32 = 52.0;
+    const stand = along(post, mathx.headingDir(mathx.headingXZ(LIT_BACK) + mathx.radians(TALK_OFF)), 2.0);
+    p.pos = post;
+    standHero(g, stand.x, stand.z, mathx.headingXZ(mathx.subV(post, stand)));
+    plantHeroForShot(g);
+    game.stepFolkForShot(g, SHOT_DT);
+    // Between the two of them, so neither is at an edge.
+    const pair = mathx.lerpV(eye, g.hero.shoulderPoint(), 0.5);
+    // THE PROMPT FIRST: it is the only thing that says a body in this world is one you can speak to rather
+    // than one you have to kill.
+    shootPortrait(g, "shots/108h_npc_prompt.png", pair, LIT_YAW, 0.12, 4.6);
+
+    must(game.openTalkForShot(g, "wanderer"), "the wanderer's dialog would not open");
+    talkShot(g, "shots/108i_dialog_root.png", pair, 20, .{});
+    // THE SECOND LINE — the cursor moved, so the highlight is provably not painted onto row 0.
+    talkShot(g, "shots/108j_dialog_cursor.png", pair, 1, .{ .down = true });
+    // A NODE WITH NO ANSWERS: the Continue shape, a shorter box and a different footer.
+    talkShot(g, "shots/108k_dialog_continue.png", pair, 4, .{ .pick = 1 });
+    // …and back at the root the GATED line is offered, because that node's `act:` opened it. Three answers
+    // where there were two — the whole point of `need:`, and unprovable from one frame.
+    talkShot(g, "shots/108l_dialog_gate_open.png", pair, 4, .{ .confirm = true });
+
+    // Walked OUT of rather than dropped, so `talked` is set and the machine is left consistent.
+    var bail: i32 = 0;
+    while (g.talk.active() and bail < 40) : (bail += 1) game.stepTalkForShot(g, .{ .pick = 3 });
+    must(!g.talk.active(), "the conversation would not close");
+    g.folk.hush();
+
+    // A TRIGGER'S OWN LINE ON SCREEN — SC1's Display Text Message, the other half of what a trigger can do,
+    // and the one with no panel to hide behind. FOUND, not indexed: `trigs[0].acts[1]` is two magic numbers
+    // into an authoring table anybody may reorder, and a `do:` inserted above the text photographs a switch.
+    g.trig.apply(&g.map, firstTextAct(&g.map) orelse {
+        must(false, "the map has no `text` action to photograph");
+        return;
+    });
+    shootPortrait(g, "shots/108m_trigger_banner.png", pair, LIT_YAW, 0.12, 4.6);
+
+    g.trig.arm(&g.map);
+    g.folk.reset(&g.map);
+}
+
+/// The first `text` action the map authors, wherever it sits — the banner shot needs a real line and does not
+/// care whose trigger it belongs to.
+fn firstTextAct(m: *const worldfmt.Map) ?*const worldfmt.Act {
+    for (m.trigSlice()) |*t| {
+        for (t.actSlice()) |*a| {
+            if (a.kind == .text) return a;
+        }
+    }
+    return null;
+}
+
+/// One frame of the panel: press `in`, settle `frames`, then scene + panel. `hud` is deliberately NOT called —
+/// the live loop suppresses it behind a conversation, and a harness that drew it would be photographing a
+/// screen the game never shows.
+fn talkShot(g: *Game, name: [:0]const u8, at: rl.Vector3, frames: i32, in: dialogmod.Input) void {
+    game.stepTalkForShot(g, in);
+    var k: i32 = 0;
+    while (k < frames) : (k += 1) game.stepTalkForShot(g, .{});
+    g.rig.yaw = mathx.radians(LIT_YAW);
+    g.rig.pitch = 0.12;
+    g.rig.dist = 4.6;
+    g.rig.followCentred(at);
+    drawScene(g);
+    game.drawTalkForShot(g);
+    snap(name);
 }
 
 // THE EDITOR — its whole job is legibility and none of that can be judged from the game shots, so it gets a frame per room: the Props layer at rest, a generator selected (its gizmo plus a marker on every instance it owns — the thing that makes a scatter editable), a Decor belt mid-drag, the Ground layer with soil painted, painted WATER low and overhead, a marquee, the Open dialog, the object viewer's two levels, the Interactables layer and the jukebox.

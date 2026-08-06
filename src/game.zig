@@ -23,6 +23,9 @@ const broodmod = @import("brood.zig"); // THE BROOD — a mother, her sacs and w
 const warriormod = @import("warrior.zig"); // THE SKELETAL WARRIORS — the archer's bones, armed two ways
 const chestmod = @import("chest.zig"); // the openable boxes
 const restmod = @import("rest.zig"); // sitting at a bonfire
+const npcmod = @import("npc.zig"); // THE FOLK — the first bodies here that are not trying to kill you
+const trigmod = @import("trigger.zig"); // THE TRIGGER MACHINE — conditions, actions, switches, counters, timers
+const dialogmod = @import("dialog.zig"); // a conversation, and the panel it is read off
 const item = @import("item.zig");
 const sfx = @import("audio.zig"); // the procedural sound bank — every voice synthesized at launch
 
@@ -147,6 +150,16 @@ pub const Game = struct {
     brood: broodmod.Brood, // the brood mothers, their egg sacs, their hatchlings and their acid
     muster: warriormod.Muster, // the skeletal warriors — shieldmen and greatswords, mixed
     chests: chestmod.Chests, // the openable boxes — props with a lid and a state (chest.zig)
+    folk: npcmod.Folk, // the NPCs the map posts — bodies with a name and a conversation, not a foe contract
+    /// THE SCRIPT LAYER. `trig` is every switch, counter, timer and one-shot latch in the world; `talk` is the
+    /// one conversation that may be on screen. Both read the map's own tables and neither is authored in Zig.
+    trig: trigmod.Runtime = .{},
+    talk: dialogmod.Session = .{},
+    /// The folk's positions, INDEX-ALIGNED with the map's records, refreshed once a frame for a `near npc=`
+    /// condition. A field rather than a local: `triggerWorld` is asked from the dialog branch too, which does
+    /// not run the trigger pass that would rebuild it.
+    npcPos: [npcmod.CAP]rl.Vector3 = [_]rl.Vector3{mathx.zero3} ** npcmod.CAP,
+    nNpcPos: usize = 0,
     rest: restmod.Rest = .{}, // sitting at a bonfire: the state machine and the fade (rest.zig)
     /// The player's own retro stack, parked while a rest borrows the screen for its VHS look.
     restRetro: [gfx.RETRO_COUNT]f32 = [_]f32{0} ** gfx.RETRO_COUNT,
@@ -195,9 +208,11 @@ pub const Game = struct {
         g.brood = broodmod.Brood.init(g.scene.shader);
         g.muster = warriormod.Muster.init(g.scene.shader);
         g.chests = chestmod.Chests.init(g.scene.shader);
+        g.folk = npcmod.Folk.init(g.scene.shader);
         rehomeFoes(g, .blind);
         g.rest = .{};
         rehomeChests(g);
+        armScript(g);
         g.bag = .{};
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
         g.clumpModel = koboldmod.clumpMesh(g.scene.shader);
@@ -214,6 +229,8 @@ pub const Game = struct {
         g.restRetro = [_]f32{0} ** gfx.RETRO_COUNT;
         // …the look probe included: `Game` is built in place from `alloc.create`, so a field this block misses never gets its default at all — and `pad` is a bool, where raw heap bytes are illegal behaviour rather than merely a wrong caption.
         g.probe = .{};
+        g.npcPos = [_]rl.Vector3{mathx.zero3} ** npcmod.CAP;
+        g.nNpcPos = 0;
         g.drawDt = 1.0 / 60.0;
     }
 };
@@ -409,9 +426,19 @@ fn snapshotPos(foes: anytype, out: []rl.Vector3) void {
     }
 }
 
+/// THE POST-STEP TERRAIN GATE. Its rule is about the FEET and nothing else, which is why it takes anything
+/// with a `pos` — the folk go through it too, and they carry no foe contract. `alive`/`airborne` are asked
+/// only of whatever HAS them: a body that cannot die and cannot leave the ground answers both by construction.
 fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3) void {
+    const T = @typeInfo(@TypeOf(foes)).pointer.child;
     for (foes, 0..) |*f, i| {
-        if (i >= was.len or !f.alive() or f.airborne()) continue;
+        if (i >= was.len) continue;
+        if (comptime @hasDecl(T, "alive")) {
+            if (!f.alive()) continue;
+        }
+        if (comptime @hasDecl(T, "airborne")) {
+            if (f.airborne()) continue;
+        }
         const dx = f.pos.x - was[i].x;
         const dz = f.pos.z - was[i].z;
         const d = @sqrt(dx * dx + dz * dz);
@@ -479,6 +506,10 @@ fn heroFade(g: *const Game) f32 {
 fn drawCasters(g: *Game, cull: envmod.Cull) void {
     g.env.drawProps(cull);
     g.chests.draw();
+    // …and the ROOTS, which are opaque WOOD standing in the ground and not FX. Through HERE, so they go through
+    // both passes and THROW A SHADOW like anything else standing in the sun (the caster contract, AGENTS.md) —
+    // drawn only in the lit pass they were lit geometry with no weight on the ground under them.
+    g.hero.drawRoots();
     g.scene.setFlash(0.6 * g.hero.hurtFlash);
     // LIT PASS ONLY — the depth pass has no alpha, and his shadow is still his.
     const fade = heroFade(g);
@@ -499,6 +530,8 @@ fn drawCasters(g: *Game, cull: envmod.Cull) void {
     }
     g.scene.setFlash(0);
     inline for (FOE_GROUPS) |f| @field(g, f.field).draw(&g.scene);
+    // The folk go through HERE like anything else standing in the sun, so they cast in the depth pass too.
+    g.folk.draw();
 }
 
 fn setCasterShaders(g: *Game, sh: rl.Shader) void {
@@ -506,6 +539,7 @@ fn setCasterShaders(g: *Game, sh: rl.Shader) void {
     g.hero.setShader(sh);
     inline for (FOE_GROUPS) |f| @field(g, f.field).setShader(sh);
     g.chests.setShader(sh);
+    g.folk.setShader(sh);
 }
 
 pub fn heroCenterY(g: *const Game) f32 {
@@ -526,6 +560,15 @@ pub fn spawnClump(g: *Game, from: rl.Vector3) void {
 
 pub fn spawnVenom(g: *Game, from: rl.Vector3) void {
     poolPut(g, archermod.launchVenom(from, heroAimPoint(g), broodmod.SPIT_SPEED, broodmod.M_SPIT_HIT));
+}
+
+/// THE SCRIPT LAYER, BACK TO A FRESH WORLD: the folk on their posts and every switch, counter, timer and
+/// one-shot latch cleared. Called wherever the MAP itself changes — a load, and every way out of the editor.
+/// NOT on a death: the story he has already heard is not undone by dying, any more than his bag is.
+fn armScript(g: *Game) void {
+    g.folk.reset(&g.map);
+    g.trig.arm(&g.map);
+    g.talk = .{};
 }
 
 fn rehomeChests(g: *Game) void {
@@ -620,13 +663,177 @@ pub fn openChestForShot(g: *Game) bool {
     return had;
 }
 
+/// THE HARNESS HAS TO DRIVE THE PANEL ITSELF. `tickTalk` reads live buttons and `triggerWorld` is private, so
+/// without these a "the conversation" shot would be a picture of the world with nothing over it.
+pub fn openTalkForShot(g: *Game, name: []const u8) bool {
+    const dlg = g.map.findDialog(name) orelse return false;
+    g.folk.update(SHOT_STEP, g.hero.pos, PLAY_HALF);
+    const npc: ?usize = g.folk.near;
+    const who: []const u8 = if (npc) |i| npcmod.nameOf(&g.map, g.folk.list[i].rec) else "";
+    if (!g.talk.open(&g.map, &g.trig, dlg, who, npc)) return false;
+    if (npc) |i| g.folk.list[i].talking = true;
+    return true;
+}
+pub fn stepTalkForShot(g: *Game, in: dialogmod.Input) void {
+    g.talk.update(&g.map, &g.trig, triggerWorld(g), SHOT_STEP, in);
+    g.folk.update(SHOT_STEP, g.hero.pos, PLAY_HALF);
+}
+pub fn drawTalkForShot(g: *Game) void {
+    g.talk.draw(&g.map, &g.trig, triggerWorld(g));
+}
+pub fn tickTriggersForShot(g: *Game, dt: f32) void {
+    tickTriggers(g, dt);
+}
+pub fn stepFolkForShot(g: *Game, dt: f32) void {
+    g.folk.update(dt, g.hero.pos, PLAY_HALF);
+    for (g.folk.live()) |*p| plantActor(g, &p.pos);
+}
+
+/// A nominal step for the staging above — THE HARNESS'S OWN, not a second copy of the same literal. `shots.zig`
+/// is imported lazily here (it is never in context while working on the loop, AGENTS.md), and one constant is
+/// the whole of what these hooks need from it.
+const SHOT_STEP: f32 = @import("shots.zig").SHOT_DT;
+
+/// ONE BUTTON, ONE PRIORITY ORDER: a bonfire, then whoever is standing there, then a box. Written down here
+/// once rather than as three call sites — you can be in reach of two of them, and the answer must not depend
+/// on which system happened to be asked first.
 fn interact(g: *Game) void {
-    if (g.rest.begin()) return; // a bonfire beats a chest — you cannot be in reach of both
+    if (g.rest.begin()) return;
+    if (startTalk(g)) return;
     const got = g.chests.openNear(&g.map) orelse return;
     for (got.loot) |it| g.bag.add(it, 1);
     if (got.loot.len > 0) sfx.world(.item_get, got.at);
     g.rig.addShake(SHAKE_CHEST);
     g.rumble.play(rumblemod.hit_light);
+}
+
+/// WHAT THE CONDITIONS ARE ALLOWED TO SEE, gathered once and handed IN. The machine never reaches into the
+/// game for a foe list, for the same reason a creature reads its stamped `Leash` instead of asking `env` what
+/// it can see: the owner of a list is the one who walks it.
+fn triggerWorld(g: *const Game) trigmod.World {
+    var w = trigmod.World{ .heroPos = g.hero.pos, .npcs = g.npcPos[0..g.nNpcPos] };
+    const Ctx = struct {
+        alive: *[@typeInfo(FoeKind).@"enum".fields.len]u32,
+        fn visit(self: *const @This(), foes: anytype, kind: ?FoeKind) void {
+            for (foes) |*f| {
+                if (!f.alive() or f.dying()) continue;
+                self.alive[@intFromEnum(memberKind(f, kind))] += 1;
+            }
+        }
+    };
+    var ctx = Ctx{ .alive = &w.alive };
+    eachTarget(g, &ctx, Ctx.visit);
+    return w;
+}
+
+/// Every foe that died THIS FRAME, billed to SC1's Deaths. One walk, through `eachTarget`, so a seventh group
+/// is counted the day it is added rather than the day somebody notices it never was.
+///
+/// `justDied` is the foe contract's one-frame edge and the only honest source for a COUNT — a latch like the
+/// sac's `killed` reads true every frame after and would bill one death sixty times a second. The one target
+/// on the field without that edge is the egg sac, and the brood already counts its own (`bursts`), which the
+/// loop bills separately.
+fn billDeaths(g: *Game) void {
+    const Ctx = struct {
+        rt: *trigmod.Runtime,
+        fn visit(self: *const @This(), foes: anytype, kind: ?FoeKind) void {
+            const T = @typeInfo(@TypeOf(foes)).pointer.child;
+            if (comptime !@hasField(T, "justDied")) return;
+            for (foes) |*f| {
+                if (f.justDied) self.rt.died(memberKind(f, kind));
+            }
+        }
+    };
+    var ctx = Ctx{ .rt = &g.trig };
+    eachTarget(g, &ctx, Ctx.visit);
+}
+
+/// ONE TRIGGER PASS A FRAME, and the conversation it may ask for opened here rather than inside the machine —
+/// a dialog needs a SPEAKER's name, and the machine has no business knowing what an NPC is.
+fn tickTriggers(g: *Game, dt: f32) void {
+    g.nNpcPos = g.folk.positions(&g.map, &g.npcPos).len;
+    billDeaths(g);
+    // A GRACE IS BUSY TOO. `run` checks the rest branch BEFORE the talk one, so a conversation opened on the
+    // frame a rest begins is never ticked and never drawn until he stands up again — frozen, not deferred.
+    // The machine already knows what to do with a screen it cannot have: it holds the trigger where it is.
+    const want = g.trig.tick(&g.map, triggerWorld(g), dt, g.talk.active() or g.rest.active()) orelse return;
+    // NO SPEAKER: nobody is standing in front of him, so the panel is named by the node's own `who:` or by
+    // nothing at all. A dialog id in the header would be a debug string on screen.
+    _ = g.talk.open(&g.map, &g.trig, want, "", null);
+}
+
+/// SPEAK TO WHOEVER IS IN REACH. Refused — and the prompt is not offered — when the map gave him no
+/// conversation: a "Talk" that does nothing is worse than no prompt at all.
+fn startTalk(g: *Game) bool {
+    if (g.talk.active()) return false;
+    const i = g.folk.near orelse return false;
+    const p = &g.folk.list[i];
+    if (p.rec >= g.map.nnpcs) return false;
+    const dlg = g.map.npcs[p.rec].dlg;
+    if (dlg == worldfmt.NO_DIALOG) return false;
+    if (!g.talk.open(&g.map, &g.trig, dlg, npcmod.nameOf(&g.map, p.rec), i)) return false;
+    p.talking = true;
+    return true;
+}
+
+/// …and whether anyone in reach HAS one, which is the same question the prompt asks.
+fn talkable(g: *const Game) bool {
+    const i = g.folk.near orelse return false;
+    const rec = g.folk.list[i].rec;
+    return rec < g.map.nnpcs and g.map.npcs[rec].dlg != worldfmt.NO_DIALOG;
+}
+
+/// The conversation on screen, and the world held still behind it. A dialog is a MENU as far as the loop is
+/// concerned: the hero is `held`, nothing decides anything, and the only clocks that run are the panel's own.
+fn tickTalk(g: *Game, dt: f32) void {
+    const in = dialogmod.Input{
+        .up = navPressed(.up),
+        .down = navPressed(.down),
+        .confirm = talkConfirmPressed(),
+        .pick = digitPressed(),
+    };
+    g.talk.update(&g.map, &g.trig, triggerWorld(g), dt, in);
+    if (g.talk.justClosed) {
+        // He inclines his head as you go, and stops attending to a conversation that is over.
+        if (g.talk.npc) |i| {
+            if (i < g.folk.n) g.folk.list[i].farewell();
+        }
+        g.folk.hush();
+    }
+    g.hero.pose();
+    g.folk.update(dt, g.hero.pos, PLAY_HALF);
+    g.rig.tickShake(dt);
+    g.rumble.update(dt, false);
+}
+
+/// A dialog's own navigation. The pause menu's rows and the character book's grid read the pad and the
+/// keyboard through `menumod`'s helpers; a third private copy of "is Down pressed" is a third thing to get
+/// out of step with the other two.
+fn navPressed(dir: menumod.NavDir) bool {
+    return menumod.navPressed(dir);
+}
+fn confirmPressed() bool {
+    return menumod.confirmPressed();
+}
+
+/// THE INTERACT KEY, named once: the prompt that opens a conversation and the panel's own footer both say
+/// "E / A", so both have to honour it.
+const INTERACT_KEY: rl.KeyboardKey = .e;
+
+/// …and the panel takes it ON TOP of the menu confirm. It cannot go into `menumod.confirmPressed`: E is the
+/// character book's page turn, and a panel that named a button the press ignored is the prompt rule broken
+/// one screen further in.
+fn talkConfirmPressed() bool {
+    return confirmPressed() or rl.isKeyPressed(INTERACT_KEY);
+}
+
+/// 1-9, for picking a line straight off its number the way BG2's list does.
+fn digitPressed() ?usize {
+    const keys = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine };
+    for (keys, 0..) |k, i| {
+        if (rl.isKeyPressed(k)) return i + 1;
+    }
+    return null;
 }
 
 fn tickRest(g: *Game, dt: f32) void {
@@ -1020,9 +1227,6 @@ pub fn drawScene(g: *Game) void {
     inline for (FOE_GROUPS) |f| {
         if (comptime @hasDecl(@FieldType(Game, f.field), "drawFx")) @field(g, f.field).drawFx();
     }
-    // …and the ROOTS, with the opaque geometry rather than the unlit FX: they are WOOD standing in the
-    // ground, and they have to take the sun the way anything else standing in it does.
-    g.hero.drawRoots();
     g.hero.drawTrail();
     for (quivers(g)) |pool| archermod.drawArrowTrails(pool);
     if (g.menu.hitboxes and g.hero.attacking) {
@@ -1115,7 +1319,10 @@ fn drawHurtFlash(g: *Game) void {
 }
 
 pub fn hud(g: *Game, dt: f32) void {
-    if (g.rest.active()) return;
+    // THE WORLD'S HUD GOES AWAY BEHIND A CONVERSATION, as it does at a bonfire. The panel takes the bottom of
+    // the screen, which is exactly where the cross and the prompt live: left up they bleed through the plate
+    // and the prompt names a button the panel has taken.
+    if (g.rest.active() or g.talk.active()) return;
     if (!g.menu.isOpen() and !g.hero.dead) {
         hud_.vitals(dt, g.hero.vit.hpFrac(), g.hero.fp.frac(), g.hero.stam.frac(), g.hero.stamRefused / combat.STAM_REFUSE_FLASH, g.hero.fpRefused / combat.STAM_REFUSE_FLASH, g.hero.stam.windedTo());
         const bowUp = g.hero.bowOut();
@@ -1140,8 +1347,18 @@ pub fn hud(g: *Game, dt: f32) void {
         );
         hud_.reticle(g.hero.aimB);
         hud_.runes(g.hero.runes.display()); // the ROLLING value, not the banked total
-        if (g.rest.near != null) hud_.prompt("E / A  Rest") else if (g.chests.near != null) hud_.prompt("E / A  Open");
+        // THE SAME PRIORITY ORDER `interact` USES, and it has to be: a prompt that names a different thing
+        // from the one the button will reach is worse than no prompt.
+        if (g.rest.near != null)
+            hud_.prompt("E / A  Rest")
+        else if (talkable(g))
+            hud_.prompt("E / A  Speak")
+        else if (g.chests.near != null) hud_.prompt("E / A  Open");
     }
+    // A `text` ACTION'S LINE — SC1's Display Text Message. Under the menu and over everything else, because a
+    // trigger firing while the pause card is up still has something to say when it comes down.
+    const line = g.trig.bannerText();
+    if (line.len > 0) hud_.banner(line);
     if (g.menu.stats) debugCorner(g);
 }
 
@@ -1312,7 +1529,8 @@ pub fn run(mode: Mode) void {
         sfx.tickFx(rawDt);
 
         // Pad SELECT opens the GAME menu, pad START the CHARACTER one; TAB is START's keyboard twin.
-        if (!g.editor.on and !g.rest.active()) {
+        // A CONVERSATION HAS TO BE FINISHED, not escaped out of (see dialog.zig), so it swallows both.
+        if (!g.editor.on and !g.rest.active() and !g.talk.active()) {
             if (rl.isKeyPressed(.escape)) g.menu.onEscape();
             if (rl.isKeyPressed(.tab)) g.menu.onStartButton();
             if (rl.isGamepadAvailable(PAD)) {
@@ -1338,11 +1556,13 @@ pub fn run(mode: Mode) void {
                     g.editor.on = false;
                     g.menu.screen = .main;
                     rl.hideCursor(); // back to the gameplay rule: the mouse IS the camera
+                    armScript(g);
                 },
                 .playtest => {
                     g.editor.flushRebuild(&g.map, &g.env);
                     g.editor.on = false;
                     rl.hideCursor();
+                    armScript(g); // the world he is about to test is a FRESH one: no switch already thrown
                     g.hero.pos = mathx.ground(g.editor.cam.target.x, g.editor.cam.target.z);
                     g.hero.pos = g.env.resolveActor(g.hero.pos, HERO_R);
                     plantActor(g, &g.hero.pos);
@@ -1358,6 +1578,10 @@ pub fn run(mode: Mode) void {
             // Re-home the foes from the map every frame the editor is up, so moving a spawn moves the thing you can SEE.
             rehomeFoes(g, .blind);
             rehomeChests(g);
+            // …AND THE FOLK, for the same reason. They still POSE, so an idle plays under the editor's camera
+            // and you can see which way one is facing before you leave.
+            g.folk.reset(&g.map);
+            g.folk.update(rawDt, g.hero.pos, PLAY_HALF);
             g.rumble.update(rawDt, false);
             drawScene(g);
             editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, rawDt);
@@ -1409,6 +1633,22 @@ pub fn run(mode: Mode) void {
             rl.endDrawing();
             continue;
         }
+        // …and a CONVERSATION holds the world exactly as the pause card does — read at wall-clock time, since
+        // a debug time-scale has no business slowing down a menu.
+        if (g.talk.active()) {
+            tickTalk(g, rawDt);
+            bWasDown = true; // poison the pad-B tap window, exactly as the menu and rest branches do
+            bHeldT = ROLL_TAP_MAX;
+            wasInside = false;
+            sfx.ambience(rawDt);
+            sfx.tickStreams();
+            drawScene(g);
+            hud(g, rawDt);
+            g.talk.draw(&g.map, &g.trig, triggerWorld(g));
+            rl.endDrawing();
+            continue;
+        }
+
         g.rest.update(rawDt);
         g.rest.look(g.hero.pos);
         sfx.tickStreams();
@@ -1532,7 +1772,7 @@ pub fn run(mode: Mode) void {
         if (arrowReq and g.hero.cycleArrow()) sfx.play(.flask_cycle);
 
         // free face button and the one every soulslike puts this on.
-        var useReq = rl.isKeyPressed(.e);
+        var useReq = rl.isKeyPressed(INTERACT_KEY);
         if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .right_face_down)) useReq = true;
         if (useReq and !g.hero.dead) interact(g);
 
@@ -1714,11 +1954,22 @@ pub fn run(mode: Mode) void {
         if (g.brood.bursts != burstsBefore) {
             g.rumble.play(rumblemod.kill);
             g.rig.addShake(SHAKE_SAC_BURST);
+            // …and the sac's own death, billed here because a sac carries no `justDied` edge for `billDeaths`
+            // to read. Her counter is the edge.
+            var burst = burstsBefore;
+            while (burst < g.brood.bursts) : (burst += 1) g.trig.died(.brood_sac);
         }
         // …and the floor she left.
         const burn = g.brood.burn(dt, g.hero.pos);
         if (burn > 0 and g.hero.burn(broodmod.acidPulse(burn)) == .taken) sfx.play(.acid_burn);
         g.chests.update(dt, g.hero.pos);
+        // THE FOLK, and the same terrain gate the foes get — a wanderer ambling about his post has no more
+        // business walking up a cliff than a kobold has.
+        var wasFolk: [npcmod.CAP]rl.Vector3 = undefined;
+        const nFolk = g.folk.n;
+        snapshotPos(g.folk.live(), &wasFolk);
+        g.folk.update(dt, g.hero.pos, PLAY_HALF);
+        gateTerrain(g, g.folk.live(), wasFolk[0..nFolk]);
         inline for (FOE_GROUPS, 0..) |f, gi| gateTerrain(g, @field(g, f.field).live(), wasPos[gi][0..wasN[gi]]);
         // Arrows in flight: gentle homing + arc, then a strike lands a chomp-weight blow.
         for (&g.arrows) |*ar| {
@@ -1766,6 +2017,9 @@ pub fn run(mode: Mode) void {
         inline for (FOE_GROUPS) |f| {
             for (@field(g, f.field).live()) |*a| groundActor(g, &a.pos, dt);
         }
+        for (g.folk.live()) |*p| groundActor(g, &p.pos, dt);
+        // THE SCRIPT LAYER LAST, so `deaths` and `alive` are this frame's answers and not the previous one's.
+        tickTriggers(g, dt);
         g.rig.tickShake(rawDt); // impact shake decays on wall-clock time (bakes this frame's jitter)
         // THE AIM PULLS THE EYE IN PAST HIM, off the hero's own stance blend — a VISUAL read of a visual, and set before the follow so the boom this frame is already the aim's (see camera.boom).
         g.rig.aimB = g.hero.aimB;
@@ -1862,6 +2116,7 @@ pub fn bookView(g: *Game) bookmod.View {
         .quiver = &g.hero.quiver,
         .arm = g.hero.arm,
         .off = g.hero.off,
+        .spell = g.hero.spell,
         .fp = g.hero.fp.cur,
         .runes = g.hero.runes.display(),
     };
@@ -2018,9 +2273,20 @@ fn collideActors(g: *Game, dt: f32) void {
             if (foemod.corporeal(a) and !a.airborne()) hp = collision.pushOutCircle(hp, HERO_R, a.pos, a.bodyR());
         }
     }
+    // A PERSON IS A BODY. You walk INTO a wanderer, never through one.
+    for (g.folk.liveConst()) |*p| hp = collision.pushOutCircle(hp, HERO_R, p.pos, p.bodyR());
     g.hero.pos = mathx.approachV(g.hero.pos, inBounds(hp), step);
 
     inline for (FOE_GROUPS) |gr| settleGroup(g, gr, step);
+
+    // …and they yield to HIM and to the world's solids, one way only (the FOE_GROUPS `vs` rule): two bodies
+    // each half-correcting is jitter between them.
+    for (g.folk.live()) |*p| {
+        const r = p.bodyR();
+        var q = g.env.resolveActor(p.pos, r);
+        q = collision.pushOutCircle(q, r, g.hero.pos, HERO_R);
+        p.pos = mathx.approachV(p.pos, inBounds(q), step);
+    }
 }
 
 fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
@@ -2231,11 +2497,18 @@ const HURT_BAR_WINDOW = 5.0;
 // Floating HP bars over EVERY target (shared foe contract, one walk for all).
 const BarCtx = struct {
     cam: rl.Camera3D,
+    /// THE FIXED FOE'S BAR IS ALWAYS UP, hit lately or not: the reticle is already on it, so the one target the
+    /// player has said he cares about is the one whose numbers must not time out. It goes with the reticle
+    /// rather than with `g.lock`, so a suspended lock (the bow is up) takes the bar down with the dot.
+    lock: ?FoeRef,
 
-    fn visit(self: *const BarCtx, foes: anytype, _: ?FoeKind) void {
-        for (foes) |*f| {
+    fn visit(self: *const BarCtx, foes: anytype, kind: ?FoeKind) void {
+        for (foes, 0..) |*f, i| {
             if (!f.alive() or f.dying()) continue; // no bar over a corpse dissolving out
-            if (f.vit.sinceHit > HURT_BAR_WINDOW) continue; // only after a recent hit
+            const fixed = if (self.lock) |l| l.idx == i and l.kind == memberKind(f, kind) else false;
+            // `sinceHurt`, not `sinceHit`: a spell that only takes HP — the bolt, and the roots' own grip —
+            // counts as a hit for the bar's purposes, which is the whole question the bar is asking.
+            if (!fixed and f.vit.sinceHurt > HURT_BAR_WINDOW) continue;
             const s = projectToScreen(self.cam, f.topWorld()) orelse continue; // skip if behind the camera
             hud_.foeBar(s.x, s.y, f.vit.hpFrac(), f.staggered()); // size/colour/lift all live in hud
         }
@@ -2243,7 +2516,7 @@ const BarCtx = struct {
 };
 
 fn drawFoeBars(g: *const Game) void {
-    const ctx = BarCtx{ .cam = g.rig.cam };
+    const ctx = BarCtx{ .cam = g.rig.cam, .lock = activeLock(g) };
     eachTarget(g, &ctx, BarCtx.visit);
 }
 

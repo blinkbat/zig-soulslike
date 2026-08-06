@@ -70,6 +70,9 @@ test {
     _ = @import("env.zig");
     _ = @import("props.zig");
     _ = @import("worldfmt.zig");
+    _ = @import("trigger.zig"); // THE TRIGGER MACHINE — conditions, actions, switches, counters, timers
+    _ = @import("dialog.zig");
+    _ = @import("npc.zig");
     _ = @import("editor.zig"); // hangs off game.zig, which this root does not reach for tests
     _ = @import("audio.zig");
     _ = @import("hud.zig"); // the word wrap the character book's descriptions are laid out with

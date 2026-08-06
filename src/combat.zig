@@ -126,6 +126,11 @@ pub const Vitals = struct {
     stance: f32,
     stanceMax: f32,
     sinceHit: f32 = LONG_AGO, // seconds since the last poise-damaging hit (gates regen)
+    /// …and since anything last took HP off this body, A DRIP INCLUDED — what the floating HP bar is gated on
+    /// (`game.drawFoeBars`). Its OWN clock, because a hold has to be as visible as a blow while denying none of
+    /// the refill `sinceHit` gates: one field cannot answer "show the bar" and "hold the gate shut" separately,
+    /// and the roots need opposite answers to the two.
+    sinceHurt: f32 = LONG_AGO,
     dead: bool = false,
     regenDelay: f32 = REGEN_DELAY,
     regenRate: f32 = 1.0,
@@ -195,6 +200,7 @@ pub const Vitals = struct {
 
     pub fn tick(self: *Vitals, dt: f32) void {
         self.sinceHit += dt;
+        self.sinceHurt += dt;
         if (self.stunLeft > 0) {
             self.stunLeft -= dt;
             // THE REACTION IS OVER: poise back to full, whichever tier it was.
@@ -208,11 +214,11 @@ pub const Vitals = struct {
         self.stance = mathx.minF(self.stanceMax, self.stance + self.stanceMax / STANCE_REFILL * self.regenRate * dt);
     }
 
-    /// A DRIP — damage billed EVERY FRAME by something that holds (`Root`), as opposed to a blow. Identical to
-    /// `hit` but it leaves the REGEN CLOCK where it was: `hit` stamps `sinceHit` at 0, which is what gates the
-    /// poise/stance refill, and stamped afresh every frame for a whole `ROOT_HOLD` that gate never opens — so a
-    /// grip that is documented to carry no poise and no stance would deny most of a poise bar anyway, which is
-    /// the stagger tool it is documented not to be. For POISE-FREE drips only; a blow belongs in `hit`.
+    /// A DRIP — damage billed EVERY FRAME by something that holds (`Root`), as opposed to a blow. `hit` in every
+    /// respect but the REGEN CLOCK: `hit` stamps `sinceHit` at 0, which gates the poise/stance refill, and
+    /// stamped afresh every frame for a whole `ROOT_HOLD` that gate never opens — so a grip documented to carry
+    /// no poise and no stance would deny most of a poise bar anyway, which is the stagger tool it is documented
+    /// not to be. `sinceHurt` IS stamped, so the bar shows the drip working. Poise-free drips only.
     pub fn drip(self: *Vitals, h: Hit) HitResult {
         const clock = self.sinceHit;
         const r = self.hit(h);
@@ -222,6 +228,7 @@ pub const Vitals = struct {
 
     pub fn hit(self: *Vitals, h: Hit) HitResult {
         if (self.dead) return .none;
+        self.sinceHurt = 0; // before the death exit: every path that takes HP is one the bar should have shown
         self.hp = mathx.maxF(0, self.hp - self.damageFrom(h));
         if (self.hp <= 0) {
             self.dead = true;
@@ -382,14 +389,16 @@ pub const Focus = struct {
 
 // The wand's one spell, and the first thing in the game that spends FP.
 
-/// WHAT A CAST COSTS, and the pool is the only thing rationing it — a cast bills NO stamina (owner's
+/// WHAT THE BOLT COSTS, and the pool is the only thing rationing it — a cast bills NO stamina (owner's
 /// call), so the wand competes with the flask for a grace's worth of resource rather than with the roll.
-pub const SPELL_FP: f32 = 12.0; // five casts of a 60-point pool
+/// NAMED FOR ITS SPELL, like `ROOT_FP` beside it: as `BOLT_FP` it read as "what a cast costs", and the
+/// character book duly priced the roots at the bolt's twelve.
+pub const BOLT_FP: f32 = 12.0; // five casts of a 60-point pool
 /// THE BOLT, and it is ALL CHAOS — no physical at all, the brood mother's rule for the same reason: one
 /// substance, one element. Its damage sits between a light slash's 13 and a heavy's 27 before anything
 /// resists it, which is the "decent" the owner asked for; the poise is above a light's and under a
 /// heavy's, so it rocks a foe without being the stagger tool the greatsword is.
-pub const SPELL_HIT = Hit{ .poise = 14, .stance = 6, .elem = elems(.{ .chaos = 24 }) };
+pub const BOLT_HIT = Hit{ .poise = 14, .stance = 6, .elem = elems(.{ .chaos = 24 }) };
 
 /// THE ROOTS — the wand's second spell, and the first thing in the game that takes a foe's FEET rather than
 /// its health. It costs MORE than the bolt and deals LESS: you cast it to buy the ground back, not to kill.
@@ -440,8 +449,17 @@ pub fn spellName(s: Spell) [:0]const u8 {
 /// WHAT EACH ONE BILLS. One place, so the HUD's "could he cast?" and the cast itself cannot disagree.
 pub fn spellFp(s: Spell) f32 {
     return switch (s) {
-        .bolt => SPELL_FP,
+        .bolt => BOLT_FP,
         .roots => ROOT_FP,
+    };
+}
+
+/// …and WHAT EACH ONE IS WORTH, before anybody's resistances — the character sheet's own row. The grip bills
+/// its chaos a frame at a time, so its whole span is what compares with a blow that lands at once.
+pub fn spellDamage(s: Spell) f32 {
+    return switch (s) {
+        .bolt => BOLT_HIT.raw(),
+        .roots => ROOT_HOLD * ROOT_DPS,
     };
 }
 
@@ -654,6 +672,9 @@ test "THE GRIP DOES NOT DENY THE REFILL — a drip bills HP and leaves the regen
     try std.testing.expectApproxEqAbs(loose.poise, held.poise, 1e-3); // the grip cost it no poise recovery…
     try std.testing.expect(held.poise > 5.5);
     try std.testing.expect(held.hp < loose.hp); // …and took the HP it is entitled to
+    // …AND IT IS VISIBLE WHILE IT DOES IT: the bar's own clock is stamped every frame the grip bills.
+    try std.testing.expect(held.sinceHurt < 1.0 / 30.0);
+    try std.testing.expect(loose.sinceHurt > ROOT_HOLD - 0.1);
     // A REAL BLOW'S OWN DENIAL SURVIVES the drip that lands on the same frame.
     var struck = Vitals.initFoe(100, 20, 40);
     _ = struck.hit(.{ .poise = 15 });
@@ -674,14 +695,16 @@ test "a re-cast REFRESHES the grip rather than stacking a second clock on it" {
 
 test "THE ROOTS COST MORE THAN THE BOLT AND DEAL LESS — a control tool, not a second bolt" {
     try std.testing.expect(spellFp(.roots) > spellFp(.bolt));
-    try std.testing.expect(ROOT_HOLD * ROOT_DPS < SPELL_HIT.raw());
+    try std.testing.expect(ROOT_HOLD * ROOT_DPS < BOLT_HIT.raw());
     // …and both are affordable off a full pool, or the sheet's Mind curve is a lie on the character page.
     try std.testing.expect(spellFp(.roots) <= FP_MAX);
     for (0..@typeInfo(Spell).@"enum".fields.len) |i| {
         const s: Spell = @enumFromInt(i);
         try std.testing.expect(spellName(s).len > 0);
         try std.testing.expect(spellFp(s) > 0);
+        try std.testing.expect(spellDamage(s) > 0);
     }
+    try std.testing.expect(spellDamage(.roots) < spellDamage(.bolt));
 }
 
 test "a small hit chips poise without a stun" {

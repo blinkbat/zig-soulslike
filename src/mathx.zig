@@ -60,6 +60,27 @@ pub fn lenXZ(v: rl.Vector3) f32 {
     return @sqrt(v.x * v.x + v.z * v.z);
 }
 
+/// THE NEAREST OF SOMETHING, WITHIN REACH — "who is close enough for a prompt", which the bonfires, the
+/// boxes and the folk each asked with their own six-line loop over the same squared comparison. Squared
+/// throughout, and `best` stays null when nothing is inside the ring.
+pub const Nearest = struct {
+    best: ?usize = null,
+    /// The bar to beat: the reach squared to start with, then whatever the closest so far is.
+    d2: f32,
+
+    pub fn within(reach: f32) Nearest {
+        return .{ .d2 = reach * reach };
+    }
+
+    /// Item `i`, standing at `at`. STRICTLY closer wins, so a tie keeps the earlier index.
+    pub fn offer(self: *Nearest, i: usize, at: rl.Vector3, from: rl.Vector3) void {
+        const d = dist2XZ(at, from);
+        if (d >= self.d2) return;
+        self.d2 = d;
+        self.best = i;
+    }
+};
+
 pub fn stepXZ(pos: *rl.Vector3, dir: rl.Vector3, dist: f32, bounds: f32) void {
     pos.x = clampF(pos.x + dir.x * dist, -bounds, bounds);
     pos.z = clampF(pos.z + dir.z * dist, -bounds, bounds);
@@ -333,6 +354,28 @@ test "closestOnSegV clamps to the ENDS, which is what makes the swept blade test
     try std.testing.expectApproxEqAbs(@as(f32, 3), d(v3(5, 0, 0), a, b), 1e-5);
     // A degenerate segment is a point, not a divide-by-zero.
     try std.testing.expectApproxEqAbs(@as(f32, 5), d(v3(5, 0, 0), a, a), 1e-5);
+}
+
+test "Nearest takes the closest inside its ring and nothing outside it" {
+    const at = zero3;
+    var n = Nearest.within(3.0);
+    try std.testing.expect(n.best == null);
+    n.offer(0, v3(9, 0, 0), at); // well outside
+    try std.testing.expect(n.best == null);
+    n.offer(1, v3(2.5, 0, 0), at);
+    try std.testing.expectEqual(@as(usize, 1), n.best.?);
+    n.offer(2, v3(0, 0, 1.0), at); // closer
+    try std.testing.expectEqual(@as(usize, 2), n.best.?);
+    n.offer(3, v3(0, 0, 1.0), at); // a TIE keeps the earlier one
+    try std.testing.expectEqual(@as(usize, 2), n.best.?);
+    // Exactly ON the ring is out, which is what `d < reach*reach` always meant.
+    var edge = Nearest.within(3.0);
+    edge.offer(0, v3(3, 0, 0), at);
+    try std.testing.expect(edge.best == null);
+    // …and Y is ignored, like every other *XZ helper here.
+    var high = Nearest.within(3.0);
+    high.offer(0, v3(1, 40, 0), at);
+    try std.testing.expectEqual(@as(usize, 0), high.best.?);
 }
 
 test "smoothstep clamps outside [a,b] and passes its midpoint" {

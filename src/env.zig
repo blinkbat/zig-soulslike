@@ -49,8 +49,10 @@ const LIGHT_REACH: f32 = 90.0;
 
 // THE OCCLUDERS — the props the camera has to see the hero THROUGH, thinned by the shader's sieve.
 /// How many instances the fade can have IN FLIGHT — the ones thinning plus the ones easing back, which
-/// is why it is larger than any sight line needs. Full, and the rest simply stay solid.
-pub const OCCL_MAX = 16;
+/// is why it is larger than any sight line needs. Full, and the THINNEST ASK EVICTS THE LEAST-THIN slot
+/// (`wantFade`): first-come at 16 meant the trunk squarely over his head lost to whatever the cell walk
+/// reached first, and to slots held by props already on their 0.34 s way back to solid.
+pub const OCCL_MAX = 32;
 /// Seconds to reach the thinness the geometry is asking for, and to come back from it. OUT IS SLOWER on
 /// purpose: a trunk hardening back to solid over the hero is the uglier half of the transition, and the
 /// eye forgives a lag in getting out of the way far more readily than a pop into it.
@@ -60,7 +62,9 @@ const OCCL_OUT: f32 = 0.34;
 const OCCL_FLOOR: f32 = 0.28;
 /// HOW MUCH OF HIM IT HAS TO HIDE BEFORE IT THINS AT ALL (owner's rule). Nothing to do with distance:
 /// a trunk you are looking past covers a sliver of him and has no business fading, and half the wood
-/// stands within a couple of metres of the sight line at any moment.
+/// stands within a couple of metres of the sight line at any moment. IT IS A COVERAGE FIGURE AND NOTHING
+/// ELSE — the depth ramp used to be multiplied into it before this test, so a mass standing right in front
+/// of him was discounted under the threshold and stayed solid at the one moment it was in the way.
 const OCCL_MIN: f32 = 0.15;
 /// …and where it is as thin as it gets. Between the two it eases on its own as the camera swings,
 /// which is what leaves the whole thing stateless.
@@ -69,7 +73,8 @@ const OCCL_FULL: f32 = 0.55;
 const HERO_HALF_W: f32 = 0.42;
 const HERO_HALF_H: f32 = 0.90;
 /// How far past its own collider a standing mass still blocks the view — the bark it does not collide
-/// with, the boughs off the trunk, and the slack that keeps the fade from snapping on at the edge.
+/// with and the slack that keeps the fade from snapping on at the edge. ONLY FOR KINDS WITH NO `occl`
+/// LIST: a fixed skirt cannot describe a canopy, which is why the trees carry their own volumes now.
 const OCCL_SKIRT: f32 = 0.9;
 /// …and the fallback for a fadeable kind with NO colliders: a share of its bound, since the bound is a
 /// canopy's whole spread and a leaf nine metres off the sight line is not in the way of anything.
@@ -623,6 +628,18 @@ pub const Env = struct {
     /// draws toward it. The target is a pure function of the sight line — only the CATCHING UP is remembered,
     /// which is the difference between a fade and a switch. A degenerate line (the editor passes eye == at)
     /// asks for everything back, so the world is never dressed through a thinned lens.
+    ///
+    /// IT WALKS `stx` ONLY, so flora never thins whatever its row says: bushes and ferns are knee-high, the
+    /// index is the one holding the most instances by far, and a thicket going see-through as you brush past
+    /// is a different look decision from a tree getting out of the way.
+    ///
+    /// WHAT IT COSTS, since `solid` being an opt-OUT widened the candidate set from eleven kinds to most of the
+    /// table: the cell box is the sight line padded by `OCCL_REACH` either way — about 9 cells at a normal boom —
+    /// and a dense wood cell holds ~30 structures, so ~270 props run `thinFor` and ~600 `coverFrac` a frame. That
+    /// is two square roots and a cross product each, which is nothing beside the draw it sits next to. A
+    /// distance-to-the-sight-line reject in front of it would throw most of them out for ten flops, and is
+    /// DELIBERATELY NOT HERE: it would be a second notion of "near the line" beside `coverFrac`'s own, and the
+    /// two would drift. Measure before adding it.
     pub fn markOccluders(self: *Env, eye: rl.Vector3, at: rl.Vector3, dt: f32) void {
         // Everything in flight is asked to come BACK; the scan below re-asks for whatever is still in the way.
         for (self.occl[0..self.noccl]) |pi| self.props[pi].fadeTo = 1;
@@ -641,21 +658,10 @@ pub const Env = struct {
                     const pi = self.stx.items[k];
                     const pr = &self.props[pi];
                     const nfo = props.info(pr.kind);
-                    if (!nfo.fades) continue;
-                    // Against the FOOTPRINT, not the bound: a bound is a canopy's whole 13 m spread, and keying
-                    // off it thinned every tree within seven metres of the line, none of them in the way. What
-                    // blocks the view is the standing mass the colliders already describe.
-                    var cover: f32 = 0;
-                    for (nfo.parts) |part| {
-                        const hl = 0.5 * mathx.lenXZ(v3(part.bx - part.ax, 0, part.bz - part.az));
-                        const r = (part.r + hl) * pr.scale + OCCL_SKIRT;
-                        cover = mathx.maxF(cover, coverFrac(eye, at, partFoot(pr, part), part.h * pr.scale, r));
-                    }
-                    if (nfo.parts.len == 0) { // no colliders: fall back to a share of the bound
-                        cover = coverFrac(eye, at, pr.pos, nfo.top * pr.scale, nfo.bound * pr.scale * OCCL_GIRTH);
-                    }
-                    if (cover <= OCCL_MIN) continue;
-                    self.wantFade(pi, mathx.lerpF(1.0, OCCL_FLOOR, mathx.smoothstep(OCCL_MIN, OCCL_FULL, cover)));
+                    if (nfo.solid) continue;
+                    const thin = thinFor(pr, nfo, eye, at);
+                    if (thin <= 0) continue;
+                    self.wantFade(pi, mathx.lerpF(1.0, OCCL_FLOOR, thin));
                 }
             }
         }
@@ -664,17 +670,32 @@ pub const Env = struct {
 
     /// Ask one instance to be `to` solid, enlisting it if it is not in flight already. Two parts of the
     /// same prop can ask (an arch's piers are separate colliders), and the THINNER ask wins.
+    ///
+    /// FULL, AND THE THINNEST ASK TAKES THE LEAST-THIN SLOT. The list is walked in cell order, so first-come
+    /// handed the slots to whatever the grid reached first and left the trunk squarely over his head solid;
+    /// worse, a prop already easing back (`fadeTo` 1) held its slot for the whole 0.34 s of `OCCL_OUT`. The
+    /// evicted one snaps to solid, which is the price of a fixed array — at 32 slots nothing reaches it.
     fn wantFade(self: *Env, pi: u32, to: f32) void {
-        for (self.occl[0..self.noccl]) |q| {
+        var worst: usize = 0;
+        for (self.occl[0..self.noccl], 0..) |q, i| {
             if (q == pi) {
                 self.props[pi].fadeTo = mathx.minF(self.props[pi].fadeTo, to);
                 return;
             }
+            if (self.props[q].fadeTo > self.props[self.occl[worst]].fadeTo) worst = i;
         }
-        if (self.noccl == OCCL_MAX) return; // full: it stays solid, which is where it already was
+        if (self.noccl < OCCL_MAX) {
+            self.props[pi].fadeTo = to;
+            self.occl[self.noccl] = pi;
+            self.noccl += 1;
+            return;
+        }
+        const victim = self.occl[worst];
+        if (self.props[victim].fadeTo <= to) return; // everything in flight is thinner than this ask
+        self.props[victim].fade = 1;
+        self.props[victim].fadeTo = 1;
         self.props[pi].fadeTo = to;
-        self.occl[self.noccl] = pi;
-        self.noccl += 1;
+        self.occl[worst] = pi;
     }
 
     /// Walk everything in flight toward what the geometry asked for, at a fixed rate per second, and
@@ -695,13 +716,14 @@ pub const Env = struct {
         }
     }
 
-    /// The nearest instance to `p` whose kind may thin — the shot harness has to stand behind a REAL
-    /// one, since the sieve is only visible through something the world actually placed.
+    /// The nearest instance to `p` CARRYING AN OCCLUDER VOLUME OF ITS OWN — the trees, and the shot harness
+    /// wants one because they are the only masses big enough to photograph the fade against. "Anything that
+    /// may thin" is now most of the table and would hand it a cairn.
     pub fn nearestFading(self: *const Env, p: rl.Vector3, within: f32) ?rl.Vector3 {
         var best = within * within;
         var out: ?rl.Vector3 = null;
         for (self.props[0..self.nprops]) |*pr| {
-            if (!props.info(pr.kind).fades) continue;
+            if (props.info(pr.kind).occl.len == 0) continue;
             const d2 = mathx.dist2XZ(pr.pos, p);
             if (d2 >= best) continue;
             best = d2;
@@ -1226,19 +1248,71 @@ fn partFoot(pr: *const Prop, part: props.Part) rl.Vector3 {
     );
 }
 
+/// HOW FAR ONE INSTANCE SHOULD THIN, 0 (leave it solid) .. 1 (as thin as it gets) — the deepest ask any of
+/// its masses makes. Three sources, in order: the volumes the kind declares for this and nothing else, the
+/// COLLIDERS plus a skirt, and for a kind with neither, a share of the bound.
+///
+/// The colliders were the only source, and on a tree they are the wrong shape by metres — a conifer's row
+/// gave a 1.48 m cylinder against boughs that block the view at 3.8 m, so the camera looking through the
+/// canopy scored nothing and the tree stayed solid. A collider is sized for what you WALK INTO.
+fn thinFor(pr: *const Prop, nfo: *const props.Info, eye: rl.Vector3, at: rl.Vector3) f32 {
+    var thin: f32 = 0;
+    if (nfo.occl.len > 0) {
+        for (nfo.occl) |bl| {
+            thin = mathx.maxF(thin, thinOf(eye, at, blockerFoot(pr, bl), (bl.y1 - bl.y0) * pr.scale, bl.r * pr.scale));
+        }
+        return thin;
+    }
+    for (nfo.parts) |part| {
+        const hl = 0.5 * mathx.lenXZ(v3(part.bx - part.ax, 0, part.bz - part.az));
+        const r = (part.r + hl) * pr.scale + OCCL_SKIRT;
+        thin = mathx.maxF(thin, thinOf(eye, at, partFoot(pr, part), part.h * pr.scale, r));
+    }
+    if (nfo.parts.len == 0) {
+        thin = thinOf(eye, at, pr.pos, nfo.top * pr.scale, nfo.bound * pr.scale * OCCL_GIRTH);
+    }
+    return thin;
+}
+
+/// THE TWO QUESTIONS STAY APART. How much of him it hides decides WHETHER it thins; how far in front of him
+/// it stands scales HOW FAR. Multiplied together before the threshold — which is what `coverFrac` used to
+/// return — a mass a metre in front of him had its coverage discounted below `OCCL_MIN` and never thinned.
+fn thinOf(eye: rl.Vector3, at: rl.Vector3, foot: rl.Vector3, h: f32, r: f32) f32 {
+    const c = coverFrac(eye, at, foot, h, r);
+    if (c.cover <= OCCL_MIN) return 0;
+    return mathx.smoothstep(OCCL_MIN, OCCL_FULL, c.cover) * c.ahead;
+}
+
+fn blockerFoot(pr: *const Prop, bl: props.Blocker) rl.Vector3 {
+    const th = mathx.radians(pr.yaw);
+    const c = mathx.cosf(th);
+    const sn = mathx.sinf(th);
+    return v3(
+        pr.pos.x + pr.scale * (bl.x * c + bl.z * sn),
+        pr.pos.y + bl.y0 * pr.scale,
+        pr.pos.z + pr.scale * (-bl.x * sn + bl.z * c),
+    );
+}
+
+const Cover = struct {
+    cover: f32, // share of him the mass hides, 0..1
+    ahead: f32, // …and how much of the way in front of him it stands, over OCCL_DEPTH_BAND
+};
+const NO_COVER = Cover{ .cover = 0, .ahead = 0 };
+
 /// What share of him a mass covers, 0..1. Overlap of two boxes in the EYE'S TANGENT PLANE — before any FOV
 /// scale, so the answer is in fractions of him and needs no projection matrix. Distance to the sight line
 /// cannot answer it: a stump on the line covers his boots, and a canopy fifteen metres up covers nothing.
-fn coverFrac(eye: rl.Vector3, at: rl.Vector3, foot: rl.Vector3, h: f32, r: f32) f32 {
+fn coverFrac(eye: rl.Vector3, at: rl.Vector3, foot: rl.Vector3, h: f32, r: f32) Cover {
     const toH = mathx.subV(at, eye);
     const dh = mathx.lenV(toH);
-    if (dh < 0.5) return 0;
+    if (dh < 0.5) return NO_COVER;
     const fwd = mathx.scaleV(toH, 1.0 / dh);
     // Screen-right, taken horizontal: the roll is always zero here, and a camera looking straight down
     // has no "in front of" to speak of.
     var right = v3(fwd.z, 0, -fwd.x);
     const rn = mathx.lenV(right);
-    if (rn < 1e-3) return 0;
+    if (rn < 1e-3) return NO_COVER;
     right = mathx.scaleV(right, 1.0 / rn);
     const up = mathx.crossV(right, fwd);
     var u: [2]f32 = undefined;
@@ -1253,7 +1327,7 @@ fn coverFrac(eye: rl.Vector3, at: rl.Vector3, foot: rl.Vector3, h: f32, r: f32) 
     }
     const zm = (z[0] + z[1]) * 0.5;
     const ahead = mathx.clampF((dh - zm) / OCCL_DEPTH_BAND, 0, 1); // behind him: not in the way of anything
-    if (ahead <= 0) return 0;
+    if (ahead <= 0) return NO_COVER;
     // The hero's own box, centred on the sight line because that is where the camera is aiming.
     const hw = HERO_HALF_W / dh;
     const hh = HERO_HALF_H / dh;
@@ -1261,7 +1335,7 @@ fn coverFrac(eye: rl.Vector3, at: rl.Vector3, foot: rl.Vector3, h: f32, r: f32) 
     const uc = (u[0] + u[1]) * 0.5;
     const ou = mathx.maxF(0, mathx.minF(uc + wp, hw) - mathx.maxF(uc - wp, -hw));
     const ov = mathx.maxF(0, mathx.minF(mathx.maxF(vv[0], vv[1]), hh) - mathx.maxF(mathx.minF(vv[0], vv[1]), -hh));
-    return ahead * mathx.clampF(ou * ov / (4.0 * hw * hh), 0, 1);
+    return .{ .cover = mathx.clampF(ou * ov / (4.0 * hw * hh), 0, 1), .ahead = ahead };
 }
 
 fn cellCentre(c: usize) rl.Vector3 {
@@ -1372,6 +1446,8 @@ const Placer = struct {
         self.leanDir = o.leanDir;
         self.leanExact = o.op == .at;
         switch (o.op) {
+            // `r1` IS THE LIFT here, not a radius — see the note at `wf.Op.r1`. It is how a lantern hangs off
+            // an arch or a prop sits on a ledge, and it is the only op that reads the field that way.
             .at => self.atY(o.kind, o.x, self.groundY(o.x, o.z) + o.r1, o.z, o.yaw, o.scale, &rng),
             .belt => self.belt(o, &rng),
             .disc => self.disc(o, &rng),
@@ -1748,6 +1824,74 @@ test "the culler accepts the full width of the screen, not just the axis" {
     try std.testing.expect(vw.visible(v3(-edge.x, 0, edge.z), 0.0, 100));
 }
 
+test "A CANOPY HIDES HIM AND THE TRUNK IT HANGS OFF DOES NOT — the occluder volume is not the collider" {
+    // The whole of the original complaint: a conifer's collider is a 0.58 m pole, its boughs reach 3.4 m,
+    // and a camera looking through the branches scored nothing against the pole and left the tree solid.
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.props[0] = .{ .kind = .conifer, .pos = v3(2.6, 0, 0), .yaw = 0, .scale = 1 };
+    e.nprops = 1;
+    fillIndex(e, &e.stx, false);
+    const nfo = props.info(.conifer);
+    const eye = v3(0, 2.2, -5);
+    const hero = v3(0, 1.0, 3);
+
+    // The colliders alone — what the fade used to be handed — cannot see it at all.
+    var collider: f32 = 0;
+    for (nfo.parts) |part| {
+        const r = part.r + OCCL_SKIRT;
+        collider = mathx.maxF(collider, thinOf(eye, hero, partFoot(&e.props[0], part), part.h, r));
+    }
+    try std.testing.expectEqual(@as(f32, 0), collider);
+    try std.testing.expect(thinFor(&e.props[0], nfo, eye, hero) > 0);
+    e.markOccluders(eye, hero, 10.0);
+    try std.testing.expect(e.props[0].fade < 1.0);
+}
+
+test "architecture never thins, and a kind added to the table cannot opt out by silence" {
+    // The flag reads `solid`, so the DEFAULT is the fade. As an opt-in `fades` every row written afterwards
+    // stayed solid without anyone deciding it should — boulders, statues, lanterns, saplings.
+    for ([_]props.Kind{ .wall, .tower, .gate, .chapel, .cottage, .watchtower, .cliff, .cliff4 }) |k| {
+        try std.testing.expect(props.info(k).solid);
+    }
+    // …AND SO IS ANYTHING DRAWN IN MORE THAN ONE PIECE. The grace's veil goes down `drawVeils` and the chest's
+    // LID down `chest.Chests.draw`; neither path carries `setFade`, so a fadeable half under an opaque half is
+    // the bug. The veil/stow half of the rule is a comptime assert in `props.zig`; the lid is its own module.
+    for ([_]props.Kind{ .grace, .chest }) |k| {
+        try std.testing.expect(props.info(k).solid);
+    }
+    for ([_]props.Kind{ .boulder, .statue, .monolith, .lantern, .gibbet, .sapling, .conifer, .bigtree }) |k| {
+        try std.testing.expect(!props.info(k).solid);
+    }
+}
+
+test "a FULL occluder list gives its slots to what hides him most, not to what the cell walk reached first" {
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    // Fill every slot with a barely-thinning ask, then let one deep ask in.
+    for (0..OCCL_MAX) |i| {
+        e.props[i] = .{ .kind = .snag, .pos = v3(@floatFromInt(i), 0, 0), .yaw = 0, .scale = 1 };
+        e.wantFade(@intCast(i), 0.98);
+    }
+    try std.testing.expectEqual(@as(usize, OCCL_MAX), e.noccl);
+    e.props[OCCL_MAX] = .{ .kind = .snag, .pos = v3(0, 0, 9), .yaw = 0, .scale = 1 };
+    e.wantFade(OCCL_MAX, OCCL_FLOOR);
+    try std.testing.expectApproxEqAbs(OCCL_FLOOR, e.props[OCCL_MAX].fadeTo, 1e-5);
+    try std.testing.expectEqual(@as(usize, OCCL_MAX), e.noccl); // it took a slot, it did not grow the list
+    // …and the one it evicted is back to solid rather than stranded thin with nothing ticking it.
+    var evicted: usize = 0;
+    for (0..OCCL_MAX) |i| {
+        if (e.props[i].fadeTo >= 1.0) evicted += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), evicted);
+    // A shallower ask against a full list of deeper ones changes nothing.
+    e.props[OCCL_MAX + 1] = .{ .kind = .snag, .pos = v3(0, 0, 12), .yaw = 0, .scale = 1 };
+    e.wantFade(OCCL_MAX + 1, 0.999);
+    try std.testing.expectEqual(@as(f32, 1), e.props[OCCL_MAX + 1].fadeTo);
+}
+
 test "the shadow cull keeps a distant TALL caster whose shadow still reaches the box" {
     const focus = v3(0, 0, 0);
     const outside = SHADOW_BOX + 10.0; // just beyond the box's own corner
@@ -1833,11 +1977,11 @@ test "an occluder passing HIS depth eases out instead of snapping" {
     const eye = v3(0, 2.2, -6);
     const hero = v3(0, 1.0, 0);
     const wide = 1.85;
-    var prev = coverFrac(eye, hero, v3(0, 0, -2.0), 6.0, wide); // well in front: the full share
-    try std.testing.expect(prev > OCCL_FULL);
+    var prev = thinOf(eye, hero, v3(0, 0, -2.0), 6.0, wide); // well in front: as thin as it goes
+    try std.testing.expect(prev > 0.99);
     for (1..19) |k| { // …walked in 20 cm steps from in front of him to well past him
         const z = -2.0 + 0.2 * @as(f32, @floatFromInt(k));
-        const now = coverFrac(eye, hero, v3(0, 0, z), 6.0, wide);
+        const now = thinOf(eye, hero, v3(0, 0, z), 6.0, wide);
         try std.testing.expect(now <= prev + 1e-4); // monotone down…
         try std.testing.expect(prev - now < 0.2); // …in steps far too small to read as a pop
         prev = now;
@@ -1849,14 +1993,28 @@ test "what covers him thins, what merely stands near the sight line does not" {
     const eye = v3(0, 2.2, -6);
     const hero = v3(0, 1.0, 0);
     // A great trunk 2 m in front of him, dead on the line: most of him.
-    try std.testing.expect(coverFrac(eye, hero, v3(0, 0, -2), 6.0, 1.85) > OCCL_FULL);
-    try std.testing.expect(coverFrac(eye, hero, v3(3.0, 0, -2), 6.0, 1.85) < OCCL_MIN);
-    try std.testing.expect(coverFrac(eye, hero, v3(0, 0, -2), 0.5, 0.6) < OCCL_MIN);
+    try std.testing.expect(coverFrac(eye, hero, v3(0, 0, -2), 6.0, 1.85).cover > OCCL_FULL);
+    try std.testing.expect(coverFrac(eye, hero, v3(3.0, 0, -2), 6.0, 1.85).cover < OCCL_MIN);
+    try std.testing.expect(coverFrac(eye, hero, v3(0, 0, -2), 0.5, 0.6).cover < OCCL_MIN);
     // Something chest-high across the line takes a real share of him without hiding him — the case the
     // ramp between the two thresholds exists for.
-    const part = coverFrac(eye, hero, v3(0, 0, -2), 1.3, 1.85);
+    const part = coverFrac(eye, hero, v3(0, 0, -2), 1.3, 1.85).cover;
     try std.testing.expect(part > OCCL_MIN and part < OCCL_FULL);
-    try std.testing.expectEqual(@as(f32, 0), coverFrac(eye, hero, v3(0, 0, 4), 6.0, 1.85));
+    try std.testing.expectEqual(@as(f32, 0), coverFrac(eye, hero, v3(0, 0, 4), 6.0, 1.85).cover);
+}
+
+test "COVERAGE ALONE OPENS THE GATE — the depth ramp scales the answer, it does not veto it" {
+    // Fused into one number, a mass close in front of him had its coverage discounted under OCCL_MIN and
+    // stayed solid at the one moment it was most in the way. It must thin, just not all the way.
+    const eye = v3(0, 2.2, -6);
+    const hero = v3(0, 1.0, 0);
+    const near = v3(0, 0, -0.7); // inside OCCL_DEPTH_BAND of him, dead on the line
+    try std.testing.expect(coverFrac(eye, hero, near, 6.0, 1.85).cover > OCCL_FULL);
+    const a = coverFrac(eye, hero, near, 6.0, 1.85).ahead;
+    try std.testing.expect(a > 0 and a < 1); // partway through the band
+    const t = thinOf(eye, hero, near, 6.0, 1.85);
+    try std.testing.expect(t > 0 and t < 1);
+    try std.testing.expectApproxEqAbs(a, t, 1e-4); // full coverage, so the thinning IS the ramp
 }
 
 test "a solid's cell iterator covers its whole footprint" {

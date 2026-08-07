@@ -65,7 +65,10 @@ pub const Op = struct {
     x1: f32 = 0, // rect max / line end
     z1: f32 = 0,
     r0: f32 = 0, // disc inner radius / ring radius / line segment length / edge step
-    r1: f32 = 0, // disc outer radius
+    /// disc outer radius — and, for an `at`, HOW FAR OFF THE GROUND the one prop is lifted, in metres
+    /// (`env.Placer.expand`). It is not one of `at`'s positionals, so it only ever arrives as an `r1=` tail;
+    /// named here because a field doing two jobs under one comment is a field the next reader gets wrong.
+    r1: f32 = 0,
     yaw: f32 = 0,
     scale: f32 = 1,
     /// TIP THE PROP OFF PLUMB: `lean` degrees, toward the compass direction `leanDir` (measured like yaw).

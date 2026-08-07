@@ -588,15 +588,18 @@ pub const Quiver = struct {
         }
         return true;
     }
+    /// …and the CEILING comes off `cap`, never off the constants again: as three places naming
+    /// `ARROWS_MAX`/`FIRE_ARROWS_MAX` a third kind of arrow was three edits, and the two here would have
+    /// compiled fine against the old pair.
     pub fn add(self: *Quiver, k: ArrowKind, n: u8) void {
         switch (k) {
-            .plain => self.arrows = @min(ARROWS_MAX, self.arrows +| n),
-            .fire => self.fire = @min(FIRE_ARROWS_MAX, self.fire +| n),
+            .plain => self.arrows = @min(cap(.plain), self.arrows +| n),
+            .fire => self.fire = @min(cap(.fire), self.fire +| n),
         }
     }
     pub fn refill(self: *Quiver) void {
-        self.arrows = ARROWS_MAX;
-        self.fire = FIRE_ARROWS_MAX;
+        self.arrows = cap(.plain);
+        self.fire = cap(.fire);
     }
 };
 

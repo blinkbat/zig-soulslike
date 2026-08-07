@@ -129,6 +129,10 @@ const RESISTS = combat.resists(.{ .fire = -25, .cold = 35, .chaos = 75 });
 /// THE SPIT IS POISON, NOT A STONE: all of its damage is CHAOS, and the poise is the only physical thing about it — a caustic glob still rocks you when it lands. Her POOLS burn with the same element (`acidPulse`), because they are the same fluid.
 pub const M_SPIT_HIT = combat.Hit{ .poise = 5, .elem = combat.elems(.{ .chaos = 5 }) };
 pub const M_BITE_HIT = combat.Hit{ .dmg = 19, .poise = 22, .stance = 7 };
+/// HOW LONG BEFORE HER FANGS LAND THEY CAN STILL BE CAUGHT — the game's own number (`foe.PARRY_LEAD`), so a
+/// player who learned the timing off a giant's club already knows this one. HER BITE AND NOTHING ELSE OF HERS
+/// carries a window; see `Spider.toImpact` for why the spit, the lay and the whole broodling are out.
+const PARRY_LEAD = foe.PARRY_LEAD;
 /// The glob's flight, handed to the shared launcher (`archer.launchShaft`, kind `.venom`).
 pub const SPIT_SPEED: f32 = 15.0;
 
@@ -942,6 +946,11 @@ pub const Spider = struct {
     leash: foe.Leash = .{},
     /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
     root: combat.Root = .{},
+    /// …and THE HERO'S SHIELD, stamped the same way (`game.markParry`). Read only inside her own bite window.
+    parry: foe.Parry = .{},
+    /// THE SHIELD CAUGHT HER FANGS THIS FRAME — a ONE-FRAME flag, `justDied`'s exactly: reset at the top of
+    /// `update`, set where the catch happens, read by the group (`Brood.anyParried`) after.
+    parried: bool = false,
     facing: f32 = 0,
     scale: f32 = 1.0,
     seed: f32 = 0,
@@ -1114,6 +1123,7 @@ pub const Spider = struct {
         }
         self.heroHit = null;
         self.justDied = false;
+        self.parried = false;
         // THE ROOTS HAVE THE FEET AND NOTHING ELSE (foe.grip) — she still spits, still lays, still bites what is in
         // reach, and chitin shrugs most of the grip off.
         const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
@@ -1131,6 +1141,9 @@ pub const Spider = struct {
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
         const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), spec(self.role).aggro);
+        // THE SHIELD, asked BEFORE the state machine runs this frame's snap — a catch has to kill the bite it
+        // caught, and by the time `tryReach` has run the fangs are already in him.
+        self.takeParry();
         var act: Act = .none;
         switch (self.role) {
             .mother => act = self.updateMother(dt, hero, bounds, d),
@@ -1387,6 +1400,62 @@ pub const Spider = struct {
         }
     }
 
+
+    /// SECONDS UNTIL HER FANGS LAND, counted back from the frame `tryReach` fires — which for the bite is the
+    /// FIRST frame of `.strike`, so the whole window lives in the windup and shuts at the snap by construction.
+    /// A caught bite is one that never reached him.
+    ///
+    /// Null for everything that is not her bite, and none of those is an oversight:
+    /// - THE SPIT IS NOT PARRYABLE. The boards refuse a BLOW; a glob of acid is a projectile and goes through
+    ///   the quiver like an arrow (`archer.launchShaft`), so there is no swing to catch.
+    /// - NOR IS THE LAY, which is not an attack at all — she is wide open for it already.
+    /// - AND NOR IS A BROODLING. A shield window on something that arrives out of a sac, four at a time, and
+    ///   dies to one slash is a mechanic nobody could read; its 0.34 s tell is the counter it was given.
+    ///
+    /// EXHAUSTIVE over the states, so one added later has to say whether it carries a blow.
+    fn toImpact(self: *const Spider) ?f32 {
+        if (self.role != .mother or self.throwing) return null;
+        return switch (self.state) {
+            .windup => BITE_WINDUP - self.t,
+            // Already snapping: `t` has been advanced by the time this is asked, so `left` is negative from the
+            // first frame of it and the window is shut. The blow and the catch can never both happen.
+            .strike => -self.t,
+            .idle, .walk, .recover, .lay, .leap, .stunlight, .stunheavy, .dead => null,
+        };
+    }
+
+    /// THE INSTANT THE FANGS CAN BE CAUGHT IN, and how far out they reach then — `tryReach`'s OWN extent, and
+    /// UNSCALED exactly as that test is, so a bite the boards could not possibly have met is never offered as
+    /// one (the ogre's `slamReach` law: the parry's reach is the blow's reach and not a second number).
+    fn parryable(self: *const Spider) ?f32 {
+        const left = self.toImpact() orelse return null;
+        if (left < 0 or left > PARRY_LEAD) return null;
+        return M_BITE_R + HERO_REACH;
+    }
+
+    /// THE BOARDS TAKE HER FANGS. `enter` is what kills the bite — it re-arms `heroLatch` and leaves `.strike`
+    /// unreached, so nothing lands.
+    ///
+    /// NO BLOOD AND NO CHIPS: nothing was wounded. What says it happened is the whole-body flash, her stumble,
+    /// and the amber off the shield itself (`hero.noteParry`) — sized against the CREATURE, and she is big.
+    fn takeParry(self: *Spider) void {
+        const reach = self.parryable() orelse return;
+        if (!self.parry.catches(self.pos, reach)) return;
+        self.parried = true;
+        self.flash = FLASH_DUR;
+        self.leash.noteCombat();
+        // Back on its own cooldown though it never finished, or she walks out of the recoil into the snap she
+        // was just denied.
+        self.biteCd = BITE_CD;
+        sfx.world(.spider_hurt, self.pos);
+        switch (self.vit.hit(combat.PARRY_HIT)) {
+            .death => self.enterDeath(), // a parry takes no HP today; the day one does, it kills like anything
+            .heavy => self.enter(.stunheavy),
+            // A stance that HELD is still fangs knocked off their line: the bite dies either way, into the
+            // short recoil rather than the wide-open punish window.
+            .light, .none => self.enter(.stunlight),
+        }
+    }
 
     fn tryReach(self: *Spider, hero: rl.Vector3, range: f32, h: combat.Hit) void {
         if (self.heroLatch) return;
@@ -1871,6 +1940,19 @@ pub const Brood = struct {
     pub fn setShader(self: *Brood, sh: rl.Shader) void {
         self.model.setShader(sh);
     }
+    /// THE HERO'S SHIELD, STAMPED ON EVERY MEMBER (`game.markParry`) — the leash's own pattern, and set before
+    /// `update` so a window is read on the frame it is open rather than the one after. The SACS are not stamped:
+    /// a membrane on the ground swings nothing.
+    pub fn setParry(self: *Brood, p: foe.Parry) void {
+        for (self.live()) |*s| s.parry = p;
+    }
+    /// …and whether any of them was caught on it this frame. A ONE-FRAME edge, `anyDied`'s, read after `update`.
+    pub fn anyParried(self: *const Brood) bool {
+        for (self.liveConst()) |*s| {
+            if (s.parried) return true;
+        }
+        return false;
+    }
     pub fn draw(self: *const Brood, scene: ?*gfx.Scene) void {
         // THE FLOOR FIRST — it is under everything else by definition.
         for (&self.pools) |*p| {
@@ -2025,6 +2107,78 @@ test "the roles ARE the map's foe kinds, by name" {
     try std.testing.expectEqual(wf.FoeKind.brood_mother, kindOf(.mother));
     try std.testing.expect(roleOf(.toad) == null);
     try std.testing.expect(roleOf(.slinger) == null);
+}
+
+test "HER BITE IS AN INSTANT FROM BEING CAUGHT, and nothing else of hers is catchable at all" {
+    try std.testing.expect(PARRY_LEAD > 0);
+    // It is an INSTANT, not a slice of the tell: her 0.40 s gape must not be catchable for a third of itself.
+    try std.testing.expect(PARRY_LEAD < BITE_WINDUP * 0.4);
+
+    var m = Spider.spawnAs(.mother, mathx.ground(0, 0), 0, 1.0, 0.0);
+    // MEASURED off the state machine: walk the bite from the first frame of its windup and collect the span
+    // that is actually parryable, plus where the fangs actually arrive.
+    const step = 1.0 / 600.0;
+    var open: f32 = -1;
+    var shut: f32 = -1;
+    var elapsed: f32 = 0;
+    m.throwing = false;
+    while (elapsed <= BITE_WINDUP + BITE_SNAP) : (elapsed += step) {
+        if (elapsed > BITE_WINDUP) { // the snap takes over, and its clock restarts
+            m.state = .strike;
+            m.t = elapsed - BITE_WINDUP;
+        } else {
+            m.state = .windup;
+            m.t = elapsed;
+        }
+        if (m.parryable() != null) {
+            if (open < 0) open = elapsed;
+            shut = elapsed;
+        }
+    }
+    try std.testing.expect(open > 0);
+    // It ENDS at the snap — the frame `tryReach` fires — and it is exactly the lead long.
+    try std.testing.expectApproxEqAbs(BITE_WINDUP, shut, 2.0 * step);
+    try std.testing.expectApproxEqAbs(PARRY_LEAD, shut - open, 3.0 * step);
+
+    // THE SPIT IS NOT A BLOW: it goes through the quiver like an arrow, so there is nothing to catch.
+    m.throwing = true;
+    m.state = .windup;
+    m.t = SPIT_WINDUP - PARRY_LEAD * 0.5;
+    try std.testing.expect(m.parryable() == null);
+    // …nor is the lay, nor anything that is not a swing.
+    m.throwing = false;
+    for ([_]State{ .idle, .walk, .recover, .lay, .leap, .stunlight, .stunheavy, .dead }) |s| {
+        m.state = s;
+        m.t = 0;
+        try std.testing.expect(m.parryable() == null);
+    }
+    // AND NOR IS A BROODLING, whatever it is doing: a window on something that arrives out of a sac and dies
+    // to one slash is a mechanic nobody could read.
+    var b = Spider.spawnAs(.broodling, mathx.ground(0, 0), 0, 1.0, 0.0);
+    for ([_]State{ .windup, .strike, .leap }) |s| {
+        b.state = s;
+        b.t = B_BITE_WINDUP - PARRY_LEAD * 0.5;
+        try std.testing.expect(b.parryable() == null);
+    }
+}
+
+test "A CAUGHT BITE NEVER REACHES HIM, and the second catch is the punish window" {
+    var m = Spider.spawnAs(.mother, mathx.ground(0, 0), 0, 1.0, 0.0); // faces +Z
+    const hero = v3(0, 0, 1.4); // dead ahead, inside her fangs
+    m.throwing = false;
+    m.state = .windup;
+    m.t = BITE_WINDUP - PARRY_LEAD * 0.5;
+    // The boards up but pointed the WRONG WAY: nothing is caught (`foe.Parry` uses the block's own arc).
+    m.parry = .{ .live = true, .at = hero, .facing = 0 };
+    m.takeParry();
+    try std.testing.expect(!m.parried and m.state == .windup); // the fangs keep coming
+    // …and squared onto her it is caught. Her stance is 46, so one catch is exactly enough to break it.
+    m.parry = .{ .live = true, .at = hero, .facing = std.math.pi }; // hero faces -Z, i.e. at her
+    m.takeParry();
+    try std.testing.expect(m.parried);
+    try std.testing.expect(m.state == .stunlight or m.state == .stunheavy);
+    try std.testing.expect(!m.heroLatch); // …and the snap it never got to is re-armed, not spent
+    try std.testing.expect(m.biteCd > 0); // the bite has to be gathered again before she throws it twice
 }
 
 test "SHE HOLDS THE CLUTCH: past her guard radius she stops closing and spits" {

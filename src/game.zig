@@ -1244,11 +1244,26 @@ fn markSight(g: *Game) void {
 /// once a frame for its reason: the arc, the window and the beat all belong to the hero's side of the fight, and
 /// six creatures reaching out for them would be six copies of one rule.
 ///
-/// ONLY THE OGRE HAS WINDOWS TODAY (`ogre.parryable`). The next creature to get them is a field, a predicate and
-/// one more line here, not a new mechanism — which is also why this is not folded over `FOE_GROUPS`: a group with
-/// nothing to catch would have to carry a `parry` field on every member to answer a question it never asks.
+/// FOLDED OVER `FOE_GROUPS` AND KEYED OFF THE GROUP'S OWN `setParry`, so a creature GAINING windows is a field,
+/// a predicate and its own two group methods — never an edit here. As a hand-written list of the groups that
+/// happened to have them, the fourth one to get windows is a creature the shield silently cannot touch. A group
+/// with nothing to catch simply does not declare the method (`clear`/`drawFx` are keyed the same way).
 fn markParry(g: *Game) void {
-    g.grief.setParry(.{ .live = g.hero.parryLive(), .at = g.hero.pos, .facing = g.hero.facing });
+    const p = foemod.Parry{ .live = g.hero.parryLive(), .at = g.hero.pos, .facing = g.hero.facing };
+    inline for (FOE_GROUPS) |f| {
+        if (comptime @hasDecl(@FieldType(Game, f.field), "setParry")) @field(g, f.field).setParry(p);
+    }
+}
+
+/// …and whether ANY of them was caught this frame. ONE answer for the whole field, because `parryBeat` is the
+/// hero's own beat: two creatures caught on one frame is still one shield, one recoil and one shower of sparks.
+fn anyParried(g: *const Game) bool {
+    inline for (FOE_GROUPS) |f| {
+        if (comptime @hasDecl(@FieldType(Game, f.field), "anyParried")) {
+            if (@field(g, f.field).anyParried()) return true;
+        }
+    }
+    return false;
 }
 
 /// A PARRY LANDING — the biggest beat the shield has, and deliberately over the block's: a block is a cost
@@ -2091,8 +2106,6 @@ pub fn run(mode: Mode) void {
         if (g.grief.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.stance >= ogremod.SLAM_HIT.stance, true);
         }
-        // …and the one moment of his the shield is allowed to simply cancel.
-        if (g.grief.anyParried()) parryBeat(g);
         for (g.line.live()) |*a| {
             if (a.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) {
                 spawnArrow(g, a.nockWorld(), heroAimPoint(g));
@@ -2135,6 +2148,10 @@ pub fn run(mode: Mode) void {
             var burst = burstsBefore;
             while (burst < g.brood.bursts) : (burst += 1) g.trig.died(.brood_sac);
         }
+        // …AND THE MOMENTS THE SHIELD IS ALLOWED TO SIMPLY CANCEL. Read AFTER every group has updated, so one
+        // beat covers the whole field: the giant's club, a mace, a greatsword and a mother's fangs are all one
+        // catch as far as the hero's arm is concerned.
+        if (anyParried(g)) parryBeat(g);
         // …and the floor she left.
         const burn = g.brood.burn(dt, g.hero.pos);
         if (burn > 0 and g.hero.burn(broodmod.acidPulse(burn)) == .taken) sfx.play(.acid_burn);
@@ -2157,8 +2174,10 @@ pub fn run(mode: Mode) void {
                     .hit = ar.blow,
                     .from = mathx.addV(g.hero.pos, mathx.scaleV(ar.vel, -1)),
                 };
-                // The BEAT is skipped on a corpse.
-                const out: combat.HitOutcome = if (g.hero.dead) .ignored else heroTakes(g, blow, false, false);
+                // The BEAT is skipped on a corpse. `heavy` comes off the BLOW like every group's does — nothing
+                // thrown carries stance today, so it reads false either way, and it stays right the day one of
+                // them gets some (the shade's own call site carries this note for the same reason).
+                const out: combat.HitOutcome = if (g.hero.dead) .ignored else heroTakes(g, blow, blow.hit.stance > 0, false);
                 // …and WHAT IT STRUCK picks that voice: boards if the shield caught it, flesh if not.
                 if (out == .taken or out == .ignored) sfx.play(.arrow_hit);
                 splashOf(g, ar);

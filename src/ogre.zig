@@ -208,10 +208,13 @@ const SWIPE_ARC = 144.0; // deg of total sweep — ±72 about SWIPE_ARC_MID
 // blow you are reading and not the animation in front of it. These two are the game's formative parries, so
 // what they teach has to be one rule and not a per-move dial the player is expected to learn twice.
 //
+// …AND IT IS NOW THE WHOLE GAME'S NUMBER, not this file's (`foe.PARRY_LEAD`): the skeletal warriors and the
+// brood mother carry windows too, and three private copies of one difficulty dial is `stunCurve`'s story.
+//
 // At 0.11 s the slam's window falls entirely inside the DROP (its club meets the earth 0.187 s in), so the club
 // is visibly falling before anything can be caught; the swipe's reaches a few frames back into the cock, since
 // its own blow lands 0.084 s in. Both are the same instant in front of the same event.
-const PARRY_LEAD = 0.11;
+const PARRY_LEAD = foe.PARRY_LEAD;
 
 const HUNCH = 9.0; // base forward stoop — stooped + weary, but still standing TALL (imposing)
 // HE HINGES AT THE WAIST (owner's law): the fraction of any body pitch the PELVIS may take.

@@ -120,6 +120,11 @@ const RESISTS = combat.resists(.{ .fire = 40, .cold = -30, .lightning = -25 });
 const CHOMP_HIT = combat.Hit{ .dmg = 13, .poise = 15 }; // eased down from 16 (owner: lower dmg a bit)
 const LUNGE_HIT = combat.Hit{ .dmg = 19, .poise = 26, .stance = 8 }; // eased down from 24 — still a real slam
 const HERO_REACH = foe.HERO_REACH; // hero footprint added to the toad's attack range for the hit test
+/// HOW LONG BEFORE THE SLAM LANDS IT CAN STILL BE CAUGHT — the game's own number (`foe.PARRY_LEAD`), so the
+/// timing a player learned off a giant's club is the timing that swats a toad out of the air. THE LEAP AND
+/// NOTHING ELSE OF ITS has a window; see `Frog.toImpact` for why the hop and the chomp are out.
+const PARRY_LEAD = foe.PARRY_LEAD;
+
 const LUNGE_IMPACT_R = 1.9; // frontal slam reach from the seat
 const LUNGE_FRONT_DOT = 0.25; // hero must lie within the frontal arc (~±76°) to be caught
 const LUNGE_IMPACT_FWD = 0.6; // dust-burst / impact-zone centre, this far ahead of the seat (pre-scale)
@@ -171,6 +176,11 @@ pub const Frog = struct {
     leash: foe.Leash = .{},
     /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
     root: combat.Root = .{},
+    /// …and THE HERO'S SHIELD, stamped the same way (`game.markParry`). Read only inside its own leap window.
+    parry: foe.Parry = .{},
+    /// THE SHIELD CAUGHT THE LEAP THIS FRAME — a ONE-FRAME flag, `justDied`'s exactly: reset at the top of
+    /// `update`, set where the catch happens, read by the group (`Knot.anyParried`) after.
+    parried: bool = false,
     facing: f32 = 0,
     scale: f32 = 1.0, // per-toad size jitter
     seed: f32 = 0, // per-toad phase offset so a knot never moves in lockstep
@@ -299,6 +309,59 @@ pub const Frog = struct {
         self.t = 0;
         self.heroLatch = false;
     }
+
+    /// SECONDS UNTIL THE SLAM LANDS, counted from the start of the leap so the coil and the arc are ONE
+    /// continuous countdown — null when it is not throwing one. `tryImpact` fires the frame the toad touches
+    /// down (`t >= coil + flight`), so that is the frame this counts back from and the window shuts there by
+    /// construction: a caught leap is one that never arrived.
+    ///
+    /// THE LEAP AND NOTHING ELSE. The approach HOP carries no blow at all, and the CHOMP is deliberately out:
+    /// the leap is the committed thing — it leaves the ground, it cannot be steered once launched, and it is
+    /// the move you have no answer to but distance. Jaws you step out of. EXHAUSTIVE, so a state added later
+    /// has to say whether it carries a blow rather than quietly defaulting to no.
+    fn toImpact(self: *const Frog) ?f32 {
+        return switch (self.state) {
+            .lunge => (LUNGE_COIL + self.hopDur) - self.t,
+            .idle, .hop, .recover, .chomp, .stunlight, .stunheavy, .dead => null,
+        };
+    }
+
+    /// THE INSTANT THE LEAP CAN BE CAUGHT IN, and how far out it reaches then — `tryImpact`'s OWN extent, and
+    /// UNSCALED exactly as that test is (the ogre's `slamReach` law: the parry's reach is the blow's reach, not
+    /// a second number that only agrees with it by luck).
+    ///
+    /// It falls inside the FLIGHT, so what the boards meet is a toad in the air a few frames off the ground.
+    /// That is the point: this is the one move whose whole threat is that it has already committed.
+    fn parryable(self: *const Frog) ?f32 {
+        const left = self.toImpact() orelse return null;
+        if (left < 0 or left > PARRY_LEAD) return null;
+        return LUNGE_IMPACT_R + HERO_REACH;
+    }
+
+    /// THE BOARDS TAKE THE LEAP. `enterStun` is what kills it: the `.lunge` state is gone, so `updateHop` never
+    /// reaches its landing and `tryImpact` never fires. The toad COMES STRAIGHT DOWN — both stun resolvers write
+    /// `lift` from scratch, so a body caught mid-air is on the ground on the frame it is caught.
+    fn takeParry(self: *Frog) void {
+        const reach = self.parryable() orelse return;
+        if (!self.parry.catches(self.pos, reach)) return;
+        self.parried = true;
+        self.flash = FLASH_DUR;
+        self.leash.noteCombat();
+        // Back on its own cooldown though it never finished, or it comes out of the sprawl into the leap it was
+        // just denied.
+        self.lungeCd = LUNGE_CD;
+        // THE EARTH IT WAS ABOUT TO HIT, thrown up where it comes down instead — a body this size stopped in
+        // mid-air still arrives somewhere.
+        self.dustBurst(self.pos, 14, 2.2, 0.20);
+        sfx.world(.toad_hurt, self.pos);
+        switch (self.vit.hit(combat.PARRY_HIT)) {
+            .death => self.enterDeath(), // a parry takes no HP today; the day one does, it kills like anything
+            .heavy => self.enterStun(.stunheavy),
+            // A stance that HELD is still a leap swatted out of the air: the slam dies either way, into the
+            // short flinch rather than the wide-open sprawl.
+            .light, .none => self.enterStun(.stunlight),
+        }
+    }
     fn enterDeath(self: *Frog) void {
         self.state = .dead;
         self.t = 0;
@@ -341,6 +404,7 @@ pub const Frog = struct {
         }
         self.heroHit = null;
         self.justDied = false;
+        self.parried = false;
         // THE ROOTS HAVE THE FEET (foe.grip) — the state machine runs, the jaws still work, and XZ goes back
         // wherever it tried to travel. Every move a toad has BESIDES the jaws is a leap, so `classify` refuses
         // the lot of them while the grip is on rather than hopping it on the spot (`foe.canLeap`).
@@ -357,6 +421,9 @@ pub const Frog = struct {
         self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
         self.updateFx(dt); // advance live particles (bursts from any state keep animating)
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt); // the knockback off a landed blow
+        // THE SHIELD, asked BEFORE the state machine runs this frame's arc — a catch has to kill the slam it
+        // caught, and by the time `tryImpact` has run the body has already landed on him.
+        self.takeParry();
 
         switch (self.state) {
             .idle => self.updateIdle(dt, hero, bounds),
@@ -864,6 +931,18 @@ pub const Knot = struct {
     pub fn setShader(self: *Knot, sh: rl.Shader) void {
         self.model.setShader(sh);
     }
+    /// THE HERO'S SHIELD, STAMPED ON EVERY MEMBER (`game.markParry`) — the leash's own pattern, and set before
+    /// `update` so a window is read on the frame it is open rather than the one after.
+    pub fn setParry(self: *Knot, p: foe.Parry) void {
+        for (self.live()) |*f| f.parry = p;
+    }
+    /// …and whether any of them was caught on it this frame. A ONE-FRAME edge, `anyDied`'s, read after `update`.
+    pub fn anyParried(self: *const Knot) bool {
+        for (self.liveConst()) |*f| {
+            if (f.parried) return true;
+        }
+        return false;
+    }
     // Advance the whole knot; returns the STRONGEST blow any toad landed on the hero this frame (null if none) AND which toad threw it, for game.zig to apply to the hero's vitals.
     pub fn update(self: *Knot, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
         return foe.groupBlow(self.live(), dt, hero, bounds, blade);
@@ -1087,6 +1166,70 @@ fn armMesh(side: f32) rl.Mesh {
     return b.toMesh();
 }
 
+
+test "THE LEAP IS AN INSTANT FROM BEING SWATTED, and nothing else the toad does is catchable" {
+    try std.testing.expect(PARRY_LEAD > 0);
+    // An INSTANT, not a slice of the tell: its 0.70 s coil must not be catchable for a fifth of itself.
+    try std.testing.expect(PARRY_LEAD < LUNGE_COIL * 0.25);
+    // …and it falls inside the FLIGHT, which is what makes the catch a body swatted out of the air.
+    try std.testing.expect(PARRY_LEAD < LUNGE_FLIGHT);
+
+    var f = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    f.startHop(mathx.ground(0, 4), 60.0, true);
+    const impact = LUNGE_COIL + f.hopDur;
+    // MEASURED off the state machine: walk the leap from the first frame of its coil and collect the span that
+    // is actually parryable. ONE clock here — coil, arc and landing are all `.lunge`.
+    const step = 1.0 / 600.0;
+    var open: f32 = -1;
+    var shut: f32 = -1;
+    var elapsed: f32 = 0;
+    while (elapsed <= impact) : (elapsed += step) {
+        f.t = elapsed;
+        if (f.parryable() != null) {
+            if (open < 0) open = elapsed;
+            shut = elapsed;
+        }
+    }
+    try std.testing.expect(open > 0);
+    // It ENDS where the body arrives — the frame `tryImpact` fires — and it is exactly the lead long.
+    try std.testing.expectApproxEqAbs(impact, shut, 2.0 * step);
+    try std.testing.expectApproxEqAbs(PARRY_LEAD, shut - open, 3.0 * step);
+    // …and the reach it is offered at is the SLAM's own, never a second number.
+    try std.testing.expectApproxEqAbs(LUNGE_IMPACT_R + HERO_REACH, f.parryable().?, 1e-5);
+
+    // THE APPROACH HOP CARRIES NO BLOW, and the CHOMP is deliberately out: jaws you step out of.
+    for ([_]State{ .idle, .hop, .recover, .chomp, .stunlight, .stunheavy, .dead }) |s| {
+        f.state = s;
+        f.t = 0;
+        try std.testing.expect(f.parryable() == null);
+        f.t = CHOMP_GAPE - PARRY_LEAD * 0.5; // …including exactly where a bite's window WOULD have been
+        try std.testing.expect(f.parryable() == null);
+    }
+}
+
+test "A CAUGHT LEAP NEVER ARRIVES, and the toad comes straight down out of the air" {
+    var f = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0); // faces +Z
+    const hero = v3(0, 0, 1.5);
+    f.startHop(hero, 60.0, true);
+    f.facing = 0; // squarely at him, whatever `startHop` aimed
+    f.t = LUNGE_COIL + f.hopDur - PARRY_LEAD * 0.5;
+    f.lift = 0.9; // mid-arc: well off the ground
+    // The boards up but pointed the WRONG WAY: nothing is caught (`foe.Parry` uses the block's own arc).
+    f.parry = .{ .live = true, .at = hero, .facing = 0 };
+    f.takeParry();
+    try std.testing.expect(!f.parried and f.state == .lunge); // the body keeps coming
+    // …and squared onto it, it is swatted. Its stance is well under one catch, so this is the sprawl.
+    f.parry = .{ .live = true, .at = hero, .facing = std.math.pi }; // hero faces -Z, i.e. at it
+    f.takeParry();
+    try std.testing.expect(f.parried);
+    try std.testing.expect(f.state == .stunlight or f.state == .stunheavy);
+    try std.testing.expect(!f.heroLatch); // the slam it never got to is re-armed, not spent
+    try std.testing.expect(f.lungeCd > 0); // …and it cannot pounce straight back out of the sprawl
+    // IT COMES STRAIGHT DOWN: the stun resolvers write `lift` from scratch, so one frame of the reaction is
+    // enough to put a body caught in mid-air back on the earth.
+    _ = f.update(1.0 / 60.0, hero, 60.0, .{});
+    try std.testing.expect(!f.airborne());
+}
 
 test "classify: ranges pick chomp < lunge < hop < rest, and cooldowns gate" {
     try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1, true, true, false));

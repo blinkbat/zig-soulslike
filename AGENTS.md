@@ -369,13 +369,25 @@ chips you for it; a parry is a COMMITTED WINDOW that pays `STAM_PARRY` once and 
 - **THE CREATURE READS THE SHIELD, IT NEVER REACHES FOR IT** (`foe.Parry`, stamped by `game.markParry` exactly
   as `markSight` stamps the eyes). Each MOVE answers for its own frames and its own reach (`ogre.parryable`):
   only the move knows where its head is, and a slam you rolled clear of is not one a shield six metres off can
-  touch. **Only the ogre has windows today**; the next creature is a field, a predicate and two lines in
-  `markParry`, not a new mechanism.
-- **A WINDOW IS `PARRY_LEAD` SECONDS MEASURED BACK FROM THE IMPACT FRAME** — one number, in seconds, and it IS
-  the difficulty. You parry an instant before THE HIT, swipe or slam (owner's call): what you read is the blow,
-  not the animation in front of it, so the ogre's two moves teach one rule and not a dial learned twice. Written
-  instead as fractions of two different state clocks the total was emergent and unreadable — the slam's came out
-  at 0.29 s, most of it while the club was still overhead and motionless.
+  touch. **FOUR CREATURES CARRY WINDOWS** — the ogre's slam and swipe, both skeletal warriors' three strokes
+  (mace, slam, lunge), the brood mother's bite and the toad's leap. Adding one is a `parry` field, a `toImpact`,
+  a `parryable` and its group's own `setParry`/`anyParried`: **`game.markParry` and `game.anyParried` are folded
+  over `FOE_GROUPS` and keyed off `@hasDecl`**, so nothing there is edited and a group with nothing to catch just
+  does not declare the pair. `parryBeat` fires ONCE a frame for the whole field — one shield, one recoil.
+- **AND WHAT IS *NOT* PARRYABLE IS A DECISION, WRITTEN AT EACH `toImpact`.** A projectile is not a blow (the
+  mother's spit, the slinger's clump, every arrow): there is no swing to catch, so the boards only ever block it.
+  The toad's approach HOP carries no blow at all and its CHOMP is out on purpose — the leap is the committed
+  thing. A BROODLING is out because a window on something that arrives out of a sac and dies to one slash is a
+  mechanic nobody could read. **HYPER ARMOUR IS NO DEFENCE** (`warrior.takeParry`): it refuses poise off the
+  blade, and a parry deals neither damage nor poise — so the greatsword's uninterruptible slam is exactly the
+  move the boards can still stop, which is the parry's whole reason to exist against him.
+- **A WINDOW IS `foe.PARRY_LEAD` SECONDS MEASURED BACK FROM THE IMPACT FRAME** — one number, in seconds, for
+  EVERY creature and every move, and it IS the difficulty. You parry an instant before THE HIT (owner's call):
+  what you read is the blow, not the animation in front of it, so a club, a mace, a greatsword, fangs and a
+  flying toad teach one rule and not a dial learned five times. It lives in `foe.zig` for `stunCurve`'s reason —
+  as a private copy per creature it is one event drifting into five numbers nobody chose. Written instead as
+  fractions of each state's own clock the total was emergent and unreadable: the ogre's slam came out at 0.29 s,
+  most of it while the club was still overhead and motionless.
 - **SO IT SHUTS AT THE IMPACT FRAME BY CONSTRUCTION** (`toImpact` counts across the state boundary), which is
   what makes a caught blow one that never landed. A window outlasting the impact is a blow "caught" after it
   hit you; one opening earlier is a free catch on a club that has not moved.
@@ -646,11 +658,26 @@ The mesh is TILED (`TCHUNK`), with normals from the FIELD so two tiles agree at 
 - **Check it, don't trust it.** Menu > Debug > Stats prints the live counts and `--shot` captures
   them. If `drawn` approaches `props`, a culler has been defeated. Caps are init-time PANICS
   (`MAX_PROPS`/`MAX_SOLIDS`/`MAX_SOLID_REFS`) — a silently dropped collider is a walk-through wall.
-- **THE OCCLUDER FADE** (`env.markOccluders`): a prop that `fades` between lens and hero goes thin,
-  keyed to how much of him it hides, MEASURED AGAINST THE COLLIDERS not the bound. Three rules keep it
-  from reading as a switch: the geometry sets a TARGET and time walks you there (`OCCL_IN` 0.16 s,
-  `OCCL_OUT` 0.34 s — out is slower); it stops being in the way over a BAND not a plane
-  (`OCCL_DEPTH_BAND`); and `OCCL_MAX` counts what is in flight, both directions.
+- **THE OCCLUDER FADE** (`env.markOccluders`): a prop between lens and hero goes thin, keyed to how much
+  of him it hides. Three rules keep it from reading as a switch: the geometry sets a TARGET and time walks
+  you there (`OCCL_IN` 0.16 s, `OCCL_OUT` 0.34 s — out is slower); it stops being in the way over a BAND
+  not a plane (`OCCL_DEPTH_BAND`); and `OCCL_MAX` counts what is in flight, both directions.
+- **EVERYTHING THINS EXCEPT WHAT SAYS `solid`** — architecture, cliffs, the water sheet, the grace (its
+  smoke draws down `drawVeils`, which carries no fade). The flag is that way round because as an opt-in
+  `fades` every kind added afterwards opted out by silence, and boulders, statues, lanterns and saplings
+  blotted the hero out solid. Flora is exempt structurally: `markOccluders` walks `stx` only.
+- **THE OCCLUDER VOLUME IS NOT THE COLLIDER** (`props.Blocker`, `Info.occl`). A collider is sized for what
+  you WALK INTO, an occluder for what you SEE THROUGH, and on a tree those differ by metres — a conifer's
+  collider is a 0.58 m pole against boughs that block the view at 3.4 m, so looking through the canopy
+  scored nothing and the tree stayed solid. The trees carry cylinders taken off their own mesh builders
+  (bole then crown; `y0`..`y1` off the foot, since one cylinder cannot be narrow low and wide up top).
+  A kind with no `occl` falls back to the colliders plus `OCCL_SKIRT`, which is right where the two shapes
+  agree — a pillar, and an ARCH, whose opening must stay see-through.
+- **COVERAGE OPENS THE GATE, DEPTH SCALES THE ANSWER** (`thinOf`). `OCCL_MIN` is a coverage figure and
+  nothing else. Multiplied together before the threshold, a mass a metre in front of him was discounted
+  under it and stayed solid at the one moment it was most in the way.
+- **A FULL LIST GIVES ITS SLOTS TO WHAT HIDES HIM MOST** (`wantFade`). First-come meant cell-walk order
+  decided, and a prop already easing back held its slot for the whole of `OCCL_OUT`.
 
 ## Triggers, folk and dialog
 
@@ -911,7 +938,8 @@ not the stick-speed `runB`.
 
 No criticals, guard counter, jump, status buildup, or AR × motion-value damage (flat constants
 today). The parry exists but has no RIPOSTE behind it — a caught blow buys a stagger and the ordinary punish,
-not a critical — and only the ogre carries parry windows. No foot IK — `rx(bodyPitch)` rotates about the WORLD ORIGIN, so a deep lean levers a
+not a critical. Four creatures carry parry windows; the archers, the kobolds and the shades have none yet, and
+the broodlings are out on purpose. No foot IK — `rx(bodyPitch)` rotates about the WORLD ORIGIN, so a deep lean levers a
 forward-swung foot down and feet clip a few cm on slopes. The roll has front-loaded i-frames but no
 collision. One leg-cycle is reused across run and sprint. Nothing scales a cast — spell damage is flat
 constants like everything else. Elevation exists but nothing is authored with

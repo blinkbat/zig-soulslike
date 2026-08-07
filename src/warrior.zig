@@ -213,6 +213,16 @@ const LUNGE = Attack{
 const MOVES_SHIELDMAN = [_]Attack{MACE};
 const MOVES_GREATSWORD = [_]Attack{ SLAM, LUNGE };
 
+/// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT — the game's own number (`foe.PARRY_LEAD`), not this
+/// file's, and the SAME one for all three moves for the reason it is the same one the giant uses: what you
+/// read is the BLOW, not the animation in front of it, so a mace, a slam and a thrust teach one rule.
+///
+/// The three impact frames it is measured back from differ wildly — the mace's blow lands 0.078 s into its
+/// stroke, the slam's 0.072, the lunge's 0.120 — and that is exactly why the lead is authored in SECONDS
+/// BEFORE THE HIT rather than as a fraction of anybody's clock: written the other way round these would be
+/// three different windows wearing one constant.
+const PARRY_LEAD = foe.PARRY_LEAD;
+
 const Spec = struct {
     hp: f32,
     poise: f32,
@@ -466,6 +476,8 @@ pub const Warrior = struct {
     leash: foe.Leash = .{},
     /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
     root: combat.Root = .{},
+    /// …and THE HERO'S SHIELD, stamped the same way (`game.markParry`). Read only inside his own parry windows.
+    parry: foe.Parry = .{},
     facing: f32 = 0,
     scale: f32 = SCALE,
     seed: f32 = 0,
@@ -488,6 +500,10 @@ pub const Warrior = struct {
     hop: f32 = 0,
     /// One-frame flag (`justDied`'s pattern), and the only thing about the lunge the camera may know.
     leapt: bool = false,
+    /// THE SHIELD CAUGHT HIS STROKE THIS FRAME — the same one-frame flag, reset at the top of `update`, set
+    /// where the catch happens, read by the group (`Muster.anyParried`) after. A latch would bill the beat
+    /// sixty times a second for the whole stumble.
+    parried: bool = false,
     /// Was the shield covering the hero's bearing at the top of THIS frame? `tryHit` reads it, because a
     /// blade arrives knowing nothing about where the hero is standing.
     covered: bool = false,
@@ -655,6 +671,7 @@ pub const Warrior = struct {
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.leapt = false;
+        self.parried = false;
         self.live = false;
         self.elapsed += dt;
         self.t += dt;
@@ -678,6 +695,9 @@ pub const Warrior = struct {
         var moveYaw: ?f32 = null;
         var moveSpeed: f32 = 0; // …and how fast, which is what the GAIT is blended off (walk vs run)
 
+        // THE SHIELD, asked BEFORE the state machine runs this frame's stroke — a catch has to kill the swing
+        // it caught, and by the time `tryReach` has run the blow is already dealt.
+        self.takeParry();
         switch (self.state) {
             .idle => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
@@ -970,6 +990,72 @@ pub const Warrior = struct {
             rl.math.vector3Transform(s[0], self.xf[WPN]),
             rl.math.vector3Transform(s[1], self.xf[WPN]),
         };
+    }
+
+    /// HOW FAR OUT THE KIT ACTUALLY ARRIVES at the impact frame, hero footprint included — the parry window's
+    /// reach, and the MOVE's own rather than one number per warrior (the ogre's `slamReach`/`swipeReach` law):
+    /// a mace lands at 1.23 m and the greatsword's slam at 2.18, and a shield out past either touches neither.
+    ///
+    /// NOT `triggerR`, which adds the leap's whole run-up on top: by the frame the point arrives that ground is
+    /// behind him, so billing the parry for it would offer a catch on a lunge still a stride and a half away.
+    fn parryReach(self: *const Warrior, a: Attack) f32 {
+        return a.reachOut * self.scale + foe.HERO_REACH;
+    }
+
+    /// SECONDS UNTIL THIS STROKE'S BLOW LANDS, counted ACROSS the wind→swing boundary so the tell and the
+    /// stroke are ONE continuous countdown — null when he is not swinging one. EXHAUSTIVE, so a state added
+    /// later has to say whether it carries a blow rather than quietly defaulting to no.
+    ///
+    /// `windDur()`, never `a.windDur`: a combo's follow-up winds on `chainWind`, and the lunge's SECOND stab is
+    /// the one that used to arrive unseen — which makes it exactly the stroke most worth being able to catch.
+    fn toImpact(self: *const Warrior) ?f32 {
+        const a = self.move();
+        const live = a.swingDur * a.impactK; // where in the stroke the kit goes live — see `.swing`
+        return switch (self.state) {
+            .wind => (self.windDur() - self.t) + live,
+            .swing => live - self.t,
+            .idle, .approach, .circle, .recover, .stunlight, .stunheavy, .guardbreak, .dead => null,
+        };
+    }
+
+    /// THE INSTANT THE KIT CAN BE CAUGHT IN, and how far out it reaches then — null when there is nothing to
+    /// catch. The window is the last `PARRY_LEAD` seconds of the blow's approach and nothing else, so it shuts
+    /// AT the impact frame by construction and a caught stroke is one that never landed.
+    fn parryable(self: *const Warrior) ?f32 {
+        const left = self.toImpact() orelse return null;
+        if (left < 0 or left > PARRY_LEAD) return null;
+        return self.parryReach(self.move());
+    }
+
+    /// THE SHIELD TAKES THE STROKE — and HYPER ARMOUR IS NO DEFENCE AGAINST IT, which is the whole point of
+    /// giving the greatsword windows. `hyperArmor` refuses the POISE off the hero's blade, so the slam cannot be
+    /// traded with; a parry deals neither damage nor poise (`combat.PARRY_HIT` is STANCE and nothing else), so
+    /// the one move you cannot interrupt is the one the boards can still stop outright.
+    ///
+    /// `enterStun` is what kills the swing: it drops the stroke, clears `live` and puts a leap back on the
+    /// ground, so nothing lands and no crater opens.
+    fn takeParry(self: *Warrior) void {
+        const reach = self.parryable() orelse return;
+        if (!self.parry.catches(self.pos, reach)) return;
+        self.parried = true;
+        // The whole body pops off the shared `hitFlash`, exactly as it does off the blade — a catch that took
+        // his footing away has earned the one piece of feedback impossible to miss.
+        self.flash = FLASH_DUR;
+        self.leash.noteCombat();
+        // The move goes on its own cooldown though it never finished: the kit has to be gathered again, or he
+        // walks out of the stumble straight into the stroke he was just denied.
+        self.cds[self.atk] = self.move().cd;
+        // STRUCK IRON off the kit's own far end, thrown back the way it came (`sparks` negates what it is
+        // given, so this is the bearing to the boards). The shield throws its own — see `hero.noteParry`.
+        self.sparks(self.wpnHere()[1], mathx.dirXZ(self.pos, self.parry.at), 16);
+        sfx.world(.bone_hurt, self.pos);
+        switch (self.vit.hit(combat.PARRY_HIT)) {
+            .death => self.enterDeath(), // a parry takes no HP today; the day one does, it kills like anything
+            .heavy => self.enterStun(.stunheavy),
+            // A stance that HELD is still a stroke knocked off its line: the swing dies either way, into the
+            // short stumble rather than the wide-open punish window.
+            .light, .none => self.enterStun(.stunlight),
+        }
     }
 
     /// The hurt shape IS the kit: what it swept this frame, against the column the hero stands in, latched
@@ -1622,6 +1708,18 @@ pub const Muster = struct {
     pub fn setShader(self: *Muster, sh: rl.Shader) void {
         self.model.setShader(sh);
     }
+    /// THE HERO'S SHIELD, STAMPED ON EVERY MEMBER (`game.markParry`) — the leash's own pattern, and set before
+    /// `update` so a window is read on the frame it is open rather than the one after.
+    pub fn setParry(self: *Muster, p: foe.Parry) void {
+        for (self.live()) |*w| w.parry = p;
+    }
+    /// …and whether any of them was caught on it this frame. A ONE-FRAME edge, `anyDied`'s, read after `update`.
+    pub fn anyParried(self: *const Muster) bool {
+        for (self.liveConst()) |*w| {
+            if (w.parried) return true;
+        }
+        return false;
+    }
     pub fn draw(self: *const Muster, scene: ?*gfx.Scene) void {
         foe.drawGroup(self.liveConst(), &self.model, scene);
     }
@@ -1924,6 +2022,108 @@ test "the role table, the enum and the map's foe kinds agree" {
         const r: Role = @enumFromInt(i);
         try std.testing.expectEqual(r, roleOf(kindOf(r)).?);
     }
+}
+
+test "THE WINDOW IS AN INSTANT BEFORE THE HIT, on every stroke a warrior throws" {
+    try std.testing.expect(PARRY_LEAD > 0);
+    for ([_]Role{ .shieldman, .greatsword }) |role| {
+        var w = Warrior.spawnAs(role, mathx.ground(0, 0), 0, 1.0, 0.0);
+        for (spec(role).moves, 0..) |a, mv| {
+            const impact = a.swingDur * a.impactK;
+            // It is an INSTANT, not a slice of the tell — a 1.34 s haul must not be catchable for a fifth of it.
+            try std.testing.expect(PARRY_LEAD < a.windDur * 0.4);
+            // MEASURED off the state machine rather than asserted about the constants: walk the move frame by
+            // frame from the first of its windup and collect the span that is actually parryable.
+            const step = 1.0 / 600.0; // finer than a frame, so the edges are the rule's and not the sampler's
+            var open: f32 = -1;
+            var shut: f32 = -1;
+            var elapsed: f32 = 0;
+            w.atk = mv;
+            w.stroke = 0;
+            while (elapsed <= a.windDur + impact) : (elapsed += step) {
+                if (elapsed > a.windDur) { // the stroke takes over, and its clock restarts
+                    w.state = .swing;
+                    w.t = elapsed - a.windDur;
+                } else {
+                    w.state = .wind;
+                    w.t = elapsed;
+                }
+                if (w.parryable() != null) {
+                    if (open < 0) open = elapsed;
+                    shut = elapsed;
+                }
+            }
+            try std.testing.expect(open > 0); // there IS a window…
+            // …it is exactly the lead long, and it ENDS at the impact frame: a window outlasting its own impact
+            // is a blow "caught" after it hit you, and one opening earlier is a free catch on a still weapon.
+            try std.testing.expectApproxEqAbs(a.windDur + impact, shut, 2.0 * step);
+            try std.testing.expectApproxEqAbs(PARRY_LEAD, shut - open, 3.0 * step);
+            // …and the reach it is offered at is where the kit ARRIVES, never the leap's whole run-up.
+            try std.testing.expect(w.parryReach(a) <= triggerR(a, w.scale) + 1e-4);
+        }
+        // A COMBO'S FOLLOW-UP IS CATCHABLE TOO, and it counts down the SHORT wind — the lunge's second stab is
+        // the stroke that used to arrive unseen, so it is the one that most needs a window at all.
+        if (spec(role).moves.len > 1) {
+            const a = spec(role).moves[1];
+            try std.testing.expect(a.strokes > 1 and a.chainWind > 0);
+            w.atk = 1;
+            w.state = .wind;
+            w.t = 0;
+            w.stroke = 0;
+            const first = w.toImpact().?;
+            w.stroke = 1;
+            const chained = w.toImpact().?;
+            // The follow-up's blow is nearer BY THE WHOLE DIFFERENCE between the two winds, which is exactly
+            // what reading `windDur()` rather than `a.windDur` buys — and it is 0.22 s of it.
+            try std.testing.expectApproxEqAbs(a.windDur - a.chainWind, first - chained, 1e-5);
+            // …and it really is catchable. Both of its windows land inside the STROKE rather than the wind,
+            // because the point goes live 0.12 s in and the lead is shorter than that.
+            w.state = .swing;
+            w.t = a.swingDur * a.impactK - PARRY_LEAD * 0.5;
+            try std.testing.expect(w.parryable() != null);
+        }
+        // Nothing outside a stroke is parryable at all.
+        for ([_]State{ .idle, .approach, .circle, .recover, .stunlight, .stunheavy, .guardbreak, .dead }) |s| {
+            w.state = s;
+            w.t = 0;
+            try std.testing.expect(w.parryable() == null);
+        }
+    }
+    // The LUNGE's reach is strictly inside its trigger radius, since it closes most of its own ground.
+    var g = Warrior.spawnAs(.greatsword, mathx.ground(0, 0), 0, 1.0, 0.0);
+    try std.testing.expect(g.parryReach(LUNGE) < triggerR(LUNGE, g.scale));
+}
+
+test "A CAUGHT STROKE NEVER LANDS, and HYPER ARMOUR is no defence against the boards" {
+    // The slam cannot be TRADED with (`hyperArmor` refuses its poise), which is the whole reason it is worth
+    // being able to refuse outright — the parry is the answer to the one move the sword has none for.
+    var w = Warrior.spawnAs(.greatsword, mathx.ground(0, 0), 0, 1.0, 0.0); // faces +Z
+    const hero = mathx.v3(0, 0, 1.6);
+    w.atk = 0;
+    const a = w.move();
+    try std.testing.expect(a.hyper);
+    w.state = .swing;
+    w.t = a.swingDur * a.impactK - PARRY_LEAD * 0.5;
+    try std.testing.expect(w.hyperArmor()); // …and it really is uninterruptible on this frame
+    // The boards up but pointed the WRONG WAY: nothing is caught (`foe.Parry` uses the block's own arc).
+    w.parry = .{ .live = true, .at = hero, .facing = 0 };
+    w.takeParry();
+    try std.testing.expect(!w.parried and w.state == .swing); // the blade keeps coming down
+    // …and squared onto him it is caught. The stance HELD, so it is the short stumble, not the collapse.
+    w.parry = .{ .live = true, .at = hero, .facing = std.math.pi }; // hero faces -Z, i.e. at him
+    w.takeParry();
+    try std.testing.expect(w.parried);
+    try std.testing.expectEqual(State.stunlight, w.state);
+    try std.testing.expect(!w.live); // the kit is DEAD: nothing can reach him out of a stroke that was caught
+    try std.testing.expect(w.cds[0] > 0); // …and the move has to be gathered again before he throws it twice
+    try std.testing.expectEqual(@as(f32, 0), w.hop); // caught in the air, he comes straight down
+    // A SECOND clean catch breaks the stance — the "may heavy stun them", earned off the bar and not rolled.
+    w.state = .swing;
+    w.t = a.swingDur * a.impactK - PARRY_LEAD * 0.5;
+    w.parried = false;
+    w.takeParry();
+    try std.testing.expect(w.parried);
+    try std.testing.expectEqual(State.stunheavy, w.state);
 }
 
 test "the two movesets differ in every column that matters" {

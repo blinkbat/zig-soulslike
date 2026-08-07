@@ -32,6 +32,18 @@ pub const AIRBORNE_LIFT: f32 = 0.04;
 /// Each creature's file tests its own moves against this; the shapes differ too much for one place to check.
 pub const TELL_MIN: f32 = 0.30;
 
+/// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT ON THE BOARDS — one number, IN SECONDS, measured back
+/// from the move's own impact frame, and it IS the parry's difficulty. **Every creature with windows reads
+/// THIS one.** As a private copy per creature it is `stunCurve`'s story again: the same event, quietly drifting
+/// into three different numbers nobody chose. You parry an instant before THE HIT, whatever is swinging
+/// (owner's call), so what the player learns off a giant's club is what catches a mace, a greatsword and a
+/// mother's fangs — a per-creature lead would be a difficulty setting nobody wrote down.
+///
+/// It is the MOVE's own `toImpact` that makes a window shut at the impact frame by construction, and that is
+/// what makes a caught blow one that never landed. See `ogre.parryable` for the worked example, and the block
+/// above it for why the lead is authored in seconds rather than as fractions of two state clocks.
+pub const PARRY_LEAD: f32 = 0.11;
+
 /// A CORPSE IS NOT A COLLIDER (owner's call): `alive()` stays true through the whole death collapse and its
 /// dissipation, so every collision site has to ask this instead.
 pub fn corporeal(f: anytype) bool {
@@ -392,6 +404,12 @@ pub fn Trail(comptime N: usize) type {
     };
 }
 
+/// THE ONE PER-FRAME COST HERE WORTH KNOWING ABOUT, and it is left alone on purpose: `drawSphereEx` at 6x8 is
+/// ~96 triangles, so a full muster (48 warriors x 56 slots) would be a quarter-million triangles of unlit
+/// spheres. It never is — a slot is dead unless something emitted into it, and the pools are sized off each
+/// emitter's WORST frame rather than a round number, so the live count is a burst and not a standing load.
+/// Dropping the tessellation would buy real triangles, but a spark is a ROUND thing and that is a look decision
+/// for the owner, not a behaviour-preserving optimisation.
 pub fn drawParticles(pool: []const Particle) void {
     for (pool) |*q| {
         if (q.life <= 0) continue;

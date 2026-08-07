@@ -293,6 +293,13 @@ comptime {
 }
 pub const Part = art.Part;
 
+/// A MASS THE OCCLUDER FADE TESTS THE SIGHT LINE AGAINST — a cylinder of radius `r` spanning `y0`..`y1`
+/// off the prop's foot, offset `x`/`z` in the prop's own yaw frame. It gets its own list because A COLLIDER
+/// IS SIZED FOR WHAT YOU WALK INTO AND THIS FOR WHAT YOU SEE THROUGH, and on a tree those differ by metres:
+/// a conifer's boughs hide the hero three metres outside the trunk you can bump into. Empty falls back to
+/// the colliders plus `OCCL_SKIRT`, which is right whenever the two shapes DO agree (a pillar, an arch).
+pub const Blocker = struct { r: f32, y0: f32 = 0, y1: f32, x: f32 = 0, z: f32 = 0 };
+
 /// A fire this kind carries: a gfx.Light at a local offset.
 pub const LightSpec = struct {
     y: f32, // height of the flame above the prop's base (fires sit on the prop axis, so x/z are 0)
@@ -312,10 +319,14 @@ pub const Info = struct {
     view: f32,
     flora: bool = false,
     interact: bool = false,
-    /// MAY THIN OUT WHEN IT STANDS IN THE CAMERA'S WAY — trunks, canopies, shafts, the things you
-    /// lose the fight behind. Buildings, walls and cliffs are deliberately NOT in it: losing sight of
-    /// the hero behind architecture is the geometry doing its job, and ER keeps those solid too.
-    fades: bool = false,
+    /// NEVER THINS WHEN IT STANDS IN THE CAMERA'S WAY — architecture, cliffs, the water sheet. Losing
+    /// sight of the hero behind a wall is the geometry doing its job, and ER keeps those solid too.
+    /// EVERYTHING ELSE THINS, and the default is that way round on purpose: as an opt-in `fades` flag
+    /// every kind added afterwards opted out by silence, which is how boulders, statues, lanterns and
+    /// saplings ended up blotting him out solid. Flora is exempt structurally — see `Env.markOccluders`.
+    solid: bool = false,
+    /// What the fade tests the sight line against when the colliders are the wrong shape for it (trees).
+    occl: []const Blocker = &.{},
     casts: bool = true,
     parts: []const Part = &.{},
     light: ?LightSpec = null,
@@ -334,20 +345,25 @@ const cliffParts = [_]Part{
 };
 
 pub const INFO = [NK]Info{
-    .{ .kind = .pillar, .build = ruins.pillarWhole, .bound = 6.2, .top = 5.8, .view = 240, .fades = true, .parts = circleParts(0.80, 5.8) },
-    .{ .kind = .broken, .build = ruins.pillarBroken, .bound = 3.6, .top = 3.3, .view = 200, .fades = true, .parts = circleParts(0.80, 2.9) },
-    .{ .kind = .block, .build = ruins.blockMesh, .bound = 2.6, .top = 1.85, .view = 180, .parts = &.{.{ .ax = -0.35, .bx = 0.35, .r = 0.80, .h = 1.65 }} },
-    .{ .kind = .arch, .build = ruins.archMesh, .bound = 7.9, .top = 7.2, .view = 260, .fades = true, .parts = &.{
+    .{ .kind = .pillar, .build = ruins.pillarWhole, .bound = 6.2, .top = 5.8, .view = 240, .parts = circleParts(0.80, 5.8) },
+    .{ .kind = .broken, .build = ruins.pillarBroken, .bound = 3.6, .top = 3.3, .view = 200, .parts = circleParts(0.80, 2.9) },
+    .{ .kind = .block, .build = ruins.blockMesh, .bound = 2.6, .top = 1.85, .view = 180, .solid = true, .parts = &.{.{ .ax = -0.35, .bx = 0.35, .r = 0.80, .h = 1.65 }} },
+    // The colliders ARE the occluder here, and that is the point of the fallback: the opening between the
+    // piers is see-through geometry, and one fat cylinder over the whole arch would thin it looking through it.
+    .{ .kind = .arch, .build = ruins.archMesh, .bound = 7.9, .top = 7.2, .view = 260, .parts = &.{
         .{ .ax = -2.7, .bx = -2.7, .r = 0.78, .h = 4.8 },
         .{ .ax = 2.7, .bx = 2.7, .r = 0.78, .h = 4.8 },
     } },
-    .{ .kind = .wall, .build = ruins.wallMesh, .bound = 5.0, .top = 3.6, .view = 220, .parts = &.{.{ .ax = -2.8, .bx = 2.8, .r = 0.60, .h = 3.0 }} },
-    .{ .kind = .tree, .build = wood.treeMesh, .bound = 5.3, .top = 4.9, .view = 240, .fades = true, .parts = circleParts(0.38, 3.6), .surf = .wood },
+    .{ .kind = .wall, .build = ruins.wallMesh, .bound = 5.0, .top = 3.6, .view = 220, .solid = true, .parts = &.{.{ .ax = -2.8, .bx = 2.8, .r = 0.60, .h = 3.0 }} },
+    // Dead and bare (`treeMesh` is all rot hollow and stripped limbs) — the bole is the only mass that hides him.
+    .{ .kind = .tree, .build = wood.treeMesh, .bound = 5.3, .top = 4.9, .view = 240, .parts = circleParts(0.38, 3.6), .occl = &.{.{ .r = 0.90, .y1 = 4.3 }}, .surf = .wood },
     .{ .kind = .graves, .build = ruins.gravesMesh, .bound = 2.3, .top = 1.05, .view = 150, .parts = circleParts(0.80, 0.9) },
     .{ .kind = .sword, .build = ruins.swordMesh, .bound = 1.6, .top = 1.35, .view = 120 },
-    .{ .kind = .grace, .build = ruins.graceMesh, .veil = ruins.graceVeilMesh, .stow = ruins.graceGuitarMesh, .bound = 7.2, .top = 5.4, .view = 300, .light = .{ .y = 0.45, .col = v3(0.86, 0.48, 0.18), .radius = 11.0, .flicker = 0.17 } },
-    .{ .kind = .tower, .build = ruins.towerMesh, .bound = 17.5, .top = 17.2, .view = FAR, .parts = circleParts(3.40, 14.0) },
-    .{ .kind = .gate, .build = ruins.gateMesh, .bound = 19.6, .top = 16.4, .view = FAR, .parts = &.{
+    // SOLID because its veil is not: the smoke column draws down a separate path (`drawVeils`) that carries
+    // no fade, so a thinned grace under a solid plume reads as a bug. It is a landmark you want to see anyway.
+    .{ .kind = .grace, .build = ruins.graceMesh, .veil = ruins.graceVeilMesh, .stow = ruins.graceGuitarMesh, .bound = 7.2, .top = 5.4, .view = 300, .solid = true, .light = .{ .y = 0.45, .col = v3(0.86, 0.48, 0.18), .radius = 11.0, .flicker = 0.17 } },
+    .{ .kind = .tower, .build = ruins.towerMesh, .bound = 17.5, .top = 17.2, .view = FAR, .solid = true, .parts = circleParts(3.40, 14.0) },
+    .{ .kind = .gate, .build = ruins.gateMesh, .bound = 19.6, .top = 16.4, .view = FAR, .solid = true, .parts = &.{
         .{ .ax = -7.5, .bx = -7.5, .r = 3.20, .h = 16.0 },
         .{ .ax = 7.5, .bx = 7.5, .r = 3.20, .h = 16.0 },
     } },
@@ -355,7 +371,7 @@ pub const INFO = [NK]Info{
     .{ .kind = .banner, .build = ruins.bannerMesh, .bound = 3.4, .top = 3.2, .view = 190 },
     .{ .kind = .statue, .build = ruins.statueMesh, .bound = 3.0, .top = 2.7, .view = 230, .parts = circleParts(0.90, 2.7) },
     // half.
-    .{ .kind = .chapel, .build = build.chapelMesh, .bound = 9.5, .top = 6.6, .view = FAR, .parts = &.{
+    .{ .kind = .chapel, .build = build.chapelMesh, .bound = 9.5, .top = 6.6, .view = FAR, .solid = true, .parts = &.{
         .{ .ax = -2.6, .az = -3.6, .bx = -2.6, .bz = 3.6, .r = 0.42, .h = 4.4 }, // west wall
         .{ .ax = 2.6, .az = -3.6, .bx = 2.6, .bz = 3.6, .r = 0.42, .h = 4.4 }, // east wall
         .{ .ax = -2.6, .az = 3.6, .bx = 2.6, .bz = 3.6, .r = 0.42, .h = 4.4 }, // north (altar) wall
@@ -363,27 +379,27 @@ pub const INFO = [NK]Info{
         .{ .ax = 1.15, .az = -3.6, .bx = 2.6, .bz = -3.6, .r = 0.42, .h = 4.4 },
         .{ .ax = -1.5, .az = 2.9, .bx = 1.5, .bz = 2.9, .r = 0.55, .h = 1.1 }, // the altar
     } },
-    .{ .kind = .watchtower, .build = build.watchtowerMesh, .bound = 13.0, .top = 12.4, .view = FAR, .parts = &art.towerRing },
-    .{ .kind = .cottage, .build = build.cottageMesh, .bound = 5.6, .top = 4.0, .view = 280, .parts = &.{
+    .{ .kind = .watchtower, .build = build.watchtowerMesh, .bound = 13.0, .top = 12.4, .view = FAR, .solid = true, .parts = &art.towerRing },
+    .{ .kind = .cottage, .build = build.cottageMesh, .bound = 5.6, .top = 4.0, .view = 280, .solid = true, .parts = &.{
         .{ .ax = -2.3, .az = -1.9, .bx = -2.3, .bz = 1.9, .r = 0.34, .h = 2.6 },
         .{ .ax = 2.3, .az = -1.9, .bx = 2.3, .bz = 1.9, .r = 0.34, .h = 2.6 },
         .{ .ax = -2.3, .az = 1.9, .bx = 2.3, .bz = 1.9, .r = 0.34, .h = 3.4 },
         .{ .ax = -2.3, .az = -1.9, .bx = -0.95, .bz = -1.9, .r = 0.34, .h = 1.2 }, // collapsed to knee height
     }, .surf = .wood },
     // The causeway: you WALK it, so only its kerbs are solid — low enough that arrows arc over.
-    .{ .kind = .causeway, .build = build.causewayMesh, .bound = 6.5, .top = 0.5, .view = 240, .parts = &.{
+    .{ .kind = .causeway, .build = build.causewayMesh, .bound = 6.5, .top = 0.5, .view = 240, .solid = true, .parts = &.{
         .{ .ax = -5.0, .az = -1.45, .bx = 5.0, .bz = -1.45, .r = 0.20, .h = 0.5 },
         .{ .ax = -5.0, .az = 1.45, .bx = 5.0, .bz = 1.45, .r = 0.20, .h = 0.5 },
     } },
-    .{ .kind = .paving, .build = build.pavingMesh, .bound = 3.2, .top = 0.15, .view = 150 },
+    .{ .kind = .paving, .build = build.pavingMesh, .bound = 3.2, .top = 0.15, .view = 150, .solid = true },
     .{ .kind = .cart, .build = village.cartMesh, .bound = 3.4, .top = 1.7, .view = 170, .parts = &.{.{ .ax = -1.1, .bx = 1.1, .r = 0.55, .h = 1.3 }}, .surf = .wood },
     .{ .kind = .monolith, .build = rock.monolithMesh, .bound = 5.2, .top = 4.9, .view = FAR, .parts = circleParts(0.62, 4.6) },
-    .{ .kind = .cliff, .build = rock.cliff1, .bound = 18.0, .top = 15.5, .view = FAR, .parts = &cliffParts },
-    .{ .kind = .cliff2, .build = rock.cliff2, .bound = 17.0, .top = 14.0, .view = FAR, .parts = &cliffParts },
-    .{ .kind = .cliff3, .build = rock.cliff3, .bound = 19.0, .top = 16.8, .view = FAR, .parts = &cliffParts },
-    .{ .kind = .cliff4, .build = rock.cliff4, .bound = 17.5, .top = 14.9, .view = FAR, .parts = &cliffParts },
-    .{ .kind = .cliff5, .build = rock.cliff5, .bound = 17.0, .top = 13.3, .view = FAR, .parts = &cliffParts },
-    .{ .kind = .cliff6, .build = rock.cliff6, .bound = 18.0, .top = 14.5, .view = FAR, .parts = &cliffParts },
+    .{ .kind = .cliff, .build = rock.cliff1, .bound = 18.0, .top = 15.5, .view = FAR, .solid = true, .parts = &cliffParts },
+    .{ .kind = .cliff2, .build = rock.cliff2, .bound = 17.0, .top = 14.0, .view = FAR, .solid = true, .parts = &cliffParts },
+    .{ .kind = .cliff3, .build = rock.cliff3, .bound = 19.0, .top = 16.8, .view = FAR, .solid = true, .parts = &cliffParts },
+    .{ .kind = .cliff4, .build = rock.cliff4, .bound = 17.5, .top = 14.9, .view = FAR, .solid = true, .parts = &cliffParts },
+    .{ .kind = .cliff5, .build = rock.cliff5, .bound = 17.0, .top = 13.3, .view = FAR, .solid = true, .parts = &cliffParts },
+    .{ .kind = .cliff6, .build = rock.cliff6, .bound = 18.0, .top = 14.5, .view = FAR, .solid = true, .parts = &cliffParts },
     .{ .kind = .boulder, .build = rock.boulderMesh, .bound = 3.2, .top = 2.5, .view = 220, .parts = circleParts(1.15, 2.3) },
     .{ .kind = .rocks, .build = rock.rocksMesh, .bound = 2.2, .top = 0.85, .view = 160 },
     .{ .kind = .stump, .build = wood.stumpMesh, .bound = 1.7, .top = 1.25, .view = 150, .parts = circleParts(0.46, 1.2), .surf = .wood },
@@ -399,7 +415,9 @@ pub const INFO = [NK]Info{
     .{ .kind = .stairs, .build = village.stairsMesh, .bound = 2.8, .top = 1.5, .view = 190, .parts = &.{.{ .ax = -1.3, .bx = 1.3, .r = 0.95, .h = 1.4 }} },
     .{ .kind = .gibbet, .build = village.gibbetMesh, .bound = 4.4, .top = 4.1, .view = 220, .parts = circleParts(0.24, 4.0), .surf = .wood },
     .{ .kind = .cairn, .build = rock.cairnMesh, .bound = 1.8, .top = 1.5, .view = 180, .parts = circleParts(0.52, 1.4) },
-    .{ .kind = .chest, .build = village.chestMesh, .bound = 1.6, .top = village.CHEST_TOP + 0.34, .view = 150, .interact = true, .parts = &.{.{ .r = 0.56, .h = village.CHEST_HINGE_Y }}, .surf = .wood },
+    // SOLID for the grace's reason: its LID is not part of this model. `chest.Chests.draw` draws it off the
+    // box's own swing through a path that carries no fade, so a thinned carcase under an opaque lid is a bug.
+    .{ .kind = .chest, .build = village.chestMesh, .bound = 1.6, .top = village.CHEST_TOP + 0.34, .view = 150, .solid = true, .interact = true, .parts = &.{.{ .r = 0.56, .h = village.CHEST_HINGE_Y }}, .surf = .wood },
     .{ .kind = .outcrop, .build = rock.outcropMesh, .bound = 3.4, .top = 1.1, .view = 200, .parts = &.{.{ .ax = -1.4, .bx = 1.4, .r = 1.1, .h = 1.05 }} },
     .{ .kind = .scree, .build = rock.screeMesh, .bound = 2.6, .top = 0.35, .view = 160 },
     .{ .kind = .torch, .build = fx.torchMesh, .bound = 2.6, .top = 2.35, .view = 200, .parts = circleParts(0.18, 2.0), .light = .{ .y = 1.98, .col = v3(0.64, 0.34, 0.13), .radius = 6.0, .flicker = 0.15 }, .surf = .metal },
@@ -409,7 +427,7 @@ pub const INFO = [NK]Info{
     // …AND ONE YOU CAN SIT AT. `interact` shelves it under the editor's Interactables layer beside the
     // chests, which is where the things the player USES belong; `rest.isRestKind` is what makes it a grace.
     .{ .kind = .campfire_lit, .build = fx.campfireMesh, .bound = 1.5, .top = 1.0, .view = 200, .interact = true, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
-    .{ .kind = .water, .build = fx.waterMesh, .bound = 30.0, .top = 0.1, .view = FAR, .casts = false },
+    .{ .kind = .water, .build = fx.waterMesh, .bound = 30.0, .top = 0.1, .view = FAR, .solid = true, .casts = false },
     .{ .kind = .tuft, .build = flora.tuftMesh, .bound = 0.9, .top = 0.8, .view = 85, .flora = true, .casts = false },
     .{ .kind = .patch, .build = flora.patchMesh, .bound = 2.2, .top = 0.8, .view = 95, .flora = true, .casts = false },
     .{ .kind = .shrub, .build = flora.shrubMesh, .bound = 1.2, .top = 0.75, .view = 115, .flora = true, .casts = false },
@@ -435,13 +453,21 @@ pub const INFO = [NK]Info{
     .{ .kind = .thicket, .build = flora.thicketMesh, .bound = 2.8, .top = 1.9, .view = 160, .flora = true, .casts = false },
     .{ .kind = .wildflowers, .build = flora.wildflowersMesh, .bound = 1.5, .top = 0.65, .view = 105, .flora = true, .casts = false },
     .{ .kind = .ivy, .build = flora.ivyMesh, .bound = 2.4, .top = 2.0, .view = 150, .flora = true, .casts = false },
-    .{ .kind = .bigtree, .build = wood.bigTree1, .bound = 13.5, .top = 11.0, .view = FAR, .fades = true, .parts = circleParts(0.95, 6.0), .surf = .wood },
-    .{ .kind = .bigtree2, .build = wood.bigTree2, .bound = 13.0, .top = 8.5, .view = FAR, .fades = true, .parts = circleParts(0.95, 5.0), .surf = .wood },
-    .{ .kind = .bigtree3, .build = wood.bigTree3, .bound = 14.0, .top = 13.5, .view = FAR, .fades = true, .parts = circleParts(0.90, 6.5), .surf = .wood },
-    .{ .kind = .willow, .build = wood.willowMesh, .bound = 8.0, .top = 7.1, .view = 300, .fades = true, .parts = circleParts(0.72, 4.4), .surf = .wood },
-    .{ .kind = .conifer, .build = wood.coniferMesh, .bound = 12.5, .top = 12.0, .view = FAR, .fades = true, .parts = circleParts(0.58, 5.0), .surf = .wood },
-    .{ .kind = .birch, .build = wood.birchMesh, .bound = 10.0, .top = 9.4, .view = 340, .fades = true, .parts = circleParts(0.44, 5.0), .surf = .wood },
-    .{ .kind = .snag, .build = wood.snagMesh, .bound = 8.2, .top = 7.8, .view = 320, .fades = true, .parts = circleParts(0.42, 6.0), .surf = .wood },
+    // BOLE THEN CROWN, and it takes two blockers because one cylinder cannot be narrow at the foot and wide
+    // at the boughs. Sized off `bigTreeMesh`'s own numbers: bole to `spec.trunk`, crown out to the bough tips
+    // (`out` * `spread` plus the canopy blob) and up to `top`. The three specs differ enough to be worth rows
+    // of their own — bigtree2 is squat and broad, bigtree3 tall and narrow.
+    .{ .kind = .bigtree, .build = wood.bigTree1, .bound = 13.5, .top = 11.0, .view = FAR, .parts = circleParts(0.95, 6.0), .occl = &.{ .{ .r = 1.30, .y1 = 5.0 }, .{ .r = 4.80, .y0 = 4.5, .y1 = 11.0 } }, .surf = .wood },
+    .{ .kind = .bigtree2, .build = wood.bigTree2, .bound = 13.0, .top = 8.5, .view = FAR, .parts = circleParts(0.95, 5.0), .occl = &.{ .{ .r = 1.30, .y1 = 3.4 }, .{ .r = 5.40, .y0 = 3.2, .y1 = 8.5 } }, .surf = .wood },
+    .{ .kind = .bigtree3, .build = wood.bigTree3, .bound = 14.0, .top = 13.5, .view = FAR, .parts = circleParts(0.90, 6.5), .occl = &.{ .{ .r = 1.25, .y1 = 5.6 }, .{ .r = 3.60, .y0 = 5.4, .y1 = 13.5 } }, .surf = .wood },
+    // The curtain HANGS: `willowMesh` drops its fronds to y 0.9 at a reach of 3.2, so the blocking mass starts
+    // near the ground and the bole inside it is beside the point.
+    .{ .kind = .willow, .build = wood.willowMesh, .bound = 8.0, .top = 7.1, .view = 300, .parts = circleParts(0.72, 4.4), .occl = &.{ .{ .r = 0.90, .y1 = 3.4 }, .{ .r = 3.60, .y0 = 0.9, .y1 = 5.5 } }, .surf = .wood },
+    // A CONE, in three steps: `coniferMesh` whorls from y 0.16H with `reach` 3.1 falling to a spire.
+    .{ .kind = .conifer, .build = wood.coniferMesh, .bound = 12.5, .top = 12.0, .view = FAR, .parts = circleParts(0.58, 5.0), .occl = &.{ .{ .r = 0.70, .y1 = 1.6 }, .{ .r = 3.40, .y0 = 1.4, .y1 = 5.0 }, .{ .r = 1.80, .y0 = 5.0, .y1 = 9.0 } }, .surf = .wood },
+    .{ .kind = .birch, .build = wood.birchMesh, .bound = 10.0, .top = 9.4, .view = 340, .parts = circleParts(0.44, 5.0), .occl = &.{ .{ .r = 0.55, .y1 = 3.9 }, .{ .r = 3.00, .y0 = 3.5, .y1 = 9.4 } }, .surf = .wood },
+    // Barkless and bare to the top — the trunk is the whole of it.
+    .{ .kind = .snag, .build = wood.snagMesh, .bound = 8.2, .top = 7.8, .view = 320, .parts = circleParts(0.42, 6.0), .occl = &.{.{ .r = 0.75, .y1 = 7.0 }}, .surf = .wood },
     // A sapling CASTS (it is 3 m of tree, and a 3 m thing with no shadow reads as a decal) and so must not sway — the depth pass has no wind term.
     .{ .kind = .sapling, .build = wood.saplingMesh, .bound = 3.8, .top = 3.4, .view = 220, .parts = circleParts(0.16, 2.2), .surf = .wood },
 };
@@ -455,6 +481,17 @@ comptime {
     // A bound smaller than the mesh pops geometry at the frustum edge; catch the obvious cases.
     for (INFO) |row| std.debug.assert(row.bound >= row.top);
     for (INFO) |row| std.debug.assert(!(row.flora and row.casts)); // flora must stay out of the shadow map
+    for (INFO) |row| {
+        // A SECOND MESH IS A SECOND DRAW PATH, and neither `drawVeils` nor `drawStows` carries the fade — so a
+        // kind whose model is not the whole prop has to stay solid or it thins under an opaque half of itself.
+        if (row.veil != null or row.stow != null) std.debug.assert(row.solid);
+        std.debug.assert(!(row.solid and row.occl.len > 0)); // a kind that never thins has nothing to test
+        for (row.occl) |bl| {
+            std.debug.assert(bl.y1 > bl.y0);
+            std.debug.assert(bl.y1 <= row.top + 0.001); // an occluder taller than the mesh thins on empty air
+            std.debug.assert(@sqrt(bl.x * bl.x + bl.z * bl.z) + bl.r <= row.bound + 0.001);
+        }
+    }
 }
 
 test "every kind row sits at its own index and carries a mesh builder" {

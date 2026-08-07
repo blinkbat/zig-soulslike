@@ -129,9 +129,13 @@ pub const RUNES: u32 = 60;
 const State = enum { idle, hop, lunge, recover, chomp, stunlight, stunheavy, dead };
 
 const Choice = enum { rest, hop, lunge, chomp, wait };
-fn classify(dist: f32, lungeReady: bool, chompReady: bool) Choice {
-    if (dist > AGGRO_R) return .rest;
+fn classify(dist: f32, lungeReady: bool, chompReady: bool, rooted: bool) Choice {
     if (dist <= BITE_R) return if (chompReady) .chomp else .wait; // too close to hop; hold for the bite
+    // ROOTED, AND A TOAD TRAVELS BY LEAVING THE GROUND — the hop and the lunge both do, so both are refused
+    // (`foe.canLeap`) and there is nothing left but to wait the grip out. The JAWS are the branch above and
+    // still work: the roots take the feet, not the mouth.
+    if (rooted) return .wait;
+    if (dist > AGGRO_R) return .rest;
     if (dist <= LUNGE_R and lungeReady) return .lunge;
     return .hop;
 }
@@ -331,8 +335,9 @@ pub const Frog = struct {
         }
         self.heroHit = null;
         self.justDied = false;
-        // THE ROOTS HAVE THE FEET AND NOTHING ELSE (foe.grip) — the state machine runs, the jaws still work, and XZ
-        // goes back wherever it tried to travel.
+        // THE ROOTS HAVE THE FEET (foe.grip) — the state machine runs, the jaws still work, and XZ goes back
+        // wherever it tried to travel. Every move a toad has BESIDES the jaws is a leap, so `classify` refuses
+        // the lot of them while the grip is on rather than hopping it on the spot (`foe.canLeap`).
         const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -388,7 +393,7 @@ pub const Frog = struct {
     // Decide what to do next (called when a hop/chomp/recovery finishes, and on the idle timer).
     fn decide(self: *Frog, hero: rl.Vector3, bounds: f32) void {
         const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
-        switch (classify(d, self.lungeCd <= 0, self.chompCd <= 0)) {
+        switch (classify(d, self.lungeCd <= 0, self.chompCd <= 0, !foe.canLeap(&self.root))) {
             .chomp => {
                 self.chompCd = CHOMP_CD;
                 self.startChomp();
@@ -1083,12 +1088,40 @@ fn armMesh(side: f32) rl.Mesh {
 
 
 test "classify: ranges pick chomp < lunge < hop < rest, and cooldowns gate" {
-    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1, true, true));
-    try std.testing.expectEqual(Choice.hop, classify((LUNGE_R + AGGRO_R) * 0.5, true, true));
-    try std.testing.expectEqual(Choice.lunge, classify(LUNGE_R - 0.5, true, true));
-    try std.testing.expectEqual(Choice.hop, classify(LUNGE_R - 0.5, false, true)); // lunge cooling → hop in
-    try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, true, true));
-    try std.testing.expectEqual(Choice.wait, classify(BITE_R - 0.2, true, false)); // in bite range, chomp cooling
+    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1, true, true, false));
+    try std.testing.expectEqual(Choice.hop, classify((LUNGE_R + AGGRO_R) * 0.5, true, true, false));
+    try std.testing.expectEqual(Choice.lunge, classify(LUNGE_R - 0.5, true, true, false));
+    try std.testing.expectEqual(Choice.hop, classify(LUNGE_R - 0.5, false, true, false)); // lunge cooling → hop in
+    try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, true, true, false));
+    try std.testing.expectEqual(Choice.wait, classify(BITE_R - 0.2, true, false, false)); // in bite range, chomp cooling
+}
+
+test "ROOTED, A TOAD HAS ONLY ITS JAWS — every other move it owns leaves the ground" {
+    // The hop and the lunge both go, at every range that would otherwise want one…
+    try std.testing.expectEqual(Choice.wait, classify(LUNGE_R - 0.5, true, true, true));
+    try std.testing.expectEqual(Choice.wait, classify((LUNGE_R + AGGRO_R) * 0.5, true, true, true));
+    try std.testing.expectEqual(Choice.wait, classify(AGGRO_R + 1, true, true, true)); // …the hop HOME included
+    // …and the bite does not: the roots take the feet, not the mouth.
+    try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, true, true, true));
+}
+
+test "a held toad never leaves the earth, and pounces again the moment it is let go" {
+    var f = Frog.spawn(mathx.zero3, 0, 1, 0.4);
+    f.root.grab();
+    var t: f32 = 0;
+    while (t < combat.ROOT_HOLD * 0.9) : (t += 1.0 / 60.0) {
+        _ = f.update(1.0 / 60.0, v3(0, 0, LUNGE_R - 0.5), 500.0, .{});
+        try std.testing.expect(!f.airborne());
+        try std.testing.expect(f.lift <= 0.0001);
+    }
+    f.root.release();
+    var left = false;
+    t = 0;
+    while (t < 3.0) : (t += 1.0 / 60.0) {
+        _ = f.update(1.0 / 60.0, v3(0, 0, LUNGE_R - 0.5), 500.0, .{});
+        if (f.airborne()) left = true;
+    }
+    try std.testing.expect(left);
 }
 
 test "range thresholds are ordered and inside senses" {

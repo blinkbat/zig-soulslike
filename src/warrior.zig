@@ -647,8 +647,8 @@ pub const Warrior = struct {
         }
         self.heroHit = null;
         self.justDied = false; // one-frame flag: re-set below only if this frame's blade kills it
-        // THE ROOTS HAVE THE FEET AND NOTHING ELSE (foe.grip) — the greatsword's lunge still swings, it just covers no
-        // ground, and dry bone shrugs most of the grip off.
+        // THE ROOTS HAVE THE FEET (foe.grip) — the slam still comes down on the spot, and dry bone shrugs most
+        // of the grip off. The LUNGE is a jump and is off the table entirely while it holds (`foe.canLeap`).
         const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -918,8 +918,15 @@ pub const Warrior = struct {
             return self.enter(.approach);
         }
         var ready: [MAX_MOVES]bool = [_]bool{false} ** MAX_MOVES;
-        const n = spec(self.role).moves.len;
-        for (0..n) |i| ready[i] = self.cds[i] <= 0;
+        const moves = spec(self.role).moves;
+        const n = moves.len;
+        // A MOVE THAT LEAVES THE EARTH IS NOT READY WHILE THE ROOTS HAVE THE FEET (`foe.canLeap`). Folded into
+        // `ready` rather than tested at the pick, because `classify` reads the same array: gated only at the
+        // pick, a rooted greatsword with the lunge up and the slam cooling is told to `.strike`, finds nothing
+        // to throw, and falls back through `orelse 0` to a slam that is still on cooldown. Asked of the move's
+        // OWN `hop` and not of `LUNGE` by name, so the third one that jumps is covered the day it is written.
+        const canLeap = foe.canLeap(&self.root);
+        for (0..n) |i| ready[i] = self.cds[i] <= 0 and (canLeap or moves[i].hop <= 0);
         switch (classify(self.role, dist, self.scale, ready[0..n])) {
             .strike => {
                 self.atk = pick(self.role, dist, self.scale, ready[0..n]) orelse 0;
@@ -2270,6 +2277,50 @@ test "EVERY STROKE'S COMMITTED TRAVEL STARTS AT ZERO, whichever stroke of the co
     g.enter(.swing);
     try std.testing.expectApproxEqAbs(@as(f32, 0), g.leapDone, 1e-6); // …and the next stroke starts clean
     try std.testing.expectEqual(@as(u8, 1), g.stroke); // without losing where it is in the combo
+}
+
+test "ROOTED, THE GREATSWORD SLAMS RATHER THAN LUNGING — and never off cooldown" {
+    var g = Warrior.spawnAs(.greatsword, mathx.zero3, 0, 1.0, 0.4);
+    g.root.grab();
+    // Stood at the range the LUNGE is thrown from and the SLAM is not, which is where the two answers differ.
+    const at = v3(0, 0, triggerR(LUNGE, g.scale) - 0.2);
+    var t: f32 = 0;
+    while (t < combat.ROOT_HOLD * 0.9) : (t += 1.0 / 60.0) {
+        _ = g.update(1.0 / 60.0, at, 500.0, .{});
+        try std.testing.expect(!g.airborne());
+        try std.testing.expect(g.hop <= 0.0001);
+        // …and it did NOT fall back through `orelse 0` onto a slam whose clock is still running.
+        if (g.state == .wind or g.state == .swing) try std.testing.expect(g.atk == 0 and g.cds[0] <= 0);
+    }
+    // Let go and the lunge is on the table again.
+    g.root.release();
+    var left = false;
+    t = 0;
+    while (t < 4.0) : (t += 1.0 / 60.0) {
+        _ = g.update(1.0 / 60.0, at, 500.0, .{});
+        if (g.airborne()) left = true;
+    }
+    try std.testing.expect(left);
+}
+
+test "a rooted berserker never dashes, and a rooted hatchling never pounces" {
+    const koboldmod = @import("kobold.zig");
+    var z = koboldmod.Kobold.spawnAs(.berserker, mathx.zero3, 0, 1.0, 0.4);
+    z.root.grab();
+    var t: f32 = 0;
+    while (t < combat.ROOT_HOLD * 0.9) : (t += 1.0 / 60.0) {
+        _ = z.update(1.0 / 60.0, v3(0, 0, 5.0), 500.0, .{}); // inside its dash band, out of chop reach
+        try std.testing.expect(!z.airborne());
+    }
+
+    const broodmod = @import("brood.zig");
+    var b = broodmod.Spider.spawnAs(.broodling, mathx.zero3, 0, 1.0, 0.4);
+    b.root.grab();
+    t = 0;
+    while (t < combat.ROOT_HOLD * 0.9) : (t += 1.0 / 60.0) {
+        _ = b.update(1.0 / 60.0, v3(0, 0, 3.0), 500.0, .{});
+        try std.testing.expect(!b.airborne());
+    }
 }
 
 test "THE LEAP TRAVELS EXACTLY ITS OWN DISTANCE, and comes back to earth" {

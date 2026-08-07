@@ -481,7 +481,10 @@ comptime {
     const release = CAST_SPARKS + CAST_COLLAR + 1;
     // …and the ROOTS' own burst, which shares this one pool and is thrown on the same frame a gather ends.
     const erupt = ROOT_DUST + ROOT_MOTES;
-    const worst = gather + @as(f32, release + erupt + 2 * BOLT_BURST); // two bolts can land across chained casts
+    // …and the shield's sparks, which the same pool carries: a parry cannot run WITH a cast, but its sparks
+    // outlive the swap, so the two overlap in the ring however exclusive the actions are.
+    const caught = PARRY_SPARKS + 1;
+    const worst = gather + @as(f32, release + erupt + caught + 2 * BOLT_BURST); // two bolts can land across chained casts
     if (@as(f32, FX_N) < worst) @compileError(std.fmt.comptimePrint(
         "hero: FX_N = {d} but a cast can have {d} particles in the air — raise it",
         .{ FX_N, worst },
@@ -550,6 +553,91 @@ const BLOCK_TRUNK = 9.0;
 const BLOCK_STEP = 0.14 * H;
 const BLOCK_SINK = 0.048 * H;
 const BLOCK_FLASH = 0.22; // a LICK of red, well under `takeHit`'s 0.35 for a blow that got through
+
+// THE PARRY — L2, the shield's own skill, and one short committed shove of the boards with a catch window at
+// the front of it. It does NOT ask whether the guard is up: blocking and parrying are the two things that one
+// arm can do, not a move and its follow-up. At ER's own numbers a parry is a gamble made INSIDE an attack's
+// tell, so the whole action has to be over before the blow you mistimed it on arrives; and because it is
+// committed, `canGuard` refuses while it runs, so the block is off for its duration whether he was holding one
+// or not. That tail is the risk, and it is why the window and the animation are two clocks.
+pub const PARRY_DUR = 0.44;
+/// It opens a HAIR late — the arm has to be visibly moving, which is `foe.TELL_MIN`'s rule turned on the
+/// player — and shuts less than halfway through, so the recovery is honestly open.
+const PARRY_OPEN = 0.04;
+const PARRY_SHUT = 0.19;
+/// Where the shove PEAKS as a fraction of the duration, kept INSIDE the window: the frame that catches has to
+/// be the frame the boards are furthest out, or the pose and the mechanic are telling different stories.
+pub const PARRY_PUNCH_AT = 0.30;
+/// A MASS IN MOTION OVERSHOOTS ITS REST AND SETTLES BACK ONTO IT (owner's law) — three quarters of a turn, so
+/// the arm comes back through its own rest and past it once before it settles.
+const PARRY_REBOUND = 0.75;
+/// THE THRUST, AND IT IS PAID FOR AT BOTH JOINTS. `shieldFit` is the INVERSE of the guard's arm fold
+/// (`GUARD_ARM_FOLD` = shoulder flex + elbow), so the boards keep their facing only while that SUM does: opened
+/// at the elbow alone, a shove of this size rotates the shield clean off its own arm and presents the player
+/// with the end of his own forearm (measured, and it is the retune AGENTS.md's shieldFit law warns about). So
+/// the shoulder takes +`PARRY_PUNCH` and the elbow gives back exactly as much — the fold is untouched, the
+/// forearm keeps its direction, and what travels is the HAND: the upper arm's own length through twice this
+/// angle, about 30 cm of boards driven at the blow.
+const PARRY_PUNCH = 52.0;
+/// …and the boards SQUARE UP onto the threat as they go, unwinding the guard's own cross rather than carrying
+/// on past it. Swung FURTHER across at the SHOULDER (the first shape tried) they leave his chest bare and
+/// arrive edge-on, which is a shield doing the one thing a shield must never do.
+const PARRY_SWEEP = 26.0;
+const PARRY_WRIST = 16.0; // deg of cant in the fist — a roll of the rim, kept small: the fold does the work
+/// THE SWIPE, AND IT IS DRIVEN FROM THE WAIST. This is the whole reason the sweep is not at the shoulder: a
+/// shoulder yaw big enough to carry the boards across his front turns their FACE with it, because `shieldFit`
+/// is the inverse of exactly that yaw. The TRUNK turns the arm and the boards TOGETHER, so the shield stays
+/// square to the direction it is travelling — which is what a bat-away is, and what a rim arriving edge-on is
+/// not. Degrees PER SEGMENT over spine + chest at full follow-through.
+const PARRY_TRUNK = 38.0;
+/// …and the SHOULDER adds a little on top, so the boards outrun the chest carrying them (stagger the lags —
+/// joints peaking on one frame read as a welded block). Small, because every degree of it turns the shield's
+/// face as well as moving it: this is the axis `shieldFit` inverts, and 12 is about what the wrist cant beside
+/// it is already worth.
+const PARRY_ARM_LEAD = 12.0;
+/// He COILS the other way first, then whips across, then settles back onto centre — three phases on their own
+/// clock, staggered against the thrust's, because joints peaking on one frame read as a welded block.
+pub const PARRY_COIL_AT = 0.13; // fraction of the action spent winding up…
+/// …and where the arc has been fully crossed. SOLVED, not chosen: `smoothstep` is half way through at half its
+/// span, so the boards cross CENTRE at `COIL_AT + (END - COIL_AT)/2` and this is the value that puts that
+/// crossing exactly on `PARRY_PUNCH_AT` — the frame the thrust peaks, which is the frame that catches. At 0.58
+/// the sweep was still a third of the way back on the coil when the blow arrived (measured, and the test that
+/// pins the crossing is what found it).
+pub const PARRY_SWEEP_END = 2.0 * PARRY_PUNCH_AT - PARRY_COIL_AT;
+/// The share of the turn the PELVIS takes; the rest is waist. All of it at the root would rotate the legs and
+/// read as a spin rather than a swipe.
+const PARRY_PELVIS = 0.30;
+const PARRY_PITCH = 6.0; // he leans INTO it, about the feet
+const PARRY_LEAD = 0.055 * H; // …and steps into it
+const PARRY_SINK = 0.020 * H;
+const PARRY_SWORD_COCK = 14.0; // the sword hand draws a little further back: the riposte, loading
+const PARRY_HEAD = 10.0;
+/// STRUCK IRON — the one FX here lit like a spark, thrown along the boards' own normal so a catch reads off the
+/// SHIELD and not off the hero holding it. They fall hard: hot metal has real weight in it.
+///
+/// SEPARATED ON HUE, not on value. The boards come back off this sun around 140 and a pale cream spark at 3 cm
+/// read as a soft bubble sitting on them (measured, at 30 of them). HOT AMBER against pale tan reads at a
+/// tenth the size, so the radius is what came down and the count with it.
+const PARRY_SPARK = rgba(255, 206, 108, 240);
+const PARRY_SPARK_HOT = rgba(255, 250, 232, 250);
+const PARRY_SPARKS = 34;
+/// AND THE FAN IS THE DOMINANT HALF OF THE THROW. Struck sparks do fly forward, but forward is DOWN THE LENS
+/// here: at 0.42 of the forward speed most of them were still inside the disc's own outline four frames later
+/// and read as dots painted on the boards (measured). What says "shower" is the ones crossing the RIM, so the
+/// sideways throw has to outrun the one off the face — hence a fan bigger than the shield's radius in the first
+/// three frames, and only enough forward to clear the boards.
+const PARRY_SPARK_FAN = 9.0; // m/s, peak sideways off the boss…
+const PARRY_SPARK_OUT_LO = 1.0; // …and off the face itself
+const PARRY_SPARK_OUT_HI = 3.2;
+const PARRY_SPARK_R0_LO = 0.009;
+const PARRY_SPARK_R0_HI = 0.019;
+const PARRY_SPARK_GRAV = 9.0;
+/// One bloom on the boss, and SMALL for the cast flash's reason: it is a solid sphere, not additive, so a big
+/// one is a balloon over the shield it exists to point at — measured at 0.085 it read as a puff of smoke sat on
+/// the boards, because on the FIRST frame it and every spark are still at the same point.
+const PARRY_FLASH_R = 0.05;
+const PARRY_FLASH_LIFE = 0.06;
+
 const SHIELD_R = 0.115 * H;
 const SHIELD_THICK = 0.020 * H;
 const SHIELD_WOOD = rgba(56, 41, 29, 255); // dark limewood boards…
@@ -565,17 +653,15 @@ const SH_CROSS_S = @sin(radians(GUARD_SH_CROSS));
 const SH_CROSS_C = @cos(radians(GUARD_SH_CROSS));
 /// The face's own normal, expressed in the WRIST's frame — which is where the standoff has to be measured, since the hand grips BEHIND the boss.
 const SHIELD_N = v3(SH_CROSS_S, -SH_CROSS_C * SH_FOLD_S, SH_CROSS_C * SH_FOLD_C);
+/// …and where the middle of the boards SITS in that frame, the hand gripping behind the boss.
+const SHIELD_HUB = v3(
+    SHIELD_STANDOFF * SHIELD_N.x,
+    FIST_Y + SHIELD_STANDOFF * SHIELD_N.y,
+    FIST_Z + SHIELD_STANDOFF * SHIELD_N.z,
+);
 /// MEASURED AND LEFT: every input here is a compile-time constant, so this rebuilds the same matrix twice a frame (the depth pass and the lit pass both go through `draw`).
 fn shieldFit() rl.Matrix {
-    return mul3(
-        ry(GUARD_SH_CROSS),
-        rx(GUARD_ARM_FOLD),
-        tr(
-            SHIELD_STANDOFF * SHIELD_N.x,
-            FIST_Y + SHIELD_STANDOFF * SHIELD_N.y,
-            FIST_Z + SHIELD_STANDOFF * SHIELD_N.z,
-        ),
-    );
+    return mul3(ry(GUARD_SH_CROSS), rx(GUARD_ARM_FOLD), tr(SHIELD_HUB.x, SHIELD_HUB.y, SHIELD_HUB.z));
 }
 
 const GRIP_PITCH = 34.0; // deg the blade leads forward of the forearm line
@@ -871,7 +957,17 @@ pub const Hero = struct {
     guarding: bool = false,
     guardB: f32 = 0,
     /// Seconds since the last blow caught on the shield — the recoil clock, and the ONLY record a block leaves.
+    /// A PARRY LANDING STAMPS IT TOO: a caught blow is driven into the body exactly as a blocked one is (THE MAN
+    /// MOVES, THE SHIELD HOLDS), and a second clock alongside it could only ever disagree with this one.
     blockT: f32 = mathx.LONG_AGO,
+    /// L2, THE SHIELD'S OWN SKILL — a COMMITTED window, unlike the held guard it shares an arm with, so it sits
+    /// in `committed()` beside the swing and the cast, is never buffered, and takes any block off him while it
+    /// runs.
+    parrying: bool = false,
+    parryT: f32 = 0,
+    /// Counted like `swings`/`casts`: the game reads the EDGE for the shove's own effort, and a chained parry
+    /// clears `parrying` and sets it again inside one frame.
+    parries: u32 = 0,
     held: bool = false,
     stun: combat.StunKind = .none, // .light flinch / .heavy stagger (a committed reaction)
     stunT: f32 = 0, // seconds into the current stagger
@@ -930,6 +1026,7 @@ pub const Hero = struct {
         self.sprinting = false;
         self.guarding = false;
         self.guardB = 0;
+        self.parrying = false;
         self.dropAim();
         self.stun = .none;
         self.hurtFlash = 0;
@@ -961,11 +1058,13 @@ pub const Hero = struct {
         // Stamina belongs in the prologue for the same reason the others do: it must advance exactly ONCE per frame whichever path is running, and hanging it off the live loop instead would leave --shot draining every swing it takes and never refilling.
         // The cast is in the PAUSE list beside the swing and the roll: a committed action does not refill the
         // bar under itself. It is not in the DRAIN argument, because a cast bills FP and never stamina.
-        if (!self.held) self.stam.tick(dt, self.sprinting, self.attacking or self.rolling or self.guarding or self.casting);
+        if (!self.held) self.stam.tick(dt, self.sprinting, self.attacking or self.rolling or self.guarding or self.casting or self.parrying);
         self.stamRefused = @max(0, self.stamRefused - dt);
         self.fpRefused = @max(0, self.fpRefused - dt);
         // The stance blend and the recoil clock, in the prologue with the rest: exactly one advance path runs each frame and both have to move under all of them, or the shield hangs mid-raise through a stagger and the recoil freezes on whatever frame the block landed.
-        self.guardB = mathx.approach(self.guardB, if (self.guarding) 1.0 else 0.0, dt * GUARD_BLEND_RATE);
+        // The PARRY holds the stance blend up as the held guard does: the boards are still up, they are being
+        // SHOVED at something. Without it the shield visibly sinks through a window it is the whole point of.
+        self.guardB = mathx.approach(self.guardB, if (self.guarding or self.parrying) 1.0 else 0.0, dt * GUARD_BLEND_RATE);
         self.aimB = mathx.approach(self.aimB, if (self.aiming) 1.0 else 0.0, dt * BOW_BLEND_RATE);
         self.aimLean = mathx.approach(self.aimLean, self.aimLeanWant, dt * AIM_LEAN_RATE);
         self.blockT = @min(self.blockT + dt, mathx.LONG_AGO);
@@ -1029,7 +1128,7 @@ pub const Hero = struct {
 
 
     pub fn committed(self: *const Hero) bool {
-        return self.rolling or self.attacking or self.drinking or self.shooting or self.casting;
+        return self.rolling or self.attacking or self.drinking or self.shooting or self.casting or self.parrying;
     }
 
     pub fn bowOut(self: *const Hero) bool {
@@ -1170,10 +1269,116 @@ pub const Hero = struct {
         self.guarding = want and self.canGuard();
     }
 
+    /// IS THE SHIELD ARM FREE TO DO ANYTHING AT ALL — everything the guard asks BAR the stamina, because that
+    /// is the one clause the parry answers differently: an empty bar leaves the shield quietly down, where a
+    /// parry the player pressed for has to say NO out loud (`hero.stamRefused` → the red ring).
+    fn shieldArm(self: *const Hero) bool {
+        return self.arm == .sword and self.off == .shield and !self.committed() and !self.staggered() and !self.dead and !self.sprinting;
+    }
+
     /// AN EMPTY BAR CANNOT HOLD A SHIELD UP — and neither can a hand with a wand in it. The wand clause is
     /// the same ANATOMY the bow clause is, asked of the other slot: there is one left hand.
     pub fn canGuard(self: *const Hero) bool {
-        return self.arm == .sword and self.off == .shield and !self.committed() and !self.staggered() and !self.dead and !self.sprinting and self.stam.canAct();
+        return self.shieldArm() and self.stam.canAct();
+    }
+
+    /// L2 WITH BOARDS IN THE HAND — and it asks nothing about whether they are RAISED. The shield's skill is not
+    /// a follow-up to blocking, it is the other thing you can do with the same arm, so the question is exactly
+    /// the guard's own: is that arm free, and is there anything in the bar. Answering it through `canGuard`
+    /// rather than restating it is what stops the two drifting apart.
+    pub fn canParry(self: *const Hero) bool {
+        return self.canGuard();
+    }
+
+    /// PRESSED, and NEVER BUFFERED (the loose's rule, and the cast's): a parry is a window the player picked a
+    /// moment for, and one fired out of the input queue would open it at a moment he did not. Reports whether
+    /// one actually started, so the caller's tell cannot sound for a shove the bar refused.
+    pub fn requestParry(self: *Hero) bool {
+        if (!self.shieldArm()) return false;
+        // The panic rule, stamina's: any bar above zero buys the window, and the whole cost comes off it.
+        if (!self.stam.canAct()) {
+            self.refuse();
+            return false;
+        }
+        self.stam.spend(combat.STAM_PARRY);
+        self.parrying = true;
+        self.parryT = 0;
+        self.parries +%= 1; // every shove, chained ones included — see the field
+        // …and if he WAS blocking, that block is off for the window's duration: one arm, one job. Written here
+        // as well as re-derived by `canGuard` because a parry can be started without going through `setGuard`.
+        self.guarding = false;
+        self.startXfade();
+        return true;
+    }
+
+    /// Call in place of move/attack while `parrying`. PLANTED, like the cast and the quick shot: catching a
+    /// blow is something you stand still and do.
+    pub fn updateParry(self: *Hero, dt: f32, faceYaw: ?f32) void {
+        self.tickClocks(dt);
+        self.speed = 0;
+        self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
+        if (faceYaw) |ty| self.facing = mathx.approachAngle(self.facing, ty, TURN_TO_SHOT * dt);
+        self.parryT += dt;
+        // Pose BEFORE clearing `parrying` — the roll's one-frame contract.
+        self.pose();
+        if (self.parryT >= PARRY_DUR) {
+            self.parrying = false;
+            self.startXfade();
+            self.fireQueued();
+        }
+    }
+
+    /// THE FRAMES THAT ACTUALLY CATCH. Its own predicate rather than a span read off the pose, because the
+    /// mechanic and the animation are not one clock: the shove keeps playing for a third of a second after the
+    /// window has shut, and that tail is the risk the parry is priced on.
+    pub fn parryLive(self: *const Hero) bool {
+        return self.parrying and self.parryT >= PARRY_OPEN and self.parryT < PARRY_SHUT;
+    }
+
+    /// A BLOW CAUGHT. NO stamina, no chip, no flinch: refusing one outright is what the window was for, and it
+    /// was paid for at the press. What it leaves is the shield's own recoil clock — `blockHit`'s, so a catch
+    /// drives into the body exactly as a block does — and the sparks that say iron, not wood on flesh.
+    pub fn noteParry(self: *Hero) void {
+        self.blockT = 0;
+        self.parrySparks();
+    }
+
+    /// THE MIDDLE OF THE BOARDS AND THE WAY THEY FACE, in world space — MEASURED off the fit matrix's own
+    /// constants (the ogre's `clubLowWorld` law) rather than transcribed, so re-hanging the shield keeps the
+    /// sparks on its face instead of in the air beside it.
+    pub fn shieldFaceWorld(self: *const Hero) struct { at: rl.Vector3, n: rl.Vector3 } {
+        const at = rl.math.vector3Transform(SHIELD_HUB, self.xf[WRL]);
+        const out = rl.math.vector3Transform(mathx.addV(SHIELD_HUB, SHIELD_N), self.xf[WRL]);
+        return .{ .at = at, .n = mathx.normV(mathx.subV(out, at)) };
+    }
+
+    /// A FAN OF STRUCK IRON OFF THE BOSS, thrown about the boards' own normal — the collar's construction in
+    /// `castSparks`, for its reason: a spray built on world axes reads as a puddle round his hand the moment
+    /// the shield is not square to the camera.
+    fn parrySparks(self: *Hero) void {
+        const f = self.shieldFaceWorld();
+        var side = mathx.perpXZ(f.n);
+        if (mathx.lenV(side) < 1e-3) side = v3(1, 0, 0); // boards facing straight up or down have no perp
+        side = mathx.normV(side);
+        const up = mathx.normV(mathx.crossV(f.n, side));
+        // A hair PROUD of the face, or the first frame's sparks are half-buried in the boards they came off.
+        const at = mathx.addV(f.at, mathx.scaleV(f.n, 0.02));
+        var rng = foemod.fxStream(@floatFromInt(self.parries), 733.0, 0x8B04);
+        var i: u32 = 0;
+        while (i < PARRY_SPARKS) : (i += 1) {
+            const a = rng.angle();
+            const fan = rng.range(0.35, 1.0) * PARRY_SPARK_FAN;
+            const v = mathx.addV(
+                mathx.scaleV(f.n, rng.range(PARRY_SPARK_OUT_LO, PARRY_SPARK_OUT_HI)),
+                mathx.addV(mathx.scaleV(side, mathx.cosf(a) * fan), mathx.scaleV(up, mathx.sinf(a) * fan)),
+            );
+            // A WIDE SPREAD OF LIVES, not one: struck iron throws a few that die instantly and a few that arc
+            // right down to the grass, and it is the long ones that make the shower read as a shower rather
+            // than as one frame of confetti.
+            foemod.emitParticle(&self.fx, &self.fxHead, at, v, rng.range(0.16, 0.72), rng.range(PARRY_SPARK_R0_LO, PARRY_SPARK_R0_HI), 0.003, if (rng.float() < 0.45) PARRY_SPARK_HOT else PARRY_SPARK, PARRY_SPARK_GRAV);
+        }
+        // The bloom DRIFTS off the boards rather than sitting on them, or it reads as a sphere switched on.
+        foemod.emitParticle(&self.fx, &self.fxHead, at, mathx.scaleV(f.n, 0.8), PARRY_FLASH_LIFE, PARRY_FLASH_R, PARRY_FLASH_R * 0.25, PARRY_SPARK_HOT, 0);
     }
 
     /// L1 with a wand in the left hand — the guard's own button, routed by what that hand is holding.
@@ -1698,6 +1903,9 @@ pub const Hero = struct {
         // spell you paid for and did not get, exactly as it is a flask you paid for and did not drink.
         self.casting = false;
         self.guarding = false;
+        // …and the shield's window, whose stamina is already gone for the cast's reason. A catch he was one
+        // frame short of is a catch he does not get.
+        self.parrying = false;
         self.dropAim();
         self.queued = null;
         self.stun = kind;
@@ -1713,6 +1921,7 @@ pub const Hero = struct {
         self.drinking = false;
         self.casting = false;
         self.guarding = false;
+        self.parrying = false;
         self.dropAim();
         self.stun = .none;
         self.queued = null;
@@ -1756,6 +1965,7 @@ pub const Hero = struct {
         self.sprinting = false;
         self.guarding = false;
         self.guardB = 0;
+        self.parrying = false;
         self.dropAim();
         self.blockT = mathx.LONG_AGO;
         self.pos = self.spawnPos;
@@ -1778,6 +1988,7 @@ pub const Hero = struct {
         if (self.rolling) return self.poseRoll();
         if (self.attacking) return self.poseAttack();
         if (self.casting) return self.poseCast();
+        if (self.parrying) return self.poseParry();
         const m = self.moving;
         const ph = self.phase;
         const twoPi = std.math.tau;
@@ -1933,6 +2144,79 @@ pub const Hero = struct {
         for ([_]usize{ SPINE, CHEST, NECK, HEAD, SHL, ELL, WRL, SHR, ELR, WRR, SWORD }) |i| {
             wx[i] = lerpM(wx[i], gp[i], k);
         }
+    }
+
+    /// ONE CHANNEL DRIVES THE WHOLE SHOVE: out hard to `PARRY_PUNCH_AT`, then a damped swing that crosses its
+    /// own rest and settles exactly on it (a mass in motion overshoots — the reactions law, on the player's own
+    /// arm). At the end it is 0, which IS the guard pose, so the window eases back into the stance it came out
+    /// of rather than snapping there.
+    fn parryDrive(u: f32) f32 {
+        if (u <= PARRY_PUNCH_AT) return mathx.smoothstep(0, PARRY_PUNCH_AT, u);
+        const w = mathx.clampF((u - PARRY_PUNCH_AT) / (1.0 - PARRY_PUNCH_AT), 0, 1);
+        const fall = (1.0 - w) * (1.0 - w); // …and it dies AT w = 1, so there is nothing left to snap out of
+        return fall * mathx.cosf(std.math.tau * PARRY_REBOUND * w);
+    }
+
+    /// THE SWIPE ITSELF: −1 fully coiled the other way, +1 followed all the way through, crossing CENTRE about
+    /// where the thrust peaks — which is the frame that catches. It comes home to 0, so the shove ends on the
+    /// stance it started from and the exit has nothing to unwind.
+    fn parrySweep(u: f32) f32 {
+        const coil = mathx.smoothstep(0, PARRY_COIL_AT, u); // wind up, fast
+        const whip = mathx.smoothstep(PARRY_COIL_AT, PARRY_SWEEP_END, u); // …then the arc, crossing at half
+        const settle = 1.0 - mathx.smoothstep(PARRY_SWEEP_END, 1.0, u); // …and the follow-through unwinds
+        return (2.0 * whip - coil) * settle;
+    }
+
+    /// THE BAT-AWAY — the guard's own stance with the boards shoved out of it, driven by the trunk and rocked
+    /// back onto rest. A CAUGHT blow lands on top of it through `blockRecoil`, the block's own channel: the man
+    /// moves and the shield holds, so the recoil goes into the body and only a little into the arm.
+    fn poseParry(self: *Hero) void {
+        const u = mathx.clampF(self.parryT / PARRY_DUR, 0, 1);
+        const k = parryDrive(u); // the THRUST: boards out and back
+        const s = parrySweep(u); // …and the SWIPE they travel on, −1 coiled through to +1 followed through
+        const rec = self.blockRecoil();
+        const facingDeg = mathx.degrees(self.facing);
+        const hipY = self.rest[ROOT].y;
+        // The guard's own trunk yaw toward the shield side, with the swipe turning through it: negative winds
+        // him up onto that side, positive carries the whole arm — and the boards square on it — across his front.
+        const blade = -(GUARD_BLADE + BLOCK_TRUNK * rec) + PARRY_TRUNK * s;
+        const sink = GUARD_CROUCH + PARRY_SINK * k + BLOCK_SINK * rec;
+
+        var wx: [N]rl.Matrix = undefined;
+        wx[ROOT] = mul3(
+            ry(PARRY_PELVIS * blade), // the pelvis takes a share of the turn; the rest is waist
+            mul(tr(0, hipY - sink, PARRY_LEAD * k - BLOCK_STEP * rec), mul(rx(PARRY_PITCH * k), ry(facingDeg))),
+            rootAt(self.pos),
+        );
+        setLocal(&wx, SPINE, self.rest, ry(0.5 * blade));
+        setLocal(&wx, CHEST, self.rest, mul(rx(5.0 * rec), ry(0.5 * blade)));
+        setLocal(&wx, NECK, self.rest, ry(-0.45 * blade));
+        setLocal(&wx, HEAD, self.rest, mul(rx(PARRY_HEAD), ry(-0.55 * blade))); // chin stays behind the rim
+        // BRACED, NOT SQUATTING: the feet are set and the shove takes up in soft knees.
+        setLocal(&wx, HIPL, self.rest, mul(rx(-5.0 * k), rz(-HIP_ADDUCT)));
+        setLocal(&wx, KNEEL, self.rest, rx(IDLE_KNEE + 12.0 * k + 8.0 * rec));
+        setLocal(&wx, ANKL, self.rest, ry(FOOT_TOEOUT));
+        setLocal(&wx, HIPR, self.rest, mul(rx(4.0 * k), rz(HIP_ADDUCT)));
+        setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 8.0 * k + 8.0 * rec));
+        setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
+        // THE BOARDS, driven at the blow and squaring onto it. The shoulder gains what the elbow gives back, so
+        // the FOLD `shieldFit` inverts is untouched and the face keeps pointing where the guard was pointing it
+        // — see PARRY_PUNCH. Everything that actually turns the boards is deliberate: the shoulder's own yaw
+        // unwinding the cross, and a small roll in the fist.
+        setLocal(&wx, SHL, self.rest, mul3(
+            rx(-(GUARD_SH_FLEX + PARRY_PUNCH * k - BLOCK_SHIELD_BACK * rec)),
+            rz(GUARD_SH_ABD),
+            ry(-(GUARD_SH_CROSS - PARRY_SWEEP * k) + PARRY_ARM_LEAD * s),
+        ));
+        setLocal(&wx, ELL, self.rest, rx(-(GUARD_ELBOW - PARRY_PUNCH * k + BLOCK_SHIELD_FOLD * rec)));
+        setLocal(&wx, WRL, self.rest, rz(PARRY_WRIST * k));
+        // …and the sword hand DRAWS BACK behind them, off the guard's own carry: the riposte, loading.
+        setLocal(&wx, SHR, self.rest, mul(rx(GUARD_SWORD_BACK + PARRY_SWORD_COCK * k), rz(-ARM_ABD)));
+        setLocal(&wx, ELR, self.rest, rx(-(GUARD_SWORD_ELBOW + 14.0 * k)));
+        setLocal(&wx, WRR, self.rest, rx(GUARD_SWORD_WRIST));
+        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        self.applyXfade(&wx);
+        self.xf = wx;
     }
 
 
@@ -3306,6 +3590,112 @@ test "the STANCE lags the block, and the block never lags the stance" {
     try std.testing.expect(h.guardB > 0.6);
 }
 
+
+test "THE PARRY IS A WINDOW INSIDE A COMMITTED ACTION, and the tail of it is open" {
+    var h = testHero();
+    const stam0 = h.stam.cur;
+    try std.testing.expect(h.canParry());
+    try std.testing.expect(h.requestParry());
+    try std.testing.expectApproxEqAbs(stam0 - combat.STAM_PARRY, h.stam.cur, 1e-4);
+    try std.testing.expect(h.committed() and !h.canGuard()); // the held block is off while it runs
+    // Frame one is before the window opens: the arm has to be moving first.
+    try std.testing.expect(!h.parryLive());
+    // …then it opens, and it SHUTS well before the animation does — that gap is the risk.
+    var t: f32 = 0;
+    var liveFor: f32 = 0;
+    while (h.parrying and t < PARRY_DUR * 3.0) : (t += 1.0 / 60.0) {
+        if (h.parryLive()) liveFor += 1.0 / 60.0;
+        h.updateParry(1.0 / 60.0, null);
+    }
+    try std.testing.expect(!h.parrying);
+    try std.testing.expect(liveFor > 0.08 and liveFor < PARRY_DUR * 0.5);
+    // And nothing is caught outside it: the window is the ONLY thing that refuses a blow, so a mistimed parry
+    // eats the hit at full weight (the shield is not up either — see requestParry).
+    try std.testing.expect(!h.parryLive());
+    var late = testHero();
+    try std.testing.expect(late.requestParry());
+    late.parryT = PARRY_SHUT + 0.01;
+    try std.testing.expect(!late.parryLive());
+    try std.testing.expectEqual(combat.HitOutcome.taken, late.takeHit(.{ .dmg = 20, .poise = 99 }, fromAngle(0)));
+    // …and the SHOVE PEAKS INSIDE the window, or the pose and the mechanic tell different stories.
+    try std.testing.expect(PARRY_DUR * PARRY_PUNCH_AT > PARRY_OPEN and PARRY_DUR * PARRY_PUNCH_AT < PARRY_SHUT);
+}
+
+test "the parry is refused by everything the guard is, and an empty bar SAYS SO" {
+    inline for (.{ "rolling", "attacking", "drinking", "sprinting", "dead" }) |field| {
+        var busy = testHero();
+        @field(busy, field) = true;
+        try std.testing.expect(!busy.requestParry());
+    }
+    var reeling = testHero();
+    reeling.stun = .heavy;
+    try std.testing.expect(!reeling.requestParry());
+    var armed = testHero();
+    armed.off = .wand; // one left hand — the boards are not in it
+    try std.testing.expect(!armed.requestParry());
+    // AN EMPTY BAR IS THE ONE REFUSAL THAT FLASHES: the guard just stays down, but a press has to answer.
+    var spent = testHero();
+    spent.stam.spend(combat.STAM_MAX);
+    try std.testing.expect(!spent.requestParry());
+    try std.testing.expect(spent.stamRefused > 0);
+    // …and the panic rule holds on the way in: any bar above zero buys the window.
+    var thin = testHero();
+    thin.stam.cur = 1.0;
+    try std.testing.expect(thin.requestParry());
+    try std.testing.expectApproxEqAbs(@as(f32, 0), thin.stam.cur, 1e-4);
+}
+
+test "the shove OVERSHOOTS its rest and settles back on it, and the boards never sink through the window" {
+    // The drive channel: 0 at the start, 1 at the peak, back THROUGH rest and dead on it at the end.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), Hero.parryDrive(0), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), Hero.parryDrive(PARRY_PUNCH_AT), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), Hero.parryDrive(1.0), 1e-5);
+    var crossed = false;
+    var u: f32 = PARRY_PUNCH_AT;
+    while (u <= 1.0) : (u += 0.005) {
+        if (Hero.parryDrive(u) < -0.02) crossed = true;
+    }
+    try std.testing.expect(crossed); // a mass in motion overshoots — a glide to a stop reads as weightless
+    // …and THE SWIPE it travels on: nothing on frame one, coiled the OTHER way, then all the way across, and
+    // home on centre at the end so the exit has nothing left to unwind.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), Hero.parrySweep(0), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, -1), Hero.parrySweep(PARRY_COIL_AT), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), Hero.parrySweep(PARRY_SWEEP_END), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), Hero.parrySweep(1.0), 1e-5);
+    // …and it crosses CENTRE exactly where the thrust peaks, which is the frame that catches: the boards have
+    // to be travelling their fastest THROUGH the blow, not still winding up when it arrives.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), Hero.parrySweep(PARRY_PUNCH_AT), 1e-5);
+    try std.testing.expect(PARRY_SWEEP_END > PARRY_PUNCH_AT and PARRY_SWEEP_END < 1.0);
+    // …and the STANCE BLEND is held up for the whole window: a shield that visibly sinks through a parry is
+    // the animation contradicting the mechanic.
+    var h = testHero();
+    h.setGuard(true);
+    var t: f32 = 0;
+    while (t < 0.4) : (t += 1.0 / 60.0) h.tickClocks(1.0 / 60.0);
+    try std.testing.expect(h.guardB > 0.95);
+    try std.testing.expect(h.requestParry());
+    while (h.parrying) h.updateParry(1.0 / 60.0, null);
+    try std.testing.expect(h.guardB > 0.95);
+}
+
+test "A PARRY STARTS COLD — no guard needed, and the boards SETTLE afterwards rather than staying up" {
+    // L2 is the shield's own skill, not a follow-up to blocking: from a standing carry it goes straight out.
+    var h = testHero();
+    try std.testing.expect(!h.guarding);
+    try std.testing.expect(h.canParry());
+    try std.testing.expect(h.requestParry());
+    // The boards come up for the shove whether or not he was holding them there…
+    while (h.parrying) h.updateParry(1.0 / 60.0, null);
+    try std.testing.expect(h.guardB > 0.95);
+    // …and with nothing on the button they EASE back down, which is a settle and not a latched guard. Snapped
+    // to 0 instead it would pop; left at 1 he would stand there blocking off a parry he never asked to hold.
+    var t: f32 = 0;
+    while (t < 0.4) : (t += 1.0 / 60.0) {
+        h.setGuard(false);
+        h.tickClocks(1.0 / 60.0);
+    }
+    try std.testing.expect(h.guardB < 0.05);
+}
 
 test "THERE IS ONE LEFT HAND: the wand and the boards can never both be in it, and a bow takes it outright" {
     var h = testHero();

@@ -477,8 +477,8 @@ pub const Kobold = struct {
             return .none;
         }
         self.justDied = false;
-        // THE ROOTS HAVE THE FEET AND NOTHING ELSE (foe.grip) — the dash and the flurry both play out on the spot,
-        // which is what makes this the answer to a warband.
+        // THE ROOTS HAVE THE FEET (foe.grip) — the flurry still plays out on the spot, which is what makes this
+        // the answer to a warband. The DASH is a jump and is refused outright at the choose site (`foe.canLeap`).
         const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -640,8 +640,9 @@ pub const Kobold = struct {
                     return;
                 }
                 self.moveDir = mathx.dirXZ(self.pos, heroAt(self));
-                // …and if the hero is out of reach but not far, CLOSE IT IN ONE JUMP, off the long cooldown.
-                if (self.dashCd <= 0 and d > DASH_R_MIN * self.scale and d <= DASH_R_MAX) return self.enter(.dash);
+                // …and if the hero is out of reach but not far, CLOSE IT IN ONE JUMP, off the long cooldown —
+                // unless the roots have its feet, because a jump is the one thing they refuse (`foe.canLeap`).
+                if (self.dashCd <= 0 and foe.canLeap(&self.root) and d > DASH_R_MIN * self.scale and d <= DASH_R_MAX) return self.enter(.dash);
                 return self.enter(.approach);
             },
             .priest => {

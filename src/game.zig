@@ -70,6 +70,10 @@ const SHAKE_HURT = 0.42;
 const SHAKE_HURT_HEAVY = 0.62;
 // A CAUGHT blow cracks the frame less than one that lands — he HELD, and the shake says so.
 const SHAKE_BLOCK = 0.40;
+/// …and a blow REFUSED cracks it harder than one merely eaten. Over the heaviest block and under the break,
+/// because it is the same weight of iron arriving either way — what differs is that this one bought him a
+/// punish window and the break cost him one.
+const SHAKE_PARRY = 0.56;
 const SHAKE_GUARD_BREAK = 0.72;
 const BLOW_HEAVIEST = ogremod.SLAM_HIT.raw(); // the whole blow, elements included — see `heroBlockBeat`
 const BLOCK_FELT_MIN = 0.25;
@@ -822,6 +826,8 @@ fn confirmPressed() bool {
 /// THE INTERACT KEY, named once: the prompt that opens a conversation and the panel's own footer both say
 /// "E / A", so both have to honour it.
 const INTERACT_KEY: rl.KeyboardKey = .e;
+/// L2 ON THE KEYBOARD — see the L2 block in `run` for why the mouse cannot carry it.
+const PARRY_KEY: rl.KeyboardKey = .c;
 
 /// …and the panel takes it ON TOP of the menu confirm. It cannot go into `menumod.confirmPressed`: E is the
 /// character book's page turn, and a panel that named a button the press ignored is the prompt rule broken
@@ -1119,6 +1125,26 @@ fn markSight(g: *Game) void {
     }
 }
 
+/// THE HERO'S SHIELD, STAMPED ON EVERYTHING THAT MIGHT BE CAUGHT ON IT — `markSight`'s pattern, and asked here
+/// once a frame for its reason: the arc, the window and the beat all belong to the hero's side of the fight, and
+/// six creatures reaching out for them would be six copies of one rule.
+///
+/// ONLY THE OGRE HAS WINDOWS TODAY (`ogre.parryable`). The next creature to get them is a field, a predicate and
+/// one more line here, not a new mechanism — which is also why this is not folded over `FOE_GROUPS`: a group with
+/// nothing to catch would have to carry a `parry` field on every member to answer a question it never asks.
+fn markParry(g: *Game) void {
+    g.grief.setParry(.{ .live = g.hero.parryLive(), .at = g.hero.pos, .facing = g.hero.facing });
+}
+
+/// A PARRY LANDING — the biggest beat the shield has, and deliberately over the block's: a block is a cost
+/// paid, this is a blow REFUSED. `hero.noteParry` throws the sparks and the recoil; the rest is frame and pad.
+fn parryBeat(g: *Game) void {
+    g.hero.noteParry();
+    g.rumble.play(rumblemod.parry);
+    g.rig.addShake(SHAKE_PARRY);
+    sfx.play(.parry);
+}
+
 /// …and the same question for the LOCK: you cannot fix on what you cannot see either.
 fn canSee(g: *const Game, r: FoeRef) bool {
     return g.env.sees(heroEye(g), foeLockPoint(g, r));
@@ -1381,6 +1407,8 @@ fn debugCorner(g: *Game) void {
         "rolling"
     else if (g.hero.attacking)
         (if (g.hero.atkHeavy) "striking" else "slashing")
+    else if (g.hero.parrying)
+        (if (g.hero.parryLive()) "PARRY" else "parry recovery")
     else if (g.hero.shooting)
         (if (g.hero.shotAimed) "loosing" else "snapshot")
     else if (g.hero.aiming)
@@ -1798,12 +1826,24 @@ pub fn run(mode: Mode) void {
             if (rl.isGamepadButtonDown(PAD, .left_trigger_1)) l1Held = true;
             if (rl.isGamepadButtonPressed(PAD, .left_trigger_1)) l1Press = true;
         }
+        const bow = g.hero.bowOut();
         const wandUp = g.hero.wandOut();
         const guardHeld = l1Held and !wandUp;
         const castReq = l1Press and wandUp;
 
-        var aimHeld = rl.isMouseButtonDown(.right);
-        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, .left_trigger_2)) aimHeld = true;
+        // …AND L2 IS THAT HAND'S SKILL SLOT, ER's own, ROUTED THE SAME WAY: a raised bow AIMS on a held level,
+        // boards PARRY on a pressed edge. On the pad it is one trigger; on the mouse the two halves part
+        // company, because RMB is already the guard's held level and Shift+RMB — the mirror of Shift+LMB — would
+        // fire a parry every time a sprinting player pressed RMB to get his shield up. So the edge takes a key
+        // of its own, in the same family as the other free-standing actions (Q/F/R/T/G/Y/E).
+        var l2Held = rl.isMouseButtonDown(.right);
+        var l2Press = rl.isKeyPressed(PARRY_KEY);
+        if (rl.isGamepadAvailable(PAD)) {
+            if (rl.isGamepadButtonDown(PAD, .left_trigger_2)) l2Held = true;
+            if (rl.isGamepadButtonPressed(PAD, .left_trigger_2)) l2Press = true;
+        }
+        const aimHeld = l2Held;
+        const parryReq = l2Press and !bow;
 
         // R1/RB or LMB, and R2/RT or Shift+LMB.
         var r1 = false;
@@ -1815,7 +1855,6 @@ pub fn run(mode: Mode) void {
             if (rl.isGamepadButtonPressed(PAD, .right_trigger_1)) r1 = true;
             if (rl.isGamepadButtonPressed(PAD, .right_trigger_2)) r2 = true;
         }
-        const bow = g.hero.bowOut();
         const lightReq = r1 and !bow;
         const heavyReq = r2 and !bow;
         const quickReq = r1 and bow;
@@ -1835,6 +1874,12 @@ pub fn run(mode: Mode) void {
         if (!g.hero.dead and !g.hero.staggered()) {
             if (rollReq) {
                 g.hero.requestRoll(rollDir(g, mv));
+            } else if (parryReq) {
+                // ABOVE THE ATTACKS: L2 and R2 are separate buttons, so a frame carrying both is a player who
+                // wants the defensive one. The boards shoved out are MOVED AIR and nothing more (the swing's own
+                // voice — a shield thrown at something sounds like a blade thrown at it); the CLANG belongs to
+                // the catch, and only to the catch.
+                if (g.hero.requestParry()) sfx.play(.swing_light);
             } else if (heavyReq) {
                 g.hero.requestAttack(.heavy);
             } else if (lightReq) {
@@ -1850,13 +1895,12 @@ pub fn run(mode: Mode) void {
             g.hero.steerQueuedRoll(rollDir(g, mv));
             if (drinkReq and g.hero.startDrink()) sfx.play(.flask_drink);
         }
-        // …and a DRAUGHT is not a sprint either: without it, Shift held through a flask drained the pool
-        // at the sprint rate and denied him the shield for the whole shuffle, off a sprint he never got.
-        // …and A CAST IS NOT A SPRINT either, for the draught's exact reason: he is PLANTED for one, so Shift
-        // held through a cast would have billed him the continuous sprint drain for travel he never took.
-        g.hero.sprinting = sprintingMove(mv) and
-            !g.hero.rolling and !g.hero.attacking and !g.hero.drinking and !g.hero.casting and
-            !g.hero.dead and !g.hero.staggered();
+        // NO COMMITTED ACTION IS A SPRINT — ONE predicate, not a list of them. Without it, Shift held through a
+        // flask drained the pool at the sprint rate and denied him the shield for the whole shuffle, off a
+        // sprint he never got; the cast, the loose and the parry are all planted for the same reason. Written
+        // out as four named states it was a list to forget one from, and it had forgotten two: the loose, and
+        // then the parry — whose keyboard binding is Shift+LMB, so every keyboard parry billed the sprint.
+        g.hero.sprinting = sprintingMove(mv) and !g.hero.committed() and !g.hero.dead and !g.hero.staggered();
         // …and the shield, AFTER the sprint (there is no running block — see hero.setGuard).
         g.hero.setGuard(guardHeld);
         g.hero.setAim(aimHeld);
@@ -1902,6 +1946,8 @@ pub fn run(mode: Mode) void {
             moveHero(g, dt, if (g.hero.drinking) mv else .{}, faceYaw);
         } else if (g.hero.attacking) {
             g.hero.updateAttack(dt, PLAY_HALF, faceYaw);
+        } else if (g.hero.parrying) {
+            g.hero.updateParry(dt, faceYaw); // PLANTED, like the cast — catching a blow is a standing job
         } else if (g.hero.shooting) {
             g.hero.updateShot(dt, faceYaw);
         } else if (g.hero.casting) {
@@ -1917,6 +1963,7 @@ pub fn run(mode: Mode) void {
         if (g.hero.thrown) releaseSpell(g);
         const hitsBefore = allHits(g);
         markSight(g); // WHO CAN SEE HIM — stamped before anything decides what to do about him
+        markParry(g); // …and WHAT HIS SHIELD IS DOING, before anything swings at him
         // ONE snapshot of the blade for every group this frame — the hero's pose is already resolved above, so re-deriving it per group only invited the three to disagree.
         const bladeNow = heroBlade(g);
         if (g.warren.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
@@ -1927,6 +1974,8 @@ pub fn run(mode: Mode) void {
         if (g.grief.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.stance >= ogremod.SLAM_HIT.stance, true);
         }
+        // …and the one moment of his the shield is allowed to simply cancel.
+        if (g.grief.anyParried()) parryBeat(g);
         for (g.line.live()) |*a| {
             if (a.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) {
                 spawnArrow(g, a.nockWorld(), heroAimPoint(g));
@@ -2512,8 +2561,13 @@ const BarCtx = struct {
             // `sinceHurt`, not `sinceHit`: a spell that only takes HP — the bolt, and the roots' own grip —
             // counts as a hit for the bar's purposes, which is the whole question the bar is asking.
             if (!fixed and f.vit.sinceHurt > HURT_BAR_WINDOW) continue;
-            const s = projectToScreen(self.cam, f.topWorld()) orelse continue; // skip if behind the camera
-            hud_.foeBar(s.x, s.y, f.vit.hpFrac(), f.staggered()); // size/colour/lift all live in hud
+            // OVER ITS HEAD — and A HEAD CAN GO BEHIND THE EYE. Stand at a giant's feet and its crown is above
+            // AND behind the camera, which `projectToScreen` rightly refuses; that took the bar off the screen
+            // entirely at exactly the range `hud.FOE_CEIL` exists for. The CHEST is always in front of you, so
+            // it is what the fallback projects — the ceiling then puts the bar where the head would have been.
+            const s = projectToScreen(self.cam, f.topWorld()) orelse
+                projectToScreen(self.cam, f.centerWorld()) orelse continue;
+            hud_.foeBar(s.x, s.y, f.vit.hpFrac(), f.staggered()); // size/colour/lift/CEILING all live in hud
         }
     }
 };

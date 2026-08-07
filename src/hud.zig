@@ -251,11 +251,21 @@ const FOE_H: i32 = 5;
 const FOE_LIFT: i32 = 16;
 const FOE_TRACK = rgba(38, 12, 10, 230);
 const STAGGER_RIM = rgba(232, 196, 90, 255); // ER's gold crit-opening cue on a stance break
+/// A BAR MAY NOT CLIMB OUT OF THE FRAME. Over the head is right at every distance you can see the whole
+/// creature at — and wrong the moment you close on a TALL one, because its crown leaves the top of the screen
+/// long before the creature does. The ogre's is 4.4 m up, so through the whole fight you are near enough to
+/// need the thing it is drawn where nobody can see it, and it takes the gold STAGGER RIM with it.
+///
+/// So the bar has a CEILING in screen space, three quarters of the way up: far off it rides the head exactly as
+/// it always did, and walking in it simply stops climbing and hangs against the body instead. Dynamic with the
+/// distance rather than a fixed height off the feet, and ONE rule for every creature — a toad never reaches it.
+const FOE_CEIL: f32 = 0.25; // …measured from the TOP, so 0.25 is three quarters up
 
 pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool) void {
     const wf: f32 = @floatFromInt(FOE_W);
     const x: i32 = @intFromFloat(sx - wf * 0.5);
-    const y: i32 = @as(i32, @intFromFloat(sy)) - FOE_LIFT;
+    const ceiling = @as(f32, @floatFromInt(rl.getScreenHeight())) * FOE_CEIL;
+    const y: i32 = @intFromFloat(mathx.maxF(sy - @as(f32, @floatFromInt(FOE_LIFT)), ceiling));
     rl.drawRectangle(x - 2, y - 2, FOE_W + 4, FOE_H + 4, rgba(0, 0, 0, 90)); // a soft seat
     rl.drawRectangle(x - 1, y - 1, FOE_W + 2, FOE_H + 2, rgba(0, 0, 0, 170)); // backing
     rl.drawRectangle(x, y, FOE_W, FOE_H, FOE_TRACK);

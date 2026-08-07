@@ -162,6 +162,10 @@ const SWIPE_REC_DUR = 0.52; // a brief overswung stagger — not the slam's wide
 const SWIPE_CD = 1.05; // its own cooldown, shorter than the slam's
 const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 6.0;
+/// How fast a staggered body gives its posture back, in the CHANNELS' OWN UNITS — see `easeChannelsNeutral`.
+/// 260 deg/s puts a club raised to `OVER_SH` back at the carry in ~0.6 s, inside even a light stun.
+const STUN_EASE_DEG = 260.0;
+const STUN_EASE_FRAC = 4.0;
 
 // "higher poise" — a long HP bar, and a stance meter that only breaks under sustained pressure) ─
 const HP_MAX = 300.0;
@@ -186,6 +190,24 @@ const SWIPE_OUTER = 1.95;
 // The sector is NOT centred on his facing: the club starts cocked behind his right shoulder and finishes past his left, so the swept bearings run ~−119..+22 (MEASURED off the posed bone, height 2.37 → 1.07 — head to hip on a hero).
 const SWIPE_ARC_MID = -48.0; // deg (negative = his club side, his right)
 const SWIPE_ARC = 144.0; // deg of total sweep — ±72 about SWIPE_ARC_MID
+
+// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT — one number per move, IN SECONDS, measured back from
+// that move's own impact frame. A parry is a read of the blow ARRIVING, never of the tell starting, and this is
+// the only form that says so: the window ends where the club does by construction, so a caught blow is one that
+// never landed, and there is no way to widen it into the rear by accident.
+//
+// WRITTEN AS TWO FRACTIONS OF TWO DIFFERENT STATE CLOCKS the total was emergent and nobody could read it — the
+// slam's came out at 0.29 s, a third of a second of free catch, most of it while the club was still overhead
+// and motionless. The number that matters is the one the player feels, so it is the one that is authored.
+//
+// ONE NUMBER FOR BOTH MOVES (owner's call): you parry an INSTANT BEFORE THE HIT — swipe or slam, it is the
+// blow you are reading and not the animation in front of it. These two are the game's formative parries, so
+// what they teach has to be one rule and not a per-move dial the player is expected to learn twice.
+//
+// At 0.11 s the slam's window falls entirely inside the DROP (its club meets the earth 0.187 s in), so the club
+// is visibly falling before anything can be caught; the swipe's reaches a few frames back into the cock, since
+// its own blow lands 0.084 s in. Both are the same instant in front of the same event.
+const PARRY_LEAD = 0.11;
 
 const HUNCH = 9.0; // base forward stoop — stooped + weary, but still standing TALL (imposing)
 // HE HINGES AT THE WAIST (owner's law): the fraction of any body pitch the PELVIS may take.
@@ -305,6 +327,8 @@ pub const Ogre = struct {
     leash: foe.Leash = .{},
     /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
     root: combat.Root = .{},
+    /// …and THE HERO'S SHIELD, stamped the same way (`game.markParry`). Read only inside its own parry windows.
+    parry: foe.Parry = .{},
     facing: f32 = 0,
     scale: f32 = SCALE,
     seed: f32 = 0,
@@ -354,6 +378,10 @@ pub const Ogre = struct {
     shove: rl.Vector3 = mathx.zero3,
     heroHit: ?combat.Hit = null, // this frame's blow ON THE HERO (the slam connects), read by game.zig
     heroLatch: bool = false, // one hero-hit per slam
+    /// THE SHIELD CAUGHT IT THIS FRAME — a ONE-FRAME flag, `justDied`'s exactly: reset at the top of `update`,
+    /// set where the catch happens, read by the group (`Grief.anyParried`) after. A latch would bill the beat
+    /// sixty times a second for the whole stagger.
+    parried: bool = false,
     justDied: bool = false,
     fade: f32 = 0,
     gone: bool = false,
@@ -430,6 +458,7 @@ pub const Ogre = struct {
         }
         self.heroHit = null;
         self.justDied = false;
+        self.parried = false;
         // THE ROOTS HAVE THE FEET AND NOTHING ELSE (foe.grip) — the club still comes down, and on a body this heavy
         // that is the whole point of holding it.
         const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
@@ -452,6 +481,8 @@ pub const Ogre = struct {
         const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
         const bearing = self.bearingTo(hero);
         self.trackHead(hero, d, dt); // the eye leads the body — every state, not just the idle
+        // THE SHIELD, asked BEFORE the state machine runs this frame's swing — see takeParry.
+        self.takeParry();
         switch (self.state) {
             .idle => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
@@ -637,6 +668,16 @@ pub const Ogre = struct {
         }
     }
 
+    /// HOW FAR EACH MOVE ACTUALLY GETS, hero footprint included — the crush tests and the parry windows both
+    /// ask, and written out at each of them the club's true end and the distance it could be caught at were
+    /// four copies of one number that only agreed by luck.
+    fn slamReach(self: *const Ogre) f32 {
+        return SLAM_LEN * self.scale + HERO_REACH;
+    }
+    fn swipeReach(self: *const Ogre) f32 {
+        return SWIPE_OUTER * self.scale + HERO_REACH;
+    }
+
     // The slam CRUSH: the club's ground footprint — a STRIP down the facing line.
     fn tryImpact(self: *Ogre, hero: rl.Vector3, h: combat.Hit) void {
         if (self.heroLatch) return;
@@ -644,7 +685,7 @@ pub const Ogre = struct {
         const fwd = self.fdir();
         const axial = to.x * fwd.x + to.z * fwd.z;
         const lateral = @abs(to.x * fwd.z - to.z * fwd.x);
-        if (axial < -0.2 or axial > SLAM_LEN * self.scale + HERO_REACH) return;
+        if (axial < -0.2 or axial > self.slamReach()) return;
         if (lateral > SLAM_HALF_W * self.scale + HERO_REACH) return;
         self.heroHit = h;
         self.heroLatch = true;
@@ -654,12 +695,76 @@ pub const Ogre = struct {
     fn trySwipe(self: *Ogre, hero: rl.Vector3, h: combat.Hit) void {
         if (self.heroLatch) return;
         const d = mathx.distXZ(self.pos, hero);
-        if (d < SWIPE_INNER * self.scale - HERO_REACH or d > SWIPE_OUTER * self.scale + HERO_REACH) return;
+        if (d < SWIPE_INNER * self.scale - HERO_REACH or d > self.swipeReach()) return;
         const slack = mathx.degrees(std.math.atan2(HERO_REACH, mathx.maxF(0.5, d)));
         if (@abs(mathx.wrapDeg(self.bearingTo(hero) - SWIPE_ARC_MID)) > SWIPE_ARC * 0.5 + slack) return;
         self.heroHit = h;
         self.heroLatch = true;
         self.leash.noteCombat(); // a blow landed is a fight in progress — the tether waits
+    }
+
+    /// Which of the two moves is on the clock — the slam counts its windup, the swipe its cock-back.
+    fn slamMove(self: *const Ogre) bool {
+        return self.state == .windup or self.state == .slam;
+    }
+
+    /// SECONDS UNTIL THIS MOVE'S BLOW LANDS, counted across the state boundary so the windup and the swing are
+    /// one continuous countdown — null when he is not swinging one. EXHAUSTIVE, so a state added later has to
+    /// say whether it carries a blow rather than quietly defaulting to no.
+    fn toImpact(self: *const Ogre) ?f32 {
+        return switch (self.state) {
+            .windup => (WINDUP_DUR - self.t) + SLAM_DUR * SLAM_IMPACT_K,
+            .slam => SLAM_DUR * SLAM_IMPACT_K - self.t,
+            .swipewind => (SWIPE_WIND_DUR - self.t) + SWIPE_DUR * SWIPE_IMPACT_K,
+            .swipe => SWIPE_DUR * SWIPE_IMPACT_K - self.t,
+            .idle, .approach, .recover, .stunlight, .stunheavy, .dead => null,
+        };
+    }
+
+    /// THE INSTANT THE CLUB CAN BE CAUGHT IN, and how far out it reaches then — null when there is nothing to
+    /// catch. The window is the last `PARRY_LEAD` seconds of the blow's approach and nothing else: it shuts AT
+    /// the impact frame by construction, so a caught blow is one that never landed. The reach is the CRUSH
+    /// TEST'S OWN extent (`tryImpact`, `trySwipe`) plus the hero's footprint, because that is where the club
+    /// actually arrives.
+    fn parryable(self: *const Ogre) ?f32 {
+        const left = self.toImpact() orelse return null;
+        if (left < 0 or left > PARRY_LEAD) return null;
+        return if (self.slamMove()) self.slamReach() else self.swipeReach();
+    }
+
+    /// THE SHIELD TAKES THE CLUB. `enterStun` is what kills the swing — it drops any slam in progress, so
+    /// nothing lands and no crater opens.
+    ///
+    /// THE ATTACK ALWAYS DIES; THE HEAVY STUN IS EARNED (the owner's "may heavy stun them"). The boards deal
+    /// STANCE and nothing else (`combat.PARRY_HIT`), so whether a catch is a stumble or a punish window is the
+    /// same question the sword has been asking all fight — and this creature's 90 takes two of them.
+    fn takeParry(self: *Ogre) void {
+        const reach = self.parryable() orelse return;
+        if (!self.parry.catches(self.pos, reach)) return;
+        self.parried = true;
+        // THE WHOLE GIANT POPS, exactly as it does off the blade (`tryHit`) — the shared `hitFlash` uniform is
+        // the one piece of feedback that is impossible to miss on a creature this size, and a catch that took
+        // its footing away had every right to it.
+        self.flash = FLASH_DUR;
+        self.judder = 1.0; // the haft RINGS: something stopped it, and that rings on through the stumble
+        self.leash.noteCombat();
+        // The move goes on its own cooldown though it never finished — the club has to be gathered again, and
+        // without this he walks straight out of the stumble into the swing he was just denied.
+        if (self.slamMove()) {
+            self.slamCd = SLAM_CD;
+        } else {
+            self.swipeCd = SWIPE_CD;
+        }
+        const low = self.clubLowWorld();
+        self.dustBurst(v3(low.x, self.pos.y + 0.05, low.z), 10, 1.8, 0.18);
+        sfx.world(.ogre_hurt, self.pos);
+        switch (self.vit.hit(combat.PARRY_HIT)) {
+            .death => self.enterDeath(), // a parry takes no HP today; the day one does, it kills like anything
+            .heavy => self.enterStun(.stunheavy),
+            // A stance that HELD is still a club knocked off its line: the swing dies either way, into the
+            // short stumble rather than the wide-open punish window.
+            .light, .none => self.enterStun(.stunlight),
+        }
     }
 
     // Debug hooks for the --shot harness (force a pose in isolation).
@@ -715,21 +820,31 @@ pub const Ogre = struct {
         self.jawOpen = mathx.approach(self.jawOpen, JAW_REST + JAW_BREATHE * breathe + 6.0 * sigh + JAW_STALK * stalk, e * 0.8);
         self.girdle = mathx.approach(self.girdle, GIRDLE_HEAVE * mathx.sinf(self.elapsed * BREATHE_RATE + self.seed * 6.28 - 0.7) - 2.0 * sigh, e);
     }
+    /// A STAGGERED BODY GIVES UP ITS POSTURE, and `mathx.approach` steps in the units of whatever it is moving —
+    /// so ONE rate cannot serve both an angle and a fraction. At the 4 the leg brace wants, an interrupted
+    /// windup crawled the club arm home from OVER_SH at FOUR DEGREES A SECOND: forty seconds to travel 163, so
+    /// a stunned ogre stood there with its club still overhead, and the next move — `setWindup`/`setSwipeWind`
+    /// both lerp FROM the carry — snapped the arm down on its first frame. The whole class of "buggy anim
+    /// depending on arm raise / heavy stun" was this one number.
+    ///
+    /// At `STUN_EASE_DEG` the arm is home in ~0.6 s, inside even the LIGHT stun, so every move that assumes it
+    /// starts from the carry actually does. That IS the reset — through the ease the animation already has,
+    /// rather than a snap on the frame the stagger lands.
     fn easeChannelsNeutral(self: *Ogre, dt: f32) void {
-        const e = dt * 4.0;
-        self.clubShoulder = mathx.approach(self.clubShoulder, CARRY_SH, e);
-        self.clubElbow = mathx.approach(self.clubElbow, CARRY_EL, e);
-        self.offShoulder = mathx.approach(self.offShoulder, OFF_SH, e);
-        self.offElbow = mathx.approach(self.offElbow, OFF_EL, e);
-        self.bodyLean = mathx.approach(self.bodyLean, HUNCH, e);
-        self.headPitch = mathx.approach(self.headPitch, HEAD_DROOP, e);
-        self.twist = mathx.approach(self.twist, 0, e * 2.0);
-        self.clubTilt = mathx.approach(self.clubTilt, CARRY_TILT, e * 2.0);
-        self.clubAbd = mathx.approach(self.clubAbd, CLUB_ABD, e);
-        self.clubSweep = mathx.approach(self.clubSweep, 0, e);
-        self.legBrace = mathx.approach(self.legBrace, 0, e);
-        self.jawOpen = mathx.approach(self.jawOpen, JAW_REST, e * 0.6); // the mouth is the LAST thing
-        self.girdle = mathx.approach(self.girdle, 0, e); // to come back under him (poseUpper holds it slack)
+        const d = dt * STUN_EASE_DEG;
+        self.clubShoulder = mathx.approach(self.clubShoulder, CARRY_SH, d);
+        self.clubElbow = mathx.approach(self.clubElbow, CARRY_EL, d);
+        self.offShoulder = mathx.approach(self.offShoulder, OFF_SH, d);
+        self.offElbow = mathx.approach(self.offElbow, OFF_EL, d);
+        self.bodyLean = mathx.approach(self.bodyLean, HUNCH, d);
+        self.headPitch = mathx.approach(self.headPitch, HEAD_DROOP, d);
+        self.twist = mathx.approach(self.twist, 0, d * 2.0);
+        self.clubTilt = mathx.approach(self.clubTilt, CARRY_TILT, d * 2.0);
+        self.clubAbd = mathx.approach(self.clubAbd, CLUB_ABD, d);
+        self.clubSweep = mathx.approach(self.clubSweep, 0, d);
+        self.legBrace = mathx.approach(self.legBrace, 0, dt * STUN_EASE_FRAC); // 0..1, not degrees
+        self.jawOpen = mathx.approach(self.jawOpen, JAW_REST, d * 0.25); // the mouth is the LAST thing
+        self.girdle = mathx.approach(self.girdle, 0, d); // to come back under him (poseUpper holds it slack)
     }
     fn setWindup(self: *Ogre, k: f32) void {
         const kBody = mathx.smoothstep(0, 0.7, k);
@@ -1104,6 +1219,18 @@ pub const Grief = struct {
     }
     pub fn setShader(self: *Grief, sh: rl.Shader) void {
         self.model.setShader(sh);
+    }
+    /// THE HERO'S SHIELD, STAMPED ON EVERY MEMBER (`game.markParry`) — the leash's own pattern, and set before
+    /// `update` so a window is read on the frame it is open rather than the one after.
+    pub fn setParry(self: *Grief, p: foe.Parry) void {
+        for (self.live()) |*o| o.parry = p;
+    }
+    /// …and whether any of them was caught on it this frame. A ONE-FRAME edge, `anyDied`'s, read after `update`.
+    pub fn anyParried(self: *const Grief) bool {
+        for (self.liveConst()) |*o| {
+            if (o.parried) return true;
+        }
+        return false;
     }
     // Advance the group; returns the STRONGEST blow any ogre landed on the hero this frame, and which ogre threw it (the hero's shield covers an arc — see foe.Blow).
     pub fn update(self: *Grief, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
@@ -1622,4 +1749,106 @@ test "NO ATTACK COMES OUT OF NOWHERE: both of the giant's moves rear first" {
     try std.testing.expect(SWIPE_WIND_DUR >= foe.TELL_MIN);
     // …and the slam is the one you read from across the plaza, so its tell dwarfs the swipe's.
     try std.testing.expect(WINDUP_DUR > SWIPE_WIND_DUR * 2.0);
+}
+
+test "THE WINDOW IS AN INSTANT BEFORE THE HIT — the same instant for both moves" {
+    // One number, both moves (owner's call): what you read is the BLOW, not the animation in front of it.
+    try std.testing.expect(PARRY_LEAD > 0);
+    // …and it is an INSTANT, not a slice of the tell. A 1.2 s rear must not be catchable for a fifth of itself.
+    try std.testing.expect(PARRY_LEAD < WINDUP_DUR * 0.15);
+    try std.testing.expect(PARRY_LEAD < SWIPE_WIND_DUR * 0.4);
+
+    var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    // MEASURED off the state machine rather than asserted about the constants: walk each move frame by frame
+    // from its first and collect the span that is actually parryable, plus where the blow actually lands.
+    for ([_]struct { wind: State, swing: State, windDur: f32, impact: f32 }{
+        .{ .wind = .windup, .swing = .slam, .windDur = WINDUP_DUR, .impact = SLAM_DUR * SLAM_IMPACT_K },
+        .{ .wind = .swipewind, .swing = .swipe, .windDur = SWIPE_WIND_DUR, .impact = SWIPE_DUR * SWIPE_IMPACT_K },
+    }) |m| {
+        const step = 1.0 / 600.0; // finer than a frame, so the edges are the curve's and not the sampler's
+        var open: f32 = -1;
+        var shut: f32 = -1;
+        var elapsed: f32 = 0;
+        o.enter(m.wind);
+        o.t = 0;
+        while (elapsed <= m.windDur + m.impact) : (elapsed += step) {
+            if (elapsed > m.windDur and o.state == m.wind) { // the swing takes over, clock restarts
+                o.enter(m.swing);
+                o.t = elapsed - m.windDur;
+            } else {
+                o.t = if (o.state == m.wind) elapsed else elapsed - m.windDur;
+            }
+            if (o.parryable() != null) {
+                if (open < 0) open = elapsed;
+                shut = elapsed;
+            }
+        }
+        try std.testing.expect(open > 0); // there IS a window…
+        // …it is exactly the lead long, and it ENDS at the impact frame — a window outlasting its own impact is
+        // a blow "caught" after it hit you, and one starting earlier is a free catch on a motionless club.
+        try std.testing.expectApproxEqAbs(m.windDur + m.impact, shut, 2.0 * step);
+        try std.testing.expectApproxEqAbs(PARRY_LEAD, shut - open, 3.0 * step);
+    }
+    o.enter(.recover);
+    o.t = 0;
+    try std.testing.expect(o.parryable() == null); // nothing outside a swing is parryable at all
+}
+
+test "A STAGGER GIVES THE POSTURE BACK BEFORE IT ENDS, so the next move starts from the carry" {
+    // THE BUG: `approach` steps in the channel's own units, so the old shared rate of 4 moved the club arm four
+    // DEGREES a second — forty seconds to come home from a raised windup. The ogre stood there stunned with its
+    // club still overhead, and `setWindup`, which lerps FROM the carry, then snapped it down on frame one.
+    var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    o.enter(.windup);
+    var t: f32 = 0;
+    while (t < WINDUP_DUR) : (t += 1.0 / 60.0) o.setWindup(mathx.smoothstep(0, WINDUP_DUR * 0.82, t));
+    try std.testing.expect(@abs(o.clubShoulder - CARRY_SH) > 100.0); // the club really is overhead
+    o.enterStun(.stunlight);
+    t = 0;
+    while (t < combat.FOE_LIGHT_STUN_DUR) : (t += 1.0 / 60.0) o.easeChannelsNeutral(1.0 / 60.0);
+    // Home on EVERY channel by the time the SHORTER of the two stuns is over, or the ogre walks out of a
+    // stagger still holding the pose it was interrupted in.
+    try std.testing.expectApproxEqAbs(CARRY_SH, o.clubShoulder, 0.01);
+    try std.testing.expectApproxEqAbs(CARRY_EL, o.clubElbow, 0.01);
+    try std.testing.expectApproxEqAbs(HUNCH, o.bodyLean, 0.01);
+    try std.testing.expectApproxEqAbs(CARRY_TILT, o.clubTilt, 0.01);
+    try std.testing.expectApproxEqAbs(CLUB_ABD, o.clubAbd, 0.01);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), o.twist, 0.01);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), o.legBrace, 0.01);
+    try std.testing.expectApproxEqAbs(JAW_REST, o.jawOpen, 0.01);
+    // …and it is not so fast that the stagger has no weight: the arm still takes real time to fall.
+    try std.testing.expect(@abs(OVER_SH - CARRY_SH) / STUN_EASE_DEG > 0.3);
+}
+
+test "A CAUGHT SLAM NEVER LANDS, and the second catch is the punish window" {
+    var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0); // faces +Z
+    const hero = v3(0, 0, 2.0); // dead ahead, under the falling club
+    o.enter(.slam); // the slam's window falls entirely inside the DROP — see PARRY_LEAD
+    o.t = SLAM_DUR * SLAM_IMPACT_K - PARRY_LEAD * 0.5;
+    // The shield up but pointed the WRONG WAY: nothing is caught (foe.Parry uses the block's own arc).
+    o.parry = .{ .live = true, .at = hero, .facing = 0 };
+    o.takeParry();
+    try std.testing.expect(!o.parried and o.state == .slam); // the club keeps coming down
+    // …and squared up on him, it is caught. The stance HELD, so it is the short stumble, not the collapse.
+    o.parry = .{ .live = true, .at = hero, .facing = std.math.pi }; // hero faces -Z, i.e. at the ogre
+    o.takeParry();
+    try std.testing.expect(o.parried);
+    try std.testing.expectEqual(State.stunlight, o.state);
+    try std.testing.expect(o.slamCd > 0); // the club has to be gathered again before it comes back
+    // THE SWING IS DEAD: run the stumble out with him standing right where the club was going, and nothing of
+    // that slam ever reaches him.
+    o.parry = .{};
+    var t: f32 = 0;
+    while (t < combat.FOE_LIGHT_STUN_DUR - 1.0 / 60.0) : (t += 1.0 / 60.0) {
+        try std.testing.expect(o.update(1.0 / 60.0, hero, 60.0, .{}) == null);
+    }
+    // A SECOND clean catch breaks the stance — the "may heavy stun them", earned off the bar and not rolled.
+    o.enter(.swipe); // …and the swipe's blow lands sooner, so its window reaches back into the cock
+    o.t = SWIPE_DUR * SWIPE_IMPACT_K - PARRY_LEAD * 0.5;
+    o.parried = false;
+    o.parry = .{ .live = true, .at = hero, .facing = std.math.pi };
+    o.takeParry();
+    try std.testing.expect(o.parried);
+    try std.testing.expectEqual(State.stunheavy, o.state);
+    try std.testing.expect(combat.FOE_HEAVY_STUN_DUR > combat.FOE_LIGHT_STUN_DUR);
 }

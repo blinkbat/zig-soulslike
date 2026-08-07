@@ -16,6 +16,9 @@ pub const hurt_heavy = Event{ .low = 0.90, .high = 0.45, .dur = 0.34 }; // the l
 pub const guard_block = Event{ .low = 0.30, .high = 0.42, .dur = 0.09 };
 pub const guard_block_heavy = Event{ .low = 0.62, .high = 0.55, .dur = 0.18 };
 pub const guard_break = Event{ .low = 0.95, .high = 0.52, .dur = 0.42 };
+/// A BLOW REFUSED, not absorbed — so it sits over the heavy block, and mostly in the HIGH motor and SHORT: this
+/// is iron ringing off iron, not a mass arriving on you.
+pub const parry = Event{ .low = 0.52, .high = 0.92, .dur = 0.15 };
 pub const roll = Event{ .low = 0.16, .high = 0.40, .dur = 0.10 }; // the dodge whump
 pub const cast_throw = Event{ .low = 0.28, .high = 0.50, .dur = 0.14 }; // the stone lets go — a crack, not a thud
 /// A RISING rumble, which a single `Event` cannot be: `Motor` decays from its peak. Pulse this every frame and

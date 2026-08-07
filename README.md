@@ -99,6 +99,7 @@ Keyboard + mouse **or** a gamepad (Elden Ring default layout):
 | Heavy overhead | Shift + LMB | R2 / RT |
 | Lock on / cycle target | Middle mouse / flick | R3 (right-stick click) / flick |
 | Guard (shield) / cast (wand) | Hold RMB | Hold L1 / LB |
+| Parry (shield) | C | L2 / LT |
 | Aim the bow | Hold RMB | Hold L2 / LT |
 | Sword ↔ bow | Q | D-pad right |
 | Shield ↔ wand | F | D-pad left |

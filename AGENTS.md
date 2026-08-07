@@ -205,6 +205,14 @@ whose contents change together is fine. Splits go where concerns genuinely part 
   leap, a shove off a blade, the next one nobody has written) and a per-site list is a list to forget
   one from. It takes ONE thing, the feet: the state machine still runs, the kit still swings, blows
   still land. Y is left alone — `game.groundActor` owns it and a held foe stands on its own ground.
+- **A JUMP IS THE ONE THING THE GRIP REFUSES OUTRIGHT** (`foe.canLeap`) — a leap does not TRAVEL, it leaves the
+  earth, and a creature held by the ankles cannot. Denying only its distance leaves it hopping on the spot
+  inside a fist of roots, so a jump skill is gated where the move is CHOSEN, which is the one place a post-step
+  gate cannot reach: the archer's backstep, the kobold's dash, the broodling's pounce, the greatsword's lunge,
+  and the toad's hop AND lunge — every move a toad owns bar the jaws. Ask it of the move's own `hop`
+  (`warrior.decide` folds it into `ready`, so `classify` cannot promise a strike the pick then refuses), never
+  of one move by name. Already in the air when the grip closes, it finishes its arc: you cannot root what is
+  not standing on anything.
 - **A multi-kind group answers for its own members** — `kind = null` in `FOE_GROUPS`, each member
   exposes `kind()`. A group with anything else on the field (sacs, acid) exposes `clear()`.
 - **Anything the map can post is a `wf.FoeKind`, APPENDED never inserted** (editor unit brushes are
@@ -246,6 +254,19 @@ hero who caused it.
 **A FLOATING BAR TIMES OUT; THE FIXED ONE DOES NOT.** The target under the reticle keeps its numbers up
 whether it was hit lately or not. It goes with the RETICLE, not `g.lock`, so a suspended lock takes the
 bar down with the dot.
+
+**AND IT MAY NOT CLIMB OUT OF THE FRAME** (`hud.FOE_CEIL`). Bars hang off `topWorld`, which is right at every
+distance you can see the whole creature at and wrong the moment you close on a TALL one: the ogre's crown is
+4.4 m up, so through the whole fight you are near enough to need the bar it is drawn off the top of the screen,
+taking the gold STAGGER RIM — the one cue that says a punish is open — with it. So the bar is OVERHEAD unless
+that would put it above three quarters of the screen, which is one `max` against a screen-space ceiling: far off
+it rides the head as it always did, and walking in it stops climbing and hangs against the body. Dynamic with
+the distance rather than a fixed height off the feet, and ONE rule for every creature — a toad never reaches it.
+
+**AND A HEAD CAN GO BEHIND THE EYE.** Stood at a giant's feet its crown is above AND behind the camera, which
+`projectToScreen` rightly refuses — which took the bar off screen entirely at exactly the range the ceiling
+exists for. The fallback anchor is the CHEST (`centerWorld`), always in front of you, and the ceiling then puts
+the bar where the head would have been.
 
 ### Stamina
 
@@ -290,6 +311,52 @@ bar down with the dot.
 - **The shield is not a bone** — it rides the left wrist through `hero.shieldFit`, DERIVED from the
   stance angles (their inverse), or the first retune swings it off its own arm.
 
+### Parrying — L2, the shield's own skill
+
+**IT IS THE GUARD'S OPPOSITE NUMBER.** A held shield is a LEVEL that pays stamina to eat blows all day and
+chips you for it; a parry is a COMMITTED WINDOW that pays `STAM_PARRY` once and refuses one blow outright.
+
+- **L2 IS THE LEFT-HAND ARMAMENT'S SKILL SLOT** (ER's own), routed by that hand exactly as L1 is: a raised bow
+  AIMS on a held level, boards PARRY on a pressed edge. It asks NOTHING about whether the guard is up —
+  blocking and parrying are the two things one arm can do, not a move and its follow-up. R2 stays purely the
+  heavy.
+- **ON THE MOUSE THE TWO HALVES OF L2 PART COMPANY** (`PARRY_KEY`). RMB is already the guard's held level, and
+  Shift+RMB — the mirror of Shift+LMB — would fire a parry every time a sprinting player pressed RMB to get his
+  shield up, because Shift is the sprint here and not ER's Space. So the edge takes a key of its own.
+- **THE WINDOW AND THE ANIMATION ARE TWO CLOCKS** (`parryLive` vs `PARRY_DUR`). The catch is open for ~0.15 s at
+  the front; the shove plays for a third of a second after it shuts, and `canGuard` refuses the whole time — so
+  a mistimed parry leaves him with no shield either, whether or not he was holding one. That tail IS the price.
+- **THE ATTACK ALWAYS DIES; THE HEAVY STUN IS EARNED** (owner's "may heavy stun them"). `combat.PARRY_HIT` is
+  STANCE and nothing else — no damage, because a parry has never been damage, and no poise, so a catch can
+  never resolve as a flinch: it breaks the stance or it does not. Whether a catch is a stumble or a punish
+  window is the same bar the sword has been chipping all fight, not a dice roll.
+- **THE CREATURE READS THE SHIELD, IT NEVER REACHES FOR IT** (`foe.Parry`, stamped by `game.markParry` exactly
+  as `markSight` stamps the eyes). Each MOVE answers for its own frames and its own reach (`ogre.parryable`):
+  only the move knows where its head is, and a slam you rolled clear of is not one a shield six metres off can
+  touch. **Only the ogre has windows today**; the next creature is a field, a predicate and two lines in
+  `markParry`, not a new mechanism.
+- **A WINDOW IS `PARRY_LEAD` SECONDS MEASURED BACK FROM THE IMPACT FRAME** — one number, in seconds, and it IS
+  the difficulty. You parry an instant before THE HIT, swipe or slam (owner's call): what you read is the blow,
+  not the animation in front of it, so the ogre's two moves teach one rule and not a dial learned twice. Written
+  instead as fractions of two different state clocks the total was emergent and unreadable — the slam's came out
+  at 0.29 s, most of it while the club was still overhead and motionless.
+- **SO IT SHUTS AT THE IMPACT FRAME BY CONSTRUCTION** (`toImpact` counts across the state boundary), which is
+  what makes a caught blow one that never landed. A window outlasting the impact is a blow "caught" after it
+  hit you; one opening earlier is a free catch on a club that has not moved.
+- **IT IS A SWIPE, AND THE SWIPE COMES FROM THE WAIST** (`parrySweep` — coil, whip across, settle). A shoulder
+  yaw big enough to carry the boards across his front turns their FACE with it, because `shieldFit` is the
+  inverse of exactly that yaw; the TRUNK turns the arm and the boards together, so the shield stays square to
+  the direction it is travelling. `PARRY_ARM_LEAD` adds a few degrees on top so the boards outrun the chest.
+- **AND THE SHOVE MAY NOT BREAK THE FOLD.** `shieldFit` is also the inverse of shoulder-flex + elbow, so the
+  shoulder takes `PARRY_PUNCH` and the elbow gives back exactly as much: the fold is untouched and what travels
+  is the HAND. Opened at the elbow alone it swings the shield off its own arm and presents the end of his
+  forearm — this is the retune `shieldFit`'s law was written for.
+- **JUDGE IT FROM ABOVE.** A lateral arc foreshortens to nothing head-on, so the harness shoots the coil, the
+  crossing and the follow-through straight down (`20o`/`20p`/`20q`). One frame cannot show a sweep.
+- **A CATCH IS A BLOCK'S RECOIL PLUS SPARKS** — `noteParry` stamps `blockT`, the same channel, because the man
+  moves and the shield holds either way. The sparks separate on HUE (hot amber on pale tan) and their FAN
+  outruns their forward throw, or they sit superimposed on the boards they came off.
+
 ### Resistances — PoE2's four
 
 - **PHYSICAL IS NOT ONE OF THE FOUR.** `Elem` is fire/cold/lightning/chaos. What mitigates physical is
@@ -329,8 +396,9 @@ their own row.
 
 ## Armaments
 
-**R1/R2 (and L1) BELONG TO THE ARM, NOT THE WEAPON.** The attack buttons are read as buttons and
-routed by which armament is in that hand, so neither weapon can swallow the other's press. Swaps:
+**R1/R2 (and L1/L2) BELONG TO THE ARM, NOT THE WEAPON.** The attack buttons are read as buttons and
+routed by which armament is in that hand, so neither weapon can swallow the other's press. L1 is the left
+hand's ACTION (block / cast) and L2 is its SKILL (aim / parry), each split by what that hand is holding. Swaps:
 D-pad Right / Q = sword ↔ bow; D-pad Left / F = shield ↔ wand; D-pad Up / G = bolt ↔ roots. The QUIVER keeps
 keyboard Y alone — the cross is four directions and the spell has taken Up, so on the pad the arrow is changed
 in the character book's ammo slot.
@@ -687,7 +755,9 @@ not the stick-speed `runB`.
   ONE slot (last press wins; a same-frame roll outranks attack) and fires at the earliest exit. A
   queued roll leaves in the direction HELD at fire time, not pressed.
 - **Guard or CAST:** hold L1/LB or RMB. The button belongs to the HAND, not the shield.
-- **Aim:** hold L2, or RMB with the bow out (free to take it because the bow already took the shield).
+- **Aim or PARRY:** L2 is that same hand's SKILL slot and is routed the same way — a raised bow aims on the
+  HELD level (or RMB with the bow out, free to take because the bow already took the shield), boards parry on
+  the PRESSED edge (`PARRY_KEY`, since RMB is spoken for and Shift is the sprint).
 - **Lock-on:** R3 / middle mouse; a flick cycles. Suspended entirely while aiming. Two ER exceptions:
   a hold-B sprint faces TRAVEL, and an attack's recovery tail re-squares (`ATK_RETRACK`).
   **YOU CANNOT FIX ON WHAT YOU CANNOT SEE** — a foe behind a wall is not offered (`game.canSee`), but
@@ -788,8 +858,9 @@ not the stick-speed `runB`.
 
 ## Gaps
 
-No criticals, guard counter, parry, jump, status buildup, or AR × motion-value damage (flat constants
-today). No foot IK — `rx(bodyPitch)` rotates about the WORLD ORIGIN, so a deep lean levers a
+No criticals, guard counter, jump, status buildup, or AR × motion-value damage (flat constants
+today). The parry exists but has no RIPOSTE behind it — a caught blow buys a stagger and the ordinary punish,
+not a critical — and only the ogre carries parry windows. No foot IK — `rx(bodyPitch)` rotates about the WORLD ORIGIN, so a deep lean levers a
 forward-swung foot down and feet clip a few cm on slopes. The roll has front-loaded i-frames but no
 collision. One leg-cycle is reused across run and sprint. Nothing scales a cast — spell damage is flat
 constants like everything else. Elevation exists but nothing is authored with

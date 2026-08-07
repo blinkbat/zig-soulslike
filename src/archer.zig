@@ -428,8 +428,8 @@ fn classify(dist: f32, reloaded: bool) Choice {
 }
 
 // Pure backstep gate, same shape as `classify` so it is testable without a world.
-fn wantsBackstep(dist: f32, cd: f32, s: State) bool {
-    if (dist > BACKSTEP_R or cd > 0) return false;
+fn wantsBackstep(dist: f32, cd: f32, s: State, rooted: bool) bool {
+    if (dist > BACKSTEP_R or cd > 0 or rooted) return false; // ROOTED: the panic leap needs the feet (foe.canLeap)
     return switch (s) {
         .idle, .draw, .hold, .recover, .reposition => true,
         .loose, .backstep, .stunlight, .stunheavy, .dead => false,
@@ -566,8 +566,8 @@ pub const Archer = struct {
     pub fn update(self: *Archer, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) bool {
         if (self.gone) return false;
         self.justDied = false; // one-frame flag: re-set below only if a blade kills it this frame
-        // THE ROOTS HAVE THE FEET AND NOTHING ELSE (foe.grip) — it still draws, still looses, still backsteps on the
-        // spot; only the travel is taken.
+        // THE ROOTS HAVE THE FEET (foe.grip) — it still draws and still looses, and only the travel is taken.
+        // The PANIC LEAP is the exception the grip cannot answer on its own: see `foe.canLeap` below.
         const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -586,7 +586,7 @@ pub const Archer = struct {
 
         const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
         // THE PANIC LEAP interrupts whatever it was doing — checked before the state machine so a hero who closes mid-draw gets leapt away from on the same frame he arrives.
-        if (wantsBackstep(d, self.backstepCd, self.state)) self.enterBackstep();
+        if (wantsBackstep(d, self.backstepCd, self.state, !foe.canLeap(&self.root))) self.enterBackstep();
         switch (self.state) {
             .idle => {
                 self.armT = mathx.approach(self.armT, 0, dt * 4.0);
@@ -1302,15 +1302,38 @@ test "range band is ordered and sits inside aggro" {
     try std.testing.expect(RANGE_MIN < RANGE_MAX and RANGE_MAX < AGGRO_R);
 }
 
-test "the backstep fires only when crowded, off cooldown, and interruptible" {
-    try std.testing.expect(wantsBackstep(BACKSTEP_R - 0.5, 0, .draw)); // crowded mid-draw: bail
-    try std.testing.expect(wantsBackstep(BACKSTEP_R - 0.5, 0, .reposition));
-    try std.testing.expect(!wantsBackstep(BACKSTEP_R + 0.5, 0, .draw)); // not crowded yet
-    try std.testing.expect(!wantsBackstep(BACKSTEP_R - 0.5, 3.0, .draw)); // still on cooldown
-    try std.testing.expect(!wantsBackstep(0.5, 0, .loose)); // the arrow is already leaving
-    try std.testing.expect(!wantsBackstep(0.5, 0, .stunheavy)); // staggered: it cannot
-    try std.testing.expect(!wantsBackstep(0.5, 0, .dead));
-    try std.testing.expect(!wantsBackstep(0.5, 0, .backstep)); // no chaining into itself
+test "the backstep fires only when crowded, off cooldown, interruptible — and NOT while rooted" {
+    try std.testing.expect(wantsBackstep(BACKSTEP_R - 0.5, 0, .draw, false)); // crowded mid-draw: bail
+    try std.testing.expect(wantsBackstep(BACKSTEP_R - 0.5, 0, .reposition, false));
+    try std.testing.expect(!wantsBackstep(BACKSTEP_R + 0.5, 0, .draw, false)); // not crowded yet
+    try std.testing.expect(!wantsBackstep(BACKSTEP_R - 0.5, 3.0, .draw, false)); // still on cooldown
+    try std.testing.expect(!wantsBackstep(0.5, 0, .loose, false)); // the arrow is already leaving
+    try std.testing.expect(!wantsBackstep(0.5, 0, .stunheavy, false)); // staggered: it cannot
+    try std.testing.expect(!wantsBackstep(0.5, 0, .dead, false));
+    try std.testing.expect(!wantsBackstep(0.5, 0, .backstep, false)); // no chaining into itself
+    // HELD BY THE FEET: the leap is refused however crowded and however ready it is.
+    try std.testing.expect(!wantsBackstep(BACKSTEP_R - 0.5, 0, .draw, true));
+    try std.testing.expect(!wantsBackstep(BACKSTEP_R - 0.5, 0, .reposition, true));
+}
+
+test "THE GRIP TAKES THE PANIC LEAP, and gives it straight back when it lets go" {
+    var a = Archer.spawn(mathx.zero3, 0, 1, 0.3);
+    a.root.grab();
+    var t: f32 = 0;
+    // Standing right on top of it, which is the one thing that makes it want to leap.
+    while (t < combat.ROOT_HOLD * 0.9) : (t += 1.0 / 60.0) {
+        _ = a.update(1.0 / 60.0, v3(0, 0, 1.0), 500.0, .{});
+        try std.testing.expect(a.state != .backstep);
+        try std.testing.expect(!a.airborne());
+    }
+    a.root.release();
+    var leapt = false;
+    t = 0;
+    while (t < 0.5) : (t += 1.0 / 60.0) {
+        _ = a.update(1.0 / 60.0, v3(0, 0, 1.0), 500.0, .{});
+        if (a.state == .backstep) leapt = true;
+    }
+    try std.testing.expect(leapt);
 }
 
 test "the leap clears sword reach, lands where its curve says, and never overshoots" {

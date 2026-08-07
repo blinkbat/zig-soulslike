@@ -198,11 +198,47 @@ pub const Grip = struct {
 ///
 /// Six byte-identical copies of that body sat in the creature files, which is six places to forget that the
 /// bite is billed as a DRIP (`combat.Vitals.drip`) and never as a blow.
+/// A JUMP IS THE ONE THING THE GRIP REFUSES OUTRIGHT (owner's law). Everywhere else the roots take the FEET as
+/// a post-step gate and the move plays out on the spot — the club still comes down, the flurry still swings,
+/// the travel is simply given back. A jump skill is not that: it does not travel, it LEAVES THE EARTH, and a
+/// creature held by the ankles cannot. So it is gated where the move is CHOSEN, which is the one place a
+/// post-step gate cannot reach: by the time `Grip.hold` runs, the leap is already committed and the only thing
+/// left to deny is its distance, which lands you a creature hopping on the spot inside a fist of roots.
+///
+/// Asked at a choose site, so the creature is on the ground by construction. One already IN THE AIR when the
+/// grip closes keeps its arc and lands: you cannot root what is not standing on anything.
+pub fn canLeap(root: *const combat.Root) bool {
+    return !root.held();
+}
+
 pub fn grip(root: *combat.Root, vit: *combat.Vitals, dt: f32, at: rl.Vector3) Grip {
     const on = root.held();
     const killed = if (root.tick(dt)) |bite| vit.drip(bite) == .death else false;
     return .{ .was = at, .on = on, .killed = killed };
 }
+
+/// THE HERO'S SHIELD AS THE THING SWINGING AT HIM SEES IT — `Leash`'s pattern exactly, stamped every frame from
+/// outside (`game.markParry`) rather than fetched, because the creature must never reach out for the hero and
+/// because the ARC belongs to the shield, not to whatever is being caught on it. A creature reads this during
+/// its OWN parry window and nowhere else.
+pub const Parry = struct {
+    /// The catch window is open THIS frame. Every other field is meaningless while it is false.
+    live: bool = false,
+    at: rl.Vector3 = mathx.zero3,
+    facing: f32 = 0,
+
+    /// Would this move be batted aside? `reach` is the MOVE's own and not one number per creature: only the
+    /// move knows where its head is, and a slam you rolled clear of during its second of windup is not
+    /// something a shield six metres away can touch. THE BLOCK'S OWN ARC (`combat.GUARD_ARC`) — a shield is a
+    /// DIRECTION, and a parry that covered the back would be a better block than the block.
+    pub fn catches(self: *const Parry, at: rl.Vector3, reach: f32) bool {
+        if (!self.live) return false;
+        if (mathx.distXZ(self.at, at) > reach) return false;
+        const to = mathx.dirXZ(self.at, at);
+        if (mathx.lenXZ(to) < 1e-4) return true; // standing inside him: there is no bearing to be wrong about
+        return @abs(mathx.degrees(mathx.wrapPi(mathx.headingXZ(to) - self.facing))) <= combat.GUARD_ARC;
+    }
+};
 
 // Carry a landed blow's KNOCKBACK for one frame and bleed it off — a jolt off the blade, not a slide.
 pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32, dt: f32) void {
@@ -512,6 +548,28 @@ test "a CORPSE is not a body in the way, from the frame it starts to fall" {
     try std.testing.expect(!corporeal(&d));
     d.gone = true;
     try std.testing.expect(!corporeal(&d));
+}
+
+test "THE SHIELD IS A DIRECTION AND EACH MOVE ITS OWN REACH" {
+    const hero = v3(0, 0, 0);
+    var p = Parry{ .live = false, .at = hero, .facing = 0 }; // facing +Z
+    const ahead = v3(0, 0, 3);
+    try std.testing.expect(!p.catches(ahead, 4.0)); // window shut: nothing is caught, however square it is
+    p.live = true;
+    try std.testing.expect(p.catches(ahead, 4.0));
+    // Out past the MOVE's own reach — a windup you rolled away from is not a thing you can bat aside.
+    try std.testing.expect(!p.catches(ahead, 2.0));
+    // Behind the arc. GUARD_ARC either side of facing, so a foe at 90 deg is out and one just inside is in.
+    const flank = v3(3, 0, 0);
+    try std.testing.expect(!p.catches(flank, 4.0));
+    const edge = mathx.radians(combat.GUARD_ARC - 2.0);
+    try std.testing.expect(p.catches(v3(3.0 * mathx.sinf(edge), 0, 3.0 * mathx.cosf(edge)), 4.0));
+    const past = mathx.radians(combat.GUARD_ARC + 2.0);
+    try std.testing.expect(!p.catches(v3(3.0 * mathx.sinf(past), 0, 3.0 * mathx.cosf(past)), 4.0));
+    // …and the arc turns with him rather than with the world.
+    p.facing = std.math.pi;
+    try std.testing.expect(!p.catches(ahead, 4.0));
+    try std.testing.expect(p.catches(v3(0, 0, -3), 4.0));
 }
 
 test "THE LEASH: a foe drawn far from home walks back once the fight has gone quiet" {

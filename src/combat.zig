@@ -356,6 +356,20 @@ pub fn guardChip(h: Hit) Hit {
     return .{ .dmg = h.dmg * k, .elem = h.elem.scaled(k) };
 }
 
+// THE PARRY — L2, the shield's own skill, and the guard's opposite number in every respect. A held shield is a
+// LEVEL that pays stamina to eat blows all day and chips you for the privilege; this is a COMMITTED WINDOW that
+// pays once and refuses one blow outright. Whiff it and the shield is not up either, because the window is a
+// committed action and `canGuard` excludes those — which is the whole risk of asking for it.
+
+/// Under the heavy's 16 and over a quick shot's 8: the cost of a guess, not of a swing.
+pub const STAM_PARRY: f32 = 9.0;
+/// WHAT THE BOARDS DEAL WHEN THEY CATCH: nothing to the health, everything to the FOOTING. No `dmg`, because a
+/// parry has never been damage — the punish after it is. And NO POISE either, so a catch can never resolve as a
+/// mere flinch: it breaks the stance or it does not, which is exactly the owner's "may heavy stun them", read
+/// off the same bar the sword has been chipping all fight rather than off a dice roll. Sized so the game's
+/// high-poise heavy (the ogre's 90 stance) takes two clean catches and everything lighter takes one.
+pub const PARRY_HIT = Hit{ .stance = 46 };
+
 pub const FP_MAX = stats.fpFor(stats.START); // 60 — MIND owns it (`stats.zig`)
 
 pub const Focus = struct {
@@ -957,6 +971,23 @@ test "the small shield costs stamina by the WEIGHT of the blow, and lets a littl
     try std.testing.expect(guardStamina(club) < 4.0 * guardStamina(teeth));
     // …and the chip is a bite, not a scratch and not the blow.
     try std.testing.expect(guardChip(club).dmg > 3.0 and guardChip(club).dmg < 0.25 * club.dmg);
+}
+
+test "THE PARRY REFUSES A BLOW, and whether it staggers is the STANCE BAR's answer" {
+    // No health and no poise on it — a catch can never come out as a flinch, only as "held" or "broken".
+    try std.testing.expectApproxEqAbs(@as(f32, 0), PARRY_HIT.raw(), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), PARRY_HIT.poise, 1e-6);
+    try std.testing.expect(PARRY_HIT.stance > 0);
+    // The game's high-poise heavy: two catches, never one. Sized against the ogre's own bar on purpose.
+    const ogreStance: f32 = 90.0;
+    var giant = Vitals.initFoe(300, 30, ogreStance);
+    try std.testing.expectEqual(HitResult.none, giant.hit(PARRY_HIT));
+    try std.testing.expectEqual(HitResult.heavy, giant.hit(PARRY_HIT));
+    // …and anything lighter goes over on the first one.
+    var lesser = Vitals.initFoe(60, 12, 40);
+    try std.testing.expectEqual(HitResult.heavy, lesser.hit(PARRY_HIT));
+    // It is billed once, at the press, and for less than the swing it replaces.
+    try std.testing.expect(STAM_PARRY < STAM_HEAVY and STAM_PARRY > 0);
 }
 
 test "a small shield holds off the small stuff and CANNOT hold a giant" {

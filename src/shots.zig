@@ -390,6 +390,57 @@ pub fn runShots(g: *Game) void {
     }
 
     {
+        // THE PARRY — started COLD, from no guard at all, because L2 is the shield's own skill and never asks
+        // whether the boards were already up. Four frames say whether it reads: the shove at its PEAK (which is
+        // the frame that catches), the same frame in three-quarter and from straight down (how far the boards
+        // actually travel), and the CATCH — recoil driven into the body with the sparks off the boss.
+        var k: i32 = 0;
+        while (k < 30) : (k += 1) stepWorld(g, dt, 0);
+        g.hero.pos = mathx.ground(0, 4);
+        g.hero.stam.reset();
+        g.hero.facing = mathx.headingXZ(LIT_BACK);
+        g.hero.update(dt, 0, 0, null);
+        g.hero.pose();
+        must(g.hero.requestParry(), "the parry would not start");
+        while (g.hero.parrying and g.hero.parryT < heromod.PARRY_DUR * heromod.PARRY_PUNCH_AT) {
+            g.hero.updateParry(dt, null);
+        }
+        must(g.hero.parryLive(), "the shove peaked outside its own catch window");
+        shootPortrait(g, "shots/20l_parry_front.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        // …and the CATCH. Shot four frames in, not one: on the frame `noteParry` fires, every spark and the
+        // bloom are still at the same point and read as a single puff.
+        g.hero.noteParry();
+        k = 0;
+        while (k < 4) : (k += 1) g.hero.updateParry(dt, null);
+        shootPortrait(g, "shots/20m_parry_catch.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        shootPortrait(g, "shots/20n_parry_catch_3q.png", g.hero.shoulderPoint(), LIT_YAW + 42, 0.09, 3.0);
+        while (g.hero.parrying) g.hero.updateParry(dt, null);
+        // THE ARC ITSELF, AND IT TAKES THREE FRAMES FROM STRAIGHT DOWN. A swipe is a LATERAL sweep, so one
+        // frame cannot show it and the front view foreshortens it to nothing: these are the coil, the crossing
+        // (which is the frame that catches) and the follow-through, off the same run.
+        k = 0;
+        while (k < 20) : (k += 1) stepWorld(g, dt, 0);
+        g.hero.pos = mathx.ground(0, 4);
+        g.hero.facing = mathx.headingXZ(LIT_BACK);
+        g.hero.stam.reset();
+        g.hero.update(dt, 0, 0, null);
+        g.hero.pose();
+        must(g.hero.requestParry(), "the parry would not start for the arc");
+        for ([_]struct { u: f32, name: [:0]const u8 }{
+            .{ .u = heromod.PARRY_COIL_AT, .name = "shots/20o_parry_arc_coil.png" },
+            .{ .u = heromod.PARRY_PUNCH_AT, .name = "shots/20p_parry_arc_cross.png" },
+            .{ .u = heromod.PARRY_SWEEP_END, .name = "shots/20q_parry_arc_follow.png" },
+        }) |step| {
+            while (g.hero.parrying and g.hero.parryT < heromod.PARRY_DUR * step.u) g.hero.updateParry(dt, null);
+            shootPortrait(g, step.name, g.hero.shoulderPoint(), LIT_YAW, 1.32, 3.4);
+        }
+        while (g.hero.parrying) g.hero.updateParry(dt, null);
+        g.hero.stam.reset();
+        k = 0;
+        while (k < 30) : (k += 1) stepWorld(g, dt, 0);
+    }
+
+    {
         var k: i32 = 0;
         while (k < 30) : (k += 1) stepWorld(g, dt, 0);
         g.hero.pos = mathx.ground(0, 4);
@@ -865,6 +916,27 @@ pub fn runShots(g: *Game) void {
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
         shootFoe(g, o, "shots/47_ogre_idle.png", 55, 0.14, 13.0);
+        // THE FLOATING BAR ON A TALL MONSTER, in the LIVE camera's own framing from where you actually fight
+        // one — the framing `hud.FOE_CEIL` exists for. Unclamped, the ogre's crown is off the top of the screen
+        // from here and the bar goes with it, gold stagger rim and all.
+        {
+            _ = o.vit.hit(.{ .dmg = 90 }); // …so the bar is up at all (`HURT_BAR_WINDOW`)
+            g.hero.facing = mathx.headingXZ(mathx.scaleV(LIT_BACK, -1)); // squared up on it
+            // TWO RANGES, because the bar has two behaviours: out where the whole giant is in frame it rides
+            // the crown untouched, and toe to toe — where the crown is over the top of the screen and can even
+            // be BEHIND the eye — the ceiling has to hold it in frame.
+            for ([_]struct { m: f32, name: [:0]const u8 }{
+                .{ .m = 9.0, .name = "shots/47b_ogre_bar_far.png" },
+                .{ .m = 2.6, .name = "shots/47c_ogre_bar_close.png" },
+            }) |shot| {
+                g.hero.pos = along(oc, LIT_BACK, shot.m);
+                g.hero.update(dt, 0, 0, null);
+                g.hero.pose();
+                shootClear(g, shot.name, LIT_YAW, 0.10, 5.0);
+            }
+            o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
+            stepFoe(o, 54, far);
+        }
         // Scale — the hero standing clearly to the ogre's side (it looms ~1.9x over him).
         g.hero.pos = mathx.ground(oc.x + 4.8, oc.z + 1.4);
         g.hero.facing = std.math.atan2(oc.x - g.hero.pos.x, oc.z - g.hero.pos.z); // face the ogre
@@ -922,6 +994,19 @@ pub fn runShots(g: *Game) void {
         o.debugStagger(true);
         stepFoe(o, 42, far); // deep in the stance-break — sagged onto a knee, wide open
         shootFoe(g, o, "shots/53_ogre_stagger.png", 50, 0.10, 13.0);
+        // STAGGERED OUT OF A RAISED CLUB, which is the case the two above never touched: both stagger a freshly
+        // spawned ogre, already at the carry, so the posture channels had nothing to give back. Interrupted at
+        // the top of a windup they have 163 degrees of shoulder to unwind, and at the old shared ease rate —
+        // four degrees a second — it simply never happened and he reeled with the club still overhead.
+        o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
+        o.debugSlam();
+        stepFoe(o, 64, far); // the loaded peak: club overhead (this is 49_ogre_windup's own frame)
+        o.debugStagger(true);
+        stepFoe(o, 10, far); // …and a sixth of a second later the arm is already on its way down
+        shootFoe(g, o, "shots/53b_ogre_stagger_armed.png", 50, 0.10, 13.0);
+        stepFoe(o, 32, far); // …and by the deep hold it is back under him, not still raised
+        shootFoe(g, o, "shots/53c_ogre_stagger_armed_late.png", 50, 0.10, 13.0);
+
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         o.debugKill();
         stepFoe(o, 72, far); // the slow topple, well into the collapse

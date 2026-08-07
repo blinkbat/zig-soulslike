@@ -413,6 +413,7 @@ pub const Id = enum {
     stagger,
     guard_block,
     guard_break,
+    parry, // …and the one the shield only makes when it REFUSED a blow instead of eating it
     refused,
     death,
     respawn,
@@ -809,6 +810,19 @@ fn mkGuardBreak(r: *Rack) void {
     r.grit(0.10, 0.34, 0.40, 1100, 0.8, 2.6);
     r.air(0.08, 0.30, 0.24, 1300, 300, 0.32, 2.8);
     r.master(1.7, 2400);
+}
+
+fn mkParry(r: *Rack) void {
+    // WHAT MAKES IT A PARRY AND NOT A BLOCK IS THE RING LEFT STANDING AFTER IT. `mkGuardBlock` is boards with
+    // iron round the edge: a tick, a low body, and a rim that is gone in 90 ms. This is the BOSS being struck
+    // square — the strike itself is brighter and briefer, and then it SINGS for nearly half a second, which is
+    // the only part of the voice a player has to hear to know a punish is open.
+    r.tick(0.0, 0.66, 7400);
+    r.body(0.0, 0.05, 1750, 760, 0.58, 9.5); // the hit: high, and over almost before it started
+    r.ring(0.002, 0.44, 2350, 0.32, 2.2, 4); // …then the rim, still going
+    r.ring(0.005, 0.20, 4300, 0.12, 4.2, 3); // a thin second voice over the top of it
+    r.grit(0.0, 0.045, 0.20, 3800, 0.28, 7.0); // the scrape of the deflection, not a crunch
+    r.master(1.7, 6400);
 }
 
 fn mkRefused(r: *Rack) void {
@@ -1530,6 +1544,10 @@ const BANK = [NV]Row{
     .{ .id = .guard_block, .make = mkGuardBlock, .gain = battle(0.62), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 4 },
     // The BREAK is once a fight at most, and it is the cue to get out.
     .{ .id = .guard_break, .make = mkGuardBreak, .gain = battle(0.92), .mix = .combat, .jit = 0.05, .vjit = 0.06, .vars = 2, .poly = 1 },
+    // THE CATCH: rarer than a block and the loudest thing the shield does, because it is the cue that a punish
+    // is open. Barely jittered for `wand_charge`'s reason — a ring that wanders take to take reads as two
+    // different pieces of metal rather than one thing being struck twice.
+    .{ .id = .parry, .make = mkParry, .gain = battle(0.90), .mix = .combat, .jit = 0.07, .vjit = 0.09, .vars = 3, .poly = 2 },
     .{ .id = .refused, .make = mkRefused, .gain = 0.34, .jit = 0.06, .vjit = 0.08, .vars = 2 },
     .{ .id = .death, .make = mkDeath, .gain = battle(0.95), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
     .{ .id = .respawn, .make = mkRespawn, .gain = battle(0.55), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
@@ -1601,11 +1619,14 @@ const BANK = [NV]Row{
     .{ .id = .menu_back, .make = mkMenuBack, .gain = 0.32, .jit = 0.03, .vjit = 0.05 },
     // MUCH quieter (owner's call).
     .{ .id = .wind, .make = mkWind, .gain = 0.030, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
-    .{ .id = .birds, .make = mkBirds, .gain = 0.20, .mix = .ambience, .jit = 0.14, .vjit = 0.22, .vars = 4, .poly = 2, .reach = 210 },
-    .{ .id = .birdsong, .make = mkBirdsong, .gain = 0.17, .mix = .ambience, .jit = 0.13, .vjit = 0.22, .vars = 4, .poly = 2, .reach = 200 },
+    // THE BIRDS CARRY THE WIDEST SPREAD OF ANYTHING HERE (owner's call), and it is spent on VOLUME: the
+    // distance band below is most of it, and `vjit` puts a last few per cent between two calls at one range.
+    .{ .id = .birds, .make = mkBirds, .gain = 0.20, .mix = .ambience, .jit = 0.14, .vjit = 0.30, .vars = 4, .poly = 2, .reach = 210 },
+    .{ .id = .birdsong, .make = mkBirdsong, .gain = 0.17, .mix = .ambience, .jit = 0.13, .vjit = 0.30, .vars = 4, .poly = 2, .reach = 200 },
     // THE OWL IS RARE AND IT IS ALLOWED TO BE HEARD.
     .{ .id = .owl, .make = mkOwl, .gain = 0.24, .mix = .ambience, .jit = 0.08, .vjit = 0.14, .vars = 3, .poly = 2, .reach = 170 },
-    .{ .id = .crickets, .make = mkCrickets, .gain = 0.010, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
+    // …and the chirr under all of it is the quietest thing in the bank, quieter again (owner's call).
+    .{ .id = .crickets, .make = mkCrickets, .gain = 0.005, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
 };
 
 fn seconds(id: Id) f32 {
@@ -1628,6 +1649,9 @@ fn seconds(id: Id) f32 {
         .arrow_hit, .arrow_dirt, .arrow_wood, .arrow_stone, .arrow_metal => 0.36,
         // The climb has to RESOLVE at the throw, and the raise is CAST_DUR × CAST_AT ≈ 0.30 s.
         .wand_charge => 0.40,
+        // THE RING IS THE VOICE (see mkParry), and it runs to 0.442 — which the 0.5 default happens to cover
+        // today and would silently CUT the moment the tail is lengthened. Written down, like the climb's.
+        .parry => 0.55,
         .birds => 1.3, // long enough for a phrase plus the answer that can start at 0.72
         .birdsong => 1.0,
         .roll, .swing_heavy, .ogre_swipe, .ogre_step => 0.7,
@@ -2087,9 +2111,13 @@ const Call = struct {
     first: f32,
 };
 
+// WHERE A CALL COMES FROM IS WHAT SETS HOW LOUD IT IS. `world` fades over the row's own `reach` as `k²`, so
+// the distance band IS the volume band: the two bird rows draw from close enough to be in the next tree
+// (`distLo`, near full) out to the edge of earshot (`distHi`, a tenth of it), and a wood you hear one flat
+// level of birdsong in is a wood with a speaker in it.
 const CALLS = [_]Call{
-    .{ .id = .birds, .gapLo = 9, .gapHi = 26, .distLo = 26, .distHi = 120, .first = 4 },
-    .{ .id = .birdsong, .gapLo = 11, .gapHi = 31, .distLo = 30, .distHi = 140, .first = 9 },
+    .{ .id = .birds, .gapLo = 6, .gapHi = 17, .distLo = 12, .distHi = 150, .first = 4 },
+    .{ .id = .birdsong, .gapLo = 7, .gapHi = 20, .distLo = 14, .distHi = 155, .first = 9 },
     .{ .id = .owl, .gapLo = 26, .gapHi = 70, .distLo = 40, .distHi = 150, .first = 22 },
 };
 

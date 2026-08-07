@@ -1297,7 +1297,10 @@ pub const Spider = struct {
     }
 
     fn decideBroodling(self: *Spider, d: f32, hero: rl.Vector3) void {
-        switch (classifyBroodling(d, self.leapCdReady(), self.biteCd <= 0)) {
+        // The pounce is a JUMP, so the grip refuses it outright rather than playing it out on the spot
+        // (`foe.canLeap`); with it off the table a held hatchling falls through to `.chase` and skitters
+        // nowhere, which is the post-step gate doing its ordinary job.
+        switch (classifyBroodling(d, self.leapCdReady() and foe.canLeap(&self.root), self.biteCd <= 0)) {
             .idle => {
                 // Out of its senses: skitter back toward where it hatched rather than freeze mid-field.
                 if (mathx.distXZ(self.pos, self.home) > B_HOME_R) {

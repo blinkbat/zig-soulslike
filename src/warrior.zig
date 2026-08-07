@@ -455,7 +455,7 @@ pub const Model = struct {
         }
         rl.drawMesh(self.kit[@intFromEnum(w.role)], self.mat, w.xf[WPN]);
         // THE SHIELD IS NOT A BONE — it rides the left wrist, the pattern hero.zig set for its own.
-        if (w.role == .shieldman and !w.shieldGone) rl.drawMesh(self.shield, self.mat, mul(shieldFit(), w.xf[WRL]));
+        if (w.role == .shieldman and !w.shieldGone) rl.drawMesh(self.shield, self.mat, shieldXf(w));
     }
 };
 
@@ -572,7 +572,7 @@ pub const Warrior = struct {
     // From `pos.y` PLUS `hop`: the lunge lifts the whole rig, and a hurt sphere pinned to the ground would
     // sit at his feet for the leap.
     pub fn centerWorld(self: *const Warrior) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + archermod.CENTER_F * H * self.scale + self.hop, self.pos.z);
+        return foe.bodyPoint(self.pos, archermod.CENTER_F * H, self.scale, self.hop);
     }
     pub fn hurtRadius(self: *const Warrior) f32 {
         return spec(self.role).hurtR * self.scale;
@@ -580,11 +580,13 @@ pub const Warrior = struct {
     pub fn bodyR(self: *const Warrior) f32 {
         return spec(self.role).bodyR * self.scale;
     }
+    /// The archer's skull mark, because it is the archer's skull — and it goes DOWN ON ONE KNEE when the
+    /// boards are smashed off him, which is the exact moment a mark hanging at head height reads worst.
     pub fn lockPoint(self: *const Warrior) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + archermod.LOCK_F * H * self.scale + self.hop, self.pos.z);
+        return foe.markOn(self.xf[SKULL], archermod.LOCK_AT);
     }
     pub fn topWorld(self: *const Warrior) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + archermod.TOP_F * H * self.scale + self.hop, self.pos.z);
+        return foe.bodyPoint(self.pos, archermod.TOP_F * H, self.scale, self.hop);
     }
     pub fn alive(self: *const Warrior) bool {
         return !self.gone;
@@ -991,14 +993,11 @@ pub const Warrior = struct {
         } else if (self.hyperArmor()) {
             b.hit = .{ .dmg = blade.hit.dmg, .elem = blade.hit.elem };
         }
-        const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), b) orelse return;
-        self.leash.provoke();
-        if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
+        // THE SPLIT IS HERE FOR THIS CREATURE: `reached` is what the blade did, `wounded` is what it cost —
+        // and the shieldman is the one body in the game with something in between the two.
+        const s = foe.reached(self, b) orelse return;
         if (blocked) return self.caught(blade.hit, s);
-        self.hits += 1;
-        self.flash = FLASH_DUR;
-        const heavyBlow = blade.hit.stance > 0;
-        self.shove = mathx.scaleV(s.dir, if (heavyBlow) 1.9 else 1.2);
+        const heavyBlow = foe.wounded(self, s, blade, .{ .light = 1.2, .heavy = 1.9 });
         self.chips(s.contact, s.dir, if (heavyBlow) 20 else 12, if (heavyBlow) 3.4 else 2.4);
         sfx.world(.bone_hurt, self.pos);
         switch (s.reaction) {
@@ -1318,8 +1317,9 @@ pub const Warrior = struct {
 
     fn stunAmount(self: *const Warrior) f32 {
         return switch (self.state) {
-            .stunlight => mathx.sinf(mathx.clampF(self.t / combat.FOE_LIGHT_STUN_DUR, 0, 1) * std.math.pi),
-            .stunheavy, .guardbreak => mathx.pulse(mathx.clampF(self.t / combat.FOE_HEAVY_STUN_DUR, 0, 1), 0, 0.13, 0.72, 1.0),
+            .stunlight => foe.stunCurve(self.t, false),
+            // A GUARD BREAK IS A HEAVY, on the heavy's own clock — that is what `breakGuard` arms.
+            .stunheavy, .guardbreak => foe.stunCurve(self.t, true),
             else => 0,
         };
     }
@@ -1332,8 +1332,15 @@ pub const Warrior = struct {
         return mathx.smoothstep(0, KNEEL_IN, self.t) * (1.0 - mathx.smoothstep(d - KNEEL_OUT, d, self.t));
     }
 
+    /// The whole rig's scale, dissipation included. ONE definition: the shield is not a bone and has to
+    /// arrive at the same number `pose` did, or the boards shrink on a different curve to the man holding
+    /// them.
+    pub fn rigScale(self: *const Warrior) f32 {
+        return self.scale * (1.0 - 0.7 * self.fade);
+    }
+
     pub fn pose(self: *Warrior) void {
-        const fs = self.scale * (1.0 - 0.7 * self.fade);
+        const fs = self.rigScale();
         const sink = -0.55 * self.scale * self.fade; // the corpse sinks as it dissipates
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
@@ -1886,8 +1893,24 @@ fn shieldMesh() rl.Mesh {
 /// THE SHIELD IS NOT A BONE (hero.zig's rule, and its pattern): it rides the LEFT WRIST's matrix. The
 /// long axis of a strapped kite shield runs DOWN the forearm — which is the wrist frame's own −Y — so
 /// the boards need no turning, only standing off the fist and raked a few degrees off the arm.
-fn shieldFit() rl.Matrix {
-    return mul(mul(rx(-9.0), rz(4.0)), tr(-0.028 * H, FIST_Y + 0.175 * H, FIST_Z + SH_STANDOFF));
+/// Where the boards hang off the fist, in the wrist's frame — the one thing about them that still rides
+/// the arm.
+const SH_HUB = v3(-0.028 * H, FIST_Y + 0.175 * H, FIST_Z + SH_STANDOFF);
+const SH_RAKE_X = -9.0; // the top edge tipped back off his chest…
+const SH_RAKE_Z = 4.0; // …and the point carried a little across him
+
+/// THE BOARDS ARE SQUARE TO THE MAN, NOT TO HIS FOREARM. They take their POSITION off the fist and their
+/// ORIENTATION off his facing alone, so nothing in the arm chain or the spine can roll their face off the
+/// hero: the swing drops the shoulder and opens the elbow, and a stagger arches the whole trunk back 46°,
+/// and inherited whole that laid a kite shield out flat and face-up over him.
+fn shieldXf(w: *const Warrior) rl.Matrix {
+    const fs = w.rigScale();
+    const hub = rl.math.vector3Transform(SH_HUB, w.xf[WRL]);
+    return mul3(
+        scaleM(fs, fs, fs),
+        mul3(rx(SH_RAKE_X), rz(SH_RAKE_Z), ry(mathx.degrees(w.facing))),
+        tr(hub.x, hub.y, hub.z),
+    );
 }
 
 test "the role table, the enum and the map's foe kinds agree" {

@@ -73,6 +73,9 @@ const TIBIA_DOWN = 0.94;
 const HURT_R = 0.52; // hurt sphere (pre per-spider scale)
 const BODY_R = 0.62; // ground footprint for collision
 const BODY_CY = 0.56; // body centre height (camera focus + hurt sphere)
+/// The reticle's seat in the CEPHALO part's own frame, whose origin sits on the ground under her — so the
+/// body height, carried a little forward onto the eye cluster.
+const LOCK_AT = v3(0, BODY_Y, 0.10);
 
 const LEG_PHASE = [NLEG]f32{ 0.0, 0.5, 0.0, 0.5 };
 const STEP_SWING = 26.0; // deg the femur sweeps fore/aft
@@ -808,7 +811,7 @@ pub const Sac = struct {
         return !self.gone and !self.killed and !self.hatched;
     }
     pub fn centerWorld(self: *const Sac) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + SAC_R * 0.9 * self.scale, self.pos.z);
+        return foe.bodyPoint(self.pos, SAC_R * 0.9, self.scale, 0);
     }
     pub fn hurtRadius(self: *const Sac) f32 {
         return SAC_HURT_R * self.scale;
@@ -820,11 +823,14 @@ pub const Sac = struct {
     pub fn staggered(_: *const Sac) bool {
         return false; // it has no reaction to be in — it either holds or it bursts
     }
+    /// THE ONE TARGET WHOSE MARK IS STILL A HEIGHT, and it is not an oversight: a sac is one membrane on
+    /// the ground with no parts to ride. There is nothing on it that moves independently of the whole,
+    /// so its centre IS the part the reticle would have ridden.
     pub fn lockPoint(self: *const Sac) rl.Vector3 {
         return self.centerWorld();
     }
     pub fn topWorld(self: *const Sac) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + SAC_R * 1.9 * self.scale, self.pos.z);
+        return foe.bodyPoint(self.pos, SAC_R * 1.9, self.scale, 0);
     }
     pub fn bodyR(self: *const Sac) f32 {
         return SAC_R * self.scale;
@@ -1012,7 +1018,7 @@ pub const Spider = struct {
         return spec(self.role).runes;
     }
     pub fn centerWorld(self: *const Spider) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + BODY_CY * self.scale + self.lift, self.pos.z);
+        return foe.bodyPoint(self.pos, BODY_CY, self.scale, self.lift);
     }
     pub fn hurtRadius(self: *const Spider) f32 {
         return HURT_R * self.scale;
@@ -1020,11 +1026,13 @@ pub const Spider = struct {
     pub fn bodyR(self: *const Spider) f32 {
         return BODY_R * self.scale;
     }
+    /// THE MARK RIDES THE CEPHALOTHORAX — the fused head she REARS on and drops through a bite. A height
+    /// off the ground ignored the whole of that: she has no upright posture to measure one against.
     pub fn lockPoint(self: *const Spider) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + BODY_Y * self.scale + self.lift, self.pos.z);
+        return foe.markOn(self.xf[CEPHALO], LOCK_AT);
     }
     pub fn topWorld(self: *const Spider) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + (BODY_Y + 0.42) * self.scale + self.lift, self.pos.z);
+        return foe.bodyPoint(self.pos, BODY_Y + 0.42, self.scale, self.lift);
     }
     pub fn airborne(self: *const Spider) bool {
         return self.lift > foe.AIRBORNE_LIFT;
@@ -1405,14 +1413,13 @@ pub const Spider = struct {
     /// THE DAMAGE ENTRY, public because a shaft comes through it too (`foe.pierceGroup`).
     pub fn tryHit(self: *Spider, blade: foe.Blade) void {
         if (self.state == .dead) return;
-        const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
-        self.hits += 1;
-        self.leash.provoke();
-        if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
-        self.flash = FLASH_DUR;
-        const heavy = blade.hit.stance > 0;
+        const s = foe.reached(self, blade) orelse return;
+        // THE SHOVE IS BILLED AGAINST HER MASS: a mother is four times a broodling and must not be swatted
+        // about like one. Divided into the pair at the call site rather than carried as a third dial —
+        // `Push` is two numbers chosen against each other, and this is the same choice made per body.
+        const d = mathx.maxF(0.5, self.scale);
+        const heavy = foe.wounded(self, s, blade, .{ .light = 1.35 / d, .heavy = 2.1 / d });
         self.bloodBurst(s.contact, s.dir, if (heavy) 13 else 8, if (heavy) 2.5 else 1.8);
-        self.shove = mathx.scaleV(s.dir, (if (heavy) @as(f32, 2.1) else 1.35) / mathx.maxF(0.5, self.scale));
         sfx.world(if (self.role == .mother) .spider_hurt else .brood_hurt, self.pos);
         switch (s.reaction) {
             .death => {

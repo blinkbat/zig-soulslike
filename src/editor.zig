@@ -192,6 +192,7 @@ const unitTips = [_][:0]const u8{
     "Post an egg sac — hatches on its own clock unless you cut it open",
     "Post a skeleton shieldman — blocks what comes at his front; break the guard, then punish",
     "Post a skeleton greatsword — a long diagonal slam you cannot interrupt; walk out of it",
+    "Post a shade — drains focus up close, hurls wisps at range, blinks behind you when threatened",
     "Hold and sweep to remove spawns ([ ] sets radius)",
 };
 
@@ -210,7 +211,7 @@ const coverIcons = [_]ui.Icon{ .clearing, .zone, .erase };
 const decorIcons = [_]ui.Icon{ .single, .patch, .scatter, .erase };
 const propIcons = [_]ui.Icon{ .stamp, .row, .ring, .cluster, .ivy, .erase };
 const interactIcons = [_]ui.Icon{ .stamp, .erase };
-const unitIcons = [_]ui.Icon{ .toad, .archer, .ogre, .berserker, .priest, .slinger, .brood_mother, .broodling, .brood_sac, .shieldman, .greatsword, .erase };
+const unitIcons = [_]ui.Icon{ .toad, .archer, .ogre, .berserker, .priest, .slinger, .brood_mother, .broodling, .brood_sac, .shieldman, .greatsword, .shade, .erase };
 
 comptime {
     // …AND PINNED BY NAME, not just by length: every one of these lists is the brush enum's own tags in
@@ -297,7 +298,7 @@ const CoverBrush = enum { clearing, zone, erase };
 pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
 const InteractBrush = enum { stamp, erase };
-const UnitBrush = enum { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, erase };
+const UnitBrush = enum { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, erase };
 
 comptime {
     // Every brush enum pinned to the table it indexes, case-insensitively so "Erase"/"Zone" read the way a button should while the tag stays Zig-shaped.
@@ -2103,6 +2104,8 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .brood_sac => ui.col(190, 208, 130, 255),
         .shieldman => ui.col(176, 178, 190, 255),
         .greatsword => ui.col(214, 216, 232, 255),
+        // The only cold violet on the map — its own colour, and legible against the skeletons' greys.
+        .shade => ui.col(138, 116, 208, 255),
     };
 }
 

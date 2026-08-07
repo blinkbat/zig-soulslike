@@ -105,6 +105,10 @@ const scaleM = mathx.scaleM;
 
 const setLocal = heromod.setHumanoid; // the shared scaffold's own setter — see there
 
+/// Where the reticle sits in the SKULL's own frame: forward of the joint, because a kobold's snout carries
+/// its head out in front of the neck rather than up above it.
+const LOCK_AT = v3(0, 0.02 * H, 0.05 * H);
+
 /// The kobold's PAW footprint, measured off `footMesh` below: the pad spans z −0.041·H…+0.206·H and x ±0.052·H, its underside on the ankle plane.
 const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKL, .heel = 0.041 * H, .toe = 0.206 * H, .halfW = 0.052 * H, .drop = 0.042 * H },
@@ -409,13 +413,17 @@ pub const Kobold = struct {
         return spec(self.role).hurtR * self.scale;
     }
     pub fn centerWorld(self: *const Kobold) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + 0.80 * H * self.scale, self.pos.z);
+        return foe.bodyPoint(self.pos, 0.80 * H, self.scale, 0);
     }
+    /// THE MARK RIDES THE SKULL, and this is the creature it matters most on: a kobold is HUNCHED, so its
+    /// head sits well below the 0.885·H the shared rest puts the joint at, and the flat 0.78·H this used
+    /// to be was a guess at where the hunch happens to leave it. It also ducks, lunges and whips its head
+    /// through a flurry — every one of which the old mark sat still through.
     pub fn lockPoint(self: *const Kobold) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + 0.78 * H * self.scale, self.pos.z);
+        return foe.markOn(self.xf[SKULL], LOCK_AT);
     }
     pub fn topWorld(self: *const Kobold) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + 1.06 * H * self.scale, self.pos.z);
+        return foe.bodyPoint(self.pos, 1.06 * H, self.scale, 0);
     }
     pub fn flashFrac(self: *const Kobold) f32 {
         return foe.flashFrac(self.flash);
@@ -818,13 +826,8 @@ pub const Kobold = struct {
 
     pub fn tryHit(self: *Kobold, blade: foe.Blade) void {
         if (self.state == .dead) return;
-        const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
-        self.hits += 1;
-        self.leash.provoke();
-        if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
-        self.flash = FLASH_DUR;
-        const heavyBlow = blade.hit.stance > 0;
-        self.shove = mathx.scaleV(s.dir, if (heavyBlow) 2.1 else 1.35);
+        const s = foe.reached(self, blade) orelse return;
+        _ = foe.wounded(self, s, blade, .{ .light = 1.35, .heavy = 2.1 });
         // The tail snaps sideways off the blow before it clamps under — the first frame of a flinch, and visible from behind, where the body's own reaction mostly is not.
         self.tailWhip = TAIL_WHIP_HURT * (if (self.fxRng.float() < 0.5) @as(f32, -1.0) else 1.0);
         self.emitBlood(s.contact, s.dir);

@@ -21,6 +21,7 @@ const ogremod = @import("ogre.zig");
 const koboldmod = @import("kobold.zig"); // THE WARBAND — three roles in one group (the priest heals)
 const broodmod = @import("brood.zig"); // THE BROOD — a mother, her sacs and what comes out of them
 const warriormod = @import("warrior.zig"); // THE SKELETAL WARRIORS — the archer's bones, armed two ways
+const shademod = @import("shade.zig"); // THE SHADES — the only thing that takes his FOCUS, and the only thing that blinks
 const chestmod = @import("chest.zig"); // the openable boxes
 const restmod = @import("rest.zig"); // sitting at a bonfire
 const npcmod = @import("npc.zig"); // THE FOLK — the first bodies here that are not trying to kill you
@@ -153,6 +154,7 @@ pub const Game = struct {
     band: koboldmod.Warband, // the kobold warband — berserkers, priests and slingers, mixed
     brood: broodmod.Brood, // the brood mothers, their egg sacs, their hatchlings and their acid
     muster: warriormod.Muster, // the skeletal warriors — shieldmen and greatswords, mixed
+    haunt: shademod.Haunt, // the shades — a flanking pack that drains focus and teleports
     chests: chestmod.Chests, // the openable boxes — props with a lid and a state (chest.zig)
     folk: npcmod.Folk, // the NPCs the map posts — bodies with a name and a conversation, not a foe contract
     /// THE SCRIPT LAYER. `trig` is every switch, counter, timer and one-shot latch in the world; `talk` is the
@@ -173,6 +175,7 @@ pub const Game = struct {
     venomModel: rl.Model,
     fireArrowModel: rl.Model,
     boltModel: rl.Model,
+    wispModel: rl.Model,
     arrows: [MAX_ARROWS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_ARROWS,
     shafts: [MAX_SHAFTS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_SHAFTS,
     rig: cameramod.CamRig,
@@ -211,6 +214,7 @@ pub const Game = struct {
         g.band = koboldmod.Warband.init(g.scene.shader);
         g.brood = broodmod.Brood.init(g.scene.shader);
         g.muster = warriormod.Muster.init(g.scene.shader);
+        g.haunt = shademod.Haunt.init(g.scene.shader);
         g.chests = chestmod.Chests.init(g.scene.shader);
         g.folk = npcmod.Folk.init(g.scene.shader);
         rehomeFoes(g, .blind);
@@ -223,6 +227,7 @@ pub const Game = struct {
         g.venomModel = broodmod.venomMesh(g.scene.shader);
         g.fireArrowModel = archermod.fireArrowMesh(g.scene.shader);
         g.boltModel = heromod.boltMesh(g.scene.shader);
+        g.wispModel = shademod.wispMesh(g.scene.shader);
         g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
         g.shafts = [_]archermod.Arrow{.{}} ** MAX_SHAFTS;
@@ -263,6 +268,7 @@ const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "band", .kind = null, .aggro = koboldmod.AGGRO_R },
     .{ .field = "brood", .kind = null, .aggro = broodmod.AGGRO_R },
     .{ .field = "muster", .kind = null, .aggro = warriormod.AGGRO_R, .vs = &.{"line"} },
+    .{ .field = "haunt", .kind = .shade, .aggro = shademod.AGGRO_R, .vs = &.{ "warren", "line", "muster" } },
 };
 
 /// Whether a re-homed field starts with EYES on the hero. A freshly loaded world is `.blind` — a foe behind a
@@ -402,6 +408,48 @@ test "wading costs the run first and never roots him" {
 fn wadeDragAt(d: f32) f32 {
     if (d <= WADE_KNEE) return 1.0;
     return mathx.lerpF(1.0, WADE_SLOWEST, mathx.smoothstep(WADE_KNEE, WADE_DEEP, d));
+}
+
+/// How far a creature's LOCK MARK swings OFF ITS OWN STANDING AXIS over five seconds of it fighting.
+///
+/// Measured horizontally, not vertically, and that is the whole point: a mark pinned to a height off the
+/// feet still rises and falls when the creature hops or leaps, so a vertical test passes on the toad and
+/// the archer whatever their reticle is bolted to. Nothing on that axis can EVER leave it — so this number
+/// is exactly zero for a fixed mark and non-zero for one riding a bone that leans, turns or hinges.
+fn markSwing(f: anytype, hero: rl.Vector3) f32 {
+    var worst: f32 = 0;
+    var i: u32 = 0;
+    while (i < 300) : (i += 1) {
+        _ = f.update(1.0 / 60.0, hero, PLAY_HALF, .{});
+        worst = @max(worst, mathx.distXZ(f.lockPoint(), f.pos));
+    }
+    return worst;
+}
+
+// THE UNIVERSAL PIN FOR `foe.markOn`. This test lives here rather than in seven creature files because the
+// rule is not any one creature's — it is the contract, and the only honest way to check "on every creature"
+// is to walk every creature. It is also the only place in the repo that imports all of them.
+//
+// A mark pinned to a fixed height off the feet scores EXACTLY ZERO here, whatever the body is doing. The
+// egg sac is deliberately absent: it is one membrane on the ground with no part that moves on its own.
+test "THE MARK RIDES THE BODY, on every creature that has one" {
+    const hero = v3(0, 0, 1.7); // inside every notice ring in the game, so all of them come for him
+    const MIN: f32 = 0.02; // two centimetres off the axis — a very low bar, and a fixed mark gives zero
+
+    var toad = frogmod.Frog.spawn(mathx.zero3, 0, 1.0, 0.3);
+    try std.testing.expect(markSwing(&toad, hero) > MIN);
+    var bowman = archermod.Archer.spawn(mathx.zero3, 0, 1.0, 0.3);
+    try std.testing.expect(markSwing(&bowman, hero) > MIN);
+    var giant = ogremod.Ogre.spawn(mathx.zero3, 0, 1.0, 0.3);
+    try std.testing.expect(markSwing(&giant, hero) > MIN);
+    var zerk = koboldmod.Kobold.spawn(mathx.zero3, 0, 1.0, 0.3);
+    try std.testing.expect(markSwing(&zerk, hero) > MIN);
+    var mother = broodmod.Spider.spawnAs(.mother, mathx.zero3, 0, 1.0, 0.3);
+    try std.testing.expect(markSwing(&mother, hero) > MIN);
+    var boards = warriormod.Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1.0, 0.3);
+    try std.testing.expect(markSwing(&boards, hero) > MIN);
+    var ghost = shademod.Shade.spawn(mathx.zero3, 0, 1.0, 0.3);
+    try std.testing.expect(markSwing(&ghost, hero) > MIN);
 }
 
 fn groundActor(g: *const Game, pos: *rl.Vector3, dt: f32) void {
@@ -564,6 +612,11 @@ pub fn spawnClump(g: *Game, from: rl.Vector3) void {
 
 pub fn spawnVenom(g: *Game, from: rl.Vector3) void {
     poolPut(g, archermod.launchVenom(from, heroAimPoint(g), broodmod.SPIT_SPEED, broodmod.M_SPIT_HIT));
+}
+
+/// LOFTED like every other thrown thing here, so its arc is the tell you read it by.
+pub fn spawnWisp(g: *Game, from: rl.Vector3) void {
+    poolPut(g, archermod.launchShaft(from, heroAimPoint(g), shademod.WISP_SPEED, shademod.WISP_HIT, true, .wisp));
 }
 
 /// THE SCRIPT LAYER, BACK TO A FRESH WORLD: the folk on their posts and every switch, counter, timer and
@@ -1179,7 +1232,8 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
         // …and the bolt bursts at the CONTACT for the clump's reason — it goes off against a wall at the
         // height it struck one, not down at that wall's foot.
         .bolt => g.hero.boltBurst(ar.pos, g.hero.casts),
-        .arrow, .firearrow => {},
+        // A wisp is a piece of the creature and it leaves nothing on the ground: it is spent arriving.
+        .arrow, .firearrow, .wisp => {},
     }
 }
 
@@ -1193,6 +1247,7 @@ fn drawArrows(g: *Game) void {
                 .venom => &g.venomModel,
                 .firearrow => &g.fireArrowModel,
                 .bolt => &g.boltModel,
+                .wisp => &g.wispModel,
             };
             rl.drawMesh(m.meshes[0], m.materials[0], archermod.arrowXform(ar));
         }
@@ -1988,6 +2043,13 @@ pub fn run(mode: Mode) void {
         if (g.muster.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.stance > 0, true);
         }
+        // THE SHADES. Only the touch is a blow they deal in person — the wisp goes through the quiver like
+        // every other thrown thing. It carries no stance at all, so it is never the heavy beat.
+        if (g.haunt.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnWisp)) |b| {
+            // The same split every other group uses, not a hardcoded `false`: the touch carries no stance
+            // today, so this reads false either way — and it stays right the day one of them gets some.
+            _ = heroTakes(g, b, b.hit.stance > 0, true);
+        }
         // …and the one moment of theirs the frame should feel BEFORE it is hit by it.
         if (g.muster.anyLeapt()) {
             g.rumble.play(rumblemod.swing_heavy);
@@ -2393,6 +2455,7 @@ fn askFoe(comptime T: type, g: *const Game, r: FoeRef, comptime ask: anytype) T 
         .toad => ask(&g.warren.frogs[r.idx]),
         .archer => ask(&g.line.archers[r.idx]),
         .ogre => ask(&g.grief.ogres[r.idx]),
+        .shade => ask(&g.haunt.shades[r.idx]),
         .berserker, .priest, .slinger => unreachable, // handled above
         .brood_mother, .broodling, .brood_sac => unreachable,
         .shieldman, .greatsword => unreachable,
@@ -2439,6 +2502,7 @@ fn refInBounds(g: *const Game, r: FoeRef) bool {
         .toad => r.idx < g.warren.liveConst().len,
         .archer => r.idx < g.line.liveConst().len,
         .ogre => r.idx < g.grief.liveConst().len,
+        .shade => r.idx < g.haunt.liveConst().len,
         // …every kind handled by the three group checks above, named so a new one cannot slip past.
         .berserker, .priest, .slinger, .brood_mother, .broodling, .brood_sac, .shieldman, .greatsword => false,
     };

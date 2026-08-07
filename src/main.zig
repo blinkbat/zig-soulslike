@@ -50,7 +50,10 @@ fn runBake(alloc: std.mem.Allocator) !void {
     );
 }
 
-// EVERY module carrying tests must be named here
+// EVERY module in `src/` is named here, and `build.zig`'s `checkTestRoster` FAILS THE BUILD if one is not.
+// A module missing from this block compiles, ships, and reports "all tests passed" while every test it
+// carries goes unrun — `shade.zig` went in with seventeen of them and the suite total did not move. Naming a
+// module that would have been pulled in anyway costs nothing; leaving one out costs the whole file.
 test {
     _ = @import("hero.zig");
     _ = @import("camera.zig");
@@ -61,6 +64,7 @@ test {
     _ = @import("kobold.zig");
     _ = @import("brood.zig");
     _ = @import("warrior.zig");
+    _ = @import("shade.zig");
     _ = @import("foe.zig");
     _ = @import("combat.zig");
     _ = @import("stats.zig");
@@ -79,4 +83,23 @@ test {
     _ = @import("book.zig");
     // …AND game.zig ITSELF, which this list said was unreachable and then never named.
     _ = @import("game.zig");
+    _ = @import("chest.zig");
+    _ = @import("rest.zig");
+    _ = @import("rumble.zig");
+    _ = @import("menu.zig");
+    _ = @import("objview.zig");
+    _ = @import("shots.zig");
+    _ = @import("shaders.zig");
+    _ = @import("ui.zig");
+    _ = @import("uiart.zig");
+    _ = @import("icons.zig");
+    _ = @import("itemart.zig");
+    _ = @import("propart.zig");
+    _ = @import("propbuild.zig");
+    _ = @import("propflora.zig");
+    _ = @import("propfx.zig");
+    _ = @import("proprock.zig");
+    _ = @import("propruins.zig");
+    _ = @import("propvillage.zig");
+    _ = @import("propwood.zig");
 }

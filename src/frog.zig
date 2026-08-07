@@ -53,6 +53,9 @@ const P_HIP = v3(0.40, 0.24, -0.06); // back-leg hip
 const P_KNEE = v3(0.47, 0.46, 0.00); // back-leg knee
 const P_SHOULDER = v3(0.22, 0.26, 0.22); // front-leg shoulder
 
+/// The reticle's seat in the BODY part's own frame, whose origin is the ground SEAT (+Y up, +Z forward) —
+/// so this is the brow, a little forward of centre, and not a height above the earth.
+const LOCK_AT = v3(0, 0.30, 0.06);
 const BODY_CY = 0.34; // body-centre height (for the camera focus + hurt sphere)
 const HURT_R = 0.46; // hurt-sphere radius (world units, pre per-toad scale)
 const BODY_R = 0.55; // ground-footprint radius for collision (pre per-toad scale) — matches the
@@ -227,7 +230,7 @@ pub const Frog = struct {
 
     // Heights measured from `pos.y`
     pub fn centerWorld(self: *const Frog) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + BODY_CY * self.scale + self.lift, self.pos.z);
+        return foe.bodyPoint(self.pos, BODY_CY, self.scale, self.lift);
     }
     pub fn hurtRadius(self: *const Frog) f32 {
         return HURT_R * self.scale;
@@ -235,8 +238,11 @@ pub const Frog = struct {
     pub fn bodyR(self: *const Frog) f32 {
         return BODY_R * self.scale;
     }
+    /// THE MARK RIDES THE BROW. `xf[BODY]` carries the SQUASH as well as the hop, so the mark now flattens
+    /// with the toad as it gathers for a lunge and rides it up through the whole arc — where a height off
+    /// the ground sat still through the one animation this creature is mostly made of.
     pub fn lockPoint(self: *const Frog) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + 0.30 * self.scale + self.lift, self.pos.z);
+        return foe.markOn(self.xf[BODY], LOCK_AT);
     }
     // Airborne mid-hop/lunge — ground collision leaves it be while it's in the air.
     pub fn airborne(self: *const Frog) bool {
@@ -244,7 +250,7 @@ pub const Frog = struct {
     }
     // Top of the domed back in world space — where the floating HP bar rides.
     pub fn topWorld(self: *const Frog) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + 0.80 * self.scale + self.lift, self.pos.z);
+        return foe.bodyPoint(self.pos, 0.80, self.scale, self.lift);
     }
     // A live combatant (a corpse whose death anim has finished is skipped everywhere).
     pub fn alive(self: *const Frog) bool {
@@ -636,15 +642,10 @@ pub const Frog = struct {
 
     pub fn tryHit(self: *Frog, blade: foe.Blade) void {
         if (self.state == .dead) return; // no hitting a corpse
-        const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
-        self.hits += 1;
-        self.leash.provoke();
-        if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
-        self.flash = FLASH_DUR;
-        const heavyBlow = blade.hit.stance > 0;
+        const s = foe.reached(self, blade) orelse return;
         // The blow READS at the wound: blood flung along the sweep, body knocked the same way.
+        const heavyBlow = foe.wounded(self, s, blade, .{ .light = 1.25, .heavy = 1.9 });
         self.bloodBurst(s.contact, s.dir, if (heavyBlow) 14 else 9, if (heavyBlow) 2.6 else 1.9);
-        self.shove = mathx.scaleV(s.dir, if (heavyBlow) 1.9 else 1.25);
         sfx.world(.toad_hurt, self.pos);
         switch (s.reaction) {
             .death => {

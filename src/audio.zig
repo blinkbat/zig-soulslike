@@ -452,6 +452,15 @@ pub const Id = enum {
     kobold_bite, // teeth: a snap with a wet click in it
     kobold_hurt,
     kobold_die, // a yelp that falls apart
+    // THE SHADE has no throat. Every one of these is AIR and RING and nothing that could be a larynx —
+    // which is what separates it from the five creatures above, all of which growl or yelp or screech.
+    shade_reach, // the arms going wide: the tell for the touch
+    shade_gather, // …and the wisp balling up between the hands, climbing
+    shade_wisp, // it lets go
+    shade_touch, // the hands closing, and something coming out of you with them
+    shade_blink, // a place tearing open and shutting again
+    shade_hurt,
+    shade_die, // the shroud letting go of its own shape
     spider_hiss, // the rear, and the squat before she lays: air forced out through something clenched
     spider_spit,
     spider_bite, // two fangs and the horn claws crossing behind them
@@ -813,16 +822,31 @@ fn mkGuardBreak(r: *Rack) void {
 }
 
 fn mkParry(r: *Rack) void {
-    // WHAT MAKES IT A PARRY AND NOT A BLOCK IS THE RING LEFT STANDING AFTER IT. `mkGuardBlock` is boards with
-    // iron round the edge: a tick, a low body, and a rim that is gone in 90 ms. This is the BOSS being struck
-    // square — the strike itself is brighter and briefer, and then it SINGS for nearly half a second, which is
-    // the only part of the voice a player has to hear to know a punish is open.
-    r.tick(0.0, 0.66, 7400);
-    r.body(0.0, 0.05, 1750, 760, 0.58, 9.5); // the hit: high, and over almost before it started
-    r.ring(0.002, 0.44, 2350, 0.32, 2.2, 4); // …then the rim, still going
-    r.ring(0.005, 0.20, 4300, 0.12, 4.2, 3); // a thin second voice over the top of it
-    r.grit(0.0, 0.045, 0.20, 3800, 0.28, 7.0); // the scrape of the deflection, not a crunch
-    r.master(1.7, 6400);
+    // IRON TURNED. What makes it a PARRY and not a block is the RING left standing after it — but a ring is a
+    // TAIL, not the event, and it has to be a struck DISC rather than a bell.
+    //
+    // The first shape was a cartoon ping, and every reason was measurable against the rest of the bank: a
+    // fundamental at 2350 with FOUR partials over it (12.8 kHz at the top) where the other struck iron here
+    // sits at 940–1750 with two or three; `decay` is exp(-curve·u), so its curve of 2.2 was still at a ninth of
+    // full amplitude when the voice ended, against `mkArrowMetal`'s 4.5 and `mkGuardBlock`'s 8.0; and NO low
+    // body at all under any of it. A sustained high sine cluster is a menu beep whatever it is labelled.
+    //
+    // TWO WAYS TO SOUND LIKE A TOY, and the first shape managed both. `body` GLIDES its pitch exponentially, so
+    // one in the mid register is a descending chirp — 1750 down to 760 is the cartoon boing, and every glide
+    // here is now either low enough not to read as pitch (the bank's thumps live at 190→78) or gone. And a
+    // `ring` is PURE SINES at inharmonic spacing, which past two or three partials and a slow decay is a spring
+    // reverb, not a shield: that is where the "springy" came from, and no amount of retuning its frequency
+    // fixes what it fundamentally is.
+    //
+    // SO THE METAL COMES FROM NOISE. `mkGuardBlock` already works and is the same event with less behind it —
+    // this is that voice made HARDER and BRIGHTER: more grit at the strike, a resonant band shimmering off the
+    // top of it, and only a touch of pure tone as garnish. Distinct because it is sharper, not because it sings.
+    r.tick(0.0, 0.58, 6000); // the strike, brighter than the block's 3400
+    r.grit(0.0, 0.09, 0.44, 3400, 0.35, 5.0); // steel ON steel — the character, and it is noise
+    r.body(0.0, 0.15, 205, 84, 1.00, 5.0); // the mass, in the block's own register
+    r.air(0.004, 0.20, 0.22, 5200, 1800, 0.30, 3.2); // the shimmer coming off it, still noise
+    r.ring(0.004, 0.17, 1240, 0.20, 5.5, 2); // …and a touch of tone, the block's own garnish
+    r.master(1.65, 5000);
 }
 
 fn mkRefused(r: *Rack) void {
@@ -1023,6 +1047,78 @@ fn mkSkelLunge(r: *Rack) void {
     r.master(2.2, 3600);
 }
 
+
+// THE SHADE. Every recipe below is AIR, RING and GRIT and never a `growl` — the growl is a throat, and the
+// one thing this creature must not have is a throat. What makes it a voice at all is that the air is
+// PITCHED (a resonant sweep, not a hiss) and that something mineral rings under it.
+
+/// The arms going wide: a long intake with nothing breathing it, sweeping DOWN as it opens.
+fn mkShadeReach(r: *Rack) void {
+    r.air(0.0, 0.34, 0.40, 2600, 620, 0.72, 1.5);
+    r.ring(0.04, 0.26, 214, 0.11, 3.4, 3); // something low turning over under it
+    r.grit(0.0, 0.20, 0.07, 900, 0.55, 2.2); // the cloth
+    r.master(1.5, 3000);
+}
+
+/// …and the wisp balling up, which is the same shape RUN BACKWARDS: it climbs, and it has to resolve on
+/// the throw (`shade.MOVES[WISP].windDur`). The wand's own charge law, for the wand's own reason.
+fn mkShadeGather(r: *Rack) void {
+    r.air(0.0, 0.66, 0.36, 480, 3100, 0.80, 1.0);
+    r.ring(0.10, 0.56, 296, 0.13, 2.2, 4);
+    r.ring(0.28, 0.42, 444, 0.09, 2.6, 3); // a second partial entering late: it is GROWING
+    r.grit(0.06, 0.58, 0.06, 2400, 0.30, 1.1);
+    r.master(1.4, 4200);
+}
+
+/// It lets go. A tear rather than a crack — there is no shell on this thing to break.
+fn mkShadeWisp(r: *Rack) void {
+    r.air(0.0, 0.26, 0.62, 3600, 700, 0.55, 2.8);
+    r.ring(0.0, 0.20, 330, 0.20, 5.0, 3);
+    r.body(0.0, 0.08, 190, 74, 0.24, 5.5); // just enough under it to be felt leaving
+    r.grit(0.01, 0.13, 0.16, 1600, 0.40, 3.2);
+    r.master(1.9, 4200);
+}
+
+/// THE TOUCH, and it is the sound of something LEAVING you: a sharp catch, then a long swallowing fall.
+/// The fall is what says the blue bar went with it — a hit alone would read as any other blow landing.
+fn mkShadeTouch(r: *Rack) void {
+    r.tick(0.0, 0.30, 4200);
+    r.air(0.0, 0.36, 0.50, 3400, 380, 0.86, 1.4); // …dragged down and IN
+    r.ring(0.02, 0.30, 262, 0.22, 3.0, 4);
+    r.ring(0.05, 0.24, 175, 0.14, 3.6, 3);
+    r.body(0.0, 0.12, 150, 62, 0.30, 4.6);
+    r.master(2.0, 3800);
+}
+
+/// A PLACE TEARING OPEN AND SHUTTING AGAIN — one sound, played at both ends of the jump. Two gestures:
+/// the rip out (fast, bright, upward) and the collapse after it (slower, downward), so a single take
+/// carries the whole idea whichever end of the blink you happen to be standing at.
+fn mkShadeBlink(r: *Rack) void {
+    r.air(0.0, 0.14, 0.66, 900, 5200, 0.60, 3.4); // the rip
+    r.tick(0.01, 0.34, 6000);
+    r.air(0.10, 0.34, 0.44, 4400, 340, 0.82, 1.6); // …and the place closing after it
+    r.ring(0.0, 0.32, 388, 0.18, 4.0, 4);
+    r.grit(0.0, 0.22, 0.14, 2800, 0.45, 2.6);
+    r.master(2.0, 4600);
+}
+
+fn mkShadeHurt(r: *Rack) void {
+    // Cloth torn, and a note bent out of true underneath it. Nothing wet, nothing dry — it is neither.
+    r.air(0.0, 0.22, 0.52, 3000, 900, 0.66, 3.0);
+    r.ring(0.0, 0.18, 356, 0.20, 5.0, 3);
+    r.grit(0.0, 0.16, 0.22, 2200, 0.60, 3.6);
+    r.master(2.2, 4400);
+}
+
+/// It does not fall over — there is nothing in it to fall. The shroud lets go of its own shape: a long
+/// sigh out, its ring detuning as it goes, and no impact anywhere in it.
+fn mkShadeDie(r: *Rack) void {
+    r.air(0.0, 0.86, 0.54, 2800, 260, 0.74, 1.5);
+    r.ring(0.0, 0.60, 330, 0.16, 2.6, 4);
+    r.ring(0.14, 0.52, 246, 0.13, 2.4, 3); // …a second, flat against the first: the chord comes apart
+    r.grit(0.05, 0.60, 0.10, 1500, 0.50, 1.7);
+    r.master(1.7, 3600);
+}
 
 fn mkOgreStep(r: *Rack) void {
     // A footfall you feel: a very low body with a long tail, and gravel thrown off it.
@@ -1544,10 +1640,10 @@ const BANK = [NV]Row{
     .{ .id = .guard_block, .make = mkGuardBlock, .gain = battle(0.62), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 4 },
     // The BREAK is once a fight at most, and it is the cue to get out.
     .{ .id = .guard_break, .make = mkGuardBreak, .gain = battle(0.92), .mix = .combat, .jit = 0.05, .vjit = 0.06, .vars = 2, .poly = 1 },
-    // THE CATCH: rarer than a block and the loudest thing the shield does, because it is the cue that a punish
-    // is open. Barely jittered for `wand_charge`'s reason — a ring that wanders take to take reads as two
-    // different pieces of metal rather than one thing being struck twice.
-    .{ .id = .parry, .make = mkParry, .gain = battle(0.90), .mix = .combat, .jit = 0.07, .vjit = 0.09, .vars = 3, .poly = 2 },
+    // THE CATCH: over a block, under a guard BREAK — louder than the cost you paid, quieter than the mistake
+    // that costs you the fight. Barely jittered for `wand_charge`'s reason: a ring that wanders take to take
+    // reads as two different pieces of metal rather than one thing being struck twice.
+    .{ .id = .parry, .make = mkParry, .gain = battle(0.82), .mix = .combat, .jit = 0.07, .vjit = 0.09, .vars = 3, .poly = 2 },
     .{ .id = .refused, .make = mkRefused, .gain = 0.34, .jit = 0.06, .vjit = 0.08, .vars = 2 },
     .{ .id = .death, .make = mkDeath, .gain = battle(0.95), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
     .{ .id = .respawn, .make = mkRespawn, .gain = battle(0.55), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
@@ -1590,6 +1686,15 @@ const BANK = [NV]Row{
     .{ .id = .kobold_bite, .make = mkKoboldBite, .gain = battle(0.56), .mix = .combat, .jit = 0.20, .vjit = 0.26, .vars = 6, .poly = 3, .reach = 40 },
     .{ .id = .kobold_hurt, .make = mkKoboldHurt, .gain = battle(0.60), .mix = .combat, .jit = 0.24, .vjit = 0.30, .vars = 6, .poly = 4, .reach = 48 },
     .{ .id = .kobold_die, .make = mkKoboldDie, .gain = battle(0.68), .mix = .combat, .jit = 0.18, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 58 },
+    // THE SHADE. Quieter than every creature above it and carrying further than any of them but the ogre:
+    // the whole point of the thing is that you hear it before you find it, and never quite where you looked.
+    .{ .id = .shade_reach, .make = mkShadeReach, .gain = battle(0.44), .mix = .combat, .jit = 0.16, .vjit = 0.22, .vars = 4, .poly = 3, .reach = 40 },
+    .{ .id = .shade_gather, .make = mkShadeGather, .gain = battle(0.46), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 3, .reach = 70 },
+    .{ .id = .shade_wisp, .make = mkShadeWisp, .gain = battle(0.58), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 4, .poly = 3, .reach = 74 },
+    .{ .id = .shade_touch, .make = mkShadeTouch, .gain = battle(0.70), .mix = .combat, .jit = 0.09, .vjit = 0.13, .vars = 4, .poly = 3, .reach = 34 },
+    .{ .id = .shade_blink, .make = mkShadeBlink, .gain = battle(0.64), .mix = .combat, .jit = 0.11, .vjit = 0.15, .vars = 4, .poly = 4, .reach = 68 },
+    .{ .id = .shade_hurt, .make = mkShadeHurt, .gain = battle(0.54), .mix = .combat, .jit = 0.15, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 44 },
+    .{ .id = .shade_die, .make = mkShadeDie, .gain = battle(0.66), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 2, .reach = 60 },
     .{ .id = .spider_hiss, .make = mkSpiderHiss, .gain = battle(0.56), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 66 },
     .{ .id = .spider_spit, .make = mkSpiderSpit, .gain = battle(0.58), .mix = .combat, .jit = 0.12, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 62 },
     .{ .id = .spider_bite, .make = mkSpiderBite, .gain = battle(0.64), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 34 },
@@ -1649,14 +1754,20 @@ fn seconds(id: Id) f32 {
         .arrow_hit, .arrow_dirt, .arrow_wood, .arrow_stone, .arrow_metal => 0.36,
         // The climb has to RESOLVE at the throw, and the raise is CAST_DUR × CAST_AT ≈ 0.30 s.
         .wand_charge => 0.40,
-        // THE RING IS THE VOICE (see mkParry), and it runs to 0.442 — which the 0.5 default happens to cover
-        // today and would silently CUT the moment the tail is lengthened. Written down, like the climb's.
-        .parry => 0.55,
+        // SHORT ON PURPOSE (see mkParry): a struck disc is over quickly, and the long tail it used to have is
+        // exactly what made it a ping. Written down rather than left on the 0.5 default so the length is a
+        // decision — the whole voice is spent by 0.21.
+        .parry => 0.28,
         .birds => 1.3, // long enough for a phrase plus the answer that can start at 0.72
         .birdsong => 1.0,
         .roll, .swing_heavy, .ogre_swipe, .ogre_step => 0.7,
         .spider_hiss => 0.7,
         .spider_die => 1.15,
+        // The gather has to RESOLVE at the throw, and the wisp's wind-up is 0.68 s (`shade.MOVES`).
+        .shade_gather => 0.72,
+        .shade_reach => 0.48,
+        .shade_blink => 0.55, // out and in are one sound heard twice; each end wants the whole tail
+        .shade_die => 1.25, // it unravels rather than falling: no impact to cut it short
         .sac_lay => 0.62, // the push, then it arriving on the ground
         .sac_hatch, .brood_screech => 0.55, // the membrane going, and the cry straight over it
         .sac_burst => 0.45,
@@ -2426,6 +2537,52 @@ test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience"
     var loudBed: f32 = 0;
     for (BEDS) |b| loudBed = mathx.maxF(loudBed, BANK[@intFromEnum(b)].gain);
     for (CALLS) |c| try std.testing.expect(BANK[@intFromEnum(c.id)].gain > loudBed);
+}
+
+const Rendered = struct {
+    /// Zero crossings a second — a cheap brightness proxy, and the one that catches a voice made of
+    /// high partials: a sustained 2.3 kHz cluster crosses an order of magnitude more often than a body at 250.
+    fn brightness(n: usize) f32 {
+        var crossings: f32 = 0;
+        var i: usize = 1;
+        while (i < n) : (i += 1) {
+            if ((work[i - 1] < 0) != (work[i] < 0)) crossings += 1;
+        }
+        return crossings / (@as(f32, @floatFromInt(n)) / SRF);
+    }
+    fn energy(a: usize, b: usize) f64 {
+        var s: f64 = 0;
+        var i = a;
+        while (i < b) : (i += 1) s += @abs(work[i]);
+        return s;
+    }
+};
+
+test "THE PARRY IS A STRUCK DISC, NOT A PING — measured against the bank's own struck iron" {
+    // A RENDERED voice, not its constants: this is the one place in the bank where reading the recipe was not
+    // enough, because "ringing" and "pinging" are the same layers at different settings.
+    var r = Rack.init(1, seconds(.parry));
+    mkParry(&r);
+    const parryTail = Rendered.energy(2 * r.n / 3, r.n) / Rendered.energy(0, r.n / 3);
+    const parryBright = Rendered.brightness(r.n);
+
+    var m = Rack.init(1, seconds(.arrow_metal));
+    mkArrowMetal(&m);
+    const metalTail = Rendered.energy(2 * m.n / 3, m.n) / Rendered.energy(0, m.n / 3);
+
+    var b = Rack.init(1, seconds(.guard_block));
+    mkGuardBlock(&b);
+    const blockBright = Rendered.brightness(b.n);
+
+    // THE LOAD-BEARING ONE. `decay` is exp(-curve·u), so a slack curve leaves the voice at full cry when it
+    // ends — and a `ring` still sounding at the end is a spring, not a shield. The shape the owner threw out
+    // measured 0.106 here against the block's 0.015 and this metal's 0.033; nothing that still rings that hard
+    // belongs in the same family, so the pin is RELATIVE to the bank's own struck iron rather than a number.
+    try std.testing.expect(parryTail <= metalTail);
+    // …and a loose lid on shrillness. It is loose on purpose: zero crossings are dominated by the noisy ATTACK
+    // every voice here opens with, so this catches a ring parked at 8 kHz and nothing subtler. The decay above
+    // is what actually separates a disc from a ping.
+    try std.testing.expect(parryBright < blockBright * 1.35);
 }
 
 test "THE OPTIONS DIALS — three families, and the fight is one of them" {

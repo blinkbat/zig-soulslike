@@ -139,6 +139,10 @@ const SLAM_R = 2.3; // starts the overhead slam within this — kept INSIDE the 
 const SWIPE_R = 4.4; // the side swipe's reach — longer than the slam's, it's a HORIZONTAL arc that
 const TURN_RATE = 3.4; // rad/s (~195 deg/s) — still out-turned by the hero, but no longer a turret
 const SWIPE_TURN = 5.4; // rad/s he PIVOTS while swiping — the swing is a turn, and it tracks into you
+/// The reticle's seat in the CHEST bone's own frame. NEGATIVE Y on purpose: the chest joint sits at the
+/// TOP of the barrel (0.775·H) and the middle of the mass is below it — which is where the old flat
+/// 0.62·H put the mark, and is still where you are aiming at him.
+const LOCK_AT = v3(0, -0.155 * H, 0);
 const BODY_R = 0.55; // ground footprint (pre-scale) — broad
 const HURT_R = 0.72; // hurt-sphere radius the hero's blade tests against (pre-scale) — a big target
 // Pelvis walk oscillation — the hero's amplitudes (heavier), scaled with the body at draw.
@@ -296,10 +300,18 @@ const State = enum { idle, approach, windup, slam, swipewind, swipe, recover, st
 
 const Choice = enum { slam, swipe, approach, wait, idle };
 const SWIPE_BEARING = 32.0; // deg off his facing past which the hero counts as "not in front of me"
-fn classify(dist: f32, bearingDeg: f32, slamReady: bool, swipeReady: bool) Choice {
+/// `swipeInner` is where the sweep STARTS connecting (`Ogre.swipeInner`) — passed in rather than derived here
+/// because it scales with the body and this stays a pure function of the numbers.
+fn classify(dist: f32, bearingDeg: f32, slamReady: bool, swipeReady: bool, swipeInner: f32) Choice {
     if (dist > AGGRO_R) return .idle; // hasn't noticed / has disengaged
     const offFront = @abs(bearingDeg) > SWIPE_BEARING;
-    if (dist <= SWIPE_R and swipeReady and (offFront or !slamReady)) return .swipe;
+    // AND THE SWIPE HAS TO BE ABLE TO LAND. Its arc passes clean OUTSIDE anything hugging his legs, and
+    // collision holds the hero at 1.68 m where the sweep only starts biting at 2.28 — so toe to toe, choosing
+    // it spent two thirds of a second on a guaranteed miss, every time the slam happened to be cooling. The
+    // pocket at his feet is something the player EARNS by getting inside; it is not somewhere to be swiped at.
+    // He looms instead (`.wait`), which is the same answer he already gives to a slam he cannot afford yet.
+    const inSweep = dist >= swipeInner and dist <= SWIPE_R;
+    if (inSweep and swipeReady and (offFront or !slamReady)) return .swipe;
     if (dist <= SLAM_R) return if (slamReady) .slam else .wait; // squared up in reach: crush it
     return .approach; // close the gap
 }
@@ -404,7 +416,7 @@ pub const Ogre = struct {
 
     // …and all measured from `pos.y`, THE GROUND UNDER HIM.
     pub fn centerWorld(self: *const Ogre) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + 0.60 * H * self.scale, self.pos.z); // chest-ish mass centre
+        return foe.bodyPoint(self.pos, 0.60 * H, self.scale, 0); // chest-ish mass centre
     }
     pub fn hurtRadius(self: *const Ogre) f32 {
         return HURT_R * self.scale;
@@ -412,11 +424,15 @@ pub const Ogre = struct {
     pub fn bodyR(self: *const Ogre) f32 {
         return BODY_R * self.scale;
     }
+    /// HIS MARK RIDES THE CHEST, NOT THE SKULL — the one creature where that is the right part. His crown
+    /// is 4.4 m up, and a reticle on it would have the camera craning at the sky through every exchange
+    /// (the same problem `hud.FOE_CEIL` exists for on the bar). The chest is where you are fighting him,
+    /// and it still HINGES: he folds at the waist through the slam, and the mark now folds with him.
     pub fn lockPoint(self: *const Ogre) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + 0.62 * H * self.scale, self.pos.z);
+        return foe.markOn(self.xf[CHEST], LOCK_AT);
     }
     pub fn topWorld(self: *const Ogre) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + 1.02 * H * self.scale, self.pos.z);
+        return foe.bodyPoint(self.pos, 1.02 * H, self.scale, 0);
     }
     // The head, roughly — for framing the face close-up (the single eye) in --shot.
     pub fn headWorld(self: *const Ogre) rl.Vector3 {
@@ -624,7 +640,7 @@ pub const Ogre = struct {
     }
 
     fn decide(self: *Ogre, dist: f32, bearingDeg: f32) void {
-        switch (classify(dist, bearingDeg, self.slamCd <= 0, self.swipeCd <= 0)) {
+        switch (classify(dist, bearingDeg, self.slamCd <= 0, self.swipeCd <= 0, self.swipeInner())) {
             .slam => self.enter(.windup),
             .swipe => self.enter(.swipewind),
             .approach => {
@@ -646,15 +662,10 @@ pub const Ogre = struct {
 
     pub fn tryHit(self: *Ogre, blade: foe.Blade) void {
         if (self.state == .dead) return;
-        const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
-        self.hits += 1;
-        self.leash.provoke();
-        if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
-        self.flash = FLASH_DUR;
-        const heavyBlow = blade.hit.stance > 0;
-        self.bloodBurst(s.contact, s.dir, if (heavyBlow) 16 else 10, if (heavyBlow) 2.8 else 2.0);
+        const s = foe.reached(self, blade) orelse return;
         // A giant barely gives — a much smaller shove than the toad's, so hits read as glancing off bulk.
-        self.shove = mathx.scaleV(s.dir, if (heavyBlow) 0.7 else 0.4);
+        const heavyBlow = foe.wounded(self, s, blade, .{ .light = 0.4, .heavy = 0.7 });
+        self.bloodBurst(s.contact, s.dir, if (heavyBlow) 16 else 10, if (heavyBlow) 2.8 else 2.0);
         sfx.world(.ogre_hurt, self.pos);
         switch (s.reaction) {
             .death => {
@@ -677,6 +688,11 @@ pub const Ogre = struct {
     fn swipeReach(self: *const Ogre) f32 {
         return SWIPE_OUTER * self.scale + HERO_REACH;
     }
+    /// …and where the sweep STARTS connecting: nearer than this and the arc passes outside you entirely, which
+    /// is the pocket at his feet the counter-play lives in.
+    fn swipeInner(self: *const Ogre) f32 {
+        return SWIPE_INNER * self.scale - HERO_REACH;
+    }
 
     // The slam CRUSH: the club's ground footprint — a STRIP down the facing line.
     fn tryImpact(self: *Ogre, hero: rl.Vector3, h: combat.Hit) void {
@@ -695,7 +711,7 @@ pub const Ogre = struct {
     fn trySwipe(self: *Ogre, hero: rl.Vector3, h: combat.Hit) void {
         if (self.heroLatch) return;
         const d = mathx.distXZ(self.pos, hero);
-        if (d < SWIPE_INNER * self.scale - HERO_REACH or d > self.swipeReach()) return;
+        if (d < self.swipeInner() or d > self.swipeReach()) return;
         const slack = mathx.degrees(std.math.atan2(HERO_REACH, mathx.maxF(0.5, d)));
         if (@abs(mathx.wrapDeg(self.bearingTo(hero) - SWIPE_ARC_MID)) > SWIPE_ARC * 0.5 + slack) return;
         self.heroHit = h;
@@ -953,14 +969,11 @@ pub const Ogre = struct {
     }
 
     fn stunAmount(self: *const Ogre) f32 {
-        if (self.state == .stunlight) {
-            const u = mathx.clampF(self.t / combat.FOE_LIGHT_STUN_DUR, 0, 1);
-            return mathx.sinf(u * std.math.pi);
-        } else if (self.state == .stunheavy) {
-            const u = mathx.clampF(self.t / combat.FOE_HEAVY_STUN_DUR, 0, 1);
-            return mathx.pulse(u, 0, 0.12, 0.78, 1.0);
-        }
-        return 0;
+        return switch (self.state) {
+            .stunlight => foe.stunCurve(self.t, false),
+            .stunheavy => foe.stunCurve(self.t, true),
+            else => 0,
+        };
     }
 
     pub fn pose(self: *Ogre) void {
@@ -1671,15 +1684,29 @@ test "the swipe's hurt SECTOR matches where the club actually goes (band + arc, 
 }
 
 test "attack choice: squared up crushes, flanked SWIPES, cooling looms, far closes, out of aggro idles" {
-    try std.testing.expectEqual(Choice.idle, classify(AGGRO_R + 1, 0, true, true)); // disengaged
-    try std.testing.expectEqual(Choice.slam, classify(SLAM_R - 0.5, 0, true, true)); // dead ahead → crush
+    const o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    const inner = o.swipeInner(); // where the sweep starts biting — 2.28 on a full-size one
+    const mid = (inner + SWIPE_R) * 0.5; // comfortably inside the band it can actually land in
+    try std.testing.expectEqual(Choice.idle, classify(AGGRO_R + 1, 0, true, true, inner)); // disengaged
+    try std.testing.expectEqual(Choice.slam, classify(SLAM_R - 0.5, 0, true, true, inner)); // dead ahead → crush
     // OFF HIS FRONT: the swipe is the whole point — it beats the slam even with the slam ready.
-    try std.testing.expectEqual(Choice.swipe, classify(SLAM_R - 0.5, 80, true, true));
-    try std.testing.expectEqual(Choice.swipe, classify(SWIPE_R - 0.2, -120, true, true));
-    try std.testing.expectEqual(Choice.swipe, classify(SLAM_R - 0.5, 0, false, true));
-    try std.testing.expectEqual(Choice.wait, classify(SLAM_R - 0.5, 0, false, false)); // all cooling → loom
-    try std.testing.expectEqual(Choice.approach, classify(SWIPE_R + 1.0, 90, true, true));
-    try std.testing.expectEqual(Choice.approach, classify((SWIPE_R + AGGRO_R) * 0.5, 0, true, true));
+    try std.testing.expectEqual(Choice.swipe, classify(mid, 80, true, true, inner));
+    try std.testing.expectEqual(Choice.swipe, classify(SWIPE_R - 0.2, -120, true, true, inner));
+    try std.testing.expectEqual(Choice.swipe, classify(mid, 0, false, true, inner));
+    try std.testing.expectEqual(Choice.wait, classify(SLAM_R - 0.5, 0, false, false, inner)); // all cooling → loom
+    try std.testing.expectEqual(Choice.approach, classify(SWIPE_R + 1.0, 90, true, true, inner));
+    try std.testing.expectEqual(Choice.approach, classify((SWIPE_R + AGGRO_R) * 0.5, 0, true, true, inner));
+
+    // HE NEVER SWIPES AT SOMETHING HUGGING HIS LEGS. Inside the band the arc passes clean outside the hero, so
+    // the move is a guaranteed miss however flanked he is — he looms or crushes instead.
+    const hugging = inner - 0.3;
+    try std.testing.expectEqual(Choice.slam, classify(hugging, 80, true, true, inner));
+    try std.testing.expectEqual(Choice.wait, classify(hugging, 80, false, true, inner));
+    // …and THIS is the range it was costing two thirds of a second at: where collision actually holds the hero,
+    // which is well inside the sweep, and where a parried slam's cooldown sends him every time.
+    const toeToToe = o.bodyR() + foe.HERO_R;
+    try std.testing.expect(toeToToe < inner);
+    try std.testing.expectEqual(Choice.wait, classify(toeToToe, 0, false, true, inner));
 }
 
 test "range bands are ordered and sit inside aggro" {

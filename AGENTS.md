@@ -117,6 +117,7 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `kobold.zig` | kobold warband + `Warband` — three roles of one creature (berserker/priest/slinger); the priest is why they are one group |
 | `brood.zig` | brood mother, sacs, broodlings + `Brood`; guard not hunter, acid POOLS are the weapon |
 | `warrior.zig` | skeletal warriors + `Muster` — shieldman (blocks, guard-breaks to one knee) and greatsword (uninterruptible slam) |
+| `shade.zig` | shades + `Haunt`; legless, hovers, 17 bones of its own. The one thing that drains FOCUS, the one thing that TELEPORTS |
 | `combat.zig` | `Vitals` (HP + two-tier stagger + regen + death), `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`. THE place to retune feel |
 | `stats.zig` | the character sheet — seven attributes and the curves that make the bars |
 | `item.zig` | item vocabulary, `Use`, the `Bag` |
@@ -188,8 +189,17 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 - **Satisfy the contract:** `pos`, an embedded `combat.Vitals` (`vit`), `hits`, `justDied`, and the
   accessors `alive/dying/staggered/airborne/bodyR/hurtRadius/centerWorld/lockPoint/topWorld/
   flashFrac` + `tryHit(foe.Blade)`.
-- **Reuse the behaviour.** `tryHit` is `if (foe.strike(...)) |s| { own FX; react on s.reaction }` —
-  the swept test, one-hit latch and damage live in `foe.strike`.
+- **Reuse the behaviour.** `tryHit` is TWO shared calls and then what is yours:
+  `foe.reached(self, blade) orelse return` (the swept test, the one-hit latch, the anti-cheese rouse, and the
+  facing snap a `pierce` alone earns) then `foe.wounded(self, s, blade, .{ .light, .heavy })` (the hit count,
+  the flash, the shove — returning whether the BLOW was heavy, which is what your blood and chips are sized
+  off, never the REACTION). Only the shieldman has anything between the two, and that is the whole reason
+  they are two. Damage and the reaction itself live in `foe.strike` under `reached`.
+- **The shared body points.** `foe.bodyPoint(pos, h, scale, lift)` for a height on the creature's own axis —
+  the hurt centre and the bar anchor — and `foe.markOn(bone, at)` for the reticle, which rides the POSE.
+  `foe.stunCurve(t, heavy)` is the one reaction shape in the game; as five private copies its constants had
+  already drifted four ways. (The kobold keeps its own on purpose: its flinch decays from full rather than
+  swelling to it, which is a different animation and not drift.)
 - **Build vitals with `combat.Vitals.initFoe`**, never `init` — that is the slow foe regen schedule.
 - **`justDied` is a ONE-FRAME flag.** Reset at the TOP of `update`, set in `enterDeath`, apply the
   blade at the END. Applying it externally without the reset latches a nonstop rumble/shake.
@@ -239,6 +249,13 @@ clocks — `sinceHit` gates the refill and only a blow moves it, `sinceHurt` is 
 reads and anything that takes HP moves it. One field cannot hold a gate shut and show a bar. **A drip
 that KILLS is reported, not acted on** — only the creature knows how to die.
 
+**A BLOW MAY TAKE THE BLUE BAR** (`combat.Hit.fp`) — the shade's touch, and the only thing in the game that
+does. It is NOT part of `Hit.raw()`: what a shield's stamina bill and "which of two blows was worse" measure
+is the WEIGHT of the thing that hit you, and a drain has none. `hero.takeHit` is the one place it is spent
+(`Focus.drain` FLOORS, where `Focus.spend` refuses — a blow is not a purchase), and the guard chips it by the
+same fraction it chips damage, because nothing the boards stop is stopped outright. Nothing but the hero
+carries a `Focus`, so a foe handed one of these simply never reads the field.
+
 **A TIMED STATUS REFRESHES, IT DOES NOT STACK** (`Root.grab`, `Regen.start`). Two clocks running on one
 body is a state no bar and no animation can show.
 
@@ -262,6 +279,20 @@ taking the gold STAGGER RIM — the one cue that says a punish is open — with 
 that would put it above three quarters of the screen, which is one `max` against a screen-space ceiling: far off
 it rides the head as it always did, and walking in it stops climbing and hangs against the body. Dynamic with
 the distance rather than a fixed height off the feet, and ONE rule for every creature — a toad never reaches it.
+
+**THE RETICLE RIDES THE BODY, NOT A HEIGHT OFF THE FEET** (`foe.markOn`, and every creature's `lockPoint`).
+Locked onto a head, the mark goes where the head goes — it dips when the head dips, hinges when the waist
+hinges, and does not hang in the air over something that has ducked. Each creature names the PART its mark
+rides and a point in that bone's own frame: the skull for the three humanoids, the brow for the toad, the
+cephalothorax for the spiders, the cowl for a shade — and the CHEST for the ogre, whose crown is 4.4 m up and
+whose head would have the camera craning at the sky (`hud.FOE_CEIL`'s problem, one layer down). The egg sac is
+the one exception and it is not an oversight: one membrane on the ground has no part that moves on its own.
+A bone matrix already carries the rig's scale, the facing and `pos`, and every `spawn` poses before it
+returns, so there is never a frame where the matrix read is undefined. **A test pins the whole rule at once**
+(`game.zig`, "THE MARK RIDES THE BODY") and it measures the mark's swing OFF THE CREATURE'S OWN AXIS, not its
+height: a fixed mark still rises and falls on a hop, so a vertical check passes on the toad and the archer
+whatever their reticle is bolted to. Nothing on the axis can leave it, so that number is exactly zero for a
+fixed mark.
 
 **AND A HEAD CAN GO BEHIND THE EYE.** Stood at a giant's feet its crown is above AND behind the camera, which
 `projectToScreen` rightly refuses — which took the bar off screen entirely at exactly the range the ceiling
@@ -381,6 +412,7 @@ chips you for it; a parry is a COMMITTED WINDOW that pays `STAM_PARRY` once and 
   | brood mother / broodling | −25 | +35 | 0 | +75 | chitin and its own acid |
   | egg sac | −70 | 0 | 0 | +75 | dry silk over a membrane |
   | skeletal warrior | −35 | +60 | 0 | +45 | the archer's own table — it is the archer's body |
+  | shade | +30 | +65 | 0 | −45 | nothing there to burn, and cold is what it already is |
 
 - **NOTHING GRANTS THE HERO ANY YET, AND THE SHEET SAYS SO** — the book's STATS page shows all four at
   0%. `makeWhole` CARRIES RESISTANCES ACROSS a grace: they are what he is, not a meter to refill.
@@ -739,6 +771,20 @@ The leash is one struct every creature embeds:
 
 **Foe pacing:** the archer's BACKSTEP is a committed jump straight back, inside sword reach, on a 7 s
 cooldown — it buys the shot back exactly once. An evade you can spam is a wall.
+
+**A TELEPORT IS A JUMP, AND THE ROOTS REFUSE IT** (`shade.wantsBlink` → `foe.canLeap`). A blink does not
+travel, it leaves the earth, so it is gated where the move is CHOSEN like every other leap in the game — and
+that is what makes the wand's roots the answer to a haunting. It is also the one move that must not fire out
+of a STAGGER: a creature that vanishes mid-flinch erases the punish window the flinch exists to open, so the
+blow sets a latch (`spooked`) and the blink is spent at the next choose site, which reads as the thing
+deciding it has had enough. Half a blink is `airborne()`, which is what exempts the jump from
+`game.gateTerrain` — a step it never took cannot be walked back.
+
+**A MOVE THAT CANNOT LAND IS NOT A DECISION.** The ogre's swipe passes clean OUTSIDE anything hugging its legs
+(`swipeInner` 2.28 m) and collision holds the hero at 1.68, so toe to toe `classify` was spending two thirds of
+a second on a guaranteed miss every time the slam happened to be cooling — and a parried slam's cooldown sends
+it there every time. The pocket at its feet is something the player EARNS by getting inside; it is not
+somewhere to be swiped at. A choose site tests the move's OWN band, not just its outer range.
 
 ## Controls (`game.zig`)
 

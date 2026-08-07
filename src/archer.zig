@@ -138,8 +138,11 @@ const A_BOB = heromod.A_BOB;
 /// A skeleton's body points as fractions of stature: hurt-sphere centre, lock-on mark, HP-bar top. Shared with
 /// `warrior.zig` — literally the same body, and three copies of "0.95" is three chances to retune one alone.
 pub const CENTER_F: f32 = 0.95;
-pub const LOCK_F: f32 = 0.90;
 pub const TOP_F: f32 = 1.15;
+/// WHERE THE RETICLE SITS IN THE SKULL'S OWN FRAME — the middle of the head, a hair above the joint the
+/// neck ends at (`restHumanoid` puts HEAD at 0.885·H, and this mark used to be a flat 0.90·H off the
+/// feet). Expressed here and not as a height, because a height is exactly what it must stop being.
+pub const LOCK_AT = v3(0, 0.015 * H, 0);
 
 /// Shared with `warrior.zig`: the same skeleton stands on the same feet, and `footMesh` is the one thing these are measured off.
 pub const solePatches = [_]heromod.SolePatch{
@@ -187,6 +190,9 @@ const VENOM_GRAV: f32 = 11.0;
 /// THE WAND'S BOLT BARELY DROPS AT ALL — it has no mass to speak of, and a sorcery that lobbed like a
 /// sling stone would be aimed by arc rather than by pointing, which is the bow's job in this game.
 const BOLT_GRAV: f32 = 0.8;
+/// …and the shade's wisp barely more: it is a thing thrown by something that does not obey the ground it
+/// floats over, and a lobbed one would read as a stone rather than as a piece of the creature.
+const WISP_GRAV: f32 = 1.1;
 const ARROW_LIFE = 3.5; // seconds airborne before it gives up (falls + sticks)
 const ARROW_STICK_FADE = 1.4; // seconds a stuck arrow lingers, then fades
 pub const ARROW_COVER_MARGIN: f32 = 0.04;
@@ -201,18 +207,23 @@ const TRAIL_FIRE = rgba(255, 146, 40, 255); // the pitched head's ember streak: 
 /// …and the wand bolt's, which is the CHAOS violet nothing else in the sky is: at range the streak is the
 /// whole read, so the one thing that must not be shared is the colour of it.
 const TRAIL_BOLT = rgba(178, 92, 224, 255);
+/// …and the shade's, which must not be the bolt's: the wand's violet is the HERO's colour in the sky, and
+/// two things flying at once that read the same are two things you cannot tell apart in the half-second
+/// you have to decide which one to roll away from. Colder, and dimmer, because it eats light.
+const TRAIL_WISP = rgba(96, 118, 176, 255);
 
 /// EVERYTHING BURNING GETS THE EMBER STREAK, and it is the streak — not the mesh — that reads at range.
 fn trailCol(s: Shot) rl.Color {
     return switch (s) {
         .firearrow, .clump => TRAIL_FIRE,
         .bolt => TRAIL_BOLT,
+        .wisp => TRAIL_WISP,
         .arrow, .venom => TRAIL_COL,
     };
 }
 
 /// The things that fly. `firearrow` is the hero's own pitched shaft — the same ballistics as a plain one, drawn and streaked as its own thing so you can see which one you loosed. `clump` is the kobold sling's burning lump (it was a bare stone; nothing slings a plain one any more, so the tag went with the thing). `bolt` is the WAND's chaos sorcery, which flies through this same pool for the same reason the fire arrow does: cover, gravity, expiry and the swept pierce test are one body of code, and a spell with its own copy of them is a spell that stops agreeing with the world.
-pub const Shot = enum { arrow, clump, venom, firearrow, bolt };
+pub const Shot = enum { arrow, clump, venom, firearrow, bolt, wisp };
 
 pub fn dropOf(s: Shot) f32 {
     return switch (s) {
@@ -220,6 +231,7 @@ pub fn dropOf(s: Shot) f32 {
         .clump => CLUMP_GRAV,
         .venom => VENOM_GRAV,
         .bolt => BOLT_GRAV,
+        .wisp => WISP_GRAV,
     };
 }
 
@@ -523,7 +535,7 @@ pub const Archer = struct {
 
     // All three ride `hop`: the backstep lifts the whole rig off the earth (pose() adds it to the pelvis), so a hurt sphere / reticle / HP bar pinned to ground height DETACHES from the body for the whole 0.44 s leap — the reticle sits at its feet and the blade tests empty air below it.
     pub fn centerWorld(self: *const Archer) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + CENTER_F * H * self.scale + self.hop, self.pos.z);
+        return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, self.hop);
     }
     pub fn hurtRadius(self: *const Archer) f32 {
         return HURT_R * self.scale;
@@ -531,11 +543,13 @@ pub const Archer = struct {
     pub fn bodyR(self: *const Archer) f32 {
         return BODY_R * self.scale;
     }
+    /// THE MARK RIDES THE SKULL. Pinned to a height off the feet it hung in the air whenever he ducked,
+    /// arched back out of a stagger or went up on the backstep — see `foe.markOn`.
     pub fn lockPoint(self: *const Archer) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + LOCK_F * H * self.scale + self.hop, self.pos.z);
+        return foe.markOn(self.xf[SKULL], LOCK_AT);
     }
     pub fn topWorld(self: *const Archer) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + TOP_F * H * self.scale + self.hop, self.pos.z);
+        return foe.bodyPoint(self.pos, TOP_F * H, self.scale, self.hop);
     }
     pub fn alive(self: *const Archer) bool {
         return !self.gone;
@@ -761,13 +775,8 @@ pub const Archer = struct {
 
     pub fn tryHit(self: *Archer, blade: foe.Blade) void {
         if (self.state == .dead) return;
-        const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
-        self.hits += 1;
-        self.leash.provoke();
-        if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
-        self.flash = FLASH_DUR;
-        const heavyBlow = blade.hit.stance > 0;
-        self.shove = mathx.scaleV(s.dir, if (heavyBlow) 1.8 else 1.15); // a bone-clatter jolt off the blow
+        const s = foe.reached(self, blade) orelse return;
+        _ = foe.wounded(self, s, blade, .{ .light = 1.15, .heavy = 1.8 }); // a bone-clatter jolt off the blow
         sfx.world(.bone_hurt, self.pos);
         switch (s.reaction) {
             .death => {
@@ -834,14 +843,11 @@ pub const Archer = struct {
     }
 
     fn stunAmount(self: *const Archer) f32 {
-        if (self.state == .stunlight) {
-            const u = mathx.clampF(self.t / combat.FOE_LIGHT_STUN_DUR, 0, 1);
-            return mathx.sinf(u * std.math.pi);
-        } else if (self.state == .stunheavy) {
-            const u = mathx.clampF(self.t / combat.FOE_HEAVY_STUN_DUR, 0, 1);
-            return mathx.pulse(u, 0, 0.14, 0.7, 1.0);
-        }
-        return 0;
+        return switch (self.state) {
+            .stunlight => foe.stunCurve(self.t, false),
+            .stunheavy => foe.stunCurve(self.t, true),
+            else => 0,
+        };
     }
 
     fn poseUpper(self: *Archer, wx: *[N]rl.Matrix, dk: f32, stun: f32, dead: bool, prot: f32) void {

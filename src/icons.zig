@@ -33,6 +33,7 @@ pub const Icon = enum {
     brood_sac,
     shieldman,
     greatsword,
+    shade,
     new,
     open,
     save,
@@ -279,6 +280,20 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             hline(cx, cy + s * 0.20, s * 0.56, w, col); // a crossguard nothing else in the set has
             vline(cx, cy + s * 0.32, s * 0.20, w * 1.6, d); // the grip, long enough for both hands
             dot(cx, cy + s * 0.43, w * 1.5, col); // and the pommel
+        },
+
+        .shade => {
+            // A HOOD WITH NOTHING IN IT, over a hem that frays out — the two reads that are only this
+            // creature's. No legs: every other unit glyph in the set stands on something.
+            arc(cx, cy - s * 0.18, s * 0.20, 180, 360, w, col); // the cowl…
+            line(cx - s * 0.20, cy - s * 0.18, cx - s * 0.30, cy + s * 0.18, w, col); // …shouldering out
+            line(cx + s * 0.20, cy - s * 0.18, cx + s * 0.30, cy + s * 0.18, w, col);
+            dot(cx, cy - s * 0.17, w * 1.5, d); // the hollow where a face would be
+            // …and the tatters, uneven, none of them reaching as far as the next.
+            line(cx - s * 0.30, cy + s * 0.18, cx - s * 0.22, cy + s * 0.42, w * 0.8, d);
+            line(cx - s * 0.10, cy + s * 0.22, cx - s * 0.04, cy + s * 0.36, w * 0.8, d);
+            line(cx + s * 0.10, cy + s * 0.22, cx + s * 0.16, cy + s * 0.44, w * 0.8, d);
+            line(cx + s * 0.30, cy + s * 0.18, cx + s * 0.24, cy + s * 0.34, w * 0.8, d);
         },
 
         .new => {

@@ -769,6 +769,11 @@ foe: archer 31.91 -34.26 45.0 1.00 0.66
 foe: archer 32.93 -38.49 135.0 1.00 0.03
 foe: shieldman 35.29 -34.54 75.0 1.00 0.40
 foe: shieldman 34.67 -40.00 135.0 1.00 0.77
+foe: shade -34.00 16.00 120.0 1.00 0.18
+foe: shade -37.20 12.40 90.0 0.94 0.63
+foe: shade -30.90 12.90 160.0 1.06 0.87
+foe: shade -31.45 -93.70 0.0 1.00 0.25
+foe: shade -23.72 -105.06 0.0 1.00 0.62
 
 flags: met_wanderer heard_of_gate
 
@@ -795,17 +800,14 @@ trig: wanderer_seen pri=10
   when: flag met_wanderer=0
   do: flag met_wanderer=1
   do: text Someone is sitting at the grace.
-
 trig: gate_rumour
   when: talked wanderer
   when: flag heard_of_gate=1
-  do: wait 1.0
+  do: wait 1
   do: text The way north is shut.
-
 trig: the_avenue
   when: region -12.0 -40.0 12.0 -12.0
   do: text Smoldering Ruins | Lodgings that once held families, now home to miscreations of blight.
-
 trig: toads_thinned
   when: deaths toad >= 3
   do: text The bog is quieter.

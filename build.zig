@@ -49,5 +49,33 @@ pub fn build(b: *std.Build) void {
     unit_tests.root_module.addAnonymousImport("campfire_wav", .{ .root_source_file = b.path("assets/campfire.wav") });
     const run_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
+    checkTestRoster(b);
     test_step.dependOn(&run_tests.step);
+}
+
+/// THE TEST ROSTER IS A LOCKSTEP LIST, AND NOTHING WAS CHECKING IT. `main.zig`'s `test { _ = @import(…) }`
+/// block is what pulls a module's tests into the binary — a module missing from it compiles, ships and
+/// reports "all tests passed" while every test it carries goes unrun. `shade.zig` went in with seventeen of
+/// them and the suite total did not move; two were failing.
+///
+/// A comptime assert cannot see the filesystem, so the check lives HERE, where the build runs on the host
+/// and can simply read the directory. Every `src/*.zig` must be named in that block or the build fails with
+/// the name of the one that is not.
+fn checkTestRoster(b: *std.Build) void {
+    const root = b.build_root.handle.readFileAlloc(b.allocator, "src/main.zig", 1 << 20) catch return;
+    var dir = b.build_root.handle.openDir("src", .{ .iterate = true }) catch return;
+    defer dir.close();
+    var it = dir.iterate();
+    while (it.next() catch null) |ent| {
+        if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, ".zig")) continue;
+        if (std.mem.eql(u8, ent.name, "main.zig")) continue; // the root itself is not imported by the root
+        const want = b.fmt("@import(\"{s}\")", .{ent.name});
+        if (std.mem.indexOf(u8, root, want) == null) {
+            std.debug.panic(
+                "src/main.zig's test block does not name {s} — every module carrying tests must be there, " ++
+                    "or its tests are silently never compiled. Add `_ = {s};`.",
+                .{ ent.name, want },
+            );
+        }
+    }
 }

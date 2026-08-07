@@ -1846,6 +1846,7 @@ pub const Hero = struct {
         if (self.dead) return .ignored;
         if (self.iFramed()) return .ignored; // rolled through it — no damage, no flinch, nothing
         if (self.guardCovers(fromDir)) return self.blockHit(h);
+        self.fp.drain(h.fp); // …and the ONE thing that reaches the blue bar (`combat.Hit.fp`)
         const r = self.vit.hit(h);
         const flash: f32 = switch (r) {
             .death => 1.0,
@@ -1878,7 +1879,9 @@ pub const Hero = struct {
     fn blockHit(self: *Hero, h: combat.Hit) combat.HitOutcome {
         self.blockT = 0;
         self.stam.spend(combat.guardStamina(h));
-        const r = self.vit.hit(combat.guardChip(h));
+        const chip = combat.guardChip(h);
+        self.fp.drain(chip.fp);
+        const r = self.vit.hit(chip);
         self.hurtFlash = mathx.maxF(self.hurtFlash, BLOCK_FLASH);
         if (r == .death) {
             self.enterDeath();

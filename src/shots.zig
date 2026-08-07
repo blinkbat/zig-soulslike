@@ -12,6 +12,7 @@ const ogremod = @import("ogre.zig");
 const koboldmod = @import("kobold.zig");
 const broodmod = @import("brood.zig");
 const warriormod = @import("warrior.zig");
+const shademod = @import("shade.zig");
 const npcmod = @import("npc.zig");
 const dialogmod = @import("dialog.zig");
 const mathx = @import("mathx.zig");
@@ -1307,6 +1308,7 @@ pub fn runShots(g: *Game) void {
 
     broodShots(g);
     warriorShots(g);
+    shadeShots(g);
     campfireShots(g);
     chestShots(g);
     folkShots(g);
@@ -1575,6 +1577,96 @@ fn warriorShots(g: *Game) void {
         stepFoe(sm, adv, along(gaitFrom, gaitAcross, 19.0));
         shootFoe(g, sm, runNames[wi], LIT_YAW, 0.06, 5.2);
     }
+
+    game.clearFoesForShot(g);
+    game.rehomeFoesForShot(g);
+}
+
+/// THE SHADES (`116…`). Shot from `LIT_YAW` with the sensed hero out on the SUN's bearing, the warriors'
+/// own rule — but this creature needs it more than any of them: it is authored NEARLY BLACK from the cowl
+/// down, so a frame that photographs its own shadow is a frame of a silhouette with two dots in it.
+fn shadeShots(g: *Game) void {
+    game.clearFoesForShot(g);
+    const sc = mathx.ground(-24.0, 34.0); // the same open patch west the warriors are shot on
+    const near = along(sc, LIT_BACK, 1.4);
+    const far = along(sc, LIT_BACK, 90.0);
+    const faceCam = mathx.headingXZ(LIT_BACK);
+    g.haunt.n = 3;
+    const s = &g.haunt.shades[0];
+    const away = mathx.ground(sc.x - 60.0, sc.z + 60.0); // the other two, parked out of every portrait
+    const spawn = struct {
+        fn it(sh: *shademod.Shade, at: rl.Vector3, yaw: f32, seed: f32) void {
+            sh.* = shademod.Shade.spawn(at, yaw, 1.0, seed);
+        }
+    }.it;
+
+    // THE HAUNTING — three of them, because the variation is authored BETWEEN the instances and a single
+    // portrait cannot show that the hem, the hood and the lean differ from one to the next.
+    spawn(s, mathx.ground(sc.x - 1.6, sc.z), faceCam, 0.18);
+    spawn(&g.haunt.shades[1], mathx.ground(sc.x + 0.2, sc.z + 1.1), faceCam, 0.63);
+    spawn(&g.haunt.shades[2], mathx.ground(sc.x + 1.9, sc.z - 0.4), faceCam, 0.87);
+    for (g.haunt.live()) |*sh| stepFoe(sh, 40, far);
+    standHero(g, sc.x + 3.0, sc.z - 3.2, mathx.radians(-140));
+    shootAt(g, "shots/116_haunting.png", v3(sc.x, sc.y + 1.05, sc.z), LIT_YAW, 0.06, 7.6);
+
+    g.hero.pos = mathx.ground(sc.x, sc.z - 30.0); // out of the portraits below
+    g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pose();
+    for ([_]usize{ 1, 2 }) |i| spawn(&g.haunt.shades[i], away, faceCam, 0.5);
+
+    spawn(s, sc, faceCam, 0.18);
+    stepFoe(s, 40, far);
+    shootFoe(g, s, "shots/116a_shade_idle.png", LIT_YAW, 0.04, 4.4);
+    // A PROFILE READ: the hem's droop and the cowl's forward tip are both invisible head-on.
+    shootFoe(g, s, "shots/116b_shade_side.png", LIT_YAW + 66, 0.04, 4.4);
+    // …and a CROP of the cowl, since two self-lit eyes inside a hole are unjudgeable at 1:1. Framed off
+    // `lockPoint` (the head) and not `centerWorld` (the chest), or the whole plate is skirt.
+    shootAt(g, "shots/116c_shade_cowl.png", s.lockPoint(), LIT_YAW, 0.02, 1.9);
+
+    // THE TOUCH, in two beats. The arms go WIDE first — that spread is the whole tell, and a single frame
+    // of the closing pose is a move that came out of nowhere.
+    const beat = struct {
+        fn at(gg: *Game, sh: *shademod.Shade, home: rl.Vector3, face: f32, which: usize, clock: f32, name: [:0]const u8, toward: rl.Vector3, yaw: f32, dist: f32) void {
+            sh.* = shademod.Shade.spawn(home, face, 1.0, 0.18);
+            sh.debugMove(which);
+            var c: f32 = 0;
+            while (c < clock) : (c += SHOT_DT) {
+                _ = sh.update(SHOT_DT, toward, game.PLAY_HALF, .{});
+                game.stepArrowsForShot(gg, SHOT_DT); // …or the thrown wisp never leaves the hands
+            }
+            shootPortrait(gg, name, sh.centerWorld(), yaw, 0.05, dist);
+        }
+    }.at;
+    const gc = shademod.moveClock(shademod.GRASP);
+    beat(g, s, sc, faceCam, shademod.GRASP, gc.wind * 0.94, "shots/116d_grasp_wide.png", near, LIT_YAW + 16, 4.2);
+    beat(g, s, sc, faceCam, shademod.GRASP, gc.wind + gc.strike * 0.62, "shots/116e_grasp_close.png", near, LIT_YAW + 16, 4.2);
+
+    // THE WISP: the gather between the hands, and the frame it lets go on. Both are the same arm shape a
+    // second apart, so the SHOT is what proves the ball is there before the throw and gone after it.
+    const wc = shademod.moveClock(shademod.WISP);
+    beat(g, s, sc, faceCam, shademod.WISP, wc.wind * 0.96, "shots/116f_wisp_gather.png", near, LIT_YAW + 16, 4.0);
+    beat(g, s, sc, faceCam, shademod.WISP, wc.wind + wc.strike + 0.10, "shots/116g_wisp_thrown.png", near, LIT_YAW + 16, 5.4);
+    game.clearShaftsForShot(g);
+
+    // THE BLINK, caught halfway out and halfway back in — one frame of each, because the whole move is
+    // over in under half a second and the thing it has to prove is that it THINS rather than popping.
+    spawn(s, sc, faceCam, 0.18);
+    s.debugBlink(near);
+    var t: f32 = 0;
+    while (t < shademod.BLINK_OUT * 0.62) : (t += SHOT_DT) _ = s.update(SHOT_DT, near, game.PLAY_HALF, .{});
+    shootFoe(g, s, "shots/116h_blink_out.png", LIT_YAW, 0.05, 4.4);
+    while (t < shademod.BLINK_OUT + shademod.BLINK_IN * 0.45) : (t += SHOT_DT) _ = s.update(SHOT_DT, near, game.PLAY_HALF, .{});
+    shootFoe(g, s, "shots/116i_blink_in.png", LIT_YAW, 0.05, 4.4);
+
+    spawn(s, sc, faceCam, 0.18);
+    s.debugStagger(true);
+    stepFoe(s, 16, far);
+    shootFoe(g, s, "shots/116j_shade_stagger.png", LIT_YAW + 20, 0.06, 4.4);
+
+    spawn(s, sc, faceCam, 0.18);
+    s.debugKill();
+    stepFoe(s, 22, far);
+    shootFoe(g, s, "shots/116k_shade_death.png", LIT_YAW + 24, 0.10, 4.8);
 
     game.clearFoesForShot(g);
     game.rehomeFoesForShot(g);

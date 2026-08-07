@@ -170,6 +170,66 @@ pub fn flashFrac(flash: f32) f32 {
     return mathx.clampF(flash / FLASH_DUR, 0, 1);
 }
 
+/// A POINT ON A CREATURE'S OWN AXIS: `h` metres of ITS OWN SCALE above the ground under it, plus whatever
+/// it is holding off that ground this frame (`lift` — a hop, a leap, a hover). Seven creatures wrote this
+/// same expression out three times each, and EVERY WORLD POINT ON AN ACTOR IS MEASURED FROM `pos.y` is the
+/// law it exists to keep: off the datum instead, a foe on a bank keeps its bar down in the field.
+pub fn bodyPoint(pos: rl.Vector3, h: f32, scale: f32, lift: f32) rl.Vector3 {
+    return v3(pos.x, pos.y + h * scale + lift, pos.z);
+}
+
+/// …AND A POINT ON THE POSED BODY ITSELF, which is a different thing entirely: `at` is in the BONE's own
+/// frame, so the answer follows whatever that bone is doing this frame rather than sitting at a fixed
+/// height off the feet. THE RETICLE RIDES THIS. Locked onto a head, the mark goes where the head goes — it
+/// dips when the head dips, and it does not hang in the air a foot above a creature that has ducked.
+///
+/// Every bone matrix already carries the rig's scale, the facing and the creature's `pos`, so this needs
+/// nothing else; and every creature's `spawn` poses before it returns, so there is no frame on which the
+/// matrix it reads is undefined.
+pub fn markOn(bone: rl.Matrix, at: rl.Vector3) rl.Vector3 {
+    return rl.math.vector3Transform(at, bone);
+}
+
+/// HOW HARD A REACTION IS PLAYING, 0..1, and it is ONE CURVE for every creature in the game. As five
+/// private copies the constants had already drifted four ways — 0.12/0.78, 0.13/0.72, 0.14/0.70,
+/// 0.16/0.78 — which is four different creatures disagreeing about the shape of the same event for no
+/// reason anybody wrote down. A light flinch is a single symmetric swell; a heavy one snaps to its peak,
+/// HOLDS there (that hold is the punish window, and it has to be legible), and lets go slowly.
+pub fn stunCurve(t: f32, heavy: bool) f32 {
+    if (!heavy) return mathx.sinf(mathx.clampF(t / combat.FOE_LIGHT_STUN_DUR, 0, 1) * std.math.pi);
+    return mathx.pulse(mathx.clampF(t / combat.FOE_HEAVY_STUN_DUR, 0, 1), 0, 0.14, 0.74, 1.0);
+}
+
+/// How far a blow knocks a creature off its feet, by whether the blow was a heavy. A PAIR and not two
+/// loose numbers: the two are only ever chosen against each other.
+pub const Push = struct { light: f32, heavy: f32 };
+
+/// THE BLADE REACHED IT — the swept test, the anti-cheese rouse, and the one thing a shaft does that a
+/// swing does not. Seven creatures opened `tryHit` with these same four lines; the differences between
+/// them were all in what came AFTER, which is why the split is here and not further down.
+///
+/// Duck-typed on the conventional field names (`drawGroup` and `anyDied` above already are): a creature
+/// satisfying the foe contract has every one of them by definition.
+pub fn reached(self: anytype, blade: Blade) ?Strike {
+    const s = strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return null;
+    self.leash.provoke();
+    // ONLY A `pierce` SNAPS THE FACING BACK DOWN ITS OWN LINE — being shot from somewhere it was not
+    // looking is exactly when a creature must turn round, and a swing already came from in front of it.
+    if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
+    return s;
+}
+
+/// …AND WHAT IT COSTS a creature that did not catch the blow on anything. Returns whether the BLOW was a
+/// heavy (it carried stance), which is what every creature sizes its own blood, chips and dust off — never
+/// the REACTION, since a heavy blow a high-poise creature shrugs off still hit it that hard.
+pub fn wounded(self: anytype, s: Strike, blade: Blade, push: Push) bool {
+    self.hits += 1;
+    self.flash = FLASH_DUR;
+    const heavy = blade.hit.stance > 0;
+    self.shove = mathx.scaleV(s.dir, if (heavy) push.heavy else push.light);
+    return heavy;
+}
+
 /// ROOTED: THE FEET ARE HELD, AND NOTHING ELSE IS (owner's law) — the state machine runs, the kit swings, the
 /// blow lands, and the body simply does not travel. Taken as a GATE at the end of a creature's own `update`
 /// rather than a guard at each `stepXZ`: a creature grows movements — a dash, a leap, the shove off a blade,

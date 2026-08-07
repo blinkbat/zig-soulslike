@@ -98,6 +98,11 @@ pub const Hit = struct {
     poise: f32 = 0,
     stance: f32 = 0,
     elem: Elems = .{},
+    /// FOCUS TORN OUT OF HIM ON TOP OF THE DAMAGE — the shade's touch, and the only thing in the game that
+    /// takes the blue bar off anybody. Deliberately NOT part of `raw()`: what a shield's stamina bill and
+    /// "which of two blows was worse" measure is the WEIGHT of the thing that hit you, and a drain has none.
+    /// Nothing but the hero carries a `Focus`, so a foe handed one of these simply never reads the field.
+    fp: f32 = 0,
 
     /// THE WHOLE BLOW BEFORE ANYBODY'S RESISTANCES. What a shield's stamina bill and "which of two blows was worse" are measured on: those are about the weight of the thing that hit you, not about what you happen to resist.
     pub fn raw(self: Hit) f32 {
@@ -353,7 +358,9 @@ pub fn guardStamina(h: Hit) f32 {
 /// WHAT GETS THROUGH — still a `Hit`, so the chip's elemental share meets the blocker's resistances instead of arriving as raw HP. DAMAGE ONLY: poise and stance are what the shield is FOR, and a chip that carried the blow's stagger through would flinch him behind his own guard.
 pub fn guardChip(h: Hit) Hit {
     const k = 1.0 - GUARD_NEGATE;
-    return .{ .dmg = h.dmg * k, .elem = h.elem.scaled(k) };
+    // The DRAIN is chipped by the same fraction, for the reason the chip exists at all: nothing the boards
+    // stop is stopped outright. A shade's touch caught square still costs a mouthful of the blue bar.
+    return .{ .dmg = h.dmg * k, .elem = h.elem.scaled(k), .fp = h.fp * k };
 }
 
 // THE PARRY — L2, the shield's own skill, and the guard's opposite number in every respect. A held shield is a
@@ -395,6 +402,11 @@ pub const Focus = struct {
         if (self.cur < amt) return false;
         self.cur -= amt;
         return true;
+    }
+    /// TAKEN FROM HIM RATHER THAN SPENT BY HIM (`Hit.fp`), so it FLOORS where `spend` refuses: a blow is not
+    /// a purchase, and one landing on four points of focus takes the four.
+    pub fn drain(self: *Focus, amt: f32) void {
+        self.cur = mathx.maxF(0, self.cur - amt);
     }
     pub fn reset(self: *Focus) void {
         self.cur = self.max;

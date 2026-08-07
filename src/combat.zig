@@ -431,9 +431,13 @@ pub const BOLT_HIT = Hit{ .poise = 14, .stance = 6, .elem = elems(.{ .chaos = 24
 pub const ROOT_FP: f32 = 18.0; // dearer than the bolt's 12 — three casts to a grace, not five
 pub const ROOT_HOLD: f32 = 3.5; // seconds the feet are held
 pub const ROOT_DPS: f32 = 4.0; // chaos a second while they hold (~14 over a full grip)
-/// How far from the mark the ground splits — everything corporeal inside it is taken, so it answers a warband
-/// the way the single-target bolt cannot.
+/// How far from the mark the ground is SEARCHED for feet to take, which is the reach of a cast with nothing
+/// locked. NOT A BLAST RADIUS: `game.rootVictim` takes ONE body out of it, since a sword's swing is the only
+/// thing in the game that reaches more than one.
 pub const ROOT_R: f32 = 2.6;
+/// …and how wide the earth splits AROUND THE BODY IT TOOK. A body, not the reach: a ring thrown out to
+/// `ROOT_R` reads as an area spell — there are none — and promises a hold on the neighbour it did not take.
+pub const ROOT_GRIP_R: f32 = 1.0;
 
 /// A FOE'S FEET, HELD. Shaped like `Regen` — a clock that bills a little every frame it runs — because that
 /// is what it is, with the sign reversed and somebody else's meter on the other end.
@@ -721,6 +725,8 @@ test "a re-cast REFRESHES the grip rather than stacking a second clock on it" {
 
 test "THE ROOTS COST MORE THAN THE BOLT AND DEAL LESS — a control tool, not a second bolt" {
     try std.testing.expect(spellFp(.roots) > spellFp(.bolt));
+    // …and what erupts stays inside the body it took, or a single-target spell is drawn as an area one.
+    try std.testing.expect(ROOT_GRIP_R < ROOT_R);
     try std.testing.expect(ROOT_HOLD * ROOT_DPS < BOLT_HIT.raw());
     // …and both are affordable off a full pool, or the sheet's Mind curve is a lie on the character page.
     try std.testing.expect(spellFp(.roots) <= FP_MAX);

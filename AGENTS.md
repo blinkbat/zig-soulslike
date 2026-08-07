@@ -259,6 +259,11 @@ carries a `Focus`, so a foe handed one of these simply never reads the field.
 **A TIMED STATUS REFRESHES, IT DOES NOT STACK** (`Root.grab`, `Regen.start`). Two clocks running on one
 body is a state no bar and no animation can show.
 
+**ONLY A SWING REACHES MORE THAN ONE BODY.** There are no area spells. A sorcery thrown into a warband picks
+ONE victim — the locked foe, else the nearest to the mark (`game.rootVictim`) — so its own reach is a search,
+never a blast, and the FX that says what it took is sized to the BODY (`combat.ROOT_GRIP_R`), not to the reach.
+A ring drawn out to the search radius promises a hold on the neighbour the spell walked past.
+
 **AN EFFECT'S CLOCK IS DERIVED FROM THE MECHANIC'S, NEVER PARALLEL TO IT** — what is standing on the
 ground IS how long the hold has left. Two constants that can disagree eventually will. And when the
 effect STAGGERS its parts, its container outlives the mechanic by that stagger, or the last part is cut

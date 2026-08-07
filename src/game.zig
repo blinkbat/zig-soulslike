@@ -117,6 +117,9 @@ const CLIP_NEAR = 0.55;
 const CLIP_FAR = 320.0;
 
 const MAX_LOCK_R = 17.0; // won't acquire, and drops, a foe beyond this
+/// …and how far PAST that a HELD lock survives. START FAR, STOP NEAR is the leash's rule read the other way
+/// round: without the gap, a foe hovering on the ring drops and re-acquires every other frame.
+const LOCK_KEEP_SLACK: f32 = 2.0;
 const LOCK_CAM_EASE = 9.0; // exponential ease rate for the lock-on camera swing (quick, snap-free)
 const LOCK_PITCH = 0.24; // framing pitch while locked (the toads sit low)
 const LOCK_FLICK = 0.65; // right-stick |x| past this cycles to the next target
@@ -759,12 +762,42 @@ pub fn stepFolkForShot(g: *Game, dt: f32) void {
 /// the whole of what these hooks need from it.
 const SHOT_STEP: f32 = @import("shots.zig").SHOT_DT;
 
-/// ONE BUTTON, ONE PRIORITY ORDER: a bonfire, then whoever is standing there, then a box. Written down here
-/// once rather than as three call sites — you can be in reach of two of them, and the answer must not depend
-/// on which system happened to be asked first.
+/// WHAT THE BUTTON WOULD REACH THIS FRAME, and in what order — a bonfire, then whoever is standing there,
+/// then a box. ONE list, because the press and the PROMPT are the same question: written out twice they are
+/// two orders kept in lockstep, and the day they part the HUD names a button the press will not honour.
+const Reach = enum {
+    rest,
+    talk,
+    chest,
+
+    /// The prompt each one puts up, keyed off the enum rather than spelled at the call site.
+    fn prompt(self: Reach) [:0]const u8 {
+        return switch (self) {
+            .rest => hud_.INTERACT_HINT ++ "Rest",
+            .talk => hud_.INTERACT_HINT ++ "Speak",
+            .chest => hud_.INTERACT_HINT ++ "Open",
+        };
+    }
+};
+
+fn reachable(g: *const Game) ?Reach {
+    if (g.rest.near != null) return .rest;
+    if (talkable(g)) return .talk;
+    if (g.chests.near != null) return .chest;
+    return null;
+}
+
+/// ONE BUTTON, ONE PRIORITY ORDER (`reachable`) — you can be in reach of two of them, and the answer must not
+/// depend on which system happened to be asked first.
 fn interact(g: *Game) void {
-    if (g.rest.begin()) return;
-    if (startTalk(g)) return;
+    switch (reachable(g) orelse return) {
+        .rest => _ = g.rest.begin(),
+        .talk => _ = startTalk(g),
+        .chest => openChest(g),
+    }
+}
+
+fn openChest(g: *Game) void {
     const got = g.chests.openNear(&g.map) orelse return;
     for (got.loot) |it| g.bag.add(it, 1);
     if (got.loot.len > 0) sfx.world(.item_get, got.at);
@@ -1035,41 +1068,67 @@ fn rootMark(g: *const Game) rl.Vector3 {
     return v3(x, g.env.groundAt(x, z), z);
 }
 
-/// THE ROOTS ERUPT. Everything corporeal standing inside `combat.ROOT_R` of the mark is taken, which is what
-/// makes this the answer to a warband the single-target bolt is not — and it ROUSES what it grabs, because a
-/// foe held by the feet that then strolls home is the anti-cheese rule (`Leash.provoke`) read backwards.
-/// The GRIP ITSELF and the ground it throws up — the part the shot harness reproduces too
-/// (`castRootsForShot`), which is `launchBolt`'s own split: sound, pad and shake stay with the caller because
-/// those are live-loop only and a shake costs `--shot` its determinism. Returns how many it closed on.
-fn seedRoots(g: *Game, at: rl.Vector3) u32 {
-    var caught: u32 = 0;
-    inline for (FOE_GROUPS) |f| {
-        for (@field(g, f.field).live()) |*a| {
-            if (!foemod.corporeal(a) or mathx.distXZ(a.pos, at) > combat.ROOT_R) continue;
-            a.root.grab();
-            a.leash.provoke();
-            caught += 1;
+/// WHICH ONE BODY THE GRIP CLOSES ON: the LOCKED foe when he is holding a lock, the nearest corporeal thing to
+/// the mark otherwise. A ROW OF `FOE_GROUPS` AND AN INDEX INTO IT rather than a `FoeRef`, because a ref only
+/// answers questions (`askFoe` takes a `*const Game`) and this one has to be handed a `grab`.
+const RootPick = struct { group: usize, idx: usize };
+fn rootVictim(g: *const Game, at: rl.Vector3) ?RootPick {
+    const locked = activeLock(g);
+    var pick: ?RootPick = null;
+    var near: f32 = combat.ROOT_R;
+    inline for (FOE_GROUPS, 0..) |f, gi| {
+        for (@field(g, f.field).liveConst(), 0..) |*a, i| {
+            if (!foemod.corporeal(a)) continue;
+            if (locked) |l| if (l.idx == i and l.kind == memberKind(a, f.kind)) return .{ .group = gi, .idx = i };
+            const d = mathx.distXZ(a.pos, at);
+            if (d < near) {
+                near = d;
+                pick = .{ .group = gi, .idx = i };
+            }
         }
     }
-    g.hero.rootsBurst(at, caught > 0);
-    return caught;
+    return pick;
+}
+
+/// THE ROOTS ERUPT, AND THEY TAKE EXACTLY ONE FOE — a swing is the only thing in the game that reaches more
+/// than one body, so a grip thrown into a warband picks a victim (`rootVictim`) instead of holding the lot.
+/// It ROUSES the one it takes, because a foe held by the feet that then strolls home is the anti-cheese rule
+/// (`Leash.provoke`) read backwards. The GRIP ITSELF and the ground it throws up — the part the shot harness
+/// reproduces too (`castRootsForShot`), which is `launchBolt`'s own split: sound, pad and shake stay with the
+/// caller because those are live-loop only and a shake costs `--shot` its determinism.
+/// Returns the earth it actually split — the victim's own feet, not the thrown mark — or null on bare ground.
+fn seedRoots(g: *Game, at: rl.Vector3) ?rl.Vector3 {
+    const pick = rootVictim(g, at) orelse {
+        g.hero.rootsBurst(at, false);
+        return null;
+    };
+    var mark = at;
+    inline for (FOE_GROUPS, 0..) |f, gi| {
+        if (gi == pick.group) {
+            const a = &@field(g, f.field).live()[pick.idx];
+            a.root.grab();
+            a.leash.provoke();
+            mark = v3(a.pos.x, g.env.groundAt(a.pos.x, a.pos.z), a.pos.z);
+        }
+    }
+    g.hero.rootsBurst(mark, true);
+    return mark;
 }
 
 fn castRoots(g: *Game) void {
-    const caught = seedRoots(g, rootMark(g));
+    const bit = seedRoots(g, rootMark(g)) != null;
     sfx.play(.wand_cast);
-    g.rumble.play(if (caught > 0) rumblemod.hit_heavy else rumblemod.cast_throw);
+    g.rumble.play(if (bit) rumblemod.hit_heavy else rumblemod.cast_throw);
     // A GRIP THAT CLOSED ON SOMETHING IS FELT; one that closed on bare earth is the lightest thing the wand
     // does, and stays under the bolt's own release for the reason that one is under a landed blow.
-    g.rig.addShake(if (caught > 0) SHAKE_ROOTS_BITE else SHAKE_CAST);
+    g.rig.addShake(if (bit) SHAKE_ROOTS_BITE else SHAKE_CAST);
 }
 
 /// …and the harness's hook, `throwBoltForShot`'s twin: the pose is driven past the `thrown` edge without going
 /// through `releaseSpell`, so without this every "the roots" still is a man finishing a sweep over bare earth.
 pub fn castRootsForShot(g: *Game) rl.Vector3 {
     const at = rootMark(g);
-    _ = seedRoots(g, at);
-    return at;
+    return seedRoots(g, at) orelse at;
 }
 
 /// The GEOMETRY of a release, which is the part the shot harness reproduces too (`throwBoltForShot`). Sound,
@@ -1434,13 +1493,9 @@ pub fn hud(g: *Game, dt: f32) void {
         );
         hud_.reticle(g.hero.aimB);
         hud_.runes(g.hero.runes.display()); // the ROLLING value, not the banked total
-        // THE SAME PRIORITY ORDER `interact` USES, and it has to be: a prompt that names a different thing
-        // from the one the button will reach is worse than no prompt.
-        if (g.rest.near != null)
-            hud_.prompt("E / A  Rest")
-        else if (talkable(g))
-            hud_.prompt("E / A  Speak")
-        else if (g.chests.near != null) hud_.prompt("E / A  Open");
+        // THE SAME `reachable` THE PRESS GOES THROUGH: a prompt that names a different thing from the one the
+        // button will reach is worse than no prompt.
+        if (reachable(g)) |r| hud_.prompt(r.prompt());
     }
     // A `text` ACTION'S LINE — SC1's Display Text Message. Under the menu and over everything else, because a
     // trigger firing while the pause card is up still has something to say when it comes down.
@@ -1979,14 +2034,6 @@ pub fn run(mode: Mode) void {
         g.hero.aimAtPitch(meleePitch(g));
         // The slope under him, eased into the rig BEFORE it poses — every branch below ends in a `pose()`, so this has to be settled first or the lean is always one frame stale.
         leanToGround(g, dt);
-        var wasPos: [FOE_GROUPS.len][FOE_CAP]rl.Vector3 = undefined;
-        // …AND HOW MANY OF EACH ROW IS REAL.
-        var wasN: [FOE_GROUPS.len]usize = undefined;
-        inline for (FOE_GROUPS, 0..) |f, gi| {
-            const row = @field(g, f.field).live();
-            wasN[gi] = row.len;
-            snapshotPos(row, &wasPos[gi]);
-        }
         if (g.hero.dead) {
             g.hero.updateDeath(dt); // collapse → respawn
             // The frame he returns, the WORLD reloads with him (ER-style): every foe re-homed at full health, arrows cleared, lock dropped.
@@ -2014,6 +2061,18 @@ pub fn run(mode: Mode) void {
             g.rumble.play(rumblemod.castCharge(g.hero.chargeFill()));
         } else {
             moveHero(g, dt, mv, faceYaw);
+        }
+        // WHERE EVERY FOE STOOD BEFORE IT MOVED — taken AFTER the hero's own branch, because a respawn
+        // re-homes the whole field inside it (`resetFoes`): read before that, the post-step gate would be
+        // comparing each fresh spawn against where the last life's foe of that index died and would drag it
+        // back down the hill it was posted on.
+        var wasPos: [FOE_GROUPS.len][FOE_CAP]rl.Vector3 = undefined;
+        // …AND HOW MANY OF EACH ROW IS REAL.
+        var wasN: [FOE_GROUPS.len]usize = undefined;
+        inline for (FOE_GROUPS, 0..) |f, gi| {
+            const row = @field(g, f.field).live();
+            wasN[gi] = row.len;
+            snapshotPos(row, &wasPos[gi]);
         }
         // THE SHAFT LEAVES on the one frame the loose says so.
         if (g.hero.loosed) looseShaft(g);
@@ -2325,6 +2384,9 @@ fn allRunes(g: *const Game) u32 {
 // The hero's blade this frame as plain data for the foe hit test (endpoints guard→tip, plus last frame's for the swept test; active only inside the strike window).
 /// HOW FAR THE HERO MUST FOLD TO PUT A FLAT CUT THROUGH WHAT IS IN FRONT OF HIM — degrees below his own eye line, or null for "nothing worth stooping for".
 const MELEE_AIM_R: f32 = 3.6;
+/// A FIXED target is worth stooping for from further out than a swept one: he has SAID which body he is
+/// swinging at, so the fold follows it out past the range the sweep picks a mark up at on its own.
+const MELEE_AIM_LOCKED: f32 = 2.0 * MELEE_AIM_R;
 /// …and it must be in FRONT: cos of the half-angle off his facing.
 const MELEE_AIM_DOT: f32 = 0.35;
 /// The eye line the pitch is measured FROM — his shoulders, which is roughly where the flat arc lives.
@@ -2351,7 +2413,7 @@ const MarkCtx = struct {
 
 fn meleeMark(g: *const Game) ?rl.Vector3 {
     if (activeLock(g)) |li| {
-        if (mathx.distXZ(g.hero.pos, foePos(g, li)) <= MELEE_AIM_R * 2.0) return foeLockPoint(g, li);
+        if (mathx.distXZ(g.hero.pos, foePos(g, li)) <= MELEE_AIM_LOCKED) return foeLockPoint(g, li);
     }
     var ctx = MarkCtx{ .g = g, .fwd = mathx.headingDir(g.hero.facing) };
     eachTarget(g, &ctx, MarkCtx.visit);
@@ -2512,7 +2574,7 @@ fn refInBounds(g: *const Game, r: FoeRef) bool {
 }
 fn lockValid(g: *const Game, r: FoeRef) bool {
     if (!refInBounds(g, r)) return false;
-    return foeLockable(g, r) and mathx.distXZ(g.hero.pos, foePos(g, r)) <= MAX_LOCK_R + 2.0;
+    return foeLockable(g, r) and mathx.distXZ(g.hero.pos, foePos(g, r)) <= MAX_LOCK_R + LOCK_KEEP_SLACK;
 }
 
 /// THE LOCK THE GAME IS ACTING ON — none of it while the bow is up.

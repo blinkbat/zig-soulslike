@@ -1356,7 +1356,7 @@ pub const Hero = struct {
         const up = mathx.normV(mathx.crossV(f.n, side));
         // A hair PROUD of the face, or the first frame's sparks are half-buried in the boards they came off.
         const at = mathx.addV(f.at, mathx.scaleV(f.n, 0.02));
-        var rng = foemod.fxStream(@floatFromInt(self.parries), 733.0, 0x8B04);
+        var rng = foemod.fxStream(@floatFromInt(self.parries), 733.0, 0x8B06);
         var i: u32 = 0;
         while (i < PARRY_SPARKS) : (i += 1) {
             const a = rng.angle();
@@ -1744,7 +1744,7 @@ pub const Hero = struct {
         var i: u32 = 0;
         while (i < dust) : (i += 1) {
             const a = rng.angle();
-            const rr = rng.range(0.1, combat.ROOT_R * 0.8);
+            const rr = rng.range(0.1, combat.ROOT_GRIP_R * 0.8);
             const from = v3(at.x + mathx.cosf(a) * rr, at.y + 0.03, at.z + mathx.sinf(a) * rr);
             const sp = rng.range(1.1, 3.0);
             const v = v3(mathx.cosf(a) * sp, rng.range(2.4, 5.4), mathx.sinf(a) * sp);
@@ -1755,7 +1755,7 @@ pub const Hero = struct {
         var j: u32 = 0;
         while (j < ROOT_MOTES) : (j += 1) {
             const a = rng.angle();
-            const rr = rng.range(0.2, combat.ROOT_R);
+            const rr = rng.range(0.2, combat.ROOT_GRIP_R);
             const from = v3(at.x + mathx.cosf(a) * rr, at.y + rng.range(0.05, 0.6), at.z + mathx.sinf(a) * rr);
             const v = v3(rng.signed() * 0.9, rng.range(0.8, 2.4), rng.signed() * 0.9);
             foemod.emitParticle(&self.fx, &self.fxHead, from, v, rng.range(0.45, 1.00), rng.range(0.038, 0.072), 0.010, if (rng.float() < 0.4) CHAOS_HOT else CHAOS_MOTE, -0.6);
@@ -1773,9 +1773,9 @@ pub const Hero = struct {
                 // Drawn from the stream FIRST and unconditionally, so a tendril that is not up yet still
                 // advances it and the fan does not reshuffle itself as the site rises.
                 const jitter = rng.range(-0.34, 0.34);
-                // Out to two thirds of the grab radius, so the ring reads across the ground the spell actually
-                // took rather than as a clump about the mark.
-                const out = rng.range(0.22, combat.ROOT_R * 0.66);
+                // Out to two thirds of the GRIP, so the fan closes on one set of ankles rather than ringing
+                // ground the spell never took.
+                const out = rng.range(0.22, combat.ROOT_GRIP_R * 0.66);
                 const sc = rng.range(0.62, 1.46); // WIDE: nine of one height is a garden rake
                 const lean = rng.range(4.0, 24.0); // the mesh already curls; the transform only tips it OFF plumb
                 const kind = @as(usize, @intFromFloat(rng.range(0, ROOT_KINDS)));
@@ -1861,9 +1861,13 @@ pub const Hero = struct {
     }
 
     /// THE GROUND HURTING HIM — the brood mother's acid today, and whatever else the floor does later. It takes a whole `Hit` because a floor has an ELEMENT (hers is chaos): a bare number would be the one damage path in the game that could not say what it was.
+    ///
+    /// A DRIP, NOT A BLOW (`combat.Vitals.drip`), for the reason the wand's grip is one: a floor HOLDS. Its
+    /// pulse lands inside the regen delay (`brood.ACID_TICK` 0.42 against 0.8), so billed through `hit` the
+    /// gate never opens and a pool denies him a whole poise bar it carries no poise to take.
     pub fn burn(self: *Hero, h: combat.Hit) combat.HitOutcome {
         if (self.dead or h.raw() <= 0) return .ignored;
-        const r = self.vit.hit(h);
+        const r = self.vit.drip(h);
         self.hurtFlash = mathx.maxF(self.hurtFlash, 0.45);
         if (r == .death) self.enterDeath();
         return .taken;
@@ -3821,6 +3825,27 @@ test "a grace gives the FP back, and a respawn does not inherit the refusal flas
     // The LOADOUT survives a death: what is in his hands is not a meter to refill (`makeWhole`'s rule
     // about resistances), so he comes back holding the wand he died holding.
     try std.testing.expectEqual(Off.wand, h.off);
+}
+
+test "THE FLOOR IS A DRIP: standing in acid takes HP and never the poise refill" {
+    // A floor HOLDS, so it bills through `Vitals.drip` for the wand grip's reason. Through `hit` it re-stamps
+    // the refill gate faster than the gate ever opens, and a pool carrying no poise at all would still deny
+    // him a whole poise bar — the stagger tool it is documented not to be.
+    var burnt = testHero();
+    var clean = testHero();
+    for ([_]*Hero{ &burnt, &clean }) |h| _ = h.takeHit(.{ .poise = 20 }, mathx.zero3);
+    var t: f32 = 0;
+    while (t < 3.0) : (t += 1.0 / 60.0) {
+        _ = burnt.burn(.{ .elem = combat.elems(.{ .chaos = 0.1 }) });
+        burnt.vit.tick(1.0 / 60.0);
+        clean.vit.tick(1.0 / 60.0);
+    }
+    try std.testing.expectApproxEqAbs(clean.vit.poise, burnt.vit.poise, 1e-3);
+    try std.testing.expectApproxEqAbs(burnt.vit.poiseMax, burnt.vit.poise, 1e-3);
+    try std.testing.expect(burnt.vit.hp < clean.vit.hp); // …and it took the HP it is entitled to
+    // …and it is still VISIBLE while it does it — the floating bar's own clock is stamped by every pulse.
+    try std.testing.expect(burnt.vit.sinceHurt < 1.0 / 30.0); // stamped by the last pulse, one tick ago
+    try std.testing.expect(clean.vit.sinceHurt > 2.0);
 }
 
 fn testStrafeAnkle(ph: f32, lat: f32, side: f32, hip: usize, knee: usize, sole: SolePatch) rl.Vector3 {

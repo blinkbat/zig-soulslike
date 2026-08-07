@@ -150,6 +150,10 @@ pub fn bigCentered(s: [:0]const u8, cx: f32, cy: f32, size: f32, spacing: f32, c
 }
 
 
+/// THE INTERACT BUTTON, SPELLED ONCE. The world's prompt and the dialog panel's footer both name it, and they
+/// are two files: written out at each of them, a rebind moves one caption and leaves the other lying.
+pub const INTERACT_HINT = "E / A  ";
+
 pub const MARGIN: i32 = 30;
 const BAR_TOP: i32 = 24;
 const BAR_GAP: i32 = 6;

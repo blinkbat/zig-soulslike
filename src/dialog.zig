@@ -276,7 +276,7 @@ pub const Session = struct {
             }
         }
         hud.text(
-            if (shown.len > 0) "Up / Down  Choose      E / A  Speak" else "E / A  Continue",
+            if (shown.len > 0) "Up / Down  Choose      " ++ hud.INTERACT_HINT ++ "Speak" else hud.INTERACT_HINT ++ "Continue",
             innerX,
             footer,
             hud.HINT,

@@ -129,7 +129,7 @@ const RESISTS = combat.resists(.{ .fire = -25, .cold = 35, .chaos = 75 });
 /// THE SPIT IS POISON, NOT A STONE: all of its damage is CHAOS, and the poise is the only physical thing about it — a caustic glob still rocks you when it lands. Her POOLS burn with the same element (`acidPulse`), because they are the same fluid.
 pub const M_SPIT_HIT = combat.Hit{ .poise = 5, .elem = combat.elems(.{ .chaos = 5 }) };
 pub const M_BITE_HIT = combat.Hit{ .dmg = 19, .poise = 22, .stance = 7 };
-/// The glob's flight, handed to the shared launcher (`archer.launchVenom`).
+/// The glob's flight, handed to the shared launcher (`archer.launchShaft`, kind `.venom`).
 pub const SPIT_SPEED: f32 = 15.0;
 
 

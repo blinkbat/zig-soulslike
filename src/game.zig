@@ -233,6 +233,7 @@ pub const Game = struct {
         g.shafts = [_]archermod.Arrow{.{}} ** MAX_SHAFTS;
         g.editor = .{};
         g.lock = null;
+        g.lockBlind = 0;
         g.rumble = .{};
         g.deathFade = 0;
         g.restRetro = [_]f32{0} ** gfx.RETRO_COUNT;
@@ -285,7 +286,7 @@ fn rehomeFoes(g: *Game, sighted: Sighted) void {
     }
 }
 
-/// EVERY LIST THE GAME TARGETS, walked ONCE: the five `FOE_GROUPS`, plus any SECOND list a group keeps on the field (`liveExtraConst` — the brood's sacs, which are real targets with their own HP). Spliced in by hand per site instead, the answers drift apart: four sites had the sacs and `rayFoeDist` never did, so an aimed shaft converged straight past a clutch.
+/// EVERY LIST THE GAME TARGETS, walked ONCE: every row of `FOE_GROUPS`, plus any SECOND list a group keeps on the field (`liveExtraConst` — the brood's sacs, which are real targets with their own HP). Spliced in by hand per site instead, the answers drift apart: four sites had the sacs and `rayFoeDist` never did, so an aimed shaft converged straight past a clutch.
 fn eachTarget(g: *const Game, ctx: anytype, comptime visit: anytype) void {
     inline for (FOE_GROUPS) |gr| {
         visit(ctx, @field(g, gr.field).liveConst(), gr.kind);
@@ -602,16 +603,23 @@ fn heroAimPoint(g: *const Game) rl.Vector3 {
     return v3(g.hero.pos.x, heroCenterY(g), g.hero.pos.z);
 }
 
+/// A POINT `reach` METRES DOWN HIS FACING, off that same centre — what a quick shot and a bolt are thrown at
+/// when nothing is locked. ONE body: as `forwardAimPoint` and `forwardBoltPoint` it was the same four lines
+/// twice with a different constant in them, and both of them rebuilt `heroAimPoint` by hand.
+fn forwardPoint(g: *const Game, reach: f32) rl.Vector3 {
+    return mathx.addV(heroAimPoint(g), mathx.scaleV(mathx.headingDir(g.hero.facing), reach));
+}
+
 fn spawnArrow(g: *Game, from: rl.Vector3, target: rl.Vector3) void {
     poolPut(g, archermod.launchArrow(from, target));
 }
 
 pub fn spawnClump(g: *Game, from: rl.Vector3) void {
-    poolPut(g, archermod.launchClump(from, heroAimPoint(g), koboldmod.CLUMP_SPEED, koboldmod.CLUMP_HIT));
+    poolPut(g, archermod.launchShaft(from, heroAimPoint(g), koboldmod.CLUMP_SPEED, koboldmod.CLUMP_HIT, true, .clump));
 }
 
 pub fn spawnVenom(g: *Game, from: rl.Vector3) void {
-    poolPut(g, archermod.launchVenom(from, heroAimPoint(g), broodmod.SPIT_SPEED, broodmod.M_SPIT_HIT));
+    poolPut(g, archermod.launchShaft(from, heroAimPoint(g), broodmod.SPIT_SPEED, broodmod.M_SPIT_HIT, true, .venom));
 }
 
 /// LOFTED like every other thrown thing here, so its arc is the tell you read it by.
@@ -962,21 +970,28 @@ fn poolPut(g: *Game, a: archermod.Arrow) void {
     putIn(&g.arrows, a);
 }
 
+/// A FULL POOL OVERWRITES ITS OLDEST, and a PLANTED shaft goes before one still in the air: a stuck arrow is
+/// scenery on a fade timer, where one in flight is a blow that has not landed yet. Slot 0 is not the oldest of
+/// anything — the first hole is refilled first, so on a full pool it was as likely to be the shaft loosed two
+/// frames ago, and that shot simply vanished on its way to the target.
 fn putIn(pool: []archermod.Arrow, a: archermod.Arrow) void {
-    for (pool) |*ar| {
+    var worst: usize = 0;
+    for (pool, 0..) |*ar, i| {
         if (!ar.live) {
             ar.* = a;
             return;
         }
+        const w = &pool[worst];
+        if ((ar.stuck and !w.stuck) or (ar.stuck == w.stuck and ar.age > w.age)) worst = i;
     }
-    pool[0] = a;
+    pool[worst] = a;
 }
 
 fn looseShaft(g: *Game) void {
     const aimed = g.hero.shotAimed;
     const from = g.hero.nockWorld();
     const locked: ?rl.Vector3 = if (aimed) null else if (activeLock(g)) |li| foeLockPoint(g, li) else null;
-    const target = locked orelse if (aimed) camAimPoint(g) else forwardAimPoint(g);
+    const target = locked orelse if (aimed) camAimPoint(g) else forwardPoint(g, heromod.BOW_AIM_REACH);
     const loft = locked != null or aimed;
     const speed: f32 = if (aimed) heromod.BOW_AIMED_SPEED else heromod.BOW_QUICK_SPEED;
     // The blow AND the shaft that carries it both come off what he actually drew (see `Hero.shotArrow`).
@@ -999,7 +1014,7 @@ fn releaseSpell(g: *Game) void {
 fn throwBolt(g: *Game) void {
     const locked: ?rl.Vector3 = if (activeLock(g)) |li| foeLockPoint(g, li) else null;
     // Loft only against a REAL point, `looseShaft`'s rule: it is solved against the distance to the target.
-    launchBolt(g, locked orelse forwardBoltPoint(g), locked != null);
+    launchBolt(g, locked orelse forwardPoint(g, heromod.BOLT_REACH), locked != null);
     sfx.play(.wand_cast);
     g.rumble.play(rumblemod.cast_throw);
     g.rig.addShake(SHAKE_CAST);
@@ -1067,12 +1082,6 @@ fn launchBolt(g: *Game, target: rl.Vector3, loft: bool) void {
     g.hero.castSparks(dir);
 }
 
-fn forwardBoltPoint(g: *const Game) rl.Vector3 {
-    const d = mathx.headingDir(g.hero.facing);
-    const from = v3(g.hero.pos.x, heroCenterY(g), g.hero.pos.z);
-    return mathx.addV(from, mathx.scaleV(d, heromod.BOLT_REACH));
-}
-
 fn camAimPoint(g: *const Game) rl.Vector3 {
     const ray = g.rig.centreRay();
     var reach = heromod.BOW_AIM_REACH;
@@ -1113,12 +1122,6 @@ fn rayFoeDist(g: *const Game, origin: rl.Vector3, dir: rl.Vector3) ?f32 {
     var ctx = RayCtx{ .origin = origin, .dir = dir };
     eachTarget(g, &ctx, RayCtx.visit);
     return ctx.best;
-}
-
-fn forwardAimPoint(g: *const Game) rl.Vector3 {
-    const d = mathx.headingDir(g.hero.facing);
-    const from = v3(g.hero.pos.x, heroCenterY(g), g.hero.pos.z);
-    return mathx.addV(from, mathx.scaleV(d, heromod.BOW_AIM_REACH));
 }
 
 fn stepShafts(g: *Game, dt: f32) void {

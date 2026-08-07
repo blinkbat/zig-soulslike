@@ -292,18 +292,9 @@ pub fn launchArrow(from: rl.Vector3, target: rl.Vector3) Arrow {
     return a;
 }
 
-pub fn launchClump(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: combat.Hit) Arrow {
-    var a = launchAt(from, target, speed, .clump, true);
-    a.blow = blow;
-    return a;
-}
-
-pub fn launchVenom(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: combat.Hit) Arrow {
-    var a = launchAt(from, target, speed, .venom, true);
-    a.blow = blow;
-    return a;
-}
-
+/// EVERYTHING ELSE THAT FLIES GOES THROUGH HERE, kind and all. `launchClump` and `launchVenom` sat beside it
+/// as byte-identical bodies with `.clump` and `.venom` written into them, which is two more launchers to keep
+/// in step for a tag their one caller already knows.
 pub fn launchShaft(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: combat.Hit, loft: bool, shot: Shot) Arrow {
     var a = launchAt(from, target, speed, shot, loft);
     a.blow = blow;
@@ -1411,7 +1402,7 @@ test "a shot that is aimed at a standing hero HITS him, at every range and eithe
         const aim = v3(0, heroY, range);
         for ([_]f32{ 1.4, 2.1, 0.4 }) |fromY| {
             var shaft = launchArrow(v3(0, fromY, 0), aim);
-            var clump = launchClump(v3(0, fromY, 0), aim, 11.0, .{ .dmg = 7 });
+            var clump = launchShaft(v3(0, fromY, 0), aim, 11.0, .{ .dmg = 7 }, true, .clump);
             var i: u32 = 0;
             while (i < 600 and !shaft.stuck) : (i += 1) stepArrow(&shaft, hero, heroY, 0, false, &.{}, dt);
             i = 0;
@@ -1450,7 +1441,7 @@ test "a FLAT launch adds no loft, so a reticle-aimed shaft goes where the reticl
     try std.testing.expectApproxEqAbs(@as(f32, 40), mathx.lenXZ(flat.vel), 1e-4);
     try std.testing.expectApproxEqAbs(mathx.lenXZ(flat.vel), mathx.lenXZ(lofted.vel), 1e-4);
     try std.testing.expectEqual(ARROW_HIT.dmg, launchArrow(from, far).blow.dmg);
-    try std.testing.expectEqual(@as(f32, 9), launchClump(from, far, 11.0, .{ .dmg = 9 }).blow.dmg);
+    try std.testing.expectEqual(@as(f32, 9), launchShaft(from, far, 11.0, .{ .dmg = 9 }, true, .clump).blow.dmg);
     // A FIRE SHAFT FLIES LIKE A PLAIN ONE — it is the same arrow with a burning head, so only the drawing and the damage differ.
     const pitched = launchShaft(from, far, 40.0, .{}, true, .firearrow);
     try std.testing.expectApproxEqAbs(lofted.vel.y, pitched.vel.y, 1e-5);
@@ -1461,7 +1452,7 @@ test "the CLUMP LOBS and the shaft does not — the arc is the slinger's tell" {
     const dt: f32 = 1.0 / 60.0;
     const aim = v3(0, 1.0, 14.0);
     var shaft = launchArrow(v3(0, 1.4, 0), aim);
-    var clump = launchClump(v3(0, 1.4, 0), aim, 11.0, .{ .dmg = 7 });
+    var clump = launchShaft(v3(0, 1.4, 0), aim, 11.0, .{ .dmg = 7 }, true, .clump);
     var peakShaft: f32 = 0;
     var peakClump: f32 = 0;
     var i: u32 = 0;

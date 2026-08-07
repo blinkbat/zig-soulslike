@@ -1018,16 +1018,9 @@ pub const Hero = struct {
         self.speed = 0;
         self.speedS = 0;
         self.moving = 0;
-        self.attacking = false;
-        self.rolling = false;
-        self.drinking = false;
-        self.casting = false;
-        self.queued = null;
+        self.dropActions();
         self.sprinting = false;
-        self.guarding = false;
-        self.guardB = 0;
-        self.parrying = false;
-        self.dropAim();
+        self.guardB = 0; // a SNAP, not the stagger's ease: he is somewhere else now
         self.stun = .none;
         self.hurtFlash = 0;
         self.makeWhole(); // the same restoration a respawn makes
@@ -1897,20 +1890,28 @@ pub const Hero = struct {
         self.hurtFlash = mathx.maxF(0, self.hurtFlash - dt * 2.6);
     }
 
-    fn enterStun(self: *Hero, kind: combat.StunKind) void {
-        self.attacking = false; // the reaction drops whatever he was committed to
+    /// EVERYTHING HE WAS COMMITTED TO, DROPPED — and NOTHING IS REFUNDED: the draught's charge, the cast's FP
+    /// and the parry's stamina were all paid at the press, so a stagger through any of them is a thing you
+    /// bought and did not get. The input buffer goes with them, or the reaction ends by firing whatever he
+    /// pressed on his way into it.
+    ///
+    /// ONE LIST, because four copies of it is four places to forget one from — and `respawn` had already
+    /// forgotten three of them (`attacking`, `rolling` and `queued`). NOT `guardB` and NOT `sprinting`: the
+    /// stance blend must EASE down through a stagger (the lag law) and only a teleport may snap it, and the
+    /// sprint is a level `game.zig` re-derives every frame rather than a latch anybody holds.
+    fn dropActions(self: *Hero) void {
+        self.attacking = false;
         self.rolling = false;
-        // …the draught included, AND THE CHARGE IS ALREADY GONE.
         self.drinking = false;
-        // …and the cast, whose FP is already gone for the same reason. A stagger through the sweep is a
-        // spell you paid for and did not get, exactly as it is a flask you paid for and did not drink.
         self.casting = false;
         self.guarding = false;
-        // …and the shield's window, whose stamina is already gone for the cast's reason. A catch he was one
-        // frame short of is a catch he does not get.
         self.parrying = false;
         self.dropAim();
         self.queued = null;
+    }
+
+    fn enterStun(self: *Hero, kind: combat.StunKind) void {
+        self.dropActions(); // the reaction drops whatever he was committed to
         self.stun = kind;
         self.stunT = 0;
         self.speed = 0;
@@ -1919,15 +1920,8 @@ pub const Hero = struct {
         self.startXfade();
     }
     fn enterDeath(self: *Hero) void {
-        self.attacking = false;
-        self.rolling = false;
-        self.drinking = false;
-        self.casting = false;
-        self.guarding = false;
-        self.parrying = false;
-        self.dropAim();
+        self.dropActions();
         self.stun = .none;
-        self.queued = null;
         self.dead = true;
         self.deathT = 0;
         self.speed = 0;
@@ -1961,15 +1955,11 @@ pub const Hero = struct {
         self.stun = .none;
         self.hurtFlash = 0;
         self.makeWhole();
-        self.drinking = false;
-        self.casting = false;
+        self.dropActions();
         self.stamRefused = 0; // a respawn must not inherit the last life's refusal flash
         self.fpRefused = 0;
         self.sprinting = false;
-        self.guarding = false;
-        self.guardB = 0;
-        self.parrying = false;
-        self.dropAim();
+        self.guardB = 0; // …and the boards go down at once, as they do at a grace
         self.blockT = mathx.LONG_AGO;
         self.pos = self.spawnPos;
         self.facing = self.spawnFacing;

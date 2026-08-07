@@ -154,7 +154,7 @@ const HEM_WOBBLE: f32 = 6.0;
 
 const PARTS = 48;
 
-// The rig. Fifteen joints and not one of them a leg.
+// The rig. Seventeen joints — nine of body and arms, eight of hem — and not one of them a leg.
 const N = 17;
 const ROOT = 0;
 const TORSO = 1;
@@ -385,6 +385,11 @@ pub const Shade = struct {
         foe.tickParticles(&self.fx, dt, self.pos.y);
 
         var act: Act = .none;
+        // WHERE THE WISP LEAVES FROM IS READ AFTER THE POSE, not at the release: `reach` snaps from the wind's
+        // 0.30 to 1.0 on this exact frame, which swings the shoulder through 94 degrees and lengthens the whole
+        // limb — so `wispWorld()` taken here answers with the hands still furled at the chest, a metre behind
+        // where the frame that draws it shows them.
+        var hurling = false;
         const was = self.pos;
         const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
 
@@ -430,7 +435,7 @@ pub const Shade = struct {
                         self.reach = 1.0;
                         self.leash.noteCombat();
                         sfx.world(.shade_wisp, self.pos);
-                        act = .{ .hurl = self.wispWorld() };
+                        hurling = true;
                     }
                     self.reach = mathx.approach(self.reach, 0.55, dt * 4.0);
                 } else {
@@ -494,6 +499,7 @@ pub const Shade = struct {
         // frame the tatters pin at full swing for most of a second after the thing has stopped moving.
         self.trailHem(if (self.airborne()) self.pos else was, dt);
         self.pose();
+        if (hurling) act = .{ .hurl = self.wispWorld() }; // …off the hands the frame actually DRAWS
         self.tryHit(blade); // the hero's blade AFTER the machine, so a kill sets justDied for THIS frame
         return act;
     }

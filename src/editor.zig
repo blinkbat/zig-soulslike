@@ -2197,7 +2197,7 @@ pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene,
     drawTopBar(ed, m, env, &ctx, sw);
     drawSide(ed, &ctx, sh);
     drawProperties(ed, m, env, &ctx, sw, sh);
-    drawMinimap(ed, m, &ctx, sw, sh);
+    drawMinimap(ed, m, env, &ctx, sw, sh);
     drawStatus(ed, m, env, &ctx, sw, sh);
     if (overlaid) ctx.setLive(true);
     if (ed.modal != .none) {
@@ -2741,7 +2741,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     }
 }
 
-fn drawMinimap(ed: *Editor, m: *const wf.Map, ctx: *ui.Ctx, sw: i32, sh: i32) void {
+fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ctx, sw: i32, sh: i32) void {
     const x0 = sw - PROP_W - MINI_W - 8;
     const y0 = sh - STATUS_H - MINI_W - 8;
     const r = ui.rect(x0, y0, MINI_W, MINI_W);
@@ -2772,7 +2772,10 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, ctx: *ui.Ctx, sw: i32, sh: i32) vo
             cx += run;
         }
     }
-    if (m.anyHeight()) {
+    // `env.heightAny` IS `m.anyHeight()`, cached where the lattice is uploaded from. Asked of the map it is a
+    // 224x224 = 50 KB scan that does NOT early-exit on a flat world — twice a frame, for the whole time the
+    // editor is open, to answer a question `env` already has the answer to.
+    if (env.heightAny) {
         const RN: usize = 56;
         const rCellPx = inner / @as(f32, @floatFromInt(RN));
         const stride = wf.HEIGHT_N / RN;
@@ -2870,7 +2873,7 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
     var buf: [200]u8 = undefined;
     const g = ed.groundAt() orelse mathx.zero3;
     var hbuf: [24]u8 = undefined;
-    const hs: [:0]const u8 = if (m.anyHeight())
+    const hs: [:0]const u8 = if (env.heightAny)
         (std.fmt.bufPrintZ(&hbuf, ",{d:.1}m", .{g.y - envmod.groundY()}) catch "")
     else
         "";

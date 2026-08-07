@@ -285,6 +285,10 @@ pub const Env = struct {
         self.stat_draws = 0;
         self.stat_cells = 0;
         self.stowed = false;
+        // …and the water flags, which are BOOLS: raw heap bytes are illegal behaviour to read, not merely a
+        // wrong answer, and `uploadWater` is the only other thing that ever writes them.
+        self.waterAny = false;
+        self.waterHalf = 0;
         @memset(&self.sgrid_start, 0);
         self.tileBuilt = [_]bool{false} ** NTILES;
         self.tileRad = [_]f32{0} ** NTILES;
@@ -706,69 +710,87 @@ pub const Env = struct {
         return out;
     }
 
-    /// The solids that could touch a circle of radius `r` about `p`, written into `out`.
-    pub fn nearSolids(self: *const Env, p: rl.Vector3, r: f32, out: []collision.Solid) []const collision.Solid {
-        var n: usize = 0;
-        const lo = cellCoord(p.x - r);
-        const hi = cellCoord(p.x + r);
-        const zlo = cellCoord(p.z - r);
-        const zhi = cellCoord(p.z + r);
-        var cz = zlo;
-        while (cz <= zhi) : (cz += 1) {
-            var cx = lo;
-            while (cx <= hi) : (cx += 1) {
+    /// EVERY SOLID IN THE CELLS AN XZ BOX TOUCHES. `visit` returns false to stop the walk. ONE copy of the
+    /// four-deep loop and of the `start[c] .. start[c + 1]` bound: `nearSolids`, `sees` and `blockedNear` each
+    /// carried it out longhand, which is three places to get the CSR arithmetic or the cell clamp wrong.
+    /// A solid whose footprint spans two visited cells is simply handed over twice.
+    fn eachSolid(
+        self: *const Env,
+        x0w: f32,
+        z0w: f32,
+        x1w: f32,
+        z1w: f32,
+        ctx: anytype,
+        comptime visit: fn (@TypeOf(ctx), collision.Solid) bool,
+    ) void {
+        const x0 = cellCoord(x0w);
+        const x1 = cellCoord(x1w);
+        const z0 = cellCoord(z0w);
+        const z1 = cellCoord(z1w);
+        var cz = z0;
+        while (cz <= z1) : (cz += 1) {
+            var cx = x0;
+            while (cx <= x1) : (cx += 1) {
                 const c = cz * GRID_N + cx;
                 var k = self.sgrid_start[c];
                 while (k < self.sgrid_start[c + 1]) : (k += 1) {
-                    if (n >= out.len) return out[0..n]; // MAX_NEAR is sized well past the densest cell
-                    out[n] = self.solid_buf[self.sgrid_items[k]];
-                    n += 1;
+                    if (!visit(ctx, self.solid_buf[self.sgrid_items[k]])) return;
                 }
             }
         }
-        return out[0..n];
+    }
+
+    /// The solids that could touch a circle of radius `r` about `p`, written into `out`.
+    pub fn nearSolids(self: *const Env, p: rl.Vector3, r: f32, out: []collision.Solid) []const collision.Solid {
+        const Take = struct {
+            out: []collision.Solid,
+            n: usize = 0,
+            fn one(c: *@This(), s: collision.Solid) bool {
+                if (c.n >= c.out.len) return false; // MAX_NEAR is sized well past the densest cell
+                c.out[c.n] = s;
+                c.n += 1;
+                return true;
+            }
+        };
+        var take = Take{ .out = out };
+        self.eachSolid(p.x - r, p.z - r, p.x + r, p.z + r, &take, Take.one);
+        return out[0..take.n];
     }
 
     /// CAN A LOOK FROM `from` REACH `to`? Walked over the prop grid's own cells rather than through
     /// `nearSolids`, because that copies into a fixed buffer and TRUNCATES at `MAX_NEAR` — over a
     /// twenty-metre sight line through a wood it would quietly drop the wall it was asked about and
-    /// answer "yes". Cells are visited by bounding box and a solid in two of them is simply tested twice.
+    /// answer "yes".
     pub fn sees(self: *const Env, from: rl.Vector3, to: rl.Vector3) bool {
-        const x0 = cellCoord(@min(from.x, to.x));
-        const x1 = cellCoord(@max(from.x, to.x));
-        const z0 = cellCoord(@min(from.z, to.z));
-        const z1 = cellCoord(@max(from.z, to.z));
-        var cz = z0;
-        while (cz <= z1) : (cz += 1) {
-            var cx = x0;
-            while (cx <= x1) : (cx += 1) {
-                const c = cz * GRID_N + cx;
-                var k = self.sgrid_start[c];
-                while (k < self.sgrid_start[c + 1]) : (k += 1) {
-                    if (collision.blocksSight(from, to, self.solid_buf[self.sgrid_items[k]])) return false;
-                }
+        const Look = struct {
+            a: rl.Vector3,
+            b: rl.Vector3,
+            clear: bool = true,
+            fn one(c: *@This(), s: collision.Solid) bool {
+                if (!collision.blocksSight(c.a, c.b, s)) return true;
+                c.clear = false;
+                return false;
             }
-        }
-        return true;
+        };
+        var look = Look{ .a = from, .b = to };
+        self.eachSolid(@min(from.x, to.x), @min(from.z, to.z), @max(from.x, to.x), @max(from.z, to.z), &look, Look.one);
+        return look.clear;
     }
 
     pub fn blockedNear(self: *const Env, p: rl.Vector3, margin: f32, r: f32) bool {
-        const x0 = cellCoord(p.x - r);
-        const x1 = cellCoord(p.x + r);
-        const z0 = cellCoord(p.z - r);
-        const z1 = cellCoord(p.z + r);
-        var cz = z0;
-        while (cz <= z1) : (cz += 1) {
-            var cx = x0;
-            while (cx <= x1) : (cx += 1) {
-                const c = cz * GRID_N + cx;
-                var k = self.sgrid_start[c];
-                while (k < self.sgrid_start[c + 1]) : (k += 1) {
-                    if (collision.blocksPoint(p, margin, self.solid_buf[self.sgrid_items[k]])) return true;
-                }
+        const Probe = struct {
+            at: rl.Vector3,
+            margin: f32,
+            hit: bool = false,
+            fn one(c: *@This(), s: collision.Solid) bool {
+                if (!collision.blocksPoint(c.at, c.margin, s)) return true;
+                c.hit = true;
+                return false;
             }
-        }
-        return false;
+        };
+        var probe = Probe{ .at = p, .margin = margin };
+        self.eachSolid(p.x - r, p.z - r, p.x + r, p.z + r, &probe, Probe.one);
+        return probe.hit;
     }
 
     pub fn resolveActor(self: *const Env, p: rl.Vector3, r: f32) rl.Vector3 {

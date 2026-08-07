@@ -185,6 +185,8 @@ const DEATH_DUR = 1.7; // a slow, weighty topple — a giant falls hard (and sad
 /// RUNES the one-eyed ogre is worth: fifteen toads.
 pub const RUNES: u32 = 900;
 const DISS_DUR = 1.1; // dissipation into grace-gold motes (ER-consistent with frog/archer)
+/// …and the cloud, sized to the mass going out in it: four metres of ogre sheds a far wider one than a man.
+const DISSOLVE = foe.Dissolve{ .rate = 70.0, .spread = 1.0, .rise = 0.70 };
 
 const HERO_REACH = foe.HERO_REACH; // hero footprint added to the strip on both axes
 const SLAM_LEN = 1.05; // crush strip length ahead of the seat (pre-scale).
@@ -294,7 +296,6 @@ const BRACE_SINK = 0.011 * H;
 const FX_MAX = 56;
 const DUST = foe.DUST; // kicked-up dust — the SHARED one (see foe.zig: it was two copies)
 const BLOOD = rgba(84, 20, 16, 235); // dark ichor spray on a landed blow — his OWN (the toad's is
-const MOTE = foe.MOTE; // death dissipation — the shared grace-gold every corpse goes out in
 
 // The SHARED particle shape + integrator + draw (foe.zig); only the bursts below are the ogre's.
 const Particle = foe.Particle;
@@ -401,7 +402,7 @@ pub const Ogre = struct {
     fade: f32 = 0,
     gone: bool = false,
 
-    fx: [FX_MAX]Particle = [_]Particle{.{}} ** FX_MAX,
+    parts: [FX_MAX]Particle = [_]Particle{.{}} ** FX_MAX,
     fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
@@ -588,11 +589,7 @@ pub const Ogre = struct {
             },
             .dead => {
                 self.easeChannelsNeutral(dt); // arms/carry settle as the body goes over
-                if (self.t >= DEATH_DUR) {
-                    self.fade = mathx.smoothstep(DEATH_DUR, DEATH_DUR + DISS_DUR, self.t);
-                    self.emitDissolve(dt);
-                    if (self.t >= DEATH_DUR + DISS_DUR) self.gone = true;
-                }
+                foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE);
             },
         }
         self.jolt = mathx.maxF(0, self.jolt - dt * 7.0); // the footfall catch releases fast
@@ -1134,10 +1131,10 @@ pub const Ogre = struct {
     }
     // The pool plumbing is the shared one (foe.zig) — these just name the ogre's own ring.
     fn emit(self: *Ogre, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        foe.emitParticle(&self.fx, &self.fxHead, p, vel, life, r0, r1, col, grav);
+        foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
     }
     fn updateFx(self: *Ogre, dt: f32) void {
-        foe.tickParticles(&self.fx, dt, self.pos.y); // dust settles on the ground HE is standing on
+        foe.tickParticles(&self.parts, dt, self.pos.y); // dust settles on the ground HE is standing on
     }
     fn dustBurst(self: *Ogre, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
         var i: i32 = 0;
@@ -1190,22 +1187,8 @@ pub const Ogre = struct {
             self.emit(at, vel, self.fxRng.range(0.3, 0.55), self.fxRng.range(0.04, 0.08) * self.scale, 0.01, BLOOD, 7.5);
         }
     }
-    fn emitDissolve(self: *Ogre, dt: f32) void {
-        self.fxAccum += 70.0 * (1.0 - 0.6 * self.fade) * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
-            const a = self.fxRng.angle();
-            const rr = self.fxRng.range(0.1, 1.0) * self.scale * (1.0 - 0.6 * self.fade);
-            const p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + self.fxRng.range(0.05, 0.7) * self.scale, self.pos.z + mathx.sinf(a) * rr);
-            if (self.fxRng.float() < 0.75) {
-                self.emit(p, v3(self.fxRng.signed() * 0.3, self.fxRng.range(0.5, 1.5), self.fxRng.signed() * 0.3), self.fxRng.range(0.6, 1.1), self.fxRng.range(0.04, 0.09) * self.scale, 0.004, MOTE, -0.7);
-            } else {
-                self.emit(p, v3(self.fxRng.signed() * 0.4, self.fxRng.range(0.1, 0.5), self.fxRng.signed() * 0.4), self.fxRng.range(0.35, 0.7), self.fxRng.range(0.06, 0.13) * self.scale, 0.012, DUST, 2.0);
-            }
-        }
-    }
     pub fn drawFx(self: *const Ogre) void {
-        foe.drawParticles(&self.fx);
+        foe.drawParticles(&self.parts);
     }
 
     pub fn draw(self: *const Ogre, model: *const Model) void {

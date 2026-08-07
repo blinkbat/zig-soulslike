@@ -178,6 +178,8 @@ const TURN_RATE = 5.2; // rad/s — quicker than the ogre, slower than the hero
 const WALK_SPEED = heromod.WALK_SPEED;
 const DEATH_DUR = 1.0; // yelp and fold
 const DISS_DUR = 0.85;
+/// …and the cloud, thin and close: the smallest body on the field, and up to 72 of them can be dying at once.
+const DISSOLVE = foe.Dissolve{ .rate = 26.0, .spread = 0.42, .rise = 0.55 };
 const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 8.0;
 
@@ -358,7 +360,8 @@ pub const Kobold = struct {
     speedS: f32 = 0,
 
     parts: [NPART]foe.Particle = [_]foe.Particle{.{}} ** NPART,
-    head: usize = 0,
+    fxHead: usize = 0,
+    fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
 
     xf: [N]rl.Matrix = undefined,
@@ -583,13 +586,7 @@ pub const Kobold = struct {
             },
             .stunlight => if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enter(.idle),
             .stunheavy => if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enter(.idle),
-            .dead => {
-                if (self.t >= DEATH_DUR) {
-                    self.fade = mathx.smoothstep(DEATH_DUR, DEATH_DUR + DISS_DUR, self.t);
-                    self.emitMotes(dt);
-                    if (self.t >= DEATH_DUR + DISS_DUR) self.gone = true;
-                }
-            },
+            .dead => foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE),
         }
 
         const gaitSpeed: f32 = if (movedDist > 0) WALK_SPEED * spec(self.role).speed else 0;
@@ -700,7 +697,7 @@ pub const Kobold = struct {
         const r = self.fxRng.range(0.16, 0.42);
         foe.emitParticle(
             &self.parts,
-            &self.head,
+            &self.fxHead,
             v3(head.x + mathx.cosf(a) * r, head.y + self.fxRng.range(-0.2, 0.2), head.z + mathx.sinf(a) * r),
             mathx.scaleV(mathx.dirXZ(v3(head.x + mathx.cosf(a) * r, 0, head.z + mathx.sinf(a) * r), head), 0.9),
             0.42,
@@ -725,7 +722,7 @@ pub const Kobold = struct {
             const sp = self.fxRng.range(1.4, 3.2);
             foe.emitParticle(
                 &self.parts,
-                &self.head,
+                &self.fxHead,
                 v3(at.x + self.fxRng.signed() * 0.05, at.y + self.fxRng.signed() * 0.05, at.z + self.fxRng.signed() * 0.05),
                 v3(tangent.x * sp, self.fxRng.range(0.2, 1.1), tangent.z * sp),
                 self.fxRng.range(0.30, 0.62),
@@ -746,7 +743,7 @@ pub const Kobold = struct {
             const spread = self.fxRng.range(0.6, 2.4);
             foe.emitParticle(
                 &self.parts,
-                &self.head,
+                &self.fxHead,
                 v3(at.x + mathx.cosf(a) * 0.06, at.y + self.fxRng.signed() * 0.06, at.z + mathx.sinf(a) * 0.06),
                 v3(
                     away.x * self.fxRng.range(0.8, 3.4) + mathx.cosf(a) * spread,
@@ -771,7 +768,7 @@ pub const Kobold = struct {
             const out = self.fxRng.range(1.2, 4.6);
             foe.emitParticle(
                 &self.parts,
-                &self.head,
+                &self.fxHead,
                 v3(at.x + mathx.cosf(a) * 0.08, at.y + self.fxRng.range(0, 0.12), at.z + mathx.sinf(a) * 0.08),
                 v3(mathx.cosf(a) * out, self.fxRng.range(1.2, 4.0), mathx.sinf(a) * out),
                 self.fxRng.range(0.34, 0.78),
@@ -795,7 +792,7 @@ pub const Kobold = struct {
             const r = self.fxRng.range(0.05, spread);
             foe.emitParticle(
                 &self.parts,
-                &self.head,
+                &self.fxHead,
                 v3(at.x + mathx.cosf(a) * r, at.y + self.fxRng.signed() * spread * 0.7, at.z + mathx.sinf(a) * r),
                 v3(mathx.cosf(a) * self.fxRng.range(0.3, 1.1), self.fxRng.range(0.7, 2.0), mathx.sinf(a) * self.fxRng.range(0.3, 1.1)),
                 self.fxRng.range(0.55, 1.05),
@@ -807,16 +804,11 @@ pub const Kobold = struct {
         }
     }
 
-    fn emitMotes(self: *Kobold, dt: f32) void {
-        if (self.fxRng.float() > dt * 26.0) return;
-        const c = self.centerWorld();
-        foe.emitParticle(&self.parts, &self.head, v3(c.x + self.fxRng.signed() * 0.3, c.y + self.fxRng.signed() * 0.3, c.z + self.fxRng.signed() * 0.3), v3(self.fxRng.signed() * 0.2, self.fxRng.range(0.4, 0.9), self.fxRng.signed() * 0.2), 0.9, 0.035, 0.008, foe.MOTE, -0.25);
-    }
 
     fn emitBlood(self: *Kobold, at: rl.Vector3, dir: rl.Vector3) void {
         var i: u32 = 0;
         while (i < 7) : (i += 1) {
-            foe.emitParticle(&self.parts, &self.head, at, v3(dir.x * self.fxRng.range(1.0, 2.6) + self.fxRng.signed() * 0.7, self.fxRng.range(0.7, 2.1), dir.z * self.fxRng.range(1.0, 2.6) + self.fxRng.signed() * 0.7), self.fxRng.range(0.28, 0.5), 0.036, 0.012, BLOOD, 7.0);
+            foe.emitParticle(&self.parts, &self.fxHead, at, v3(dir.x * self.fxRng.range(1.0, 2.6) + self.fxRng.signed() * 0.7, self.fxRng.range(0.7, 2.1), dir.z * self.fxRng.range(1.0, 2.6) + self.fxRng.signed() * 0.7), self.fxRng.range(0.28, 0.5), 0.036, 0.012, BLOOD, 7.0);
         }
     }
 

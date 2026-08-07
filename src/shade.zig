@@ -292,7 +292,7 @@ pub const Shade = struct {
     justDied: bool = false,
     gone: bool = false,
 
-    fx: [PARTS]foe.Particle = [_]foe.Particle{.{}} ** PARTS,
+    parts: [PARTS]foe.Particle = [_]foe.Particle{.{}} ** PARTS,
     fxHead: usize = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
 
@@ -364,7 +364,7 @@ pub const Shade = struct {
 
     pub fn update(self: *Shade, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) Act {
         if (self.gone) {
-            foe.tickParticles(&self.fx, dt, self.pos.y);
+            foe.tickParticles(&self.parts, dt, self.pos.y);
             return .none;
         }
         self.justDied = false; // one-frame flag, reset at the TOP (the foe contract's own rule)
@@ -382,7 +382,7 @@ pub const Shade = struct {
         self.spookLeft = mathx.maxF(0, self.spookLeft - dt);
         self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
-        foe.tickParticles(&self.fx, dt, self.pos.y);
+        foe.tickParticles(&self.parts, dt, self.pos.y);
 
         var act: Act = .none;
         // WHERE THE WISP LEAVES FROM IS READ AFTER THE POSE, not at the release: `reach` snaps from the wind's
@@ -484,6 +484,10 @@ pub const Shade = struct {
                 self.easeRest(dt);
                 if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enter(.idle);
             },
+            // THE ONE BODY THAT DOES NOT DISSIPATE (`foe.dissipate`, which every other creature's death runs
+            // through). It has no collapse to be still after and nothing to shed: it does not fall over, it
+            // comes APART — `thin` from the first frame, and motes off a thing made of nothing is a substance
+            // it never had.
             .dead => {
                 self.reach = mathx.approach(self.reach, -0.2, dt * 2.0);
                 self.thin = mathx.smoothstep(0, DEATH_DUR + DISS_DUR, self.t);
@@ -646,7 +650,7 @@ pub const Shade = struct {
     // ── FX ────────────────────────────────────────────────────────────────────────────────────────────
 
     fn emit(self: *Shade, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        foe.emitParticle(&self.fx, &self.fxHead, p, vel, life, r0, r1, col, grav);
+        foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
     }
 
     /// THE TEAR A BLINK LEAVES, at both ends of it. Motes that fall INWARD (negative gravity is up here, so
@@ -733,7 +737,7 @@ pub const Shade = struct {
     }
 
     pub fn drawFx(self: *const Shade) void {
-        foe.drawParticles(&self.fx);
+        foe.drawParticles(&self.parts);
     }
     pub fn draw(self: *const Shade, model: *const Model) void {
         model.draw(self);

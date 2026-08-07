@@ -102,13 +102,14 @@ const KNEE_STRAIGHTEN = 104.0; // + straightens the knee out of its tuck
 const FLASH_DUR = foe.FLASH_DUR; // how long a landed hit flares the toad blood-red (gfx hitFlash) + the debug wires
 const SHOVE_DECAY = 7.0; // 1/s — the hit shove bleeds off fast (a jolt off the blow, not a slide)
 const DISS_DUR = 0.95; // seconds the corpse takes to dissipate into motes once the collapse is done
+/// …and the cloud it goes out in: a low, close body, so it comes off nearer the ground than a man's does.
+const DISSOLVE = foe.Dissolve{ .rate = 44.0, .spread = 0.55, .rise = 0.35 };
 
 const FX_MAX = 40; // per-toad budget (ring buffer — the oldest particle is overwritten)
 const DUST = foe.DUST; // kicked-up bog dust — the SHARED one (see foe.zig: it was two copies)
 const EMBER = rgba(252, 196, 84, 150); // amber charge glow — the lamp-eye colour, gathering (kept sheer so glints layer, not blob)
 const SPIT = rgba(176, 190, 150, 140); // pale sickly drool / spit fling
 const BLOOD = rgba(112, 22, 16, 235); // hit spray — dark oxblood, kin to the maw (unlit droplets).
-const MOTE = foe.MOTE; // death dissipation — the shared grace-gold every corpse goes out in
 
 const HP_MAX = 46.0;
 const POISE_MAX = 8.0; // BELOW the hero's light poise damage (10): every landed light
@@ -222,7 +223,7 @@ pub const Frog = struct {
     gone: bool = false, // corpse removed from play (dissipation finished) — skipped everywhere
 
     // telegraph FX (see the FX tuning block): a ring buffer of particles, a rate-based emit carry so trickles are frame-rate independent, and a seeded RNG for the scatter.
-    fx: [FX_MAX]Particle = [_]Particle{.{}} ** FX_MAX,
+    parts: [FX_MAX]Particle = [_]Particle{.{}} ** FX_MAX,
     fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
@@ -444,11 +445,7 @@ pub const Frog = struct {
             },
             .dead => {
                 self.resolveDeath();
-                if (self.t >= DEATH_DUR) {
-                    self.fade = mathx.smoothstep(DEATH_DUR, DEATH_DUR + DISS_DUR, self.t);
-                    self.emitDissolve(dt);
-                    if (self.t >= DEATH_DUR + DISS_DUR) self.gone = true;
-                }
+                foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE);
             },
         }
 
@@ -774,21 +771,6 @@ pub const Frog = struct {
         }
     }
 
-    fn emitDissolve(self: *Frog, dt: f32) void {
-        self.fxAccum += 44.0 * (1.0 - 0.6 * self.fade) * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
-            const a = self.fxRng.angle();
-            const rr = self.fxRng.range(0.05, 0.55) * self.scale * (1.0 - 0.6 * self.fade);
-            const p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + self.fxRng.range(0.03, 0.35) * self.scale, self.pos.z + mathx.sinf(a) * rr);
-            if (self.fxRng.float() < 0.75) {
-                self.emit(p, v3(self.fxRng.signed() * 0.25, self.fxRng.range(0.5, 1.3), self.fxRng.signed() * 0.25), self.fxRng.range(0.5, 1.0), self.fxRng.range(0.025, 0.06) * self.scale, 0.003, MOTE, -0.7);
-            } else {
-                self.emit(p, v3(self.fxRng.signed() * 0.3, self.fxRng.range(0.1, 0.4), self.fxRng.signed() * 0.3), self.fxRng.range(0.3, 0.6), self.fxRng.range(0.04, 0.09) * self.scale, 0.01, DUST, 2.0);
-            }
-        }
-    }
-
     // Unit facing vector on the ground (matches startHop's atan2(x, z) convention).
     fn fdir(self: *const Frog) rl.Vector3 {
         return mathx.headingDir(self.facing);
@@ -805,10 +787,10 @@ pub const Frog = struct {
     }
     // The pool plumbing is the shared one (foe.zig) — these just name the toad's own ring.
     fn emit(self: *Frog, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        foe.emitParticle(&self.fx, &self.fxHead, p, vel, life, r0, r1, col, grav);
+        foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
     }
     fn updateFx(self: *Frog, dt: f32) void {
-        foe.tickParticles(&self.fx, dt, self.pos.y); // dust settles on the ground IT is standing on
+        foe.tickParticles(&self.parts, dt, self.pos.y); // dust settles on the ground IT is standing on
     }
     // A radial fan of dust from `c` (the lunge slam / a hop's smaller landing puff).
     fn dustBurst(self: *Frog, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
@@ -859,7 +841,7 @@ pub const Frog = struct {
         }
     }
     pub fn drawFx(self: *const Frog) void {
-        foe.drawParticles(&self.fx);
+        foe.drawParticles(&self.parts);
     }
 
     pub fn pose(self: *Frog) void {

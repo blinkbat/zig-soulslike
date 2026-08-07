@@ -203,6 +203,16 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 - **Build vitals with `combat.Vitals.initFoe`**, never `init` — that is the slow foe regen schedule.
 - **`justDied` is a ONE-FRAME flag.** Reset at the TOP of `update`, set in `enterDeath`, apply the
   blade at the END. Applying it externally without the reset latches a nonstop rumble/shake.
+- **EVERY BODY GOES OUT THE SAME WAY** (`foe.dissipate` + `foe.Dissolve`) — past its own `DEATH_DUR` the fall
+  is over and it dissipates over `DISS_DUR` into grace motes rising and flakes of itself falling. The two
+  DURATIONS are per-creature (a giant topples slower than a toad) and so is the `Dissolve` (rate, spread,
+  rise, and the flake's colour — bone, chitin or hide); the SHAPE is not. As a private `emitDissolve` per
+  creature it had drifted four ways over one effect at four sizes, and the ARCHER's had gone missing
+  entirely — the one skeleton that shoots faded out into nothing while its twin shed bone. It reads FIELDS
+  only (`fade`/`scale`/`pos`/`parts`/`fxHead`/`fxAccum`/`fxRng`, one spelling each), which is what lets it
+  live in `foe.zig` at all: a creature's own emitter is private and nothing outside its file can call one.
+  **The SHADE is the one exemption and it is written at its own `.dead`:** no collapse to be still after and
+  nothing to shed, so it thins from the first frame instead.
 - **A CORPSE IS NOT A COLLIDER.** `alive()` stays true through the collapse and dissipation, so every
   collision site asks `foe.corporeal` (`alive() and !dying()`) instead.
 - **Group + register.** Wrap instances in a `Group` exposing `anyDied`/`totalHits`/`aliveCount`; its
@@ -404,6 +414,38 @@ chips you for it; a parry is a COMMITTED WINDOW that pays `STAM_PARRY` once and 
 - **A CATCH IS A BLOCK'S RECOIL PLUS SPARKS** — `noteParry` stamps `blockT`, the same channel, because the man
   moves and the shield holds either way. The sparks separate on HUE (hot amber on pale tan) and their FAN
   outruns their forward throw, or they sit superimposed on the boards they came off.
+
+### In combat, and the quick bar
+
+**THERE IS ONE FLAG THAT SAYS A FIGHT IS ON** (`game.inCombat`), and nothing about the HERO is in it: swinging
+at air in an empty field is not combat and standing still in front of a roused ogre is. A creature counts if
+its `foe.Leash` is ROUSED — it has been hit, or it is coming for him wherever he stands — or if he is inside
+the range it notices him at, **and that range is the group's own `FoeGroup.aggro`**, never a radius invented
+for this: a toad's world is 11 m and an archer's is 24, and one flat figure is wrong at both ends. Sight is
+deliberately not asked; it is a real question (`env.sees`) but it flickers as he rounds a corner, and a state
+that decides whether a menu works may not blink. A CORPSE DOES NOT COUNT (`foe.corporeal`) — a fight is over
+when the thing swinging at you stops, not when its motes have finished going up. **…and a BOSS ZONE, the day
+one exists**: `worldfmt` has no boss record yet, and when it does its region test is the third term in that
+one function and nothing else changes. `foeFights` is the per-creature term, split out so the rule has a test.
+
+**IN COMBAT A CONSUMABLE COMES OFF THE QUICK BAR OR IT DOES NOT COME AT ALL** (owner's rule). The character
+book's inventory Use is refused while a fight is on and the panel says where to go instead; out of combat that
+page is the convenient way and the bar may sit empty. What is on the bar is therefore a decision made BEFORE
+the fight, which is the whole point of it.
+
+- **THE BAR IS THE CROSS'S DOWN SLOT** (`combat.Quick`, ten entries — ER's pouch). It is not a second system
+  beside the flask: **the two flasks are simply its first two entries**, so a fresh game plays exactly as it
+  did. `Flasks` still owns their CHARGES, because those come back at a grace where everything else comes out
+  of the bag (`game.quickLeft` and `book.quickTally` are that split, each on its own side of the `View`).
+- **CYCLE STAMPS `flasks.sel`, it does not cycle it** (`hero.cycleQuick` → `syncFlask`). The draught, the HUD
+  tint and the charge count all keep reading the one field they always read, and only the bar decides what
+  is up. Nothing calls `Flasks.cycle` any more.
+- **A REMOVAL LEAVES ITS HOLE.** The bar is stepped by muscle memory mid-fight; a list that compacts under
+  you every time you drop something is one you cannot learn. `add` takes the first free slot.
+- **THE EQUIPMENT PAGE'S QUICK PICKER TOGGLES** where every other slot chooses — it is the only one holding
+  more than one thing, so `equipped` is bar MEMBERSHIP and it is what draws the ticks. Its rows are FILTERED
+  (`item.quickable`: a flask or something with an effect), so a row's ordinal is not the enum's and
+  `pickIndexOf` has to count it out the same way `candidates` builds it.
 
 ### Resistances — PoE2's four
 
@@ -659,9 +701,12 @@ The mesh is TILED (`TCHUNK`), with normals from the FIELD so two tiles agree at 
   them. If `drawn` approaches `props`, a culler has been defeated. Caps are init-time PANICS
   (`MAX_PROPS`/`MAX_SOLIDS`/`MAX_SOLID_REFS`) — a silently dropped collider is a walk-through wall.
 - **THE OCCLUDER FADE** (`env.markOccluders`): a prop between lens and hero goes thin, keyed to how much
-  of him it hides. Three rules keep it from reading as a switch: the geometry sets a TARGET and time walks
-  you there (`OCCL_IN` 0.16 s, `OCCL_OUT` 0.34 s — out is slower); it stops being in the way over a BAND
-  not a plane (`OCCL_DEPTH_BAND`); and `OCCL_MAX` counts what is in flight, both directions.
+  of him it hides. Three rules keep it from reading as a switch: the geometry sets a TARGET and an EASED
+  ramp walks you there (`OCCL_IN` 0.16 s, `OCCL_OUT` 0.34 s — out is slower, and `easeShape` takes the speed
+  off both ends, since a constant rate leaves solid and arrives at the floor with the same abruptness); it
+  stops being in the way over a BAND not a plane (`OCCL_DEPTH_BAND`); and `OCCL_MAX` counts what is in
+  flight, both directions. The shape is a pure function of where the value SITS, never of where a travel
+  began — `fadeTo` moves under it every frame the camera does, and an anchored ease restarts on each one.
 - **EVERYTHING THINS EXCEPT WHAT SAYS `solid`** — architecture, cliffs, the water sheet, the grace (its
   smoke draws down `drawVeils`, which carries no fade). The flag is that way round because as an opt-in
   `fades` every kind added afterwards opted out by silence, and boulders, statues, lanterns and saplings
@@ -676,8 +721,21 @@ The mesh is TILED (`TCHUNK`), with normals from the FIELD so two tiles agree at 
 - **COVERAGE OPENS THE GATE, DEPTH SCALES THE ANSWER** (`thinOf`). `OCCL_MIN` is a coverage figure and
   nothing else. Multiplied together before the threshold, a mass a metre in front of him was discounted
   under it and stayed solid at the one moment it was most in the way.
-- **A FULL LIST GIVES ITS SLOTS TO WHAT HIDES HIM MOST** (`wantFade`). First-come meant cell-walk order
-  decided, and a prop already easing back held its slot for the whole of `OCCL_OUT`.
+- **A THINNED OCCLUDER DRAWS LAST, AFTER EVERY OPAQUE THING, AND BACK TO FRONT** (`env.drawThinned`). It
+  draws with the depth MASK OFF, so it writes no depth — and left in cell order with the rest, the HERO came
+  afterwards and composited at FULL opacity straight over it. He went from hidden to solid on the one frame
+  the mask came off, and the ramp underneath only ever dressed the TREE against the terrain: an instant
+  reveal wearing a fade. Drawn last, the tree's alpha is what mattes HIM, so the reveal IS the ramp.
+- **AND IT BLENDS ONE LAYER PER PIXEL.** A trunk is not a sheet — buttress roots, boughs and the far side of
+  its own bole stack three or four surfaces along the ray, and blended one after another the alpha COMPOUNDS:
+  the number stops meaning what it says and the mass comes out banded where the layer count changes. So each
+  prop lays its own depth down first with the colour buffer held (`dst = 0·src + 1·dst`, rlgl having no
+  colour mask), and the pass after it draws under rlgl's LEQUAL, which only the NEAREST surface satisfies.
+- **A FULL LIST GIVES ITS SLOTS TO WHAT HIDES HIM MOST — TAKEN OFF SOMETHING STILL SOLID** (`wantFade`).
+  First-come meant cell-walk order decided. But nothing outside the list is ticked, so dropping an entry
+  that has already left solid either strands it thin or snaps it back; the victim is the least-thin ask
+  among those still AT solid, and with none of those the ask waits a frame instead. A tree a frame late in
+  getting out of the way is not something the eye can see; a tree jumping back to solid is.
 
 ## Triggers, folk and dialog
 

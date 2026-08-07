@@ -1,6 +1,7 @@
 const std = @import("std");
 const mathx = @import("mathx.zig");
 const stats = @import("stats.zig");
+const item = @import("item.zig");
 
 
 pub const StunKind = enum { none, light, heavy };
@@ -538,6 +539,108 @@ pub const Flasks = struct {
     pub fn refill(self: *Flasks) void {
         self.crimson = FLASK_CRIMSON;
         self.cerulean = FLASK_CERULEAN;
+    }
+};
+
+/// The flask kind an item IS, or null. `item.isFlask` is the same question one layer down, where it is a fact
+/// about the item and not about the pool its charges live in.
+pub fn flaskOf(k: item.Kind) ?FlaskKind {
+    return switch (k) {
+        .crimson_flask => .crimson,
+        .cerulean_flask => .cerulean,
+        else => null,
+    };
+}
+
+/// THE QUICK BAR — ER's pouch, on the cross's DOWN slot, and **in combat the only way to spend a
+/// consumable** (`game.inCombat` decides; the character book's own Use is refused while a fight is on).
+/// What is on it is therefore a decision made BEFORE the fight, which is the whole point of it. Out of
+/// combat you may use anything straight off the inventory page and never touch this.
+///
+/// THE FLASKS ARE JUST ITS FIRST TWO ENTRIES and are not special-cased anywhere but the spend: `Flasks` keeps
+/// their charges because those come back at a grace, where everything else comes out of the bag.
+pub const QUICK_SLOTS: usize = 10;
+
+pub const Quick = struct {
+    /// ORDERED, and a removal leaves its hole rather than compacting: the bar is cycled by muscle memory in
+    /// the middle of a fight, and a list that shuffles under you every time you drop something is one you
+    /// cannot learn. `add` takes the first free slot.
+    slots: [QUICK_SLOTS]?item.Kind = blk: {
+        var s = [_]?item.Kind{null} ** QUICK_SLOTS;
+        s[0] = .crimson_flask;
+        s[1] = .cerulean_flask;
+        break :blk s;
+    },
+    sel: usize = 0,
+
+    pub fn selected(self: *const Quick) ?item.Kind {
+        return self.slots[self.sel];
+    }
+    pub fn holds(self: *const Quick, k: item.Kind) bool {
+        for (self.slots) |s| {
+            if (s == k) return true;
+        }
+        return false;
+    }
+    pub fn filled(self: *const Quick) usize {
+        var n: usize = 0;
+        for (self.slots) |s| {
+            if (s != null) n += 1;
+        }
+        return n;
+    }
+    /// …into the first free slot. False = it is already on, or the bar is full.
+    pub fn add(self: *Quick, k: item.Kind) bool {
+        if (self.holds(k)) return false;
+        for (&self.slots, 0..) |*s, i| {
+            if (s.* != null) continue;
+            s.* = k;
+            if (self.slots[self.sel] == null) self.sel = i; // the bar was empty: land on what just arrived
+            return true;
+        }
+        return false;
+    }
+    pub fn remove(self: *Quick, k: item.Kind) bool {
+        for (&self.slots) |*s| {
+            if (s.* != k) continue;
+            s.* = null;
+            if (self.slots[self.sel] == null) self.settle();
+            return true;
+        }
+        return false;
+    }
+    /// The next occupied slot, wrapping. A bar with one thing on it stays on that thing.
+    pub fn cycle(self: *Quick) void {
+        for (1..QUICK_SLOTS + 1) |step| {
+            const i = (self.sel + step) % QUICK_SLOTS;
+            if (self.slots[i] == null) continue;
+            self.sel = i;
+            return;
+        }
+    }
+    /// DROP WHAT HE HAS RUN OUT OF, called once a frame (`game.stepWorld`). A row pointing at nothing is a
+    /// cycle step that does nothing and a HUD cell showing a thing he does not have.
+    ///
+    /// A FLASK AT ZERO STAYS ON. Its charges are not the bag's — they come back at a grace — so an empty one
+    /// is still the thing he is carrying, and taking it off the bar the moment he drank the last swallow
+    /// would mean re-loading the bar at every bonfire.
+    pub fn dropEmpty(self: *Quick, bag: *const item.Bag) void {
+        for (&self.slots) |*s| {
+            const k = s.* orelse continue;
+            if (flaskOf(k) != null) continue;
+            if (bag.count(k) == 0) s.* = null;
+        }
+        if (self.slots[self.sel] == null) self.settle();
+    }
+
+    /// Point `sel` at something real, for when what it was on has just been taken off.
+    fn settle(self: *Quick) void {
+        for (self.slots, 0..) |s, i| {
+            if (s == null) continue;
+            self.sel = i;
+            return;
+        }
+        self.sel = 0; // nothing left on it at all
     }
 };
 
@@ -1284,4 +1387,85 @@ test "the lockout switch is what decides whether an empty pool bites" {
     s.spend(STAM_MAX); // bone dry
     try std.testing.expectApproxEqAbs(@as(f32, 0), s.cur, 1e-4);
     try std.testing.expectEqual(!STAM_LOCKOUT, s.canAct());
+}
+
+test "THE QUICK BAR STARTS AS THE TWO FLASKS, so a fresh game plays exactly as it did" {
+    const q = Quick{};
+    try std.testing.expectEqual(@as(usize, 2), q.filled());
+    try std.testing.expectEqual(item.Kind.crimson_flask, q.selected().?);
+    try std.testing.expect(q.holds(.cerulean_flask));
+    // …and the two of them ARE flasks as far as anything downstream is concerned.
+    try std.testing.expectEqual(FlaskKind.crimson, flaskOf(.crimson_flask).?);
+    try std.testing.expectEqual(FlaskKind.cerulean, flaskOf(.cerulean_flask).?);
+    try std.testing.expectEqual(@as(?FlaskKind, null), flaskOf(.mushroom_jerky));
+}
+
+test "the bar cycles what is ON it and skips the holes a removal leaves" {
+    var q = Quick{};
+    try std.testing.expect(q.add(.mushroom_jerky)); // lands in slot 2
+    try std.testing.expect(!q.add(.mushroom_jerky)); // …and never twice: one thing is one row to cycle past
+    q.cycle();
+    try std.testing.expectEqual(item.Kind.cerulean_flask, q.selected().?);
+    q.cycle();
+    try std.testing.expectEqual(item.Kind.mushroom_jerky, q.selected().?);
+    q.cycle();
+    try std.testing.expectEqual(item.Kind.crimson_flask, q.selected().?); // wrapped, having skipped slots 3..9
+
+    // A REMOVAL LEAVES ITS HOLE — the bar is cycled by muscle memory and may not shuffle under a thumb.
+    try std.testing.expect(q.remove(.cerulean_flask));
+    try std.testing.expectEqual(item.Kind.crimson_flask, q.slots[0].?);
+    try std.testing.expectEqual(@as(?item.Kind, null), q.slots[1]);
+    try std.testing.expectEqual(item.Kind.mushroom_jerky, q.slots[2].?);
+    q.cycle();
+    try std.testing.expectEqual(item.Kind.mushroom_jerky, q.selected().?);
+}
+
+test "taking off what the bar was TURNED TO lands the selection on something real" {
+    var q = Quick{};
+    try std.testing.expect(q.remove(.crimson_flask)); // the one it was on
+    try std.testing.expectEqual(item.Kind.cerulean_flask, q.selected().?);
+    try std.testing.expect(q.remove(.cerulean_flask));
+    try std.testing.expectEqual(@as(?item.Kind, null), q.selected()); // an empty bar is empty, not stale
+}
+
+test "the bar is CAPPED, and a full one refuses rather than dropping what is on it" {
+    var q = Quick{};
+    var k: usize = 0;
+    while (q.filled() < QUICK_SLOTS) : (k += 1) {
+        q.slots[q.filled()] = .bloodgrass; // straight in: there are not ten quickable kinds to add
+    }
+    try std.testing.expectEqual(QUICK_SLOTS, q.filled());
+    try std.testing.expect(!q.add(.mushroom_jerky));
+    try std.testing.expectEqual(item.Kind.crimson_flask, q.selected().?); // and nothing was evicted for it
+}
+
+test "THE BAR SHEDS WHAT HE HAS RUN OUT OF, and never a flask" {
+    var bag = item.Bag{};
+    bag.add(.mushroom_jerky, 1);
+    var q = Quick{};
+    try std.testing.expect(q.add(.mushroom_jerky));
+    q.dropEmpty(&bag);
+    try std.testing.expect(q.holds(.mushroom_jerky)); // he still has one
+
+    _ = bag.take(.mushroom_jerky, 1);
+    q.dropEmpty(&bag);
+    try std.testing.expect(!q.holds(.mushroom_jerky)); // …and now he does not
+    // AN EMPTY FLASK STAYS ON. Its charges come back at a grace, so it is still what he is carrying —
+    // dropped here, the bar would have to be re-loaded at every bonfire.
+    try std.testing.expect(q.holds(.crimson_flask) and q.holds(.cerulean_flask));
+    try std.testing.expectEqual(@as(u16, 0), bag.count(.crimson_flask)); // and the bag has never held one
+}
+
+test "…and shedding the row it was TURNED TO lands the selection on something real" {
+    var bag = item.Bag{};
+    bag.add(.mushroom_jerky, 1);
+    var q = Quick{};
+    q.slots[0] = null; // a bar carrying nothing but the edible
+    q.slots[1] = null;
+    q.slots[2] = .mushroom_jerky;
+    q.sel = 2;
+    _ = bag.take(.mushroom_jerky, 1);
+    q.dropEmpty(&bag);
+    try std.testing.expectEqual(@as(?item.Kind, null), q.selected());
+    try std.testing.expectEqual(@as(usize, 0), q.filled());
 }

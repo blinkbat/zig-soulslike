@@ -102,6 +102,20 @@ pub fn usable(k: Kind) bool {
     return std.meta.activeTag(use(k)) != .none;
 }
 
+/// THE TWO THE FLASK SYSTEM OWNS. They sit on the quick bar like anything else, but their charges live in
+/// `combat.Flasks` and come back at a grace, so spending one never touches the bag. Named here rather than
+/// in `combat` because it is a fact about the ITEM; `combat.flaskOf` is the same question answered as a
+/// `FlaskKind`, and it cannot live here — `combat` imports this file and not the other way about.
+pub fn isFlask(k: Kind) bool {
+    return k == .crimson_flask or k == .cerulean_flask;
+}
+
+/// …and WHAT MAY GO ON THE QUICK BAR: a flask, or anything with an effect. There is no point carrying a
+/// kobold fang into a fight on the one bar you are allowed to reach during it.
+pub fn quickable(k: Kind) bool {
+    return isFlask(k) or usable(k);
+}
+
 /// The SHORT tag the map file writes, and the only name a hand-edited world has to get right.
 pub fn tag(k: Kind) []const u8 {
     return @tagName(k);

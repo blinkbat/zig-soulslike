@@ -37,6 +37,8 @@ const MAX_MARKED: usize = 512;
 
 /// The one wording for a full map, said by every path that can hit the cap.
 const FULL_MSG = "map is full — worldfmt.MAX_OPS reached";
+/// …and the same for the spawn table, which three paths fill (a stamp, a paste and a duplicate).
+const FOES_FULL_MSG = "foe cap reached";
 
 /// How far east a Duplicate lands from its original, so the copy isn't hidden under it.
 const DUPE_OFFSET: f32 = 6.0;
@@ -49,7 +51,7 @@ const NEW_ZONE_DENSITY: f32 = 0.7;
 /// How near the cursor has to be to a foe spawn to count as ON it.
 const FOE_PICK_R: f32 = 1.6;
 
-// File scope: a Map measures ~386 KB, so 24 of them is ~9.1 MB — BSS, not inside Game and not on an allocator this codebase avoids.
+// File scope: a Map measures ~477 KB, so 24 of them is ~11.2 MB — BSS, not inside Game and not on an allocator this codebase avoids.
 var undoRing: [UNDO_CAP]wf.Map = undefined;
 var undoBase: usize = 0; // ring slot of the OLDEST live snapshot
 var undoN: usize = 0; // how many snapshots are live
@@ -405,6 +407,17 @@ const JUKE_H: i32 = 520;
 const JUKE_LIST_W: i32 = 300;
 const JUKE_LIST_H: i32 = JUKE_H - 150;
 
+/// DIALOG CHROME, one set for every modal: the inset from a box edge to its content, a footer button's height,
+/// and the drop from the box's own BOTTOM edge to that footer row. Each dialog used to re-spell its own height
+/// at the footer (`box.y + 170 - 44`), which is a number kept in lockstep with the one passed to `beginModal`
+/// three lines above — `ModalBox` carries `h`, so read it.
+const DLG_PAD: i32 = 24;
+const DLG_BTN_H: i32 = 28;
+const DLG_FOOT: i32 = 44;
+/// The chest dialog's own row pitch, and where its first row sits under the header.
+const LOOT_ROW_H: i32 = 26;
+const LOOT_TOP: i32 = 84;
+
 pub const Pending = enum { none, new, open, leave };
 
 /// An axis-aligned XZ rect with its corners sorted.
@@ -499,8 +512,15 @@ pub const Editor = struct {
     sel: ?usize = null, // selected op
     selFoe: ?usize = null, // selected foe spawn (Units layer)
     dirty: bool = false,
+    /// BUMPED WHENEVER THE MAP IS REPLACED WHOLESALE — entering, and every Open / New / Reload. What the game
+    /// watches to know its copy of the tables the editor cannot author (the folk) has gone stale, without
+    /// re-deriving them every frame.
+    mapGen: u32 = 0,
 
     kindScroll: i32 = 0,
+
+    /// The cursor's ground point for this frame — see `groundAt`. Null until a frame has resolved one.
+    cursor: ?rl.Vector3 = null,
 
     dragging: bool = false,
     dragFrom: rl.Vector3 = mathx.zero3,
@@ -523,6 +543,10 @@ pub const Editor = struct {
     marquee: bool = false, // Shift+drag box in progress
     /// What the cursor is over THIS FRAME while Select is armed (see `Hover`).
     hover: Hover = .none,
+    /// …and whether `hover` was actually RESOLVED this frame, as opposed to left at `.none` because nothing
+    /// asked. A pick reuses a live one: the op-layer sweep is a ray against every prop in the world, and a
+    /// click used to pay for three of them (the hover, the marked-set test, and the take).
+    hoverLive: bool = false,
     moving: bool = false, // dragging the marked set bodily
     moveFrom: rl.Vector3 = mathx.zero3,
 
@@ -541,6 +565,9 @@ pub const Editor = struct {
     pathLen: usize = 0,
     hotFrame: bool = false, // chrome owned the pointer LAST frame (gates world clicks)
     editing: bool = false, // mid-gesture on a properties widget (one undo step per gesture)
+    /// How many INSTANCES the selected generator owns, and how many of them got a marker before `MAX_MARKERS`
+    /// ran out. COUNTED BY `draw3D` AND READ BY `drawProperties`, in that order — the 3D pass runs inside
+    /// `drawScene`, the panel after it in `drawOverlay`. Swap the two and the panel reports the previous frame.
     selOwned: usize = 0,
     selMarked: usize = 0,
 
@@ -603,11 +630,15 @@ pub const Editor = struct {
         self.panning = false;
         self.dragging = false;
         self.painting = false;
+        self.wetStroke = false;
+        self.heightStroke = false;
+        self.hover = .none;
+        self.hoverLive = false;
         self.wipe = .{};
         self.menuOpen = false;
         self.marquee = false;
         self.moving = false;
-        self.nMarked = 0;
+        self.dropSelection(); // last session's indices mean nothing against whatever map is loaded now
         self.modal = .none;
         self.pending = .none;
         self.rmbDown = false;
@@ -617,6 +648,7 @@ pub const Editor = struct {
         // The path is set ONCE and then belongs to Open / Save-As.
         if (self.pathLen == 0) self.setPath(wf.START_MAP);
         undoReset();
+        self.mapGen +%= 1;
         self.say("Editor ready");
     }
 
@@ -668,7 +700,12 @@ pub const Editor = struct {
     }
 
     /// THE ONE WAY TO CHANGE LAYER.
+    ///
+    /// AND IT REFUSES MID-GESTURE, the armament law: a shape drag reads the layer at its RELEASE
+    /// (`commitDrag`), so Tab between the press and the release committed a Props drag as a Decor op — or
+    /// dropped it silently on a layer `commitDrag` returns from. What starts is what lands.
     pub fn setLayer(self: *Editor, l: Layer) void {
+        if (self.dragging or self.painting or self.wipe.on) return;
         // THE MARKED SET DOES NOT CROSS LAYERS.
         if (self.layer != l) self.nMarked = 0;
         self.layer = l;
@@ -694,7 +731,7 @@ pub const Editor = struct {
         self.cam.position.y = @max(self.cam.position.y, self.groundHeight(self.cam.position.x, self.cam.position.z) + 0.6);
     }
 
-    fn orbitCam(self: *Editor) void {
+    fn orbitCam(self: *Editor, ctrl: bool) void {
         // RIGHT-DRAG ROTATES, RIGHT-CLICK is the context menu / deselect.
         if (rl.isMouseButtonPressed(.right)) {
             self.rmbDown = true;
@@ -715,14 +752,17 @@ pub const Editor = struct {
             self.dist = mathx.clampF(self.dist * (1.0 - wheel * 0.12), 2.0, 420.0);
         }
 
-        // WASD and the ARROWS pan, same as dragging.
-        const step = self.dist * 0.02;
-        const gf = self.groundForward();
-        const r = self.right();
-        if (rl.isKeyDown(.w) or rl.isKeyDown(.up)) self.focus = mathx.addV(self.focus, mathx.scaleV(gf, step));
-        if (rl.isKeyDown(.s) or rl.isKeyDown(.down)) self.focus = mathx.addV(self.focus, mathx.scaleV(gf, -step));
-        if (rl.isKeyDown(.d) or rl.isKeyDown(.right)) self.focus = mathx.addV(self.focus, mathx.scaleV(r, step));
-        if (rl.isKeyDown(.a) or rl.isKeyDown(.left)) self.focus = mathx.addV(self.focus, mathx.scaleV(r, -step));
+        // WASD and the ARROWS pan, same as dragging — but NOT under Ctrl, whose shortcuts share those very
+        // letters, so Ctrl+S drove the camera backwards while it saved and Ctrl+A slid it left.
+        if (!ctrl) {
+            const step = self.dist * 0.02;
+            const gf = self.groundForward();
+            const r = self.right();
+            if (rl.isKeyDown(.w) or rl.isKeyDown(.up)) self.focus = mathx.addV(self.focus, mathx.scaleV(gf, step));
+            if (rl.isKeyDown(.s) or rl.isKeyDown(.down)) self.focus = mathx.addV(self.focus, mathx.scaleV(gf, -step));
+            if (rl.isKeyDown(.d) or rl.isKeyDown(.right)) self.focus = mathx.addV(self.focus, mathx.scaleV(r, step));
+            if (rl.isKeyDown(.a) or rl.isKeyDown(.left)) self.focus = mathx.addV(self.focus, mathx.scaleV(r, -step));
+        }
         self.focusToGround();
         self.applyCam();
     }
@@ -740,9 +780,23 @@ pub const Editor = struct {
         self.focus.z += self.panGrab.z - now.z;
         self.focusToGround();
         self.applyCam();
+        self.resolveCursor(); // the eye moved mid-frame; everything downstream wants the point under it NOW
     }
 
+    /// Where the cursor meets the ground, as resolved for THIS frame. `env.rayGround` is a MARCH over the height
+    /// lattice — on a sculpted map a ray that never lands walks `4 × GROUND_HALF` at half a lattice step, some
+    /// 1600 bilinear samples — and five sites ask this question a frame (the mouse, the gizmos, the status
+    /// readout, the sculpt panel, a pick). The pointer cannot move inside a frame, so they share one answer.
     pub fn groundAt(self: *const Editor) ?rl.Vector3 {
+        return self.cursor;
+    }
+
+    /// …and the trace itself, run ONCE wherever the camera has just been settled.
+    fn resolveCursor(self: *Editor) void {
+        self.cursor = self.traceGround();
+    }
+
+    fn traceGround(self: *const Editor) ?rl.Vector3 {
         const ray = rl.getScreenToWorldRay(rl.getMousePosition(), self.cam);
         if (ray.direction.y > -1e-4) return null;
         var p = blk: {
@@ -794,7 +848,7 @@ pub const Editor = struct {
         }
         undoAt += 1;
         m.* = undoSlot(undoN - undoAt).*;
-        self.clampSel();
+        self.dropSelection();
         return true;
     }
 
@@ -802,11 +856,13 @@ pub const Editor = struct {
         if (undoAt <= 1) return false;
         undoAt -= 1;
         m.* = undoSlot(undoN - undoAt).*;
-        self.clampSel();
+        self.dropSelection();
         return true;
     }
 
-    fn clampSel(self: *Editor) void {
+    /// DROP EVERY SELECTION. Called wherever indices shift under it — a removal, an undo, a redo — because an
+    /// op or spawn index that has moved names a different thing, not a stale one.
+    fn dropSelection(self: *Editor) void {
         self.sel = null;
         self.selFoe = null;
         self.nMarked = 0;
@@ -815,6 +871,7 @@ pub const Editor = struct {
     /// Re-derive the camera after the shot harness pokes the orbit state directly.
     pub fn applyCamForShot(self: *Editor) void {
         self.applyCam();
+        self.resolveCursor(); // the harness never runs `update`, and the overlay it draws reads this
     }
 
     /// `focusOn` for the shot harness, which has no click to trigger it.
@@ -874,6 +931,7 @@ pub const Editor = struct {
         self.focus = mathx.ground(cx, cz);
         self.focusToGround();
         self.applyCam();
+        self.resolveCursor(); // …and the frame's cached cursor point belongs to the camera it was traced under
     }
 
 
@@ -893,6 +951,8 @@ pub const Editor = struct {
             self.marquee = false;
             self.moving = false;
             self.hover = .none;
+            self.hoverLive = false;
+            self.resolveCursor(); // the camera is frozen under a modal, but `draw3D` still rides this point
             if (self.wipe.on) self.wipeEnd();
             // The jukebox is the one modal with a keyboard of its own (step + replay).
             if (self.modal == .jukebox) self.jukeKeys();
@@ -904,7 +964,10 @@ pub const Editor = struct {
             }
             return .none;
         }
-        self.orbitCam();
+        const ctrl = rl.isKeyDown(.left_control) or rl.isKeyDown(.right_control);
+        const shift = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
+        self.orbitCam(ctrl);
+        self.resolveCursor(); // the camera is settled: trace the cursor ONCE for the whole frame
         // THE EARS ARE WHERE THE EDITOR'S CAMERA IS.
         sfx.listen(self.cam.position, self.right());
         // Serviced here rather than in commitPending, because leaving is the game loop's call.
@@ -913,8 +976,6 @@ pub const Editor = struct {
             return .leave;
         }
 
-        const ctrl = rl.isKeyDown(.left_control) or rl.isKeyDown(.right_control);
-        const shift = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
         if (ctrl and rl.isKeyPressed(.s)) {
             if (shift) {
                 self.nameLen = 0;
@@ -1010,7 +1071,8 @@ pub const Editor = struct {
             if (self.nMarked > 0) self.deleteMarked(m, env) else self.deleteSel(m, env);
         }
 
-        // ALWAYS called.
+        // Every frame the shortcuts above did not claim. Those `return`s cost the mouse one frame, which a live
+        // gesture picks up on the next — the commit is keyed off the button being UP, not off the release edge.
         self.worldMouse(m, env, dt);
         return .none;
     }
@@ -1041,8 +1103,12 @@ pub const Editor = struct {
         self.editing = false;
     }
 
-    /// For the paths about to READ the world (leaving, a playtest, a save) rather than draw one more frame of it.
+    /// For the paths about to READ the materialized world (leaving, a playtest) rather than draw one more frame
+    /// of it. NOT a save: the MAP is written the moment a widget moves, and only `env` lags behind it.
+    /// A LIVE STROKE COUNTS: Esc and F5 are read before the mouse is, so a sculpt still under the button had
+    /// only its MESH rebuilt — leaving without settling it plays a world whose props stand at the old heights.
     pub fn flushRebuild(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
+        if (self.painting) self.endPaint(m, env);
         if (self.rebuildDue) self.rebuild(m, env);
     }
 
@@ -1061,7 +1127,8 @@ pub const Editor = struct {
         const ground = self.groundAt();
 
         // the thing itself (see drawOverlay).
-        self.hover = if (self.selecting and !blocked) self.hoverInLayer(m, env) else .none;
+        self.hoverLive = self.selecting and !blocked;
+        self.hover = if (self.hoverLive) self.hoverInLayer(m, env) else .none;
 
         if (self.wipe.on and !rl.isMouseButtonDown(.left)) self.wipeEnd();
         if (self.painting and !rl.isMouseButtonDown(.left)) self.endPaint(m, env);
@@ -1250,8 +1317,10 @@ pub const Editor = struct {
         return .{ .ed = self, .m = m };
     }
 
-    fn overMarked(self: *Editor, m: *const wf.Map, env: *envmod.Env) bool {
+    fn overMarked(self: *Editor, m: *wf.Map, env: *envmod.Env) bool {
         if (self.layer == .units) {
+            // ANY marked spawn in reach, not the nearest one: a marked set is dragged as a body, so brushing the
+            // edge of it takes hold even where an unmarked neighbour happens to sit a hair closer.
             const g = self.groundAt() orelse return false;
             for (self.marked[0..self.nMarked]) |i| {
                 if (i >= m.nfoes) continue;
@@ -1261,9 +1330,17 @@ pub const Editor = struct {
             return false;
         }
         // The LAYER filter goes through the sweep, then membership is tested on the winner alone.
-        const ray = self.cursorRay();
-        const pi = env.pickIf(ray.position, ray.direction, self.filter(m), OpFilter.inLayer) orelse return false;
-        return self.isMarked(env.props[pi].op);
+        return switch (self.underCursor(m, env)) {
+            .prop => |pi| self.isMarked(env.props[pi].op),
+            .foe, .none => false,
+        };
+    }
+
+    /// WHAT THE CURSOR IS OVER, off this frame's hover where there is one. Nothing `hoverInLayer` reads can move
+    /// inside a frame, so a second sweep of every prop in the world would only reach the same answer.
+    fn underCursor(self: *Editor, m: *wf.Map, env: *envmod.Env) Hover {
+        if (self.hoverLive) return self.hover;
+        return self.hoverInLayer(m, env);
     }
 
     /// Pick something in the ACTIVE layer only.
@@ -1292,7 +1369,7 @@ pub const Editor = struct {
 
     /// TAKE what the cursor is over.
     fn pickInLayer(self: *Editor, m: *wf.Map, env: *envmod.Env) bool {
-        switch (self.hoverInLayer(m, env)) {
+        switch (self.underCursor(m, env)) {
             .prop => |pi| {
                 const o = env.props[pi].op;
                 self.sel = o;
@@ -1373,8 +1450,12 @@ pub const Editor = struct {
 
         var o = wf.defaults(.at);
         o.kind = self.kindForLayer();
-        if (self.layer == .decor) {
-            switch (@as(DecorBrush, @enumFromInt(self.brushIdx()))) {
+        // EXHAUSTIVE OVER THE LAYER, not an if/else whose tail means "props": the brush index is cast straight
+        // to that layer's own brush enum, so a seventh layer falling through here is an out-of-range cast.
+        switch (self.layer) {
+            .ground, .units => return, // neither reaches commitDrag — see worldMouse
+            .cover => unreachable, // handled and returned above
+            .decor => switch (@as(DecorBrush, @enumFromInt(self.brushIdx()))) {
                 .single => {
                     o.x = a.x;
                     o.z = a.z;
@@ -1388,9 +1469,8 @@ pub const Editor = struct {
                     o = self.discOp(m, a, span);
                 },
                 .erase => return,
-            }
-        } else if (self.layer == .interact) {
-            switch (@as(InteractBrush, @enumFromInt(self.brushIdx()))) {
+            },
+            .interact => switch (@as(InteractBrush, @enumFromInt(self.brushIdx()))) {
                 .stamp => {
                     o.x = a.x;
                     o.z = a.z;
@@ -1398,9 +1478,8 @@ pub const Editor = struct {
                     o.scale = 1;
                 },
                 .erase => return,
-            }
-        } else {
-            switch (@as(PropBrush, @enumFromInt(self.brushIdx()))) {
+            },
+            .props => switch (@as(PropBrush, @enumFromInt(self.brushIdx()))) {
                 .stamp => {
                     o.x = a.x;
                     o.z = a.z;
@@ -1443,7 +1522,7 @@ pub const Editor = struct {
                     o.seed = self.freshSeed(m);
                 },
                 .erase => return,
-            }
+            },
         }
 
         if (m.nops >= wf.MAX_OPS) {
@@ -1510,7 +1589,7 @@ pub const Editor = struct {
     fn addFoe(self: *Editor, m: *wf.Map, at: rl.Vector3) void {
         if (self.erasing()) return;
         if (m.nfoes >= wf.MAX_FOES) {
-            self.say("foe cap reached");
+            self.say(FOES_FULL_MSG);
             return;
         }
         self.bank(m);
@@ -1563,8 +1642,7 @@ pub const Editor = struct {
                     self.bankStroke(m);
                     std.mem.copyForwards(wf.Foe, m.foes[i - 1 .. m.nfoes - 1], m.foes[i..m.nfoes]);
                     m.nfoes -= 1;
-                    self.selFoe = null;
-                    self.clampSel(); // the spawn indices just shifted — see there
+                    self.dropSelection(); // the spawn indices just shifted — see there
                     self.sayFmt("-foe ({d:.0}, {d:.0})", .{ f.x, f.z });
                     return true;
                 }
@@ -1622,8 +1700,7 @@ pub const Editor = struct {
             self.bank(m);
             std.mem.copyForwards(wf.Foe, m.foes[f .. m.nfoes - 1], m.foes[f + 1 .. m.nfoes]);
             m.nfoes -= 1;
-            self.selFoe = null;
-            self.clampSel(); // the spawn indices just shifted — see there
+            self.dropSelection(); // the spawn indices just shifted — see there
             self.say("-foe");
             return;
         }
@@ -1639,7 +1716,7 @@ pub const Editor = struct {
 
     fn removeOp(self: *Editor, m: *wf.Map, env: *envmod.Env, s: usize) void {
         m.remove(s);
-        self.clampSel();
+        self.dropSelection();
         self.rebuild(m, env);
         self.sayFmt("deleted op #{d}", .{s});
     }
@@ -1780,9 +1857,20 @@ pub const Editor = struct {
             if (onUnits) self.say("clipboard holds ops — paste them on an object layer") else self.say("clipboard holds spawns — paste them on Units");
             return;
         }
+        // The CAP CHECK comes before the snapshot, like every other adding path: a paste into a full map that
+        // banked first cost an undo step and a dirty flag for nothing.
+        if (nOps > 0 and m.nops >= wf.MAX_OPS) {
+            self.say(FULL_MSG);
+            return;
+        }
+        if (nFoes > 0 and m.nfoes >= wf.MAX_FOES) {
+            self.say(FOES_FULL_MSG);
+            return;
+        }
         self.bank(m);
         self.nMarked = 0;
         var seed = self.freshSeed(m);
+        var landed: usize = 0;
         for (clipOps[0..nOps]) |src| {
             var o = src;
             translateOp(&o, at.x, at.z);
@@ -1796,10 +1884,11 @@ pub const Editor = struct {
                 break;
             };
             self.mark(self.sinkBeforeCover(m, idx));
+            landed += 1;
         }
         for (clipFoes[0..nFoes]) |src| {
             if (m.nfoes >= wf.MAX_FOES) {
-                self.say("foe cap reached");
+                self.say(FOES_FULL_MSG);
                 break;
             }
             var f = src;
@@ -1808,9 +1897,16 @@ pub const Editor = struct {
             m.foes[m.nfoes] = f;
             self.mark(m.nfoes);
             m.nfoes += 1;
+            landed += 1;
         }
         self.rebuild(m, env);
-        self.sayFmt("pasted {d}", .{nOps + nFoes});
+        // WHAT LANDED, not what the clipboard held — a paste that hit a cap partway said it pasted all of it.
+        const want = nOps + nFoes;
+        if (landed == want) {
+            self.sayFmt("pasted {d}", .{landed});
+        } else if (landed > 0) {
+            self.sayFmt("pasted {d} of {d} — cap reached", .{ landed, want });
+        }
     }
 
     fn deleteMarked(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
@@ -1831,9 +1927,7 @@ pub const Editor = struct {
             }
             removed += 1;
         }
-        self.nMarked = 0;
-        self.sel = null;
-        self.selFoe = null;
+        self.dropSelection();
         self.rebuild(m, env);
         self.sayFmt("deleted {d}", .{removed});
     }
@@ -1877,11 +1971,10 @@ pub const Editor = struct {
     }
 
     fn adopt(self: *Editor, m: *const wf.Map, env: *envmod.Env, isDirty: bool) void {
-        self.sel = null;
-        self.selFoe = null;
-        self.nMarked = 0;
+        self.dropSelection();
         self.dirty = isDirty;
         undoReset();
+        self.mapGen +%= 1;
         self.rebuild(m, env);
     }
 
@@ -1959,6 +2052,11 @@ pub const Editor = struct {
         if (self.sel) |s| {
             if (s < m.nops and self.layer.opLayer()) {
                 drawOpGizmo(&m.ops[s], y);
+                // MEASURED AND LEFT: a whole-list walk (~17k props, ~1 MB touched) every frame something is
+                // selected, to find the few hundred one op owns. `materialize` appends in op order, so the run
+                // IS contiguous and a binary search would find it in ~14 steps — but that buys a gizmo pass a
+                // dependence on the placer's append order, and the frame already walks this list for the pick,
+                // the occluders and both draw passes. Cache it instead if `selOwned` ever needs to be free.
                 for (env.props[0..env.nprops]) |pr| {
                     if (pr.op != s) continue;
                     self.selOwned += 1;
@@ -2187,6 +2285,9 @@ const SLIDER_DROP: i32 = 20;
 
 pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, t: f32) void {
     ed.world = env;
+    // Once for the chrome, against the camera as it ended up — a pan or a minimap fly this frame moved it after
+    // `update` traced. The panel, the status readout and a paste then share this one answer.
+    ed.resolveCursor();
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
     var ctx = ui.Ctx.begin(t);
@@ -2260,12 +2361,14 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
     }
     if (row.verb(.reload, "Reload — throw away every unsaved change and re-read the file")) {
         var line: usize = 0;
-        wf.load(ed.curPath(), m, &line) catch |e| {
+        // A failed load leaves `m` untouched (`wf.load` parses into scratch first) — and must not take the rest
+        // of the bar with it, or the frame it fails on has no undo, no Objects and no chrome to claim the pointer.
+        if (wf.load(ed.curPath(), m, &line)) |_| {
+            ed.adopt(m, env, false);
+            ed.say("reloaded from disk");
+        } else |e| {
             ed.sayFmt("RELOAD FAILED: {s} (line {d})", .{ @errorName(e), line });
-            return;
-        };
-        ed.adopt(m, env, false);
-        ed.say("reloaded from disk");
+        }
     }
     row.gap(10);
     if (row.verb(.undo, "Undo (Ctrl+Z)")) {
@@ -2381,6 +2484,29 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
     }
 }
 
+
+/// ONE WORLD-COORDINATE ROW: the stepper plus the row advance, so `COORD_LIM` is written once instead of at
+/// fourteen call sites that all have to agree.
+fn coordRow(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, label: [:0]const u8, v: *f32, step: f32) bool {
+    defer y.* += ROW_H;
+    return ui.stepperF(ctx, x, y.*, w, label, v, step, -COORD_LIM, COORD_LIM);
+}
+
+/// A CENTRE — what `at`, `disc` and `ring` open with.
+fn centreRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op, step: f32) bool {
+    var ch = coordRow(ctx, x, y, w, "x", &o.x, step);
+    ch = coordRow(ctx, x, y, w, "z", &o.z, step) or ch;
+    return ch;
+}
+
+/// …and a SPAN — what `belt`, `ivy` and `line` open with.
+fn spanRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
+    var ch = coordRow(ctx, x, y, w, "x0", &o.x, 1);
+    ch = coordRow(ctx, x, y, w, "z0", &o.z, 1) or ch;
+    ch = coordRow(ctx, x, y, w, "x1", &o.x1, 1) or ch;
+    ch = coordRow(ctx, x, y, w, "z1", &o.z1, 1) or ch;
+    return ch;
+}
 
 fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32, sh: i32) void {
     const x0 = sw - PROP_W;
@@ -2596,10 +2722,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
 
     switch (o.op) {
         .at => {
-            changed = ui.stepperF(ctx, x, y, w, "x", &o.x, 0.5, -COORD_LIM, COORD_LIM) or changed;
-            y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "z", &o.z, 0.5, -COORD_LIM, COORD_LIM) or changed;
-            y += ROW_H;
+            changed = centreRows(ctx, x, &y, w, o, 0.5) or changed;
             changed = ui.stepperF(ctx, x, y, w, "yaw", &o.yaw, 5, -360, 720) or changed;
             y += ROW_H;
             changed = ui.stepperF(ctx, x, y, w, "scale", &o.scale, 0.05, 0.1, 4) or changed;
@@ -2610,14 +2733,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             y += ROW_H;
         },
         .belt, .ivy => {
-            changed = ui.stepperF(ctx, x, y, w, "x0", &o.x, 1, -COORD_LIM, COORD_LIM) or changed;
-            y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "z0", &o.z, 1, -COORD_LIM, COORD_LIM) or changed;
-            y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "x1", &o.x1, 1, -COORD_LIM, COORD_LIM) or changed;
-            y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "z1", &o.z1, 1, -COORD_LIM, COORD_LIM) or changed;
-            y += ROW_H;
+            changed = spanRows(ctx, x, &y, w, o) or changed;
             if (o.op == .belt) {
                 changed = ui.stepperI(ctx, x, y, w, "count", &o.n, 5, 0, COUNT_MAX) or changed;
                 y += ROW_H;
@@ -2627,10 +2743,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             }
         },
         .disc => {
-            changed = ui.stepperF(ctx, x, y, w, "x", &o.x, 1, -COORD_LIM, COORD_LIM) or changed;
-            y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "z", &o.z, 1, -COORD_LIM, COORD_LIM) or changed;
-            y += ROW_H;
+            changed = centreRows(ctx, x, &y, w, o, 1) or changed;
             changed = ui.stepperF(ctx, x, y, w, "inner", &o.r0, 0.5, 0, 200) or changed;
             y += ROW_H;
             changed = ui.stepperF(ctx, x, y, w, "outer", &o.r1, 0.5, 0, 200) or changed;
@@ -2641,10 +2754,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             y += ROW_H + SLIDER_DROP;
         },
         .ring => {
-            changed = ui.stepperF(ctx, x, y, w, "x", &o.x, 1, -COORD_LIM, COORD_LIM) or changed;
-            y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "z", &o.z, 1, -COORD_LIM, COORD_LIM) or changed;
-            y += ROW_H;
+            changed = centreRows(ctx, x, &y, w, o, 1) or changed;
             changed = ui.stepperF(ctx, x, y, w, "radius", &o.r0, 0.5, 0.5, 200) or changed;
             y += ROW_H;
             changed = ui.stepperI(ctx, x, y, w, "count", &o.n, 1, 2, RING_N_MAX) or changed;
@@ -2654,14 +2764,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             y += ROW_H;
         },
         .line => {
-            changed = ui.stepperF(ctx, x, y, w, "x0", &o.x, 1, -COORD_LIM, COORD_LIM) or changed;
-            y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "z0", &o.z, 1, -COORD_LIM, COORD_LIM) or changed;
-            y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "x1", &o.x1, 1, -COORD_LIM, COORD_LIM) or changed;
-            y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "z1", &o.z1, 1, -COORD_LIM, COORD_LIM) or changed;
-            y += ROW_H;
+            changed = spanRows(ctx, x, &y, w, o) or changed;
             changed = ui.stepperF(ctx, x, y, w, "step", &o.r0, 0.25, 0.5, 40) or changed;
             y += ROW_H;
             changed = ui.slider(ctx, x, y, w, "stands", &o.chance, 0, 1) or changed;
@@ -2681,7 +2784,9 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         y += ROW_H;
         changed = ui.stepperF(ctx, x, y, w, "scale hi", &o.sHi, 0.05, 0.1, 3) or changed;
         y += ROW_H;
-        if (o.sHi < o.sLo) o.sHi = o.sLo;
+        // Only once an edit has actually happened: unconditionally, merely SELECTING a hand-authored op with
+        // the band the wrong way round rewrote the map behind a clean dirty flag.
+        if (changed and o.sHi < o.sLo) o.sHi = o.sLo;
         changed = ui.stepperF(ctx, x, y, w, "lean max", &o.lean, 1, 0, LEAN_LIM) or changed;
         y += ROW_H;
         var sb: [40]u8 = undefined;
@@ -2751,37 +2856,15 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
     const py = y0 + 4;
     rl.drawRectangle(px, py, MINI_W - 8, MINI_W - 8, ui.col(18, 20, 14, 255));
 
-    const cellPx = inner / @as(f32, @floatFromInt(wf.SOIL_N));
-    for (0..wf.SOIL_N) |cz| {
-        const row = m.soil[cz * wf.SOIL_N ..][0..wf.SOIL_N];
-        var cx: usize = 0;
-        while (cx < wf.SOIL_N) {
-            const id = row[cx];
-            if (id == 0) {
-                cx += 1;
-                continue;
-            }
-            var run: usize = 1;
-            while (cx + run < wf.SOIL_N and row[cx + run] == id) run += 1;
-            rl.drawRectangleRec(.{
-                .x = @as(f32, @floatFromInt(px)) + @as(f32, @floatFromInt(cx)) * cellPx,
-                .y = @as(f32, @floatFromInt(py)) + @as(f32, @floatFromInt(cz)) * cellPx,
-                .width = @ceil(@as(f32, @floatFromInt(run)) * cellPx),
-                .height = @ceil(cellPx),
-            }, soilSwatch(@enumFromInt(id)));
-            cx += run;
-        }
-    }
+    blitField(m.soil[0..], wf.SOIL_N, px, py, inner, null);
     // `env.heightAny` IS `m.anyHeight()`, cached where the lattice is uploaded from. Asked of the map it is a
     // 224x224 = 50 KB scan that does NOT early-exit on a flat world — twice a frame, for the whole time the
     // editor is open, to answer a question `env` already has the answer to.
     if (env.heightAny) {
-        const RN: usize = 56;
-        const rCellPx = inner / @as(f32, @floatFromInt(RN));
-        const stride = wf.HEIGHT_N / RN;
-        for (0..RN) |cz| {
-            for (0..RN) |cx| {
-                const i = (cz * stride) * wf.HEIGHT_N + cx * stride;
+        const rCellPx = inner / @as(f32, @floatFromInt(RELIEF_N));
+        for (0..RELIEF_N) |cz| {
+            for (0..RELIEF_N) |cx| {
+                const i = (cz * RELIEF_STRIDE) * wf.HEIGHT_N + cx * RELIEF_STRIDE;
                 const h = wf.heightOf(m.height[i]);
                 if (@abs(h) < wf.HEIGHT_STEP) continue; // ground at the datum: leave the soil showing
                 // Saturating at ±12 m, which is a hill you would notice; past that it is just white.
@@ -2797,26 +2880,7 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
             }
         }
     }
-    const wCellPx = inner / @as(f32, @floatFromInt(wf.WATER_N));
-    for (0..wf.WATER_N) |cz| {
-        const row = m.water[cz * wf.WATER_N ..][0..wf.WATER_N];
-        var cx: usize = 0;
-        while (cx < wf.WATER_N) {
-            if (row[cx] == 0) {
-                cx += 1;
-                continue;
-            }
-            var run: usize = 1;
-            while (cx + run < wf.WATER_N and row[cx + run] != 0) run += 1;
-            rl.drawRectangleRec(.{
-                .x = @as(f32, @floatFromInt(px)) + @as(f32, @floatFromInt(cx)) * wCellPx,
-                .y = @as(f32, @floatFromInt(py)) + @as(f32, @floatFromInt(cz)) * wCellPx,
-                .width = @ceil(@as(f32, @floatFromInt(run)) * wCellPx),
-                .height = @ceil(wCellPx),
-            }, WATER_SWATCH);
-            cx += run;
-        }
-    }
+    blitField(m.water[0..], wf.WATER_N, px, py, inner, WATER_SWATCH);
 
     const toMini = struct {
         fn f(wx: f32, wz: f32, half: f32, ox: i32, oy: i32, span: f32) rl.Vector2 {
@@ -2827,31 +2891,86 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
         }
     }.f;
 
+    // OFF THE MAP IS OFF THE PANEL: a coordinate stepper reaches ±COORD_LIM and a marquee drag is unclamped,
+    // so a marker past ±half was drawn straight across the properties panel beside it.
+    const onMap = struct {
+        fn f(wx: f32, wz: f32, half: f32) bool {
+            return @abs(wx) <= half and @abs(wz) <= half;
+        }
+    }.f;
+
     for (m.ops[0..m.nops]) |*o| {
         if (o.op == .cover or o.op == .edge) continue;
+        if (!onMap(o.x, o.z, m.half)) continue;
         const p = toMini(o.x, o.z, m.half, px, py, inner);
         const mine = layerOf(o) == ed.layer;
         const col = if (layerOf(o) == .decor) ui.col(96, 132, 70, if (mine) 235 else 70) else ui.col(168, 156, 130, if (mine) 235 else 70);
         rl.drawRectangleV(.{ .x = p.x - 1, .y = p.y - 1 }, .{ .x = 2, .y = 2 }, col);
     }
     for (m.foes[0..m.nfoes]) |f| {
+        if (!onMap(f.x, f.z, m.half)) continue;
         const p = toMini(f.x, f.z, m.half, px, py, inner);
         rl.drawCircleV(p, 2.5, ui.col(220, 120, 90, if (ed.layer == .units) 255 else 110));
     }
-    const cp = toMini(ed.cam.position.x, ed.cam.position.z, m.half, px, py, inner);
+    // The EYE is pinned to the rim instead of dropped — full zoom on a small map puts it well outside, and a
+    // "you are here" that disappears reads worse than one held against the edge it left by.
+    const cp = toMini(
+        mathx.clampF(ed.cam.position.x, -m.half, m.half),
+        mathx.clampF(ed.cam.position.z, -m.half, m.half),
+        m.half,
+        px,
+        py,
+        inner,
+    );
     const f = ed.forward();
     rl.drawLineV(cp, .{ .x = cp.x + f.x * 12, .y = cp.y + f.z * 12 }, ui.HOT);
     rl.drawCircleV(cp, 3, ui.HOT);
 
     if (ctx.pressed and rl.checkCollisionPointRec(ctx.mouse, r)) {
-        const t = (ctx.mouse.x - @as(f32, @floatFromInt(px))) / inner;
-        const u = (ctx.mouse.y - @as(f32, @floatFromInt(py))) / inner;
+        // Clamped because the hit rect is the PANEL and the projection is the inner square inside its border.
+        const t = mathx.clampF((ctx.mouse.x - @as(f32, @floatFromInt(px))) / inner, 0, 1);
+        const u = mathx.clampF((ctx.mouse.y - @as(f32, @floatFromInt(py))) / inner, 0, 1);
         ed.lookAtGround(-m.half + t * 2 * m.half, -m.half + u * 2 * m.half, 60);
     }
     ui.tipFor(ctx, r, "Click to fly there");
 }
 
 const WATER_SWATCH = ui.col(32, 55, 62, 255);
+
+/// The minimap's RELIEF overlay: how many cells a side it samples the height lattice down to, and the step that
+/// takes. `HEIGHT_N` must divide by it exactly or the last column reads a row it does not mean.
+const RELIEF_N: usize = 56;
+const RELIEF_STRIDE: usize = wf.HEIGHT_N / RELIEF_N;
+comptime {
+    std.debug.assert(RELIEF_N * RELIEF_STRIDE == wf.HEIGHT_N);
+}
+
+/// ONE RUN-LENGTH BLIT for both painted grids: skip 0, coalesce equal neighbours, one rect per run. `paint` is
+/// the single colour a MASK draws in (water); null means the byte is a material id and picks its own swatch.
+fn blitField(cells: []const u8, n: usize, px: i32, py: i32, inner: f32, paint: ?rl.Color) void {
+    const cellPx = inner / @as(f32, @floatFromInt(n));
+    for (0..n) |cz| {
+        const row = cells[cz * n ..][0..n];
+        var cx: usize = 0;
+        while (cx < n) {
+            const id = row[cx];
+            if (id == 0) {
+                cx += 1;
+                continue;
+            }
+            var run: usize = 1;
+            // A mask coalesces any non-zero together; a material grid only coalesces its OWN id.
+            while (cx + run < n and (if (paint == null) row[cx + run] == id else row[cx + run] != 0)) run += 1;
+            rl.drawRectangleRec(.{
+                .x = @as(f32, @floatFromInt(px)) + @as(f32, @floatFromInt(cx)) * cellPx,
+                .y = @as(f32, @floatFromInt(py)) + @as(f32, @floatFromInt(cz)) * cellPx,
+                .width = @ceil(@as(f32, @floatFromInt(run)) * cellPx),
+                .height = @ceil(cellPx),
+            }, paint orelse soilSwatch(@enumFromInt(id)));
+            cx += run;
+        }
+    }
+}
 
 fn soilSwatch(s: wf.Soil) rl.Color {
     return switch (s) {
@@ -2932,44 +3051,43 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
             const y = box.y + 62;
             var buf: [wf.PATH_CAP + 40]u8 = undefined;
             const s = std.fmt.bufPrintZ(&buf, "{s} has unsaved edits.", .{ed.curPath()}) catch "";
-            hud.mono(s, box.x + 24, y, hud.MONO, ui.VALUE);
-            const by = box.y + 170 - 44;
-            if (ui.button(ctx, ui.rect(box.x + 24, by, 120, 28), "Save first", hud.MONO, false) or confirm) {
+            hud.mono(s, box.x + DLG_PAD, y, hud.MONO, ui.VALUE);
+            const by = box.y + box.h - DLG_FOOT;
+            if (ui.button(ctx, ui.rect(box.x + DLG_PAD, by, 120, DLG_BTN_H), "Save first", hud.MONO, false) or confirm) {
                 ed.saveNow(m);
                 const what = ed.pending;
                 ed.modal = .none;
                 ed.commitPending(what);
                 return;
             }
-            if (ui.button(ctx, ui.rect(box.x + 154, by, 120, 28), "Discard", hud.MONO, false)) {
+            if (ui.button(ctx, ui.rect(box.x + 154, by, 120, DLG_BTN_H), "Discard", hud.MONO, false)) {
                 const what = ed.pending;
                 ed.dirty = false; // the discard IS the decision; don't ask twice
                 ed.modal = .none;
                 ed.commitPending(what);
                 return;
             }
-            if (ui.button(ctx, ui.rect(box.x + 300, by, 120, 28), "Cancel", hud.MONO, false)) {
+            if (ui.button(ctx, ui.rect(box.x + 300, by, 120, DLG_BTN_H), "Cancel", hud.MONO, false)) {
                 ed.modal = .none;
                 ed.pending = .none;
             }
         },
         .loot => {
             const rows: i32 = @intCast(item.NK);
-            const box = ui.beginModal(ctx, 470, 96 + rows * 26 + 44, "Chest contents");
-            const op: ?usize = if (ed.sel) |s| (if (s < m.nops and m.ops[s].kind == .chest) s else null) else null;
-            if (op == null) {
+            const box = ui.beginModal(ctx, 470, LOOT_TOP + rows * LOOT_ROW_H + 8 + DLG_FOOT, "Chest contents");
+            const s = lootOp(ed, m) orelse {
                 ed.modal = .none; // the selection went away under it
                 return;
-            }
-            const o = &m.ops[op.?];
+            };
+            const o = &m.ops[s];
             var buf: [48]u8 = undefined;
             const total = std.fmt.bufPrintZ(&buf, "{d} / {d} items", .{ o.nloot, wf.MAX_LOOT }) catch "";
-            hud.mono(total, box.x + 24, box.y + 58, hud.MONO, ui.LABEL);
+            hud.mono(total, box.x + DLG_PAD, box.y + 58, hud.MONO, ui.LABEL);
             var i: usize = 0;
             while (i < item.NK) : (i += 1) {
                 const k: item.Kind = @enumFromInt(i);
-                const y = box.y + 84 + @as(i32, @intCast(i)) * 26;
-                hud.mono(item.displayName(k), box.x + 24, y + 5, hud.MONO, ui.VALUE);
+                const y = box.y + LOOT_TOP + @as(i32, @intCast(i)) * LOOT_ROW_H;
+                hud.mono(item.displayName(k), box.x + DLG_PAD, y + 5, hud.MONO, ui.VALUE);
                 const n = lootCount(o, k);
                 var nbuf: [8]u8 = undefined;
                 const ns = std.fmt.bufPrintZ(&nbuf, "{d}", .{n}) catch "0";
@@ -2984,7 +3102,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
                     lootAdd(o, k);
                 }
             }
-            if (ui.button(ctx, ui.rect(box.x + 24, box.y + 84 + rows * 26 + 8, 120, 28), "Done", hud.MONO, false) or confirm) {
+            if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false) or confirm) {
                 ed.modal = .none;
             }
         },
@@ -3023,46 +3141,46 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
             else
                 "at the ear";
             hud.mono(ds, cx, cy, hud.MONO, ui.alpha(ui.LABEL, 170));
-            const by = box.y + JUKE_H - 44;
-            if (ui.button(ctx, ui.rect(box.x + 20, by, 150, 28), "Play again", hud.MONO, false) or confirm) ed.jukePlay();
-            if (ui.button(ctx, ui.rect(box.x + 180, by, 120, 28), "Done", hud.MONO, false)) ed.modal = .none;
+            const by = box.y + box.h - DLG_FOOT;
+            if (ui.button(ctx, ui.rect(box.x + 20, by, 150, DLG_BTN_H), "Play again", hud.MONO, false) or confirm) ed.jukePlay();
+            if (ui.button(ctx, ui.rect(box.x + 180, by, 120, DLG_BTN_H), "Done", hud.MONO, false)) ed.modal = .none;
             hud.mono("up / down step and play, space replays", box.x + 320, by + 6, hud.MONO, ui.alpha(ui.LABEL, 150));
         },
         .new_map, .save_as => {
             const isNew = ed.modal == .new_map;
             const box = ui.beginModal(ctx, 460, 180, if (isNew) "New map" else "Save map as");
-            hud.mono("name", box.x + 24, box.y + 58, hud.MONO, ui.LABEL);
-            ui.textField(ctx, ui.rect(box.x + 24, box.y + 82, 412, 30), &ed.nameBuf, &ed.nameLen, true);
+            hud.mono("name", box.x + DLG_PAD, box.y + 58, hud.MONO, ui.LABEL);
+            ui.textField(ctx, ui.rect(box.x + DLG_PAD, box.y + 82, 412, 30), &ed.nameBuf, &ed.nameLen, true);
             var buf: [wf.PATH_CAP]u8 = undefined;
             const p = wf.pathFor(&buf, ed.nameBuf[0..ed.nameLen]);
             var pz: [wf.PATH_CAP + 4]u8 = undefined;
             const ps = std.fmt.bufPrintZ(&pz, "{s}", .{p}) catch "";
-            hud.mono(ps, box.x + 24, box.y + 118, hud.MONO, ui.alpha(ui.LABEL, 190));
-            const by = box.y + 180 - 44;
-            const go = ui.button(ctx, ui.rect(box.x + 24, by, 130, 28), if (isNew) "Create" else "Save", hud.MONO, false);
+            hud.mono(ps, box.x + DLG_PAD, box.y + 118, hud.MONO, ui.alpha(ui.LABEL, 190));
+            const by = box.y + box.h - DLG_FOOT;
+            const go = ui.button(ctx, ui.rect(box.x + DLG_PAD, by, 130, DLG_BTN_H), if (isNew) "Create" else "Save", hud.MONO, false);
             if (go or confirm) {
                 ed.modal = .none;
                 if (isNew) ed.doNew(m, env) else ed.doSaveAs(m);
                 return;
             }
-            if (ui.button(ctx, ui.rect(box.x + 164, by, 120, 28), "Cancel", hud.MONO, false)) ed.modal = .none;
+            if (ui.button(ctx, ui.rect(box.x + 164, by, 120, DLG_BTN_H), "Cancel", hud.MONO, false)) ed.modal = .none;
         },
         .open_map => {
             const box = ui.beginModal(ctx, 460, 380, "Open map");
             var labels: [wf.MAX_FILES][:0]const u8 = undefined;
             for (0..listing.n) |i| labels[i] = listing.name(i);
             if (listing.n == 0) {
-                hud.mono("no maps in worlds/", box.x + 24, box.y + 62, hud.MONO, ui.LABEL);
-            } else if (ui.list(ctx, ui.rect(box.x + 24, box.y + 54, 412, 258), labels[0..listing.n], ed.fileSel, &ed.fileScroll)) |i| {
+                hud.mono("no maps in worlds/", box.x + DLG_PAD, box.y + 62, hud.MONO, ui.LABEL);
+            } else if (ui.list(ctx, ui.rect(box.x + DLG_PAD, box.y + 54, 412, 258), labels[0..listing.n], ed.fileSel, &ed.fileScroll)) |i| {
                 ed.fileSel = i;
             }
-            const by = box.y + 380 - 44;
-            if ((ui.button(ctx, ui.rect(box.x + 24, by, 130, 28), "Open", hud.MONO, false) or confirm) and listing.n > 0) {
+            const by = box.y + box.h - DLG_FOOT;
+            if ((ui.button(ctx, ui.rect(box.x + DLG_PAD, by, 130, DLG_BTN_H), "Open", hud.MONO, false) or confirm) and listing.n > 0) {
                 ed.modal = .none;
                 ed.doOpen(m, env, ed.fileSel);
                 return;
             }
-            if (ui.button(ctx, ui.rect(box.x + 164, by, 120, 28), "Cancel", hud.MONO, false)) ed.modal = .none;
+            if (ui.button(ctx, ui.rect(box.x + 164, by, 120, DLG_BTN_H), "Cancel", hud.MONO, false)) ed.modal = .none;
         },
         .objects => {
             if (!objview.draw(&ed.objects, env, scene, ctx)) ed.modal = .none;
@@ -3085,6 +3203,15 @@ const menuRows = [_]struct { act: MenuItem, label: [:0]const u8 }{
 const MENU_W: i32 = 150; // the FLOOR; the menu grows to fit its widest row (see drawContextMenu)
 const MENU_EDGE: i32 = 4; // clear space kept between the menu and the screen edge
 
+
+/// THE ONE ANSWER TO "does the selection have contents to edit?" — only a LITERAL chest does. The menu row that
+/// opens the dialog and the dialog itself both ask this; asked twice they had already parted company, the menu
+/// insisting on `.at` and the dialog taking any op that placed a chest.
+fn lootOp(ed: *const Editor, m: *const wf.Map) ?usize {
+    const s = ed.sel orelse return null;
+    if (s >= m.nops) return null;
+    return if (m.ops[s].op == .at and m.ops[s].kind == .chest) s else null;
+}
 
 fn lootCount(o: *const wf.Op, k: item.Kind) u8 {
     var n: u8 = 0;
@@ -3116,8 +3243,7 @@ fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
         .close => true,
         .focus => op != null,
         .view => if (op) |s| m.ops[s].op != .cover else false,
-        // Only a LITERAL chest has contents to edit.
-        .loot => if (op) |s| (m.ops[s].op == .at and m.ops[s].kind == .chest) else false,
+        .loot => lootOp(ed, m) != null,
         .reroll, .duplicate => if (op) |s| isMovable(&m.ops[s]) else false,
         .delete => op != null or (ed.layer == .units and ed.selFoe != null),
     };

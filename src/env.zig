@@ -49,15 +49,40 @@ const LIGHT_REACH: f32 = 90.0;
 
 // THE OCCLUDERS — the props the camera has to see the hero THROUGH, thinned by the shader's sieve.
 /// How many instances the fade can have IN FLIGHT — the ones thinning plus the ones easing back, which
-/// is why it is larger than any sight line needs. Full, and the THINNEST ASK EVICTS THE LEAST-THIN slot
-/// (`wantFade`): first-come at 16 meant the trunk squarely over his head lost to whatever the cell walk
-/// reached first, and to slots held by props already on their 0.34 s way back to solid.
-pub const OCCL_MAX = 32;
+/// is why it is larger than any sight line needs. Full, and the THINNEST ASK TAKES A SLOT OFF SOMETHING
+/// STILL SOLID (`wantFade`): first-come at 16 meant the trunk squarely over his head lost to whatever the
+/// cell walk reached first. Nothing mid-travel is spendable any more, so the list has to be roomy enough
+/// that a camera whipped through a wood cannot run it dry.
+pub const OCCL_MAX = 64;
 /// Seconds to reach the thinness the geometry is asking for, and to come back from it. OUT IS SLOWER on
 /// purpose: a trunk hardening back to solid over the hero is the uglier half of the transition, and the
 /// eye forgives a lag in getting out of the way far more readily than a pop into it.
 const OCCL_IN: f32 = 0.16;
 const OCCL_OUT: f32 = 0.34;
+/// Where a fade is near enough to solid to go down the opaque path: the blend is indistinguishable there and
+/// the prop is better off writing depth like everything else. Below it, `drawThinned` owns it.
+const FADE_SOLID: f32 = 0.999;
+// Raw GL factors for `drawThinned`'s depth-only pass; rlgl takes them unwrapped.
+const GL_ZERO: i32 = 0;
+const GL_ONE: i32 = 1;
+const GL_FUNC_ADD: i32 = 0x8006;
+/// How fast the ramp runs where the value already sits: full speed across the middle of the travel, down to
+/// this share of it at solid and at the floor. Never 0, or a fade would never leave either end.
+const EASE_ENDS = 0.3;
+fn easeAt(u: f64) f64 {
+    return EASE_ENDS + (1.0 - EASE_ENDS) * 4.0 * u * (1.0 - u);
+}
+fn easeShape(fade: f32) f32 {
+    return @floatCast(easeAt(mathx.clampF((fade - OCCL_FLOOR) / (1.0 - OCCL_FLOOR), 0, 1)));
+}
+/// …scaled so a full traverse still takes OCCL_IN / OCCL_OUT: the mean of 1/shape over the travel.
+const EASE_NORM: f32 = blk: {
+    @setEvalBranchQuota(40000);
+    const N = 4096;
+    var acc: f64 = 0;
+    for (0..N) |i| acc += 1.0 / easeAt((@as(f64, @floatFromInt(i)) + 0.5) / N);
+    break :blk @floatCast(acc / N);
+};
 /// A thinned occluder NEVER disappears: you must still be able to tell a tree is there.
 const OCCL_FLOOR: f32 = 0.28;
 /// HOW MUCH OF HIM IT HAS TO HIDE BEFORE IT THINS AT ALL (owner's rule). Nothing to do with distance:
@@ -671,18 +696,22 @@ pub const Env = struct {
     /// Ask one instance to be `to` solid, enlisting it if it is not in flight already. Two parts of the
     /// same prop can ask (an arch's piers are separate colliders), and the THINNER ask wins.
     ///
-    /// FULL, AND THE THINNEST ASK TAKES THE LEAST-THIN SLOT. The list is walked in cell order, so first-come
-    /// handed the slots to whatever the grid reached first and left the trunk squarely over his head solid;
-    /// worse, a prop already easing back (`fadeTo` 1) held its slot for the whole 0.34 s of `OCCL_OUT`. The
-    /// evicted one snaps to solid, which is the price of a fixed array — at 32 slots nothing reaches it.
+    /// FULL, AND THE SLOT COMES OFF SOMETHING STILL SOLID. The list is walked in cell order, so first-come
+    /// handed the slots to whatever the grid reached first and left the trunk squarely over his head solid.
+    /// But an entry that has already left solid cannot be dropped: nothing outside this list is ticked, so it
+    /// would either strand thin or jump back — and a jump is the one thing the fade exists to avoid. The
+    /// victim is therefore the least-thin ask AMONG THE ONES STILL AT FULL SOLIDITY, whose `fade` is within
+    /// `FADE_SOLID` of 1 by construction, and with none of those the ask waits a frame instead. A tree a
+    /// frame late in getting out of the way is not something the eye can see; a tree snapping back is.
     fn wantFade(self: *Env, pi: u32, to: f32) void {
-        var worst: usize = 0;
+        var worst: ?usize = null;
         for (self.occl[0..self.noccl], 0..) |q, i| {
             if (q == pi) {
                 self.props[pi].fadeTo = mathx.minF(self.props[pi].fadeTo, to);
                 return;
             }
-            if (self.props[q].fadeTo > self.props[self.occl[worst]].fadeTo) worst = i;
+            if (self.props[q].fade < FADE_SOLID) continue;
+            if (worst == null or self.props[q].fadeTo > self.props[self.occl[worst.?]].fadeTo) worst = i;
         }
         if (self.noccl < OCCL_MAX) {
             self.props[pi].fadeTo = to;
@@ -690,22 +719,30 @@ pub const Env = struct {
             self.noccl += 1;
             return;
         }
-        const victim = self.occl[worst];
-        if (self.props[victim].fadeTo <= to) return; // everything in flight is thinner than this ask
+        const w = worst orelse return; // every slot is mid-travel: none of them is spendable
+        const victim = self.occl[w];
+        if (self.props[victim].fadeTo <= to) return; // everything spendable is thinner than this ask
         self.props[victim].fade = 1;
         self.props[victim].fadeTo = 1;
         self.props[pi].fadeTo = to;
-        self.occl[worst] = pi;
+        self.occl[w] = pi;
     }
 
-    /// Walk everything in flight toward what the geometry asked for, at a fixed rate per second, and
-    /// discharge whatever has arrived back at solid. This is the ONLY thing the fade remembers.
+    /// Walk everything in flight toward what the geometry asked for, and discharge whatever has arrived back
+    /// at solid. This is the ONLY thing the fade remembers.
+    ///
+    /// THE RATE IS SHAPED, NOT CONSTANT. A fixed rate leaves solid and arrives at the floor at the same speed
+    /// it ran at, and now that the occluder composites OVER him (`drawThinned`) both of those ends read as a
+    /// step. `easeShape` slows it at either end as a pure function of where the value already sits — nothing
+    /// remembers where a travel began, which it cannot: `fadeTo` moves under it every frame the camera does,
+    /// and an ease anchored to a start point would restart on each one and crawl.
     fn easeFades(self: *Env, dt: f32) void {
         var i: usize = 0;
         while (i < self.noccl) {
             const pr = &self.props[self.occl[i]];
             const secs = if (pr.fadeTo < pr.fade) OCCL_IN else OCCL_OUT;
-            const step = if (secs > 0) (1.0 - OCCL_FLOOR) * dt / secs else 1.0;
+            const span = (1.0 - OCCL_FLOOR) * EASE_NORM * easeShape(pr.fade);
+            const step = if (secs > 0) span * dt / secs else 1.0;
             pr.fade = mathx.approach(pr.fade, pr.fadeTo, step);
             if (pr.fade >= 1.0 and pr.fadeTo >= 1.0) {
                 self.noccl -= 1;
@@ -1126,29 +1163,74 @@ pub const Env = struct {
                         if (!castsInto(focus, pr.pos, bound, nfo.top * pr.scale)) continue;
                     },
                 }
+                if (!casters_only and pr.fade < FADE_SOLID) continue; // held back for `drawThinned`
                 self.stat_draws += 1;
-                const sc = v3(pr.scale, pr.scale, pr.scale);
-                // Plain opacity, the hero's aim-fade path, so the same two conditions hold: LIT PASS ONLY (the
-                // depth shader has no alpha, and a see-through tree still blocks the sun) and the depth MASK
-                // off, or it blends with the sky and then hides everything behind it.
-                const thinned = !casters_only and pr.fade < 0.999;
-                if (thinned) {
-                    if (self.scene) |s| s.setFade(pr.fade);
-                    rl.gl.rlDisableDepthMask();
-                }
-                if (pr.lean == 0) {
-                    rl.drawModelEx(self.models[@intFromEnum(pr.kind)], pr.pos, v3(0, 1, 0), pr.yaw, sc, rl.Color.white);
-                } else {
-                    var mdl = self.models[@intFromEnum(pr.kind)];
-                    mdl.transform = rl.math.matrixRotateY(mathx.radians(pr.yaw));
-                    rl.drawModelEx(mdl, pr.pos, leanAxis(pr.leanDir), pr.lean, sc, rl.Color.white);
-                }
-                if (thinned) {
-                    rl.gl.rlEnableDepthMask();
-                    if (self.scene) |s| s.setFade(1);
-                }
+                self.drawProp(pr);
             }
         }
+    }
+
+    fn drawProp(self: *const Env, pr: *const Prop) void {
+        const sc = v3(pr.scale, pr.scale, pr.scale);
+        if (pr.lean == 0) {
+            rl.drawModelEx(self.models[@intFromEnum(pr.kind)], pr.pos, v3(0, 1, 0), pr.yaw, sc, rl.Color.white);
+            return;
+        }
+        var mdl = self.models[@intFromEnum(pr.kind)];
+        mdl.transform = rl.math.matrixRotateY(mathx.radians(pr.yaw));
+        rl.drawModelEx(mdl, pr.pos, leanAxis(pr.leanDir), pr.lean, sc, rl.Color.white);
+    }
+
+    /// THE THINNED OCCLUDERS, AFTER EVERY OPAQUE THING AND BACK TO FRONT — the whole point of the fade, and
+    /// what it was missing. A thinned prop draws with the depth MASK OFF (or it blends with the sky and then
+    /// hides everything behind it), so it writes no depth: drawn in cell order with the rest, the hero came
+    /// afterwards and composited at FULL opacity straight over it. He went from hidden to solid on the one
+    /// frame the mask came off, and the ramp underneath only ever dressed the TREE against the terrain — an
+    /// instant reveal wearing a fade. Drawn last, the tree's alpha is what mattes HIM, so the reveal IS the
+    /// ramp. Back to front because they blend against each other too.
+    ///
+    /// LIT PASS ONLY — the depth shader has no alpha, and a see-through tree still blocks the sun. NOT the
+    /// hero's aim fade (`game.drawCasters`), which stays a plain masked-off blend: he is drawn BEFORE the
+    /// foes behind him, so laying his depth down would hide them behind a man who is not there.
+    pub fn drawThinned(self: *Env, view: *const View) void {
+        var order: [OCCL_MAX]u32 = undefined;
+        var far: [OCCL_MAX]f32 = undefined;
+        var n: usize = 0;
+        for (self.occl[0..self.noccl]) |pi| {
+            const pr = &self.props[pi];
+            if (pr.fade >= FADE_SOLID) continue; // it drew solid with everything else
+            const nfo = props.info(pr.kind);
+            if (!view.visible(pr.pos, nfo.bound * pr.scale, nfo.view)) continue;
+            const d = mathx.dist2XZ(pr.pos, view.pos);
+            var i = n;
+            while (i > 0 and far[i - 1] < d) : (i -= 1) {
+                order[i] = order[i - 1];
+                far[i] = far[i - 1];
+            }
+            order[i] = pi;
+            far[i] = d;
+            n += 1;
+        }
+        if (n == 0) return;
+        rl.gl.rlSetBlendFactors(GL_ZERO, GL_ONE, GL_FUNC_ADD);
+        for (order[0..n]) |pi| {
+            const pr = &self.props[pi];
+            self.stat_draws += 2;
+            // ONE LAYER PER PIXEL. A trunk is not a sheet — buttress roots, boughs and the far side of its own
+            // bole stack three or four surfaces along the ray, and blended one after another the alpha
+            // COMPOUNDS: the number stops meaning what it says and the mass comes out banded where the layers
+            // change count. So each prop lays down its own depth first with the colour buffer held (rlgl has
+            // no colour mask, but `dst = 0·src + 1·dst` is one), and the pass that follows draws under rlgl's
+            // LEQUAL, which only the NEAREST surface can satisfy.
+            rl.gl.rlSetBlendMode(@intFromEnum(rl.gl.rlBlendMode.rl_blend_custom));
+            self.drawProp(pr);
+            rl.gl.rlSetBlendMode(@intFromEnum(rl.gl.rlBlendMode.rl_blend_alpha));
+            rl.gl.rlDisableDepthMask();
+            if (self.scene) |s| s.setFade(pr.fade);
+            self.drawProp(pr);
+            rl.gl.rlEnableDepthMask();
+        }
+        if (self.scene) |s| s.setFade(1);
     }
 
     /// This frame's torch/fire lights: the gfx.MAX_LIGHTS nearest the camera whose pool is actually ON SCREEN, guttering applied.
@@ -1890,6 +1972,23 @@ test "a FULL occluder list gives its slots to what hides him most, not to what t
     e.props[OCCL_MAX + 1] = .{ .kind = .snag, .pos = v3(0, 0, 12), .yaw = 0, .scale = 1 };
     e.wantFade(OCCL_MAX + 1, 0.999);
     try std.testing.expectEqual(@as(f32, 1), e.props[OCCL_MAX + 1].fadeTo);
+}
+
+test "NOTHING MID-TRAVEL IS DROPPED — a full list refuses the ask rather than snap a tree back to solid" {
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    for (0..OCCL_MAX) |i| {
+        e.props[i] = .{ .kind = .snag, .pos = v3(@floatFromInt(i), 0, 0), .yaw = 0, .scale = 1 };
+        e.wantFade(@intCast(i), 0.98);
+    }
+    e.easeFades(1.0 / 60.0); // every slot has now LEFT solid, so none of them is spendable
+    for (e.occl[0..e.noccl]) |pi| try std.testing.expect(e.props[pi].fade < FADE_SOLID);
+    e.props[OCCL_MAX] = .{ .kind = .snag, .pos = v3(0, 0, 9), .yaw = 0, .scale = 1 };
+    e.wantFade(OCCL_MAX, OCCL_FLOOR);
+    try std.testing.expectEqual(@as(f32, 1), e.props[OCCL_MAX].fadeTo); // the deepest ask there is, refused…
+    try std.testing.expectEqual(OCCL_MAX, e.noccl);
+    for (e.occl[0..e.noccl]) |pi| try std.testing.expect(e.props[pi].fade < FADE_SOLID); // …and nobody jumped
 }
 
 test "the shadow cull keeps a distant TALL caster whose shadow still reaches the box" {

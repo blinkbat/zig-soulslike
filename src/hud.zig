@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 const uiart = @import("uiart.zig");
 const itemart = @import("itemart.zig"); // the pictures in the cross — shared with the character book
+const item = @import("item.zig"); // …and what the DOWN cell holds is a bag item, off the quick bar
 
 const rgba = mathx.rgba;
 
@@ -353,24 +354,39 @@ const SLOT_GAP: i32 = eq(8); // between the LEFT/RIGHT arms and the centre colum
 const PITCH_Y: i32 = eq(48);
 const BOTTOM: i32 = 26;
 
-pub const Slot = enum { empty, sword, bow, shield, wand, flask, spell, roots };
+/// WHAT A HAND OR THE SORCERY CELL IS SHOWING. The cross`s DOWN cell is NOT here: it holds an `item.Kind`
+/// off the quick bar (`quickSlot`), which is a wider thing than the handful his hands can be doing.
+pub const Slot = enum { empty, sword, bow, shield, wand, spell, roots };
 
-pub const FlaskTint = itemart.FlaskTint;
-
-/// `left`/`right` are what is IN HIS HANDS this frame, not what he owns — the cross is four slots and it `tint` picks which flask is drawn in the DOWN slot, `charges` how many are left — the cross is where ER shows both, and a charge count you have to open a menu for is a charge count you play without.
+/// `left`/`right` are what is IN HIS HANDS this frame, not what he owns.
 /// `up` is the SORCERY slot, and `castable` is whether the pool would cover one — it stays `.empty` while
 /// nothing he is holding could cast, because an empty ER slot is a real part of this HUD.
-pub fn equipment(left_hand: Slot, right_hand: Slot, up: Slot, castable: bool, tint: FlaskTint, charges: u8, ammo: ?Ammo) void {
+/// DOWN is whatever the QUICK BAR is turned to (`combat.Quick`) and how many of it are left — the cross is
+/// where ER shows both, and a count you have to open a menu for is a count you play without.
+pub fn equipment(left_hand: Slot, right_hand: Slot, up: Slot, castable: bool, quick: ?item.Kind, charges: u8, ammo: ?Ammo) void {
     const stepX = SLOT_W + SLOT_GAP;
     const left = MARGIN;
     const bottom = rl.getScreenHeight() - BOTTOM;
     const midX = left + stepX; // the centre cell of the three
     const midY = bottom - SLOT_H - PITCH_Y;
-    slot(midX, midY - PITCH_Y, up, .crimson, if (castable) 1 else 0); // UP — sorcery/incantation
-    slot(left, midY, left_hand, .crimson, 0); // LEFT — left hand: the shield, or nothing behind a bow
-    slot(midX + stepX, midY, right_hand, .crimson, 0); // RIGHT — right hand: the sword or the bow
-    slot(midX, midY + PITCH_Y, .flask, tint, charges); // DOWN — the quick item
+    slot(midX, midY - PITCH_Y, up, if (castable) 1 else 0); // UP — sorcery/incantation
+    slot(left, midY, left_hand, 0); // LEFT — left hand: the shield, or nothing behind a bow
+    slot(midX + stepX, midY, right_hand, 0); // RIGHT — right hand: the sword or the bow
+    quickSlot(midX, midY + PITCH_Y, quick, charges); // DOWN — whatever is up on the quick bar
     if (ammo) |n| ammoBox(midX + stepX, midY + SLOT_H + AMMO_GAP, n);
+}
+
+/// THE CROSS'S DOWN CELL. Its own function and not a `Slot`, because unlike the other three it holds an
+/// `item.Kind` off the bar rather than one of a fixed handful of things his hands can be doing.
+fn quickSlot(x: i32, y: i32, k: ?item.Kind, n: u8) void {
+    uiart.slot(x, y, SLOT_W, SLOT_H, k != null);
+    const kind = k orelse return; // a bar with nothing on it is an empty socket, and no tally under it
+    const cx: f32 = @floatFromInt(x + @divTrunc(SLOT_W, 2));
+    const cy: f32 = @floatFromInt(y + @divTrunc(SLOT_H, 2));
+    itemart.drawHeld(kind, cx, cy, @floatFromInt(ICON), n > 0);
+    var buf: [8]u8 = undefined;
+    const s = std.fmt.bufPrintZ(&buf, "{d}", .{n}) catch return;
+    tally(s, x + SLOT_W, y + SLOT_H + 6, HINT, if (n > 0) TALLY_OK else TALLY_DRY);
 }
 
 const AMMO_H: i32 = eq(26);
@@ -408,7 +424,7 @@ fn ammoBox(x: i32, y: i32, a: Ammo) void {
     text(s, x + SLOT_W - textW(s, HINT) - 6, y + @divTrunc(AMMO_H - lineH(HINT), 2), HINT, col);
 }
 
-fn slot(x: i32, y: i32, holds: Slot, tint: FlaskTint, charges: u8) void {
+fn slot(x: i32, y: i32, holds: Slot, charges: u8) void {
     uiart.slot(x, y, SLOT_W, SLOT_H, holds != .empty);
     const cx: f32 = @floatFromInt(x + @divTrunc(SLOT_W, 2));
     const cy: f32 = @floatFromInt(y + @divTrunc(SLOT_H, 2));
@@ -424,12 +440,6 @@ fn slot(x: i32, y: i32, holds: Slot, tint: FlaskTint, charges: u8) void {
         .spell => itemart.spell(cx, cy, px, charges > 0),
         // …and the rod's other sorcery, greyed by the same rule: a thing you cannot afford has to LOOK it.
         .roots => itemart.roots(cx, cy, px, charges > 0),
-        .flask => {
-            itemart.flask(cx, cy, px, tint, charges > 0);
-            var buf: [8]u8 = undefined;
-            const s = std.fmt.bufPrintZ(&buf, "{d}", .{charges}) catch return;
-            tally(s, x + SLOT_W, y + SLOT_H + 6, HINT, if (charges > 0) TALLY_OK else TALLY_DRY);
-        },
     }
 }
 

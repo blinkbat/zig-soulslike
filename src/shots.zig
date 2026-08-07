@@ -887,6 +887,17 @@ pub fn runShots(g: *Game) void {
         var bl: i32 = 0;
         while (bl < 18) : (bl += 1) _ = a.update(dt, mathx.ground(0, 2.2), game.PLAY_HALF, .{});
         shootFoe(g, a, "shots/45c_archer_backstep_land.png", 90, 0.06, 6.0);
+        // THE BODY GOING (`foe.dissipate`) — caught well past `DEATH_DUR` so the bone-dust and the grace
+        // motes are up, which is the whole point of the frame: this is the one skeleton that used to fade
+        // out into nothing while its twin shed bone.
+        // Off the column it spawns beside — a corpse is a low subject, and architecture is `solid` and never
+        // thins to let the lens past it. Open ground, the hero beside it for the shadow box, looking DOWN.
+        const ac = mathx.ground(-26.0, 30.0);
+        a.* = archermod.Archer.spawn(ac, 0, 1.0, 0.0);
+        a.debugKill();
+        stepFoe(a, 95, mathx.ground(0, 60)); // ~1.58 s: the collapse is over and the cloud is at full
+        standHero(g, ac.x + 2.2, ac.z - 1.4, std.math.pi);
+        shootFoe(g, a, "shots/45d_archer_dissolve.png", LIT_YAW, 0.42, 3.4);
         a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         var lk: i32 = 0;
         while (lk < 24) : (lk += 1) _ = a.update(dt, mathx.ground(0, 60), game.PLAY_HALF, .{}); // settle to idle

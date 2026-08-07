@@ -29,10 +29,9 @@ const BOARD_LT = rgba(70, 53, 37, 255); // …which are not all one plank and no
 const BOARD_DK = rgba(30, 22, 16, 255);
 const BLAZON = rgba(74, 32, 30, 255); // what is left of a device nobody remembers
 
-// FX palette. DUST and MOTE are the WORLD's, not this creature's (see foe.zig).
+// FX palette. DUST is the WORLD's, not this creature's (see foe.zig); the grace motes are foe.zig's own.
 const DUST = foe.DUST;
-const MOTE = foe.MOTE;
-const CHIP = rgba(150, 140, 116, 235); // bone, knocked off in flakes — these things do not bleed
+const CHIP = archermod.BONE_CHIP; // bone, knocked off in flakes — the archer's, because it is his body
 const SPARK = rgba(255, 208, 128, 240); // iron on iron, off the boards
 const SPLINTER = rgba(86, 64, 44, 240); // …and the boards themselves, when they finally go
 
@@ -546,7 +545,7 @@ pub const Warrior = struct {
     gone: bool = false,
 
     parts: [NPART]foe.Particle = [_]foe.Particle{.{}} ** NPART,
-    head: usize = 0,
+    fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
 
@@ -774,11 +773,7 @@ pub const Warrior = struct {
             },
             .dead => {
                 self.easeNeutral(dt);
-                if (self.t >= DEATH_DUR) {
-                    self.fade = mathx.smoothstep(DEATH_DUR, DEATH_DUR + DISS_DUR, self.t);
-                    self.emitDissolve(dt);
-                    if (self.t >= DEATH_DUR + DISS_DUR) self.gone = true;
-                }
+                foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, archermod.DISSOLVE);
             },
         }
 
@@ -1547,7 +1542,7 @@ pub const Warrior = struct {
     // integrator are foe.zig's; only the bursts are this creature's.
 
     fn emit(self: *Warrior, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        foe.emitParticle(&self.parts, &self.head, p, vel, life, r0, r1, col, grav);
+        foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
     }
 
     fn dustBurst(self: *Warrior, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
@@ -1654,20 +1649,6 @@ pub const Warrior = struct {
         const s: f32 = if (@mod(@floor(self.phase * 2.0), 2.0) == 0) 1.0 else -1.0;
         const at = v3(self.pos.x + side.x * 0.16 * s * self.scale, self.pos.y, self.pos.z + side.z * 0.16 * s * self.scale);
         self.dustBurst(at, 3, 0.9, 0.10);
-    }
-    fn emitDissolve(self: *Warrior, dt: f32) void {
-        self.fxAccum += 54.0 * (1.0 - 0.6 * self.fade) * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
-            const a = self.fxRng.angle();
-            const rr = self.fxRng.range(0.1, 0.85) * self.scale * (1.0 - 0.6 * self.fade);
-            const p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + self.fxRng.range(0.05, 0.7) * self.scale, self.pos.z + mathx.sinf(a) * rr);
-            if (self.fxRng.float() < 0.78) {
-                self.emit(p, v3(self.fxRng.signed() * 0.3, self.fxRng.range(0.5, 1.5), self.fxRng.signed() * 0.3), self.fxRng.range(0.6, 1.1), self.fxRng.range(0.035, 0.08) * self.scale, 0.004, MOTE, -0.7);
-            } else {
-                self.emit(p, v3(self.fxRng.signed() * 0.4, self.fxRng.range(0.1, 0.5), self.fxRng.signed() * 0.4), self.fxRng.range(0.3, 0.65), self.fxRng.range(0.05, 0.11) * self.scale, 0.010, CHIP, 3.0);
-            }
-        }
     }
     pub fn drawFx(self: *const Warrior) void {
         foe.drawParticles(&self.parts);

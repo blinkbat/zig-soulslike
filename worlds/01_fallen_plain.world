@@ -807,7 +807,7 @@ trig: gate_rumour
   do: text The way north is shut.
 trig: the_avenue
   when: region -12.0 -40.0 12.0 -12.0
-  do: text Smoldering Ruins | Lodgings that once held families, now home to miscreations of blight.
+  do: text Smoldering Ruins 
 trig: toads_thinned
   when: deaths toad >= 3
   do: text The bog is quieter.

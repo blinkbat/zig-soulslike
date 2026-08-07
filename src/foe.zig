@@ -346,6 +346,60 @@ pub fn emitParticle(pool: []Particle, head: *usize, p: rl.Vector3, vel: rl.Vecto
     head.* = (head.* + 1) % pool.len;
 }
 
+/// WHAT ONE BODY BRINGS TO ITS OWN DISSOLVE, and all it brings: how thick the cloud is, how far out and how
+/// far up the body it comes off — both in the creature's own scale — and the colour of the flakes the body
+/// SHEDS. The grace motes are not here: gold is the world's, the same off everything that dies, and two
+/// substances of one thing is what the brood's rule forbids.
+pub const Dissolve = struct {
+    rate: f32 = 54.0,
+    spread: f32 = 0.85,
+    rise: f32 = 0.70,
+    flake: rl.Color = DUST,
+};
+/// The mix and the grain, which are the effect and not the creature: `spread` already carries the size.
+const DISS_MOTE_SHARE: f32 = 0.76;
+const DISS_MOTE_R: f32 = 0.094;
+const DISS_FLAKE_R: f32 = 0.129;
+
+/// THE BODY COMING APART — the one copy, for every creature on the field. Grace motes rising out of it and
+/// flakes of the body falling back, both thinning as the fade closes.
+///
+/// It reads FIELDS only (`fade`, `scale`, `pos`, `fxAccum`, `fxRng`, `parts`, `head`), which is what lets it
+/// live here at all: a creature's own `emitDissolve` is private and nothing outside its file can call one.
+/// That is exactly why there were five of these, drifted four ways over what is one effect at four sizes —
+/// and why the sixth, the ARCHER's, had gone missing altogether: the one skeleton that shoots faded out into
+/// nothing while its twin shed bone.
+pub fn dissolveMotes(self: anytype, dt: f32, d: Dissolve) void {
+    const thinning = 1.0 - 0.6 * self.fade;
+    self.fxAccum += d.rate * thinning * dt;
+    while (self.fxAccum >= 1.0) {
+        self.fxAccum -= 1.0;
+        const a = self.fxRng.angle();
+        const rr = self.fxRng.range(0.1, 1.0) * d.spread * self.scale * thinning;
+        const p = mathx.v3(
+            self.pos.x + mathx.cosf(a) * rr,
+            self.pos.y + self.fxRng.range(0.08, 1.0) * d.rise * self.scale,
+            self.pos.z + mathx.sinf(a) * rr,
+        );
+        if (self.fxRng.float() < DISS_MOTE_SHARE) {
+            emitParticle(&self.parts, &self.fxHead, p, mathx.v3(self.fxRng.signed() * 0.3, self.fxRng.range(0.5, 1.4), self.fxRng.signed() * 0.3), self.fxRng.range(0.55, 1.05), self.fxRng.range(0.42, 1.0) * DISS_MOTE_R * d.spread * self.scale, 0.004, MOTE, -0.7);
+        } else {
+            emitParticle(&self.parts, &self.fxHead, p, mathx.v3(self.fxRng.signed() * 0.35, self.fxRng.range(0.1, 0.45), self.fxRng.signed() * 0.35), self.fxRng.range(0.32, 0.65), self.fxRng.range(0.55, 1.0) * DISS_FLAKE_R * d.spread * self.scale, 0.011, d.flake, 2.0);
+        }
+    }
+}
+
+/// THE CORPSE GOING. Past `still` the fall is over and the body dissipates over `diss`: `fade` is that ramp,
+/// the dissolve comes off it the whole way, and the creature leaves the field at the end of it. The two
+/// DURATIONS stay per-creature — a giant topples slower than a toad — but the shape does not, and six
+/// private copies of this five-line tail is where the archer's emit went missing without anyone noticing.
+pub fn dissipate(self: anytype, dt: f32, still: f32, diss: f32, d: Dissolve) void {
+    if (self.t < still) return;
+    self.fade = mathx.smoothstep(still, still + diss, self.t);
+    dissolveMotes(self, dt, d);
+    if (self.t >= still + diss) self.gone = true;
+}
+
 pub fn tickParticles(pool: []Particle, dt: f32, floor: f32) void {
     for (pool) |*q| {
         if (q.life <= 0) continue;

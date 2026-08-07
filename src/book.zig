@@ -40,7 +40,8 @@ pub const Action = union(enum) {
     arm: heromod.Arm,
     off: heromod.Off,
     ammo: combat.ArrowKind,
-    flask: combat.FlaskKind,
+    /// WHAT THE QUICK SLOT IS TURNED TO — a bar entry, not a flask: the bar carries edibles too.
+    quick: item.Kind,
     use: item.Kind,
 };
 
@@ -50,7 +51,12 @@ pub const View = struct {
     sheet: *const stats.Sheet,
     res: *const combat.Resists,
     flasks: *const combat.Flasks,
+    /// THE QUICK BAR, which the equipment page is where you load. Read AND edited here, unlike the rod.
+    quick: *const combat.Quick,
     quiver: *const combat.Quiver,
+    /// IS A FIGHT ON (`game.inCombat`). The page reads it for one rule: in combat a consumable may only be
+    /// spent off the bar, so the inventory's own Use is refused and says so.
+    inCombat: bool = false,
     arm: heromod.Arm,
     off: heromod.Off,
     /// WHICH SORCERY THE ROD IS SET TO. Read, never chosen here — the rod is changed on the D-pad in play,
@@ -72,7 +78,8 @@ const Loadout = struct {
     arm: heromod.Arm,
     off: heromod.Off,
     ammo: combat.ArrowKind,
-    flask: combat.FlaskKind,
+    /// WHAT THE QUICK SLOT IS TURNED TO — a bar entry, so an edible as readily as a flask.
+    quick: item.Kind,
     spell: combat.Spell,
 };
 
@@ -144,10 +151,7 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     const casts = !bow and l.off == .wand;
     d[@intFromEnum(Der.spell)] = if (casts) combat.spellDamage(l.spell) else 0;
     d[@intFromEnum(Der.spell_fp)] = if (casts) combat.spellFp(l.spell) else 0;
-    d[@intFromEnum(Der.quick)] = switch (l.flask) {
-        .crimson => v.sheet.hp() * combat.FLASK_HP_FRAC,
-        .cerulean => v.sheet.fp() * combat.FLASK_FP_FRAC,
-    };
+    d[@intFromEnum(Der.quick)] = quickWorth(l.quick, v);
     d[@intFromEnum(Der.ammo)] = @floatFromInt(v.quiver.count(l.ammo));
     return d;
 }
@@ -191,7 +195,8 @@ fn locked(s: SlotId, v: View) ?[:0]const u8 {
 /// Is there anything in it? The socket lights off this, and an empty one stays cold.
 fn slotHas(s: SlotId, v: View) bool {
     return switch (s) {
-        .right, .quick => true,
+        .right => true,
+        .quick => v.quick.selected() != null,
         .left => v.arm != .bow,
         .sorcery => v.arm != .bow and v.off == .wand,
         .arrows => v.quiver.count(v.quiver.sel) > 0,
@@ -223,13 +228,6 @@ fn ammoName(k: combat.ArrowKind) [:0]const u8 {
     };
 }
 
-fn flaskName(k: combat.FlaskKind) [:0]const u8 {
-    return switch (k) {
-        .crimson => "Crimson Tears",
-        .cerulean => "Cerulean Tears",
-    };
-}
-
 fn slotFilled(s: SlotId, v: View) [:0]const u8 {
     return switch (s) {
         .right => armName(v.arm),
@@ -238,19 +236,50 @@ fn slotFilled(s: SlotId, v: View) [:0]const u8 {
         // shows the one it is turned to.
         .sorcery => if (slotHas(.sorcery, v)) combat.spellName(v.spell) else EMPTY,
         .arrows => ammoName(v.quiver.sel),
-        .quick => flaskName(v.flasks.sel),
+        .quick => if (v.quick.selected()) |k| item.displayName(k) else EMPTY,
     };
 }
 
 fn slotTally(s: SlotId, v: View) ?u8 {
     return switch (s) {
         .arrows => v.quiver.count(v.quiver.sel),
-        .quick => v.flasks.charges(v.flasks.sel),
+        .quick => if (v.quick.selected()) |k| quickTally(k, v) else null,
         // HOW MANY CASTS ARE ACTUALLY IN THE POOL — the same question the arrow tally answers, and the one
         // thing about a spell the player needs at a glance.
         .sorcery => if (slotHas(.sorcery, v)) castsLeft(v.fp, v.spell) else null,
         else => null,
     };
+}
+
+/// WHAT ONE PRESS OF THE QUICK SLOT GIVES BACK. A flask is a fraction of the pool it fills, taken off the
+/// SHEET so the row moves when the attribute does; anything else is its own `item.Use`. The day one restores
+/// something that is not HP, this switch is where it says so.
+fn quickWorth(k: item.Kind, v: View) f32 {
+    if (combat.flaskOf(k)) |f| return switch (f) {
+        .crimson => v.sheet.hp() * combat.FLASK_HP_FRAC,
+        .cerulean => v.sheet.fp() * combat.FLASK_FP_FRAC,
+    };
+    return switch (item.use(k)) {
+        .none => 0,
+        .regen => |r| v.sheet.hp() * r.frac,
+    };
+}
+
+/// IS THIS ROW EVEN OFFERED. He may not put on the bar a thing he does not own — an empty row is a cycle
+/// step that does nothing and a HUD cell showing what he has not got, and the bar drops one the moment the
+/// last is spent (`combat.Quick.dropEmpty`), so offering it here would be offering something that leaves
+/// again before he closes the book. THE FLASKS ARE ALWAYS OFFERED: their charges are not the bag's and an
+/// empty one is still carried.
+fn quickOffered(k: item.Kind, v: View) bool {
+    if (!item.quickable(k)) return false;
+    return combat.flaskOf(k) != null or v.bag.count(k) > 0;
+}
+
+/// HOW MANY OF IT HE HAS. A flask counts charges, which come back at a grace; everything else counts what is
+/// in the BAG, which does not.
+fn quickTally(k: item.Kind, v: View) u8 {
+    if (combat.flaskOf(k)) |f| return v.flasks.charges(f);
+    return @intCast(@min(v.bag.count(k), 99));
 }
 
 fn castsLeft(fp: f32, s: combat.Spell) u8 {
@@ -266,8 +295,8 @@ const Cand = struct { name: [:0]const u8, tally: ?u8 = null, act: Action };
 /// The longest candidate list any slot can offer, off the enums themselves — the scratch every caller
 /// hands `candidates` is sized from this, so a third arrow cannot write past the end of one.
 const CAND_MAX = blk: {
-    var n: usize = 0;
-    for ([_]type{ heromod.Arm, heromod.Off, combat.ArrowKind, combat.FlaskKind }) |T| {
+    var n: usize = item.NK; // the quick bar offers every kind that may go on it, so it is the long list
+    for ([_]type{ heromod.Arm, heromod.Off, combat.ArrowKind }) |T| {
         n = @max(n, @typeInfo(T).@"enum".fields.len);
     }
     break :blk n;
@@ -302,12 +331,19 @@ fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
             }
             return out[0..@typeInfo(combat.ArrowKind).@"enum".fields.len];
         },
+        // THE ONE PICKER THAT TOGGLES rather than chooses: every other slot holds exactly one thing, and the
+        // quick bar holds up to `combat.QUICK_SLOTS` of them. Confirm on a row puts it ON the bar or takes it
+        // off, and `equipped` is what draws the ones that are on — so the list IS the bar, read down.
         .quick => {
-            inline for (@typeInfo(combat.FlaskKind).@"enum".fields, 0..) |f, i| {
-                const k: combat.FlaskKind = @enumFromInt(f.value);
-                out[i] = .{ .name = flaskName(k), .tally = v.flasks.charges(k), .act = .{ .flask = k } };
+            var n: usize = 0;
+            inline for (@typeInfo(item.Kind).@"enum".fields) |f| {
+                const k: item.Kind = @enumFromInt(f.value);
+                if (quickOffered(k, v)) {
+                    out[n] = .{ .name = item.displayName(k), .tally = quickTally(k, v), .act = .{ .quick = k } };
+                    n += 1;
+                }
             }
-            return out[0..@typeInfo(combat.FlaskKind).@"enum".fields.len];
+            return out[0..n];
         },
         else => return out[0..0],
     }
@@ -320,7 +356,7 @@ fn withCand(base: Loadout, c: Cand) Loadout {
         .arm => |a| l.arm = a,
         .off => |o| l.off = o,
         .ammo => |a| l.ammo = a,
-        .flask => |f| l.flask = f,
+        .quick => |k| l.quick = k,
         else => {},
     }
     return l;
@@ -331,7 +367,8 @@ fn equipped(c: Cand, v: View) bool {
         .arm => |a| a == v.arm,
         .off => |o| o == v.off,
         .ammo => |a| a == v.quiver.sel,
-        .flask => |f| f == v.flasks.sel,
+        // ON THE BAR, not "is it the one selected": the quick picker is a toggle list, so this is its tick.
+        .quick => |k| v.quick.holds(k),
         else => false,
     };
 }
@@ -345,9 +382,21 @@ fn pickIndexOf(s: SlotId, v: View) usize {
         .right => @intFromEnum(v.arm),
         .left => @intFromEnum(v.off),
         .arrows => @intFromEnum(v.quiver.sel),
-        .quick => @intFromEnum(v.flasks.sel),
+        // …and the quick list is FILTERED (`item.quickable`), so its rows are not the enum's ordinals and
+        // the row has to be counted out the same way `candidates` builds it.
+        .quick => quickRowOf(v.quick.selected() orelse return 0),
         else => 0,
     };
+}
+
+fn quickRowOf(want: item.Kind) usize {
+    var n: usize = 0;
+    inline for (@typeInfo(item.Kind).@"enum".fields) |f| {
+        const k: item.Kind = @enumFromInt(f.value);
+        if (k == want) return n;
+        if (item.quickable(k)) n += 1;
+    }
+    return 0;
 }
 
 
@@ -491,9 +540,12 @@ pub const Book = struct {
                 self.settled = false;
                 sfx.play(.menu_pick);
             },
+            // IN COMBAT NOTHING IS SPENT FROM HERE. The bag is a rucksack, not a belt: with something coming
+            // at you the only reach you have is the quick bar, which is why what is on it is a decision made
+            // before the fight. Out of combat this page is the convenient way and the bar can stay empty.
             .inventory => {
                 if (v.bag.nth(self.cur[idx(.inventory)])) |k| {
-                    if (item.usable(k)) {
+                    if (item.usable(k) and !v.inCombat) {
                         self.thump();
                         sfx.play(.menu_pick);
                         return .{ .use = k };
@@ -916,10 +968,9 @@ fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
         // The arrow is drawn LONG for its box (a shaft is 0.3 of what it is handed, where a blade is 1.4),
         // so it is given a bigger one — at the slot's own size it is a twig in a cupboard.
         .arrows => itemart.arrow(cx, cy, px * 1.5, v.quiver.count(v.quiver.sel) > 0, v.quiver.sel == .fire),
-        .quick => itemart.flask(cx, cy, px, switch (v.flasks.sel) {
-            .crimson => .crimson,
-            .cerulean => .cerulean,
-        }, v.flasks.charges(v.flasks.sel) > 0),
+        // WHATEVER THE BAR IS TURNED TO, drawn greyed when there is none of it left — an empty flask and an
+        // eaten-out stack are the same fact and read the same way.
+        .quick => if (v.quick.selected()) |k| itemart.drawHeld(k, cx, cy, px, quickTally(k, v) > 0),
     }
 }
 
@@ -927,7 +978,7 @@ fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
 /// arrow — which is the whole reason the equipment page shows numbers at all.
 fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     const inner = panel(box, if (cand == null) "WHAT IT IS WORTH" else "IF HE TAKES IT UP");
-    const base = Loadout{ .arm = v.arm, .off = v.off, .ammo = v.quiver.sel, .flask = v.flasks.sel, .spell = v.spell };
+    const base = Loadout{ .arm = v.arm, .off = v.off, .ammo = v.quiver.sel, .quick = v.quick.selected() orelse .crimson_flask, .spell = v.spell };
     const now = derive(base, v);
     const then = if (cand) |c| derive(withCand(base, c), v) else now;
 
@@ -987,10 +1038,9 @@ fn candSays(c: Cand) []const u8 {
             .plain => "A plain shaft. Ten of them, and nothing in these ruins resists the hole one leaves.",
             .fire => "Fire rides on top of the shaft's own damage. Five of them, so pick the target.",
         },
-        .flask => |f| switch (f) {
-            .crimson => "The red one closes wounds.",
-            .cerulean => "The blue one returns focus, and there is nothing yet that spends focus.",
-        },
+        // The item's own words (`item.describe`), so a description tuned there is not written twice. What
+        // CONFIRM does to it is the row's tick, not a sentence.
+        .quick => |k| item.describe(k),
         else => "",
     };
 }
@@ -1096,7 +1146,14 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
         .none => hud.text("It does nothing you can do here.", inner.x, y, hud.HINT, uiart.TEXT_HINT),
         .regen => |r| {
             hud.text(fmt("Restores {d:.0} HP over {d:.0} seconds.", .{ v.sheet.hp() * r.frac, r.secs }), inner.x, y, hud.SMALL, uiart.GOOD);
-            hud.text("A / Enter    Use", inner.x, y + hud.lineH(hud.SMALL) + 6, hud.HINT, mathx.withAlpha(uiart.GILT, 220));
+            const hy = y + hud.lineH(hud.SMALL) + 6;
+            // THE REFUSAL SAYS WHY AND SAYS WHERE. A greyed prompt with no reason is a prompt the player
+            // calls broken (`locked`'s rule, one page over).
+            if (v.inCombat) {
+                hud.text("Not with something on you — load it on the quick bar.", inner.x, hy, hud.HINT, uiart.BAD);
+            } else {
+                hud.text("A / Enter    Use", inner.x, hy, hud.HINT, mathx.withAlpha(uiart.GILT, 220));
+            }
         },
     }
 }
@@ -1292,12 +1349,14 @@ fn drawPortrait(self: *const Book, col: Box, v: View, portrait: ?Portrait) void 
 }
 
 
+const TEST_QUICK = combat.Quick{}; // the default bar: the two flasks, crimson up
+
 fn testView(bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.Resists, flasks: *const combat.Flasks, quiver: *const combat.Quiver, arm: heromod.Arm) View {
     return testViewOff(bag, sheet, res, flasks, quiver, arm, .shield);
 }
 
 fn testViewOff(bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.Resists, flasks: *const combat.Flasks, quiver: *const combat.Quiver, arm: heromod.Arm, off: heromod.Off) View {
-    return .{ .bag = bag, .sheet = sheet, .res = res, .flasks = flasks, .quiver = quiver, .arm = arm, .off = off, .spell = .bolt, .fp = combat.FP_MAX, .runes = 0 };
+    return .{ .bag = bag, .sheet = sheet, .res = res, .flasks = flasks, .quick = &TEST_QUICK, .quiver = quiver, .arm = arm, .off = off, .spell = .bolt, .fp = combat.FP_MAX, .runes = 0 };
 }
 
 test "the grid walk never leaves the slots, and a ragged last row cannot swallow the cursor" {
@@ -1338,21 +1397,21 @@ test "THE SWAP IS PRICED HONESTLY: taking up the bow shows the shield's guard go
     const flasks = combat.Flasks{};
     const quiver = combat.Quiver{};
     const v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
-    const sword = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .flask = .crimson, .spell = .bolt }, v);
-    const bow = derive(.{ .arm = .bow, .off = .shield, .ammo = .plain, .flask = .crimson, .spell = .bolt }, v);
+    const sword = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .quick = .crimson_flask, .spell = .bolt }, v);
+    const bow = derive(.{ .arm = .bow, .off = .shield, .ammo = .plain, .quick = .crimson_flask, .spell = .bolt }, v);
     try std.testing.expect(worth(sword, .guard) > 0 and worth(bow, .guard) == 0); // the bow's real cost
     try std.testing.expect(worth(sword, .light) > worth(bow, .light)); // …and the sword hits harder up close
     // FIRE SHOWS ONLY ON A FIRE ARROW, and it is a fraction of that shaft's own physical.
-    const fire = derive(.{ .arm = .bow, .off = .shield, .ammo = .fire, .flask = .crimson, .spell = .bolt }, v);
+    const fire = derive(.{ .arm = .bow, .off = .shield, .ammo = .fire, .quick = .crimson_flask, .spell = .bolt }, v);
     try std.testing.expect(worth(bow, .fire) == 0 and worth(fire, .fire) > 0);
     try std.testing.expectApproxEqAbs(worth(bow, .heavy) * heromod.FIRE_ARROW_FRAC, worth(fire, .fire), 1e-3);
     // The quick-item row follows the flask, and the two draughts do not fill the same bar.
-    const cer = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .flask = .cerulean, .spell = .bolt }, v);
+    const cer = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .quick = .cerulean_flask, .spell = .bolt }, v);
     try std.testing.expectApproxEqAbs(sheet.hp() * combat.FLASK_HP_FRAC, worth(sword, .quick), 1e-3);
     try std.testing.expectApproxEqAbs(sheet.fp() * combat.FLASK_FP_FRAC, worth(cer, .quick), 1e-3);
     // A ROW MOVES ONLY WHEN THE THING THAT FEEDS IT DOES: behind a sword, choosing the other arrow moves
     // the tally it counts and not one number he swings with.
-    const swordFire = derive(.{ .arm = .sword, .off = .shield, .ammo = .fire, .flask = .crimson, .spell = .bolt }, v);
+    const swordFire = derive(.{ .arm = .sword, .off = .shield, .ammo = .fire, .quick = .crimson_flask, .spell = .bolt }, v);
     for (0..ND) |i| {
         const k: Der = @enumFromInt(i);
         if (k == .ammo) continue;
@@ -1398,15 +1457,15 @@ test "THE WAND IS PRICED HONESTLY TOO: it buys a bolt and it costs him the guard
     const flasks = combat.Flasks{};
     const quiver = combat.Quiver{};
     const v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
-    const board = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .flask = .crimson, .spell = .bolt }, v);
-    const rod = derive(.{ .arm = .sword, .off = .wand, .ammo = .plain, .flask = .crimson, .spell = .bolt }, v);
+    const board = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .quick = .crimson_flask, .spell = .bolt }, v);
+    const rod = derive(.{ .arm = .sword, .off = .wand, .ammo = .plain, .quick = .crimson_flask, .spell = .bolt }, v);
     // The left hand's price, and it is the SAME row the bow is billed on, because it is the same hand.
     try std.testing.expect(worth(board, .guard) > 0 and worth(rod, .guard) == 0);
     // …and what he got for it. Zero behind a shield, because a spell he cannot cast is not worth a number.
     try std.testing.expect(worth(board, .spell) == 0 and worth(rod, .spell) > 0);
     try std.testing.expect(worth(board, .spell_fp) == 0 and worth(rod, .spell_fp) > 0);
     // A BOW SILENCES IT WHICHEVER WAY THE LEFT SLOT IS SET — both hands are on the string.
-    const bowRod = derive(.{ .arm = .bow, .off = .wand, .ammo = .plain, .flask = .crimson, .spell = .bolt }, v);
+    const bowRod = derive(.{ .arm = .bow, .off = .wand, .ammo = .plain, .quick = .crimson_flask, .spell = .bolt }, v);
     try std.testing.expect(worth(bowRod, .spell) == 0 and worth(bowRod, .guard) == 0);
     // …and the swing rows do not move: taking a wand changes nothing about the sword in the other hand.
     for ([_]Der{ .light, .heavy, .poise, .stance, .stam_light, .stam_heavy }) |k| {
@@ -1425,8 +1484,8 @@ test "THE PAGE PRICES THE SORCERY THAT IS LOADED, not the first one ever written
     const flasks = combat.Flasks{};
     const quiver = combat.Quiver{};
     var v = testViewOff(&bag, &sheet, &res, &flasks, &quiver, .sword, .wand);
-    const bolt = derive(.{ .arm = .sword, .off = .wand, .ammo = .plain, .flask = .crimson, .spell = .bolt }, v);
-    const roots = derive(.{ .arm = .sword, .off = .wand, .ammo = .plain, .flask = .crimson, .spell = .roots }, v);
+    const bolt = derive(.{ .arm = .sword, .off = .wand, .ammo = .plain, .quick = .crimson_flask, .spell = .bolt }, v);
+    const roots = derive(.{ .arm = .sword, .off = .wand, .ammo = .plain, .quick = .crimson_flask, .spell = .roots }, v);
     // THE bug: both rows read the bolt's constants, so turning the rod moved nothing on the sheet.
     try std.testing.expect(worth(roots, .spell_fp) > worth(bolt, .spell_fp));
     try std.testing.expect(worth(roots, .spell) < worth(bolt, .spell));
@@ -1458,4 +1517,72 @@ test "the bag cursor is pulled back onto a real cell when the last of something 
     b.clamp(testView(&bag, &sheet, &res, &flasks, &quiver, .sword));
     try std.testing.expectEqual(@as(usize, 0), b.cur[idx(.inventory)]);
     try std.testing.expectEqual(@as(usize, 0), b.scroll);
+}
+
+test "IN COMBAT THE BAG IS SHUT: the inventory refuses Use and the panel says where to go instead" {
+    var bag = item.Bag{};
+    bag.add(.mushroom_jerky, 3);
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+
+    const calm = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+    var fighting = calm;
+    fighting.inCombat = true;
+
+    var b = Book{};
+    b.page = .inventory;
+    b.cur[idx(.inventory)] = 0;
+    try std.testing.expectEqual(item.Kind.mushroom_jerky, bag.nth(0).?);
+    // Out of combat the page is the convenient way…
+    try std.testing.expectEqual(Action{ .use = .mushroom_jerky }, b.confirm(calm));
+    // …and in it, nothing at all comes off this page. The quick bar is the only reach he has.
+    try std.testing.expectEqual(Action.none, b.confirm(fighting));
+}
+
+test "THE QUICK PICKER OFFERS ONLY WHAT HE HAS — and the flasks, which are never the bag's" {
+    var bag = item.Bag{};
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+    var buf: [CAND_MAX]Cand = undefined;
+
+    // AN EMPTY BAG STILL OFFERS THE TWO FLASKS: their charges come back at a grace, so he is carrying them
+    // whether or not there is a swallow in one.
+    const broke = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+    const bare = candidates(.quick, broke, &buf);
+    try std.testing.expectEqual(@as(usize, 2), bare.len);
+    for (bare) |c| try std.testing.expect(combat.flaskOf(c.act.quick) != null);
+
+    // …and an edible shows up exactly when one is in the bag.
+    bag.add(.mushroom_jerky, 1);
+    bag.add(.kobold_fang, 4); // owned, and still no business on a belt
+    const fed = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+    var sawJerky = false;
+    for (candidates(.quick, fed, &buf)) |c| {
+        const k = c.act.quick;
+        try std.testing.expect(item.quickable(k));
+        try std.testing.expect(combat.flaskOf(k) != null or fed.bag.count(k) > 0);
+        // AND THE TICK IS BAR MEMBERSHIP, not "is it the one selected" — this picker toggles.
+        try std.testing.expectEqual(fed.quick.holds(k), equipped(c, fed));
+        if (k == .mushroom_jerky) sawJerky = true;
+    }
+    try std.testing.expect(sawJerky);
+    // It opens on what the bar is TURNED TO, and the rows are filtered, so the ordinal is not the row.
+    try std.testing.expectEqual(quickRowOf(fed.quick.selected().?), pickIndexOf(.quick, fed));
+}
+
+test "the quick row prices whatever the bar holds, flask or not" {
+    const bag = item.Bag{};
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+    const v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+    try std.testing.expectApproxEqAbs(sheet.hp() * combat.FLASK_HP_FRAC, quickWorth(.crimson_flask, v), 1e-3);
+    try std.testing.expectApproxEqAbs(sheet.fp() * combat.FLASK_FP_FRAC, quickWorth(.cerulean_flask, v), 1e-3);
+    const jerky = item.use(.mushroom_jerky).regen;
+    try std.testing.expectApproxEqAbs(sheet.hp() * jerky.frac, quickWorth(.mushroom_jerky, v), 1e-3);
 }

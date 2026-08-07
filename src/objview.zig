@@ -179,6 +179,8 @@ const CELL_GAP: i32 = 10;
 const LABEL_H: i32 = 18;
 const HEADER: i32 = 78; // title band + the shelf tabs under it
 const FOOTER: i32 = 44;
+/// Drop from a panel's BOTTOM edge to its footer row — the gallery and the big viewer share it.
+const FOOT_DROP: i32 = 34;
 
 fn perPage() i32 {
     return COLS * ROWS;
@@ -311,13 +313,14 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
         );
     }
 
-    const by = box.y + modalH() - 34;
+    // Off the box's OWN extent, not a second call to the size functions it was built from.
+    const by = box.y + box.h - FOOT_DROP;
     if (ui.button(ctx, ui.rect(box.x + 16, by, 44, 24), "<", hud.MONO, false)) st.page = @max(0, st.page - 1);
     if (ui.button(ctx, ui.rect(box.x + 64, by, 44, 24), ">", hud.MONO, false)) st.page = @min(pages - 1, st.page + 1);
     var buf: [96]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "page {d}/{d}   {d} objects   drag spins, wheel zooms, click opens", .{ st.page + 1, pages, list.len }) catch "";
     hud.mono(s, box.x + 120, by + 5, hud.MONO, ui.alpha(ui.LABEL, 210));
-    if (ui.button(ctx, ui.rect(box.x + modalW() - 96, by, 80, 24), "Close", hud.MONO, false)) return false;
+    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Close", hud.MONO, false)) return false;
     return true;
 }
 
@@ -399,7 +402,7 @@ fn big(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, kind: Kind
     for (list, 0..) |k, idx| {
         if (k == kind) at = idx;
     }
-    const by = box.y + h - 34;
+    const by = box.y + box.h - FOOT_DROP;
     if (ui.button(ctx, ui.rect(box.x + BIG_PAD, by, 44, 24), "<", hud.MONO, false)) {
         st.open = list[if (at == 0) list.len - 1 else at - 1];
     }
@@ -409,8 +412,8 @@ fn big(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, kind: Kind
     var cb: [64]u8 = undefined;
     const count = std.fmt.bufPrintZ(&cb, "{d}/{d} in {s}", .{ at + 1, list.len, st.shelf.label() }) catch "";
     hud.mono(count, box.x + BIG_PAD + 104, by + 5, hud.MONO, ui.alpha(ui.LABEL, 210));
-    if (ui.button(ctx, ui.rect(box.x + w - 176, by, 74, 24), "Reset", hud.MONO, false)) p.* = .{};
-    if (ui.button(ctx, ui.rect(box.x + w - 96, by, 80, 24), "Back", hud.MONO, false)) return false;
+    if (ui.button(ctx, ui.rect(box.x + box.w - 176, by, 74, 24), "Reset", hud.MONO, false)) p.* = .{};
+    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Back", hud.MONO, false)) return false;
     return true;
 }
 

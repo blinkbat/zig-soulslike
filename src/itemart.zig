@@ -117,9 +117,16 @@ pub const FlaskTint = enum { crimson, cerulean };
 /// WHAT AN ITEM LOOKS LIKE — the one place the binding is written, and EXHAUSTIVE, so a tenth kind is a
 /// compile error here rather than a blank cell in the bag.
 pub fn draw(k: item.Kind, cx: f32, cy: f32, px: f32) void {
+    drawHeld(k, cx, cy, px, true);
+}
+
+/// …and the same picture knowing whether there is any of it LEFT, which only the quick slot and the flask
+/// ever ask: an empty glass reads as empty, and everything else is drawn whole because a bag row you can
+/// see at all is a row with one in it.
+pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
     switch (k) {
-        .crimson_flask => flask(cx, cy, px, .crimson, true),
-        .cerulean_flask => flask(cx, cy, px, .cerulean, true),
+        .crimson_flask => flask(cx, cy, px, .crimson, any),
+        .cerulean_flask => flask(cx, cy, px, .cerulean, any),
         .rune_arc => runeArc(cx, cy, px),
         .golden_seed => goldenSeed(cx, cy, px),
         .smithing_stone => smithingStone(cx, cy, px),
@@ -783,57 +790,92 @@ fn ironKey(cx: f32, cy: f32, px: f32) void {
 
 /// A STRIP OF DRIED CAP, curling as it dries, torn at both ends and dusted with the salt it was kept in.
 /// The read is LEATHERY: a wavy band, dark outside and pale where the flesh was torn open.
+/// A DRIED MUSHROOM, and the silhouette is what says so: a domed CAP over a STEM with the gills showing
+/// under the rim. As a wavy horizontal strip it was leathery and salted and read as neither — a lump.
+/// Dried, not fresh: the cap is shrunken onto a stem too thin for it and the rim has curled UP off the gills,
+/// which is exactly what drying does to one and is why it still reads as jerky rather than as forage.
 fn jerky(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
     var rng = mathx.Rng.init(0x1E12C4);
-    const len = s * 0.72;
-    const x0 = cx - len * 0.5;
-    const wobble = s * 0.10;
-    const SEGS = 12;
-    // The strip: a run of quads following a sine, each a hair thinner than the last towards the ends —
-    // a rectangle here reads as a plank and a smooth taper as a leaf.
-    var prevT = v2(0, 0);
-    var prevB = v2(0, 0);
-    for (0..SEGS + 1) |i| {
+    const capR = s * 0.32; // the cap's half-width…
+    const capH = s * 0.30; // …and how far the dome stands above its own rim
+    const rimY = cy - s * 0.02; // the underside, a touch above centre so the stem has its room
+    const SEGS = 14;
+
+    // THE STEM first, so the cap sits over its top: a shrivelled taper, wider at the foot, leaning off plumb.
+    const footX = cx + s * 0.035;
+    const stemTop = s * 0.085;
+    const stemFoot = s * 0.115;
+    quad(
+        v2(cx - stemTop, rimY),
+        v2(cx + stemTop, rimY),
+        v2(footX + stemFoot, cy + s * 0.36),
+        v2(footX - stemFoot, cy + s * 0.36),
+        CAP_DK,
+    );
+    // …lit down one side of it, or the stem is a flat plank under a shaded cap.
+    quad(
+        v2(cx, rimY),
+        v2(cx + stemTop, rimY),
+        v2(footX + stemFoot, cy + s * 0.36),
+        v2(footX + stemFoot * 0.25, cy + s * 0.36),
+        mathx.lerpColor(CAP_DK, CAP_LT, 0.30),
+    );
+    // The torn foot: pale fibres where it was pulled up, never a clean cut.
+    var f: u32 = 0;
+    while (f < 4) : (f += 1) {
+        const x = footX + (@as(f32, @floatFromInt(f)) - 1.5) * s * 0.06;
+        rl.drawLineEx(v2(x, cy + s * 0.34), v2(x + rng.range(-1.0, 1.0) * k, cy + s * 0.36 + rng.range(1.2, 3.0) * k), 1.0 * k, CAP_LT);
+    }
+
+    // THE GILLS, drawn before the cap so the dome's rim laps over their tops: dark radial ticks fanned out
+    // under the rim, and the one part of a mushroom nothing else in the bag looks like.
+    var gi: u32 = 0;
+    while (gi < 9) : (gi += 1) {
+        const t = (@as(f32, @floatFromInt(gi)) + 0.5) / 9.0;
+        const x = cx - capR * 0.86 + capR * 1.72 * t;
+        const drop = s * 0.075 * (1.0 - @abs(t - 0.5) * 1.5) * rng.range(0.8, 1.2);
+        rl.drawLineEx(v2(x, rimY - s * 0.01), v2(x * 0.985 + cx * 0.015, rimY + drop), 1.0 * k, rgba(62, 40, 30, 205));
+    }
+
+    // THE CAP: a dome laid down as a fan of quads off its own rim line, each rib a hair uneven so the
+    // outline is a dried cap and not a compass arc.
+    var prev = v2(cx - capR, rimY);
+    for (1..SEGS + 1) |i| {
         const t = @as(f32, @floatFromInt(i)) / SEGS;
-        const x = x0 + len * t;
-        const y = cy + mathx.sinf(t * 4.1 + 0.6) * wobble;
-        const half = s * (0.13 - 0.06 * @abs(t - 0.5) * 2.0) * rng.range(0.88, 1.12);
-        const top = v2(x, y - half);
-        const bot = v2(x, y + half);
-        if (i > 0) {
-            const shade = mathx.lerpColor(CAP_DK, CAP_LT, 0.25 + 0.5 * (1.0 - @abs(t - 0.42) * 2.0));
-            quad(prevT, top, bot, prevB, shade);
-        }
-        prevT = top;
-        prevB = bot;
+        const a = std.math.pi * (1.0 - t); // pi → 0, left rim over the top to the right rim
+        const shrink = rng.range(0.94, 1.05);
+        const p = v2(cx + mathx.cosf(a) * capR * shrink, rimY - mathx.sinf(a) * capH * shrink);
+        // Lit from the upper left, like every other picture in this file.
+        const shade = mathx.lerpColor(CAP_DK, CAP_LT, mathx.clampF(0.86 - t * 0.86, 0, 1));
+        rl.drawTriangle(v2(cx, rimY), prev, p, shade);
+        rl.drawTriangle(v2(cx, rimY), p, prev, shade);
+        prev = p;
     }
-    // THE TORN ENDS: pale fibres, not a clean cut.
-    for ([_]f32{ 0.0, 1.0 }) |end| {
-        const x = x0 + len * end;
-        const y = cy + mathx.sinf(end * 4.1 + 0.6) * wobble;
-        var f: u32 = 0;
-        while (f < 3) : (f += 1) {
-            const off = (@as(f32, @floatFromInt(f)) - 1.0) * s * 0.055;
-            const out = (if (end > 0.5) @as(f32, 1) else @as(f32, -1)) * rng.range(1.4, 3.2) * k;
-            rl.drawLineEx(v2(x, y + off), v2(x + out, y + off + rng.range(-1.0, 1.0) * k), 1.1 * k, CAP_LT);
-        }
+    // …and the rim CURLED UP off the gills, which is the whole tell that it is dried.
+    rl.drawLineEx(v2(cx - capR, rimY), v2(cx - capR * 0.82, rimY - s * 0.055), 1.2 * k, CAP_LT);
+    rl.drawLineEx(v2(cx + capR, rimY), v2(cx + capR * 0.84, rimY - s * 0.045), 1.2 * k, CAP_LT);
+    // A shrivel crease or two over the dome — dried cap flesh puckers.
+    var c: u32 = 0;
+    while (c < 3) : (c += 1) {
+        const a0 = 2.5 - @as(f32, @floatFromInt(c)) * 0.65;
+        rl.drawLineEx(
+            v2(cx + mathx.cosf(a0) * capR * 0.86, rimY - mathx.sinf(a0) * capH * 0.86),
+            v2(cx + mathx.cosf(a0) * capR * 0.30, rimY - mathx.sinf(a0) * capH * 0.34),
+            0.9 * k,
+            rgba(74, 46, 34, 150),
+        );
     }
-    // The curl along the top edge, the gills as dark ticks underneath, and the salt.
-    rl.drawLineEx(v2(x0 + len * 0.06, cy - s * 0.10), v2(x0 + len * 0.94, cy - s * 0.06), 1.1 * k, rgba(196, 156, 112, 150));
-    var g: u32 = 0;
-    while (g < 6) : (g += 1) {
-        const t = 0.16 + @as(f32, @floatFromInt(g)) * 0.13;
-        const x = x0 + len * t;
-        const y = cy + mathx.sinf(t * 4.1 + 0.6) * wobble;
-        rl.drawLineEx(v2(x, y + s * 0.01), v2(x + rng.range(-0.8, 0.8) * k, y + s * 0.075), 0.9 * k, rgba(70, 44, 32, 190));
-    }
+    // The salt it was cured in, over the cap only — it does not settle on the underside.
     var sa: u32 = 0;
-    while (sa < 5) : (sa += 1) {
-        const t = rng.range(0.12, 0.88);
-        const x = x0 + len * t;
-        const y = cy + mathx.sinf(t * 4.1 + 0.6) * wobble + rng.range(-0.7, 0.7) * s * 0.09;
-        rl.drawCircleV(v2(x, y), rng.range(0.4, 0.9) * k, rgba(SALT.r, SALT.g, SALT.b, 190));
+    while (sa < 6) : (sa += 1) {
+        const a0 = rng.range(0.35, std.math.pi - 0.35);
+        const r0 = rng.range(0.25, 0.88);
+        rl.drawCircleV(
+            v2(cx + mathx.cosf(a0) * capR * r0, rimY - mathx.sinf(a0) * capH * r0),
+            rng.range(0.4, 0.9) * k,
+            rgba(SALT.r, SALT.g, SALT.b, 190),
+        );
     }
 }

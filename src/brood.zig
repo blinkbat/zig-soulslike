@@ -192,6 +192,8 @@ const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 7.5;
 const DEATH_DUR = 1.05;
 const DISS_DUR = 0.9;
+/// …and the cloud. A spider dies FLAT — legs out, body low — so it comes off wider than it does tall.
+const DISSOLVE = foe.Dissolve{ .rate = 34.0, .spread = 0.60, .rise = 0.40 };
 const HERO_REACH = foe.HERO_REACH;
 
 /// RUNES each is worth.
@@ -722,7 +724,7 @@ pub const Pool = struct {
     t: f32 = 0,
     seed: f32 = 0,
     live: bool = false,
-    fx: [FX_MAX]Particle = [_]Particle{.{}} ** FX_MAX,
+    parts: [FX_MAX]Particle = [_]Particle{.{}} ** FX_MAX,
     fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
@@ -746,7 +748,7 @@ pub const Pool = struct {
     pub fn update(self: *Pool, dt: f32) void {
         if (!self.live) return;
         self.t += dt;
-        foe.tickParticles(&self.fx, dt, self.pos.y);
+        foe.tickParticles(&self.parts, dt, self.pos.y);
         if (self.t >= ACID_LIFE) {
             self.live = false;
             return;
@@ -757,7 +759,7 @@ pub const Pool = struct {
             const a = self.fxRng.angle();
             const rr = self.fxRng.float() * self.radius();
             foe.emitParticle(
-                &self.fx,
+                &self.parts,
                 &self.fxHead,
                 v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.02, self.pos.z + mathx.sinf(a) * rr),
                 v3(self.fxRng.signed() * 0.14, self.fxRng.range(0.25, 0.85), self.fxRng.signed() * 0.14),
@@ -771,7 +773,7 @@ pub const Pool = struct {
     }
 
     pub fn drawFx(self: *const Pool) void {
-        foe.drawParticles(&self.fx);
+        foe.drawParticles(&self.parts);
     }
     pub fn xform(self: *const Pool) rl.Matrix {
         const r = self.radius();
@@ -793,7 +795,7 @@ pub const Sac = struct {
     killed: bool = false,
     hatched: bool = false,
     gone: bool = false,
-    fx: [FX_MAX]Particle = [_]Particle{.{}} ** FX_MAX,
+    parts: [FX_MAX]Particle = [_]Particle{.{}} ** FX_MAX,
     fxHead: usize = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
 
@@ -853,14 +855,14 @@ pub const Sac = struct {
 
     pub fn update(self: *Sac, dt: f32, blade: foe.Blade) bool {
         if (self.gone) {
-            foe.tickParticles(&self.fx, dt, self.pos.y);
+            foe.tickParticles(&self.parts, dt, self.pos.y);
             return false;
         }
         self.flash = mathx.maxF(0, self.flash - dt);
         // A SAC IS A TARGET, so its vitals run like every other target's — `sinceHurt` is what the floating HP bar is gated on, and left frozen at 0 the bar never goes away again.
         self.vit.tick(dt);
         self.t += dt;
-        foe.tickParticles(&self.fx, dt, self.pos.y);
+        foe.tickParticles(&self.parts, dt, self.pos.y);
         if (self.killed or self.hatched) {
             if (self.t >= SAC_BURST_DUR) self.gone = true;
             return false;
@@ -901,7 +903,7 @@ pub const Sac = struct {
             const a = self.fxRng.angle();
             const s = self.fxRng.range(0.4, 1.0) * spd;
             foe.emitParticle(
-                &self.fx,
+                &self.parts,
                 &self.fxHead,
                 c,
                 v3(mathx.cosf(a) * s, self.fxRng.range(0.4, 2.1), mathx.sinf(a) * s),
@@ -915,7 +917,7 @@ pub const Sac = struct {
     }
 
     pub fn drawFx(self: *const Sac) void {
-        foe.drawParticles(&self.fx);
+        foe.drawParticles(&self.parts);
     }
 
     pub fn xform(self: *const Sac) rl.Matrix {
@@ -994,7 +996,7 @@ pub const Spider = struct {
     fade: f32 = 0,
     gone: bool = false,
 
-    fx: [FX_MAX]Particle = [_]Particle{.{}} ** FX_MAX,
+    parts: [FX_MAX]Particle = [_]Particle{.{}} ** FX_MAX,
     fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
@@ -1118,7 +1120,7 @@ pub const Spider = struct {
 
     pub fn update(self: *Spider, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) Act {
         if (self.gone) {
-            foe.tickParticles(&self.fx, dt, self.pos.y);
+            foe.tickParticles(&self.parts, dt, self.pos.y);
             return .none;
         }
         self.heroHit = null;
@@ -1137,7 +1139,7 @@ pub const Spider = struct {
         self.biteCd = mathx.maxF(0, self.biteCd - dt);
         self.layCd = mathx.maxF(0, self.layCd - dt);
         self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), spec(self.role).aggro);
-        foe.tickParticles(&self.fx, dt, self.pos.y);
+        foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
         const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), spec(self.role).aggro);
@@ -1503,7 +1505,7 @@ pub const Spider = struct {
 
 
     fn emit(self: *Spider, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        foe.emitParticle(&self.fx, &self.fxHead, p, vel, life, r0, r1, col, grav);
+        foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
     }
     fn bloodBurst(self: *Spider, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
         var i: i32 = 0;
@@ -1592,22 +1594,8 @@ pub const Spider = struct {
             );
         }
     }
-    fn emitDissolve(self: *Spider, dt: f32) void {
-        self.fxAccum += 34.0 * (1.0 - 0.6 * self.fade) * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
-            const a = self.fxRng.angle();
-            const rr = self.fxRng.range(0.05, 0.6) * self.scale * (1.0 - 0.6 * self.fade);
-            const p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + self.fxRng.range(0.03, 0.4) * self.scale, self.pos.z + mathx.sinf(a) * rr);
-            if (self.fxRng.float() < 0.75) {
-                self.emit(p, v3(self.fxRng.signed() * 0.25, self.fxRng.range(0.5, 1.3), self.fxRng.signed() * 0.25), self.fxRng.range(0.5, 1.0), self.fxRng.range(0.02, 0.055) * self.scale, 0.003, MOTE, -0.7);
-            } else {
-                self.emit(p, v3(self.fxRng.signed() * 0.3, self.fxRng.range(0.1, 0.4), self.fxRng.signed() * 0.3), self.fxRng.range(0.3, 0.6), self.fxRng.range(0.035, 0.08) * self.scale, 0.01, DUST, 2.0);
-            }
-        }
-    }
     pub fn drawFx(self: *const Spider) void {
-        foe.drawParticles(&self.fx);
+        foe.drawParticles(&self.parts);
     }
 
 
@@ -1751,11 +1739,7 @@ pub const Spider = struct {
         self.abdoPump = 0.25 * rearK - 0.3 * clench;
         self.fangs = rearK;
         self.lift = 0;
-        if (self.t >= DEATH_DUR) {
-            self.fade = mathx.smoothstep(DEATH_DUR, DEATH_DUR + DISS_DUR, self.t);
-            self.emitDissolve(dt);
-            if (self.t >= DEATH_DUR + DISS_DUR) self.gone = true;
-        }
+        foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE);
     }
     /// Legs hold their standing stance (the coil, the landing) — the body moves, the feet do not.
     fn resolvePlanted(self: *Spider) void {

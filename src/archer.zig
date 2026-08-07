@@ -177,7 +177,13 @@ pub const ARROW_HIT = combat.Hit{ .dmg = 16, .poise = 10 }; // eased down from 2
 const DEATH_DUR = 1.15; // collapse-and-still before the corpse dissipates
 /// RUNES a skeletal archer is worth — twice a toad.
 pub const RUNES: u32 = 130;
-const DISS_DUR = 0.9; // dissipation into bone-dust + grace motes
+const DISS_DUR = 0.9; // …and the dissipation into bone-dust and grace motes after it
+/// BONE, KNOCKED OFF IN FLAKES — these things do not bleed. Here rather than in `warrior.zig` for the reason
+/// the feet and the fist are: it is the same dead man, and a second copy is a second thing to retune.
+pub const BONE_CHIP = rgba(150, 140, 116, 235);
+/// …and the whole dissolve of that body, which both skeletons wear. `scale` carries the warrior's extra inch.
+pub const DISSOLVE = foe.Dissolve{ .rate = 54.0, .spread = 0.85, .rise = 0.70, .flake = BONE_CHIP };
+const NPART = 56;
 const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 7.0;
 
@@ -509,6 +515,11 @@ pub const Archer = struct {
     fade: f32 = 0,
     gone: bool = false,
 
+    parts: [NPART]foe.Particle = [_]foe.Particle{.{}} ** NPART,
+    fxHead: usize = 0,
+    fxAccum: f32 = 0,
+    fxRng: mathx.Rng = mathx.Rng.init(1),
+
     xf: [N]rl.Matrix = undefined,
     stringXf: [2]rl.Matrix = undefined, // tip→nock, nock→tip (live string segments)
     nockXf: rl.Matrix = undefined,
@@ -519,6 +530,7 @@ pub const Archer = struct {
     pub fn spawn(home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Archer {
         var a = Archer{ .pos = home, .home = home, .facing = faceYaw, .scale = scale * SCALE, .seed = seed };
         a.rest = REST;
+        a.fxRng = foe.fxStream(seed, 71237.0, 11);
         a.reloadCd = 0.4 + seed; // stagger the volley so a line doesn't fire in lockstep
         a.pose();
         return a;
@@ -569,7 +581,10 @@ pub const Archer = struct {
 
     // `blade` is applied at the END (via tryHit) so a kill sets justDied for THIS frame's beat
     pub fn update(self: *Archer, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) bool {
-        if (self.gone) return false;
+        if (self.gone) {
+            foe.tickParticles(&self.parts, dt, self.pos.y); // the last motes keep drifting out
+            return false;
+        }
         self.justDied = false; // one-frame flag: re-set below only if a blade kills it this frame
         // THE ROOTS HAVE THE FEET (foe.grip) — it still draws and still looses, and only the travel is taken.
         // The PANIC LEAP is the exception the grip cannot answer on its own: see `foe.canLeap` below.
@@ -582,6 +597,7 @@ pub const Archer = struct {
         self.backstepCd = mathx.maxF(0, self.backstepCd - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
         self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
+        foe.tickParticles(&self.parts, dt, self.pos.y);
         self.t += dt;
         var loosed = false;
         var movedDist: f32 = 0; // this frame's walk distance + heading → the shared gait
@@ -680,10 +696,7 @@ pub const Archer = struct {
             .dead => {
                 self.armT = mathx.approach(self.armT, 0, dt * 3.0);
                 self.drawAmt = mathx.approach(self.drawAmt, 0, dt * 8.0);
-                if (self.t >= DEATH_DUR) {
-                    self.fade = mathx.smoothstep(DEATH_DUR, DEATH_DUR + DISS_DUR, self.t);
-                    if (self.t >= DEATH_DUR + DISS_DUR) self.gone = true;
-                }
+                foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE);
             },
         }
         if (self.state != .loose) self.kick = mathx.approach(self.kick, 0, dt * 4.5);
@@ -751,6 +764,10 @@ pub const Archer = struct {
         self.t = 0;
         self.hop = 0;
         self.justDied = true;
+    }
+
+    pub fn debugKill(self: *Archer) void {
+        self.enterDeath();
     }
 
     fn leapCrouch(self: *const Archer) f32 {
@@ -934,6 +951,11 @@ pub const Line = struct {
     }
     pub fn draw(self: *const Line, scene: ?*gfx.Scene) void {
         foe.drawGroup(self.liveConst(), &self.model, scene);
+    }
+    /// The bone-dust going up. Unlit spheres over the opaque pass, like every other group's — `game.drawScene`
+    /// picks this up off `@hasDecl`, so declaring it is the whole wiring.
+    pub fn drawFx(self: *const Line) void {
+        for (self.liveConst()) |*a| foe.drawParticles(&a.parts);
     }
     pub fn pierce(self: *Line, blade: foe.Blade) bool {
         return foe.pierceGroup(self.live(), blade);

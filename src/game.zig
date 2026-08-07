@@ -160,6 +160,9 @@ pub const Game = struct {
     haunt: shademod.Haunt, // the shades — a flanking pack that drains focus and teleports
     chests: chestmod.Chests, // the openable boxes — props with a lid and a state (chest.zig)
     folk: npcmod.Folk, // the NPCs the map posts — bodies with a name and a conversation, not a foe contract
+    /// Which `editor.mapGen` the folk on the field were posted from, so an editor frame re-homes them when the
+    /// MAP changes and leaves their idle clocks running when it does not.
+    folkGen: u32 = 0,
     /// THE SCRIPT LAYER. `trig` is every switch, counter, timer and one-shot latch in the world; `talk` is the
     /// one conversation that may be on screen. Both read the map's own tables and neither is authored in Zig.
     trig: trigmod.Runtime = .{},
@@ -235,6 +238,7 @@ pub const Game = struct {
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
         g.shafts = [_]archermod.Arrow{.{}} ** MAX_SHAFTS;
         g.editor = .{};
+        g.folkGen = g.editor.mapGen;
         g.lock = null;
         g.lockBlind = 0;
         g.rumble = .{};
@@ -274,6 +278,63 @@ const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "muster", .kind = null, .aggro = warriormod.AGGRO_R, .vs = &.{"line"} },
     .{ .field = "haunt", .kind = .shade, .aggro = shademod.AGGRO_R, .vs = &.{ "warren", "line", "muster" } },
 };
+
+/// **IS A FIGHT ON.** The one predicate, and the only thing allowed to answer it. Nothing about the HERO is
+/// in it: swinging at air in an empty field is not combat, and standing perfectly still in front of a roused
+/// ogre is. What it gates today is the consumables — in combat only the quick bar may be reached, and the
+/// character book's own Use is refused (`useItem`).
+///
+/// A creature counts if it is ROUSED (it has been hit, or it is coming for him wherever he stands) or if he
+/// is simply inside the range it notices him at — **and that range is the GROUP'S OWN NUMBER**
+/// (`FoeGroup.aggro`), never a radius invented here: a toad's world is 11 m and an archer's is 24, and one
+/// flat figure would put him in combat with a toad that has not seen him and out of it under a bowman's nose.
+/// Sight is deliberately NOT asked. It is a real question (`env.sees`) but it flickers as he rounds a corner,
+/// and a state that decides whether a menu works may not blink.
+///
+/// A CORPSE DOES NOT COUNT (`foe.corporeal`): the dissipation runs for seconds after the last one dies, and
+/// a fight is over when the thing swinging at you stops, not when its motes have finished going up.
+///
+/// …AND A BOSS ZONE, the day there is one. `worldfmt` has no boss record yet; when it does, its region test
+/// is the third term here and nothing else in the codebase changes.
+pub fn inCombat(g: *const Game) bool {
+    inline for (FOE_GROUPS) |gr| {
+        for (@field(g, gr.field).liveConst()) |*f| {
+            if (foeFights(f, g.hero.pos, gr.aggro)) return true;
+        }
+    }
+    return false;
+}
+
+/// The single creature's answer `inCombat` folds. Split out because the rule is worth a test and standing up
+/// a whole `Game` to reach one is not.
+fn foeFights(f: anytype, hero: rl.Vector3, aggro: f32) bool {
+    if (!foemod.corporeal(f)) return false;
+    return f.leash.roused() or mathx.distXZ(hero, f.pos) <= aggro;
+}
+
+test "A FIGHT IS ON while something is roused OR simply near, and is over when the last body stops" {
+    var toad = frogmod.Frog.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const near = v3(0, 0, frogmod.AGGRO_R - 1.0);
+    const far = v3(0, 0, frogmod.AGGRO_R + 40.0);
+    try std.testing.expect(foeFights(&toad, near, frogmod.AGGRO_R));
+    try std.testing.expect(!foeFights(&toad, far, frogmod.AGGRO_R)); // out of its world, and calm
+
+    // ROUSED REACHES ANYWHERE: hit it and walk off, and you are still in a fight with it.
+    toad.leash.provoke();
+    try std.testing.expect(foeFights(&toad, far, frogmod.AGGRO_R));
+
+    // …AND A CORPSE IS NOT A COMBATANT, though it stays `alive()` for seconds while it dissipates.
+    toad.debugKill();
+    try std.testing.expect(toad.alive()); // still on the field, still going out
+    try std.testing.expect(!foeFights(&toad, near, frogmod.AGGRO_R));
+}
+
+test "the ranges the fight is judged at are each GROUP'S OWN, never one figure for the field" {
+    // A toad's world is a fraction of an archer's, so a flat radius would be wrong at both ends. The table
+    // is what says so, and this pins that the numbers actually differ rather than merely being spelled twice.
+    try std.testing.expect(frogmod.AGGRO_R < archermod.AGGRO_R);
+    inline for (FOE_GROUPS) |gr| try std.testing.expect(gr.aggro > 0);
+}
 
 /// Whether a re-homed field starts with EYES on the hero. A freshly loaded world is `.blind` — a foe behind a
 /// wall must not know he is there until `markSight` says so. The shot harness is `.seen`: no game loop runs to
@@ -1382,6 +1443,9 @@ pub fn drawScene(g: *Game) void {
     g.env.drawFlora(&view);
     g.scene.setWind(false);
     drawArrows(g); // in-flight + stuck arrows (lit, rigid, non-casting)
+    // …and the thinned occluders LAST, so their alpha is what mattes the hero standing behind them rather
+    // than being drawn under him and counting for nothing (see `Env.drawThinned`).
+    g.env.drawThinned(&view);
     if (g.menu.wireframe) rl.gl.rlDisableWireMode();
     g.env.drawVeils(&view);
     // Unlit spheres over the opaque geometry.
@@ -1499,11 +1563,10 @@ pub fn hud(g: *Game, dt: f32) void {
                 .roots => hud_.Slot.roots,
             }) else .empty,
             g.hero.fp.cur >= g.hero.castCost(),
-            switch (g.hero.flasks.sel) {
-                .crimson => hud_.FlaskTint.crimson,
-                .cerulean => hud_.FlaskTint.cerulean,
-            },
-            g.hero.flasks.ready(),
+            // DOWN: whatever the quick bar is turned to, and how many of it there are. A flask counts
+            // charges (they come back at a grace); anything else counts what is in the bag.
+            g.hero.quick.selected(),
+            quickLeft(g),
             if (bowUp) hud_.Ammo{ .n = g.hero.quiver.ready(), .fire = heromod.arrowBurns(g.hero.quiver.sel) } else null,
         );
         hud_.reticle(g.hero.aimB);
@@ -1734,12 +1797,22 @@ pub fn run(mode: Mode) void {
             // …and the shield comes DOWN.
             g.hero.setGuard(false);
             g.hero.pose();
-            // Re-home the foes from the map every frame the editor is up, so moving a spawn moves the thing you can SEE.
+            // Re-home the foes from the map every frame the editor is up, so moving a spawn moves the thing you
+            // can SEE. NOT gated on `mapGen` the way the folk below are, and deliberately: the Units layer moves
+            // spawns with a stepper, a marquee drag, a wipe, a paste and an undo, and a flag stamped at each of
+            // those is a list to forget one from. The cost is ≤ MAX_FOES scanned per group plus a rig pose per
+            // live foe — the same order as the pose the frame draws anyway.
             rehomeFoes(g, .blind);
             rehomeChests(g);
-            // …AND THE FOLK, for the same reason. They still POSE, so an idle plays under the editor's camera
-            // and you can see which way one is facing before you leave.
-            g.folk.reset(&g.map);
+            // …AND THE FOLK, but ONLY WHEN THE MAP ITSELF IS REPLACED (`editor.mapGen`). Re-homed every frame
+            // like the foes, `Folk.reset` re-spawns them, which restarts the three idle clocks from `seed*40`
+            // every frame — the breathing bob, the weight shift and the head drift never advance and the pose
+            // the camera is being pointed at is frozen on frame one. Nothing in the editor can move an `npc:`
+            // record, so there is nothing per-frame to track.
+            if (g.folkGen != g.editor.mapGen) {
+                g.folk.reset(&g.map);
+                g.folkGen = g.editor.mapGen;
+            }
             g.folk.update(rawDt, g.hero.pos, PLAY_HALF);
             g.rumble.update(rawDt, false);
             drawScene(g);
@@ -1914,7 +1987,7 @@ pub fn run(mode: Mode) void {
             if (rl.isGamepadButtonPressed(PAD, .left_face_down)) cycleReq = true;
         }
         if (cycleReq and !g.hero.dead) {
-            g.hero.cycleFlask();
+            g.hero.cycleQuick();
             sfx.play(.flask_cycle);
         }
 
@@ -1998,6 +2071,9 @@ pub fn run(mode: Mode) void {
         // …and anything he ATE drips HP back.
         g.hero.regen.tick(dt, &g.hero.vit);
         g.hero.tickFlash(dt); // fade the red damage flash
+        // …and the QUICK BAR sheds whatever he has run out of. Once a frame rather than at each site that can
+        // empty the bag (a use, a drip, whatever spends one next): a per-site list is a list to forget one from.
+        g.hero.quick.dropEmpty(&g.bag);
         // Action input is dead while staggered or dead (a reaction is committed).
         if (!g.hero.dead and !g.hero.staggered()) {
             if (rollReq) {
@@ -2021,7 +2097,7 @@ pub fn run(mode: Mode) void {
                 if (g.hero.requestCast()) sfx.play(.wand_charge);
             }
             g.hero.steerQueuedRoll(rollDir(g, mv));
-            if (drinkReq and g.hero.startDrink()) sfx.play(.flask_drink);
+            if (drinkReq) quickUse(g);
         }
         // NO COMMITTED ACTION IS A SPRINT — ONE predicate, not a list of them. Without it, Shift held through a
         // flask drained the pool at the sprint rate and denied him the shield for the whole shuffle, off a
@@ -2308,7 +2384,9 @@ pub fn bookView(g: *Game) bookmod.View {
         .sheet = &g.hero.sheet,
         .res = &g.hero.vit.res,
         .flasks = &g.hero.flasks,
+        .quick = &g.hero.quick,
         .quiver = &g.hero.quiver,
+        .inCombat = inCombat(g),
         .arm = g.hero.arm,
         .off = g.hero.off,
         .spell = g.hero.spell,
@@ -2332,14 +2410,39 @@ fn bookAct(g: *Game, a: bookmod.Action) void {
         .ammo => |k| while (g.hero.quiver.sel != k) {
             if (!g.hero.cycleArrow()) break;
         },
-        .flask => |k| while (g.hero.flasks.sel != k) {
-            const before = g.hero.flasks.sel;
-            g.hero.cycleFlask();
-            if (g.hero.flasks.sel == before) break; // refused (dead, or mid-draught): stop rather than spin
+        // A TOGGLE, not a choice: the quick bar holds up to `combat.QUICK_SLOTS` things and this row is one
+        // of them going on or coming off. `syncFlask` follows, because what the bar is turned to is what
+        // `flasks.sel` has to be for the draught and the HUD tint to agree with it.
+        .quick => |k| {
+            if (g.hero.quick.holds(k)) _ = g.hero.quick.remove(k) else _ = g.hero.quick.add(k);
+            g.hero.syncFlask();
         },
     }
 }
 
+/// HOW MANY OF THE QUICK SLOT'S THING ARE LEFT. A flask counts CHARGES, which come back at a grace; anything
+/// else counts what is in the BAG, which does not. `book.quickTally` is the same question on the other page
+/// and cannot share this one — it reads a `View`, not the live game.
+fn quickLeft(g: *const Game) u8 {
+    const k = g.hero.quick.selected() orelse return 0;
+    if (combat.flaskOf(k)) |f| return g.hero.flasks.charges(f);
+    return @intCast(@min(g.bag.count(k), 99));
+}
+
+/// SPEND THE THING THE QUICK BAR IS TURNED TO — the cross's DOWN press, and in combat the ONLY way anything
+/// gets consumed. A flask goes down the committed draught it has always had; everything else is the bag's
+/// own `useItem`, which is instant and costs no animation, because an edible is not a draught.
+fn quickUse(g: *Game) void {
+    const k = g.hero.quick.selected() orelse return; // an empty bar: nothing to reach for
+    if (combat.flaskOf(k) != null) {
+        if (g.hero.startDrink()) sfx.play(.flask_drink);
+        return;
+    }
+    useItem(g, k);
+}
+
+/// A flask never comes through here — its charges are `combat.Flasks`, refilled at a grace, and the bag has
+/// none of them (`quickUse`).
 fn useItem(g: *Game, k: item.Kind) void {
     if (g.hero.dead) return;
     switch (item.use(k)) {

@@ -895,7 +895,9 @@ pub const Hero = struct {
     stam: combat.Stamina = .{}, // ER's third bar — the hero's alone; foes don't carry one
     fp: combat.Focus = .{},
     runes: combat.Runes = .{},
-    flasks: combat.Flasks = .{}, // Crimson + Cerulean, sharing the quick-item slot
+    flasks: combat.Flasks = .{}, // Crimson + Cerulean — their charges; WHICH is up is the bar's business
+    /// THE QUICK BAR the cross's DOWN slot is turned to, and in combat the only reach he has (`game.inCombat`).
+    quick: combat.Quick = .{},
     /// …and the ARROWS, which are finite: an empty quiver refuses the shot (see `startShot`).
     quiver: combat.Quiver = .{},
     regen: combat.Regen = .{},
@@ -1556,10 +1558,20 @@ pub const Hero = struct {
     }
 
 
-    /// Swap which flask is up (D-pad down).
-    pub fn cycleFlask(self: *Hero) void {
+    /// STEP THE QUICK BAR to the next thing on it. `flasks.sel` is STAMPED from the new entry rather than
+    /// cycled on its own, so the draught, the HUD tint and the charge count all keep reading the one field
+    /// they always read and only the bar decides what is up.
+    pub fn cycleQuick(self: *Hero) void {
         if (self.dead or self.drinking) return;
-        self.flasks.cycle();
+        self.quick.cycle();
+        self.syncFlask();
+    }
+
+    /// …and the same stamp wherever the bar is changed from outside (the character book's own slot).
+    pub fn syncFlask(self: *Hero) void {
+        if (self.quick.selected()) |k| {
+            if (combat.flaskOf(k)) |f| self.flasks.sel = f;
+        }
     }
 
     /// WHICH ARROW IS NOCKED NEXT. Refused mid-loose for the reason `shotArrow` exists — and it does not need the bow to be out, because choosing your ammunition is not an action.

@@ -66,6 +66,8 @@ test {
     _ = @import("warrior.zig");
     _ = @import("shade.zig");
     _ = @import("leechfly.zig"); // THE FIRST FLYER — its height is the whole creature, so the tests are about that
+    _ = @import("rooted.zig"); // THE TREE THAT ISN`T — a fixture, so the tests are about its rings
+    _ = @import("shroom.zig"); // THE SPORELING — the trip's roll and the cloud's metronome
     _ = @import("foe.zig");
     _ = @import("combat.zig");
     _ = @import("stats.zig");

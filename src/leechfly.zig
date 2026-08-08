@@ -51,9 +51,9 @@ const DUST = foe.DUST;
 /// ITS OWN STATURE — nose to tail, and NOT the shared humanoid scaffold: it has no legs to walk on, so
 /// `hero.legChain` has nothing to solve and `advanceGait` nothing to phase.
 ///
-/// SIZED AGAINST A TOAD (owner: "about as large as the frogs"). A toad is `frog.SCALE` 1.4 over a body about
-/// a metre long, so this is a mosquito you could not swat: 1.15 m of body with a wingspan half again as wide.
-pub const H: f32 = 1.15;
+/// SIZED AGAINST A TOAD, then grown (owner: "about as large as the frogs", later "a bit bigger"): 1.3 m of
+/// body with a wingspan half again as wide — a mosquito you could not swat.
+pub const H: f32 = 1.3;
 
 /// WHERE IT FLIES. `pos.y` is the ground under it (the one law every creature obeys) and `hover` is what it
 /// is holding itself off that by — the same field the shade has, except this one MOVES.
@@ -442,7 +442,7 @@ pub const Leechfly = struct {
             .stab => {
                 self.hoverTo = HOVER_LOW;
                 const u = mathx.clampF(self.t / STAB_DUR, 0, 1);
-                self.lunge = lerpF(-0.45, 1.0, 1.0 - (1.0 - u) * (1.0 - u) * (1.0 - u));
+                self.lunge = lerpF(-0.45, 1.0, foe.swingCurve(u));
                 self.pitch = mathx.approach(self.pitch, 16.0, dt * 140.0);
                 if (!self.dealt and u >= 0.45 and self.holds(hero)) {
                     self.dealt = true;

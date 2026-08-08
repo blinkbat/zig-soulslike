@@ -440,7 +440,7 @@ pub const Shade = struct {
                     self.reach = mathx.approach(self.reach, 0.55, dt * 4.0);
                 } else {
                     const u = mathx.clampF(self.t / a.strikeDur, 0, 1);
-                    self.reach = lerpF(-0.55, 1.0, 1.0 - (1.0 - u) * (1.0 - u) * (1.0 - u));
+                    self.reach = lerpF(-0.55, 1.0, foe.swingCurve(u));
                     if (!self.dealt and u >= 0.42 and self.holds(hero)) {
                         self.dealt = true;
                         self.leash.noteCombat();
@@ -758,7 +758,9 @@ pub const Shade = struct {
         // whole rig rather than each state carrying its own vanish.
         const fs = self.scale * (1.0 - 0.82 * self.thin);
         const facingDeg = mathx.degrees(self.facing);
-        const bob = IDLE_BOB * mathx.sinf(self.elapsed * BOB_HZ * std.math.tau + self.seed * 6.28);
+        // The bob's RATE is dealt as well as its phase — a haunting of three phase-offset copies of one
+        // clock still beats in step every few seconds, and three clocks that never agree do not.
+        const bob = IDLE_BOB * mathx.sinf(self.elapsed * BOB_HZ * (1.0 + 0.16 * (self.seed - 0.5)) * std.math.tau + self.seed * 6.28);
         // …and a DEAD one settles as it goes, where a blinking one holds its height: one is coming apart on
         // the spot, the other is somewhere else already.
         const sink = if (self.state == .dead) -0.30 * self.scale * self.thin else 0;
@@ -773,7 +775,7 @@ pub const Shade = struct {
         // THE LEAN LIVES IN THE TRUNK, not at the root: there are no legs to be rotated out from under it,
         // but the hem tatters hang off the ROOT and a root pitch would swing them forward with the chest —
         // which is the one thing a trailing hem must never do.
-        wx[TORSO] = placeAt(REST[TORSO], mul(rx(leanDeg), rz(mathx.sinf(self.elapsed * 0.41) * 2.4)), wx[ROOT]);
+        wx[TORSO] = placeAt(REST[TORSO], mul(rx(leanDeg), rz(mathx.sinf(self.elapsed * (0.41 + 0.07 * (self.seed - 0.5)) + self.seed * 7.7) * 2.4)), wx[ROOT]);
         wx[COWL] = placeAt(REST[COWL], mul(
             rx(-leanDeg * 0.35 + 4.0 * self.reach),
             ry(mathx.sinf(self.elapsed * 0.33 + self.seed * 4.0) * 5.0),

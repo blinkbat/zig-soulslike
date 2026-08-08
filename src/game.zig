@@ -18,9 +18,11 @@ const collision = @import("collision.zig");
 const rumblemod = @import("rumble.zig");
 const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
+const shroommod = @import("shroom.zig");
 const koboldmod = @import("kobold.zig"); // THE WARBAND — three roles in one group (the priest heals)
 const broodmod = @import("brood.zig"); // THE BROOD — a mother, her sacs and what comes out of them
 const warriormod = @import("warrior.zig"); // THE SKELETAL WARRIORS — the archer's bones, armed two ways
+const rootedmod = @import("rooted.zig"); // THE ROOTED — a fixture that cannot chase, and drags you back instead
 const leechmod = @import("leechfly.zig"); // THE LEECHFLIES — the first thing in the game that FLIES, and climbs out of reach
 const shademod = @import("shade.zig"); // THE SHADES — the only thing that takes his FOCUS, and the only thing that blinks
 const chestmod = @import("chest.zig"); // the openable boxes
@@ -158,6 +160,8 @@ pub const Game = struct {
     band: koboldmod.Warband, // the kobold warband — berserkers, priests and slingers, mixed
     brood: broodmod.Brood, // the brood mothers, their egg sacs, their hatchlings and their acid
     muster: warriormod.Muster, // the skeletal warriors — shieldmen and greatswords, mixed
+    grove: rootedmod.Grove, // the Rooted — dead trees that are not, one per clearing
+    cluster: shroommod.Cluster, // the sporelings — squat mushrooms that fling themselves and burst spore clouds
     swarm: leechmod.Swarm, // the leechflies — fast flyers that drink his life and zoom out of sword reach
     haunt: shademod.Haunt, // the shades — a flanking pack that drains focus and teleports
     chests: chestmod.Chests, // the openable boxes — props with a lid and a state (chest.zig)
@@ -198,34 +202,50 @@ pub const Game = struct {
     drawDt: f32 = 1.0 / 60.0,
 
     fn init(g: *Game) void {
+        // THE STARTUP LEDGER — one INFO line per phase, so "what is slow to launch" is read off the
+        // console and never guessed. The editor is deliberately on it: it is a struct default and the
+        // line proving that costs a microsecond.
+        var initTimer = std.time.Timer.start() catch unreachable;
+        const phase = struct {
+            fn ms(t: *std.time.Timer, name: []const u8) void {
+                std.debug.print("INIT: {s: <10} {d:.1} ms\n", .{ name, @as(f64, @floatFromInt(t.lap())) / 1e6 });
+            }
+        }.ms;
         g.scene = gfx.Scene.init();
         g.sky = gfx.Sky.init();
         g.vignette = gfx.Vignette.init();
         g.retro = gfx.Retro.init(rl.getScreenWidth(), rl.getScreenHeight());
         g.menu = .{}; // opens on the main screen: Continue / Debug / Quit
+        phase(&initTimer, "gfx");
         worldfmt.loadOrPanic(worldfmt.START_MAP, &g.map);
         PLAY_HALF = g.map.half - envmod.PLAY_INSET; // before anything spawns against it
+        phase(&initTimer, "map");
         g.env.build(&g.scene); // meshes once…
         g.env.uploadSoil(&g.map);
         g.env.uploadWater(&g.map);
         g.env.uploadHeight(&g.map);
         g.env.materialize(&g.map);
+        phase(&initTimer, "world");
         g.hero = heromod.Hero.init(g.scene.shader);
         g.hero.pos = mathx.ground(0, 4); // start just south of the ruin avenue
         plantActor(g, &g.hero.pos);
         g.hero.facing = std.math.pi; // facing -Z, into the columns
         g.hero.setSpawn(g.hero.pos, g.hero.facing); // where a death returns him
         g.hero.pose();
+        phase(&initTimer, "hero");
         g.warren = frogmod.Knot.init(g.scene.shader);
         g.line = archermod.Line.init(g.scene.shader);
         g.grief = ogremod.Grief.init(g.scene.shader);
         g.band = koboldmod.Warband.init(g.scene.shader);
         g.brood = broodmod.Brood.init(g.scene.shader);
         g.muster = warriormod.Muster.init(g.scene.shader);
+        g.grove = rootedmod.Grove.init(g.scene.shader);
+        g.cluster = shroommod.Cluster.init(g.scene.shader);
         g.swarm = leechmod.Swarm.init(g.scene.shader);
         g.haunt = shademod.Haunt.init(g.scene.shader);
         g.chests = chestmod.Chests.init(g.scene.shader);
         g.folk = npcmod.Folk.init(g.scene.shader);
+        phase(&initTimer, "foes");
         rehomeFoes(g, .blind);
         g.rest = .{};
         rehomeChests(g);
@@ -240,7 +260,9 @@ pub const Game = struct {
         g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
         g.shafts = [_]archermod.Arrow{.{}} ** MAX_SHAFTS;
+        phase(&initTimer, "pools");
         g.editor = .{};
+        phase(&initTimer, "editor");
         g.folkGen = g.editor.mapGen;
         g.lock = null;
         g.lockBlind = 0;
@@ -282,6 +304,9 @@ const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "haunt", .kind = .shade, .aggro = shademod.AGGRO_R, .vs = &.{ "warren", "line", "muster" } },
     // IT IS NEVER SHOULDERED AND IT SHOULDERS NOTHING: it is in the air, and `airborne` is what says so.
     .{ .field = "swarm", .kind = .leechfly, .aggro = leechmod.AGGRO_R },
+    // IT IS A FIXTURE: nothing shoulders it off its spot and it shoulders nothing, because it never moves.
+    .{ .field = "grove", .kind = .rooted, .aggro = rootedmod.AGGRO_R, .vsHero = false },
+    .{ .field = "cluster", .kind = .shroom, .aggro = shroommod.AGGRO_R },
 };
 
 /// **IS A FIGHT ON.** The one predicate, and the only thing allowed to answer it. Nothing about the HERO is
@@ -520,6 +545,8 @@ test "THE MARK RIDES THE BODY, on every creature that has one" {
     try std.testing.expect(markSwing(&boards, hero) > MIN);
     var ghost = shademod.Shade.spawn(mathx.zero3, 0, 1.0, 0.3);
     try std.testing.expect(markSwing(&ghost, hero) > MIN);
+    var cap = shroommod.Shroom.spawn(mathx.zero3, 0, 1.0, 0.3);
+    try std.testing.expect(markSwing(&cap, hero) > MIN);
 }
 
 fn groundActor(g: *const Game, pos: *rl.Vector3, dt: f32) void {
@@ -700,6 +727,23 @@ pub fn spawnWisp(g: *Game, from: rl.Vector3) void {
 /// so it bills through `combat.Vitals.drip` (which leaves the regen gate where it found it) and no shield
 /// stands between him and a thing that is already attached. The ROLL is the answer to it — get out of the
 /// beak's own band and the creature's `holds` goes false on the next frame.
+/// THE HOOK LANDED AND IT PULLS. Through `env.walkStep` like his own movement, so a drag cannot haul him up
+/// a cliff or through a wall, and clamped to the play area the same way `moveHero` clamps it.
+///
+/// BLOCKED, HE KEEPS HIS GROUND. `heroTakes` has already run this frame, so the blow`s fate is known: the
+/// boards are the one answer to a hook, which is the only place a shield beats walking away.
+pub fn rootedYank(g: *Game, from: rl.Vector3, pull: f32, h: combat.Hit) void {
+    _ = h;
+    if (g.hero.dead or g.hero.guarding or g.hero.rolling) return;
+    const dir = mathx.dirXZ(g.hero.pos, from);
+    if (mathx.lenXZ(dir) < 1e-3) return;
+    const stepped = g.env.walkStep(g.hero.pos, mathx.normV(dir), pull);
+    g.hero.pos.x = mathx.clampF(stepped.x, -PLAY_HALF, PLAY_HALF);
+    g.hero.pos.z = mathx.clampF(stepped.z, -PLAY_HALF, PLAY_HALF);
+    g.rig.addShake(SHAKE_GUARD_BREAK);
+    g.rumble.play(rumblemod.hit_heavy);
+}
+
 pub fn leechSip(g: *Game, h: combat.Hit) void {
     _ = g.hero.burn(h);
 }
@@ -1716,7 +1760,11 @@ pub fn run(mode: Mode) void {
     defer hud_.deinit();
 
     // NO AUDIO UNDER --shot.
-    if (!shot) sfx.init();
+    if (!shot) {
+        var bakeTimer = std.time.Timer.start() catch unreachable;
+        sfx.init();
+        std.debug.print("INIT: {s: <10} {d:.1} ms\n", .{ "audio bake", @as(f64, @floatFromInt(bakeTimer.read())) / 1e6 });
+    }
     defer if (!shot) sfx.deinit();
     defer objviewmod.unload();
     defer bookmod.unload(); // the character book's turntable target
@@ -2083,6 +2131,7 @@ pub fn run(mode: Mode) void {
         g.hero.vit.tick(dt);
         // …and anything he ATE drips HP back.
         g.hero.regen.tick(dt, &g.hero.vit);
+        g.hero.tickWard(dt); // the sporeling cap's chaos ward, running out beside it
         g.hero.tickFlash(dt); // fade the red damage flash
         // …and the QUICK BAR sheds whatever he has run out of. Once a frame rather than at each site that can
         // empty the bag (a use, a drip, whatever spends one next): a per-site list is a list to forget one from.
@@ -2220,6 +2269,16 @@ pub fn run(mode: Mode) void {
         if (g.swarm.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, leechSip)) |b| {
             _ = heroTakes(g, b, b.hit.stance > 0, true);
         }
+        // THE ROOTED. Its hook hands the DRAG over rather than applying it — only this side knows whether the
+        // blow was blocked, and a hook the boards caught must not move him.
+        if (g.grove.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, rootedYank)) |b| {
+            _ = heroTakes(g, b, b.hit.stance > 0, true);
+        }
+        // THE SPORELINGS. The bonk is a blow; the cloud it leaves is a HOLD, billed further down beside
+        // the mother's acid — two channels for the leechfly's reason.
+        if (g.cluster.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.stance > 0, true);
+        }
         // …and the one moment of theirs the frame should feel BEFORE it is hit by it.
         if (g.muster.anyLeapt()) {
             g.rumble.play(rumblemod.swing_heavy);
@@ -2250,6 +2309,10 @@ pub fn run(mode: Mode) void {
         // …and the floor she left.
         const burn = g.brood.burn(dt, g.hero.pos);
         if (burn > 0 and g.hero.burn(broodmod.acidPulse(burn)) == .taken) sfx.play(.acid_burn);
+        // …and the air THEY left. The same metronome, its own accumulator — standing in spores and acid at
+        // once is two bad decisions and bills as both.
+        const spores = g.cluster.spores(dt, g.hero.pos);
+        if (spores > 0 and g.hero.burn(shroommod.sporePulse(spores)) == .taken) sfx.play(.acid_burn);
         g.chests.update(dt, g.hero.pos);
         // THE FOLK, and the same terrain gate the foes get — a wanderer ambling about his post has no more
         // business walking up a cliff than a kobold has.
@@ -2471,6 +2534,26 @@ fn useItem(g: *Game, k: item.Kind) void {
             g.hero.regen.start(g.hero.vit.hpMax * r.frac, r.secs);
             sfx.play(.eat);
         },
+        // THE CANDLE FLIES THE SLINGER'S OWN WAD (`.clump` — one fire in this world), thrown at the point
+        // the reticle converges on (`camAimPoint`, the bow's law), through the hero's shaft pool where the
+        // swept pierce, cover and ground are one body of code. ONE victim — nothing thrown here is a blast.
+        .lob => |l| {
+            if (g.bag.take(k, 1) == 0) return;
+            const from = mathx.addV(heroAimPoint(g), mathx.scaleV(mathx.headingDir(g.hero.facing), 0.4));
+            const hit = combat.Hit{ .dmg = l.dmg, .poise = l.poise, .elem = combat.elems(.{ .fire = l.fire }) };
+            putIn(&g.shafts, archermod.launchShaft(from, camAimPoint(g), koboldmod.CLUMP_SPEED, hit, true, .clump));
+            sfx.play(.wand_cast);
+        },
+        .ward => |w| {
+            if (g.bag.take(k, 1) == 0) return;
+            g.hero.startWard(w.chaos, w.secs);
+            sfx.play(.eat);
+        },
+        .wind => |w| {
+            if (g.bag.take(k, 1) == 0) return;
+            g.hero.stam.secondWind(w.share);
+            sfx.play(.flask_drink);
+        },
     }
 }
 
@@ -2662,6 +2745,8 @@ fn askFoe(comptime T: type, g: *const Game, r: FoeRef, comptime ask: anytype) T 
         .ogre => ask(&g.grief.ogres[r.idx]),
         .shade => ask(&g.haunt.shades[r.idx]),
         .leechfly => ask(&g.swarm.flies[r.idx]),
+        .rooted => ask(&g.grove.trees[r.idx]),
+        .shroom => ask(&g.cluster.shrooms[r.idx]),
         .berserker, .priest, .slinger => unreachable, // handled above
         .brood_mother, .broodling, .brood_sac => unreachable,
         .shieldman, .greatsword => unreachable,
@@ -2710,6 +2795,8 @@ fn refInBounds(g: *const Game, r: FoeRef) bool {
         .ogre => r.idx < g.grief.liveConst().len,
         .shade => r.idx < g.haunt.liveConst().len,
         .leechfly => r.idx < g.swarm.liveConst().len,
+        .rooted => r.idx < g.grove.liveConst().len,
+        .shroom => r.idx < g.cluster.liveConst().len,
         // …every kind handled by the three group checks above, named so a new one cannot slip past.
         .berserker, .priest, .slinger, .brood_mother, .broodling, .brood_sac, .shieldman, .greatsword => false,
     };

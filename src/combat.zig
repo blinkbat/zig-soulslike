@@ -331,6 +331,15 @@ pub const Stamina = struct {
         return if (self.canSprint()) 0 else STAM_WIND_CLEAR;
     }
 
+    /// ONE SHARP BREATH (the Second Wind item): `frac` of the pool back at once, through `settleWind`
+    /// like every other path that moves `cur` — which is what clears the winded latch, since half a pool
+    /// is past `STAM_WIND_CLEAR`. `sinceSpend` restarts: it is a gasp, not a rest, so the trickle waits.
+    pub fn secondWind(self: *Stamina, share: f32) void {
+        self.cur = mathx.minF(self.max, self.cur + self.max * share);
+        self.sinceSpend = 0;
+        self.settleWind();
+    }
+
     /// The winded latch, set and cleared in ONE place and called from every path that moves `cur`.
     fn settleWind(self: *Stamina) void {
         if (self.cur <= 0) {

@@ -741,7 +741,7 @@ pub const Warrior = struct {
             .swing => {
                 foe.faceToward(self.pos, &self.facing, hero, SWING_TURN, dt);
                 const k = mathx.clampF(self.t / a.swingDur, 0, 1);
-                self.setSwing(mathx.smoothstep(0, a.swingDur, self.t));
+                self.setSwing(foe.swingCurve(self.t / a.swingDur));
                 self.flyStroke(k, bounds); // the leap, or the step into a plain blow
                 if (self.t >= a.swingDur * a.impactK) self.live = true;
                 if (self.t >= a.swingDur) {
@@ -2368,7 +2368,7 @@ fn swung(role: Role, mv: usize, stroke: u8, at: f32) Swung {
     t = 0;
     while (t < a.swingDur) : (t += 1.0 / 60.0) {
         w.t = t;
-        w.setSwing(mathx.smoothstep(0, a.swingDur, t));
+        w.setSwing(foe.swingCurve(t / a.swingDur));
         w.pose();
         const tip = w.weaponSeg()[1];
         out.maxD = @max(out.maxD, mathx.distXZ(w.pos, tip));

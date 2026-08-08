@@ -423,6 +423,12 @@ pub const Id = enum {
     toad_chomp,
     toad_hurt,
     toad_die,
+    shroom_hop,
+    shroom_coo, // the gather's tell — sweet, and then the second note bends flat
+    shroom_fling,
+    shroom_puff,
+    shroom_hurt,
+    shroom_die,
     bow_draw,
     bow_loose,
     arrow_hit,
@@ -466,6 +472,12 @@ pub const Id = enum {
     leech_drink, // …and the pull of it, retriggered while it holds on
     leech_hurt,
     leech_die, // the note falling out from under it
+    wood_wake, // THE UNFOLD — timber tearing out of its own grain
+    wood_creak, // …and the bole working against its roots while it is awake
+    wood_swing, // a limb through the air: mass, not an edge
+    wood_hit, // …and it landing
+    wood_hurt, // steel into wood
+    wood_die, // the whole thing letting go and coming down
     spider_hiss, // the rear, and the squat before she lays: air forced out through something clenched
     spider_spit,
     spider_bite, // two fangs and the horn claws crossing behind them
@@ -846,12 +858,18 @@ fn mkParry(r: *Rack) void {
     // SO THE METAL COMES FROM NOISE. `mkGuardBlock` already works and is the same event with less behind it —
     // this is that voice made HARDER and BRIGHTER: more grit at the strike, a resonant band shimmering off the
     // top of it, and only a touch of pure tone as garnish. Distinct because it is sharper, not because it sings.
+    // …AND THE TURN IS ITS OWN EVENT NOW (owner: "a more unique sound"). What a block does not own is the
+    // SLIDE-OFF: a blow a parry refused does not stop, it is sent somewhere else — so after the strike a
+    // short scrape RISES away (air swept low→high, the one direction nothing else in the bank sweeps), and
+    // one higher partial hangs a beat past the hit. Still noise-built; distinct by shape, not by singing.
     r.tick(0.0, 0.58, 6000); // the strike, brighter than the block's 3400
     r.grit(0.0, 0.09, 0.44, 3400, 0.35, 5.0); // steel ON steel — the character, and it is noise
     r.body(0.0, 0.15, 205, 84, 1.00, 5.0); // the mass, in the block's own register
-    r.air(0.004, 0.20, 0.22, 5200, 1800, 0.30, 3.2); // the shimmer coming off it, still noise
-    r.ring(0.004, 0.17, 1240, 0.20, 5.5, 2); // …and a touch of tone, the block's own garnish
-    r.master(1.65, 5000);
+    r.grit(0.05, 0.10, 0.28, 2100, 0.45, 4.2); // the blade SLIDING off the boards' face
+    r.air(0.05, 0.15, 0.26, 1500, 6200, 0.30, 3.4); // …and the shimmer RISING with it, away
+    r.ring(0.004, 0.17, 1240, 0.20, 5.5, 2); // a touch of tone at the strike…
+    r.ring(0.06, 0.15, 1980, 0.11, 6.0, 2); // …and the turned blow's own, a shade higher and later
+    r.master(1.7, 5200);
 }
 
 fn mkRefused(r: *Rack) void {
@@ -929,6 +947,55 @@ fn mkToadDie(r: *Rack) void {
     r.master(2.0, 2400);
 }
 
+
+// THE SPORELING — cute shapes with one wrong thing in each (owner: "slightly unnerving"). The wrongness
+// is always PITCH doing something a happy sound would not: bending flat, sliding up too far, leaking out.
+fn mkShroomHop(r: *Rack) void {
+    r.body(0.0, 0.07, 150, 70, 0.4, 5.5); // the soft pat of it landing
+    r.ring(0.0, 0.05, 980, 0.12, 9.0, 1); // one tiny glassy peep, barely there
+    r.master(1.6, 2600);
+}
+
+fn mkShroomCoo(r: *Rack) void {
+    // Two little notes. The first is clean; the second SLIDES FLAT while breath gathers under it —
+    // a nursery sound going somewhere it shouldn't.
+    r.ring(0.0, 0.14, 640, 0.42, 6.5, 2);
+    r.growl(0.17, 0.34, 700, 496, 0.34, 0.22, 0.05);
+    r.air(0.05, 0.46, 0.20, 800, 2600, 0.30, 1.3);
+    r.master(1.5, 3200);
+}
+
+fn mkShroomFling(r: *Rack) void {
+    // The launch: a thin gliding whee that keeps RISING past where a squeal would stop.
+    r.growl(0.0, 0.34, 340, 1150, 0.38, 0.18, 0.06);
+    r.air(0.06, 0.28, 0.26, 900, 3200, 0.32, 2.0);
+    r.body(0.0, 0.08, 160, 80, 0.4, 5.0); // the push off the little feet
+    r.master(1.7, 3400);
+}
+
+fn mkShroomPuff(r: *Rack) void {
+    // The cloud: a deep soft POFF and a long papery hiss that stays a beat longer than feels right.
+    r.body(0.0, 0.12, 120, 52, 0.7, 3.4);
+    r.air(0.02, 0.55, 0.30, 2400, 700, 0.5, 1.0); // the hiss sinking as the spores settle
+    r.grit(0.04, 0.30, 0.16, 3600, 0.35, 1.8);
+    r.master(1.9, 3000);
+}
+
+fn mkShroomHurt(r: *Rack) void {
+    // A bright chirp that CRACKS mid-note into something lower than the body making it.
+    r.ring(0.0, 0.07, 920, 0.4, 8.0, 2);
+    r.growl(0.07, 0.20, 560, 170, 0.44, 0.3, 0.07);
+    r.grit(0.0, 0.08, 0.25, 1600, 0.5, 5.0);
+    r.master(1.9, 3000);
+}
+
+fn mkShroomDie(r: *Rack) void {
+    // A toy losing its air: one long sagging note wobbling as it goes down, and the leak after it.
+    r.growl(0.0, 0.60, 520, 64, 0.5, 0.4, 0.06);
+    r.air(0.30, 0.40, 0.22, 1800, 500, 0.4, 1.0);
+    r.body(0.44, 0.20, 90, 40, 0.5, 2.6);
+    r.master(1.8, 2600);
+}
 
 fn mkBowDraw(r: *Rack) void {
     // A slow creak: resonant noise crawling upward as the limbs load.
@@ -1091,6 +1158,66 @@ fn mkShadeGather(r: *Rack) void {
 /// A HAIR LONGER THAN ITS OWN RETRIGGER (`leechfly.WHINE_EVERY`) so consecutive takes OVERLAP into one note.
 /// Gapped instead, the whine chatters on and off at 4 Hz, which is a helicopter. The SILENCES are between
 /// phrases, not between takes — see `leechfly.beatWings`.
+// ─── THE ROOTED ───────────────────────────────────────────────────────────────────────────────────────
+// WOOD IS GRIT AND A LOW BODY, never a ring: a ring is metal or glass, and the one thing this creature must
+// not sound like is either. Everything here is a fibre tearing, filtered dark.
+
+/// THE UNFOLD. Dry grain letting go over the better part of a second, with a groan under it that RISES —
+/// the one sound in the bank that swells rather than decaying, because the thing making it is standing up.
+fn mkWoodWake(r: *Rack) void {
+    r.grit(0.0, 0.62, 0.52, 900, 0.72, 0.6);
+    r.growl(0.02, 0.70, 44, 84, 0.40, 0.42, 0.5);
+    r.air(0.0, 0.66, 0.20, 700, 2200, 0.30, 0.5);
+    r.crackle(0.34, 40.0);
+    r.body(0.44, 0.26, 92, 38, 0.34, 3.4); // the roots taking the weight
+    r.master(2.0, 2600);
+}
+
+/// The bole working. Quiet, slow, and it must not read as a footstep: no transient at the front of it.
+fn mkWoodCreak(r: *Rack) void {
+    r.growl(0.0, 0.44, 62, 78, 0.26, 0.34, 1.0);
+    r.grit(0.04, 0.30, 0.16, 620, 0.60, 1.6);
+    r.ends(0.10, 0.14);
+    r.master(1.4, 1800);
+}
+
+/// A limb through the air: MASS and not an edge. Broad, low noise with no hiss in it — a hiss is steel.
+fn mkWoodSwing(r: *Rack) void {
+    r.air(0.0, 0.30, 0.56, 260, 1500, 0.36, 1.5);
+    r.growl(0.0, 0.26, 58, 96, 0.20, 0.26, 1.8);
+    r.master(1.7, 2400);
+}
+
+/// …and it landing. A dead thud with the grain cracking through it, no ring at all.
+fn mkWoodHit(r: *Rack) void {
+    r.tick(0.0, 0.44, 2600);
+    r.body(0.0, 0.20, 150, 44, 0.62, 4.0);
+    r.grit(0.0, 0.16, 0.50, 1300, 0.66, 3.4);
+    r.crackle(0.22, 70.0);
+    r.master(2.4, 2200);
+}
+
+/// Steel into wood: a chunk, and a shower of it after.
+fn mkWoodHurt(r: *Rack) void {
+    r.tick(0.0, 0.40, 4200);
+    r.grit(0.0, 0.13, 0.56, 1900, 0.62, 3.8);
+    r.body(0.0, 0.11, 190, 70, 0.34, 4.6);
+    r.crackle(0.16, 90.0);
+    r.master(2.3, 3200);
+}
+
+/// THE WHOLE THING COMING DOWN. A long tear, then the ground taking it — the only voice here with two
+/// events in it, because a tree falling is a thing that happens and then arrives.
+fn mkWoodDie(r: *Rack) void {
+    r.grit(0.0, 0.70, 0.54, 1000, 0.76, 1.2);
+    r.growl(0.0, 0.80, 70, 30, 0.44, 0.46, 1.4);
+    r.air(0.10, 0.60, 0.26, 1600, 300, 0.30, 1.6);
+    r.crackle(0.44, 120.0);
+    r.body(0.80, 0.30, 110, 32, 0.72, 3.0); // the ground
+    r.grit(0.80, 0.24, 0.40, 800, 0.70, 3.2);
+    r.master(2.5, 2000);
+}
+
 fn mkLeechWing(r: *Rack) void {
     r.growl(0.0, 0.32, 356, 392, 0.26, 0.05, 1.0);
     r.air(0.0, 0.32, 0.06, 2600, 1700, 0.25, 1.0); // the air it is moving, and nothing above it
@@ -1721,6 +1848,12 @@ const BANK = [NV]Row{
     .{ .id = .toad_chomp, .make = mkToadChomp, .gain = battle(0.62), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 30 },
     .{ .id = .toad_hurt, .make = mkToadHurt, .gain = battle(0.58), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 30 },
     .{ .id = .toad_die, .make = mkToadDie, .gain = battle(0.66), .mix = .combat, .jit = 0.11, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 34 },
+    .{ .id = .shroom_hop, .make = mkShroomHop, .gain = battle(0.30), .mix = .combat, .jit = 0.18, .vjit = 0.30, .vars = 4, .poly = 4, .reach = 22 },
+    .{ .id = .shroom_coo, .make = mkShroomCoo, .gain = battle(0.46), .mix = .combat, .jit = 0.14, .vjit = 0.22, .vars = 4, .poly = 3, .reach = 26 },
+    .{ .id = .shroom_fling, .make = mkShroomFling, .gain = battle(0.52), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 30 },
+    .{ .id = .shroom_puff, .make = mkShroomPuff, .gain = battle(0.56), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 30 },
+    .{ .id = .shroom_hurt, .make = mkShroomHurt, .gain = battle(0.48), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 4, .poly = 3, .reach = 26 },
+    .{ .id = .shroom_die, .make = mkShroomDie, .gain = battle(0.56), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 30 },
     .{ .id = .bow_draw, .make = mkBowDraw, .gain = 0.17, .mix = .combat, .jit = 0.10, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 44 },
     .{ .id = .bow_loose, .make = mkBowLoose, .gain = battle(0.58), .mix = .combat, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 64 },
     .{ .id = .arrow_hit, .make = mkArrowHit, .gain = battle(0.72), .mix = .combat, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3 },
@@ -1773,6 +1906,14 @@ const BANK = [NV]Row{
     .{ .id = .leech_drink, .make = mkLeechDrink, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 4, .poly = 3, .reach = 26 },
     .{ .id = .leech_hurt, .make = mkLeechHurt, .gain = battle(0.56), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 5, .poly = 4, .reach = 40 },
     .{ .id = .leech_die, .make = mkLeechDie, .gain = battle(0.60), .mix = .combat, .jit = 0.11, .vjit = 0.15, .vars = 4, .poly = 3, .reach = 48 },
+    // THE TREE. It is a big slow mass, so it is heard a long way off and it takes its time — the wake and
+    // the death are the two longest tails in the bank after the ogre.
+    .{ .id = .wood_wake, .make = mkWoodWake, .gain = battle(0.86), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 2, .reach = 96 },
+    .{ .id = .wood_creak, .make = mkWoodCreak, .gain = battle(0.34), .mix = .combat, .jit = 0.18, .vjit = 0.26, .vars = 5, .poly = 3, .reach = 42 },
+    .{ .id = .wood_swing, .make = mkWoodSwing, .gain = battle(0.62), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 4, .poly = 3, .reach = 60 },
+    .{ .id = .wood_hit, .make = mkWoodHit, .gain = battle(0.82), .mix = .combat, .jit = 0.08, .vjit = 0.12, .vars = 4, .poly = 3, .reach = 74 },
+    .{ .id = .wood_hurt, .make = mkWoodHurt, .gain = battle(0.66), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 5, .poly = 3, .reach = 54 },
+    .{ .id = .wood_die, .make = mkWoodDie, .gain = battle(0.90), .mix = .combat, .jit = 0.07, .vjit = 0.11, .vars = 3, .poly = 2, .reach = 110 },
     .{ .id = .spider_hiss, .make = mkSpiderHiss, .gain = battle(0.56), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 66 },
     .{ .id = .spider_spit, .make = mkSpiderSpit, .gain = battle(0.58), .mix = .combat, .jit = 0.12, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 62 },
     .{ .id = .spider_bite, .make = mkSpiderBite, .gain = battle(0.64), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 34 },

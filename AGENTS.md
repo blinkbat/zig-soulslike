@@ -113,12 +113,14 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `foe.zig` | THE FOE STANDARD — shared contract, `Blade`/`strike`/`weaponReaches`/`Blow`, `Trail` ribbon, particles, `Leash`, group plumbing |
 | `frog.zig` | gaping toad + `Knot` |
 | `archer.zig` | skeletal archer + `Line`; kite-only, arrows that stick and fade |
-| `ogre.zig` | one-eyed ogre + `Grief`; 24 bones, high poise, overhead slam + side swipe, never strafes |
+| `ogre.zig` | one-eyed ogre + `Grief`; 24 bones, high poise; slam (sometimes HELD at the top), side swipe (sometimes a RETURN chained off it), mid-range lunging DRIVE, jittered cooldowns; never strafes |
 | `kobold.zig` | kobold warband + `Warband` — three roles of one creature (berserker/priest/slinger); the priest is why they are one group |
 | `brood.zig` | brood mother, sacs, broodlings + `Brood`; guard not hunter, acid POOLS are the weapon |
 | `warrior.zig` | skeletal warriors + `Muster` — shieldman (blocks, guard-breaks to one knee) and greatsword (uninterruptible slam) |
 | `shade.zig` | shades + `Haunt`; legless, hovers, 17 bones of its own. The one thing that drains FOCUS, the one thing that TELEPORTS |
 | `leechfly.zig` | THE FIRST FLYER + `Swarm`; 15 bones, never lands. Drinks his HP through a beak and heals off what it takes, and ZOOMS out of sword reach |
+| `rooted.zig` | THE TREE THAT ISN'T + `Grove`; a snag-mimic fixture — eyes open outside its reach, three limb strikes (slam/sweep/hook-drag), never moves |
+| `shroom.zig` | the sporeling + `Cluster`; a squat mushroom that FLINGS itself and bursts a lingering chaos spore cloud (billed as a drip). Sometimes it TRIPS instead — same gather, longer opening |
 | `combat.zig` | `Vitals` (HP + two-tier stagger + regen + death), `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`. THE place to retune feel |
 | `stats.zig` | the character sheet — seven attributes and the curves that make the bars |
 | `item.zig` | item vocabulary, `Use`, the `Bag` |
@@ -129,7 +131,7 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `uiart.zig` | chrome DRESSING shared by hud/menu/book/ui |
 | `itemart.zig` | pictures of things — armaments and bag items as objects, sized by the caller |
 | `icons.zig` | editor glyph set, drawn from primitives (vector, not an atlas) |
-| `book.zig` | THE CHARACTER BOOK (pad START) — equipment / inventory / stats |
+| `book.zig` | THE CHARACTER BOOK (pad START) — a Diablo paper doll + ten quick sockets, the bag, the sheet |
 | `menu.zig` | pause/debug menu, sound levels, retro + sound filter racks |
 | `audio.zig` | ~80 synthesized voices through one tape-style `master`; three submixes; read it as recipes |
 | `rumble.zig` | XInput directly (raylib's GLFW backend stubs `SetGamepadVibration`); holds `PAD` |
@@ -414,7 +416,8 @@ chips you for it; a parry is a COMMITTED WINDOW that pays `STAM_PARRY` once and 
 - **THE CREATURE READS THE SHIELD, IT NEVER REACHES FOR IT** (`foe.Parry`, stamped by `game.markParry` exactly
   as `markSight` stamps the eyes). Each MOVE answers for its own frames and its own reach (`ogre.parryable`):
   only the move knows where its head is, and a slam you rolled clear of is not one a shield six metres off can
-  touch. **FOUR CREATURES CARRY WINDOWS** — the ogre's slam and swipe, both skeletal warriors' three strokes
+  touch. **FOUR CREATURES CARRY WINDOWS** — all four of the ogre's blows (slam, swipe, return, drive — a held
+  slam tell moves nothing, since the window reads the DROP), both skeletal warriors' three strokes
   (mace, slam, lunge), the brood mother's bite and the toad's leap. Adding one is a `parry` field, a `toImpact`,
   a `parryable` and its group's own `setParry`/`anyParried`: **`game.markParry` and `game.anyParried` are folded
   over `FOE_GROUPS` and keyed off `@hasDecl`**, so nothing there is edited and a group with nothing to catch just
@@ -480,11 +483,11 @@ the fight, which is the whole point of it.
   tint and the charge count all keep reading the one field they always read, and only the bar decides what
   is up. Nothing calls `Flasks.cycle` any more.
 - **A REMOVAL LEAVES ITS HOLE.** The bar is stepped by muscle memory mid-fight; a list that compacts under
-  you every time you drop something is one you cannot learn. `add` takes the first free slot.
-- **THE EQUIPMENT PAGE'S QUICK PICKER TOGGLES** where every other slot chooses — it is the only one holding
-  more than one thing, so `equipped` is bar MEMBERSHIP and it is what draws the ticks. Its rows are FILTERED
-  (`item.quickable`: a flask or something with an effect), so a row's ordinal is not the enum's and
-  `pickIndexOf` has to count it out the same way `candidates` builds it.
+  you every time you drop something is one you cannot learn.
+- **EACH BAR ENTRY IS ITS OWN SOCKET ON THE PAGE** — two rows of five on the paper doll, and Confirm on one
+  puts a kind in THAT socket (`combat.Quick.put`, which moves a kind already elsewhere on the bar rather
+  than copying it). The rows are FILTERED to what he actually carries (`quickOffered`) and carry an empty
+  row, so a kind's ordinal is not its row and `pickIndexOf` counts it out the way `candidates` builds it.
 
 ### Resistances — PoE2's four
 
@@ -512,6 +515,8 @@ the fight, which is the whole point of it.
   | skeletal warrior | −35 | +60 | 0 | +45 | the archer's own table — it is the archer's body |
   | shade | +30 | +65 | 0 | −45 | nothing there to burn, and cold is what it already is |
   | leechfly | −55 | −25 | 0 | +35 | a wing is a membrane; the chaos in it is what it has been drinking |
+  | the Rooted | −70 | +40 | −20 | +30 | dead dry wood; fire is the counter, lightning splits it |
+  | sporeling | −50 | +15 | 0 | +75 | a damp little fungus stuffed with its own element |
 
 - **NOTHING GRANTS THE HERO ANY YET, AND THE SHEET SAYS SO** — the book's STATS page shows all four at
   0%. `makeWhole` CARRIES RESISTANCES ACROSS a grace: they are what he is, not a meter to refill.

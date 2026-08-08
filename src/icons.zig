@@ -35,6 +35,8 @@ pub const Icon = enum {
     greatsword,
     shade,
     leechfly,
+    rooted,
+    shroom,
     new,
     open,
     save,
@@ -295,6 +297,33 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             line(cx - s * 0.10, cy + s * 0.22, cx - s * 0.04, cy + s * 0.36, w * 0.8, d);
             line(cx + s * 0.10, cy + s * 0.22, cx + s * 0.16, cy + s * 0.44, w * 0.8, d);
             line(cx + s * 0.30, cy + s * 0.18, cx + s * 0.24, cy + s * 0.34, w * 0.8, d);
+        },
+
+        .rooted => {
+            // A TRUNK WITH TWO EYES IN IT and limbs that reach: the only unit glyph that is also a prop, and
+            // the eyes are what say which of the two it is.
+            vline(cx, cy + s * 0.10, s * 0.74, w * 2.4, col); // the bole
+            dot(cx - s * 0.09, cy - s * 0.06, w * 1.5, col); // …and the pair of knot-holes
+            dot(cx + s * 0.09, cy - s * 0.06, w * 1.5, col);
+            hline(cx, cy + s * 0.44, s * 0.44, w, d); // the roots it cannot leave
+            // Two limbs out and one over the top, each elbowing rather than running straight.
+            line(cx - s * 0.02, cy - s * 0.18, cx - s * 0.26, cy - s * 0.30, w, col);
+            line(cx - s * 0.26, cy - s * 0.30, cx - s * 0.38, cy - s * 0.14, w * 0.8, col);
+            line(cx + s * 0.02, cy - s * 0.10, cx + s * 0.28, cy - s * 0.22, w, col);
+            line(cx + s * 0.28, cy - s * 0.22, cx + s * 0.40, cy - s * 0.04, w * 0.8, col);
+            line(cx, cy - s * 0.26, cx + s * 0.06, cy - s * 0.44, w * 0.8, d);
+        },
+
+        .shroom => {
+            // A CAP OVER A MOUTH (no eyes — the creature has none): the dome is the mushroom, the mouth is
+            // what makes it a unit and not a decor toadstool, and the puff beside it is what it does to you.
+            arc(cx, cy - s * 0.06, s * 0.34, 180, 360, w * 1.6, col); // the dome
+            hline(cx, cy - s * 0.06, s * 0.62, w * 1.2, col); // its rim
+            vline(cx - s * 0.10, cy + s * 0.14, s * 0.30, w * 1.6, col); // the squat stalk…
+            vline(cx + s * 0.10, cy + s * 0.14, s * 0.30, w * 1.6, col);
+            hline(cx, cy + s * 0.12, s * 0.12, w * 1.3, d); // …and the small flat mouth under the rim
+            dot(cx + s * 0.36, cy - s * 0.34, w * 1.2, d); // the spore puff, drifting off the cap
+            dot(cx + s * 0.44, cy - s * 0.24, w * 0.9, d);
         },
 
         .leechfly => {

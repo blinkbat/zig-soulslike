@@ -866,15 +866,22 @@ pub const Archer = struct {
         const pull = mathx.smoothstep(0.45, 1.0, at);
         // Seeded wonk — each archer stands a little crooked (cosmetic only; wabi-sabi).
         const wonk = (self.seed - 0.5) * 6.0;
+        // …and it does not stand STILL: a skeleton does not breathe, it BALANCES — a slow, uneasy sway
+        // (two incommensurate rates, dealt off the seed) as if the bones were forever catching themselves.
+        // Zero on the move and through the crumple; the lagged copy is what keeps it from swaying as one bar.
+        const idleAmt = (1.0 - mathx.clampF(self.moving * 2.0, 0, 1)) * (1.0 - dk);
+        const swayArg = self.elapsed * (0.55 + 0.25 * (0.5 + 0.5 * mathx.sinf(self.seed * 31.7))) + self.seed * 6.28;
+        const swy = mathx.sinf(swayArg) * idleAmt;
+        const swyLag = mathx.sinf(swayArg - 0.8) * idleAmt;
 
         const spineX = 4.0 - 3.0 * dr + 22.0 * dk - 20.0 * stun + 26.0 * self.leapLean();
-        setLocal(wx, SPINE, rest, mul3(rx(spineX * 0.5), ry(-0.35 * prot), rz(wonk * 0.5)));
-        setLocal(wx, CHEST, rest, mul3(rx(spineX * 0.5), ry(-0.5 * prot - 5.0 * reach - 9.0 * pull), rz(-wonk * 0.3)));
+        setLocal(wx, SPINE, rest, mul3(rx(spineX * 0.5 + 0.8 * swy), ry(-0.35 * prot), rz(wonk * 0.5 + 1.1 * swy)));
+        setLocal(wx, CHEST, rest, mul3(rx(spineX * 0.5 + 0.6 * swyLag), ry(-0.5 * prot - 5.0 * reach - 9.0 * pull + 2.0 * swyLag), rz(-wonk * 0.3 - 0.8 * swyLag)));
         setLocal(wx, NECK, rest, rx(3.0 + 12.0 * dk - 8.0 * stun));
         setLocal(wx, SKULL, rest, mul3(
             rx(6.0 + 4.0 * pull + 20.0 * dk - 30.0 * stun),
             ry(self.headScan + 8.0 * pull),
-            rz(wonk + 9.0 * dr + 14.0 * dk),
+            rz(wonk + 9.0 * dr + 14.0 * dk - 1.4 * swyLag),
         ));
 
         // Legs buckle under the crumple ONLY when dead; alive, hero.legChain (pose()) owns them.
@@ -904,14 +911,14 @@ pub const Archer = struct {
 
         const armStun = -70.0 * stun; // arms fly up when hit
         const bowT = mathx.clampF(at * 1.7, 0, 1);
-        const bowShFwd = mathx.lerpF(-26.0, -88.0, bowT) + 5.0 * self.kick + armStun;
+        const bowShFwd = mathx.lerpF(-26.0, -88.0, bowT) + 5.0 * self.kick + armStun + 2.2 * swyLag;
         setLocal(wx, SHR, rest, mul(rx(bowShFwd - 30.0 * dk), rz(-9.0 + wonk * 0.4)));
         setLocal(wx, ELR, rest, rx(-(8.0 + 5.0 * bowT)));
         setLocal(wx, WRR, rest, rz(-6.0 - 4.0 * self.kick));
         setLocal(wx, BOW, rest, mul(ry(180.0), rx(100.0 - 3.0 * self.kick)));
 
         const wob = (mathx.sinf(self.elapsed * 9.0 + self.seed * 7.0) + 0.5 * mathx.sinf(self.elapsed * 23.0)) * 1.1 * dr;
-        const drawSh = -26.0 - 102.0 * reach + 44.0 * pull + armStun - 30.0 * dk + wob;
+        const drawSh = -26.0 - 102.0 * reach + 44.0 * pull + armStun - 30.0 * dk + wob + 1.8 * swy;
         const drawYaw = -26.0 * reach + 10.0 * pull; // out-and-back at the quiver, in at the anchor
         const drawRz = 9.0 + 24.0 * pull - wonk * 0.4; // the drawing elbow rides up
         const drawEl = 16.0 + 104.0 * reach + 32.0 * pull - 30.0 * self.kick;

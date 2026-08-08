@@ -11,6 +11,12 @@ pub const Kind = enum(u8) {
     kobold_fang,
     iron_key,
     mushroom_jerky, // THE FIRST ITEM THAT DOES ANYTHING — see `Use`
+    ember_candle, // thrown fire — the quiver's answer without the quiver
+    sporeling_cap, // chewed: chaos slides off you for a while
+    second_wind, // one sharp breath — the winded latch let go at once
+    tower_shield, // gear waiting on an equip system: registered, described honestly, inert
+    greatclub,
+    leech_signet,
 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
@@ -26,6 +32,12 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .kobold_fang => "Kobold Fang",
         .iron_key => "Iron Key",
         .mushroom_jerky => "Mushroom Jerky",
+        .ember_candle => "Emberfat Candle",
+        .sporeling_cap => "Dried Sporeling Cap",
+        .second_wind => "Second Wind",
+        .tower_shield => "Cracked Tower Shield",
+        .greatclub => "Bog-Oak Greatclub",
+        .leech_signet => "Leech Signet",
     };
 }
 
@@ -49,8 +61,10 @@ pub const Class = enum {
 
 pub fn class(k: Kind) Class {
     return switch (k) {
-        .crimson_flask, .cerulean_flask, .mushroom_jerky => .tool,
-        .rune_arc, .golden_seed => .treasure,
+        .crimson_flask, .cerulean_flask, .mushroom_jerky, .ember_candle, .sporeling_cap, .second_wind => .tool,
+        // The three pieces of GEAR shelve as treasure until there is an arm to take them up — the shelf
+        // whose own definition is "something the game has not built yet".
+        .rune_arc, .golden_seed, .tower_shield, .greatclub, .leech_signet => .treasure,
         .smithing_stone, .bloodgrass, .kobold_fang => .material,
         .iron_key => .key,
     };
@@ -71,20 +85,39 @@ pub fn describe(k: Kind) [:0]const u8 {
         .kobold_fang => "A tooth taken out of a jaw that was still using it. The crack across the root says how.",
         .iron_key => "Cold, heavy, and eaten with rust. It was cut for one lock, and that lock is somewhere in the ruins.",
         .mushroom_jerky => "Cap flesh, salted and dried until it is more leather than mushroom. Chewing it staunches you slowly, for a long while.",
+        .ember_candle => "A dollop of rendered fire-fat around a wick, made to be thrown lit. It bursts on whatever it lands on; the fat still burns out too fast to pool.",
+        .sporeling_cap => "A sporeling's cap, dried until the violet in it went quiet. Chewed, it steeps you in its element, and for a minute chaos slides off you.",
+        .second_wind => "A curl of pale bark that smells of cold air after rain. One sharp breath of it and your legs remember themselves.",
+        .tower_shield => "A door of a shield, cracked through and banded in old iron. No arm here has learned to carry it yet.",
+        .greatclub => "Bog-oak shod with iron, heavier than it looks, and it looks heavy. No hand here knows its heft yet.",
+        .leech_signet => "A signet cut from a leech's beak, warm against the skin. Whatever bargain it offers, nothing here can seal it yet.",
     };
 }
 
-/// WHAT USING IT DOES — named here, done elsewhere.
+/// WHAT USING IT DOES — named here, done elsewhere. Plain numbers only: this file imports nothing but
+/// std, so an effect that needs a `combat` type is described here in floats and assembled at the apply
+/// site (`game.useItem`).
 pub const Use = union(enum) {
     /// Nothing yet.
     none,
     /// HP back slowly over time (`combat.Regen` is the mechanism): `frac` of MAX HP spread over `secs` seconds.
     regen: struct { frac: f32, secs: f32 },
+    /// LOBBED at the reticle through the shafts' own pool — one victim, like everything thrown here.
+    lob: struct { dmg: f32, fire: f32, poise: f32 },
+    /// A timed ward: `chaos` resistance for `secs` seconds. Refreshes, never stacks (the status law).
+    ward: struct { chaos: f32, secs: f32 },
+    /// `share` of the stamina pool back at once, through the winded latch's own gate.
+    wind: struct { share: f32 },
 };
 
 pub fn use(k: Kind) Use {
     return switch (k) {
         .mushroom_jerky => .{ .regen = .{ .frac = 0.60, .secs = 20.0 } },
+        // Under both melee swings in damage (the bow's own restraint), but it is fire, and fire is the
+        // answer to half the wood.
+        .ember_candle => .{ .lob = .{ .dmg = 8, .fire = 22, .poise = 12 } },
+        .sporeling_cap => .{ .ward = .{ .chaos = 40, .secs = 60 } },
+        .second_wind => .{ .wind = .{ .share = 0.5 } },
         .crimson_flask,
         .cerulean_flask,
         .rune_arc,
@@ -93,6 +126,9 @@ pub fn use(k: Kind) Use {
         .bloodgrass,
         .kobold_fang,
         .iron_key,
+        .tower_shield,
+        .greatclub,
+        .leech_signet,
         => .none,
     };
 }
@@ -224,6 +260,21 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
                 try std.testing.expect(usable(k));
                 try std.testing.expect(r.frac > 0 and r.frac <= 1.0);
                 try std.testing.expect(r.secs > 0);
+            },
+            .lob => |l| {
+                found += 1;
+                try std.testing.expect(usable(k));
+                try std.testing.expect(l.dmg + l.fire > 0);
+            },
+            .ward => |w| {
+                found += 1;
+                try std.testing.expect(usable(k));
+                try std.testing.expect(w.chaos > 0 and w.secs > 0);
+            },
+            .wind => |w| {
+                found += 1;
+                try std.testing.expect(usable(k));
+                try std.testing.expect(w.share > 0 and w.share <= 1.0);
             },
         }
     }

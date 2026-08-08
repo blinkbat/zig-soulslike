@@ -901,6 +901,11 @@ pub const Hero = struct {
     /// …and the ARROWS, which are finite: an empty quiver refuses the shot (see `startShot`).
     quiver: combat.Quiver = .{},
     regen: combat.Regen = .{},
+    /// THE SPORELING CAP'S WARD — timed chaos resistance, one clock (a timed status REFRESHES, it does
+    /// not stack). While it runs it IS his resistances, since nothing else grants him any yet; the day
+    /// something else does, this becomes a merge instead of an overwrite.
+    wardChaos: f32 = 0,
+    wardLeft: f32 = 0,
     drinking: bool = false,
     drinkT: f32 = 0,
     poured: bool = false,
@@ -1904,6 +1909,15 @@ pub const Hero = struct {
     }
     pub fn tickFlash(self: *Hero, dt: f32) void {
         self.hurtFlash = mathx.maxF(0, self.hurtFlash - dt * 2.6);
+    }
+
+    pub fn startWard(self: *Hero, chaos: f32, secs: f32) void {
+        self.wardChaos = chaos;
+        self.wardLeft = secs; // refreshed, never stacked
+    }
+    pub fn tickWard(self: *Hero, dt: f32) void {
+        self.wardLeft = mathx.maxF(0, self.wardLeft - dt);
+        self.vit.res = if (self.wardLeft > 0) combat.resists(.{ .chaos = self.wardChaos }) else .{};
     }
 
     /// EVERYTHING HE WAS COMMITTED TO, DROPPED — and NOTHING IS REFUNDED: the draught's charge, the cast's FP

@@ -24,6 +24,7 @@ const LEAF_PALE = art.LEAF_PALE;
 const MOSS_DK = art.MOSS_DK;
 const NEEDLE = art.NEEDLE;
 const NEEDLE_LT = art.NEEDLE_LT;
+const NEEDLE_DK = art.NEEDLE_DK;
 const SCRUB_DK = art.SCRUB_DK;
 const STONE_MOSS = art.STONE_MOSS;
 const TIMBER = art.TIMBER;
@@ -35,7 +36,7 @@ const tuftInto = art.tuftInto;
 /// rosette of them is a hub of spokes. So leave the bole on the bole's own AXIS, rise to an elbow, then droop
 /// off the line to a blunt snap of pale heartwood. Twigs root on that OUTER half and carry on outward — struck
 /// across the limb instead, a twig crosses its parent and reads as a needle lying near a branch.
-fn deadLimbInto(b: *Builder, rng: *mathx.Rng, root: rl.Vector3, a: f32, reach: f32, rise: f32, r0: f32, twigs: i32) void {
+pub fn deadLimbInto(b: *Builder, rng: *mathx.Rng, root: rl.Vector3, a: f32, reach: f32, rise: f32, r0: f32, twigs: i32) void {
     const elbow = v3(root.x + mathx.cosf(a) * reach * 0.58, root.y + rise, root.z + mathx.sinf(a) * reach * 0.58);
     const r1 = r0 * 0.52;
     b.addCapsule(root, elbow, r0, r1, 5, BARK_DK);
@@ -428,8 +429,12 @@ pub fn coniferMesh(shader: rl.Shader) rl.Model {
             b.setMat(.bark);
             b.addCapsule(v3(0, y, 0), v3(px, y - reach * 0.22, pz), 0.055, 0.02, 4, BARK_DK);
             b.setMat(.plant);
-            b.addBlob(v3(px * 0.55, y - reach * 0.08, pz * 0.55), v3(reach * 0.42, reach * 0.22, reach * 0.42), 3, 6, if (rng.float() < 0.28) NEEDLE_LT else NEEDLE);
-            b.addBlob(v3(px * 0.92, y - reach * 0.20, pz * 0.92), v3(reach * 0.32, reach * 0.17, reach * 0.32), 3, 6, NEEDLE);
+            // The tone follows the LIGHT the whorl grows in: lit tips toward the crown, its own shade in
+            // the low inner tiers — one flat needle green per whorl is what stacked the pagoda roofs.
+            const shadeT = 1.0 - t;
+            const inner: rl.Color = if (rng.float() < 0.55 * shadeT) NEEDLE_DK else NEEDLE;
+            b.addBlob(v3(px * 0.55, y - reach * 0.08, pz * 0.55), v3(reach * 0.42, reach * 0.22, reach * 0.42), 3, 7, if (rng.float() < 0.20 + 0.30 * t) NEEDLE_LT else inner);
+            b.addBlob(v3(px * 0.92, y - reach * 0.20, pz * 0.92), v3(reach * 0.32, reach * 0.17, reach * 0.32), 3, 7, inner);
         }
     }
     b.addBlob(v3(0, H * 0.99, 0), v3(0.34, 0.65, 0.34), 3, 6, NEEDLE); // the leader

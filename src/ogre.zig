@@ -13,11 +13,13 @@ const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
 
-const HIDE = rgba(39, 34, 28, 255); // ashen grey-tan hide — earthen, darker than bone
-const HIDE_DK = rgba(24, 20, 17, 255); // shadowed folds / warts — near-black
-const HIDE_LT = rgba(56, 49, 40, 255); // caught-light ridges / knuckles
-const BELLY = rgba(52, 46, 37, 255); // paler, scarred underside
-const SCAR = rgba(74, 64, 50, 255); // old scar tissue / calloused patches
+// LIVER-BROWN FLESH, not stone: the old grey-tan hide sat on the cliffs' exact hue and he read as one
+// more boulder in front of them. Value stays near-black (big-mass law); the separation is all HUE.
+const HIDE = rgba(44, 27, 21, 255);
+const HIDE_DK = rgba(25, 15, 12, 255); // shadowed folds / warts — near-black
+const HIDE_LT = rgba(63, 38, 29, 255); // caught-light ridges / knuckles
+const BELLY = rgba(58, 44, 31, 255); // sallow, scarred underside
+const SCAR = rgba(82, 62, 46, 255); // old scar tissue / calloused patches
 const EYE = rgba(242, 192, 96, 58); // the single eye — tired amber, SELF-LIT (low alpha = emissive)
 const EYE_RIM = rgba(20, 16, 13, 255); // heavy wet socket rim
 const PUPIL = rgba(8, 6, 5, 255);
@@ -32,6 +34,7 @@ const CLUB_IRON = rgba(50, 46, 42, 255); // old iron
 const IRON_RUST = rgba(72, 46, 26, 255); // rust-bitten iron / old blood-stain bleed
 const MAW = rgba(14, 8, 7, 255); // the dark of the mouth behind the teeth — so a gape reads as a
 const TONGUE = rgba(58, 25, 23, 255); // MOUTH and not a hole punched in the head
+const PARRY_SPARK = rgba(236, 170, 84, 230); // struck iron off a caught club — hot against the dark hide
 
 const N = 24;
 const ROOT = 0; // pelvis
@@ -85,9 +88,10 @@ fn restPositions() [N]rl.Vector3 {
     r[ROOT] = v3(0, 0.530, 0);
     r[SPINE] = v3(0, 0.645, 0);
     r[CHEST] = v3(0, 0.775, 0);
-    r[NECK] = v3(0, 0.842, 0.026);
-    r[SKULL] = v3(0, 0.925, 0.070); // MEASURED against the chest barrel's top, not eyeballed: the
-    // skull's centre has to sit clear of it or the head reads as swallowed by the shoulders
+    r[NECK] = v3(0, 0.842, 0.048);
+    r[SKULL] = v3(0, 0.925, 0.104); // MEASURED against the chest barrel's top, not eyeballed: the
+    // skull's centre has to sit clear of it or the head reads as swallowed by the shoulders — and it
+    // JUTS: at 0.070 the whole head sat between the shoulder blobs and vanished from every rear quarter
     r[HIPL] = v3(hx, 0.530, 0);
     r[KNEEL] = v3(hx, 0.285, 0);
     r[ANKL] = v3(hx, 0.039, 0);
@@ -101,7 +105,7 @@ fn restPositions() [N]rl.Vector3 {
     r[ELR] = v3(-sx, 0.574, 0);
     r[WRR] = v3(-sx, 0.379, 0);
     r[CLUB] = v3(-sx, 0.379, 0); // zero offset from the wrist; club mesh authored in the wrist frame
-    r[JAW] = v3(0, 0.905, 0.090); // = SKULL + (0, −0.020, +0.020); jawMesh is authored to that offset
+    r[JAW] = v3(0, 0.905, 0.124); // = SKULL + (0, −0.020, +0.020); jawMesh is authored to that offset
     r[TOEL] = v3(hx, 0.026, 0.095);
     r[TOER] = v3(-hx, 0.026, 0.095);
     r[HUMP] = v3(0, 0.792, -0.020);
@@ -164,6 +168,27 @@ const SWIPE_DUR = 0.20;
 const SWIPE_IMPACT_K = 0.42; // fraction into the sweep the club crosses his centre line
 const SWIPE_REC_DUR = 0.52; // a brief overswung stagger — not the slam's wide-open collapse
 const SWIPE_CD = 1.05; // its own cooldown, shorter than the slam's
+
+// THE RETURN — sometimes the swipe does not die in the overswing: a short re-cock and the club whips
+// STRAIGHT BACK along its own arc. Punishing the swipe's tail on sight is what this exists to tax.
+const BACK_WIND_DUR = 0.36; // the re-cock, off the overswing (>= foe.TELL_MIN — the chain is still fair)
+const BACK_DUR = 0.24;
+const BACK_IMPACT_K = 0.45; // fraction into the return the club re-crosses his centre line
+const BACK_CHANCE = 0.55; // per swipe, rolled at the overswing — the tail is never SAFE, only USUALLY safe
+const BACK_ARC_MID = -65.0; // deg — the return's own swept sector (MEASURED off the posed bone, like the
+const BACK_ARC = 175.0; // swipe's: +22..−152 — it wraps further round his club flank than the outbound came from)
+
+// THE DRIVE — the mid-range answer. Beyond the swipe he used to have nothing but a trudge; now the club
+// comes up, the body coils FORWARD (the opposite tell to the slam's arch-back) and he CRASHES the slam's
+// own crush strip in at a sprint. It is a LUNGE, so the roots refuse it where it is chosen (foe.canLeap).
+const DRIVE_WIND_DUR = 0.72; // shorter than the standing slam's rear — the coil is the read, not the length
+const DRIVE_DUR = 0.62;
+const DRIVE_IMPACT_K = 0.78; // the surge runs until here — then the club meets the earth
+const DRIVE_SPEED = 9.0; // m/s through the surge (~4.3 m covered)
+const DRIVE_REC_DUR = 0.95; // folded over the buried club like the slam, but he was already moving forward
+const DRIVE_CD = 5.0;
+const DRIVE_MIN = 4.5; // just past the swipe's outer band — the two never argue over one distance
+const DRIVE_MAX = 7.0; // surge travel + the crush strip must cover this or the far edge is a promised miss (pinned)
 const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 6.0;
 /// How fast a staggered body gives its posture back, in the CHANNELS' OWN UNITS — see `easeChannelsNeutral`.
@@ -181,6 +206,9 @@ const STANCE_MAX = 90.0; // keep the pressure on to reach the heavy stance-break
 const RESISTS = combat.resists(.{ .fire = 30, .cold = 30, .lightning = -15, .chaos = 20 });
 pub const SLAM_HIT = combat.Hit{ .dmg = 36, .poise = 44, .stance = 20 }; // a crushing body-blow (heavy).
 pub const SWIPE_HIT = combat.Hit{ .dmg = 23, .poise = 30, .stance = 11 }; // the swipe trades weight for
+/// The drive lands the slam's strip off a sprint: under the standing slam in damage, but stance 20 keeps
+/// it on the heavy side of `game.heroTakes`'s beat — a four-metre lunge that lands soft reads as a bump.
+pub const DRIVE_HIT = combat.Hit{ .dmg = 31, .poise = 40, .stance = 20 };
 const DEATH_DUR = 1.7; // a slow, weighty topple — a giant falls hard (and sadly)
 /// RUNES the one-eyed ogre is worth: fifteen toads.
 pub const RUNES: u32 = 900;
@@ -300,13 +328,13 @@ const BLOOD = rgba(84, 20, 16, 235); // dark ichor spray on a landed blow — hi
 // The SHARED particle shape + integrator + draw (foe.zig); only the bursts below are the ogre's.
 const Particle = foe.Particle;
 
-const State = enum { idle, approach, windup, slam, swipewind, swipe, recover, stunlight, stunheavy, dead };
+const State = enum { idle, approach, windup, slam, swipewind, swipe, backwind, backswipe, drivewind, drive, recover, stunlight, stunheavy, dead };
 
-const Choice = enum { slam, swipe, approach, wait, idle };
+const Choice = enum { slam, swipe, drive, approach, wait, idle };
 const SWIPE_BEARING = 32.0; // deg off his facing past which the hero counts as "not in front of me"
 /// `swipeInner` is where the sweep STARTS connecting (`Ogre.swipeInner`) — passed in rather than derived here
 /// because it scales with the body and this stays a pure function of the numbers.
-fn classify(dist: f32, bearingDeg: f32, slamReady: bool, swipeReady: bool, swipeInner: f32) Choice {
+fn classify(dist: f32, bearingDeg: f32, slamReady: bool, swipeReady: bool, driveReady: bool, swipeInner: f32) Choice {
     if (dist > AGGRO_R) return .idle; // hasn't noticed / has disengaged
     const offFront = @abs(bearingDeg) > SWIPE_BEARING;
     // AND THE SWIPE HAS TO BE ABLE TO LAND. Its arc passes clean OUTSIDE anything hugging his legs, and
@@ -317,6 +345,9 @@ fn classify(dist: f32, bearingDeg: f32, slamReady: bool, swipeReady: bool, swipe
     const inSweep = dist >= swipeInner and dist <= SWIPE_R;
     if (inSweep and swipeReady and (offFront or !slamReady)) return .swipe;
     if (dist <= SLAM_R) return if (slamReady) .slam else .wait; // squared up in reach: crush it
+    // The drive owns its own band, past the swipe's — `driveReady` folds the roots in (a lunge is refused
+    // where it is CHOSEN, `foe.canLeap`'s law), so a held ogre trudges through the band instead.
+    if (dist >= DRIVE_MIN and dist <= DRIVE_MAX and driveReady) return .drive;
     return .approach; // close the gap
 }
 
@@ -353,9 +384,14 @@ pub const Ogre = struct {
     t: f32 = 0,
     slamCd: f32 = 0,
     swipeCd: f32 = 0,
+    driveCd: f32 = 0,
+    /// Seconds the club HANGS at the top of a slam windup before it falls — rolled fresh per swing
+    /// (owner's "more unpredictability"): the tell varies, the parry does not (it reads the DROP).
+    windHold: f32 = 0,
     elapsed: f32 = 0,
-    slammed: bool = false, // one crush per slam/swipe (the impact burst + hero hit are latched)
-    swiped: bool = false, // the recovery being served belongs to a SWIPE (short) not a slam (long)
+    slammed: bool = false, // one crush per swing (the impact burst + hero hit are latched)
+    /// Which move the swing/recovery being served belongs to — the recover pose and duration read it.
+    blowKind: enum { slam, swipe, backswipe, drive } = .slam,
     /// `.approach` is trudging back HOME rather than chasing.
     homing: bool = false,
 
@@ -406,6 +442,9 @@ pub const Ogre = struct {
     fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
+    /// The DECISION stream — every hold, chain roll and cooldown jitter comes off this, its own stream so
+    /// a dust budget change cannot re-deal the fight (fxRng's law). Seeded, so --shot stays deterministic.
+    aiRng: mathx.Rng = mathx.Rng.init(2),
 
     xf: [N]rl.Matrix = undefined,
     rest: [N]rl.Vector3 = undefined,
@@ -414,6 +453,7 @@ pub const Ogre = struct {
         var o = Ogre{ .pos = home, .home = home, .facing = faceYaw, .scale = scale * SCALE, .seed = seed };
         o.rest = REST;
         o.fxRng = foe.fxStream(seed, 88883.0, 7);
+        o.aiRng = foe.fxStream(seed, 51707.0, 5);
         o.pose();
         return o;
     }
@@ -488,6 +528,7 @@ pub const Ogre = struct {
         self.elapsed += dt;
         self.slamCd = mathx.maxF(0, self.slamCd - dt);
         self.swipeCd = mathx.maxF(0, self.swipeCd - dt);
+        self.driveCd = mathx.maxF(0, self.driveCd - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
         self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
         self.t += dt;
@@ -525,17 +566,21 @@ pub const Ogre = struct {
                         self.homing = false;
                         self.decide(d, bearing);
                     } else if (mathx.distXZ(self.pos, self.home) <= foe.LEASH_HOME_R) self.enterIdle();
-                } else if (d <= SWIPE_R or d > AGGRO_R) self.decide(d, bearing);
+                } else if (d <= SWIPE_R or d > AGGRO_R or
+                    (d >= DRIVE_MIN and d <= DRIVE_MAX and self.driveCd <= 0 and foe.canLeap(&self.root)))
+                    self.decide(d, bearing);
             },
             .windup => {
                 self.faceToward(hero, dt * 0.4); // a little tracking while rearing (committed tell)
                 const k = mathx.smoothstep(0, WINDUP_DUR * 0.82, self.t);
                 self.setWindup(k);
                 self.emitStrain(dt, k); // gravel trickles as it plants + loads
-                if (self.t >= WINDUP_DUR) self.enter(.slam);
+                // …and sometimes it HANGS there (`windHold`), trembling under its own load, the eye still
+                // tracking — the drop is what you parry, so the hold costs the read nothing but nerve.
+                if (self.t >= WINDUP_DUR + self.windHold) self.enter(.slam);
             },
             .slam => {
-                const k = mathx.smoothstep(0, SLAM_DUR, self.t);
+                const k = foe.swingCurve(self.t / SLAM_DUR);
                 self.setSlam(k);
                 if (self.t >= SLAM_DUR * SLAM_IMPACT_K) {
                     self.tryImpact(hero, SLAM_HIT); // the club meets the earth
@@ -547,7 +592,9 @@ pub const Ogre = struct {
                     }
                 }
                 if (self.t >= SLAM_DUR) {
-                    self.slamCd = SLAM_CD;
+                    // EVERY COOLDOWN IS DEALT WITH JITTER (owner's "more unpredictability"): the loop the
+                    // old ogre fell into — slam, recover, slam — was these constants beating in phase.
+                    self.slamCd = SLAM_CD * self.aiRng.range(0.85, 1.45);
                     self.enter(.recover);
                 }
             },
@@ -558,7 +605,7 @@ pub const Ogre = struct {
             },
             .swipe => {
                 foe.faceToward(self.pos, &self.facing, hero, SWIPE_TURN, dt);
-                const k = mathx.smoothstep(0, SWIPE_DUR, self.t);
+                const k = foe.swingCurve(self.t / SWIPE_DUR);
                 self.setSwipe(k);
                 if (self.t >= SWIPE_DUR * SWIPE_IMPACT_K) {
                     self.trySwipe(hero, SWIPE_HIT); // the club scythes through the front SECTOR
@@ -570,12 +617,77 @@ pub const Ogre = struct {
                     }
                 }
                 if (self.t >= SWIPE_DUR) {
-                    self.swipeCd = SWIPE_CD;
+                    // THE TAIL IS NEVER SAFE, ONLY USUALLY SAFE: still in the band, the club sometimes
+                    // comes straight back (`.backwind`). Rolled HERE, at the overswing, so the choice is
+                    // made where the club is — and only where the return could actually land (the
+                    // cannot-land law: out of the band there is no roll, there is a recovery).
+                    if (d >= self.swipeInner() and d <= self.swipeReach() and self.aiRng.float() < BACK_CHANCE) {
+                        self.enter(.backwind);
+                    } else {
+                        self.swipeCd = SWIPE_CD * self.aiRng.range(0.8, 1.5);
+                        self.enter(.recover);
+                    }
+                }
+            },
+            .backwind => {
+                foe.faceToward(self.pos, &self.facing, hero, SWIPE_TURN * 0.6, dt);
+                self.setBackwind(mathx.smoothstep(0, 1, self.t / BACK_WIND_DUR));
+                if (self.t >= BACK_WIND_DUR) self.enter(.backswipe);
+            },
+            .backswipe => {
+                foe.faceToward(self.pos, &self.facing, hero, SWIPE_TURN, dt);
+                const k = foe.swingCurve(self.t / BACK_DUR);
+                self.setBackswipe(k);
+                if (self.t >= BACK_DUR * BACK_IMPACT_K) {
+                    self.trySweep(hero, SWIPE_HIT, BACK_ARC_MID, BACK_ARC);
+                    if (!self.slammed) {
+                        self.slammed = true;
+                        const low = self.clubLowWorld();
+                        self.dustBurst(v3(low.x, self.pos.y + 0.05, low.z), 12, 2.2, 0.20);
+                    }
+                }
+                if (self.t >= BACK_DUR) {
+                    self.swipeCd = SWIPE_CD * self.aiRng.range(1.0, 1.7); // the chain cools as ONE move
+                    self.enter(.recover);
+                }
+            },
+            .drivewind => {
+                self.faceToward(hero, dt * 1.6); // squares up hard — the lunge goes where he is pointed
+                self.setDrivewind(mathx.smoothstep(0, DRIVE_WIND_DUR * 0.9, self.t));
+                self.emitStrain(dt, mathx.clampF(self.t / DRIVE_WIND_DUR, 0, 1));
+                if (self.t >= DRIVE_WIND_DUR) self.enter(.drive);
+            },
+            .drive => {
+                self.faceToward(hero, dt * 0.5); // committed — the surge barely bends
+                const surge = DRIVE_DUR * DRIVE_IMPACT_K;
+                self.setDrive(foe.swingCurve(self.t / DRIVE_DUR));
+                if (self.t < surge) {
+                    const f = self.fdir();
+                    const moved = DRIVE_SPEED * dt;
+                    mathx.stepXZ(&self.pos, f, moved, bounds);
+                    movedDist = moved;
+                    moveYaw = mathx.headingXZ(f); // the legs RUN the surge (the gait has them)
+                }
+                if (self.t >= surge) {
+                    self.tryImpact(hero, DRIVE_HIT); // the slam's own strip, landed at the surge's end
+                    if (!self.slammed) {
+                        self.slammed = true;
+                        self.judder = 1.0;
+                        self.dustBurst(self.impactWorld(), 42, 4.2, 0.42);
+                        sfx.world(.ogre_slam, self.impactWorld());
+                    }
+                }
+                if (self.t >= DRIVE_DUR) {
+                    self.driveCd = DRIVE_CD * self.aiRng.range(0.75, 1.6);
                     self.enter(.recover);
                 }
             },
             .recover => {
-                const dur: f32 = if (self.swiped) SWIPE_REC_DUR else RECOVER_DUR;
+                const dur: f32 = switch (self.blowKind) {
+                    .slam => RECOVER_DUR,
+                    .drive => DRIVE_REC_DUR,
+                    .swipe, .backswipe => SWIPE_REC_DUR,
+                };
                 self.setRecover(mathx.clampF(self.t / dur, 0, 1));
                 if (self.t >= dur) self.enterIdle();
             },
@@ -595,7 +707,7 @@ pub const Ogre = struct {
         self.jolt = mathx.maxF(0, self.jolt - dt * 7.0); // the footfall catch releases fast
         self.judder = mathx.maxF(0, self.judder - dt * 3.2); // the club-bounce rings ~0.3 s
 
-        const gaitSpeed: f32 = if (movedDist > 0) WALK_SPEED else 0;
+        const gaitSpeed: f32 = if (movedDist <= 0) 0 else if (self.state == .drive) DRIVE_SPEED else WALK_SPEED;
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, gaitSpeed, moveYaw, self.facing);
         self.footfalls(); // heavy dust puffs + the pelvis CATCH as each foot plants
         self.pose();
@@ -606,13 +718,26 @@ pub const Ogre = struct {
     fn enter(self: *Ogre, s: State) void {
         self.state = s;
         self.t = 0;
-        if (s == .slam or s == .swipe) {
-            self.slammed = false;
-            self.heroLatch = false; // a fresh blow gets one chance to land on the hero
-            self.swiped = s == .swipe;
+        switch (s) {
+            .slam, .swipe, .backswipe, .drive => {
+                self.slammed = false;
+                self.heroLatch = false; // a fresh blow gets one chance to land on the hero
+                self.blowKind = switch (s) {
+                    .slam => .slam,
+                    .swipe => .swipe,
+                    .backswipe => .backswipe,
+                    else => .drive,
+                };
+            },
+            else => {},
         }
-        if (s == .windup) sfx.world(.ogre_roar, self.pos);
-        if (s == .swipewind) sfx.world(.ogre_swipe, self.pos);
+        if (s == .windup) {
+            // Rolled at the REAR, not authored: two slams in five fall on the beat, the rest hang.
+            self.windHold = if (self.aiRng.float() < 0.4) 0 else self.aiRng.range(0.12, 0.55);
+            sfx.world(.ogre_roar, self.pos);
+        }
+        if (s == .drivewind) sfx.world(.ogre_roar, self.pos);
+        if (s == .swipewind or s == .backwind) sfx.world(.ogre_swipe, self.pos);
     }
     fn enterIdle(self: *Ogre) void {
         self.state = .idle;
@@ -640,9 +765,11 @@ pub const Ogre = struct {
     }
 
     fn decide(self: *Ogre, dist: f32, bearingDeg: f32) void {
-        switch (classify(dist, bearingDeg, self.slamCd <= 0, self.swipeCd <= 0, self.swipeInner())) {
+        const driveReady = self.driveCd <= 0 and foe.canLeap(&self.root);
+        switch (classify(dist, bearingDeg, self.slamCd <= 0, self.swipeCd <= 0, driveReady, self.swipeInner())) {
             .slam => self.enter(.windup),
             .swipe => self.enter(.swipewind),
+            .drive => self.enter(.drivewind),
             .approach => {
                 self.homing = false; // chasing the hero
                 self.enter(.approach);
@@ -708,20 +835,27 @@ pub const Ogre = struct {
         self.leash.noteCombat(); // a blow landed is a fight in progress — the tether waits
     }
 
-    fn trySwipe(self: *Ogre, hero: rl.Vector3, h: combat.Hit) void {
+    /// The swipe's hurt test, shared with the RETURN — each passes its own measured sector.
+    fn trySweep(self: *Ogre, hero: rl.Vector3, h: combat.Hit, mid: f32, arc: f32) void {
         if (self.heroLatch) return;
         const d = mathx.distXZ(self.pos, hero);
         if (d < self.swipeInner() or d > self.swipeReach()) return;
         const slack = mathx.degrees(std.math.atan2(HERO_REACH, mathx.maxF(0.5, d)));
-        if (@abs(mathx.wrapDeg(self.bearingTo(hero) - SWIPE_ARC_MID)) > SWIPE_ARC * 0.5 + slack) return;
+        if (@abs(mathx.wrapDeg(self.bearingTo(hero) - mid)) > arc * 0.5 + slack) return;
         self.heroHit = h;
         self.heroLatch = true;
         self.leash.noteCombat(); // a blow landed is a fight in progress — the tether waits
     }
+    fn trySwipe(self: *Ogre, hero: rl.Vector3, h: combat.Hit) void {
+        self.trySweep(hero, h, SWIPE_ARC_MID, SWIPE_ARC);
+    }
 
-    /// Which of the two moves is on the clock — the slam counts its windup, the swipe its cock-back.
+    /// Which family a move on the clock belongs to — the overheads count their rears, the sweeps their cocks.
     fn slamMove(self: *const Ogre) bool {
         return self.state == .windup or self.state == .slam;
+    }
+    fn driveMove(self: *const Ogre) bool {
+        return self.state == .drivewind or self.state == .drive;
     }
 
     /// SECONDS UNTIL THIS MOVE'S BLOW LANDS, counted across the state boundary so the windup and the swing are
@@ -729,10 +863,14 @@ pub const Ogre = struct {
     /// say whether it carries a blow rather than quietly defaulting to no.
     fn toImpact(self: *const Ogre) ?f32 {
         return switch (self.state) {
-            .windup => (WINDUP_DUR - self.t) + SLAM_DUR * SLAM_IMPACT_K,
+            .windup => (WINDUP_DUR + self.windHold - self.t) + SLAM_DUR * SLAM_IMPACT_K,
             .slam => SLAM_DUR * SLAM_IMPACT_K - self.t,
             .swipewind => (SWIPE_WIND_DUR - self.t) + SWIPE_DUR * SWIPE_IMPACT_K,
             .swipe => SWIPE_DUR * SWIPE_IMPACT_K - self.t,
+            .backwind => (BACK_WIND_DUR - self.t) + BACK_DUR * BACK_IMPACT_K,
+            .backswipe => BACK_DUR * BACK_IMPACT_K - self.t,
+            .drivewind => (DRIVE_WIND_DUR - self.t) + DRIVE_DUR * DRIVE_IMPACT_K,
+            .drive => DRIVE_DUR * DRIVE_IMPACT_K - self.t,
             .idle, .approach, .recover, .stunlight, .stunheavy, .dead => null,
         };
     }
@@ -740,11 +878,13 @@ pub const Ogre = struct {
     /// THE INSTANT THE CLUB CAN BE CAUGHT IN, and how far out it reaches then — null when there is nothing to
     /// catch. The window is the last `PARRY_LEAD` seconds of the blow's approach and nothing else: it shuts AT
     /// the impact frame by construction, so a caught blow is one that never landed. The reach is the CRUSH
-    /// TEST'S OWN extent (`tryImpact`, `trySwipe`) plus the hero's footprint, because that is where the club
-    /// actually arrives.
+    /// TEST'S OWN extent (`tryImpact`, `trySweep`) plus the hero's footprint, because that is where the club
+    /// actually arrives — and a DRIVE is still surging through its window, so the ground it will cover before
+    /// the impact frame is part of where the club arrives.
     fn parryable(self: *const Ogre) ?f32 {
         const left = self.toImpact() orelse return null;
         if (left < 0 or left > PARRY_LEAD) return null;
+        if (self.driveMove()) return self.slamReach() + DRIVE_SPEED * left;
         return if (self.slamMove()) self.slamReach() else self.swipeReach();
     }
 
@@ -768,11 +908,40 @@ pub const Ogre = struct {
         // without this he walks straight out of the stumble into the swing he was just denied.
         if (self.slamMove()) {
             self.slamCd = SLAM_CD;
+        } else if (self.driveMove()) {
+            self.driveCd = DRIVE_CD;
         } else {
             self.swipeCd = SWIPE_CD;
         }
+        // THE SWING VISIBLY STARTS (owner's call): caught in the last instant of a WIND, the old stun ate
+        // the whole swing and he reeled off a club that never moved — a parry on empty air. One step of the
+        // swing's own pose, and the stun's ease then knocks it BACK from there: a deflection, not a cancel.
+        switch (self.state) {
+            .windup => self.setSlam(0.30),
+            .swipewind => self.setSwipe(0.35),
+            .backwind => self.setBackswipe(0.35),
+            .drivewind => self.setDrive(0.25),
+            else => {}, // already mid-swing — the club was moving where everyone could see it
+        }
         const low = self.clubLowWorld();
         self.dustBurst(v3(low.x, self.pos.y + 0.05, low.z), 10, 1.8, 0.18);
+        // …and STRUCK IRON off the club itself, thrown back the way the blow came (the warriors' own
+        // deflection read) — hot on the hide's dark palette, so the catch is visible at the WEAPON too.
+        const back = mathx.dirXZ(self.parry.at, self.pos);
+        var sp: i32 = 0;
+        while (sp < 12) : (sp += 1) {
+            const a = self.fxRng.angle();
+            const fan = self.fxRng.range(0.5, 1.0);
+            self.emit(
+                low,
+                v3(back.x * 3.4 * fan + mathx.cosf(a) * 1.5, self.fxRng.range(1.2, 3.2), back.z * 3.4 * fan + mathx.sinf(a) * 1.5),
+                self.fxRng.range(0.16, 0.30),
+                0.05,
+                0.01,
+                PARRY_SPARK,
+                2.4,
+            );
+        }
         sfx.world(.ogre_hurt, self.pos);
         switch (self.vit.hit(combat.PARRY_HIT)) {
             .death => self.enterDeath(), // a parry takes no HP today; the day one does, it kills like anything
@@ -783,12 +952,20 @@ pub const Ogre = struct {
         }
     }
 
-    // Debug hooks for the --shot harness (force a pose in isolation).
+    // Debug hooks for the --shot harness (force a pose in isolation). The slam's hold is zeroed so a
+    // framing counted in frames lands on the same pose every run — the held tell is the same pose anyway.
     pub fn debugSlam(self: *Ogre) void {
         self.enter(.windup);
+        self.windHold = 0;
     }
     pub fn debugSwipe(self: *Ogre) void {
         self.enter(.swipewind);
+    }
+    pub fn debugBackswipe(self: *Ogre) void {
+        self.enter(.backwind);
+    }
+    pub fn debugDrive(self: *Ogre) void {
+        self.enter(.drivewind);
     }
     pub fn debugStagger(self: *Ogre, heavy: bool) void {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
@@ -929,8 +1106,86 @@ pub const Ogre = struct {
         self.jawOpen = lerpF(JAW_ROAR * 0.55, JAW_GRIT, mathx.smoothstep(0.1, 0.7, k));
         self.girdle = lerpF(9.0, -2.0, kW);
     }
+    // THE RETURN'S RE-COCK — from the OVERSWING, not the carry: the swipe ends slung across him (twist 52,
+    // sweep 52, kW = 1 exactly), and these lerps start from those numbers so the chain is continuous by
+    // construction. The club gathers a hand higher and re-rakes; the whole thing reads as "not done yet".
+    // The RE-COCK is a DRAG, not a lift: the overswing dies further round and the club head drops toward
+    // the dirt (this rig is low at his left, high at his right — measured), so the return leaves from
+    // under the band and cuts a RISING diagonal back across it. A re-shouldered gather left the whole
+    // return over the hero's head, which is a blow the sector could not honestly bill.
+    fn setBackwind(self: *Ogre, k: f32) void {
+        self.twist = lerpF(52.0, 52.0, k);
+        self.clubShoulder = lerpF(-6.0, -6.0, k);
+        self.clubElbow = lerpF(-8.0, -8.0, k);
+        self.clubAbd = lerpF(66.0, 66.0, k);
+        self.clubSweep = lerpF(52.0, 56.0, k);
+        self.clubTilt = lerpF(-18.0, -18.0, k); // the head HANGS where the swipe left it — plumb, the arc's own low
+        self.offShoulder = lerpF(22.0, -18.0, k);
+        self.offElbow = lerpF(-20.0, -44.0, k);
+        self.bodyLean = lerpF(HUNCH + 8.0, HUNCH + 10.0, k);
+        self.headPitch = lerpF(12.0, -2.0, k);
+        self.legBrace = lerpF(0.42, 0.38, k);
+        self.jawOpen = lerpF(JAW_GRIT, JAW_ROAR * 0.5, k);
+        self.girdle = lerpF(-2.0, 7.0, k);
+    }
+    fn setBackswipe(self: *Ogre, k: f32) void {
+        const kW = 1.0 - (1.0 - k) * (1.0 - k) * (1.0 - k); // the same whip, run the other way
+        self.twist = lerpF(52.0, -48.0, kW);
+        self.clubShoulder = lerpF(-6.0, -8.0, kW);
+        self.clubElbow = lerpF(-8.0, -12.0, kW);
+        self.clubAbd = lerpF(66.0, 60.0, kW);
+        self.clubSweep = lerpF(56.0, -24.0, kW);
+        self.clubTilt = lerpF(-18.0, 26.0, kW * kW); // the head stays DOWN through the front crossing, then leads the rise
+        self.offShoulder = lerpF(-18.0, 14.0, kW);
+        self.offElbow = lerpF(-44.0, -24.0, kW);
+        self.bodyLean = lerpF(HUNCH + 10.0, HUNCH + 2.0, k); // he stands up INTO the rising cut
+        self.headPitch = lerpF(-2.0, 8.0, kW);
+        self.legBrace = lerpF(0.38, 0.44, k);
+        self.jawOpen = lerpF(JAW_ROAR * 0.5, JAW_GRIT, mathx.smoothstep(0.1, 0.7, k));
+        self.girdle = lerpF(7.0, -3.0, kW);
+    }
+    // THE DRIVE'S TELL IS THE COIL, NOT THE ARCH: the standing slam rears BACK (lean −24); this one folds
+    // FORWARD over deeply-loaded legs with the club cocked short of the full overhead — read them apart at
+    // a glance, because one of them is about to leave.
+    fn setDrivewind(self: *Ogre, k: f32) void {
+        const kArm = k * @sqrt(k);
+        const shiver = mathx.sinf(self.t * 34.0) * 1.6 * mathx.smoothstep(0.7, 1.0, k);
+        self.clubShoulder = lerpF(CARRY_SH, -118.0, kArm) + shiver;
+        self.clubElbow = lerpF(CARRY_EL, -66.0, kArm);
+        self.offShoulder = lerpF(OFF_SH, -52.0, k); // thrown back — a sprinter set into his blocks
+        self.offElbow = lerpF(OFF_EL, -48.0, k);
+        self.bodyLean = lerpF(HUNCH, 30.0, k);
+        self.headPitch = lerpF(HEAD_DROOP, -26.0, k); // the eye up under the brow, fixed on you
+        self.twist = lerpF(0, -18.0, k);
+        self.clubTilt = lerpF(CARRY_TILT, WIND_TILT, kArm) + shiver * 0.5;
+        self.clubAbd = lerpF(CLUB_ABD, WIND_ABD, kArm);
+        self.clubSweep = lerpF(self.clubSweep, 0, kArm);
+        self.legBrace = lerpF(0, 0.8, k); // loaded DEEP — this brace is spent on travel, not on planting
+        self.jawOpen = lerpF(JAW_REST, JAW_ROAR, mathx.smoothstep(0, 0.5, k)) + shiver * 0.7;
+        self.girdle = lerpF(0, GIRDLE_WIND * 0.7, kArm);
+    }
+    fn setDrive(self: *Ogre, k: f32) void {
+        const kArm = 1.0 - (1.0 - k) * (1.0 - k);
+        self.clubShoulder = lerpF(-118.0, SLAM_SH + 4.0, kArm);
+        self.clubElbow = lerpF(-66.0, SLAM_EL, kArm);
+        self.offShoulder = lerpF(-52.0, 12.0, kArm); // pumps through like the stride it is
+        self.offElbow = lerpF(-48.0, -20.0, kArm);
+        self.bodyLean = lerpF(30.0, 60.0, k); // stays thrown forward all the way into the crash
+        self.headPitch = lerpF(-26.0, 20.0, kArm);
+        self.twist = lerpF(-18.0, 10.0, kArm);
+        self.clubTilt = lerpF(WIND_TILT, SLAM_TILT, kArm);
+        self.clubAbd = lerpF(WIND_ABD, SLAM_ABD, kArm);
+        self.clubSweep = 0;
+        self.legBrace = 0; // the legs are RUNNING, not planted — the gait has them through the surge
+        self.jawOpen = lerpF(JAW_ROAR, JAW_GRIT, mathx.smoothstep(0.3, 0.9, k));
+        self.girdle = lerpF(GIRDLE_WIND * 0.7, -6.0, kArm);
+    }
     fn setRecover(self: *Ogre, u: f32) void {
-        if (self.swiped) return self.setSwipeRecover(u);
+        switch (self.blowKind) {
+            .swipe => return self.setSwipeRecover(u),
+            .backswipe => return self.setBackswipeRecover(u),
+            .slam, .drive => {}, // both end folded over the buried club (the drive just got there at a run)
+        }
         const spent = 1.0 - mathx.smoothstep(0.7, 1.0, u);
         const heave = 3.0 * mathx.sinf(self.elapsed * 7.0) * spent;
         const ring = self.judder * mathx.sinf(self.t * 44.0);
@@ -965,6 +1220,25 @@ pub const Ogre = struct {
         self.headPitch = lerpF(HEAD_DROOP, 10.0, over);
         self.legBrace = lerpF(0, 0.42, over);
         self.jawOpen = lerpF(JAW_REST, JAW_PANT * 0.6, over);
+        self.girdle = lerpF(0, -4.0, over);
+    }
+
+    // After the RETURN: the mirror of the swipe's overswing — the club died back on his own flank.
+    fn setBackswipeRecover(self: *Ogre, u: f32) void {
+        const over = 1.0 - mathx.smoothstep(0.35, 1.0, u);
+        const settle = mathx.sinf(u * std.math.pi * 2.0) * (1.0 - u) * 2.5;
+        self.twist = lerpF(0, -44.0, over) - settle;
+        self.clubShoulder = lerpF(CARRY_SH, -8.0, over);
+        self.clubElbow = lerpF(CARRY_EL, -26.0, over);
+        self.clubAbd = lerpF(CLUB_ABD, 46.0, over);
+        self.clubSweep = lerpF(0, -14.0, over); // near the carry's own side — a short walk home
+        self.clubTilt = lerpF(CARRY_TILT, -12.0, over);
+        self.offShoulder = lerpF(OFF_SH, 16.0, over);
+        self.offElbow = lerpF(OFF_EL, -24.0, over);
+        self.bodyLean = lerpF(HUNCH, HUNCH + 7.0, over) + settle * 0.4;
+        self.headPitch = lerpF(HEAD_DROOP, 9.0, over);
+        self.legBrace = lerpF(0, 0.40, over);
+        self.jawOpen = lerpF(JAW_REST, JAW_PANT * 0.55, over);
         self.girdle = lerpF(0, -4.0, over);
     }
 
@@ -1064,7 +1338,7 @@ pub const Ogre = struct {
         const m = self.moving * (1.0 - dk1);
         const armPh = std.math.tau * self.phase;
         const hung: f32 = switch (self.state) {
-            .windup, .slam, .swipewind, .swipe, .recover => 0,
+            .windup, .slam, .swipewind, .swipe, .backwind, .backswipe, .drivewind, .drive, .recover => 0,
             else => 1,
         };
         const nod = TRUNK_NOD * (0.5 - 0.5 * mathx.cosf(2.0 * armPh)) * m + 1.6 * self.jolt * m;
@@ -1271,11 +1545,11 @@ fn buildMeshes() [N]rl.Mesh {
     mesh[HIPR] = thighMesh();
     mesh[KNEER] = shinMesh();
     mesh[ANKR] = footMesh(-1.0);
-    mesh[SHL] = upperArmMesh();
-    mesh[ELL] = forearmMesh(31, false);
+    mesh[SHL] = upperArmMesh(0.94);
+    mesh[ELL] = forearmMesh(31, false, 0.94);
     mesh[WRL] = fistMesh(true); // the off hand wears the FORSAKEN's broken manacle
-    mesh[SHR] = upperArmMesh();
-    mesh[ELR] = forearmMesh(77, true); // the club forearm, rope-lashed for the grip
+    mesh[SHR] = upperArmMesh(1.12); // the WORKING arm — visibly heavier than the off one
+    mesh[ELR] = forearmMesh(77, true, 1.10); // the club forearm, rope-lashed for the grip
     mesh[WRR] = fistMesh(false);
     mesh[CLUB] = clubMesh();
     mesh[JAW] = jawMesh();
@@ -1323,9 +1597,11 @@ fn pelvisMesh() rl.Mesh {
 fn lumbarMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0.008 * H, 0), v3(0, 0.120 * H, -0.004 * H), 0.150 * H, 0.186 * H, 14, HIDE); // thick waist → chest
-    b.addBlob(v3(0, 0.052 * H, 0.062 * H), v3(0.146 * H, 0.070 * H, 0.098 * H), 8, 13, BELLY); // the sagging gut, slung forward
-    b.addBlob(v3(0, -0.004 * H, 0.052 * H), v3(0.136 * H, 0.032 * H, 0.088 * H), 6, 13, HIDE_DK); // the fold where it overhangs the belt
+    b.addCapsule(v3(0, 0.008 * H, 0), v3(0, 0.120 * H, -0.004 * H), 0.150 * H, 0.186 * H, 16, HIDE); // thick waist → chest
+    // THE GUT IS THE CREATURE: slung LOW and PROUD, in the belly's paler tone — the one big value break
+    // on the trunk, which is what stops the whole mass reading as a stack of same-coloured boulders.
+    b.addBlob(v3(0, 0.040 * H, 0.072 * H), v3(0.158 * H, 0.088 * H, 0.112 * H), 9, 15, BELLY);
+    b.addBlob(v3(0, -0.008 * H, 0.058 * H), v3(0.144 * H, 0.036 * H, 0.094 * H), 6, 13, HIDE_DK); // the fold where it overhangs the belt
     b.addBlob(v3(0, 0.046 * H, 0.152 * H), v3(0.032 * H, 0.020 * H, 0.018 * H), 5, 9, HIDE_DK); // navel
     b.addBlob(v3(0.088 * H, 0.020 * H, -0.062 * H), v3(0.062 * H, 0.058 * H, 0.056 * H), 6, 11, HIDE); // slab of back muscle
     b.addBlob(v3(-0.084 * H, 0.028 * H, -0.058 * H), v3(0.058 * H, 0.062 * H, 0.052 * H), 6, 11, HIDE); // uneven either side
@@ -1335,8 +1611,8 @@ fn lumbarMesh() rl.Mesh {
 fn torsoMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addBlob(v3(0, 0.022 * H, -0.012 * H), v3(0.232 * H, 0.080 * H, 0.166 * H), 9, 15, HIDE);
-    b.addBlob(v3(0, -0.036 * H, -0.005 * H), v3(0.206 * H, 0.062 * H, 0.150 * H), 7, 14, HIDE); // lower ribs into the waist
+    b.addBlob(v3(0, 0.022 * H, -0.012 * H), v3(0.232 * H, 0.080 * H, 0.166 * H), 10, 17, HIDE); // more SIDES on the biggest mass, not more relief on it
+    b.addBlob(v3(0, -0.036 * H, -0.005 * H), v3(0.206 * H, 0.062 * H, 0.150 * H), 8, 15, HIDE); // lower ribs into the waist
     b.addBlob(v3(0.070 * H, 0.012 * H, 0.108 * H), v3(0.090 * H, 0.070 * H, 0.078 * H), 8, 13, HIDE); // L pec, sagging
     b.addBlob(v3(-0.072 * H, 0.016 * H, 0.112 * H), v3(0.098 * H, 0.076 * H, 0.082 * H), 8, 13, HIDE); // R pec (club side) — heavier
     b.addBlob(v3(0, 0.000 * H, 0.140 * H), v3(0.030 * H, 0.088 * H, 0.030 * H), 6, 10, BELLY); // sternum valley
@@ -1356,8 +1632,8 @@ fn torsoMesh() rl.Mesh {
 fn humpMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addBlob(v3(0, -0.012 * H, -0.088 * H), v3(0.142 * H, 0.078 * H, 0.088 * H), 9, 14, HIDE_DK);
-    b.addBlob(v3(0.004 * H, 0.026 * H, -0.062 * H), v3(0.112 * H, 0.048 * H, 0.070 * H), 7, 13, HIDE); // its caught-light crown
+    b.addBlob(v3(0, -0.008 * H, -0.090 * H), v3(0.146 * H, 0.088 * H, 0.092 * H), 10, 15, HIDE_DK);
+    b.addBlob(v3(0.004 * H, 0.040 * H, -0.064 * H), v3(0.116 * H, 0.056 * H, 0.074 * H), 8, 14, HIDE); // its caught-light crown — a real CREST, proud of the shoulder line
     b.addBlob(v3(-0.058 * H, -0.048 * H, -0.104 * H), v3(0.058 * H, 0.044 * H, 0.044 * H), 6, 10, HIDE_DK); // an uneven second lump
     b.setMat(.steel);
     b.addBox(v3(0.055 * H, 0.050 * H, -0.118 * H), v3(0.028 * H, 0.007 * H, 0.0), v3(-0.006 * H, 0.052 * H, -0.024 * H), v3(0, 0, 0.006 * H), CLUB_IRON);
@@ -1382,7 +1658,7 @@ fn clavicleMesh(side: f32, load: bool) rl.Mesh {
 fn neckMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCapsule(v3(0, -0.014 * H, -0.014 * H), v3(0, 0.046 * H, 0.052 * H), 0.100 * H, 0.086 * H, 13, HIDE);
+    b.addCapsule(v3(0, -0.016 * H, -0.020 * H), v3(0, 0.050 * H, 0.058 * H), 0.102 * H, 0.086 * H, 13, HIDE); // raked FORWARD with the jutting skull
     b.addBlob(v3(0, 0.008 * H, -0.052 * H), v3(0.104 * H, 0.038 * H, 0.042 * H), 7, 12, HIDE_DK); // nape fold
     b.addBlob(v3(0.062 * H, 0.014 * H, 0.026 * H), v3(0.034 * H, 0.044 * H, 0.030 * H), 6, 10, HIDE); // L tendon cord
     b.addBlob(v3(-0.058 * H, 0.020 * H, 0.030 * H), v3(0.030 * H, 0.048 * H, 0.028 * H), 6, 10, HIDE); // R, uneven
@@ -1392,32 +1668,42 @@ fn neckMesh() rl.Mesh {
 fn headMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addBlob(v3(0, 0.055 * H, 0.000 * H), v3(0.120 * H, 0.078 * H, 0.108 * H), 9, 15, HIDE); // cranium
-    b.addBlob(v3(0, 0.008 * H, 0.048 * H), v3(0.114 * H, 0.072 * H, 0.098 * H), 9, 15, HIDE); // face mass
-    b.addBlob(v3(0.014 * H, 0.098 * H, 0.014 * H), v3(0.050 * H, 0.018 * H, 0.062 * H), 6, 11, SCAR); // old scalp scar
-    b.addBlob(v3(0.004 * H, 0.078 * H, 0.084 * H), v3(0.088 * H, 0.026 * H, 0.034 * H), 7, 13, HIDE_DK);
-    b.addBlob(v3(-0.060 * H, 0.068 * H, 0.086 * H), v3(0.042 * H, 0.022 * H, 0.030 * H), 6, 11, HIDE_DK); // drooped end
-    b.addBlob(v3(0, 0.032 * H, 0.084 * H), v3(0.090 * H, 0.066 * H, 0.030 * H), 7, 13, EYE_RIM); // socket backing
+    b.addBlob(v3(0, 0.058 * H, -0.002 * H), v3(0.130 * H, 0.092 * H, 0.116 * H), 10, 16, HIDE); // cranium — a real dome
+    b.addBlob(v3(0, 0.006 * H, 0.050 * H), v3(0.118 * H, 0.074 * H, 0.100 * H), 9, 15, HIDE); // face mass
+    b.addBlob(v3(0.014 * H, 0.104 * H, 0.014 * H), v3(0.052 * H, 0.018 * H, 0.064 * H), 6, 11, SCAR); // old scalp scar
+    // THE BROW IS THE ROOF OF THE FACE — one heavy bar the eye burns out from under. It is most of what
+    // makes the glow read as an EYE and not a hole: the orb needs something to hide behind.
+    b.addBlob(v3(0.004 * H, 0.070 * H, 0.088 * H), v3(0.098 * H, 0.028 * H, 0.044 * H), 8, 14, HIDE);
+    b.addBlob(v3(-0.062 * H, 0.060 * H, 0.090 * H), v3(0.046 * H, 0.022 * H, 0.032 * H), 6, 11, HIDE_DK); // drooped end
+    b.addBlob(v3(0, 0.030 * H, 0.086 * H), v3(0.084 * H, 0.058 * H, 0.030 * H), 7, 13, EYE_RIM); // socket backing
     b.setMat(.plain); // glassy — no hide-material blotch over the glow
-    b.addBlob(v3(0, 0.030 * H, 0.106 * H), v3(0.046 * H, 0.044 * H, 0.042 * H), 9, 14, EYE); // the amber orb
-    b.addBlob(v3(0, 0.020 * H, 0.138 * H), v3(0.024 * H, 0.025 * H, 0.014 * H), 6, 11, PUPIL); // pupil set LOW — downcast
+    // The orb between its two failures: at 0.046 it filled the face and read as a blank cream mask, and at
+    // 0.036 the brow hid it from the game's own high camera on a drooped head — a cyclops with no visible
+    // eye. 0.042, proud of the socket, under a THINNER brow: hooded, but it burns out from under it.
+    b.addBlob(v3(0, 0.030 * H, 0.106 * H), v3(0.042 * H, 0.040 * H, 0.036 * H), 9, 14, EYE);
+    b.addBlob(v3(0, 0.028 * H, 0.134 * H), v3(0.021 * H, 0.023 * H, 0.011 * H), 6, 11, PUPIL); // pupil CENTRED — it looks AT you
     b.setMat(.skin);
-    b.addBlob(v3(0, 0.062 * H, 0.100 * H), v3(0.062 * H, 0.024 * H, 0.038 * H), 7, 12, HIDE_DK);
-    b.addBlob(v3(0.030 * H, 0.048 * H, 0.114 * H), v3(0.028 * H, 0.014 * H, 0.020 * H), 6, 10, HIDE_DK); // lid corner, uneven
-    b.addBlob(v3(0, -0.014 * H, 0.104 * H), v3(0.092 * H, 0.020 * H, 0.026 * H), 6, 12, HIDE_DK); // the weary bag under it
-    b.addBlob(v3(0.004 * H, -0.030 * H, 0.116 * H), v3(0.046 * H, 0.028 * H, 0.032 * H), 7, 12, HIDE_DK); // squat nose
-    b.addBlob(v3(0.072 * H, -0.012 * H, 0.070 * H), v3(0.030 * H, 0.036 * H, 0.038 * H), 6, 11, HIDE_DK); // L cheek hollow
-    b.addBlob(v3(-0.072 * H, -0.018 * H, 0.068 * H), v3(0.030 * H, 0.040 * H, 0.038 * H), 6, 11, HIDE_DK); // R, deeper
-    b.addBlob(v3(0, -0.050 * H, 0.068 * H), v3(0.086 * H, 0.030 * H, 0.062 * H), 7, 12, MAW); // the dark of the mouth
-    b.addBlob(v3(0, -0.036 * H, 0.104 * H), v3(0.084 * H, 0.016 * H, 0.026 * H), 6, 12, HIDE); // upper lip roll
+    b.addBlob(v3(0, 0.058 * H, 0.108 * H), v3(0.050 * H, 0.015 * H, 0.028 * H), 7, 12, HIDE); // the hooded upper lid
+    b.addBlob(v3(0.032 * H, 0.044 * H, 0.116 * H), v3(0.028 * H, 0.013 * H, 0.020 * H), 6, 10, HIDE_DK); // lid corner, uneven
+    b.addBlob(v3(0, -0.012 * H, 0.106 * H), v3(0.090 * H, 0.020 * H, 0.026 * H), 6, 12, HIDE_DK); // the weary bag under it
+    b.addBlob(v3(0.005 * H, -0.028 * H, 0.120 * H), v3(0.050 * H, 0.030 * H, 0.036 * H), 7, 12, HIDE_DK); // squat nose —
+    b.addBlob(v3(0.014 * H, -0.012 * H, 0.124 * H), v3(0.024 * H, 0.020 * H, 0.020 * H), 6, 10, HIDE_LT); // broken at the bridge
+    b.addBlob(v3(0.074 * H, -0.012 * H, 0.072 * H), v3(0.032 * H, 0.038 * H, 0.040 * H), 6, 11, HIDE_DK); // L cheek hollow
+    b.addBlob(v3(-0.074 * H, -0.018 * H, 0.070 * H), v3(0.032 * H, 0.042 * H, 0.040 * H), 6, 11, HIDE_DK); // R, deeper
+    b.addBlob(v3(0, -0.050 * H, 0.070 * H), v3(0.088 * H, 0.030 * H, 0.064 * H), 7, 12, MAW); // the dark of the mouth
+    b.addBlob(v3(0, -0.036 * H, 0.106 * H), v3(0.086 * H, 0.016 * H, 0.026 * H), 6, 12, HIDE); // upper lip roll
     b.setMat(.stone);
     for ([_]f32{ -1.2, -0.45, 0.45, 1.2 }) |t| { // blunt upper teeth, uneven (wabi-sabi)
         const tl: f32 = if (t < 0) 0.028 else 0.021;
-        b.addCapsule(v3(t * 0.030 * H, -0.046 * H, 0.096 * H), v3(t * 0.032 * H, (-0.046 - tl) * H, 0.098 * H), 0.013 * H, 0.006 * H, 8, if (t < 0) TUSK else TUSK_DK);
+        b.addCapsule(v3(t * 0.030 * H, -0.046 * H, 0.098 * H), v3(t * 0.032 * H, (-0.046 - tl) * H, 0.100 * H), 0.013 * H, 0.006 * H, 8, if (t < 0) TUSK else TUSK_DK);
     }
     b.setMat(.skin);
-    b.addBlob(v3(0.126 * H, -0.010 * H, -0.006 * H), v3(0.016 * H, 0.046 * H, 0.030 * H), 7, 10, HIDE);
-    b.addBlob(v3(-0.126 * H, -0.002 * H, -0.004 * H), v3(0.015 * H, 0.042 * H, 0.028 * H), 7, 10, HIDE);
+    // EARS — swept flaps, not nubs: they and the tusks are what say OGRE in silhouette. The right one is
+    // torn short (wabi-sabi, and the pathos of a thing that has been fought before).
+    b.addBlob(v3(0.134 * H, 0.014 * H, -0.012 * H), v3(0.020 * H, 0.058 * H, 0.042 * H), 7, 11, HIDE);
+    b.addBlob(v3(0.142 * H, 0.052 * H, -0.024 * H), v3(0.012 * H, 0.030 * H, 0.024 * H), 6, 9, HIDE_DK); // its folded tip
+    b.addBlob(v3(-0.132 * H, 0.002 * H, -0.010 * H), v3(0.018 * H, 0.038 * H, 0.032 * H), 7, 10, HIDE); // torn short
+    b.addBlob(v3(-0.136 * H, 0.028 * H, -0.014 * H), v3(0.012 * H, 0.012 * H, 0.018 * H), 5, 9, SCAR); // the healed stump edge
     return b.toMesh();
 }
 
@@ -1433,8 +1719,14 @@ fn jawMesh() rl.Mesh {
     b.setMat(.plain);
     b.addBlob(v3(0, -0.026 * H, 0.050 * H), v3(0.052 * H, 0.013 * H, 0.050 * H), 7, 12, TONGUE); // the slack tongue
     b.setMat(.stone);
-    b.addCapsule(v3(0.048 * H, -0.025 * H, 0.115 * H), v3(0.056 * H, 0.038 * H, 0.128 * H), 0.017 * H, 0.005 * H, 8, TUSK);
-    b.addCapsule(v3(-0.052 * H, -0.030 * H, 0.115 * H), v3(-0.062 * H, 0.062 * H, 0.130 * H), 0.020 * H, 0.006 * H, 8, TUSK_DK);
+    // THE TUSKS ARE THE OTHER HALF OF THE SILHOUETTE — boar-swept, out past the lip and UP toward the brow
+    // line, in two segments so they CURVE (one capsule to a tip is a spear — the dead-limb law). The left
+    // one carries the full rise and hooks in at the top; the right SNAPPED mid-rise years ago and shows the
+    // darker core at the break. They ride the JAW, so the roar bares them and the grit sets them.
+    b.addCapsule(v3(0.050 * H, -0.030 * H, 0.106 * H), v3(0.078 * H, 0.036 * H, 0.126 * H), 0.024 * H, 0.015 * H, 9, TUSK);
+    b.addCapsule(v3(0.078 * H, 0.036 * H, 0.126 * H), v3(0.074 * H, 0.096 * H, 0.116 * H), 0.015 * H, 0.008 * H, 8, TUSK);
+    b.addCapsule(v3(-0.054 * H, -0.034 * H, 0.104 * H), v3(-0.082 * H, 0.028 * H, 0.122 * H), 0.026 * H, 0.014 * H, 9, TUSK_DK);
+    b.addBlob(v3(-0.082 * H, 0.032 * H, 0.122 * H), v3(0.015 * H, 0.010 * H, 0.014 * H), 6, 9, PUPIL); // the snapped core
     for ([_]f32{ -0.6, 0.6 }) |t| { // a couple of blunt lower teeth beside them
         b.addCapsule(v3(t * 0.032 * H, -0.022 * H, 0.098 * H), v3(t * 0.034 * H, 0.006 * H, 0.100 * H), 0.012 * H, 0.006 * H, 7, TUSK_DK);
     }
@@ -1486,29 +1778,31 @@ fn toeMesh(side: f32) rl.Mesh {
     return b.toMesh();
 }
 
-fn upperArmMesh() rl.Mesh {
+// `girth` is the CLUB-SIDE ASYMMETRY: the working arm is visibly heavier than the off one (wabi-sabi
+// between the two limbs, and the honest anatomy of a life spent hauling one club).
+fn upperArmMesh(girth: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
     // Leaner than it was (0.088/0.072): the mass moved to the fists.
-    limb(&b, v3(0, 0, 0), v3(0, -SEG_UPARM * H, 0), 0.077 * H, 0.063 * H, HIDE); // heavy upper arm
-    b.addBlob(v3(0, -0.064 * H, 0.046 * H), v3(0.055 * H, 0.064 * H, 0.036 * H), 7, 12, HIDE); // biceps swell, front
-    b.addBlob(v3(0, -0.078 * H, -0.043 * H), v3(0.050 * H, 0.070 * H, 0.032 * H), 7, 12, HIDE); // triceps, long + behind
+    limb(&b, v3(0, 0, 0), v3(0, -SEG_UPARM * H, 0), 0.077 * H * girth, 0.063 * H * girth, HIDE); // heavy upper arm
+    b.addBlob(v3(0, -0.064 * H, 0.046 * H), v3(0.055 * H * girth, 0.064 * H, 0.036 * H * girth), 7, 12, HIDE); // biceps swell, front
+    b.addBlob(v3(0, -0.078 * H, -0.043 * H), v3(0.050 * H * girth, 0.070 * H, 0.032 * H * girth), 7, 12, HIDE); // triceps, long + behind
     b.addBlob(v3(-0.018 * H, -0.082 * H, 0.062 * H), v3(0.030 * H, 0.047 * H, 0.018 * H), 6, 11, SCAR); // old brand / callous
     return b.toMesh();
 }
 
-fn forearmMesh(seed: u64, corded: bool) rl.Mesh {
+fn forearmMesh(seed: u64, corded: bool, girth: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    limb(&b, v3(0, 0, 0), v3(0, -SEG_FOREARM * H, 0), 0.066 * H, 0.053 * H, HIDE); // thick forearm
-    b.addBlob(v3(0, -0.043 * H, 0.018 * H), v3(0.062 * H, 0.050 * H, 0.051 * H), 7, 12, HIDE); // the forearm's upper mass
+    limb(&b, v3(0, 0, 0), v3(0, -SEG_FOREARM * H, 0), 0.066 * H * girth, 0.053 * H * girth, HIDE); // thick forearm
+    b.addBlob(v3(0, -0.043 * H, 0.018 * H), v3(0.062 * H * girth, 0.050 * H, 0.051 * H * girth), 7, 12, HIDE); // the forearm's upper mass
     var rng = mathx.Rng.init(seed);
     b.addBlob(v3(rng.range(-0.027, 0.027) * H, -rng.range(0.055, 0.11) * H, 0.046 * H), v3(0.027 * H, 0.023 * H, 0.018 * H), 6, 10, if (rng.float() < 0.5) SCAR else HIDE_DK); // a wart / old weal
     if (corded) { // the CLUB forearm: wound with old rope — the grip it never lets go of
         // Bands hug the LEANER shaft and stay inside the shorter segment (ends at −SEG_FOREARM·H).
         b.setMat(.leather);
-        b.addCylinder(v3(0, -0.066 * H, 0), v3(0, -0.093 * H, 0), 0.066 * H, 0.064 * H, 8, ROPE);
-        b.addCylinder(v3(0, -0.111 * H, 0), v3(0, -0.129 * H, 0), 0.061 * H, 0.059 * H, 8, ROPE);
+        b.addCylinder(v3(0, -0.066 * H, 0), v3(0, -0.093 * H, 0), 0.066 * H * girth, 0.064 * H * girth, 8, ROPE);
+        b.addCylinder(v3(0, -0.111 * H, 0), v3(0, -0.129 * H, 0), 0.061 * H * girth, 0.059 * H * girth, 8, ROPE);
     }
     return b.toMesh();
 }
@@ -1673,31 +1967,73 @@ test "attack choice: squared up crushes, flanked SWIPES, cooling looms, far clos
     const o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     const inner = o.swipeInner(); // where the sweep starts biting — 2.28 on a full-size one
     const mid = (inner + SWIPE_R) * 0.5; // comfortably inside the band it can actually land in
-    try std.testing.expectEqual(Choice.idle, classify(AGGRO_R + 1, 0, true, true, inner)); // disengaged
-    try std.testing.expectEqual(Choice.slam, classify(SLAM_R - 0.5, 0, true, true, inner)); // dead ahead → crush
+    try std.testing.expectEqual(Choice.idle, classify(AGGRO_R + 1, 0, true, true, true, inner)); // disengaged
+    try std.testing.expectEqual(Choice.slam, classify(SLAM_R - 0.5, 0, true, true, true, inner)); // dead ahead → crush
     // OFF HIS FRONT: the swipe is the whole point — it beats the slam even with the slam ready.
-    try std.testing.expectEqual(Choice.swipe, classify(mid, 80, true, true, inner));
-    try std.testing.expectEqual(Choice.swipe, classify(SWIPE_R - 0.2, -120, true, true, inner));
-    try std.testing.expectEqual(Choice.swipe, classify(mid, 0, false, true, inner));
-    try std.testing.expectEqual(Choice.wait, classify(SLAM_R - 0.5, 0, false, false, inner)); // all cooling → loom
-    try std.testing.expectEqual(Choice.approach, classify(SWIPE_R + 1.0, 90, true, true, inner));
-    try std.testing.expectEqual(Choice.approach, classify((SWIPE_R + AGGRO_R) * 0.5, 0, true, true, inner));
+    try std.testing.expectEqual(Choice.swipe, classify(mid, 80, true, true, false, inner));
+    try std.testing.expectEqual(Choice.swipe, classify(SWIPE_R - 0.2, -120, true, true, false, inner));
+    try std.testing.expectEqual(Choice.swipe, classify(mid, 0, false, true, false, inner));
+    try std.testing.expectEqual(Choice.wait, classify(SLAM_R - 0.5, 0, false, false, false, inner)); // all cooling → loom
+    try std.testing.expectEqual(Choice.approach, classify(SWIPE_R + 1.0, 90, true, true, false, inner));
+    try std.testing.expectEqual(Choice.approach, classify((SWIPE_R + AGGRO_R) * 0.5, 0, true, true, true, inner));
+
+    // THE DRIVE OWNS THE MID-BAND — ready, anything in [DRIVE_MIN, DRIVE_MAX] is charged, whatever the
+    // bearing (he squares up through the wind); cooling or rooted (`driveReady` false), he just walks.
+    try std.testing.expectEqual(Choice.drive, classify((DRIVE_MIN + DRIVE_MAX) * 0.5, 0, true, true, true, inner));
+    try std.testing.expectEqual(Choice.drive, classify(DRIVE_MAX - 0.1, 140, true, true, true, inner));
+    try std.testing.expectEqual(Choice.approach, classify((DRIVE_MIN + DRIVE_MAX) * 0.5, 0, true, true, false, inner));
+    try std.testing.expectEqual(Choice.approach, classify(DRIVE_MAX + 0.5, 0, true, true, true, inner));
+    // …and it never argues with the sweep over one distance: their bands do not overlap.
+    try std.testing.expect(DRIVE_MIN > SWIPE_R);
 
     // HE NEVER SWIPES AT SOMETHING HUGGING HIS LEGS. Inside the band the arc passes clean outside the hero, so
     // the move is a guaranteed miss however flanked he is — he looms or crushes instead.
     const hugging = inner - 0.3;
-    try std.testing.expectEqual(Choice.slam, classify(hugging, 80, true, true, inner));
-    try std.testing.expectEqual(Choice.wait, classify(hugging, 80, false, true, inner));
+    try std.testing.expectEqual(Choice.slam, classify(hugging, 80, true, true, false, inner));
+    try std.testing.expectEqual(Choice.wait, classify(hugging, 80, false, true, false, inner));
     // …and THIS is the range it was costing two thirds of a second at: where collision actually holds the hero,
     // which is well inside the sweep, and where a parried slam's cooldown sends him every time.
     const toeToToe = o.bodyR() + foe.HERO_R;
     try std.testing.expect(toeToToe < inner);
-    try std.testing.expectEqual(Choice.wait, classify(toeToToe, 0, false, true, inner));
+    try std.testing.expectEqual(Choice.wait, classify(toeToToe, 0, false, true, false, inner));
 }
 
 test "range bands are ordered and sit inside aggro" {
     try std.testing.expect(SLAM_R < SWIPE_R); // the horizontal arc outreaches the overhead drop
-    try std.testing.expect(SWIPE_R < AGGRO_R);
+    try std.testing.expect(SWIPE_R < DRIVE_MIN); // the drive picks up where the sweep gives out
+    try std.testing.expect(DRIVE_MAX < AGGRO_R);
+}
+
+test "THE DRIVE ALWAYS REACHES: surge travel + the crush strip covers its own band's far edge" {
+    // The swipe's lesson (the cannot-land law): a move chosen at a range it cannot cover is a promised miss.
+    // A hero who stands dead still at DRIVE_MAX must be inside the strip when the club comes down.
+    const travel = DRIVE_SPEED * DRIVE_DUR * DRIVE_IMPACT_K;
+    const o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    try std.testing.expect(travel + o.slamReach() >= DRIVE_MAX);
+    try std.testing.expect(DRIVE_MIN > SLAM_R); // never chosen where the standing slam already answers
+
+    // …and MEASURED, not asserted: spawn one at mid-band, let it run, and the blow must arrive.
+    var g = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    const hero = v3(0, 0, (DRIVE_MIN + DRIVE_MAX) * 0.5 + 1.0); // upper half of the band
+    var landed = false;
+    var drove = false;
+    var frames: i32 = 0;
+    while (frames < 60 * 4) : (frames += 1) {
+        if (g.update(1.0 / 60.0, hero, 60, .{}) != null) landed = true;
+        if (g.state == .drive) drove = true;
+        if (landed) break;
+    }
+    try std.testing.expect(drove); // it chose the lunge, not the trudge
+    try std.testing.expect(landed); // and the strip really did arrive
+    try std.testing.expect(mathx.distXZ(g.pos, mathx.zero3) > 2.0); // it covered real ground doing it
+}
+
+test "THE DRIVE IS A LEAP as far as the roots go: held feet choose the trudge instead" {
+    var g = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    g.root.grab();
+    var frames: i32 = 0;
+    while (frames < 30) : (frames += 1) _ = g.update(1.0 / 60.0, v3(0, 0, (DRIVE_MIN + DRIVE_MAX) * 0.5), 60, .{});
+    try std.testing.expect(g.state != .drivewind and g.state != .drive);
 }
 
 test "swipe hurt SECTOR: sweeps the whole front arc, misses the flanks behind it and the legs" {
@@ -1724,6 +2060,73 @@ test "swipe hurt SECTOR: sweeps the whole front arc, misses the flanks behind it
     var far = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     far.trySwipe(v3(0, 0, SWIPE_OUTER * SCALE + 2.0), SWIPE_HIT); // ahead but beyond the band
     try std.testing.expect(far.heroHit == null);
+}
+
+test "the RETURN's hurt sector matches where the club actually goes (band + arc, measured)" {
+    var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.4);
+    o.debugBackswipe();
+    var lowest: f32 = 99;
+    var highest: f32 = -99;
+    var minB: f32 = 999;
+    var maxB: f32 = -999;
+    var frames: u32 = 0;
+    var fr: i32 = 0;
+    while (fr < 60) : (fr += 1) {
+        _ = o.update(1.0 / 60.0, v3(0, 0, 3.4), 60, .{}); // dead ahead — the facing holds still
+        if (o.state != .backswipe) continue;
+        frames += 1;
+        const club = o.clubLowWorld();
+        const rad = mathx.distXZ(o.pos, club);
+        try std.testing.expect(rad >= SWIPE_INNER * o.scale and rad <= SWIPE_OUTER * o.scale);
+        const bearing = mathx.degrees(mathx.wrapPi(mathx.headingXZ(mathx.dirXZ(o.pos, club)) - o.facing));
+        minB = mathx.minF(minB, bearing);
+        maxB = mathx.maxF(maxB, bearing);
+        try std.testing.expect(@abs(mathx.wrapDeg(bearing - BACK_ARC_MID)) <= BACK_ARC * 0.5);
+        lowest = mathx.minF(lowest, club.y);
+        highest = mathx.maxF(highest, club.y);
+    }
+    try std.testing.expect(frames > 6); // it really did whip back
+    try std.testing.expect(maxB - minB > 100.0); // …across the whole front, not a twitch
+    // …and it stays INSIDE the hero column through the front (a RISING cut, chest-high where it re-crosses
+    // — the deep scythe was the outbound's job; a return over his head would be a hit the sector cannot bill).
+    try std.testing.expect(lowest < 1.5 and highest > 1.6);
+}
+
+test "THE TAIL IS NEVER SAFE, ONLY USUALLY SAFE: the swipe sometimes returns, and only in the band" {
+    var chains: u32 = 0;
+    var recovers: u32 = 0;
+    var s: u32 = 0;
+    while (s < 14) : (s += 1) {
+        var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, @as(f32, @floatFromInt(s)) * 0.37 + 0.1);
+        o.debugSwipe();
+        var fr: i32 = 0;
+        while (fr < 90) : (fr += 1) {
+            _ = o.update(1.0 / 60.0, v3(0, 0, 3.2), 60, .{}); // mid-band: the return COULD land
+            if (o.state == .backwind or o.state == .backswipe) {
+                chains += 1;
+                break;
+            }
+            if (o.state == .recover) {
+                recovers += 1;
+                break;
+            }
+        }
+    }
+    try std.testing.expect(chains > 0); // the tail gets taxed…
+    try std.testing.expect(recovers > 0); // …but not every time, or it is just a longer swipe
+
+    // Out of the band there is no roll at all — a return that cannot land is not a decision.
+    var s2: u32 = 0;
+    while (s2 < 14) : (s2 += 1) {
+        var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, @as(f32, @floatFromInt(s2)) * 0.37 + 0.1);
+        o.debugSwipe();
+        var fr: i32 = 0;
+        while (fr < 90) : (fr += 1) {
+            _ = o.update(1.0 / 60.0, v3(0, 0, 12.0), 60, .{}); // far beyond the sweep
+            try std.testing.expect(o.state != .backwind and o.state != .backswipe);
+            if (o.state == .recover) break;
+        }
+    }
 }
 
 test "higher poise: a single hero light does NOT flinch the ogre (only sustained pressure does)" {
@@ -1757,9 +2160,11 @@ test "slam crush is the club's LINE: hits ahead on the axis, clears the flanks +
     try std.testing.expect(far.heroHit == null);
 }
 
-test "NO ATTACK COMES OUT OF NOWHERE: both of the giant's moves rear first" {
+test "NO ATTACK COMES OUT OF NOWHERE: every one of the giant's moves rears first" {
     try std.testing.expect(WINDUP_DUR >= foe.TELL_MIN);
     try std.testing.expect(SWIPE_WIND_DUR >= foe.TELL_MIN);
+    try std.testing.expect(BACK_WIND_DUR >= foe.TELL_MIN); // the chain re-cocks for real, it is not a free hit
+    try std.testing.expect(DRIVE_WIND_DUR >= foe.TELL_MIN);
     // …and the slam is the one you read from across the plaza, so its tell dwarfs the swipe's.
     try std.testing.expect(WINDUP_DUR > SWIPE_WIND_DUR * 2.0);
 }
@@ -1774,9 +2179,14 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT — the same instant for both move
     var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     // MEASURED off the state machine rather than asserted about the constants: walk each move frame by frame
     // from its first and collect the span that is actually parryable, plus where the blow actually lands.
+    // The slam runs with a HELD tell on purpose — the hold stretches the rear, and the window must not move
+    // with it, because what is parried is the drop and the drop is the same drop however long the club hung.
+    const HOLD = 0.4;
     for ([_]struct { wind: State, swing: State, windDur: f32, impact: f32 }{
-        .{ .wind = .windup, .swing = .slam, .windDur = WINDUP_DUR, .impact = SLAM_DUR * SLAM_IMPACT_K },
+        .{ .wind = .windup, .swing = .slam, .windDur = WINDUP_DUR + HOLD, .impact = SLAM_DUR * SLAM_IMPACT_K },
         .{ .wind = .swipewind, .swing = .swipe, .windDur = SWIPE_WIND_DUR, .impact = SWIPE_DUR * SWIPE_IMPACT_K },
+        .{ .wind = .backwind, .swing = .backswipe, .windDur = BACK_WIND_DUR, .impact = BACK_DUR * BACK_IMPACT_K },
+        .{ .wind = .drivewind, .swing = .drive, .windDur = DRIVE_WIND_DUR, .impact = DRIVE_DUR * DRIVE_IMPACT_K },
     }) |m| {
         const step = 1.0 / 600.0; // finer than a frame, so the edges are the curve's and not the sampler's
         var open: f32 = -1;
@@ -1784,6 +2194,7 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT — the same instant for both move
         var elapsed: f32 = 0;
         o.enter(m.wind);
         o.t = 0;
+        o.windHold = if (m.wind == .windup) HOLD else 0;
         while (elapsed <= m.windDur + m.impact) : (elapsed += step) {
             if (elapsed > m.windDur and o.state == m.wind) { // the swing takes over, clock restarts
                 o.enter(m.swing);

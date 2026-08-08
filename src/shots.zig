@@ -9,11 +9,13 @@ const heromod = @import("hero.zig");
 const frogmod = @import("frog.zig");
 const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
+const shroommod = @import("shroom.zig");
 const koboldmod = @import("kobold.zig");
 const broodmod = @import("brood.zig");
 const warriormod = @import("warrior.zig");
 const shademod = @import("shade.zig");
 const leechmod = @import("leechfly.zig");
+const rootedmod = @import("rooted.zig");
 const npcmod = @import("npc.zig");
 const dialogmod = @import("dialog.zig");
 const mathx = @import("mathx.zig");
@@ -999,6 +1001,34 @@ pub fn runShots(g: *Game) void {
             shootFoe(g, o, "shots/63_ogre_swipe_top.png", 35, 0.60, 15.0); // same frame, from above
         }
 
+        {
+            // THE RETURN — judged from above like the swipe (a lateral arc foreshortens to nothing head-on).
+            // debugBackswipe enters .backwind at t=0: the re-cock ends / the return begins at f22, and its
+            // blow re-crosses his centre at f28.
+            const ahead = v3(oc.x, 0, oc.z + 3.4); // dead ahead, mid-band — where a chained hero stands
+            o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
+            o.debugBackswipe();
+            stepFoe(o, 20, ahead); // f20: the DRAG — club dying low on his left, about to be ripped back
+            shootFoe(g, o, "shots/63b_ogre_backwind.png", 35, 0.50, 14.0); // from above — the drag is a lateral fact, like the arcs
+            stepFoe(o, 9, ahead); // f29: one frame past the return's impact — the rising cut mid-front
+            shootFoe(g, o, "shots/63c_ogre_backswipe.png", 35, 0.12, 12.0);
+            shootFoe(g, o, "shots/63d_ogre_backswipe_top.png", 35, 0.60, 15.0); // same frame, from above
+        }
+
+        {
+            // THE DRIVE — tell, surge and crash. debugDrive enters .drivewind at t=0: the coil peaks at
+            // f43, the surge runs f43..f72 (impact), the whole move ends at f80.
+            const mark = v3(oc.x, 0, oc.z + 6.5); // mid-band, dead ahead — what the lunge is for
+            o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
+            o.debugDrive();
+            stepFoe(o, 40, mark); // f40: the coil — folded FORWARD over loaded legs (not the slam's arch)
+            shootFoe(g, o, "shots/64_ogre_drive_tell.png", 55, 0.10, 13.0);
+            stepFoe(o, 18, mark); // f58: mid-surge — legs churning, club coming over the top
+            shootFoe(g, o, "shots/64b_ogre_drive_surge.png", 90, 0.08, 13.5);
+            stepFoe(o, 15, mark); // f73: one frame past impact — the crash at the end of the run
+            shootFoe(g, o, "shots/64c_ogre_drive_crash.png", 55, 0.08, 13.0);
+        }
+
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         o.debugStagger(false);
         stepFoe(o, 13, far); // flinch peak (recoiled back, arm flung up)
@@ -1322,6 +1352,8 @@ pub fn runShots(g: *Game) void {
     warriorShots(g);
     shadeShots(g);
     leechShots(g);
+    rootedShots(g);
+    shroomShots(g);
     campfireShots(g);
     chestShots(g);
     folkShots(g);
@@ -1601,6 +1633,140 @@ fn warriorShots(g: *Game) void {
 /// THE LEECHFLY. Everything here is fought over its HEIGHT, so every frame has to say where it is: the
 /// portraits are shot at attack height, the climb is shot from the ground looking UP, and the feed is shot
 /// with the hero in it — a beak in nobody is a beak pointing at air.
+/// THE ROOTED. Every frame here is about the DISGUISE and the staged tell: asleep beside a real snag, the
+/// lids up, the unfold, and each of the three limbs mid-arc. A creature whose whole point is that you cannot
+/// tell it from scenery has to be photographed NEXT TO the scenery.
+fn rootedShots(g: *Game) void {
+    game.clearFoesForShot(g);
+    // In the wood, where the snags it is pretending to be actually grow.
+    const sc = mathx.ground(-88.0, 3.0);
+    const near = along(sc, LIT_BACK, 3.0);
+    const far = along(sc, LIT_BACK, 90.0);
+    const faceCam = mathx.headingXZ(LIT_BACK);
+    g.grove.n = 2;
+    const t = &g.grove.trees[0];
+    const spawn = struct {
+        fn it(tt: *rootedmod.Rooted, at: rl.Vector3, yaw: f32, seed: f32) void {
+            tt.* = rootedmod.Rooted.spawn(at, yaw, 1.0, seed);
+        }
+    }.it;
+    const away = mathx.ground(sc.x - 60.0, sc.z + 60.0);
+    spawn(&g.grove.trees[1], away, faceCam, 0.5);
+
+    // ASLEEP, AND THE WHOLE TEST IS THAT YOU CANNOT PICK IT OUT. `nearestFading` finds a real tree to stand
+    // it beside; a portrait of it alone proves nothing about a disguise.
+    spawn(t, sc, faceCam, 0.21);
+    stepFoe(t, 30, far);
+    standHero(g, sc.x + 5.0, sc.z - 5.0, mathx.radians(-140));
+    shootAt(g, "shots/118_rooted_hidden.png", v3(sc.x, sc.y + 3.2, sc.z), LIT_YAW, 0.10, 15.0);
+
+    // …AND THE LIDS UP, which is the warning and happens a metre and a half outside its reach. Cropped, since
+    // two embers down two knot-holes are unjudgeable at 1:1 (the thin-geometry rule).
+    var k: f32 = 0;
+    while (k < 3.0) : (k += SHOT_DT) _ = t.update(SHOT_DT, near, game.PLAY_HALF, .{});
+    shootAt(g, "shots/118a_rooted_eyes.png", t.lockPoint(), LIT_YAW, 0.05, 3.2);
+    shootAt(g, "shots/118b_rooted_watching.png", v3(sc.x, sc.y + 3.0, sc.z), LIT_YAW, 0.08, 9.0);
+
+    // THE UNFOLD, caught halfway — the biggest tell in the game and the one frame that proves it is not a pop.
+    spawn(t, sc, faceCam, 0.21);
+    t.debugWake();
+    stepFoe(t, 28, near);
+    shootAt(g, "shots/118c_rooted_wake.png", v3(sc.x, sc.y + 3.0, sc.z), LIT_YAW, 0.08, 10.0);
+    stepFoe(t, 40, near);
+    shootAt(g, "shots/118d_rooted_open.png", v3(sc.x, sc.y + 3.2, sc.z), LIT_YAW, 0.08, 11.0);
+
+    // THE THREE MOVES, each at its own strike. The hook is shot WITH THE HERO IN FRAME: a limb reaching for
+    // nobody is a branch waving.
+    const beat = struct {
+        fn at(gg: *Game, tt: *rootedmod.Rooted, home: rl.Vector3, face: f32, which: usize, clock: f32, name: [:0]const u8, toward: rl.Vector3, dist: f32) void {
+            tt.* = rootedmod.Rooted.spawn(home, face, 1.0, 0.21);
+            tt.debugMove(which);
+            var c: f32 = 0;
+            while (c < clock) : (c += SHOT_DT) _ = tt.update(SHOT_DT, toward, game.PLAY_HALF, .{});
+            shootAt(gg, name, v3(home.x, home.y + 2.6, home.z), LIT_YAW + 18, 0.10, dist);
+        }
+    }.at;
+    const slam = rootedmod.moveClock(rootedmod.SLAM);
+    const swp = rootedmod.moveClock(rootedmod.SWEEP);
+    const hk = rootedmod.moveClock(rootedmod.HOOK);
+    standHero(g, near.x, near.z, mathx.radians(LIT_YAW + 180));
+    beat(g, t, sc, faceCam, rootedmod.SLAM, slam.wind * 0.9, "shots/118e_rooted_slam_cock.png", near, 11.0);
+    beat(g, t, sc, faceCam, rootedmod.SLAM, slam.wind + slam.strike * 0.8, "shots/118f_rooted_slam.png", near, 11.0);
+    beat(g, t, sc, faceCam, rootedmod.SWEEP, swp.wind + swp.strike * 0.6, "shots/118g_rooted_sweep.png", near, 11.0);
+    const hookAt = along(sc, LIT_BACK, 4.2); // inside the hook's own (measured) band
+    standHero(g, hookAt.x, hookAt.z, mathx.radians(LIT_YAW + 180));
+    beat(g, t, sc, faceCam, rootedmod.HOOK, hk.wind + hk.strike * 0.7, "shots/118h_rooted_hook.png", hookAt, 13.0);
+
+    g.hero.pos = mathx.ground(sc.x, sc.z - 40.0);
+    g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pose();
+    spawn(t, sc, faceCam, 0.21);
+    t.debugStagger(true);
+    stepFoe(t, 16, far);
+    shootAt(g, "shots/118i_rooted_stagger.png", v3(sc.x, sc.y + 2.8, sc.z), LIT_YAW + 20, 0.10, 11.0);
+
+    spawn(t, sc, faceCam, 0.21);
+    t.debugKill();
+    stepFoe(t, 70, far);
+    shootAt(g, "shots/118j_rooted_death.png", v3(sc.x, sc.y + 2.2, sc.z), LIT_YAW + 24, 0.12, 12.0);
+    game.clearFoesForShot(g);
+}
+
+fn shroomShots(g: *Game) void {
+    game.clearFoesForShot(g);
+    const sc = mathx.ground(-24.0, 34.0); // the open patch west — small and low, it wants clean ground
+    const far = along(sc, LIT_BACK, 90.0);
+    const faceCam = mathx.headingXZ(LIT_BACK);
+    g.cluster.n = 2;
+    const m = &g.cluster.shrooms[0];
+    const away = mathx.ground(sc.x - 60.0, sc.z + 60.0);
+    const spawn = struct {
+        fn it(s: *shroommod.Shroom, at: rl.Vector3, yaw: f32, seed: f32) void {
+            s.* = shroommod.Shroom.spawn(at, yaw, 1.0, seed);
+        }
+    }.it;
+    spawn(&g.cluster.shrooms[1], mathx.ground(sc.x + 1.1, sc.z + 0.8), faceCam, 0.72);
+
+    // THE PAIR AT REST — the hero beside them for scale: knee-high toys, until one of them isn't.
+    spawn(m, sc, faceCam, 0.23);
+    stepFoe(m, 40, far);
+    stepFoe(&g.cluster.shrooms[1], 40, far);
+    standHero(g, sc.x + 2.2, sc.z - 2.2, mathx.radians(-140));
+    shootAt(g, "shots/119_shroom_pair.png", v3(sc.x, sc.y + 0.6, sc.z), LIT_YAW, 0.10, 4.6);
+
+    g.hero.pos = mathx.ground(sc.x, sc.z - 30.0); // out of the portraits below
+    g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pose();
+    spawn(&g.cluster.shrooms[1], away, faceCam, 0.5);
+
+    // THE GATHER — the deep squat, cap tipped back, spore-dust shaking off: the tell, near its top.
+    const mark = along(sc, LIT_BACK, 3.4);
+    spawn(m, sc, faceCam, 0.23);
+    m.debugFling(mark);
+    stepFoe(m, 32, mark);
+    shootAt(g, "shots/119b_shroom_gather.png", v3(sc.x, sc.y + 0.5, sc.z), LIT_YAW, 0.06, 4.2);
+
+    // MID-FLING — arms out, feet paddling, the whole toy stretched along its own arc.
+    stepFoe(m, 22, mark); // gather ends at f38; f54 is just past the apex
+    shootAt(g, "shots/119c_shroom_fling.png", v3(m.pos.x, m.pos.y + 1.2, m.pos.z), LIT_YAW, 0.06, 4.6);
+
+    // THE CLOUD — stepped through the CLUSTER, which owns it: the bloom outlives the body that threw it.
+    spawn(m, sc, faceCam, 0.23);
+    m.debugFling(mark);
+    var k: i32 = 0;
+    while (k < 132) : (k += 1) _ = g.cluster.update(SHOT_DT, mark, game.PLAY_HALF, .{}); // landing + a second of bloom
+    shootAt(g, "shots/119d_shroom_cloud.png", v3(mark.x, mark.y + 0.9, mark.z), LIT_YAW, 0.10, 7.0);
+
+    // THE TRIP — flat on its face where the fling should have left, feet going like a turned turtle.
+    // Shot from HIGH: from ground level the cap hides everything that says pratfall.
+    spawn(m, sc, faceCam, 0.23);
+    m.debugTrip(mark);
+    stepFoe(m, 38 + 15 + 30, mark); // gather + the fall + deep in the sprawl
+    shootAt(g, "shots/119e_shroom_trip.png", v3(sc.x, sc.y + 0.3, sc.z), LIT_YAW + 40, 0.45, 4.2);
+
+    game.clearFoesForShot(g);
+}
+
 fn leechShots(g: *Game) void {
     game.clearFoesForShot(g);
     const sc = mathx.ground(-24.0, 34.0); // the same open patch west the shades and warriors are shot on

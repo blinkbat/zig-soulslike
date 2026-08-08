@@ -551,7 +551,7 @@ pub const Frog = struct {
     fn updateChomp(self: *Frog, dt: f32, hero: rl.Vector3) void {
         if (self.t < CHOMP_GAPE) {
             self.faceToward(hero, dt); // track the target while gaping
-            const k = mathx.smoothstep(0, CHOMP_GAPE, self.t);
+            const k = foe.swingCurve(self.t / CHOMP_GAPE);
             self.resolveGape(k);
             self.emitGape(dt, k); // amber charge gathers + drool strings from the maw
         } else if (self.t < CHOMP_GAPE + CHOMP_SNAP) {

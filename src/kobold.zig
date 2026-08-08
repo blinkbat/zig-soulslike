@@ -862,6 +862,25 @@ pub const Kobold = struct {
         self.justDied = true;
     }
 
+    /// THE IDLE'S CLOCKS (the wanderer's law): breath, its lagged echo one joint down, and a slow weight
+    /// rock — every RATE and PHASE dealt off the seed, at rates that never line up. One breathing bob is
+    /// a mannequin with a pulse, and three identical mannequins PHASE-LOCKED is exactly what a warband
+    /// standing at its post read as. All three go to zero on the move and through the collapse.
+    fn idleSway(self: *const Kobold, m: f32, dk: f32) struct { br: f32, brLag: f32, rock: f32, deal: f32 } {
+        const s1 = 0.5 + 0.5 * mathx.sinf(self.seed * 12.98);
+        const s2 = 0.5 + 0.5 * mathx.sinf(self.seed * 78.23);
+        const amt = (1.0 - mathx.clampF(m * 2.0, 0, 1)) * (1.0 - dk);
+        const arg = self.elapsed * (1.05 + 0.4 * s1) + self.seed * 6.28;
+        return .{
+            .br = mathx.sinf(arg) * amt,
+            .brLag = mathx.sinf(arg - 0.7) * amt,
+            .rock = mathx.sinf(self.elapsed * (0.42 + 0.2 * s2) + self.seed * 9.4) * amt,
+            // The same die the rates were cast with, for anything else dealt per instance (the skulk
+            // base) — recomputed at a call site it eventually disagrees with the rates it was dealt with.
+            .deal = s1,
+        };
+    }
+
     pub fn pose(self: *Kobold) void {
         const fs = self.scale * (1.0 - 0.55 * self.fade);
         const sink = -0.4 * self.scale * self.fade;
@@ -890,13 +909,15 @@ pub const Kobold = struct {
         const landAbs = self.dashLand();
         const dashLoad = DASH_COIL * gather + DASH_ABSORB * landAbs;
         const crouch = CROUCH_HEAVE * heave + CROUCH_STUN * stunAmt + dashLoad;
-        const slouch = 7.0 + 4.0 * m + PELVIS_SHARE * (46.0 * heave + BITE_FOLD * self.biteLunge()) +
+        const o = self.idleSway(m, dk);
+        // The base skulk is DEALT, not authored (5..9.5 deg): three of one warband stand three ways.
+        const slouch = (5.0 + 4.5 * o.deal) + 1.8 * o.br + 4.0 * m + PELVIS_SHARE * (46.0 * heave + BITE_FOLD * self.biteLunge()) +
             16.0 * dk - 14.0 * stunAmt;
         const sag = legSink(crouch);
-        const pelvY = if (dead) collapse else hipY + bob - dip - sag;
+        const pelvY = if (dead) collapse else hipY + bob + 0.006 * H * o.br - dip - sag;
         // scaleM FIRST → the whole rig scales about its pelvis; the world placement stays unscaled.
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul3(rz(8.0 * dk), rx(slouch), ry(prot)),
+            mul3(rz(8.0 * dk + 1.6 * o.rock), rx(slouch), ry(prot)),
             mul(tr(sway * fs, pelvY * fs + sink + self.hop, 0), ry(facingDeg)),
             heromod.rootAt(self.pos),
         ));
@@ -915,7 +936,7 @@ pub const Kobold = struct {
             heromod.legChain(&wx, &self.rest, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
             heromod.legChain(&wx, &self.rest, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, solePatches[1]);
         }
-        self.poseUpper(&wx, dk, stunAmt, prot);
+        self.poseUpper(&wx, dk, stunAmt, prot, o);
         self.xf = wx;
         self.poseJaw();
         self.poseTail(dk, stunAmt);
@@ -1043,8 +1064,8 @@ pub const Kobold = struct {
         return mathx.pulse(u, 0, knee, knee, BITE_HIT_A); // b == c: a spike, no hold
     }
 
-    // AGENTS.md: legs alone are NOT a gait.
-    fn poseUpper(self: *Kobold, wx: *[N]rl.Matrix, dk: f32, stunAmt: f32, prot: f32) void {
+    // AGENTS.md: legs alone are NOT a gait. `o` is pose()'s own idleSway, handed down rather than recomputed.
+    fn poseUpper(self: *Kobold, wx: *[N]rl.Matrix, dk: f32, stunAmt: f32, prot: f32, o: anytype) void {
         const twoPi = std.math.tau;
         const ph = self.phase;
         const m = self.moving * (1.0 - dk);
@@ -1060,15 +1081,16 @@ pub const Kobold = struct {
         const spineExtra = 14.0 * dk - 16.0 * stunAmt;
         const twist = self.chopTwist();
         const throwF = self.chopThrow();
+        // `o`: breath through the spine, its ECHO through the chest — staggered lags, computed once in pose().
         setLocal(wx, SPINE, self.rest, mul3(
-            rx(nod + fold + gasp + spineExtra * 0.5 + throwF * 0.45),
+            rx(nod + fold + gasp + 1.7 * o.br + spineExtra * 0.5 + throwF * 0.45),
             ry(counter * 0.45 + twist * 0.40),
-            rz(1.4 * mathx.sinf(twoPi * ph) * m),
+            rz(1.4 * mathx.sinf(twoPi * ph) * m + 0.9 * o.rock),
         ));
         setLocal(wx, CHEST, self.rest, mul3(
-            rx(nod * 0.6 + 0.65 * fold + gasp * 0.7 + spineExtra * 0.5 + throwF * 0.55),
+            rx(nod * 0.6 + 0.65 * fold + gasp * 0.7 + 1.2 * o.brLag + spineExtra * 0.5 + throwF * 0.55),
             ry(counter * 0.55 + twist * 0.60),
-            rz(-1.0 * mathx.sinf(twoPi * ph) * m),
+            rz(-1.0 * mathx.sinf(twoPi * ph) * m - 0.7 * o.rock),
         ));
 
         const headYaw = -counter * 0.5 + 6.0 * mathx.sinf(self.elapsed * 0.7 + self.seed * 6.0) * (1.0 - m);
@@ -1078,10 +1100,12 @@ pub const Kobold = struct {
 
         const swing = 22.0 * m;
         const lag = 0.125;
-        const shL = -swing * mathx.cosf(twoPi * ph);
-        const shR = -swing * mathx.cosf(twoPi * (ph + 0.5));
-        const elL = 24.0 + 24.0 * mathx.maxF(0, -mathx.cosf(twoPi * (ph - lag))) * m;
-        const elR = 24.0 + 24.0 * mathx.maxF(0, -mathx.cosf(twoPi * (ph + 0.5 - lag))) * m;
+        // The hanging arms ride the breath UNEVENLY — one gathers on the in-breath, the other trails the
+        // rock. Symmetric hanging arms at zero were most of the mannequin.
+        const shL = -swing * mathx.cosf(twoPi * ph) + 3.0 * o.brLag + 1.2 * o.rock;
+        const shR = -swing * mathx.cosf(twoPi * (ph + 0.5)) - 2.4 * o.brLag + 1.5 * o.rock;
+        const elL = 24.0 + 24.0 * mathx.maxF(0, -mathx.cosf(twoPi * (ph - lag))) * m + 4.5 * mathx.maxF(0, o.br);
+        const elR = 24.0 + 24.0 * mathx.maxF(0, -mathx.cosf(twoPi * (ph + 0.5 - lag))) * m + 3.2 * mathx.maxF(0, -o.br);
         const abd = 13.0;
 
         switch (self.role) {

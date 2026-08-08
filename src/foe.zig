@@ -207,6 +207,22 @@ pub fn markOn(bone: rl.Matrix, at: rl.Vector3) rl.Vector3 {
 /// 0.16/0.78 — which is four different creatures disagreeing about the shape of the same event for no
 /// reason anybody wrote down. A light flinch is a single symmetric swell; a heavy one snaps to its peak,
 /// HOLDS there (that hold is the punish window, and it has to be legible), and lets go slowly.
+/// HOW FAR THROUGH ITS ARC A SWING IS, 0..1 of the strike window — ONE CURVE for every creature, and the
+/// reason it exists is that you must be able to parry off what you SEE (owner: "should be all 3" — visuals,
+/// sound and timing, not the last two alone).
+///
+/// A FRONT-LOADED ARC (`1 - (1-u)³`) was fastest on the frame it began: 58% of the travel in the first
+/// quarter of the window, so the limb was most of the way there before the eye registered it moving. A
+/// SYMMETRIC one (`smoothstep`) is no better — it spends its speed in the middle and reads as a glide. This
+/// holds near the cock for a beat, then whips: 8% of the arc in the first quarter of the window against the
+/// 58% a front-loaded one moved, and the last quarter carries two and a half times what the first did.
+///
+/// The impact latch is on the CLOCK and is untouched by this, so no parry window moves (`PARRY_LEAD` is
+/// measured back from the impact frame, which is the rule `toImpact` keeps).
+pub fn swingCurve(u: f32) f32 {
+    return std.math.pow(f32, mathx.smoothstep(0, 1, u), 1.35);
+}
+
 pub fn stunCurve(t: f32, heavy: bool) f32 {
     if (!heavy) return mathx.sinf(mathx.clampF(t / combat.FOE_LIGHT_STUN_DUR, 0, 1) * std.math.pi);
     return mathx.pulse(mathx.clampF(t / combat.FOE_HEAVY_STUN_DUR, 0, 1), 0, 0.14, 0.74, 1.0);
@@ -918,4 +934,24 @@ test "THE SWING RIBBON ONLY RECORDS A BLADE THAT MOVED, and it expires" {
     try std.testing.expect(t.s[t.head].age > 0.39);
     t.reset();
     for (t.s) |s| try std.testing.expect(s.age >= mathx.LONG_AGO);
+}
+
+test "A SWING STARTS SLOW ENOUGH TO BE SEEN, then whips" {
+    try std.testing.expectApproxEqAbs(@as(f32, 0), swingCurve(0), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), swingCurve(1), 1e-5);
+    // The first quarter of the window moves the limb a TWELFTH of its arc. Front-loaded it moved 58% of it,
+    // which is why a parry could only ever be timed off the sound and the clock.
+    try std.testing.expect(swingCurve(0.25) < 0.10);
+    // …and the LAST quarter carries more than twice what the first did: that asymmetry is the whip.
+    try std.testing.expect(1.0 - swingCurve(0.75) > 2.0 * swingCurve(0.25));
+    // …and it is monotone, so the arc never goes backwards mid-strike.
+    var prev: f32 = -1;
+    var u: f32 = 0;
+    while (u <= 1.0001) : (u += 1.0 / 64.0) {
+        const now = swingCurve(u);
+        try std.testing.expect(now >= prev);
+        prev = now;
+    }
+    // …and it is BEHIND a symmetric smoothstep the whole way, which is what makes the start the slow part.
+    try std.testing.expect(swingCurve(0.5) < 0.5);
 }

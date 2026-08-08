@@ -15,10 +15,13 @@ pub const MORTAR = rgba(36, 33, 29, 255);
 pub const MARBLE = rgba(54, 54, 52, 255);
 pub const MARBLE_LT = rgba(70, 70, 68, 255); // capitals, abaci, an altar top
 pub const MARBLE_DK = rgba(34, 34, 34, 255); // in shade, or where the soot and rain got in
-// Living rock: colder and greyer than ruin masonry, and DARKER than feels right on the swatch.
-pub const CLIFF_ROCK = rgba(47, 45, 42, 255);
-pub const CLIFF_DK = rgba(31, 30, 28, 255);
-pub const CLIFF_LT = rgba(62, 59, 55, 255);
+// Living rock — and the three tones separate on HUE, not value alone: the noon sun flattens any value
+// pair on a face this big (AGENTS.md), so as three neutral greys every cliff came back one slab of pale
+// concrete. Warm base, COOL shadow seams, buff caught-light — the strata banding the builder already
+// deals only reads at all because these disagree in hue.
+pub const CLIFF_ROCK = rgba(46, 42, 36, 255);
+pub const CLIFF_DK = rgba(27, 27, 29, 255);
+pub const CLIFF_LT = rgba(56, 51, 42, 255);
 pub const ROCK_DEEP = rgba(23, 22, 21, 255);
 pub const PAVE = rgba(32, 31, 27, 255);
 pub const PAVE_DK = rgba(22, 21, 19, 255);
@@ -60,13 +63,16 @@ pub const STEM = rgba(44, 54, 28, 255);
 pub const PETAL = rgba(210, 196, 152, 255);
 pub const SEED = rgba(118, 94, 46, 255);
 pub const PETAL_GLOW = rgba(242, 206, 118, 200); // slight emissive — kin to the grace ember
-pub const LEAF_DK = rgba(26, 34, 20, 255);
-pub const LEAF = rgba(36, 45, 24, 255);
-pub const LEAF_LT = rgba(52, 58, 28, 255);
+// The leaf family spans a real HUE range now, not one olive at five values: the canopy builders already
+// put light on top and dark below, but sun-flattened value was all that said so — the undersides go COOL
+// blue-green and the crowns warm lime, which is the split daylight cannot take away.
+pub const LEAF_DK = rgba(19, 32, 24, 255);
+pub const LEAF = rgba(35, 46, 25, 255);
+pub const LEAF_LT = rgba(55, 58, 25, 255);
 pub const LEAF_GOLD = rgba(74, 66, 30, 255);
 pub const LEAF_PALE = rgba(58, 64, 34, 255); // willow: silvered, thirstier green
 pub const BERRY = rgba(58, 14, 18, 255);
-pub const LEAF_DAMP = rgba(30, 44, 26, 255); // shade-grown: greener and cooler than the sunlit gold
+pub const LEAF_DAMP = rgba(23, 40, 31, 255); // shade-grown: properly COOL beside the sunlit gold
 pub const CLOVER_GRN = rgba(40, 54, 30, 255);
 pub const MOSS_SOFT = rgba(44, 56, 32, 255);
 pub const MOSS_DK = rgba(30, 40, 24, 255);
@@ -81,8 +87,9 @@ pub const CAP_BROWN = rgba(88, 60, 40, 255); // mushroom cap
 pub const CAP_PALE = rgba(126, 116, 96, 255);
 pub const LILY_GRN = rgba(46, 60, 34, 255);
 pub const IVY_GRN = rgba(28, 40, 24, 255);
-pub const NEEDLE = rgba(23, 33, 25, 255); // conifer: the darkest green in the world
-pub const NEEDLE_LT = rgba(34, 44, 28, 255);
+pub const NEEDLE = rgba(21, 32, 27, 255); // conifer: the darkest green in the world, and COOL
+pub const NEEDLE_LT = rgba(37, 45, 25, 255); // …against warm lit tips — hue carries what the sun flattens
+pub const NEEDLE_DK = rgba(15, 24, 21, 255); // the inner shade the lower whorls grow in
 pub const BIRCH_BARK = rgba(104, 100, 90, 255); // pale, and the only tree you can pick out at distance
 pub const BIRCH_SCAR = rgba(44, 42, 38, 255);
 pub const BONE = rgba(108, 104, 92, 255);

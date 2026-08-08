@@ -199,9 +199,13 @@ fn quickIndex(s: SlotId) ?usize {
     return if (i >= Q0) i - Q0 else null;
 }
 
-const SLOT_PX: i32 = 56;
-const SLOT_GAP: i32 = 10;
-/// Where each socket sits, as (col, row). Rows 4 and 5 are the quick block and get `QUICK_BREAK` above them.
+/// The socket grid: five across, six down (four of body, two of quick bar).
+const SLOT_COLS: i32 = 5;
+const SLOT_ROWS: i32 = 6;
+/// …clamped so a small window keeps them usable and a huge one does not make dinner plates of them.
+const SLOT_MIN: i32 = 30;
+const SLOT_MAX: i32 = 112;
+/// Where each socket sits, as (col, row). Rows 4 and 5 are the quick block and get `SlotFit.brk` above them.
 const Cell = struct { col: i32, row: i32 };
 const SLOT_CELL = blk: {
     var c = [_]Cell{.{ .col = 0, .row = 0 }} ** NSLOT;
@@ -221,21 +225,22 @@ const SLOT_CELL = blk: {
     }
     break :blk c;
 };
-const QUICK_BREAK: i32 = 20;
 
 fn slotName(s: SlotId) [:0]const u8 {
     return switch (s) {
+        // SHORT: the label is fixed-size text (`hud`'s type scale) over a socket that is a share of the
+        // window, so a long one runs into its neighbour the moment the card is anything but wide.
         .helm => "Head",
-        .amulet => "Amulet",
-        .left => "Left Hand",
+        .amulet => "Neck",
+        .left => "L Hand",
         .chest => "Body",
-        .right => "Right Hand",
+        .right => "R Hand",
         .ring1 => "Ring",
         .belt => "Belt",
         .ring2 => "Ring",
-        .arrows => "Arrows",
+        .arrows => "Ammo",
         .boots => "Feet",
-        .sorcery => "Sorcery",
+        .sorcery => "Spell",
         // The quick sockets are NUMBERED, not named: what is in one changes, and the number is what the
         // player learns the cycle order by.
         .q0 => "1",
@@ -342,6 +347,8 @@ fn quickWorth(kind: ?item.Kind, v: View) f32 {
     return switch (item.use(k)) {
         .none => 0,
         .regen => |r| v.sheet.hp() * r.frac,
+        .lob => |l| l.dmg + l.fire, // what one press throws, in the only number a throw has
+        .ward, .wind => 0, // neither restores a bar the row could price
     };
 }
 
@@ -408,9 +415,7 @@ fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
             }
             return out[0..@typeInfo(combat.ArrowKind).@"enum".fields.len];
         },
-        // THE ONE PICKER THAT TOGGLES rather than chooses: every other slot holds exactly one thing, and the
-        // quick bar holds up to `combat.QUICK_SLOTS` of them. Confirm on a row puts it ON the bar or takes it
-        // off, and `equipped` is what draws the ones that are on — so the list IS the bar, read down.
+        // A quick socket: what he actually carries, plus an empty row to clear it with.
         else => {
             const qi = quickIndex(s) orelse return out[0..0];
             // An EMPTY row first, or a socket you filled by mistake can never be cleared.
@@ -787,20 +792,43 @@ fn labelH() i32 {
     return hud.lineH(hud.TINY) + 2;
 }
 
-/// Where socket `i` sits on the page. One table (`SLOT_CELL`) feeds this and the cursor, so the picture and
-/// the walk cannot disagree.
-fn slotRect(body: Box, i: usize) rl.Rectangle {
+/// THE SOCKETS ARE FITTED TO THE PANEL, not a fixed pixel size — the card is a fraction of the window
+/// (`cardBox`), so a fixed socket is a different share of the page on every monitor. The bag's cells have
+/// always worked this way (`bagGrid`); this is the same sum with a break in the middle of it.
+///
+/// The gap and the break between the body and the quick rows are fractions of the socket, so the whole block
+/// scales as one thing. TEXT DOES NOT SCALE — sizes come from `hud`'s type scale (AGENTS.md), which is why
+/// the label height is subtracted rather than solved for.
+const SlotFit = struct { px: i32, gap: i32, brk: i32, x: i32, y: i32 };
+
+fn slotFit(body: Box) SlotFit {
     const inner = panelInner(equipCols(body)[0], false);
-    const stepX = SLOT_PX + SLOT_GAP;
-    const stepY = SLOT_PX + labelH() + 6;
-    const run = stepX * 5 - SLOT_GAP;
+    // gap = px/7 and break = px/3, so both axes solve for px directly.
+    const byW = @divTrunc(inner.w * 7, SLOT_COLS * 7 + (SLOT_COLS - 1));
+    const spare = inner.h - SLOT_ROWS * (labelH() + 6) - hud.lineH(hud.BODY) - 14;
+    const byH = @divTrunc(spare * 3, SLOT_ROWS * 3 + 1);
+    const px = mathx.clampI(@min(byW, byH), SLOT_MIN, SLOT_MAX);
+    const gap = @max(4, @divTrunc(px, 7));
+    const run = SLOT_COLS * px + (SLOT_COLS - 1) * gap;
+    return .{
+        .px = px,
+        .gap = gap,
+        .brk = @divTrunc(px, 3),
+        .x = inner.x + @divTrunc(inner.w - run, 2),
+        .y = inner.y + labelH(),
+    };
+}
+
+/// Where socket `i` sits. One table (`SLOT_CELL`) feeds this and the cursor, so the picture and the walk
+/// cannot disagree.
+fn slotRect(body: Box, i: usize) rl.Rectangle {
+    const f = slotFit(body);
     const c = SLOT_CELL[i];
-    const brk: i32 = if (c.row >= 4) QUICK_BREAK else 0;
     return rect(
-        inner.x + @divTrunc(inner.w - run, 2) + c.col * stepX,
-        inner.y + labelH() + c.row * stepY + brk,
-        SLOT_PX,
-        SLOT_PX,
+        f.x + c.col * (f.px + f.gap),
+        f.y + c.row * (f.px + labelH() + 6) + (if (c.row >= 4) f.brk else 0),
+        f.px,
+        f.px,
     );
 }
 
@@ -1078,7 +1106,8 @@ fn drawSlot(self: *const Book, r: rl.Rectangle, s: SlotId, v: View, sel: bool) v
     // does not exist, and at full strength it reads as a page that has lost its contents.
     const inert = locked(s, v) != null;
     const lab: u8 = if (sel) 235 else if (inert) 70 else 150;
-    hud.text(slotName(s), x, y - hud.lineH(hud.TINY) - 2, hud.TINY, mathx.withAlpha(uiart.TEXT_DIM, lab));
+    const nm = slotName(s);
+    hud.text(nm, x + @divTrunc(w - hud.textW(nm, hud.TINY), 2), y - hud.lineH(hud.TINY) - 2, hud.TINY, mathx.withAlpha(uiart.TEXT_DIM, lab));
     uiart.slot(x, sy, w, h, on);
     if (inert) rl.drawRectangle(x, sy, w, h, mathx.withAlpha(rl.Color.black, 110));
     if (sel) uiart.sheen(rect(x, sy, w, h), 3.4, 22);
@@ -1282,19 +1311,24 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
     uiart.divider(inner.x + @divTrunc(inner.w, 2), y, @divTrunc(inner.w, 2) - 10, 120);
     y += 12;
     // WHAT IT DOES, in the game's own numbers — read off `item.use`, so a dose tuned there reads here.
+    // ONE effect line per arm; the use-or-refuse hint below is shared, because the refusal is the quick
+    // bar's rule and not any one effect's.
     switch (item.use(k)) {
         .none => hud.text("It does nothing you can do here.", inner.x, y, hud.HINT, uiart.TEXT_HINT),
-        .regen => |r| {
-            hud.text(fmt("Restores {d:.0} HP over {d:.0} seconds.", .{ v.sheet.hp() * r.frac, r.secs }), inner.x, y, hud.SMALL, uiart.GOOD);
-            const hy = y + hud.lineH(hud.SMALL) + 6;
-            // THE REFUSAL SAYS WHY AND SAYS WHERE. A greyed prompt with no reason is a prompt the player
-            // calls broken (`locked`'s rule, one page over).
-            if (v.inCombat) {
-                hud.text("Not with something on you — load it on the quick bar.", inner.x, hy, hud.HINT, uiart.BAD);
-            } else {
-                hud.text("A / Enter    Use", inner.x, hy, hud.HINT, mathx.withAlpha(uiart.GILT, 220));
-            }
-        },
+        .regen => |r| hud.text(fmt("Restores {d:.0} HP over {d:.0} seconds.", .{ v.sheet.hp() * r.frac, r.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .lob => |l| hud.text(fmt("Thrown at the reticle; bursts for {d:.0} + {d:.0} fire.", .{ l.dmg, l.fire }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .ward => |w| hud.text(fmt("Chaos slides off you (+{d:.0}) for {d:.0} seconds.", .{ w.chaos, w.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .wind => |w| hud.text(fmt("Half your wind back at once ({d:.0} stamina), and the lockout with it.", .{ v.sheet.stamina() * w.share }), inner.x, y, hud.SMALL, uiart.GOOD),
+    }
+    if (item.usable(k)) {
+        const hy = y + hud.lineH(hud.SMALL) + 6;
+        // THE REFUSAL SAYS WHY AND SAYS WHERE. A greyed prompt with no reason is a prompt the player
+        // calls broken (`locked`'s rule, one page over).
+        if (v.inCombat) {
+            hud.text("Not with something on you — load it on the quick bar.", inner.x, hy, hud.HINT, uiart.BAD);
+        } else {
+            hud.text("A / Enter    Use", inner.x, hy, hud.HINT, mathx.withAlpha(uiart.GILT, 220));
+        }
     }
 }
 
@@ -1730,4 +1764,26 @@ test "the quick row prices whatever the bar holds, flask or not" {
     try std.testing.expectApproxEqAbs(sheet.fp() * combat.FLASK_FP_FRAC, quickWorth(.cerulean_flask, v), 1e-3);
     const jerky = item.use(.mushroom_jerky).regen;
     try std.testing.expectApproxEqAbs(sheet.hp() * jerky.frac, quickWorth(.mushroom_jerky, v), 1e-3);
+}
+
+test "the sockets are fitted to the panel, and never off the end of it" {
+    // A window a quarter the size and one four times it both have to lay out: the socket is a share of the
+    // card, which is itself a share of the screen.
+    for ([_][2]i32{ .{ 640, 400 }, .{ 1280, 800 }, .{ 2560, 1440 }, .{ 3840, 2160 } }) |wh| {
+        const card = Box{ .x = 0, .y = 0, .w = wh[0], .h = wh[1] };
+        const body = Box{ .x = card.x, .y = card.y + headH(), .w = card.w, .h = card.h - headH() - 40 };
+        const inner = panelInner(equipCols(body)[0], false);
+        const f = slotFit(body);
+        try std.testing.expect(f.px >= SLOT_MIN and f.px <= SLOT_MAX);
+        for (0..NSLOT) |i| {
+            const r = slotRect(body, i);
+            try std.testing.expect(r.x >= fi(inner.x) - 1);
+            try std.testing.expect(r.x + r.width <= fi(inner.x + inner.w) + 1);
+            try std.testing.expect(r.y >= fi(inner.y) - 1);
+        }
+    }
+    // …and it GROWS with the window rather than sitting at one size.
+    const small = slotFit(.{ .x = 0, .y = 0, .w = 620, .h = 380 });
+    const big = slotFit(.{ .x = 0, .y = 0, .w = 2400, .h = 1300 });
+    try std.testing.expect(big.px > small.px);
 }

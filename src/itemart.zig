@@ -56,6 +56,12 @@ const SALT = rgba(226, 208, 176, 255);
 const ROOT_BARK = rgba(64, 46, 32, 255);
 const ROOT_HEART = rgba(172, 148, 112, 255);
 const ROOT_SOIL = rgba(52, 40, 30, 255);
+/// The sporeling's brick over cream — brighter than the creature's albedo, HUD colours are literal.
+const SHROOM_CAP = rgba(178, 84, 70, 255);
+const SHROOM_CAP_DK = rgba(112, 48, 40, 255);
+const SHROOM_CREAM = rgba(224, 206, 170, 255);
+const EMBER_FAT = rgba(230, 196, 130, 255);
+const EMBER_FAT_DK = rgba(178, 140, 84, 255);
 
 /// THE BOX EVERY STROKE WAS TUNED IN. A picture drawn at `px` multiplies each weight by `px / TUNED_AT`.
 pub const TUNED_AT: f32 = 34.0;
@@ -134,7 +140,133 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
         .kobold_fang => koboldFang(cx, cy, px),
         .iron_key => ironKey(cx, cy, px),
         .mushroom_jerky => jerky(cx, cy, px),
+        .ember_candle => emberCandle(cx, cy, px),
+        .sporeling_cap => sporelingCap(cx, cy, px),
+        .second_wind => secondWind(cx, cy, px),
+        .tower_shield => towerShield(cx, cy, px),
+        .greatclub => greatclub(cx, cy, px),
+        .leech_signet => leechSignet(cx, cy, px),
     }
+}
+
+/// A squat dollop of rendered fat round a wick, lit — the flame is the read, the drips are the wabi-sabi.
+fn emberCandle(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0xEB3A);
+    const lean = rng.range(-1.2, 1.2) * k;
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.20 + 1.0 * k), s * 0.24, rgba(0, 0, 0, 120));
+    rl.drawCircleV(v2(cx, cy + s * 0.20), s * 0.24, EMBER_FAT_DK); // the dollop, slumped
+    rl.drawCircleV(v2(cx - s * 0.03, cy + s * 0.16), s * 0.20, EMBER_FAT);
+    // Two runs of fat down the side, no two alike.
+    rl.drawLineEx(v2(cx + s * 0.14, cy + s * 0.12), v2(cx + s * 0.17 + lean, cy + s * 0.32), 2.6 * k, EMBER_FAT);
+    rl.drawLineEx(v2(cx - s * 0.18, cy + s * 0.18), v2(cx - s * 0.19, cy + s * 0.33 + rng.range(0, 2) * k), 2.0 * k, EMBER_FAT_DK);
+    rl.drawLineEx(v2(cx + lean, cy + s * 0.02), v2(cx + lean, cy - s * 0.10), 1.6 * k, IRON_DK); // the wick
+    // The flame: a dim outer tongue and a hot heart, leaning the wick's own way.
+    rl.drawCircleV(v2(cx + lean * 1.4, cy - s * 0.17), s * 0.085, FIRE_DIM);
+    rl.drawCircleV(v2(cx + lean * 1.2, cy - s * 0.145), s * 0.05, FIRE);
+    rl.drawCircleV(v2(cx + lean, cy - s * 0.12), s * 0.022, rgba(255, 236, 190, 255));
+}
+
+/// One dried cap, gills up-ended: the brick dome, the pale flecks, and the bite something regretted.
+fn sporelingCap(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x5CA9);
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + 1.2 * k), s * 0.30, rgba(0, 0, 0, 120));
+    // The dome as a half-disc: a run of arcs from thick to nothing, curled at the rim by drying.
+    arc(cx, cy + s * 0.06, s * 0.28, std.math.pi, std.math.tau, 14, s * 0.34, s * 0.20, SHROOM_CAP);
+    arc(cx, cy + s * 0.07, s * 0.29, std.math.pi * 1.06, std.math.pi * 1.94, 12, 2.4 * k, 2.0 * k, SHROOM_CAP_DK);
+    // The gill line under it, and the shrunken flesh below that.
+    rl.drawLineEx(v2(cx - s * 0.27, cy + s * 0.075), v2(cx + s * 0.27, cy + s * 0.065), 3.0 * k, SHROOM_CAP_DK);
+    rl.drawLineEx(v2(cx - s * 0.20, cy + s * 0.13), v2(cx + s * 0.20, cy + s * 0.12), 2.2 * k, CAP_LT);
+    var f: u32 = 0;
+    while (f < 5) : (f += 1) { // the cream flecks, dealt
+        const a = rng.range(std.math.pi * 1.15, std.math.pi * 1.85);
+        const rr = rng.range(0.10, 0.24) * s;
+        rl.drawCircleV(v2(cx + mathx.cosf(a) * rr, cy + s * 0.02 + mathx.sinf(a) * rr * 0.8), rng.range(1.2, 2.2) * k, SHROOM_CREAM);
+    }
+    // The BITE out of the rim — a dark wedge, with the violet gone quiet just inside it.
+    rl.drawCircleV(v2(cx + s * 0.21, cy - s * 0.10), s * 0.06, rgba(30, 22, 20, 255));
+    rl.drawCircleV(v2(cx + s * 0.17, cy - s * 0.075), 1.6 * k, CHAOS_DK);
+}
+
+/// A curl of pale bark and the breath it buys: two faint arcs of moving air off its lip.
+fn secondWind(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.06 + 1.0 * k), s * 0.26, rgba(0, 0, 0, 110));
+    // The curl: bark outside, pale inner face showing at the roll.
+    arc(cx, cy + s * 0.04, s * 0.22, std.math.pi * 0.2, std.math.pi * 1.6, 14, s * 0.16, s * 0.10, BONE_DK);
+    arc(cx, cy + s * 0.04, s * 0.22, std.math.pi * 0.25, std.math.pi * 1.5, 12, s * 0.10, s * 0.05, BONE);
+    arc(cx + s * 0.06, cy + s * 0.02, s * 0.10, std.math.pi * 0.4, std.math.pi * 1.8, 10, s * 0.07, s * 0.03, BONE);
+    rl.drawLineEx(v2(cx - s * 0.16, cy + s * 0.20), v2(cx - s * 0.02, cy + s * 0.24), 2.0 * k, CORD); // the tie
+    // The wind itself, drawn the way the HUD draws nothing else: two pale streaks running OFF the curl.
+    arc(cx + s * 0.16, cy - s * 0.14, s * 0.16, std.math.pi * 1.2, std.math.pi * 1.85, 8, 2.0 * k, 0.8 * k, rgba(238, 244, 248, 170));
+    arc(cx + s * 0.20, cy - s * 0.02, s * 0.12, std.math.pi * 1.25, std.math.pi * 1.9, 8, 1.6 * k, 0.6 * k, rgba(238, 244, 248, 110));
+}
+
+/// A DOOR of a shield: planks, two iron bands, and the crack that names it.
+fn towerShield(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    const hw = s * 0.20;
+    const top = cy - s * 0.34;
+    const bot = cy + s * 0.36;
+    rl.drawCircleV(v2(cx + 1.2 * k, bot - s * 0.04), hw, rgba(0, 0, 0, 110));
+    quad(v2(cx - hw, top + s * 0.06), v2(cx + hw, top + s * 0.06), v2(cx + hw * 0.86, bot), v2(cx - hw * 0.86, bot), GRIP);
+    arc(cx, top + s * 0.07, hw, std.math.pi, std.math.tau, 10, s * 0.12, s * 0.12, GRIP); // the rounded head
+    // Plank seams, and the lit lip under each that makes them EDGES.
+    for ([_]f32{ -0.4, 0.2 }) |t| {
+        rl.drawLineEx(v2(cx + hw * t, top + s * 0.02), v2(cx + hw * t * 0.86, bot - s * 0.01), 1.4 * k, BOARD_JOINT);
+        rl.drawLineEx(v2(cx + hw * t + 1.2 * k, top + s * 0.02), v2(cx + hw * t * 0.86 + 1.2 * k, bot - s * 0.01), 0.8 * k, GRIP_LT);
+    }
+    // Two iron bands and their rivets.
+    for ([_]f32{ top + s * 0.16, bot - s * 0.14 }) |by| {
+        rl.drawLineEx(v2(cx - hw, by), v2(cx + hw, by), 3.4 * k, IRON_DK);
+        rl.drawCircleV(v2(cx - hw * 0.6, by), 1.3 * k, STEEL_DK);
+        rl.drawCircleV(v2(cx + hw * 0.6, by), 1.3 * k, STEEL_DK);
+    }
+    // THE CRACK — through, corner to band, jagged where a straight line would be a scratch.
+    rl.drawLineEx(v2(cx - hw * 0.2, top + s * 0.05), v2(cx + hw * 0.15, cy - s * 0.02), 1.8 * k, rgba(24, 16, 12, 255));
+    rl.drawLineEx(v2(cx + hw * 0.15, cy - s * 0.02), v2(cx - hw * 0.1, cy + s * 0.16), 1.6 * k, rgba(24, 16, 12, 255));
+    rl.drawLineEx(v2(cx - hw * 0.1, cy + s * 0.16), v2(cx + hw * 0.1, bot - s * 0.06), 1.2 * k, rgba(24, 16, 12, 255));
+}
+
+/// MOSTLY HEAD (the sword's own law, upside down): everything that says CLUB is the lumped end, so it is
+/// drawn big and the haft runs off the bottom losing itself.
+fn greatclub(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0xC1B8);
+    rl.drawCircleV(v2(cx + 1.4 * k, cy - s * 0.10 + 1.4 * k), s * 0.24, rgba(0, 0, 0, 120));
+    // The haft, running off frame.
+    rl.drawLineEx(v2(cx - s * 0.10, cy + s * 0.44), v2(cx + s * 0.02, cy - s * 0.02), s * 0.10, ROOT_BARK);
+    rl.drawLineEx(v2(cx - s * 0.085, cy + s * 0.42), v2(cx + s * 0.005, cy + s * 0.06), 1.6 * k, rgba(30, 20, 14, 255)); // its grain
+    // The head: bog-oak lumps, no two the same size.
+    rl.drawCircleV(v2(cx + s * 0.05, cy - s * 0.12), s * 0.20, ROOT_BARK);
+    rl.drawCircleV(v2(cx + s * 0.14, cy - s * 0.20), s * 0.13, rgba(50, 36, 26, 255));
+    rl.drawCircleV(v2(cx - s * 0.06, cy - s * 0.22), s * 0.11, rgba(46, 33, 24, 255));
+    // The iron shoe and its studs.
+    arc(cx + s * 0.05, cy - s * 0.13, s * 0.185, std.math.pi * 1.15, std.math.pi * 1.95, 10, 3.2 * k, 2.6 * k, IRON_DK);
+    var st: u32 = 0;
+    while (st < 4) : (st += 1) {
+        const a = rng.range(std.math.pi * 1.2, std.math.pi * 1.9);
+        rl.drawCircleV(v2(cx + s * 0.05 + mathx.cosf(a) * s * 0.185, cy - s * 0.13 + mathx.sinf(a) * s * 0.185), 1.4 * k, RUST);
+    }
+    rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.19), 2.0 * k, rgba(84, 64, 46, 255)); // one worn hight-light knot
+}
+
+/// A ring of dark beak-horn with a bead of what it is for.
+fn leechSignet(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.04 + 1.0 * k), s * 0.20, rgba(0, 0, 0, 110));
+    arc(cx, cy + s * 0.04, s * 0.17, 0, std.math.tau, 18, s * 0.075, s * 0.05, rgba(44, 34, 30, 255)); // the band, thicker at the seat
+    arc(cx - s * 0.04, cy, s * 0.16, std.math.pi * 0.9, std.math.pi * 1.5, 8, 1.6 * k, 0.8 * k, rgba(120, 104, 92, 255)); // horn sheen
+    rl.drawCircleV(v2(cx, cy - s * 0.16), s * 0.075, CRIMSON); // the bead
+    rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.18), 1.4 * k, rgba(255, 200, 190, 220)); // its gloss
+    rl.drawCircleV(v2(cx, cy - s * 0.10), 1.6 * k, rgba(44, 34, 30, 255)); // the claw holding it
 }
 
 pub fn flask(cx: f32, cy: f32, px: f32, tint: FlaskTint, full: bool) void {

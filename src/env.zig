@@ -2400,8 +2400,8 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(solids0, e.solidCount());
     try std.testing.expectEqual(lights0, e.lightCount());
 
-    try std.testing.expectEqual(@as(usize, 17272), props0);
-    try std.testing.expectEqual(@as(usize, 1819), solids0);
+    try std.testing.expectEqual(@as(usize, 17238), props0);
+    try std.testing.expectEqual(@as(usize, 1820), solids0);
     // The map's three `campfire`s are the EXTINGUISHED kind and carry no light. Swap one to
     // `campfire_lit` in the editor and this goes up by one — and gains a rest site with it.
     try std.testing.expectEqual(@as(usize, 42), lights0);

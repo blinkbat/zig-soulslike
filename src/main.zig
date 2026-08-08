@@ -65,6 +65,7 @@ test {
     _ = @import("brood.zig");
     _ = @import("warrior.zig");
     _ = @import("shade.zig");
+    _ = @import("leechfly.zig"); // THE FIRST FLYER — its height is the whole creature, so the tests are about that
     _ = @import("foe.zig");
     _ = @import("combat.zig");
     _ = @import("stats.zig");

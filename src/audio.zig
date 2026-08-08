@@ -461,6 +461,11 @@ pub const Id = enum {
     shade_blink, // a place tearing open and shutting again
     shade_hurt,
     shade_die, // the shroud letting go of its own shape
+    leech_wing, // THE WHINE — retriggered on a fly's cadence, since a synthesized take cannot loop
+    leech_stab, // the beak going in: a wet tick and a shell creaking
+    leech_drink, // …and the pull of it, retriggered while it holds on
+    leech_hurt,
+    leech_die, // the note falling out from under it
     spider_hiss, // the rear, and the squat before she lays: air forced out through something clenched
     spider_spit,
     spider_bite, // two fangs and the horn claws crossing behind them
@@ -1071,6 +1076,69 @@ fn mkShadeGather(r: *Rack) void {
 }
 
 /// It lets go. A tear rather than a crack — there is no shell on this thing to break.
+// ─── THE LEECHFLY ─────────────────────────────────────────────────────────────────────────────────────
+// A MOSQUITO IS ONE NOTE AND EVERYTHING ELSE IS WET. The whine is the creature; the beak, the pull and the
+// death are all short, close, organic things happening at the end of it.
+
+/// THE WHINE, and the three things that stop it being a dentist's drill (owner: too loud, too annoying, too
+/// constant). It is a BIG fly, so it is pitched where a big one would be — under 400 Hz, an octave below a
+/// real mosquito, because the piercing part of that sound is entirely in the top and a note you cannot
+/// escape has no business up there. `growl`'s saw carries the harmonics and its own vibrato the warble.
+///
+/// THE HARMONICS ARE CUT, not the volume alone: the octave layer was what made it a buzzsaw, and the master
+/// is lowpassed hard on top. What is left is a hum with a texture rather than an edge.
+///
+/// A HAIR LONGER THAN ITS OWN RETRIGGER (`leechfly.WHINE_EVERY`) so consecutive takes OVERLAP into one note.
+/// Gapped instead, the whine chatters on and off at 4 Hz, which is a helicopter. The SILENCES are between
+/// phrases, not between takes — see `leechfly.beatWings`.
+fn mkLeechWing(r: *Rack) void {
+    r.growl(0.0, 0.32, 356, 392, 0.26, 0.05, 1.0);
+    r.air(0.0, 0.32, 0.06, 2600, 1700, 0.25, 1.0); // the air it is moving, and nothing above it
+    r.wow(0.0045, 6.5); // …and the last of the warble, on top of `growl`'s own
+    r.ends(0.09, 0.12); // a soft nose and tail: the take has to swell in, or the retrigger ticks
+    r.master(1.0, 2200);
+}
+
+/// THE BEAK GOING IN: a hard tick of shell, then something giving. Nothing musical about it at all — the
+/// creature's one moment that is not a note.
+fn mkLeechStab(r: *Rack) void {
+    r.tick(0.0, 0.40, 5600);
+    r.grit(0.0, 0.055, 0.34, 2400, 0.55, 4.0); // the shell creaking as it braces
+    r.body(0.005, 0.09, 260, 96, 0.30, 5.2); // …and the punch through
+    r.air(0.01, 0.16, 0.26, 1800, 420, 0.70, 2.4); // wet, and dragged inward
+    r.master(2.2, 4600);
+}
+
+/// THE PULL. A rising suck rather than a falling one — everything else in this bank decays, and a thing
+/// taking something OUT of you has to go the other way or it reads as a splash.
+fn mkLeechDrink(r: *Rack) void {
+    r.air(0.0, 0.34, 0.44, 500, 2600, 0.82, 0.5); // the filter opening UP: the direction is the whole cue
+    r.growl(0.02, 0.26, 96, 148, 0.20, 0.22, 0.8); // a gullet working under it
+    r.ring(0.0, 0.20, 210, 0.10, 3.4, 3);
+    r.crackle(0.10, 90.0); // …and the wet of it
+    r.master(1.8, 3600);
+}
+
+/// STRUCK. A shell cracking and the note it was holding breaking with it — the whine's own pitch, bent
+/// sharply down, is what says the thing that was flying has been hit.
+fn mkLeechHurt(r: *Rack) void {
+    r.tick(0.0, 0.36, 4800);
+    r.grit(0.0, 0.10, 0.42, 2000, 0.70, 3.4); // chitin going
+    r.growl(0.0, 0.20, 620, 240, 0.26, 0.30, 3.0); // the whine falling out from under it
+    r.body(0.0, 0.10, 180, 70, 0.26, 5.0);
+    r.master(2.3, 4400);
+}
+
+/// AND THE NOTE STOPS. The long fall is the wings running down; the wet thud at the end of it is the body
+/// arriving, because this is the one creature in the game that dies by FALLING out of the air.
+fn mkLeechDie(r: *Rack) void {
+    r.growl(0.0, 0.46, 600, 120, 0.34, 0.34, 1.6); // the run-down
+    r.air(0.0, 0.40, 0.20, 4000, 700, 0.40, 2.0);
+    r.grit(0.02, 0.22, 0.30, 1500, 0.60, 3.0);
+    r.body(0.44, 0.14, 130, 48, 0.34, 4.4); // …and the landing, after it
+    r.master(2.1, 4000);
+}
+
 fn mkShadeWisp(r: *Rack) void {
     r.air(0.0, 0.26, 0.62, 3600, 700, 0.55, 2.8);
     r.ring(0.0, 0.20, 330, 0.20, 5.0, 3);
@@ -1695,6 +1763,16 @@ const BANK = [NV]Row{
     .{ .id = .shade_blink, .make = mkShadeBlink, .gain = battle(0.64), .mix = .combat, .jit = 0.11, .vjit = 0.15, .vars = 4, .poly = 4, .reach = 68 },
     .{ .id = .shade_hurt, .make = mkShadeHurt, .gain = battle(0.54), .mix = .combat, .jit = 0.15, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 44 },
     .{ .id = .shade_die, .make = mkShadeDie, .gain = battle(0.66), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 2, .reach = 60 },
+    // THE WHINE IS AMBIENT-QUIET AND VERY CLOSE — a mosquito is a thing you hear at your ear and not before.
+    // It sits near the birdsong rather than near a blow: it fires hundreds of times in a fight and anything
+    // at combat level that repeats that often stops being a cue and becomes a noise floor. The shortest
+    // `reach` in the bank, and a wide `vjit` so no two takes come back at the same level.
+    // High `poly`: retriggered four times a second per fly, and a swarm has to overlap without cutting itself.
+    .{ .id = .leech_wing, .make = mkLeechWing, .gain = battle(0.055), .mix = .combat, .jit = 0.16, .vjit = 0.34, .vars = 6, .poly = 6, .reach = 12 },
+    .{ .id = .leech_stab, .make = mkLeechStab, .gain = battle(0.68), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 4, .poly = 3, .reach = 30 },
+    .{ .id = .leech_drink, .make = mkLeechDrink, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 4, .poly = 3, .reach = 26 },
+    .{ .id = .leech_hurt, .make = mkLeechHurt, .gain = battle(0.56), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 5, .poly = 4, .reach = 40 },
+    .{ .id = .leech_die, .make = mkLeechDie, .gain = battle(0.60), .mix = .combat, .jit = 0.11, .vjit = 0.15, .vars = 4, .poly = 3, .reach = 48 },
     .{ .id = .spider_hiss, .make = mkSpiderHiss, .gain = battle(0.56), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 66 },
     .{ .id = .spider_spit, .make = mkSpiderSpit, .gain = battle(0.58), .mix = .combat, .jit = 0.12, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 62 },
     .{ .id = .spider_bite, .make = mkSpiderBite, .gain = battle(0.64), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 34 },
@@ -1778,7 +1856,9 @@ fn seconds(id: Id) f32 {
 
 
 const MAX_VARS = 6;
-const MAX_POLY = 4;
+/// Voices of one take that may sound AT ONCE. Six: the leechfly whine is retriggered four times a second
+/// per fly and a swarm has to overlap without cutting its own note in half — every other row wants 2..4.
+const MAX_POLY = 6;
 
 const MASTER_VOL: f32 = 0.85;
 

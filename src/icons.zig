@@ -34,6 +34,7 @@ pub const Icon = enum {
     shieldman,
     greatsword,
     shade,
+    leechfly,
     new,
     open,
     save,
@@ -294,6 +295,21 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             line(cx - s * 0.10, cy + s * 0.22, cx - s * 0.04, cy + s * 0.36, w * 0.8, d);
             line(cx + s * 0.10, cy + s * 0.22, cx + s * 0.16, cy + s * 0.44, w * 0.8, d);
             line(cx + s * 0.30, cy + s * 0.18, cx + s * 0.24, cy + s * 0.34, w * 0.8, d);
+        },
+
+        .leechfly => {
+            // WINGS OUT AND A BEAK DOWN — the two reads that are only this creature's, and the only glyph
+            // in the set that is not standing on anything. The wings are what says it flies; the beak,
+            // pointing at where a floor would be, is what says what it does when it gets there.
+            arc(cx - s * 0.24, cy - s * 0.14, s * 0.22, 200, 340, w * 0.8, d); // the wings, swept back…
+            arc(cx + s * 0.24, cy - s * 0.14, s * 0.22, 200, 340, w * 0.8, d);
+            dot(cx, cy - s * 0.02, w * 2.6, col); // the thorax
+            line(cx, cy + s * 0.04, cx - s * 0.06, cy + s * 0.30, w * 1.4, col); // the abdomen, hung back
+            dot(cx - s * 0.07, cy + s * 0.33, w * 1.1, d); //  …to a blunt end, never a point
+            dot(cx + s * 0.02, cy - s * 0.20, w * 1.8, col); // the head…
+            dot(cx - s * 0.06, cy - s * 0.24, w * 1.2, col); // …and the two bulged eyes
+            dot(cx + s * 0.09, cy - s * 0.24, w * 1.2, col);
+            line(cx + s * 0.02, cy - s * 0.16, cx + s * 0.12, cy + s * 0.16, w * 0.8, col); // the beak
         },
 
         .new => {

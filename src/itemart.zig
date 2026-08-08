@@ -822,11 +822,12 @@ fn jerky(cx: f32, cy: f32, px: f32) void {
         v2(footX + stemFoot * 0.25, cy + s * 0.36),
         mathx.lerpColor(CAP_DK, CAP_LT, 0.30),
     );
-    // The torn foot: pale fibres where it was pulled up, never a clean cut.
+    // The torn foot: pale fibres where it was pulled up, never a clean cut. SHORT and inside the stem's own
+    // width — run past it and they read as legs, which is a different animal entirely.
     var f: u32 = 0;
     while (f < 4) : (f += 1) {
-        const x = footX + (@as(f32, @floatFromInt(f)) - 1.5) * s * 0.06;
-        rl.drawLineEx(v2(x, cy + s * 0.34), v2(x + rng.range(-1.0, 1.0) * k, cy + s * 0.36 + rng.range(1.2, 3.0) * k), 1.0 * k, CAP_LT);
+        const x = footX + (@as(f32, @floatFromInt(f)) - 1.5) * s * 0.05;
+        rl.drawLineEx(v2(x, cy + s * 0.345), v2(x + rng.range(-0.5, 0.5) * k, cy + s * 0.36 + rng.range(0.6, 1.4) * k), 1.0 * k, CAP_LT);
     }
 
     // THE GILLS, drawn before the cap so the dome's rim laps over their tops: dark radial ticks fanned out

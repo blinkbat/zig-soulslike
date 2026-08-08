@@ -552,6 +552,14 @@ pub fn flaskOf(k: item.Kind) ?FlaskKind {
     };
 }
 
+/// HOW MANY OF A QUICK-BAR THING HE HAS. A flask counts CHARGES, which come back at a grace; everything else
+/// counts what is in the BAG, which does not. The HUD asks this off the live game and the character book off
+/// its `View`, and both have the two pools in hand — as a copy on each side it was one rule in two files.
+pub fn quickCount(k: item.Kind, flasks: *const Flasks, bag: *const item.Bag) u8 {
+    if (flaskOf(k)) |f| return flasks.charges(f);
+    return @intCast(@min(bag.count(k), 99));
+}
+
 /// THE QUICK BAR — ER's pouch, on the cross's DOWN slot, and **in combat the only way to spend a
 /// consumable** (`game.inCombat` decides; the character book's own Use is refused while a fight is on).
 /// What is on it is therefore a decision made BEFORE the fight, which is the whole point of it. Out of
@@ -599,6 +607,19 @@ pub const Quick = struct {
             return true;
         }
         return false;
+    }
+
+    /// Set one socket; `null` empties it. A kind already elsewhere on the bar MOVES here — two sockets on
+    /// one flask are two cycle steps to the same swallow.
+    pub fn put(self: *Quick, i: usize, k: ?item.Kind) void {
+        if (i >= QUICK_SLOTS) return;
+        if (k) |want| {
+            for (&self.slots, 0..) |*s, j| {
+                if (j != i and s.* == want) s.* = null;
+            }
+        }
+        self.slots[i] = k;
+        if (self.slots[self.sel] == null) self.settle();
     }
     pub fn remove(self: *Quick, k: item.Kind) bool {
         for (&self.slots) |*s| {

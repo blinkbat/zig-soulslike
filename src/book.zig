@@ -40,8 +40,8 @@ pub const Action = union(enum) {
     arm: heromod.Arm,
     off: heromod.Off,
     ammo: combat.ArrowKind,
-    /// WHAT THE QUICK SLOT IS TURNED TO — a bar entry, not a flask: the bar carries edibles too.
-    quick: item.Kind,
+    /// Put `kind` (or nothing) in quick socket `slot`.
+    quick: struct { slot: usize, kind: ?item.Kind },
     use: item.Kind,
 };
 
@@ -78,8 +78,8 @@ const Loadout = struct {
     arm: heromod.Arm,
     off: heromod.Off,
     ammo: combat.ArrowKind,
-    /// WHAT THE QUICK SLOT IS TURNED TO — a bar entry, so an edible as readily as a flask.
-    quick: item.Kind,
+    /// What the quick slot is turned to, or nothing.
+    quick: ?item.Kind,
     spell: combat.Spell,
 };
 
@@ -157,17 +157,97 @@ fn derive(l: Loadout, v: View) [ND]f32 {
 }
 
 
-const SlotId = enum { right, left, sorcery, arrows, quick };
+/// A Diablo paper doll. Six of these hold nothing yet — there is no armour or jewellery in the game — and
+/// each says so in `locked`.
+pub const SlotId = enum {
+    helm,
+    amulet,
+    left,
+    chest,
+    right,
+    ring1,
+    belt,
+    ring2,
+    arrows,
+    boots,
+    sorcery,
+    q0,
+    q1,
+    q2,
+    q3,
+    q4,
+    q5,
+    q6,
+    q7,
+    q8,
+    q9,
+};
 const NSLOT = @typeInfo(SlotId).@"enum".fields.len;
-const SLOT_COLS: usize = 3;
+
+/// A socket`s ordinal, for the shot harness — so a frame is aimed at a NAME and not at a number that moves.
+pub fn slotOrdinal(s: SlotId) usize {
+    return @intFromEnum(s);
+}
+const Q0: usize = @intFromEnum(SlotId.q0);
+comptime {
+    if (NSLOT - Q0 != combat.QUICK_SLOTS) @compileError("book: the quick sockets and combat.QUICK_SLOTS disagree");
+}
+
+/// Which bar entry a socket is, or null for a gear slot.
+fn quickIndex(s: SlotId) ?usize {
+    const i = @intFromEnum(s);
+    return if (i >= Q0) i - Q0 else null;
+}
+
+const SLOT_PX: i32 = 56;
+const SLOT_GAP: i32 = 10;
+/// Where each socket sits, as (col, row). Rows 4 and 5 are the quick block and get `QUICK_BREAK` above them.
+const Cell = struct { col: i32, row: i32 };
+const SLOT_CELL = blk: {
+    var c = [_]Cell{.{ .col = 0, .row = 0 }} ** NSLOT;
+    c[@intFromEnum(SlotId.helm)] = .{ .col = 2, .row = 0 };
+    c[@intFromEnum(SlotId.amulet)] = .{ .col = 3, .row = 0 };
+    c[@intFromEnum(SlotId.left)] = .{ .col = 1, .row = 1 };
+    c[@intFromEnum(SlotId.chest)] = .{ .col = 2, .row = 1 };
+    c[@intFromEnum(SlotId.right)] = .{ .col = 3, .row = 1 };
+    c[@intFromEnum(SlotId.ring1)] = .{ .col = 1, .row = 2 };
+    c[@intFromEnum(SlotId.belt)] = .{ .col = 2, .row = 2 };
+    c[@intFromEnum(SlotId.ring2)] = .{ .col = 3, .row = 2 };
+    c[@intFromEnum(SlotId.arrows)] = .{ .col = 1, .row = 3 };
+    c[@intFromEnum(SlotId.boots)] = .{ .col = 2, .row = 3 };
+    c[@intFromEnum(SlotId.sorcery)] = .{ .col = 3, .row = 3 };
+    for (0..combat.QUICK_SLOTS) |i| {
+        c[Q0 + i] = .{ .col = @intCast(i % 5), .row = 4 + @as(i32, @intCast(i / 5)) };
+    }
+    break :blk c;
+};
+const QUICK_BREAK: i32 = 20;
 
 fn slotName(s: SlotId) [:0]const u8 {
     return switch (s) {
-        .right => "Right Hand",
+        .helm => "Head",
+        .amulet => "Amulet",
         .left => "Left Hand",
-        .sorcery => "Sorcery",
+        .chest => "Body",
+        .right => "Right Hand",
+        .ring1 => "Ring",
+        .belt => "Belt",
+        .ring2 => "Ring",
         .arrows => "Arrows",
-        .quick => "Quick Item",
+        .boots => "Feet",
+        .sorcery => "Sorcery",
+        // The quick sockets are NUMBERED, not named: what is in one changes, and the number is what the
+        // player learns the cycle order by.
+        .q0 => "1",
+        .q1 => "2",
+        .q2 => "3",
+        .q3 => "4",
+        .q4 => "5",
+        .q5 => "6",
+        .q6 => "7",
+        .q7 => "8",
+        .q8 => "9",
+        .q9 => "10",
     };
 }
 
@@ -175,31 +255,35 @@ fn slotName(s: SlotId) [:0]const u8 {
 /// only refuses the button is a slot the player decides is broken.
 fn locked(s: SlotId, v: View) ?[:0]const u8 {
     return switch (s) {
-        // The left hand is a real choice now — boards or a wand — and the only thing that takes the choice
-        // away is a bow, which takes the hand itself.
+        .helm, .chest, .belt, .boots => "There is no armour in this world yet. The socket is here for the day there is.",
+        .amulet, .ring1, .ring2 => "There is no jewellery in this world yet. The socket is here for the day there is.",
         .left => if (v.arm == .bow) "Both hands are on the bow. The left one comes back when the sword does." else null,
-        // …and the sorcery slot is only empty while nothing that could cast is in that hand. It says which
-        // of the two reasons it is, because "locked" with no reason is a slot the player calls broken.
+        // Which of the two reasons it is: "locked" with no reason is a slot the player calls broken.
         .sorcery => if (v.arm == .bow)
             "Both hands are on the bow. Nothing is free to hold a wand."
         else if (v.off != .wand)
             "No wand in his hand to cast a sorcery with."
         else
-            // FILLED AND STILL UNCHANGEABLE HERE, which is a different sentence from being empty: the rod is
-            // turned to its other sorcery on the D-pad in play, and the book does not own that button.
+            // Filled and still unchangeable HERE — the rod is turned on the D-pad and the book does not own it.
             "The rod is turned to its other sorcery with D-pad Up.",
         else => null,
     };
+}
+
+/// What a quick socket holds, or null (also null for a gear slot).
+fn quickAt(s: SlotId, v: View) ?item.Kind {
+    return if (quickIndex(s)) |i| v.quick.slots[i] else null;
 }
 
 /// Is there anything in it? The socket lights off this, and an empty one stays cold.
 fn slotHas(s: SlotId, v: View) bool {
     return switch (s) {
         .right => true,
-        .quick => v.quick.selected() != null,
         .left => v.arm != .bow,
         .sorcery => v.arm != .bow and v.off == .wand,
         .arrows => v.quiver.count(v.quiver.sel) > 0,
+        .helm, .chest, .belt, .boots, .amulet, .ring1, .ring2 => false,
+        else => quickAt(s, v) != null,
     };
 }
 
@@ -232,29 +316,25 @@ fn slotFilled(s: SlotId, v: View) [:0]const u8 {
     return switch (s) {
         .right => armName(v.arm),
         .left => if (v.arm == .bow) EMPTY else offName(v.off),
-        // NAMED BY `combat`, like everything else in this file: the rod carries two sorceries and the slot
-        // shows the one it is turned to.
         .sorcery => if (slotHas(.sorcery, v)) combat.spellName(v.spell) else EMPTY,
         .arrows => ammoName(v.quiver.sel),
-        .quick => if (v.quick.selected()) |k| item.displayName(k) else EMPTY,
+        .helm, .chest, .belt, .boots, .amulet, .ring1, .ring2 => EMPTY,
+        else => if (quickAt(s, v)) |k| item.displayName(k) else EMPTY,
     };
 }
 
 fn slotTally(s: SlotId, v: View) ?u8 {
     return switch (s) {
         .arrows => v.quiver.count(v.quiver.sel),
-        .quick => if (v.quick.selected()) |k| quickTally(k, v) else null,
-        // HOW MANY CASTS ARE ACTUALLY IN THE POOL — the same question the arrow tally answers, and the one
-        // thing about a spell the player needs at a glance.
         .sorcery => if (slotHas(.sorcery, v)) castsLeft(v.fp, v.spell) else null,
-        else => null,
+        .helm, .chest, .belt, .boots, .amulet, .ring1, .ring2, .left, .right => null,
+        else => if (quickAt(s, v)) |k| quickTally(k, v) else null,
     };
 }
 
-/// WHAT ONE PRESS OF THE QUICK SLOT GIVES BACK. A flask is a fraction of the pool it fills, taken off the
-/// SHEET so the row moves when the attribute does; anything else is its own `item.Use`. The day one restores
-/// something that is not HP, this switch is where it says so.
-fn quickWorth(k: item.Kind, v: View) f32 {
+/// What one press of the quick slot gives back. Off the SHEET, so the row moves when the attribute does.
+fn quickWorth(kind: ?item.Kind, v: View) f32 {
+    const k = kind orelse return 0;
     if (combat.flaskOf(k)) |f| return switch (f) {
         .crimson => v.sheet.hp() * combat.FLASK_HP_FRAC,
         .cerulean => v.sheet.fp() * combat.FLASK_FP_FRAC,
@@ -275,11 +355,8 @@ fn quickOffered(k: item.Kind, v: View) bool {
     return combat.flaskOf(k) != null or v.bag.count(k) > 0;
 }
 
-/// HOW MANY OF IT HE HAS. A flask counts charges, which come back at a grace; everything else counts what is
-/// in the BAG, which does not.
 fn quickTally(k: item.Kind, v: View) u8 {
-    if (combat.flaskOf(k)) |f| return v.flasks.charges(f);
-    return @intCast(@min(v.bag.count(k), 99));
+    return combat.quickCount(k, v.flasks, v.bag);
 }
 
 fn castsLeft(fp: f32, s: combat.Spell) u8 {
@@ -334,18 +411,20 @@ fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
         // THE ONE PICKER THAT TOGGLES rather than chooses: every other slot holds exactly one thing, and the
         // quick bar holds up to `combat.QUICK_SLOTS` of them. Confirm on a row puts it ON the bar or takes it
         // off, and `equipped` is what draws the ones that are on — so the list IS the bar, read down.
-        .quick => {
-            var n: usize = 0;
+        else => {
+            const qi = quickIndex(s) orelse return out[0..0];
+            // An EMPTY row first, or a socket you filled by mistake can never be cleared.
+            var n: usize = 1;
+            out[0] = .{ .name = "(empty)", .act = .{ .quick = .{ .slot = qi, .kind = null } } };
             inline for (@typeInfo(item.Kind).@"enum".fields) |f| {
                 const k: item.Kind = @enumFromInt(f.value);
                 if (quickOffered(k, v)) {
-                    out[n] = .{ .name = item.displayName(k), .tally = quickTally(k, v), .act = .{ .quick = k } };
+                    out[n] = .{ .name = item.displayName(k), .tally = quickTally(k, v), .act = .{ .quick = .{ .slot = qi, .kind = k } } };
                     n += 1;
                 }
             }
             return out[0..n];
         },
-        else => return out[0..0],
     }
 }
 
@@ -356,7 +435,7 @@ fn withCand(base: Loadout, c: Cand) Loadout {
         .arm => |a| l.arm = a,
         .off => |o| l.off = o,
         .ammo => |a| l.ammo = a,
-        .quick => |k| l.quick = k,
+        .quick => |q| l.quick = q.kind,
         else => {},
     }
     return l;
@@ -367,8 +446,7 @@ fn equipped(c: Cand, v: View) bool {
         .arm => |a| a == v.arm,
         .off => |o| o == v.off,
         .ammo => |a| a == v.quiver.sel,
-        // ON THE BAR, not "is it the one selected": the quick picker is a toggle list, so this is its tick.
-        .quick => |k| v.quick.holds(k),
+        .quick => |q| v.quick.slots[q.slot] == q.kind,
         else => false,
     };
 }
@@ -382,19 +460,18 @@ fn pickIndexOf(s: SlotId, v: View) usize {
         .right => @intFromEnum(v.arm),
         .left => @intFromEnum(v.off),
         .arrows => @intFromEnum(v.quiver.sel),
-        // …and the quick list is FILTERED (`item.quickable`), so its rows are not the enum's ordinals and
-        // the row has to be counted out the same way `candidates` builds it.
-        .quick => quickRowOf(v.quick.selected() orelse return 0),
-        else => 0,
+        // The quick list is FILTERED and carries an "(empty)" row, so a kind's ordinal is not its row.
+        else => quickRowOf(quickAt(s, v), v),
     };
 }
 
-fn quickRowOf(want: item.Kind) usize {
-    var n: usize = 0;
+fn quickRowOf(want: ?item.Kind, v: View) usize {
+    const k0 = want orelse return 0;
+    var n: usize = 1;
     inline for (@typeInfo(item.Kind).@"enum".fields) |f| {
         const k: item.Kind = @enumFromInt(f.value);
-        if (k == want) return n;
-        if (item.quickable(k)) n += 1;
+        if (k == k0) return n;
+        if (quickOffered(k, v)) n += 1;
     }
     return 0;
 }
@@ -408,7 +485,11 @@ const SPIN_RATE: f32 = 1.7; // radians a second, the portrait turntable under Le
 pub const Book = struct {
     page: Page = .equipment,
     /// The cursor per page, kept so coming back to one finds it where you left it.
-    cur: [NPAGE]usize = [_]usize{0} ** NPAGE,
+    cur: [NPAGE]usize = blk: {
+        var c = [_]usize{0} ** NPAGE;
+        c[idx(.equipment)] = @intFromEnum(SlotId.right); // opening on a socket nothing can go in reads as broken
+        break :blk c;
+    },
     /// Which slot's picker is open, and where its own cursor sits.
     picking: ?SlotId = null,
     pick: usize = 0,
@@ -497,7 +578,7 @@ pub const Book = struct {
         }
         const i = idx(self.page);
         const next = switch (self.page) {
-            .equipment => grid(self.cur[i], NSLOT, SLOT_COLS, dx, dy),
+            .equipment => slotStep(self.cur[i], dx, dy),
             .inventory => grid(self.cur[i], @max(v.bag.distinct(), 1), BAG_COLS, dx, dy),
             // Up/Down walks the attributes; Left/Right is the turntable, so it must not move the cursor.
             .stats => if (dy == 0) self.cur[i] else @as(usize, @intCast(@mod(
@@ -580,7 +661,7 @@ pub const Book = struct {
                     const cs = candidates(s, v, &buf);
                     return pickRow(pickBox(equipCols(body)[1], cs.len), self.pick);
                 }
-                return equipGrid(body).at(self.cur[idx(.equipment)]);
+                return slotRect(body, self.cur[idx(.equipment)]);
             },
             .inventory => {
                 const g = bagGrid(body);
@@ -699,27 +780,51 @@ fn bodyBox(card: Box) Box {
 }
 
 fn equipCols(body: Box) [2]Box {
-    return body.cut(@divTrunc(body.w * 52, 100));
+    return body.cut(@divTrunc(body.w * 44, 100));
 }
 
-fn equipGrid(body: Box) Grid {
-    const left = panelInner(equipCols(body)[0], true);
-    const cw = @divTrunc(left.w - (@as(i32, SLOT_COLS) - 1) * 16, @as(i32, SLOT_COLS));
-    const rows: i32 = (NSLOT + @as(i32, SLOT_COLS) - 1) / @as(i32, SLOT_COLS);
-    const capH = hud.lineH(hud.TINY) + hud.lineH(hud.SMALL) + 10;
-    const w = @min(cw, 152);
-    const h = @min(@divTrunc(w * 5, 4), @divTrunc(left.h, rows) - capH - 12);
-    const stepX = w + 16;
-    const stepY = h + capH + 14;
-    return .{
-        .x = left.x + @divTrunc(left.w - (stepX * @as(i32, SLOT_COLS) - 16), 2),
-        .y = left.y + hud.lineH(hud.TINY) + 2, // the slot NAME sits above the socket
-        .cw = w,
-        .ch = h,
-        .stepX = stepX,
-        .stepY = stepY,
-        .cols = SLOT_COLS,
-    };
+fn labelH() i32 {
+    return hud.lineH(hud.TINY) + 2;
+}
+
+/// Where socket `i` sits on the page. One table (`SLOT_CELL`) feeds this and the cursor, so the picture and
+/// the walk cannot disagree.
+fn slotRect(body: Box, i: usize) rl.Rectangle {
+    const inner = panelInner(equipCols(body)[0], false);
+    const stepX = SLOT_PX + SLOT_GAP;
+    const stepY = SLOT_PX + labelH() + 6;
+    const run = stepX * 5 - SLOT_GAP;
+    const c = SLOT_CELL[i];
+    const brk: i32 = if (c.row >= 4) QUICK_BREAK else 0;
+    return rect(
+        inner.x + @divTrunc(inner.w - run, 2) + c.col * stepX,
+        inner.y + labelH() + c.row * stepY + brk,
+        SLOT_PX,
+        SLOT_PX,
+    );
+}
+
+/// MOVE BY GEOMETRY, not by ordinal: a ragged paper doll over a five-wide block has no grid arithmetic, and
+/// an ordinal walk steps between slots that are nowhere near each other on screen.
+fn slotStep(cur: usize, dx: i32, dy: i32) usize {
+    if (dx == 0 and dy == 0) return cur;
+    const from = SLOT_CELL[cur];
+    var best = cur;
+    var score: i32 = std.math.maxInt(i32);
+    for (SLOT_CELL, 0..) |c, i| {
+        if (i == cur) continue;
+        const ax = c.col - from.col;
+        const ay = c.row - from.row;
+        const along = ax * dx + ay * dy;
+        if (along <= 0) continue;
+        const cross: i32 = @intCast(@abs(ax * dy - ay * dx));
+        const s = along + cross * 6; // the cross-axis is what disqualifies a candidate
+        if (s < score) {
+            score = s;
+            best = i;
+        }
+    }
+    return best;
 }
 
 fn pickRowH() i32 {
@@ -798,9 +903,12 @@ fn panel(b: Box, title: [:0]const u8) Box {
 /// THE PITCH `n` ROWS GET IN `space` PIXELS: their natural one, tightened to fit, and NEVER under the
 /// line height — a panel too short for its rows spills off the bottom, which is ugly, where a negative
 /// pitch stacks them backwards up through the heading, which is unreadable.
+/// …and the FLOOR is the glyph height, not the comfortable line height. It used to be `lineH`, which twelve
+/// rows cannot make fit in the half-panel a picker leaves them: they overran the foot, and the divider drew
+/// straight through the last row. Rows touching is ugly; a rule through a number is a broken page.
 fn rowStep(space: i32, n: usize) i32 {
     const natural = hud.lineH(hud.SMALL) + 7;
-    return mathx.clampI(@divTrunc(space, @as(i32, @intCast(n))), hud.lineH(hud.SMALL), natural);
+    return mathx.clampI(@divTrunc(space, @as(i32, @intCast(n))), hud.SMALL + 1, natural);
 }
 
 fn rowLabel(s: [:0]const u8, x: i32, y: i32, col: rl.Color) void {
@@ -866,8 +974,8 @@ pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
     }
 
     const hint: [:0]const u8 = switch (self.page) {
-        .equipment => if (self.picking != null)
-            "Up/Down choose    A/Enter equip    B/Esc cancel"
+        .equipment => if (self.picking) |ps|
+            (if (quickIndex(ps) != null) "Up/Down choose    A/Enter put it in the socket    B/Esc cancel" else "Up/Down choose    A/Enter equip    B/Esc cancel")
         else
             "Arrows move    A/Enter open a slot    Q/E or LB/RB page    B/Esc close",
         .inventory => "Arrows move    A/Enter use    Q/E or LB/RB page    B/Esc close",
@@ -915,15 +1023,42 @@ fn drawTabs(self: *const Book, card: Box, v: View) void {
 }
 
 
+/// EVERYTHING UP FRONT (owner's call, and ER's own shape): the sockets are a single row of small squares,
+/// the list you choose from opens UNDER them, and the numbers hold the right-hand column whether a picker is
+/// open or not. They used to be the same column — choosing something took the readout off the page at exactly
+/// the moment you wanted to read it, which is the one thing that screen is for.
 fn drawEquipment(self: *const Book, body: Box, v: View) void {
     const cols = equipCols(body);
-    _ = panel(cols[0], "WHAT HE CARRIES");
-    const g = equipGrid(body);
+    const inner = panel(cols[0], "");
+    const cur = self.cur[idx(.equipment)];
     for (0..NSLOT) |i| {
-        const r = g.at(i);
-        drawSlot(self, r, @enumFromInt(i), v, self.cur[idx(.equipment)] == i and self.picking == null);
+        drawSlot(self, slotRect(body, i), @enumFromInt(i), v, cur == i and self.picking == null);
     }
-    if (self.picking) |s| drawPicker(self, cols[1], s, v) else drawDerived(cols[1], v, null);
+    // What is IN the socket under the cursor, once — every socket carries its NAME, and a second caption
+    // under each of twenty-one of them is a page of overlapping words.
+    const on: SlotId = @enumFromInt(if (self.picking) |s| @intFromEnum(s) else cur);
+    const name = slotFilled(on, v);
+    const q = slotRect(body, NSLOT - 1);
+    hud.text(
+        name,
+        inner.x + @divTrunc(inner.w - hud.textW(name, hud.BODY), 2),
+        @as(i32, @intFromFloat(q.y + q.height)) + 12,
+        hud.BODY,
+        uiart.HOT,
+    );
+
+    var buf: [CAND_MAX]Cand = undefined;
+    const cs = if (self.picking) |s| candidates(s, v, &buf) else buf[0..0];
+    if (self.picking) |s| drawPicker(self, cols[1], s, v);
+    drawDerived(derivedBox(body, cs.len), v, if (self.pick < cs.len) cs[self.pick] else null);
+}
+
+/// The numbers keep the right column; an open picker takes the top of it and pushes them down.
+fn derivedBox(body: Box, cands: usize) Box {
+    const col = equipCols(body)[1];
+    if (cands == 0) return col;
+    const top = pickBox(col, cands);
+    return .{ .x = col.x, .y = top.y + top.h + GUTTER, .w = col.w, .h = col.h - top.h - GUTTER };
 }
 
 /// One equipment cell: the socket, the picture, a tally, the slot's name above and what is in it below.
@@ -939,18 +1074,22 @@ fn drawSlot(self: *const Book, r: rl.Rectangle, s: SlotId, v: View, sel: bool) v
     const pop = if (sel) self.pop / POP_DUR else 0;
     const sy = y + sink - @as(i32, @intFromFloat(@round(pop * pop * 3.0)));
 
-    hud.text(slotName(s), x, y - hud.lineH(hud.TINY) - 2, hud.TINY, mathx.withAlpha(uiart.TEXT_DIM, if (sel) 235 else 150));
+    // A socket nothing can go in yet is drawn FAINT, not merely empty: half the doll is waiting on gear that
+    // does not exist, and at full strength it reads as a page that has lost its contents.
+    const inert = locked(s, v) != null;
+    const lab: u8 = if (sel) 235 else if (inert) 70 else 150;
+    hud.text(slotName(s), x, y - hud.lineH(hud.TINY) - 2, hud.TINY, mathx.withAlpha(uiart.TEXT_DIM, lab));
     uiart.slot(x, sy, w, h, on);
+    if (inert) rl.drawRectangle(x, sy, w, h, mathx.withAlpha(rl.Color.black, 110));
     if (sel) uiart.sheen(rect(x, sy, w, h), 3.4, 22);
     if (pop > 0) rl.drawRectangleLinesEx(rect(x - 1, sy - 1, w + 2, h + 2), 2, mathx.withAlpha(uiart.GILT_BRIGHT, mathx.u8f(200.0 * pop)));
 
     const lift: f32 = if (sel) 2.0 - self.press * 3.0 else 0;
     drawSlotArt(s, v, fi(x + @divTrunc(w, 2)), fi(sy + @divTrunc(h, 2)) - lift, fi(@min(w, h)) * 0.84);
 
+    // THE COUNT IS ALL A SOCKET SAYS. What is IN it is named once, for the one under the cursor
+    // (`drawEquipment`) — five captions at this pitch is a row of words running into each other.
     if (slotTally(s, v)) |n| hud.tally(fmt("{d}", .{n}), x + w, sy + h, hud.SMALL, if (n > 0) uiart.TEXT_VALUE else uiart.BAD);
-
-    const name = slotFilled(s, v);
-    hud.text(name, x + @divTrunc(w - hud.textW(name, hud.SMALL), 2), sy + h + 5, hud.SMALL, if (sel) uiart.HOT else uiart.TEXT_DIM);
 }
 
 fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
@@ -965,26 +1104,24 @@ fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
             .bolt => itemart.spell(cx, cy, px, v.fp >= combat.spellFp(v.spell)),
             .roots => itemart.roots(cx, cy, px, v.fp >= combat.spellFp(v.spell)),
         },
-        // The arrow is drawn LONG for its box (a shaft is 0.3 of what it is handed, where a blade is 1.4),
-        // so it is given a bigger one — at the slot's own size it is a twig in a cupboard.
+        // A shaft is drawn 0.3 of the box it is handed where a blade is 1.4, so it is given a bigger one.
         .arrows => itemart.arrow(cx, cy, px * 1.5, v.quiver.count(v.quiver.sel) > 0, v.quiver.sel == .fire),
-        // WHATEVER THE BAR IS TURNED TO, drawn greyed when there is none of it left — an empty flask and an
-        // eaten-out stack are the same fact and read the same way.
-        .quick => if (v.quick.selected()) |k| itemart.drawHeld(k, cx, cy, px, quickTally(k, v) > 0),
+        .helm, .chest, .belt, .boots, .amulet, .ring1, .ring2 => {},
+        else => if (quickAt(s, v)) |k| itemart.drawHeld(k, cx, cy, px, quickTally(k, v) > 0),
     }
 }
 
 /// The right-hand column: what the set is worth. With a candidate, every row gains a second value and an
 /// arrow — which is the whole reason the equipment page shows numbers at all.
 fn drawDerived(box: Box, v: View, cand: ?Cand) void {
-    const inner = panel(box, if (cand == null) "WHAT IT IS WORTH" else "IF HE TAKES IT UP");
-    const base = Loadout{ .arm = v.arm, .off = v.off, .ammo = v.quiver.sel, .quick = v.quick.selected() orelse .crimson_flask, .spell = v.spell };
+    const inner = panel(box, "");
+    const base = Loadout{ .arm = v.arm, .off = v.off, .ammo = v.quiver.sel, .quick = v.quick.selected(), .spell = v.spell };
     const now = derive(base, v);
     const then = if (cand) |c| derive(withCand(base, c), v) else now;
 
     // THE ROWS ARE FITTED TO THE PANEL, not the other way round: with a picker open this column is half
     // the height it has to itself, and ten rows at a fixed pitch walked straight off the bottom of it.
-    const says = if (cand) |c| candSays(c) else armSays(v.arm, v.off);
+    const says = if (cand) |c| candSays(c, v) else armSays(v.arm, v.off);
     const foot = proseH(says, inner.w, hud.HINT) + 22;
     const head: i32 = if (cand == null) 0 else hud.lineH(hud.SMALL) + 4;
     const step = rowStep(inner.h - foot - head, ND);
@@ -1011,8 +1148,12 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
         }
         y += step;
     }
-    const footY = inner.y + inner.h - foot + 22;
-    uiart.divider(inner.x + @divTrunc(inner.w, 2), footY - 12, @divTrunc(inner.w, 2) - 10, 120);
+    // THE FOOT GOES UNDER THE LAST ROW THAT WAS ACTUALLY DRAWN, not at a fixed drop from the panel's bottom.
+    // `rowStep` FLOORS at one line height, so with a picker open the twelve rows can be taller than the space
+    // left for them and they run into the foot — which drew the divider straight through "Ammunition" and
+    // printed the blurb over the row above it.
+    const footY = @max(inner.y + inner.h - foot + 22, y + 8);
+    uiart.divider(inner.x + @divTrunc(inner.w, 2), @max(footY - 12, y + 2), @divTrunc(inner.w, 2) - 10, 120);
     _ = prose(says, inner.x, footY, inner.w, hud.HINT, uiart.TEXT_HINT);
 }
 
@@ -1024,7 +1165,7 @@ fn armSays(a: heromod.Arm, o: heromod.Off) []const u8 {
     };
 }
 
-fn candSays(c: Cand) []const u8 {
+fn candSays(c: Cand, _: View) []const u8 {
     return switch (c.act) {
         .arm => |a| switch (a) {
             .sword => "Back to sword and shield, and back to being able to guard.",
@@ -1038,20 +1179,21 @@ fn candSays(c: Cand) []const u8 {
             .plain => "A plain shaft. Ten of them, and nothing in these ruins resists the hole one leaves.",
             .fire => "Fire rides on top of the shaft's own damage. Five of them, so pick the target.",
         },
-        // The item's own words (`item.describe`), so a description tuned there is not written twice. What
-        // CONFIRM does to it is the row's tick, not a sentence.
-        .quick => |k| item.describe(k),
+        // Short on purpose: `item.describe` is a paragraph and the rows have nowhere to shrink to.
+        .quick => |q| if (q.kind == null)
+            "Leave the socket empty."
+        else
+            "On the belt, which is the only reach he has in a fight.",
         else => "",
     };
 }
 
+/// THE LIST, under the sockets it is choosing for. The pricing is NOT here any more — it holds the
+/// right-hand column whether a picker is open or not, so the numbers do not move when the list appears.
 fn drawPicker(self: *const Book, col: Box, s: SlotId, v: View) void {
-    // The picker takes the TOP of the column and the pricing keeps the rest, so the numbers under a
-    // candidate never jump about when the cursor moves.
     var buf: [CAND_MAX]Cand = undefined;
     const cs = candidates(s, v, &buf);
-    const top = pickBox(col, cs.len);
-    const inner = panel(top, fmt("{s}  >", .{slotName(s)}));
+    const inner = panel(pickBox(col, cs.len), fmt("{s}  >", .{slotName(s)}));
     for (cs, 0..) |c, i| {
         const y = inner.y + @as(i32, @intCast(i)) * pickRowH();
         const on = self.pick == i;
@@ -1066,8 +1208,6 @@ fn drawPicker(self: *const Book, col: Box, s: SlotId, v: View) void {
             hud.text(str, inner.right() - hud.textW(str, hud.BODY), y, hud.BODY, if (n > 0) uiart.TEXT_VALUE else uiart.BAD);
         }
     }
-    const rest = Box{ .x = col.x, .y = top.y + top.h + GUTTER, .w = col.w, .h = col.h - top.h - GUTTER };
-    drawDerived(rest, v, if (self.pick < cs.len) cs[self.pick] else null);
 }
 
 
@@ -1163,7 +1303,7 @@ fn drawStats(self: *const Book, body: Box, v: View, portrait: ?Portrait) void {
     const cols = statsCols(body);
     drawAttributes(self, cols[0], v);
     drawBody(cols[1], v);
-    drawPortrait(self, cols[2], v, portrait);
+    drawPortrait(self, cols[2], portrait, fmt("Level {d}    {d} runes    Left / Right turns him", .{ v.sheet.level(), v.runes }));
 }
 
 fn drawAttributes(self: *const Book, col: Box, v: View) void {
@@ -1278,7 +1418,7 @@ pub fn unload() void {
     portRT = null;
 }
 
-fn drawPortrait(self: *const Book, col: Box, v: View, portrait: ?Portrait) void {
+fn drawPortrait(self: *const Book, col: Box, portrait: ?Portrait, caption: [:0]const u8) void {
     const inner = panel(col, "THE TARNISHED");
     const capH = hud.lineH(hud.HINT) + 6;
     const frameH = inner.h - capH;
@@ -1338,7 +1478,6 @@ fn drawPortrait(self: *const Book, col: Box, v: View, portrait: ?Portrait) void 
     rl.drawRectangleGradientH(dx + dw - side, dy, side, dh, rgba(0, 0, 0, 0), rgba(0, 0, 0, 170));
     rl.drawRectangleLinesEx(dst, 1, mathx.withAlpha(uiart.GILT_DIM, 90));
 
-    const caption = fmt("Level {d}    {d} runes    Left / Right turns him", .{ v.sheet.level(), v.runes });
     hud.text(
         caption,
         inner.x + @divTrunc(inner.w - hud.textW(caption, hud.HINT), 2),
@@ -1359,17 +1498,23 @@ fn testViewOff(bag: *const item.Bag, sheet: *const stats.Sheet, res: *const comb
     return .{ .bag = bag, .sheet = sheet, .res = res, .flasks = flasks, .quick = &TEST_QUICK, .quiver = quiver, .arm = arm, .off = off, .spell = .bolt, .fp = combat.FP_MAX, .runes = 0 };
 }
 
-test "the grid walk never leaves the slots, and a ragged last row cannot swallow the cursor" {
-    // Five slots in rows of three: down from the last cell of row 0 lands on the ragged row's end.
-    try std.testing.expectEqual(@as(usize, 4), grid(2, NSLOT, SLOT_COLS, 0, 1));
-    try std.testing.expectEqual(@as(usize, 0), grid(0, NSLOT, SLOT_COLS, -1, 0)); // hard rails, no wrap
-    try std.testing.expectEqual(@as(usize, 2), grid(2, NSLOT, SLOT_COLS, 1, 0));
-    try std.testing.expectEqual(@as(usize, 1), grid(4, NSLOT, SLOT_COLS, 0, -1));
+test "the paper doll walks by geometry, and every step lands on a socket" {
+    // Hard rails: pushed at a wall the cursor STAYS PUT rather than wrapping to the far side of the body.
+    try std.testing.expectEqual(@intFromEnum(SlotId.chest), slotStep(@intFromEnum(SlotId.helm), 0, 1));
+    try std.testing.expectEqual(@intFromEnum(SlotId.right), slotStep(@intFromEnum(SlotId.chest), 1, 0));
+    try std.testing.expectEqual(@intFromEnum(SlotId.left), slotStep(@intFromEnum(SlotId.chest), -1, 0));
+    try std.testing.expectEqual(@intFromEnum(SlotId.helm), slotStep(@intFromEnum(SlotId.helm), 0, -1));
+    // …and the two blocks JOIN: down off the doll's last row is the first quick socket under it.
+    try std.testing.expectEqual(@intFromEnum(SlotId.q1), slotStep(@intFromEnum(SlotId.arrows), 0, 1));
+    try std.testing.expectEqual(@intFromEnum(SlotId.q6), slotStep(@intFromEnum(SlotId.q1), 0, 1));
+    try std.testing.expectEqual(@intFromEnum(SlotId.q9), slotStep(@intFromEnum(SlotId.q8), 1, 0));
     for (0..NSLOT) |i| {
         for ([_][2]i32{ .{ -1, 0 }, .{ 1, 0 }, .{ 0, -1 }, .{ 0, 1 } }) |d| {
-            try std.testing.expect(grid(i, NSLOT, SLOT_COLS, d[0], d[1]) < NSLOT);
+            try std.testing.expect(slotStep(i, d[0], d[1]) < NSLOT);
         }
     }
+    // …and the BAG is still the ragged case: five across, so down from row 0 lands on the row below.
+    try std.testing.expectEqual(@as(usize, 7), grid(2, 8, BAG_COLS, 0, 1));
     try std.testing.expectEqual(@as(usize, 0), grid(0, 0, BAG_COLS, 1, 1)); // an EMPTY bag still has a cell
 }
 
@@ -1383,7 +1528,7 @@ test "a picker opens on what is already equipped, never on the first row" {
     quiver.sel = .fire;
     const v = testView(&bag, &sheet, &res, &flasks, &quiver, .bow);
     var buf: [CAND_MAX]Cand = undefined;
-    for ([_]SlotId{ .right, .arrows, .quick }) |s| {
+    for ([_]SlotId{ .right, .arrows, .q0 }) |s| {
         const cs = candidates(s, v, &buf);
         try std.testing.expect(cs.len >= 2);
         try std.testing.expect(equipped(cs[pickIndexOf(s, v)], v));
@@ -1397,21 +1542,21 @@ test "THE SWAP IS PRICED HONESTLY: taking up the bow shows the shield's guard go
     const flasks = combat.Flasks{};
     const quiver = combat.Quiver{};
     const v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
-    const sword = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .quick = .crimson_flask, .spell = .bolt }, v);
-    const bow = derive(.{ .arm = .bow, .off = .shield, .ammo = .plain, .quick = .crimson_flask, .spell = .bolt }, v);
+    const sword = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .quick = item.Kind.crimson_flask, .spell = .bolt }, v);
+    const bow = derive(.{ .arm = .bow, .off = .shield, .ammo = .plain, .quick = item.Kind.crimson_flask, .spell = .bolt }, v);
     try std.testing.expect(worth(sword, .guard) > 0 and worth(bow, .guard) == 0); // the bow's real cost
     try std.testing.expect(worth(sword, .light) > worth(bow, .light)); // …and the sword hits harder up close
     // FIRE SHOWS ONLY ON A FIRE ARROW, and it is a fraction of that shaft's own physical.
-    const fire = derive(.{ .arm = .bow, .off = .shield, .ammo = .fire, .quick = .crimson_flask, .spell = .bolt }, v);
+    const fire = derive(.{ .arm = .bow, .off = .shield, .ammo = .fire, .quick = item.Kind.crimson_flask, .spell = .bolt }, v);
     try std.testing.expect(worth(bow, .fire) == 0 and worth(fire, .fire) > 0);
     try std.testing.expectApproxEqAbs(worth(bow, .heavy) * heromod.FIRE_ARROW_FRAC, worth(fire, .fire), 1e-3);
     // The quick-item row follows the flask, and the two draughts do not fill the same bar.
-    const cer = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .quick = .cerulean_flask, .spell = .bolt }, v);
+    const cer = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .quick = item.Kind.cerulean_flask, .spell = .bolt }, v);
     try std.testing.expectApproxEqAbs(sheet.hp() * combat.FLASK_HP_FRAC, worth(sword, .quick), 1e-3);
     try std.testing.expectApproxEqAbs(sheet.fp() * combat.FLASK_FP_FRAC, worth(cer, .quick), 1e-3);
     // A ROW MOVES ONLY WHEN THE THING THAT FEEDS IT DOES: behind a sword, choosing the other arrow moves
     // the tally it counts and not one number he swings with.
-    const swordFire = derive(.{ .arm = .sword, .off = .shield, .ammo = .fire, .quick = .crimson_flask, .spell = .bolt }, v);
+    const swordFire = derive(.{ .arm = .sword, .off = .shield, .ammo = .fire, .quick = item.Kind.crimson_flask, .spell = .bolt }, v);
     for (0..ND) |i| {
         const k: Der = @enumFromInt(i);
         if (k == .ammo) continue;
@@ -1457,15 +1602,15 @@ test "THE WAND IS PRICED HONESTLY TOO: it buys a bolt and it costs him the guard
     const flasks = combat.Flasks{};
     const quiver = combat.Quiver{};
     const v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
-    const board = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .quick = .crimson_flask, .spell = .bolt }, v);
-    const rod = derive(.{ .arm = .sword, .off = .wand, .ammo = .plain, .quick = .crimson_flask, .spell = .bolt }, v);
+    const board = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .quick = item.Kind.crimson_flask, .spell = .bolt }, v);
+    const rod = derive(.{ .arm = .sword, .off = .wand, .ammo = .plain, .quick = item.Kind.crimson_flask, .spell = .bolt }, v);
     // The left hand's price, and it is the SAME row the bow is billed on, because it is the same hand.
     try std.testing.expect(worth(board, .guard) > 0 and worth(rod, .guard) == 0);
     // …and what he got for it. Zero behind a shield, because a spell he cannot cast is not worth a number.
     try std.testing.expect(worth(board, .spell) == 0 and worth(rod, .spell) > 0);
     try std.testing.expect(worth(board, .spell_fp) == 0 and worth(rod, .spell_fp) > 0);
     // A BOW SILENCES IT WHICHEVER WAY THE LEFT SLOT IS SET — both hands are on the string.
-    const bowRod = derive(.{ .arm = .bow, .off = .wand, .ammo = .plain, .quick = .crimson_flask, .spell = .bolt }, v);
+    const bowRod = derive(.{ .arm = .bow, .off = .wand, .ammo = .plain, .quick = item.Kind.crimson_flask, .spell = .bolt }, v);
     try std.testing.expect(worth(bowRod, .spell) == 0 and worth(bowRod, .guard) == 0);
     // …and the swing rows do not move: taking a wand changes nothing about the sword in the other hand.
     for ([_]Der{ .light, .heavy, .poise, .stance, .stam_light, .stam_heavy }) |k| {
@@ -1484,8 +1629,8 @@ test "THE PAGE PRICES THE SORCERY THAT IS LOADED, not the first one ever written
     const flasks = combat.Flasks{};
     const quiver = combat.Quiver{};
     var v = testViewOff(&bag, &sheet, &res, &flasks, &quiver, .sword, .wand);
-    const bolt = derive(.{ .arm = .sword, .off = .wand, .ammo = .plain, .quick = .crimson_flask, .spell = .bolt }, v);
-    const roots = derive(.{ .arm = .sword, .off = .wand, .ammo = .plain, .quick = .crimson_flask, .spell = .roots }, v);
+    const bolt = derive(.{ .arm = .sword, .off = .wand, .ammo = .plain, .quick = item.Kind.crimson_flask, .spell = .bolt }, v);
+    const roots = derive(.{ .arm = .sword, .off = .wand, .ammo = .plain, .quick = item.Kind.crimson_flask, .spell = .roots }, v);
     // THE bug: both rows read the bolt's constants, so turning the rod moved nothing on the sheet.
     try std.testing.expect(worth(roots, .spell_fp) > worth(bolt, .spell_fp));
     try std.testing.expect(worth(roots, .spell) < worth(bolt, .spell));
@@ -1549,29 +1694,29 @@ test "THE QUICK PICKER OFFERS ONLY WHAT HE HAS — and the flasks, which are nev
     const quiver = combat.Quiver{};
     var buf: [CAND_MAX]Cand = undefined;
 
-    // AN EMPTY BAG STILL OFFERS THE TWO FLASKS: their charges come back at a grace, so he is carrying them
-    // whether or not there is a swallow in one.
+    // An empty bag still offers the two flasks — their charges come back at a grace — plus the empty row.
     const broke = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
-    const bare = candidates(.quick, broke, &buf);
-    try std.testing.expectEqual(@as(usize, 2), bare.len);
-    for (bare) |c| try std.testing.expect(combat.flaskOf(c.act.quick) != null);
+    const bare = candidates(.q0, broke, &buf);
+    try std.testing.expectEqual(@as(usize, 3), bare.len);
+    try std.testing.expectEqual(@as(?item.Kind, null), bare[0].act.quick.kind); // …and it is first
+    for (bare[1..]) |c| try std.testing.expect(combat.flaskOf(c.act.quick.kind.?) != null);
 
     // …and an edible shows up exactly when one is in the bag.
     bag.add(.mushroom_jerky, 1);
     bag.add(.kobold_fang, 4); // owned, and still no business on a belt
     const fed = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
     var sawJerky = false;
-    for (candidates(.quick, fed, &buf)) |c| {
-        const k = c.act.quick;
+    for (candidates(.q0, fed, &buf)) |c| {
+        try std.testing.expectEqual(@as(usize, 0), c.act.quick.slot); // every row fills THIS socket
+        const k = c.act.quick.kind orelse continue;
         try std.testing.expect(item.quickable(k));
         try std.testing.expect(combat.flaskOf(k) != null or fed.bag.count(k) > 0);
-        // AND THE TICK IS BAR MEMBERSHIP, not "is it the one selected" — this picker toggles.
-        try std.testing.expectEqual(fed.quick.holds(k), equipped(c, fed));
+        try std.testing.expectEqual(fed.quick.slots[0] == k, equipped(c, fed));
         if (k == .mushroom_jerky) sawJerky = true;
     }
     try std.testing.expect(sawJerky);
-    // It opens on what the bar is TURNED TO, and the rows are filtered, so the ordinal is not the row.
-    try std.testing.expectEqual(quickRowOf(fed.quick.selected().?), pickIndexOf(.quick, fed));
+    // It opens on what THAT socket holds; the rows are filtered and carry an empty one, so it is counted out.
+    try std.testing.expectEqual(quickRowOf(fed.quick.slots[0], fed), pickIndexOf(.q0, fed));
 }
 
 test "the quick row prices whatever the bar holds, flask or not" {

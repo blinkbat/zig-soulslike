@@ -13,6 +13,7 @@ const koboldmod = @import("kobold.zig");
 const broodmod = @import("brood.zig");
 const warriormod = @import("warrior.zig");
 const shademod = @import("shade.zig");
+const leechmod = @import("leechfly.zig");
 const npcmod = @import("npc.zig");
 const dialogmod = @import("dialog.zig");
 const mathx = @import("mathx.zig");
@@ -1320,6 +1321,7 @@ pub fn runShots(g: *Game) void {
     broodShots(g);
     warriorShots(g);
     shadeShots(g);
+    leechShots(g);
     campfireShots(g);
     chestShots(g);
     folkShots(g);
@@ -1596,6 +1598,97 @@ fn warriorShots(g: *Game) void {
 /// THE SHADES (`116…`). Shot from `LIT_YAW` with the sensed hero out on the SUN's bearing, the warriors'
 /// own rule — but this creature needs it more than any of them: it is authored NEARLY BLACK from the cowl
 /// down, so a frame that photographs its own shadow is a frame of a silhouette with two dots in it.
+/// THE LEECHFLY. Everything here is fought over its HEIGHT, so every frame has to say where it is: the
+/// portraits are shot at attack height, the climb is shot from the ground looking UP, and the feed is shot
+/// with the hero in it — a beak in nobody is a beak pointing at air.
+fn leechShots(g: *Game) void {
+    game.clearFoesForShot(g);
+    const sc = mathx.ground(-24.0, 34.0); // the same open patch west the shades and warriors are shot on
+    const near = along(sc, LIT_BACK, 1.1);
+    const far = along(sc, LIT_BACK, 90.0);
+    const faceCam = mathx.headingXZ(LIT_BACK);
+    g.swarm.n = 3;
+    const f = &g.swarm.flies[0];
+    const away = mathx.ground(sc.x - 60.0, sc.z + 60.0); // the other two, parked out of every portrait
+    const spawn = struct {
+        fn it(fly: *leechmod.Leechfly, at: rl.Vector3, yaw: f32, seed: f32) void {
+            fly.* = leechmod.Leechfly.spawn(at, yaw, 1.0, seed);
+        }
+    }.it;
+
+    // THE SWARM — three, because the wingbeat, the leg dangle and the abdomen's swing are all seeded and a
+    // single portrait cannot show that no two of them are on the same frame of it.
+    spawn(f, mathx.ground(sc.x - 1.5, sc.z), faceCam, 0.18);
+    spawn(&g.swarm.flies[1], mathx.ground(sc.x + 0.4, sc.z + 1.3), faceCam, 0.61);
+    spawn(&g.swarm.flies[2], mathx.ground(sc.x + 2.0, sc.z - 0.6), faceCam, 0.89);
+    for (g.swarm.live()) |*fly| stepFoe(fly, 30, far);
+    standHero(g, sc.x + 3.0, sc.z - 3.2, mathx.radians(-140));
+    shootAt(g, "shots/117_swarm.png", v3(sc.x, sc.y + 1.5, sc.z), LIT_YAW, 0.04, 7.0);
+
+    g.hero.pos = mathx.ground(sc.x, sc.z - 30.0); // out of the portraits below
+    g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pose();
+    for ([_]usize{ 1, 2 }) |i| spawn(&g.swarm.flies[i], away, faceCam, 0.5);
+
+    spawn(f, sc, faceCam, 0.18);
+    stepFoe(f, 30, far);
+    shootFoe(g, f, "shots/117a_leech_idle.png", LIT_YAW, 0.04, 3.4);
+    // A PROFILE READ: the beak's tuck, the abdomen's droop and the wings' sweep are all invisible head-on.
+    shootFoe(g, f, "shots/117b_leech_side.png", LIT_YAW + 68, 0.03, 3.4);
+    // …and from ABOVE, which is the only angle the wings are a shape rather than an edge.
+    shootFoe(g, f, "shots/117c_leech_top.png", LIT_YAW + 20, 0.85, 3.2);
+    // …and a CROP of the head. Two dark beads and a beak are unjudgeable at 1:1 (the thin-geometry rule).
+    shootAt(g, "shots/117d_leech_head.png", f.lockPoint(), LIT_YAW + 30, 0.02, 1.3);
+
+    // THE FEED, in three beats, WITH THE HERO IN FRAME — the rear-back that is the tell, the beak going in,
+    // and the drink with the eyes alight. A photograph of the drain without the man it is taken from is a
+    // picture of an insect hovering.
+    // ACROSS THE PAIR, not down the line of them: with the camera on the hero's side of it the man simply
+    // stands in front of the insect, and the frame is a picture of his back. Side-on, the beak, the gap it
+    // closes and the eyes coming alight are all in the clear.
+    const beat = struct {
+        fn at(gg: *Game, fly: *leechmod.Leechfly, home: rl.Vector3, face: f32, clock: f32, name: [:0]const u8, toward: rl.Vector3, dist: f32) void {
+            fly.* = leechmod.Leechfly.spawn(home, face, 1.0, 0.18);
+            fly.debugFeedFrom(clock);
+            var c: f32 = 0;
+            while (c < clock) : (c += SHOT_DT) _ = fly.update(SHOT_DT, toward, game.PLAY_HALF, .{});
+            const mid = mathx.lerpV(fly.centerWorld(), v3(toward.x, toward.y + 1.15, toward.z), 0.5);
+            shootAt(gg, name, mid, LIT_YAW + 84, 0.05, dist);
+        }
+    }.at;
+    standHero(g, near.x, near.z, mathx.radians(LIT_YAW + 180));
+    const fc = leechmod.feedClock();
+    beat(g, f, sc, faceCam, fc.wind * 0.92, "shots/117e_leech_rear.png", near, 3.6);
+    beat(g, f, sc, faceCam, fc.wind + fc.stab * 0.70, "shots/117f_leech_stab.png", near, 3.6);
+    beat(g, f, sc, faceCam, fc.wind + fc.stab + 0.55, "shots/117g_leech_drink.png", near, 3.2);
+    // …and the EYES, cropped, which is where the drain is actually said (owner's call).
+    shootAt(g, "shots/117h_leech_eyes.png", f.lockPoint(), LIT_YAW + 20, 0.02, 1.2);
+
+    // THE CLIMB — the whole creature in one frame. Shot from the GROUND looking up, because a flyer
+    // photographed level with itself has not gone anywhere.
+    g.hero.pos = mathx.ground(sc.x, sc.z - 30.0);
+    g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pose();
+    spawn(f, sc, faceCam, 0.18);
+    f.debugClimb();
+    stepFoe(f, 26, near);
+    standHero(g, sc.x + 0.5, sc.z - 2.4, mathx.radians(LIT_YAW + 180));
+    // Level with the GAP between them, not above it: from overhead the man is a hat and the four metres it
+    // has put between itself and his sword are foreshortened to nothing.
+    shootAt(g, "shots/117i_leech_climb.png", v3(sc.x, sc.y + 3.1, sc.z), LIT_YAW, 0.12, 7.6);
+
+    spawn(f, sc, faceCam, 0.18);
+    f.debugStagger(true);
+    stepFoe(f, 14, far);
+    shootFoe(g, f, "shots/117j_leech_stagger.png", LIT_YAW + 20, 0.05, 3.6);
+
+    spawn(f, sc, faceCam, 0.18);
+    f.debugKill();
+    stepFoe(f, 30, far);
+    shootFoe(g, f, "shots/117k_leech_death.png", LIT_YAW + 24, 0.16, 3.8);
+    game.clearFoesForShot(g);
+}
+
 fn shadeShots(g: *Game) void {
     game.clearFoesForShot(g);
     const sc = mathx.ground(-24.0, 34.0); // the same open patch west the warriors are shot on
@@ -1774,9 +1867,12 @@ fn chestShots(g: *Game) void {
         if (g.bag.count(k) == 0) g.bag.add(k, if (k == .bloodgrass) 12 else 3);
     }
     g.menu.onStartButton();
-    bookShot(g, "shots/106e_book_equipment.png", .equipment, 0, null, 0);
+    bookShot(g, "shots/106e_book_equipment.png", .equipment, bookmod.slotOrdinal(.right), null, 0);
     // THE SWAP PRICED: the bow picked over the sword, with the guard row going to nothing beside it.
-    bookShot(g, "shots/106f_book_swap.png", .equipment, 0, 0, 1);
+    bookShot(g, "shots/106f_book_swap.png", .equipment, bookmod.slotOrdinal(.right), bookmod.slotOrdinal(.right), 1);
+    // A quick SOCKET being loaded: the list holds only what he actually carries, plus an empty row, and the
+    // cursor sits on the jerky — the one row that is not a flask.
+    bookShot(g, "shots/106f2_book_quickbar.png", .equipment, bookmod.slotOrdinal(.q2), bookmod.slotOrdinal(.q2), 3);
     bookShot(g, "shots/106g_book_inventory.png", .inventory, 0, null, 0);
     // …and the sheet on a row that HAS a footnote — the inert rows prove nothing.
     bookShot(g, "shots/106h_book_stats.png", .stats, @intFromEnum(stats.Attr.endurance), null, 0);

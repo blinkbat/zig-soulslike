@@ -21,6 +21,7 @@ const ogremod = @import("ogre.zig");
 const koboldmod = @import("kobold.zig"); // THE WARBAND — three roles in one group (the priest heals)
 const broodmod = @import("brood.zig"); // THE BROOD — a mother, her sacs and what comes out of them
 const warriormod = @import("warrior.zig"); // THE SKELETAL WARRIORS — the archer's bones, armed two ways
+const leechmod = @import("leechfly.zig"); // THE LEECHFLIES — the first thing in the game that FLIES, and climbs out of reach
 const shademod = @import("shade.zig"); // THE SHADES — the only thing that takes his FOCUS, and the only thing that blinks
 const chestmod = @import("chest.zig"); // the openable boxes
 const restmod = @import("rest.zig"); // sitting at a bonfire
@@ -157,6 +158,7 @@ pub const Game = struct {
     band: koboldmod.Warband, // the kobold warband — berserkers, priests and slingers, mixed
     brood: broodmod.Brood, // the brood mothers, their egg sacs, their hatchlings and their acid
     muster: warriormod.Muster, // the skeletal warriors — shieldmen and greatswords, mixed
+    swarm: leechmod.Swarm, // the leechflies — fast flyers that drink his life and zoom out of sword reach
     haunt: shademod.Haunt, // the shades — a flanking pack that drains focus and teleports
     chests: chestmod.Chests, // the openable boxes — props with a lid and a state (chest.zig)
     folk: npcmod.Folk, // the NPCs the map posts — bodies with a name and a conversation, not a foe contract
@@ -220,6 +222,7 @@ pub const Game = struct {
         g.band = koboldmod.Warband.init(g.scene.shader);
         g.brood = broodmod.Brood.init(g.scene.shader);
         g.muster = warriormod.Muster.init(g.scene.shader);
+        g.swarm = leechmod.Swarm.init(g.scene.shader);
         g.haunt = shademod.Haunt.init(g.scene.shader);
         g.chests = chestmod.Chests.init(g.scene.shader);
         g.folk = npcmod.Folk.init(g.scene.shader);
@@ -277,6 +280,8 @@ const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "brood", .kind = null, .aggro = broodmod.AGGRO_R },
     .{ .field = "muster", .kind = null, .aggro = warriormod.AGGRO_R, .vs = &.{"line"} },
     .{ .field = "haunt", .kind = .shade, .aggro = shademod.AGGRO_R, .vs = &.{ "warren", "line", "muster" } },
+    // IT IS NEVER SHOULDERED AND IT SHOULDERS NOTHING: it is in the air, and `airborne` is what says so.
+    .{ .field = "swarm", .kind = .leechfly, .aggro = leechmod.AGGRO_R },
 };
 
 /// **IS A FIGHT ON.** The one predicate, and the only thing allowed to answer it. Nothing about the HERO is
@@ -689,6 +694,14 @@ pub fn spawnVenom(g: *Game, from: rl.Vector3) void {
 /// LOFTED like every other thrown thing here, so its arc is the tell you read it by.
 pub fn spawnWisp(g: *Game, from: rl.Vector3) void {
     poolPut(g, archermod.launchShaft(from, heroAimPoint(g), shademod.WISP_SPEED, shademod.WISP_HIT, true, .wisp));
+}
+
+/// THIS FRAME'S SWALLOW, from a leechfly that has its beak in him. `burn` and not `takeHit`: it is a HOLD,
+/// so it bills through `combat.Vitals.drip` (which leaves the regen gate where it found it) and no shield
+/// stands between him and a thing that is already attached. The ROLL is the answer to it — get out of the
+/// beak's own band and the creature's `holds` goes false on the next frame.
+pub fn leechSip(g: *Game, h: combat.Hit) void {
+    _ = g.hero.burn(h);
 }
 
 /// THE SCRIPT LAYER, BACK TO A FRESH WORLD: the folk on their posts and every switch, counter, timer and
@@ -2201,6 +2214,12 @@ pub fn run(mode: Mode) void {
             // today, so this reads false either way — and it stays right the day one of them gets some.
             _ = heroTakes(g, b, b.hit.stance > 0, true);
         }
+        // THE LEECHFLIES. TWO CHANNELS, because the feed is two different things: the beak going in is a
+        // BLOW (blockable, and it carries where it came from), and the swallow after it is a HOLD that goes
+        // through `hero.burn` like the mother's acid. A shield answers the first and only the roll the second.
+        if (g.swarm.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, leechSip)) |b| {
+            _ = heroTakes(g, b, b.hit.stance > 0, true);
+        }
         // …and the one moment of theirs the frame should feel BEFORE it is hit by it.
         if (g.muster.anyLeapt()) {
             g.rumble.play(rumblemod.swing_heavy);
@@ -2410,23 +2429,18 @@ fn bookAct(g: *Game, a: bookmod.Action) void {
         .ammo => |k| while (g.hero.quiver.sel != k) {
             if (!g.hero.cycleArrow()) break;
         },
-        // A TOGGLE, not a choice: the quick bar holds up to `combat.QUICK_SLOTS` things and this row is one
-        // of them going on or coming off. `syncFlask` follows, because what the bar is turned to is what
-        // `flasks.sel` has to be for the draught and the HUD tint to agree with it.
-        .quick => |k| {
-            if (g.hero.quick.holds(k)) _ = g.hero.quick.remove(k) else _ = g.hero.quick.add(k);
+        // `syncFlask` follows: what the bar is turned to is what `flasks.sel` has to be for the draught and
+        // the HUD tint to agree with it.
+        .quick => |q| {
+            g.hero.quick.put(q.slot, q.kind);
             g.hero.syncFlask();
         },
     }
 }
 
-/// HOW MANY OF THE QUICK SLOT'S THING ARE LEFT. A flask counts CHARGES, which come back at a grace; anything
-/// else counts what is in the BAG, which does not. `book.quickTally` is the same question on the other page
-/// and cannot share this one — it reads a `View`, not the live game.
 fn quickLeft(g: *const Game) u8 {
     const k = g.hero.quick.selected() orelse return 0;
-    if (combat.flaskOf(k)) |f| return g.hero.flasks.charges(f);
-    return @intCast(@min(g.bag.count(k), 99));
+    return combat.quickCount(k, &g.hero.flasks, &g.bag);
 }
 
 /// SPEND THE THING THE QUICK BAR IS TURNED TO — the cross's DOWN press, and in combat the ONLY way anything
@@ -2434,7 +2448,11 @@ fn quickLeft(g: *const Game) u8 {
 /// own `useItem`, which is instant and costs no animation, because an edible is not a draught.
 fn quickUse(g: *Game) void {
     const k = g.hero.quick.selected() orelse return; // an empty bar: nothing to reach for
-    if (combat.flaskOf(k) != null) {
+    if (combat.flaskOf(k)) |f| {
+        // STAMPED HERE AND NOT ONLY AT THE CYCLE. `dropEmpty` can move the selection on any frame — an edible
+        // running out re-points it at a flask — and it has no business calling `syncFlask` from inside the
+        // bar. Left to the cycle alone, the cross showed crimson and he drank the blue one.
+        g.hero.flasks.sel = f;
         if (g.hero.startDrink()) sfx.play(.flask_drink);
         return;
     }
@@ -2643,6 +2661,7 @@ fn askFoe(comptime T: type, g: *const Game, r: FoeRef, comptime ask: anytype) T 
         .archer => ask(&g.line.archers[r.idx]),
         .ogre => ask(&g.grief.ogres[r.idx]),
         .shade => ask(&g.haunt.shades[r.idx]),
+        .leechfly => ask(&g.swarm.flies[r.idx]),
         .berserker, .priest, .slinger => unreachable, // handled above
         .brood_mother, .broodling, .brood_sac => unreachable,
         .shieldman, .greatsword => unreachable,
@@ -2690,6 +2709,7 @@ fn refInBounds(g: *const Game, r: FoeRef) bool {
         .archer => r.idx < g.line.liveConst().len,
         .ogre => r.idx < g.grief.liveConst().len,
         .shade => r.idx < g.haunt.liveConst().len,
+        .leechfly => r.idx < g.swarm.liveConst().len,
         // …every kind handled by the three group checks above, named so a new one cannot slip past.
         .berserker, .priest, .slinger, .brood_mother, .broodling, .brood_sac, .shieldman, .greatsword => false,
     };

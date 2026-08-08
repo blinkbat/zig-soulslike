@@ -118,6 +118,7 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `brood.zig` | brood mother, sacs, broodlings + `Brood`; guard not hunter, acid POOLS are the weapon |
 | `warrior.zig` | skeletal warriors + `Muster` — shieldman (blocks, guard-breaks to one knee) and greatsword (uninterruptible slam) |
 | `shade.zig` | shades + `Haunt`; legless, hovers, 17 bones of its own. The one thing that drains FOCUS, the one thing that TELEPORTS |
+| `leechfly.zig` | THE FIRST FLYER + `Swarm`; 15 bones, never lands. Drinks his HP through a beak and heals off what it takes, and ZOOMS out of sword reach |
 | `combat.zig` | `Vitals` (HP + two-tier stagger + regen + death), `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`. THE place to retune feel |
 | `stats.zig` | the character sheet — seven attributes and the curves that make the bars |
 | `item.zig` | item vocabulary, `Use`, the `Bag` |
@@ -238,6 +239,40 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 - **Anything the map can post is a `wf.FoeKind`, APPENDED never inserted** (editor unit brushes are
   pinned to that enum's order at comptime), plus `foeName`, a `unitTips` line, a `unitIcons` glyph and
   a `foeSwatch`. Several kinds of one creature go in as a CONTIGUOUS RUN, pinned at comptime.
+
+### The leechfly (`leechfly.zig`) — the first thing that flies
+
+**ITS HEIGHT IS THE WHOLE CREATURE.** `pos.y` is the ground under it like everything else's and `hover` is
+what it is flying above that by — the shade's field, except this one MOVES, and every world point it has
+(`centerWorld`, `lockPoint`, `topWorld`, the hurt sphere) is measured off `pos.y + hover`.
+
+- **IT ZOOMS OUT OF SWORD REACH** (owner's whole point). Threatened, it climbs to `HOVER_HIGH` (4.6 m) in a
+  third of a second, hangs there working round behind him, and dives back. The hero's blade sweeps a capsule
+  off his own shoulder and cannot reach that; **an arrow can, and so can a bolt.** The climb takes the sword
+  off the table and hands you the ranged kit, and that trade IS the fight.
+- **THE CLIMB IS A LEAP, AND THE ROOTS REFUSE IT** (`wantsClimb` → `foe.canLeap`, the shade's blink rule). It
+  does not travel, it leaves the earth. Rooted, the one thing keeping it alive is gone and the sword finally
+  answers it — which is the wand's whole argument against this creature.
+- **IT IS ALWAYS `airborne()`**, so the terrain gate never applies (a fly does not walk up slopes) and nothing
+  on the ground shoulders it. It is NOT exempt from `env.resolveActor`: fly through a wall and there is
+  nowhere to come back from.
+- **THE FEED IS A BLOW AND THEN A HOLD, and they go down different channels.** The beak going in is a real
+  `foe.Blow` — blockable, and it carries where it came from. The swallow after it is a DRIP (`game.leechSip`
+  → `hero.burn`), billed per SECOND and scaled by `dt`. A shield answers the first and only the ROLL answers
+  the second: `holds()` is re-asked every frame and it tests the height as well as the bearing, so getting
+  out of the beak's own band is what breaks it.
+- **IT HEALS OFF WHAT IT TAKES** (`LEECH_SHARE`, some of it and not all) — a flyer that heals for everything
+  it drinks is a stalemate against a player with no bow. The belly (`gorge`) fills as it goes and STAYS
+  full, so a fed one you failed to kill is a thing you can see you failed to kill.
+- **AND THE EYES COME ALIGHT WHILE IT DRINKS** (owner's call). Drawn in `drawFx` as unlit spheres over the
+  opaque pass, not lit in the mesh: vertex alpha is a FIXED emissive channel and cannot brighten, and
+  brightening is the entire cue.
+- **THE WHINE IS A RETRIGGER, not a loop** (`WHINE_EVERY`, the footfall idiom) — raylib cannot loop a
+  synthesized take. The voice is cut a hair LONGER than its own period so consecutive takes overlap; gapped,
+  a mosquito's note chatters on and off at 4 Hz, which is a helicopter.
+- **A SWATTED FLY DROPS.** The stun states pull `hoverTo` down: the height sagging is most of what a hit on
+  this creature looks like, and it is the window to hit it again in. Death is the hover running out from
+  under it before `foe.dissipate` takes it.
 
 ## Combat
 
@@ -388,7 +423,10 @@ chips you for it; a parry is a COMMITTED WINDOW that pays `STAM_PARRY` once and 
   mother's spit, the slinger's clump, every arrow): there is no swing to catch, so the boards only ever block it.
   The toad's approach HOP carries no blow at all and its CHOMP is out on purpose — the leap is the committed
   thing. A BROODLING is out because a window on something that arrives out of a sac and dies to one slash is a
-  mechanic nobody could read. **HYPER ARMOUR IS NO DEFENCE** (`warrior.takeParry`): it refuses poise off the
+  mechanic nobody could read. **AND THE LEECHFLY IS OUT BY DESIGN, not by omission**: its counters are the
+  ROLL (which breaks the hold) and the ranged kit (which is the only thing that reaches it perched). A window
+  on the stab would make the boards the answer to a flyer, which is the one answer the creature is built to
+  refuse. **HYPER ARMOUR IS NO DEFENCE** (`warrior.takeParry`): it refuses poise off the
   blade, and a parry deals neither damage nor poise — so the greatsword's uninterruptible slam is exactly the
   move the boards can still stop, which is the parry's whole reason to exist against him.
 - **A WINDOW IS `foe.PARRY_LEAD` SECONDS MEASURED BACK FROM THE IMPACT FRAME** — one number, in seconds, for
@@ -436,7 +474,8 @@ the fight, which is the whole point of it.
 - **THE BAR IS THE CROSS'S DOWN SLOT** (`combat.Quick`, ten entries — ER's pouch). It is not a second system
   beside the flask: **the two flasks are simply its first two entries**, so a fresh game plays exactly as it
   did. `Flasks` still owns their CHARGES, because those come back at a grace where everything else comes out
-  of the bag (`game.quickLeft` and `book.quickTally` are that split, each on its own side of the `View`).
+  of the bag — `combat.quickCount` is that split, ONE copy, asked by the HUD off the live game and by the
+  book off its `View`.
 - **CYCLE STAMPS `flasks.sel`, it does not cycle it** (`hero.cycleQuick` → `syncFlask`). The draught, the HUD
   tint and the charge count all keep reading the one field they always read, and only the bar decides what
   is up. Nothing calls `Flasks.cycle` any more.
@@ -472,6 +511,7 @@ the fight, which is the whole point of it.
   | egg sac | −70 | 0 | 0 | +75 | dry silk over a membrane |
   | skeletal warrior | −35 | +60 | 0 | +45 | the archer's own table — it is the archer's body |
   | shade | +30 | +65 | 0 | −45 | nothing there to burn, and cold is what it already is |
+  | leechfly | −55 | −25 | 0 | +35 | a wing is a membrane; the chaos in it is what it has been drinking |
 
 - **NOTHING GRANTS THE HERO ANY YET, AND THE SHEET SAYS SO** — the book's STATS page shows all four at
   0%. `makeWhole` CARRIES RESISTANCES ACROSS a grace: they are what he is, not a meter to refill.

@@ -774,6 +774,14 @@ foe: shade -37.20 12.40 90.0 0.94 0.63
 foe: shade -30.90 12.90 160.0 1.06 0.87
 foe: shade -31.45 -93.70 0.0 1.00 0.25
 foe: shade -23.72 -105.06 0.0 1.00 0.62
+foe: leechfly 96.00 14.00 200.0 1.00 0.14
+foe: leechfly 101.50 9.20 240.0 0.94 0.52
+foe: leechfly 108.00 17.40 260.0 1.08 0.81
+foe: leechfly 76.00 4.50 180.0 1.00 0.37
+foe: leechfly 80.20 11.80 210.0 1.02 0.68
+foe: leechfly 50.04 -50.35 0.0 1.00 0.84
+foe: leechfly 50.67 -54.66 0.0 1.00 0.21
+foe: leechfly 52.75 -51.98 0.0 1.00 0.58
 
 flags: met_wanderer heard_of_gate
 
@@ -782,7 +790,7 @@ npc: wanderer -4.50 7.50 128.0 1.00 0.31 roam=1.8 dlg=wanderer
 
 dlg: wanderer
   node: root
-  say: Another one walking north. They all walk north, and the road only goes the one way after that.
+  say: Another one walking north, and the road only goes the one way after that.
   ask: What lies north? -> north
   ask: Then why do you sit here? -> why
   need: flag heard_of_gate=1
@@ -792,7 +800,7 @@ dlg: wanderer
   act: flag heard_of_gate=1
   then: root
   node: why
-  say: Because I have walked it. Sit long enough at a fire and the road stops asking.
+  say: Sit long enough at a fire and the road stops asking.
   then: root
 
 trig: wanderer_seen pri=10
@@ -807,7 +815,7 @@ trig: gate_rumour
   do: text The way north is shut.
 trig: the_avenue
   when: region -12.0 -40.0 12.0 -12.0
-  do: text Smoldering Ruins 
+  do: text Smoldering Ruins
 trig: toads_thinned
   when: deaths toad >= 3
   do: text The bog is quieter.

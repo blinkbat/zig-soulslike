@@ -126,8 +126,13 @@ pub const PER_SAC: usize = 1;
 /// body that makes and carries its own acid, hung about with silk that catches. See `frog.RESISTS` on
 /// why fire is the only one of the four anything deals yet.
 const RESISTS = combat.resists(.{ .fire = -25, .cold = 35, .chaos = 75 });
-/// THE SPIT IS POISON, NOT A STONE: all of its damage is CHAOS, and the poise is the only physical thing about it — a caustic glob still rocks you when it lands. Her POOLS burn with the same element (`acidPulse`), because they are the same fluid.
-pub const M_SPIT_HIT = combat.Hit{ .poise = 5, .elem = combat.elems(.{ .chaos = 5 }) };
+/// THE SPIT IS POISON, AND NOW IT MEANS IT (`combat.Status`): the glob deals almost nothing on arrival —
+/// the poise is a caustic lump still rocking you — and what it really costs is `M_SPIT_BUILD` on the meter.
+/// Her POOLS carry the same venom (`SPIT_BUILD_DPS`), because they are the same fluid.
+pub const M_SPIT_HIT = combat.Hit{ .dmg = 2, .poise = 5 };
+/// WHAT ONE GLOB PUTS ON THE METER — three of them proc, so a mother left to spit at range is a clock you
+/// are running down whether or not you feel the hits.
+pub const M_SPIT_BUILD: f32 = 36.0;
 pub const M_BITE_HIT = combat.Hit{ .dmg = 19, .poise = 22, .stance = 7 };
 /// HOW LONG BEFORE HER FANGS LAND THEY CAN STILL BE CAUGHT — the game's own number (`foe.PARRY_LEAD`), so a
 /// player who learned the timing off a giant's club already knows this one. HER BITE AND NOTHING ELSE OF HERS
@@ -144,15 +149,10 @@ const ACID_SPREAD: f32 = 0.22;
 /// …and how long it lies there before it has eaten itself out.
 pub const ACID_LIFE: f32 = 7.5;
 const ACID_THIN: f32 = 2.0;
-/// IT BURNS IN PULSES, not as a drain
-pub const ACID_TICK: f32 = 0.42;
-/// …and this is the linger tax: ~15 HP/s, so a hero at full (70) has about four and a half seconds of standing in one.
-pub const ACID_TICK_DMG: f32 = 6.4;
-
-/// ONE PULSE OF THE FLOOR, as a typed blow — CHAOS, the same element as the spit that made the pool. The AMOUNT still comes from `Brood.burn` (the pulse clock is its own), so this is only what the pulse IS.
-pub fn acidPulse(amt: f32) combat.Hit {
-    return .{ .elem = combat.elems(.{ .chaos = amt }) };
-}
+/// THE FLOOR NO LONGER BURNS — IT POISONS. Buildup a second while he stands in it, continuous and scaled by
+/// `dt` rather than pulsed: the meter is drawn every frame and a dose delivered in lumps reads as a stutter.
+/// Sized so about two and a half seconds in a pool is a proc — a pool is a place you leave, not one you cross.
+pub const ACID_BUILD: f32 = 40.0;
 const POOL_CAP: usize = 12;
 
 // THE BROODLING'S.
@@ -1262,10 +1262,9 @@ pub const Spider = struct {
                 self.throwing = false;
                 self.enter(.windup);
             },
-            .lay => {
-                self.enter(.lay);
-                sfx.world(.spider_hiss, self.pos);
-            },
+            // NO HISS ON THE LAY. The hiss is kept for the SPIT, where it is the windup you read the glob
+            // off; laying a sac is a thing you watch her do, and it already has the sac's own voice under it.
+            .lay => self.enter(.lay),
         }
     }
 
@@ -1372,9 +1371,9 @@ pub const Spider = struct {
         }
         if (self.t < B_LEAP_COIL + B_LEAP_FLIGHT) {
             const u = (self.t - B_LEAP_COIL) / B_LEAP_FLIGHT;
-            const p = mathx.lerpV(self.leapFrom, self.leapTo, u);
-            self.pos.x = mathx.clampF(p.x, -bounds, bounds);
-            self.pos.z = mathx.clampF(p.z, -bounds, bounds);
+            const p = mathx.clampXZ(mathx.lerpV(self.leapFrom, self.leapTo, u), bounds);
+            self.pos.x = p.x;
+            self.pos.z = p.z;
             self.lift = B_LEAP_APEX * self.scale * 4.0 * u * (1.0 - u);
             self.crouch = -0.35; // legs thrown out, body stretched forward
             self.armSpread = 46.0;
@@ -1832,7 +1831,6 @@ pub const Brood = struct {
     /// TWO EVENTS THE FRAME SHOULD FEEL, counted rather than flagged so game.zig edge-detects them the way it already does hits and kills — a bool would need somebody to remember to clear it.
     hatches: u32 = 0,
     bursts: u32 = 0,
-    burnT: f32 = 0,
     hatchRng: mathx.Rng = mathx.Rng.init(6113),
 
     pub fn init(shader: rl.Shader) Brood {
@@ -1872,7 +1870,6 @@ pub const Brood = struct {
         self.hatches = 0;
         self.bursts = 0;
         self.pools = [_]Pool{.{}} ** POOL_CAP;
-        self.burnT = 0;
         self.hatchRng = mathx.Rng.init(6113);
     }
     pub fn clear(self: *Brood) void {
@@ -1895,20 +1892,11 @@ pub const Brood = struct {
         sfx.world(.acid_splash, at);
     }
 
-    /// STANDING IN IT COSTS, and in pulses (see ACID_TICK).
-    pub fn burn(self: *Brood, dt: f32, hero: rl.Vector3) f32 {
-        var inside = false;
-        for (&self.pools) |*p| {
-            if (p.covers(hero)) inside = true;
-        }
-        if (!inside) {
-            self.burnT = 0; // step out and the next pulse starts its clock over — lingering is the tax
-            return 0;
-        }
-        self.burnT += dt;
-        if (self.burnT < ACID_TICK) return 0;
-        self.burnT -= ACID_TICK;
-        return ACID_TICK_DMG;
+    /// THE VENOM DOSE: how much POISON BUILDUP standing in her floor is worth this frame, 0 out of it.
+    /// `combat.Status` owns the decay, so stepping out is answered one layer up and this side keeps no
+    /// clock of its own to fall out of step with it (the sporeling cloud's rule, and the same reason).
+    pub fn burn(self: *const Brood, dt: f32, hero: rl.Vector3) f32 {
+        return if (self.burning(hero)) ACID_BUILD * dt else 0;
     }
     /// Is he in it at all? (The HUD tint and the hiss ride this, not the pulse.)
     pub fn burning(self: *const Brood, hero: rl.Vector3) bool {
@@ -2304,27 +2292,43 @@ test "a sac takes a few blows, not one — it is a target, not a balloon" {
     try std.testing.expect(s.killed);
 }
 
-test "THE GLOB IS NOT THE WEAPON, THE FLOOR IS: a hit is cheap, standing in it is not" {
-    try std.testing.expect(M_SPIT_HIT.raw() < M_BITE_HIT.raw() * 0.35);
+test "THE GLOB IS NOT THE WEAPON, THE METER IS: a hit is cheap, standing in it is not" {
+    try std.testing.expect(M_SPIT_HIT.raw() < M_BITE_HIT.raw() * 0.15); // it barely scratches…
     try std.testing.expect(M_SPIT_HIT.stance == 0);
-    // …and lingering has to be the thing that kills: a full-health hero (70) dies in a few seconds of it, where crossing one costs a pulse.
-    const dps = ACID_TICK_DMG / ACID_TICK;
-    try std.testing.expect(dps > M_SPIT_HIT.raw() * 2.0);
-    try std.testing.expect(heromod.HP_MAX / dps < 6.0);
-    try std.testing.expect(ACID_TICK_DMG < heromod.HP_MAX * 0.15);
+    // …and what it really does is fill the bar: three globs go off, so a mother left to spit is a clock.
+    try std.testing.expect(M_SPIT_BUILD * 3.0 >= combat.POISON_MAX);
+    try std.testing.expect(M_SPIT_BUILD * 2.0 < combat.POISON_MAX);
+    // THE FLOOR IS FASTER THAN THE GLOB: a pool is a place you leave, not one you trade hits from.
+    try std.testing.expect(ACID_BUILD > M_SPIT_BUILD * 0.8);
+    try std.testing.expect(combat.POISON_MAX / ACID_BUILD < 3.0); // under three seconds of standing in it
 }
 
-test "HER POISON IS CHAOS, spit and puddle alike — one fluid, one element" {
-    try std.testing.expectApproxEqAbs(@as(f32, 0), M_SPIT_HIT.dmg, 1e-6); // no physical bite: it is a caustic glob
-    try std.testing.expectApproxEqAbs(M_SPIT_HIT.raw(), M_SPIT_HIT.elem.at(.chaos), 1e-6);
-    try std.testing.expectApproxEqAbs(ACID_TICK_DMG, acidPulse(ACID_TICK_DMG).elem.at(.chaos), 1e-6);
-    try std.testing.expectApproxEqAbs(@as(f32, 0), acidPulse(ACID_TICK_DMG).dmg, 1e-6);
-    // A hero with no chaos resistance takes exactly what he always took, which is why this retyping moved no balance.
-    var bare = combat.Vitals.init(70, 55, 90);
-    try std.testing.expectApproxEqAbs(ACID_TICK_DMG, bare.damageFrom(acidPulse(ACID_TICK_DMG)), 1e-4);
-    var mother = Spider.spawnAs(.mother, mathx.ground(0, 0), 0, 1.0, 0.5);
-    try std.testing.expect(mother.vit.damageFrom(M_SPIT_HIT) < 0.3 * M_SPIT_HIT.raw());
-    try std.testing.expect(mother.vit.damageFrom(acidPulse(ACID_TICK_DMG)) < 0.3 * ACID_TICK_DMG);
+test "HER VENOM IS ONE FLUID: the spit and the puddle fill the SAME meter" {
+    var psn = combat.Status{};
+    psn.add(M_SPIT_BUILD);
+    const oneGlob = psn.frac();
+    try std.testing.expect(oneGlob > 0.3 and !psn.active());
+    // Two more of them and it goes off, the floor having done nothing at all.
+    psn.add(M_SPIT_BUILD);
+    psn.add(M_SPIT_BUILD);
+    _ = psn.tick(1.0 / 60.0, 70);
+    try std.testing.expect(psn.active());
+
+    // …and the pool alone gets there too, in its own two and a half seconds.
+    var b = Brood{ .model = undefined };
+    b.clear();
+    const at = mathx.ground(0, 0);
+    b.pools[0] = Pool.splash(at, 0.5);
+    var t: f32 = 0;
+    while (t < ACID_SPREAD * 2) : (t += 1.0 / 60.0) b.pools[0].update(1.0 / 60.0);
+    var floor = combat.Status{};
+    t = 0;
+    while (t < 3.0 and !floor.active()) : (t += 1.0 / 60.0) {
+        floor.add(b.burn(1.0 / 60.0, at));
+        _ = floor.tick(1.0 / 60.0, 70);
+    }
+    try std.testing.expect(floor.active());
+    try std.testing.expect(t < 3.0);
 }
 
 test "A FIRE ARROW IS FOR THE CLUTCH: silk burns where the mother mostly shrugs it off" {
@@ -2337,7 +2341,7 @@ test "A FIRE ARROW IS FOR THE CLUTCH: silk burns where the mother mostly shrugs 
     try std.testing.expectApproxEqAbs(combat.RES_CAP, mother.vit.res.at(.chaos), 1e-5);
 }
 
-test "a pool spreads, burns in PULSES, thins out and stops" {
+test "a pool spreads, DOSES while he stands in it, thins out and stops" {
     var b = Brood{ .model = undefined };
     b.clear();
     const at = mathx.ground(0, 0);
@@ -2349,19 +2353,13 @@ test "a pool spreads, burns in PULSES, thins out and stops" {
     try std.testing.expect(b.burning(at));
     try std.testing.expect(!b.burning(mathx.ground(ACID_R + 1, 0)));
 
-    var dealt: f32 = 0;
-    var pulses: u32 = 0;
+    // A CONTINUOUS DOSE, not a metronome: every frame in it is worth its own slice of a second.
+    var dosed: f32 = 0;
     t = 0;
-    while (t < ACID_TICK * 3) : (t += 1.0 / 60.0) {
-        const d = b.burn(1.0 / 60.0, at);
-        if (d > 0) pulses += 1;
-        dealt += d;
-    }
-    try std.testing.expectEqual(@as(u32, 3), pulses);
-    try std.testing.expectApproxEqAbs(ACID_TICK_DMG * 3, dealt, 1e-4);
-    _ = b.burn(ACID_TICK * 0.9, at);
-    _ = b.burn(1.0 / 60.0, mathx.ground(50, 50));
-    try std.testing.expectEqual(@as(f32, 0), b.burn(ACID_TICK * 0.9, at));
+    while (t < 1.0) : (t += 1.0 / 60.0) dosed += b.burn(1.0 / 60.0, at);
+    try std.testing.expectApproxEqAbs(ACID_BUILD, dosed, 0.7);
+    // …and out of it, nothing.
+    try std.testing.expectEqual(@as(f32, 0), b.burn(1.0 / 60.0, mathx.ground(50, 50)));
 
     t = 0;
     while (t < ACID_LIFE + 0.2) : (t += 1.0 / 60.0) b.pools[0].update(1.0 / 60.0);

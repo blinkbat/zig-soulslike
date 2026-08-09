@@ -295,7 +295,7 @@ pub const Parry = struct {
         if (mathx.distXZ(self.at, at) > reach) return false;
         const to = mathx.dirXZ(self.at, at);
         if (mathx.lenXZ(to) < 1e-4) return true; // standing inside him: there is no bearing to be wrong about
-        return @abs(mathx.degrees(mathx.wrapPi(mathx.headingXZ(to) - self.facing))) <= combat.GUARD_ARC;
+        return combat.withinGuardArc(mathx.headingXZ(to), self.facing);
     }
 };
 

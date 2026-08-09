@@ -142,6 +142,9 @@ const LookProbe = struct {
     pad: bool = false,
 };
 
+/// A hook that landed this frame and has not been paid out yet — see `noteYank`.
+const Hook = struct { from: rl.Vector3, pull: f32 };
+
 pub const Game = struct {
     scene: gfx.Scene,
     sky: gfx.Sky,
@@ -191,6 +194,8 @@ pub const Game = struct {
     rig: cameramod.CamRig,
     lock: ?FoeRef = null, // ER lock-on: which foe (toad or skeleton) is locked, or null
     lockBlind: f32 = 0, // …and how long it has been since he could see it (see LOCK_BLIND_HOLD)
+    /// The Rooted's hook, waiting on the blow's own fate (`noteYank` → `applyYank`).
+    hook: ?Hook = null,
     rumble: rumblemod.Rumble = .{}, // controller vibration, keyed to combat beats
     deathFade: f32 = 0, // post-respawn fade-from-black seconds remaining (armed while dead)
     probe: LookProbe = .{},
@@ -263,6 +268,7 @@ pub const Game = struct {
         g.folkGen = g.editor.mapGen;
         g.lock = null;
         g.lockBlind = 0;
+        g.hook = null;
         g.rumble = .{};
         g.deathFade = 0;
         g.restRetro = [_]f32{0} ** gfx.RETRO_COUNT;
@@ -598,9 +604,7 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
             speed *= mathx.lerpF(1.0, STRAFE_SPEED, latAmt);
         }
         moved = speed * dt;
-        const stepped = g.env.walkStep(g.hero.pos, dir, moved);
-        g.hero.pos.x = mathx.clampF(stepped.x, -PLAY_HALF, PLAY_HALF);
-        g.hero.pos.z = mathx.clampF(stepped.z, -PLAY_HALF, PLAY_HALF);
+        g.hero.pos = inBounds(g.env.walkStep(g.hero.pos, dir, moved));
     }
     if (faceYaw != null and !sprinting) {
         g.hero.facing = mathx.approachAngle(g.hero.facing, faceYaw.?, TURN_RATE * dt);
@@ -701,18 +705,28 @@ pub fn spawnWisp(g: *Game, from: rl.Vector3) void {
     poolPut(g, archermod.launchShaft(from, heroAimPoint(g), shademod.WISP_SPEED, shademod.WISP_HIT, true, .wisp));
 }
 
-/// THE HOOK LANDED AND IT PULLS. Through `env.walkStep` like his own movement, so a drag cannot haul him up
-/// a cliff or through a wall, and clamped to the play area the same way `moveHero` clamps it.
-/// BLOCKED, HE KEEPS HIS GROUND. `heroTakes` has already run this frame, so the blow`s fate is known: the
-/// boards are the one answer to a hook, which is the only place a shield beats walking away.
-pub fn rootedYank(g: *Game, from: rl.Vector3, pull: f32, h: combat.Hit) void {
+/// THE HOOK LANDED AND IT WANTS TO PULL — noted here and SPENT AFTER `heroTakes` (`applyYank`), because
+/// whether it moves him is the BLOW's fate and the blow has not been resolved yet: `Grove.update` calls this
+/// from inside its own walk, before anything has asked what the shield did with it.
+pub fn noteYank(g: *Game, from: rl.Vector3, pull: f32, h: combat.Hit) void {
     _ = h;
-    if (g.hero.dead or g.hero.guarding or g.hero.rolling) return;
-    const dir = mathx.dirXZ(g.hero.pos, from);
+    g.hook = .{ .from = from, .pull = pull };
+}
+
+/// …and the drag itself. Through `env.walkStep` like his own movement, so it cannot haul him up a cliff or
+/// through a wall, and clamped to the play area the way `moveHero` clamps it.
+/// BLOCKED, HE KEEPS HIS GROUND — the boards are the one answer to a hook, and the only place a shield beats
+/// walking away. A guard that BROKE under it is not an answer, so that one travels.
+fn applyYank(g: *Game, out: combat.HitOutcome) void {
+    const h = g.hook orelse return;
+    g.hook = null;
+    switch (out) {
+        .blocked, .ignored => return, // caught on the boards, or rolled clean through it
+        .taken, .guardBroken => {},
+    }
+    const dir = mathx.dirXZ(g.hero.pos, h.from);
     if (mathx.lenXZ(dir) < 1e-3) return;
-    const stepped = g.env.walkStep(g.hero.pos, mathx.normV(dir), pull);
-    g.hero.pos.x = mathx.clampF(stepped.x, -PLAY_HALF, PLAY_HALF);
-    g.hero.pos.z = mathx.clampF(stepped.z, -PLAY_HALF, PLAY_HALF);
+    g.hero.pos = inBounds(g.env.walkStep(g.hero.pos, mathx.normV(dir), h.pull));
     g.rig.addShake(SHAKE_GUARD_BREAK);
     g.rumble.play(rumblemod.hit_heavy);
 }
@@ -769,6 +783,14 @@ pub fn throwBoltForShot(g: *Game, at: rl.Vector3) void {
 
 pub fn stepShaftsForShot(g: *Game, dt: f32) void {
     stepShafts(g, dt);
+}
+/// ONE FRAME OF THE STATUS, exactly as `run` bills it: every source's dose, then the meter. Its own hook
+/// because the loop does this inline and the harness has no loop — and because the ORDER is the mechanic
+/// (dose, then resolve), so a copy of it in `shots.zig` would be a copy that can go out of step.
+pub fn tickPoisonForShot(g: *Game, dt: f32) void {
+    g.hero.poisonBy(g.brood.burn(dt, g.hero.pos));
+    g.hero.poisonBy(g.cluster.spores(dt, g.hero.pos));
+    _ = g.hero.tickPoison(dt);
 }
 /// Where something in flight actually IS — a crop of a burning head or a slung clump has to be aimed at it, not guessed. Both quivers, because the hero's shafts are in one and everything thrown AT him is in the other.
 pub fn flyingPointForShot(g: *Game, kind: archermod.Shot) ?rl.Vector3 {
@@ -1550,7 +1572,16 @@ pub fn hud(g: *Game, dt: f32) void {
     // the screen, which is exactly where the cross and the prompt live.
     if (g.rest.active() or g.talk.active()) return;
     if (!g.menu.isOpen() and !g.hero.dead) {
-        hud_.vitals(dt, g.hero.vit.hpFrac(), g.hero.fp.frac(), g.hero.stam.frac(), g.hero.stamRefused / combat.STAM_REFUSE_FLASH, g.hero.fpRefused / combat.STAM_REFUSE_FLASH, g.hero.stam.windedTo());
+        hud_.vitals(
+            dt,
+            g.hero.vit.hpFrac(),
+            g.hero.fp.frac(),
+            g.hero.stam.frac(),
+            g.hero.stamRefused / combat.STAM_REFUSE_FLASH,
+            g.hero.fpRefused / combat.STAM_REFUSE_FLASH,
+            g.hero.stam.windedTo(),
+            .{ .frac = g.hero.poison.frac(), .on = g.hero.poison.active() },
+        );
         const bowUp = g.hero.bowOut();
         const wandUp = g.hero.wandOut();
         hud_.equipment(
@@ -2187,9 +2218,11 @@ pub fn run(mode: Mode) void {
             _ = heroTakes(g, b, b.hit.stance > 0, true);
         }
         // THE ROOTED. Its hook hands the DRAG over rather than applying it — only this side knows whether the
-        // blow was blocked, and a hook the boards caught must not move him.
-        if (g.grove.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, rootedYank)) |b| {
-            _ = heroTakes(g, b, b.hit.stance > 0, true);
+        // blow was blocked, and a hook the boards caught must not move him. Spent AFTER `heroTakes`, since
+        // that is the call that decides it.
+        g.hook = null;
+        if (g.grove.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, noteYank)) |b| {
+            applyYank(g, heroTakes(g, b, b.hit.stance > 0, true));
         }
         // THE SPORELINGS. The bonk is a blow; the cloud it leaves is a HOLD, billed further down beside
         // the mother's acid — two channels for the leechfly's reason.
@@ -2222,13 +2255,22 @@ pub fn run(mode: Mode) void {
         // …AND THE MOMENTS THE SHIELD IS ALLOWED TO SIMPLY CANCEL. Read AFTER every group has updated, so one
         // beat covers the whole field: club, mace, greatsword and fangs are one catch as far as his arm knows.
         if (anyParried(g)) parryBeat(g);
-        // …and the floor she left.
-        const burn = g.brood.burn(dt, g.hero.pos);
-        if (burn > 0 and g.hero.burn(broodmod.acidPulse(burn)) == .taken) sfx.play(.acid_burn);
-        // …and the air THEY left. The same metronome, its own accumulator — standing in spores and acid at
-        // once is two bad decisions and bills as both.
-        const spores = g.cluster.spores(dt, g.hero.pos);
-        if (spores > 0 and g.hero.burn(shroommod.sporePulse(spores)) == .taken) sfx.play(.acid_burn);
+        // THE VENOM ON THE GROUND AND IN THE AIR — neither is DAMAGE any more: both fill the one meter
+        // (`combat.Status`). Standing in spores and acid at once is two bad decisions and doses as both,
+        // which is the whole reason they are two `add` calls and not a max.
+        g.hero.poisonBy(g.brood.burn(dt, g.hero.pos));
+        g.hero.poisonBy(g.cluster.spores(dt, g.hero.pos));
+        // …and the meter resolves LAST, after every source has had its say this frame, so a bar that filled
+        // on this frame goes off on this frame rather than a frame late.
+        // THE DRAIN ITSELF IS SILENT: it runs for fourteen seconds, and a beat on every tick of it would be
+        // a rattle nobody can hear past. The PROC gets the whole of the feedback, once.
+        _ = g.hero.tickPoison(dt);
+        if (g.hero.poison.justProcced) {
+            sfx.play(.acid_burn);
+            g.rig.addShake(SHAKE_HURT);
+            g.rumble.play(rumblemod.hurt);
+            g.hero.hurtFlash = mathx.maxF(g.hero.hurtFlash, 0.7); // the ONE flash the poison gets
+        }
         g.chests.update(dt, g.hero.pos);
         // THE FOLK, and the same terrain gate the foes get — a wanderer ambling about his post has no more
         // business walking up a cliff than a kobold has.
@@ -2571,8 +2613,9 @@ pub fn heroBlade(g: *const Game) foemod.Blade {
     };
 }
 
+/// THE PLAY SQUARE, named once — `mathx.clampXZ` with this world's own half-extent already in it.
 fn inBounds(p: rl.Vector3) rl.Vector3 {
-    return v3(mathx.clampF(p.x, -PLAY_HALF, PLAY_HALF), p.y, mathx.clampF(p.z, -PLAY_HALF, PLAY_HALF));
+    return mathx.clampXZ(p, PLAY_HALF);
 }
 
 fn collideActors(g: *Game, dt: f32) void {
@@ -2686,6 +2729,15 @@ fn foeLockable(g: *const Game, r: FoeRef) bool {
         }
     }.ask);
 }
+/// …and the same disguise test through a `FoeRef`: a Rooted that FOLDS BACK is scenery again, and a lock that
+/// survived the fold would leave the reticle sitting on a dead tree.
+fn foeDisguised(g: *const Game, r: FoeRef) bool {
+    return askFoe(bool, g, r, struct {
+        fn ask(f: anytype) bool {
+            return disguised(f);
+        }
+    }.ask);
+}
 /// Every group is fixed storage plus a LIVE COUNT, so its tail is `undefined`: an index that outlived a re-home
 /// is a read of undefined memory. `rehomeFoes` runs four ways and only three drop the lock, so the bound is here.
 fn refInBounds(g: *const Game, r: FoeRef) bool {
@@ -2707,6 +2759,7 @@ fn refInBounds(g: *const Game, r: FoeRef) bool {
 }
 fn lockValid(g: *const Game, r: FoeRef) bool {
     if (!refInBounds(g, r)) return false;
+    if (foeDisguised(g, r)) return false;
     return foeLockable(g, r) and mathx.distXZ(g.hero.pos, foePos(g, r)) <= MAX_LOCK_R + LOCK_KEEP_SLACK;
 }
 
@@ -2741,6 +2794,14 @@ fn memberKind(f: anytype, group: ?FoeKind) FoeKind {
     return group.?;
 }
 
+/// IS IT STILL IN DISGUISE? A dormant Rooted is a dead tree until something wakes it (`rooted.hidden`), and a
+/// reticle offered on one gives the disguise away for nothing. Keyed off `@hasDecl` like every other optional
+/// half of the foe contract, so a creature with nothing to hide simply never declares it.
+fn disguised(f: anytype) bool {
+    if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "hidden")) return f.hidden();
+    return false;
+}
+
 // A fresh acquire: nearest to screen-centre, across every target list.
 const LockCtx = struct {
     g: *const Game,
@@ -2751,6 +2812,7 @@ const LockCtx = struct {
     fn visit(self: *LockCtx, foes: anytype, kind: ?FoeKind) void {
         for (foes, 0..) |*f, i| {
             if (!f.alive() or f.dying() or mathx.distXZ(self.g.hero.pos, f.pos) > MAX_LOCK_R) continue;
+            if (disguised(f)) continue; // a tree is not a target until it stops being a tree
             const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
             if (!canSee(self.g, r)) continue; // no fixing on a shape behind a wall
             const sx = lockScreenX(self.g, r) orelse continue;
@@ -2776,6 +2838,7 @@ const CycleCtx = struct {
         for (foes, 0..) |*f, i| {
             const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
             if ((self.cur.kind == r.kind and self.cur.idx == i) or !f.alive() or f.dying()) continue;
+            if (disguised(f)) continue; // the flick skips what the acquire would not have taken
             if (mathx.distXZ(self.g.hero.pos, f.pos) > MAX_LOCK_R) continue;
             if (!canSee(self.g, r)) continue; // the flick skips what the acquire would not have taken
             const sx = lockScreenX(self.g, r) orelse continue;

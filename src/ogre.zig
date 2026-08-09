@@ -143,10 +143,12 @@ const SLAM_R = 2.3; // starts the overhead slam within this — kept INSIDE the 
 const SWIPE_R = 4.4; // the side swipe's reach — longer than the slam's, it's a HORIZONTAL arc that
 const TURN_RATE = 3.4; // rad/s (~195 deg/s) — still out-turned by the hero, but no longer a turret
 const SWIPE_TURN = 5.4; // rad/s he PIVOTS while swiping — the swing is a turn, and it tracks into you
-/// The reticle's seat in the CHEST bone's own frame. NEGATIVE Y on purpose: the chest joint sits at the
-/// TOP of the barrel (0.775·H) and the middle of the mass is below it — which is where the old flat
-/// 0.62·H put the mark, and is still where you are aiming at him.
-const LOCK_AT = v3(0, -0.155 * H, 0);
+/// The reticle's seat in the CHEST bone's own frame. UP PAST THE JOINT (which sits at the TOP of the barrel,
+/// 0.775·H): the mark rides the collar line rather than the middle of the mass, ~3.5 m of a 4.4 m creature.
+/// Still short of the skull at 0.925·H — the head is what the ogre's mark is kept OFF, not the height — and
+/// well inside the hurt sphere (`centerWorld` ± `hurtRadius` reaches 4.3 m), so a locked shaft still converges
+/// on something it can hit.
+const LOCK_AT = v3(0, 0.03 * H, 0);
 const BODY_R = 0.55; // ground footprint (pre-scale) — broad
 const HURT_R = 0.72; // hurt-sphere radius the hero's blade tests against (pre-scale) — a big target
 // Pelvis walk oscillation — the hero's amplitudes (heavier), scaled with the body at draw.
@@ -457,8 +459,9 @@ pub const Ogre = struct {
         return BODY_R * self.scale;
     }
     /// HIS MARK RIDES THE CHEST, NOT THE SKULL — the one creature where that is the right part. His crown is
-    /// 4.4 m up, and a reticle on it would have the camera craning at the sky through every exchange. The chest
-    /// is where you are fighting him, and it still HINGES: he folds at the waist through the slam.
+    /// 4.4 m up, and a reticle bolted to it would sit at the top of the frame through every exchange. Seated
+    /// high on the barrel (`LOCK_AT`) it reads as the creature and not as its belt, and it still HINGES: he
+    /// folds at the waist through the slam.
     pub fn lockPoint(self: *const Ogre) rl.Vector3 {
         return foe.markOn(self.xf[CHEST], LOCK_AT);
     }

@@ -30,14 +30,16 @@ const Screen = enum {
     options,
     debug,
     retro,
-    sfxgroups, // …the EAR-side twin of the retro list: pick a family, then its filter rack
-    sfxfilters,
+    // THE SOUND FILTER RACK IS NOT HERE ANY MORE — it moved to the EDITOR, beside the jukebox, because it
+    // is an authoring tool and not a setting: you turn a dial to hear what a voice becomes, and the one
+    // place you can hear a voice on demand is the jukebox. The RETRO rack stays: that one is a LOOK the
+    // player picks. See `editor.zig`'s `.jukebox` modal.
     character, // …and the CHARACTER BOOK (Start), which is `book.zig` end to end
 
     fn root(s: Screen) Screen {
         return switch (s) {
             .closed => .closed,
-            .main, .options, .debug, .retro, .sfxgroups, .sfxfilters => .main,
+            .main, .options, .debug, .retro => .main,
             .character => .character,
         };
     }
@@ -50,30 +52,14 @@ comptime {
 const OPT_CLOSE = OPT_MIX.len;
 const OPT_COUNT = OPT_CLOSE + 1;
 
-// SOUND FILTER rows, and they are TWO screens because a rack is per FAMILY: the group list picks whose
-// rack you are turning, and `OPT_MIX` is that list — the same three, in the same order, as the volume
-// sliders, so "which slider moves this" and "which rack filters it" can never disagree.
-const SFG_CLOSE = OPT_MIX.len;
-const SFG_COUNT = SFG_CLOSE + 1;
-
-const SFF_PRESET_VINYL = sfx.AFX_COUNT + 0;
-const SFF_PRESET_RADIO = sfx.AFX_COUNT + 1;
-const SFF_PRESET_TAPE = sfx.AFX_COUNT + 2;
-const SFF_PRESET_CRUSHED = sfx.AFX_COUNT + 3;
-const SFF_PRESET_BROKEN = sfx.AFX_COUNT + 4;
-const SFF_RESET = sfx.AFX_COUNT + 5;
-const SFF_ALL_OFF = sfx.AFX_COUNT + 6;
-const SFF_CLOSE = sfx.AFX_COUNT + 7;
-const SFF_COUNT = SFF_CLOSE + 1;
-
-// Debug rows (the two filter lists get submenus; the rest toggle/cycle in place).
+// Debug rows (the retro list gets a submenu; the rest toggle/cycle in place). The SOUND filter rack used to
+// sit here and is now the editor's — see the note on `Screen`.
 const DBG_RETRO = 0;
-const DBG_SFX = 1;
-const DBG_STATS = 2;
-const DBG_WIREFRAME = 3;
-const DBG_HITBOX = 4;
-const DBG_TIMESCALE = 5;
-const DBG_CLOSE = 6;
+const DBG_STATS = 1;
+const DBG_WIREFRAME = 2;
+const DBG_HITBOX = 3;
+const DBG_TIMESCALE = 4;
+const DBG_CLOSE = 5;
 const DBG_COUNT = DBG_CLOSE + 1;
 
 const RET_PRESET_PS1 = gfx.RETRO_COUNT + 0;
@@ -116,8 +102,6 @@ pub const Menu = struct {
     hitboxes: bool = false, // draw the blade hit capsule during attacks
     timeScale: f32 = 1.0,
     adjHoldT: f32 = 0, // seconds an adjust direction has been held (glide timer)
-    /// WHOSE FILTER RACK the `.sfxfilters` screen is turning.
-    mixSel: sfx.Submix = .combat,
     /// The CHARACTER BOOK, which keeps its own cursor per page and its own animation.
     book: bookmod.Book = .{},
 
@@ -125,10 +109,11 @@ pub const Menu = struct {
         return self.screen != .closed;
     }
 
-    /// Esc, and pad SELECT. Both sound screens persist on the way out — the levels and the racks live in
-    /// the same `settings.cfg` and are written when the screen closes, never per nudge.
+    /// Esc, and pad SELECT. The sound screen persists on the way out — the levels live in `settings.cfg`
+    /// and are written when the screen closes, never per nudge. (The racks are written the same way by the
+    /// editor's own rack panel, into the same file.)
     fn leavingSound(self: *Menu) void {
-        if (self.screen == .options or self.screen == .sfxfilters) sfx.saveSettings();
+        if (self.screen == .options) sfx.saveSettings();
     }
 
     pub fn onEscape(self: *Menu) void {
@@ -141,8 +126,7 @@ pub const Menu = struct {
             .main, .character => .closed,
             .options => .main,
             .debug => .main,
-            .retro, .sfxgroups => .debug,
-            .sfxfilters => .sfxgroups,
+            .retro => .debug,
         };
     }
 
@@ -173,8 +157,6 @@ pub const Menu = struct {
             .options => OPT_COUNT,
             .debug => DBG_COUNT,
             .retro => RET_COUNT,
-            .sfxgroups => SFG_COUNT,
-            .sfxfilters => SFF_COUNT,
         };
     }
 
@@ -200,9 +182,6 @@ pub const Menu = struct {
             const m = OPT_MIX[self.cursor];
             const d = self.adjustDelta(dt);
             if (d != 0) sfx.setVolume(m, sfx.volume(m) + d);
-        } else if (self.screen == .sfxfilters and self.cursor < sfx.AFX_COUNT) {
-            const d = self.adjustDelta(dt);
-            if (d != 0) sfx.setFx(self.mixSel, self.cursor, sfx.fxValues(self.mixSel)[self.cursor] + d);
         } else {
             self.adjHoldT = 0;
         }
@@ -274,39 +253,9 @@ pub const Menu = struct {
                     self.cursor = 0;
                 }
             },
-            // Pick whose rack to turn. Confirm on a family row opens it; only Back leaves.
-            .sfxgroups => {
-                if (self.cursor == SFG_CLOSE) {
-                    self.screen = .debug;
-                    self.cursor = 0;
-                } else {
-                    self.mixSel = OPT_MIX[self.cursor];
-                    self.screen = .sfxfilters;
-                    self.cursor = 0;
-                }
-            },
-            .sfxfilters => switch (self.cursor) {
-                SFF_PRESET_VINYL => sfx.applyFxPreset(self.mixSel, &sfx.FX_VINYL),
-                SFF_PRESET_RADIO => sfx.applyFxPreset(self.mixSel, &sfx.FX_RADIO),
-                SFF_PRESET_TAPE => sfx.applyFxPreset(self.mixSel, &sfx.FX_TAPE),
-                SFF_PRESET_CRUSHED => sfx.applyFxPreset(self.mixSel, &sfx.FX_CRUSHED),
-                SFF_PRESET_BROKEN => sfx.applyFxPreset(self.mixSel, &sfx.FX_BROKEN),
-                SFF_RESET => sfx.resetFx(self.mixSel),
-                SFF_ALL_OFF => sfx.allFxOff(self.mixSel),
-                SFF_CLOSE => {
-                    self.leavingSound();
-                    self.screen = .sfxgroups;
-                    self.cursor = 0;
-                },
-                else => {}, // confirm on a slider row: nothing (Left/Right adjust)
-            },
             .debug => switch (self.cursor) {
                 DBG_RETRO => {
                     self.screen = .retro;
-                    self.cursor = 0;
-                },
-                DBG_SFX => {
-                    self.screen = .sfxgroups;
                     self.cursor = 0;
                 },
                 DBG_STATS => self.stats = !self.stats,
@@ -360,7 +309,6 @@ pub const Menu = struct {
     fn debugLabels(self: *const Menu) [DBG_COUNT][:0]const u8 {
         var out: [DBG_COUNT][:0]const u8 = undefined;
         out[DBG_RETRO] = "Retro Filters >";
-        out[DBG_SFX] = "Sound Filters >";
         out[DBG_STATS] = if (self.stats) "Stats: On" else "Stats: Off";
         out[DBG_WIREFRAME] = if (self.wireframe) "Wireframe: On" else "Wireframe: Off";
         out[DBG_HITBOX] = if (self.hitboxes) "Hitboxes: On" else "Hitboxes: Off";
@@ -389,11 +337,6 @@ pub const Menu = struct {
             .options => self.drawCard("SOUND", &optionLabels(), .{ .gauges = &soundLevels() }),
             .debug => self.drawCard("DEBUG", &self.debugLabels(), .{}),
             .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), .{ .gauges = retro.values[0..gfx.RETRO_COUNT] }),
-            .sfxgroups => self.drawCard("SOUND FILTERS", &sfxGroupLabels(), .{ .note = sfxGroupNote() }),
-            .sfxfilters => self.drawCard(sfxFilterTitle(self.mixSel), &sfxFilterLabels(self.mixSel), .{
-                .gauges = sfx.fxValues(self.mixSel),
-                .note = sfxFilterNote(),
-            }),
         }
         const hint: [:0]const u8 = if (rl.isGamepadAvailable(PAD))
             "D-pad move / adjust (hold glides, LB coarse)   A select   B back   Select game   Start character"
@@ -547,68 +490,6 @@ fn retroLabels(retro: *const gfx.Retro) [RET_COUNT][:0]const u8 {
 }
 var retroBufs: [gfx.RETRO_COUNT][48]u8 = undefined;
 
-/// THE SOUND FILTERS' own two lists, built exactly as the retro one is. `sfx` owns the names and the
-/// values; this only says how they read.
-var sfgBufs: [OPT_MIX.len][56]u8 = undefined;
-
-fn sfxGroupLabels() [SFG_COUNT][:0]const u8 {
-    var out: [SFG_COUNT][:0]const u8 = undefined;
-    for (OPT_MIX, 0..) |m, i| {
-        var on: usize = 0;
-        for (sfx.fxValues(m)) |v| {
-            if (v > sfx.AFX_EPS) on += 1;
-        }
-        // A family says whether anything is ON it, so the list answers "what have I done to this build"
-        // without opening all three.
-        out[i] = if (on == 0)
-            std.fmt.bufPrintZ(&sfgBufs[i], "{s}: clean >", .{optionName(m)}) catch "?"
-        else
-            std.fmt.bufPrintZ(&sfgBufs[i], "{s}: {d} on >", .{ optionName(m), on }) catch "?";
-    }
-    out[SFG_CLOSE] = "Back";
-    return out;
-}
-
-fn sfxGroupNote() [:0]const u8 {
-    return "Filters are BAKED, not mixed: moving a dial re-renders that family's voices.";
-}
-
-var sffTitleBuf: [48]u8 = undefined;
-
-fn sfxFilterTitle(m: sfx.Submix) [:0]const u8 {
-    var up: [24]u8 = undefined;
-    const name = optionName(m);
-    const n = @min(name.len, up.len);
-    for (name[0..n], 0..) |c, i| up[i] = std.ascii.toUpper(c);
-    return std.fmt.bufPrintZ(&sffTitleBuf, "{s} FILTERS", .{up[0..n]}) catch "SOUND FILTERS";
-}
-
-var sffBufs: [sfx.AFX_COUNT][48]u8 = undefined;
-
-fn sfxFilterLabels(m: sfx.Submix) [SFF_COUNT][:0]const u8 {
-    var out: [SFF_COUNT][:0]const u8 = undefined;
-    const vals = sfx.fxValues(m);
-    for (0..sfx.AFX_COUNT) |i| {
-        out[i] = if (vals[i] <= sfx.AFX_EPS)
-            std.fmt.bufPrintZ(&sffBufs[i], "{s}: Off", .{sfx.AFX_NAMES[i]}) catch "?"
-        else
-            std.fmt.bufPrintZ(&sffBufs[i], "{s}: {d:.0}%", .{ sfx.AFX_NAMES[i], vals[i] * 100 }) catch "?";
-    }
-    out[SFF_PRESET_VINYL] = "Preset: Vinyl";
-    out[SFF_PRESET_RADIO] = "Preset: AM Radio";
-    out[SFF_PRESET_TAPE] = "Preset: Worn Tape";
-    out[SFF_PRESET_CRUSHED] = "Preset: Crushed";
-    out[SFF_PRESET_BROKEN] = "Preset: Broken Speaker";
-    out[SFF_RESET] = "Reset to Default";
-    out[SFF_ALL_OFF] = "All Off";
-    out[SFF_CLOSE] = "Back";
-    return out;
-}
-
-fn sfxFilterNote() [:0]const u8 {
-    // A bake is not instant, so the card SAYS a change is coming rather than looking like it did nothing.
-    return if (sfx.fxPending()) "Re-rendering..." else "Left/Right to turn a dial. Play a sound to hear it.";
-}
 
 /// PUBLIC because this file is where full-screen UI navigation lives — the pause card's rows, the character
 /// book's grid, and now the dialog panel's answer list all read the pad and the keyboard through here. A

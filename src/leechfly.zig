@@ -103,7 +103,9 @@ pub const DRINK_DPS: f32 = 22.0;
 /// all: a flyer that heals for everything it drinks is a stalemate against a player without a bow.
 const LEECH_SHARE: f32 = 0.55;
 const DRINK_DUR: f32 = 1.45; // how long it will hold on if nothing shakes it off
-const DRINK_EVERY: f32 = 0.48; // …and how often the pull of it is heard under the wingbeat
+/// …and how often the pull of it is heard under the wingbeat. THINNED from 0.48: a hold runs for seconds and
+/// a swallow twice a second is texture pretending to be an event. The BEAK GOING IN is the event.
+const DRINK_EVERY: f32 = 0.80;
 const FEED_CD: f32 = 3.4;
 /// How far the beak reaches, off its own centre. Short — it has to be ON you.
 const STAB_R: f32 = 1.30;

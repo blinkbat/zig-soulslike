@@ -133,7 +133,9 @@ const SLEEP_DUR: f32 = 1.30; // …folding back is slower, because nothing is ch
 
 const SWAY_HZ: f32 = 0.21; // awake, the bole works against its own roots
 const SWAY_DEG: f32 = 3.2;
-const CREAK_EVERY: f32 = 2.6; // …and it is heard on this cadence while it is awake
+/// …and it is heard on this cadence while it is awake. THINNED from 2.6: the creak is what says the thing is
+/// alive, and once it has said so a second time you know. Its own `wood_creak` is under the floor besides.
+const CREAK_EVERY: f32 = 4.4;
 /// How fast the lids move. SLOW — an eye that snaps open is a jump-scare, and this one has to be NOTICED:
 /// about a second and a half from bark to ember.
 const EYES_RATE: f32 = 0.7;
@@ -231,8 +233,8 @@ pub const Rooted = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// Stamped from outside like every creature's, and the one thing on this creature it cannot matter to:
-    /// roots on a thing that is already rooted take nothing away.
+    /// Stamped from outside like every creature's. Its FEET are the half that cannot matter here — the thing
+    /// never travels — but the BITE is billed through the same `foe.grip`, so it is taken like everyone else's.
     root: combat.Root = .{},
     facing: f32 = 0,
     scale: f32 = 1.0,
@@ -344,6 +346,12 @@ pub const Rooted = struct {
             return .none;
         }
         self.justDied = false;
+        // THE ROOTS' OWN BITE (foe.grip). The FEET half is a no-op on a thing that never travels, but the
+        // grip is also what BILLS the hold's chaos every frame — left out, a cast on this creature was
+        // eighteen focus for no damage and a `combat.Root` clock that never ran down.
+        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        defer grip.hold(&self.pos);
+        if (grip.killed) self.enterDeath();
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
@@ -972,6 +980,22 @@ test "it is scenery until you walk into it, and scenery again when you leave" {
     while (k < 400) : (k += 1) _ = t.update(1.0 / 60.0, v3(0, 0, SLEEP_R + 3.0), 400, .{});
     try std.testing.expect(t.hidden());
     try std.testing.expectApproxEqAbs(@as(f32, 0), t.open, 1e-3);
+}
+
+test "THE GRIP BITES A ROOTED TOO, and it lets go of its own accord" {
+    // Its feet were never the point, but the hold's chaos is billed through the same `foe.grip` every other
+    // creature takes — without it a cast on this one was eighteen focus for nothing and a clock that never ran.
+    var t = Rooted.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const full = t.vit.hp;
+    t.root.grab();
+    try std.testing.expect(t.root.held());
+    var k: f32 = 0;
+    while (k < combat.ROOT_HOLD + 0.2) : (k += 1.0 / 60.0) _ = t.update(1.0 / 60.0, v3(0, 0, 30), 400, .{});
+    try std.testing.expect(!t.root.held()); // …and it expires rather than latching on for the fight
+    // Chaos at +30 on this table, so the span's ~14 comes in around ten — a real bite, not the full figure.
+    const paid = full - t.vit.hp;
+    try std.testing.expect(paid > 0.5 * combat.ROOT_HOLD * combat.ROOT_DPS);
+    try std.testing.expect(paid < combat.ROOT_HOLD * combat.ROOT_DPS);
 }
 
 test "IT NEVER MOVES, whatever is done to it" {

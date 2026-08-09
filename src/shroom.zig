@@ -20,7 +20,7 @@ const mul3 = mathx.mul3;
 const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 
-// CUTE IS A SHAPE LANGUAGE: one big dome, one squat pale body, two huge dark eyes, and everything blunt.
+// CUTE IS A SHAPE LANGUAGE: one big dome, one squat pale body, one gaping mouth, and everything blunt.
 // The cap is a large smooth sunward mass, so its albedo starts near-black (AGENTS.md) — the read is the
 // muted brick it comes back as, not fire-engine red.
 const CAP_COL = rgba(52, 18, 14, 255);
@@ -28,8 +28,7 @@ const CAP_DK = rgba(34, 12, 10, 255); // the chipped bite out of the rim, and th
 const WART = rgba(88, 78, 58, 255); // the cream flecks — small areas, so they may run pale
 const STALK = rgba(72, 62, 45, 255);
 const STALK_DK = rgba(52, 44, 32, 255); // the skirt fold under the cap
-const EYE = rgba(10, 8, 7, 255); // two big wet dots — most of the cute
-const BLUSH = rgba(74, 34, 24, 255);
+const MOUTH = rgba(10, 8, 7, 255);
 /// The spores: dry ochre dust with a violet cast — chaos, the brood's own element, in one hue family with
 /// the wand and the pools so a third purple in the world does not become a third substance.
 const SPORE = rgba(142, 120, 88, 205);
@@ -57,12 +56,13 @@ pub const RUNES: u32 = 70;
 
 /// The BONK — its whole body arriving. Light: the cloud it leaves behind is the actual bill.
 pub const FLING_HIT = combat.Hit{ .dmg = 12, .poise = 20, .stance = 8 };
-/// What standing in the cloud costs, billed on the acid pools' own cadence (a DRIP, never a blow).
-pub const SPORE_TICK: f32 = 0.5;
-pub const SPORE_TICK_DMG: f32 = 6.0;
-pub fn sporePulse(amt: f32) combat.Hit {
-    return .{ .elem = combat.elems(.{ .chaos = amt }) };
-}
+/// WHAT STANDING IN THE CLOUD COSTS, AND IT IS NO LONGER DAMAGE: the spores POISON him (`combat.Status`).
+/// Billed as BUILDUP a second, continuously rather than on the acid's metronome — a meter that filled in
+/// half-second steps would tick up in visible jerks, and the bar is the whole read of this creature now.
+///
+/// Sized against the cloud itself: `CLOUD_LIFE` is 3.4 s, so standing in ONE for its whole life fills about
+/// four fifths of a bar. One cloud is a warning; a second one before the first has decayed is the proc.
+pub const SPORE_BUILD: f32 = 24.0;
 
 // The approach is HOPPING — a mushroom has no legs worth walking on, and the bounce is the character.
 const HOP_REACH: f32 = 1.05;
@@ -397,11 +397,7 @@ pub const Shroom = struct {
         const d = mathx.distXZ(self.pos, to);
         const reach = mathx.minF(HOP_REACH, mathx.maxF(0.3, d - KEEP_R * 0.8));
         const dir = mathx.dirXZ(self.pos, to);
-        self.hopAim = v3(
-            mathx.clampF(self.pos.x + dir.x * reach, -bounds, bounds),
-            0,
-            mathx.clampF(self.pos.z + dir.z * reach, -bounds, bounds),
-        );
+        self.hopAim = mathx.clampXZ(v3(self.pos.x + dir.x * reach, 0, self.pos.z + dir.z * reach), bounds);
         self.hopReach = mathx.distXZ(self.pos, self.hopAim);
         self.hopDur = HOP_FLIGHT;
         self.hopApex = HOP_APEX;
@@ -438,11 +434,7 @@ pub const Shroom = struct {
                 self.launched = true;
                 self.hopFrom = self.pos;
                 const f = self.fdir();
-                self.hopTo = v3(
-                    mathx.clampF(self.pos.x + f.x * self.hopReach, -bounds, bounds),
-                    0,
-                    mathx.clampF(self.pos.z + f.z * self.hopReach, -bounds, bounds),
-                );
+                self.hopTo = mathx.clampXZ(v3(self.pos.x + f.x * self.hopReach, 0, self.pos.z + f.z * self.hopReach), bounds);
             }
             const s = (self.t - coil) / flight;
             const inv = 1.0 / flight;
@@ -477,8 +469,7 @@ pub const Shroom = struct {
                 }
             }
         }
-        self.pos.x = mathx.clampF(self.pos.x, -bounds, bounds);
-        self.pos.z = mathx.clampF(self.pos.z, -bounds, bounds);
+        mathx.holdXZ(&self.pos, bounds);
         if (self.t >= total) {
             if (fling) {
                 self.enter(.recover);
@@ -696,7 +687,6 @@ pub const Cluster = struct {
     n: usize = 0,
     clouds: [CLOUD_CAP]Cloud = [_]Cloud{.{}} ** CLOUD_CAP,
     cloudHead: usize = 0,
-    burnT: f32 = 0,
 
     pub fn init(shader: rl.Shader) Cluster {
         return .{ .model = Model.init(shader) };
@@ -714,7 +704,6 @@ pub const Cluster = struct {
     /// EMPTY THE FIELD: the clouds are what this group owns besides its members.
     pub fn clear(self: *Cluster) void {
         for (&self.clouds) |*c| c.* = .{};
-        self.burnT = 0;
     }
     pub fn setShader(self: *Cluster, sh: rl.Shader) void {
         self.model.setShader(sh);
@@ -740,23 +729,17 @@ pub const Cluster = struct {
         return blow;
     }
 
-    /// The spore bill, on the acid pools' own metronome (`brood.burn`): step out and the clock resets —
-    /// lingering is the tax. Returns the damage due THIS frame, 0 most frames.
-    pub fn spores(self: *Cluster, dt: f32, hero: rl.Vector3) f32 {
-        var inside = false;
-        for (&self.clouds) |*c| {
-            if (c.covers(hero)) inside = true;
-        }
-        if (!inside) {
-            self.burnT = 0;
-            return 0;
-        }
-        self.burnT += dt;
-        if (self.burnT < SPORE_TICK) return 0;
-        self.burnT -= SPORE_TICK;
-        return SPORE_TICK_DMG;
+    /// THE SPORE DOSE: how much POISON BUILDUP standing in the cloud is worth this frame, 0 outside it.
+    /// Continuous and scaled by `dt`, never a metronome — the meter it feeds is drawn every frame, and a
+    /// dose delivered in half-second lumps reads as a bar that stutters upward.
+    ///
+    /// NOTHING ACCUMULATES HERE. `combat.Status` owns the decay, so stepping out of the cloud is answered
+    /// one layer up and this side has no clock of its own to get out of step with it.
+    pub fn spores(self: *const Cluster, dt: f32, hero: rl.Vector3) f32 {
+        return if (self.fuming(hero)) SPORE_BUILD * dt else 0;
     }
-    /// Is he in a cloud at all? (Tint and hiss ride this, not the pulse.)
+    /// Is he in a cloud at all — the LEVEL beside `spores`' pulse. Nothing reads it yet: it is what a tint or
+    /// a hiss would ride, and neither exists, so do not take it for a wired-up cue.
     pub fn fuming(self: *const Cluster, hero: rl.Vector3) bool {
         for (&self.clouds) |*c| {
             if (c.covers(hero)) return true;
@@ -807,12 +790,8 @@ fn bodyMesh() rl.Mesh {
     b.addBlob(v3(0, 0.12 * H, 0.04), v3(0.24, 0.13 * H, 0.22), 7, 12, STALK); // its little belly
     b.addBlob(v3(0, 0.50 * H, 0), v3(0.22, 0.05 * H, 0.20), 5, 10, STALK_DK); // the skirt under the cap
     b.setMat(.plain);
-    // NO EYES (owner's call) — the face is a MOUTH and two blushes under the cap's shadow. Wide, so the
-    // one dark mark cannot read as a single eye: one eye is the ogre's whole identity, not this toy's.
-    b.addBlob(v3(0.01, 0.25 * H, 0.228), v3(0.062, 0.017, 0.016), 5, 9, EYE);
-    b.setMat(.skin);
-    b.addBlob(v3(0.155, 0.29 * H, 0.185), v3(0.05, 0.032, 0.025), 5, 9, BLUSH); // blush,
-    b.addBlob(v3(-0.15, 0.30 * H, 0.185), v3(0.045, 0.03, 0.025), 5, 9, BLUSH); // uneven
+    // NO EYES, NO BLUSHES (owner's call) — the whole face is one gaping mouth under the cap's shadow.
+    b.addBlob(v3(0.01, 0.25 * H, 0.222), v3(0.105, 0.062, 0.032), 6, 11, MOUTH);
     return b.toMesh();
 }
 
@@ -919,30 +898,42 @@ test "the fling actually arrives: it closes on a hero in band and pops the cloud
     try std.testing.expect(mathx.distXZ(m.pos, mathx.zero3) > 2.5); // it really did throw itself
 }
 
-test "the cloud is a DRIP on the acid's metronome: linger and be billed, step out and the clock resets" {
+test "THE CLOUD POISONS, IT DOES NOT BURN: linger and the meter fills, step out and it decays" {
     var c = Cluster{ .model = undefined };
     c.spawnCloud(mathx.zero3);
     const inside = v3(0.4, 0, 0.2);
     const outside = v3(9, 0, 9);
-    var due: f32 = 0;
+    var psn = combat.Status{};
     var t: f32 = 0;
-    // The bloom has to reach him first (CLOUD_GROW), then one full tick of standing in it — the first
-    // pulse lands after the metronome's own beat, never on the frame the cloud touched him.
-    while (t < CLOUD_GROW * 0.3 + SPORE_TICK * 1.4) : (t += 1.0 / 60.0) {
+    // ONE cloud, stood in for its whole life, is most of a bar and NOT a proc: it is the warning.
+    while (t < CLOUD_LIFE) : (t += 1.0 / 60.0) {
         for (&c.clouds) |*cl| cl.update(1.0 / 60.0);
-        due += c.spores(1.0 / 60.0, inside);
+        psn.add(c.spores(1.0 / 60.0, inside));
+        _ = psn.tick(1.0 / 60.0, 70);
     }
-    try std.testing.expectApproxEqAbs(SPORE_TICK_DMG, due, 0.01);
-    // Step out: the accumulator lets go.
-    _ = c.spores(1.0 / 60.0, outside);
-    try std.testing.expectApproxEqAbs(@as(f32, 0), c.burnT, 1e-6);
-    // …and a dead cloud bills nothing however long he stands in the spot it held.
+    try std.testing.expect(psn.frac() > 0.5 and !psn.active());
+    // Outside it, nothing is dosed at all…
+    try std.testing.expectApproxEqAbs(@as(f32, 0), c.spores(1.0 / 60.0, outside), 1e-6);
+    // …and a dead cloud doses nothing however long he stands in the spot it held.
     var k: u32 = 0;
     while (k < 60 * 5) : (k += 1) {
         for (&c.clouds) |*cl| cl.update(1.0 / 60.0);
     }
     try std.testing.expect(!c.fuming(inside));
     try std.testing.expectApproxEqAbs(@as(f32, 0), c.spores(1.0 / 60.0, inside), 1e-6);
+
+    // …and TWO clouds back to back DO go off, which is what makes a pair of sporelings a real problem.
+    var pair = Cluster{ .model = undefined };
+    var p2 = combat.Status{};
+    pair.spawnCloud(mathx.zero3);
+    t = 0;
+    while (t < CLOUD_LIFE * 2.0) : (t += 1.0 / 60.0) {
+        if (t > CLOUD_LIFE - 0.5 and !pair.clouds[1].live) pair.spawnCloud(mathx.zero3);
+        for (&pair.clouds) |*cl| cl.update(1.0 / 60.0);
+        p2.add(pair.spores(1.0 / 60.0, inside));
+        _ = p2.tick(1.0 / 60.0, 70);
+    }
+    try std.testing.expect(p2.active());
 }
 
 test "a wandered sporeling hops HOME, not at a hero forty metres off" {

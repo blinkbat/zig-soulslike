@@ -179,6 +179,20 @@ const FP_TP = rgba(88, 148, 188, 255);
 const ST_HI = rgba(112, 136, 58, 255);
 const ST_LO = rgba(60, 78, 28, 255);
 const ST_TP = rgba(154, 178, 88, 255);
+/// THE STATUS METER, and it has TWO faces off ONE number: a sickly violet while it FILLS (a threat), and a
+/// hot toxic YELLOW once it has GONE OFF (a thing happening to you). Filling and poisoned must not read as
+/// the same bar at different lengths — that is the one thing this meter cannot afford, since the number
+/// itself means opposite things either side of the proc.
+///
+/// AND THE ACTIVE FACE IS NOT GREEN, though poison green is the genre's own: it sits DIRECTLY UNDER the
+/// stamina bar, and measured off the first pass (108,150,44 against stamina's 112,136,58) the two were the
+/// same bar. Separated on HUE *and* VALUE — yellow, and much lighter than the olive above it.
+const PSN_HI = rgba(96, 62, 118, 255);
+const PSN_LO = rgba(52, 32, 66, 255);
+const PSN_TP = rgba(146, 106, 172, 255);
+const PSN_ON_HI = rgba(196, 202, 44, 255);
+const PSN_ON_LO = rgba(112, 112, 16, 255);
+const PSN_ON_TP = rgba(232, 240, 132, 255);
 const CHIP = rgba(180, 98, 58, 226); // the recent-damage trail behind the HP fill
 const WARN = rgba(232, 96, 72, 255);
 const WARN_LT = rgba(240, 150, 120, 255);
@@ -198,7 +212,25 @@ fn refuseRing(x: i32, y: i32, w: i32, h: i32, k: f32) void {
     rl.drawRectangleLines(x - 3, y - 3, w + 6, h + 6, mathx.withAlpha(WARN, a / 2));
 }
 
-pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, fpRefused: f32, windedTo: f32) void {
+/// A STATUS METER: how full, and whether it has already gone off. `frac` means both things (see
+/// `combat.Status`), so the flag is the only thing that says which — and it is what picks the colour.
+pub const Status = struct { frac: f32 = 0, on: bool = false };
+
+/// THE STATUS BAR, and it is only there when it has something to say — an empty meter draws NOTHING. A row
+/// of dead track under the stamina bar is chrome the player learns to stop reading, and this is a bar that
+/// has to be noticed the first frame it moves.
+const PSN_W: i32 = 196; // narrower than stamina: it is not one of the three
+const PSN_H: i32 = 9;
+fn statusBar(x: i32, y: i32, s: Status) void {
+    if (s.frac <= 0.001) return;
+    if (s.on) {
+        bar(x, y, PSN_W, PSN_H, s.frac, 0, PSN_ON_HI, PSN_ON_LO, PSN_ON_TP);
+        return;
+    }
+    bar(x, y, PSN_W, PSN_H, s.frac, 0, PSN_HI, PSN_LO, PSN_TP);
+}
+
+pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, fpRefused: f32, windedTo: f32, psn: Status) void {
     if (hp > chip) {
         chip = hp; // healing (and a respawn) snaps it — never strand a trail across the bar
         chipHold = 0;
@@ -222,6 +254,10 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, fpRefused:
         rl.drawRectangle(MARGIN + owed - 1, y - 1, 2, ST_H + 2, mathx.withAlpha(WARN_LT, 210)); // the threshold
     }
     refuseRing(MARGIN, y, ST_W, ST_H, stamRefused);
+    // …and the status meter UNDER the three, because it is not one of them: the bars above are what he
+    // spends, this is what is being done to him.
+    y += ST_H + BAR_GAP + 2;
+    statusBar(MARGIN, y, psn);
 }
 
 /// Three values (flat body, shaded bottom band, lit hairline) plus a catchlight on the leading edge while the

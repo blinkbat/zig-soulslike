@@ -396,7 +396,7 @@ fn layerOf(o: *const wf.Op) Layer {
 
 pub const Action = enum { none, leave, playtest };
 
-pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, jukebox };
+pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, jukebox, world, zonemix };
 
 const VOICE_NAMES = blk: {
     const fields = @typeInfo(sfx.Id).@"enum".fields;
@@ -405,8 +405,11 @@ const VOICE_NAMES = blk: {
     break :blk out;
 };
 
-const JUKE_W: i32 = 620;
-const JUKE_H: i32 = 520;
+/// Wide enough for a THIRD column: the voice list, what that voice IS, and the family's FILTER RACK. The
+/// rack lives here and not in the game's debug menu because it is an authoring tool — you turn a dial to
+/// hear what a voice becomes, and this is the one place a voice can be played on demand.
+const JUKE_W: i32 = 1010;
+const JUKE_H: i32 = 560;
 const JUKE_LIST_W: i32 = 300;
 const JUKE_LIST_H: i32 = JUKE_H - 150;
 
@@ -559,6 +562,15 @@ pub const Editor = struct {
     juke: usize = 0,
     jukeScroll: i32 = 0,
     jukeWorld: bool = false,
+    /// WHOSE FILTER RACK the jukebox's third column is turning. Defaults to the family whose voice is
+    /// selected, but it is a LATCH the chips set: you audition a combat voice against the ambience rack
+    /// often enough that following the selection would fight you.
+    rackMix: sfx.Submix = .combat,
+    /// WHICH ZONE the name field and the mix modal are editing. A zone is not an `Op`, so it cannot ride
+    /// `sel` — and its mix was the one thing in the whole format the editor could only ever INHERIT.
+    zoneSel: ?usize = null,
+    zoneNameLen: usize = 0,
+    zoneNameBuf: [wf.NAME_CAP]u8 = [_]u8{0} ** wf.NAME_CAP,
     nameBuf: [wf.NAME_CAP]u8 = undefined,
     nameLen: usize = 0,
     fileSel: usize = 0,
@@ -891,6 +903,35 @@ pub const Editor = struct {
         self.modal = .open_map;
     }
 
+    /// The harness's own way into the three panels that reach what no brush can. Real entry points, not a
+    /// poked `modal`: each one loads state the panel then reads.
+    pub fn worldForShot(self: *Editor) void {
+        self.menuOpen = false;
+        self.modal = .world;
+    }
+    pub fn zoneMixForShot(self: *Editor, m: *const wf.Map, i: usize) void {
+        self.selectZone(m, i);
+        self.menuOpen = false;
+        self.modal = .zonemix;
+    }
+    pub fn closeModalForShot(self: *Editor) void {
+        self.modal = .none;
+    }
+    /// …and the belt inspector with a gradient actually TURNED ON, since an `.none` axis draws only the chips.
+    pub fn gradientForShot(self: *Editor, m: *wf.Map, i: usize) void {
+        if (i >= m.nops) return;
+        const o = &m.ops[i];
+        // THE LAYER FOLLOWS THE OP, not the other way about: the inspector refuses to show an op that is
+        // not on the live layer, and a harness guessing `.decor` gets "selection is on another layer".
+        self.setLayer(layerOf(o));
+        self.sel = i;
+        o.gAxis = .x;
+        o.gA = @min(o.x, o.x1);
+        o.gB = @max(o.x, o.x1);
+        if (o.gB - o.gA < 1.0) o.gB = o.gA + 1.0;
+        o.gFloor = 0.25;
+    }
+
     /// Put the JUKEBOX up for the shot harness, parked on one voice.
     pub fn soundsForShot(self: *Editor, id: sfx.Id) void {
         self.modal = .jukebox;
@@ -1109,6 +1150,33 @@ pub const Editor = struct {
     pub fn flushRebuild(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
         if (self.painting) self.endPaint(m, env);
         if (self.rebuildDue) self.rebuild(m, env);
+    }
+
+    /// The World panel edits two UNRELATED fields of the map itself, so it cannot use `bankGesture`'s
+    /// single-target trick: it puts both back, banks, and restores the live pair. Same contract otherwise —
+    /// one undo step per gesture, closed by `endGesture` when the mouse lets go.
+    /// Point the name field and the mix modal at one zone, loading its CURRENT name into the buffer — a
+    /// field that opened empty would rename the zone to nothing on the first frame.
+    fn selectZone(self: *Editor, m: *const wf.Map, i: usize) void {
+        self.zoneSel = i;
+        self.zoneNameBuf = [_]u8{0} ** wf.NAME_CAP;
+        self.zoneNameLen = 0;
+        if (i >= m.nzones) return;
+        const lab = m.zones[i].label();
+        self.zoneNameLen = @min(lab.len, wf.NAME_CAP - 1);
+        @memcpy(self.zoneNameBuf[0..self.zoneNameLen], lab[0..self.zoneNameLen]);
+    }
+
+    fn bankWorld(self: *Editor, m: *wf.Map, half: f32, runway: wf.Runway) void {
+        if (self.editing) return;
+        const liveHalf = m.half;
+        const liveRun = m.runway;
+        m.half = half;
+        m.runway = runway;
+        self.bank(m);
+        m.half = liveHalf;
+        m.runway = liveRun;
+        self.editing = true;
     }
 
     fn bankGesture(self: *Editor, comptime T: type, m: *wf.Map, target: *T, before: T) void {
@@ -2385,6 +2453,10 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
         ed.menuOpen = false;
         ed.modal = .objects;
     }
+    if (row.button("World", ed.modal == .world, "The map itself — its size, the runway, and the cliff rim")) {
+        ed.menuOpen = false;
+        ed.modal = .world;
+    }
     if (row.button("Sounds", ed.modal == .jukebox, "Jukebox — play any sound in the bank on demand")) {
         ed.menuOpen = false;
         ed.modal = .jukebox;
@@ -2508,6 +2580,50 @@ fn spanRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
     ch = coordRow(ctx, x, y, w, "z0", &o.z, 1) or ch;
     ch = coordRow(ctx, x, y, w, "x1", &o.x1, 1) or ch;
     ch = coordRow(ctx, x, y, w, "z1", &o.z1, 1) or ch;
+    return ch;
+}
+
+/// THE DENSITY GRADIENT a scatter can carry (`Op.gAxis`/`gA`/`gB`/`gFloor`) — acceptance ramps from `gFloor`
+/// to 1 as the chosen axis runs `gA` → `gB`. It has been in the FORMAT and in `env.Placer` since the belts
+/// were written and had NO control at all: a hand-edited map round-tripped its gradient untouched while the
+/// editor showed nothing, so the feature existed only for people editing text.
+///
+/// The axis chips come FIRST and the rest only appear once one is picked — three numbers that do nothing
+/// are worse than no rows at all, and `.none` is the off switch the format already had.
+fn gradientRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
+    var ch = false;
+    hud.mono("density gradient", x, y.*, hud.MONO, ui.alpha(ui.TRIM, 220));
+    y.* += hud.monoLineH(hud.MONO);
+    var cx = x;
+    inline for (@typeInfo(wf.Axis).@"enum".fields) |fld| {
+        const ax: wf.Axis = @enumFromInt(fld.value);
+        var usedW: i32 = 0;
+        const lab: [:0]const u8 = switch (ax) {
+            .none => "off",
+            .x => "along x",
+            .z => "along z",
+        };
+        if (ui.chip(ctx, cx, y.*, lab, o.gAxis == ax, &usedW) and o.gAxis != ax) {
+            o.gAxis = ax;
+            // A FRESH GRADIENT SPANS THE OP ITSELF, so turning one on does something visible rather than
+            // ramping between two zeroes: the belt's own box on that axis, thin end first.
+            if (ax != .none and o.gA == o.gB) {
+                o.gA = if (ax == .x) @min(o.x, o.x1) else @min(o.z, o.z1);
+                o.gB = if (ax == .x) @max(o.x, o.x1) else @max(o.z, o.z1);
+                if (o.gB - o.gA < 1.0) o.gB = o.gA + 1.0;
+            }
+            ch = true;
+        }
+        cx += usedW;
+    }
+    y.* += ROW_H + 4;
+    if (o.gAxis == .none) return ch;
+    ch = ui.stepperF(ctx, x, y.*, w, "from", &o.gA, 1, -COORD_LIM, COORD_LIM) or ch;
+    y.* += ROW_H;
+    ch = ui.stepperF(ctx, x, y.*, w, "to", &o.gB, 1, -COORD_LIM, COORD_LIM) or ch;
+    y.* += ROW_H;
+    ch = ui.slider(ctx, x, y.*, w, "thin end", &o.gFloor, 0, 1) or ch;
+    y.* += ROW_H + SLIDER_DROP;
     return ch;
 }
 
@@ -2662,11 +2778,33 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         for (m.zones[0..m.nzones], 0..) |*z, i| before[i] = z.density;
         for (m.zones[0..m.nzones], 0..) |*z, i| {
             var zb: [48]u8 = undefined;
-            const lab = std.fmt.bufPrintZ(&zb, "{d} {s}", .{ i, z.label() }) catch "?";
-            changed = ui.slider(ctx, x, y, w, lab, &z.density, 0, 1) or changed;
+            const lab = std.fmt.bufPrintZ(&zb, "{d} {s} ({d})", .{ i, z.label(), z.nmix }) catch "?";
+            changed = ui.slider(ctx, x, y, w - 34, lab, &z.density, 0, 1) or changed;
+            // …and the way IN to the two things a zone carries that nothing here could reach: its NAME and
+            // the MIX it grows. Its own button, so it cannot fight the slider for the same click.
+            if (ui.buttonTip(ctx, ui.rect(x + w - 30, y + 14, 30, 22), "...", hud.MONO, ed.zoneSel == i, "Name this zone and choose what grows in it")) {
+                ed.selectZone(m, i);
+                ed.modal = .zonemix;
+            }
             y += ROW_H + SLIDER_DROP;
         }
         y += 6;
+        // THE NAME, for whichever zone is picked. Every zone the editor has ever made was called "new".
+        if (ed.zoneSel) |zi| {
+            if (zi < m.nzones) {
+                hud.mono("name", x, y, hud.MONO, ui.LABEL);
+                y += hud.monoLineH(hud.MONO) + 2;
+                ui.textField(ctx, ui.rect(x, y, w, 26), &ed.zoneNameBuf, &ed.zoneNameLen, true);
+                const typed = ed.zoneNameBuf[0..ed.zoneNameLen];
+                if (!std.mem.eql(u8, typed, m.zones[zi].label())) {
+                    ed.bank(m);
+                    m.zones[zi].name = [_]u8{0} ** wf.NAME_CAP;
+                    const n = @min(typed.len, wf.NAME_CAP - 1);
+                    @memcpy(m.zones[zi].name[0..n], typed[0..n]);
+                }
+                y += 32;
+            }
+        }
         var cb: [64]u8 = undefined;
         const cs = std.fmt.bufPrintZ(&cb, "{d} clearings", .{m.nclearings}) catch "";
         hud.mono(cs, x, y, hud.MONO, ui.LABEL);
@@ -2814,6 +2952,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         if (o.op == .belt or o.op == .disc) {
             changed = ui.checkbox(ctx, x, y, "cover field", &o.field) or changed;
             y += 26;
+            changed = gradientRows(ctx, x, &y, w, o) or changed;
         }
     }
 
@@ -3109,6 +3248,130 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
                 ed.modal = .none;
             }
         },
+        // WHAT GROWS IN A ZONE. The loot modal's own shape, and for the loot modal's reason: a WEIGHTED
+        // mix is a kind repeated, so "how many of this kind" is the only control it needs. Until now a new
+        // zone could only INHERIT its mix from whatever zone sat under its centre — there was no way to
+        // choose one at all, and every zone the editor made was called "new" into the bargain.
+        .zonemix => {
+            const rows: i32 = @intCast(props.FLORA_KINDS.len);
+            const box = ui.beginModal(ctx, 470, LOOT_TOP + rows * LOOT_ROW_H + 8 + DLG_FOOT, "What grows here");
+            const zi = ed.zoneSel orelse {
+                ed.modal = .none;
+                return;
+            };
+            if (zi >= m.nzones) {
+                ed.modal = .none;
+                return;
+            }
+            const z = &m.zones[zi];
+            var hb: [64]u8 = undefined;
+            hud.mono(
+                std.fmt.bufPrintZ(&hb, "{s} - {d} / {d} picks", .{ z.label(), z.nmix, wf.MAX_MIX }) catch "",
+                box.x + DLG_PAD,
+                box.y + 58,
+                hud.MONO,
+                ui.LABEL,
+            );
+            for (props.FLORA_KINDS, 0..) |k, i| {
+                const y = box.y + LOOT_TOP + @as(i32, @intCast(i)) * LOOT_ROW_H;
+                const n = mixCount(z, k);
+                hud.mono(props.displayName(k), box.x + DLG_PAD, y + 5, hud.MONO, if (n > 0) ui.VALUE else ui.LABEL);
+                var nbuf: [8]u8 = undefined;
+                hud.mono(std.fmt.bufPrintZ(&nbuf, "{d}", .{n}) catch "0", box.x + 340, y + 5, hud.MONO, if (n > 0) ui.VALUE else ui.LABEL);
+                // MORE OF A KIND IS MORE WEIGHT — `Zone.pick` draws uniformly from the list, so a kind
+                // written twice comes up twice as often. That is the whole of the weighting the format has.
+                if (ui.button(ctx, ui.rect(box.x + 368, y, 24, 22), "-", hud.MONO, false) and n > 0) {
+                    ed.bank(m);
+                    mixRemove(z, k);
+                    ed.requestRebuild();
+                }
+                if (ui.button(ctx, ui.rect(box.x + 396, y, 24, 22), "+", hud.MONO, false) and z.nmix < wf.MAX_MIX) {
+                    ed.bank(m);
+                    mixAdd(z, k);
+                    ed.requestRebuild();
+                }
+            }
+            if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false) or confirm) {
+                ed.modal = .none;
+            }
+        },
+        // THE MAP ITSELF — the three things the format has always carried that nothing here could reach:
+        // how big the world is, where the runway lies, and the cliff rim (`edge`), which only `Map.blank`
+        // could ever create. Their own modal because none of them is a thing you place with a brush.
+        .world => {
+            const box = ui.beginModal(ctx, WORLD_W, WORLD_H, "World");
+            const x = box.x + DLG_PAD;
+            const w = WORLD_W - DLG_PAD * 2;
+            var y = box.y + 56;
+            var changed = false;
+            const before = wf.Runway{ .x = m.runway.x, .z = m.runway.z, .x1 = m.runway.x1, .z1 = m.runway.z1 };
+            const halfBefore = m.half;
+
+            hud.mono("SIZE", x, y, hud.MONO, ui.TITLE);
+            y += ROW_H + 4;
+            // THE LOADER'S OWN BAND (`wf.MAX_DECLARED_HALF`), and the grid's floor under it: `env`'s cell
+            // index is sized off `MAX_HALF`, so a half past it would clamp cells together silently.
+            changed = ui.stepperF(ctx, x, y, w, "half extent", &m.half, 5, 40, wf.MAX_DECLARED_HALF) or changed;
+            y += ROW_H;
+            var hb: [72]u8 = undefined;
+            hud.mono(
+                std.fmt.bufPrintZ(&hb, "{d:.0} m across - every scatter re-expands", .{m.half * 2}) catch "",
+                x,
+                y,
+                hud.MONO,
+                ui.alpha(ui.LABEL, 170),
+            );
+            y += ROW_H + 10;
+
+            hud.mono("RUNWAY", x, y, hud.MONO, ui.TITLE);
+            y += ROW_H + 4;
+            hud.mono("the lane kept clear of anything that avoids it", x, y, hud.MONO, ui.alpha(ui.LABEL, 170));
+            y += hud.monoLineH(hud.MONO) + 4;
+            changed = ui.stepperF(ctx, x, y, w, "x0", &m.runway.x, 0.5, -COORD_LIM, COORD_LIM) or changed;
+            y += ROW_H;
+            changed = ui.stepperF(ctx, x, y, w, "z0", &m.runway.z, 0.5, -COORD_LIM, COORD_LIM) or changed;
+            y += ROW_H;
+            changed = ui.stepperF(ctx, x, y, w, "x1", &m.runway.x1, 0.5, -COORD_LIM, COORD_LIM) or changed;
+            y += ROW_H;
+            changed = ui.stepperF(ctx, x, y, w, "z1", &m.runway.z1, 0.5, -COORD_LIM, COORD_LIM) or changed;
+            y += ROW_H + 10;
+
+            hud.mono("RIM", x, y, hud.MONO, ui.TITLE);
+            y += ROW_H + 4;
+            var rims: usize = 0;
+            for (m.slice()) |*o| {
+                if (o.op == .edge) rims += 1;
+            }
+            var rb: [64]u8 = undefined;
+            hud.mono(
+                std.fmt.bufPrintZ(&rb, "{d} cliff rim op{s} in the world", .{ rims, if (rims == 1) "" else "s" }) catch "",
+                x,
+                y,
+                hud.MONO,
+                ui.alpha(ui.LABEL, 170),
+            );
+            y += hud.monoLineH(hud.MONO) + 6;
+            if (ui.buttonTip(ctx, ui.rect(x, y, 190, 24), "Add cliff rim", hud.MONO, false, "A ring of cliffs round the world's edge — what a new map is given, and the one op no brush could make")) {
+                ed.bank(m);
+                if (m.add(freshRim(ed, m))) |_| {
+                    ed.rebuild(m, env);
+                    ed.say("+rim");
+                } else |_| ed.say("op cap reached");
+            }
+
+            if (changed) {
+                // ONE gesture for the whole panel, banked on the first nudge and closed when the mouse lets
+                // go — the foe inspector's own rule, so a held stepper is one undo step and not forty.
+                ed.bankWorld(m, halfBefore, before);
+                // …and a size change moves the painted grids as well as the props, so it is the FULL rebuild
+                // and not just a re-materialize: `half` is what every one of those uploads is measured in.
+                ed.rebuild(m, env);
+            } else if (!ctx.down) ed.endGesture(m, env);
+
+            if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false) or confirm) {
+                ed.modal = .none;
+            }
+        },
         .jukebox => {
             const box = ui.beginModal(ctx, JUKE_W, JUKE_H, "Sounds");
             if (ui.list(ctx, ui.rect(box.x + 20, box.y + 56, JUKE_LIST_W, JUKE_LIST_H), &VOICE_NAMES, ed.juke, &ed.jukeScroll)) |i| {
@@ -3144,9 +3407,17 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
             else
                 "at the ear";
             hud.mono(ds, cx, cy, hud.MONO, ui.alpha(ui.LABEL, 170));
+            // THE FILTER RACK, third column — the game's debug menu used to own this and does not any more.
+            rackPanel(ed, ctx, box.x + JUKE_W - RACK_W - 20, box.y + 56);
+
             const by = box.y + box.h - DLG_FOOT;
             if (ui.button(ctx, ui.rect(box.x + 20, by, 150, DLG_BTN_H), "Play again", hud.MONO, false) or confirm) ed.jukePlay();
-            if (ui.button(ctx, ui.rect(box.x + 180, by, 120, DLG_BTN_H), "Done", hud.MONO, false)) ed.modal = .none;
+            if (ui.button(ctx, ui.rect(box.x + 180, by, 120, DLG_BTN_H), "Done", hud.MONO, false)) {
+                // The racks live in `settings.cfg` beside the levels, and are written when the panel closes
+                // rather than per nudge — the menu's own rule, kept now that the panel has moved here.
+                sfx.saveSettings();
+                ed.modal = .none;
+            }
             hud.mono("up / down step and play, space replays", box.x + 320, by + 6, hud.MONO, ui.alpha(ui.LABEL, 150));
         },
         .new_map, .save_as => {
@@ -3224,6 +3495,33 @@ fn lootCount(o: *const wf.Op, k: item.Kind) u8 {
     return n;
 }
 
+/// A ZONE'S MIX, counted / added / removed — `lootCount`/`lootAdd`/`lootRemove` for a different list. Kept
+/// as three small bodies beside those rather than folded into a generic: the loot list is an `item.Kind` cap
+/// of 8 and this a `props.Kind` cap of 24, and the one thing they share is the swap-the-last-one-down trick.
+fn mixCount(z: *const wf.Zone, k: Kind) u8 {
+    var n: u8 = 0;
+    for (z.mix[0..z.nmix]) |it| {
+        if (it == k) n += 1;
+    }
+    return n;
+}
+
+fn mixAdd(z: *wf.Zone, k: Kind) void {
+    if (z.nmix >= wf.MAX_MIX) return;
+    z.mix[z.nmix] = k;
+    z.nmix += 1;
+}
+
+fn mixRemove(z: *wf.Zone, k: Kind) void {
+    var i: u8 = 0;
+    while (i < z.nmix) : (i += 1) {
+        if (z.mix[i] != k) continue;
+        z.mix[i] = z.mix[z.nmix - 1]; // order carries no meaning in a weighted draw
+        z.nmix -= 1;
+        return;
+    }
+}
+
 fn lootAdd(o: *wf.Op, k: item.Kind) void {
     if (o.nloot >= wf.MAX_LOOT) return; // full: the counter above says so, so this needs no complaint
     o.loot[o.nloot] = k;
@@ -3239,6 +3537,98 @@ fn lootRemove(o: *wf.Op, k: item.Kind) void {
         return;
     }
 }
+
+const RACK_W: i32 = 356;
+const RACK_GAP: i32 = 14;
+
+const WORLD_W: i32 = 420;
+const WORLD_H: i32 = 470;
+
+/// A CLIFF RIM — the ONE op no brush can make, because it is world-wide: nowhere to stamp it, no gizmo to
+/// drag it by. Deleting the rim a new map is given used to be irreversible short of editing the file.
+/// The numbers mirror `wf.Map.blank`'s own rim; they are two copies on opposite sides of the module line
+/// (this one needs the editor's seed counter), so a change to one is a change owed to the other.
+fn freshRim(ed: *Editor, m: *const wf.Map) wf.Op {
+    var rim = wf.defaults(.edge);
+    rim.kind = .cliff;
+    rim.r0 = 6.5;
+    rim.n = 90;
+    rim.sLo = 0.92;
+    rim.sHi = 1.24;
+    rim.seed = ed.freshSeed(m);
+    for (props.CLIFFS, 0..) |k, i| rim.mix[i] = k;
+    rim.nmix = props.CLIFFS.len;
+    return rim;
+}
+
+/// THE SOUND FILTER RACK, one family at a time. Moved here out of the game's debug menu: it is an
+/// authoring tool, not a setting, and the one place a voice can be played on demand is the list to its left.
+///
+/// **FILTERS ARE BAKED, NOT MIXED** — raylib can neither filter a playing voice nor a submix, so moving a
+/// dial re-renders that whole family (`sfx.tickFx`, coalesced by `FX_SETTLE`). That is why the panel SAYS
+/// a re-render is owed rather than looking like the dial did nothing.
+fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32) void {
+    var y = y0;
+    hud.mono("FILTER RACK", x, y, hud.MONO, ui.TITLE);
+    y += ROW_H + 4;
+
+    // WHOSE rack. The same three families, in the same order, as the volume sliders in the game's options —
+    // "which slider moves this" and "which rack filters it" must never disagree.
+    var cx = x;
+    inline for (@typeInfo(sfx.Submix).@"enum".fields) |fld| {
+        const mx: sfx.Submix = @enumFromInt(fld.value);
+        var usedW: i32 = 0;
+        if (ui.chip(ctx, cx, y, @tagName(mx), ed.rackMix == mx, &usedW)) ed.rackMix = mx;
+        cx += usedW;
+    }
+    y += ROW_H + 8;
+
+    // TWO COLUMNS. Eleven sliders in one stack is taller than the box, and a rack is a thing you read across
+    // as much as down — the EQ pair lands at the foot of the second column, where a tone control belongs.
+    const colW = (RACK_W - RACK_GAP) / 2;
+    const perCol = (sfx.AFX_COUNT + 1) / 2;
+    const vals = sfx.fxValues(ed.rackMix);
+    for (0..sfx.AFX_COUNT) |i| {
+        var v = vals[i];
+        // The NAME alone: `ui.slider` prints the value itself at the right of the same line, and a percentage
+        // beside it collided with that readout on a column this narrow.
+        const lab = sfx.AFX_NAMES[i];
+        const cxx = x + @as(i32, @intCast(i / perCol)) * (colW + RACK_GAP);
+        const cyy = y + @as(i32, @intCast(i % perCol)) * RACK_ROW;
+        if (ui.slider(ctx, cxx, cyy, colW, lab, &v, 0, 1)) sfx.setFx(ed.rackMix, i, v);
+    }
+    y += @as(i32, @intCast(perCol)) * RACK_ROW + 6;
+    // The presets, two to a row — the same five the menu offered, off `sfx`'s own tables.
+    const PRESETS = [_]struct { n: [:0]const u8, p: []const sfx.FxPreset }{
+        .{ .n = "Vinyl", .p = &sfx.FX_VINYL },
+        .{ .n = "AM Radio", .p = &sfx.FX_RADIO },
+        .{ .n = "Worn Tape", .p = &sfx.FX_TAPE },
+        .{ .n = "Crushed", .p = &sfx.FX_CRUSHED },
+        .{ .n = "Broken", .p = &sfx.FX_BROKEN },
+    };
+    inline for (PRESETS, 0..) |pre, i| {
+        const bx = x + @as(i32, @intCast(i % 2)) * (RACK_W / 2 + 4);
+        const by = y + @as(i32, @intCast(i / 2)) * 26;
+        if (ui.button(ctx, ui.rect(bx, by, RACK_W / 2 - 4, 22), pre.n, hud.MONO, false)) {
+            sfx.applyFxPreset(ed.rackMix, pre.p);
+        }
+    }
+    y += 26 * 3 + 4;
+    if (ui.buttonTip(ctx, ui.rect(x, y, RACK_W / 2 - 4, 22), "Default", hud.MONO, false, "Back to the house sound (worn tape)")) sfx.resetFx(ed.rackMix);
+    if (ui.buttonTip(ctx, ui.rect(x + RACK_W / 2 + 4, y, RACK_W / 2 - 4, 22), "All Off", hud.MONO, false, "Every dial to zero — drier than the game ships")) sfx.allFxOff(ed.rackMix);
+    y += ROW_H + 4;
+    hud.mono(
+        if (sfx.fxPending()) "re-rendering..." else "baked, not mixed - a dial re-renders the family",
+        x,
+        y,
+        hud.MONO,
+        ui.alpha(ui.LABEL, if (sfx.fxPending()) 220 else 150),
+    );
+}
+
+/// A slider is a LABEL LINE plus a 12 px bar plus its seat, so the row has to clear both — at 30 the bars
+/// sat on the next label. MEASURED off `ui.slider`'s own layout rather than guessed.
+const RACK_ROW: i32 = ui.ROW_H + 14;
 
 fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
     const op: ?usize = if (ed.sel) |s| (if (s < m.nops) s else null) else null;

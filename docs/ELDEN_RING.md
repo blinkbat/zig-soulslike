@@ -159,11 +159,16 @@ Sources: [Dodging](https://eldenring.wiki.fextralife.com/Dodging) · [Equip Load
 
 ## 5. Status effects (buildup model)
 
-**Fill → proc → reset**, with **decay**: each hit adds a flat buildup; at threshold it **procs**
-and the meter **resets to 0** (no proc cooldown — can proc repeatedly). Buildup **decays** once
-you stop: **base 1/s + the enemy's own 1–10/s** (big bosses shed ~11/s). Resistances (Robustness/
-Immunity/Focus/Vitality) **raise the threshold, not reduce the proc.** This is the purest "keep
-pressure on" system — spaced hits against a high-decay foe may **never** proc. **[DM/V]**
+**Fill → proc → run out**, with **decay**: each hit adds a flat buildup; at threshold it **procs**.
+Buildup **decays** once you stop: **base 1/s + the enemy's own 1–10/s** (big bosses shed ~11/s).
+Resistances (Robustness/Immunity/Focus/Vitality) **raise the threshold, not reduce the proc.** This
+is the purest "keep pressure on" system — spaced hits against a high-decay foe may **never** proc.
+**[DM/V]**
+
+**A DURATION STATUS CANNOT BE RE-APPLIED WHILE IT RUNS.** Poison, Scarlet Rot and Frostbite hold the
+meter for the length of the effect — it is a state you are already in, and further buildup does
+nothing until it has worn off. Only the **BURST** statuses (Hemorrhage, Madness) have nothing to
+run: those resolve on the frame they proc and the meter is free to fill again at once.
 
 | Status | Proc effect | Lingering | Resist |
 |---|---|---|---|

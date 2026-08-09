@@ -285,7 +285,7 @@ pub const Frog = struct {
 
     // Begin a hop toward `to` (clamped to bounds); `lunge` = the big committed leap.
     pub fn startHop(self: *Frog, to: rl.Vector3, bounds: f32, lunge: bool) void {
-        self.hopAim = v3(mathx.clampF(to.x, -bounds, bounds), 0, mathx.clampF(to.z, -bounds, bounds));
+        self.hopAim = mathx.clampXZ(v3(to.x, 0, to.z), bounds);
         self.hopReach = mathx.distXZ(self.pos, self.hopAim);
         self.hopFrom = self.pos;
         self.hopTo = self.hopAim; // provisional — re-aimed along facing at launch
@@ -508,11 +508,7 @@ pub const Frog = struct {
                 self.launched = true;
                 self.hopFrom = self.pos;
                 const f = self.fdir();
-                self.hopTo = v3(
-                    mathx.clampF(self.pos.x + f.x * self.hopReach, -bounds, bounds),
-                    0,
-                    mathx.clampF(self.pos.z + f.z * self.hopReach, -bounds, bounds),
-                );
+                self.hopTo = mathx.clampXZ(v3(self.pos.x + f.x * self.hopReach, 0, self.pos.z + f.z * self.hopReach), bounds);
             }
             const s = (self.t - coil) / flight; // 0..1 across the arc
             // Advance horizontally by an INCREMENT (velocity·dt), NOT an absolute lerp from a stale hopFrom: this way a collision nudge mid-arc just deflects the leap instead of the next frame snapping the toad back to its takeoff point (the "warp" bug).
@@ -531,8 +527,7 @@ pub const Frog = struct {
             }
             if (self.isLunge) self.tryImpact(hero, LUNGE_HIT); // the body-slam connects
         }
-        self.pos.x = mathx.clampF(self.pos.x, -bounds, bounds);
-        self.pos.z = mathx.clampF(self.pos.z, -bounds, bounds);
+        mathx.holdXZ(&self.pos, bounds);
         if (self.t >= total) {
             if (self.isLunge) {
                 self.state = .recover; // land the lunge into the wide-open window

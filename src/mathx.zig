@@ -81,9 +81,20 @@ pub const Nearest = struct {
     }
 };
 
+/// A POINT HELD INSIDE THE PLAY SQUARE, Y untouched — `stepXZ`'s own clamp with the step taken out, for the
+/// callers that have already worked out where they are going. As a hand-written pair of `clampF` lines it sat
+/// in four files, and the one in `game` had a name (`inBounds`) two of its own callers walked past.
+pub fn clampXZ(p: rl.Vector3, bounds: f32) rl.Vector3 {
+    return v3(clampF(p.x, -bounds, bounds), p.y, clampF(p.z, -bounds, bounds));
+}
+
 pub fn stepXZ(pos: *rl.Vector3, dir: rl.Vector3, dist: f32, bounds: f32) void {
-    pos.x = clampF(pos.x + dir.x * dist, -bounds, bounds);
-    pos.z = clampF(pos.z + dir.z * dist, -bounds, bounds);
+    pos.* = clampXZ(v3(pos.x + dir.x * dist, pos.y, pos.z + dir.z * dist), bounds);
+}
+
+/// …and the same clamp taken IN PLACE, which is what a state machine holding its own `pos` wants.
+pub fn holdXZ(pos: *rl.Vector3, bounds: f32) void {
+    pos.* = clampXZ(pos.*, bounds);
 }
 
 /// Right-hand perpendicular of a facing direction in the XZ plane.

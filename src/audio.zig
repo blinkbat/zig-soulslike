@@ -335,6 +335,31 @@ const Rack = struct {
         }
     }
 
+    /// THE EQ'S BOTTOM END — a high pass built as "the signal less its own low end", so one `Pole` does it
+    /// and the dial is how much of the body is taken away. It THINS; it does not scoop, because a scoop is
+    /// two filters and a taste, and this rack is a tone control rather than a mix desk.
+    fn thin(r: *Rack, cut: f32, amt: f32) void {
+        var p = Pole{};
+        const k = mathx.clampF(amt, 0, 1);
+        for (work[0..r.n]) |*s| {
+            const low = p.step(s.*, cut);
+            s.* = s.* - low * k;
+        }
+    }
+
+    /// …AND ITS TOP — a band ADDED rather than blended in (`band` lerps, which cannot boost). This is the
+    /// bite: where a struck edge and a consonant live, and where a voice that has been muffled gets its
+    /// legibility back without the fizz coming with it.
+    fn lift(r: *Rack, cut: f32, res: f32, amt: f32) void {
+        const c = svfCoef(cut, res);
+        var f = Svf{};
+        const k = mathx.clampF(amt, 0, 1);
+        for (work[0..r.n]) |*s| {
+            const out = f.stepAt(s.*, c);
+            s.* += out.bp * k;
+        }
+    }
+
     /// VINYL CRACKLE — sparse impulsive POPS, and the sparseness is the whole point: a dense one is just
     /// `hiss` with a worse spectrum, where what reads as age is the silence between the clicks.
     fn crackle(r: *Rack, amt: f32, perSec: f32) void {
@@ -518,8 +543,17 @@ pub const Submix = enum {
 const NMIX = @typeInfo(Submix).@"enum".fields.len;
 
 const TRIM_AMBIENCE: f32 = 0.625;
-const TRIM_COMBAT: f32 = 0.55;
+/// THE FIGHT SITS UNDER EVERYTHING ELSE (owner's call). Lowered from 0.55: this is the one dial that reaches
+/// the WHOLE family — the `battle()` band and the literal-gain rows both — where `BATTLE_FLOOR` only moves
+/// the band. A family level is a family level, so it is spent here and not in fifty rows.
+const TRIM_COMBAT: f32 = 0.46;
 const TRIM_SFX: f32 = 0.65;
+
+/// …AND THE FIGHT IS ROLLED OFF THE TOP (owner's call). One author-side pole over every combat voice at bake
+/// (`bakeRow`), UNDER the player's own rack so a dial still sits on top of it. It is the fizz on a struck
+/// edge and the sizzle on a hiss that make a busy fight tiring; the body of every one of these is well below
+/// it, so the cut costs the weight nothing.
+const COMBAT_TREBLE: f32 = 6200;
 
 /// THE AUTHOR-SIDE LEVEL of each family, paid before the player's dial sees it. No family ships at unity (owner's call: quieter at the SOURCE, so an untouched slider still hears the intended mix).
 fn submixTrim(m: Submix) f32 {
@@ -534,7 +568,7 @@ fn submixTrim(m: Submix) f32 {
 // has to be: raylib gives volume/pitch/pan per playing sound and nothing else, so a voice already sounding
 // cannot be filtered. Moving a dial re-renders that family (`tickFx`).
 
-pub const AFX_COUNT = 9;
+pub const AFX_COUNT = 11;
 pub const AFX_EPS: f32 = 0.001;
 pub const AF_DRIVE = 0;
 pub const AF_CRUSH = 1;
@@ -545,6 +579,10 @@ pub const AF_WOBBLE = 5;
 pub const AF_ROOM = 6;
 pub const AF_HISS = 7;
 pub const AF_CRACKLE = 8;
+/// THE EQ — the two ends of the tone, added last so the character filters above keep their indices (a
+/// `settings.cfg` written before them reads back with these two at 0, which is off).
+pub const AF_BASS = 9;
+pub const AF_PRESENCE = 10;
 
 /// One row per filter in AF_* order (`gfx.RETRO_FILTERS`' shape), so the menu labels are DERIVED.
 const AudioFilter = struct { name: [:0]const u8 };
@@ -558,6 +596,8 @@ const AUDIO_FILTERS = [AFX_COUNT]AudioFilter{
     .{ .name = "Room" },
     .{ .name = "Tape Hiss" },
     .{ .name = "Vinyl Crackle" },
+    .{ .name = "Bass Cut" }, // …and the EQ: the bottom taken away…
+    .{ .name = "Presence" }, // …and the bite put back
 };
 pub const AFX_NAMES = blk: {
     var out: [AFX_COUNT][:0]const u8 = undefined;
@@ -577,6 +617,8 @@ comptime {
         .{ .i = AF_ROOM, .n = "Room" },
         .{ .i = AF_HISS, .n = "Tape Hiss" },
         .{ .i = AF_CRACKLE, .n = "Vinyl Crackle" },
+        .{ .i = AF_BASS, .n = "Bass Cut" },
+        .{ .i = AF_PRESENCE, .n = "Presence" },
     };
     if (PINS.len != AFX_COUNT) @compileError("audio: a filter with no pin");
     for (PINS) |p| {
@@ -656,6 +698,10 @@ fn applyFx(r: *Rack, m: Submix) void {
     if (v[AF_ROOM] > AFX_EPS) r.hall(0.12 + 1.5 * v[AF_ROOM], 2600.0);
     if (v[AF_HISS] > AFX_EPS) r.hiss(0.012 + 0.09 * v[AF_HISS]);
     if (v[AF_CRACKLE] > AFX_EPS) r.crackle(0.05 + 0.30 * v[AF_CRACKLE], 6.0 + 340.0 * v[AF_CRACKLE]);
+    // THE EQ LAST, over whatever character the rack above it put on: it is the tone of the RESULT, and a
+    // presence lift ahead of the drive would just be more to distort.
+    if (v[AF_BASS] > AFX_EPS) r.thin(120.0 + 220.0 * v[AF_BASS], v[AF_BASS]);
+    if (v[AF_PRESENCE] > AFX_EPS) r.lift(3200.0, 0.5, 0.9 * v[AF_PRESENCE]);
     r.norm(0.92);
     r.ends(0.002, 0.012);
 }
@@ -1805,15 +1851,18 @@ const BANK = [NV]Row{
     .{ .id = .refused, .make = mkRefused, .gain = 0.34, .jit = 0.06, .vjit = 0.08, .vars = 2 },
     .{ .id = .death, .make = mkDeath, .gain = battle(0.95), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
     .{ .id = .respawn, .make = mkRespawn, .gain = battle(0.55), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
-    .{ .id = .toad_hop, .make = mkToadHop, .gain = battle(0.40), .mix = .combat, .jit = 0.15, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 30 },
-    .{ .id = .toad_lunge, .make = mkToadLunge, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 34 },
+    // A HOP IS TRAVEL, NOT A THREAT — under the floor with the footsteps, where a noise that fires every
+    // second and a half belongs. The LUNGE is the opposite: a body committed at your face, and it is now
+    // near the top of the band with the giant's own blows.
+    .{ .id = .toad_hop, .make = mkToadHop, .gain = battle(0.28), .mix = .combat, .jit = 0.15, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 30 },
+    .{ .id = .toad_lunge, .make = mkToadLunge, .gain = battle(0.86), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 34 },
     .{ .id = .toad_gape, .make = mkToadGape, .gain = battle(0.46), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 26 },
     .{ .id = .toad_chomp, .make = mkToadChomp, .gain = battle(0.62), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 30 },
     .{ .id = .toad_hurt, .make = mkToadHurt, .gain = battle(0.58), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 30 },
     .{ .id = .toad_die, .make = mkToadDie, .gain = battle(0.66), .mix = .combat, .jit = 0.11, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 34 },
-    .{ .id = .shroom_hop, .make = mkShroomHop, .gain = battle(0.30), .mix = .combat, .jit = 0.18, .vjit = 0.30, .vars = 4, .poly = 4, .reach = 22 },
+    .{ .id = .shroom_hop, .make = mkShroomHop, .gain = battle(0.22), .mix = .combat, .jit = 0.18, .vjit = 0.30, .vars = 4, .poly = 4, .reach = 22 },
     .{ .id = .shroom_coo, .make = mkShroomCoo, .gain = battle(0.46), .mix = .combat, .jit = 0.14, .vjit = 0.22, .vars = 4, .poly = 3, .reach = 26 },
-    .{ .id = .shroom_fling, .make = mkShroomFling, .gain = battle(0.52), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 30 },
+    .{ .id = .shroom_fling, .make = mkShroomFling, .gain = battle(0.76), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 30 },
     .{ .id = .shroom_puff, .make = mkShroomPuff, .gain = battle(0.56), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 30 },
     .{ .id = .shroom_hurt, .make = mkShroomHurt, .gain = battle(0.48), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 4, .poly = 3, .reach = 26 },
     .{ .id = .shroom_die, .make = mkShroomDie, .gain = battle(0.56), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 30 },
@@ -1833,7 +1882,7 @@ const BANK = [NV]Row{
     // THE ONE WARNING THE LEAP GIVES YOU, so it carries as far as the leap can reach and then some.
     .{ .id = .skel_lunge, .make = mkSkelLunge, .gain = battle(0.86), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 4, .poly = 3, .reach = 62 },
     // The giant is an octave down and half a second longer than anything else, and low frequencies are what survive a couple of hundred metres of air — so the physics and the character agree for once.
-    .{ .id = .ogre_step, .make = mkOgreStep, .gain = battle(0.60), .mix = .combat, .jit = 0.08, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 115 },
+    .{ .id = .ogre_step, .make = mkOgreStep, .gain = battle(0.44), .mix = .combat, .jit = 0.08, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 115 },
     .{ .id = .ogre_roar, .make = mkOgreRoar, .gain = battle(0.80), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .reach = 135 },
     .{ .id = .ogre_slam, .make = mkOgreSlam, .gain = battle(1.00), .mix = .combat, .jit = 0.06, .vjit = 0.08, .vars = 3, .reach = 135 },
     .{ .id = .ogre_swipe, .make = mkOgreSwipe, .gain = battle(0.72), .mix = .combat, .jit = 0.07, .vjit = 0.12, .vars = 3, .reach = 85 },
@@ -1841,19 +1890,19 @@ const BANK = [NV]Row{
     .{ .id = .ogre_die, .make = mkOgreDie, .gain = battle(0.92), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1, .reach = 135 },
     .{ .id = .kobold_snarl, .make = mkKoboldSnarl, .gain = battle(0.62), .mix = .combat, .jit = 0.22, .vjit = 0.24, .vars = 6, .poly = 3, .reach = 58 },
     .{ .id = .kobold_chop, .make = mkKoboldChop, .gain = battle(0.38), .mix = .combat, .jit = 0.22, .vjit = 0.28, .vars = 6, .poly = 4, .reach = 40 },
-    .{ .id = .kobold_heave, .make = mkKoboldHeave, .gain = battle(0.58), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 2, .reach = 62 },
+    .{ .id = .kobold_heave, .make = mkKoboldHeave, .gain = battle(0.78), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 2, .reach = 62 },
     .{ .id = .kobold_cast, .make = mkKoboldCast, .gain = 0.30, .mix = .combat, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 2, .reach = 78 },
     // The quietest positive cue in the game, and lowered twice on the owner's call.
     .{ .id = .kobold_heal, .make = mkKoboldHeal, .gain = 0.11, .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 3, .reach = 54 },
-    .{ .id = .kobold_whirl, .make = mkKoboldWhirl, .gain = battle(0.42), .mix = .combat, .jit = 0.20, .vjit = 0.24, .vars = 5, .poly = 3, .reach = 44 },
-    .{ .id = .kobold_sling, .make = mkKoboldSling, .gain = battle(0.50), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 4, .reach = 52 },
+    .{ .id = .kobold_whirl, .make = mkKoboldWhirl, .gain = battle(0.34), .mix = .combat, .jit = 0.20, .vjit = 0.24, .vars = 5, .poly = 3, .reach = 44 },
+    .{ .id = .kobold_sling, .make = mkKoboldSling, .gain = battle(0.68), .mix = .combat, .jit = 0.13, .vjit = 0.18, .vars = 4, .poly = 4, .reach = 52 },
     .{ .id = .kobold_bite, .make = mkKoboldBite, .gain = battle(0.56), .mix = .combat, .jit = 0.20, .vjit = 0.26, .vars = 6, .poly = 3, .reach = 40 },
     .{ .id = .kobold_hurt, .make = mkKoboldHurt, .gain = battle(0.60), .mix = .combat, .jit = 0.24, .vjit = 0.30, .vars = 6, .poly = 4, .reach = 48 },
     .{ .id = .kobold_die, .make = mkKoboldDie, .gain = battle(0.68), .mix = .combat, .jit = 0.18, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 58 },
     // THE SHADE. Quieter than every creature above it and carrying further than any of them but the ogre:
     // the whole point of the thing is that you hear it before you find it, and never quite where you looked.
     .{ .id = .shade_reach, .make = mkShadeReach, .gain = battle(0.44), .mix = .combat, .jit = 0.16, .vjit = 0.22, .vars = 4, .poly = 3, .reach = 40 },
-    .{ .id = .shade_gather, .make = mkShadeGather, .gain = battle(0.46), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 3, .reach = 70 },
+    .{ .id = .shade_gather, .make = mkShadeGather, .gain = battle(0.66), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 3, .reach = 70 },
     .{ .id = .shade_wisp, .make = mkShadeWisp, .gain = battle(0.58), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 4, .poly = 3, .reach = 74 },
     .{ .id = .shade_touch, .make = mkShadeTouch, .gain = battle(0.70), .mix = .combat, .jit = 0.09, .vjit = 0.13, .vars = 4, .poly = 3, .reach = 34 },
     .{ .id = .shade_blink, .make = mkShadeBlink, .gain = battle(0.64), .mix = .combat, .jit = 0.11, .vjit = 0.15, .vars = 4, .poly = 4, .reach = 68 },
@@ -1864,16 +1913,18 @@ const BANK = [NV]Row{
     // at combat level that repeats that often stops being a cue and becomes a noise floor. The shortest
     // `reach` in the bank, and a wide `vjit` so no two takes come back at the same level.
     // High `poly`: retriggered four times a second per fly, and a swarm has to overlap without cutting itself.
-    .{ .id = .leech_wing, .make = mkLeechWing, .gain = battle(0.055), .mix = .combat, .jit = 0.16, .vjit = 0.34, .vars = 6, .poly = 6, .reach = 12 },
-    .{ .id = .leech_stab, .make = mkLeechStab, .gain = battle(0.68), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 4, .poly = 3, .reach = 30 },
-    .{ .id = .leech_drink, .make = mkLeechDrink, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 4, .poly = 3, .reach = 26 },
+    .{ .id = .leech_wing, .make = mkLeechWing, .gain = battle(0.035), .mix = .combat, .jit = 0.16, .vjit = 0.34, .vars = 6, .poly = 6, .reach = 12 },
+    .{ .id = .leech_stab, .make = mkLeechStab, .gain = battle(0.80), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 4, .poly = 3, .reach = 30 },
+    // The DRINK repeats for as long as the hold lasts, so it is texture and not an event: down with the
+    // wingbeat, and retriggered a third as often (`leechfly.DRINK_EVERY`). The BEAK GOING IN is the event.
+    .{ .id = .leech_drink, .make = mkLeechDrink, .gain = battle(0.40), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 4, .poly = 3, .reach = 26 },
     .{ .id = .leech_hurt, .make = mkLeechHurt, .gain = battle(0.56), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 5, .poly = 4, .reach = 40 },
     .{ .id = .leech_die, .make = mkLeechDie, .gain = battle(0.60), .mix = .combat, .jit = 0.11, .vjit = 0.15, .vars = 4, .poly = 3, .reach = 48 },
     // THE TREE. It is a big slow mass, so it is heard a long way off and it takes its time — the wake and
     // the death are the two longest tails in the bank after the ogre.
     .{ .id = .wood_wake, .make = mkWoodWake, .gain = battle(0.86), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 2, .reach = 96 },
-    .{ .id = .wood_creak, .make = mkWoodCreak, .gain = battle(0.34), .mix = .combat, .jit = 0.18, .vjit = 0.26, .vars = 5, .poly = 3, .reach = 42 },
-    .{ .id = .wood_swing, .make = mkWoodSwing, .gain = battle(0.62), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 4, .poly = 3, .reach = 60 },
+    .{ .id = .wood_creak, .make = mkWoodCreak, .gain = battle(0.24), .mix = .combat, .jit = 0.18, .vjit = 0.26, .vars = 5, .poly = 3, .reach = 42 },
+    .{ .id = .wood_swing, .make = mkWoodSwing, .gain = battle(0.80), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 4, .poly = 3, .reach = 60 },
     .{ .id = .wood_hit, .make = mkWoodHit, .gain = battle(0.82), .mix = .combat, .jit = 0.08, .vjit = 0.12, .vars = 4, .poly = 3, .reach = 74 },
     .{ .id = .wood_hurt, .make = mkWoodHurt, .gain = battle(0.66), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 5, .poly = 3, .reach = 54 },
     .{ .id = .wood_die, .make = mkWoodDie, .gain = battle(0.90), .mix = .combat, .jit = 0.07, .vjit = 0.11, .vars = 3, .poly = 2, .reach = 110 },
@@ -2006,6 +2057,8 @@ fn bakeRow(id: Id, idx: usize) void {
     while (v < row.vars) : (v += 1) {
         var r = Rack.init(0x9E3779B9 *% (idx + 1) +% v, seconds(id));
         row.make(&r);
+        // The fight's own tone, BEFORE the player's rack: his dials sit on top of the mix, never under it.
+        if (row.mix == .combat) r.warm(COMBAT_TREBLE);
         applyFx(&r, row.mix);
         slots[idx].snd[v][0] = bake(&r);
         slots[idx].owned[v] = slots[idx].snd[v][0];
@@ -2823,6 +2876,37 @@ test "THE FIGHT IS ONE BAND — no battle voice towers over the rest of them" {
     try std.testing.expect(g(.bow_draw) < g(.bow_loose));
     try std.testing.expect(g(.kobold_snarl) > g(.kobold_chop));
     for ([_]Id{ .step_soft, .step_hard, .step_sprint, .roll, .swing_light, .swing_heavy, .refused, .arrow_dirt, .kobold_cast, .kobold_heal }) |id| {
+        try std.testing.expect(g(id) <= BATTLE_FLOOR + 1e-6);
+    }
+}
+
+test "THE VOLUME IS RESERVED FOR WHAT IS ABOUT TO HIT YOU" {
+    const g = struct {
+        fn of(id: Id) f32 {
+            return BANK[@intFromEnum(id)].gain;
+        }
+    }.of;
+    // A CREATURE'S COMMITTED ARRIVAL OUTRANKS ITS OWN MOVEMENT NOISE. Pairs, so each one is that creature's
+    // own decision and not a comparison across two different-sized things.
+    try std.testing.expect(g(.toad_lunge) > g(.toad_hop));
+    try std.testing.expect(g(.shroom_fling) > g(.shroom_hop));
+    try std.testing.expect(g(.ogre_slam) > g(.ogre_step));
+    try std.testing.expect(g(.leech_stab) > g(.leech_wing));
+    try std.testing.expect(g(.wood_swing) > g(.wood_creak));
+    try std.testing.expect(g(.kobold_heave) > g(.kobold_whirl));
+    // …AND THE ONGOING HOLD IS TEXTURE, where the blow that opened it is the event.
+    try std.testing.expect(g(.leech_stab) > g(.leech_drink));
+    // THE TELLS SIT AT THE TOP OF THE BAND — every one of them past the midpoint of it.
+    var hi: f32 = 0;
+    for (BANK) |row| {
+        if (row.mix == .combat) hi = mathx.maxF(hi, row.gain);
+    }
+    const mid = (BATTLE_FLOOR + hi) * 0.5;
+    for ([_]Id{ .ogre_slam, .ogre_roar, .skel_lunge, .toad_lunge, .shroom_fling, .wood_wake, .wood_swing, .kobold_heave, .guard_break }) |id| {
+        try std.testing.expect(g(id) > mid);
+    }
+    // …and the texture sits at or under the floor, which is what takes it out of the band entirely.
+    for ([_]Id{ .toad_hop, .shroom_hop, .wood_creak, .leech_wing, .kobold_whirl }) |id| {
         try std.testing.expect(g(id) <= BATTLE_FLOOR + 1e-6);
     }
 }

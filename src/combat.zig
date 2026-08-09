@@ -358,6 +358,13 @@ pub const GUARD_STAM_FLAT: f32 = 5.0;
 pub const GUARD_STAM_PER_DMG: f32 = 1.10;
 pub const GUARD_ARC: f32 = 65.0;
 
+/// THE ONE PLACE `GUARD_ARC` IS COMPARED AGAINST A BEARING. The block asks it of the direction a blow came
+/// from and the parry of where the swinging thing is standing; written out at both, the two are one rule in
+/// two files. What each does with a DEGENERATE bearing stays its own call and is written at each of them.
+pub fn withinGuardArc(bearing: f32, facing: f32) bool {
+    return @abs(mathx.degrees(mathx.wrapPi(bearing - facing))) <= GUARD_ARC;
+}
+
 /// Billed on the RAW weight of the blow: the arm behind a burning arrow does not know what you resist.
 pub fn guardStamina(h: Hit) f32 {
     return GUARD_STAM_FLAT + GUARD_STAM_PER_DMG * h.raw();
@@ -725,6 +732,86 @@ pub const Quiver = struct {
 };
 
 
+// POISON — the first STATUS EFFECT, and the shape every one after it takes.
+//
+// **ONE METER DOES ALL THREE JOBS** (owner's call). Hits fill it; full, it PROCS; and the same meter then
+// becomes the CLOCK, draining over the effect's own life while it bills HP. **It cannot be topped up while
+// it drains** — poison is a state you are already in, where a BURST status (bleed) resets to nothing and
+// re-procs at once. That is the souls rule for a status with a DURATION, and it is why there is no second
+// clock here: what the bar shows is always the same number, so a readout and a mechanic cannot disagree.
+//
+// **DECAY IS WHAT MAKES IT PRESSURE** (ER's, `docs/ELDEN_RING.md` §5): the meter falls once you STOP taking
+// doses, so spaced hits never proc and LINGERING is the whole cost. Step out of the cloud and you are fine;
+// stand in it and you are not.
+
+/// A full meter, in points — ER's own scale, so a source's rate reads as "seconds of this to proc" rather
+/// than as a fraction nobody can size anything against.
+pub const POISON_MAX: f32 = 100.0;
+/// How long after the last dose the meter holds before it starts falling…
+pub const POISON_DECAY_DELAY: f32 = 1.1;
+/// …and how fast it falls then. Sized so a half-full bar is gone about two seconds after you walk out.
+pub const POISON_DECAY: f32 = 24.0;
+/// THE PROC: how long it runs…
+pub const POISON_DUR: f32 = 14.0;
+/// …and what it takes over that span, as a fraction of MAX HP — the flask's rule, so it is worth the same
+/// on a Vitality build as on a fresh sheet. Over a quarter of him, but slowly, and a crimson answers it.
+pub const POISON_HP_FRAC: f32 = 0.26;
+
+pub const Status = struct {
+    /// 0..`POISON_MAX`. BUILDUP while it is filling, and the SHARE OF THE DURATION LEFT while it runs — one
+    /// number, which is the whole point of the shape.
+    meter: f32 = 0,
+    on: bool = false,
+    sinceDose: f32 = LONG_AGO,
+    /// A ONE-FRAME EDGE (`justDied`'s idiom): the frame it went off, for the beat that says so.
+    justProcced: bool = false,
+
+    pub fn frac(self: *const Status) f32 {
+        return mathx.clampF(self.meter / POISON_MAX, 0, 1);
+    }
+    pub fn active(self: *const Status) bool {
+        return self.on;
+    }
+    /// A DOSE — refused outright while the effect runs, which is the lockout.
+    pub fn add(self: *Status, amt: f32) void {
+        if (self.on or amt <= 0) return;
+        self.meter = minF(POISON_MAX, self.meter + amt);
+        self.sinceDose = 0;
+    }
+    /// ONE FRAME, and it RETURNS THE HP DUE rather than taking it: only the body knows how to die, so the
+    /// bill goes back to the caller exactly as `Root.tick`'s does.
+    pub fn tick(self: *Status, dt: f32, hpMax: f32) f32 {
+        self.justProcced = false;
+        if (self.on) {
+            self.meter = maxF(0, self.meter - POISON_MAX / POISON_DUR * dt);
+            if (self.meter <= 0) {
+                self.* = .{}; // …and it is clear again, meter and clock together
+                return 0;
+            }
+            return hpMax * POISON_HP_FRAC / POISON_DUR * dt;
+        }
+        self.sinceDose += dt;
+        // FULL. The meter does not empty — it turns into the clock, which is why it starts the drain FULL.
+        if (self.meter >= POISON_MAX) {
+            self.on = true;
+            self.justProcced = true;
+            self.meter = POISON_MAX;
+            return 0;
+        }
+        if (self.sinceDose >= POISON_DECAY_DELAY) self.meter = maxF(0, self.meter - POISON_DECAY * dt);
+        return 0;
+    }
+    pub fn reset(self: *Status) void {
+        self.* = .{};
+    }
+};
+
+/// WHAT THE POISON TAKES, as a blow — no element (`Elem` has no poison and ER has no poison damage type
+/// either: it ticks HP and nothing absorbs it) and NO POISE, because a status is not a stagger.
+pub fn poisonPulse(amt: f32) Hit {
+    return .{ .dmg = amt };
+}
+
 pub const Regen = struct {
     left: f32 = 0, // seconds still to run
     rate: f32 = 0, // HP a second while it does
@@ -777,6 +864,71 @@ pub const Runes = struct {
 
 const minF = mathx.minF;
 const maxF = mathx.maxF;
+
+test "POISON: the meter fills, PROCS, and the same meter drains as the clock" {
+    var s = Status{};
+    try std.testing.expect(!s.active() and s.frac() == 0);
+    // Filling: no bill, no proc, right up to the brim.
+    s.add(POISON_MAX - 1.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), s.tick(1.0 / 60.0, 70), 1e-6);
+    try std.testing.expect(!s.active() and s.frac() > 0.9);
+    // …and the frame it fills, it goes off — with the meter FULL, because it is the clock now.
+    s.add(5.0);
+    _ = s.tick(1.0 / 60.0, 70);
+    try std.testing.expect(s.active() and s.justProcced);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), s.frac(), 1e-4);
+    // …and the edge is ONE FRAME, not a latch.
+    _ = s.tick(1.0 / 60.0, 70);
+    try std.testing.expect(!s.justProcced);
+
+    // It bills its whole share of him over its own span, and lets go on its own.
+    var paid: f32 = 0;
+    var t: f32 = 1.0 / 30.0;
+    while (t < POISON_DUR * 1.2) : (t += 1.0 / 60.0) paid += s.tick(1.0 / 60.0, 70);
+    try std.testing.expect(!s.active());
+    try std.testing.expectApproxEqAbs(@as(f32, 0), s.frac(), 1e-6);
+    try std.testing.expectApproxEqAbs(70.0 * POISON_HP_FRAC, paid, 0.5);
+}
+
+test "POISON CANNOT BE RE-APPLIED WHILE IT RUNS — a state you are already in, not a burst" {
+    var s = Status{};
+    s.add(POISON_MAX);
+    _ = s.tick(1.0 / 60.0, 70);
+    try std.testing.expect(s.active());
+    // Half way through, dosed hard: the clock is untouched and nothing is topped up.
+    var t: f32 = 0;
+    while (t < POISON_DUR * 0.5) : (t += 1.0 / 60.0) _ = s.tick(1.0 / 60.0, 70);
+    const half = s.frac();
+    for (0..40) |_| s.add(POISON_MAX);
+    try std.testing.expectApproxEqAbs(half, s.frac(), 1e-5); // …the dose did nothing at all
+    // …and it still ends when it was always going to.
+    while (t < POISON_DUR + 0.2) : (t += 1.0 / 60.0) _ = s.tick(1.0 / 60.0, 70);
+    try std.testing.expect(!s.active());
+    // …and only THEN does a fresh dose take.
+    s.add(20.0);
+    try std.testing.expect(s.frac() > 0.15);
+}
+
+test "LINGERING IS THE COST: the meter decays once the doses stop" {
+    var s = Status{};
+    s.add(POISON_MAX * 0.7);
+    // It HOLDS briefly first, or a stutter in the source would undo a real dose.
+    var t: f32 = 0;
+    while (t < POISON_DECAY_DELAY * 0.5) : (t += 1.0 / 60.0) _ = s.tick(1.0 / 60.0, 70);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.7), s.frac(), 1e-3);
+    // …then it falls, and it never procs off a dose you walked away from.
+    while (t < POISON_DECAY_DELAY + POISON_MAX / POISON_DECAY + 0.2) : (t += 1.0 / 60.0) _ = s.tick(1.0 / 60.0, 70);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), s.frac(), 1e-6);
+    try std.testing.expect(!s.active());
+    // SPACED DOSES NEVER PROC (ER's own point): half a bar, wait it off, half a bar again.
+    var spaced = Status{};
+    for (0..6) |_| {
+        spaced.add(POISON_MAX * 0.45);
+        var u: f32 = 0;
+        while (u < POISON_DECAY_DELAY + POISON_MAX / POISON_DECAY) : (u += 1.0 / 60.0) _ = spaced.tick(1.0 / 60.0, 70);
+        try std.testing.expect(!spaced.active());
+    }
+}
 
 test "the roots hold for their span, bill chaos the whole way, and let go on their own" {
     var r = Root{};

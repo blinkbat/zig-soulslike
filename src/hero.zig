@@ -853,6 +853,9 @@ pub const Hero = struct {
     /// stack). While it runs it IS his resistances, since nothing else grants him any yet.
     wardChaos: f32 = 0,
     wardLeft: f32 = 0,
+    /// THE FIRST STATUS EFFECT (`combat.Status`) — ONE meter that fills, procs, and then drains as the
+    /// poison's own clock. His alone for now: nothing in the world applies one to a foe.
+    poison: combat.Status = .{},
     drinking: bool = false,
     drinkT: f32 = 0,
     poured: bool = false,
@@ -985,6 +988,9 @@ pub const Hero = struct {
         self.stam.reset();
         self.fp.reset();
         self.regen.reset();
+        // A GRACE CURES WHAT IS ON HIM (ER's own), and a death is a return to one.
+        self.poison.reset();
+        self.wardLeft = 0;
         // FLASKS REFILL AT THE GRACE, and a death IS a return to one.
         self.flasks.refill();
         self.quiver.refill();
@@ -1749,9 +1755,9 @@ pub const Hero = struct {
     }
 
     pub fn guardCovers(self: *const Hero, fromDir: rl.Vector3) bool {
+        // A ZERO DIRECTION IS NEVER BLOCKED, which is what lets `--shot` force reactions with synthetic hits.
         if (!self.guarding or mathx.lenXZ(fromDir) < 1e-4) return false;
-        const off = mathx.wrapPi(mathx.headingXZ(fromDir) - self.facing);
-        return @abs(mathx.degrees(off)) <= combat.GUARD_ARC;
+        return combat.withinGuardArc(mathx.headingXZ(fromDir), self.facing);
     }
 
     pub fn takeHit(self: *Hero, h: combat.Hit, fromDir: rl.Vector3) combat.HitOutcome {
@@ -1818,6 +1824,26 @@ pub const Hero = struct {
     pub fn tickWard(self: *Hero, dt: f32) void {
         self.wardLeft = mathx.maxF(0, self.wardLeft - dt);
         self.vit.res = if (self.wardLeft > 0) combat.resists(.{ .chaos = self.wardChaos }) else .{};
+    }
+
+    /// A DOSE OF POISON — refused while it already runs, which `Status.add` owns. Sources hand it a number
+    /// of BUILDUP and never HP: what the poison takes is the proc's business, not the cloud's.
+    pub fn poisonBy(self: *Hero, amt: f32) void {
+        if (self.dead) return;
+        self.poison.add(amt);
+    }
+
+    /// …and one frame of it. Billed as a DRIP (`Vitals.drip`) like every other hold: it carries no poise, and
+    /// stamped through `hit` it would deny him a whole poise bar it has no business touching.
+    ///
+    /// NO HURT FLASH. The red edge belongs to a BLOW; a status that runs fourteen seconds cannot own the
+    /// frame for all of it, and one that re-armed the flash every tick would simply never go out. The bar IS
+    /// the cue. Returns whether this frame's tick actually took HP, so the caller can size its own beat.
+    pub fn tickPoison(self: *Hero, dt: f32) bool {
+        const due = self.poison.tick(dt, self.vit.hpMax);
+        if (due <= 0 or self.dead) return false;
+        if (self.vit.drip(combat.poisonPulse(due)) == .death) self.enterDeath();
+        return true;
     }
 
     /// EVERYTHING HE WAS COMMITTED TO, DROPPED — and NOTHING IS REFUNDED: the draught's charge, the cast's FP

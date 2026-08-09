@@ -952,6 +952,18 @@ pub fn runShots(g: *Game) void {
             o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
             stepFoe(o, 54, far);
         }
+        // …AND WHERE THE RETICLE SITS ON HIM (`ogre.LOCK_AT`). Its own shot because the bar rides `topWorld`
+        // and the dot rides the POSED CHEST: the two answer different questions and only one of them was
+        // ever photographed. Toe to toe, which is the range the seat was chosen against.
+        {
+            g.hero.pos = along(oc, LIT_BACK, 4.2);
+            g.hero.facing = mathx.headingXZ(mathx.scaleV(LIT_BACK, -1));
+            g.hero.update(dt, 0, 0, null);
+            g.hero.pose();
+            g.lock = .{ .kind = .ogre, .idx = 0 };
+            shootClear(g, "shots/47d_ogre_lock.png", LIT_YAW, 0.10, 6.4);
+            g.lock = null;
+        }
         // Scale — the hero standing clearly to the ogre's side (it looms ~1.9x over him).
         g.hero.pos = mathx.ground(oc.x + 4.8, oc.z + 1.4);
         g.hero.facing = std.math.atan2(oc.x - g.hero.pos.x, oc.z - g.hero.pos.z); // face the ogre
@@ -1356,30 +1368,20 @@ pub fn runShots(g: *Game) void {
     folkShots(g);
     soundFilterShots(g);
     editorShots(g);
+    editorGapShots(g);
 }
 
-/// THE SOUND FILTER RACKS (Menu > Debug > Sound Filters) — the retro list's ear-side twin, and the only
-/// two menu screens the harness photographs. They are here because a 17-row card carrying a FOOTNOTE is
-/// the one layout in `drawCard` that can outgrow the window: the note is centred on the plate and the
-/// plate widens to hold it, so a long one pushes the card past both edges of a 1280 frame. A shot is the
-/// only thing that answers that, and the menu is drawn LAST over the world so nothing else has to move.
+/// THE SOUND FILTER RACK, which now lives in the EDITOR beside the jukebox (it moved out of the game's
+/// debug menu — it is an authoring tool, and the one place a voice can be played on demand is that list).
+/// Photographed because the panel is the widest modal in the editor and a third column of eleven sliders
+/// is exactly the layout that can outgrow its box.
 fn soundFilterShots(g: *Game) void {
     const was = g.menu.screen;
     const wasCursor = g.menu.cursor;
-    g.menu.screen = .sfxgroups;
-    g.menu.cursor = 0;
-    drawScene(g);
-    g.menu.draw(&g.retro, game.bookView(g), null);
-    snap("shots/115a_sound_groups.png");
-
-    // The rack itself, with a preset ON: an all-zero card proves the layout and nothing about the dials.
-    g.menu.screen = .sfxfilters;
-    g.menu.mixSel = .combat;
+    // With a preset ON: an all-zero rack proves the layout and nothing about the dials.
     sfx.applyFxPreset(.combat, &sfx.FX_VINYL);
-    g.menu.cursor = 0; // the first dial, so its gauge shows the selected-row arrows
-    drawScene(g);
-    g.menu.draw(&g.retro, game.bookView(g), null);
-    snap("shots/115b_sound_filters.png");
+    g.menu.screen = .closed;
+    editorJukeShot(g, "shots/115a_sound_rack.png");
 
     // …and put the bank back exactly as it was — the harness must not leave a filtered build behind.
     // `resetFx`, NOT `allFxOff`: the house sound IS a rack (worn tape), so turning everything off would
@@ -1755,7 +1757,56 @@ fn shroomShots(g: *Game) void {
     stepFoe(m, 38 + 15 + 30, mark); // gather + the fall + deep in the sprawl
     shootAt(g, "shots/119e_shroom_trip.png", v3(sc.x, sc.y + 0.3, sc.z), LIT_YAW + 40, 0.45, 4.2);
 
+    // …AND WHAT THE CLOUD IS ACTUALLY FOR: the status meter (`combat.Status`). THREE frames, because the
+    // bar means three different things and only the colour and the direction tell them apart — filling is a
+    // threat, full is a thing that has happened, and draining is the clock running out.
+    poisonShots(g, mark);
+
     game.clearFoesForShot(g);
+}
+
+/// THE POISON METER, FILL → PROC → DRAIN. Shot with the hero STANDING IN the cloud rather than through a
+/// debug poke, so what is photographed is the wiring the game actually runs (`game.tickPoisonForShot`).
+fn poisonShots(g: *Game, mark: rl.Vector3) void {
+    const soak = struct {
+        fn it(gg: *Game, frames: i32) void {
+            var k: i32 = 0;
+            while (k < frames) : (k += 1) {
+                _ = gg.cluster.update(SHOT_DT, gg.hero.pos, game.PLAY_HALF, .{});
+                game.tickPoisonForShot(gg, SHOT_DT);
+            }
+        }
+    }.it;
+
+    g.hero.respawnForTest(); // a clean bar, and full HP to watch the poison take off it
+    game.clearFoesForShot(g);
+    g.cluster.n = 1;
+    const m = &g.cluster.shrooms[0];
+    m.* = shroommod.Shroom.spawn(mathx.ground(mark.x - 6.0, mark.z), 0, 1.0, 0.23);
+    standHero(g, mark.x, mark.z, mathx.headingXZ(LIT_BACK));
+
+    // FILLING — a cloud on him, part of a bar in, still violet and still only a threat.
+    m.debugFling(g.hero.pos);
+    soak(g, 46 + 34); // its gather, then its flight — the cloud pops under him
+    soak(g, 90);
+    shootClear(g, "shots/119f_poison_filling.png", LIT_YAW, 0.10, 5.2);
+
+    // THE PROC — a second cloud before the first has decayed, which is what two of them cost you.
+    m.* = shroommod.Shroom.spawn(mathx.ground(mark.x - 6.0, mark.z), 0, 1.0, 0.23);
+    m.debugFling(g.hero.pos);
+    var k: i32 = 0;
+    while (k < 60 * 6 and !g.hero.poison.active()) : (k += 1) {
+        _ = g.cluster.update(SHOT_DT, g.hero.pos, game.PLAY_HALF, .{});
+        game.tickPoisonForShot(g, SHOT_DT);
+    }
+    shootClear(g, "shots/119g_poison_proc.png", LIT_YAW, 0.10, 5.2);
+
+    // DRAINING — the same bar, green now, on its way out with his health going with it.
+    game.clearFoesForShot(g); // no cloud left: the meter is running on its own clock
+    var d: i32 = 0;
+    while (d < 60 * 6) : (d += 1) game.tickPoisonForShot(g, SHOT_DT);
+    shootClear(g, "shots/119h_poison_draining.png", LIT_YAW, 0.10, 5.2);
+    g.hero.respawnForTest(); // …and nothing downstream inherits a poisoned hero
 }
 
 fn leechShots(g: *Game) void {
@@ -2194,6 +2245,50 @@ fn talkShot(g: *Game, name: [:0]const u8, at: rl.Vector3, frames: i32, in: dialo
 }
 
 // THE EDITOR — its whole job is legibility and none of that can be judged from the game shots, so it gets a frame per room: the Props layer at rest, a generator selected (its gizmo plus a marker on every instance it owns — the thing that makes a scatter editable), a Decor belt mid-drag, the Ground layer with soil painted, painted WATER low and overhead, a marquee, the Open dialog, the object viewer's two levels, the Interactables layer and the jukebox.
+/// The editor with the JUKEBOX modal up — the sound rack's own frame. Its own helper because the modal is
+/// opened through the editor's real entry point (`openJukeboxForShot`), never by poking `modal` from here:
+/// the panel reads state that entering sets up.
+fn editorJukeShot(g: *Game, name: [:0]const u8) void {
+    g.editor.enter(mathx.ground(0, -66));
+    g.editor.applyCamForShot();
+    g.editor.soundsForShot(.ogre_slam); // a combat voice, so the rack beside it is the one being turned
+    g.editor.rackMix = .combat;
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
+    snap(name);
+    g.editor.on = false;
+}
+
+/// THE TWO PANELS THAT REACH WHAT NO BRUSH COULD — the map's own size/runway/rim, and what a zone grows.
+/// Both are modals with no gizmo behind them, so a shot is the only thing that says they lay out at all.
+fn editorGapShots(g: *Game) void {
+    g.editor.enter(mathx.ground(0, -66));
+    g.editor.applyCamForShot();
+    g.editor.worldForShot();
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
+    snap("shots/116a_editor_world.png");
+
+    g.editor.zoneMixForShot(&g.map, 0);
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
+    snap("shots/116b_editor_zonemix.png");
+
+    // …and the DENSITY GRADIENT rows, which live in the belt inspector rather than in a modal: select a
+    // belt, turn a gradient on, and photograph the panel that had no control for it at all until now.
+    g.editor.closeModalForShot();
+    for (g.map.slice(), 0..) |o, i| {
+        if (o.op == .belt) {
+            g.editor.gradientForShot(&g.map, i); // …which sets the layer the op actually lives on
+            break;
+        }
+    }
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
+    snap("shots/116c_editor_gradient.png");
+    g.editor.on = false;
+}
+
 fn editorShots(g: *Game) void {
     g.editor.enter(mathx.ground(0, -66)); // the chapel end of the processional way
     g.editor.setLayer(.props);

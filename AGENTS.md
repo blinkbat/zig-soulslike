@@ -115,12 +115,12 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `archer.zig` | skeletal archer + `Line`; kite-only, arrows that stick and fade |
 | `ogre.zig` | one-eyed ogre + `Grief`; 24 bones, high poise; slam (sometimes HELD at the top), side swipe (sometimes a RETURN chained off it), mid-range lunging DRIVE, jittered cooldowns; never strafes |
 | `kobold.zig` | kobold warband + `Warband` — three roles of one creature (berserker/priest/slinger); the priest is why they are one group |
-| `brood.zig` | brood mother, sacs, broodlings + `Brood`; guard not hunter, acid POOLS are the weapon |
+| `brood.zig` | brood mother, sacs, broodlings + `Brood`; guard not hunter, venom POOLS are the weapon — they POISON rather than burn |
 | `warrior.zig` | skeletal warriors + `Muster` — shieldman (blocks, guard-breaks to one knee) and greatsword (uninterruptible slam) |
 | `shade.zig` | shades + `Haunt`; legless, hovers, 17 bones of its own. The one thing that drains FOCUS, the one thing that TELEPORTS |
 | `leechfly.zig` | THE FIRST FLYER + `Swarm`; 15 bones, never lands. Drinks his HP through a beak and heals off what it takes, and ZOOMS out of sword reach |
 | `rooted.zig` | THE TREE THAT ISN'T + `Grove`; a snag-mimic fixture — eyes open outside its reach, three limb strikes (slam/sweep/hook-drag), never moves |
-| `shroom.zig` | the sporeling + `Cluster`; a squat mushroom that FLINGS itself and bursts a lingering chaos spore cloud (billed as a drip). Sometimes it TRIPS instead — same gather, longer opening |
+| `shroom.zig` | the sporeling + `Cluster`; a squat mushroom that FLINGS itself and bursts a lingering spore cloud that POISONS (buildup, never damage). Sometimes it TRIPS instead — same gather, longer opening |
 | `combat.zig` | `Vitals` (HP + two-tier stagger + regen + death), `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`. THE place to retune feel |
 | `stats.zig` | the character sheet — seven attributes and the curves that make the bars |
 | `item.zig` | item vocabulary, `Use`, the `Bag` |
@@ -132,7 +132,7 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `itemart.zig` | pictures of things — armaments and bag items as objects, sized by the caller |
 | `icons.zig` | editor glyph set, drawn from primitives (vector, not an atlas) |
 | `book.zig` | THE CHARACTER BOOK (pad START) — a Diablo paper doll + ten quick sockets, the bag, the sheet |
-| `menu.zig` | pause/debug menu, sound levels, retro + sound filter racks |
+| `menu.zig` | pause/debug menu, sound LEVELS, and the retro filter rack. The SOUND filter rack is not here — it is the editor's (`editor.rackPanel`) |
 | `audio.zig` | ~80 synthesized voices through one tape-style `master`; three submixes; read it as recipes |
 | `rumble.zig` | XInput directly (raylib's GLFW backend stubs `SetGamepadVibration`); holds `PAD` |
 | `shots.zig` | the headless harness — never in context while working on the loop |
@@ -489,6 +489,33 @@ the fight, which is the whole point of it.
   than copying it). The rows are FILTERED to what he actually carries (`quickOffered`) and carry an empty
   row, so a kind's ordinal is not its row and `pickIndexOf` counts it out the way `candidates` builds it.
 
+### Status effects — POISON, and the shape every one after it takes
+
+**ONE METER DOES ALL THREE JOBS** (`combat.Status`, owner's call). Hits fill it; full, it **PROCS**; and the
+same meter then becomes the **CLOCK**, draining over the effect's life while it bills HP. **It cannot be
+topped up while it drains** — poison is a state you are already in, where a BURST status (bleed) resets to
+nothing and re-procs at once. That is why there is no second clock: what the bar shows is always the same
+number, so a readout and a mechanic cannot disagree.
+
+- **DECAY IS WHAT MAKES IT PRESSURE** (ER's own): the meter falls once you STOP taking doses
+  (`POISON_DECAY_DELAY` then `POISON_DECAY`), so spaced hits never proc and LINGERING is the whole cost.
+- **A SOURCE HANDS OVER BUILDUP, NEVER HP.** What the poison takes is the proc's business, not the cloud's —
+  so a source keeps no clock of its own and cannot fall out of step with the decay.
+- **THE PROC IS BILLED AS A DRIP** (`Vitals.drip`): it carries no poise, and stamped through `hit` it would
+  deny him a whole poise bar it has no business touching. It takes `POISON_HP_FRAC` of MAX HP over its span,
+  a fraction so it is worth the same on a Vitality build as on a fresh sheet.
+- **THE DRAIN IS SILENT AND UNFLASHED.** The red edge and the beat belong to a BLOW; a status running
+  fourteen seconds cannot own the frame, and a flash re-armed every tick would never go out. **The PROC gets
+  the whole of the feedback, once** — one shake, one voice, one flash. The bar is the cue for the rest.
+- **THE BAR HAS TWO FACES OFF ONE NUMBER** — violet FILLING (a threat), toxic YELLOW once it has gone off (a
+  thing happening to you), and it draws **nothing at all** while empty. Not green: it sits directly under the
+  stamina bar and the two measured as the same bar.
+- **A GRACE CURES IT** (`hero.makeWhole`), and a death is a return to one.
+- **TWO SOURCES, ONE FLUID** — the sporeling's spore cloud (`SPORE_BUILD`) and the brood mother's spit
+  (`M_SPIT_BUILD`) and acid pools (`ACID_BUILD`). Neither floor deals damage any more; both are pressure.
+  Standing in spores and acid at once doses as **both**, which is why they are two `add` calls and not a max.
+- **THE HERO ALONE CARRIES ONE.** Nothing applies a status to a foe, so nothing on a foe reads one.
+
 ### Resistances — PoE2's four
 
 - **PHYSICAL IS NOT ONE OF THE FOUR.** `Elem` is fire/cold/lightning/chaos. What mitigates physical is
@@ -500,8 +527,9 @@ the fight, which is the whole point of it.
   rename is a compile error. An array literal in enum order silently shifts on a fifth element.
 - **POISE AND STANCE BELONG TO THE BLOW, NOT THE BODY.** `guardChip` is damage only for the same
   reason. **A shield is billed on the RAW blow** (`Hit.raw`).
-- **TWO OF THE FOUR ARE LIVE** — FIRE (hero's fire arrow, kobold sling clump) and CHAOS (brood spit
-  and pools, hero's chaos bolt). Cold and lightning have no source yet.
+- **ONE AND A HALF OF THE FOUR ARE LIVE** — FIRE (hero's fire arrow, kobold sling clump) and CHAOS, which
+  is now the WAND'S ALONE (the bolt and the roots' grip). Cold and lightning have no source yet, and nothing
+  in the world deals chaos AT the hero since the brood's venom and the sporeling's spores became POISON.
 - Every foe carries its own table, authored where its HP is (`initFoe(..).withRes(..)`):
 
   | creature | fire | cold | lightning | chaos | why |
@@ -955,7 +983,7 @@ not the stick-speed `runB`.
 - **VSYNC, not `setTargetFPS`.** `vsync_hint` before `initWindow`, no frame cap — `setTargetFPS` is a
   CPU-side limiter that never asks the driver to swap during vblank, so the swap TEARS in exclusive
   fullscreen, and two limiters fight on any panel that isn't 60 Hz.
-- **Depth z-fighting:** `rlSetClipPlanes(0.2, 320)` at startup. The ground sits a hair above y=0
+- **Depth z-fighting:** `rlSetClipPlanes(CLIP_NEAR, CLIP_FAR)` (0.55, 320) at startup. The ground sits a hair above y=0
   (`env.GROUND_Y = 0.01`) so content is planted-to-slightly-embedded and never FLOATS.
 - **Sun + shadows are ONE source** (`gfx.SUN_DIR`) feeding both the shader and the shadow camera.
 - **Shadow pass contract:** every caster draws through `game.drawCasters` (both passes, so transforms
@@ -1031,16 +1059,36 @@ not the stick-speed `runB`.
   only `BANK.gain` sets how loud it is. **THE FIGHT IS ONE BAND** — combat rows above `BATTLE_FLOOR`
   (0.34) are pulled geometrically toward the soft end, halving the spread in dB. Retune by moving the
   FLOOR, not by pushing one row back up; a test pins the ratio and the orderings.
-- **The player's sound filter rack is BAKE-TIME** — raylib cannot filter a playing voice, but every
+- **THE VOLUME IS RESERVED FOR WHAT IS ABOUT TO HIT YOU** (owner's call). A creature's committed arrival
+  outranks its own movement noise — lunge over hop, slam over step, stab over wingbeat, swing over creak —
+  and the tells sit past the midpoint of the band. **TEXTURE GOES AT OR UNDER THE FLOOR**, which is what
+  takes it out of the band entirely: hops, the wingbeat, the idle creak, the whirl. A second test pins both
+  halves, in PAIRS, so each is that creature's own decision rather than a comparison across two sizes.
+- **AND TEXTURE IS THINNED IN COUNT, NOT JUST IN LEVEL** — `leechfly.DRINK_EVERY`, `rooted.CREAK_EVERY`, and
+  the hiss the brood mother no longer spends on laying a sac. A voice that repeats through a hold is not an
+  event however quiet it is. The one cadence that MAY NOT be thinned is `leechfly.WHINE_EVERY`: the take is
+  cut a hair longer than its own period so consecutive ones overlap, and gapping it is the helicopter.
+- **THE FAMILY LEVEL IS `TRIM_COMBAT` (0.46), NOT THE FLOOR** — the floor moves only the `battle()` band,
+  where the trim reaches the literal-gain rows too (the swings, the chant, the draw). Whole-family moves go
+  there. **And the fight is rolled off the top** (`COMBAT_TREBLE`, one pole at bake in `bakeRow`, UNDER the
+  player's rack so a dial still sits on top of it): the fizz on a struck edge is what makes a busy fight
+  tiring, and the body of every one of these voices is well below the cut.
+- **The sound filter rack is BAKE-TIME** — raylib cannot filter a playing voice, but every
   voice is synthesized, so a dial re-renders that family (coalesced by `FX_SETTLE`). A bake STOPS
-  every take before freeing any of it.
+  every take before freeing any of it. **IT LIVES IN THE EDITOR, beside the JUKEBOX** (`editor.rackPanel`,
+  the `.jukebox` modal) and not in the game's debug menu: it is an authoring tool rather than a setting, and
+  the one place a voice can be played on demand is the list next to it. Its eleven dials end in the EQ pair
+  (`AF_BASS`, `AF_PRESENCE`), which are applied LAST — the tone of the result, not another thing to distort.
+  The RETRO rack stays in the menu; that one is a LOOK the player picks.
 - **Never bulk-edit source through PowerShell** `Get-Content`/`Set-Content`: em dashes mojibake and a
   BOM appears. Use the Edit tool.
 
 ## Gaps
 
-No criticals, guard counter, jump, status buildup, or AR × motion-value damage (flat constants
-today). The parry exists but has no RIPOSTE behind it — a caught blow buys a stagger and the ordinary punish,
+No criticals, guard counter, jump, or AR × motion-value damage (flat constants
+today). POISON is the only status effect, it is the HERO's alone (nothing applies one to a foe, and no foe
+reads one), and nothing RESISTS it yet — the sporeling cap's ward still grants CHAOS resistance, which since
+the venom became poison protects against nothing in the world. The parry exists but has no RIPOSTE behind it — a caught blow buys a stagger and the ordinary punish,
 not a critical. Four creatures carry parry windows; the archers, the kobolds and the shades have none yet, and
 the broodlings are out on purpose. No foot IK — `rx(bodyPitch)` rotates about the WORLD ORIGIN, so a deep lean levers a
 forward-swung foot down and feet clip a few cm on slopes. The roll has front-loaded i-frames but no

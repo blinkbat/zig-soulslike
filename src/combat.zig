@@ -108,6 +108,15 @@ pub const Hit = struct {
     pub fn raw(self: Hit) f32 {
         return self.dmg + self.elem.total();
     }
+
+    /// IS THIS A HEAVY BLOW — i.e. does it carry STANCE. The question every felt beat is sized off (`foe.wounded`
+    /// for the blood and the chips, `game.heroTakes` for the shake, the pad and the grunt), and it was written
+    /// out as `hit.stance > 0` at nine sites. One test of the BLOW, never of the reaction: a heavy a high-poise
+    /// body shrugs off still hit it that hard. The ogre's slam and the berserker's chop deviate ON PURPOSE and
+    /// say so where they do it.
+    pub fn heavy(self: Hit) bool {
+        return self.stance > 0;
+    }
 };
 
 const REGEN_DELAY = 0.8; // seconds after the last hit before the HERO's meters refill
@@ -846,6 +855,16 @@ pub const Runes = struct {
 
     pub fn gain(self: *Runes, n: u32) void {
         self.total += n;
+    }
+
+    /// EVERYTHING HE WAS CARRYING, OFF HIM AT ONCE — what a death spills onto the ground (`souls.Souls`).
+    /// The ROLLING display goes with it rather than draining down to zero over the next second: the number
+    /// did not tick away, it was taken, and the card that says so is already on the screen.
+    pub fn dropAll(self: *Runes) u32 {
+        const had = self.total;
+        self.total = 0;
+        self.shown = 0;
+        return had;
     }
 
     pub fn tick(self: *Runes, dt: f32) void {

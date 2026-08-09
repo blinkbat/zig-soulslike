@@ -27,8 +27,9 @@ pub fn closestApproach(bodyR: f32) f32 {
 pub const AIRBORNE_LIFT: f32 = 0.04;
 
 /// **NO ATTACK COMES OUT OF NOWHERE** (owner's law): seconds a creature's kit must be VISIBLY MOVING before
-/// it can deal damage. Derived from what already reads — the ogre's swipe 0.46, the brood bite 0.40, the
-/// toad's gape 0.42 — against the berserker's chop at 0.14 and the broodling's at 0.20, which read as INSTANT.
+/// it can deal damage. Derived from what already reads — the ogre's swipe, the brood's bite, the toad's gape,
+/// all half a second and up — against the berserker's chop at 0.14 and the broodling's at 0.20, which read as
+/// INSTANT. It is a FLOOR under the winds, never the length of one: `PARRY_LEAD` brackets those from above.
 pub const TELL_MIN: f32 = 0.30;
 
 /// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT ON THE BOARDS — one number, IN SECONDS, measured back
@@ -36,7 +37,7 @@ pub const TELL_MIN: f32 = 0.30;
 /// THIS one.** As a private copy per creature it is `stunCurve`'s story again: the same event drifting into
 /// three numbers nobody chose. You parry an instant before THE HIT, whatever is swinging (owner's call), so
 /// a club, a mace, a greatsword and a mother's fangs teach one rule. See `ogre.parryable` for the example.
-pub const PARRY_LEAD: f32 = 0.11;
+pub const PARRY_LEAD: f32 = 0.18;
 
 /// A CORPSE IS NOT A COLLIDER (owner's call): `alive()` stays true through the whole death collapse and its
 /// dissipation, so every collision site has to ask this instead.
@@ -232,7 +233,7 @@ pub fn reached(self: anytype, blade: Blade) ?Strike {
 pub fn wounded(self: anytype, s: Strike, blade: Blade, push: Push) bool {
     self.hits += 1;
     self.flash = FLASH_DUR;
-    const heavy = blade.hit.stance > 0;
+    const heavy = blade.hit.heavy();
     self.shove = mathx.scaleV(s.dir, if (heavy) push.heavy else push.light);
     return heavy;
 }

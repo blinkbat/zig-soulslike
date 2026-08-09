@@ -469,6 +469,7 @@ pub const Id = enum {
     ogre_roar,
     ogre_slam,
     ogre_swipe,
+    ogre_heave, // HE COMMITS — the club leaving the cock, one grunt, on the frame the swing starts
     ogre_hurt,
     ogre_die,
     kobold_snarl, // HE COMMITS — one bark per flurry, and the cue to get out of reach
@@ -522,6 +523,12 @@ pub const Id = enum {
     eat,
     chest_open, // a lid coming up: the lock giving, the hinge turning, the boards settling back
     item_get,
+    // THE SOULS. Gold and AIR, no wood and no iron: what leaves you when you die is not an object, and the
+    // family has to be audibly a different substance from the chest and the flask beside it.
+    souls_spill, // everything coming off you at once, falling
+    souls_hum, // …and standing there — a RETRIGGER on its own cadence, since a synthesized take cannot loop
+    souls_take, // it rushing back up into you: the spill's own shape, run backwards and brighter
+    ring_snap, // the binding ring giving instead of you — one thin break, and it is over
     kill,
     menu_move,
     menu_pick,
@@ -1671,6 +1678,57 @@ fn mkFlaskCycle(r: *Rack) void {
 }
 
 
+/// EVERYTHING COMING OFF HIM AT ONCE. A struck gold ring, then the whole thing SINKING — the sweep runs
+/// DOWN, which is the only part of it that has to be right: this is a loss, and a rising figure would read
+/// as a reward. No grit at all; there is nothing solid in it.
+fn mkSoulsSpill(r: *Rack) void {
+    r.ring(0.0, 0.70, 523, 0.40, 2.6, 4); // the gold struck once…
+    r.ring(0.03, 0.62, 349, 0.30, 2.4, 3); // …and its fifth under it, so the interval is the sound
+    r.air(0.0, 0.85, 0.34, 3400, 420, 0.55, 1.5); // the whole of it falling away
+    r.body(0.05, 0.55, 190, 62, 0.34, 2.2); // …with just enough weight to be a loss and not a chime
+    r.master(1.7, 5200);
+}
+
+/// IT STANDING THERE. Nearly nothing: a low bell with a breath under it, cut short enough that the retrigger
+/// in `souls.zig` overlaps its own takes rather than chattering (the leechfly's whine rule).
+fn mkSoulsHum(r: *Rack) void {
+    r.ring(0.0, 1.30, 262, 0.26, 1.1, 3);
+    r.ring(0.10, 1.05, 392, 0.13, 1.3, 2);
+    r.air(0.0, 1.20, 0.09, 700, 1300, 0.30, 1.0);
+    r.master(1.2, 4200);
+}
+
+/// AND BACK INTO HIM. The spill's own figure run the other way: the sweep CLIMBS, the interval closes
+/// upward, and it is over fast — the runes are already rolling on the counter by the time it ends.
+fn mkSoulsTake(r: *Rack) void {
+    r.air(0.0, 0.30, 0.30, 500, 4800, 0.52, 2.6); // the rush up
+    r.ring(0.05, 0.44, 523, 0.42, 3.4, 4);
+    r.ring(0.09, 0.38, 784, 0.30, 4.0, 3); // …arriving a fifth ABOVE, where the spill fell a fifth below
+    r.ring(0.13, 0.30, 1046, 0.18, 5.0, 2);
+    r.master(2.0, 6400);
+}
+
+/// THE RING GIVING INSTEAD OF YOU. One thin break and nothing after it: a hard tick, a high partial that
+/// dies almost at once, and no body — it is a hairline finishing its journey through a gram of gold.
+fn mkRingSnap(r: *Rack) void {
+    r.tick(0.0, 0.62, 7200);
+    r.ring(0.0, 0.20, 1568, 0.34, 7.0, 2);
+    r.ring(0.01, 0.11, 2093, 0.20, 9.0, 1);
+    r.grit(0.0, 0.05, 0.22, 5200, 0.5, 6.0);
+    r.master(2.2, 7000);
+}
+
+/// THE CLUB LEAVING THE COCK. Short and hard — a chest emptying in one push, and NOT another roar: the
+/// roar at the top of the wind already said a swing was coming, and two of the same shape a second apart
+/// read as one long noise rather than as two different facts about the same swing.
+fn mkOgreHeave(r: *Rack) void {
+    r.growl(0.0, 0.26, 168, 76, 0.62, 0.42, 3.4); // the throat, dropping
+    r.air(0.0, 0.30, 0.34, 900, 320, 0.42, 2.8); // the breath going with it
+    r.body(0.0, 0.14, 92, 44, 0.40, 3.0); // the mass under it setting
+    r.grit(0.02, 0.16, 0.24, 1400, 0.7, 2.6);
+    r.master(2.2, 3200);
+}
+
 fn mkKill(r: *Rack) void {
     // A KILL IS A THUD (owner's call, twice over: no bell, no jingle).
     r.tick(0.0, 0.35, 2000);
@@ -1886,6 +1944,7 @@ const BANK = [NV]Row{
     .{ .id = .ogre_roar, .make = mkOgreRoar, .gain = battle(0.80), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .reach = 135 },
     .{ .id = .ogre_slam, .make = mkOgreSlam, .gain = battle(1.00), .mix = .combat, .jit = 0.06, .vjit = 0.08, .vars = 3, .reach = 135 },
     .{ .id = .ogre_swipe, .make = mkOgreSwipe, .gain = battle(0.72), .mix = .combat, .jit = 0.07, .vjit = 0.12, .vars = 3, .reach = 85 },
+    .{ .id = .ogre_heave, .make = mkOgreHeave, .gain = battle(0.70), .mix = .combat, .jit = 0.07, .vjit = 0.11, .vars = 3, .reach = 85 },
     .{ .id = .ogre_hurt, .make = mkOgreHurt, .gain = battle(0.66), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 80 },
     .{ .id = .ogre_die, .make = mkOgreDie, .gain = battle(0.92), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1, .reach = 135 },
     .{ .id = .kobold_snarl, .make = mkKoboldSnarl, .gain = battle(0.62), .mix = .combat, .jit = 0.22, .vjit = 0.24, .vars = 6, .poly = 3, .reach = 58 },
@@ -1951,6 +2010,14 @@ const BANK = [NV]Row{
     .{ .id = .eat, .make = mkEat, .gain = 0.40, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 2 },
     .{ .id = .chest_open, .make = mkChestOpen, .gain = 0.72, .jit = 0.04, .vjit = 0.06, .vars = 2, .poly = 2, .reach = 70 },
     .{ .id = .item_get, .make = mkItemGet, .gain = 0.44, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 4 },
+    // THE SPILL IS THE LOUDEST OF THE FOUR and it is not in the combat band: it happens under the YOU DIED
+    // card, where nothing else is playing, and it is the only line that says what the death actually cost.
+    .{ .id = .souls_spill, .make = mkSoulsSpill, .gain = 0.68, .jit = 0.03, .vjit = 0.05, .vars = 2, .poly = 2 },
+    // …and the hum is TEXTURE, so it sits low and carries a short way: it is there to be found by walking
+    // toward it, not to be heard across the map (`reach`, and the retrigger cadence in `souls.zig`).
+    .{ .id = .souls_hum, .make = mkSoulsHum, .gain = 0.26, .jit = 0.05, .vjit = 0.07, .vars = 3, .poly = 2, .reach = 26 },
+    .{ .id = .souls_take, .make = mkSoulsTake, .gain = 0.62, .jit = 0.04, .vjit = 0.07, .vars = 3, .poly = 2, .reach = 40 },
+    .{ .id = .ring_snap, .make = mkRingSnap, .gain = 0.66, .jit = 0.05, .vjit = 0.08, .vars = 2, .poly = 2 },
     .{ .id = .kill, .make = mkKill, .gain = battle(0.55), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 4 },
     .{ .id = .menu_move, .make = mkMenuMove, .gain = 0.30, .jit = 0.06, .vjit = 0.08, .vars = 2, .poly = 3 },
     .{ .id = .menu_pick, .make = mkMenuPick, .gain = 0.38, .jit = 0.03, .vjit = 0.05 },

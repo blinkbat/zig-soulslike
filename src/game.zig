@@ -27,6 +27,7 @@ const leechmod = @import("leechfly.zig");
 const shademod = @import("shade.zig");
 const chestmod = @import("chest.zig");
 const restmod = @import("rest.zig");
+const soulsmod = @import("souls.zig"); // WHAT A DEATH LEAVES ON THE GROUND, and the walk back for it
 const npcmod = @import("npc.zig");
 const trigmod = @import("trigger.zig");
 const dialogmod = @import("dialog.zig");
@@ -122,7 +123,25 @@ const MAX_LOCK_R = 17.0; // won't acquire, and drops, a foe beyond this
 /// round: without the gap, a foe hovering on the ring drops and re-acquires every other frame.
 const LOCK_KEEP_SLACK: f32 = 2.0;
 const LOCK_CAM_EASE = 9.0; // exponential ease rate for the lock-on camera swing (quick, snap-free)
-const LOCK_PITCH = 0.24; // framing pitch while locked (the toads sit low)
+/// The framing pitch while locked onto something at chest height at ordinary range — the fallback when the
+/// geometry has nothing to say (he is standing inside it) and the value `lockPitch` settles near on a toad.
+const LOCK_PITCH = 0.24;
+/// …AND THE RIG TILTS ONTO WHAT IT IS LOCKED TO (owner's call). The boom's pitch IS the view's, so the right
+/// number is the angle from the EYE down to the mark: a toad at your boots tips the camera down, an ogre
+/// whose chest is two and a half metres up tips it back. A fixed pitch framed the grass under a giant and
+/// the sky over a toad, and both of those are the one thing you are trying to look at.
+///
+/// Measured off the LIVE eye rather than solved, which makes it a feedback loop — and a convergent one: the
+/// loop gain is `boom / (boom + distance to the mark)`, under 1 everywhere the guard below does not fire,
+/// and `camera.aim`'s ease damps it the rest of the way. The clamps are the rig's own.
+const LOCK_PITCH_NEAR: f32 = 0.5; // metres of horizontal separation under which the angle stops meaning anything
+fn lockPitch(g: *const Game, r: FoeRef) f32 {
+    const mark = foeLockPoint(g, r);
+    const eye = g.rig.cam.position;
+    const flat = mathx.distXZ(eye, mark);
+    if (flat < LOCK_PITCH_NEAR) return LOCK_PITCH;
+    return std.math.atan2(eye.y - mark.y, flat);
+}
 const LOCK_FLICK = 0.65; // right-stick |x| past this cycles to the next target
 /// HOW LONG A LOCK SURVIVES WITH NO SIGHT OF ITS TARGET. You cannot FIX on what you cannot see, but a
 /// lock that dropped the instant a pillar crossed the line would be unusable anywhere in these ruins —
@@ -180,6 +199,7 @@ pub const Game = struct {
     npcPos: [npcmod.CAP]rl.Vector3 = [_]rl.Vector3{mathx.zero3} ** npcmod.CAP,
     nNpcPos: usize = 0,
     rest: restmod.Rest = .{}, // sitting at a bonfire: the state machine and the fade (rest.zig)
+    souls: soulsmod.Souls, // THE DROP — one, standing where he last died until he walks back for it
     /// The player's own retro stack, parked while a rest borrows the screen for its VHS look.
     restRetro: [gfx.RETRO_COUNT]f32 = [_]f32{0} ** gfx.RETRO_COUNT,
     bag: item.Bag = .{},
@@ -247,6 +267,7 @@ pub const Game = struct {
         g.haunt = shademod.Haunt.init(g.scene.shader);
         g.chests = chestmod.Chests.init(g.scene.shader);
         g.folk = npcmod.Folk.init(g.scene.shader);
+        g.souls = soulsmod.Souls.init(g.scene.shader);
         phase(&initTimer, "foes");
         rehomeFoes(g, .blind);
         g.rest = .{};
@@ -669,6 +690,7 @@ fn drawCasters(g: *Game, cull: envmod.Cull) void {
 fn setCasterShaders(g: *Game, sh: rl.Shader) void {
     g.env.setShader(sh);
     g.hero.setShader(sh);
+    g.souls.setShader(sh);
     inline for (FOE_GROUPS) |f| @field(g, f.field).setShader(sh);
     g.chests.setShader(sh);
     g.folk.setShader(sh);
@@ -708,8 +730,7 @@ pub fn spawnWisp(g: *Game, from: rl.Vector3) void {
 /// THE HOOK LANDED AND IT WANTS TO PULL — noted here and SPENT AFTER `heroTakes` (`applyYank`), because
 /// whether it moves him is the BLOW's fate and the blow has not been resolved yet: `Grove.update` calls this
 /// from inside its own walk, before anything has asked what the shield did with it.
-pub fn noteYank(g: *Game, from: rl.Vector3, pull: f32, h: combat.Hit) void {
-    _ = h;
+pub fn noteYank(g: *Game, from: rl.Vector3, pull: f32) void {
     g.hook = .{ .from = from, .pull = pull };
 }
 
@@ -742,6 +763,9 @@ fn armScript(g: *Game) void {
     g.folk.reset(&g.map);
     g.trig.arm(&g.map);
     g.talk = .{};
+    // …AND THE DROP, which a DEATH must not clear and a new WORLD must: where it is standing means nothing
+    // in a map it was not left in. This is the one place the map itself changes, which is exactly the split.
+    g.souls.clear();
 }
 
 fn rehomeChests(g: *Game) void {
@@ -871,24 +895,31 @@ pub fn stepFolkForShot(g: *Game, dt: f32) void {
 /// `shots.zig` is imported lazily here, and one constant is the whole of what these hooks need from it.
 const SHOT_STEP: f32 = @import("shots.zig").SHOT_DT;
 
-/// WHAT THE BUTTON WOULD REACH THIS FRAME, and in what order — a bonfire, then whoever is standing there,
-/// then a box. ONE list, because the press and the PROMPT are the same question.
+/// WHAT THE BUTTON WOULD REACH THIS FRAME, and in what order — what he DROPPED, then a bonfire, then whoever
+/// is standing there, then a box. ONE list, because the press and the PROMPT are the same question.
+///
+/// THE DROP IS FIRST and its ring is the smallest of the four: you can die at a grace, and on the frame you
+/// walk back in there is exactly one thing you came for. One press clears it and the fire is offered again.
 const Reach = enum {
+    souls,
     rest,
     talk,
     chest,
 
-    /// The prompt each one puts up, keyed off the enum rather than spelled at the call site.
-    fn prompt(self: Reach) [:0]const u8 {
-        return switch (self) {
-            .rest => hud_.INTERACT_HINT ++ "Rest",
-            .talk => hud_.INTERACT_HINT ++ "Speak",
-            .chest => hud_.INTERACT_HINT ++ "Open",
-        };
+    /// The prompt each one puts up — the BUTTON drawn, and the verb. Keyed off the enum rather than spelled
+    /// at the call site, and off `hud.BTN_INTERACT` rather than a letter, so a rebind moves both at once.
+    fn prompt(self: Reach) hud_.Hint {
+        return .{ .glyph = .{ .face = hud_.BTN_INTERACT }, .label = switch (self) {
+            .souls => "Reclaim",
+            .rest => "Rest",
+            .talk => "Speak",
+            .chest => "Open",
+        } };
     }
 };
 
 fn reachable(g: *const Game) ?Reach {
+    if (g.souls.near) return .souls;
     if (g.rest.near != null) return .rest;
     if (talkable(g)) return .talk;
     if (g.chests.near != null) return .chest;
@@ -899,10 +930,48 @@ fn reachable(g: *const Game) ?Reach {
 /// depend on which system happened to be asked first.
 fn interact(g: *Game) void {
     switch (reachable(g) orelse return) {
+        .souls => reclaimSouls(g),
         .rest => _ = g.rest.begin(),
         .talk => _ = startTalk(g),
         .chest => openChest(g),
     }
+}
+
+/// HE DIED HERE CARRYING THIS. The RING GIVES FIRST (DS's Ring of Sacrifice): one snaps, he keeps the lot,
+/// and there is nothing on the ground to come back for. Otherwise everything comes off him onto the spot he
+/// fell on — and whatever was standing there already is GONE, which is the whole of the mechanic.
+fn spillSouls(g: *Game) void {
+    if (bindingInBag(&g.bag)) |ring| {
+        _ = g.bag.take(ring, 1);
+        g.hero.quick.dropEmpty(&g.bag); // …and the bar sheds it like anything else he has run out of
+        sfx.play(.ring_snap);
+        g.trig.say("The Soul Binding Ring snaps.");
+        return;
+    }
+    const had = g.hero.runes.dropAll();
+    if (had == 0) return; // nothing to spill: no stain, and no walk back for one
+    g.souls.spill(g.hero.pos, had);
+    sfx.play(.souls_spill);
+}
+
+/// The first binding charm he is carrying, asked of the ITEM rather than by kind (`item.bindsSouls`) — a
+/// second one is a row in `item.zig` and no edit here.
+fn bindingInBag(bag: *const item.Bag) ?item.Kind {
+    for (0..item.NK) |i| {
+        const k: item.Kind = @enumFromInt(i);
+        if (item.bindsSouls(k) and bag.count(k) > 0) return k;
+    }
+    return null;
+}
+
+/// …AND IT IS INSTANT (owner's call). No committed action and no animation on the man: the runes are on the
+/// counter the frame he presses, and the rush of gold that crosses to his chest is the effect catching up
+/// with something that has already happened.
+fn reclaimSouls(g: *Game) void {
+    const got = g.souls.take(g.hero.pos) orelse return;
+    g.hero.runes.gain(got);
+    g.rig.addShake(SHAKE_CHEST);
+    g.rumble.play(rumblemod.hit_light);
 }
 
 fn openChest(g: *Game) void {
@@ -1017,16 +1086,22 @@ fn confirmPressed() bool {
     return menumod.confirmPressed();
 }
 
-/// THE INTERACT KEY, named once: the prompt that opens a conversation and the panel's own footer both say
-/// "E / A", so both have to honour it.
-const INTERACT_KEY: rl.KeyboardKey = .e;
+/// THE INTERACT BUTTON. On the pad it is **Y** (owner's call) — the one face button ER leaves free, since A
+/// is reserved for the jump, B is the roll and X is the quick item. The keyboard mirrors it letter for
+/// letter: pressing Y does what the Y glyph on the prompt says, so no crib ever has to name a key.
+const INTERACT_PAD: rl.GamepadButton = .right_face_up;
+const INTERACT_KEY: rl.KeyboardKey = .y;
+/// …and the QUIVER, turned off Y to make room for it. On the pad it stays the character book's ammo slot.
+const ARROW_KEY: rl.KeyboardKey = .u;
 /// L2 ON THE KEYBOARD — see the L2 block in `run` for why the mouse cannot carry it.
 const PARRY_KEY: rl.KeyboardKey = .c;
 
-/// …and the panel takes it ON TOP of the menu confirm. It cannot go into `menumod.confirmPressed`: E is the
-/// character book's page turn, and a panel naming a button the press ignores is the prompt rule broken again.
+/// …and the panel takes the INTERACT button on top of the menu confirm, so the button that opened a
+/// conversation is also the one that walks through it. It cannot go into `menumod.confirmPressed`: that is
+/// the book's own Confirm, and a panel naming a button the press ignores is the prompt rule broken again.
 fn talkConfirmPressed() bool {
-    return confirmPressed() or rl.isKeyPressed(INTERACT_KEY);
+    return confirmPressed() or rl.isKeyPressed(INTERACT_KEY) or
+        (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, INTERACT_PAD));
 }
 
 /// 1-9, for picking a line straight off its number the way BG2's list does.
@@ -1468,6 +1543,9 @@ pub fn drawScene(g: *Game) void {
     g.env.drawFlora(&view);
     g.scene.setWind(false);
     drawArrows(g);
+    // WHAT HE DROPPED, with the arrows: it is made of light and lays no shadow, so it stays out of the depth
+    // pass and off `drawCasters` entirely.
+    g.souls.draw();
     // …and the thinned occluders LAST, so their alpha mattes the hero standing behind them (`Env.drawThinned`).
     g.env.drawThinned(&view);
     if (g.menu.wireframe) rl.gl.rlDisableWireMode();
@@ -1476,6 +1554,7 @@ pub fn drawScene(g: *Game) void {
     inline for (FOE_GROUPS) |f| {
         if (comptime @hasDecl(@FieldType(Game, f.field), "drawFx")) @field(g, f.field).drawFx();
     }
+    g.souls.drawFx();
     g.hero.drawTrail();
     for (quivers(g)) |pool| archermod.drawArrowTrails(pool);
     if (g.menu.hitboxes and g.hero.attacking) {
@@ -1907,6 +1986,10 @@ pub fn run(mode: Mode) void {
 
         g.rest.update(rawDt);
         g.rest.look(g.hero.pos);
+        // WHAT HE DROPPED, on the world's own clock — it is scenery with a prompt, like a bonfire, so it
+        // ticks here beside one rather than inside the combat block.
+        g.souls.update(dt);
+        g.souls.look(g.hero.pos);
         sfx.tickStreams();
 
         const lockPressed = !g.hero.aiming and (rl.isMouseButtonPressed(.middle) or
@@ -1948,7 +2031,7 @@ pub fn run(mode: Mode) void {
         if (activeLock(g)) |li| {
             const dir = mathx.dirXZ(g.hero.pos, foePos(g, li));
             if (mathx.lenXZ(dir) > 0.001) {
-                g.rig.aim(mathx.headingXZ(dir), LOCK_PITCH, dt, LOCK_CAM_EASE);
+                g.rig.aim(mathx.headingXZ(dir), lockPitch(g, li), dt, LOCK_CAM_EASE);
             }
             var flick: f32 = 0;
             if (inside and wasInside and @abs(md.x) > 40) flick = std.math.sign(md.x);
@@ -2020,14 +2103,14 @@ pub fn run(mode: Mode) void {
         if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .left_face_up)) spellReq = true;
         if (spellReq and g.hero.cycleSpell()) sfx.play(.flask_cycle);
 
-        // …and the ARROW keeps KEYBOARD Y ALONE. The cross is four directions and the spell has taken Up
+        // …and the ARROW keeps a KEY OF ITS OWN. The cross is four directions and the spell has taken Up
         // (owner's call), so on the pad the quiver is changed in the character book's ammo slot instead.
-        const arrowReq = rl.isKeyPressed(.y);
+        const arrowReq = rl.isKeyPressed(ARROW_KEY);
         if (arrowReq and g.hero.cycleArrow()) sfx.play(.flask_cycle);
 
-        // E / A: the free face button, and the one every soulslike puts interact on.
+        // Y everywhere (owner's call). A is left alone for the jump ER reserves it for.
         var useReq = rl.isKeyPressed(INTERACT_KEY);
-        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .right_face_down)) useReq = true;
+        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, INTERACT_PAD)) useReq = true;
         if (useReq and !g.hero.dead) interact(g);
 
         // Dodge roll: Space, or a short TAP of Circle/B (holding B sprints instead).
@@ -2189,7 +2272,7 @@ pub fn run(mode: Mode) void {
         const bladeNow = heroBlade(g);
         if (g.warren.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             // The lunge carries stance damage; the chomp doesn't — split the felt blow by that.
-            _ = heroTakes(g, b, b.hit.stance > 0, true);
+            _ = heroTakes(g, b, b.hit.heavy(), true);
         }
         if (g.grief.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.stance >= ogremod.SLAM_HIT.stance, true);
@@ -2204,30 +2287,30 @@ pub fn run(mode: Mode) void {
         }
         // The skeletal warriors. Only the greatsword's diagonal carries stance, so that is the split.
         if (g.muster.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.stance > 0, true);
+            _ = heroTakes(g, b, b.hit.heavy(), true);
         }
         // THE SHADES. Only the touch is a blow they deal in person — the wisp goes through the quiver like
         // every other thrown thing. It carries no stance at all, so it is never the heavy beat.
         if (g.haunt.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnWisp)) |b| {
             // The same split every other group uses, not a hardcoded `false`: the touch carries no stance today.
-            _ = heroTakes(g, b, b.hit.stance > 0, true);
+            _ = heroTakes(g, b, b.hit.heavy(), true);
         }
         // THE LEECHFLIES. TWO CHANNELS: the beak going in is a BLOW (blockable), and the swallow after it is a
         // HOLD that goes through `hero.burn`. A shield answers the first and only the roll the second.
         if (g.swarm.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, leechSip)) |b| {
-            _ = heroTakes(g, b, b.hit.stance > 0, true);
+            _ = heroTakes(g, b, b.hit.heavy(), true);
         }
         // THE ROOTED. Its hook hands the DRAG over rather than applying it — only this side knows whether the
         // blow was blocked, and a hook the boards caught must not move him. Spent AFTER `heroTakes`, since
         // that is the call that decides it.
         g.hook = null;
         if (g.grove.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, noteYank)) |b| {
-            applyYank(g, heroTakes(g, b, b.hit.stance > 0, true));
+            applyYank(g, heroTakes(g, b, b.hit.heavy(), true));
         }
         // THE SPORELINGS. The bonk is a blow; the cloud it leaves is a HOLD, billed further down beside
         // the mother's acid — two channels for the leechfly's reason.
         if (g.cluster.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.stance > 0, true);
+            _ = heroTakes(g, b, b.hit.heavy(), true);
         }
         // …and the one moment of theirs the frame should feel BEFORE it is hit by it.
         if (g.muster.anyLeapt()) {
@@ -2237,7 +2320,7 @@ pub fn run(mode: Mode) void {
         const hatchesBefore = g.brood.hatches;
         const burstsBefore = g.brood.bursts;
         if (g.brood.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnVenom)) |b| {
-            _ = heroTakes(g, b, b.hit.stance > 0, true);
+            _ = heroTakes(g, b, b.hit.heavy(), true);
         }
         // THE TWO MOMENTS OF HERS THAT THE FRAME SHOULD FEEL.
         if (g.brood.hatches != hatchesBefore) {
@@ -2291,7 +2374,7 @@ pub fn run(mode: Mode) void {
                 };
                 // The BEAT is skipped on a corpse. `heavy` comes off the BLOW like every group's does — nothing
                 // thrown carries stance today, so it reads false either way, and stays right when one gets some.
-                const out: combat.HitOutcome = if (g.hero.dead) .ignored else heroTakes(g, blow, blow.hit.stance > 0, false);
+                const out: combat.HitOutcome = if (g.hero.dead) .ignored else heroTakes(g, blow, blow.hit.heavy(), false);
                 // …and WHAT IT STRUCK picks that voice: boards if the shield caught it, flesh if not.
                 if (out == .taken or out == .ignored) sfx.play(.arrow_hit);
                 splashOf(g, ar);
@@ -2360,6 +2443,9 @@ pub fn run(mode: Mode) void {
             g.rumble.play(rumblemod.death);
             g.rig.addShake(SHAKE_DEATH);
             sfx.play(.death);
+            // …AND EVERYTHING HE WAS CARRYING GOES ONTO THE GROUND, on the frame he DIES rather than on the
+            // respawn: the spill plays under the YOU DIED card, which is the one moment nothing else is.
+            spillSouls(g);
         }
         if (!g.hero.dead and wasDead) sfx.play(.respawn);
         // The YOU DIED tail: armed while dead, drains after the respawn (fade from black).

@@ -120,6 +120,15 @@ pub const Runtime = struct {
         return if (self.bannerLeft > 0) self.banner[0..self.bannerLen] else "";
     }
 
+    /// A LINE THE ENGINE ITSELF HAS TO SAY — the binding ring snapping, and nothing else yet. Down the
+    /// `text` action's OWN channel and not a second banner beside it: SC1's Display Text Message is exactly
+    /// this, and one line of prose on screen may only ever come from one place.
+    pub fn say(self: *Runtime, line: []const u8) void {
+        self.bannerLen = @min(line.len, BANNER_CAP);
+        @memcpy(self.banner[0..self.bannerLen], line[0..self.bannerLen]);
+        self.bannerLeft = BANNER_DUR;
+    }
+
     pub fn flagOn(self: *const Runtime, slot: u16) bool {
         return slot < wf.MAX_FLAGS and self.flags[slot];
     }
@@ -225,12 +234,7 @@ pub const Runtime = struct {
     pub fn apply(self: *Runtime, m: *const wf.Map, a: *const wf.Act) void {
         switch (a.kind) {
             .dialog, .wait, .preserve => {},
-            .text => {
-                const s = m.spanText(a.line);
-                self.bannerLen = @min(s.len, BANNER_CAP);
-                @memcpy(self.banner[0..self.bannerLen], s[0..self.bannerLen]);
-                self.bannerLeft = BANNER_DUR;
-            },
+            .text => self.say(m.spanText(a.line)),
             .flag => if (a.slot < wf.MAX_FLAGS) {
                 self.flags[a.slot] = switch (a.setop) {
                     .off => false,

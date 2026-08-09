@@ -151,9 +151,215 @@ pub fn bigCentered(s: [:0]const u8, cx: f32, cy: f32, size: f32, spacing: f32, c
 }
 
 
-/// THE INTERACT BUTTON, SPELLED ONCE. The world's prompt and the dialog panel's footer both name it, and they
-/// are two files: written out at each of them, a rebind moves one caption and leaves the other lying.
-pub const INTERACT_HINT = "E / A  ";
+// THE PAD IS THE ONLY THING THIS UI NAMES (owner's call). Every prompt, crib and footer in the game shows the
+// BUTTON that does the thing — drawn, not spelled — and no keyboard key appears anywhere in it. Keys still
+// work; they simply are not what the chrome talks about. The editor is the one exception and is not this UI:
+// it is a mouse-and-keyboard authoring tool with no pad bindings at all.
+//
+// Xbox lettering and colours, because that is what a pad in a hand actually says. The glyphs live HERE rather
+// than in `uiart` for one reason: a face button is a letter, and this file is the ONLY path to draw text.
+
+pub const PadBtn = enum { a, b, x, y };
+/// Which way a D-pad prompt points; the paired ones light two arms for a "move" or "adjust" line.
+pub const Dir = enum { up, down, left, right, leftright, updown };
+
+/// What a hint's picture IS. A `bumper` carries its own label (L1/R2/R3…), which is what makes one pill do
+/// for every shoulder and stick press without six near-identical drawers.
+pub const Glyph = union(enum) {
+    face: PadBtn,
+    dpad: Dir,
+    bumper: [:0]const u8,
+    /// The Start/Select pictogram — three bars on a pill, since the physical button carries no letter.
+    menu: void,
+};
+
+/// One "[picture] what it does" prompt. The picture is the button; the label is plain English and never
+/// names a key.
+pub const Hint = struct { glyph: Glyph, label: [:0]const u8 };
+
+/// THE BUTTONS THE GAME ACTUALLY BINDS, named once so a caption and the press cannot drift. `game.zig` reads
+/// these for its own bindings, and every crib in the UI draws them.
+pub const BTN_INTERACT: PadBtn = .y;
+pub const BTN_CONFIRM: PadBtn = .a;
+pub const BTN_BACK: PadBtn = .b;
+pub const BTN_QUICK: PadBtn = .x;
+
+fn padBtnColor(b: PadBtn) rl.Color {
+    return switch (b) {
+        .a => rgba(94, 178, 66, 255), // green
+        .b => rgba(214, 62, 52, 255), // red
+        .x => rgba(46, 120, 205, 255), // blue
+        .y => rgba(234, 190, 58, 255), // amber
+    };
+}
+fn padBtnLetter(b: PadBtn) [:0]const u8 {
+    return switch (b) {
+        .a => "A",
+        .b => "B",
+        .x => "X",
+        .y => "Y",
+    };
+}
+
+/// The iron a pad pictogram is cast in — a hair warmer than `uiart.IRON`, so the controller glyphs recolour
+/// together rather than one at a time.
+const PAD_BODY = rgba(27, 23, 19, 255);
+const PAD_INK = rgba(226, 210, 180, 245);
+
+/// A short label centred ON a point rather than laid off its top-left — the glyphs are round and the text is
+/// not, so every one of them wants the same correction and gets it here.
+fn glyphLabel(s: [:0]const u8, cx: i32, cy: i32, size: i32, col: rl.Color) void {
+    const w = textW(s, size);
+    const y = cy - @divTrunc(size * 62, 100);
+    drawStr(s, cx - @divTrunc(w, 2) + 1, y + 1, size, rgba(0, 0, 0, 150));
+    drawStr(s, cx - @divTrunc(w, 2), y, size, col);
+}
+
+/// A ROUND FACE BUTTON: a dark raised dome, a ring in the button's own colour, and the letter in it. The
+/// COLOUR names the button; the body stays in the chrome's palette, because a full coloured disc reads as
+/// modern plastic against gilt and stone.
+pub fn padFace(cx: i32, cy: i32, r: i32, b: PadBtn) void {
+    const col = padBtnColor(b);
+    const rf: f32 = @floatFromInt(r);
+    const cv = rl.Vector2{ .x = @floatFromInt(cx), .y = @floatFromInt(cy) };
+    rl.drawCircleV(cv, rf + 1.5, mathx.withAlpha(uiart.INK, 235)); // the seat
+    rl.drawCircleV(cv, rf, PAD_BODY);
+    rl.drawCircleV(.{ .x = cv.x, .y = cv.y - rf * 0.16 }, rf * 0.80, rgba(40, 34, 28, 255)); // the dome
+    rl.drawCircleLines(cx, cy, rf - 1.0, mathx.withAlpha(col, 245));
+    rl.drawCircleLines(cx, cy, rf - 2.2, mathx.withAlpha(col, 150));
+    glyphLabel(padBtnLetter(b), cx, cy, @max(@divTrunc(r * 5, 4), 11), mathx.lerpColor(col, rl.Color.white, 0.38));
+}
+
+/// THE D-PAD as a rounded iron tile with four chevrons: the direction being asked for burns gilt and the rest
+/// stay dim. A tile reads cleaner than a cross at crib sizes, and the dim arms are what say it is a D-pad.
+pub fn padDpad(cx: i32, cy: i32, r: i32, dir: Dir) void {
+    const rf: f32 = @floatFromInt(r);
+    const tile = uiart.rect(cx - r + 1, cy - r + 1, r * 2 - 2, r * 2 - 2);
+    rl.drawRectangleRounded(tile, 0.35, 6, PAD_BODY);
+    rl.drawRectangleRoundedLinesEx(tile, 0.35, 6, 1, mathx.withAlpha(uiart.GILT_DIM, 150));
+    const up = dir == .up or dir == .updown;
+    const dn = dir == .down or dir == .updown;
+    const lf = dir == .left or dir == .leftright;
+    const rt = dir == .right or dir == .leftright;
+    const gh = rf * 2;
+    const cw = gh * 0.16;
+    const off = gh * 0.30;
+    const tip = gh * 0.40;
+    const xf: f32 = @floatFromInt(cx);
+    const yf: f32 = @floatFromInt(cy);
+    const on = uiart.GILT_BRIGHT;
+    const dim = mathx.withAlpha(uiart.GILT_DIM, 110);
+    const chev = struct {
+        fn v(ax: f32, ay: f32, bx: f32, by: f32, c: rl.Color) void {
+            rl.drawLineEx(.{ .x = ax, .y = ay }, .{ .x = bx, .y = by }, 1.6, c);
+        }
+    }.v;
+    chev(xf - cw, yf - off, xf, yf - tip, if (up) on else dim);
+    chev(xf, yf - tip, xf + cw, yf - off, if (up) on else dim);
+    chev(xf - cw, yf + off, xf, yf + tip, if (dn) on else dim);
+    chev(xf, yf + tip, xf + cw, yf + off, if (dn) on else dim);
+    chev(xf - off, yf - cw, xf - tip, yf, if (lf) on else dim);
+    chev(xf - tip, yf, xf - off, yf + cw, if (lf) on else dim);
+    chev(xf + off, yf - cw, xf + tip, yf, if (rt) on else dim);
+    chev(xf + tip, yf, xf + off, yf + cw, if (rt) on else dim);
+}
+
+/// The dark rounded pill the shoulder and menu pictograms share.
+fn padPill(r: rl.Rectangle) void {
+    rl.drawRectangleRounded(r, 0.6, 6, rgba(34, 29, 24, 235));
+    rl.drawRectangleRoundedLinesEx(r, 0.6, 6, 1, mathx.withAlpha(uiart.GILT_DIM, 160));
+}
+
+const PAD_GLYPH_TEXT: i32 = 12;
+const PAD_MENU_W: i32 = 24;
+/// Measured, not guessed: the layout pass and the drawer read the SAME width, or the column a crib reserves
+/// and the pill it paints drift apart on the first label anybody lengthens.
+fn padBumperW(label: [:0]const u8) i32 {
+    return textW(label, PAD_GLYPH_TEXT) + 12;
+}
+
+pub fn padMenu(cx: i32, cy: i32) void {
+    const w = PAD_MENU_W;
+    const h: i32 = 16;
+    padPill(uiart.rect(cx - @divTrunc(w, 2), cy - @divTrunc(h, 2), w, h));
+    var i: i32 = -1;
+    while (i <= 1) : (i += 1) {
+        const ly: f32 = @as(f32, @floatFromInt(cy)) + @as(f32, @floatFromInt(i)) * 3.5;
+        rl.drawLineEx(
+            .{ .x = @as(f32, @floatFromInt(cx)) - 5, .y = ly },
+            .{ .x = @as(f32, @floatFromInt(cx)) + 5, .y = ly },
+            1.5,
+            PAD_INK,
+        );
+    }
+}
+
+/// A shoulder or stick press, sized to its own label: L1, R2, R3 and the rest are one pill and one drawer.
+pub fn padBumper(cx: i32, cy: i32, label: [:0]const u8) void {
+    const w = padBumperW(label);
+    const h: i32 = 18;
+    padPill(uiart.rect(cx - @divTrunc(w, 2), cy - @divTrunc(h, 2), w, h));
+    glyphLabel(label, cx, cy, PAD_GLYPH_TEXT, PAD_INK);
+}
+
+pub fn glyphW(g: Glyph, r: i32) i32 {
+    return switch (g) {
+        .face, .dpad => r * 2,
+        .bumper => |b| padBumperW(b),
+        .menu => PAD_MENU_W,
+    };
+}
+
+pub fn drawGlyph(g: Glyph, cx: i32, cy: i32, r: i32) void {
+    switch (g) {
+        .face => |b| padFace(cx, cy, r, b),
+        .dpad => |d| padDpad(cx, cy, r, d),
+        .bumper => |b| padBumper(cx, cy, b),
+        .menu => padMenu(cx, cy),
+    }
+}
+
+/// The radius every crib draws its glyphs at, and the two gaps that lay a row out. One set, so the menu's
+/// footer, the book's and the dialog panel's are the same strip at the same rhythm.
+pub const GLYPH_R: i32 = 9;
+const GLYPH_GAP: i32 = 7; // picture → its own label
+const HINT_PAD: i32 = 24; // one hint → the next
+
+/// How wide a row of hints comes out — the measure the centring and the plate-fitting both read.
+pub fn hintRowW(hints: []const Hint, size: i32) i32 {
+    var total: i32 = 0;
+    for (hints, 0..) |h, i| {
+        total += glyphW(h.glyph, GLYPH_R) + GLYPH_GAP + textW(h.label, size);
+        if (i + 1 < hints.len) total += HINT_PAD;
+    }
+    return total;
+}
+
+/// A row of prompts laid left to right, VERTICALLY CENTRED on `cy` — the glyphs are round and the text is
+/// not, so a row hung off a top edge always sits a pixel or two out of true.
+pub fn hintRowAt(hints: []const Hint, x0: i32, cy: i32, size: i32, col: rl.Color) void {
+    const ty = cy - @divTrunc(lineH(size), 2);
+    var x = x0;
+    for (hints) |h| {
+        const gw = glyphW(h.glyph, GLYPH_R);
+        drawGlyph(h.glyph, x + @divTrunc(gw, 2), cy, GLYPH_R);
+        x += gw + GLYPH_GAP;
+        text(h.label, x, ty, size, col);
+        x += textW(h.label, size) + HINT_PAD;
+    }
+}
+
+/// …and the same row centred on the screen, with the chrome's own diamond termini stitching it closed.
+pub fn hintRow(hints: []const Hint, cy: i32, size: i32, col: rl.Color) void {
+    if (hints.len == 0) return;
+    const total = hintRowW(hints, size);
+    const x0 = @divTrunc(rl.getScreenWidth() - total, 2);
+    hintRowAt(hints, x0, cy, size, col);
+    const cyf: f32 = @floatFromInt(cy);
+    const a: u8 = @intCast(@as(u16, 150) * @as(u16, col.a) / 255);
+    uiart.diamond(@floatFromInt(x0 - 16), cyf, 2.4, mathx.withAlpha(uiart.GILT_DIM, a));
+    uiart.diamond(@floatFromInt(x0 + total - HINT_PAD + 16), cyf, 2.4, mathx.withAlpha(uiart.GILT_DIM, a));
+}
 
 pub const MARGIN: i32 = 30;
 const BAR_TOP: i32 = 24;
@@ -334,8 +540,11 @@ pub fn runes(n: u32) void {
 
 const PROMPT_LIFT: i32 = 76;
 
-pub fn prompt(s: [:0]const u8) void {
-    const w = textW(s, BODY);
+/// WHAT THE BUTTON IN REACH WOULD DO — the picture of the button, then the verb. The band is measured off
+/// BOTH, so a longer verb or a wider glyph moves the plate rather than spilling off it.
+pub fn prompt(h: Hint) void {
+    const gw = glyphW(h.glyph, GLYPH_R);
+    const w = gw + GLYPH_GAP + textW(h.label, BODY);
     const x = @divTrunc(rl.getScreenWidth() - w, 2);
     const y = rl.getScreenHeight() - lineH(BODY) - BOTTOM - PROMPT_LIFT;
     const bh = lineH(BODY) + 12;
@@ -353,7 +562,8 @@ pub fn prompt(s: [:0]const u8) void {
         rl.drawRectangleGradientH(x - 14 - ear, ly, ear, 1, gclear, gilt);
         rl.drawRectangleGradientH(x + w + 14, ly, ear, 1, gilt, gclear);
     }
-    text(s, x, y, BODY, rgba(226, 214, 186, 240));
+    drawGlyph(h.glyph, x + @divTrunc(gw, 2), by + @divTrunc(bh, 2), GLYPH_R);
+    text(h.label, x + gw + GLYPH_GAP, y, BODY, rgba(226, 214, 186, 240));
 }
 
 /// Where a trigger's line sits: high on the screen, clear of the prompt band and of everything in the four

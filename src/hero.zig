@@ -849,8 +849,12 @@ pub const Hero = struct {
     /// …and the ARROWS, which are finite: an empty quiver refuses the shot (see `startShot`).
     quiver: combat.Quiver = .{},
     regen: combat.Regen = .{},
+    /// WHAT HE IS — the resistances a grace does NOT refill (`makeWhole` carries them across). Nothing grants
+    /// him any yet, and the book's STATS page says so; this is the field the day something does.
+    baseRes: combat.Resists = .{},
     /// THE SPORELING CAP'S WARD — timed chaos resistance, one clock (a timed status REFRESHES, it does not
-    /// stack). While it runs it IS his resistances, since nothing else grants him any yet.
+    /// stack). It sits ON TOP of `baseRes` and `settleResists` is the one place the two are composed into
+    /// `vit.res`, which is the only copy `Vitals.damageFrom` ever reads.
     wardChaos: f32 = 0,
     wardLeft: f32 = 0,
     /// THE FIRST STATUS EFFECT (`combat.Status`) — ONE meter that fills, procs, and then drains as the
@@ -980,9 +984,7 @@ pub const Hero = struct {
 
     /// WHOLE AGAIN — a grace, and a death is a return to one. The three bars take their SIZE from the sheet here and nowhere else, so a raised attribute cannot leave one at its old length.
     fn makeWhole(self: *Hero) void {
-        const res = self.vit.res; // …but NOT his resistances: those are what he IS, not a meter to refill
         self.vit = freshVitals(self.sheet);
-        self.vit.res = res;
         self.stam.max = self.sheet.stamina();
         self.fp.max = self.sheet.fp();
         self.stam.reset();
@@ -991,6 +993,9 @@ pub const Hero = struct {
         // A GRACE CURES WHAT IS ON HIM (ER's own), and a death is a return to one.
         self.poison.reset();
         self.wardLeft = 0;
+        // …and the resistances go back to WHAT HE IS, ward gone: `freshVitals` cleared `vit.res` above, so the
+        // base has to be laid back down here. They are not a meter to refill — `baseRes` is untouched.
+        self.settleResists();
         // FLASKS REFILL AT THE GRACE, and a death IS a return to one.
         self.flasks.refill();
         self.quiver.refill();
@@ -1820,10 +1825,22 @@ pub const Hero = struct {
     pub fn startWard(self: *Hero, chaos: f32, secs: f32) void {
         self.wardChaos = chaos;
         self.wardLeft = secs; // refreshed, never stacked
+        // APPLIED ON THE SWALLOW, not on the next frame's tick: the blow that is already in the air this
+        // frame is exactly the one he drank it for.
+        self.settleResists();
     }
     pub fn tickWard(self: *Hero, dt: f32) void {
         self.wardLeft = mathx.maxF(0, self.wardLeft - dt);
-        self.vit.res = if (self.wardLeft > 0) combat.resists(.{ .chaos = self.wardChaos }) else .{};
+        self.settleResists();
+    }
+
+    /// THE ONE PLACE `vit.res` IS WRITTEN — what he IS, plus whatever timed ward is running on top of it.
+    /// As a bare `vit.res = ward or nothing` it was the sole writer AND a clobberer, so `makeWhole`'s
+    /// carrying the resistances across a grace was undone by the very next frame's tick.
+    fn settleResists(self: *Hero) void {
+        var r = self.baseRes;
+        if (self.wardLeft > 0) r.v[@intFromEnum(combat.Elem.chaos)] += self.wardChaos;
+        self.vit.res = r;
     }
 
     /// A DOSE OF POISON — refused while it already runs, which `Status.add` owns. Sources hand it a number

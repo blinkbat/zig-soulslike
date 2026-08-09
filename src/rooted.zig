@@ -90,7 +90,7 @@ pub const SWEEP_HIT = combat.Hit{ .dmg = 26, .poise = 20 };
 /// THE HOOK. Light on damage because the damage is not the point: it is the DRAG, and being pulled back
 /// inside the slam's own band is what it costs you.
 pub const HOOK_HIT = combat.Hit{ .dmg = 14, .poise = 14 };
-/// How far in it yanks him. Blocked, he keeps his ground (`game.rootedYank`) — the boards are the answer to
+/// How far in it yanks him. Blocked, he keeps his ground (`game.applyYank`) — the boards are the answer to
 /// a hook, which is the one place a shield beats leaving.
 pub const DRAG_PULL: f32 = 3.4;
 
@@ -324,7 +324,8 @@ pub const Rooted = struct {
         return self.state == .dormant;
     }
     /// Are the lids up? Its own question: a dormant one with its eyes open is exactly the state the warning
-    /// exists to be seen in.
+    /// exists to be seen in. Nothing reads it yet — it is what a cue or a shot predicate would ride, and
+    /// neither exists, so do not take it for a wired-up state (`shroom.Cluster.fuming`'s note).
     pub fn watching(self: *const Rooted) bool {
         return self.eyes > 0.5;
     }
@@ -925,7 +926,7 @@ pub const Grove = struct {
         bounds: f32,
         blade: foe.Blade,
         ctx: anytype,
-        comptime yank: fn (@TypeOf(ctx), rl.Vector3, f32, combat.Hit) void,
+        comptime yank: fn (@TypeOf(ctx), rl.Vector3, f32) void,
     ) ?foe.Blow {
         var blow: ?foe.Blow = null;
         for (self.live()) |*t| {
@@ -933,7 +934,9 @@ pub const Grove = struct {
                 .none => {},
                 .struck => |s| {
                     foe.worseBlow(&blow, s.hit, t.pos);
-                    if (s.pull > 0) yank(ctx, t.pos, s.pull, s.hit);
+                    // The BLOW goes up as the return value like every other group's; the hook hands over
+                    // only what is its own — where it pulls from and how far.
+                    if (s.pull > 0) yank(ctx, t.pos, s.pull);
                 },
             }
         }

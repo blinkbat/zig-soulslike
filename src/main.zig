@@ -87,6 +87,7 @@ test {
     _ = @import("game.zig");
     _ = @import("chest.zig");
     _ = @import("rest.zig");
+    _ = @import("souls.zig"); // THE DROP — one, and everything about it is that there is only one
     _ = @import("rumble.zig");
     _ = @import("menu.zig");
     _ = @import("objview.zig");

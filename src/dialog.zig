@@ -274,13 +274,17 @@ pub const Session = struct {
                 cy += rowStep;
             }
         }
-        hud.text(
-            if (shown.len > 0) "Up / Down  Choose      " ++ hud.INTERACT_HINT ++ "Speak" else hud.INTERACT_HINT ++ "Continue",
-            innerX,
-            footer,
-            hud.HINT,
-            uiart.TEXT_HINT,
-        );
+        // THE FOOTER NAMES THE BUTTONS AND NOTHING ELSE — the same interact glyph the world's own prompt
+        // showed to open this conversation, so the button that got you in is the button that walks you out.
+        var hints: [2]hud.Hint = undefined;
+        var n: usize = 0;
+        if (shown.len > 0) {
+            hints[n] = .{ .glyph = .{ .dpad = .updown }, .label = "Choose" };
+            n += 1;
+        }
+        hints[n] = .{ .glyph = .{ .face = hud.BTN_INTERACT }, .label = if (shown.len > 0) "Speak" else "Continue" };
+        n += 1;
+        hud.hintRowAt(hints[0..n], innerX, footer + @divTrunc(hud.lineH(hud.HINT), 2), hud.HINT, uiart.TEXT_HINT);
     }
 };
 

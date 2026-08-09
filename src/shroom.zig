@@ -698,12 +698,19 @@ pub const Cluster = struct {
         return self.shrooms[0..self.n];
     }
     pub fn reset(self: *Cluster, m: *const wf.Map) void {
+        self.clearClouds();
         foe.resetGroup(Shroom, &self.shrooms, &self.n, m, .shroom);
-        self.clear();
     }
-    /// EMPTY THE FIELD: the clouds are what this group owns besides its members.
+    /// EMPTY THE FIELD — the MEMBERS as well as the clouds. `game.clearFoes` calls this INSTEAD of zeroing
+    /// `n`, so a `clear` that only swept the extras left every sporeling standing at a grace and in `--shot`.
     pub fn clear(self: *Cluster) void {
+        self.n = 0;
+        self.clearClouds();
+    }
+    /// …and the clouds alone, which is what a re-home wants (the brood's `clearSacs`).
+    fn clearClouds(self: *Cluster) void {
         for (&self.clouds) |*c| c.* = .{};
+        self.cloudHead = 0;
     }
     pub fn setShader(self: *Cluster, sh: rl.Shader) void {
         self.model.setShader(sh);
@@ -934,6 +941,19 @@ test "THE CLOUD POISONS, IT DOES NOT BURN: linger and the meter fills, step out 
         _ = p2.tick(1.0 / 60.0, 70);
     }
     try std.testing.expect(p2.active());
+}
+
+test "CLEAR EMPTIES THE FIELD — the members as well as the clouds" {
+    // `game.clearFoes` calls a group's own `clear()` INSTEAD of zeroing `n`, so a `clear` that only swept
+    // the extras left every sporeling standing at a grace and in every `--shot` that asked for a bare field.
+    var c = Cluster{ .model = undefined };
+    c.shrooms[0] = Shroom.spawn(mathx.zero3, 0, 1.0, 0.3);
+    c.n = 1;
+    c.spawnCloud(mathx.zero3);
+    try std.testing.expect(c.fuming(mathx.zero3));
+    c.clear();
+    try std.testing.expectEqual(@as(usize, 0), c.n);
+    try std.testing.expect(!c.fuming(mathx.zero3));
 }
 
 test "a wandered sporeling hops HOME, not at a hero forty metres off" {

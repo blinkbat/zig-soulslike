@@ -17,6 +17,7 @@ pub const Kind = enum(u8) {
     tower_shield, // gear waiting on an equip system: registered, described honestly, inert
     greatclub,
     leech_signet,
+    soul_binding_ring, // it breaks in place of you: a death spills no souls while one is on you
 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
@@ -38,6 +39,7 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .tower_shield => "Cracked Tower Shield",
         .greatclub => "Bog-Oak Greatclub",
         .leech_signet => "Leech Signet",
+        .soul_binding_ring => "Soul Binding Ring",
     };
 }
 
@@ -65,6 +67,9 @@ pub fn class(k: Kind) Class {
         // The three pieces of GEAR shelve as treasure until there is an arm to take them up — the shelf
         // whose own definition is "something the game has not built yet".
         .rune_arc, .golden_seed, .tower_shield, .greatclub, .leech_signet => .treasure,
+        // NOT a tool, though it is the one carried thing that DOES something: a tool is spent by pressing
+        // Confirm on it, and this one is spent by dying. `usable` stays false and the shelf says so.
+        .soul_binding_ring => .treasure,
         .smithing_stone, .bloodgrass, .kobold_fang => .material,
         .iron_key => .key,
     };
@@ -91,6 +96,7 @@ pub fn describe(k: Kind) [:0]const u8 {
         .tower_shield => "A door of a shield, cracked through and banded in old iron. No arm here has learned to carry it yet.",
         .greatclub => "Bog-oak shod with iron, heavier than it looks, and it looks heavy. No hand here knows its heft yet.",
         .leech_signet => "A signet cut from a leech's beak, warm against the skin. Whatever bargain it offers, nothing here can seal it yet.",
+        .soul_binding_ring => "A thin gold band with a hairline already run through it. Die with one on you and the RING gives instead: it snaps, and what you were carrying stays carried.",
     };
 }
 
@@ -129,6 +135,7 @@ pub fn use(k: Kind) Use {
         .tower_shield,
         .greatclub,
         .leech_signet,
+        .soul_binding_ring,
         => .none,
     };
 }
@@ -144,6 +151,14 @@ pub fn usable(k: Kind) bool {
 /// `FlaskKind`, and it cannot live here — `combat` imports this file and not the other way about.
 pub fn isFlask(k: Kind) bool {
     return k == .crimson_flask or k == .cerulean_flask;
+}
+
+/// THE ONE THING IN THE BAG THAT SPENDS ITSELF WITHOUT BEING USED — DS's Ring of Sacrifice. A death takes
+/// the RING instead of the souls, so what you were carrying stays carried and nothing is left on the ground
+/// to walk back for. Named here rather than tested for by kind at the death site, exactly as `isFlask` is:
+/// it is a fact about the ITEM, and a second binding charm should be one row here and no edit at all there.
+pub fn bindsSouls(k: Kind) bool {
+    return k == .soul_binding_ring;
 }
 
 /// …and WHAT MAY GO ON THE QUICK BAR: a flask, or anything with an effect. There is no point carrying a
@@ -279,6 +294,22 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
         }
     }
     try std.testing.expect(found >= 1);
+}
+
+test "THE BINDING RING IS NOT A TOOL — it is spent by DYING, and nothing else in the bag is" {
+    var n: usize = 0;
+    for (0..NK) |i| {
+        const k: Kind = @enumFromInt(i);
+        if (!bindsSouls(k)) continue;
+        n += 1;
+        // It must not offer a Confirm: pressing Use on it would promise something the mechanic never does.
+        try std.testing.expect(!usable(k));
+        try std.testing.expect(!quickable(k)); // …nor a socket on the bar it can never be spent from
+        try std.testing.expectEqual(Use.none, use(k));
+    }
+    try std.testing.expectEqual(@as(usize, 1), n);
+    try std.testing.expect(bindsSouls(.soul_binding_ring));
+    try std.testing.expect(!bindsSouls(.leech_signet)); // the other ring binds nothing
 }
 
 test "the bag counts, caps, and never wraps" {

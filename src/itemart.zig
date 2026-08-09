@@ -58,6 +58,11 @@ const ROOT_HEART = rgba(172, 148, 112, 255);
 const ROOT_SOIL = rgba(52, 40, 30, 255);
 /// The sporeling's brick over cream — brighter than the creature's albedo, HUD colours are literal.
 const SHROOM_CAP = rgba(178, 84, 70, 255);
+/// THE BINDING RING'S OWN GOLD, and the soul it is holding. Kept off `BRASS` on purpose: brass is fittings,
+/// this is the one precious metal in the bag.
+const RING_GOLD = rgba(214, 176, 84, 255);
+const RING_GOLD_LT = rgba(248, 226, 160, 255);
+const RING_SOUL = rgba(250, 214, 132, 255);
 const SHROOM_CAP_DK = rgba(112, 48, 40, 255);
 const SHROOM_CREAM = rgba(224, 206, 170, 255);
 const EMBER_FAT = rgba(230, 196, 130, 255);
@@ -145,6 +150,7 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
         .tower_shield => towerShield(cx, cy, px),
         .greatclub => greatclub(cx, cy, px),
         .leech_signet => leechSignet(cx, cy, px),
+        .soul_binding_ring => soulRing(cx, cy, px),
     }
 }
 
@@ -254,6 +260,26 @@ fn greatclub(cx: f32, cy: f32, px: f32) void {
         rl.drawCircleV(v2(cx + s * 0.05 + mathx.cosf(a) * s * 0.185, cy - s * 0.13 + mathx.sinf(a) * s * 0.185), 1.4 * k, RUST);
     }
     rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.19), 2.0 * k, rgba(84, 64, 46, 255)); // one worn hight-light knot
+}
+
+/// A THIN GOLD BAND ALREADY CRACKED — the break is the picture, since breaking is the whole of what it does.
+/// Gold rather than the runes' own amber: this is the thing that KEEPS them, and two golds at one size in one
+/// grid read as one item drawn twice.
+fn soulRing(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.03 + 1.0 * k), s * 0.21, rgba(0, 0, 0, 110));
+    // The band, thin and even — a plain ring, so the CRACK is the only thing on it worth looking at.
+    arc(cx, cy + s * 0.02, s * 0.175, 0, std.math.tau, 20, s * 0.048, s * 0.038, RING_GOLD);
+    arc(cx - s * 0.05, cy - s * 0.02, s * 0.175, std.math.pi * 0.85, std.math.pi * 1.45, 8, 1.7 * k, 0.9 * k, RING_GOLD_LT);
+    // …and the hairline through the shoulder of it, already run: a dark gap with a lit lip either side.
+    const bx = cx + s * 0.155;
+    const by = cy - s * 0.06;
+    rl.drawLineEx(v2(bx - s * 0.03, by + s * 0.04), v2(bx + s * 0.03, by - s * 0.04), 2.2 * k, rgba(26, 20, 12, 255));
+    rl.drawLineEx(v2(bx - s * 0.035, by + s * 0.035), v2(bx - s * 0.008, by), 1.1 * k, RING_GOLD_LT);
+    // The soul caught in it: one small warm bead on the seat, which is what it is holding onto.
+    rl.drawCircleV(v2(cx, cy - s * 0.155), s * 0.062, RING_SOUL);
+    rl.drawCircleV(v2(cx - s * 0.015, cy - s * 0.172), 1.3 * k, rgba(255, 246, 214, 235));
 }
 
 /// A ring of dark beak-horn with a bead of what it is for.

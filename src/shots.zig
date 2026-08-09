@@ -10,6 +10,7 @@ const frogmod = @import("frog.zig");
 const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
 const shroommod = @import("shroom.zig");
+const soulsmod = @import("souls.zig");
 const koboldmod = @import("kobold.zig");
 const broodmod = @import("brood.zig");
 const warriormod = @import("warrior.zig");
@@ -1363,6 +1364,7 @@ pub fn runShots(g: *Game) void {
     leechShots(g);
     rootedShots(g);
     shroomShots(g);
+    soulsShots(g);
     campfireShots(g);
     chestShots(g);
     folkShots(g);
@@ -2026,6 +2028,52 @@ fn campfireShots(g: *Game) void {
     g.map.nops = saved;
     g.env.materialize(&g.map);
     game.rehomeChestsForShot(g); // …which re-homes the REST SITES too, and that is what we came for
+}
+
+/// WHAT A DEATH LEAVES ON THE GROUND. Photographed at THREE moments, because the whole read of the thing is
+/// that it is a growing, turning, breathing bloom and not a decal: half way out of the earth, fully up with
+/// the prompt on it, and with the man standing in its ring.
+fn soulsShots(g: *Game) void {
+    game.clearFoesForShot(g);
+    const sc = mathx.ground(-14.0, 30.0); // the open ground west — a bloom of light wants nothing behind it
+    const gy = mathx.ground(sc.x, sc.z).y;
+    const aim = v3(sc.x, gy + soulsmod.H * 0.55, sc.z);
+    // He stands SQUARE TO THE BOOM rather than on the sun's line, so both he and the gold are in frame — the
+    // reclaim's whole read is the motes crossing from one to the other, and a hero behind the lens shows none of it.
+    // SCREEN-RIGHT of the gold at yaw 53, which is `camera.rightXZ` and not the boom's own perpendicular:
+    // the drop sits on the left of the frame and the man on the right, and the motes cross between them.
+    const screenRight = v3(-mathx.cosf(mathx.radians(LIT_YAW)), 0, mathx.sinf(mathx.radians(LIT_YAW)));
+    const hero = v3(sc.x + screenRight.x * 2.1, 0, sc.z + screenRight.z * 2.1);
+    standHero(g, hero.x, hero.z, mathx.headingXZ(v3(sc.x - hero.x, 0, sc.z - hero.z)));
+    // …AND THE STANCE BLENDS SETTLED. `standHero` steps ONE frame, and a block above may have left the bow
+    // up: `heroFade` is driven off `aimB`, so an unsettled aim draws him FULLY TRANSPARENT and the picture
+    // comes out with nobody in it (measured — the first three passes of this block had no man in them).
+    g.hero.setAim(false);
+    g.hero.setGuard(false);
+    var settle: u32 = 0;
+    while (settle < 40) : (settle += 1) g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pose();
+    const between = v3((sc.x + hero.x) * 0.5, gy + 0.9, (sc.z + hero.z) * 0.5);
+
+    g.souls.clear();
+    g.souls.spill(v3(sc.x, gy, sc.z), 4820);
+    // HALF WAY OUT: the rise is what says it grew rather than appeared, and one frame of it proves the ramp.
+    var t: f32 = 0;
+    while (t < 0.22) : (t += SHOT_DT) g.souls.update(SHOT_DT);
+    shootAt(g, "shots/120_souls_rising.png", aim, LIT_YAW, 0.10, 4.2);
+    // …and settled, with the motes it throws the whole time it stands.
+    while (t < 2.4) : (t += SHOT_DT) g.souls.update(SHOT_DT);
+    shootAt(g, "shots/120a_souls_bloom.png", aim, LIT_YAW, 0.10, 4.2);
+    // THE PROMPT, which is the only thing that says it is a thing you can press a button on.
+    g.souls.look(g.hero.pos);
+    shootAt(g, "shots/120b_souls_prompt.png", aim, LIT_YAW, 0.16, 5.4);
+    // …and the RECLAIM: the gold crossing to his chest, which is the pickup's whole animation (the man has
+    // none — it is instant).
+    _ = g.souls.take(g.hero.pos);
+    t = 0;
+    while (t < 0.12) : (t += SHOT_DT) g.souls.update(SHOT_DT);
+    shootAt(g, "shots/120c_souls_reclaim.png", between, LIT_YAW, 0.12, 5.6);
+    g.souls.clear();
 }
 
 fn chestShots(g: *Game) void {

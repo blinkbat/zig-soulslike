@@ -6,6 +6,7 @@ const collision = @import("collision.zig");
 const props = @import("props.zig");
 const wf = @import("worldfmt.zig");
 const chestmod = @import("chest.zig"); // for `Site` alone — env finds the boxes, chest.zig runs them
+const item = @import("item.zig"); // …and for what a box is carrying, which only its own test reads
 const restmod = @import("rest.zig");
 
 const v3 = mathx.v3;
@@ -2381,15 +2382,20 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(@as(usize, 42), lights0);
 
     var jerky: usize = 0;
+    var rings: usize = 0;
     var chestOps: usize = 0;
     for (m.ops[0..m.nops]) |*op| {
         if (op.kind != .chest) continue;
         chestOps += 1;
         for (op.loot[0..op.nloot]) |it| {
             if (it == .mushroom_jerky) jerky += 1;
+            if (item.bindsSouls(it)) rings += 1;
         }
     }
-    try std.testing.expectEqual(@as(usize, 2), jerky);
+    try std.testing.expectEqual(@as(usize, 1), jerky);
+    // …AND ONE BINDING RING IN THE WORLD, which is the whole of what makes it worth anything: it is the one
+    // death you get to refuse, and a box that refilled with them would be a death you never have to take.
+    try std.testing.expectEqual(@as(usize, 1), rings);
 
     var boxes: [chestmod.CAP]chestmod.Site = undefined;
     try std.testing.expectEqual(chestOps, e.chestSites(&boxes));

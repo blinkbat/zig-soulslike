@@ -158,14 +158,14 @@ const A_LUMBER = 6.5; // deg the trunk rolls toward the stance foot through each
 const A_PROT = 6.0; // deg of pelvic TRANSVERSE rotation — the swagger (the hero walks on 3.5)
 const TRUNK_NOD = 5.5; // deg the trunk flexes twice a stride as the mass settles onto each foot
 
-const WINDUP_DUR = 1.20; // rear the club overhead — the unmistakable tell.
+const WINDUP_DUR = 1.35; // rear the club overhead — the unmistakable tell.
 const SLAM_DUR = 0.22;
 const SLAM_IMPACT_K = 0.85; // fraction into the slam the club meets the ground (impact frame)
 // MEASURED off the posed club's arc, which first touches the earth at ~0.19 s of the 0.22 s crash
 const RECOVER_DUR = 1.20; // hunched over the buried club, spent + wide open
 const SLAM_CD = 1.3; // beat between slams
 
-const SWIPE_WIND_DUR = 0.46; // the cock-back — still SHORT next to the slam's tell (about a third of
+const SWIPE_WIND_DUR = 0.52; // the cock-back — still SHORT next to the slam's tell (about a third of
 const SWIPE_DUR = 0.20;
 const SWIPE_IMPACT_K = 0.42; // fraction into the sweep the club crosses his centre line
 const SWIPE_REC_DUR = 0.52; // a brief overswung stagger — not the slam's wide-open collapse
@@ -173,7 +173,7 @@ const SWIPE_CD = 1.05; // its own cooldown, shorter than the slam's
 
 // THE RETURN — sometimes the swipe does not die in the overswing: a short re-cock and the club whips
 // STRAIGHT BACK along its own arc. Punishing the swipe's tail on sight is what this exists to tax.
-const BACK_WIND_DUR = 0.36; // the re-cock, off the overswing (>= foe.TELL_MIN — the chain is still fair)
+const BACK_WIND_DUR = 0.44; // the re-cock, off the overswing (>= foe.TELL_MIN — the chain is still fair)
 const BACK_DUR = 0.24;
 const BACK_IMPACT_K = 0.45; // fraction into the return the club re-crosses his centre line
 const BACK_CHANCE = 0.55; // per swipe, rolled at the overswing — the tail is never SAFE, only USUALLY safe
@@ -727,6 +727,18 @@ pub const Ogre = struct {
         }
         if (s == .drivewind) sfx.world(.ogre_roar, self.pos);
         if (s == .swipewind or s == .backwind) sfx.world(.ogre_swipe, self.pos);
+        // THE MOMENT HE COMMITS — the club leaving the cock, which is the frame the parry has to be timed
+        // off (owner: he needs more tells as to when he is about to swing). The ROAR at the top of a wind
+        // says a swing is coming and then hangs there for a second and a third of it; this says NOW, once,
+        // on the state boundary itself. All three channels, as the parry's own law asks: a HEAVE out of the
+        // chest, a plant of dust off both feet, and the shoulders driving over in the pose behind it.
+        switch (s) {
+            .slam, .swipe, .backswipe, .drive => {
+                sfx.world(.ogre_heave, self.pos);
+                self.plantBurst();
+            },
+            else => {},
+        }
     }
     fn enterIdle(self: *Ogre) void {
         self.state = .idle;
@@ -1399,6 +1411,18 @@ pub const Ogre = struct {
             self.emit(v3(c.x, self.pos.y + 0.06, c.z), vel, self.fxRng.range(0.4, 0.7), self.fxRng.range(0.08, 0.16) * self.scale, big * self.fxRng.range(0.8, 1.3) * self.scale, DUST, 4.5);
         }
     }
+    /// BOTH FEET SETTING as the club is thrown — the visible half of the commit tell. Off the FEET rather
+    /// than the club: a giant swings by planting, and dust off the ground is legible from any angle the club
+    /// itself foreshortens to nothing in.
+    fn plantBurst(self: *Ogre) void {
+        const f = mathx.headingDir(self.facing);
+        for ([_]f32{ -1, 1 }) |side| {
+            const rr = 0.42 * self.scale;
+            const at = v3(self.pos.x - f.z * side * rr, self.pos.y + 0.05, self.pos.z + f.x * side * rr);
+            self.dustBurst(at, 9, 2.0, 0.20);
+        }
+    }
+
     fn emitStrain(self: *Ogre, dt: f32, k: f32) void {
         self.fxAccum += (6.0 + 22.0 * k) * dt;
         while (self.fxAccum >= 1.0) {
@@ -1892,8 +1916,10 @@ test "the SLAM reaches the earth, and the crush strip ends where the club does" 
     o.debugSlam();
     var deepest: f32 = 99;
     var axialAtEarth: f32 = 0; // where the head FIRST touches down — the far end of the crater
+    // RUN IT TO THE END OF THE SWING, not for a frame budget sized against whatever the windup happened to
+    // be: the tell's length is a feel dial and this test is about where the club GOES.
     var k: i32 = 0;
-    while (k < 90) : (k += 1) {
+    while (k < 600 and (o.state == .windup or o.state == .slam)) : (k += 1) {
         _ = o.update(1.0 / 60.0, v3(0, 0, 2), 60, .{});
         if (o.state != .slam) continue;
         const c = o.clubLowWorld();
@@ -1923,7 +1949,8 @@ test "the swipe's hurt SECTOR matches where the club actually goes (band + arc, 
     var highest: f32 = -99;
     var frames: u32 = 0;
     var fr: i32 = 0;
-    while (fr < 40) : (fr += 1) {
+    // …to the end of the SWIPE, for the slam test's reason: the cock-back's length is a feel dial.
+    while (fr < 600 and (o.state == .swipewind or o.state == .swipe)) : (fr += 1) {
         _ = o.update(1.0 / 60.0, v3(3.6, 0, -1.2), 60, .{}); // a hero round on his left flank
         if (o.state != .swipe) continue;
         frames += 1;

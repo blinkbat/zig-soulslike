@@ -338,17 +338,18 @@ pub const Menu = struct {
             .debug => self.drawCard("DEBUG", &self.debugLabels(), .{}),
             .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), .{ .gauges = retro.values[0..gfx.RETRO_COUNT] }),
         }
-        const hint: [:0]const u8 = if (rl.isGamepadAvailable(PAD))
-            "D-pad move / adjust (hold glides, LB coarse)   A select   B back   Select game   Start character"
-        else
-            "Up/Down move   Left/Right adjust (hold glides, Shift coarse)   Enter select   Esc back";
-        const hw = hud.textW(hint, hud.HINT);
-        const hx = @divTrunc(sw - hw, 2);
-        const hy = sh - hud.lineH(hud.HINT) - 12;
-        hud.text(hint, hx, hy, hud.HINT, HINT_COL);
-        const hcy: f32 = @floatFromInt(hy + @divTrunc(hud.lineH(hud.HINT), 2));
-        uiart.diamond(@floatFromInt(hx - 16), hcy, 2.2, mathx.withAlpha(uiart.GILT_DIM, 130));
-        uiart.diamond(@floatFromInt(hx + hw + 16), hcy, 2.2, mathx.withAlpha(uiart.GILT_DIM, 130));
+        // THE CRIB NAMES BUTTONS AND NOTHING ELSE (owner's call) — one strip, whether a pad is plugged in or
+        // not. The keys still work; they are simply not what the chrome talks about, so there is no second
+        // caption to keep in step with this one and no branch that can show the wrong half.
+        const hints = [_]hud.Hint{
+            .{ .glyph = .{ .dpad = .updown }, .label = "Move" },
+            .{ .glyph = .{ .dpad = .leftright }, .label = "Adjust" },
+            .{ .glyph = .{ .bumper = "LB" }, .label = "Coarse" },
+            .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Select" },
+            .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Back" },
+            .{ .glyph = .menu, .label = "Character" },
+        };
+        hud.hintRow(&hints, sh - @divTrunc(hud.lineH(hud.HINT), 2) - 14, hud.HINT, HINT_COL);
     }
 
     fn drawCard(self: *const Menu, title: [:0]const u8, labels: []const [:0]const u8, card: Card) void {

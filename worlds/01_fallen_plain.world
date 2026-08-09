@@ -298,7 +298,7 @@ at: boulder 4.3850946 36.486008 40 1
 at: boulder 5.644925 35.58229 25 1
 at: cliff4 35.523308 47.30874 30 1 lean=9 leanDir=-105
 at: cliff4 41.71763 37.725925 125 1 lean=5
-at: chest -0.8820944 44.309277 120 1 leanDir=30 loot=mushroom_jerky,mushroom_jerky
+at: chest -0.8820944 44.309277 120 1 leanDir=30 loot=mushroom_jerky,soul_binding_ring
 at: cliff3 -17.344637 0.8332672 95 0.6499999
 at: birch 8.689278 1.582593 0 1 lean=2
 at: sapling 9.547991 -0.34965706 0 1

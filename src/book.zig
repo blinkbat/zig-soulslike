@@ -995,18 +995,46 @@ pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
         );
     }
 
-    const hint: [:0]const u8 = switch (self.page) {
-        .equipment => if (self.picking) |ps|
-            (if (quickIndex(ps) != null) "Up/Down choose    A/Enter put it in the socket    B/Esc cancel" else "Up/Down choose    A/Enter equip    B/Esc cancel")
-        else
-            "Arrows move    A/Enter open a slot    Q/E or LB/RB page    B/Esc close",
-        .inventory => "Arrows move    A/Enter use    Q/E or LB/RB page    B/Esc close",
-        .stats => "Up/Down read an attribute    Left/Right turn him    Q/E or LB/RB page    B/Esc close",
+    // THE CRIB IS BUTTONS, NOT KEYS (owner's call). One strip per state, drawn as the pad's own pictograms,
+    // and the page-turn pair rides every one of them because it is the only way off a page.
+    // ONE hint for the pair: two pills labelled "Page" side by side read as two different page turns.
+    const PAGE = hud.Hint{ .glyph = .{ .bumper = "LB/RB" }, .label = "Page" };
+    const CLOSE = hud.Hint{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Close" };
+    const CANCEL = hud.Hint{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Cancel" };
+    var buf: [6]hud.Hint = undefined;
+    const hints: []const hud.Hint = switch (self.page) {
+        .equipment => if (self.picking) |ps| blk: {
+            buf[0] = .{ .glyph = .{ .dpad = .updown }, .label = "Choose" };
+            buf[1] = .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = if (quickIndex(ps) != null) "Socket" else "Equip" };
+            buf[2] = CANCEL;
+            break :blk buf[0..3];
+        } else blk: {
+            buf[0] = .{ .glyph = .{ .dpad = .updown }, .label = "Move" };
+            buf[1] = .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Open" };
+            buf[2] = PAGE;
+            buf[3] = CLOSE;
+            break :blk buf[0..4];
+        },
+        .inventory => blk: {
+            buf[0] = .{ .glyph = .{ .dpad = .updown }, .label = "Move" };
+            buf[1] = .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Use" };
+            buf[2] = PAGE;
+            buf[3] = CLOSE;
+            break :blk buf[0..4];
+        },
+        .stats => blk: {
+            buf[0] = .{ .glyph = .{ .dpad = .updown }, .label = "Read" };
+            buf[1] = .{ .glyph = .{ .dpad = .leftright }, .label = "Turn" };
+            buf[2] = PAGE;
+            buf[3] = CLOSE;
+            break :blk buf[0..4];
+        },
     };
-    hud.text(
-        hint,
-        card.x + @divTrunc(card.w - hud.textW(hint, hud.HINT), 2),
-        card.y + card.h - footH() + 2,
+    const hw = hud.hintRowW(hints, hud.HINT);
+    hud.hintRowAt(
+        hints,
+        card.x + @divTrunc(card.w - hw, 2),
+        card.y + card.h - footH() + 2 + @divTrunc(hud.lineH(hud.HINT), 2),
         hud.HINT,
         uiart.TEXT_HINT,
     );
@@ -1319,7 +1347,13 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
         if (v.inCombat) {
             hud.text("Not with something on you — load it on the quick bar.", inner.x, hy, hud.HINT, uiart.BAD);
         } else {
-            hud.text("A / Enter    Use", inner.x, hy, hud.HINT, mathx.withAlpha(uiart.GILT, 220));
+            hud.hintRowAt(
+                &[_]hud.Hint{.{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Use" }},
+                inner.x,
+                hy + @divTrunc(hud.lineH(hud.HINT), 2),
+                hud.HINT,
+                mathx.withAlpha(uiart.GILT, 220),
+            );
         }
     }
 }

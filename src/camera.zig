@@ -12,7 +12,11 @@ const DEFAULT_DIST = 4.6;
 const DEFAULT_PITCH = 0.28; // gentle downward framing; recenter (R3) returns here too
 const ZOOM_STEP = 0.6;
 const LOOK_SENS = 0.0032; // radians per pixel of mouse motion
-const PITCH_MIN = -0.20; // ~ -11 deg (looking up from just below)
+/// ~ -22 deg, looking UP from below. Wider than the -0.20 the free look ever asked for, because the LOCK
+/// now tilts the rig onto whatever it is fixed on (`game.lockPitch`): an ogre's chest is two and a half
+/// metres up and eleven degrees of lift clipped short of framing it, which put the one thing you are locked
+/// to against the top edge of the screen.
+const PITCH_MIN = -0.38;
 const PITCH_MAX = 1.15; // ~  66 deg (looking down)
 const SHOULDER = 0.55; // lateral offset (world units): hero sits left of centre
 const TARGET_RAISE = 0.15; // lift the look-at a touch above the shoulder point

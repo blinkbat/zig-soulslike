@@ -126,7 +126,8 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `item.zig` | item vocabulary, `Use`, the `Bag` |
 | `chest.zig` | openable boxes; contents read off the placing op (`Op.loot`) |
 | `rest.zig` | bonfire + campfire grace; `isRestKind` is the one predicate |
-| `hud.zig` | ER HUD + the ONLY path to draw/measure text |
+| `souls.zig` | THE DROP — what a death leaves on the ground, the gold bloom it stands as, and the walk back for it |
+| `hud.zig` | ER HUD, the PAD-GLYPH kit every prompt and crib is drawn with, and the ONLY path to draw/measure text |
 | `ui.zig` | editor widget kit; `Ctx.anyHot` gates world clicks next frame |
 | `uiart.zig` | chrome DRESSING shared by hud/menu/book/ui |
 | `itemart.zig` | pictures of things — armaments and bag items as objects, sized by the caller |
@@ -433,7 +434,10 @@ chips you for it; a parry is a COMMITTED WINDOW that pays `STAM_PARRY` once and 
   blade, and a parry deals neither damage nor poise — so the greatsword's uninterruptible slam is exactly the
   move the boards can still stop, which is the parry's whole reason to exist against him.
 - **A WINDOW IS `foe.PARRY_LEAD` SECONDS MEASURED BACK FROM THE IMPACT FRAME** — one number, in seconds, for
-  EVERY creature and every move, and it IS the difficulty. You parry an instant before THE HIT (owner's call):
+  EVERY creature and every move, and it IS the difficulty. **It is 0.18** (owner: the ogre felt unparryable),
+  up from 0.11, and every creature's tests BRACKET it from above: a window may never be more than a fraction
+  of the tell in front of it, which is what forced the toad's `LUNGE_COIL` and the brood's `BITE_WINDUP` up
+  with it. Widening the dial widens every creature at once, which is the point of there being one. You parry an instant before THE HIT (owner's call):
   what you read is the blow, not the animation in front of it, so a club, a mace, a greatsword, fangs and a
   flying toad teach one rule and not a dial learned five times. It lives in `foe.zig` for `stunCurve`'s reason —
   as a private copy per creature it is one event drifting into five numbers nobody chose. Written instead as
@@ -450,6 +454,13 @@ chips you for it; a parry is a COMMITTED WINDOW that pays `STAM_PARRY` once and 
   shoulder takes `PARRY_PUNCH` and the elbow gives back exactly as much: the fold is untouched and what travels
   is the HAND. Opened at the elbow alone it swings the shield off its own arm and presents the end of his
   forearm — this is the retune `shieldFit`'s law was written for.
+- **AND THE OGRE SAYS WHEN HE COMMITS** (owner: he needs more tells as to when he is about to swing). The
+  ROAR at the top of a wind says a swing is COMING and then hangs there for a second and a third; the commit
+  tell says NOW, once, on the wind → swing boundary itself, in all three channels the parry's own law asks
+  for: `ogre_heave` out of the chest, `plantBurst` off BOTH FEET (a giant swings by planting, and dust on the
+  ground is legible from every angle the club itself foreshortens to nothing in), and the shoulders driving
+  over in the pose behind it. His winds are longer to match — the tell has to be readable before the beat
+  that ends it means anything.
 - **JUDGE IT FROM ABOVE.** A lateral arc foreshortens to nothing head-on, so the harness shoots the coil, the
   crossing and the follow-through straight down (`20o`/`20p`/`20q`). One frame cannot show a sweep.
 - **A CATCH IS A BLOCK'S RECOIL PLUS SPARKS** — `noteParry` stamps `blockT`, the same channel, because the man
@@ -488,6 +499,45 @@ the fight, which is the whole point of it.
   puts a kind in THAT socket (`combat.Quick.put`, which moves a kind already elsewhere on the bar rather
   than copying it). The rows are FILTERED to what he actually carries (`quickOffered`) and carry an empty
   row, so a kind's ordinal is not its row and `pickIndexOf` counts it out the way `candidates` builds it.
+
+### Souls — the drop, and the ring that refuses it
+
+**WHAT YOU WERE CARRYING IS ON THE GROUND WHERE YOU DIED** (`souls.zig`) — DS's bloodstain and ER's rune drop,
+which are one mechanic under two names. Everything comes off him on the frame he DIES rather than at the
+respawn, so the spill plays under the YOU DIED card, which is the one moment nothing else is playing.
+
+- **THERE IS EXACTLY ONE.** A second death overwrites the first and the first is gone for good. That is not a
+  storage decision, it is THE mechanic: a list of drops would quietly delete the whole risk.
+- **NOTHING ELSE SPENDS IT.** No timer, no decay, no despawn on distance — only picking it up or dying again.
+  A death RE-HOMES the field (`game.resetFoes`) and must not touch the drop; only a change of MAP clears it,
+  which is `game.armScript` and nowhere else.
+- **AND RETRIEVAL IS INSTANT** (owner's call). No committed action and no animation on the man: the runes are
+  on the counter the frame he presses. The animation is all on the DROP — motes solved to ARRIVE at his chest
+  inside their own life (the wand gather's construction with the ends swapped), so it reads as a thing being
+  taken up rather than a thing being scattered.
+- **IT IS A TREE, NOT A FLAME**, so it obeys the dead-limb law: a crooked bole in three leaning segments,
+  limbs that rise to an elbow, droop off their own line and stop in a BLUNT swelling. It grows out of the
+  earth over `RISE`, overshoots its own height and settles onto it (the reactions law, on a prop).
+- **ONE EMISSIVE LEVEL, THREE ALBEDOS.** Vertex alpha is the emissive channel, so all three golds sit at one
+  alpha and separate on hue and value alone — at two levels the shaft bands where the level changes. The
+  albedos are SOLVED off a sampled render (`souls.EMISSIVE`): the first pass authored the tips at 246,220,150
+  and they came back 255,255,221, a white knuckle, which is why it read as BONE and not as gold.
+- **IT SAYS WHERE IT IS OUT LOUD** — `souls_hum` on a RETRIGGER (`HUM_EVERY`, the leechfly's whine rule), cut
+  short enough that consecutive takes overlap. It is what lets you find one you walked past.
+- **THE PROMPT IS FIRST IN `game.reachable`** and its ring is the smallest of the four: you can die at a grace,
+  and on the frame you walk back in there is exactly one thing you came for. One press clears it and the fire
+  is offered again.
+
+**AND THE SOUL BINDING RING REFUSES THE WHOLE THING** (`item.soul_binding_ring`, DS's Ring of Sacrifice).
+Carried, a death takes the RING instead of the souls: it snaps, he keeps the lot, and nothing is left standing.
+
+- **CARRYING IT IS ENOUGH.** There is no ring slot and there is no equip system, so the bag is the wearing.
+- **IT IS NOT A TOOL.** `usable` is false and it is off the quick bar: a Confirm on it would promise something
+  the mechanic never does. It is the one thing in the bag spent by DYING.
+- **ASKED OF THE ITEM, NOT THE KIND** (`item.bindsSouls`, `isFlask`'s shape) — a second binding charm is one
+  row in `item.zig` and no edit at the death site.
+- **ONE IN THE WORLD**, in a chest, and a test pins that. A box that refilled with them is a death you never
+  have to take.
 
 ### Status effects — POISON, and the shape every one after it takes
 
@@ -963,10 +1013,22 @@ not the stick-speed `runB`.
 - **Committed actions with an ER-style input queue** — an attack/roll pressed mid-action buffers in
   ONE slot (last press wins; a same-frame roll outranks attack) and fires at the earliest exit. A
   queued roll leaves in the direction HELD at fire time, not pressed.
+- **INTERACT IS Y, EVERYWHERE** (owner's call) — `game.INTERACT_PAD`/`INTERACT_KEY`, and the keyboard mirrors
+  the pad letter for letter so no crib ever has to name a key. It is the one face button ER leaves free: A is
+  reserved for the jump, B is the roll, X is the quick item. The dialog panel takes it on top of the menu
+  Confirm, so the button that opened a conversation is the one that walks through it. The quiver's keyboard
+  cycle moved off Y to `ARROW_KEY` to make room.
 - **Guard or CAST:** hold L1/LB or RMB. The button belongs to the HAND, not the shield.
 - **Aim or PARRY:** L2 is that same hand's SKILL slot and is routed the same way — a raised bow aims on the
   HELD level (or RMB with the bow out, free to take because the bow already took the shield), boards parry on
   the PRESSED edge (`PARRY_KEY`, since RMB is spoken for and Shift is the sprint).
+- **THE RIG TILTS ONTO WHAT IT IS LOCKED TO** (`game.lockPitch`). The boom's pitch IS the view's, so the
+  right number is the angle from the EYE down to the mark — a toad at your boots tips the camera down, an
+  ogre whose chest is two and a half metres up tips it back. A fixed pitch framed the grass under a giant and
+  the sky over a toad, and both of those are the one thing you are trying to look at. Measured off the LIVE
+  eye rather than solved, which makes it a convergent feedback loop (gain `boom / (boom + range)`, under 1
+  everywhere the near guard does not fire) that `camera.aim`'s ease damps the rest of the way. It is why
+  `camera.PITCH_MIN` is -0.38 and not the -0.20 the free look ever asked for.
 - **Lock-on:** R3 / middle mouse; a flick cycles. Suspended entirely while aiming. Two ER exceptions:
   a hold-B sprint faces TRAVEL, and an attack's recovery tail re-squares (`ATK_RETRACK`).
   **YOU CANNOT FIX ON WHAT YOU CANNOT SEE** — a foe behind a wall is not offered (`game.canSee`), but
@@ -1034,6 +1096,16 @@ not the stick-speed `runB`.
   (`PIX_BOX`) instead of keeping one pixel of four, which is a TRADE — the twinkle IS a hard edge
   crossing a pixel boundary. **Sub-pixel filter offsets snap under nearest**, so the chroma fringe's
   offset now snaps to whole BLOCKS or R/B smear a whole pixel apart.
+- **THE UI NAMES BUTTONS, NEVER KEYS** (owner's call). Every prompt, crib and footer in the GAME shows the
+  button that does the thing, DRAWN — `hud.Hint`, `hud.hintRow`/`hintRowAt`, and the `padFace`/`padDpad`/
+  `padBumper`/`padMenu` pictograms ported from zig-diablo's `hudx`. There is no keyboard caption anywhere and
+  no pad-vs-keyboard branch: one strip, whether a pad is plugged in or not, so there is no second caption to
+  keep in step and no branch that can show the wrong half. Keys still work; they are simply not what the
+  chrome talks about. The glyphs live in `hud.zig` and not `uiart.zig` for one reason: a face button is a
+  LETTER, and that file is the only path to draw text. **The EDITOR is the one exception and it is not this
+  UI** — a mouse-and-keyboard authoring tool with no pad bindings at all, so its own crib names keys.
+- **A BUTTON IS NAMED ONCE** — `hud.BTN_INTERACT`/`BTN_CONFIRM`/`BTN_BACK`/`BTN_QUICK`. `game.zig` binds off
+  them and every crib draws off them, so a rebind moves the caption and the press together.
 - **All UI text goes through `hud.text/textW`**, in **Balthazar** (`assets/`, OFL; owner's pick). The
   atlas is ASCII-ONLY — a `·` or `—` renders as tofu. Exo and Tagesschrift are GONE; one face only.
 - **SIZES COME FROM `hud`'s TYPE SCALE** (`TITLE`/`BODY`/`SMALL`/`HINT`), never a literal at the call
@@ -1086,7 +1158,10 @@ not the stick-speed `runB`.
 ## Gaps
 
 No criticals, guard counter, jump, or AR × motion-value damage (flat constants
-today). POISON is the only status effect, it is the HERO's alone (nothing applies one to a foe, and no foe
+today). SOULS DROP AND ARE RECLAIMED but nothing SPENDS them yet: there is no levelling and no merchant, so
+the counter is a score with a real risk attached and nothing to buy. The BINDING RING is the only wearable
+that does anything and it is worn by being CARRIED — there is no ring slot, because there is no equip system
+under one. POISON is the only status effect, it is the HERO's alone (nothing applies one to a foe, and no foe
 reads one), and nothing RESISTS it yet — the sporeling cap's ward still grants CHAOS resistance, which since
 the venom became poison protects against nothing in the world. The parry exists but has no RIPOSTE behind it — a caught blow buys a stagger and the ordinary punish,
 not a critical. Four creatures carry parry windows; the archers, the kobolds and the shades have none yet, and

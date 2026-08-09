@@ -851,7 +851,7 @@ pub fn runShots(g: *Game) void {
         g.hero.vit.hp = g.hero.vit.hpMax;
         g.hero.stam.reset();
         g.hero.stamRefused = 0;
-        f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0); // reset the slot
+        f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     }
 
     {
@@ -1061,7 +1061,6 @@ pub fn runShots(g: *Game) void {
 
     {
         const kc = mathx.ground(-26.0, 30.0); // open ground west of the ogre's spot, clear of ruins
-        // camera where the hero is; and `LIT_YAW` says which bearing is lit.
         const litB = LIT_BACK; // the XZ bearing of backDir(LIT_YAW) — where the camera sits
         const far = v3(kc.x + litB.x * 80.0, 0, kc.z + litB.z * 80.0);
         const near = v3(kc.x + litB.x * 1.2, 0, kc.z + litB.z * 1.2);
@@ -1208,7 +1207,6 @@ pub fn runShots(g: *Game) void {
         game.rehomeFoesForShot(g);
     }
 
-    // the scene shader grew point lights.
     {
         standHero(g, 0, 12, std.math.pi);
         shootAt(g, "shots/70_avenue_north.png", g.hero.shoulderPoint(), 180, 0.16, 9.0);
@@ -1270,7 +1268,6 @@ pub fn runShots(g: *Game) void {
         // THE START ARC — the only place the cliff CHARACTERS stand side by side close enough to compare.
         standHero(g, 0.0, 6.0, 0);
         shootAt(g, "shots/85c_arc_ivied.png", mathx.ground(0, 21), 0, 0.16, 22.0);
-        // the east flank sits at yaw 85 (face toward −X), so the eye goes WEST of it looking +X (camera yaw 90).
         standHero(g, 22.0, 3.0, mathx.radians(90));
         shootAt(g, "shots/85d_arc_collapsed.png", mathx.ground(36, 2), 90, 0.14, 20.0);
 
@@ -1627,12 +1624,6 @@ fn warriorShots(g: *Game) void {
     game.rehomeFoesForShot(g);
 }
 
-/// THE SHADES (`116…`). Shot from `LIT_YAW` with the sensed hero out on the SUN's bearing, the warriors'
-/// own rule — but this creature needs it more than any of them: it is authored NEARLY BLACK from the cowl
-/// down, so a frame that photographs its own shadow is a frame of a silhouette with two dots in it.
-/// THE LEECHFLY. Everything here is fought over its HEIGHT, so every frame has to say where it is: the
-/// portraits are shot at attack height, the climb is shot from the ground looking UP, and the feed is shot
-/// with the hero in it — a beak in nobody is a beak pointing at air.
 /// THE ROOTED. Every frame here is about the DISGUISE and the staged tell: asleep beside a real snag, the
 /// lids up, the unfold, and each of the three limbs mid-arc. A creature whose whole point is that you cannot
 /// tell it from scenery has to be photographed NEXT TO the scenery.

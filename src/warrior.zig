@@ -15,7 +15,7 @@ const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
 
-const IRON = propart.IRON; // the world's iron — a warrior's kit is the world's ironwork, not its own
+const IRON = propart.IRON;
 const IRON_LT = rgba(52, 50, 46, 255); // caught-light on a bevel / a knuckle of a flange
 const IRON_DK = rgba(19, 18, 17, 255); // the shadowed side of everything forged
 const RUST = rgba(66, 42, 24, 255); // grave-rust, in the pits and along the welds
@@ -168,7 +168,7 @@ const Attack = struct {
 
 const MACE = Attack{
     .reachOut = 1.23, // MEASURED off the posed head: its own furthest, out in front of him at the blow
-    .windDur = 0.64, // was 0.40 — the whole point of the retune
+    .windDur = 0.64,
     .swingDur = 0.30,
     .impactK = 0.26,
     .recoverDur = 0.74,
@@ -183,11 +183,11 @@ const MACE = Attack{
 
 const SLAM = Attack{
     .reachOut = 2.18, // MEASURED: near three metres of reach, cocked high and driven down through
-    .windDur = 1.34, // was 1.05
+    .windDur = 1.34,
     .swingDur = 0.30,
     .impactK = 0.24,
-    .recoverDur = 1.62, // was 1.15 — the greatsword's own punish window, and the longest in the game
-    .cd = 3.10, // was 2.20
+    .recoverDur = 1.62, // the greatsword's own punish window, and the longest in the game
+    .cd = 3.10,
     .hit = .{ .dmg = 30, .poise = 40, .stance = 18 },
     .hyper = true,
     .crash = true,
@@ -200,11 +200,11 @@ const LUNGE = Attack{
     .windDur = 0.52,
     .swingDur = 0.26,
     .impactK = 0.46,
-    .recoverDur = 1.02, // was 0.66
-    .cd = 3.90, // was 3.10
+    .recoverDur = 1.02,
+    .cd = 3.90,
     .hit = .{ .dmg = 17, .poise = 22 },
     .strokes = 2,
-    .chainWind = 0.30, // was 0.19 — the SECOND stab is the one that used to arrive unseen
+    .chainWind = 0.30, // the SECOND stab is the one that used to arrive unseen
     .lunge = 1.55,
     .hop = 0.40,
 };

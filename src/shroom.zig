@@ -632,7 +632,6 @@ pub const Shroom = struct {
     }
 };
 
-// ─── the cloud ────────────────────────────────────────────────────────────────────────────────────────
 
 /// The cloud's own ring: peak emission 24/s against lives up to 1.4 s ≈ 34 in flight — at 26 the ring
 /// was quietly eating its own spores mid-hang.
@@ -688,7 +687,6 @@ pub const Cloud = struct {
     }
 };
 
-// ─── the group ────────────────────────────────────────────────────────────────────────────────────────
 
 const CAP_N = wf.MAX_PER_KIND;
 
@@ -790,7 +788,6 @@ pub const Cluster = struct {
     }
 };
 
-// ─── the meshes ───────────────────────────────────────────────────────────────────────────────────────
 
 fn buildMeshes() [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
@@ -860,7 +857,6 @@ fn armMesh(side: f32) rl.Mesh {
     return b.toMesh();
 }
 
-// ─── tests ────────────────────────────────────────────────────────────────────────────────────────────
 
 test "the fling is only chosen where it can land, and rooted it can only tremble" {
     // The cannot-land law: a fling at nine metres travels five and pops its cloud on empty grass.

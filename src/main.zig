@@ -3,7 +3,6 @@ const game = @import("game.zig");
 const bake = @import("bake.zig");
 const wf = @import("worldfmt.zig");
 
-// Entry point.
 pub fn main() void {
     const alloc = std.heap.c_allocator;
     const argv = std.process.argsAlloc(alloc) catch {

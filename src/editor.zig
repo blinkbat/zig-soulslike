@@ -1129,7 +1129,6 @@ pub const Editor = struct {
         const blocked = self.hotFrame or self.menuOpen;
         const ground = self.groundAt();
 
-        // the thing itself (see drawOverlay).
         self.hoverLive = self.selecting and !blocked;
         self.hover = if (self.hoverLive) self.hoverInLayer(m, env) else .none;
 

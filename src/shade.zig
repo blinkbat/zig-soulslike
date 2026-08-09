@@ -647,7 +647,6 @@ pub const Shade = struct {
         self.enterDeath();
     }
 
-    // ── FX ────────────────────────────────────────────────────────────────────────────────────────────
 
     fn emit(self: *Shade, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
         foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
@@ -743,7 +742,6 @@ pub const Shade = struct {
         model.draw(self);
     }
 
-    // ── POSE ──────────────────────────────────────────────────────────────────────────────────────────
 
     /// The hem's trail, updated off the distance actually covered: a mass in motion OVERSHOOTS its rest and
     /// settles back onto it, so this is an eased lag and never the frame's travel read straight.
@@ -900,7 +898,6 @@ pub const Haunt = struct {
     }
 };
 
-// ── MESHES ────────────────────────────────────────────────────────────────────────────────────────────
 
 fn buildMeshes() [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
@@ -1154,7 +1151,6 @@ pub fn wispMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// ── TESTS ─────────────────────────────────────────────────────────────────────────────────────────────
 
 test "the rig's tables are the rig's size, and the tatters are the tail of it" {
     try std.testing.expectEqual(@as(usize, N), REST.len);

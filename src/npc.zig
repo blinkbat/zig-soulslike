@@ -601,7 +601,6 @@ pub fn nameOf(m: *const wf.Map, rec: u16) []const u8 {
 }
 
 
-// ── THE MESHES ───────────────────────────────────────────────────────────────────────────────────────
 // FLESH IS ROUND (hands, the head under a hood, the nose); cloth and leather are slabs and skirts. Nothing
 // ends in a point and no cylinder is left capless.
 

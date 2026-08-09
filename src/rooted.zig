@@ -712,7 +712,6 @@ fn place(p: rl.Vector3) rl.Matrix {
     return tr(p.x, p.y, p.z);
 }
 
-// ─── the meshes ───────────────────────────────────────────────────────────────────────────────────────
 
 fn buildMeshes() [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
@@ -885,7 +884,6 @@ fn clawMesh(which: usize) rl.Mesh {
     return b.toMesh();
 }
 
-// ─── the group ────────────────────────────────────────────────────────────────────────────────────────
 
 const CAP = wf.MAX_PER_KIND;
 
@@ -957,7 +955,6 @@ pub const Grove = struct {
     }
 };
 
-// ─── tests ────────────────────────────────────────────────────────────────────────────────────────────
 
 test "it is scenery until you walk into it, and scenery again when you leave" {
     var t = Rooted.spawn(mathx.zero3, 0, 1.0, 0.3);

@@ -218,7 +218,6 @@ fn render(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, kind: Kin
     rl.endTextureMode();
 }
 
-// ─── the characters ───────────────────────────────────────────────────────────────────────────────────
 //
 // ONE GROUP OF EACH, exactly as the game holds them — the group is every creature's own draw contract
 // (model, flash, scale), so the viewer cannot drift from what the field shows. Members are respawned into
@@ -372,7 +371,6 @@ fn renderChar(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, k: wf
     rl.endTextureMode();
 }
 
-// ─── the icons ────────────────────────────────────────────────────────────────────────────────────────
 
 fn iconLabel(i: usize) [:0]const u8 {
     if (i < GLYPH_N) return @tagName(@as(icons.Icon, @enumFromInt(i)));

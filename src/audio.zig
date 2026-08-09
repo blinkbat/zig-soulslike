@@ -267,7 +267,6 @@ const Rack = struct {
         }
     }
 
-    // separately-authored sounds feel like they were recorded in the same room on the same machine.
 
     fn sat(r: *Rack, drive: f32) void {
         for (work[0..r.n]) |*s| {
@@ -447,7 +446,6 @@ pub const Id = enum {
     ogre_swipe,
     ogre_hurt,
     ogre_die,
-    // animal because the yip and the snarl are the same larynx at different sizes.
     kobold_snarl, // HE COMMITS — one bark per flurry, and the cue to get out of reach
     kobold_chop,
     kobold_heave,
@@ -504,7 +502,6 @@ pub const Id = enum {
     menu_pick,
     menu_back,
     wind,
-    // bird on it reads as a plain with a single repeating bird on it.
     birds,
     birdsong,
     owl, // hoo … hu-hoooo, from somewhere in the ruins
@@ -839,29 +836,13 @@ fn mkGuardBreak(r: *Rack) void {
 }
 
 fn mkParry(r: *Rack) void {
-    // IRON TURNED. What makes it a PARRY and not a block is the RING left standing after it — but a ring is a
-    // TAIL, not the event, and it has to be a struck DISC rather than a bell.
-    //
-    // The first shape was a cartoon ping, and every reason was measurable against the rest of the bank: a
-    // fundamental at 2350 with FOUR partials over it (12.8 kHz at the top) where the other struck iron here
-    // sits at 940–1750 with two or three; `decay` is exp(-curve·u), so its curve of 2.2 was still at a ninth of
-    // full amplitude when the voice ended, against `mkArrowMetal`'s 4.5 and `mkGuardBlock`'s 8.0; and NO low
-    // body at all under any of it. A sustained high sine cluster is a menu beep whatever it is labelled.
-    //
-    // TWO WAYS TO SOUND LIKE A TOY, and the first shape managed both. `body` GLIDES its pitch exponentially, so
-    // one in the mid register is a descending chirp — 1750 down to 760 is the cartoon boing, and every glide
-    // here is now either low enough not to read as pitch (the bank's thumps live at 190→78) or gone. And a
-    // `ring` is PURE SINES at inharmonic spacing, which past two or three partials and a slow decay is a spring
-    // reverb, not a shield: that is where the "springy" came from, and no amount of retuning its frequency
-    // fixes what it fundamentally is.
-    //
-    // SO THE METAL COMES FROM NOISE. `mkGuardBlock` already works and is the same event with less behind it —
-    // this is that voice made HARDER and BRIGHTER: more grit at the strike, a resonant band shimmering off the
-    // top of it, and only a touch of pure tone as garnish. Distinct because it is sharper, not because it sings.
-    // …AND THE TURN IS ITS OWN EVENT NOW (owner: "a more unique sound"). What a block does not own is the
-    // SLIDE-OFF: a blow a parry refused does not stop, it is sent somewhere else — so after the strike a
-    // short scrape RISES away (air swept low→high, the one direction nothing else in the bank sweeps), and
-    // one higher partial hangs a beat past the hit. Still noise-built; distinct by shape, not by singing.
+    // IRON TURNED, and it has to be a struck DISC rather than a bell. TWO WAYS TO SOUND LIKE A TOY, and the
+    // first shape managed both: `body` GLIDES its pitch exponentially, so one in the mid register is a
+    // descending chirp (1750 down to 760 is the cartoon boing); and a `ring` is PURE SINES at inharmonic
+    // spacing, which past two or three partials and a slow decay is a spring reverb, not a shield.
+    // SO THE METAL COMES FROM NOISE — `mkGuardBlock` made HARDER and BRIGHTER, with a touch of tone as
+    // garnish. …AND THE TURN IS ITS OWN EVENT (owner): a short scrape RISES away after the strike, the one
+    // direction nothing else in the bank sweeps, and one higher partial hangs a beat past the hit.
     r.tick(0.0, 0.58, 6000); // the strike, brighter than the block's 3400
     r.grit(0.0, 0.09, 0.44, 3400, 0.35, 5.0); // steel ON steel — the character, and it is noise
     r.body(0.0, 0.15, 205, 84, 1.00, 5.0); // the mass, in the block's own register
@@ -1142,23 +1123,6 @@ fn mkShadeGather(r: *Rack) void {
     r.master(1.4, 4200);
 }
 
-/// It lets go. A tear rather than a crack — there is no shell on this thing to break.
-// ─── THE LEECHFLY ─────────────────────────────────────────────────────────────────────────────────────
-// A MOSQUITO IS ONE NOTE AND EVERYTHING ELSE IS WET. The whine is the creature; the beak, the pull and the
-// death are all short, close, organic things happening at the end of it.
-
-/// THE WHINE, and the three things that stop it being a dentist's drill (owner: too loud, too annoying, too
-/// constant). It is a BIG fly, so it is pitched where a big one would be — under 400 Hz, an octave below a
-/// real mosquito, because the piercing part of that sound is entirely in the top and a note you cannot
-/// escape has no business up there. `growl`'s saw carries the harmonics and its own vibrato the warble.
-///
-/// THE HARMONICS ARE CUT, not the volume alone: the octave layer was what made it a buzzsaw, and the master
-/// is lowpassed hard on top. What is left is a hum with a texture rather than an edge.
-///
-/// A HAIR LONGER THAN ITS OWN RETRIGGER (`leechfly.WHINE_EVERY`) so consecutive takes OVERLAP into one note.
-/// Gapped instead, the whine chatters on and off at 4 Hz, which is a helicopter. The SILENCES are between
-/// phrases, not between takes — see `leechfly.beatWings`.
-// ─── THE ROOTED ───────────────────────────────────────────────────────────────────────────────────────
 // WOOD IS GRIT AND A LOW BODY, never a ring: a ring is metal or glass, and the one thing this creature must
 // not sound like is either. Everything here is a fibre tearing, filtered dark.
 
@@ -1723,7 +1687,7 @@ fn mkWind(r: *Rack) void {
     r.norm(0.42);
     r.sat(1.2);
     r.crush(CRUSH_BITS + 1.5, CRUSH_HOLD); // gentler than the house: a crushed noise bed hisses
-    // 1400, down from 2600 — the AIR ABSORPTION of a few hundred metres of it, which is the cue that actually reads as distance (see the mix above).
+    // The AIR ABSORPTION of a few hundred metres of it, which is the cue that actually reads as distance.
     r.warm(AIR_FAR_BED);
     r.wow(0.003, 0.4);
     r.hiss(0.035);
@@ -1734,7 +1698,6 @@ fn mkWind(r: *Rack) void {
 fn mkBirds(r: *Rack) void {
     r.chirp(0.04, r.rng.range(0.55, 0.85), r.rng.range(1550, 2500));
     if (r.rng.float() < 0.45) r.chirp(r.rng.range(0.42, 0.72), r.rng.range(0.28, 0.48), r.rng.range(1700, 2700));
-    // 2100, not the old 4200.
     r.masterX(1.1, AIR_FAR_CALL, CRUSH_BITS + 1.0, CRUSH_HOLD);
 }
 
@@ -1869,7 +1832,7 @@ const BANK = [NV]Row{
     .{ .id = .bone_die, .make = mkBoneDie, .gain = battle(0.68), .mix = .combat, .jit = 0.09, .vjit = 0.12, .vars = 3, .reach = 54 },
     // THE ONE WARNING THE LEAP GIVES YOU, so it carries as far as the leap can reach and then some.
     .{ .id = .skel_lunge, .make = mkSkelLunge, .gain = battle(0.86), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 4, .poly = 3, .reach = 62 },
-    // about him is an octave down and half a second longer (see the ogre block above); low frequencies are also what survive a couple of hundred metres of air, so the physics and the character agree for once.
+    // The giant is an octave down and half a second longer than anything else, and low frequencies are what survive a couple of hundred metres of air — so the physics and the character agree for once.
     .{ .id = .ogre_step, .make = mkOgreStep, .gain = battle(0.60), .mix = .combat, .jit = 0.08, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 115 },
     .{ .id = .ogre_roar, .make = mkOgreRoar, .gain = battle(0.80), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .reach = 135 },
     .{ .id = .ogre_slam, .make = mkOgreSlam, .gain = battle(1.00), .mix = .combat, .jit = 0.06, .vjit = 0.08, .vars = 3, .reach = 135 },

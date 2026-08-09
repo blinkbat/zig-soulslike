@@ -869,7 +869,6 @@ fn place(p: rl.Vector3) rl.Matrix {
     return tr(p.x, p.y, p.z);
 }
 
-// ─── the meshes ───────────────────────────────────────────────────────────────────────────────────────
 // FLESH IS ROUND (AGENTS.md): every mass here is `addBlob`/`addCapsule`. The only flat things on the
 // creature are the wing membranes, which are flat because a wing is.
 
@@ -1073,7 +1072,6 @@ fn legMesh(i: usize) rl.Mesh {
     return b.toMesh();
 }
 
-// ─── the group ────────────────────────────────────────────────────────────────────────────────────────
 
 const CAP = wf.MAX_PER_KIND;
 
@@ -1147,7 +1145,6 @@ pub const Swarm = struct {
     }
 };
 
-// ─── tests ────────────────────────────────────────────────────────────────────────────────────────────
 
 test "IT CLIMBS OUT OF SWORD REACH AND NOT OUT OF THE WORLD" {
     // The whole design in one assertion: perched, its body is above anything the hero's arm sweeps, and it

@@ -22,22 +22,15 @@ const setLocal = heromod.setHumanoid;
 // THE WANDERER — the first person in this world who is not trying to kill you.
 //
 // A living human, so it is the HERO'S 18-BONE SCAFFOLD (`heromod.restHumanoid`) and the hero's own
-// `advanceGait`/`legChain`: never a bespoke walk. What is this creature's own is the upper body, the kit and
-// the idle set. It carries no `Vitals`, no `Leash` and no blade — it is not a foe and must not grow the foe
-// contract by accident.
-//
-// **A MAN STANDING STILL IS THE HARDEST THING TO ANIMATE.** An idle that is only a breathing bob reads as a
-// mannequin with a pulse, so three clocks run at rates that never line up: the breath, a WEIGHT SHIFT from
-// one leg to the other, and a slow head drift. Because the periods are incommensurate the loop never shows.
-//
+// `advanceGait`/`legChain`: never a bespoke walk. Its own is the upper body, the kit and the idle set. It
+// carries no `Vitals`, no `Leash` and no blade — it must not grow the foe contract by accident.
+// **A MAN STANDING STILL IS THE HARDEST THING TO ANIMATE.** Three clocks run at rates that never line up:
+// the breath, a WEIGHT SHIFT from one leg to the other, and a slow head drift — so the loop never shows.
 // **THE STAFF IS THE OTHER HALF OF THE GAIT.** A walking staff plants with the OPPOSITE foot, so the right
-// arm is not free to swing — it drives the pole into the ground once a stride while the left arm swings at
-// full amplitude. Giving both arms the hero's swing and letting the staff float is what reads as a prop
-// glued to a hand.
-//
-// **VARIATION IS BETWEEN THE INSTANCES, NOT ALONG ONE** (the wabi-sabi rule at the right scale): the two HEAD
-// variants — hood up, hood back — are what makes two wanderers two people. Everything else varies through the
-// POSE off `seed` (stoop, the crook the staff is held at, which way the weight starts), which costs no mesh.
+// arm is not free to swing: it drives the pole into the ground once a stride while the left arm swings at
+// full amplitude. Both arms swinging with the staff floating is what reads as a prop glued to a hand.
+// **VARIATION IS BETWEEN THE INSTANCES, NOT ALONG ONE**: the two HEAD variants — hood up, hood back — are
+// what makes two wanderers two people, and everything else varies through the POSE off `seed`.
 
 const H: f32 = heromod.H;
 const N = heromod.N;
@@ -65,16 +58,11 @@ pub const SCALE = (H - 0.065) / H;
 const REST = heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF * 0.96, H);
 
 // THE PALETTE IS SOLVED AGAINST THE RENDER, NOT PICKED. Sampled off the first pass every material landed
-// inside 30-36 on screen — a lit figure at the value of ground in SHADOW, which is a silhouette — while the
-// hero beside him spanned 29-50 plus skin near 90. What separates a body is RANGE, not overall lightness.
-//
-// The chain is albedo × 1.72 → linear → gamma 1/2.2, so a sunward face reads
-// `255 × (albedo × 1.72 / 255)^(1/2.2)`: albedo 40 comes back at 142 and albedo 58 at 168. On THIS sun
-// anything above about 30 reads pale on a face square to it, which is what the dark-albedo rule is telling
-// you, and it means value contrast between two LARGE areas cannot survive full daylight — the second one
-// blows out with the first. So the layering is done on HUE, which the sun does not flatten: warm wool under a
-// COLD cloak, with the value contrast spent only on `LINEN`, where a few square centimetres can be bright
-// without a whole mass going plastic.
+// inside 30-36 on screen — a lit figure at the value of ground in SHADOW — while the hero beside him spanned
+// 29-50 plus skin near 90. What separates a body is RANGE, not overall lightness.
+// The chain is albedo × 1.72 → linear → gamma 1/2.2, so albedo 40 comes back at 142 and albedo 58 at 168:
+// on THIS sun, value contrast between two LARGE areas cannot survive full daylight. So the layering is done
+// on HUE — warm wool under a COLD cloak — with the value contrast spent only on `LINEN`.
 const ROBE = rgba(50, 42, 33, 255);
 const ROBE_LT = rgba(68, 58, 45, 255);
 const ROBE_DK = rgba(30, 25, 20, 255);
@@ -124,15 +112,11 @@ const SHIFT_RATE = 0.19;
 const DRIFT_RATE = 0.113;
 const A_BREATH = 2.1; // deg of chest rise
 /// THE WEIGHT SHIFT IS A PELVIC LIST, NOT A SLIDE. Translating the pelvis sideways carries both hips with it
-/// and `legChain` solves each leg straight down from its own hip, so both feet travel too — a man skating
-/// gently from side to side. Rolling the pelvis about its own joint raises one hip and drops the other, which
-/// is what standing on one leg actually does, and leaves the mean where it was.
+/// and `legChain` solves each leg straight down from its own hip, so both feet travel too. Rolling the pelvis
+/// about its own joint raises one hip and drops the other, and leaves the mean where it was.
 ///
-/// SMALL, AND ITS DROP PAID BACK (see `listLift`). At rest this rig's leg is EXACTLY straight — pelvis 0.530·H,
-/// ankle 0.039·H, thigh + shank 0.491·H — so a pelvis a millimetre lower than rest has nowhere to put the
-/// millimetre and the sole goes through the floor. There is no foot IK to catch it, and it is the STANDING
-/// pose that has none of the gait's knee flexion to absorb one. The read comes from the spine and head
-/// counter-rolling anyway, which is why the pelvis itself only needs a degree of it.
+/// SMALL, AND ITS DROP PAID BACK (see `listLift`). At rest this rig's leg is EXACTLY straight — pelvis
+/// 0.530·H, ankle 0.039·H, thigh + shank 0.491·H — a pelvis a millimetre low puts the sole through the floor, and there is no foot IK to catch it.
 const A_LIST = 1.3; // deg
 const A_DRIFT_YAW = 7.5; // deg the head wanders
 const A_DRIFT_PITCH = 3.0;
@@ -369,8 +353,7 @@ pub const Wanderer = struct {
                     self.wantYaw = mathx.headingXZ(to);
                     // HE TURNS FIRST, THEN WALKS. Stepping off before he is pointed at it makes the travel
                     // direction disagree with the facing, which is a SIDESTEP as far as the shared gait is
-                    // concerned — a crab-walk on a creature with no reason to strafe, and the strafe path's
-                    // foot clearance is a third of a metre of tolerance this rig has no need of.
+                    // concerned — a crab-walk on a creature with no reason to strafe.
                     if (@abs(mathx.wrapPi(self.wantYaw - self.facing)) < TURN_GATE) {
                         moveYaw = self.wantYaw;
                         speed = AMBLE_SPEED;
@@ -411,16 +394,14 @@ pub const Wanderer = struct {
 
         const lean = STOOP + wonk * 0.6 + 16.0 * bowK;
         // THE LIST'S OWN DROP, PAID BACK AT THE PELVIS. A roll of `list` about the pelvis origin takes the low
-        // hip down by hx·sin(list); lift the pelvis by exactly that and the low hip stays on the rest plane it
-        // needs to be on, leaving the high one to rise. THE BREATH STAYS OUT OF THIS TRANSLATION for the same
-        // reason and lives in the chest, which is where a breath shows anyway.
+        // hip down by hx·sin(list); lift the pelvis by exactly that and it stays on the rest plane. THE BREATH
+        // STAYS OUT OF THIS TRANSLATION for the same reason and lives in the chest, where a breath shows.
         const list = shift * A_LIST;
         const listLift = heromod.HIP_HALF * H * @abs(mathx.sinf(mathx.radians(list)));
         var wx: [N]rl.Matrix = undefined;
         // NO PITCH AT ALL AT THE ROOT. The waist-hinge law says leave the pelvis near-upright, and here it is
         // not a taste call: a root pitch rotates the LEGS, so a degree of stoop levers a just-planted foot half
-        // a centimetre into the ground and there is no foot IK behind it. A stoop is thoracic anyway — it lives
-        // in the spine and the chest, which is where the whole of `lean` goes.
+        // a centimetre into the ground with no foot IK behind it. A stoop is thoracic anyway.
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul(ry(prot), rz(list)),
             mul(tr(sway * fs, (hipY + bob + listLift) * fs, 0), ry(facingDeg)),
@@ -466,12 +447,10 @@ pub const Wanderer = struct {
         setLocal(wx, SHR, rest, mul3(rx(-(STAFF_SH + push)), rz(-STAFF_ABD - wonk * 0.4), ry(-4.0 * plant)));
         setLocal(wx, ELR, rest, rx(STAFF_EL - 10.0 * plant));
         setLocal(wx, WRR, rest, rz(-6.0));
-        // THE POLE IS NOT A BONE, AND WHERE IT POINTS IS AUTHORED IN THE WORLD, NOT IN THE WRIST. It is built
-        // down the wrist's own −Y, so left alone it inherits the entire arm chain: at rest that is 46 degrees
-        // off plumb and at the plant it laid the staff flat out in front of him like a lance. So the fit BILLS
-        // THE ARM for its own angles (`warrior.swingTilt`'s law, and `hero.shieldFit`'s) — the inverse of the
-        // shoulder's abduction, and the inverse of the shoulder's and elbow's pitch — leaving `STAFF_TILT` to
-        // mean degrees off plumb IN THE WORLD, which is the only thing a stave's rake can honestly mean.
+        // THE POLE IS NOT A BONE, AND WHERE IT POINTS IS AUTHORED IN THE WORLD, NOT IN THE WRIST. Built down
+        // the wrist's own −Y, left alone it inherits the entire arm chain and the plant laid the staff flat out
+        // in front of him like a lance. So the fit BILLS THE ARM for its own angles (`hero.shieldFit`'s law),
+        // leaving `STAFF_TILT` to mean degrees off plumb IN THE WORLD.
         const armPitch = -(STAFF_SH + push) + (STAFF_EL - 10.0 * plant);
         setLocal(wx, STAFF, rest, mul3(
             rz(STAFF_ABD + wonk * 0.4),
@@ -656,8 +635,6 @@ fn chestMesh() rl.Mesh {
     // THE CLOAK IS A MANTLE, NOT A YOKE. A wide flat box across the shoulders in a pale tone reads as a
     // pauldron pair however soft the colour: cloth over shoulders is a CONE that flares as it falls, so it is
     // the same `skirt` the hood's own shoulder cape is, hung from the collar.
-    // …and it STOPS above the belt: a mantle that reaches the waist covers the whole torso and the dark robe
-    // it is supposed to be layered over never shows at all.
     skirt(&b, v3(0, 0.058 * H, -0.004 * H), 0.082 * H, 0.088 * H, 0.158 * H, 12, CLOAK);
     // …with the hem uneven (wabi-sabi): one side falls a good deal further than the other.
     skirt(&b, v3(0.030 * H, 0.052 * H, -0.012 * H), 0.132 * H, 0.070 * H, 0.118 * H, 11, CLOAK_DK);

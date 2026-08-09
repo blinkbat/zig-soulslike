@@ -1929,10 +1929,10 @@ pub fn run(mode: Mode) void {
                 lockCycleReady = true;
             }
         } else {
-            // …and the two devices are latched apart: a mouse-emulation layer puts a stick on the OS cursor,
+            // …and the two devices are latched apart: a mouse-emulation layer can put a stick on the OS cursor.
             const look = stickRadial(padRX, padRY, LOOK_DEADZONE, LOOK_CURVE);
             const mouseLook = inside and wasInside and (@abs(md.x) + @abs(md.y)) > MOUSE_WAKE;
-            // …and CLAIMING needs more than merely clearing the deadzone, or a worn stick pins the latch to PAD
+            // …and CLAIMING needs more than merely clearing the deadzone, or a worn stick pins the latch to PAD.
             const padClaim = padMag > LOOK_CLAIM;
             // …and LAST DEVICE WINS has to be resolved as a TIE, not by statement order.
             if (padClaim and !mouseLook) lookPad = true;

@@ -66,9 +66,8 @@ pub const SCALE = 1.4;
 // Locomotion & senses (world units / seconds).
 pub const AGGRO_R = 11.0; // notices the hero within this
 /// CLOSE ENOUGH TO ITS OWN PATCH to stop hopping back to it. Deliberately TIGHTER than the tether's
-/// `foe.LEASH_HOME_R` — that is the radius a leash stops pulling at, this is a small animal's idea of
-/// having got home — and named rather than left a bare literal inside `decide`, which is where every
-/// other creature's copy of this question also sat.
+/// `foe.LEASH_HOME_R` — that is the radius a leash stops pulling at, this is a small animal's idea of having
+/// got home — and named rather than left a bare literal inside `decide`.
 const HOME_R = 2.2;
 const LUNGE_R = 5.6; // will commit a lunge inside this (but outside bite range)
 const BITE_R = 1.45; // chomps inside this
@@ -313,13 +312,10 @@ pub const Frog = struct {
 
     /// SECONDS UNTIL THE SLAM LANDS, counted from the start of the leap so the coil and the arc are ONE
     /// continuous countdown — null when it is not throwing one. `tryImpact` fires the frame the toad touches
-    /// down (`t >= coil + flight`), so that is the frame this counts back from and the window shuts there by
-    /// construction: a caught leap is one that never arrived.
+    /// down, so the window shuts there by construction: a caught leap is one that never arrived.
     ///
-    /// THE LEAP AND NOTHING ELSE. The approach HOP carries no blow at all, and the CHOMP is deliberately out:
-    /// the leap is the committed thing — it leaves the ground, it cannot be steered once launched, and it is
-    /// the move you have no answer to but distance. Jaws you step out of. EXHAUSTIVE, so a state added later
-    /// has to say whether it carries a blow rather than quietly defaulting to no.
+    /// THE LEAP AND NOTHING ELSE. The approach HOP carries no blow, and the CHOMP is deliberately out: the leap
+    /// is the committed thing — jaws you step out of. EXHAUSTIVE, so a state added later has to say.
     fn toImpact(self: *const Frog) ?f32 {
         return switch (self.state) {
             .lunge => (LUNGE_COIL + self.hopDur) - self.t,
@@ -328,11 +324,10 @@ pub const Frog = struct {
     }
 
     /// THE INSTANT THE LEAP CAN BE CAUGHT IN, and how far out it reaches then — `tryImpact`'s OWN extent, and
-    /// UNSCALED exactly as that test is (the ogre's `slamReach` law: the parry's reach is the blow's reach, not
-    /// a second number that only agrees with it by luck).
+    /// UNSCALED exactly as that test is (the ogre's `slamReach` law: the parry's reach is the blow's reach).
     ///
-    /// It falls inside the FLIGHT, so what the boards meet is a toad in the air a few frames off the ground.
-    /// That is the point: this is the one move whose whole threat is that it has already committed.
+    /// It falls inside the FLIGHT, so what the boards meet is a toad in the air a few frames off the ground —
+    /// which is the point: this is the one move whose whole threat is that it has already committed.
     fn parryable(self: *const Frog) ?f32 {
         const left = self.toImpact() orelse return null;
         if (left < 0 or left > PARRY_LEAD) return null;

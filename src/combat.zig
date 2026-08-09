@@ -102,7 +102,6 @@ pub const Hit = struct {
     /// FOCUS TORN OUT OF HIM ON TOP OF THE DAMAGE — the shade's touch, and the only thing in the game that
     /// takes the blue bar off anybody. Deliberately NOT part of `raw()`: what a shield's stamina bill and
     /// "which of two blows was worse" measure is the WEIGHT of the thing that hit you, and a drain has none.
-    /// Nothing but the hero carries a `Focus`, so a foe handed one of these simply never reads the field.
     fp: f32 = 0,
 
     /// THE WHOLE BLOW BEFORE ANYBODY'S RESISTANCES. What a shield's stamina bill and "which of two blows was worse" are measured on: those are about the weight of the thing that hit you, not about what you happen to resist.
@@ -132,10 +131,9 @@ pub const Vitals = struct {
     stance: f32,
     stanceMax: f32,
     sinceHit: f32 = LONG_AGO, // seconds since the last poise-damaging hit (gates regen)
-    /// …and since anything last took HP off this body, A DRIP INCLUDED — what the floating HP bar is gated on
-    /// (`game.drawFoeBars`). Its OWN clock, because a hold has to be as visible as a blow while denying none of
-    /// the refill `sinceHit` gates: one field cannot answer "show the bar" and "hold the gate shut" separately,
-    /// and the roots need opposite answers to the two.
+    /// …and since anything last took HP off this body, A DRIP INCLUDED — what the floating HP bar is gated on.
+    /// Its OWN clock, because a hold has to be as visible as a blow while denying none of the refill `sinceHit`
+    /// gates: one field cannot answer "show the bar" and "hold the gate shut", and the roots need both.
     sinceHurt: f32 = LONG_AGO,
     dead: bool = false,
     regenDelay: f32 = REGEN_DELAY,
@@ -222,9 +220,8 @@ pub const Vitals = struct {
 
     /// A DRIP — damage billed EVERY FRAME by something that holds (`Root`), as opposed to a blow. `hit` in every
     /// respect but the REGEN CLOCK: `hit` stamps `sinceHit` at 0, which gates the poise/stance refill, and
-    /// stamped afresh every frame for a whole `ROOT_HOLD` that gate never opens — so a grip documented to carry
-    /// no poise and no stance would deny most of a poise bar anyway, which is the stagger tool it is documented
-    /// not to be. `sinceHurt` IS stamped, so the bar shows the drip working. Poise-free drips only.
+    /// stamped afresh every frame for a whole `ROOT_HOLD` that gate never opens — so a grip carrying no poise
+    /// would deny most of a poise bar anyway. `sinceHurt` IS stamped, so the bar shows it. Poise-free drips only.
     pub fn drip(self: *Vitals, h: Hit) HitResult {
         const clock = self.sinceHit;
         const r = self.hit(h);
@@ -374,17 +371,15 @@ pub fn guardChip(h: Hit) Hit {
 }
 
 // THE PARRY — L2, the shield's own skill, and the guard's opposite number in every respect. A held shield is a
-// LEVEL that pays stamina to eat blows all day and chips you for the privilege; this is a COMMITTED WINDOW that
-// pays once and refuses one blow outright. Whiff it and the shield is not up either, because the window is a
-// committed action and `canGuard` excludes those — which is the whole risk of asking for it.
+// LEVEL that pays stamina to eat blows all day and chips you for the privilege; this is a COMMITTED WINDOW
+// that pays once and refuses one blow outright — and whiff it and the shield is not up either.
 
 /// Under the heavy's 16 and over a quick shot's 8: the cost of a guess, not of a swing.
 pub const STAM_PARRY: f32 = 9.0;
 /// WHAT THE BOARDS DEAL WHEN THEY CATCH: nothing to the health, everything to the FOOTING. No `dmg`, because a
-/// parry has never been damage — the punish after it is. And NO POISE either, so a catch can never resolve as a
-/// mere flinch: it breaks the stance or it does not, which is exactly the owner's "may heavy stun them", read
-/// off the same bar the sword has been chipping all fight rather than off a dice roll. Sized so the game's
-/// high-poise heavy (the ogre's 90 stance) takes two clean catches and everything lighter takes one.
+/// parry has never been damage — the punish after it is. And NO POISE either, so a catch can never resolve as
+/// a mere flinch: it breaks the stance or it does not, which is the owner's "may heavy stun them" read off the
+/// same bar the sword has been chipping. Sized so the ogre's 90 stance takes two catches and lighter takes one.
 pub const PARRY_HIT = Hit{ .stance = 46 };
 
 pub const FP_MAX = stats.fpFor(stats.START); // 60 — MIND owns it (`stats.zig`)
@@ -405,9 +400,8 @@ pub const Focus = struct {
         return true;
     }
     /// PAY THE WHOLE COST OR CAST NOTHING — the exact OPPOSITE of `Stamina.canAct`'s panic rule, and the
-    /// difference is deliberate: the bottom of the stamina bar buys a roll you cannot afford because that
-    /// is the genre's most important move, where a half-paid spell would be a spell that half exists. ER
-    /// refuses the cast outright, so an FP bar reading 4 of a 12-cost sorcery is 4 you cannot use.
+    /// difference is deliberate: the bottom of the stamina bar buys a roll you cannot afford because that is the
+    /// genre's most important move, where a half-paid spell would be a spell that half exists (ER's rule too).
     pub fn spend(self: *Focus, amt: f32) bool {
         if (self.cur < amt) return false;
         self.cur -= amt;
@@ -425,15 +419,13 @@ pub const Focus = struct {
 
 // The wand's one spell, and the first thing in the game that spends FP.
 
-/// WHAT THE BOLT COSTS, and the pool is the only thing rationing it — a cast bills NO stamina (owner's
-/// call), so the wand competes with the flask for a grace's worth of resource rather than with the roll.
-/// NAMED FOR ITS SPELL, like `ROOT_FP` beside it: as `BOLT_FP` it read as "what a cast costs", and the
-/// character book duly priced the roots at the bolt's twelve.
+/// WHAT THE BOLT COSTS, and the pool is the only thing rationing it — a cast bills NO stamina (owner's call),
+/// so the wand competes with the flask rather than with the roll. NAMED FOR ITS SPELL, like `ROOT_FP` beside
+/// it: as `BOLT_FP` it read as "what a cast costs", and the character book duly priced the roots at twelve.
 pub const BOLT_FP: f32 = 12.0; // five casts of a 60-point pool
-/// THE BOLT, and it is ALL CHAOS — no physical at all, the brood mother's rule for the same reason: one
-/// substance, one element. Its damage sits between a light slash's 13 and a heavy's 27 before anything
-/// resists it, which is the "decent" the owner asked for; the poise is above a light's and under a
-/// heavy's, so it rocks a foe without being the stagger tool the greatsword is.
+/// THE BOLT, and it is ALL CHAOS — no physical at all, the brood mother's rule: one substance, one element.
+/// Its damage sits between a light slash's 13 and a heavy's 27 before anything resists it, which is the
+/// "decent" the owner asked for; the poise rocks a foe without being the stagger tool the greatsword is.
 pub const BOLT_HIT = Hit{ .poise = 14, .stance = 6, .elem = elems(.{ .chaos = 24 }) };
 
 /// THE ROOTS — the wand's second spell, and the first thing in the game that takes a foe's FEET rather than
@@ -569,13 +561,10 @@ pub fn quickCount(k: item.Kind, flasks: *const Flasks, bag: *const item.Bag) u8 
     return @intCast(@min(bag.count(k), 99));
 }
 
-/// THE QUICK BAR — ER's pouch, on the cross's DOWN slot, and **in combat the only way to spend a
-/// consumable** (`game.inCombat` decides; the character book's own Use is refused while a fight is on).
-/// What is on it is therefore a decision made BEFORE the fight, which is the whole point of it. Out of
-/// combat you may use anything straight off the inventory page and never touch this.
-///
-/// THE FLASKS ARE JUST ITS FIRST TWO ENTRIES and are not special-cased anywhere but the spend: `Flasks` keeps
-/// their charges because those come back at a grace, where everything else comes out of the bag.
+/// THE QUICK BAR — ER's pouch, on the cross's DOWN slot, and **in combat the only way to spend a consumable**
+/// (`game.inCombat` decides). What is on it is therefore a decision made BEFORE the fight, which is the whole
+/// point of it. THE FLASKS ARE JUST ITS FIRST TWO ENTRIES and are special-cased nowhere but the spend:
+/// `Flasks` keeps their charges, because those come back at a grace where everything else comes out of the bag.
 pub const QUICK_SLOTS: usize = 10;
 
 pub const Quick = struct {
@@ -648,12 +637,11 @@ pub const Quick = struct {
             return;
         }
     }
-    /// DROP WHAT HE HAS RUN OUT OF, called once a frame (`game.stepWorld`). A row pointing at nothing is a
-    /// cycle step that does nothing and a HUD cell showing a thing he does not have.
+    /// DROP WHAT HE HAS RUN OUT OF, called once a frame. A row pointing at nothing is a cycle step that does
+    /// nothing and a HUD cell showing a thing he does not have.
     ///
-    /// A FLASK AT ZERO STAYS ON. Its charges are not the bag's — they come back at a grace — so an empty one
-    /// is still the thing he is carrying, and taking it off the bar the moment he drank the last swallow
-    /// would mean re-loading the bar at every bonfire.
+    /// A FLASK AT ZERO STAYS ON. Its charges are not the bag's — they come back at a grace — so taking it off
+    /// the bar the moment he drank the last swallow would mean re-loading the bar at every bonfire.
     pub fn dropEmpty(self: *Quick, bag: *const item.Bag) void {
         for (&self.slots) |*s| {
             const k = s.* orelse continue;

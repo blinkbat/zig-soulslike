@@ -257,13 +257,11 @@ const FOE_LIFT: i32 = 16;
 const FOE_TRACK = rgba(38, 12, 10, 230);
 const STAGGER_RIM = rgba(232, 196, 90, 255); // ER's gold crit-opening cue on a stance break
 /// A BAR MAY NOT CLIMB OUT OF THE FRAME. Over the head is right at every distance you can see the whole
-/// creature at — and wrong the moment you close on a TALL one, because its crown leaves the top of the screen
-/// long before the creature does. The ogre's is 4.4 m up, so through the whole fight you are near enough to
-/// need the thing it is drawn where nobody can see it, and it takes the gold STAGGER RIM with it.
+/// creature at, and wrong the moment you close on a TALL one: the ogre's crown is 4.4 m up, so through the
+/// whole fight you are near enough to need the bar it is drawn off the top of the screen, gold rim and all.
 ///
-/// So the bar has a CEILING in screen space, three quarters of the way up: far off it rides the head exactly as
-/// it always did, and walking in it simply stops climbing and hangs against the body instead. Dynamic with the
-/// distance rather than a fixed height off the feet, and ONE rule for every creature — a toad never reaches it.
+/// So the bar has a CEILING in screen space, three quarters of the way up: far off it rides the head exactly
+/// as before, and walking in it stops climbing and hangs against the body. ONE rule for every creature.
 const FOE_CEIL: f32 = 0.25; // …measured from the TOP, so 0.25 is three quarters up
 
 pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool) void {

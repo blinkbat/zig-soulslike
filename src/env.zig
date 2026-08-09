@@ -48,11 +48,9 @@ const SHADOW_BOX: f32 = gfx.SHADOW_ORTHO * HALF_DIAG;
 const LIGHT_REACH: f32 = 90.0;
 
 // THE OCCLUDERS — the props the camera has to see the hero THROUGH, thinned by the shader's sieve.
-/// How many instances the fade can have IN FLIGHT — the ones thinning plus the ones easing back, which
-/// is why it is larger than any sight line needs. Full, and the THINNEST ASK TAKES A SLOT OFF SOMETHING
-/// STILL SOLID (`wantFade`): first-come at 16 meant the trunk squarely over his head lost to whatever the
-/// cell walk reached first. Nothing mid-travel is spendable any more, so the list has to be roomy enough
-/// that a camera whipped through a wood cannot run it dry.
+/// How many instances the fade can have IN FLIGHT — the ones thinning plus the ones easing back, which is
+/// why it is larger than any sight line needs. Full, and the THINNEST ASK TAKES A SLOT OFF SOMETHING STILL
+/// SOLID (`wantFade`): first-come at 16 meant the trunk squarely over his head lost to the cell walk.
 pub const OCCL_MAX = 64;
 /// Seconds to reach the thinness the geometry is asking for, and to come back from it. OUT IS SLOWER on
 /// purpose: a trunk hardening back to solid over the hero is the uglier half of the transition, and the
@@ -85,11 +83,10 @@ const EASE_NORM: f32 = blk: {
 };
 /// A thinned occluder NEVER disappears: you must still be able to tell a tree is there.
 const OCCL_FLOOR: f32 = 0.28;
-/// HOW MUCH OF HIM IT HAS TO HIDE BEFORE IT THINS AT ALL (owner's rule). Nothing to do with distance:
-/// a trunk you are looking past covers a sliver of him and has no business fading, and half the wood
-/// stands within a couple of metres of the sight line at any moment. IT IS A COVERAGE FIGURE AND NOTHING
-/// ELSE — the depth ramp used to be multiplied into it before this test, so a mass standing right in front
-/// of him was discounted under the threshold and stayed solid at the one moment it was in the way.
+/// HOW MUCH OF HIM IT HAS TO HIDE BEFORE IT THINS AT ALL (owner's rule). Nothing to do with distance: half
+/// the wood stands within a couple of metres of the sight line at any moment. IT IS A COVERAGE FIGURE AND
+/// NOTHING ELSE — the depth ramp used to be multiplied in before this test, so a mass right in front of him
+/// was discounted under the threshold and stayed solid at the one moment it was in the way.
 const OCCL_MIN: f32 = 0.15;
 /// …and where it is as thin as it gets. Between the two it eases on its own as the camera swings,
 /// which is what leaves the whole thing stateless.
@@ -654,17 +651,10 @@ pub const Env = struct {
     /// which is the difference between a fade and a switch. A degenerate line (the editor passes eye == at)
     /// asks for everything back, so the world is never dressed through a thinned lens.
     ///
-    /// IT WALKS `stx` ONLY, so flora never thins whatever its row says: bushes and ferns are knee-high, the
-    /// index is the one holding the most instances by far, and a thicket going see-through as you brush past
-    /// is a different look decision from a tree getting out of the way.
-    ///
-    /// WHAT IT COSTS, since `solid` being an opt-OUT widened the candidate set from eleven kinds to most of the
-    /// table: the cell box is the sight line padded by `OCCL_REACH` either way — about 9 cells at a normal boom —
-    /// and a dense wood cell holds ~30 structures, so ~270 props run `thinFor` and ~600 `coverFrac` a frame. That
-    /// is two square roots and a cross product each, which is nothing beside the draw it sits next to. A
-    /// distance-to-the-sight-line reject in front of it would throw most of them out for ten flops, and is
-    /// DELIBERATELY NOT HERE: it would be a second notion of "near the line" beside `coverFrac`'s own, and the
-    /// two would drift. Measure before adding it.
+    /// IT WALKS `stx` ONLY, so flora never thins whatever its row says: a thicket going see-through as you
+    /// brush past is a different look decision from a tree getting out of the way. WHAT IT COSTS: ~270 props
+    /// run `thinFor` and ~600 `coverFrac` a frame — nothing beside the draw it sits next to. A distance-to-the-
+    /// sight-line reject in front of it is DELIBERATELY NOT HERE: it would drift against `coverFrac`'s own.
     pub fn markOccluders(self: *Env, eye: rl.Vector3, at: rl.Vector3, dt: f32) void {
         // Everything in flight is asked to come BACK; the scan below re-asks for whatever is still in the way.
         for (self.occl[0..self.noccl]) |pi| self.props[pi].fadeTo = 1;
@@ -693,16 +683,12 @@ pub const Env = struct {
         self.easeFades(dt);
     }
 
-    /// Ask one instance to be `to` solid, enlisting it if it is not in flight already. Two parts of the
-    /// same prop can ask (an arch's piers are separate colliders), and the THINNER ask wins.
+    /// Ask one instance to be `to` solid, enlisting it if it is not in flight already. Two parts of the same
+    /// prop can ask (an arch's piers are separate colliders), and the THINNER ask wins.
     ///
-    /// FULL, AND THE SLOT COMES OFF SOMETHING STILL SOLID. The list is walked in cell order, so first-come
-    /// handed the slots to whatever the grid reached first and left the trunk squarely over his head solid.
-    /// But an entry that has already left solid cannot be dropped: nothing outside this list is ticked, so it
-    /// would either strand thin or jump back — and a jump is the one thing the fade exists to avoid. The
-    /// victim is therefore the least-thin ask AMONG THE ONES STILL AT FULL SOLIDITY, whose `fade` is within
-    /// `FADE_SOLID` of 1 by construction, and with none of those the ask waits a frame instead. A tree a
-    /// frame late in getting out of the way is not something the eye can see; a tree snapping back is.
+    /// FULL, AND THE SLOT COMES OFF SOMETHING STILL SOLID: first-come handed slots to whatever the grid reached
+    /// first and left the trunk over his head solid. But an entry already off solid cannot be dropped — nothing
+    /// outside this list is ticked, so it would strand thin or JUMP, which is what the fade exists to avoid.
     fn wantFade(self: *Env, pi: u32, to: f32) void {
         var worst: ?usize = null;
         for (self.occl[0..self.noccl], 0..) |q, i| {
@@ -728,14 +714,12 @@ pub const Env = struct {
         self.occl[w] = pi;
     }
 
-    /// Walk everything in flight toward what the geometry asked for, and discharge whatever has arrived back
-    /// at solid. This is the ONLY thing the fade remembers.
+    /// Walk everything in flight toward what the geometry asked for, and discharge whatever has arrived back at
+    /// solid. This is the ONLY thing the fade remembers.
     ///
-    /// THE RATE IS SHAPED, NOT CONSTANT. A fixed rate leaves solid and arrives at the floor at the same speed
-    /// it ran at, and now that the occluder composites OVER him (`drawThinned`) both of those ends read as a
-    /// step. `easeShape` slows it at either end as a pure function of where the value already sits — nothing
-    /// remembers where a travel began, which it cannot: `fadeTo` moves under it every frame the camera does,
-    /// and an ease anchored to a start point would restart on each one and crawl.
+    /// THE RATE IS SHAPED, NOT CONSTANT: a fixed rate leaves solid and arrives at the floor at the same speed,
+    /// and both ends read as a step. `easeShape` slows it at either end as a pure function of where the value
+    /// already sits — `fadeTo` moves under it every frame, so an ease anchored to a start point would crawl.
     fn easeFades(self: *Env, dt: f32) void {
         var i: usize = 0;
         while (i < self.noccl) {
@@ -770,8 +754,7 @@ pub const Env = struct {
     }
 
     /// EVERY SOLID IN THE CELLS AN XZ BOX TOUCHES. `visit` returns false to stop the walk. ONE copy of the
-    /// four-deep loop and of the `start[c] .. start[c + 1]` bound: `nearSolids`, `sees` and `blockedNear` each
-    /// carried it out longhand, which is three places to get the CSR arithmetic or the cell clamp wrong.
+    /// four-deep loop and of the `start[c] .. start[c + 1]` bound, which three callers each carried longhand.
     /// A solid whose footprint spans two visited cells is simply handed over twice.
     fn eachSolid(
         self: *const Env,
@@ -817,9 +800,8 @@ pub const Env = struct {
     }
 
     /// CAN A LOOK FROM `from` REACH `to`? Walked over the prop grid's own cells rather than through
-    /// `nearSolids`, because that copies into a fixed buffer and TRUNCATES at `MAX_NEAR` — over a
-    /// twenty-metre sight line through a wood it would quietly drop the wall it was asked about and
-    /// answer "yes".
+    /// `nearSolids`, because that copies into a fixed buffer and TRUNCATES at `MAX_NEAR` — over a twenty-metre
+    /// sight line it would quietly drop the wall it was asked about and answer "yes".
     pub fn sees(self: *const Env, from: rl.Vector3, to: rl.Vector3) bool {
         const Look = struct {
             a: rl.Vector3,
@@ -1181,17 +1163,12 @@ pub const Env = struct {
         rl.drawModelEx(mdl, pr.pos, leanAxis(pr.leanDir), pr.lean, sc, rl.Color.white);
     }
 
-    /// THE THINNED OCCLUDERS, AFTER EVERY OPAQUE THING AND BACK TO FRONT — the whole point of the fade, and
-    /// what it was missing. A thinned prop draws with the depth MASK OFF (or it blends with the sky and then
-    /// hides everything behind it), so it writes no depth: drawn in cell order with the rest, the hero came
-    /// afterwards and composited at FULL opacity straight over it. He went from hidden to solid on the one
-    /// frame the mask came off, and the ramp underneath only ever dressed the TREE against the terrain — an
-    /// instant reveal wearing a fade. Drawn last, the tree's alpha is what mattes HIM, so the reveal IS the
-    /// ramp. Back to front because they blend against each other too.
+    /// THE THINNED OCCLUDERS, AFTER EVERY OPAQUE THING AND BACK TO FRONT — the whole point of the fade. A
+    /// thinned prop draws with the depth MASK OFF, so it writes no depth: drawn in cell order with the rest,
+    /// the hero came afterwards and composited at FULL opacity straight over it — an instant reveal wearing a
+    /// fade. Drawn last, the tree's alpha is what mattes HIM, so the reveal IS the ramp.
     ///
-    /// LIT PASS ONLY — the depth shader has no alpha, and a see-through tree still blocks the sun. NOT the
-    /// hero's aim fade (`game.drawCasters`), which stays a plain masked-off blend: he is drawn BEFORE the
-    /// foes behind him, so laying his depth down would hide them behind a man who is not there.
+    /// LIT PASS ONLY — the depth shader has no alpha, and a see-through tree still blocks the sun.
     pub fn drawThinned(self: *Env, view: *const View) void {
         var order: [OCCL_MAX]u32 = undefined;
         var far: [OCCL_MAX]f32 = undefined;
@@ -1216,12 +1193,10 @@ pub const Env = struct {
         for (order[0..n]) |pi| {
             const pr = &self.props[pi];
             self.stat_draws += 2;
-            // ONE LAYER PER PIXEL. A trunk is not a sheet — buttress roots, boughs and the far side of its own
-            // bole stack three or four surfaces along the ray, and blended one after another the alpha
-            // COMPOUNDS: the number stops meaning what it says and the mass comes out banded where the layers
-            // change count. So each prop lays down its own depth first with the colour buffer held (rlgl has
-            // no colour mask, but `dst = 0·src + 1·dst` is one), and the pass that follows draws under rlgl's
-            // LEQUAL, which only the NEAREST surface can satisfy.
+            // ONE LAYER PER PIXEL. A trunk is not a sheet — roots, boughs and the far side of its own bole
+            // stack three or four surfaces along the ray, and blended one after another the alpha COMPOUNDS.
+            // So each prop lays down its own depth first with the colour buffer held (`dst = 0·src + 1·dst`),
+            // and the pass that follows draws under rlgl's LEQUAL, which only the NEAREST surface satisfies.
             rl.gl.rlSetBlendMode(@intFromEnum(rl.gl.rlBlendMode.rl_blend_custom));
             self.drawProp(pr);
             rl.gl.rlSetBlendMode(@intFromEnum(rl.gl.rlBlendMode.rl_blend_alpha));
@@ -1233,11 +1208,10 @@ pub const Env = struct {
         if (self.scene) |s| s.setFade(1);
     }
 
-    /// This frame's torch/fire lights: the gfx.MAX_LIGHTS nearest the camera whose pool is actually ON SCREEN, guttering applied.
+    /// This frame's torch/fire lights: the gfx.MAX_LIGHTS nearest the camera whose pool is actually ON SCREEN.
     ///
     /// `carried` is a light that is not in the world (`hero.wandLight`). It gets a RESERVED slot rather than
-    /// joining the contest, so a brazier the player stands beside cannot evict the spell he just cast; the
-    /// world's own lights fight over one slot fewer.
+    /// joining the contest, so a brazier the player stands beside cannot evict the spell he just cast.
     pub fn uploadLights(self: *const Env, scene: *gfx.Scene, view: *const View, t: f32, carried: ?gfx.Light) void {
         comptime std.debug.assert(gfx.MAX_LIGHTS > 1); // the reserved slot has to leave the world at least one
         var picked: [gfx.MAX_LIGHTS]gfx.Light = undefined;
@@ -1331,12 +1305,12 @@ fn partFoot(pr: *const Prop, part: props.Part) rl.Vector3 {
 }
 
 /// HOW FAR ONE INSTANCE SHOULD THIN, 0 (leave it solid) .. 1 (as thin as it gets) — the deepest ask any of
-/// its masses makes. Three sources, in order: the volumes the kind declares for this and nothing else, the
-/// COLLIDERS plus a skirt, and for a kind with neither, a share of the bound.
+/// its masses makes. Three sources, in order: the volumes the kind declares, the COLLIDERS plus a skirt, and
+/// for a kind with neither, a share of the bound.
 ///
-/// The colliders were the only source, and on a tree they are the wrong shape by metres — a conifer's row
-/// gave a 1.48 m cylinder against boughs that block the view at 3.8 m, so the camera looking through the
-/// canopy scored nothing and the tree stayed solid. A collider is sized for what you WALK INTO.
+/// A collider is sized for what you WALK INTO, and on a tree it is wrong by metres: a conifer's 1.48 m
+/// cylinder against boughs that block the view at 3.8 m, so the camera looking through the canopy scored
+/// nothing and the tree stayed solid.
 fn thinFor(pr: *const Prop, nfo: *const props.Info, eye: rl.Vector3, at: rl.Vector3) f32 {
     var thin: f32 = 0;
     if (nfo.occl.len > 0) {
@@ -2424,11 +2398,9 @@ test "replaying the SHIPPED map produces a stable world" {
 }
 
 test "EVERY SHIPPED MAP LOADS AND MATERIALIZES, not just the one the game starts on" {
-    // A test arena nobody boots into is a file that rots: the shipped plain is the only map with a
-    // build-time guard, so an op renamed under `02`/`03` would surface as a PANIC in the editor's
-    // Open dialog months later. This is the cheap version of that guard for the rest of them.
-    // WALKED OFF THE DIRECTORY, not off a list: a hardcoded roster silently stops covering the map you
-    // add next, which is exactly the rot this test exists to catch.
+    // A test arena nobody boots into is a file that rots: the shipped plain is the only map with a build-time
+    // guard, so an op renamed under `02`/`03` would surface as a PANIC in the editor's Open dialog months
+    // later. WALKED OFF THE DIRECTORY, not off a list, which silently stops covering the map you add next.
     var dir = std.fs.cwd().openDir(wf.DIR, .{ .iterate = true }) catch return error.SkipZigTest;
     defer dir.close();
     const m = try std.testing.allocator.create(wf.Map);

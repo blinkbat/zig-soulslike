@@ -16,24 +16,24 @@ const Builder = gfx.Builder;
 
 
 const IRON = propart.IRON;
-const IRON_LT = rgba(52, 50, 46, 255); // caught-light on a bevel / a knuckle of a flange
-const IRON_DK = rgba(19, 18, 17, 255); // the shadowed side of everything forged
-const RUST = rgba(66, 42, 24, 255); // grave-rust, in the pits and along the welds
+const IRON_LT = rgba(52, 50, 46, 255);
+const IRON_DK = rgba(19, 18, 17, 255);
+const RUST = rgba(66, 42, 24, 255);
 const STEEL = rgba(96, 100, 108, 190); // a kept edge — slightly self-lit, so the blade is the read
-const STEEL_DK = rgba(38, 40, 45, 255); // the flat behind that edge
-const HAFT = rgba(38, 27, 17, 255); // dark, dried haft-wood
+const STEEL_DK = rgba(38, 40, 45, 255);
+const HAFT = rgba(38, 27, 17, 255);
 const HAFT_LT = rgba(54, 39, 25, 255);
-const WRAP = rgba(44, 33, 24, 255); // cracked leather, on every grip
-const BOARD = rgba(48, 35, 25, 255); // the shield's limewood boards…
-const BOARD_LT = rgba(70, 53, 37, 255); // …which are not all one plank and not all one tone
+const WRAP = rgba(44, 33, 24, 255);
+const BOARD = rgba(48, 35, 25, 255);
+const BOARD_LT = rgba(70, 53, 37, 255);
 const BOARD_DK = rgba(30, 22, 16, 255);
-const BLAZON = rgba(74, 32, 30, 255); // what is left of a device nobody remembers
+const BLAZON = rgba(74, 32, 30, 255);
 
 // FX palette. DUST is the WORLD's, not this creature's (see foe.zig); the grace motes are foe.zig's own.
 const DUST = foe.DUST;
 const CHIP = archermod.BONE_CHIP; // bone, knocked off in flakes — the archer's, because it is his body
-const SPARK = rgba(255, 208, 128, 240); // iron on iron, off the boards
-const SPLINTER = rgba(86, 64, 44, 240); // …and the boards themselves, when they finally go
+const SPARK = rgba(255, 208, 128, 240);
+const SPLINTER = rgba(86, 64, 44, 240);
 
 /// The LUNGE's ribbon only: a level thrust points down the camera and foreshortens to a dot, where the
 /// slam already crosses the frame.
@@ -177,9 +177,8 @@ const MACE = Attack{
     .step = MACE_STEP,
 };
 
-// He is the hardest thing in the game to trade with (hyper-armour on the slam, 124 HP, 26 poise), so what makes
-// him FAIR is the size of the window either side of a blow, not a smaller number on it — a longer haul UP to be
-// read from further off, and a longer stand-there AFTER so there is a punish rather than a block to hold.
+// He is the hardest thing in the game to trade with (hyper-armour on the slam, 124 HP, 26 poise), so what
+// makes him FAIR is the size of the window either side of a blow, not a smaller number on it.
 
 const SLAM = Attack{
     .reachOut = 2.18, // MEASURED: near three metres of reach, cocked high and driven down through
@@ -212,14 +211,10 @@ const LUNGE = Attack{
 const MOVES_SHIELDMAN = [_]Attack{MACE};
 const MOVES_GREATSWORD = [_]Attack{ SLAM, LUNGE };
 
-/// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT — the game's own number (`foe.PARRY_LEAD`), not this
-/// file's, and the SAME one for all three moves for the reason it is the same one the giant uses: what you
-/// read is the BLOW, not the animation in front of it, so a mace, a slam and a thrust teach one rule.
-///
-/// The three impact frames it is measured back from differ wildly — the mace's blow lands 0.078 s into its
-/// stroke, the slam's 0.072, the lunge's 0.120 — and that is exactly why the lead is authored in SECONDS
-/// BEFORE THE HIT rather than as a fraction of anybody's clock: written the other way round these would be
-/// three different windows wearing one constant.
+/// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT — the game's own number (`foe.PARRY_LEAD`), and the
+/// SAME one for all three moves: what you read is the BLOW, not the animation in front of it. In SECONDS
+/// BEFORE THE HIT, because the three impact frames differ wildly (mace 0.078 s into its stroke, slam 0.072,
+/// lunge 0.120) — as a fraction of anybody's clock these would be three windows wearing one constant.
 const PARRY_LEAD = foe.PARRY_LEAD;
 
 const Spec = struct {
@@ -393,8 +388,7 @@ const NPART = 56;
 const State = enum { idle, approach, circle, wind, swing, recover, stunlight, stunheavy, guardbreak, dead };
 
 /// Pure, so it is testable without a world. `wait` and `hold` ARE NOT THE SAME ANSWER: `wait` is in reach
-/// with nothing to throw, `hold` is out of my senses. Collapsed into one, a greatsword with both moves
-/// cooling turned round mid-exchange and walked home.
+/// with nothing to throw, `hold` is out of my senses. Collapsed, a greatsword mid-exchange walks home.
 const Choice = enum { strike, circle, approach, wait, hold };
 fn classify(r: Role, dist: f32, scale: f32, ready: []const bool) Choice {
     if (dist > AGGRO_R) return .hold;
@@ -499,9 +493,8 @@ pub const Warrior = struct {
     hop: f32 = 0,
     /// One-frame flag (`justDied`'s pattern), and the only thing about the lunge the camera may know.
     leapt: bool = false,
-    /// THE SHIELD CAUGHT HIS STROKE THIS FRAME — the same one-frame flag, reset at the top of `update`, set
-    /// where the catch happens, read by the group (`Muster.anyParried`) after. A latch would bill the beat
-    /// sixty times a second for the whole stumble.
+    /// THE SHIELD CAUGHT HIS STROKE THIS FRAME — the one-frame flag, reset at the top of `update` and read by
+    /// the group after. A latch would bill the beat sixty times a second for the whole stumble.
     parried: bool = false,
     /// Was the shield covering the hero's bearing at the top of THIS frame? `tryHit` reads it, because a
     /// blade arrives knowing nothing about where the hero is standing.
@@ -742,7 +735,7 @@ pub const Warrior = struct {
                 foe.faceToward(self.pos, &self.facing, hero, SWING_TURN, dt);
                 const k = mathx.clampF(self.t / a.swingDur, 0, 1);
                 self.setSwing(foe.swingCurve(self.t / a.swingDur));
-                self.flyStroke(k, bounds); // the leap, or the step into a plain blow
+                self.flyStroke(k, bounds);
                 if (self.t >= a.swingDur * a.impactK) self.live = true;
                 if (self.t >= a.swingDur) {
                     self.hop = 0;
@@ -891,8 +884,7 @@ pub const Warrior = struct {
             self.hop = 0;
         }
         // Zeroed by the state that INTEGRATES it (`.swing`, not `.wind`): `flyStroke` moves him by
-        // `want - leapDone`, so a move with `strokes > 1` and `step > 0` would carry stroke 0's total into
-        // stroke 1 and drive him backward. No shipped move has both, but a moveset is a table.
+        // `want - leapDone`, so a move with `strokes > 1` and `step > 0` would drive him backward.
         if (s == .swing) self.leapDone = 0;
         switch (s) {
             .wind => {
@@ -938,10 +930,8 @@ pub const Warrior = struct {
         const moves = spec(self.role).moves;
         const n = moves.len;
         // A MOVE THAT LEAVES THE EARTH IS NOT READY WHILE THE ROOTS HAVE THE FEET (`foe.canLeap`). Folded into
-        // `ready` rather than tested at the pick, because `classify` reads the same array: gated only at the
-        // pick, a rooted greatsword with the lunge up and the slam cooling is told to `.strike`, finds nothing
-        // to throw, and falls back through `orelse 0` to a slam that is still on cooldown. Asked of the move's
-        // OWN `hop` and not of `LUNGE` by name, so the third one that jumps is covered the day it is written.
+        // `ready` rather than tested at the pick, because `classify` reads the same array — gated at the pick,
+        // a rooted greatsword falls through `orelse 0` onto a slam still cooling. Asked of the move's own `hop`.
         const canLeap = foe.canLeap(&self.root);
         for (0..n) |i| ready[i] = self.cds[i] <= 0 and (canLeap or moves[i].hop <= 0);
         switch (classify(self.role, dist, self.scale, ready[0..n])) {
@@ -988,21 +978,15 @@ pub const Warrior = struct {
     }
 
     /// HOW FAR OUT THE KIT ACTUALLY ARRIVES at the impact frame, hero footprint included — the parry window's
-    /// reach, and the MOVE's own rather than one number per warrior (the ogre's `slamReach`/`swipeReach` law):
-    /// a mace lands at 1.23 m and the greatsword's slam at 2.18, and a shield out past either touches neither.
-    ///
-    /// NOT `triggerR`, which adds the leap's whole run-up on top: by the frame the point arrives that ground is
-    /// behind him, so billing the parry for it would offer a catch on a lunge still a stride and a half away.
+    /// reach, and the MOVE's own rather than one number per warrior: a mace lands at 1.23 m, the slam at 2.18.
+    /// NOT `triggerR`, which adds the leap's whole run-up: that ground is behind him by the frame it arrives.
     fn parryReach(self: *const Warrior, a: Attack) f32 {
         return a.reachOut * self.scale + foe.HERO_REACH;
     }
 
     /// SECONDS UNTIL THIS STROKE'S BLOW LANDS, counted ACROSS the wind→swing boundary so the tell and the
     /// stroke are ONE continuous countdown — null when he is not swinging one. EXHAUSTIVE, so a state added
-    /// later has to say whether it carries a blow rather than quietly defaulting to no.
-    ///
-    /// `windDur()`, never `a.windDur`: a combo's follow-up winds on `chainWind`, and the lunge's SECOND stab is
-    /// the one that used to arrive unseen — which makes it exactly the stroke most worth being able to catch.
+    /// later has to say whether it carries a blow. `windDur()`, never `a.windDur`: a combo winds on `chainWind`.
     fn toImpact(self: *const Warrior) ?f32 {
         const a = self.move();
         const live = a.swingDur * a.impactK; // where in the stroke the kit goes live — see `.swing`
@@ -1023,12 +1007,9 @@ pub const Warrior = struct {
     }
 
     /// THE SHIELD TAKES THE STROKE — and HYPER ARMOUR IS NO DEFENCE AGAINST IT, which is the whole point of
-    /// giving the greatsword windows. `hyperArmor` refuses the POISE off the hero's blade, so the slam cannot be
-    /// traded with; a parry deals neither damage nor poise (`combat.PARRY_HIT` is STANCE and nothing else), so
-    /// the one move you cannot interrupt is the one the boards can still stop outright.
-    ///
-    /// `enterStun` is what kills the swing: it drops the stroke, clears `live` and puts a leap back on the
-    /// ground, so nothing lands and no crater opens.
+    /// giving the greatsword windows: `hyperArmor` refuses POISE off the blade, and a parry deals none, so the
+    /// one move you cannot interrupt is the one the boards can still stop outright. `enterStun` kills the swing
+    /// — it drops the stroke, clears `live` and puts a leap back on the ground, so no crater opens.
     fn takeParry(self: *Warrior) void {
         const reach = self.parryable() orelse return;
         if (!self.parry.catches(self.pos, reach)) return;
@@ -1184,7 +1165,7 @@ pub const Warrior = struct {
             self.armSh = mathx.approach(self.armSh, CARRY_SH + 14.0 + 3.0 * breathe, e);
             self.armEl = mathx.approach(self.armEl, CARRY_EL - 26.0, e);
             self.armAbd = mathx.approach(self.armAbd, CARRY_ABD + 4.0, e);
-            self.offSh = mathx.approach(self.offSh, CARRY_SH - 8.0, e); // the empty arm just hangs
+            self.offSh = mathx.approach(self.offSh, CARRY_SH - 8.0, e);
             self.offEl = mathx.approach(self.offEl, CARRY_EL - 6.0, e);
             self.offAbd = mathx.approach(self.offAbd, -CARRY_ABD - 4.0, e);
             self.bodyLean = mathx.approach(self.bodyLean, 6.0 + 1.2 * breathe + 5.0 * stalk, e);
@@ -1267,7 +1248,7 @@ pub const Warrior = struct {
         self.offAbd = lerpF(-34.0, -12.0, kArm);
         self.bodyLean = lerpF(5.0, GS_WIND_LEAN, k);
         self.twist = lerpF(-8.0, GS_WIND_TWIST, k);
-        self.headPitch = lerpF(2.0, -12.0, k); // the empty sockets come up onto you
+        self.headPitch = lerpF(2.0, -12.0, k);
         self.legBrace = lerpF(0, 0.62, k);
     }
 
@@ -1413,9 +1394,8 @@ pub const Warrior = struct {
         return mathx.smoothstep(0, KNEEL_IN, self.t) * (1.0 - mathx.smoothstep(d - KNEEL_OUT, d, self.t));
     }
 
-    /// The whole rig's scale, dissipation included. ONE definition: the shield is not a bone and has to
-    /// arrive at the same number `pose` did, or the boards shrink on a different curve to the man holding
-    /// them.
+    /// The whole rig's scale, dissipation included. ONE definition: the shield is not a bone and has to arrive
+    /// at the same number `pose` did, or the boards shrink on a different curve to the man holding them.
     pub fn rigScale(self: *const Warrior) f32 {
         return self.scale * (1.0 - 0.7 * self.fade);
     }
@@ -1506,7 +1486,7 @@ pub const Warrior = struct {
             setLocal(wx, ANKL, rest, rx(-16.0 * kn));
             setLocal(wx, HIPR, rest, mul(rx(KNEEL_TRAIL_HIP * kn), rz(5.0)));
             setLocal(wx, KNEER, rest, rx(8.0 + KNEEL_TRAIL_KNEE * kn));
-            setLocal(wx, ANKR, rest, rx(26.0 * kn)); // the toe turns under, taking his weight
+            setLocal(wx, ANKR, rest, rx(26.0 * kn));
         } else if (self.leaping()) {
             const u = mathx.clampF(self.t / self.move().swingDur, 0, 1);
             const air = mathx.sinf(u * std.math.pi);
@@ -1663,9 +1643,8 @@ pub const Warrior = struct {
 // WHERE they stand is the MAP's business (`foe: shieldman …` / `foe: greatsword …` records).
 pub const CAP = SPEC.len * wf.MAX_PER_KIND;
 
-/// THE MUSTER — both roles in one array, for the warband's reason: they are one creature with two kits,
-/// so the body, the gait, the bones, the death and the reactions are shared and only the kit and the
-/// state machine differ.
+/// THE MUSTER — both roles in one array, for the warband's reason: they are one creature with two kits, so
+/// the body, the gait, the bones, the death and the reactions are shared and only the kit differs.
 pub const Muster = struct {
     model: Model,
     band: [CAP]Warrior = undefined,
@@ -1790,10 +1769,8 @@ fn greatswordMesh() rl.Mesh {
     const fy = FIST_Y;
     const fz = FIST_Z;
     const guardY = fy + GS_GUARD;
-    // ABOVE THE GUARD, like every other feature of this blade. Measured off the FIST instead — which is
-    // how it went in — it landed BELOW the last blade segment's own top, so the point was drawn pointing
-    // down INSIDE the steel, the blade ended blunt, and the hurt segment stopped 0.12 m short of what you
-    // could see. A weapon's reach cannot be judged against a mesh that disagrees with itself.
+    // ABOVE THE GUARD, like every other feature of this blade. Measured off the FIST instead it landed BELOW
+    // the last blade segment's top: the point drawn inside the steel, and the hurt segment 0.12 m short.
     const tipY = guardY + GS_BLADE;
 
     b.setMat(.wood);
@@ -1969,19 +1946,16 @@ fn shieldMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// THE SHIELD IS NOT A BONE (hero.zig's rule, and its pattern): it rides the LEFT WRIST's matrix. The
-/// long axis of a strapped kite shield runs DOWN the forearm — which is the wrist frame's own −Y — so
-/// the boards need no turning, only standing off the fist and raked a few degrees off the arm.
-/// Where the boards hang off the fist, in the wrist's frame — the one thing about them that still rides
-/// the arm.
+/// THE SHIELD IS NOT A BONE (hero.zig's rule, and its pattern): it rides the LEFT WRIST's matrix. The long
+/// axis of a strapped kite shield runs DOWN the forearm — the wrist frame's own −Y — so the boards need no
+/// turning, only standing off the fist and raked a few degrees off the arm.
 const SH_HUB = v3(-0.028 * H, FIST_Y + 0.175 * H, FIST_Z + SH_STANDOFF);
 const SH_RAKE_X = -9.0; // the top edge tipped back off his chest…
 const SH_RAKE_Z = 4.0; // …and the point carried a little across him
 
 /// THE BOARDS ARE SQUARE TO THE MAN, NOT TO HIS FOREARM. They take their POSITION off the fist and their
 /// ORIENTATION off his facing alone, so nothing in the arm chain or the spine can roll their face off the
-/// hero: the swing drops the shoulder and opens the elbow, and a stagger arches the whole trunk back 46°,
-/// and inherited whole that laid a kite shield out flat and face-up over him.
+/// hero — a stagger arches the whole trunk back 46°, and inherited whole that laid the shield out face-up.
 fn shieldXf(w: *const Warrior) rl.Matrix {
     const fs = w.rigScale();
     const hub = rl.math.vector3Transform(SH_HUB, w.xf[WRL]);

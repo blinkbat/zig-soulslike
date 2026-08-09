@@ -70,11 +70,10 @@ fn strokeK(px: f32) f32 {
     return px / TUNED_AT;
 }
 
-/// Two triangles making one quad, WOUND WHICHEVER WAY RAYLIB WILL ACTUALLY RASTERISE. It culls a
-/// back-facing 2D triangle (see `arrow`, which is the one that proved it), so a quad handed over the
-/// wrong way round is silently not drawn — and that is exactly how the sword icon's blade body went
-/// missing: the picture was its point triangle plus two hairlines, which is to say a dagger. Callers give
-/// the four corners in order and stop caring.
+/// Two triangles making one quad, WOUND WHICHEVER WAY RAYLIB WILL ACTUALLY RASTERISE. It culls a back-facing
+/// 2D triangle, so a quad handed over the wrong way round is silently not drawn — which is how the sword
+/// icon's blade body went missing and left a point triangle plus two hairlines. Callers give the four
+/// corners in order and stop caring.
 fn quad(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2, d: rl.Vector2, col: rl.Color) void {
     // Signed area of a→b→c in SCREEN space, where y runs down: raylib draws the NEGATIVE one.
     if ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x) <= 0) {
@@ -289,11 +288,10 @@ pub fn flask(cx: f32, cy: f32, px: f32, tint: FlaskTint, full: bool) void {
     const lean = rng.range(-0.9, 0.9) * k;
 
     rl.drawCircleV(v2(cx + 1.0 * k, bodyY + 1.1 * k), body, rgba(0, 0, 0, 120)); // off the plate
-    // THE BULB, SHADED FROM THE DARK SIDE OUT: the deep tone is the whole ball and the lit fill is a
-    // slightly smaller one set up and left inside it, so what shows of the deep is a crescent along the
-    // bottom-right rim. THERE IS NO CLIPPING HERE, which is what killed the three attempts before it —
-    // a concentric dark circle is a bubble, a sector cuts the flask in half, and a big offset circle
-    // (the obvious way round) spills its far side across the HUD and the world behind it.
+    // THE BULB, SHADED FROM THE DARK SIDE OUT: the deep tone is the whole ball and the lit fill is a slightly
+    // smaller one set up and left inside it, so what shows of the deep is a crescent along the bottom-right
+    // rim. THERE IS NO CLIPPING HERE — a concentric dark circle is a bubble, a sector cuts the flask in half,
+    // and a big offset circle spills its far side across the HUD and the world behind it.
     rl.drawCircleV(v2(cx, bodyY), body, deep);
     rl.drawCircleV(v2(cx - body * 0.11, bodyY - body * 0.13), body * 0.90, fill);
     // THE SHOULDERS as a taper up to the neck. A rounded BOX here (the first pass) pokes its corners out
@@ -343,10 +341,9 @@ pub fn flask(cx: f32, cy: f32, px: f32, tint: FlaskTint, full: bool) void {
     );
 }
 
-/// ELDEN RING'S OWN PATTERN, and the owner's call: MOSTLY HILT, AND THE BLADE FADES OUT. A whole sword
-/// scaled to fit a 44×60 socket is a dagger — that is what it read as — because everything that says
-/// LONG about a longsword is the part there is no room for. So the hilt is drawn big and jewelled down
-/// in the frame and the steel runs off the top losing itself, which reads as a blade that continues.
+/// ELDEN RING'S OWN PATTERN, and the owner's call: MOSTLY HILT, AND THE BLADE FADES OUT. A whole sword scaled
+/// to fit a 44×60 socket is a dagger, because everything that says LONG about a longsword is the part there
+/// is no room for. So the hilt is drawn big and the steel runs off the top, which reads as a blade continuing.
 pub fn sword(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -540,10 +537,9 @@ pub fn shield(cx: f32, cy: f32, px: f32) void {
     rl.drawCircleV(v2(bx - 1.5 * k, by - 1.7 * k), br * 0.30, uiart.CATCH);
 }
 
-/// THE WAND — the rod on the diagonal every other armament here uses, with the stone at its high end.
-/// The stone is drawn as a LIT CORE inside a cooler shell, which is the flask's trick for the flask's
-/// reason: there is no clipping in this set, so anything that glows has to be built out of stacked shapes
-/// rather than out of a gradient.
+/// THE WAND — the rod on the diagonal every other armament here uses, with the stone at its high end. The
+/// stone is a LIT CORE inside a cooler shell, the flask's trick for the flask's reason: there is no clipping
+/// in this set, so anything that glows is built out of stacked shapes rather than a gradient.
 pub fn wand(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -922,10 +918,9 @@ fn ironKey(cx: f32, cy: f32, px: f32) void {
 
 /// A STRIP OF DRIED CAP, curling as it dries, torn at both ends and dusted with the salt it was kept in.
 /// The read is LEATHERY: a wavy band, dark outside and pale where the flesh was torn open.
-/// A DRIED MUSHROOM, and the silhouette is what says so: a domed CAP over a STEM with the gills showing
-/// under the rim. As a wavy horizontal strip it was leathery and salted and read as neither — a lump.
-/// Dried, not fresh: the cap is shrunken onto a stem too thin for it and the rim has curled UP off the gills,
-/// which is exactly what drying does to one and is why it still reads as jerky rather than as forage.
+/// A DRIED MUSHROOM, and the silhouette is what says so: a domed CAP over a STEM with the gills showing under
+/// the rim. As a wavy horizontal strip it read as neither jerky nor forage — a lump. Dried, not fresh: the
+/// cap is shrunken onto a stem too thin for it and the rim has curled UP off the gills.
 fn jerky(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);

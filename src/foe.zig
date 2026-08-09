@@ -26,22 +26,16 @@ pub fn closestApproach(bodyR: f32) f32 {
 
 pub const AIRBORNE_LIFT: f32 = 0.04;
 
-/// **NO ATTACK COMES OUT OF NOWHERE** (owner's law): seconds a creature's kit must be VISIBLY MOVING before it
-/// can deal damage. Derived from what already reads — the ogre's swipe 0.46, the brood bite 0.40, the toad's
-/// gape 0.42 — against the two that read as INSTANT, the berserker's chop at 0.14 and the broodling's at 0.20.
-/// Each creature's file tests its own moves against this; the shapes differ too much for one place to check.
+/// **NO ATTACK COMES OUT OF NOWHERE** (owner's law): seconds a creature's kit must be VISIBLY MOVING before
+/// it can deal damage. Derived from what already reads — the ogre's swipe 0.46, the brood bite 0.40, the
+/// toad's gape 0.42 — against the berserker's chop at 0.14 and the broodling's at 0.20, which read as INSTANT.
 pub const TELL_MIN: f32 = 0.30;
 
 /// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT ON THE BOARDS — one number, IN SECONDS, measured back
 /// from the move's own impact frame, and it IS the parry's difficulty. **Every creature with windows reads
-/// THIS one.** As a private copy per creature it is `stunCurve`'s story again: the same event, quietly drifting
-/// into three different numbers nobody chose. You parry an instant before THE HIT, whatever is swinging
-/// (owner's call), so what the player learns off a giant's club is what catches a mace, a greatsword and a
-/// mother's fangs — a per-creature lead would be a difficulty setting nobody wrote down.
-///
-/// It is the MOVE's own `toImpact` that makes a window shut at the impact frame by construction, and that is
-/// what makes a caught blow one that never landed. See `ogre.parryable` for the worked example, and the block
-/// above it for why the lead is authored in seconds rather than as fractions of two state clocks.
+/// THIS one.** As a private copy per creature it is `stunCurve`'s story again: the same event drifting into
+/// three numbers nobody chose. You parry an instant before THE HIT, whatever is swinging (owner's call), so
+/// a club, a mace, a greatsword and a mother's fangs teach one rule. See `ogre.parryable` for the example.
 pub const PARRY_LEAD: f32 = 0.11;
 
 /// A CORPSE IS NOT A COLLIDER (owner's call): `alive()` stays true through the whole death collapse and its
@@ -182,43 +176,31 @@ pub fn flashFrac(flash: f32) f32 {
     return mathx.clampF(flash / FLASH_DUR, 0, 1);
 }
 
-/// A POINT ON A CREATURE'S OWN AXIS: `h` metres of ITS OWN SCALE above the ground under it, plus whatever
-/// it is holding off that ground this frame (`lift` — a hop, a leap, a hover). Seven creatures wrote this
-/// same expression out three times each, and EVERY WORLD POINT ON AN ACTOR IS MEASURED FROM `pos.y` is the
-/// law it exists to keep: off the datum instead, a foe on a bank keeps its bar down in the field.
+/// A POINT ON A CREATURE'S OWN AXIS: `h` metres of ITS OWN SCALE above the ground under it, plus whatever it
+/// is holding off that ground this frame (`lift` — a hop, a leap, a hover). EVERY WORLD POINT ON AN ACTOR IS
+/// MEASURED FROM `pos.y` is the law it keeps: off the datum, a foe on a bank keeps its bar down in the field.
 pub fn bodyPoint(pos: rl.Vector3, h: f32, scale: f32, lift: f32) rl.Vector3 {
     return v3(pos.x, pos.y + h * scale + lift, pos.z);
 }
 
 /// …AND A POINT ON THE POSED BODY ITSELF, which is a different thing entirely: `at` is in the BONE's own
-/// frame, so the answer follows whatever that bone is doing this frame rather than sitting at a fixed
-/// height off the feet. THE RETICLE RIDES THIS. Locked onto a head, the mark goes where the head goes — it
-/// dips when the head dips, and it does not hang in the air a foot above a creature that has ducked.
-///
-/// Every bone matrix already carries the rig's scale, the facing and the creature's `pos`, so this needs
-/// nothing else; and every creature's `spawn` poses before it returns, so there is no frame on which the
-/// matrix it reads is undefined.
+/// frame, so the answer follows whatever that bone is doing this frame. THE RETICLE RIDES THIS — locked onto
+/// a head, the mark dips when the head dips. Every bone matrix already carries the rig's scale, the facing
+/// and `pos`, and every `spawn` poses before it returns, so the matrix is never undefined.
 pub fn markOn(bone: rl.Matrix, at: rl.Vector3) rl.Vector3 {
     return rl.math.vector3Transform(at, bone);
 }
 
-/// HOW HARD A REACTION IS PLAYING, 0..1, and it is ONE CURVE for every creature in the game. As five
-/// private copies the constants had already drifted four ways — 0.12/0.78, 0.13/0.72, 0.14/0.70,
-/// 0.16/0.78 — which is four different creatures disagreeing about the shape of the same event for no
-/// reason anybody wrote down. A light flinch is a single symmetric swell; a heavy one snaps to its peak,
-/// HOLDS there (that hold is the punish window, and it has to be legible), and lets go slowly.
-/// HOW FAR THROUGH ITS ARC A SWING IS, 0..1 of the strike window — ONE CURVE for every creature, and the
-/// reason it exists is that you must be able to parry off what you SEE (owner: "should be all 3" — visuals,
-/// sound and timing, not the last two alone).
+/// HOW HARD A REACTION IS PLAYING, 0..1, and it is ONE CURVE for every creature in the game. As five private
+/// copies the constants had already drifted four ways (0.12/0.78, 0.13/0.72, 0.14/0.70, 0.16/0.78). A light
+/// flinch is a single symmetric swell; a heavy one snaps to its peak, HOLDS there — that hold is the punish
+/// window and it has to be legible — and lets go slowly.
+/// HOW FAR THROUGH ITS ARC A SWING IS, 0..1 of the strike window — ONE CURVE for every creature, and it
+/// exists because you must be able to parry off what you SEE (owner: "should be all 3" — visuals, sound and
+/// timing, not the last two alone).
 ///
-/// A FRONT-LOADED ARC (`1 - (1-u)³`) was fastest on the frame it began: 58% of the travel in the first
-/// quarter of the window, so the limb was most of the way there before the eye registered it moving. A
-/// SYMMETRIC one (`smoothstep`) is no better — it spends its speed in the middle and reads as a glide. This
-/// holds near the cock for a beat, then whips: 8% of the arc in the first quarter of the window against the
-/// 58% a front-loaded one moved, and the last quarter carries two and a half times what the first did.
-///
-/// The impact latch is on the CLOCK and is untouched by this, so no parry window moves (`PARRY_LEAD` is
-/// measured back from the impact frame, which is the rule `toImpact` keeps).
+/// A FRONT-LOADED ARC (`1 - (1-u)³`) put 58% of the travel in the first quarter of the window, so the limb
+/// was there before the eye registered it; a SYMMETRIC one glides. This holds near the cock, then whips: 8% of the arc in the first quarter against that 58%, and the last quarter carries two and a half times the first.
 pub fn swingCurve(u: f32) f32 {
     return std.math.pow(f32, mathx.smoothstep(0, 1, u), 1.35);
 }
@@ -232,12 +214,9 @@ pub fn stunCurve(t: f32, heavy: bool) f32 {
 /// loose numbers: the two are only ever chosen against each other.
 pub const Push = struct { light: f32, heavy: f32 };
 
-/// THE BLADE REACHED IT — the swept test, the anti-cheese rouse, and the one thing a shaft does that a
-/// swing does not. Seven creatures opened `tryHit` with these same four lines; the differences between
-/// them were all in what came AFTER, which is why the split is here and not further down.
-///
-/// Duck-typed on the conventional field names (`drawGroup` and `anyDied` above already are): a creature
-/// satisfying the foe contract has every one of them by definition.
+/// THE BLADE REACHED IT — the swept test, the anti-cheese rouse, and the one thing a shaft does that a swing
+/// does not. Seven creatures opened `tryHit` with these same four lines. Duck-typed on the conventional field
+/// names: a creature satisfying the foe contract has every one of them by definition.
 pub fn reached(self: anytype, blade: Blade) ?Strike {
     const s = strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return null;
     self.leash.provoke();
@@ -260,9 +239,8 @@ pub fn wounded(self: anytype, s: Strike, blade: Blade, push: Push) bool {
 
 /// ROOTED: THE FEET ARE HELD, AND NOTHING ELSE IS (owner's law) — the state machine runs, the kit swings, the
 /// blow lands, and the body simply does not travel. Taken as a GATE at the end of a creature's own `update`
-/// rather than a guard at each `stepXZ`: a creature grows movements — a dash, a leap, the shove off a blade,
-/// the next one nobody has written — and a per-site list is a list to forget something from. Y is left alone,
-/// since `game.groundActor` owns it and a held foe still stands on its own ground.
+/// rather than a guard at each `stepXZ`, because a creature grows movements and a per-site list forgets one.
+/// Y is left alone: `game.groundActor` owns it, and a held foe still stands on its own ground.
 pub const Grip = struct {
     was: rl.Vector3,
     on: bool,
@@ -286,15 +264,10 @@ pub const Grip = struct {
 ///
 /// Six byte-identical copies of that body sat in the creature files, which is six places to forget that the
 /// bite is billed as a DRIP (`combat.Vitals.drip`) and never as a blow.
-/// A JUMP IS THE ONE THING THE GRIP REFUSES OUTRIGHT (owner's law). Everywhere else the roots take the FEET as
-/// a post-step gate and the move plays out on the spot — the club still comes down, the flurry still swings,
-/// the travel is simply given back. A jump skill is not that: it does not travel, it LEAVES THE EARTH, and a
-/// creature held by the ankles cannot. So it is gated where the move is CHOSEN, which is the one place a
-/// post-step gate cannot reach: by the time `Grip.hold` runs, the leap is already committed and the only thing
-/// left to deny is its distance, which lands you a creature hopping on the spot inside a fist of roots.
-///
-/// Asked at a choose site, so the creature is on the ground by construction. One already IN THE AIR when the
-/// grip closes keeps its arc and lands: you cannot root what is not standing on anything.
+/// A JUMP IS THE ONE THING THE GRIP REFUSES OUTRIGHT (owner's law). Everywhere else the roots take the FEET
+/// as a post-step gate and the move plays out on the spot; a jump does not travel, it LEAVES THE EARTH. So it
+/// is gated where the move is CHOSEN — the one place a post-step gate cannot reach, since by `Grip.hold` the
+/// leap is committed and denying its distance leaves a creature hopping inside a fist of roots. One already IN THE AIR when the grip closes keeps its arc and lands: you cannot root what is not standing on anything.
 pub fn canLeap(root: *const combat.Root) bool {
     return !root.held();
 }
@@ -305,10 +278,9 @@ pub fn grip(root: *combat.Root, vit: *combat.Vitals, dt: f32, at: rl.Vector3) Gr
     return .{ .was = at, .on = on, .killed = killed };
 }
 
-/// THE HERO'S SHIELD AS THE THING SWINGING AT HIM SEES IT — `Leash`'s pattern exactly, stamped every frame from
-/// outside (`game.markParry`) rather than fetched, because the creature must never reach out for the hero and
-/// because the ARC belongs to the shield, not to whatever is being caught on it. A creature reads this during
-/// its OWN parry window and nowhere else.
+/// THE HERO'S SHIELD AS THE THING SWINGING AT HIM SEES IT — `Leash`'s pattern exactly, stamped every frame
+/// from outside (`game.markParry`) rather than fetched, because the creature must never reach out for the
+/// hero and because the ARC belongs to the shield, not to whatever is being caught on it.
 pub const Parry = struct {
     /// The catch window is open THIS frame. Every other field is meaningless while it is false.
     live: bool = false,
@@ -316,9 +288,8 @@ pub const Parry = struct {
     facing: f32 = 0,
 
     /// Would this move be batted aside? `reach` is the MOVE's own and not one number per creature: only the
-    /// move knows where its head is, and a slam you rolled clear of during its second of windup is not
-    /// something a shield six metres away can touch. THE BLOCK'S OWN ARC (`combat.GUARD_ARC`) — a shield is a
-    /// DIRECTION, and a parry that covered the back would be a better block than the block.
+    /// move knows where its head is. THE BLOCK'S OWN ARC (`combat.GUARD_ARC`) — a shield is a DIRECTION, and a
+    /// parry that covered the back would be a better block than the block.
     pub fn catches(self: *const Parry, at: rl.Vector3, reach: f32) bool {
         if (!self.live) return false;
         if (mathx.distXZ(self.at, at) > reach) return false;
@@ -363,9 +334,8 @@ pub fn emitParticle(pool: []Particle, head: *usize, p: rl.Vector3, vel: rl.Vecto
 }
 
 /// WHAT ONE BODY BRINGS TO ITS OWN DISSOLVE, and all it brings: how thick the cloud is, how far out and how
-/// far up the body it comes off — both in the creature's own scale — and the colour of the flakes the body
-/// SHEDS. The grace motes are not here: gold is the world's, the same off everything that dies, and two
-/// substances of one thing is what the brood's rule forbids.
+/// far up the body it comes off — both in the creature's own scale — and the colour of the flakes it SHEDS.
+/// The grace motes are not here: gold is the world's, the same off everything that dies.
 pub const Dissolve = struct {
     rate: f32 = 54.0,
     spread: f32 = 0.85,
@@ -381,10 +351,7 @@ const DISS_FLAKE_R: f32 = 0.129;
 /// flakes of the body falling back, both thinning as the fade closes.
 ///
 /// It reads FIELDS only (`fade`, `scale`, `pos`, `fxAccum`, `fxRng`, `parts`, `head`), which is what lets it
-/// live here at all: a creature's own `emitDissolve` is private and nothing outside its file can call one.
-/// That is exactly why there were five of these, drifted four ways over what is one effect at four sizes —
-/// and why the sixth, the ARCHER's, had gone missing altogether: the one skeleton that shoots faded out into
-/// nothing while its twin shed bone.
+/// live here: a creature's own `emitDissolve` is private, and as five copies the ARCHER's had gone missing.
 pub fn dissolveMotes(self: anytype, dt: f32, d: Dissolve) void {
     const thinning = 1.0 - 0.6 * self.fade;
     self.fxAccum += d.rate * thinning * dt;
@@ -407,8 +374,7 @@ pub fn dissolveMotes(self: anytype, dt: f32, d: Dissolve) void {
 
 /// THE CORPSE GOING. Past `still` the fall is over and the body dissipates over `diss`: `fade` is that ramp,
 /// the dissolve comes off it the whole way, and the creature leaves the field at the end of it. The two
-/// DURATIONS stay per-creature — a giant topples slower than a toad — but the shape does not, and six
-/// private copies of this five-line tail is where the archer's emit went missing without anyone noticing.
+/// DURATIONS stay per-creature — a giant topples slower than a toad — but the shape does not.
 pub fn dissipate(self: anytype, dt: f32, still: f32, diss: f32, d: Dissolve) void {
     if (self.t < still) return;
     self.fade = mathx.smoothstep(still, still + diss, self.t);
@@ -474,12 +440,10 @@ pub fn Trail(comptime N: usize) type {
     };
 }
 
-/// THE ONE PER-FRAME COST HERE WORTH KNOWING ABOUT, and it is left alone on purpose: `drawSphereEx` at 6x8 is
-/// ~96 triangles, so a full muster (48 warriors x 56 slots) would be a quarter-million triangles of unlit
-/// spheres. It never is — a slot is dead unless something emitted into it, and the pools are sized off each
-/// emitter's WORST frame rather than a round number, so the live count is a burst and not a standing load.
-/// Dropping the tessellation would buy real triangles, but a spark is a ROUND thing and that is a look decision
-/// for the owner, not a behaviour-preserving optimisation.
+/// THE ONE PER-FRAME COST HERE WORTH KNOWING ABOUT, left alone on purpose: `drawSphereEx` at 6x8 is ~96
+/// triangles, so a full muster (48 x 56 slots) would be a quarter-million unlit triangles. It never is — a
+/// slot is dead unless something emitted into it, and the pools are sized off each emitter's WORST frame, so
+/// the live count is a burst and not a standing load. A spark is a ROUND thing: the tessellation is a look call.
 pub fn drawParticles(pool: []const Particle) void {
     for (pool) |*q| {
         if (q.life <= 0) continue;
@@ -503,8 +467,7 @@ pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want:
 
 /// …AND THE SAME RESET FOR A GROUP WHOSE MEMBERS ARE ROLES OF ONE CREATURE (the warband, the muster, the
 /// brood): its own `roleOf` says which role a map kind is, and `T.spawnAs` takes it. Three byte-identical
-/// copies of this body sat in kobold/warrior/brood — the same one-line-delegate rule `resetGroup` above
-/// already gives the single-kind groups.
+/// copies of this body sat in kobold/warrior/brood.
 pub fn resetRoles(
     comptime T: type,
     comptime R: type,

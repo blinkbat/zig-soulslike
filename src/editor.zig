@@ -412,8 +412,7 @@ const JUKE_LIST_H: i32 = JUKE_H - 150;
 
 /// DIALOG CHROME, one set for every modal: the inset from a box edge to its content, a footer button's height,
 /// and the drop from the box's own BOTTOM edge to that footer row. Each dialog used to re-spell its own height
-/// at the footer (`box.y + 170 - 44`), which is a number kept in lockstep with the one passed to `beginModal`
-/// three lines above — `ModalBox` carries `h`, so read it.
+/// at the footer (`box.y + 170 - 44`) — `ModalBox` carries `h`, so read it.
 const DLG_PAD: i32 = 24;
 const DLG_BTN_H: i32 = 28;
 const DLG_FOOT: i32 = 44;
@@ -702,11 +701,10 @@ pub const Editor = struct {
         };
     }
 
-    /// THE ONE WAY TO CHANGE LAYER.
+    /// THE ONE WAY TO CHANGE LAYER, and IT REFUSES MID-GESTURE (the armament law): a shape drag reads the
+    /// layer at its RELEASE (`commitDrag`), so Tab between the press and the release committed a Props drag as
+    /// a Decor op, or dropped it silently. What starts is what lands.
     ///
-    /// AND IT REFUSES MID-GESTURE, the armament law: a shape drag reads the layer at its RELEASE
-    /// (`commitDrag`), so Tab between the press and the release committed a Props drag as a Decor op — or
-    /// dropped it silently on a layer `commitDrag` returns from. What starts is what lands.
     pub fn setLayer(self: *Editor, l: Layer) void {
         if (self.dragging or self.painting or self.wipe.on) return;
         // THE MARKED SET DOES NOT CROSS LAYERS.
@@ -788,8 +786,7 @@ pub const Editor = struct {
 
     /// Where the cursor meets the ground, as resolved for THIS frame. `env.rayGround` is a MARCH over the height
     /// lattice — on a sculpted map a ray that never lands walks `4 × GROUND_HALF` at half a lattice step, some
-    /// 1600 bilinear samples — and five sites ask this question a frame (the mouse, the gizmos, the status
-    /// readout, the sculpt panel, a pick). The pointer cannot move inside a frame, so they share one answer.
+    /// 1600 bilinear samples — and five sites ask it a frame. The pointer cannot move inside a frame.
     pub fn groundAt(self: *const Editor) ?rl.Vector3 {
         return self.cursor;
     }
@@ -1107,9 +1104,8 @@ pub const Editor = struct {
     }
 
     /// For the paths about to READ the materialized world (leaving, a playtest) rather than draw one more frame
-    /// of it. NOT a save: the MAP is written the moment a widget moves, and only `env` lags behind it.
-    /// A LIVE STROKE COUNTS: Esc and F5 are read before the mouse is, so a sculpt still under the button had
-    /// only its MESH rebuilt — leaving without settling it plays a world whose props stand at the old heights.
+    /// of it. NOT a save: the MAP is written the moment a widget moves, and only `env` lags behind it. A LIVE
+    /// STROKE COUNTS — Esc and F5 are read before the mouse, so a sculpt still under the button had only its MESH rebuilt, and leaving without settling it plays a world whose props stand at the old heights.
     pub fn flushRebuild(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
         if (self.painting) self.endPaint(m, env);
         if (self.rebuildDue) self.rebuild(m, env);
@@ -2055,10 +2051,9 @@ pub const Editor = struct {
             if (s < m.nops and self.layer.opLayer()) {
                 drawOpGizmo(&m.ops[s], y);
                 // MEASURED AND LEFT: a whole-list walk (~17k props, ~1 MB touched) every frame something is
-                // selected, to find the few hundred one op owns. `materialize` appends in op order, so the run
-                // IS contiguous and a binary search would find it in ~14 steps — but that buys a gizmo pass a
-                // dependence on the placer's append order, and the frame already walks this list for the pick,
-                // the occluders and both draw passes. Cache it instead if `selOwned` ever needs to be free.
+                // selected, to find the few hundred one op owns. `materialize` appends in op order, so a binary
+                // search would find the run in ~14 steps — but that buys a gizmo pass a dependence on the
+                // placer's append order, and the frame already walks this list four other times.
                 for (env.props[0..env.nprops]) |pr| {
                     if (pr.op != s) continue;
                     self.selOwned += 1;

@@ -144,10 +144,9 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     // than lore, and it is the same number for both because it is the same left hand being spent.
     const guards = !bow and l.off == .shield;
     d[@intFromEnum(Der.guard)] = if (guards) combat.GUARD_NEGATE * 100.0 else 0;
-    // …and what he bought with it. Zero on both rows unless a wand is actually in that hand, because a
-    // spell he cannot cast is not worth a number (`stats.governs`' rule about an inert attribute).
-    // …and it is the SORCERY THAT IS LOADED that is priced, through `combat`'s own two answers — the rod
-    // carries two now, and they neither cost the same nor deal the same.
+    // …and what he bought with it. Zero on both rows unless a wand is actually in that hand, because a spell
+    // he cannot cast is not worth a number — and it is the SORCERY THAT IS LOADED that is priced, through
+    // `combat`'s own two answers: the rod carries two now, and they neither cost nor deal the same.
     const casts = !bow and l.off == .wand;
     d[@intFromEnum(Der.spell)] = if (casts) combat.spellDamage(l.spell) else 0;
     d[@intFromEnum(Der.spell_fp)] = if (casts) combat.spellFp(l.spell) else 0;
@@ -352,11 +351,10 @@ fn quickWorth(kind: ?item.Kind, v: View) f32 {
     };
 }
 
-/// IS THIS ROW EVEN OFFERED. He may not put on the bar a thing he does not own — an empty row is a cycle
-/// step that does nothing and a HUD cell showing what he has not got, and the bar drops one the moment the
-/// last is spent (`combat.Quick.dropEmpty`), so offering it here would be offering something that leaves
-/// again before he closes the book. THE FLASKS ARE ALWAYS OFFERED: their charges are not the bag's and an
-/// empty one is still carried.
+/// IS THIS ROW EVEN OFFERED. He may not put on the bar a thing he does not own — an empty row is a cycle step
+/// that does nothing, and the bar drops one the moment the last is spent (`combat.Quick.dropEmpty`), so
+/// offering it here would be offering something that leaves again before he closes the book. THE FLASKS ARE
+/// ALWAYS OFFERED: their charges are not the bag's, and an empty one is still carried.
 fn quickOffered(k: item.Kind, v: View) bool {
     if (!item.quickable(k)) return false;
     return combat.flaskOf(k) != null or v.bag.count(k) > 0;
@@ -456,10 +454,9 @@ fn equipped(c: Cand, v: View) bool {
     };
 }
 
-/// Where a picker opens: on what is ALREADY equipped, never on row 0. Landing the cursor somewhere other
-/// than the current choice is how a menu tricks you into swapping something you meant to look at.
-/// The rows are built in enum order, so the equipped thing's ORDINAL is its row — no second table to keep
-/// in step with the first.
+/// Where a picker opens: on what is ALREADY equipped, never on row 0 — landing the cursor somewhere other
+/// than the current choice is how a menu tricks you into swapping something you meant to look at. The rows
+/// are built in enum order, so the equipped thing's ORDINAL is its row.
 fn pickIndexOf(s: SlotId, v: View) usize {
     return switch (s) {
         .right => @intFromEnum(v.arm),
@@ -793,12 +790,10 @@ fn labelH() i32 {
 }
 
 /// THE SOCKETS ARE FITTED TO THE PANEL, not a fixed pixel size — the card is a fraction of the window
-/// (`cardBox`), so a fixed socket is a different share of the page on every monitor. The bag's cells have
-/// always worked this way (`bagGrid`); this is the same sum with a break in the middle of it.
+/// (`cardBox`), so a fixed socket is a different share of the page on every monitor. The gap and the break
+/// between the body and the quick rows are fractions of the socket, so the whole block scales as one thing.
 ///
-/// The gap and the break between the body and the quick rows are fractions of the socket, so the whole block
-/// scales as one thing. TEXT DOES NOT SCALE — sizes come from `hud`'s type scale (AGENTS.md), which is why
-/// the label height is subtracted rather than solved for.
+/// TEXT DOES NOT SCALE — sizes come from `hud`'s type scale, which is why the label height is subtracted.
 const SlotFit = struct { px: i32, gap: i32, brk: i32, x: i32, y: i32 };
 
 fn slotFit(body: Box) SlotFit {
@@ -928,12 +923,11 @@ fn panel(b: Box, title: [:0]const u8) Box {
     return panelInner(b, title.len > 0);
 }
 
-/// THE PITCH `n` ROWS GET IN `space` PIXELS: their natural one, tightened to fit, and NEVER under the
-/// line height — a panel too short for its rows spills off the bottom, which is ugly, where a negative
-/// pitch stacks them backwards up through the heading, which is unreadable.
-/// …and the FLOOR is the glyph height, not the comfortable line height. It used to be `lineH`, which twelve
-/// rows cannot make fit in the half-panel a picker leaves them: they overran the foot, and the divider drew
-/// straight through the last row. Rows touching is ugly; a rule through a number is a broken page.
+/// THE PITCH `n` ROWS GET IN `space` PIXELS: their natural one, tightened to fit, and NEVER under the GLYPH
+/// height. A panel too short for its rows spills off the bottom, which is ugly, where a negative pitch stacks
+/// them backwards up through the heading, which is unreadable. The floor used to be `lineH`, which twelve
+/// rows cannot make fit in the half-panel a picker leaves them: they overran the foot and the divider drew
+/// straight through the last row.
 fn rowStep(space: i32, n: usize) i32 {
     const natural = hud.lineH(hud.SMALL) + 7;
     return mathx.clampI(@divTrunc(space, @as(i32, @intCast(n))), hud.SMALL + 1, natural);
@@ -1051,10 +1045,9 @@ fn drawTabs(self: *const Book, card: Box, v: View) void {
 }
 
 
-/// EVERYTHING UP FRONT (owner's call, and ER's own shape): the sockets are a single row of small squares,
-/// the list you choose from opens UNDER them, and the numbers hold the right-hand column whether a picker is
-/// open or not. They used to be the same column — choosing something took the readout off the page at exactly
-/// the moment you wanted to read it, which is the one thing that screen is for.
+/// EVERYTHING UP FRONT (owner's call, and ER's own shape): the sockets are a single row of small squares, the
+/// list you choose from opens UNDER them, and the numbers hold the right-hand column whether a picker is open
+/// or not. As one column, choosing something took the readout off the page at the moment you wanted it.
 fn drawEquipment(self: *const Book, body: Box, v: View) void {
     const cols = equipCols(body);
     const inner = panel(cols[0], "");
@@ -1179,8 +1172,7 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     }
     // THE FOOT GOES UNDER THE LAST ROW THAT WAS ACTUALLY DRAWN, not at a fixed drop from the panel's bottom.
     // `rowStep` FLOORS at one line height, so with a picker open the twelve rows can be taller than the space
-    // left for them and they run into the foot — which drew the divider straight through "Ammunition" and
-    // printed the blurb over the row above it.
+    // left for them — which drew the divider through "Ammunition" and printed the blurb over the row above.
     const footY = @max(inner.y + inner.h - foot + 22, y + 8);
     uiart.divider(inner.x + @divTrunc(inner.w, 2), @max(footY - 12, y + 2), @divTrunc(inner.w, 2) - 10, 120);
     _ = prose(says, inner.x, footY, inner.w, hud.HINT, uiart.TEXT_HINT);

@@ -190,8 +190,7 @@ pub const Session = struct {
     /// values and the author-dark rule does not apply.
     ///
     /// **IT IS SIZED TO WHAT IT HOLDS, and it grows UPWARD off a fixed bottom edge.** A panel pinned to a
-    /// fraction of the screen is half empty on a two-line exchange and cramped on a long one; laid out to the
-    /// rows it actually has, a short answer looks like a short answer.
+    /// fraction of the screen is half empty on a two-line exchange and cramped on a long one.
     pub fn draw(self: *const Session, m: *const wf.Map, rt: *const trigger.Runtime, w: trigger.World) void {
         if (!self.active()) return;
         const nd = self.nodeOf(m) orelse return;

@@ -1403,9 +1403,8 @@ pub const Spider = struct {
     }
 
 
-    /// SECONDS UNTIL HER FANGS LAND, counted back from the frame `tryReach` fires — which for the bite is the
-    /// FIRST frame of `.strike`, so the whole window lives in the windup and shuts at the snap by construction.
-    /// A caught bite is one that never reached him.
+    /// SECONDS UNTIL HER FANGS LAND, counted back from the frame `tryReach` fires — the FIRST frame of
+    /// `.strike`, so the whole window lives in the windup and shuts at the snap by construction.
     ///
     /// Null for everything that is not her bite, and none of those is an oversight:
     /// - THE SPIT IS NOT PARRYABLE. The boards refuse a BLOW; a glob of acid is a projectile and goes through
@@ -1436,10 +1435,8 @@ pub const Spider = struct {
     }
 
     /// THE BOARDS TAKE HER FANGS. `enter` is what kills the bite — it re-arms `heroLatch` and leaves `.strike`
-    /// unreached, so nothing lands.
-    ///
-    /// NO BLOOD AND NO CHIPS: nothing was wounded. What says it happened is the whole-body flash, her stumble,
-    /// and the amber off the shield itself (`hero.noteParry`) — sized against the CREATURE, and she is big.
+    /// unreached, so nothing lands. NO BLOOD AND NO CHIPS: nothing was wounded. What says it happened is the
+    /// whole-body flash, her stumble, and the amber off the shield itself — sized against the CREATURE.
     fn takeParry(self: *Spider) void {
         const reach = self.parryable() orelse return;
         if (!self.parry.catches(self.pos, reach)) return;

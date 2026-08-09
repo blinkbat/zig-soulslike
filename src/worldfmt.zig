@@ -22,11 +22,10 @@ pub const MAX_LOOT: usize = 8;
 pub const MAX_ZONES: usize = 16;
 pub const MAX_CLEARINGS: usize = 32;
 pub const MAX_FOES: usize = 256;
-/// THE BAND A SPAWN'S SCALE MULTIPLIER MAY SIT IN, and the editor's own stepper limits (the foe
-/// row of `editor.drawProperties`) — one set, because a hand-edited file is the only way past that stepper.
-/// A ZERO IS NOT COSMETIC: every humanoid feeds its gait `movedDist / scale` (the scale-corrected
-/// stride, without which a taller rig's foot skates), so 0 makes the stride phase inf, then NaN, and
-/// `hero.sampleCurve` casts that NaN to an index.
+/// THE BAND A SPAWN'S SCALE MULTIPLIER MAY SIT IN, and the editor's own stepper limits — one set, because a
+/// hand-edited file is the only way past that stepper. A ZERO IS NOT COSMETIC: every humanoid feeds its gait
+/// `movedDist / scale`, so 0 makes the stride phase inf, then NaN, and `hero.sampleCurve` casts that NaN to
+/// an index.
 pub const FOE_SCALE_LO: f32 = 0.5;
 pub const FOE_SCALE_HI: f32 = 2.0;
 pub const NAME_CAP: usize = 48;

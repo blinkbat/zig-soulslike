@@ -1269,11 +1269,10 @@ pub fn arrowMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// THE FIRE ARROW — the plain shaft with a pitch-soaked wad burning behind the head. Same gauge and
-// same fletching, because it is the same arrow. THE FLAME IS THE PROPS' FLAME (`.flame` — emissive,
-// translucent, guttering) AND ITS PALETTE, because a second kind of fire in the same world would read as
-// a different substance. Two things are its own: it streams BACKWARD down the flight axis instead of
-// climbing +Y, and it is authored off a fixed seed, so the wabi-sabi is baked in and every shaft matches.
+// THE FIRE ARROW — the plain shaft with a pitch-soaked wad burning behind the head. Same gauge and fletching,
+// because it is the same arrow. THE FLAME IS THE PROPS' FLAME (`.flame`) AND ITS PALETTE, because a second
+// kind of fire in the same world reads as a different substance. Two things are its own: it streams BACKWARD
+// down the flight axis instead of climbing +Y, and it is authored off a fixed seed, so every shaft matches.
 const FIRE_TONGUES = 7;
 pub fn fireArrowMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();

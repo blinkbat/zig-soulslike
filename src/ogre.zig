@@ -225,25 +225,14 @@ const SWIPE_OUTER = 1.95;
 const SWIPE_ARC_MID = -48.0; // deg (negative = his club side, his right)
 const SWIPE_ARC = 144.0; // deg of total sweep — ±72 about SWIPE_ARC_MID
 
-// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT — one number per move, IN SECONDS, measured back from
-// that move's own impact frame. A parry is a read of the blow ARRIVING, never of the tell starting, and this is
-// the only form that says so: the window ends where the club does by construction, so a caught blow is one that
-// never landed, and there is no way to widen it into the rear by accident.
+// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT — ONE NUMBER FOR BOTH MOVES (owner's call), IN
+// SECONDS, measured back from that move's own impact frame. A parry is a read of the blow ARRIVING, never of
+// the tell starting, and this is the only form that says so: the window ends where the club does by
+// construction, so a caught blow is one that never landed.
 //
-// WRITTEN AS TWO FRACTIONS OF TWO DIFFERENT STATE CLOCKS the total was emergent and nobody could read it — the
-// slam's came out at 0.29 s, a third of a second of free catch, most of it while the club was still overhead
-// and motionless. The number that matters is the one the player feels, so it is the one that is authored.
-//
-// ONE NUMBER FOR BOTH MOVES (owner's call): you parry an INSTANT BEFORE THE HIT — swipe or slam, it is the
-// blow you are reading and not the animation in front of it. These two are the game's formative parries, so
-// what they teach has to be one rule and not a per-move dial the player is expected to learn twice.
-//
-// …AND IT IS NOW THE WHOLE GAME'S NUMBER, not this file's (`foe.PARRY_LEAD`): the skeletal warriors and the
-// brood mother carry windows too, and three private copies of one difficulty dial is `stunCurve`'s story.
-//
-// At 0.11 s the slam's window falls entirely inside the DROP (its club meets the earth 0.187 s in), so the club
-// is visibly falling before anything can be caught; the swipe's reaches a few frames back into the cock, since
-// its own blow lands 0.084 s in. Both are the same instant in front of the same event.
+// WRITTEN AS TWO FRACTIONS OF TWO DIFFERENT STATE CLOCKS the total was emergent — the slam's came out at
+// 0.29 s, most of it while the club was still overhead and motionless. And it is the whole GAME's number now
+// (`foe.PARRY_LEAD`): three private copies of one difficulty dial is `stunCurve`'s story.
 const PARRY_LEAD = foe.PARRY_LEAD;
 
 const HUNCH = 9.0; // base forward stoop — stooped + weary, but still standing TALL (imposing)
@@ -339,9 +328,8 @@ fn classify(dist: f32, bearingDeg: f32, slamReady: bool, swipeReady: bool, drive
     const offFront = @abs(bearingDeg) > SWIPE_BEARING;
     // AND THE SWIPE HAS TO BE ABLE TO LAND. Its arc passes clean OUTSIDE anything hugging his legs, and
     // collision holds the hero at 1.68 m where the sweep only starts biting at 2.28 — so toe to toe, choosing
-    // it spent two thirds of a second on a guaranteed miss, every time the slam happened to be cooling. The
-    // pocket at his feet is something the player EARNS by getting inside; it is not somewhere to be swiped at.
-    // He looms instead (`.wait`), which is the same answer he already gives to a slam he cannot afford yet.
+    // it spent two thirds of a second on a guaranteed miss. The pocket at his feet is EARNED; he looms
+    // instead (`.wait`), the same answer he gives to a slam he cannot afford yet.
     const inSweep = dist >= swipeInner and dist <= SWIPE_R;
     if (inSweep and swipeReady and (offFront or !slamReady)) return .swipe;
     if (dist <= SLAM_R) return if (slamReady) .slam else .wait; // squared up in reach: crush it
@@ -468,10 +456,9 @@ pub const Ogre = struct {
     pub fn bodyR(self: *const Ogre) f32 {
         return BODY_R * self.scale;
     }
-    /// HIS MARK RIDES THE CHEST, NOT THE SKULL — the one creature where that is the right part. His crown
-    /// is 4.4 m up, and a reticle on it would have the camera craning at the sky through every exchange
-    /// (the same problem `hud.FOE_CEIL` exists for on the bar). The chest is where you are fighting him,
-    /// and it still HINGES: he folds at the waist through the slam, and the mark now folds with him.
+    /// HIS MARK RIDES THE CHEST, NOT THE SKULL — the one creature where that is the right part. His crown is
+    /// 4.4 m up, and a reticle on it would have the camera craning at the sky through every exchange. The chest
+    /// is where you are fighting him, and it still HINGES: he folds at the waist through the slam.
     pub fn lockPoint(self: *const Ogre) rl.Vector3 {
         return foe.markOn(self.xf[CHEST], LOCK_AT);
     }
@@ -617,10 +604,9 @@ pub const Ogre = struct {
                     }
                 }
                 if (self.t >= SWIPE_DUR) {
-                    // THE TAIL IS NEVER SAFE, ONLY USUALLY SAFE: still in the band, the club sometimes
-                    // comes straight back (`.backwind`). Rolled HERE, at the overswing, so the choice is
-                    // made where the club is — and only where the return could actually land (the
-                    // cannot-land law: out of the band there is no roll, there is a recovery).
+                    // THE TAIL IS NEVER SAFE, ONLY USUALLY SAFE: still in the band, the club sometimes comes
+                    // straight back (`.backwind`). Rolled HERE, at the overswing, so the choice is made where
+                    // the club is — and only where the return could actually land (the cannot-land law).
                     if (d >= self.swipeInner() and d <= self.swipeReach() and self.aiRng.float() < BACK_CHANCE) {
                         self.enter(.backwind);
                     } else {
@@ -876,11 +862,9 @@ pub const Ogre = struct {
     }
 
     /// THE INSTANT THE CLUB CAN BE CAUGHT IN, and how far out it reaches then — null when there is nothing to
-    /// catch. The window is the last `PARRY_LEAD` seconds of the blow's approach and nothing else: it shuts AT
-    /// the impact frame by construction, so a caught blow is one that never landed. The reach is the CRUSH
-    /// TEST'S OWN extent (`tryImpact`, `trySweep`) plus the hero's footprint, because that is where the club
-    /// actually arrives — and a DRIVE is still surging through its window, so the ground it will cover before
-    /// the impact frame is part of where the club arrives.
+    /// catch. The window is the last `PARRY_LEAD` seconds of the blow's approach and nothing else, so it shuts
+    /// AT the impact frame by construction. The reach is the CRUSH TEST'S OWN extent plus the hero's footprint
+    /// — and a DRIVE is still surging, so the ground it covers before impact is part of where the club arrives.
     fn parryable(self: *const Ogre) ?f32 {
         const left = self.toImpact() orelse return null;
         if (left < 0 or left > PARRY_LEAD) return null;
@@ -889,11 +873,9 @@ pub const Ogre = struct {
     }
 
     /// THE SHIELD TAKES THE CLUB. `enterStun` is what kills the swing — it drops any slam in progress, so
-    /// nothing lands and no crater opens.
-    ///
-    /// THE ATTACK ALWAYS DIES; THE HEAVY STUN IS EARNED (the owner's "may heavy stun them"). The boards deal
-    /// STANCE and nothing else (`combat.PARRY_HIT`), so whether a catch is a stumble or a punish window is the
-    /// same question the sword has been asking all fight — and this creature's 90 takes two of them.
+    /// nothing lands and no crater opens. THE ATTACK ALWAYS DIES; THE HEAVY STUN IS EARNED (owner's "may heavy
+    /// stun them"): the boards deal STANCE and nothing else, so whether a catch is a stumble or a punish window
+    /// is the same question the sword has been asking all fight — and this creature's 90 takes two of them.
     fn takeParry(self: *Ogre) void {
         const reach = self.parryable() orelse return;
         if (!self.parry.catches(self.pos, reach)) return;
@@ -1013,16 +995,11 @@ pub const Ogre = struct {
         self.jawOpen = mathx.approach(self.jawOpen, JAW_REST + JAW_BREATHE * breathe + 6.0 * sigh + JAW_STALK * stalk, e * 0.8);
         self.girdle = mathx.approach(self.girdle, GIRDLE_HEAVE * mathx.sinf(self.elapsed * BREATHE_RATE + self.seed * 6.28 - 0.7) - 2.0 * sigh, e);
     }
-    /// A STAGGERED BODY GIVES UP ITS POSTURE, and `mathx.approach` steps in the units of whatever it is moving —
-    /// so ONE rate cannot serve both an angle and a fraction. At the 4 the leg brace wants, an interrupted
+    /// A STAGGERED BODY GIVES UP ITS POSTURE, and `mathx.approach` steps in the units of whatever it is moving
+    /// — so ONE rate cannot serve both an angle and a fraction. At the 4 the leg brace wants, an interrupted
     /// windup crawled the club arm home from OVER_SH at FOUR DEGREES A SECOND: forty seconds to travel 163, so
-    /// a stunned ogre stood there with its club still overhead, and the next move — `setWindup`/`setSwipeWind`
-    /// both lerp FROM the carry — snapped the arm down on its first frame. The whole class of "buggy anim
-    /// depending on arm raise / heavy stun" was this one number.
-    ///
-    /// At `STUN_EASE_DEG` the arm is home in ~0.6 s, inside even the LIGHT stun, so every move that assumes it
-    /// starts from the carry actually does. That IS the reset — through the ease the animation already has,
-    /// rather than a snap on the frame the stagger lands.
+    /// a stunned ogre stood with its club overhead and the next move snapped the arm down on frame one. At
+    /// `STUN_EASE_DEG` it is home in ~0.6 s, inside even the LIGHT stun — that IS the reset.
     fn easeChannelsNeutral(self: *Ogre, dt: f32) void {
         const d = dt * STUN_EASE_DEG;
         self.clubShoulder = mathx.approach(self.clubShoulder, CARRY_SH, d);
@@ -1107,12 +1084,10 @@ pub const Ogre = struct {
         self.girdle = lerpF(9.0, -2.0, kW);
     }
     // THE RETURN'S RE-COCK — from the OVERSWING, not the carry: the swipe ends slung across him (twist 52,
-    // sweep 52, kW = 1 exactly), and these lerps start from those numbers so the chain is continuous by
-    // construction. The club gathers a hand higher and re-rakes; the whole thing reads as "not done yet".
-    // The RE-COCK is a DRAG, not a lift: the overswing dies further round and the club head drops toward
-    // the dirt (this rig is low at his left, high at his right — measured), so the return leaves from
-    // under the band and cuts a RISING diagonal back across it. A re-shouldered gather left the whole
-    // return over the hero's head, which is a blow the sector could not honestly bill.
+    // sweep 52, kW = 1 exactly), so these lerps start from those numbers and the chain is continuous by
+    // construction. The RE-COCK is a DRAG, not a lift: the club head drops toward the dirt (this rig is low at
+    // his left, high at his right — measured), so the return cuts a RISING diagonal back across the band. A
+    // re-shouldered gather left the whole return over the hero's head, a blow the sector could not bill.
     fn setBackwind(self: *Ogre, k: f32) void {
         self.twist = lerpF(52.0, 52.0, k);
         self.clubShoulder = lerpF(-6.0, -6.0, k);
@@ -1720,9 +1695,8 @@ fn jawMesh() rl.Mesh {
     b.addBlob(v3(0, -0.026 * H, 0.050 * H), v3(0.052 * H, 0.013 * H, 0.050 * H), 7, 12, TONGUE); // the slack tongue
     b.setMat(.stone);
     // THE TUSKS ARE THE OTHER HALF OF THE SILHOUETTE — boar-swept, out past the lip and UP toward the brow
-    // line, in two segments so they CURVE (one capsule to a tip is a spear — the dead-limb law). The left
-    // one carries the full rise and hooks in at the top; the right SNAPPED mid-rise years ago and shows the
-    // darker core at the break. They ride the JAW, so the roar bares them and the grit sets them.
+    // line, in two segments so they CURVE (one capsule to a tip is a spear). The left one carries the full
+    // rise; the right SNAPPED mid-rise and shows the darker core. They ride the JAW, so the roar bares them.
     b.addCapsule(v3(0.050 * H, -0.030 * H, 0.106 * H), v3(0.078 * H, 0.036 * H, 0.126 * H), 0.024 * H, 0.015 * H, 9, TUSK);
     b.addCapsule(v3(0.078 * H, 0.036 * H, 0.126 * H), v3(0.074 * H, 0.096 * H, 0.116 * H), 0.015 * H, 0.008 * H, 8, TUSK);
     b.addCapsule(v3(-0.054 * H, -0.034 * H, 0.104 * H), v3(-0.082 * H, 0.028 * H, 0.122 * H), 0.026 * H, 0.014 * H, 9, TUSK_DK);
@@ -2178,9 +2152,8 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT — the same instant for both move
 
     var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     // MEASURED off the state machine rather than asserted about the constants: walk each move frame by frame
-    // from its first and collect the span that is actually parryable, plus where the blow actually lands.
-    // The slam runs with a HELD tell on purpose — the hold stretches the rear, and the window must not move
-    // with it, because what is parried is the drop and the drop is the same drop however long the club hung.
+    // from its first and collect the span that is actually parryable. The slam runs with a HELD tell on
+    // purpose — the hold stretches the rear, and the window must not move with it: what is parried is the drop.
     const HOLD = 0.4;
     for ([_]struct { wind: State, swing: State, windDur: f32, impact: f32 }{
         .{ .wind = .windup, .swing = .slam, .windDur = WINDUP_DUR + HOLD, .impact = SLAM_DUR * SLAM_IMPACT_K },

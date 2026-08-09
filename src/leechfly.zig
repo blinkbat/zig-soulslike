@@ -21,10 +21,9 @@ const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 
 // THE PALETTE. A BIG SMOOTH MASS NEEDS A NEARLY-BLACK ALBEDO (AGENTS.md) and this thing is four smooth
-// masses, so the separation is HUE — a cold blue-black chitin against a warm blood-brown abdomen — with the
-// value contrast spent only where the area is small: the wing membrane and the eyes.
+// masses, so the separation is HUE — cold blue-black chitin against a warm blood-brown abdomen.
 const CHITIN = rgba(21, 20, 26, 255); // thorax and head: blue-black, the shell
-const CHITIN_LT = rgba(38, 36, 46, 255); // …and a ridge of it catching the sun
+const CHITIN_LT = rgba(38, 36, 46, 255);
 const CHITIN_DK = rgba(9, 9, 12, 255);
 /// THE ABDOMEN IS WARM, and it is the one place on the creature that says what it lives on. Empty it is
 /// nearly as dark as the shell; `gorge` lerps it toward the full tone as it drinks.
@@ -48,11 +47,8 @@ const BLOOD = rgba(126, 20, 18, 235);
 const CHIP = rgba(74, 70, 86, 235);
 const DUST = foe.DUST;
 
-/// ITS OWN STATURE — nose to tail, and NOT the shared humanoid scaffold: it has no legs to walk on, so
-/// `hero.legChain` has nothing to solve and `advanceGait` nothing to phase.
-///
-/// SIZED AGAINST A TOAD, then grown (owner: "about as large as the frogs", later "a bit bigger"): 1.3 m of
-/// body with a wingspan half again as wide — a mosquito you could not swat.
+/// ITS OWN STATURE — nose to tail, and NOT the shared humanoid scaffold: it has no legs to walk on. SIZED
+/// AGAINST A TOAD, then grown (owner): 1.3 m of body with a wingspan half again as wide.
 pub const H: f32 = 1.3;
 
 /// WHERE IT FLIES. `pos.y` is the ground under it (the one law every creature obeys) and `hover` is what it
@@ -60,8 +56,7 @@ pub const H: f32 = 1.3;
 const HOVER_LOW: f32 = 1.18; // the attack height: its beak at the hero's chest
 const HOVER_IDLE: f32 = 1.75; // …and where it loiters when nothing has annoyed it
 /// **OUT OF YOUR RANGE** (owner's whole point). The hero's blade sweeps a capsule off his own shoulder and
-/// cannot reach a body four and a half metres up — but an ARROW can, and so can a bolt. That is the trade the
-/// creature is built on: it takes the sword off the table and hands you the bow.
+/// cannot reach a body four and a half metres up — but an ARROW can, and so can a bolt. That is the trade.
 const HOVER_HIGH: f32 = 4.6;
 const CLIMB_RATE: f32 = 8.5; // it ZOOMS — up out of a swing in a third of a second
 const DIVE_RATE: f32 = 7.0;
@@ -142,11 +137,9 @@ const BANK_MAX: f32 = 26.0; // how far it rolls into a turn
 const PITCH_MAX: f32 = 22.0; // …and noses down into a dive
 const BOB_AMP: f32 = 0.035 * H; // the hover's own unsteadiness
 const BOB_HZ: f32 = 3.1;
-/// THE WHINE COMES AND GOES (owner: it was too constant). raylib cannot loop a synthesized take, so a
-/// continuous note is a short voice retriggered — but a fly retriggered forever is a drill you cannot get
-/// away from. What a real one does is arrive, whine for a moment and be gone again, and **the SILENCES are
-/// what make the next one land**: a phrase is a run of overlapping takes, and between phrases it says
-/// nothing at all. Hushes are longer than phrases on purpose — most of the time you should not hear it.
+/// THE WHINE COMES AND GOES (owner: it was too constant). raylib cannot loop a synthesized take, so a note
+/// is a short voice retriggered — but retriggered forever it is a drill. A phrase is a run of overlapping
+/// takes, and between phrases it says nothing; hushes outlast phrases, so mostly you should not hear it.
 const WHINE_EVERY: f32 = 0.26; // the retrigger INSIDE a phrase, under the take's own 0.32 so they overlap
 const PHRASE_MIN: f32 = 0.30;
 const PHRASE_MAX: f32 = 0.95;
@@ -168,8 +161,7 @@ const WINGL = 7;
 const WINGR = 8;
 const LEG_0 = 9;
 /// SIX LEGS, three a side, one bone each. The KINK is authored into the mesh rather than given a second
-/// joint apiece: what a leg needs from the pose is a dangle and a curl, and twelve bones to buy that is
-/// twelve bones of rig for something you see as a silhouette under a wingbeat.
+/// joint apiece: what a leg needs from the pose is a dangle and a curl, not twelve bones of rig.
 const LEG_N = 6;
 
 const SH_HALF: f32 = 0.085 * H; // where a wing roots, off the thorax's midline
@@ -223,12 +215,9 @@ fn classify(dist: f32, feedReady: bool) Choice {
 }
 
 /// THE CLIMB'S OWN GATE, `shade.wantsBlink`'s shape and for its reasons. `spooked` is what a landed blow
-/// leaves behind: it does not zoom out of the stagger itself — that would erase the punish window the flinch
-/// exists to open — it goes the moment the flinch lets go, which reads as the thing having had enough.
-///
-/// AND THE ROOTS REFUSE IT OUTRIGHT (`foe.canLeap`). A climb does not TRAVEL, it leaves the earth, so it is
-/// gated where the move is CHOSEN like every other leap in the game. Rooted, the one thing that keeps it
-/// alive is off the table and the sword finally gets to answer it.
+/// leaves behind: it does not zoom out of the stagger itself — that would erase the punish window — it goes
+/// the moment the flinch lets go. AND THE ROOTS REFUSE IT OUTRIGHT (`foe.canLeap`): a climb leaves the
+/// earth, so it is gated where the move is CHOSEN, and rooted the sword finally gets to answer it.
 fn wantsClimb(dist: f32, cd: f32, spooked: bool, s: State, rooted: bool) bool {
     if (cd > 0 or rooted) return false;
     if (!spooked and dist > THREAT_R) return false;
@@ -346,9 +335,8 @@ pub const Leechfly = struct {
     pub fn centerWorld(self: *const Leechfly) rl.Vector3 {
         return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, self.lift());
     }
-    /// THE MARK RIDES THE HEAD, and this creature is why the rule earns its keep twice over: it bobs on its
-    /// own wingbeat AND the whole body climbs four metres in a third of a second. A height off the ground
-    /// would hold the reticle in the grass while the thing it names went over the treeline.
+    /// THE MARK RIDES THE HEAD, and this creature is why the rule earns its keep twice: it bobs on its own
+    /// wingbeat AND climbs four metres in a third of a second. A height off the ground would hold the reticle in the grass while the thing it names went over the treeline.
     pub fn lockPoint(self: *const Leechfly) rl.Vector3 {
         return foe.markOn(self.xf[HEAD], LOCK_AT);
     }
@@ -370,9 +358,8 @@ pub const Leechfly = struct {
     pub fn staggered(self: *const Leechfly) bool {
         return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
     }
-    /// IT IS ALWAYS AIRBORNE, and that is not a special case here — it is the creature. Which exempts it from
-    /// the terrain gate (a fly does not walk up slopes) and from being shouldered by anything on the ground.
-    /// It is NOT exempt from `env.resolveActor`: fly through a wall and there is nowhere to come back from.
+    /// IT IS ALWAYS AIRBORNE, which exempts it from the terrain gate and from being shouldered by anything on
+    /// the ground. NOT exempt from `env.resolveActor`: fly through a wall and there is nowhere to come back from.
     pub fn airborne(self: *const Leechfly) bool {
         return !self.gone;
     }
@@ -466,9 +453,8 @@ pub const Leechfly = struct {
                     // had to shake, so it closes any gap he opens without leaving its own reach.
                     self.faceToward(hero, dt);
                     self.clingTo(hero, dt, bounds);
-                    // THE PULL, on its own slow cadence under the wingbeat. Off a CROSSING of the state's
-                    // own clock (the ogre's footfall idiom) rather than a field: one clock, no second thing
-                    // to reset when the hold breaks early.
+                    // THE PULL, on its own slow cadence under the wingbeat. Off a CROSSING of the state's own
+                    // clock (the ogre's footfall idiom) rather than a field, so nothing needs resetting.
                     if (@floor(self.t / DRINK_EVERY) != @floor((self.t - dt) / DRINK_EVERY)) {
                         sfx.world(.leech_drink, self.beakWorld());
                     }
@@ -541,12 +527,9 @@ pub const Leechfly = struct {
     }
 
     /// THIS FRAME'S SWALLOW, and the creature takes its share of it here. Billed per SECOND and scaled by
-    /// `dt`, which is the only honest way to write a hold's damage — a per-frame constant is a different
-    /// number on every machine.
-    ///
-    /// IT HEALS OFF WHAT IT BILLS, not off what the hero actually lost. Nothing grants the hero resistances
-    /// yet (AGENTS.md) so the two are the same figure today; the day armour or a ward lands, this is the line
-    /// that has to start asking.
+    /// `dt`, which is the only honest way to write a hold's damage.
+    /// IT HEALS OFF WHAT IT BILLS, not off what the hero actually lost — the same figure today, since nothing
+    /// grants the hero resistances yet, but this is the line that has to start asking the day one does.
     fn sip(self: *Leechfly, dt: f32) combat.Hit {
         const h = combat.Hit{ .dmg = DRINK_DPS * dt };
         _ = self.vit.heal(h.dmg * LEECH_SHARE);
@@ -570,9 +553,8 @@ pub const Leechfly = struct {
         return @abs(mathx.degrees(mathx.wrapPi(mathx.headingXZ(to) - self.facing))) <= FEED_ARC;
     }
 
-    /// WALK THE HOVER toward what the state asked for. Up is faster than down (it is fleeing when it climbs
-    /// and merely arriving when it drops), and the last of either is EASED — a linear arrival at a height
-    /// reads as a lift stopping at a floor, which is the one thing a fly does not do.
+    /// WALK THE HOVER toward what the state asked for. Up is faster than down, and the last of either is
+    /// EASED — a linear arrival at a height reads as a lift stopping at a floor.
     fn flyTo(self: *Leechfly, dt: f32) void {
         const gap = self.hoverTo - self.hover;
         const rate = if (gap > 0) CLIMB_RATE else DIVE_RATE;
@@ -609,8 +591,7 @@ pub const Leechfly = struct {
         const moving = self.state == .stalk or self.state == .dive or self.state == .climb;
         self.wingPhase += dt * (if (moving) WING_HZ_FLY else WING_HZ_HOVER);
         // …AND THE NOTE IS PHRASED, not held. `whineT` doubles as both clocks: inside a phrase it is the
-        // retrigger, and at the end of one it is simply set to the whole HUSH — so the silence needs no
-        // second field and there is nothing to get out of step with.
+        // retrigger, at the end of one it is set to the whole HUSH — so the silence needs no second field.
         self.whineT -= dt;
         if (self.whineT > 0) return;
         if (self.phraseLeft > 0) {
@@ -693,13 +674,11 @@ pub const Leechfly = struct {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
 
-    /// FORCE THE FEED for the shot harness, and put it at ATTACK HEIGHT to do it: a fresh one is loitering at
-    /// `HOVER_IDLE` and `flyTo` would still be walking it down when the frame is captured, so a photograph of
-    /// the beak going in would be one of it going in half a metre over his head.
+    /// FORCE THE FEED for the shot harness, at ATTACK HEIGHT: a fresh one loiters at `HOVER_IDLE`, so a
+    /// photograph of the beak going in would be one of it going in half a metre over his head.
+    /// `runFor` is how long the caller means to step it. The wind and the drink are entered DIRECTLY, because
+    /// the chain only fires with a hero under the beak and the harness's hero is a position, not a body.
     ///
-    /// `runFor` is how long the caller means to step it: the wind is entered directly and the drink is
-    /// entered directly, because `.wind → .stab → .drink` only chains when a hero is actually under the beak
-    /// and the harness's hero is a position, not a body the strike can test.
     pub fn debugFeedFrom(self: *Leechfly, runFor: f32) void {
         self.hover = HOVER_LOW;
         self.hoverTo = HOVER_LOW;
@@ -818,12 +797,10 @@ pub const Leechfly = struct {
         );
         self.xf[ROOT] = mul(place(REST[ROOT]), root);
 
-        // THE ABDOMEN DROOPS AND SWINGS. It is the heaviest thing on the creature and it hangs off a hinge:
-        // it lags the pitch rather than following it, which is what gives the body its weight, and it lifts
-        // as the belly fills because a full one is carried, not dragged.
-        // NEGATIVE IS DOWN here: at +26 it stood up off the thorax like a wasp's gaster, which is a hornet's
-        // silhouette and not a mosquito's. It hangs a little BELOW the line of the body and lifts as the
-        // belly fills, because a full one is carried and an empty one is dragged.
+        // THE ABDOMEN DROOPS AND SWINGS. It is the heaviest thing on the creature and hangs off a hinge: it
+        // lags the pitch rather than following it, and lifts as the belly fills — a full one is carried.
+        // NEGATIVE IS DOWN here: at +26 it stood off the thorax like a wasp's gaster, which is a hornet's
+        // silhouette and not a mosquito's.
         const droop = -(15.0 - 11.0 * self.gorge) + self.pitch * 0.45;
         const swing = mathx.sinf((self.elapsed * 1.7 + self.seed) * std.math.tau) * 4.0;
         self.xf[ABDO] = mul(mul(rx(droop), place(REST[ABDO])), self.xf[ROOT]);
@@ -850,9 +827,8 @@ pub const Leechfly = struct {
             self.xf[b] = mul(mul3(ry(twist), rz(flap), place(REST[b])), self.xf[ROOT]);
         }
 
-        // THE LEGS DANGLE, and they dangle UNEVENLY — six identical trailing wires is a rake. Each pair
-        // swings on its own phase off the wingbeat, and the front pair reaches forward while the back pair
-        // trails, which is how an insect carries them in the air.
+        // THE LEGS DANGLE, and UNEVENLY — six identical trailing wires is a rake. Each pair swings on its own
+        // phase off the wingbeat, and the front pair reaches forward while the back pair trails.
         for (0..LEG_N) |i| {
             const pair = legPair(i);
             const side = legSide(i);
@@ -893,8 +869,7 @@ fn buildMeshes() [N]rl.Mesh {
 }
 
 /// THE THORAX — a humped barrel, taller than it is wide, with the wing roots standing proud of it. Seeded
-/// wonk on every lump: at the right scale, BETWEEN the instances is where variation belongs, but a single
-/// mesh still wants its own asymmetry or it reads as a lathe part.
+/// wonk on every lump: a single mesh still wants its own asymmetry, or it reads as a lathe part.
 fn thoraxMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x1EEC4);
@@ -921,8 +896,7 @@ fn abdomenMesh(seg: usize) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5AC0 + @as(u64, seg));
     // LONG AND SLENDER, not a sausage. At 0.070 radius over 0.27 of stature the first segment was as thick
-    // as it was long and the creature read as a bee: a mosquito's abdomen is most of its length and none of
-    // its girth, and it is the taper down it that says which insect this is.
+    // as it was long and the creature read as a bee — the taper is what says which insect this is.
     const fat: f32 = if (seg == 0) 1.0 else 0.72;
     const len: f32 = if (seg == 0) 0.175 else 0.165;
     b.addCapsule(
@@ -1009,12 +983,10 @@ fn wingMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     const span = 0.52 * H;
     const SEG = 10;
-    // THE MEMBRANE IS ONE STRIP, and it has to be: built as a row of `addBox` slabs it was a STAIRCASE —
-    // each block's own end walls standing proud of its neighbour's, which at a wing's thickness is all you
-    // see of it. A shared edge between consecutive quads is the only way a swept outline comes out smooth.
+    // THE MEMBRANE IS ONE STRIP, and it has to be: built as a row of `addBox` slabs it was a STAIRCASE, each
+    // block's end walls standing proud of its neighbour's. Drawn BOTH WAYS ROUND, since Builder winding is
+    // unchecked, face-down geometry is culled, and a wing presents its underside half of every beat.
     //
-    // Drawn BOTH WAYS ROUND. Builder winding is not checked and face-down geometry is culled (AGENTS.md), and
-    // a wing spends half of every beat presenting its underside.
     var prevF = v3(0, 0, 0); // leading edge
     var prevB = v3(0, 0, 0); // …and trailing
     var i: u32 = 0;
@@ -1104,9 +1076,8 @@ pub const Swarm = struct {
         for (self.liveConst()) |*f| f.drawFx();
     }
 
-    /// `sip` takes THIS FRAME'S swallow, which is a hold and not a blow — it goes to `hero.burn`, where the
-    /// stab goes back as a `foe.Blow` like every other creature's blow. Two channels because they are two
-    /// different things (AGENTS.md: A DRIP IS NOT A BLOW), and the shield answers only one of them.
+    /// `sip` takes THIS FRAME'S swallow, a hold and not a blow — it goes to `hero.burn`, where the stab goes
+    /// back as a `foe.Blow`. Two channels because they are two things, and the shield answers only one.
     pub fn update(
         self: *Swarm,
         dt: f32,
@@ -1157,9 +1128,8 @@ test "IT CLIMBS OUT OF SWORD REACH AND NOT OUT OF THE WORLD" {
     f.hover = HOVER_LOW;
     const low = f.centerWorld().y;
     f.hover = HOVER_HIGH;
-    // THE HURT SPHERE WENT WITH IT — the whole point, and the thing a height stored anywhere but on the
-    // accessors would quietly not do: the blade tests `centerWorld`, so if that stayed put the climb would
-    // be a cosmetic hop with the creature still swingable at.
+    // THE HURT SPHERE WENT WITH IT — the thing a height stored anywhere but on the accessors would quietly
+    // not do: the blade tests `centerWorld`, so a climb would be a cosmetic hop still swingable at.
     try std.testing.expect(f.centerWorld().y > low + 3.0);
     // …and it is above the arc of a blade swung off a 1.8 m man's shoulder.
     try std.testing.expect(f.centerWorld().y - f.hurtRadius() > 2.6);

@@ -67,9 +67,8 @@ const HP_MAX: f32 = 46.0;
 const POISE_MAX: f32 = 11.0; // a clean light hit flinches it out of anything
 const STANCE_MAX: f32 = 26.0;
 /// WHAT THE WAND IS FOR. Chaos is the most-resisted column in the game and the shade is the one thing that
-/// is WEAK to it, which is the trade the whole creature is built on: the bolt is the answer to a haunting,
-/// and the haunting's own touch is what takes the focus to cast it with. Fire is no use — there is nothing
-/// there to burn — and cold is what it already is.
+/// is WEAK to it: the bolt is the answer to a haunting, and the haunting's own touch takes the focus to
+/// cast it with. Fire is no use — there is nothing there to burn — and cold is what it already is.
 const RESISTS = combat.resists(.{ .fire = 30, .cold = 65, .chaos = -45 });
 pub const RUNES: u32 = 110;
 
@@ -307,8 +306,7 @@ pub const Shade = struct {
         return s;
     }
 
-    // EVERY WORLD POINT IS MEASURED OFF `pos.y` PLUS THE HOVER — `pos.y` is the ground under it and the
-    // hover is how far it floats above that, so a shade over a bank keeps its bar over its own head.
+    // EVERY WORLD POINT IS MEASURED OFF `pos.y` PLUS THE HOVER, so a shade over a bank keeps its own head.
     /// What it is holding itself off the ground by — the `lift` every other creature passes a hop or a leap
     /// as, which for this one is simply always there.
     fn hover(self: *const Shade) f32 {
@@ -317,10 +315,9 @@ pub const Shade = struct {
     pub fn centerWorld(self: *const Shade) rl.Vector3 {
         return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, self.hover());
     }
-    /// THE MARK RIDES THE COWL — and this creature is why the rule is worth having twice over: it BOBS on
-    /// its hover the whole time it is alive, and it THINS to nothing through a blink. A height off the
-    /// ground held the reticle dead still over something visibly moving, and left it hanging in empty air
-    /// for the two frames the body was not there.
+    /// THE MARK RIDES THE COWL — and this creature is why the rule is worth having twice over: it BOBS on its
+    /// hover the whole time it is alive, and it THINS to nothing through a blink. A height off the ground held
+    /// the reticle dead still over something visibly moving, and in empty air while the body was not there.
     pub fn lockPoint(self: *const Shade) rl.Vector3 {
         return foe.markOn(self.xf[COWL], LOCK_AT);
     }
@@ -386,9 +383,8 @@ pub const Shade = struct {
 
         var act: Act = .none;
         // WHERE THE WISP LEAVES FROM IS READ AFTER THE POSE, not at the release: `reach` snaps from the wind's
-        // 0.30 to 1.0 on this exact frame, which swings the shoulder through 94 degrees and lengthens the whole
-        // limb — so `wispWorld()` taken here answers with the hands still furled at the chest, a metre behind
-        // where the frame that draws it shows them.
+        // 0.30 to 1.0 on this exact frame, swinging the shoulder through 94 degrees — so `wispWorld()` taken
+        // here answers with the hands still furled at the chest, a metre behind where the frame shows them.
         var hurling = false;
         const was = self.pos;
         const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
@@ -484,10 +480,9 @@ pub const Shade = struct {
                 self.easeRest(dt);
                 if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enter(.idle);
             },
-            // THE ONE BODY THAT DOES NOT DISSIPATE (`foe.dissipate`, which every other creature's death runs
-            // through). It has no collapse to be still after and nothing to shed: it does not fall over, it
-            // comes APART — `thin` from the first frame, and motes off a thing made of nothing is a substance
-            // it never had.
+            // THE ONE BODY THAT DOES NOT DISSIPATE (`foe.dissipate`, which every other death runs through). It
+            // has no collapse to be still after and nothing to shed: it does not fall over, it comes APART —
+            // `thin` from the first frame, and motes off a thing made of nothing is a substance it never had.
             .dead => {
                 self.reach = mathx.approach(self.reach, -0.2, dt * 2.0);
                 self.thin = mathx.smoothstep(0, DEATH_DUR + DISS_DUR, self.t);
@@ -929,14 +924,10 @@ fn emptyMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// THE SHROUD — ONE MASS, and everything about how it is built is in service of that. Eleven rings, each
-/// twice as tall as the gap to the next, so they fuse instead of stacking; the profile is a smooth taper
-/// with a waist in it, because a straight cone is a traffic bollard and a stepped one is a stack of tyres.
-///
-/// AND IT IS ALL ONE TONE. Alternating the three shroud values ring by ring banded it like a barber's pole
-/// and the thing came back reading as segmented plate armour — the exact failure the wabi-sabi law names.
-/// The two other values live on the FOLDS, which are small and vertical, and the variation that separates
-/// one shade from the next is carried entirely in the POSE.
+/// THE SHROUD — ONE MASS, and everything about how it is built serves that. Eleven rings, each twice as tall
+/// as the gap to the next so they fuse instead of stacking, on a smooth taper with a waist: a straight cone
+/// is a traffic bollard and a stepped one is a stack of tyres. AND IT IS ALL ONE TONE — alternating the three
+/// shroud values ring by ring banded it like a barber's pole. The other two live on the FOLDS.
 /// The shroud's profile: four stations, each a height in stature and the half-width there. Broad at the
 /// shoulders, NIPPED at the waist, flaring under it — the three moves that separate a robed figure from a
 /// tapered tube. Written down once and read by the meshing, the folds and the hem's overhang alike.
@@ -1096,13 +1087,10 @@ fn handMesh(side: f32, seed: u64) rl.Mesh {
 }
 
 /// ONE HEM TATTER, and it is a PANEL OF CLOTH, not a rod. Eight rods hanging off a waist are eight legs
-/// however thin they are drawn — what makes a hem is a curtain, so each of these is wide in the tangential
-/// direction (`ang` is where it hangs on the ring) and a couple of millimetres through. At this width the
-/// eight OVERLAP at the top and only part company toward the bottom, which is what reads as torn cloth.
-/// `addBox` rather than a capsule: cloth is one of the things the round-mass law explicitly exempts.
-///
-/// ONE curl, drawn once and applied every segment (the law — re-rolled per segment it wanders into a chain
-/// of elbows), and the end of it is a blunt fray rather than a point.
+/// however thin — what makes a hem is a curtain, so each is wide tangentially and millimetres through. At
+/// this width the eight OVERLAP at the top and part company toward the bottom, which reads as torn cloth.
+/// `addBox` rather than a capsule: cloth is one of the things the round-mass law exempts. ONE curl, drawn
+/// once and applied every segment, ending in a blunt fray rather than a point.
 fn tatterMesh(len: f32, ang: f32, seed: u64) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
@@ -1138,11 +1126,10 @@ fn tatterMesh(len: f32, ang: f32, seed: u64) rl.Mesh {
     return b.toMesh();
 }
 
-/// THE WISP IN FLIGHT — drawn along +Z, because that is the axis `archer.arrowXform` puts down the line of
-/// travel. STRETCHED along it so a shot crossing the frame reads as a streak and not a pebble; the vertex
-/// alpha is the emissive channel, which is what lets a nearly-black creature throw something you can see.
-/// Two shells, and the outer one is the DARKER: this is the one projectile in the game that eats light
-/// rather than giving it off, and a hot core inside a cold husk is the only way to draw that.
+/// THE WISP IN FLIGHT — drawn along +Z, the axis `archer.arrowXform` puts down the line of travel, and
+/// STRETCHED along it so a shot crossing the frame reads as a streak. The vertex alpha is the emissive
+/// channel. Two shells, and the outer one is the DARKER: this projectile eats light rather than giving it
+/// off, and a hot core inside a cold husk is the only way to draw that.
 pub fn wispMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     b.setMat(.plain);

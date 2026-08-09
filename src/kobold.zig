@@ -185,9 +185,8 @@ const SHOVE_DECAY = 8.0;
 
 const ZERK_SWINGS_LO: u32 = 3;
 const ZERK_SWINGS_HI: u32 = 5;
-/// One chop. `CHOP_DUR * CHOP_HIT_A` is the raise you get to see, and it must clear `foe.TELL_MIN`: the flurry
-/// stays fast, so the read comes from the SWING rather than a tell in front of it. It was 0.42 × 0.34 = 0.14 s,
-/// eight frames from nothing to hurt, three to five times in a row.
+/// One chop. `CHOP_DUR * CHOP_HIT_A` is the raise you get to see, and it must clear `foe.TELL_MIN`: the
+/// flurry stays fast, so the read comes from the SWING rather than a tell in front of it.
 /// Pub for the SHOT HARNESS alone, which aims its two chop beats off these rather than literal frame counts.
 pub const CHOP_DUR = 0.58;
 pub const CHOP_HIT_A = 0.53;
@@ -418,10 +417,9 @@ pub const Kobold = struct {
     pub fn centerWorld(self: *const Kobold) rl.Vector3 {
         return foe.bodyPoint(self.pos, 0.80 * H, self.scale, 0);
     }
-    /// THE MARK RIDES THE SKULL, and this is the creature it matters most on: a kobold is HUNCHED, so its
-    /// head sits well below the 0.885·H the shared rest puts the joint at, and the flat 0.78·H this used
-    /// to be was a guess at where the hunch happens to leave it. It also ducks, lunges and whips its head
-    /// through a flurry — every one of which the old mark sat still through.
+    /// THE MARK RIDES THE SKULL, and this is the creature it matters most on: a kobold is HUNCHED, so its head
+    /// sits well below the 0.885·H the shared rest puts the joint at, and the flat 0.78·H this used to be was a
+    /// guess. It also ducks, lunges and whips its head through a flurry, all of which the old mark sat still for.
     pub fn lockPoint(self: *const Kobold) rl.Vector3 {
         return foe.markOn(self.xf[SKULL], LOCK_AT);
     }
@@ -708,10 +706,9 @@ pub const Kobold = struct {
         );
     }
 
-    /// THE WHIRL IS THE TELL, AND FIRE IS WHAT MAKES IT ONE: a lit clump going round overhead sheds
-    /// embers the whole time it is winding up, so the read arrives before the throw does. They drop
-    /// (real gravity, unlike the priest's motes, which float up into his staff) and they are thrown OFF
-    /// the circle — tangentially, at the speed the pouch is actually travelling.
+    /// THE WHIRL IS THE TELL, AND FIRE IS WHAT MAKES IT ONE: a lit clump going round overhead sheds embers the
+    /// whole time it is winding up, so the read arrives before the throw does. They DROP (real gravity, unlike
+    /// the priest's motes) and are thrown OFF the circle — tangentially, at the speed the pouch is travelling.
     fn emitWhirlEmbers(self: *Kobold, dt: f32) void {
         // Both hoisted out of the loop: they are the same for either ember, and `slingPoint` is a matrix transform.
         const at = self.slingPoint();
@@ -862,10 +859,9 @@ pub const Kobold = struct {
         self.justDied = true;
     }
 
-    /// THE IDLE'S CLOCKS (the wanderer's law): breath, its lagged echo one joint down, and a slow weight
-    /// rock — every RATE and PHASE dealt off the seed, at rates that never line up. One breathing bob is
-    /// a mannequin with a pulse, and three identical mannequins PHASE-LOCKED is exactly what a warband
-    /// standing at its post read as. All three go to zero on the move and through the collapse.
+    /// THE IDLE'S CLOCKS (the wanderer's law): breath, its lagged echo one joint down, and a slow weight rock —
+    /// every RATE and PHASE dealt off the seed, at rates that never line up. Three identical mannequins
+    /// PHASE-LOCKED is what a warband at its post read as. All three go to zero on the move and the collapse.
     fn idleSway(self: *const Kobold, m: f32, dk: f32) struct { br: f32, brLag: f32, rock: f32, deal: f32 } {
         const s1 = 0.5 + 0.5 * mathx.sinf(self.seed * 12.98);
         const s2 = 0.5 + 0.5 * mathx.sinf(self.seed * 78.23);
@@ -1613,10 +1609,9 @@ fn slingMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// The sling's BURNING CLUMP, as a projectile mesh — game.zig draws it where an arrow would go. The core
-/// is a charred lump and the fire is `propart`'s own (see `archer.fireArrowMesh` for why it is shared and
-/// why it is tongues); unlike the arrow's, this flame has no flight axis to stream down — a slung lump
-/// tumbles — so the tongues go out in every direction from the middle of it.
+/// The sling's BURNING CLUMP, as a projectile mesh. The core is a charred lump and the fire is `propart`'s own
+/// (see `archer.fireArrowMesh`), because a second kind of fire in one world reads as a different substance.
+/// Unlike the arrow's, this flame has no flight axis to stream down — a slung lump tumbles.
 const CLUMP_TONGUES = 8;
 pub fn clumpMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
@@ -1766,11 +1761,9 @@ pub const Warband = struct {
     pub fn aliveCount(self: *const Warband) u32 {
         return foe.aliveCount(self.liveConst());
     }
-    /// A CLUMP BURST HERE — the band's answer to `brood.splash`, and for the brood's reason: the thing
-    /// that landed belongs to the group, not to the arrow pool that flew it. The embers go in the pool of
-    /// whichever member is NEAREST the impact, because a pool is only drawn while its owner is (a dead
-    /// slinger's last clump would otherwise land silently) — and if the whole band is down, nothing is
-    /// still in the air to land.
+    /// A CLUMP BURST HERE — the band's answer to `brood.splash`: the thing that landed belongs to the group,
+    /// not to the arrow pool that flew it. The embers go in the pool of whichever member is NEAREST the impact,
+    /// because a pool is only drawn while its owner is — a dead slinger's last clump would land silently.
     pub fn splash(self: *Warband, at: rl.Vector3) void {
         var best: ?*Kobold = null;
         var bestD: f32 = 1e9;

@@ -66,10 +66,9 @@ const TOP_F: f32 = 0.96;
 /// an eye, because the eyes ROTATE as they open and a mark that opened with them would slide off the tree.
 const LOCK_AT = v3(0, 0.30 * H, 0.34);
 
-/// TOUGH, AND DELIBERATELY EXPENSIVE TO SHOOT. It cannot chase, so a bow at range is free damage and the
-/// only thing standing between that and a trivial kill is the size of the bill: at 130 it costs nine of ten
-/// plain shafts, which is the whole quiver and a walk back to a grace. FIRE is the honest answer — five fire
-/// arrows do it, which is exactly how many you carry.
+/// TOUGH, AND DELIBERATELY EXPENSIVE TO SHOOT. It cannot chase, so a bow at range is free damage and the only
+/// thing between that and a trivial kill is the size of the bill: at 130 it costs nine of ten plain shafts.
+/// FIRE is the honest answer — five fire arrows do it, which is exactly how many you carry.
 const HP_MAX: f32 = 130.0;
 const POISE_MAX: f32 = 28.0; // a tree does not flinch at a sword
 const STANCE_MAX: f32 = 40.0; // …but chained blows do break it, and that is the whole punish window
@@ -113,10 +112,9 @@ const Attack = struct {
 pub const SLAM: usize = 0;
 pub const SWEEP: usize = 1;
 pub const HOOK: usize = 2;
-/// Wind-ups are LONG — it is a tree, it has no business being quick, and its reach is what makes it
-/// dangerous. Every one clears `foe.TELL_MIN`; the test at the foot of this file pins that. The bands are
-/// MEASURED off the posed tip ("the limb tip crosses the hero column" test): the old 7.4 m hook billed a
-/// blow off a limb that passed three metres over his head, half a map away.
+/// Wind-ups are LONG — it is a tree, and its reach is what makes it dangerous. Every one clears
+/// `foe.TELL_MIN`; the test at the foot of this file pins that. The bands are MEASURED off the posed tip:
+/// the old 7.4 m hook billed a blow off a limb that passed three metres over his head.
 const MOVES = [_]Attack{
     .{ .windDur = 0.86, .strikeDur = 0.26, .recoverDur = 0.95, .cd = 3.4, .minR = 0, .maxR = 2.4, .arc = 46.0, .hit = SLAM_HIT, .limb = LIMB_H },
     .{ .windDur = 0.70, .strikeDur = 0.32, .recoverDur = 0.80, .cd = 2.8, .minR = 1.2, .maxR = 3.8, .arc = 82.0, .hit = SWEEP_HIT, .limb = LIMB_L },
@@ -255,10 +253,9 @@ pub const Rooted = struct {
     eyes: f32 = 0,
     /// How far through the live move's own arc the swinging limb is, −1 (cocked back) … 1 (thrown through).
     swing: f32 = 0,
-    /// …and the swing one and two JOINTS late (exponential followers, ticked every frame): the elbow
-    /// arrives after the shoulder and the tip after the elbow, through every state including the stuns.
-    /// Three segments peaking on the same frame read as one welded paddle however big the arc — the
-    /// staggered-lags law, and the whole of what "disjointed" was.
+    /// …and the swing one and two JOINTS late (exponential followers, ticked every frame): the elbow arrives
+    /// after the shoulder and the tip after the elbow, through every state including the stuns. Three segments
+    /// peaking on one frame read as one welded paddle however big the arc — the staggered-lags law.
     swingL1: f32 = 0,
     swingL2: f32 = 0,
     sway: f32 = 0,
@@ -613,10 +610,9 @@ pub const Rooted = struct {
         );
         self.xf[ROOT] = root;
 
-        // THE BODY ANSWERS PER MOVE, and it is most of the tell: the old wind drifted one limb a few
-        // degrees and left seven metres of tree stone still. The slam REARS the whole bole back and drives
-        // it through; the sweep COILS it on its own roots and unwinds; the hook leans it out reaching and
-        // hauls it back in. The bole's throw is also real REACH — the tree lunges from the root.
+        // THE BODY ANSWERS PER MOVE, and it is most of the tell: the old wind drifted one limb a few degrees
+        // and left seven metres of tree stone still. The slam REARS the whole bole back and drives it through;
+        // the sweep COILS it on its roots; the hook leans out and hauls back in. The bole's throw is real REACH.
         const swinging = self.state == .wind or self.state == .strike or self.state == .recover;
         const cock = if (swinging) mathx.clampF(-self.swingL1, 0, 1) else 0;
         const thru = if (swinging) mathx.clampF(self.swingL1, 0, 1) else 0;
@@ -646,10 +642,9 @@ pub const Rooted = struct {
             self.xf[b] = mul(mul3(rz(side * LID_SWING * 0.25 * self.eyes), rx(-LID_SWING * self.eyes), place(REST[b])), self.xf[BOLE]);
         }
 
-        // THE LIMBS. Asleep each one droops against the trunk on its own axis, which is exactly where a
-        // snag's dead limbs sit; opening swings them out into the raptorial hang — IN TURN, front-left first
-        // and the overhead last, because three limbs unfolding on one shared fraction is machinery. The
-        // swinging one rides `swing` and its two FOLLOWERS, one per joint out.
+        // THE LIMBS. Asleep each one droops against the trunk on its own axis, which is exactly where a snag's
+        // dead limbs sit; opening swings them out into the raptorial hang — IN TURN, front-left first and the
+        // overhead last, because three limbs unfolding on one shared fraction is machinery.
         inline for ([_]usize{ LIMB_L, LIMB_R, LIMB_H }, 0..) |b0, i| {
             const fi: f32 = @floatFromInt(i);
             const live = swinging and self.move().limb == b0;
@@ -688,10 +683,9 @@ pub const Rooted = struct {
     }
 };
 
-/// PER SEGMENT, AND THEY ARE PITCHES THAT ADD UP. Folded, the three hang down the bole, which is exactly
-/// where a snag`s dead limbs sit. Open they make the RAPTORIAL hang — down-forward, elbow re-folded up,
-/// claw dropped — a mantis's arms, not scaffolding. One pair per segment lerped by `open`, because two
-/// separate droop-and-level channels was what folded the limb back through itself.
+/// PER SEGMENT, AND THEY ARE PITCHES THAT ADD UP. Folded, the three hang down the bole, which is exactly where
+/// a snag's dead limbs sit. Open they make the RAPTORIAL hang — down-forward, elbow re-folded up, claw dropped
+/// — a mantis's arms, not scaffolding. One pair per segment lerped by `open`.
 const LIMB_SHUT = [_]f32{ 74.0, 12.0, 10.0 };
 const LIMB_OPEN = [_]f32{ 24.0, -34.0, 52.0 };
 /// How much of the swing each joint yaws through. Shoulder-heavy — the WHIP now comes from the followers'

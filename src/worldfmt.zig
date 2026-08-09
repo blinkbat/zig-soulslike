@@ -532,6 +532,21 @@ fn brushFalloff(d: f32, radius: f32) f32 {
     return u * u * (3.0 - 2.0 * u);
 }
 
+/// THE ONE PAINTED-GRID SAMPLER — world position → cell index over an `n`-a-side grid spanning `-half..+half`,
+/// or null outside it. The soil grid, the water mask and `env`'s own copy of the water field each carried
+/// these six lines, and they had already drifted: two clamped on the way in and the third after the cast, so
+/// "the same rule" was written two ways for grids that differ only in `n`.
+pub fn gridIndex(half: f32, n: usize, px: f32, pz: f32) ?usize {
+    if (half <= 0) return null;
+    const t = (px + half) / (2 * half);
+    const u = (pz + half) / (2 * half);
+    if (t < 0 or t >= 1 or u < 0 or u >= 1) return null;
+    const nf: f32 = @floatFromInt(n);
+    const cx = @min(@as(usize, @intFromFloat(t * nf)), n - 1);
+    const cz = @min(@as(usize, @intFromFloat(u * nf)), n - 1);
+    return cz * n + cx;
+}
+
 // A second painted grid, and a much simpler one: one BIT per cell — wet or dry.
 pub const WATER_N: usize = @intCast(gfx.WATER_N);
 pub const WATER_CELLS: usize = WATER_N * WATER_N;
@@ -838,14 +853,13 @@ pub const Map = struct {
         return 2 * self.half / @as(f32, @floatFromInt(n));
     }
 
+    pub fn waterIndex(self: *const Map, px: f32, pz: f32) ?usize {
+        return gridIndex(self.half, WATER_N, px, pz);
+    }
+
     /// World position → soil cell index, or null when it falls outside the grid.
     pub fn soilIndex(self: *const Map, px: f32, pz: f32) ?usize {
-        const t = (px + self.half) / (2 * self.half);
-        const u = (pz + self.half) / (2 * self.half);
-        if (t < 0 or t >= 1 or u < 0 or u >= 1) return null;
-        const cx: usize = @intFromFloat(t * @as(f32, @floatFromInt(SOIL_N)));
-        const cz: usize = @intFromFloat(u * @as(f32, @floatFromInt(SOIL_N)));
-        return @min(cz, SOIL_N - 1) * SOIL_N + @min(cx, SOIL_N - 1);
+        return gridIndex(self.half, SOIL_N, px, pz);
     }
 
     pub fn paintSoil(self: *Map, px: f32, pz: f32, radius: f32, id: Soil, opacity: f32) bool {
@@ -921,12 +935,8 @@ pub const Map = struct {
     }
 
     pub fn waterAt(self: *const Map, px: f32, pz: f32) bool {
-        const t = (px + self.half) / (2 * self.half);
-        const u = (pz + self.half) / (2 * self.half);
-        if (t < 0 or t >= 1 or u < 0 or u >= 1) return false;
-        const cx: usize = @min(@as(usize, @intFromFloat(t * @as(f32, @floatFromInt(WATER_N)))), WATER_N - 1);
-        const cz: usize = @min(@as(usize, @intFromFloat(u * @as(f32, @floatFromInt(WATER_N)))), WATER_N - 1);
-        return self.water[cz * WATER_N + cx] != 0;
+        const i = self.waterIndex(px, pz) orelse return false;
+        return self.water[i] != 0;
     }
 
     pub fn anyWater(self: *const Map) bool {

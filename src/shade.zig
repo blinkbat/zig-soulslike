@@ -106,11 +106,9 @@ const MOVES = [_]Attack{
     .{ .windDur = 0.46, .strikeDur = 0.30, .recoverDur = 0.55, .cd = 2.6, .minR = 0, .maxR = 2.05, .hit = GRASP_HIT, .hurl = false },
     .{ .windDur = 0.68, .strikeDur = 0.18, .recoverDur = 0.62, .cd = 4.6, .minR = 4.2, .maxR = 12.0, .hit = WISP_HIT, .hurl = true },
 };
-/// A MOVE'S CLOCK, for anything aiming at a beat inside it (`shots.zig`). Off the table itself, so a
-/// retuned window still photographs the beat it is named after rather than a literal number of seconds.
-pub fn moveClock(which: usize) struct { wind: f32, strike: f32, recover: f32 } {
-    const a = MOVES[@min(which, MOVES.len - 1)];
-    return .{ .wind = a.windDur, .strike = a.strikeDur, .recover = a.recoverDur };
+/// A MOVE'S CLOCK, for anything aiming at a beat inside it (`shots.zig`) — the shared shape, off this table.
+pub fn moveClock(which: usize) foe.Clock {
+    return foe.moveClock(MOVES[@min(which, MOVES.len - 1)]);
 }
 
 /// How far the closing arms reach, off its own centre. Past `MOVES[GRASP].maxR` by the hero's own slack, so

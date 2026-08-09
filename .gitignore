@@ -1,5 +1,7 @@
 zig-out/
+zig-out-dev/
 .zig-cache/
+zig-pkg/
 *.exe
 *.pdb
 *.png

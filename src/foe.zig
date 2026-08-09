@@ -215,6 +215,19 @@ pub fn stunCurve(t: f32, heavy: bool) f32 {
 /// loose numbers: the two are only ever chosen against each other.
 pub const Push = struct { light: f32, heavy: f32 };
 
+/// A MOVE'S CLOCK, for anything aiming at a beat inside it (`shots.zig` alone). NAMED here rather than returned
+/// as an anonymous struct per creature: `rooted.moveClock` and `shade.moveClock` were byte-identical bodies
+/// whose two return types could not be held in one variable, so a third creature meant a third copy.
+pub const Clock = struct { wind: f32, strike: f32, recover: f32 };
+
+/// …off the creature's OWN attack row, so a retuned window still photographs the beat it is named after rather
+/// than a literal number of seconds. Duck-typed on the three field names both tables already use. The WARRIOR
+/// keeps its own `Clock`: its rows name the swing differently and carry a fourth knot (`chainWind`), which is a
+/// different shape rather than a fourth copy of this one.
+pub fn moveClock(row: anytype) Clock {
+    return .{ .wind = row.windDur, .strike = row.strikeDur, .recover = row.recoverDur };
+}
+
 /// THE BLADE REACHED IT — the swept test, the anti-cheese rouse, and the one thing a shaft does that a swing
 /// does not. Seven creatures opened `tryHit` with these same four lines. Duck-typed on the conventional field
 /// names: a creature satisfying the foe contract has every one of them by definition.
@@ -327,11 +340,24 @@ pub const Particle = struct {
     r1: f32 = 0.05, // radius at death (r1>r0 = an expanding puff; r1<r0 = a shrinking spark)
     col: rl.Color = mathx.rgba(255, 255, 255, 255),
     grav: f32 = 0, // downward accel (world/s²); negative floats up
+    /// THE GROUND THIS ONE CAME OFF, when it is not the pool owner's own — `souls.fxFloor`'s rule, one layer
+    /// down and per particle, because one pool can hold two bursts off two different grounds. Null means the
+    /// owner's floor, which is every creature's whole pool: a creature's FX all come off its own feet.
+    floor: ?f32 = null,
 };
 
 pub fn emitParticle(pool: []Particle, head: *usize, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
     pool[head.*] = .{ .p = p, .v = vel, .life = life, .max = life, .r0 = r0, .r1 = r1, .col = col, .grav = grav };
     head.* = (head.* + 1) % pool.len;
+}
+
+/// EVERY SLOT A BURST JUST WROTE, floored on the ground THAT burst came off rather than the pool owner's.
+/// For an emitter that fires clear of its owner: the hero's roots erupt under the FOE and his bolt bursts
+/// wherever it landed, and on sculpted ground neither settles on the earth under his boots. Take `head`
+/// before the emit loop and hand both ends over after it — the ring wraps, so the walk does too.
+pub fn floorBurst(pool: []Particle, from: usize, to: usize, floor: f32) void {
+    var i = from;
+    while (i != to) : (i = (i + 1) % pool.len) pool[i].floor = floor;
 }
 
 /// WHAT ONE BODY BRINGS TO ITS OWN DISSOLVE, and all it brings: how thick the cloud is, how far out and how
@@ -383,6 +409,7 @@ pub fn dissipate(self: anytype, dt: f32, still: f32, diss: f32, d: Dissolve) voi
     if (self.t >= still + diss) self.gone = true;
 }
 
+/// `floor` is the pool owner's own ground; a particle that named its own (`floorBurst`) keeps that instead.
 pub fn tickParticles(pool: []Particle, dt: f32, floor: f32) void {
     for (pool) |*q| {
         if (q.life <= 0) continue;
@@ -391,7 +418,8 @@ pub fn tickParticles(pool: []Particle, dt: f32, floor: f32) void {
         q.p.y += q.v.y * dt;
         q.p.z += q.v.z * dt;
         q.v.y -= q.grav * dt;
-        if (q.p.y < floor) q.p.y = floor;
+        const at = q.floor orelse floor;
+        if (q.p.y < at) q.p.y = at;
     }
 }
 

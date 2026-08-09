@@ -184,6 +184,20 @@ pub const BTN_CONFIRM: PadBtn = .a;
 pub const BTN_BACK: PadBtn = .b;
 pub const BTN_QUICK: PadBtn = .x;
 
+/// …AND THE PRESS ITSELF COMES OFF THE SAME NAME, which is what makes "a button is named once" true rather than
+/// merely written down. Three sites held their own copy of a binding beside the letter drawn for it —
+/// `game.INTERACT_PAD = .right_face_up`, `menu.confirmPressed`'s `.right_face_down`, `backPressed`'s
+/// `.right_face_right` — so a rebind moved the press and left every crib in the game drawing the old letter.
+/// raylib names a face button by its POSITION, which is where the Xbox letters this UI draws happen to sit.
+pub fn padOf(b: PadBtn) rl.GamepadButton {
+    return switch (b) {
+        .a => .right_face_down,
+        .b => .right_face_right,
+        .x => .right_face_left,
+        .y => .right_face_up,
+    };
+}
+
 fn padBtnColor(b: PadBtn) rl.Color {
     return switch (b) {
         .a => rgba(94, 178, 66, 255), // green

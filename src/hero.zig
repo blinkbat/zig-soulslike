@@ -915,8 +915,8 @@ pub const Hero = struct {
     guarding: bool = false,
     guardB: f32 = 0,
     /// Seconds since the last blow caught on the shield — the recoil clock, and the ONLY record a block leaves.
-    /// A PARRY LANDING STAMPS IT TOO: a caught blow is driven into the body exactly as a blocked one is.
-    /// MOVES, THE SHIELD HOLDS), and a second clock alongside it could only ever disagree with this one.
+    /// A PARRY LANDING STAMPS IT TOO (`noteParry`): a caught blow is driven into the body exactly as a blocked
+    /// one is (THE MAN MOVES, THE SHIELD HOLDS), and a second clock beside this could only ever disagree with it.
     blockT: f32 = mathx.LONG_AGO,
     /// L2, THE SHIELD'S OWN SKILL — a COMMITTED window, unlike the held guard it shares an arm with: it sits
     /// in `committed()`, is never buffered, and takes any block off him while it runs.
@@ -1673,6 +1673,10 @@ pub const Hero = struct {
     pub fn rootsBurst(self: *Hero, at: rl.Vector3, bit: bool) void {
         self.rootHead = (self.rootHead + 1) % ROOT_SITES;
         self.rootSites[self.rootHead] = .{ .at = at, .t = 0, .seed = @floatFromInt(self.casts) };
+        // THE EARTH IT ERUPTS THROUGH IS THE VICTIM'S, NOT HIS. `tickClocks` floors the pool at his own feet,
+        // which on sculpted ground stops this shower in mid-air over a hollow or drops it through a rise.
+        const was = self.fxHead;
+        defer foemod.floorBurst(&self.fx, was, self.fxHead, at.y);
         var rng = foemod.fxStream(@floatFromInt(self.casts), 331.0, 0x8B04);
         // The EARTH first — thrown out and up, and it falls back, which is what says something came THROUGH it.
         const dust: u32 = if (bit) ROOT_DUST else ROOT_DUST / 2;
@@ -1726,8 +1730,13 @@ pub const Hero = struct {
         }
     }
 
-    /// …and a bigger one WHEREVER IT LANDS.
-    pub fn boltBurst(self: *Hero, at: rl.Vector3, salt: u32) void {
+    /// …and a bigger one WHEREVER IT LANDS — which is the point: it is nowhere near his feet, so the burst
+    /// carries its OWN floor (`foe.floorBurst`) rather than taking the one `tickClocks` gives his pool.
+    /// `groundY` is the earth under the contact and NOT `at.y`: the bolt bursts against a wall at the height
+    /// it struck one, and its sparks have to fall from there to the ground rather than stop at the contact.
+    pub fn boltBurst(self: *Hero, at: rl.Vector3, groundY: f32, salt: u32) void {
+        const was = self.fxHead;
+        defer foemod.floorBurst(&self.fx, was, self.fxHead, groundY);
         var rng = foemod.fxStream(@floatFromInt(salt), 419.0, 0x8B03);
         var i: u32 = 0;
         while (i < BOLT_BURST) : (i += 1) {
@@ -3447,6 +3456,42 @@ test "chip CAN kill through a raised shield" {
     h.vit.hp = 1.0;
     try std.testing.expectEqual(combat.HitOutcome.taken, h.takeHit(.{ .dmg = 36 }, fromAngle(0)));
     try std.testing.expect(h.dead and !h.guarding);
+}
+
+test "A SPELL'S BURST SETTLES ON THE GROUND IT WENT OFF ON, not on the one under his boots" {
+    // `tickClocks` floors the whole pool at `self.pos.y`, which is right for the gather and the shield's own
+    // sparks and wrong for the two things thrown clear of him: the roots erupt under the FOE and the bolt
+    // bursts wherever it landed. Floored at his feet, thrown soil stops in mid-air over a hollow.
+    var h = testHero();
+    h.pos = v3(0, 0, 0); // he is standing on the datum…
+    const dug: f32 = -3.0; // …and the victim is in a pit
+    h.rootsBurst(v3(6, dug, 0), true);
+    var soil: usize = 0;
+    for (h.fx) |q| {
+        if (q.life <= 0) continue;
+        soil += 1;
+        try std.testing.expectEqual(@as(?f32, dug), q.floor);
+    }
+    try std.testing.expect(soil > 0);
+    // …and it is that floor the tick honours, so the dirt falls back into the hollow it came out of.
+    var t: f32 = 0;
+    while (t < 1.2) : (t += 1.0 / 60.0) foemod.tickParticles(&h.fx, 1.0 / 60.0, h.pos.y);
+    for (h.fx) |q| {
+        if (q.life > 0) try std.testing.expect(q.p.y < 0);
+    }
+    // A BOLT BURSTING UP A WALL still falls to the EARTH, which is why the floor is not the contact point.
+    var w = testHero();
+    w.boltBurst(v3(0, 4.0, 0), 0.0, 1);
+    for (w.fx) |q| {
+        if (q.life > 0) try std.testing.expectEqual(@as(?f32, 0.0), q.floor);
+    }
+    // …and what comes off HIM never names one, so it keeps taking the floor its owner hands it.
+    var own = testHero();
+    own.pose(); // `parrySparks` rides the posed wrist
+    own.parrySparks();
+    for (own.fx) |q| {
+        if (q.life > 0) try std.testing.expect(q.floor == null);
+    }
 }
 
 test "i-frames beat the shield, and a committed action drops it" {

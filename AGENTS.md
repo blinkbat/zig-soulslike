@@ -1029,6 +1029,12 @@ not the stick-speed `runB`.
   eye rather than solved, which makes it a convergent feedback loop (gain `boom / (boom + range)`, under 1
   everywhere the near guard does not fire) that `camera.aim`'s ease damps the rest of the way. It is why
   `camera.PITCH_MIN` is -0.38 and not the -0.20 the free look ever asked for.
+  **DOWN IS FREE; UP IS EARNED** (`LOCK_TILT_TALL`, owner: it was tilting up too much and too often). A
+  kobold, a skeleton or a shade is framed whole from the default pitch already, and lifting the lens onto one
+  only takes the ground out from under it — so the up half is gated on how far the creature reaches into the
+  sky OFF ITS OWN FEET (`topWorld`), which keeps a kobold standing on a rise a kobold. Only the ogre and the
+  Rooted clear it standing, and the LEECHFLY clears it once it has climbed and not before, which is the one
+  answer that has to move with the creature.
 - **Lock-on:** R3 / middle mouse; a flick cycles. Suspended entirely while aiming. Two ER exceptions:
   a hold-B sprint faces TRAVEL, and an attack's recovery tail re-squares (`ATK_RETRACK`).
   **YOU CANNOT FIX ON WHAT YOU CANNOT SEE** — a foe behind a wall is not offered (`game.canSee`), but

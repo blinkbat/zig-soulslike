@@ -135,12 +135,24 @@ const LOCK_PITCH = 0.24;
 /// loop gain is `boom / (boom + distance to the mark)`, under 1 everywhere the guard below does not fire,
 /// and `camera.aim`'s ease damps it the rest of the way. The clamps are the rig's own.
 const LOCK_PITCH_NEAR: f32 = 0.5; // metres of horizontal separation under which the angle stops meaning anything
+/// …AND ONLY SOMETHING THAT TOWERS EARNS THE TILT **UP** (owner: it was tilting up too much and too often).
+/// DOWN is free — a toad at your boots is the case the whole rule was written for. Up is not: a kobold, a
+/// skeleton or a shade is framed whole from the default pitch already, and lifting the lens onto one only
+/// takes the ground out from under it. So the up half is gated on how far the creature reaches into the sky
+/// OFF ITS OWN FEET (`topWorld`), which keeps a kobold standing on a rise a kobold — and lets a leechfly that
+/// has CLIMBED through it while a low one stays framed flat, since that is the one answer that has to move.
+const LOCK_TILT_TALL: f32 = 3.2; // over the shade's 2.4 and under the ogre's 4.4
 fn lockPitch(g: *const Game, r: FoeRef) f32 {
     const mark = foeLockPoint(g, r);
     const eye = g.rig.cam.position;
     const flat = mathx.distXZ(eye, mark);
     if (flat < LOCK_PITCH_NEAR) return LOCK_PITCH;
-    return std.math.atan2(eye.y - mark.y, flat);
+    const want = std.math.atan2(eye.y - mark.y, flat);
+    if (want >= LOCK_PITCH) return want; // tipping DOWN onto it, or already at the default framing
+    return if (foeTall(g, r)) want else LOCK_PITCH;
+}
+fn foeTall(g: *const Game, r: FoeRef) bool {
+    return foeTopWorld(g, r).y - foePos(g, r).y >= LOCK_TILT_TALL;
 }
 const LOCK_FLICK = 0.65; // right-stick |x| past this cycles to the next target
 /// HOW LONG A LOCK SURVIVES WITH NO SIGHT OF ITS TARGET. You cannot FIX on what you cannot see, but a
@@ -373,6 +385,20 @@ test "A FIGHT IS ON while something is roused OR simply near, and is over when t
     try std.testing.expect(!foeFights(&toad, near, frogmod.AGGRO_R));
 }
 
+test "A BUTTON IS NAMED ONCE — the press the loop reads IS the letter the cribs draw" {
+    // Written out as its own `rl.GamepadButton` beside `hud.BTN_INTERACT`, the binding and the glyph were two
+    // declarations of one fact: a rebind moved the press and left every prompt in the game naming the old key.
+    try std.testing.expectEqual(INTERACT_PAD, hud_.padOf(hud_.BTN_INTERACT));
+    try std.testing.expectEqual(QUICK_PAD, hud_.padOf(hud_.BTN_QUICK));
+    // …and the four names are four DISTINCT buttons, or two prompts point at one press.
+    const named = [_]hud_.PadBtn{ hud_.BTN_INTERACT, hud_.BTN_CONFIRM, hud_.BTN_BACK, hud_.BTN_QUICK };
+    for (named, 0..) |a, i| {
+        for (named[i + 1 ..]) |b| try std.testing.expect(hud_.padOf(a) != hud_.padOf(b));
+    }
+    // The keyboard MIRRORS the pad letter for letter (owner's rule), so no crib has to name a key.
+    try std.testing.expectEqual(rl.KeyboardKey.y, INTERACT_KEY);
+}
+
 test "the ranges the fight is judged at are each GROUP'S OWN, never one figure for the field" {
     try std.testing.expect(frogmod.AGGRO_R < archermod.AGGRO_R);
     inline for (FOE_GROUPS) |gr| try std.testing.expect(gr.aggro > 0);
@@ -553,6 +579,45 @@ test "THE MARK RIDES THE BODY, on every creature that has one" {
     try std.testing.expect(markSwing(&ghost, hero) > MIN);
     var cap = shroommod.Shroom.spawn(mathx.zero3, 0, 1.0, 0.3);
     try std.testing.expect(markSwing(&cap, hero) > MIN);
+}
+
+/// A creature's own reach into the sky, which is the number `lockPitch` gates the tilt UP on.
+fn standHeight(f: anytype) f32 {
+    return f.topWorld().y - f.pos.y;
+}
+
+test "ONLY SOMETHING THAT TOWERS TILTS THE LENS UP — everything else is framed flat" {
+    // The bar has to sit ABOVE every creature you meet at eye level and UNDER the two that do not fit in
+    // the frame from the default pitch. Written as a walk of the field, so a new creature says which it is.
+    const giant = ogremod.Ogre.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const snag = rootedmod.Rooted.spawn(mathx.zero3, 0, 1.0, 0.3);
+    for ([_]f32{ standHeight(&giant), standHeight(&snag) }) |h| {
+        try std.testing.expect(h >= LOCK_TILT_TALL);
+    }
+    const toad = frogmod.Frog.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const bowman = archermod.Archer.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const zerk = koboldmod.Kobold.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const boards = warriormod.Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1.0, 0.3);
+    const ghost = shademod.Shade.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const cap = shroommod.Shroom.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const mother = broodmod.Spider.spawnAs(.mother, mathx.zero3, 0, 1.0, 0.3);
+    for ([_]f32{
+        standHeight(&toad),   standHeight(&bowman), standHeight(&zerk),  standHeight(&boards),
+        standHeight(&ghost),  standHeight(&cap),    standHeight(&mother),
+    }) |h| {
+        try std.testing.expect(h < LOCK_TILT_TALL);
+    }
+    // …AND THE FLYER ANSWERS FOR ITSELF, both ways: on the deck it is framed flat, and once it has climbed
+    // out of sword reach it is the one small creature the lens has to come up onto.
+    var fly = leechmod.Leechfly.spawn(mathx.zero3, 0, 1.0, 0.3);
+    try std.testing.expect(standHeight(&fly) < LOCK_TILT_TALL);
+    var t: f32 = 0;
+    var high: f32 = 0;
+    while (t < 6.0) : (t += 1.0 / 60.0) {
+        _ = fly.update(1.0 / 60.0, v3(0, 0, 1.6), PLAY_HALF, .{});
+        high = @max(high, standHeight(&fly));
+    }
+    try std.testing.expect(high >= LOCK_TILT_TALL);
 }
 
 fn groundActor(g: *const Game, pos: *rl.Vector3, dt: f32) void {
@@ -1024,8 +1089,8 @@ fn billDeaths(g: *Game) void {
 fn tickTriggers(g: *Game, dt: f32) void {
     g.nNpcPos = g.folk.positions(&g.map, &g.npcPos).len;
     billDeaths(g);
-        // A GRACE IS BUSY TOO. `run` checks the rest branch BEFORE the talk one, so a conversation opened on
-        // the frame a rest begins would be frozen rather than deferred if the machine were not told.
+    // A GRACE IS BUSY TOO. `run` checks the rest branch BEFORE the talk one, so a conversation opened on
+    // the frame a rest begins would be frozen rather than deferred if the machine were not told.
     const want = g.trig.tick(&g.map, triggerWorld(g), dt, g.talk.active() or g.rest.active()) orelse return;
     // NO SPEAKER: nobody is standing in front of him, so the panel is named by the node's own `who:`.
     // A REFUSED OPEN IS A CONVERSATION THAT CLOSED AT ONCE: the machine latched the trigger the moment it
@@ -1089,8 +1154,14 @@ fn confirmPressed() bool {
 /// THE INTERACT BUTTON. On the pad it is **Y** (owner's call) — the one face button ER leaves free, since A
 /// is reserved for the jump, B is the roll and X is the quick item. The keyboard mirrors it letter for
 /// letter: pressing Y does what the Y glyph on the prompt says, so no crib ever has to name a key.
-const INTERACT_PAD: rl.GamepadButton = .right_face_up;
+///
+/// DERIVED FROM THE NAME THE CRIBS DRAW (`hud.BTN_INTERACT` → `hud.padOf`), which is the whole of "a button is
+/// named once": as its own `.right_face_up` it was a second declaration of the same binding, and a rebind moved
+/// the press while every prompt in the game carried on drawing the old letter.
+const INTERACT_PAD: rl.GamepadButton = hud_.padOf(hud_.BTN_INTERACT);
 const INTERACT_KEY: rl.KeyboardKey = .y;
+/// …and the QUICK ITEM, the same way — the cross's own X, and the one binding `hud.BTN_QUICK` existed for.
+const QUICK_PAD: rl.GamepadButton = hud_.padOf(hud_.BTN_QUICK);
 /// …and the QUIVER, turned off Y to make room for it. On the pad it stays the character book's ammo slot.
 const ARROW_KEY: rl.KeyboardKey = .u;
 /// L2 ON THE KEYBOARD — see the L2 block in `run` for why the mouse cannot carry it.
@@ -1287,7 +1358,7 @@ fn castRoots(g: *Game) void {
     const bit = seedRoots(g, rootMark(g)) != null;
     sfx.play(.wand_cast);
     g.rumble.play(if (bit) rumblemod.hit_heavy else rumblemod.cast_throw);
-        // A GRIP THAT CLOSED ON SOMETHING IS FELT; one that closed on bare earth is the lightest thing the wand does.
+    // A GRIP THAT CLOSED ON SOMETHING IS FELT; one that closed on bare earth is the lightest thing the wand does.
     g.rig.addShake(if (bit) SHAKE_ROOTS_BITE else SHAKE_CAST);
 }
 
@@ -1469,7 +1540,7 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
         .clump => g.band.splash(ar.pos), // at the CONTACT, not the floor: it can burst against a chest
         // …and the bolt bursts at the CONTACT for the clump's reason — it goes off against a wall at the
         // height it struck one, not down at that wall's foot.
-        .bolt => g.hero.boltBurst(ar.pos, g.hero.casts),
+        .bolt => g.hero.boltBurst(ar.pos, ground.y, g.hero.casts),
         // A wisp is a piece of the creature and it leaves nothing on the ground: it is spent arriving.
         .arrow, .firearrow, .wisp => {},
     }
@@ -2079,8 +2150,8 @@ pub fn run(mode: Mode) void {
         if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .left_face_right)) swapReq = true;
         if (swapReq and g.hero.swapArm()) sfx.play(.flask_cycle);
 
-        // D-PAD LEFT / F: cycle the LEFT-hand armament — shield or wand. ER's own binding for that slot.
-        // and the last free direction on the pad's D-pad now that Right, Up and Down are all spent.
+        // D-PAD LEFT / F: cycle the LEFT-hand armament — shield or wand. ER's own binding for that slot, and
+        // the last free direction on the pad's cross now that Right, Up and Down are all spent.
         var offReq = rl.isKeyPressed(.f);
         if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .left_face_left)) offReq = true;
         if (offReq and g.hero.swapOff()) sfx.play(.flask_cycle);
@@ -2088,7 +2159,7 @@ pub fn run(mode: Mode) void {
         var drinkReq = rl.isKeyPressed(.r);
         var cycleReq = rl.isKeyPressed(.t);
         if (rl.isGamepadAvailable(PAD)) {
-            if (rl.isGamepadButtonPressed(PAD, .right_face_left)) drinkReq = true;
+            if (rl.isGamepadButtonPressed(PAD, QUICK_PAD)) drinkReq = true;
             if (rl.isGamepadButtonPressed(PAD, .left_face_down)) cycleReq = true;
         }
         if (cycleReq and !g.hero.dead) {
@@ -2097,8 +2168,8 @@ pub fn run(mode: Mode) void {
         }
 
         // D-PAD UP / G: cycle the SPELL. Up is the cross's SORCERY slot, so the button that changes it is the
-        // slot it is shown in — the D-pad's "belongs to what it points at" rule.
-        // arm on Right and the off hand on Left.
+        // slot it is shown in — the same "belongs to what it points at" rule that puts the arm on Right and
+        // the off hand on Left.
         var spellReq = rl.isKeyPressed(.g);
         if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .left_face_up)) spellReq = true;
         if (spellReq and g.hero.cycleSpell()) sfx.play(.flask_cycle);
@@ -2175,7 +2246,7 @@ pub fn run(mode: Mode) void {
         g.hero.regen.tick(dt, &g.hero.vit);
         g.hero.tickWard(dt); // the sporeling cap's chaos ward, running out beside it
         g.hero.tickFlash(dt); // fade the red damage flash
-        // …and the QUICK BAR sheds whatever he has run out of, once a frame rather than at each site that can empty the bag.
+        // …and the QUICK BAR sheds whatever he has run out of, once a frame rather than at each site that can
         // empty the bag (a use, a drip, whatever spends one next): a per-site list is a list to forget one from.
         g.hero.quick.dropEmpty(&g.bag);
         // Action input is dead while staggered or dead (a reaction is committed).
@@ -2549,8 +2620,8 @@ fn quickLeft(g: *const Game) u8 {
 }
 
 /// SPEND THE THING THE QUICK BAR IS TURNED TO — the cross's DOWN press, and in combat the ONLY way anything
-/// gets consumed. A flask goes down the committed draught; everything else is instant, because an edible is not a draught.
-/// own `useItem`, which is instant and costs no animation, because an edible is not a draught.
+/// gets consumed. A flask goes down the committed draught; everything else takes its own `useItem`, which is
+/// instant and costs no animation, because an edible is not a draught.
 fn quickUse(g: *Game) void {
     const k = g.hero.quick.selected() orelse return; // an empty bar: nothing to reach for
     if (combat.flaskOf(k)) |f| {
@@ -2767,24 +2838,53 @@ const ROLE_GROUPS = .{
 fn roleIdx(comptime mod: type, r: FoeRef) ?usize {
     return if (mod.roleOf(r.kind) != null) r.idx else null;
 }
-/// ASK ONE QUESTION OF WHATEVER A `FoeRef` POINTS AT.
+
+/// EVERY GROUP WHOSE MEMBERS ARE ONE KIND, WRITTEN DOWN ONCE — the map kind and the field on `Game` that keeps
+/// it. `askFoe` and `refInBounds` were two hand-written switches over these same seven rows, and they named
+/// DIFFERENT things on each side (`warren.frogs[i]` against `warren.liveConst().len`), so nothing tied the two
+/// together: a creature added to one and forgotten in the other is either an `unreachable` or a read of the
+/// undefined tail past `n`. The comptime block below is what the exhaustive switches used to be worth.
+const SOLO_GROUPS = [_]struct { kind: FoeKind, field: []const u8 }{
+    .{ .kind = .toad, .field = "warren" },
+    .{ .kind = .archer, .field = "line" },
+    .{ .kind = .ogre, .field = "grief" },
+    .{ .kind = .shade, .field = "haunt" },
+    .{ .kind = .leechfly, .field = "swarm" },
+    .{ .kind = .rooted, .field = "grove" },
+    .{ .kind = .shroom, .field = "cluster" },
+};
+
+comptime {
+    // EVERY KIND IS ANSWERED FOR EXACTLY ONCE, across the role groups, the sac and the rows above. This is the
+    // guarantee the two exhaustive switches gave separately and neither gave jointly, so a new `FoeKind` is a
+    // compile error here until one group has claimed it — and a kind claimed TWICE is one too.
+    for (@typeInfo(FoeKind).@"enum".fields) |f| {
+        const k: FoeKind = @enumFromInt(f.value);
+        var claims: usize = 0;
+        for (ROLE_GROUPS) |rg| {
+            if (rg[1].roleOf(k) != null) claims += 1;
+        }
+        if (k == .brood_sac) claims += 1;
+        for (SOLO_GROUPS) |s| {
+            if (s.kind == k) claims += 1;
+        }
+        if (claims != 1) @compileError("game: FoeKind." ++ f.name ++ " is claimed by " ++
+            std.fmt.comptimePrint("{d}", .{claims}) ++ " groups — a `FoeRef` needs exactly one");
+    }
+}
+
+/// ASK ONE QUESTION OF WHATEVER A `FoeRef` POINTS AT. Through `liveConst()` rather than the raw storage array,
+/// which is the same slice bounded by `n` — every caller has been through `lockValid` (`refInBounds`), and the
+/// tail past `n` is undefined memory.
 fn askFoe(comptime T: type, g: *const Game, r: FoeRef, comptime ask: anytype) T {
     inline for (ROLE_GROUPS) |rg| {
         if (roleIdx(rg[1], r)) |i| return ask(&@field(g, rg[0]).band[i]);
     }
     if (r.kind == .brood_sac) return ask(&g.brood.sacs[r.idx]);
-    return switch (r.kind) {
-        .toad => ask(&g.warren.frogs[r.idx]),
-        .archer => ask(&g.line.archers[r.idx]),
-        .ogre => ask(&g.grief.ogres[r.idx]),
-        .shade => ask(&g.haunt.shades[r.idx]),
-        .leechfly => ask(&g.swarm.flies[r.idx]),
-        .rooted => ask(&g.grove.trees[r.idx]),
-        .shroom => ask(&g.cluster.shrooms[r.idx]),
-        .berserker, .priest, .slinger => unreachable,
-        .brood_mother, .broodling, .brood_sac => unreachable,
-        .shieldman, .greatsword => unreachable,
-    };
+    inline for (SOLO_GROUPS) |s| {
+        if (r.kind == s.kind) return ask(&@field(g, s.field).liveConst()[r.idx]);
+    }
+    unreachable; // the comptime partition above is what makes this dead
 }
 fn foePos(g: *const Game, r: FoeRef) rl.Vector3 {
     return askFoe(rl.Vector3, g, r, struct {
@@ -2807,6 +2907,14 @@ fn foeLockPoint(g: *const Game, r: FoeRef) rl.Vector3 {
         }
     }.ask);
 }
+/// …and how far its crown stands over its own feet, which is what `lockPitch` gates the tilt UP on.
+fn foeTopWorld(g: *const Game, r: FoeRef) rl.Vector3 {
+    return askFoe(rl.Vector3, g, r, struct {
+        fn ask(f: anytype) rl.Vector3 {
+            return f.topWorld();
+        }
+    }.ask);
+}
 // A live, non-dissipating foe (both a fresh acquire and a held lock require this).
 fn foeLockable(g: *const Game, r: FoeRef) bool {
     return askFoe(bool, g, r, struct {
@@ -2825,23 +2933,17 @@ fn foeDisguised(g: *const Game, r: FoeRef) bool {
     }.ask);
 }
 /// Every group is fixed storage plus a LIVE COUNT, so its tail is `undefined`: an index that outlived a re-home
-/// is a read of undefined memory. `rehomeFoes` runs four ways and only three drop the lock, so the bound is here.
+/// is a read of undefined memory. `rehomeFoes` runs four ways and only three drop the lock, so the bound is
+/// here — off the SAME table `askFoe` dispatches on, so the two cannot disagree about which group a kind is in.
 fn refInBounds(g: *const Game, r: FoeRef) bool {
     inline for (ROLE_GROUPS) |rg| {
         if (roleIdx(rg[1], r)) |i| return i < @field(g, rg[0]).liveConst().len;
     }
     if (r.kind == .brood_sac) return r.idx < g.brood.liveSacsConst().len;
-    return switch (r.kind) {
-        .toad => r.idx < g.warren.liveConst().len,
-        .archer => r.idx < g.line.liveConst().len,
-        .ogre => r.idx < g.grief.liveConst().len,
-        .shade => r.idx < g.haunt.liveConst().len,
-        .leechfly => r.idx < g.swarm.liveConst().len,
-        .rooted => r.idx < g.grove.liveConst().len,
-        .shroom => r.idx < g.cluster.liveConst().len,
-        // …every kind handled by the three group checks above, named so a new one cannot slip past.
-        .berserker, .priest, .slinger, .brood_mother, .broodling, .brood_sac, .shieldman, .greatsword => false,
-    };
+    inline for (SOLO_GROUPS) |s| {
+        if (r.kind == s.kind) return r.idx < @field(g, s.field).liveConst().len;
+    }
+    unreachable;
 }
 fn lockValid(g: *const Game, r: FoeRef) bool {
     if (!refInBounds(g, r)) return false;

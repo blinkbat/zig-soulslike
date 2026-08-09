@@ -1615,6 +1615,13 @@ pub const Editor = struct {
     const MIN_CLEARING_R: f32 = 2.0;
     const MIN_BRUSH_R: f32 = 1.0;
 
+    /// COUNT FOLLOWS THE AREA — so a big box is not sparse and a small one is not a mat. The rule, once: the
+    /// belt and the disc differ in how they MEASURE their ground, never in what that ground is worth, and as a
+    /// line apiece the third op shape would have been a third copy of the same three constants.
+    fn countForArea(area: f32) i32 {
+        return @intFromFloat(mathx.clampF(area / AREA_PER_INSTANCE, FRESH_N_LO, FRESH_N_HI));
+    }
+
     fn rectBelt(self: *Editor, m: *const wf.Map, a: rl.Vector3, b: rl.Vector3) wf.Op {
         var o = wf.defaults(.belt);
         o.kind = self.kindForLayer();
@@ -1623,9 +1630,7 @@ pub const Editor = struct {
         o.z = box.z0;
         o.x1 = box.x1;
         o.z1 = box.z1;
-        // Count scaled to the AREA, so a big box isn't sparse and a small one isn't a mat.
-        const area = (o.x1 - o.x) * (o.z1 - o.z);
-        o.n = @intFromFloat(mathx.clampF(area / AREA_PER_INSTANCE, FRESH_N_LO, FRESH_N_HI));
+        o.n = countForArea((o.x1 - o.x) * (o.z1 - o.z));
         o.seed = self.freshSeed(m);
         return o;
     }
@@ -1637,8 +1642,7 @@ pub const Editor = struct {
         o.z = centre.z;
         o.r0 = 0;
         o.r1 = @max(span, MIN_BRUSH_R);
-        const area = std.math.pi * o.r1 * o.r1;
-        o.n = @intFromFloat(mathx.clampF(area / AREA_PER_INSTANCE, FRESH_N_LO, FRESH_N_HI));
+        o.n = countForArea(std.math.pi * o.r1 * o.r1);
         o.bias = 0.5;
         o.seed = self.freshSeed(m);
         return o;

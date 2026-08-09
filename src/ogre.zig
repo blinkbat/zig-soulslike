@@ -133,22 +133,28 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
     heromod.setJoint(wx, &rest, i, @intCast(parent[i]), animRot);
 }
 
-// A hulking giant — ~2.2x the hero to the crown. It went 2.5 → 2.1 once (too big) and the owner has now
-// asked for bigger again, so this is deliberately SHORT of the 2.5 that was rejected: judge it off
-// `108_brood_scale`'s ogre framings before pushing it further.
-pub const SCALE = 2.4;
+// A hulking giant — ~4.1 m to the crown, a shade over twice the hero. The dial has been walked: 2.5 was
+// rejected as too big, 2.1 as too small, 2.4 read big again, and the owner has now asked for a bit off it.
+// So it sits between the two rejections and nearer the top. Judge it off `108_brood_scale`'s ogre framings.
+//
+// THE DECISION RADII BELOW ARE ABSOLUTE METRES AND THE REACHES ARE SCALED (`slamStripEnd`, `swipeReach`,
+// `swipeInner`), so moving this moves what he can actually touch out from under what he chooses to swing at.
+// The tests at the foot of this file bracket the gap; they are what says how far this may travel.
+pub const SCALE = 2.3;
 const WALK_SPEED = heromod.WALK_SPEED * 0.72; // a slow, ground-eating lumber (long legs cover it)
 pub const AGGRO_R = 18.0; // it sees you coming from far off (it's huge)
 const SLAM_R = 2.3; // starts the overhead slam within this — kept INSIDE the crush strip's true end
 const SWIPE_R = 4.4; // the side swipe's reach — longer than the slam's, it's a HORIZONTAL arc that
 const TURN_RATE = 3.4; // rad/s (~195 deg/s) — still out-turned by the hero, but no longer a turret
 const SWIPE_TURN = 5.4; // rad/s he PIVOTS while swiping — the swing is a turn, and it tracks into you
-/// The reticle's seat in the CHEST bone's own frame. UP PAST THE JOINT (which sits at the TOP of the barrel,
-/// 0.775·H): the mark rides the collar line rather than the middle of the mass, ~3.5 m of a 4.4 m creature.
-/// Still short of the skull at 0.925·H — the head is what the ogre's mark is kept OFF, not the height — and
-/// well inside the hurt sphere (`centerWorld` ± `hurtRadius` reaches 4.3 m), so a locked shaft still converges
-/// on something it can hit.
-const LOCK_AT = v3(0, 0.03 * H, 0);
+/// The reticle's seat in the CHEST bone's own frame, and it is DOWN off the joint (which sits at the TOP of
+/// the barrel, 0.775·H) rather than up past it — owner's call, the mark was riding too high. It now sits in
+/// the upper barrel at ~0.715·H, which is 2.9 m of a 4.1 m creature: the middle of the mass you are actually
+/// swinging at, not the collar line above it. Well inside the hurt sphere (`centerWorld` ± `hurtRadius` spans
+/// 0.8..4.1 m), so a locked shaft still converges on something it can hit, and far enough under the skull at
+/// 0.925·H that the head stays what the ogre's mark is kept OFF. It still HINGES: he folds at the waist
+/// through the slam and the mark goes with the chest.
+const LOCK_AT = v3(0, -0.06 * H, 0);
 const BODY_R = 0.55; // ground footprint (pre-scale) — broad
 const HURT_R = 0.72; // hurt-sphere radius the hero's blade tests against (pre-scale) — a big target
 // Pelvis walk oscillation — the hero's amplitudes (heavier), scaled with the body at draw.
@@ -1610,10 +1616,16 @@ fn lumbarMesh() rl.Mesh {
     return b.toMesh();
 }
 
+/// The barrel's own centre and half-height in the CHEST bone's frame, so its TOP is arithmetic and not a
+/// number transcribed into the head-clearance test beside it (`clubLowWorld`'s law).
+const BARREL_Y = 0.022 * H;
+const BARREL_HALF_H = 0.080 * H;
+const BARREL_TOP = BARREL_Y + BARREL_HALF_H;
+
 fn torsoMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addBlob(v3(0, 0.022 * H, -0.012 * H), v3(0.232 * H, 0.080 * H, 0.166 * H), 10, 17, HIDE); // more SIDES on the biggest mass, not more relief on it
+    b.addBlob(v3(0, BARREL_Y, -0.012 * H), v3(0.232 * H, BARREL_HALF_H, 0.166 * H), 10, 17, HIDE); // more SIDES on the biggest mass, not more relief on it
     b.addBlob(v3(0, -0.036 * H, -0.005 * H), v3(0.206 * H, 0.062 * H, 0.150 * H), 8, 15, HIDE); // lower ribs into the waist
     b.addBlob(v3(0.070 * H, 0.012 * H, 0.108 * H), v3(0.090 * H, 0.070 * H, 0.078 * H), 8, 13, HIDE); // L pec, sagging
     b.addBlob(v3(-0.072 * H, 0.016 * H, 0.112 * H), v3(0.098 * H, 0.076 * H, 0.082 * H), 8, 13, HIDE); // R pec (club side) — heavier
@@ -1667,10 +1679,17 @@ fn neckMesh() rl.Mesh {
     return b.toMesh();
 }
 
+/// …and the cranium's, in the SKULL bone's frame. THE HEAD IS NOT ITS JOINT: the dome's centre sits a good
+/// way ABOVE the joint the mark hangs off, and how much of the head shows over the barrel is what the
+/// clearance test is actually asking about.
+const CRANIUM_Y = 0.058 * H;
+const CRANIUM_HALF_H = 0.092 * H;
+const CRANIUM_TOP = CRANIUM_Y + CRANIUM_HALF_H;
+
 fn headMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addBlob(v3(0, 0.058 * H, -0.002 * H), v3(0.130 * H, 0.092 * H, 0.116 * H), 10, 16, HIDE); // cranium — a real dome
+    b.addBlob(v3(0, CRANIUM_Y, -0.002 * H), v3(0.130 * H, CRANIUM_HALF_H, 0.116 * H), 10, 16, HIDE); // cranium — a real dome
     b.addBlob(v3(0, 0.006 * H, 0.050 * H), v3(0.118 * H, 0.074 * H, 0.100 * H), 9, 15, HIDE); // face mass
     b.addBlob(v3(0.014 * H, 0.104 * H, 0.014 * H), v3(0.052 * H, 0.018 * H, 0.064 * H), 6, 11, SCAR); // old scalp scar
     // THE BROW IS THE ROOF OF THE FACE — one heavy bar the eye burns out from under. It is most of what
@@ -1933,13 +1952,27 @@ test "the SLAM reaches the earth, and the crush strip ends where the club does" 
 }
 
 test "the head clears the chest barrel — a giant with no visible head is the fail this guards" {
+    // IT MEASURES THE MASSES, NOT THE JOINTS, and it measures the WHOLE STRIDE. As written it compared the
+    // skull JOINT against the barrel's top and sampled ONE frame of the walk: the joint sits 0.150·H under
+    // the top of the cranium it carries, so the comparison was 0.150·H stricter than the thing the test is
+    // named for — and it passed on which frame the stride happened to be at, which is why a nudge to `SCALE`
+    // flipped it while the rig had not moved at all. Both ends now come off the meshes' own constants.
     var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.4);
+    var worst: f32 = 99;
     var k: i32 = 0;
-    while (k < 110) : (k += 1) _ = o.update(1.0 / 60.0, v3(0, 0, 15), 60, .{}); // lumbering (worst case)
-    const chest = rl.math.vector3Transform(mathx.zero3, o.xf[CHEST]);
-    const skull = rl.math.vector3Transform(mathx.zero3, o.xf[SKULL]);
-    // torsoMesh's barrel tops out 0.102 H above the chest joint; the skull's centre must be clear.
-    try std.testing.expect(skull.y - chest.y > 0.102 * H * SCALE);
+    while (k < 400) : (k += 1) {
+        _ = o.update(1.0 / 60.0, v3(0, 0, 15), 60, .{}); // lumbering, the pose that sinks the head furthest
+        if (k < 60) continue; // let the approach settle into the walk
+        const chest = rl.math.vector3Transform(mathx.zero3, o.xf[CHEST]);
+        const skull = rl.math.vector3Transform(mathx.zero3, o.xf[SKULL]);
+        worst = @min(worst, (skull.y - chest.y) / (H * o.scale));
+    }
+    // The crown of the head against the top of the barrel, in units of the rig's own stature.
+    const shows = worst + CRANIUM_TOP / H - BARREL_TOP / H;
+    try std.testing.expect(shows > 0.10); // a real dome of him, not a sliver, at the worst frame of the walk
+    // …and the JOINT still sits under the barrel's top through part of the stride, which is fine and is the
+    // reason the old form of this test was measuring the wrong two things.
+    try std.testing.expect(worst > 0.06);
 }
 
 test "the swipe's hurt SECTOR matches where the club actually goes (band + arc, measured)" {

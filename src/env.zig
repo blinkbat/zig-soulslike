@@ -835,9 +835,30 @@ pub const Env = struct {
         return probe.hit;
     }
 
+    /// PUSH ONE BODY OUT OF THE WORLD — the grid WALKED, not copied, which is the same move `sees` and
+    /// `blockedNear` already made and for the same two reasons. It runs for the hero, every live foe and every
+    /// wanderer EVERY FRAME, and going through `nearSolids` paid a `[MAX_NEAR]Solid` stack frame (~6 KB) and a
+    /// memcpy of every solid in the cells for each of them — to answer a question a visitor answers in place.
+    /// And `nearSolids` TRUNCATES at `MAX_NEAR`: in a thick wood the dropped capsule is a walk-through wall,
+    /// which is the one thing the caps are init-time panics to prevent everywhere else.
+    ///
+    /// THE SECOND SWEEP IS STILL ONLY WORTH ANYTHING IF THE FIRST MOVED HIM (`collision.resolve`'s rule), so
+    /// the second grid walk is the rare frame and a body standing clear pays exactly one.
     pub fn resolveActor(self: *const Env, p: rl.Vector3, r: f32) rl.Vector3 {
-        var buf: [MAX_NEAR]collision.Solid = undefined;
-        return collision.resolve(p, r, self.nearSolids(p, r + 1.0, &buf));
+        const Push = struct {
+            at: rl.Vector3,
+            r: f32,
+            fn one(c: *@This(), s: collision.Solid) bool {
+                c.at = collision.pushOut(c.at, c.r, s);
+                return true;
+            }
+        };
+        const q = r + 1.0;
+        var push = Push{ .at = p, .r = r };
+        self.eachSolid(p.x - q, p.z - q, p.x + q, p.z + q, &push, Push.one);
+        if (push.at.x == p.x and push.at.z == p.z) return push.at;
+        self.eachSolid(p.x - q, p.z - q, p.x + q, p.z + q, &push, Push.one);
+        return push.at;
     }
 
 
@@ -948,14 +969,10 @@ pub const Env = struct {
 
     /// How deep the painted water is at a point: 0 dry, 1 as deep as the field ramps (gfx.WATER_DEEP_AT metres from the shore).
     pub fn paintedDepth(self: *const Env, x: f32, z: f32) f32 {
-        if (!self.waterAny or self.waterHalf <= 0) return 0;
-        const N = wf.WATER_N;
-        const t = (x + self.waterHalf) / (2 * self.waterHalf);
-        const u = (z + self.waterHalf) / (2 * self.waterHalf);
-        if (t < 0 or t >= 1 or u < 0 or u >= 1) return 0;
-        const cx: usize = @min(@as(usize, @intFromFloat(t * @as(f32, @floatFromInt(N)))), N - 1);
-        const cz: usize = @min(@as(usize, @intFromFloat(u * @as(f32, @floatFromInt(N)))), N - 1);
-        const v: f32 = @floatFromInt(self.waterField[cz * N + cx]);
+        if (!self.waterAny) return 0;
+        // The MAP's own sampler over env's copy of the field — one rule for both owners (`wf.gridIndex`).
+        const i = wf.gridIndex(self.waterHalf, wf.WATER_N, x, z) orelse return 0;
+        const v: f32 = @floatFromInt(self.waterField[i]);
         const shore: f32 = @floatFromInt(gfx.WATER_SHORE);
         if (v <= shore) return 0;
         return (v - shore) / (255.0 - shore);

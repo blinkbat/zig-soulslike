@@ -119,6 +119,10 @@ pub const Souls = struct {
     fxAccum: f32 = 0,
     humLeft: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(0x50015),
+    /// THE GROUND THE MOTES CAME OFF, kept apart from the drop: `take` clears the drop on the frame it fires
+    /// the retrieval burst, so reading the floor off `drop.at.y` afterwards floors that whole shower at the
+    /// DATUM instead of at the earth it left — which on ground dug below it snaps the lot up mid-flight.
+    fxFloor: f32 = 0,
 
     pub fn init(shader: rl.Shader) Souls {
         var mat = rl.loadMaterialDefault() catch @panic("souls material");
@@ -140,6 +144,7 @@ pub const Souls = struct {
         }
         self.drop = .{ .at = at, .amount = amount, .t = 0, .live = true };
         self.near = false;
+        self.fxFloor = at.y;
         self.humLeft = HUM_EVERY * 0.5; // …and it does not sound the instant it lands: the spill owns that beat
         self.fxRng = foe.fxStream(at.x + at.z * 1.7 + @as(f32, @floatFromInt(amount)), 613.0, 0x5011);
     }
@@ -175,7 +180,7 @@ pub const Souls = struct {
     }
 
     pub fn update(self: *Souls, dt: f32) void {
-        foe.tickParticles(&self.parts, dt, self.drop.at.y);
+        foe.tickParticles(&self.parts, dt, self.fxFloor);
         if (!self.drop.live) return;
         self.drop.t += dt;
         // …and it says so out loud on its own cadence, which is what lets you find one you walked past.
@@ -382,6 +387,22 @@ test "it GROWS out of the ground, overshoots, and settles onto its own height" {
     }
     try std.testing.expect(over > 1.0); // A MASS IN MOTION OVERSHOOTS ITS REST…
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), s.drop.grown(), 0.01); // …and settles back onto it
+}
+
+test "THE RETRIEVAL SHOWER IS FLOORED ON THE EARTH IT LEFT, not on the datum" {
+    // `take` clears the drop on the frame it fires the burst, so a floor read off `drop.at.y` afterwards is
+    // 0 — and on ground dug under the datum that lifts the whole shower out of the hollow it came from.
+    var s = Souls{};
+    s.spill(v3(0, -4.0, 0), 500);
+    _ = s.take(v3(0.4, -4.0, 0.4));
+    s.update(1.0 / 60.0);
+    var live: usize = 0;
+    for (s.parts) |p| {
+        if (p.life <= 0) continue;
+        live += 1;
+        try std.testing.expect(p.p.y < 0);
+    }
+    try std.testing.expect(live > 0);
 }
 
 test "the prompt anchor is over the bloom, not at its foot" {

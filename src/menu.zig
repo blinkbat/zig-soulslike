@@ -571,10 +571,11 @@ pub fn confirmPressed() bool {
     // ALT+Enter is the game loop's borderless-fullscreen toggle, so Enter must not ALSO confirm the highlighted row while Alt is down.
     const altHeld = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
     if ((rl.isKeyPressed(.enter) and !altHeld) or rl.isKeyPressed(.space)) return true;
-    return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .right_face_down);
+    // …and the pad press comes off the NAME the cribs draw (`hud.BTN_CONFIRM`), not a second literal beside it.
+    return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, hud.padOf(hud.BTN_CONFIRM));
 }
 
 fn backPressed() bool {
-    // Esc is routed by the game loop (onEscape); pad B backs out here.
-    return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .right_face_right);
+    // Esc is routed by the game loop (onEscape); pad B backs out here — off `hud.BTN_BACK`, as above.
+    return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, hud.padOf(hud.BTN_BACK));
 }

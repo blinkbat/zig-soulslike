@@ -377,7 +377,10 @@ const Cand = struct { name: [:0]const u8, tally: ?u8 = null, act: Action };
 /// The longest candidate list any slot can offer, off the enums themselves — the scratch every caller
 /// hands `candidates` is sized from this, so a third arrow cannot write past the end of one.
 const CAND_MAX = blk: {
-    var n: usize = item.NK; // the quick bar offers every kind that may go on it, so it is the long list
+    // The quick bar offers every kind that may go on it, so it is the long list — PLUS the "(empty)" row it
+    // opens with, which is a row like any other and was not counted: at `item.NK` exactly, the day every kind
+    // is quickable the last one writes past the end of the caller's scratch.
+    var n: usize = item.NK + 1;
     for ([_]type{ heromod.Arm, heromod.Off, combat.ArrowKind }) |T| {
         n = @max(n, @typeInfo(T).@"enum".fields.len);
     }
@@ -1777,6 +1780,26 @@ test "THE QUICK PICKER OFFERS ONLY WHAT HE HAS — and the flasks, which are nev
     try std.testing.expect(sawJerky);
     // It opens on what THAT socket holds; the rows are filtered and carry an empty one, so it is counted out.
     try std.testing.expectEqual(quickRowOf(fed.quick.slots[0], fed), pickIndexOf(.q0, fed));
+}
+
+test "THE SCRATCH FITS THE LONGEST LIST ANY SOCKET CAN OFFER, empty row and all" {
+    // `CAND_MAX` sized the buffer at `item.NK` and the quick picker writes `item.NK + 1` rows in the worst
+    // case — the "(empty)" one is a row like the others. It cannot be reached with today's six quickable
+    // kinds, which is exactly why it has to be arithmetic and not a count of what happens to be in the table.
+    try std.testing.expect(CAND_MAX >= item.NK + 1);
+    // …and every slot's real list fits inside it, with a bag holding one of everything.
+    var bag = item.Bag{};
+    for (0..item.NK) |i| bag.add(@enumFromInt(i), 1);
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+    const v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+    var buf: [CAND_MAX]Cand = undefined;
+    for (0..NSLOT) |i| {
+        const s: SlotId = @enumFromInt(i);
+        try std.testing.expect(candidates(s, v, &buf).len <= CAND_MAX);
+    }
 }
 
 test "the quick row prices whatever the bar holds, flask or not" {

@@ -361,10 +361,19 @@ fn plantIn(a: *Arrow, at: rl.Vector3, surf: collision.Surface) void {
     plantShaft(a);
 }
 
+/// True = it is finished with, either way. IT REACHED THE EARTH, or IT RAN OUT OF TIME STILL IN THE AIR —
+/// which are two different endings and used to be one. `ARROW_GRAV` is 3.0 and `BOLT_GRAV` 0.8, so anything
+/// loosed steeply upward is still climbing at `ARROW_LIFE`; planted there it hung forty metres up and faded
+/// on the spot. A shaft nobody can see does not stick to the sky — it is simply gone.
 fn plantGround(a: *Arrow, groundY: f32) bool {
-    if (a.pos.y > groundY + GROUND_BITE and a.age < ARROW_LIFE) return false;
-    a.pos.y = mathx.maxF(a.pos.y, groundY + GROUND_BITE); // stuck in the earth where it landed
-    plantShaft(a);
+    const floor = groundY + GROUND_BITE;
+    if (a.pos.y <= floor) {
+        a.pos.y = floor; // stuck in the earth where it landed
+        plantShaft(a);
+        return true;
+    }
+    if (a.age < ARROW_LIFE) return false;
+    a.live = false;
     return true;
 }
 
@@ -1420,6 +1429,24 @@ test "arrows thunk into cover instead of piercing it; tall shots clear a LOW blo
     while (i < 240 and !over.stuck) : (i += 1)
         stepArrow(&over, v3(0, 0, 12.0), 1.0, 0, false, &.{low}, dt);
     try std.testing.expect(over.stuck and over.pos.z > 5.5); // cleared the grave, landed well beyond
+}
+
+test "A SHAFT LOOSED AT THE SKY IS GONE, not planted in mid-air" {
+    // `ARROW_LIFE` is 3.5 s and `ARROW_GRAV` 3.0, so a steep shot is still climbing when it expires. Planted
+    // there it stuck to the sky and faded over `ARROW_STICK_FADE` where anybody looking up could see it.
+    const dt: f32 = 1.0 / 60.0;
+    var up = launchShaft(v3(0, 1.3, 0), v3(0, 400, 20), 40.0, .{ .dmg = 1 }, false, .arrow);
+    var i: u32 = 0;
+    while (i < 600 and up.live) : (i += 1) _ = stepShaft(&up, 0, &.{}, dt);
+    try std.testing.expect(!up.live); // retired…
+    try std.testing.expect(!up.stuck); // …rather than stuck to nothing
+    try std.testing.expect(up.pos.y > 5.0); // and it really was still well up there
+    // …and one that reaches the earth still PLANTS in it, which is the ending this shares a function with.
+    var down = launchShaft(v3(0, 6.0, 0), v3(0, 0, 8), 20.0, .{ .dmg = 1 }, false, .arrow);
+    i = 0;
+    while (i < 600 and !down.stuck) : (i += 1) _ = stepShaft(&down, 0, &.{}, dt);
+    try std.testing.expect(down.stuck and down.live);
+    try std.testing.expectApproxEqAbs(GROUND_BITE, down.pos.y, 1e-4);
 }
 
 test "a shot that is aimed at a standing hero HITS him, at every range and either weight" {

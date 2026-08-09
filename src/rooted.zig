@@ -121,10 +121,9 @@ const MOVES = [_]Attack{
     .{ .windDur = 0.66, .strikeDur = 0.30, .recoverDur = 1.15, .cd = 5.0, .minR = 2.8, .maxR = 4.6, .arc = 58.0, .hit = HOOK_HIT, .limb = LIMB_R },
 };
 
-/// A move's clock, for anything aiming at a beat inside it (`shots.zig`).
-pub fn moveClock(which: usize) struct { wind: f32, strike: f32, recover: f32 } {
-    const a = MOVES[@min(which, MOVES.len - 1)];
-    return .{ .wind = a.windDur, .strike = a.strikeDur, .recover = a.recoverDur };
+/// A move's clock, for anything aiming at a beat inside it (`shots.zig`) — the shared shape, off this table.
+pub fn moveClock(which: usize) foe.Clock {
+    return foe.moveClock(MOVES[@min(which, MOVES.len - 1)]);
 }
 
 

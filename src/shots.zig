@@ -2119,7 +2119,7 @@ fn chestShots(g: *Game) void {
     // THE CHARACTER BOOK — a frame per page, and the pages are the whole reason it exists, so each one is
     // staged on the state that has something to show: a picker OPEN over its delta column, a bag with
     // enough in it to fill a grid, an attribute that owns a bar.
-    for ([_]item.Kind{ .mushroom_jerky, .bloodgrass, .kobold_fang, .rune_arc, .golden_seed, .smithing_stone, .iron_key }) |k| {
+    for ([_]item.Kind{ .mushroom_jerky, .bloodgrass, .kobold_fang, .rune_arc, .golden_seed, .smithing_stone, .iron_key, .fire_tallow, .thundercrock, .cracked_rune, .toadflesh_broth, .fang_dirk, .grave_warbow, .quilted_gambeson }) |k| {
         if (g.bag.count(k) == 0) g.bag.add(k, if (k == .bloodgrass) 12 else 3);
     }
     g.menu.onStartButton();

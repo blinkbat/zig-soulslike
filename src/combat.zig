@@ -296,6 +296,11 @@ pub const Stamina = struct {
     sinceSpend: f32 = LONG_AGO, // gates the refill delay
     winded: bool = false,
     regenRate: f32 = 1.0,
+    /// THE TOADFLESH BROTH — the refill runs `brewMult`× while `brewLeft` runs. One clock, refreshed
+    /// never stacked (the status law); it speeds the trickle and touches nothing else, so the delay,
+    /// the winded latch and the panic rule all mean what they always did.
+    brewMult: f32 = 1.0,
+    brewLeft: f32 = 0,
 
     /// A guard that is NOT the hero's — its own pool, on the slow foe schedule (mirrors `Vitals.initFoe`).
     pub fn initFoe(max: f32) Stamina {
@@ -321,16 +326,23 @@ pub const Stamina = struct {
     }
 
     pub fn tick(self: *Stamina, dt: f32, sprinting: bool, committed: bool) void {
+        self.brewLeft = mathx.maxF(0, self.brewLeft - dt); // wall time — it runs out mid-sprint too
         if (sprinting) {
             self.cur = mathx.maxF(0, self.cur - STAM_SPRINT * dt);
             self.sinceSpend = 0;
         } else {
             self.sinceSpend += dt;
             if (!committed and self.sinceSpend >= STAM_DELAY) {
-                self.cur = mathx.minF(self.max, self.cur + STAM_REGEN * self.regenRate * dt);
+                const brew: f32 = if (self.brewLeft > 0) self.brewMult else 1.0;
+                self.cur = mathx.minF(self.max, self.cur + STAM_REGEN * self.regenRate * brew * dt);
             }
         }
         self.settleWind();
+    }
+
+    pub fn startBrew(self: *Stamina, mult: f32, secs: f32) void {
+        self.brewMult = mult;
+        self.brewLeft = secs;
     }
 
     pub fn windedTo(self: *const Stamina) f32 {
@@ -359,6 +371,7 @@ pub const Stamina = struct {
         self.cur = self.max;
         self.sinceSpend = LONG_AGO;
         self.winded = false;
+        self.brewLeft = 0; // a grace clears what is on him, the ward's rule
     }
 };
 

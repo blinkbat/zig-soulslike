@@ -18,6 +18,13 @@ pub const Kind = enum(u8) {
     greatclub,
     leech_signet,
     soul_binding_ring, // it breaks in place of you: a death spills no souls while one is on you
+    fire_tallow, // wiped on the blade: the fire arrow's rule, moved to the swing
+    thundercrock, // thrown lightning — the first of it anywhere in the world
+    cracked_rune, // souls, straight onto the counter
+    toadflesh_broth, // the stamina refill runs faster for a while
+    fang_dirk, // more gear waiting on the equip system, the tower shield's shelf
+    grave_warbow,
+    quilted_gambeson,
 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
@@ -40,6 +47,13 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .greatclub => "Bog-Oak Greatclub",
         .leech_signet => "Leech Signet",
         .soul_binding_ring => "Soul Binding Ring",
+        .fire_tallow => "Fire Tallow",
+        .thundercrock => "Thundercrock",
+        .cracked_rune => "Cracked Rune",
+        .toadflesh_broth => "Toadflesh Broth",
+        .fang_dirk => "Fang Dirk",
+        .grave_warbow => "Grave Warbow",
+        .quilted_gambeson => "Quilted Gambeson",
     };
 }
 
@@ -63,10 +77,10 @@ pub const Class = enum {
 
 pub fn class(k: Kind) Class {
     return switch (k) {
-        .crimson_flask, .cerulean_flask, .mushroom_jerky, .ember_candle, .sporeling_cap, .second_wind => .tool,
-        // The three pieces of GEAR shelve as treasure until there is an arm to take them up — the shelf
+        .crimson_flask, .cerulean_flask, .mushroom_jerky, .ember_candle, .sporeling_cap, .second_wind, .fire_tallow, .thundercrock, .cracked_rune, .toadflesh_broth => .tool,
+        // The pieces of GEAR shelve as treasure until there is an arm to take them up — the shelf
         // whose own definition is "something the game has not built yet".
-        .rune_arc, .golden_seed, .tower_shield, .greatclub, .leech_signet => .treasure,
+        .rune_arc, .golden_seed, .tower_shield, .greatclub, .leech_signet, .fang_dirk, .grave_warbow, .quilted_gambeson => .treasure,
         // NOT a tool, though it is the one carried thing that DOES something: a tool is spent by pressing
         // Confirm on it, and this one is spent by dying. `usable` stays false and the shelf says so.
         .soul_binding_ring => .treasure,
@@ -97,6 +111,13 @@ pub fn describe(k: Kind) [:0]const u8 {
         .greatclub => "Bog-oak shod with iron, heavier than it looks, and it looks heavy. No hand here knows its heft yet.",
         .leech_signet => "A signet cut from a leech's beak, warm against the skin. Whatever bargain it offers, nothing here can seal it yet.",
         .soul_binding_ring => "A thin gold band with a hairline already run through it. Die with one on you and the RING gives instead: it snaps, and what you were carrying stays carried.",
+        .fire_tallow => "Rendered fire-fat, unlit, in a waxed twist of cloth. Wiped along an edge it clings and burns: for a minute the sword hangs fire on top of what it always did.",
+        .thundercrock => "A squat clay jar that hums against the palm, thrown like the candle. It cracks on what it lands on and the sky's own spark gets out — the only lightning anywhere in these ruins.",
+        .cracked_rune => "A rune split clean through, its light already leaking. Crushed in the fist it is worth a middling foe's souls, and nobody walks back for these.",
+        .toadflesh_broth => "Toad shanks boiled pale, drunk cold from the skin they cooked in. It sits heavy and warm, and for a minute your wind comes back the faster for it.",
+        .fang_dirk => "A dirk ground out of the longest fang in a kobold's jaw, hafted in cord. Quick, and hungry for nothing; no hand here has learned to fight with it yet.",
+        .grave_warbow => "A warbow of grave-oak, its draw twice the skeletons' hunting bows. It would loose a shaft worth stopping for; no arm here can bend it yet.",
+        .quilted_gambeson => "A coat of rag-stuffed linen, stitched in diamonds and stained by whoever wore it last. It would turn the edge off a blow, if anything here knew how to wear armour.",
     };
 }
 
@@ -109,11 +130,18 @@ pub const Use = union(enum) {
     /// HP back slowly over time (`combat.Regen` is the mechanism): `frac` of MAX HP spread over `secs` seconds.
     regen: struct { frac: f32, secs: f32 },
     /// LOBBED at the reticle through the shafts' own pool — one victim, like everything thrown here.
-    lob: struct { dmg: f32, fire: f32, poise: f32 },
+    lob: struct { dmg: f32, fire: f32 = 0, lightning: f32 = 0, poise: f32 },
     /// A timed ward: `chaos` resistance for `secs` seconds. Refreshes, never stacks (the status law).
     ward: struct { chaos: f32, secs: f32 },
     /// `share` of the stamina pool back at once, through the winded latch's own gate.
     wind: struct { share: f32 },
+    /// WIPED ON THE BLADE: the sword hangs `frac` of its own physical as fire for `secs` — the fire
+    /// arrow's rule (`hero.FIRE_ARROW_FRAC`), moved to the swing. Refreshes, never stacks.
+    grease: struct { frac: f32, secs: f32 },
+    /// Runes, straight onto the counter.
+    souls: struct { n: u32 },
+    /// The stamina refill runs `mult` times its rate for `secs` seconds. Refreshes, never stacks.
+    brew: struct { mult: f32, secs: f32 },
 };
 
 pub fn use(k: Kind) Use {
@@ -124,6 +152,14 @@ pub fn use(k: Kind) Use {
         .ember_candle => .{ .lob = .{ .dmg = 8, .fire = 22, .poise = 12 } },
         .sporeling_cap => .{ .ward = .{ .chaos = 40, .secs = 60 } },
         .second_wind => .{ .wind = .{ .share = 0.5 } },
+        // The fire arrow's own fraction: the tallow makes a sword of the burning shaft, not a bigger one.
+        .fire_tallow => .{ .grease = .{ .frac = 0.5, .secs = 60 } },
+        // The candle's weights with the element swapped — the pair teach one throw, and the tables in
+        // `combat` decide which jar answers which creature.
+        .thundercrock => .{ .lob = .{ .dmg = 8, .lightning = 22, .poise = 12 } },
+        // A middling foe's worth (the Rooted's own figure) — found money, not a farm.
+        .cracked_rune => .{ .souls = .{ .n = 150 } },
+        .toadflesh_broth => .{ .brew = .{ .mult = 1.5, .secs = 60 } },
         .crimson_flask,
         .cerulean_flask,
         .rune_arc,
@@ -136,6 +172,9 @@ pub fn use(k: Kind) Use {
         .greatclub,
         .leech_signet,
         .soul_binding_ring,
+        .fang_dirk,
+        .grave_warbow,
+        .quilted_gambeson,
         => .none,
     };
 }
@@ -279,7 +318,7 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
             .lob => |l| {
                 found += 1;
                 try std.testing.expect(usable(k));
-                try std.testing.expect(l.dmg + l.fire > 0);
+                try std.testing.expect(l.dmg + l.fire + l.lightning > 0);
             },
             .ward => |w| {
                 found += 1;
@@ -290,6 +329,23 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
                 found += 1;
                 try std.testing.expect(usable(k));
                 try std.testing.expect(w.share > 0 and w.share <= 1.0);
+            },
+            .grease => |gr| {
+                found += 1;
+                try std.testing.expect(usable(k));
+                try std.testing.expect(gr.frac > 0 and gr.frac <= 1.0);
+                try std.testing.expect(gr.secs > 0);
+            },
+            .souls => |s| {
+                found += 1;
+                try std.testing.expect(usable(k));
+                try std.testing.expect(s.n > 0);
+            },
+            .brew => |b| {
+                found += 1;
+                try std.testing.expect(usable(k));
+                try std.testing.expect(b.mult > 1.0);
+                try std.testing.expect(b.secs > 0);
             },
         }
     }

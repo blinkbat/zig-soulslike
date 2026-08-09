@@ -407,9 +407,13 @@ chips you for it; a parry is a COMMITTED WINDOW that pays `STAM_PARRY` once and 
 - **ON THE MOUSE THE TWO HALVES OF L2 PART COMPANY** (`PARRY_KEY`). RMB is already the guard's held level, and
   Shift+RMB — the mirror of Shift+LMB — would fire a parry every time a sprinting player pressed RMB to get his
   shield up, because Shift is the sprint here and not ER's Space. So the edge takes a key of its own.
-- **THE WINDOW AND THE ANIMATION ARE TWO CLOCKS** (`parryLive` vs `PARRY_DUR`). The catch is open for ~0.15 s at
-  the front; the shove plays for a third of a second after it shuts, and `canGuard` refuses the whole time — so
-  a mistimed parry leaves him with no shield either, whether or not he was holding one. That tail IS the price.
+- **THE WINDOW AND THE ANIMATION ARE TWO CLOCKS** (`parryLive` vs `PARRY_DUR`). The catch is open for ~0.16 s;
+  the shove plays for a quarter of a second after it shuts, and `canGuard` refuses the whole time — so a
+  mistimed parry leaves him with no shield either, whether or not he was holding one. That tail IS the price.
+- **AND IT IS SLOW OFF THE MARK** (owner's call, `PARRY_OPEN` 0.10 of 0.52). Boards do not snap: a tenth of a
+  second passes before anything can be caught, and the COIL is already readable in it. The startup is the
+  other half of what the window costs — widening `foe.PARRY_LEAD` makes catches easier, this makes STARTING
+  one a commitment, and they are separate dials on purpose.
 - **THE ATTACK ALWAYS DIES; THE HEAVY STUN IS EARNED** (owner's "may heavy stun them"). `combat.PARRY_HIT` is
   STANCE and nothing else — no damage, because a parry has never been damage, and no poise, so a catch can
   never resolve as a flinch: it breaks the stance or it does not. Whether a catch is a stumble or a punish
@@ -466,6 +470,17 @@ chips you for it; a parry is a COMMITTED WINDOW that pays `STAM_PARRY` once and 
 - **A CATCH IS A BLOCK'S RECOIL PLUS SPARKS** — `noteParry` stamps `blockT`, the same channel, because the man
   moves and the shield holds either way. The sparks separate on HUE (hot amber on pale tan) and their FAN
   outruns their forward throw, or they sit superimposed on the boards they came off.
+- **AND THE SWIPE ITSELF THROWS A GLINT, CAUGHT OR NOT** (`parryGlint`, owner: it needed to be far more
+  apparent and to spark). It fires ONCE on the whip's own peak frame — the frame that catches — because
+  under the zero-input-lag law a committed action that shows nothing is indistinguishable from a dropped
+  press. **IT IS LAID ALONG THE ARC, NOT THROWN FROM A POINT** (`PARRY_GLINT_SPAN`): every burst here is
+  coincident on its emission frame, which is why the CATCH is photographed four frames in — but a catch has
+  an impact to justify a flash and a whiffed swipe has none, so a ball of white beside the boards with
+  nothing touching them read as an artifact. Spread over the sweep's own axis it is a STREAK from the first
+  frame, which is the shape the motion has. Count buys its brightness; a TIGHT fan and SHORT lives are what
+  keep it a glint — thrown as far and lived as long as struck iron it was strewn across the grass a metre
+  off the boards and read as litter. It is always less than a catch, and never a different colour: what
+  separates the two is size, or a whiff reads as half a hit.
 
 ### In combat, and the quick bar
 
@@ -577,9 +592,10 @@ number, so a readout and a mechanic cannot disagree.
   rename is a compile error. An array literal in enum order silently shifts on a fifth element.
 - **POISE AND STANCE BELONG TO THE BLOW, NOT THE BODY.** `guardChip` is damage only for the same
   reason. **A shield is billed on the RAW blow** (`Hit.raw`).
-- **ONE AND A HALF OF THE FOUR ARE LIVE** — FIRE (hero's fire arrow, kobold sling clump) and CHAOS, which
-  is now the WAND'S ALONE (the bolt and the roots' grip). Cold and lightning have no source yet, and nothing
-  in the world deals chaos AT the hero since the brood's venom and the sporeling's spores became POISON.
+- **TWO AND A HALF OF THE FOUR ARE LIVE** — FIRE (hero's fire arrow, the tallowed sword, kobold sling
+  clump), LIGHTNING (the thundercrock's alone — nothing deals it AT the hero), and CHAOS, which is the
+  WAND'S ALONE (the bolt and the roots' grip). Cold has no source yet, and nothing in the world deals chaos
+  AT the hero since the brood's venom and the sporeling's spores became POISON.
 - Every foe carries its own table, authored where its HP is (`initFoe(..).withRes(..)`):
 
   | creature | fire | cold | lightning | chaos | why |
@@ -804,6 +820,12 @@ The mesh is TILED (`TCHUNK`), with normals from the FIELD so two tiles agree at 
   bar down in the field.
 - **THE CAMERA SHORTENS ITS BOOM RATHER THAN BURYING THE EYE** (`camera.followClear`); lifting instead
   would tip the view toward looking straight down as you climb.
+- **BUT IT GIVES WAY TO TERRAIN ONLY, NEVER TO ITS OWN PITCH** (owner: it zoomed in hard when tilting up
+  onto a tall foe). An up-tilt puts the eye LOW on purpose — that is `game.lockPitch` framing an ogre — and
+  the probe answered by eating boom to buy the altitude back, so every lock onto something tall read as a
+  shove toward the hero. Only ground standing PROUD of the hero's own level (`GROUND_RISE`, just under one
+  terrain riser, so quantisation cannot bill a step) is worth paying distance for; on the flat the skim
+  clamp lifts the eye those last few centimetres and the boom stays the player's.
 - **THE HERO LEANS INTO THE HILL** (`hero.slopeLean`, 0.55 of the slope capped at 16°) through the
   SAME `rx(bodyPitch)` term as the run lean — same motion, same hinge.
 - **THE TERRAIN RECEIVES SHADOWS BUT DOES NOT CAST.** Self-shadowing a heightfield off a 108 m ortho
@@ -1169,7 +1191,10 @@ the counter is a score with a real risk attached and nothing to buy. The BINDING
 that does anything and it is worn by being CARRIED — there is no ring slot, because there is no equip system
 under one. POISON is the only status effect, it is the HERO's alone (nothing applies one to a foe, and no foe
 reads one), and nothing RESISTS it yet — the sporeling cap's ward still grants CHAOS resistance, which since
-the venom became poison protects against nothing in the world. The parry exists but has no RIPOSTE behind it — a caught blow buys a stagger and the ordinary punish,
+the venom became poison protects against nothing in the world. THE SEVEN NEWEST ITEMS (fire tallow,
+thundercrock, cracked rune, toadflesh broth, fang dirk, grave warbow, quilted gambeson) are registered and
+the four tools WORK, but nothing PLACES any of them — no chest holds one and no map op drops one. The crock
+lands with no burst FX yet, and the tallowed blade shows nothing on the sword while it runs. The parry exists but has no RIPOSTE behind it — a caught blow buys a stagger and the ordinary punish,
 not a critical. Four creatures carry parry windows; the archers, the kobolds and the shades have none yet, and
 the broodlings are out on purpose. No foot IK — `rx(bodyPitch)` rotates about the WORLD ORIGIN, so a deep lean levers a
 forward-swung foot down and feet clip a few cm on slopes. The roll has front-loaded i-frames but no

@@ -151,6 +151,13 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
         .greatclub => greatclub(cx, cy, px),
         .leech_signet => leechSignet(cx, cy, px),
         .soul_binding_ring => soulRing(cx, cy, px),
+        .fire_tallow => fireTallow(cx, cy, px),
+        .thundercrock => thundercrock(cx, cy, px),
+        .cracked_rune => crackedRune(cx, cy, px),
+        .toadflesh_broth => toadfleshBroth(cx, cy, px),
+        .fang_dirk => fangDirk(cx, cy, px),
+        .grave_warbow => graveWarbow(cx, cy, px),
+        .quilted_gambeson => quiltedGambeson(cx, cy, px),
     }
 }
 
@@ -292,6 +299,219 @@ fn leechSignet(cx: f32, cy: f32, px: f32) void {
     rl.drawCircleV(v2(cx, cy - s * 0.16), s * 0.075, CRIMSON); // the bead
     rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.18), 1.4 * k, rgba(255, 200, 190, 220)); // its gloss
     rl.drawCircleV(v2(cx, cy - s * 0.10), 1.6 * k, rgba(44, 34, 30, 255)); // the claw holding it
+}
+
+/// The candle's fat WITHOUT wick or flame — unlit on purpose: what it promises burns on the sword, not in
+/// the bag. An open twist of cloth with the fat slumped proud of it.
+fn fireTallow(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0xFA77);
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.12 + 1.2 * k), s * 0.25, rgba(0, 0, 0, 115));
+    // The cloth, gathered to a twist at one side.
+    quad(v2(cx - s * 0.23, cy + s * 0.02), v2(cx + s * 0.22, cy + s * 0.05), v2(cx + s * 0.15, cy + s * 0.30), v2(cx - s * 0.17, cy + s * 0.27), SALT);
+    rl.drawLineEx(v2(cx - s * 0.23, cy + s * 0.04), v2(cx - s * 0.33, cy - s * 0.04), 3.4 * k, CORD);
+    rl.drawLineEx(v2(cx - s * 0.05, cy + s * 0.10), v2(cx - s * 0.10, cy + s * 0.24), 1.0 * k, rgba(190, 172, 138, 255)); // one fold
+    // The fat, two lobes no two alike, and its sheen.
+    rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.03), s * 0.165, EMBER_FAT);
+    rl.drawCircleV(v2(cx + s * 0.11 + rng.range(-1.2, 1.2) * k, cy + s * 0.01), s * 0.115, EMBER_FAT_DK);
+    rl.drawCircleV(v2(cx - s * 0.09, cy - s * 0.08), s * 0.05, rgba(246, 222, 164, 255));
+    // …and one run of it down the cloth: it is going to end up on an edge anyway.
+    rl.drawLineEx(v2(cx + s * 0.05, cy + s * 0.08), v2(cx + s * 0.07 + rng.range(0, 2) * k, cy + s * 0.25), 2.2 * k, EMBER_FAT_DK);
+}
+
+/// A squat clay jar, corked, the spark already showing at a crack in the belly — the same LIGHTNING pale
+/// its trail flies (`archer.TRAIL_CROCK`'s read), which nothing else in the bag or the sky is.
+fn thundercrock(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x7C0C);
+    const clay = rgba(118, 76, 50, 255);
+    const clayDk = rgba(80, 52, 34, 255);
+    const lean = rng.range(-1.4, 1.4) * k;
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.09 + 1.2 * k), s * 0.25, rgba(0, 0, 0, 120));
+    rl.drawCircleV(v2(cx, cy + s * 0.08), s * 0.245, clay); // the belly
+    rl.drawCircleV(v2(cx - s * 0.07, cy + s * 0.02), s * 0.15, rgba(142, 96, 64, 255)); // thrown-pot sheen
+    quad(v2(cx - s * 0.09 + lean, cy - s * 0.21), v2(cx + s * 0.09 + lean, cy - s * 0.21), v2(cx + s * 0.07, cy - s * 0.07), v2(cx - s * 0.07, cy - s * 0.07), clayDk); // the neck, off plumb
+    rl.drawCircleV(v2(cx + lean, cy - s * 0.22), s * 0.07, CORK);
+    // THE CRACK, AND THE SKY'S OWN SPARK IN IT — the read of the whole item, so it is drawn HOT (a pale
+    // blue jag on brown clay was a hairline) and it BREAKS THE RIM: the bolt gets out past the belly at
+    // both ends, which is what says a thing is escaping rather than a pot is chipped.
+    // SIZED BETWEEN TWO FAILURES: at the width that first read, it hid the jar it exists to point at. It
+    // sits INSIDE the belly and clears the rim only at its two ends.
+    const jag = [_]rl.Vector2{
+        v2(cx - s * 0.27, cy + s * 0.01),
+        v2(cx - s * 0.11, cy + s * 0.09),
+        v2(cx - s * 0.01, cy + s * 0.03),
+        v2(cx + s * 0.07, cy + s * 0.15),
+        v2(cx + s * 0.26, cy + s * 0.09),
+    };
+    for (0..jag.len - 1) |i| {
+        const w = mathx.lerpF(3.0, 1.8, @as(f32, @floatFromInt(i)) / 3.0) * k;
+        rl.drawLineEx(jag[i], jag[i + 1], w, SPARK); // the cool outer body of the bolt…
+        rl.drawLineEx(jag[i], jag[i + 1], w * 0.40, rgba(252, 254, 255, 255)); // …and the white heart in it
+    }
+    // The glare where it is coming through the shell, kept under the neck so the jar keeps its silhouette.
+    rl.drawCircleV(jag[2], s * 0.038, rgba(232, 246, 255, 120));
+    rl.drawCircleV(jag[2], s * 0.018, rgba(255, 255, 255, 235));
+}
+
+/// TWO HALVES OF ONE RUNE PARTED A HAIR, the light getting out of the split. Kin to the Rune Arc's gilt —
+/// this is the currency itself, so the split carries the pale core the arc wears as a band.
+fn crackedRune(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0xC4AC);
+    // ONE STONE WITH A BREAK THROUGH IT, not two halves side by side: as a pair of upright slabs with a
+    // lit gutter between them it read as an open BOOK, which is the shape any two equal panels make.
+    // A six-sided tablet, split down its own middle, the halves shifted a hair ACROSS the break.
+    const hw = s * 0.19;
+    const shy = s * 0.17; // where the sides turn — the tablet's shoulders
+    const top = cy - s * 0.32;
+    const bot = cy + s * 0.30;
+    const slip = s * 0.028; // how far the right half has slid down its own crack
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.04 + 1.2 * k), s * 0.26, rgba(0, 0, 0, 120));
+    // Each half is a quad down the seam — apex, shoulder, shoulder, apex — so neither is a rectangle.
+    quad(v2(cx, top), v2(cx, bot), v2(cx - hw, cy + shy), v2(cx - hw, cy - shy), rgba(0, 0, 0, 170));
+    quad(v2(cx, top + slip), v2(cx, bot + slip), v2(cx + hw, cy + shy + slip), v2(cx + hw, cy - shy + slip), rgba(0, 0, 0, 170));
+    quad(v2(cx - 0.8 * k, top), v2(cx - 0.8 * k, bot), v2(cx - hw + 1.4 * k, cy + shy), v2(cx - hw + 1.4 * k, cy - shy), uiart.GILT_DIM);
+    quad(v2(cx + 0.8 * k, top + slip), v2(cx + 0.8 * k, bot + slip), v2(cx + hw - 1.4 * k, cy + shy + slip), v2(cx + hw - 1.4 * k, cy - shy + slip), uiart.GILT);
+    // The lit bevels off the two upper edges — struck metal, not parchment.
+    rl.drawLineEx(v2(cx - 0.8 * k, top), v2(cx - hw + 1.4 * k, cy - shy), 1.3 * k, uiart.GILT_BRIGHT);
+    rl.drawLineEx(v2(cx + 0.8 * k, top + slip), v2(cx + hw - 1.4 * k, cy - shy + slip), 1.3 * k, uiart.GILT_BRIGHT);
+    // THE RUNE CUT INTO THE FACE — half the mark on each half, which is what says a rune broke and not a
+    // coin. Dark, because a groove is a shadow.
+    const groove = rgba(92, 66, 20, 235);
+    rl.drawLineEx(v2(cx - hw * 0.72, cy - s * 0.10), v2(cx - 1.5 * k, cy - s * 0.17), 1.7 * k, groove);
+    rl.drawLineEx(v2(cx - hw * 0.62, cy + s * 0.15), v2(cx - hw * 0.62, cy - s * 0.06), 1.7 * k, groove);
+    rl.drawLineEx(v2(cx + 1.5 * k, cy - s * 0.16 + slip), v2(cx + hw * 0.74, cy - s * 0.01 + slip), 1.7 * k, groove);
+    rl.drawLineEx(v2(cx + hw * 0.74, cy - s * 0.01 + slip), v2(cx + hw * 0.40, cy + s * 0.16 + slip), 1.7 * k, groove);
+    // THE LIGHT GETTING OUT OF THE BREAK, and it is a JAG rather than a gutter — a straight bright band
+    // between two panels is a spine, and a spine is a book.
+    const seam = [_]rl.Vector2{
+        v2(cx + 1.0 * k, top + s * 0.03),
+        v2(cx - 1.6 * k, cy - s * 0.11),
+        v2(cx + 2.0 * k, cy + s * 0.02),
+        v2(cx - 1.0 * k, bot - s * 0.03),
+    };
+    for (0..seam.len - 1) |i| {
+        rl.drawLineEx(seam[i], seam[i + 1], 2.6 * k, rgba(255, 240, 196, 210));
+        rl.drawLineEx(seam[i], seam[i + 1], 1.1 * k, rgba(255, 254, 240, 250));
+    }
+    rl.drawCircleV(seam[2], 2.6 * k, rgba(255, 254, 244, 255)); // the hot point at the widest of it
+    // Motes coming off the leak, the arc's own idiom.
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) {
+        rl.drawCircleV(v2(cx + rng.range(-0.08, 0.08) * s, cy + rng.range(-0.36, -0.12) * s), rng.range(0.6, 1.2) * k, rgba(255, 232, 176, 200));
+    }
+}
+
+/// The skin it cooked in: a sagging waterskin tied at the neck over a bone toggle. Leather and bone say
+/// FOOD OFF A CAMPFIRE, and nothing about it glows — it is soup.
+fn toadfleshBroth(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x70AD);
+    const sag = rng.range(0, 1.6) * k;
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.12 + 1.2 * k), s * 0.24, rgba(0, 0, 0, 115));
+    // The body: two lobes, fuller on one side — a skin sags where the weight went.
+    rl.drawCircleV(v2(cx - s * 0.04, cy + s * 0.12 + sag), s * 0.21, GRIP);
+    rl.drawCircleV(v2(cx + s * 0.10, cy + s * 0.08), s * 0.16, GRIP);
+    rl.drawCircleV(v2(cx - s * 0.09, cy + s * 0.05), s * 0.11, GRIP_LT); // the swell catching light
+    // The neck, pinched and tied, and the toggle that stops the cord.
+    quad(v2(cx - s * 0.045, cy - s * 0.18), v2(cx + s * 0.045, cy - s * 0.18), v2(cx + s * 0.06, cy - s * 0.02), v2(cx - s * 0.06, cy - s * 0.02), BOARD_JOINT);
+    rl.drawLineEx(v2(cx - s * 0.08, cy - s * 0.10), v2(cx + s * 0.08, cy - s * 0.12), 2.6 * k, CORD);
+    rl.drawLineEx(v2(cx - s * 0.11, cy - s * 0.20), v2(cx + s * 0.11, cy - s * 0.22), 3.0 * k, BONE); // the toggle
+    rl.drawCircleV(v2(cx + s * 0.11, cy - s * 0.22), 1.5 * k, BONE_DK); // its cut end
+    // One pale bead at the mouth: drunk from, not poured.
+    rl.drawCircleV(v2(cx + s * 0.02, cy - s * 0.155), 1.4 * k, SALT);
+}
+
+/// THE KOBOLD FANG AS A BLADE — the tooth's own quadratic curve (`koboldFang`'s construction), ground to a
+/// lit edge and hafted in cord. Bone, not steel: what it is made of is the whole item.
+fn fangDirk(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0xD1FA);
+    const rootP = v2(cx - s * 0.10, cy + s * 0.14); // where blade meets haft
+    const tipP = v2(cx + s * 0.24, cy - s * 0.34);
+    const bend = rng.range(0.12, 0.18);
+    const SEGS = 12;
+    var prev = rootP;
+    for (0..SEGS + 1) |i| {
+        const t = @as(f32, @floatFromInt(i)) / SEGS;
+        const p = onAxis(rootP, tipP, t, -bend * s * (4.0 * t * (1.0 - t)));
+        const w = mathx.lerpF(5.2, 0.5, t * t * 0.85 + t * 0.15) * k;
+        if (i > 0) rl.drawLineEx(prev, p, w, mathx.lerpColor(BONE_DK, BONE, mathx.clampF(t * 1.25, 0, 1)));
+        prev = p;
+    }
+    // The GROUND EDGE along the hollow of the curve — brighter than any tooth, which is what says dirk.
+    rl.drawLineEx(onAxis(rootP, tipP, 0.15, 1.2 * k), onAxis(rootP, tipP, 0.88, 0.3 * k), 1.1 * k, rgba(255, 252, 240, 220));
+    // The haft: a stub of the root wrapped in cord, three turns, and an iron washer for a guard.
+    const buttP = v2(cx - s * 0.24, cy + s * 0.30);
+    rl.drawLineEx(rootP, buttP, 5.0 * k, GRIP);
+    rl.drawCircleV(v2(rootP.x, rootP.y), 3.2 * k, IRON_DK);
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) {
+        const t = 0.25 + 0.25 * @as(f32, @floatFromInt(i)) + rng.range(-0.03, 0.03);
+        rl.drawLineEx(onAxis(rootP, buttP, t, -3.0 * k), onAxis(rootP, buttP, t + 0.07, 3.0 * k), 1.5 * k, CORD);
+    }
+    rl.drawCircleV(buttP, 2.4 * k, GRIP_LT); // the pommel-less butt, just leather over bone
+}
+
+/// TWICE THE SKELETONS' TIMBER: a stave of grave-oak, iron-shod, strung. Darker and thicker than any bow
+/// this HUD has drawn, and the string runs the chord to say it is a bow and not a stick.
+fn graveWarbow(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x6B0B);
+    const top = v2(cx + s * 0.16, cy - s * 0.36);
+    const bot = v2(cx - s * 0.14 + rng.range(-1.2, 1.2) * k, cy + s * 0.37);
+    const belly = rng.range(0.16, 0.20);
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.06 + 1.4 * k), s * 0.22, rgba(0, 0, 0, 100));
+    // The stave: a run of segments bellying off the chord, thick in the grip and losing it toward the tips.
+    const SEGS = 14;
+    var prev = top;
+    for (0..SEGS + 1) |i| {
+        const t = @as(f32, @floatFromInt(i)) / SEGS;
+        const p = onAxis(top, bot, t, -belly * s * (4.0 * t * (1.0 - t)));
+        const w = mathx.lerpF(2.6, 6.0, 4.0 * t * (1.0 - t)) * k;
+        if (i > 0) rl.drawLineEx(prev, p, w, ROOT_BARK);
+        prev = p;
+    }
+    // The lit back of the stave, and the wrapped grip at its middle.
+    rl.drawLineEx(onAxis(top, bot, 0.22, -belly * s * 0.75), onAxis(top, bot, 0.78, -belly * s * 0.72), 1.2 * k, rgba(110, 82, 54, 255));
+    rl.drawLineEx(onAxis(top, bot, 0.44, -belly * s * 1.02), onAxis(top, bot, 0.56, -belly * s * 1.00), 6.8 * k, GRIP);
+    // Iron shoes on both tips — the fittings of a weapon, not a hunting stick.
+    for ([_]rl.Vector2{ top, bot }) |p| rl.drawCircleV(p, 2.2 * k, IRON_DK);
+    rl.drawLineEx(top, bot, 1.0 * k, BOWSTRING); // the string, dead straight down the chord
+}
+
+/// A COAT OFF ITS WEARER: box body, stub sleeves, the diamond stitching that names it — and the stain
+/// nobody asked about, because "stained by whoever wore it last" is the description's own second sentence.
+fn quiltedGambeson(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x6A3B);
+    const linen = rgba(184, 168, 136, 255);
+    const linenDk = rgba(140, 126, 100, 255);
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.08 + 1.4 * k), s * 0.26, rgba(0, 0, 0, 110));
+    // Sleeves first so the body sits OVER their roots.
+    quad(v2(cx - s * 0.20, cy - s * 0.18), v2(cx - s * 0.34, cy - s * 0.02), v2(cx - s * 0.26, cy + s * 0.06), v2(cx - s * 0.14, cy - s * 0.06), linenDk);
+    quad(v2(cx + s * 0.20, cy - s * 0.18), v2(cx + s * 0.34, cy - s * 0.04), v2(cx + s * 0.27, cy + s * 0.05), v2(cx + s * 0.14, cy - s * 0.06), linenDk);
+    // The body, hem a little uneven, and the dark V of the collar.
+    quad(v2(cx - s * 0.19, cy - s * 0.22), v2(cx + s * 0.19, cy - s * 0.22), v2(cx + s * 0.17, cy + s * 0.32), v2(cx - s * 0.16, cy + s * 0.30 + rng.range(0, 2) * k), linen);
+    quad(v2(cx - s * 0.06, cy - s * 0.22), v2(cx + s * 0.06, cy - s * 0.22), v2(cx + s * 0.01, cy - s * 0.10), v2(cx - s * 0.01, cy - s * 0.10), rgba(56, 44, 34, 255));
+    // THE QUILTING: a diamond lattice, and every endpoint is solved INSIDE the body — run off a stepped
+    // key it walked out of the coat and out of the bag cell with it.
+    var i: u32 = 0;
+    while (i < 4) : (i += 1) {
+        const yc = cy - s * 0.10 + @as(f32, @floatFromInt(i)) * s * 0.10 + rng.range(-0.012, 0.012) * s;
+        rl.drawLineEx(v2(cx - s * 0.17, yc - s * 0.07), v2(cx + s * 0.17, yc + s * 0.07), 0.9 * k, linenDk);
+        rl.drawLineEx(v2(cx - s * 0.17, yc + s * 0.07), v2(cx + s * 0.17, yc - s * 0.07), 0.9 * k, linenDk);
+    }
+    rl.drawCircleV(v2(cx + s * 0.08, cy + s * 0.20), s * 0.075, rgba(96, 62, 48, 170)); // the stain, low and old
+    rl.drawCircleV(v2(cx + s * 0.12, cy + s * 0.24), s * 0.045, rgba(96, 62, 48, 140));
 }
 
 pub fn flask(cx: f32, cy: f32, px: f32, tint: FlaskTint, full: bool) void {

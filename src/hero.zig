@@ -461,7 +461,7 @@ comptime {
     // …and the ROOTS' own burst, which shares this one pool and is thrown on the same frame a gather ends.
     const erupt = ROOT_DUST + ROOT_MOTES;
 // …and the shield's sparks: a parry cannot run WITH a cast, but its sparks outlive the swap.
-    const caught = PARRY_SPARKS + 1;
+    const caught = PARRY_SPARKS + 1 + PARRY_GLINT + 1; // a caught parry also glinted on its own whip frame
     const worst = gather + @as(f32, release + erupt + caught + 2 * BOLT_BURST); // two bolts can land across chained casts
     if (@as(f32, FX_N) < worst) @compileError(std.fmt.comptimePrint(
         "hero: FX_N = {d} but a cast can have {d} particles in the air — raise it",
@@ -532,43 +532,44 @@ const BLOCK_FLASH = 0.22; // a LICK of red, well under `takeHit`'s 0.35 for a bl
 
 // THE PARRY — L2, the shield's own skill: one short committed shove with a catch window at the front. It does
 // NOT ask whether the guard is up, and `canGuard` refuses while it runs — that tail is the risk it is priced on.
-pub const PARRY_DUR = 0.44;
-/// It opens a HAIR late — the arm has to be visibly moving, which is `foe.TELL_MIN`'s rule turned on the
-/// player — and shuts less than halfway through, so the recovery is honestly open.
-const PARRY_OPEN = 0.04;
-const PARRY_SHUT = 0.19;
+pub const PARRY_DUR = 0.52;
+/// It opens off a REAL wind-up (owner: boards should be slower off the mark than they were) — a tenth of a
+/// second in which the coil is already readable, `foe.TELL_MIN`'s rule turned on the player — and shuts by
+/// half way, so the recovery is honestly open.
+const PARRY_OPEN = 0.10;
+const PARRY_SHUT = 0.26;
 /// Where the shove PEAKS as a fraction of the duration, kept INSIDE the window: the frame that catches has to
 /// be the frame the boards are furthest out, or the pose and the mechanic are telling different stories.
-pub const PARRY_PUNCH_AT = 0.30;
+pub const PARRY_PUNCH_AT = 0.33;
 /// A MASS IN MOTION OVERSHOOTS ITS REST — three quarters of a turn, so the arm crosses its rest once first.
 const PARRY_REBOUND = 0.75;
 /// THE THRUST, AND IT IS PAID FOR AT BOTH JOINTS. `shieldFit` is the INVERSE of the guard's arm fold
 /// (`GUARD_ARM_FOLD` = shoulder flex + elbow), so the boards keep their facing only while that SUM does:
 /// opened at the elbow alone, a shove this size rotates the shield clean off its own arm (measured).
-const PARRY_PUNCH = 52.0;
+const PARRY_PUNCH = 60.0;
 /// …and the boards SQUARE UP onto the threat, unwinding the guard's own cross rather than carrying on past it.
 /// Swung further across at the SHOULDER instead, they leave his chest bare and arrive edge-on.
 const PARRY_SWEEP = 26.0;
-const PARRY_WRIST = 16.0; // deg of cant in the fist, kept small: the fold does the work
+const PARRY_WRIST = 20.0; // deg of cant in the fist, kept small: the fold does the work
 /// THE SWIPE, AND IT IS DRIVEN FROM THE WAIST — which is why the sweep is not at the shoulder: a shoulder yaw
 /// big enough to carry the boards across turns their FACE with it (`shieldFit` inverts that yaw). Deg PER SEGMENT.
-const PARRY_TRUNK = 38.0;
+const PARRY_TRUNK = 52.0; // (owner: the swipe was not reading — the waist is the face-safe channel to spend on)
 /// …and the SHOULDER adds a little on top, so the boards outrun the chest carrying them. Small, because every
 /// degree of it turns the shield's face as well as moving it: this is the axis `shieldFit` inverts.
-const PARRY_ARM_LEAD = 12.0;
+const PARRY_ARM_LEAD = 16.0;
 /// He COILS the other way first, then whips across, then settles back onto centre — three phases, own clock.
-pub const PARRY_COIL_AT = 0.13; // fraction of the action spent winding up…
+pub const PARRY_COIL_AT = 0.17; // fraction of the action spent winding up…
 /// …and where the arc has been fully crossed. SOLVED, not chosen: `smoothstep` is half way through at half its
 /// span, so the boards cross CENTRE at `COIL_AT + (END - COIL_AT)/2`, and this value puts that crossing exactly
 /// on `PARRY_PUNCH_AT` — the frame the thrust peaks, which is the frame that catches.
 pub const PARRY_SWEEP_END = 2.0 * PARRY_PUNCH_AT - PARRY_COIL_AT;
 /// The share of the turn the PELVIS takes; the rest is waist. All of it at the root reads as a spin.
 const PARRY_PELVIS = 0.30;
-const PARRY_PITCH = 6.0; // he leans INTO it, about the feet
-const PARRY_LEAD = 0.055 * H;
-const PARRY_SINK = 0.020 * H;
-const PARRY_SWORD_COCK = 14.0;
-const PARRY_HEAD = 10.0;
+const PARRY_PITCH = 8.0; // he leans INTO it, about the feet
+const PARRY_LEAD = 0.075 * H;
+const PARRY_SINK = 0.024 * H;
+const PARRY_SWORD_COCK = 18.0;
+const PARRY_HEAD = 12.0;
 /// STRUCK IRON — thrown along the boards' own normal, so a catch reads off the SHIELD and not off the hero.
 /// SEPARATED ON HUE, not on value: the boards come back off this sun around 140, and a pale cream spark at 3 cm
 /// read as a soft bubble sitting on them (measured, at 30 of them). Hot amber on pale tan reads at a tenth that.
@@ -588,6 +589,24 @@ const PARRY_SPARK_GRAV = 9.0;
 /// as a puff of smoke sat on the boards — on the FIRST frame it and every spark are still at the same point.
 const PARRY_FLASH_R = 0.05;
 const PARRY_FLASH_LIFE = 0.06;
+/// THE SWIPE ANNOUNCES ITSELF (owner's call) — one bright glint thrown off the boards at the whip's peak,
+/// catch or no catch: the skill FIRED, and under the zero-input-lag law silence is a dropped input. A GLINT,
+/// not the catch's shower — a handful of motes and one hot bloom, so the two cannot be read as each other.
+const PARRY_GLINT = 18;
+/// TIGHTER THAN THE CATCH'S FAN, NOT WIDER. Thrown as far and lived as long as struck iron, a dozen motes
+/// were strewn across the grass a metre off the boards five frames later and read as litter (measured) —
+/// a glint has to HUG the shield and be gone. Count buys the brightness, the fan and the life buy the read.
+const PARRY_GLINT_FAN = 4.5;
+/// AND IT IS LAID ALONG THE ARC, NOT THROWN FROM A POINT. Every burst in the game is coincident on its
+/// emission frame, which is why the CATCH is photographed four frames in — but the catch has an impact to
+/// justify a flash and a whiffed swipe has nothing: a white ball beside the boards with nothing touching
+/// them reads as an artifact (measured). Spread over the sweep's own axis it is a STREAK from the first
+/// frame, which is the shape the motion itself has.
+const PARRY_GLINT_SPAN = 0.22; // metres either side of the boss, along the direction of travel
+const PARRY_GLINT_TRAIL = 0.55; // …and they carry that much of the fan along it, so the streak drifts on
+/// …and the bloom is UNDER the catch's 0.05, not over it: at 0.075 the first frame was a solid white ball
+/// sitting beside the boards (measured), which is the balloon the cast flash's own note warns about.
+const PARRY_GLINT_FLASH_R = 0.03;
 
 const SHIELD_R = 0.115 * H;
 const SHIELD_THICK = 0.020 * H;
@@ -857,6 +876,11 @@ pub const Hero = struct {
     /// `vit.res`, which is the only copy `Vitals.damageFrom` ever reads.
     wardChaos: f32 = 0,
     wardLeft: f32 = 0,
+    /// THE FIRE TALLOW ON THE BLADE — the swing hangs `greaseFire` of its own physical as fire while the
+    /// clock runs (`FIRE_ARROW_FRAC`'s rule, moved to the sword). The ward's shape: one clock, refreshed
+    /// never stacked, read where the blow is built (`attackHit`) so there is no second copy of the Hit.
+    greaseFire: f32 = 0,
+    greaseLeft: f32 = 0,
     /// THE FIRST STATUS EFFECT (`combat.Status`) — ONE meter that fills, procs, and then drains as the
     /// poison's own clock. His alone for now: nothing in the world applies one to a foe.
     poison: combat.Status = .{},
@@ -993,6 +1017,7 @@ pub const Hero = struct {
         // A GRACE CURES WHAT IS ON HIM (ER's own), and a death is a return to one.
         self.poison.reset();
         self.wardLeft = 0;
+        self.greaseLeft = 0;
         // …and the resistances go back to WHAT HE IS, ward gone: `freshVitals` cleared `vit.res` above, so the
         // base has to be laid back down here. They are not a meter to refill — `baseRes` is untouched.
         self.settleResists();
@@ -1259,6 +1284,9 @@ pub const Hero = struct {
         self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
         if (faceYaw) |ty| self.facing = mathx.approachAngle(self.facing, ty, TURN_TO_SHOT * dt);
         self.parryT += dt;
+        // The glint fires ON the whip's own peak frame, once — the pose's loudest instant, made louder.
+        const punchT = PARRY_PUNCH_AT * PARRY_DUR;
+        if (self.parryT >= punchT and self.parryT - dt < punchT) self.parryGlint();
         // Pose BEFORE clearing `parrying` — the roll's one-frame contract.
         self.pose();
         if (self.parryT >= PARRY_DUR) {
@@ -1314,6 +1342,35 @@ pub const Hero = struct {
         }
         // The bloom DRIFTS off the boards rather than sitting on them, or it reads as a sphere switched on.
         foemod.emitParticle(&self.fx, &self.fxHead, at, mathx.scaleV(f.n, 0.8), PARRY_FLASH_LIFE, PARRY_FLASH_R, PARRY_FLASH_R * 0.25, PARRY_SPARK_HOT, 0);
+    }
+
+    /// The swipe's own light — `parrySparks`' construction at a fraction of its size, all of it HOT: what
+    /// separates a glint from a catch is COUNT and fan, never colour, or a whiff reads as half a hit.
+    fn parryGlint(self: *Hero) void {
+        const f = self.shieldFaceWorld();
+        var side = mathx.perpXZ(f.n);
+        if (mathx.lenV(side) < 1e-3) side = v3(1, 0, 0);
+        side = mathx.normV(side);
+        const up = mathx.normV(mathx.crossV(f.n, side));
+        const at = mathx.addV(f.at, mathx.scaleV(f.n, 0.02));
+        var rng = foemod.fxStream(@floatFromInt(self.parries), 419.0, 0x8B07);
+        var i: u32 = 0;
+        while (i < PARRY_GLINT) : (i += 1) {
+            // WHERE ON THE ARC this mote sits — the streak, laid down before anything has moved.
+            const along = rng.range(-1.0, 1.0);
+            const from = mathx.addV(at, mathx.scaleV(side, along * PARRY_GLINT_SPAN));
+            const a = rng.angle();
+            const fan = rng.range(0.35, 1.0) * PARRY_GLINT_FAN;
+            const v = mathx.addV(
+                mathx.addV(
+                    mathx.scaleV(f.n, rng.range(PARRY_SPARK_OUT_LO * 0.5, PARRY_SPARK_OUT_HI * 0.4)),
+                    mathx.scaleV(side, along * PARRY_GLINT_FAN * PARRY_GLINT_TRAIL), // …carrying on the way it was going
+                ),
+                mathx.addV(mathx.scaleV(side, mathx.cosf(a) * fan * 0.4), mathx.scaleV(up, mathx.sinf(a) * fan)),
+            );
+            foemod.emitParticle(&self.fx, &self.fxHead, from, v, rng.range(0.05, 0.15), rng.range(PARRY_SPARK_R0_LO, PARRY_SPARK_R0_HI), 0.003, PARRY_SPARK_HOT, PARRY_SPARK_GRAV);
+        }
+        foemod.emitParticle(&self.fx, &self.fxHead, at, mathx.scaleV(f.n, 0.9), PARRY_FLASH_LIFE, PARRY_GLINT_FLASH_R, PARRY_GLINT_FLASH_R * 0.25, PARRY_SPARK_HOT, 0);
     }
 
     /// L1 with a wand in the left hand — the guard's own button, routed by what that hand is holding. STAMINA IS
@@ -1750,7 +1807,12 @@ pub const Hero = struct {
     }
 
     pub fn attackHit(self: *const Hero) combat.Hit {
-        return if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT;
+        const base = if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT;
+        if (self.greaseLeft <= 0) return base;
+        // Fire ON TOP, the physical untouched — the fire arrow's own construction (`fireTipped`).
+        var out = base;
+        out.elem = combat.elems(.{ .fire = base.dmg * self.greaseFire });
+        return out;
     }
     pub fn setSpawn(self: *Hero, pos: rl.Vector3, facing: f32) void {
         self.spawnPos = pos;
@@ -1840,7 +1902,13 @@ pub const Hero = struct {
     }
     pub fn tickWard(self: *Hero, dt: f32) void {
         self.wardLeft = mathx.maxF(0, self.wardLeft - dt);
+        self.greaseLeft = mathx.maxF(0, self.greaseLeft - dt); // the tallow burns down on the same clock
         self.settleResists();
+    }
+
+    pub fn startGrease(self: *Hero, frac: f32, secs: f32) void {
+        self.greaseFire = frac;
+        self.greaseLeft = secs; // refreshed, never stacked
     }
 
     /// THE ONE PLACE `vit.res` IS WRITTEN — what he IS, plus whatever timed ward is running on top of it.

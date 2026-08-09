@@ -217,6 +217,9 @@ const TRAIL_BOLT = rgba(178, 92, 224, 255);
 /// two things flying at once that read the same are two things you cannot tell apart in the half-second
 /// you have to decide which one to roll away from. Colder, and dimmer, because it eats light.
 const TRAIL_WISP = rgba(96, 118, 176, 255);
+/// …and the thundercrock's, which is the LIGHTNING pale — bright and cold where the wisp is cold and dim,
+/// because one is a spark getting out and the other eats light.
+const TRAIL_CROCK = rgba(198, 228, 252, 255);
 
 /// EVERYTHING BURNING GETS THE EMBER STREAK, and it is the streak — not the mesh — that reads at range.
 fn trailCol(s: Shot) rl.Color {
@@ -224,17 +227,18 @@ fn trailCol(s: Shot) rl.Color {
         .firearrow, .clump => TRAIL_FIRE,
         .bolt => TRAIL_BOLT,
         .wisp => TRAIL_WISP,
+        .crock => TRAIL_CROCK,
         .arrow, .venom => TRAIL_COL,
     };
 }
 
 /// The things that fly. `firearrow` is the hero's own pitched shaft — the same ballistics as a plain one, drawn and streaked as its own thing so you can see which one you loosed. `clump` is the kobold sling's burning lump (it was a bare stone; nothing slings a plain one any more, so the tag went with the thing). `bolt` is the WAND's chaos sorcery, which flies through this same pool for the same reason the fire arrow does: cover, gravity, expiry and the swept pierce test are one body of code, and a spell with its own copy of them is a spell that stops agreeing with the world.
-pub const Shot = enum { arrow, clump, venom, firearrow, bolt, wisp };
+pub const Shot = enum { arrow, clump, venom, firearrow, bolt, wisp, crock };
 
 pub fn dropOf(s: Shot) f32 {
     return switch (s) {
         .arrow, .firearrow => ARROW_GRAV,
-        .clump => CLUMP_GRAV,
+        .clump, .crock => CLUMP_GRAV, // both jars fly the candle's own lob, so the pair teach one throw
         .venom => VENOM_GRAV,
         .bolt => BOLT_GRAV,
         .wisp => WISP_GRAV,
@@ -1283,6 +1287,25 @@ pub fn arrowMesh(shader: rl.Shader) rl.Model {
 // kind of fire in the same world reads as a different substance. Two things are its own: it streams BACKWARD
 // down the flight axis instead of climbing +Y, and it is authored off a fixed seed, so every shaft matches.
 const FIRE_TONGUES = 7;
+/// THE THUNDERCROCK IN FLIGHT — a squat clay jar, tumbling like the sling's clump (a thrown pot has no
+/// flight axis to stream down), with the spark already showing at a crack in the belly: LIGHTNING pale,
+/// cold and bright, nothing else in this sky's colour. Vertex alpha is the emissive channel, so the crack
+/// glows on its own where the clay takes the sun.
+pub fn crockMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0xC70C);
+    const clay = rgba(96, 62, 40, 255);
+    const clayDk = rgba(64, 42, 28, 255);
+    const spark = rgba(198, 228, 252, 30);
+    b.setMat(.stone);
+    b.addBlob(mathx.zero3, v3(0.060 * rng.range(0.92, 1.1), 0.052, 0.058 * rng.range(0.92, 1.1)), 4, 8, clay);
+    b.addBlob(v3(0, 0.048, 0), v3(0.023, 0.017, 0.023), 3, 6, clayDk); // the stoppered neck
+    // The crack, lit from inside — a thin jag proud of the belly, in two runs so it is a CRACK and not a band.
+    b.addCapsule(v3(-0.048, 0.010, 0.018), v3(-0.004, -0.012, 0.052), 0.006, 0.005, 5, spark);
+    b.addCapsule(v3(-0.004, -0.012, 0.052), v3(0.040, 0.004, 0.030), 0.005, 0.004, 5, spark);
+    return b.toModel(shader);
+}
+
 pub fn fireArrowMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(80421);

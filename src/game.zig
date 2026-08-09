@@ -226,6 +226,7 @@ pub const Game = struct {
     bag: item.Bag = .{},
     arrowModel: rl.Model, // shared arrow mesh, drawn per live/stuck arrow with its own matrix
     clumpModel: rl.Model,
+    crockModel: rl.Model,
     venomModel: rl.Model,
     fireArrowModel: rl.Model,
     boltModel: rl.Model,
@@ -297,6 +298,7 @@ pub const Game = struct {
         g.bag = .{};
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
         g.clumpModel = koboldmod.clumpMesh(g.scene.shader);
+        g.crockModel = archermod.crockMesh(g.scene.shader);
         g.venomModel = broodmod.venomMesh(g.scene.shader);
         g.fireArrowModel = archermod.fireArrowMesh(g.scene.shader);
         g.boltModel = heromod.boltMesh(g.scene.shader);
@@ -1549,7 +1551,9 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
         // height it struck one, not down at that wall's foot.
         .bolt => g.hero.boltBurst(ar.pos, ground.y, g.hero.casts),
         // A wisp is a piece of the creature and it leaves nothing on the ground: it is spent arriving.
-        .arrow, .firearrow, .wisp => {},
+        // The crock's spark is spent in the BLOW — no burst on the ground yet, and the gap is deliberate
+        // until the owner picks what lightning landing looks like.
+        .arrow, .firearrow, .wisp, .crock => {},
     }
 }
 
@@ -1560,6 +1564,7 @@ fn drawArrows(g: *Game) void {
             const m = switch (ar.shot) {
                 .arrow => &g.arrowModel,
                 .clump => &g.clumpModel,
+                .crock => &g.crockModel,
                 .venom => &g.venomModel,
                 .firearrow => &g.fireArrowModel,
                 .bolt => &g.boltModel,
@@ -2637,8 +2642,11 @@ fn useItem(g: *Game, k: item.Kind) void {
         .lob => |l| {
             if (g.bag.take(k, 1) == 0) return;
             const from = mathx.addV(heroAimPoint(g), mathx.scaleV(mathx.headingDir(g.hero.facing), 0.4));
-            const hit = combat.Hit{ .dmg = l.dmg, .poise = l.poise, .elem = combat.elems(.{ .fire = l.fire }) };
-            putIn(&g.shafts, archermod.launchShaft(from, camAimPoint(g), koboldmod.CLUMP_SPEED, hit, true, .clump));
+            const hit = combat.Hit{ .dmg = l.dmg, .poise = l.poise, .elem = combat.elems(.{ .fire = l.fire, .lightning = l.lightning }) };
+            // The jar says its element in the sky (`archer.trailCol`) — a lightning lob on the fire wad's
+            // streak would be the second-kind-of-fire lie the brood's rule forbids.
+            const shot: archermod.Shot = if (l.lightning > 0) .crock else .clump;
+            putIn(&g.shafts, archermod.launchShaft(from, camAimPoint(g), koboldmod.CLUMP_SPEED, hit, true, shot));
             sfx.play(.wand_cast);
         },
         .ward => |w| {
@@ -2649,6 +2657,21 @@ fn useItem(g: *Game, k: item.Kind) void {
         .wind => |w| {
             if (g.bag.take(k, 1) == 0) return;
             g.hero.stam.secondWind(w.share);
+            sfx.play(.flask_drink);
+        },
+        .grease => |gr| {
+            if (g.bag.take(k, 1) == 0) return;
+            g.hero.startGrease(gr.frac, gr.secs);
+            sfx.play(.eat);
+        },
+        .souls => |s| {
+            if (g.bag.take(k, 1) == 0) return;
+            g.hero.runes.gain(s.n);
+            sfx.play(.souls_take); // the reclaim's own voice: runes rushing back up into you
+        },
+        .brew => |b| {
+            if (g.bag.take(k, 1) == 0) return;
+            g.hero.stam.startBrew(b.mult, b.secs);
             sfx.play(.flask_drink);
         },
     }

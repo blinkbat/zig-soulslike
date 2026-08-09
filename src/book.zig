@@ -346,8 +346,8 @@ fn quickWorth(kind: ?item.Kind, v: View) f32 {
     return switch (item.use(k)) {
         .none => 0,
         .regen => |r| v.sheet.hp() * r.frac,
-        .lob => |l| l.dmg + l.fire, // what one press throws, in the only number a throw has
-        .ward, .wind => 0, // neither restores a bar the row could price
+        .lob => |l| l.dmg + l.fire + l.lightning, // what one press throws, in the only number a throw has
+        .ward, .wind, .grease, .souls, .brew => 0, // none of these restores a bar the row could price
     };
 }
 
@@ -1339,9 +1339,12 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
     switch (item.use(k)) {
         .none => hud.text("It does nothing you can do here.", inner.x, y, hud.HINT, uiart.TEXT_HINT),
         .regen => |r| hud.text(fmt("Restores {d:.0} HP over {d:.0} seconds.", .{ v.sheet.hp() * r.frac, r.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .lob => |l| hud.text(fmt("Thrown at the reticle; bursts for {d:.0} + {d:.0} fire.", .{ l.dmg, l.fire }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .lob => |l| hud.text(fmt("Thrown at the reticle; bursts for {d:.0} + {d:.0} {s}.", .{ l.dmg, l.fire + l.lightning, if (l.lightning > 0) @as([]const u8, "lightning") else "fire" }), inner.x, y, hud.SMALL, uiart.GOOD),
         .ward => |w| hud.text(fmt("Chaos slides off you (+{d:.0}) for {d:.0} seconds.", .{ w.chaos, w.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
         .wind => |w| hud.text(fmt("Half your wind back at once ({d:.0} stamina), and the lockout with it.", .{ v.sheet.stamina() * w.share }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .grease => |gr| hud.text(fmt("The sword hangs {d:.0}% of its blow as fire for {d:.0} seconds.", .{ gr.frac * 100, gr.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .souls => |so| hud.text(fmt("Crushed for {d} runes, on the spot.", .{so.n}), inner.x, y, hud.SMALL, uiart.GOOD),
+        .brew => |b| hud.text(fmt("Your wind returns {d:.1}x as fast for {d:.0} seconds.", .{ b.mult, b.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
     }
     if (item.usable(k)) {
         const hy = y + hud.lineH(hud.SMALL) + 6;

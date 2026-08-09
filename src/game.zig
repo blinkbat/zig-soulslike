@@ -38,6 +38,8 @@ const v3 = mathx.v3;
 const rgba = mathx.rgba;
 
 const PAD = rumblemod.PAD;
+const padPressed = rumblemod.padPressed;
+const padDown = rumblemod.padDown;
 
 const SCREEN_W = 1280;
 const SCREEN_H = 800;
@@ -155,6 +157,13 @@ fn foeTall(g: *const Game, r: FoeRef) bool {
     return foeTopWorld(g, r).y - foePos(g, r).y >= LOCK_TILT_TALL;
 }
 const LOCK_FLICK = 0.65; // right-stick |x| past this cycles to the next target
+/// …and the MOUSE's own flick, in pixels of travel in one frame — the same gesture on the other device.
+const LOCK_FLICK_MOUSE: f32 = 40.0;
+/// START FAR, STOP NEAR, on the flick's debounce: the target has to come back UNDER these before another
+/// flick is armed, or a stick held over on a diagonal cycles the lock every frame. Named beside the two
+/// thresholds they debounce, since a bare 12 and 0.3 next to a named 0.65 read as three unrelated dials.
+const LOCK_REARM_MOUSE: f32 = 12.0;
+const LOCK_REARM_STICK: f32 = 0.3;
 /// HOW LONG A LOCK SURVIVES WITH NO SIGHT OF ITS TARGET. You cannot FIX on what you cannot see, but a
 /// lock that dropped the instant a pillar crossed the line would be unusable anywhere in these ruins —
 /// so it is a fade, not a switch, and it is long enough to cover a foe stepping behind its own cover.
@@ -491,9 +500,8 @@ test "the look curve is fine near centre and still reaches full rate at the rim"
 }
 
 fn gatherMove() Move {
-    var sprint = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
+    const sprint = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift) or padDown(.right_face_right);
     if (rl.isGamepadAvailable(PAD)) {
-        if (rl.isGamepadButtonDown(PAD, .right_face_right)) sprint = true;
         const s = stickRadial(
             rl.getGamepadAxisMovement(PAD, .left_x),
             rl.getGamepadAxisMovement(PAD, .left_y),
@@ -1171,8 +1179,7 @@ const PARRY_KEY: rl.KeyboardKey = .c;
 /// conversation is also the one that walks through it. It cannot go into `menumod.confirmPressed`: that is
 /// the book's own Confirm, and a panel naming a button the press ignores is the prompt rule broken again.
 fn talkConfirmPressed() bool {
-    return confirmPressed() or rl.isKeyPressed(INTERACT_KEY) or
-        (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, INTERACT_PAD));
+    return confirmPressed() or rl.isKeyPressed(INTERACT_KEY) or padPressed(INTERACT_PAD);
 }
 
 /// 1-9, for picking a line straight off its number the way BG2's list does.
@@ -1937,10 +1944,8 @@ pub fn run(mode: Mode) void {
         if (!g.editor.on and !g.rest.active() and !g.talk.active()) {
             if (rl.isKeyPressed(.escape)) g.menu.onEscape();
             if (rl.isKeyPressed(.tab)) g.menu.onStartButton();
-            if (rl.isGamepadAvailable(PAD)) {
-                if (rl.isGamepadButtonPressed(PAD, .middle_left)) g.menu.onSelectButton();
-                if (rl.isGamepadButtonPressed(PAD, .middle_right)) g.menu.onStartButton();
-            }
+            if (padPressed(.middle_left)) g.menu.onSelectButton();
+            if (padPressed(.middle_right)) g.menu.onStartButton();
         }
 
         if (rl.isKeyPressed(.enter) and (rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt))) {
@@ -2063,8 +2068,7 @@ pub fn run(mode: Mode) void {
         g.souls.look(g.hero.pos);
         sfx.tickStreams();
 
-        const lockPressed = !g.hero.aiming and (rl.isMouseButtonPressed(.middle) or
-            (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .right_thumb)));
+        const lockPressed = !g.hero.aiming and (rl.isMouseButtonPressed(.middle) or padPressed(.right_thumb));
         if (lockPressed) {
             if (g.lock != null) {
                 g.lock = null;
@@ -2105,12 +2109,12 @@ pub fn run(mode: Mode) void {
                 g.rig.aim(mathx.headingXZ(dir), lockPitch(g, li), dt, LOCK_CAM_EASE);
             }
             var flick: f32 = 0;
-            if (inside and wasInside and @abs(md.x) > 40) flick = std.math.sign(md.x);
+            if (inside and wasInside and @abs(md.x) > LOCK_FLICK_MOUSE) flick = std.math.sign(md.x);
             if (@abs(padRX) > LOCK_FLICK) flick = std.math.sign(padRX);
             if (flick != 0 and lockCycleReady) {
                 cycleLock(g, flick);
                 lockCycleReady = false;
-            } else if (@abs(md.x) < 12 and @abs(padRX) < 0.3) {
+            } else if (@abs(md.x) < LOCK_REARM_MOUSE and @abs(padRX) < LOCK_REARM_STICK) {
                 lockCycleReady = true;
             }
         } else {
@@ -2146,22 +2150,16 @@ pub fn run(mode: Mode) void {
         if (wheel != 0) g.rig.zoom(wheel);
 
         // D-PAD RIGHT / Q: cycle the right-hand armament.
-        var swapReq = rl.isKeyPressed(.q);
-        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .left_face_right)) swapReq = true;
+        const swapReq = rl.isKeyPressed(.q) or padPressed(.left_face_right);
         if (swapReq and g.hero.swapArm()) sfx.play(.flask_cycle);
 
         // D-PAD LEFT / F: cycle the LEFT-hand armament — shield or wand. ER's own binding for that slot, and
         // the last free direction on the pad's cross now that Right, Up and Down are all spent.
-        var offReq = rl.isKeyPressed(.f);
-        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .left_face_left)) offReq = true;
+        const offReq = rl.isKeyPressed(.f) or padPressed(.left_face_left);
         if (offReq and g.hero.swapOff()) sfx.play(.flask_cycle);
 
-        var drinkReq = rl.isKeyPressed(.r);
-        var cycleReq = rl.isKeyPressed(.t);
-        if (rl.isGamepadAvailable(PAD)) {
-            if (rl.isGamepadButtonPressed(PAD, QUICK_PAD)) drinkReq = true;
-            if (rl.isGamepadButtonPressed(PAD, .left_face_down)) cycleReq = true;
-        }
+        const drinkReq = rl.isKeyPressed(.r) or padPressed(QUICK_PAD);
+        const cycleReq = rl.isKeyPressed(.t) or padPressed(.left_face_down);
         if (cycleReq and !g.hero.dead) {
             g.hero.cycleQuick();
             sfx.play(.flask_cycle);
@@ -2170,8 +2168,7 @@ pub fn run(mode: Mode) void {
         // D-PAD UP / G: cycle the SPELL. Up is the cross's SORCERY slot, so the button that changes it is the
         // slot it is shown in — the same "belongs to what it points at" rule that puts the arm on Right and
         // the off hand on Left.
-        var spellReq = rl.isKeyPressed(.g);
-        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, .left_face_up)) spellReq = true;
+        const spellReq = rl.isKeyPressed(.g) or padPressed(.left_face_up);
         if (spellReq and g.hero.cycleSpell()) sfx.play(.flask_cycle);
 
         // …and the ARROW keeps a KEY OF ITS OWN. The cross is four directions and the spell has taken Up
@@ -2180,13 +2177,12 @@ pub fn run(mode: Mode) void {
         if (arrowReq and g.hero.cycleArrow()) sfx.play(.flask_cycle);
 
         // Y everywhere (owner's call). A is left alone for the jump ER reserves it for.
-        var useReq = rl.isKeyPressed(INTERACT_KEY);
-        if (rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, INTERACT_PAD)) useReq = true;
+        const useReq = rl.isKeyPressed(INTERACT_KEY) or padPressed(INTERACT_PAD);
         if (useReq and !g.hero.dead) interact(g);
 
         // Dodge roll: Space, or a short TAP of Circle/B (holding B sprints instead).
         var rollReq = rl.isKeyPressed(.space);
-        const bDown = rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, .right_face_right);
+        const bDown = padDown(.right_face_right);
         if (bDown) {
             bHeldT += rawDt; // REAL time: tap-vs-hold is a wall-clock decision, unaffected by debug time-scale
         } else {
@@ -2197,12 +2193,8 @@ pub fn run(mode: Mode) void {
 
         // L1/RMB belongs to the HAND, not the shield (the R1/R2 rule from the other side): boards block on a
         // held LEVEL, a wand casts on a pressed EDGE, so both are read here and neither swallows the other.
-        var l1Held = rl.isMouseButtonDown(.right);
-        var l1Press = rl.isMouseButtonPressed(.right);
-        if (rl.isGamepadAvailable(PAD)) {
-            if (rl.isGamepadButtonDown(PAD, .left_trigger_1)) l1Held = true;
-            if (rl.isGamepadButtonPressed(PAD, .left_trigger_1)) l1Press = true;
-        }
+        const l1Held = rl.isMouseButtonDown(.right) or padDown(.left_trigger_1);
+        const l1Press = rl.isMouseButtonPressed(.right) or padPressed(.left_trigger_1);
         const bow = g.hero.bowOut();
         const wandUp = g.hero.wandOut();
         const guardHeld = l1Held and !wandUp;
@@ -2211,12 +2203,8 @@ pub fn run(mode: Mode) void {
         // …AND L2 IS THAT HAND'S SKILL SLOT, ER's own, ROUTED THE SAME WAY: a raised bow AIMS on a held level,
         // boards PARRY on a pressed edge. On the pad it is one trigger; on the mouse the halves part company,
         // because RMB is already the guard's level and Shift+RMB would fire a parry on every sprinting block.
-        var l2Held = rl.isMouseButtonDown(.right);
-        var l2Press = rl.isKeyPressed(PARRY_KEY);
-        if (rl.isGamepadAvailable(PAD)) {
-            if (rl.isGamepadButtonDown(PAD, .left_trigger_2)) l2Held = true;
-            if (rl.isGamepadButtonPressed(PAD, .left_trigger_2)) l2Press = true;
-        }
+        const l2Held = rl.isMouseButtonDown(.right) or padDown(.left_trigger_2);
+        const l2Press = rl.isKeyPressed(PARRY_KEY) or padPressed(.left_trigger_2);
         const aimHeld = l2Held;
         const parryReq = l2Press and !bow;
 
@@ -2226,10 +2214,8 @@ pub fn run(mode: Mode) void {
         if (rl.isMouseButtonPressed(.left)) {
             if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift)) r2 = true else r1 = true;
         }
-        if (rl.isGamepadAvailable(PAD)) {
-            if (rl.isGamepadButtonPressed(PAD, .right_trigger_1)) r1 = true;
-            if (rl.isGamepadButtonPressed(PAD, .right_trigger_2)) r2 = true;
-        }
+        if (padPressed(.right_trigger_1)) r1 = true;
+        if (padPressed(.right_trigger_2)) r2 = true;
         const lightReq = r1 and !bow;
         const heavyReq = r2 and !bow;
         const quickReq = r1 and bow;

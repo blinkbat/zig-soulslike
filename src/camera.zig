@@ -20,8 +20,11 @@ const PITCH_MIN = -0.38;
 const PITCH_MAX = 1.15; // ~  66 deg (looking down)
 const SHOULDER = 0.55; // lateral offset (world units): hero sits left of centre
 const TARGET_RAISE = 0.15; // lift the look-at a touch above the shoulder point
-/// How far the eye stays clear of the ground (see `followClear`).
+/// How far the eye stays clear of the ground (see `followClear`)…
 const GROUND_CLEAR = 0.7;
+/// …and how much boom one probe of that search gives up. Named beside the clearance it is searching for:
+/// the two are only ever chosen against each other, and a bare 0.25 in the loop reads as arbitrary.
+const GROUND_PROBE = 0.25;
 
 // AIMING PUSHES THE EYE IN PAST HIM (L2 / RMB with the bow).
 const AIM_DIST = 0.7; // right up past his head — near enough that he is behind the lens, not in front of it
@@ -140,7 +143,7 @@ pub const CamRig = struct {
         while (d > shortest) {
             const p = mathx.addV(target, mathx.scaleV(back, d));
             if (p.y >= groundAt(ctx, p.x, p.z) + GROUND_CLEAR) break;
-            d = mathx.maxF(d - 0.25, shortest);
+            d = mathx.maxF(d - GROUND_PROBE, shortest);
         }
         c.place(target, d);
         const floor = groundAt(ctx, c.cam.position.x, c.cam.position.z) + GROUND_CLEAR;

@@ -11,7 +11,8 @@ const bookmod = @import("book.zig"); // pad START opens the CHARACTER BOOK, whic
 
 const rgba = mathx.rgba;
 
-const PAD = rumblemod.PAD;
+const padPressed = rumblemod.padPressed;
+const padDown = rumblemod.padDown;
 
 
 /// The three swap actions are the BOOK's, passed straight through: the menu owns no game state and never
@@ -519,10 +520,7 @@ fn dirPressed(dir: NavDir, autoRepeat: bool) bool {
     const k = keyNav(dir);
     if (rl.isKeyPressed(k.a) or rl.isKeyPressed(k.b)) return true;
     if (autoRepeat and (rl.isKeyPressedRepeat(k.a) or rl.isKeyPressedRepeat(k.b))) return true;
-    if (rl.isGamepadAvailable(PAD)) {
-        if (rl.isGamepadButtonPressed(PAD, padNav(dir))) return true;
-    }
-    return false;
+    return padPressed(padNav(dir));
 }
 
 pub fn navPressed(dir: NavDir) bool {
@@ -539,16 +537,16 @@ fn adjHeldDir() i32 {
     const r = keyNav(.right);
     if (rl.isKeyDown(l.a) or rl.isKeyDown(l.b)) dir -= 1;
     if (rl.isKeyDown(r.a) or rl.isKeyDown(r.b)) dir += 1;
-    if (dir == 0 and rl.isGamepadAvailable(PAD)) {
-        if (rl.isGamepadButtonDown(PAD, padNav(.left))) dir -= 1;
-        if (rl.isGamepadButtonDown(PAD, padNav(.right))) dir += 1;
+    if (dir == 0) {
+        if (padDown(padNav(.left))) dir -= 1;
+        if (padDown(padNav(.right))) dir += 1;
     }
     return dir;
 }
 
 fn coarseHeld() bool {
     if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift)) return true;
-    return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, .left_trigger_1);
+    return padDown(.left_trigger_1);
 }
 
 /// THE PAGE TURN — the shoulders, and Q/E for the keyboard. It cannot be Left/Right: those move a grid
@@ -556,15 +554,14 @@ fn coarseHeld() bool {
 fn tabPressed(dir: i32) bool {
     const back = dir < 0;
     if (rl.isKeyPressed(if (back) .q else .e)) return true;
-    if (!rl.isGamepadAvailable(PAD)) return false;
-    return rl.isGamepadButtonPressed(PAD, if (back) .left_trigger_1 else .right_trigger_1);
+    return padPressed(if (back) .left_trigger_1 else .right_trigger_1);
 }
 
 /// Confirm HELD, not tapped — the book's slots sink for as long as the button is down.
 fn confirmHeld() bool {
     const altHeld = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
     if ((rl.isKeyDown(.enter) and !altHeld) or rl.isKeyDown(.space)) return true;
-    return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, .right_face_down);
+    return padDown(.right_face_down);
 }
 
 pub fn confirmPressed() bool {
@@ -572,10 +569,10 @@ pub fn confirmPressed() bool {
     const altHeld = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
     if ((rl.isKeyPressed(.enter) and !altHeld) or rl.isKeyPressed(.space)) return true;
     // …and the pad press comes off the NAME the cribs draw (`hud.BTN_CONFIRM`), not a second literal beside it.
-    return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, hud.padOf(hud.BTN_CONFIRM));
+    return padPressed(hud.padOf(hud.BTN_CONFIRM));
 }
 
 fn backPressed() bool {
     // Esc is routed by the game loop (onEscape); pad B backs out here — off `hud.BTN_BACK`, as above.
-    return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, hud.padOf(hud.BTN_BACK));
+    return padPressed(hud.padOf(hud.BTN_BACK));
 }

@@ -5,6 +5,17 @@ const rl = @import("raylib");
 
 pub const PAD = 0;
 
+/// THE PAD IS ASKED THROUGH THESE TWO. Every read has to clear `isGamepadAvailable` first, and the guard
+/// was written out longhand at twenty-five sites across `game.zig` and `menu.zig` — twenty-five places for
+/// a new binding to forget it. They sit beside `PAD` because that is what they are: the one place the pad
+/// index is named. The AXIS reads keep their own guard: they wrap a stick, not a button.
+pub fn padPressed(b: rl.GamepadButton) bool {
+    return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonPressed(PAD, b);
+}
+pub fn padDown(b: rl.GamepadButton) bool {
+    return rl.isGamepadAvailable(PAD) and rl.isGamepadButtonDown(PAD, b);
+}
+
 pub const Event = struct { low: f32 = 0, high: f32 = 0, dur: f32 = 0 };
 
 pub const swing_light = Event{ .low = 0.08, .high = 0.20, .dur = 0.06 }; // your R1 whips out — a light tick

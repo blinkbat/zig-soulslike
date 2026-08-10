@@ -180,7 +180,6 @@ const DEATH_DUR = 1.0; // yelp and fold
 const DISS_DUR = 0.85;
 /// …and the cloud, thin and close: the smallest body on the field, and up to 72 of them can be dying at once.
 const DISSOLVE = foe.Dissolve{ .rate = 26.0, .spread = 0.42, .rise = 0.55 };
-const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 8.0;
 
 const ZERK_SWINGS_LO: u32 = 3;
@@ -489,7 +488,7 @@ pub const Kobold = struct {
         // THE ROOTS HAVE THE FEET (foe.grip) — the flurry still plays out on the spot, which is what makes this
         // the answer to a warband. The DASH is a jump and is refused outright at the choose site (`foe.canLeap`).
         const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
-        defer grip.hold(&self.pos);
+        defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.elapsed += dt;
         self.t += dt;
@@ -511,11 +510,13 @@ pub const Kobold = struct {
         const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
         switch (self.state) {
             .idle => {
-                self.faceToward(hero, dt);
+                // Gated on the SENSED range (the frog's idiom) — a posted kobold must not track a hero
+                // across the map, and one walking home blind must not stare back the whole way.
+                if (d <= AGGRO_R) self.faceToward(hero, dt);
                 if (self.t >= 0.25) self.decide(d);
             },
             .approach, .reposition => {
-                self.faceToward(hero, dt);
+                if (d <= AGGRO_R) self.faceToward(hero, dt);
                 const moved = WALK_SPEED * spec(self.role).speed * dt;
                 mathx.stepXZ(&self.pos, self.moveDir, moved, bounds);
                 movedDist = moved;
@@ -840,6 +841,7 @@ pub const Kobold = struct {
         self.dealt = true; // an interrupted swing lands nothing
         self.chopsLeft = 0;
         self.castGlow = 0;
+        self.hop = 0; // struck mid-dash, or the body keeps the flight's height forever
     }
 
     /// Stage a reaction for the shot harness, `ogre.debugStagger`/`debugKill` verbatim.
@@ -856,6 +858,7 @@ pub const Kobold = struct {
         self.dealt = true;
         self.chopsLeft = 0;
         self.castGlow = 0;
+        self.hop = 0; // killed mid-dash, the corpse collapses on the ground and not in the air
         self.justDied = true;
     }
 
@@ -1669,7 +1672,7 @@ pub const Model = struct {
     robe: rl.Mesh, // the PRIEST's alone
     hat: rl.Mesh,
     /// THE LOINCLOTH, one per ROLE, because the fabric is dyed by role (see `fabric`).
-    loin: [3]rl.Mesh,
+    loin: [SPEC.len]rl.Mesh, // one per ROLE, off the table `Role` is already pinned against
     tail: [TAIL_N]rl.Mesh,
     mat: rl.Material,
 

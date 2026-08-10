@@ -113,6 +113,9 @@ pub fn pillarMesh(shader: rl.Shader, broken: bool) rl.Model {
 
     if (broken) {
         const c = axisAt(shaftTop, leanX, leanZ);
+        // THE SNAPPED BED, the fallen drums' own treatment: without it the top drum is an open tube and
+        // an overhead framing sees the ground through the shaft (the rubble only half covers it).
+        b.addBlob(v3(c.x, shaftTop, c.z), v3(radAt(shaftTop), 0.02, radAt(shaftTop)), 3, 9, MARBLE_DK);
         var s: i32 = 0;
         while (s < 7) : (s += 1) {
             const a = rng.angle();
@@ -889,7 +892,9 @@ pub fn statueMesh(shader: rl.Shader) rl.Model {
     b.addBlob(v3(rng.range(0.35, 0.62), 0.16, rng.range(-0.7, -0.4)), v3(0.22, 0.16, 0.20), 3, 5, STONE_MOSS); // a spalled plinth corner
     var ins: i32 = 0;
     while (ins < 3) : (ins += 1) {
-        b.addBox(v3(rng.signed() * 0.10, 0.24 + @as(f32, @floatFromInt(ins)) * 0.075, -0.79), v3(rng.range(0.28, 0.52), 0, 0), v3(0, 0.016, 0), v3(0, 0, 0.02), STONE_DK);
+        // Spaced to stay on the LOWER plinth's face (it tops out at 0.32): the old 0.075 step put the
+        // third line above the stone and 11 cm in front of the upper one — a bar hanging in the air.
+        b.addBox(v3(rng.signed() * 0.10, 0.16 + @as(f32, @floatFromInt(ins)) * 0.05, -0.79), v3(rng.range(0.28, 0.52), 0, 0), v3(0, 0.016, 0), v3(0, 0, 0.02), STONE_DK);
     }
     b.setMat(.marble);
     b.addBox(v3(0, 0.62, 0), v3(0.56, rng.signed() * 0.01, 0), v3(0, 0.08, 0), v3(0, 0, 0.56), MARBLE_LT); // the statue's own base

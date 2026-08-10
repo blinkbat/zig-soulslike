@@ -140,7 +140,7 @@ pub const Vignette = struct {
     }
 };
 
-pub const RETRO_COUNT = 15;
+pub const RETRO_COUNT = RETRO_FILTERS.len; // the table's own length, not a literal beside it
 pub const RETRO_EPS: f32 = 0.001;
 pub const RF_PIXELATE = 0;
 pub const RF_CHROMA = 1;
@@ -160,7 +160,7 @@ pub const RF_GRAIN = 14;
 
 // SINGLE SOURCE OF TRUTH — one row per filter in RF_* index order; the menu labels, uniform names, and owner-tuned launch defaults are DERIVED at comptime so they can't drift out of positional lockstep.
 const RetroFilter = struct { name: [:0]const u8, uniform: [:0]const u8, default: f32 };
-const RETRO_FILTERS = [RETRO_COUNT]RetroFilter{
+const RETRO_FILTERS = [_]RetroFilter{
     .{ .name = "Pixelate", .uniform = "fPixelate", .default = 0.05 },
     .{ .name = "Chroma Fringe", .uniform = "fChroma", .default = 0.09 },
     .{ .name = "Posterize", .uniform = "fPosterize", .default = 0.24 },
@@ -465,9 +465,12 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_time, &t, .float);
     }
 
-    /// TAKE CAST SHADOWS OFF the draws that follow, until the next `bind`.
+    /// TAKE CAST SHADOWS OFF the draws that follow, until the next `bind`. The translate ALONE left a
+    /// live 2 m box at the origin whose fragments still passed the shader's in-range test and sampled a
+    /// stale depth map; the zero scale collapses every world point out of range, which is the point.
     pub fn shadowsOff(self: *Scene) void {
-        rl.setShaderValueMatrix(self.shader, self.loc_lightVP, rl.math.matrixTranslate(0, 0, 5));
+        const kill = rl.math.matrixMultiply(rl.math.matrixScale(0, 0, 0), rl.math.matrixTranslate(0, 0, 5));
+        rl.setShaderValueMatrix(self.shader, self.loc_lightVP, kill);
     }
 
     /// Upload this frame's point lights (torches/fires).

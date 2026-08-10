@@ -881,6 +881,15 @@ pub fn draw(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool 
 
 /// ESC / right-click backs out ONE level: the big viewer to the gallery, the gallery to the map.
 pub fn back(st: *State) bool {
+    if (st.openIcon != null) {
+        st.openIcon = null;
+        return true;
+    }
+    if (st.openChar != null) {
+        st.openChar = null;
+        st.grabbed = null;
+        return true;
+    }
     if (st.open == null) return false;
     st.open = null;
     st.grabbed = null;

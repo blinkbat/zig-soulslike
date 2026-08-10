@@ -274,7 +274,7 @@ pub const Wanderer = struct {
         };
         // Each one starts somewhere else in its own idle, or a pair posted together breathes in unison.
         p.t = seed * 40.0;
-        p.rest = heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF * 0.96, H);
+        p.rest = REST; // the archer's and the kobold's idiom — the scaffold is solved ONCE, at file scope
         p.pose();
         return p;
     }

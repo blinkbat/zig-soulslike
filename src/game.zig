@@ -502,7 +502,7 @@ test "the look curve is fine near centre and still reaches full rate at the rim"
 }
 
 fn gatherMove() Move {
-    const sprint = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift) or padDown(.right_face_right);
+    const sprint = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift) or padDown(hud_.padOf(hud_.BTN_BACK));
     if (rl.isGamepadAvailable(PAD)) {
         const s = stickRadial(
             rl.getGamepadAxisMovement(PAD, .left_x),
@@ -738,10 +738,11 @@ fn drawCasters(g: *Game, cull: envmod.Cull) void {
     // both passes and THROW A SHADOW like anything else standing in the sun (the caster contract, AGENTS.md) —
     // drawn only in the lit pass they were lit geometry with no weight on the ground under them.
     g.hero.drawRoots();
-    g.scene.setFlash(0.6 * g.hero.hurtFlash);
-    // LIT PASS ONLY — the depth pass has no alpha, and his shadow is still his.
+    // LIT PASS ONLY, like the fade below it: in the sun pass the materials are on the DEPTH shader, so this
+    // pushed a uniform to a shader nothing was drawing with — two `glUseProgram`+`glUniform` pairs a frame.
     const fade = heroFade(g);
     const seeThrough = cull == .view and fade < 0.999;
+    if (cull == .view) g.scene.setFlash(0.6 * g.hero.hurtFlash);
     // …and once the fade has reached the floor there is nothing left to submit: the shader's last line is
     // `outA*fade`, so at 0 every one of his ~20 meshes draws a fully transparent fragment over a masked-off
     // depth buffer. Skipped, not drawn invisibly — the sun pass above still has him, so the shadow stays.
@@ -756,7 +757,7 @@ fn drawCasters(g: *Game, cull: envmod.Cull) void {
             g.scene.setFade(1);
         }
     }
-    g.scene.setFlash(0);
+    if (cull == .view) g.scene.setFlash(0);
     inline for (FOE_GROUPS) |f| @field(g, f.field).draw(&g.scene);
     // The folk go through HERE like anything else standing in the sun, so they cast in the depth pass too.
     g.folk.draw();
@@ -1023,10 +1024,12 @@ fn spillSouls(g: *Game) void {
         g.trig.say("The Soul Binding Ring snaps.");
         return;
     }
+    // ALWAYS through `spill`, even carrying nothing: 0 clears the drop there, and returning early
+    // instead left the PREVIOUS death's stain standing — a second death that does not overwrite the
+    // first is the one thing this mechanic may never do.
     const had = g.hero.runes.dropAll();
-    if (had == 0) return; // nothing to spill: no stain, and no walk back for one
     g.souls.spill(g.hero.pos, had);
-    sfx.play(.souls_spill);
+    if (had > 0) sfx.play(.souls_spill); // …but a spill worth nothing is silent, and leaves no stain
 }
 
 /// The first binding charm he is carrying, asked of the ITEM rather than by kind (`item.bindsSouls`) — a
@@ -1433,11 +1436,7 @@ fn stepShafts(g: *Game, dt: f32) void {
     for (&g.shafts) |*ar| {
         if (!ar.live) continue;
         const seg = archermod.stepShaft(ar, g.env.groundAt(ar.pos.x, ar.pos.z), arrowCover(g, ar, dt), dt) orelse {
-            // It STOPPED this frame — into cover or into the earth, and that gets the surface's own voice.
-            if (ar.stuck and ar.age == 0) {
-                sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
-                splashOf(g, ar); // …and whatever it leaves behind, the foes' pool's own rule
-            }
+            planted(g, ar);
             continue;
         };
         const blade = foemod.Blade{
@@ -1538,6 +1537,17 @@ pub fn arrowCover(g: *const Game, ar: *const archermod.Arrow, dt: f32) []const c
 
 fn quivers(g: *Game) [2][]archermod.Arrow {
     return .{ &g.arrows, &g.shafts };
+}
+
+/// IT STOPPED THIS FRAME — into cover or into the earth. The surface's own voice, then whatever it leaves
+/// behind. ONE body for BOTH quivers: written out at each, the hero's copy had no `.venom` exemption, so a glob
+/// routed through his pool would sound its landing twice (`brood.splash` plays its own).
+fn planted(g: *Game, ar: *const archermod.Arrow) void {
+    if (!ar.stuck or ar.age != 0) return;
+    // ONLY THE GLOB IS SILENT, because `brood.splash` carries the voice for that one. A clump keeps the thunk
+    // the stone it replaced had — dropping it lost the landing its sound entirely.
+    if (ar.shot != .venom) sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
+    splashOf(g, ar);
 }
 
 /// WHAT A LANDED PROJECTILE LEAVES BEHIND, asked in ONE place because the two callers (it reached him / it
@@ -1882,21 +1892,33 @@ pub const Mode = enum { play, shots, props };
 
 pub fn run(mode: Mode) void {
     const shot = mode != .play;
+    // THE LEDGER STARTS HERE, not at `Game.init`: the window, the GL context and the font atlases are the
+    // better part of a second and were invisible to it, so "what is slow to launch" was being read off a
+    // measurement that began after the first big cost had already been paid.
+    var runTimer = std.time.Timer.start() catch unreachable;
+    const stamp = struct {
+        fn ms(t: *std.time.Timer, name: []const u8) void {
+            std.debug.print("INIT: {s: <10} {d:.1} ms\n", .{ name, @as(f64, @floatFromInt(t.lap())) / 1e6 });
+        }
+    }.ms;
     // VSYNC is why fullscreen was tearing. setTargetFPS is a CPU-side frame LIMITER — it paces how often we draw but never tells the driver to swap during vblank, so the swap lands mid-scan and the seam shows.
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .vsync_hint = true, .window_hidden = shot, .window_resizable = true });
     rl.initWindow(SCREEN_W, SCREEN_H, "zig-soulslike");
     defer rl.closeWindow();
     rl.setExitKey(.null);
     // No setTargetFPS alongside vsync: the two limiters fight on any display that isn't 60 Hz (vsync paces to the refresh, then raylib's own busy-wait throttles on top, which reads as judder).
+    stamp(&runTimer, "window"); // GL context, MSAA, vsync — and whatever the driver takes to hand one over
 
     hud_.init();
     defer hud_.deinit();
+    stamp(&runTimer, "fonts"); // three atlases rasterized and mipmapped: 96 px, 160 px, and the mono face
 
     // NO AUDIO UNDER --shot.
     if (!shot) {
-        var bakeTimer = std.time.Timer.start() catch unreachable;
         sfx.init();
-        std.debug.print("INIT: {s: <10} {d:.1} ms\n", .{ "audio bake", @as(f64, @floatFromInt(bakeTimer.read())) / 1e6 });
+        // TAKE 0 OF EVERY ROW ONLY — the variants come in through `sfx.pump` below, a few ms a frame behind
+        // the menu. The whole bank was 4.4 s here, in front of a window that is already up and blank.
+        stamp(&runTimer, "audio bake");
     }
     defer if (!shot) sfx.deinit();
     defer objviewmod.unload();
@@ -1932,6 +1954,9 @@ pub fn run(mode: Mode) void {
     var wasAiming = false;
     var wasStun: combat.StunKind = .none;
     var lastPhase: f32 = 0.75;
+    // Seconds spent finishing the bank behind the menu; -1 once it has been reported. The startup ledger
+    // would otherwise stop at "audio bake" and hide where the rest of the synthesis went.
+    var bankT: f32 = 0;
     defer g.rumble.stop();
     while (!rl.windowShouldClose()) {
         const rawDt = rl.getFrameTime(); // wall-clock dt: feel systems (shake, rumble, fades, tap windows)
@@ -1943,6 +1968,24 @@ pub fn run(mode: Mode) void {
         // …and a moved SOUND FILTER dial re-renders its family once it has settled (Menu > Debug > Sound
         // Filters). Before every branch, because the settle has to run out under the menu that armed it.
         sfx.tickFx(rawDt);
+        // THE REST OF THE BANK, a few milliseconds a frame. `init` baked one take per row so every voice
+        // sounds; this walks the variants in. Safe to call always — it returns at once when there is nothing
+        // left, and under `--shot` the device was never opened. `tickFx` goes FIRST, so a settled dial's
+        // re-bake decides what take 0 is before this starts appending variants to it.
+        // A LONG TAKE IS ONLY AFFORDABLE WHILE PAUSED (see `sfx.pump`): nothing is moving behind the menu, a
+        // grace or a conversation, so a bed's 8 s take can be built there. In live play only the short rows
+        // drip.
+        //
+        // THE BUDGET IS SIZED TO BE INVISIBLE, NOT TO FINISH FAST. At 12 ms of a 16.7 ms frame the menu ran
+        // at half rate for four seconds, which is the whole saving handed straight back — time to the first
+        // frame halved and time to a SMOOTH one did not move. What the tail costs is variety nobody can hear
+        // in the meantime, so it is allowed to take half a minute.
+        const paused = g.menu.isOpen() or g.rest.active() or g.talk.active() or g.editor.on;
+        const budget: u64 = if (paused) 3 * std.time.ns_per_ms else 1 * std.time.ns_per_ms;
+        if (sfx.pump(budget, paused)) bankT += rawDt else if (bankT > 0) {
+            std.debug.print("INIT: {s: <10} {d:.1} ms (behind the menu)\n", .{ "audio rest", bankT * 1000.0 });
+            bankT = -1;
+        }
 
         // Pad SELECT opens the GAME menu, pad START the CHARACTER one; TAB is START's keyboard twin.
         // A CONVERSATION HAS TO BE FINISHED, not escaped out of (see dialog.zig), so it swallows both.
@@ -2187,7 +2230,7 @@ pub fn run(mode: Mode) void {
 
         // Dodge roll: Space, or a short TAP of Circle/B (holding B sprints instead).
         var rollReq = rl.isKeyPressed(.space);
-        const bDown = padDown(.right_face_right);
+        const bDown = padDown(hud_.padOf(hud_.BTN_BACK)); // B is the roll/sprint button, named once in hud
         if (bDown) {
             bHeldT += rawDt; // REAL time: tap-vs-hold is a wall-clock decision, unaffected by debug time-scale
         } else {
@@ -2440,12 +2483,7 @@ pub fn run(mode: Mode) void {
                 // …and WHAT IT STRUCK picks that voice: boards if the shield caught it, flesh if not.
                 if (out == .taken or out == .ignored) sfx.play(.arrow_hit);
                 splashOf(g, ar);
-            } else if (ar.stuck and ar.age == 0) {
-                // ONLY THE GLOB IS SILENT HERE, because `brood.splash` plays its own voice. A clump keeps
-                // the thunk the stone it replaced had — dropping it lost the landing its sound entirely.
-                if (ar.shot != .venom) sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
-                splashOf(g, ar);
-            }
+            } else planted(g, ar);
         }
         // Blade connected this frame (a foe's hit count climbed) → pulse + frame crack sized to the swing.
         if (allHits(g) > hitsBefore) {
@@ -2848,19 +2886,27 @@ fn roleIdx(comptime mod: type, r: FoeRef) ?usize {
     return if (mod.roleOf(r.kind) != null) r.idx else null;
 }
 
-/// EVERY GROUP WHOSE MEMBERS ARE ONE KIND, WRITTEN DOWN ONCE — the map kind and the field on `Game` that keeps
-/// it. `askFoe` and `refInBounds` were two hand-written switches over these same seven rows, and they named
-/// DIFFERENT things on each side (`warren.frogs[i]` against `warren.liveConst().len`), so nothing tied the two
-/// together: a creature added to one and forgotten in the other is either an `unreachable` or a read of the
-/// undefined tail past `n`. The comptime block below is what the exhaustive switches used to be worth.
-const SOLO_GROUPS = [_]struct { kind: FoeKind, field: []const u8 }{
-    .{ .kind = .toad, .field = "warren" },
-    .{ .kind = .archer, .field = "line" },
-    .{ .kind = .ogre, .field = "grief" },
-    .{ .kind = .shade, .field = "haunt" },
-    .{ .kind = .leechfly, .field = "swarm" },
-    .{ .kind = .rooted, .field = "grove" },
-    .{ .kind = .shroom, .field = "cluster" },
+/// EVERY GROUP WHOSE MEMBERS ARE ONE KIND — DERIVED from `FOE_GROUPS`, never restated. `askFoe` and
+/// `refInBounds` were two hand-written switches over these same seven rows, and they named DIFFERENT things on
+/// each side (`warren.frogs[i]` against `warren.liveConst().len`), so nothing tied the two together: a creature
+/// added to one and forgotten in the other is either an `unreachable` or a read of the undefined tail past `n`.
+/// Restated as its own table it was a THIRD place a field/kind pair could disagree with the other two, and the
+/// comptime block below only ever checked the kind side — so a mistyped field resolved a `FoeRef` into the
+/// wrong group's array and still compiled. It is a pure projection, so it is taken as one.
+const SOLO_GROUPS = blk: {
+    var n: usize = 0;
+    for (FOE_GROUPS) |gr| {
+        if (gr.kind != null) n += 1;
+    }
+    var out: [n]struct { kind: FoeKind, field: []const u8 } = undefined;
+    var i: usize = 0;
+    for (FOE_GROUPS) |gr| {
+        if (gr.kind) |k| {
+            out[i] = .{ .kind = k, .field = gr.field };
+            i += 1;
+        }
+    }
+    break :blk out;
 };
 
 comptime {
@@ -2879,6 +2925,23 @@ comptime {
         }
         if (claims != 1) @compileError("game: FoeKind." ++ f.name ++ " is claimed by " ++
             std.fmt.comptimePrint("{d}", .{claims}) ++ " groups — a `FoeRef` needs exactly one");
+    }
+    // …AND THE ROLE GROUPS ARE EXACTLY THE `kind == null` ROWS. `ROLE_GROUPS` cannot be derived (it carries a
+    // module handle `FoeGroup` has no business holding), so the one thing it restates — the field name — is
+    // checked against the table instead.
+    var nulls: usize = 0;
+    for (FOE_GROUPS) |gr| {
+        if (gr.kind == null) nulls += 1;
+    }
+    if (nulls != ROLE_GROUPS.len) @compileError("game: ROLE_GROUPS and the `kind = null` rows of FOE_GROUPS disagree");
+    for (ROLE_GROUPS) |rg| {
+        var seen = false;
+        for (FOE_GROUPS) |gr| {
+            if (!std.mem.eql(u8, gr.field, rg[0])) continue;
+            if (gr.kind != null) @compileError("game: ROLE_GROUPS names `" ++ rg[0] ++ "`, which FOE_GROUPS gives a single kind");
+            seen = true;
+        }
+        if (!seen) @compileError("game: ROLE_GROUPS names `" ++ rg[0] ++ "`, which is not a FOE_GROUPS field");
     }
 }
 

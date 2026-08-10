@@ -323,7 +323,7 @@ pub fn bigTreeMesh(shader: rl.Shader, spec: TreeSpec) rl.Model {
         tips[@intCast(i)] = tip;
     }
     const da = rng.angle();
-    b.addCapsule(t2, v3(t2.x + mathx.cosf(da) * 3.4 * spec.spread, t2.y + 0.9, t2.z + mathx.sinf(da) * 3.4), 0.26, 0.05, 6, BARK_DK);
+    b.addCapsule(t2, v3(t2.x + mathx.cosf(da) * 3.4 * spec.spread, t2.y + 0.9, t2.z + mathx.sinf(da) * 3.4 * spec.spread), 0.26, 0.05, 6, BARK_DK);
 
     b.setMat(.plant);
     const crownY = spec.trunk + 2.5 * spec.lift + 1.5;

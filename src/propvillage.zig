@@ -236,6 +236,7 @@ pub fn lanternMesh(shader: rl.Shader) rl.Model {
         b.addCapsule(v3(0.30 + mathx.cosf(a) * 0.12, 2.44, mathx.sinf(a) * 0.12), v3(0.30 + mathx.cosf(a) * 0.12, 2.74, mathx.sinf(a) * 0.12), 0.017, 0.017, 4, IRON);
     }
     b.addCylinder(v3(0.30, 2.42, 0), v3(0.30, 2.47, 0), 0.14, 0.14, 8, IRON);
+    b.addDome(v3(0.30, 2.42, 0), v3(0, -1, 0), 0.14, 8, IRON); // it hangs overhead: the FLOOR of the collar is what you see
     b.addCylinder(v3(0.30, 2.74, 0), v3(0.30, 2.80, 0), 0.16, 0.11, 8, IRON);
     b.addDome(v3(0.30, 2.80, 0), v3(0, 1, 0), 0.11, 8, IRON);
     b.setMat(.flame);
@@ -436,7 +437,7 @@ pub fn sarcophagusMesh(shader: rl.Shader) rl.Model {
     b.addCube(v3(0.10, 0.80, 0), v3(1.80, 0.075, 1.11), STONE); // the cornice, its broken WEST end simply missing
     for ([_]f32{ -1, 1 }) |sz| {
         b.addCube(v3(-0.08, 0.50, sz * 0.525), v3(1.35, 0.34, 0.045), STONE_LT);
-        b.addCube(v3(-0.08, 0.50, sz * 0.545), v3(1.05, 0.22, 0.03), STONE_DK); // the field, weathered back
+        b.addCube(v3(-0.08, 0.50, sz * 0.5365), v3(1.05, 0.22, 0.03), STONE_DK); // the field, weathered back
     }
     b.setMat(.marble);
     b.addBox(v3(-0.35, 0.92, 0.30), v3(1.0, 0.10, 0), v3(-0.04, 0.11, 0), v3(0, 0, 0.5), MARBLE);
@@ -563,7 +564,9 @@ pub fn chestMesh(shader: rl.Shader) rl.Model {
     b.addCube(v3(0, CHEST_FOOT_H + 0.055, 0), v3(inX * 2.0, 0.11, inZ * 2.0), CHEST_INSIDE);
     var x = -hx + 0.04;
     while (x < hx - 0.06) {
-        const w = rng.range(0.13, 0.22);
+        // CLAMPED to what is left: `w` is drawn after the loop test, so the last board could run up to
+        // 15 cm past the carcase's end and stick out sideways off the corner.
+        const w = @min(rng.range(0.13, 0.22), hx - 0.04 - x);
         const cx = x + w * 0.5;
         for ([_]f32{ -1, 1 }) |sz| {
             b.addCube(v3(cx, CHEST_FOOT_H + CHEST_BODY_H * 0.5, sz * hz), v3(w - 0.012, CHEST_BODY_H - 0.05, 0.03), if (rng.float() < 0.4) TIMBER else TIMBER_DK);

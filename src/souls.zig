@@ -4,6 +4,7 @@ const gfx = @import("gfx.zig");
 const mathx = @import("mathx.zig");
 const foe = @import("foe.zig");
 const sfx = @import("audio.zig");
+const chest = @import("chest.zig"); // for the one comptime assert below, and nothing else
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -19,9 +20,14 @@ const Builder = gfx.Builder;
 // **NOTHING ELSE CAN TAKE IT.** No timer, no decay, no despawn on distance: the only thing that spends a drop
 // is picking it up or dying again. A bloodstain on a clock is a bloodstain you lose to the loading screen.
 
-/// How close you have to stand for the prompt, in metres on XZ. Generous next to a chest's 2.1: you are
-/// coming back for this under pressure, and fumbling the reach is not the tension the mechanic is for.
+/// How close you have to stand for the prompt, in metres on XZ. GENEROUS NEXT TO A CHEST'S: you are coming
+/// back for this under pressure, and fumbling the reach is not the tension the mechanic is for. Asserted
+/// rather than said, because as prose it was a claim about another module's number that nothing checked —
+/// and `chest.REACH` moving is exactly how the ring quietly stops being the generous one.
 pub const REACH: f32 = 2.6;
+comptime {
+    std.debug.assert(REACH > chest.REACH);
+}
 
 /// The gold stands about chest height on the 1.8 m rig — tall enough to find across a clearing, short enough
 /// that it never hides the thing that killed you standing behind it.

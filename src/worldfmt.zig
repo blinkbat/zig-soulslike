@@ -178,7 +178,23 @@ pub const Zone = struct {
     pub fn label(self: *const Zone) []const u8 {
         return std.mem.sliceTo(&self.name, 0);
     }
+    /// `Map.setName`'s shape, one level down — the zone name was filled by hand at four sites, twice with
+    /// its length written as a literal (`@memcpy(z.name[0..3], "new")`).
+    pub fn setName(self: *Zone, s: []const u8) void {
+        self.name = [_]u8{0} ** NAME_CAP;
+        const n = @min(s.len, NAME_CAP - 1);
+        @memcpy(self.name[0..n], s[0..n]);
+    }
 };
+
+/// A WEIGHTED KIND MIX, BOUNDED. Three live sites filled a `[MAX_MIX]Kind` with a bare indexed loop, so a
+/// mix literal grown past the cap writes past the array; the only bounded spelling lived in `bake.zig`, the
+/// one-way door nothing calls any more.
+pub fn setMix(dst: *[MAX_MIX]Kind, n: *u8, mix: []const Kind) void {
+    const k = @min(mix.len, MAX_MIX);
+    @memcpy(dst[0..k], mix[0..k]);
+    n.* = @intCast(k);
+}
 
 pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 
@@ -692,36 +708,45 @@ pub const Map = struct {
         self.height = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS;
     }
 
-    /// The smallest VALID map: a world-spanning fallback zone plus the cover op that reads it.
-    pub fn blank(self: *Map, name: []const u8) void {
-        self.* = .{};
-        self.setName(name);
-        var z = Zone{ .x = -4000, .z = -4000, .x1 = 4000, .z1 = 4000, .density = 0.7 };
-        const mix = [_]Kind{ .grasstall, .grasstall, .patch, .tuft, .clover, .moss, .wildflowers };
-        for (mix, 0..) |k, i| z.mix[i] = k;
-        z.nmix = mix.len;
-        @memcpy(z.name[0..5], "plain");
-        self.zones[0] = z;
-        self.nzones = 1;
-
-        var cover = defaults(.cover);
-        cover.r0 = 3.3; // lattice pitch
-        cover.sLo = 0.72;
-        cover.sHi = 1.38;
-        cover.seed = 1001;
-        self.ops[0] = cover;
-        self.nops = 1;
-
-        // The rim, so a new map is bounded terrain rather than a plane running into haze.
+    /// THE CLIFF RIM OP AND THE COVER SCATTER, minus their seeds. `blank` gives every new map both, and the
+    /// editor's World panel adds a replacement rim — so the four rim numbers and the three cover numbers were
+    /// each written out twice over here and in `editor.freshRim`, plus a third time in `bake.zig`.
+    pub fn defaultRim() Op {
         var rim = defaults(.edge);
         rim.kind = .cliff;
         rim.r0 = 6.5;
         rim.n = 90;
         rim.sLo = 0.92;
         rim.sHi = 1.24;
+        setMix(&rim.mix, &rim.nmix, &props.CLIFFS);
+        return rim;
+    }
+    pub fn defaultCover() Op {
+        var cover = defaults(.cover);
+        cover.r0 = 3.3; // lattice pitch
+        cover.sLo = 0.72;
+        cover.sHi = 1.38;
+        return cover;
+    }
+
+    /// The smallest VALID map: a world-spanning fallback zone plus the cover op that reads it.
+    pub fn blank(self: *Map, name: []const u8) void {
+        self.* = .{};
+        self.setName(name);
+        var z = Zone{ .x = -4000, .z = -4000, .x1 = 4000, .z1 = 4000, .density = 0.7 };
+        setMix(&z.mix, &z.nmix, &.{ .grasstall, .grasstall, .patch, .tuft, .clover, .moss, .wildflowers });
+        z.setName("plain");
+        self.zones[0] = z;
+        self.nzones = 1;
+
+        var cover = defaultCover();
+        cover.seed = 1001;
+        self.ops[0] = cover;
+        self.nops = 1;
+
+        // The rim, so a new map is bounded terrain rather than a plane running into haze.
+        var rim = defaultRim();
         rim.seed = 1002;
-        for (props.CLIFFS, 0..) |k, i| rim.mix[i] = k;
-        rim.nmix = props.CLIFFS.len;
         self.ops[1] = self.ops[0];
         self.ops[0] = rim;
         self.nops = 2;
@@ -1405,6 +1430,12 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
         }
     }
     if (!seenVersion) return ParseError.BadVersion;
+    // A grid is all-or-nothing: a hand-truncated `soil:`/`hgt:` record would leave its tail at
+    // defaults with no error, and missing fields are LOAD ERRORS in this format.
+    if (soilAt != 0 and soilAt != m.soil.len) return ParseError.MissingField;
+    if (covAt != 0 and covAt != m.soilCov.len) return ParseError.MissingField;
+    if (waterAt != 0 and waterAt != m.water.len) return ParseError.MissingField;
+    if (hgtAt != 0 and hgtAt != m.height.len) return ParseError.MissingField;
     // Line numbers stop meaning anything here: a name resolved at the end failed WHEREVER it was written.
     lineOut.* = 0;
     try link(m);
@@ -1728,9 +1759,11 @@ fn link(m: *Map) !void {
     }
 }
 
-/// One condition's forward references — the only one today is `talked`, which names a dialog. Every pool a
+/// One condition's forward references — `talked` names a dialog, `near` indexes the npc table. Every pool a
 /// `Cond` can live in goes through here, so a new pool cannot inherit half the resolution.
 fn linkCond(m: *Map, c: *Cond) !void {
+    // A mistyped spawn index would otherwise be a trigger that never fires, not a load error.
+    if (c.kind == .near and c.slot >= m.nnpcs) return ParseError.UnknownRef;
     if (c.kind != .talked) return;
     c.slot = m.findDialog(m.spanText(c.ref)) orelse return ParseError.UnknownRef;
 }
@@ -1746,9 +1779,7 @@ fn nodeIn(m: *const Map, d: *const Dialog, name: []const u8) !u16 {
 
 fn parseZone(it: *std.mem.TokenIterator(u8, .any)) !Zone {
     var z = Zone{};
-    const nm = it.next() orelse return ParseError.MissingField;
-    const n = @min(nm.len, NAME_CAP - 1);
-    @memcpy(z.name[0..n], nm[0..n]);
+    z.setName(it.next() orelse return ParseError.MissingField);
     z.x = try nextFloat(it);
     z.z = try nextFloat(it);
     z.x1 = try nextFloat(it);

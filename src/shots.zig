@@ -110,7 +110,9 @@ fn must(ok: bool, what: []const u8) void {
 
 /// THE CAMERA YAW WITH THE SUN BEHIND IT
 pub const LIT_YAW: f32 = 53.0;
-pub const LIT_BACK = v3(-0.794, 0, -0.608);
+/// …and its XZ bearing, DERIVED (`camera.backDir` at pitch 0). Hand-rounded it was already 0.45° out, so
+/// moving `LIT_YAW` left every "lit" framing in the file pointing the old way.
+pub const LIT_BACK = v3(-mathx.sinf(mathx.radians(LIT_YAW)), 0, -mathx.cosf(mathx.radians(LIT_YAW)));
 
 /// `m` metres from `from` along `dir`, on the ground. Every "put the sensed hero out on the sun's bearing"
 /// in here is this, and it was open-coded as a pair of `from.x + dir.x * m` axes at each site.

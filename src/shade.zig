@@ -16,7 +16,6 @@ const ry = mathx.ry;
 const rz = mathx.rz;
 const tr = mathx.tr;
 const mul = mathx.mul;
-const mul3 = mathx.mul3;
 const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 const placeAt = mathx.placeAt;
@@ -74,7 +73,6 @@ pub const RUNES: u32 = 110;
 
 const DEATH_DUR: f32 = 0.55; // it does not fall over; it comes apart
 const DISS_DUR: f32 = 0.75;
-const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY: f32 = 9.0;
 
 /// THE TOUCH. Most of it is the BLUE bar (`combat.Hit.fp`): 14 of a 60-point pool is a cast and a sixth, so
@@ -366,7 +364,9 @@ pub const Shade = struct {
         // THE ROOTS HAVE ITS FEET — such as they are. The drift is given back as a post-step gate and the
         // grasp still closes; the BLINK is the one thing refused outright, at the choose site below.
         const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
-        defer grip.hold(&self.pos);
+        // Airborne is half a blink: the arrival write must not be snapped back to the departure point,
+        // leaving the rift flash five metres from the body (a leap in the air finishes its arc).
+        defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.elapsed += dt;
         self.t += dt;

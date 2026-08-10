@@ -68,9 +68,25 @@ fn swell(u: f32, peak: f32) f32 {
     return decay((t - peak) / (1.0 - peak), 3.5);
 }
 
+/// ONE LAYER'S SAMPLE RANGE, and the only place `u` is worked out. As two lines at the head of six
+/// primitives it was six encodings of "a duration is clamped through the same path as an absolute time".
+const Span = struct {
+    a: usize,
+    b: usize,
+
+    fn u(s: Span, i: usize) f32 {
+        return @as(f32, @floatFromInt(i - s.a)) / @as(f32, @floatFromInt(s.b - s.a));
+    }
+};
+
 const Rack = struct {
     n: usize = 0, // samples written so far (the voice's length)
     rng: mathx.Rng,
+    /// LAYERS THAT RENDERED NOTHING. `at` clamps a duration to the take just as it clamps an absolute time,
+    /// so a layer authored past the voice's own length emits zero samples and says nothing about it — which is
+    /// how `wood_die`'s ground arrival and `eat`'s third chew went missing. A test bakes the whole bank and
+    /// asserts this stays 0, so a new voice whose recipe outruns its `seconds()` row fails there instead.
+    dropped: usize = 0,
 
     // `secs`, not `seconds` — that name belongs to the bank's own length table below, and a parameter shadowing a declaration is a compile error in Zig (rightly).
     fn init(seed: u64, secs: f32) Rack {
@@ -83,13 +99,23 @@ const Rack = struct {
         return @min(@as(usize, @intFromFloat(mathx.maxF(t, 0) * SRF)), r.n);
     }
 
-    fn body(r: *Rack, t0: f32, dur: f32, f0: f32, f1: f32, amp: f32, curve: f32) void {
+    /// …and the span a layer actually gets, `null` when the take has no room for it at all.
+    fn span(r: *Rack, t0: f32, dur: f32) ?Span {
         const a = r.at(t0);
         const b = @min(a + r.at(dur), r.n);
+        if (a >= b) {
+            r.dropped += 1;
+            return null;
+        }
+        return .{ .a = a, .b = b };
+    }
+
+    fn body(r: *Rack, t0: f32, dur: f32, f0: f32, f1: f32, amp: f32, curve: f32) void {
+        const s = r.span(t0, dur) orelse return;
         var ph: f32 = 0;
-        var i = a;
-        while (i < b) : (i += 1) {
-            const u = @as(f32, @floatFromInt(i - a)) / @as(f32, @floatFromInt(b - a));
+        var i = s.a;
+        while (i < s.b) : (i += 1) {
+            const u = s.u(i);
             const f = f0 * std.math.pow(f32, f1 / f0, u); // exponential glide reads as one fall
             ph += std.math.tau * f / SRF;
             work[i] += mathx.sinf(ph) * amp * decay(u, curve);
@@ -97,12 +123,11 @@ const Rack = struct {
     }
 
     fn air(r: *Rack, t0: f32, dur: f32, amp: f32, c0: f32, c1: f32, res: f32, curve: f32) void {
-        const a = r.at(t0);
-        const b = @min(a + r.at(dur), r.n);
+        const s = r.span(t0, dur) orelse return;
         var f = Svf{};
-        var i = a;
-        while (i < b) : (i += 1) {
-            const u = @as(f32, @floatFromInt(i - a)) / @as(f32, @floatFromInt(b - a));
+        var i = s.a;
+        while (i < s.b) : (i += 1) {
+            const u = s.u(i);
             const cut = c0 * std.math.pow(f32, c1 / c0, mathx.smoothstep(0, 1, u));
             const out = f.step(r.rng.signed(), cut, res);
             work[i] += out.bp * amp * decay(u, curve);
@@ -111,14 +136,13 @@ const Rack = struct {
 
     /// GRIT — lowpassed noise with a granular amplitude, so it CRUNCHES instead of hissing.
     fn grit(r: *Rack, t0: f32, dur: f32, amp: f32, cut: f32, coarse: f32, curve: f32) void {
-        const a = r.at(t0);
-        const b = @min(a + r.at(dur), r.n);
+        const s = r.span(t0, dur) orelse return;
         var p = Pole{};
         var hold: f32 = 0;
         var left: i32 = 0;
-        var i = a;
-        while (i < b) : (i += 1) {
-            const u = @as(f32, @floatFromInt(i - a)) / @as(f32, @floatFromInt(b - a));
+        var i = s.a;
+        while (i < s.b) : (i += 1) {
+            const u = s.u(i);
             if (left <= 0) {
                 hold = r.rng.signed();
                 left = 1 + r.rng.intn(@intFromFloat(1.0 + coarse * 12.0));
@@ -129,8 +153,9 @@ const Rack = struct {
     }
 
     fn ring(r: *Rack, t0: f32, dur: f32, f0: f32, amp: f32, curve: f32, parts: u32) void {
-        const a = r.at(t0);
-        const b = @min(a + r.at(dur), r.n);
+        const s = r.span(t0, dur) orelse return;
+        const a = s.a;
+        const b = s.b;
         var k: u32 = 0;
         while (k < parts) : (k += 1) {
             const mult = 1.0 + @as(f32, @floatFromInt(k)) * (1.48 + r.rng.signed() * 0.12);
@@ -141,21 +166,19 @@ const Rack = struct {
             const ph0 = r.rng.angle();
             var i = a;
             while (i < b) : (i += 1) {
-                const u = @as(f32, @floatFromInt(i - a)) / @as(f32, @floatFromInt(b - a));
-                work[i] += mathx.sinf(ph0 + std.math.tau * f * @as(f32, @floatFromInt(i - a)) / SRF) * g * decay(u, d);
+                work[i] += mathx.sinf(ph0 + std.math.tau * f * @as(f32, @floatFromInt(i - a)) / SRF) * g * decay(s.u(i), d);
             }
         }
     }
 
     fn growl(r: *Rack, t0: f32, dur: f32, f0: f32, f1: f32, amp: f32, rough: f32, shape: f32) void {
-        const a = r.at(t0);
-        const b = @min(a + r.at(dur), r.n);
+        const s = r.span(t0, dur) orelse return;
         var f = Svf{};
         var ph: f32 = 0;
         var vib: f32 = 0;
-        var i = a;
-        while (i < b) : (i += 1) {
-            const u = @as(f32, @floatFromInt(i - a)) / @as(f32, @floatFromInt(b - a));
+        var i = s.a;
+        while (i < s.b) : (i += 1) {
+            const u = s.u(i);
             vib += std.math.tau * (5.5 + 3.0 * u) / SRF;
             const hz = f0 * std.math.pow(f32, f1 / f0, u) * (1.0 + 0.035 * mathx.sinf(vib));
             ph += hz / SRF;
@@ -175,10 +198,9 @@ const Rack = struct {
     /// The bank's most expensive layer, ~70 ms of the heal's bake (Debug, 3 takes). The remaining `sin` per
     /// sample per voice is DELIBERATE: a table LFO would trade that beating for launch time nobody waits on.
     fn choir(r: *Rack, t0: f32, dur: f32, f0: f32, amp: f32, voices: u32, peak: f32) void {
-        const a = r.at(t0);
-        const b = @min(a + r.at(dur), r.n);
-        if (a >= b) return;
-        const span: f32 = @floatFromInt(b - a);
+        const s = r.span(t0, dur) orelse return;
+        const a = s.a;
+        const b = s.b;
         var v: u32 = 0;
         while (v < voices) : (v += 1) {
             const detune = 1.0 + r.rng.signed() * 0.006; // ±10 cents: a choir, not a chorus pedal
@@ -196,7 +218,7 @@ const Rack = struct {
             var vib: f32 = r.rng.angle();
             var i = a;
             while (i < b) : (i += 1) {
-                const u = @as(f32, @floatFromInt(i - a)) / span;
+                const u = s.u(i);
                 vib += std.math.tau * vrate / SRF;
                 ph += hz * (1.0 + vdepth * mathx.sinf(vib)) / SRF;
                 ph -= @floor(ph);
@@ -2072,6 +2094,17 @@ fn seconds(id: Id) f32 {
         .sac_hatch, .brood_screech => 0.55, // the membrane going, and the cry straight over it
         .sac_burst => 0.45,
         .acid_splash => 0.42,
+        // Recipes that author past the 0.5 s default — without a row here `Rack.at` clamps to the take
+        // and the tail layers render zero samples (wood_die's ground arrival, eat's third chew).
+        .wood_wake => 0.8,
+        .wood_die => 1.2, // the tear, THEN the ground taking it at 0.80
+        .eat => 0.65,
+        .shroom_die => 0.75,
+        .leech_die => 0.65, // the run-down, then the body arriving at 0.44
+        .souls_spill => 0.9,
+        // The retrigger in souls.zig fires every HUM_EVERY (1.15 s); the take must outlast it or the
+        // hum chatters (the leechfly whine rule).
+        .souls_hum => 1.30,
         else => 0.5,
     };
 }
@@ -2088,9 +2121,15 @@ const Slot = struct {
     snd: [MAX_VARS][MAX_POLY]rl.Sound = undefined,
     owned: [MAX_VARS]rl.Sound = undefined, // alias 0 owns the data; the rest borrow it
     next: u8 = 0,
+    /// HOW MANY OF `Row.vars` ARE ACTUALLY BUILT, and the only thing allowed to bound a walk of `snd`.
+    /// The bank is baked in two stages — variant 0 for every row before the first frame, the rest dripped
+    /// by `pump` — so `Row.vars` is what a row WILL have and this is what it has NOW. Walking `Row.vars`
+    /// instead hands raylib an undefined `rl.Sound` to play, stop or unload.
+    varsReady: u8 = 0,
 };
 
-var slots: [NV]Slot = undefined;
+// ZERO-INITIALISED, not `undefined`: `varsReady` is read before anything is baked.
+var slots = [_]Slot{.{}} ** NV;
 var ready = false;
 // The PLAYBACK rng — per-trigger pitch wobble only.
 var rng = mathx.Rng.init(0x50FA5);
@@ -2116,30 +2155,78 @@ fn panFor(side: f32, width: f32) f32 {
     return mathx.clampF(0.5 - width * side, 0.04, 0.96);
 }
 
-/// Every take of one row, plus its polyphony aliases. The ONE copy, shared by `init` and `rebakeMix`, so a
-/// voice cannot come back from a filter change built differently from the one it launched as.
-fn bakeRow(id: Id, idx: usize) void {
+/// ONE take of one row, plus its polyphony aliases. The ONE copy of the recipe→sound path, shared by `init`,
+/// `pump` and `rebakeMix`, so a voice cannot come back from a filter change built differently from the one it
+/// launched as. Takes are always appended in order, so `varsReady` is both the count and the next index.
+fn bakeTake(id: Id, idx: usize) void {
     const row = BANK[idx];
-    var v: u8 = 0;
-    while (v < row.vars) : (v += 1) {
-        var r = Rack.init(0x9E3779B9 *% (idx + 1) +% v, seconds(id));
-        row.make(&r);
-        // The fight's own tone, BEFORE the player's rack: his dials sit on top of the mix, never under it.
-        if (row.mix == .combat) r.warm(COMBAT_TREBLE);
-        applyFx(&r, row.mix);
-        slots[idx].snd[v][0] = bake(&r);
-        slots[idx].owned[v] = slots[idx].snd[v][0];
-        var p: u8 = 1;
-        while (p < row.poly) : (p += 1) slots[idx].snd[v][p] = rl.loadSoundAlias(slots[idx].owned[v]);
-    }
+    const v = slots[idx].varsReady;
+    if (v >= row.vars) return;
+    var r = Rack.init(0x9E3779B9 *% (idx + 1) +% v, seconds(id));
+    row.make(&r);
+    // The fight's own tone, BEFORE the player's rack: his dials sit on top of the mix, never under it.
+    if (row.mix == .combat) r.warm(COMBAT_TREBLE);
+    applyFx(&r, row.mix);
+    slots[idx].snd[v][0] = bake(&r);
+    slots[idx].owned[v] = slots[idx].snd[v][0];
+    var p: u8 = 1;
+    while (p < row.poly) : (p += 1) slots[idx].snd[v][p] = rl.loadSoundAlias(slots[idx].owned[v]);
+    slots[idx].varsReady = v + 1; // LAST: nothing may see a half-built take
     slots[idx].next = 0;
 }
 
-/// From take 0, not 1: index 0 is the OWNER and the one the looping beds play on.
+/// …and every take of one row, for the paths that want a row whole.
+fn bakeRow(id: Id, idx: usize) void {
+    while (slots[idx].varsReady < BANK[idx].vars) bakeTake(id, idx);
+}
+
+/// THE BANK IS NOT BUILT ALL AT ONCE (it was 4.4 s of synthesis on the main thread, in front of a window
+/// that was already up and blank). `init` builds variant 0 of every row — enough for every voice to SOUND —
+/// and this walks the rest in behind the menu, a few milliseconds a frame. Returns whether work remains.
+///
+/// A TAKE IS INDIVISIBLE, which is the whole difficulty: the budget bounds how much we START, never how much
+/// we finish, so one 8 s bed take is a ~300 ms hole in whatever frame picks it up. Harmless on the menu and
+/// unacceptable mid-fight — hence `longOk`. While the game is PAUSED (and the menu is up at launch, so that
+/// is where the bank actually finishes) anything may be built; in live play the long rows are passed over and
+/// wait for the next pause. `LONG_TAKE` is in seconds of AUDIO, which is the one cheap proxy for the cost.
+const LONG_TAKE: f32 = 1.4;
+
+pub fn pump(budgetNs: u64, longOk: bool) bool {
+    if (!ready or pumpDone) return false;
+    var t = std.time.Timer.start() catch return false;
+    var left: usize = NV;
+    var deferred = false;
+    while (left > 0) : (left -= 1) {
+        const idx = pumpAt;
+        pumpAt = (pumpAt + 1) % NV;
+        if (slots[idx].varsReady >= BANK[idx].vars) continue;
+        if (!longOk and seconds(BANK[idx].id) > LONG_TAKE) {
+            deferred = true; // there IS work, just none this pass may afford
+            continue;
+        }
+        bakeTake(BANK[idx].id, idx);
+        if (t.read() >= budgetNs) return true;
+        left = NV + 1; // it had work and time: give the walk a fresh lap
+    }
+    // A FULL LAP THAT STARTED NOTHING, and only ONE of the two reasons is finished: a DEFERRED row is work
+    // waiting on the next pause, where nothing deferred means the bank is whole and this may stop asking.
+    pumpDone = !deferred;
+    return deferred;
+}
+
+/// Where `pump` resumes. A cursor rather than a rescan from 0, so a nearly-full bank costs one walk.
+var pumpAt: usize = 0;
+/// …and whether there is anything left to resume AT. Without it a finished bank still cost a timer read and a
+/// walk of all `NV` rows every frame for the rest of the session — the whole job having ended half a minute in.
+/// Cleared by `freeRow`, which is the only thing that ever un-bakes a take.
+var pumpDone = false;
+
+/// From take 0, not 1: index 0 is the OWNER and the one the looping beds play on. Bounded by `varsReady`,
+/// not `Row.vars` — a take that has not been baked yet is an undefined `rl.Sound`.
 fn stopRow(idx: usize) void {
     const row = BANK[idx];
     var v: u8 = 0;
-    while (v < row.vars) : (v += 1) {
+    while (v < slots[idx].varsReady) : (v += 1) {
         var p: u8 = 0;
         while (p < row.poly) : (p += 1) rl.stopSound(slots[idx].snd[v][p]);
     }
@@ -2149,11 +2236,13 @@ fn stopRow(idx: usize) void {
 fn freeRow(idx: usize) void {
     const row = BANK[idx];
     var v: u8 = 0;
-    while (v < row.vars) : (v += 1) {
+    while (v < slots[idx].varsReady) : (v += 1) {
         var p: u8 = 1;
         while (p < row.poly) : (p += 1) rl.unloadSoundAlias(slots[idx].snd[v][p]);
         rl.unloadSound(slots[idx].owned[v]);
     }
+    slots[idx].varsReady = 0; // freed IS not-ready, and `pump` rebuilds it from take 0
+    pumpDone = false; // …so it has to start asking again
 }
 
 /// Silence always before free (see `deinit`).
@@ -2169,7 +2258,9 @@ fn rebakeMix(m: Submix) void {
     inline for (@typeInfo(Id).@"enum".fields, 0..) |f, idx| {
         if (BANK[idx].mix == m) {
             dropRow(idx);
-            bakeRow(@enumFromInt(f.value), idx);
+            // TAKE 0 ONLY, and `pump` walks the variants back in — the same two-stage build `init` uses.
+            // Whole, this was 342 takes of synthesis inside one frame every time a combat dial settled.
+            bakeTake(@enumFromInt(f.value), idx);
         }
     }
     // The campfire is an ambience voice too, and the only one that is a STREAM rather than a baked Sound.
@@ -2190,13 +2281,18 @@ fn redressFire() void {
     }
 }
 
-/// Build the whole bank at launch — a few hundred milliseconds of synthesis, once.
+/// ENOUGH OF THE BANK TO PLAY, and no more: variant 0 of every row, which is ~112 takes of the 407 the bank
+/// wants. `pump` brings the rest in behind the menu. Whole, this was 4.4 s on the main thread with the window
+/// already up and blank — and it grows with every voice added, so the fix has to be structural.
+///
+/// A row with one take still SOUNDS; what it lacks is variety, which is exactly what the `vars = 1` rows
+/// already sound like and what nobody can hear in the first second of a launch.
 pub fn init() void {
     loadSettings(); // before the device: the dials are data, and they are what the first bed is mixed at
     rl.initAudioDevice();
     if (!rl.isAudioDeviceReady()) return;
     rl.setMasterVolume(MASTER_VOL);
-    inline for (@typeInfo(Id).@"enum".fields, 0..) |f, idx| bakeRow(@enumFromInt(f.value), idx);
+    inline for (@typeInfo(Id).@"enum".fields, 0..) |f, idx| bakeTake(@enumFromInt(f.value), idx);
     restFire = rl.loadMusicStreamFromMemory(".wav", dressedFire()) catch null;
     if (restFire) |*m| {
         m.looping = true;
@@ -2391,8 +2487,8 @@ pub fn setVolume(m: Submix, v: f32) void {
         for (BEDS) |b| {
             const s = &slots[@intFromEnum(b)];
             const lvl = bedLevel(BANK[@intFromEnum(b)]);
-            rl.setSoundVolume(s.snd[0][0], lvl);
-            if (BANK[@intFromEnum(b)].vars > 1) rl.setSoundVolume(s.snd[1][0], lvl);
+            if (s.varsReady > 0) rl.setSoundVolume(s.snd[0][0], lvl);
+            if (s.varsReady > 1) rl.setSoundVolume(s.snd[1][0], lvl);
         }
     }
 }
@@ -2492,9 +2588,12 @@ fn emit(id: Id, vol: f32, pan: f32, pitchScale: f32) void {
     const idx = @intFromEnum(id);
     const row = BANK[idx];
     const s = &slots[idx];
+    // Round-robin over the takes THAT EXIST. Before `pump` has caught up a row has one, and `Row.vars` here
+    // would pick a take that has not been synthesized yet.
+    if (s.varsReady == 0) return;
     const pick = s.next;
-    s.next = (s.next + 1) % (row.vars * row.poly);
-    trigger(s.snd[pick % row.vars][pick / row.vars % row.poly], row, vol, pan, pitchScale);
+    s.next = (s.next + 1) % (s.varsReady * row.poly);
+    trigger(s.snd[pick % s.varsReady][pick / s.varsReady % row.poly], row, vol, pan, pitchScale);
 }
 
 fn trigger(snd: rl.Sound, row: Row, vol: f32, pan: f32, pitchScale: f32) void {
@@ -2510,8 +2609,16 @@ fn bed(id: Id, vol: f32) void {
     const idx = @intFromEnum(id);
     const row = BANK[idx];
     const s = &slots[idx];
+    if (s.varsReady == 0) return;
+    // THE WIDTH IS THE SECOND TAKE, and the beds are the two most expensive rows in the bank, so at launch
+    // only take 0 exists. Hard-panned alone it would be a bed in one ear; CENTRED it is simply narrow, and
+    // `ambience` re-fires whatever is not playing, so the width arrives with the next loop of an 8 s take.
+    if (s.varsReady == 1) {
+        trigger(s.snd[0][0], row, vol, 0.5, 1.0);
+        return;
+    }
     trigger(s.snd[0][0], row, vol, BED_PAN, 1.0);
-    if (row.vars > 1) trigger(s.snd[1][0], row, vol, 1.0 - BED_PAN, 1.0);
+    trigger(s.snd[1][0], row, vol, 1.0 - BED_PAN, 1.0);
 }
 
 const BEDS = [_]Id{ .wind, .crickets };
@@ -2547,7 +2654,9 @@ var callWait: [CALLS.len]f32 = init: {
 pub fn ambience(dt: f32) void {
     if (!ready or muted) return;
     for (BEDS) |b| {
-        if (!rl.isSoundPlaying(slots[@intFromEnum(b)].snd[0][0])) bed(b, 1.0);
+        const s = &slots[@intFromEnum(b)];
+        if (s.varsReady == 0) continue; // not baked yet: `pump` is still walking the bank in
+        if (!rl.isSoundPlaying(s.snd[0][0])) bed(b, 1.0);
     }
     for (CALLS, 0..) |c, i| {
         callWait[i] -= dt;
@@ -2606,6 +2715,22 @@ test "every voice renders, stays in range, and is not silence" {
         try std.testing.expect(peak > 0.2); // it made a sound…
         try std.testing.expect(peak <= 1.0);
         try std.testing.expect(energy / @as(f32, @floatFromInt(r.n)) > 0.002); // not a lone click
+    }
+}
+
+test "NO VOICE OUTRUNS ITS OWN TAKE — every authored layer gets samples to render into" {
+    // `Rack.at` clamps a layer's start AND its duration to the take, so a recipe authoring past its
+    // `seconds()` row loses those layers with no error and no silence to show for it: `wood_die`'s ground
+    // arrival and `eat`'s third chew both rendered nothing for exactly this reason. `Rack.dropped` counts
+    // them, so a new voice whose recipe outgrows its length fails HERE rather than in someone's ears.
+    inline for (@typeInfo(Id).@"enum".fields, 0..) |f, idx| {
+        const id: Id = @enumFromInt(f.value);
+        var r = Rack.init(0x9E3779B9 *% (idx + 1), seconds(id));
+        BANK[idx].make(&r);
+        if (r.dropped != 0) {
+            std.debug.print("audio: .{s} authors {d} layer(s) past its {d:.2}s take\n", .{ f.name, r.dropped, seconds(id) });
+        }
+        try std.testing.expectEqual(@as(usize, 0), r.dropped);
     }
 }
 

@@ -952,12 +952,24 @@ fn unitStr(u: Unit, x: f32) [:0]const u8 {
     };
 }
 
+/// ONE PARAGRAPH'S SCRATCH, sized once. As a pair of literals declared inside `prose` AND inside `proseH`,
+/// the measure and the draw were the same paragraph only because two pairs of numbers happened to match.
+const PROSE_LINES = 8;
+const PROSE_BUF = 768;
+var proseLines: [PROSE_LINES][:0]const u8 = undefined;
+var proseBuf: [PROSE_BUF]u8 = undefined;
+
+/// THE WRAP ITSELF, run ONCE. `hud.wrap` measures a candidate per word and the candidate grows through the
+/// line, so it is O(words²) in glyph measurement — and every panel here anchored its floor with `proseH` and
+/// then drew the identical string with `prose`, paying for it twice a frame.
+fn proseWrap(s: []const u8, w: i32, size: i32) []const [:0]const u8 {
+    return hud.wrap(s, size, w, &proseBuf, &proseLines);
+}
+
 /// Wrapped prose, returning the y it ended on — the panels' one paragraph idiom.
 fn prose(s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color) i32 {
-    var lines: [8][:0]const u8 = undefined;
-    var buf: [768]u8 = undefined;
     var yy = y;
-    for (hud.wrap(s, size, w, &buf, &lines)) |line| {
+    for (proseWrap(s, w, size)) |line| {
         hud.text(line, x, yy, size, col);
         yy += hud.lineH(size);
     }
@@ -967,9 +979,7 @@ fn prose(s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color) i32 {
 /// How tall a paragraph will be BEFORE it is drawn, so a panel can anchor it to its own floor instead of
 /// letting it run out over the crib line — which is what the picker's short column did.
 fn proseH(s: []const u8, w: i32, size: i32) i32 {
-    var lines: [8][:0]const u8 = undefined;
-    var buf: [768]u8 = undefined;
-    return @as(i32, @intCast(hud.wrap(s, size, w, &buf, &lines).len)) * hud.lineH(size);
+    return @as(i32, @intCast(proseWrap(s, w, size).len)) * hud.lineH(size);
 }
 
 pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
@@ -1225,7 +1235,7 @@ fn candSays(c: Cand, _: View) []const u8 {
         },
         .off => |o| switch (o) {
             .shield => "Boards back on the arm. He can guard again, and the wand goes away with the sorcery.",
-            .wand => "The wand takes the shield's hand, so there is no guarding — and L1 casts instead of blocks.",
+            .wand => "The wand takes the shield's hand, so there is no guarding - and L1 casts instead of blocks.",
         },
         .ammo => |a| switch (a) {
             .plain => "A plain shaft. Ten of them, and nothing in these ruins resists the hole one leaves.",
@@ -1351,7 +1361,7 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
         // THE REFUSAL SAYS WHY AND SAYS WHERE. A greyed prompt with no reason is a prompt the player
         // calls broken (`locked`'s rule, one page over).
         if (v.inCombat) {
-            hud.text("Not with something on you — load it on the quick bar.", inner.x, hy, hud.HINT, uiart.BAD);
+            hud.text("Not with something on you - load it on the quick bar.", inner.x, hy, hud.HINT, uiart.BAD);
         } else {
             hud.hintRowAt(
                 &[_]hud.Hint{.{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Use" }},

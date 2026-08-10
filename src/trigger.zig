@@ -184,7 +184,12 @@ pub const Runtime = struct {
             .never => false,
             .flag => self.flagOn(c.slot) == c.on,
             .counter => c.cmp.holds(self.counterAt(c.slot), c.n),
-            .timer => c.on == (c.slot < wf.MAX_TIMERS and self.armed[c.slot] and self.timers[c.slot] <= 0),
+            // Three states, two words: `done` is armed-and-expired (unstarted is NOT done), and
+            // `running` is armed-and-counting — NOT `!done`, or it holds for a timer nobody started.
+            .timer => if (c.on)
+                c.slot < wf.MAX_TIMERS and self.armed[c.slot] and self.timers[c.slot] <= 0
+            else
+                c.slot < wf.MAX_TIMERS and self.armed[c.slot] and self.timers[c.slot] > 0,
             .elapsed => c.cmp.holdsF(self.elapsed, c.r),
             .region => w.heroPos.x >= @min(c.x, c.x1) and w.heroPos.x <= @max(c.x, c.x1) and
                 w.heroPos.z >= @min(c.z, c.z1) and w.heroPos.z <= @max(c.z, c.z1),

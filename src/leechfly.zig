@@ -45,7 +45,6 @@ const EYE_LIT = rgba(255, 52, 40, 255);
 // FX. The blood it takes is the one red in the effects; the chitin chip is the body's own.
 const BLOOD = rgba(126, 20, 18, 235);
 const CHIP = rgba(74, 70, 86, 235);
-const DUST = foe.DUST;
 
 /// ITS OWN STATURE — nose to tail, and NOT the shared humanoid scaffold: it has no legs to walk on. SIZED
 /// AGAINST A TOAD, then grown (owner): 1.3 m of body with a wingspan half again as wide.
@@ -88,7 +87,6 @@ const DEATH_DUR: f32 = 0.85; // the wings stop and it falls out of the air
 const DISS_DUR: f32 = 0.8;
 /// …and the cloud it goes out in: a small body, close and quick.
 const DISSOLVE = foe.Dissolve{ .rate = 30.0, .spread = 0.45, .rise = 0.30, .flake = CHIP };
-const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY: f32 = 8.0;
 
 // THE FEED — the one move it has, and the reason the creature exists.

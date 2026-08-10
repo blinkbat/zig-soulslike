@@ -449,9 +449,9 @@ pub const Env = struct {
         while (i < n) : (i += 1) {
             const a = -half + @as(f32, @floatFromInt(i)) * step;
             const c = a + step;
-            // North (−Z) and south (+Z) runs, then west/east.
-            b.quadSmooth(v3(a, self.pointY(i, 0), -half), v3(a, 0, -out), v3(c, 0, -out), v3(c, self.pointY(i + 1, 0), -half), up, up, up, up, rl.Color.white);
-            b.quadSmooth(v3(a, 0, out), v3(a, self.pointY(i, n), half), v3(c, self.pointY(i + 1, n), half), v3(c, 0, out), up, up, up, up, rl.Color.white);
+            // North (−Z) and south (+Z) runs, then west/east — each wound to face UP like the tiles.
+            b.quadSmooth(v3(a, self.pointY(i, 0), -half), v3(c, self.pointY(i + 1, 0), -half), v3(c, 0, -out), v3(a, 0, -out), up, up, up, up, rl.Color.white);
+            b.quadSmooth(v3(a, 0, out), v3(c, 0, out), v3(c, self.pointY(i + 1, n), half), v3(a, self.pointY(i, n), half), up, up, up, up, rl.Color.white);
             b.quadSmooth(v3(-out, 0, a), v3(-out, 0, c), v3(-half, self.pointY(0, i + 1), c), v3(-half, self.pointY(0, i), a), up, up, up, up, rl.Color.white);
             b.quadSmooth(v3(half, self.pointY(n, i), a), v3(half, self.pointY(n, i + 1), c), v3(out, 0, c), v3(out, 0, a), up, up, up, up, rl.Color.white);
         }
@@ -1028,7 +1028,9 @@ pub const Env = struct {
         for (&self.stows) |*m| {
             if (m.*) |*s| s.materials[0].shader = sh;
         }
-        // The terrain tiles too, or the depth pass leaves them on the scene shader.
+        // The terrain tiles too — NOT for the depth pass, which never draws them (terrain receives shadows and
+        // does not cast, so `drawCasters` skips `drawGround` entirely). They are here so a shader SWAP reaches
+        // them at all: `rl.unloadModel` would take the scene shader with it, and `unloadTerrain` is the door.
         for (self.tiles[0..], self.tileBuilt[0..]) |*t, built| {
             if (built) t.materials[0].shader = sh;
         }
@@ -1307,20 +1309,37 @@ fn cellOf(x: f32, z: f32) usize {
     return cellCoord(z) * GRID_N + cellCoord(x);
 }
 
-/// The FOOT of one collider part's centre line, in world space — the same local→world turn
-/// `buildSolids` makes, at the prop's own base.
-fn partFoot(pr: *const Prop, part: props.Part) rl.Vector3 {
-    const th = mathx.radians(pr.yaw);
-    const c = mathx.cosf(th);
-    const sn = mathx.sinf(th);
-    const mx = (part.ax + part.bx) * 0.5;
-    const mz = (part.az + part.bz) * 0.5;
-    return v3(
-        pr.pos.x + pr.scale * (mx * c + mz * sn),
-        pr.pos.y,
-        pr.pos.z + pr.scale * (-mx * sn + mz * c),
-    );
-}
+/// ONE INSTANCE'S LOCAL→WORLD TURN, with the yaw's sine and cosine taken ONCE. Three copies of this rotation
+/// sat in `partFoot`, `blockerFoot` and `buildSolids`, each re-deriving the trig — and the first two do it per
+/// PART, per prop, per frame inside the occluder scan. The colliders and the occluder volumes are authored in
+/// the same local frame, so there is one turn and this is it.
+const PropFrame = struct {
+    pr: *const Prop,
+    c: f32,
+    sn: f32,
+
+    fn of(pr: *const Prop) PropFrame {
+        const th = mathx.radians(pr.yaw);
+        return .{ .pr = pr, .c = mathx.cosf(th), .sn = mathx.sinf(th) };
+    }
+    /// A point authored at (lx, ly, lz) in the prop's own frame, in world space.
+    fn at(self: PropFrame, lx: f32, ly: f32, lz: f32) rl.Vector3 {
+        const s = self.pr.scale;
+        return v3(
+            self.pr.pos.x + s * (lx * self.c + lz * self.sn),
+            self.pr.pos.y + ly * s,
+            self.pr.pos.z + s * (-lx * self.sn + lz * self.c),
+        );
+    }
+    /// The FOOT of one collider part's centre line — the same turn, at the prop's own base.
+    fn partFoot(self: PropFrame, part: props.Part) rl.Vector3 {
+        return self.at((part.ax + part.bx) * 0.5, 0, (part.az + part.bz) * 0.5);
+    }
+    /// …and the foot of one occluder volume, which carries its own start height.
+    fn blockerFoot(self: PropFrame, bl: props.Blocker) rl.Vector3 {
+        return self.at(bl.x, bl.y0, bl.z);
+    }
+};
 
 /// HOW FAR ONE INSTANCE SHOULD THIN, 0 (leave it solid) .. 1 (as thin as it gets) — the deepest ask any of
 /// its masses makes. Three sources, in order: the volumes the kind declares, the COLLIDERS plus a skirt, and
@@ -1331,16 +1350,17 @@ fn partFoot(pr: *const Prop, part: props.Part) rl.Vector3 {
 /// nothing and the tree stayed solid.
 fn thinFor(pr: *const Prop, nfo: *const props.Info, eye: rl.Vector3, at: rl.Vector3) f32 {
     var thin: f32 = 0;
+    const fr = PropFrame.of(pr); // the yaw's trig ONCE per prop, not once per mass
     if (nfo.occl.len > 0) {
         for (nfo.occl) |bl| {
-            thin = mathx.maxF(thin, thinOf(eye, at, blockerFoot(pr, bl), (bl.y1 - bl.y0) * pr.scale, bl.r * pr.scale));
+            thin = mathx.maxF(thin, thinOf(eye, at, fr.blockerFoot(bl), (bl.y1 - bl.y0) * pr.scale, bl.r * pr.scale));
         }
         return thin;
     }
     for (nfo.parts) |part| {
         const hl = 0.5 * mathx.lenXZ(v3(part.bx - part.ax, 0, part.bz - part.az));
         const r = (part.r + hl) * pr.scale + OCCL_SKIRT;
-        thin = mathx.maxF(thin, thinOf(eye, at, partFoot(pr, part), part.h * pr.scale, r));
+        thin = mathx.maxF(thin, thinOf(eye, at, fr.partFoot(part), part.h * pr.scale, r));
     }
     if (nfo.parts.len == 0) {
         thin = thinOf(eye, at, pr.pos, nfo.top * pr.scale, nfo.bound * pr.scale * OCCL_GIRTH);
@@ -1355,17 +1375,6 @@ fn thinOf(eye: rl.Vector3, at: rl.Vector3, foot: rl.Vector3, h: f32, r: f32) f32
     const c = coverFrac(eye, at, foot, h, r);
     if (c.cover <= OCCL_MIN) return 0;
     return mathx.smoothstep(OCCL_MIN, OCCL_FULL, c.cover) * c.ahead;
-}
-
-fn blockerFoot(pr: *const Prop, bl: props.Blocker) rl.Vector3 {
-    const th = mathx.radians(pr.yaw);
-    const c = mathx.cosf(th);
-    const sn = mathx.sinf(th);
-    return v3(
-        pr.pos.x + pr.scale * (bl.x * c + bl.z * sn),
-        pr.pos.y + bl.y0 * pr.scale,
-        pr.pos.z + pr.scale * (-bl.x * sn + bl.z * c),
-    );
 }
 
 const Cover = struct {
@@ -1714,18 +1723,12 @@ fn buildSolids(e: *Env) void {
     for (e.props[0..e.nprops]) |*pr| {
         const nfo = props.info(pr.kind);
         const s = pr.scale;
-        const th = mathx.radians(pr.yaw);
-        const c = mathx.cosf(th);
-        const sn = mathx.sinf(th);
+        const fr = PropFrame.of(pr); // the SAME local→world turn the occluder scan makes
         for (nfo.parts) |part| {
             if (e.nsolids >= MAX_SOLIDS) @panic("env: MAX_SOLIDS exceeded — raise the cap");
-            var sol = collision.capsule(
-                pr.pos.x + s * (part.ax * c + part.az * sn),
-                pr.pos.z + s * (-part.ax * sn + part.az * c),
-                pr.pos.x + s * (part.bx * c + part.bz * sn),
-                pr.pos.z + s * (-part.bx * sn + part.bz * c),
-                part.r * s,
-            );
+            const a = fr.at(part.ax, 0, part.az);
+            const b = fr.at(part.bx, 0, part.bz);
+            var sol = collision.capsule(a.x, a.z, b.x, b.z, part.r * s);
             sol.h = pr.pos.y + part.h * s;
             sol.surf = nfo.surf;
             if (pr.lean != 0) {
@@ -1808,15 +1811,19 @@ fn indexProps(e: *Env) void {
     for (e.props[0..e.nprops], 0..) |*pr, pi| {
         const i: u32 = @intCast(pi);
         const nfo = props.info(pr.kind);
-        if ((nfo.veil != null or nfo.stow != null) and e.ndress < MAX_DRESSED) {
+        // Caps PANIC like MAX_PROPS — a silently unregistered chest is a box that draws but never opens.
+        if (nfo.veil != null or nfo.stow != null) {
+            if (e.ndress >= MAX_DRESSED) @panic("env: MAX_DRESSED exceeded — raise the cap");
             e.dressItems[e.ndress] = i;
             e.ndress += 1;
         }
-        if (pr.kind == .chest and e.nchests < chestmod.CAP) {
+        if (pr.kind == .chest) {
+            if (e.nchests >= chestmod.CAP) @panic("env: chest cap exceeded — raise chest.CAP");
             e.chestItems[e.nchests] = i;
             e.nchests += 1;
         }
-        if (restmod.isRestKind(pr.kind) and e.nrests < restmod.CAP) {
+        if (restmod.isRestKind(pr.kind)) {
+            if (e.nrests >= restmod.CAP) @panic("env: rest cap exceeded — raise rest.CAP");
             e.restItems[e.nrests] = i;
             e.nrests += 1;
         }
@@ -1913,9 +1920,10 @@ test "A CANOPY HIDES HIM AND THE TRUNK IT HANGS OFF DOES NOT — the occluder vo
 
     // The colliders alone — what the fade used to be handed — cannot see it at all.
     var collider: f32 = 0;
+    const fr = PropFrame.of(&e.props[0]);
     for (nfo.parts) |part| {
         const r = part.r + OCCL_SKIRT;
-        collider = mathx.maxF(collider, thinOf(eye, hero, partFoot(&e.props[0], part), part.h, r));
+        collider = mathx.maxF(collider, thinOf(eye, hero, fr.partFoot(part), part.h, r));
     }
     try std.testing.expectEqual(@as(f32, 0), collider);
     try std.testing.expect(thinFor(&e.props[0], nfo, eye, hero) > 0);

@@ -80,7 +80,6 @@ pub const RUNES: u32 = 150;
 const DEATH_DUR: f32 = 1.9; // it comes apart slowly and it is a long way down
 const DISS_DUR: f32 = 1.1;
 const DISSOLVE = foe.Dissolve{ .rate = 62.0, .spread = 1.15, .rise = 0.85, .flake = SPLINTER };
-const FLASH_DUR = foe.FLASH_DUR;
 
 // THE THREE MOVES. Every band is covered, so standing anywhere inside its ring is answered — you do not kite
 // this thing, you close on it or you leave.

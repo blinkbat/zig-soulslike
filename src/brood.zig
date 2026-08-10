@@ -360,8 +360,10 @@ const FLAIL_SPREAD = 15.0; // deg of yaw…
 const FLAIL_LIFT = 11.0;
 
 pub const Model = struct {
-    mesh: [2][NP]rl.Mesh, // [role][part]
-    eyes: [2][2]rl.Mesh, // [role][burning]
+    // SIZED OFF `Role`, not off a literal 2: both are indexed by `@intFromEnum(role)`, so a third role
+    // otherwise compiles and hands `drawMesh` an undefined mesh.
+    mesh: [ROLE_KIND.len][NP]rl.Mesh, // [role][part]
+    eyes: [ROLE_KIND.len][2]rl.Mesh, // [role][burning]
     sac: rl.Mesh,
     wreck: rl.Mesh,
     pool: rl.Mesh,
@@ -746,9 +748,11 @@ pub const Pool = struct {
     }
 
     pub fn update(self: *Pool, dt: f32) void {
+        // Ticked past death like every creature's — a pool's last fumes must finish fading, not
+        // hang frozen mid-air until the slot is reused.
+        foe.tickParticles(&self.parts, dt, self.pos.y);
         if (!self.live) return;
         self.t += dt;
-        foe.tickParticles(&self.parts, dt, self.pos.y);
         if (self.t >= ACID_LIFE) {
             self.live = false;
             return;
@@ -1129,7 +1133,7 @@ pub const Spider = struct {
         // THE ROOTS HAVE THE FEET AND NOTHING ELSE (foe.grip) — she still spits, still lays, still bites what is in
         // reach, and chitin shrugs most of the grip off.
         const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
-        defer grip.hold(&self.pos);
+        defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.vit.tick(dt);
         self.elapsed += dt;
@@ -1429,7 +1433,7 @@ pub const Spider = struct {
     /// one (the ogre's `slamReach` law: the parry's reach is the blow's reach and not a second number).
     fn parryable(self: *const Spider) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (left < 0 or left > PARRY_LEAD) return null;
+        if (!foe.inParryWindow(left)) return null;
         return M_BITE_R + HERO_REACH;
     }
 
@@ -1694,8 +1698,7 @@ pub const Spider = struct {
         self.abdoPump = 0.14 * swell + 0.09 * swell * mathx.sinf(self.t * 13.0) - 0.14 * after;
     }
     fn resolveStun(self: *Spider, heavy: bool) void {
-        const dur: f32 = if (heavy) combat.FOE_HEAVY_STUN_DUR else combat.FOE_LIGHT_STUN_DUR;
-        const u = mathx.clampF(self.t / dur, 0, 1);
+        const u = mathx.clampF(self.t / combat.foeStunDur(heavy), 0, 1);
         const k = (1.0 - u) * (1.0 - u);
         const shake = mathx.sinf(self.t * (if (heavy) @as(f32, 26.0) else 34.0));
         self.crouch = (if (heavy) @as(f32, 0.62) else 0.34) * k;
@@ -1913,14 +1916,11 @@ pub const Brood = struct {
     /// `update` so a window is read on the frame it is open rather than the one after. The SACS are not stamped:
     /// a membrane on the ground swings nothing.
     pub fn setParry(self: *Brood, p: foe.Parry) void {
-        for (self.live()) |*s| s.parry = p;
+        foe.setParry(self.live(), p);
     }
     /// …and whether any of them was caught on it this frame. A ONE-FRAME edge, `anyDied`'s, read after `update`.
     pub fn anyParried(self: *const Brood) bool {
-        for (self.liveConst()) |*s| {
-            if (s.parried) return true;
-        }
-        return false;
+        return foe.anyParried(self.liveConst());
     }
     pub fn draw(self: *const Brood, scene: ?*gfx.Scene) void {
         // THE FLOOR FIRST — it is under everything else by definition.

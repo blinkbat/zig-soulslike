@@ -267,8 +267,10 @@ const CRASH_LOW = 0.30; // m above his own feet the point must get down to befor
 const GATHER_HEAVY = 1.4;
 const GATHER_LEAP = 1.7;
 const GATHER_PLAIN = 0.85;
-const DEATH_DUR = 1.15;
-const DISS_DUR = 0.9;
+// THE ARCHER'S OWN, for `BONE_CHIP`/`DISSOLVE`'s reason: it is the same dead man, and a second copy of how
+// long he takes to fall is a second thing to retune.
+const DEATH_DUR = archermod.DEATH_DUR;
+const DISS_DUR = archermod.DISS_DUR;
 const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 7.0;
 const A_BOB = heromod.A_BOB;
@@ -660,7 +662,7 @@ pub const Warrior = struct {
         // THE ROOTS HAVE THE FEET (foe.grip) — the slam still comes down on the spot, and dry bone shrugs most
         // of the grip off. The LUNGE is a jump and is off the table entirely while it holds (`foe.canLeap`).
         const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
-        defer grip.hold(&self.pos);
+        defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.leapt = false;
         self.parried = false;
@@ -1002,7 +1004,7 @@ pub const Warrior = struct {
     /// AT the impact frame by construction and a caught stroke is one that never landed.
     fn parryable(self: *const Warrior) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (left < 0 or left > PARRY_LEAD) return null;
+        if (!foe.inParryWindow(left)) return null;
         return self.parryReach(self.move());
     }
 
@@ -1671,14 +1673,11 @@ pub const Muster = struct {
     /// THE HERO'S SHIELD, STAMPED ON EVERY MEMBER (`game.markParry`) — the leash's own pattern, and set before
     /// `update` so a window is read on the frame it is open rather than the one after.
     pub fn setParry(self: *Muster, p: foe.Parry) void {
-        for (self.live()) |*w| w.parry = p;
+        foe.setParry(self.live(), p);
     }
     /// …and whether any of them was caught on it this frame. A ONE-FRAME edge, `anyDied`'s, read after `update`.
     pub fn anyParried(self: *const Muster) bool {
-        for (self.liveConst()) |*w| {
-            if (w.parried) return true;
-        }
-        return false;
+        return foe.anyParried(self.liveConst());
     }
     pub fn draw(self: *const Muster, scene: ?*gfx.Scene) void {
         foe.drawGroup(self.liveConst(), &self.model, scene);

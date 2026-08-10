@@ -566,7 +566,7 @@ pub const PARRY_SWEEP_END = 2.0 * PARRY_PUNCH_AT - PARRY_COIL_AT;
 /// The share of the turn the PELVIS takes; the rest is waist. All of it at the root reads as a spin.
 const PARRY_PELVIS = 0.30;
 const PARRY_PITCH = 8.0; // he leans INTO it, about the feet
-const PARRY_LEAD = 0.075 * H;
+const PARRY_HAND_LEAD = 0.075 * H;
 const PARRY_SINK = 0.024 * H;
 const PARRY_SWORD_COCK = 18.0;
 const PARRY_HEAD = 12.0;
@@ -585,6 +585,9 @@ const PARRY_SPARK_OUT_HI = 3.2;
 const PARRY_SPARK_R0_LO = 0.009;
 const PARRY_SPARK_R0_HI = 0.019;
 const PARRY_SPARK_GRAV = 9.0;
+/// A hair PROUD of the surface a burst comes off, or the first frame's motes are half-buried in the boards
+/// they were struck from. Named because BOTH shield emitters need exactly the same clearance.
+const SPARK_PROUD: f32 = 0.02;
 /// One bloom on the boss, SMALL for the cast flash's reason: a solid sphere, not additive, so at 0.085 it read
 /// as a puff of smoke sat on the boards — on the FIRST frame it and every spark are still at the same point.
 const PARRY_FLASH_R = 0.05;
@@ -796,6 +799,21 @@ fn bump(u: f32, a: f32, b: f32) f32 {
     return mathx.pulse(u, a, mid, mid, b);
 }
 
+/// THE TWO AXES A BURST IS FANNED ABOUT, perpendicular to `axis` and to each other. Every emitter here throws
+/// its motes round the thing that made them — the bolt line, the boards' own normal — because a spray built on
+/// WORLD axes reads as a puddle round his hand the moment the shield or the cast turns. Three copies of these
+/// four lines sat in `castSparks`, `parrySparks` and `parryGlint`, degenerate-guard and all.
+///
+/// NOT `gfx.axisFrame`, which is the mesh Builder's revolution frame and seeds its perpendicular off world Y.
+/// `side` here is deliberately the HORIZONTAL one, because `PARRY_GLINT_SPAN` lays the streak along it.
+fn burstFrame(axis: rl.Vector3) struct { side: rl.Vector3, up: rl.Vector3 } {
+    var side = mathx.perpXZ(axis);
+    // An axis straight up or down has no horizontal perpendicular; any one will do, so long as it is stable.
+    if (mathx.lenV(side) < 1e-3) side = v3(1, 0, 0);
+    side = mathx.normV(side);
+    return .{ .side = side, .up = mathx.normV(mathx.crossV(axis, side)) };
+}
+
 pub const Attack = enum { light, heavy };
 
 pub const Arm = enum { sword, bow };
@@ -1001,6 +1019,7 @@ pub const Hero = struct {
         self.dropActions();
         self.sprinting = false;
         self.guardB = 0; // a SNAP, not the stagger's ease: he is somewhere else now
+        self.aimB = 0; // …and the same for the aim, or the rest opens with the eye still up past his head
         self.stun = .none;
         self.hurtFlash = 0;
         self.makeWhole();
@@ -1058,7 +1077,7 @@ pub const Hero = struct {
     }
 
     pub fn startRoll(self: *Hero, dir: rl.Vector3) void {
-        if (self.committed()) return;
+        if (self.committed() or self.dead or self.staggered() or self.resting) return;
         if (!self.stam.canAct()) {
             self.refuse();
             return;
@@ -1146,10 +1165,13 @@ pub const Hero = struct {
         self.aimLeanWant = mathx.clampF(AIM_LEAN_BIAS + (deg orelse 0), -AIM_LEAN_UP, AIM_LEAN_DOWN);
     }
 
-    /// Everything the bow was doing, down — but never the ARM.
+    /// Everything the bow was doing, down — but never the ARM, and NOT `aimB`: that is a stance blend and it
+    /// must EASE down through a stagger, exactly as `guardB` does (see `dropActions`). The camera's boom rides
+    /// it (`game.rig.aimB` → `camera.boom`), so snapping it here cut the eye from `AIM_DIST` to the player's
+    /// own zoom in ONE frame every time a blow flinched him mid-aim. The paths that genuinely want a snap say
+    /// so themselves, beside their `guardB = 0`.
     fn dropAim(self: *Hero) void {
         self.aiming = false;
-        self.aimB = 0;
         self.shooting = false;
         self.loosed = false;
         self.drawAmt = 0;
@@ -1158,8 +1180,10 @@ pub const Hero = struct {
 
     /// `shooting` is the ONE committed action this allows: a loose out of a held aim must not cost the aim, or the second shot of a pair is a different action from the first.
     pub fn canAim(self: *const Hero) bool {
-        return self.bowOut() and !self.rolling and !self.attacking and !self.drinking and
-            !self.staggered() and !self.dead and !self.sprinting and self.stam.canAct();
+        // …through `committed()` and not a hand-rolled copy of its list, for `dropActions`' reason: as a copy
+        // minus `shooting` it silently also dropped `casting` and `parrying`, and nothing would have said so.
+        return self.bowOut() and (!self.committed() or self.shooting) and
+            !self.staggered() and !self.dead and !self.sprinting and !self.resting and self.stam.canAct();
     }
 
     pub fn requestShot(self: *Hero, aimed: bool) void {
@@ -1244,7 +1268,7 @@ pub const Hero = struct {
     /// IS THE SHIELD ARM FREE TO DO ANYTHING AT ALL — everything the guard asks BAR the stamina, because that is
     /// the one clause the parry answers differently: a press has to say NO out loud, where the guard stays down.
     fn shieldArm(self: *const Hero) bool {
-        return self.arm == .sword and self.off == .shield and !self.committed() and !self.staggered() and !self.dead and !self.sprinting;
+        return self.arm == .sword and self.off == .shield and !self.committed() and !self.staggered() and !self.dead and !self.sprinting and !self.resting;
     }
 
     /// AN EMPTY BAR CANNOT HOLD A SHIELD UP — and neither can a hand with a wand in it. There is one left hand.
@@ -1321,12 +1345,10 @@ pub const Hero = struct {
     /// its reason: a spray built on world axes reads as a puddle round his hand the moment the shield turns.
     fn parrySparks(self: *Hero) void {
         const f = self.shieldFaceWorld();
-        var side = mathx.perpXZ(f.n);
-        if (mathx.lenV(side) < 1e-3) side = v3(1, 0, 0); // boards facing straight up or down have no perp
-        side = mathx.normV(side);
-        const up = mathx.normV(mathx.crossV(f.n, side));
-        // A hair PROUD of the face, or the first frame's sparks are half-buried in the boards they came off.
-        const at = mathx.addV(f.at, mathx.scaleV(f.n, 0.02));
+        const fr = burstFrame(f.n);
+        const side = fr.side;
+        const up = fr.up;
+        const at = mathx.addV(f.at, mathx.scaleV(f.n, SPARK_PROUD));
         var rng = foemod.fxStream(@floatFromInt(self.parries), 733.0, 0x8B06);
         var i: u32 = 0;
         while (i < PARRY_SPARKS) : (i += 1) {
@@ -1348,11 +1370,10 @@ pub const Hero = struct {
     /// separates a glint from a catch is COUNT and fan, never colour, or a whiff reads as half a hit.
     fn parryGlint(self: *Hero) void {
         const f = self.shieldFaceWorld();
-        var side = mathx.perpXZ(f.n);
-        if (mathx.lenV(side) < 1e-3) side = v3(1, 0, 0);
-        side = mathx.normV(side);
-        const up = mathx.normV(mathx.crossV(f.n, side));
-        const at = mathx.addV(f.at, mathx.scaleV(f.n, 0.02));
+        const fr = burstFrame(f.n);
+        const side = fr.side;
+        const up = fr.up;
+        const at = mathx.addV(f.at, mathx.scaleV(f.n, SPARK_PROUD));
         var rng = foemod.fxStream(@floatFromInt(self.parries), 419.0, 0x8B07);
         var i: u32 = 0;
         while (i < PARRY_GLINT) : (i += 1) {
@@ -1485,7 +1506,7 @@ pub const Hero = struct {
     }
 
     pub fn startAttack(self: *Hero, kind: Attack) void {
-        if (self.committed()) return;
+        if (self.committed() or self.dead or self.staggered() or self.resting) return;
         const cost: f32 = if (kind == .heavy) combat.STAM_HEAVY else combat.STAM_LIGHT;
         if (!self.stam.canAct()) {
             self.refuse();
@@ -1683,10 +1704,9 @@ pub const Hero = struct {
     pub fn castSparks(self: *Hero, dir: rl.Vector3) void {
         const at = self.wandTipWorld();
         // The collar's plane is the BOLT LINE's perpendicular pair, not world axes, or a cast uphill is a puddle.
-        var side = mathx.perpXZ(dir);
-        if (mathx.lenV(side) < 1e-3) side = v3(1, 0, 0); // a bolt straight up or down has no horizontal perp
-        side = mathx.normV(side);
-        const up = mathx.normV(mathx.crossV(dir, side));
+        const fr = burstFrame(dir);
+        const side = fr.side;
+        const up = fr.up;
         var rng = foemod.fxStream(@floatFromInt(self.casts), 613.0, 0x8B02);
         var i: u32 = 0;
         while (i < CAST_SPARKS) : (i += 1) {
@@ -2005,6 +2025,7 @@ pub const Hero = struct {
         self.fpRefused = 0;
         self.sprinting = false;
         self.guardB = 0; // …and the boards go down at once, as they do at a grace
+        self.aimB = 0; // …and so does the bow: a respawn is a cut, not a blend
         self.blockT = mathx.LONG_AGO;
         self.pos = self.spawnPos;
         self.facing = self.spawnFacing;
@@ -2216,7 +2237,7 @@ pub const Hero = struct {
         var wx: [N]rl.Matrix = undefined;
         wx[ROOT] = mul3(
             ry(PARRY_PELVIS * blade), // the pelvis takes a share of the turn; the rest is waist
-            mul(tr(0, hipY - sink, PARRY_LEAD * k - BLOCK_STEP * rec), mul(rx(PARRY_PITCH * k), ry(facingDeg))),
+            mul(tr(0, hipY - sink, PARRY_HAND_LEAD * k - BLOCK_STEP * rec), mul(rx(PARRY_PITCH * k), ry(facingDeg))),
             rootAt(self.pos),
         );
         setLocal(&wx, SPINE, self.rest, ry(0.5 * blade));
@@ -3406,6 +3427,37 @@ test "a stagger drops the bow but never the CHOICE of weapon" {
     while (h.dead and guard < 2000) : (guard += 1) h.updateDeath(1.0 / 60.0);
     try std.testing.expect(h.bowOut());
     try std.testing.expect(!h.aiming and h.drawAmt == 0);
+}
+
+test "THE AIM BLEND EASES DOWN THROUGH A STAGGER, exactly as the guard's does" {
+    // The camera's boom rides `aimB` (`game.rig.aimB` → `camera.boom`, AIM_DIST 0.7 against a 4.6 zoom), so
+    // zeroing it inside `dropAim` cut the eye four metres in ONE frame every time a blow flinched him mid-aim.
+    var h = testHero();
+    _ = h.swapArm();
+    h.setAim(true);
+    var t: f32 = 0;
+    while (t < 0.5) : (t += 1.0 / 60.0) h.update(1.0 / 60.0, 0, 0, null);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), h.aimB, 1e-4);
+    h.enterStun(.heavy);
+    try std.testing.expect(!h.aiming);
+    try std.testing.expect(h.aimB > 0.9); // …not gone on the frame the blow landed
+    h.updateStun(1.0 / 60.0);
+    try std.testing.expect(h.aimB < 1.0 and h.aimB > 0); // …travelling, not switched
+    t = 0;
+    while (t < 0.4) : (t += 1.0 / 60.0) h.updateStun(1.0 / 60.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.aimB, 1e-4); // …and it does arrive
+
+    // A GRACE AND A RESPAWN ARE CUTS, not blends, and they say so themselves.
+    var s = testHero();
+    _ = s.swapArm();
+    s.setAim(true);
+    s.aimB = 1;
+    s.sit(true, mathx.zero3, 0);
+    try std.testing.expectEqual(@as(f32, 0), s.aimB);
+    var r = testHero();
+    r.aimB = 1;
+    r.respawnForTest();
+    try std.testing.expectEqual(@as(f32, 0), r.aimB);
 }
 
 test "a Cerulean is refused into a full bar rather than pouring a charge away" {

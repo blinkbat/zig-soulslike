@@ -129,6 +129,16 @@ pub const LIGHT_STUN_DUR = 0.46;
 pub const HEAVY_STUN_DUR = 1.15;
 pub const FOE_LIGHT_STUN_DUR = 0.78;
 pub const FOE_HEAVY_STUN_DUR = 2.40;
+
+/// WHICH REACTION CLOCK A FOE IS ON — one name, matching `foe.stunCurve(t, heavy)`'s own signature. THE ONLY
+/// PLACE THE TWO ARMS ARE WRITTEN DOWN TOGETHER: as a hand-written pick it sat in `foe.stunCurve`, the brood's
+/// `resolveStun` and the sporeling's stun prong in three shapes, two of them with the arms the other way round,
+/// so "which tier is which" had to be re-read at each. A creature's per-state `t >= FOE_*_STUN_DUR` exits are
+/// NOT this: each names one constant in one branch, and there is nothing there to get backwards.
+pub fn foeStunDur(heavy: bool) f32 {
+    return if (heavy) FOE_HEAVY_STUN_DUR else FOE_LIGHT_STUN_DUR;
+}
+
 const LONG_AGO = mathx.LONG_AGO;
 
 
@@ -450,7 +460,8 @@ pub const Focus = struct {
 
 /// WHAT THE BOLT COSTS, and the pool is the only thing rationing it — a cast bills NO stamina (owner's call),
 /// so the wand competes with the flask rather than with the roll. NAMED FOR ITS SPELL, like `ROOT_FP` beside
-/// it: as `BOLT_FP` it read as "what a cast costs", and the character book duly priced the roots at twelve.
+/// it: as a bare `CAST_FP` it read as "what a cast costs", and the character book duly priced the roots at
+/// twelve. One constant per spell, and `spellFp` is the only thing that picks between them.
 pub const BOLT_FP: f32 = 12.0; // five casts of a 60-point pool
 /// THE BOLT, and it is ALL CHAOS — no physical at all, the brood mother's rule: one substance, one element.
 /// Its damage sits between a light slash's 13 and a heavy's 27 before anything resists it, which is the
@@ -546,12 +557,6 @@ pub const Flasks = struct {
     }
     pub fn ready(self: *const Flasks) u8 {
         return self.charges(self.sel);
-    }
-    pub fn cycle(self: *Flasks) void {
-        self.sel = switch (self.sel) {
-            .crimson => .cerulean,
-            .cerulean => .crimson,
-        };
     }
     pub fn take(self: *Flasks) bool {
         switch (self.sel) {
@@ -1424,22 +1429,15 @@ test "flasks: a drink spends exactly one charge, and an empty flask refuses" {
     while (i < FLASK_CRIMSON) : (i += 1) try std.testing.expect(f.take());
     try std.testing.expectEqual(@as(u8, 0), f.ready());
     try std.testing.expect(!f.take()); // dry — and it must SAY so rather than heal for free
-    f.cycle();
-    try std.testing.expectEqual(FlaskKind.cerulean, f.sel);
+    // `sel` is STAMPED from the quick bar (`hero.cycleQuick` → `syncFlask`), never cycled here: `Flasks`
+    // owns the charges and the bar owns which one is up.
+    f.sel = .cerulean;
     try std.testing.expectEqual(FLASK_CERULEAN, f.ready());
     try std.testing.expect(f.take());
     f.refill();
     try std.testing.expectEqual(FLASK_CERULEAN, f.ready());
-    f.cycle();
+    f.sel = .crimson;
     try std.testing.expectEqual(FLASK_CRIMSON, f.ready());
-}
-
-test "flasks: the cycle still moves when the other one is empty" {
-    var f = Flasks{};
-    f.cerulean = 0;
-    f.cycle();
-    try std.testing.expectEqual(FlaskKind.cerulean, f.sel);
-    try std.testing.expectEqual(@as(u8, 0), f.ready());
 }
 
 test "focus refuses a pour it cannot take, so a full bar never eats a charge" {

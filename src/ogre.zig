@@ -888,7 +888,7 @@ pub const Ogre = struct {
     /// — and a DRIVE is still surging, so the ground it covers before impact is part of where the club arrives.
     fn parryable(self: *const Ogre) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (left < 0 or left > PARRY_LEAD) return null;
+        if (!foe.inParryWindow(left)) return null;
         if (self.driveMove()) return self.slamReach() + DRIVE_SPEED * left;
         return if (self.slamMove()) self.slamReach() else self.swipeReach();
     }
@@ -1504,14 +1504,11 @@ pub const Grief = struct {
     /// THE HERO'S SHIELD, STAMPED ON EVERY MEMBER (`game.markParry`) — the leash's own pattern, and set before
     /// `update` so a window is read on the frame it is open rather than the one after.
     pub fn setParry(self: *Grief, p: foe.Parry) void {
-        for (self.live()) |*o| o.parry = p;
+        foe.setParry(self.live(), p);
     }
     /// …and whether any of them was caught on it this frame. A ONE-FRAME edge, `anyDied`'s, read after `update`.
     pub fn anyParried(self: *const Grief) bool {
-        for (self.liveConst()) |*o| {
-            if (o.parried) return true;
-        }
-        return false;
+        return foe.anyParried(self.liveConst());
     }
     // Advance the group; returns the STRONGEST blow any ogre landed on the hero this frame, and which ogre threw it (the hero's shield covers an arc — see foe.Blow).
     pub fn update(self: *Grief, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {

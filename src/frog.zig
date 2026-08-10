@@ -330,7 +330,7 @@ pub const Frog = struct {
     /// which is the point: this is the one move whose whole threat is that it has already committed.
     fn parryable(self: *const Frog) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (left < 0 or left > PARRY_LEAD) return null;
+        if (!foe.inParryWindow(left)) return null;
         return LUNGE_IMPACT_R + HERO_REACH;
     }
 
@@ -405,7 +405,7 @@ pub const Frog = struct {
         // wherever it tried to travel. Every move a toad has BESIDES the jaws is a leap, so `classify` refuses
         // the lot of them while the grip is on rather than hopping it on the spot (`foe.canLeap`).
         const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
-        defer grip.hold(&self.pos);
+        defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.vit.tick(dt); // poise/stance regenerate between hits (relent and it recovers)
         self.elapsed += dt;
@@ -524,8 +524,10 @@ pub const Frog = struct {
             if ((self.t - dt) < coil + flight) {
                 // …at its FEET, which `pos` already is now that it carries the ground height.
                 if (self.isLunge) self.dustBurst(self.impactWorld(), 32, 4.4, 0.30) else self.dustBurst(self.pos, 8, 1.8, 0.16);
+                // The slam connects on the SAME edge — the parry window shuts at touchdown, so a blow
+                // still live through the sprawl would be one caught "after it hit you".
+                if (self.isLunge) self.tryImpact(hero, LUNGE_HIT);
             }
-            if (self.isLunge) self.tryImpact(hero, LUNGE_HIT); // the body-slam connects
         }
         mathx.holdXZ(&self.pos, bounds);
         if (self.t >= total) {
@@ -906,14 +908,11 @@ pub const Knot = struct {
     /// THE HERO'S SHIELD, STAMPED ON EVERY MEMBER (`game.markParry`) — the leash's own pattern, and set before
     /// `update` so a window is read on the frame it is open rather than the one after.
     pub fn setParry(self: *Knot, p: foe.Parry) void {
-        for (self.live()) |*f| f.parry = p;
+        foe.setParry(self.live(), p);
     }
     /// …and whether any of them was caught on it this frame. A ONE-FRAME edge, `anyDied`'s, read after `update`.
     pub fn anyParried(self: *const Knot) bool {
-        for (self.liveConst()) |*f| {
-            if (f.parried) return true;
-        }
-        return false;
+        return foe.anyParried(self.liveConst());
     }
     // Advance the whole knot; returns the STRONGEST blow any toad landed on the hero this frame (null if none) AND which toad threw it, for game.zig to apply to the hero's vitals.
     pub fn update(self: *Knot, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {

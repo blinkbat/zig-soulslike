@@ -185,9 +185,9 @@ pub const BTN_BACK: PadBtn = .b;
 pub const BTN_QUICK: PadBtn = .x;
 
 /// …AND THE PRESS ITSELF COMES OFF THE SAME NAME, which is what makes "a button is named once" true rather than
-/// merely written down. Three sites held their own copy of a binding beside the letter drawn for it —
-/// `game.INTERACT_PAD = .right_face_up`, `menu.confirmPressed`'s `.right_face_down`, `backPressed`'s
-/// `.right_face_right` — so a rebind moved the press and left every crib in the game drawing the old letter.
+/// merely written down. Every site held its own copy of a binding beside the letter drawn for it — the interact
+/// press, both halves of Confirm, Back, and the roll/sprint B in `game.gatherMove` and the input queue — so a
+/// rebind moved the press and left every crib in the game drawing the old letter.
 /// raylib names a face button by its POSITION, which is where the Xbox letters this UI draws happen to sit.
 pub fn padOf(b: PadBtn) rl.GamepadButton {
     return switch (b) {
@@ -372,7 +372,7 @@ pub fn hintRow(hints: []const Hint, cy: i32, size: i32, col: rl.Color) void {
     const cyf: f32 = @floatFromInt(cy);
     const a: u8 = @intCast(@as(u16, 150) * @as(u16, col.a) / 255);
     uiart.diamond(@floatFromInt(x0 - 16), cyf, 2.4, mathx.withAlpha(uiart.GILT_DIM, a));
-    uiart.diamond(@floatFromInt(x0 + total - HINT_PAD + 16), cyf, 2.4, mathx.withAlpha(uiart.GILT_DIM, a));
+    uiart.diamond(@floatFromInt(x0 + total + 16), cyf, 2.4, mathx.withAlpha(uiart.GILT_DIM, a));
 }
 
 pub const MARGIN: i32 = 30;

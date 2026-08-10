@@ -39,6 +39,25 @@ pub const TELL_MIN: f32 = 0.30;
 /// a club, a mace, a greatsword and a mother's fangs teach one rule. See `ogre.parryable` for the example.
 pub const PARRY_LEAD: f32 = 0.18;
 
+/// …AND THE TEST ITSELF, off one clock: `left` is seconds until the blow lands. The `left < 0` half IS the
+/// "shuts at the impact frame by construction" law — as four private copies the constant was centralised and
+/// the comparison that gives it meaning was not.
+pub fn inParryWindow(left: f32) bool {
+    return left >= 0 and left <= PARRY_LEAD;
+}
+
+/// THE HERO'S SHIELD, STAMPED ON EVERY MEMBER (`game.markParry`), and whether any of them was caught on it
+/// this frame — a ONE-FRAME edge, `anyDied`'s, read after `update`. Four groups carried byte-identical folds.
+pub fn setParry(foes: anytype, p: Parry) void {
+    for (foes) |*f| f.parry = p;
+}
+pub fn anyParried(foes: anytype) bool {
+    for (foes) |*f| {
+        if (f.parried) return true;
+    }
+    return false;
+}
+
 /// A CORPSE IS NOT A COLLIDER (owner's call): `alive()` stays true through the whole death collapse and its
 /// dissipation, so every collision site has to ask this instead.
 pub fn corporeal(f: anytype) bool {
@@ -192,10 +211,6 @@ pub fn markOn(bone: rl.Matrix, at: rl.Vector3) rl.Vector3 {
     return rl.math.vector3Transform(at, bone);
 }
 
-/// HOW HARD A REACTION IS PLAYING, 0..1, and it is ONE CURVE for every creature in the game. As five private
-/// copies the constants had already drifted four ways (0.12/0.78, 0.13/0.72, 0.14/0.70, 0.16/0.78). A light
-/// flinch is a single symmetric swell; a heavy one snaps to its peak, HOLDS there — that hold is the punish
-/// window and it has to be legible — and lets go slowly.
 /// HOW FAR THROUGH ITS ARC A SWING IS, 0..1 of the strike window — ONE CURVE for every creature, and it
 /// exists because you must be able to parry off what you SEE (owner: "should be all 3" — visuals, sound and
 /// timing, not the last two alone).
@@ -206,9 +221,14 @@ pub fn swingCurve(u: f32) f32 {
     return std.math.pow(f32, mathx.smoothstep(0, 1, u), 1.35);
 }
 
+/// HOW HARD A REACTION IS PLAYING, 0..1, and it is ONE CURVE for every creature in the game. As five private
+/// copies the constants had already drifted four ways (0.12/0.78, 0.13/0.72, 0.14/0.70, 0.16/0.78). A light
+/// flinch is a single symmetric swell; a heavy one snaps to its peak, HOLDS there — that hold is the punish
+/// window and it has to be legible — and lets go slowly.
 pub fn stunCurve(t: f32, heavy: bool) f32 {
-    if (!heavy) return mathx.sinf(mathx.clampF(t / combat.FOE_LIGHT_STUN_DUR, 0, 1) * std.math.pi);
-    return mathx.pulse(mathx.clampF(t / combat.FOE_HEAVY_STUN_DUR, 0, 1), 0, 0.14, 0.74, 1.0);
+    const u = mathx.clampF(t / combat.foeStunDur(heavy), 0, 1);
+    if (!heavy) return mathx.sinf(u * std.math.pi);
+    return mathx.pulse(u, 0, 0.14, 0.74, 1.0);
 }
 
 /// How far a blow knocks a creature off its feet, by whether the blow was a heavy. A PAIR and not two
@@ -273,8 +293,13 @@ pub const Grip = struct {
 /// and held through a `defer` there, so the pin covers whatever the state machine goes on to do:
 ///
 ///     const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
-///     defer grip.hold(&self.pos);
+///     defer if (!self.airborne()) grip.hold(&self.pos);
 ///     if (grip.killed) self.enterDeath();
+///
+/// The airborne guard IS the finishes-its-arc half of the law below. Three creatures hold unconditionally and
+/// each for its own reason: the LEECHFLY because it is ALWAYS airborne and being rootable is its designed
+/// weakness, the OGRE and the ROOTED because neither can leave the ground at all (`airborne()` is a constant
+/// `false` on both), so the guard would only be a branch nothing can take.
 ///
 /// Six byte-identical copies of that body sat in the creature files, which is six places to forget that the
 /// bite is billed as a DRIP (`combat.Vitals.drip`) and never as a blow.
@@ -355,6 +380,9 @@ pub fn emitParticle(pool: []Particle, head: *usize, p: rl.Vector3, vel: rl.Vecto
 /// For an emitter that fires clear of its owner: the hero's roots erupt under the FOE and his bolt bursts
 /// wherever it landed, and on sculpted ground neither settles on the earth under his boots. Take `head`
 /// before the emit loop and hand both ends over after it — the ring wraps, so the walk does too.
+/// ONE BURST MUST BE SMALLER THAN THE POOL: at exactly `pool.len` the head lands back where it started
+/// and the walk reads as empty. The hero's and the drop's pools assert their worst frame at comptime
+/// (`hero.FX_N`, `souls.PARTS`); a creature's is argued for in prose at its own declaration.
 pub fn floorBurst(pool: []Particle, from: usize, to: usize, floor: f32) void {
     var i = from;
     while (i != to) : (i = (i + 1) % pool.len) pool[i].floor = floor;
@@ -377,7 +405,7 @@ const DISS_FLAKE_R: f32 = 0.129;
 /// THE BODY COMING APART — the one copy, for every creature on the field. Grace motes rising out of it and
 /// flakes of the body falling back, both thinning as the fade closes.
 ///
-/// It reads FIELDS only (`fade`, `scale`, `pos`, `fxAccum`, `fxRng`, `parts`, `head`), which is what lets it
+/// It reads FIELDS only (`fade`, `scale`, `pos`, `fxAccum`, `fxRng`, `parts`, `fxHead`), which is what lets it
 /// live here: a creature's own `emitDissolve` is private, and as five copies the ARCHER's had gone missing.
 pub fn dissolveMotes(self: anytype, dt: f32, d: Dissolve) void {
     const thinning = 1.0 - 0.6 * self.fade;
@@ -469,10 +497,12 @@ pub fn Trail(comptime N: usize) type {
     };
 }
 
-/// THE ONE PER-FRAME COST HERE WORTH KNOWING ABOUT, left alone on purpose: `drawSphereEx` at 6x8 is ~96
-/// triangles, so a full muster (48 x 56 slots) would be a quarter-million unlit triangles. It never is — a
-/// slot is dead unless something emitted into it, and the pools are sized off each emitter's WORST frame, so
-/// the live count is a burst and not a standing load. A spark is a ROUND thing: the tessellation is a look call.
+/// THE ONE PER-FRAME COST HERE WORTH KNOWING ABOUT, left alone on purpose: `drawSphereEx` at 6x8 is 112
+/// triangles — 336 immediate-mode vertex pushes, CPU-transformed, since the push/translate/scale sets rlgl's
+/// `transformRequired` — so a full muster (48 x 56 slots) would be a quarter-million unlit triangles. It never
+/// is: a slot is dead unless something emitted into it, and the pools are sized off each emitter's WORST frame,
+/// so the live count is a burst and not a standing load. A spark is a ROUND thing: the tessellation is a look
+/// call, and the one cheaper shape (a cached unit sphere through `drawMesh`) would come out LIT.
 pub fn drawParticles(pool: []const Particle) void {
     for (pool) |*q| {
         if (q.life <= 0) continue;

@@ -561,7 +561,7 @@ fn tabPressed(dir: i32) bool {
 fn confirmHeld() bool {
     const altHeld = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
     if ((rl.isKeyDown(.enter) and !altHeld) or rl.isKeyDown(.space)) return true;
-    return padDown(.right_face_down);
+    return padDown(hud.padOf(hud.BTN_CONFIRM)); // the HELD half off the same name as the tap
 }
 
 pub fn confirmPressed() bool {

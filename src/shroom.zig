@@ -100,8 +100,8 @@ const CLOUD_CAP: usize = 8;
 
 const DEATH_DUR: f32 = 0.9; // small body, quick topple
 const DISS_DUR: f32 = 0.9;
+const SHOVE_DECAY: f32 = 8.0; // named like every sibling's, rather than a literal at the one call site
 const DISSOLVE = foe.Dissolve{ .rate = 46.0, .spread = 0.6, .rise = 0.8, .flake = SPORE };
-const FLASH_DUR = foe.FLASH_DUR;
 
 /// Sized by ARITHMETIC over the emitters' worst frame (the ring-buffer law): the landing stacks the
 /// 16-spore burst (life ≤ 0.7) on 14 dust (≤ 0.5) on the flight trail's last 0.55 s at 26/s (≈ 14).
@@ -254,7 +254,7 @@ pub const Shroom = struct {
         return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
     }
     pub fn airborne(self: *const Shroom) bool {
-        return self.lift > 0.03;
+        return self.lift > foe.AIRBORNE_LIFT;
     }
     pub fn flashFrac(self: *const Shroom) f32 {
         return foe.flashFrac(self.flash);
@@ -276,7 +276,7 @@ pub const Shroom = struct {
         self.burstAt = null;
         self.justDied = false;
         const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
-        defer grip.hold(&self.pos);
+        defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.vit.tick(dt);
         self.elapsed += dt;
@@ -285,7 +285,7 @@ pub const Shroom = struct {
         self.flash = mathx.maxF(0, self.flash - dt);
         self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
-        foe.applyShove(&self.pos, &self.shove, 8.0, bounds, dt);
+        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
         switch (self.state) {
             .idle => self.updateIdle(dt, hero, bounds),
@@ -299,7 +299,9 @@ pub const Shroom = struct {
                 self.kick = 0;
                 if (self.t >= GATHER_DUR * 0.7) self.emitTremble(dt); // spore-dust shakes off the cap
                 if (self.t >= GATHER_DUR) {
-                    if (self.tripping) {
+                    // Re-asked at the LAUNCH: a wand root closing during the gather arrives after the
+                    // choose site, and a leap is the one thing the grip refuses (`foe.canLeap`).
+                    if (self.tripping or !foe.canLeap(&self.root)) {
                         // THE ROOT IT CAUGHT. Same gather to the last frame — the difference is only
                         // ever visible one frame too late, which is the whole joke and the whole tax.
                         sfx.world(.shroom_hurt, self.pos); // the chirp cracks — it knows
@@ -342,8 +344,7 @@ pub const Shroom = struct {
                 self.squash = mathx.approach(self.squash, 1.0, dt * 4.0);
                 self.pitch = mathx.approach(self.pitch, -22.0, dt * 160.0); // knocked back on its heels
                 self.armUp = mathx.approach(self.armUp, 0.8, dt * 6.0);
-                const dur: f32 = if (self.state == .stunlight) combat.FOE_LIGHT_STUN_DUR else combat.FOE_HEAVY_STUN_DUR;
-                if (self.t >= dur) self.enterIdle(0.1);
+                if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enterIdle(0.1);
             },
             .dead => {
                 self.pitch = mathx.approach(self.pitch, 84.0, dt * 140.0); // face-down one last time

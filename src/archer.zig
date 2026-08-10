@@ -174,17 +174,16 @@ const STANCE_MAX = 30.0;
 /// to find. See `frog.RESISTS` on why only fire is exercised yet.
 const RESISTS = combat.resists(.{ .fire = -35, .cold = 60, .chaos = 45 });
 pub const ARROW_HIT = combat.Hit{ .dmg = 16, .poise = 10 }; // eased down from 20 (owner: lower dmg a bit)
-const DEATH_DUR = 1.15; // collapse-and-still before the corpse dissipates
+pub const DEATH_DUR = 1.15; // collapse-and-still before the corpse dissipates
 /// RUNES a skeletal archer is worth — twice a toad.
 pub const RUNES: u32 = 130;
-const DISS_DUR = 0.9; // …and the dissipation into bone-dust and grace motes after it
+pub const DISS_DUR = 0.9; // …and the dissipation into bone-dust and grace motes after it
 /// BONE, KNOCKED OFF IN FLAKES — these things do not bleed. Here rather than in `warrior.zig` for the reason
 /// the feet and the fist are: it is the same dead man, and a second copy is a second thing to retune.
 pub const BONE_CHIP = rgba(150, 140, 116, 235);
 /// …and the whole dissolve of that body, which both skeletons wear. `scale` carries the warrior's extra inch.
-pub const DISSOLVE = foe.Dissolve{ .rate = 54.0, .spread = 0.85, .rise = 0.70, .flake = BONE_CHIP };
+pub const DISSOLVE = foe.Dissolve{ .flake = BONE_CHIP }; // only the FLAKE is a decision; the rest is the default
 const NPART = 56;
-const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 7.0;
 
 const ARROW_SPEED = 15.0; // world units/s — slowish, dodgeable
@@ -602,7 +601,7 @@ pub const Archer = struct {
         // THE ROOTS HAVE THE FEET (foe.grip) — it still draws and still looses, and only the travel is taken.
         // The PANIC LEAP is the exception the grip cannot answer on its own: see `foe.canLeap` below.
         const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
-        defer grip.hold(&self.pos);
+        defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.elapsed += dt;
         self.vit.tick(dt);

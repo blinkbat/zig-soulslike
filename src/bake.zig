@@ -138,10 +138,6 @@ pub const Emit = struct {
         self.push(o);
     }
 
-    fn anyOf(self: *Emit, kinds: []const Kind) Kind {
-        return kinds[@intCast(self.rng.intn(@intCast(kinds.len)))];
-    }
-
     fn clearing(self: *Emit, x: f32, z: f32, r: f32) void {
         if (self.m.nclearings >= wf.MAX_CLEARINGS) @panic("bake: clearing cap exceeded");
         self.m.clearings[self.m.nclearings] = .{ .x = x, .z = z, .r = r };

@@ -175,8 +175,8 @@ const STANCE_MAX = 30.0;
 const RESISTS = combat.resists(.{ .fire = -35, .cold = 60, .chaos = 45 });
 pub const ARROW_HIT = combat.Hit{ .dmg = 16, .poise = 10 }; // eased down from 20 (owner: lower dmg a bit)
 pub const DEATH_DUR = 1.15; // collapse-and-still before the corpse dissipates
-/// RUNES a skeletal archer is worth — twice a toad.
-pub const RUNES: u32 = 130;
+/// SOULS a skeletal archer is worth — twice a toad.
+pub const SOULS: u32 = 130;
 pub const DISS_DUR = 0.9; // …and the dissipation into bone-dust and grace motes after it
 /// BONE, KNOCKED OFF IN FLAKES — these things do not bleed. Here rather than in `warrior.zig` for the reason
 /// the feet and the fist are: it is the same dead man, and a second copy is a second thing to retune.
@@ -982,8 +982,8 @@ pub const Line = struct {
     pub fn anyDied(self: *const Line) bool {
         return foe.anyDied(self.liveConst());
     }
-    pub fn runesDropped(self: *const Line) u32 {
-        return foe.runesDropped(self.liveConst(), RUNES);
+    pub fn soulsDropped(self: *const Line) u32 {
+        return foe.soulsDropped(self.liveConst(), SOULS);
     }
     pub fn totalHits(self: *const Line) u32 {
         return foe.totalHits(self.liveConst());

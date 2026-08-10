@@ -87,10 +87,12 @@ const MAIN_COUNT = MAIN_QUIT + 1;
 
 const VEIL = rgba(6, 6, 9, 150);
 const CARD = rgba(16, 15, 13, 232);
-const TEXT_DIM = rgba(150, 146, 138, 255);
+// THE INK IS `uiart`'s, not a second copy of it — that file's four weights exist so the menu card and the
+// character book cannot drift into two greys, and these three were byte-identical restatements of them.
+const TEXT_DIM = uiart.TEXT_DIM;
 const TEXT_HOT = uiart.HOT;
-const TITLE_COL = rgba(232, 222, 198, 255);
-const HINT_COL = rgba(128, 122, 110, 255);
+const TITLE_COL = uiart.TEXT_TITLE;
+const HINT_COL = uiart.TEXT_HINT;
 const BAR_EDGE = rgba(120, 104, 74, 160);
 const BAR_FILL = rgba(198, 164, 96, 220);
 
@@ -211,7 +213,15 @@ pub const Menu = struct {
         if (navPressed(.down)) self.book.move(0, 1, v);
         if (navPressed(.left)) self.book.move(-1, 0, v);
         if (navPressed(.right)) self.book.move(1, 0, v);
+        // …and the LEFT STICK drives the same four, which is what walking a wheel wants.
+        if (stickStep(dt)) |d| switch (d) {
+            .up => self.book.move(0, -1, v),
+            .down => self.book.move(0, 1, v),
+            .left => self.book.move(-1, 0, v),
+            .right => self.book.move(1, 0, v),
+        };
         self.book.spinBy(adjHeldDir(), dt);
+        self.book.zoomBy(stickZoom(), dt);
         var act: Action = .none;
         if (confirmPressed()) {
             const a = self.book.confirm(v);
@@ -527,6 +537,90 @@ pub fn navPressed(dir: NavDir) bool {
     return dirPressed(dir, true);
 }
 
+// THE LEFT STICK AS A D-PAD, and getting this wrong is a known genre of bug — a stick is a LEVEL where a
+// walk wants EDGES, so the naive reading fires a step every frame the stick is anywhere but centre. Four
+// standard pieces, all of them here:
+//
+//  1. A RADIAL magnitude, never per-axis. Testing the axes separately is the "snap to grid" mistake: the
+//     corner of the square passes at 0.62 on each axis while the true deflection is 0.88, so a lazy diagonal
+//     reads as a hard push.
+//  2. A SCHMITT TRIGGER, not one threshold. It arms at `STICK_FIRE` and does not re-arm until the stick has
+//     fallen back under `STICK_REARM`; one threshold chatters across itself on the way past.
+//  3. DAS then ARR (the falling-block idiom): a held push waits `STICK_DAS` before it repeats and then goes
+//     every `STICK_ARR`, so a nudge is exactly one step and a hold is a readable crawl.
+//  4. A DEAD CONE AT THE DIAGONALS. Inside 32° of an axis is that direction; outside it is NOTHING. Letting
+//     the bigger component win means a 46° push picks one of two nodes that are nowhere near each other on
+//     a wheel, which is the whole of "imprecise".
+//
+// …plus one this layout needed: a direction CHANGE without returning to centre does not fire on the frame it
+// turns. Rolling a thumb round the rim crosses all four quadrants, and firing each one is the twitch.
+const STICK_FIRE: f32 = 0.72;
+const STICK_REARM: f32 = 0.42;
+const STICK_CONE: f32 = 0.848; // cos 32° — the half-angle a push must sit inside to count as an axis
+const STICK_DAS: f32 = 0.42; // seconds a held push waits before it starts repeating
+const STICK_ARR: f32 = 0.20; // …and the gap between repeats after that
+
+var stickDir: ?NavDir = null;
+var stickWait: f32 = 0;
+/// Has the stick been back to centre since the last step — what makes the FIRST push instant and every
+/// direction rolled into after it deliberate.
+var stickArmed: bool = true;
+
+/// The direction the left stick is asking for THIS frame, or null. Call once a frame; it owns its own clock.
+pub fn stickStep(dt: f32) ?NavDir {
+    if (!rl.isGamepadAvailable(0)) {
+        stickDir = null;
+        stickArmed = true;
+        return null;
+    }
+    const x = rl.getGamepadAxisMovement(0, .left_x);
+    const y = rl.getGamepadAxisMovement(0, .left_y);
+    const mag = @sqrt(x * x + y * y);
+    if (mag < STICK_REARM) { // home again: everything resets, and the next push is instant
+        stickDir = null;
+        stickArmed = true;
+        return null;
+    }
+    if (mag < STICK_FIRE) return null; // inside the hysteresis band: neither fires nor resets
+
+    const nx = x / mag;
+    const ny = y / mag;
+    const dir: ?NavDir = if (@abs(nx) >= STICK_CONE)
+        (if (nx > 0) .right else .left)
+    else if (@abs(ny) >= STICK_CONE)
+        (if (ny > 0) .down else .up)
+    else
+        null; // a diagonal is not a direction — hold, and step nothing
+    const d = dir orelse return null;
+
+    if (stickDir != d) {
+        stickDir = d;
+        stickWait = STICK_DAS;
+        if (!stickArmed) return null; // rolled into it: it costs a full DAS, exactly as a repeat would
+        stickArmed = false;
+        return d;
+    }
+    stickWait -= dt;
+    if (stickWait > 0) return null;
+    stickWait = STICK_ARR;
+    return d;
+}
+
+/// The RIGHT stick's zoom axis, −1 (out) … +1 (in). Pushing UP zooms IN. VERTICAL-DOMINANT: a sideways push
+/// on the look stick is not a request to zoom, and on this screen there is nothing else for it to mean.
+pub fn stickZoom() f32 {
+    var v: f32 = 0;
+    if (rl.isGamepadAvailable(0)) {
+        const x = rl.getGamepadAxisMovement(0, .right_x);
+        const y = rl.getGamepadAxisMovement(0, .right_y);
+        if (@abs(y) > 0.22 and @abs(y) > @abs(x)) v = -y;
+    }
+    // …and the wheel, because the tree is read on a desk as often as on a pad.
+    const notch = rl.getMouseWheelMove();
+    if (notch != 0) v = mathx.clampF(v + notch * 0.6, -1, 1);
+    return v;
+}
+
 fn adjTapped(dir: NavDir) bool {
     return dirPressed(dir, false);
 }
@@ -564,6 +658,13 @@ fn confirmHeld() bool {
     return padDown(hud.padOf(hud.BTN_CONFIRM)); // the HELD half off the same name as the tap
 }
 
+/// THE QUICK BUTTON, off the same name the cribs draw. The tree page's Level Up, and nothing else in the
+/// menu asks for it yet. R is the keyboard's, free because the book has no other letter binding.
+pub fn quickPressed() bool {
+    if (rl.isKeyPressed(.r)) return true;
+    return padPressed(hud.padOf(hud.BTN_QUICK));
+}
+
 pub fn confirmPressed() bool {
     // ALT+Enter is the game loop's borderless-fullscreen toggle, so Enter must not ALSO confirm the highlighted row while Alt is down.
     const altHeld = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
@@ -572,7 +673,7 @@ pub fn confirmPressed() bool {
     return padPressed(hud.padOf(hud.BTN_CONFIRM));
 }
 
-fn backPressed() bool {
+pub fn backPressed() bool {
     // Esc is routed by the game loop (onEscape); pad B backs out here — off `hud.BTN_BACK`, as above.
     return padPressed(hud.padOf(hud.BTN_BACK));
 }

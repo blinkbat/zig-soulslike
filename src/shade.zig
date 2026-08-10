@@ -69,7 +69,7 @@ const STANCE_MAX: f32 = 26.0;
 /// is WEAK to it: the bolt is the answer to a haunting, and the haunting's own touch takes the focus to
 /// cast it with. Fire is no use — there is nothing there to burn — and cold is what it already is.
 const RESISTS = combat.resists(.{ .fire = 30, .cold = 65, .chaos = -45 });
-pub const RUNES: u32 = 110;
+pub const SOULS: u32 = 110;
 
 const DEATH_DUR: f32 = 0.55; // it does not fall over; it comes apart
 const DISS_DUR: f32 = 0.75;
@@ -880,8 +880,8 @@ pub const Haunt = struct {
     pub fn anyDied(self: *const Haunt) bool {
         return foe.anyDied(self.liveConst());
     }
-    pub fn runesDropped(self: *const Haunt) u32 {
-        return foe.runesDropped(self.liveConst(), RUNES);
+    pub fn soulsDropped(self: *const Haunt) u32 {
+        return foe.soulsDropped(self.liveConst(), SOULS);
     }
     pub fn totalHits(self: *const Haunt) u32 {
         return foe.totalHits(self.liveConst());

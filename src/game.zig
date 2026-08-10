@@ -28,6 +28,7 @@ const shademod = @import("shade.zig");
 const chestmod = @import("chest.zig");
 const restmod = @import("rest.zig");
 const soulsmod = @import("souls.zig"); // WHAT A DEATH LEAVES ON THE GROUND, and the walk back for it
+const treemod = @import("tree.zig"); // …and the one thing the souls are SPENT on
 const npcmod = @import("npc.zig");
 const trigmod = @import("trigger.zig");
 const dialogmod = @import("dialog.zig");
@@ -221,6 +222,9 @@ pub const Game = struct {
     nNpcPos: usize = 0,
     rest: restmod.Rest = .{}, // sitting at a bonfire: the state machine and the fade (rest.zig)
     souls: soulsmod.Souls, // THE DROP — one, standing where he last died until he walks back for it
+    /// THE PASSIVE TREE — the levels bought and the nodes taken. It survives a death exactly as the bag
+    /// does: what a death takes is the souls on the counter, never what they have already been spent on.
+    tree: treemod.Tree = .{},
     /// The player's own retro stack, parked while a rest borrows the screen for its VHS look.
     restRetro: [gfx.RETRO_COUNT]f32 = [_]f32{0} ** gfx.RETRO_COUNT,
     bag: item.Bag = .{},
@@ -296,6 +300,8 @@ pub const Game = struct {
         rehomeChests(g);
         armScript(g);
         g.bag = .{};
+        g.tree = .{};
+        applyTree(g); // a fresh game and a fully-allocated one size the bars down the one path
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
         g.clumpModel = koboldmod.clumpMesh(g.scene.shader);
         g.crockModel = archermod.crockMesh(g.scene.shader);
@@ -936,6 +942,10 @@ pub fn endRestForShot(g: *Game) void {
     g.rest.reset(fires[0..g.env.restSites(&fires)]);
     rehomeFoes(g, .blind);
 }
+/// THE FIRE'S OWN CHROME, for the harness — it is drawn in the loop's rest branch, which `--shot` never runs.
+pub fn drawGraceForShot(g: *Game) void {
+    restmod.drawScreen(&g.rest, &g.tree, g.hero.souls.total);
+}
 pub fn openChestForShot(g: *Game) bool {
     const had = g.chests.near != null;
     interact(g);
@@ -958,9 +968,6 @@ pub fn stepTalkForShot(g: *Game, in: dialogmod.Input) void {
 }
 pub fn drawTalkForShot(g: *Game) void {
     g.talk.draw(&g.map, &g.trig, triggerWorld(g));
-}
-pub fn tickTriggersForShot(g: *Game, dt: f32) void {
-    tickTriggers(g, dt);
 }
 pub fn stepFolkForShot(g: *Game, dt: f32) void {
     g.folk.update(dt, g.hero.pos, PLAY_HALF);
@@ -1027,7 +1034,7 @@ fn spillSouls(g: *Game) void {
     // ALWAYS through `spill`, even carrying nothing: 0 clears the drop there, and returning early
     // instead left the PREVIOUS death's stain standing — a second death that does not overwrite the
     // first is the one thing this mechanic may never do.
-    const had = g.hero.runes.dropAll();
+    const had = g.hero.souls.dropAll();
     g.souls.spill(g.hero.pos, had);
     if (had > 0) sfx.play(.souls_spill); // …but a spill worth nothing is silent, and leaves no stain
 }
@@ -1042,12 +1049,12 @@ fn bindingInBag(bag: *const item.Bag) ?item.Kind {
     return null;
 }
 
-/// …AND IT IS INSTANT (owner's call). No committed action and no animation on the man: the runes are on the
+/// …AND IT IS INSTANT (owner's call). No committed action and no animation on the man: the souls are on the
 /// counter the frame he presses, and the rush of gold that crosses to his chest is the effect catching up
 /// with something that has already happened.
 fn reclaimSouls(g: *Game) void {
     const got = g.souls.take(g.hero.pos) orelse return;
-    g.hero.runes.gain(got);
+    g.hero.souls.gain(got);
     g.rig.addShake(SHAKE_CHEST);
     g.rumble.play(rumblemod.hit_light);
 }
@@ -1215,11 +1222,7 @@ fn tickRest(g: *Game, dt: f32) void {
         g.hero.sit(false, g.hero.pos, g.hero.facing);
         rehomeFoes(g, .blind);
     }
-    if (rl.isKeyPressed(.escape) or rl.getKeyPressed() != .null or rl.isMouseButtonPressed(.left) or
-        (rl.isGamepadAvailable(PAD) and rl.getGamepadButtonPressed() != .unknown))
-    {
-        g.rest.leave();
-    }
+    if (g.rest.listening()) graceInput(g, dt);
     if (g.rest.scene()) {
         g.hero.poseRest(dt);
         restCamera(g);
@@ -1228,6 +1231,45 @@ fn tickRest(g: *Game, dt: f32) void {
     }
     g.rig.tickShake(dt);
     g.rumble.update(dt, false);
+}
+
+/// THE FIRE'S OWN MENU, driven off the same nav helpers every full-screen list in the game reads
+/// (`menu.zig`, which is where UI navigation lives). Getting up is a ROW now, so there is no any-button
+/// rule left to fight with a cursor.
+fn graceInput(g: *Game, dt: f32) void {
+    if (menumod.navPressed(.up)) restmod.navigate(&g.rest, 0, -1);
+    if (menumod.navPressed(.down)) restmod.navigate(&g.rest, 0, 1);
+    if (menumod.navPressed(.left)) restmod.navigate(&g.rest, -1, 0);
+    if (menumod.navPressed(.right)) restmod.navigate(&g.rest, 1, 0);
+    if (menumod.stickStep(dt)) |d| switch (d) {
+        .up => restmod.navigate(&g.rest, 0, -1),
+        .down => restmod.navigate(&g.rest, 0, 1),
+        .left => restmod.navigate(&g.rest, -1, 0),
+        .right => restmod.navigate(&g.rest, 1, 0),
+    };
+    restmod.zoom(&g.rest, menumod.stickZoom(), dt);
+    if (menumod.confirmPressed()) gracePick(g, restmod.confirm(&g.rest, &g.tree, g.hero.souls.total));
+    // Esc is routed by the loop rather than by `backPressed`, and at a fire the loop leaves it free.
+    if (menumod.backPressed() or rl.isKeyPressed(.escape)) restmod.back(&g.rest);
+}
+
+/// WHAT THE FIRE ASKED FOR, done. The grace holds neither the souls nor the tree, so this is the one place
+/// either is moved by it — `bookAct`'s split, for `bookAct`'s reason.
+fn gracePick(g: *Game, pick: restmod.Pick) void {
+    switch (pick) {
+        .none => {},
+        .leave => g.rest.leave(),
+        // TAKING THE NODE IS THE LEVEL, and it is ONE transaction: the tree hands back what it charged
+        // rather than reaching for the counter itself (`souls.take`'s shape), and this is the only line in
+        // the game that spends souls.
+        .take => |i| {
+            const paid = g.tree.take(i, g.hero.souls.total) orelse return;
+            g.hero.souls.total -= paid;
+            g.hero.souls.shown = @floatFromInt(g.hero.souls.total); // it went DOWN: nothing rolls to a smaller number
+            applyTree(g);
+            sfx.play(.souls_take);
+        },
+    }
 }
 
 fn applyDim(g: *Game) void {
@@ -1239,6 +1281,11 @@ fn applyDim(g: *Game) void {
 }
 
 const REST_WARMTH: f32 = 0.14;
+/// HOW FAR THE SEAT VIEW PANS LEFT so the man clears the fire's menu, in metres. MEASURED AGAINST THE MAN,
+/// who is ~4.4 m off (≈4.1 m of visible half-width there) — not against the FIRE, which is barely 2.6 m away
+/// and so slides more than twice as far across the frame for the same pan. Solved off the fire, 1.55 m put
+/// the flame in the middle of the screen and carried him off the right edge entirely.
+const REST_PAN: f32 = 0.70;
 
 /// THE REST'S CAMERA, to the owner's own plan sketch: the lens stands PAST the fire and off to one side, so the fire is the near thing on one half of the frame and the man the far thing on the other — and since he is looking at the fire, that puts him three-quarters on.
 fn restCamera(g: *Game) void {
@@ -1254,6 +1301,15 @@ fn restCamera(g: *Game) void {
     // Aimed between them and biased toward the man, so the fire sits off to one side of frame rather than dead centre with him crowded against the edge.
     g.rig.cam.target = v3(s.pos.x + axis.x * 0.90, s.pos.y + 0.60, s.pos.z + axis.z * 0.90);
     g.rig.cam.up = v3(0, 1, 0);
+    // …AND THE WHOLE VIEW PANS LEFT, which puts the man and the flame in the RIGHT of the frame (owner's
+    // call) — the left is the fire's menu. A PAN, both eye and target by the same vector: swinging the
+    // target alone would turn the camera and shear the composition instead of sliding it. Screen-right is
+    // `cross(forward, up)`, which on this handedness is world (−fwd.z, 0, fwd.x) — `camera.rightXZ`'s law.
+    const fwd = mathx.subV(g.rig.cam.target, g.rig.cam.position);
+    const right = mathx.normV(v3(-fwd.z, 0, fwd.x));
+    const shove = mathx.scaleV(right, -REST_PAN);
+    g.rig.cam.position = mathx.addV(g.rig.cam.position, shove);
+    g.rig.cam.target = mathx.addV(g.rig.cam.target, shove);
 }
 
 fn poolPut(g: *Game, a: archermod.Arrow) void {
@@ -1772,7 +1828,7 @@ pub fn hud(g: *Game, dt: f32) void {
             if (bowUp) hud_.Ammo{ .n = g.hero.quiver.ready(), .fire = heromod.arrowBurns(g.hero.quiver.sel) } else null,
         );
         hud_.reticle(g.hero.aimB);
-        hud_.runes(g.hero.runes.display()); // the ROLLING value, not the banked total
+        hud_.souls(g.hero.souls.display()); // the ROLLING value, not the banked total
         // THE SAME `reachable` THE PRESS GOES THROUGH: a prompt naming a different thing is worse than none.
         if (reachable(g)) |r| hud_.prompt(r.prompt());
     }
@@ -1989,6 +2045,8 @@ pub fn run(mode: Mode) void {
 
         // Pad SELECT opens the GAME menu, pad START the CHARACTER one; TAB is START's keyboard twin.
         // A CONVERSATION HAS TO BE FINISHED, not escaped out of (see dialog.zig), so it swallows both.
+        // NEITHER MENU OPENS AT A FIRE (owner's call). The grace is its own screen with its own list, and a
+        // pause card or a character book over it would be a second way out of a scene that has exactly one.
         if (!g.editor.on and !g.rest.active() and !g.talk.active()) {
             if (rl.isKeyPressed(.escape)) g.menu.onEscape();
             if (rl.isKeyPressed(.tab)) g.menu.onStartButton();
@@ -2089,6 +2147,7 @@ pub fn run(mode: Mode) void {
             sfx.tickStreams();
             drawScene(g);
             hud(g, rawDt);
+            restmod.drawScreen(&g.rest, &g.tree, g.hero.souls.total);
             rl.endDrawing();
             continue;
         }
@@ -2499,7 +2558,7 @@ pub fn run(mode: Mode) void {
             sfx.play(.kill);
         }
         // …and the kill PAYS.
-        g.hero.runes.gain(allRunes(g));
+        g.hero.souls.gain(allSouls(g));
         // ER lock-on across a kill: the lock leaves a corpse the FRAME it dies, snapping to the next valid target.
         if (g.lock) |li| {
             if (!foeLockable(g, li)) g.lock = acquireLock(g);
@@ -2610,12 +2669,13 @@ pub fn bookView(g: *Game) bookmod.View {
         .flasks = &g.hero.flasks,
         .quick = &g.hero.quick,
         .quiver = &g.hero.quiver,
+        .tree = &g.tree,
         .inCombat = inCombat(g),
         .arm = g.hero.arm,
         .off = g.hero.off,
         .spell = g.hero.spell,
         .fp = g.hero.fp.cur,
-        .runes = g.hero.runes.display(),
+        .souls = g.hero.souls.display(),
     };
 }
 
@@ -2641,6 +2701,12 @@ fn bookAct(g: *Game, a: bookmod.Action) void {
             g.hero.syncFlask();
         },
     }
+}
+
+/// THE ONE PLACE THE TREE REACHES THE HERO. Called wherever a node is taken and once at startup, so a fresh
+/// game and a fully-allocated one go down the same path and the bars can never be sized off a stale sheet.
+pub fn applyTree(g: *Game) void {
+    g.hero.applyPerks(g.tree.bonus());
 }
 
 fn quickLeft(g: *const Game) u8 {
@@ -2704,8 +2770,8 @@ fn useItem(g: *Game, k: item.Kind) void {
         },
         .souls => |s| {
             if (g.bag.take(k, 1) == 0) return;
-            g.hero.runes.gain(s.n);
-            sfx.play(.souls_take); // the reclaim's own voice: runes rushing back up into you
+            g.hero.souls.gain(s.n);
+            sfx.play(.souls_take); // the reclaim's own voice: souls rushing back up into you
         },
         .brew => |b| {
             if (g.bag.take(k, 1) == 0) return;
@@ -2755,9 +2821,9 @@ fn anyFoeDied(g: *const Game) bool {
     }
     return false;
 }
-fn allRunes(g: *const Game) u32 {
+fn allSouls(g: *const Game) u32 {
     var n: u32 = 0;
-    inline for (FOE_GROUPS) |f| n += @field(g, f.field).runesDropped();
+    inline for (FOE_GROUPS) |f| n += @field(g, f.field).soulsDropped();
     return n;
 }
 

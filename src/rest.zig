@@ -2,6 +2,9 @@ const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 const props = @import("props.zig");
 const sfx = @import("audio.zig");
+const hud = @import("hud.zig");
+const uiart = @import("uiart.zig");
+const tree = @import("tree.zig");
 
 const v3 = mathx.v3;
 
@@ -16,11 +19,48 @@ const FADE_DOWN: f32 = 0.75; // to black, on the way in
 const FADE_UP: f32 = 1.10;
 const FADE_OUT: f32 = 0.60; // to black again on the way back to the field
 const FADE_RETURN: f32 = 0.90;
-const MIN_SIT: f32 = 2.2;
 const BED_IN: f32 = 2.6;
 const BED_OUT: f32 = 0.55;
 /// A nudge OFF the fire, toward the lens.
 const SEAT_TURN: f32 = 0.20;
+
+// THE GRACE IS A SCREEN NOW, not a pause with a fade. He sits on the RIGHT of the frame and the fire's own
+// menu is a list down the LEFT — the shape every bonfire in the genre has. GETTING UP IS A ROW ON THAT LIST
+// and not "any button": with a menu on screen, a stray press has somewhere to land, and a press that both
+// chose a row and stood him up is the bug the old any-button rule guaranteed.
+
+/// What the fire offers. Two rows for now, and Leave is deliberately the LAST of them: it is the one you
+/// arrive at by pushing down, which is where a hand that means to leave already is.
+///
+/// NO GLOSS UNDER THEM (owner's call). "Level Up" and "Leave Bonfire" are two verbs that say exactly what
+/// they do, and a sentence explaining a verb is a sentence nobody reads twice.
+pub const Row = enum {
+    level,
+    leave,
+
+    pub fn label(r: Row) [:0]const u8 {
+        return switch (r) {
+            .level => "Level Up",
+            .leave => "Leave Bonfire",
+        };
+    }
+};
+
+pub const NROW = @typeInfo(Row).@"enum".fields.len;
+
+/// Which of the fire's screens is up. The tree is shown ONLY once Level Up is chosen (owner's call) — the
+/// list is what a grace looks like, and a wheel behind it every time you sat down would bury that.
+pub const Screen = enum { list, tree };
+
+/// WHAT A PRESS AT THE FIRE ASKED FOR. The grace owns none of the game's state — the souls and the tree
+/// belong to the loop, exactly as the book's own `Action` does.
+pub const Pick = union(enum) {
+    none,
+    /// Take the node the wheel's cursor is on — which IS the level-up, souls and all.
+    take: usize,
+    /// Stand up.
+    leave,
+};
 
 pub const Site = struct {
     pos: rl.Vector3 = mathx.zero3,
@@ -47,6 +87,13 @@ pub const Rest = struct {
     /// EDGES, true for exactly the one frame the transition happens on.
     justEntered: bool = false,
     justLeft: bool = false,
+
+    /// THE FIRE'S OWN MENU. Reset on every sit (`begin`), because a grace opens on its first row: coming
+    /// back to a fire already sat on Leave is one press from standing straight back up.
+    screen: Screen = .list,
+    row: usize = 0,
+    /// …and the grace's own view of the tree, kept apart from the book's for the reason written at that one.
+    wheel: tree.Wheel = .{},
 
     pub fn reset(self: *Rest, sites: []const Site) void {
         self.n = 0;
@@ -115,12 +162,23 @@ pub const Rest = struct {
         self.phase = .in;
         self.t = 0;
         self.near = null;
+        self.screen = .list; // a grace opens on its FIRST row, never on the one you left it on
+        self.row = 0;
         return true;
     }
 
-    /// LEAVE, on any button.
+    /// IS THE MENU TAKING INPUT — sat down, AND far enough through the fade for the list to be readable.
+    /// Live from the first frame of `.sit`, a press aimed at the world before the screen went black picks a
+    /// row nobody has seen yet; the chrome's own alpha is `1 - fade()`, so this is the same clock it draws on.
+    pub fn listening(self: *const Rest) bool {
+        return self.phase == .sit and self.fade() <= 0.35;
+    }
+
+    /// LEAVE — the list's own last row. There is no minimum sit any more: that existed to stop the
+    /// ANY-BUTTON rule standing him up on the frame he sat down, and against a row you have to move to and
+    /// confirm, all it could do was make that row silently do nothing for its first two seconds.
     pub fn leave(self: *Rest) void {
-        if (self.phase != .sit or self.t < MIN_SIT) return;
+        if (self.phase != .sit) return;
         self.phase = .out;
         self.t = 0;
     }
@@ -165,6 +223,173 @@ pub const Rest = struct {
 
 pub fn siteFromProp(pos: rl.Vector3, yaw: f32) Site {
     return .{ .pos = pos, .yaw = yaw };
+}
+
+// THE GRACE'S SCREEN. The state and the walk live here; the game loop reads the buttons and hands the
+// results in, exactly as it does for the character book — this file owns no bindings.
+
+/// Move the cursor on whichever screen is up. `dx`/`dy` are one step, from a d-pad, a key or the left stick.
+pub fn navigate(self: *Rest, dx: i32, dy: i32) void {
+    if (dx == 0 and dy == 0) return;
+    switch (self.screen) {
+        .list => {
+            if (dy == 0) return;
+            const n: i32 = NROW;
+            const at: i32 = @intCast(self.row);
+            const next = @mod(at + dy + n, n);
+            if (next == at) return;
+            self.row = @intCast(next);
+            sfx.play(.menu_move);
+        },
+        // THE WHEEL IS WALKED BY DIRECTION, never cycled (`tree.step`'s law).
+        .tree => if (self.wheel.move(dx, dy)) sfx.play(.menu_move),
+    }
+}
+
+/// The right stick, on the tree screen and nowhere else.
+pub fn zoom(self: *Rest, dv: f32, dt: f32) void {
+    if (self.screen == .tree and dv != 0) self.wheel.zoomBy(dv, dt);
+}
+
+/// CONFIRM. On the list it picks a row; on the wheel it asks for the node under the cursor.
+pub fn confirm(self: *Rest, t: *const Tree, souls: u32) Pick {
+    switch (self.screen) {
+        .list => switch (@as(Row, @enumFromInt(self.row))) {
+            .level => {
+                self.screen = .tree;
+                sfx.play(.menu_pick);
+                return .none;
+            },
+            .leave => return .leave,
+        },
+        .tree => {
+            const i = self.wheel.cursor;
+            // THE MIDDLE TAKES NO PRESS. It is a place to stand, not a thing to buy, and `locked` is only
+            // ever asked about a real node.
+            if (i >= tree.N or t.locked(i, souls) != null) {
+                sfx.play(.menu_back); // refused, and the column beside it already says why
+                return .none;
+            }
+            return .{ .take = i };
+        },
+    }
+}
+
+/// BACK. Off the wheel and onto the list; on the list it does nothing, because leaving is a ROW — a Back
+/// that stood him up would be the any-button rule sneaking back in through the one button that means
+/// "the screen before this one".
+pub fn back(self: *Rest) void {
+    if (self.screen != .tree) return;
+    self.screen = .list;
+    sfx.play(.menu_back);
+}
+
+const Tree = tree.Tree;
+
+/// Stage a screen for the shot harness (`book.debugShow`'s pattern): a photograph of the wheel zoomed onto
+/// a keystone cannot be got by pretending to press buttons at 1/60 s a frame.
+pub fn debugShow(self: *Rest, screen: Screen, row: usize, node: usize, mag: f32) void {
+    self.screen = screen;
+    self.row = row;
+    self.wheel = .{ .cursor = node, .zoom = mag };
+}
+
+/// How much of the screen's width the fire's own chrome takes down the left. The seat camera is panned so
+/// the man and the flame compose in what is left (`game.restCamera`).
+pub const PANEL_FRAC: f32 = 0.34;
+const PANEL_MIN: i32 = 300;
+const PANEL_MAX: i32 = 460;
+const MARGIN: i32 = 46;
+
+fn panelW() i32 {
+    return mathx.clampI(@intFromFloat(@as(f32, @floatFromInt(rl.getScreenWidth())) * PANEL_FRAC), PANEL_MIN, PANEL_MAX);
+}
+
+fn rowH() i32 {
+    return hud.lineH(hud.BODY) + 18;
+}
+
+/// THE FIRE'S CHROME, over the scene and under nothing. Drawn only once he is actually SAT: through the two
+/// fades the screen is going black, and a panel at full strength over that reads as a card that arrived
+/// early. `t` and `souls` are the live ones — the grace holds no copy of either.
+pub fn drawScreen(self: *const Rest, t: *const Tree, souls: u32) void {
+    if (self.phase != .sit) return;
+    const a: f32 = 1.0 - self.fade(); // the fade is the scene coming UP; the chrome comes up with it
+    if (a <= 0.02) return;
+    switch (self.screen) {
+        .list => drawList(self, a),
+        .tree => drawTree(self, t, souls, a),
+    }
+}
+
+fn ink(c: rl.Color, a: f32) rl.Color {
+    return mathx.withAlpha(c, mathx.u8f(@as(f32, @floatFromInt(c.a)) * mathx.clampF(a, 0, 1)));
+}
+
+const PAD_X: i32 = 24;
+
+fn drawList(self: *const Rest, a: f32) void {
+    const w = panelW();
+    const sh = rl.getScreenHeight();
+    const head = hud.lineH(hud.TITLE) + 40;
+    const body = rowH() * @as(i32, NROW);
+    const foot = hud.lineH(hud.HINT) + 30;
+    const h = head + body + foot;
+    const x = MARGIN;
+    const y = @divTrunc(sh - h, 2);
+
+    uiart.seat(x, y, w, h);
+    uiart.plate(x, y, w, h, mathx.u8f(236.0 * mathx.clampF(a, 0, 1)));
+    uiart.frame(x, y, w, h, mathx.u8f(200.0 * mathx.clampF(a, 0, 1)));
+
+    hud.engraved("LOST GRACE", x + PAD_X, y + 20, hud.TITLE, ink(uiart.TEXT_TITLE, a));
+    uiart.divider(x + @divTrunc(w, 2), y + hud.lineH(hud.TITLE) + 30, @divTrunc(w, 2) - PAD_X, mathx.u8f(170.0 * a));
+
+    var ry = y + head;
+    for (0..NROW) |i| {
+        const r: Row = @enumFromInt(i);
+        const on = i == self.row;
+        if (on) uiart.rowHilite(x + 14, ry - 4, w - 28, rowH() - 8);
+        hud.text(r.label(), x + PAD_X + 6, ry, hud.BODY, ink(if (on) uiart.HOT else uiart.TEXT_VALUE, a));
+        ry += rowH();
+    }
+    const hints = [_]hud.Hint{
+        .{ .glyph = .{ .dpad = .updown }, .label = "Choose" },
+        .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Select" },
+    };
+    hud.hintRowAt(&hints, x + PAD_X, y + h - hud.lineH(hud.HINT) - 14, hud.HINT, ink(uiart.TEXT_HINT, a));
+}
+
+/// THE WHEEL, and at a fire it is SPENDABLE — this is the one screen in the game that can charge him souls.
+/// It takes the whole card rather than the left strip: the tree is a picture, and a picture in a third of
+/// the screen is one you cannot find a node on.
+fn drawTree(self: *const Rest, t: *const Tree, souls: u32, a: f32) void {
+    const sw = rl.getScreenWidth();
+    const sh = rl.getScreenHeight();
+    const x = MARGIN;
+    const y = @max(30, @divTrunc(sh, 16));
+    const w = sw - MARGIN * 2;
+    const h = sh - y * 2;
+
+    rl.drawRectangle(0, 0, sw, sh, mathx.withAlpha(rl.Color.black, mathx.u8f(150.0 * mathx.clampF(a, 0, 1))));
+    uiart.seat(x, y, w, h);
+    uiart.plate(x, y, w, h, mathx.u8f(240.0 * mathx.clampF(a, 0, 1)));
+    uiart.frame(x, y, w, h, mathx.u8f(200.0 * mathx.clampF(a, 0, 1)));
+
+    const headY = y + 14;
+    hud.engraved("LEVEL UP", x + 24, headY, hud.TITLE, ink(uiart.TEXT_TITLE, a));
+    const foot = hud.lineH(hud.HINT) + 20;
+    const bodyY = headY + hud.lineH(hud.TITLE) + 12;
+    tree.drawPage(t, self.wheel, x + 22, bodyY, w - 44, y + h - bodyY - foot - 8, true, souls);
+
+    const hints = [_]hud.Hint{
+        .{ .glyph = .{ .bumper = "LS" }, .label = "Walk" },
+        .{ .glyph = .{ .bumper = "RS" }, .label = "Zoom" },
+        .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Take" },
+        .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Back" },
+    };
+    const hw = hud.hintRowW(&hints, hud.HINT);
+    hud.hintRowAt(&hints, x + @divTrunc(w - hw, 2), y + h - foot + 2, hud.HINT, ink(uiart.TEXT_HINT, a));
 }
 
 /// THE KINDS YOU CAN SIT AT. The bonfire camp, and the lit campfire — a camp you can pitch anywhere,

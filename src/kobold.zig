@@ -128,17 +128,17 @@ const Spec = struct {
     speed: f32,
     bodyR: f32,
     hurtR: f32,
-    runes: u32,
+    souls: u32,
     wantMin: f32,
     wantMax: f32,
 };
 
 const SPEC = [_]Spec{
-    .{ .hp = 76, .poise = 11, .stance = 34, .speed = 1.22, .bodyR = 0.40, .hurtR = 0.60, .runes = 120, .wantMin = 0.0, .wantMax = 1.5 },
+    .{ .hp = 76, .poise = 11, .stance = 34, .speed = 1.22, .bodyR = 0.40, .hurtR = 0.60, .souls = 120, .wantMin = 0.0, .wantMax = 1.5 },
     // priest — frail, and the only one with no attack at all.
-    .{ .hp = 54, .poise = 10, .stance = 24, .speed = 0.86, .bodyR = 0.38, .hurtR = 0.58, .runes = 210, .wantMin = 7.5, .wantMax = 12.0 },
+    .{ .hp = 54, .poise = 10, .stance = 24, .speed = 0.86, .bodyR = 0.38, .hurtR = 0.58, .souls = 210, .wantMin = 7.5, .wantMax = 12.0 },
     // slinger — middling everything, dangerous only at the range it chooses.
-    .{ .hp = 62, .poise = 12, .stance = 28, .speed = 1.0, .bodyR = 0.38, .hurtR = 0.58, .runes = 140, .wantMin = 5.0, .wantMax = 10.5 },
+    .{ .hp = 62, .poise = 12, .stance = 28, .speed = 1.0, .bodyR = 0.38, .hurtR = 0.58, .souls = 140, .wantMin = 5.0, .wantMax = 10.5 },
 };
 
 fn spec(r: Role) *const Spec {
@@ -428,8 +428,8 @@ pub const Kobold = struct {
     pub fn flashFrac(self: *const Kobold) f32 {
         return foe.flashFrac(self.flash);
     }
-    pub fn runeValue(self: *const Kobold) u32 {
-        return spec(self.role).runes;
+    pub fn soulValue(self: *const Kobold) u32 {
+        return spec(self.role).souls;
     }
     pub fn kind(self: *const Kobold) wf.FoeKind {
         return kindOf(self.role);
@@ -1781,8 +1781,8 @@ pub const Warband = struct {
         if (best) |k| k.impactSparks(at);
     }
 
-    pub fn runesDropped(self: *const Warband) u32 {
-        return foe.runesEach(self.liveConst());
+    pub fn soulsDropped(self: *const Warband) u32 {
+        return foe.soulsEach(self.liveConst());
     }
 
     pub fn update(
@@ -1876,8 +1876,8 @@ test "the berserker's recovery is a REAL opening, and his poise is glass" {
 
 test "the priest is the priority target, and the numbers say so" {
     try std.testing.expect(spec(.priest).hp < spec(.berserker).hp);
-    try std.testing.expect(spec(.priest).runes > spec(.berserker).runes);
-    try std.testing.expect(spec(.priest).runes > spec(.slinger).runes);
+    try std.testing.expect(spec(.priest).souls > spec(.berserker).souls);
+    try std.testing.expect(spec(.priest).souls > spec(.slinger).souls);
     // It stands FURTHER out than the slinger does — the back line is behind the skirmish line.
     try std.testing.expect(spec(.priest).wantMin > spec(.slinger).wantMin);
     try std.testing.expect(CAST_DUR > 1.0 and CAST_CD > 6.0);

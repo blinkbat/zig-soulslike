@@ -37,15 +37,22 @@ const tuftInto = art.tuftInto;
 /// off the line to a blunt snap of pale heartwood. Twigs root on that OUTER half and carry on outward — struck
 /// across the limb instead, a twig crosses its parent and reads as a needle lying near a branch.
 pub fn deadLimbInto(b: *Builder, rng: *mathx.Rng, root: rl.Vector3, a: f32, reach: f32, rise: f32, r0: f32, twigs: i32) void {
+    deadLimbTinted(b, rng, root, a, reach, rise, r0, twigs, BARK_DK, TIMBER);
+}
+
+/// THE SAME LIMB IN SOMEBODY ELSE'S TWO COLOURS — the souls bloom is a dead tree made of gold (`souls.zig`),
+/// and the law it has to obey is the SHAPE. As its own transcription of this it came out a rosette of
+/// needles, which is precisely what the law forbids.
+pub fn deadLimbTinted(b: *Builder, rng: *mathx.Rng, root: rl.Vector3, a: f32, reach: f32, rise: f32, r0: f32, twigs: i32, bark: rl.Color, heart: rl.Color) void {
     const elbow = v3(root.x + mathx.cosf(a) * reach * 0.58, root.y + rise, root.z + mathx.sinf(a) * reach * 0.58);
     const r1 = r0 * 0.52;
-    b.addCapsule(root, elbow, r0, r1, 5, BARK_DK);
+    b.addCapsule(root, elbow, r0, r1, 5, bark);
     const oa = a + rng.signed() * 0.55;
     const drop = rise * rng.range(-0.7, 0.05); // its own weight has taken it back down
     const tip = v3(elbow.x + mathx.cosf(oa) * reach * 0.42, elbow.y + drop, elbow.z + mathx.sinf(oa) * reach * 0.42);
     const r2 = r1 * 0.5;
-    b.addCapsule(elbow, tip, r1, r2, 5, BARK_DK);
-    b.addBlob(tip, v3(r2 * 1.7, r2 * 1.3, r2 * 1.7), 3, 5, TIMBER); // where it broke off
+    b.addCapsule(elbow, tip, r1, r2, 5, bark);
+    b.addBlob(tip, v3(r2 * 1.7, r2 * 1.3, r2 * 1.7), 3, 5, heart); // where it broke off
     var t: i32 = 0;
     while (t < twigs) : (t += 1) {
         const u = rng.range(0.05, 0.6);

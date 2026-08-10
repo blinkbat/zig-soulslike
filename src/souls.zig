@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const gfx = @import("gfx.zig");
 const mathx = @import("mathx.zig");
 const foe = @import("foe.zig");
+const wood = @import("propwood.zig"); // THE dead-limb builder — this thing is a dead tree made of gold
 const sfx = @import("audio.zig");
 const chest = @import("chest.zig"); // for the one comptime assert below, and nothing else
 
@@ -10,7 +11,7 @@ const v3 = mathx.v3;
 const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
-// WHAT YOU DROPPED WHEN YOU DIED — DS's bloodstain and ER's rune drop, which are the same mechanic under two
+// WHAT YOU DROPPED WHEN YOU DIED — DS's bloodstain and ER's soul drop, which are the same mechanic under two
 // names: everything you were carrying stands on the spot it left you, you walk back for it, and dying again
 // on the way is what makes the walk mean something.
 //
@@ -45,7 +46,7 @@ const BOB: f32 = 0.035; // metres either way
 const BOB_RATE: f32 = 1.3;
 
 /// Motes coming off it a second, and how long one lives. Sized against the ring below by arithmetic.
-const MOTE_RATE: f32 = 26.0;
+const MOTE_RATE: f32 = 38.0;
 const MOTE_LIFE_LO: f32 = 0.9;
 const MOTE_LIFE_HI: f32 = 1.7;
 /// A ring that overwrites its oldest does it silently, so its size is arithmetic over what feeds it.
@@ -59,7 +60,7 @@ comptime {
     std.debug.assert(@as(f32, PARTS) >= MOTE_RATE * MOTE_LIFE_HI + TAKE_MOTES);
 }
 /// The burst it goes out on when you pick it up, and how long those motes take to reach him. THE PICKUP IS
-/// INSTANT (owner's call): the runes are on the counter the frame he presses, and this is the effect
+/// INSTANT (owner's call): the souls are on the counter the frame he presses, and this is the effect
 /// catching up with a thing that has already happened — no committed action, no animation on the man.
 const TAKE_MOTES: f32 = 34.0;
 const TAKE_PULL: f32 = 0.34; // seconds a mote takes to cross to him
@@ -79,20 +80,38 @@ const HUM_EVERY: f32 = 1.15;
 /// MEASURED, NOT GUESSED (AGENTS.md). At alpha 58 the chain comes back as screen = 255·(albedo/255 · 1.236)^(1/2.2)
 /// — sampled off the first pass, where albedo 150 rendered 221 and anything over ~205 clipped to 255. The
 /// tips were authored at 246,220,150 and came back 255,255,221: a white knuckle, which is why it read as bone.
-/// Solved back from the screen values actually wanted, the three come out deeply saturated and none of them clips.
+/// Solved back from the screen values actually wanted, none of the four clips.
+///
+/// FOUR TONES, AND THE LADDER IS THE POINT. The first pass ran two of them ~18 screen values apart, which is
+/// no separation at all, and nothing anywhere near dark — so a mass lit uniformly by its own emissive had no
+/// form in it and read as one plastic orange. The reds now step 150 → 214 → 246 → 254 while the blues step
+/// 24 → 60 → 100 → 170, so it DESATURATES as it brightens, which is what hot metal does and what a flat
+/// value ramp cannot fake.
 const EMISSIVE: u8 = 58;
-const GOLD = rgba(140, 70, 8, EMISSIVE); // → ~214,158,60 on screen
-const GOLD_LT = rgba(168, 90, 13, EMISSIVE); // → ~232,176,74
-/// …and the hot heart at the fork and the limb ends, which is the only part allowed to run pale.
-const GOLD_HOT = rgba(201, 140, 39, EMISSIVE); // → ~252,214,120
+const GOLD_DEEP = rgba(64, 20, 1, EMISSIVE); // → ~150,88,24 on screen: the earth end of the bole
+const GOLD = rgba(141, 73, 8, EMISSIVE); // → ~214,158,60
+const GOLD_LT = rgba(191, 122, 26, EMISSIVE); // → ~246,200,100
+/// …and the heartwood at every blunt snap, which is the only part allowed to run pale — and it is only ever
+/// the END of something, never a length of it.
+const GOLD_HOT = rgba(204, 174, 85, EMISSIVE); // → ~254,236,170
+
 const MOTE = rgba(250, 200, 96, 190);
 
-/// The trunk's own dimensions, in metres.
-const BOLE_R0: f32 = 0.085;
-const BOLE_R1: f32 = 0.045;
-/// Limbs the bloom forks into. NOTHING ENDS IN A POINT: each rises to an elbow, droops off the line, and
-/// stops in a blunt swelling — a rosette of needles is a hub of spokes, whatever it is made of.
-const LIMBS = 7;
+/// The trunk's own dimensions, in metres. The taper is GENTLE: run 0.085 → 0.045 over half a metre and it is
+/// a carrot, and a cone that steep on a short shaft is most of why the first pass read as one moulded piece.
+const BOLE_R0: f32 = 0.082;
+const BOLE_R1: f32 = 0.038;
+/// How far up the bole climbs before the leader snaps, as a share of `H`. The shaft has to carry the canopy
+/// clear of the ground: too short and the limbs start at the earth and the whole thing is a stump, too long
+/// and it is a bare pole with a tuft. This is the SLENDERNESS dial too — read it against `BOLE_R0`.
+const BOLE_TOP: f32 = 0.68;
+/// Segments in it. Five, because three straight capsules over half a metre cannot be crooked.
+const BOLE_SEGS = 5;
+/// WHERE THE LIMBS LEAVE, up the bole — three forks, not one. Every limb off a single point is a ROSETTE OF
+/// SPOKES, which is exactly what the dead-limb law is written against and exactly what the first pass was.
+/// SPREAD DOWN THE SHAFT, too: bunched into the top third they are one tangle rather than three tiers.
+const FORKS = [_]f32{ 0.42, 0.66, 0.88 }; // shares of the bole's own height
+const PER_FORK = [_]u32{ 3, 3, 2 };
 
 pub const Drop = struct {
     at: rl.Vector3 = mathx.zero3,
@@ -274,56 +293,90 @@ pub const Souls = struct {
     }
 };
 
-/// THE BLOOM: a short crooked bole out of the earth, forking into limbs that rise to an elbow, droop off
-/// their own line and stop in a blunt swelling. It is a TREE and not a flame, so it obeys the dead-limb law
-/// — nothing straight, nothing ending in a point — and the variation is seeded so a build stays deterministic.
+/// THE BLOOM: a crooked bole out of the earth, forking at THREE heights into limbs that leave on their own
+/// axis, rise to an elbow, droop off the line and stop in a blunt snap of pale heartwood, with twigs rooted
+/// on the outer half. It is a TREE and not a flame — so the limbs come through `propwood.deadLimbTinted`,
+/// the one builder both leafless trees call, rather than a transcription of it. The first pass WAS that
+/// transcription: seven equal limbs off ONE point, each a straight run ending in a ball bigger than itself,
+/// which is a hub of spokes wearing a rosette of knuckles — the two shapes the law is written against.
+/// Seeded, so a build stays deterministic.
 fn boughMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x501D7EE);
     b.setMat(.plain);
 
-    // The bole, in three leaning segments — one capsule to the fork is a stake.
-    var at = v3(0, 0, 0);
-    var r = BOLE_R0;
-    var seg: u32 = 0;
-    while (seg < 3) : (seg += 1) {
-        const rise = H * 0.16 * rng.range(0.85, 1.2);
+    // THE BOLE, and its colour is ONE ramp bottom to top, never two tones alternated: segment by segment
+    // they band a shaft like a barber's pole (AGENTS' own worked example — and the first pass did exactly
+    // that). Dark where it leaves the earth, bright at the crown, which is what a self-lit thing looks like.
+    var joint: [BOLE_SEGS + 1]rl.Vector3 = undefined;
+    var radius: [BOLE_SEGS + 1]f32 = undefined;
+    joint[0] = mathx.zero3;
+    radius[0] = BOLE_R0;
+    var seg: usize = 0;
+    while (seg < BOLE_SEGS) : (seg += 1) {
+        const k = @as(f32, @floatFromInt(seg + 1)) / @as(f32, @floatFromInt(BOLE_SEGS));
         const a = rng.angle();
-        const lean = rng.range(0.01, 0.035);
-        const next = v3(at.x + mathx.cosf(a) * lean, at.y + rise, at.z + mathx.sinf(a) * lean);
-        const rn = mathx.lerpF(r, BOLE_R1, 0.4);
-        b.addCapsule(at, next, r, rn, 7, if (seg % 2 == 0) GOLD else GOLD_LT);
-        at = next;
-        r = rn;
-    }
-    // The fork itself — the one part that reads white, and it is small.
-    b.addBlob(at, v3(r * 1.9, r * 1.5, r * 1.9), 5, 9, GOLD_HOT);
-
-    // The limbs. Each one: out and up to an elbow, then OFF the line and DOWN to a blunt snap, with a
-    // swelling on the end. No two the same length, height or lean — nine of one size is a garden rake.
-    const forkY = at.y;
-    var i: u32 = 0;
-    while (i < LIMBS) : (i += 1) {
-        const yaw = std.math.tau * (@as(f32, @floatFromInt(i)) / LIMBS) + rng.range(-0.30, 0.30);
-        const out = rng.range(0.16, 0.30);
-        const up = rng.range(0.16, 0.34) * H;
-        const c = mathx.cosf(yaw);
-        const s = mathx.sinf(yaw);
-        const elbow = v3(at.x + c * out, forkY + up, at.z + s * out);
-        const lr = rng.range(0.45, 0.75) * r;
-        b.addCapsule(at, elbow, r * 0.8, lr, 6, if (i % 2 == 0) GOLD_LT else GOLD);
-        // …and off the line: it droops, and it stops BLUNT.
-        const drop = rng.range(0.05, 0.16) * H;
-        const reach = rng.range(0.09, 0.20);
-        const tip = v3(
-            elbow.x + c * reach + rng.signed() * 0.05,
-            elbow.y + rng.range(-drop, drop * 0.35),
-            elbow.z + s * reach + rng.signed() * 0.05,
+        const lean = rng.range(0.012, 0.042);
+        joint[seg + 1] = v3(
+            joint[seg].x + mathx.cosf(a) * lean,
+            H * BOLE_TOP * k * rng.range(0.94, 1.06),
+            joint[seg].z + mathx.sinf(a) * lean,
         );
-        b.addCapsule(elbow, tip, lr, lr * 0.75, 6, GOLD_LT);
-        b.addBlob(tip, v3(lr * 1.15, lr * 1.05, lr * 1.15), 4, 8, GOLD_HOT); // the blunt swelling — a STOP, not a knuckle
+        radius[seg + 1] = mathx.lerpF(BOLE_R0, BOLE_R1, k);
+        b.addCapsule(joint[seg], joint[seg + 1], radius[seg], radius[seg + 1], 8, boleTone(k));
+    }
+    // The leader SNAPPED, so the crown is blunt and shows its heart — sized off the shaft it broke from.
+    b.addBlob(
+        joint[BOLE_SEGS],
+        v3(radius[BOLE_SEGS] * 1.5, radius[BOLE_SEGS] * 1.2, radius[BOLE_SEGS] * 1.5),
+        4,
+        7,
+        GOLD_HOT,
+    );
+
+    // THE LIMBS, at three forks up the shaft. Each fork is SPUN off the one below it so no two limbs sit one
+    // above the other — stacked, they read as a mast with yards rather than as a crown.
+    var spin = rng.angle();
+    for (FORKS, PER_FORK) |where, n| {
+        const at = boleAt(&joint, where);
+        const r = mathx.lerpF(BOLE_R0, BOLE_R1, where);
+        spin += rng.range(0.7, 1.5);
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            const yaw = spin + std.math.tau * (@as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n))) + rng.range(-0.28, 0.28);
+            // Higher limbs are SHORTER: a crown of equal limbs is a garden rake however crooked each one is.
+            const shrink = 1.0 - 0.35 * where;
+            // …and a limb is a real fraction of the bole it leaves. `deadLimbInto` halves at the elbow and
+            // halves again at the tip, so a thin r0 arrives at a six-millimetre tip and the crown reads as
+            // wire whiskers rather than as branches.
+            wood.deadLimbTinted(
+                &b,
+                &rng,
+                at,
+                yaw,
+                H * rng.range(0.30, 0.48) * shrink,
+                H * rng.range(0.16, 0.32) * shrink,
+                r * rng.range(0.72, 0.98),
+                1 + rng.intn(2),
+                if (where > 0.75) GOLD_LT else GOLD,
+                GOLD_HOT,
+            );
+        }
     }
     return b.toMesh();
+}
+
+/// The bole's own value ramp, `k` being how far up it is — two stops, not a per-segment pick.
+fn boleTone(k: f32) rl.Color {
+    return if (k < 0.34) GOLD_DEEP else if (k < 0.72) GOLD else GOLD_LT;
+}
+
+/// A point `u` of the way up the boled polyline, so a fork sits ON the leaning shaft rather than on the axis
+/// it left the ground on.
+fn boleAt(joint: []const rl.Vector3, u: f32) rl.Vector3 {
+    const t = mathx.clampF(u, 0, 1) * @as(f32, @floatFromInt(BOLE_SEGS));
+    const i: usize = @min(@as(usize, @intFromFloat(t)), BOLE_SEGS - 1);
+    return mathx.lerpV(joint[i], joint[i + 1], t - @as(f32, @floatFromInt(i)));
 }
 
 

@@ -138,7 +138,7 @@ pub const Use = union(enum) {
     /// WIPED ON THE BLADE: the sword hangs `frac` of its own physical as fire for `secs` — the fire
     /// arrow's rule (`hero.FIRE_ARROW_FRAC`), moved to the swing. Refreshes, never stacks.
     grease: struct { frac: f32, secs: f32 },
-    /// Runes, straight onto the counter.
+    /// Souls, straight onto the counter.
     souls: struct { n: u32 },
     /// The stamina refill runs `mult` times its rate for `secs` seconds. Refreshes, never stacks.
     brew: struct { mult: f32, secs: f32 },

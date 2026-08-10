@@ -196,9 +196,9 @@ const DISS_DUR = 0.9;
 const DISSOLVE = foe.Dissolve{ .rate = 34.0, .spread = 0.60, .rise = 0.40 };
 const HERO_REACH = foe.HERO_REACH;
 
-/// RUNES each is worth.
-pub const M_RUNES: u32 = 240;
-pub const B_RUNES: u32 = 25;
+/// SOULS each is worth.
+pub const M_SOULS: u32 = 240;
+pub const B_SOULS: u32 = 25;
 
 // THE SAC.
 const SAC_HP = 18.0;
@@ -253,7 +253,7 @@ const Spec = struct {
     speed: f32,
     aggro: f32,
     turn: f32,
-    runes: u32,
+    souls: u32,
 };
 
 /// THE WIDEST NOTICE RING IN THE BROOD, off the table itself — read by `game.markSight` to work out how
@@ -266,8 +266,8 @@ pub const AGGRO_R = blk: {
 
 fn spec(r: Role) Spec {
     return switch (r) {
-        .mother => .{ .scale = M_SCALE, .hp = M_HP, .poise = M_POISE, .stance = M_STANCE, .speed = M_SPEED, .aggro = M_AGGRO, .turn = TURN_RATE, .runes = M_RUNES },
-        .broodling => .{ .scale = B_SCALE, .hp = B_HP, .poise = B_POISE, .stance = B_STANCE, .speed = B_SPEED, .aggro = B_AGGRO, .turn = TURN_RATE_B, .runes = B_RUNES },
+        .mother => .{ .scale = M_SCALE, .hp = M_HP, .poise = M_POISE, .stance = M_STANCE, .speed = M_SPEED, .aggro = M_AGGRO, .turn = TURN_RATE, .souls = M_SOULS },
+        .broodling => .{ .scale = B_SCALE, .hp = B_HP, .poise = B_POISE, .stance = B_STANCE, .speed = B_SPEED, .aggro = B_AGGRO, .turn = TURN_RATE_B, .souls = B_SOULS },
     };
 }
 
@@ -1029,8 +1029,8 @@ pub const Spider = struct {
     pub fn kind(self: *const Spider) wf.FoeKind {
         return kindOf(self.role);
     }
-    pub fn runeValue(self: *const Spider) u32 {
-        return spec(self.role).runes;
+    pub fn soulValue(self: *const Spider) u32 {
+        return spec(self.role).souls;
     }
     pub fn centerWorld(self: *const Spider) rl.Vector3 {
         return foe.bodyPoint(self.pos, BODY_CY, self.scale, self.lift);
@@ -1967,8 +1967,8 @@ pub const Brood = struct {
     pub fn aliveCount(self: *const Brood) u32 {
         return foe.aliveCount(self.liveConst());
     }
-    pub fn runesDropped(self: *const Brood) u32 {
-        return foe.runesEach(self.liveConst());
+    pub fn soulsDropped(self: *const Brood) u32 {
+        return foe.soulsEach(self.liveConst());
     }
 
     /// How many of `m`'s sacs are still going to hatch — what her cap counts.

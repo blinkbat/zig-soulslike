@@ -218,8 +218,8 @@ pub const SWIPE_HIT = combat.Hit{ .dmg = 23, .poise = 30, .stance = 11 }; // the
 /// it on the heavy side of `game.heroTakes`'s beat — a four-metre lunge that lands soft reads as a bump.
 pub const DRIVE_HIT = combat.Hit{ .dmg = 31, .poise = 40, .stance = 20 };
 const DEATH_DUR = 1.7; // a slow, weighty topple — a giant falls hard (and sadly)
-/// RUNES the one-eyed ogre is worth: fifteen toads.
-pub const RUNES: u32 = 900;
+/// SOULS the one-eyed ogre is worth: fifteen toads.
+pub const SOULS: u32 = 900;
 const DISS_DUR = 1.1; // dissipation into grace-gold motes (ER-consistent with frog/archer)
 /// …and the cloud, sized to the mass going out in it: four metres of ogre sheds a far wider one than a man.
 const DISSOLVE = foe.Dissolve{ .rate = 70.0, .spread = 1.0, .rise = 0.70 };
@@ -1526,8 +1526,8 @@ pub const Grief = struct {
     pub fn anyDied(self: *const Grief) bool {
         return foe.anyDied(self.liveConst());
     }
-    pub fn runesDropped(self: *const Grief) u32 {
-        return foe.runesDropped(self.liveConst(), RUNES);
+    pub fn soulsDropped(self: *const Grief) u32 {
+        return foe.soulsDropped(self.liveConst(), SOULS);
     }
     pub fn totalHits(self: *const Grief) u32 {
         return foe.totalHits(self.liveConst());

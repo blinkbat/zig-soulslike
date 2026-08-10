@@ -22,6 +22,8 @@ const dialogmod = @import("dialog.zig");
 const mathx = @import("mathx.zig");
 const props = @import("props.zig");
 const stats = @import("stats.zig");
+const treemod = @import("tree.zig");
+const restmod = @import("rest.zig");
 const item = @import("item.zig");
 const bookmod = @import("book.zig");
 const sfx = @import("audio.zig"); // for the SOUND FILTER cards alone — `--shot` runs with no audio device
@@ -75,6 +77,15 @@ fn snap(name: [:0]const u8) void {
 fn shoot(g: *Game, name: [:0]const u8) void {
     drawScene(g);
     hud(g, SHOT_DT); // the fixed harness timestep — the HP chip trail stays reproducible
+    snap(name);
+}
+
+/// …and the same frame with the FIRE'S chrome on it. The grace's list and its wheel are drawn in the loop's
+/// rest branch, which `--shot` never runs, so `shoot` alone photographs a man sitting in front of nothing.
+fn graceShoot(g: *Game, name: [:0]const u8) void {
+    drawScene(g);
+    hud(g, SHOT_DT);
+    game.drawGraceForShot(g);
     snap(name);
 }
 
@@ -825,9 +836,9 @@ pub fn runShots(g: *Game) void {
         g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
         g.hero.vit.hp = g.hero.vit.hpMax * 0.55;
         g.hero.stam.spend(combat.STAM_ROLL + combat.STAM_HEAVY);
-        g.hero.runes.gain(ogremod.RUNES + 2 * frogmod.RUNES);
+        g.hero.souls.gain(ogremod.SOULS + 2 * frogmod.SOULS);
         var rk: i32 = 0;
-        while (rk < 14) : (rk += 1) g.hero.runes.tick(SHOT_DT);
+        while (rk < 14) : (rk += 1) g.hero.souls.tick(SHOT_DT);
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
         g.rig.yaw = mathx.radians(202);
@@ -1235,8 +1246,28 @@ pub fn runShots(g: *Game) void {
         for ([_]i32{ 165, 55, 60 }, [_][:0]const u8{ "shots/71e_rest.png", "shots/71f_rest_play.png", "shots/71g_rest_play2.png" }) |adv, name| {
             var k: i32 = 0;
             while (k < adv) : (k += 1) game.tickRestForShot(g, SHOT_DT);
-            shoot(g, name);
+            graceShoot(g, name);
         }
+        // THE FIRE'S OWN TREE, the one screen that can charge him souls. Staged with the warrior arm two
+        // deep so its ring 1 has opened, and carrying enough to afford the next — the lit links, the open
+        // rims and the selection mark are then all in one frame. ZOOMED for the third, because the zoom
+        // re-centres on the cursor and a fitted shot cannot show that.
+        const treeSouls = g.hero.souls.total;
+        _ = g.tree.take(treemod.armFirst(.warrior), 1_000_000);
+        _ = g.tree.take(treemod.armFirst(.warrior) + 1, 1_000_000);
+        g.hero.souls.total = 900;
+        g.hero.souls.shown = 900;
+        game.applyTree(g);
+        restmod.debugShow(&g.rest, .list, 0, 0, 1.0);
+        graceShoot(g, "shots/71h_grace_list.png");
+        restmod.debugShow(&g.rest, .tree, 0, treemod.armFirst(.warrior) + 3, 1.0);
+        graceShoot(g, "shots/71i_grace_tree.png");
+        restmod.debugShow(&g.rest, .tree, 0, treemod.armFirst(.warrior) + 3, 2.3);
+        graceShoot(g, "shots/71j_grace_tree_zoom.png");
+        g.tree = .{};
+        game.applyTree(g);
+        g.hero.souls.total = treeSouls;
+        g.hero.souls.shown = @floatFromInt(treeSouls);
         game.endRestForShot(g);
 
         // THE SMOKE COLUMN against the horizon — the framing that judges the veil pass.
@@ -2134,6 +2165,8 @@ fn chestShots(g: *Game) void {
     bookShot(g, "shots/106g_book_inventory.png", .inventory, 0, null, 0);
     // …and the sheet on a row that HAS a footnote — the inert rows prove nothing.
     bookShot(g, "shots/106h_book_stats.png", .stats, @intFromEnum(stats.Attr.endurance), null, 0);
+    // THE PASSIVE TREE in the book, which is READ-ONLY — the fire's own copy (`71i`) is the one that spends.
+    bookShot(g, "shots/106i_book_tree.png", .tree, treemod.armFirst(.wizard) + treemod.PER_ARM - 1, null, 0);
     g.menu.screen = .closed;
 
     g.map.nops = saved;

@@ -85,6 +85,27 @@ caster's shadow can physically reach the shadow box. Collision and arrow flight 
 Turn on **Debug > Stats** to watch those numbers live. For playtesting at this density use
 `build-release.cmd`; the debug build carries Zig's safety checks through every culling loop.
 
+## Something to spend the souls on
+
+The souls you drop and walk back for are spent on a **radial passive tree** in the shape of Path of Exile 2's
+— and they are the only thing spent on it, and it is the only thing they are spent on. You stand at the hub
+and three arms run out of it: one for heavy arms, flesh and what a guard turns aside; one for the roll, luck,
+a light edge and the blood that answers a poison; one for FP, what a cast costs and what it deals. They are
+not named anywhere — colour and direction are what tell you which is which — and none of them is a class:
+all three hang off the middle, so all three are open from the first souls you spend.
+
+**Taking a node IS the level up.** There is no pool of points to hold: one press pays the souls and puts the
+node on the board. What stops you is the path — a node opens as soon as anything it connects to is yours, so
+you climb a branch a node at a time toward whichever capstone you want, and either side of an arm gets you to
+its tip. Prices are measured against what a body is worth: your first node costs about three skeletal
+archers, and the whole one-and-twenty is a game's worth of killing.
+
+There is no attribute screen any more: every attribute past the starting sheet comes off a node here. The
+wheel is the character book's fourth page and you can read it anywhere, but you spend **only at a grace**.
+Sitting at one is its own screen: you sit off to the right of the frame with the fire, and the bonfire's menu
+is a list down the left — **Level Up**, which opens the wheel, and **Leave Bonfire**, which is the only way
+back out. Walk the tree with the left stick and zoom it with the right.
+
 ## Controls
 
 Keyboard + mouse **or** a gamepad (Elden Ring default layout):

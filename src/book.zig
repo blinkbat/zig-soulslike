@@ -6,6 +6,7 @@ const uiart = @import("uiart.zig");
 const itemart = @import("itemart.zig");
 const item = @import("item.zig");
 const stats = @import("stats.zig");
+const treemod = @import("tree.zig");
 const combat = @import("combat.zig");
 const heromod = @import("hero.zig");
 const gfx = @import("gfx.zig");
@@ -21,12 +22,14 @@ pub const Page = enum {
     equipment,
     inventory,
     stats,
+    tree,
 
     fn label(p: Page) [:0]const u8 {
         return switch (p) {
             .equipment => "EQUIPMENT",
             .inventory => "INVENTORY",
             .stats => "STATS",
+            .tree => "TREE",
         };
     }
 };
@@ -54,6 +57,8 @@ pub const View = struct {
     /// THE QUICK BAR, which the equipment page is where you load. Read AND edited here, unlike the rod.
     quick: *const combat.Quick,
     quiver: *const combat.Quiver,
+    /// THE PASSIVE TREE. Read on every page (it owns the LEVEL now), spent on only at a grace.
+    tree: *const treemod.Tree,
     /// IS A FIGHT ON (`game.inCombat`). The page reads it for one rule: in combat a consumable may only be
     /// spent off the bar, so the inventory's own Use is refused and says so.
     inCombat: bool = false,
@@ -64,7 +69,7 @@ pub const View = struct {
     spell: combat.Spell,
     /// The live FP pool, so the sorcery slot can say how many casts are actually in it.
     fp: f32,
-    runes: u32,
+    souls: u32,
 };
 
 /// The live hero and the scene to draw him in, for the stats page's turntable.
@@ -495,6 +500,10 @@ pub const Book = struct {
         c[idx(.equipment)] = @intFromEnum(SlotId.right); // opening on a socket nothing can go in reads as broken
         break :blk c;
     },
+    /// THE TREE PAGE'S OWN CURSOR AND ZOOM. Not in `cur`, which is one ordinal per page: a wheel is walked by
+    /// GEOMETRY and looked at from a distance, and the grace's screen holds a second one of these so the two
+    /// views of the tree do not shove each other's cursor about.
+    wheel: treemod.Wheel = .{},
     /// Which slot's picker is open, and where its own cursor sits.
     picking: ?SlotId = null,
     pick: usize = 0,
@@ -581,6 +590,11 @@ pub const Book = struct {
             self.moved();
             return;
         }
+        // The wheel is not an ordinal, so it moves itself and says whether it went anywhere.
+        if (self.page == .tree) {
+            if (self.wheel.move(dx, dy)) self.moved();
+            return;
+        }
         const i = idx(self.page);
         const next = switch (self.page) {
             .equipment => slotStep(self.cur[i], dx, dy),
@@ -590,6 +604,7 @@ pub const Book = struct {
                 @as(i32, @intCast(self.cur[i])) + dy + @as(i32, stats.NA),
                 @as(i32, stats.NA),
             ))),
+            .tree => unreachable, // handled above: the wheel is not an ordinal
         };
         if (next == self.cur[i]) return;
         self.cur[i] = next;
@@ -600,6 +615,12 @@ pub const Book = struct {
     pub fn spinBy(self: *Book, dir: i32, dt: f32) void {
         if (self.page != .stats or self.picking != null or dir == 0) return;
         self.spin += @as(f32, @floatFromInt(dir)) * SPIN_RATE * dt;
+    }
+
+    /// …and the RIGHT stick pushed up and down zooms the wheel, on the tree page and nowhere else.
+    pub fn zoomBy(self: *Book, dv: f32, dt: f32) void {
+        if (self.page != .tree or self.picking != null or dv == 0) return;
+        self.wheel.zoomBy(dv, dt);
     }
 
     pub fn confirm(self: *Book, v: View) Action {
@@ -639,7 +660,12 @@ pub const Book = struct {
                 }
                 sfx.play(.menu_back);
             },
-            .stats => sfx.play(.menu_back), // nothing to spend here: there is no leveling yet
+            // THE SHEET IS READ-ONLY NOW AND ALWAYS WILL BE: every attribute past the start came off a node
+            // on the TREE page, so there is nothing here a press could move.
+            .stats => sfx.play(.menu_back),
+            // NOTHING IS SPENT FROM THE BOOK. The wheel is readable here and committed at the fire, which
+            // is the one screen that can charge him souls.
+            .tree => sfx.play(.menu_back),
         }
         return .none;
     }
@@ -649,6 +675,7 @@ pub const Book = struct {
     pub fn debugShow(self: *Book, p: Page, cursor: usize, pickSlot: ?usize, row: usize) void {
         self.page = p;
         self.cur[idx(p)] = cursor;
+        if (p == .tree) self.wheel.cursor = cursor; // the wheel is not in `cur` — see the field
         self.picking = if (pickSlot) |s| @enumFromInt(s) else null;
         self.pick = row;
         self.settled = false;
@@ -673,8 +700,10 @@ pub const Book = struct {
                 return g.at(self.cur[idx(.inventory)] - self.scroll * BAG_COLS);
             },
             .stats => return attrRow(statsCols(body)[0], self.cur[idx(.stats)]),
+            .tree => return treemod.nodeRect(self.wheel, body.x, body.y, body.w, body.h),
         }
     }
+
 };
 
 fn idx(p: Page) usize {
@@ -994,10 +1023,13 @@ pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
         .equipment => drawEquipment(self, body, v),
         .inventory => drawInventory(self, body, v),
         .stats => drawStats(self, body, v, portrait),
+        .tree => drawTree(self, body, v),
     }
 
-    // THE CURSOR LAST, over everything: it is in front of the page, not part of it.
-    if (self.at.width > 1) {
+    // THE CURSOR LAST, over everything: it is in front of the page, not part of it. THE WHEEL DRAWS ITS OWN
+    // (`tree.draw`) — a node is a disc and its mark is built out of the disc, and the grace's screen needs
+    // the same one without carrying the book's eased rectangle to get it.
+    if (self.at.width > 1 and self.page != .tree) {
         uiart.slotCursor(
             @intFromFloat(self.at.x),
             @intFromFloat(self.at.y),
@@ -1042,6 +1074,15 @@ pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
             buf[3] = CLOSE;
             break :blk buf[0..4];
         },
+        // THE CRIB DOES NOT OFFER WHAT THE PRESS WILL REFUSE (the `game.interact` law). Nothing is spent
+        // here, so nothing on this strip says Allocate — the grace's own screen is where those live.
+        .tree => blk: {
+            buf[0] = .{ .glyph = .{ .bumper = "LS" }, .label = "Walk" };
+            buf[1] = .{ .glyph = .{ .bumper = "RS" }, .label = "Zoom" };
+            buf[2] = PAGE;
+            buf[3] = CLOSE;
+            break :blk buf[0..4];
+        },
     };
     const hw = hud.hintRowW(hints, hud.HINT);
     hud.hintRowAt(
@@ -1077,11 +1118,11 @@ fn drawTabs(self: *const Book, card: Box, v: View) void {
         }
         x += w[i] + gap;
     }
-    // The runes he is carrying ride the header's right end, which is ER's own corner for them.
-    const runes = fmt("{d}", .{v.runes});
-    const rx = card.right() - PAD - hud.textW(runes, hud.BODY);
-    hud.text(runes, rx, y + 8, hud.BODY, uiart.TEXT_VALUE);
-    hud.text("RUNES", rx - hud.textW("RUNES", hud.TINY) - 10, y + 12, hud.TINY, uiart.TEXT_DIM);
+    // The souls he is carrying ride the header's right end, which is ER's own corner for them.
+    const souls = fmt("{d}", .{v.souls});
+    const rx = card.right() - PAD - hud.textW(souls, hud.BODY);
+    hud.text(souls, rx, y + 8, hud.BODY, uiart.TEXT_VALUE);
+    hud.text("SOULS", rx - hud.textW("SOULS", hud.TINY) - 10, y + 12, hud.TINY, uiart.TEXT_DIM);
     uiart.divider(card.x + @divTrunc(card.w, 2), card.y + headH(), @divTrunc(card.w, 2) - 30, 170);
 }
 
@@ -1353,7 +1394,7 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
         .ward => |w| hud.text(fmt("Chaos slides off you (+{d:.0}) for {d:.0} seconds.", .{ w.chaos, w.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
         .wind => |w| hud.text(fmt("Half your wind back at once ({d:.0} stamina), and the lockout with it.", .{ v.sheet.stamina() * w.share }), inner.x, y, hud.SMALL, uiart.GOOD),
         .grease => |gr| hud.text(fmt("The sword hangs {d:.0}% of its blow as fire for {d:.0} seconds.", .{ gr.frac * 100, gr.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .souls => |so| hud.text(fmt("Crushed for {d} runes, on the spot.", .{so.n}), inner.x, y, hud.SMALL, uiart.GOOD),
+        .souls => |so| hud.text(fmt("Crushed for {d} souls, on the spot.", .{so.n}), inner.x, y, hud.SMALL, uiart.GOOD),
         .brew => |b| hud.text(fmt("Your wind returns {d:.1}x as fast for {d:.0} seconds.", .{ b.mult, b.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
     }
     if (item.usable(k)) {
@@ -1375,15 +1416,24 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
 }
 
 
+/// THE WHEEL, READ-ONLY. The page itself is `tree.drawPage`, shared with the grace's own screen — the book
+/// can no longer be opened at a fire, so `spendable` is false here and always will be: this is where you
+/// plan a build and the bonfire is where you commit one.
+fn drawTree(self: *const Book, body: Box, v: View) void {
+    treemod.drawPage(v.tree, self.wheel, body.x, body.y, body.w, body.h, false, v.souls);
+}
+
 fn drawStats(self: *const Book, body: Box, v: View, portrait: ?Portrait) void {
     const cols = statsCols(body);
     drawAttributes(self, cols[0], v);
     drawBody(cols[1], v);
-    drawPortrait(self, cols[2], portrait, fmt("Level {d}    {d} runes    Left / Right turns him", .{ v.sheet.level(), v.runes }));
+    drawPortrait(self, cols[2], portrait, fmt("Level {d}    {d} souls    Left / Right turns him", .{ v.tree.level(), v.souls }));
 }
 
 fn drawAttributes(self: *const Book, col: Box, v: View) void {
-    const inner = panel(col, fmt("ATTRIBUTES    LEVEL {d}", .{v.sheet.level()}));
+    // THE LEVEL IS THE TREE'S, not the sheet's count of points past the start: a level spent on a PASSIVE
+    // moves no attribute, and `Sheet.level` would quietly report a lower number than the fire charged for.
+    const inner = panel(col, fmt("ATTRIBUTES    LEVEL {d}", .{v.tree.level()}));
     var y = inner.y;
     for (0..stats.NA) |i| {
         const a: stats.Attr = @enumFromInt(i);
@@ -1565,13 +1615,14 @@ fn drawPortrait(self: *const Book, col: Box, portrait: ?Portrait, caption: [:0]c
 
 
 const TEST_QUICK = combat.Quick{}; // the default bar: the two flasks, crimson up
+const TEST_TREE = treemod.Tree{}; // …and a fresh tree: level 1, no points, nothing taken
 
 fn testView(bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.Resists, flasks: *const combat.Flasks, quiver: *const combat.Quiver, arm: heromod.Arm) View {
     return testViewOff(bag, sheet, res, flasks, quiver, arm, .shield);
 }
 
 fn testViewOff(bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.Resists, flasks: *const combat.Flasks, quiver: *const combat.Quiver, arm: heromod.Arm, off: heromod.Off) View {
-    return .{ .bag = bag, .sheet = sheet, .res = res, .flasks = flasks, .quick = &TEST_QUICK, .quiver = quiver, .arm = arm, .off = off, .spell = .bolt, .fp = combat.FP_MAX, .runes = 0 };
+    return .{ .bag = bag, .sheet = sheet, .res = res, .flasks = flasks, .quick = &TEST_QUICK, .quiver = quiver, .tree = &TEST_TREE, .arm = arm, .off = off, .spell = .bolt, .fp = combat.FP_MAX, .souls = 0 };
 }
 
 test "the paper doll walks by geometry, and every step lands on a socket" {
@@ -1727,7 +1778,7 @@ test "the bag cursor is pulled back onto a real cell when the last of something 
     bag.add(.bloodgrass, 1);
     bag.add(.kobold_fang, 1);
     bag.add(.iron_key, 1);
-    var b = Book{ .page = .inventory, .cur = .{ 0, 2, 0 } };
+    var b = Book{ .page = .inventory, .cur = .{ 0, 2, 0, 0 } };
     b.clamp(testView(&bag, &sheet, &res, &flasks, &quiver, .sword));
     try std.testing.expectEqual(@as(usize, 2), b.cur[idx(.inventory)]);
     _ = bag.take(.iron_key, 1);

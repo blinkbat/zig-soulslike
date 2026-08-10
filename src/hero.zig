@@ -7,6 +7,7 @@ const statsmod = @import("stats.zig");
 const art = @import("propart.zig");
 const archer = @import("archer.zig");
 const foemod = @import("foe.zig");
+const tree = @import("tree.zig"); // the passive tree, for the `Bonus` he is stamped with and nothing else
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -874,12 +875,15 @@ pub const Hero = struct {
     /// THE WAND'S OWN SPARKS — the shared particle pool (`foe.zig`), the same one every creature's FX ride.
     fx: [FX_N]foemod.Particle = [_]foemod.Particle{.{}} ** FX_N,
     fxHead: usize = 0,
-    /// THE CHARACTER SHEET, and the source of the three maxima below — re-read wherever he is made whole (`makeWhole`), which is the only moment a sheet can have changed and the only moment a bar may resize.
+    /// THE CHARACTER SHEET, and the source of the three maxima below — re-read wherever he is made whole (`makeWhole`), which is the only moment a sheet can have changed and the only moment a bar may resize. It is DERIVED now (`tree.Bonus.sheet`): every point past the starting sheet came off a node, and `game.applyTree` is the one writer.
     sheet: statsmod.Sheet = .{},
+    /// WHAT THE PASSIVE TREE IS WORTH, folded once and stamped on him (`game.applyTree`). He reads FIELDS
+    /// off it at the five sites below and never walks the node list — the creature's-own-`Leash` rule.
+    perk: tree.Bonus = .{},
     vit: combat.Vitals = freshVitals(.{}),
     stam: combat.Stamina = .{}, // ER's third bar — the hero's alone; foes don't carry one
     fp: combat.Focus = .{},
-    runes: combat.Runes = .{},
+    souls: combat.Souls = .{},
     flasks: combat.Flasks = .{}, // Crimson + Cerulean — their charges; WHICH is up is the bar's business
     /// THE QUICK BAR the cross's DOWN slot is turned to, and in combat the only reach he has (`game.inCombat`).
     quick: combat.Quick = .{},
@@ -1025,6 +1029,17 @@ pub const Hero = struct {
         self.makeWhole();
     }
 
+    /// THE TREE, STAMPED ON HIM — the sheet, the resistances and the perk block all in one call, because a
+    /// caller that set two of the three would leave a bar sized off the sheet he had a node ago. He is made
+    /// WHOLE on the way out, which is honest: nothing may spend a point away from a grace (`book.levelUp`),
+    /// so the one moment this runs is the one moment a refill is already owed.
+    pub fn applyPerks(self: *Hero, b: tree.Bonus) void {
+        self.perk = b;
+        self.sheet = b.sheet();
+        self.baseRes = b.res;
+        self.makeWhole();
+    }
+
     /// WHOLE AGAIN — a grace, and a death is a return to one. The three bars take their SIZE from the sheet here and nowhere else, so a raised attribute cannot leave one at its old length.
     fn makeWhole(self: *Hero) void {
         self.vit = freshVitals(self.sheet);
@@ -1063,7 +1078,7 @@ pub const Hero = struct {
         self.aimB = mathx.approach(self.aimB, if (self.aiming) 1.0 else 0.0, dt * BOW_BLEND_RATE);
         self.aimLean = mathx.approach(self.aimLean, self.aimLeanWant, dt * AIM_LEAN_RATE);
         self.blockT = @min(self.blockT + dt, mathx.LONG_AGO);
-        self.runes.tick(dt);
+        self.souls.tick(dt);
         // In the prologue with the other clocks: sparks that only aged inside `updateCast` would hang in the air.
         foemod.tickParticles(&self.fx, dt, self.pos.y);
         // …and the splits in the ground, for the same reason: aged only inside `updateCast` they would stand for good.
@@ -1082,7 +1097,7 @@ pub const Hero = struct {
             self.refuse();
             return;
         }
-        self.stam.spend(combat.STAM_ROLL);
+        self.stam.spend(combat.STAM_ROLL * self.perk.rollStam);
         var d = v3(dir.x, 0, dir.z);
         if (mathx.lenXZ(d) < 0.1) d = mathx.headingDir(self.facing);
         d = mathx.normV(d);
@@ -1409,7 +1424,7 @@ pub const Hero = struct {
 
     /// WHAT THE ROD WOULD BILL FOR THE SPELL IT IS SET TO — the HUD's "could he?" and the cast both ask this.
     pub fn castCost(self: *const Hero) f32 {
-        return combat.spellFp(self.spell);
+        return combat.spellFp(self.spell) * self.perk.spellCost;
     }
 
     /// D-pad Up. Refused mid-cast: the FP for the one already running is spent, and swapping under it would throw a spell he did not pay for.
@@ -1475,8 +1490,10 @@ pub const Hero = struct {
         return rl.math.vector3Transform(wandAt(WAND_TIP_T), self.xf[WRL]);
     }
 
-    pub fn castBlow(_: *const Hero) combat.Hit {
-        return combat.BOLT_HIT;
+    /// SCALED WHOLE, not on the damage alone: what the tree bought is a stronger spell, and a bolt that hit
+    /// harder without hitting heavier would leave the poise it staggers with pinned at its level-1 figure.
+    pub fn castBlow(self: *const Hero) combat.Hit {
+        return combat.BOLT_HIT.scaled(self.perk.spellDmg);
     }
 
     pub fn requestAttack(self: *Hero, kind: Attack) void {
@@ -1847,7 +1864,7 @@ pub const Hero = struct {
     }
 
     pub fn iFramed(self: *const Hero) bool {
-        return self.rolling and self.rollT < ROLL_IFRAME_END;
+        return self.rolling and self.rollT < ROLL_IFRAME_END + self.perk.iframe;
     }
 
     pub fn guardCovers(self: *const Hero, fromDir: rl.Vector3) bool {
@@ -1895,7 +1912,7 @@ pub const Hero = struct {
     fn blockHit(self: *Hero, h: combat.Hit) combat.HitOutcome {
         self.blockT = 0;
         self.stam.spend(combat.guardStamina(h));
-        const chip = combat.guardChip(h);
+        const chip = combat.guardChip(h, combat.GUARD_NEGATE + self.perk.guard);
         self.fp.drain(chip.fp);
         const r = self.vit.hit(chip);
         self.hurtFlash = mathx.maxF(self.hurtFlash, BLOCK_FLASH);
@@ -1944,7 +1961,7 @@ pub const Hero = struct {
     /// of BUILDUP and never HP: what the poison takes is the proc's business, not the cloud's.
     pub fn poisonBy(self: *Hero, amt: f32) void {
         if (self.dead) return;
-        self.poison.add(amt);
+        self.poison.add(amt * self.perk.poison);
     }
 
     /// …and one frame of it. Billed as a DRIP (`Vitals.drip`) like every other hold: it carries no poise, and
@@ -3543,7 +3560,7 @@ test "a blocked blow costs STAMINA and chip, and never poise" {
     const club = combat.Hit{ .dmg = 36, .poise = 44, .stance = 20 };
     const stam0 = h.stam.cur;
     try std.testing.expectEqual(combat.HitOutcome.blocked, h.takeHit(club, fromAngle(10)));
-    try std.testing.expectApproxEqAbs(HP_MAX - combat.guardChip(club).dmg, h.vit.hp, 1e-3);
+    try std.testing.expectApproxEqAbs(HP_MAX - combat.guardChip(club, combat.GUARD_NEGATE).dmg, h.vit.hp, 1e-3);
     try std.testing.expectApproxEqAbs(stam0 - combat.guardStamina(club), h.stam.cur, 1e-3);
     try std.testing.expect(!h.staggered() and h.guarding);
     try std.testing.expectApproxEqAbs(POISE_MAX, h.vit.poise, 1e-4);

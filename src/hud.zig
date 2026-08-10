@@ -387,7 +387,7 @@ const ST_H: i32 = 11;
 
 const TRACK = rgba(16, 13, 11, 186); // the empty channel behind every fill
 /// The tarnished-metal rim, one tone at whatever alpha the surface wants — the bars' hairline and the
-/// rune plate's edge were two names for the same three channels.
+/// soul plate's edge were two names for the same three channels.
 const RIM = rgba(116, 104, 84, 255);
 const FRAME = mathx.withAlpha(RIM, 210);
 const HP_HI = rgba(158, 36, 28, 255);
@@ -533,23 +533,23 @@ pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool) void {
     fillThree(x, y, fw, FOE_H, frac, HP_HI, HP_LO, mathx.withAlpha(HP_TP, 200), 2, 1, 120);
     if (staggered) rl.drawRectangleLines(x - 1, y - 1, FOE_W + 2, FOE_H + 2, STAGGER_RIM);
 }
-const RUNE_W: i32 = 122;
-const RUNE_H: i32 = 32;
-const RUNE_FILL_A: u8 = 170;
-const RUNE_TEXT = rgba(228, 216, 190, 255);
+const SOUL_W: i32 = 122;
+const SOUL_H: i32 = 32;
+const SOUL_FILL_A: u8 = 170;
+const SOUL_TEXT = rgba(228, 216, 190, 255);
 
-pub fn runes(n: u32) void {
+pub fn souls(n: u32) void {
     var buf: [16]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "{d}", .{n}) catch return;
-    const x = rl.getScreenWidth() - RUNE_W - MARGIN;
-    const y = rl.getScreenHeight() - RUNE_H - BOTTOM;
-    rl.drawRectangle(x - 2, y - 2, RUNE_W + 4, RUNE_H + 4, rgba(0, 0, 0, 128)); // the hard black seat
-    uiart.plate(x, y, RUNE_W, RUNE_H, RUNE_FILL_A);
-    rl.drawRectangleLines(x, y, RUNE_W, RUNE_H, mathx.withAlpha(RIM, 186));
-    rl.drawRectangle(x + 1, y + 1, RUNE_W - 2, 1, mathx.withAlpha(uiart.GILT, 90)); // lit top rim
-    uiart.cornerJewels(x + 1, y + 1, RUNE_W - 2, RUNE_H - 2, 2.0, mathx.withAlpha(uiart.GILT_DIM, 200));
-    uiart.diamond(@floatFromInt(x + 12), @floatFromInt(y + @divTrunc(RUNE_H, 2)), 2.8, mathx.withAlpha(uiart.GILT_DIM, 220));
-    text(s, x + RUNE_W - textW(s, BODY) - 11, y + @divTrunc(RUNE_H - lineH(BODY), 2) + 1, BODY, RUNE_TEXT);
+    const x = rl.getScreenWidth() - SOUL_W - MARGIN;
+    const y = rl.getScreenHeight() - SOUL_H - BOTTOM;
+    rl.drawRectangle(x - 2, y - 2, SOUL_W + 4, SOUL_H + 4, rgba(0, 0, 0, 128)); // the hard black seat
+    uiart.plate(x, y, SOUL_W, SOUL_H, SOUL_FILL_A);
+    rl.drawRectangleLines(x, y, SOUL_W, SOUL_H, mathx.withAlpha(RIM, 186));
+    rl.drawRectangle(x + 1, y + 1, SOUL_W - 2, 1, mathx.withAlpha(uiart.GILT, 90)); // lit top rim
+    uiart.cornerJewels(x + 1, y + 1, SOUL_W - 2, SOUL_H - 2, 2.0, mathx.withAlpha(uiart.GILT_DIM, 200));
+    uiart.diamond(@floatFromInt(x + 12), @floatFromInt(y + @divTrunc(SOUL_H, 2)), 2.8, mathx.withAlpha(uiart.GILT_DIM, 220));
+    text(s, x + SOUL_W - textW(s, BODY) - 11, y + @divTrunc(SOUL_H - lineH(BODY), 2) + 1, BODY, SOUL_TEXT);
 }
 
 const PROMPT_LIFT: i32 = 76;

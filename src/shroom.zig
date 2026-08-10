@@ -52,7 +52,7 @@ const STANCE_MAX: f32 = 26.0;
 /// A DAMP LITTLE FUNGUS STUFFED WITH ITS OWN ELEMENT: chaos barely touches it, fire eats it, and a cold
 /// snap is just weather in the wood.
 const RESISTS = combat.resists(.{ .fire = -50, .cold = 15, .chaos = 75 });
-pub const RUNES: u32 = 70;
+pub const SOULS: u32 = 70;
 
 /// The BONK — its whole body arriving. Light: the cloud it leaves behind is the actual bill.
 pub const FLING_HIT = combat.Hit{ .dmg = 12, .poise = 20, .stance = 8 };
@@ -768,8 +768,8 @@ pub const Cluster = struct {
     pub fn anyDied(self: *const Cluster) bool {
         return foe.anyDied(self.liveConst());
     }
-    pub fn runesDropped(self: *const Cluster) u32 {
-        return foe.runesDropped(self.liveConst(), RUNES);
+    pub fn soulsDropped(self: *const Cluster) u32 {
+        return foe.soulsDropped(self.liveConst(), SOULS);
     }
     pub fn totalHits(self: *const Cluster) u32 {
         return foe.totalHits(self.liveConst());

@@ -75,7 +75,7 @@ const STANCE_MAX: f32 = 40.0; // …but chained blows do break it, and that is t
 /// DEAD DRY WOOD. Fire is not a soft counter here, it is the counter; lightning splits it; cold and rot have
 /// already had their turn.
 const RESISTS = combat.resists(.{ .fire = -70, .cold = 40, .lightning = -20, .chaos = 30 });
-pub const RUNES: u32 = 150;
+pub const SOULS: u32 = 150;
 
 const DEATH_DUR: f32 = 1.9; // it comes apart slowly and it is a long way down
 const DISS_DUR: f32 = 1.1;
@@ -947,8 +947,8 @@ pub const Grove = struct {
     pub fn anyDied(self: *const Grove) bool {
         return foe.anyDied(self.liveConst());
     }
-    pub fn runesDropped(self: *const Grove) u32 {
-        return foe.runesDropped(self.liveConst(), RUNES);
+    pub fn soulsDropped(self: *const Grove) u32 {
+        return foe.soulsDropped(self.liveConst(), SOULS);
     }
     pub fn totalHits(self: *const Grove) u32 {
         return foe.totalHits(self.liveConst());

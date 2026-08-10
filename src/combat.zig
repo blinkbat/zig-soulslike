@@ -117,6 +117,19 @@ pub const Hit = struct {
     pub fn heavy(self: Hit) bool {
         return self.stance > 0;
     }
+
+    /// THE WHOLE BLOW, LOUDER OR QUIETER — every channel by the same factor. Scaling only the damage would
+    /// leave a boosted sorcery staggering exactly as hard as it did at level one, which is a blow whose
+    /// picture and whose effect disagree.
+    pub fn scaled(self: Hit, k: f32) Hit {
+        return .{
+            .dmg = self.dmg * k,
+            .poise = self.poise * k,
+            .stance = self.stance * k,
+            .elem = self.elem.scaled(k),
+            .fp = self.fp * k,
+        };
+    }
 };
 
 const REGEN_DELAY = 0.8; // seconds after the last hit before the HERO's meters refill
@@ -402,8 +415,8 @@ pub fn guardStamina(h: Hit) f32 {
     return GUARD_STAM_FLAT + GUARD_STAM_PER_DMG * h.raw();
 }
 /// WHAT GETS THROUGH — still a `Hit`, so the chip's elemental share meets the blocker's resistances instead of arriving as raw HP. DAMAGE ONLY: poise and stance are what the shield is FOR, and a chip that carried the blow's stagger through would flinch him behind his own guard.
-pub fn guardChip(h: Hit) Hit {
-    const k = 1.0 - GUARD_NEGATE;
+pub fn guardChip(h: Hit, negate: f32) Hit {
+    const k = 1.0 - mathx.clampF(negate, 0, 1);
     // The DRAIN is chipped by the same fraction, for the reason the chip exists at all: nothing the boards
     // stop is stopped outright. A shade's touch caught square still costs a mouthful of the blue bar.
     return .{ .dmg = h.dmg * k, .elem = h.elem.scaled(k), .fp = h.fp * k };
@@ -864,37 +877,37 @@ pub const Regen = struct {
     }
 };
 
-pub const RUNE_ROLL_RATE = 7.0;
-pub const RUNE_ROLL_FLOOR = 26.0;
+pub const SOUL_ROLL_RATE = 7.0;
+pub const SOUL_ROLL_FLOOR = 26.0;
 
-pub const Runes = struct {
+pub const Souls = struct {
     total: u32 = 0,
     shown: f32 = 0, // what the HUD prints — chases `total`
 
-    pub fn gain(self: *Runes, n: u32) void {
+    pub fn gain(self: *Souls, n: u32) void {
         self.total += n;
     }
 
     /// EVERYTHING HE WAS CARRYING, OFF HIM AT ONCE — what a death spills onto the ground (`souls.Souls`).
     /// The ROLLING display goes with it rather than draining down to zero over the next second: the number
     /// did not tick away, it was taken, and the card that says so is already on the screen.
-    pub fn dropAll(self: *Runes) u32 {
+    pub fn dropAll(self: *Souls) u32 {
         const had = self.total;
         self.total = 0;
         self.shown = 0;
         return had;
     }
 
-    pub fn tick(self: *Runes, dt: f32) void {
+    pub fn tick(self: *Souls, dt: f32) void {
         const goal: f32 = @floatFromInt(self.total);
         if (self.shown >= goal) {
-            self.shown = goal; // never DRIFT above it, or the display shows a rune you don't have
+            self.shown = goal; // never DRIFT above it, or the display shows a soul you don't have
             return;
         }
-        self.shown = minF(goal, self.shown + maxF((goal - self.shown) * RUNE_ROLL_RATE, RUNE_ROLL_FLOOR) * dt);
+        self.shown = minF(goal, self.shown + maxF((goal - self.shown) * SOUL_ROLL_RATE, SOUL_ROLL_FLOOR) * dt);
     }
 
-    pub fn display(self: *const Runes) u32 {
+    pub fn display(self: *const Souls) u32 {
         return @intFromFloat(@floor(maxF(self.shown, 0)));
     }
 };
@@ -1301,7 +1314,7 @@ test "the small shield costs stamina by the WEIGHT of the blow, and lets a littl
     try std.testing.expect(guardStamina(club) > 2.5 * guardStamina(teeth));
     try std.testing.expect(guardStamina(club) < 4.0 * guardStamina(teeth));
     // …and the chip is a bite, not a scratch and not the blow.
-    try std.testing.expect(guardChip(club).dmg > 3.0 and guardChip(club).dmg < 0.25 * club.dmg);
+    try std.testing.expect(guardChip(club, GUARD_NEGATE).dmg > 3.0 and guardChip(club, GUARD_NEGATE).dmg < 0.25 * club.dmg);
 }
 
 test "THE PARRY REFUSES A BLOW, and whether it staggers is the STANCE BAR's answer" {
@@ -1389,15 +1402,15 @@ test "a drip tops out at max, cannot raise the dead, and REFRESHES rather than s
     try std.testing.expect(!dr.active() and d.hp <= 0);
 }
 
-test "runes roll UP to a kill's payout and never overshoot it" {
-    var r = Runes{};
+test "souls roll UP to a kill's payout and never overshoot it" {
+    var r = Souls{};
     r.gain(900); // an ogre
     try std.testing.expectEqual(@as(u32, 900), r.total);
     try std.testing.expectEqual(@as(u32, 0), r.display());
     var t: f32 = 0;
     while (t < 3.0) : (t += 1.0 / 60.0) r.tick(1.0 / 60.0);
     try std.testing.expectEqual(@as(u32, 900), r.display());
-    var r2 = Runes{};
+    var r2 = Souls{};
     r2.gain(60);
     t = 0;
     while (t < 2.0) : (t += 1.0 / 60.0) {
@@ -1407,8 +1420,8 @@ test "runes roll UP to a kill's payout and never overshoot it" {
     try std.testing.expectEqual(@as(u32, 60), r2.display());
 }
 
-test "a rune payout mid-roll retargets instead of restarting" {
-    var r = Runes{};
+test "a soul payout mid-roll retargets instead of restarting" {
+    var r = Souls{};
     r.gain(120);
     var t: f32 = 0;
     while (t < 0.15) : (t += 1.0 / 60.0) r.tick(1.0 / 60.0);
@@ -1522,7 +1535,7 @@ test "the shield eats the WHOLE blow, and the chip meets the resistances on its 
     // Billed on the raw weight: a burning arrow costs more stamina to hold off than a bare one.
     try std.testing.expect(guardStamina(burning) > guardStamina(.{ .dmg = 20 }));
     try std.testing.expectApproxEqAbs(GUARD_STAM_FLAT + GUARD_STAM_PER_DMG * 40.0, guardStamina(burning), 1e-4);
-    const chip = guardChip(.{ .dmg = 20, .poise = 44, .stance = 20, .elem = elems(.{ .fire = 20 }) });
+    const chip = guardChip(.{ .dmg = 20, .poise = 44, .stance = 20, .elem = elems(.{ .fire = 20 }) }, GUARD_NEGATE);
     try std.testing.expectApproxEqAbs(20.0 * (1.0 - GUARD_NEGATE), chip.dmg, 1e-4);
     try std.testing.expectApproxEqAbs(20.0 * (1.0 - GUARD_NEGATE), chip.elem.at(.fire), 1e-4);
     // …and NOTHING of the stagger: a caught blow is paid for in stamina, never in poise.

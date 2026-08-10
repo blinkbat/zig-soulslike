@@ -580,7 +580,7 @@ pub fn totalHits(foes: anytype) u32 {
     return n;
 }
 
-pub fn runesDropped(foes: anytype, per: u32) u32 {
+pub fn soulsDropped(foes: anytype, per: u32) u32 {
     var n: u32 = 0;
     for (foes) |*f| {
         if (f.justDied) n += per;
@@ -589,12 +589,12 @@ pub fn runesDropped(foes: anytype, per: u32) u32 {
 }
 
 /// …and the same for a group whose members are ROLES OF ONE CREATURE, where the payout is the MEMBER'S
-/// (`runeValue`) rather than one number for the kind. Three byte-identical copies of this body sat in
+/// (`soulValue`) rather than one number for the kind. Three byte-identical copies of this body sat in
 /// kobold/brood/warrior — the one-line-delegate rule `resetGroup`/`drawGroup` already give the rest.
-pub fn runesEach(foes: anytype) u32 {
+pub fn soulsEach(foes: anytype) u32 {
     var n: u32 = 0;
     for (foes) |*f| {
-        if (f.justDied) n += f.runeValue();
+        if (f.justDied) n += f.soulValue();
     }
     return n;
 }

@@ -123,9 +123,10 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `shroom.zig` | the sporeling + `Cluster`; a squat mushroom that FLINGS itself and bursts a lingering spore cloud that POISONS (buildup, never damage). Sometimes it TRIPS instead — same gather, longer opening |
 | `combat.zig` | `Vitals` (HP + two-tier stagger + regen + death), `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`. THE place to retune feel |
 | `stats.zig` | the character sheet — seven attributes and the curves that make the bars |
+| `tree.zig` | THE PASSIVE TREE — PoE2's, radially: three arms out of one hub, the gates, the `Bonus`, and the wheel it is drawn as |
 | `item.zig` | item vocabulary, `Use`, the `Bag` |
 | `chest.zig` | openable boxes; contents read off the placing op (`Op.loot`) |
-| `rest.zig` | bonfire + campfire grace; `isRestKind` is the one predicate |
+| `rest.zig` | bonfire + campfire grace — the phase machine, the seat, and THE FIRE'S OWN SCREEN (its list, and the wheel behind Level Up); `isRestKind` is the one predicate |
 | `souls.zig` | THE DROP — what a death leaves on the ground, the gold bloom it stands as, and the walk back for it |
 | `hud.zig` | ER HUD, the PAD-GLYPH kit every prompt and crib is drawn with, and the ONLY path to draw/measure text |
 | `ui.zig` | editor widget kit; `Ctx.anyHot` gates world clicks next frame |
@@ -517,7 +518,7 @@ the fight, which is the whole point of it.
 
 ### Souls — the drop, and the ring that refuses it
 
-**WHAT YOU WERE CARRYING IS ON THE GROUND WHERE YOU DIED** (`souls.zig`) — DS's bloodstain and ER's rune drop,
+**WHAT YOU WERE CARRYING IS ON THE GROUND WHERE YOU DIED** (`souls.zig`) — DS's bloodstain and ER's rune drop (this game calls the currency SOULS throughout),
 which are one mechanic under two names. Everything comes off him on the frame he DIES rather than at the
 respawn, so the spill plays under the YOU DIED card, which is the one moment nothing else is playing.
 
@@ -526,7 +527,7 @@ respawn, so the spill plays under the YOU DIED card, which is the one moment not
 - **NOTHING ELSE SPENDS IT.** No timer, no decay, no despawn on distance — only picking it up or dying again.
   A death RE-HOMES the field (`game.resetFoes`) and must not touch the drop; only a change of MAP clears it,
   which is `game.armScript` and nowhere else.
-- **AND RETRIEVAL IS INSTANT** (owner's call). No committed action and no animation on the man: the runes are
+- **AND RETRIEVAL IS INSTANT** (owner's call). No committed action and no animation on the man: the souls are
   on the counter the frame he presses. The animation is all on the DROP — motes solved to ARRIVE at his chest
   inside their own life (the wand gather's construction with the ends swapped), so it reads as a thing being
   taken up rather than a thing being scattered.
@@ -623,6 +624,87 @@ starts at 15, which is where the curves yield 70 HP / 60 FP / 105 stamina, so `h
 `combat.FP_MAX` and `combat.STAM_MAX` are DERIVED and a test pins all three. **The bars take their
 size from the sheet in one place** — `hero.makeWhole`. The four attributes nothing reads yet say so on
 their own row.
+
+### The passive tree (`tree.zig`) — PoE2's, radially
+
+**YOU START IN THE MIDDLE AND THREE ARMS RUN OUT OF IT.** The arms are never NAMED on screen — colour and
+direction carry which is which (`Arm.ink` is all that is left of them). Nothing here is a class: all three
+hang off the hub, so all three are open from the first souls you spend.
+
+- **YOU CLIMB, AND THE LINK IS THE RULE** (`feeders` / `Tree.reached`). A node opens the moment ANY ONE of
+  the things it hangs off is yours — no counts, no tolls, just a path walked a node at a time to the capstone
+  you want. `feeders` is asked by the DRAW and by `locked` alike, so the page cannot gate a branch on
+  something it does not show. **The capstone is the one node with two ways in**: both strands of an arm climb
+  to it, and a tip only one of them reached would make the other a dead end nobody walks.
+- **IT RETURNS A SLICE, NOT A PAIR OF OPTIONALS.** As `[2]?usize` a one-feeder node carried a trailing null,
+  every reader read that null as "hangs off the hub", and the whole tree opened at once with a second link
+  drawn from the middle to every node on it. An EMPTY slice is the hub and nothing else is.
+- **TAKING A NODE IS THE LEVEL** (owner's call) — one press spends the souls and puts the node on the board.
+  There is no point pool between the two: a point in hand is a decision already paid for and not yet made,
+  which is a state with nothing to show for itself. `Tree.take` hands back what it charged rather than
+  reaching for the counter (`souls.take`'s shape), so `game.gracePick` is the one line that can bill him, and
+  it is the ONLY thing in the game that spends souls.
+- **SOULS, NEVER RUNES**, in the code as well as on the page. The currency is `combat.Souls`, the counter is
+  `hero.souls`, and the two ITEMS with "rune" in their names (`rune_arc`, `cracked_rune`) are physical
+  objects and not the currency.
+- **THE PRICE IS MEASURED AGAINST A BODY.** A toad is 60, an archer 130, a mother 240 — so `costAt` is set
+  where the first node is three archers and the whole one-and-twenty is a game's worth of killing (~80k). It
+  is ONE price per level whichever node it lands on: what you buy is the level, and which node is the choice.
+- **SPENT AT A GRACE, READ ANYWHERE.** The book's fourth page is the wheel READ-ONLY — where a build is
+  planned. The fire's own screen is where it is committed. `tree.drawPage` is ONE copy drawn by both,
+  `spendable` being the only difference.
+- **THE GRACE IS A SCREEN, NOT A PAUSE** (owner's layout). He sits in the RIGHT of the frame and the fire's
+  menu is a list down the LEFT: **Level Up** (which opens the wheel) and **Leave Bonfire**, and nothing else
+  yet. The wheel is shown ONLY once Level Up is chosen — a tree behind every sit buries what a grace is.
+- **GETTING UP IS A ROW ON THAT LIST.** It was "any button", which cannot coexist with a cursor: every press
+  that chose a row also stood him up. That is why the character book and the pause card are BOTH refused at a
+  fire — a grace has exactly one way out and it is on the list.
+- **THE VIEW IS PANNED, NOT SHEARED** (`game.restCamera`, `REST_PAN`). Eye and target move by the same vector
+  along the camera's own right axis; swinging the target alone turns the camera and re-composes the shot
+  instead of sliding it. Screen-right is `cross(forward, up)` — `camera.rightXZ`'s law, one layer up.
+- **THE LEFT STICK WALKS THE WHEEL AND THE RIGHT ONE ZOOMS IT** (`menu.stickStep`, `menu.stickZoom`). A
+  stick is a LEVEL where a walk wants EDGES, and reading it naively is a known genre of bug (Godot #54959 is
+  the same one). FOUR STANDARD PIECES, all of them here: a RADIAL magnitude, never per-axis — the square's
+  corner passes at 0.62 on each axis while the true deflection is 0.88, so a lazy diagonal reads as a hard
+  push; a SCHMITT TRIGGER (`STICK_FIRE` to arm, `STICK_REARM` to re-arm), because one threshold chatters
+  across itself; DAS then ARR, the falling-block idiom, so a nudge is exactly one step and a hold is a
+  readable crawl; and a DEAD CONE AT THE DIAGONALS — inside 32 degrees of an axis is that direction and
+  outside it is NOTHING, where letting the bigger component win makes a 46-degree push pick one of two nodes
+  that are nowhere near each other. Plus one this layout needed: a direction CHANGE without returning to
+  centre costs a full DAS rather than firing on the frame it turns — rolling a thumb round the rim crosses
+  all four quadrants. **The zoom re-centres on the CURSOR** as it goes in (blended from the fitted framing,
+  so nothing moves at `ZOOM_MIN`); scaled about the fitted centre instead, the first notch pushes what you
+  were reading off the panel. It is VERTICAL-DOMINANT, so a sideways push on the look stick is not a zoom.
+- **THE MIDDLE IS A PLACE THE CURSOR MAY REST** (`tree.HUB`, indexed one past the last node so every
+  `NODES[i]` site is untouched). It is where the wheel opens, it takes no press and it is never a purchase -
+  the reading column describes the TREE from it. A cursor that cannot sit on the one spot the whole thing is
+  described from is a cursor with a hole in it.
+- **THE TREE OWNS THE LEVEL, NOT THE SHEET.** `stats.Sheet.level` counts points past the start, and a node
+  spent on a PASSIVE moves no attribute — it would report a lower number than the fire charged for. So level
+  is COUNTED off the board (`spent() + 1`) and every attribute past the starting sheet came off a node
+  (`Bonus.sheet`). There is no attribute allocation beside this and the STATS page is read-only for good.
+- **ONE GRANT PER NODE.** A node that did two things could never be named on the row that names it, and the
+  page is read at a glance.
+- **THE REST OF THE GAME READS FIELDS OFF ONE `Bonus`**, stamped on the hero by `game.applyTree` →
+  `hero.applyPerks` (sheet + resistances + perks in ONE call, or a bar is sized off the sheet he had a node
+  ago). Nothing outside `tree.zig` walks the node list. Five hero-local sites read it: the roll's stamina,
+  the roll's i-frames, the cast's cost, the cast's blow (`Hit.scaled` — the WHOLE blow, or a boosted sorcery
+  staggers exactly as hard as it did at level one) and the guard's negation (`combat.guardChip` takes the
+  figure as an argument now; a foe's boards pass the flat `GUARD_NEGATE`).
+- **`foe.PARRY_LEAD` IS DELIBERATELY NOT A PERK.** It is one difficulty dial every creature's tests bracket
+  from above at comptime; a node that widened it would move eleven creatures at once, which is the opposite
+  of what one number in `foe.zig` exists for.
+- **THE WALK IS GEOMETRIC** (`book.slotStep`'s law) — on a wheel an ordinal walk steps between nodes nowhere
+  near each other. A test floods all four directions from every node: nothing the cursor cannot reach.
+- **THE THREE STATES SEPARATE ON FILL, NOT ON HUE** — taken is solid, open is a lit rim over the seat, locked
+  is the rim gone to nothing. The arm's colour is already carrying the arm; a hue shift for state is one
+  state read at arm's length.
+- **ONE LINK PER NODE, AND TWO ONLY AT THE CAPSTONE.** The first pass wired the hub to six nodes and drew a
+  web dense enough to have to read past; a later one cut every link for a bare spine, which meant the page
+  showed nothing about what connects to what. The link IS the rule now, so it can be neither.
+- **THE SELECTION IS BUILT OUT OF THE NODE** and drawn last, by the wheel itself so both screens get it: a
+  breathing halo standing off the disc, a hard rim on it, and the chrome's corner brackets round that. All
+  three — the rim alone is lost in a taken node's fill and the halo alone in the ring circles behind it.
 
 ## Armaments
 
@@ -1186,8 +1268,9 @@ not the stick-speed `runB`.
 ## Gaps
 
 No criticals, guard counter, jump, or AR × motion-value damage (flat constants
-today). SOULS DROP AND ARE RECLAIMED but nothing SPENDS them yet: there is no levelling and no merchant, so
-the counter is a score with a real risk attached and nothing to buy. The BINDING RING is the only wearable
+today). SOULS BUY LEVELS AND NOTHING ELSE — there is no merchant. The PASSIVE TREE is the basic version: 21
+nodes, three arms of seven, no respec, no jewel sockets, and no second grant on a node. Nine of the twenty-one
+are attribute nodes and four of the seven attributes are still inert (the sheet says so). The BINDING RING is the only wearable
 that does anything and it is worn by being CARRIED — there is no ring slot, because there is no equip system
 under one. POISON is the only status effect, it is the HERO's alone (nothing applies one to a foe, and no foe
 reads one), and nothing RESISTS it yet — the sporeling cap's ward still grants CHAOS resistance, which since

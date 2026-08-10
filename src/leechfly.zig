@@ -81,7 +81,7 @@ const STANCE_MAX: f32 = 20.0;
 /// A THIN MEMBRANE AND A BELLY FULL OF BLOOD. Fire is the answer and it is not close: the wings go up and
 /// the thing drops. Cold slows it; the chaos it carries is what it has been drinking.
 const RESISTS = combat.resists(.{ .fire = -55, .cold = -25, .chaos = 35 });
-pub const RUNES: u32 = 95;
+pub const SOULS: u32 = 95;
 
 const DEATH_DUR: f32 = 0.85; // the wings stop and it falls out of the air
 const DISS_DUR: f32 = 0.8;
@@ -1105,8 +1105,8 @@ pub const Swarm = struct {
     pub fn anyDied(self: *const Swarm) bool {
         return foe.anyDied(self.liveConst());
     }
-    pub fn runesDropped(self: *const Swarm) u32 {
-        return foe.runesDropped(self.liveConst(), RUNES);
+    pub fn soulsDropped(self: *const Swarm) u32 {
+        return foe.soulsDropped(self.liveConst(), SOULS);
     }
     pub fn totalHits(self: *const Swarm) u32 {
         return foe.totalHits(self.liveConst());

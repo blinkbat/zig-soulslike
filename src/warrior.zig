@@ -225,13 +225,13 @@ const Spec = struct {
     speed: f32,
     bodyR: f32,
     hurtR: f32,
-    runes: u32,
+    souls: u32,
     moves: []const Attack,
 };
 
 const SPEC = [_]Spec{
-    .{ .hp = 92, .poise = 15, .stance = 42, .speed = 0.86, .bodyR = 0.36, .hurtR = 0.44, .runes = 180, .moves = &MOVES_SHIELDMAN },
-    .{ .hp = 124, .poise = 26, .stance = 58, .speed = 0.74, .bodyR = 0.38, .hurtR = 0.46, .runes = 280, .moves = &MOVES_GREATSWORD },
+    .{ .hp = 92, .poise = 15, .stance = 42, .speed = 0.86, .bodyR = 0.36, .hurtR = 0.44, .souls = 180, .moves = &MOVES_SHIELDMAN },
+    .{ .hp = 124, .poise = 26, .stance = 58, .speed = 0.74, .bodyR = 0.38, .hurtR = 0.46, .souls = 280, .moves = &MOVES_GREATSWORD },
 };
 
 fn spec(r: Role) *const Spec {
@@ -613,8 +613,8 @@ pub const Warrior = struct {
     pub fn airborne(self: *const Warrior) bool {
         return self.hop > foe.AIRBORNE_LIFT;
     }
-    pub fn runeValue(self: *const Warrior) u32 {
-        return spec(self.role).runes;
+    pub fn soulValue(self: *const Warrior) u32 {
+        return spec(self.role).souls;
     }
     pub fn kind(self: *const Warrior) wf.FoeKind {
         return kindOf(self.role);
@@ -1053,7 +1053,8 @@ pub const Warrior = struct {
         const blocked = self.covered;
         var b = blade;
         if (blocked) {
-            b.hit = combat.guardChip(blade.hit);
+            b.hit = combat.guardChip(blade.hit, combat.GUARD_NEGATE); // no tree behind a foe's boards — the flat figure
+
         } else if (self.hyperArmor()) {
             b.hit = .{ .dmg = blade.hit.dmg, .elem = blade.hit.elem };
         }
@@ -1706,8 +1707,8 @@ pub const Muster = struct {
         }
         return false;
     }
-    pub fn runesDropped(self: *const Muster) u32 {
-        return foe.runesEach(self.liveConst());
+    pub fn soulsDropped(self: *const Muster) u32 {
+        return foe.soulsEach(self.liveConst());
     }
 
     pub fn update(self: *Muster, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {

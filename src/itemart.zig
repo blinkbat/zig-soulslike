@@ -137,7 +137,7 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
     switch (k) {
         .crimson_flask => flask(cx, cy, px, .crimson, any),
         .cerulean_flask => flask(cx, cy, px, .cerulean, any),
-        .rune_arc => runeArc(cx, cy, px),
+        .rune_arc => soulArc(cx, cy, px),
         .golden_seed => goldenSeed(cx, cy, px),
         .smithing_stone => smithingStone(cx, cy, px),
         .bloodgrass => bloodgrass(cx, cy, px),
@@ -153,7 +153,7 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
         .soul_binding_ring => soulRing(cx, cy, px),
         .fire_tallow => fireTallow(cx, cy, px),
         .thundercrock => thundercrock(cx, cy, px),
-        .cracked_rune => crackedRune(cx, cy, px),
+        .cracked_rune => crackedSoul(cx, cy, px),
         .toadflesh_broth => toadfleshBroth(cx, cy, px),
         .fang_dirk => fangDirk(cx, cy, px),
         .grave_warbow => graveWarbow(cx, cy, px),
@@ -270,7 +270,7 @@ fn greatclub(cx: f32, cy: f32, px: f32) void {
 }
 
 /// A THIN GOLD BAND ALREADY CRACKED — the break is the picture, since breaking is the whole of what it does.
-/// Gold rather than the runes' own amber: this is the thing that KEEPS them, and two golds at one size in one
+/// Gold rather than the souls' own amber: this is the thing that KEEPS them, and two golds at one size in one
 /// grid read as one item drawn twice.
 fn soulRing(cx: f32, cy: f32, px: f32) void {
     const s = px;
@@ -358,7 +358,7 @@ fn thundercrock(cx: f32, cy: f32, px: f32) void {
 
 /// TWO HALVES OF ONE RUNE PARTED A HAIR, the light getting out of the split. Kin to the Rune Arc's gilt —
 /// this is the currency itself, so the split carries the pale core the arc wears as a band.
-fn crackedRune(cx: f32, cy: f32, px: f32) void {
+fn crackedSoul(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
     var rng = mathx.Rng.init(0xC4AC);
@@ -379,7 +379,7 @@ fn crackedRune(cx: f32, cy: f32, px: f32) void {
     // The lit bevels off the two upper edges — struck metal, not parchment.
     rl.drawLineEx(v2(cx - 0.8 * k, top), v2(cx - hw + 1.4 * k, cy - shy), 1.3 * k, uiart.GILT_BRIGHT);
     rl.drawLineEx(v2(cx + 0.8 * k, top + slip), v2(cx + hw - 1.4 * k, cy - shy + slip), 1.3 * k, uiart.GILT_BRIGHT);
-    // THE RUNE CUT INTO THE FACE — half the mark on each half, which is what says a rune broke and not a
+    // THE RUNE CUT INTO THE FACE — half the mark on each half, which is what says a soul broke and not a
     // coin. Dark, because a groove is a shadow.
     const groove = rgba(92, 66, 20, 235);
     rl.drawLineEx(v2(cx - hw * 0.72, cy - s * 0.10), v2(cx - 1.5 * k, cy - s * 0.17), 1.7 * k, groove);
@@ -937,7 +937,7 @@ pub fn arrow(cx: f32, cy: f32, px: f32, on: bool, fire: bool) void {
 
 /// A RING THAT HAS BEEN BROKEN, which is the whole of what a Rune Arc is: an arc of gilt with a lit core
 /// running through it and two snapped ends. The break is what stops it reading as a coin.
-fn runeArc(cx: f32, cy: f32, px: f32) void {
+fn soulArc(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
     var rng = mathx.Rng.init(0xA12C);

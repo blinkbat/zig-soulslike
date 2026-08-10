@@ -54,7 +54,7 @@ pub fn finial(cx: f32, cy: f32, r: f32, col: rl.Color) void {
 }
 
 /// A jewel at each of a rect's four corners — the chrome's way of saying "this panel is mounted".
-/// The one copy: the menu's frame, the equipment slots and the rune plate all struck their own.
+/// The one copy: the menu's frame, the equipment slots and the soul plate all struck their own.
 pub fn cornerJewels(x: i32, y: i32, w: i32, h: i32, r: f32, col: rl.Color) void {
     for ([_][2]i32{ .{ x, y }, .{ x + w, y }, .{ x, y + h }, .{ x + w, y + h } }) |c| {
         diamond(fi(c[0]), fi(c[1]), r, col);

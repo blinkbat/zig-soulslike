@@ -1721,7 +1721,7 @@ fn mkSoulsHum(r: *Rack) void {
 }
 
 /// AND BACK INTO HIM. The spill's own figure run the other way: the sweep CLIMBS, the interval closes
-/// upward, and it is over fast — the runes are already rolling on the counter by the time it ends.
+/// upward, and it is over fast — the souls are already rolling on the counter by the time it ends.
 fn mkSoulsTake(r: *Rack) void {
     r.air(0.0, 0.30, 0.30, 500, 4800, 0.52, 2.6); // the rush up
     r.ring(0.05, 0.44, 523, 0.42, 3.4, 4);
@@ -2503,11 +2503,19 @@ pub const SETTINGS_PATH = "settings.cfg";
 /// no `fx.` line and loads every family at `AFX_DEFAULTS`.
 const FX_KEY = "fx.";
 
+/// SIZED OFF THE TABLES, not a round number that looked big enough (the ring-buffer rule): `saveSettings`
+/// writes one volume line and one `fx.` line per submix, every value at `{d:.3}`.
+const SETTINGS_CAP = NMIX * (32 + AFX_COUNT * 8) + 64;
+
 pub fn loadSettings() void {
-    var buf: [1024]u8 = undefined; // the three volume lines plus the three racks
+    var buf: [SETTINGS_CAP]u8 = undefined;
     const f = std.fs.cwd().openFile(SETTINGS_PATH, .{}) catch return;
     defer f.close();
     const n = f.readAll(&buf) catch return;
+    // IT FILLED THE BUFFER, so the tail was cut MID-LINE (`worldfmt.load`'s own guard). A half-read `fx.`
+    // line parses as a short one, and a short line loads its remaining dials at ZERO rather than at what
+    // the file said — so the whole file is refused instead of applied wrong.
+    if (n == buf.len) return;
     var lines = std.mem.tokenizeAny(u8, buf[0..n], "\r\n");
     while (lines.next()) |line| {
         var it = std.mem.tokenizeScalar(u8, line, ' ');

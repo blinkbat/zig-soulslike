@@ -131,8 +131,8 @@ const LUNGE_IMPACT_FWD = 0.6; // dust-burst / impact-zone centre, this far ahead
 /// Embers a second dragged off the body through the lunge's flight (`emitLungeTrail`).
 const TRAIL_RATE: f32 = 150.0;
 const DEATH_DUR = 1.25; // collapse-and-still before the corpse is removed from play
-/// RUNES a toad is worth.
-pub const RUNES: u32 = 60;
+/// SOULS a toad is worth.
+pub const SOULS: u32 = 60;
 
 const State = enum { idle, hop, lunge, recover, chomp, stunlight, stunheavy, dead };
 
@@ -932,8 +932,8 @@ pub const Knot = struct {
     pub fn anyDied(self: *const Knot) bool {
         return foe.anyDied(self.liveConst());
     }
-    pub fn runesDropped(self: *const Knot) u32 {
-        return foe.runesDropped(self.liveConst(), RUNES);
+    pub fn soulsDropped(self: *const Knot) u32 {
+        return foe.soulsDropped(self.liveConst(), SOULS);
     }
     pub fn totalHits(self: *const Knot) u32 {
         return foe.totalHits(self.liveConst());

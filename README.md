@@ -125,10 +125,11 @@ Keyboard + mouse **or** a gamepad (Elden Ring default layout):
 | Sword ↔ bow | Q | D-pad right |
 | Shield ↔ wand | F | D-pad left |
 | Chaos Bolt ↔ Roots | G | D-pad up |
-| Plain ↔ fire arrow | Y | — (character book's ammo slot) |
+| Plain ↔ fire arrow | U | — (character book's ammo slot) |
 | Drink / cycle flask | R / T | Square / X / D-pad down |
-| Rest / speak / open | E | Cross / A |
-| Answer in a conversation | Up / Down or 1-9, Enter or E | D-pad up / down, Cross / A |
+| Jump | V | Cross / A |
+| Rest / speak / open | Y | Triangle / Y |
+| Answer in a conversation | Up / Down or 1-9, Enter or Y | D-pad up / down, Cross / A |
 | Zoom | Scroll wheel | — |
 | Menu (Continue / Debug / Quit) | Esc | Select |
 | Character book | Tab | Start |
@@ -139,7 +140,12 @@ to face the direction of travel. The mouse is **hidden but never captured** — 
 window edge and it comes back as a normal cursor, so the pointer can always escape. Attacks and the
 roll are committed, with an Elden-Ring-style one-slot input buffer that fires at the earliest exit.
 While locked on, the hero faces the target with real strafe/backpedal footing and R3 cycles targets.
-Reserved for later, matching Elden Ring: Cross/A = jump.
+**Cross/A jumps**, matching Elden Ring. It is free — no stamina — and it is committed: no double jump, and a
+swing pressed in mid-air buffers and goes off the frame he lands. The heading and speed are set at takeoff (a
+standing jump goes straight up, a sprint jump carries the sprint) and the stick may only bend the arc from
+there. He clears a metre, which is three of the terrain's own risers where a walk climbs two — so a ledge is
+something you answer with a button — and he flies over what he is above and nothing else, creatures included.
+There is no jump attack and no fall damage.
 
 ## Build & run
 

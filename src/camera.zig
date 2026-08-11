@@ -35,6 +35,14 @@ const AIM_DIST = 0.7; // right up past his head — near enough that he is behin
 const AIM_SHOULDER = 0.30;
 const AIM_RAISE = 0.42;
 
+/// HOW MUCH OF A JUMP THE LENS TAKES. Not all of it, and that is the whole point: the rig is bolted to his
+/// shoulder, so a target that rose the full metre would hold him dead still in frame and move the WORLD
+/// instead — the same picture with the wrong subject. At a bit over half, he visibly climbs out of the frame
+/// and the horizon barely stirs. And it is EASED (`LIFT_RATE`), for `game.GROUND_RISE_RATE`'s reason: the eye
+/// rides this, so anything that snaps it kicks the frame.
+const LIFT_SHARE: f32 = 0.55;
+const LIFT_RATE: f32 = 10.0;
+
 const SHAKE_MAX = 0.13; // world-unit jitter amplitude at full trauma
 const SHAKE_DECAY = 2.6; // trauma drained per second — shakes die fast (a crack, not a wobble)
 const SHAKE_FREQ = 33.0; // base jitter frequency (layered sines, incommensurate)
@@ -46,6 +54,9 @@ pub const CamRig = struct {
     dist: f32,
     /// HOW FAR THE AIM VIEW IS BLENDED IN, 0..1 — pushed in from the hero's own stance blend every frame.
     aimB: f32 = 0,
+    /// HOW FAR THE LENS HAS COME UP WITH A JUMP, in metres — stamped every frame by `tickLift`, the aim
+    /// blend's shape exactly. See `LIFT_SHARE`: the rest of the jump is what the player watches him do.
+    lift: f32 = 0,
     trauma: f32 = 0, // 0..1 impact charge; addShake() feeds it, tickShake() drains it
     shakeT: f32 = 0, // running phase for the jitter noise
     shakeOff: rl.Vector3 = mathx.zero3, // this frame's world-space jitter (zero when calm)
@@ -113,7 +124,7 @@ pub const CamRig = struct {
         const off = mathx.lerpF(SHOULDER, AIM_SHOULDER, k);
         return v3(
             shoulder.x + right.x * off,
-            shoulder.y + mathx.lerpF(TARGET_RAISE, AIM_RAISE, k),
+            shoulder.y + mathx.lerpF(TARGET_RAISE, AIM_RAISE, k) + c.lift,
             shoulder.z + right.z * off,
         );
     }
@@ -125,6 +136,11 @@ pub const CamRig = struct {
 
     fn boomFloor(c: *const CamRig) f32 {
         return mathx.minF(MIN_DIST, c.boom());
+    }
+
+    /// The share of the hero's own `lift` the eye is to carry, walked toward every frame.
+    pub fn tickLift(c: *CamRig, heroLift: f32, dt: f32) void {
+        c.lift = mathx.approach(c.lift, LIFT_SHARE * heroLift, LIFT_RATE * dt);
     }
 
     pub fn follow(c: *CamRig, shoulder: rl.Vector3) void {

@@ -450,6 +450,8 @@ pub const Id = enum {
     step_stone,
     step_water,
     roll,
+    jump,
+    land,
     swing_light,
     swing_heavy,
     hit_light,
@@ -828,6 +830,27 @@ fn mkRoll(r: *Rack) void {
     r.grit(0.24, 0.13, 0.20, 1700, 0.45, 4.0);
     r.air(0.0, 0.16, 0.10, 900, 480, 0.10, 3.2); // a breath of cloth, resonance nearly shut — no glide
     r.master(1.15, 2600);
+}
+
+fn mkJump(r: *Rack) void {
+    // THE PUSH-OFF, and nothing has arrived: an exhale, cloth, and the one scuff of the boot leaving. No
+    // transient at all — a `tick` on the front of it is the LANDING's, and the pair would read as one event
+    // heard twice.
+    r.air(0.0, 0.14, 0.30, 520, 1100, 0.26, 4.2);
+    r.grit(0.0, 0.08, 0.24, 1800 + r.rng.signed() * 300, 0.45, 5.2);
+    r.body(0.0, 0.09, 96, 44, 0.28, 5.5);
+    r.master(1.2, 3200);
+}
+
+fn mkLand(r: *Rack) void {
+    // …AND THE BODY ARRIVING. The sprint step is the reference and this sits over it: more mass, lower, and
+    // the grit sprays wider — but it is the same BOOT, so it stays in that family rather than becoming a thud
+    // out of the combat bank.
+    r.tick(0.0, 0.26, 2600);
+    r.body(0.0, 0.21, 96 + r.rng.signed() * 10, 36, 1.0, 3.3);
+    r.grit(0.004, 0.19, 0.48, 1900 + r.rng.signed() * 400, 0.55, 3.8);
+    r.air(0.05, 0.15, 0.14, 700, 420, 0.14, 3.0); // cloth settling after the mass, not with it
+    r.master(2.0, 3200);
 }
 
 fn mkSwingLight(r: *Rack) void {
@@ -1914,6 +1937,9 @@ const BANK = [NV]Row{
     .{ .id = .step_stone, .make = mkStepStone, .gain = 0.055, .jit = 0.14, .vjit = 0.28, .vars = 4, .poly = 3 },
     .{ .id = .step_water, .make = mkStepWater, .gain = 0.130, .jit = 0.13, .vjit = 0.26, .vars = 4, .poly = 3 },
     .{ .id = .roll, .make = mkRoll, .gain = 0.30, .jit = 0.09, .vjit = 0.14, .vars = 2 },
+    // THE EFFORT IS UNDER THE ARRIVAL, and both are under the roll: a jump is the most ordinary thing he does.
+    .{ .id = .jump, .make = mkJump, .gain = 0.14, .jit = 0.11, .vjit = 0.20, .vars = 3 },
+    .{ .id = .land, .make = mkLand, .gain = 0.22, .jit = 0.10, .vjit = 0.18, .vars = 3, .poly = 3 },
     .{ .id = .swing_light, .make = mkSwingLight, .gain = 0.26, .mix = .combat, .jit = 0.16, .vjit = 0.22, .vars = 5, .poly = 3 },
     .{ .id = .swing_heavy, .make = mkSwingHeavy, .gain = 0.34, .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 4, .poly = 2 },
     .{ .id = .hit_light, .make = mkHitLight, .gain = battle(0.68), .mix = .combat, .jit = 0.19, .vjit = 0.24, .vars = 6, .poly = 4 },

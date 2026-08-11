@@ -134,6 +134,11 @@ pub const STEP_PROBE: f32 = 0.5;
 /// enforced in the one place all three are (`stepOk`) — not at each mover.
 pub const WADE_MAX: f32 = 1.37;
 
+/// THE HERO'S OWN FOOTPRINT, for the tests here that push a body out of a collider — `foe.HERO_R`, written out
+/// for `WADE_MAX`'s reason (env sits below it and stays there) and PINNED for `foe.HERO_HIGH`'s: a comment is
+/// not a link, so `game.zig` asserts the two agree where it can see both ends.
+pub const HERO_R_PIN: f32 = 0.36;
+
 /// …AND THE COLOUR IS THE ONLY WARNING HE GETS, so it is DERIVED from that wall and not set beside it (the
 /// same rule an effect's clock keeps: two numbers that can disagree eventually will). Dug depth in metres →
 /// 0..1 of the sheet's shallow→deep ramp, reaching the deep tone exactly at `WADE_MAX` — so the darkest water
@@ -870,17 +875,31 @@ pub const Env = struct {
     ///
     /// THE SECOND SWEEP IS STILL ONLY WORTH ANYTHING IF THE FIRST MOVED HIM (`collision.resolve`'s rule), so
     /// the second grid walk is the rare frame and a body standing clear pays exactly one.
-    pub fn resolveActor(self: *const Env, p: rl.Vector3, r: f32) rl.Vector3 {
+    /// PUSH AN ACTOR OUT OF THE WORLD'S SOLIDS — and `footY` IS THE WORLD HEIGHT OF ITS FEET, because a solid
+    /// only blocks up to its own top (`Solid.h`, stamped by `buildSolids` off the collider's `part.h`). Every
+    /// other consumer of that field already honours it — `blocksPoint` is why an arrow lobs over a kerb,
+    /// `blocksSight` is why a look passes over one — and the PUSH-OUT was the only one that did not, so no
+    /// altitude cleared anything: a man a metre in the air was shouldered off 40 cm of scree.
+    ///
+    /// A WALL IS STILL A WALL AT ANY ALTITUDE. That law is about a WALL, and it holds by construction — the
+    /// jump's apex is `hero.JUMP_APEX` and a wall's `h` is metres above it. What changes is that a knee-high
+    /// collider stops being one. NO `STEP_UP` ALLOWANCE HERE, unlike `flyStep`: the terrain's riser rule
+    /// already lets a WALK take 0.55 m, so a jump matching it changes nothing on foot — but there is no
+    /// step-over-props rule to stay level with, and an allowance would let a man standing still walk through
+    /// low rubble. Feet genuinely above the top, or it is in the way.
+    pub fn resolveActor(self: *const Env, p: rl.Vector3, r: f32, footY: f32) rl.Vector3 {
         const Push = struct {
             at: rl.Vector3,
             r: f32,
+            footY: f32,
             fn one(c: *@This(), s: collision.Solid) bool {
+                if (c.footY >= s.h) return true; // over the top of it — see the note above
                 c.at = collision.pushOut(c.at, c.r, s);
                 return true;
             }
         };
         const q = r + 1.0;
-        var push = Push{ .at = p, .r = r };
+        var push = Push{ .at = p, .r = r, .footY = footY };
         self.eachSolid(p.x - q, p.z - q, p.x + q, p.z + q, &push, Push.one);
         if (push.at.x == p.x and push.at.z == p.z) return push.at;
         self.eachSolid(p.x - q, p.z - q, p.x + q, p.z + q, &push, Push.one);
@@ -942,6 +961,25 @@ pub const Env = struct {
         if (tl < 1e-5) return v3(from.x, from.y, from.z);
         const slide = v3(from.x + tx / tl * dist, from.y, from.z + tz / tl * dist);
         if (self.stepOk(from, v3(tx / tl, 0, tz / tl), dist)) return slide;
+        return v3(from.x, from.y, from.z);
+    }
+
+    /// THE SAME RULE FOR SOMETHING WITH ITS FEET OFF THE GROUND, and it lives here rather than at the jump for
+    /// `walkStep`'s reason: traversal is decided in one file. A man in the air asks a different question of the
+    /// terrain — not "may I climb this" but "am I over it" — so what replaces the riser rule is his own FEET
+    /// (`footY`, a WORLD height). Ground standing higher than they are is a wall.
+    ///
+    /// Without it a jump at a cliff carries him into the cliff's own footprint, `game.groundActor` lifts him up
+    /// three metres of it, and the ledge nobody could walk up has been climbed by pressing A at it.
+    ///
+    /// PLUS THE WALK'S OWN ALLOWANCE: on the takeoff frame his feet are still at the ground he left, so a bare
+    /// comparison stalls a jump against the gentle rise that same jump exists to clear. A jump may never travel
+    /// WORSE than a step. Deep water is not asked here — `game.gateHeroWater` is that rule's one copy, and it
+    /// runs after every branch including this one.
+    pub fn flyStep(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32, footY: f32) rl.Vector3 {
+        const to = v3(from.x + dir.x * dist, from.y, from.z + dir.z * dist);
+        if (!self.heightAny or dist <= 0) return to;
+        if (self.groundAt(to.x, to.z) <= footY + STEP_UP) return to;
         return v3(from.x, from.y, from.z);
     }
 
@@ -2257,6 +2295,70 @@ test "THE STEP RULE IS FRAME-RATE INDEPENDENT — a wall cannot be ratcheted up 
     }
 }
 
+test "flyStep: a jump crosses what it is OVER, and a cliff is a wall at any altitude" {
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.heightHalf = wf.DEFAULT_HALF;
+    e.heightAny = true;
+    const mid = wf.HEIGHT_N / 2;
+    const WALL: f32 = 3.0;
+    for (0..wf.HEIGHT_N) |iz| {
+        for (0..wf.HEIGHT_N) |ix| {
+            e.heightField[iz * wf.HEIGHT_N + ix] = wf.heightByte(if (ix >= mid) WALL else 0.0);
+        }
+    }
+    const at = v3(-1.0, 0, 0); // a metre short of the face, on the low side
+    const east = v3(1, 0, 0);
+    const foot = e.groundAt(at.x, at.z);
+    // On the deck and at the top of an ordinary jump alike, three metres of rock is still three metres of rock:
+    // without this the hop lands ON the wall and `groundActor` hands him the climb.
+    try std.testing.expectApproxEqAbs(at.x, e.flyStep(at, east, 2.0, foot).x, 1e-4);
+    try std.testing.expectApproxEqAbs(at.x, e.flyStep(at, east, 2.0, foot + 1.0).x, 1e-4);
+    // …and once his feet are genuinely over it, he crosses.
+    try std.testing.expect(e.flyStep(at, east, 2.0, foot + WALL).x > at.x);
+    // A jump may never travel WORSE than a step: a rise inside the walk's own allowance is taken from the
+    // takeoff frame, feet still on the ground.
+    const low = try envWithRamp(0.30);
+    defer std.testing.allocator.destroy(low);
+    const g0 = low.groundAt(0, 0);
+    try std.testing.expect(low.flyStep(v3(0, 0, 0), east, 0.5, g0).x > 0.4);
+}
+
+test "A JUMP CLEARS A LOW COLLIDER AND A WALL IS STILL A WALL — the push-out reads `Solid.h`" {
+    // The owner's report: jumping did not get him over low obstacles. `buildSolids` has always stamped each
+    // collider's blocking height and `blocksPoint`/`blocksSight` have always honoured it — the PUSH-OUT was
+    // the one consumer that did not, so a man at the top of his arc was shouldered off a fallen log.
+    const HR = HERO_R_PIN; // the hero's own footprint, pinned to `foe.HERO_R` in game.zig
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+
+    // A LOG: one capsule along X, blocking to 0.75 m — under the jump's 1.0 m apex.
+    e.props[0] = .{ .kind = .log, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
+    e.nprops = 1;
+    buildSolids(e);
+    const logTop = props.info(.log).parts[0].h;
+    const at = v3(0, 0, 0.2); // stood in it, needing 2 × HR of clearance
+    try std.testing.expect(e.resolveActor(at, HR, 0).z > 0.5); // on the deck it is in the way…
+    // …and off the ground above its top it is not, to the bit.
+    try std.testing.expectEqual(at.z, e.resolveActor(at, HR, logTop).z);
+    try std.testing.expectEqual(at.z, e.resolveActor(at, HR, 0.9).z);
+    // JUST UNDER the top is still a collider: the rule is the feet, not "airborne".
+    try std.testing.expect(e.resolveActor(at, HR, logTop - 0.05).z > 0.5);
+
+    // A WALL blocks to 3.0 m, which no jump in this game reaches, so the law survives intact.
+    e.props[0] = .{ .kind = .wall, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
+    buildSolids(e);
+    try std.testing.expect(props.info(.wall).parts[0].h > 3.0 * logTop);
+    try std.testing.expect(e.resolveActor(at, HR, 0.9).z > 0.5);
+
+    // …AND THE HEIGHT IS A WORLD ONE, so a collider standing on a bank is not cleared by a jump taken below it.
+    e.props[0] = .{ .kind = .log, .pos = v3(0, 2.0, 0), .yaw = 0, .scale = 1, .op = 0 };
+    buildSolids(e);
+    try std.testing.expect(e.resolveActor(at, HR, 0.9).z > 0.5);
+}
+
 test "a SLIGHT STEP is always taken, however steep the face carrying it" {
     // The owner's ask, and the other half of the anti-jank story: a low ledge is a step, not a wall.
     const e = try std.testing.allocator.create(Env);
@@ -2519,11 +2621,11 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(solids0, e.solidCount());
     try std.testing.expectEqual(lights0, e.lightCount());
 
-    try std.testing.expectEqual(@as(usize, 17238), props0);
-    try std.testing.expectEqual(@as(usize, 1820), solids0);
+    try std.testing.expectEqual(@as(usize, 17343), props0);
+    try std.testing.expectEqual(@as(usize, 1810), solids0);
     // The map's three `campfire`s are the EXTINGUISHED kind and carry no light. Swap one to
     // `campfire_lit` in the editor and this goes up by one — and gains a rest site with it.
-    try std.testing.expectEqual(@as(usize, 42), lights0);
+    try std.testing.expectEqual(@as(usize, 40), lights0);
 
     var jerky: usize = 0;
     var rings: usize = 0;

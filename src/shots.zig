@@ -328,6 +328,50 @@ pub fn runShots(g: *Game) void {
         g.rig.follow(g.hero.shoulderPoint());
     }
 
+    // THE JUMP. Shot from the SIDE and off a FIXED camera, which is most of the test: the rig rides his
+    // shoulder, so a camera that followed him up would hold him dead centre and photograph a world sliding
+    // down — four frames of a man standing still. Pinned to the ground he left, the arc is the subject and
+    // the ground under him is the ruler. Lit from `LIT_YAW` + 90 so the profile takes the sun across it.
+    // …and DOWN THE FIELD from the fire: the wanderer stands at it, and at this boom he is a black mass
+    // filling a third of the frame the arc is supposed to be read against.
+    standHero(g, 0, -2, std.math.pi);
+    g.rig.yaw = mathx.radians(90); // the roll's own framing: he travels −Z, so 90 is a clean profile
+    g.rig.pitch = 0.06; // near level: height reads against the horizon, and from above it reads as nothing
+    g.rig.dist = 6.4;
+    // …AIMED AT THE MIDDLE OF THE ARC, not at the takeoff: he covers RUN_SPEED × JUMP_AIR of ground, so a lens
+    // pinned to where he left walks him out of its own frame by the landing.
+    const jumpGround = mathx.addV(
+        g.hero.shoulderPoint(),
+        v3(0, 0, -RUN_SPEED * heromod.JUMP_AIR * 0.5),
+    );
+    must(g.hero.startJump(v3(0, 0, -1), RUN_SPEED), "the jump would not start");
+    // AIMED OFF THE ARC'S OWN NUMBERS, never off literal frames: each stage is a FRACTION of the flight, and
+    // the apex one is 0.5 because that is where v passes through zero (t = v0/g = JUMP_AIR/2). Written as
+    // frame counts the three quietly stopped bracketing the arc the moment `JUMP_AIR` or `SHOT_DT` moved —
+    // and a retune of either is exactly when these pictures matter.
+    const jumpStages = [_]struct { name: [:0]const u8, at: f32 }{
+        .{ .name = "shots/9a_jump_drive.png", .at = 0.15 }, // leaving: legs extended behind, arms thrown up
+        .{ .name = "shots/9b_jump_apex.png", .at = 0.50 }, // the top — knees tucked, the one frame v = 0
+        .{ .name = "shots/9c_jump_reach.png", .at = 0.80 }, // coming down: legs under him, toes up to receive
+    };
+    var flown: f32 = 0;
+    for (jumpStages) |st| {
+        const want = st.at * heromod.JUMP_AIR;
+        while (flown < want and g.hero.airborne()) : (flown += dt) game.stepAirForShot(g, dt);
+        g.rig.follow(jumpGround); // …the ground he LEFT, not the shoulder he is on
+        shoot(g, st.name);
+    }
+    // …and the ABSORB, which is the whole weight of the thing: run him down to the deck, then on to where the
+    // sink is at its LOWEST (`hero.LAND_SINK_AT` of `LAND_DUR`) rather than the frame it started arriving on.
+    while (g.hero.airborne()) game.stepAirForShot(g, dt);
+    var landT: f32 = 0;
+    while (landT < heromod.LAND_SINK_DEEPEST) : (landT += dt) {
+        g.hero.update(dt, 0, 0, null);
+        g.hero.pose();
+    }
+    g.rig.follow(jumpGround);
+    shoot(g, "shots/9d_jump_land.png");
+
     // Sword swings: light slash from the SWORD side (right profile — left hides the windup behind the torso), heavy from the left in silhouette (an overhead is sagittal) at windup apex + buried impact, then heavy again with the hit capsule visible (menu > Debug > Hitboxes) to verify it rides the blade.
     g.hero.pos = mathx.ground(0, 4);
     g.rig.yaw = mathx.radians(30); // front 3/4 — the hero faces -Z, so this shows the sword-arm arc (270 hid it behind the torso)

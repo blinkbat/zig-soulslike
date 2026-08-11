@@ -859,6 +859,13 @@ pub const Map = struct {
         return found(self.timerNames[0..self.ntimers], name);
     }
 
+    /// IS THIS THE FALLBACK — the one `zoneAt` hands back for ground no rect contains. The editor inserts a new
+    /// zone at the FRONT and refuses to erase this one off the same rule, and as bare index arithmetic at both
+    /// of those sites the rule was a comment here and two `nzones` expressions there.
+    pub fn isFallbackZone(self: *const Map, i: usize) bool {
+        return self.nzones > 0 and i + 1 == self.nzones;
+    }
+
     /// The zone governing a point — first containing rect wins, last zone is the fallback.
     pub fn zoneAt(self: *const Map, px: f32, pz: f32) ?*const Zone {
         if (self.nzones == 0) return null;
@@ -1612,14 +1619,15 @@ fn parseScript(m: *Map, rec: []const u8, rest: []const u8, it: *Toks, cur: *Curs
     if (std.mem.eql(u8, rec, "act") or std.mem.eql(u8, rec, "gets")) {
         const nd = &m.nodes[cur.node orelse return ParseError.NoOwner];
         if (m.ndacts >= MAX_DACTS) return ParseError.TooManyActs;
+        // OWNERSHIP IS SETTLED BEFORE THE ARENA IS TOUCHED. Refusing after the append leaves an act in
+        // `dacts` that `ndacts` counts and no run reaches, which is the one thing an append-only cursor
+        // may not carry.
+        const onNode = std.mem.eql(u8, rec, "act");
+        if (onNode and nd.nchoices > 0) return ParseError.NoOwner; // …or its run would swallow the choices'
+        const ci = if (onNode) 0 else cur.choice orelse return ParseError.NoOwner;
         m.dacts[m.ndacts] = try parseAct(m, rest, it);
         m.ndacts += 1;
-        if (std.mem.eql(u8, rec, "act")) {
-            if (nd.nchoices > 0) return ParseError.NoOwner; // …or its run would swallow the choices'
-            nd.nact += 1;
-        } else {
-            nd.choices[cur.choice orelse return ParseError.NoOwner].nact += 1;
-        }
+        if (onNode) nd.nact += 1 else nd.choices[ci].nact += 1;
         return true;
     }
     return false;

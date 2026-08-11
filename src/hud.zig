@@ -181,6 +181,11 @@ pub const Hint = struct { glyph: Glyph, label: [:0]const u8 };
 /// these for its own bindings, and every crib in the UI draws them.
 pub const BTN_INTERACT: PadBtn = .y;
 pub const BTN_CONFIRM: PadBtn = .a;
+/// …and A AGAIN, in the WORLD (ER's own). Not a clash: every screen that takes Confirm — the menus, the book,
+/// a conversation, a bonfire — holds the world still while it is up, so the two can never be asked at once.
+/// Named apart from `BTN_CONFIRM` because they are two bindings that happen to agree, and a rebind of one is
+/// not a rebind of the other.
+pub const BTN_JUMP: PadBtn = .a;
 pub const BTN_BACK: PadBtn = .b;
 pub const BTN_QUICK: PadBtn = .x;
 

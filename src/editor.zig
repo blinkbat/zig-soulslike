@@ -1505,6 +1505,8 @@ pub const Editor = struct {
                         z.mix = src.mix;
                         z.nmix = src.nmix;
                     }
+                    // AT THE FRONT, because the LAST one is the fallback (`wf.Map.isFallbackZone`): appended, a
+                    // new rect would become the ground everything not in a rect is governed by.
                     std.mem.copyBackwards(wf.Zone, m.zones[1 .. m.nzones + 1], m.zones[0..m.nzones]);
                     m.zones[0] = z;
                     m.nzones += 1;
@@ -1742,7 +1744,8 @@ pub const Editor = struct {
                     return true;
                 }
                 var i: usize = 0;
-                while (i + 1 < m.nzones) : (i += 1) {
+                while (i < m.nzones) : (i += 1) {
+                    if (m.isFallbackZone(i)) continue; // the world's own ground has to be governed by something
                     if (!m.zones[i].contains(g.x, g.z)) continue;
                     self.bankStroke(m);
                     std.mem.copyForwards(wf.Zone, m.zones[i .. m.nzones - 1], m.zones[i + 1 .. m.nzones]);

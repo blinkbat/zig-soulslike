@@ -209,10 +209,9 @@ pub const Menu = struct {
     fn updateBook(self: *Menu, dt: f32, v: bookmod.View) Action {
         if (tabPressed(-1)) self.book.onTab(-1);
         if (tabPressed(1)) self.book.onTab(1);
-        // ON THE WHEEL THE CROSS IS THE ZOOM (`dpadZoom`), so the walk there is the left stick's and the
-        // keys'. The bumpers stay the PAGE TURN on every page, this one included — that is the whole reason
-        // the zoom is not on them.
-        const nav: *const fn (NavDir) bool = if (self.book.wheelUp()) &navPressedNoPad else &navPressed;
+        // The bumpers stay the PAGE TURN on every page, this one included — that is the whole reason the
+        // zoom is not on them, and `navFor` is where the rest of that rule lives.
+        const nav = navFor(self.book.wheelUp());
         if (nav(.up)) self.book.move(0, -1, v);
         if (nav(.down)) self.book.move(0, 1, v);
         if (nav(.left)) self.book.move(-1, 0, v);
@@ -628,8 +627,8 @@ pub fn stickPan() rl.Vector2 {
 /// notching (owner's call). NOT the bumpers: those are the book's page turn, and the passive tree is one of
 /// its pages — a zoom that took them would strand you on the wheel with no way to turn off it.
 ///
-/// PAD ONLY. The keyboard's arrows keep WALKING the wheel on both screens, because a desk has the MOUSE
-/// WHEEL for this and does not need the cross.
+/// TWO DEVICES, AND NEITHER IS THE KEYBOARD'S ARROWS: the pad's cross, and the MOUSE WHEEL, which is why the
+/// arrows keep WALKING the wheel on both screens (`navFor`) instead of being spent on a zoom a desk already has.
 pub fn dpadZoom() f32 {
     var v: f32 = 0;
     if (padDown(.left_face_up)) v += 1;
@@ -646,19 +645,13 @@ pub fn navPressedNoPad(dir: NavDir) bool {
     return rl.isKeyPressed(k.a) or rl.isKeyPressed(k.b) or rl.isKeyPressedRepeat(k.a) or rl.isKeyPressedRepeat(k.b);
 }
 
-/// The RIGHT stick's zoom axis, −1 (out) … +1 (in). Pushing UP zooms IN. VERTICAL-DOMINANT: a sideways push
-/// on the look stick is not a request to zoom, and on this screen there is nothing else for it to mean.
-pub fn stickZoom() f32 {
-    var v: f32 = 0;
-    if (rl.isGamepadAvailable(0)) {
-        const x = rl.getGamepadAxisMovement(0, .right_x);
-        const y = rl.getGamepadAxisMovement(0, .right_y);
-        if (@abs(y) > 0.22 and @abs(y) > @abs(x)) v = -y;
-    }
-    // …and the wheel, because the tree is read on a desk as often as on a pad.
-    const notch = rl.getMouseWheelMove();
-    if (notch != 0) v = mathx.clampF(v + notch * 0.6, -1, 1);
-    return v;
+/// WHICH WALK A SCREEN GETS, and the ONE copy of that decision. On a WHEEL the cross is the zoom (`dpadZoom`),
+/// so it is withheld from the walk there and the left stick does it instead; on a plain LIST the cross is the
+/// only sensible way to pick a row and it keeps it. Both wheel screens — the character book's tree page and the
+/// bonfire's — read this; hand-rolled at each site the rule was two declarations of one fact, and moving it
+/// meant editing two files.
+pub fn navFor(onWheel: bool) *const fn (NavDir) bool {
+    return if (onWheel) &navPressedNoPad else &navPressed;
 }
 
 fn adjTapped(dir: NavDir) bool {
@@ -696,13 +689,6 @@ fn confirmHeld() bool {
     const altHeld = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
     if ((rl.isKeyDown(.enter) and !altHeld) or rl.isKeyDown(.space)) return true;
     return padDown(hud.padOf(hud.BTN_CONFIRM)); // the HELD half off the same name as the tap
-}
-
-/// THE QUICK BUTTON, off the same name the cribs draw. The tree page's Level Up, and nothing else in the
-/// menu asks for it yet. R is the keyboard's, free because the book has no other letter binding.
-pub fn quickPressed() bool {
-    if (rl.isKeyPressed(.r)) return true;
-    return padPressed(hud.padOf(hud.BTN_QUICK));
 }
 
 pub fn confirmPressed() bool {

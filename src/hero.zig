@@ -17,6 +17,14 @@ const radians = mathx.radians;
 
 pub const H: f32 = 1.8; // stature (world units ≈ metres)
 
+comptime {
+    // THE CONSTANTS DOWNSTREAM FILES HAD TO WRITE OUT, PINNED WHERE BOTH ENDS ARE VISIBLE. `foe.zig` sits
+    // BELOW this file in the import graph (hero → archer → foe) and so cannot read `H`; its sight-line column
+    // is authored as a bare 1.71 with the derivation in a comment beside it. A comment is not a link — this
+    // file imports `foe`, so this is the one place a stature that moved can be made to say so.
+    std.debug.assert(@abs(foemod.HERO_HIGH - 0.95 * H) < 0.005);
+}
+
 pub const WALK_SPEED: f32 = 1.7;
 pub const RUN_SPEED: f32 = 3.4;
 pub const SPRINT_SPEED: f32 = 5.1;
@@ -103,7 +111,7 @@ const HAIR = rgba(40, 31, 24, 255);
 const CAPE = rgba(82, 20, 12, 255);
 const STEEL = rgba(98, 104, 114, 255);
 const STEEL_DK = rgba(58, 62, 70, 255);
-const BRASS = rgba(122, 92, 40, 255);
+const BRASS = art.BRASS; // the WORLD's brass, not a second literal of it (`propruins.zig`'s line)
 
 pub const HIP_FLEX = [8]f32{ 25, 13, 3, -5, -10, -3, 12, 22 };
 pub const KNEE_FLEX = [8]f32{ 5, 18, 10, 4, 10, 38, 62, 30 };
@@ -139,9 +147,54 @@ pub fn slopeLean(rise: f32) f32 {
     return mathx.clampF(deg, -SLOPE_LEAN_MAX, SLOPE_LEAN_MAX);
 }
 
+/// THE JUMP (A/Cross, ER's own button — `hud.BTN_JUMP`). A REAL INTEGRATION under gravity, not a scripted arc
+/// like a toad's hop: he has to land on whatever ground turns out to be under him, and a fixed flight time
+/// cannot know that. TWO numbers are the decision and the other two are SOLVED off them — an apex and a
+/// gravity authored side by side are two dials for one shape, and they drift.
+pub const JUMP_APEX: f32 = 1.0; // metres his feet clear at the top: THREE terrain risers, where a walk gets two
+pub const JUMP_AIR: f32 = 0.72; // seconds off the ground on the flat
+/// apex = g·t²/8 and v0 = g·t/2, both inverted.
+const JUMP_G: f32 = 8.0 * JUMP_APEX / (JUMP_AIR * JUMP_AIR);
+const JUMP_V0: f32 = JUMP_G * JUMP_AIR * 0.5;
+/// HOW FAST THE STICK MAY BEND THE ARC, rad/s — well under `game.TURN_RATE`. A jump carries the run that
+/// started it (ER's own): the stick steers the heading and may never re-price the SPEED, or a standing hop
+/// becomes a free sprint and the sprint's own stamina bill is a thing you jump past.
+const AIR_TURN_RATE: f32 = 2.6;
+/// THE LANDING ABSORB — VISUAL ONLY, and that is a law and not a shortcut: a recovery that took the stick off
+/// him for a tenth of a second is the hitstop the house rules refuse, paid on the most ordinary move there is.
+/// Nothing mechanical reads `landT`.
+const LAND_DUR: f32 = 0.34;
+const LAND_SINK = 0.052 * H; // just over a caught blow's `BLOCK_SINK`: this is his own mass arriving
+const LAND_SINK_AT: f32 = 0.22; // …and it ARRIVES rather than starting there — the touchdown frame is the impact
+const LAND_REBOUND: f32 = 0.62; // …then rises PAST its own stance and settles onto it (the reactions law)
+/// Seconds past touchdown at which the sink is DEEPEST — for the harness, which has to photograph the absorb
+/// at the bottom of it and not on the frame it began arriving on. Derived, so a retune of either dial re-aims
+/// the shot instead of leaving it a frame count nobody re-checked.
+pub const LAND_SINK_DEEPEST: f32 = LAND_DUR * LAND_SINK_AT;
+const LAND_STOOP: f32 = 7.0; // deg of thoracic fold over the sink; the pelvis dips, the trunk closes over it
+/// THE FLIGHT POSE, all degrees. Three terms off ONE number (the vertical velocity): DRIVE on the way up,
+/// TUCK at the apex where the velocity passes through zero, REACH on the way down.
+const JUMP_TOEOFF: f32 = 26.0; // hip extension behind him at the push — the leg he just left the ground with
+const JUMP_TOE_PLANTAR: f32 = 30.0; // …and the ankle that did it, still pointed
+const JUMP_TUCK_HIP: f32 = 62.0;
+const JUMP_TUCK_KNEE: f32 = 88.0;
+const JUMP_REACH_HIP: f32 = 14.0; // descending: the legs come down UNDER him, knees nearly straight
+const JUMP_REACH_KNEE: f32 = 16.0;
+const JUMP_REACH_DORSI: f32 = 12.0; // …toes up, receiving the ground
+const JUMP_ARM_UP: f32 = 52.0; // the drive throws the arms up and open…
+const JUMP_ARM_HOLD: f32 = 0.55; // …and this much of the raise is KEPT for the whole flight (see `jumpArm`)
+const JUMP_ARM_DROP: f32 = 0.55; // …traded away again over the descent
+const JUMP_ARM_ELBOW: f32 = 34.0;
+const JUMP_ARM_FOLD: f32 = 26.0; // the elbows close over the tuck, so the apex is a BALL and not a starfish
+const JUMP_ARM_OUT: f32 = 22.0; // …and the descent spreads them for balance
+const JUMP_ARCH: f32 = -8.0; // trunk EXTENDS at the push (negative = back arch), per segment
+const JUMP_FOLD: f32 = 12.0; // …and closes over the tuck
+const JUMP_HEAD_UP: f32 = -10.0; // the eyes go up with the drive and back to level on the way down
+const JUMP_LEG_SPLIT: f32 = 5.0; // the two legs never do the same thing at once (wabi-sabi, cosmetic)
+
 const ROLL_DUR = 0.70; // seconds, start to finish
 const ROLL_IFRAME_END = 0.46; // invulnerable from the FIRST frame to here
-const ROLL_DIST = 3.5; // ground units travelled
+pub const ROLL_DIST = 3.5; // ground units travelled
 const ROLL_BALL_Y = 0.50; // pelvis pivot height at mid-roll
 const ROLL_TUCK_IN = 0.16;
 const ROLL_SPIN_A = 0.05; // somersault sweep: two OVERLAPPED eases, front-loaded.
@@ -860,6 +913,25 @@ pub const Hero = struct {
     rollYaw: f32 = 0, // committed heading of the roll; the visible yaw eases onto it fast
     rollSide: f32 = -1, // +1 = over the LEFT shoulder, -1 = the RIGHT (picked from the leading leg)
     rollVar: f32 = 1, // this roll's imperfection magnitude (ROLL_VAR_LO..HI, cosmetic only)
+    /// HIS FEET ABOVE THE GROUND UNDER HIM (`leechfly.hover`'s law, and the reason `pos.y` needs no exception):
+    /// `pos.y` stays the ground and `game.groundActor` stays its one writer. ZERO unless he is in the air, so a
+    /// teleport — a respawn, an F5 playtest, the shot harness — can never strand him standing on nothing.
+    lift: f32 = 0,
+    /// THE WORLD HEIGHT OF HIS FEET while airborne, integrated under gravity; `lift` is DERIVED off it every
+    /// frame. That is the whole trick: run off a ledge and the datum falls away underneath, so the gap opens on
+    /// its own — where a lift integrated over a moving datum sinks with the ground it was measured from.
+    airY: f32 = 0,
+    vertVel: f32 = 0,
+    /// A jump is a COMMITTED action (`committed()`) and it runs to touchdown. `dropActions` deliberately does
+    /// NOT clear it: flinched mid-air, he still has to come down.
+    jumping: bool = false,
+    /// Counted like `swings`/`rolls`, for the same reason.
+    jumps: u32 = 0,
+    airYaw: f32 = 0, // heading committed at takeoff; the stick bends it at `AIR_TURN_RATE`
+    airSpeed: f32 = 0, // …and the ground speed it left with, which the stick may never touch
+    /// ONE FRAME, the frame his feet touch down — game.zig thumps off it. Cleared in the prologue like `loosed`.
+    landed: bool = false,
+    landT: f32 = mathx.LONG_AGO, // seconds since touchdown: the absorb, and nothing mechanical reads it
     attacking: bool = false,
     atkT: f32 = 0, // seconds into the current swing
     queued: ?Queued = null,
@@ -1020,6 +1092,7 @@ pub const Hero = struct {
         self.speed = 0;
         self.speedS = 0;
         self.moving = 0;
+        self.clearAir();
         self.dropActions();
         self.sprinting = false;
         self.guardB = 0; // a SNAP, not the stagger's ease: he is somewhere else now
@@ -1064,6 +1137,7 @@ pub const Hero = struct {
         // The one-frame loose flag is cleared HERE, not in `updateShot`: a frame long enough to cross both the release knot and the end of the shot sets it and drops `shooting` in the same call, and nothing would ever run `updateShot` again to clear it — so game.zig loosed a fresh shaft every frame after. Every advance path passes through this prologue.
         self.loosed = false;
         self.thrown = false; // the cast's own one-frame edge, cleared here for the reason `loosed` is
+        self.landed = false; // …and the touchdown's, for that same reason
         self.elapsed += dt;
         self.trail.age(dt);
         self.blendT = @min(self.blendT + dt, mathx.LONG_AGO);
@@ -1078,6 +1152,11 @@ pub const Hero = struct {
         self.aimB = mathx.approach(self.aimB, if (self.aiming) 1.0 else 0.0, dt * BOW_BLEND_RATE);
         self.aimLean = mathx.approach(self.aimLean, self.aimLeanWant, dt * AIM_LEAN_RATE);
         self.blockT = @min(self.blockT + dt, mathx.LONG_AGO);
+        self.landT = @min(self.landT + dt, mathx.LONG_AGO);
+        // GRAVITY BELONGS IN THE PROLOGUE for the reason the other clocks do, and one of its own: a blow
+        // landing mid-air routes him to `updateStun`, a death to `updateDeath`, and a man who stopped falling
+        // because he got hit would hang in the sky. Every advance path passes through here.
+        self.tickAir(dt);
         self.souls.tick(dt);
         // In the prologue with the other clocks: sparks that only aged inside `updateCast` would hang in the air.
         foemod.tickParticles(&self.fx, dt, self.pos.y);
@@ -1089,6 +1168,89 @@ pub const Hero = struct {
         self.tickClocks(dt);
         self.speed = speed;
         advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist, speed, moveYaw, self.facing);
+    }
+
+    /// WHERE HIS FEET ACTUALLY ARE — `pos` with the jump's height on it. Every `rootAt` site and the camera's
+    /// own shoulder read THIS; `pos` stays the ground under him, which is what the rest of the game measures
+    /// from (`env.groundAt`, the dust, the particle floor).
+    pub fn footPos(self: *const Hero) rl.Vector3 {
+        return v3(self.pos.x, self.pos.y + self.lift, self.pos.z);
+    }
+    pub fn footY(self: *const Hero) f32 {
+        return self.pos.y + self.lift;
+    }
+    /// IN THE AIR. `foe.AIRBORNE_LIFT` is the field's own threshold for the same question, and it is asked of the
+    /// FLAG rather than the height so the takeoff frame — lift still zero, feet already leaving — is airborne.
+    pub fn airborne(self: *const Hero) bool {
+        return self.jumping;
+    }
+
+    /// A/CROSS. FREE (ER's own — nothing but a jump ATTACK is billed there), so an empty bar still leaves him
+    /// this: it is traversal, and `STAM_LOCKOUT` exists to punish greed in a fight, not to fence off the map.
+    /// Takes the travel it is to carry, exactly as `startRoll` takes its direction.
+    pub fn startJump(self: *Hero, dir: rl.Vector3, speed: f32) bool {
+        if (self.committed() or self.dead or self.staggered() or self.resting) return false;
+        self.jumping = true;
+        self.jumps +%= 1;
+        self.airY = self.pos.y;
+        self.vertVel = JUMP_V0;
+        // A standing jump goes STRAIGHT UP: no travel to carry, so it keeps the facing it had.
+        self.airSpeed = if (mathx.lenXZ(dir) > 0.01) speed else 0;
+        self.airYaw = if (self.airSpeed > 0.01) mathx.headingXZ(dir) else self.facing;
+        self.startXfade();
+        return true;
+    }
+
+    /// THE ARC, and the touchdown that ends it. In `tickClocks`, so it runs under every branch.
+    fn tickAir(self: *Hero, dt: f32) void {
+        // …and NOT under the pause card. `held` is the stamina drain's own gate, and it is the same argument:
+        // the menu branch still calls `update` (for the breathing bob), and a man who kept falling through it
+        // would be somewhere else when it closed.
+        if (self.held) return;
+        if (!self.jumping) {
+            self.lift = 0;
+            return;
+        }
+        // THE CLOSED FORM OF THE STEP, not `v -= g·dt; y += v·dt`. Under constant acceleration that plain
+        // pair loses g·t·dt/2 of height — NINE CENTIMETRES of apex at 30 fps and none at 240, which is
+        // `env.walkStep`'s bug wearing a different hat: a hero who jumps higher on a better machine. The
+        // half-a-dt² term makes it exact at every frame rate instead, and a test pins all four.
+        self.airY += self.vertVel * dt - 0.5 * JUMP_G * dt * dt;
+        self.vertVel -= JUMP_G * dt;
+        // THE GROUND CATCHES HIS FEET — which may be higher or lower than the ground he left, and that is the
+        // whole reason this is a velocity and not a scripted arc.
+        if (self.airY <= self.pos.y) {
+            self.airY = self.pos.y;
+            self.lift = 0;
+            self.vertVel = 0;
+            self.jumping = false;
+            self.landed = true;
+            self.landT = 0;
+            self.startXfade();
+            self.fireQueued(); // …and whatever he pressed on the way down goes off now (the ER queue)
+            return;
+        }
+        self.lift = self.airY - self.pos.y;
+    }
+
+    /// THE STICK BENDS THE HEADING and nothing else. Called by the mover, which owns the step itself: what a
+    /// jump may fly OVER is a question about the ground, and the ground belongs to `env`.
+    pub fn steerAir(self: *Hero, dt: f32, dir: rl.Vector3) void {
+        if (self.airSpeed <= 0.01 or mathx.lenXZ(dir) < 0.01) return;
+        self.airYaw = mathx.approachAngle(self.airYaw, mathx.headingXZ(dir), AIR_TURN_RATE * dt);
+    }
+
+    /// The clocks, the facing and the pose. The TRAVEL is `game.moveHeroAir`'s, for `steerAir`'s reason.
+    pub fn updateAir(self: *Hero, dt: f32, faceYaw: ?f32) void {
+        self.tickClocks(dt);
+        self.speed = self.airSpeed;
+        self.speedS = mathx.approach(self.speedS, self.airSpeed, dt * SPEED_SMOOTH);
+        // Locked on, he stays square to the thing he is jumping around; free, he turns onto his own arc — at
+        // the ROLL's rate, which is the same relationship: the heading is committed and the visible yaw whips
+        // onto it. `AIR_TURN_RATE` is the other half and a different question — how fast the ARC may bend.
+        const want = faceYaw orelse self.airYaw;
+        self.facing = mathx.approachAngle(self.facing, want, ROLL_YAW_RATE * dt);
+        self.pose();
     }
 
     pub fn startRoll(self: *Hero, dir: rl.Vector3) void {
@@ -1135,8 +1297,12 @@ pub const Hero = struct {
     }
 
 
+    /// A JUMP IS IN HERE, beside the roll: it cannot be cancelled, it runs to touchdown, and every rule that
+    /// hangs off this predicate then lands right without a second list — no double jump, no roll or cast out of
+    /// the air, a sprint that stops when his feet do, and an attack pressed mid-flight BUFFERED into the one
+    /// slot and fired the frame he lands (`tickAir` → `fireQueued`), which is what ER does with it.
     pub fn committed(self: *const Hero) bool {
-        return self.rolling or self.attacking or self.drinking or self.shooting or self.casting or self.parrying;
+        return self.jumping or self.rolling or self.attacking or self.drinking or self.shooting or self.casting or self.parrying;
     }
 
     pub fn bowOut(self: *const Hero) bool {
@@ -1981,6 +2147,18 @@ pub const Hero = struct {
     /// and the parry's stamina were all paid at the press. The input buffer goes with them.
     /// ONE LIST, because four copies of it is four places to forget one from. NOT `guardB` and NOT `sprinting`:
     /// the stance blend must EASE down through a stagger, and the sprint is a level `game.zig` re-derives.
+    /// PUT HIM BACK ON THE GROUND — for the two places that MOVE him rather than let him travel: a respawn and
+    /// sitting down at a fire. Not part of `dropActions`: a stagger and a death both drop everything else and
+    /// must leave a man in mid-air still falling.
+    fn clearAir(self: *Hero) void {
+        self.jumping = false;
+        self.lift = 0;
+        self.airY = self.pos.y;
+        self.vertVel = 0;
+        self.airSpeed = 0;
+        self.landT = mathx.LONG_AGO; // …and no absorb on arrival: he did not land there, he appeared there
+    }
+
     fn dropActions(self: *Hero) void {
         self.attacking = false;
         self.rolling = false;
@@ -2046,6 +2224,7 @@ pub const Hero = struct {
         self.blockT = mathx.LONG_AGO;
         self.pos = self.spawnPos;
         self.facing = self.spawnFacing;
+        self.clearAir();
         self.moving = 0;
         self.speed = 0;
         self.speedS = 0;
@@ -2061,6 +2240,9 @@ pub const Hero = struct {
     fn poseBody(self: *Hero) void {
         if (self.dead) return self.poseDeath();
         if (self.stun != .none) return self.poseStun();
+        // ABOVE the roll and the rest for the reason the stun is above it: a man in the air is in the air
+        // whatever he pressed. Nothing below can be running with him (they are all `committed()` together).
+        if (self.jumping) return self.poseJump();
         if (self.rolling) return self.poseRoll();
         if (self.attacking) return self.poseAttack();
         if (self.casting) return self.poseCast();
@@ -2078,9 +2260,13 @@ pub const Hero = struct {
         const rec = self.blockRecoil();
         const guardBack = BLOCK_STEP * rec;
         const dk = self.drinkLevels(); // zero unless he has a flask up — see poseDrinkArm
+        // THE LANDING ABSORB, laid over whatever gait is running rather than given a pose of its own: he lands
+        // into a walk, a sprint or a standstill, and three copies of a stance would be three animations of one
+        // event. It is a term in the CROUCH, exactly as a caught blow's sink is.
+        const land = self.landDip();
         const crouch = (RUN_CROUCH * runB + 0.5 * RUN_CROUCH * sprintB) * m +
             STRAFE_DIP * @abs(lat) * m +
-            GUARD_CROUCH * gB + BLOCK_SINK * rec + DRINK_SINK * H * dk.lift;
+            GUARD_CROUCH * gB + BLOCK_SINK * rec + DRINK_SINK * H * dk.lift + LAND_SINK * land;
 
         const walkBob = -0.5 * A_BOB * mathx.cosf(2.0 * twoPi * ph); // twice/stride, symmetric
         const runBounce = A_RUN_BOUNCE * (0.5 - 0.5 * mathx.cosf(2.0 * twoPi * (ph - 0.2))); // up-only, peaks at flight
@@ -2100,10 +2286,11 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             mul(rz(list), ry(prot)),
             mul(tr(sway, pelvY, -guardBack), mul(rx(bodyPitch), ry(facingDeg))), // crouch, driven back off a caught blow, pitch whole body forward about the feet, then face
-            rootAt(self.pos),
+            rootAt(self.footPos()),
         );
 
-        const lean = (mathx.lerpF(TORSO_LEAN * fw, RUN_LEAN, runB) + sprintB * (SPRINT_LEAN - RUN_LEAN)) * m;
+        const lean = (mathx.lerpF(TORSO_LEAN * fw, RUN_LEAN, runB) + sprintB * (SPRINT_LEAN - RUN_LEAN)) * m +
+            LAND_STOOP * land; // …and the trunk closes over the sink, which is where most of a landing reads
         const bank = STRAFE_LEAN * lat * m;
         const aim = self.aimLean;
         setLocal(&wx, SPINE, self.rest, mul3(rx(lean * 0.5 + aim * 0.5), ry(-0.3 * prot), rz(0.5 * bank)));
@@ -2222,11 +2409,25 @@ pub const Hero = struct {
 
     /// ONE CHANNEL DRIVES THE WHOLE SHOVE: out hard to `PARRY_PUNCH_AT`, then a damped swing that crosses its own
     /// rest and settles exactly on it. At the end it is 0, which IS the guard pose, so the exit cannot snap.
+    /// A MASS ARRIVING AND SETTLING BACK ONTO ITS REST, over one normalized clock: it ARRIVES over `at` (a
+    /// shove that starts at full is a snap), then rings down through its own rest and back — the reactions law,
+    /// which is the same law whether what arrived was a caught blow or his own weight off a jump. `rebound`
+    /// is how much of one cycle the ring gets; it dies AT u = 1, so there is nothing left to snap out of.
+    fn absorb(u: f32, at: f32, rebound: f32) f32 {
+        if (u <= at) return mathx.smoothstep(0, at, u);
+        const w = mathx.clampF((u - at) / (1.0 - at), 0, 1);
+        const fall = (1.0 - w) * (1.0 - w);
+        return fall * mathx.cosf(std.math.tau * rebound * w);
+    }
+
     fn parryDrive(u: f32) f32 {
-        if (u <= PARRY_PUNCH_AT) return mathx.smoothstep(0, PARRY_PUNCH_AT, u);
-        const w = mathx.clampF((u - PARRY_PUNCH_AT) / (1.0 - PARRY_PUNCH_AT), 0, 1);
-        const fall = (1.0 - w) * (1.0 - w); // …and it dies AT w = 1, so there is nothing left to snap out of
-        return fall * mathx.cosf(std.math.tau * PARRY_REBOUND * w);
+        return absorb(u, PARRY_PUNCH_AT, PARRY_REBOUND);
+    }
+
+    /// …and the landing's own, off the touchdown clock. 0 once it is spent, so it costs the gait nothing.
+    fn landDip(self: *const Hero) f32 {
+        if (self.landT >= LAND_DUR) return 0;
+        return absorb(self.landT / LAND_DUR, LAND_SINK_AT, LAND_REBOUND);
     }
 
     /// THE SWIPE ITSELF: −1 fully coiled the other way, +1 followed all the way through, crossing CENTRE about
@@ -2255,7 +2456,7 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             ry(PARRY_PELVIS * blade), // the pelvis takes a share of the turn; the rest is waist
             mul(tr(0, hipY - sink, PARRY_HAND_LEAD * k - BLOCK_STEP * rec), mul(rx(PARRY_PITCH * k), ry(facingDeg))),
-            rootAt(self.pos),
+            rootAt(self.footPos()),
         );
         setLocal(&wx, SPINE, self.rest, ry(0.5 * blade));
         setLocal(&wx, CHEST, self.rest, mul(rx(5.0 * rec), ry(0.5 * blade)));
@@ -2298,6 +2499,43 @@ pub const Hero = struct {
         for (0..N) |i| wx[i] = lerpM(self.blendXf[i], wx[i], k);
     }
 
+    /// THE FLIGHT, off ONE number: the vertical velocity. DRIVE on the way up (the leg that pushed still
+    /// extended behind him, arms thrown up, trunk arched), TUCK where the velocity passes through zero — which
+    /// IS the apex, so the pose cannot drift out of step with the arc the way a second clock would — and REACH
+    /// on the way down, legs under him and toes up to receive the ground.
+    ///
+    /// NO ROOT PITCH: `rx` at the root rotates about the world origin, so it swings the legs (the waist-hinge
+    /// law, and here there is not even a foot on the ground to argue for it). The whole fold is spine and chest.
+    fn poseJump(self: *Hero) void {
+        const k = mathx.clampF(self.vertVel / JUMP_V0, -1, 1);
+        const drive = mathx.clampF(k, 0, 1);
+        const reach = mathx.clampF(-k, 0, 1);
+        const tuck = 1.0 - @abs(k); // peaks at the apex, gone at both ends
+        const facingDeg = mathx.degrees(self.facing);
+        const hipY = self.rest[ROOT].y;
+
+        var wx: [N]rl.Matrix = undefined;
+        wx[ROOT] = mul(mul(tr(0, hipY, 0), ry(facingDeg)), rootAt(self.footPos()));
+        const fold = JUMP_FOLD * tuck + JUMP_ARCH * drive;
+        setLocal(&wx, SPINE, self.rest, rx(fold * 0.5));
+        setLocal(&wx, CHEST, self.rest, rx(fold * 0.5));
+        setLocal(&wx, NECK, self.rest, rx(JUMP_HEAD_UP * 0.4 * drive));
+        setLocal(&wx, HEAD, self.rest, rx(HEAD_WALK * reach + JUMP_HEAD_UP * 0.6 * drive));
+        // …AND THE TWO LEGS ARE NEVER DOING THE SAME THING AT ONCE. A symmetric pair of legs is what reads as a
+        // doll dropped off a table; the split is cosmetic and the same both jumps, since a jump is not a stride.
+        jumpLeg(&wx, self.rest, drive, reach, tuck, 1.0 + JUMP_LEG_SPLIT / JUMP_TUCK_HIP, 1.0, HIPL, KNEEL, ANKL);
+        jumpLeg(&wx, self.rest, drive, reach, tuck, 1.0 - JUMP_LEG_SPLIT / JUMP_TUCK_HIP, -1.0, HIPR, KNEER, ANKR);
+        jumpArm(&wx, self.rest, drive, reach, tuck, 1.0, SHL, ELL, WRL);
+        jumpArm(&wx, self.rest, drive, reach, tuck, -1.0, SHR, ELR, WRR);
+        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        // The boards stay up if they were up: one hand is holding a shield, not helping him fly.
+        if (self.guardB > 0.001) self.poseGuard(&wx, mathx.clampF(self.guardB, 0, 1), 0, fold * 0.5, 0, 0);
+        if (self.wandOut()) self.poseWandArm(&wx);
+        if (self.bowOut()) self.poseBowArms(&wx, fold * 0.5, 0, 0);
+        self.applyXfade(&wx);
+        self.xf = wx;
+    }
+
     fn poseRoll(self: *Hero) void {
         const u = mathx.clampF(self.rollT / ROLL_DUR, 0, 1);
         const tuckIn = mathx.smoothstep(0, ROLL_TUCK_IN, u);
@@ -2316,7 +2554,7 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             mul(rz(lean), rx(spin)), // dip the roll-side shoulder, then somersault forward over it
             mul(ry(facingDeg + skew), tr(0, ballY, 0)), // face roll dir (off-square fading out), lift to the ball centre
-            rootAt(self.pos),
+            rootAt(self.footPos()),
         );
         setLocal(&wx, SPINE, self.rest, rx(ROLL_SPINE * tuck));
         setLocal(&wx, CHEST, self.rest, rx(ROLL_SPINE * tuck));
@@ -2363,7 +2601,7 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             ry(yawP),
             mul(tr(0, hipY - AL_LOAD * wind - AL_DIP * sPelv, 0), mul(rx(1.5 * sChest), ry(facingDeg))), // knees coil under the windup; only a WHISKER of forward pitch (the swipe plane stays flat)
-            rootAt(self.pos),
+            rootAt(self.footPos()),
         );
         setLocal(&wx, SPINE, self.rest, mul(rx(crunch + self.aimLean * 0.5), ry(0.35 * yawC)));
         setLocal(&wx, CHEST, self.rest, mul(rx(crunch + self.aimLean * 0.5), ry(0.65 * yawC)));
@@ -2423,7 +2661,7 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             ry(yaw),
             mul(tr(0, hipY - dip, 0), mul(rx(AH_PITCH * sPelv), ry(facingDeg))),
-            rootAt(self.pos),
+            rootAt(self.footPos()),
         );
         setLocal(&wx, SPINE, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), rz(0.5 * tilt)));
         setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), rz(0.5 * tilt)));
@@ -2472,7 +2710,7 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             ry(yaw),
             mul(tr(0, hipY - dip, 0), mul(rx(2.0 * sThrow), ry(facingDeg))),
-            rootAt(self.pos),
+            rootAt(self.footPos()),
         );
         // He ARCHES under the raised arm and folds back over the throw — the waist hinge, not a root lean.
         const spineX = -CAST_LEAN * wind + 2.0 * CAST_LEAN * sThrow;
@@ -2527,7 +2765,7 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             rz(lilt * 0.18),
             mul(tr(0, SIT_Y * H + breathe, 0), mul(rx(SIT_PITCH), ry(facingDeg))),
-            rootAt(self.pos),
+            rootAt(self.footPos()),
         );
         setLocal(&wx, SPINE, self.rest, mul(rx(SIT_SPINE + 0.6 * strum), rz(lilt * 0.45)));
         setLocal(&wx, CHEST, self.rest, mul(rx(SIT_CHEST), rz(lilt * 0.37)));
@@ -2572,7 +2810,7 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             rz(wob),
             mul(tr(0, hipY - sink, -back), mul(rx(-0.55 * lean), ry(facingDeg))),
-            rootAt(self.pos),
+            rootAt(self.footPos()),
         );
         setLocal(&wx, SPINE, self.rest, mul(rx(-0.55 * lean), rz(0.3 * wob)));
         setLocal(&wx, CHEST, self.rest, mul(rx(-0.55 * lean), rz(0.3 * wob)));
@@ -2617,7 +2855,7 @@ pub const Hero = struct {
         wx[ROOT] = mul3(
             rz(twist),
             mul(tr(0, y, 0), mul(rx(pitch), ry(facingDeg))),
-            rootAt(self.pos),
+            rootAt(self.footPos()),
         );
         setLocal(&wx, SPINE, self.rest, rx(28.0 * k));
         setLocal(&wx, CHEST, self.rest, rx(28.0 * k));
@@ -2664,6 +2902,10 @@ pub const Hero = struct {
     }
 
     /// Eye/target point for the camera: the base of the neck, measured from `pos.y`
+    /// THE CAMERA'S POINT, and its only caller. Deliberately over the GROUND under him and not over his feet:
+    /// the rig is bolted to this, so a jump taken 1:1 would not read as HIM rising — it reads as the WORLD
+    /// dropping a metre and coming back, which is the same picture with the wrong subject in it. How much of a
+    /// jump the lens takes is the CAMERA's decision and it is made there (`camera.LIFT_SHARE`).
     pub fn shoulderPoint(self: *const Hero) rl.Vector3 {
         return v3(self.pos.x, self.pos.y + self.rest[CHEST].y, self.pos.z);
     }
@@ -2777,6 +3019,27 @@ fn rollLeg(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, tuck: f32, f: f32, side: f32,
     setLocal(wx, hip, rest, mul(rx(-ROLL_HIP * f * tuck), rz(-side * HIP_ADDUCT)));
     setLocal(wx, knee, rest, rx(mathx.lerpF(IDLE_KNEE, ROLL_KNEE * f, tuck)));
     setLocal(wx, ank, rest, ry(side * FOOT_TOEOUT));
+}
+/// ONE LEG THROUGH THE ARC. `f` is this leg's share of the tuck — the two are deliberately unequal.
+fn jumpLeg(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, drive: f32, reach: f32, tuck: f32, f: f32, side: f32, hip: usize, knee: usize, ank: usize) void {
+    // NEGATIVE rx IS FLEXION at the hip (`rollLeg`'s convention, and the gait curves' behind it), so the
+    // toe-off — the leg still EXTENDED behind him — is the one term here with a positive sign.
+    const hipA = JUMP_TOEOFF * drive - JUMP_TUCK_HIP * f * tuck - JUMP_REACH_HIP * reach;
+    setLocal(wx, hip, rest, mul(rx(hipA), rz(-side * HIP_ADDUCT)));
+    setLocal(wx, knee, rest, rx(IDLE_KNEE + JUMP_TUCK_KNEE * f * tuck + JUMP_REACH_KNEE * reach));
+    // The ankle stays POINTED through the push and comes up to receive the ground on the way down.
+    setLocal(wx, ank, rest, mul(rx(-JUMP_TOE_PLANTAR * drive + JUMP_REACH_DORSI * reach), ry(side * FOOT_TOEOUT)));
+}
+/// THE ARMS MUST SURVIVE THE APEX. `drive` and `reach` both pass through zero at the top of the arc, so an
+/// arm hung off either of them alone goes limp on the one frame the whole jump is read from — the upper body
+/// doing nothing while the legs do everything, which is the "legs alone are not a gait" failure with the man
+/// off the ground. So the raise KEEPS a share of itself the whole flight (`JUMP_ARM_HOLD`) and only trades it
+/// for the spread on the way down.
+fn jumpArm(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, drive: f32, reach: f32, tuck: f32, side: f32, sh: usize, el: usize, wr: usize) void {
+    const up = JUMP_ARM_UP * (JUMP_ARM_HOLD + (1.0 - JUMP_ARM_HOLD) * drive) * (1.0 - JUMP_ARM_DROP * reach);
+    setLocal(wx, sh, rest, mul(rx(-up), rz(side * (ARM_ABD + JUMP_ARM_OUT * reach))));
+    setLocal(wx, el, rest, rx(-(IDLE_ELBOW + JUMP_ARM_ELBOW * drive + JUMP_ARM_FOLD * tuck)));
+    setLocal(wx, wr, rest, rl.math.matrixIdentity());
 }
 fn sitLeg(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, side: f32, hip: usize, knee: usize, ank: usize) void {
     setLocal(wx, hip, rest, mul(rx(-SIT_HIP_FLEX), rz(side * SIT_HIP_ABD)));
@@ -3528,6 +3791,160 @@ test "roll travel: the brake profile integrates to ROLL_DIST" {
     try std.testing.expectApproxEqAbs(@as(f64, ROLL_DIST), dist, 1e-3);
 }
 
+
+/// Fly one whole jump at `dt` and report what it did. The hero's own advance path, so what is measured is what
+/// the game runs — `updateAir` minus the TRAVEL, which is `game.moveHeroAir`'s and needs an Env.
+fn flyJump(dt: f32) struct { apex: f32, air: f32, frames: usize } {
+    var h = testHero();
+    _ = h.startJump(mathx.zero3, 0);
+    var apex: f32 = 0;
+    var t: f32 = 0;
+    var n: usize = 0;
+    while (h.airborne()) : (n += 1) {
+        h.updateAir(dt, null);
+        apex = @max(apex, h.lift);
+        t += dt;
+        if (n > 100_000) break; // the "stuck in the air" failure, caught rather than hung on
+    }
+    return .{ .apex = apex, .air = t, .frames = n };
+}
+
+test "THE JUMP IS THE SAME JUMP AT EVERY FRAME RATE — and it always comes down" {
+    // `env.walkStep`'s lesson, one layer over: a vertical integration measured in FRAMES rather than seconds is
+    // a hero who jumps higher on a better machine. Semi-implicit Euler's error is O(g·dt²), which is 9 mm at
+    // 30 fps and nothing above it — so the tolerance is a real bound and not a shrug.
+    for ([_]f32{ 1.0 / 30.0, 1.0 / 60.0, 1.0 / 144.0, 1.0 / 240.0 }) |dt| {
+        const j = flyJump(dt);
+        try std.testing.expect(j.frames < 100_000); // it ended
+        try std.testing.expectApproxEqAbs(JUMP_APEX, j.apex, 0.02);
+        try std.testing.expectApproxEqAbs(JUMP_AIR, j.air, 0.05);
+    }
+}
+
+test "A JUMP NEVER WRITES pos.y — the ground under him is `groundActor`'s and stays that" {
+    // The whole of the `lift` law. `airY` is the world height his feet are integrating through; `pos.y` is
+    // untouched, so nothing that measures off the ground (the dust, the particle floor, `env.groundAt`) moves.
+    var h = testHero();
+    h.pos = v3(3, 1.25, -2); // standing on a bank, not on the datum
+    _ = h.startJump(mathx.zero3, 0);
+    var high: f32 = 0;
+    while (h.airborne()) {
+        h.updateAir(1.0 / 60.0, null);
+        try std.testing.expectEqual(@as(f32, 1.25), h.pos.y);
+        try std.testing.expectApproxEqAbs(h.footY(), h.pos.y + h.lift, 1e-5);
+        high = @max(high, h.lift);
+    }
+    try std.testing.expect(high > 0.9);
+    try std.testing.expectEqual(@as(f32, 0), h.lift); // …and ZERO the moment he is down, always
+}
+
+test "THE GROUND CATCHES HIS FEET WHEREVER IT IS — a jump onto a ledge lands early, off one lands late" {
+    const flat = flyJump(1.0 / 60.0).air;
+    // Onto a LEDGE: the datum rises under him mid-flight (that is what `groundActor` does as he crosses it),
+    // and he lands on it rather than sinking back to the height he left.
+    var up = testHero();
+    _ = up.startJump(mathx.zero3, 0);
+    var t: f32 = 0;
+    while (up.airborne()) : (t += 1.0 / 60.0) {
+        if (t > 0.30) up.pos.y = 0.6;
+        up.updateAir(1.0 / 60.0, null);
+    }
+    try std.testing.expect(t < flat);
+    try std.testing.expectEqual(@as(f32, 0.6), up.pos.y);
+    // …and off a DROP, the far side of the same rule: the ground falls away and he is in the air longer.
+    var down = testHero();
+    down.pos = v3(0, 2.0, 0);
+    _ = down.startJump(mathx.zero3, 0);
+    t = 0;
+    while (down.airborne()) : (t += 1.0 / 60.0) {
+        if (t > 0.20) down.pos.y = 0;
+        down.updateAir(1.0 / 60.0, null);
+    }
+    try std.testing.expect(t > flat);
+}
+
+test "A JUMP IS COMMITTED: no second one out of the air, and nothing else starts out of it either" {
+    var h = testHero();
+    try std.testing.expect(h.startJump(mathx.zero3, 0));
+    try std.testing.expect(h.committed());
+    try std.testing.expect(!h.startJump(mathx.zero3, 0)); // no double jump, and it falls out of `committed()`
+    h.startRoll(v3(0, 0, 1));
+    try std.testing.expect(!h.rolling);
+    // …and the swing pressed on the way down is BUFFERED, not eaten: it goes off the frame he lands.
+    h.requestAttack(.light);
+    try std.testing.expect(!h.attacking and h.queued != null);
+    var n: usize = 0;
+    while (h.airborne() and n < 1000) : (n += 1) h.updateAir(1.0 / 60.0, null);
+    try std.testing.expect(h.attacking);
+}
+
+test "A JUMP IS FREE, and the two states that refuse it outright" {
+    // ER's own: only a jump ATTACK is billed. `STAM_LOCKOUT` exists to punish greed in a fight, and fencing a
+    // man off the map with it is a different thing wearing the same rule.
+    var h = testHero();
+    h.stam.spend(combat.STAM_MAX);
+    try std.testing.expect(!h.stam.canAct());
+    try std.testing.expect(h.startJump(mathx.zero3, 0));
+    try std.testing.expectEqual(@as(f32, 0), h.stam.cur);
+
+    var stunned = testHero();
+    stunned.enterStun(.light);
+    try std.testing.expect(!stunned.startJump(mathx.zero3, 0));
+    var sitting = testHero();
+    sitting.resting = true;
+    try std.testing.expect(!sitting.startJump(mathx.zero3, 0));
+}
+
+test "A BLOW IN THE AIR STILL BRINGS HIM DOWN — the arc runs under every branch, not just its own" {
+    var h = testHero();
+    _ = h.startJump(mathx.zero3, 0);
+    h.updateAir(0.1, null);
+    try std.testing.expect(h.lift > 0.2);
+    h.enterStun(.heavy); // dropActions leaves the jump alone on purpose: he is still up there
+    try std.testing.expect(h.jumping);
+    var n: usize = 0;
+    while (h.airborne() and n < 1000) : (n += 1) h.updateStun(1.0 / 60.0);
+    try std.testing.expect(n < 1000);
+    try std.testing.expectEqual(@as(f32, 0), h.lift);
+}
+
+test "HE JUMPS, HE DOES NOT DIVE — the trunk stays near upright the whole way through" {
+    // A jump is the one big move with no ground under it to hinge against, so nothing is holding the body up
+    // but the numbers: let the fold run away and he goes over the handlebars, head-first, every hop. Measured
+    // as the angle of the PELVIS→HEAD line off world up, which is the thing the eye actually reads.
+    var h = testHero();
+    _ = h.startJump(v3(0, 0, -1), RUN_SPEED);
+    var worst: f32 = 0;
+    while (h.airborne()) {
+        h.updateAir(1.0 / 60.0, null);
+        const spine = mathx.subV(foemod.markOn(h.xf[HEAD], mathx.zero3), foemod.markOn(h.xf[ROOT], mathx.zero3));
+        const tilt = mathx.degrees(std.math.atan2(mathx.lenXZ(spine), spine.y));
+        worst = @max(worst, tilt);
+    }
+    try std.testing.expect(worst < 20.0);
+}
+
+test "THE LANDING ABSORB OVERSHOOTS ITS REST AND IS SPENT, so the gait gets it back whole" {
+    // The reactions law on the most ordinary move in the game, and the other half of it: `landDip` reads 0
+    // past its own clock, so nothing about a walk taken a second later remembers the jump.
+    var h = testHero();
+    h.landT = 0;
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.landDip(), 1e-4); // it ARRIVES; it does not start sunk
+    var peak: f32 = 0;
+    var over: f32 = 0;
+    var t: f32 = 0;
+    while (t <= LAND_DUR) : (t += 1.0 / 240.0) {
+        h.landT = t;
+        peak = @max(peak, h.landDip());
+        over = @min(over, h.landDip());
+    }
+    try std.testing.expectApproxEqAbs(@as(f32, 1), peak, 0.02);
+    try std.testing.expect(over < -0.05); // …and it rises PAST its stance on the way back
+    h.landT = LAND_DUR;
+    try std.testing.expectEqual(@as(f32, 0), h.landDip());
+    h.landT = mathx.LONG_AGO;
+    try std.testing.expectEqual(@as(f32, 0), h.landDip());
+}
 
 /// A hero facing +Z with the shield already up.
 fn testGuarded() Hero {

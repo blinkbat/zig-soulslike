@@ -74,6 +74,10 @@ const SHAKE_CAST = 0.07;
 /// …and the ROOTS closing on something: heavier than a stone leaving a rod, lighter than the blow it is
 /// buying you. It holds, it does not hit.
 const SHAKE_ROOTS_BITE = 0.20;
+/// …and HIS OWN WEIGHT arriving off a jump. Over the bolt leaving (nothing has been hit either way, but this
+/// is a mass landing rather than a stone leaving a rod) and under the lightest blow he lands: a jump is
+/// traversal, and a frame that cracks as hard for stepping off a rock as for a sword going in is a liar.
+const SHAKE_LAND = 0.08;
 const SHAKE_HURT = 0.42;
 const SHAKE_HURT_HEAVY = 0.62;
 // A CAUGHT blow cracks the frame less than one that lands — he HELD, and the shake says so.
@@ -548,6 +552,17 @@ const WADE_KNEE: f32 = 0.50;
 const WADE_DEEP: f32 = envmod.WADE_MAX;
 const WADE_SLOWEST: f32 = 0.8;
 
+comptime {
+    // …AND THE WALL ITSELF IS CHEST HEIGHT ON HIM, pinned here for `hero.H`'s reason: `env` sits below `hero`
+    // in the import graph and writes 1.37 out with the derivation in a comment. This file sees both ends, and
+    // env's own test only brackets the figure to a hand-picked band — which a moved stature walks straight
+    // through. 0.760·H is the thorax on the rig.
+    std.debug.assert(@abs(envmod.WADE_MAX - 0.760 * heromod.H) < 0.005);
+    // …and the hero's FOOTPRINT, which env's own push-out tests write out for the same reason and had left
+    // as a comment. Third instance of the pattern, same fix.
+    std.debug.assert(envmod.HERO_R_PIN == foemod.HERO_R);
+}
+
 fn wadeDrag(g: *const Game) f32 {
     return wadeDragAt(g.env.wadeDepth(g.hero.pos.x, g.hero.pos.z));
 }
@@ -671,6 +686,18 @@ test "NOTHING CHASES FOREVER — every creature turns round at its own tether, n
 /// The sprint in `chase` starts at the halfway mark, so this is how long after it a creature may still be
 /// coming. `LEASH_CALM` plus a beat for the last bite to land.
 const LEASH_LETGO: f32 = foemod.LEASH_CALM + 1.5;
+
+test "THE JUMP IS SIZED AGAINST THE TERRAIN IT EXISTS TO CROSS, not against a number that looked right" {
+    // The one claim that spans both files, so it is pinned in the file that can see both. `HEIGHT_STEP` is
+    // 0.25 m and a WALK takes two risers (`env.STEP_UP` 0.55): the apex has to clear a THIRD, which is what
+    // makes a sculpted ledge something the player answers with a button rather than a detour — and it must
+    // stay well under the wall the walk is rightly refused by, or the jump quietly deletes the step rule.
+    try std.testing.expect(heromod.JUMP_APEX > 3.0 * worldfmt.HEIGHT_STEP);
+    try std.testing.expect(heromod.JUMP_APEX > envmod.STEP_UP);
+    try std.testing.expect(heromod.JUMP_APEX < 6.0 * worldfmt.HEIGHT_STEP);
+    // …and a SPRINT jump covers ground worth taking off for, measured against the roll he already has.
+    try std.testing.expect(SPRINT_SPEED * heromod.JUMP_AIR > heromod.ROLL_DIST);
+}
 
 /// A creature's own reach into the sky, which is the number `lockPitch` gates the tilt UP on.
 fn standHeight(f: anytype) f32 {
@@ -808,6 +835,15 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
     }
     g.hero.update(dt, moved, speed, moveYaw);
     g.hero.pose();
+}
+
+/// THE AIRBORNE MOVER, `moveHero`'s opposite number: the stick may bend the heading and nothing else (the
+/// speed was committed at takeoff), and the step goes through `env.flyStep` — he flies over what he is above.
+fn moveHeroAir(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
+    g.hero.steerAir(dt, if (mv.speed > 0.001) rollDir(g, mv) else mathx.zero3);
+    const dir = mathx.headingDir(g.hero.airYaw);
+    g.hero.pos = inBounds(g.env.flyStep(g.hero.pos, dir, g.hero.airSpeed * dt, g.hero.footY()));
+    g.hero.updateAir(dt, faceYaw);
 }
 
 fn leanToGround(g: *Game, dt: f32) void {
@@ -1009,6 +1045,14 @@ fn flyArrow(g: *Game, ar: *archermod.Arrow, dt: f32) void {
 }
 
 /// One frame of flight for everything thrown AT him — the harness's own hook, since the game does this inline.
+/// THE HARNESS HAS TO FLY ONE THROUGH THE REAL MOVER (`throwBoltForShot`'s reason). `hero.updateAir` is the
+/// clocks and the pose; the TRAVEL is `moveHeroAir`'s, because what a jump may fly OVER is a question about
+/// the ground. Called with only the hero, every "the jump" still is a picture of a man hopping on the spot —
+/// which is the one thing the shot exists to disprove.
+pub fn stepAirForShot(g: *Game, dt: f32) void {
+    moveHeroAir(g, dt, .{}, null);
+}
+
 pub fn stepArrowsForShot(g: *Game, dt: f32) void {
     for (&g.arrows) |*ar| {
         if (!ar.live) continue;
@@ -1279,6 +1323,11 @@ const QUICK_PAD: rl.GamepadButton = hud_.padOf(hud_.BTN_QUICK);
 const ARROW_KEY: rl.KeyboardKey = .u;
 /// L2 ON THE KEYBOARD — see the L2 block in `run` for why the mouse cannot carry it.
 const PARRY_KEY: rl.KeyboardKey = .c;
+/// THE JUMP. On the pad it is **A**, ER's own and the one this game has been holding it open for
+/// (`hud.BTN_JUMP`). The keyboard cannot mirror the letter here — A is strafe-left — so the jump takes a key of
+/// its own, next to the parry's, the way `PARRY_KEY` did when RMB turned out to be spoken for.
+const JUMP_PAD: rl.GamepadButton = hud_.padOf(hud_.BTN_JUMP);
+const JUMP_KEY: rl.KeyboardKey = .v;
 
 /// …and the panel takes the INTERACT button on top of the menu confirm, so the button that opened a
 /// conversation is also the one that walks through it. It cannot go into `menumod.confirmPressed`: that is
@@ -1330,11 +1379,7 @@ fn tickRest(g: *Game, dt: f32) void {
 /// (`menu.zig`, which is where UI navigation lives). Getting up is a ROW now, so there is no any-button
 /// rule left to fight with a cursor.
 fn bonfireInput(g: *Game, dt: f32) void {
-    // ON THE WHEEL THE CROSS IS THE ZOOM, so it is withheld from the walk there and the LEFT STICK does it
-    // instead; on the LIST the cross is the only sensible way to pick a row and it keeps it. The keyboard's
-    // arrows walk on both (`navPressedNoPad`), because a desk zooms with the mouse wheel.
-    const onWheel = g.rest.screen == .tree;
-    const nav: *const fn (menumod.NavDir) bool = if (onWheel) &menumod.navPressedNoPad else &menumod.navPressed;
+    const nav = menumod.navFor(g.rest.screen == .tree); // the cross-vs-stick rule, written once (`menu.navFor`)
     if (nav(.up)) restmod.navigate(&g.rest, 0, -1);
     if (nav(.down)) restmod.navigate(&g.rest, 0, 1);
     if (nav(.left)) restmod.navigate(&g.rest, -1, 0);
@@ -2178,8 +2223,11 @@ pub fn run(mode: Mode) void {
                     rl.hideCursor();
                     armScript(g); // the world he is about to test is a FRESH one: no switch already thrown
                     g.hero.pos = mathx.ground(g.editor.cam.target.x, g.editor.cam.target.z);
-                    g.hero.pos = g.env.resolveActor(g.hero.pos, HERO_R);
+                    // PLANTED BEFORE HE IS PUSHED OUT: the two write different axes (`plantActor` the Y,
+                    // `resolveActor` the XZ), so the order costs nothing and the push-out then has a real foot
+                    // height to compare against instead of the datum a sculpted map is metres above.
                     plantActor(g, &g.hero.pos);
+                    g.hero.pos = g.env.resolveActor(g.hero.pos, HERO_R, g.hero.pos.y);
                     g.hero.setSpawn(g.hero.pos, g.hero.facing);
                     g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
                     wasInside = false; // swallow the mouse delta the editor's look accumulated
@@ -2441,10 +2489,16 @@ pub fn run(mode: Mode) void {
         // …and the QUICK BAR sheds whatever he has run out of, once a frame rather than at each site that can
         // empty the bag (a use, a drip, whatever spends one next): a per-site list is a list to forget one from.
         g.hero.quick.dropEmpty(&g.bag);
+        const jumpReq = rl.isKeyPressed(JUMP_KEY) or padPressed(JUMP_PAD);
         // Action input is dead while staggered or dead (a reaction is committed).
         if (!g.hero.dead and !g.hero.staggered()) {
             if (rollReq) {
                 g.hero.requestRoll(rollDir(g, mv));
+            } else if (jumpReq) {
+                // UNDER THE ROLL: A and B are separate buttons, so a frame carrying both is a player who wants
+                // the one with i-frames on it. Above everything else for the same reason the parry is — a jump
+                // is where he has decided to be, and a swing can wait for the queue.
+                if (g.hero.startJump(rollDir(g, mv), mv.speed)) sfx.play(.jump);
             } else if (parryReq) {
                 // ABOVE THE ATTACKS: L2 and R2 are separate buttons, so a frame carrying both is a player who
                 // wants the defensive one. The shove is MOVED AIR; the CLANG belongs to the catch alone.
@@ -2498,6 +2552,10 @@ pub fn run(mode: Mode) void {
             if (!g.hero.dead) resetFoes(g);
         } else if (g.hero.staggered()) {
             g.hero.updateStun(dt);
+        } else if (g.hero.airborne()) {
+            // Under the stagger (a blow in the air still flinches him, and he falls out of it through
+            // `tickAir`) and over everything else: a jump is `committed()`, so nothing below can be running.
+            moveHeroAir(g, dt, mv, faceYaw);
         } else if (g.hero.rolling) {
             g.hero.updateRoll(dt, PLAY_HALF); // committed — ignores move input
         } else if (g.hero.drinking) {
@@ -2679,6 +2737,9 @@ pub fn run(mode: Mode) void {
         g.rig.tickShake(rawDt);
         // THE AIM PULLS THE EYE IN PAST HIM, off the hero's own stance blend — set before the follow, so this frame's boom is already the aim's (see `camera.boom`).
         g.rig.aimB = g.hero.aimB;
+        // …and the share of a JUMP the lens takes, walked before the follow for the same reason: this frame's
+        // target has to be this frame's, or the eye is always one frame behind the man it is pointed at.
+        g.rig.tickLift(g.hero.lift, dt);
         g.rig.followClear(g.hero.shoulderPoint(), &g.env, envGroundAt);
         sfx.listen(g.rig.cam.position, g.rig.rightXZ());
         sfx.ambience(rawDt);
@@ -2689,6 +2750,15 @@ pub fn run(mode: Mode) void {
             g.rumble.play(rumblemod.roll);
             sfx.play(.roll);
             wasRolls = g.hero.rolls;
+        }
+        // HIS OWN MASS ARRIVING — the one beat the jump gets, and it goes on the LANDING and not the takeoff:
+        // nothing has happened until the ground stops him. A one-frame flag, not a counter edge: `tickAir` sets
+        // it on exactly the frame the feet touch and the prologue clears it (`loosed`'s rule).
+        if (g.hero.landed) {
+            g.rumble.play(rumblemod.land);
+            g.rig.addShake(SHAKE_LAND);
+            sfx.playAt(.land, 1.0);
+            if (stepOverlay(g, g.hero.pos.x, g.hero.pos.z)) |over| sfx.playAt(over, 1.0);
         }
         if (g.hero.swings != wasSwings) {
             g.rumble.play(if (g.hero.atkHeavy) rumblemod.swing_heavy else rumblemod.swing_light);
@@ -2729,7 +2799,9 @@ pub fn run(mode: Mode) void {
 
 fn footsteps(g: *Game, last: *f32) void {
     const h = &g.hero;
-    if (h.moving < 0.45 or h.rolling or h.dead or h.staggered()) {
+    // …and NOT while his feet are off the ground: the gait phase keeps running through a jump so he lands back
+    // into the stride he left with, and a boot on every half-cycle of it is a man walking on air.
+    if (h.moving < 0.45 or h.rolling or h.airborne() or h.dead or h.staggered()) {
         last.* = h.phase;
         return;
     }
@@ -2995,13 +3067,21 @@ fn inBounds(p: rl.Vector3) rl.Vector3 {
 
 fn collideActors(g: *Game, dt: f32) void {
     const step = COLLIDE_RATE * dt; // max correction this frame — bigger pushes ease in (no warp)
-    var hp = g.env.resolveActor(g.hero.pos, HERO_R);
+    // HIS FEET, not the ground under him: a jump clears a low collider for the same reason it clears a low
+    // riser and a short creature, and off the same height (`hero.footY`). A wall is still a wall.
+    var hp = g.env.resolveActor(g.hero.pos, HERO_R, g.hero.footY());
     inline for (FOE_GROUPS) |gr| {
         for (@field(g, gr.field).live()) |*a| {
-            if (foemod.corporeal(a) and !a.airborne()) hp = collision.pushOutCircle(hp, HERO_R, a.pos, a.bodyR());
+            // …AND HE CLEARS WHAT HE IS OVER (`moveHeroAir`'s rule, on bodies instead of ground): a jump passes
+            // above a toad and is stopped dead by an ogre, off the creature's own crown rather than a height
+            // invented here. The world's SOLIDS answer the same question off their own `Solid.h` — see the
+            // note at `env.resolveActor`, which is where a wall stays a wall at any altitude.
+            if (foemod.corporeal(a) and !a.airborne() and g.hero.footY() < a.topWorld().y) {
+                hp = collision.pushOutCircle(hp, HERO_R, a.pos, a.bodyR());
+            }
         }
     }
-    // A PERSON IS A BODY. You walk INTO a wanderer, never through one.
+    // A PERSON IS A BODY. You walk INTO a wanderer, never through one — and no jump in this game clears a man.
     for (g.folk.liveConst()) |*p| hp = collision.pushOutCircle(hp, HERO_R, p.pos, p.bodyR());
     g.hero.pos = mathx.approachV(g.hero.pos, inBounds(hp), step);
 
@@ -3011,7 +3091,7 @@ fn collideActors(g: *Game, dt: f32) void {
     // each half-correcting is jitter between them.
     for (g.folk.live()) |*p| {
         const r = p.bodyR();
-        var q = g.env.resolveActor(p.pos, r);
+        var q = g.env.resolveActor(p.pos, r, p.pos.y); // a wanderer never leaves the ground
         q = collision.pushOutCircle(q, r, g.hero.pos, HERO_R);
         p.pos = mathx.approachV(p.pos, inBounds(q), step);
     }
@@ -3024,11 +3104,15 @@ fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
         const r = a.bodyR();
         // Airborne exempts a jump from the terrain rule and from being shouldered — NEVER from the world's
         // solids, or a pounce leaves the arena through a wall. Full strength: a leap into stone stops at it.
+        // AND IT IS MEASURED AT ITS FEET ON THE GROUND, not at the height it is flying at: nothing here has a
+        // hero's `lift` law yet (a hop's own arc is scripted, the fly's `hover` is a field), so handing the
+        // real height over would let a leechfly at 4.6 m sail through architecture. When a creature's flight
+        // becomes a real integration this is the one line that changes.
         if (a.airborne()) {
-            a.pos = inBounds(g.env.resolveActor(a.pos, r));
+            a.pos = inBounds(g.env.resolveActor(a.pos, r, a.pos.y));
             continue;
         }
-        var p = g.env.resolveActor(a.pos, r);
+        var p = g.env.resolveActor(a.pos, r, a.pos.y);
         if (gr.vsHero) p = collision.pushOutCircle(p, r, g.hero.pos, HERO_R);
         for (foes, 0..) |*o, j| {
             if (i == j or !foemod.corporeal(o) or o.airborne()) continue;

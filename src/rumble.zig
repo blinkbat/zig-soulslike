@@ -31,6 +31,9 @@ pub const guard_break = Event{ .low = 0.95, .high = 0.52, .dur = 0.42 };
 /// is iron ringing off iron, not a mass arriving on you.
 pub const parry = Event{ .low = 0.52, .high = 0.92, .dur = 0.15 };
 pub const roll = Event{ .low = 0.16, .high = 0.40, .dur = 0.10 }; // the dodge whump
+/// HIS OWN WEIGHT ARRIVING. Mostly in the LOW motor, which is where mass lives — the roll is the other way
+/// round because a roll is cloth and grit passing under you, and this is a body stopping.
+pub const land = Event{ .low = 0.34, .high = 0.14, .dur = 0.12 };
 pub const cast_throw = Event{ .low = 0.28, .high = 0.50, .dur = 0.14 }; // the stone lets go — a crack, not a thud
 /// A RISING rumble, which a single `Event` cannot be: `Motor` decays from its peak. Pulse this every frame and
 /// the envelope walks UP, since `pulse` re-arms on any peak at or above the live level. Mostly in the HIGH

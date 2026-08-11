@@ -483,6 +483,82 @@ chips you for it; a parry is a COMMITTED WINDOW that pays `STAM_PARRY` once and 
   off the boards and read as litter. It is always less than a catch, and never a different colour: what
   separates the two is size, or a whiff reads as half a hit.
 
+### The jump — A/Cross, and the one move with no ground under it
+
+**IT IS TRAVERSAL, NOT A TECHNIQUE.** ER's own button (`hud.BTN_JUMP`, keyboard `V` — A is strafe-left, so the
+letter cannot be mirrored and the jump takes a key of its own the way the parry did). It costs NO STAMINA:
+only a jump ATTACK is billed in ER, and `STAM_LOCKOUT` exists to punish greed in a fight rather than to fence a
+man off the map. There is no jump attack and no fall damage yet.
+
+- **`pos.y` IS STILL THE GROUND UNDER HIM** — `game.groundActor` remains its only writer, and `hero.lift` is
+  what he is flying above it by. The leechfly's law exactly, with one addition it needed: the height actually
+  integrated is `airY`, the WORLD height of his feet, and `lift` is DERIVED off it (`airY − pos.y`) every
+  frame. That is what makes running off a ledge work — the datum falls away underneath and the gap opens on
+  its own, where a lift integrated over a moving datum sinks with the ground it was measured from.
+  **`lift` is ZERO unless he is airborne**, so a teleport (respawn, F5, the shot harness) can never strand him
+  standing on nothing.
+- **TWO NUMBERS ARE THE DECISION AND THE OTHER TWO ARE SOLVED** — `JUMP_APEX` (1.0 m) and `JUMP_AIR` (0.72 s);
+  `JUMP_G` and `JUMP_V0` fall out of them. An apex and a gravity authored side by side are two dials for one
+  shape and they drift. The apex clears THREE terrain risers where a walk gets two (`env.STEP_UP`), which is
+  what makes a sculpted ledge something a player answers with a button instead of a detour — and a test in
+  `game.zig` pins it against `wf.HEIGHT_STEP` from both sides.
+- **THE INTEGRATOR IS THE CLOSED FORM, not `v -= g·dt; y += v·dt`.** That plain pair loses `g·t·dt/2` of
+  height: NINE CENTIMETRES of apex at 30 fps and none at 240, which is `env.walkStep`'s bug wearing a
+  different hat. The half-a-`dt²` term makes it exact at every frame rate, and a test flies all four.
+- **GRAVITY LIVES IN `tickClocks`**, with the other clocks and for their reason plus one of its own: a blow
+  mid-air routes him to `updateStun` and a death to `updateDeath`, and a man who stopped falling because he
+  got hit would hang in the sky. `dropActions` deliberately does NOT clear `jumping`. It IS gated on `held`,
+  though — the pause card still calls `update` for the breathing bob.
+- **IT IS `committed()`, beside the roll.** One predicate, and every rule then lands without a second list: no
+  double jump, no roll or cast out of the air, a sprint that stops when his feet do, and an attack pressed
+  mid-flight BUFFERED into the one slot and fired the frame he lands (`tickAir` → `fireQueued`).
+- **THE STICK BENDS THE ARC AND MAY NEVER RE-PRICE IT** (`AIR_TURN_RATE`, well under `TURN_RATE`). Heading and
+  ground speed are committed at takeoff, ER-style: a standing jump goes straight up and a sprint jump carries
+  the sprint. Steering the speed instead would make a standing hop a free sprint with no bill.
+- **HE MAY FLY OVER ANYTHING HE IS ABOVE, AND NOTHING ELSE** (`env.flyStep`, beside `walkStep` because
+  traversal is decided in one file). A man in the air asks a different question of the terrain — not "may I
+  climb this" but "am I over it" — so his own FEET replace the riser rule. Without it a hop at a cliff carries
+  him into its footprint, `groundActor` lifts him up three metres of it, and the ledge nobody could walk up has
+  been climbed by pressing A at it. **Plus the walk's own `STEP_UP` allowance**, since on the takeoff frame his
+  feet are still on the ground he left: a jump may never travel WORSE than a step. **THE SAME RULE RUNS ON ALL
+  THREE THINGS THAT CAN BE IN THE WAY, each off its own top**: on BODIES in `collideActors` (he clears a toad
+  and is stopped dead by an ogre, off the creature's `topWorld`) and on the world's SOLIDS in
+  `env.resolveActor`, which takes his `footY` and skips any collider whose `Solid.h` is under it. That last one
+  was the report — *jumping did not let you clear low obstacles* — and it was the odd one out rather than a
+  missing rule: `buildSolids` has always stamped each collider's blocking height off its `part.h`, and
+  `blocksPoint` (an arrow lobbed over a kerb) and `blocksSight` (a look passing over one) have always read it.
+  The PUSH-OUT was the one consumer that did not, so no altitude cleared anything and a man at the top of his
+  arc was shouldered off a fallen log. **A wall is still a wall at any altitude** — that law is about a WALL
+  and it holds by construction, since a wall's `h` is 3 m and `JUMP_APEX` is 1.0; what changed is that
+  knee-high rubble stopped being one. **And NO `STEP_UP` allowance there**, unlike `flyStep`: the terrain's
+  riser rule already lets a WALK take 0.55 m so matching it costs nothing on foot, but there is no
+  step-over-props rule to stay level with, and an allowance would let a man standing still walk through low
+  rubble. Feet genuinely above the top, or it is in the way. **The FOES are deliberately still measured at
+  `pos.y`**, flying or not: nothing but the hero has a real integrated height yet (a hop's arc is scripted,
+  the fly's `hover` is a field), and handing the real one over would sail a leechfly at 4.6 m through
+  architecture. When a creature's flight becomes an integration, that is the one line that changes.
+- **THE LENS TAKES ONLY A SHARE OF IT** (`camera.LIFT_SHARE`, 0.55, eased). The rig is bolted to his shoulder,
+  so a target that rose the full metre would hold him dead still in frame and move the WORLD instead — the
+  same picture with the wrong subject. `hero.shoulderPoint` is therefore over the GROUND under him and how
+  much of a jump the camera takes is the camera's decision, made once, in `camera.zig`.
+- **THE POSE IS THREE TERMS OFF ONE NUMBER — the vertical velocity.** DRIVE on the way up (the leg that pushed
+  still extended behind, ankle pointed, arms thrown up), TUCK where the velocity passes through ZERO — which
+  IS the apex, so the pose cannot drift out of step with the arc the way a second clock would — and REACH on
+  the way down, legs under him and toes up to receive. **The arms must survive the apex** (`JUMP_ARM_HOLD`):
+  drive and reach both pass through zero there, so an arm hung off either alone goes limp on the one frame the
+  whole jump is read from. NO ROOT PITCH — `rx` at the root rotates about the world origin and swings the
+  legs; the whole fold is spine and chest, and a test pins the trunk under 20° off upright for the whole arc.
+- **THE ABSORB IS VISUAL ONLY, and that is a law.** A landing recovery that took the stick off him would be
+  the hitstop the house rules refuse, paid on the most ordinary move in the game. It is a term in poseBody's
+  own CROUCH (a caught blow's sink is the other), so he lands into a walk, a sprint or a standstill without
+  three copies of a stance — and it OVERSHOOTS its rest and settles back onto it, through the shared `absorb`
+  curve the parry's shove already used.
+- **THE BEAT GOES ON THE LANDING, NEVER THE TAKEOFF** — nothing has happened until the ground stops him.
+  `landed` is a one-frame flag (`loosed`'s rule) carrying `sfx.land` + the ground overlay, `rumble.land` (mostly
+  LOW, where mass lives, against the roll's high) and `SHAKE_LAND`, which sits over a bolt leaving and under
+  the lightest blow he lands. The takeoff gets a voice and nothing else. **And no footfalls in mid-air**: the
+  gait phase keeps running so he lands back into the stride he left with.
+
 ### In combat, and the quick bar
 
 **THERE IS ONE FLAG THAT SAYS A FIGHT IS ON** (`game.inCombat`), and nothing about the HERO is in it: swinging
@@ -663,7 +739,11 @@ hang off the hub, so all three are open from the first souls you spend.
 - **THE VIEW IS PANNED, NOT SHEARED** (`game.restCamera`, `REST_PAN`). Eye and target move by the same vector
   along the camera's own right axis; swinging the target alone turns the camera and re-composes the shot
   instead of sliding it. Screen-right is `cross(forward, up)` — `camera.rightXZ`'s law, one layer up.
-- **THE LEFT STICK WALKS THE WHEEL AND THE RIGHT ONE ZOOMS IT** (`menu.stickStep`, `menu.stickZoom`). A
+- **THE LEFT STICK WALKS THE WHEEL, THE CROSS ZOOMS IT AND THE RIGHT STICK PANS** (`menu.stickStep`,
+  `menu.dpadZoom`, `menu.stickPan`). The zoom is on the CROSS and not the bumpers, because the bumpers are the
+  character book's page turn and the wheel is one of its pages — a zoom that took them would strand you on the
+  wheel with no way to turn off it. Which is also why the cross is then WITHHELD from the walk on a wheel and
+  kept on a list: `menu.navFor` is that decision, in one place, read by both wheel screens. A
   stick is a LEVEL where a walk wants EDGES, and reading it naively is a known genre of bug (Godot #54959 is
   the same one). FOUR STANDARD PIECES, all of them here: a RADIAL magnitude, never per-axis — the square's
   corner passes at 0.62 on each axis while the true deflection is 0.88, so a lazy diagonal reads as a hard
@@ -675,7 +755,8 @@ hang off the hub, so all three are open from the first souls you spend.
   centre costs a full DAS rather than firing on the frame it turns — rolling a thumb round the rim crosses
   all four quadrants. **The zoom re-centres on the CURSOR** as it goes in (blended from the fitted framing,
   so nothing moves at `ZOOM_MIN`); scaled about the fitted centre instead, the first notch pushes what you
-  were reading off the panel. It is VERTICAL-DOMINANT, so a sideways push on the look stick is not a zoom.
+  were reading off the panel. The zoom is read as a HELD LEVEL so it glides rather than notching, and the pad's
+  half of it is the cross alone — a desk has the mouse wheel and needs neither.
 - **THE MIDDLE IS A PLACE THE CURSOR MAY REST** (`passivetree.HUB`, indexed one past the last node so every
   `NODES[i]` site is untouched). It is where the wheel opens, it takes no press and it is never a purchase -
   the reading column describes the TREE from it. A cursor that cannot sit on the one spot the whole thing is
@@ -1156,7 +1237,10 @@ not the stick-speed `runB`.
   **YOU CANNOT FIX ON WHAT YOU CANNOT SEE** — a foe behind a wall is not offered (`game.canSee`), but
   a HELD lock fades rather than switching (`LOCK_BLIND_HOLD` 1.1 s), or a pillar crossing the line
   mid-circle throws the camera off.
-- Reserved, matching ER: Cross/A = jump.
+- **Cross/A = JUMP** (keyboard `V`), matching ER — see "The jump" under Combat. Not a clash with the menu
+  Confirm on the same button: every screen that takes Confirm holds the world still while it is up, so the two
+  can never be asked on one frame. `hud.BTN_JUMP` is named apart from `BTN_CONFIRM` because they are two
+  bindings that happen to agree, and a rebind of one is not a rebind of the other.
 
 ## Hard invariants & gotchas
 
@@ -1230,7 +1314,8 @@ not the stick-speed `runB`.
   them and every crib draws off them, so a rebind moves the caption and the press together.
 - **All UI text goes through `hud.text/textW`**, in **Balthazar** (`assets/`, OFL; owner's pick). The
   atlas is ASCII-ONLY — a `·` or `—` renders as tofu. Exo and Tagesschrift are GONE; one face only.
-- **SIZES COME FROM `hud`'s TYPE SCALE** (`TITLE`/`BODY`/`SMALL`/`HINT`), never a literal at the call
+- **SIZES COME FROM `hud`'s TYPE SCALE** (`TITLE`/`BODY`/`SMALL`/`HINT`/`TINY`, plus `MONO` for the editor's
+  own readouts), never a literal at the call
   site; rows step by `hud.lineH(size)`. The atlas resolution must stay ABOVE the largest size drawn,
   and the drop shadow's offset scales with the size.
 - **HUD colours are LITERAL screen values** — drawn after the retro blit, outside the scene shader, so
@@ -1279,8 +1364,10 @@ not the stick-speed `runB`.
 
 ## Gaps
 
-No criticals, guard counter, jump, or AR × motion-value damage (flat constants
-today). SOULS BUY LEVELS AND NOTHING ELSE — there is no merchant. The PASSIVE TREE is the basic version: 21
+No criticals, guard counter, or AR × motion-value damage (flat constants
+today). THE JUMP EXISTS but nothing hangs off it yet: no jump ATTACK (the one thing ER bills stamina for), no
+fall damage at any height, and no creature's move misses him for being over it — a sweep you jump is a sweep
+that still lands, because a per-move height is authored at each `toImpact` the way a parry window is. SOULS BUY LEVELS AND NOTHING ELSE — there is no merchant. The PASSIVE TREE is the basic version: 21
 nodes, three arms of seven, no respec, no jewel sockets, and no second grant on a node. Twelve of the
 twenty-one are attribute nodes — four an arm — and four of the seven attributes are still inert (the sheet
 says so). The BINDING RING is the only wearable

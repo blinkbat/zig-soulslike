@@ -246,7 +246,8 @@ pub fn navigate(self: *Rest, dx: i32, dy: i32) void {
     }
 }
 
-/// The BUMPERS, on the tree screen and nowhere else.
+/// The CROSS's up and down (`menu.dpadZoom`), on the tree screen and nowhere else — never the bumpers, which
+/// are the character book's page turn.
 pub fn zoom(self: *Rest, dv: f32, dt: f32) void {
     if (self.screen == .tree and dv != 0) self.wheel.zoomBy(dv, dt);
 }

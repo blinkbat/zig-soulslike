@@ -220,7 +220,7 @@ pub const DRIVE_HIT = combat.Hit{ .dmg = 31, .poise = 40, .stance = 20 };
 const DEATH_DUR = 1.7; // a slow, weighty topple — a giant falls hard (and sadly)
 /// SOULS the one-eyed ogre is worth: fifteen toads.
 pub const SOULS: u32 = 900;
-const DISS_DUR = 1.1; // dissipation into grace-gold motes (ER-consistent with frog/archer)
+const DISS_DUR = 1.1; // dissipation into gold motes (ER-consistent with frog/archer)
 /// …and the cloud, sized to the mass going out in it: four metres of ogre sheds a far wider one than a man.
 const DISSOLVE = foe.Dissolve{ .rate = 70.0, .spread = 1.0, .rise = 0.70 };
 
@@ -526,7 +526,7 @@ pub const Ogre = struct {
         self.swipeCd = mathx.maxF(0, self.swipeCd - dt);
         self.driveCd = mathx.maxF(0, self.driveCd - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), AGGRO_R);
         self.t += dt;
         self.updateFx(dt);
         var movedDist: f32 = 0;

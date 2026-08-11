@@ -494,7 +494,7 @@ pub const Kobold = struct {
         self.t += dt;
         self.vit.tick(dt);
         self.flash = mathx.maxF(0, self.flash - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), AGGRO_R);
         self.castCd = mathx.maxF(0, self.castCd - dt);
         self.slingCd = mathx.maxF(0, self.slingCd - dt);
         self.biteCd = mathx.maxF(0, self.biteCd - dt);

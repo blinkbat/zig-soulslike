@@ -1142,7 +1142,7 @@ pub const Spider = struct {
         self.spitCd = mathx.maxF(0, self.spitCd - dt);
         self.biteCd = mathx.maxF(0, self.biteCd - dt);
         self.layCd = mathx.maxF(0, self.layCd - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), spec(self.role).aggro);
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), spec(self.role).aggro);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 

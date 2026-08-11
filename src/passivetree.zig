@@ -12,7 +12,7 @@ const uiart = @import("uiart.zig");
 // hangs off is yours (`feeders`). No counts and no tolls — only a path.
 //
 // **TAKING A NODE IS THE LEVEL.** There is no point pool: the souls come off the counter and the node goes
-// on the board in one press, at a grace, and nothing else in the game spends souls. Every attribute the hero
+// on the board in one press, at a bonfire, and nothing else in the game spends souls. Every attribute the hero
 // has past the starting sheet came off a node here (`Bonus.sheet`), which is what "each arm gives more stat
 // allocations" means.
 
@@ -360,8 +360,25 @@ fn unitPos(i: usize) rl.Vector2 {
     return .{ .x = mathx.sinf(a) * r, .y = -mathx.cosf(a) * r };
 }
 
+/// THE WEDGE a push has to land in, as the cosine of its half-angle — 60°, which is what the three arms at
+/// 120° need: from the middle, DOWN has to reach the two lower arms and their ring-0 nodes sit 45-60° off
+/// straight down. Tighter and the cursor simply refuses to go that way; wider and opposite arms start
+/// competing for the same push.
+const STEP_CONE: f32 = 0.5;
+/// …and how much being off-axis costs once you are inside the wedge, as a share of the distance. It only
+/// breaks ties between candidates at similar range: dead ahead beats a near-miss 45° off, but a node right
+/// under your thumb still beats one on the far side of the wheel.
+const STEP_BIAS: f32 = 1.0;
+
 /// MOVE BY GEOMETRY, not by ordinal (`book.slotStep`'s law) — on a wheel an ordinal walk steps between
 /// nodes that are nowhere near each other, and crossing from one arm to its neighbour has no arithmetic.
+///
+/// **A CANDIDATE MUST BE IN THE DIRECTION PUSHED, AND THEN THE NEAREST ONE WINS.** Scored as
+/// `along + cross*3` over the whole forward HALF-PLANE it was neither: any node with a scrap of forward
+/// component was eligible, and minimising `along` meant the CLOSEST won almost regardless of bearing — a
+/// node 75° off the push at 0.57 units scored 1.80 and beat one dead ahead at 2.0. Push up, travel sideways,
+/// which is the owner's "direction you travel vs direction you push don't align". The wedge is what makes
+/// the two agree; the distance is what makes it feel like a step rather than a jump.
 pub fn step(cur: usize, dx: i32, dy: i32) usize {
     if (dx == 0 and dy == 0) return cur;
     const from = unitPos(cur);
@@ -374,10 +391,11 @@ pub fn step(cur: usize, dx: i32, dy: i32) usize {
         const p = unitPos(i);
         const ax = p.x - from.x;
         const ay = p.y - from.y;
-        const along = ax * fdx + ay * fdy;
-        if (along <= 0.001) continue;
-        const cross = @abs(ax * fdy - ay * fdx);
-        const s = along + cross * 3.0; // the cross-axis is what disqualifies a candidate
+        const dist = std.math.hypot(ax, ay);
+        if (dist < 1e-5) continue;
+        const cos = (ax * fdx + ay * fdy) / dist; // 1 = dead on the push, 0 = square across it
+        if (cos < STEP_CONE) continue; // not in that direction at all
+        const s = dist * (1.0 + STEP_BIAS * (1.0 - cos));
         if (s < score) {
             score = s;
             best = i;
@@ -388,15 +406,27 @@ pub fn step(cur: usize, dx: i32, dy: i32) usize {
 
 pub const ZOOM_MIN: f32 = 1.0;
 pub const ZOOM_MAX: f32 = 3.2;
-/// Zoom travel a second at full stick. Slow enough to stop where you meant to.
+/// Zoom travel a second, held. Slow enough to stop where you meant to.
 pub const ZOOM_RATE: f32 = 1.7;
+/// How far the view slides a second at full stick, in units of the wheel AT ZOOM_MIN — divided by the zoom
+/// where it is spent, so the pan crosses the same amount of SCREEN however far in you are.
+pub const PAN_RATE: f32 = 3.4;
+/// …and how far it may slide at all: only as far as the zoom has pushed off the edge. At `ZOOM_MIN` the
+/// whole wheel is in the box, so there is nothing off-screen to go and look at and the pan is pinned to
+/// nothing — which is what stops a player sliding the tree out of its own panel and losing it.
+const PAN_SPAN: f32 = 6.0;
 
-/// WHERE THE WHEEL IS BEING LOOKED AT FROM — the cursor and how far in. The book's page and the grace's own
-/// screen each hold one, because they are two views of one tree and neither may move the other's.
+/// WHERE THE WHEEL IS BEING LOOKED AT FROM — the cursor, how far in, and where the view has been slid to.
+/// The book's page and the bonfire's own screen each hold one, because they are two views of one tree and
+/// neither may move the other's.
 pub const Wheel = struct {
     /// It opens in the MIDDLE, which is where the player is standing before he has spent anything.
     cursor: usize = HUB,
     zoom: f32 = ZOOM_MIN,
+    /// THE VIEW'S OWN OFFSET, in units, on top of the framing the zoom picks. Additive rather than a mode:
+    /// walking the cursor still pulls the view along (that is what keeps the thing you are choosing on
+    /// screen), and this is the player saying "and a bit that way" over the top of it.
+    pan: rl.Vector2 = .{ .x = 0, .y = 0 },
 
     /// Directional, never cyclic (`step`'s law). True if it actually went somewhere.
     pub fn move(self: *Wheel, dx: i32, dy: i32) bool {
@@ -408,6 +438,26 @@ pub const Wheel = struct {
 
     pub fn zoomBy(self: *Wheel, dv: f32, dt: f32) void {
         self.zoom = mathx.clampF(self.zoom + dv * ZOOM_RATE * dt, ZOOM_MIN, ZOOM_MAX);
+        self.clampPan(); // …and zooming back OUT has to walk the pan home with it, or the wheel is left off-centre with nowhere off-screen to justify it
+    }
+
+    /// THE RIGHT STICK, as a view slide. `v` is the raw thumb, so a lazy push moves it slowly.
+    pub fn panBy(self: *Wheel, v: rl.Vector2, dt: f32) void {
+        if (v.x == 0 and v.y == 0) return;
+        const k = PAN_RATE * dt / self.zoom;
+        self.pan.x += v.x * k;
+        self.pan.y += v.y * k;
+        self.clampPan();
+    }
+
+    fn panLimit(self: *const Wheel) f32 {
+        return PAN_SPAN * (1.0 - 1.0 / mathx.clampF(self.zoom, ZOOM_MIN, ZOOM_MAX));
+    }
+
+    fn clampPan(self: *Wheel) void {
+        const lim = self.panLimit();
+        self.pan.x = mathx.clampF(self.pan.x, -lim, lim);
+        self.pan.y = mathx.clampF(self.pan.y, -lim, lim);
     }
 };
 
@@ -458,8 +508,10 @@ fn layout(wh: Wheel, x: i32, y: i32, w: i32, h: i32) Lay {
     // ZOOM_MIN the blend is 0 and the framing is exactly the fitted one, so nothing moves until you ask.
     const k = mathx.clampF((zoom - ZOOM_MIN) / (ZOOM_MAX - ZOOM_MIN), 0, 1);
     const on = unitPos(@min(wh.cursor, HUB));
-    const fx = mathx.lerpF((x0 + x1) * 0.5, on.x, k);
-    const fy = mathx.lerpF((y0 + y1) * 0.5, on.y, k);
+    // …AND THE PLAYER'S OWN SLIDE ON TOP OF IT (`Wheel.pan`). Pushing the stick RIGHT moves the VIEW right,
+    // which is the content going left — the same sense the cursor walks in, so the two thumbs agree.
+    const fx = mathx.lerpF((x0 + x1) * 0.5, on.x, k) + wh.pan.x;
+    const fy = mathx.lerpF((y0 + y1) * 0.5, on.y, k) + wh.pan.y;
     return .{
         .cx = @as(f32, @floatFromInt(x)) + fw * 0.5 - fx * unit,
         .cy = @as(f32, @floatFromInt(y)) + fh * 0.5 - fy * unit,
@@ -591,7 +643,7 @@ pub fn draw(t: *const Tree, wh: Wheel, x: i32, y: i32, w: i32, h: i32, spendable
 }
 
 // THE PAGE — the wheel and the column that reads it. ONE copy, because the tree is looked at from two
-// places now (the book's page and the grace's own screen) and two transcriptions of a readout is two
+// places now (the book's page and the bonfire's own screen) and two transcriptions of a readout is two
 // readouts one edit apart.
 
 /// Sunk panel, `book.panel`'s dressing without book's layout types — this file cannot import that one.
@@ -624,7 +676,7 @@ pub fn wheelBox(x: i32, y: i32, w: i32, h: i32) [4]i32 {
     return .{ x, y, w - readW(w) - GUT, h };
 }
 
-/// EVERYTHING THE PAGE SAYS. `spendable` is the grace and nothing else: away from a fire this is a thing you
+/// EVERYTHING THE PAGE SAYS. `spendable` is the bonfire and nothing else: away from a fire this is a thing you
 /// read, and the caller's crib must not offer what a press would refuse.
 pub fn drawPage(t: *const Tree, wh: Wheel, x: i32, y: i32, w: i32, h: i32, spendable: bool, souls: u32) void {
     const rw = readW(w);
@@ -647,7 +699,7 @@ pub fn drawPage(t: *const Tree, wh: Wheel, x: i32, y: i32, w: i32, h: i32, spend
     // said twice. It is ONE price whichever node he picks — what he is buying is the level, and which node it
     // lands on is the choice and not the bill. A FULL TREE prices nothing.
     const c = t.cost();
-    hud.text("Next node", ix, yy, hud.SMALL, uiart.TEXT_DIM);
+    hud.text("Required", ix, yy, hud.SMALL, uiart.TEXT_DIM);
     const cs: [:0]const u8 = if (t.full()) "all spent" else fmt("{d}", .{c});
     const ccol = if (t.full()) uiart.TEXT_DIM else if (souls >= c) uiart.GOOD else uiart.BAD;
     hud.text(cs, right - hud.textW(cs, hud.SMALL), yy, hud.SMALL, ccol);
@@ -686,7 +738,7 @@ pub fn drawPage(t: *const Tree, wh: Wheel, x: i32, y: i32, w: i32, h: i32, spend
     if (t.taken[i]) {
         hud.text("TAKEN", ix, yy, hud.HINT, uiart.GOOD);
     } else if (!spendable) {
-        _ = prose("Sit at a grace to level up and to spend what you have.", ix, yy, iw, hud.HINT, uiart.TEXT_HINT);
+        _ = prose("Sit at a bonfire to level up and to spend what you have.", ix, yy, iw, hud.HINT, uiart.TEXT_HINT);
     } else if (t.locked(i, souls)) |whyNot| {
         if (whyNot.len > 0) _ = prose(whyNot, ix, yy, iw, hud.HINT, uiart.TEXT_HINT);
     }
@@ -876,6 +928,55 @@ test "THE WALK IS GEOMETRIC: pressing a direction lands on something in that dir
     try std.testing.expectEqual(key, step(key, 0, -1));
 }
 
+// THE MISSING PIN, and the reason the bug lived: the tests below check that the walk GOES somewhere and
+// that it reaches everything, and the old scoring satisfied both while sending you 75° off your own thumb.
+// What nobody asked was whether the direction you TRAVEL is the direction you PUSHED.
+test "THE PAN ONLY REACHES WHAT THE ZOOM PUSHED OFF THE EDGE" {
+    var w = Wheel{};
+    // Zoomed all the way OUT the whole wheel is in the box, so there is nowhere to go and the stick is inert.
+    for (0..120) |_| w.panBy(.{ .x = 1, .y = 1 }, 1.0 / 60.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), w.pan.x, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), w.pan.y, 1e-6);
+    // Zoomed IN it slides, and stops at the edge of what is off screen rather than running away.
+    w.zoomBy(1, 10.0);
+    try std.testing.expectApproxEqAbs(ZOOM_MAX, w.zoom, 1e-5);
+    for (0..600) |_| w.panBy(.{ .x = 1, .y = -1 }, 1.0 / 60.0);
+    try std.testing.expect(w.pan.x > 0.5 and w.pan.x <= w.panLimit() + 1e-5);
+    try std.testing.expect(w.pan.y < -0.5 and w.pan.y >= -w.panLimit() - 1e-5);
+    // …and ZOOMING BACK OUT walks it home with it, or the wheel is left off-centre for no reason.
+    w.zoomBy(-1, 10.0);
+    try std.testing.expectApproxEqAbs(ZOOM_MIN, w.zoom, 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), w.pan.x, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), w.pan.y, 1e-6);
+}
+
+test "THE WALK GOES WHERE YOU PUSHED — every step from every spot lands inside the wedge" {
+    for (0..SPOTS) |from| {
+        for ([_][2]i32{ .{ 0, -1 }, .{ 0, 1 }, .{ -1, 0 }, .{ 1, 0 } }) |d| {
+            const to = step(from, d[0], d[1]);
+            if (to == from) continue; // nothing that way at all is a legal answer
+            const a = unitPos(from);
+            const b = unitPos(to);
+            const ax = b.x - a.x;
+            const ay = b.y - a.y;
+            const cos = (ax * @as(f32, @floatFromInt(d[0])) + ay * @as(f32, @floatFromInt(d[1]))) / std.math.hypot(ax, ay);
+            try std.testing.expect(cos >= STEP_CONE - 1e-5);
+        }
+    }
+}
+
+test "…and from the MIDDLE each arm is under the thumb that points at it" {
+    // The three spokes run UP, down-LEFT and down-RIGHT (`armAngle`), so those three pushes have to find
+    // them — this is the first thing anybody does on the page and the first thing they would notice broken.
+    try std.testing.expectEqual(Arm.wizard, NODES[step(HUB, 0, -1)].arm);
+    try std.testing.expectEqual(Arm.warrior, NODES[step(HUB, -1, 0)].arm);
+    try std.testing.expectEqual(Arm.rogue, NODES[step(HUB, 1, 0)].arm);
+    // …and each lands on the FIRST ring, not somewhere out on the spoke.
+    for ([_][2]i32{ .{ 0, -1 }, .{ -1, 0 }, .{ 1, 0 } }) |d| {
+        try std.testing.expectEqual(@as(u8, 0), NODES[step(HUB, d[0], d[1])].ring);
+    }
+}
+
 test "NO NODE IS UNREACHABLE — four directions get you from any one of them to all twenty-one" {
     // A wheel is not a grid, and a node the cursor cannot be walked onto is a node nobody can take. Flooded
     // from every start, because a walk that only works from the middle is a walk that strands the tips.
@@ -918,3 +1019,4 @@ test "the wheel's geometry cannot collide two nodes, and every node hangs off it
         try std.testing.expect(off < std.math.tau / @as(f32, NARM) * 0.5);
     }
 }
+

@@ -6,7 +6,7 @@ const uiart = @import("uiart.zig");
 const itemart = @import("itemart.zig");
 const item = @import("item.zig");
 const stats = @import("stats.zig");
-const treemod = @import("tree.zig");
+const ptree = @import("passivetree.zig");
 const combat = @import("combat.zig");
 const heromod = @import("hero.zig");
 const gfx = @import("gfx.zig");
@@ -29,7 +29,7 @@ pub const Page = enum {
             .equipment => "EQUIPMENT",
             .inventory => "INVENTORY",
             .stats => "STATS",
-            .tree => "TREE",
+            .tree => "PASSIVE TREE",
         };
     }
 };
@@ -57,8 +57,8 @@ pub const View = struct {
     /// THE QUICK BAR, which the equipment page is where you load. Read AND edited here, unlike the rod.
     quick: *const combat.Quick,
     quiver: *const combat.Quiver,
-    /// THE PASSIVE TREE. Read on every page (it owns the LEVEL now), spent on only at a grace.
-    tree: *const treemod.Tree,
+    /// THE PASSIVE TREE. Read on every page (it owns the LEVEL now), spent on only at a bonfire.
+    tree: *const ptree.Tree,
     /// IS A FIGHT ON (`game.inCombat`). The page reads it for one rule: in combat a consumable may only be
     /// spent off the bar, so the inventory's own Use is refused and says so.
     inCombat: bool = false,
@@ -503,9 +503,9 @@ pub const Book = struct {
         break :blk c;
     },
     /// THE TREE PAGE'S OWN CURSOR AND ZOOM. Not in `cur`, which is one ordinal per page: a wheel is walked by
-    /// GEOMETRY and looked at from a distance, and the grace's screen holds a second one of these so the two
+    /// GEOMETRY and looked at from a distance, and the bonfire's screen holds a second one of these so the two
     /// views of the tree do not shove each other's cursor about.
-    wheel: treemod.Wheel = .{},
+    wheel: ptree.Wheel = .{},
     /// Which slot's picker is open, and where its own cursor sits.
     picking: ?SlotId = null,
     pick: usize = 0,
@@ -625,6 +625,18 @@ pub const Book = struct {
         self.wheel.zoomBy(dv, dt);
     }
 
+    /// …and the RIGHT STICK slides the view, the bonfire screen's own pair of thumbs on the book's copy.
+    pub fn panBy(self: *Book, v: rl.Vector2, dt: f32) void {
+        if (self.page != .tree or self.picking != null) return;
+        self.wheel.panBy(v, dt);
+    }
+
+    /// IS THE CROSS SPENT ON THE ZOOM this frame — true on the wheel, where the walk is the left stick's.
+    /// A picker open over it is a row list again and takes the cross back.
+    pub fn wheelUp(self: *const Book) bool {
+        return self.page == .tree and self.picking == null;
+    }
+
     pub fn confirm(self: *Book, v: View) Action {
         if (self.picking) |s| {
             var buf: [CAND_MAX]Cand = undefined;
@@ -702,7 +714,7 @@ pub const Book = struct {
                 return g.at(self.cur[idx(.inventory)] - self.scroll * BAG_COLS);
             },
             .stats => return attrRow(statsCols(body)[0], self.cur[idx(.stats)]),
-            .tree => return treemod.nodeRect(self.wheel, body.x, body.y, body.w, body.h),
+            .tree => return ptree.nodeRect(self.wheel, body.x, body.y, body.w, body.h),
         }
     }
 
@@ -1029,7 +1041,7 @@ pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
     }
 
     // THE CURSOR LAST, over everything: it is in front of the page, not part of it. THE WHEEL DRAWS ITS OWN
-    // (`tree.draw`) — a node is a disc and its mark is built out of the disc, and the grace's screen needs
+    // (`tree.draw`) — a node is a disc and its mark is built out of the disc, and the bonfire's screen needs
     // the same one without carrying the book's eased rectangle to get it.
     if (self.at.width > 1 and self.page != .tree) {
         uiart.slotCursor(
@@ -1077,7 +1089,7 @@ pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
             break :blk buf[0..4];
         },
         // THE CRIB DOES NOT OFFER WHAT THE PRESS WILL REFUSE (the `game.interact` law). Nothing is spent
-        // here, so nothing on this strip says Allocate — the grace's own screen is where those live.
+        // here, so nothing on this strip says Allocate — the bonfire's own screen is where those live.
         .tree => blk: {
             buf[0] = .{ .glyph = .{ .bumper = "LS" }, .label = "Walk" };
             buf[1] = .{ .glyph = .{ .bumper = "RS" }, .label = "Zoom" };
@@ -1418,11 +1430,11 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
 }
 
 
-/// THE WHEEL, READ-ONLY. The page itself is `tree.drawPage`, shared with the grace's own screen — the book
+/// THE WHEEL, READ-ONLY. The page itself is `tree.drawPage`, shared with the bonfire's own screen — the book
 /// can no longer be opened at a fire, so `spendable` is false here and always will be: this is where you
 /// plan a build and the bonfire is where you commit one.
 fn drawTree(self: *const Book, body: Box, v: View) void {
-    treemod.drawPage(v.tree, self.wheel, body.x, body.y, body.w, body.h, false, v.souls);
+    ptree.drawPage(v.tree, self.wheel, body.x, body.y, body.w, body.h, false, v.souls);
 }
 
 fn drawStats(self: *const Book, body: Box, v: View, portrait: ?Portrait) void {
@@ -1617,7 +1629,7 @@ fn drawPortrait(self: *const Book, col: Box, portrait: ?Portrait, caption: [:0]c
 
 
 const TEST_QUICK = combat.Quick{}; // the default bar: the two flasks, crimson up
-const TEST_TREE = treemod.Tree{}; // …and a fresh tree: level 1, no points, nothing taken
+const TEST_TREE = ptree.Tree{}; // …and a fresh tree: level 1, no points, nothing taken
 
 fn testView(bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.Resists, flasks: *const combat.Flasks, quiver: *const combat.Quiver, arm: heromod.Arm) View {
     return testViewOff(bag, sheet, res, flasks, quiver, arm, .shield);
@@ -1823,7 +1835,7 @@ test "THE QUICK PICKER OFFERS ONLY WHAT HE HAS — and the flasks, which are nev
     const quiver = combat.Quiver{};
     var buf: [CAND_MAX]Cand = undefined;
 
-    // An empty bag still offers the two flasks — their charges come back at a grace — plus the empty row.
+    // An empty bag still offers the two flasks — their charges come back at a bonfire — plus the empty row.
     const broke = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
     const bare = candidates(.q0, broke, &buf);
     try std.testing.expectEqual(@as(usize, 3), bare.len);

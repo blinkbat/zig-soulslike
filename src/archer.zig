@@ -177,7 +177,7 @@ pub const ARROW_HIT = combat.Hit{ .dmg = 16, .poise = 10 }; // eased down from 2
 pub const DEATH_DUR = 1.15; // collapse-and-still before the corpse dissipates
 /// SOULS a skeletal archer is worth — twice a toad.
 pub const SOULS: u32 = 130;
-pub const DISS_DUR = 0.9; // …and the dissipation into bone-dust and grace motes after it
+pub const DISS_DUR = 0.9; // …and the dissipation into bone-dust and gold motes after it
 /// BONE, KNOCKED OFF IN FLAKES — these things do not bleed. Here rather than in `warrior.zig` for the reason
 /// the feet and the fist are: it is the same dead man, and a second copy is a second thing to retune.
 pub const BONE_CHIP = rgba(150, 140, 116, 235);
@@ -608,7 +608,7 @@ pub const Archer = struct {
         self.reloadCd = mathx.maxF(0, self.reloadCd - dt);
         self.backstepCd = mathx.maxF(0, self.backstepCd - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         self.t += dt;
         var loosed = false;

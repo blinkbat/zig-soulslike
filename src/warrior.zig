@@ -29,7 +29,7 @@ const BOARD_LT = rgba(70, 53, 37, 255);
 const BOARD_DK = rgba(30, 22, 16, 255);
 const BLAZON = rgba(74, 32, 30, 255);
 
-// FX palette. DUST is the WORLD's, not this creature's (see foe.zig); the grace motes are foe.zig's own.
+// FX palette. DUST is the WORLD's, not this creature's (see foe.zig); the gold motes are foe.zig's own.
 const DUST = foe.DUST;
 const CHIP = archermod.BONE_CHIP; // bone, knocked off in flakes — the archer's, because it is his body
 const SPARK = rgba(255, 208, 128, 240);
@@ -676,7 +676,7 @@ pub const Warrior = struct {
         self.blockT += dt;
         for (&self.cds) |*c| c.* = mathx.maxF(0, c.* - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         self.trail.age(dt);
 

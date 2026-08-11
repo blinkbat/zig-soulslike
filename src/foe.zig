@@ -107,9 +107,16 @@ pub const Leash = struct {
     engagedLeft: f32 = 0,
     returning: bool = false,
 
-    /// Per frame, BEFORE the state machine decides anything. `out` is how far it is from its post, `toHero`
-    /// the REAL distance to the hero — a walk home is never blind to him.
-    pub fn tick(self: *Leash, dt: f32, out: f32, toHero: f32, aggroR: f32) void {
+    /// Per frame, BEFORE the state machine decides anything. `out` is how far the CREATURE is from its post
+    /// and `heroOut` how far the HERO is from that same post — a walk home is never blind to him.
+    ///
+    /// **BOTH RANGES ARE MEASURED FROM THE POST, and that is the whole of the tether.** Asked as the gap
+    /// between the two BODIES instead, the notice ring was doing a job it is the wrong size for: a creature
+    /// could only let go once the hero had out-run it by its own full aggro (24 m for an archer), and it went
+    /// on walking the whole time that gap was opening — so tethers nominally 17–30 m long were measured
+    /// releasing at 34 m (ogre) to 176 m (leechfly), which is a chase with no end a player can see. The
+    /// question a tether asks is "has he left my patch", and a patch is a place, not a separation.
+    pub fn tick(self: *Leash, dt: f32, out: f32, heroOut: f32, aggroR: f32) void {
         self.sinceCombat += dt;
         self.sinceSeen += dt;
         self.provoked = mathx.maxF(0, self.provoked - PROVOKE_DECAY * dt);
@@ -125,15 +132,16 @@ pub const Leash = struct {
             // unless the hero puts himself back inside its notice ring, which ends the walk there and then.
             if (out <= LEASH_HOME_R) {
                 self.returning = false;
-            } else if (toHero <= aggroR) {
+            } else if (heroOut <= aggroR) {
                 self.reengage();
             }
             return;
         }
         if (self.engagedLeft > 0) return;
-        // It gives up only when he is BOTH far from its post AND out of its ring: a foe with the hero in its
-        // face has no business turning round, whoever happens not to have landed a blow this half-second.
-        if (out > leashR(aggroR) and toHero > aggroR and self.sinceCombat >= LEASH_CALM) self.returning = true;
+        // It gives up only when it is past its tether AND he has left its patch: a foe with the hero still
+        // standing in the ground it guards has no business turning round, whoever happens not to have landed
+        // a blow this half-second. The two tests SHARE the ring, so what it gives up on is what it re-takes.
+        if (out > leashR(aggroR) and heroOut > aggroR and self.sinceCombat >= LEASH_CALM) self.returning = true;
     }
 
     pub fn noteCombat(self: *Leash) void {
@@ -390,7 +398,7 @@ pub fn floorBurst(pool: []Particle, from: usize, to: usize, floor: f32) void {
 
 /// WHAT ONE BODY BRINGS TO ITS OWN DISSOLVE, and all it brings: how thick the cloud is, how far out and how
 /// far up the body it comes off — both in the creature's own scale — and the colour of the flakes it SHEDS.
-/// The grace motes are not here: gold is the world's, the same off everything that dies.
+/// The gold motes are not here: gold is the world's, the same off everything that dies.
 pub const Dissolve = struct {
     rate: f32 = 54.0,
     spread: f32 = 0.85,
@@ -402,7 +410,7 @@ const DISS_MOTE_SHARE: f32 = 0.76;
 const DISS_MOTE_R: f32 = 0.094;
 const DISS_FLAKE_R: f32 = 0.129;
 
-/// THE BODY COMING APART — the one copy, for every creature on the field. Grace motes rising out of it and
+/// THE BODY COMING APART — the one copy, for every creature on the field. Gold motes rising out of it and
 /// flakes of the body falling back, both thinning as the fade closes.
 ///
 /// It reads FIELDS only (`fade`, `scale`, `pos`, `fxAccum`, `fxRng`, `parts`, `fxHead`), which is what lets it
@@ -746,7 +754,7 @@ test "THE LEASH: a foe drawn far from home walks back once the fight has gone qu
     var l = Leash{};
     const aggro: f32 = 20.0;
     const far = leashR(aggro) + 8.0;
-    const gone = aggro + 1.0; // the hero, out of its ring
+    const gone = aggro + 1.0; // the hero, OUT OF ITS PATCH — every range here is measured from the POST
     l.noteCombat();
     l.tick(1.0 / 60.0, far, gone, aggro);
     try std.testing.expect(!l.goingHome());
@@ -764,10 +772,13 @@ test "THE LEASH: a foe drawn far from home walks back once the fight has gone qu
     try std.testing.expect(!near.goingHome());
 }
 
-test "IT NEVER TURNS ROUND WITH THE HERO IN ITS FACE, and walking back into its ring ends the walk home" {
+test "IT NEVER TURNS ROUND WHILE HE IS STILL IN ITS PATCH, and walking back in ends the walk home" {
     const aggro: f32 = 20.0;
     const far = leashR(aggro) + 8.0;
-    // Toe to toe a long way from its post, and neither side has landed a blow in a while: it fights on.
+    // The hero standing deep in the ground it guards, and neither side has landed a blow in a while: it
+    // fights on, wherever the creature itself has wandered to. THE PATCH IS A PLACE, not a separation —
+    // asked as the gap between the two bodies this clause wanted the hero to out-run it by a full 20 m,
+    // and the creature walked the whole way while that gap opened.
     var toe = Leash{};
     var t: f32 = 0;
     while (t < LEASH_CALM * 3.0) : (t += 1.0 / 60.0) toe.tick(1.0 / 60.0, far, 1.2, aggro);

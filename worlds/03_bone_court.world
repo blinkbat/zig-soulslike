@@ -8,7 +8,7 @@ clear: 0.0 -14.0 9.0
 clear: -14.0 -26.0 9.0
 clear: 10.0 -34.0 11.0
 
-at: grace 3 6.5 0 1
+at: bonfire 3 6.5 0 1
 at: glow 2.1 5.5 40 1
 at: campfire_lit -13 -2 0 1
 at: campfire -6 12 0 1

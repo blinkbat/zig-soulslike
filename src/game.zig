@@ -28,7 +28,7 @@ const shademod = @import("shade.zig");
 const chestmod = @import("chest.zig");
 const restmod = @import("rest.zig");
 const soulsmod = @import("souls.zig"); // WHAT A DEATH LEAVES ON THE GROUND, and the walk back for it
-const treemod = @import("tree.zig"); // …and the one thing the souls are SPENT on
+const ptree = @import("passivetree.zig"); // …and the one thing the souls are SPENT on
 const npcmod = @import("npc.zig");
 const trigmod = @import("trigger.zig");
 const dialogmod = @import("dialog.zig");
@@ -224,7 +224,7 @@ pub const Game = struct {
     souls: soulsmod.Souls, // THE DROP — one, standing where he last died until he walks back for it
     /// THE PASSIVE TREE — the levels bought and the nodes taken. It survives a death exactly as the bag
     /// does: what a death takes is the souls on the counter, never what they have already been spent on.
-    tree: treemod.Tree = .{},
+    tree: ptree.Tree = .{},
     /// The player's own retro stack, parked while a rest borrows the screen for its VHS look.
     restRetro: [gfx.RETRO_COUNT]f32 = [_]f32{0} ** gfx.RETRO_COUNT,
     bag: item.Bag = .{},
@@ -538,8 +538,14 @@ fn sprintingMove(mv: Move) bool {
     return mv.speed > RUN_SPEED + 0.01 and (mv.fx * mv.fx + mv.fz * mv.fz) > 1e-6;
 }
 
-const WADE_KNEE: f32 = 0.75; // mid-thigh on the H=1.8 rig — where a leg starts pushing instead of swinging
-const WADE_DEEP: f32 = 1.5;
+/// THE KNEE ITSELF on the H=1.8 rig (0.285·H) — where a leg starts pushing instead of swinging. Owner's call
+/// to start it here rather than at mid-thigh: the drag is the tell that the ground is falling away, and a tell
+/// that waits until you are half-submerged has nothing left to warn you about.
+const WADE_KNEE: f32 = 0.50;
+/// …AND IT REACHES ITS SLOWEST EXACTLY AT THE WALL. Two figures here would mean either a drag that keeps
+/// deepening past the last step he can take, or one that tops out early and leaves the last stretch feeling
+/// the same as the middle — and only one of those numbers is the one the player can be taught.
+const WADE_DEEP: f32 = envmod.WADE_MAX;
 const WADE_SLOWEST: f32 = 0.8;
 
 fn wadeDrag(g: *const Game) f32 {
@@ -596,6 +602,75 @@ test "THE MARK RIDES THE BODY, on every creature that has one" {
     var cap = shroommod.Shroom.spawn(mathx.zero3, 0, 1.0, 0.3);
     try std.testing.expect(markSwing(&cap, hero) > MIN);
 }
+
+/// THE REAL SHAPE OF THE COMPLAINT, in two phases. First he LEADS it: he backs off at a pace it can follow,
+/// which is what drags a creature off its post in play. Then he RUNS. `markSight` is stamped every frame,
+/// because this is an open field with a clear line — a leash that only lets go when the hero happens to duck
+/// behind something is not a leash. Reports how far from its post it got, and when it turned round.
+const Chase = struct { turned: ?f32, out: f32, gap: f32 };
+fn chase(f: anytype, lead: f32, secs: f32) Chase {
+    const dt = 1.0 / 60.0;
+    var t: f32 = 0;
+    var hero = v3(0, 0, 0.5);
+    while (t < secs) : (t += dt) {
+        hero.z += (if (t < secs * 0.5) lead else heromod.SPRINT_SPEED) * dt;
+        f.leash.noteSeen();
+        _ = f.update(dt, hero, PLAY_HALF, .{});
+        if (f.leash.goingHome()) {
+            return .{ .turned = t, .out = mathx.distXZ(f.pos, f.home), .gap = mathx.distXZ(f.pos, hero) };
+        }
+    }
+    return .{ .turned = null, .out = mathx.distXZ(f.pos, f.home), .gap = mathx.distXZ(f.pos, hero) };
+}
+
+// THE UNIVERSAL PIN FOR THE TETHER, walked over the whole field for `THE MARK RIDES THE BODY`'s reason: the
+// rule is the CONTRACT's, and the only honest way to check "no creature chases forever" is to walk every
+// creature. It is the owner's own report — "monsters simply chase you forever" — turned into arithmetic.
+//
+// A TETHER IS A LENGTH, so what this measures is how far from its post a creature actually gets before it
+// turns round, against the length it was given. Measured as the gap between the two BODIES, every one of
+// these ran to 2–5 times its own tether (the ogre 33.5 m on a 24 m leash, the shieldman 89.6 m on 26,
+// the kobold 82.1 m on 22) — which is what "forever" looks like from inside the game.
+test "NOTHING CHASES FOREVER — every creature turns round at its own tether, not five times past it" {
+    // Half a tether of slack, and no more: it is still walking while it decides, so it cannot stop ON the
+    // line — but a creature twice its own leash from home is a creature the tether is not holding.
+    const SLACK: f32 = 1.5;
+    var toad = frogmod.Frog.spawn(mathx.zero3, 0, 1.0, 0.3);
+    var bowman = archermod.Archer.spawn(mathx.zero3, 0, 1.0, 0.3);
+    var giant = ogremod.Ogre.spawn(mathx.zero3, 0, 1.0, 0.3);
+    var zerk = koboldmod.Kobold.spawn(mathx.zero3, 0, 1.0, 0.3);
+    var boards = warriormod.Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1.0, 0.3);
+    var ghost = shademod.Shade.spawn(mathx.zero3, 0, 1.0, 0.3);
+    var cap = shroommod.Shroom.spawn(mathx.zero3, 0, 1.0, 0.3);
+    inline for (.{
+        .{ &toad, frogmod.AGGRO_R },
+        .{ &bowman, archermod.AGGRO_R },
+        .{ &giant, ogremod.AGGRO_R },
+        .{ &zerk, koboldmod.AGGRO_R },
+        .{ &boards, warriormod.AGGRO_R },
+        .{ &ghost, shademod.AGGRO_R },
+        .{ &cap, shroommod.AGGRO_R },
+    }) |row| {
+        const c = chase(row[0], heromod.WALK_SPEED, 90.0);
+        try std.testing.expect(c.turned != null); // it let go at all…
+        try std.testing.expect(c.out <= foemod.leashR(row[1]) * SLACK); // …and near the length it was given
+    }
+    // THE TWO THAT ANSWER DIFFERENTLY, and both on purpose. The BROOD MOTHER is slower than a walk, so she
+    // never leaves her post at all — there is no tether to test, only a creature that stayed home.
+    var mother = broodmod.Spider.spawnAs(.mother, mathx.zero3, 0, 1.0, 0.3);
+    const m = chase(&mother, heromod.WALK_SPEED, 90.0);
+    try std.testing.expect(m.out < foemod.leashR(broodmod.AGGRO_R));
+    // …and the LEECHFLY rides him the whole way, because it is FEEDING: `noteCombat` is stamped every bite,
+    // and a tether may not pull a creature off a fight in progress. What it owes is a prompt let-go once the
+    // fight stops, which is `LEASH_CALM` and not a distance.
+    var fly = leechmod.Leechfly.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const f = chase(&fly, heromod.WALK_SPEED, 90.0);
+    try std.testing.expect(f.turned != null);
+    try std.testing.expect(f.turned.? < 45.0 + LEASH_LETGO); // …within a breath of the flight beginning
+}
+/// The sprint in `chase` starts at the halfway mark, so this is how long after it a creature may still be
+/// coming. `LEASH_CALM` plus a beat for the last bite to land.
+const LEASH_LETGO: f32 = foemod.LEASH_CALM + 1.5;
 
 /// A creature's own reach into the sky, which is the number `lockPitch` gates the tilt UP on.
 fn standHeight(f: anytype) f32 {
@@ -961,7 +1036,7 @@ pub fn endRestForShot(g: *Game) void {
     rehomeFoes(g, .blind);
 }
 /// THE FIRE'S OWN CHROME, for the harness — it is drawn in the loop's rest branch, which `--shot` never runs.
-pub fn drawGraceForShot(g: *Game) void {
+pub fn drawBonfireForShot(g: *Game) void {
     restmod.drawScreen(&g.rest, &g.tree, g.hero.souls.total);
 }
 pub fn openChestForShot(g: *Game) bool {
@@ -999,7 +1074,7 @@ const SHOT_STEP: f32 = @import("shots.zig").SHOT_DT;
 /// WHAT THE BUTTON WOULD REACH THIS FRAME, and in what order — what he DROPPED, then a bonfire, then whoever
 /// is standing there, then a box. ONE list, because the press and the PROMPT are the same question.
 ///
-/// THE DROP IS FIRST and its ring is the smallest of the four: you can die at a grace, and on the frame you
+/// THE DROP IS FIRST and its ring is the smallest of the four: you can die at a bonfire, and on the frame you
 /// walk back in there is exactly one thing you came for. One press clears it and the fire is offered again.
 const Reach = enum {
     souls,
@@ -1127,7 +1202,7 @@ fn billDeaths(g: *Game) void {
 fn tickTriggers(g: *Game, dt: f32) void {
     g.nNpcPos = g.folk.positions(&g.map, &g.npcPos).len;
     billDeaths(g);
-    // A GRACE IS BUSY TOO. `run` checks the rest branch BEFORE the talk one, so a conversation opened on
+    // A BONFIRE IS BUSY TOO. `run` checks the rest branch BEFORE the talk one, so a conversation opened on
     // the frame a rest begins would be frozen rather than deferred if the machine were not told.
     const want = g.trig.tick(&g.map, triggerWorld(g), dt, g.talk.active() or g.rest.active()) orelse return;
     // NO SPEAKER: nobody is standing in front of him, so the panel is named by the node's own `who:`.
@@ -1240,7 +1315,7 @@ fn tickRest(g: *Game, dt: f32) void {
         g.hero.sit(false, g.hero.pos, g.hero.facing);
         rehomeFoes(g, .blind);
     }
-    if (g.rest.listening()) graceInput(g, dt);
+    if (g.rest.listening()) bonfireInput(g, dt);
     if (g.rest.scene()) {
         g.hero.poseRest(dt);
         restCamera(g);
@@ -1254,26 +1329,32 @@ fn tickRest(g: *Game, dt: f32) void {
 /// THE FIRE'S OWN MENU, driven off the same nav helpers every full-screen list in the game reads
 /// (`menu.zig`, which is where UI navigation lives). Getting up is a ROW now, so there is no any-button
 /// rule left to fight with a cursor.
-fn graceInput(g: *Game, dt: f32) void {
-    if (menumod.navPressed(.up)) restmod.navigate(&g.rest, 0, -1);
-    if (menumod.navPressed(.down)) restmod.navigate(&g.rest, 0, 1);
-    if (menumod.navPressed(.left)) restmod.navigate(&g.rest, -1, 0);
-    if (menumod.navPressed(.right)) restmod.navigate(&g.rest, 1, 0);
+fn bonfireInput(g: *Game, dt: f32) void {
+    // ON THE WHEEL THE CROSS IS THE ZOOM, so it is withheld from the walk there and the LEFT STICK does it
+    // instead; on the LIST the cross is the only sensible way to pick a row and it keeps it. The keyboard's
+    // arrows walk on both (`navPressedNoPad`), because a desk zooms with the mouse wheel.
+    const onWheel = g.rest.screen == .tree;
+    const nav: *const fn (menumod.NavDir) bool = if (onWheel) &menumod.navPressedNoPad else &menumod.navPressed;
+    if (nav(.up)) restmod.navigate(&g.rest, 0, -1);
+    if (nav(.down)) restmod.navigate(&g.rest, 0, 1);
+    if (nav(.left)) restmod.navigate(&g.rest, -1, 0);
+    if (nav(.right)) restmod.navigate(&g.rest, 1, 0);
     if (menumod.stickStep(dt)) |d| switch (d) {
         .up => restmod.navigate(&g.rest, 0, -1),
         .down => restmod.navigate(&g.rest, 0, 1),
         .left => restmod.navigate(&g.rest, -1, 0),
         .right => restmod.navigate(&g.rest, 1, 0),
     };
-    restmod.zoom(&g.rest, menumod.stickZoom(), dt);
-    if (menumod.confirmPressed()) gracePick(g, restmod.confirm(&g.rest, &g.tree, g.hero.souls.total));
+    restmod.pan(&g.rest, menumod.stickPan(), dt);
+    restmod.zoom(&g.rest, menumod.dpadZoom(), dt);
+    if (menumod.confirmPressed()) bonfirePick(g, restmod.confirm(&g.rest, &g.tree, g.hero.souls.total));
     // Esc is routed by the loop rather than by `backPressed`, and at a fire the loop leaves it free.
     if (menumod.backPressed() or rl.isKeyPressed(.escape)) restmod.back(&g.rest);
 }
 
-/// WHAT THE FIRE ASKED FOR, done. The grace holds neither the souls nor the tree, so this is the one place
+/// WHAT THE FIRE ASKED FOR, done. The bonfire holds neither the souls nor the tree, so this is the one place
 /// either is moved by it — `bookAct`'s split, for `bookAct`'s reason.
-fn gracePick(g: *Game, pick: restmod.Pick) void {
+fn bonfirePick(g: *Game, pick: restmod.Pick) void {
     switch (pick) {
         .none => {},
         .leave => g.rest.leave(),
@@ -2047,7 +2128,7 @@ pub fn run(mode: Mode) void {
         // left, and under `--shot` the device was never opened. `tickFx` goes FIRST, so a settled dial's
         // re-bake decides what take 0 is before this starts appending variants to it.
         // A LONG TAKE IS ONLY AFFORDABLE WHILE PAUSED (see `sfx.pump`): nothing is moving behind the menu, a
-        // grace or a conversation, so a bed's 8 s take can be built there. In live play only the short rows
+        // bonfire or a conversation, so a bed's 8 s take can be built there. In live play only the short rows
         // drip.
         //
         // THE BUDGET IS SIZED TO BE INVISIBLE, NOT TO FINISH FAST. At 12 ms of a 16.7 ms frame the menu ran
@@ -2063,7 +2144,7 @@ pub fn run(mode: Mode) void {
 
         // Pad SELECT opens the GAME menu, pad START the CHARACTER one; TAB is START's keyboard twin.
         // A CONVERSATION HAS TO BE FINISHED, not escaped out of (see dialog.zig), so it swallows both.
-        // NEITHER MENU OPENS AT A FIRE (owner's call). The grace is its own screen with its own list, and a
+        // NEITHER MENU OPENS AT A FIRE (owner's call). The bonfire is its own screen with its own list, and a
         // pause card or a character book over it would be a second way out of a scene that has exactly one.
         if (!g.editor.on and !g.rest.active() and !g.talk.active()) {
             if (rl.isKeyPressed(.escape)) g.menu.onEscape();
@@ -2408,7 +2489,7 @@ pub fn run(mode: Mode) void {
         // The slope under him, eased into the rig BEFORE it poses — every branch below ends in a `pose()`, so this has to be settled first or the lean is always one frame stale.
         leanToGround(g, dt);
         // WHERE HE STOOD BEFORE HE MOVED, for the water gate under the branch. Taken only while he is ALIVE:
-        // the death branch respawns him, and a hold across that would drag him back off his own grace.
+        // the death branch respawns him, and a hold across that would drag him back off his own bonfire.
         const heroWas = g.hero.pos;
         const heroAfoot = !g.hero.dead;
         if (g.hero.dead) {
@@ -2753,7 +2834,7 @@ fn quickUse(g: *Game) void {
     useItem(g, k);
 }
 
-/// A flask never comes through here — its charges are `combat.Flasks`, refilled at a grace, and the bag has
+/// A flask never comes through here — its charges are `combat.Flasks`, refilled at a bonfire, and the bag has
 /// none of them (`quickUse`).
 fn useItem(g: *Game, k: item.Kind) void {
     if (g.hero.dead) return;

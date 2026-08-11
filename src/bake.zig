@@ -222,8 +222,8 @@ const avenue_layout = [_]P{
     .{ .x = -6, .z = -36, .yaw = -6, .s = 1.05, .kind = .pillar },
     .{ .x = 6, .z = -36, .yaw = 20, .s = 0.95, .kind = .broken },
     .{ .x = 0, .z = -31, .yaw = 0, .s = 1.0, .kind = .arch },
-    // the grace ember, just off the path by the start
-    .{ .x = 3.0, .z = 6.5, .yaw = 0, .s = 1.0, .kind = .grace },
+    // the bonfire ember, just off the path by the start
+    .{ .x = 3.0, .z = 6.5, .yaw = 0, .s = 1.0, .kind = .bonfire },
     // ruined walls
     .{ .x = -14, .z = -14, .yaw = 78, .s = 1.1, .kind = .wall },
     .{ .x = 15, .z = -40, .yaw = -12, .s = 1.2, .kind = .wall },
@@ -247,7 +247,7 @@ const avenue_layout = [_]P{
     .{ .x = -9, .z = -44, .yaw = 30, .s = 1.0, .kind = .block },
     .{ .x = 20, .z = -18, .yaw = 55, .s = 1.0, .kind = .block },
     .{ .x = -22, .z = -6, .yaw = -35, .s = 0.9, .kind = .block },
-    // war banners flanking the avenue + a headless sentinel by the grace
+    // war banners flanking the avenue + a headless sentinel by the bonfire
     .{ .x = 7.5, .z = -11, .yaw = -18, .s = 1.0, .kind = .banner },
     .{ .x = -7.5, .z = -33, .yaw = 155, .s = 1.1, .kind = .banner },
     .{ .x = -8.5, .z = 7, .yaw = 155, .s = 1.0, .kind = .statue },
@@ -256,7 +256,7 @@ const avenue_layout = [_]P{
     .{ .x = -4, .z = -34, .yaw = 10, .s = 1.0, .kind = .rubble },
     .{ .x = 8, .z = 2, .yaw = 70, .s = 0.8, .kind = .rubble },
     .{ .x = -8, .z = -20, .yaw = 0, .s = 1.0, .kind = .rubble },
-    // hand-placed flora accents: glowing blooms hug the grace; flowers among the graves
+    // hand-placed flora accents: glowing blooms hug the bonfire; flowers among the graves
     .{ .x = 2.1, .z = 5.5, .yaw = 40, .s = 1.0, .kind = .glow },
     .{ .x = 4.2, .z = 7.6, .yaw = 210, .s = 0.85, .kind = .glow },
     .{ .x = -11.8, .z = -30.6, .yaw = 75, .s = 1.0, .kind = .flowers },
@@ -287,7 +287,7 @@ fn avenue(p: *Emit) void {
     p.at(.shrine, 6.8, -3.5, 200, 1.0);
     p.at(.cairn, -5.2, 18.0, 0, 1.1);
     p.at(.barrels, 9.5, -16.0, 50, 0.95);
-    // A dense flowering meadow around the grace — the first thing the player ever looks at.
+    // A dense flowering meadow around the bonfire — the first thing the player ever looks at.
     p.belt(.wildflowers, -18, -6, 18, 24, 60, 0.85, 1.35);
     p.belt(.grasstall, -20, -8, 20, 26, 80, 0.85, 1.4);
     p.belt(.clover, -20, -8, 20, 26, 60, 0.9, 1.5);
@@ -480,7 +480,7 @@ fn oldWood(p: *Emit) void {
     p.ring(.monolith, -98, -16, 8.5, 9, 6, 0.9, 1.25);
     p.at(.monolith, -98, -16, 30, 0.7); // a small altar stone at the centre
     p.belt(.flowers, -106, -24, -90, -8, 12, 0.8, 1.2);
-    p.belt(.glow, -104, -22, -92, -10, 5, 0.9, 1.2); // only here and at the grace
+    p.belt(.glow, -104, -22, -92, -10, 5, 0.9, 1.2); // only here and at the bonfire
     p.at(.brazier, -93.0, -11.0, 0, 1.0);
 
     // THE WOODCUTTER'S COTTAGE — doorway on local −Z, turned to open east onto the wood.

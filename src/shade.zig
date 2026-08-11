@@ -34,7 +34,7 @@ const LIMB_DK = rgba(9, 8, 15, 255);
 const EYE = rgba(126, 92, 206, 70);
 const EYE_CORE = rgba(206, 180, 255, 30);
 
-// FX. The MOTE is the world's grace-dust and stays the world's; everything else here is this creature's.
+// FX. The MOTE is the world's bonfire-dust and stays the world's; everything else here is this creature's.
 const WISP_COL = rgba(96, 118, 176, 210); // what it throws, and what it comes apart into
 const WISP_DK = rgba(46, 58, 96, 190);
 const DRAIN = rgba(150, 116, 232, 220); // focus leaving the hero — the ONE violet on this creature
@@ -375,7 +375,7 @@ pub const Shade = struct {
         for (&self.cds) |*c| c.* = mathx.maxF(0, c.* - dt);
         self.blinkCd = mathx.maxF(0, self.blinkCd - dt);
         self.spookLeft = mathx.maxF(0, self.spookLeft - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), AGGRO_R);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
         foe.tickParticles(&self.parts, dt, self.pos.y);
 

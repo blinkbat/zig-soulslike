@@ -123,10 +123,10 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `shroom.zig` | the sporeling + `Cluster`; a squat mushroom that FLINGS itself and bursts a lingering spore cloud that POISONS (buildup, never damage). Sometimes it TRIPS instead — same gather, longer opening |
 | `combat.zig` | `Vitals` (HP + two-tier stagger + regen + death), `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`. THE place to retune feel |
 | `stats.zig` | the character sheet — seven attributes and the curves that make the bars |
-| `tree.zig` | THE PASSIVE TREE — PoE2's, radially: three arms out of one hub, the gates, the `Bonus`, and the wheel it is drawn as |
+| `passivetree.zig` | THE PASSIVE TREE — PoE2's, radially: three arms out of one hub, the gates, the `Bonus`, and the wheel it is drawn as |
 | `item.zig` | item vocabulary, `Use`, the `Bag` |
 | `chest.zig` | openable boxes; contents read off the placing op (`Op.loot`) |
-| `rest.zig` | bonfire + campfire grace — the phase machine, the seat, and THE FIRE'S OWN SCREEN (its list, and the wheel behind Level Up); `isRestKind` is the one predicate |
+| `rest.zig` | bonfire + campfire bonfire — the phase machine, the seat, and THE FIRE'S OWN SCREEN (its list, and the wheel behind Level Up); `isRestKind` is the one predicate |
 | `souls.zig` | THE DROP — what a death leaves on the ground, the gold bloom it stands as, and the walk back for it |
 | `hud.zig` | ER HUD, the PAD-GLYPH kit every prompt and crib is drawn with, and the ONLY path to draw/measure text |
 | `ui.zig` | editor widget kit; `Ctx.anyHot` gates world clicks next frame |
@@ -209,7 +209,7 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 - **`justDied` is a ONE-FRAME flag.** Reset at the TOP of `update`, set in `enterDeath`, apply the
   blade at the END. Applying it externally without the reset latches a nonstop rumble/shake.
 - **EVERY BODY GOES OUT THE SAME WAY** (`foe.dissipate` + `foe.Dissolve`) — past its own `DEATH_DUR` the fall
-  is over and it dissipates over `DISS_DUR` into grace motes rising and flakes of itself falling. The two
+  is over and it dissipates over `DISS_DUR` into gold motes rising and flakes of itself falling. The two
   DURATIONS are per-creature (a giant topples slower than a toad) and so is the `Dissolve` (rate, spread,
   rise, and the flake's colour — bone, chitin or hide); the SHAPE is not. As a private `emitDissolve` per
   creature it had drifted four ways over one effect at four sizes, and the ARCHER's had gone missing
@@ -503,7 +503,7 @@ the fight, which is the whole point of it.
 
 - **THE BAR IS THE CROSS'S DOWN SLOT** (`combat.Quick`, ten entries — ER's pouch). It is not a second system
   beside the flask: **the two flasks are simply its first two entries**, so a fresh game plays exactly as it
-  did. `Flasks` still owns their CHARGES, because those come back at a grace where everything else comes out
+  did. `Flasks` still owns their CHARGES, because those come back at a bonfire where everything else comes out
   of the bag — `combat.quickCount` is that split, ONE copy, asked by the HUD off the live game and by the
   book off its `View`.
 - **CYCLE STAMPS `flasks.sel`, it does not cycle it** (`hero.cycleQuick` → `syncFlask`). The draught, the HUD
@@ -540,7 +540,7 @@ respawn, so the spill plays under the YOU DIED card, which is the one moment not
   and they came back 255,255,221, a white knuckle, which is why it read as BONE and not as gold.
 - **IT SAYS WHERE IT IS OUT LOUD** — `souls_hum` on a RETRIGGER (`HUM_EVERY`, the leechfly's whine rule), cut
   short enough that consecutive takes overlap. It is what lets you find one you walked past.
-- **THE PROMPT IS FIRST IN `game.reachable`**, ahead of the fire, the folk and a box: you can die at a grace,
+- **THE PROMPT IS FIRST IN `game.reachable`**, ahead of the fire, the folk and a box: you can die at a bonfire,
   and on the frame you walk back in there is exactly one thing you came for. One press clears it and the fire
   is offered again. Its ring is the GENEROUS one — `souls.REACH` 2.6 against a box's 2.1, asserted at comptime
   in `souls.zig` — because you come back for this under pressure and fumbling the reach is not the tension.
@@ -577,7 +577,7 @@ number, so a readout and a mechanic cannot disagree.
 - **THE BAR HAS TWO FACES OFF ONE NUMBER** — violet FILLING (a threat), toxic YELLOW once it has gone off (a
   thing happening to you), and it draws **nothing at all** while empty. Not green: it sits directly under the
   stamina bar and the two measured as the same bar.
-- **A GRACE CURES IT** (`hero.makeWhole`), and a death is a return to one.
+- **A BONFIRE CURES IT** (`hero.makeWhole`), and a death is a return to one.
 - **TWO SOURCES, ONE FLUID** — the sporeling's spore cloud (`SPORE_BUILD`) and the brood mother's spit
   (`M_SPIT_BUILD`) and acid pools (`ACID_BUILD`). Neither floor deals damage any more; both are pressure.
   Standing in spores and acid at once doses as **both**, which is why they are two `add` calls and not a max.
@@ -615,7 +615,7 @@ number, so a readout and a mechanic cannot disagree.
   | sporeling | −50 | +15 | 0 | +75 | a damp little fungus stuffed with its own element |
 
 - **NOTHING GRANTS THE HERO ANY YET, AND THE SHEET SAYS SO** — the book's STATS page shows all four at
-  0%. `makeWhole` CARRIES RESISTANCES ACROSS a grace: they are what he is, not a meter to refill.
+  0%. `makeWhole` CARRIES RESISTANCES ACROSS a bonfire: they are what he is, not a meter to refill.
 
 ### The character sheet (`stats.zig`)
 
@@ -626,7 +626,7 @@ starts at 15, which is where the curves yield 70 HP / 60 FP / 105 stamina, so `h
 size from the sheet in one place** — `hero.makeWhole`. The four attributes nothing reads yet say so on
 their own row.
 
-### The passive tree (`tree.zig`) — PoE2's, radially
+### The passive tree (`passivetree.zig`) — PoE2's, radially
 
 **YOU START IN THE MIDDLE AND THREE ARMS RUN OUT OF IT.** The arms are never NAMED on screen — colour and
 direction carry which is which (`Arm.ink` is all that is left of them). Nothing here is a class: all three
@@ -643,7 +643,7 @@ hang off the hub, so all three are open from the first souls you spend.
 - **TAKING A NODE IS THE LEVEL** (owner's call) — one press spends the souls and puts the node on the board.
   There is no point pool between the two: a point in hand is a decision already paid for and not yet made,
   which is a state with nothing to show for itself. `Tree.take` hands back what it charged rather than
-  reaching for the counter (`souls.take`'s shape), so `game.gracePick` is the one line that can bill him, and
+  reaching for the counter (`souls.take`'s shape), so `game.bonfirePick` is the one line that can bill him, and
   it is the ONLY thing in the game that spends souls.
 - **SOULS, NEVER RUNES**, in the code as well as on the page. The currency is `combat.Souls`, the counter is
   `hero.souls`, and the two ITEMS with "rune" in their names (`rune_arc`, `cracked_rune`) are physical
@@ -651,15 +651,15 @@ hang off the hub, so all three are open from the first souls you spend.
 - **THE PRICE IS MEASURED AGAINST A BODY.** A toad is 60, an archer 130, a mother 240 — so `costAt` is set
   where the first node is three archers and the whole one-and-twenty is a game's worth of killing (~80k). It
   is ONE price per level whichever node it lands on: what you buy is the level, and which node is the choice.
-- **SPENT AT A GRACE, READ ANYWHERE.** The book's fourth page is the wheel READ-ONLY — where a build is
-  planned. The fire's own screen is where it is committed. `tree.drawPage` is ONE copy drawn by both,
+- **SPENT AT A BONFIRE, READ ANYWHERE.** The book's fourth page is the wheel READ-ONLY — where a build is
+  planned. The fire's own screen is where it is committed. `passivetree.drawPage` is ONE copy drawn by both,
   `spendable` being the only difference.
-- **THE GRACE IS A SCREEN, NOT A PAUSE** (owner's layout). He sits in the RIGHT of the frame and the fire's
+- **THE BONFIRE IS A SCREEN, NOT A PAUSE** (owner's layout). He sits in the RIGHT of the frame and the fire's
   menu is a list down the LEFT: **Level Up** (which opens the wheel) and **Leave Bonfire**, and nothing else
-  yet. The wheel is shown ONLY once Level Up is chosen — a tree behind every sit buries what a grace is.
+  yet. The wheel is shown ONLY once Level Up is chosen — a tree behind every sit buries what a bonfire is.
 - **GETTING UP IS A ROW ON THAT LIST.** It was "any button", which cannot coexist with a cursor: every press
   that chose a row also stood him up. That is why the character book and the pause card are BOTH refused at a
-  fire — a grace has exactly one way out and it is on the list.
+  fire — a bonfire has exactly one way out and it is on the list.
 - **THE VIEW IS PANNED, NOT SHEARED** (`game.restCamera`, `REST_PAN`). Eye and target move by the same vector
   along the camera's own right axis; swinging the target alone turns the camera and re-composes the shot
   instead of sliding it. Screen-right is `cross(forward, up)` — `camera.rightXZ`'s law, one layer up.
@@ -676,7 +676,7 @@ hang off the hub, so all three are open from the first souls you spend.
   all four quadrants. **The zoom re-centres on the CURSOR** as it goes in (blended from the fitted framing,
   so nothing moves at `ZOOM_MIN`); scaled about the fitted centre instead, the first notch pushes what you
   were reading off the panel. It is VERTICAL-DOMINANT, so a sideways push on the look stick is not a zoom.
-- **THE MIDDLE IS A PLACE THE CURSOR MAY REST** (`tree.HUB`, indexed one past the last node so every
+- **THE MIDDLE IS A PLACE THE CURSOR MAY REST** (`passivetree.HUB`, indexed one past the last node so every
   `NODES[i]` site is untouched). It is where the wheel opens, it takes no press and it is never a purchase -
   the reading column describes the TREE from it. A cursor that cannot sit on the one spot the whole thing is
   described from is a cursor with a hole in it.
@@ -688,7 +688,7 @@ hang off the hub, so all three are open from the first souls you spend.
   page is read at a glance.
 - **THE REST OF THE GAME READS FIELDS OFF ONE `Bonus`**, stamped on the hero by `game.applyTree` →
   `hero.applyPerks` (sheet + resistances + perks in ONE call, or a bar is sized off the sheet he had a node
-  ago). Nothing outside `tree.zig` walks the node list. Five hero-local sites read it: the roll's stamina,
+  ago). Nothing outside `passivetree.zig` walks the node list. Five hero-local sites read it: the roll's stamina,
   the roll's i-frames, the cast's cost, the cast's blow (`Hit.scaled` — the WHOLE blow, or a boosted sorcery
   staggers exactly as hard as it did at level one) and the guard's negation (`combat.guardChip` takes the
   figure as an argument now; a foe's boards pass the flat `GUARD_NEGATE`).
@@ -739,7 +739,7 @@ it costs and what it does.
   is slighter still. Behind a raised bow he moves at `BOW_AIM_SPEED` (0.45 of the walk, under the
   shield's 0.75): a shield is something you walk behind, an aim is something you stand still for.
 - **ARROWS ARE FINITE** — `combat.Quiver`, ten plain and five fire (`FIRE_ARROWS_MAX`), refilled at a
-  grace. The quiver is checked BEFORE stamina is charged. The SELECTED kind is what flies, empty or
+  bonfire. The quiver is checked BEFORE stamina is charged. The SELECTED kind is what flies, empty or
   not, and the kind is LATCHED at `startShot`.
 - **THE FIRE ARROW** hangs fire worth `FIRE_ARROW_FRAC` (0.5) of the shaft's physical ON TOP of it —
   PoE2's "adds X fire damage", physical untouched. It uses `.flame` and `propart`'s fire palette; a
@@ -758,7 +758,7 @@ it costs and what it does.
 - **A CAST IS COMMITTED, NOT HELD** — the FP is gone the moment it starts, so it lives in `committed()`
   beside the swing and the loose, is not buffered, and a stagger drops it with the charge spent. He is
   PLANTED for it.
-- **BILLED IN FP AND NOTHING ELSE** — `BOLT_FP` 12 of 60, five casts to a grace. An empty stamina bar
+- **BILLED IN FP AND NOTHING ELSE** — `BOLT_FP` 12 of 60, five casts to a bonfire. An empty stamina bar
   still leaves him a spell; the wand competes with the flask, not with the roll.
 - **PAY OR CAST NOTHING** (`Focus.spend`) — deliberately the INVERSE of stamina's panic rule: a
   half-paid spell would be a spell that half exists. `hero.fpRefused` → `hud.refuseRing`.
@@ -859,7 +859,7 @@ them. Nothing about the world is authored in Zig. Ops: `at`, `belt`, `disc`, `ri
     when: near npc=0 r=3.5
     when: flag met_wanderer=0
     do: flag met_wanderer=1
-    do: text Someone is sitting at the grace.
+    do: text Someone is sitting at the bonfire.
   ```
 
   **`npc:` RECORDS ARE APPENDED, NEVER INSERTED** — `near npc=0` is an INDEX into that table (SC1's own
@@ -935,7 +935,7 @@ The mesh is TILED (`TCHUNK`), with normals from the FIELD so two tiles agree at 
   stops being in the way over a BAND not a plane (`OCCL_DEPTH_BAND`); and `OCCL_MAX` counts what is in
   flight, both directions. The shape is a pure function of where the value SITS, never of where a travel
   began — `fadeTo` moves under it every frame the camera does, and an anchored ease restarts on each one.
-- **EVERYTHING THINS EXCEPT WHAT SAYS `solid`** — architecture, cliffs, the water sheet, the grace (its
+- **EVERYTHING THINS EXCEPT WHAT SAYS `solid`** — architecture, cliffs, the water sheet, the bonfire (its
   smoke draws down `drawVeils`, which carries no fade). The flag is that way round because as an opt-in
   `fades` every kind added afterwards opted out by silence, and boulders, statues, lanterns and saplings
   blotted the hero out solid. Flora is exempt structurally: `markOccluders` walks `stx` only.
@@ -1073,9 +1073,20 @@ The leash is one struct every creature embeds:
 - **THE TETHER IS THE CREATURE'S OWN NOTICE RING PLUS `LEASH_SLACK` (6 m)**, not one authored number,
   so a toad and an ogre give up after the same few unproductive metres. A flat 30 m was also THE
   SPACING BETWEEN CAMPS, so a tether reached the next encounter.
-- **ONLY AFTER `LEASH_CALM` (4.5 s) WITH NO BLOW GIVEN OR TAKEN**, and only with the hero out of its
-  ring — a foe with him in its face has no business turning round.
-- **A WALK HOME IS NOT BLIND** — step back inside the ring, or land one blow, and it turns on the spot.
+- **ONLY AFTER `LEASH_CALM` (4.5 s) WITH NO BLOW GIVEN OR TAKEN**, and only once the hero has left the
+  patch — a foe with him standing in the ground it guards has no business turning round.
+- **AND THE PATCH IS A PLACE, NOT A SEPARATION** — both ranges in `Leash.tick` are measured FROM THE POST:
+  how far the CREATURE has come, and how far the HERO is. Asked as the gap between the two BODIES the
+  notice ring was doing a job it is the wrong size for — a creature could only let go once the hero had
+  out-run it by its own full aggro (24 m for an archer), and it walked the whole time that gap was opening.
+  Tethers nominally 17-30 m long measured out at 34 m (ogre) to 176 m (leechfly), which is the owner's
+  "monsters simply chase you forever". A test walks the field and pins each one to its own leash
+  (`game.zig`, "NOTHING CHASES FOREVER").
+- **A WALK HOME IS NOT BLIND** — step back into the patch, or land one blow, and it turns on the spot.
+- **A FIGHT IN PROGRESS OUTRANKS THE TETHER, and that is not a leak**: `noteCombat` is stamped by every
+  blow either side lands, so a leechfly that rides him for eighty metres is one that has been FEEDING the
+  whole way. What a tether owes there is a prompt let-go once the biting stops, which is a CLOCK and not
+  a distance.
 - **RE-ENGAGING COSTS `REENGAGE_HOLD` (8 s)** in which it cannot try to leave again.
 - **ONE PLAYER BLOW ROUSES IT FROM ANY RANGE for `PROVOKE_ROUSE` (14 s)** — a COUNTDOWN, not a level,
   because it has to outlast the walk. Only a `pierce` blade also snaps its facing back down the shaft.

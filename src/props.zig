@@ -25,7 +25,7 @@ pub const Kind = enum(u8) {
     tree, // dead tree
     graves,
     sword,
-    grace, // the BONFIRE CAMP — the tag is the world files' word, not a description (see ruins.graceMesh)
+    bonfire, // the BONFIRE CAMP — the tag is the world files' word, not a description (see ruins.bonfireMesh)
     tower, // colossal horizon keep
     gate, // colossal horizon gate
     rubble,
@@ -152,7 +152,7 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .tree => "Dead Tree",
         .graves => "Graves",
         .sword => "Planted Sword",
-        .grace => "Bonfire Camp",
+        .bonfire => "Bonfire Camp",
         .tower => "Horizon Keep",
         .gate => "Colossal Gate",
         .rubble => "Rubble",
@@ -233,7 +233,7 @@ pub fn group(k: Kind) Group {
     return switch (k) {
         .pillar, .broken, .block, .arch, .wall, .statue, .monolith, .paving, .stairs, .rubble, .banner, .sword, .graves, .sarcophagus, .bones, .gibbet, .cairn => .ruins,
         .chapel, .watchtower, .cottage, .tower, .gate, .causeway => .buildings,
-        .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart, .grace => .village,
+        .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart, .bonfire => .village,
         .chest => .treasure,
         .boulder, .rocks, .outcrop, .scree, .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6, .stump, .log => .rock,
         .tree, .bigtree, .bigtree2, .bigtree3, .willow, .conifer, .birch, .snag, .sapling => .trees,
@@ -360,8 +360,8 @@ pub const INFO = [NK]Info{
     .{ .kind = .graves, .build = ruins.gravesMesh, .bound = 2.3, .top = 1.05, .view = 150, .parts = circleParts(0.80, 0.9) },
     .{ .kind = .sword, .build = ruins.swordMesh, .bound = 1.6, .top = 1.35, .view = 120 },
     // SOLID because its veil is not: the smoke column draws down a separate path (`drawVeils`) that carries
-    // no fade, so a thinned grace under a solid plume reads as a bug. It is a landmark you want to see anyway.
-    .{ .kind = .grace, .build = ruins.graceMesh, .veil = ruins.graceVeilMesh, .stow = ruins.graceGuitarMesh, .bound = 7.2, .top = 5.4, .view = 300, .solid = true, .light = .{ .y = 0.45, .col = v3(0.86, 0.48, 0.18), .radius = 11.0, .flicker = 0.17 } },
+    // no fade, so a thinned bonfire under a solid plume reads as a bug. It is a landmark you want to see anyway.
+    .{ .kind = .bonfire, .build = ruins.bonfireMesh, .veil = ruins.bonfireVeilMesh, .stow = ruins.bonfireGuitarMesh, .bound = 7.2, .top = 5.4, .view = 300, .solid = true, .light = .{ .y = 0.45, .col = v3(0.86, 0.48, 0.18), .radius = 11.0, .flicker = 0.17 } },
     .{ .kind = .tower, .build = ruins.towerMesh, .bound = 17.5, .top = 17.2, .view = FAR, .solid = true, .parts = circleParts(3.40, 14.0) },
     .{ .kind = .gate, .build = ruins.gateMesh, .bound = 19.6, .top = 16.4, .view = FAR, .solid = true, .parts = &.{
         .{ .ax = -7.5, .bx = -7.5, .r = 3.20, .h = 16.0 },
@@ -414,7 +414,7 @@ pub const INFO = [NK]Info{
     .{ .kind = .stairs, .build = village.stairsMesh, .bound = 2.8, .top = 1.5, .view = 190, .parts = &.{.{ .ax = -1.3, .bx = 1.3, .r = 0.95, .h = 1.4 }} },
     .{ .kind = .gibbet, .build = village.gibbetMesh, .bound = 4.4, .top = 4.1, .view = 220, .parts = circleParts(0.24, 4.0), .surf = .wood },
     .{ .kind = .cairn, .build = rock.cairnMesh, .bound = 1.8, .top = 1.5, .view = 180, .parts = circleParts(0.52, 1.4) },
-    // SOLID for the grace's reason: its LID is not part of this model. `chest.Chests.draw` draws it off the
+    // SOLID for the bonfire's reason: its LID is not part of this model. `chest.Chests.draw` draws it off the
     // box's own swing through a path that carries no fade, so a thinned carcase under an opaque lid is a bug.
     .{ .kind = .chest, .build = village.chestMesh, .bound = 1.6, .top = village.CHEST_TOP + 0.34, .view = 150, .solid = true, .interact = true, .parts = &.{.{ .r = 0.56, .h = village.CHEST_HINGE_Y }}, .surf = .wood },
     .{ .kind = .outcrop, .build = rock.outcropMesh, .bound = 3.4, .top = 1.1, .view = 200, .parts = &.{.{ .ax = -1.4, .bx = 1.4, .r = 1.1, .h = 1.05 }} },
@@ -424,7 +424,7 @@ pub const INFO = [NK]Info{
     // BURNT OUT: no `light`, and that absence is the whole difference between these two rows.
     .{ .kind = .campfire, .build = fx.deadCampfireMesh, .bound = 1.5, .top = 0.6, .view = 200, .parts = circleParts(0.45, 0.5), .surf = .stone },
     // …AND ONE YOU CAN SIT AT. `interact` shelves it under the editor's Interactables layer beside the
-    // chests, which is where the things the player USES belong; `rest.isRestKind` is what makes it a grace.
+    // chests, which is where the things the player USES belong; `rest.isRestKind` is what makes it a bonfire.
     .{ .kind = .campfire_lit, .build = fx.campfireMesh, .bound = 1.5, .top = 1.0, .view = 200, .interact = true, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
     .{ .kind = .water, .build = fx.waterMesh, .bound = 30.0, .top = 0.1, .view = FAR, .solid = true, .casts = false },
     .{ .kind = .tuft, .build = flora.tuftMesh, .bound = 0.9, .top = 0.8, .view = 85, .flora = true, .casts = false },

@@ -209,10 +209,14 @@ pub const Menu = struct {
     fn updateBook(self: *Menu, dt: f32, v: bookmod.View) Action {
         if (tabPressed(-1)) self.book.onTab(-1);
         if (tabPressed(1)) self.book.onTab(1);
-        if (navPressed(.up)) self.book.move(0, -1, v);
-        if (navPressed(.down)) self.book.move(0, 1, v);
-        if (navPressed(.left)) self.book.move(-1, 0, v);
-        if (navPressed(.right)) self.book.move(1, 0, v);
+        // ON THE WHEEL THE CROSS IS THE ZOOM (`dpadZoom`), so the walk there is the left stick's and the
+        // keys'. The bumpers stay the PAGE TURN on every page, this one included — that is the whole reason
+        // the zoom is not on them.
+        const nav: *const fn (NavDir) bool = if (self.book.wheelUp()) &navPressedNoPad else &navPressed;
+        if (nav(.up)) self.book.move(0, -1, v);
+        if (nav(.down)) self.book.move(0, 1, v);
+        if (nav(.left)) self.book.move(-1, 0, v);
+        if (nav(.right)) self.book.move(1, 0, v);
         // …and the LEFT STICK drives the same four, which is what walking a wheel wants.
         if (stickStep(dt)) |d| switch (d) {
             .up => self.book.move(0, -1, v),
@@ -221,7 +225,8 @@ pub const Menu = struct {
             .right => self.book.move(1, 0, v),
         };
         self.book.spinBy(adjHeldDir(), dt);
-        self.book.zoomBy(stickZoom(), dt);
+        self.book.panBy(stickPan(), dt);
+        self.book.zoomBy(dpadZoom(), dt);
         var act: Action = .none;
         if (confirmPressed()) {
             const a = self.book.confirm(v);
@@ -604,6 +609,41 @@ pub fn stickStep(dt: f32) ?NavDir {
     if (stickWait > 0) return null;
     stickWait = STICK_ARR;
     return d;
+}
+
+/// THE RIGHT STICK AS A VIEW SLIDE, raw thumb in both axes (owner's call: the look stick pans the passive
+/// tree). NOT run through `stickRadial`'s deadzone-and-curve: a pan is the one input here that wants to be
+/// analogue all the way down, so a feather push creeps and a shove flies. Only the resting slop is cut.
+const PAN_DEAD: f32 = 0.18;
+pub fn stickPan() rl.Vector2 {
+    if (!rl.isGamepadAvailable(0)) return .{ .x = 0, .y = 0 };
+    const x = rl.getGamepadAxisMovement(0, .right_x);
+    const y = rl.getGamepadAxisMovement(0, .right_y);
+    const m = @sqrt(x * x + y * y);
+    if (m < PAN_DEAD) return .{ .x = 0, .y = 0 };
+    return .{ .x = x, .y = y };
+}
+
+/// THE CROSS'S UP AND DOWN AS A ZOOM, −1 (out) … +1 (in), read as a HELD level so it glides rather than
+/// notching (owner's call). NOT the bumpers: those are the book's page turn, and the passive tree is one of
+/// its pages — a zoom that took them would strand you on the wheel with no way to turn off it.
+///
+/// PAD ONLY. The keyboard's arrows keep WALKING the wheel on both screens, because a desk has the MOUSE
+/// WHEEL for this and does not need the cross.
+pub fn dpadZoom() f32 {
+    var v: f32 = 0;
+    if (padDown(.left_face_up)) v += 1;
+    if (padDown(.left_face_down)) v -= 1;
+    const notch = rl.getMouseWheelMove();
+    if (notch != 0) v = mathx.clampF(v + notch * 0.6, -1, 1);
+    return v;
+}
+
+/// …and the walk with the CROSS TAKEN OUT OF IT, for the two screens that have spent it on the zoom above.
+/// The keys are untouched: only the pad's own d-pad is withheld.
+pub fn navPressedNoPad(dir: NavDir) bool {
+    const k = keyNav(dir);
+    return rl.isKeyPressed(k.a) or rl.isKeyPressed(k.b) or rl.isKeyPressedRepeat(k.a) or rl.isKeyPressedRepeat(k.b);
 }
 
 /// The RIGHT stick's zoom axis, −1 (out) … +1 (in). Pushing UP zooms IN. VERTICAL-DOMINANT: a sideways push

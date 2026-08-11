@@ -62,7 +62,7 @@ pub const SCRUB_DK = rgba(28, 34, 20, 255);
 pub const STEM = rgba(44, 54, 28, 255);
 pub const PETAL = rgba(210, 196, 152, 255);
 pub const SEED = rgba(118, 94, 46, 255);
-pub const PETAL_GLOW = rgba(242, 206, 118, 200); // slight emissive — kin to the grace ember
+pub const PETAL_GLOW = rgba(242, 206, 118, 200); // slight emissive — kin to the bonfire ember
 // The leaf family spans a real HUE range now, not one olive at five values: the canopy builders already
 // put light on top and dark below, but sun-flattened value was all that said so — the undersides go COOL
 // blue-green and the crowns warm lime, which is the split daylight cannot take away.

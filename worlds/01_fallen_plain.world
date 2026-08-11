@@ -18,7 +18,7 @@ at: broken 6 -26 0 1.05
 at: pillar -6 -36 -6 1.05
 at: broken 6 -36 20 0.95
 at: arch 0 -31 0 1
-at: grace 3 6.5 0 1
+at: bonfire 3 6.5 0 1
 at: wall -14 -14 78 1.1
 at: wall 15 -40 -12 1.2
 at: wall -24 -28 100 0.9
@@ -910,7 +910,7 @@ trig: wanderer_seen pri=10
   when: near npc=0 r=3.5
   when: flag met_wanderer=0
   do: flag met_wanderer=1
-  do: text Someone is sitting at the grace.
+  do: text Someone is sitting at the bonfire.
 trig: gate_rumour
   when: talked wanderer
   when: flag heard_of_gate=1

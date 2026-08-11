@@ -283,7 +283,7 @@ pub const Shroom = struct {
         self.t += dt;
         self.flingCd = mathx.maxF(0, self.flingCd - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
@@ -703,7 +703,7 @@ pub const Cluster = struct {
         foe.resetGroup(Shroom, &self.shrooms, &self.n, m, .shroom);
     }
     /// EMPTY THE FIELD — the MEMBERS as well as the clouds. `game.clearFoes` calls this INSTEAD of zeroing
-    /// `n`, so a `clear` that only swept the extras left every sporeling standing at a grace and in `--shot`.
+    /// `n`, so a `clear` that only swept the extras left every sporeling standing at a bonfire and in `--shot`.
     pub fn clear(self: *Cluster) void {
         self.n = 0;
         self.clearClouds();
@@ -946,7 +946,7 @@ test "THE CLOUD POISONS, IT DOES NOT BURN: linger and the meter fills, step out 
 
 test "CLEAR EMPTIES THE FIELD — the members as well as the clouds" {
     // `game.clearFoes` calls a group's own `clear()` INSTEAD of zeroing `n`, so a `clear` that only swept
-    // the extras left every sporeling standing at a grace and in every `--shot` that asked for a bare field.
+    // the extras left every sporeling standing at a bonfire and in every `--shot` that asked for a bare field.
     var c = Cluster{ .model = undefined };
     c.shrooms[0] = Shroom.spawn(mathx.zero3, 0, 1.0, 0.3);
     c.n = 1;

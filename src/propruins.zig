@@ -450,7 +450,7 @@ pub fn swordMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-pub fn graceMesh(shader: rl.Shader) rl.Model {
+pub fn bonfireMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4809);
     b.setMat(.stone);
@@ -524,7 +524,7 @@ pub fn graceMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-pub fn graceVeilMesh(shader: rl.Shader) rl.Model {
+pub fn bonfireVeilMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4811);
     smokeInto(&b, &rng);
@@ -616,7 +616,7 @@ fn guitarRockInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32) void {
     lichenInto(b, rng, v3(cx + rng.signed() * 0.2, 0.40, cz + rng.signed() * 0.2), v3(0.16, 0.015, 0.15), 3);
 }
 
-pub fn graceGuitarMesh(shader: rl.Shader) rl.Model {
+pub fn bonfireGuitarMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     guitarPropInto(&b, GUITAR_CX, GUITAR_CZ, GUITAR_YAW);
     return b.toModel(shader);

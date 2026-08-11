@@ -949,7 +949,7 @@ fn mkDeath(r: *Rack) void {
 }
 
 fn mkRespawn(r: *Rack) void {
-    // Waking at the grace: a warm low bloom rising out of nothing.
+    // Waking at the bonfire: a warm low bloom rising out of nothing.
     r.body(0.0, 1.1, 88, 132, 0.8, 1.2);
     r.ring(0.02, 1.0, 330, 0.35, 2.0, 4);
     r.air(0.0, 0.8, 0.18, 300, 1800, 0.3, 1.4);

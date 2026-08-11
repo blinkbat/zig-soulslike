@@ -101,7 +101,7 @@ its tip. Prices are measured against what a body is worth: your first node costs
 archers, and the whole one-and-twenty is a game's worth of killing.
 
 There is no attribute screen any more: every attribute past the starting sheet comes off a node here. The
-wheel is the character book's fourth page and you can read it anywhere, but you spend **only at a grace**.
+wheel is the character book's fourth page and you can read it anywhere, but you spend **only at a bonfire**.
 Sitting at one is its own screen: you sit off to the right of the frame with the fire, and the bonfire's menu
 is a list down the left — **Level Up**, which opens the wheel, and **Leave Bonfire**, which is the only way
 back out. Walk the tree with the left stick and zoom it with the right.

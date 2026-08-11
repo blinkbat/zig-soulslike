@@ -394,7 +394,7 @@ pub const Stamina = struct {
         self.cur = self.max;
         self.sinceSpend = LONG_AGO;
         self.winded = false;
-        self.brewLeft = 0; // a grace clears what is on him, the ward's rule
+        self.brewLeft = 0; // a bonfire clears what is on him, the ward's rule
     }
 };
 
@@ -483,7 +483,7 @@ pub const BOLT_HIT = Hit{ .poise = 14, .stance = 6, .elem = elems(.{ .chaos = 24
 
 /// THE ROOTS — the wand's second spell, and the first thing in the game that takes a foe's FEET rather than
 /// its health. It costs MORE than the bolt and deals LESS: you cast it to buy the ground back, not to kill.
-pub const ROOT_FP: f32 = 18.0; // dearer than the bolt's 12 — three casts to a grace, not five
+pub const ROOT_FP: f32 = 18.0; // dearer than the bolt's 12 — three casts to a bonfire, not five
 pub const ROOT_HOLD: f32 = 3.5; // seconds the feet are held
 pub const ROOT_DPS: f32 = 4.0; // chaos a second while they hold (~14 over a full grip)
 /// How far from the mark the ground is SEARCHED for feet to take, which is the reach of a cast with nothing
@@ -600,7 +600,7 @@ pub fn flaskOf(k: item.Kind) ?FlaskKind {
     };
 }
 
-/// HOW MANY OF A QUICK-BAR THING HE HAS. A flask counts CHARGES, which come back at a grace; everything else
+/// HOW MANY OF A QUICK-BAR THING HE HAS. A flask counts CHARGES, which come back at a bonfire; everything else
 /// counts what is in the BAG, which does not. The HUD asks this off the live game and the character book off
 /// its `View`, and both have the two pools in hand — as a copy on each side it was one rule in two files.
 pub fn quickCount(k: item.Kind, flasks: *const Flasks, bag: *const item.Bag) u8 {
@@ -611,7 +611,7 @@ pub fn quickCount(k: item.Kind, flasks: *const Flasks, bag: *const item.Bag) u8 
 /// THE QUICK BAR — ER's pouch, on the cross's DOWN slot, and **in combat the only way to spend a consumable**
 /// (`game.inCombat` decides). What is on it is therefore a decision made BEFORE the fight, which is the whole
 /// point of it. THE FLASKS ARE JUST ITS FIRST TWO ENTRIES and are special-cased nowhere but the spend:
-/// `Flasks` keeps their charges, because those come back at a grace where everything else comes out of the bag.
+/// `Flasks` keeps their charges, because those come back at a bonfire where everything else comes out of the bag.
 pub const QUICK_SLOTS: usize = 10;
 
 pub const Quick = struct {
@@ -687,7 +687,7 @@ pub const Quick = struct {
     /// DROP WHAT HE HAS RUN OUT OF, called once a frame. A row pointing at nothing is a cycle step that does
     /// nothing and a HUD cell showing a thing he does not have.
     ///
-    /// A FLASK AT ZERO STAYS ON. Its charges are not the bag's — they come back at a grace — so taking it off
+    /// A FLASK AT ZERO STAYS ON. Its charges are not the bag's — they come back at a bonfire — so taking it off
     /// the bar the moment he drank the last swallow would mean re-loading the bar at every bonfire.
     pub fn dropEmpty(self: *Quick, bag: *const item.Bag) void {
         for (&self.slots) |*s| {
@@ -1663,7 +1663,7 @@ test "THE BAR SHEDS WHAT HE HAS RUN OUT OF, and never a flask" {
     _ = bag.take(.mushroom_jerky, 1);
     q.dropEmpty(&bag);
     try std.testing.expect(!q.holds(.mushroom_jerky)); // …and now he does not
-    // AN EMPTY FLASK STAYS ON. Its charges come back at a grace, so it is still what he is carrying —
+    // AN EMPTY FLASK STAYS ON. Its charges come back at a bonfire, so it is still what he is carrying —
     // dropped here, the bar would have to be re-loaded at every bonfire.
     try std.testing.expect(q.holds(.crimson_flask) and q.holds(.cerulean_flask));
     try std.testing.expectEqual(@as(u16, 0), bag.count(.crimson_flask)); // and the bag has never held one

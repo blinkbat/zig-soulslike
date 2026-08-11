@@ -235,7 +235,7 @@ pub const Souls = struct {
                 self.fxRng.range(0.022, 0.045),
                 0.004,
                 MOTE,
-                -0.55, // negative grav: they FLOAT, the grace motes' own rule
+                -0.55, // negative grav: they FLOAT, the gold motes' own rule
             );
         }
     }

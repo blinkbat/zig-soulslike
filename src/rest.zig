@@ -4,7 +4,7 @@ const props = @import("props.zig");
 const sfx = @import("audio.zig");
 const hud = @import("hud.zig");
 const uiart = @import("uiart.zig");
-const tree = @import("tree.zig");
+const ptree = @import("passivetree.zig");
 
 const v3 = mathx.v3;
 
@@ -24,7 +24,7 @@ const BED_OUT: f32 = 0.55;
 /// A nudge OFF the fire, toward the lens.
 const SEAT_TURN: f32 = 0.20;
 
-// THE GRACE IS A SCREEN NOW, not a pause with a fade. He sits on the RIGHT of the frame and the fire's own
+// THE BONFIRE IS A SCREEN NOW, not a pause with a fade. He sits on the RIGHT of the frame and the fire's own
 // menu is a list down the LEFT — the shape every bonfire in the genre has. GETTING UP IS A ROW ON THAT LIST
 // and not "any button": with a menu on screen, a stray press has somewhere to land, and a press that both
 // chose a row and stood him up is the bug the old any-button rule guaranteed.
@@ -49,10 +49,10 @@ pub const Row = enum {
 pub const NROW = @typeInfo(Row).@"enum".fields.len;
 
 /// Which of the fire's screens is up. The tree is shown ONLY once Level Up is chosen (owner's call) — the
-/// list is what a grace looks like, and a wheel behind it every time you sat down would bury that.
+/// list is what a bonfire looks like, and a wheel behind it every time you sat down would bury that.
 pub const Screen = enum { list, tree };
 
-/// WHAT A PRESS AT THE FIRE ASKED FOR. The grace owns none of the game's state — the souls and the tree
+/// WHAT A PRESS AT THE FIRE ASKED FOR. The bonfire owns none of the game's state — the souls and the tree
 /// belong to the loop, exactly as the book's own `Action` does.
 pub const Pick = union(enum) {
     none,
@@ -88,12 +88,12 @@ pub const Rest = struct {
     justEntered: bool = false,
     justLeft: bool = false,
 
-    /// THE FIRE'S OWN MENU. Reset on every sit (`begin`), because a grace opens on its first row: coming
+    /// THE FIRE'S OWN MENU. Reset on every sit (`begin`), because a bonfire opens on its first row: coming
     /// back to a fire already sat on Leave is one press from standing straight back up.
     screen: Screen = .list,
     row: usize = 0,
-    /// …and the grace's own view of the tree, kept apart from the book's for the reason written at that one.
-    wheel: tree.Wheel = .{},
+    /// …and the bonfire's own view of the tree, kept apart from the book's for the reason written at that one.
+    wheel: ptree.Wheel = .{},
 
     pub fn reset(self: *Rest, sites: []const Site) void {
         self.n = 0;
@@ -162,7 +162,7 @@ pub const Rest = struct {
         self.phase = .in;
         self.t = 0;
         self.near = null;
-        self.screen = .list; // a grace opens on its FIRST row, never on the one you left it on
+        self.screen = .list; // a bonfire opens on its FIRST row, never on the one you left it on
         self.row = 0;
         return true;
     }
@@ -225,7 +225,7 @@ pub fn siteFromProp(pos: rl.Vector3, yaw: f32) Site {
     return .{ .pos = pos, .yaw = yaw };
 }
 
-// THE GRACE'S SCREEN. The state and the walk live here; the game loop reads the buttons and hands the
+// THE BONFIRE'S SCREEN. The state and the walk live here; the game loop reads the buttons and hands the
 // results in, exactly as it does for the character book — this file owns no bindings.
 
 /// Move the cursor on whichever screen is up. `dx`/`dy` are one step, from a d-pad, a key or the left stick.
@@ -241,14 +241,19 @@ pub fn navigate(self: *Rest, dx: i32, dy: i32) void {
             self.row = @intCast(next);
             sfx.play(.menu_move);
         },
-        // THE WHEEL IS WALKED BY DIRECTION, never cycled (`tree.step`'s law).
+        // THE WHEEL IS WALKED BY DIRECTION, never cycled (`ptree.step`'s law).
         .tree => if (self.wheel.move(dx, dy)) sfx.play(.menu_move),
     }
 }
 
-/// The right stick, on the tree screen and nowhere else.
+/// The BUMPERS, on the tree screen and nowhere else.
 pub fn zoom(self: *Rest, dv: f32, dt: f32) void {
     if (self.screen == .tree and dv != 0) self.wheel.zoomBy(dv, dt);
+}
+
+/// …and the RIGHT STICK, which slides the view (owner's call). Same gate: the list has nothing to pan.
+pub fn pan(self: *Rest, v: rl.Vector2, dt: f32) void {
+    if (self.screen == .tree) self.wheel.panBy(v, dt);
 }
 
 /// CONFIRM. On the list it picks a row; on the wheel it asks for the node under the cursor.
@@ -266,7 +271,7 @@ pub fn confirm(self: *Rest, t: *const Tree, souls: u32) Pick {
             const i = self.wheel.cursor;
             // THE MIDDLE TAKES NO PRESS. It is a place to stand, not a thing to buy, and `locked` is only
             // ever asked about a real node.
-            if (i >= tree.N or t.locked(i, souls) != null) {
+            if (i >= ptree.N or t.locked(i, souls) != null) {
                 sfx.play(.menu_back); // refused, and the column beside it already says why
                 return .none;
             }
@@ -284,7 +289,7 @@ pub fn back(self: *Rest) void {
     sfx.play(.menu_back);
 }
 
-const Tree = tree.Tree;
+const Tree = ptree.Tree;
 
 /// Stage a screen for the shot harness (`book.debugShow`'s pattern): a photograph of the wheel zoomed onto
 /// a keystone cannot be got by pretending to press buttons at 1/60 s a frame.
@@ -292,7 +297,7 @@ pub fn debugShow(self: *Rest, screen: Screen, row: usize, node: usize, mag: f32)
     self.screen = screen;
     // CLAMPED, because `confirm` turns this into a `Row` and an out-of-range `@enumFromInt` is illegal
     // behaviour rather than a wrong row. `navigate` keeps it in range with its own `@mod`; this is the
-    // other writer, and the wheel's cursor is already bounded at every read (`tree.HUB`).
+    // other writer, and the wheel's cursor is already bounded at every read (`ptree.HUB`).
     self.row = @min(row, NROW - 1);
     self.wheel = .{ .cursor = node, .zoom = mag };
 }
@@ -314,7 +319,7 @@ fn rowH() i32 {
 
 /// THE FIRE'S CHROME, over the scene and under nothing. Drawn only once he is actually SAT: through the two
 /// fades the screen is going black, and a panel at full strength over that reads as a card that arrived
-/// early. `t` and `souls` are the live ones — the grace holds no copy of either.
+/// early. `t` and `souls` are the live ones — the bonfire holds no copy of either.
 pub fn drawScreen(self: *const Rest, t: *const Tree, souls: u32) void {
     if (self.phase != .sit) return;
     const a: f32 = 1.0 - self.fade(); // the fade is the scene coming UP; the chrome comes up with it
@@ -345,7 +350,7 @@ fn drawList(self: *const Rest, a: f32) void {
     uiart.plate(x, y, w, h, mathx.u8f(236.0 * mathx.clampF(a, 0, 1)));
     uiart.frame(x, y, w, h, mathx.u8f(200.0 * mathx.clampF(a, 0, 1)));
 
-    hud.engraved("LOST GRACE", x + PAD_X, y + 20, hud.TITLE, ink(uiart.TEXT_TITLE, a));
+    hud.engraved("BONFIRE", x + PAD_X, y + 20, hud.TITLE, ink(uiart.TEXT_TITLE, a));
     uiart.divider(x + @divTrunc(w, 2), y + hud.lineH(hud.TITLE) + 30, @divTrunc(w, 2) - PAD_X, mathx.u8f(170.0 * a));
 
     var ry = y + head;
@@ -380,14 +385,15 @@ fn drawTree(self: *const Rest, t: *const Tree, souls: u32, a: f32) void {
     uiart.frame(x, y, w, h, mathx.u8f(200.0 * mathx.clampF(a, 0, 1)));
 
     const headY = y + 14;
-    hud.engraved("LEVEL UP", x + 24, headY, hud.TITLE, ink(uiart.TEXT_TITLE, a));
+    hud.engraved("PASSIVE TREE", x + 24, headY, hud.TITLE, ink(uiart.TEXT_TITLE, a));
     const foot = hud.lineH(hud.HINT) + 20;
     const bodyY = headY + hud.lineH(hud.TITLE) + 12;
-    tree.drawPage(t, self.wheel, x + 22, bodyY, w - 44, y + h - bodyY - foot - 8, true, souls);
+    ptree.drawPage(t, self.wheel, x + 22, bodyY, w - 44, y + h - bodyY - foot - 8, true, souls);
 
     const hints = [_]hud.Hint{
         .{ .glyph = .{ .bumper = "LS" }, .label = "Walk" },
-        .{ .glyph = .{ .bumper = "RS" }, .label = "Zoom" },
+        .{ .glyph = .{ .bumper = "RS" }, .label = "Pan" },
+        .{ .glyph = .{ .dpad = .updown }, .label = "Zoom" },
         .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Take" },
         .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Back" },
     };
@@ -396,8 +402,8 @@ fn drawTree(self: *const Rest, t: *const Tree, souls: u32, a: f32) void {
 }
 
 /// THE KINDS YOU CAN SIT AT. The bonfire camp, and the lit campfire — a camp you can pitch anywhere,
-/// and it is a FULL grace (owner's call): the same restore and the same world reload, because the one
+/// and it is a FULL bonfire (owner's call): the same restore and the same world reload, because the one
 /// thing worse than a second rest kind is a second rest kind with its own half-rules.
 pub fn isRestKind(k: props.Kind) bool {
-    return k == .grace or k == .campfire_lit;
+    return k == .bonfire or k == .campfire_lit;
 }

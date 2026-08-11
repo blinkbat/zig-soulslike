@@ -414,7 +414,7 @@ pub const Frog = struct {
         self.flash = mathx.maxF(0, self.flash - dt);
         self.t += dt;
         // THE TETHER: drawn a long way from its lily patch and left alone, it goes back (foe.Leash).
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.pos, hero), AGGRO_R);
+        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), AGGRO_R);
         self.updateFx(dt); // advance live particles (bursts from any state keep animating)
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt); // the knockback off a landed blow
         // THE SHIELD, asked BEFORE the state machine runs this frame's arc — a catch has to kill the slam it

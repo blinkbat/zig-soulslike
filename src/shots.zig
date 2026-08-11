@@ -22,7 +22,7 @@ const dialogmod = @import("dialog.zig");
 const mathx = @import("mathx.zig");
 const props = @import("props.zig");
 const stats = @import("stats.zig");
-const treemod = @import("tree.zig");
+const ptree = @import("passivetree.zig");
 const restmod = @import("rest.zig");
 const item = @import("item.zig");
 const bookmod = @import("book.zig");
@@ -80,12 +80,12 @@ fn shoot(g: *Game, name: [:0]const u8) void {
     snap(name);
 }
 
-/// …and the same frame with the FIRE'S chrome on it. The grace's list and its wheel are drawn in the loop's
+/// …and the same frame with the FIRE'S chrome on it. The bonfire's list and its wheel are drawn in the loop's
 /// rest branch, which `--shot` never runs, so `shoot` alone photographs a man sitting in front of nothing.
-fn graceShoot(g: *Game, name: [:0]const u8) void {
+fn bonfireShoot(g: *Game, name: [:0]const u8) void {
     drawScene(g);
     hud(g, SHOT_DT);
-    game.drawGraceForShot(g);
+    game.drawBonfireForShot(g);
     snap(name);
 }
 
@@ -904,7 +904,7 @@ pub fn runShots(g: *Game) void {
         var bl: i32 = 0;
         while (bl < 18) : (bl += 1) _ = a.update(dt, mathx.ground(0, 2.2), game.PLAY_HALF, .{});
         shootFoe(g, a, "shots/45c_archer_backstep_land.png", 90, 0.06, 6.0);
-        // THE BODY GOING (`foe.dissipate`) — caught well past `DEATH_DUR` so the bone-dust and the grace
+        // THE BODY GOING (`foe.dissipate`) — caught well past `DEATH_DUR` so the bone-dust and the bonfire
         // motes are up, which is the whole point of the frame: this is the one skeleton that used to fade
         // out into nothing while its twin shed bone.
         // Off the column it spawns beside — a corpse is a low subject, and architecture is `solid` and never
@@ -1246,24 +1246,24 @@ pub fn runShots(g: *Game) void {
         for ([_]i32{ 165, 55, 60 }, [_][:0]const u8{ "shots/71e_rest.png", "shots/71f_rest_play.png", "shots/71g_rest_play2.png" }) |adv, name| {
             var k: i32 = 0;
             while (k < adv) : (k += 1) game.tickRestForShot(g, SHOT_DT);
-            graceShoot(g, name);
+            bonfireShoot(g, name);
         }
         // THE FIRE'S OWN TREE, the one screen that can charge him souls. Staged with the warrior arm two
         // deep so its ring 1 has opened, and carrying enough to afford the next — the lit links, the open
         // rims and the selection mark are then all in one frame. ZOOMED for the third, because the zoom
         // re-centres on the cursor and a fitted shot cannot show that.
         const treeSouls = g.hero.souls.total;
-        _ = g.tree.take(treemod.armFirst(.warrior), 1_000_000);
-        _ = g.tree.take(treemod.armFirst(.warrior) + 1, 1_000_000);
+        _ = g.tree.take(ptree.armFirst(.warrior), 1_000_000);
+        _ = g.tree.take(ptree.armFirst(.warrior) + 1, 1_000_000);
         g.hero.souls.total = 900;
         g.hero.souls.shown = 900;
         game.applyTree(g);
         restmod.debugShow(&g.rest, .list, 0, 0, 1.0);
-        graceShoot(g, "shots/71h_grace_list.png");
-        restmod.debugShow(&g.rest, .tree, 0, treemod.armFirst(.warrior) + 3, 1.0);
-        graceShoot(g, "shots/71i_grace_tree.png");
-        restmod.debugShow(&g.rest, .tree, 0, treemod.armFirst(.warrior) + 3, 2.3);
-        graceShoot(g, "shots/71j_grace_tree_zoom.png");
+        bonfireShoot(g, "shots/71h_bonfire_list.png");
+        restmod.debugShow(&g.rest, .tree, 0, ptree.armFirst(.warrior) + 3, 1.0);
+        bonfireShoot(g, "shots/71i_bonfire_tree.png");
+        restmod.debugShow(&g.rest, .tree, 0, ptree.armFirst(.warrior) + 3, 2.3);
+        bonfireShoot(g, "shots/71j_bonfire_tree_zoom.png");
         g.tree = .{};
         game.applyTree(g);
         g.hero.souls.total = treeSouls;
@@ -2174,7 +2174,7 @@ fn chestShots(g: *Game) void {
     // …and the sheet on a row that HAS a footnote — the inert rows prove nothing.
     bookShot(g, "shots/106h_book_stats.png", .stats, @intFromEnum(stats.Attr.endurance), null, 0);
     // THE PASSIVE TREE in the book, which is READ-ONLY — the fire's own copy (`71i`) is the one that spends.
-    bookShot(g, "shots/106i_book_tree.png", .tree, treemod.armFirst(.wizard) + treemod.PER_ARM - 1, null, 0);
+    bookShot(g, "shots/106i_book_tree.png", .tree, ptree.armFirst(.wizard) + ptree.PER_ARM - 1, null, 0);
     g.menu.screen = .closed;
 
     g.map.nops = saved;
@@ -2240,7 +2240,7 @@ fn folkShots(g: *Game) void {
     // him and the camera square to his travel at the same time. Left to his own errands he walks wherever the
     // seed sends him, which the first pass proved is into the cliff shadow, where nothing can be judged.
     const laneYaw = mathx.radians(LIT_YAW - 90.0);
-    // OUT ON THE DOWNS. The framing has to be CLEAR as well as lit: at the grace the boom at four metres ends
+    // OUT ON THE DOWNS. The framing has to be CLEAR as well as lit: at the bonfire the boom at four metres ends
     // up inside the rubble and the frame is a picture of the inside of a rock.
     const lane = mathx.ground(14, 70);
     p.home = lane;

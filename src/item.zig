@@ -95,8 +95,8 @@ pub fn class(k: Kind) Class {
 /// note under it (`stats.governs`). The day one of them gains an effect, its line is edited here.
 pub fn describe(k: Kind) [:0]const u8 {
     return switch (k) {
-        .crimson_flask => "A flask of clouded red glass, refilled at any grace. The draught it holds closes wounds that ought to have killed you.",
-        .cerulean_flask => "The blue twin of the crimson. It gives back half the focus a rod spends, which is two more casts of the wand before you have to walk back to a grace.",
+        .crimson_flask => "A flask of clouded red glass, refilled at any bonfire. The draught it holds closes wounds that ought to have killed you.",
+        .cerulean_flask => "The blue twin of the crimson. It gives back half the focus a rod spends, which is two more casts of the wand before you have to walk back to a bonfire.",
         .rune_arc => "A shard of a shattered great rune, still lit from the inside. Whatever it once carried leaks out of the break; nothing here can catch it yet.",
         .golden_seed => "A sprout of gilded stalk, pulled up whole. In another age these bought another swallow from the flask. This one is only precious.",
         .smithing_stone => "A shard off a bigger stone, hard enough to bite steel. No smith has set up in these ruins to grind it against.",
@@ -185,7 +185,7 @@ pub fn usable(k: Kind) bool {
 }
 
 /// THE TWO THE FLASK SYSTEM OWNS. They sit on the quick bar like anything else, but their charges live in
-/// `combat.Flasks` and come back at a grace, so spending one never touches the bag. Named here rather than
+/// `combat.Flasks` and come back at a bonfire, so spending one never touches the bag. Named here rather than
 /// in `combat` because it is a fact about the ITEM; `combat.flaskOf` is the same question answered as a
 /// `FlaskKind`, and it cannot live here — `combat` imports this file and not the other way about.
 pub fn isFlask(k: Kind) bool {

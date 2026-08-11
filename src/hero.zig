@@ -7,7 +7,7 @@ const statsmod = @import("stats.zig");
 const art = @import("propart.zig");
 const archer = @import("archer.zig");
 const foemod = @import("foe.zig");
-const tree = @import("tree.zig"); // the passive tree, for the `Bonus` he is stamped with and nothing else
+const ptree = @import("passivetree.zig"); // the passive tree, for the `Bonus` he is stamped with and nothing else
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -875,11 +875,11 @@ pub const Hero = struct {
     /// THE WAND'S OWN SPARKS — the shared particle pool (`foe.zig`), the same one every creature's FX ride.
     fx: [FX_N]foemod.Particle = [_]foemod.Particle{.{}} ** FX_N,
     fxHead: usize = 0,
-    /// THE CHARACTER SHEET, and the source of the three maxima below — re-read wherever he is made whole (`makeWhole`), which is the only moment a sheet can have changed and the only moment a bar may resize. It is DERIVED now (`tree.Bonus.sheet`): every point past the starting sheet came off a node, and `game.applyTree` is the one writer.
+    /// THE CHARACTER SHEET, and the source of the three maxima below — re-read wherever he is made whole (`makeWhole`), which is the only moment a sheet can have changed and the only moment a bar may resize. It is DERIVED now (`ptree.Bonus.sheet`): every point past the starting sheet came off a node, and `game.applyTree` is the one writer.
     sheet: statsmod.Sheet = .{},
     /// WHAT THE PASSIVE TREE IS WORTH, folded once and stamped on him (`game.applyTree`). He reads FIELDS
     /// off it at the five sites below and never walks the node list — the creature's-own-`Leash` rule.
-    perk: tree.Bonus = .{},
+    perk: ptree.Bonus = .{},
     vit: combat.Vitals = freshVitals(.{}),
     stam: combat.Stamina = .{}, // ER's third bar — the hero's alone; foes don't carry one
     fp: combat.Focus = .{},
@@ -890,7 +890,7 @@ pub const Hero = struct {
     /// …and the ARROWS, which are finite: an empty quiver refuses the shot (see `startShot`).
     quiver: combat.Quiver = .{},
     regen: combat.Regen = .{},
-    /// WHAT HE IS — the resistances a grace does NOT refill (`makeWhole` carries them across). Nothing grants
+    /// WHAT HE IS — the resistances a bonfire does NOT refill (`makeWhole` carries them across). Nothing grants
     /// him any yet, and the book's STATS page says so; this is the field the day something does.
     baseRes: combat.Resists = .{},
     /// THE SPORELING CAP'S WARD — timed chaos resistance, one clock (a timed status REFRESHES, it does not
@@ -1031,16 +1031,16 @@ pub const Hero = struct {
 
     /// THE TREE, STAMPED ON HIM — the sheet, the resistances and the perk block all in one call, because a
     /// caller that set two of the three would leave a bar sized off the sheet he had a node ago. He is made
-    /// WHOLE on the way out, which is honest: nothing may spend a point away from a grace (`book.levelUp`),
+    /// WHOLE on the way out, which is honest: nothing may spend a point away from a bonfire (`book.levelUp`),
     /// so the one moment this runs is the one moment a refill is already owed.
-    pub fn applyPerks(self: *Hero, b: tree.Bonus) void {
+    pub fn applyPerks(self: *Hero, b: ptree.Bonus) void {
         self.perk = b;
         self.sheet = b.sheet();
         self.baseRes = b.res;
         self.makeWhole();
     }
 
-    /// WHOLE AGAIN — a grace, and a death is a return to one. The three bars take their SIZE from the sheet here and nowhere else, so a raised attribute cannot leave one at its old length.
+    /// WHOLE AGAIN — a bonfire, and a death is a return to one. The three bars take their SIZE from the sheet here and nowhere else, so a raised attribute cannot leave one at its old length.
     fn makeWhole(self: *Hero) void {
         self.vit = freshVitals(self.sheet);
         self.stam.max = self.sheet.stamina();
@@ -1048,14 +1048,14 @@ pub const Hero = struct {
         self.stam.reset();
         self.fp.reset();
         self.regen.reset();
-        // A GRACE CURES WHAT IS ON HIM (ER's own), and a death is a return to one.
+        // A BONFIRE CURES WHAT IS ON HIM (ER's own), and a death is a return to one.
         self.poison.reset();
         self.wardLeft = 0;
         self.greaseLeft = 0;
         // …and the resistances go back to WHAT HE IS, ward gone: `freshVitals` cleared `vit.res` above, so the
         // base has to be laid back down here. They are not a meter to refill — `baseRes` is untouched.
         self.settleResists();
-        // FLASKS REFILL AT THE GRACE, and a death IS a return to one.
+        // FLASKS REFILL AT THE BONFIRE, and a death IS a return to one.
         self.flasks.refill();
         self.quiver.refill();
     }
@@ -1749,7 +1749,7 @@ pub const Hero = struct {
 
     /// The stone, wherever the left wrist has it — a RESERVED light slot, so a torch he stands beside cannot evict it.
     pub fn wandLight(self: *const Hero) ?gfx.Light {
-        if (!self.wandOut() or self.resting) return null; // at a grace the rod is stowed for the guitar
+        if (!self.wandOut() or self.resting) return null; // at a bonfire the rod is stowed for the guitar
         const u = self.castU();
         // The charge fills to the throw and is SPENT by it; the flare is a spike straddling that instant.
         const held = mathx.smoothstep(0, CAST_AT, u) * (1.0 - mathx.smoothstep(CAST_AT, CAST_RECOV_A, u));
@@ -1858,7 +1858,7 @@ pub const Hero = struct {
     pub fn staggered(self: *const Hero) bool {
         return self.stun != .none;
     }
-    /// The grace's restock, reachable from a test without running the whole death animation.
+    /// The bonfire's restock, reachable from a test without running the whole death animation.
     pub fn respawnForTest(self: *Hero) void {
         self.respawn();
     }
@@ -1950,7 +1950,7 @@ pub const Hero = struct {
 
     /// THE ONE PLACE `vit.res` IS WRITTEN — what he IS, plus whatever timed ward is running on top of it.
     /// As a bare `vit.res = ward or nothing` it was the sole writer AND a clobberer, so `makeWhole`'s
-    /// carrying the resistances across a grace was undone by the very next frame's tick.
+    /// carrying the resistances across a bonfire was undone by the very next frame's tick.
     fn settleResists(self: *Hero) void {
         var r = self.baseRes;
         if (self.wardLeft > 0) r.v[@intFromEnum(combat.Elem.chaos)] += self.wardChaos;
@@ -2041,7 +2041,7 @@ pub const Hero = struct {
         self.stamRefused = 0; // a respawn must not inherit the last life's refusal flash
         self.fpRefused = 0;
         self.sprinting = false;
-        self.guardB = 0; // …and the boards go down at once, as they do at a grace
+        self.guardB = 0; // …and the boards go down at once, as they do at a bonfire
         self.aimB = 0; // …and so does the bow: a respawn is a cut, not a blend
         self.blockT = mathx.LONG_AGO;
         self.pos = self.spawnPos;
@@ -3464,7 +3464,7 @@ test "THE AIM BLEND EASES DOWN THROUGH A STAGGER, exactly as the guard's does" {
     while (t < 0.4) : (t += 1.0 / 60.0) h.updateStun(1.0 / 60.0);
     try std.testing.expectApproxEqAbs(@as(f32, 0), h.aimB, 1e-4); // …and it does arrive
 
-    // A GRACE AND A RESPAWN ARE CUTS, not blends, and they say so themselves.
+    // A BONFIRE AND A RESPAWN ARE CUTS, not blends, and they say so themselves.
     var s = testHero();
     _ = s.swapArm();
     s.setAim(true);
@@ -3894,7 +3894,7 @@ test "THE BOLT IS ALL CHAOS, and it is worth more than a light slash before anyt
     try std.testing.expect(casts >= 4 and casts <= 8);
 }
 
-test "a grace gives the FP back, and a respawn does not inherit the refusal flash" {
+test "a bonfire gives the FP back, and a respawn does not inherit the refusal flash" {
     var h = testHero();
     h.off = .wand;
     _ = h.requestCast();

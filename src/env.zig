@@ -125,14 +125,14 @@ pub const STEP_UP: f32 = 0.55;
 /// The fixed distance the walkable test looks AHEAD, and the reason the rule is frame-rate independent.
 pub const STEP_PROBE: f32 = 0.5;
 
-/// HOW DEEP ANYTHING ON FOOT MAY WADE, in metres — WAIST HEIGHT (owner's call), which on the 1.8 m rig is the
-/// pelvis at 0.530·H. Past it the water is a WALL: there is no swimming and no drowning yet, so a hero or a
+/// HOW DEEP ANYTHING ON FOOT MAY WADE, in metres — CHEST HEIGHT (owner's call), which on the 1.8 m rig is the
+/// thorax at 0.760·H. Past it the water is a WALL: there is no swimming and no drowning yet, so a hero or a
 /// foe that could walk in would be walking into a state the game has nothing to say about.
 ///
 /// Written out rather than read off `hero.H` for `foe.HERO_HIGH`'s reason: env sits BELOW hero in the import
 /// graph and stays there. It is a TRAVERSAL rule, so it lives here beside `STEP_UP` and `MAX_SLOPE` and is
 /// enforced in the one place all three are (`stepOk`) — not at each mover.
-pub const WADE_MAX: f32 = 0.95;
+pub const WADE_MAX: f32 = 1.37;
 
 /// …AND THE COLOUR IS THE ONLY WARNING HE GETS, so it is DERIVED from that wall and not set beside it (the
 /// same rule an effect's clock keeps: two numbers that can disagree eventually will). Dug depth in metres →
@@ -1972,10 +1972,10 @@ test "architecture never thins, and a kind added to the table cannot opt out by 
     for ([_]props.Kind{ .wall, .tower, .gate, .chapel, .cottage, .watchtower, .cliff, .cliff4 }) |k| {
         try std.testing.expect(props.info(k).solid);
     }
-    // …AND SO IS ANYTHING DRAWN IN MORE THAN ONE PIECE. The grace's veil goes down `drawVeils` and the chest's
+    // …AND SO IS ANYTHING DRAWN IN MORE THAN ONE PIECE. The bonfire's veil goes down `drawVeils` and the chest's
     // LID down `chest.Chests.draw`; neither path carries `setFade`, so a fadeable half under an opaque half is
     // the bug. The veil/stow half of the rule is a comptime assert in `props.zig`; the lid is its own module.
-    for ([_]props.Kind{ .grace, .chest }) |k| {
+    for ([_]props.Kind{ .bonfire, .chest }) |k| {
         try std.testing.expect(props.info(k).solid);
     }
     for ([_]props.Kind{ .boulder, .statue, .monolith, .lantern, .gibbet, .sapling, .conifer, .bigtree }) |k| {
@@ -2370,8 +2370,8 @@ test "DEEP WATER READS DEEP — the sheet is darkened by the DIG, not by the sho
     try std.testing.expectApproxEqAbs(@as(f32, 0), digTone(-1.0), 1e-6); // ground standing proud is not water
 }
 
-test "the wade cap is the WAIST" {
-    try std.testing.expect(WADE_MAX > 0.9 and WADE_MAX < 1.0); // the pelvis on the 1.8 m rig is 0.954
+test "the wade cap is the CHEST" {
+    try std.testing.expect(WADE_MAX > 1.3 and WADE_MAX < 1.45); // the thorax on the 1.8 m rig is 1.368
     try std.testing.expect(WADE_MAX > STEP_UP); // …and deeper than a step is tall, or a kerb would refuse
 }
 
@@ -2593,7 +2593,7 @@ test "EVERY SHIPPED MAP LOADS AND MATERIALIZES, not just the one the game starts
     e.* = .{ .ground = undefined, .models = undefined };
     e.materialize(m);
     var sites: [restmod.CAP]restmod.Site = undefined;
-    try std.testing.expectEqual(@as(usize, 2), e.restSites(&sites)); // the grace AND the campfire
+    try std.testing.expectEqual(@as(usize, 2), e.restSites(&sites)); // the bonfire AND the campfire
     try std.testing.expect(restmod.isRestKind(.campfire_lit));
     try std.testing.expect(!restmod.isRestKind(.campfire));
     try std.testing.expect(props.info(.campfire_lit).interact);

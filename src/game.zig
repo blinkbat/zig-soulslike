@@ -685,6 +685,24 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3) void {
     }
 }
 
+/// DEEP WATER IS A WALL FOR HIM TOO, as a POST-STEP GATE (`foe.Grip.hold`'s shape, and the same law: a mover
+/// is something he GROWS, and a guard at each one is a list to forget one from). `env.stepOk` is the other
+/// half and the one his WALK and the Rooted's hook drag already go through; the ROLL and the attack LUNGE
+/// travel by `mathx.stepXZ` and never see `walkStep`, so without this a dive carries him into the deep.
+///
+/// A HOLD and not a slide: what reaches here is a COMMITTED action with nothing left of its step to spend
+/// sideways. Y is left alone — `groundActor` owns it, exactly as it does for a foe the roots have.
+fn gateHeroWater(g: *Game, was: rl.Vector3) void {
+    const deep = g.env.wadeDepth(g.hero.pos.x, g.hero.pos.z);
+    if (deep <= envmod.WADE_MAX) return;
+    // …and GETTING OUT IS NEVER HELD (`env.walkStep`'s own escape): dropped in the deep by a playtest spawn or
+    // carried in by something that never asked, he would otherwise be pinned there by the gate meant to keep
+    // him out of it.
+    if (deep < g.env.wadeDepth(was.x, was.z)) return;
+    g.hero.pos.x = was.x;
+    g.hero.pos.z = was.z;
+}
+
 fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
     const fwd = g.rig.forwardXZ();
     const right = g.rig.rightXZ();
@@ -2389,6 +2407,10 @@ pub fn run(mode: Mode) void {
         g.hero.aimAtPitch(meleePitch(g));
         // The slope under him, eased into the rig BEFORE it poses — every branch below ends in a `pose()`, so this has to be settled first or the lean is always one frame stale.
         leanToGround(g, dt);
+        // WHERE HE STOOD BEFORE HE MOVED, for the water gate under the branch. Taken only while he is ALIVE:
+        // the death branch respawns him, and a hold across that would drag him back off his own grace.
+        const heroWas = g.hero.pos;
+        const heroAfoot = !g.hero.dead;
         if (g.hero.dead) {
             g.hero.updateDeath(dt);
             // The frame he returns, the WORLD reloads with him (ER-style): every foe re-homed at full health, arrows cleared, lock dropped.
@@ -2415,6 +2437,8 @@ pub fn run(mode: Mode) void {
         } else {
             moveHero(g, dt, mv, faceYaw);
         }
+        // …AND DEEP WATER IS A WALL, taken ONCE here rather than at each of the eight branches above.
+        if (heroAfoot) gateHeroWater(g, heroWas);
         // WHERE EVERY FOE STOOD BEFORE IT MOVED — taken AFTER the hero's own branch, because a respawn re-homes
         // the whole field inside it and the gate would drag each fresh spawn back to where the last one died.
         var wasPos: [FOE_GROUPS.len][FOE_CAP]rl.Vector3 = undefined;
@@ -3018,7 +3042,7 @@ fn askFoe(comptime T: type, g: *const Game, r: FoeRef, comptime ask: anytype) T 
     inline for (ROLE_GROUPS) |rg| {
         if (roleIdx(rg[1], r)) |i| return ask(&@field(g, rg[0]).band[i]);
     }
-    if (r.kind == .brood_sac) return ask(&g.brood.sacs[r.idx]);
+    if (r.kind == .brood_sac) return ask(&g.brood.liveSacsConst()[r.idx]);
     inline for (SOLO_GROUPS) |s| {
         if (r.kind == s.kind) return ask(&@field(g, s.field).liveConst()[r.idx]);
     }

@@ -290,7 +290,10 @@ const Tree = tree.Tree;
 /// a keystone cannot be got by pretending to press buttons at 1/60 s a frame.
 pub fn debugShow(self: *Rest, screen: Screen, row: usize, node: usize, mag: f32) void {
     self.screen = screen;
-    self.row = row;
+    // CLAMPED, because `confirm` turns this into a `Row` and an out-of-range `@enumFromInt` is illegal
+    // behaviour rather than a wrong row. `navigate` keeps it in range with its own `@mod`; this is the
+    // other writer, and the wheel's cursor is already bounded at every read (`tree.HUB`).
+    self.row = @min(row, NROW - 1);
     self.wheel = .{ .cursor = node, .zoom = mag };
 }
 

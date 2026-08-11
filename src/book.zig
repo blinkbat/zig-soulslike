@@ -447,7 +447,9 @@ fn withCand(base: Loadout, c: Cand) Loadout {
         .off => |o| l.off = o,
         .ammo => |a| l.ammo = a,
         .quick => |q| l.quick = q.kind,
-        else => {},
+        // EXHAUSTIVE, not `else` (`hero.steerQueuedRoll`'s rule): a seventh action has to be asked whether
+        // it changes the loadout, or its rows price themselves against the one already in force.
+        .none, .use => {},
     }
     return l;
 }
@@ -458,7 +460,7 @@ fn equipped(c: Cand, v: View) bool {
         .off => |o| o == v.off,
         .ammo => |a| a == v.quiver.sel,
         .quick => |q| v.quick.slots[q.slot] == q.kind,
-        else => false,
+        .none, .use => false,
     };
 }
 

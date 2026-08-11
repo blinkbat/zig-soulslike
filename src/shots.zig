@@ -1329,6 +1329,14 @@ pub fn runShots(g: *Game) void {
             shootAt(g, m.name, mathx.ground(m.x, m.z), 180, 1.02, m.dist);
         }
 
+        // DEEP WATER: the wall (`env.WADE_MAX`) and the tone the DIG darkens the sheet to (`env.digTone`).
+        // A world change wants a steep overhead, which is the only framing a basin's SHAPE reads in; the bank
+        // shot is at the sun's own bearing (~53) so the shallow→deep ramp is lit rather than in its own shade.
+        standHero(g, 46.0, -24.0, std.math.pi);
+        shootAt(g, "shots/90a_map_deepwater.png", mathx.ground(46, -24), 180, 1.02, 55.0);
+        standHero(g, 44.0, -22.0, mathx.radians(200));
+        shootAt(g, "shots/90b_deepwater_bank.png", mathx.ground(50, -32), 53, 0.14, 17.0);
+
         g.menu.stats = true;
         standHero(g, 2.0, -72.0, std.math.pi);
         shootAt(g, "shots/91_stats_city.png", g.hero.shoulderPoint(), 180, 0.22, 8.0);

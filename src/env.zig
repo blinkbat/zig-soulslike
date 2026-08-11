@@ -125,6 +125,23 @@ pub const STEP_UP: f32 = 0.55;
 /// The fixed distance the walkable test looks AHEAD, and the reason the rule is frame-rate independent.
 pub const STEP_PROBE: f32 = 0.5;
 
+/// HOW DEEP ANYTHING ON FOOT MAY WADE, in metres — WAIST HEIGHT (owner's call), which on the 1.8 m rig is the
+/// pelvis at 0.530·H. Past it the water is a WALL: there is no swimming and no drowning yet, so a hero or a
+/// foe that could walk in would be walking into a state the game has nothing to say about.
+///
+/// Written out rather than read off `hero.H` for `foe.HERO_HIGH`'s reason: env sits BELOW hero in the import
+/// graph and stays there. It is a TRAVERSAL rule, so it lives here beside `STEP_UP` and `MAX_SLOPE` and is
+/// enforced in the one place all three are (`stepOk`) — not at each mover.
+pub const WADE_MAX: f32 = 0.95;
+
+/// …AND THE COLOUR IS THE ONLY WARNING HE GETS, so it is DERIVED from that wall and not set beside it (the
+/// same rule an effect's clock keeps: two numbers that can disagree eventually will). Dug depth in metres →
+/// 0..1 of the sheet's shallow→deep ramp, reaching the deep tone exactly at `WADE_MAX` — so the darkest water
+/// on the map is precisely the water he cannot walk into, and the tell is learnable in one attempt.
+fn digTone(metres: f32) f32 {
+    return mathx.clampF(metres / WADE_MAX, 0, 1);
+}
+
 const WATER_Y: f32 = 0.055;
 
 // The distance transform's two working grids.
@@ -577,7 +594,16 @@ pub const Env = struct {
         for (m.water, 0..) |wet, i| {
             const enc: f32 = if (wet != 0) blk: {
                 const metres = @max(0.0, (dIn[i] - 0.5) * cell);
-                break :blk shoreF + mathx.clampF(metres / gfx.WATER_DEEP_AT, 0, 1) * (255.0 - shoreF);
+                // HOW FAR INSIDE THE SHORE it is…
+                const byShore = mathx.clampF(metres / gfx.WATER_DEEP_AT, 0, 1);
+                // …AND HOW FAR DOWN THE GROUND UNDER IT WAS DUG, whichever reads deeper. A hole cut hard
+                // against the bank is deep water the moment you look at it, and the distance ramp alone
+                // painted it the same pale shallow as the puddle next to it.
+                //
+                // OFF THE **MAP**, NOT `self.heightField`: `uploadWater` runs BEFORE `uploadHeight` at both
+                // call sites (`game.init`, `editor`'s rebuild), so env's own copy is still the last world's.
+                const dug = WATER_Y - (GROUND_Y + m.heightAt(edge(i % N, m.half, cell), edge(i / N, m.half, cell)));
+                break :blk shoreF + @max(byShore, digTone(dug)) * (255.0 - shoreF);
             } else blk: {
                 const metres = @max(0.0, (dOut[i] - 0.5) * cell);
                 break :blk shoreF * (1.0 - mathx.clampF(metres / gfx.WATER_WET_OUT, 0, 1));
@@ -893,6 +919,15 @@ pub const Env = struct {
     pub fn walkStep(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32) rl.Vector3 {
         const to = v3(from.x + dir.x * dist, from.y, from.z + dir.z * dist);
         if (!self.heightAny or dist <= 0) return to;
+        // DEEP WATER IS A WALL, and it needs a refusal of its OWN rather than a clause in `stepOk`: you walk
+        // DOWN into a basin, and the rise rule lets every downhill step through by design.
+        //
+        // A HOLD, not the slope's slide (which is why it is not folded in below): there is no swimming yet, so
+        // this is a stopgap, and a stopgap that stops dead is one the player reads as a wall rather than as a
+        // current. A step that comes out SHALLOWER is always taken, or anything the map posts in the deep —
+        // or anything that leapt in, since a jump never asks this — is trapped there for good.
+        const deep = self.wadeDepth(to.x, to.z);
+        if (deep > WADE_MAX and deep > self.wadeDepth(from.x, from.z)) return v3(from.x, from.y, from.z);
         if (self.stepOk(from, dir, dist)) return to;
         const g = self.gradAt(from.x, from.z);
         const gl = @sqrt(g[0] * g[0] + g[1] * g[1]);
@@ -2254,6 +2289,90 @@ test "a SLIGHT STEP is always taken, however steep the face carrying it" {
     i = 0;
     while (i < 120) : (i += 1) q = e.walkStep(q, v3(1, 0, 0), 6.0 / 60.0);
     try std.testing.expect(e.groundAt(q.x, q.z) - GROUND_Y < 0.01); // still on the lower terrace
+}
+
+/// A SHELVING BEACH, painted wet edge to edge: the ground falls away with +x at `fall` metres per metre, so
+/// the water gets steadily deeper and the bank is WALKABLE in both directions. That is the point — a dug
+/// step would be a cliff, and the slope rule would stop him for reasons that have nothing to do with water.
+fn envWithBeach(fall: f32) !*Env {
+    const e = try std.testing.allocator.create(Env);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.heightHalf = wf.DEFAULT_HALF;
+    e.heightAny = true;
+    const step = 2 * e.heightHalf / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+    for (0..wf.HEIGHT_N) |iz| {
+        for (0..wf.HEIGHT_N) |ix| {
+            const x = -e.heightHalf + @as(f32, @floatFromInt(ix)) * step;
+            e.heightField[iz * wf.HEIGHT_N + ix] = wf.heightByte(-x * fall);
+        }
+    }
+    e.waterAny = true;
+    e.waterHalf = wf.DEFAULT_HALF;
+    @memset(&e.waterField, 255); // wet everywhere, so only the DIG decides how deep it is
+    return e;
+}
+
+test "DEEP WATER IS A WALL — waist-deep is waded, over the waist is refused, and wading OUT never is" {
+    const e = try envWithBeach(0.25); // 14 deg of shelf: walkable, so only the water can refuse anything
+    defer std.testing.allocator.destroy(e);
+    try std.testing.expect(e.walkableAt(4, 0));
+
+    // He wades in until it is over the waist, and no further, however long he pushes.
+    var p = v3(-2.0, 0, 0);
+    var i: usize = 0;
+    while (i < 600) : (i += 1) p = e.walkStep(p, v3(1, 0, 0), 6.0 / 60.0);
+    try std.testing.expect(e.wadeDepth(p.x, p.z) <= WADE_MAX);
+    try std.testing.expect(p.x > 2.0); // …and he got properly wet on the way: this is a wall, not a fence
+
+    // THE WALL IS THE WATER'S, not the shelf's: unpainted, the identical ground is walked straight down.
+    e.waterAny = false;
+    var q = v3(-2.0, 0, 0);
+    i = 0;
+    while (i < 600) : (i += 1) q = e.walkStep(q, v3(1, 0, 0), 6.0 / 60.0);
+    try std.testing.expect(q.x > p.x + 10.0);
+
+    // DROPPED IN IT (a playtest spawn, or a leap — a jump never asks this): every step toward the bank is
+    // taken, or the gate that keeps him out would pin him in.
+    e.waterAny = true;
+    var r = v3(20.0, 0, 0);
+    try std.testing.expect(e.wadeDepth(r.x, r.z) > WADE_MAX);
+    i = 0;
+    while (i < 600) : (i += 1) r = e.walkStep(r, v3(-1, 0, 0), 6.0 / 60.0);
+    try std.testing.expect(e.wadeDepth(r.x, r.z) <= WADE_MAX);
+}
+
+test "DEEP WATER READS DEEP — the sheet is darkened by the DIG, not by the shore alone" {
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("Tarn");
+    try std.testing.expect(m.paintWater(0, 0, 60, true));
+
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.uploadWater(m);
+    // A CELL HARD AGAINST THE BANK, which is the whole case: out in the middle the shore ramp has already
+    // saturated and there is nothing left for a dig to say.
+    const RIM = v3(56, 0, 0);
+    const flat = e.paintedDepth(RIM.x, RIM.z);
+    try std.testing.expect(flat > 0 and flat < 0.6); // wet, and nowhere near the deep tone
+
+    // …now cut a hole in it, well past the wade cap, and the same cell has to come back deeper.
+    var span: [4]usize = undefined;
+    try std.testing.expect(m.sculpt(RIM.x, RIM.z, 10, .lower, 3.0, &span));
+    e.uploadWater(m);
+    try std.testing.expect(e.paintedDepth(RIM.x, RIM.z) > flat + 0.2);
+
+    // …and the ramp tops out AT the wall, so the darkest water is exactly the water he is refused.
+    try std.testing.expectApproxEqAbs(@as(f32, 1), digTone(WADE_MAX), 1e-6);
+    try std.testing.expect(digTone(WADE_MAX * 0.5) < 1.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), digTone(WADE_MAX * 4.0), 1e-6); // and stays there
+    try std.testing.expectApproxEqAbs(@as(f32, 0), digTone(-1.0), 1e-6); // ground standing proud is not water
+}
+
+test "the wade cap is the WAIST" {
+    try std.testing.expect(WADE_MAX > 0.9 and WADE_MAX < 1.0); // the pelvis on the 1.8 m rig is 0.954
+    try std.testing.expect(WADE_MAX > STEP_UP); // …and deeper than a step is tall, or a kerb would refuse
 }
 
 test "env's ground agrees with the MAP's to the millimetre" {

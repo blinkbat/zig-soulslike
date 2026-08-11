@@ -540,9 +540,10 @@ respawn, so the spill plays under the YOU DIED card, which is the one moment not
   and they came back 255,255,221, a white knuckle, which is why it read as BONE and not as gold.
 - **IT SAYS WHERE IT IS OUT LOUD** — `souls_hum` on a RETRIGGER (`HUM_EVERY`, the leechfly's whine rule), cut
   short enough that consecutive takes overlap. It is what lets you find one you walked past.
-- **THE PROMPT IS FIRST IN `game.reachable`** and its ring is the smallest of the four: you can die at a grace,
+- **THE PROMPT IS FIRST IN `game.reachable`**, ahead of the fire, the folk and a box: you can die at a grace,
   and on the frame you walk back in there is exactly one thing you came for. One press clears it and the fire
-  is offered again.
+  is offered again. Its ring is the GENEROUS one — `souls.REACH` 2.6 against a box's 2.1, asserted at comptime
+  in `souls.zig` — because you come back for this under pressure and fumbling the reach is not the tension.
 
 **AND THE SOUL BINDING RING REFUSES THE WHOLE THING** (`item.soul_binding_ring`, DS's Ring of Sacrifice).
 Carried, a death takes the RING instead of the souls: it snaps, he keeps the lot, and nothing is left standing.
@@ -1269,8 +1270,9 @@ not the stick-speed `runB`.
 
 No criticals, guard counter, jump, or AR × motion-value damage (flat constants
 today). SOULS BUY LEVELS AND NOTHING ELSE — there is no merchant. The PASSIVE TREE is the basic version: 21
-nodes, three arms of seven, no respec, no jewel sockets, and no second grant on a node. Nine of the twenty-one
-are attribute nodes and four of the seven attributes are still inert (the sheet says so). The BINDING RING is the only wearable
+nodes, three arms of seven, no respec, no jewel sockets, and no second grant on a node. Twelve of the
+twenty-one are attribute nodes — four an arm — and four of the seven attributes are still inert (the sheet
+says so). The BINDING RING is the only wearable
 that does anything and it is worn by being CARRIED — there is no ring slot, because there is no equip system
 under one. POISON is the only status effect, it is the HERO's alone (nothing applies one to a foe, and no foe
 reads one), and nothing RESISTS it yet — the sporeling cap's ward still grants CHAOS resistance, which since

@@ -93,10 +93,16 @@ const SHOVE_DECAY: f32 = 8.0;
 
 /// THE BEAK GOING IN. A real blow: it carries a direction, the boards can catch it and a roll beats it.
 /// Slight on purpose — this is not how it hurts you, it is how it gets HOLD of you.
-pub const STAB_HIT = combat.Hit{ .dmg = 9, .poise = 9 };
+pub const STAB_HIT = combat.Hit{ .dmg = 6, .poise = 9 };
 /// …AND THE SWALLOW, billed EVERY FRAME while it is on you (`hero.burn` → `combat.Vitals.drip`). Written per
 /// SECOND and scaled by `dt` at the site, because that is the only honest way to read a hold's damage.
-pub const DRINK_DPS: f32 = 22.0;
+///
+/// **HALVED, AND THE ARITHMETIC IS WHY** (owner: they do too much). This is a SWARM — the drip is per fly, and
+/// nothing stops three of them being on him at once. At 22 that was 66 a second against a 70 HP pool, so a
+/// swarm that caught him took him from full to dead in about a second whatever he did about it; a hold you
+/// cannot survive long enough to roll out of is not a hold, it is a timer. At 10 the same three cost him
+/// nearly half a bar over a second, which is a beating he can answer.
+pub const DRINK_DPS: f32 = 10.0;
 /// HOW MUCH OF WHAT IT TAKES COMES BACK TO IT (owner: "leeches some of your life back to him"). SOME, not
 /// all: a flyer that heals for everything it drinks is a stalemate against a player without a bow.
 const LEECH_SHARE: f32 = 0.55;

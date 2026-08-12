@@ -1529,19 +1529,23 @@ fn mkKoboldBite(r: *Rack) void {
 /// pitch travels the whole way and never sits still. Two voices a beat apart and slightly detuned: a lone
 /// wolf sounds like more than one animal and that is the whole hair-raising trick of it.
 fn mkWolfHowl(r: *Rack) void {
-    r.body(0.0, 0.90, 150, 132, 0.42, 1.1); // the chest under it, barely moving
-    r.growl(0.0, 0.34, 190, 420, 0.62, 0.10, 0.03); // the climb…
-    r.growl(0.26, 0.72, 430, 396, 0.80, 0.07, 0.02); // …the HOLD, which is what a howl actually is…
-    r.growl(0.86, 0.62, 392, 208, 0.58, 0.12, 0.05); // …and the long fall off the end
-    // The second animal that is not there — a fifth above, quieter, and late.
-    r.growl(0.12, 0.68, 596, 640, 0.26, 0.09, 0.04);
-    r.growl(0.74, 0.52, 628, 320, 0.20, 0.13, 0.06);
-    r.air(0.0, 1.30, 0.10, 700, 380, 0.10, 0.9); // breath through the whole of it
-    // THE TAIL. Long, low and tuned OFF the note so it beats against it — this is the spirit, and nothing else
-    // in the voice is.
-    r.ring(0.30, 1.45, 214, 0.22, 0.55, 4);
-    r.ring(0.55, 1.30, 321, 0.13, 0.60, 3);
-    r.master(1.25, 2100);
+    // **TONED WAY DOWN** (owner: it sounded crazy weird). Two things were doing that and both are gone.
+    //
+    // THE PHANTOM SECOND ANIMAL was a fifth above the note, and a fifth held against a sustained tone is a
+    // CHORD — the ear stops hearing an animal and starts hearing an organ. Clever on paper, and the single
+    // worst-sounding thing in the bank.
+    //
+    // THE RING TAILS were deliberately detuned off the note so they would beat against it. Beating against a
+    // held pitch is not ethereal, it is OUT OF TUNE, and at 0.22 they were louder than most of the howl. They
+    // stay, because the tail is what makes it a spirit — but quiet, short, and tuned ON the note now, so they
+    // read as the sound carrying on somewhere rather than as a second instrument arguing with the first.
+    r.body(0.0, 0.80, 150, 134, 0.34, 1.2); // the chest under it, barely moving
+    r.growl(0.0, 0.30, 200, 400, 0.54, 0.09, 0.03); // the climb…
+    r.growl(0.24, 0.60, 408, 384, 0.66, 0.06, 0.02); // …the HOLD, which is what a howl actually is…
+    r.growl(0.78, 0.52, 380, 214, 0.48, 0.11, 0.05); // …and the fall off the end
+    r.air(0.0, 1.10, 0.08, 700, 400, 0.08, 1.0); // breath through the whole of it
+    r.ring(0.34, 0.85, 192, 0.06, 1.1, 3); // the tail, ON the note and well under it
+    r.master(1.15, 2000);
 }
 
 /// A warning, low in the chest and nearly all cords. Short, because a growl that runs long turns into a note.
@@ -2164,7 +2168,7 @@ const BANK = [NV]Row{
     // THE WOLF. It carries FURTHER than a kobold and is quieter up close: this is a thing on your side, so it
     // must never fight the creature it is biting for the frame. The HOWL is the exception and it is allowed to
     // be heard — it is the sound of thirty focus being spent, and the player has to know it landed.
-    .{ .id = .wolf_howl, .make = mkWolfHowl, .gain = battle(0.78), .mix = .combat, .jit = 0.05, .vjit = 0.09, .vars = 3, .poly = 1, .reach = 150 },
+    .{ .id = .wolf_howl, .make = mkWolfHowl, .gain = battle(0.44), .mix = .combat, .jit = 0.05, .vjit = 0.09, .vars = 3, .poly = 1, .reach = 110 },
     .{ .id = .wolf_growl, .make = mkWolfGrowl, .gain = battle(0.30), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 2, .reach = 46 },
     .{ .id = .wolf_bite, .make = mkWolfBite, .gain = battle(0.52), .mix = .combat, .jit = 0.16, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 52 },
     .{ .id = .wolf_hurt, .make = mkWolfHurt, .gain = battle(0.54), .mix = .combat, .jit = 0.20, .vjit = 0.26, .vars = 5, .poly = 3, .reach = 56 },
@@ -2182,7 +2186,7 @@ fn seconds(id: Id) f32 {
         .bone_die, .toad_die, .ogre_roar => 1.1,
         // THE HOWL AND THE SPIRIT'S DEATH both outlive their own animal — the ring tail is the point of them,
         // and cut to a combat length it is the tail that goes.
-        .wolf_howl => 2.1,
+        .wolf_howl => 1.7,
         .wolf_die => 2.0,
         .kobold_cast => 1.35,
         .kobold_heal => 1.95, // the chord has to finish opening, and its room has to finish emptying

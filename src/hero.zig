@@ -2927,11 +2927,7 @@ pub const Hero = struct {
         var wx: [N]rl.Matrix = undefined;
         // The brace takes up in the KNEES, and the trunk gives back at the WAIST — a lean at the root would
         // rotate the legs and read as a lurch.
-        wx[ROOT] = mul3(
-            ry(0),
-            mul(tr(0, hipY - 0.012 * lift, 0), ry(facingDeg)),
-            rootAt(self.footPos()),
-        );
+        wx[ROOT] = mul(mul(tr(0, hipY - 0.012 * lift, 0), ry(facingDeg)), rootAt(self.footPos()));
         const spineX = -RING_LEAN * lift;
         setLocal(&wx, SPINE, self.rest, rx(0.5 * (spineX + self.aimLean)));
         setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), ry(-5.0 * lift)));

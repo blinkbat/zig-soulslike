@@ -58,8 +58,12 @@ const mul3 = mathx.mul3;
 /// shoulder (dimensions.com), 1.02-1.83 m head-and-body, 36-40 kg. Everything below is a fraction of this, so
 /// a bigger wolf is one number.
 /// **A DIRE WOLF, so it is over the top of the real range** (owner: bigger, and chunkier). A gray wolf runs
-/// 66-84 cm at the withers; this stands at 98, which puts its back at the hero's own hip and makes it read as
-/// something that could take a kobold off its feet rather than as a large dog.
+/// 66-84 cm at the withers; this stands at 112, which puts its back above the hero's own hip and makes it read
+/// as something that could take a kobold off its feet rather than as a large dog.
+///
+/// Note what this number does NOT do: the SHAPE. `W` scales the whole animal uniformly, and stocky is the
+/// proportions under it (`SHOULDER_Y`, `BRISKET_Y` — a deeper chest over shorter legs). Reaching for `W` when
+/// the answer is "chunkier" only makes a bigger animal of the same build.
 pub const W: f32 = 1.12;
 
 // THE SKELETON. 26 bones, and the layout is a quadruped's: the forelimbs hang off the CHEST and the hindlimbs
@@ -575,6 +579,16 @@ pub const BITE_HIT = combat.Hit{ .dmg = 21, .poise = 16, .stance = 3 };
 /// a spirit that snarled continuously would be the loudest thing in a fight it is only assisting in.
 const GROWL_EVERY: f32 = 2.6;
 
+/// How far down the jaw bone the teeth sit, as a fraction of `W` — where the bite's blade is measured from.
+const JAW_REACH: f32 = 0.10;
+
+/// HOW FAR A BLOW KNOCKS IT BACK, by whether the blow was heavy — `foe.Push`, the same PAIR every wounded
+/// creature is shoved by, because the two are only ever chosen against each other.
+pub const SHOVE = foe.Push{ .light = 0.24, .heavy = 0.55 };
+/// …and how fast that shove bleeds off. One rate, named once: as a literal it appeared twice inside `settle`
+/// and the two had to agree by eye.
+const SHOVE_DECAY: f32 = 6.0;
+
 const TURN_RATE: f32 = 5.6; // rad/s — a wolf turns on its own length
 const ACCEL: f32 = 9.0;
 
@@ -656,7 +670,20 @@ pub const Wolf = struct {
     pub fn spawn(at: rl.Vector3, facing: f32) Wolf {
         var w = Wolf{ .pos = at, .facing = facing, .rest = restPose() };
         w.pose();
+        // THE JAW STARTS WHERE THE JAW IS. Left at the origin, the first frame's swept bite is a segment from
+        // world zero to its teeth — a blade across the entire map. It cannot bite that early today (it spawns
+        // idle and has to reach something first), which is exactly what makes it the kind of latent blade that
+        // goes off the day the spirit is ever called ON TOP of a foe.
+        w.jaw1 = w.jawPoint();
+        w.jaw0 = w.jaw1;
         return w;
+    }
+
+    /// WHERE THE TEETH ARE, in the world — the point the bite's swept blade is built from. Its OWN function
+    /// because two places need it (the spawn, and the game's per-frame stamp) and as two copies the offset
+    /// down the jaw bone was a literal that had to agree with itself.
+    pub fn jawPoint(self: *const Wolf) rl.Vector3 {
+        return foe.markOn(self.xf[JAW], v3(0, 0, JAW_REACH * W));
     }
 
     /// A BLOW LANDING ON IT. Its own entry point rather than the foe contract's `tryHit`: what swings at this
@@ -816,8 +843,8 @@ pub const Wolf = struct {
         self.speedS = mathx.approach(self.speedS, self.speed, 8.0 * dt);
         const l = mathx.lenXZ(self.shove);
         if (l <= 1e-4) return;
-        mathx.stepXZ(&self.pos, mathx.scaleV(self.shove, 1.0 / l), l * dt * 6.0, bounds);
-        self.shove = mathx.scaleV(self.shove, mathx.maxF(0, 1.0 - dt * 6.0));
+        mathx.stepXZ(&self.pos, mathx.scaleV(self.shove, 1.0 / l), l * dt * SHOVE_DECAY, bounds);
+        self.shove = mathx.scaleV(self.shove, mathx.maxF(0, 1.0 - dt * SHOVE_DECAY));
     }
 
     fn faceToward(self: *Wolf, at: rl.Vector3, dt: f32) void {
@@ -894,11 +921,15 @@ pub const Wolf = struct {
         // …AND THE FEET COME UP WITH IT. `hop` raises the body, so without this the paws stay nailed to the
         // ground and the legs simply stretch — the body floats off four stilts instead of the animal leaving
         // the earth. Folding the reach by the same lift is what makes it a jump.
+        // **ONE MECHANISM, NOT TWO.** The tuck is `tuck` and nothing else: the joint heights stay what they
+        // are. Written with the hop ALSO subtracted from `jointY` it was applied twice over — and the first
+        // application had the sign backwards on top of that, since a body rising by `hop` needs its planted
+        // foot to reach `+hop` FURTHER, not less. Between the two the legs folded to the chest on a 15 cm hop.
         const tuck = hop / @max(HIP_Y, 0.001);
-        self.column(&wx, SHL, ELL, CAL, PAWL, ph[2], g, stride, m, HUMERUS, FORE_LOWER, 1.0, SHOULDER_Y - hop + crouch, tuck);
-        self.column(&wx, SHR, ELR, CAR, PAWR, ph[3], g, stride, m, HUMERUS, FORE_LOWER, 1.0, SHOULDER_Y - hop + crouch, tuck);
-        self.column(&wx, HIPL, STL, HKL, HPAWL, ph[0], g, stride, m, FEMUR, HIND_LOWER, -1.0, HIP_Y - hop + crouch, tuck);
-        self.column(&wx, HIPR, STR, HKR, HPAWR, ph[1], g, stride, m, FEMUR, HIND_LOWER, -1.0, HIP_Y - hop + crouch, tuck);
+        self.column(&wx, SHL, ELL, CAL, PAWL, ph[2], g, stride, m, HUMERUS, FORE_LOWER, 1.0, SHOULDER_Y + crouch, tuck);
+        self.column(&wx, SHR, ELR, CAR, PAWR, ph[3], g, stride, m, HUMERUS, FORE_LOWER, 1.0, SHOULDER_Y + crouch, tuck);
+        self.column(&wx, HIPL, STL, HKL, HPAWL, ph[0], g, stride, m, FEMUR, HIND_LOWER, -1.0, HIP_Y + crouch, tuck);
+        self.column(&wx, HIPR, STR, HKR, HPAWR, ph[1], g, stride, m, FEMUR, HIND_LOWER, -1.0, HIP_Y + crouch, tuck);
         self.xf = wx;
     }
 

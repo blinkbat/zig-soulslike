@@ -1293,7 +1293,7 @@ fn tickPack(g: *Game, dt: f32) void {
         if (w.growled) sfx.world(.wolf_growl, w.pos);
         if (w.yelped) sfx.world(.wolf_hurt, w.pos);
         if (w.justDied) sfx.world(.wolf_die, w.pos);
-        w.jaw1 = foemod.markOn(w.xf[wolfmod.JAW], v3(0, 0, 0.10 * wolfmod.W));
+        w.jaw1 = w.jawPoint();
         // THE JAWS GO THROUGH THE SAME SWEPT TEST THE HERO'S SWORD DOES — `pierceFoes` walks every group with
         // a `foe.Blade` and the first body it reaches takes it. A summon that had its own hit path would be a
         // second definition of what "reached" means.
@@ -3255,10 +3255,15 @@ fn spiritTakes(g: *Game, b: foemod.Blow, heavy: bool) combat.HitOutcome {
         const out = w.takeHit(b.hit);
         if (out == .taken) {
             // The shove goes along the blow, so a spirit hit hard visibly gives ground — the one part of a
-            // creature's reaction the player reads from a distance.
+            // creature's reaction the player reads from a distance. Off `foe.Push`, the shared pair every
+            // wounded creature is knocked back by, rather than two loose numbers here.
             const dir = mathx.dirXZ(b.from, w.pos);
-            if (mathx.lenXZ(dir) > 1e-3) w.shove = mathx.scaleV(mathx.normV(dir), if (heavy) 0.55 else 0.24);
-            sfx.world(if (heavy) .hit_heavy else .hit_light, w.pos);
+            if (mathx.lenXZ(dir) > 1e-3) {
+                w.shove = mathx.scaleV(mathx.normV(dir), if (heavy) wolfmod.SHOVE.heavy else wolfmod.SHOVE.light);
+            }
+            // NO IMPACT VOICE HERE. `hit_light`/`hit_heavy` are "YOUR BLADE LANDED" — game.zig plays them off
+            // `allHits` climbing — and borrowing them for a club hitting the wolf tells the player he connected
+            // when he did not. The spirit's own yelp is the voice for this and `takeHit` already sets it.
         }
         break; // one spirit, and `SUMMON_MAX` is what says so
     }

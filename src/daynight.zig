@@ -47,6 +47,16 @@ pub const SUN_ALT_MAX: f32 = 61.8895;
 /// The one hour `--shot` runs at, and the light every reference frame in `shots/` was judged under.
 pub const SHOT_HOUR: f32 = 17.45283;
 
+/// WHERE A BONFIRE'S "REST UNTIL EVENING" PUTS YOU — 9 pm, and **the sun is DOWN there** (owner's call). It is
+/// deliberately NOT `SHOT_HOUR`: the anchor is the golden hour with the sun still well up, and a row named
+/// "evening" that hands you back an afternoon is a row that does nothing you can see. An hour past `SUNSET`,
+/// so what walks out of that fire is walking out into the dark — which is the whole point of being able to
+/// wait at one. A comptime assert below pins it past the horizon rather than trusting the number.
+pub const EVENING_HOUR: f32 = 21.0;
+comptime {
+    std.debug.assert(EVENING_HOUR > SUNSET);
+}
+
 /// The lowest altitude the CASTING direction is allowed to reach — see the note above. About the sun at
 /// half past six on a summer evening, which is as long as a shadow the box can hold.
 const KEY_ALT_MIN: f32 = 15.0;
@@ -562,7 +572,7 @@ pub fn paletteAt(hour: f32) Palette {
 
 /// THE HOURS A BONFIRE WILL HOLD YOU UNTIL, and the only times in the day with names. Two, because two is
 /// what the owner asked for and because they are the two that change how a fight goes: the clearest light in
-/// the day, and the last of it.
+/// the day, and the dark after it.
 pub const Until = enum {
     morning,
     evening,
@@ -570,7 +580,7 @@ pub const Until = enum {
     pub fn hour(u: Until) f32 {
         return switch (u) {
             .morning => 8.5, // the MORNING key — the clean, cold light
-            .evening => SHOT_HOUR, // …and the anchor, which is the golden hour the game looks best in
+            .evening => EVENING_HOUR,
         };
     }
     pub fn label(u: Until) [:0]const u8 {
@@ -828,8 +838,13 @@ test "a rest always carries the clock FORWARD, and asking for the hour you are o
         try std.testing.expect(u.label().len > 0);
         try std.testing.expect(u.hour() >= 0 and u.hour() < HOURS);
     }
-    // Morning is a DAY hour and so is evening — a fire that put you out in the dark is not a rest.
-    try std.testing.expect(isDay(Until.morning.hour()) and isDay(Until.evening.hour()));
+    // MORNING IS A DAY HOUR AND EVENING IS NOT (owner's call) — the two rows are the two halves of the clock,
+    // so one puts you out in the clean light and the other puts you out after the sun has gone. An "evening"
+    // that landed before `SUNSET` is a row whose whole effect you cannot see.
+    try std.testing.expect(isDay(Until.morning.hour()));
+    try std.testing.expect(!isDay(Until.evening.hour()));
+    try std.testing.expect(sunDir(Until.evening.hour()).y < 0); // …and the disc is genuinely under the world
+    try std.testing.expect(keyAmt(paletteAt(Until.evening.hour())) < 0.25); // …and it is DARK when you stand up
 }
 
 test "the readout says the hour and names the phase" {

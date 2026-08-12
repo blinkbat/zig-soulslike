@@ -379,11 +379,18 @@ const STEP_BIAS: f32 = 1.0;
 /// node 75° off the push at 0.57 units scored 1.80 and beat one dead ahead at 2.0. Push up, travel sideways,
 /// which is the owner's "direction you travel vs direction you push don't align". The wedge is what makes
 /// the two agree; the distance is what makes it feel like a step rather than a jump.
-pub fn step(cur: usize, dx: i32, dy: i32) usize {
-    if (dx == 0 and dy == 0) return cur;
+///
+/// **THE PUSH IS A HEADING AND NOT ONE OF FOUR** (`menu.stickPush`'s `radial`, and the long note at it). The
+/// d-pad and the keys still hand it a cardinal — those devices have four directions and that is all they have
+/// — but a STICK hands it the thumb's own bearing, which is the only thing that makes a layout whose arms run
+/// out at 120° apart navigable at all. Not required to arrive normalised: `cos` is a bearing test and a caller
+/// passing a raw delta (a node minus a node) would otherwise have its own length decide how wide the wedge is.
+pub fn step(cur: usize, dx: f32, dy: f32) usize {
+    const push = std.math.hypot(dx, dy);
+    if (push < 1e-6) return cur;
     const from = unitPos(cur);
-    const fdx: f32 = @floatFromInt(dx);
-    const fdy: f32 = @floatFromInt(dy);
+    const fdx = dx / push;
+    const fdy = dy / push;
     var best = cur;
     var score: f32 = std.math.floatMax(f32);
     for (0..SPOTS) |i| {
@@ -411,10 +418,15 @@ pub const ZOOM_RATE: f32 = 1.7;
 /// How far the view slides a second at full stick, in units of the wheel AT ZOOM_MIN — divided by the zoom
 /// where it is spent, so the pan crosses the same amount of SCREEN however far in you are.
 pub const PAN_RATE: f32 = 3.4;
-/// …and how far it may slide at all: only as far as the zoom has pushed off the edge. At `ZOOM_MIN` the
-/// whole wheel is in the box, so there is nothing off-screen to go and look at and the pan is pinned to
-/// nothing — which is what stops a player sliding the tree out of its own panel and losing it.
+/// …and how far it may slide at all, in units, at full zoom.
 const PAN_SPAN: f32 = 6.0;
+/// **AND IT IS LIVE FROM THE FRAME THE PAGE OPENS** (owner: "so it starts pannable"). It used to be pinned to
+/// nothing at `ZOOM_MIN`, on the argument that a box-fitted wheel has nothing off-screen to go and look at —
+/// which stopped being true the moment the framing became a SQUARE ON THE HUB (`VIEW_R`): the two lower arms
+/// now run out into the long axis' own slack and the wizard's keystone sits at the top of the square, so
+/// sliding the view is the thing that brings a tip fully into the middle to read it. Sized well under the
+/// square's own half-extent, which is what still stops a player sliding the tree out of its panel entirely.
+const PAN_FLOOR: f32 = 1.6;
 
 /// WHERE THE WHEEL IS BEING LOOKED AT FROM — the cursor, how far in, and where the view has been slid to.
 /// The book's page and the bonfire's own screen each hold one, because they are two views of one tree and
@@ -428,8 +440,9 @@ pub const Wheel = struct {
     /// screen), and this is the player saying "and a bit that way" over the top of it.
     pan: rl.Vector2 = .{ .x = 0, .y = 0 },
 
-    /// Directional, never cyclic (`step`'s law). True if it actually went somewhere.
-    pub fn move(self: *Wheel, dx: i32, dy: i32) bool {
+    /// Directional, never cyclic (`step`'s law). `dx`/`dy` are a HEADING, not a pair of steps — a cardinal
+    /// from the cross and the keys, the thumb's own bearing from the stick. True if it actually went somewhere.
+    pub fn move(self: *Wheel, dx: f32, dy: f32) bool {
         const next = step(self.cursor, dx, dy);
         if (next == self.cursor) return false;
         self.cursor = next;
@@ -450,8 +463,10 @@ pub const Wheel = struct {
         self.clampPan();
     }
 
+    /// How far the view may slide: a FLOOR that is live at `ZOOM_MIN` (`PAN_FLOOR` — the page opens pannable),
+    /// growing with whatever the zoom has pushed off the edge on top of it.
     fn panLimit(self: *const Wheel) f32 {
-        return PAN_SPAN * (1.0 - 1.0 / mathx.clampF(self.zoom, ZOOM_MIN, ZOOM_MAX));
+        return PAN_FLOOR + PAN_SPAN * (1.0 - 1.0 / mathx.clampF(self.zoom, ZOOM_MIN, ZOOM_MAX));
     }
 
     fn clampPan(self: *Wheel) void {
@@ -463,65 +478,46 @@ pub const Wheel = struct {
 
 const Lay = struct { cx: f32, cy: f32, unit: f32 };
 
-/// Sideways room for an arm's caption, in units. Not measured: the measurement is in pixels and the pixel
-/// size is what this is solving for, so an allowance it is.
-const CAP_HALF: f32 = 0.9;
 /// The hub's own disc, in units — read by the draw AND by the cursor that can now land on it.
 const HUB_R: f32 = 0.26;
-/// HOW FAR OUT THE CAPTION SITS. Past the keystone's own disc AND past half a caption, or the name is
-/// printed straight through the node it names — which at 0.55 it was. Read by the FIT as well as the draw,
-/// or the label is placed somewhere the box was never sized for.
-const CAP_OUT: f32 = @as(f32, @floatFromInt(RINGS)) + 1.05;
 
-/// FITTED TO WHAT IS ACTUALLY DRAWN, and centred on THAT — not on the hub. Three arms at 120° are not
-/// symmetric about their own centre: the wizard's spoke runs four rings straight up where the two lower ones
-/// reach only two rings down, so a wheel centred on the hub left a third of the panel empty underneath and
-/// paid for it by drawing everything smaller.
+/// A SQUARE WINDOW ON THE HUB, and this is its half-extent in units (owner: "square with central node in
+/// center, so it starts pannable, not bottom heavy").
+///
+/// **IT IS FRAMED ON THE MIDDLE, NOT FITTED TO THE BOUNDING BOX.** Three arms at 120° have a bounding box that
+/// is not centred on the hub — the wizard's spoke runs four rings straight UP where the two lower ones reach
+/// only two rings down — so a box-fitted framing puts the one spot the whole page is described from a long way
+/// below the middle of the panel and piles the slack at the top. That is the "bottom heavy". A wheel's own
+/// symmetry is its RADIUS, so the framing is a square about the hub and the slack falls in the four corners and
+/// in the arcs between the arms, evenly, which is what a wheel is supposed to look like.
+///
+/// The value is the outer radius of what is DRAWN: the keystone's centre at `RINGS`, its own disc (0.30 in
+/// `radiusPx`) and the breathing halo an OPEN one wears (`uiart.candle` at 2.1× that). Anything smaller clips
+/// the top node on the frame the page opens.
+const VIEW_R: f32 = @as(f32, @floatFromInt(RINGS)) + 0.30 * 2.1;
+
+/// A SQUARE WINDOW CENTRED ON THE HUB — see `VIEW_R`. `unit` comes off the panel's SHORT axis so the square
+/// fits either way up, and the long axis simply shows more of the world than the square asked for; on the wide
+/// box this page gets, that room is exactly where the two lower arms run.
 fn layout(wh: Wheel, x: i32, y: i32, w: i32, h: i32) Lay {
-    var x0: f32 = 0;
-    var x1: f32 = 0;
-    var y0: f32 = 0;
-    var y1: f32 = 0;
-    for (0..N) |i| {
-        const p = unitPos(i);
-        const r: f32 = if (NODES[i].key) 0.38 else 0.28; // the node's own disc, keystone rim included
-        x0 = @min(x0, p.x - r);
-        x1 = @max(x1, p.x + r);
-        y0 = @min(y0, p.y - r);
-        y1 = @max(y1, p.y + r);
-    }
-    for (0..NARM) |a| {
-        const ang = armAngle(@enumFromInt(a));
-        const lx = mathx.sinf(ang) * CAP_OUT;
-        const ly = -mathx.cosf(ang) * CAP_OUT;
-        x0 = @min(x0, lx - CAP_HALF);
-        x1 = @max(x1, lx + CAP_HALF);
-        y0 = @min(y0, ly - 0.30);
-        y1 = @max(y1, ly + 0.30);
-    }
     const fw: f32 = @floatFromInt(w);
     const fh: f32 = @floatFromInt(h);
     const zoom = mathx.clampF(wh.zoom, ZOOM_MIN, ZOOM_MAX);
-    const unit = @min(fw / (x1 - x0), fh / (y1 - y0)) * zoom;
-    // THE ZOOM WALKS THE VIEW ONTO THE CURSOR. Scaled about the fitted centre instead, the first notch in
-    // pushes whatever you were reading off the edge of the panel — which is a zoom that fights you. At
-    // ZOOM_MIN the blend is 0 and the framing is exactly the fitted one, so nothing moves until you ask.
+    const unit = @min(fw, fh) / (2.0 * VIEW_R) * zoom;
+    // THE ZOOM WALKS THE VIEW ONTO THE CURSOR. Scaled about the hub instead, the first notch in pushes whatever
+    // you were reading off the edge of the panel — which is a zoom that fights you. At ZOOM_MIN the blend is 0
+    // and the middle of the panel is the HUB, which is where the page opens and where the cursor starts.
     const k = mathx.clampF((zoom - ZOOM_MIN) / (ZOOM_MAX - ZOOM_MIN), 0, 1);
     const on = unitPos(@min(wh.cursor, HUB));
     // …AND THE PLAYER'S OWN SLIDE ON TOP OF IT (`Wheel.pan`). Pushing the stick RIGHT moves the VIEW right,
     // which is the content going left — the same sense the cursor walks in, so the two thumbs agree.
-    const fx = mathx.lerpF((x0 + x1) * 0.5, on.x, k) + wh.pan.x;
-    const fy = mathx.lerpF((y0 + y1) * 0.5, on.y, k) + wh.pan.y;
+    const fx = on.x * k + wh.pan.x;
+    const fy = on.y * k + wh.pan.y;
     return .{
         .cx = @as(f32, @floatFromInt(x)) + fw * 0.5 - fx * unit,
         .cy = @as(f32, @floatFromInt(y)) + fh * 0.5 - fy * unit,
         .unit = unit,
     };
-}
-
-/// A point `rr` rings out along an arm's own axis — the arm captions.
-fn onAxis(l: Lay, ang: f32, rr: f32) rl.Vector2 {
-    return .{ .x = l.cx + mathx.sinf(ang) * rr * l.unit, .y = l.cy - mathx.cosf(ang) * rr * l.unit };
 }
 
 fn place(l: Lay, i: usize) rl.Vector2 {
@@ -931,35 +927,67 @@ test "THE WALK IS GEOMETRIC: pressing a direction lands on something in that dir
 // THE MISSING PIN, and the reason the bug lived: the tests below check that the walk GOES somewhere and
 // that it reaches everything, and the old scoring satisfied both while sending you 75° off your own thumb.
 // What nobody asked was whether the direction you TRAVEL is the direction you PUSHED.
-test "THE PAN ONLY REACHES WHAT THE ZOOM PUSHED OFF THE EDGE" {
+test "IT OPENS PANNABLE, and the zoom only ever buys MORE slide" {
     var w = Wheel{};
-    // Zoomed all the way OUT the whole wheel is in the box, so there is nowhere to go and the stick is inert.
-    for (0..120) |_| w.panBy(.{ .x = 1, .y = 1 }, 1.0 / 60.0);
-    try std.testing.expectApproxEqAbs(@as(f32, 0), w.pan.x, 1e-6);
-    try std.testing.expectApproxEqAbs(@as(f32, 0), w.pan.y, 1e-6);
-    // Zoomed IN it slides, and stops at the edge of what is off screen rather than running away.
+    // ZOOMED ALL THE WAY OUT IT STILL SLIDES (owner: "so it starts pannable"). The framing is a square on the
+    // HUB now, not a fit of the bounding box, so there genuinely is wheel outside the panel from frame one.
+    try std.testing.expect(w.panLimit() >= PAN_FLOOR - 1e-6);
+    for (0..600) |_| w.panBy(.{ .x = 1, .y = 1 }, 1.0 / 60.0);
+    try std.testing.expectApproxEqAbs(PAN_FLOOR, w.pan.x, 1e-4);
+    try std.testing.expectApproxEqAbs(PAN_FLOOR, w.pan.y, 1e-4);
+    // …but never so far that the wheel leaves its own panel: the slide stays well inside the square.
+    try std.testing.expect(w.panLimit() < VIEW_R);
+    // Zoomed IN it slides FURTHER, and stops at the edge of what is off screen rather than running away.
     w.zoomBy(1, 10.0);
     try std.testing.expectApproxEqAbs(ZOOM_MAX, w.zoom, 1e-5);
+    try std.testing.expect(w.panLimit() > PAN_FLOOR);
     for (0..600) |_| w.panBy(.{ .x = 1, .y = -1 }, 1.0 / 60.0);
-    try std.testing.expect(w.pan.x > 0.5 and w.pan.x <= w.panLimit() + 1e-5);
-    try std.testing.expect(w.pan.y < -0.5 and w.pan.y >= -w.panLimit() - 1e-5);
-    // …and ZOOMING BACK OUT walks it home with it, or the wheel is left off-centre for no reason.
+    try std.testing.expect(w.pan.x > PAN_FLOOR and w.pan.x <= w.panLimit() + 1e-5);
+    try std.testing.expect(w.pan.y < -PAN_FLOOR and w.pan.y >= -w.panLimit() - 1e-5);
+    // …and ZOOMING BACK OUT walks it in with it, down to the floor rather than past it.
     w.zoomBy(-1, 10.0);
     try std.testing.expectApproxEqAbs(ZOOM_MIN, w.zoom, 1e-5);
-    try std.testing.expectApproxEqAbs(@as(f32, 0), w.pan.x, 1e-6);
-    try std.testing.expectApproxEqAbs(@as(f32, 0), w.pan.y, 1e-6);
+    try std.testing.expectApproxEqAbs(PAN_FLOOR, w.pan.x, 1e-4);
+    try std.testing.expectApproxEqAbs(-PAN_FLOOR, w.pan.y, 1e-4);
 }
+
+test "THE MIDDLE IS THE MIDDLE — the hub sits dead centre of the panel on the frame it opens" {
+    // THE COMPLAINT, as arithmetic (owner: "square with central node in center … not bottom heavy"). Fitted to
+    // the bounding box the framing centred on a shape whose own centre is nowhere near the hub — three arms at
+    // 120° reach four rings UP and two DOWN — so the one spot the whole page is described from opened well below
+    // the middle. Now: the square is on the hub, and the hub is the centre of the box whatever shape the box is.
+    const wh = Wheel{};
+    for ([_][4]i32{ .{ 0, 0, 800, 600 }, .{ 40, 20, 600, 800 }, .{ -30, 90, 512, 512 } }) |b| {
+        const l = layout(wh, b[0], b[1], b[2], b[3]);
+        const mid = place(l, HUB);
+        try std.testing.expectApproxEqAbs(@as(f32, @floatFromInt(b[0])) + @as(f32, @floatFromInt(b[2])) * 0.5, mid.x, 1e-3);
+        try std.testing.expectApproxEqAbs(@as(f32, @floatFromInt(b[1])) + @as(f32, @floatFromInt(b[3])) * 0.5, mid.y, 1e-3);
+        // …and it IS square: one unit of world is one unit of screen either way, off the SHORT axis, so the
+        // square fits whichever way up the box is.
+        try std.testing.expectApproxEqAbs(@as(f32, @floatFromInt(@min(b[2], b[3]))) / (2.0 * VIEW_R), l.unit, 1e-3);
+    }
+    // …and nothing DRAWN is outside the square, which is what makes `VIEW_R` the right radius rather than a
+    // number that happens to look right: the keystone's own halo is the outermost thing on the page.
+    for (0..N) |i| {
+        const p = unitPos(i);
+        try std.testing.expect(std.math.hypot(p.x, p.y) + 0.30 * 2.1 <= VIEW_R + 1e-4);
+    }
+}
+
+/// THE FOUR THE CROSS AND THE KEYS HAVE, which is what the reachability pins below are about: a STICK hands
+/// `step` its own bearing (`menu.stickPush`), so the tests that matter for it are the bearing ones further down.
+const CARDINALS = [_][2]f32{ .{ 0, -1 }, .{ 0, 1 }, .{ -1, 0 }, .{ 1, 0 } };
 
 test "THE WALK GOES WHERE YOU PUSHED — every step from every spot lands inside the wedge" {
     for (0..SPOTS) |from| {
-        for ([_][2]i32{ .{ 0, -1 }, .{ 0, 1 }, .{ -1, 0 }, .{ 1, 0 } }) |d| {
+        for (CARDINALS) |d| {
             const to = step(from, d[0], d[1]);
             if (to == from) continue; // nothing that way at all is a legal answer
             const a = unitPos(from);
             const b = unitPos(to);
             const ax = b.x - a.x;
             const ay = b.y - a.y;
-            const cos = (ax * @as(f32, @floatFromInt(d[0])) + ay * @as(f32, @floatFromInt(d[1]))) / std.math.hypot(ax, ay);
+            const cos = (ax * d[0] + ay * d[1]) / std.math.hypot(ax, ay);
             try std.testing.expect(cos >= STEP_CONE - 1e-5);
         }
     }
@@ -972,8 +1000,56 @@ test "…and from the MIDDLE each arm is under the thumb that points at it" {
     try std.testing.expectEqual(Arm.warrior, NODES[step(HUB, -1, 0)].arm);
     try std.testing.expectEqual(Arm.rogue, NODES[step(HUB, 1, 0)].arm);
     // …and each lands on the FIRST ring, not somewhere out on the spoke.
-    for ([_][2]i32{ .{ 0, -1 }, .{ -1, 0 }, .{ 1, 0 } }) |d| {
+    for ([_][2]f32{ .{ 0, -1 }, .{ -1, 0 }, .{ 1, 0 } }) |d| {
         try std.testing.expectEqual(@as(u8, 0), NODES[step(HUB, d[0], d[1])].ring);
+    }
+}
+
+test "POINT AT A NODE AND YOU GO TO THAT NODE — the stick's bearing IS the step" {
+    // THE COMPLAINT, as arithmetic (owner: walking the tree with the stick "feels horrible"). The arms run out
+    // at 0, 120 and 240 degrees, so from the middle the ring-0 nodes sit at ∓15, 105, 135, 225 and 255 — and
+    // every outward step along the two lower arms runs down a bearing near 96 or 216. Snapped to four screen
+    // axes and gated by a 32-degree dead cone (`menu.STICK_CONE`), the push aimed AT a node landed in the cone
+    // and did nothing on two arms out of three. `stickPush`'s `radial` hands the bearing over instead, so:
+    //
+    //   1. from the MIDDLE, a push aimed at any ring-0 node reaches THAT node and not its neighbour…
+    for (0..N) |i| {
+        if (NODES[i].ring != 0) continue;
+        const p = unitPos(i);
+        try std.testing.expectEqual(i, step(HUB, p.x, p.y));
+    }
+    //   2. …and from any node, a push aimed down the LINK THE PAGE DRAWS reaches what it feeds. That is the
+    //      whole of climbing an arm, on every strand and into both ways in at each capstone (`feeders`).
+    for (0..N) |i| {
+        var buf: [2]usize = undefined;
+        for (feeders(i, &buf)) |f| {
+            const a = unitPos(f);
+            const b = unitPos(i);
+            try std.testing.expectEqual(i, step(f, b.x - a.x, b.y - a.y));
+        }
+    }
+    //   3. …and it is not required to arrive normalised: a raw node-minus-node delta is a bearing, and its own
+    //      LENGTH must not decide how wide the wedge is.
+    const up = unitPos(14); // wizard ring 0, straight up off the hub
+    try std.testing.expectEqual(step(HUB, up.x, up.y), step(HUB, up.x * 40.0, up.y * 40.0));
+    // …and a push of nothing at all moves nothing, rather than dividing by it.
+    try std.testing.expectEqual(HUB, step(HUB, 0, 0));
+    try std.testing.expectEqual(HUB, step(HUB, 1e-9, -1e-9));
+}
+
+test "AND A ROUGH PUSH IS ENOUGH — a thumb within 20 degrees of an arm finds that arm" {
+    // A player does not aim to the degree; what he does is shove the thumb at the branch he wants. Each arm's
+    // own axis and twenty degrees either side of it, which is the width of a shove — a bearing that reached the
+    // WRONG arm would be the old failure back in a new shape.
+    for (0..NARM) |a| {
+        const arm: Arm = @enumFromInt(a);
+        for ([_]f32{ -20.0, -8.0, 0.0, 8.0, 20.0 }) |off| {
+            const ang = armAngle(arm) + mathx.radians(off);
+            const to = step(HUB, mathx.sinf(ang), -mathx.cosf(ang));
+            try std.testing.expect(to < N);
+            try std.testing.expectEqual(arm, NODES[to].arm);
+            try std.testing.expectEqual(@as(u8, 0), NODES[to].ring); // …and the near end of it, never the tip
+        }
     }
 }
 
@@ -990,7 +1066,7 @@ test "NO NODE IS UNREACHABLE — four directions get you from any one of them to
         while (top > 0) {
             top -= 1;
             const at = stack[top];
-            for ([_][2]i32{ .{ 0, -1 }, .{ 0, 1 }, .{ -1, 0 }, .{ 1, 0 } }) |d| {
+            for (CARDINALS) |d| {
                 const next = step(at, d[0], d[1]);
                 if (seen[next]) continue;
                 seen[next] = true;

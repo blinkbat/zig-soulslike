@@ -245,15 +245,18 @@ pub fn siteFromProp(pos: rl.Vector3, yaw: f32) Site {
 // THE BONFIRE'S SCREEN. The state and the walk live here; the game loop reads the buttons and hands the
 // results in, exactly as it does for the character book — this file owns no bindings.
 
-/// Move the cursor on whichever screen is up. `dx`/`dy` are one step, from a d-pad, a key or the left stick.
-pub fn navigate(self: *Rest, dx: i32, dy: i32) void {
-    if (dx == 0 and dy == 0) return;
+/// Move the cursor on whichever screen is up. `dx`/`dy` ARE A HEADING (`menu.stickPush`): a cardinal off the
+/// cross or a key, the thumb's own bearing off the stick. The LIST takes the sign of it — four rows have four
+/// directions and nothing between them — and the WHEEL takes the bearing whole, which is the only thing that
+/// makes a layout with three arms at 120° navigable.
+pub fn navigate(self: *Rest, dx: f32, dy: f32) void {
     switch (self.screen) {
         .list => {
-            if (dy == 0) return;
+            const dv = mathx.signI(dy);
+            if (dv == 0) return;
             const n: i32 = NROW;
             const at: i32 = @intCast(self.row);
-            const next = @mod(at + dy + n, n);
+            const next = @mod(at + dv + n, n);
             if (next == at) return;
             self.row = @intCast(next);
             sfx.play(.menu_move);

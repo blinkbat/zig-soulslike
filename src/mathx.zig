@@ -25,6 +25,15 @@ pub fn clampI(v: i32, lo: i32, hi: i32) i32 {
     return @max(lo, @min(hi, v));
 }
 
+/// A FLOAT'S DIRECTION AS ONE STEP: -1, 0 or +1 — what a cursor on a ROW LIST or a GRID wants out of an axis
+/// that arrived as a heading (`menu.stickPush`). Zero for a zero and for a NaN, which is what stops a poisoned
+/// axis walking a cursor: `std.math.sign` hands a NaN straight back and `@intFromFloat` on one is illegal.
+pub fn signI(v: f32) i32 {
+    if (v > 0) return 1;
+    if (v < 0) return -1;
+    return 0;
+}
+
 pub fn minF(a: f32, b: f32) f32 {
     return if (a < b) a else b;
 }
@@ -336,6 +345,15 @@ pub fn degrees(rad: f32) f32 {
     return rad * 180.0 / std.math.pi;
 }
 
+
+test "signI is one step, and a NaN axis walks no cursor" {
+    try std.testing.expectEqual(@as(i32, 1), signI(0.0001));
+    try std.testing.expectEqual(@as(i32, -1), signI(-40.0));
+    try std.testing.expectEqual(@as(i32, 0), signI(0));
+    // The reason it is not `std.math.sign`: that hands a NaN straight back, and `@intFromFloat` on one is
+    // illegal behaviour rather than a wrong row.
+    try std.testing.expectEqual(@as(i32, 0), signI(std.math.nan(f32)));
+}
 
 test "clampF pins NaN to lo and clamps both ends" {
     try std.testing.expectEqual(@as(f32, 1), clampF(std.math.nan(f32), 1, 5));

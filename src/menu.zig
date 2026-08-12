@@ -250,13 +250,9 @@ pub const Menu = struct {
         if (nav(.down)) self.book.move(0, 1, v);
         if (nav(.left)) self.book.move(-1, 0, v);
         if (nav(.right)) self.book.move(1, 0, v);
-        // …and the LEFT STICK drives the same four, which is what walking a wheel wants.
-        if (stickStep(dt)) |d| switch (d) {
-            .up => self.book.move(0, -1, v),
-            .down => self.book.move(0, 1, v),
-            .left => self.book.move(-1, 0, v),
-            .right => self.book.move(1, 0, v),
-        };
+        // …and the LEFT STICK. On the WHEEL it hands over the thumb's own bearing (`stickPush`'s `radial`) —
+        // point at a node, go to that node; on every other page it is one of four, as those pages are.
+        if (stickPush(dt, self.book.wheelUp())) |d| self.book.move(d.x, d.y, v);
         self.book.spinBy(adjHeldDir(), dt);
         self.book.panBy(stickPan(), dt);
         self.book.zoomBy(dpadZoom(), dt);
@@ -597,9 +593,9 @@ pub fn navPressed(dir: NavDir) bool {
     return dirPressed(dir, true);
 }
 
-// THE LEFT STICK AS A D-PAD, and getting this wrong is a known genre of bug — a stick is a LEVEL where a
-// walk wants EDGES, so the naive reading fires a step every frame the stick is anywhere but centre. Four
-// standard pieces, all of them here:
+// THE LEFT STICK AS A WALK, and getting this wrong is a known genre of bug — a stick is a LEVEL where a walk
+// wants EDGES, so the naive reading fires a step every frame the stick is anywhere but centre. Four standard
+// pieces, all of them here:
 //
 //  1. A RADIAL magnitude, never per-axis. Testing the axes separately is the "snap to grid" mistake: the
 //     corner of the square passes at 0.62 on each axis while the true deflection is 0.88, so a lazy diagonal
@@ -608,26 +604,46 @@ pub fn navPressed(dir: NavDir) bool {
 //     fallen back under `STICK_REARM`; one threshold chatters across itself on the way past.
 //  3. DAS then ARR (the falling-block idiom): a held push waits `STICK_DAS` before it repeats and then goes
 //     every `STICK_ARR`, so a nudge is exactly one step and a hold is a readable crawl.
-//  4. A DEAD CONE AT THE DIAGONALS. Inside 32° of an axis is that direction; outside it is NOTHING. Letting
-//     the bigger component win means a 46° push picks one of two nodes that are nowhere near each other on
-//     a wheel, which is the whole of "imprecise".
+//  4. A DEAD CONE AT THE DIAGONALS — **ON A LIST OR A GRID, WHICH IS THE ONLY PLACE IT BELONGS.** Inside 32°
+//     of an axis is that direction and outside it is nothing, because on a layout with four directions in it
+//     a 46° push is a push the player has not finished making.
 //
-// …plus one this layout needed: a direction CHANGE without returning to centre does not fire on the frame it
-// turns. Rolling a thumb round the rim crosses all four quadrants, and firing each one is the twitch.
+// **AND A RADIAL LAYOUT TAKES THE THUMB'S OWN BEARING, NOT ONE OF FOUR** (owner: walking the passive tree with
+// the stick "feels horrible", and this is why). The wheel's three arms run out at 0, 120 and 240 degrees, so
+// almost nothing on it is reachable along a screen axis: from the middle the ring-0 nodes sit at ∓15°, 105°,
+// 135°, 225° and 255°, and every outward step along the two lower arms runs down a bearing near 216° or 96°.
+// Snapped to four directions and then gated by a 32° dead cone, the natural push — the thumb pointed AT the
+// node — landed in the cone and did NOTHING, twice out of three arms; what did work was pushing LEFT to reach
+// the arm drawn down-and-right. The direction you travel and the direction you push had no relation.
+//
+// So `radial` hands `passivetree.step` the thumb's own unit heading and lets the wheel's own wedge search
+// pick what lies along it (`STEP_CONE`, `STEP_BIAS` — the part that was already right). Point at a node, go to
+// that node. Nothing about the LIST path moves: a row list still gets its four directions and its dead cone.
 const STICK_FIRE: f32 = 0.72;
 const STICK_REARM: f32 = 0.42;
-const STICK_CONE: f32 = 0.848; // cos 32° — the half-angle a push must sit inside to count as an axis
+const STICK_CONE: f32 = 0.848; // cos 32° — the half-angle a push must sit inside to count as an AXIS
 const STICK_DAS: f32 = 0.42; // seconds a held push waits before it starts repeating
 const STICK_ARR: f32 = 0.20; // …and the gap between repeats after that
+/// HOW FAR THE THUMB HAS TO TURN TO COUNT AS A FRESH INTENT, as the cosine of the angle between the push that
+/// fired last and the one on the stick now. cos 40°. Under it he is holding the same push and the DAS/ARR
+/// clock governs; past it he has aimed somewhere else. ONE rule for both layouts: two cardinals are 90° apart,
+/// so a list reads exactly as it always did, and a wheel gets a heading it can steer.
+const AIM_TURN: f32 = 0.766;
 
-var stickDir: ?NavDir = null;
+/// The push that last fired, as a unit heading — null once the stick is home.
+var stickDir: ?rl.Vector2 = null;
 var stickWait: f32 = 0;
-/// Has the stick been back to centre since the last step — what makes the FIRST push instant and every
-/// direction rolled into after it deliberate.
+/// Has the stick been back to centre since the last step? A LIST makes you come back before it will take a new
+/// direction — rolling a thumb round the rim crosses all four quadrants and firing each one is the twitch. A
+/// WHEEL does not: steering to a new bearing without letting go IS how you cross a radial layout.
 var stickArmed: bool = true;
 
-/// The direction the left stick is asking for THIS frame, or null. Call once a frame; it owns its own clock.
-pub fn stickStep(dt: f32) ?NavDir {
+/// WHAT THE LEFT STICK IS ASKING FOR THIS FRAME, as a unit heading in SCREEN space (+y down, which is the
+/// stick's own sense and `passivetree.unitPos`'s), or null. Call ONCE a frame — it owns its own clock.
+///
+/// `radial` is the whole decision and it is `navFor`'s shape: a WHEEL takes the bearing, a list or a grid takes
+/// one of four. See the note above for why a wheel cannot take one of four.
+pub fn stickPush(dt: f32, radial: bool) ?rl.Vector2 {
     if (!rl.isGamepadAvailable(0)) {
         stickDir = null;
         stickArmed = true;
@@ -645,24 +661,30 @@ pub fn stickStep(dt: f32) ?NavDir {
 
     const nx = x / mag;
     const ny = y / mag;
-    const dir: ?NavDir = if (@abs(nx) >= STICK_CONE)
-        (if (nx > 0) .right else .left)
+    const d: rl.Vector2 = if (radial)
+        .{ .x = nx, .y = ny } // the thumb's own bearing, and the wheel's wedge does the rest
+    else if (@abs(nx) >= STICK_CONE)
+        .{ .x = std.math.sign(nx), .y = 0 }
     else if (@abs(ny) >= STICK_CONE)
-        (if (ny > 0) .down else .up)
+        .{ .x = 0, .y = std.math.sign(ny) }
     else
-        null; // a diagonal is not a direction — hold, and step nothing
-    const d = dir orelse return null;
+        return null; // a diagonal is not one of four directions — hold, and step nothing
 
-    if (stickDir != d) {
+    const turned = if (stickDir) |was| (was.x * d.x + was.y * d.y) < AIM_TURN else true;
+    if (turned) {
         stickDir = d;
         stickWait = STICK_DAS;
-        if (!stickArmed) return null; // rolled into it: it costs a full DAS, exactly as a repeat would
+        // A LIST costs a full DAS for a direction rolled into, exactly as a repeat would; a WHEEL is steered.
+        if (!radial and !stickArmed) return null;
         stickArmed = false;
         return d;
     }
     stickWait -= dt;
     if (stickWait > 0) return null;
     stickWait = STICK_ARR;
+    // …and the REPEAT goes down the heading the stick is on NOW, not the one that armed the clock: a thumb
+    // easing round the rim under `AIM_TURN` should crawl round the wheel with it rather than off the old line.
+    stickDir = d;
     return d;
 }
 

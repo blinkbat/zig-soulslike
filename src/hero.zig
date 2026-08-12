@@ -3004,8 +3004,11 @@ pub const Hero = struct {
 
     fn poseStun(self: *Hero) void {
         const heavy = self.stun == .heavy;
-        const dur: f32 = if (heavy) combat.HEAVY_STUN_DUR else combat.LIGHT_STUN_DUR;
-        const u = mathx.clampF(self.stunT / dur, 0, 1);
+        // …through `heroStunDur` and not the pair by hand, which is the one shape that helper exists to remove
+        // (`combat.zig`'s own note at it) — `updateStun` is the other reader, and the two clocks are the SAME
+        // clock: a pose normalised on a duration the state machine does not exit on is a reaction that either
+        // freezes at its peak or is cut off mid-release.
+        const u = mathx.clampF(self.stunT / combat.heroStunDur(heavy), 0, 1);
         const amt = if (heavy)
             mathx.pulse(u, 0, 0.12, 0.68, 1.0) // ramp, hold, release
         else

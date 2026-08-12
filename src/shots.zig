@@ -2603,7 +2603,9 @@ fn dayShots(g: *Game) void {
         .{ .h = 12.0, .name = "shots/144_day_noon.png" },
         .{ .h = game.daynight.SHOT_HOUR, .name = "shots/145_day_golden.png" },
         .{ .h = 19.4, .name = "shots/146_day_sunset.png" },
-        .{ .h = 20.9, .name = "shots/147_day_dusk.png" },
+        // …AND THE LAST ROW IS THE HOUR THE FIRE HANDS YOU (`EVENING_HOUR`), not a number beside it: the strip
+        // is the only eye on "Rest until evening", so it photographs that hour exactly.
+        .{ .h = game.daynight.EVENING_HOUR, .name = "shots/147_day_dusk.png" },
     };
     // The sun's bearing at the anchor, as a CAMERA yaw: `camera.backDir` puts the lens behind the hero on the
     // yaw's own bearing, so pointing it down the sun's bearing is the yaw that faces INTO the light.

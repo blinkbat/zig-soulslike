@@ -62,8 +62,10 @@ over it at night. The haze in the distance takes the colour of the hour; steel a
 when there is nothing left to glint at; the campfires stop being decoration and become the only warm
 thing in the frame.
 
-A **bonfire will hold you until morning or until evening** — the two lights worth choosing between, and a
-fire never takes you backwards, so asking for the hour you are already sitting in costs a whole day. The
+A **bonfire will hold you until morning or until evening** — the two halves of the clock worth choosing
+between: half past eight, in the clearest light of the day, or nine at night, with the sun an hour gone and
+the moon already casting. A fire never takes you backwards, so asking for the hour you are sitting in costs
+a whole day. The
 debug menu carries an **Hour** row you can scrub and hold, and in the editor `,` and `.` sweep the day so a
 belt of trees can be judged under every light it will ever stand in rather than under one permanent
 afternoon.

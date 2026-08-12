@@ -1236,8 +1236,11 @@ const SHOT_STEP: f32 = @import("shots.zig").SHOT_DT;
 /// WHAT THE BUTTON WOULD REACH THIS FRAME, and in what order — what he DROPPED, then a bonfire, then whoever
 /// is standing there, then a box. ONE list, because the press and the PROMPT are the same question.
 ///
-/// THE DROP IS FIRST and its ring is the smallest of the four: you can die at a bonfire, and on the frame you
-/// walk back in there is exactly one thing you came for. One press clears it and the fire is offered again.
+/// THE DROP IS FIRST BECAUSE OF WHAT IT IS, NOT BECAUSE ITS RING IS TIGHTEST: you can die at a bonfire, and on
+/// the frame you walk back in there is exactly one thing you came for. One press clears it and the fire is
+/// offered again. Its ring is in fact the GENEROUS one against a box's (`souls.REACH` 2.6 vs `chest.REACH` 2.1,
+/// asserted at comptime in `souls.zig`) — you come back for it under pressure and fumbling the reach is not the
+/// tension. The rings overlap, which is exactly why the ORDER is written down here and asked once.
 const Reach = enum {
     souls,
     rest,
@@ -1659,17 +1662,15 @@ fn tickRest(g: *Game, dt: f32) void {
 /// (`menu.zig`, which is where UI navigation lives). Getting up is a ROW now, so there is no any-button
 /// rule left to fight with a cursor.
 fn bonfireInput(g: *Game, dt: f32) void {
-    const nav = menumod.navFor(g.rest.screen == .tree); // the cross-vs-stick rule, written once (`menu.navFor`)
+    const onWheel = g.rest.screen == .tree;
+    const nav = menumod.navFor(onWheel); // the cross-vs-stick rule, written once (`menu.navFor`)
     if (nav(.up)) restmod.navigate(&g.rest, 0, -1);
     if (nav(.down)) restmod.navigate(&g.rest, 0, 1);
     if (nav(.left)) restmod.navigate(&g.rest, -1, 0);
     if (nav(.right)) restmod.navigate(&g.rest, 1, 0);
-    if (menumod.stickStep(dt)) |d| switch (d) {
-        .up => restmod.navigate(&g.rest, 0, -1),
-        .down => restmod.navigate(&g.rest, 0, 1),
-        .left => restmod.navigate(&g.rest, -1, 0),
-        .right => restmod.navigate(&g.rest, 1, 0),
-    };
+    // …and the LEFT STICK, which on the WHEEL is the thumb's own bearing rather than one of four — the same
+    // `radial` split `navFor` above is making, and the long note at `menu.stickPush` says why a wheel needs it.
+    if (menumod.stickPush(dt, onWheel)) |d| restmod.navigate(&g.rest, d.x, d.y);
     restmod.pan(&g.rest, menumod.stickPan(), dt);
     restmod.zoom(&g.rest, menumod.dpadZoom(), dt);
     if (menumod.confirmPressed()) bonfirePick(g, restmod.confirm(&g.rest, &g.tree, g.hero.souls.total));

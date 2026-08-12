@@ -763,7 +763,7 @@ hang off the hub, so all three are open from the first souls you spend.
 - **THE VIEW IS PANNED, NOT SHEARED** (`game.restCamera`, `REST_PAN`). Eye and target move by the same vector
   along the camera's own right axis; swinging the target alone turns the camera and re-composes the shot
   instead of sliding it. Screen-right is `cross(forward, up)` — `camera.rightXZ`'s law, one layer up.
-- **THE LEFT STICK WALKS THE WHEEL, THE CROSS ZOOMS IT AND THE RIGHT STICK PANS** (`menu.stickStep`,
+- **THE LEFT STICK WALKS THE WHEEL, THE CROSS ZOOMS IT AND THE RIGHT STICK PANS** (`menu.stickPush`,
   `menu.dpadZoom`, `menu.stickPan`). The zoom is on the CROSS and not the bumpers, because the bumpers are the
   character book's page turn and the wheel is one of its pages — a zoom that took them would strand you on the
   wheel with no way to turn off it. Which is also why the cross is then WITHHELD from the walk on a wheel and
@@ -773,12 +773,39 @@ hang off the hub, so all three are open from the first souls you spend.
   corner passes at 0.62 on each axis while the true deflection is 0.88, so a lazy diagonal reads as a hard
   push; a SCHMITT TRIGGER (`STICK_FIRE` to arm, `STICK_REARM` to re-arm), because one threshold chatters
   across itself; DAS then ARR, the falling-block idiom, so a nudge is exactly one step and a hold is a
-  readable crawl; and a DEAD CONE AT THE DIAGONALS — inside 32 degrees of an axis is that direction and
-  outside it is NOTHING, where letting the bigger component win makes a 46-degree push pick one of two nodes
-  that are nowhere near each other. Plus one this layout needed: a direction CHANGE without returning to
-  centre costs a full DAS rather than firing on the frame it turns — rolling a thumb round the rim crosses
-  all four quadrants. **The zoom re-centres on the CURSOR** as it goes in (blended from the fitted framing,
-  so nothing moves at `ZOOM_MIN`); scaled about the fitted centre instead, the first notch pushes what you
+  readable crawl; and a DEAD CONE AT THE DIAGONALS — **ON A LIST OR A GRID, WHICH IS THE ONLY PLACE IT
+  BELONGS.**
+- **A RADIAL LAYOUT TAKES THE THUMB'S OWN BEARING, NEVER ONE OF FOUR** (`menu.stickPush`'s `radial`, owner:
+  walking the tree with the stick "feels horrible"). The three arms run out at 0, 120 and 240 degrees, so almost
+  nothing on this page lies along a screen axis: from the middle the ring-0 nodes sit at ∓15, 105, 135, 225 and
+  255 degrees, and every outward step along the two lower arms runs down a bearing near 96 or 216. Snapped to
+  four axes and then gated by the 32-degree dead cone, the natural push — the thumb pointed AT the node — landed
+  IN the cone and did nothing, on two arms out of three; what worked was pushing LEFT to reach the arm drawn
+  down-and-RIGHT. So `passivetree.step` takes a HEADING (`dx`/`dy` as floats, normalised inside it) and its own
+  wedge does the choosing: point at a node, go to that node. The CROSS and the KEYS still hand it a cardinal —
+  those devices have four directions and that is all they have — and a LIST still takes the sign of an axis
+  (`mathx.signI`). Two tests pin it: a push aimed at any ring-0 node from the middle reaches THAT node, a push
+  aimed down any link `feeders` draws reaches what it feeds, and a rough shove within 20 degrees of an arm finds
+  that arm's near end. **AND A WHEEL IS STEERED, NOT RE-PRESSED**: on a list a direction rolled into without
+  returning to centre costs a full DAS, because a thumb going round the rim crosses all four quadrants; on a
+  wheel that IS how you cross the layout, so a turn past `AIM_TURN` (40 degrees) fires at once and a drift under
+  it carries the repeat onto the bearing the thumb is on NOW.
+- **THE FRAMING IS A SQUARE ON THE HUB, NOT A FIT OF THE BOUNDING BOX** (`passivetree.VIEW_R`, owner: "square
+  with central node in center, so it starts pannable, not bottom heavy"). Three arms at 120° have a bounding box
+  whose centre is nowhere near the hub — the wizard's spoke runs four rings straight UP where the two lower ones
+  reach two rings down — so a box-fitted framing opened with the one spot the whole page is described from a long
+  way below the middle of the panel and the slack piled at the top. A wheel's own symmetry is its RADIUS: the
+  square is centred on the hub, `unit` comes off the panel's SHORT axis so it fits either way up, and `VIEW_R` is
+  the outer radius of what is actually DRAWN — the keystone's centre at `RINGS`, its disc, and the breathing halo
+  an OPEN one wears. A test pins the hub to the centre of the box at three aspect ratios and pins `VIEW_R`
+  against every node's own reach. **AND THE PAN IS LIVE AT `ZOOM_MIN`** (`PAN_FLOOR`): it used to be pinned to
+  nothing there on the argument that a box-fitted wheel has nothing off-screen, which stopped being true the
+  moment the framing became a square on the hub.
+  **THE ARMS ARE NEVER CAPTIONED, so nothing reserves room for one.** `CAP_OUT`/`CAP_HALF`/`onAxis` outlived the
+  labels the "never NAMED on screen" rule deleted and went on reserving 5.35 units above the hub against 2.83
+  below — dead air the fit then paid for by drawing every node ~19% smaller. That is what "bottom heavy" was.
+- **The zoom re-centres on the CURSOR** as it goes in (blended from the hub, so nothing moves at `ZOOM_MIN`);
+  scaled about the hub the whole way instead, the first notch pushes what you
   were reading off the panel. The zoom is read as a HELD LEVEL so it glides rather than notching, and the pad's
   half of it is the cross alone — a desk has the mouse wheel and needs neither.
 - **THE MIDDLE IS A PLACE THE CURSOR MAY REST** (`passivetree.HUB`, indexed one past the last node so every
@@ -1007,6 +1034,12 @@ One number — `Game.day.hour` — and every colour and every shadow in the worl
   EDITOR, `,` and `.` sweep it and Shift runs (the clock is held in the editor, so those are the only writers).
   A BONFIRE offers `Rest until morning` / `Rest until evening` — always FORWARD (`hoursUntil`), and asking for the
   hour you are on costs a whole day. Nothing is restocked there: `hero.sit` made him whole when he sat down.
+  **THE TWO ROWS ARE THE TWO HALVES OF THE CLOCK, AND EVENING IS AFTER DARK** (owner's call): morning is 8:30 in
+  the clearest light of the day, evening is `EVENING_HOUR` — 9 pm, an hour past `SUNSET`, **with the sun DOWN and
+  the moon already casting**. It is deliberately NOT `SHOT_HOUR`: the anchor is the golden hour with the sun still
+  well up, so a row named "evening" that handed you the anchor did nothing you could see. A comptime assert pins
+  it past the horizon, a test pins `!isDay` and the key under a quarter of the anchor, and `shots/147` is that
+  hour exactly rather than a number beside it.
 - **AND THE FIRE TOUCHES THE CLOCK NOWHERE ELSE** (owner's call). Sitting down used to pull the whole world into a
   local dusk whatever hour it was — a `dim` uniform in both shaders, riding on top of the palette. That dial is
   GONE: the hour you walk in at is the hour you sit in, and the two `Rest until…` rows are the only thing at a

@@ -588,13 +588,18 @@ pub const Book = struct {
         return true;
     }
 
-    pub fn move(self: *Book, dx: i32, dy: i32, v: View) void {
+    /// `dx`/`dy` ARE A HEADING, not a pair of steps (`menu.stickPush`). The wheel is the only page that can use
+    /// a bearing; every other page here has four directions and nothing between them, so it takes the SIGN and
+    /// the stick hands those pages a cardinal anyway (`radial` is false off the tree).
+    pub fn move(self: *Book, dx: f32, dy: f32, v: View) void {
+        const sy = mathx.signI(dy);
+        const sx = mathx.signI(dx);
         if (self.picking) |s| {
             var buf: [CAND_MAX]Cand = undefined;
             const cs = candidates(s, v, &buf);
-            if (cs.len == 0 or dy == 0) return;
+            if (cs.len == 0 or sy == 0) return;
             const n: i32 = @intCast(cs.len);
-            self.pick = @intCast(@mod(@as(i32, @intCast(self.pick)) + dy + n, n));
+            self.pick = @intCast(@mod(@as(i32, @intCast(self.pick)) + sy + n, n));
             self.moved();
             return;
         }
@@ -605,11 +610,11 @@ pub const Book = struct {
         }
         const i = idx(self.page);
         const next = switch (self.page) {
-            .equipment => slotStep(self.cur[i], dx, dy),
-            .inventory => grid(self.cur[i], @max(v.bag.distinct(), 1), BAG_COLS, dx, dy),
+            .equipment => slotStep(self.cur[i], sx, sy),
+            .inventory => grid(self.cur[i], @max(v.bag.distinct(), 1), BAG_COLS, sx, sy),
             // Up/Down walks the attributes; Left/Right is the turntable, so it must not move the cursor.
-            .stats => if (dy == 0) self.cur[i] else @as(usize, @intCast(@mod(
-                @as(i32, @intCast(self.cur[i])) + dy + @as(i32, stats.NA),
+            .stats => if (sy == 0) self.cur[i] else @as(usize, @intCast(@mod(
+                @as(i32, @intCast(self.cur[i])) + sy + @as(i32, stats.NA),
                 @as(i32, stats.NA),
             ))),
             .tree => unreachable, // handled above: the wheel is not an ordinal

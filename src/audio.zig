@@ -2488,7 +2488,7 @@ fn dressedFire() []const u8 {
     var fr = Rack{ .n = n, .rng = mathx.Rng.init(0xF12E9A ^ 0x5EED) };
     applyFx(&fr, .ambience);
     for (work[0..n], 0..) |s, si| {
-        std.mem.writeInt(i16, fireWav[44 + si * 2 ..][0..2], @intFromFloat(s * 32000.0), .little);
+        std.mem.writeInt(i16, fireWav[44 + si * 2 ..][0..2], pcm16(s), .little);
     }
 
     const rate: u32 = w.sampleRate;
@@ -2535,9 +2535,17 @@ pub fn tickStreams() void {
     if (rl.isMusicStreamPlaying(m)) rl.updateMusicStream(m);
 }
 
+/// ONE SAMPLE OUT TO 16-BIT PCM, and the CLAMP is what makes it a function rather than a multiply. `bake` and
+/// the fire bed's own byte loop are the two places a float leaves this file, and only one of them clamped: the
+/// other leant on `applyFx`'s closing `norm(0.92)` two functions away, where a sample past ±1.024 is not a
+/// clipped take but an out-of-range `@intFromFloat`. Written once, both sites cannot disagree about the ceiling.
+fn pcm16(s: f32) i16 {
+    return @intFromFloat(mathx.clampF(s, -1, 1) * 32000.0);
+}
+
 fn bake(r: *Rack) rl.Sound {
     for (work[0..r.n], 0..) |s, i| {
-        pcm[i] = @intFromFloat(mathx.clampF(s, -1, 1) * 32000.0);
+        pcm[i] = pcm16(s);
     }
     const wave = rl.Wave{
         .frameCount = @intCast(r.n),

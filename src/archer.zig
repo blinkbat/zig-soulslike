@@ -109,7 +109,7 @@ pub fn poseBow(bowXf: rl.Matrix, handXf: rl.Matrix, drawAmt: f32) BowPose {
 
 // Orient +Z along `dir` (the arrowXform convention), rotation only.
 fn orientZ(dir: rl.Vector3) rl.Matrix {
-    const yaw = mathx.degrees(std.math.atan2(dir.x, dir.z));
+    const yaw = mathx.degrees(mathx.headingXZ(dir));
     const pitch = mathx.degrees(std.math.asin(mathx.clampF(-dir.y, -1, 1)));
     return mul(rx(pitch), ry(yaw));
 }

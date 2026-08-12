@@ -361,8 +361,15 @@ pub fn drawScreen(self: *const Rest, t: *const Tree, souls: u32) void {
     }
 }
 
+/// AN AUTHORED ALPHA, FADED — `ink`'s own arithmetic for the chrome calls that take a bare `u8` rather than a
+/// colour. Written out at each of them it was six copies of `u8f(K * clampF(a, 0, 1))` beside the one function
+/// that already says what that means — and one of the six had lost the clamp, which `u8f` happened to cover.
+fn alpha(v: f32, a: f32) u8 {
+    return mathx.u8f(v * mathx.clampF(a, 0, 1));
+}
+
 fn ink(c: rl.Color, a: f32) rl.Color {
-    return mathx.withAlpha(c, mathx.u8f(@as(f32, @floatFromInt(c.a)) * mathx.clampF(a, 0, 1)));
+    return mathx.withAlpha(c, alpha(@floatFromInt(c.a), a));
 }
 
 const PAD_X: i32 = 24;
@@ -380,11 +387,11 @@ fn drawList(self: *const Rest, a: f32) void {
     const y = @divTrunc(sh - h, 2);
 
     uiart.seat(x, y, w, h);
-    uiart.plate(x, y, w, h, mathx.u8f(236.0 * mathx.clampF(a, 0, 1)));
-    uiart.frame(x, y, w, h, mathx.u8f(200.0 * mathx.clampF(a, 0, 1)));
+    uiart.plate(x, y, w, h, alpha(236.0, a));
+    uiart.frame(x, y, w, h, alpha(200.0, a));
 
     hud.engraved("BONFIRE", x + PAD_X, y + 20, hud.TITLE, ink(uiart.TEXT_TITLE, a));
-    uiart.divider(x + @divTrunc(w, 2), y + hud.lineH(hud.TITLE) + 30, @divTrunc(w, 2) - PAD_X, mathx.u8f(170.0 * a));
+    uiart.divider(x + @divTrunc(w, 2), y + hud.lineH(hud.TITLE) + 30, @divTrunc(w, 2) - PAD_X, alpha(170.0, a));
 
     var ry = y + head;
     for (0..NROW) |i| {
@@ -407,10 +414,10 @@ fn drawTree(self: *const Rest, t: *const Tree, souls: u32, a: f32) void {
     const w = sw - MARGIN * 2;
     const h = sh - y * 2;
 
-    rl.drawRectangle(0, 0, sw, sh, mathx.withAlpha(rl.Color.black, mathx.u8f(150.0 * mathx.clampF(a, 0, 1))));
+    rl.drawRectangle(0, 0, sw, sh, mathx.withAlpha(rl.Color.black, alpha(150.0, a)));
     uiart.seat(x, y, w, h);
-    uiart.plate(x, y, w, h, mathx.u8f(240.0 * mathx.clampF(a, 0, 1)));
-    uiart.frame(x, y, w, h, mathx.u8f(200.0 * mathx.clampF(a, 0, 1)));
+    uiart.plate(x, y, w, h, alpha(240.0, a));
+    uiart.frame(x, y, w, h, alpha(200.0, a));
 
     const headY = y + 14;
     hud.engraved("PASSIVE TREE", x + 24, headY, hud.TITLE, ink(uiart.TEXT_TITLE, a));

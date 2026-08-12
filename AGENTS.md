@@ -605,7 +605,7 @@ the fight, which is the whole point of it.
   book off its `View`.
 - **CYCLE STAMPS `flasks.sel`, it does not cycle it** (`hero.cycleQuick` → `syncFlask`). The draught, the HUD
   tint and the charge count all keep reading the one field they always read, and only the bar decides what
-  is up. Nothing calls `Flasks.cycle` any more.
+  is up. `Flasks` has no `cycle` of its own — `Quick.cycle` is the only one, and `sel` is only ever STAMPED.
 - **A REMOVAL LEAVES ITS HOLE.** The bar is stepped by muscle memory mid-fight; a list that compacts under
   you every time you drop something is one you cannot learn.
 - **EACH BAR ENTRY IS ITS OWN SOCKET ON THE PAGE** — two rows of five on the paper doll, and Confirm on one

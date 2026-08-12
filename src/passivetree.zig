@@ -481,6 +481,13 @@ const Lay = struct { cx: f32, cy: f32, unit: f32 };
 /// The hub's own disc, in units — read by the draw AND by the cursor that can now land on it.
 const HUB_R: f32 = 0.26;
 
+/// A KEYSTONE'S OWN DISC, in units, and the halo an OPEN node wears over it as a multiple of that disc. NAMED
+/// because the two of them are the outermost thing on the page and `VIEW_R` is solved off them: written out at
+/// each site the pair sat in four places (the framing, `radiusPx`, the `uiart.candle` call and the framing's
+/// own test), so retuning the keystone clipped the top node on the frame the page opens and nothing said so.
+const KEY_R: f32 = 0.30;
+const HALO_K: f32 = 2.1;
+
 /// A SQUARE WINDOW ON THE HUB, and this is its half-extent in units (owner: "square with central node in
 /// center, so it starts pannable, not bottom heavy").
 ///
@@ -491,10 +498,10 @@ const HUB_R: f32 = 0.26;
 /// symmetry is its RADIUS, so the framing is a square about the hub and the slack falls in the four corners and
 /// in the arcs between the arms, evenly, which is what a wheel is supposed to look like.
 ///
-/// The value is the outer radius of what is DRAWN: the keystone's centre at `RINGS`, its own disc (0.30 in
-/// `radiusPx`) and the breathing halo an OPEN one wears (`uiart.candle` at 2.1× that). Anything smaller clips
-/// the top node on the frame the page opens.
-const VIEW_R: f32 = @as(f32, @floatFromInt(RINGS)) + 0.30 * 2.1;
+/// The value is the outer radius of what is DRAWN: the keystone's centre at `RINGS`, its own disc (`KEY_R`) and
+/// the breathing halo an OPEN one wears (`HALO_K`× that). Anything smaller clips the top node on the frame the
+/// page opens, which is why it is SOLVED off those two rather than written down beside them.
+const VIEW_R: f32 = @as(f32, @floatFromInt(RINGS)) + KEY_R * HALO_K;
 
 /// A SQUARE WINDOW CENTRED ON THE HUB — see `VIEW_R`. `unit` comes off the panel's SHORT axis so the square
 /// fits either way up, and the long axis simply shows more of the world than the square asked for; on the wide
@@ -527,7 +534,7 @@ fn place(l: Lay, i: usize) rl.Vector2 {
 
 fn radiusPx(l: Lay, i: usize) f32 {
     if (i >= N) return l.unit * HUB_R;
-    return l.unit * (if (NODES[i].key) @as(f32, 0.30) else switch (NODES[i].grant) {
+    return l.unit * (if (NODES[i].key) KEY_R else switch (NODES[i].grant) {
         .attr => @as(f32, 0.15),
         else => @as(f32, 0.21),
     });
@@ -608,7 +615,7 @@ pub fn draw(t: *const Tree, wh: Wheel, x: i32, y: i32, w: i32, h: i32, spendable
             rl.drawCircleV(p, r, mathx.withAlpha(uiart.STONE_DK, 235));
             rl.drawCircleLinesV(p, r, mathx.withAlpha(ink, if (open) 235 else 80));
         }
-        if (open and !t.taken[i]) uiart.candle(@intFromFloat(p.x), @intFromFloat(p.y), r * 2.1, 26);
+        if (open and !t.taken[i]) uiart.candle(@intFromFloat(p.x), @intFromFloat(p.y), r * HALO_K, 26);
         if (n.key) rl.drawCircleLinesV(p, r + 3.5, mathx.withAlpha(if (t.taken[i]) uiart.GILT_BRIGHT else uiart.GILT_DIM, 150));
     }
 
@@ -970,7 +977,7 @@ test "THE MIDDLE IS THE MIDDLE — the hub sits dead centre of the panel on the 
     // number that happens to look right: the keystone's own halo is the outermost thing on the page.
     for (0..N) |i| {
         const p = unitPos(i);
-        try std.testing.expect(std.math.hypot(p.x, p.y) + 0.30 * 2.1 <= VIEW_R + 1e-4);
+        try std.testing.expect(std.math.hypot(p.x, p.y) + KEY_R * HALO_K <= VIEW_R + 1e-4);
     }
 }
 

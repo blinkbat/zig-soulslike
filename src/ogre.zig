@@ -137,7 +137,7 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
 // rejected as too big, 2.1 as too small, 2.4 read big again, and the owner has now asked for a bit off it.
 // So it sits between the two rejections and nearer the top. Judge it off `108_brood_scale`'s ogre framings.
 //
-// THE DECISION RADII BELOW ARE ABSOLUTE METRES AND THE REACHES ARE SCALED (`slamStripEnd`, `swipeReach`,
+// THE DECISION RADII BELOW ARE ABSOLUTE METRES AND THE REACHES ARE SCALED (`slamReach`, `swipeReach`,
 // `swipeInner`), so moving this moves what he can actually touch out from under what he chooses to swing at.
 // The tests at the foot of this file bracket the gap; they are what says how far this may travel.
 pub const SCALE = 2.3;

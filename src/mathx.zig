@@ -235,6 +235,12 @@ pub fn approachV(cur: rl.Vector3, target: rl.Vector3, maxStep: f32) rl.Vector3 {
 pub fn wrapPi(a: f32) f32 {
     if (!std.math.isFinite(a)) return 0;
     var x = a;
+    // A REDUCTION FIRST FOR ANYTHING THE LOOP CANNOT WALK. Past ~2^23·tau an f32 subtraction of tau is a
+    // no-op and the loop never terminates; well below that it is millions of iterations. The threshold sits
+    // far above every live caller (all of them wrap a difference of two bounded angles), so the loop is
+    // still what handles every real input and the arithmetic below it has not moved.
+    const REDUCE_OVER: f32 = std.math.tau * 1024.0;
+    if (@abs(x) > REDUCE_OVER) x = @rem(x, std.math.tau);
     while (x > std.math.pi) x -= std.math.tau;
     while (x <= -std.math.pi) x += std.math.tau;
     return x;

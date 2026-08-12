@@ -556,7 +556,10 @@ pub fn gridIndex(half: f32, n: usize, px: f32, pz: f32) ?usize {
     if (half <= 0) return null;
     const t = (px + half) / (2 * half);
     const u = (pz + half) / (2 * half);
-    if (t < 0 or t >= 1 or u < 0 or u >= 1) return null;
+    // WRITTEN AS THE POSITIVE TEST, so a NaN falls OUT of the grid rather than through it: `t < 0 or t >= 1`
+    // is false for NaN either way, and the casts below are illegal behaviour on one. `sampleHeight` gets this
+    // for free off `clampF`; this sampler is the other half of the same rule.
+    if (!(t >= 0 and t < 1) or !(u >= 0 and u < 1)) return null;
     const nf: f32 = @floatFromInt(n);
     const cx = @min(@as(usize, @intFromFloat(t * nf)), n - 1);
     const cz = @min(@as(usize, @intFromFloat(u * nf)), n - 1);
@@ -964,11 +967,6 @@ pub const Map = struct {
             }
         }
         return changed;
-    }
-
-    pub fn waterAt(self: *const Map, px: f32, pz: f32) bool {
-        const i = self.waterIndex(px, pz) orelse return false;
-        return self.water[i] != 0;
     }
 
     pub fn anyWater(self: *const Map) bool {

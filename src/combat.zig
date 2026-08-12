@@ -476,8 +476,8 @@ pub const Focus = struct {
 // up). So finding one is the whole of unlocking it, and losing one takes it back with no second piece of state
 // to keep in step.
 //
-// **AND ONE STANDS AT A TIME** (`Bond`). The cap is a property of the BOND and not of the wolf, so the second
-// spirit is a row in these two switches and nothing else.
+// **AND ONE STANDS AT A TIME** (`wolf.Pack`). The cap is a property of the BOND and not of the wolf, so the
+// second spirit is a row in these two switches and nothing else.
 
 /// Every spirit a scroll can carry. APPENDED never inserted, `FoeKind`'s rule — a saved bag is a list of
 /// ordinals, and inserting here would turn every scroll already in the world into a different animal.
@@ -1634,14 +1634,18 @@ test "the quiver holds two kinds, and the SELECTED one is the one that flies" {
     q.refill();
     try std.testing.expectEqual(FIRE_ARROWS_MAX, q.count(.fire));
     try std.testing.expectEqual(ARROWS_MAX, q.count(.plain));
-    for (0..2) |_| q.cycle();
+    for (0..NARROW) |_| q.cycle();
     try std.testing.expectEqual(ArrowKind.plain, q.sel); // the cycle is a round trip
 }
+
+/// How many kinds the quiver holds — off the enum, so a third arrow moves the round trip and the walk below
+/// with it rather than leaving two tests asserting a 2 that stopped being the count.
+const NARROW = @typeInfo(ArrowKind).@"enum".fields.len;
 
 test "fire arrows are the SCARCE ones" {
     try std.testing.expect(FIRE_ARROWS_MAX < ARROWS_MAX and FIRE_ARROWS_MAX > 0);
     const full = Quiver{};
-    for (0..2) |i| {
+    for (0..NARROW) |i| {
         const k: ArrowKind = @enumFromInt(i);
         try std.testing.expectEqual(Quiver.cap(k), full.count(k)); // a fresh quiver IS full of both
     }

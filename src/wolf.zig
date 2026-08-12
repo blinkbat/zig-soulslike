@@ -1114,10 +1114,6 @@ pub const Pack = struct {
         }
     }
 
-    pub fn anyDied(self: *const Pack) bool {
-        return foe.anyDied(self.liveConst());
-    }
-
     pub fn draw(self: *const Pack) void {
         if (!self.ready) return;
         for (self.liveConst()) |*w| w.draw(&self.mesh, self.mat);
@@ -1160,6 +1156,23 @@ test "a spirit dies and stops being a collider before it stops being drawn" {
     // …and `justDied` is a ONE-FRAME flag, not a latch that bills the death every frame after.
     w.update(1.0 / 60.0, mathx.zero3, 100);
     try std.testing.expect(!w.justDied);
+}
+
+test "THE EDGES A BLOW SETS DO NOT SURVIVE THE UPDATE — so they have to be read above it" {
+    // `takeHit` runs with the FIELD's blows and `update` clears every one-frame edge at the top of its body,
+    // so a caller reading these two AFTER `Pack.update` reads false on every frame — which is what left
+    // `wolf_hurt` and `wolf_die` silent. Pinned here rather than in game.zig: the contract is the creature's.
+    var hurt = Wolf.spawn(mathx.zero3, 0);
+    _ = hurt.takeHit(.{ .dmg = 1, .poise = 999 });
+    try std.testing.expect(hurt.yelped);
+    hurt.update(1.0 / 60.0, mathx.zero3, 100);
+    try std.testing.expect(!hurt.yelped);
+
+    var slain = Wolf.spawn(mathx.zero3, 0);
+    _ = slain.takeHit(.{ .dmg = HP * 2 });
+    try std.testing.expect(slain.justDied);
+    slain.update(1.0 / 60.0, mathx.zero3, 100);
+    try std.testing.expect(!slain.justDied);
 }
 
 test "HILDEBRAND'S TWO DIALS ARE THE GAIT — the anchors are the published ones and the blend is continuous" {

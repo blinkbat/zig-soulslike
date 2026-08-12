@@ -2400,7 +2400,7 @@ fn talkShot(g: *Game, name: [:0]const u8, at: rl.Vector3, frames: i32, in: dialo
 
 // THE EDITOR — its whole job is legibility and none of that can be judged from the game shots, so it gets a frame per room: the Props layer at rest, a generator selected (its gizmo plus a marker on every instance it owns — the thing that makes a scatter editable), a Decor belt mid-drag, the Ground layer with soil painted, painted WATER low and overhead, a marquee, the Open dialog, the object viewer's two levels, the Interactables layer and the jukebox.
 /// The editor with the JUKEBOX modal up — the sound rack's own frame. Its own helper because the modal is
-/// opened through the editor's real entry point (`openJukeboxForShot`), never by poking `modal` from here:
+/// opened through the editor's real entry point (`editor.soundsForShot`), never by poking `modal` from here:
 /// the panel reads state that entering sets up.
 fn editorJukeShot(g: *Game, name: [:0]const u8) void {
     g.editor.enter(mathx.ground(0, -66));

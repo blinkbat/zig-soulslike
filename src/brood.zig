@@ -128,7 +128,7 @@ pub const PER_SAC: usize = 1;
 const RESISTS = combat.resists(.{ .fire = -25, .cold = 35, .chaos = 75 });
 /// THE SPIT IS POISON, AND NOW IT MEANS IT (`combat.Status`): the glob deals almost nothing on arrival —
 /// the poise is a caustic lump still rocking you — and what it really costs is `M_SPIT_BUILD` on the meter.
-/// Her POOLS carry the same venom (`SPIT_BUILD_DPS`), because they are the same fluid.
+/// Her POOLS carry the same venom (`ACID_BUILD`), because they are the same fluid.
 pub const M_SPIT_HIT = combat.Hit{ .dmg = 2, .poise = 5 };
 /// WHAT ONE GLOB PUTS ON THE METER — three of them proc, so a mother left to spit at range is a clock you
 /// are running down whether or not you feel the hits.
@@ -380,7 +380,10 @@ pub const Model = struct {
             .pool = poolMesh(),
             .mat = mat,
         };
-        for (0..2) |i| {
+        // …AND THE FILL IS OFF `Role` TOO, not a literal 2. The arrays above are sized off it for the reason
+        // written there, and a loop that stops at 2 leaves a third role's meshes `undefined` — which is that
+        // note's own failure, one line below the note.
+        for (0..ROLE_KIND.len) |i| {
             const sk = skinOf(@enumFromInt(i));
             m.mesh[i] = buildMeshes(sk);
             m.eyes[i] = [2]rl.Mesh{ eyeMesh(sk, EYE), eyeMesh(sk, EYE_HOT) };

@@ -1295,6 +1295,14 @@ const SUMMON_R: f32 = 1.9;
 /// the other side. The creature owns a point; only this file knows what is on the field.
 fn tickPack(g: *Game, dt: f32) void {
     if (g.pack.n == 0) return;
+    // WHAT A BLOW PUT ON IT, READ BEFORE ITS OWN UPDATE WIPES IT. `yelped` and `justDied` are stamped by
+    // `Wolf.takeHit`, which `spiritTakes` calls with the field's blows — and `Wolf.update` clears every
+    // one-frame edge at the top of its body, so read below `pack.update` these two were always false and
+    // neither voice ever sounded. `bit` and `growled` are set INSIDE that update, so they stay after it.
+    for (g.pack.live()) |*w| {
+        if (w.yelped) sfx.world(.wolf_hurt, w.pos);
+        if (w.justDied) sfx.world(.wolf_die, w.pos);
+    }
     for (g.pack.live()) |*w| w.quarry = huntFor(g, w.pos);
     // …AND IT WALKS ON THE SAME EARTH EVERYTHING ELSE DOES. The terrain gate is about FEET and nothing else
     // (`gateTerrain`'s own law, which is why the FOLK go through it carrying no foe contract), so a spirit is
@@ -1309,11 +1317,10 @@ fn tickPack(g: *Game, dt: f32) void {
         // (`groundActor`, beside the hero, the field and the folk) — taken a second time here the spirit climbed
         // onto rising ground at twice `GROUND_RISE_RATE`, which is the one actor in the game not sharing the ease.
         // ITS VOICES, off the one-frame edges the creature sets — the `justDied`/`loosed` idiom, so a beat
-        // cannot sound twice on a long frame or be missed on a short one.
+        // cannot sound twice on a long frame or be missed on a short one. The two a BLOW sets are read above
+        // the update rather than here, for the reason written there.
         if (w.bit) sfx.world(.wolf_bite, w.pos);
         if (w.growled) sfx.world(.wolf_growl, w.pos);
-        if (w.yelped) sfx.world(.wolf_hurt, w.pos);
-        if (w.justDied) sfx.world(.wolf_die, w.pos);
         w.jaw1 = w.jawPoint();
         // THE JAWS GO THROUGH THE SAME SWEPT TEST THE HERO'S SWORD DOES — `pierceFoes` walks every group with
         // a `foe.Blade` and the first body it reaches takes it. A summon that had its own hit path would be a

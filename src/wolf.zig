@@ -66,7 +66,7 @@ const mul3 = mathx.mul3;
 /// the answer is "chunkier" only makes a bigger animal of the same build.
 pub const W: f32 = 1.12;
 
-// THE SKELETON. 26 bones, and the layout is a quadruped's: the forelimbs hang off the CHEST and the hindlimbs
+// THE SKELETON. 27 bones, and the layout is a quadruped's: the forelimbs hang off the CHEST and the hindlimbs
 // off the ROOT, which is the pelvis. `ROOT` carries the whole animal's position and facing exactly as the
 // hero's does.
 pub const ROOT = 0; // pelvis — the body's anchor
@@ -608,6 +608,14 @@ pub const BITE_HIT = combat.Hit{ .dmg = 21, .poise = 16, .stance = 3 };
 /// a spirit that snarled continuously would be the loudest thing in a fight it is only assisting in.
 const GROWL_EVERY: f32 = 2.6;
 
+/// THE DISSOLVE'S RING, named like every sibling's (`archer.NPART`, `frog.FX_MAX`, `shade.PARTS`) rather than
+/// left as a bare literal in the field's own type — a ring overwrites its oldest SILENTLY, so its size is a
+/// thing to argue rather than a number that looked big enough. `foe.dissolveMotes` is the only emitter that
+/// feeds it: `DISSOLVE.rate` 62 a second against a mean life of ~0.72 s (0.55-1.05 for a mote, 0.32-0.65 for
+/// a flake, three in four being motes) stands about 45 at the fade's start, and the rate only falls from
+/// there as `thinning` closes.
+const PARTS = 48;
+
 /// How far down the jaw bone the teeth sit, as a fraction of `W` — where the bite's blade is measured from.
 const JAW_REACH: f32 = 0.10;
 
@@ -674,7 +682,7 @@ pub const Wolf = struct {
     gone: bool = false,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(0xD16E),
-    parts: [48]foe.Particle = [_]foe.Particle{.{}} ** 48,
+    parts: [PARTS]foe.Particle = [_]foe.Particle{.{}} ** PARTS,
     fxHead: usize = 0,
     rest: [N]rl.Vector3 = undefined,
     xf: [N]rl.Matrix = undefined,
@@ -1107,10 +1115,7 @@ pub const Pack = struct {
     }
 
     pub fn anyDied(self: *const Pack) bool {
-        for (self.liveConst()) |*w| {
-            if (w.justDied) return true;
-        }
-        return false;
+        return foe.anyDied(self.liveConst());
     }
 
     pub fn draw(self: *const Pack) void {

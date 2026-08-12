@@ -909,7 +909,14 @@ fn drawCasters(g: *Game, cull: envmod.Cull) void {
         }
     }
     if (cull == .view) g.scene.setFlash(0);
-    inline for (FOE_GROUPS) |f| @field(g, f.field).draw(&g.scene);
+    // LIT PASS ONLY, for the HERO'S OWN REASON eleven lines up — the fold was not brought along when that one
+    // was fixed. In the sun pass every material is on the DEPTH shader, so a group's `setFlash` pushes
+    // `hitFlash` at a shader nothing is drawing with; raylib re-binds the program to write a uniform, so each
+    // one is a `glUseProgram` there and another back on the next draw. Ten groups is ten of those a frame
+    // before anything is even hit, and the brood adds one per sac and per spider on top. The `?*Scene` every
+    // group's `draw` already takes is exactly what the null is for.
+    const flashPass: ?*gfx.Scene = if (cull == .view) &g.scene else null;
+    inline for (FOE_GROUPS) |f| @field(g, f.field).draw(flashPass);
     // The folk go through HERE like anything else standing in the sun, so they cast in the depth pass too.
     g.folk.draw();
     // …AND THE SPIRIT, WHICH IS ONLY HALF HERE. Thinned through the scene's own `fade` uniform with the depth

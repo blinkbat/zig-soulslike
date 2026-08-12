@@ -335,7 +335,7 @@ pub fn bladeColor(rng: *mathx.Rng) rl.Color {
 
 pub fn tuftInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, s: f32) void {
     // SETS ITS OWN MATERIAL, like every other helper here. It was the one that inherited the caller's, and
-    // `propruins.plantedSword` calls it straight after `chipsInto` — so that grass came out tagged `.stone`
+    // `propruins.swordMesh` calls it straight after `chipsInto` — so that grass came out tagged `.stone`
     // and took the stone weathering branch in the shader.
     b.setMat(.plant);
     const nb = 6 + rng.intn(3);

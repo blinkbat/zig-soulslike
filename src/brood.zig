@@ -1929,18 +1929,26 @@ pub const Brood = struct {
         for (&self.pools) |*p| {
             if (p.live) rl.drawMesh(self.model.pool, self.model.mat, p.xform());
         }
+        // THE SACS KEEP THEIR OWN LOOP — a burst one swaps to `wreck`, which is a different mesh than the
+        // fold has a place for — but they take `drawGroup`'s change-tracking with them: `setFlash` is a driver
+        // upload every time it is asked, and a clutch of eight paid eight per pass for the same 0.
+        var lit: f32 = -1; // outside 0..1, so nothing is assumed about the uniform before this group
         for (self.liveSacsConst()) |*s| {
             if (!s.alive()) continue;
-            if (scene) |sc| sc.setFlash(foe.FLASH_GAIN * s.flashFrac());
+            if (scene) |sc| {
+                const want = foe.FLASH_GAIN * s.flashFrac();
+                if (want != lit) {
+                    sc.setFlash(want);
+                    lit = want;
+                }
+            }
             rl.drawMesh(if (s.killed or s.hatched) self.model.wreck else self.model.sac, self.model.mat, s.xform());
         }
-        if (scene) |sc| sc.setFlash(0);
-        for (self.liveConst()) |*s| {
-            if (!s.alive()) continue;
-            if (scene) |sc| sc.setFlash(foe.FLASH_GAIN * s.flashFrac());
-            s.draw(&self.model);
+        if (scene) |sc| {
+            if (lit > 0) sc.setFlash(0);
         }
-        if (scene) |sc| sc.setFlash(0);
+        // …and the SPIDERS are the shared fold outright: this loop was its body with the tracking left out.
+        foe.drawGroup(self.liveConst(), &self.model, scene);
     }
     pub fn drawFx(self: *const Brood) void {
         for (self.liveConst()) |*s| s.drawFx();

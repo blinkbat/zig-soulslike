@@ -1190,7 +1190,8 @@ pub const Hero = struct {
 
     /// THE TREE, STAMPED ON HIM — the sheet, the resistances and the perk block all in one call, because a
     /// caller that set two of the three would leave a bar sized off the sheet he had a node ago. He is made
-    /// WHOLE on the way out, which is honest: nothing may spend a point away from a bonfire (`book.levelUp`),
+    /// WHOLE on the way out, which is honest: nothing may spend a point away from a bonfire (`game.bonfirePick`
+    /// is the one caller of `passivetree.Tree.take`, and the book draws the wheel `spendable = false`),
     /// so the one moment this runs is the one moment a refill is already owed.
     pub fn applyPerks(self: *Hero, b: ptree.Bonus) void {
         self.perk = b;

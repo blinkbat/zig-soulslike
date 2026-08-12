@@ -766,7 +766,7 @@ pub fn runShots(g: *Game) void {
         const f = &g.warren.frogs[0];
         // Hero stands a couple metres off — a scale reference that also keeps the toad inside the sun's shadow ortho box (which tracks the hero).
         g.hero.pos = mathx.ground(2.0, 0.9);
-        g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z); // face the toad at origin
+        g.hero.facing = mathx.headingXZ(mathx.subV(mathx.zero3, g.hero.pos)); // face the toad at origin
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
 
@@ -827,11 +827,11 @@ pub fn runShots(g: *Game) void {
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         stepFoe(f, 8, front);
         g.hero.pos = mathx.ground(1.7, 3.6);
-        g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
+        g.hero.facing = mathx.headingXZ(mathx.subV(mathx.zero3, g.hero.pos));
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
         g.lock = .{ .kind = .toad, .idx = 0 };
-        g.rig.yaw = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
+        g.rig.yaw = mathx.headingXZ(mathx.subV(mathx.zero3, g.hero.pos));
         g.rig.pitch = 0.16;
         g.rig.dist = 5.4;
         g.rig.follow(g.hero.shoulderPoint());
@@ -891,7 +891,7 @@ pub fn runShots(g: *Game) void {
         f.vit.sinceHurt = 0;
         stepFoe(f, 4, front);
         g.hero.pos = mathx.ground(2.4, 4.2);
-        g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
+        g.hero.facing = mathx.headingXZ(mathx.subV(mathx.zero3, g.hero.pos));
         g.hero.vit.hp = g.hero.vit.hpMax * 0.55;
         g.hero.stam.spend(combat.STAM_ROLL + combat.STAM_HEAVY);
         g.hero.souls.gain(ogremod.SOULS + 2 * frogmod.SOULS);
@@ -977,11 +977,11 @@ pub fn runShots(g: *Game) void {
         var lk: i32 = 0;
         while (lk < 24) : (lk += 1) _ = a.update(dt, mathx.ground(0, 60), game.PLAY_HALF, .{}); // settle to idle
         g.hero.pos = mathx.ground(1.8, 6.0);
-        g.hero.facing = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
+        g.hero.facing = mathx.headingXZ(mathx.subV(mathx.zero3, g.hero.pos));
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
         g.lock = .{ .kind = .archer, .idx = 0 };
-        g.rig.yaw = std.math.atan2(-g.hero.pos.x, -g.hero.pos.z);
+        g.rig.yaw = mathx.headingXZ(mathx.subV(mathx.zero3, g.hero.pos));
         g.rig.pitch = 0.16;
         g.rig.dist = 6.2;
         g.rig.follow(g.hero.shoulderPoint());
@@ -1038,7 +1038,7 @@ pub fn runShots(g: *Game) void {
         }
         // Scale — the hero standing clearly to the ogre's side (it looms ~1.9x over him).
         g.hero.pos = mathx.ground(oc.x + 4.8, oc.z + 1.4);
-        g.hero.facing = std.math.atan2(oc.x - g.hero.pos.x, oc.z - g.hero.pos.z); // face the ogre
+        g.hero.facing = mathx.headingXZ(mathx.subV(oc, g.hero.pos)); // face the ogre
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
         shootFoe(g, o, "shots/48_ogre_scale.png", 30, 0.16, 15.5);
@@ -1511,7 +1511,7 @@ fn broodShots(g: *Game) void {
     shootFoe(g, m, "shots/107c_brood_mother_side.png", 300, 0.10, 8.5);
 
     g.hero.pos = mathx.ground(bc.x + 3.4, bc.z + 1.2);
-    g.hero.facing = std.math.atan2(bc.x - g.hero.pos.x, bc.z - g.hero.pos.z);
+    g.hero.facing = mathx.headingXZ(mathx.subV(bc, g.hero.pos));
     g.hero.update(SHOT_DT, 0, 0, null);
     g.hero.pose();
     shootFoe(g, m, "shots/108_brood_scale.png", 30, 0.14, 11.0);

@@ -18,6 +18,7 @@ const shademod = @import("shade.zig");
 const leechmod = @import("leechfly.zig");
 const rootedmod = @import("rooted.zig");
 const npcmod = @import("npc.zig");
+const wolfmod = @import("wolf.zig");
 const dialogmod = @import("dialog.zig");
 const mathx = @import("mathx.zig");
 const props = @import("props.zig");
@@ -1454,6 +1455,7 @@ pub fn runShots(g: *Game) void {
     chestShots(g);
     folkShots(g);
     soundFilterShots(g);
+    wolfShots(g);
     editorShots(g);
     editorGapShots(g);
 }
@@ -2204,7 +2206,7 @@ fn chestShots(g: *Game) void {
     // THE CHARACTER BOOK — a frame per page, and the pages are the whole reason it exists, so each one is
     // staged on the state that has something to show: a picker OPEN over its delta column, a bag with
     // enough in it to fill a grid, an attribute that owns a bar.
-    for ([_]item.Kind{ .mushroom_jerky, .bloodgrass, .kobold_fang, .rune_arc, .golden_seed, .smithing_stone, .iron_key, .fire_tallow, .thundercrock, .cracked_rune, .toadflesh_broth, .fang_dirk, .grave_warbow, .quilted_gambeson }) |k| {
+    for ([_]item.Kind{ .mushroom_jerky, .bloodgrass, .kobold_fang, .rune_arc, .golden_seed, .smithing_stone, .iron_key, .fire_tallow, .thundercrock, .cracked_rune, .toadflesh_broth, .fang_dirk, .grave_warbow, .quilted_gambeson, .spirit_scroll_wolf }) |k| {
         if (g.bag.count(k) == 0) g.bag.add(k, if (k == .bloodgrass) 12 else 3);
     }
     g.menu.onStartButton();
@@ -2646,6 +2648,58 @@ fn bookShot(g: *Game, name: [:0]const u8, page: bookmod.Page, cursor: usize, pic
     drawScene(g);
     g.menu.draw(&g.retro, game.bookView(g), .{ .hero = &g.hero, .scene = &g.scene });
     snap(name);
+}
+
+/// THE BELL AND THE SPIRIT.
+///
+/// **A GAIT IS JUDGED FROM THE SIDE** — the whole of a stride is fore-and-aft travel, and head-on it
+/// foreshortens to a creature bobbing on the spot. So the trot is shot at yaw 90 with the sun over the
+/// shoulder, at four phases a quarter-cycle apart: that is one full stride, and the diagonal pairs are what
+/// has to read (a trot is `lag` 0.50, so fore-right lands with hind-left).
+fn wolfShots(g: *Game) void {
+    g.hero.arm = .bell;
+    standHero(g, 6.0, 4.0, std.math.pi * 0.5);
+    plantHeroForShot(g);
+    // THE BELL IN HIS HAND, close and at the sun's own bearing — a 9 cm object at 4 m is the thin-geometry
+    // rule's problem, so it is framed tight or it is not being looked at.
+    const chest = v3(g.hero.pos.x, game.heroCenterY(g), g.hero.pos.z);
+    shootPortrait(g, "shots/130_bell_carry.png", chest, 53, 0.06, 2.2);
+    // …and the RINGING, at the note itself: the arm up, the wrist through its first throw.
+    game.ringForShot(g, heromod.RING_AT);
+    shootPortrait(g, "shots/131_bell_ring.png", chest, 53, 0.06, 2.4);
+
+    const at = mathx.ground(9.0, 4.0);
+    // FACING ACROSS THE LENS, not down it. A quadruped's whole stride is fore-and-aft, so a creature pointed
+    // at a camera at the same bearing foreshortens to a body bobbing on the spot with four sticks under it —
+    // and every angle the IK solves is in the plane you cannot see. The gait shots are yaw 90, so it stands
+    // at 0: ninety degrees apart is the only framing this animal can be judged in.
+    game.callWolfForShot(g, at, 0);
+    // STANDING, first: the rest pose has to hold the animal up on four straight legs before any gait is worth
+    // looking at, and a rig that sags at zero speed sags at every other one.
+    game.poseWolfForShot(g, 0, 0);
+    shootAt(g, "shots/132_wolf_stand.png", at, 53, 0.10, 3.4);
+    shootAt(g, "shots/133_wolf_stand_side.png", at, 90, 0.06, 3.2);
+    // …and one full stride of the TROT, quarter by quarter.
+    const phases = [_]f32{ 0.0, 0.25, 0.5, 0.75 };
+    const names = [_][:0]const u8{
+        "shots/134a_wolf_trot_q0.png",
+        "shots/134b_wolf_trot_q1.png",
+        "shots/134c_wolf_trot_q2.png",
+        "shots/134d_wolf_trot_q3.png",
+    };
+    for (phases, names) |ph, nm| {
+        game.poseWolfForShot(g, wolfmod.TROT_SPEED, ph);
+        shootAt(g, nm, at, 90, 0.05, 3.4);
+    }
+    // The GALLOP is a different creature — duty factor under 0.5, so there are frames with nothing on the
+    // ground at all, and the spine bows once a stride. Shot at the phase the bow is deepest.
+    game.poseWolfForShot(g, wolfmod.GALLOP_SPEED, 0.25);
+    shootAt(g, "shots/135_wolf_gallop.png", at, 90, 0.05, 3.8);
+    // …and its HEAD, which is where a wolf is or is not a wolf: the ears, the stop, the blunt muzzle.
+    game.poseWolfForShot(g, 0, 0);
+    shootPortrait(g, "shots/136_wolf_head.png", mathx.addV(at, v3(0, wolfmod.W * 1.0, 0)), 40, 0.02, 1.5);
+    g.pack.reset();
+    g.hero.arm = .sword;
 }
 
 /// Stand the hero ON the ground, with no easing — the harness has no frame loop to ease across, and a hero left at the datum on a sculpted map is photographed knee-deep in his own hill.

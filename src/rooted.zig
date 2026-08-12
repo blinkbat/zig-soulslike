@@ -266,6 +266,8 @@ pub const Rooted = struct {
     flash: f32 = 0,
     shove: rl.Vector3 = mathx.zero3, // read by `foe.wounded` and never spent: it is rooted
     justDied: bool = false,
+    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
+    threat: foe.Threat = .{},
     fade: f32 = 0,
     gone: bool = false,
 
@@ -928,10 +930,10 @@ pub const Grove = struct {
     ) ?foe.Blow {
         var blow: ?foe.Blow = null;
         for (self.live()) |*t| {
-            switch (t.update(dt, hero, bounds, blade)) {
+            switch (t.update(dt, t.threat.aim(hero), bounds, blade)) {
                 .none => {},
                 .struck => |s| {
-                    foe.worseBlow(&blow, s.hit, t.pos);
+                    foe.worseBlow(&blow, s.hit, t.pos, t.threat.on);
                     // The BLOW goes up as the return value like every other group's; the hook hands over
                     // only what is its own — where it pulls from and how far.
                     if (s.pull > 0) yank(ctx, t.pos, s.pull);

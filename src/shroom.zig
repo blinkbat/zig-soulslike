@@ -208,6 +208,8 @@ pub const Shroom = struct {
     heroHit: ?combat.Hit = null,
     burstAt: ?rl.Vector3 = null, // one-frame, like `justDied`: the cluster reads it after update
     justDied: bool = false,
+    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
+    threat: foe.Threat = .{},
     fade: f32 = 0,
     gone: bool = false,
 
@@ -725,11 +727,11 @@ pub const Cluster = struct {
     pub fn update(self: *Cluster, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
         var blow: ?foe.Blow = null;
         for (self.live()) |*s| {
-            switch (s.update(dt, hero, bounds, blade)) {
+            switch (s.update(dt, s.threat.aim(hero), bounds, blade)) {
                 .none => {},
                 .burst => |b| {
                     self.spawnCloud(b.at);
-                    if (b.hit) |h| foe.worseBlow(&blow, h, s.pos);
+                    if (b.hit) |h| foe.worseBlow(&blow, h, s.pos, s.threat.on);
                 },
             }
         }

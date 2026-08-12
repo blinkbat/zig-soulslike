@@ -431,6 +431,8 @@ pub const Ogre = struct {
     /// sixty times a second for the whole stagger.
     parried: bool = false,
     justDied: bool = false,
+    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
+    threat: foe.Threat = .{},
     fade: f32 = 0,
     gone: bool = false,
 

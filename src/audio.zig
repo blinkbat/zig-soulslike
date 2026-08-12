@@ -562,6 +562,15 @@ pub const Id = enum {
     birdsong,
     owl, // hoo … hu-hoooo, from somewhere in the ruins
     crickets, // the insect chirr in the grass — a BED, and the only ambient voice rendered bright
+    // THE SUMMONED WOLF. It HAS a throat, unlike the shade — it growls and it yelps like an animal, because
+    // it is one. What says it is a spirit is the TAIL on every voice: each one ends in a ring that no chest
+    // could make and takes far too long to die, as though the sound carried on somewhere else. Author the
+    // larynx honestly and let the reverb be the only unearthly thing, or it stops reading as a wolf at all.
+    wolf_howl, // the call — what answers the bell
+    wolf_growl, // it has something in its sights
+    wolf_bite, // the jaws arriving at the end of the hop
+    wolf_hurt,
+    wolf_die, // …and the thread letting go
 };
 const NV = @typeInfo(Id).@"enum".fields.len;
 
@@ -1510,6 +1519,78 @@ fn mkKoboldBite(r: *Rack) void {
     r.master(1.3, 2200);
 }
 
+// THE WOLF'S FIVE. A real larynx — `body` for the chest and `growl` for the cords, the kobold's own kit —
+// with one thing added to every voice: a long `ring` tail well under the note that keeps sounding after the
+// animal has stopped. That tail is the ONLY unearthly thing in any of them, and it is doing all the work. The
+// shade got the opposite treatment (air and ring and no throat at all) because a shade has no throat; this
+// creature does, and a wolf sung through a shade's recipe stops being a wolf.
+
+/// THE CALL. Rising into a held note and falling off it — a real howl is one long glide, not a siren, so the
+/// pitch travels the whole way and never sits still. Two voices a beat apart and slightly detuned: a lone
+/// wolf sounds like more than one animal and that is the whole hair-raising trick of it.
+fn mkWolfHowl(r: *Rack) void {
+    r.body(0.0, 0.90, 150, 132, 0.42, 1.1); // the chest under it, barely moving
+    r.growl(0.0, 0.34, 190, 420, 0.62, 0.10, 0.03); // the climb…
+    r.growl(0.26, 0.72, 430, 396, 0.80, 0.07, 0.02); // …the HOLD, which is what a howl actually is…
+    r.growl(0.86, 0.62, 392, 208, 0.58, 0.12, 0.05); // …and the long fall off the end
+    // The second animal that is not there — a fifth above, quieter, and late.
+    r.growl(0.12, 0.68, 596, 640, 0.26, 0.09, 0.04);
+    r.growl(0.74, 0.52, 628, 320, 0.20, 0.13, 0.06);
+    r.air(0.0, 1.30, 0.10, 700, 380, 0.10, 0.9); // breath through the whole of it
+    // THE TAIL. Long, low and tuned OFF the note so it beats against it — this is the spirit, and nothing else
+    // in the voice is.
+    r.ring(0.30, 1.45, 214, 0.22, 0.55, 4);
+    r.ring(0.55, 1.30, 321, 0.13, 0.60, 3);
+    r.master(1.25, 2100);
+}
+
+/// A warning, low in the chest and nearly all cords. Short, because a growl that runs long turns into a note.
+fn mkWolfGrowl(r: *Rack) void {
+    r.body(0.0, 0.42, 96, 84, 0.62, 2.0);
+    r.growl(0.0, 0.46, 118, 104, 0.70, 0.34, 0.26); // rough: the modulation IS the growl
+    r.growl(0.04, 0.40, 84, 76, 0.44, 0.42, 0.34);
+    r.grit(0.0, 0.38, 0.10, 620, 0.55, 2.2);
+    r.ring(0.10, 0.60, 168, 0.07, 1.1, 3);
+    r.master(1.20, 1500);
+}
+
+/// THE JAWS AT THE END OF THE HOP. A snap with a whole body behind it — the kobold's bite has the clack and
+/// the click, and this one adds the MASS the leap put into it.
+fn mkWolfBite(r: *Rack) void {
+    r.air(0.0, 0.10, 0.34, 820, 1500, 0.36, 3.2); // the lunge going past
+    r.tick(0.07, 0.44, 2200); // teeth meeting
+    r.ring(0.07, 0.09, 540, 0.17, 8.0, 2);
+    r.body(0.06, 0.15, 112, 62, 0.72, 3.8); // …and it is a big animal arriving, not a snap in the air
+    r.growl(0.0, 0.20, 152, 112, 0.52, 0.26, 0.14);
+    r.grit(0.06, 0.10, 0.12, 900, 0.45, 3.0);
+    r.ring(0.10, 0.72, 196, 0.06, 1.0, 3);
+    r.master(1.30, 2200);
+}
+
+fn mkWolfHurt(r: *Rack) void {
+    // A yelp: straight up and straight back down, the kobold's shape on a bigger animal.
+    r.body(0.0, 0.16, 104, 58, 0.62, 4.0);
+    r.growl(0.0, 0.17, 176, 288, 0.88, 0.15, 0.07);
+    r.growl(0.06, 0.22, 150, 92, 0.46, 0.26, 0.22);
+    r.air(0.0, 0.12, 0.18, 1000, 440, 0.26, 2.8);
+    r.ring(0.06, 0.85, 182, 0.09, 0.95, 3);
+    r.master(1.28, 2000);
+}
+
+/// …AND THE THREAD LETTING GO. It starts as an animal dying and ends as something that was never quite here —
+/// the growl thins out and the tail outlives it by a second, which is the one death in this game that fades
+/// UP into ring rather than down into grit.
+fn mkWolfDie(r: *Rack) void {
+    r.growl(0.0, 0.20, 190, 300, 0.86, 0.17, 0.08);
+    r.growl(0.10, 0.52, 168, 74, 0.60, 0.30, 0.16);
+    r.body(0.14, 0.34, 92, 34, 0.42, 2.6);
+    r.grit(0.22, 0.30, 0.18, 900, 0.60, 2.4);
+    r.ring(0.24, 1.60, 208, 0.20, 0.42, 4);
+    r.ring(0.42, 1.40, 312, 0.14, 0.48, 3);
+    r.ring(0.60, 1.20, 415, 0.08, 0.55, 2);
+    r.master(1.30, 2000);
+}
+
 fn mkKoboldHurt(r: *Rack) void {
     // A yelp — up, then straight down.
     r.body(0.0, 0.13, 120, 66, 0.6, 4.2);
@@ -2080,6 +2161,14 @@ const BANK = [NV]Row{
     .{ .id = .owl, .make = mkOwl, .gain = 0.24, .mix = .ambience, .jit = 0.08, .vjit = 0.14, .vars = 3, .poly = 2, .reach = 170 },
     // …and the chirr under all of it is the quietest thing in the bank, quieter again (owner's call).
     .{ .id = .crickets, .make = mkCrickets, .gain = 0.005, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
+    // THE WOLF. It carries FURTHER than a kobold and is quieter up close: this is a thing on your side, so it
+    // must never fight the creature it is biting for the frame. The HOWL is the exception and it is allowed to
+    // be heard — it is the sound of thirty focus being spent, and the player has to know it landed.
+    .{ .id = .wolf_howl, .make = mkWolfHowl, .gain = battle(0.78), .mix = .combat, .jit = 0.05, .vjit = 0.09, .vars = 3, .poly = 1, .reach = 150 },
+    .{ .id = .wolf_growl, .make = mkWolfGrowl, .gain = battle(0.30), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 2, .reach = 46 },
+    .{ .id = .wolf_bite, .make = mkWolfBite, .gain = battle(0.52), .mix = .combat, .jit = 0.16, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 52 },
+    .{ .id = .wolf_hurt, .make = mkWolfHurt, .gain = battle(0.54), .mix = .combat, .jit = 0.20, .vjit = 0.26, .vars = 5, .poly = 3, .reach = 56 },
+    .{ .id = .wolf_die, .make = mkWolfDie, .gain = battle(0.70), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 1, .reach = 90 },
 };
 
 fn seconds(id: Id) f32 {
@@ -2091,6 +2180,10 @@ fn seconds(id: Id) f32 {
         .ogre_die => 2.2,
         .respawn => 1.4,
         .bone_die, .toad_die, .ogre_roar => 1.1,
+        // THE HOWL AND THE SPIRIT'S DEATH both outlive their own animal — the ring tail is the point of them,
+        // and cut to a combat length it is the tail that goes.
+        .wolf_howl => 2.1,
+        .wolf_die => 2.0,
         .kobold_cast => 1.35,
         .kobold_heal => 1.95, // the chord has to finish opening, and its room has to finish emptying
         .kobold_die => 1.15,

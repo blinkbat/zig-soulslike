@@ -469,6 +469,58 @@ pub const Focus = struct {
     }
 };
 
+// THE BELL — ER's spirit ashes, and the third thing in the game that spends FP.
+//
+// **WHAT HE CAN CALL IS WHAT HE IS CARRYING.** A spirit is not learned and not equipped: the SCROLL is in the
+// bag or it is not, and the bell reads the bag every time it is rung (`spiritOf`, the `flaskOf` shape one layer
+// up). So finding one is the whole of unlocking it, and losing one takes it back with no second piece of state
+// to keep in step.
+//
+// **AND ONE STANDS AT A TIME** (`Bond`). The cap is a property of the BOND and not of the wolf, so the second
+// spirit is a row in these two switches and nothing else.
+
+/// Every spirit a scroll can carry. APPENDED never inserted, `FoeKind`'s rule — a saved bag is a list of
+/// ordinals, and inserting here would turn every scroll already in the world into a different animal.
+pub const SpiritKind = enum { wolf };
+
+/// The spirit a scroll IS, or null. `item.zig` cannot answer this — it imports nothing but std, and this is
+/// the same split `flaskOf` keeps: the ITEM is a fact about the bag, the KIND is a fact about the mechanic.
+pub fn spiritOf(k: item.Kind) ?SpiritKind {
+    return switch (k) {
+        .spirit_scroll_wolf => .wolf,
+        else => null,
+    };
+}
+
+/// The scroll that calls one — `spiritOf` read the other way, so "has he got the wolf?" is one bag lookup and
+/// never a walk over every kind.
+pub fn scrollFor(s: SpiritKind) item.Kind {
+    return switch (s) {
+        .wolf => .spirit_scroll_wolf,
+    };
+}
+
+/// WHAT A RINGING COSTS. Dearer than the roots' 18 and by some way the biggest single bill in the game: a
+/// spirit is a second body on the field for as long as it can hold one, where a sorcery is spent the moment it
+/// lands. Two calls to a bonfire's worth of focus, and the flask buys back one of them.
+pub fn spiritFp(s: SpiritKind) f32 {
+    return switch (s) {
+        .wolf => 30.0,
+    };
+}
+
+/// …AND IT HAS A NAME, not a species. A spirit you can call by name is a companion; "Dire Wolf" is a bestiary
+/// entry. (Hildebrand is the man whose two-dial gait diagram the animal's own legs run on — `wolf.zig`.)
+pub fn spiritName(s: SpiritKind) [:0]const u8 {
+    return switch (s) {
+        .wolf => "Hildebrand",
+    };
+}
+
+/// HOW MANY SPIRITS MAY STAND AT ONCE. One, and it is written here rather than as a `?Wolf` somewhere so that
+/// the second spirit is a bigger number and not a second field.
+pub const SUMMON_MAX: usize = 1;
+
 // The wand's one spell, and the first thing in the game that spends FP.
 
 /// WHAT THE BOLT COSTS, and the pool is the only thing rationing it — a cast bills NO stamina (owner's call),

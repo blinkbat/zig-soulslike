@@ -345,6 +345,29 @@ const TURN_TO_SHOT = 11.0;
 
 const CAST_DUR: f32 = 0.66; // s
 const CAST_AT: f32 = 0.46;
+
+// THE RINGING. Longer than a cast and by a distance the most committed thing he can do standing up — which is
+// the point: calling a second body onto the field is not a move you slip between two of a creature's swings.
+const RING_DUR: f32 = 1.05;
+/// WHERE THE NOTE IS, and it is EARLY. The spirit is owed at the strike, and the rest of the animation is the
+/// arm settling — so a player who read the opening correctly gets his wolf before the thing reaches him rather
+/// than a third of a second after. The tail is still committed; that is what he is paying.
+pub const RING_AT: f32 = 0.38;
+/// deg the shoulder lifts the bell to shoulder height, and the elbow's fold under it.
+const RING_SH_FWD = 74.0;
+const RING_SH_ABD = 26.0;
+const RING_ELBOW = 62.0;
+/// THE FLICK. A bell is not swung, it is SHAKEN: the wrist snaps through a small arc twice, and the second
+/// throw is smaller than the first — a mass in motion overshoots its rest and settles back onto it.
+const RING_FLICK = 46.0; // deg of wrist roll at the peak of the first throw
+const RING_FLICK_RATE = 13.0; // rad/s through the shake — fast, because the note is an IMPACT
+/// The throw STARTS before the note lands: the arm is already moving when the clapper arrives, or the sound
+/// comes off a wrist that has not gone anywhere. Sized so the flick's first peak sits on `RING_AT`.
+const RING_FLICK_LEAD: f32 = 0.10; // in u
+const RING_DECAY: f32 = 4.2; // how fast the shake dies — two throws' worth and then still
+const RING_RECOV_A: f32 = 0.66; // where the arm starts coming back down
+const RING_LEAN = 7.0; // deg the trunk gives back against the raised arm — the waist, never the root
+const RING_HEAD = -9.0; // …and the head coming UP to watch for what he called
 pub const BOLT_SPEED: f32 = 30.0;
 pub const BOLT_REACH: f32 = 55.0;
 
@@ -372,6 +395,33 @@ const CAST_HEAD = 9.0;
 const CAST_DIP = 0.020 * H;
 const CAST_WIND_B = 0.32;
 const CAST_RECOV_A = 0.70;
+
+// THE SUMMONING BELL — right hand, and the one armament that does not swing.
+//
+// **IT HANGS, SO IT IS NEARLY PLUMB.** The sword leads 34° forward of the forearm (`GRIP_PITCH`) because a
+// blade is AIMED; a bell is carried, and gravity has the only say in where its mouth points. 12° is what is
+// left of the fist's own cant after the wrist gives way to the weight.
+const BELL_PITCH = 12.0;
+const BELL_CA = @cos(radians(BELL_PITCH));
+const BELL_SA = @sin(radians(BELL_PITCH));
+/// A point `t` (units of H) down the bell's axis from the fist centre — `bladeAt`'s shape on its own cant.
+fn bellAt(t: f32) rl.Vector3 {
+    return v3(-BELL_SA * t * H * 0.35, FIST_Y - BELL_CA * t * H, FIST_Z + BELL_SA * t * H);
+}
+const BELL_GRIP_T0 = -0.040; // the butt of the handle, standing proud above the fist
+const BELL_CROWN_T = 0.052; // where the handle meets the metal
+const BELL_MOUTH_T = 0.107; // …and the rim, 10 cm of bronze below it
+const BELL_MOUTH_R = 0.026 * H; // ~9.4 cm across the mouth: a hand bell, not a chapel one
+const BELL_WALL = 0.0035 * H;
+/// BRONZE, and deliberately off `BRASS` (the world's fittings) and off `STEEL`: this is the only cast metal
+/// the hero carries and it wants to read as a different alloy from his own guard. Dark, for `WAND_FERRULE`'s
+/// reason — a small strongly-curved revolved surface takes the sun over its whole visible face.
+const BELL_BRONZE = rgba(78, 58, 30, 255);
+const BELL_BRONZE_LT = rgba(104, 80, 42, 255);
+/// The inside of the mouth, which is a HOLE: near-black is free here for `npc.HOOD_IN`'s reason — it cannot
+/// blow out, and the contrast against the rim is the whole read of a bell being hollow.
+const BELL_BORE = rgba(14, 11, 8, 255);
+const BELL_HANDLE = rgba(46, 34, 26, 255);
 
 /// THE WAND ITSELF — a knotted rod with a bound grip and a chaos-lit stone in its head. Authored in the
 /// LEFT WRIST's frame extending out of the fist along −Y, exactly as the sword is off the right, so the
@@ -870,7 +920,14 @@ fn burstFrame(axis: rl.Vector3) struct { side: rl.Vector3, up: rl.Vector3 } {
 
 pub const Attack = enum { light, heavy };
 
-pub const Arm = enum { sword, bow };
+/// THE RIGHT HAND'S ARMAMENT. APPENDED never inserted (`wf.FoeKind`'s rule): the book's picker is walked off
+/// this enum's order and a saved slot is an ordinal.
+///
+/// **THE BELL IS NOT A WEAPON AND THAT IS ITS PRICE** (owner's call). It has no light and no heavy: R1 rings
+/// it and R2 does nothing, so the whole time it is in his hand the only answer he has to something walking at
+/// him is the shield, the roll and whatever he already called. Everything downstream asks `swings()` rather
+/// than testing this enum, or "can he attack" becomes a list of arms to keep in step.
+pub const Arm = enum { sword, bow, bell };
 
 /// THE LEFT HAND'S ARMAMENT — the wand is the shield's ALTERNATIVE, not a third thing he carries.
 pub const Off = enum { shield, wand };
@@ -887,6 +944,9 @@ pub const Hero = struct {
     shield: rl.Mesh,
     /// …nor is THE WAND. Same route (the left wrist) but no fit matrix: it is authored IN that wrist's frame.
     wand: rl.Mesh,
+    /// …and THE BELL, off the HELD slot where the bow and the sword go, for the same reason: it is what is in
+    /// the right hand, and the pose already carries that bone.
+    bell: rl.Mesh,
     /// THE TENDRILS, authored rising out of the earth at the origin — `ROOT_FANS` of them per site through a
     /// seeded transform. THREE meshes, because one shape yaw-rotated seven times is a periodic pattern.
     roots: [ROOT_KINDS]rl.Mesh,
@@ -1018,8 +1078,20 @@ pub const Hero = struct {
     castAlt: bool = false,
     /// Counted like `swings`/`shots`: a chained cast clears `casting` and sets it again inside one frame.
     casts: u32 = 0,
+    rings: u32 = 0,
     /// ONE FRAME, the frame the bolt leaves — game.zig throws it from `wandTipWorld()`.
     thrown: bool = false,
+    /// WHICH SPIRIT THE BELL IS SET TO — `spell`'s twin on the other hand, and read by `ringCost` exactly as
+    /// `spell` is read by `castCost`. Whether he actually HOLDS its scroll is a question about the BAG, so it
+    /// is asked in game.zig where the bag is (`game.ringBell`); the hero only ever knows which one is chosen.
+    spirit: combat.SpiritKind = .wolf,
+    /// A ringing is running — COMMITTED, and it lives in `committed()` beside the cast for the same reason.
+    ringing: bool = false,
+    ringT: f32 = 0,
+    /// ONE FRAME, the frame the bell actually SOUNDS and the spirit is owed — `thrown`'s rule exactly, cleared
+    /// in the prologue. game.zig spawns off this rather than off `ringing` going false, so the beat lands on
+    /// the note and not on the arm coming down after it.
+    rang: bool = false,
     /// WHERE THE GROUND IS SPLIT, and for how much longer — a ring, so a second cast leaves two holes rather than teleporting the first.
     rootSites: [ROOT_SITES]RootSite = [_]RootSite{.{}} ** ROOT_SITES,
     rootHead: usize = 0,
@@ -1067,6 +1139,7 @@ pub const Hero = struct {
             .bowNock = archer.nockArrowMesh(),
             .shield = shieldMesh(),
             .wand = wandMesh(),
+            .bell = bellMesh(),
             .roots = blk: {
                 var out: [ROOT_KINDS]rl.Mesh = undefined;
                 for (&out, 0..) |*m, i| m.* = rootTendrilMesh(@intCast(i));
@@ -1137,6 +1210,7 @@ pub const Hero = struct {
         // The one-frame loose flag is cleared HERE, not in `updateShot`: a frame long enough to cross both the release knot and the end of the shot sets it and drops `shooting` in the same call, and nothing would ever run `updateShot` again to clear it — so game.zig loosed a fresh shaft every frame after. Every advance path passes through this prologue.
         self.loosed = false;
         self.thrown = false; // the cast's own one-frame edge, cleared here for the reason `loosed` is
+        self.rang = false; // …and the bell's note
         self.landed = false; // …and the touchdown's, for that same reason
         self.elapsed += dt;
         self.trail.age(dt);
@@ -1302,15 +1376,35 @@ pub const Hero = struct {
     /// the air, a sprint that stops when his feet do, and an attack pressed mid-flight BUFFERED into the one
     /// slot and fired the frame he lands (`tickAir` → `fireQueued`), which is what ER does with it.
     pub fn committed(self: *const Hero) bool {
-        return self.jumping or self.rolling or self.attacking or self.drinking or self.shooting or self.casting or self.parrying;
+        return self.jumping or self.rolling or self.attacking or self.drinking or self.shooting or self.casting or self.parrying or self.ringing;
     }
 
     pub fn bowOut(self: *const Hero) bool {
         return self.arm == .bow;
     }
 
+    pub fn bellOut(self: *const Hero) bool {
+        return self.arm == .bell;
+    }
+
+    /// DOES WHAT IS IN HIS RIGHT HAND SWING? Asked instead of `arm != .bell` at every site that gates an
+    /// attack, for `Hit.heavy`'s reason: one question about the ARMAMENT, so a fourth one that also does not
+    /// swing is a row in this switch and no edit anywhere else. EXHAUSTIVE on purpose.
+    /// (`swings` without the prefix is the swing COUNTER, a field — this is the armament's own question.)
+    pub fn armSwings(self: *const Hero) bool {
+        return switch (self.arm) {
+            .sword => true,
+            // The bow's R1/R2 are the quick and the aimed shot — they are not SWINGS, and the loose is routed
+            // on `bowOut` at the input. What this answers is whether the blade capsule can ever go live.
+            .bow => false,
+            .bell => false,
+        };
+    }
+
     /// IS THE LEFT-HAND ARMAMENT ACTUALLY IN HIS HAND? Not the same question as which one is EQUIPPED: a raised
     /// bow takes that hand to the string. Asked here rather than cleared on the swap, so it cannot go stale.
+    /// THE BELL LEAVES IT FREE — it is rung one-handed, so the shield stays up behind it and the wand can still
+    /// be the thing in the other hand.
     pub fn offInHand(self: *const Hero) bool {
         return self.arm != .bow;
     }
@@ -1327,10 +1421,16 @@ pub const Hero = struct {
         return true;
     }
 
-    /// D-pad Right.
+    /// D-pad Right. A CYCLE and not a toggle since the bell landed — written as an exhaustive switch (the
+    /// `Quiver.cycle` shape) so a fourth armament is a row here rather than a `+ 1 % N` that silently keeps
+    /// working while meaning something else.
     pub fn swapArm(self: *Hero) bool {
         if (self.committed() or self.staggered() or self.dead or self.resting) return false;
-        self.arm = if (self.arm == .bow) .sword else .bow;
+        self.arm = switch (self.arm) {
+            .sword => .bow,
+            .bow => .bell,
+            .bell => .sword,
+        };
         self.drawAmt = 0;
         self.startXfade();
         return true;
@@ -1442,14 +1542,19 @@ pub const Hero = struct {
         self.fpRefused = combat.STAM_REFUSE_FLASH;
     }
 
+
     pub fn setGuard(self: *Hero, want: bool) void {
         self.guarding = want and self.canGuard();
     }
 
     /// IS THE SHIELD ARM FREE TO DO ANYTHING AT ALL — everything the guard asks BAR the stamina, because that is
     /// the one clause the parry answers differently: a press has to say NO out loud, where the guard stays down.
+    /// …and it asks `offInHand`, NOT `arm == .sword`. Those two were the same sentence while the bow was the
+    /// only other armament, and the bell is one-handed: what takes the boards off his arm is a hand going to a
+    /// STRING, not a hand being busy. The owner's price for the bell is having no attack, and only that — he
+    /// keeps the guard and he keeps the parry, which is the whole of what he has left while a spirit is coming.
     fn shieldArm(self: *const Hero) bool {
-        return self.arm == .sword and self.off == .shield and !self.committed() and !self.staggered() and !self.dead and !self.sprinting and !self.resting;
+        return self.offInHand() and self.off == .shield and !self.committed() and !self.staggered() and !self.dead and !self.sprinting and !self.resting;
     }
 
     /// AN EMPTY BAR CANNOT HOLD A SHIELD UP — and neither can a hand with a wand in it. There is one left hand.
@@ -1637,6 +1742,70 @@ pub const Hero = struct {
             self.startXfade();
             self.fireQueued();
         }
+    }
+
+    /// IS THE BELL FREE TO BE RUNG — `canCast`'s clause list on the other hand. It asks nothing about the bag
+    /// or about what is already standing: those are the field's business and game.zig owns them.
+    pub fn canRing(self: *const Hero) bool {
+        return self.bellOut() and !self.committed() and !self.staggered() and !self.dead and
+            !self.resting and !self.sprinting;
+    }
+
+    /// WHAT A RINGING WOULD BILL — `castCost`'s twin, through the same perk so a Focus build pays less for
+    /// both. The HUD's "could he?" and the ring itself ask this one function.
+    pub fn ringCost(self: *const Hero) f32 {
+        return combat.spiritFp(self.spirit) * self.perk.spellCost;
+    }
+
+    /// R1 with the bell out, PRESSED — committed, so an edge. Reports whether one STARTED, since the caller's
+    /// voice must not sound for a ring the pool refused.
+    pub fn requestRing(self: *Hero) bool {
+        if (!self.canRing()) return false;
+        // PAY OR RING NOTHING (`Focus.spend`), and the refusal lights the FP bar — the cast's rule, and its
+        // reason: under the zero-input-lag law a press that shows nothing is a press that was dropped.
+        if (!self.fp.spend(self.ringCost())) {
+            self.refuseFp();
+            return false;
+        }
+        self.ringing = true;
+        self.ringT = 0;
+        self.rang = false;
+        self.rings +%= 1;
+        self.startXfade();
+        return true;
+    }
+
+    /// Call in place of move/attack while `ringing`. PLANTED, like the cast: calling something is a standing job.
+    pub fn updateRing(self: *Hero, dt: f32, faceYaw: ?f32) void {
+        self.tickClocks(dt); // clears `rang`
+        self.speed = 0;
+        self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
+        if (faceYaw) |ty| self.facing = mathx.approachAngle(self.facing, ty, TURN_TO_SHOT * dt);
+        const was = self.ringT / RING_DUR;
+        self.ringT += dt;
+        // The one-frame edge, `updateCast`'s: a long frame cannot ring twice and a short one cannot miss it.
+        if (was < RING_AT and self.ringT / RING_DUR >= RING_AT) self.rang = true;
+        self.pose();
+        if (self.ringT >= RING_DUR) {
+            self.ringing = false;
+            self.startXfade();
+            self.fireQueued();
+        }
+    }
+
+    /// Stage a ringing at `u` through it for the shot harness (`book.debugShow`'s pattern) — no FP is spent
+    /// and nothing is called: this is a POSE, and the mechanic stays on the live path.
+    pub fn stageRing(self: *Hero, u: f32) void {
+        self.arm = .bell;
+        self.ringing = true;
+        self.ringT = mathx.clampF(u, 0, 1) * RING_DUR;
+        self.pose();
+    }
+
+    /// How far through the current ringing, 0..1 (0 when there is none).
+    fn ringU(self: *const Hero) f32 {
+        if (!self.ringing) return 0;
+        return mathx.clampF(self.ringT / RING_DUR, 0, 1);
     }
 
     /// How far through the current cast, 0..1 (0 when there is none).
@@ -2164,6 +2333,7 @@ pub const Hero = struct {
         self.rolling = false;
         self.drinking = false;
         self.casting = false;
+        self.ringing = false; // …and the FP it cost is NOT refunded, with the cast's and the parry's
         self.guarding = false;
         self.parrying = false;
         self.dropAim();
@@ -2246,6 +2416,7 @@ pub const Hero = struct {
         if (self.rolling) return self.poseRoll();
         if (self.attacking) return self.poseAttack();
         if (self.casting) return self.poseCast();
+        if (self.ringing) return self.poseRing();
         if (self.parrying) return self.poseParry();
         const m = self.moving;
         const ph = self.phase;
@@ -2738,6 +2909,54 @@ pub const Hero = struct {
         self.xf = wx;
     }
 
+    /// THE RINGING — `poseCast` on the other arm, and its one novelty is the SHAKE. A bell is not swung and it
+    /// is not thrown: the wrist snaps through a small arc and the bell's own mass takes it back past the rest
+    /// and settles onto it, which is a damped oscillation and not a curve anybody hand-authors. Two throws come
+    /// out of one `exp × sin` for free, the second smaller than the first, because that is what the physics of
+    /// it does — and the house law about a mass overshooting its rest is exactly this shape.
+    fn poseRing(self: *Hero) void {
+        const u = self.ringU();
+        const rec = 1.0 - mathx.smoothstep(RING_RECOV_A, 1.0, u); // 1 until recovery, draining to 0
+        const lift = mathx.smoothstep(0, RING_AT - 0.06, u) * rec; // the bell up to shoulder height…
+        // …and the shake, live from just before the note. `flickT` is REAL seconds so the rate is a rate.
+        const flickT = (u - (RING_AT - RING_FLICK_LEAD)) * RING_DUR;
+        const shake: f32 = if (flickT <= 0) 0 else @exp(-flickT * RING_DECAY) * mathx.sinf(flickT * RING_FLICK_RATE);
+        const facingDeg = mathx.degrees(self.facing);
+        const hipY = self.rest[ROOT].y;
+
+        var wx: [N]rl.Matrix = undefined;
+        // The brace takes up in the KNEES, and the trunk gives back at the WAIST — a lean at the root would
+        // rotate the legs and read as a lurch.
+        wx[ROOT] = mul3(
+            ry(0),
+            mul(tr(0, hipY - 0.012 * lift, 0), ry(facingDeg)),
+            rootAt(self.footPos()),
+        );
+        const spineX = -RING_LEAN * lift;
+        setLocal(&wx, SPINE, self.rest, rx(0.5 * (spineX + self.aimLean)));
+        setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), ry(-5.0 * lift)));
+        setLocal(&wx, NECK, self.rest, rx(-0.35 * spineX));
+        setLocal(&wx, HEAD, self.rest, rx(HEAD_WALK + RING_HEAD * lift));
+        setLocal(&wx, HIPL, self.rest, mul(rx(-3.0 * lift), rz(-HIP_ADDUCT)));
+        setLocal(&wx, KNEEL, self.rest, rx(IDLE_KNEE + 9.0 * lift));
+        setLocal(&wx, ANKL, self.rest, ry(FOOT_TOEOUT));
+        setLocal(&wx, HIPR, self.rest, mul(rx(-2.0 * lift), rz(HIP_ADDUCT)));
+        setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 7.0 * lift));
+        setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
+        // THE BELL ARM. The shoulder and elbow carry it up and HOLD; everything that shakes is the wrist, or a
+        // whole arm swinging reads as a man throwing something rather than sounding it.
+        setLocal(&wx, SHR, self.rest, mul3(rx(-RING_SH_FWD * lift), ry(0), rz(-ARM_ABD - RING_SH_ABD * lift)));
+        setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + (RING_ELBOW - IDLE_ELBOW) * lift) + 5.0 * shake));
+        setLocal(&wx, WRR, self.rest, mul(rz(RING_FLICK * shake), rx(-14.0 * lift)));
+        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        // …and the off arm stays where the carry left it, so the boards do not go anywhere while he rings.
+        setLocal(&wx, SHL, self.rest, mul(rx(-6.0 * lift), rz(ARM_ABD)));
+        setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 10.0 * lift)));
+        setLocal(&wx, WRL, self.rest, rl.math.matrixIdentity());
+        self.applyXfade(&wx);
+        self.xf = wx;
+    }
+
     /// THE DRAUGHT — the OFF hand does all of it, laid OVER whatever gait just ran (the guard and bow arms'
     /// pattern). Only the off arm and the head are the flask's; the legs stay the walk's, or travel would SKATE.
     fn poseDrinkArm(self: *const Hero, wx: *[N]rl.Matrix, lift: f32, tip: f32) void {
@@ -2879,7 +3098,9 @@ pub const Hero = struct {
     }
 
     pub fn draw(self: *const Hero) void {
-        const stowSword = self.resting or self.bowOut();
+        // The SWORD is bone `SWORD` itself, so it is stowed by not drawing that bone — and it is stowed
+        // whenever the sword is not what he is holding, which is now two arms and not just the bow.
+        const stowSword = self.resting or self.arm != .sword;
         for (0..N) |i| {
             if (stowSword and i == SWORD) continue;
             rl.drawMesh(self.mesh[i], self.mat, self.xf[i]);
@@ -2888,11 +3109,17 @@ pub const Hero = struct {
             rl.drawMesh(self.guitar, self.mat, self.xf[ROOT]);
             return;
         }
-        if (self.bowOut()) {
-            rl.drawMesh(self.bow, self.mat, self.xf[HELD]);
-            for (self.stringXf) |sm| rl.drawMesh(self.bowString, self.mat, sm);
-            if (self.nockVis) rl.drawMesh(self.bowNock, self.mat, self.nockXf);
-            return;
+        // WHAT IS IN THE RIGHT HAND, exhaustively: the sword IS a bone and was drawn in the loop, the other
+        // two hang off `HELD`. A fourth armament is a row here.
+        switch (self.arm) {
+            .sword => {},
+            .bow => {
+                rl.drawMesh(self.bow, self.mat, self.xf[HELD]);
+                for (self.stringXf) |sm| rl.drawMesh(self.bowString, self.mat, sm);
+                if (self.nockVis) rl.drawMesh(self.bowNock, self.mat, self.nockXf);
+                return; // a raised bow takes the left hand to the string — nothing to draw in it
+            },
+            .bell => rl.drawMesh(self.bell, self.mat, self.xf[HELD]),
         }
         // WHAT IS IN THE LEFT HAND — both ride that wrist rather than a bone of their own, and only the shield needs turning onto the arm.
         switch (self.off) {
@@ -3112,6 +3339,68 @@ fn swordMesh() rl.Mesh {
     b.addBox(bladeAt(0.231), scaleV(n, 0.048 * H), scaleV(a, 0.37 * H), scaleV(s, 0.012 * H), STEEL); // blade, edges fore/aft
     b.addCylinder(bladeAt(0.416), bladeAt(0.481), 0.020 * H, 0.001, 4, STEEL_DK); // tapering point
     return b.toMesh();
+}
+
+/// THE BELL. A turned handle through the fist, a domed crown, and a skirt that FLARES on a curve — the flare
+/// is the whole silhouette, and a straight cone reads as a funnel. Authored in the HELD bone's frame like the
+/// bow, so the arm carries it wherever the pose puts the hand.
+///
+/// The mouth is a real hole: an outer skin, an inner bore a wall's thickness inside it, and a rim band joining
+/// the two. Left as a bare `addCylinder` the mouth is an open cut-pipe end and the skirt reads as tin foil —
+/// the house rule about rims, on the one shape that genuinely is a tube.
+fn bellMesh() rl.Mesh {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0xBE11);
+
+    b.setMat(.wood);
+    // The handle, turned: a swell in the middle so the fist has something to close on.
+    b.addCapsule(bellAt(BELL_GRIP_T0), bellAt(BELL_GRIP_T0 + 0.018), 0.0105 * H, 0.0088 * H, 7, BELL_HANDLE);
+    b.addCapsule(bellAt(BELL_GRIP_T0 + 0.014), bellAt(0.030), 0.0092 * H, 0.0115 * H, 7, BELL_HANDLE);
+    b.addCapsule(bellAt(0.030), bellAt(BELL_CROWN_T), 0.0115 * H, 0.0080 * H, 7, BELL_HANDLE);
+
+    b.setMat(.steel);
+    // THE CROWN — a dome, not a lid. It is the shoulder the skirt hangs off and it carries the sun.
+    b.addCapsule(bellAt(BELL_CROWN_T), bellAt(BELL_CROWN_T + 0.008), BELL_MOUTH_R * 0.30, BELL_MOUTH_R * 0.36, 12, BELL_BRONZE_LT);
+
+    // THE SKIRT. `u` runs crown → mouth and the radius follows a bell's own curve: slow out of the shoulder,
+    // then away. Banded so the profile can bend at all, and each band's radius is jittered — a cast bell is
+    // never a lathe-true one, and the variation goes BETWEEN the bands, never along one.
+    const BANDS = 6;
+    const span = BELL_MOUTH_T - BELL_CROWN_T - 0.008;
+    var i: i32 = 0;
+    while (i < BANDS) : (i += 1) {
+        const f0 = @as(f32, @floatFromInt(i)) / @as(f32, BANDS);
+        const f1 = (@as(f32, @floatFromInt(i)) + 1.0) / @as(f32, BANDS);
+        const t0 = BELL_CROWN_T + 0.008 + span * f0;
+        const t1 = BELL_CROWN_T + 0.008 + span * f1;
+        const r0 = bellR(f0) * rng.range(0.985, 1.015);
+        const r1 = bellR(f1) * rng.range(0.985, 1.015);
+        const tone = if (@mod(i, 2) == 0) BELL_BRONZE else BELL_BRONZE_LT;
+        b.addCylinder(bellAt(t0), bellAt(t1), r0, r1, 14, tone);
+        // …and the BORE behind it, a wall in. Dark, and it is what you see through the mouth.
+        b.addCylinder(bellAt(t0), bellAt(t1), r0 - BELL_WALL, r1 - BELL_WALL, 14, BELL_BORE);
+    }
+    // THE RIM — the band that closes the wall off at the mouth. Without it the skirt has no thickness and the
+    // bronze ends in a sheet edge.
+    b.addCylinder(bellAt(BELL_MOUTH_T), bellAt(BELL_MOUTH_T - 0.004), BELL_MOUTH_R, BELL_MOUTH_R - BELL_WALL, 14, BELL_BRONZE_LT);
+    // A raised moulding round the waist, sunk most of the way in: RELIEF IS SUBTLE, so it stands a few percent
+    // of the radius proud and no more.
+    const waistT = BELL_CROWN_T + 0.008 + span * 0.62;
+    b.addCylinder(bellAt(waistT - 0.004), bellAt(waistT + 0.004), bellR(0.62) * 1.035, bellR(0.62) * 1.035, 14, BELL_BRONZE_LT);
+
+    // THE CLAPPER, hung short so it sits up inside the mouth rather than dangling out of it. Off the axis on
+    // purpose — a clapper at rest has swung to one side and stayed there.
+    const hang = bellAt(BELL_MOUTH_T - 0.020);
+    const off = BELL_MOUTH_R * 0.30;
+    b.addCylinder(bellAt(BELL_CROWN_T + 0.012), v3(hang.x + off, hang.y, hang.z + off * 0.4), 0.0022 * H, 0.0026 * H, 5, BELL_BRONZE);
+    b.addBlob(v3(hang.x + off, hang.y, hang.z + off * 0.4), v3(0.0072 * H, 0.0080 * H, 0.0072 * H), 4, 8, BELL_BRONZE_LT);
+    return b.toMesh();
+}
+
+/// The skirt's radius at `u` (0 at the shoulder, 1 at the mouth). The exponent IS the bell: under 1 it bulges
+/// like a pot, at 1 it is a cone, and past ~1.5 the wall stays tucked in and then throws out to the rim.
+fn bellR(u: f32) f32 {
+    return BELL_MOUTH_R * (0.34 + 0.66 * std.math.pow(f32, mathx.clampF(u, 0, 1), 1.7));
 }
 
 fn guitarMesh() rl.Mesh {
@@ -3447,6 +3736,7 @@ fn testHero() Hero {
         .bowNock = undefined,
         .shield = undefined,
         .wand = undefined,
+        .bell = undefined,
         .roots = undefined,
         .guitar = undefined,
         .mat = undefined,

@@ -997,6 +997,8 @@ pub const Spider = struct {
     heroHit: ?combat.Hit = null,
     heroLatch: bool = false,
     justDied: bool = false,
+    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
+    threat: foe.Threat = .{},
     fade: f32 = 0,
     gone: bool = false,
 
@@ -2058,12 +2060,12 @@ pub const Brood = struct {
         var i: usize = 0;
         while (i < self.n) : (i += 1) {
             const sp = &self.band[i];
-            switch (sp.update(dt, hero, bounds, blade)) {
+            switch (sp.update(dt, sp.threat.aim(hero), bounds, blade)) {
                 .none => {},
                 .spit => |from| spit(ctx, from),
                 .lay => |at| self.addSac(at, sp.seed + sp.elapsed, sp.scale / M_SCALE),
             }
-            if (sp.heroHit) |h| foe.worseBlow(&blow, h, sp.pos);
+            if (sp.heroHit) |h| foe.worseBlow(&blow, h, sp.pos, sp.threat.on);
         }
         return blow;
     }

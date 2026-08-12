@@ -343,6 +343,8 @@ pub const Kobold = struct {
     vit: combat.Vitals = combat.Vitals.initFoe(76, 13, 34).withRes(RESISTS),
     hits: u32 = 0,
     justDied: bool = false,
+    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
+    threat: foe.Threat = .{},
     hitLatch: bool = false,
     flash: f32 = 0,
     shove: rl.Vector3 = mathx.zero3,
@@ -1801,7 +1803,7 @@ pub const Warband = struct {
         }
         var blow: ?foe.Blow = null;
         for (self.live()) |*k| {
-            switch (k.update(dt, hero, bounds, blade)) {
+            switch (k.update(dt, k.threat.aim(hero), bounds, blade)) {
                 .none => {},
                 .sling => |from| loose(ctx, from),
                 .healed => {
@@ -1817,7 +1819,7 @@ pub const Warband = struct {
             // A live hurt window that reaches the hero: one blow per swing, latched.
             if (k.hurtOpen() and mathx.distXZ(k.pos, hero) <= k.hurtReach()) {
                 k.markDealt();
-                foe.worseBlow(&blow, k.hurtBlow(), k.pos);
+                foe.worseBlow(&blow, k.hurtBlow(), k.pos, k.threat.on);
             }
         }
         return blow;

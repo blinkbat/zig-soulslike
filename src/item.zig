@@ -25,6 +25,7 @@ pub const Kind = enum(u8) {
     fang_dirk, // more gear waiting on the equip system, the tower shield's shelf
     grave_warbow,
     quilted_gambeson,
+    spirit_scroll_wolf, // THE FIRST SPIRIT — carried, not used: the bell reads the bag (`combat.spiritOf`)
 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
@@ -54,6 +55,7 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .fang_dirk => "Fang Dirk",
         .grave_warbow => "Grave Warbow",
         .quilted_gambeson => "Quilted Gambeson",
+        .spirit_scroll_wolf => "Spirit Scroll: Hildebrand",
     };
 }
 
@@ -84,6 +86,9 @@ pub fn class(k: Kind) Class {
         // NOT a tool, though it is the one carried thing that DOES something: a tool is spent by pressing
         // Confirm on it, and this one is spent by dying. `usable` stays false and the shelf says so.
         .soul_binding_ring => .treasure,
+        // …and the scroll for the ring's reason, read the other way: finding it is a PERMANENT gain (the bell
+        // knows the wolf from here on), which is what this shelf means. Nothing is spent by pressing Confirm.
+        .spirit_scroll_wolf => .treasure,
         .smithing_stone, .bloodgrass, .kobold_fang => .material,
         .iron_key => .key,
     };
@@ -118,6 +123,7 @@ pub fn describe(k: Kind) [:0]const u8 {
         .fang_dirk => "A dirk ground out of the longest fang in a kobold's jaw, hafted in cord. Quick, and hungry for nothing; no hand here has learned to fight with it yet.",
         .grave_warbow => "A warbow of grave-oak, its draw twice the skeletons' hunting bows. It would loose a shaft worth stopping for; no arm here can bend it yet.",
         .quilted_gambeson => "A coat of rag-stuffed linen, stitched in diamonds and stained by whoever wore it last. It would turn the edge off a blow, if anything here knew how to wear armour.",
+        .spirit_scroll_wolf => "A hide scroll gone stiff as board, the wolf on it drawn in one unbroken line. A name is written under it - Hildebrand - and a bell that knows the name can call the shape; what answers is grey, half there, and already running.",
     };
 }
 
@@ -175,6 +181,9 @@ pub fn use(k: Kind) Use {
         .fang_dirk,
         .grave_warbow,
         .quilted_gambeson,
+        // CARRIED, NOT USED — the `soul_binding_ring`'s shape: what it does, it does by being in the bag.
+        // The bell reads it (`combat.spiritOf`), so a Confirm on this row would be a press that did nothing.
+        .spirit_scroll_wolf,
         => .none,
     };
 }

@@ -67,6 +67,21 @@ const SHROOM_CAP_DK = rgba(112, 48, 40, 255);
 const SHROOM_CREAM = rgba(224, 206, 170, 255);
 const EMBER_FAT = rgba(230, 196, 130, 255);
 const EMBER_FAT_DK = rgba(178, 140, 84, 255);
+/// THE BELL'S BRONZE. Warmer and darker than `BRASS` (the world's fittings) so the two do not read as one
+/// metal, and the bore is near-black because it is a HOLE — the same free contrast the scroll's ink takes.
+const BRONZE = rgba(168, 126, 58, 255);
+const BRONZE_LT = rgba(214, 176, 102, 255);
+const BRONZE_DK = rgba(104, 76, 34, 255);
+const BRONZE_BORE = rgba(38, 28, 14, 255);
+/// THE SCROLL — hide gone stiff as board, so it is browner and duller than `BONE`, which is clean bone.
+const HIDE = rgba(198, 176, 134, 255);
+const HIDE_LT = rgba(226, 208, 172, 255);
+const HIDE_DK = rgba(132, 112, 80, 255);
+/// …and the wolf inked on it, which is the one COLD thing in the picture. Separated from the hide on HUE and
+/// not on value (the sheet is warm, the spirit is not): at icon size a darker brown line on brown hide reads
+/// as a crease, where a grey one reads as a drawing. It is also what the creature itself will be.
+const SPIRIT = rgba(146, 166, 190, 255);
+const SPIRIT_LT = rgba(206, 222, 238, 255);
 
 /// THE BOX EVERY STROKE WAS TUNED IN. A picture drawn at `px` multiplies each weight by `px / TUNED_AT`.
 pub const TUNED_AT: f32 = 34.0;
@@ -158,6 +173,114 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
         .fang_dirk => fangDirk(cx, cy, px),
         .grave_warbow => graveWarbow(cx, cy, px),
         .quilted_gambeson => quiltedGambeson(cx, cy, px),
+        .spirit_scroll_wolf => spiritScroll(cx, cy, px, .wolf),
+    }
+}
+
+/// THE SUMMONING BELL — a cross's picture, not a bag row: it is an ARMAMENT (`hero.Arm.bell`), so it is drawn
+/// beside `sword` and `bow` and takes no `item.Kind`.
+///
+/// The flare and the OPEN MOUTH are the whole read. Drawn as a quad whose foot is wider than its head, an
+/// elliptical rim under it, and the bore as a darker ellipse INSIDE that rim — at 34 px a bell with a filled
+/// bottom is a thimble.
+pub fn bell(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0xBE11);
+    const lean = rng.range(-0.6, 0.6) * k;
+    const mouthY = cy + s * 0.24;
+    const crownY = cy - s * 0.12;
+    const hw = s * 0.215; // half the mouth
+    const cw = s * 0.085; // …and half the shoulder
+    rl.drawCircleV(v2(cx + 1.2 * k, mouthY + 1.0 * k), hw, rgba(0, 0, 0, 110));
+
+    // The handle, above the crown: a turned grip with a swell, so it is not a peg.
+    rl.drawLineEx(v2(cx + lean, cy - s * 0.36), v2(cx + lean, crownY), 3.6 * k, GRIP);
+    rl.drawCircleV(v2(cx + lean, cy - s * 0.345), 2.6 * k, GRIP_LT);
+    rl.drawCircleV(v2(cx + lean, cy - s * 0.245), 2.9 * k, GRIP); // the swell the fist closes on
+
+    // THE SKIRT. The sides bow OUT rather than running straight — a cone is a funnel, a curve is a bell.
+    quad(v2(cx - cw + lean, crownY), v2(cx + cw + lean, crownY), v2(cx + hw, mouthY), v2(cx - hw, mouthY), BRONZE);
+    // The shoulder: a dome capping the skirt, which is what the crown actually is.
+    arc(cx + lean, crownY + s * 0.015, cw, std.math.pi, std.math.tau, 10, s * 0.055, s * 0.055, BRONZE);
+    // The lit edge down the near side, and the moulding round the waist — sunk, a few percent proud.
+    rl.drawLineEx(v2(cx - cw * 0.8 + lean, crownY + s * 0.01), v2(cx - hw * 0.88, mouthY - s * 0.02), 1.6 * k, BRONZE_LT);
+    const wy = mathx.lerpF(crownY, mouthY, 0.62);
+    const ww = mathx.lerpF(cw, hw, 0.62);
+    rl.drawLineEx(v2(cx - ww, wy), v2(cx + ww, wy), 1.8 * k, BRONZE_DK);
+
+    // THE MOUTH — the rim ellipse, then the bore inside it. Raylib has no ellipse primitive with a stroke, so
+    // the rim is the outer fill and the bore is a smaller one laid on top.
+    rl.drawEllipse(@intFromFloat(cx), @intFromFloat(mouthY), hw, s * 0.075, BRONZE_LT);
+    rl.drawEllipse(@intFromFloat(cx), @intFromFloat(mouthY), hw - 2.2 * k, s * 0.075 - 1.6 * k, BRONZE_BORE);
+    // …and the clapper hanging in it, off-centre: at rest it has swung to one side and stayed there.
+    rl.drawLineEx(v2(cx + s * 0.02, mouthY - s * 0.10), v2(cx + s * 0.055, mouthY + s * 0.005), 1.3 * k, BRONZE_DK);
+    rl.drawCircleV(v2(cx + s * 0.055, mouthY + s * 0.02), 2.6 * k, BRONZE_LT);
+}
+
+/// A HIDE SCROLL, HALF UNROLLED, with the spirit it carries inked on the face — one sheet standing out of one
+/// roll, and the drawing is the only thing that changes between scrolls (`SpiritGlyph`), so a second spirit is
+/// a glyph and not a second picture.
+///
+/// THE SHEET IS NOT A RECTANGLE. Hide dried flat cups and curls: the face is a quad with its top corners
+/// pulled apart and a lit lip along the near edge, which is what stops it reading as a playing card.
+fn spiritScroll(cx: f32, cy: f32, px: f32, glyph: SpiritGlyph) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x5C011);
+    const lean = rng.range(-0.8, 0.8) * k; // no scroll was ever rolled square
+    const hw = s * 0.21;
+    const top = cy - s * 0.33;
+    const rollY = cy + s * 0.26; // the roll it is still wound on, at the foot
+    rl.drawCircleV(v2(cx + 1.2 * k, rollY + 1.2 * k), hw * 1.02, rgba(0, 0, 0, 110));
+
+    // The face, cupped: the top corners spread and the near edge sits proud of the far one.
+    const tl = v2(cx - hw * 1.06 + lean, top);
+    const tr = v2(cx + hw * 1.02 + lean, top + s * 0.02);
+    quad(tl, tr, v2(cx + hw * 0.94, rollY), v2(cx - hw * 0.96, rollY), HIDE);
+    // …and the curl at the head of it, the pale INSIDE of the hide showing where it has rolled back on itself.
+    arc(cx + lean, top + s * 0.03, hw * 1.02, std.math.pi * 1.04, std.math.tau - 0.06, 10, s * 0.055, s * 0.035, HIDE_LT);
+    rl.drawLineEx(v2(cx - hw * 0.96, rollY), v2(cx - hw * 1.06 + lean, top), 1.2 * k, HIDE_LT); // the lit near edge
+
+    glyphOn(cx, cy - s * 0.03, s, k, glyph);
+
+    // THE ROLL, drawn OVER the sheet's foot so the sheet is coming off it rather than sitting behind it.
+    rl.drawLineEx(v2(cx - hw, rollY), v2(cx + hw, rollY), s * 0.17, HIDE_DK);
+    rl.drawLineEx(v2(cx - hw, rollY - s * 0.03), v2(cx + hw, rollY - s * 0.03), s * 0.05, HIDE);
+    rl.drawCircleV(v2(cx - hw, rollY), s * 0.085, HIDE_DK); // the two ends of the roll…
+    rl.drawCircleV(v2(cx + hw, rollY), s * 0.085, HIDE_DK);
+    rl.drawCircleV(v2(cx + hw, rollY), s * 0.042, rgba(84, 68, 46, 255)); // …and the hole down the near one
+    // The tie, off-centre and slack — the one soft thing on a stiff object.
+    rl.drawLineEx(v2(cx - s * 0.05, rollY - s * 0.10), v2(cx - s * 0.02, rollY + s * 0.09), 1.8 * k, CORD);
+    rl.drawLineEx(v2(cx - s * 0.02, rollY + s * 0.09), v2(cx + s * 0.07, rollY + s * 0.13), 1.5 * k, CORD);
+}
+
+/// WHICH ANIMAL IS ON THE SHEET. Its own enum rather than `combat.SpiritKind` because `itemart` draws pictures
+/// and must not import the rules — the binding is made once, at the `drawHeld` row.
+const SpiritGlyph = enum { wolf };
+
+/// THE DRAWING, IN ONE UNBROKEN LINE — which is the flavour and also the only thing legible at 34 px. A whole
+/// body comes out as twelve pixels of mush, so what is inked is the HEAD IN PROFILE: muzzle, stop, pricked ear
+/// and the nape running off the sheet. The ear is the read; without it this is a dog or a fox.
+fn glyphOn(cx: f32, cy: f32, s: f32, k: f32, glyph: SpiritGlyph) void {
+    switch (glyph) {
+        .wolf => {
+            const w = 2.0 * k;
+            const nose = v2(cx - s * 0.115, cy + s * 0.045);
+            const stop = v2(cx - s * 0.025, cy - s * 0.005); // where muzzle meets brow — a wolf's is shallow
+            const brow = v2(cx + s * 0.025, cy - s * 0.055);
+            const ear = v2(cx + s * 0.045, cy - s * 0.135); // pricked and set BACK, never on top of the skull
+            const nape = v2(cx + s * 0.10, cy - s * 0.02);
+            rl.drawLineEx(nose, stop, w, SPIRIT);
+            rl.drawLineEx(stop, brow, w, SPIRIT);
+            rl.drawLineEx(brow, ear, w, SPIRIT);
+            rl.drawLineEx(ear, nape, w, SPIRIT);
+            // The jaw, back off the nose — the line doubles back under itself and stops at the throat.
+            rl.drawLineEx(nose, v2(cx - s * 0.02, cy + s * 0.075), w * 0.85, SPIRIT);
+            rl.drawLineEx(v2(cx - s * 0.02, cy + s * 0.075), v2(cx + s * 0.06, cy + s * 0.06), w * 0.85, SPIRIT);
+            rl.drawCircleV(v2(cx - s * 0.115, cy + s * 0.045), w * 0.6, SPIRIT_LT); // the nose, blunt: nothing ends in a point
+            rl.drawCircleV(v2(cx - s * 0.005, cy + s * 0.005), 1.3 * k, SPIRIT_LT); // and the eye it is looking at you with
+        },
     }
 }
 

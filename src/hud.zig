@@ -619,7 +619,7 @@ const BOTTOM: i32 = 26;
 
 /// WHAT A HAND OR THE SORCERY CELL IS SHOWING. The cross`s DOWN cell is NOT here: it holds an `item.Kind`
 /// off the quick bar (`quickSlot`), which is a wider thing than the handful his hands can be doing.
-pub const Slot = enum { empty, sword, bow, shield, wand, spell, roots };
+pub const Slot = enum { empty, sword, bow, bell, shield, wand, spell, roots };
 
 /// `left`/`right` are what is IN HIS HANDS this frame, not what he owns.
 /// `up` is the SORCERY slot, and `castable` is whether the pool would cover one — it stays `.empty` while
@@ -696,6 +696,7 @@ fn slot(x: i32, y: i32, holds: Slot, charges: u8) void {
         .empty => {},
         .sword => itemart.sword(cx, cy, px),
         .bow => itemart.bow(cx, cy, px),
+        .bell => itemart.bell(cx, cy, px),
         .shield => itemart.shield(cx, cy, px),
         .wand => itemart.wand(cx, cy, px),
         // The sorcery slot's picture greys out when the FP will not cover a cast, which is the ammo box's

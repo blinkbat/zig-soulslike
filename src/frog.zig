@@ -218,6 +218,9 @@ pub const Frog = struct {
     heroHit: ?combat.Hit = null, // this frame's blow ON THE HERO (chomp/lunge connect), read by game.zig
     heroLatch: bool = false, // one hero-hit per attack action (chomp/lunge)
     justDied: bool = false, // true only on the frame a blow kills it (game.zig keys the kill beat off this)
+    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law. The
+    /// creature never asks what a spirit is; it is handed a target in the argument it calls `hero`.
+    threat: foe.Threat = .{},
     fade: f32 = 0, // death dissipation 0..1 — pose() shrinks + sinks the corpse by it
     gone: bool = false, // corpse removed from play (dissipation finished) — skipped everywhere
 

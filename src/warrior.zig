@@ -536,6 +536,8 @@ pub const Warrior = struct {
     flash: f32 = 0,
     shove: rl.Vector3 = mathx.zero3,
     justDied: bool = false,
+    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
+    threat: foe.Threat = .{},
     fade: f32 = 0,
     gone: bool = false,
 
@@ -1714,7 +1716,7 @@ pub const Muster = struct {
     pub fn update(self: *Muster, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
         var blow: ?foe.Blow = null;
         for (self.live()) |*w| {
-            if (w.update(dt, hero, bounds, blade)) |h| foe.worseBlow(&blow, h, w.pos);
+            if (w.update(dt, w.threat.aim(hero), bounds, blade)) |h| foe.worseBlow(&blow, h, w.pos, w.threat.on);
         }
         return blow;
     }

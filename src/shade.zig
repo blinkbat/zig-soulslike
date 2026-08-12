@@ -285,6 +285,8 @@ pub const Shade = struct {
     flash: f32 = 0,
     shove: rl.Vector3 = mathx.zero3,
     justDied: bool = false,
+    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
+    threat: foe.Threat = .{},
     gone: bool = false,
 
     parts: [PARTS]foe.Particle = [_]foe.Particle{.{}} ** PARTS,
@@ -864,10 +866,10 @@ pub const Haunt = struct {
     ) ?foe.Blow {
         var blow: ?foe.Blow = null;
         for (self.live()) |*s| {
-            switch (s.update(dt, hero, bounds, blade)) {
+            switch (s.update(dt, s.threat.aim(hero), bounds, blade)) {
                 .none => {},
                 .hurl => |from| hurl(ctx, from),
-                .grasp => |h| foe.worseBlow(&blow, h, s.pos),
+                .grasp => |h| foe.worseBlow(&blow, h, s.pos, s.threat.on),
             }
         }
         return blow;

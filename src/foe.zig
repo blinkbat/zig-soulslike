@@ -262,6 +262,11 @@ pub fn moveClock(row: anytype) Clock {
 pub fn reached(self: anytype, blade: Blade) ?Strike {
     const s = strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return null;
     self.leash.provoke();
+    // **AND WHOEVER SWUNG IT JUST BOUGHT ITS ATTENTION.** The ONE place damage-threat is written, for the
+    // reason `stunCurve` and `PARRY_LEAD` live here: the hero's blade and a spirit's jaws come through this
+    // same door, so "who has been hurting me" cannot end up as two rules that disagree. The blade says who it
+    // belongs to (`Blade.by`) — nothing here has to know what a wolf is.
+    self.threat.hurtBy(blade.by, blade.hit.raw());
     // ONLY A `pierce` SNAPS THE FACING BACK DOWN ITS OWN LINE — being shot from somewhere it was not
     // looking is exactly when a creature must turn round, and a swing already came from in front of it.
     if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
@@ -645,23 +650,224 @@ pub const Blade = struct {
     hit: combat.Hit = .{}, // HP/poise/stance the swing deals (light vs heavy, set by game.zig)
     /// A PROJECTILE, NOT A SWING: one of the player's own, presented as the segment it crossed this frame so it goes through the same `strike` and gets each creature's own reactions.
     pierce: bool = false,
+    /// WHOSE BLADE THIS IS. Defaults to the hero, so every existing site — his sword, his shafts, his bolts —
+    /// says what it always said by saying nothing. A spirit's jaws set it (`wolf.blade`), and that is the
+    /// whole of how a summon earns aggro.
+    by: Victim = .hero,
+};
+
+// ===========================================================================================================
+// THREAT — WHO A CREATURE IS ACTUALLY FIGHTING
+// ===========================================================================================================
+//
+// **ONE TABLE PER CREATURE, and it is the creature's own field** (`Leash`'s law, and `Root`'s: cross-cutting
+// state is EMBEDDED by the creature and STAMPED by the game — the creature reads it and never reaches out for
+// the field). Before this there was nothing to decide: `hero` was the target because he was the only body in
+// the world that could be one.
+//
+// The model is Elden Ring's, which is a threat table with a decay on it:
+//
+//  - **HITTING SOMETHING TAKES ITS ATTENTION.** Damage is the loudest term by a distance, so a creature
+//    chewing on the spirit turns on you the moment you commit to it. This is the rule ER players describe as
+//    "bosses aggro whoever attacks them".
+//  - **…BUT ONLY FOR A WHILE.** Threat from damage DECAYS (`THREAT_HALFLIFE`), which is the mechanic that
+//    makes a summon work at all: stop hitting and your claim fades, and the creature drifts back to whatever
+//    is still in its face. ER's own note is that a spirit which stops generating aggro loses it.
+//  - **STANDING CLOSE IS ITSELF A CLAIM.** A live proximity term, so walking into something's reach takes its
+//    eye whether or not you have touched it — and backing off hands it away again. This is the half that
+//    makes the spirit useful when the player is trying to drink.
+//  - **A SUMMON PULLS HARDER THAN ITS NUMBERS** (`SPIRIT_TAUNT`) — ER gives spirits a target-priority boost,
+//    and the fragile ones get less of it. Ours is a wolf that is meant to be bitten, so it gets a real one.
+//  - **AND IT DOES NOT DITHER.** The switch needs the challenger to beat the incumbent by a MARGIN, not to
+//    tie with it. Without that a creature between two roughly equal claims re-picks every frame and spins on
+//    the spot, which is the single thing that makes an aggro system read as broken rather than as alive.
+//
+// The whole of it is two floats and a latch, per creature, ticked once a frame.
+
+/// WHO a creature has its eye on. Two today; a second spirit does not add a case, it adds a body behind
+/// `spirit` — the pack is capped at one (`combat.SUMMON_MAX`) and this is the same decision one layer up.
+pub const Victim = enum { hero, spirit };
+
+/// Seconds for damage-threat to fall by half once you stop landing blows. Short enough that a player who
+/// disengages hands the fight back to the wolf inside a couple of exchanges, long enough that one missed
+/// swing does not.
+pub const THREAT_HALFLIFE: f32 = 5.0;
+/// How much threat a point of damage is worth. Only the RATIO between this and `THREAT_PROX` matters — this
+/// one is 1.0 so that damage numbers read directly as threat and the other dial is the one to turn.
+pub const THREAT_PER_DMG: f32 = 1.0;
+/// …and what standing in its face is worth, at nose-to-nose. Sized against a couple of light hits: presence
+/// alone should be able to hold a creature that nobody is hurting, and should lose to anybody who commits.
+pub const THREAT_PROX: f32 = 26.0;
+/// Past this the proximity term is nothing — beyond it you are not in the fight and only damage speaks.
+pub const THREAT_PROX_R: f32 = 9.0;
+/// The spirit's own pull. A wolf exists to be bitten instead of him, so it claims harder than its damage and
+/// its position earn — ER's target-priority boost, and the reason a summon tanks at all.
+pub const SPIRIT_TAUNT: f32 = 1.55;
+/// **THE ANTI-DITHER.** A challenger must beat the incumbent by this much to take it. One flat multiplier, so
+/// it behaves the same at every scale of threat.
+pub const THREAT_SWITCH: f32 = 1.30;
+/// …and it may not switch more often than this however the numbers move. Two creatures trading a target back
+/// and forth twice a second is legible as a bug; a beat between changes of mind is legible as one.
+pub const THREAT_DWELL: f32 = 0.65;
+
+pub const Threat = struct {
+    /// Damage-threat, per side, decaying. The proximity term is NOT stored — it is live, so a body that walks
+    /// away stops claiming on the frame it does rather than draining for five seconds first.
+    dmgHero: f32 = 0,
+    dmgSpirit: f32 = 0,
+    /// Who it is actually fighting. A LATCH: the scores propose and this disposes, which is the hysteresis.
+    on: Victim = .hero,
+    since: f32 = mathx.LONG_AGO,
+    /// Where that victim is standing, stamped each frame by the game (`game.markThreat`). The creature reads
+    /// this and never asks what a spirit is.
+    at: rl.Vector3 = mathx.zero3,
+    /// …and whether there is a spirit at all. With none, every rule below collapses to "the hero", which is
+    /// exactly what the game was before any of this existed.
+    hasSpirit: bool = false,
+
+    /// WHAT IT SHOULD BE GOING FOR. Falls back to the hero whenever there is no spirit standing, so a
+    /// creature whose `at` was never stamped behaves the way it always did.
+    pub fn aim(self: *const Threat, heroPos: rl.Vector3) rl.Vector3 {
+        if (!self.hasSpirit or self.on == .hero) return heroPos;
+        return self.at;
+    }
+
+    /// A BLOW LANDED ON THIS CREATURE, and by whom. The one thing that writes damage-threat.
+    pub fn hurtBy(self: *Threat, who: Victim, dmg: f32) void {
+        const t = mathx.maxF(dmg, 0) * THREAT_PER_DMG;
+        switch (who) {
+            .hero => self.dmgHero += t,
+            .spirit => self.dmgSpirit += t,
+        }
+    }
+
+    /// The whole claim one side has right now: what it has done, plus where it is standing.
+    pub fn score(dmg: f32, dist: f32, taunt: f32) f32 {
+        const prox = mathx.clampF((THREAT_PROX_R - dist) / THREAT_PROX_R, 0, 1);
+        return (dmg + THREAT_PROX * prox * prox) * taunt;
+    }
+
+    /// ONE FRAME. `distSpirit` is meaningless when `hasSpirit` is false and is not read.
+    pub fn tick(self: *Threat, dt: f32, distHero: f32, distSpirit: f32, spirit: bool) void {
+        self.hasSpirit = spirit;
+        self.since += dt;
+        // Exponential decay on both, so neither claim is permanent and neither snaps to nothing.
+        const k = std.math.pow(f32, 0.5, dt / THREAT_HALFLIFE);
+        self.dmgHero *= k;
+        self.dmgSpirit *= k;
+        if (!spirit) {
+            self.on = .hero;
+            self.dmgSpirit = 0;
+            return;
+        }
+        const h = score(self.dmgHero, distHero, 1.0);
+        const s = score(self.dmgSpirit, distSpirit, SPIRIT_TAUNT);
+        if (self.since < THREAT_DWELL) return; // it has only just changed its mind — let it commit
+        const want: Victim = switch (self.on) {
+            .hero => if (s > h * THREAT_SWITCH) .spirit else .hero,
+            .spirit => if (h > s * THREAT_SWITCH) .hero else .spirit,
+        };
+        if (want != self.on) {
+            self.on = want;
+            self.since = 0;
+        }
+    }
 };
 
 pub const Blow = struct {
     hit: combat.Hit,
     from: rl.Vector3, // the attacker's own `pos`, in world space
+    /// WHO IT WAS SWUNG AT. A creature aiming at the spirit must not have its blow land on the hero standing
+    /// somewhere else — as a bare hit-plus-position the group fold had no way to say, and every blow on the
+    /// field was the player's problem by construction.
+    on: Victim = .hero,
 };
 
-pub fn worseBlow(worst: *?Blow, h: combat.Hit, from: rl.Vector3) void {
-    if (worst.* == null or h.raw() > worst.*.?.hit.raw()) worst.* = .{ .hit = h, .from = from };
+pub fn worseBlow(worst: *?Blow, h: combat.Hit, from: rl.Vector3, on: Victim) void {
+    if (worst.* == null or h.raw() > worst.*.?.hit.raw()) worst.* = .{ .hit = h, .from = from, .on = on };
 }
 
 pub fn groupBlow(foes: anytype, dt: f32, hero: rl.Vector3, bounds: f32, blade: Blade) ?Blow {
     var worst: ?Blow = null;
     for (foes) |*f| {
-        if (f.update(dt, hero, bounds, blade)) |h| worseBlow(&worst, h, f.pos);
+        // `aim` is the whole of the substitution: the creature is handed ITS OWN target in the argument it
+        // has always called `hero`, so nothing inside it changes and nothing inside it knows.
+        if (f.update(dt, f.threat.aim(hero), bounds, blade)) |h| worseBlow(&worst, h, f.pos, f.threat.on);
     }
     return worst;
+}
+
+test "THREAT: hitting something takes its attention, and letting up hands it back" {
+    var t = Threat{ .hasSpirit = true, .on = .spirit };
+    t.since = 100; // past the dwell, so it is free to change its mind
+    // Both standing at the same range, nobody has hit it: the SPIRIT holds it, because that is what a taunt is.
+    t.tick(1.0 / 60.0, 3.0, 3.0, true);
+    try std.testing.expectEqual(Victim.spirit, t.on);
+    // The hero commits. Damage is the loudest term, so it turns on him.
+    t.hurtBy(.hero, 60);
+    t.tick(1.0 / 60.0, 3.0, 3.0, true);
+    try std.testing.expectEqual(Victim.hero, t.on);
+    // …and then he backs off and stops swinging. His claim decays and the wolf in its face takes it back.
+    var s: f32 = 0;
+    while (s < 14.0) : (s += 1.0 / 60.0) t.tick(1.0 / 60.0, 14.0, 2.0, true);
+    try std.testing.expectEqual(Victim.spirit, t.on);
+}
+
+test "THREAT: standing close is its own claim, with nobody hitting anything" {
+    var t = Threat{ .hasSpirit = true, .on = .spirit };
+    t.since = 100;
+    // The wolf is across the field and the hero is at its nose. Presence alone is enough to turn it.
+    t.tick(1.0 / 60.0, 0.6, 12.0, true);
+    try std.testing.expectEqual(Victim.hero, t.on);
+}
+
+test "THREAT DOES NOT DITHER — a near-tie holds whoever has it, whichever way round" {
+    // A tie has to be built out of the SCORES, not out of the raw damage: the spirit's taunt multiplies its
+    // whole claim, so equal damage is not a tie and testing it as one tests nothing. Solve for the spirit
+    // damage that puts its score just INSIDE the switch margin, and the incumbent must keep it both ways.
+    const D: f32 = 5.0;
+    const inside = THREAT_SWITCH - 0.05;
+    const h = Threat.score(100, D, 1.0);
+    // (dS + prox) * TAUNT = h * inside  →  dS = h*inside/TAUNT - prox
+    const prox = Threat.score(0, D, 1.0);
+    const dS = h * inside / SPIRIT_TAUNT - prox;
+
+    var t = Threat{ .hasSpirit = true, .on = .spirit, .dmgHero = 100, .dmgSpirit = dS };
+    t.since = 100;
+    t.tick(1.0 / 60.0, D, D, true);
+    try std.testing.expectEqual(Victim.spirit, t.on); // the spirit is ahead but not by enough to be taken off
+
+    var u = Threat{ .hasSpirit = true, .on = .hero, .dmgHero = 100, .dmgSpirit = dS };
+    u.since = 100;
+    u.tick(1.0 / 60.0, D, D, true);
+    try std.testing.expectEqual(Victim.hero, u.on); // …and the same numbers leave the hero holding it too
+}
+
+test "THREAT: it will not change its mind twice in a heartbeat" {
+    var t = Threat{ .hasSpirit = true, .on = .hero };
+    t.since = 100;
+    t.hurtBy(.spirit, 400); // an overwhelming claim…
+    t.tick(1.0 / 60.0, 5.0, 5.0, true);
+    try std.testing.expectEqual(Victim.spirit, t.on);
+    // …and now an equally overwhelming one the other way, on the very next frame. The DWELL refuses it: a
+    // creature spinning between two targets twice a second reads as a bug, not as indecision.
+    t.hurtBy(.hero, 4000);
+    t.tick(1.0 / 60.0, 5.0, 5.0, true);
+    try std.testing.expectEqual(Victim.spirit, t.on);
+    // Past the dwell it commits properly.
+    var s: f32 = 0;
+    while (s < THREAT_DWELL + 0.1) : (s += 1.0 / 60.0) t.tick(1.0 / 60.0, 5.0, 5.0, true);
+    try std.testing.expectEqual(Victim.hero, t.on);
+}
+
+test "WITH NO SPIRIT ON THE FIELD it is the hero, exactly as it always was" {
+    var t = Threat{};
+    t.hurtBy(.spirit, 500); // …even with a claim from something that is no longer standing
+    t.tick(1.0 / 60.0, 30.0, 0.0, false);
+    try std.testing.expectEqual(Victim.hero, t.on);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), t.dmgSpirit, 1e-6);
+    const hero = v3(1, 0, 2);
+    try std.testing.expectEqual(hero.x, t.aim(hero).x); // and `aim` is a pass-through
 }
 
 pub fn pierceGroup(foes: anytype, blade: Blade) bool {

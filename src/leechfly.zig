@@ -303,6 +303,10 @@ pub const Leechfly = struct {
     flash: f32 = 0,
     shove: rl.Vector3 = mathx.zero3,
     justDied: bool = false,
+    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law. It is
+    /// carried like every other creature's, but a FLYER is never handed the spirit (`game.markThreat`): the
+    /// wolf cannot reach it and it drinking from something that cannot swat it is a stalemate with no clock.
+    threat: foe.Threat = .{},
     fade: f32 = 0,
     gone: bool = false,
 
@@ -1089,9 +1093,9 @@ pub const Swarm = struct {
     ) ?foe.Blow {
         var blow: ?foe.Blow = null;
         for (self.live()) |*f| {
-            switch (f.update(dt, hero, bounds, blade)) {
+            switch (f.update(dt, f.threat.aim(hero), bounds, blade)) {
                 .none => {},
-                .stab => |h| foe.worseBlow(&blow, h, f.pos),
+                .stab => |h| foe.worseBlow(&blow, h, f.pos, f.threat.on),
                 .drink => |h| sip(ctx, h),
             }
         }

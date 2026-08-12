@@ -30,6 +30,7 @@ const restmod = @import("rest.zig");
 const soulsmod = @import("souls.zig"); // WHAT A DEATH LEAVES ON THE GROUND, and the walk back for it
 const ptree = @import("passivetree.zig"); // …and the one thing the souls are SPENT on
 const npcmod = @import("npc.zig");
+const wolfmod = @import("wolf.zig");
 const trigmod = @import("trigger.zig");
 const dialogmod = @import("dialog.zig");
 const item = @import("item.zig");
@@ -212,6 +213,10 @@ pub const Game = struct {
     haunt: shademod.Haunt, // the shades — a flanking pack that drains focus and teleports
     chests: chestmod.Chests, // the openable boxes — props with a lid and a state (chest.zig)
     folk: npcmod.Folk, // the NPCs the map posts — bodies with a name and a conversation, not a foe contract
+    /// WHAT THE BELL HAS STANDING. Deliberately NOT in `FOE_GROUPS` — everything folded over that list (the
+    /// lock, the bars, the blade, `billDeaths`, the terrain gate) is about things trying to kill him, and a
+    /// spirit is on his side. It is nearer the folk, and like them it answers for itself.
+    pack: wolfmod.Pack = .{},
     /// Which `editor.mapGen` the folk on the field were posted from, so an editor frame re-homes them when the
     /// MAP changes and leaves their idle clocks running when it does not.
     folkGen: u32 = 0,
@@ -297,6 +302,11 @@ pub const Game = struct {
         g.haunt = shademod.Haunt.init(g.scene.shader);
         g.chests = chestmod.Chests.init(g.scene.shader);
         g.folk = npcmod.Folk.init(g.scene.shader);
+        // `= .{}` FIRST, and it is not decoration: `Game` is created on an allocator and `init` assigns it
+        // field by field, so a struct default here never runs and `n` comes up as whatever the fill byte was.
+        // Every other defaulted field in this struct is set the same way (`g.rest = .{}`).
+        g.pack = .{};
+        g.pack.load(g.scene.shader);
         g.souls = soulsmod.Souls.init(g.scene.shader);
         phase(&initTimer, "foes");
         rehomeFoes(g, .blind);
@@ -304,6 +314,7 @@ pub const Game = struct {
         rehomeChests(g);
         armScript(g);
         g.bag = .{};
+        for (STARTING_KIT) |k| g.bag.add(k, 1);
         g.tree = .{};
         applyTree(g); // a fresh game and a fully-allocated one size the bars down the one path
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
@@ -549,6 +560,15 @@ const WADE_KNEE: f32 = 0.50;
 /// …AND IT REACHES ITS SLOWEST EXACTLY AT THE WALL. Two figures here would mean either a drag that keeps
 /// deepening past the last step he can take, or one that tops out early and leaves the last stretch feeling
 /// the same as the middle — and only one of those numbers is the one the player can be taught.
+/// WHAT HE HAS ON HIM AT THE FIRST BONFIRE. A list rather than a run of `add` calls, so a second starting
+/// item is a row — and one place to look for "why do I already have this".
+///
+/// The SCROLL is here because the bell is an armament he starts able to equip: a summon he can select in the
+/// book and then cannot use until he has walked forty metres to a chest is a slot that reads as broken.
+const STARTING_KIT = [_]item.Kind{
+    .spirit_scroll_wolf,
+};
+
 const WADE_DEEP: f32 = envmod.WADE_MAX;
 const WADE_SLOWEST: f32 = 0.8;
 
@@ -788,19 +808,15 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3) void {
 }
 
 /// DEEP WATER IS A WALL FOR HIM TOO, as a POST-STEP GATE (`foe.Grip.hold`'s shape, and the same law: a mover
-/// is something he GROWS, and a guard at each one is a list to forget one from). `env.stepOk` is the other
-/// half and the one his WALK and the Rooted's hook drag already go through; the ROLL and the attack LUNGE
-/// travel by `mathx.stepXZ` and never see `walkStep`, so without this a dive carries him into the deep.
+/// is something he GROWS, and a guard at each one is a list to forget one from). The RULE is `env.deepRefused`
+/// and this is only the second place it is ASKED: his WALK and the Rooted's hook drag reach it through
+/// `walkStep`, but the ROLL and the attack LUNGE travel by `mathx.stepXZ` and never see `walkStep` at all, so
+/// without this a dive carries him into the deep.
 ///
 /// A HOLD and not a slide: what reaches here is a COMMITTED action with nothing left of its step to spend
 /// sideways. Y is left alone — `groundActor` owns it, exactly as it does for a foe the roots have.
 fn gateHeroWater(g: *Game, was: rl.Vector3) void {
-    const deep = g.env.wadeDepth(g.hero.pos.x, g.hero.pos.z);
-    if (deep <= envmod.WADE_MAX) return;
-    // …and GETTING OUT IS NEVER HELD (`env.walkStep`'s own escape): dropped in the deep by a playtest spawn or
-    // carried in by something that never asked, he would otherwise be pinned there by the gate meant to keep
-    // him out of it.
-    if (deep < g.env.wadeDepth(was.x, was.z)) return;
+    if (!g.env.deepRefused(was.x, was.z, g.hero.pos.x, g.hero.pos.z)) return;
     g.hero.pos.x = was.x;
     g.hero.pos.z = was.z;
 }
@@ -896,6 +912,26 @@ fn drawCasters(g: *Game, cull: envmod.Cull) void {
     inline for (FOE_GROUPS) |f| @field(g, f.field).draw(&g.scene);
     // The folk go through HERE like anything else standing in the sun, so they cast in the depth pass too.
     g.folk.draw();
+    // …AND THE SPIRIT, WHICH IS ONLY HALF HERE. Thinned through the scene's own `fade` uniform with the depth
+    // mask dropped — the see-through hero's exact route, and the only real transparency this renderer has
+    // (vertex alpha is the EMISSIVE channel and cannot make anything see-through).
+    //
+    // IT STILL CASTS. The sun pass draws it solid: a called thing that laid no shadow would read as a decal
+    // painted on the grass rather than as something standing on it, and the shadow is most of what puts it in
+    // the world. So the thinning is the LIT pass's alone.
+    // **AND THE DEPTH MASK STAYS ON**, which is the opposite of what the see-through hero does and it is not
+    // an oversight. He is thinned for a FRAME OR TWO while something passes in front of him, so the shells
+    // showing through each other never has time to read; a spirit is thinned for its whole life, and with
+    // depth writes off every part of it blends over every other part — twenty-seven bones of overlapping
+    // glass, which is a pile of shards rather than an animal. Writing depth costs the far side of him and
+    // buys a body with one silhouette.
+    if (cull == .view) {
+        g.scene.setFade(wolfmod.SPIRIT_FADE);
+        g.pack.draw();
+        g.scene.setFade(1);
+    } else {
+        g.pack.draw();
+    }
 }
 
 fn setCasterShaders(g: *Game, sh: rl.Shader) void {
@@ -905,6 +941,7 @@ fn setCasterShaders(g: *Game, sh: rl.Shader) void {
     inline for (FOE_GROUPS) |f| @field(g, f.field).setShader(sh);
     g.chests.setShader(sh);
     g.folk.setShader(sh);
+    g.pack.setShader(sh);
 }
 
 pub fn heroCenterY(g: *const Game) f32 {
@@ -1063,6 +1100,38 @@ pub fn clearShaftsForShot(g: *Game) void {
     clearQuivers(g);
 }
 
+/// STAGE A RINGING at a given point through it, `u` in 0..1 — the harness has no frame loop to press a button
+/// across, and the note is one frame of a one-second animation.
+pub fn ringForShot(g: *Game, u: f32) void {
+    g.hero.stageRing(u);
+}
+
+/// Stand a spirit up for the harness (`book.debugShow`'s pattern): a photograph of a wolf mid-trot cannot be
+/// got by pretending to ring a bell at 1/60 s a frame.
+pub fn callWolfForShot(g: *Game, at: rl.Vector3, facing: f32) void {
+    g.pack.reset();
+    _ = g.pack.call(at, facing);
+}
+
+/// …and STAGE ITS GAIT. Speed and phase are what the pose is a function of, so setting the two and posing IS
+/// the frame — no clock, and reproducible.
+pub fn poseWolfForShot(g: *Game, speed: f32, phase: f32) void {
+    for (g.pack.live()) |*w| {
+        w.speed = speed;
+        w.speedS = speed;
+        w.phase = phase;
+        w.state = if (speed > 0.05) .move else .idle;
+        plantActor(g, &w.pos);
+        w.pose();
+    }
+}
+
+/// The one standing, for a shot that wants to frame it.
+pub fn wolfPosForShot(g: *const Game) ?rl.Vector3 {
+    const w = g.pack.firstConst() orelse return null;
+    return w.pos;
+}
+
 pub fn beginRestForShot(g: *Game) void {
     g.rest.look(g.hero.pos);
     _ = g.rest.begin();
@@ -1160,6 +1229,122 @@ fn interact(g: *Game) void {
 /// HE DIED HERE CARRYING THIS. The RING GIVES FIRST (DS's Ring of Sacrifice): one snaps, he keeps the lot,
 /// and there is nothing on the ground to come back for. Otherwise everything comes off him onto the spot he
 /// fell on — and whatever was standing there already is GONE, which is the whole of the mechanic.
+/// R1 WITH THE BELL OUT. Three things have to be true and they live in three different places, which is why
+/// this is here and not on the hero: the SCROLL is in the bag (game's), there is ROOM (the field's), and the
+/// FOCUS covers it (his). Asked in that order so the pool is never spent on a ringing that was going to be
+/// refused anyway — `Focus.spend` pays or does nothing, and this is the "or does nothing".
+/// **A REFUSAL HAS TO SAY WHICH ONE IT IS.** Three different things stop a ringing and only ONE of them is
+/// about focus, so only that one may light the focus bar: flashing the blue meter because he is not carrying a
+/// scroll tells the player to go and drink, which is the wrong lesson taught in the one moment he is paying
+/// attention. The other two are facts he cannot see anywhere on the HUD, so they are SAID — down `Runtime.say`,
+/// which is this game's one channel for a line of prose (the binding ring's own).
+fn ringBell(g: *Game) void {
+    if (!g.hero.canRing()) return;
+    // WHAT HE CAN CALL IS WHAT HE IS CARRYING. No second piece of state that could disagree with the bag.
+    if (g.bag.count(combat.scrollFor(g.hero.spirit)) == 0) {
+        g.trig.say("The bell rings on nothing. You carry no scroll for it.");
+        sfx.play(.refused);
+        return;
+    }
+    if (!g.pack.room()) {
+        g.trig.say("One already answers.");
+        sfx.play(.refused);
+        return;
+    }
+    // …and THIS one is the focus bar's, because this one genuinely is the pool saying no (`requestRing` →
+    // `Focus.spend` → `refuseFp`).
+    if (g.hero.requestRing()) sfx.play(.wand_charge);
+}
+
+/// …AND THE SPIRIT ITSELF, on the frame the bell actually sounds (`hero.rang`). It comes up BESIDE him and a
+/// little behind — in front and it is standing in the swing he is about to take, on top of him and the
+/// push-out throws one of them somewhere neither chose.
+fn summonSpirit(g: *Game) void {
+    const back = mathx.headingDir(g.hero.facing + SUMMON_BEARING);
+    var at = mathx.addV(g.hero.pos, mathx.scaleV(back, SUMMON_R));
+    at = inBounds(g.env.resolveActor(at, wolfmod.BODY_R, at.y));
+    plantActor(g, &at); // …standing on the ground it arrived over, not on the datum
+    if (!g.pack.call(at, g.hero.facing)) return;
+    // THE HOWL IS THE RECEIPT. Thirty focus just left the bar and a second body just arrived behind him where
+    // he cannot see it — the one cue that says both, and it plays AT the spirit rather than on the camera so
+    // it tells him which shoulder to look over.
+    sfx.world(.wolf_howl, at);
+    g.rig.addShake(SHAKE_LAND);
+    g.rumble.play(rumblemod.cast_throw);
+}
+
+/// Where a called spirit stands up, off his own facing: over his left shoulder and behind the line of a swing.
+const SUMMON_BEARING: f32 = 2.5; // radians off his facing
+const SUMMON_R: f32 = 1.9;
+
+/// THE SPIRIT'S WHOLE FRAME: what it should be going for, its own step, and what its jaws reached.
+///
+/// **IT NEVER REACHES FOR THE FOE LIST** — the quarry is STAMPED, `foe.Leash` and `foe.Parry`'s law read from
+/// the other side. The creature owns a point; only this file knows what is on the field.
+fn tickPack(g: *Game, dt: f32) void {
+    if (g.pack.n == 0) return;
+    for (g.pack.live()) |*w| w.quarry = huntFor(g, w.pos);
+    g.pack.update(dt, g.hero.pos, PLAY_HALF);
+    for (g.pack.live()) |*w| {
+        groundActor(g, &w.pos, dt);
+        // ITS VOICES, off the one-frame edges the creature sets — the `justDied`/`loosed` idiom, so a beat
+        // cannot sound twice on a long frame or be missed on a short one.
+        if (w.bit) sfx.world(.wolf_bite, w.pos);
+        if (w.growled) sfx.world(.wolf_growl, w.pos);
+        if (w.yelped) sfx.world(.wolf_hurt, w.pos);
+        if (w.justDied) sfx.world(.wolf_die, w.pos);
+        w.jaw1 = foemod.markOn(w.xf[wolfmod.JAW], v3(0, 0, 0.10 * wolfmod.W));
+        // THE JAWS GO THROUGH THE SAME SWEPT TEST THE HERO'S SWORD DOES — `pierceFoes` walks every group with
+        // a `foe.Blade` and the first body it reaches takes it. A summon that had its own hit path would be a
+        // second definition of what "reached" means.
+        const b = w.blade();
+        if (b.active and !w.hitLatch and pierceFoes(g, b)) {
+            w.hitLatch = true; // one bite, one body: the swing's own latch, kept on this side
+            sfx.play(.hit_light);
+        }
+    }
+}
+
+/// THE NEAREST THING WORTH KILLING, or null to heel. Corpses do not count (`foe.corporeal`) and neither does
+/// anything past the spirit's own reach or past its tether to HIM — a summon that wanders off after the
+/// furthest archer on the map is one the player has lost.
+fn huntFor(g: *const Game, from: rl.Vector3) ?rl.Vector3 {
+    // **HE COMES FIRST** (owner's call). Past the recall ring there is no quarry at all — it breaks off
+    // whatever it was worrying at and runs back. Asked BEFORE the walk rather than as another rejection inside
+    // it, because this is not "is that body worth it", it is "I am too far from him to be doing anything".
+    if (mathx.distXZ(from, g.hero.pos) > wolfmod.RECALL_R) return null;
+    const Ctx = struct {
+        from: rl.Vector3,
+        hero: rl.Vector3,
+        best: f32 = wolfmod.HUNT_R,
+        at: ?rl.Vector3 = null,
+        fn visit(self: *@This(), foes: anytype, _: ?FoeKind) void {
+            const T = @typeInfo(@TypeOf(foes)).pointer.child;
+            for (foes) |*f| {
+                if (!foemod.corporeal(f)) continue;
+                // **IT NEVER GOES FOR A FLYER** (owner's call). The hop reaches low and mid bodies — that is
+                // its whole point — but a thing whose answer is that it LEAVES THE GROUND is not answered by
+                // jaws, and a wolf hopping uselessly under a leechfly is a summon that looks broken while
+                // doing exactly what it was told. `airborne` is the foe contract's own predicate, so this is
+                // one clause and not a list of creature names — and it is asked only of whatever HAS it
+                // (`gateTerrain`'s rule): a thing that cannot leave the ground answers by construction.
+                if (comptime @hasDecl(T, "airborne")) {
+                    if (f.airborne()) continue;
+                }
+                // …and a body the HERO has walked away from is not this spirit's problem either.
+                if (mathx.distXZ(self.hero, f.pos) > wolfmod.TETHER_R) continue;
+                const d = mathx.distXZ(self.from, f.pos);
+                if (d >= self.best) continue;
+                self.best = d;
+                self.at = f.pos;
+            }
+        }
+    };
+    var ctx = Ctx{ .from = from, .hero = g.hero.pos };
+    eachTarget(g, &ctx, Ctx.visit);
+    return ctx.at;
+}
+
 fn spillSouls(g: *Game) void {
     if (bindingInBag(&g.bag)) |ring| {
         _ = g.bag.take(ring, 1);
@@ -1689,6 +1874,45 @@ fn markSight(g: *Game) void {
 /// six creatures reaching out for them would be six copies of one rule.
 ///
 /// FOLDED OVER `FOE_GROUPS` AND KEYED OFF THE GROUP'S OWN `setParry`, so a creature GAINING windows is a field, a predicate and two group methods — never an edit here.
+/// **WHO EVERY CREATURE ON THE FIELD IS FIGHTING** — `markSight`/`markParry`'s pattern, and stamped for their
+/// reason: the threat table is the HERO'S side of the fight (where he is standing, what he has hit, what he
+/// called), and eleven creature files reaching out for a spirit would be eleven copies of one rule.
+///
+/// Run BEFORE anything decides what to do about anybody, with the sight and the shield.
+fn markThreat(g: *Game, dt: f32) void {
+    const spirit: ?rl.Vector3 = blk: {
+        const w = g.pack.firstConst() orelse break :blk null;
+        // A spirit that is DYING has stopped being a thing worth fighting — the corpse rule, and without it
+        // the field goes on swinging at motes for a second and a half.
+        if (!foemod.corporeal(w)) break :blk null;
+        break :blk w.pos;
+    };
+    // A MUTABLE fold, so `markSight`'s shape rather than `eachTarget`'s — that one hands out const pointers
+    // because everything it serves is a question, and this is an answer being written down.
+    inline for (FOE_GROUPS) |gr| {
+        for (@field(g, gr.field).live()) |*f| {
+            const M = @TypeOf(f.*);
+            // **A FLYER IS NEVER HANDED THE SPIRIT.** The wolf cannot reach it (`wolf.blade` stops at the
+            // hop's own height), so a leechfly that chose the wolf would be drinking from something that can
+            // never answer — a stalemate with no clock, and the exact trade the creature exists to refuse.
+            // The same predicate the spirit picks ITS targets with, read from the other end.
+            const mine: ?rl.Vector3 = blk: {
+                if (comptime @hasDecl(M, "airborne")) {
+                    if (f.airborne()) break :blk null;
+                }
+                break :blk spirit;
+            };
+            f.threat.at = mine orelse g.hero.pos;
+            f.threat.tick(
+                dt,
+                mathx.distXZ(f.pos, g.hero.pos),
+                if (mine) |s| mathx.distXZ(f.pos, s) else 1e9,
+                mine != null,
+            );
+        }
+    }
+}
+
 fn markParry(g: *Game) void {
     const p = foemod.Parry{ .live = g.hero.parryLive(), .at = g.hero.pos, .facing = g.hero.facing };
     inline for (FOE_GROUPS) |f| {
@@ -1959,7 +2183,13 @@ pub fn hud(g: *Game, dt: f32) void {
         hud_.equipment(
             // LEFT: what that hand actually has — boards, the rod, or nothing at all behind a bow.
             if (bowUp) .empty else if (wandUp) .wand else .shield,
-            if (bowUp) .bow else .sword,
+            // RIGHT: the armament itself, off the enum rather than off `bowUp` — as a pair of nested ifs the
+            // bell would have drawn a sword.
+            switch (g.hero.arm) {
+                .sword => hud_.Slot.sword,
+                .bow => hud_.Slot.bow,
+                .bell => hud_.Slot.bell,
+            },
             // …and UP fills only while something in his hands could cast one; behind a bow or a shield, empty.
             if (wandUp) (switch (g.hero.spell) {
                 .bolt => hud_.Slot.spell,
@@ -2470,10 +2700,28 @@ pub fn run(mode: Mode) void {
         }
         if (padPressed(.right_trigger_1)) r1 = true;
         if (padPressed(.right_trigger_2)) r2 = true;
-        const lightReq = r1 and !bow;
-        const heavyReq = r2 and !bow;
-        const quickReq = r1 and bow;
-        const aimedReq = r2 and bow;
+        // THE RIGHT HAND ROUTES R1/R2, AND IT IS A SWITCH ON THE ARMAMENT, NOT A TEST OF ONE. Written as
+        // `r1 and !bow` it meant "the sword" only while the sword was the one thing that was not the bow, so
+        // the bell inherited the swing the moment it existed — a man ringing a hand bell taking a step into a
+        // cut with nothing in his fist. Exhaustive, so a fourth armament has to say what its two buttons do.
+        var lightReq = false;
+        var heavyReq = false;
+        var quickReq = false;
+        var aimedReq = false;
+        var ringReq = false;
+        switch (g.hero.arm) {
+            .sword => {
+                lightReq = r1;
+                heavyReq = r2;
+            },
+            .bow => {
+                quickReq = r1;
+                aimedReq = r2;
+            },
+            // R2 IS DELIBERATELY DEAD ON THE BELL (owner's call): not having an attack IS what it costs to
+            // carry, so the heavy has nothing to fall through to.
+            .bell => ringReq = r1,
+        }
 
         // STAMINA GATES THE SPRINT AT THE SOURCE.
         var mv = gatherMove();
@@ -2514,6 +2762,8 @@ pub fn run(mode: Mode) void {
             } else if (castReq) {
                 // At the RAISE, not the throw: `wand_charge` climbs, and resolves about where the bolt goes.
                 if (g.hero.requestCast()) sfx.play(.wand_charge);
+            } else if (ringReq) {
+                ringBell(g);
             }
             g.hero.steerQueuedRoll(rollDir(g, mv));
             if (drinkReq) quickUse(g);
@@ -2569,6 +2819,8 @@ pub fn run(mode: Mode) void {
             g.hero.updateParry(dt, faceYaw); // PLANTED, like the cast — catching a blow is a standing job
         } else if (g.hero.shooting) {
             g.hero.updateShot(dt, faceYaw);
+        } else if (g.hero.ringing) {
+            g.hero.updateRing(dt, faceYaw); // PLANTED, like the cast — calling something is a standing job
         } else if (g.hero.casting) {
             g.hero.updateCast(dt, faceYaw); // PLANTED, like a quick shot — both hands are busy
             // Pulsed EVERY frame, since a `rumble.Event` can only decay from its peak (`rumble.castCharge`).
@@ -2592,8 +2844,11 @@ pub fn run(mode: Mode) void {
         if (g.hero.loosed) looseShaft(g);
         // …and THE SPELL on the one frame the cast does — whichever the rod is set to.
         if (g.hero.thrown) releaseSpell(g);
+        // …and THE SPIRIT on the one frame the bell sounds, which is the note and not the arm coming down.
+        if (g.hero.rang) summonSpirit(g);
         const hitsBefore = allHits(g);
         markSight(g); // WHO CAN SEE HIM — stamped before anything decides what to do about him
+        markThreat(g, dt); // …WHO EACH OF THEM IS ACTUALLY FIGHTING, before any of them moves toward it
         markParry(g); // …and WHAT HIS SHIELD IS DOING, before anything swings at him
         // ONE snapshot of the blade for every group this frame — re-derived per group, the three would disagree.
         const bladeNow = heroBlade(g);
@@ -2602,6 +2857,8 @@ pub fn run(mode: Mode) void {
             _ = heroTakes(g, b, b.hit.heavy(), true);
         }
         if (g.grief.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            // NOT `hit.heavy()`, on purpose: all four of his blows carry stance, so that test would call the
+            // side swipe a slam. The split is "was it THE SLAM", which is its own stance figure.
             _ = heroTakes(g, b, b.hit.stance >= ogremod.SLAM_HIT.stance, true);
         }
         for (g.line.live()) |*a| {
@@ -2610,6 +2867,8 @@ pub fn run(mode: Mode) void {
             }
         }
         if (g.band.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnClump)) |b| {
+            // NOT `hit.heavy()`, on purpose: nothing a kobold throws carries stance, so that test reads false
+            // for the whole band. The berserker's CHOP is the heavy one here and POISE is what separates it.
             _ = heroTakes(g, b, b.hit.poise >= koboldmod.ZERK_HIT.poise, true);
         }
         // The skeletal warriors. Only the greatsword's diagonal carries stance, so that is the split.
@@ -2681,6 +2940,9 @@ pub fn run(mode: Mode) void {
             g.rumble.play(rumblemod.hurt);
             g.hero.hurtFlash = mathx.maxF(g.hero.hurtFlash, 0.7); // the ONE flash the poison gets
         }
+        // THE SPIRIT. It runs AFTER every creature has moved, so what it is handed to go for is where that
+        // body actually is this frame and not where it was last one.
+        tickPack(g, dt);
         g.chests.update(dt, g.hero.pos);
         // THE FOLK, and the same terrain gate the foes get — a wanderer ambling about his post has no more
         // business walking up a cliff than a kobold has.
@@ -2732,6 +2994,7 @@ pub fn run(mode: Mode) void {
             for (@field(g, f.field).live()) |*a| groundActor(g, &a.pos, dt);
         }
         for (g.folk.live()) |*p| groundActor(g, &p.pos, dt);
+    for (g.pack.live()) |*w| groundActor(g, &w.pos, dt);
         // THE SCRIPT LAYER LAST, so `deaths` and `alive` are this frame's answers and not the previous one's.
         tickTriggers(g, dt);
         g.rig.tickShake(rawDt);
@@ -2958,7 +3221,14 @@ fn useItem(g: *Game, k: item.Kind) void {
     }
 }
 
+/// EVERY BLOW THE FIELD DEALS COMES THROUGH HERE, and the FIRST thing it asks is who it was aimed at.
+///
+/// Routed here rather than at the nine call sites for `Hit.heavy`'s reason: a creature swinging at the spirit
+/// must not land on a man standing six metres away, and as a test repeated per group it is nine places for the
+/// next creature to forget it. The name stays `heroTakes` because that is what it is for — the spirit branch
+/// is the exception and it says so.
 fn heroTakes(g: *Game, b: foemod.Blow, heavy: bool, voice: bool) combat.HitOutcome {
+    if (b.on == .spirit) return spiritTakes(g, b, heavy);
     const out = g.hero.takeHit(b.hit, mathx.dirXZ(g.hero.pos, b.from));
     switch (out) {
         .ignored => {}, // rolled through it, or he was already gone
@@ -2971,6 +3241,28 @@ fn heroTakes(g: *Game, b: foemod.Blow, heavy: bool, voice: bool) combat.HitOutco
         },
     }
     return out;
+}
+
+/// …AND THE SAME BLOW LANDING ON THE SPIRIT INSTEAD. Its own beats, and they are DELIBERATELY quieter than
+/// his: the camera shake and the pad belong to things happening to the PLAYER, and a summon taking a club to
+/// the ribs across the clearing must not rattle his screen. What he gets is the sound, from where it happened.
+///
+/// Returns `.ignored` so nothing downstream treats it as his — most of all `applyYank`, where a hook that
+/// caught the wolf has no business dragging the man.
+fn spiritTakes(g: *Game, b: foemod.Blow, heavy: bool) combat.HitOutcome {
+    for (g.pack.live()) |*w| {
+        if (!foemod.corporeal(w)) continue;
+        const out = w.takeHit(b.hit);
+        if (out == .taken) {
+            // The shove goes along the blow, so a spirit hit hard visibly gives ground — the one part of a
+            // creature's reaction the player reads from a distance.
+            const dir = mathx.dirXZ(b.from, w.pos);
+            if (mathx.lenXZ(dir) > 1e-3) w.shove = mathx.scaleV(mathx.normV(dir), if (heavy) 0.55 else 0.24);
+            sfx.world(if (heavy) .hit_heavy else .hit_light, w.pos);
+        }
+        break; // one spirit, and `SUMMON_MAX` is what says so
+    }
+    return .ignored;
 }
 
 fn heroBlockBeat(g: *Game, h: combat.Hit) void {
@@ -3083,6 +3375,11 @@ fn collideActors(g: *Game, dt: f32) void {
     }
     // A PERSON IS A BODY. You walk INTO a wanderer, never through one — and no jump in this game clears a man.
     for (g.folk.liveConst()) |*p| hp = collision.pushOutCircle(hp, HERO_R, p.pos, p.bodyR());
+    // …AND SO IS A SPIRIT. It is on his side and it is still in the way — a summon you can stand inside is one
+    // that reads as a projection rather than as a body between him and the thing coming.
+    for (g.pack.liveConst()) |*w| {
+        if (foemod.corporeal(w)) hp = collision.pushOutCircle(hp, HERO_R, w.pos, w.bodyR());
+    }
     g.hero.pos = mathx.approachV(g.hero.pos, inBounds(hp), step);
 
     inline for (FOE_GROUPS) |gr| settleGroup(g, gr, step);
@@ -3094,6 +3391,15 @@ fn collideActors(g: *Game, dt: f32) void {
         var q = g.env.resolveActor(p.pos, r, p.pos.y); // a wanderer never leaves the ground
         q = collision.pushOutCircle(q, r, g.hero.pos, HERO_R);
         p.pos = mathx.approachV(p.pos, inBounds(q), step);
+    }
+    // …and the spirit yields to the world and to HIM, one way only (the `FOE_GROUPS` `vs` rule): two bodies
+    // each half-correcting is jitter between them, and the one that gives way is never the player.
+    for (g.pack.live()) |*w| {
+        if (!foemod.corporeal(w)) continue;
+        const r = w.bodyR();
+        var q = g.env.resolveActor(w.pos, r, w.pos.y);
+        q = collision.pushOutCircle(q, r, g.hero.pos, HERO_R);
+        w.pos = mathx.approachV(w.pos, inBounds(q), step);
     }
 }
 
@@ -3382,6 +3688,9 @@ fn resetFoes(g: *Game) void {
     rehomeFoes(g, .blind);
     clearQuivers(g);
     g.lock = null;
+    // …AND WHAT HE HAD CALLED GOES WITH HIM. A spirit is bound to the man who rang for it: it does not outlive
+    // his death and stand in the fresh world with the FP already spent, and the walk back is his alone.
+    g.pack.reset();
 }
 
 const HURT_BAR_WINDOW = 5.0;

@@ -304,6 +304,7 @@ fn armName(a: heromod.Arm) [:0]const u8 {
     return switch (a) {
         .sword => "Straight Sword",
         .bow => "Short Bow",
+        .bell => "Summoning Bell",
     };
 }
 
@@ -690,7 +691,9 @@ pub const Book = struct {
         self.page = p;
         self.cur[idx(p)] = cursor;
         if (p == .tree) self.wheel.cursor = cursor; // the wheel is not in `cur` — see the field
-        self.picking = if (pickSlot) |s| @enumFromInt(s) else null;
+        // CLAMPED, for `rest.debugShow`'s reason: an out-of-range `@enumFromInt` is illegal behaviour, and
+        // `clamp` never touches `picking` — it owns `cur`, which is why only this one needs it here.
+        self.picking = if (pickSlot) |s| @enumFromInt(@min(s, NSLOT - 1)) else null;
         self.pick = row;
         self.settled = false;
         self.press = 0;
@@ -1287,6 +1290,7 @@ fn candSays(c: Cand, _: View) []const u8 {
         .arm => |a| switch (a) {
             .sword => "Back to sword and shield, and back to being able to guard.",
             .bow => "Both hands go to the bow, and the shield goes with them.",
+            .bell => "Ring it and what the scroll names comes. Nothing else: with the bell in his hand he has no attack at all.",
         },
         .off => |o| switch (o) {
             .shield => "Boards back on the arm. He can guard again, and the wand goes away with the sorcery.",

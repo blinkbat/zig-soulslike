@@ -130,8 +130,8 @@ pub const STEP_PROBE: f32 = 0.5;
 /// foe that could walk in would be walking into a state the game has nothing to say about.
 ///
 /// Written out rather than read off `hero.H` for `foe.HERO_HIGH`'s reason: env sits BELOW hero in the import
-/// graph and stays there. It is a TRAVERSAL rule, so it lives here beside `STEP_UP` and `MAX_SLOPE` and is
-/// enforced in the one place all three are (`stepOk`) — not at each mover.
+/// graph and stays there. It is a TRAVERSAL rule, so it lives here beside `STEP_UP` and `MAX_SLOPE`; the rule
+/// itself is `deepRefused`, which is NOT a clause in `stepOk` and says at its own head why.
 pub const WADE_MAX: f32 = 1.37;
 
 /// THE HERO'S OWN FOOTPRINT, for the tests here that push a body out of a collider — `foe.HERO_R`, written out
@@ -938,15 +938,8 @@ pub const Env = struct {
     pub fn walkStep(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32) rl.Vector3 {
         const to = v3(from.x + dir.x * dist, from.y, from.z + dir.z * dist);
         if (!self.heightAny or dist <= 0) return to;
-        // DEEP WATER IS A WALL, and it needs a refusal of its OWN rather than a clause in `stepOk`: you walk
-        // DOWN into a basin, and the rise rule lets every downhill step through by design.
-        //
-        // A HOLD, not the slope's slide (which is why it is not folded in below): there is no swimming yet, so
-        // this is a stopgap, and a stopgap that stops dead is one the player reads as a wall rather than as a
-        // current. A step that comes out SHALLOWER is always taken, or anything the map posts in the deep —
-        // or anything that leapt in, since a jump never asks this — is trapped there for good.
-        const deep = self.wadeDepth(to.x, to.z);
-        if (deep > WADE_MAX and deep > self.wadeDepth(from.x, from.z)) return v3(from.x, from.y, from.z);
+        // A HOLD, not the slope's slide, which is why it is not folded in below.
+        if (self.deepRefused(from.x, from.z, to.x, to.z)) return v3(from.x, from.y, from.z);
         if (self.stepOk(from, dir, dist)) return to;
         const g = self.gradAt(from.x, from.z);
         const gl = @sqrt(g[0] * g[0] + g[1] * g[1]);
@@ -974,8 +967,8 @@ pub const Env = struct {
     ///
     /// PLUS THE WALK'S OWN ALLOWANCE: on the takeoff frame his feet are still at the ground he left, so a bare
     /// comparison stalls a jump against the gentle rise that same jump exists to clear. A jump may never travel
-    /// WORSE than a step. Deep water is not asked here — `game.gateHeroWater` is that rule's one copy, and it
-    /// runs after every branch including this one.
+    /// WORSE than a step. Deep water is not asked here — `deepRefused` is that rule and `game.gateHeroWater`
+    /// asks it after every branch including this one.
     pub fn flyStep(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32, footY: f32) rl.Vector3 {
         const to = v3(from.x + dir.x * dist, from.y, from.z + dir.z * dist);
         if (!self.heightAny or dist <= 0) return to;
@@ -1055,6 +1048,20 @@ pub const Env = struct {
     pub fn wadeDepth(self: *const Env, x: f32, z: f32) f32 {
         if (self.paintedDepth(x, z) <= 0) return 0;
         return mathx.maxF(0, WATER_Y - self.groundAt(x, z));
+    }
+
+    /// DEEP WATER IS A WALL, and it is ONE rule with two callers: `walkStep`, which is every step taken on
+    /// foot, and `game.gateHeroWater`, which is the post-step gate over the committed moves that travel by
+    /// `mathx.stepXZ` and never see `walkStep` at all. As a copy at each the two had already drifted at the
+    /// boundary — one refused a move that came out at the SAME depth and the other allowed it.
+    ///
+    /// It needs a refusal of its own rather than a clause in `stepOk`: you walk DOWN into a basin, and the
+    /// rise rule lets every downhill step through by design. And GETTING OUT IS NEVER HELD — only a move that
+    /// comes out DEEPER is refused, or anything the map posts in the deep, or anything that leapt in (a jump
+    /// never asks this), is trapped there for good on a flat bottom where every bearing reads the same depth.
+    pub fn deepRefused(self: *const Env, fromX: f32, fromZ: f32, toX: f32, toZ: f32) bool {
+        const deep = self.wadeDepth(toX, toZ);
+        return deep > WADE_MAX and deep > self.wadeDepth(fromX, fromZ);
     }
 
 
@@ -2621,8 +2628,8 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(solids0, e.solidCount());
     try std.testing.expectEqual(lights0, e.lightCount());
 
-    try std.testing.expectEqual(@as(usize, 17343), props0);
-    try std.testing.expectEqual(@as(usize, 1810), solids0);
+    try std.testing.expectEqual(@as(usize, 17761), props0);
+    try std.testing.expectEqual(@as(usize, 1827), solids0);
     // The map's three `campfire`s are the EXTINGUISHED kind and carry no light. Swap one to
     // `campfire_lit` in the editor and this goes up by one — and gains a rest site with it.
     try std.testing.expectEqual(@as(usize, 40), lights0);
@@ -2677,7 +2684,7 @@ test "EVERY SHIPPED MAP LOADS AND MATERIALIZES, not just the one the game starts
     }
     try std.testing.expect(seen >= 3); // the plain and the two arenas, at least — or the walk found nothing
     var line: usize = 0;
-    try wf.load(wf.DIR ++ "/03_bone_court.world", m, &line);
+    try wf.load(wf.DIR ++ "/03_bone_court" ++ wf.EXT, m, &line);
     var shields: usize = 0;
     var blades: usize = 0;
     for (m.foes[0..m.nfoes]) |f| {

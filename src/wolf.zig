@@ -108,6 +108,35 @@ pub const PARENT = [N]i32{
     ROOT,  HIPR,  STR,   HKR, // hind right
 };
 
+/// ONE LIMB'S WHOLE DESCRIPTION: its four bones (joint → middle → cannon → paw), the two segment lengths the
+/// solver spans, which way the middle joint folds, and the height its own joint hangs at.
+const Limb = struct { bones: [4]usize, upper: f32, lower: f32, bend: f32, jointY: f32 };
+
+/// THE FOUR OF THEM, **IN `limbPhases`' OWN ORDER** — hind left, hind right, fore left, fore right — so a
+/// limb's index IS its phase. As four hand-written `column` calls the bones came off one order and the phases
+/// off another (`ph[2]` against the fore left), and nothing but a reader's care tied the two together.
+///
+/// `bend` is ANATOMY: a wolf's elbow points BACK and its stifle points FORWARD, which is exactly why a
+/// quadruped's front and back legs read as different machines. Get it the same on both and you have drawn a
+/// horse's front legs on a dog.
+const LIMBS = [4]Limb{
+    .{ .bones = .{ HIPL, STL, HKL, HPAWL }, .upper = FEMUR, .lower = HIND_LOWER, .bend = -1.0, .jointY = HIP_Y },
+    .{ .bones = .{ HIPR, STR, HKR, HPAWR }, .upper = FEMUR, .lower = HIND_LOWER, .bend = -1.0, .jointY = HIP_Y },
+    .{ .bones = .{ SHL, ELL, CAL, PAWL }, .upper = HUMERUS, .lower = FORE_LOWER, .bend = 1.0, .jointY = SHOULDER_Y },
+    .{ .bones = .{ SHR, ELR, CAR, PAWR }, .upper = HUMERUS, .lower = FORE_LOWER, .bend = 1.0, .jointY = SHOULDER_Y },
+};
+
+comptime {
+    // `column` links mid←top, low←mid and paw←low by construction from the chain it is handed, so this is the
+    // one place that chain is held against the layout it mirrors. A limb renumbered in `PARENT` alone is a
+    // compile error here rather than a leg hanging off the wrong bone.
+    for (LIMBS) |L| {
+        if (@as(usize, @intCast(PARENT[L.bones[1]])) != L.bones[0] or
+            @as(usize, @intCast(PARENT[L.bones[2]])) != L.bones[1] or
+            @as(usize, @intCast(PARENT[L.bones[3]])) != L.bones[2]) @compileError("wolf: a limb chain disagrees with PARENT");
+    }
+}
+
 // SEGMENT LENGTHS, as fractions of `W`. Canid proportions: the femur is a little shorter than the tibia and
 // about a fifth longer than the humerus, and the fore column (scapula + humerus + radius + metacarpus) is
 // what SETS the withers height — so these sum to the stature they are measured against rather than being
@@ -582,15 +611,23 @@ const GROWL_EVERY: f32 = 2.6;
 /// How far down the jaw bone the teeth sit, as a fraction of `W` — where the bite's blade is measured from.
 const JAW_REACH: f32 = 0.10;
 
-/// HOW FAR A BLOW KNOCKS IT BACK, by whether the blow was heavy — `foe.Push`, the same PAIR every wounded
+/// HOW HARD A BLOW KNOCKS IT BACK, by whether the blow was heavy — `foe.Push`, the same PAIR every wounded
 /// creature is shoved by, because the two are only ever chosen against each other.
-pub const SHOVE = foe.Push{ .light = 0.24, .heavy = 0.55 };
-/// …and how fast that shove bleeds off. One rate, named once: as a literal it appeared twice inside `settle`
-/// and the two had to agree by eye.
+///
+/// **IT IS A SPEED, in the unit every sibling's is** (`foe.applyShove`, which steps by `shove·dt` and bleeds
+/// the vector off at `SHOVE_DECAY`): the ground actually covered is that speed OVER the decay, so these two
+/// work out at the 4 cm and 9.4 cm of give-ground they were tuned to. Written as a hand-rolled step here the
+/// decay was multiplied INTO the travel as well, so the same pair the shared type names meant METRES on this
+/// one creature and m/s on the other nine — one struct, two units, and nothing to say which you were reading.
+pub const SHOVE = foe.Push{ .light = 1.44, .heavy = 3.30 };
+/// …and how fast that shove bleeds off, named like every sibling's.
 const SHOVE_DECAY: f32 = 6.0;
 
 const TURN_RATE: f32 = 5.6; // rad/s — a wolf turns on its own length
 const ACCEL: f32 = 9.0;
+/// How fast the SHOWN speed chases the real one — the gait's own smoothing, and the only thing `pose` reads.
+/// It is not `ACCEL`: that is the animal accelerating, this is the legs catching up with it.
+const GAIT_BLEND: f32 = 8.0;
 
 pub const State = enum { idle, move, bite, hurt, dead };
 
@@ -606,7 +643,6 @@ pub const Wolf = struct {
     phase: f32 = 0,
     speed: f32 = 0,
     speedS: f32 = 0,
-    hits: u32 = 0,
     justDied: bool = false,
     /// ITS VOICES' OWN ONE-FRAME EDGES (`justDied`'s idiom, and cleared with it at the top of `update`). The
     /// creature says WHEN; game.zig owns the speaker, because a creature that called `sfx` itself would be a
@@ -625,6 +661,11 @@ pub const Wolf = struct {
     /// out for the foe list, exactly as a foe never reaches out for the hero's shield (`foe.Parry`'s law).
     quarry: ?rl.Vector3 = null,
     biteCool: f32 = 0,
+    /// WHERE IT STOOD BEFORE IT MOVED THIS FRAME — what the game's terrain gate measures the step against
+    /// (`game.tickPack`). Carried by the creature rather than snapshotted from outside because the pack
+    /// COMPACTS: a slot's occupant can change inside one `Pack.update`, and a `was` array taken before it
+    /// would gate one spirit's step against another's ground.
+    wasAt: rl.Vector3 = mathx.zero3,
     /// Last frame's jaw, for the swept bite — `foe.Blade`'s `a0`/`b0`.
     jaw0: rl.Vector3 = mathx.zero3,
     jaw1: rl.Vector3 = mathx.zero3,
@@ -750,6 +791,7 @@ pub const Wolf = struct {
     /// nothing to go for, which is the hero.
     pub fn update(self: *Wolf, dt: f32, heel: rl.Vector3, bounds: f32) void {
         self.justDied = false; // the one-frame flag, reset at the TOP (the foe contract's own rule)
+        self.wasAt = self.pos; // …and the ground it is stepping OFF, for the gate that runs after this
         self.bit = false;
         self.growled = false;
         self.yelped = false;
@@ -838,19 +880,24 @@ pub const Wolf = struct {
         self.pose();
     }
 
-    /// The shove a blow put into it, bleeding off — the one thing that moves it that is not its own legs.
+    /// The gait blend, and the shove a blow put into it bleeding off — the one thing that moves it that is not
+    /// its own legs, through the SHARED step every wounded creature's goes through.
     fn settle(self: *Wolf, dt: f32, bounds: f32) void {
-        self.speedS = mathx.approach(self.speedS, self.speed, 8.0 * dt);
-        const l = mathx.lenXZ(self.shove);
-        if (l <= 1e-4) return;
-        mathx.stepXZ(&self.pos, mathx.scaleV(self.shove, 1.0 / l), l * dt * SHOVE_DECAY, bounds);
-        self.shove = mathx.scaleV(self.shove, mathx.maxF(0, 1.0 - dt * SHOVE_DECAY));
+        self.speedS = mathx.approach(self.speedS, self.speed, GAIT_BLEND * dt);
+        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
     }
 
     fn faceToward(self: *Wolf, at: rl.Vector3, dt: f32) void {
-        const d = mathx.dirXZ(self.pos, at);
-        if (mathx.lenXZ(d) < 1e-3) return;
-        self.facing = mathx.approachAngle(self.facing, mathx.headingXZ(d), TURN_RATE * dt);
+        foe.faceToward(self.pos, &self.facing, at, TURN_RATE, dt);
+    }
+
+    /// Stage the bite's own GATHER at `u` (0..1 of the wind) for the harness — `hero.stageRing`'s pattern, and
+    /// a POSE and nothing else: no blow, no hop travel, no cooldown spent. It is the only frame the crouch can
+    /// be judged on, and a crouch is judged by whether the PAWS stayed where the animal was standing.
+    pub fn stageGather(self: *Wolf, u: f32) void {
+        self.state = .bite;
+        self.t = mathx.clampF(u, 0, 1) * BITE_WIND;
+        self.pose();
     }
 
     /// THE POSE. One world matrix per bone, once a frame — `draw` only replays them.
@@ -912,12 +959,11 @@ pub const Wolf = struct {
         heromod.setJoint(&wx, &self.rest, TAIL1, TAIL0, mul(rx(-6.0 * m + 10.0 * react), ry(tailSwing * 0.8)));
         heromod.setJoint(&wx, &self.rest, TAIL2, TAIL1, mul(rx(-3.0 * m), ry(tailSwing * 0.6)));
 
-        // THE FOUR COLUMNS, each solved to where its paw has to be this frame. `bend` is anatomy: the elbow
-        // folds BACK and the stifle folds FORWARD, which is what makes a quadruped's ends read as different
-        // machines rather than as four of the same leg.
-        // …and the fold signs go WITH that negation: in the rig's own sense the elbow has to end up behind the
-        // column and the stifle in front of it, which is the opposite pair to the one the solver's own
-        // +Z-forward convention names. Straight legs with a kink at the top was this.
+        // THE FOUR COLUMNS, each solved to where its paw has to be this frame — off the ONE table that carries
+        // the bones, the lengths and the fold (`LIMBS`), whose index is the limb's own phase.
+        // …and the fold signs go WITH the solver's negation: in the rig's own sense the elbow has to end up
+        // behind the column and the stifle in front of it, which is the opposite pair to the one the solver's
+        // own +Z-forward convention names. Straight legs with a kink at the top was this.
         // …AND THE FEET COME UP WITH IT. `hop` raises the body, so without this the paws stay nailed to the
         // ground and the legs simply stretch — the body floats off four stilts instead of the animal leaving
         // the earth. Folding the reach by the same lift is what makes it a jump.
@@ -925,11 +971,14 @@ pub const Wolf = struct {
         // are. Written with the hop ALSO subtracted from `jointY` it was applied twice over — and the first
         // application had the sign backwards on top of that, since a body rising by `hop` needs its planted
         // foot to reach `+hop` FURTHER, not less. Between the two the legs folded to the chest on a 15 cm hop.
+        // …AND THE GATHER GOES THE OTHER WAY. `crouch` LOWERS the whole animal (the root's own `-crouch`), so
+        // the joint it hangs from is that much nearer the ground and the leg has that much LESS to span: the
+        // sink is what folds the limbs, which is the whole of what a gather looks like. Added instead, the
+        // reach ran past the ground by twice the crouch — and past the limb's own span, so `limbChain` clamped
+        // it dead straight and stood the animal 20 cm into the earth on four locked stilts for the whole of
+        // every wind-up. Level the LEG, never the body (the hero's ankle law) — this is that law at the hip.
         const tuck = hop / @max(HIP_Y, 0.001);
-        self.column(&wx, SHL, ELL, CAL, PAWL, ph[2], g, stride, m, HUMERUS, FORE_LOWER, 1.0, SHOULDER_Y + crouch, tuck);
-        self.column(&wx, SHR, ELR, CAR, PAWR, ph[3], g, stride, m, HUMERUS, FORE_LOWER, 1.0, SHOULDER_Y + crouch, tuck);
-        self.column(&wx, HIPL, STL, HKL, HPAWL, ph[0], g, stride, m, FEMUR, HIND_LOWER, -1.0, HIP_Y + crouch, tuck);
-        self.column(&wx, HIPR, STR, HKR, HPAWR, ph[1], g, stride, m, FEMUR, HIND_LOWER, -1.0, HIP_Y + crouch, tuck);
+        inline for (LIMBS, 0..) |L, i| self.column(&wx, L, ph[i], g, stride, m, crouch, tuck);
         self.xf = wx;
     }
 
@@ -939,21 +988,21 @@ pub const Wolf = struct {
     fn column(
         self: *Wolf,
         wx: *[N]rl.Matrix,
-        top: usize,
-        mid: usize,
-        low: usize,
-        paw: usize,
+        L: Limb,
         phase: f32,
         g: Gait,
         stride: f32,
         m: f32,
-        upperLen: f32,
-        lowerLen: f32,
-        bend: f32,
-        jointY: f32,
+        /// How far the whole animal has SUNK this frame — the gather. It comes off the joint's own height,
+        /// because a body that is lower has that much less leg to span (see `pose`).
+        crouch: f32,
         /// How far the paw is drawn UP under the body, 0..1 of the limb's own reach — the hop's tuck.
         tuck: f32,
     ) void {
+        const top = L.bones[0];
+        const mid = L.bones[1];
+        const low = L.bones[2];
+        const paw = L.bones[3];
         const at = pawAt(phase, g, stride);
         // At a standstill the paw sits under its own joint; the gait fades in with `m` so an idle wolf is not
         // walking on the spot.
@@ -967,10 +1016,11 @@ pub const Wolf = struct {
         // that way; this is the rig's own handedness and it belongs at the rig.
         const dz = -at.z * m;
         // `tuck` folds the reach itself, so a hopping wolf draws its feet up under it instead of hanging them.
-        const dy = (jointY * W - at.y * m) * (1.0 - mathx.clampF(tuck, 0, 0.6));
-        const sol = limbChain(upperLen * W, lowerLen * W, dy, dz, bend);
-        const parent: usize = if (top == SHL or top == SHR) CHEST else ROOT;
-        heromod.setJoint(wx, &self.rest, top, parent, rx(sol.upper));
+        const dy = ((L.jointY - crouch) * W - at.y * m) * (1.0 - mathx.clampF(tuck, 0, 0.6));
+        const sol = limbChain(L.upper * W, L.lower * W, dy, dz, L.bend);
+        // …and it hangs off whatever the LAYOUT says it hangs off (the forelimbs on the chest, the hinds on the
+        // pelvis), rather than a `top == SHL or top == SHR` restating the table two hundred lines below it.
+        heromod.setJoint(wx, &self.rest, top, @intCast(PARENT[top]), rx(sol.upper));
         heromod.setJoint(wx, &self.rest, mid, top, rx(sol.lower));
         // The carpus/hock takes a share of the lower segment's fold back the other way — that second bend is
         // the zig-zag a canid's leg has and a two-link solve on its own cannot show.
@@ -984,6 +1034,14 @@ pub const Wolf = struct {
     pub fn draw(self: *const Wolf, mesh: *const [N]rl.Mesh, mat: rl.Material) void {
         if (self.gone) return;
         for (0..N) |i| rl.drawMesh(mesh[i], mat, self.xf[i]);
+    }
+
+    /// THE COMING-APART, drawn as unlit spheres over the opaque pass like every other creature's
+    /// (`foe.drawParticles`). `foe.dissipate` fills this pool every frame of the death whether or not anybody
+    /// draws it, so with no call anywhere the spirit was the one body in the game that went out into nothing —
+    /// the ARCHER's missing emitter again, one layer further on.
+    pub fn drawFx(self: *const Wolf) void {
+        foe.drawParticles(&self.parts);
     }
 };
 
@@ -1058,6 +1116,12 @@ pub const Pack = struct {
     pub fn draw(self: *const Pack) void {
         if (!self.ready) return;
         for (self.liveConst()) |*w| w.draw(&self.mesh, self.mat);
+    }
+
+    /// …and its FX, which are NOT part of `draw`: they go over the whole opaque pass, once, with every other
+    /// creature's (`game.drawScene`) — inside `draw` they would be drawn twice and once into the depth pass.
+    pub fn drawFx(self: *const Pack) void {
+        for (self.liveConst()) |*w| w.drawFx();
     }
 
     pub fn reset(self: *Pack) void {
@@ -1147,6 +1211,30 @@ test "THE HIND FOOT LANDS IN THE FOREFOOT'S PRINT — one stride length for all 
     // …and at a trot the diagonal pairs are exactly together, which is what a trot IS.
     try std.testing.expectApproxEqAbs(ph[0], wrap01(ph[3]), 1e-5); // hind-left with fore-right
     try std.testing.expectApproxEqAbs(ph[1], wrap01(ph[2]), 1e-5); // hind-right with fore-left
+}
+
+/// The lowest of the four paw bones' origins, in world Y — what "standing on the ground" is measured off.
+fn deepestPaw(w: *const Wolf) f32 {
+    var low: f32 = 1e9;
+    for ([_]usize{ PAWL, PAWR, HPAWL, HPAWR }) |p| low = mathx.minF(low, foe.markOn(w.xf[p], mathx.zero3).y);
+    return low;
+}
+
+test "A GATHER FOLDS THE LEGS, IT DOES NOT SINK THE ANIMAL — the paws stay where they were standing" {
+    var w = Wolf.spawn(mathx.zero3, 0);
+    const standing = deepestPaw(&w);
+    // Walk the whole wind-up, which is where `crouch` lives. Added to the joint height instead of taken off it
+    // the reach ran past the limb's own span, `limbChain` clamped it straight, and the animal stood 20 cm into
+    // the earth on four locked stilts — so a few centimetres of give is a crouch and a fifth of a metre is this.
+    w.state = .bite;
+    var t: f32 = 0;
+    var worst: f32 = standing;
+    while (t <= BITE_WIND) : (t += 1.0 / 240.0) {
+        w.t = t;
+        w.pose();
+        worst = mathx.minF(worst, deepestPaw(&w));
+    }
+    try std.testing.expect(worst > standing - 0.05);
 }
 
 test "the two-link solver reaches what it is given and folds the right way round" {

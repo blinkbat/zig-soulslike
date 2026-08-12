@@ -929,6 +929,20 @@ pub const Attack = enum { light, heavy };
 /// than testing this enum, or "can he attack" becomes a list of arms to keep in step.
 pub const Arm = enum { sword, bow, bell };
 
+/// DOES WHAT IS IN THAT HAND SWING? The one question about the ARMAMENT, so a fourth one that also does not
+/// swing is a row in this switch and no edit anywhere else — EXHAUSTIVE on purpose. A FREE function on the
+/// enum and not a method on `Hero`, because the character book prices a CANDIDATE arm rather than the one he
+/// is holding, and as a two-way `if (arm == .bow)` that page put the sword's own light and heavy on a bell.
+pub fn armSwings(a: Arm) bool {
+    return switch (a) {
+        .sword => true,
+        // The bow's R1/R2 are the quick and the aimed shot — they are not SWINGS, and the loose is routed on
+        // `bowOut` at the input. What this answers is whether the blade capsule can ever go live.
+        .bow => false,
+        .bell => false,
+    };
+}
+
 /// THE LEFT HAND'S ARMAMENT — the wand is the shield's ALTERNATIVE, not a third thing he carries.
 pub const Off = enum { shield, wand };
 
@@ -1078,7 +1092,6 @@ pub const Hero = struct {
     castAlt: bool = false,
     /// Counted like `swings`/`shots`: a chained cast clears `casting` and sets it again inside one frame.
     casts: u32 = 0,
-    rings: u32 = 0,
     /// ONE FRAME, the frame the bolt leaves — game.zig throws it from `wandTipWorld()`.
     thrown: bool = false,
     /// WHICH SPIRIT THE BELL IS SET TO — `spell`'s twin on the other hand, and read by `ringCost` exactly as
@@ -1387,19 +1400,6 @@ pub const Hero = struct {
         return self.arm == .bell;
     }
 
-    /// DOES WHAT IS IN HIS RIGHT HAND SWING? Asked instead of `arm != .bell` at every site that gates an
-    /// attack, for `Hit.heavy`'s reason: one question about the ARMAMENT, so a fourth one that also does not
-    /// swing is a row in this switch and no edit anywhere else. EXHAUSTIVE on purpose.
-    /// (`swings` without the prefix is the swing COUNTER, a field — this is the armament's own question.)
-    pub fn armSwings(self: *const Hero) bool {
-        return switch (self.arm) {
-            .sword => true,
-            // The bow's R1/R2 are the quick and the aimed shot — they are not SWINGS, and the loose is routed
-            // on `bowOut` at the input. What this answers is whether the blade capsule can ever go live.
-            .bow => false,
-            .bell => false,
-        };
-    }
 
     /// IS THE LEFT-HAND ARMAMENT ACTUALLY IN HIS HAND? Not the same question as which one is EQUIPPED: a raised
     /// bow takes that hand to the string. Asked here rather than cleared on the swap, so it cannot go stale.
@@ -1770,7 +1770,6 @@ pub const Hero = struct {
         self.ringing = true;
         self.ringT = 0;
         self.rang = false;
-        self.rings +%= 1;
         self.startXfade();
         return true;
     }
@@ -3725,7 +3724,7 @@ fn handMesh() rl.Mesh {
 
 /// A Hero for the STATE tests.
 fn testHero() Hero {
-    return .{
+    var h = Hero{
         .mesh = undefined,
         .bow = undefined,
         .bowString = undefined,
@@ -3738,6 +3737,13 @@ fn testHero() Hero {
         .mat = undefined,
         .rest = restPositions(),
     };
+    // AND IT POSES BEFORE IT IS HANDED OVER, which is what every real construction does (`Hero.init`, and the
+    // foe contract's "every `spawn` poses before it returns"). `xf` and `blendXf` are `undefined` defaults, so
+    // without this the first `startXfade` freezes uninitialised memory as the source pose and the opening
+    // ~0.09 s of any committed action blends out of it — a test measuring a bone then passes or fails on the
+    // struct's byte layout rather than on the animation, and a field removed anywhere above it moves the answer.
+    h.pose();
+    return h;
 }
 
 test "the DRAUGHT is committed like the other two: inputs buffer, they do not fire through it" {

@@ -525,6 +525,10 @@ pub const Archer = struct {
     shove: rl.Vector3 = mathx.zero3,
     justDied: bool = false,
     /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
+    /// **AND NOTHING HERE READS IT YET.** Every other creature is handed `threat.aim(hero)` by its group's own
+    /// fold; the archer is walked directly in `game.run` and its shot is spawned at `heroAimPoint`, so a spirit
+    /// can never take an archer's attention. Wiring it up is not a rename: `archer.Arrow` homes on the hero and
+    /// carries no victim (`foe.Blow.on` is melee's), so whether shafts chase a summon is the owner's call.
     threat: foe.Threat = .{},
     fade: f32 = 0,
     gone: bool = false,

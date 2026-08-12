@@ -135,16 +135,21 @@ const DER = blk: {
 
 fn derive(l: Loadout, v: View) [ND]f32 {
     const bow = l.arm == .bow;
+    // …AND WHETHER THAT HAND HAS AN ATTACK AT ALL (`hero.armSwings`). `bow` alone was the whole question while
+    // there were two armaments; the BELL has neither a light nor a heavy, so every row below came off the
+    // SWORD and the page priced a swing he cannot take. Zero is the honest figure, and the arm's own tip
+    // already says it in words.
+    const attacks = heromod.armSwings(l.arm) or bow;
     const light = if (bow) heromod.BOW_QUICK_HIT else heromod.ATK_LIGHT_HIT;
     const heavy = if (bow) heromod.arrowBlow(l.ammo, true) else heromod.ATK_HEAVY_HIT;
     var d: [ND]f32 = undefined;
-    d[@intFromEnum(Der.light)] = light.dmg;
-    d[@intFromEnum(Der.heavy)] = heavy.dmg;
-    d[@intFromEnum(Der.fire)] = heavy.elem.total();
-    d[@intFromEnum(Der.poise)] = heavy.poise;
-    d[@intFromEnum(Der.stance)] = heavy.stance;
-    d[@intFromEnum(Der.stam_light)] = if (bow) combat.STAM_SHOT else combat.STAM_LIGHT;
-    d[@intFromEnum(Der.stam_heavy)] = if (bow) combat.STAM_AIMED else combat.STAM_HEAVY;
+    d[@intFromEnum(Der.light)] = if (attacks) light.dmg else 0;
+    d[@intFromEnum(Der.heavy)] = if (attacks) heavy.dmg else 0;
+    d[@intFromEnum(Der.fire)] = if (attacks) heavy.elem.total() else 0;
+    d[@intFromEnum(Der.poise)] = if (attacks) heavy.poise else 0;
+    d[@intFromEnum(Der.stance)] = if (attacks) heavy.stance else 0;
+    d[@intFromEnum(Der.stam_light)] = if (!attacks) 0 else if (bow) combat.STAM_SHOT else combat.STAM_LIGHT;
+    d[@intFromEnum(Der.stam_heavy)] = if (!attacks) 0 else if (bow) combat.STAM_AIMED else combat.STAM_HEAVY;
     // THE BOW COSTS HIM THE SHIELD, and so does the WAND — this is the row where that is a number rather
     // than lore, and it is the same number for both because it is the same left hand being spent.
     const guards = !bow and l.off == .shield;
@@ -1215,7 +1220,13 @@ fn drawSlot(self: *const Book, r: rl.Rectangle, s: SlotId, v: View, sel: bool) v
 
 fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
     switch (s) {
-        .right => if (v.arm == .bow) itemart.bow(cx, cy, px) else itemart.sword(cx, cy, px),
+        // EXHAUSTIVE over the arm, like the HUD's own right-hand cell (`game.hud`): as a two-way `if` the
+        // BELL drew a sword in his fist on the one page whose whole job is showing what he is carrying.
+        .right => switch (v.arm) {
+            .sword => itemart.sword(cx, cy, px),
+            .bow => itemart.bow(cx, cy, px),
+            .bell => itemart.bell(cx, cy, px),
+        },
         .left => if (v.arm != .bow) switch (v.off) {
             .shield => itemart.shield(cx, cy, px),
             .wand => itemart.wand(cx, cy, px),

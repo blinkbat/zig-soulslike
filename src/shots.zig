@@ -120,6 +120,19 @@ fn must(ok: bool, what: []const u8) void {
     @panic("shot harness: a staged action was refused");
 }
 
+/// PUT A NAMED ARMAMENT IN HIS HAND, however many steps round that is. **`swapArm` IS A CYCLE AND THERE ARE
+/// THREE OF THEM NOW**, so the single step that used to mean "back to the sword" lands on the BELL — and since
+/// the sword bone is stowed by not being what he holds, every hero frame after the bow's own group was a man
+/// gripping air with a bell in the HUD. The `must` comment above this is the rule; this is the case that broke
+/// it, and it broke SILENTLY because the step itself was never refused.
+fn armTo(g: *Game, want: heromod.Arm) void {
+    var guard: usize = 0;
+    while (g.hero.arm != want) : (guard += 1) {
+        must(guard < @typeInfo(heromod.Arm).@"enum".fields.len, "the armament never came round");
+        must(g.hero.swapArm(), "the armament would not swap");
+    }
+}
+
 /// THE CAMERA YAW WITH THE SUN BEHIND IT
 pub const LIT_YAW: f32 = 53.0;
 /// …and its XZ bearing, DERIVED (`camera.backDir` at pitch 0). Hand-rounded it was already 0.45° out, so
@@ -509,7 +522,7 @@ pub fn runShots(g: *Game) void {
         g.hero.pos = mathx.ground(0, 4);
         g.hero.stam.reset();
         g.hero.facing = mathx.headingXZ(LIT_BACK); // looking down the lens — the FRONT view
-        must(g.hero.swapArm(), "the bow would not come out");
+        armTo(g, .bow);
         // THE LOW CARRY first: bow in the right fist, string slack, and NO SHIELD on the left arm — which is the whole mechanic, and the one thing a single frame can prove.
         k = 0;
         while (k < 20) : (k += 1) {
@@ -605,7 +618,7 @@ pub fn runShots(g: *Game) void {
         // PUT IT AWAY, and leave the field as the rest of the harness expects to find it.
         g.hero.setAim(false);
         while (g.hero.shooting) g.hero.updateShot(dt, null);
-        must(g.hero.swapArm(), "the sword would not come back");
+        armTo(g, .sword);
         game.clearShaftsForShot(g);
         g.hero.stam.reset();
         g.hero.vit = heromod.freshVitals(g.hero.sheet);
@@ -2213,6 +2226,10 @@ fn chestShots(g: *Game) void {
     bookShot(g, "shots/106e_book_equipment.png", .equipment, bookmod.slotOrdinal(.right), null, 0);
     // THE SWAP PRICED: the bow picked over the sword, with the guard row going to nothing beside it.
     bookShot(g, "shots/106f_book_swap.png", .equipment, bookmod.slotOrdinal(.right), bookmod.slotOrdinal(.right), 1);
+    // …AND THE BELL PRICED, the one candidate that does not swing (`hero.armSwings`): light, heavy, poise,
+    // stance and both stamina rows go to NOTHING beside the sword's. They read the sword's own numbers before,
+    // which priced a swing the arm does not have — and its socket drew a sword in his fist to match.
+    bookShot(g, "shots/106f3_book_bell.png", .equipment, bookmod.slotOrdinal(.right), bookmod.slotOrdinal(.right), 2);
     // A quick SOCKET being loaded: the list holds only what he actually carries, plus an empty row, and the
     // cursor sits on the jerky — the one row that is not a flask.
     bookShot(g, "shots/106f2_book_quickbar.png", .equipment, bookmod.slotOrdinal(.q2), bookmod.slotOrdinal(.q2), 3);
@@ -2695,6 +2712,14 @@ fn wolfShots(g: *Game) void {
     // ground at all, and the spine bows once a stride. Shot at the phase the bow is deepest.
     game.poseWolfForShot(g, wolfmod.GALLOP_SPEED, 0.25);
     shootAt(g, "shots/135_wolf_gallop.png", at, 90, 0.05, 3.8);
+    // THE GATHER, near the top of the wind — the bite's tell, and the one frame the crouch is legible on. Judge
+    // it on the PAWS: a gather sinks the body and FOLDS the legs, so the feet stay where the animal was standing.
+    // Read the other way round it reached past its own span, `limbChain` locked every limb straight and stood it
+    // 20 cm into the earth for the whole wind-up. Side on, because a sink is vertical.
+    // …and it is staged BEFORE the hop's own lift begins (which is 55% into the wind), or the picture is of an
+    // animal already leaving the ground and the crouch cannot be read off it at all.
+    game.poseWolfGatherForShot(g, 0.5);
+    shootAt(g, "shots/135b_wolf_gather.png", at, 90, 0.05, 3.4);
     // …and its HEAD, which is where a wolf is or is not a wolf: the ears, the stop, the blunt muzzle.
     game.poseWolfForShot(g, 0, 0);
     shootPortrait(g, "shots/136_wolf_head.png", mathx.addV(at, v3(0, wolfmod.W * 1.0, 0)), 40, 0.02, 1.5);

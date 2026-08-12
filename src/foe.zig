@@ -870,12 +870,23 @@ test "WITH NO SPIRIT ON THE FIELD it is the hero, exactly as it always was" {
     try std.testing.expectEqual(hero.x, t.aim(hero).x); // and `aim` is a pass-through
 }
 
+/// HOW MANY BLOWS A CREATURE'S OWN BOARDS HAVE EATEN — zero for everything that carries none. `hits` is the
+/// honest edge for a body that TOOK a blow, and a block is deliberately not one (`warrior.caught` bills the
+/// guard and leaves the count alone), so a shaft stopped on a shield came back from `pierceGroup` as a MISS:
+/// it was never spent, it flew on through the man who caught it, and it landed in whatever stood behind him —
+/// billing his guard again on the way out. Keyed off `@hasDecl` like every other optional half of the contract.
+fn blocksOf(f: anytype) u32 {
+    if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "blocksTaken")) return f.blocksTaken();
+    return 0;
+}
+
 pub fn pierceGroup(foes: anytype, blade: Blade) bool {
     for (foes) |*f| {
         if (!f.alive() or f.dying()) continue;
         const before = f.hits;
+        const caught = blocksOf(f);
         f.tryHit(blade);
-        if (f.hits != before) return true;
+        if (f.hits != before or blocksOf(f) != caught) return true;
     }
     return false;
 }

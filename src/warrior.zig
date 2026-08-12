@@ -283,7 +283,6 @@ const RESISTS = combat.resists(.{ .fire = -35, .cold = 60, .chaos = 45 });
 /// HIS BOARDS ARE THIN (owner's call): four of the hero's lights or two of his heavies empty this, and
 /// an emptied bar under a blow SHATTERS THE SHIELD — see `caught`.
 const SHIELD_STAM: f32 = 62.0;
-const GUARD_ARC = combat.GUARD_ARC;
 
 const PELVIS_SHARE: f32 = 0.15; // BIG BODIES HINGE AT THE WAIST: the pelvis takes only this much lean
 
@@ -498,11 +497,14 @@ pub const Warrior = struct {
     /// THE SHIELD CAUGHT HIS STROKE THIS FRAME — the one-frame flag, reset at the top of `update` and read by
     /// the group after. A latch would bill the beat sixty times a second for the whole stumble.
     parried: bool = false,
-    /// Was the shield covering the hero's bearing at the top of THIS frame? `tryHit` reads it, because a
-    /// blade arrives knowing nothing about where the hero is standing.
+    /// Were the boards UP at the top of THIS frame — the state half of a block, settled with the pose. The
+    /// BEARING is not in it: that belongs to the blow and is asked of the blade itself (`shielded`).
     covered: bool = false,
     /// A latch nothing clears (owner's call): the fight after a guard break is a different fight.
     shieldGone: bool = false,
+    /// HOW MANY BLOWS THE BOARDS HAVE EATEN. A block is not a `hits`, on purpose — but it IS a blow that
+    /// stopped here, and `foe.pierceGroup` has no other way to know a shaft was spent (see `blocksOf`).
+    blocks: u32 = 0,
     /// The shieldman's guard pool. The greatsword carries one and never spends it — a second struct would
     /// fork the pose, the gait and the state machine with it.
     stam: combat.Stamina = combat.Stamina.initFoe(SHIELD_STAM),
@@ -624,6 +626,10 @@ pub const Warrior = struct {
     pub fn guardFrac(self: *const Warrior) f32 {
         return if (self.role == .shieldman and !self.shieldGone) self.stam.frac() else 0;
     }
+    /// A BLOW THE BOARDS ATE IS A BLOW THAT STOPPED HERE (`foe.blocksOf`) — what tells a shaft it is spent.
+    pub fn blocksTaken(self: *const Warrior) u32 {
+        return self.blocks;
+    }
 
     pub fn guardUp(self: *const Warrior) bool {
         if (self.role != .shieldman or self.gone or self.shieldGone) return false;
@@ -647,13 +653,6 @@ pub const Warrior = struct {
     fn faceToward(self: *Warrior, target: rl.Vector3, dt: f32) void {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt);
     }
-    /// The hero's bearing off his facing, in degrees (0 = dead ahead, ±180 = behind him).
-    fn bearingTo(self: *const Warrior, hero: rl.Vector3) f32 {
-        const d = mathx.dirXZ(self.pos, hero);
-        if (mathx.lenXZ(d) < 1e-3) return 0;
-        return mathx.degrees(mathx.wrapPi(mathx.headingXZ(d) - self.facing));
-    }
-
     pub fn update(self: *Warrior, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         if (self.gone) {
             foe.tickParticles(&self.parts, dt, self.pos.y); // the last motes keep drifting out
@@ -775,7 +774,7 @@ pub const Warrior = struct {
         }
 
         // Settled BEFORE the blade, so a hit this frame is judged against the guard he actually held.
-        self.covered = self.guardUp() and @abs(self.bearingTo(hero)) <= GUARD_ARC;
+        self.covered = self.guardUp();
 
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, moveSpeed, moveYaw, self.facing);
         self.footfalls();
@@ -1050,9 +1049,28 @@ pub const Warrior = struct {
         self.leash.noteCombat(); // a blow landed is a fight in progress — the tether waits
     }
 
+    /// DID THE BOARDS STAND BETWEEN HIM AND *THIS* BLOW. **THERE IS NOTHING ON HIS BACK** (owner's call): the
+    /// shield is a DIRECTION, so what decides a block is where the blow CAME FROM and never where he happens to
+    /// be looking. Asked of the blade's own segment rather than of `update`'s target, which is the whole of the
+    /// bug — with a spirit on the field the thing he is squared up to is the WOLF, so every sword going into his
+    /// spine was landing inside a front arc pointed somewhere else entirely.
+    ///
+    /// The MIDPOINT of the sweep, which sits between the attacker's grip and wherever the far end got to: the
+    /// grip alone swings a bow-length off the body mid-arc, and the contact point is buried in his chest, where
+    /// there is no bearing left to read. A blade with no bearing at all counts as caught (`foe.Parry.catches`'s
+    /// own rule — standing inside him, there is nothing to be wrong about), which is also what lets the harness
+    /// force a block with a synthetic hit at `centerWorld`.
+    fn shielded(self: *const Warrior, blade: foe.Blade) bool {
+        if (!self.covered) return false;
+        const at = mathx.lerpV(blade.a, blade.b, 0.5);
+        const d = mathx.dirXZ(self.pos, at);
+        if (mathx.lenXZ(d) < 1e-4) return true;
+        return combat.withinGuardArc(mathx.headingXZ(d), self.facing);
+    }
+
     pub fn tryHit(self: *Warrior, blade: foe.Blade) void {
         if (self.state == .dead) return;
-        const blocked = self.covered;
+        const blocked = self.shielded(blade);
         var b = blade;
         if (blocked) {
             b.hit = combat.guardChip(blade.hit, combat.GUARD_NEGATE); // no tree behind a foe's boards — the flat figure
@@ -1083,6 +1101,7 @@ pub const Warrior = struct {
     /// the bones resist), and the chip has already gone through `strike` above.
     fn caught(self: *Warrior, raw: combat.Hit, s: foe.Strike) void {
         self.blockT = 0;
+        self.blocks += 1;
         self.stam.spend(combat.guardStamina(raw));
         self.shove = mathx.scaleV(self.fdir(), -0.6); // he gives ground, he does not flinch
         self.sparks(s.contact, s.dir, 14);
@@ -2299,6 +2318,49 @@ test "UNINTERRUPTIBLE: the diagonal takes the damage and keeps coming — the LU
         .hit = heromod.ATK_LIGHT_HIT,
     });
     try std.testing.expectEqual(State.dead, k.state);
+}
+
+test "THERE IS NOTHING ON HIS BACK — the boards answer for the BLOW'S bearing, not for what he is squared up to" {
+    var w = Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1.0, 0.3); // facing +Z, boards up
+    w.covered = w.guardUp();
+    try std.testing.expect(w.covered);
+    const c = w.centerWorld();
+    const swing = struct {
+        fn at(from: rl.Vector3, to: rl.Vector3) foe.Blade {
+            return .{ .active = true, .r = 0.5, .a = from, .b = to, .a0 = from, .b0 = to, .hit = heromod.ATK_HEAVY_HIT };
+        }
+    }.at;
+    // Square onto his front: caught, as it always was.
+    try std.testing.expect(w.shielded(swing(v3(0, c.y, 1.4), c)));
+    // …and the SAME blow into his spine is not, though `covered` says the boards are up and he has not
+    // moved: with a spirit on the field the thing he is facing is the wolf, and this is the report.
+    const back = swing(v3(0, c.y, -1.4), c);
+    try std.testing.expect(!w.shielded(back));
+    w.tryHit(back);
+    try std.testing.expectEqual(@as(u32, 1), w.hits); // it hurt…
+    try std.testing.expect(w.staggered()); // …and it stunned…
+    try std.testing.expectApproxEqAbs(w.stam.max, w.stam.cur, 1e-5); // …and the boards paid nothing: they were not there
+}
+
+test "A SHAFT THE BOARDS ATE IS SPENT — it does not fly on into whatever stood behind him" {
+    var w = [_]Warrior{Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1.0, 0.3)};
+    w[0].covered = w[0].guardUp();
+    const c = w[0].centerWorld();
+    const shaft = foe.Blade{
+        .active = true,
+        .pierce = true,
+        .r = 0.16,
+        .a = v3(0, c.y, 1.4), // …coming in at his front, so the boards answer for it
+        .b = c,
+        .a0 = v3(0, c.y, 1.4),
+        .b0 = c,
+        .hit = .{ .dmg = 9 },
+    };
+    // A BLOCK IS NOT A `hits` (the test above pins that), so this is the only thing that can say it stopped.
+    try std.testing.expect(foe.pierceGroup(&w, shaft));
+    try std.testing.expectEqual(@as(u32, 0), w[0].hits);
+    try std.testing.expectEqual(@as(u32, 1), w[0].blocksTaken());
+    try std.testing.expect(w[0].stam.cur < w[0].stam.max);
 }
 
 test "a shieldman with his boards down takes a blow like anything else" {

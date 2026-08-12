@@ -560,6 +560,9 @@ const WADE_KNEE: f32 = 0.50;
 /// …AND IT REACHES ITS SLOWEST EXACTLY AT THE WALL. Two figures here would mean either a drag that keeps
 /// deepening past the last step he can take, or one that tops out early and leaves the last stretch feeling
 /// the same as the middle — and only one of those numbers is the one the player can be taught.
+const WADE_DEEP: f32 = envmod.WADE_MAX;
+const WADE_SLOWEST: f32 = 0.8;
+
 /// WHAT HE HAS ON HIM AT THE FIRST BONFIRE. A list rather than a run of `add` calls, so a second starting
 /// item is a row — and one place to look for "why do I already have this".
 ///
@@ -568,9 +571,6 @@ const WADE_KNEE: f32 = 0.50;
 const STARTING_KIT = [_]item.Kind{
     .spirit_scroll_wolf,
 };
-
-const WADE_DEEP: f32 = envmod.WADE_MAX;
-const WADE_SLOWEST: f32 = 0.8;
 
 comptime {
     // …AND THE WALL ITSELF IS CHEST HEIGHT ON HIM, pinned here for `hero.H`'s reason: `env` sits below `hero`
@@ -1126,6 +1126,14 @@ pub fn poseWolfForShot(g: *Game, speed: f32, phase: f32) void {
     }
 }
 
+/// …and the BITE'S GATHER, `u` through the wind: the crouch is a pose, so a shot is the only way to see it.
+pub fn poseWolfGatherForShot(g: *Game, u: f32) void {
+    for (g.pack.live()) |*w| {
+        plantActor(g, &w.pos);
+        w.stageGather(u);
+    }
+}
+
 /// The one standing, for a shot that wants to frame it.
 pub fn wolfPosForShot(g: *const Game) ?rl.Vector3 {
     const w = g.pack.firstConst() orelse return null;
@@ -1226,9 +1234,6 @@ fn interact(g: *Game) void {
     }
 }
 
-/// HE DIED HERE CARRYING THIS. The RING GIVES FIRST (DS's Ring of Sacrifice): one snaps, he keeps the lot,
-/// and there is nothing on the ground to come back for. Otherwise everything comes off him onto the spot he
-/// fell on — and whatever was standing there already is GONE, which is the whole of the mechanic.
 /// R1 WITH THE BELL OUT. Three things have to be true and they live in three different places, which is why
 /// this is here and not on the hero: the SCROLL is in the bag (game's), there is ROOM (the field's), and the
 /// FOCUS covers it (his). Asked in that order so the pool is never spent on a ringing that was going to be
@@ -1284,9 +1289,18 @@ const SUMMON_R: f32 = 1.9;
 fn tickPack(g: *Game, dt: f32) void {
     if (g.pack.n == 0) return;
     for (g.pack.live()) |*w| w.quarry = huntFor(g, w.pos);
+    // …AND IT WALKS ON THE SAME EARTH EVERYTHING ELSE DOES. The terrain gate is about FEET and nothing else
+    // (`gateTerrain`'s own law, which is why the FOLK go through it carrying no foe contract), so a spirit is
+    // in it for the folk's reason and not for the field's: without it the one body on his side is the one
+    // thing in the world that can trot up a cliff the hero is rightly refused by.
     g.pack.update(dt, g.hero.pos, PLAY_HALF);
+    var was: [combat.SUMMON_MAX]rl.Vector3 = undefined;
+    for (g.pack.liveConst(), 0..) |*w, i| was[i] = w.wasAt; // …read off the creature, so the indices align
+    gateTerrain(g, g.pack.live(), was[0..g.pack.n]);
     for (g.pack.live()) |*w| {
-        groundActor(g, &w.pos, dt);
+        // NOT GROUNDED HERE. `pos.y` has ONE writer and it is the walk of every actor at the end of the frame
+        // (`groundActor`, beside the hero, the field and the folk) — taken a second time here the spirit climbed
+        // onto rising ground at twice `GROUND_RISE_RATE`, which is the one actor in the game not sharing the ease.
         // ITS VOICES, off the one-frame edges the creature sets — the `justDied`/`loosed` idiom, so a beat
         // cannot sound twice on a long frame or be missed on a short one.
         if (w.bit) sfx.world(.wolf_bite, w.pos);
@@ -1322,6 +1336,10 @@ fn huntFor(g: *const Game, from: rl.Vector3) ?rl.Vector3 {
             const T = @typeInfo(@TypeOf(foes)).pointer.child;
             for (foes) |*f| {
                 if (!foemod.corporeal(f)) continue;
+                // …AND NEVER FOR A TREE THAT IS STILL A TREE (`disguised`, the lock's own refusal): a dormant
+                // Rooted is scenery until something wakes it, and a spirit that trots across a clearing to
+                // bite one gives the disguise away for nothing — and `foe.reached` rouses it on the way.
+                if (disguised(f)) continue;
                 // **IT NEVER GOES FOR A FLYER** (owner's call). The hop reaches low and mid bodies — that is
                 // its whole point — but a thing whose answer is that it LEAVES THE GROUND is not answered by
                 // jaws, and a wolf hopping uselessly under a leechfly is a summon that looks broken while
@@ -1345,6 +1363,9 @@ fn huntFor(g: *const Game, from: rl.Vector3) ?rl.Vector3 {
     return ctx.at;
 }
 
+/// HE DIED HERE CARRYING THIS. The RING GIVES FIRST (DS's Ring of Sacrifice): one snaps, he keeps the lot,
+/// and there is nothing on the ground to come back for. Otherwise everything comes off him onto the spot he
+/// fell on — and whatever was standing there already is GONE, which is the whole of the mechanic.
 fn spillSouls(g: *Game) void {
     if (bindingInBag(&g.bag)) |ring| {
         _ = g.bag.take(ring, 1);
@@ -1869,11 +1890,6 @@ fn markSight(g: *Game) void {
     }
 }
 
-/// THE HERO'S SHIELD, STAMPED ON EVERYTHING THAT MIGHT BE CAUGHT ON IT — `markSight`'s pattern, and asked here
-/// once a frame for its reason: the arc, the window and the beat all belong to the hero's side of the fight, and
-/// six creatures reaching out for them would be six copies of one rule.
-///
-/// FOLDED OVER `FOE_GROUPS` AND KEYED OFF THE GROUP'S OWN `setParry`, so a creature GAINING windows is a field, a predicate and two group methods — never an edit here.
 /// **WHO EVERY CREATURE ON THE FIELD IS FIGHTING** — `markSight`/`markParry`'s pattern, and stamped for their
 /// reason: the threat table is the HERO'S side of the fight (where he is standing, what he has hit, what he
 /// called), and eleven creature files reaching out for a spirit would be eleven copies of one rule.
@@ -1906,13 +1922,21 @@ fn markThreat(g: *Game, dt: f32) void {
             f.threat.tick(
                 dt,
                 mathx.distXZ(f.pos, g.hero.pos),
-                if (mine) |s| mathx.distXZ(f.pos, s) else 1e9,
+                // …and with no spirit to measure, INFINITELY FAR — `mathx.LONG_AGO`, which is this codebase's
+                // one word for "a number nothing can be nearer than" (`foe.sensedDist` reads it the same way).
+                if (mine) |s| mathx.distXZ(f.pos, s) else mathx.LONG_AGO,
                 mine != null,
             );
         }
     }
 }
 
+/// THE HERO'S SHIELD, STAMPED ON EVERYTHING THAT MIGHT BE CAUGHT ON IT — `markSight`'s pattern, and asked here
+/// once a frame for its reason: the arc, the window and the beat all belong to the hero's side of the fight, and
+/// six creatures reaching out for them would be six copies of one rule.
+///
+/// FOLDED OVER `FOE_GROUPS` AND KEYED OFF THE GROUP'S OWN `setParry`, so a creature GAINING windows is a field,
+/// a predicate and two group methods — never an edit here.
 fn markParry(g: *Game) void {
     const p = foemod.Parry{ .live = g.hero.parryLive(), .at = g.hero.pos, .facing = g.hero.facing };
     inline for (FOE_GROUPS) |f| {
@@ -2071,6 +2095,9 @@ pub fn drawScene(g: *Game) void {
     inline for (FOE_GROUPS) |f| {
         if (comptime @hasDecl(@FieldType(Game, f.field), "drawFx")) @field(g, f.field).drawFx();
     }
+    // …AND THE SPIRIT'S OWN, which needs its own line for the reason its `draw` does: it is not in `FOE_GROUPS`.
+    // `foe.dissipate` has been filling that pool since the day it was written, with nothing drawing it.
+    g.pack.drawFx();
     g.souls.drawFx();
     g.hero.drawTrail();
     for (quivers(g)) |pool| archermod.drawArrowTrails(pool);
@@ -2994,7 +3021,7 @@ pub fn run(mode: Mode) void {
             for (@field(g, f.field).live()) |*a| groundActor(g, &a.pos, dt);
         }
         for (g.folk.live()) |*p| groundActor(g, &p.pos, dt);
-    for (g.pack.live()) |*w| groundActor(g, &w.pos, dt);
+        for (g.pack.live()) |*w| groundActor(g, &w.pos, dt);
         // THE SCRIPT LAYER LAST, so `deaths` and `alive` are this frame's answers and not the previous one's.
         tickTriggers(g, dt);
         g.rig.tickShake(rawDt);
@@ -3125,11 +3152,15 @@ fn bookAct(g: *Game, a: bookmod.Action) void {
     switch (a) {
         .none => {},
         .use => |k| useItem(g, k),
-        .arm => |want| if (g.hero.arm != want) {
-            _ = g.hero.swapArm();
+        // **WALKED ROUND UNTIL IT IS THE ONE HE PICKED** — the `.ammo` row's own shape, and not one step of it.
+        // `swapArm` is a CYCLE and there are three armaments now, so a single step lands on whatever happens to
+        // be next: choosing the BELL while holding the sword handed him the BOW, and choosing the sword while
+        // holding the bow handed him the bell. The break keeps a refusal (mid-roll, dead, at a fire) a no-op.
+        .arm => |want| while (g.hero.arm != want) {
+            if (!g.hero.swapArm()) break;
         },
-        .off => |want| if (g.hero.off != want) {
-            _ = g.hero.swapOff();
+        .off => |want| while (g.hero.off != want) {
+            if (!g.hero.swapOff()) break;
         },
         .ammo => |k| while (g.hero.quiver.sel != k) {
             if (!g.hero.cycleArrow()) break;

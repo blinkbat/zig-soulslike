@@ -5,6 +5,7 @@ const sfx = @import("audio.zig");
 const hud = @import("hud.zig");
 const uiart = @import("uiart.zig");
 const ptree = @import("passivetree.zig");
+const daynight = @import("daynight.zig"); // the two named hours the fire will hold you until
 
 const v3 = mathx.v3;
 
@@ -26,8 +27,12 @@ const SEAT_TURN: f32 = 0.20;
 
 // THE BONFIRE IS A SCREEN NOW, not a pause with a fade. He sits on the RIGHT of the frame and the fire's own
 // menu is a list down the LEFT — the shape every bonfire in the genre has. GETTING UP IS A ROW ON THAT LIST
-// and not "any button": with a menu on screen, a stray press has somewhere to land, and a press that both
-// chose a row and stood him up is the bug the old any-button rule guaranteed.
+// **OR BACK** (owner's call), and never "any button": what the old any-button rule guaranteed was a press
+// that both chose a row and stood him up, and Back is the one button that can never also pick.
+//
+// THE FIRE DOES NOT TOUCH THE CLOCK ON ITS OWN (owner's call). Sitting down used to pull the whole world
+// into a local dusk whatever hour it was; the hour you walked in at is the hour you sit in, and the two
+// `Rest until…` rows are the only thing at a fire that moves the light.
 
 /// What the fire offers. Two rows for now, and Leave is deliberately the LAST of them: it is the one you
 /// arrive at by pushing down, which is where a hand that means to leave already is.
@@ -36,12 +41,30 @@ const SEAT_TURN: f32 = 0.20;
 /// they do, and a sentence explaining a verb is a sentence nobody reads twice.
 pub const Row = enum {
     level,
+    /// **WAIT OUT THE CLOCK.** A bonfire is where you stop, so it is the one place that may spend HOURS: the
+    /// world's light is a thing you can now be in the wrong half of, and a fire you cannot wait at is a night
+    /// you have to walk off. Two, and they are the two hours worth naming (`daynight.Until`) rather than a
+    /// scrub — the fire is not an authoring tool, and "which light do I want to fight in" has two answers.
+    untilMorning,
+    untilEvening,
     leave,
 
     pub fn label(r: Row) [:0]const u8 {
         return switch (r) {
             .level => "Level Up",
+            .untilMorning => daynight.Until.morning.label(),
+            .untilEvening => daynight.Until.evening.label(),
             .leave => "Leave Bonfire",
+        };
+    }
+
+    /// The hour this row waits for, or null for the rows that are not about the clock — EXHAUSTIVE, so a third
+    /// named hour is a row here and a row in `daynight.Until` and nothing else.
+    pub fn until(r: Row) ?daynight.Until {
+        return switch (r) {
+            .level, .leave => null,
+            .untilMorning => .morning,
+            .untilEvening => .evening,
         };
     }
 };
@@ -58,6 +81,9 @@ pub const Pick = union(enum) {
     none,
     /// Take the node the wheel's cursor is on — which IS the level-up, souls and all.
     take: usize,
+    /// SIT UNTIL A NAMED HOUR. The fire asks; only the loop owns the clock, which is the same split the
+    /// level-up keeps with the souls.
+    wait: daynight.Until,
     /// Stand up.
     leave,
 };
@@ -120,15 +146,6 @@ pub const Rest = struct {
             .sit => 1.0 - mathx.smoothstep(0, FADE_UP, self.t),
             .out => mathx.clampF(self.t / FADE_OUT, 0, 1),
             .off => 1.0 - mathx.smoothstep(0, FADE_RETURN, self.t),
-        };
-    }
-
-    /// HOW FAR INTO DUSK the world is pulled, 0..1 (see gfx.Scene.setDim).
-    pub fn dim(self: *const Rest) f32 {
-        return switch (self.phase) {
-            .in, .off => 0,
-            .sit => 1,
-            .out => 1.0 - mathx.clampF(self.t / FADE_OUT, 0, 1),
         };
     }
 
@@ -260,13 +277,19 @@ pub fn pan(self: *Rest, v: rl.Vector2, dt: f32) void {
 /// CONFIRM. On the list it picks a row; on the wheel it asks for the node under the cursor.
 pub fn confirm(self: *Rest, t: *const Tree, souls: u32) Pick {
     switch (self.screen) {
-        .list => switch (@as(Row, @enumFromInt(self.row))) {
-            .level => {
-                self.screen = .tree;
-                sfx.play(.menu_pick);
-                return .none;
-            },
-            .leave => return .leave,
+        .list => {
+            const r: Row = @enumFromInt(self.row);
+            if (r.until()) |u| return .{ .wait = u };
+            switch (r) {
+                .level => {
+                    self.screen = .tree;
+                    sfx.play(.menu_pick);
+                    return .none;
+                },
+                .leave => return .leave,
+                // …answered by `until()` above, which is the one place the clock rows are named.
+                .untilMorning, .untilEvening => unreachable,
+            }
         },
         .tree => {
             const i = self.wheel.cursor;
@@ -281,13 +304,17 @@ pub fn confirm(self: *Rest, t: *const Tree, souls: u32) Pick {
     }
 }
 
-/// BACK. Off the wheel and onto the list; on the list it does nothing, because leaving is a ROW — a Back
-/// that stood him up would be the any-button rule sneaking back in through the one button that means
-/// "the screen before this one".
+/// BACK. Off the wheel and onto the list; on the list it stands him up, which is what the one button that
+/// means "the screen before this one" has to do when the screen before this one is the field.
 pub fn back(self: *Rest) void {
-    if (self.screen != .tree) return;
-    self.screen = .list;
+    if (self.screen == .tree) {
+        self.screen = .list;
+        sfx.play(.menu_back);
+        return;
+    }
+    if (self.phase != .sit) return;
     sfx.play(.menu_back);
+    self.leave();
 }
 
 const Tree = ptree.Tree;
@@ -342,7 +369,9 @@ fn drawList(self: *const Rest, a: f32) void {
     const sh = rl.getScreenHeight();
     const head = hud.lineH(hud.TITLE) + 40;
     const body = rowH() * @as(i32, NROW);
-    const foot = hud.lineH(hud.HINT) + 30;
+    // NO HINT ROW HERE (owner's call) — four verbs down a list is the whole of it, and a crib under them
+    // was telling you which button picks a row on the one screen where every row says what it does.
+    const foot: i32 = 26;
     const h = head + body + foot;
     const x = MARGIN;
     const y = @divTrunc(sh - h, 2);
@@ -362,11 +391,6 @@ fn drawList(self: *const Rest, a: f32) void {
         hud.text(r.label(), x + PAD_X + 6, ry, hud.BODY, ink(if (on) uiart.HOT else uiart.TEXT_VALUE, a));
         ry += rowH();
     }
-    const hints = [_]hud.Hint{
-        .{ .glyph = .{ .dpad = .updown }, .label = "Choose" },
-        .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Select" },
-    };
-    hud.hintRowAt(&hints, x + PAD_X, y + h - hud.lineH(hud.HINT) - 14, hud.HINT, ink(uiart.TEXT_HINT, a));
 }
 
 /// THE WHEEL, and at a fire it is SPENDABLE — this is the one screen in the game that can charge him souls.

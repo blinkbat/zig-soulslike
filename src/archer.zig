@@ -530,6 +530,8 @@ pub const Archer = struct {
     /// can never take an archer's attention. Wiring it up is not a rename: `archer.Arrow` homes on the hero and
     /// carries no victim (`foe.Blow.on` is melee's), so whether shafts chase a summon is the owner's call.
     threat: foe.Threat = .{},
+    /// …AND THE WAY ROUND WHAT IS IN THE WAY (`foe.Nav`), stamped by the game like every creature's on the field.
+    nav: foe.Nav = .{},
     fade: f32 = 0,
     gone: bool = false,
 
@@ -592,6 +594,14 @@ pub const Archer = struct {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt); // shared — see foe.zig
     }
 
+    /// WHERE IT IS TRYING TO WALK, or null when it is not walking anywhere (`game.markWay`) — off the kite's own
+    /// committed vector, which is the whole errand: closing in, backing off, or going home.
+    pub fn navWant(self: *const Archer, hero: rl.Vector3) ?rl.Vector3 {
+        _ = hero;
+        if (self.state != .reposition) return null;
+        return mathx.addV(self.pos, self.kiteDir);
+    }
+
     // The true nock point — where the arrow actually sits on the live string this frame, so the loosed projectile leaves from exactly where the nocked shaft was drawn.
     pub fn nockWorld(self: *const Archer) rl.Vector3 {
         return self.lastNock;
@@ -614,7 +624,7 @@ pub const Archer = struct {
         self.reloadCd = mathx.maxF(0, self.reloadCd - dt);
         self.backstepCd = mathx.maxF(0, self.backstepCd - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         self.t += dt;
         var loosed = false;
@@ -623,7 +633,7 @@ pub const Archer = struct {
 
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt); // the bone-clatter jolt off a blow
 
-        const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
+        const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         // THE PANIC LEAP interrupts whatever it was doing — checked before the state machine so a hero who closes mid-draw gets leapt away from on the same frame he arrives.
         if (wantsBackstep(d, self.backstepCd, self.state, !foe.canLeap(&self.root))) self.enterBackstep();
         switch (self.state) {
@@ -683,9 +693,13 @@ pub const Archer = struct {
                     foe.faceToward(self.pos, &self.facing, mathx.addV(self.pos, self.kiteDir), TURN_RATE, dt);
                 } else self.faceToward(hero, dt);
                 const moved = WALK_SPEED * dt;
-                mathx.stepXZ(&self.pos, self.kiteDir, moved, bounds);
+                // …ROUND WHAT IS IN THE WAY (`foe.Nav`), at the STEP: a kiting archer keeps its eyes and its bow
+                // on him and moves sideways to whatever it is looking at, so the detour is one more kite
+                // direction. The BACKSTEP below is not steered — it is a committed leap.
+                const go = self.nav.along(self.kiteDir);
+                mathx.stepXZ(&self.pos, go, moved, bounds);
                 movedDist = moved;
-                moveYaw = mathx.headingXZ(self.kiteDir);
+                moveYaw = mathx.headingXZ(go);
                 if (self.t >= REPOSITION_DUR) self.decide(d);
             },
             .backstep => {
@@ -700,7 +714,7 @@ pub const Archer = struct {
                 if (self.t >= BACKSTEP_GATHER + BACKSTEP_FLIGHT + BACKSTEP_LAND) {
                     self.hop = 0;
                     // RE-MEASURED (it leapt), BUT STILL THROUGH THE LEASH — see the kobold's dash.
-                    self.decide(foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R));
+                    self.decide(foe.senseHero(&self.leash, self.pos, hero, AGGRO_R));
                 }
             },
             .stunlight => {

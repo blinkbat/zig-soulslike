@@ -540,6 +540,8 @@ pub const Warrior = struct {
     justDied: bool = false,
     /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
     threat: foe.Threat = .{},
+    /// …AND THE WAY ROUND WHAT IS IN FRONT OF IT (`foe.Nav`), stamped the same way and for the same reason.
+    nav: foe.Nav = .{},
     fade: f32 = 0,
     gone: bool = false,
 
@@ -653,6 +655,13 @@ pub const Warrior = struct {
     fn faceToward(self: *Warrior, target: rl.Vector3, dt: f32) void {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt);
     }
+
+    /// WHERE HE IS TRYING TO WALK, or null when he is not walking anywhere (`game.markWay`). The APPROACH only —
+    /// the circle is a lateral orbit that re-decides on its own clock, and a stroke or a leap is committed.
+    pub fn navWant(self: *const Warrior, hero: rl.Vector3) ?rl.Vector3 {
+        if (self.state != .approach) return null;
+        return if (self.homing) self.home else hero;
+    }
     pub fn update(self: *Warrior, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         if (self.gone) {
             foe.tickParticles(&self.parts, dt, self.pos.y); // the last motes keep drifting out
@@ -677,7 +686,7 @@ pub const Warrior = struct {
         self.blockT += dt;
         for (&self.cds) |*c| c.* = mathx.maxF(0, c.* - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         self.trail.age(dt);
 
@@ -685,7 +694,7 @@ pub const Warrior = struct {
 
         const sp = spec(self.role);
         const a = self.move();
-        const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
+        const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         var movedDist: f32 = 0;
         var moveYaw: ?f32 = null;
         var moveSpeed: f32 = 0; // …and how fast, which is what the GAIT is blended off (walk vs run)
@@ -701,7 +710,9 @@ pub const Warrior = struct {
             },
             .approach => {
                 const tgt = if (self.homing) self.home else hero;
-                self.faceToward(tgt, dt);
+                // …ROUND WHAT IS IN THE WAY (`foe.Nav`): he walks where he is looking, so the way through is
+                // read at the FACING and the step below is untouched.
+                self.faceToward(self.nav.aim(self.pos, tgt), dt);
                 const f = self.fdir();
                 moveSpeed = self.approachSpeed(d);
                 const moved = moveSpeed * dt;

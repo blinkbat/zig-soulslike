@@ -210,6 +210,8 @@ pub const Shroom = struct {
     justDied: bool = false,
     /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
     threat: foe.Threat = .{},
+    /// …AND THE WAY ROUND WHAT IS IN THE WAY (`foe.Nav`), stamped the same way and for the same reason.
+    nav: foe.Nav = .{},
     fade: f32 = 0,
     gone: bool = false,
 
@@ -265,6 +267,15 @@ pub const Shroom = struct {
     fn fdir(self: *const Shroom) rl.Vector3 {
         return mathx.headingDir(self.facing);
     }
+    /// WHERE IT IS TRYING TO GO (`game.markWay`), asked while it is SITTING — the toad's rule, and for its
+    /// reason: this one travels in committed hops too, so the stamp has to be ready on the frame the next one is
+    /// chosen.
+    pub fn navWant(self: *const Shroom, hero: rl.Vector3) ?rl.Vector3 {
+        if (self.state != .idle) return null;
+        if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
+        return if (mathx.distXZ(self.pos, self.home) > HOME_R) self.home else null;
+    }
+
     fn faceToward(self: *Shroom, target: rl.Vector3, dt: f32) void {
         foe.faceToward(self.pos, &self.facing, target, 5.2, dt); // small and eager — it turns fast
     }
@@ -285,7 +296,7 @@ pub const Shroom = struct {
         self.t += dt;
         self.flingCd = mathx.maxF(0, self.flingCd - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
@@ -366,7 +377,7 @@ pub const Shroom = struct {
     }
 
     fn updateIdle(self: *Shroom, dt: f32, hero: rl.Vector3, bounds: f32) void {
-        const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
+        const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         if (d <= AGGRO_R) self.faceToward(hero, dt);
         // Three little clocks (the wanderer's law, toy-sized): a breath, a cap sway, a weight rock.
         const br = mathx.sinf(self.elapsed * (1.7 + 0.4 * self.seed) + self.seed * 6.28);
@@ -379,7 +390,7 @@ pub const Shroom = struct {
     }
 
     fn decide(self: *Shroom, hero: rl.Vector3, bounds: f32) void {
-        const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
+        const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         switch (classify(d, self.flingCd <= 0, !foe.canLeap(&self.root))) {
             .rest => {
                 if (mathx.distXZ(self.pos, self.home) > HOME_R) {
@@ -399,7 +410,9 @@ pub const Shroom = struct {
     fn beginHop(self: *Shroom, to: rl.Vector3, bounds: f32) void {
         const d = mathx.distXZ(self.pos, to);
         const reach = mathx.minF(HOP_REACH, mathx.maxF(0.3, d - KEEP_R * 0.8));
-        const dir = mathx.dirXZ(self.pos, to);
+        // …ROUND WHAT IS IN THE WAY (`foe.Nav`), and HERE at the choose because a hop is committed the moment it
+        // leaves the ground. The FLING is left straight: that one is the attack.
+        const dir = self.nav.along(mathx.dirXZ(self.pos, to));
         self.hopAim = mathx.clampXZ(v3(self.pos.x + dir.x * reach, 0, self.pos.z + dir.z * reach), bounds);
         self.hopReach = mathx.distXZ(self.pos, self.hopAim);
         self.hopDur = HOP_FLIGHT;

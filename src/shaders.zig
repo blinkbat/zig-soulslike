@@ -97,12 +97,21 @@ pub const sceneFS =
     \\in vec2 fragUV;
     \\in float fragMatF;
     \\in float fragLife;        // smoke only — see the vertex shader's rise block
-    \\uniform vec3 sunDir;      // normalized, surface -> sun
+    \\uniform vec3 sunDir;      // normalized, surface -> whatever is CASTING (sun by day, moon by night)
     \\uniform int groundMode;   // 1 = terrain (procedural grain), 0 = props/hero
     \\uniform vec3 camPos;      // for distance haze
     \\uniform vec3 hazeColor;   // sky/haze tint (pre-gamma)
     \\uniform float hazeDensity;
-    \\uniform float dim;        // 0 = full daylight, 1 = dusk (the rest scene) — see Scene.setDim
+    \\// THE HOUR'S OWN COLOURS (`daynight.Palette`, pushed by `gfx.Scene.setHour`). The KEY carries its own
+    \\// strength, so nightfall is this vector walking toward black; the hemisphere pair is the ambient it sits
+    \\// in, and `hazeBank` the warm wash the distance takes on looking into the light.
+    \\uniform vec3 keyCol;
+    \\uniform vec3 ambGround;
+    \\uniform vec3 ambSky;
+    \\uniform vec3 hazeBank;
+    \\// …and how bright the key is against the hour the SPECULARS were authored at (1 = that hour). Every
+    \\// highlight here is a mirror of the key, so left at full a blade blazed like noon under a half moon.
+    \\uniform float keyAmt;
     \\uniform float hitFlash;   // 0..1 blood-red combat flash on the CURRENT draw (per-actor)
     \\uniform float fade;       // 1 = solid, <1 = see THROUGH the current draw — see Scene.setFade
     \\uniform float uTime;      // seconds — water ripple phase (shared with the VS wind term)
@@ -447,16 +456,15 @@ pub const sceneFS =
     \\  float diff = clamp((ndl + 0.12)/1.12, 0.0, 1.0); // tighter wrap = crisper terminator (more contrast)
     \\  float sh = shadowFrac(fragPosition, ndl);
     \\  // Golden-hour split: warm amber key vs cool slate sky ambient + warm dirt bounce.
-    \\  vec3 hemi = mix(vec3(0.090, 0.076, 0.054), vec3(0.168, 0.188, 0.244), n.y*0.5 + 0.5); // darker floor — darks go DARKER
-    \\  // DUSK DIAL (`Scene.setDim`): 0 = the golden hour as authored, 1 = the sun and the sky pulled right down while the POINT LIGHTS are left alone.
-    \\  float keyK = 1.0 - 0.86*dim;
-    \\  float ambK = 1.0 - 0.62*dim;
-    \\  vec3 lit = base*(hemi*ambK*(1.0 - 0.62*sh) + vec3(1.32, 1.10, 0.80)*diff*1.72*keyK*(1.0 - sh)
+    \\  vec3 hemi = mix(ambGround, ambSky, n.y*0.5 + 0.5); // darker floor — darks go DARKER
+    \\  vec3 lit = base*(hemi*(1.0 - 0.62*sh) + keyCol*diff*1.72*(1.0 - sh)
     \\                   + pointLights(fragPosition, n));                                   // + torch/firelight
     \\  if (groundMode == 0){
     \\    // Cool sky rim on props/hero — lifts silhouettes off the dark ground (cheap atmospheric backlight; NOT on terrain, where grazing angles would sheen it all).
     \\    float rim = (mi == 9) ? 0.0 : pow(1.0 - nv, 2.6);
-    \\    lit += rim*vec3(0.082, 0.096, 0.128)*(0.6 + 0.4*n.y)*(1.0 - 0.5*sh);
+    \\    // The rim IS the sky, so it takes the sky's own ambient rather than a colour of its own — which is
+    \\    // what carries it from slate at noon to near-nothing at midnight without a second dial.
+    \\    lit += rim*ambSky*0.51*(0.6 + 0.4*n.y)*(1.0 - 0.5*sh);
     \\    // SHINY METAL (STEEL, id 4): a hot, tight Blinn-Phong sun glint + a cool sky sheen on grazing angles, so blades/armour/steel props read as polished metal (not matte).
     \\    if (mi == 4){
     \\      vec3 H = normalize(L + V);
@@ -464,9 +472,9 @@ pub const sceneFS =
     \\      // The tight 96-exponent lobe is what made distant blades and helms strobe; the broad 22 one already spans several pixels, so it is left alone.
     \\      float w = lobe(pxQ, 8.0);
     \\      float sp = pow(nh, 96.0*w)*3.6*w + pow(nh, 22.0)*0.7;  // a BLINDING tight hotspot + a broader sheen
-    \\      lit += sp*vec3(1.5, 1.3, 1.0)*(1.0 - sh);              // hot near-white glint — steel POPS
+    \\      lit += sp*vec3(1.5, 1.3, 1.0)*keyAmt*(1.0 - sh);       // hot near-white glint — steel POPS
     \\      float fres = pow(1.0 - nv, 4.0);
-    \\      lit += fres*vec3(0.34, 0.40, 0.52)*(1.0 - 0.4*sh);     // bright cool reflective sky sheen at the edges
+    \\      lit += fres*vec3(0.34, 0.40, 0.52)*keyAmt*(1.0 - 0.4*sh); // bright cool reflective sky sheen at the edges
     \\    }
     \\    // POLISHED STONE.
     \\    float gloss = (mi == 10) ? 0.55 : (mi == 1) ? 0.09 : 0.0;
@@ -474,8 +482,8 @@ pub const sceneFS =
     \\      vec3 Hg = normalize(L + V);
     \\      float nhg = max(dot(n, Hg), 0.0);
     \\      float wg = lobe(pxQ, 8.0); // a burnished capital across the plaza was blinking, same cause
-    \\      lit += (pow(nhg, 78.0*wg)*0.72*wg + pow(nhg, 20.0)*0.06)*gloss*vec3(1.18, 1.05, 0.86)*(1.0 - sh);
-    \\      lit += pow(1.0 - nv, 6.0)*gloss*vec3(0.07, 0.09, 0.13);
+    \\      lit += (pow(nhg, 78.0*wg)*0.72*wg + pow(nhg, 20.0)*0.06)*gloss*vec3(1.18, 1.05, 0.86)*keyAmt*(1.0 - sh);
+    \\      lit += pow(1.0 - nv, 6.0)*gloss*vec3(0.07, 0.09, 0.13)*keyAmt;
     \\    }
     \\    // WATER (id 9): a long tight sun streak shattered across the ripples + a broad sky reflection at grazing angles.
     \\    if (mi == 9){
@@ -483,9 +491,9 @@ pub const sceneFS =
     \\      float nh = max(dot(n, H), 0.0);
     \\      // A TIGHT glitter path only.
     \\      float ww = lobe(pxP, 10.0);
-    \\      lit += (pow(nh, 320.0*ww)*2.6*ww + pow(nh, 48.0)*0.07)*vec3(1.5, 1.26, 0.92)*(1.0 - sh);
+    \\      lit += (pow(nh, 320.0*ww)*2.6*ww + pow(nh, 48.0)*0.07)*vec3(1.5, 1.26, 0.92)*keyAmt*(1.0 - sh);
     \\      float fres = pow(1.0 - nv, 4.0);
-    \\      lit += fres*vec3(0.058, 0.072, 0.104);                 // the slate sky, only at grazing angles
+    \\      lit += fres*vec3(0.058, 0.072, 0.104)*keyAmt;          // the slate sky, only at grazing angles
     \\    }
     \\  }
     \\  float emis = 1.0 - fragColor.a;
@@ -495,7 +503,7 @@ pub const sceneFS =
     \\  float haze = 1.0 - exp(-hazeDensity*dist);
     \\  // Haze banks golden looking into the sun's quarter (matches the sky shader's bank).
     \\  float sunAmt = pow(clamp(dot(-V, L), 0.0, 1.0), 3.0);
-    \\  vec3 hazeC = (hazeColor + vec3(0.34, 0.19, 0.05)*sunAmt)*(1.0 - 0.62*dim); // …and the distance goes with it
+    \\  vec3 hazeC = hazeColor + hazeBank*sunAmt;
     \\  lit = mix(lit, hazeC, clamp(haze, 0.0, 1.0));
     \\  // A TOUCH more saturation overall — push colours out from their luma (kept subtle).
     \\  float luma = dot(lit, vec3(0.299, 0.587, 0.114));
@@ -532,9 +540,22 @@ pub const skyFS =
     \\uniform vec3 camFwd;    // camera forward (unit)
     \\uniform vec3 camRightS; // camera right, pre-scaled by tan(fov/2)*aspect
     \\uniform vec3 camUpS;    // camera up, pre-scaled by tan(fov/2)
-    \\uniform vec3 sunDir;
+    \\uniform vec3 sunDir;    // the TRUE sun — below the horizon at night, which is the point of it
+    \\uniform vec3 moonDir;   // …and the anti-sun, so exactly one of the two is always up
     \\uniform vec2 resolution;
-    \\uniform float dim;      // dusk dial, matched to the scene shader's (see Scene.setDim)
+    \\uniform float uTime;    // seconds — the stars' twinkle, and nothing else here
+    \\// THE HOUR'S SKY (`daynight.Palette`, pushed by `gfx.Sky.setHour`). Horizon → middle → zenith, then the
+    \\// bank laid along the horizon under the light, the aureole round it, the disc itself, and the cloud deck's
+    \\// two sides. The SHAPE of the sky is this shader's; every colour in it belongs to the clock.
+    \\uniform vec3 skyLow;
+    \\uniform vec3 skyMid;
+    \\uniform vec3 skyHigh;
+    \\uniform vec3 skyBank;
+    \\uniform vec3 skyGlow;
+    \\uniform vec3 skyDisc;
+    \\uniform vec3 cloudDark;
+    \\uniform vec3 cloudLit;
+    \\uniform float stars;    // 0..1 of the star field, and its own dial — see the note at Palette.stars
     \\out vec4 finalColor;
     \\float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
     \\float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
@@ -547,25 +568,53 @@ pub const skyFS =
     \\  float sy = (gl_FragCoord.y/resolution.y)*2.0 - 1.0; // gl_FragCoord.y is bottom-up: +1 = screen top
     \\  vec3 ray = normalize(camFwd + sx*camRightS + sy*camUpS);
     \\  float e = max(ray.y, 0.0);
+    \\  // WHICHEVER OF THE TWO IS UP is what lights the sky and carries the disc — ONE code path for both,
+    \\  // because a moonrise is a sunrise with a different palette and nothing else. The colours do the rest:
+    \\  // `skyDisc` is warm at the golden hour and pale at midnight, so the same three lines draw either.
     \\  vec3 sun = normalize(sunDir);
-    \\  float sunAmt = clamp(dot(ray, sun), 0.0, 1.0);
+    \\  vec3 moon = normalize(moonDir);
+    \\  vec3 lumDir = (sun.y >= moon.y) ? sun : moon;
+    \\  float sunAmt = clamp(dot(ray, lumDir), 0.0, 1.0);
     \\  float az = pow(sunAmt, 3.0);
-    \\  vec3 col = mix(vec3(0.325,0.310,0.278), vec3(0.235,0.250,0.300), smoothstep(0.0,0.22,e));
-    \\  col = mix(col, vec3(0.150,0.170,0.230), smoothstep(0.18,0.75,e));
-    \\  col += vec3(0.40,0.26,0.10)*az*exp(-e*7.0);                    // golden horizon bank
-    \\  col += vec3(0.90,0.62,0.28)*pow(sunAmt, 24.0)*0.50;            // aureole
-    \\  col += vec3(1.00,0.85,0.55)*smoothstep(0.9993, 0.9998, sunAmt); // disc
+    \\  vec3 col = mix(skyLow, skyMid, smoothstep(0.0,0.22,e));
+    \\  col = mix(col, skyHigh, smoothstep(0.18,0.75,e));
+    \\  // THE STARS GO UNDER EVERYTHING ELSE IN THE SKY: laid down before the bank, the aureole and the deck,
+    \\  // they are washed out near the moon and hidden by cloud, which is the whole of why they read as far off.
+    \\  if (stars > 0.002 && ray.y > 0.0){
+    \\    // A GNOMONIC-ISH PROJECTION of the ray, so the field is anchored to the SKY and not to the screen —
+    \\    // dense overhead, thinning toward the horizon the way a real one does under haze.
+    \\    vec2 sp = (ray.xz/(ray.y + 0.42))*7.0;
+    \\    vec2 ci = floor(sp*18.0);
+    \\    float h = hash21(ci);
+    \\    if (h > 0.978){
+    \\      // Off-centre inside its own cell, or the field is a lattice however sparse it is.
+    \\      vec2 fp = fract(sp*18.0) - 0.5 - (vec2(hash21(ci + 7.13), hash21(ci + 3.71)) - 0.5)*0.62;
+    \\      float mag = (h - 0.978)/0.022;                       // how bright THIS one is
+    \\      float tw = 0.62 + 0.38*sin(uTime*(1.3 + 3.4*hash21(ci + 11.3)) + h*57.0);
+    \\      float pt = smoothstep(0.17, 0.0, length(fp))*(0.30 + 0.70*mag);
+    \\      col += vec3(0.80,0.86,1.00)*pt*tw*stars*smoothstep(0.0, 0.20, ray.y)*(1.0 - 0.85*az);
+    \\    }
+    \\  }
+    \\  col += skyBank*az*exp(-e*7.0);                                 // the bank along the horizon
+    \\  col += skyGlow*pow(sunAmt, 24.0)*0.50;                         // aureole
+    \\  // THE DISC, and the MOON'S IS WIDER AND SOFTER than the sun's — a sun you can look at is a sun that is
+    \\  // wrong, and a moon the same angular size as one reads as a hole punched in the sky. `stars` is the
+    \\  // night proxy the widening rides, since it is already 0 by day and 1 in the small hours.
+    \\  float d0 = mix(0.9993, 0.99855, stars);
+    \\  float d1 = mix(0.9998, 0.99925, stars);
+    \\  col += skyDisc*smoothstep(d0, d1, sunAmt);
+    \\  col += skyDisc*pow(sunAmt, 900.0)*0.22*stars;                  // …and the lunar corona around it
     \\  if (ray.y > 0.0){
     \\    vec2 cp = ray.xz/(ray.y + 0.32);          // low deck: streaks reach the horizon
     \\    float cl = fbm(cp*vec2(1.1,2.2) + vec2(3.1,-6.7));
     \\    float cover = smoothstep(0.34, 0.62, cl)*smoothstep(0.0, 0.06, ray.y);
-    \\    vec3 cloudCol = mix(vec3(0.165,0.172,0.205), vec3(0.40,0.31,0.20), az*0.85);
+    \\    vec3 cloudCol = mix(cloudDark, cloudLit, az*0.85);
     \\    col = mix(col, cloudCol, cover*0.85);
     \\    float rim = smoothstep(0.26,0.40,cl) - smoothstep(0.40,0.66,cl);
-    \\    col += vec3(0.16,0.13,0.08)*rim*(0.45 + 0.55*az);
+    \\    col += cloudLit*0.40*rim*(0.45 + 0.55*az);
     \\  }
     \\  col += (hash21(gl_FragCoord.xy) - 0.5)*(2.0/255.0);
-    \\  finalColor = vec4(col*(1.0 - 0.68*dim), 1.0); // the sky goes with the sun, or dusk reads as a bug
+    \\  finalColor = vec4(col, 1.0);
     \\}
 ;
 

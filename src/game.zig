@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 const gfx = @import("gfx.zig");
+pub const daynight = @import("daynight.zig"); // THE WORLD CLOCK — re-exported, so the menu/editor name one module
 const envmod = @import("env.zig");
 const worldfmt = @import("worldfmt.zig");
 const editormod = @import("editor.zig");
@@ -107,7 +108,14 @@ const RESPAWN_FADE = 0.9;
 const DEATH_BAND_TOP: f32 = 0.35;
 const DEATH_BAND_H: f32 = 0.30;
 
-pub var PLAY_HALF: f32 = worldfmt.DEFAULT_HALF - envmod.PLAY_INSET;
+pub var PLAY_HALF: f32 = playHalfOf(worldfmt.DEFAULT_HALF);
+
+/// THE PLAY SQUARE A DECLARED WORLD GIVES YOU — its half-extent less the inset every actor is held inside.
+/// One expression, because the load path and the frame that re-reads it after an editor session each wrote
+/// out the subtraction, and a moved `PLAY_INSET` has to move both or the two disagree about where the wall is.
+fn playHalfOf(half: f32) f32 {
+    return half - envmod.PLAY_INSET;
+}
 
 const HERO_R = foemod.HERO_R;
 
@@ -230,6 +238,10 @@ pub const Game = struct {
     npcPos: [npcmod.CAP]rl.Vector3 = [_]rl.Vector3{mathx.zero3} ** npcmod.CAP,
     nNpcPos: usize = 0,
     rest: restmod.Rest = .{}, // sitting at a bonfire: the state machine and the fade (rest.zig)
+    /// THE WORLD CLOCK (`daynight.zig`) — where the sun is, what colour the hour is, and the one thing a
+    /// bonfire's "rest until" moves. It survives a death, like the bag and the tree: dying does not un-spend an
+    /// afternoon. A LOAD does not reset it either — the hour is a fact about the world, not about the map file.
+    day: daynight.Clock = .{},
     souls: soulsmod.Souls, // THE DROP — one, standing where he last died until he walks back for it
     /// THE PASSIVE TREE — the levels bought and the nodes taken. It survives a death exactly as the bag
     /// does: what a death takes is the souls on the counter, never what they have already been spent on.
@@ -275,7 +287,7 @@ pub const Game = struct {
         g.menu = .{}; // opens on the main screen: Continue / Debug / Quit
         phase(&initTimer, "gfx");
         worldfmt.loadOrPanic(worldfmt.START_MAP, &g.map);
-        PLAY_HALF = g.map.half - envmod.PLAY_INSET; // before anything spawns against it
+        PLAY_HALF = playHalfOf(g.map.half); // before anything spawns against it
         phase(&initTimer, "map");
         g.env.build(&g.scene);
         g.env.uploadSoil(&g.map);
@@ -307,6 +319,14 @@ pub const Game = struct {
         // Every other defaulted field in this struct is set the same way (`g.rest = .{}`).
         g.pack = .{};
         g.pack.load(g.scene.shader);
+        // **AND THE WORLD CLOCK, for exactly the reason written above it** — this one was MISSING, and the whole
+        // day/night cycle was dead in live play because of it. `rate` came up as the fill byte: zero is a HELD
+        // clock (`Clock.tick` returns at once), and a non-finite `hour` renders as the anchor through
+        // `wrapHour`'s NaN guard — so the world came up correctly lit at the golden hour and the sun never moved
+        // again. What made it look like a design decision rather than a bug is that every path which SETS the
+        // clock repaired it: a bonfire's "wait until…" (`Clock.set`), the debug menu's Hour row, the editor's
+        // `,`/`.`. Reported as "time doesn't advance unless I rest or debug it", which is this line.
+        g.day = .{};
         g.souls = soulsmod.Souls.init(g.scene.shader);
         phase(&initTimer, "foes");
         rehomeFoes(g, .blind);
@@ -706,6 +726,26 @@ test "NOTHING CHASES FOREVER — every creature turns round at its own tether, n
 /// The sprint in `chase` starts at the halfway mark, so this is how long after it a creature may still be
 /// coming. `LEASH_CALM` plus a beat for the last bite to land.
 const LEASH_LETGO: f32 = foemod.LEASH_CALM + 1.5;
+
+test "STEERING IS ALL-OR-NOTHING PER CREATURE — the field and the question that stamps it cannot part company" {
+    // `markWays` is keyed off `@hasField(M, "nav")`, so the two failures this pins are both silent: a creature
+    // that gains the field and no `navWant` would never be asked and would walk into walls exactly as before,
+    // and one that declares `navWant` with no field would be answering a question nobody puts to it.
+    inline for (FOE_GROUPS) |gr| {
+        const Ret = @typeInfo(@TypeOf(@FieldType(Game, gr.field).live)).@"fn".return_type.?;
+        const M = @typeInfo(Ret).pointer.child;
+        try std.testing.expectEqual(@hasField(M, "nav"), @hasDecl(M, "navWant"));
+        // …and a steered creature is a GROUNDED one: the probe asks `walkStep`, which is the rule for feet.
+        if (comptime @hasField(M, "nav")) try std.testing.expect(@hasDecl(M, "airborne"));
+    }
+    // THE FLYER IS OUT BY DESIGN, not by omission — see `markWays`. Pinned, or a later "why has the leechfly no
+    // nav" reads as an oversight and somebody adds one.
+    try std.testing.expect(!@hasField(leechmod.Leechfly, "nav"));
+    // …and so is the tree that never moves.
+    try std.testing.expect(!@hasField(rootedmod.Rooted, "nav"));
+    // The spirit is not in `FOE_GROUPS` and is stamped by hand in `tickPack`, so it is pinned by hand too.
+    try std.testing.expect(@hasField(wolfmod.Wolf, "nav") and @hasDecl(wolfmod.Wolf, "navWant"));
+}
 
 test "THE JUMP IS SIZED AGAINST THE TERRAIN IT EXISTS TO CROSS, not against a number that looked right" {
     // The one claim that spans both files, so it is pinned in the file that can see both. `HEIGHT_STEP` is
@@ -1141,12 +1181,6 @@ pub fn poseWolfGatherForShot(g: *Game, u: f32) void {
     }
 }
 
-/// The one standing, for a shot that wants to frame it.
-pub fn wolfPosForShot(g: *const Game) ?rl.Vector3 {
-    const w = g.pack.firstConst() orelse return null;
-    return w.pos;
-}
-
 pub fn beginRestForShot(g: *Game) void {
     g.rest.look(g.hero.pos);
     _ = g.rest.begin();
@@ -1272,10 +1306,7 @@ fn ringBell(g: *Game) void {
 /// little behind — in front and it is standing in the swing he is about to take, on top of him and the
 /// push-out throws one of them somewhere neither chose.
 fn summonSpirit(g: *Game) void {
-    const back = mathx.headingDir(g.hero.facing + SUMMON_BEARING);
-    var at = mathx.addV(g.hero.pos, mathx.scaleV(back, SUMMON_R));
-    at = inBounds(g.env.resolveActor(at, wolfmod.BODY_R, at.y));
-    plantActor(g, &at); // …standing on the ground it arrived over, not on the datum
+    const at = spiritSpot(g);
     if (!g.pack.call(at, g.hero.facing)) return;
     // THE HOWL IS THE RECEIPT. Thirty focus just left the bar and a second body just arrived behind him where
     // he cannot see it — the one cue that says both, and it plays AT the spirit rather than on the camera so
@@ -1288,6 +1319,28 @@ fn summonSpirit(g: *Game) void {
 /// Where a called spirit stands up, off his own facing: over his left shoulder and behind the line of a swing.
 const SUMMON_BEARING: f32 = 2.5; // radians off his facing
 const SUMMON_R: f32 = 1.9;
+
+/// THAT SPOT, MADE SAFE — one body, because the bell is no longer the only thing that puts a spirit down beside
+/// him (`rematerialize`), and a second copy of this is a second answer to "where does it come up".
+fn spiritSpot(g: *Game) rl.Vector3 {
+    const back = mathx.headingDir(g.hero.facing + SUMMON_BEARING);
+    var at = mathx.addV(g.hero.pos, mathx.scaleV(back, SUMMON_R));
+    at = inBounds(g.env.resolveActor(at, wolfmod.BODY_R, at.y));
+    plantActor(g, &at); // …standing on the ground it arrived over, not on the datum
+    return at;
+}
+
+/// **A SPIRIT HE HAS OUT-RUN IS MOVED, NOT ABANDONED** (owner's call). The walk home is what it tries first and
+/// `wolf.LOST_DWELL` is how long it is given to manage it; past that the bond simply puts it back beside him.
+/// Taken BEFORE `Pack.update`, so the frame it arrives on is a frame it walks normally out of — done after, the
+/// terrain gate would measure the whole jump as one step and refuse it.
+///
+/// NO SHAKE AND NO RUMBLE, unlike the bell: those are the receipt for thirty focus, and nothing was spent here.
+fn rematerialize(g: *Game, w: *wolfmod.Wolf) void {
+    const at = spiritSpot(g);
+    w.reappear(at, g.hero.facing);
+    sfx.world(.wolf_growl, at);
+}
 
 /// THE SPIRIT'S WHOLE FRAME: what it should be going for, its own step, and what its jaws reached.
 ///
@@ -1303,7 +1356,14 @@ fn tickPack(g: *Game, dt: f32) void {
         if (w.yelped) sfx.world(.wolf_hurt, w.pos);
         if (w.justDied) sfx.world(.wolf_die, w.pos);
     }
-    for (g.pack.live()) |*w| w.quarry = huntFor(g, w.pos);
+    for (g.pack.live()) |*w| if (w.lost()) rematerialize(g, w);
+    for (g.pack.live()) |*w| {
+        w.quarry = huntFor(g, w.pos);
+        // …AND THE WAY ROUND WHAT IS BETWEEN IT AND THAT. Stamped here rather than in `markWays` because the
+        // spirit is not in `FOE_GROUPS` and its errand is not the hero's position — but it is the same prober,
+        // and a second one would be a second answer to what walkable means.
+        if (w.navWant(g.hero.pos)) |want| markWay(g, &w.nav, w.pos, w.bodyR(), want) else w.nav.dir = null;
+    }
     // …AND IT WALKS ON THE SAME EARTH EVERYTHING ELSE DOES. The terrain gate is about FEET and nothing else
     // (`gateTerrain`'s own law, which is why the FOLK go through it carrying no foe contract), so a spirit is
     // in it for the folk's reason and not for the field's: without it the one body on his side is the one
@@ -1633,15 +1693,46 @@ fn bonfirePick(g: *Game, pick: restmod.Pick) void {
             applyTree(g);
             sfx.play(.souls_take);
         },
+        // WAITING OUT THE CLOCK, and it is a jump and not a fast-forward: nothing in the world is running
+        // while he sits (the loop's own tick skips a rest), so there is nothing for the hours to happen TO.
+        // Always FORWARD (`hoursUntil`), so asking for the hour you are already on costs a whole day rather
+        // than nothing — a fire cannot take you back through a night you have spent.
+        //
+        // AND HE STANDS UP ON IT. The point of the row is the light you walk back out into; held at the fire
+        // afterwards, the one thing it bought is the one thing you cannot see.
+        // NOTHING IS RESTOCKED HERE, and that is not an omission: `hero.sit` made him whole the moment he sat
+        // down, so by the time this row can be pressed the flasks, the quiver and all three bars are already
+        // full. A second refill would be a second bonfire inside the first one.
+        .wait => |u| {
+            g.day.set(g.day.hour + daynight.hoursUntil(g.day.hour, u.hour()));
+            applyHour(g);
+            sfx.play(.menu_pick);
+            g.rest.leave();
+        },
     }
 }
 
-fn applyDim(g: *Game) void {
-    const d = g.rest.dim();
-    g.scene.setDim(d);
-    g.sky.setDim(d);
-    // …and the propped guitar goes off the rock for exactly as long as he is holding one.
+/// The propped guitar goes off the rock for exactly as long as he is holding one. A REST NO LONGER TOUCHES
+/// THE LIGHT (owner's call): the fire used to pull the world into a local dusk whatever hour it was, and now
+/// the only thing at a bonfire that moves the light is the row that asks for an hour.
+fn applyStow(g: *Game) void {
     g.env.stowed = g.hero.resting;
+}
+
+/// THE HOUR, PUSHED INTO BOTH SHADERS AND INTO THE SHADOW CAMERA — one call, and it is the only place either
+/// gets one. Taken BEFORE the depth pass every frame, since `Scene.setHour` is what moves `gfx.sun` and the
+/// box is built off that: pushed after it, a frame's shadows would be cast by the previous frame's sun.
+fn applyHour(g: *Game) void {
+    g.scene.setHour(g.day.hour);
+    g.sky.setHour(g.day.hour);
+}
+
+/// …and the harness's hook: one hour, held, and pushed. The shot harness never runs the loop that would push
+/// it, so setting the clock without this is a sequence photographed under whatever the last frame was lit by.
+pub fn pinHourForShot(g: *Game, hour: f32) void {
+    g.day.set(hour);
+    g.day.freeze(true);
+    applyHour(g);
 }
 
 const REST_WARMTH: f32 = 0.14;
@@ -1904,6 +1995,91 @@ fn markSight(g: *Game) void {
     }
 }
 
+/// HOW FAR AHEAD A CREATURE LOOKS FOR SOMETHING IN THE WAY, past its own radius. About a walking second: far
+/// enough that it has started turning before it is against the thing, short enough that what comes out is
+/// STEERING and not a route.
+const WAY_PROBE: f32 = 2.0;
+/// THE FAN it will give up off the line it wanted, in radians, TRIED NEAREST-FIRST — so an obstacle costs it as
+/// little of its heading as the obstacle actually costs. The last one is past square, which is what lets a body
+/// walk back out of a pocket instead of standing in the corner of one.
+const WAY_FAN = [_]f32{ 0.45, 0.90, 1.40, 1.95, 2.50 };
+/// How straight a step has to come out to count as TAKEN. `env.walkStep` answers a refused step by SLIDING it
+/// along the slope, and that slide travels the full distance asked for — so a probe measuring only how far it
+/// got would call every refusal clear.
+const WAY_TRUE: f32 = 0.98;
+
+/// IS THIS HEADING ACTUALLY WALKABLE from here — the ONE question the steering asks, and it asks it of the two
+/// rules that own the answer rather than of a map of its own.
+fn wayClear(g: *const Game, at: rl.Vector3, r: f32, dir: rl.Vector3) bool {
+    const reach = WAY_PROBE + r;
+    const went = mathx.dirXZ(at, g.env.walkStep(at, dir, reach));
+    if (mathx.lenXZ(went) < 1e-4) return false; // the terrain (or the deep) refused it outright…
+    if (went.x * dir.x + went.z * dir.z < WAY_TRUE) return false; // …or slid it somewhere it did not ask for
+    // …AND THE WORLD'S SOLIDS, which the terrain rule knows nothing about: a wall is not a slope. Sampled at
+    // the MIDDLE of the probe as well as its end, or anything thinner than the reach sits between the two and
+    // is walked straight through. `resolveActor` is the push-out every actor is already held out by, so the
+    // question is simply whether it would move the probe.
+    for ([2]f32{ 0.5, 1.0 }) |u| {
+        const p = v3(at.x + dir.x * reach * u, at.y, at.z + dir.z * reach * u);
+        if (mathx.distXZ(g.env.resolveActor(p, r, at.y), p) > 1e-3) return false;
+    }
+    return true;
+}
+
+/// THE WAY THROUGH, STAMPED ONTO ONE CREATURE — `markSight`'s pattern, and asked here for its reason: every
+/// question a detour asks belongs to `env`.
+///
+/// The straight line is tried first and nearly always wins, in which case the stamp is cleared and the creature
+/// walks exactly as it always did — this can only ever bend a heading the world has already refused.
+fn markWay(g: *const Game, nav: *foemod.Nav, at: rl.Vector3, r: f32, want: rl.Vector3) void {
+    const straight = mathx.dirXZ(at, want);
+    if (mathx.lenXZ(straight) < 1e-4 or wayClear(g, at, r, straight)) {
+        nav.dir = null;
+        return;
+    }
+    const yaw = mathx.headingXZ(straight);
+    // WIDTH OUTSIDE, SIDE INSIDE: the narrowest angle that works wins whichever side it is on, and the side
+    // only settles a TIE — which is exactly the anti-dither `Nav.side` is for.
+    for (WAY_FAN) |off| {
+        for ([2]f32{ nav.side, -nav.side }) |s| {
+            const d = mathx.headingDir(yaw + off * s);
+            if (!wayClear(g, at, r, d)) continue;
+            nav.dir = d;
+            nav.side = s;
+            return;
+        }
+    }
+    nav.dir = null; // BOXED IN: nowhere to go, so it presses on into the thing and the gate holds its feet
+}
+
+/// …AND OVER THE WHOLE FIELD, folded over `FOE_GROUPS` and keyed off the creature's own `nav` field, so a
+/// creature GAINING steering is a field and a `navWant` and never an edit here.
+///
+/// **A FLYER IS NEVER STEERED** (`gateTerrain`'s own `airborne` skip, one layer up): the probe asks `walkStep`,
+/// which is the rule for something with its feet on the ground. Asked of a leechfly it would refuse it the bank
+/// it is entitled to fly straight over, and turn the one creature whose answer is ALTITUDE into one that walks
+/// round things.
+fn markWays(g: *Game) void {
+    inline for (FOE_GROUPS) |gr| {
+        for (@field(g, gr.field).live()) |*f| {
+            const M = @TypeOf(f.*);
+            if (comptime !@hasField(M, "nav")) continue;
+            if (!foemod.corporeal(f) or f.airborne()) {
+                f.nav.dir = null;
+                continue;
+            }
+            // …AND IT IS ASKED ABOUT WHOEVER IT IS ACTUALLY FIGHTING, never about the hero (`Threat.aim`, the
+            // same point its group hands it as `hero`): a creature that had gone for the spirit would otherwise
+            // be steered round obstacles on a line to a man it has stopped chasing.
+            const want = f.navWant(f.threat.aim(g.hero.pos)) orelse {
+                f.nav.dir = null;
+                continue;
+            };
+            markWay(g, &f.nav, f.pos, f.bodyR(), want);
+        }
+    }
+}
+
 /// **WHO EVERY CREATURE ON THE FIELD IS FIGHTING** — `markSight`/`markParry`'s pattern, and stamped for their
 /// reason: the threat table is the HERO'S side of the fight (where he is standing, what he has hit, what he
 /// called), and eleven creature files reaching out for a spirit would be eleven copies of one rule.
@@ -2065,7 +2241,7 @@ fn sunFocus(g: *const Game) rl.Vector3 {
 
 pub fn drawScene(g: *Game) void {
     g.env.resetStats(); // culling counters for the debug overlay, both passes together
-    applyDim(g); // before the depth pass: the uniform is read by every draw below it
+    applyStow(g); // before the depth pass: what is stowed is not a caster
     const cam = sceneCam(g);
     // WHAT STANDS BETWEEN THE LENS AND HIM, before either pass, since the marks are read by the draw
     // loop both of them go through. In the editor the line is degenerate on purpose — see markOccluders.
@@ -2219,6 +2395,8 @@ pub fn hud(g: *Game, dt: f32) void {
             g.hero.stam.windedTo(),
             .{ .frac = g.hero.poison.frac(), .on = g.hero.poison.active() },
         );
+        // …AND THE WORLD CLOCK BESIDE THEM, off the live clock rather than off anything the HUD remembers.
+        hud_.dayDial(g.day.hour);
         const bowUp = g.hero.bowOut();
         const wandUp = g.hero.wandOut();
         hud_.equipment(
@@ -2433,7 +2611,14 @@ pub fn run(mode: Mode) void {
         const rawDt = rl.getFrameTime(); // wall-clock dt: feel systems (shake, rumble, fades, tap windows)
         const dt = rawDt * g.menu.timeScale;
         g.drawDt = rawDt; // …including the occluder fade, which every branch below draws through
-        PLAY_HALF = g.map.half - envmod.PLAY_INSET;
+        PLAY_HALF = playHalfOf(g.map.half);
+        // THE CLOCK. It runs on `dt` and not `rawDt`, so the debug menu's time scale slows the sun with
+        // everything else — a world at 0.2x whose shadows swept at full speed would read as the WORLD being
+        // wrong rather than as the dial being turned. It is held wherever the world is (`paused` below cannot
+        // be read yet, so the branches that stop it say so at each), and it is pushed into both shaders BEFORE
+        // anything draws — `Scene.setHour` is what moves `gfx.sun`, and the depth pass is built off that.
+        if (!g.editor.on and !g.menu.isOpen() and !g.rest.active() and !g.talk.active()) g.day.tick(dt);
+        applyHour(g);
         // THE WORLD GOES QUIET IN THE EDITOR.
         sfx.mute(g.editor.on and !g.editor.auditioning());
         // …and a moved SOUND FILTER dial re-renders its family once it has settled (Menu > Debug > Sound
@@ -2477,7 +2662,7 @@ pub fn run(mode: Mode) void {
 
         if (g.editor.on) {
             rl.showCursor();
-            switch (g.editor.update(&g.map, &g.env, rawDt)) {
+            switch (g.editor.update(&g.map, &g.env, &g.day, rawDt)) {
                 .none => {},
                 .leave => {
                     // The last edit's rebuild may still be inside its quiet window, and nothing is going
@@ -2527,7 +2712,7 @@ pub fn run(mode: Mode) void {
 
         g.hero.held = g.menu.isOpen();
         if (g.menu.isOpen()) {
-            switch (g.menu.update(&g.retro, rawDt, bookView(g))) {
+            switch (g.menu.update(&g.retro, &g.day, rawDt, bookView(g))) {
                 .quit => break,
                 .editor => {
                     // Drop the lock on the way in: the reticle rides a FoeRef into groups the editor re-homes from the map every frame, so a held lock survives into a world where its index means something else.
@@ -2551,7 +2736,7 @@ pub fn run(mode: Mode) void {
             sfx.ambience(rawDt);
             drawScene(g);
             hud(g, rawDt);
-            g.menu.draw(&g.retro, bookView(g), .{ .hero = &g.hero, .scene = &g.scene });
+            g.menu.draw(&g.retro, &g.day, bookView(g), .{ .hero = &g.hero, .scene = &g.scene });
             rl.endDrawing();
             continue;
         }
@@ -2890,6 +3075,7 @@ pub fn run(mode: Mode) void {
         const hitsBefore = allHits(g);
         markSight(g); // WHO CAN SEE HIM — stamped before anything decides what to do about him
         markThreat(g, dt); // …WHO EACH OF THEM IS ACTUALLY FIGHTING, before any of them moves toward it
+        markWays(g); // …WHICH WAY ROUND WHAT IS IN FRONT OF IT, before any of them takes a step
         markParry(g); // …and WHAT HIS SHIELD IS DOING, before anything swings at him
         // ONE snapshot of the blade for every group this frame — re-derived per group, the three would disagree.
         const bladeNow = heroBlade(g);
@@ -3561,7 +3747,7 @@ comptime {
 /// tail past `n` is undefined memory.
 fn askFoe(comptime T: type, g: *const Game, r: FoeRef, comptime ask: anytype) T {
     inline for (ROLE_GROUPS) |rg| {
-        if (roleIdx(rg[1], r)) |i| return ask(&@field(g, rg[0]).band[i]);
+        if (roleIdx(rg[1], r)) |i| return ask(&@field(g, rg[0]).liveConst()[i]);
     }
     if (r.kind == .brood_sac) return ask(&g.brood.liveSacsConst()[r.idx]);
     inline for (SOLO_GROUPS) |s| {

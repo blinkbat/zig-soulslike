@@ -49,6 +49,25 @@ deliberately flat; the elevation is there for the worlds you build next.
 - **south — the Windswept Downs.** Open, dry and nearly empty — the region that makes the others
   feel dense. Lone trees, field stones, old graves, a watchtower on the rise.
 
+### …and a day that runs through it
+
+The world has a **clock**, and the light is the whole of what it does. A real day takes about twenty
+minutes: the sun climbs out of the east at six, arcs over, and goes down in the west at eight, and once
+it is under the horizon the **moon** takes over from the opposite quarter — so there is always something
+casting and you are never in the dark you cannot fight in.
+
+Everything moves with it. **Shadows swing round and stretch** as the sun drops. The sky is banked red at
+both ends of the day, opens cool and clear by mid-morning, and goes to deep navy with a **field of stars**
+over it at night. The haze in the distance takes the colour of the hour; steel and marble stop glinting
+when there is nothing left to glint at; the campfires stop being decoration and become the only warm
+thing in the frame.
+
+A **bonfire will hold you until morning or until evening** — the two lights worth choosing between, and a
+fire never takes you backwards, so asking for the hour you are already sitting in costs a whole day. The
+debug menu carries an **Hour** row you can scrub and hold, and in the editor `,` and `.` sweep the day so a
+belt of trees can be judged under every light it will ever stand in rather than under one permanent
+afternoon.
+
 ## Someone to talk to
 
 At the bonfire where you start there is now a **wanderer** — a hooded traveller with a walking staff who
@@ -132,6 +151,7 @@ Keyboard + mouse **or** a gamepad (Elden Ring default layout):
 | Answer in a conversation | Up / Down or 1-9, Enter or Y | D-pad up / down, Cross / A |
 | Zoom | Scroll wheel | — |
 | Menu (Continue / Debug / Quit) | Esc | Select |
+| Scrub the world clock | Menu > Debug > Hour (Left/Right, Shift coarse, hold to sweep, Enter holds it) | same, on the d-pad |
 | Character book | Tab | Start |
 | Borderless fullscreen | Alt + Enter | — |
 

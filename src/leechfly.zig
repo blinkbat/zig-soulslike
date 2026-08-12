@@ -399,12 +399,12 @@ pub const Leechfly = struct {
         self.feedCd = mathx.maxF(0, self.feedCd - dt);
         self.climbCd = mathx.maxF(0, self.climbCd - dt);
         self.spookLeft = mathx.maxF(0, self.spookLeft - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
         foe.tickParticles(&self.parts, dt, self.pos.y);
 
         var act: Act = .none;
-        const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
+        const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
 
         switch (self.state) {
             .idle => {

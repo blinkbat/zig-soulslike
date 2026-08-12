@@ -1002,6 +1002,8 @@ pub const Spider = struct {
     justDied: bool = false,
     /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
     threat: foe.Threat = .{},
+    /// …AND THE WAY ROUND WHAT IS IN FRONT OF IT (`foe.Nav`), stamped the same way and for the same reason.
+    nav: foe.Nav = .{},
     fade: f32 = 0,
     gone: bool = false,
 
@@ -1076,6 +1078,14 @@ pub const Spider = struct {
     fn fdir(self: *const Spider) rl.Vector3 {
         return mathx.headingDir(self.facing);
     }
+    /// WHERE IT IS TRYING TO WALK, or null when it is not walking anywhere (`game.markWay`). The WALK only — a
+    /// windup, a strike and a pounce are committed. The two roles answer differently because they travel
+    /// differently: the mother on a committed vector, the broodling straight down its own nose.
+    pub fn navWant(self: *const Spider, hero: rl.Vector3) ?rl.Vector3 {
+        if (self.state != .walk) return null;
+        return if (self.role == .mother) mathx.addV(self.pos, self.moveDir) else hero;
+    }
+
     fn faceToward(self: *Spider, target: rl.Vector3, dt: f32) void {
         foe.faceToward(self.pos, &self.facing, target, spec(self.role).turn, dt);
     }
@@ -1147,11 +1157,11 @@ pub const Spider = struct {
         self.spitCd = mathx.maxF(0, self.spitCd - dt);
         self.biteCd = mathx.maxF(0, self.biteCd - dt);
         self.layCd = mathx.maxF(0, self.layCd - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), spec(self.role).aggro);
+        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, spec(self.role).aggro);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
-        const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), spec(self.role).aggro);
+        const d = foe.senseHero(&self.leash, self.pos, hero, spec(self.role).aggro);
         // THE SHIELD, asked BEFORE the state machine runs this frame's snap — a catch has to kill the bite it
         // caught, and by the time `tryReach` has run the fangs are already in him.
         self.takeParry();
@@ -1178,7 +1188,9 @@ pub const Spider = struct {
             .walk => {
                 self.faceToward(hero, dt);
                 const moved = M_SPEED * dt;
-                mathx.stepXZ(&self.pos, self.moveDir, moved, bounds);
+                // …ROUND WHAT IS IN THE WAY (`foe.Nav`), at the STEP: she travels on a committed vector with
+                // her eyes on him, and eight legs do not care which way the body is going.
+                mathx.stepXZ(&self.pos, self.nav.along(self.moveDir), moved, bounds);
                 self.gait += moved / (skinOf(self.role).stride * self.scale);
                 self.emitDrag(dt);
                 self.resolveWalk();
@@ -1287,7 +1299,9 @@ pub const Spider = struct {
                 if (self.t >= wait) self.decideBroodling(d, hero);
             },
             .walk => {
-                self.faceToward(hero, dt);
+                // …and the broodling steers at the FACING, since it runs where it is pointed rather than on a
+                // vector of its own (`foe.Nav`).
+                self.faceToward(self.nav.aim(self.pos, hero), dt);
                 const moved = B_SPEED * dt;
                 mathx.stepXZ(&self.pos, self.fdir(), moved, bounds);
                 self.gait += moved / (skinOf(self.role).stride * self.scale);

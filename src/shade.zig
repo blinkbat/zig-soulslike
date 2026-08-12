@@ -287,6 +287,10 @@ pub const Shade = struct {
     justDied: bool = false,
     /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
     threat: foe.Threat = .{},
+    /// …AND THE WAY ROUND WHAT IS IN FRONT OF IT (`foe.Nav`), stamped the same way and for the same reason. It
+    /// is `airborne()` through a blink, which is exactly when the stamp is skipped: nothing in the middle of a
+    /// blink is walking anywhere.
+    nav: foe.Nav = .{},
     gone: bool = false,
 
     parts: [PARTS]foe.Particle = [_]foe.Particle{.{}} ** PARTS,
@@ -377,7 +381,7 @@ pub const Shade = struct {
         for (&self.cds) |*c| c.* = mathx.maxF(0, c.* - dt);
         self.blinkCd = mathx.maxF(0, self.blinkCd - dt);
         self.spookLeft = mathx.maxF(0, self.spookLeft - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
         foe.tickParticles(&self.parts, dt, self.pos.y);
 
@@ -387,7 +391,7 @@ pub const Shade = struct {
         // here answers with the hands still furled at the chest, a metre behind where the frame shows them.
         var hurling = false;
         const was = self.pos;
-        const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
+        const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
 
         switch (self.state) {
             .idle => {
@@ -398,7 +402,10 @@ pub const Shade = struct {
             .drift => {
                 self.easeRest(dt);
                 self.faceToward(hero, dt);
-                mathx.stepXZ(&self.pos, self.driftDir, DRIFT_SPEED * dt, bounds);
+                // …ROUND WHAT IS IN THE WAY (`foe.Nav`), at the STEP: it drifts on a committed vector with its
+                // cowl still turned on him. Only the drift — the CIRCLE is an orbit at a band it re-aims every
+                // frame, and bending that would be steering the shape of the orbit itself.
+                mathx.stepXZ(&self.pos, self.nav.along(self.driftDir), DRIFT_SPEED * dt, bounds);
                 self.decide(d, hero);
             },
             .circle => {
@@ -469,7 +476,7 @@ pub const Shade = struct {
                 self.faceToward(hero, dt);
                 if (self.t >= BLINK_IN) {
                     self.thin = 0;
-                    self.decide(foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R), hero);
+                    self.decide(foe.senseHero(&self.leash, self.pos, hero, AGGRO_R), hero);
                 }
             },
             .stunlight => {
@@ -518,6 +525,14 @@ pub const Shade = struct {
 
     fn faceToward(self: *Shade, target: rl.Vector3, dt: f32) void {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt);
+    }
+
+    /// WHERE IT IS TRYING TO GO, or null when it is not going anywhere (`game.markWay`) — read off the drift's
+    /// own committed vector, which is the whole errand whether that is closing on him or going home.
+    pub fn navWant(self: *const Shade, hero: rl.Vector3) ?rl.Vector3 {
+        _ = hero;
+        if (self.state != .drift) return null;
+        return mathx.addV(self.pos, self.driftDir);
     }
 
     fn easeRest(self: *Shade, dt: f32) void {

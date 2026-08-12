@@ -43,7 +43,6 @@ const NCELL: usize = GRID_N * GRID_N;
 const HALF_DIAG: f32 = @sqrt(0.5);
 const CELL_CIRCUM: f32 = CELL * HALF_DIAG; // centre-to-corner of a cell, for sphere tests
 
-const SUN_REACH: f32 = @sqrt(gfx.SUN_DIR.x * gfx.SUN_DIR.x + gfx.SUN_DIR.z * gfx.SUN_DIR.z) / gfx.SUN_DIR.y;
 const SHADOW_BOX: f32 = gfx.SHADOW_ORTHO * HALF_DIAG;
 
 const LIGHT_REACH: f32 = 90.0;
@@ -1355,8 +1354,12 @@ fn gutter(t: f32, phase: f32) f32 {
     return 0.30 * mathx.sinf(t * 4.3 + phase) + 0.14 * mathx.sinf(t * 8.9 + phase * 2.3) + 0.56 * mathx.sinf(t * 1.7 + phase * 0.6);
 }
 
+/// …AND THE REACH MOVES WITH THE SUN NOW (`gfx.sunReach`, written once a frame by `gfx.Scene.setHour`). It was
+/// a comptime constant off the one authored sun; with a sun that climbs and sets, a fixed reach either culls a
+/// low evening caster whose shadow genuinely crosses the box, or accepts the whole world at noon to avoid it.
+/// `daynight` floors the casting altitude, which is what keeps this bounded rather than cot(0).
 fn castsInto(focus: rl.Vector3, pos: rl.Vector3, bound: f32, top: f32) bool {
-    const reach = SHADOW_BOX + bound + top * SUN_REACH;
+    const reach = SHADOW_BOX + bound + top * gfx.sunReach;
     return mathx.dist2XZ(focus, pos) <= reach * reach;
 }
 

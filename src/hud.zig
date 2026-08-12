@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 const uiart = @import("uiart.zig");
+const daynight = @import("daynight.zig"); // the clock dial reads the hour's own arithmetic, never its own
 const itemart = @import("itemart.zig"); // the pictures in the cross — shared with the character book
 const item = @import("item.zig"); // …and what the DOWN cell holds is a bag item, off the quick bar
 
@@ -383,6 +384,13 @@ pub fn hintRow(hints: []const Hint, cy: i32, size: i32, col: rl.Color) void {
 pub const MARGIN: i32 = 30;
 const BAR_TOP: i32 = 24;
 const BAR_GAP: i32 = 6;
+/// THE WORLD CLOCK'S DIAL, and the ONLY thing on this side of the HUD that is not about him — so it sits
+/// OUTSIDE the three bars rather than under them, and the bars step right to make room (`BARS_X`).
+const DIAL_R: i32 = 21;
+const DIAL_GAP: i32 = 14;
+/// …and where the bars now start. Held as its own name because `MARGIN` is still the screen's edge and four
+/// other things measure off it — the soul plate, the banner and the debug corner among them.
+const BARS_X: i32 = MARGIN + DIAL_R * 2 + DIAL_GAP;
 const HP_W: i32 = 268;
 const HP_H: i32 = 15;
 const FP_W: i32 = 182;
@@ -465,24 +473,88 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, fpRefused:
     }
     chipLast = hp;
     var y = BAR_TOP;
-    bar(MARGIN, y, HP_W, HP_H, hp, chip, HP_HI, HP_LO, HP_TP);
+    bar(BARS_X, y, HP_W, HP_H, hp, chip, HP_HI, HP_LO, HP_TP);
     y += HP_H + BAR_GAP;
-    bar(MARGIN, y, FP_W, FP_H, fp, 0, FP_HI, FP_LO, FP_TP);
-    refuseRing(MARGIN, y, FP_W, FP_H, fpRefused); // a cast the pool could not cover
+    bar(BARS_X, y, FP_W, FP_H, fp, 0, FP_HI, FP_LO, FP_TP);
+    refuseRing(BARS_X, y, FP_W, FP_H, fpRefused); // a cast the pool could not cover
     y += FP_H + BAR_GAP;
-    bar(MARGIN, y, ST_W, ST_H, stam, 0, ST_HI, ST_LO, ST_TP);
+    bar(BARS_X, y, ST_W, ST_H, stam, 0, ST_HI, ST_LO, ST_TP);
     if (windedTo > 0.001) {
         const wf: f32 = @floatFromInt(ST_W);
         const owed: i32 = @intFromFloat(wf * mathx.clampF(windedTo, 0, 1));
         const fill: i32 = @intFromFloat(wf * mathx.clampF(stam, 0, 1));
-        if (owed > fill) rl.drawRectangle(MARGIN + fill, y, owed - fill, ST_H, mathx.withAlpha(WARN, 46));
-        rl.drawRectangle(MARGIN + owed - 1, y - 1, 2, ST_H + 2, mathx.withAlpha(WARN_LT, 210)); // the threshold
+        if (owed > fill) rl.drawRectangle(BARS_X + fill, y, owed - fill, ST_H, mathx.withAlpha(WARN, 46));
+        rl.drawRectangle(BARS_X + owed - 1, y - 1, 2, ST_H + 2, mathx.withAlpha(WARN_LT, 210)); // the threshold
     }
-    refuseRing(MARGIN, y, ST_W, ST_H, stamRefused);
+    refuseRing(BARS_X, y, ST_W, ST_H, stamRefused);
     // …and the status meter UNDER the three, because it is not one of them: the bars above are what he
     // spends, this is what is being done to him.
     y += ST_H + BAR_GAP + 2;
-    statusBar(MARGIN, y, psn);
+    statusBar(BARS_X, y, psn);
+}
+
+/// How tall the three bars stand together — what the dial beside them is centred on, DERIVED rather than
+/// guessed, so a retune of any bar's height carries the dial with it.
+const BARS_H: i32 = HP_H + BAR_GAP + FP_H + BAR_GAP + ST_H;
+
+const DIAL_SKY = rgba(74, 104, 148, 210); // the lit half of the face…
+const DIAL_SKY_NIGHT = rgba(28, 36, 60, 214);
+const DIAL_GROUND = rgba(20, 17, 14, 214); // …and the earth under the horizon, whatever hour it is
+const SUN_COL = rgba(244, 206, 118, 255);
+const MOON_COL = rgba(206, 216, 234, 255);
+
+/// THE WORLD CLOCK, drawn as the thing it actually is: a horizon, and the key light travelling across it left to
+/// right. The hour is the ONLY input and every shape here comes off `daynight`'s own arithmetic (`spanU`,
+/// `isDay`, `dayAmt`), so the dial cannot tell a different time than the sun the scene is lit by.
+///
+/// **THE MARKER IS WHATEVER IS CASTING** — the sun while it is up and the moon once it is not, which is
+/// `daynight.keyDir`'s own split. One body on the face rather than two, because at this size two would be two
+/// dots nobody could tell apart, and the one that matters is the one making the shadows.
+pub fn dayDial(hour: f32) void {
+    const cx = MARGIN + DIAL_R;
+    const cy = BAR_TOP + @divTrunc(BARS_H, 2);
+    const r: f32 = @floatFromInt(DIAL_R);
+    const fx: f32 = @floatFromInt(cx);
+    const fy: f32 = @floatFromInt(cy);
+    const day = daynight.isDay(hour);
+
+    rl.drawCircle(cx, cy, r + 2, rgba(0, 0, 0, 60)); // the bars' own soft seat, on a round thing
+    rl.drawCircle(cx, cy, r, DIAL_GROUND);
+    // THE SKY IS THE TOP HALF, cut with a SCISSOR rather than a circle sector: raylib's sector sweeps in screen
+    // space and the angle convention is one more thing to get backwards, where a clipped rectangle is not.
+    rl.beginScissorMode(cx - DIAL_R, cy - DIAL_R, DIAL_R * 2, DIAL_R);
+    rl.drawCircle(cx, cy, r, if (day) DIAL_SKY else DIAL_SKY_NIGHT);
+    rl.endScissorMode();
+    // …and how BRIGHT that sky is follows the daylight itself, so dawn and noon are not the same picture.
+    if (day) {
+        const k: u8 = @intFromFloat(90.0 * daynight.dayAmt(hour));
+        rl.beginScissorMode(cx - DIAL_R, cy - DIAL_R, DIAL_R * 2, DIAL_R);
+        rl.drawCircle(cx, cy, r, mathx.withAlpha(rgba(150, 190, 236, 255), k));
+        rl.endScissorMode();
+    }
+    rl.drawLineEx(.{ .x = fx - r, .y = fy }, .{ .x = fx + r, .y = fy }, 1.6, mathx.withAlpha(RIM, 220));
+    rl.drawCircleLines(cx, cy, r, FRAME);
+
+    // THE BODY, on the arc: 0 through its span is the horizon it rose over and 1 the one it is setting behind,
+    // which is east on the left and west on the right — the same sweep for the moon, since it is the anti-sun.
+    const a = std.math.pi * (1.0 - daynight.spanU(hour));
+    const rr = r - 5.5;
+    const mx = fx + mathx.cosf(a) * rr;
+    const my = fy - mathx.sinf(a) * rr;
+    const col = if (day) SUN_COL else MOON_COL;
+    rl.drawCircleV(.{ .x = mx, .y = my }, 6.5, mathx.withAlpha(col, 70)); // the halo…
+    rl.drawCircleV(.{ .x = mx, .y = my }, 3.6, col);
+    if (!day) {
+        // …and the moon is bitten into a crescent by the face behind it, which is the cheapest thing that stops
+        // a pale dot reading as a dim sun.
+        rl.drawCircleV(.{ .x = mx + 2.2, .y = my - 1.4 }, 2.9, DIAL_SKY_NIGHT);
+    }
+
+    // THE READOUT UNDER IT. A dial says where in the day you are and this says which day-hour that is; the pair
+    // is what makes "has the clock moved" a question you can answer at a glance.
+    var buf: [8]u8 = undefined;
+    const s = daynight.clockTextZ(hour, &buf);
+    text(s, cx - @divTrunc(textW(s, TINY), 2), cy + DIAL_R + 3, TINY, mathx.withAlpha(uiart.GILT_DIM, 236));
 }
 
 /// Three values (flat body, shaded bottom band, lit hairline) plus a catchlight on the leading edge while the

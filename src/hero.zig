@@ -2363,7 +2363,7 @@ pub const Hero = struct {
         self.stunT += dt;
         self.speed = 0;
         self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
-        const dur: f32 = if (self.stun == .heavy) combat.HEAVY_STUN_DUR else combat.LIGHT_STUN_DUR;
+        const dur = combat.heroStunDur(self.stun == .heavy);
         self.pose();
         if (self.stunT >= dur) {
             self.stun = .none;

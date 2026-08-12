@@ -159,10 +159,11 @@ const HIND_LOWER = 0.52; // tibia + metatarsus — the hock stands well back, wh
 const TRACK = 0.145; // half the distance between the left and right feet — a wide, planted stance
 const CHEST_Z = 0.42; // the shoulder, forward of the body's centre…
 const HIP_Z = -0.42; // …and the pelvis behind it: a 0.84 W trunk
-/// **THE HEAD IS CARRIED AT OR BELOW THE WITHERS**, on a SHORT thick neck reaching forward — not up. A neck
-/// that lifts the skull above the shoulder is a llama, and it was what the first pass drew.
-const NECK_LEN = 0.22;
 const HEAD_LEN = 0.26;
+/// **THE HEAD IS CARRIED AT OR BELOW THE WITHERS**, on a SHORT thick neck reaching forward — not up. A neck
+/// that lifts the skull above the shoulder is a llama, and it was what the first pass drew. The neck's LENGTH
+/// is not a constant of its own: it falls out of where `restPose` puts NECK against HEAD, and a spare
+/// `NECK_LEN` sat under this note reading as the thing that set it while nothing anywhere read it.
 const HEAD_Y = 0.82; // …a hair over the shoulder joint and under the top of the back
 const HEAD_Z = 0.72;
 
@@ -585,6 +586,11 @@ pub const HEEL_R: f32 = 3.2;
 /// …and how far behind it has to fall before it RUNS to catch up rather than trots. A spirit that ambles back
 /// to heel from thirty metres is one the player out-walks forever.
 pub const RUN_GAP: f32 = 7.0;
+/// HOW LONG IT MAY BE OUT PAST `RECALL_R` BEFORE THE BOND MOVES IT ITSELF (owner's call). Running home is the
+/// first answer and this is the one for when running cannot work — a bank it may not climb, a wall with no way
+/// round inside its probe, or a man who simply out-sprints it. Measured against the recall ring rather than
+/// against a distance of its own, so the clock only runs while it has already been told to come back.
+pub const LOST_DWELL: f32 = 3.0;
 /// …and how close it gets before the jaws go in.
 pub const BITE_R: f32 = 1.35;
 
@@ -614,7 +620,11 @@ const GROWL_EVERY: f32 = 2.6;
 /// feeds it: `DISSOLVE.rate` 62 a second against a mean life of ~0.72 s (0.55-1.05 for a mote, 0.32-0.65 for
 /// a flake, three in four being motes) stands about 45 at the fade's start, and the rate only falls from
 /// there as `thinning` closes.
+/// The rift's two bursts share it and cannot crowd it out: `2 × RIFT_N` is 24, and the two emitters can never
+/// run at once (a spirit that is coming apart is not one the bond can move).
 const PARTS = 48;
+/// Motes at ONE end of a rematerialize — the shade's own count, on a ring half the size.
+const RIFT_N = 12;
 
 /// How far down the jaw bone the teeth sit, as a fraction of `W` — where the bite's blade is measured from.
 const JAW_REACH: f32 = 0.10;
@@ -668,6 +678,12 @@ pub const Wolf = struct {
     /// WHICH BODY IT IS GOING FOR. An index into the field, handed in by game.zig — the creature never reaches
     /// out for the foe list, exactly as a foe never reaches out for the hero's shield (`foe.Parry`'s law).
     quarry: ?rl.Vector3 = null,
+    /// THE WAY ROUND WHAT IS IN FRONT OF IT — stamped by `game.markWay` like every creature's on the field, and
+    /// read in the one place this one travels.
+    nav: foe.Nav = .{},
+    /// SECONDS IT HAS BEEN OUT PAST `RECALL_R`, and the creature's own because the creature is the thing that
+    /// knows how far off it is standing. `LOST_DWELL` is what it is measured against.
+    lostT: f32 = 0,
     biteCool: f32 = 0,
     /// WHERE IT STOOD BEFORE IT MOVED THIS FRAME — what the game's terrain gate measures the step against
     /// (`game.tickPack`). Carried by the creature rather than snapshotted from outside because the pack
@@ -808,6 +824,9 @@ pub const Wolf = struct {
         self.vit.tick(dt);
         self.flash = mathx.maxF(0, self.flash - dt * 4.0);
         self.biteCool = mathx.maxF(0, self.biteCool - dt);
+        // HOW LONG IT HAS BEEN OUT OF HIS REACH. Up here with the other clocks and BEFORE the early returns,
+        // because a spirit stuck 20 m off worrying at something is exactly as lost as one stuck against a bank.
+        if (mathx.distXZ(self.pos, heel) > RECALL_R) self.lostT += dt else self.lostT = 0;
         foe.tickParticles(&self.parts, dt, self.pos.y);
         self.jaw0 = self.jaw1;
 
@@ -847,7 +866,7 @@ pub const Wolf = struct {
         }
 
         // NOTHING TO KILL: heel. Something to kill: go at it, and bite when the jaws will reach.
-        const want = self.quarry orelse heel;
+        const want = self.wants(heel);
         const gap = mathx.distXZ(self.pos, want);
         const stop: f32 = if (self.quarry != null) BITE_R * 0.85 else HEEL_R;
         // …and the bite opens a little further out than it lands, because the HOP closes the rest.
@@ -873,7 +892,11 @@ pub const Wolf = struct {
             else if (gap > HEEL_R * 2.0) TROT_SPEED else WALK_SPEED;
             self.speed = mathx.approach(self.speed, want_speed, ACCEL * dt);
             self.state = .move;
-            self.faceToward(want, dt);
+            // …AND IT TURNS ROUND WHAT IS IN THE WAY RATHER THAN INTO IT (`foe.Nav`). It walks where it is
+            // LOOKING, so the way through is read at the FACING and the step below is untouched — the GAP is
+            // still measured to the real target, so a detour cannot talk it into biting a wall or ambling home
+            // as though it had arrived.
+            self.faceToward(self.nav.aim(self.pos, want), dt);
             const step = self.speed * dt;
             mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), step, bounds);
             // THE PHASE IS DRIVEN BY THE DISTANCE ACTUALLY TRAVELLED — never by `dt` — so a paw that is down
@@ -893,6 +916,76 @@ pub const Wolf = struct {
     fn settle(self: *Wolf, dt: f32, bounds: f32) void {
         self.speedS = mathx.approach(self.speedS, self.speed, GAIT_BLEND * dt);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
+    }
+
+    /// WHERE IT IS GOING: the body it is going for, else HIM. One definition, because game.zig needs the same
+    /// answer to stamp the way through and two copies of a choice this small still drift.
+    pub fn wants(self: *const Wolf, heel: rl.Vector3) rl.Vector3 {
+        return self.quarry orelse heel;
+    }
+
+    /// …and the same thing as the steering asks it (`foe.Nav`): null while it is not walking anywhere, so a
+    /// stale heading cannot bend the bite's own hop or a stun.
+    pub fn navWant(self: *const Wolf, heel: rl.Vector3) ?rl.Vector3 {
+        if (self.state == .dead or self.state == .hurt or self.state == .bite) return null;
+        return self.wants(heel);
+    }
+
+    /// **HAS THE BOND BEEN STRETCHED PAST WHAT WALKING CAN FIX.** Running home is the first answer and it is
+    /// nearly always the right one; this is for the cases where it cannot work — a bank it may not climb, a
+    /// pocket with no way out inside its own probe, or a man who simply out-sprints it.
+    pub fn lost(self: *const Wolf) bool {
+        return self.lostT >= LOST_DWELL and self.state != .dead and !self.gone;
+    }
+
+    /// THE BOND CLOSING THE GAP ITSELF (owner's call): a summon the player has to walk back and fetch is one he
+    /// has lost. The SPOT is handed in, because the only thing that knows what is standing there is the file
+    /// that owns the world (`game.spiritSpot` — the bell's own spot, so it arrives where it was first called).
+    pub fn reappear(self: *Wolf, at: rl.Vector3, facing: f32) void {
+        const was = self.pos;
+        const from = self.fxHead;
+        self.rift(was);
+        // The departure's motes are floored on the ground it LEFT, not on the one it arrives over — a burst
+        // fired clear of its owner is exactly what `foe.floorBurst` is for.
+        foe.floorBurst(&self.parts, from, self.fxHead, was.y);
+        self.pos = at;
+        self.facing = facing;
+        self.state = .idle;
+        self.t = 0;
+        self.speed = 0;
+        self.speedS = 0;
+        self.shove = mathx.zero3;
+        self.lostT = 0;
+        self.nav = .{};
+        self.wasAt = at; // the terrain gate measures a STEP off this, and a rematerialize is not a step
+        self.rift(at);
+        self.pose();
+        // THE JAWS ARRIVE WITH IT (`spawn`'s own law): left where they were, this frame's swept bite is a blade
+        // from one side of the map to the other.
+        self.jaw1 = self.jawPoint();
+        self.jaw0 = self.jaw1;
+    }
+
+    /// THE TEAR AT BOTH ENDS OF A REMATERIALIZE — the shade's `rift`, on a body that does not thin out. A spirit
+    /// that simply stood somewhere else between two frames reads as a dropped frame rather than as a thing that
+    /// moved, and the motes are the only cue there is.
+    fn rift(self: *Wolf, at: rl.Vector3) void {
+        var i: i32 = 0;
+        while (i < RIFT_N) : (i += 1) {
+            const a = self.fxRng.angle();
+            const sp = self.fxRng.range(1.4, 3.0) * self.scale;
+            foe.emitParticle(
+                &self.parts,
+                &self.fxHead,
+                v3(at.x, at.y + (CENTER_H * W + self.fxRng.range(-0.32, 0.42)) * self.scale, at.z),
+                v3(mathx.cosf(a) * sp, self.fxRng.range(-0.3, 1.5), mathx.sinf(a) * sp),
+                self.fxRng.range(0.18, 0.32),
+                self.fxRng.range(0.030, 0.058) * self.scale,
+                0.006,
+                if (self.fxRng.float() < 0.4) EYE else PELT_LT,
+                1.2, // …and they fall INWARD, which is the place closing after it (the shade's own trick)
+            );
+        }
     }
 
     fn faceToward(self: *Wolf, at: rl.Vector3, dt: f32) void {
@@ -1173,6 +1266,60 @@ test "THE EDGES A BLOW SETS DO NOT SURVIVE THE UPDATE — so they have to be rea
     try std.testing.expect(slain.justDied);
     slain.update(1.0 / 60.0, mathx.zero3, 100);
     try std.testing.expect(!slain.justDied);
+}
+
+test "IT WALKS THE STAMPED WAY, and the gap is still measured to the real target" {
+    var w = Wolf.spawn(mathx.zero3, 0);
+    const heel = mathx.ground(0, 30); // straight ahead (+Z) and a long way off, so it runs
+    // Stamped hard to one side: the body has to end up going THAT way, not at him.
+    w.nav.dir = v3(1, 0, 0);
+    var t: f32 = 0;
+    while (t < 2.0) : (t += 1.0 / 60.0) w.update(1.0 / 60.0, heel, 100);
+    try std.testing.expect(w.pos.x > 1.0);
+    try std.testing.expect(@abs(w.pos.z) < w.pos.x); // …and it did not simply carry on toward him
+
+    // …AND A DETOUR MAY NOT TALK IT INTO ARRIVING. Standing off him with the way bent sideways it must still
+    // read as far away — the gap is the real one, so it keeps running rather than settling to heel.
+    try std.testing.expectEqual(State.move, w.state);
+    try std.testing.expect(w.speed > TROT_SPEED);
+}
+
+test "A SPIRIT THAT CANNOT GET HOME IS MOVED HOME" {
+    var w = Wolf.spawn(mathx.ground(0, RECALL_R + 8.0), 0);
+    const heel = mathx.zero3;
+    // Held where it stands (a bank, a wall — here simply a test that never lets it move) the clock fills.
+    var t: f32 = 0;
+    while (t < LOST_DWELL) : (t += 1.0 / 60.0) {
+        const at = w.pos;
+        w.update(1.0 / 60.0, heel, 100);
+        w.pos = at; // the gate's refusal, stood in for
+        try std.testing.expect(!w.lost() or t >= LOST_DWELL - 1.0 / 30.0);
+    }
+    w.update(1.0 / 60.0, heel, 100);
+    w.pos = mathx.ground(0, RECALL_R + 8.0);
+    try std.testing.expect(w.lost());
+
+    // …and the bond puts it down where it is told, with its jaws and its clock.
+    const spot = mathx.ground(1.5, 0.5);
+    w.reappear(spot, 1.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.distXZ(spot, w.pos), 1e-5);
+    try std.testing.expectEqual(State.idle, w.state);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), w.lostT, 1e-6);
+    try std.testing.expect(!w.lost());
+    // THE JAWS ARRIVED WITH IT. Left behind, the swept bite is a blade from the old spot to the new one —
+    // `spawn`'s own law, and the reason this is measured rather than trusted.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.distXZ(w.jaw0, w.jaw1), 1e-5);
+    try std.testing.expect(mathx.distXZ(w.jaw1, spot) < 2.0);
+    // …and it is inside the ring the moment it lands, so the clock cannot fire again next frame.
+    w.update(1.0 / 60.0, heel, 100);
+    try std.testing.expect(!w.lost());
+}
+
+test "a dead spirit is never moved — the bond does not fetch a corpse" {
+    var w = Wolf.spawn(mathx.ground(0, RECALL_R + 8.0), 0);
+    _ = w.takeHit(.{ .dmg = HP * 2 });
+    w.lostT = LOST_DWELL * 2.0;
+    try std.testing.expect(!w.lost());
 }
 
 test "HILDEBRAND'S TWO DIALS ARE THE GAIT — the anchors are the published ones and the blend is continuous" {

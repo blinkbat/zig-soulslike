@@ -265,6 +265,11 @@ pub fn runShots(g: *Game) void {
     g.drawDt = SETTLE_DT;
     g.menu.screen = .closed;
     g.retro.allOff();
+    // THE HOUR IS PINNED AND THE CLOCK IS STOPPED. Every frame below is framed off the sun's bearing
+    // (`LIT_YAW` — the sun over a camera at 53 deg, AGENTS.md), the palette was measured against that one
+    // light, and a foe's front is judged lit or not against it. A clock running through a 362-frame harness
+    // re-lights the sequence as it goes and no two of those judgements are made under the same sky.
+    game.pinHourForShot(g, game.daynight.SHOT_HOUR);
 
     g.hero.pos = mathx.ground(0, 26); // long runway of −Z travel ahead
     var i: i32 = 0;
@@ -592,6 +597,12 @@ pub fn runShots(g: *Game) void {
         if (game.flyingPointForShot(g, .firearrow)) |at| shootPortrait(g, "shots/20t_fire_head.png", at, LIT_YAW + 20, 0.04, 1.3);
         game.clearShaftsForShot(g);
         shootClear(g, "shots/20o_bow_hud.png", LIT_YAW + 150, 0.18, 4.6);
+        // …AND THE SAME CORNER AFTER DARK, which is the only frame the clock dial's MOON face is ever visible
+        // in: everything else here is pinned at the golden anchor, so without this the night half of the dial is
+        // drawn by nobody's eye. Back to the anchor straight after — every shot below is judged under it.
+        game.pinHourForShot(g, 23.4);
+        shootClear(g, "shots/20o2_bow_hud_night.png", LIT_YAW + 150, 0.18, 4.6);
+        game.pinHourForShot(g, game.daynight.SHOT_HOUR);
         g.hero.setAim(true);
         k = 0;
         while (k < 24) : (k += 1) {
@@ -1440,7 +1451,7 @@ pub fn runShots(g: *Game) void {
     g.menu.cursor = 0;
     drawScene(g);
     hud(g, SHOT_DT);
-    g.menu.draw(&g.retro, game.bookView(g), null);
+    g.menu.draw(&g.retro, &g.day, game.bookView(g), null);
     snap("shots/12_menu_main.png");
 
     g.retro.values[gfx.RF_GAMEBOY] = 1.0; // show a live gauge on the retro card
@@ -1448,7 +1459,7 @@ pub fn runShots(g: *Game) void {
     g.menu.cursor = gfx.RF_GAMEBOY;
     drawScene(g);
     hud(g, SHOT_DT);
-    g.menu.draw(&g.retro, game.bookView(g), null);
+    g.menu.draw(&g.retro, &g.day, game.bookView(g), null);
     snap("shots/13_menu_retro.png");
     g.menu.screen = .closed;
 
@@ -1469,6 +1480,7 @@ pub fn runShots(g: *Game) void {
     folkShots(g);
     soundFilterShots(g);
     wolfShots(g);
+    dayShots(g);
     editorShots(g);
     editorGapShots(g);
 }
@@ -2399,6 +2411,15 @@ fn talkShot(g: *Game, name: [:0]const u8, at: rl.Vector3, frames: i32, in: dialo
 }
 
 // THE EDITOR — its whole job is legibility and none of that can be judged from the game shots, so it gets a frame per room: the Props layer at rest, a generator selected (its gizmo plus a marker on every instance it owns — the thing that makes a scatter editable), a Decor belt mid-drag, the Ground layer with soil painted, painted WATER low and overhead, a marquee, the Open dialog, the object viewer's two levels, the Interactables layer and the jukebox.
+/// ONE EDITOR FRAME: the world behind it, the chrome over it, shutter. Eighteen sites wrote the triple out,
+/// which is eighteen places for a room to be photographed without its overlay — a shot of the editor with no
+/// editor in it, and nothing refuses it (`must`'s own rule, on the drawing side).
+fn editorSnap(g: *Game, name: [:0]const u8) void {
+    drawScene(g);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
+    snap(name);
+}
+
 /// The editor with the JUKEBOX modal up — the sound rack's own frame. Its own helper because the modal is
 /// opened through the editor's real entry point (`editor.soundsForShot`), never by poking `modal` from here:
 /// the panel reads state that entering sets up.
@@ -2407,9 +2428,7 @@ fn editorJukeShot(g: *Game, name: [:0]const u8) void {
     g.editor.applyCamForShot();
     g.editor.soundsForShot(.ogre_slam); // a combat voice, so the rack beside it is the one being turned
     g.editor.rackMix = .combat;
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap(name);
+    editorSnap(g, name);
     g.editor.on = false;
 }
 
@@ -2419,14 +2438,10 @@ fn editorGapShots(g: *Game) void {
     g.editor.enter(mathx.ground(0, -66));
     g.editor.applyCamForShot();
     g.editor.worldForShot();
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/116a_editor_world.png");
+    editorSnap(g, "shots/116a_editor_world.png");
 
     g.editor.zoneMixForShot(&g.map, 0);
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/116b_editor_zonemix.png");
+    editorSnap(g, "shots/116b_editor_zonemix.png");
 
     // …and the DENSITY GRADIENT rows, which live in the belt inspector rather than in a modal: select a
     // belt, turn a gradient on, and photograph the panel that had no control for it at all until now.
@@ -2437,9 +2452,7 @@ fn editorGapShots(g: *Game) void {
             break;
         }
     }
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/116c_editor_gradient.png");
+    editorSnap(g, "shots/116c_editor_gradient.png");
     g.editor.on = false;
 }
 
@@ -2450,9 +2463,7 @@ fn editorShots(g: *Game) void {
     g.editor.pitch = -0.65;
     g.editor.applyCamForShot();
 
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/95_editor_props.png");
+    editorSnap(g, "shots/95_editor_props.png");
 
     g.editor.setLayer(.props);
     for (g.map.slice(), 0..) |o, i| {
@@ -2462,9 +2473,7 @@ fn editorShots(g: *Game) void {
             break;
         }
     }
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/96_editor_selected.png");
+    editorSnap(g, "shots/96_editor_selected.png");
 
     g.editor.enter(mathx.ground(0, 0));
     g.editor.setLayer(.decor);
@@ -2478,9 +2487,7 @@ fn editorShots(g: *Game) void {
     g.editor.dragging = true;
     g.editor.dragFrom = mathx.ground(-16, -12);
     g.editor.dragTo = mathx.ground(14, 16);
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/97_editor_drag.png");
+    editorSnap(g, "shots/97_editor_drag.png");
     g.editor.dragging = false;
 
     const before = g.map.soil;
@@ -2498,9 +2505,7 @@ fn editorShots(g: *Game) void {
     g.editor.yaw = std.math.pi;
     g.editor.dist = 46;
     g.editor.applyCamForShot();
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/98_editor_ground.png");
+    editorSnap(g, "shots/98_editor_ground.png");
 
     g.map.soil = before;
     g.map.soilCov = beforeCov;
@@ -2522,15 +2527,11 @@ fn editorShots(g: *Game) void {
     g.editor.yaw = 2.4;
     g.editor.dist = 34;
     g.editor.applyCamForShot();
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/98b_editor_water.png");
+    editorSnap(g, "shots/98b_editor_water.png");
     g.editor.pitch = -1.15;
     g.editor.dist = 58;
     g.editor.applyCamForShot();
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/98c_editor_water_map.png");
+    editorSnap(g, "shots/98c_editor_water_map.png");
 
     g.map.water = beforeWater;
     g.env.uploadWater(&g.map);
@@ -2543,30 +2544,20 @@ fn editorShots(g: *Game) void {
     g.editor.dist = 40;
     g.editor.applyCamForShot();
     g.editor.selectForShot(&g.map, mathx.ground(-20, -30), mathx.ground(20, 6));
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/99_editor_marquee.png");
+    editorSnap(g, "shots/99_editor_marquee.png");
 
     // The OPEN dialog over the same frame — the file list is chrome and can't be judged from any of the above.
     g.editor.openForShot();
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/99b_editor_open.png");
+    editorSnap(g, "shots/99b_editor_open.png");
 
     g.editor.objectsForShot(.props, 0, null);
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/99c_editor_objects.png");
+    editorSnap(g, "shots/99c_editor_objects.png");
 
     g.editor.objectsForShot(.props, 0, .well);
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/99d_editor_object_one.png");
+    editorSnap(g, "shots/99d_editor_object_one.png");
 
     g.editor.objectsForShot(.decor, 0, null);
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/99e_editor_objects_decor.png");
+    editorSnap(g, "shots/99e_editor_objects_decor.png");
 
     g.editor.modal = .none;
     g.editor.setLayer(.interact);
@@ -2576,18 +2567,63 @@ fn editorShots(g: *Game) void {
     g.editor.yaw = std.math.pi;
     g.editor.dist = 34;
     g.editor.applyCamForShot();
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/99f_editor_interact.png");
+    editorSnap(g, "shots/99f_editor_interact.png");
 
     g.editor.soundsForShot(.ogre_slam);
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/99g_editor_sounds.png");
+    editorSnap(g, "shots/99g_editor_sounds.png");
     g.editor.modal = .none;
 
     g.editor.on = false;
     elevationShots(g);
+}
+
+/// THE WHOLE DAY, FROM ONE PLACE AND ONE LENS. The strip is the test: eight frames of the SAME view under
+/// eight hours, so what is being judged is the ARC and not any one sky. Anything that moves between two
+/// neighbours other than the light is a bug, and a frame that reads like the one before it is an hour the
+/// palette is not earning.
+///
+/// **SHOT INTO THE SUN'S QUARTER, NOT WITH IT.** The rest of the harness shoots from `LIT_YAW` so a subject
+/// is lit; here the SKY is the subject, and the bank, the aureole and the disc all live in the quarter the
+/// sun is actually in. The camera therefore looks along the sun's own bearing at the anchor hour — which is
+/// where the disc sits at the golden hour, and the one bearing every other hour can be compared against.
+///
+/// The hero stands in it as the value reference: he is the one thing whose albedo is known, so "is this hour
+/// too dark" is a question about him and not about the grass.
+fn dayShots(g: *Game) void {
+    const at = mathx.ground(0, -14.0);
+    standHero(g, at.x, at.z, mathx.radians(game.daynight.SHOT_HOUR * 0)); // facing +Z, square to the lens
+    plantHeroForShot(g);
+    game.clearFoesForShot(g);
+    game.clearShaftsForShot(g);
+    const hours = [_]struct { h: f32, name: [:0]const u8 }{
+        .{ .h = 1.5, .name = "shots/140_day_night.png" },
+        .{ .h = 5.2, .name = "shots/141_day_firstlight.png" },
+        .{ .h = 6.2, .name = "shots/142_day_sunrise.png" },
+        .{ .h = 8.5, .name = "shots/143_day_morning.png" },
+        .{ .h = 12.0, .name = "shots/144_day_noon.png" },
+        .{ .h = game.daynight.SHOT_HOUR, .name = "shots/145_day_golden.png" },
+        .{ .h = 19.4, .name = "shots/146_day_sunset.png" },
+        .{ .h = 20.9, .name = "shots/147_day_dusk.png" },
+    };
+    // The sun's bearing at the anchor, as a CAMERA yaw: `camera.backDir` puts the lens behind the hero on the
+    // yaw's own bearing, so pointing it down the sun's bearing is the yaw that faces INTO the light.
+    const intoSun: f32 = 232.5 + 180.0;
+    for (hours) |row| {
+        game.pinHourForShot(g, row.h);
+        shootAt(g, row.name, at, intoSun, 0.02, 7.0);
+    }
+    // …AND THE SHADOWS, which are the half of this that is not the sky: a steep overhead of the same ground at
+    // three hours, where the only thing in the frame is which way and how far everything is throwing.
+    for ([_]struct { h: f32, name: [:0]const u8 }{
+        .{ .h = 7.0, .name = "shots/148_day_shadows_morning.png" },
+        .{ .h = 12.0, .name = "shots/148b_day_shadows_noon.png" },
+        .{ .h = 19.0, .name = "shots/148c_day_shadows_evening.png" },
+    }) |row| {
+        game.pinHourForShot(g, row.h);
+        shootAt(g, row.name, at, 90, 0.62, 26.0);
+    }
+    // BACK TO THE ANCHOR, and the harness expects to find it there: everything below this is judged under it.
+    game.pinHourForShot(g, game.daynight.SHOT_HOUR);
 }
 
 fn elevationShots(g: *Game) void {
@@ -2647,9 +2683,7 @@ fn elevationShots(g: *Game) void {
     g.editor.yaw = 2.5;
     g.editor.dist = 62;
     g.editor.applyCamForShot();
-    drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
-    snap("shots/105_editor_sculpt.png");
+    editorSnap(g, "shots/105_editor_sculpt.png");
     g.editor.on = false;
 
     g.map.height = before;
@@ -2661,9 +2695,9 @@ fn elevationShots(g: *Game) void {
 /// the slot before the frame is drawn: in play it is EASED there, and `debugShow` only says where to.
 fn bookShot(g: *Game, name: [:0]const u8, page: bookmod.Page, cursor: usize, pickSlot: ?usize, row: usize) void {
     g.menu.book.debugShow(page, cursor, pickSlot, row);
-    _ = g.menu.update(&g.retro, SHOT_DT, game.bookView(g));
+    _ = g.menu.update(&g.retro, &g.day, SHOT_DT, game.bookView(g));
     drawScene(g);
-    g.menu.draw(&g.retro, game.bookView(g), .{ .hero = &g.hero, .scene = &g.scene });
+    g.menu.draw(&g.retro, &g.day, game.bookView(g), .{ .hero = &g.hero, .scene = &g.scene });
     snap(name);
 }
 

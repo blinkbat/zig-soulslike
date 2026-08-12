@@ -194,10 +194,79 @@ pub fn sensedDist(l: *const Leash, real: f32, aggroR: f32) f32 {
     return real;
 }
 
+/// ONE FRAME OF A CREATURE'S TETHER, off the three points it is actually about. `Leash.tick` takes the two
+/// distances already measured, and the WHOLE of its own long note is that they are measured FROM THE POST and
+/// which way round they go — restated as a hand-written pair of `distXZ` calls at every creature, that order is
+/// eight places to transpose `out` and `heroOut` and get a tether that releases at the wrong range.
+pub fn tickLeash(l: *Leash, dt: f32, at: rl.Vector3, home: rl.Vector3, hero: rl.Vector3, aggroR: f32) void {
+    l.tick(dt, mathx.distXZ(at, home), mathx.distXZ(home, hero), aggroR);
+}
+
+/// …and HOW FAR IT READS THE HERO AS BEING, from where it is standing — `sensedDist` with the one distance
+/// every caller was measuring by hand. Fourteen sites wrote out the same `distXZ(self.pos, hero)`.
+pub fn senseHero(l: *const Leash, at: rl.Vector3, hero: rl.Vector3, aggroR: f32) f32 {
+    return sensedDist(l, mathx.distXZ(at, hero), aggroR);
+}
+
 pub fn faceToward(pos: rl.Vector3, facing: *f32, target: rl.Vector3, rate: f32, dt: f32) void {
     const d = mathx.dirXZ(pos, target);
     if (mathx.lenXZ(d) < 1e-3) return;
     facing.* = mathx.approachAngle(facing.*, mathx.headingXZ(d), rate * dt);
+}
+
+/// THE WAY ROUND WHAT IS IN THE WAY, and the whole of what a creature here knows about pathfinding.
+///
+/// **IT IS STAMPED FROM OUTSIDE** (`game.markWay`), the `Leash` arrangement and for its reason: a riser, a wall
+/// and deep water are all questions about `env`, and a creature that reached for the world would be an eleventh
+/// definition of what walkable means. What the creature owes in return is ONE method — `navWant`, the point it
+/// is trying to walk at this frame, or null when it is not walking anywhere.
+///
+/// **IT IS STEERING AND NOT A ROUTE.** There is no graph, no path and nothing remembered about the map: the
+/// stamp is a heading that has been TESTED for the next couple of metres, and the creature walks it instead of
+/// the straight line it wanted. That answers the failure it exists for — a body pressed against a wall for the
+/// rest of the fight because the only direction it ever considered was the one the hero was in — and it does not
+/// pretend to answer more than that.
+///
+/// A creature reads it in exactly one place, whichever of the two its own movement is:
+///   `aim`   — for one that walks where it is LOOKING (the ogre turns his whole body; he never strafes)
+///   `along` — for one that steps on a committed vector and faces the hero anyway (the kobold, the shade)
+pub const Nav = struct {
+    /// The tested heading, unit XZ. NULL is the ordinary case and it means "the straight line is fine".
+    dir: ?rl.Vector3 = null,
+    /// WHICH WAY ROUND IT WENT LAST TIME, and this is the whole of why it does not dither: with both sides of
+    /// an obstacle equally open, the side it already committed to wins, so a creature at a corner keeps going
+    /// round the way it started instead of shivering in front of it. Re-set to whichever side actually worked
+    /// every time a detour is taken, so it cannot commit to a wrong one for good.
+    side: f32 = 1,
+
+    /// THE POINT TO TURN TOWARD, given the one the creature actually wants.
+    pub fn aim(self: *const Nav, from: rl.Vector3, want: rl.Vector3) rl.Vector3 {
+        const d = self.dir orelse return want;
+        return mathx.addV(from, d);
+    }
+
+    /// …and the same answer as a HEADING, for a creature that steps along a vector of its own rather than
+    /// along its facing. `want` is already a unit direction.
+    pub fn along(self: *const Nav, want: rl.Vector3) rl.Vector3 {
+        return self.dir orelse want;
+    }
+};
+
+test "AN UNSTAMPED WAY CHANGES NOTHING — steering is a bend on a refused heading, never a layer on top of one" {
+    const at = mathx.ground(0, 0);
+    const want = mathx.ground(0, 10);
+    var n = Nav{};
+    // Nothing stamped: both readings hand back exactly what the creature asked for, so a creature reading these
+    // in its walk walks the same line it walked before any of this existed.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.distXZ(want, n.aim(at, want)), 1e-6);
+    const straight = mathx.dirXZ(at, want);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.distXZ(straight, n.along(straight)), 1e-6);
+    // …and stamped, BOTH readings turn — `aim` as a point one metre along the way and `along` as the way itself,
+    // which is the one thing the two shapes have to agree on.
+    n.dir = v3(1, 0, 0);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.distXZ(mathx.ground(1, 0), n.aim(at, want)), 1e-6);
+    try std.testing.expectApproxEqAbs(mathx.headingXZ(n.dir.?), mathx.headingXZ(mathx.dirXZ(at, n.aim(at, want))), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), n.along(straight).x, 1e-6);
 }
 
 pub fn flashFrac(flash: f32) f32 {

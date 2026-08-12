@@ -96,10 +96,11 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | file | what |
 | --- | --- |
 | `main.zig` | entry; `--shot` headless harness |
-| `game.zig` | window/loop, input, camera-relative movement, render orchestration, combat-beat feedback, YOU DIED |
+| `game.zig` | window/loop, input, camera-relative movement, render orchestration, combat-beat feedback, YOU DIED. **A DEFAULTED FIELD ON `Game` MUST BE ASSIGNED IN `init`** — it is built from `alloc.create`, so `= .{}` on the field never runs and the field comes up as the fill byte. Silent, and it has bitten twice: `pack.n` as garbage, and the WHOLE DAY/NIGHT CYCLE dead because `g.day` was never assigned (rate 0 is a held clock; a NaN hour renders as the anchor) |
 | `hero.zig` | THE HERO — FK skeleton, every animation, swept blade capsule, the guard, the bow, the wand. Start here |
 | `camera.zig` | over-the-shoulder orbit rig, ground basis, trauma shake (live-loop only, so `--shot` stays deterministic) |
 | `gfx.zig` | mesh `Builder`, scene shader, shadow depth pass, `Sky`, `Vignette`, `Mat` surface materials |
+| `daynight.zig` | THE WORLD CLOCK — the sun/moon path, the hour's whole palette, and the anchor hour `--shot` pins |
 | `shaders.zig` | every line of GLSL and nothing else; the contract with `gfx.zig` is written at its top |
 | `worldfmt.zig` | THE MAP FORMAT — op vocabulary, zone/foe/**npc/trigger/dialog** tables, one comptime field table driving writer and parser |
 | `trigger.zig` | THE TRIGGER MACHINE — SC1's conditions + actions, and the switches / counters / timers they compose through |
@@ -121,7 +122,7 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `leechfly.zig` | THE FIRST FLYER + `Swarm`; 15 bones, never lands. Drinks his HP through a beak and heals off what it takes, and ZOOMS out of sword reach |
 | `rooted.zig` | THE TREE THAT ISN'T + `Grove`; a snag-mimic fixture — eyes open outside its reach, three limb strikes (slam/sweep/hook-drag), never moves |
 | `shroom.zig` | the sporeling + `Cluster`; a squat mushroom that FLINGS itself and bursts a lingering spore cloud that POISONS (buildup, never damage). Sometimes it TRIPS instead — same gather, longer opening |
-| `wolf.zig` | THE FIRST SPIRIT + `Pack` — what the BELL calls, and the one thing that fights ON HIS SIDE. NOT a foe (no `Leash`, its own `takeHit`, not in `FOE_GROUPS`) and the first QUADRUPED: 27 bones, and the gait is Hildebrand's two dials |
+| `wolf.zig` | THE FIRST SPIRIT + `Pack` — what the BELL calls, and the one thing that fights ON HIS SIDE. NOT a foe (no `Leash`, its own `takeHit`, not in `FOE_GROUPS`) and the first QUADRUPED: 27 bones, and the gait is Hildebrand's two dials. Out past `RECALL_R` for `LOST_DWELL` and the BOND MOVES IT (`reappear` + `game.rematerialize`, the bell's own spot) — running home is what it tries first, and this is for when running cannot work |
 | `combat.zig` | `Vitals` (HP + two-tier stagger + regen + death), `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`, `SpiritKind`/`SUMMON_MAX`. THE place to retune feel |
 | `stats.zig` | the character sheet — seven attributes and the curves that make the bars |
 | `passivetree.zig` | THE PASSIVE TREE — PoE2's, radially: three arms out of one hub, the gates, the `Bonus`, and the wheel it is drawn as |
@@ -129,7 +130,7 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `chest.zig` | openable boxes; contents read off the placing op (`Op.loot`) |
 | `rest.zig` | bonfire + campfire bonfire — the phase machine, the seat, and THE FIRE'S OWN SCREEN (its list, and the wheel behind Level Up); `isRestKind` is the one predicate |
 | `souls.zig` | THE DROP — what a death leaves on the ground, the gold bloom it stands as, and the walk back for it |
-| `hud.zig` | ER HUD, the PAD-GLYPH kit every prompt and crib is drawn with, and the ONLY path to draw/measure text |
+| `hud.zig` | ER HUD, the PAD-GLYPH kit every prompt and crib is drawn with, and the ONLY path to draw/measure text. The three bars start at `BARS_X`, not `MARGIN` — the WORLD CLOCK'S dial has the corner (`dayDial`, drawn off `daynight.spanU`/`isDay`, so it cannot tell a different time than the light) |
 | `ui.zig` | editor widget kit; `Ctx.anyHot` gates world clicks next frame |
 | `uiart.zig` | chrome DRESSING shared by hud/menu/book/ui |
 | `itemart.zig` | pictures of things — armaments and bag items as objects, sized by the caller |
@@ -239,6 +240,25 @@ whose contents change together is fine. Splits go where concerns genuinely part 
   (`warrior.decide` folds it into `ready`, so `classify` cannot promise a strike the pick then refuses), never
   of one move by name. Already in the air when the grip closes, it finishes its arc: you cannot root what is
   not standing on anything.
+- **STEERING ROUND WHAT IS IN THE WAY IS `foe.Nav`, STAMPED BY THE GAME** (`game.markWay`/`markWays`,
+  `Leash`'s own arrangement). A creature owes a `nav` field and ONE method — `navWant(target)`, the point it is
+  trying to walk at this frame, or null when it is not walking anywhere. `markWays` is folded over `FOE_GROUPS`
+  and keyed off `@hasField(M, "nav")`, so gaining steering is a field and a method and never an edit there — and
+  a test pins field ⟺ method, because both halves fail SILENTLY.
+  - **It is STEERING, not a route.** No graph, nothing remembered: the stamp is a heading tested for the next
+    couple of metres against `env.walkStep` (terrain, the deep) and `env.resolveActor` (the world's solids), and
+    the fan is tried NEAREST-FIRST so an obstacle costs as little heading as it actually costs. What it answers
+    is a body pressed into a wall for the rest of the fight; it does not claim more.
+  - **The creature reads it in ONE place, and which one is its own movement's business.** `Nav.aim` for one that
+    walks where it is LOOKING (the ogre turns his whole body — he never strafes); `Nav.along` for one that steps
+    on a committed vector with its eyes still on him (the kobold, the shade, a kiting archer). A hop is bent at
+    the CHOOSE (`frog`, `shroom`), never mid-arc.
+  - **ONLY THE TRAVEL STATE.** A swing, a wind, a lunge, a leap and a pounce are committed: a heading bent under
+    one of those aims the blow at the wall. And **the attack hop is left straight on purpose** — that one is the
+    attack.
+  - **A FLYER IS NEVER STEERED** (`gateTerrain`'s own `airborne` skip): the probe is the rule for FEET. The
+    leechfly's answer is ALTITUDE, and steering it would refuse it the bank it may fly straight over.
+  - **It is asked about whoever the creature is actually FIGHTING** (`Threat.aim`), never about the hero.
 - **A multi-kind group answers for its own members** — `kind = null` in `FOE_GROUPS`, each member
   exposes `kind()`. A group with anything else on the field (sacs, acid) exposes `clear()`.
 - **Anything the map can post is a `wf.FoeKind`, APPENDED never inserted** (editor unit brushes are
@@ -734,9 +754,12 @@ hang off the hub, so all three are open from the first souls you spend.
 - **THE BONFIRE IS A SCREEN, NOT A PAUSE** (owner's layout). He sits in the RIGHT of the frame and the fire's
   menu is a list down the LEFT: **Level Up** (which opens the wheel) and **Leave Bonfire**, and nothing else
   yet. The wheel is shown ONLY once Level Up is chosen — a tree behind every sit buries what a bonfire is.
-- **GETTING UP IS A ROW ON THAT LIST.** It was "any button", which cannot coexist with a cursor: every press
-  that chose a row also stood him up. That is why the character book and the pause card are BOTH refused at a
-  fire — a bonfire has exactly one way out and it is on the list.
+- **GETTING UP IS A ROW ON THAT LIST, OR BACK.** It was "any button", which cannot coexist with a cursor: every
+  press that chose a row also stood him up. Back is the one button that can never also pick, so it is the one
+  exception (owner's call) — off the wheel first, then out of the fire. The character book and the pause card
+  are still BOTH refused at a fire.
+- **NO HINT ROW ON THE FIRE'S LIST** (owner's call). Four verbs, each saying what it does; a crib under them was
+  spelling out which button picks a row. The WHEEL keeps its hints — LS/RS/zoom is not guessable.
 - **THE VIEW IS PANNED, NOT SHEARED** (`game.restCamera`, `REST_PAN`). Eye and target move by the same vector
   along the camera's own right axis; swinging the target alone turns the camera and re-composes the shot
   instead of sliding it. Screen-right is `cross(forward, up)` — `camera.rightXZ`'s law, one layer up.
@@ -952,6 +975,45 @@ them. Nothing about the world is authored in Zig. Ops: `at`, `belt`, `disc`, `ri
   `elapsed <cmp> secs`, `region x z x1 z1`, `near npc=i r=m`, `talked dlgId`, `deaths foeKind <cmp> n`,
   `alive foeKind <cmp> n`. Actions: `dialog dlgId`, `text …`, `flag N=0|1|flip`,
   `counter N set|add|sub n`, `timer N=secs`, `wait secs`, `preserve`. `<cmp>` is `<` `<=` `=` `>=` `>`.
+
+### The day (`daynight.zig`)
+
+One number — `Game.day.hour` — and every colour and every shadow in the world is a function of it.
+
+- **ONE DIRECTION CASTS AND THE SHADER KEYS OFF IT** (the old law, unchanged): `keyDir` is the SUN while the sun
+  is up and the MOON once it is down, `gfx.Scene.setHour` is its only writer, and it moves `gfx.sun` and
+  `gfx.sunReach` together. The sun rises at 6 on bearing 100 and sets at 20 on 262; the moon is the ANTI-SUN, so
+  one of the two is always up and the world is never unlit.
+- **THE SKY DRAWS THE TRUE PATH, THE SHADOWS DO NOT.** `keyDir` FLOORS the casting altitude at `KEY_ALT_MIN`
+  (15°) while `sunDir`/`moonDir` keep the honest angle for the disc. A 2° sun throws a 300 m shadow the 108 m
+  ortho box cannot hold; the eye reads the disc's height off the horizon and the shadow's DIRECTION off the
+  ground, and never solves one from the other. That is the one place the two are allowed to disagree.
+- **THE TEXEL SNAP IS TAKEN IN THE LIGHT'S OWN BASIS** (`gfx.lightBasis`). Rounding world x/z to the texel pitch
+  only lands on a texel while the light looks down a world axis. With a sun that sweeps, a world-axis snap stops
+  snapping and the shadow edges crawl.
+- **`Palette` IS THE WHOLE LOOK OF AN HOUR**, keyframed at nine hours and blended with the ease taken off both
+  ends (a linear walk puts a corner in the light at every row). Wants retuning? Move a row, not a shader.
+- **ITS TWO HALVES ARE ON DIFFERENT SCALES.** `key`/`ambGround`/`ambSky`/`haze`/`hazeBank` are read by the SCENE
+  shader, which gammas its output — so they are PRE-GAMMA and near-black. Every `sky*`/`cloud*` value is read by
+  the SKY shader, which gammas nothing — those are LITERAL SCREEN VALUES. Authoring the sky pre-gamma is what
+  reads as a black hole over a blazing noon. **And at the dark hours `haze` must sit UNDER what the ground is lit
+  to**, or the distance comes out brighter than the foreground and reads as fog rather than nightfall.
+- **THE ANCHOR IS NOT A KEYFRAME.** `SHOT_HOUR` (17:27) is the hour that reproduces `gfx.SUN_DIR` — the light this
+  game was authored, measured and photographed under, and the bearing `shots.LIT_YAW` is framed off. `SUN_ALT_MAX`
+  and `SHOT_HOUR` are SOLVED from it; move `AZ_RISE`/`AZ_SET` and you solve them again rather than nudge them. Two
+  tests pin the direction and the palette row. `--shot` pins and FREEZES that hour (`game.pinHourForShot`) — a
+  clock running through a 362-frame harness re-lights the sequence as it goes.
+- **The controls.** Menu > Debug > `Hour` (Left/Right scrub, Shift coarse, hold to sweep, Confirm holds it); in the
+  EDITOR, `,` and `.` sweep it and Shift runs (the clock is held in the editor, so those are the only writers).
+  A BONFIRE offers `Rest until morning` / `Rest until evening` — always FORWARD (`hoursUntil`), and asking for the
+  hour you are on costs a whole day. Nothing is restocked there: `hero.sit` made him whole when he sat down.
+- **AND THE FIRE TOUCHES THE CLOCK NOWHERE ELSE** (owner's call). Sitting down used to pull the whole world into a
+  local dusk whatever hour it was — a `dim` uniform in both shaders, riding on top of the palette. That dial is
+  GONE: the hour you walk in at is the hour you sit in, and the two `Rest until…` rows are the only thing at a
+  fire that moves the light.
+- Verify with the strip: `shots/140`–`147` are eight hours of ONE view shot into the light's own quarter, and
+  `148*` three overheads of the same ground. The arc is the test — a frame that reads like its neighbour is an
+  hour the palette is not earning.
 
 ### Elevation
 
@@ -1254,7 +1316,9 @@ not the stick-speed `runB`.
   fullscreen, and two limiters fight on any panel that isn't 60 Hz.
 - **Depth z-fighting:** `rlSetClipPlanes(CLIP_NEAR, CLIP_FAR)` (0.55, 320) at startup. The ground sits a hair above y=0
   (`env.GROUND_Y = 0.01`) so content is planted-to-slightly-embedded and never FLOATS.
-- **Sun + shadows are ONE source** (`gfx.SUN_DIR`) feeding both the shader and the shadow camera.
+- **Sun + shadows are STILL ONE source** — `gfx.sun`, solved from the hour (`daynight.keyDir`) and written only by
+  `gfx.Scene.setHour`, feeding the shader, the shadow camera and `env`'s depth cull. `gfx.SUN_DIR` is now the
+  ANCHOR the cycle is solved through, not what casts.
 - **Shadow pass contract:** every caster draws through `game.drawCasters` (both passes, so transforms
   can't drift). drawMesh/drawModel use the MATERIAL's shader, so the depth pass swaps caster shaders
   (`setCasterShaders`) and runs BEFORE `beginDrawing`. Terrain and FLORA receive but do not cast. The
@@ -1268,8 +1332,9 @@ not the stick-speed `runB`.
 - **TWO STONE MATERIALS.** `.stone` is rubble masonry, matte; `.marble` is dressed stone, veined, with
   the only real gloss besides steel and water — kept LOW, or it lays a wash over every sunward face
   and undoes the dark-albedo rule. Marble = columns/arches/statues; stone = walls/towers/rubble.
-- **`gfx.Mat` is APPEND-ONLY** — the shader hard-codes 9 for water and 10 for marble; comptime asserts
-  guard both.
+- **`gfx.Mat` is APPEND-ONLY** — the shader branches on the raw ordinal the whole way from 1 to 14, and the
+  comptime asserts pin the TAIL (water 9 through bark 14). Pinning `water == 9` is what catches an insert
+  anywhere below it, which is why the head needs no assert of its own.
 - **THE FLAME MATERIAL IS THE ONE THING DRAWN SEMI-TRANSPARENT BY ITS MATERIAL** (the faded hero under
   an aim is the one drawn so by a per-draw uniform). Opacity is graded off the emissive
   (`FLAME_A_CORE`→`FLAME_A_TIP`); depth WRITE stays on so tongues don't stack into a brighter core.

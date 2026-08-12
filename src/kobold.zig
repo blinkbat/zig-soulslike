@@ -345,6 +345,8 @@ pub const Kobold = struct {
     justDied: bool = false,
     /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
     threat: foe.Threat = .{},
+    /// …AND THE WAY ROUND WHAT IS IN FRONT OF IT (`foe.Nav`), stamped the same way and for the same reason.
+    nav: foe.Nav = .{},
     hitLatch: bool = false,
     flash: f32 = 0,
     shove: rl.Vector3 = mathx.zero3,
@@ -441,6 +443,17 @@ pub const Kobold = struct {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt);
     }
 
+    /// WHERE IT IS TRYING TO WALK, or null when it is not walking anywhere (`game.markWay`). Read off the
+    /// COMMITTED VECTOR rather than off the hero, because that vector is the whole of the errand: closing,
+    /// backing off to a priest's range, or drifting home are three different targets and one direction.
+    pub fn navWant(self: *const Kobold, hero: rl.Vector3) ?rl.Vector3 {
+        _ = hero;
+        return switch (self.state) {
+            .approach, .reposition => mathx.addV(self.pos, self.moveDir),
+            else => null,
+        };
+    }
+
     /// Where the clump leaves the sling: the pouch, out at arm's length past the head. It is also where the whirl sheds its embers from, so it is read every frame of the tell, not just at the release.
     pub fn slingPoint(self: *const Kobold) rl.Vector3 {
         return rl.math.vector3Transform(v3(0, 0, SLING_LEN * H), self.xf[KIT]);
@@ -496,7 +509,7 @@ pub const Kobold = struct {
         self.t += dt;
         self.vit.tick(dt);
         self.flash = mathx.maxF(0, self.flash - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         self.castCd = mathx.maxF(0, self.castCd - dt);
         self.slingCd = mathx.maxF(0, self.slingCd - dt);
         self.biteCd = mathx.maxF(0, self.biteCd - dt);
@@ -509,7 +522,7 @@ pub const Kobold = struct {
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
         foe.tickParticles(&self.parts, dt, self.pos.y);
 
-        const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
+        const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         switch (self.state) {
             .idle => {
                 // Gated on the SENSED range (the frog's idiom) — a posted kobold must not track a hero
@@ -520,9 +533,13 @@ pub const Kobold = struct {
             .approach, .reposition => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
                 const moved = WALK_SPEED * spec(self.role).speed * dt;
-                mathx.stepXZ(&self.pos, self.moveDir, moved, bounds);
+                // …ROUND WHAT IS IN THE WAY (`foe.Nav`), and at the STEP rather than the facing: this one
+                // already travels on a committed vector while it keeps its eyes on the hero, so the detour is
+                // one more direction its own gait reads off `moveYaw`.
+                const go = self.nav.along(self.moveDir);
+                mathx.stepXZ(&self.pos, go, moved, bounds);
                 movedDist = moved;
-                moveYaw = mathx.headingXZ(self.moveDir);
+                moveYaw = mathx.headingXZ(go);
                 if (self.t >= REPOSITION_DUR) self.decide(d);
             },
             .chop => {
@@ -552,7 +569,7 @@ pub const Kobold = struct {
                     self.hop = 0;
                     // RE-MEASURED (it moved), BUT STILL THROUGH THE LEASH: on the raw distance a dash was
                     // the one exit that re-engaged a foe walking home, or one that cannot see him.
-                    self.decide(foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R));
+                    self.decide(foe.senseHero(&self.leash, self.pos, hero, AGGRO_R));
                 }
             },
             .cast => {

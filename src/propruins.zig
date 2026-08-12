@@ -532,9 +532,6 @@ pub fn bonfireVeilMesh(shader: rl.Shader) rl.Model {
 }
 
 fn smokeInto(b: *Builder, rng: *mathx.Rng) void {
-    b.setMat(.plain);
-    b.addCylinder(v3(0, 0.62, 0), v3(rng.signed() * 0.06, 1.15, rng.signed() * 0.06), 0.055, 0.012, 6, WISP);
-
     const SRC: f32 = 1.0; // the source height the shader billows each puff about
     const PUFFS = 14;
     b.setMat(.smoke);

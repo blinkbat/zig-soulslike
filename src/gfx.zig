@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 const glsl = @import("shaders.zig"); // the GLSL source text — see there for the contract between the two
+const daynight = @import("daynight.zig"); // THE CLOCK — where the sun is and what colour the hour is
 
 const v3 = mathx.v3;
 
@@ -26,17 +27,31 @@ pub const WATER_SHORE: u8 = 128;
 pub const WATER_DEEP_AT: f32 = 11.0;
 pub const WATER_WET_OUT: f32 = 3.4;
 
+/// THE ANCHOR SUN — the light this whole game was authored, measured and photographed under, and the bearing
+/// every reference frame in `shots/` is framed off (`shots.LIT_YAW`). It is NOT what casts any more: the clock
+/// is (`daynight.keyDir`, and `sun` below). It stays because it is the thing the cycle is SOLVED THROUGH, and
+/// because `--shot` pins the hour that reproduces it — `daynight`'s own test is what says the two still agree.
 pub const SUN_DIR = norm3(v3(-0.60, 0.50, -0.46));
+
+/// WHAT IS CASTING THIS FRAME, and it is STILL ONE SOURCE (AGENTS.md): the shader's `sunDir`, the shadow
+/// camera's position and `env`'s shadow-reach cull all read this and nothing else. Written once a frame by
+/// `Scene.setHour` — never by hand, which is what keeps the three from drifting apart mid-frame.
+pub var sun: rl.Vector3 = SUN_DIR;
+/// …and how far sideways a caster throws its shadow per metre of its own height, which is cot(altitude) of
+/// whatever is up. `env.castsInto` culls the depth pass on it, so it MOVES WITH THE SUN: pinned at the
+/// anchor's value a low evening sun's real shadows were culled away, and pinned at the worst case the pass
+/// accepted the whole world at noon. Bounded by `daynight`'s altitude floor, and a test there says so.
+pub var sunReach: f32 = @sqrt(SUN_DIR.x * SUN_DIR.x + SUN_DIR.z * SUN_DIR.z) / SUN_DIR.y;
 
 pub const SHADOWMAP_RES = 8192;
 pub const SHADOW_ORTHO = 108.0;
-const SUN_DIST = 120.0; // shadow camera distance along SUN_DIR
+const SUN_DIST = 120.0; // shadow camera distance along the casting direction
 // Depth slab around the casters, kept as TIGHT as the box allows.
 const SHADOW_CLIP_NEAR = SUN_DIST - SHADOW_ORTHO * 0.78;
 const SHADOW_CLIP_FAR = SUN_DIST + SHADOW_ORTHO * 0.78;
 
-pub const HAZE = v3(0.078, 0.070, 0.056);
-// Haze falloff: 1-exp(-density*dist).
+// Haze falloff: 1-exp(-density*dist). The COLOUR is the clock's (`daynight.Palette.haze`); only how far you
+// can see through it is fixed, because that is a property of the air and not of the hour.
 const HAZE_DENSITY: f32 = 0.013;
 
 pub const MAX_LIGHTS = 16;
@@ -60,32 +75,69 @@ pub const Sky = struct {
     loc_right: i32,
     loc_up: i32,
     loc_res: i32,
-    loc_dim: i32,
+    loc_time: i32,
+    /// The hour's own uniforms — the two light directions, the eight colours and the star dial. Held as
+    /// locations rather than looked up per push: `getShaderLocation` is a string compare against the program's
+    /// uniform table, and eleven of those a frame for numbers that never move is eleven for nothing.
+    loc_sun: i32,
+    loc_moon: i32,
+    loc_stars: i32,
+    loc_pal: [8]i32,
+
+    /// The palette fields the eight sky colours come off, IN UNIFORM ORDER — the one place the two lists are
+    /// tied together, so a renamed palette field is a compile error instead of a colour that stops arriving.
+    const PAL_FIELDS = [8][:0]const u8{ "skyLow", "skyMid", "skyHigh", "skyBank", "skyGlow", "skyDisc", "cloudDark", "cloudLit" };
+    comptime {
+        for (PAL_FIELDS) |name| {
+            if (!@hasField(daynight.Palette, name)) @compileError("gfx.Sky: daynight.Palette has no `" ++ name ++ "`");
+        }
+    }
 
     pub fn init() Sky {
         const sh = rl.loadShaderFromMemory(glsl.skyVS, glsl.skyFS) catch @panic("sky shader");
-        var sun = SUN_DIR;
-        rl.setShaderValue(sh, rl.getShaderLocation(sh, "sunDir"), &sun, .vec3);
-        var dimOff: f32 = 0;
-        rl.setShaderValue(sh, rl.getShaderLocation(sh, "dim"), &dimOff, .float);
-        return .{
+        var pal: [8]i32 = undefined;
+        for (PAL_FIELDS, 0..) |name, i| pal[i] = rl.getShaderLocation(sh, name);
+        var out = Sky{
             .shader = sh,
             .loc_fwd = rl.getShaderLocation(sh, "camFwd"),
             .loc_right = rl.getShaderLocation(sh, "camRightS"),
             .loc_up = rl.getShaderLocation(sh, "camUpS"),
             .loc_res = rl.getShaderLocation(sh, "resolution"),
-            .loc_dim = rl.getShaderLocation(sh, "dim"),
+            .loc_time = rl.getShaderLocation(sh, "uTime"),
+            .loc_sun = rl.getShaderLocation(sh, "sunDir"),
+            .loc_moon = rl.getShaderLocation(sh, "moonDir"),
+            .loc_stars = rl.getShaderLocation(sh, "stars"),
+            .loc_pal = pal,
         };
+        // A SKY WITH NO HOUR IN IT IS BLACK, so it is armed at the anchor here rather than left to the first
+        // frame: the menu draws over a live sky before the loop has ticked anything.
+        out.setHour(daynight.SHOT_HOUR);
+        return out;
     }
 
-    pub fn setDim(self: *Sky, amt: f32) void {
-        var a = mathx.clampF(amt, 0, 1);
-        rl.setShaderValue(self.shader, self.loc_dim, &a, .float);
+    /// THE HOUR, PUSHED. The two directions are the TRUE ones — the disc has to sit where the light actually
+    /// is, which is the one place the sky and the shadows are allowed to disagree (see `daynight`'s own note).
+    pub fn setHour(self: *Sky, hour: f32) void {
+        const p = daynight.paletteAt(hour);
+        var s = daynight.sunDir(hour);
+        var m = daynight.moonDir(hour);
+        rl.setShaderValue(self.shader, self.loc_sun, &s, .vec3);
+        rl.setShaderValue(self.shader, self.loc_moon, &m, .vec3);
+        var st = p.stars;
+        rl.setShaderValue(self.shader, self.loc_stars, &st, .float);
+        inline for (PAL_FIELDS, 0..) |name, i| {
+            var c = @field(p, name);
+            rl.setShaderValue(self.shader, self.loc_pal[i], &c, .vec3);
+        }
     }
 
     pub fn draw(self: *Sky, cam: rl.Camera3D) void {
         const w = rl.getScreenWidth();
         const h = rl.getScreenHeight();
+        // …and the clock the STARS twinkle on, which is wall time and not the world's hour: a star's
+        // scintillation is atmosphere, so it keeps its own rate whatever the sun is doing.
+        var t: f32 = @floatCast(rl.getTime());
+        rl.setShaderValue(self.shader, self.loc_time, &t, .float);
         const fwd = norm3(v3(cam.target.x - cam.position.x, cam.target.y - cam.position.y, cam.target.z - cam.position.z));
         const right = norm3(cross(fwd, cam.up));
         const up = cross(right, fwd);
@@ -175,7 +227,7 @@ const RETRO_FILTERS = [_]RetroFilter{
     .{ .name = "Scanlines", .uniform = "fScanlines", .default = 0.0 },
     .{ .name = "CRT Curve", .uniform = "fCurve", .default = 0.0 },
     .{ .name = "VHS", .uniform = "fVHS", .default = 0.0 },
-    .{ .name = "Film Grain", .uniform = "fGrain", .default = 0.04 },
+    .{ .name = "Film Grain", .uniform = "fGrain", .default = 0.0 },
 };
 pub const RETRO_NAMES = blk: {
     var out: [RETRO_COUNT][:0]const u8 = undefined;
@@ -331,6 +383,22 @@ fn loadShadowmap(res: i32) rl.RenderTexture2D {
     };
 }
 
+fn dot3(a: rl.Vector3, b: rl.Vector3) f32 {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+/// AN ORTHONORMAL FRAME FOR WHATEVER IS CASTING — the shadow camera's own axes, and the two the texel snap is
+/// rounded along. The hint is world −Z because that is the `up` the box was always built with; it is only a
+/// HINT, and it is re-crossed rather than used directly so the frame stays orthonormal at any sun bearing.
+/// `daynight` floors the altitude, so `fwd` can never come out parallel to the hint and degenerate the cross.
+fn lightBasis() struct { fwd: rl.Vector3, right: rl.Vector3, up: rl.Vector3 } {
+    const fwd = mathx.normV(mathx.scaleV(sun, -1)); // the light looks DOWN its own direction
+    var right = mathx.crossV(v3(0, 0, -1), fwd);
+    if (mathx.lenV(right) < 1e-4) right = mathx.crossV(v3(1, 0, 0), fwd);
+    right = mathx.normV(right);
+    return .{ .fwd = fwd, .right = right, .up = mathx.normV(mathx.crossV(fwd, right)) };
+}
+
 pub const Scene = struct {
     shader: rl.Shader,
     depthShader: rl.Shader,
@@ -343,11 +411,19 @@ pub const Scene = struct {
     loc_time: i32,
     loc_flash: i32,
     loc_fade: i32,
-    loc_dim: i32,
     loc_lightPos: i32,
     loc_lightCol: i32,
     loc_lightRad: i32,
     loc_nLights: i32,
+    /// The hour's own uniforms — the casting direction, the key, the hemisphere pair, the haze and its bank,
+    /// and how bright the key is against the hour the speculars were authored at (`daynight.keyAmt`).
+    loc_sun: i32,
+    loc_key: i32,
+    loc_ambGround: i32,
+    loc_ambSky: i32,
+    loc_haze: i32,
+    loc_hazeBank: i32,
+    loc_keyAmt: i32,
     soilTex: rl.Texture2D,
     soilCovTex: rl.Texture2D,
     loc_soilOn: i32,
@@ -364,8 +440,6 @@ pub const Scene = struct {
     pub fn init() Scene {
         const shader = rl.loadShaderFromMemory(glsl.sceneVS, glsl.sceneFS) catch @panic("scene shader");
         const depthShader = rl.loadShaderFromMemory(glsl.depthVS, glsl.depthFS) catch @panic("depth shader");
-        var sun = SUN_DIR;
-        rl.setShaderValue(shader, rl.getShaderLocation(shader, "sunDir"), &sun, .vec3);
         var slotShadow = SLOT_SHADOW;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "shadowMap"), &slotShadow, .int);
         var res: i32 = SHADOWMAP_RES;
@@ -379,8 +453,6 @@ pub const Scene = struct {
         var waterOff: i32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterOn"), &waterOff, .int);
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterSheet"), &waterOff, .int);
-        var haze = HAZE;
-        rl.setShaderValue(shader, rl.getShaderLocation(shader, "hazeColor"), &haze, .vec3);
         var density: f32 = HAZE_DENSITY;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "hazeDensity"), &density, .float);
         var windOff: f32 = 0;
@@ -391,9 +463,7 @@ pub const Scene = struct {
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "fade"), &fadeOff, .float);
         var noLights: i32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "nLights"), &noLights, .int);
-        var dimOff: f32 = 0;
-        rl.setShaderValue(shader, rl.getShaderLocation(shader, "dim"), &dimOff, .float);
-        return .{
+        var out = Scene{
             .shader = shader,
             .depthShader = depthShader,
             .shadowMap = loadShadowmap(SHADOWMAP_RES),
@@ -415,25 +485,63 @@ pub const Scene = struct {
             .loc_time = rl.getShaderLocation(shader, "uTime"),
             .loc_flash = rl.getShaderLocation(shader, "hitFlash"),
             .loc_fade = rl.getShaderLocation(shader, "fade"),
-            .loc_dim = rl.getShaderLocation(shader, "dim"),
             .loc_lightPos = rl.getShaderLocation(shader, "lightPos"),
             .loc_lightCol = rl.getShaderLocation(shader, "lightCol"),
             .loc_lightRad = rl.getShaderLocation(shader, "lightRad"),
             .loc_nLights = rl.getShaderLocation(shader, "nLights"),
+            .loc_sun = rl.getShaderLocation(shader, "sunDir"),
+            .loc_key = rl.getShaderLocation(shader, "keyCol"),
+            .loc_ambGround = rl.getShaderLocation(shader, "ambGround"),
+            .loc_ambSky = rl.getShaderLocation(shader, "ambSky"),
+            .loc_haze = rl.getShaderLocation(shader, "hazeColor"),
+            .loc_hazeBank = rl.getShaderLocation(shader, "hazeBank"),
+            .loc_keyAmt = rl.getShaderLocation(shader, "keyAmt"),
         };
+        // ARMED AT THE ANCHOR before a frame has run, the sky's reason: a scene with no hour pushed into it is
+        // a world lit by an all-zero key, and the object viewer and the menu both draw one before the loop does.
+        out.setHour(daynight.SHOT_HOUR);
+        return out;
+    }
+
+    /// THE HOUR, PUSHED — and this is the ONE writer of `gfx.sun`/`gfx.sunReach`, which is what keeps the
+    /// shader's key, the shadow camera's position and `env`'s depth-pass cull the single source AGENTS.md says
+    /// they are. Called once a frame, before either pass.
+    pub fn setHour(self: *Scene, hour: f32) void {
+        const p = daynight.paletteAt(hour);
+        sun = daynight.keyDir(hour);
+        sunReach = daynight.shadowReach(hour);
+        var d = sun;
+        rl.setShaderValue(self.shader, self.loc_sun, &d, .vec3);
+        var key = p.key;
+        rl.setShaderValue(self.shader, self.loc_key, &key, .vec3);
+        var ag = p.ambGround;
+        rl.setShaderValue(self.shader, self.loc_ambGround, &ag, .vec3);
+        var as_ = p.ambSky;
+        rl.setShaderValue(self.shader, self.loc_ambSky, &as_, .vec3);
+        var hz = p.haze;
+        rl.setShaderValue(self.shader, self.loc_haze, &hz, .vec3);
+        var hb = p.hazeBank;
+        rl.setShaderValue(self.shader, self.loc_hazeBank, &hb, .vec3);
+        var ka = daynight.keyAmt(p);
+        rl.setShaderValue(self.shader, self.loc_keyAmt, &ka, .float);
     }
 
     // Sun depth pass: call, draw casters (materials swapped to depthShader — drawMesh uses the MATERIAL's shader, beginShaderMode won't reach it), then endShadowPass; must run BEFORE beginDrawing.
     pub fn beginShadowPass(self: *Scene, focus: rl.Vector3) void {
         const t = SHADOW_ORTHO / @as(f32, SHADOWMAP_RES);
-        const fx = @round(focus.x / t) * t;
-        const fz = @round(focus.z / t) * t;
-        // …AND THE FOCUS HEIGHT, snapped the same way.
-        const fy = @round(focus.y / t) * t;
+        // THE SNAP IS TAKEN IN THE LIGHT'S OWN BASIS. Rounding world x/y/z to the texel pitch only lands on a
+        // texel while the light looks down a world axis — which it did, when the sun was a constant. With one
+        // that sweeps, the texel grid turns under the world and a world-axis snap stops snapping at all: the
+        // edges crawl as the camera moves, which is the exact artefact the snap exists to kill.
+        const b = lightBasis();
+        const a0 = @round(dot3(focus, b.right) / t) * t;
+        const a1 = @round(dot3(focus, b.up) / t) * t;
+        const a2 = dot3(focus, b.fwd); // depth along the light — a texel has no size in this direction
+        const f = mathx.addV(mathx.addV(mathx.scaleV(b.right, a0), mathx.scaleV(b.up, a1)), mathx.scaleV(b.fwd, a2));
         const cam = rl.Camera3D{
-            .position = v3(fx + SUN_DIR.x * SUN_DIST, fy + SUN_DIR.y * SUN_DIST, fz + SUN_DIR.z * SUN_DIST),
-            .target = v3(fx, fy, fz),
-            .up = v3(0, 0, -1),
+            .position = v3(f.x + sun.x * SUN_DIST, f.y + sun.y * SUN_DIST, f.z + sun.z * SUN_DIST),
+            .target = f,
+            .up = b.up,
             .fovy = SHADOW_ORTHO, // orthographic: fovy is the box height in world units
             .projection = .orthographic,
         };
@@ -569,11 +677,6 @@ pub const Scene = struct {
     pub fn setFade(self: *Scene, amt: f32) void {
         var a = mathx.clampF(amt, 0, 1);
         rl.setShaderValue(self.shader, self.loc_fade, &a, .float);
-    }
-
-    pub fn setDim(self: *Scene, amt: f32) void {
-        var a = mathx.clampF(amt, 0, 1);
-        rl.setShaderValue(self.shader, self.loc_dim, &a, .float);
     }
 };
 

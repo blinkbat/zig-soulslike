@@ -152,6 +152,13 @@ pub fn foeStunDur(heavy: bool) f32 {
     return if (heavy) FOE_HEAVY_STUN_DUR else FOE_LIGHT_STUN_DUR;
 }
 
+/// …AND THE HERO'S OWN PAIR, for the same reason on his side of the fight. `Vitals` already picks between
+/// them for the poise immunity (`lightStun`/`heavyStun`); his rig runs a second clock for the ANIMATION and
+/// was picking between the two constants by hand, which is the one shape this file exists to remove.
+pub fn heroStunDur(heavy: bool) f32 {
+    return if (heavy) HEAVY_STUN_DUR else LIGHT_STUN_DUR;
+}
+
 const LONG_AGO = mathx.LONG_AGO;
 
 

@@ -7,6 +7,7 @@ const ui = @import("ui.zig");
 const wf = @import("worldfmt.zig");
 const envmod = @import("env.zig");
 const gfx = @import("gfx.zig");
+const daynight = @import("daynight.zig"); // the world clock — `,`/`.` scrub the hour while authoring
 const objview = @import("objview.zig");
 const item = @import("item.zig"); // the chest-contents dialog
 const sfx = @import("audio.zig"); // the jukebox
@@ -981,7 +982,7 @@ pub const Editor = struct {
     }
 
 
-    pub fn update(self: *Editor, m: *wf.Map, env: *envmod.Env, dt: f32) Action {
+    pub fn update(self: *Editor, m: *wf.Map, env: *envmod.Env, day: *daynight.Clock, dt: f32) Action {
         // THE WORLD, for the terrain questions the cursor and camera ask — see `Editor.world`.
         self.world = env;
         self.statusT = @max(0, self.statusT - dt);
@@ -1119,6 +1120,22 @@ pub const Editor = struct {
             }
             if (rl.isKeyPressed(.left_bracket)) self.radius = mathx.clampF(self.radius - 1, 1, 60);
             if (rl.isKeyPressed(.right_bracket)) self.radius = mathx.clampF(self.radius + 1, 1, 60);
+            // THE WORLD CLOCK, on `,` and `.` — held with Shift for whole hours. AN AUTHORING TOOL WANTS TO SEE
+            // ITS WORK UNDER EVERY LIGHT: a belt of trees that reads at the golden hour can be a black wall at
+            // dusk, and until now the editor had exactly one sun to judge against. REPEATING (`isKeyDown`, not
+            // `isKeyPressed`), because sweeping the day is the gesture — a tap at a time is a control you fight.
+            // The clock is HELD in the editor (`game`'s own tick skips it there), so this is the only thing that
+            // moves it: what you set is what the next frame is lit by, and it stays.
+            {
+                const fast = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
+                const rate: f32 = if (fast) EDIT_HOUR_FAST else EDIT_HOUR_RATE;
+                if (rl.isKeyDown(.comma)) day.nudge(-rate * dt);
+                if (rl.isKeyDown(.period)) day.nudge(rate * dt);
+                if (rl.isKeyPressed(.comma) or rl.isKeyPressed(.period)) {
+                    var buf: [8]u8 = undefined;
+                    self.sayFmt("{s} {s}", .{ daynight.clockText(day.hour, &buf), daynight.phaseName(day.hour) });
+                }
+            }
             if (rl.isKeyPressed(.r)) self.rerollSel(m, env);
             if (rl.isKeyPressed(.delete)) {
                 if (self.nMarked > 0) self.deleteMarked(m, env) else self.deleteSel(m, env);
@@ -3215,10 +3232,15 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
     }
 }
 
+/// HOW FAST `,`/`.` WALK THE CLOCK, in game hours a real second, plain and with Shift. The slow one is about
+/// four seconds a day — fast enough to sweep, slow enough to stop on a light you like.
+const EDIT_HOUR_RATE: f32 = 6.0;
+const EDIT_HOUR_FAST: f32 = 24.0;
+
 /// The keyboard crib, widest first — the status bar shows the longest one that fits.
 const CRIBS = [_][:0]const u8{
-    "LMB brush   Shift+LMB drag marquee   RMB menu / deselect, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   Esc back",
-    "LMB brush   Shift+LMB marquee   RMB menu, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   Esc back",
+    "LMB brush   Shift+LMB drag marquee   RMB menu / deselect, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   ,/. time   Esc back",
+    "LMB brush   Shift+LMB marquee   RMB menu, drag rotates   wheel zoom   WASD pan   Tab layer   ,/. time",
     "LMB brush   Shift+LMB marquee   RMB menu/rotate   wheel zoom   WASD pan   Tab layer",
     "LMB brush   Shift marquee   Tab layer   Esc back",
 };

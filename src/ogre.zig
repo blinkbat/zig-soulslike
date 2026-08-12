@@ -433,6 +433,8 @@ pub const Ogre = struct {
     justDied: bool = false,
     /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
     threat: foe.Threat = .{},
+    /// …AND THE WAY ROUND WHAT IS IN FRONT OF IT (`foe.Nav`), stamped the same way and for the same reason.
+    nav: foe.Nav = .{},
     fade: f32 = 0,
     gone: bool = false,
 
@@ -509,6 +511,14 @@ pub const Ogre = struct {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt); // shared — see foe.zig
     }
 
+    /// WHERE HE IS TRYING TO WALK, or null when he is not walking anywhere — the one thing `game.markWay` needs
+    /// and the only part of it the creature knows (he may be going HOME). It is the WALK only: a swing, a rear
+    /// and a drive are committed, and a heading bent under one of those would aim the blow at the wall.
+    pub fn navWant(self: *const Ogre, hero: rl.Vector3) ?rl.Vector3 {
+        if (self.state != .approach) return null;
+        return if (self.homing) self.home else hero;
+    }
+
     pub fn update(self: *Ogre, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         if (self.gone) {
             self.updateFx(dt);
@@ -528,7 +538,7 @@ pub const Ogre = struct {
         self.swipeCd = mathx.maxF(0, self.swipeCd - dt);
         self.driveCd = mathx.maxF(0, self.driveCd - dt);
         self.flash = mathx.maxF(0, self.flash - dt);
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         self.t += dt;
         self.updateFx(dt);
         var movedDist: f32 = 0;
@@ -537,7 +547,7 @@ pub const Ogre = struct {
         // Hit shove — a jolt off a landed blow (a giant barely budges, so it decays fast).
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
-        const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
+        const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         const bearing = self.bearingTo(hero);
         self.trackHead(hero, d, dt); // the eye leads the body — every state, not just the idle
         // THE SHIELD, asked BEFORE the state machine runs this frame's swing — see takeParry.
@@ -551,7 +561,10 @@ pub const Ogre = struct {
             .approach => {
                 // Chasing → face/move toward the HERO; disengaged (returning) → toward HOME.
                 const tgt = if (self.homing) self.home else hero;
-                self.faceToward(tgt, dt);
+                // …AND HE TURNS ROUND WHAT IS IN THE WAY (`foe.Nav`). It goes through the FACING and not the
+                // step, because he walks where he is looking and HE NEVER STRAFES: bent at the step he would
+                // sidle round a wall still square to the hero, which is a different creature.
+                self.faceToward(self.nav.aim(self.pos, tgt), dt);
                 const f = self.fdir();
                 const moved = WALK_SPEED * dt;
                 mathx.stepXZ(&self.pos, f, moved, bounds);

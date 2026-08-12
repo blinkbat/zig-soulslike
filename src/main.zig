@@ -74,6 +74,7 @@ test {
     _ = @import("item.zig");
     _ = @import("collision.zig");
     _ = @import("gfx.zig"); // the mesh `Builder` is pure CPU, and addRoundBox has invariants worth pinning
+    _ = @import("daynight.zig"); // THE WORLD CLOCK — the sun's path, the palette, and the hour `--shot` pins
     _ = @import("env.zig");
     _ = @import("props.zig");
     _ = @import("worldfmt.zig");

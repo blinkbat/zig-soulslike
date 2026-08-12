@@ -8,6 +8,7 @@ const sfx = @import("audio.zig");
 const item = @import("item.zig");
 const uiart = @import("uiart.zig");
 const bookmod = @import("book.zig"); // pad START opens the CHARACTER BOOK, which is its own three pages
+const daynight = @import("daynight.zig"); // …and Debug carries the world clock's one scrub row
 
 const rgba = mathx.rgba;
 
@@ -59,9 +60,25 @@ const DBG_RETRO = 0;
 const DBG_STATS = 1;
 const DBG_WIREFRAME = 2;
 const DBG_HITBOX = 3;
-const DBG_TIMESCALE = 4;
-const DBG_CLOSE = 5;
+/// THE WORLD CLOCK, scrubbed by hand: Left/Right walk the hour, Confirm holds it where it is. A row and not a
+/// submenu, because there is exactly one number in it and the whole point is to watch the sky move while you
+/// turn it — a card in the way would hide the thing being adjusted.
+const DBG_HOUR = 4;
+/// …AND HOW FAST IT RUNS ON ITS OWN, which is a different question from where it is pointed and gets its own
+/// row for that reason. At the standard speed a day is twenty real minutes, so "does the clock move" is not a
+/// thing you can sit and watch — this is the row that makes it one.
+const DBG_DAYRATE = 5;
+const DBG_TIMESCALE = 6;
+const DBG_CLOSE = 7;
 const DBG_COUNT = DBG_CLOSE + 1;
+
+/// How far one tap of the hour row moves the clock, fine and coarse. A quarter hour is about the finest step
+/// whose effect on the light you can actually see; an hour is the step for getting somewhere.
+const HOUR_TAP: f32 = 0.25;
+const HOUR_COARSE: f32 = 1.0;
+/// …and how fast it runs while a direction is HELD — a whole day in about four seconds, so the sweep reads as
+/// a sweep. This is the control the sky is really judged with.
+const HOUR_GLIDE: f32 = 6.0;
 
 const RET_PRESET_PS1 = gfx.RETRO_COUNT + 0;
 const RET_PRESET_CRT = gfx.RETRO_COUNT + 1;
@@ -164,7 +181,9 @@ pub const Menu = struct {
     }
 
     // dt is the REAL frame time (not time-scaled) so the glide speed never changes.
-    pub fn update(self: *Menu, retro: *gfx.Retro, dt: f32, v: bookmod.View) Action {
+    // `day` is handed in mutable for the retro dials' reason: the row adjusts a live thing, and the menu has no
+    // business holding a second copy of the world's hour that would have to be pushed back on the way out.
+    pub fn update(self: *Menu, retro: *gfx.Retro, day: *daynight.Clock, dt: f32, v: bookmod.View) Action {
         if (self.screen == .closed) return .none;
         if (self.screen == .character) return self.updateBook(dt, v);
         const rows = self.rowCount();
@@ -191,10 +210,25 @@ pub const Menu = struct {
         if (self.screen == .debug and self.cursor == DBG_TIMESCALE) {
             if (adjTapped(.left) or adjTapped(.right)) self.cycleTimeScale();
         }
+        if (self.screen == .debug and self.cursor == DBG_DAYRATE) {
+            if (adjTapped(.left) or adjTapped(.right)) day.cycleSpeed();
+        }
+        // THE HOUR. Its own delta rather than `adjustDelta`'s, which is scaled for a 0..1 dial: an hour is not
+        // a hundredth of anything, and a tap of 0.01 h is nine game seconds — a control that does nothing.
+        if (self.screen == .debug and self.cursor == DBG_HOUR) {
+            const step: f32 = if (coarseHeld()) HOUR_COARSE else HOUR_TAP;
+            if (adjTapped(.left)) day.nudge(-step);
+            if (adjTapped(.right)) day.nudge(step);
+            const dir = adjHeldDir();
+            if (dir != 0) {
+                self.adjHoldT += dt;
+                if (self.adjHoldT > ADJ_GLIDE_DELAY) day.nudge(@as(f32, @floatFromInt(dir)) * HOUR_GLIDE * dt);
+            }
+        }
 
         if (confirmPressed()) {
             sfx.play(.menu_pick);
-            return self.confirm(retro);
+            return self.confirm(retro, day);
         }
         if (backPressed()) {
             sfx.play(.menu_back);
@@ -240,7 +274,7 @@ pub const Menu = struct {
         return act;
     }
 
-    fn confirm(self: *Menu, retro: *gfx.Retro) Action {
+    fn confirm(self: *Menu, retro: *gfx.Retro, day: *daynight.Clock) Action {
         switch (self.screen) {
             .closed => {},
             .main => switch (self.cursor) {
@@ -276,6 +310,10 @@ pub const Menu = struct {
                 DBG_STATS => self.stats = !self.stats,
                 DBG_WIREFRAME => self.wireframe = !self.wireframe,
                 DBG_HITBOX => self.hitboxes = !self.hitboxes,
+                // …and Confirm on the hour HOLDS it. Scrubbing to the light you want and then watching it walk
+                // off again is the one thing this row must not do.
+                DBG_HOUR => day.freeze(!day.frozen()),
+                DBG_DAYRATE => day.cycleSpeed(),
                 DBG_TIMESCALE => self.cycleTimeScale(),
                 DBG_CLOSE => {
                     self.screen = .main;
@@ -321,18 +359,34 @@ pub const Menu = struct {
         self.timeScale = if (self.timeScale > 0.75) 0.5 else if (self.timeScale > 0.35) 0.25 else 1.0;
     }
 
-    fn debugLabels(self: *const Menu) [DBG_COUNT][:0]const u8 {
+    fn debugLabels(self: *const Menu, day: *const daynight.Clock) [DBG_COUNT][:0]const u8 {
         var out: [DBG_COUNT][:0]const u8 = undefined;
         out[DBG_RETRO] = "Retro Filters >";
         out[DBG_STATS] = if (self.stats) "Stats: On" else "Stats: Off";
         out[DBG_WIREFRAME] = if (self.wireframe) "Wireframe: On" else "Wireframe: Off";
         out[DBG_HITBOX] = if (self.hitboxes) "Hitboxes: On" else "Hitboxes: Off";
+        // The clock, the PHASE it is in, and whether it is running — the phase is what makes the number mean
+        // something without having to remember when this world's sun comes up.
+        var clock: [8]u8 = undefined;
+        out[DBG_HOUR] = std.fmt.bufPrintZ(&dbgHourBuf, "Hour: {s} {s}{s}", .{
+            daynight.clockText(day.hour, &clock),
+            daynight.phaseName(day.hour),
+            if (day.frozen()) " (held)" else "",
+        }) catch "?";
+        // …and the SPEED, said as a day's length rather than as a multiplier: what you are about to watch is the
+        // sky going round, and "10 s/day" is that where "120x" is arithmetic.
+        var len: [12]u8 = undefined;
+        out[DBG_DAYRATE] = std.fmt.bufPrintZ(&dbgRateBuf, "Day Speed: {d:.0}x — {s}/day{s}", .{
+            day.speed(),
+            daynight.dayLenText(day, &len),
+            if (day.frozen()) " (held)" else "",
+        }) catch "?";
         out[DBG_TIMESCALE] = std.fmt.bufPrintZ(&dbgTimeBuf, "Time Scale: {d:.0}%", .{self.timeScale * 100}) catch "?";
         out[DBG_CLOSE] = "Back";
         return out;
     }
 
-    pub fn draw(self: *const Menu, retro: *const gfx.Retro, v: bookmod.View, portrait: ?bookmod.Portrait) void {
+    pub fn draw(self: *const Menu, retro: *const gfx.Retro, day: *const daynight.Clock, v: bookmod.View, portrait: ?bookmod.Portrait) void {
         if (self.screen == .closed) return;
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
@@ -350,7 +404,7 @@ pub const Menu = struct {
             .closed, .character => {},
             .main => self.drawCard("SOULSLIKE", &mainLabels(), .{}),
             .options => self.drawCard("SOUND", &optionLabels(), .{ .gauges = &soundLevels() }),
-            .debug => self.drawCard("DEBUG", &self.debugLabels(), .{}),
+            .debug => self.drawCard("DEBUG", &self.debugLabels(day), .{}),
             .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), .{ .gauges = retro.values[0..gfx.RETRO_COUNT] }),
         }
         // THE CRIB NAMES BUTTONS AND NOTHING ELSE (owner's call) — one strip, whether a pad is plugged in or
@@ -484,6 +538,8 @@ fn soundLevels() [OPT_MIX.len]f32 {
 }
 
 var dbgTimeBuf: [48]u8 = undefined;
+var dbgHourBuf: [48]u8 = undefined;
+var dbgRateBuf: [48]u8 = undefined;
 
 fn retroLabels(retro: *const gfx.Retro) [RET_COUNT][:0]const u8 {
     var out: [RET_COUNT][:0]const u8 = undefined;

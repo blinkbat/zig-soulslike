@@ -221,6 +221,8 @@ pub const Frog = struct {
     /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law. The
     /// creature never asks what a spirit is; it is handed a target in the argument it calls `hero`.
     threat: foe.Threat = .{},
+    /// …AND THE WAY ROUND WHAT IS IN THE WAY (`foe.Nav`), stamped the same way and for the same reason.
+    nav: foe.Nav = .{},
     fade: f32 = 0, // death dissipation 0..1 — pose() shrinks + sinks the corpse by it
     gone: bool = false, // corpse removed from play (dissipation finished) — skipped everywhere
 
@@ -284,6 +286,15 @@ pub const Frog = struct {
 
     fn faceToward(self: *Frog, target: rl.Vector3, dt: f32) void {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt); // shared — see foe.zig
+    }
+
+    /// WHERE IT IS TRYING TO GO (`game.markWay`), asked while it is SITTING: a toad travels in committed hops, so
+    /// the stamp has to be standing ready on the frame the next one is chosen. Whichever errand it is on — him,
+    /// or the post it wandered off.
+    pub fn navWant(self: *const Frog, hero: rl.Vector3) ?rl.Vector3 {
+        if (self.state != .idle) return null;
+        if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
+        return if (mathx.distXZ(self.pos, self.home) > HOME_R) self.home else null;
     }
 
     // Begin a hop toward `to` (clamped to bounds); `lunge` = the big committed leap.
@@ -417,7 +428,7 @@ pub const Frog = struct {
         self.flash = mathx.maxF(0, self.flash - dt);
         self.t += dt;
         // THE TETHER: drawn a long way from its lily patch and left alone, it goes back (foe.Leash).
-        self.leash.tick(dt, mathx.distXZ(self.pos, self.home), mathx.distXZ(self.home, hero), AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         self.updateFx(dt); // advance live particles (bursts from any state keep animating)
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt); // the knockback off a landed blow
         // THE SHIELD, asked BEFORE the state machine runs this frame's arc — a catch has to kill the slam it
@@ -460,7 +471,7 @@ pub const Frog = struct {
 
     // Decide what to do next (called when a hop/chomp/recovery finishes, and on the idle timer).
     fn decide(self: *Frog, hero: rl.Vector3, bounds: f32) void {
-        const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
+        const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         switch (classify(d, self.lungeCd <= 0, self.chompCd <= 0, !foe.canLeap(&self.root))) {
             .chomp => {
                 self.chompCd = CHOMP_CD;
@@ -474,7 +485,10 @@ pub const Frog = struct {
                 self.startHop(v3(self.pos.x + dir.x * reach, 0, self.pos.z + dir.z * reach), bounds, true);
             },
             .hop => {
-                const dir = mathx.dirXZ(self.pos, hero);
+                // …ROUND WHAT IS IN THE WAY (`foe.Nav`), and the bend goes in HERE, at the choose: a hop is
+                // committed the moment it starts, so a heading bent mid-arc would only bend the arc. The LUNGE
+                // is deliberately left straight — that one is the attack, and it goes where it was aimed.
+                const dir = self.nav.along(mathx.dirXZ(self.pos, hero));
                 const reach = mathx.minF(HOP_REACH, mathx.maxF(0, d - KEEP_OFF));
                 self.startHop(v3(self.pos.x + dir.x * reach, 0, self.pos.z + dir.z * reach), bounds, false);
             },
@@ -482,7 +496,7 @@ pub const Frog = struct {
             .rest => {
                 // Out of aggro: hop home if we've wandered, else sit and wait.
                 if (mathx.distXZ(self.pos, self.home) > HOME_R) {
-                    const dir = mathx.dirXZ(self.pos, self.home);
+                    const dir = self.nav.along(mathx.dirXZ(self.pos, self.home));
                     self.startHop(v3(self.pos.x + dir.x * HOP_REACH, 0, self.pos.z + dir.z * HOP_REACH), bounds, false);
                 } else self.enterIdle(1.4 + self.seed * 2.2);
             },
@@ -490,7 +504,7 @@ pub const Frog = struct {
     }
 
     fn updateIdle(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32) void {
-        const d = foe.sensedDist(&self.leash, mathx.distXZ(self.pos, hero), AGGRO_R);
+        const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         if (d <= AGGRO_R) self.faceToward(hero, dt); // lock eyes the moment it wakes
         self.resolveIdle();
         // React fast when the hero is in range; laze otherwise.

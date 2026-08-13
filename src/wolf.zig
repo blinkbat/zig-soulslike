@@ -1184,6 +1184,16 @@ pub const Pack = struct {
         return &self.wolves[0];
     }
 
+    /// **SEND EVERYTHING HOME WITHOUT UNLOADING THE MESHES** — a new game, and the one caller
+    /// (`game.beginGame`). It exists because `= .{}` does NOT do this: `mesh`/`mat`/`ready` sit in this
+    /// struct beside `wolves`/`n`, so resetting the whole thing puts `ready` back to false and `draw`
+    /// returns at its first line — a spirit that is called, walks, fights and is INVISIBLE. That is the
+    /// mirror of `foe.zig`'s rule (a group is emptied through its own `clear`, never by zeroing `n`), and
+    /// the reason is the same one: only the group knows what it owns.
+    pub fn clear(self: *Pack) void {
+        self.n = 0;
+    }
+
     pub fn call(self: *Pack, at: rl.Vector3, facing: f32) bool {
         if (!self.room()) return false;
         self.wolves[self.n] = Wolf.spawn(at, facing);
@@ -1400,6 +1410,18 @@ test "A GATHER FOLDS THE LEGS, IT DOES NOT SINK THE ANIMAL — the paws stay whe
         worst = mathx.minF(worst, deepestPaw(&w));
     }
     try std.testing.expect(worst > standing - 0.05);
+}
+
+test "CLEARING THE PACK SENDS IT HOME, IT DOES NOT UNLOAD IT" {
+    // The bug this pins was silent and total: `= .{}` in a new-game reset put `ready` back to false, and
+    // `draw` returns at its first line — the bell called a spirit that walked, fought and could not be seen.
+    // Nothing about the wolf's behaviour changes when its meshes go, which is why only an eye caught it.
+    var p = Pack{};
+    p.ready = true; // stands in for `load`, which needs a GL context
+    p.n = 1;
+    p.clear();
+    try std.testing.expectEqual(@as(usize, 0), p.n);
+    try std.testing.expect(p.ready);
 }
 
 test "the two-link solver reaches what it is given and folds the right way round" {

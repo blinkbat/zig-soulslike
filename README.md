@@ -13,7 +13,11 @@ pipeline). UI is set in **Balthazar** (OFL, in `assets/`).
   Winter, contralateral arm swing, pelvic bob/sway/rotation).
 - A **third-person over-the-shoulder camera** you can rotate freely (mouse look),
   souls-style, with scroll zoom.
-- A **menu (open at launch)** — Continue / Debug / Quit — whose Debug screen has a
+- A **boot screen** — New Game / Load Game / Options / Editor / Quit — over a live 3D
+  backdrop the camera walks slowly round. **Three save slots**, each shown by the picture
+  taken at the bonfire it was written at. You save by **sitting down at a bonfire** and
+  nowhere else; a fire writes over whatever slot you are playing.
+- A **pause menu** — Continue / Options / Editor / Debug / Back to Title — whose Debug screen has a
   stats overlay, wireframe, time scale, and **15 layerable retro post-filters**
   (pixelate, chroma fringe, posterize, dither, Game Boy, CGA, 16-color palette, sepia,
   mono, amber CRT, ink edges, scanlines, CRT curvature, VHS, film grain) with PS1 /

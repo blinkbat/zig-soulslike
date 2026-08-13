@@ -14,6 +14,7 @@ const SLOT_SHADOW: i32 = 12;
 const SLOT_SOIL: i32 = 13;
 const SLOT_WATER: i32 = 14;
 const SLOT_SOILCOV: i32 = 15;
+const SLOT_SOILEDGE: i32 = 16;
 
 pub const SOIL_N: i32 = 112;
 
@@ -426,6 +427,7 @@ pub const Scene = struct {
     loc_keyAmt: i32,
     soilTex: rl.Texture2D,
     soilCovTex: rl.Texture2D,
+    soilEdgeTex: rl.Texture2D,
     loc_soilOn: i32,
     loc_soilHalf: i32,
     loc_soilCell: i32,
@@ -450,6 +452,8 @@ pub const Scene = struct {
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterMap"), &slotWater, .int);
         var slotSoilCov = SLOT_SOILCOV;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "soilCovMap"), &slotSoilCov, .int);
+        var slotSoilEdge = SLOT_SOILEDGE;
+        rl.setShaderValue(shader, rl.getShaderLocation(shader, "soilEdgeMap"), &slotSoilEdge, .int);
         var waterOff: i32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterOn"), &waterOff, .int);
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterSheet"), &waterOff, .int);
@@ -469,6 +473,9 @@ pub const Scene = struct {
             .shadowMap = loadShadowmap(SHADOWMAP_RES),
             .soilTex = loadFieldTexture(SOIL_N, .point),
             .soilCovTex = loadFieldTexture(SOIL_N, .bilinear),
+            // POINT, like the id map and for its reason: an edge is a CHOICE, and a bilinear read halfway
+            // between `tiled` and `jagged` is an ordinal nobody authored pointing at a shape nobody picked.
+            .soilEdgeTex = loadFieldTexture(SOIL_N, .point),
             .loc_soilOn = rl.getShaderLocation(shader, "soilOn"),
             .loc_soilHalf = rl.getShaderLocation(shader, "soilHalf"),
             .loc_soilCell = rl.getShaderLocation(shader, "soilCell"),
@@ -628,13 +635,51 @@ pub const Scene = struct {
         rl.setShaderValueV(self.shader, self.loc_waterTone, &t, .vec3, 3);
     }
 
-    /// Push the painted soil grid: SOIL_N x SOIL_N material ids, one byte each, 0 = unpainted.
-    pub fn setSoil(self: *Scene, ids: []const u8, cov: []const u8, half: f32) void {
+/// **THE EDGE MAP, GROWN ONE CELL INTO THE BARE GROUND AROUND EACH PATCH.** A boundary is drawn from both
+/// sides — the pixel deciding it may be standing on the painted cell or on the empty one next to it — and the
+/// shader has to read the same policy either way, because the policy is what picks the lookup's own warp.
+/// Undilated, a tiled courtyard came out snapped looking outward and soft looking in, which is two edges.
+///
+/// It runs at UPLOAD, not per pixel: an edit is a mouse-move, a frame is sixty of them, and this is a fixed
+/// 112x112 sweep either way. The buffer is file-scope for the reason every prototype mesh here is — one grid
+/// exists, it is rebuilt whole each time, and `setSoil` is the only thing that ever reads it.
+var edgeDilated: [@as(usize, @intCast(SOIL_N)) * @as(usize, @intCast(SOIL_N))]u8 = undefined;
+
+fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
+    const n: usize = @intCast(SOIL_N);
+    @memcpy(&edgeDilated, edge);
+    for (0..n) |z| {
+        for (0..n) |x| {
+            const i = z * n + x;
+            if (ids[i] != 0) continue; // a painted cell already carries its own stroke's shape
+            // The first painted neighbour wins, in a fixed order, so the result is deterministic and a
+            // corner between two patches does not flicker on which one was scanned first.
+            const nb = [4]?usize{
+                if (x > 0) i - 1 else null,
+                if (x + 1 < n) i + 1 else null,
+                if (z > 0) i - n else null,
+                if (z + 1 < n) i + n else null,
+            };
+            for (nb) |maybe| {
+                const j = maybe orelse continue;
+                if (ids[j] == 0) continue;
+                edgeDilated[i] = edge[j];
+                break;
+            }
+        }
+    }
+    return &edgeDilated;
+}
+
+/// Push the painted soil grid: SOIL_N x SOIL_N material ids, one byte each, 0 = unpainted.
+    pub fn setSoil(self: *Scene, ids: []const u8, cov: []const u8, edge: []const u8, half: f32) void {
         const n: usize = @intCast(SOIL_N);
         std.debug.assert(ids.len == n * n);
         std.debug.assert(cov.len == ids.len);
+        std.debug.assert(edge.len == ids.len);
         rl.updateTexture(self.soilTex, ids.ptr);
         rl.updateTexture(self.soilCovTex, cov.ptr);
+        rl.updateTexture(self.soilEdgeTex, dilateEdges(ids, edge).ptr);
         var painted: i32 = 0;
         for (ids) |v| {
             if (v != 0) {
@@ -657,6 +702,8 @@ pub const Scene = struct {
         rl.gl.rlEnableTexture(self.waterTex.id);
         rl.gl.rlActiveTextureSlot(SLOT_SOILCOV);
         rl.gl.rlEnableTexture(self.soilCovTex.id);
+        rl.gl.rlActiveTextureSlot(SLOT_SOILEDGE);
+        rl.gl.rlEnableTexture(self.soilEdgeTex.id);
         rl.gl.rlActiveTextureSlot(0);
     }
 

@@ -152,6 +152,157 @@ const WATER_Y: f32 = 0.055;
 var scratchIn: [wf.WATER_CELLS]f32 = undefined;
 var scratchOut: [wf.WATER_CELLS]f32 = undefined;
 
+/// **HOW BIG A FACET OF COASTLINE IS, in metres.** The one dial for the whole look, and it is bounded at
+/// BOTH ends by something real. Under about a field cell there is nothing left to straighten and the coast
+/// comes back the curve it was. Over about five, a planar fit spans more water than the shallow fringe of a
+/// marsh is wide, and the fit dips under the waterline in the middle of it: at 7 the tarn came apart into a
+/// scatter of disconnected puddles, which is the failure to watch for if this is ever widened.
+pub const WATER_FACET: f32 = 3.6;
+
+/// **HOW FAR THIS SHAPE MOVES THE WATERLINE AT THIS POINT, in metres**, positive pushing the water outward.
+/// The coast's own share of `wf.Edge`, and it is the same eight names the soil uses because they are the
+/// same eight questions — but the answers are a coastline's, not a floor's.
+///
+/// **NOTHING UNDER ABOUT 0.7 m DOES ANYTHING.** The distance transform is quantised to whole cells, so no
+/// cell is nearer the line than half a cell (1.25 m here) and a warp smaller than that can never flip one.
+/// That is why these are metres and not the soil's sub-metre wobbles.
+fn coastWarp(e: wf.Edge, x: f32, z: f32) f32 {
+    return switch (e) {
+        // A shore you cannot find the edge of. No warp — the width is `coastBand`'s say, not this one's.
+        .blend => 0,
+        // What a lake does on its own: a slow wander, a couple of metres either way.
+        .natural => (vnoise2(x / 13.0, z / 13.0) - 0.5) * 4.4,
+        // Reeds and shallows picking at it — quicker, and it only ever eats INTO the land.
+        .frayed => (vnoise2(x / 5.5 + 12.3, z / 5.5 - 7.1) - 0.5) * 3.0,
+        // A torn rocky shore: fast and deep, two octaves so it has both bays and bites.
+        .jagged => (vnoise2(x / 6.0 + 3.3, z / 6.0 + 9.9) - 0.5) * 7.0 +
+            (vnoise2(x / 2.2 - 5.0, z / 2.2 + 4.0) - 0.5) * 2.6,
+        // Built: the line is exactly where it was painted.
+        .straight => 0,
+        // …and the same line taken to the grid, which is what a dock or a harbour wall runs on.
+        .tiled => tiledCoast(x, z),
+        // Regular bays, the one shape here that is deliberate rather than noisy.
+        .scallop => (mathx.sinf(x * 0.34) + mathx.sinf(z * 0.34)) * 2.3,
+        // A boggy fringe that breaks into separate pools — the tarn's own look, made authorable. The
+        // high-frequency term is what detaches them, and it is why this is the one shape that may
+        // legitimately disconnect water where every other one must not.
+        .speckle => (vnoise2(x / 3.0 + 21.0, z / 3.0 - 17.0) - 0.5) * 8.0 - 1.4,
+    };
+}
+
+/// The tiled coast snaps the waterline onto the lattice `facetWater` already works in, so a dock's edge and
+/// the facets around it are the same grid rather than two that nearly agree.
+fn tiledCoast(x: f32, z: f32) f32 {
+    const g = WATER_FACET;
+    const sx = x / g - @floor(x / g);
+    const sz = z / g - @floor(z / g);
+    // Distance to the nearer lattice line on each axis, pushed to whichever is closer — the line lands ON
+    // the lattice instead of wherever the painted disc happened to stop.
+    const dx = (0.5 - @abs(sx - 0.5)) * g;
+    const dz = (0.5 - @abs(sz - 0.5)) * g;
+    return -@min(dx, dz);
+}
+
+/// **HOW WIDE THE WET SAND IS**, as a multiple of `gfx.WATER_WET_OUT`. The shape's second say, and the only
+/// thing that separates `blend` from `straight` — both leave the line alone and differ entirely in how far
+/// the ground around it reads as soaked.
+fn coastBand(e: wf.Edge) f32 {
+    return switch (e) {
+        .blend => 3.2, // a marsh margin: metres of ground that is neither
+        .natural => 1.0,
+        .frayed => 1.6,
+        .jagged => 0.55, // rock does not soak
+        .straight => 0.3, // a built bank, near enough dry to the edge
+        .tiled => 0.3,
+        .scallop => 1.2, // a beach
+        .speckle => 2.2, // bog
+    };
+}
+
+/// **THE COAST IS FACETED, NOT SMOOTHED** (owner: the flat water borders do not match our style, more of a
+/// low poly look). A bilinear field's iso-contour is a CURVE — hyperbolic arcs inside every cell — and a
+/// curve is the one silhouette nothing else in this world has. Resampling the field onto a TRIANGULAR
+/// lattice makes it piecewise PLANAR, and a planar field's contour inside a triangle is a STRAIGHT LINE, so
+/// the waterline comes out a polyline with corners: the same thing a flat-shaded mesh's edge is.
+///
+/// **IT IS BAKED INTO THE FIELD, NOT DONE IN THE SHADER**, and that is the whole reason it is here. The
+/// field is ONE field feeding three things — the sheet, the wet sand and `waterDepthAt`'s wading — so a
+/// coast faceted in the fragment shader would be a coast you can SEE in one place and WALK INTO in
+/// another, up to half a facet apart. Done once at upload, all three read the same polyline.
+fn facetWater(field: *[wf.WATER_CELLS]u8, half: f32) void {
+    const N = wf.WATER_N;
+    if (!(half > 0)) return;
+    const cell = 2 * half / @as(f32, @floatFromInt(N));
+    // A lattice finer than the field it samples straightens nothing, so this is a floor and not a taste.
+    const facet = @max(WATER_FACET, cell * 1.2);
+
+    // The ORIGINAL field has to survive the whole pass — every cell reads three lattice corners, and a
+    // corner may sit in a cell this loop has already rewritten. `scratchIn` is free by now: the distance
+    // transform it carried was spent in the encode loop above.
+    const out = &scratchIn;
+    for (0..N) |cz| {
+        for (0..N) |cx| {
+            const wx = -half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
+            const wz = -half + (@as(f32, @floatFromInt(cz)) + 0.5) * cell;
+            const sx = wx / facet;
+            const sz = wz / facet;
+            const bx = @floor(sx);
+            const bz = @floor(sz);
+            const fx = sx - bx;
+            const fz = sz - bz;
+            // TWO TRIANGLES PER LATTICE SQUARE. Which one the point is in decides its three corners, and
+            // the diagonal between them is what puts a CORNER in the coastline rather than a bend.
+            var wa: f32 = undefined;
+            var wb: f32 = undefined;
+            var wc: f32 = undefined;
+            var c0: [2]f32 = undefined;
+            var c1: [2]f32 = undefined;
+            var c2: [2]f32 = undefined;
+            if (fx + fz > 1.0) {
+                c0 = .{ 1, 0 };
+                c1 = .{ 0, 1 };
+                c2 = .{ 1, 1 };
+                wa = 1 - fz;
+                wb = 1 - fx;
+                wc = fx + fz - 1;
+            } else {
+                c0 = .{ 0, 0 };
+                c1 = .{ 1, 0 };
+                c2 = .{ 0, 1 };
+                wa = 1 - fx - fz;
+                wb = fx;
+                wc = fz;
+            }
+            const va = sampleField(field, half, cell, (bx + c0[0]) * facet, (bz + c0[1]) * facet);
+            const vb = sampleField(field, half, cell, (bx + c1[0]) * facet, (bz + c1[1]) * facet);
+            const vc = sampleField(field, half, cell, (bx + c2[0]) * facet, (bz + c2[1]) * facet);
+            out[cz * N + cx] = wa * va + wb * vb + wc * vc;
+        }
+    }
+    for (field, out) |*dst, v| dst.* = mathx.u8f(v);
+}
+
+/// Bilinear read of the byte field at a world point, clamped at the rim. The lattice corners are arbitrary
+/// world positions rather than cell centres, and nearest-sampling them puts the field's own 2.5 m staircase
+/// back into the very thing this pass exists to take out of it.
+fn sampleField(field: *const [wf.WATER_CELLS]u8, half: f32, cell: f32, wx: f32, wz: f32) f32 {
+    const N = wf.WATER_N;
+    const maxI: f32 = @floatFromInt(N - 1);
+    const tx = mathx.clampF((wx + half) / cell - 0.5, 0, maxI);
+    const tz = mathx.clampF((wz + half) / cell - 0.5, 0, maxI);
+    const x0: usize = @intFromFloat(@floor(tx));
+    const z0: usize = @intFromFloat(@floor(tz));
+    const x1 = @min(x0 + 1, N - 1);
+    const z1 = @min(z0 + 1, N - 1);
+    const ux = tx - @floor(tx);
+    const uz = tz - @floor(tz);
+    const v00: f32 = @floatFromInt(field[z0 * N + x0]);
+    const v10: f32 = @floatFromInt(field[z0 * N + x1]);
+    const v01: f32 = @floatFromInt(field[z1 * N + x0]);
+    const v11: f32 = @floatFromInt(field[z1 * N + x1]);
+    return mathx.lerpF(mathx.lerpF(v00, v10, ux), mathx.lerpF(v01, v11, ux), uz);
+}
+
 // `fade`/`fadeTo` are the only fields here the frame writes: how solid this instance IS and how solid the
 // sight line wants it to be, both 1 unless it is standing between the lens and the hero (see markOccluders).
 const Prop = struct { kind: Kind, pos: rl.Vector3, yaw: f32, scale: f32, lean: f32 = 0, leanDir: f32 = 0, op: u16 = 0, fade: f32 = 1, fadeTo: f32 = 1 };
@@ -349,7 +500,7 @@ pub const Env = struct {
     }
 
     pub fn uploadSoil(self: *Env, m: *const wf.Map) void {
-        if (self.scene) |sc| sc.setSoil(&m.soil, &m.soilCov, m.half);
+        if (self.scene) |sc| sc.setSoil(&m.soil, &m.soilCov, &m.soilEdge, m.half);
     }
 
     pub fn uploadHeight(self: *Env, m: *const wf.Map) void {
@@ -596,10 +747,20 @@ pub const Env = struct {
         }
         const shoreF: f32 = @floatFromInt(gfx.WATER_SHORE);
         for (m.water, 0..) |wet, i| {
-            const enc: f32 = if (wet != 0) blk: {
-                const metres = @max(0.0, (dIn[i] - 0.5) * cell);
+            const wx = edge(i % N, m.half, cell) + cell * 0.5;
+            const wz = edge(i / N, m.half, cell) + cell * 0.5;
+            const shape: wf.Edge = @enumFromInt(@min(m.waterEdge[i], wf.Edge.N - 1));
+            // **ONE SIGNED DISTANCE, POSITIVE INTO THE WATER.** That is what lets a coast shape move the
+            // line BOTH ways: as two branches keyed off the painted bit, a warp could only ever deepen the
+            // water or dry the land further, because a wet cell's encode floors at the shore however much
+            // you take off it. Written signed, the warp simply moves where zero is.
+            const sd = coastWarp(shape, wx, wz) + if (wet != 0)
+                @max(0.0, (dIn[i] - 0.5) * cell)
+            else
+                -@max(0.0, (dOut[i] - 0.5) * cell);
+            const enc: f32 = if (sd >= 0) blk: {
                 // HOW FAR INSIDE THE SHORE it is…
-                const byShore = mathx.clampF(metres / gfx.WATER_DEEP_AT, 0, 1);
+                const byShore = mathx.clampF(sd / gfx.WATER_DEEP_AT, 0, 1);
                 // …AND HOW FAR DOWN THE GROUND UNDER IT WAS DUG, whichever reads deeper. A hole cut hard
                 // against the bank is deep water the moment you look at it, and the distance ramp alone
                 // painted it the same pale shallow as the puddle next to it.
@@ -609,11 +770,13 @@ pub const Env = struct {
                 const dug = WATER_Y - (GROUND_Y + m.heightAt(edge(i % N, m.half, cell), edge(i / N, m.half, cell)));
                 break :blk shoreF + @max(byShore, digTone(dug)) * (255.0 - shoreF);
             } else blk: {
-                const metres = @max(0.0, (dOut[i] - 0.5) * cell);
-                break :blk shoreF * (1.0 - mathx.clampF(metres / gfx.WATER_WET_OUT, 0, 1));
+                // …AND THE WET SAND OUTSIDE IT, whose WIDTH is the shape's second say. A blended margin is
+                // a marsh you cannot find the edge of; a built embankment has none at all.
+                break :blk shoreF * (1.0 - mathx.clampF(-sd / (gfx.WATER_WET_OUT * coastBand(shape)), 0, 1));
             };
             self.waterField[i] = mathx.u8f(enc);
         }
+        facetWater(&self.waterField, m.half);
         if (self.scene) |sc| sc.setWater(&self.waterField, m.half, true);
     }
 
@@ -2457,7 +2620,7 @@ test "DEEP WATER READS DEEP — the sheet is darkened by the DIG, not by the sho
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     m.blank("Tarn");
-    try std.testing.expect(m.paintWater(0, 0, 60, true));
+    try std.testing.expect(m.paintWater(0, 0, 60, true, .natural));
 
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
@@ -2631,8 +2794,12 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(solids0, e.solidCount());
     try std.testing.expectEqual(lights0, e.lightCount());
 
-    try std.testing.expectEqual(@as(usize, 17761), props0);
-    try std.testing.expectEqual(@as(usize, 1827), solids0);
+    // 17761 BEFORE THE COAST WAS FACETED (`facetWater`). Scatter refuses to place in water, so straightening
+    // the waterline moves it by up to half a facet and the props along every shore follow it — 196 of them,
+    // about 1%. This number moving is the POINT of pinning it; it may only be re-pinned when the world was
+    // meant to change, and this is one of those times.
+    try std.testing.expectEqual(@as(usize, 17565), props0);
+    try std.testing.expectEqual(@as(usize, 1848), solids0); // …and their colliders with them (was 1827)
     // The map's three `campfire`s are the EXTINGUISHED kind and carry no light. Swap one to
     // `campfire_lit` in the editor and this goes up by one — and gains a rest site with it.
     try std.testing.expectEqual(@as(usize, 40), lights0);

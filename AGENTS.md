@@ -136,7 +136,8 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `itemart.zig` | pictures of things — armaments and bag items as objects, sized by the caller |
 | `icons.zig` | editor glyph set, drawn from primitives (vector, not an atlas) |
 | `book.zig` | THE CHARACTER BOOK (pad START) — a Diablo paper doll + ten quick sockets, the bag, the sheet |
-| `menu.zig` | pause/debug menu, sound LEVELS, and the retro filter rack. The SOUND filter rack is not here — it is the editor's (`editor.rackPanel`) |
+| `menu.zig` | THE BOOT SCREEN, the pause/debug menu, sound LEVELS, and the retro filter rack. The SOUND filter rack is not here — it is the editor's (`editor.rackPanel`) |
+| `save.zig` | THE SLOTS — three files in the map's own `key: value` grammar, each with the picture the picker shows it by; written by sitting down at a fire and by nothing else |
 | `audio.zig` | ~80 synthesized voices through one tape-style `master`; three submixes; read it as recipes |
 | `rumble.zig` | XInput directly (raylib's GLFW backend stubs `SetGamepadVibration`); holds `PAD` |
 | `shots.zig` | the headless harness — never in context while working on the loop |
@@ -956,8 +957,33 @@ them. Nothing about the world is authored in Zig. Ops: `at`, `belt`, `disc`, `ri
   where the author left coverage low. The paint rule is `lerp(here, opacity, falloff)`: painting below
   what is there THINS it and repeated passes converge instead of running away. A cell holding a
   different material is CONTESTED — the stroke wins only where it would cover more. `BRUSH_CORE`
-  (0.55) keeps the middle solid. **Hard vs soft edges are a property of the MATERIAL**
-  (`Soil.hardEdge`, stone only), pinned to the shader's `soilHard` by a comptime assert.
+  (0.55) keeps the middle solid.
+- **HOW A PATCH ENDS IS PAINTED, NOT DERIVED** — a third grid (`Map.soilEdge`, one `wf.Edge` per cell)
+  beside the material and the coverage, picked in the brush panel like the radius and the opacity. It is
+  the STROKE's and not the material's: six materials cannot carry eight shapes, and the point is to lay a
+  tiled courtyard and a torn scree of the same stone in one world. Eight shapes — `blend`, `natural`,
+  `frayed`, `jagged`, `straight`, `tiled`, `scallop`, `speckle` — and their ordinals are pinned to the
+  shader's `edgeShape()` by a comptime assert, so an inserted row is a compile error and not every stroke
+  in every map silently re-pointed.
+- **AN EDGE HAS THREE KNOBS AND THEY WERE FUSED INTO ONE BOOL** — how far the lookup WANDERS off the
+  authored line, at what WAVELENGTH, and whether the boundary CUTS or feathers. The old `hardEdge` bool
+  reached only the last of them, and the ±1.7 m wander was applied to the material ID *before* anything
+  was asked, so a boundary wobbled whatever its policy said and **nothing could produce a straight edge —
+  the thing being straightened was not the thing being bent.** The policy is now read FIRST, at the
+  unwarped position, because the warp is what the policy decides.
+- **THE EDGE MAP IS DILATED ONE CELL AT UPLOAD** (`gfx.dilateEdges`). A boundary is drawn from both sides
+  and the shader must read the same policy either way; undilated, a tiled courtyard came out snapped
+  looking outward and soft looking in, which is two edges. It is POINT-sampled for the id map's reason: a
+  bilinear read halfway between `tiled` and `jagged` is an ordinal nobody authored.
+- **A CELL IS 5 m** (`SOIL_N` 112 over a 560 m world), which is the floor on how fine any of this can be.
+  Warps under about half a cell do not survive the coverage staircase.
+- **AN OLD MAP COMES UP UNCHANGED** — no `soiledge:` row means a world written before the grid, and every
+  cell takes the edge its material used to imply (`fillLegacyEdges`: stone cut, everything else soft). The
+  row is only written when some stroke asked for something else (`edgesAllDefault`), so no existing world
+  file changed. **WATER'S COAST DOES NOT USE ANY OF THIS YET** and it may not use it the same way: the
+  water field is ONE field feeding the look *and* the wading, so an edge warped in the shader would put
+  the coast you see somewhere other than the coast you walk into. It has to be baked into the field in
+  `env.uploadWater` instead.
 - **WATER IS PAINTED, ITS COAST DERIVED** — one bit per cell → a signed distance field (128 is the
   waterline). One field, three effects, so they cannot disagree. The sheet is ONE world-spanning quad.
 - **PROPS CAN LEAN** (`lean`/`leanDir`) about the prop's GROUND ORIGIN, so the base stays planted and
@@ -1292,6 +1318,55 @@ a second on a guaranteed miss every time the slam happened to be cooling — and
 it there every time. The pocket at its feet is something the player EARNS by getting inside; it is not
 somewhere to be swiped at. A choose site tests the move's OWN band, not just its outer range.
 
+## Saving, and the boot screen (`save.zig`, `menu.zig`)
+
+**YOU SAVE AT BONFIRES AND NOWHERE ELSE** (owner's call). There is no Save row anywhere in the game: sitting
+down IS the save, `game.tickRest`'s `justEntered` is the one line that writes one, and it lands in whatever
+slot is being played (`g.slot`, ER's rule) without asking. **THREE SLOTS**, `save1.dat`…`save3.dat`, each with
+a `save<n>.png` beside it.
+
+- **THE FILE IS TEXT IN THE MAP'S OWN GRAMMAR** (`key: value`, `version:` first) for the map's reason: a save
+  you can read is a save you can see what is wrong with. Unknown key, bad version or another map's name are
+  LOAD ERRORS — a save is refused whole rather than applied in half.
+- **THE BARS ARE NOT IN THE FILE, AND THAT IS THE POINT.** The one place a save is taken is a fire, and
+  `hero.sit` runs `makeWhole` before the write — HP, stamina, focus, both flasks, both quivers, poison, ward
+  and grease all settled. Storing them would be storing a constant beside the thing that derives it. The
+  SHEET is out for the same reason one layer along: it is `ptree.Bonus.sheet()` of the tree below, and
+  `game.applyTree` re-derives it on the way back in.
+- **IT IS GATHERED AND SCATTERED THROUGH ONE VIEW** (`save.Slot`, `game.slotOf` — `bookView`'s shape and its
+  reason): the save file owns no game state and reaches for nothing. Parsing goes into a `save.Data` on the
+  stack FIRST and is committed only if the whole file read, so a half-read file is never a half-built
+  character.
+- **A LOAD LANDS IN A FRESH WORLD AND THEN OVERWRITES IT** (`game.loadGame`). Every array the file does not
+  mention is at what a NEW game has rather than at what the last one left, and the order is load-bearing:
+  `beginGame` is what sizes `chests.n` off the map and rebuilds the trigger ORDER, both of which the file
+  writes into and neither of which it carries.
+- **`beginGame` IS THE ONE ANSWER TO "WHAT IS A FRESH GAME"** — `Game.init` and New Game both come through
+  it. As a second list in `init` it is the copy nobody plays through.
+- **THE THUMBNAIL IS A POST-DRAW GATE, NOT A DECISION AT THE EDGE** (`game.takeSlotShot`). `justEntered`
+  fires at the BOTTOM of the fade-in where the screen is black, so what is OWED and when it can be PAID are
+  different frames. Taken after the world is drawn and before the HUD and the fire's list go over it, so the
+  picker shows him at the fire rather than a menu. The harness calls the same function at the same point
+  (`shots.bonfireShoot`) — `--shot` never runs the loop, so that is the only thing proving the grab works.
+
+**THE BOOT SCREEN IS ITS OWN SCREEN, not the pause card with different rows.** New Game / Load Game /
+Options / Editor / Quit, over a live 3D backdrop the camera walks slowly round (`game.BOOT_*`).
+
+- **IT HAS NO BACK AND NO CONTINUE**, and Select/Start are refused while it is up (`Menu.booting`) rather
+  than gated at each call site. **QUIT IS ITS ROW**; from inside a game the way out is `Back to Title`.
+- **`menu.home` IS WHICH ROOT A SUB-SCREEN RETURNS TO.** Options hangs off both cards and the editor is
+  reachable from both, so a hard `.main` dropped you into the pause menu of a game nobody had started.
+- **THE BOOT CAMERA IS ASKED FOR AFTER `menu.update`, NEVER BEFORE.** `dist`/`pitch` are the PLAYER's zoom
+  and tilt and nothing in play resets them, so stamping the title framing on the frame New Game was pressed
+  handed the new character a camera seven metres back. (Reported as "you zoomed out the game when playing".)
+- **NEW GAME TAKES THE FIRST EMPTY SLOT WITHOUT ASKING** (ER's own). The picker only comes up when all three
+  are full, which is the one time that press is a decision about an existing character.
+- **A ROW THAT CANNOT BE PRESSED IS DRAWN SO** (`Menu.rowLive` + `Card.dim`, `TEXT_OFF`) — one predicate read
+  by the PRESS and by the picture, so a row can never look available and do nothing. The cursor still lands
+  on it: a row you cannot reach is a row whose reason you cannot read, and the reason is the footnote.
+- **THE PICKER'S THREE TEXTURES LIVE NO LONGER THAN THE PICKER** (`menu.loadShots`/`unloadShots`).
+- **ASCII ONLY, like every string in the game** — the atlas has no em dash and one renders as tofu.
+
 ## Controls (`game.zig`)
 
 Keyboard+mouse or gamepad; the pad follows **Elden Ring's default layout** (ER is the north star
@@ -1322,6 +1397,11 @@ not the stick-speed `runB`.
   eye rather than solved, which makes it a convergent feedback loop (gain `boom / (boom + range)`, under 1
   everywhere the near guard does not fire) that `camera.aim`'s ease damps the rest of the way. It is why
   `camera.PITCH_MIN` is -0.38 and not the -0.20 the free look ever asked for.
+  **THE TILT UP IS EARNED BY HEIGHT *AND* BY CLOSENESS** (owner: only bring the camera low for a tall enemy
+  when it is NEARBY; further off a lock behaves like any other), and it is a SHARE rather than a switch —
+  `lockTiltShare`, the product of two smoothsteps, so neither gate can step. Height alone used to be the
+  whole rule, so an ogre across the field still pulled the lens up off the ground it stood on; and a hard
+  height threshold snapped every time a leechfly climbed through it. Down is still free and still ungated.
   **DOWN IS FREE; UP IS EARNED** (`LOCK_TILT_TALL`, owner: it was tilting up too much and too often). A
   kobold, a skeleton or a shade is framed whole from the default pitch already, and lifting the lens onto one
   only takes the ground out from under it — so the up half is gated on how far the creature reaches into the

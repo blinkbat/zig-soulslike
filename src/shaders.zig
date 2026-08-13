@@ -163,13 +163,48 @@ pub const sceneFS =
     \\}
     \\// brush (wf.Map.soilCov).
     \\uniform sampler2D soilCovMap;
-    \\// DOES THIS MATERIAL CUT OR BLEND?
-    \\bool soilHard(int id){ return id==3; }   // stone: masons stop where they stopped
-    \\float soilCovAt(vec2 w, bool hard){
+    \\// …AND HOW THE PATCH ENDS, one authored `wf.Edge` per cell (wf.Map.soilEdge), point-sampled and
+    \\// DILATED one cell at upload so the bare side of a boundary answers with the same policy as the
+    \\// painted side. Without that dilation a tiled courtyard is tiled looking out and soft looking in.
+    \\uniform sampler2D soilEdgeMap;
+    \\int soilEdgeAt(vec2 w){
+    \\  vec2 uv = w/(2.0*soilHalf) + 0.5;
+    \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1;   // natural
+    \\  return int(texture(soilEdgeMap, uv).r*255.0 + 0.5);
+    \\}
+    \\// **THE THREE KNOBS AN EDGE ACTUALLY HAS.** x = how far the lookup wanders off the authored line in
+    \\// metres, y = the wavelength it wanders at in cycles/metre, z = how much the 4-tap neighbour feather
+    \\// survives (1 = full soft ring, 0 = a clean cut). Ordinals are pinned to `wf.Edge` by a comptime
+    \\// assert there — an inserted row would re-point every stroke in every map at the wrong shape.
+    \\vec3 edgeShape(int e){
+    \\  if (e==0) return vec3(0.0,  0.00, 1.60);  // blend    — no wander, the widest feather of the set
+    \\  if (e==2) return vec3(1.1,  1.90, 1.00);  // frayed   — a light fast wander, still soft
+    \\  if (e==3) return vec3(3.2,  2.60, 0.00);  // jagged   — deep, fast, and CUT: a torn line
+    \\  if (e==4) return vec3(0.0,  0.00, 0.00);  // straight — exactly where it was painted
+    \\  if (e==5) return vec3(0.0,  0.00, 0.00);  // tiled    — straight, and snapped to the grid below
+    \\  if (e==6) return vec3(1.5,  0.00, 0.00);  // scallop  — a periodic wave, not noise (see below)
+    \\  if (e==7) return vec3(0.9,  3.40, 0.55);  // speckle  — flecks off the end of it
+    \\  return vec3(1.7, 0.62, 1.00);             // 1 = natural, the wander everything used to have
+    \\}
+    \\// WHERE THE LOOKUP ACTUALLY READS FROM. This is the whole fix: the displacement used to be one fixed
+    \\// noise applied to EVERY material before anything else was asked, so the material BOUNDARY wandered
+    \\// +/-1.7 m whatever its policy said — and `soilHard` only ever snapped the COVERAGE. Nothing could
+    \\// produce a straight edge because the thing being straightened was not the thing being bent.
+    \\vec2 edgeWarp(vec2 p, int e, vec3 k){
+    \\  if (k.x <= 0.0001) return p;
+    \\  if (e==6){
+    \\    // The scallop is DELIBERATE, so it is a sine along both axes rather than noise — a laid border.
+    \\    return p + vec2(sin(p.y*0.9), sin(p.x*0.9))*k.x;
+    \\  }
+    \\  vec2 j = vec2(vnoise(p*k.y), vnoise(p*k.y + 47.3)) - 0.5;
+    \\  return p + j*2.0*k.x;
+    \\}
+    \\float soilCovAt(vec2 w, bool snap){
     \\  vec2 uv = w/(2.0*soilHalf) + 0.5;
     \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
-    \\  // A HARD MATERIAL SNAPS THE UV TO THE TEXEL CENTRE — point sampling out of the same bilinear texture, which is the trick that lets one texture serve both policies.
-    \\  if (hard){ float n = 2.0*soilHalf/soilCell; uv = (floor(uv*n) + 0.5)/n; }
+    \\  // SNAPPING THE UV TO THE TEXEL CENTRE point-samples out of the same bilinear texture, which is the
+    \\  // trick that lets one texture serve both policies. Only `tiled` asks for it.
+    \\  if (snap){ float n = 2.0*soilHalf/soilCell; uv = (floor(uv*n) + 0.5)/n; }
     \\  return texture(soilCovMap, uv).r;
     \\}
     \\// of it: 0.5 is the waterline, above it depth, below it the walk back to dry land.
@@ -194,9 +229,12 @@ pub const sceneFS =
     \\}
     \\vec3 paintedSoil(vec3 c, vec2 p, float blades, float f3, float px){
     \\  if (soilOn == 0) return c;
-    \\  // JITTER THE LOOKUP, don't filter the id.
-    \\  vec2 j = vec2(vnoise(p*0.62), vnoise(p*0.62 + 47.3)) - 0.5;
-    \\  vec2 q = p + j*3.4;
+    \\  // **THE POLICY IS READ FIRST, AT THE UNWARPED POSITION.** It has to be: the warp is what the policy
+    \\  // decides, so sampling the edge through it would ask the answer to choose the question. The map is
+    \\  // dilated one cell at upload, so this reads the patch's own policy from either side of its boundary.
+    \\  int e = soilEdgeAt(p);
+    \\  vec3 k = edgeShape(e);
+    \\  vec2 q = edgeWarp(p, e, k);
     \\  // …then SOFTEN IT BY COVERAGE.
     \\  vec2 o[4] = vec2[4](vec2(1.0,0.0), vec2(-1.0,0.0), vec2(0.0,1.0), vec2(0.0,-1.0));
     \\  int id = soilAt(q);
@@ -209,10 +247,14 @@ pub const sceneFS =
     \\  }
     \\  if (id == 0) return c;
     \\  vec3 s = soilColor(id)*(0.80 + 0.50*blades + 0.20*f3);
-    \\  // THE TWO COVERAGES MULTIPLY, and they answer different questions.
-    \\  bool hard = soilHard(id);
-    \\  float a = soilCovAt(q, hard);
-    \\  if (!hard) a *= cov/5.0;
+    \\  // THE TWO COVERAGES MULTIPLY, and they answer different questions: the brush's own strength, and how
+    \\  // much of this cell's NEIGHBOURHOOD is the same material. `k.z` is how much of the second one the
+    \\  // shape wants — 0 cuts the ring out entirely and the edge lands wherever the coverage does.
+    \\  float a = soilCovAt(q, e==5);
+    \\  if (k.z > 0.0001) a *= clamp((cov/5.0)*k.z, 0.0, 1.0);
+    \\  // AND THE SPECKLE BREAKS ITS LAST STRETCH INTO FLECKS rather than fading: a hard per-cell hash
+    \\  // thresholded against the coverage, so full cover is solid and the tail scatters and stops.
+    \\  if (e==7) a *= step(speck(p, 2.7), a*1.35);
     \\  return mix(c, s, a*0.92);
     \\}
     \\vec3 terrainAlbedo(vec2 p, float px){

@@ -8,3 +8,4 @@ zig-pkg/
 shots/
 *.bak
 settings.cfg
+save*.dat

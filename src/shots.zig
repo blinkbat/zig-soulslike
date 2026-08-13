@@ -27,6 +27,7 @@ const ptree = @import("passivetree.zig");
 const restmod = @import("rest.zig");
 const item = @import("item.zig");
 const bookmod = @import("book.zig");
+const savemod = @import("save.zig"); // for the boot screen's shelf — staged, never read off the disk
 const sfx = @import("audio.zig"); // for the SOUND FILTER cards alone — `--shot` runs with no audio device
 const worldfmt = @import("worldfmt.zig");
 
@@ -85,6 +86,7 @@ fn shoot(g: *Game, name: [:0]const u8) void {
 /// rest branch, which `--shot` never runs, so `shoot` alone photographs a man sitting in front of nothing.
 fn bonfireShoot(g: *Game, name: [:0]const u8) void {
     drawScene(g);
+    game.takeSlotShot(g); // the loop's own order: the slot's thumbnail comes off the BARE frame
     hud(g, SHOT_DT);
     game.drawBonfireForShot(g);
     snap(name);
@@ -1306,6 +1308,43 @@ pub fn runShots(g: *Game) void {
         standHero(g, 0, 12, std.math.pi);
         shootAt(g, "shots/70_avenue_north.png", g.hero.shoulderPoint(), 180, 0.16, 9.0);
         shootAt(g, "shots/71_vista_north.png", mathx.ground(0, 6), 180, 0.30, 9.0);
+
+        // **EVERY EDGE SHAPE IN ONE FRAME.** Eight identical stone discs on bare ground, one per
+        // `worldfmt.Edge`. The whole value of having eight is telling them apart, and one at a time in eight
+        // frames is exactly the comparison that cannot be made. STEEP AND LIT, not in the editor: an edge is
+        // a line on the GROUND, so a grazing angle foreshortens the far side of a disc into the near side of
+        // the next — and stone's albedo is near-black, which the editor's own overhead leaves unreadable.
+        {
+            const wasSoil = g.map.soil;
+            const wasCov = g.map.soilCov;
+            const wasEdge = g.map.soilEdge;
+            g.map.soil = [_]u8{0} ** worldfmt.SOIL_CELLS;
+            g.map.soilCov = [_]u8{worldfmt.COV_FULL} ** worldfmt.SOIL_CELLS;
+            // ON THE OPEN DOWNS, not the ruin avenue: over the avenue every disc was under a pillar's
+            // shadow or a cliff's, and a shadow crossing an edge is indistinguishable from the edge.
+            const EX: f32 = 0;
+            const EZ: f32 = 96;
+            var ei: usize = 0;
+            while (ei < worldfmt.Edge.N) : (ei += 1) {
+                const col: f32 = @floatFromInt(ei % 4);
+                const row: f32 = @floatFromInt(ei / 4);
+                _ = g.map.paintSoil(EX + (col - 1.5) * 30.0, EZ + (row - 0.5) * 30.0, 13.0, .stone, 1, @enumFromInt(ei));
+            }
+            g.env.uploadSoil(&g.map);
+            // …AND AT NOON. The anchor hour is late golden, which lays metre-long shadows off every tuft
+            // across exactly the lines being judged; overhead sun is flat, even, and shows the paint alone.
+            game.pinHourForShot(g, 12.0);
+            // The hero is the SCALE and the shadow ortho box tracks him, so he stands in the middle of it.
+            standHero(g, EX, EZ, std.math.pi);
+            // Yaw 180 like every other overhead map shot — at noon the sun is straight up, so the 53-degree
+            // sun-over-the-shoulder rule has nothing to say here and the grid may as well sit square.
+            shootAt(g, "shots/98a_soil_edges.png", mathx.ground(EX, EZ), 180, 1.12, 74.0);
+            game.pinHourForShot(g, game.daynight.SHOT_HOUR);
+            g.map.soil = wasSoil;
+            g.map.soilCov = wasCov;
+            g.map.soilEdge = wasEdge;
+            g.env.uploadSoil(&g.map);
+        }
         standHero(g, 1.4, 7.4, mathx.radians(120));
         shootAt(g, "shots/71b_bonfire.png", v3(3.0, 0.55, 6.5), 300, 0.07, 3.1);
         standHero(g, 0.0, 3.4, mathx.radians(200));
@@ -1447,19 +1486,65 @@ pub fn runShots(g: *Game) void {
     shoot(g, "shots/11_retro_ps1.png");
     g.retro.allOff();
 
+    // A SHELF WITH SOMETHING ON IT, for every card below that reads one. The empty one is staged where the
+    // greying is what is being judged.
+    var shelf = savemod.Shelf{};
+    shelf.head[0] = .{ .level = 7, .souls = 1240, .playtime = 8100 };
+    shelf.head[2] = .{ .level = 1, .souls = 0, .playtime = 95 };
+    const bare = savemod.Shelf{};
+
     g.menu.screen = .main;
     g.menu.cursor = 0;
     drawScene(g);
     hud(g, SHOT_DT);
-    g.menu.draw(&g.retro, &g.day, game.bookView(g), null);
+    g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &shelf);
     snap("shots/12_menu_main.png");
+
+    // THE BOOT SCREEN, framed the way the LOOP frames it (`game.BOOT_*`) — the card is only half of what is
+    // being judged and the other half is what stands behind it. Sun over the shoulder at yaw 53, or the
+    // world it is drawn over is its own shadow. NO HUD: nothing has been started, so there are no bars.
+    // Both states of the Load row, because the greyed one is a fresh install's first screen.
+    g.rig.yaw = mathx.radians(53);
+    g.rig.pitch = game.BOOT_PITCH;
+    g.rig.dist = game.BOOT_DIST;
+    g.rig.follow(g.hero.shoulderPoint());
+    g.menu.screen = .boot;
+    g.menu.home = .boot;
+    g.menu.cursor = 1; // ON Load, which is the only row whose two states differ
+    drawScene(g);
+    g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &bare);
+    snap("shots/12a_menu_boot.png");
+
+    drawScene(g);
+    g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &shelf);
+    snap("shots/12b_menu_boot_save.png");
+
+    // …AND THE PICKER. Two slots filled and one empty, which is the one staging that shows all three of a
+    // row's states at once: taken, taken, and the greyed Empty a Load may not press.
+    g.menu.showSlotsForShot(.load, 1);
+    drawScene(g);
+    g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &shelf);
+    snap("shots/12c_menu_slots.png");
+
+    // The same three under NEW, where every row is live because all it can be is an overwrite.
+    g.menu.showSlotsForShot(.new, 1);
+    drawScene(g);
+    g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &shelf);
+    snap("shots/12d_menu_slots_new.png");
+
+    g.menu.onEscape(); // …and OUT through the picker's own door, which is what drops its three textures
+    g.menu.home = .main;
+    g.rig.yaw = mathx.radians(300);
+    g.rig.pitch = 0.14;
+    g.rig.dist = 3.4;
+    g.rig.follow(g.hero.shoulderPoint());
 
     g.retro.values[gfx.RF_GAMEBOY] = 1.0; // show a live gauge on the retro card
     g.menu.screen = .retro;
     g.menu.cursor = gfx.RF_GAMEBOY;
     drawScene(g);
     hud(g, SHOT_DT);
-    g.menu.draw(&g.retro, &g.day, game.bookView(g), null);
+    g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &shelf);
     snap("shots/13_menu_retro.png");
     g.menu.screen = .closed;
 
@@ -1892,7 +1977,7 @@ fn poisonShots(g: *Game, mark: rl.Vector3) void {
         }
     }.it;
 
-    g.hero.respawnForTest(); // a clean bar, and full HP to watch the poison take off it
+    g.hero.respawnNow(); // a clean bar, and full HP to watch the poison take off it
     game.clearFoesForShot(g);
     g.cluster.n = 1;
     const m = &g.cluster.shrooms[0];
@@ -1920,7 +2005,7 @@ fn poisonShots(g: *Game, mark: rl.Vector3) void {
     var d: i32 = 0;
     while (d < 60 * 6) : (d += 1) game.tickPoisonForShot(g, SHOT_DT);
     shootClear(g, "shots/119h_poison_draining.png", LIT_YAW, 0.10, 5.2);
-    g.hero.respawnForTest(); // …and nothing downstream inherits a poisoned hero
+    g.hero.respawnNow(); // …and nothing downstream inherits a poisoned hero
 }
 
 fn leechShots(g: *Game) void {
@@ -2492,13 +2577,14 @@ fn editorShots(g: *Game) void {
 
     const before = g.map.soil;
     const beforeCov = g.map.soilCov;
+    const beforeEdge = g.map.soilEdge;
     g.editor.setLayer(.ground);
     g.editor.brush[@intFromEnum(editormod.Layer.ground)] = @intFromEnum(editormod.GroundBrush.dirt);
     g.editor.radius = 5;
     var z: f32 = 22;
-    while (z > -40) : (z -= 3) _ = g.map.paintSoil(0.6, z, 4.5, .dirt, 1);
-    _ = g.map.paintSoil(0, -30, 9, .stone, 1);
-    _ = g.map.paintSoil(-13.5, 3, 6, .moss, 0.5);
+    while (z > -40) : (z -= 3) _ = g.map.paintSoil(0.6, z, 4.5, .dirt, 1, .natural);
+    _ = g.map.paintSoil(0, -30, 9, .stone, 1, .tiled);
+    _ = g.map.paintSoil(-13.5, 3, 6, .moss, 0.5, .natural);
     g.env.uploadSoil(&g.map);
     g.editor.focus = mathx.ground(0, -10);
     g.editor.pitch = -0.85;
@@ -2509,6 +2595,7 @@ fn editorShots(g: *Game) void {
 
     g.map.soil = before;
     g.map.soilCov = beforeCov;
+    g.map.soilEdge = beforeEdge;
     g.env.uploadSoil(&g.map);
 
     const beforeWater = g.map.water;
@@ -2516,10 +2603,10 @@ fn editorShots(g: *Game) void {
     g.editor.brush[@intFromEnum(editormod.Layer.ground)] = @intFromEnum(editormod.GroundBrush.water);
     g.editor.radius = 7;
     var wz: f32 = -6;
-    while (wz < 26) : (wz += 2.5) _ = g.map.paintWater(-26 + wz * 0.35, wz, 9.5, true);
+    while (wz < 26) : (wz += 2.5) _ = g.map.paintWater(-26 + wz * 0.35, wz, 9.5, true, .natural);
     var wx: f32 = -34;
-    while (wx < -8) : (wx += 2.5) _ = g.map.paintWater(wx, 14, 7.5, true);
-    _ = g.map.paintWater(-21, 9, 4.6, false); // the headland
+    while (wx < -8) : (wx += 2.5) _ = g.map.paintWater(wx, 14, 7.5, true, .natural);
+    _ = g.map.paintWater(-21, 9, 4.6, false, null); // the headland
     g.env.uploadWater(&g.map);
     g.env.materialize(&g.map);
     g.editor.focus = mathx.ground(-24, 10);
@@ -2697,9 +2784,10 @@ fn elevationShots(g: *Game) void {
 /// the slot before the frame is drawn: in play it is EASED there, and `debugShow` only says where to.
 fn bookShot(g: *Game, name: [:0]const u8, page: bookmod.Page, cursor: usize, pickSlot: ?usize, row: usize) void {
     g.menu.book.debugShow(page, cursor, pickSlot, row);
-    _ = g.menu.update(&g.retro, &g.day, SHOT_DT, game.bookView(g));
+    const shelf = savemod.Shelf{}; // the book knows nothing about slots; it is the same card either way
+    _ = g.menu.update(&g.retro, &g.day, SHOT_DT, game.bookView(g), &shelf);
     drawScene(g);
-    g.menu.draw(&g.retro, &g.day, game.bookView(g), .{ .hero = &g.hero, .scene = &g.scene });
+    g.menu.draw(&g.retro, &g.day, game.bookView(g), .{ .hero = &g.hero, .scene = &g.scene }, &shelf);
     snap(name);
 }
 

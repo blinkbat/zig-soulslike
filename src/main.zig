@@ -92,6 +92,7 @@ test {
     _ = @import("souls.zig"); // THE DROP — one, and everything about it is that there is only one
     _ = @import("passivetree.zig"); // …and the one thing that spends it: the radial passive tree
     _ = @import("rumble.zig");
+    _ = @import("save.zig"); // THE SLOT — the bonfire's file, and the round-trip through its own text
     _ = @import("menu.zig");
     _ = @import("objview.zig");
     _ = @import("shots.zig");

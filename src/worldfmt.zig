@@ -513,17 +513,97 @@ pub const Soil = enum(u8) {
 
     pub const N = @typeInfo(Soil).@"enum".fields.len;
 
-    /// DOES THIS MATERIAL CUT, OR DOES IT BLEND?
-    pub fn hardEdge(s: Soil) bool {
-        return s == .stone;
+    /// WHAT A STROKE OF THIS GETS IF NOBODY SAYS OTHERWISE — and what a map written before the edge grid
+    /// existed comes back as, so an old world looks exactly as it did (`fillLegacyEdges`).
+    pub fn defaultEdge(s: Soil) Edge {
+        return switch (s) {
+            .stone => .tiled, // masons stop where they stopped
+            else => .natural,
+        };
+    }
+};
+
+/// **HOW A PAINTED PATCH ENDS.** One authored property per CELL, beside its material and its coverage — not a
+/// property of the material, because six materials cannot carry eight shapes and the whole point is to lay a
+/// tiled courtyard and a torn scree of the same stone in one world.
+///
+/// Three knobs make all of these and they were fused into one bool before: how far the lookup WANDERS off
+/// the authored line, at what WAVELENGTH it wanders, and whether the boundary CUTS or feathers. The bool
+/// only ever reached the last one, which is why nothing could produce a straight edge — see `shaders.zig`.
+pub const Edge = enum(u8) {
+    /// One material dissolves into the next over metres. The gentlest thing here: no line at all.
+    blend,
+    /// A boundary that wanders on its own, softly. Grass into dirt — what everything was before.
+    natural,
+    /// Light, fast wander with a soft finish. Turf creeping into gravel a handful at a time.
+    frayed,
+    /// Hard, fast, deep wander. A torn line: broken flags, the lip of a scree.
+    jagged,
+    /// Exactly where you painted it, cut clean. No wander, no snap.
+    straight,
+    /// Cut clean AND snapped to the grid, so every edge runs on an axis. Laid masonry.
+    tiled,
+    /// A deliberate repeating wave rather than noise — a laid border, a tide line.
+    scallop,
+    /// The line breaks up into detached flecks before it ends. Moss stippling out over stone.
+    speckle,
+
+    pub const N = @typeInfo(Edge).@"enum".fields.len;
+
+    pub fn label(e: Edge) [:0]const u8 {
+        return switch (e) {
+            .blend => "blend",
+            .natural => "natural",
+            .frayed => "frayed",
+            .jagged => "jagged",
+            .straight => "straight",
+            .tiled => "tiled",
+            .scallop => "scallop",
+            .speckle => "speckle",
+        };
+    }
+
+    pub fn fromTag(s: []const u8) ?Edge {
+        return std.meta.stringToEnum(Edge, s);
     }
 };
 
 comptime {
     // The shader's soilColor() hard-codes ids 1..6 and falls through to moss.
     std.debug.assert(Soil.N == 7);
-    const SHADER_HARD_ID = 3; // `shaders.zig`: soilHard(id) is `id == 3`
-    for (0..Soil.N) |i| std.debug.assert(Soil.hardEdge(@enumFromInt(i)) == (i == SHADER_HARD_ID));
+    // …AND `shaders.zig`'s `edgeShape(e)` BRANCHES ON THESE ORDINALS, 0..7 in this order. The old assert
+    // pinned one bool to one id; this pins the whole table, because an inserted row would silently re-point
+    // every stroke in every map at the wrong shape.
+    std.debug.assert(Edge.N == 8);
+    std.debug.assert(@intFromEnum(Edge.blend) == 0);
+    std.debug.assert(@intFromEnum(Edge.natural) == 1);
+    std.debug.assert(@intFromEnum(Edge.frayed) == 2);
+    std.debug.assert(@intFromEnum(Edge.jagged) == 3);
+    std.debug.assert(@intFromEnum(Edge.straight) == 4);
+    std.debug.assert(@intFromEnum(Edge.tiled) == 5);
+    std.debug.assert(@intFromEnum(Edge.scallop) == 6);
+    std.debug.assert(@intFromEnum(Edge.speckle) == 7);
+}
+
+/// **IS EVERY CELL'S EDGE THE ONE ITS MATERIAL WOULD HAVE CHOSEN** — what decides whether the grid is worth a
+/// row in the file, and the exact inverse of `fillLegacyEdges`. Written as one predicate so the writer and
+/// the loader cannot disagree about what "default" means; as a `!= .natural` test on the writer's side, every
+/// map with stone in it grew a full grid row saying what stone already says.
+fn edgesAllDefault(m: *const Map) bool {
+    for (m.soil, m.soilEdge) |id, e| {
+        const want: u8 = @intFromEnum(@as(Soil, @enumFromInt(@min(id, Soil.N - 1))).defaultEdge());
+        if (e != want) return false;
+    }
+    return true;
+}
+
+/// A MAP WRITTEN BEFORE THE EDGE GRID gets each cell the edge its material used to imply — stone cut to the
+/// cell grid, everything else soft — so an old world comes up looking exactly as it did. Run on load when
+/// there was no `soiledge` row, and never otherwise.
+fn fillLegacyEdges(m: *Map) void {
+    for (m.soil, 0..) |id, i| {
+        m.soilEdge[i] = @intFromEnum(@as(Soil, @enumFromInt(@min(id, Soil.N - 1))).defaultEdge());
+    }
 }
 
 pub const COV_FULL: u8 = 255;
@@ -683,8 +763,16 @@ pub const Map = struct {
     soil: [SOIL_CELLS]u8 = [_]u8{0} ** SOIL_CELLS,
     /// HOW STRONGLY that material covers its cell, 0..255 — the same grid, one number deeper.
     soilCov: [SOIL_CELLS]u8 = [_]u8{COV_FULL} ** SOIL_CELLS,
+    /// …and HOW THAT PATCH ENDS, one `Edge` per cell. Painted with the stroke, not derived from the
+    /// material: the same stone is a laid courtyard in one place and a torn scree in another.
+    soilEdge: [SOIL_CELLS]u8 = [_]u8{@intFromEnum(Edge.natural)} ** SOIL_CELLS,
     /// The painted WATER MASK, same layout, 1 = wet.
     water: [WATER_CELLS]u8 = [_]u8{0} ** WATER_CELLS,
+    /// …AND HOW ITS COAST RUNS, one `Edge` per cell, painted with the water brush exactly as the soil's is.
+    /// Baked into the field by `env.uploadWater` and never read at draw time — see the note there: the water
+    /// field is the ONE field the sheet, the wet sand and the wading all read, so a coast shaped in the
+    /// shader would be a coast you can see in one place and walk into in another.
+    waterEdge: [WATER_CELLS]u8 = [_]u8{@intFromEnum(Edge.natural)} ** WATER_CELLS,
     /// THE SCULPTED GROUND: one quantised height per lattice POINT (see the HEIGHT block above).
     height: [HEIGHT_CELLS]u8 = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS,
 
@@ -706,7 +794,9 @@ pub const Map = struct {
         self.clearScript();
         self.soil = [_]u8{0} ** SOIL_CELLS;
         self.soilCov = [_]u8{COV_FULL} ** SOIL_CELLS;
+        self.soilEdge = [_]u8{@intFromEnum(Edge.natural)} ** SOIL_CELLS;
         self.water = [_]u8{0} ** WATER_CELLS;
+        self.waterEdge = [_]u8{@intFromEnum(Edge.natural)} ** WATER_CELLS;
         // To the DATUM, not to zero: `@memset(.., 0)` here would drop the ground to HEIGHT_MIN.
         self.height = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS;
     }
@@ -897,7 +987,10 @@ pub const Map = struct {
         return gridIndex(self.half, SOIL_N, px, pz);
     }
 
-    pub fn paintSoil(self: *Map, px: f32, pz: f32, radius: f32, id: Soil, opacity: f32) bool {
+    /// The edge goes down WITH the stroke and is the stroke's, not the material's — `edge` null takes the
+    /// material's own default, which is what every caller that predates the grid wants.
+    pub fn paintSoil(self: *Map, px: f32, pz: f32, radius: f32, id: Soil, opacity: f32, edge: ?Edge) bool {
+        const ev: u8 = @intFromEnum(edge orelse id.defaultEdge());
         const cell = self.cellSize(SOIL_N);
         const r2 = radius * radius;
         const want = std.math.clamp(opacity, 0, 1);
@@ -922,6 +1015,10 @@ pub const Map = struct {
                     if (self.soil[i] != 0 or self.soilCov[i] != COV_FULL) {
                         self.soil[i] = 0;
                         self.soilCov[i] = COV_FULL;
+                        // …and the edge goes back to the DEFAULT, not to whatever the wiped stroke used: a
+                        // bare cell has no edge, and one left behind is a policy the next stroke inherits
+                        // without having asked for it.
+                        self.soilEdge[i] = @intFromEnum(Edge.natural);
                         changed = true;
                     }
                     continue;
@@ -932,9 +1029,13 @@ pub const Map = struct {
                 const nv = covByte(next);
                 // Contest: an incumbent material only loses a cell to coverage that MATCHES OR beats its own.
                 if (self.soil[i] != v and self.soil[i] != 0 and nv < self.soilCov[i]) continue;
-                if (self.soil[i] != v or self.soilCov[i] != nv) {
+                if (self.soil[i] != v or self.soilCov[i] != nv or self.soilEdge[i] != ev) {
                     self.soil[i] = v;
                     self.soilCov[i] = nv;
+                    // THE EDGE IS THE STROKE'S AND IT IS NOT BLENDED. Coverage is a quantity and eases; a
+                    // shape is a choice, and half of one is not a shape. Every cell the stroke wins takes
+                    // the shape whole, which is what makes re-painting an area a way to CHANGE its edge.
+                    self.soilEdge[i] = ev;
                     changed = true;
                 }
             }
@@ -943,10 +1044,13 @@ pub const Map = struct {
     }
 
     /// Paint (or wipe) a disc of the WATER MASK.
-    pub fn paintWater(self: *Map, px: f32, pz: f32, radius: f32, wet: bool) bool {
+    /// `edge` null leaves each cell's coast shape alone, which is what an ERASE wants — wiping water is not
+    /// a statement about how the water that is left ends.
+    pub fn paintWater(self: *Map, px: f32, pz: f32, radius: f32, wet: bool, edge: ?Edge) bool {
         const cell = self.cellSize(WATER_N);
         const r2 = radius * radius;
         const v: u8 = if (wet) 1 else 0;
+        const ev: ?u8 = if (edge) |e| @intFromEnum(e) else null;
         var changed = false;
         var cz: usize = 0;
         while (cz < WATER_N) : (cz += 1) {
@@ -963,6 +1067,16 @@ pub const Map = struct {
                 if (self.water[i] != v) {
                     self.water[i] = v;
                     changed = true;
+                }
+                // THE SHAPE GOES DOWN WHOLE, like the soil's and for its reason: half an edge is not an
+                // edge. Laid on every cell the stroke touches, wet or not — the coast of a lake runs
+                // through the DRY cells just outside it too, and the warp has to agree on both sides of
+                // the line or it tears where the two policies meet.
+                if (ev) |want| {
+                    if (self.waterEdge[i] != want) {
+                        self.waterEdge[i] = want;
+                        changed = true;
+                    }
                 }
             }
         }
@@ -1119,11 +1233,23 @@ pub fn write(m: *const Map, w: anytype) !void {
                 break;
             }
         }
+        // …and its EDGES, only when a stroke asked for something other than its material's own default.
+        // A map every one of whose strokes took the default writes no row and reads back identically
+        // through `fillLegacyEdges`, so adding this grid did not touch a single existing world file.
+        if (!edgesAllDefault(m)) try writeGrid(w, "soiledge", &m.soilEdge);
     }
     // …and the water mask the same way.
     if (m.anyWater()) {
         try w.writeAll("\n");
         try writeGrid(w, "water", &m.water);
+        // …and its COAST SHAPES, only when a stroke asked for something other than the default. A map whose
+        // every shore is `natural` writes no row and reads back identically, so no existing world changed.
+        for (m.waterEdge) |e| {
+            if (e != @intFromEnum(Edge.natural)) {
+                try writeGrid(w, "wateredge", &m.waterEdge);
+                break;
+            }
+        }
     }
     // …and the SCULPTED GROUND.
     if (m.anyHeight()) {
@@ -1372,7 +1498,9 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     var seenVersion = false;
     var soilAt: usize = 0; // running cursor, so soil runs may wrap across lines
     var covAt: usize = 0;
+    var edgeAt: usize = 0;
     var waterAt: usize = 0;
+    var wEdgeAt: usize = 0;
     var hgtAt: usize = 0;
     var cur = Cursor{};
     var lines = std.mem.splitScalar(u8, text, '\n');
@@ -1411,8 +1539,12 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
         } else if (std.mem.eql(u8, rec, "soilcov")) {
             // Every byte is a legal coverage, so 256 like the heights.
             covAt = try readGrid(&it, &m.soilCov, covAt, 256);
+        } else if (std.mem.eql(u8, rec, "soiledge")) {
+            edgeAt = try readGrid(&it, &m.soilEdge, edgeAt, Edge.N);
         } else if (std.mem.eql(u8, rec, "water")) {
             waterAt = try readGrid(&it, &m.water, waterAt, 2);
+        } else if (std.mem.eql(u8, rec, "wateredge")) {
+            wEdgeAt = try readGrid(&it, &m.waterEdge, wEdgeAt, Edge.N);
         } else if (std.mem.eql(u8, rec, "hgt")) {
             hgtAt = try readGrid(&it, &m.height, hgtAt, 256);
         } else if (std.mem.eql(u8, rec, "foe")) {
@@ -1439,8 +1571,14 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     // defaults with no error, and missing fields are LOAD ERRORS in this format.
     if (soilAt != 0 and soilAt != m.soil.len) return ParseError.MissingField;
     if (covAt != 0 and covAt != m.soilCov.len) return ParseError.MissingField;
+    if (edgeAt != 0 and edgeAt != m.soilEdge.len) return ParseError.MissingField;
     if (waterAt != 0 and waterAt != m.water.len) return ParseError.MissingField;
+    if (wEdgeAt != 0 and wEdgeAt != m.waterEdge.len) return ParseError.MissingField;
     if (hgtAt != 0 and hgtAt != m.height.len) return ParseError.MissingField;
+    // NO `soiledge` ROW MEANS A MAP OLDER THAN THE GRID, and every cell takes the edge its material used to
+    // imply. Keyed off the CURSOR rather than off "is the grid all-default", because a map that genuinely
+    // wrote an all-natural grid is not the same thing as one that never had the row.
+    if (edgeAt == 0) fillLegacyEdges(m);
     // Line numbers stop meaning anything here: a name resolved at the end failed WHEREVER it was written.
     lineOut.* = 0;
     try link(m);
@@ -2336,6 +2474,55 @@ test "an op round-trips through write and parse" {
     try std.testing.expect(b.avoid.runway and b.avoid.water and !b.avoid.solid);
 }
 
+test "A MAP OLDER THAN THE EDGE GRID COMES UP LOOKING THE SAME" {
+    // The whole reason `fillLegacyEdges` exists. Written with no `soiledge:` row — which is what every
+    // world file on disk is — stone must come back CUT and everything else soft, or adding the grid
+    // silently re-shaped every floor already authored.
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    const back = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(back);
+    m.blank("Legacy");
+    _ = m.paintSoil(0, 0, 30, .stone, 1, null);
+    _ = m.paintSoil(-60, 40, 20, .moss, 1, null);
+
+    var buf: [1 << 18]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    // …and it writes NO edge row, because every stroke took its material's default.
+    try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "soiledge") == null);
+
+    var line: usize = 0;
+    try parse(fbs.getWritten(), back, &line);
+    for (back.soil, back.soilEdge) |id, e| {
+        const want = @as(Soil, @enumFromInt(id)).defaultEdge();
+        try std.testing.expectEqual(want, @as(Edge, @enumFromInt(e)));
+    }
+    try std.testing.expectEqual(Edge.tiled, @as(Edge, @enumFromInt(back.soilEdge[back.soilIndex(0, 0).?])));
+}
+
+test "an edge is the STROKE's, so the same material carries two of them" {
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("Two Edges");
+    _ = m.paintSoil(-60, 0, 15, .stone, 1, .tiled);
+    _ = m.paintSoil(60, 0, 15, .stone, 1, .jagged);
+    const a = m.soilIndex(-60, 0).?;
+    const b = m.soilIndex(60, 0).?;
+    try std.testing.expectEqual(m.soil[a], m.soil[b]); // one material…
+    try std.testing.expectEqual(Edge.tiled, @as(Edge, @enumFromInt(m.soilEdge[a])));
+    try std.testing.expectEqual(Edge.jagged, @as(Edge, @enumFromInt(m.soilEdge[b]))); // …two edges
+
+    // REPAINTING CHANGES THE SHAPE WHOLE. A shape does not ease the way coverage does: half a `tiled` is
+    // not a shape, so a stroke that wins a cell takes its edge outright.
+    _ = m.paintSoil(-60, 0, 15, .stone, 1, .scallop);
+    try std.testing.expectEqual(Edge.scallop, @as(Edge, @enumFromInt(m.soilEdge[a])));
+
+    // …and wiping puts it back to the default rather than leaving a policy for the next stroke to inherit.
+    _ = m.paintSoil(-60, 0, 15, .none, 1, null);
+    try std.testing.expectEqual(Edge.natural, @as(Edge, @enumFromInt(m.soilEdge[a])));
+}
+
 test "the soil grid and foe records survive a round trip" {
     const m = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(m);
@@ -2343,8 +2530,8 @@ test "the soil grid and foe records survive a round trip" {
     defer std.testing.allocator.destroy(back);
     m.blank("Round Trip");
     // A painted patch plus a lone cell, so both a long run and a one-cell run are exercised.
-    _ = m.paintSoil(0, 0, 30, .stone, 1);
-    _ = m.paintSoil(-60, 40, 20, .moss, 0.4);
+    _ = m.paintSoil(0, 0, 30, .stone, 1, .jagged);
+    _ = m.paintSoil(-60, 40, 20, .moss, 0.4, .scallop);
     m.soil[SOIL_CELLS - 1] = @intFromEnum(Soil.ash);
     m.foes[0] = .{ .kind = .ogre, .x = 3, .z = -50, .yaw = 90, .scale = 1.2, .seed = 0.4 };
     m.nfoes = 1;
@@ -2357,6 +2544,7 @@ test "the soil grid and foe records survive a round trip" {
 
     try std.testing.expectEqualSlices(u8, &m.soil, &back.soil);
     try std.testing.expectEqualSlices(u8, &m.soilCov, &back.soilCov);
+    try std.testing.expectEqualSlices(u8, &m.soilEdge, &back.soilEdge);
     try std.testing.expectEqual(@as(usize, 1), back.nfoes);
     try std.testing.expectEqual(FoeKind.ogre, back.foes[0].kind);
     try std.testing.expectApproxEqAbs(@as(f32, 1.2), back.foes[0].scale, 1e-4);
@@ -2376,7 +2564,7 @@ test "COVERAGE: an untouched grid costs no record, and the four rules the brush 
         try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "soilcov:") == null);
     }
 
-    _ = m.paintSoil(0, 0, 40, .stone, 1);
+    _ = m.paintSoil(0, 0, 40, .stone, 1, null);
     {
         var buf: [1 << 18]u8 = undefined;
         var fbs = std.io.fixedBufferStream(&buf);
@@ -2387,24 +2575,24 @@ test "COVERAGE: an untouched grid costs no record, and the four rules the brush 
     const mid = m.soilIndex(0, 0).?;
     try std.testing.expectEqual(COV_FULL, m.soilCov[mid]);
 
-    _ = m.paintSoil(0, 0, 40, .stone, 0.4);
+    _ = m.paintSoil(0, 0, 40, .stone, 0.4, null);
     try std.testing.expect(m.soilCov[mid] < 200);
-    for (0..8) |_| _ = m.paintSoil(0, 0, 40, .stone, 0.4);
+    for (0..8) |_| _ = m.paintSoil(0, 0, 40, .stone, 0.4, null);
     try std.testing.expectApproxEqAbs(@as(f32, 0.4), covF(m.soilCov[mid]), 0.01);
 
-    _ = m.paintSoil(0, 0, 40, .moss, 0.1);
+    _ = m.paintSoil(0, 0, 40, .moss, 0.1, null);
     try std.testing.expectEqual(@intFromEnum(Soil.stone), m.soil[mid]);
-    _ = m.paintSoil(0, 0, 40, .moss, 1);
+    _ = m.paintSoil(0, 0, 40, .moss, 1, null);
     try std.testing.expectEqual(@intFromEnum(Soil.moss), m.soil[mid]);
-    _ = m.paintSoil(0, 0, 40, .dirt, 1);
+    _ = m.paintSoil(0, 0, 40, .dirt, 1, null);
     try std.testing.expectEqual(@intFromEnum(Soil.dirt), m.soil[mid]);
     try std.testing.expectEqual(COV_FULL, m.soilCov[mid]);
 
-    _ = m.paintSoil(0, 0, 40, .none, 1);
+    _ = m.paintSoil(0, 0, 40, .none, 1, null);
     try std.testing.expectEqual(@as(u8, 0), m.soil[mid]);
     try std.testing.expectEqual(COV_FULL, m.soilCov[mid]);
 
-    _ = m.paintSoil(0, 0, 40, .dirt, 1);
+    _ = m.paintSoil(0, 0, 40, .dirt, 1, null);
     const rim = m.soilIndex(0, 38).?;
     try std.testing.expect(m.soilCov[rim] < m.soilCov[mid]);
 }

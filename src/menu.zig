@@ -9,6 +9,7 @@ const item = @import("item.zig");
 const uiart = @import("uiart.zig");
 const bookmod = @import("book.zig"); // pad START opens the CHARACTER BOOK, which is its own three pages
 const daynight = @import("daynight.zig"); // …and Debug carries the world clock's one scrub row
+const savemod = @import("save.zig"); // …and the boot screen carries the three slots
 
 const rgba = mathx.rgba;
 
@@ -17,17 +18,32 @@ const padDown = rumblemod.padDown;
 
 
 /// The three swap actions are the BOOK's, passed straight through: the menu owns no game state and never
-/// has, and an equipment screen that reached into the hero would be the first place it did.
+/// has, and an equipment screen that reached into the hero would be the first place it did. The two BOOT
+/// actions keep the same split: this file says which row was pressed, `game.zig` is what starts a world.
 pub const Action = union(enum) {
     none,
     quit,
+    /// PUT THE TITLE BACK UP. Quit is the BOOT screen's row now — from inside a game the way out is the
+    /// screen you came in through, and a running character is never more than a bonfire from being saved.
+    toTitle,
     editor,
+    /// …both carrying WHICH SLOT, because with three of them the row pressed is only half the answer.
+    newGame: usize,
+    loadGame: usize,
     use: item.Kind,
     arm: bookmod.Action,
 };
 
 const Screen = enum {
     closed,
+    /// ── THE BOOT SCREEN, which is what the window opens on. It is NOT the pause card with different rows:
+    /// there is no world behind it to go back to, so it has no Back and no Continue, and Select/Start are
+    /// refused while it is up rather than gated at the call site.
+    boot,
+    /// THE THREE SLOTS, each shown by the picture taken at the fire it was written at. Reached from Load
+    /// always, and from New Game only when all three are full — which is the one time starting a character
+    /// is a decision about an existing one.
+    slots,
     main, // ── the GAME menu (Select) …
     options,
     debug,
@@ -37,14 +53,6 @@ const Screen = enum {
     // place you can hear a voice on demand is the jukebox. The RETRO rack stays: that one is a LOOK the
     // player picks. See `editor.zig`'s `.jukebox` modal.
     character, // …and the CHARACTER BOOK (Start), which is `book.zig` end to end
-
-    fn root(s: Screen) Screen {
-        return switch (s) {
-            .closed => .closed,
-            .main, .options, .debug, .retro => .main,
-            .character => .character,
-        };
-    }
 };
 
 const OPT_MIX = [_]sfx.Submix{ .ambience, .sfx, .combat };
@@ -99,14 +107,50 @@ const MAIN_CONTINUE = 0;
 const MAIN_OPTIONS = 1;
 const MAIN_EDITOR = 2;
 const MAIN_DEBUG = 3;
-const MAIN_QUIT = 4;
-const MAIN_COUNT = MAIN_QUIT + 1;
+const MAIN_TITLE = 4;
+const MAIN_COUNT = MAIN_TITLE + 1;
+
+const BOOT_NEW = 0;
+const BOOT_LOAD = 1;
+const BOOT_OPTIONS = 2;
+const BOOT_EDITOR = 3;
+const BOOT_QUIT = 4;
+const BOOT_COUNT = BOOT_QUIT + 1;
+
+/// The picker: one row per slot, then Back.
+const SLOT_BACK = savemod.SLOTS;
+const SLOT_COUNT = SLOT_BACK + 1;
+
+/// WHY THE PICKER IS UP, which is the whole of what a press on a row means.
+const SlotIntent = enum { load, new };
+
+/// HOW FAR A ROW'S HILITE IS INSET FROM THE PLATE. One number, because the picker lays itself out relative
+/// to the hilite and the cards lay themselves out relative to the plate, and two literals that had to agree
+/// is exactly how the caret ended up under the thumbnail.
+const CARD_INSET: i32 = 14;
+
+/// The thumbnail is the row's height, not the other way round: 16:10 to match the window the grab came off,
+/// small enough that three of them and a Back row still centre on a short screen.
+const SLOT_THUMB_W: i32 = 144;
+const SLOT_THUMB_H: i32 = 90;
+const SLOT_H: i32 = SLOT_THUMB_H + 16;
+const SLOT_GAP: i32 = 8;
+const SLOT_TEXT_GAP: i32 = 18; // picture to its two lines
+/// WHERE THE `>` AND THE ROW'S CONTENT SIT, measured from the HILITE's left edge and shared by both kinds
+/// of card — so the picker's thumbnail starts exactly where an ordinary row's label starts. Written as its
+/// own pair rather than at each call site: the picker laid its picture out at the hilite inset instead and
+/// the caret came out underneath it.
+const ROW_CARET: i32 = 10;
+const ROW_LABEL: i32 = 26;
 
 const VEIL = rgba(6, 6, 9, 150);
+const BOOT_VEIL = rgba(5, 5, 8, 168);
 const CARD = rgba(16, 15, 13, 232);
 // THE INK IS `uiart`'s, not a second copy of it — that file's four weights exist so the menu card and the
 // character book cannot drift into two greys, and these three were byte-identical restatements of them.
 const TEXT_DIM = uiart.TEXT_DIM;
+/// A row that cannot be pressed, at the character book's own inert weight rather than a fifth grey.
+const TEXT_OFF = mathx.withAlpha(uiart.TEXT_DIM, 70);
 const TEXT_HOT = uiart.HOT;
 const TITLE_COL = uiart.TEXT_TITLE;
 const HINT_COL = uiart.TEXT_HINT;
@@ -114,7 +158,12 @@ const BAR_EDGE = rgba(120, 104, 74, 160);
 const BAR_FILL = rgba(198, 164, 96, 220);
 
 pub const Menu = struct {
-    screen: Screen = .main, // the menu IS the start screen
+    screen: Screen = .boot, // the window opens on the BOOT screen, and nothing is running behind it
+    /// WHICH ROOT A SUB-SCREEN GOES BACK TO. Options hangs off both cards, so "one level up" is a different
+    /// place depending on which one opened it — as a fixed `.main` it dropped you into the pause card of a
+    /// game that had not been started.
+    home: Screen = .boot,
+    slotIntent: SlotIntent = .load,
     cursor: usize = 0,
     // debug toggles the game loop reads
     stats: bool = false,
@@ -129,6 +178,22 @@ pub const Menu = struct {
         return self.screen != .closed;
     }
 
+    /// IS THE BOOT SCREEN UP — this screen or anything hanging off it. The one predicate for "no world has
+    /// been started yet", asked by every rule that must not fire before one has.
+    pub fn booting(self: *const Menu) bool {
+        return self.root() == .boot;
+    }
+
+    fn root(self: *const Menu) Screen {
+        return switch (self.screen) {
+            .closed => .closed,
+            .boot, .slots => .boot,
+            .main, .debug, .retro => .main,
+            .options => self.home,
+            .character => .character,
+        };
+    }
+
     /// Esc, and pad SELECT. The sound screen persists on the way out — the levels live in `settings.cfg`
     /// and are written when the screen closes, never per nudge. (The racks are written the same way by the
     /// editor's own rack panel, into the same file.)
@@ -137,30 +202,45 @@ pub const Menu = struct {
     }
 
     pub fn onEscape(self: *Menu) void {
+        if (self.screen == .boot) return; // there is nothing behind it to escape to
         // Inside the book, Back closes an open picker first — one press, one level, like every other screen.
         if (self.screen == .character and self.book.onBack()) return;
         self.leavingSound();
         self.cursor = 0;
+        if (self.screen == .slots) unloadShots(); // the three textures live no longer than the picker does
         self.screen = switch (self.screen) {
+            .boot => .boot,
             .closed => .main,
             .main, .character => .closed,
-            .options => .main,
+            .options => self.home,
+            .slots => .boot,
             .debug => .main,
             .retro => .debug,
         };
     }
 
+    /// FROM A RUNNING GAME BACK TO THE TITLE. The world behind is left exactly where it stood — nothing here
+    /// tears it down, because the next New Game or Load builds one from scratch anyway, and until one of
+    /// those is pressed the picture behind the card is as good a backdrop as any.
+    pub fn toTitle(self: *Menu) void {
+        self.home = .boot;
+        self.cursor = 0;
+        self.screen = .boot;
+    }
+
     pub fn onSelectButton(self: *Menu) void {
+        if (self.booting()) return; // a game that has not been started cannot be paused
         self.leavingSound();
         self.cursor = 0;
-        self.screen = if (self.screen.root() == .main) .closed else .main;
+        self.screen = if (self.root() == .main) .closed else .main;
     }
 
     /// Pad START — the CHARACTER BOOK (owner's call: "start menu will be character-driven").
     pub fn onStartButton(self: *Menu) void {
+        if (self.booting()) return; // …and there is no character yet to open a book on
         self.leavingSound();
         self.cursor = 0;
-        if (self.screen.root() == .character) {
+        if (self.root() == .character) {
             self.screen = .closed;
             return;
         }
@@ -168,11 +248,34 @@ pub const Menu = struct {
         self.book.opened();
     }
 
+    /// A WORLD IS RUNNING NOW — the boot screen's one way out, taken by both New Game and Load Game.
+    /// Options belongs to the pause card from here on, which is what `home` carries.
+    pub fn started(self: *Menu) void {
+        unloadShots(); // …and the picker's pictures go with it, whichever row started the world
+        self.home = .main;
+        self.cursor = 0;
+        self.screen = .closed;
+    }
+
+    /// **CAN THIS ROW BE PRESSED** — the one predicate, read by the PRESS and by the card that draws it, so
+    /// a row can never look available and do nothing. Two rows are ever refused and both for the same
+    /// reason: there is no file behind them. NEW over an occupied slot is allowed — that is what the picker
+    /// is being shown for.
+    fn rowLive(self: *const Menu, i: usize, shelf: *const savemod.Shelf) bool {
+        return switch (self.screen) {
+            .boot => i != BOOT_LOAD or shelf.any(),
+            .slots => i >= savemod.SLOTS or self.slotIntent == .new or shelf.head[i] != null,
+            else => true,
+        };
+    }
+
     /// HOW MANY ROWS THE LIVE SCREEN HAS — asked by the cursor wrap AND by "is the cursor on Back".
     /// The book is not a row list and answers 0; it is driven whole, below.
     fn rowCount(self: *const Menu) usize {
         return switch (self.screen) {
             .closed, .character => 0,
+            .boot => BOOT_COUNT,
+            .slots => SLOT_COUNT,
             .main => MAIN_COUNT,
             .options => OPT_COUNT,
             .debug => DBG_COUNT,
@@ -183,7 +286,10 @@ pub const Menu = struct {
     // dt is the REAL frame time (not time-scaled) so the glide speed never changes.
     // `day` is handed in mutable for the retro dials' reason: the row adjusts a live thing, and the menu has no
     // business holding a second copy of the world's hour that would have to be pushed back on the way out.
-    pub fn update(self: *Menu, retro: *gfx.Retro, day: *daynight.Clock, dt: f32, v: bookmod.View) Action {
+    /// The `shelf` is handed in rather than surveyed off the disk here, for the reason nothing else in this
+    /// file holds game state either: the menu draws what it is told. `game.zig` knows what is on the shelf,
+    /// because writing a file is the only thing that puts anything on it.
+    pub fn update(self: *Menu, retro: *gfx.Retro, day: *daynight.Clock, dt: f32, v: bookmod.View, shelf: *const savemod.Shelf) Action {
         if (self.screen == .closed) return .none;
         if (self.screen == .character) return self.updateBook(dt, v);
         const rows = self.rowCount();
@@ -227,8 +333,12 @@ pub const Menu = struct {
         }
 
         if (confirmPressed()) {
+            if (!self.rowLive(self.cursor, shelf)) {
+                sfx.play(.menu_back);
+                return .none;
+            }
             sfx.play(.menu_pick);
-            return self.confirm(retro, day);
+            return self.confirm(retro, day, shelf);
         }
         if (backPressed()) {
             sfx.play(.menu_back);
@@ -270,12 +380,61 @@ pub const Menu = struct {
         return act;
     }
 
-    fn confirm(self: *Menu, retro: *gfx.Retro, day: *daynight.Clock) Action {
+    /// THE PICKER, AND THE PICTURES IT IS READ OFF. The textures are loaded HERE and dropped the moment it
+    /// closes (`onEscape`, and the Back row): three screen-sized PNGs held for the life of the process to
+    /// serve a screen nobody is on is the kind of thing that is never noticed and never freed.
+    fn openSlots(self: *Menu, why: SlotIntent) void {
+        self.slotIntent = why;
+        self.screen = .slots;
+        self.cursor = 0;
+        loadShots();
+    }
+
+    /// The harness's own door onto the picker: `--shot` never presses a row, and staging `screen = .slots`
+    /// by hand skips the texture load, so the shot comes out with three empty plates.
+    pub fn showSlotsForShot(self: *Menu, why: SlotIntent, row: usize) void {
+        self.openSlots(why);
+        self.cursor = row;
+    }
+
+    fn confirm(self: *Menu, retro: *gfx.Retro, day: *daynight.Clock, shelf: *const savemod.Shelf) Action {
         switch (self.screen) {
             .closed => {},
+            // THE BOOT ROWS HAND BACK AN ACTION AND CHANGE NOTHING. Starting a world is `game.zig`'s, and
+            // the screen only closes once it has actually started one (`started`) — a Load that finds a
+            // broken file leaves you on the boot screen rather than in an empty world.
+            .boot => switch (self.cursor) {
+                // ER'S NEW GAME: straight into the first empty slot without asking. The picker only comes up
+                // when there is no empty one, which is the only time this press is a decision about an
+                // existing character rather than about a new one.
+                BOOT_NEW => {
+                    if (shelf.firstFree()) |i| return .{ .newGame = i };
+                    self.openSlots(.new);
+                },
+                BOOT_LOAD => self.openSlots(.load),
+                BOOT_OPTIONS => {
+                    self.home = .boot;
+                    self.screen = .options;
+                    self.cursor = 0;
+                },
+                BOOT_EDITOR => return .editor,
+                BOOT_QUIT => return .quit,
+                else => {},
+            },
+            .slots => {
+                if (self.cursor >= savemod.SLOTS) {
+                    unloadShots();
+                    self.screen = .boot;
+                    self.cursor = 0;
+                } else return switch (self.slotIntent) {
+                    .load => .{ .loadGame = self.cursor },
+                    .new => .{ .newGame = self.cursor },
+                };
+            },
             .main => switch (self.cursor) {
                 MAIN_CONTINUE => self.screen = .closed,
                 MAIN_OPTIONS => {
+                    self.home = .main;
                     self.screen = .options;
                     self.cursor = 0;
                 },
@@ -287,14 +446,14 @@ pub const Menu = struct {
                     self.screen = .debug;
                     self.cursor = 0;
                 },
-                MAIN_QUIT => return .quit,
+                MAIN_TITLE => return .toTitle,
                 else => {},
             },
             .options => {
                 // Confirm on a level row does nothing (Left/Right adjust it) — only Back acts.
                 if (self.cursor == OPT_CLOSE) {
                     self.leavingSound();
-                    self.screen = .main;
+                    self.screen = self.home;
                     self.cursor = 0;
                 }
             },
@@ -382,14 +541,22 @@ pub const Menu = struct {
         return out;
     }
 
-    pub fn draw(self: *const Menu, retro: *const gfx.Retro, day: *const daynight.Clock, v: bookmod.View, portrait: ?bookmod.Portrait) void {
+    pub fn draw(self: *const Menu, retro: *const gfx.Retro, day: *const daynight.Clock, v: bookmod.View, portrait: ?bookmod.Portrait, shelf: *const savemod.Shelf) void {
         if (self.screen == .closed) return;
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
-        rl.drawRectangle(0, 0, sw, sh, VEIL);
-        const lb = @divTrunc(sh, 8); // dusk gathers at the frame's edges
-        rl.drawRectangleGradientV(0, 0, sw, lb, rgba(0, 0, 0, 140), rgba(0, 0, 0, 0));
-        rl.drawRectangleGradientV(0, sh - lb, sw, lb, rgba(0, 0, 0, 0), rgba(0, 0, 0, 140));
+        // THE BOOT SCREEN SITS DEEPER IN THE DUSK than the pause card. A pause is a held breath in a game you
+        // are already looking at, so it stays legible under the veil; a title screen is a picture with a name
+        // on it, and the world behind it is scenery.
+        const boot = self.booting();
+        rl.drawRectangle(0, 0, sw, sh, if (boot) BOOT_VEIL else VEIL);
+        // …and the letterbox is DEEPER, not darker. A title screen wants the cinematic crop; what it does not
+        // want is the picture it is drawn over gone, and at 205 over a wooded frame the world went black and
+        // the card was floating on nothing. The separation is the CARD's job — that is what the plate is for.
+        const lb = @divTrunc(sh, if (boot) @as(i32, 6) else 8); // dusk gathers at the frame's edges
+        const lbA: u8 = if (boot) 180 else 140;
+        rl.drawRectangleGradientV(0, 0, sw, lb, rgba(0, 0, 0, lbA), rgba(0, 0, 0, 0));
+        rl.drawRectangleGradientV(0, sh - lb, sw, lb, rgba(0, 0, 0, 0), rgba(0, 0, 0, lbA));
         // THE BOOK IS NOT A CARD. It fills the frame and carries its own crib line, so it returns here
         // rather than falling through to the row-list chrome below.
         if (self.screen == .character) {
@@ -398,6 +565,11 @@ pub const Menu = struct {
         }
         switch (self.screen) {
             .closed, .character => {},
+            .boot => self.drawCard("SOULSLIKE", &bootLabels(), .{
+                .dim = &bootDim(shelf),
+                .note = if (shelf.any()) BOOT_NOTE else BOOT_NOTE_EMPTY,
+            }),
+            .slots => self.drawSlots(shelf),
             .main => self.drawCard("SOULSLIKE", &mainLabels(), .{}),
             .options => self.drawCard("SOUND", &optionLabels(), .{ .gauges = &soundLevels() }),
             .debug => self.drawCard("DEBUG", &self.debugLabels(day), .{}),
@@ -406,6 +578,19 @@ pub const Menu = struct {
         // THE CRIB NAMES BUTTONS AND NOTHING ELSE (owner's call) — one strip, whether a pad is plugged in or
         // not. The keys still work; they are simply not what the chrome talks about, so there is no second
         // caption to keep in step with this one and no branch that can show the wrong half.
+        // THE BOOT SCREEN'S IS SHORTER because its rows are: nothing there adjusts, there is nowhere to go
+        // back to, and there is no character yet to open a book on. A crib that names three dead buttons is
+        // three things to try before finding out they do nothing.
+        const bootHints = [_]hud.Hint{
+            .{ .glyph = .{ .dpad = .updown }, .label = "Move" },
+            .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Select" },
+        };
+        // …and the picker's, which HAS a way back where the title screen has none.
+        const slotHints = [_]hud.Hint{
+            .{ .glyph = .{ .dpad = .updown }, .label = "Move" },
+            .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Select" },
+            .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Back" },
+        };
         const hints = [_]hud.Hint{
             .{ .glyph = .{ .dpad = .updown }, .label = "Move" },
             .{ .glyph = .{ .dpad = .leftright }, .label = "Adjust" },
@@ -414,7 +599,97 @@ pub const Menu = struct {
             .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Back" },
             .{ .glyph = .menu, .label = "Character" },
         };
-        hud.hintRow(&hints, sh - @divTrunc(hud.lineH(hud.HINT), 2) - 14, hud.HINT, HINT_COL);
+        const row: []const hud.Hint = switch (self.screen) {
+            .boot => &bootHints,
+            .slots => &slotHints,
+            else => &hints,
+        };
+        hud.hintRow(row, sh - @divTrunc(hud.lineH(hud.HINT), 2) - 14, hud.HINT, HINT_COL);
+    }
+
+    /// **THE PICKER IS NOT A ROW LIST**, which is why it is not `drawCard` with a fourth optional column: a
+    /// row here is a PICTURE with two lines beside it, and the plate has to be tall enough to hold one.
+    /// Back is a plain row under the three, at the row height the rest of the game's lists use.
+    fn drawSlots(self: *const Menu, shelf: *const savemod.Shelf) void {
+        const sw = rl.getScreenWidth();
+        const sh = rl.getScreenHeight();
+        const headerH: i32 = hud.lineH(hud.TITLE) + 22;
+        const backH: i32 = hud.lineH(hud.BODY) + 14;
+        const cardW: i32 = 640;
+        const cardH: i32 = headerH + (SLOT_H + SLOT_GAP) * @as(i32, savemod.SLOTS) + backH + 30;
+        const cx = @divTrunc(sw - cardW, 2);
+        const cy = @divTrunc(sh - cardH, 2);
+        uiart.seat(cx, cy, cardW, cardH);
+        uiart.plate(cx, cy, cardW, cardH, CARD.a);
+        uiart.frame(cx, cy, cardW, cardH, uiart.flick(200, cx));
+        uiart.divider(cx + @divTrunc(cardW, 2), cy + hud.lineH(hud.TITLE) + 10, @divTrunc(cardW, 2) - 24, 180);
+        const title: [:0]const u8 = if (self.slotIntent == .new) "OVERWRITE WHICH?" else "LOAD GAME";
+        const tw = hud.textW(title, hud.TITLE);
+        hud.engraved(title, cx + @divTrunc(cardW - tw, 2), cy + 12, hud.TITLE, TITLE_COL);
+
+        for (0..savemod.SLOTS) |i| {
+            const y = cy + headerH + (SLOT_H + SLOT_GAP) * @as(i32, @intCast(i));
+            self.drawSlotRow(i, shelf.head[i], cx + CARD_INSET, y, cardW - CARD_INSET * 2);
+        }
+        const by = cy + headerH + (SLOT_H + SLOT_GAP) * @as(i32, savemod.SLOTS) + 8;
+        const onBack = self.cursor == SLOT_BACK;
+        if (onBack) uiart.rowHilite(cx + CARD_INSET, by - 3, cardW - CARD_INSET * 2, backH);
+        hud.text("Back", cx + CARD_INSET + ROW_LABEL, by, hud.BODY, if (onBack) TEXT_HOT else TEXT_DIM);
+        if (onBack) hud.text(">", cx + CARD_INSET + ROW_CARET, by, hud.BODY, TEXT_HOT);
+    }
+
+    fn drawSlotRow(self: *const Menu, i: usize, head: ?savemod.Head, x: i32, y: i32, w: i32) void {
+        const on = self.cursor == i;
+        // A row you may not press: empty, under Load. Under New EVERY row is pressable — that screen only
+        // comes up when all three are full, and picking one is the whole reason it is on the screen.
+        const dead = head == null and self.slotIntent == .load;
+        if (on and !dead) {
+            uiart.rowHilite(x, y, w, SLOT_H);
+            rl.drawRectangle(x, y, w, 1, mathx.withAlpha(uiart.GILT, 70));
+            rl.drawRectangle(x, y + SLOT_H - 1, w, 1, mathx.withAlpha(uiart.GILT, 46));
+            uiart.diamond(@floatFromInt(x + 2), @floatFromInt(y + 3), 2.6, uiart.GILT_BRIGHT);
+            uiart.diamond(@floatFromInt(x + 2), @floatFromInt(y + SLOT_H - 3), 2.6, uiart.GILT_BRIGHT);
+        }
+        // THE PICTURE, in a sunk plate that is drawn WHETHER OR NOT there is one: an empty slot with no
+        // frame around its gap makes the three rows read as two rows and a margin.
+        const px = x + ROW_LABEL;
+        const py = y + @divTrunc(SLOT_H - SLOT_THUMB_H, 2);
+        rl.drawRectangle(px, py, SLOT_THUMB_W, SLOT_THUMB_H, rgba(6, 5, 4, 220));
+        // THE PICTURE IS PART OF WHAT THE HEAD SAYS, so a slot with no head shows none — a file refused on
+        // load leaves its PNG on disk, and a row reading "Empty" beside a photograph of somebody's game is
+        // the two halves of one row disagreeing.
+        if (if (head == null) null else slotTex[i]) |tex| {
+            const src = rl.Rectangle{ .x = 0, .y = 0, .width = @floatFromInt(tex.width), .height = @floatFromInt(tex.height) };
+            const dst = rl.Rectangle{
+                .x = @floatFromInt(px),
+                .y = @floatFromInt(py),
+                .width = @floatFromInt(SLOT_THUMB_W),
+                .height = @floatFromInt(SLOT_THUMB_H),
+            };
+            const tint = if (dead or !on) mathx.withAlpha(rl.Color.white, 190) else rl.Color.white;
+            rl.drawTexturePro(tex, src, dst, .{ .x = 0, .y = 0 }, 0, tint);
+        }
+        rl.drawRectangleLines(px, py, SLOT_THUMB_W, SLOT_THUMB_H, BAR_EDGE);
+
+        const tx = px + SLOT_THUMB_W + SLOT_TEXT_GAP;
+        const col = if (dead) TEXT_OFF else if (on) TEXT_HOT else TEXT_DIM;
+        var nameBuf: [24]u8 = undefined;
+        const name = std.fmt.bufPrintZ(&nameBuf, "Slot {d}", .{i + 1}) catch "Slot";
+        hud.text(name, tx, py + 2, hud.BODY, col);
+        if (on) hud.text(">", x + ROW_CARET, py + 2, hud.BODY, if (dead) TEXT_OFF else TEXT_HOT);
+
+        if (head) |h| {
+            var timeBuf: [16]u8 = undefined;
+            var lineBuf: [64]u8 = undefined;
+            const line = std.fmt.bufPrintZ(&lineBuf, "Level {d}   {d} souls   {s}", .{
+                h.level,
+                h.souls,
+                playtimeText(h.playtime, &timeBuf),
+            }) catch "?";
+            hud.text(line, tx, py + hud.lineH(hud.BODY) + 6, hud.SMALL, if (on) uiart.TEXT_VALUE else TEXT_DIM);
+        } else {
+            hud.text("Empty", tx, py + hud.lineH(hud.BODY) + 6, hud.SMALL, TEXT_OFF);
+        }
     }
 
     fn drawCard(self: *const Menu, title: [:0]const u8, labels: []const [:0]const u8, card: Card) void {
@@ -443,17 +718,18 @@ pub const Menu = struct {
         for (labels, 0..) |label, i| {
             const y = cy + headerH + (rowH + rowGap) * @as(i32, @intCast(i));
             const selected = self.cursor == i;
-            const col = if (selected) TEXT_HOT else TEXT_DIM;
-            if (selected) {
-                uiart.rowHilite(cx + 14, y - 3, cardW - 28, rowH);
+            const dead = if (card.dim) |d| i < d.len and d[i] else false;
+            const col = if (dead) TEXT_OFF else if (selected) TEXT_HOT else TEXT_DIM;
+            if (selected and !dead) {
+                uiart.rowHilite(cx + CARD_INSET, y - 3, cardW - CARD_INSET * 2, rowH);
                 // …and the card's own two hairlines and jewelled spine-ends on top of the shared wash.
-                rl.drawRectangle(cx + 14, y - 3, cardW - 28, 1, mathx.withAlpha(uiart.GILT, 70));
-                rl.drawRectangle(cx + 14, y - 4 + rowH, cardW - 28, 1, mathx.withAlpha(uiart.GILT, 46));
-                uiart.diamond(@floatFromInt(cx + 16), @floatFromInt(y), 2.6, uiart.GILT_BRIGHT);
-                uiart.diamond(@floatFromInt(cx + 16), @floatFromInt(y - 3 + rowH), 2.6, uiart.GILT_BRIGHT);
+                rl.drawRectangle(cx + CARD_INSET, y - 3, cardW - CARD_INSET * 2, 1, mathx.withAlpha(uiart.GILT, 70));
+                rl.drawRectangle(cx + CARD_INSET, y - 4 + rowH, cardW - CARD_INSET * 2, 1, mathx.withAlpha(uiart.GILT, 46));
+                uiart.diamond(@floatFromInt(cx + CARD_INSET + 2), @floatFromInt(y), 2.6, uiart.GILT_BRIGHT);
+                uiart.diamond(@floatFromInt(cx + CARD_INSET + 2), @floatFromInt(y - 3 + rowH), 2.6, uiart.GILT_BRIGHT);
             }
-            hud.text(label, cx + 40, y, fontSize, col);
-            if (selected) hud.text(">", cx + 24, y, fontSize, TEXT_HOT);
+            hud.text(label, cx + CARD_INSET + ROW_LABEL, y, fontSize, col);
+            if (selected) hud.text(">", cx + CARD_INSET + ROW_CARET, y, fontSize, if (dead) TEXT_OFF else TEXT_HOT);
             if (card.gauges) |g| {
                 if (i < g.len) drawGauge(cx + cardW - 40 - 130, y + @divTrunc(fontSize, 2) - 3, 130, 10, g[i], selected);
             }
@@ -469,10 +745,13 @@ pub const Menu = struct {
     }
 };
 
-/// The optional columns a card can carry: a GAUGE per row (the two slider screens) and a footnote about whichever row the cursor is on. A slice shorter than the row list simply leaves the tail bare, which is how Back gets no gauge.
+/// The optional columns a card can carry: a GAUGE per row (the two slider screens), a footnote about whichever row the cursor is on, and which rows are UNAVAILABLE. A slice shorter than the row list simply leaves the tail bare, which is how Back gets no gauge.
 const Card = struct {
     gauges: ?[]const f32 = null,
     note: ?[:0]const u8 = null,
+    /// Drawn faint and with no hilite under it, but the cursor still LANDS on it: a row the cursor skips is
+    /// a row you cannot read the reason for, and the reason is the whole of what the footnote is saying.
+    dim: ?[]const bool = null,
 };
 
 fn drawGauge(x: i32, y: i32, w: i32, h: i32, v: f32, selected: bool) void {
@@ -494,13 +773,74 @@ fn drawGauge(x: i32, y: i32, w: i32, h: i32, v: f32, selected: bool) void {
     }
 }
 
+/// WHAT THE SAVE IS AND WHERE IT COMES FROM, said once on the one screen that can act on it. The empty case
+/// is not an apology: it names the one place a save is made, which is a thing a soulslike has to teach.
+/// ASCII ONLY, like every string in the game: the atlas has no em dash and one renders as tofu.
+const BOOT_NOTE: [:0]const u8 = "Three slots. A bonfire saves over the one you are playing.";
+const BOOT_NOTE_EMPTY: [:0]const u8 = "No save yet. Rest at a bonfire to write one.";
+
+fn bootLabels() [BOOT_COUNT][:0]const u8 {
+    var out: [BOOT_COUNT][:0]const u8 = undefined;
+    out[BOOT_NEW] = "New Game";
+    out[BOOT_LOAD] = "Load Game";
+    out[BOOT_OPTIONS] = "Options >";
+    out[BOOT_EDITOR] = "Editor";
+    out[BOOT_QUIT] = "Quit";
+    return out;
+}
+
+fn bootDim(shelf: *const savemod.Shelf) [BOOT_COUNT]bool {
+    var out = [_]bool{false} ** BOOT_COUNT;
+    out[BOOT_LOAD] = !shelf.any();
+    return out;
+}
+
+// ── the slot picker ─────────────────────────────────────────────────────────────────────────────────────
+
+/// THE PICTURE EACH SLOT IS SHOWN BY, held only while the picker is up. File-scope like `book.zig`'s
+/// portrait target and `objview.zig`'s two: a texture is chrome, and the menu owning one is not the menu
+/// owning game state.
+var slotTex: [savemod.SLOTS]?rl.Texture2D = [_]?rl.Texture2D{null} ** savemod.SLOTS;
+
+fn loadShots() void {
+    unloadShots();
+    for (0..savemod.SLOTS) |i| {
+        // A slot with no picture is not an error: the file predates the thumbnail, or the export failed.
+        // The row draws an empty plate and still says everything that matters, which is the point of the
+        // head being read off the SAVE rather than off the picture.
+        slotTex[i] = rl.loadTexture(savemod.shotPath(i)) catch null;
+    }
+}
+
+fn unloadShots() void {
+    for (&slotTex) |*t| {
+        if (t.*) |tex| rl.unloadTexture(tex);
+        t.* = null;
+    }
+}
+
+/// Called on the way out of the program, beside `book.unload` and `objview.unload`.
+pub fn unload() void {
+    unloadShots();
+}
+
+/// "2h 14m" — hours and minutes, never seconds. What a slot row is answering is "which of these have I
+/// played", and a number that ticks is not what that question is asking.
+fn playtimeText(secs: f32, buf: []u8) [:0]const u8 {
+    const total: u32 = @intFromFloat(@max(0, secs));
+    const h = total / 3600;
+    const m = (total % 3600) / 60;
+    if (h > 0) return std.fmt.bufPrintZ(buf, "{d}h {d}m", .{ h, m }) catch "?";
+    return std.fmt.bufPrintZ(buf, "{d}m", .{m}) catch "?";
+}
+
 fn mainLabels() [MAIN_COUNT][:0]const u8 {
     var out: [MAIN_COUNT][:0]const u8 = undefined;
     out[MAIN_CONTINUE] = "Continue";
     out[MAIN_OPTIONS] = "Options >";
     out[MAIN_EDITOR] = "Editor";
     out[MAIN_DEBUG] = "Debug";
-    out[MAIN_QUIT] = "Quit";
+    out[MAIN_TITLE] = "Back to Title";
     return out;
 }
 

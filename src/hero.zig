@@ -2194,7 +2194,9 @@ pub const Hero = struct {
         return self.stun != .none;
     }
     /// The bonfire's restock, reachable from a test without running the whole death animation.
-    pub fn respawnForTest(self: *Hero) void {
+    /// **PUT HIM BACK AT HIS SPAWN POINT, CLEAN** — the death's own path, exposed because a NEW GAME needs
+    /// exactly it (`game.beginGame`) and so does the harness. Set `setSpawn` first: this reads it.
+    pub fn respawnNow(self: *Hero) void {
         self.respawn();
     }
 
@@ -2398,6 +2400,12 @@ pub const Hero = struct {
         self.moving = 0;
         self.speed = 0;
         self.speedS = 0;
+        // …AND THE LAST LIFE'S SWING IS NOT DRAWN OVER THIS ONE. Both are in WORLD space, so left to age out
+        // on their own they hang where he was rather than where he is — a ribbon stretched across the map.
+        // Invisible after a death, whose collapse outlasts them both, and the whole of what a NEW GAME sees.
+        self.trail = .{};
+        self.fx = [_]foemod.Particle{.{}} ** FX_N;
+        self.fxHead = 0;
         self.startXfade();
     }
 
@@ -3913,7 +3921,7 @@ test "AN EMPTY QUIVER REFUSES THE SHOT, and it does not bill him for the one tha
     try std.testing.expect(!h.shooting);
     try std.testing.expect(h.stamRefused > 0);
     try std.testing.expectApproxEqAbs(stamBefore, h.stam.cur, 1e-5);
-    h.respawnForTest();
+    h.respawnNow();
     try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.ready());
 }
 
@@ -3969,7 +3977,7 @@ test "A DRY FIRE QUIVER REFUSES, with plain shafts still on his back" {
     try std.testing.expect(!h.shooting and h.stamRefused > 0);
     try std.testing.expectApproxEqAbs(stamBefore, h.stam.cur, 1e-5);
     try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.count(.plain));
-    h.respawnForTest();
+    h.respawnNow();
     try std.testing.expectEqual(combat.FIRE_ARROWS_MAX, h.quiver.count(.fire));
     try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.count(.plain));
 }
@@ -4032,7 +4040,7 @@ test "THE AIM BLEND EASES DOWN THROUGH A STAGGER, exactly as the guard's does" {
     try std.testing.expectEqual(@as(f32, 0), s.aimB);
     var r = testHero();
     r.aimB = 1;
-    r.respawnForTest();
+    r.respawnNow();
     try std.testing.expectEqual(@as(f32, 0), r.aimB);
 }
 

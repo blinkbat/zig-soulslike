@@ -513,6 +513,9 @@ pub const Editor = struct {
     radius: f32 = 6.0,
     /// HOW STRONGLY A SOIL STROKE COVERS.
     soilOpacity: f32 = 1.0,
+    /// …AND HOW IT ENDS. A brush setting beside the radius and the opacity, not a property of the material,
+    /// so the same stone lays a tiled courtyard in one stroke and a torn scree in the next.
+    brushEdge: wf.Edge = .natural,
     snap: bool = false,
 
     sel: ?usize = null, // selected op
@@ -1297,21 +1300,21 @@ pub const Editor = struct {
                                 self.heightStroke = true;
                             }
                         },
-                        .water => if (m.paintWater(g.x, g.z, self.radius, true)) {
+                        .water => if (m.paintWater(g.x, g.z, self.radius, true, self.brushEdge)) {
                             env.uploadWater(m);
                             self.wetStroke = true;
                         },
                         .erase => {
                             // Opacity is not passed: an eraser clears outright (see `paintSoil`).
-                            if (m.paintSoil(g.x, g.z, self.radius, .none, 1)) env.uploadSoil(m);
-                            if (m.paintWater(g.x, g.z, self.radius, false)) {
+                            if (m.paintSoil(g.x, g.z, self.radius, .none, 1, null)) env.uploadSoil(m);
+                            if (m.paintWater(g.x, g.z, self.radius, false, null)) {
                                 env.uploadWater(m);
                                 self.wetStroke = true;
                             }
                         },
                         else => {
                             const id: wf.Soil = @enumFromInt(self.brushIdx() - GROUND_SOIL_0 + 1);
-                            if (m.paintSoil(g.x, g.z, self.radius, id, self.soilOpacity)) env.uploadSoil(m);
+                            if (m.paintSoil(g.x, g.z, self.radius, id, self.soilOpacity, self.brushEdge)) env.uploadSoil(m);
                         },
                     }
                 }
@@ -2391,6 +2394,33 @@ const RING_N_MAX: i32 = 64;
 const LEAN_LIM: f32 = 40;
 
 /// ONE row pitch for every stacked row in the chrome.
+/// WHAT EACH EDGE SHAPE IS FOR, said in the thing you hover. The names alone do not separate `frayed` from
+/// `natural` or `blend` from either, and a picker of eight words nobody can tell apart is one button.
+fn edgeTip(e: wf.Edge, wet: bool) [:0]const u8 {
+    // THE SAME EIGHT NAMES ANSWER TWO DIFFERENT QUESTIONS. A tooltip about masonry on the water brush is
+    // worse than none: the shape is real either way, but what it is FOR is not the same thing at all.
+    if (wet) return switch (e) {
+        .blend => "A margin you cannot find the edge of. Metres of ground that is neither",
+        .natural => "What a lake does on its own. A slow wander either side of the line",
+        .frayed => "Quicker, shallower. Reeds and shallows picking at the bank",
+        .jagged => "A torn rocky shore, deep and fast. Bays and bites, and it does not soak",
+        .straight => "The line exactly where you painted it, and dry to the edge. A built bank",
+        .tiled => "The line taken to the grid. A dock, a harbour wall",
+        .scallop => "Regular bays. A beach rather than a bank",
+        .speckle => "A bog: the fringe breaks into separate pools. The ONE shape allowed to disconnect water",
+    };
+    return switch (e) {
+        .blend => "No line at all. One material dissolves into the next over metres",
+        .natural => "A soft boundary that wanders on its own. Grass into dirt",
+        .frayed => "A light, quick wander, still soft. Turf creeping into gravel",
+        .jagged => "Deep, quick and CUT. A torn line: broken flags, the lip of a scree",
+        .straight => "Cut exactly where you painted it. No wander",
+        .tiled => "Cut and snapped to the grid, so every edge runs on an axis. Laid masonry",
+        .scallop => "A deliberate repeating wave instead of noise. A laid border, a tide line",
+        .speckle => "Breaks into detached flecks before it ends. Moss stippling over stone",
+    };
+}
+
 const ROW_H: i32 = ui.ROW_H;
 /// Extra drop under a slider, which draws its bar BELOW its label and so is taller than a row.
 const SLIDER_DROP: i32 = 20;
@@ -2692,6 +2722,25 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         if (!sculpting and !wet) {
             _ = ui.slider(ctx, x, y, w, "opacity", &ed.soilOpacity, 0, 1);
             y += ROW_H + SLIDER_DROP;
+        }
+        // **HOW THE STROKE ENDS** — a brush setting, so the same material lays a tiled courtyard and a torn
+        // scree without being two materials, and the same water is a built dock here and a bog there. Two
+        // rows of four rather than a cycling row: eight shapes you have to press through one at a time is
+        // eight presses to compare two of them. SHARED BY BOTH BRUSHES — the eight names ask the same eight
+        // questions of a floor and of a coastline, and `env.coastWarp` is where a shore answers them.
+        if (!sculpting) {
+            hud.mono(if (wet) "coast" else "edge", x, y, hud.MONO, ui.LABEL);
+            y += ROW_H;
+            const EDGE_COLS = 4;
+            const cellW = @divTrunc(w - (EDGE_COLS - 1) * 4, EDGE_COLS);
+            for (0..wf.Edge.N) |i| {
+                const e: wf.Edge = @enumFromInt(i);
+                const col: i32 = @intCast(i % EDGE_COLS);
+                const row: i32 = @intCast(i / EDGE_COLS);
+                const r = ui.rect(x + col * (cellW + 4), y + row * (ROW_H + 4), cellW, ROW_H);
+                if (ui.buttonTip(ctx, r, e.label(), hud.MONO, ed.brushEdge == e, edgeTip(e, wet))) ed.brushEdge = e;
+            }
+            y += 2 * (ROW_H + 4) + 6;
         }
         if (sculpting) {
             _ = ui.slider(ctx, x, y, w, "strength", &ed.sculptRate, 0.5, 12);

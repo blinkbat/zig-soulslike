@@ -35,6 +35,7 @@ const wolfmod = @import("wolf.zig");
 const trigmod = @import("trigger.zig");
 const dialogmod = @import("dialog.zig");
 const item = @import("item.zig");
+const savemod = @import("save.zig"); // THE SLOT — one file, written by sitting down at a fire
 const sfx = @import("audio.zig");
 
 const v3 = mathx.v3;
@@ -158,6 +159,17 @@ const LOCK_PITCH_NEAR: f32 = 0.5; // metres of horizontal separation under which
 /// OFF ITS OWN FEET (`topWorld`), which keeps a kobold standing on a rise a kobold — and lets a leechfly that
 /// has CLIMBED through it while a low one stays framed flat, since that is the one answer that has to move.
 const LOCK_TILT_TALL: f32 = 3.2; // over the shade's 2.4 and under the ogre's 4.4
+/// …and fully earned by here. A RAMP rather than a threshold so nothing SNAPS as a creature grows through
+/// it — which is not hypothetical: the leechfly climbs through this height every time it is threatened, and
+/// a step change in the target pitch is a step the rig's ease then has to chase.
+const LOCK_TILT_TALLER: f32 = 3.6;
+/// **AND CLOSENESS EARNS IT TOO** (owner: only bring the camera low for a tall enemy when it is NEARBY; if
+/// it is not close enough for the lock to be dramatically high, the lock behaves like any other). Height
+/// alone was the whole gate, so an ogre across the field still pulled the lens up off the ground it was
+/// standing on — and at that range the tilt buys nothing, because a creature far enough away is framed whole
+/// from the default pitch whatever it is standing on. Inside `NEAR` the whole tilt, past `FAR` none of it.
+const LOCK_TILT_NEAR: f32 = 7.0;
+const LOCK_TILT_FAR: f32 = 17.0;
 fn lockPitch(g: *const Game, r: FoeRef) f32 {
     const mark = foeLockPoint(g, r);
     const eye = g.rig.cam.position;
@@ -165,10 +177,19 @@ fn lockPitch(g: *const Game, r: FoeRef) f32 {
     if (flat < LOCK_PITCH_NEAR) return LOCK_PITCH;
     const want = std.math.atan2(eye.y - mark.y, flat);
     if (want >= LOCK_PITCH) return want; // tipping DOWN onto it, or already at the default framing
-    return if (foeTall(g, r)) want else LOCK_PITCH;
+    // THE UP HALF IS A SHARE, NOT A SWITCH. Blended toward the default framing rather than gated on/off, so
+    // walking in on a giant brings the lens up over the last ten metres instead of at one step of it.
+    return mathx.lerpF(LOCK_PITCH, want, lockTiltShare(g, r, flat));
 }
-fn foeTall(g: *const Game, r: FoeRef) bool {
-    return foeTopWorld(g, r).y - foePos(g, r).y >= LOCK_TILT_TALL;
+
+/// HOW MUCH OF THE UP-TILT THIS TARGET HAS EARNED, 0..1 — the PRODUCT of the two, because either one alone
+/// is a reason not to tilt: a short thing never earns it however close, and a giant does not earn it from
+/// across the map. Both are smoothsteps, so neither can step, and the rig's own ease damps what is left.
+fn lockTiltShare(g: *const Game, r: FoeRef, flat: f32) f32 {
+    const rise = foeTopWorld(g, r).y - foePos(g, r).y;
+    const tall = mathx.smoothstep(LOCK_TILT_TALL, LOCK_TILT_TALLER, rise);
+    const near = 1.0 - mathx.smoothstep(LOCK_TILT_NEAR, LOCK_TILT_FAR, flat);
+    return tall * near;
 }
 const LOCK_FLICK = 0.65; // right-stick |x| past this cycles to the next target
 /// …and the MOUSE's own flick, in pixels of travel in one frame — the same gesture on the other device.
@@ -266,6 +287,17 @@ pub const Game = struct {
     rumble: rumblemod.Rumble = .{}, // controller vibration, keyed to combat beats
     deathFade: f32 = 0, // post-respawn fade-from-black seconds remaining (armed while dead)
     probe: LookProbe = .{},
+    /// WHAT IS ON THE SHELF — one head per slot, or null. Cached rather than surveyed per frame, and it
+    /// cannot go stale: writing a file is the only thing in the game that puts anything on it.
+    shelf: savemod.Shelf = .{},
+    /// **WHICH SLOT IS BEING PLAYED** (ER's own): decided once, when the character is started, and a fire
+    /// writes over it without asking. There is no Save row anywhere, so this is the only thing that says
+    /// where a rest lands.
+    slot: usize = 0,
+    /// A THUMBNAIL OWED. `rest.justEntered` fires at the BOTTOM of the fade-in, where the screen is black,
+    /// so the grab is deferred to a frame where there is a picture (`SHOT_CLEAR`) and taken before any of
+    /// the fire's own chrome goes down over it.
+    shotOwed: bool = false,
     /// The REAL frame time the DRAWING layer needs — the occluder fade's clock, and nothing else, since a
     /// fade paced off the time-scaled dt would crawl in slow motion. `--shot` parks it at a settle-size
     /// step (`shots.SETTLE_DT`): a still frame cannot show a fade, so a capture wants its END state.
@@ -284,7 +316,7 @@ pub const Game = struct {
         g.sky = gfx.Sky.init();
         g.vignette = gfx.Vignette.init();
         g.retro = gfx.Retro.init(rl.getScreenWidth(), rl.getScreenHeight());
-        g.menu = .{}; // opens on the main screen: Continue / Debug / Quit
+        g.menu = .{}; // opens on the BOOT screen: New Game / Load Game / Options / Editor / Quit
         phase(&initTimer, "gfx");
         worldfmt.loadOrPanic(worldfmt.START_MAP, &g.map);
         PLAY_HALF = playHalfOf(g.map.half); // before anything spawns against it
@@ -296,11 +328,6 @@ pub const Game = struct {
         g.env.materialize(&g.map);
         phase(&initTimer, "world");
         g.hero = heromod.Hero.init(g.scene.shader);
-        g.hero.pos = mathx.ground(0, 4); // start just south of the ruin avenue
-        plantActor(g, &g.hero.pos);
-        g.hero.facing = std.math.pi; // facing -Z, into the columns
-        g.hero.setSpawn(g.hero.pos, g.hero.facing); // where a death returns him
-        g.hero.pose();
         phase(&initTimer, "hero");
         g.warren = frogmod.Knot.init(g.scene.shader);
         g.line = archermod.Line.init(g.scene.shader);
@@ -329,14 +356,6 @@ pub const Game = struct {
         g.day = .{};
         g.souls = soulsmod.Souls.init(g.scene.shader);
         phase(&initTimer, "foes");
-        rehomeFoes(g, .blind);
-        g.rest = .{};
-        rehomeChests(g);
-        armScript(g);
-        g.bag = .{};
-        for (STARTING_KIT) |k| g.bag.add(k, 1);
-        g.tree = .{};
-        applyTree(g); // a fresh game and a fully-allocated one size the bars down the one path
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
         g.clumpModel = koboldmod.clumpMesh(g.scene.shader);
         g.crockModel = archermod.crockMesh(g.scene.shader);
@@ -344,16 +363,12 @@ pub const Game = struct {
         g.fireArrowModel = archermod.fireArrowMesh(g.scene.shader);
         g.boltModel = heromod.boltMesh(g.scene.shader);
         g.wispModel = shademod.wispMesh(g.scene.shader);
-        g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
         g.shafts = [_]archermod.Arrow{.{}} ** MAX_SHAFTS;
         phase(&initTimer, "pools");
         g.editor = .{};
         phase(&initTimer, "editor");
         g.folkGen = g.editor.mapGen;
-        g.lock = null;
-        g.lockBlind = 0;
-        g.hook = null;
         g.rumble = .{};
         g.deathFade = 0;
         g.restRetro = [_]f32{0} ** gfx.RETRO_COUNT;
@@ -362,8 +377,114 @@ pub const Game = struct {
         g.npcPos = [_]rl.Vector3{mathx.zero3} ** npcmod.CAP;
         g.nNpcPos = 0;
         g.drawDt = 1.0 / 60.0;
+        g.shelf = savemod.survey(saveMap(g));
+        g.slot = 0;
+        g.shotOwed = false;
+        // THE WHOLE OF A FRESH CHARACTER, down the SAME path New Game takes. As a second list here it is the
+        // copy nobody plays through — everything up to now is meshes and materials, and this is the game.
+        beginGame(g);
     }
 };
+
+/// THE BOOT SCREEN'S CAMERA. A full turn in about ninety seconds — slow enough that no single frame of it
+/// reads as motion, which is the whole point of a title backdrop. The stand-off and the tilt are a LOOK, not
+/// the rig's own defaults: they exist to get the man's back out of the middle of the card. The world clock is
+/// HELD here like it is under any menu, so the light does not move while it turns.
+/// HOW FAR OFF BLACK THE FADE HAS TO BE before the slot's thumbnail is worth taking. Read off the fire's own
+/// fade rather than off a second clock beside it (the derived-clock law) — one number, and it is "is there a
+/// picture yet" and nothing else.
+const SHOT_CLEAR: f32 = 0.02;
+
+const BOOT_SPIN: f32 = 0.07; // radians a second
+pub const BOOT_PITCH: f32 = 0.34; // …the two the HARNESS has to match, or it photographs a framing nobody sees
+pub const BOOT_DIST: f32 = 7.2;
+
+/// A WORLD FROM THE TOP: the hero at the start facing the columns, an empty bag but for the kit, no nodes
+/// taken, the script unarmed, every box shut, no drop on the ground and the clock back at its first hour.
+/// `Game.init` and New Game both come through here, so there is one answer to "what is a fresh game".
+///
+/// It does NOT touch a mesh, a material or a model — those are built once and outlive any number of games.
+fn beginGame(g: *Game) void {
+    var start = mathx.ground(0, 4); // start just south of the ruin avenue
+    plantActor(g, &start);
+    g.hero.setSpawn(start, std.math.pi); // facing -Z, into the columns; and where a death returns him
+    g.hero.souls = .{};
+    g.hero.arm = .sword;
+    g.hero.off = .shield;
+    g.hero.spell = .bolt;
+    g.hero.quick = .{};
+    g.hero.quiver = .{};
+    g.hero.flasks = .{};
+    g.day = .{};
+    g.bag = .{};
+    for (STARTING_KIT) |k| g.bag.add(k, 1);
+    g.tree = .{};
+    applyTree(g); // the sheet and the perks FIRST: the respawn below sizes his bars off them
+    // **AND THEN THROUGH THE HERO'S OWN RESPAWN**, which is what puts him at the spawn point in a CLEAN
+    // state — not `pos = …` and a hope. Until `Back to Title` existed this only ever ran on a hero who was
+    // already fresh, so a plain move was enough; from a running game it has to answer a man who may be
+    // mid-swing, mid-roll, in the air, staggered or three seconds into a death, and every one of those
+    // fields would have survived into the new character.
+    g.hero.respawnNow();
+    rehomeFoes(g, .blind);
+    g.rest = .{};
+    rehomeChests(g);
+    armScript(g);
+    // …AND EVERYTHING ELSE STILL STANDING IN THE OLD WORLD. Each of these was assigned once in `init` and
+    // never again, which was correct while this ran only at startup: arrows still in flight, a spirit the
+    // bell had called, a fade left armed by a death, and the lock/hook the last fight was holding.
+    clearQuivers(g);
+    g.pack.clear(); // NOT `= .{}` — that struct holds the wolf's meshes, and the reset made it invisible
+    g.deathFade = 0;
+    g.restRetro = [_]f32{0} ** gfx.RETRO_COUNT;
+    g.lock = null;
+    g.lockBlind = 0;
+    g.hook = null;
+    g.shotOwed = false; // a picture owed by the fire of a game that no longer exists
+    g.hero.pose();
+    g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
+    applyHour(g);
+}
+
+/// THE SLOT'S VIEW OF THE GAME, gathered in ONE place — `bookView`'s shape, for `bookView`'s reason: the
+/// save file owns no game state and reaches for nothing, it is handed exactly what it reads and writes.
+/// WHICH WORLD A SAVE BELONGS TO, named ONCE. The shelf and the load have to agree on it or a slot lists as
+/// loadable and then refuses — and as `worldfmt.START_MAP` written at each of the three call sites, they
+/// agreed only by everybody remembering to change all three.
+fn saveMap(g: *const Game) []const u8 {
+    _ = g; // one map today; the parameter is where a per-`Game` current map goes when there is more than one
+    return worldfmt.START_MAP;
+}
+
+fn slotOf(g: *Game) savemod.Slot {
+    return .{
+        .hero = &g.hero,
+        .bag = &g.bag,
+        .tree = &g.tree,
+        .souls = &g.souls,
+        .day = &g.day,
+        .trig = &g.trig,
+        .chests = &g.chests,
+        .map = saveMap(g),
+    };
+}
+
+/// **A LOAD LANDS IN A FRESH WORLD AND THEN OVERWRITES IT.** Every array the file does not mention is
+/// therefore at exactly what a new game has rather than at whatever the last one left, and a file that turns
+/// out to be unreadable leaves a startable world behind rather than half of two.
+///
+/// The order is the whole of it: `beginGame` is what sizes `chests.n` off the map and rebuilds the trigger
+/// ORDER, both of which the file writes into and neither of which it carries.
+fn loadGame(g: *Game, i: usize) bool {
+    beginGame(g);
+    if (!savemod.read(i, slotOf(g))) return false;
+    applyTree(g); // the sheet, the resists and all three bars re-derived off the nodes that just came in
+    plantActor(g, &g.hero.pos); // …and back onto the ground, in case the map has been sculpted under him
+    g.hero.pose();
+    g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
+    applyHour(g); // the loaded hour, into both shaders and the shadow camera, before anything draws
+    return true;
+}
 
 /// The foe groups written down ONCE, including what the actor-vs-actor settle needs (`collideActors`). As six
 /// hand-written call sites, a seventh group drew, spawned, locked and took hits — and was the only thing in the
@@ -798,6 +919,36 @@ test "ONLY SOMETHING THAT TOWERS TILTS THE LENS UP — everything else is framed
     try std.testing.expect(high >= LOCK_TILT_TALL);
 }
 
+test "A GIANT ONLY BRINGS THE LENS DOWN WHEN IT IS ON TOP OF YOU, and it arrives smoothly" {
+    // Owner's rule: height alone used to be the whole gate, so an ogre across the field pulled the camera
+    // up off the ground. The share is what says how much of the tilt a target has earned — and because it
+    // is the PRODUCT of two smoothsteps, neither closeness nor height can step.
+    const OGRE: f32 = 4.4; // comfortably past LOCK_TILT_TALLER
+    const share = struct {
+        fn at(rise: f32, flat: f32) f32 {
+            const tall = mathx.smoothstep(LOCK_TILT_TALL, LOCK_TILT_TALLER, rise);
+            const near = 1.0 - mathx.smoothstep(LOCK_TILT_NEAR, LOCK_TILT_FAR, flat);
+            return tall * near;
+        }
+    }.at;
+
+    try std.testing.expectApproxEqAbs(@as(f32, 1), share(OGRE, LOCK_TILT_NEAR - 1), 1e-4); // on top of you
+    try std.testing.expectApproxEqAbs(@as(f32, 0), share(OGRE, LOCK_TILT_FAR + 1), 1e-4); // across the field
+    // …and NOTHING SHORT earns it at any range, which is the half that was already right.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), share(2.4, 1.0), 1e-4);
+
+    // SMOOTH: no step bigger than a small fraction anywhere along the walk in, and it only ever increases.
+    var prev = share(OGRE, LOCK_TILT_FAR + 4);
+    var d = LOCK_TILT_FAR + 4;
+    while (d > 0) : (d -= 0.05) {
+        const s = share(OGRE, d);
+        try std.testing.expect(s >= prev - 1e-4); // monotone: closing never gives the tilt BACK
+        try std.testing.expect(s - prev < 0.05); // and never arrives in one jump
+        prev = s;
+    }
+    try std.testing.expectApproxEqAbs(@as(f32, 1), prev, 1e-4);
+}
+
 fn groundActor(g: *const Game, pos: *rl.Vector3, dt: f32) void {
     const want = g.env.groundAt(pos.x, pos.z);
     const d = want - pos.y;
@@ -1197,6 +1348,19 @@ pub fn endRestForShot(g: *Game) void {
     g.rest.reset(fires[0..g.env.restSites(&fires)]);
     rehomeFoes(g, .blind);
 }
+/// **THE SLOT'S PICTURE, if one is owed and there is finally something to photograph.** Called from the
+/// loop's rest branch AFTER the world is down and BEFORE any chrome goes over it, so what the picker shows
+/// is him at the fire rather than a menu — and from the harness at that same point, which is the only thing
+/// that proves the grab works at all, since `--shot` never runs the loop.
+///
+/// It is a POST-DRAW gate rather than a decision taken at `justEntered`, because that edge is at the bottom
+/// of the fade-in where the screen is black: what is owed and when it can be paid are two different frames.
+pub fn takeSlotShot(g: *Game) void {
+    if (!g.shotOwed or g.rest.fade() > SHOT_CLEAR) return;
+    g.shotOwed = false;
+    _ = savemod.writeShot(g.slot);
+}
+
 /// THE FIRE'S OWN CHROME, for the harness — it is drawn in the loop's rest branch, which `--shot` never runs.
 pub fn drawBonfireForShot(g: *Game) void {
     restmod.drawScreen(&g.rest, &g.tree, g.hero.souls.total);
@@ -1641,6 +1805,18 @@ fn tickRest(g: *Game, dt: f32) void {
         var at = s.pos;
         plantActor(g, &at);
         g.hero.sit(true, at, s.facing);
+        // **SITTING DOWN IS THE SAVE, and this is the only line in the game that writes one.** It goes into
+        // whichever slot is being played (`g.slot`, ER's own rule), and AFTER `sit`, never before: `sit`
+        // runs `makeWhole`, so the file is written by a character whose bars, flasks and quivers are
+        // already full — which is why `save.Data` does not carry any of them. Silent on success, since the
+        // fire's own screen is already saying where you are; a FAILURE says so on the console, because a
+        // save that quietly did not happen is the worst thing this file can do.
+        if (savemod.write(g.slot, slotOf(g))) {
+            g.shelf = savemod.survey(saveMap(g));
+            g.shotOwed = true; // …the picture is owed, and taken once there is one to take
+        } else {
+            std.debug.print("SAVE FAILED: could not write {s}\n", .{savemod.path(g.slot)});
+        }
     }
     if (g.rest.justLeft) {
         g.retro.values = g.restRetro;
@@ -2573,6 +2749,7 @@ pub fn run(mode: Mode) void {
     defer if (!shot) sfx.deinit();
     defer objviewmod.unload();
     defer bookmod.unload();
+    defer menumod.unload(); // the slot picker's three thumbnails, if it was the screen we went out on
 
     const alloc = std.heap.c_allocator;
     const g = alloc.create(Game) catch return;
@@ -2670,13 +2847,17 @@ pub fn run(mode: Mode) void {
                     // to draw the editor again to service it.
                     g.editor.flushRebuild(&g.map, &g.env);
                     g.editor.on = false;
-                    g.menu.screen = .main;
+                    // BACK TO WHICHEVER CARD OPENED IT. Entered off the boot screen there is no world to
+                    // pause, and a hard `.main` here dropped you into the pause menu of a game nobody had
+                    // started — Continue on it then closed onto an empty field.
+                    g.menu.screen = g.menu.home;
                     rl.hideCursor(); // back to the gameplay rule: the mouse IS the camera
                     armScript(g);
                 },
                 .playtest => {
                     g.editor.flushRebuild(&g.map, &g.env);
                     g.editor.on = false;
+                    g.menu.started(); // F5 IS a started world, whichever card the editor was opened from
                     rl.hideCursor();
                     armScript(g); // the world he is about to test is a FRESH one: no switch already thrown
                     g.hero.pos = mathx.ground(g.editor.cam.target.x, g.editor.cam.target.z);
@@ -2713,12 +2894,34 @@ pub fn run(mode: Mode) void {
 
         g.hero.held = g.menu.isOpen();
         if (g.menu.isOpen()) {
-            switch (g.menu.update(&g.retro, &g.day, rawDt, bookView(g))) {
+            switch (g.menu.update(&g.retro, &g.day, rawDt, bookView(g), &g.shelf)) {
                 .quit => break,
                 .editor => {
                     // Drop the lock on the way in: the reticle rides a FoeRef into groups the editor re-homes from the map every frame, so a held lock survives into a world where its index means something else.
                     g.lock = null;
                     g.editor.enter(g.hero.pos);
+                },
+                // BACK TO THE TITLE. Nothing is torn down and nothing is written: the character is saved as
+                // of the last fire, which is the whole of what this game promises, and the world standing
+                // behind the card is as good a backdrop as any until New or Load replaces it.
+                .toTitle => g.menu.toTitle(),
+                .newGame => |i| {
+                    beginGame(g);
+                    g.slot = i;
+                    g.menu.started();
+                },
+                // A LOAD THAT FAILS LEAVES YOU ON THE BOOT SCREEN. The row is greyed unless a file is
+                // there, so getting here means one was and it was unreadable — a version we cannot honestly
+                // read, another map's, or a truncated write. Dropping into the world anyway is the one
+                // outcome worth refusing: it would be a fresh character wearing a loaded game's name.
+                .loadGame => |i| {
+                    if (loadGame(g, i)) {
+                        g.slot = i;
+                        g.menu.started();
+                    } else {
+                        g.shelf.head[i] = null; // …and the row goes dead, so it cannot be pressed again
+                        std.debug.print("LOAD FAILED: {s} is not a save this build can read\n", .{savemod.path(i)});
+                    }
                 },
                 // AN ITEM USED FROM THE BAG, or a swap made in the character book.
                 .use => |k| useItem(g, k),
@@ -2731,13 +2934,30 @@ pub fn run(mode: Mode) void {
             g.hero.update(rawDt, 0, 0, null);
             g.hero.pose();
             g.rig.tickShake(rawDt);
+            // THE BOOT SCREEN'S CAMERA WALKS ROUND HIM, standing off further and looking down a little: the
+            // over-the-shoulder rig is framed for a man you are STEERING, and behind a title card it puts
+            // the back of his head across half the picture. Driven off the rig's own `orbit` rather than by
+            // writing `yaw`, so the wrap and the pitch clamp are the ones every other camera obeys.
+            //
+            // ASKED AFTER `update`, NEVER BEFORE IT: `dist` and `pitch` are the PLAYER's zoom and tilt and
+            // nothing in play resets them, so stamping the title framing on the frame New Game was pressed
+            // hands the new character a camera seven metres back that he never asked for and cannot undo
+            // except by scrolling. On the frame a world starts this is already false and the fresh rig
+            // `beginGame` just built is the one that survives.
+            const booting = g.menu.booting();
+            if (booting) {
+                g.rig.orbit(BOOT_SPIN * rawDt, 0);
+                g.rig.pitch = BOOT_PITCH;
+                g.rig.dist = BOOT_DIST;
+            }
             g.rig.follow(g.hero.shoulderPoint());
             g.rumble.update(rawDt, false); // motors silent while paused (envelopes still decay)
             // THE WIND KEEPS BLOWING UNDER THE PAUSE CARD.
             sfx.ambience(rawDt);
             drawScene(g);
-            hud(g, rawDt);
-            g.menu.draw(&g.retro, &g.day, bookView(g), .{ .hero = &g.hero, .scene = &g.scene });
+            // …BUT NOT THE HUD BEHIND THE BOOT SCREEN: there is no character yet whose bars those would be.
+            if (!booting) hud(g, rawDt);
+            g.menu.draw(&g.retro, &g.day, bookView(g), .{ .hero = &g.hero, .scene = &g.scene }, &g.shelf);
             rl.endDrawing();
             continue;
         }
@@ -2750,6 +2970,7 @@ pub fn run(mode: Mode) void {
             sfx.ambience(rawDt);
             sfx.tickStreams();
             drawScene(g);
+            takeSlotShot(g);
             hud(g, rawDt);
             restmod.drawScreen(&g.rest, &g.tree, g.hero.souls.total);
             rl.endDrawing();

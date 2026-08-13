@@ -21,6 +21,7 @@ const shademod = @import("shade.zig");
 const leechmod = @import("leechfly.zig");
 const rootedmod = @import("rooted.zig");
 const shroommod = @import("shroom.zig");
+const knightmod = @import("knight.zig");
 
 const v3 = mathx.v3;
 const Kind = props.Kind;
@@ -234,6 +235,7 @@ const CharSet = struct {
     swarm: leechmod.Swarm,
     grove: rootedmod.Grove,
     cluster: shroommod.Cluster,
+    vigil: knightmod.Vigil,
 };
 var charSet: ?CharSet = null;
 
@@ -250,6 +252,7 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
             .swarm = leechmod.Swarm.init(scene.shader),
             .grove = rootedmod.Grove.init(scene.shader),
             .cluster = shroommod.Cluster.init(scene.shader),
+            .vigil = knightmod.Vigil.init(scene.shader),
         };
         var cs = &charSet.?;
         cs.warren.n = 0;
@@ -262,6 +265,7 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
         cs.swarm.n = 0;
         cs.grove.n = 0;
         cs.cluster.n = 0;
+        cs.vigil.n = 0;
     }
     return &charSet.?;
 }
@@ -281,6 +285,7 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .leechfly => .{ .top = 2.9, .bound = 1.8 },
         .rooted => .{ .top = 7.2, .bound = 3.6 },
         .shroom => .{ .top = 1.2, .bound = 1.0 },
+        .bone_knight => .{ .top = 5.4, .bound = 3.2 },
     };
 }
 
@@ -348,6 +353,11 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.cluster.n = 1;
             cs.cluster.live()[0] = shroommod.Shroom.spawn(mathx.zero3, 0, 1.0, seed);
             cs.cluster.draw(scene);
+        },
+        .bone_knight => {
+            cs.vigil.n = 1;
+            cs.vigil.live()[0] = knightmod.Knight.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.vigil.draw(scene);
         },
     }
 }

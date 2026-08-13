@@ -178,6 +178,13 @@ pub const AGGRO_R = 16.0; // it notices you from here
 const HOME_R = 1.5;
 const TURN_RATE = 5.2; // rad/s — quicker than the ogre, slower than the hero
 const WALK_SPEED = heromod.WALK_SPEED;
+/// …and what the BERSERKER closes at, which is the hero's own run scaled by his spec (`approachSpeed`). At
+/// 1.22 of it that is 4.15 m/s: past the hero's run (3.4) so backing off on foot does not shake him, and well
+/// under the sprint (5.1) so the sprint still does. The escape stays real; the stroll does not.
+const RUN_SPEED = heromod.RUN_SPEED;
+/// Metres outside his own reach the charge drops back to a walk — one stride, against the warrior's three.
+/// A rusher that walks in from further out is a rusher you get a free step away from.
+const ZERK_WALK_IN = 0.9;
 const DEATH_DUR = 1.0; // yelp and fold
 const DISS_DUR = 0.85;
 /// …and the cloud, thin and close: the smallest body on the field, and up to 72 of them can be dying at once.
@@ -524,6 +531,7 @@ pub const Kobold = struct {
         var act: Act = .none;
         var movedDist: f32 = 0;
         var moveYaw: ?f32 = null;
+        var moveSpeed: f32 = 0; // …and the speed it moved AT, so the legs are told one number, not a second call
 
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
         foe.tickParticles(&self.parts, dt, self.pos.y);
@@ -538,7 +546,8 @@ pub const Kobold = struct {
             },
             .approach, .reposition => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
-                const moved = WALK_SPEED * spec(self.role).speed * dt;
+                moveSpeed = self.approachSpeed(d);
+                const moved = moveSpeed * dt;
                 // …ROUND WHAT IS IN THE WAY (`foe.Nav`), and at the STEP rather than the facing: this one
                 // already travels on a committed vector while it keeps its eyes on the hero, so the detour is
                 // one more direction its own gait reads off `moveYaw`.
@@ -613,11 +622,36 @@ pub const Kobold = struct {
             .dead => foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE),
         }
 
-        const gaitSpeed: f32 = if (movedDist > 0) WALK_SPEED * spec(self.role).speed else 0;
+        // …AND THE LEGS ARE TOLD THE SAME NUMBER THE BODY MOVED AT. `advanceGait` picks walk/run/sprint off
+        // this, so a berserker carried across the ground at his charge while the gait was handed a walk is a
+        // creature skating — the one thing the distance-driven phase exists to prevent.
+        const gaitSpeed: f32 = if (movedDist > 0) moveSpeed else 0;
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, gaitSpeed, moveYaw, self.facing);
         self.pose();
         self.tryHit(blade);
         return act;
+    }
+
+    /// **THE BERSERKER RUNS** (owner: he should always run unless he is very close to you, and faster than the
+    /// other skels too). He was the one melee rusher on the field walking in at `WALK_SPEED * 1.22` — 2.07 m/s
+    /// against a shieldman who CHARGES at 2.92 and a greatsword at 2.52, so the thing whose entire design is
+    /// getting in your face was the slowest skeleton on the field and could be strolled away from. It is the
+    /// warrior's own rule (`warrior.approachSpeed`), which is why it is that shape and not a new one: run at
+    /// distance, walk the last stride in.
+    ///
+    /// The other two roles keep their walk on purpose — a priest and a slinger are kiters, and `wantMin`/
+    /// `wantMax` already say they are not trying to reach you.
+    pub fn approachSpeed(self: *const Kobold, dist: f32) f32 {
+        const base = spec(self.role).speed;
+        // Out past his own world he is drifting HOME rather than charging, and `decide` branches on exactly
+        // this number to send him there — so the walk is asked of the same `AGGRO_R` and not a second copy.
+        if (self.role != .berserker or dist > AGGRO_R or dist <= self.walkInR()) return WALK_SPEED * base;
+        return RUN_SPEED * base;
+    }
+    /// Where the charge ends. TIGHT, because "very close" is the owner's own word for it and this creature's
+    /// reach is a hand's length: his own chop plus a stride, not the warrior's three.
+    fn walkInR(self: *const Kobold) f32 {
+        return ZERK_REACH * self.scale + foe.HERO_REACH + ZERK_WALK_IN * self.scale;
     }
 
     fn enter(self: *Kobold, s: State) void {

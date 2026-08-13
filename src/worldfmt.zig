@@ -199,7 +199,7 @@ pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 /// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at
 /// comptime, and each `roleOf` reads its own entries as a CONTIGUOUS RUN off the first of them — so
 /// inserting a kind in the middle silently renumbers all of it.
-pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom };
+pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight };
 
 pub fn foeName(k: FoeKind) [:0]const u8 {
     return switch (k) {
@@ -218,6 +218,7 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
         .leechfly => "Leechfly",
         .rooted => "The Rooted",
         .shroom => "Sporeling",
+        .bone_knight => "Bone Knight",
     };
 }
 

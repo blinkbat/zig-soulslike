@@ -24,6 +24,7 @@ const koboldmod = @import("kobold.zig");
 const broodmod = @import("brood.zig");
 const warriormod = @import("warrior.zig");
 const rootedmod = @import("rooted.zig");
+const knightmod = @import("knight.zig");
 const leechmod = @import("leechfly.zig");
 const shademod = @import("shade.zig");
 const chestmod = @import("chest.zig");
@@ -76,7 +77,9 @@ const SHAKE_HURT_HEAVY = 0.62;
 const SHAKE_BLOCK = 0.40;
 const SHAKE_PARRY = 0.56;
 const SHAKE_GUARD_BREAK = 0.72;
-const BLOW_HEAVIEST = ogremod.SLAM_HIT.raw();
+/// THE HEAVIEST THING IN THE GAME, which is what a block's felt weight is graded against. A `@max` rather
+/// than one creature's name: the ogre's slam held it until five metres of iron started falling over.
+const BLOW_HEAVIEST = @max(ogremod.SLAM_HIT.raw(), knightmod.FALL_HIT.raw());
 const BLOCK_FELT_MIN = 0.25;
 const BLOCK_FELT_HEAVY = 0.5;
 const SHAKE_DEATH = 0.85;
@@ -188,6 +191,7 @@ pub const Game = struct {
     muster: warriormod.Muster,
     grove: rootedmod.Grove,
     cluster: shroommod.Cluster,
+    vigil: knightmod.Vigil,
     swarm: leechmod.Swarm,
     haunt: shademod.Haunt,
     chests: chestmod.Chests,
@@ -269,6 +273,7 @@ pub const Game = struct {
         g.muster = warriormod.Muster.init(g.scene.shader);
         g.grove = rootedmod.Grove.init(g.scene.shader);
         g.cluster = shroommod.Cluster.init(g.scene.shader);
+        g.vigil = knightmod.Vigil.init(g.scene.shader);
         g.swarm = leechmod.Swarm.init(g.scene.shader);
         g.haunt = shademod.Haunt.init(g.scene.shader);
         g.chests = chestmod.Chests.init(g.scene.shader);
@@ -411,6 +416,9 @@ const FOE_GROUPS = [_]FoeGroup{
     // A fixture: nothing shoulders it off its spot and it shoulders nothing, because it never moves.
     .{ .field = "grove", .kind = .rooted, .aggro = rootedmod.AGGRO_R, .vsHero = false },
     .{ .field = "cluster", .kind = .shroom, .aggro = shroommod.AGGRO_R },
+    // The ogre's `vsHero`: far too much of him to be walked out of the way. The `vs` list is his own — the
+    // skeletons keep the vigil with him, so they give way to him and he gives way to nothing.
+    .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
 };
 
 /// Is a fight on — the one predicate, and the only thing allowed to answer it. Sight is deliberately NOT
@@ -642,6 +650,8 @@ test "THE MARK RIDES THE BODY, on every creature that has one" {
     try std.testing.expect(markSwing(&ghost, hero) > MIN);
     var cap = shroommod.Shroom.spawn(mathx.zero3, 0, 1.0, 0.3);
     try std.testing.expect(markSwing(&cap, hero) > MIN);
+    var knight = knightmod.Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    try std.testing.expect(markSwing(&knight, hero) > MIN);
 }
 
 /// Two phases: he LEADS it at a pace it can follow, then he RUNS. `markSight` is stamped every frame — a
@@ -664,6 +674,69 @@ fn chase(f: anytype, lead: f32, secs: f32) Chase {
 
 // Before this measured how far from its POST a creature got, every one ran to 2–5 times its own tether
 // (the ogre 33.5 m on a 24 m leash, the shieldman 89.6 m on 26, the kobold 82.1 m on 22).
+test "A SPIRIT'S JAWS MUST REACH THE BOTTOM OF WHAT IT IS SET ON — one sphere at a giant's chest is out of a wolf's world" {
+    // Owner: the wolf struggles to get in range, things are too tall. `foe.reached` tests the biter's segment
+    // against ONE hurt SPHERE at `centerWorld()`, so what decides whether a low animal can touch a tall
+    // creature is entirely where the bottom of that sphere sits. Measured against the jaw's own height rather
+    // than argued: the wolf's teeth are the blade, and they ride at wolf height whatever it is biting.
+    var w = wolfmod.Wolf.spawn(mathx.zero3, 0);
+    w.pose();
+    const jaw = w.jawPoint().y - w.pos.y + 0.20 * w.scale; // the teeth, plus the blade's own radius
+    var giant = ogremod.Ogre.spawn(mathx.zero3, 0, 1.0, 0.3);
+    var snag = rootedmod.Rooted.spawn(mathx.zero3, 0, 1.0, 0.3);
+    var plate = knightmod.Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    std.debug.print("\n  wolf teeth reach {d:.2} m\n", .{jaw});
+    inline for (.{ .{ "ogre", &giant }, .{ "rooted", &snag }, .{ "knight", &plate } }) |row| {
+        const f = row[1];
+        const floor = f.centerWorld().y - f.pos.y - f.hurtRadius();
+        // …AND THE RANGE GATE IS THE OTHER HALF, which is the one that actually bites. `BITE_R` is a FLAT
+        // number measured centre-to-centre, but the colliders hold the wolf `bodyR + its own` out — so on
+        // anything broad the closest it can legally stand is already outside the range its bite asks for, and
+        // it circles a creature it can never trigger on.
+        const held = f.bodyR() + w.bodyR();
+        const trigger = wolfmod.triggerR(f.bodyR()); // the gate as `update` actually asks it
+        std.debug.print("  {s}: sphere floor {d:.2} (jaw gap {d:.2}) | held {d:.2} m out, bite triggers at {d:.2}\n", .{
+            row[0], floor, floor - jaw, held, trigger,
+        });
+        try std.testing.expect(floor < jaw); // reachable in HEIGHT — every one of them is
+        // …and the gate must be satisfiable from where the colliders let it stand. This is the half that fails.
+        try std.testing.expect(held < trigger);
+    }
+}
+
+test "THE BERSERKER IS THE FASTEST THING ON FOOT — and he closes at a RUN, not a stroll" {
+    // Owner: the skel berserker should always run unless he is very close to you, and be faster than the
+    // other skels too. He was the SLOWEST of them: a flat `WALK_SPEED * 1.22` = 2.07 m/s against a shieldman
+    // charging at 2.92, so the one creature whose whole design is closing the gap could be walked away from.
+    // Measured across the pair rather than argued, because the two speeds live in different files.
+    const zerk = koboldmod.Kobold.spawnAs(.berserker, mathx.zero3, 0, 1.0, 0.3);
+    const far = koboldmod.AGGRO_R * 0.9; // inside his world: past it he is drifting home, not charging
+    const charge = zerk.approachSpeed(far);
+    std.debug.print("\n  berserker charges at {d:.2} m/s (hero runs {d:.2}, sprints {d:.2})\n", .{
+        charge, heromod.RUN_SPEED, heromod.SPRINT_SPEED,
+    });
+    inline for (.{ warriormod.Role.shieldman, warriormod.Role.greatsword }) |role| {
+        var w = warriormod.Warrior.spawnAs(role, mathx.zero3, 0, 1.0, 0.3);
+        const skel = w.approachSpeed(warriormod.AGGRO_R);
+        std.debug.print("  {s} charges at {d:.2} m/s\n", .{ @tagName(role), skel });
+        try std.testing.expect(charge > skel);
+    }
+    // BACKING OFF ON FOOT MUST NOT SHAKE HIM, and a SPRINT must — that pair is the whole point of a rusher.
+    try std.testing.expect(charge > heromod.RUN_SPEED);
+    try std.testing.expect(charge < heromod.SPRINT_SPEED);
+    // …AND HE WALKS THE LAST STRIDE IN. A charge carried to contact overshoots the swing it is closing for.
+    try std.testing.expect(zerk.approachSpeed(0.0) < charge);
+    // …which is what "very close" has to mean: inside his own reach and a stride, and no further out.
+    try std.testing.expect(zerk.approachSpeed(koboldmod.AGGRO_R * 0.5) > heromod.RUN_SPEED);
+    // …and out past his own world he is drifting home, which is a walk.
+    try std.testing.expect(zerk.approachSpeed(koboldmod.AGGRO_R + 2.0) < heromod.RUN_SPEED);
+    // The kiters keep their walk — a priest and a slinger are not trying to reach you.
+    inline for (.{ koboldmod.Role.priest, koboldmod.Role.slinger }) |role| {
+        const k = koboldmod.Kobold.spawnAs(role, mathx.zero3, 0, 1.0, 0.3);
+        try std.testing.expect(k.approachSpeed(far) < heromod.RUN_SPEED);
+    }
+}
+
 test "NOTHING CHASES FOREVER — every creature turns round at its own tether, not five times past it" {
     // It is still walking while it decides, so it cannot stop ON the line.
     const SLACK: f32 = 1.5;
@@ -674,6 +747,7 @@ test "NOTHING CHASES FOREVER — every creature turns round at its own tether, n
     var boards = warriormod.Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1.0, 0.3);
     var ghost = shademod.Shade.spawn(mathx.zero3, 0, 1.0, 0.3);
     var cap = shroommod.Shroom.spawn(mathx.zero3, 0, 1.0, 0.3);
+    var knight = knightmod.Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     inline for (.{
         .{ &toad, frogmod.AGGRO_R },
         .{ &bowman, archermod.AGGRO_R },
@@ -682,6 +756,7 @@ test "NOTHING CHASES FOREVER — every creature turns round at its own tether, n
         .{ &boards, warriormod.AGGRO_R },
         .{ &ghost, shademod.AGGRO_R },
         .{ &cap, shroommod.AGGRO_R },
+        .{ &knight, knightmod.AGGRO_R },
     }) |row| {
         const c = chase(row[0], heromod.WALK_SPEED, 90.0);
         try std.testing.expect(c.turned != null);
@@ -734,7 +809,8 @@ fn standHeight(f: anytype) f32 {
 test "ONLY SOMETHING THAT TOWERS TILTS THE LENS UP — everything else is framed flat" {
     const giant = ogremod.Ogre.spawn(mathx.zero3, 0, 1.0, 0.3);
     const snag = rootedmod.Rooted.spawn(mathx.zero3, 0, 1.0, 0.3);
-    for ([_]f32{ standHeight(&giant), standHeight(&snag) }) |h| {
+    const knight = knightmod.Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    for ([_]f32{ standHeight(&giant), standHeight(&snag), standHeight(&knight) }) |h| {
         try std.testing.expect(h >= LOCK_TILT_TALL);
     }
     const toad = frogmod.Frog.spawn(mathx.zero3, 0, 1.0, 0.3);
@@ -745,8 +821,8 @@ test "ONLY SOMETHING THAT TOWERS TILTS THE LENS UP — everything else is framed
     const cap = shroommod.Shroom.spawn(mathx.zero3, 0, 1.0, 0.3);
     const mother = broodmod.Spider.spawnAs(.mother, mathx.zero3, 0, 1.0, 0.3);
     for ([_]f32{
-        standHeight(&toad),   standHeight(&bowman), standHeight(&zerk),  standHeight(&boards),
-        standHeight(&ghost),  standHeight(&cap),    standHeight(&mother),
+        standHeight(&toad),  standHeight(&bowman), standHeight(&zerk),   standHeight(&boards),
+        standHeight(&ghost), standHeight(&cap),    standHeight(&mother),
     }) |h| {
         try std.testing.expect(h < LOCK_TILT_TALL);
     }
@@ -1111,7 +1187,7 @@ pub fn ringForShot(g: *Game, u: f32) void {
 }
 
 pub fn callWolfForShot(g: *Game, at: rl.Vector3, facing: f32) void {
-    g.pack.reset();
+    g.pack.clear();
     _ = g.pack.call(at, facing);
 }
 
@@ -1321,7 +1397,7 @@ fn tickPack(g: *Game, dt: f32) void {
 }
 
 /// The nearest thing worth killing, or null to heel.
-fn huntFor(g: *const Game, from: rl.Vector3) ?rl.Vector3 {
+fn huntFor(g: *const Game, from: rl.Vector3) ?wolfmod.Quarry {
     // HE COMES FIRST: past the recall ring there is no quarry at all. Asked before the walk rather than as
     // another rejection inside it — this is "I am too far from him", not "is that body worth it".
     if (mathx.distXZ(from, g.hero.pos) > wolfmod.RECALL_R) return null;
@@ -1329,7 +1405,7 @@ fn huntFor(g: *const Game, from: rl.Vector3) ?rl.Vector3 {
         from: rl.Vector3,
         hero: rl.Vector3,
         best: f32 = wolfmod.HUNT_R,
-        at: ?rl.Vector3 = null,
+        at: ?wolfmod.Quarry = null,
         fn visit(self: *@This(), foes: anytype, _: ?FoeKind) void {
             const T = @typeInfo(@TypeOf(foes)).pointer.child;
             for (foes) |*f| {
@@ -1347,7 +1423,8 @@ fn huntFor(g: *const Game, from: rl.Vector3) ?rl.Vector3 {
                 const d = mathx.distXZ(self.from, f.pos);
                 if (d >= self.best) continue;
                 self.best = d;
-                self.at = f.pos;
+                // …AND HOW BROAD IT IS, which is what the bite gate is measured off.
+                self.at = .{ .at = f.pos, .r = f.bodyR() };
             }
         }
     };
@@ -2218,46 +2295,75 @@ fn drawHurtFlash(g: *Game) void {
     rl.drawRectangleGradientH(w - t, 0, t, h, clear, edge);
 }
 
+/// HOW LONG THE CHROME TAKES TO GO once he is dead (owner: fade it away instead of removing it immediately).
+/// Read off `hero.deathT`, which is the clock the YOU DIED card itself is drawn from — an effect's clock is
+/// DERIVED from the mechanic's, never parallel to it, or the two eventually disagree about when he died.
+/// Short of the card's own first beat (`smoothstep(0.03, 0.30)` of `DEATH_DUR`), so the bars are on their way
+/// out before the screen starts to dim rather than fading underneath it.
+pub const HUD_FADE_DUR: f32 = 0.55;
+
+/// …and what the chrome is worth this frame: 1 alive, easing to 0 across the fade once he is down.
+fn chromeFade(g: *const Game) f32 {
+    if (!g.hero.dead) return 1;
+    return 1.0 - mathx.smoothstep(0, HUD_FADE_DUR, g.hero.deathT);
+}
+
 pub fn hud(g: *Game, dt: f32) void {
     // A conversation takes the bottom of the screen, which is where the cross and the prompt live.
     if (g.rest.active() or g.talk.active()) return;
-    if (!g.menu.isOpen() and !g.hero.dead) {
-        hud_.vitals(
-            dt,
-            g.hero.vit.hpFrac(),
-            g.hero.fp.frac(),
-            g.hero.stam.frac(),
-            g.hero.stamRefused / combat.STAM_REFUSE_FLASH,
-            g.hero.fpRefused / combat.STAM_REFUSE_FLASH,
-            g.hero.stam.windedTo(),
-            .{ .frac = g.hero.poison.frac(), .on = g.hero.poison.active() },
-        );
-        hud_.dayDial(g.day.hour);
-        const bowUp = g.hero.bowOut();
-        const wandUp = g.hero.wandOut();
-        hud_.equipment(
-            // LEFT: what that hand actually has — boards, the rod, or nothing at all behind a bow.
-            if (bowUp) .empty else if (wandUp) .wand else .shield,
-            // RIGHT: off the ENUM rather than off `bowUp` — as nested ifs the bell drew a sword.
-            switch (g.hero.arm) {
-                .sword => hud_.Slot.sword,
-                .bow => hud_.Slot.bow,
-                .bell => hud_.Slot.bell,
-            },
-            // UP fills only while something in his hands could cast; behind a bow or a shield, empty.
-            if (wandUp) (switch (g.hero.spell) {
-                .bolt => hud_.Slot.spell,
-                .roots => hud_.Slot.roots,
-            }) else .empty,
-            g.hero.fp.cur >= g.hero.castCost(),
-            g.hero.quick.selected(),
-            quickLeft(g),
-            if (bowUp) hud_.Ammo{ .n = g.hero.quiver.ready(), .fire = heromod.arrowBurns(g.hero.quiver.sel) } else null,
-        );
-        hud_.reticle(g.hero.aimB);
-        hud_.souls(g.hero.souls.display()); // the ROLLING value, not the banked total
-        // The same `reachable` the PRESS goes through: a prompt naming a different thing is worse than none.
-        if (reachable(g)) |r| hud_.prompt(r.prompt());
+    // THE CHROME IS COMPOSITED AS ONE PICTURE while it is going out (`hud.beginChrome`) — every element in
+    // the block below carries its own literal colours, and a per-element alpha is one call site away from
+    // leaving a slot solid over a HUD that has gone.
+    const chrome = chromeFade(g);
+    const wantChrome = !g.menu.isOpen() and chrome > 0.001;
+    // The target is only taken while a fade is actually running: at full chrome `beginChrome` refuses and
+    // every draw below goes straight at the backbuffer exactly as it always did.
+    //
+    // **THE CLOSE IS A `defer` IN ITS OWN SCOPE, NOT A LINE AT THE BOTTOM.** An open `beginTextureMode` that
+    // never closes does not lose the chrome, it eats the WHOLE REST OF THE FRAME into an offscreen buffer —
+    // so a `return` added anywhere in the block below would blank the screen, and nothing about the edit
+    // would look wrong. The scope also ends BEFORE the banner, which is not chrome.
+    {
+        const veiled = wantChrome and hud_.beginChrome(chrome);
+        defer if (veiled) hud_.endChrome(chrome);
+        if (wantChrome) {
+            hud_.vitals(
+                dt,
+                g.hero.vit.hpFrac(),
+                g.hero.fp.frac(),
+                g.hero.stam.frac(),
+                g.hero.stamRefused / combat.STAM_REFUSE_FLASH,
+                g.hero.fpRefused / combat.STAM_REFUSE_FLASH,
+                g.hero.stam.windedTo(),
+                .{ .frac = g.hero.poison.frac(), .on = g.hero.poison.active() },
+            );
+            hud_.dayDial(g.day.hour);
+            const bowUp = g.hero.bowOut();
+            const wandUp = g.hero.wandOut();
+            hud_.equipment(
+                // LEFT: what that hand actually has — boards, the rod, or nothing at all behind a bow.
+                if (bowUp) .empty else if (wandUp) .wand else .shield,
+                // RIGHT: off the ENUM rather than off `bowUp` — as nested ifs the bell drew a sword.
+                switch (g.hero.arm) {
+                    .sword => hud_.Slot.sword,
+                    .bow => hud_.Slot.bow,
+                    .bell => hud_.Slot.bell,
+                },
+                // UP fills only while something in his hands could cast; behind a bow or a shield, empty.
+                if (wandUp) (switch (g.hero.spell) {
+                    .bolt => hud_.Slot.spell,
+                    .roots => hud_.Slot.roots,
+                }) else .empty,
+                g.hero.fp.cur >= g.hero.castCost(),
+                g.hero.quick.selected(),
+                quickLeft(g),
+                if (bowUp) hud_.Ammo{ .n = g.hero.quiver.ready(), .fire = heromod.arrowBurns(g.hero.quiver.sel) } else null,
+            );
+            hud_.reticle(g.hero.aimB);
+            hud_.souls(g.hero.souls.display()); // the ROLLING value, not the banked total
+            // The same `reachable` the PRESS goes through: a prompt naming a different thing is worse than none.
+            if (reachable(g)) |r| hud_.prompt(r.prompt());
+        }
     }
     // Under the menu and over everything else: a trigger firing while the pause card is up still has
     // something to say when it comes down.
@@ -2946,6 +3052,11 @@ pub fn run(mode: Mode) void {
         // The sporeling's bonk is a blow; its cloud is a HOLD, billed further down beside the mother's acid.
         if (g.cluster.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        // The Bone Knight. NOT `hit.heavy()`: all three of his blows carry stance, so that test would call a
+        // shield bash a five-metre body landing on you. The split is "was it THE FALL", its own stance figure.
+        if (g.vigil.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.stance >= knightmod.FALL_HIT.stance, true);
         }
         // …and the one moment of theirs the frame should feel BEFORE it is hit by it.
         if (g.muster.anyLeapt()) {
@@ -3695,7 +3806,7 @@ fn resetFoes(g: *Game) void {
     g.lock = null;
     // A spirit is bound to the man who rang for it: it does not outlive his death standing in the fresh
     // world with the FP already spent.
-    g.pack.reset();
+    g.pack.clear();
 }
 
 const HURT_BAR_WINDOW = 5.0;
@@ -3736,4 +3847,3 @@ fn drawLockDot(g: *Game) void {
     rl.drawCircleGradient(x, y, 15, rgba(255, 255, 255, 175), rgba(255, 255, 255, 0));
     rl.drawCircle(x, y, 2, rl.Color.white);
 }
-

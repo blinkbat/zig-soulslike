@@ -815,7 +815,10 @@ pub const Warrior = struct {
         return self.longestTrigger() + WALK_IN * self.scale;
     }
     /// Inside `walkInR`, or homeward, he walks. Slower than the hero's run either way.
-    fn approachSpeed(self: *const Warrior, dist: f32) f32 {
+    /// PUBLIC because it is one half of a CROSS-CREATURE comparison — the berserker is pinned above every
+    /// skeleton that charges (`game.zig`, "THE BERSERKER IS THE FASTEST THING ON FOOT"), and a number that
+    /// only one file can read is a number nothing can be measured against.
+    pub fn approachSpeed(self: *const Warrior, dist: f32) f32 {
         const base = spec(self.role).speed;
         if (self.homing or dist <= self.walkInR()) return WALK_SPEED * base;
         return RUN_SPEED * base;

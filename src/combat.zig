@@ -419,7 +419,14 @@ pub const GUARD_ARC: f32 = 65.0;
 /// from and the parry of where the swinging thing is standing; written out at both, the two are one rule in
 /// two files. What each does with a DEGENERATE bearing stays its own call and is written at each of them.
 pub fn withinGuardArc(bearing: f32, facing: f32) bool {
-    return @abs(mathx.degrees(mathx.wrapPi(bearing - facing))) <= GUARD_ARC;
+    return withinArc(bearing, facing, GUARD_ARC);
+}
+
+/// …and the same comparison for a shield that is NOT a man's boards. The knight's tower shield covers a far
+/// wider sector, and that width is the whole of that fight — but it is the same question, so it is the same
+/// line of arithmetic rather than a second copy that can drift in how it wraps.
+pub fn withinArc(bearing: f32, facing: f32, arc: f32) bool {
+    return @abs(mathx.degrees(mathx.wrapPi(bearing - facing))) <= arc;
 }
 
 /// Billed on the RAW weight of the blow: the arm behind a burning arrow does not know what you resist.

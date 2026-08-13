@@ -10,6 +10,7 @@ const frogmod = @import("frog.zig");
 const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
 const shroommod = @import("shroom.zig");
+const knightmod = @import("knight.zig");
 const soulsmod = @import("souls.zig");
 const koboldmod = @import("kobold.zig");
 const broodmod = @import("brood.zig");
@@ -880,7 +881,12 @@ pub fn runShots(g: *Game) void {
         while (g.hero.staggered()) g.hero.updateStun(dt);
 
         _ = g.hero.takeHit(.{ .dmg = 999 }, mathx.zero3); // lethal → the death collapse
+        // MID-FADE, which is the only frame that shows the chrome going rather than gone: stepped in SECONDS
+        // off the hero's own death clock so it stays on the same beat if `HUD_FADE_DUR` is ever retuned.
         sk = 0;
+        while (@as(f32, @floatFromInt(sk)) * dt < game.HUD_FADE_DUR * 0.5) : (sk += 1) g.hero.updateDeath(dt);
+        g.rig.follow(g.hero.shoulderPoint());
+        shoot(g, "shots/36a_hero_death_hudfade.png");
         while (sk < 130) : (sk += 1) g.hero.updateDeath(dt); // deep into the card: heap + YOU DIED full
         g.rig.pitch = 0.22;
         g.rig.dist = 5.2;
@@ -1176,6 +1182,16 @@ pub fn runShots(g: *Game) void {
         }.it;
         park(priest, .priest, away);
         park(sling, .slinger, away);
+
+        // THE CHARGE. He closes at a RUN now, and `advanceGait` picks the leg curves off the ground speed it
+        // is handed — so what has to be photographed is that this reads as a RUN and not as a fast walk: a
+        // real flight phase, the deep lean, arms pumping. Shot from far enough out that he is still charging
+        // (past `walkInR`), and stepped until the gait has settled rather than for a literal frame count.
+        zerk.* = koboldmod.Kobold.spawnAs(.berserker, mathx.ground(kc.x, kc.z - 9.0), 0, 1.0, 0.15);
+        var chf: i32 = 0;
+        while (zerk.state != .approach and chf < 600) : (chf += 1) _ = zerk.update(SHOT_DT, near, game.PLAY_HALF, .{});
+        stepFoe(zerk, 26, near);
+        shootFoe(g, zerk, "shots/64e_kobold_charge.png", LIT_YAW + 30, 0.06, 3.8);
 
         zerk.* = koboldmod.Kobold.spawnAs(.berserker, kc, 0, 1.0, 0.15);
         var zf: i32 = 0;
@@ -1539,6 +1555,7 @@ pub fn runShots(g: *Game) void {
     leechShots(g);
     rootedShots(g);
     shroomShots(g);
+    knightShots(g);
     soulsShots(g);
     campfireShots(g);
     chestShots(g);
@@ -1933,6 +1950,154 @@ fn shroomShots(g: *Game) void {
     poisonShots(g, mark);
 
     game.clearFoesForShot(g);
+}
+
+/// THE BONE KNIGHT. Five of the eleven frames are the FALL, because that move is five distinct pictures and
+/// no one of them says what it is: the tell (his back coming round to you), the topple, the strip landing, the
+/// roll onto his front, and the rise. The two swings are shot from the LIT bearing with the hero on the sun's
+/// side, and the FALL is shot from ABOVE — a topple down the camera foreshortens to a man standing still.
+fn knightShots(g: *Game) void {
+    game.clearFoesForShot(g);
+    const sc = mathx.ground(3.0, -60.0); // the open avenue south, past the ogre — he needs room to lie down
+    const far = along(sc, LIT_BACK, 120.0);
+    const faceCam = mathx.headingXZ(LIT_BACK);
+    g.vigil.n = 1;
+    const k = &g.vigil.knights[0];
+    const spawn = struct {
+        fn it(kk: *knightmod.Knight, at: rl.Vector3, yaw: f32) void {
+            kk.* = knightmod.Knight.spawn(at, yaw, 1.0, 0.37);
+        }
+    }.it;
+    // Beats are named in SECONDS off the creature's own clocks and stepped here — a beat pinned to a literal
+    // frame count silently photographs somewhere else the next time a timing is tuned.
+    const run = struct {
+        fn secs(kk: *knightmod.Knight, clock: f32, toward: rl.Vector3) void {
+            var c: f32 = 0;
+            while (c < clock) : (c += SHOT_DT) _ = kk.update(SHOT_DT, toward, game.PLAY_HALF, .{});
+        }
+    }.secs;
+
+    // THE STANDING PORTRAIT, SHOT THREE-QUARTER. Squared up to the lens the door eclipses the creature — it
+    // is 3.1 m of iron held half a metre off his chest, and that is what it is FOR. Turned 42 deg off, the
+    // door foreshortens and the body, the sword arm and the helm are all in the frame beside it.
+    const quarter = along(sc, mathx.headingDir(mathx.headingXZ(LIT_BACK) + mathx.radians(42.0)), 5.0);
+    spawn(k, sc, faceCam);
+    standHero(g, quarter.x, quarter.z, mathx.radians(LIT_YAW + 180));
+    stepFoe(k, 90, quarter); // long enough for a 33 deg/s turn to settle on him
+    shootAt(g, "shots/121_knight.png", v3(sc.x, sc.y + 2.5, sc.z), LIT_YAW, 0.14, 12.0);
+
+    // …AND FROM BEHIND, which is the picture of what the fight is about: no door on that side. Shot from the
+    // SAME lit bearing with the hero moved to the FAR side — `LIT_YAW + 180` puts the sun in the lens and his
+    // whole front in his own shadow, so turning the creature is the way to photograph its back.
+    const beyond = along(sc, LIT_BACK, -4.6);
+    standHero(g, beyond.x, beyond.z, mathx.radians(LIT_YAW));
+    spawn(k, sc, mathx.headingXZ(mathx.dirXZ(sc, beyond)));
+    stepFoe(k, 40, beyond);
+    shootAt(g, "shots/121a_knight_back.png", v3(sc.x, sc.y + 2.5, sc.z), LIT_YAW, 0.14, 12.0);
+
+    g.hero.pos = mathx.ground(sc.x, sc.z - 44.0); // out of the beats below
+    g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pose();
+
+    // THE BASH — the door driven forward. Its own tell, then the frame it arrives on. Also three-quarter:
+    // a shield coming straight down the lens does not travel across the frame at all.
+    const near = along(sc, mathx.headingDir(mathx.headingXZ(LIT_BACK) + mathx.radians(38.0)), 4.0);
+    const atHero = mathx.headingXZ(mathx.dirXZ(sc, near)); // squared onto him, so the stroke is aimed at him
+    const bash = knightmod.moveClock(0);
+    spawn(k, sc, atHero);
+    k.debugBash();
+    run(k, bash.wind * 0.9, near);
+    shootAt(g, "shots/121b_knight_bash_wind.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 11.0);
+    run(k, bash.wind * 0.1 + bash.strike * 0.8, near);
+    shootAt(g, "shots/121c_knight_bash.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 11.0);
+
+    // THE CLEAVE — the one move that takes the door off his front, so the WIND is the frame that matters:
+    // what has to read is his whole chest with nothing in front of it.
+    const cleave = knightmod.moveClock(1);
+    spawn(k, sc, atHero);
+    k.debugCleave();
+    run(k, cleave.wind * 0.92, near);
+    shootAt(g, "shots/121d_knight_cleave_cock.png", v3(sc.x, sc.y + 3.0, sc.z), LIT_YAW, 0.16, 13.0);
+    run(k, cleave.wind * 0.08 + cleave.strike * 0.85, near);
+    shootAt(g, "shots/121e_knight_cleave.png", v3(sc.x, sc.y + 2.2, sc.z), LIT_YAW, 0.10, 12.0);
+
+    // THE FALL, all five beats, SHOT IN PROFILE FROM ABOVE. He is stood across the lens (facing 90 deg off
+    // the camera's bearing) with the hero dead behind him, so the topple sweeps ACROSS the frame — pointed
+    // toward or away from the lens the whole move foreshortens into a man standing still. `sc + back*L` is
+    // where his body ends up, and that, not his feet, is what the later frames are aimed at.
+    const across = mathx.headingXZ(LIT_BACK) + mathx.radians(90.0);
+    const backDir = mathx.scaleV(mathx.headingDir(across), -1);
+    const behind = along(sc, backDir, 3.6); // the hero, dead behind him: what makes the strip worth throwing
+    const lying = along(sc, backDir, 2.6); // …and where the middle of the body comes to rest
+    const fc = knightmod.fallClock();
+    spawn(k, sc, across);
+    k.debugFall();
+    run(k, fc.wind * 0.88, behind);
+    shootAt(g, "shots/121f_knight_fall_tell.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.20, 12.0);
+    run(k, fc.wind * 0.12 + fc.drop * 0.55, behind);
+    shootAt(g, "shots/121g_knight_falling.png", v3(lying.x, sc.y + 1.8, lying.z), LIT_YAW, 0.34, 12.0);
+    run(k, fc.drop * 0.45 + 0.10, behind);
+    shootAt(g, "shots/121h_knight_landed.png", v3(lying.x, sc.y + 0.9, lying.z), LIT_YAW, 0.40, 11.0);
+    // Mid-roll: the one frame that says the body is turning over rather than lying still.
+    run(k, fc.down - 0.10 + fc.roll * 0.55, behind);
+    shootAt(g, "shots/121i_knight_rollover.png", v3(lying.x, sc.y + 0.8, lying.z), LIT_YAW, 0.36, 10.0);
+    // …and coming up off the door, which is the last of the punish window.
+    run(k, fc.roll * 0.45 + fc.rise * 0.58, behind);
+    shootAt(g, "shots/121j_knight_rise.png", v3(lying.x, sc.y + 1.4, lying.z), LIT_YAW, 0.28, 11.0);
+
+    // The death — FORWARD onto his face, which is what separates it from the fall he does on purpose.
+    spawn(k, sc, faceCam);
+    k.debugKill();
+    stepFoe(k, 96, far);
+    shootAt(g, "shots/121k_knight_death.png", v3(sc.x, sc.y + 1.2, sc.z), LIT_YAW + 26, 0.30, 12.0);
+
+    knightStrokeStrips(g, sc, spawn, run);
+    game.clearFoesForShot(g);
+}
+
+/// EVERY FRAME OF BOTH STROKES, IN PROFILE — a swing is a shape over TIME and the two-frame wind/impact pair
+/// above cannot show one. He is stood ACROSS the lens with the hero out on the side he is swinging at, so the
+/// arc travels across the frame instead of foreshortening down it; the whole wind AND the whole strike are
+/// walked at a fixed step, so a stroke that snaps, windmills or arrives somewhere the body is not shows up as
+/// a break between two adjacent frames rather than as a feeling.
+fn knightStrokeStrips(
+    g: *Game,
+    sc: rl.Vector3,
+    spawn: fn (*knightmod.Knight, rl.Vector3, f32) void,
+    run: fn (*knightmod.Knight, f32, rl.Vector3) void,
+) void {
+    const k = &g.vigil.knights[0];
+    const across = mathx.headingXZ(LIT_BACK) + mathx.radians(90.0);
+    // The hero out on his STRIKING side, so the stroke is aimed across the lens rather than into it.
+    const side = along(sc, mathx.headingDir(across), 4.2);
+    // **THE FRAMES ARE SPENT WHERE THE MOTION IS, NOT SPREAD EVENLY OVER THE MOVE.** The cleave is 1.18 s of
+    // wind and 0.26 s of strike, so an even walk lands SIX frames in the wind and one in the stroke — which
+    // reads as a swing that never travels when what it actually shows is the held shiver at the top. Two
+    // frames establish the gather; the remaining six are the STRIKE, which is the only part that sweeps.
+    const NW = 2;
+    const NS = 6;
+    const strokes = [_]struct { i: usize, tag: []const u8, pitch: f32, dist: f32, lift: f32 }{
+        .{ .i = 0, .tag = "l", .pitch = 0.16, .dist = 13.0, .lift = 2.6 },
+        .{ .i = 1, .tag = "m", .pitch = 0.20, .dist = 15.0, .lift = 3.2 },
+    };
+    inline for (strokes) |st| {
+        const cl = knightmod.moveClock(st.i);
+        var f: usize = 0;
+        while (f < NW + NS) : (f += 1) {
+            const at = if (f < NW)
+                cl.wind * (0.45 + 0.40 * @as(f32, @floatFromInt(f)))
+            else
+                cl.wind + cl.strike * (@as(f32, @floatFromInt(f - NW)) + 0.5) / @as(f32, @floatFromInt(NS));
+            // Re-spawned and re-run from zero each frame: stepping one clip and shooting as it goes would
+            // photograph a body that has already been shoved down the field by the frames before it.
+            spawn(k, sc, mathx.headingXZ(mathx.dirXZ(sc, side)));
+            if (st.i == 0) k.debugBash() else k.debugCleave();
+            run(k, at, side);
+            var name: [64]u8 = undefined;
+            const p = std.fmt.bufPrintZ(&name, "shots/121{s}{d}_knight_stroke.png", .{ st.tag, f }) catch continue;
+            shootAt(g, p, v3(sc.x, sc.y + st.lift, sc.z), LIT_YAW, st.pitch, st.dist);
+        }
+    }
 }
 
 /// THE POISON METER, FILL → PROC → DRAIN. Shot with the hero STANDING IN the cloud rather than through a
@@ -2772,7 +2937,7 @@ fn wolfShots(g: *Game) void {
     shootAt(g, "shots/135b_wolf_gather.png", at, 90, 0.05, 3.4);
     game.poseWolfForShot(g, 0, 0);
     shootPortrait(g, "shots/136_wolf_head.png", mathx.addV(at, v3(0, wolfmod.W * 1.0, 0)), 40, 0.02, 1.5);
-    g.pack.reset();
+    g.pack.clear();
     g.hero.arm = .sword;
 }
 

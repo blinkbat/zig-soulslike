@@ -2755,15 +2755,18 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(solids0, e.solidCount());
     try std.testing.expectEqual(lights0, e.lightCount());
 
-    // 17761 BEFORE THE COAST WAS FACETED (`facetWater`). Scatter refuses to place in water, so straightening
-    // the waterline moves it by up to half a facet and the props along every shore follow it — 196 of them,
-    // about 1%. This number moving is the POINT of pinning it; it may only be re-pinned when the world was
-    // meant to change, and this is one of those times.
-    try std.testing.expectEqual(@as(usize, 17565), props0);
-    try std.testing.expectEqual(@as(usize, 1848), solids0); // …and their colliders with them (was 1827)
+    // 17761 BEFORE THE COAST WAS FACETED (`facetWater`), then 17565. Scatter refuses to place in water, so
+    // straightening the waterline moves it by up to half a facet and the props along every shore follow it —
+    // 196 of them, about 1%. This number moving is the POINT of pinning it; it may only be re-pinned when the
+    // world was meant to change. 17594 is the BONE KNIGHT'S ground: the ruin east of the graves gained a
+    // torch line, a rock belt and its cliffs, and lost the watchtower and two cottages that stood in it.
+    try std.testing.expectEqual(@as(usize, 17594), props0);
+    try std.testing.expectEqual(@as(usize, 1854), solids0); // …and their colliders with them (was 1827, 1848)
     // The map's three `campfire`s are the EXTINGUISHED kind and carry no light. Swap one to
     // `campfire_lit` in the editor and this goes up by one — and gains a rest site with it.
-    try std.testing.expectEqual(@as(usize, 40), lights0);
+    // 46 since the Bone Knight's ruin was lit: seven torches went in round it and one came out with the
+    // watchtower that used to stand there.
+    try std.testing.expectEqual(@as(usize, 46), lights0);
 
     var jerky: usize = 0;
     var rings: usize = 0;

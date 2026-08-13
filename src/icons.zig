@@ -37,6 +37,7 @@ pub const Icon = enum {
     leechfly,
     rooted,
     shroom,
+    bone_knight,
     new,
     open,
     save,
@@ -339,6 +340,18 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             dot(cx - s * 0.06, cy - s * 0.24, w * 1.2, col); // …and the two bulged eyes
             dot(cx + s * 0.09, cy - s * 0.24, w * 1.2, col);
             line(cx + s * 0.02, cy - s * 0.16, cx + s * 0.12, cy + s * 0.16, w * 0.8, col); // the beak
+        },
+
+        .bone_knight => {
+            // A SLAB OF A SHIELD, filling most of the box, with a helm over its rim and a blade behind it.
+            // The shield is the read: nothing else in the set is mostly one closed shape.
+            box(cx - s * 0.06, cy + s * 0.06, s * 0.50, s * 0.66, w * 1.6, col); // the door…
+            hline(cx - s * 0.06, cy + s * 0.06, s * 0.44, w, d); // …its brace
+            dot(cx - s * 0.06, cy - s * 0.10, w * 1.8, d); // …and the boss over the grip
+            arc(cx + s * 0.10, cy - s * 0.28, s * 0.16, 180, 360, w * 1.4, col); // the helm above it
+            hline(cx + s * 0.10, cy - s * 0.26, s * 0.24, w * 1.1, d); // the visor slit
+            line(cx + s * 0.34, cy - s * 0.12, cx + s * 0.34, cy + s * 0.40, w, col); // the blade behind
+            hline(cx + s * 0.34, cy + s * 0.02, s * 0.16, w * 0.8, d); // …and its crossguard
         },
 
         .new => {

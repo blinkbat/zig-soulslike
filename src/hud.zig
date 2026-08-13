@@ -50,6 +50,63 @@ pub fn deinit() void {
     haveBig = false;
     if (haveMono) rl.unloadFont(monoFont);
     haveMono = false;
+    veilFree();
+}
+
+// **THE HUD GOES OUT AS A WHOLE PICTURE, NOT AS A LIST OF THINGS THAT EACH KNOW AN ALPHA** (owner: gradually
+// fade the HUD away when you die instead of removing it immediately). Every colour here is a LITERAL screen
+// value — the bars, the dial's sky, the gilt rules, the pad glyphs, and the item pictures `itemart` draws into
+// the cross, which are not this file's colours at all. Threading a factor through all of them is dozens of
+// call sites and ONE of them missed is a slot left solid over a chrome that has gone, which reads worse than
+// the hard cut it replaced. So the block is drawn once into a target and composited at one alpha: nothing can
+// be missed, because nothing is asked.
+//
+// It costs a screen-sized target and one blit, and it is only paid WHILE a fade is running — at full chrome
+// `begin` refuses and the draws go straight at the backbuffer exactly as they always did.
+var veil: ?rl.RenderTexture2D = null;
+
+fn veilFree() void {
+    if (veil) |rt| rl.unloadRenderTexture(rt);
+    veil = null;
+}
+
+/// Sized to the screen, rebuilt only when that changes (`gfx.Retro.resize`'s guard, and for its reason: a
+/// reload every frame is a texture allocation every frame).
+fn veilFor(w: i32, h: i32) ?rl.RenderTexture2D {
+    if (w <= 0 or h <= 0) return null;
+    if (veil) |rt| {
+        if (rt.texture.width == w and rt.texture.height == h) return rt;
+        veilFree();
+    }
+    veil = rl.loadRenderTexture(w, h) catch return null;
+    return veil;
+}
+
+/// Redirect the chrome into the target, or refuse. TRUE means the caller MUST call `endChrome(k)` after it.
+/// Refused at full — there is nothing to fade and the backbuffer is one blit cheaper.
+pub fn beginChrome(k: f32) bool {
+    if (k >= 0.999) return false;
+    const rt = veilFor(rl.getScreenWidth(), rl.getScreenHeight()) orelse return false;
+    rl.beginTextureMode(rt);
+    rl.clearBackground(rgba(0, 0, 0, 0)); // …and it must start EMPTY, or the last frame's chrome is under it
+    return true;
+}
+
+/// …and lay it down at `k`. A render target reads back FLIPPED, hence the negative source height — raylib's
+/// own idiom, and the same one `gfx.Retro.end` uses.
+pub fn endChrome(k: f32) void {
+    rl.endTextureMode();
+    const rt = veil orelse return;
+    const w: f32 = @floatFromInt(rt.texture.width);
+    const h: f32 = @floatFromInt(rt.texture.height);
+    rl.drawTexturePro(
+        rt.texture,
+        .{ .x = 0, .y = 0, .width = w, .height = -h },
+        .{ .x = 0, .y = 0, .width = w, .height = h },
+        .{ .x = 0, .y = 0 },
+        0,
+        mathx.withAlpha(rl.Color.white, mathx.u8f(255.0 * mathx.clampF(k, 0, 1))),
+    );
 }
 
 pub fn textW(s: [:0]const u8, size: i32) i32 {

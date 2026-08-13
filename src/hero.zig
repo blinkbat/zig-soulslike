@@ -18,8 +18,7 @@ const radians = mathx.radians;
 pub const H: f32 = 1.8; // stature (world units ≈ metres)
 
 comptime {
-    // `foe.zig` sits BELOW this file in the import graph and cannot read `H`, so its sight-line column is a
-    // bare 1.71. This is the one place a stature that moved can be made to say so.
+    // `foe.zig` is below this file in the import graph and cannot read `H`, so it hardcodes 1.71.
     std.debug.assert(@abs(foemod.HERO_HIGH - 0.95 * H) < 0.005);
 }
 
@@ -36,10 +35,10 @@ pub const DRINK_SPEED: f32 = 0.35;
 const DRINK_SINK: f32 = 0.012;
 
 // Body-segment lengths as a fraction of stature H (Drillis & Contini 1966; Winter).
-pub const SEG_THIGH = 0.245; // hip → knee   (femur)
-pub const SEG_SHANK = 0.246; // knee → ankle (tibia)
-pub const SEG_UPARM = 0.188; // shoulder → elbow
-pub const SEG_FOREARM = 0.145; // elbow → wrist
+pub const SEG_THIGH = 0.245;
+pub const SEG_SHANK = 0.246;
+pub const SEG_UPARM = 0.188;
+pub const SEG_FOREARM = 0.145;
 
 pub const N = 18;
 pub const ROOT = 0; // pelvis

@@ -254,10 +254,6 @@ pub fn limbChain(a: f32, b: f32, dy: f32, dz: f32, bend: f32) struct { upper: f3
     };
 }
 
-// ===========================================================================================================
-// THE BODY
-// ===========================================================================================================
-
 // GREY, AND COUNTERSHADED. A wolf is not one colour: a dark saddle over the back, pale down the throat, belly
 // and inside the legs. That gradient is most of what makes the shape read at distance — a flat grey animal is
 // a dog-shaped smudge. Solved against the render the way `npc.zig`'s palette was: the chain is albedo × 1.72 →
@@ -479,10 +475,6 @@ fn boneMesh(i: usize) rl.Mesh {
     return b.toMesh();
 }
 
-// ===========================================================================================================
-// THE CREATURE
-// ===========================================================================================================
-
 pub const SCALE: f32 = 1.0;
 pub const BODY_R: f32 = 0.34;
 pub const HURT_R: f32 = 0.42;
@@ -536,6 +528,26 @@ const BITE_COOL: f32 = 0.55;
 /// travel is what makes the blow feel like it came from a body — and it is also, mechanically, what closes a
 /// gap the approach left, so the strike is not a lunge that whiffs at the edge of `BITE_R`.
 const BITE_HOP: f32 = 0.62; // metres of forward travel across the wind and the strike
+/// HOW FAR OUT THE JAWS OPEN — ONE definition, because it is the gate the whole behaviour turns on and a
+/// second copy at the call site is a number nothing can measure against.
+const BITE_TRIGGER_R: f32 = BITE_R + BITE_HOP * 0.8;
+
+/// WHAT IT IS SET ON: a point AND HOW BROAD IT IS. The radius is the whole reason this is not just a point.
+pub const Quarry = struct { at: rl.Vector3, r: f32 = 0 };
+
+/// **THE GATE IS MEASURED FROM THE QUARRY'S HIDE, NOT ITS CENTRE** — the knight's `triggerR` idiom, and for
+/// the same reason. Asked centre-to-centre, a flat 1.85 m is unsatisfiable on anything broad: `env.resolveActor`
+/// holds the wolf `bodyR + its own` out, which on the Bone Knight is 2.11 m, so the jaws opened 0.26 m closer
+/// than the animal was ever allowed to stand and it circled a creature it could not trigger on for ever. The
+/// ogre had 0.24 m of margin, which is why that one only ever "struggled" (owner). A test pins both.
+pub fn triggerR(quarryR: f32) f32 {
+    return BITE_TRIGGER_R + quarryR;
+}
+
+/// …and how close it TRIES to get, which has to sit inside the gate or it walks into a collider for ever.
+fn stopR(quarryR: f32) f32 {
+    return BITE_R * 0.85 + quarryR;
+}
 const BITE_HOP_UP: f32 = 0.14; // …and how far off the ground it gets, as a fraction of W
 /// The gather: it SINKS before it goes, which is the wind-up you read the hop off.
 const BITE_CROUCH: f32 = 0.09;
@@ -610,7 +622,7 @@ pub const Wolf = struct {
     shove: rl.Vector3 = mathx.zero3,
     /// WHICH BODY IT IS GOING FOR. An index into the field, handed in by game.zig — the creature never reaches
     /// out for the foe list, exactly as a foe never reaches out for the hero's shield (`foe.Parry`'s law).
-    quarry: ?rl.Vector3 = null,
+    quarry: ?Quarry = null,
     /// THE WAY ROUND WHAT IS IN FRONT OF IT — stamped by `game.markWay` like every creature's on the field, and
     /// read in the one place this one travels.
     nav: foe.Nav = .{},
@@ -777,7 +789,7 @@ pub const Wolf = struct {
             return;
         }
         if (self.state == .bite) {
-            self.faceToward(self.quarry orelse heel, dt);
+            self.faceToward(if (self.quarry) |q| q.at else heel, dt);
             self.speed = 0;
             // THE HOP CARRIES IT IN. The travel is spread across the wind and the strike and stops dead at the
             // recovery — it is a throw of the whole body, not a glide, so it goes through `stepXZ` like any
@@ -801,9 +813,9 @@ pub const Wolf = struct {
         // NOTHING TO KILL: heel. Something to kill: go at it, and bite when the jaws will reach.
         const want = self.wants(heel);
         const gap = mathx.distXZ(self.pos, want);
-        const stop: f32 = if (self.quarry != null) BITE_R * 0.85 else HEEL_R;
+        const stop: f32 = if (self.quarry) |q| stopR(q.r) else HEEL_R;
         // …and the bite opens a little further out than it lands, because the HOP closes the rest.
-        if (self.quarry != null and gap <= BITE_R + BITE_HOP * 0.8 and self.biteCool <= 0) {
+        if (self.quarry != null and gap <= triggerR(self.quarry.?.r) and self.biteCool <= 0) {
             self.state = .bite;
             self.t = 0;
             self.hitLatch = false;
@@ -854,7 +866,7 @@ pub const Wolf = struct {
     /// WHERE IT IS GOING: the body it is going for, else HIM. One definition, because game.zig needs the same
     /// answer to stamp the way through and two copies of a choice this small still drift.
     pub fn wants(self: *const Wolf, heel: rl.Vector3) rl.Vector3 {
-        return self.quarry orelse heel;
+        return if (self.quarry) |q| q.at else heel;
     }
 
     /// …and the same thing as the steering asks it (`foe.Nav`): null while it is not walking anywhere, so a
@@ -1123,6 +1135,11 @@ pub const Pack = struct {
     /// returns at its first line — a spirit that is called, walks, fights and is INVISIBLE. That is the
     /// mirror of `foe.zig`'s rule (a group is emptied through its own `clear`, never by zeroing `n`), and
     /// the reason is the same one: only the group knows what it owns.
+    ///
+    /// **AND IT IS THE ONLY NAME FOR IT.** A `reset` sat beside this doing the identical `self.n = 0` with
+    /// none of the note above, and both were live — `game.beginGame` took this door and the shot harness took
+    /// the other. Every OTHER group's `reset` means "re-home from the map", so the twin was the same word
+    /// promising a different contract, one keystroke from the `= .{}` this comment exists to forbid.
     pub fn clear(self: *Pack) void {
         self.n = 0;
     }
@@ -1161,9 +1178,6 @@ pub const Pack = struct {
         for (self.liveConst()) |*w| w.drawFx();
     }
 
-    pub fn reset(self: *Pack) void {
-        self.n = 0;
-    }
 };
 
 test "ONE SPIRIT STANDS AT A TIME, and its slot comes back when it is gone" {

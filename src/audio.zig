@@ -5,19 +5,15 @@ const mathx = @import("mathx.zig");
 
 pub const SR: usize = 22050;
 const SRF: f32 = @floatFromInt(SR);
-/// The longest thing that passes through `work`. The synthesized voices top out at the 8 s wind bed; the
-/// ceiling is the CAMPFIRE take (12.8 s), which goes through the same filter rack as everything else and
-/// so has to fit in the same buffer — see `dressedFire`.
+/// Ceiling is the CAMPFIRE take (12.8 s); the synthesized voices top out at the 8 s wind bed.
 const MAX_N: usize = 13 * SR;
 
 var work: [MAX_N]f32 = undefined;
 var tape: [MAX_N]f32 = undefined;
 var pcm: [MAX_N]i16 = undefined;
 
-/// A resonant state-variable filter (Chamberlin), the workhorse of the whole bank.
-/// What a cutoff and a resonance boil down to. SEPARABLE from the filter step because for a FIXED filter
-/// they never change: `choir` runs two formants over ~86k samples apiece, and recomputing a `sin` per
-/// sample for a cutoff that does not move was most of the heal's bake time (90 ms of it, measured).
+/// Chamberlin state-variable filter coefficients. Separate from the filter step because for a FIXED cutoff
+/// they never change, and the per-sample `sin` was 90 ms of the heal's bake time (measured).
 const SvfCoef = struct { f: f32, q: f32 };
 
 fn svfCoef(cut: f32, res: f32) SvfCoef {
@@ -27,15 +23,15 @@ fn svfCoef(cut: f32, res: f32) SvfCoef {
     };
 }
 
-/// Named, because the two entry points below must share ONE return type: two identically-shaped anonymous
-/// structs are two distinct types to Zig, and `step` forwarding to `stepAt` will not compile.
+/// Named, not anonymous: two identically-shaped anonymous structs are distinct types to Zig, so `step`
+/// forwarding to `stepAt` would not compile.
 const SvfOut = struct { lp: f32, bp: f32, hp: f32 };
 
 const Svf = struct {
     lp: f32 = 0,
     bp: f32 = 0,
 
-    /// ONE filter implementation, entered two ways — `step` for a SWEEPING cutoff (`air`, `growl`), this for a fixed one.
+    /// For a FIXED cutoff; `step` is the sweeping one.
     fn stepAt(s: *Svf, x: f32, c: SvfCoef) SvfOut {
         const hp = x - s.lp - c.q * s.bp;
         s.bp += c.f * hp;
@@ -68,8 +64,6 @@ fn swell(u: f32, peak: f32) f32 {
     return decay((t - peak) / (1.0 - peak), 3.5);
 }
 
-/// ONE LAYER'S SAMPLE RANGE, and the only place `u` is worked out. As two lines at the head of six
-/// primitives it was six encodings of "a duration is clamped through the same path as an absolute time".
 const Span = struct {
     a: usize,
     b: usize,
@@ -82,13 +76,11 @@ const Span = struct {
 const Rack = struct {
     n: usize = 0, // samples written so far (the voice's length)
     rng: mathx.Rng,
-    /// LAYERS THAT RENDERED NOTHING. `at` clamps a duration to the take just as it clamps an absolute time,
-    /// so a layer authored past the voice's own length emits zero samples and says nothing about it — which is
-    /// how `wood_die`'s ground arrival and `eat`'s third chew went missing. A test bakes the whole bank and
-    /// asserts this stays 0, so a new voice whose recipe outruns its `seconds()` row fails there instead.
+    /// Layers that rendered nothing — authored past the voice's own length, so they emit zero samples
+    /// silently. A test bakes the bank and asserts this stays 0.
     dropped: usize = 0,
 
-    // `secs`, not `seconds` — that name belongs to the bank's own length table below, and a parameter shadowing a declaration is a compile error in Zig (rightly).
+    // `secs`, not `seconds`: that name is the bank's length table below, and shadowing is a Zig compile error.
     fn init(seed: u64, secs: f32) Rack {
         const n = @min(@as(usize, @intFromFloat(secs * SRF)), MAX_N);
         @memset(work[0..n], 0);
@@ -99,7 +91,7 @@ const Rack = struct {
         return @min(@as(usize, @intFromFloat(mathx.maxF(t, 0) * SRF)), r.n);
     }
 
-    /// …and the span a layer actually gets, `null` when the take has no room for it at all.
+    /// `null` when the take has no room for the layer at all.
     fn span(r: *Rack, t0: f32, dur: f32) ?Span {
         const a = r.at(t0);
         const b = @min(a + r.at(dur), r.n);
@@ -116,7 +108,7 @@ const Rack = struct {
         var i = s.a;
         while (i < s.b) : (i += 1) {
             const u = s.u(i);
-            const f = f0 * std.math.pow(f32, f1 / f0, u); // exponential glide reads as one fall
+            const f = f0 * std.math.pow(f32, f1 / f0, u);
             ph += std.math.tau * f / SRF;
             work[i] += mathx.sinf(ph) * amp * decay(u, curve);
         }
@@ -134,7 +126,7 @@ const Rack = struct {
         }
     }
 
-    /// GRIT — lowpassed noise with a granular amplitude, so it CRUNCHES instead of hissing.
+    /// Lowpassed noise with a granular amplitude, so it CRUNCHES instead of hissing.
     fn grit(r: *Rack, t0: f32, dur: f32, amp: f32, cut: f32, coarse: f32, curve: f32) void {
         const s = r.span(t0, dur) orelse return;
         var p = Pole{};
@@ -193,10 +185,9 @@ const Rack = struct {
         r.grit(t0, 0.012, amp, cut, 0.0, 5.0);
     }
 
-    /// `voices` detuned unison "ahh"s. Two things make it VOICES rather than an organ: FORMANTS (~730 and
-    /// ~1090 Hz for "ah") and per-voice detune/vibrato/entry, whose beating IS the choral sound.
-    /// The bank's most expensive layer, ~70 ms of the heal's bake (Debug, 3 takes). The remaining `sin` per
-    /// sample per voice is DELIBERATE: a table LFO would trade that beating for launch time nobody waits on.
+    /// Detuned unison "ahh"s. What makes it voices rather than an organ: formants (~730 and ~1090 Hz for
+    /// "ah") plus per-voice detune/vibrato/entry, whose beating IS the choral sound. The bank's most
+    /// expensive layer (~70 ms of the heal's bake, Debug); a table LFO would trade that beating away.
     fn choir(r: *Rack, t0: f32, dur: f32, f0: f32, amp: f32, voices: u32, peak: f32) void {
         const s = r.span(t0, dur) orelse return;
         const a = s.a;
@@ -208,8 +199,7 @@ const Rack = struct {
             if (hz > SRF * 0.45) continue;
             const vrate = r.rng.range(4.2, 6.4);
             const vdepth = r.rng.range(0.004, 0.010);
-            const enter = r.rng.range(0, 0.10); // …and they do not all open their mouths together
-            // The two formants are FIXED, so their coefficients are solved once per voice, not per sample.
+            const enter = r.rng.range(0, 0.10);
             const c1 = svfCoef(730, 0.86);
             const c2 = svfCoef(1090, 0.82);
             var f1 = Svf{};
@@ -231,8 +221,8 @@ const Rack = struct {
         }
     }
 
-    /// SPARKLE — a scatter of short high bells on a pentatonic ladder, so a shimmer never lands on a note
-    /// that fights the chord under it. Random pitches here read as a broken wind chime.
+    /// Short high bells on a PENTATONIC ladder, so a shimmer never lands on a note that fights the chord
+    /// under it — random pitches here read as a broken wind chime.
     fn sparkle(r: *Rack, t0: f32, dur: f32, amp: f32, base: f32, n: u32) void {
         const PENT = [_]f32{ 0, 2, 4, 7, 9, 12, 14, 16, 19, 24 };
         var k: u32 = 0;
@@ -244,17 +234,16 @@ const Rack = struct {
         }
     }
 
-    /// Three feedback combs in series, each fed back through a one-pole so the tail darkens as it dies —
-    /// that darkening is the difference between a reverb and a stack of echoes. Feed-forward in time
-    /// (sample i only reads earlier samples), so it cannot blow up for `fb` under 1 and needs no 2nd buffer.
+    /// Three feedback combs, each fed back through a one-pole so the tail darkens as it dies — that
+    /// darkening is what separates a reverb from a stack of echoes. Feed-forward in time (sample i reads
+    /// only earlier samples), so it cannot blow up and needs no second buffer.
     fn hall(r: *Rack, secs: f32, cut: f32) void {
         const taps = [_]f32{ 0.0297, 0.0371, 0.0411 }; // prime-ish, so their echoes never line up
         for (taps) |d| {
             const lag = @max(r.at(d), 1);
             if (lag >= r.n) continue;
             // THE GAIN *IS* THE DECAY TIME: g^(secs/d) = -60 dB. Trimming it by a separate "wet" factor
-            // shortens the tail instead of quieting it — the first pass did that and bought a 0.3 s room
-            // out of a 1.35 s ask. Level is `norm`'s job at the end of the master chain, not this one's.
+            // shortens the tail rather than quieting it; level is `norm`'s job at the end of the chain.
             const g = mathx.clampF(std.math.pow(f32, 0.001, d / @max(secs, 0.05)), 0, 0.92);
             var p = Pole{};
             var i = lag;
@@ -262,7 +251,6 @@ const Rack = struct {
         }
     }
 
-    /// A DIGITAL BIRDCALL — two to four short pulse blips at STEPPED pitches.
     fn chirp(r: *Rack, t0: f32, amp: f32, base: f32) void {
         const notes = 2 + r.rng.intn(3);
         var t = t0;
@@ -345,9 +333,8 @@ const Rack = struct {
         }
     }
 
-    /// A THIN, BOXY BAND — the telephone / transistor-radio read, which is not a lowpass: it is losing the
-    /// BOTTOM as well as the top, and the bottom going is the half the ear hears as "through a speaker".
-    /// Mixed rather than replaced, so the dial sweeps INTO it instead of switching.
+    /// The telephone / transistor-radio read. NOT a lowpass — it loses the BOTTOM as well as the top, and
+    /// the bottom going is the half the ear hears as "through a speaker". Mixed, so the dial sweeps into it.
     fn band(r: *Rack, cut: f32, res: f32, amt: f32) void {
         const c = svfCoef(cut, res);
         var f = Svf{};
@@ -357,9 +344,8 @@ const Rack = struct {
         }
     }
 
-    /// THE EQ'S BOTTOM END — a high pass built as "the signal less its own low end", so one `Pole` does it
-    /// and the dial is how much of the body is taken away. It THINS; it does not scoop, because a scoop is
-    /// two filters and a taste, and this rack is a tone control rather than a mix desk.
+    /// A high pass built as "the signal less its own low end", so one `Pole` does it and the dial is how
+    /// much body is taken away.
     fn thin(r: *Rack, cut: f32, amt: f32) void {
         var p = Pole{};
         const k = mathx.clampF(amt, 0, 1);
@@ -369,9 +355,8 @@ const Rack = struct {
         }
     }
 
-    /// …AND ITS TOP — a band ADDED rather than blended in (`band` lerps, which cannot boost). This is the
-    /// bite: where a struck edge and a consonant live, and where a voice that has been muffled gets its
-    /// legibility back without the fizz coming with it.
+    /// A band ADDED rather than blended in — `band` lerps, which cannot boost. This is the bite a muffled
+    /// voice gets its legibility back from.
     fn lift(r: *Rack, cut: f32, res: f32, amt: f32) void {
         const c = svfCoef(cut, res);
         var f = Svf{};
@@ -382,8 +367,8 @@ const Rack = struct {
         }
     }
 
-    /// VINYL CRACKLE — sparse impulsive POPS, and the sparseness is the whole point: a dense one is just
-    /// `hiss` with a worse spectrum, where what reads as age is the silence between the clicks.
+    /// Vinyl crackle. The SPARSENESS is the point — dense, it is just `hiss` with a worse spectrum; what
+    /// reads as age is the silence between the clicks.
     fn crackle(r: *Rack, amt: f32, perSec: f32) void {
         const chance = perSec / SRF; // …that a given sample is where a pop starts
         const life = @max(r.at(0.0022), 2); // a pop is a couple of milliseconds and nothing more
@@ -433,12 +418,11 @@ const CRUSH_BITS: f32 = 7.5;
 const DITHER_LSB: f32 = 0.4;
 const CRUSH_HOLD: u32 = 2;
 
-// The cue that actually makes a sound read as FAR rather than as quiet.
-const AIR_FAR_BED: f32 = 1400; // the wind, a few hundred metres of it in every direction
+// Air-absorption cutoffs in Hz — the cue that makes a sound read as FAR rather than as quiet.
+const AIR_FAR_BED: f32 = 1400;
 const AIR_FAR_CALL: f32 = 2100;
-/// The big LOW cry — the OWL (a wolf howl was the other and is gone).
 const AIR_FAR_CRY: f32 = 1950;
-/// The darkest any NEAR voice is rendered (mkOgreStep / mkStepSoft sit here).
+/// The darkest any NEAR voice is rendered.
 const AIR_NEAR_DARKEST: f32 = 2200;
 const AIR_NEAR_GRASS: f32 = 4200;
 
@@ -461,7 +445,7 @@ pub const Id = enum {
     stagger,
     guard_block,
     guard_break,
-    parry, // …and the one the shield only makes when it REFUSED a blow instead of eating it
+    parry,
     refused,
     death,
     respawn,
@@ -472,7 +456,7 @@ pub const Id = enum {
     toad_hurt,
     toad_die,
     shroom_hop,
-    shroom_coo, // the gather's tell — sweet, and then the second note bends flat
+    shroom_coo,
     shroom_fling,
     shroom_puff,
     shroom_hurt,
@@ -484,75 +468,74 @@ pub const Id = enum {
     arrow_wood,
     arrow_stone,
     arrow_metal,
-    wand_charge, // the gather: something being drawn INTO the stone, climbing
-    wand_cast, // …and the stone letting go
+    wand_charge,
+    wand_cast,
     bone_hurt,
     bone_die,
-    skel_lunge, // THE GREATSWORD COMMITTING — dry bones gathering, then two metres of steel coming at you
+    skel_lunge,
     ogre_step,
     ogre_roar,
     ogre_slam,
     ogre_swipe,
-    ogre_heave, // HE COMMITS — the club leaving the cock, one grunt, on the frame the swing starts
+    ogre_heave,
     ogre_hurt,
     ogre_die,
-    kobold_snarl, // HE COMMITS — one bark per flurry, and the cue to get out of reach
+    kobold_snarl,
     kobold_chop,
     kobold_heave,
-    kobold_cast, // the priest's tell, rising
+    kobold_cast,
     kobold_heal,
-    kobold_whirl, // the sling going round overhead
+    kobold_whirl,
     kobold_sling,
-    kobold_bite, // teeth: a snap with a wet click in it
+    kobold_bite,
     kobold_hurt,
-    kobold_die, // a yelp that falls apart
-    // THE SHADE has no throat. Every one of these is AIR and RING and nothing that could be a larynx —
-    // which is what separates it from the five creatures above, all of which growl or yelp or screech.
-    shade_reach, // the arms going wide: the tell for the touch
-    shade_gather, // …and the wisp balling up between the hands, climbing
-    shade_wisp, // it lets go
-    shade_touch, // the hands closing, and something coming out of you with them
-    shade_blink, // a place tearing open and shutting again
+    kobold_die,
+    // THE SHADE has no throat: every one of these is AIR and RING and nothing that could be a larynx.
+    shade_reach,
+    shade_gather,
+    shade_wisp,
+    shade_touch,
+    shade_blink,
     shade_hurt,
-    shade_die, // the shroud letting go of its own shape
-    leech_wing, // THE WHINE — retriggered on a fly's cadence, since a synthesized take cannot loop
-    leech_stab, // the beak going in: a wet tick and a shell creaking
-    leech_drink, // …and the pull of it, retriggered while it holds on
+    shade_die,
+    leech_wing, // retriggered on a fly's cadence, since a synthesized take cannot loop
+    leech_stab,
+    leech_drink, // …likewise retriggered, while it holds on
     leech_hurt,
-    leech_die, // the note falling out from under it
-    wood_wake, // THE UNFOLD — timber tearing out of its own grain
-    wood_creak, // …and the bole working against its roots while it is awake
-    wood_swing, // a limb through the air: mass, not an edge
-    wood_hit, // …and it landing
-    wood_hurt, // steel into wood
-    wood_die, // the whole thing letting go and coming down
-    spider_hiss, // the rear, and the squat before she lays: air forced out through something clenched
+    leech_die,
+    wood_wake,
+    wood_creak,
+    wood_swing,
+    wood_hit,
+    wood_hurt,
+    wood_die,
+    spider_hiss,
     spider_spit,
-    spider_bite, // two fangs and the horn claws crossing behind them
+    spider_bite,
     spider_hurt,
-    spider_die, // the big one going over: legs rattling on the ground, then nothing
-    brood_screech, // IT IS BORN — the highest thing in the game, straight over the sac splitting
-    brood_leap, // a hatchling committing — a thin shriek, and the only warning you get
+    spider_die,
+    brood_screech,
+    brood_leap,
     brood_bite,
     brood_hurt,
-    brood_die, // a wet pop, and it is done
-    sac_lay, // something heavy and soft arriving on the ground
+    brood_die,
+    sac_lay,
     sac_hit,
-    sac_hatch, // the membrane splitting and what was inside it coming out
+    sac_hatch,
     sac_burst,
-    acid_splash, // the glob landing and spreading
+    acid_splash,
     acid_burn,
     flask_drink,
     flask_cycle,
     eat,
-    chest_open, // a lid coming up: the lock giving, the hinge turning, the boards settling back
+    chest_open,
     item_get,
-    // THE SOULS. Gold and AIR, no wood and no iron: what leaves you when you die is not an object, and the
-    // family has to be audibly a different substance from the chest and the flask beside it.
-    souls_spill, // everything coming off you at once, falling
-    souls_hum, // …and standing there — a RETRIGGER on its own cadence, since a synthesized take cannot loop
-    souls_take, // it rushing back up into you: the spill's own shape, run backwards and brighter
-    ring_snap, // the binding ring giving instead of you — one thin break, and it is over
+    // THE SOULS are gold and AIR, no wood and no iron — audibly a different substance from the chest and
+    // the flask beside them.
+    souls_spill,
+    souls_hum, // a RETRIGGER on its own cadence, since a synthesized take cannot loop
+    souls_take,
+    ring_snap,
     kill,
     menu_move,
     menu_pick,
@@ -560,42 +543,37 @@ pub const Id = enum {
     wind,
     birds,
     birdsong,
-    owl, // hoo … hu-hoooo, from somewhere in the ruins
-    crickets, // the insect chirr in the grass — a BED, and the only ambient voice rendered bright
-    // THE SUMMONED WOLF. It HAS a throat, unlike the shade — it growls and it yelps like an animal, because
-    // it is one. What says it is a spirit is the TAIL on every voice: each one ends in a ring that no chest
-    // could make and takes far too long to die, as though the sound carried on somewhere else. Author the
-    // larynx honestly and let the reverb be the only unearthly thing, or it stops reading as a wolf at all.
-    wolf_howl, // the call — what answers the bell
-    wolf_growl, // it has something in its sights
-    wolf_bite, // the jaws arriving at the end of the hop
+    owl,
+    crickets, // a BED, and the only ambient voice rendered bright
+    // THE SUMMONED WOLF has a throat, unlike the shade. What says it is a spirit is the TAIL on every voice
+    // — author the larynx honestly and let the reverb be the only unearthly thing.
+    wolf_howl,
+    wolf_growl,
+    wolf_bite,
     wolf_hurt,
-    wolf_die, // …and the thread letting go
+    wolf_die,
 };
 const NV = @typeInfo(Id).@"enum".fields.len;
 
 pub const Submix = enum {
     sfx,
     combat,
-    /// THE BACKGROUND: both beds and all three sparse calls.
     ambience,
 };
 const NMIX = @typeInfo(Submix).@"enum".fields.len;
 
 const TRIM_AMBIENCE: f32 = 0.625;
-/// THE FIGHT SITS UNDER EVERYTHING ELSE (owner's call). Lowered from 0.55: this is the one dial that reaches
-/// the WHOLE family — the `battle()` band and the literal-gain rows both — where `BATTLE_FLOOR` only moves
-/// the band. A family level is a family level, so it is spent here and not in fifty rows.
+/// THE FIGHT SITS UNDER EVERYTHING ELSE (owner's call). The one dial reaching the WHOLE family — the
+/// `battle()` band and the literal-gain rows both — where `BATTLE_FLOOR` only moves the band.
 const TRIM_COMBAT: f32 = 0.46;
 const TRIM_SFX: f32 = 0.65;
 
-/// …AND THE FIGHT IS ROLLED OFF THE TOP (owner's call). One author-side pole over every combat voice at bake
-/// (`bakeRow`), UNDER the player's own rack so a dial still sits on top of it. It is the fizz on a struck
-/// edge and the sizzle on a hiss that make a busy fight tiring; the body of every one of these is well below
-/// it, so the cut costs the weight nothing.
+/// One author-side pole over every combat voice at bake (`bakeRow`), UNDER the player's own rack so a dial
+/// still sits on top of it. The body of every one of these is well below it, so the cut costs no weight.
 const COMBAT_TREBLE: f32 = 6200;
 
-/// THE AUTHOR-SIDE LEVEL of each family, paid before the player's dial sees it. No family ships at unity (owner's call: quieter at the SOURCE, so an untouched slider still hears the intended mix).
+/// Author-side level per family, paid before the player's dial sees it. No family ships at unity (owner's
+/// call: quieter at the SOURCE, so an untouched slider still hears the intended mix).
 fn submixTrim(m: Submix) f32 {
     return switch (m) {
         .sfx => TRIM_SFX,
@@ -604,9 +582,8 @@ fn submixTrim(m: Submix) f32 {
     };
 }
 
-// The player's filter rack, one per `Submix` (Menu > Debug > Sound Filters). BAKE-TIME, not playback-time, and it
-// has to be: raylib gives volume/pitch/pan per playing sound and nothing else, so a voice already sounding
-// cannot be filtered. Moving a dial re-renders that family (`tickFx`).
+// The player's filter rack, one per `Submix`. BAKE-TIME, not playback-time, and it has to be: raylib gives
+// volume/pitch/pan per playing sound and nothing else. Moving a dial re-renders that family (`tickFx`).
 
 pub const AFX_COUNT = 11;
 pub const AFX_EPS: f32 = 0.001;
@@ -619,8 +596,8 @@ pub const AF_WOBBLE = 5;
 pub const AF_ROOM = 6;
 pub const AF_HISS = 7;
 pub const AF_CRACKLE = 8;
-/// THE EQ — the two ends of the tone, added last so the character filters above keep their indices (a
-/// `settings.cfg` written before them reads back with these two at 0, which is off).
+/// Added last so the character filters above keep their indices — a `settings.cfg` written before them
+/// reads back with these two at 0, which is off.
 pub const AF_BASS = 9;
 pub const AF_PRESENCE = 10;
 
@@ -629,15 +606,15 @@ const AudioFilter = struct { name: [:0]const u8 };
 const AUDIO_FILTERS = [AFX_COUNT]AudioFilter{
     .{ .name = "Drive" },
     .{ .name = "Bit Crush" },
-    .{ .name = "Sample Hold" }, // the aliasing whistle, where Bit Crush is the quantise rasp
+    .{ .name = "Sample Hold" },
     .{ .name = "Muffle" },
-    .{ .name = "Telephone" }, // loses the BOTTOM too, which is what says "through a speaker"
+    .{ .name = "Telephone" },
     .{ .name = "Wow & Flutter" },
     .{ .name = "Room" },
     .{ .name = "Tape Hiss" },
     .{ .name = "Vinyl Crackle" },
-    .{ .name = "Bass Cut" }, // …and the EQ: the bottom taken away…
-    .{ .name = "Presence" }, // …and the bite put back
+    .{ .name = "Bass Cut" },
+    .{ .name = "Presence" },
 };
 pub const AFX_NAMES = blk: {
     var out: [AFX_COUNT][:0]const u8 = undefined;
@@ -669,9 +646,8 @@ comptime {
 pub const FxPreset = struct { idx: usize, val: f32 };
 pub const FX_VINYL = [_]FxPreset{ .{ .idx = AF_CRACKLE, .val = 0.55 }, .{ .idx = AF_HISS, .val = 0.30 }, .{ .idx = AF_WOBBLE, .val = 0.35 }, .{ .idx = AF_MUFFLE, .val = 0.22 } };
 pub const FX_RADIO = [_]FxPreset{ .{ .idx = AF_TELEPHONE, .val = 0.85 }, .{ .idx = AF_DRIVE, .val = 0.40 }, .{ .idx = AF_HISS, .val = 0.22 } };
-/// **THE HOUSE SOUND** (owner's call): worn tape is what the game LAUNCHES as, on all three families.
-/// `AFX_DEFAULTS` is DERIVED from this row rather than authored beside it, so "Reset to Default" and
-/// "Preset: Worn Tape" are one set of numbers and cannot come to mean two different things.
+/// The house sound (owner's call): what the game LAUNCHES as, on all three families. `AFX_DEFAULTS` is
+/// derived from this row, so "Reset to Default" and "Preset: Worn Tape" cannot come to mean two things.
 pub const FX_TAPE = [_]FxPreset{ .{ .idx = AF_WOBBLE, .val = 0.55 }, .{ .idx = AF_HISS, .val = 0.35 }, .{ .idx = AF_MUFFLE, .val = 0.30 }, .{ .idx = AF_DRIVE, .val = 0.25 } };
 pub const FX_CRUSHED = [_]FxPreset{ .{ .idx = AF_CRUSH, .val = 0.70 }, .{ .idx = AF_ALIAS, .val = 0.55 }, .{ .idx = AF_DRIVE, .val = 0.30 } };
 pub const FX_BROKEN = [_]FxPreset{ .{ .idx = AF_DRIVE, .val = 0.85 }, .{ .idx = AF_TELEPHONE, .val = 0.50 }, .{ .idx = AF_CRACKLE, .val = 0.40 }, .{ .idx = AF_ALIAS, .val = 0.35 } };
@@ -722,11 +698,9 @@ pub fn applyFxPreset(m: Submix, preset: []const FxPreset) void {
     markFxDirty(m);
 }
 
-/// Over the voice `make` rendered and `master` finished, in signal-path order: distort, quantise,
-/// band-limit, warp, place in a room, then the medium's own noise. Re-normalises, because everything above
-/// can push past ±1.
+/// In signal-path order: distort, quantise, band-limit, warp, place in a room, then the medium's own noise.
 fn applyFx(r: *Rack, m: Submix) void {
-    if (!anyFxIn(m)) return; // an all-off rack bakes the bank exactly as it did before filters existed
+    if (!anyFxIn(m)) return;
     const v = fxVals[@intFromEnum(m)];
     if (v[AF_DRIVE] > AFX_EPS) r.sat(1.0 + 7.0 * v[AF_DRIVE]);
     if (v[AF_CRUSH] > AFX_EPS) r.crush(mathx.lerpF(CRUSH_BITS, 2.0, v[AF_CRUSH]), 1);
@@ -738,8 +712,7 @@ fn applyFx(r: *Rack, m: Submix) void {
     if (v[AF_ROOM] > AFX_EPS) r.hall(0.12 + 1.5 * v[AF_ROOM], 2600.0);
     if (v[AF_HISS] > AFX_EPS) r.hiss(0.012 + 0.09 * v[AF_HISS]);
     if (v[AF_CRACKLE] > AFX_EPS) r.crackle(0.05 + 0.30 * v[AF_CRACKLE], 6.0 + 340.0 * v[AF_CRACKLE]);
-    // THE EQ LAST, over whatever character the rack above it put on: it is the tone of the RESULT, and a
-    // presence lift ahead of the drive would just be more to distort.
+    // THE EQ LAST: it is the tone of the RESULT, and a presence lift ahead of the drive is more to distort.
     if (v[AF_BASS] > AFX_EPS) r.thin(120.0 + 220.0 * v[AF_BASS], v[AF_BASS]);
     if (v[AF_PRESENCE] > AFX_EPS) r.lift(3200.0, 0.5, 0.9 * v[AF_PRESENCE]);
     r.norm(0.92);
@@ -747,7 +720,7 @@ fn applyFx(r: *Rack, m: Submix) void {
 }
 
 /// Seconds a dial must sit still before its family is re-rendered — a held slider glides at frame rate and
-/// a re-bake is tens of ms a family, so only the last value asked for is paid for.
+/// a re-bake is tens of ms.
 const FX_SETTLE: f32 = 0.22;
 var fxDirty: [NMIX]bool = [_]bool{false} ** NMIX;
 var fxSettle: f32 = 0;
@@ -757,7 +730,6 @@ fn markFxDirty(m: Submix) void {
     fxSettle = FX_SETTLE;
 }
 
-/// True while a re-render is owed, so the menu can say so rather than look like it did nothing.
 pub fn fxPending() bool {
     return fxSettle > 0;
 }
@@ -776,8 +748,8 @@ pub fn tickFx(dt: f32) void {
 }
 
 const Row = struct {
-    /// Here to be CHECKED, not read. `BANK` is indexed by `@intFromEnum`, so inserting an `Id` without its row
-    /// at the matching line leaves the lengths agreeing while every voice below plays its neighbour's recipe.
+    /// Here to be CHECKED, not read: `BANK` is indexed by `@intFromEnum`, so an `Id` inserted without its row
+    /// leaves the lengths agreeing while every voice below plays its neighbour's recipe.
     id: Id,
     make: *const fn (*Rack) void,
     gain: f32 = 0.7,
@@ -786,13 +758,12 @@ const Row = struct {
     vjit: f32 = 0.12,
     vars: u8 = 1,
     poly: u8 = 2,
-    /// HOW FAR THIS VOICE CARRIES, in metres — the range `world()` fades it out over, and past which it costs nothing at all.
+    /// Metres. The range `world()` fades it out over, past which it costs nothing at all.
     reach: f32 = FALLOFF,
 };
 
 
 fn mkStepSoft(r: *Rack) void {
-    // A walk: a soft heel body, a scuff of grit, and nothing else.
     r.body(0.0, 0.11, 108 + r.rng.signed() * 12, 52, 0.55, 5.0);
     r.grit(0.004, 0.075, 0.28, 1500 + r.rng.signed() * 400, 0.5, 5.5);
     r.air(0.0, 0.05, 0.10, 900, 380, 0.35, 6.0);
@@ -800,7 +771,6 @@ fn mkStepSoft(r: *Rack) void {
 }
 
 fn mkStepHard(r: *Rack) void {
-    // A run: more mass, a harder transient, and the grit sprays further.
     r.tick(0.0, 0.20, 3000);
     r.body(0.0, 0.16, 138 + r.rng.signed() * 14, 46, 0.85, 4.2);
     r.grit(0.003, 0.13, 0.40, 2100 + r.rng.signed() * 500, 0.55, 4.6);
@@ -825,7 +795,7 @@ fn mkStepStone(r: *Rack) void {
 }
 
 fn mkStepWater(r: *Rack) void {
-    r.air(0.0, 0.11, 0.34, 700, 3200, 0.30, 4.0); // the sheet thrown up
+    r.air(0.0, 0.11, 0.34, 700, 3200, 0.30, 4.0);
     r.body(0.008, 0.07, 380, 820, 0.42, 6.5);
     r.body(0.052, 0.05, 620, 1180, 0.22, 7.5);
     r.grit(0.02, 0.13, 0.16, 2600, 0.25, 3.4);
@@ -833,18 +803,16 @@ fn mkStepWater(r: *Rack) void {
 }
 
 fn mkRoll(r: *Rack) void {
-    // CLOTH AND GRIT OVER DIRT, and NOTHING THAT SWEEPS.
+    // Cloth and grit over dirt, and NOTHING THAT SWEEPS.
     r.grit(0.0, 0.20, 0.34, 1100, 0.55, 3.0);
     r.body(0.05, 0.16, 78, 40, 0.42, 4.5);
     r.grit(0.24, 0.13, 0.20, 1700, 0.45, 4.0);
-    r.air(0.0, 0.16, 0.10, 900, 480, 0.10, 3.2); // a breath of cloth, resonance nearly shut — no glide
+    r.air(0.0, 0.16, 0.10, 900, 480, 0.10, 3.2);
     r.master(1.15, 2600);
 }
 
 fn mkJump(r: *Rack) void {
-    // THE PUSH-OFF, and nothing has arrived: an exhale, cloth, and the one scuff of the boot leaving. No
-    // transient at all — a `tick` on the front of it is the LANDING's, and the pair would read as one event
-    // heard twice.
+    // NO TRANSIENT: a `tick` on the front of this is the LANDING's, and the pair reads as one event twice.
     r.air(0.0, 0.14, 0.30, 520, 1100, 0.26, 4.2);
     r.grit(0.0, 0.08, 0.24, 1800 + r.rng.signed() * 300, 0.45, 5.2);
     r.body(0.0, 0.09, 96, 44, 0.28, 5.5);
@@ -852,43 +820,39 @@ fn mkJump(r: *Rack) void {
 }
 
 fn mkLand(r: *Rack) void {
-    // …AND THE BODY ARRIVING. The sprint step is the reference and this sits over it: more mass, lower, and
-    // the grit sprays wider — but it is the same BOOT, so it stays in that family rather than becoming a thud
-    // out of the combat bank.
+    // The sprint step is the reference and this sits over it — same BOOT, not a thud out of the combat bank.
     r.tick(0.0, 0.26, 2600);
     r.body(0.0, 0.21, 96 + r.rng.signed() * 10, 36, 1.0, 3.3);
     r.grit(0.004, 0.19, 0.48, 1900 + r.rng.signed() * 400, 0.55, 3.8);
-    r.air(0.05, 0.15, 0.14, 700, 420, 0.14, 3.0); // cloth settling after the mass, not with it
+    r.air(0.05, 0.15, 0.14, 700, 420, 0.14, 3.0);
     r.master(2.0, 3200);
 }
 
 fn mkSwingLight(r: *Rack) void {
-    // R1: MOVED AIR, not a cartoon vwip (owner's call — the old pair sounded stupid).
+    // MOVED AIR, not a cartoon vwip (owner's call).
     r.air(0.0, 0.15, 0.55, 2000, 620, 0.16, 2.6);
-    r.air(0.015, 0.085, 0.16, 5200, 2400, 0.12, 3.4); // the EDGE: a thin hiss riding the front of it
+    r.air(0.015, 0.085, 0.16, 5200, 2400, 0.12, 3.4);
     r.master(1.05, 4200);
 }
 
 fn mkSwingHeavy(r: *Rack) void {
     r.air(0.0, 0.26, 0.26, 900, 1500, 0.14, 1.7);
     r.air(0.24, 0.30, 0.72, 2200, 380, 0.18, 2.1);
-    r.body(0.26, 0.14, 170, 64, 0.22, 3.8); // a little mass behind the edge
+    r.body(0.26, 0.14, 170, 64, 0.22, 3.8);
     r.master(1.25, 3600);
 }
 
 
 fn mkHitLight(r: *Rack) void {
-    // Blade into a body: a wet crack and a low thump under it.
     r.tick(0.0, 0.34, 2200);
     r.body(0.0, 0.20, 170, 56, 1.05, 3.8);
-    r.body(0.0, 0.09, 88, 52, 0.5, 5.0); // a sub under it, for the thud
+    r.body(0.0, 0.09, 88, 52, 0.5, 5.0);
     r.grit(0.0, 0.10, 0.34, 1500, 0.45, 5.0);
     r.ring(0.004, 0.13, 700, 0.13, 7.0, 2);
     r.master(1.25, 2500);
 }
 
 fn mkHitHeavy(r: *Rack) void {
-    // The R2 connecting: everything the light has, dropped an octave and given a crunch that carries.
     r.tick(0.0, 0.40, 1800);
     r.body(0.0, 0.36, 128, 34, 1.35, 2.4);
     r.body(0.0, 0.14, 66, 38, 0.62, 4.0);
@@ -899,7 +863,6 @@ fn mkHitHeavy(r: *Rack) void {
 }
 
 fn mkHurt(r: *Rack) void {
-    // Taking a chomp: a short winded grunt over the impact.
     r.body(0.0, 0.19, 118, 46, 0.85, 3.8);
     r.growl(0.01, 0.22, 156, 108, 0.60, 0.11, 0.14);
     r.grit(0.0, 0.09, 0.22, 1100, 0.45, 5.0);
@@ -907,7 +870,6 @@ fn mkHurt(r: *Rack) void {
 }
 
 fn mkHurtHeavy(r: *Rack) void {
-    // The lunge or the slam landing: the air goes out of him.
     r.body(0.0, 0.38, 98, 30, 1.15, 2.4);
     r.growl(0.0, 0.42, 140, 70, 0.85, 0.15, 0.10);
     r.grit(0.0, 0.16, 0.34, 900, 0.68, 3.4);
@@ -916,7 +878,6 @@ fn mkHurtHeavy(r: *Rack) void {
 }
 
 fn mkStagger(r: *Rack) void {
-    // A stance break: boots losing the floor.
     r.grit(0.0, 0.36, 0.52, 1200, 0.8, 2.4);
     r.air(0.0, 0.32, 0.30, 1200, 320, 0.34, 2.6);
     r.body(0.14, 0.18, 70, 38, 0.42, 3.6);
@@ -924,8 +885,7 @@ fn mkStagger(r: *Rack) void {
 }
 
 fn mkGuardBlock(r: *Rack) void {
-    // A BLOW CAUGHT ON WOOD, with iron round the edge of it.
-    r.tick(0.0, 0.42, 3400); // the strike itself…
+    r.tick(0.0, 0.42, 3400);
     r.body(0.0, 0.13, 190, 78, 0.95, 5.0);
     r.grit(0.0, 0.07, 0.30, 2400, 0.4, 6.0);
     r.ring(0.003, 0.09, 940, 0.16, 8.0, 2);
@@ -936,27 +896,22 @@ fn mkGuardBreak(r: *Rack) void {
     r.tick(0.0, 0.46, 1700);
     r.body(0.0, 0.34, 132, 40, 1.30, 2.6);
     r.grit(0.0, 0.22, 0.50, 1300, 0.7, 3.2);
-    r.ring(0.004, 0.30, 470, 0.22, 3.4, 3); // the rim, swinging away and still ringing
+    r.ring(0.004, 0.30, 470, 0.22, 3.4, 3);
     r.grit(0.10, 0.34, 0.40, 1100, 0.8, 2.6);
     r.air(0.08, 0.30, 0.24, 1300, 300, 0.32, 2.8);
     r.master(1.7, 2400);
 }
 
 fn mkParry(r: *Rack) void {
-    // IRON TURNED, and it has to be a struck DISC rather than a bell. TWO WAYS TO SOUND LIKE A TOY, and the
-    // first shape managed both: `body` GLIDES its pitch exponentially, so one in the mid register is a
-    // descending chirp (1750 down to 760 is the cartoon boing); and a `ring` is PURE SINES at inharmonic
-    // spacing, which past two or three partials and a slow decay is a spring reverb, not a shield.
-    // SO THE METAL COMES FROM NOISE — `mkGuardBlock` made HARDER and BRIGHTER, with a touch of tone as
-    // garnish. …AND THE TURN IS ITS OWN EVENT (owner): a short scrape RISES away after the strike, the one
-    // direction nothing else in the bank sweeps, and one higher partial hangs a beat past the hit.
-    r.tick(0.0, 0.58, 6000); // the strike, brighter than the block's 3400
-    r.grit(0.0, 0.09, 0.44, 3400, 0.35, 5.0); // steel ON steel — the character, and it is noise
-    r.body(0.0, 0.15, 205, 84, 1.00, 5.0); // the mass, in the block's own register
-    r.grit(0.05, 0.10, 0.28, 2100, 0.45, 4.2); // the blade SLIDING off the boards' face
-    r.air(0.05, 0.15, 0.26, 1500, 6200, 0.30, 3.4); // …and the shimmer RISING with it, away
-    r.ring(0.004, 0.17, 1240, 0.20, 5.5, 2); // a touch of tone at the strike…
-    r.ring(0.06, 0.15, 1980, 0.11, 6.0, 2); // …and the turned blow's own, a shade higher and later
+    // THE METAL COMES FROM NOISE, and both alternatives sound like a toy: `body` GLIDES its pitch, so one
+    // in the mid register is a cartoon boing, and a `ring` past two or three partials is a spring reverb.
+    r.tick(0.0, 0.58, 6000);
+    r.grit(0.0, 0.09, 0.44, 3400, 0.35, 5.0);
+    r.body(0.0, 0.15, 205, 84, 1.00, 5.0);
+    r.grit(0.05, 0.10, 0.28, 2100, 0.45, 4.2);
+    r.air(0.05, 0.15, 0.26, 1500, 6200, 0.30, 3.4);
+    r.ring(0.004, 0.17, 1240, 0.20, 5.5, 2);
+    r.ring(0.06, 0.15, 1980, 0.11, 6.0, 2);
     r.master(1.7, 5200);
 }
 
@@ -971,17 +926,16 @@ fn mkDeath(r: *Rack) void {
     r.body(0.0, 2.2, 82, 33, 0.8, 1.1);
     r.body(0.10, 1.9, 41, 22, 0.6, 1.0);
     r.air(0.0, 1.6, 0.25, 900, 160, 0.35, 1.6);
-    r.ring(0.55, 1.5, 210, 0.10, 1.8, 3); // a far, cold overtone coming up under it
+    r.ring(0.55, 1.5, 210, 0.10, 1.8, 3);
     r.sat(2.2);
     r.warm(2400);
-    r.wow(0.006, 0.9); // deeper wow than the house default: the tape is DRAGGING
+    r.wow(0.006, 0.9);
     r.hiss(0.02);
     r.norm(0.95);
     r.ends(0.01, 0.35);
 }
 
 fn mkRespawn(r: *Rack) void {
-    // Waking at the bonfire: a warm low bloom rising out of nothing.
     r.body(0.0, 1.1, 88, 132, 0.8, 1.2);
     r.ring(0.02, 1.0, 330, 0.35, 2.0, 4);
     r.air(0.0, 0.8, 0.18, 300, 1800, 0.3, 1.4);
@@ -990,14 +944,13 @@ fn mkRespawn(r: *Rack) void {
 
 
 fn mkToadHop(r: *Rack) void {
-    r.body(0.0, 0.09, 190, 88, 0.5, 5.0); // the push off the haunches
-    r.growl(0.0, 0.13, 130, 210, 0.45, 0.3, 0.25); // a short croak going UP with the leap
+    r.body(0.0, 0.09, 190, 88, 0.5, 5.0);
+    r.growl(0.0, 0.13, 130, 210, 0.45, 0.3, 0.25);
     r.grit(0.0, 0.06, 0.25, 1200, 0.6, 6.0);
     r.master(1.9, 2600);
 }
 
 fn mkToadLunge(r: *Rack) void {
-    // The committed pounce: a long loaded croak on the coil, then the launch.
     r.growl(0.0, 0.36, 96, 168, 0.85, 0.34, 0.55);
     r.air(0.26, 0.22, 0.4, 600, 2200, 0.4, 2.6);
     r.body(0.28, 0.16, 150, 64, 0.7, 3.8);
@@ -1005,18 +958,16 @@ fn mkToadLunge(r: *Rack) void {
 }
 
 fn mkToadGape(r: *Rack) void {
-    // The jaws yawning: a rising airy suck with a throat under it.
     r.air(0.0, 0.34, 0.5, 260, 1500, 0.45, 1.2);
     r.growl(0.05, 0.30, 74, 108, 0.5, 0.4, 0.5);
     r.master(1.7, 2400);
 }
 
 fn mkToadChomp(r: *Rack) void {
-    // The snap: a hard wet clack of jaws, a squelch, and a low thud where the head stops.
     r.tick(0.0, 0.6, 2600);
     r.body(0.0, 0.10, 240, 70, 0.9, 5.5);
     r.grit(0.0, 0.07, 0.55, 1100, 0.75, 6.0);
-    r.ring(0.002, 0.06, 620, 0.2, 8.0, 2); // the teeth meeting
+    r.ring(0.002, 0.06, 620, 0.2, 8.0, 2);
     r.master(2.3, 2600);
 }
 
@@ -1028,7 +979,6 @@ fn mkToadHurt(r: *Rack) void {
 }
 
 fn mkToadDie(r: *Rack) void {
-    // The croak running out of air, then the body going down.
     r.growl(0.0, 0.55, 190, 58, 0.9, 0.5, 0.07);
     r.body(0.22, 0.30, 96, 38, 0.7, 2.6);
     r.grit(0.24, 0.22, 0.35, 900, 0.7, 3.0);
@@ -1036,17 +986,15 @@ fn mkToadDie(r: *Rack) void {
 }
 
 
-// THE SPORELING — cute shapes with one wrong thing in each (owner: "slightly unnerving"). The wrongness
-// is always PITCH doing something a happy sound would not: bending flat, sliding up too far, leaking out.
+// THE SPORELING — cute shapes with one wrong thing in each (owner: "slightly unnerving"), and the wrongness
+// is always PITCH doing what a happy sound would not: bending flat, sliding up too far, leaking out.
 fn mkShroomHop(r: *Rack) void {
-    r.body(0.0, 0.07, 150, 70, 0.4, 5.5); // the soft pat of it landing
-    r.ring(0.0, 0.05, 980, 0.12, 9.0, 1); // one tiny glassy peep, barely there
+    r.body(0.0, 0.07, 150, 70, 0.4, 5.5);
+    r.ring(0.0, 0.05, 980, 0.12, 9.0, 1);
     r.master(1.6, 2600);
 }
 
 fn mkShroomCoo(r: *Rack) void {
-    // Two little notes. The first is clean; the second SLIDES FLAT while breath gathers under it —
-    // a nursery sound going somewhere it shouldn't.
     r.ring(0.0, 0.14, 640, 0.42, 6.5, 2);
     r.growl(0.17, 0.34, 700, 496, 0.34, 0.22, 0.05);
     r.air(0.05, 0.46, 0.20, 800, 2600, 0.30, 1.3);
@@ -1054,23 +1002,20 @@ fn mkShroomCoo(r: *Rack) void {
 }
 
 fn mkShroomFling(r: *Rack) void {
-    // The launch: a thin gliding whee that keeps RISING past where a squeal would stop.
     r.growl(0.0, 0.34, 340, 1150, 0.38, 0.18, 0.06);
     r.air(0.06, 0.28, 0.26, 900, 3200, 0.32, 2.0);
-    r.body(0.0, 0.08, 160, 80, 0.4, 5.0); // the push off the little feet
+    r.body(0.0, 0.08, 160, 80, 0.4, 5.0);
     r.master(1.7, 3400);
 }
 
 fn mkShroomPuff(r: *Rack) void {
-    // The cloud: a deep soft POFF and a long papery hiss that stays a beat longer than feels right.
     r.body(0.0, 0.12, 120, 52, 0.7, 3.4);
-    r.air(0.02, 0.55, 0.30, 2400, 700, 0.5, 1.0); // the hiss sinking as the spores settle
+    r.air(0.02, 0.55, 0.30, 2400, 700, 0.5, 1.0);
     r.grit(0.04, 0.30, 0.16, 3600, 0.35, 1.8);
     r.master(1.9, 3000);
 }
 
 fn mkShroomHurt(r: *Rack) void {
-    // A bright chirp that CRACKS mid-note into something lower than the body making it.
     r.ring(0.0, 0.07, 920, 0.4, 8.0, 2);
     r.growl(0.07, 0.20, 560, 170, 0.44, 0.3, 0.07);
     r.grit(0.0, 0.08, 0.25, 1600, 0.5, 5.0);
@@ -1078,7 +1023,6 @@ fn mkShroomHurt(r: *Rack) void {
 }
 
 fn mkShroomDie(r: *Rack) void {
-    // A toy losing its air: one long sagging note wobbling as it goes down, and the leak after it.
     r.growl(0.0, 0.60, 520, 64, 0.5, 0.4, 0.06);
     r.air(0.30, 0.40, 0.22, 1800, 500, 0.4, 1.0);
     r.body(0.44, 0.20, 90, 40, 0.5, 2.6);
@@ -1086,14 +1030,12 @@ fn mkShroomDie(r: *Rack) void {
 }
 
 fn mkBowDraw(r: *Rack) void {
-    // A slow creak: resonant noise crawling upward as the limbs load.
     r.air(0.0, 0.55, 0.6, 420, 1150, 0.88, 0.9);
-    r.grit(0.0, 0.5, 0.14, 2400, 0.85, 1.1); // fibres crackling under the pull
+    r.grit(0.0, 0.5, 0.14, 2400, 0.85, 1.1);
     r.master(1.6, 3400);
 }
 
 fn mkBowLoose(r: *Rack) void {
-    // The release: a string twang and the shaft's fizz leaving.
     r.tick(0.0, 0.5, 6000);
     r.ring(0.0, 0.30, 196, 0.9, 5.0, 4);
     r.air(0.01, 0.22, 0.45, 4200, 1200, 0.5, 3.2);
@@ -1117,7 +1059,6 @@ fn mkArrowHit(r: *Rack) void {
 }
 
 fn mkArrowDirt(r: *Rack) void {
-    // INTO THE EARTH — the miss, and by far the commonest of the four.
     arrowRip(r, 0.62);
     r.body(0.0, 0.11, 150, 52, 0.60, 6.0);
     r.grit(0.0, 0.12, 0.55, 900, 0.65, 5.0);
@@ -1125,17 +1066,15 @@ fn mkArrowDirt(r: *Rack) void {
 }
 
 fn mkArrowWood(r: *Rack) void {
-    // INTO TIMBER — the satisfying one.
     arrowRip(r, 0.34);
     r.tick(0.0, 0.70, 5000);
     r.body(0.0, 0.11, 300, 96, 0.95, 6.0);
-    r.ring(0.003, 0.13, 420, 0.30, 8.0, 2); // a dull, low, fast-dying knock — wood, not metal
+    r.ring(0.003, 0.13, 420, 0.30, 8.0, 2);
     r.grit(0.0, 0.06, 0.45, 2600, 0.4, 7.0);
     r.master(2.2, 4200);
 }
 
 fn mkArrowStone(r: *Rack) void {
-    // INTO MASONRY — a STRUCTURE, and the one place a bodkin head meets something harder than it is.
     arrowRip(r, 0.40);
     r.tick(0.0, 0.85, 7000);
     r.body(0.0, 0.055, 420, 190, 0.55, 9.0);
@@ -1145,41 +1084,37 @@ fn mkArrowStone(r: *Rack) void {
 }
 
 fn mkArrowMetal(r: *Rack) void {
-    // INTO IRON — a brazier, a torch bracket, a gibbet cage.
     arrowRip(r, 0.30);
     r.tick(0.0, 0.90, 8000);
     r.body(0.0, 0.06, 520, 240, 0.60, 8.5);
-    r.ring(0.002, 0.30, 1750, 0.55, 4.5, 3); // the shaft and the iron singing together
+    r.ring(0.002, 0.30, 1750, 0.55, 4.5, 3);
     r.grit(0.0, 0.05, 0.5, 5000, 0.3, 8.0);
     r.master(2.0, 5600);
 }
 
 
-/// MINERAL, not a throat: something drawn into a stone. `mkBowDraw`'s trick — resonant noise crawling across
-/// the spectrum as the thing loads — run UPWARD, with a tone rising under it so the climb is pitched rather
-/// than a bare filter sweep. It must be OVER by the throw (see `seconds`), or a chained cast leaves the last
+/// MINERAL, not a throat. Must be OVER by the throw (see `seconds`), or a chained cast leaves the last
 /// gather still climbing under the next crack.
 fn mkWandCharge(r: *Rack) void {
-    r.air(0.0, 0.34, 0.34, 700, 3800, 0.66, 1.1); // the draw-in, sweeping up
-    r.growl(0.02, 0.32, 150, 430, 0.30, 0.26, 0.42); // …and a pitched core climbing with it
-    r.ring(0.05, 0.30, 880, 0.15, 3.0, 3); // a thin harmonic on top: the stone, not the air round it
-    r.grit(0.0, 0.28, 0.12, 3000, 0.30, 1.2); // the shimmer the motes are drawing in
+    r.air(0.0, 0.34, 0.34, 700, 3800, 0.66, 1.1);
+    r.growl(0.02, 0.32, 150, 430, 0.30, 0.26, 0.42);
+    r.ring(0.05, 0.30, 880, 0.15, 3.0, 3);
+    r.grit(0.0, 0.28, 0.12, 3000, 0.30, 1.2);
     r.master(1.5, 4400);
 }
 
-/// A CRACK, not a boom: the bolt is 24 damage of the most-resisted element, and a cannon would promise a hit
-/// the numbers cannot pay for. Struck crystal over a short tear of air.
+/// A CRACK, not a boom: the bolt is 24 damage of the most-resisted element, and a cannon would promise a
+/// hit the numbers cannot pay for.
 fn mkWandCast(r: *Rack) void {
-    r.tick(0.0, 0.44, 5200); // the stone letting go
-    r.ring(0.0, 0.26, 620, 0.24, 5.5, 3); // …ringing after it, which is what makes it mineral
-    r.air(0.0, 0.20, 0.50, 4600, 1100, 0.48, 3.4); // the bolt tearing away
-    r.body(0.0, 0.09, 260, 110, 0.32, 5.5); // just enough mass under it to be felt
+    r.tick(0.0, 0.44, 5200);
+    r.ring(0.0, 0.26, 620, 0.24, 5.5, 3);
+    r.air(0.0, 0.20, 0.50, 4600, 1100, 0.48, 3.4);
+    r.body(0.0, 0.09, 260, 110, 0.32, 5.5);
     r.grit(0.02, 0.15, 0.24, 1800, 0.45, 3.0);
     r.master(2.1, 5000);
 }
 
 fn mkBoneHurt(r: *Rack) void {
-    // Blade on bone: a dry rattle, no flesh in it at all.
     r.tick(0.0, 0.6, 6500);
     r.grit(0.0, 0.20, 0.85, 3800, 0.9, 4.0);
     r.ring(0.0, 0.16, 900, 0.35, 6.5, 4);
@@ -1188,7 +1123,6 @@ fn mkBoneHurt(r: *Rack) void {
 }
 
 fn mkBoneDie(r: *Rack) void {
-    // The skeleton coming apart: a long clatter of pieces settling.
     r.grit(0.0, 0.75, 0.9, 3200, 0.95, 1.9);
     r.ring(0.0, 0.35, 700, 0.3, 4.0, 5);
     r.ring(0.16, 0.35, 520, 0.22, 4.5, 4);
@@ -1196,55 +1130,47 @@ fn mkBoneDie(r: *Rack) void {
     r.master(2.1, 4400);
 }
 
-/// THE COMMIT. Bone first — a dry rattle as he coils and kicks off the earth — and the STEEL over the
-/// top of it, sweeping down and out. The bones are what say WHICH thing is coming; the steel is why.
 fn mkSkelLunge(r: *Rack) void {
     r.grit(0.0, 0.17, 0.85, 3400, 0.9, 4.6);
-    r.ring(0.0, 0.20, 820, 0.22, 5.5, 3); // iron somewhere in the ribs
-    r.body(0.01, 0.15, 124, 52, 0.75, 4.2); // the push off the ground
-    r.air(0.09, 0.32, 0.95, 1600, 300, 0.42, 1.9); // and the blade, sweeping DOWN at you
-    r.air(0.13, 0.20, 0.32, 5000, 1900, 0.16, 3.0); // the edge riding the front of it
+    r.ring(0.0, 0.20, 820, 0.22, 5.5, 3);
+    r.body(0.01, 0.15, 124, 52, 0.75, 4.2);
+    r.air(0.09, 0.32, 0.95, 1600, 300, 0.42, 1.9);
+    r.air(0.13, 0.20, 0.32, 5000, 1900, 0.16, 3.0);
     r.master(2.2, 3600);
 }
 
 
-// THE SHADE. Every recipe below is AIR, RING and GRIT and never a `growl` — the growl is a throat, and the
-// one thing this creature must not have is a throat. What makes it a voice at all is that the air is
-// PITCHED (a resonant sweep, not a hiss) and that something mineral rings under it.
+// Every recipe below is AIR, RING and GRIT and never a `growl` — a growl is a throat, and this creature
+// must not have one. What makes it a voice at all is that the air is PITCHED and something mineral rings.
 
-/// The arms going wide: a long intake with nothing breathing it, sweeping DOWN as it opens.
 fn mkShadeReach(r: *Rack) void {
     r.air(0.0, 0.34, 0.40, 2600, 620, 0.72, 1.5);
-    r.ring(0.04, 0.26, 214, 0.11, 3.4, 3); // something low turning over under it
-    r.grit(0.0, 0.20, 0.07, 900, 0.55, 2.2); // the cloth
+    r.ring(0.04, 0.26, 214, 0.11, 3.4, 3);
+    r.grit(0.0, 0.20, 0.07, 900, 0.55, 2.2);
     r.master(1.5, 3000);
 }
 
-/// …and the wisp balling up, which is the same shape RUN BACKWARDS: it climbs, and it has to resolve on
-/// the throw (`shade.MOVES[WISP].windDur`). The wand's own charge law, for the wand's own reason.
+/// Must resolve ON the throw (`shade.MOVES[WISP].windDur`) — the wand's own charge law.
 fn mkShadeGather(r: *Rack) void {
     r.air(0.0, 0.66, 0.36, 480, 3100, 0.80, 1.0);
     r.ring(0.10, 0.56, 296, 0.13, 2.2, 4);
-    r.ring(0.28, 0.42, 444, 0.09, 2.6, 3); // a second partial entering late: it is GROWING
+    r.ring(0.28, 0.42, 444, 0.09, 2.6, 3);
     r.grit(0.06, 0.58, 0.06, 2400, 0.30, 1.1);
     r.master(1.4, 4200);
 }
 
-// WOOD IS GRIT AND A LOW BODY, never a ring: a ring is metal or glass, and the one thing this creature must
-// not sound like is either. Everything here is a fibre tearing, filtered dark.
+// WOOD IS GRIT AND A LOW BODY, never a ring — a ring is metal or glass. Everything here is fibre tearing.
 
-/// THE UNFOLD. Dry grain letting go over the better part of a second, with a groan under it that RISES —
-/// the one sound in the bank that swells rather than decaying, because the thing making it is standing up.
 fn mkWoodWake(r: *Rack) void {
     r.grit(0.0, 0.62, 0.52, 900, 0.72, 0.6);
     r.growl(0.02, 0.70, 44, 84, 0.40, 0.42, 0.5);
     r.air(0.0, 0.66, 0.20, 700, 2200, 0.30, 0.5);
     r.crackle(0.34, 40.0);
-    r.body(0.44, 0.26, 92, 38, 0.34, 3.4); // the roots taking the weight
+    r.body(0.44, 0.26, 92, 38, 0.34, 3.4);
     r.master(2.0, 2600);
 }
 
-/// The bole working. Quiet, slow, and it must not read as a footstep: no transient at the front of it.
+/// No transient at the front of it, or it reads as a footstep.
 fn mkWoodCreak(r: *Rack) void {
     r.growl(0.0, 0.44, 62, 78, 0.26, 0.34, 1.0);
     r.grit(0.04, 0.30, 0.16, 620, 0.60, 1.6);
@@ -1252,14 +1178,12 @@ fn mkWoodCreak(r: *Rack) void {
     r.master(1.4, 1800);
 }
 
-/// A limb through the air: MASS and not an edge. Broad, low noise with no hiss in it — a hiss is steel.
 fn mkWoodSwing(r: *Rack) void {
     r.air(0.0, 0.30, 0.56, 260, 1500, 0.36, 1.5);
     r.growl(0.0, 0.26, 58, 96, 0.20, 0.26, 1.8);
     r.master(1.7, 2400);
 }
 
-/// …and it landing. A dead thud with the grain cracking through it, no ring at all.
 fn mkWoodHit(r: *Rack) void {
     r.tick(0.0, 0.44, 2600);
     r.body(0.0, 0.20, 150, 44, 0.62, 4.0);
@@ -1268,7 +1192,6 @@ fn mkWoodHit(r: *Rack) void {
     r.master(2.4, 2200);
 }
 
-/// Steel into wood: a chunk, and a shower of it after.
 fn mkWoodHurt(r: *Rack) void {
     r.tick(0.0, 0.40, 4200);
     r.grit(0.0, 0.13, 0.56, 1900, 0.62, 3.8);
@@ -1277,126 +1200,111 @@ fn mkWoodHurt(r: *Rack) void {
     r.master(2.3, 3200);
 }
 
-/// THE WHOLE THING COMING DOWN. A long tear, then the ground taking it — the only voice here with two
-/// events in it, because a tree falling is a thing that happens and then arrives.
 fn mkWoodDie(r: *Rack) void {
     r.grit(0.0, 0.70, 0.54, 1000, 0.76, 1.2);
     r.growl(0.0, 0.80, 70, 30, 0.44, 0.46, 1.4);
     r.air(0.10, 0.60, 0.26, 1600, 300, 0.30, 1.6);
     r.crackle(0.44, 120.0);
-    r.body(0.80, 0.30, 110, 32, 0.72, 3.0); // the ground
+    r.body(0.80, 0.30, 110, 32, 0.72, 3.0);
     r.grit(0.80, 0.24, 0.40, 800, 0.70, 3.2);
     r.master(2.5, 2000);
 }
 
 fn mkLeechWing(r: *Rack) void {
     r.growl(0.0, 0.32, 356, 392, 0.26, 0.05, 1.0);
-    r.air(0.0, 0.32, 0.06, 2600, 1700, 0.25, 1.0); // the air it is moving, and nothing above it
-    r.wow(0.0045, 6.5); // …and the last of the warble, on top of `growl`'s own
-    r.ends(0.09, 0.12); // a soft nose and tail: the take has to swell in, or the retrigger ticks
+    r.air(0.0, 0.32, 0.06, 2600, 1700, 0.25, 1.0);
+    r.wow(0.0045, 6.5);
+    r.ends(0.09, 0.12);
     r.master(1.0, 2200);
 }
 
-/// THE BEAK GOING IN: a hard tick of shell, then something giving. Nothing musical about it at all — the
-/// creature's one moment that is not a note.
 fn mkLeechStab(r: *Rack) void {
     r.tick(0.0, 0.40, 5600);
-    r.grit(0.0, 0.055, 0.34, 2400, 0.55, 4.0); // the shell creaking as it braces
-    r.body(0.005, 0.09, 260, 96, 0.30, 5.2); // …and the punch through
-    r.air(0.01, 0.16, 0.26, 1800, 420, 0.70, 2.4); // wet, and dragged inward
+    r.grit(0.0, 0.055, 0.34, 2400, 0.55, 4.0);
+    r.body(0.005, 0.09, 260, 96, 0.30, 5.2);
+    r.air(0.01, 0.16, 0.26, 1800, 420, 0.70, 2.4);
     r.master(2.2, 4600);
 }
 
-/// THE PULL. A rising suck rather than a falling one — everything else in this bank decays, and a thing
-/// taking something OUT of you has to go the other way or it reads as a splash.
+/// RISES, where everything else in this bank decays — a thing taking something OUT of you has to go the
+/// other way or it reads as a splash.
 fn mkLeechDrink(r: *Rack) void {
-    r.air(0.0, 0.34, 0.44, 500, 2600, 0.82, 0.5); // the filter opening UP: the direction is the whole cue
-    r.growl(0.02, 0.26, 96, 148, 0.20, 0.22, 0.8); // a gullet working under it
+    r.air(0.0, 0.34, 0.44, 500, 2600, 0.82, 0.5);
+    r.growl(0.02, 0.26, 96, 148, 0.20, 0.22, 0.8);
     r.ring(0.0, 0.20, 210, 0.10, 3.4, 3);
-    r.crackle(0.10, 90.0); // …and the wet of it
+    r.crackle(0.10, 90.0);
     r.master(1.8, 3600);
 }
 
-/// STRUCK. A shell cracking and the note it was holding breaking with it — the whine's own pitch, bent
-/// sharply down, is what says the thing that was flying has been hit.
 fn mkLeechHurt(r: *Rack) void {
     r.tick(0.0, 0.36, 4800);
-    r.grit(0.0, 0.10, 0.42, 2000, 0.70, 3.4); // chitin going
-    r.growl(0.0, 0.20, 620, 240, 0.26, 0.30, 3.0); // the whine falling out from under it
+    r.grit(0.0, 0.10, 0.42, 2000, 0.70, 3.4);
+    r.growl(0.0, 0.20, 620, 240, 0.26, 0.30, 3.0);
     r.body(0.0, 0.10, 180, 70, 0.26, 5.0);
     r.master(2.3, 4400);
 }
 
-/// AND THE NOTE STOPS. The long fall is the wings running down; the wet thud at the end of it is the body
-/// arriving, because this is the one creature in the game that dies by FALLING out of the air.
 fn mkLeechDie(r: *Rack) void {
-    r.growl(0.0, 0.46, 600, 120, 0.34, 0.34, 1.6); // the run-down
+    r.growl(0.0, 0.46, 600, 120, 0.34, 0.34, 1.6);
     r.air(0.0, 0.40, 0.20, 4000, 700, 0.40, 2.0);
     r.grit(0.02, 0.22, 0.30, 1500, 0.60, 3.0);
-    r.body(0.44, 0.14, 130, 48, 0.34, 4.4); // …and the landing, after it
+    r.body(0.44, 0.14, 130, 48, 0.34, 4.4);
     r.master(2.1, 4000);
 }
 
 fn mkShadeWisp(r: *Rack) void {
     r.air(0.0, 0.26, 0.62, 3600, 700, 0.55, 2.8);
     r.ring(0.0, 0.20, 330, 0.20, 5.0, 3);
-    r.body(0.0, 0.08, 190, 74, 0.24, 5.5); // just enough under it to be felt leaving
+    r.body(0.0, 0.08, 190, 74, 0.24, 5.5);
     r.grit(0.01, 0.13, 0.16, 1600, 0.40, 3.2);
     r.master(1.9, 4200);
 }
 
-/// THE TOUCH, and it is the sound of something LEAVING you: a sharp catch, then a long swallowing fall.
-/// The fall is what says the blue bar went with it — a hit alone would read as any other blow landing.
 fn mkShadeTouch(r: *Rack) void {
     r.tick(0.0, 0.30, 4200);
-    r.air(0.0, 0.36, 0.50, 3400, 380, 0.86, 1.4); // …dragged down and IN
+    r.air(0.0, 0.36, 0.50, 3400, 380, 0.86, 1.4);
     r.ring(0.02, 0.30, 262, 0.22, 3.0, 4);
     r.ring(0.05, 0.24, 175, 0.14, 3.6, 3);
     r.body(0.0, 0.12, 150, 62, 0.30, 4.6);
     r.master(2.0, 3800);
 }
 
-/// A PLACE TEARING OPEN AND SHUTTING AGAIN — one sound, played at both ends of the jump. Two gestures:
-/// the rip out (fast, bright, upward) and the collapse after it (slower, downward), so a single take
-/// carries the whole idea whichever end of the blink you happen to be standing at.
+/// ONE sound, played at both ends of the jump — so it carries the rip out and the collapse after it,
+/// whichever end of the blink you are standing at.
 fn mkShadeBlink(r: *Rack) void {
-    r.air(0.0, 0.14, 0.66, 900, 5200, 0.60, 3.4); // the rip
+    r.air(0.0, 0.14, 0.66, 900, 5200, 0.60, 3.4);
     r.tick(0.01, 0.34, 6000);
-    r.air(0.10, 0.34, 0.44, 4400, 340, 0.82, 1.6); // …and the place closing after it
+    r.air(0.10, 0.34, 0.44, 4400, 340, 0.82, 1.6);
     r.ring(0.0, 0.32, 388, 0.18, 4.0, 4);
     r.grit(0.0, 0.22, 0.14, 2800, 0.45, 2.6);
     r.master(2.0, 4600);
 }
 
 fn mkShadeHurt(r: *Rack) void {
-    // Cloth torn, and a note bent out of true underneath it. Nothing wet, nothing dry — it is neither.
     r.air(0.0, 0.22, 0.52, 3000, 900, 0.66, 3.0);
     r.ring(0.0, 0.18, 356, 0.20, 5.0, 3);
     r.grit(0.0, 0.16, 0.22, 2200, 0.60, 3.6);
     r.master(2.2, 4400);
 }
 
-/// It does not fall over — there is nothing in it to fall. The shroud lets go of its own shape: a long
-/// sigh out, its ring detuning as it goes, and no impact anywhere in it.
 fn mkShadeDie(r: *Rack) void {
     r.air(0.0, 0.86, 0.54, 2800, 260, 0.74, 1.5);
     r.ring(0.0, 0.60, 330, 0.16, 2.6, 4);
-    r.ring(0.14, 0.52, 246, 0.13, 2.4, 3); // …a second, flat against the first: the chord comes apart
+    r.ring(0.14, 0.52, 246, 0.13, 2.4, 3);
     r.grit(0.05, 0.60, 0.10, 1500, 0.50, 1.7);
     r.master(1.7, 3600);
 }
 
 fn mkOgreStep(r: *Rack) void {
-    // A footfall you feel: a very low body with a long tail, and gravel thrown off it.
     r.body(0.0, 0.42, 74, 27, 1.2, 2.4);
-    r.body(0.0, 0.16, 150, 60, 0.4, 4.5); // a knock on top, so it reads as a FOOT not a rumble
+    r.body(0.0, 0.16, 150, 60, 0.4, 4.5);
     r.grit(0.005, 0.26, 0.45, 1500, 0.8, 3.2);
     r.master(2.6, 2200);
 }
 
 fn mkOgreRoar(r: *Rack) void {
     r.growl(0.0, 0.85, 68, 104, 1.0, 0.28, 0.35);
-    r.growl(0.02, 0.80, 102, 152, 0.5, 0.4, 0.4); // an upper throat layer, for size
+    r.growl(0.02, 0.80, 102, 152, 0.5, 0.4, 0.4);
     r.body(0.0, 0.7, 46, 34, 0.6, 1.4);
     r.air(0.1, 0.6, 0.16, 700, 2200, 0.3, 1.5);
     r.master(2.4, 2600);
@@ -1407,13 +1315,12 @@ fn mkOgreSlam(r: *Rack) void {
     r.body(0.0, 0.62, 96, 22, 1.5, 1.9);
     r.body(0.0, 0.20, 210, 55, 0.7, 3.6);
     r.grit(0.0, 0.40, 0.9, 1700, 0.85, 2.4);
-    r.grit(0.14, 0.34, 0.35, 2600, 0.95, 2.2); // the debris, arriving late
+    r.grit(0.14, 0.34, 0.35, 2600, 0.95, 2.2);
     r.air(0.0, 0.30, 0.35, 2200, 260, 0.4, 2.6);
     r.master(3.0, 2400);
 }
 
 fn mkOgreSwipe(r: *Rack) void {
-    // The horizontal scythe: a huge slow whoosh that never touches the ground.
     r.air(0.0, 0.42, 1.0, 1900, 210, 0.55, 1.8);
     r.air(0.04, 0.34, 0.4, 900, 3000, 0.35, 2.2);
     r.body(0.06, 0.24, 120, 52, 0.4, 2.8);
@@ -1429,7 +1336,7 @@ fn mkOgreHurt(r: *Rack) void {
 
 fn mkOgreDie(r: *Rack) void {
     r.growl(0.0, 1.0, 92, 34, 1.0, 0.35, 0.06);
-    r.body(0.62, 0.75, 74, 20, 1.3, 1.7); // he lands
+    r.body(0.62, 0.75, 74, 20, 1.3, 1.7);
     r.grit(0.62, 0.55, 0.6, 1300, 0.9, 2.0);
     r.body(0.0, 0.9, 50, 30, 0.5, 1.3);
     r.sat(2.8);
@@ -1444,7 +1351,7 @@ fn mkOgreDie(r: *Rack) void {
 
 
 fn mkKoboldSnarl(r: *Rack) void {
-    r.body(0.0, 0.12, 132, 84, 0.75, 4.0); // the chest behind the bark
+    r.body(0.0, 0.12, 132, 84, 0.75, 4.0);
     r.growl(0.0, 0.14, 176, 236, 0.85, 0.14, 0.06);
     r.growl(0.10, 0.26, 208, 118, 0.60, 0.26, 0.16);
     r.air(0.0, 0.10, 0.16, 900, 1900, 0.30, 3.2);
@@ -1452,14 +1359,13 @@ fn mkKoboldSnarl(r: *Rack) void {
 }
 
 fn mkKoboldChop(r: *Rack) void {
-    r.air(0.0, 0.21, 0.46, 1700, 420, 0.34, 2.6); // DOWN-sweeping, so it reads as travelling past you
+    r.air(0.0, 0.21, 0.46, 1700, 420, 0.34, 2.6);
     r.grit(0.02, 0.10, 0.08, 1000, 0.4, 3.0);
-    r.growl(0.0, 0.15, 148, 116, 0.26, 0.24, 0.30); // a low grunt of effort under it, not a bark
+    r.growl(0.0, 0.15, 148, 116, 0.26, 0.24, 0.30);
     r.master(1.15, 2000);
 }
 
 fn mkKoboldHeave(r: *Rack) void {
-    // THE OPENING, and it has to SOUND like one — this is the cue that says come back in.
     r.air(0.0, 0.24, 0.52, 1300, 380, 0.22, 1.8);
     r.growl(0.02, 0.20, 148, 104, 0.26, 0.30, 0.18);
     r.air(0.30, 0.26, 0.48, 1150, 340, 0.20, 1.6);
@@ -1469,31 +1375,28 @@ fn mkKoboldHeave(r: *Rack) void {
 }
 
 fn mkKoboldCast(r: *Rack) void {
-    r.grit(0.0, 0.10, 0.20, 2600, 0.7, 5.0); // the charms — the attack
-    r.growl(0.02, 0.85, 190, 300, 0.40, 0.34, 0.55); // the chant itself, climbing
+    r.grit(0.0, 0.10, 0.20, 2600, 0.7, 5.0);
+    r.growl(0.02, 0.85, 190, 300, 0.40, 0.34, 0.55);
     r.body(0.10, 0.75, 128, 190, 0.24, 1.6);
     r.grit(0.58, 0.30, 0.10, 1500, 0.5, 2.0);
     r.master(1.5, 3200);
 }
 
-/// CHORAL AND HEAVENLY (owner's call). It used to be one high ring, which read as a UI ping mid-fight.
-/// Four parts: an open chord SUNG (root/fifth/octave/tenth entering in that order, so it resolves upward),
-/// a low octave under it, a pentatonic SPARKLE over the top, and a room the kobolds are not standing in.
+/// CHORAL AND HEAVENLY (owner's call) — one high ring read as a UI ping mid-fight.
 fn mkKoboldHeal(r: *Rack) void {
     const ROOT: f32 = 330.0; // E4 — high enough to cut a fight, low enough not to shriek
-    r.choir(0.00, 1.55, ROOT * 0.5, 0.30, 2, 0.30); // the octave below, for a floor under the chord
+    r.choir(0.00, 1.55, ROOT * 0.5, 0.30, 2, 0.30);
     r.choir(0.00, 1.60, ROOT, 0.46, 3, 0.26);
-    r.choir(0.10, 1.50, ROOT * 1.5, 0.38, 3, 0.28); // the fifth…
-    r.choir(0.22, 1.38, ROOT * 2.0, 0.30, 2, 0.30); // …the octave…
-    r.choir(0.34, 1.24, ROOT * 2.5, 0.20, 2, 0.32); // …and the tenth on top: the chord OPENS as it lands
+    r.choir(0.10, 1.50, ROOT * 1.5, 0.38, 3, 0.28);
+    r.choir(0.22, 1.38, ROOT * 2.0, 0.30, 2, 0.30);
+    r.choir(0.34, 1.24, ROOT * 2.5, 0.20, 2, 0.32);
     r.sparkle(0.06, 1.10, 0.085, ROOT * 4.0, 11);
-    r.ring(0.0, 0.34, ROOT * 4.0, 0.10, 4.2, 2); // one bell ON the beat, so it still has an attack
+    r.ring(0.0, 0.34, ROOT * 4.0, 0.10, 4.2, 2);
     r.hall(1.30, 3400);
-    r.master(0.95, 5200); // driven gently: the room is already doing the work, and saturation muddies it
+    r.master(0.95, 5200);
 }
 
 fn mkKoboldWhirl(r: *Rack) void {
-    // The sling going round.
     var i: u32 = 0;
     while (i < 3) : (i += 1) {
         const t = 0.02 + @as(f32, @floatFromInt(i)) * 0.20;
@@ -1503,7 +1406,6 @@ fn mkKoboldWhirl(r: *Rack) void {
 }
 
 fn mkKoboldSling(r: *Rack) void {
-    // The release: a hard snap of cord and the stone leaving.
     r.tick(0.0, 0.5, 6000);
     r.air(0.0, 0.11, 0.46, 3400, 1200, 0.5, 4.5);
     r.body(0.0, 0.06, 300, 150, 0.22, 6.0);
@@ -1512,59 +1414,45 @@ fn mkKoboldSling(r: *Rack) void {
 
 fn mkKoboldBite(r: *Rack) void {
     r.air(0.0, 0.07, 0.26, 900, 1700, 0.32, 3.5);
-    r.tick(0.06, 0.34, 2600); // the clack — and 7 kHz of it was the ice-pick in the mix
+    r.tick(0.06, 0.34, 2600);
     r.ring(0.06, 0.06, 620, 0.14, 9.0, 2);
-    r.body(0.05, 0.10, 128, 72, 0.55, 4.5); // the jaw has MASS: this is what the clack was missing
+    r.body(0.05, 0.10, 128, 72, 0.55, 4.5);
     r.growl(0.0, 0.16, 210, 148, 0.5, 0.22, 0.10);
     r.master(1.3, 2200);
 }
 
-// THE WOLF'S FIVE. A real larynx — `body` for the chest and `growl` for the cords, the kobold's own kit —
-// with one thing added to every voice: a long `ring` tail well under the note that keeps sounding after the
-// animal has stopped. That tail is the ONLY unearthly thing in any of them, and it is doing all the work. The
-// shade got the opposite treatment (air and ring and no throat at all) because a shade has no throat; this
-// creature does, and a wolf sung through a shade's recipe stops being a wolf.
+// A REAL LARYNX (the kobold's kit) plus one thing on every voice: a long `ring` tail under the note that
+// keeps sounding after the animal has stopped. That tail is the only unearthly thing in any of them.
 
-/// THE CALL. Rising into a held note and falling off it — a real howl is one long glide, not a siren, so the
-/// pitch travels the whole way and never sits still. Two voices a beat apart and slightly detuned: a lone
-/// wolf sounds like more than one animal and that is the whole hair-raising trick of it.
+/// A real howl is ONE LONG GLIDE, not a siren — the pitch travels the whole way and never sits still.
 fn mkWolfHowl(r: *Rack) void {
-    // **TONED WAY DOWN** (owner: it sounded crazy weird). Two things were doing that and both are gone.
-    //
-    // THE PHANTOM SECOND ANIMAL was a fifth above the note, and a fifth held against a sustained tone is a
-    // CHORD — the ear stops hearing an animal and starts hearing an organ. Clever on paper, and the single
-    // worst-sounding thing in the bank.
-    //
-    // THE RING TAILS were deliberately detuned off the note so they would beat against it. Beating against a
-    // held pitch is not ethereal, it is OUT OF TUNE, and at 0.22 they were louder than most of the howl. They
-    // stay, because the tail is what makes it a spirit — but quiet, short, and tuned ON the note now, so they
-    // read as the sound carrying on somewhere rather than as a second instrument arguing with the first.
-    r.body(0.0, 0.80, 150, 134, 0.34, 1.2); // the chest under it, barely moving
-    r.growl(0.0, 0.30, 200, 400, 0.54, 0.09, 0.03); // the climb…
-    r.growl(0.24, 0.60, 408, 384, 0.66, 0.06, 0.02); // …the HOLD, which is what a howl actually is…
-    r.growl(0.78, 0.52, 380, 214, 0.48, 0.11, 0.05); // …and the fall off the end
-    r.air(0.0, 1.10, 0.08, 700, 400, 0.08, 1.0); // breath through the whole of it
-    r.ring(0.34, 0.85, 192, 0.06, 1.1, 3); // the tail, ON the note and well under it
+    // NO SECOND VOICE AT A FIFTH: held against a sustained tone that is a CHORD, and the ear hears an organ
+    // rather than an animal. The ring tails stay tuned ON the note — detuned they are out of tune, not
+    // ethereal (owner: it sounded crazy weird).
+    r.body(0.0, 0.80, 150, 134, 0.34, 1.2);
+    r.growl(0.0, 0.30, 200, 400, 0.54, 0.09, 0.03);
+    r.growl(0.24, 0.60, 408, 384, 0.66, 0.06, 0.02);
+    r.growl(0.78, 0.52, 380, 214, 0.48, 0.11, 0.05);
+    r.air(0.0, 1.10, 0.08, 700, 400, 0.08, 1.0);
+    r.ring(0.34, 0.85, 192, 0.06, 1.1, 3);
     r.master(1.15, 2000);
 }
 
-/// A warning, low in the chest and nearly all cords. Short, because a growl that runs long turns into a note.
+/// Short, because a growl that runs long turns into a note.
 fn mkWolfGrowl(r: *Rack) void {
     r.body(0.0, 0.42, 96, 84, 0.62, 2.0);
-    r.growl(0.0, 0.46, 118, 104, 0.70, 0.34, 0.26); // rough: the modulation IS the growl
+    r.growl(0.0, 0.46, 118, 104, 0.70, 0.34, 0.26);
     r.growl(0.04, 0.40, 84, 76, 0.44, 0.42, 0.34);
     r.grit(0.0, 0.38, 0.10, 620, 0.55, 2.2);
     r.ring(0.10, 0.60, 168, 0.07, 1.1, 3);
     r.master(1.20, 1500);
 }
 
-/// THE JAWS AT THE END OF THE HOP. A snap with a whole body behind it — the kobold's bite has the clack and
-/// the click, and this one adds the MASS the leap put into it.
 fn mkWolfBite(r: *Rack) void {
-    r.air(0.0, 0.10, 0.34, 820, 1500, 0.36, 3.2); // the lunge going past
-    r.tick(0.07, 0.44, 2200); // teeth meeting
+    r.air(0.0, 0.10, 0.34, 820, 1500, 0.36, 3.2);
+    r.tick(0.07, 0.44, 2200);
     r.ring(0.07, 0.09, 540, 0.17, 8.0, 2);
-    r.body(0.06, 0.15, 112, 62, 0.72, 3.8); // …and it is a big animal arriving, not a snap in the air
+    r.body(0.06, 0.15, 112, 62, 0.72, 3.8);
     r.growl(0.0, 0.20, 152, 112, 0.52, 0.26, 0.14);
     r.grit(0.06, 0.10, 0.12, 900, 0.45, 3.0);
     r.ring(0.10, 0.72, 196, 0.06, 1.0, 3);
@@ -1572,7 +1460,6 @@ fn mkWolfBite(r: *Rack) void {
 }
 
 fn mkWolfHurt(r: *Rack) void {
-    // A yelp: straight up and straight back down, the kobold's shape on a bigger animal.
     r.body(0.0, 0.16, 104, 58, 0.62, 4.0);
     r.growl(0.0, 0.17, 176, 288, 0.88, 0.15, 0.07);
     r.growl(0.06, 0.22, 150, 92, 0.46, 0.26, 0.22);
@@ -1581,9 +1468,6 @@ fn mkWolfHurt(r: *Rack) void {
     r.master(1.28, 2000);
 }
 
-/// …AND THE THREAD LETTING GO. It starts as an animal dying and ends as something that was never quite here —
-/// the growl thins out and the tail outlives it by a second, which is the one death in this game that fades
-/// UP into ring rather than down into grit.
 fn mkWolfDie(r: *Rack) void {
     r.growl(0.0, 0.20, 190, 300, 0.86, 0.17, 0.08);
     r.growl(0.10, 0.52, 168, 74, 0.60, 0.30, 0.16);
@@ -1596,7 +1480,6 @@ fn mkWolfDie(r: *Rack) void {
 }
 
 fn mkKoboldHurt(r: *Rack) void {
-    // A yelp — up, then straight down.
     r.body(0.0, 0.13, 120, 66, 0.6, 4.2);
     r.growl(0.0, 0.15, 200, 300, 0.85, 0.16, 0.08);
     r.growl(0.05, 0.18, 168, 104, 0.42, 0.26, 0.24);
@@ -1615,16 +1498,15 @@ fn mkKoboldDie(r: *Rack) void {
 
 fn mkSpiderHiss(r: *Rack) void {
     r.air(0.0, 0.38, 0.46, 2600, 5200, 0.42, 1.5);
-    r.grit(0.06, 0.34, 0.16, 2200, 0.35, 1.8); // the wet in it
-    r.growl(0.02, 0.30, 96, 132, 0.20, 0.55, 0.40); // a low seething under the air
+    r.grit(0.06, 0.34, 0.16, 2200, 0.35, 1.8);
+    r.growl(0.02, 0.30, 96, 132, 0.20, 0.55, 0.40);
     r.air(0.30, 0.30, 0.34, 4200, 2400, 0.38, 2.2);
     r.master(1.5, 5200);
 }
 
 fn mkSpiderSpit(r: *Rack) void {
-    // THE THROW: the body heaving behind it, then the glob actually leaving — a wet slap, not a hiss.
-    r.growl(0.0, 0.10, 150, 90, 0.42, 0.40, 0.10); // the heave
-    r.grit(0.07, 0.09, 0.52, 1500, 0.55, 5.0); // the launch — thick and granular
+    r.growl(0.0, 0.10, 150, 90, 0.42, 0.40, 0.10);
+    r.grit(0.07, 0.09, 0.52, 1500, 0.55, 5.0);
     r.air(0.07, 0.14, 0.40, 1900, 700, 0.40, 3.6);
     r.body(0.07, 0.07, 210, 96, 0.34, 6.0);
     r.master(1.8, 3600);
@@ -1634,15 +1516,14 @@ fn mkSpiderBite(r: *Rack) void {
     r.air(0.0, 0.08, 0.30, 1000, 2000, 0.34, 3.4);
     r.tick(0.05, 0.42, 2400);
     r.tick(0.072, 0.30, 3100);
-    r.ring(0.05, 0.09, 480, 0.20, 8.0, 3); // horn, not bone: lower and deader than the kobold's clack
-    r.body(0.05, 0.12, 112, 60, 0.52, 4.2); // the mass of the head behind it
+    r.ring(0.05, 0.09, 480, 0.20, 8.0, 3);
+    r.body(0.05, 0.12, 112, 60, 0.52, 4.2);
     r.grit(0.05, 0.14, 0.20, 800, 0.6, 3.2);
     r.master(1.4, 2200);
 }
 
 fn mkSpiderHurt(r: *Rack) void {
-    // A shriek through a spiracle, with the shell cracking under it.
-    r.grit(0.0, 0.07, 0.44, 2800, 0.5, 5.5); // the shell
+    r.grit(0.0, 0.07, 0.44, 2800, 0.5, 5.5);
     r.air(0.0, 0.26, 0.44, 3400, 1500, 0.52, 2.6);
     r.growl(0.0, 0.22, 340, 190, 0.44, 0.42, 0.14);
     r.body(0.0, 0.11, 130, 70, 0.40, 4.4);
@@ -1652,7 +1533,7 @@ fn mkSpiderHurt(r: *Rack) void {
 fn mkSpiderDie(r: *Rack) void {
     r.growl(0.0, 0.30, 360, 120, 0.70, 0.44, 0.10);
     r.air(0.0, 0.42, 0.44, 3000, 900, 0.46, 1.9);
-    r.body(0.22, 0.30, 104, 40, 0.66, 3.0); // it comes down
+    r.body(0.22, 0.30, 104, 40, 0.66, 3.0);
     r.grit(0.30, 0.52, 0.26, 1300, 0.85, 1.7);
     r.grit(0.62, 0.34, 0.14, 1000, 0.9, 2.2);
     r.master(1.35, 2000);
@@ -1661,22 +1542,20 @@ fn mkSpiderDie(r: *Rack) void {
 fn mkBroodScreech(r: *Rack) void {
     r.growl(0.0, 0.30, 900, 1750, 0.72, 0.26, 0.16);
     r.growl(0.015, 0.28, 940, 1690, 0.44, 0.40, 0.20);
-    r.air(0.0, 0.30, 0.34, 4200, 8000, 0.55, 2.0); // the hiss of it, climbing with the pitch
+    r.air(0.0, 0.30, 0.34, 4200, 8000, 0.55, 2.0);
     r.growl(0.24, 0.16, 1600, 820, 0.42, 0.55, 0.30);
-    r.grit(0.0, 0.07, 0.26, 5200, 0.35, 5.0); // the membrane letting go under it
+    r.grit(0.0, 0.07, 0.26, 5200, 0.35, 5.0);
     r.master(1.7, 8200);
 }
 
 fn mkBroodLeap(r: *Rack) void {
-    // A HATCHLING COMMITTING — thin, high and short.
     r.growl(0.0, 0.13, 620, 980, 0.70, 0.30, 0.10);
     r.air(0.0, 0.10, 0.24, 3000, 6000, 0.45, 3.0);
-    r.tick(0.0, 0.24, 5200); // the legs leaving the ground
+    r.tick(0.0, 0.24, 5200);
     r.master(1.5, 6200);
 }
 
 fn mkBroodBite(r: *Rack) void {
-    // The same mouth as hers, a third the size: brighter, faster, and hardly any body behind it.
     r.tick(0.02, 0.34, 4200);
     r.tick(0.036, 0.24, 5000);
     r.ring(0.02, 0.05, 1050, 0.16, 10.0, 2);
@@ -1686,7 +1565,7 @@ fn mkBroodBite(r: *Rack) void {
 }
 
 fn mkBroodHurt(r: *Rack) void {
-    r.grit(0.0, 0.05, 0.40, 4200, 0.4, 6.0); // the shell, and there is not much of it
+    r.grit(0.0, 0.05, 0.40, 4200, 0.4, 6.0);
     r.growl(0.0, 0.13, 760, 420, 0.52, 0.36, 0.10);
     r.air(0.0, 0.12, 0.26, 4000, 2200, 0.44, 3.4);
     r.master(1.3, 5200);
@@ -1701,8 +1580,7 @@ fn mkBroodDie(r: *Rack) void {
 }
 
 fn mkSacLay(r: *Rack) void {
-    // Something heavy and soft arriving on the ground, out of something that had to push.
-    r.growl(0.0, 0.34, 120, 84, 0.34, 0.50, 0.45); // the strain
+    r.growl(0.0, 0.34, 120, 84, 0.34, 0.50, 0.45);
     r.grit(0.24, 0.20, 0.34, 900, 0.7, 3.0);
     r.body(0.32, 0.16, 96, 44, 0.60, 4.0);
     r.grit(0.34, 0.16, 0.20, 620, 0.55, 3.4);
@@ -1710,7 +1588,7 @@ fn mkSacLay(r: *Rack) void {
 }
 
 fn mkSacHit(r: *Rack) void {
-    // A BLADE INTO A MEMBRANE, which must not sound like hitting a body: no crack, no bone — a taut surface giving and fluid moving behind it.
+    // A BLADE INTO A MEMBRANE: no crack and no bone, or it sounds like hitting a body.
     r.grit(0.0, 0.09, 0.44, 1300, 0.5, 4.5);
     r.body(0.0, 0.10, 168, 76, 0.44, 5.0);
     r.air(0.0, 0.13, 0.20, 900, 400, 0.30, 3.4);
@@ -1718,7 +1596,7 @@ fn mkSacHit(r: *Rack) void {
 }
 
 fn mkSacHatch(r: *Rack) void {
-    r.grit(0.0, 0.20, 0.50, 1800, 0.55, 3.0); // the membrane opening
+    r.grit(0.0, 0.20, 0.50, 1800, 0.55, 3.0);
     r.air(0.0, 0.30, 0.34, 2400, 1000, 0.40, 2.4);
     r.body(0.04, 0.18, 130, 58, 0.42, 3.6);
     var i: u32 = 0;
@@ -1731,7 +1609,6 @@ fn mkSacHatch(r: *Rack) void {
 }
 
 fn mkSacBurst(r: *Rack) void {
-    // THE SAME THING KILLED, and it has to read as a DENIAL: one hard wet burst and no legs after it.
     r.grit(0.0, 0.08, 0.72, 1600, 0.5, 5.5);
     r.body(0.0, 0.16, 190, 52, 0.72, 4.0);
     r.air(0.0, 0.22, 0.44, 2000, 600, 0.42, 2.8);
@@ -1740,10 +1617,9 @@ fn mkSacBurst(r: *Rack) void {
 }
 
 fn mkAcidSplash(r: *Rack) void {
-    // The glob landing: a flat wet slap, then the spread, then the first of the fizz.
     r.grit(0.0, 0.07, 0.60, 1200, 0.45, 5.5);
     r.body(0.0, 0.11, 150, 58, 0.50, 4.5);
-    r.air(0.04, 0.30, 0.30, 1600, 3600, 0.30, 1.8); // spreading OUT, so the cut climbs
+    r.air(0.04, 0.30, 0.30, 1600, 3600, 0.30, 1.8);
     r.grit(0.10, 0.34, 0.22, 4200, 0.25, 1.6);
     r.master(1.6, 5000);
 }
@@ -1756,22 +1632,19 @@ fn mkAcidBurn(r: *Rack) void {
 }
 
 fn mkFlaskDrink(r: *Rack) void {
-    // Cork, then three glugs, then the warm bloom of it taking hold.
     r.ring(0.0, 0.20, 2450, 0.55, 9.0, 2);
     r.tick(0.0, 0.30, 3000);
     r.body(0.10, 0.11, 150, 96, 0.55, 5.0);
     r.body(0.27, 0.11, 132, 84, 0.60, 5.0);
     r.body(0.46, 0.13, 118, 72, 0.65, 4.4);
-    r.grit(0.10, 0.45, 0.10, 900, 0.5, 2.2); // the liquid moving between them
+    r.grit(0.10, 0.45, 0.10, 900, 0.5, 2.2);
     r.body(0.58, 0.42, 90, 150, 0.5, 1.7);
-    // A SLIGHT SPARKLE on the bloom (owner's call) — the drink itself is right, it just needed the moment
-    // it takes hold to glint. Four bells, quiet, and UNDER the master's 2.8 kHz, so it is felt not heard.
+    // A slight sparkle on the bloom (owner's call), UNDER the master's 2.8 kHz so it is felt not heard.
     r.sparkle(0.56, 0.34, 0.035, 1320, 4);
     r.master(1.8, 2800);
 }
 
 fn mkEat(r: *Rack) void {
-    // DRIED MEAT: a tear, then chewing.
     r.grit(0.0, 0.16, 0.42, 1700, 0.85, 3.0);
     r.air(0.0, 0.12, 0.14, 1200, 500, 0.25, 3.4);
     r.body(0.14, 0.09, 116, 74, 0.42, 5.5);
@@ -1780,15 +1653,15 @@ fn mkEat(r: *Rack) void {
     r.grit(0.31, 0.09, 0.22, 1000, 0.7, 4.8);
     r.body(0.50, 0.10, 96, 60, 0.34, 5.0);
     r.grit(0.50, 0.10, 0.20, 950, 0.65, 4.8);
-    r.master(1.4, 2200); // dark: a bright chew is a crisp, and this is leather
+    r.master(1.4, 2200);
 }
 
 fn mkChestOpen(r: *Rack) void {
     r.tick(0.0, 0.55, 4200);
-    r.ring(0.0, 0.16, 620, 0.34, 6.0, 3); // the lock plate
-    r.grit(0.06, 0.52, 0.30, 1100, 0.85, 1.1); // the hinge, coarse and slow
+    r.ring(0.0, 0.16, 620, 0.34, 6.0, 3);
+    r.grit(0.06, 0.52, 0.30, 1100, 0.85, 1.1);
     r.body(0.06, 0.30, 132, 88, 0.40, 1.6);
-    r.tick(0.60, 0.42, 2600); // the lid arriving, over
+    r.tick(0.60, 0.42, 2600);
     r.body(0.60, 0.16, 108, 58, 0.46, 4.0);
     r.master(2.0, 3200);
 }
@@ -1801,26 +1674,23 @@ fn mkItemGet(r: *Rack) void {
 }
 
 fn mkFlaskCycle(r: *Rack) void {
-    // Swapping which flask is up: a dry glassy tap on the belt.
     r.tick(0.0, 0.30, 6000);
     r.body(0.0, 0.06, 720, 520, 0.45, 6.5);
-    r.masterX(1.4, 5200, CRUSH_BITS - 1.0, CRUSH_HOLD); // crushed harder — it IS a UI blip
+    r.masterX(1.4, 5200, CRUSH_BITS - 1.0, CRUSH_HOLD);
 }
 
 
-/// EVERYTHING COMING OFF HIM AT ONCE. A struck gold ring, then the whole thing SINKING — the sweep runs
-/// DOWN, which is the only part of it that has to be right: this is a loss, and a rising figure would read
-/// as a reward. No grit at all; there is nothing solid in it.
+/// The sweep runs DOWN, and that is the only part that has to be right: this is a loss, and a rising
+/// figure reads as a reward.
 fn mkSoulsSpill(r: *Rack) void {
-    r.ring(0.0, 0.70, 523, 0.40, 2.6, 4); // the gold struck once…
-    r.ring(0.03, 0.62, 349, 0.30, 2.4, 3); // …and its fifth under it, so the interval is the sound
-    r.air(0.0, 0.85, 0.34, 3400, 420, 0.55, 1.5); // the whole of it falling away
-    r.body(0.05, 0.55, 190, 62, 0.34, 2.2); // …with just enough weight to be a loss and not a chime
+    r.ring(0.0, 0.70, 523, 0.40, 2.6, 4);
+    r.ring(0.03, 0.62, 349, 0.30, 2.4, 3);
+    r.air(0.0, 0.85, 0.34, 3400, 420, 0.55, 1.5);
+    r.body(0.05, 0.55, 190, 62, 0.34, 2.2);
     r.master(1.7, 5200);
 }
 
-/// IT STANDING THERE. Nearly nothing: a low bell with a breath under it, cut short enough that the retrigger
-/// in `souls.zig` overlaps its own takes rather than chattering (the leechfly's whine rule).
+/// Cut short enough that the retrigger in `souls.zig` overlaps its own takes rather than chattering.
 fn mkSoulsHum(r: *Rack) void {
     r.ring(0.0, 1.30, 262, 0.26, 1.1, 3);
     r.ring(0.10, 1.05, 392, 0.13, 1.3, 2);
@@ -1828,18 +1698,15 @@ fn mkSoulsHum(r: *Rack) void {
     r.master(1.2, 4200);
 }
 
-/// AND BACK INTO HIM. The spill's own figure run the other way: the sweep CLIMBS, the interval closes
-/// upward, and it is over fast — the souls are already rolling on the counter by the time it ends.
+/// The spill's own figure run the other way — the sweep CLIMBS, and it is over before the counter stops.
 fn mkSoulsTake(r: *Rack) void {
-    r.air(0.0, 0.30, 0.30, 500, 4800, 0.52, 2.6); // the rush up
+    r.air(0.0, 0.30, 0.30, 500, 4800, 0.52, 2.6);
     r.ring(0.05, 0.44, 523, 0.42, 3.4, 4);
-    r.ring(0.09, 0.38, 784, 0.30, 4.0, 3); // …arriving a fifth ABOVE, where the spill fell a fifth below
+    r.ring(0.09, 0.38, 784, 0.30, 4.0, 3);
     r.ring(0.13, 0.30, 1046, 0.18, 5.0, 2);
     r.master(2.0, 6400);
 }
 
-/// THE RING GIVING INSTEAD OF YOU. One thin break and nothing after it: a hard tick, a high partial that
-/// dies almost at once, and no body — it is a hairline finishing its journey through a gram of gold.
 fn mkRingSnap(r: *Rack) void {
     r.tick(0.0, 0.62, 7200);
     r.ring(0.0, 0.20, 1568, 0.34, 7.0, 2);
@@ -1848,35 +1715,32 @@ fn mkRingSnap(r: *Rack) void {
     r.master(2.2, 7000);
 }
 
-/// THE CLUB LEAVING THE COCK. Short and hard — a chest emptying in one push, and NOT another roar: the
-/// roar at the top of the wind already said a swing was coming, and two of the same shape a second apart
-/// read as one long noise rather than as two different facts about the same swing.
+/// NOT another roar: the roar at the top of the wind already said a swing was coming, and two of the same
+/// shape a second apart read as one long noise.
 fn mkOgreHeave(r: *Rack) void {
-    r.growl(0.0, 0.26, 168, 76, 0.62, 0.42, 3.4); // the throat, dropping
-    r.air(0.0, 0.30, 0.34, 900, 320, 0.42, 2.8); // the breath going with it
-    r.body(0.0, 0.14, 92, 44, 0.40, 3.0); // the mass under it setting
+    r.growl(0.0, 0.26, 168, 76, 0.62, 0.42, 3.4);
+    r.air(0.0, 0.30, 0.34, 900, 320, 0.42, 2.8);
+    r.body(0.0, 0.14, 92, 44, 0.40, 3.0);
     r.grit(0.02, 0.16, 0.24, 1400, 0.7, 2.6);
     r.master(2.2, 3200);
 }
 
 fn mkKill(r: *Rack) void {
-    // A KILL IS A THUD (owner's call, twice over: no bell, no jingle).
+    // A KILL IS A THUD (owner's call, twice over): no bell, no jingle.
     r.tick(0.0, 0.35, 2000);
     r.body(0.0, 0.36, 116, 30, 1.3, 2.5);
-    r.body(0.035, 0.24, 60, 25, 0.65, 2.7); // the second, lower settle — it lands twice, as bodies do
+    r.body(0.035, 0.24, 60, 25, 0.65, 2.7);
     r.grit(0.0, 0.18, 0.34, 850, 0.7, 3.8);
     r.master(2.4, 2200);
 }
 
 fn mkMenuMove(r: *Rack) void {
-    // Chrome, so it stays quiet and dry — a warm click with a hint of pitch, nothing musical.
     r.body(0.0, 0.045, 520, 380, 0.5, 6.0);
     r.tick(0.0, 0.25, 4000);
     r.master(1.3, 3800);
 }
 
 fn mkMenuPick(r: *Rack) void {
-    // Confirm: lower and rounder than the move, with a short ring so it reads as a DECISION.
     r.body(0.0, 0.09, 300, 200, 0.7, 4.5);
     r.ring(0.0, 0.16, 440, 0.3, 4.0, 2);
     r.tick(0.0, 0.2, 3000);
@@ -1884,7 +1748,6 @@ fn mkMenuPick(r: *Rack) void {
 }
 
 fn mkMenuBack(r: *Rack) void {
-    // Back out: the same gesture falling instead of settling.
     r.body(0.0, 0.10, 300, 150, 0.6, 4.5);
     r.tick(0.0, 0.18, 2400);
     r.master(1.3, 2600);
@@ -1912,7 +1775,7 @@ fn mkWind(r: *Rack) void {
         const s = top.step(nz, 5200) * mathx.smoothstep(0.55, 1.0, g3);
         const m = moan.step(nz, 52.0 + 34.0 * g3, 0.55).bp;
 
-        // Distance is SPECTRAL, not level (`norm` owns the level): ISO 9613-2 puts 4 kHz at ~15x the loss per 100 m that 250 Hz takes, so far air is nothing but weight.
+        // Distance is SPECTRAL, not level: ISO 9613-2 puts 4 kHz at ~15x the loss per 100 m that 250 Hz takes.
         work[i] = b * (0.30 + 0.70 * g2) * 0.94 +
             w * (0.10 + 0.50 * g1) * 0.20 +
             s * 0.05 +
@@ -1920,13 +1783,12 @@ fn mkWind(r: *Rack) void {
     }
     r.norm(0.42);
     r.sat(1.2);
-    r.crush(CRUSH_BITS + 1.5, CRUSH_HOLD); // gentler than the house: a crushed noise bed hisses
-    // The AIR ABSORPTION of a few hundred metres of it, which is the cue that actually reads as distance.
+    r.crush(CRUSH_BITS + 1.5, CRUSH_HOLD);
     r.warm(AIR_FAR_BED);
     r.wow(0.003, 0.4);
     r.hiss(0.035);
     r.norm(0.62);
-    r.ends(0.9, 0.9); // long crossfade ends, so the re-trigger seam is inaudible
+    r.ends(0.9, 0.9);
 }
 
 fn mkBirds(r: *Rack) void {
@@ -1938,10 +1800,10 @@ fn mkBirds(r: *Rack) void {
 fn mkBirdsong(r: *Rack) void {
     const f0 = r.rng.range(1050, 1650);
     const up = f0 * r.rng.range(1.20, 1.55);
-    r.body(0.05, 0.16, f0, up, 0.75, 3.2); // the up-slur…
+    r.body(0.05, 0.16, f0, up, 0.75, 3.2);
     r.body(0.26, 0.22, up, f0 * r.rng.range(0.80, 0.95), 0.60, 2.6);
     if (r.rng.float() < 0.5) r.body(0.56, 0.18, f0 * 1.1, f0 * 1.45, 0.40, 3.0);
-    r.air(0.05, 0.09, 0.06, 2600, 1400, 0.5, 4.0); // the breath at the front of it
+    r.air(0.05, 0.09, 0.06, 2600, 1400, 0.5, 4.0);
     r.masterX(1.1, AIR_FAR_CALL, CRUSH_BITS + 1.0, CRUSH_HOLD);
 }
 
@@ -1952,7 +1814,7 @@ fn mkOwl(r: *Rack) void {
     r.body(0.60, 0.52, 352, 268, 0.95, 1.9);
     r.body(0.60, 0.46, 528, 402, 0.22, 2.6);
     r.air(0.60, 0.44, 0.40, 1150, 520, 0.42, 2.0);
-    r.body(0.62, 0.50, 176, 142, 0.28, 1.7); // an octave under, for the woody chest of it
+    r.body(0.62, 0.50, 176, 142, 0.28, 1.7);
     r.masterX(1.15, AIR_FAR_CRY, CRUSH_BITS + 1.0, CRUSH_HOLD);
 }
 
@@ -1993,20 +1855,18 @@ fn mkCrickets(r: *Rack) void {
             const pulse = 1.0 - (p - @floor(p));
             s += mathx.sinf(std.math.tau * ph[k]) * pulse * pulse * mathx.sinf(std.math.pi * w) * amp[k];
         }
-        // The seven get a resonant band so they have a BODY instead of being bare sines…
         const near = band.step(s, 4300, 0.42).bp;
-        // …and under them, the hundreds too far away to hear apart: a soft filtered hiss on a slow swell.
         const swellK = 0.55 + 0.45 * mathx.sinf(std.math.tau * 0.047 * t + q);
         const chorus = far.step(r.rng.signed(), 3800) * swellK;
         work[i] = near * 0.80 + chorus * 0.30;
     }
     r.sat(1.15);
-    r.crush(CRUSH_BITS + 1.5, CRUSH_HOLD); // gentle, like the wind's: a crushed chirr fizzes
+    r.crush(CRUSH_BITS + 1.5, CRUSH_HOLD);
     r.warm(AIR_NEAR_GRASS);
     r.wow(0.002, 0.6);
     r.hiss(0.010);
     r.norm(0.66);
-    r.ends(0.9, 0.9); // long crossfade ends, so the re-trigger seam is inaudible
+    r.ends(0.9, 0.9);
 }
 
 
@@ -2022,7 +1882,6 @@ const BANK = [NV]Row{
     .{ .id = .step_stone, .make = mkStepStone, .gain = 0.055, .jit = 0.14, .vjit = 0.28, .vars = 4, .poly = 3 },
     .{ .id = .step_water, .make = mkStepWater, .gain = 0.130, .jit = 0.13, .vjit = 0.26, .vars = 4, .poly = 3 },
     .{ .id = .roll, .make = mkRoll, .gain = 0.30, .jit = 0.09, .vjit = 0.14, .vars = 2 },
-    // THE EFFORT IS UNDER THE ARRIVAL, and both are under the roll: a jump is the most ordinary thing he does.
     .{ .id = .jump, .make = mkJump, .gain = 0.14, .jit = 0.11, .vjit = 0.20, .vars = 3 },
     .{ .id = .land, .make = mkLand, .gain = 0.22, .jit = 0.10, .vjit = 0.18, .vars = 3, .poly = 3 },
     .{ .id = .swing_light, .make = mkSwingLight, .gain = 0.26, .mix = .combat, .jit = 0.16, .vjit = 0.22, .vars = 5, .poly = 3 },
@@ -2035,16 +1894,12 @@ const BANK = [NV]Row{
     .{ .id = .guard_block, .make = mkGuardBlock, .gain = battle(0.62), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 4 },
     // The BREAK is once a fight at most, and it is the cue to get out.
     .{ .id = .guard_break, .make = mkGuardBreak, .gain = battle(0.92), .mix = .combat, .jit = 0.05, .vjit = 0.06, .vars = 2, .poly = 1 },
-    // THE CATCH: over a block, under a guard BREAK — louder than the cost you paid, quieter than the mistake
-    // that costs you the fight. Barely jittered for `wand_charge`'s reason: a ring that wanders take to take
-    // reads as two different pieces of metal rather than one thing being struck twice.
+    // Barely jittered: a ring that wanders take to take reads as two pieces of metal, not one struck twice.
     .{ .id = .parry, .make = mkParry, .gain = battle(0.82), .mix = .combat, .jit = 0.07, .vjit = 0.09, .vars = 3, .poly = 2 },
     .{ .id = .refused, .make = mkRefused, .gain = 0.34, .jit = 0.06, .vjit = 0.08, .vars = 2 },
     .{ .id = .death, .make = mkDeath, .gain = battle(0.95), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
     .{ .id = .respawn, .make = mkRespawn, .gain = battle(0.55), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
-    // A HOP IS TRAVEL, NOT A THREAT — under the floor with the footsteps, where a noise that fires every
-    // second and a half belongs. The LUNGE is the opposite: a body committed at your face, and it is now
-    // near the top of the band with the giant's own blows.
+    // A HOP IS TRAVEL, NOT A THREAT — down with the footsteps, since it fires every second and a half.
     .{ .id = .toad_hop, .make = mkToadHop, .gain = battle(0.28), .mix = .combat, .jit = 0.15, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 30 },
     .{ .id = .toad_lunge, .make = mkToadLunge, .gain = battle(0.86), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 34 },
     .{ .id = .toad_gape, .make = mkToadGape, .gain = battle(0.46), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 26 },
@@ -2064,15 +1919,14 @@ const BANK = [NV]Row{
     .{ .id = .arrow_wood, .make = mkArrowWood, .gain = battle(0.56), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 4, .reach = 44 },
     .{ .id = .arrow_stone, .make = mkArrowStone, .gain = battle(0.50), .mix = .combat, .jit = 0.13, .vjit = 0.22, .vars = 4, .poly = 4, .reach = 48 },
     .{ .id = .arrow_metal, .make = mkArrowMetal, .gain = battle(0.52), .mix = .combat, .jit = 0.11, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 52 },
-    // Barely jittered, unlike everything round it: the climb IS the tell, and a pitch that wanders take to
-    // take reads as two different things rather than one thing arriving.
+    // Barely jittered: the climb IS the tell, and a wandering pitch reads as two different things.
     .{ .id = .wand_charge, .make = mkWandCharge, .gain = 0.28, .mix = .combat, .jit = 0.04, .vjit = 0.06, .vars = 3, .poly = 2, .reach = 80 },
     .{ .id = .wand_cast, .make = mkWandCast, .gain = battle(0.60), .mix = .combat, .jit = 0.08, .vjit = 0.12, .vars = 4, .poly = 3, .reach = 72 },
     .{ .id = .bone_hurt, .make = mkBoneHurt, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 44 },
     .{ .id = .bone_die, .make = mkBoneDie, .gain = battle(0.68), .mix = .combat, .jit = 0.09, .vjit = 0.12, .vars = 3, .reach = 54 },
     // THE ONE WARNING THE LEAP GIVES YOU, so it carries as far as the leap can reach and then some.
     .{ .id = .skel_lunge, .make = mkSkelLunge, .gain = battle(0.86), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 4, .poly = 3, .reach = 62 },
-    // The giant is an octave down and half a second longer than anything else, and low frequencies are what survive a couple of hundred metres of air — so the physics and the character agree for once.
+    // An octave down, and low frequencies are what survive a couple of hundred metres of air — hence `reach`.
     .{ .id = .ogre_step, .make = mkOgreStep, .gain = battle(0.44), .mix = .combat, .jit = 0.08, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 115 },
     .{ .id = .ogre_roar, .make = mkOgreRoar, .gain = battle(0.80), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .reach = 135 },
     .{ .id = .ogre_slam, .make = mkOgreSlam, .gain = battle(1.00), .mix = .combat, .jit = 0.06, .vjit = 0.08, .vars = 3, .reach = 135 },
@@ -2091,8 +1945,7 @@ const BANK = [NV]Row{
     .{ .id = .kobold_bite, .make = mkKoboldBite, .gain = battle(0.56), .mix = .combat, .jit = 0.20, .vjit = 0.26, .vars = 6, .poly = 3, .reach = 40 },
     .{ .id = .kobold_hurt, .make = mkKoboldHurt, .gain = battle(0.60), .mix = .combat, .jit = 0.24, .vjit = 0.30, .vars = 6, .poly = 4, .reach = 48 },
     .{ .id = .kobold_die, .make = mkKoboldDie, .gain = battle(0.68), .mix = .combat, .jit = 0.18, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 58 },
-    // THE SHADE. Quieter than every creature above it and carrying further than any of them but the ogre:
-    // the whole point of the thing is that you hear it before you find it, and never quite where you looked.
+    // Quiet but far-carrying: you hear the shade before you find it, and never quite where you looked.
     .{ .id = .shade_reach, .make = mkShadeReach, .gain = battle(0.44), .mix = .combat, .jit = 0.16, .vjit = 0.22, .vars = 4, .poly = 3, .reach = 40 },
     .{ .id = .shade_gather, .make = mkShadeGather, .gain = battle(0.66), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 3, .reach = 70 },
     .{ .id = .shade_wisp, .make = mkShadeWisp, .gain = battle(0.58), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 4, .poly = 3, .reach = 74 },
@@ -2100,20 +1953,15 @@ const BANK = [NV]Row{
     .{ .id = .shade_blink, .make = mkShadeBlink, .gain = battle(0.64), .mix = .combat, .jit = 0.11, .vjit = 0.15, .vars = 4, .poly = 4, .reach = 68 },
     .{ .id = .shade_hurt, .make = mkShadeHurt, .gain = battle(0.54), .mix = .combat, .jit = 0.15, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 44 },
     .{ .id = .shade_die, .make = mkShadeDie, .gain = battle(0.66), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 2, .reach = 60 },
-    // THE WHINE IS AMBIENT-QUIET AND VERY CLOSE — a mosquito is a thing you hear at your ear and not before.
-    // It sits near the birdsong rather than near a blow: it fires hundreds of times in a fight and anything
-    // at combat level that repeats that often stops being a cue and becomes a noise floor. The shortest
-    // `reach` in the bank, and a wide `vjit` so no two takes come back at the same level.
-    // High `poly`: retriggered four times a second per fly, and a swarm has to overlap without cutting itself.
+    // AMBIENT-QUIET AND VERY CLOSE: it fires hundreds of times in a fight, and anything at combat level
+    // repeating that often becomes a noise floor. High `poly` — a swarm has to overlap without cutting itself.
     .{ .id = .leech_wing, .make = mkLeechWing, .gain = battle(0.035), .mix = .combat, .jit = 0.16, .vjit = 0.34, .vars = 6, .poly = 6, .reach = 12 },
     .{ .id = .leech_stab, .make = mkLeechStab, .gain = battle(0.80), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 4, .poly = 3, .reach = 30 },
-    // The DRINK repeats for as long as the hold lasts, so it is texture and not an event: down with the
-    // wingbeat, and retriggered a third as often (`leechfly.DRINK_EVERY`). The BEAK GOING IN is the event.
+    // Texture, not an event: retriggered for as long as the hold lasts (`leechfly.DRINK_EVERY`).
     .{ .id = .leech_drink, .make = mkLeechDrink, .gain = battle(0.40), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 4, .poly = 3, .reach = 26 },
     .{ .id = .leech_hurt, .make = mkLeechHurt, .gain = battle(0.56), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 5, .poly = 4, .reach = 40 },
     .{ .id = .leech_die, .make = mkLeechDie, .gain = battle(0.60), .mix = .combat, .jit = 0.11, .vjit = 0.15, .vars = 4, .poly = 3, .reach = 48 },
-    // THE TREE. It is a big slow mass, so it is heard a long way off and it takes its time — the wake and
-    // the death are the two longest tails in the bank after the ogre.
+    // A big slow mass: the wake and the death are the two longest tails in the bank after the ogre.
     .{ .id = .wood_wake, .make = mkWoodWake, .gain = battle(0.86), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 2, .reach = 96 },
     .{ .id = .wood_creak, .make = mkWoodCreak, .gain = battle(0.24), .mix = .combat, .jit = 0.18, .vjit = 0.26, .vars = 5, .poly = 3, .reach = 42 },
     .{ .id = .wood_swing, .make = mkWoodSwing, .gain = battle(0.80), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 4, .poly = 3, .reach = 60 },
@@ -2143,11 +1991,9 @@ const BANK = [NV]Row{
     .{ .id = .eat, .make = mkEat, .gain = 0.40, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 2 },
     .{ .id = .chest_open, .make = mkChestOpen, .gain = 0.72, .jit = 0.04, .vjit = 0.06, .vars = 2, .poly = 2, .reach = 70 },
     .{ .id = .item_get, .make = mkItemGet, .gain = 0.44, .jit = 0.05, .vjit = 0.08, .vars = 3, .poly = 4 },
-    // THE SPILL IS THE LOUDEST OF THE FOUR and it is not in the combat band: it happens under the YOU DIED
-    // card, where nothing else is playing, and it is the only line that says what the death actually cost.
+    // NOT in the combat band: it plays under the YOU DIED card, where nothing else is sounding.
     .{ .id = .souls_spill, .make = mkSoulsSpill, .gain = 0.68, .jit = 0.03, .vjit = 0.05, .vars = 2, .poly = 2 },
-    // …and the hum is TEXTURE, so it sits low and carries a short way: it is there to be found by walking
-    // toward it, not to be heard across the map (`reach`, and the retrigger cadence in `souls.zig`).
+    // …and the hum is TEXTURE: found by walking toward it, not heard across the map.
     .{ .id = .souls_hum, .make = mkSoulsHum, .gain = 0.26, .jit = 0.05, .vjit = 0.07, .vars = 3, .poly = 2, .reach = 26 },
     .{ .id = .souls_take, .make = mkSoulsTake, .gain = 0.62, .jit = 0.04, .vjit = 0.07, .vars = 3, .poly = 2, .reach = 40 },
     .{ .id = .ring_snap, .make = mkRingSnap, .gain = 0.66, .jit = 0.05, .vjit = 0.08, .vars = 2, .poly = 2 },
@@ -2157,17 +2003,16 @@ const BANK = [NV]Row{
     .{ .id = .menu_back, .make = mkMenuBack, .gain = 0.32, .jit = 0.03, .vjit = 0.05 },
     // MUCH quieter (owner's call).
     .{ .id = .wind, .make = mkWind, .gain = 0.030, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
-    // THE BIRDS CARRY THE WIDEST SPREAD OF ANYTHING HERE (owner's call), and it is spent on VOLUME: the
-    // distance band below is most of it, and `vjit` puts a last few per cent between two calls at one range.
-    .{ .id = .birds, .make = mkBirds, .gain = 0.20, .mix = .ambience, .jit = 0.14, .vjit = 0.30, .vars = 4, .poly = 2, .reach = 210 },
-    .{ .id = .birdsong, .make = mkBirdsong, .gain = 0.17, .mix = .ambience, .jit = 0.13, .vjit = 0.30, .vars = 4, .poly = 2, .reach = 200 },
+    // DAYTIME figures (owner: birdcall louder by day) — `CALLS` takes them back down under a dark sky, so
+    // what is set here is the noon level and not the night's.
+    .{ .id = .birds, .make = mkBirds, .gain = 0.31, .mix = .ambience, .jit = 0.14, .vjit = 0.30, .vars = 4, .poly = 2, .reach = 210 },
+    .{ .id = .birdsong, .make = mkBirdsong, .gain = 0.26, .mix = .ambience, .jit = 0.13, .vjit = 0.30, .vars = 4, .poly = 2, .reach = 200 },
     // THE OWL IS RARE AND IT IS ALLOWED TO BE HEARD.
     .{ .id = .owl, .make = mkOwl, .gain = 0.24, .mix = .ambience, .jit = 0.08, .vjit = 0.14, .vars = 3, .poly = 2, .reach = 170 },
-    // …and the chirr under all of it is the quietest thing in the bank, quieter again (owner's call).
-    .{ .id = .crickets, .make = mkCrickets, .gain = 0.005, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
-    // THE WOLF. It carries FURTHER than a kobold and is quieter up close: this is a thing on your side, so it
-    // must never fight the creature it is biting for the frame. The HOWL is the exception and it is allowed to
-    // be heard — it is the sound of thirty focus being spent, and the player has to know it landed.
+    // Its NIGHT figure (owner: crickets louder at night); `BEDS` thins it through the middle of the day.
+    .{ .id = .crickets, .make = mkCrickets, .gain = 0.015, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
+    // Quieter up close than a kobold: a thing on YOUR side must never fight the creature it is biting for
+    // the frame. The HOWL is the exception — thirty focus spent, and the player has to know it landed.
     .{ .id = .wolf_howl, .make = mkWolfHowl, .gain = battle(0.44), .mix = .combat, .jit = 0.05, .vjit = 0.09, .vars = 3, .poly = 1, .reach = 110 },
     .{ .id = .wolf_growl, .make = mkWolfGrowl, .gain = battle(0.30), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 2, .reach = 46 },
     .{ .id = .wolf_bite, .make = mkWolfBite, .gain = battle(0.52), .mix = .combat, .jit = 0.16, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 52 },
@@ -2199,9 +2044,7 @@ fn seconds(id: Id) f32 {
         .arrow_hit, .arrow_dirt, .arrow_wood, .arrow_stone, .arrow_metal => 0.36,
         // The climb has to RESOLVE at the throw, and the raise is CAST_DUR × CAST_AT ≈ 0.30 s.
         .wand_charge => 0.40,
-        // SHORT ON PURPOSE (see mkParry): a struck disc is over quickly, and the long tail it used to have is
-        // exactly what made it a ping. Written down rather than left on the 0.5 default so the length is a
-        // decision — the whole voice is spent by 0.21.
+        // SHORT ON PURPOSE (see mkParry): a long tail is what made it a ping. Spent by 0.21.
         .parry => 0.28,
         .birds => 1.3, // long enough for a phrase plus the answer that can start at 0.72
         .birdsong => 1.0,
@@ -2217,16 +2060,15 @@ fn seconds(id: Id) f32 {
         .sac_hatch, .brood_screech => 0.55, // the membrane going, and the cry straight over it
         .sac_burst => 0.45,
         .acid_splash => 0.42,
-        // Recipes that author past the 0.5 s default — without a row here `Rack.at` clamps to the take
-        // and the tail layers render zero samples (wood_die's ground arrival, eat's third chew).
+        // Recipes authoring past the 0.5 s default — without a row here `Rack.at` clamps and the tail
+        // layers render zero samples.
         .wood_wake => 0.8,
         .wood_die => 1.2, // the tear, THEN the ground taking it at 0.80
         .eat => 0.65,
         .shroom_die => 0.75,
         .leech_die => 0.65, // the run-down, then the body arriving at 0.44
         .souls_spill => 0.9,
-        // The retrigger in souls.zig fires every HUM_EVERY (1.15 s); the take must outlast it or the
-        // hum chatters (the leechfly whine rule).
+        // The retrigger fires every HUM_EVERY (1.15 s); the take must outlast it or the hum chatters.
         .souls_hum => 1.30,
         else => 0.5,
     };
@@ -2234,8 +2076,7 @@ fn seconds(id: Id) f32 {
 
 
 const MAX_VARS = 6;
-/// Voices of one take that may sound AT ONCE. Six: the leechfly whine is retriggered four times a second
-/// per fly and a swarm has to overlap without cutting its own note in half — every other row wants 2..4.
+/// Voices of one take that may sound AT ONCE. Six, for the leechfly swarm; every other row wants 2..4.
 const MAX_POLY = 6;
 
 const MASTER_VOL: f32 = 0.85;
@@ -2244,10 +2085,8 @@ const Slot = struct {
     snd: [MAX_VARS][MAX_POLY]rl.Sound = undefined,
     owned: [MAX_VARS]rl.Sound = undefined, // alias 0 owns the data; the rest borrow it
     next: u8 = 0,
-    /// HOW MANY OF `Row.vars` ARE ACTUALLY BUILT, and the only thing allowed to bound a walk of `snd`.
-    /// The bank is baked in two stages — variant 0 for every row before the first frame, the rest dripped
-    /// by `pump` — so `Row.vars` is what a row WILL have and this is what it has NOW. Walking `Row.vars`
-    /// instead hands raylib an undefined `rl.Sound` to play, stop or unload.
+    /// The only thing allowed to bound a walk of `snd`. `Row.vars` is what a row WILL have once `pump`
+    /// finishes; walking that instead hands raylib an undefined `rl.Sound` to play, stop or unload.
     varsReady: u8 = 0,
 };
 
@@ -2278,9 +2117,8 @@ fn panFor(side: f32, width: f32) f32 {
     return mathx.clampF(0.5 - width * side, 0.04, 0.96);
 }
 
-/// ONE take of one row, plus its polyphony aliases. The ONE copy of the recipe→sound path, shared by `init`,
-/// `pump` and `rebakeMix`, so a voice cannot come back from a filter change built differently from the one it
-/// launched as. Takes are always appended in order, so `varsReady` is both the count and the next index.
+/// The ONE copy of the recipe→sound path, shared by `init`, `pump` and `rebakeMix`, so a voice cannot come
+/// back from a filter change built differently. Takes append in order, so `varsReady` is also the next index.
 fn bakeTake(id: Id, idx: usize) void {
     const row = BANK[idx];
     const v = slots[idx].varsReady;
@@ -2303,15 +2141,12 @@ fn bakeRow(id: Id, idx: usize) void {
     while (slots[idx].varsReady < BANK[idx].vars) bakeTake(id, idx);
 }
 
-/// THE BANK IS NOT BUILT ALL AT ONCE (it was 4.4 s of synthesis on the main thread, in front of a window
-/// that was already up and blank). `init` builds variant 0 of every row — enough for every voice to SOUND —
-/// and this walks the rest in behind the menu, a few milliseconds a frame. Returns whether work remains.
+/// Walks the rest of the bank in behind the menu, a few ms a frame; returns whether work remains. Whole,
+/// it was 4.4 s of synthesis on the main thread in front of an already-blank window.
 ///
-/// A TAKE IS INDIVISIBLE, which is the whole difficulty: the budget bounds how much we START, never how much
-/// we finish, so one 8 s bed take is a ~300 ms hole in whatever frame picks it up. Harmless on the menu and
-/// unacceptable mid-fight — hence `longOk`. While the game is PAUSED (and the menu is up at launch, so that
-/// is where the bank actually finishes) anything may be built; in live play the long rows are passed over and
-/// wait for the next pause. `LONG_TAKE` is in seconds of AUDIO, which is the one cheap proxy for the cost.
+/// A TAKE IS INDIVISIBLE: the budget bounds how much we START, never how much we finish, so one 8 s bed
+/// take is a ~300 ms hole in whatever frame picks it up — hence `longOk`, which defers the long rows to a
+/// pause. `LONG_TAKE` is in seconds of AUDIO, the one cheap proxy for the cost.
 const LONG_TAKE: f32 = 1.4;
 
 pub fn pump(budgetNs: u64, longOk: bool) bool {
@@ -2331,17 +2166,16 @@ pub fn pump(budgetNs: u64, longOk: bool) bool {
         if (t.read() >= budgetNs) return true;
         left = NV + 1; // it had work and time: give the walk a fresh lap
     }
-    // A FULL LAP THAT STARTED NOTHING, and only ONE of the two reasons is finished: a DEFERRED row is work
-    // waiting on the next pause, where nothing deferred means the bank is whole and this may stop asking.
+    // A full lap that started nothing. Only one of the two reasons is finished: a DEFERRED row is work
+    // waiting on the next pause, where nothing deferred means the bank is whole.
     pumpDone = !deferred;
     return deferred;
 }
 
 /// Where `pump` resumes. A cursor rather than a rescan from 0, so a nearly-full bank costs one walk.
 var pumpAt: usize = 0;
-/// …and whether there is anything left to resume AT. Without it a finished bank still cost a timer read and a
-/// walk of all `NV` rows every frame for the rest of the session — the whole job having ended half a minute in.
-/// Cleared by `freeRow`, which is the only thing that ever un-bakes a take.
+/// …and whether there is anything left to resume AT — without it a finished bank still costs a timer read
+/// and a walk of all `NV` rows every frame. Cleared by `freeRow`, the only thing that un-bakes a take.
 var pumpDone = false;
 
 /// From take 0, not 1: index 0 is the OWNER and the one the looping beds play on. Bounded by `varsReady`,
@@ -2404,12 +2238,8 @@ fn redressFire() void {
     }
 }
 
-/// ENOUGH OF THE BANK TO PLAY, and no more: variant 0 of every row, which is ~112 takes of the 407 the bank
-/// wants. `pump` brings the rest in behind the menu. Whole, this was 4.4 s on the main thread with the window
-/// already up and blank — and it grows with every voice added, so the fix has to be structural.
-///
-/// A row with one take still SOUNDS; what it lacks is variety, which is exactly what the `vars = 1` rows
-/// already sound like and what nobody can hear in the first second of a launch.
+/// ENOUGH OF THE BANK TO PLAY, and no more: variant 0 of every row, ~112 takes of the 407 the bank wants.
+/// `pump` brings the rest in behind the menu. A row with one take still SOUNDS; what it lacks is variety.
 pub fn init() void {
     loadSettings(); // before the device: the dials are data, and they are what the first bed is mixed at
     rl.initAudioDevice();
@@ -2454,8 +2284,8 @@ fn dressedFire() []const u8 {
     const chans: usize = @intCast(w.channels);
     const n = frames * chans;
     const bytes = 44 + n * 2;
-    // …and short enough to go through `work`, which is what lets the filter rack reach it. A longer take
-    // swapped in later degrades to the RAW asset rather than running off the end of the buffer.
+    // …and short enough to go through `work`. A longer take swapped in later degrades to the RAW asset
+    // rather than running off the end of the buffer.
     if (n == 0 or bytes > fireWav.len or n > MAX_N) return CAMPFIRE_WAV;
     const src: [*]i16 = @ptrCast(@alignCast(w.data));
 
@@ -2483,8 +2313,7 @@ fn dressedFire() []const u8 {
         work[i] = mathx.clampF(x * FIRE_OUT, -1, 1);
     }
 
-    // …and the ambience rack over the top, the same recipe-then-`applyFx` order every voice takes. A COPY:
-    // the embedded asset is never touched.
+    // …and the ambience rack over the top. A COPY: the embedded asset is never touched.
     var fr = Rack{ .n = n, .rng = mathx.Rng.init(0xF12E9A ^ 0x5EED) };
     applyFx(&fr, .ambience);
     for (work[0..n], 0..) |s, si| {
@@ -2535,10 +2364,8 @@ pub fn tickStreams() void {
     if (rl.isMusicStreamPlaying(m)) rl.updateMusicStream(m);
 }
 
-/// ONE SAMPLE OUT TO 16-BIT PCM, and the CLAMP is what makes it a function rather than a multiply. `bake` and
-/// the fire bed's own byte loop are the two places a float leaves this file, and only one of them clamped: the
-/// other leant on `applyFx`'s closing `norm(0.92)` two functions away, where a sample past ±1.024 is not a
-/// clipped take but an out-of-range `@intFromFloat`. Written once, both sites cannot disagree about the ceiling.
+/// The CLAMP is what makes this a function rather than a multiply: a sample past ±1.024 is not a clipped
+/// take but an out-of-range `@intFromFloat`. Both float-out sites share it so they cannot disagree.
 fn pcm16(s: f32) i16 {
     return @intFromFloat(mathx.clampF(s, -1, 1) * 32000.0);
 }
@@ -2558,13 +2385,12 @@ fn bake(r: *Rack) rl.Sound {
 }
 
 /// SILENCE EVERYTHING FIRST, THEN FREE IT. Freeing a buffer the mixer is still reading presents as the
-/// WINDOW CLOSING WHILE THE PROCESS STAYS UP — no window, no way to quit, icon still in the taskbar. Not a
-/// rare race: the beds loop and the rest fire streams, so several voices are mid-playback on any quit.
+/// WINDOW CLOSING WHILE THE PROCESS STAYS UP, and it is not a rare race — several voices are mid-playback
+/// on any quit.
 pub fn deinit() void {
     if (!ready) return;
     if (restFire) |m| rl.stopMusicStream(m);
-    // TWO WHOLE-BANK PASSES, not one per row: on an ordinary quit several voices are mid-playback, so
-    // EVERYTHING goes quiet before ANYTHING is freed.
+    // TWO WHOLE-BANK PASSES, not one per row: everything goes quiet before anything is freed.
     for (0..NV) |idx| stopRow(idx);
     for (0..NV) |idx| freeRow(idx);
     if (restFire) |m| rl.unloadMusicStream(m);
@@ -2611,21 +2437,37 @@ fn levelFor(row: Row, vol: f32, vj: f32) f32 {
     return mathx.clampF(row.gain * submixTrim(row.mix) * userVol[@intFromEnum(row.mix)] * vol * vj, 0, 1);
 }
 
+/// HOW MUCH DAYLIGHT THERE IS, 0 under a dark sky and 1 at noon — stamped by `game.applyHour`, exactly as the
+/// scene's own hour is. Nothing in this file knows what an hour is; it is handed the one number it can use.
+var daylight: f32 = 1.0;
+
+pub fn setDaylight(k: f32) void {
+    daylight = mathx.clampF(k, 0, 1);
+}
+
+/// WHAT THE HOUR IS WORTH TO AN AMBIENT VOICE. LERPED on `daylight` rather than switched at sunset, so a
+/// bird's last call and a cricket's first are both simply quiet rather than cut off.
+const Hour = struct { atNoon: f32 = 1.0, atNight: f32 = 1.0 };
+
+fn hourGain(h: Hour) f32 {
+    return mathx.lerpF(h.atNight, h.atNoon, daylight);
+}
+
 pub fn setVolume(m: Submix, v: f32) void {
     userVol[@intFromEnum(m)] = mathx.clampF(v, 0, 1);
     // …AND THE BEDS, WHICH ARE ALREADY PLAYING.
     if (ready and m == .ambience) {
         for (BEDS) |b| {
-            const s = &slots[@intFromEnum(b)];
-            const lvl = bedLevel(BANK[@intFromEnum(b)]);
+            const s = &slots[@intFromEnum(b.id)];
+            const lvl = bedLevel(BANK[@intFromEnum(b.id)], b.hour);
             if (s.varsReady > 0) rl.setSoundVolume(s.snd[0][0], lvl);
             if (s.varsReady > 1) rl.setSoundVolume(s.snd[1][0], lvl);
         }
     }
 }
 
-fn bedLevel(row: Row) f32 {
-    return levelFor(row, 1.0, 1.0);
+fn bedLevel(row: Row, h: Hour) f32 {
+    return levelFor(row, hourGain(h), 1.0);
 }
 
 pub const SETTINGS_PATH = "settings.cfg";
@@ -2643,9 +2485,8 @@ pub fn loadSettings() void {
     const f = std.fs.cwd().openFile(SETTINGS_PATH, .{}) catch return;
     defer f.close();
     const n = f.readAll(&buf) catch return;
-    // IT FILLED THE BUFFER, so the tail was cut MID-LINE (`worldfmt.load`'s own guard). A half-read `fx.`
-    // line parses as a short one, and a short line loads its remaining dials at ZERO rather than at what
-    // the file said — so the whole file is refused instead of applied wrong.
+    // IT FILLED THE BUFFER, so the tail was cut MID-LINE. A half-read `fx.` line parses as a short one and
+    // loads its remaining dials at ZERO, so the whole file is refused rather than applied wrong.
     if (n == buf.len) return;
     var lines = std.mem.tokenizeAny(u8, buf[0..n], "\r\n");
     while (lines.next()) |line| {
@@ -2655,8 +2496,7 @@ pub fn loadSettings() void {
             const fam = key[FX_KEY.len..];
             inline for (@typeInfo(Submix).@"enum".fields) |fld| {
                 if (std.mem.eql(u8, fam, fld.name)) {
-                    // A short line leaves the tail at zero, not at its default: the file is the whole truth
-                    // about a rack once it has one.
+                    // A short line leaves the tail at ZERO, not at its default: the file is the whole truth.
                     var row = [_]f32{0} ** AFX_COUNT;
                     var i: usize = 0;
                     while (i < AFX_COUNT) : (i += 1) {
@@ -2705,6 +2545,11 @@ pub fn playAt(id: Id, vol: f32) void {
 }
 
 pub fn world(id: Id, at: rl.Vector3) void {
+    worldAt(id, at, 1.0);
+}
+
+/// …and the same thing with a level on top, for a caller that has a reason to duck it (`ambience`'s hour).
+pub fn worldAt(id: Id, at: rl.Vector3, gain: f32) void {
     if (!ready) return;
     const row = BANK[@intFromEnum(id)];
     const d2 = mathx.dist2XZ(at, lisPos);
@@ -2719,7 +2564,7 @@ pub fn world(id: Id, at: rl.Vector3) void {
     const rear = 1.0 - REAR_DUCK * 0.5 * (1.0 - front);
     // …and the pan closes to centre in the near field, so a foe standing on you doesn't strobe.
     const width = PAN_WIDTH * mathx.smoothstep(0, PAN_NEAR, d);
-    emit(id, k * k * rear, panFor(side, width), 1.0 - PITCH_DROOP * near);
+    emit(id, k * k * rear * gain, panFor(side, width), 1.0 - PITCH_DROOP * near);
 }
 
 fn emit(id: Id, vol: f32, pan: f32, pitchScale: f32) void {
@@ -2749,9 +2594,8 @@ fn bed(id: Id, vol: f32) void {
     const row = BANK[idx];
     const s = &slots[idx];
     if (s.varsReady == 0) return;
-    // THE WIDTH IS THE SECOND TAKE, and the beds are the two most expensive rows in the bank, so at launch
-    // only take 0 exists. Hard-panned alone it would be a bed in one ear; CENTRED it is simply narrow, and
-    // `ambience` re-fires whatever is not playing, so the width arrives with the next loop of an 8 s take.
+    // THE WIDTH IS THE SECOND TAKE, and at launch only take 0 exists. Hard-panned alone that is a bed in
+    // one ear; CENTRED it is simply narrow, and the width arrives with the next loop.
     if (s.varsReady == 1) {
         trigger(s.snd[0][0], row, vol, 0.5, 1.0);
         return;
@@ -2760,7 +2604,14 @@ fn bed(id: Id, vol: f32) void {
     trigger(s.snd[1][0], row, vol, 1.0 - BED_PAN, 1.0);
 }
 
-const BEDS = [_]Id{ .wind, .crickets };
+const Bed = struct { id: Id, hour: Hour = .{} };
+
+const BEDS = [_]Bed{
+    // The wind blows the same all day; the CHIRR is the night's own, and it thins to a background at noon
+    // rather than stopping — there are crickets in a hot field too.
+    .{ .id = .wind },
+    .{ .id = .crickets, .hour = .{ .atNoon = 0.34, .atNight = 1.0 } },
+};
 
 /// A TABLE, because there are three of these now and they differ in nothing but those numbers.
 const Call = struct {
@@ -2770,15 +2621,16 @@ const Call = struct {
     distLo: f32,
     distHi: f32,
     first: f32,
+    hour: Hour = .{},
 };
 
-// WHERE A CALL COMES FROM IS WHAT SETS HOW LOUD IT IS. `world` fades over the row's own `reach` as `k²`, so
-// the distance band IS the volume band: the two bird rows draw from close enough to be in the next tree
-// (`distLo`, near full) out to the edge of earshot (`distHi`, a tenth of it), and a wood you hear one flat
-// level of birdsong in is a wood with a speaker in it.
+// WHERE A CALL COMES FROM IS WHAT SETS HOW LOUD IT IS: `world` fades over `reach` as `k²`, so the distance
+// band IS the volume band, and a wood you hear one flat level of birdsong in is a wood with a speaker in it.
+// The hour is the other half — the bird rows are left far under at night but never silenced, since a bird
+// that stops dead at sunset is a switch. The OWL is left alone; it already reads as a night voice.
 const CALLS = [_]Call{
-    .{ .id = .birds, .gapLo = 6, .gapHi = 17, .distLo = 12, .distHi = 150, .first = 4 },
-    .{ .id = .birdsong, .gapLo = 7, .gapHi = 20, .distLo = 14, .distHi = 155, .first = 9 },
+    .{ .id = .birds, .gapLo = 6, .gapHi = 17, .distLo = 12, .distHi = 150, .first = 4, .hour = .{ .atNoon = 1.0, .atNight = 0.22 } },
+    .{ .id = .birdsong, .gapLo = 7, .gapHi = 20, .distLo = 14, .distHi = 155, .first = 9, .hour = .{ .atNoon = 1.0, .atNight = 0.22 } },
     .{ .id = .owl, .gapLo = 26, .gapHi = 70, .distLo = 40, .distHi = 150, .first = 22 },
 };
 
@@ -2793,9 +2645,11 @@ var callWait: [CALLS.len]f32 = init: {
 pub fn ambience(dt: f32) void {
     if (!ready or muted) return;
     for (BEDS) |b| {
-        const s = &slots[@intFromEnum(b)];
+        const s = &slots[@intFromEnum(b.id)];
         if (s.varsReady == 0) continue; // not baked yet: `pump` is still walking the bank in
-        if (!rl.isSoundPlaying(s.snd[0][0])) bed(b, 1.0);
+        // The hour is read at the RETRIGGER — seconds against a twenty-minute day, so nothing has to slide
+        // a volume under a playing sound.
+        if (!rl.isSoundPlaying(s.snd[0][0])) bed(b.id, hourGain(b.hour));
     }
     for (CALLS, 0..) |c, i| {
         callWait[i] -= dt;
@@ -2803,7 +2657,7 @@ pub fn ambience(dt: f32) void {
         callWait[i] = rng.range(c.gapLo, c.gapHi);
         const a = rng.angle();
         const d = rng.range(c.distLo, c.distHi);
-        world(c.id, mathx.v3(lisPos.x + mathx.cosf(a) * d, lisPos.y, lisPos.z + mathx.sinf(a) * d));
+        worldAt(c.id, mathx.v3(lisPos.x + mathx.cosf(a) * d, lisPos.y, lisPos.z + mathx.sinf(a) * d), hourGain(c.hour));
     }
 }
 
@@ -2859,9 +2713,7 @@ test "every voice renders, stays in range, and is not silence" {
 
 test "NO VOICE OUTRUNS ITS OWN TAKE — every authored layer gets samples to render into" {
     // `Rack.at` clamps a layer's start AND its duration to the take, so a recipe authoring past its
-    // `seconds()` row loses those layers with no error and no silence to show for it: `wood_die`'s ground
-    // arrival and `eat`'s third chew both rendered nothing for exactly this reason. `Rack.dropped` counts
-    // them, so a new voice whose recipe outgrows its length fails HERE rather than in someone's ears.
+    // `seconds()` row loses those layers silently. `Rack.dropped` counts them so it fails HERE instead.
     inline for (@typeInfo(Id).@"enum".fields, 0..) |f, idx| {
         const id: Id = @enumFromInt(f.value);
         var r = Rack.init(0x9E3779B9 *% (idx + 1), seconds(id));
@@ -2906,10 +2758,8 @@ test "THE HOUSE SOUND IS WORN TAPE, on all three families, and it is the preset'
     }
 }
 
-// THE CAMPFIRE IS NOT UNIT-TESTED, and it is the one voice that cannot be: `dressedFire` has to DECODE
-// the asset first (`rl.loadWaveFromMemory`), and doing that in a test process with no raylib device hangs
-// it. What a test could reach is the arithmetic, which is `applyFx` — already pinned above — so the fire
-// rides the same covered path every other ambience voice does and its wiring is judged by ear.
+// THE CAMPFIRE CANNOT BE UNIT-TESTED: `dressedFire` has to `rl.loadWaveFromMemory` first, and doing that
+// in a test process with no raylib device hangs it. Its arithmetic is `applyFx`, pinned above.
 
 test "EVERY VOICE SURVIVES THE HOUSE RACK — in range, still a sound, and never NaN" {
     const keep = fxVals;
@@ -3019,7 +2869,8 @@ test "the buffer never starts or ends on a step (that is the click you cannot un
 }
 
 test "the world falloff is silent past its own range and loudest underfoot" {
-    // `world` is the one path that can be called thousands of times a frame by a knot of foes, so its early-out has to be real; and a pan that leaves the 0..1 range is a raylib assert.
+    // `world` can be called thousands of times a frame by a knot of foes, so its early-out has to be real;
+    // and a pan that leaves the 0..1 range is a raylib assert.
     listen(mathx.zero3, mathx.v3(1, 0, 0));
     try std.testing.expect(mathx.distXZ(mathx.v3(FALLOFF + 1, 0, 0), lisPos) > FALLOFF);
     const near = 1.0 - 0.0 / FALLOFF;
@@ -3044,7 +2895,8 @@ test "PAN IS THE LEFT CHANNEL'S GAIN — a source on your right must pan DOWN, n
 }
 
 test "the near field closes the pan, so a foe standing on you does not strobe" {
-    // A bearing at arm's length is arithmetically fine and perceptually meaningless: a toad chewing your leg crosses from one side to the other in a frame, and panning that honestly flicks the sound between the speakers.
+    // A bearing at arm's length is arithmetically fine and perceptually meaningless: a toad chewing your
+    // leg crosses side to side in a frame, and panning that honestly flicks it between the speakers.
     const onTop = PAN_WIDTH * mathx.smoothstep(0, PAN_NEAR, 0.05);
     const clear = PAN_WIDTH * mathx.smoothstep(0, PAN_NEAR, 4.0);
     try std.testing.expect(onTop < 0.02); // effectively centred
@@ -3080,7 +2932,7 @@ test "every sparse call is rolled INSIDE its own reach, and none of them is roll
 }
 
 test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience" {
-    for (BEDS) |b| try std.testing.expectEqual(Submix.ambience, BANK[@intFromEnum(b)].mix);
+    for (BEDS) |b| try std.testing.expectEqual(Submix.ambience, BANK[@intFromEnum(b.id)].mix);
     for (CALLS) |c| try std.testing.expectEqual(Submix.ambience, BANK[@intFromEnum(c.id)].mix);
     // WHAT IS PINNED IS THE SIGNAL, NOT THE MIX POSITION.
     // EVERY family is trimmed at the source now, not just this one — none of the three ships at unity.
@@ -3103,7 +2955,7 @@ test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience"
     }
 
     var loudBed: f32 = 0;
-    for (BEDS) |b| loudBed = mathx.maxF(loudBed, BANK[@intFromEnum(b)].gain);
+    for (BEDS) |b| loudBed = mathx.maxF(loudBed, BANK[@intFromEnum(b.id)].gain);
     for (CALLS) |c| try std.testing.expect(BANK[@intFromEnum(c.id)].gain > loudBed);
 }
 
@@ -3127,8 +2979,7 @@ const Rendered = struct {
 };
 
 test "THE PARRY IS A STRUCK DISC, NOT A PING — measured against the bank's own struck iron" {
-    // A RENDERED voice, not its constants: this is the one place in the bank where reading the recipe was not
-    // enough, because "ringing" and "pinging" are the same layers at different settings.
+    // A RENDERED voice, not its constants: "ringing" and "pinging" are the same layers at different settings.
     var r = Rack.init(1, seconds(.parry));
     mkParry(&r);
     const parryTail = Rendered.energy(2 * r.n / 3, r.n) / Rendered.energy(0, r.n / 3);
@@ -3143,13 +2994,11 @@ test "THE PARRY IS A STRUCK DISC, NOT A PING — measured against the bank's own
     const blockBright = Rendered.brightness(b.n);
 
     // THE LOAD-BEARING ONE. `decay` is exp(-curve·u), so a slack curve leaves the voice at full cry when it
-    // ends — and a `ring` still sounding at the end is a spring, not a shield. The shape the owner threw out
-    // measured 0.106 here against the block's 0.015 and this metal's 0.033; nothing that still rings that hard
-    // belongs in the same family, so the pin is RELATIVE to the bank's own struck iron rather than a number.
+    // ends, and a `ring` still sounding then is a spring, not a shield. The shape the owner threw out
+    // measured 0.106 against the block's 0.015 and this metal's 0.033 — hence a RELATIVE pin, not a number.
     try std.testing.expect(parryTail <= metalTail);
-    // …and a loose lid on shrillness. It is loose on purpose: zero crossings are dominated by the noisy ATTACK
-    // every voice here opens with, so this catches a ring parked at 8 kHz and nothing subtler. The decay above
-    // is what actually separates a disc from a ping.
+    // …and a loose lid on shrillness, loose on purpose: zero crossings are dominated by the noisy ATTACK,
+    // so this catches a ring parked at 8 kHz and nothing subtler.
     try std.testing.expect(parryBright < blockBright * 1.35);
 }
 
@@ -3177,10 +3026,9 @@ test "THE OPTIONS DIALS — three families, and the fight is one of them" {
 }
 
 test "THE FIGHT IS ONE BAND — no battle voice towers over the rest of them" {
-    // WALKED OFF THE BANK, not off a hand-kept list of fifty ids. `.combat` at or under `BATTLE_FLOOR` is
-    // the DELIBERATELY quiet half (the swings, the steps, the priest's chant — named below, because each of
-    // those is a decision); everything else in the family is the band, and derived like this a new combat
-    // voice is inside the guard the moment it has a row instead of the day somebody remembers the list.
+    // WALKED OFF THE BANK, not off a hand-kept list of fifty ids: `.combat` at or under `BATTLE_FLOOR` is
+    // the deliberately quiet half, everything else is the band. A new combat voice is inside the guard the
+    // moment it has a row.
     var lo: f32 = 1e9;
     var hi: f32 = 0;
     var n: usize = 0;
@@ -3217,8 +3065,7 @@ test "THE VOLUME IS RESERVED FOR WHAT IS ABOUT TO HIT YOU" {
             return BANK[@intFromEnum(id)].gain;
         }
     }.of;
-    // A CREATURE'S COMMITTED ARRIVAL OUTRANKS ITS OWN MOVEMENT NOISE. Pairs, so each one is that creature's
-    // own decision and not a comparison across two different-sized things.
+    // A CREATURE'S COMMITTED ARRIVAL OUTRANKS ITS OWN MOVEMENT NOISE — in PAIRS, never across creatures.
     try std.testing.expect(g(.toad_lunge) > g(.toad_hop));
     try std.testing.expect(g(.shroom_fling) > g(.shroom_hop));
     try std.testing.expect(g(.ogre_slam) > g(.ogre_step));
@@ -3243,13 +3090,14 @@ test "THE VOLUME IS RESERVED FOR WHAT IS ABOUT TO HIT YOU" {
 }
 
 test "every BED has two takes to pan, and they do not loop in lockstep" {
-    // BEDS MUST NOT SHARE A LENGTH: equal-length beds re-trigger on the same frame for the whole session, and two textures repeating in lockstep is a loop you can hear even when neither is audible alone.
+    // BEDS MUST NOT SHARE A LENGTH: equal-length beds re-trigger on the same frame for the whole session,
+    // and two textures repeating in lockstep is a loop you can hear even when neither is audible alone.
     var i: usize = 0;
     while (i < BEDS.len) : (i += 1) {
         // Played through `bed`, which needs two takes to have two channels to pan hard apart.
-        try std.testing.expect(BANK[@intFromEnum(BEDS[i])].vars >= 2);
+        try std.testing.expect(BANK[@intFromEnum(BEDS[i].id)].vars >= 2);
         var j = i + 1;
-        while (j < BEDS.len) : (j += 1) try std.testing.expect(seconds(BEDS[i]) != seconds(BEDS[j]));
+        while (j < BEDS.len) : (j += 1) try std.testing.expect(seconds(BEDS[i].id) != seconds(BEDS[j].id));
     }
 }
 
@@ -3300,7 +3148,7 @@ test "THE HEAL IS CHORAL AND IT IS IN A ROOM — the parts of that a render can 
             return @floatCast(@sqrt(e / @as(f64, @floatFromInt(@max(to - from, 1)))));
         }
     }.of;
-    // IT SWELLS: the middle of it is louder than its first 40 ms, which is what "sung" means as opposed to "struck".
+    // IT SWELLS: the middle is louder than the first 40 ms, which is what "sung" means against "struck".
     const attack = rms(0, @intFromFloat(SRF * 0.04));
     const middle = rms(n / 3, n * 2 / 3);
     try std.testing.expect(middle > attack * 1.5);
@@ -3349,12 +3197,14 @@ test "the two ambient voices are baked DARK, which is the cue level cannot buy" 
     try std.testing.expect(wind < 0.75 * crossings(.toad_chomp, @intFromEnum(Id.toad_chomp)));
     try std.testing.expect(wind < 0.60 * crossings(.swing_light, @intFromEnum(Id.swing_light)));
 
-    // THE BIRDS ARE NOT MEASURED THIS WAY, and the reason is worth writing down: a chirp is PITCHED, so its zero-crossing rate is set by its fundamental and barely moves when you take the reedy harmonics off the top.
+    // THE BIRDS ARE NOT MEASURED THIS WAY: a chirp is PITCHED, so its zero-crossing rate is set by its
+    // fundamental and barely moves when the reedy harmonics come off the top.
     try std.testing.expect(AIR_FAR_CALL < AIR_NEAR_DARKEST);
     try std.testing.expect(AIR_FAR_BED < AIR_FAR_CALL); // the bed is the furthest thing in the world
     try std.testing.expect(AIR_FAR_CRY < AIR_FAR_CALL);
     try std.testing.expect(AIR_FAR_CRY < AIR_NEAR_DARKEST);
-    // …and neither so dark it stops being the thing it is: a bird still has to be a whistle (its band tops out at 2500 Hz) and wind still has to have air in it, not just rumble.
+    // …and neither so dark it stops being the thing it is: a bird still has to be a whistle (its band tops
+    // out at 2500 Hz) and wind still has to have air in it, not just rumble.
     try std.testing.expect(AIR_FAR_CALL > 1200 and AIR_FAR_BED > 800);
     try std.testing.expect(AIR_NEAR_GRASS > AIR_NEAR_DARKEST);
     // …and every one of the FAR voices stays on the far side of it.

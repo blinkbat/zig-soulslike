@@ -194,7 +194,6 @@ pub fn bell(cx: f32, cy: f32, px: f32) void {
     const cw = s * 0.085; // …and half the shoulder
     rl.drawCircleV(v2(cx + 1.2 * k, mouthY + 1.0 * k), hw, rgba(0, 0, 0, 110));
 
-    // The handle, above the crown: a turned grip with a swell, so it is not a peg.
     rl.drawLineEx(v2(cx + lean, cy - s * 0.36), v2(cx + lean, crownY), 3.6 * k, GRIP);
     rl.drawCircleV(v2(cx + lean, cy - s * 0.345), 2.6 * k, GRIP_LT);
     rl.drawCircleV(v2(cx + lean, cy - s * 0.245), 2.9 * k, GRIP); // the swell the fist closes on
@@ -213,7 +212,6 @@ pub fn bell(cx: f32, cy: f32, px: f32) void {
     // the rim is the outer fill and the bore is a smaller one laid on top.
     rl.drawEllipse(@intFromFloat(cx), @intFromFloat(mouthY), hw, s * 0.075, BRONZE_LT);
     rl.drawEllipse(@intFromFloat(cx), @intFromFloat(mouthY), hw - 2.2 * k, s * 0.075 - 1.6 * k, BRONZE_BORE);
-    // …and the clapper hanging in it, off-centre: at rest it has swung to one side and stayed there.
     rl.drawLineEx(v2(cx + s * 0.02, mouthY - s * 0.10), v2(cx + s * 0.055, mouthY + s * 0.005), 1.3 * k, BRONZE_DK);
     rl.drawCircleV(v2(cx + s * 0.055, mouthY + s * 0.02), 2.6 * k, BRONZE_LT);
 }
@@ -234,23 +232,19 @@ fn spiritScroll(cx: f32, cy: f32, px: f32, glyph: SpiritGlyph) void {
     const rollY = cy + s * 0.26; // the roll it is still wound on, at the foot
     rl.drawCircleV(v2(cx + 1.2 * k, rollY + 1.2 * k), hw * 1.02, rgba(0, 0, 0, 110));
 
-    // The face, cupped: the top corners spread and the near edge sits proud of the far one.
     const tl = v2(cx - hw * 1.06 + lean, top);
     const tr = v2(cx + hw * 1.02 + lean, top + s * 0.02);
     quad(tl, tr, v2(cx + hw * 0.94, rollY), v2(cx - hw * 0.96, rollY), HIDE);
-    // …and the curl at the head of it, the pale INSIDE of the hide showing where it has rolled back on itself.
     arc(cx + lean, top + s * 0.03, hw * 1.02, std.math.pi * 1.04, std.math.tau - 0.06, 10, s * 0.055, s * 0.035, HIDE_LT);
     rl.drawLineEx(v2(cx - hw * 0.96, rollY), v2(cx - hw * 1.06 + lean, top), 1.2 * k, HIDE_LT); // the lit near edge
 
     glyphOn(cx, cy - s * 0.03, s, k, glyph);
 
-    // THE ROLL, drawn OVER the sheet's foot so the sheet is coming off it rather than sitting behind it.
     rl.drawLineEx(v2(cx - hw, rollY), v2(cx + hw, rollY), s * 0.17, HIDE_DK);
     rl.drawLineEx(v2(cx - hw, rollY - s * 0.03), v2(cx + hw, rollY - s * 0.03), s * 0.05, HIDE);
     rl.drawCircleV(v2(cx - hw, rollY), s * 0.085, HIDE_DK); // the two ends of the roll…
     rl.drawCircleV(v2(cx + hw, rollY), s * 0.085, HIDE_DK);
     rl.drawCircleV(v2(cx + hw, rollY), s * 0.042, rgba(84, 68, 46, 255)); // …and the hole down the near one
-    // The tie, off-centre and slack — the one soft thing on a stiff object.
     rl.drawLineEx(v2(cx - s * 0.05, rollY - s * 0.10), v2(cx - s * 0.02, rollY + s * 0.09), 1.8 * k, CORD);
     rl.drawLineEx(v2(cx - s * 0.02, rollY + s * 0.09), v2(cx + s * 0.07, rollY + s * 0.13), 1.5 * k, CORD);
 }
@@ -275,7 +269,6 @@ fn glyphOn(cx: f32, cy: f32, s: f32, k: f32, glyph: SpiritGlyph) void {
             rl.drawLineEx(stop, brow, w, SPIRIT);
             rl.drawLineEx(brow, ear, w, SPIRIT);
             rl.drawLineEx(ear, nape, w, SPIRIT);
-            // The jaw, back off the nose — the line doubles back under itself and stops at the throat.
             rl.drawLineEx(nose, v2(cx - s * 0.02, cy + s * 0.075), w * 0.85, SPIRIT);
             rl.drawLineEx(v2(cx - s * 0.02, cy + s * 0.075), v2(cx + s * 0.06, cy + s * 0.06), w * 0.85, SPIRIT);
             rl.drawCircleV(v2(cx - s * 0.115, cy + s * 0.045), w * 0.6, SPIRIT_LT); // the nose, blunt: nothing ends in a point
@@ -293,11 +286,9 @@ fn emberCandle(cx: f32, cy: f32, px: f32) void {
     rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.20 + 1.0 * k), s * 0.24, rgba(0, 0, 0, 120));
     rl.drawCircleV(v2(cx, cy + s * 0.20), s * 0.24, EMBER_FAT_DK); // the dollop, slumped
     rl.drawCircleV(v2(cx - s * 0.03, cy + s * 0.16), s * 0.20, EMBER_FAT);
-    // Two runs of fat down the side, no two alike.
     rl.drawLineEx(v2(cx + s * 0.14, cy + s * 0.12), v2(cx + s * 0.17 + lean, cy + s * 0.32), 2.6 * k, EMBER_FAT);
     rl.drawLineEx(v2(cx - s * 0.18, cy + s * 0.18), v2(cx - s * 0.19, cy + s * 0.33 + rng.range(0, 2) * k), 2.0 * k, EMBER_FAT_DK);
     rl.drawLineEx(v2(cx + lean, cy + s * 0.02), v2(cx + lean, cy - s * 0.10), 1.6 * k, IRON_DK); // the wick
-    // The flame: a dim outer tongue and a hot heart, leaning the wick's own way.
     rl.drawCircleV(v2(cx + lean * 1.4, cy - s * 0.17), s * 0.085, FIRE_DIM);
     rl.drawCircleV(v2(cx + lean * 1.2, cy - s * 0.145), s * 0.05, FIRE);
     rl.drawCircleV(v2(cx + lean, cy - s * 0.12), s * 0.022, rgba(255, 236, 190, 255));
@@ -309,10 +300,8 @@ fn sporelingCap(cx: f32, cy: f32, px: f32) void {
     const k = strokeK(px);
     var rng = mathx.Rng.init(0x5CA9);
     rl.drawCircleV(v2(cx + 1.0 * k, cy + 1.2 * k), s * 0.30, rgba(0, 0, 0, 120));
-    // The dome as a half-disc: a run of arcs from thick to nothing, curled at the rim by drying.
     arc(cx, cy + s * 0.06, s * 0.28, std.math.pi, std.math.tau, 14, s * 0.34, s * 0.20, SHROOM_CAP);
     arc(cx, cy + s * 0.07, s * 0.29, std.math.pi * 1.06, std.math.pi * 1.94, 12, 2.4 * k, 2.0 * k, SHROOM_CAP_DK);
-    // The gill line under it, and the shrunken flesh below that.
     rl.drawLineEx(v2(cx - s * 0.27, cy + s * 0.075), v2(cx + s * 0.27, cy + s * 0.065), 3.0 * k, SHROOM_CAP_DK);
     rl.drawLineEx(v2(cx - s * 0.20, cy + s * 0.13), v2(cx + s * 0.20, cy + s * 0.12), 2.2 * k, CAP_LT);
     var f: u32 = 0;
@@ -321,7 +310,6 @@ fn sporelingCap(cx: f32, cy: f32, px: f32) void {
         const rr = rng.range(0.10, 0.24) * s;
         rl.drawCircleV(v2(cx + mathx.cosf(a) * rr, cy + s * 0.02 + mathx.sinf(a) * rr * 0.8), rng.range(1.2, 2.2) * k, SHROOM_CREAM);
     }
-    // The BITE out of the rim — a dark wedge, with the violet gone quiet just inside it.
     rl.drawCircleV(v2(cx + s * 0.21, cy - s * 0.10), s * 0.06, rgba(30, 22, 20, 255));
     rl.drawCircleV(v2(cx + s * 0.17, cy - s * 0.075), 1.6 * k, CHAOS_DK);
 }
@@ -331,7 +319,6 @@ fn secondWind(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
     rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.06 + 1.0 * k), s * 0.26, rgba(0, 0, 0, 110));
-    // The curl: bark outside, pale inner face showing at the roll.
     arc(cx, cy + s * 0.04, s * 0.22, std.math.pi * 0.2, std.math.pi * 1.6, 14, s * 0.16, s * 0.10, BONE_DK);
     arc(cx, cy + s * 0.04, s * 0.22, std.math.pi * 0.25, std.math.pi * 1.5, 12, s * 0.10, s * 0.05, BONE);
     arc(cx + s * 0.06, cy + s * 0.02, s * 0.10, std.math.pi * 0.4, std.math.pi * 1.8, 10, s * 0.07, s * 0.03, BONE);
@@ -351,12 +338,10 @@ fn towerShield(cx: f32, cy: f32, px: f32) void {
     rl.drawCircleV(v2(cx + 1.2 * k, bot - s * 0.04), hw, rgba(0, 0, 0, 110));
     quad(v2(cx - hw, top + s * 0.06), v2(cx + hw, top + s * 0.06), v2(cx + hw * 0.86, bot), v2(cx - hw * 0.86, bot), GRIP);
     arc(cx, top + s * 0.07, hw, std.math.pi, std.math.tau, 10, s * 0.12, s * 0.12, GRIP); // the rounded head
-    // Plank seams, and the lit lip under each that makes them EDGES.
     for ([_]f32{ -0.4, 0.2 }) |t| {
         rl.drawLineEx(v2(cx + hw * t, top + s * 0.02), v2(cx + hw * t * 0.86, bot - s * 0.01), 1.4 * k, BOARD_JOINT);
         rl.drawLineEx(v2(cx + hw * t + 1.2 * k, top + s * 0.02), v2(cx + hw * t * 0.86 + 1.2 * k, bot - s * 0.01), 0.8 * k, GRIP_LT);
     }
-    // Two iron bands and their rivets.
     for ([_]f32{ top + s * 0.16, bot - s * 0.14 }) |by| {
         rl.drawLineEx(v2(cx - hw, by), v2(cx + hw, by), 3.4 * k, IRON_DK);
         rl.drawCircleV(v2(cx - hw * 0.6, by), 1.3 * k, STEEL_DK);
@@ -375,14 +360,11 @@ fn greatclub(cx: f32, cy: f32, px: f32) void {
     const k = strokeK(px);
     var rng = mathx.Rng.init(0xC1B8);
     rl.drawCircleV(v2(cx + 1.4 * k, cy - s * 0.10 + 1.4 * k), s * 0.24, rgba(0, 0, 0, 120));
-    // The haft, running off frame.
     rl.drawLineEx(v2(cx - s * 0.10, cy + s * 0.44), v2(cx + s * 0.02, cy - s * 0.02), s * 0.10, ROOT_BARK);
     rl.drawLineEx(v2(cx - s * 0.085, cy + s * 0.42), v2(cx + s * 0.005, cy + s * 0.06), 1.6 * k, rgba(30, 20, 14, 255)); // its grain
-    // The head: bog-oak lumps, no two the same size.
     rl.drawCircleV(v2(cx + s * 0.05, cy - s * 0.12), s * 0.20, ROOT_BARK);
     rl.drawCircleV(v2(cx + s * 0.14, cy - s * 0.20), s * 0.13, rgba(50, 36, 26, 255));
     rl.drawCircleV(v2(cx - s * 0.06, cy - s * 0.22), s * 0.11, rgba(46, 33, 24, 255));
-    // The iron shoe and its studs.
     arc(cx + s * 0.05, cy - s * 0.13, s * 0.185, std.math.pi * 1.15, std.math.pi * 1.95, 10, 3.2 * k, 2.6 * k, IRON_DK);
     var st: u32 = 0;
     while (st < 4) : (st += 1) {
@@ -402,12 +384,10 @@ fn soulRing(cx: f32, cy: f32, px: f32) void {
     // The band, thin and even — a plain ring, so the CRACK is the only thing on it worth looking at.
     arc(cx, cy + s * 0.02, s * 0.175, 0, std.math.tau, 20, s * 0.048, s * 0.038, RING_GOLD);
     arc(cx - s * 0.05, cy - s * 0.02, s * 0.175, std.math.pi * 0.85, std.math.pi * 1.45, 8, 1.7 * k, 0.9 * k, RING_GOLD_LT);
-    // …and the hairline through the shoulder of it, already run: a dark gap with a lit lip either side.
     const bx = cx + s * 0.155;
     const by = cy - s * 0.06;
     rl.drawLineEx(v2(bx - s * 0.03, by + s * 0.04), v2(bx + s * 0.03, by - s * 0.04), 2.2 * k, rgba(26, 20, 12, 255));
     rl.drawLineEx(v2(bx - s * 0.035, by + s * 0.035), v2(bx - s * 0.008, by), 1.1 * k, RING_GOLD_LT);
-    // The soul caught in it: one small warm bead on the seat, which is what it is holding onto.
     rl.drawCircleV(v2(cx, cy - s * 0.155), s * 0.062, RING_SOUL);
     rl.drawCircleV(v2(cx - s * 0.015, cy - s * 0.172), 1.3 * k, rgba(255, 246, 214, 235));
 }
@@ -431,11 +411,9 @@ fn fireTallow(cx: f32, cy: f32, px: f32) void {
     const k = strokeK(px);
     var rng = mathx.Rng.init(0xFA77);
     rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.12 + 1.2 * k), s * 0.25, rgba(0, 0, 0, 115));
-    // The cloth, gathered to a twist at one side.
     quad(v2(cx - s * 0.23, cy + s * 0.02), v2(cx + s * 0.22, cy + s * 0.05), v2(cx + s * 0.15, cy + s * 0.30), v2(cx - s * 0.17, cy + s * 0.27), SALT);
     rl.drawLineEx(v2(cx - s * 0.23, cy + s * 0.04), v2(cx - s * 0.33, cy - s * 0.04), 3.4 * k, CORD);
     rl.drawLineEx(v2(cx - s * 0.05, cy + s * 0.10), v2(cx - s * 0.10, cy + s * 0.24), 1.0 * k, rgba(190, 172, 138, 255)); // one fold
-    // The fat, two lobes no two alike, and its sheen.
     rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.03), s * 0.165, EMBER_FAT);
     rl.drawCircleV(v2(cx + s * 0.11 + rng.range(-1.2, 1.2) * k, cy + s * 0.01), s * 0.115, EMBER_FAT_DK);
     rl.drawCircleV(v2(cx - s * 0.09, cy - s * 0.08), s * 0.05, rgba(246, 222, 164, 255));
@@ -522,7 +500,6 @@ fn crackedSoul(cx: f32, cy: f32, px: f32) void {
         rl.drawLineEx(seam[i], seam[i + 1], 1.1 * k, rgba(255, 254, 240, 250));
     }
     rl.drawCircleV(seam[2], 2.6 * k, rgba(255, 254, 244, 255)); // the hot point at the widest of it
-    // Motes coming off the leak, the arc's own idiom.
     var i: u32 = 0;
     while (i < 3) : (i += 1) {
         rl.drawCircleV(v2(cx + rng.range(-0.08, 0.08) * s, cy + rng.range(-0.36, -0.12) * s), rng.range(0.6, 1.2) * k, rgba(255, 232, 176, 200));
@@ -541,12 +518,10 @@ fn toadfleshBroth(cx: f32, cy: f32, px: f32) void {
     rl.drawCircleV(v2(cx - s * 0.04, cy + s * 0.12 + sag), s * 0.21, GRIP);
     rl.drawCircleV(v2(cx + s * 0.10, cy + s * 0.08), s * 0.16, GRIP);
     rl.drawCircleV(v2(cx - s * 0.09, cy + s * 0.05), s * 0.11, GRIP_LT); // the swell catching light
-    // The neck, pinched and tied, and the toggle that stops the cord.
     quad(v2(cx - s * 0.045, cy - s * 0.18), v2(cx + s * 0.045, cy - s * 0.18), v2(cx + s * 0.06, cy - s * 0.02), v2(cx - s * 0.06, cy - s * 0.02), BOARD_JOINT);
     rl.drawLineEx(v2(cx - s * 0.08, cy - s * 0.10), v2(cx + s * 0.08, cy - s * 0.12), 2.6 * k, CORD);
     rl.drawLineEx(v2(cx - s * 0.11, cy - s * 0.20), v2(cx + s * 0.11, cy - s * 0.22), 3.0 * k, BONE); // the toggle
     rl.drawCircleV(v2(cx + s * 0.11, cy - s * 0.22), 1.5 * k, BONE_DK); // its cut end
-    // One pale bead at the mouth: drunk from, not poured.
     rl.drawCircleV(v2(cx + s * 0.02, cy - s * 0.155), 1.4 * k, SALT);
 }
 
@@ -570,7 +545,6 @@ fn fangDirk(cx: f32, cy: f32, px: f32) void {
     }
     // The GROUND EDGE along the hollow of the curve — brighter than any tooth, which is what says dirk.
     rl.drawLineEx(onAxis(rootP, tipP, 0.15, 1.2 * k), onAxis(rootP, tipP, 0.88, 0.3 * k), 1.1 * k, rgba(255, 252, 240, 220));
-    // The haft: a stub of the root wrapped in cord, three turns, and an iron washer for a guard.
     const buttP = v2(cx - s * 0.24, cy + s * 0.30);
     rl.drawLineEx(rootP, buttP, 5.0 * k, GRIP);
     rl.drawCircleV(v2(rootP.x, rootP.y), 3.2 * k, IRON_DK);
@@ -592,7 +566,6 @@ fn graveWarbow(cx: f32, cy: f32, px: f32) void {
     const bot = v2(cx - s * 0.14 + rng.range(-1.2, 1.2) * k, cy + s * 0.37);
     const belly = rng.range(0.16, 0.20);
     rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.06 + 1.4 * k), s * 0.22, rgba(0, 0, 0, 100));
-    // The stave: a run of segments bellying off the chord, thick in the grip and losing it toward the tips.
     const SEGS = 14;
     var prev = top;
     for (0..SEGS + 1) |i| {
@@ -602,7 +575,6 @@ fn graveWarbow(cx: f32, cy: f32, px: f32) void {
         if (i > 0) rl.drawLineEx(prev, p, w, ROOT_BARK);
         prev = p;
     }
-    // The lit back of the stave, and the wrapped grip at its middle.
     rl.drawLineEx(onAxis(top, bot, 0.22, -belly * s * 0.75), onAxis(top, bot, 0.78, -belly * s * 0.72), 1.2 * k, rgba(110, 82, 54, 255));
     rl.drawLineEx(onAxis(top, bot, 0.44, -belly * s * 1.02), onAxis(top, bot, 0.56, -belly * s * 1.00), 6.8 * k, GRIP);
     // Iron shoes on both tips — the fittings of a weapon, not a hunting stick.
@@ -622,7 +594,6 @@ fn quiltedGambeson(cx: f32, cy: f32, px: f32) void {
     // Sleeves first so the body sits OVER their roots.
     quad(v2(cx - s * 0.20, cy - s * 0.18), v2(cx - s * 0.34, cy - s * 0.02), v2(cx - s * 0.26, cy + s * 0.06), v2(cx - s * 0.14, cy - s * 0.06), linenDk);
     quad(v2(cx + s * 0.20, cy - s * 0.18), v2(cx + s * 0.34, cy - s * 0.04), v2(cx + s * 0.27, cy + s * 0.05), v2(cx + s * 0.14, cy - s * 0.06), linenDk);
-    // The body, hem a little uneven, and the dark V of the collar.
     quad(v2(cx - s * 0.19, cy - s * 0.22), v2(cx + s * 0.19, cy - s * 0.22), v2(cx + s * 0.17, cy + s * 0.32), v2(cx - s * 0.16, cy + s * 0.30 + rng.range(0, 2) * k), linen);
     quad(v2(cx - s * 0.06, cy - s * 0.22), v2(cx + s * 0.06, cy - s * 0.22), v2(cx + s * 0.01, cy - s * 0.10), v2(cx - s * 0.01, cy - s * 0.10), rgba(56, 44, 34, 255));
     // THE QUILTING: a diamond lattice, and every endpoint is solved INSIDE the body — run off a stepped

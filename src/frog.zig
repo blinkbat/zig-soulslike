@@ -226,7 +226,8 @@ pub const Frog = struct {
     fade: f32 = 0, // death dissipation 0..1 — pose() shrinks + sinks the corpse by it
     gone: bool = false, // corpse removed from play (dissipation finished) — skipped everywhere
 
-    // telegraph FX (see the FX tuning block): a ring buffer of particles, a rate-based emit carry so trickles are frame-rate independent, and a seeded RNG for the scatter.
+    // Telegraph FX: a ring of particles, a rate-based emit carry so trickles are frame-rate independent,
+    // and a seeded RNG for the scatter.
     parts: [FX_MAX]Particle = [_]Particle{.{}} ** FX_MAX,
     fxHead: usize = 0,
     fxAccum: f32 = 0,
@@ -528,7 +529,9 @@ pub const Frog = struct {
                 self.hopTo = mathx.clampXZ(v3(self.pos.x + f.x * self.hopReach, 0, self.pos.z + f.z * self.hopReach), bounds);
             }
             const s = (self.t - coil) / flight; // 0..1 across the arc
-            // Advance horizontally by an INCREMENT (velocity·dt), NOT an absolute lerp from a stale hopFrom: this way a collision nudge mid-arc just deflects the leap instead of the next frame snapping the toad back to its takeoff point (the "warp" bug).
+            // Advance horizontally by an INCREMENT (velocity·dt), NOT an absolute lerp from a stale
+            // `hopFrom`: a collision nudge mid-arc then deflects the leap rather than snapping the toad
+            // back to its takeoff point on the next frame.
             const inv = 1.0 / flight;
             self.pos.x += (self.hopTo.x - self.hopFrom.x) * inv * dt;
             self.pos.z += (self.hopTo.z - self.hopFrom.z) * inv * dt;
@@ -931,7 +934,7 @@ pub const Knot = struct {
     pub fn anyParried(self: *const Knot) bool {
         return foe.anyParried(self.liveConst());
     }
-    // Advance the whole knot; returns the STRONGEST blow any toad landed on the hero this frame (null if none) AND which toad threw it, for game.zig to apply to the hero's vitals.
+    // Returns the STRONGEST blow any toad landed this frame (null if none) and which toad threw it.
     pub fn update(self: *Knot, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
         return foe.groupBlow(self.live(), dt, hero, bounds, blade);
     }

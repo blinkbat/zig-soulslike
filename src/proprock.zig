@@ -112,7 +112,8 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
         const inOut = rng.signed() * k.cleft;
         const sides: i32 = @intFromFloat(@round(10.0 - 4.0 * k.blocky + rng.signed() * 1.4));
         const rings: i32 = @intFromFloat(@round(6.0 - 2.0 * k.blocky + rng.signed() * 0.8));
-        // Two stacked bodies per position: a broad foot and a narrower shoulder, so the profile tapers the way weathered rock does instead of standing up like a column.
+        // Two stacked bodies per position — a broad foot and a narrower shoulder, so the profile tapers the
+        // way weathered rock does instead of standing up like a column.
         const fz = inOut + rng.signed() * 0.4;
         b.addBlob(v3(cx, hgt * 0.34, fz), v3(rx, hgt * 0.42, rz), rings, sides, if (@mod(m, 2) == 0) CLIFF_ROCK else CLIFF_DK);
         bodies[nbody] = .{ .x = cx, .y = hgt * 0.34, .z = fz, .rx = rx, .ry = hgt * 0.42, .rz = rz };

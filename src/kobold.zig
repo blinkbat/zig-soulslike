@@ -80,7 +80,8 @@ const KIT = heromod.HELD; // the right hand's weapon: an axe, a staff, or a slin
 
 
 const H: f32 = heromod.H;
-// The LEGS and ARMS take the hero's fractions from the shared source, like the archer's: `legChain`'s strafe geometry is measured off the leg pair, so a local copy that drifted would make a kobold's planted feet skate.
+// The LEGS and ARMS take the hero's fractions from the shared source: `legChain`'s strafe geometry is
+// measured off the leg pair, so a local copy that drifted would make a kobold's planted feet skate.
 const SEG_THIGH = heromod.SEG_THIGH;
 const SEG_SHANK = heromod.SEG_SHANK;
 const SEG_UPARM = heromod.SEG_UPARM;
@@ -109,7 +110,8 @@ const setLocal = heromod.setHumanoid; // the shared scaffold's own setter — se
 /// its head out in front of the neck rather than up above it.
 const LOCK_AT = v3(0, 0.02 * H, 0.05 * H);
 
-/// The kobold's PAW footprint, measured off `footMesh` below: the pad spans z −0.041·H…+0.206·H and x ±0.052·H, its underside on the ankle plane.
+/// The kobold's PAW footprint, measured off `footMesh` below: the pad spans z −0.041·H…+0.206·H and
+/// x ±0.052·H, its underside on the ankle plane.
 const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKL, .heel = 0.041 * H, .toe = 0.206 * H, .halfW = 0.052 * H, .drop = 0.042 * H },
     .{ .bone = ANKR, .heel = 0.041 * H, .toe = 0.206 * H, .halfW = 0.052 * H, .drop = 0.042 * H },
@@ -235,7 +237,8 @@ const BITE_HIT_B = 0.52;
 const BITE_CD = 1.15;
 const BITE_COIL_AT = 0.42; // fraction of the pre-hit window spent chambering before the snap fires
 const BITE_ARCH = 14.0;
-// The snap: the waist throwing the whole head at you (deg through the lumbar; the chest adds 0.65 of it again and the pelvis its small share).
+// The snap: the waist throwing the whole head at you (degrees through the lumbar; the chest adds 0.65 of
+// it again and the pelvis its small share).
 const BITE_FOLD = 18.0;
 const BITE_GAZE = 26.0;
 const BITE_ARM_BACK = 30.0; // the forelimbs drawn back…
@@ -246,7 +249,8 @@ pub const BITE_HIT = combat.Hit{ .dmg = 9, .poise = 7 };
 /// only one of the four anything deals today — see `frog.RESISTS`.
 const RESISTS = combat.resists(.{ .fire = -45, .cold = 20 });
 pub const CLUMP_SPEED = 11.0;
-/// Embers off the release, and off wherever it lands. The IMPACT is the bigger of the two on purpose: the throw is a tell you are meant to read, the landing is a thing that just happened to you.
+/// Embers off the release, and off wherever it lands. The IMPACT is the bigger on purpose: the throw is a
+/// tell you are meant to read, the landing is a thing that just happened to you.
 const SLING_SPARKS: u32 = 12;
 const CLUMP_SPARKS: u32 = 18;
 /// A BURNING CLUMP, NOT A STONE (owner's call): the sling throws a lump of pitch-soaked rag, so all of
@@ -407,7 +411,8 @@ pub const Kobold = struct {
     pub fn staggered(self: *const Kobold) bool {
         return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
     }
-    /// OFF THE GROUND only during the berserker's dash — and only for the FLIGHT of it, measured off the same `hop` the pelvis rides and against the shared threshold the toad and the archer use.
+    /// OFF THE GROUND only during the berserker's dash, and only for the FLIGHT of it — measured off the
+    /// same `hop` the pelvis rides, against the threshold the toad and the archer share.
     pub fn airborne(self: *const Kobold) bool {
         return self.state == .dash and self.hop > foe.AIRBORNE_LIFT;
     }
@@ -454,7 +459,8 @@ pub const Kobold = struct {
         };
     }
 
-    /// Where the clump leaves the sling: the pouch, out at arm's length past the head. It is also where the whirl sheds its embers from, so it is read every frame of the tell, not just at the release.
+    /// Where the clump leaves the sling: the pouch, out at arm's length past the head. Also where the whirl
+    /// sheds its embers, so it is read every frame of the tell and not just at the release.
     pub fn slingPoint(self: *const Kobold) rl.Vector3 {
         return rl.math.vector3Transform(v3(0, 0, SLING_LEN * H), self.xf[KIT]);
     }

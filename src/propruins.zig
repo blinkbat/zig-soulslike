@@ -619,7 +619,8 @@ pub fn bonfireGuitarMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// Where the rock and its guitar sit in the camp's local frame — read by BOTH meshes, so the guitar cannot drift off the rock it is supposed to be leaning on.
+/// Where the rock and its guitar sit in the camp's local frame — read by BOTH meshes, so the guitar cannot
+/// drift off the rock it leans on.
 const GUITAR_CX: f32 = -1.62;
 const GUITAR_CZ: f32 = 1.18;
 const GUITAR_YAW: f32 = -1.56;

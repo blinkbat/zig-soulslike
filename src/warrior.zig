@@ -211,10 +211,9 @@ const LUNGE = Attack{
 const MOVES_SHIELDMAN = [_]Attack{MACE};
 const MOVES_GREATSWORD = [_]Attack{ SLAM, LUNGE };
 
-/// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT — the game's own number (`foe.PARRY_LEAD`), and the
-/// SAME one for all three moves: what you read is the BLOW, not the animation in front of it. In SECONDS
-/// BEFORE THE HIT, because the three impact frames differ wildly (mace 0.078 s into its stroke, slam 0.072,
-/// lunge 0.120) — as a fraction of anybody's clock these would be three windows wearing one constant.
+/// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT — the game's own number (`foe.PARRY_LEAD`), the SAME
+/// one for all three moves: what you read is the BLOW, not the animation in front of it. In SECONDS BEFORE
+/// THE HIT, since the impact frames differ wildly (mace 0.078 s into its stroke, slam 0.072, lunge 0.120).
 const PARRY_LEAD = foe.PARRY_LEAD;
 
 const Spec = struct {
@@ -943,9 +942,9 @@ pub const Warrior = struct {
         var ready: [MAX_MOVES]bool = [_]bool{false} ** MAX_MOVES;
         const moves = spec(self.role).moves;
         const n = moves.len;
-        // A MOVE THAT LEAVES THE EARTH IS NOT READY WHILE THE ROOTS HAVE THE FEET (`foe.canLeap`). Folded into
-        // `ready` rather than tested at the pick, because `classify` reads the same array — gated at the pick,
-        // a rooted greatsword falls through `orelse 0` onto a slam still cooling. Asked of the move's own `hop`.
+        // A MOVE THAT LEAVES THE EARTH IS NOT READY WHILE THE ROOTS HAVE THE FEET (`foe.canLeap`). Folded
+        // into `ready` rather than tested at the pick, since `classify` reads the same array — gated at the
+        // pick, a rooted greatsword falls through `orelse 0` onto a slam still cooling.
         const canLeap = foe.canLeap(&self.root);
         for (0..n) |i| ready[i] = self.cds[i] <= 0 and (canLeap or moves[i].hop <= 0);
         switch (classify(self.role, dist, self.scale, ready[0..n])) {
@@ -1020,10 +1019,9 @@ pub const Warrior = struct {
         return self.parryReach(self.move());
     }
 
-    /// THE SHIELD TAKES THE STROKE — and HYPER ARMOUR IS NO DEFENCE AGAINST IT, which is the whole point of
-    /// giving the greatsword windows: `hyperArmor` refuses POISE off the blade, and a parry deals none, so the
-    /// one move you cannot interrupt is the one the boards can still stop outright. `enterStun` kills the swing
-    /// — it drops the stroke, clears `live` and puts a leap back on the ground, so no crater opens.
+    /// THE SHIELD TAKES THE STROKE, and HYPER ARMOUR IS NO DEFENCE AGAINST IT — `hyperArmor` refuses POISE
+    /// off the blade and a parry deals none, so the one move you cannot interrupt is the one the boards can
+    /// still stop outright. `enterStun` drops the stroke, clears `live` and puts a leap back on the ground.
     fn takeParry(self: *Warrior) void {
         const reach = self.parryable() orelse return;
         if (!self.parry.catches(self.pos, reach)) return;
@@ -1049,8 +1047,7 @@ pub const Warrior = struct {
     }
 
     /// The hurt shape IS the kit: what it swept this frame, against the column the hero stands in, latched
-    /// to one blow per stroke. The yaw-guessed sector this replaced fired at 2.8 m off a head that never
-    /// left 0.6 m of his own chest.
+    /// to one blow per stroke — never a yaw-guessed sector.
     fn tryReach(self: *Warrior, hero: rl.Vector3) void {
         if (self.dealt) return;
         const r = KIT_R[@intFromEnum(self.role)] * self.scale + foe.HERO_REACH;
@@ -1060,17 +1057,14 @@ pub const Warrior = struct {
         self.leash.noteCombat(); // a blow landed is a fight in progress — the tether waits
     }
 
-    /// DID THE BOARDS STAND BETWEEN HIM AND *THIS* BLOW. **THERE IS NOTHING ON HIS BACK** (owner's call): the
-    /// shield is a DIRECTION, so what decides a block is where the blow CAME FROM and never where he happens to
-    /// be looking. Asked of the blade's own segment rather than of `update`'s target, which is the whole of the
-    /// bug — with a spirit on the field the thing he is squared up to is the WOLF, so every sword going into his
-    /// spine was landing inside a front arc pointed somewhere else entirely.
+    /// DID THE BOARDS STAND BETWEEN HIM AND *THIS* BLOW. **THERE IS NOTHING ON HIS BACK** (owner's call):
+    /// the shield is a DIRECTION, so what decides a block is where the blow CAME FROM, never where he is
+    /// looking. Asked of the BLADE's segment, not of `update`'s target — with a spirit on the field he is
+    /// squared up to the WOLF, and a sword in his spine lands inside a front arc pointed elsewhere.
     ///
-    /// The MIDPOINT of the sweep, which sits between the attacker's grip and wherever the far end got to: the
-    /// grip alone swings a bow-length off the body mid-arc, and the contact point is buried in his chest, where
-    /// there is no bearing left to read. A blade with no bearing at all counts as caught (`foe.Parry.catches`'s
-    /// own rule — standing inside him, there is nothing to be wrong about), which is also what lets the harness
-    /// force a block with a synthetic hit at `centerWorld`.
+    /// The MIDPOINT of the sweep: the grip alone swings a bow-length off the body mid-arc, and the contact
+    /// point is buried in his chest where there is no bearing left to read. A blade with no bearing counts
+    /// as caught (`foe.Parry.catches`'s rule), which is what lets the harness force a block.
     fn shielded(self: *const Warrior, blade: foe.Blade) bool {
         if (!self.covered) return false;
         const at = mathx.lerpV(blade.a, blade.b, 0.5);
@@ -1492,9 +1486,8 @@ pub const Warrior = struct {
         const rest = self.rest;
         const wonk = (self.seed - 0.5) * 6.0; // each one stands its own crooked way (cosmetic only)
         const brk = if (self.state == .guardbreak) stun else 0; // the break's own, bigger reaction
-        // The trunk carries the REST of the lean the pelvis did not take, split up the spine. ONCE HE IS
-        // DOWN THE KNEEL OWNS THE TRUNK: the generic stagger arches BACK and the kneel folds FORWARD, so
-        // left to fight each other they cancel into a man doing nothing in particular.
+        // The trunk carries the REST of the lean, split up the spine. ONCE HE IS DOWN THE KNEEL OWNS THE
+        // TRUNK: the stagger arches BACK and the kneel folds FORWARD, and together they cancel.
         const spineX = self.bodyLean * (1.0 - PELVIS_SHARE) + 22.0 * dk - 22.0 * stun * (1.0 - kn) + KNEEL_FOLD * kn;
 
         setLocal(wx, SPINE, rest, mul3(rx(spineX * 0.45), ry(-0.35 * prot + self.twist * 0.4), rz(wonk * 0.5)));
@@ -1678,8 +1671,8 @@ pub const Warrior = struct {
 // WHERE they stand is the MAP's business (`foe: shieldman …` / `foe: greatsword …` records).
 pub const CAP = SPEC.len * wf.MAX_PER_KIND;
 
-/// THE MUSTER — both roles in one array, for the warband's reason: they are one creature with two kits, so
-/// the body, the gait, the bones, the death and the reactions are shared and only the kit differs.
+/// THE MUSTER — both roles in one array: one creature with two kits, so the body, the gait, the bones, the
+/// death and the reactions are shared and only the kit differs.
 pub const Muster = struct {
     model: Model,
     band: [CAP]Warrior = undefined,
@@ -1801,8 +1794,8 @@ fn greatswordMesh() rl.Mesh {
     const fy = FIST_Y;
     const fz = FIST_Z;
     const guardY = fy + GS_GUARD;
-    // ABOVE THE GUARD, like every other feature of this blade. Measured off the FIST instead it landed BELOW
-    // the last blade segment's top: the point drawn inside the steel, and the hurt segment 0.12 m short.
+    // ABOVE THE GUARD, like every other feature of this blade — measured off the FIST it lands BELOW the
+    // last blade segment's top, drawing the point inside the steel and cutting the hurt segment 0.12 m short.
     const tipY = guardY + GS_BLADE;
 
     b.setMat(.wood);
@@ -1985,9 +1978,9 @@ const SH_HUB = v3(-0.028 * H, FIST_Y + 0.175 * H, FIST_Z + SH_STANDOFF);
 const SH_RAKE_X = -9.0; // the top edge tipped back off his chest…
 const SH_RAKE_Z = 4.0; // …and the point carried a little across him
 
-/// THE BOARDS ARE SQUARE TO THE MAN, NOT TO HIS FOREARM. They take their POSITION off the fist and their
-/// ORIENTATION off his facing alone, so nothing in the arm chain or the spine can roll their face off the
-/// hero — a stagger arches the whole trunk back 46°, and inherited whole that laid the shield out face-up.
+/// THE BOARDS ARE SQUARE TO THE MAN, NOT TO HIS FOREARM: POSITION off the fist, ORIENTATION off his facing
+/// alone, so nothing in the arm chain or spine can roll their face off the hero — a stagger arches the
+/// trunk back 46°, and inherited whole that lays the shield out face-up.
 fn shieldXf(w: *const Warrior) rl.Matrix {
     const fs = w.rigScale();
     const hub = rl.math.vector3Transform(SH_HUB, w.xf[WRL]);

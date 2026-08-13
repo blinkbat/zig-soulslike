@@ -58,7 +58,8 @@ const BOW = heromod.HELD; // the drawn bow, in the shared weapon slot
 
 // Stature + segment lengths: the hero's exact anthropometry (Drillis & Contini 1966 / Winter).
 const H: f32 = heromod.H;
-// The LEGS take the hero's fractions from the shared source — legChain's strafe geometry is measured off them, so a local copy that drifted would make this skeleton's planted feet skate.
+// The LEGS take the hero's fractions from the shared source — `legChain`'s strafe geometry is measured off
+// them, so a local copy that drifted would make this skeleton's planted feet skate.
 const SEG_THIGH = heromod.SEG_THIGH;
 const SEG_SHANK = heromod.SEG_SHANK;
 const SEG_UPARM = heromod.SEG_UPARM;
@@ -134,7 +135,8 @@ const BODY_R = 0.34; // ground footprint (matches the hero's HERO_R feel)
 const HURT_R = 0.42; // hurt-sphere radius for the hero's blade
 // Pelvis walk oscillation — the hero's amplitude, so the shared gait reads as one humanoid.
 const A_BOB = heromod.A_BOB;
-// Where a skeletal foot meets the earth, MEASURED off footMesh: the metatarsal plate + heel, with the toe bones fanning out to ~0.245·H ahead.
+// Where a skeletal foot meets the earth, MEASURED off `footMesh`: the metatarsal plate and heel, with the
+// toe bones fanning out to ~0.245·H ahead.
 /// A skeleton's body points as fractions of stature: hurt-sphere centre, lock-on mark, HP-bar top. Shared with
 /// `warrior.zig` — literally the same body, and three copies of "0.95" is three chances to retune one alone.
 pub const CENTER_F: f32 = 0.95;
@@ -231,7 +233,10 @@ fn trailCol(s: Shot) rl.Color {
     };
 }
 
-/// The things that fly. `firearrow` is the hero's own pitched shaft — the same ballistics as a plain one, drawn and streaked as its own thing so you can see which one you loosed. `clump` is the kobold sling's burning lump (it was a bare stone; nothing slings a plain one any more, so the tag went with the thing). `bolt` is the WAND's chaos sorcery, which flies through this same pool for the same reason the fire arrow does: cover, gravity, expiry and the swept pierce test are one body of code, and a spell with its own copy of them is a spell that stops agreeing with the world.
+/// The things that fly. `firearrow` is the hero's own pitched shaft — the same ballistics as a plain one,
+/// drawn and streaked as its own thing. `clump` is the kobold sling's burning lump. `bolt` is the WAND's
+/// chaos sorcery, in this pool because cover, gravity, expiry and the swept pierce test are one body of
+/// code, and a spell with its own copy of them stops agreeing with the world.
 pub const Shot = enum { arrow, clump, venom, firearrow, bolt, wisp, crock };
 
 pub fn dropOf(s: Shot) f32 {
@@ -251,7 +256,8 @@ pub const Arrow = struct {
     stuck: bool = false,
     age: f32 = 0, // in flight: seconds airborne; stuck: seconds since it stuck (fade timer)
     hit: bool = false, // it connected with the hero this frame (game.zig reads + clears)
-    /// WHAT IT STUCK IN, set on the frame it plants. null = the bare earth (a miss), which is the commonest case by far and wants its own duller, fizzier impact. game.zig reads it to pick the sound; nothing else cares.
+    /// WHAT IT STUCK IN, set on the frame it plants. null = the bare earth, which wants its own duller,
+    /// fizzier impact. `game.zig` reads it to pick the sound; nothing else cares.
     struck: ?collision.Surface = null,
     shot: Shot = .arrow,
     blow: combat.Hit = .{},
@@ -301,9 +307,8 @@ pub fn launchArrow(from: rl.Vector3, target: rl.Vector3) Arrow {
     return a;
 }
 
-/// EVERYTHING ELSE THAT FLIES GOES THROUGH HERE, kind and all. `launchClump` and `launchVenom` sat beside it
-/// as byte-identical bodies with `.clump` and `.venom` written into them, which is two more launchers to keep
-/// in step for a tag their one caller already knows.
+/// EVERYTHING ELSE THAT FLIES GOES THROUGH HERE, kind and all — a per-kind launcher is one more body to
+/// keep in step for a tag its one caller already knows.
 pub fn launchShaft(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: combat.Hit, loft: bool, shot: Shot) Arrow {
     var a = launchAt(from, target, speed, shot, loft);
     a.blow = blow;
@@ -334,7 +339,8 @@ const EMBED: f32 = 0.26;
 /// …and how far into the earth one that simply fell lands.
 const GROUND_BITE: f32 = 0.02;
 
-/// THE PROLOGUE BOTH QUIVERS SHARE: the streak ages whether the shaft is flying or planted, and a planted one counts down its fade. False = there is nothing more to do with it this frame.
+/// THE PROLOGUE BOTH QUIVERS SHARE: the streak ages whether the shaft is flying or planted, and a planted
+/// one counts down its fade. False = there is nothing more to do with it this frame.
 fn flying(a: *Arrow, dt: f32) bool {
     if (!a.live) return false;
     for (&a.trailAge) |*ag| ag.* = @min(ag.* + dt, mathx.LONG_AGO);
@@ -397,7 +403,8 @@ pub fn plantShaft(a: *Arrow) void {
     a.age = 0;
 }
 
-// Advance one arrow a frame: LIGHT homing (a gentle bend toward the hero, never a lock — a sidestep beats it), gravity arc, then STICK on cover / hero / ground / expiry; sets `hit` the frame it strikes, stuck arrows age out and clear `live`.
+// LIGHT homing (a bend toward the hero, never a lock — a sidestep beats it), gravity arc, then STICK on
+// cover / hero / ground / expiry.
 fn heroReached(p: rl.Vector3, hero: rl.Vector3, heroCenterY: f32) bool {
     return mathx.distXZ(p, hero) <= ARROW_HIT_R and @abs(p.y - heroCenterY) <= ARROW_HIT_HALF_H;
 }
@@ -419,7 +426,8 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, he
         }
     }
     const prev = advance(a, dt);
-    // COVER first (a wall between archer and hero beats a hero hugging its far side): sampled the LENGTH of the frame's travel so a fast shaft cannot tunnel a thin trunk — see `coverHit`, which both quivers share rather than each carrying this block.
+    // COVER first (a wall beats a hero hugging its far side), sampled the LENGTH of the frame's travel so
+    // a fast shaft cannot tunnel a thin trunk.
     if (coverHit(prev, a.pos, solids)) |c| return plantIn(a, c.at, c.surf);
     const mid = mathx.lerpV(prev, a.pos, 0.5);
     if (!heroDodging and (heroReached(a.pos, hero, heroCenterY) or heroReached(mid, hero, heroCenterY))) {
@@ -733,7 +741,8 @@ pub const Archer = struct {
         }
         if (self.state != .loose) self.kick = mathx.approach(self.kick, 0, dt * 4.5);
 
-        // Drive the SHARED humanoid gait (the walk/strafe legs come from hero.legChain in pose()). legChain's geometry is entirely RIG-LOCAL (it divides the measured hip height by the root matrix's own scale), so the stride phase must be fed a SCALE-CORRECTED distance or a scale≠1 archer's planted foot skates — the same correction ogre.zig applies.
+        // `legChain`'s geometry is RIG-LOCAL (it divides the measured hip height by the root matrix's own
+        // scale), so the stride phase must be fed a SCALE-CORRECTED distance or a scale≠1 archer skates.
         const gaitSpeed: f32 = if (movedDist > 0) WALK_SPEED else 0;
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, gaitSpeed, moveYaw, self.facing);
         self.pose();

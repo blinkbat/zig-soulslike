@@ -14,7 +14,9 @@ pub const Attr = enum(u8) {
 
 pub const NA = @typeInfo(Attr).@"enum".fields.len;
 
-/// Every attribute starts here, and 15 is not arbitrary: it is the level at which each curve below yields exactly the HP / FP / stamina the game was already tuned around (see the tests), so putting the bars behind attributes moved nothing.
+/// Every attribute starts here, and 15 is not arbitrary: it is the level at which each curve below yields
+/// exactly the HP / FP / stamina the game was already tuned around, so putting the bars behind attributes
+/// moved nothing.
 pub const START: u8 = 15;
 pub const MAX: u8 = 99;
 
@@ -30,7 +32,8 @@ pub fn displayName(a: Attr) [:0]const u8 {
     };
 }
 
-/// WHAT IT DOES — and for the four nothing reads yet, that nothing reads it yet. An inert attribute the player cannot tell is inert is a lie on the character sheet, the same way inventing a sorcery for the HUD's empty slot would be.
+/// WHAT IT DOES — and for the four nothing reads yet, that nothing reads it yet. An inert attribute the
+/// player cannot tell is inert is a lie on the character sheet.
 pub fn governs(a: Attr) [:0]const u8 {
     return switch (a) {
         .vitality => "Governs HP.",

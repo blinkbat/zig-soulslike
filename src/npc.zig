@@ -116,7 +116,8 @@ const A_BREATH = 2.1; // deg of chest rise
 /// about its own joint raises one hip and drops the other, and leaves the mean where it was.
 ///
 /// SMALL, AND ITS DROP PAID BACK (see `listLift`). At rest this rig's leg is EXACTLY straight — pelvis
-/// 0.530·H, ankle 0.039·H, thigh + shank 0.491·H — a pelvis a millimetre low puts the sole through the floor, and there is no foot IK to catch it.
+/// 0.530·H, ankle 0.039·H, thigh + shank 0.491·H — a pelvis a millimetre low puts the sole through the
+/// floor, and there is no foot IK to catch it.
 const A_LIST = 1.3; // deg
 const A_DRIFT_YAW = 7.5; // deg the head wanders
 const A_DRIFT_PITCH = 3.0;
@@ -440,7 +441,7 @@ pub const Wanderer = struct {
             rz(wonk + shift * A_LIST * 1.2),
         ));
 
-        // ── THE STAFF ARM. It plants with the LEFT foot, so the plant is read half a cycle off this leg.
+        // THE STAFF ARM. It plants with the LEFT foot, so the plant is read half a cycle off this leg.
         const plantPh = self.phase + 0.5;
         const plant = mathx.maxF(0, mathx.cosf(twoPi * plantPh)) * m; // 1 at the plant, 0 through the carry
         const push = STAFF_PLANT_SH * plant;
@@ -458,7 +459,7 @@ pub const Wanderer = struct {
             rz(wonk * 0.5),
         ));
 
-        // ── THE FREE ARM: the hero's own contralateral swing, elbow flexing through the forward half only,
+        // THE FREE ARM: the hero's own contralateral swing, elbow flexing through the forward half only,
         // and whatever gesture has taken it this second.
         const swing = 15.0 * mathx.sinf(twoPi * self.phase) * m;
         var sh: f32 = FREE_SH - swing;
@@ -597,12 +598,9 @@ fn skirt(b: *Builder, top: rl.Vector3, drop: f32, rTop: f32, rBot: f32, sides: i
 fn pelvisMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.cloth);
-    // The robe's own waist, and the SKIRT that hangs off it — the silhouette that says pilgrim.
     slab(&b, v3(0, 0.005 * H, 0), v3(0.215 * H, 0.14 * H, 0.16 * H), ROBE);
     skirt(&b, v3(0, 0.045 * H, 0), 0.30 * H, 0.115 * H, 0.205 * H, 12, ROBE_DK);
-    // …and a panel of it hanging PROUD of the rest, so the hem is not one turned surface.
     slab(&b, v3(0.02 * H, -0.14 * H, 0.098 * H), v3(0.09 * H, 0.20 * H, 0.012 * H), ROBE_LT);
-    // …and one corner of the hem caught up higher than the rest (wabi-sabi: nothing here is level).
     slab(&b, v3(-0.10 * H, -0.115 * H, -0.055 * H), v3(0.075 * H, 0.145 * H, 0.014 * H), ROBE);
     b.setMat(.leather);
     slab(&b, v3(0, 0.055 * H, 0), v3(0.222 * H, 0.038 * H, 0.166 * H), LEATHER); // the belt
@@ -610,7 +608,6 @@ fn pelvisMesh() rl.Mesh {
     slab(&b, v3(-0.10 * H, -0.01 * H, -0.028 * H), v3(0.058 * H, 0.07 * H, 0.05 * H), LEATHER); // a satchel
     slab(&b, v3(-0.10 * H, 0.022 * H, -0.028 * H), v3(0.062 * H, 0.018 * H, 0.056 * H), LEATHER_LT); // its flap
     b.setMat(.wood);
-    // A water gourd on the other hip. ROUND, and slung — not a box on a string.
     b.addBlob(v3(0.10 * H, -0.02 * H, -0.03 * H), v3(0.042 * H, 0.05 * H, 0.038 * H), 5, 8, GOURD);
     b.addCylinder(v3(0.10 * H, 0.026 * H, -0.03 * H), v3(0.10 * H, 0.05 * H, -0.03 * H), 0.014 * H, 0.011 * H, 7, WOOD);
     b.addDome(v3(0.10 * H, 0.05 * H, -0.03 * H), v3(0, 1, 0), 0.012 * H, 7, WOOD_LT);
@@ -622,7 +619,6 @@ fn abdomenMesh() rl.Mesh {
     b.setMat(.cloth);
     slab(&b, v3(0, -0.005 * H, 0), v3(0.20 * H, 0.13 * H, 0.145 * H), ROBE);
     slab(&b, v3(0, 0.072 * H, 0), v3(0.228 * H, 0.085 * H, 0.155 * H), ROBE);
-    // The SASH — the one warm thing on him, wound twice and hanging.
     slab(&b, v3(0, -0.035 * H, 0.005 * H), v3(0.212 * H, 0.032 * H, 0.152 * H), SASH);
     slab(&b, v3(0.05 * H, -0.075 * H, 0.078 * H), v3(0.038 * H, 0.075 * H, 0.011 * H), SASH);
     return b.toMesh();
@@ -636,7 +632,6 @@ fn chestMesh() rl.Mesh {
     // pauldron pair however soft the colour: cloth over shoulders is a CONE that flares as it falls, so it is
     // the same `skirt` the hood's own shoulder cape is, hung from the collar.
     skirt(&b, v3(0, 0.058 * H, -0.004 * H), 0.082 * H, 0.088 * H, 0.158 * H, 12, CLOAK);
-    // …with the hem uneven (wabi-sabi): one side falls a good deal further than the other.
     skirt(&b, v3(0.030 * H, 0.052 * H, -0.012 * H), 0.132 * H, 0.070 * H, 0.118 * H, 11, CLOAK_DK);
     // The two fronts hanging OPEN — narrow lapels off the collar, not plates on the chest.
     slab(&b, v3(0.072 * H, -0.048 * H, 0.076 * H), v3(0.048 * H, 0.150 * H, 0.013 * H), CLOAK_LT);
@@ -679,7 +674,6 @@ fn hoodedHeadMesh() rl.Mesh {
     slab(&b, v3(0.062 * H, 0.078 * H, -0.006 * H), v3(0.024 * H, 0.120 * H, 0.090 * H), CLOAK_DK); // one deep fold
     b.addBlob(v3(0, 0.066 * H, 0.048 * H), v3(0.066 * H, 0.068 * H, 0.020 * H), 4, 10, CLOAK_LT); // the rim…
     b.addBlob(v3(0, 0.062 * H, 0.052 * H), v3(0.058 * H, 0.060 * H, 0.030 * H), 4, 9, HOOD_IN); // …and the mouth
-    // The shoulder cape the cowl runs into, so the hood is not a helmet resting on a neck.
     skirt(&b, v3(0, 0.012 * H, 0), 0.058 * H, 0.062 * H, 0.104 * H, 11, CLOAK_DK);
     return b.toMesh();
 }
@@ -714,7 +708,6 @@ fn shankMesh() rl.Mesh {
     b.setMat(.cloth);
     b.addCylinder(v3(0, 0, 0), v3(0, -0.105 * H, 0), 0.054 * H, 0.048 * H, 9, ROBE_DK);
     b.setMat(.leather);
-    // Wrapped shins under the hem, then the boot leg.
     b.addCylinder(v3(0, -0.100 * H, 0), v3(0, -heromod.SEG_SHANK * H, 0), 0.050 * H, 0.036 * H, 9, LEATHER);
     slab(&b, v3(0, -0.155 * H, 0.006 * H), v3(0.052 * H, 0.016 * H, 0.050 * H), LEATHER_LT); // one binding
     return b.toMesh();
@@ -798,7 +791,6 @@ fn staffMesh() rl.Mesh {
     b.addBlob(v3(0, STAFF_UP + 0.008 * H, 0), v3(STAFF_R * 1.8, STAFF_R * 1.6, STAFF_R * 1.7), 4, 9, WOOD_LT);
     // …and a second, smaller, a third of the way down: a cut stave has knots and a broom handle does not.
     b.addBlob(v3(STAFF_R * 0.5, STAFF_UP - total * 0.31, 0), v3(STAFF_R * 1.25, STAFF_R * 0.9, STAFF_R * 1.1), 3, 8, WOOD_LT);
-    // …and an iron ferrule where it meets the road.
     b.setMat(.steel);
     const ferrule = mathx.scaleV(dir, 0.024 * H);
     b.addCylinder(p, mathx.addV(p, ferrule), STAFF_R * 0.9, STAFF_R * 0.72, 8, IRON);

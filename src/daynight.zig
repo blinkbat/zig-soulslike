@@ -63,23 +63,17 @@ const KEY_ALT_MIN: f32 = 15.0;
 
 /// **WHEN THE CASTER CHANGES HANDS, AND IT IS NOT SUNRISE AND SUNSET.**
 ///
-/// There is ONE shadow-casting light. The moon is the ANTI-sun, so the instant the key stops being one and starts
-/// being the other its bearing turns most of the way round the compass, and every shadow in the world swings with
-/// it on one frame. Swapped on `isDay` — at the horizon crossings themselves — that happened at 06:00 and 20:00,
-/// and 20:00 is 0.6 h INTO the ramp down from the sunset row: measured, the bearing moved 179.9 degrees in a
-/// hundredth of an hour while the key was still at half the anchor's brightness. That is the abrupt switch.
+/// There is ONE shadow-casting light and the moon is the ANTI-sun, so when the key changes hands its bearing
+/// turns most of the way round the compass. Swapped on `isDay` that happened at 06:00 and 20:00, and 20:00
+/// is 0.6 h into the ramp down from sunset: measured, 179.9 degrees in a hundredth of an hour with the key
+/// still at half the anchor's brightness.
 ///
-/// So the swap is moved to the DIMMEST hours of each ramp, which are the `KEYS` rows either side of the bright
-/// terminator ones (first light, and dusk). Two things fall out of that and both are what you want:
-///   - the flip happens while the key is at about a tenth of the anchor, where a bearing change reads as the
-///     light going cold rather than as a switch being thrown;
-///   - through the hour on each side, the caster is the sun with its altitude on the floor (`KEY_ALT_MIN`) and
-///     its true bearing — so dusk throws long shadows away from where the sun actually went down, and the small
-///     hours before dawn throw them from where it is about to come up. Both were being cast from the OPPOSITE
-///     side of the sky before.
+/// So the swap sits at the DIMMEST hours of each ramp (first light, and dusk), where the key is about a
+/// tenth of the anchor and a bearing change reads as the light going cold. Through the hour on each side
+/// the caster is the SUN with its altitude on the floor and its true bearing, so dusk throws long shadows
+/// away from where the sun actually went down.
 ///
-/// **`isDay` IS NOT TOUCHED** — it is the day's own definition and the palette, the dial and the bonfire's hours
-/// all read it. This is the CASTER's question and it is asked here, once.
+/// **`isDay` IS NOT TOUCHED** — that is the day's own definition. This is the CASTER's question.
 const KEY_SWAP_DAWN: f32 = 5.0;
 const KEY_SWAP_DUSK: f32 = 20.8;
 
@@ -90,10 +84,8 @@ comptime {
 }
 
 /// HOW LONG THE HANDOVER TAKES, in hours either side of the swap hour. **THE TWO CASTERS ARE FADED TOGETHER
-/// RATHER THAN SWITCHED** (owner's call): across this window the key's bearing turns the whole half circle and its
-/// altitude crosses through the floor, so what the eye gets is the light SWEEPING round — the shadows visibly
-/// travelling — instead of every one of them being somewhere else on the next frame. Kept inside the dim band the
-/// swap hour sits in, so the sweep is happening while the key is at a tenth of the anchor and not during sunset.
+/// RATHER THAN SWITCHED** (owner's call), so the eye gets the light SWEEPING round rather than every shadow
+/// being somewhere else next frame. Kept inside the dim band, so the sweep never runs during sunset.
 const KEY_SWAP_FADE: f32 = 0.45;
 
 /// HOW MUCH OF THE KEY IS THE MOON'S, 0..1 — the sun's alone by day, the moon's alone by night, and a smooth
@@ -207,7 +199,6 @@ pub fn dayLenText(c: *const Clock, buf: []u8) [:0]const u8 {
     return std.fmt.bufPrintZ(buf, "{d:.0} s", .{s}) catch "?";
 }
 
-// ——— where the sun and the moon actually are ———
 
 /// 0..1 through the DAY for an hour inside it; outside it, the value runs on past the ends, which is what
 /// makes the azimuth sweep continuous across both knots.
@@ -252,12 +243,9 @@ pub fn sunDir(hour: f32) rl.Vector3 {
     // One sine over the whole run: positive through the day, negative through the night, and zero at both
     // knots — so nothing pops at sunrise or sunset and midnight is the deepest point under the world.
     const alt = SUN_ALT_MAX * mathx.sinf(std.math.pi * u);
-    // **THE BEARING GOES ALL THE WAY ROUND, ONCE A DAY, AND THE NIGHT CARRIES THE PART OF THE CIRCLE THE DAY DOES
-    // NOT.** Swept at the day's own rate through the night instead, `u = 2` landed at `2·(AZ_SET − AZ_RISE)` past
-    // the rise bearing — with a 162 degree day that is 36 degrees SHORT of a full turn, so at 06:00, where `dayU`
-    // wraps 2 back to 0, every shadow in the world stepped 36 degrees sideways on one frame. Measured at 36.16.
-    // `dayU`'s own note claims the sweep is continuous across both knots; it was true at sunset only, because
-    // there `u` is 1 from both sides and nothing wraps.
+    // **THE BEARING GOES ALL THE WAY ROUND ONCE A DAY, AND THE NIGHT CARRIES THE PART OF THE CIRCLE THE DAY
+    // DOES NOT.** Swept at the day's own rate through the night, `u = 2` lands 36 degrees short of a full
+    // turn on a 162 degree day, so at 06:00 every shadow steps 36 degrees sideways on one frame.
     const az = if (u <= 1.0)
         AZ_RISE + (AZ_SET - AZ_RISE) * u
     else
@@ -300,7 +288,6 @@ pub fn shadowReach(hour: f32) f32 {
     return mathx.lenXZ(d) / mathx.maxF(d.y, 1e-3);
 }
 
-// ——— what colour the world is ———
 
 /// EVERY COLOUR THE HOUR DECIDES, in one struct so the whole look of a time of day is ONE row of a table and
 /// never a set of numbers scattered over two shaders.
@@ -568,7 +555,6 @@ pub fn paletteAt(hour: f32) Palette {
     return Palette.lerp(a.p, b.p, t);
 }
 
-// ——— naming an hour ———
 
 /// THE HOURS A BONFIRE WILL HOLD YOU UNTIL, and the only times in the day with names. Two, because two is
 /// what the owner asked for and because they are the two that change how a fight goes: the clearest light in
@@ -627,7 +613,6 @@ pub fn phaseName(hour: f32) [:0]const u8 {
     return "night";
 }
 
-// ——— tests ———
 
 /// The sun `gfx` used to carry as a constant, and the thing every frame in `shots/` was lit by.
 const ANCHOR_DIR = mathx.normV(v3(-0.60, 0.50, -0.46));

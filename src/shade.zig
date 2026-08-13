@@ -999,7 +999,6 @@ fn shroudMesh() rl.Mesh {
             if (rng.float() < 0.5) SHROUD_LT else SHROUD_DK,
         );
     }
-    // The cloth gathered at the throat, where the cowl comes out of it — a break, not a seam.
     b.addBlob(v3(0, 0.244 * H, -0.006 * H), v3(0.080 * H, 0.036 * H, 0.072 * H), 5, 11, SHROUD_LT);
     return b.toMesh();
 }
@@ -1031,7 +1030,6 @@ fn cowlMesh() rl.Mesh {
     // ends in a point, so the peak is a blunt roll of cloth and not a witch's cone.
     b.addBlob(v3(0, 0.055 * H, -0.010 * H), v3(0.083 * H, 0.098 * H, 0.086 * H), 5, 10, SHROUD);
     b.addBlob(v3(rng.range(-0.006, 0.006) * H, 0.118 * H, -0.030 * H), v3(0.050 * H, 0.052 * H, 0.048 * H), 4, 8, SHROUD_LT);
-    // …and the cloth that falls off the back of it onto the shoulders.
     b.addBlob(v3(0, 0.010 * H, -0.056 * H), v3(0.072 * H, 0.070 * H, 0.048 * H), 4, 8, SHROUD_DK);
     // THE HOLLOW: sunk most of the way in, so what shows is a mouth of shadow rather than a ball stuck on.
     b.addBlob(v3(0, 0.048 * H, 0.052 * H), v3(0.056 * H, 0.062 * H, 0.048 * H), 5, 9, HOLLOW);

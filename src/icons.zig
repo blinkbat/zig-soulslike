@@ -414,7 +414,8 @@ fn arrowHead(cx: f32, cy: f32, r: f32, dirDeg: f32, c: rl.Color) void {
     const tip = rl.Vector2{ .x = cx + mathx.cosf(a) * r, .y = cy + mathx.sinf(a) * r };
     const l = rl.Vector2{ .x = cx + mathx.cosf(a + 2.5) * r, .y = cy + mathx.sinf(a + 2.5) * r };
     const rr = rl.Vector2{ .x = cx + mathx.cosf(a - 2.5) * r, .y = cy + mathx.sinf(a - 2.5) * r };
-    // Winding matters: raylib culls a back-facing 2D triangle, so the three go anticlockwise in SCREEN space (y down) or the head simply is not there.
+    // Winding matters: raylib culls a back-facing 2D triangle, so the three go anticlockwise in SCREEN
+    // space (y down) or the head simply is not there.
     rl.drawTriangle(tip, l, rr, c);
 }
 /// Deterministically scattered dots — a fixed seed, so the icon is identical every frame.

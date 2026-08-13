@@ -64,14 +64,16 @@ const CLAVR = 23;
 
 const parent = [N]i32{ -1, ROOT, SPINE, HUMP, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CLAVL, SHL, ELL, CLAVR, SHR, ELR, WRR, SKULL, ANKL, ANKR, CHEST, CHEST, CHEST };
 
-// Where this giant carries his weight, MEASURED off `footMesh`: the fat pad under each ankle, which `hero.legChain` levels every frame so the sole cannot rake through the ground.
+// Where this giant carries his weight, MEASURED off `footMesh`: the fat pad under each ankle, which
+// `hero.legChain` levels every frame so the sole cannot rake through the ground.
 const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKL, .heel = 0.094 * H, .toe = 0.144 * H, .halfW = 0.082 * H, .drop = 0.039 * H },
     .{ .bone = ANKR, .heel = 0.094 * H, .toe = 0.144 * H, .halfW = 0.082 * H, .drop = 0.039 * H },
 };
 
 const H: f32 = heromod.H;
-// Ogre proportions (fractions of H): LEGS keep the hero's segment lengths so the shared gait reads honestly; ARMS run long + heavy, the frame wide.
+// Ogre proportions (fractions of H): LEGS keep the hero's segment lengths so the shared gait reads
+// honestly; ARMS run long and heavy, the frame wide.
 const SEG_THIGH = heromod.SEG_THIGH; // shared with the hero — legChain's geometry is measured off
 const SEG_SHANK = heromod.SEG_SHANK; // these, so they must never drift from the source
 // Owner's call: arms SHORTER and LEANER, hands BIGGER.
@@ -229,7 +231,8 @@ const SLAM_LEN = 1.05; // crush strip length ahead of the seat (pre-scale).
 const SLAM_HALF_W = 0.45; // crush strip HALF-width (pre-scale) — about the club head + shock
 const SWIPE_INNER = 1.18; // pre-scale: nearer than this and the club passes over you.
 const SWIPE_OUTER = 1.95;
-// The sector is NOT centred on his facing: the club starts cocked behind his right shoulder and finishes past his left, so the swept bearings run ~−119..+22 (MEASURED off the posed bone, height 2.37 → 1.07 — head to hip on a hero).
+// The sector is NOT centred on his facing: the club starts cocked behind his right shoulder and finishes
+// past his left, so the swept bearings run ~−119..+22 (MEASURED off the posed bone, height 2.37 → 1.07).
 const SWIPE_ARC_MID = -48.0; // deg (negative = his club side, his right)
 const SWIPE_ARC = 144.0; // deg of total sweep — ±72 about SWIPE_ARC_MID
 
@@ -252,7 +255,8 @@ const CARRY_EL = -13.0; // a heavy arm keeps some natural flex — never a strai
 const CARRY_TILT = 44.0; // the club raked back in the fist (deg off the forearm) — the hover
 const WIND_TILT = 30.0; // cocked back off the shoulder at the top of the windup
 const SLAM_TILT = -14.0; // whipped through AHEAD of the haft at impact (the head leads).
-// REACH against DEPTH along one arc: rake it further ahead and the head lands further out but higher (measured, −30 put the crater 2.1 out and 0.66 in the air — a slam that missed the earth).
+// REACH against DEPTH along one arc: raked further ahead the head lands further out but higher — measured,
+// −30 put the crater 2.1 out and 0.66 in the air, a slam that missed the earth.
 const OVER_SH = -158.0; // upper arm thrown up-and-back — the club COCKS diagonally over the
 const WIND_EL = -78.0; // shoulder like a headsman's backswing, not a vertical telescope
 const SLAM_SH = -56.0; // club crashed forward-and-down into the earth, FOLLOWING THROUGH past
@@ -402,7 +406,8 @@ pub const Ogre = struct {
     clubTilt: f32 = CARRY_TILT, // club-in-fist rake: raked back for the carry, whips on the blow
     clubAbd: f32 = CLUB_ABD, // how far the club arm is held OUT (see CLUB_ABD)
     clubSweep: f32 = 0, // deg the club arm is swung HORIZONTALLY across his front (+ = forward).
-    // The waist twist alone only rotates the arc, it can't carry an arm that is held out to the right across his centre line — this is the shoulder's own horizontal swing, and without it the "side swipe" only ever scythes his right flank (measured: −104..−23 of bearing).
+    // The waist twist alone rotates the arc but cannot carry an arm held out right across his centre line.
+    // Without this shoulder swing the "side swipe" only scythes his right flank (measured: −104..−23).
     jawOpen: f32 = JAW_REST, // deg the mouth hangs open — breath, the roar, the grit, the loll
     girdle: f32 = 0, // deg the shoulder yoke is shrugged up (both clavicles, club side damped)
     legBrace: f32 = 0, // 0 = loose stance, 1 = feet planted + knees loaded (bracing a slam)
@@ -779,7 +784,8 @@ pub const Ogre = struct {
         self.homing = false;
     }
 
-    // The hero's bearing off his facing, in degrees (0 = dead ahead, ±180 = behind) — what decides whether he can simply drop the club on you or has to SWEEP round to reach you.
+    // The hero's bearing off his facing, in degrees (0 = dead ahead, ±180 = behind) — what decides whether
+    // he can drop the club on you or has to SWEEP round to reach you.
     fn bearingTo(self: *const Ogre, hero: rl.Vector3) f32 {
         const d = mathx.dirXZ(self.pos, hero);
         if (mathx.lenXZ(d) < 1e-3) return 0;
@@ -1076,7 +1082,8 @@ pub const Ogre = struct {
         self.clubElbow = lerpF(WIND_EL, SLAM_EL, kArm);
         self.offShoulder = lerpF(-74.0, 8.0, kArm);
         self.offElbow = lerpF(-44.0, -22.0, kArm);
-        // …the trunk drives through behind it, and it drives DEEP: with the legs planted and the club shortened, the fold at the waist is the only thing that can still carry the head to the earth (arm straight down from a standing shoulder leaves it 0.46 short — measured). 62 deg of body pitch drops the shoulder the missing half-metre.
+        // …and the trunk drives DEEP: with the legs planted and the club shortened, the waist fold is the
+        // only thing that can carry the head to the earth (a straight arm leaves it 0.46 short, measured).
         self.bodyLean = lerpF(-24.0, 62.0, k);
         self.headPitch = lerpF(-20.0, 24.0, kArm);
         self.twist = lerpF(-26.0, 12.0, kArm); // the coil releases through the strike
@@ -1320,7 +1327,8 @@ pub const Ogre = struct {
             }
         }
         self.poseUpper(&wx, dk1, dk2, lstun, hstun, dead, lumber, prot, waist);
-        // TOES last — they hang off whichever ankle the branches above resolved (walk, stand, brace or crumple), and every bone must get a matrix every frame.
+        // TOES last — they hang off whichever ankle the branches above resolved, and every bone must get a
+        // matrix every frame.
         const curl = mathx.maxF(dk1, 0.6 * hstun);
         self.toePose(&wx, self.phase, m, curl, TOEL);
         self.toePose(&wx, self.phase + 0.5, m, curl, TOER);
@@ -1405,7 +1413,9 @@ pub const Ogre = struct {
         setLocal(wx, SHR, rest, mul3(rx(self.clubShoulder + armFly - 22.0 * dk2 - clubSwing), rz(-self.clubAbd - ARM_ABD_SWING * clubSwing), ry(self.clubSweep)));
         setLocal(wx, ELR, rest, rx(self.clubElbow - clubFlex));
         setLocal(wx, WRR, rest, rl.math.matrixIdentity());
-        // The club rides the wrist frame; clubTilt rakes it back for the carry and whips it through the blow, clubPend rocks it on the walk (a fixed tilt read as welded-on), and clubHold gives the fist back what the arm's swing took off the rake (the hover survives).
+        // The club rides the wrist frame: `clubTilt` rakes it back for the carry and whips it through the
+        // blow, `clubPend` rocks it on the walk (a fixed tilt reads as welded-on), and `clubHold` gives the
+        // fist back what the arm's swing took off the rake.
         const clubHold = CLUB_HOLD * mathx.maxF(0, clubSwing + clubFlex); // only pays back the DIPS
         setLocal(wx, CLUB, rest, rx(self.clubTilt + clubPend + clubHold - nod));
     }
@@ -1525,7 +1535,8 @@ pub const Grief = struct {
     pub fn anyParried(self: *const Grief) bool {
         return foe.anyParried(self.liveConst());
     }
-    // Advance the group; returns the STRONGEST blow any ogre landed on the hero this frame, and which ogre threw it (the hero's shield covers an arc — see foe.Blow).
+    // Returns the STRONGEST blow any ogre landed this frame, and which ogre threw it — the hero's shield covers
+// an arc (see `foe.Blow`).
     pub fn update(self: *Grief, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
         return foe.groupBlow(self.live(), dt, hero, bounds, blade);
     }
@@ -1668,7 +1679,8 @@ fn humpMesh() rl.Mesh {
     return b.toMesh();
 }
 
-// One half of the shoulder GIRDLE, authored in its clavicle frame: a heavy trapezius sloping DOWN-AND-OUT (weary, not epaulettes) into the rounded deltoid boss the arm swings from.
+// One half of the shoulder GIRDLE, in its clavicle frame: a heavy trapezius sloping DOWN-AND-OUT (weary,
+// not epaulettes) into the rounded deltoid boss the arm swings from.
 fn clavicleMesh(side: f32, load: bool) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
@@ -1870,13 +1882,15 @@ fn fistMesh(shackled: bool) rl.Mesh {
     return b.toMesh();
 }
 
-// The great club — authored in the RIGHT-WRIST frame, gripped near the top of the haft and extending DOWN the arm line (−Y), so the raked carry trails it behind him and the swing rears it overhead.
+// The great club — authored in the RIGHT-WRIST frame, gripped near the top of the haft and extending DOWN
+// the arm line (−Y), so the raked carry trails it behind him and the swing rears it overhead.
 const CLUB_DROP = 0.30 * H; // grip → the club's LOWEST point.
 const CLUB_HEAD_R = 0.118 * H; // the drum's radius…
 const CLUB_HEAD_HH = 0.082 * H;
 const gy = -0.03 * H; // grip centre in the wrist frame (at the fist)
 const gz = 0.02 * H; // a touch out front of the palm
-// The club's lowest authored point, in the wrist frame — ride it through xf[CLUB] and you get the business end in world space (see clubLowWorld).
+// The club's lowest authored point, in the wrist frame — ridden through `xf[CLUB]` it is the business end
+// in world space (see `clubLowWorld`).
 const CLUB_LOW = v3(0, gy - CLUB_DROP - 0.014 * H, gz + 0.022 * H);
 fn clubMesh() rl.Mesh {
     var b = Builder.init();

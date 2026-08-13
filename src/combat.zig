@@ -11,7 +11,8 @@ pub const HitResult = enum { none, light, heavy, death };
 pub const HitOutcome = enum { ignored, taken, blocked, guardBroken };
 
 
-/// THE FOUR NON-PHYSICAL DAMAGE TYPES, PoE2's. Physical is deliberately NOT one of them: it is the damage everything in the game already deals, it is the one type nothing resists, and what mitigates it there is ARMOUR, which does not exist here yet.
+/// THE FOUR NON-PHYSICAL DAMAGE TYPES, PoE2's. Physical is deliberately NOT one: it is what everything
+/// already deals, nothing resists it, and what mitigates it there is ARMOUR, which does not exist here yet.
 pub const Elem = enum(u8) { fire, cold, lightning, chaos };
 
 pub const NELEM = @typeInfo(Elem).@"enum".fields.len;
@@ -25,7 +26,9 @@ pub fn elemName(e: Elem) [:0]const u8 {
     };
 }
 
-/// A number per element, WRITTEN BY NAME — damage on a `Hit`, percent on a `Resists`. Authoring through this rather than an array literal is what stops a four-wide row from silently shifting when the enum gains a fifth: the field names are matched against the enum at comptime, so a rename is a compile error and an omitted element is a 0.
+/// A number per element, WRITTEN BY NAME — damage on a `Hit`, percent on a `Resists`. Field names are
+/// matched against the enum at comptime, so a rename is a compile error and an omitted element is a 0;
+/// an array literal would silently shift when the enum gains a fifth.
 pub const Spread = struct { fire: f32 = 0, cold: f32 = 0, lightning: f32 = 0, chaos: f32 = 0 };
 
 fn pack(s: Spread) [NELEM]f32 {
@@ -62,10 +65,11 @@ pub fn elems(s: Spread) Elems {
 
 /// PoE2's MAXIMUM RESISTANCE: 75%, however much is stacked on top.
 pub const RES_CAP: f32 = 75.0;
-/// …and a floor, because a NEGATIVE resistance amplifies the hit instead and there is no natural stop on that side. -100 is exactly double damage.
+/// …and a floor: a NEGATIVE resistance amplifies the hit and has no natural stop. -100 is double damage.
 pub const RES_FLOOR: f32 = -100.0;
 
-/// WHAT A BODY SHRUGS OFF, per element, as a percentage. Stored UNCAPPED and capped on the way out, so a creature authored at 90 still reads as 90 on a sheet while taking damage at 75 — the same split PoE2 shows.
+/// WHAT A BODY SHRUGS OFF, per element, as a percentage. Stored UNCAPPED and capped on the way out, so a
+/// creature authored at 90 still reads as 90 on a sheet while taking damage at 75 — PoE2's own split.
 pub const Resists = struct {
     v: [NELEM]f32 = [_]f32{0} ** NELEM,
 
@@ -104,7 +108,8 @@ pub const Hit = struct {
     /// "which of two blows was worse" measure is the WEIGHT of the thing that hit you, and a drain has none.
     fp: f32 = 0,
 
-    /// THE WHOLE BLOW BEFORE ANYBODY'S RESISTANCES. What a shield's stamina bill and "which of two blows was worse" are measured on: those are about the weight of the thing that hit you, not about what you happen to resist.
+    /// THE WHOLE BLOW BEFORE ANYBODY'S RESISTANCES — what a shield's stamina bill and "which of two blows
+    /// was worse" are measured on, since those are about weight rather than about what you resist.
     pub fn raw(self: Hit) f32 {
         return self.dmg + self.elem.total();
     }
@@ -143,11 +148,9 @@ pub const HEAVY_STUN_DUR = 1.15;
 pub const FOE_LIGHT_STUN_DUR = 0.78;
 pub const FOE_HEAVY_STUN_DUR = 2.40;
 
-/// WHICH REACTION CLOCK A FOE IS ON — one name, matching `foe.stunCurve(t, heavy)`'s own signature. THE ONLY
-/// PLACE THE TWO ARMS ARE WRITTEN DOWN TOGETHER: as a hand-written pick it sat in `foe.stunCurve`, the brood's
-/// `resolveStun` and the sporeling's stun prong in three shapes, two of them with the arms the other way round,
-/// so "which tier is which" had to be re-read at each. A creature's per-state `t >= FOE_*_STUN_DUR` exits are
-/// NOT this: each names one constant in one branch, and there is nothing there to get backwards.
+/// WHICH REACTION CLOCK A FOE IS ON — one name, matching `foe.stunCurve(t, heavy)`'s own signature, and THE
+/// ONLY PLACE THE TWO ARMS ARE WRITTEN DOWN TOGETHER, so "which tier is which" is asked once. A creature's
+/// per-state `t >= FOE_*_STUN_DUR` exits are NOT this: each names one constant in one branch.
 pub fn foeStunDur(heavy: bool) f32 {
     return if (heavy) FOE_HEAVY_STUN_DUR else FOE_LIGHT_STUN_DUR;
 }
@@ -202,7 +205,8 @@ pub const Vitals = struct {
         return v;
     }
 
-    /// The creature's own resistances, bolted on where it is declared (`initFoe(..).withRes(..)`) so a foe's nature sits in one expression beside its HP.
+    /// The creature's own resistances, bolted on at `initFoe(..).withRes(..)` so a foe's nature sits in one
+    /// expression beside its HP.
     pub fn withRes(self: Vitals, r: Resists) Vitals {
         var v = self;
         v.res = r;
@@ -300,7 +304,8 @@ pub const Vitals = struct {
     }
 };
 
-// ER's shallow, fast-refilling pool (docs/ELDEN_RING.md §3 — these ARE its Endurance-15 numbers): a flat bite per action, pouring back ~4x as fast as a roll spends it, so it paces a FLURRY without becoming a resource you manage between fights.
+// ER's shallow, fast-refilling pool (docs/ELDEN_RING.md §3 — its Endurance-15 numbers): a flat bite per
+// action, pouring back ~4x as fast as a roll spends it, so it paces a FLURRY and not a whole fight.
 pub const STAM_MAX = stats.staminaFor(stats.START); // 105 — ENDURANCE owns the pool size now (`stats.zig`); about eight rolls from full
 pub const STAM_ROLL = 12.0; // ER's flat, load-independent roll cost: the anchor for the rest
 pub const STAM_LIGHT = 10.0; // R1, ER's straight-sword band

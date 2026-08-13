@@ -584,7 +584,8 @@ pub fn chestMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// THE LID, authored about its HINGE — origin at the back edge of the rim, so `chest.zig` opens it with one `rx` and no offset arithmetic.
+/// THE LID, authored about its HINGE — origin at the back edge of the rim, so `chest.zig` opens it with
+/// one `rx` and no offset arithmetic.
 pub fn chestLidMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2113);

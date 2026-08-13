@@ -481,10 +481,9 @@ const Lay = struct { cx: f32, cy: f32, unit: f32 };
 /// The hub's own disc, in units — read by the draw AND by the cursor that can now land on it.
 const HUB_R: f32 = 0.26;
 
-/// A KEYSTONE'S OWN DISC, in units, and the halo an OPEN node wears over it as a multiple of that disc. NAMED
-/// because the two of them are the outermost thing on the page and `VIEW_R` is solved off them: written out at
-/// each site the pair sat in four places (the framing, `radiusPx`, the `uiart.candle` call and the framing's
-/// own test), so retuning the keystone clipped the top node on the frame the page opens and nothing said so.
+/// A KEYSTONE'S OWN DISC, in units, and the halo an OPEN node wears over it as a multiple of that disc.
+/// NAMED because the two are the outermost thing on the page and `VIEW_R` is solved off them — written out
+/// per site, retuning the keystone clips the top node on the frame the page opens and nothing says so.
 const KEY_R: f32 = 0.30;
 const HALO_K: f32 = 2.1;
 

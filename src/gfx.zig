@@ -18,7 +18,9 @@ const SLOT_SOILEDGE: i32 = 16;
 
 pub const SOIL_N: i32 = 112;
 
-/// THE WATER FIELD's resolution — finer than the soil's, because a coastline is a SHAPE you read and a patch of dirt is not. 224 over a 560 m map is 2.5 m a cell, and the field is BILINEAR (unlike the soil's ids, which must not interpolate), so the shoreline the shader draws is smooth well under a cell.
+/// THE WATER FIELD's resolution — finer than the soil's, because a coastline is a SHAPE you read. 224 over
+/// a 560 m map is 2.5 m a cell, and the field is BILINEAR (unlike the soil's ids, which must not
+/// interpolate), so the shoreline the shader draws is smooth well under a cell.
 pub const WATER_N: i32 = 224;
 
 pub const HEIGHT_N: i32 = 224;
@@ -862,7 +864,9 @@ pub const Builder = struct {
         self.ringBand(a, b, f.u, f.w, ra, rb, sides, col, o, rmid, o.y, o.y + f.len);
     }
 
-    // ONE band of a revolved surface: the quad ring between circle (a, ra) and circle (b, rb) in the (u, w) frame, with the UV offset / arc radius / v-range supplied by the caller — so a multi-band surface (a capsule's cap, a blob) keeps ONE continuous texture instead of a fresh decorrelated patch per band (which reads as rings of noise on a big smooth mass).
+    // ONE band of a revolved surface: the quad ring between circle (a, ra) and circle (b, rb) in the (u, w)
+    // frame. The caller supplies the UV offset / arc radius / v-range, so a multi-band surface keeps ONE
+    // continuous texture rather than a decorrelated patch per band — which reads as rings of noise.
     fn ringBand(self: *Builder, a: rl.Vector3, b: rl.Vector3, u: rl.Vector3, w: rl.Vector3, ra: f32, rb: f32, sides: i32, col: rl.Color, o: rl.Vector2, rmid: f32, va: f32, vb: f32) void {
         const sf: f32 = @floatFromInt(sides);
         var s: i32 = 0;

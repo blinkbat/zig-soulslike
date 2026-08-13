@@ -346,7 +346,8 @@ pub const Leechfly = struct {
         return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, self.lift());
     }
     /// THE MARK RIDES THE HEAD, and this creature is why the rule earns its keep twice: it bobs on its own
-    /// wingbeat AND climbs four metres in a third of a second. A height off the ground would hold the reticle in the grass while the thing it names went over the treeline.
+    /// wingbeat AND climbs four metres in a third of a second — a height off the ground would hold the
+    /// reticle in the grass while the thing it names went over the treeline.
     pub fn lockPoint(self: *const Leechfly) rl.Vector3 {
         return foe.markOn(self.xf[HEAD], LOCK_AT);
     }
@@ -886,7 +887,6 @@ fn thoraxMesh() rl.Mesh {
     b.addBlob(v3(0, 0, 0), v3(0.088 * H, 0.098 * H, 0.132 * H), 9, 14, CHITIN);
     // The hump over the wing roots, sunk most of the way in — RELIEF IS SUBTLE (a few percent of the mass).
     b.addBlob(v3(0, 0.058 * H, -0.010 * H), v3(0.066 * H, 0.052 * H, 0.086 * H), 7, 12, CHITIN_LT);
-    // A collar where the head joins, and the pinch behind it where the abdomen does.
     b.addBlob(v3(0, 0.004 * H, 0.104 * H), v3(0.062 * H, 0.062 * H, 0.040 * H), 6, 12, CHITIN_DK);
     b.addBlob(v3(0, -0.014 * H, -0.126 * H), v3(0.050 * H, 0.048 * H, 0.036 * H), 6, 12, CHITIN_DK);
     // Two bristle ridges down the back, uneven — the shell's own break-up (a dark smooth mass reads as
@@ -930,7 +930,6 @@ fn abdomenMesh(seg: usize) rl.Mesh {
             SAC_DK,
         );
     }
-    // …and the FULL tone showing between them, which is what the belly reads as when it has drunk.
     if (seg == 0) b.addBlob(v3(0, -0.005 * H, -0.095 * H), v3(0.043 * H, 0.039 * H, 0.062 * H), 6, 12, SAC_FULL);
     // The blunt snap at the end — a rounded cap, never a taper to nothing.
     if (seg == 1) b.addBlob(v3(0, -0.012 * H, -len * H * 2.04), v3(0.022 * H, 0.021 * H, 0.020 * H), 5, 10, SAC_DK);

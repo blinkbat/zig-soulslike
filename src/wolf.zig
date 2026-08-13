@@ -17,22 +17,14 @@ const tr = mathx.tr;
 const mul = mathx.mul;
 const mul3 = mathx.mul3;
 
-// THE DIRE WOLF — THE FIRST SPIRIT, and the first thing in this world that fights ON HIS SIDE.
-//
-// **IT IS NOT A FOE AND IT IS NOT ONE OF THE FOLK.** It carries `combat.Vitals` and it deals blows, so it is
-// nothing like the wanderer; it has no `foe.Leash`, because a leash is a creature's eyes on the HERO and this
-// one's eyes are on everything else. What it shares with the foes it shares through `foe.zig` — the swept
-// `Blade`, `stunCurve`, `dissipate` — and it reaches for none of their private machinery.
-//
-// **IT IS THE FIRST QUADRUPED**, so it is off the 18-bone humanoid scaffold for the ogre's reason: a different
-// layout is a different layout, not a wider one. What it does NOT get is a bespoke gait.
+// It has no `foe.Leash` — a leash is a creature's eyes on the HERO, and this one's eyes are on everything
+// else. What it shares with the foes it shares through `foe.zig`: the swept `Blade`, `stunCurve`, `dissipate`.
 //
 // ## The gait is Hildebrand's, and it is TWO NUMBERS
 //
 // Every symmetrical quadruped gait is fully specified by a DUTY FACTOR (the fraction of the stride a foot is
-// on the ground) and a LIMB PHASE (how far the forefoot's strike lags the hind foot on the same side). That is
-// Hildebrand's 1965/1968 result and it is why there is one footfall machine here and not three hand-authored
-// cycles: walk, trot and gallop are the same code at three points on one line.
+// on the ground) and a LIMB PHASE (how far the forefoot's strike lags the hind foot on the same side) —
+// Hildebrand 1965/1968. So walk, trot and gallop are one footfall machine at three points on one line:
 //
 //   gait     duty   lag    speed (m/s)
 //   walk     0.65   0.84   0.4 - 2.0     lateral sequence
@@ -40,35 +32,17 @@ const mul3 = mathx.mul3;
 //   gallop   0.42   0.63   3.2 - 10.0    transverse, with a real aerial phase
 //
 // Figures from steady-state dog locomotion (Bertram et al., J. Exp. Biol. 211:138) and working-dog trotting
-// (J. Exp. Biol. 228:jeb250523), which puts a 34 kg German Shepherd — the closest domestic build to a wolf —
-// at 2.14 m/s, a 0.52 s cycle and a 1.21 m stride. `gaitAt` LERPS between the three anchors rather than
-// switching, because Hildebrand's diagram is continuous and a snap between two duty factors is a creature
-// changing its legs mid-stride.
-//
-// **STRIDE LENGTH RISES LINEARLY WITH SPEED and the cycle time bottoms out** — both measured, both in
-// `strideFor`. That is what lets the phase be driven by DISTANCE TRAVELLED and never by time (the hero's own
-// law), which is the whole of why the feet do not skate: a planted foot's offset sweeps back linear in
-// distance, so in world space it does not move at all.
-//
-// **THE HIND FOOT LANDS IN THE FOREFOOT'S PRINT.** Fore and hind stride lengths in the working-dog data are
-// identical to two decimals, which is a trotting dog tracking up — and it is a free correctness check on this
-// rig: one stride length for all four limbs, never one per pair.
+// (J. Exp. Biol. 228:jeb250523), which puts a 34 kg German Shepherd at 2.14 m/s, a 0.52 s cycle and a 1.21 m
+// stride. Fore and hind stride lengths there are identical to two decimals — a trotting dog tracking up — so
+// this rig uses ONE stride length for all four limbs, never one per pair.
 
-/// STATURE, the hero's `H` on four legs: HEIGHT AT THE WITHERS in metres. Gray wolves run 66-84 cm at the
-/// shoulder (dimensions.com), 1.02-1.83 m head-and-body, 36-40 kg. Everything below is a fraction of this, so
-/// a bigger wolf is one number.
-/// **A DIRE WOLF, so it is over the top of the real range** (owner: bigger, and chunkier). A gray wolf runs
-/// 66-84 cm at the withers; this stands at 112, which puts its back above the hero's own hip and makes it read
-/// as something that could take a kobold off its feet rather than as a large dog.
-///
-/// Note what this number does NOT do: the SHAPE. `W` scales the whole animal uniformly, and stocky is the
-/// proportions under it (`SHOULDER_Y`, `BRISKET_Y` — a deeper chest over shorter legs). Reaching for `W` when
-/// the answer is "chunkier" only makes a bigger animal of the same build.
+/// Height at the WITHERS, in metres — everything below is a fraction of it. A gray wolf runs 66-84 cm; this
+/// is a dire wolf and stands over the real range (owner: bigger, and chunkier), which puts its back above the
+/// hero's own hip. It scales the animal UNIFORMLY: stocky is the proportions under it (`SHOULDER_Y`,
+/// `BRISKET_Y`), so reaching for `W` when the answer is "chunkier" only makes a bigger animal of one build.
 pub const W: f32 = 1.12;
 
-// THE SKELETON. 27 bones, and the layout is a quadruped's: the forelimbs hang off the CHEST and the hindlimbs
-// off the ROOT, which is the pelvis. `ROOT` carries the whole animal's position and facing exactly as the
-// hero's does.
+// The forelimbs hang off the CHEST and the hindlimbs off the ROOT, which is the pelvis.
 pub const ROOT = 0; // pelvis — the body's anchor
 pub const SPINE = 1; // lumbar
 pub const CHEST = 2; // thorax, and where the forelimbs hang
@@ -112,13 +86,7 @@ pub const PARENT = [N]i32{
 /// solver spans, which way the middle joint folds, and the height its own joint hangs at.
 const Limb = struct { bones: [4]usize, upper: f32, lower: f32, bend: f32, jointY: f32 };
 
-/// THE FOUR OF THEM, **IN `limbPhases`' OWN ORDER** — hind left, hind right, fore left, fore right — so a
-/// limb's index IS its phase. As four hand-written `column` calls the bones came off one order and the phases
-/// off another (`ph[2]` against the fore left), and nothing but a reader's care tied the two together.
-///
-/// `bend` is ANATOMY: a wolf's elbow points BACK and its stifle points FORWARD, which is exactly why a
-/// quadruped's front and back legs read as different machines. Get it the same on both and you have drawn a
-/// horse's front legs on a dog.
+/// IN `limbPhases`' OWN ORDER — hind left, hind right, fore left, fore right — so a limb's index IS its phase.
 const LIMBS = [4]Limb{
     .{ .bones = .{ HIPL, STL, HKL, HPAWL }, .upper = FEMUR, .lower = HIND_LOWER, .bend = -1.0, .jointY = HIP_Y },
     .{ .bones = .{ HIPR, STR, HKR, HPAWR }, .upper = FEMUR, .lower = HIND_LOWER, .bend = -1.0, .jointY = HIP_Y },
@@ -127,9 +95,7 @@ const LIMBS = [4]Limb{
 };
 
 comptime {
-    // `column` links mid←top, low←mid and paw←low by construction from the chain it is handed, so this is the
-    // one place that chain is held against the layout it mirrors. A limb renumbered in `PARENT` alone is a
-    // compile error here rather than a leg hanging off the wrong bone.
+    // A limb renumbered in `PARENT` alone is a compile error here rather than a leg on the wrong bone.
     for (LIMBS) |L| {
         if (@as(usize, @intCast(PARENT[L.bones[1]])) != L.bones[0] or
             @as(usize, @intCast(PARENT[L.bones[2]])) != L.bones[1] or
@@ -137,18 +103,10 @@ comptime {
     }
 }
 
-// SEGMENT LENGTHS, as fractions of `W`. Canid proportions: the femur is a little shorter than the tibia and
-// about a fifth longer than the humerus, and the fore column (scapula + humerus + radius + metacarpus) is
-// what SETS the withers height — so these sum to the stature they are measured against rather than being
-// picked to look right.
-// **THE CHEST IS HALF THE HEIGHT, AND THAT IS WHAT STOPS IT BEING LEGGY.** A canid's brisket sits at about
-// 0.55 of the withers, so the body is nearly as deep as the leg under it is long. Built with the shoulder
-// joint down at 0.62 the trunk floated on stilts and the whole animal read as a deer — the single biggest
-// error in the first pass, and it is a proportion, not a mesh.
-// **STOCKY IS A PROPORTION, NOT A SCALE.** Making `W` bigger makes a bigger animal of the same shape; what
-// reads as stocky is the body being DEEPER and the legs SHORTER relative to it. So the brisket comes down and
-// the joints come down with it — the chest is now over half the standing height and the leg under it is the
-// smaller half, which is a bull terrier's balance rather than a deerhound's.
+// Segment lengths as fractions of `W`, summing to the stature they are measured against. The CHEST IS HALF
+// THE HEIGHT and that is what stops it being leggy: a canid's brisket sits at ~0.55 of the withers, so the
+// body is nearly as deep as the leg under it is long. Built with the shoulder at 0.62 the trunk floated on
+// stilts and read as a deer.
 const SHOULDER_Y = 0.70; // the shoulder JOINT, which is well up inside the body's own mass
 const HIP_Y = 0.72; // …and the hip a touch above it: a wolf stands very slightly croup-high
 const BRISKET_Y = 0.46; // the bottom of the chest — the line the elbow drops out of
@@ -160,16 +118,12 @@ const TRACK = 0.145; // half the distance between the left and right feet — a 
 const CHEST_Z = 0.42; // the shoulder, forward of the body's centre…
 const HIP_Z = -0.42; // …and the pelvis behind it: a 0.84 W trunk
 const HEAD_LEN = 0.26;
-/// **THE HEAD IS CARRIED AT OR BELOW THE WITHERS**, on a SHORT thick neck reaching forward — not up. A neck
-/// that lifts the skull above the shoulder is a llama, and it was what the first pass drew. The neck's LENGTH
-/// is not a constant of its own: it falls out of where `restPose` puts NECK against HEAD, and a spare
-/// `NECK_LEN` sat under this note reading as the thing that set it while nothing anywhere read it.
+/// The head is carried at or below the WITHERS, on a short thick neck reaching FORWARD — one that lifts the
+/// skull above the shoulder is a llama. The neck's length has no constant: it falls out of `restPose`.
 const HEAD_Y = 0.82; // …a hair over the shoulder joint and under the top of the back
 const HEAD_Z = 0.72;
 
-/// THE REST POSE, in the wolf's own standing frame (X its left, Y up, Z forward), as fractions of `W`. Written
-/// the way `hero.restHumanoid` is and for the same reason: the proportions ARE the animal, so they live in one
-/// table and a retune is one edit.
+/// In the wolf's own standing frame (X its left, Y up, Z forward), as fractions of `W`.
 pub fn restPose() [N]rl.Vector3 {
     var r: [N]rl.Vector3 = undefined;
     r[ROOT] = v3(0, HIP_Y, HIP_Z);
@@ -183,17 +137,10 @@ pub fn restPose() [N]rl.Vector3 {
     r[TAIL2] = v3(0, HIP_Y - 0.185, HIP_Z - 0.45);
     r[EARL] = v3(0.050, HEAD_Y + 0.075, HEAD_Z - 0.055);
     r[EARR] = v3(-0.050, HEAD_Y + 0.075, HEAD_Z - 0.055);
-    // The four columns. Each hangs STRAIGHT DOWN at rest and the gait bends it — a rest pose already folded
-    // into a stance is one the IK has to undo before it can do anything.
-    // **THE REST CHAIN CARRIES THE TRUE SEGMENT LENGTHS, and its paw therefore hangs BELOW the ground.** That
-    // is not a mistake and it is the whole reason the limbs fold: `setJoint` takes each bone's length from the
-    // DISTANCE between two rest points, so a chain laid out to put the paw exactly on the ground is a chain
-    // whose bones sum to the joint's height — a leg with no slack, which `limbChain` can only solve straight.
-    // A canid's bones sum to MORE than it stands tall; the surplus is the zig-zag.
-    //
-    // Written the other way round (rest paw at y = 0) the solver was told a lower segment 4-10% longer than
-    // the bones actually were, over-bent every limb to compensate, and stood the animal on four feet hanging
-    // in the air above the ground it was supposed to be on.
+    // THE REST CHAIN CARRIES THE TRUE SEGMENT LENGTHS, so its paw hangs BELOW the ground — that surplus is
+    // the zig-zag. `setJoint` takes each bone's length from the DISTANCE between two rest points, so laying
+    // the paw at y = 0 tells the solver a lower segment 4-10% longer than the bones are, and it over-bends
+    // every limb and stands the animal on four feet hanging in the air.
     inline for (.{ .{ SHL, ELL, CAL, PAWL, TRACK }, .{ SHR, ELR, CAR, PAWR, -TRACK } }) |c| {
         r[c[0]] = v3(c[4], SHOULDER_Y, CHEST_Z);
         r[c[1]] = v3(c[4], SHOULDER_Y - HUMERUS, CHEST_Z);
@@ -210,11 +157,7 @@ pub fn restPose() [N]rl.Vector3 {
     return r;
 }
 
-// ===========================================================================================================
-// THE GAIT
-// ===========================================================================================================
-
-/// HILDEBRAND'S TWO DIALS, and the whole of what separates one symmetrical gait from another.
+/// Hildebrand's two dials, and the whole of what separates one symmetrical gait from another.
 pub const Gait = struct {
     /// Fraction of the stride each foot is ON THE GROUND. Above 0.5 something is always down (a walk); below
     /// it there are moments with no feet on the earth at all, which is what an aerial phase IS.
@@ -234,9 +177,8 @@ pub const WALK_SPEED: f32 = 1.1;
 pub const TROT_SPEED: f32 = 2.4;
 pub const GALLOP_SPEED: f32 = 5.2;
 
-/// WHICH GAIT AT WHICH SPEED — LERPED, never switched. Hildebrand's diagram is a continuous surface and the
-/// transitions are where duty factor crosses 0.5 rather than a line an animator drew; a creature that snapped
-/// between two duty factors would be changing its legs mid-stride.
+/// LERPED, never switched: Hildebrand's diagram is a continuous surface, and a creature that snapped between
+/// two duty factors would be changing its legs mid-stride.
 pub fn gaitAt(speed: f32) Gait {
     if (speed <= WALK_SPEED) return WALK;
     if (speed >= GALLOP_SPEED) return GALLOP;
@@ -275,41 +217,32 @@ pub fn planted(phase: f32, g: Gait) bool {
     return phase < g.duty;
 }
 
-/// WHERE ONE PAW IS THIS FRAME, in the body's own frame: `z` along the direction of travel and `y` off the
-/// ground. Both are pure functions of the limb's PHASE, so nothing here knows what time it is.
-///
-/// **THE STANCE SWEEP IS LINEAR IN PHASE, WHICH IS LINEAR IN DISTANCE** — and that is the no-skate law. The
-/// paw's offset behind the body decreases at exactly the rate the body advances, so in WORLD space a planted
-/// paw does not move at all. Held at a joint ANGLE instead it would only be still in joint space, and the
-/// whole animal would slide.
+/// In the BODY's frame: `z` along the direction of travel, `y` off the ground. Pure functions of PHASE, so
+/// nothing here knows what time it is — and the stance sweep is linear in phase, which is linear in DISTANCE,
+/// so in world space a planted paw does not move at all.
 pub fn pawAt(phase: f32, g: Gait, stride: f32) struct { z: f32, y: f32 } {
-    // THE STANCE EXCURSION IS `stride × duty`, NOT `stride`. A stride is measured PRINT TO PRINT — the same
-    // foot's two consecutive touchdowns — but the foot is only down for `duty` of that cycle, so the ground it
-    // sweeps under the body is the share of the stride the body covers WHILE IT IS DOWN. Written as the whole
-    // stride the offset ran back 1/duty times too fast, the paw outran the body it was carrying, and every
-    // foot slid backwards through its own contact. The rest of the stride is closed by the SWING.
+    // The stance excursion is `stride × duty`, NOT `stride`: a stride is print to print, but the foot is only
+    // down for `duty` of that cycle. Written as the whole stride the offset ran back 1/duty times too fast
+    // and every foot slid backwards through its own contact.
     const half = stride * g.duty * 0.5;
     if (planted(phase, g)) {
         const s = phase / g.duty; // 0 at touchdown, 1 at lift-off
         return .{ .z = half * (1.0 - 2.0 * s), .y = 0 };
     }
     const s = (phase - g.duty) / (1.0 - g.duty); // 0 at lift-off, 1 at the next touchdown
-    // The swing carries it forward again and lifts it clear. A wolf picks its feet up: the arc peaks near the
-    // middle of the swing and the paw is already coming down before it is over its landing.
     return .{ .z = half * (-1.0 + 2.0 * s), .y = SWING_LIFT * W * mathx.sinf(s * std.math.pi) };
 }
 
 const SWING_LIFT: f32 = 0.115; // of W — how high a paw clears the ground at the top of its swing
 
-/// TWO-LINK IK IN THE SAGITTAL PLANE. Given a limb whose upper segment is `a` long and lower `b`, hung from a
-/// joint at the origin, put the paw at (`dy` below, `dz` forward) and report the two rotations about X.
+/// Two-link IK in the sagittal plane: a limb of segments `a` and `b` hung from a joint at the origin, paw at
+/// (`dy` below, `dz` forward), reporting the two rotations about X.
 ///
-/// `bend` is which way the middle joint folds and it is ANATOMY, not a preference: a wolf's elbow points BACK
-/// and its stifle points FORWARD, which is exactly why a quadruped's front and back legs read as different
-/// machines. Get it the same on both and you have drawn a horse's front legs on a dog.
+/// `bend` is ANATOMY, not a preference: a wolf's elbow points BACK and its stifle points FORWARD, which is why
+/// front and back legs read as different machines. Get it the same on both and it is a horse's front legs.
 pub fn limbChain(a: f32, b: f32, dy: f32, dz: f32, bend: f32) struct { upper: f32, lower: f32 } {
-    // The reach is clamped inside the limb's own span: a target further than `a + b` has no solution, and one
-    // inside `|a - b|` folds the limb through itself. Both are what a leg does at the ends of its travel.
+    // Clamped inside the limb's own span: past `a + b` there is no solution, inside `|a - b|` it folds
+    // through itself.
     const want = @sqrt(dy * dy + dz * dz);
     const d = mathx.clampF(want, @abs(a - b) + 1e-4, a + b - 1e-4);
     const t = std.math.atan2(dz, @max(dy, 1e-4)); // the target's bearing off straight-down

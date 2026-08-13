@@ -34,20 +34,18 @@ pub const TELL_MIN: f32 = 0.30;
 
 /// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT ON THE BOARDS — one number, IN SECONDS, measured back
 /// from the move's own impact frame, and it IS the parry's difficulty. **Every creature with windows reads
-/// THIS one.** As a private copy per creature it is `stunCurve`'s story again: the same event drifting into
-/// three numbers nobody chose. You parry an instant before THE HIT, whatever is swinging (owner's call), so
-/// a club, a mace, a greatsword and a mother's fangs teach one rule. See `ogre.parryable` for the example.
+/// THIS one.** You parry an instant before THE HIT, whatever is swinging (owner's call), so a club, a mace,
+/// a greatsword and a mother's fangs teach one rule. See `ogre.parryable` for the example.
 pub const PARRY_LEAD: f32 = 0.18;
 
 /// …AND THE TEST ITSELF, off one clock: `left` is seconds until the blow lands. The `left < 0` half IS the
-/// "shuts at the impact frame by construction" law — as four private copies the constant was centralised and
-/// the comparison that gives it meaning was not.
+/// "shuts at the impact frame by construction" law.
 pub fn inParryWindow(left: f32) bool {
     return left >= 0 and left <= PARRY_LEAD;
 }
 
 /// THE HERO'S SHIELD, STAMPED ON EVERY MEMBER (`game.markParry`), and whether any of them was caught on it
-/// this frame — a ONE-FRAME edge, `anyDied`'s, read after `update`. Four groups carried byte-identical folds.
+/// this frame — a ONE-FRAME edge, `anyDied`'s, read after `update`.
 pub fn setParry(foes: anytype, p: Parry) void {
     for (foes) |*f| f.parry = p;
 }
@@ -65,9 +63,10 @@ pub fn corporeal(f: anytype) bool {
 }
 
 
-/// HOW FAR PAST ITS OWN NOTICE RING a creature follows before turning for home — per-creature, because one flat 30 m was both 2.7x the toad's aggro and the spacing between camps in `worlds/`.
+/// HOW FAR PAST ITS OWN NOTICE RING a creature follows before turning for home. Per-creature: one flat 30 m
+/// was both 2.7x the toad's aggro and the spacing between camps in `worlds/`.
 pub const LEASH_SLACK: f32 = 6.0;
-/// …and it is home again only this close, which is the hysteresis: start far, stop near, so a foe hovering at the boundary cannot flap between chasing and returning every other frame.
+/// …and it is home again only this close — the hysteresis, so a foe at the boundary cannot flap.
 pub const LEASH_HOME_R: f32 = 3.0;
 /// …and only after this long with no blow given OR taken.
 pub const LEASH_CALM: f32 = 4.5;
@@ -110,11 +109,8 @@ pub const Leash = struct {
     /// Per frame, BEFORE the state machine decides anything. `out` is how far the CREATURE is from its post
     /// and `heroOut` how far the HERO is from that same post — a walk home is never blind to him.
     ///
-    /// **BOTH RANGES ARE MEASURED FROM THE POST, and that is the whole of the tether.** Asked as the gap
-    /// between the two BODIES instead, the notice ring was doing a job it is the wrong size for: a creature
-    /// could only let go once the hero had out-run it by its own full aggro (24 m for an archer), and it went
-    /// on walking the whole time that gap was opening — so tethers nominally 17–30 m long were measured
-    /// releasing at 34 m (ogre) to 176 m (leechfly), which is a chase with no end a player can see. The
+    /// **BOTH RANGES ARE MEASURED FROM THE POST, and that is the whole of the tether.** As the gap between
+    /// the two BODIES, tethers nominally 17–30 m long released at 34 m (ogre) to 176 m (leechfly). The
     /// question a tether asks is "has he left my patch", and a patch is a place, not a separation.
     pub fn tick(self: *Leash, dt: f32, out: f32, heroOut: f32, aggroR: f32) void {
         self.sinceCombat += dt;
@@ -194,16 +190,13 @@ pub fn sensedDist(l: *const Leash, real: f32, aggroR: f32) f32 {
     return real;
 }
 
-/// ONE FRAME OF A CREATURE'S TETHER, off the three points it is actually about. `Leash.tick` takes the two
-/// distances already measured, and the WHOLE of its own long note is that they are measured FROM THE POST and
-/// which way round they go — restated as a hand-written pair of `distXZ` calls at every creature, that order is
-/// eight places to transpose `out` and `heroOut` and get a tether that releases at the wrong range.
+/// ONE FRAME OF A CREATURE'S TETHER, off the three points it is actually about — so `out` and `heroOut`
+/// cannot be transposed into a tether that releases at the wrong range.
 pub fn tickLeash(l: *Leash, dt: f32, at: rl.Vector3, home: rl.Vector3, hero: rl.Vector3, aggroR: f32) void {
     l.tick(dt, mathx.distXZ(at, home), mathx.distXZ(home, hero), aggroR);
 }
 
-/// …and HOW FAR IT READS THE HERO AS BEING, from where it is standing — `sensedDist` with the one distance
-/// every caller was measuring by hand. Fourteen sites wrote out the same `distXZ(self.pos, hero)`.
+/// …and HOW FAR IT READS THE HERO AS BEING, from where it is standing.
 pub fn senseHero(l: *const Leash, at: rl.Vector3, hero: rl.Vector3, aggroR: f32) f32 {
     return sensedDist(l, mathx.distXZ(at, hero), aggroR);
 }
@@ -221,11 +214,9 @@ pub fn faceToward(pos: rl.Vector3, facing: *f32, target: rl.Vector3, rate: f32, 
 /// definition of what walkable means. What the creature owes in return is ONE method — `navWant`, the point it
 /// is trying to walk at this frame, or null when it is not walking anywhere.
 ///
-/// **IT IS STEERING AND NOT A ROUTE.** There is no graph, no path and nothing remembered about the map: the
-/// stamp is a heading that has been TESTED for the next couple of metres, and the creature walks it instead of
-/// the straight line it wanted. That answers the failure it exists for — a body pressed against a wall for the
-/// rest of the fight because the only direction it ever considered was the one the hero was in — and it does not
-/// pretend to answer more than that.
+/// **IT IS STEERING AND NOT A ROUTE.** No graph, no path, nothing remembered: the stamp is a heading TESTED
+/// for the next couple of metres. It answers one failure — a body pressed against a wall for the rest of the
+/// fight because the only direction it considered was the hero's — and nothing more.
 ///
 /// A creature reads it in exactly one place, whichever of the two its own movement is:
 ///   `aim`   — for one that walks where it is LOOKING (the ogre turns his whole body; he never strafes)
@@ -292,16 +283,16 @@ pub fn markOn(bone: rl.Matrix, at: rl.Vector3) rl.Vector3 {
 /// exists because you must be able to parry off what you SEE (owner: "should be all 3" — visuals, sound and
 /// timing, not the last two alone).
 ///
-/// A FRONT-LOADED ARC (`1 - (1-u)³`) put 58% of the travel in the first quarter of the window, so the limb
-/// was there before the eye registered it; a SYMMETRIC one glides. This holds near the cock, then whips: 8% of the arc in the first quarter against that 58%, and the last quarter carries two and a half times the first.
+/// A FRONT-LOADED ARC (`1 - (1-u)³`) put 58% of the travel in the first quarter, so the limb was there
+/// before the eye registered it; a SYMMETRIC one glides. This holds near the cock, then whips — 8% of the
+/// arc in the first quarter, and the last quarter carries two and a half times the first.
 pub fn swingCurve(u: f32) f32 {
     return std.math.pow(f32, mathx.smoothstep(0, 1, u), 1.35);
 }
 
-/// HOW HARD A REACTION IS PLAYING, 0..1, and it is ONE CURVE for every creature in the game. As five private
-/// copies the constants had already drifted four ways (0.12/0.78, 0.13/0.72, 0.14/0.70, 0.16/0.78). A light
-/// flinch is a single symmetric swell; a heavy one snaps to its peak, HOLDS there — that hold is the punish
-/// window and it has to be legible — and lets go slowly.
+/// HOW HARD A REACTION IS PLAYING, 0..1, and it is ONE CURVE for every creature in the game. A light flinch
+/// is a single symmetric swell; a heavy one snaps to its peak, HOLDS there — that hold is the punish window
+/// and it has to be legible — and lets go slowly.
 pub fn stunCurve(t: f32, heavy: bool) f32 {
     const u = mathx.clampF(t / combat.foeStunDur(heavy), 0, 1);
     if (!heavy) return mathx.sinf(u * std.math.pi);
@@ -312,22 +303,18 @@ pub fn stunCurve(t: f32, heavy: bool) f32 {
 /// loose numbers: the two are only ever chosen against each other.
 pub const Push = struct { light: f32, heavy: f32 };
 
-/// A MOVE'S CLOCK, for anything aiming at a beat inside it (`shots.zig` alone). NAMED here rather than returned
-/// as an anonymous struct per creature: `rooted.moveClock` and `shade.moveClock` were byte-identical bodies
-/// whose two return types could not be held in one variable, so a third creature meant a third copy.
+/// A MOVE'S CLOCK, for anything aiming at a beat inside it (`shots.zig` alone). NAMED rather than an
+/// anonymous struct per creature, whose return types could not be held in one variable.
 pub const Clock = struct { wind: f32, strike: f32, recover: f32 };
 
-/// …off the creature's OWN attack row, so a retuned window still photographs the beat it is named after rather
-/// than a literal number of seconds. Duck-typed on the three field names both tables already use. The WARRIOR
-/// keeps its own `Clock`: its rows name the swing differently and carry a fourth knot (`chainWind`), which is a
-/// different shape rather than a fourth copy of this one.
+/// …off the creature's OWN attack row, so a retuned window still photographs the beat it is named after.
+/// The WARRIOR keeps its own `Clock`: its rows carry a fourth knot (`chainWind`), a different shape.
 pub fn moveClock(row: anytype) Clock {
     return .{ .wind = row.windDur, .strike = row.strikeDur, .recover = row.recoverDur };
 }
 
-/// THE BLADE REACHED IT — the swept test, the anti-cheese rouse, and the one thing a shaft does that a swing
-/// does not. Seven creatures opened `tryHit` with these same four lines. Duck-typed on the conventional field
-/// names: a creature satisfying the foe contract has every one of them by definition.
+/// THE BLADE REACHED IT — the swept test, the anti-cheese rouse, and the one thing a shaft does that a
+/// swing does not. Duck-typed on the conventional field names.
 pub fn reached(self: anytype, blade: Blade) ?Strike {
     const s = strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return null;
     self.leash.provoke();
@@ -378,17 +365,13 @@ pub const Grip = struct {
 ///     defer if (!self.airborne()) grip.hold(&self.pos);
 ///     if (grip.killed) self.enterDeath();
 ///
-/// The airborne guard IS the finishes-its-arc half of the law below. Three creatures hold unconditionally and
-/// each for its own reason: the LEECHFLY because it is ALWAYS airborne and being rootable is its designed
-/// weakness, the OGRE and the ROOTED because neither can leave the ground at all (`airborne()` is a constant
-/// `false` on both), so the guard would only be a branch nothing can take.
+/// The airborne guard IS the finishes-its-arc half of the law below. Three creatures hold unconditionally:
+/// the LEECHFLY because it is ALWAYS airborne and being rootable is its designed weakness, the OGRE and the
+/// ROOTED because neither can leave the ground at all. The bite is billed as a DRIP, never as a blow.
 ///
-/// Six byte-identical copies of that body sat in the creature files, which is six places to forget that the
-/// bite is billed as a DRIP (`combat.Vitals.drip`) and never as a blow.
-/// A JUMP IS THE ONE THING THE GRIP REFUSES OUTRIGHT (owner's law). Everywhere else the roots take the FEET
-/// as a post-step gate and the move plays out on the spot; a jump does not travel, it LEAVES THE EARTH. So it
-/// is gated where the move is CHOSEN — the one place a post-step gate cannot reach, since by `Grip.hold` the
-/// leap is committed and denying its distance leaves a creature hopping inside a fist of roots. One already IN THE AIR when the grip closes keeps its arc and lands: you cannot root what is not standing on anything.
+/// A JUMP IS THE ONE THING THE GRIP REFUSES OUTRIGHT (owner's law): a jump does not travel, it LEAVES THE
+/// EARTH, so it is gated where the move is CHOSEN — by `Grip.hold` the leap is committed, and denying its
+/// distance leaves a creature hopping inside a fist of roots. One already IN THE AIR keeps its arc.
 pub fn canLeap(root: *const combat.Root) bool {
     return !root.held();
 }
@@ -579,12 +562,9 @@ pub fn Trail(comptime N: usize) type {
     };
 }
 
-/// THE ONE PER-FRAME COST HERE WORTH KNOWING ABOUT, left alone on purpose: `drawSphereEx` at 6x8 is 112
-/// triangles — 336 immediate-mode vertex pushes, CPU-transformed, since the push/translate/scale sets rlgl's
-/// `transformRequired` — so a full muster (48 x 56 slots) would be a quarter-million unlit triangles. It never
-/// is: a slot is dead unless something emitted into it, and the pools are sized off each emitter's WORST frame,
-/// so the live count is a burst and not a standing load. A spark is a ROUND thing: the tessellation is a look
-/// call, and the one cheaper shape (a cached unit sphere through `drawMesh`) would come out LIT.
+/// LEFT ALONE ON PURPOSE: `drawSphereEx` at 6x8 is 112 triangles — 336 immediate-mode vertex pushes,
+/// CPU-transformed — so a full muster would be a quarter-million unlit triangles. It never is: a slot is
+/// dead unless something emitted into it. The one cheaper shape (a cached unit sphere) would come out LIT.
 pub fn drawParticles(pool: []const Particle) void {
     for (pool) |*q| {
         if (q.life <= 0) continue;
@@ -600,15 +580,15 @@ pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want:
     n.* = 0;
     for (m.foes[0..m.nfoes]) |h| {
         if (h.kind != want or n.* >= out.len) continue;
-        // ON THE GROUND, which the map's own height field decides — a spawn table stores x/z only, so posting a foe on a sculpted rise and dropping it at y = 0 would bury it to the waist.
+        // ON THE GROUND: a spawn table stores x/z only, so a foe on a sculpted rise dropped at y = 0 is
+        // buried to the waist.
         out[n.*] = T.spawn(v3(h.x, m.heightAt(h.x, h.z), h.z), mathx.radians(h.yaw), h.scale, h.seed);
         n.* += 1;
     }
 }
 
 /// …AND THE SAME RESET FOR A GROUP WHOSE MEMBERS ARE ROLES OF ONE CREATURE (the warband, the muster, the
-/// brood): its own `roleOf` says which role a map kind is, and `T.spawnAs` takes it. Three byte-identical
-/// copies of this body sat in kobold/warrior/brood.
+/// brood): its own `roleOf` says which role a map kind is, and `T.spawnAs` takes it.
 pub fn resetRoles(
     comptime T: type,
     comptime R: type,
@@ -671,8 +651,7 @@ pub fn soulsDropped(foes: anytype, per: u32) u32 {
 }
 
 /// …and the same for a group whose members are ROLES OF ONE CREATURE, where the payout is the MEMBER'S
-/// (`soulValue`) rather than one number for the kind. Three byte-identical copies of this body sat in
-/// kobold/brood/warrior — the one-line-delegate rule `resetGroup`/`drawGroup` already give the rest.
+/// (`soulValue`) rather than one number for the kind.
 pub fn soulsEach(foes: anytype) u32 {
     var n: u32 = 0;
     for (foes) |*f| {
@@ -717,7 +696,8 @@ pub const Blade = struct {
     a0: rl.Vector3 = mathx.zero3,
     b0: rl.Vector3 = mathx.zero3,
     hit: combat.Hit = .{}, // HP/poise/stance the swing deals (light vs heavy, set by game.zig)
-    /// A PROJECTILE, NOT A SWING: one of the player's own, presented as the segment it crossed this frame so it goes through the same `strike` and gets each creature's own reactions.
+    /// A PROJECTILE, NOT A SWING: presented as the segment it crossed this frame so it goes through the
+    /// same `strike` and gets each creature's own reactions.
     pierce: bool = false,
     /// WHOSE BLADE THIS IS. Defaults to the hero, so every existing site — his sword, his shafts, his bolts —
     /// says what it always said by saying nothing. A spirit's jaws set it (`wolf.blade`), and that is the
@@ -725,14 +705,10 @@ pub const Blade = struct {
     by: Victim = .hero,
 };
 
-// ===========================================================================================================
 // THREAT — WHO A CREATURE IS ACTUALLY FIGHTING
-// ===========================================================================================================
 //
 // **ONE TABLE PER CREATURE, and it is the creature's own field** (`Leash`'s law, and `Root`'s: cross-cutting
-// state is EMBEDDED by the creature and STAMPED by the game — the creature reads it and never reaches out for
-// the field). Before this there was nothing to decide: `hero` was the target because he was the only body in
-// the world that could be one.
+// state is EMBEDDED by the creature and STAMPED by the game).
 //
 // The model is Elden Ring's, which is a threat table with a decay on it:
 //
@@ -846,9 +822,8 @@ pub const Threat = struct {
 pub const Blow = struct {
     hit: combat.Hit,
     from: rl.Vector3, // the attacker's own `pos`, in world space
-    /// WHO IT WAS SWUNG AT. A creature aiming at the spirit must not have its blow land on the hero standing
-    /// somewhere else — as a bare hit-plus-position the group fold had no way to say, and every blow on the
-    /// field was the player's problem by construction.
+    /// WHO IT WAS SWUNG AT — a creature aiming at the spirit must not have its blow land on the hero
+    /// standing somewhere else.
     on: Victim = .hero,
 };
 
@@ -939,11 +914,9 @@ test "WITH NO SPIRIT ON THE FIELD it is the hero, exactly as it always was" {
     try std.testing.expectEqual(hero.x, t.aim(hero).x); // and `aim` is a pass-through
 }
 
-/// HOW MANY BLOWS A CREATURE'S OWN BOARDS HAVE EATEN — zero for everything that carries none. `hits` is the
-/// honest edge for a body that TOOK a blow, and a block is deliberately not one (`warrior.caught` bills the
-/// guard and leaves the count alone), so a shaft stopped on a shield came back from `pierceGroup` as a MISS:
-/// it was never spent, it flew on through the man who caught it, and it landed in whatever stood behind him —
-/// billing his guard again on the way out. Keyed off `@hasDecl` like every other optional half of the contract.
+/// HOW MANY BLOWS A CREATURE'S OWN BOARDS HAVE EATEN — zero for everything that carries none. `hits` counts
+/// a body that TOOK a blow and a block deliberately is not one, so without this a shaft stopped on a shield
+/// came back from `pierceGroup` as a MISS and flew on through the man who caught it.
 fn blocksOf(f: anytype) u32 {
     if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "blocksTaken")) return f.blocksTaken();
     return 0;
@@ -985,7 +958,8 @@ pub fn strike(vit: *combat.Vitals, hitLatch: *bool, center: rl.Vector3, hurtR: f
     if (!blade.pierce) hitLatch.* = true;
     // The blow reads at the wound: blood/knockback fly along the blade's sweep at the contact.
     const contact = if (hit1) q1 else q0;
-    // A SHAFT'S OWN LENGTH *IS* ITS TRAVEL (`a`→`b` is this frame's segment), where a swing's sweep is the difference between two FRAMES of blade — which for a shaft subtracts to zero and used to fall through to "contact toward centre", i.e. square across the shaft.
+    // A SHAFT'S OWN LENGTH *IS* ITS TRAVEL, where a swing's sweep is the difference between two FRAMES of
+    // blade — which for a shaft subtracts to zero and falls through to "contact toward centre".
     var sweep = if (blade.pierce)
         mathx.subV(blade.b, blade.a)
     else
@@ -1047,7 +1021,7 @@ test "THE LEASH: a foe drawn far from home walks back once the fight has gone qu
     var t: f32 = 0;
     while (t < LEASH_CALM + 0.1) : (t += 1.0 / 60.0) l.tick(1.0 / 60.0, far, gone, aggro);
     try std.testing.expect(l.goingHome());
-    // THE HYSTERESIS: back inside the tether is NOT "home" — it keeps walking until it is actually there, so a foe hovering at the boundary cannot flap between chasing and returning every other frame.
+    // THE HYSTERESIS: back inside the tether is NOT "home" — it walks until it is actually there.
     l.tick(1.0 / 60.0, leashR(aggro) - 1.0, gone, aggro);
     try std.testing.expect(l.goingHome());
     l.tick(1.0 / 60.0, LEASH_HOME_R - 0.5, gone, aggro);
@@ -1061,10 +1035,8 @@ test "THE LEASH: a foe drawn far from home walks back once the fight has gone qu
 test "IT NEVER TURNS ROUND WHILE HE IS STILL IN ITS PATCH, and walking back in ends the walk home" {
     const aggro: f32 = 20.0;
     const far = leashR(aggro) + 8.0;
-    // The hero standing deep in the ground it guards, and neither side has landed a blow in a while: it
-    // fights on, wherever the creature itself has wandered to. THE PATCH IS A PLACE, not a separation —
-    // asked as the gap between the two bodies this clause wanted the hero to out-run it by a full 20 m,
-    // and the creature walked the whole way while that gap opened.
+    // The hero standing deep in the ground it guards, neither side having landed a blow: it fights on.
+    // THE PATCH IS A PLACE, not a separation.
     var toe = Leash{};
     var t: f32 = 0;
     while (t < LEASH_CALM * 3.0) : (t += 1.0 / 60.0) toe.tick(1.0 / 60.0, far, 1.2, aggro);
@@ -1163,7 +1135,7 @@ test "NOTHING NOTICES WHAT IT CANNOT SEE, and it keeps at him a while after it l
 test "the leash constants say what the rule is" {
     // Start FAR, stop NEAR — the gap between them IS the debounce, and a zero gap is the flapping.
     try std.testing.expect(LEASH_HOME_R < LEASH_SLACK);
-    // …and the slack is POSITIVE whatever the creature, or a tether comes out shorter than the ring it was derived from and turns its owner for home mid-stare.
+    // …and the slack is POSITIVE whatever the creature, or a tether comes out shorter than its own ring.
     try std.testing.expect(LEASH_SLACK > 0 and leashR(11.0) > 11.0);
     try std.testing.expect(PROVOKE_BREAK > PROVOKE_PER_HIT);
     try std.testing.expect(PROVOKE_ROUSE > LEASH_CALM * 2.0);

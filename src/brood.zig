@@ -205,7 +205,8 @@ const SAC_HP = 18.0;
 const SAC_R = 0.44; // the drawn radius…
 /// …and a FATTER one to hit, deliberately.
 const SAC_HURT_R = 0.62;
-/// SECONDS OF VISIBLE SWELLING BEFORE IT SPLITS — long (owner's call), because the whole point of a sac is that it is a problem you can go and solve, and six seconds was not enough time to decide to.
+/// SECONDS OF VISIBLE SWELLING BEFORE IT SPLITS — long (owner's call): a sac is a problem you can go and
+/// solve, and six seconds was not enough time to decide to.
 pub const SAC_HATCH = 11.5;
 const SAC_BURST_DUR = 0.55;
 const SAC_PULSE_HZ = 1.6;
@@ -340,7 +341,8 @@ fn rideDropSkin(sk: Skin) f32 {
 fn rideDrop(r: Role) f32 {
     return rideDropSkin(skinOf(r));
 }
-/// Where a flipped corpse's back finds the ground (author units): the standing crown, mirrored about the BODY_Y roll hinge, less the ride the legs no longer provide.
+/// Where a flipped corpse's back finds the ground (author units): the standing crown, mirrored about the
+/// `BODY_Y` roll hinge, less the ride the legs no longer provide.
 fn deadRest(sk: Skin) f32 {
     const crown: f32 = if (sk.matron) 1.05 else 1.02; // a hatchling rests on its slung abdomen, higher than its carapace
     return rideDropSkin(sk) - (2.0 * BODY_Y - crown);
@@ -866,7 +868,8 @@ pub const Sac = struct {
             return false;
         }
         self.flash = mathx.maxF(0, self.flash - dt);
-        // A SAC IS A TARGET, so its vitals run like every other target's — `sinceHurt` is what the floating HP bar is gated on, and left frozen at 0 the bar never goes away again.
+        // A SAC IS A TARGET, so its vitals run like every other target's: `sinceHurt` gates the floating
+        // HP bar, and left frozen at 0 the bar never goes away again.
         self.vit.tick(dt);
         self.t += dt;
         foe.tickParticles(&self.parts, dt, self.pos.y);
@@ -1258,7 +1261,8 @@ pub const Spider = struct {
     fn windupDur(self: *const Spider) f32 {
         return if (self.throwing) SPIT_WINDUP else BITE_WINDUP;
     }
-    /// PER ROLE, like every other duration here: `resolveRecover` scales its pose to this, so a broodling given the mother's window plays half a recovery and then snaps to idle.
+    /// PER ROLE, like every other duration here: `resolveRecover` scales its pose to this, so a broodling
+    /// given the mother's window plays half a recovery and then snaps to idle.
     fn recoverDur(self: *const Spider) f32 {
         if (self.role == .broodling) return B_BITE_RECOVER;
         return if (self.throwing) SPIT_RECOVER else BITE_RECOVER;
@@ -1618,7 +1622,8 @@ pub const Spider = struct {
     }
 
 
-    /// `dt`, NOT a baked 1/60: every `approach` here is a rate per SECOND, so a fixed step makes the settle twice as fast on a 120 Hz machine as on a 60 Hz one — the same class of bug the FEEL RULES ban for input, and it is just as visible on a creature easing back to rest.
+    /// `dt`, NOT a baked 1/60: every `approach` here is a rate per SECOND, so a fixed step settles twice as
+    /// fast on a 120 Hz machine as on a 60 Hz one.
     fn resolveIdle(self: *Spider, dt: f32) void {
         const breathe = mathx.sinf(self.elapsed * 1.3 + self.seed * 6.0);
         self.crouch = -IDLE_BOB * breathe;
@@ -1772,9 +1777,11 @@ pub const Spider = struct {
     pub fn pose(self: *Spider) void {
         const fs = self.scale * (1.0 - 0.8 * self.fade);
         const sink = -0.24 * self.scale * self.fade;
-        // The BODY rides up and down on its legs (`crouch`) and tips its front up (`rear`) — the legs are placed off the same frame, so the whole animal squats over feet that stay where they were put.
+        // The BODY rides up and down on its legs (`crouch`) and tips its front up (`rear`) — the legs are
+        // placed off the same frame, so the animal squats over feet that stay where they were put.
         const bodyDrop = -self.crouch * 0.30;
-        // …and the whole animal rides at whatever its own leg length can hold it at (see `rideDrop`), in WORLD units because the frame's translate happens after the scale.
+        // …and the animal rides at whatever its own leg length holds it at (see `rideDrop`), in WORLD units
+        // because the frame's translate happens after the scale.
         const ride = self.pos.y + self.lift + sink + self.settle - rideDrop(self.role) * fs;
         // The death KEEL: a barrel roll about the body's own long axis, hinged at BODY_Y, so the trunk spins in place and the legs sweep overhead. rz(0) makes it the exact identity — no living pose moves.
         const keel = mul3(tr(0, -BODY_Y, 0), rz(self.roll), tr(0, BODY_Y, 0));
@@ -1870,7 +1877,9 @@ pub const Brood = struct {
     pub fn liveSacsConst(self: *const Brood) []const Sac {
         return self.sacs[0..self.nsacs];
     }
-    /// THE SECOND LIST, under the foe standard's own name: everything this group keeps on the field BESIDES its members, and which is still a target. `game.eachTarget` asks for this decl and nothing else, so the lock-on, the melee mark, the aim ray and the HP bars all see the clutch without any of them naming the brood.
+    /// THE SECOND LIST, under the foe standard's own name: everything this group keeps on the field besides
+    /// its members and is still a target. `game.eachTarget` asks for this decl and nothing else, so nothing
+    /// downstream has to name the brood.
     pub fn liveExtraConst(self: *const Brood) []const Sac {
         return self.liveSacsConst();
     }

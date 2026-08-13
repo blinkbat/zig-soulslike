@@ -52,7 +52,7 @@ const NEW_ZONE_DENSITY: f32 = 0.7;
 /// How near the cursor has to be to a foe spawn to count as ON it.
 const FOE_PICK_R: f32 = 1.6;
 
-// File scope: a Map measures ~477 KB, so 24 of them is ~11.2 MB — BSS, not inside Game and not on an allocator this codebase avoids.
+// File scope: a Map is ~477 KB, so 24 of them is ~11.2 MB — BSS, not inside Game and not on an allocator.
 var undoRing: [UNDO_CAP]wf.Map = undefined;
 var undoBase: usize = 0; // ring slot of the OLDEST live snapshot
 var undoN: usize = 0; // how many snapshots are live
@@ -307,13 +307,15 @@ const InteractBrush = enum { stamp, erase };
 const UnitBrush = enum { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, erase };
 
 comptime {
-    // Every brush enum pinned to the table it indexes, case-insensitively so "Erase"/"Zone" read the way a button should while the tag stays Zig-shaped.
+    // Every brush enum pinned to the table it indexes, case-insensitively so "Erase"/"Zone" read the way a
+    // button should while the tag stays Zig-shaped.
     pinBrushes(CoverBrush, &coverBrushes);
     pinBrushes(DecorBrush, &decorBrushes);
     pinBrushes(PropBrush, &propBrushes);
     pinBrushes(InteractBrush, &interactBrushes);
     pinBrushes(GroundBrush, &groundBrushes);
-    // UNITS pin to `wf.FoeKind` itself instead: their labels are the foes' real NAMES (`wf.foeName`), so a label-to-tag compare would only assert that "Giant Toad" is spelled "toad".
+    // UNITS pin to `wf.FoeKind` itself: their labels are the foes' real NAMES, so a label-to-tag compare
+    // would only assert that "Giant Toad" is spelled "toad".
     const foeFields = @typeInfo(wf.FoeKind).@"enum".fields;
     const unitFields = @typeInfo(UnitBrush).@"enum".fields;
     if (unitFields.len != foeFields.len + 1) @compileError("editor: UnitBrush is not the foe kinds plus an eraser");
@@ -345,7 +347,8 @@ fn pinBrushes(comptime E: type, comptime names: []const [:0]const u8) void {
     if (!std.mem.eql(u8, fields[fields.len - 1].name, "erase")) @compileError("editor: " ++ @typeName(E) ++ " must end in `erase`");
 }
 
-// THE KIND PALETTES live in props.zig beside the INFO table they derive from — the object viewer needs the same lists, and a second copy is how a fern ends up on two different shelves.
+// THE KIND PALETTES live in props.zig beside the INFO table they derive from — the object viewer needs the
+// same lists, and a second copy is how a fern ends up on two different shelves.
 const floraKinds = props.FLORA_KINDS;
 const solidKinds = props.SOLID_KINDS;
 const interactKinds = props.INTERACT_KINDS;
@@ -414,9 +417,9 @@ const JUKE_H: i32 = 560;
 const JUKE_LIST_W: i32 = 300;
 const JUKE_LIST_H: i32 = JUKE_H - 150;
 
-/// DIALOG CHROME, one set for every modal: the inset from a box edge to its content, a footer button's height,
-/// and the drop from the box's own BOTTOM edge to that footer row. Each dialog used to re-spell its own height
-/// at the footer (`box.y + 170 - 44`) — `ModalBox` carries `h`, so read it.
+/// DIALOG CHROME, one set for every modal: the inset from a box edge to its content, a footer button's
+/// height, and the drop from the box's own BOTTOM edge to that footer row. `ModalBox` carries `h` — read
+/// it rather than re-spelling a dialog's height at the footer.
 const DLG_PAD: i32 = 24;
 const DLG_BTN_H: i32 = 28;
 const DLG_FOOT: i32 = 44;
@@ -468,7 +471,6 @@ fn translateOp(o: *wf.Op, dx: f32, dz: f32) void {
     }
 }
 
-/// Can this op be copied, moved or deleted?
 fn isMovable(o: *const wf.Op) bool {
     return o.op != .cover and o.op != .edge;
 }
@@ -482,7 +484,6 @@ fn eraseMiss(l: Layer) [:0]const u8 {
     };
 }
 
-/// A held erase stroke.
 const Wipe = struct {
     on: bool = false,
     at: rl.Vector3 = mathx.zero3, // ground point of the last removal, for the travel gate
@@ -554,7 +555,7 @@ pub const Editor = struct {
     hover: Hover = .none,
     /// …and whether `hover` was actually RESOLVED this frame, as opposed to left at `.none` because nothing
     /// asked. A pick reuses a live one: the op-layer sweep is a ray against every prop in the world, and a
-    /// click used to pay for three of them (the hover, the marked-set test, and the take).
+    /// click would otherwise pay for three of them.
     hoverLive: bool = false,
     moving: bool = false, // dragging the marked set bodily
     moveFrom: rl.Vector3 = mathx.zero3,
@@ -721,8 +722,8 @@ pub const Editor = struct {
     }
 
     /// THE ONE WAY TO CHANGE LAYER, and IT REFUSES MID-GESTURE (the armament law): a shape drag reads the
-    /// layer at its RELEASE (`commitDrag`), so Tab between the press and the release committed a Props drag as
-    /// a Decor op, or dropped it silently. What starts is what lands.
+    /// layer at its RELEASE (`commitDrag`), so Tab between press and release commits a Props drag as a
+    /// Decor op, or drops it silently. What starts is what lands.
     ///
     pub fn setLayer(self: *Editor, l: Layer) void {
         if (self.dragging or self.painting or self.wipe.on) return;
@@ -738,7 +739,7 @@ pub const Editor = struct {
         return v3(mathx.sinf(self.yaw) * cp, mathx.sinf(self.pitch), mathx.cosf(self.yaw) * cp);
     }
 
-    // Screen-right = cross(forward, up), which for this codebase's convention (looking +Z at yaw 0) is world −X, matching camera.rightXZ's invariant.
+    // Screen-right = cross(forward, up), which looking +Z at yaw 0 is world −X — `camera.rightXZ`'s invariant.
     fn right(self: *const Editor) rl.Vector3 {
         const f = self.forward();
         return mathx.normV(v3(-f.z, 0, f.x));
@@ -772,9 +773,8 @@ pub const Editor = struct {
             self.dist = mathx.clampF(self.dist * (1.0 - wheel * 0.12), 2.0, 420.0);
         }
 
-        // WASD and the ARROWS pan, same as dragging — but NOT under Ctrl, whose shortcuts share those very
-        // letters, so Ctrl+S drove the camera backwards while it saved and Ctrl+A slid it left. And not
-        // while the zone name field is focused: typing a name is not a request to drive.
+        // WASD and the ARROWS pan — but NOT under Ctrl, whose shortcuts share those letters, and not while
+        // the zone name field is focused: typing a name is not a request to drive.
         if (!ctrl and !self.textFocus) {
             const step = self.dist * 0.02;
             const gf = self.groundForward();
@@ -804,9 +804,9 @@ pub const Editor = struct {
         self.resolveCursor(); // the eye moved mid-frame; everything downstream wants the point under it NOW
     }
 
-    /// Where the cursor meets the ground, as resolved for THIS frame. `env.rayGround` is a MARCH over the height
-    /// lattice — on a sculpted map a ray that never lands walks `4 × GROUND_HALF` at half a lattice step, some
-    /// 1600 bilinear samples — and five sites ask it a frame. The pointer cannot move inside a frame.
+    /// Where the cursor meets the ground, as resolved for THIS frame. `env.rayGround` is a MARCH over the
+    /// height lattice — a ray that never lands walks some 1600 bilinear samples — and five sites ask it a
+    /// frame. The pointer cannot move inside a frame.
     pub fn groundAt(self: *const Editor) ?rl.Vector3 {
         return self.cursor;
     }
@@ -833,7 +833,8 @@ pub const Editor = struct {
         return p;
     }
 
-    /// The ground's height at a world XZ — the editor's own thin wrapper, so a null world (a headless harness, a first frame) answers with the flat datum instead of needing a check at every use.
+    /// A null world (a headless harness, a first frame) answers with the flat datum rather than needing a
+    /// check at every use.
     pub fn groundHeight(self: *const Editor, x: f32, z: f32) f32 {
         if (self.world) |w| return w.groundAt(x, z);
         return envmod.groundY();
@@ -900,7 +901,6 @@ pub const Editor = struct {
         self.focusOn(m, i);
     }
 
-    /// Marquee + Open, for the shot harness — the same entry points a drag and Ctrl+O reach.
     pub fn selectForShot(self: *Editor, m: *const wf.Map, a: rl.Vector3, b: rl.Vector3) void {
         self.marqueeSelect(m, a, b);
     }
@@ -973,7 +973,8 @@ pub const Editor = struct {
         self.lookAtGround(c.x, c.z, span);
     }
 
-    // Frame a patch of ground `span` across, capped well inside the haze — framing a 250 m belt by its full extent puts the eye so far back that every prop is past its own view distance and all you get is fog with markers in it.
+    // Capped well inside the haze: framing a 250 m belt by its full extent puts the eye so far back that
+    // every prop is past its own view distance and all you get is fog with markers in it.
     fn lookAtGround(self: *Editor, cx: f32, cz: f32, span: f32) void {
         self.dist = mathx.clampF(span * 0.8 + 12, 14, 150);
         self.pitch = if (span > 90) -1.05 else -0.72;
@@ -1123,12 +1124,9 @@ pub const Editor = struct {
             }
             if (rl.isKeyPressed(.left_bracket)) self.radius = mathx.clampF(self.radius - 1, 1, 60);
             if (rl.isKeyPressed(.right_bracket)) self.radius = mathx.clampF(self.radius + 1, 1, 60);
-            // THE WORLD CLOCK, on `,` and `.` — held with Shift for whole hours. AN AUTHORING TOOL WANTS TO SEE
-            // ITS WORK UNDER EVERY LIGHT: a belt of trees that reads at the golden hour can be a black wall at
-            // dusk, and until now the editor had exactly one sun to judge against. REPEATING (`isKeyDown`, not
-            // `isKeyPressed`), because sweeping the day is the gesture — a tap at a time is a control you fight.
-            // The clock is HELD in the editor (`game`'s own tick skips it there), so this is the only thing that
-            // moves it: what you set is what the next frame is lit by, and it stays.
+            // THE WORLD CLOCK, on `,` and `.`, held with Shift for whole hours: a belt of trees that reads
+            // at the golden hour can be a black wall at dusk. REPEATING (`isKeyDown`), because sweeping the
+            // day is the gesture. The clock is HELD in the editor, so this is the only thing that moves it.
             {
                 const fast = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
                 const rate: f32 = if (fast) EDIT_HOUR_FAST else EDIT_HOUR_RATE;
@@ -1172,14 +1170,17 @@ pub const Editor = struct {
         if (self.rebuildT >= REBUILD_QUIET) self.rebuild(m, env);
     }
 
-    /// Deliberately does NOT rebuild — `tickRebuild`'s quiet window owns that, or one stepper click re-materializes 17k props before the next can register. Paths that need the world current NOW call `flushRebuild`.
+    /// Deliberately does NOT rebuild — `tickRebuild`'s quiet window owns that, or one stepper click
+    /// re-materializes 17k props before the next can register. Paths needing the world NOW call
+    /// `flushRebuild`.
     fn endGesture(self: *Editor, _: *const wf.Map, _: *envmod.Env) void {
         self.editing = false;
     }
 
-    /// For the paths about to READ the materialized world (leaving, a playtest) rather than draw one more frame
-    /// of it. NOT a save: the MAP is written the moment a widget moves, and only `env` lags behind it. A LIVE
-    /// STROKE COUNTS — Esc and F5 are read before the mouse, so a sculpt still under the button had only its MESH rebuilt, and leaving without settling it plays a world whose props stand at the old heights.
+    /// For the paths about to READ the materialized world (leaving, a playtest) rather than draw one more
+    /// frame of it. NOT a save: the MAP is written the moment a widget moves, and only `env` lags behind.
+    /// A LIVE STROKE COUNTS — Esc and F5 are read before the mouse, so a sculpt still under the button has
+    /// had only its MESH rebuilt, and leaving unsettled plays a world whose props stand at the old heights.
     pub fn flushRebuild(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
         if (self.painting) self.endPaint(m, env);
         if (self.rebuildDue) self.rebuild(m, env);
@@ -1382,7 +1383,7 @@ pub const Editor = struct {
             }
             return;
         }
-        // A live drag just tracks the cursor; the COMMIT is handled at the top of this function, where the release lands whatever branch is live this frame.
+        // A live drag just tracks the cursor; the COMMIT is at the top of this function.
         if (self.dragging) {
             if (ground) |g| self.dragTo = g;
         }
@@ -1418,8 +1419,8 @@ pub const Editor = struct {
 
     fn overMarked(self: *Editor, m: *wf.Map, env: *envmod.Env) bool {
         if (self.layer == .units) {
-            // ANY marked spawn in reach, not the nearest one: a marked set is dragged as a body, so brushing the
-            // edge of it takes hold even where an unmarked neighbour happens to sit a hair closer.
+            // ANY marked spawn in reach, not the nearest: a marked set is dragged as a body, so brushing
+            // its edge takes hold even where an unmarked neighbour sits a hair closer.
             const g = self.groundAt() orelse return false;
             for (self.marked[0..self.nMarked]) |i| {
                 if (i >= m.nfoes) continue;
@@ -1442,7 +1443,6 @@ pub const Editor = struct {
         return self.hoverInLayer(m, env);
     }
 
-    /// Pick something in the ACTIVE layer only.
     fn hoverInLayer(self: *Editor, m: *wf.Map, env: *envmod.Env) Hover {
         if (self.layer.opLayer()) {
             const ray = self.cursorRay();
@@ -1466,7 +1466,6 @@ pub const Editor = struct {
         return .none;
     }
 
-    /// TAKE what the cursor is over.
     fn pickInLayer(self: *Editor, m: *wf.Map, env: *envmod.Env) bool {
         switch (self.underCursor(m, env)) {
             .prop => |pi| {
@@ -1552,8 +1551,8 @@ pub const Editor = struct {
 
         var o = wf.defaults(.at);
         o.kind = self.kindForLayer();
-        // EXHAUSTIVE OVER THE LAYER, not an if/else whose tail means "props": the brush index is cast straight
-        // to that layer's own brush enum, so a seventh layer falling through here is an out-of-range cast.
+        // EXHAUSTIVE OVER THE LAYER, not an if/else whose tail means "props": the brush index is cast
+        // straight to that layer's brush enum, so a seventh layer falling through is an out-of-range cast.
         switch (self.layer) {
             .ground, .units => return, // neither reaches commitDrag — see worldMouse
             .cover => unreachable, // handled and returned above
@@ -1643,7 +1642,8 @@ pub const Editor = struct {
         self.sayFmt("+{s} {s} #{d}", .{ @tagName(o.op), @tagName(o.kind), at });
     }
 
-    /// Square metres of ground one scattered instance is worth when the editor sizes a fresh belt or disc from the box you dragged.
+    /// Square metres of ground one scattered instance is worth, when a fresh belt or disc is sized from the
+    /// box you dragged.
     const AREA_PER_INSTANCE: f32 = 9.0;
     /// Instance count a fresh belt or disc is clamped into.
     const FRESH_N_LO: f32 = 4;
@@ -1651,9 +1651,8 @@ pub const Editor = struct {
     const MIN_CLEARING_R: f32 = 2.0;
     const MIN_BRUSH_R: f32 = 1.0;
 
-    /// COUNT FOLLOWS THE AREA — so a big box is not sparse and a small one is not a mat. The rule, once: the
-    /// belt and the disc differ in how they MEASURE their ground, never in what that ground is worth, and as a
-    /// line apiece the third op shape would have been a third copy of the same three constants.
+    /// COUNT FOLLOWS THE AREA — so a big box is not sparse and a small one is not a mat. The belt and the
+    /// disc differ in how they MEASURE their ground, never in what that ground is worth.
     fn countForArea(area: f32) i32 {
         return @intFromFloat(mathx.clampF(area / AREA_PER_INSTANCE, FRESH_N_LO, FRESH_N_HI));
     }
@@ -1721,7 +1720,7 @@ pub const Editor = struct {
         if (self.eraseAt(m, env, g)) {
             self.wipe.n += 1;
         } else if (first) {
-            // Said on the stroke's FIRST frame only — a sweep across empty ground would otherwise strobe the status line with a miss every eighth of a second.
+            // The stroke's FIRST frame only, or a sweep across empty ground strobes the status line.
             self.say(eraseMiss(self.layer));
         }
     }
@@ -2162,10 +2161,9 @@ pub const Editor = struct {
         if (self.sel) |s| {
             if (s < m.nops and self.layer.opLayer()) {
                 drawOpGizmo(&m.ops[s], y);
-                // MEASURED AND LEFT: a whole-list walk (~17k props, ~1 MB touched) every frame something is
-                // selected, to find the few hundred one op owns. `materialize` appends in op order, so a binary
-                // search would find the run in ~14 steps — but that buys a gizmo pass a dependence on the
-                // placer's append order, and the frame already walks this list four other times.
+                // MEASURED AND LEFT: a whole-list walk (~17k props, ~1 MB) every frame something is
+                // selected. A binary search over `materialize`'s op order would find the run in ~14 steps,
+                // but that buys the gizmo pass a dependence on the placer's append order.
                 for (env.props[0..env.nprops]) |pr| {
                     if (pr.op != s) continue;
                     self.selOwned += 1;
@@ -2623,7 +2621,7 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
             if (k == cur) selIdx = i;
         }
         const listH = @max(0, sh - y - STATUS_H - 8);
-        // THE PALETTE ARMS THE BRUSH, and that is ALL it does (owner's call): a click in a chooser must not edit the document.
+        // THE PALETTE ARMS THE BRUSH and nothing else (owner's call): a chooser must not edit the document.
         if (ui.list(ctx, ui.rect(8, y, SIDE_W - 16, listH), labels[0..n], selIdx, &ed.kindScroll)) |i| {
             ed.kindSlot().* = kinds[i];
         }
@@ -2654,13 +2652,10 @@ fn spanRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
     return ch;
 }
 
-/// THE DENSITY GRADIENT a scatter can carry (`Op.gAxis`/`gA`/`gB`/`gFloor`) — acceptance ramps from `gFloor`
-/// to 1 as the chosen axis runs `gA` → `gB`. It has been in the FORMAT and in `env.Placer` since the belts
-/// were written and had NO control at all: a hand-edited map round-tripped its gradient untouched while the
-/// editor showed nothing, so the feature existed only for people editing text.
-///
-/// The axis chips come FIRST and the rest only appear once one is picked — three numbers that do nothing
-/// are worse than no rows at all, and `.none` is the off switch the format already had.
+/// THE DENSITY GRADIENT a scatter can carry (`Op.gAxis`/`gA`/`gB`/`gFloor`) — acceptance ramps from
+/// `gFloor` to 1 as the chosen axis runs `gA` → `gB`. The axis chips come FIRST and the rest appear only
+/// once one is picked: three numbers that do nothing are worse than no rows, and `.none` is the format's
+/// own off switch.
 fn gradientRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
     var ch = false;
     hud.mono("density gradient", x, y.*, hud.MONO, ui.alpha(ui.TRIM, 220));
@@ -2723,11 +2718,9 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             _ = ui.slider(ctx, x, y, w, "opacity", &ed.soilOpacity, 0, 1);
             y += ROW_H + SLIDER_DROP;
         }
-        // **HOW THE STROKE ENDS** — a brush setting, so the same material lays a tiled courtyard and a torn
-        // scree without being two materials, and the same water is a built dock here and a bog there. Two
-        // rows of four rather than a cycling row: eight shapes you have to press through one at a time is
-        // eight presses to compare two of them. SHARED BY BOTH BRUSHES — the eight names ask the same eight
-        // questions of a floor and of a coastline, and `env.coastWarp` is where a shore answers them.
+        // **HOW THE STROKE ENDS** — a brush setting, so one material lays a tiled courtyard and a torn
+        // scree. Two rows of four rather than a cycling row, since eight shapes pressed through one at a
+        // time is eight presses to compare two. SHARED BY BOTH BRUSHES; `env.coastWarp` is the shore's half.
         if (!sculpting) {
             hud.mono(if (wet) "coast" else "edge", x, y, hud.MONO, ui.LABEL);
             y += ROW_H;
@@ -2773,7 +2766,8 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             }
             return;
         }
-        // A full scan of the armed brush's grid every frame (12,544 bytes soil / 50,176 water) to print one number — measured, and deliberately left.
+        // A full scan of the armed brush's grid every frame (12,544 bytes soil / 50,176 water) to print one
+        // number — measured, and deliberately left.
         var painted: usize = 0;
         if (wet) {
             for (m.water) |v| {
@@ -2866,7 +2860,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         hud.mono("ZONES", x, y, hud.MONO, ui.TITLE);
         y += ROW_H + 4;
         var changed = false;
-        // Snapshot BEFORE any slider runs, or the gesture banks post-edit densities and Ctrl+Z cannot take a zone edit back.
+        // Snapshot BEFORE any slider runs, or the gesture banks post-edit densities and Ctrl+Z is a no-op.
         var before: [wf.MAX_ZONES]f32 = undefined;
         for (m.zones[0..m.nzones], 0..) |*z, i| before[i] = z.density;
         for (m.zones[0..m.nzones], 0..) |*z, i| {
@@ -2882,7 +2876,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             y += ROW_H + SLIDER_DROP;
         }
         y += 6;
-        // THE NAME, for whichever zone is picked. Every zone the editor has ever made was called "new".
+        // THE NAME, for whichever zone is picked.
         if (ed.zoneSel) |zi| {
             if (zi < m.nzones) {
                 hud.mono("name", x, y, hud.MONO, ui.LABEL);
@@ -3099,9 +3093,8 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
     rl.drawRectangle(px, py, MINI_W - 8, MINI_W - 8, ui.col(18, 20, 14, 255));
 
     blitField(m.soil[0..], wf.SOIL_N, px, py, inner, null);
-    // `env.heightAny` IS `m.anyHeight()`, cached where the lattice is uploaded from. Asked of the map it is a
-    // 224x224 = 50 KB scan that does NOT early-exit on a flat world — twice a frame, for the whole time the
-    // editor is open, to answer a question `env` already has the answer to.
+    // `env.heightAny` IS `m.anyHeight()`, cached where the lattice is uploaded. Asked of the map it is a
+    // 224x224 = 50 KB scan with no early-out on a flat world, twice a frame for as long as the editor is up.
     if (env.heightAny) {
         const rCellPx = inner / @as(f32, @floatFromInt(RELIEF_N));
         for (0..RELIEF_N) |cz| {
@@ -3364,10 +3357,8 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
                 ed.modal = .none;
             }
         },
-        // WHAT GROWS IN A ZONE. The loot modal's own shape, and for the loot modal's reason: a WEIGHTED
-        // mix is a kind repeated, so "how many of this kind" is the only control it needs. Until now a new
-        // zone could only INHERIT its mix from whatever zone sat under its centre — there was no way to
-        // choose one at all, and every zone the editor made was called "new" into the bargain.
+        // WHAT GROWS IN A ZONE. The loot modal's own shape and for its reason: a WEIGHTED mix is a kind
+        // repeated, so "how many of this kind" is the only control it needs.
         .zonemix => {
             const rows: i32 = @intCast(props.FLORA_KINDS.len);
             const box = ui.beginModal(ctx, 470, LOOT_TOP + rows * LOOT_ROW_H + 8 + DLG_FOOT, "What grows here");
@@ -3411,9 +3402,8 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
                 ed.modal = .none;
             }
         },
-        // THE MAP ITSELF — the three things the format has always carried that nothing here could reach:
-        // how big the world is, where the runway lies, and the cliff rim (`edge`), which only `Map.blank`
-        // could ever create. Their own modal because none of them is a thing you place with a brush.
+        // THE MAP ITSELF: how big the world is, where the runway lies, and the cliff rim (`edge`), which
+        // only `Map.blank` could otherwise create. Their own modal — none is a thing you place with a brush.
         .world => {
             const box = ui.beginModal(ctx, WORLD_W, WORLD_H, "World");
             const x = box.x + DLG_PAD;
@@ -3468,8 +3458,8 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
             );
             y += hud.monoLineH(hud.MONO) + 6;
             if (ui.buttonTip(ctx, ui.rect(x, y, 190, 24), "Add cliff rim", hud.MONO, false, "A ring of cliffs round the world's edge - what a new map is given, and the one op no brush could make")) {
-                // THE CAP CHECK COMES BEFORE THE SNAPSHOT, like every other adding path: banking first cost an
-                // undo step and a dirty flag for an op that never landed.
+                // THE CAP CHECK COMES BEFORE THE SNAPSHOT, like every other adding path: banking first
+                // costs an undo step and a dirty flag for an op that never landed.
                 if (m.nops >= wf.MAX_OPS) {
                     ed.say(FULL_MSG);
                 } else {
@@ -3530,7 +3520,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
             else
                 "at the ear";
             hud.mono(ds, cx, cy, hud.MONO, ui.alpha(ui.LABEL, 170));
-            // THE FILTER RACK, third column — the game's debug menu used to own this and does not any more.
+            // THE FILTER RACK, third column.
             rackPanel(ed, ctx, box.x + JUKE_W - RACK_W - 20, box.y + 56);
 
             const by = box.y + box.h - DLG_FOOT;

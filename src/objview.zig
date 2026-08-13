@@ -79,7 +79,8 @@ const FIT: f32 = 2.05;
 
 const BACKDROP = mathx.rgba(52, 48, 40, 255);
 
-// The off-screen targets, at FIXED sizes and shared by every cell: the gallery blits the same texture once per cell, and a fixed size is what keeps a window resize from unloading and reloading a render texture mid-frame (which is a crash, not a hiccup).
+// The off-screen targets, at FIXED sizes and shared by every cell: a fixed size keeps a window resize from
+// unloading and reloading a render texture mid-frame, which is a crash and not a hiccup.
 const THUMB_W: i32 = 236;
 const THUMB_H: i32 = 198;
 const BIG_W: i32 = 1000;
@@ -538,7 +539,7 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
         }
     }
 
-    // …and now draw the page: a render/blit pair per cell, so twelve off-screen passes a frame, each one model over a ground quad at 236x198.
+    // A render/blit pair per cell — twelve off-screen passes a frame, one model over a ground quad at 236x198.
     i = start;
     while (i < end) : (i += 1) {
         const kind = list[i];

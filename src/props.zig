@@ -288,7 +288,8 @@ fn countOn(comptime s: Stock) usize {
 
 comptime {
     std.debug.assert(FLORA_KINDS.len + SOLID_KINDS.len + INTERACT_KINDS.len == NK);
-    // …and the two flags must not both be set, since `stock` resolves flora first and the kind would silently shelve as Decor.
+    // …and the two flags must not both be set: `stock` resolves flora first, so the kind would silently
+    // shelve as Decor.
     for (INFO) |row| std.debug.assert(!(row.interact and row.flora));
 }
 pub const Part = art.Part;
@@ -466,7 +467,8 @@ pub const INFO = [NK]Info{
     .{ .kind = .birch, .build = wood.birchMesh, .bound = 10.0, .top = 9.4, .view = 340, .parts = circleParts(0.44, 5.0), .occl = &.{ .{ .r = 0.55, .y1 = 3.9 }, .{ .r = 3.00, .y0 = 3.5, .y1 = 9.4 } }, .surf = .wood },
     // Barkless and bare to the top — the trunk is the whole of it.
     .{ .kind = .snag, .build = wood.snagMesh, .bound = 8.2, .top = 7.8, .view = 320, .parts = circleParts(0.42, 6.0), .occl = &.{.{ .r = 0.75, .y1 = 7.0 }}, .surf = .wood },
-    // A sapling CASTS (it is 3 m of tree, and a 3 m thing with no shadow reads as a decal) and so must not sway — the depth pass has no wind term.
+    // A sapling CASTS (3 m of tree with no shadow reads as a decal) and so must not sway — the depth pass
+    // has no wind term.
     .{ .kind = .sapling, .build = wood.saplingMesh, .bound = 3.8, .top = 3.4, .view = 220, .parts = circleParts(0.16, 2.2), .surf = .wood },
 };
 
@@ -493,7 +495,8 @@ comptime {
 }
 
 test "every kind row sits at its own index and carries a mesh builder" {
-    // The comptime block already asserts the index match; this pins the table's SHAPE so a half-added kind (enum extended, table not) fails as a test rather than at first draw.
+    // The comptime block asserts the index match; this pins the table's SHAPE, so a half-added kind (enum
+    // extended, table not) fails as a test rather than at first draw.
     try std.testing.expectEqual(@as(usize, NK), INFO.len);
     for (INFO) |row| try std.testing.expect(row.bound > 0 and row.view > 0);
 }

@@ -97,7 +97,7 @@ const RET_ALL_OFF = gfx.RETRO_COUNT + 5;
 const RET_CLOSE = gfx.RETRO_COUNT + 6;
 const RET_COUNT = RET_CLOSE + 1;
 
-// Slider feel: a TAP steps fine, Shift/LB-tap steps coarse, and HOLDING a direction glides continuously after a short delay — frame-rate-fine adjustment.
+// Slider feel: a TAP steps fine, Shift/LB-tap steps coarse, and HOLDING a direction glides after a delay.
 const ADJ_TAP: f32 = 0.01;
 const ADJ_COARSE: f32 = 0.10;
 const ADJ_GLIDE_DELAY: f32 = 0.35; // seconds held before the glide kicks in
@@ -147,7 +147,7 @@ const VEIL = rgba(6, 6, 9, 150);
 const BOOT_VEIL = rgba(5, 5, 8, 168);
 const CARD = rgba(16, 15, 13, 232);
 // THE INK IS `uiart`'s, not a second copy of it — that file's four weights exist so the menu card and the
-// character book cannot drift into two greys, and these three were byte-identical restatements of them.
+// character book cannot drift into two greys.
 const TEXT_DIM = uiart.TEXT_DIM;
 /// A row that cannot be pressed, at the character book's own inert weight rather than a fifth grey.
 const TEXT_OFF = mathx.withAlpha(uiart.TEXT_DIM, 70);
@@ -494,7 +494,7 @@ pub const Menu = struct {
         return .none;
     }
 
-    /// How far the adjust inputs want the value under the cursor to move THIS FRAME: a TAP steps fine, Shift/LB-tap steps coarse, and holding a direction glides continuously after a short delay.
+    /// How far the adjust inputs want the value under the cursor to move THIS FRAME.
     fn adjustDelta(self: *Menu, dt: f32) f32 {
         const step: f32 = if (coarseHeld()) ADJ_COARSE else ADJ_TAP;
         var d: f32 = 0;
@@ -745,7 +745,8 @@ pub const Menu = struct {
     }
 };
 
-/// The optional columns a card can carry: a GAUGE per row (the two slider screens), a footnote about whichever row the cursor is on, and which rows are UNAVAILABLE. A slice shorter than the row list simply leaves the tail bare, which is how Back gets no gauge.
+/// The optional columns a card can carry: a GAUGE per row, a footnote about the row the cursor is on, and
+/// which rows are UNAVAILABLE. A slice shorter than the row list leaves the tail bare.
 const Card = struct {
     gauges: ?[]const f32 = null,
     note: ?[:0]const u8 = null,
@@ -795,7 +796,6 @@ fn bootDim(shelf: *const savemod.Shelf) [BOOT_COUNT]bool {
     return out;
 }
 
-// ── the slot picker ─────────────────────────────────────────────────────────────────────────────────────
 
 /// THE PICTURE EACH SLOT IS SHOWN BY, held only while the picker is up. File-scope like `book.zig`'s
 /// portrait target and `objview.zig`'s two: a texture is chrome, and the menu owning one is not the menu

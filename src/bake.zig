@@ -410,7 +410,8 @@ fn theTarn(p: *Emit) void {
     _ = p.disc(&.{.willow}, lx, lz, 36.0, 46.0, 11, 0.85, 1.3);
     _ = p.disc(&.{ .reeds, .reeds, .cattails, .cattails }, lx, lz, 26.0, 54.0, 420, 0.9, 1.55);
 
-    // LILY PADS float ON the water, so they are the one scatter that must NOT avoid it — and they come in RAFTS from a rootstock, not sown evenly, so each raft is its own disc with the area-uniform bias that packs it toward its centre.
+    // LILY PADS float ON the water, so they are the one scatter that must NOT avoid it. They come in RAFTS
+    // off a rootstock rather than sown evenly, so each raft is its own disc with an area-uniform bias.
     var raft: i32 = 0;
     while (raft < 14) : (raft += 1) {
         const ra = p.rng.angle();

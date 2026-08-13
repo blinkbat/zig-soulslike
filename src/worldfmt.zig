@@ -178,8 +178,7 @@ pub const Zone = struct {
     pub fn label(self: *const Zone) []const u8 {
         return std.mem.sliceTo(&self.name, 0);
     }
-    /// `Map.setName`'s shape, one level down — the zone name was filled by hand at four sites, twice with
-    /// its length written as a literal (`@memcpy(z.name[0..3], "new")`).
+    /// `Map.setName`'s shape, one level down, so a name's length is never written as a literal.
     pub fn setName(self: *Zone, s: []const u8) void {
         self.name = [_]u8{0} ** NAME_CAP;
         const n = @min(s.len, NAME_CAP - 1);
@@ -187,9 +186,8 @@ pub const Zone = struct {
     }
 };
 
-/// A WEIGHTED KIND MIX, BOUNDED. Three live sites filled a `[MAX_MIX]Kind` with a bare indexed loop, so a
-/// mix literal grown past the cap writes past the array; the only bounded spelling lived in `bake.zig`, the
-/// one-way door nothing calls any more.
+/// A WEIGHTED KIND MIX, BOUNDED — a bare indexed loop over `[MAX_MIX]Kind` writes past the array the
+/// moment a mix literal outgrows the cap.
 pub fn setMix(dst: *[MAX_MIX]Kind, n: *u8, mix: []const Kind) void {
     const k = @min(mix.len, MAX_MIX);
     @memcpy(dst[0..k], mix[0..k]);
@@ -198,7 +196,9 @@ pub fn setMix(dst: *[MAX_MIX]Kind, n: *u8, mix: []const Kind) void {
 
 pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 
-/// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at comptime and `kobold.roleOf` / `brood.roleOf` / `warrior.roleOf` each read their own entries as a CONTIGUOUS RUN off the first of them, so inserting a kind in the middle silently renumbers all of it.
+/// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at
+/// comptime, and each `roleOf` reads its own entries as a CONTIGUOUS RUN off the first of them — so
+/// inserting a kind in the middle silently renumbers all of it.
 pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom };
 
 pub fn foeName(k: FoeKind) [:0]const u8 {
@@ -523,13 +523,12 @@ pub const Soil = enum(u8) {
     }
 };
 
-/// **HOW A PAINTED PATCH ENDS.** One authored property per CELL, beside its material and its coverage — not a
-/// property of the material, because six materials cannot carry eight shapes and the whole point is to lay a
+/// **HOW A PAINTED PATCH ENDS.** One authored property per CELL, beside its material and its coverage —
+/// not a property of the material, since six materials cannot carry eight shapes and the point is to lay a
 /// tiled courtyard and a torn scree of the same stone in one world.
 ///
-/// Three knobs make all of these and they were fused into one bool before: how far the lookup WANDERS off
-/// the authored line, at what WAVELENGTH it wanders, and whether the boundary CUTS or feathers. The bool
-/// only ever reached the last one, which is why nothing could produce a straight edge — see `shaders.zig`.
+/// Three knobs make all of these: how far the lookup WANDERS off the authored line, at what WAVELENGTH,
+/// and whether the boundary CUTS or feathers. See `shaders.zig`.
 pub const Edge = enum(u8) {
     /// One material dissolves into the next over metres. The gentlest thing here: no line at all.
     blend,
@@ -571,9 +570,8 @@ pub const Edge = enum(u8) {
 comptime {
     // The shader's soilColor() hard-codes ids 1..6 and falls through to moss.
     std.debug.assert(Soil.N == 7);
-    // …AND `shaders.zig`'s `edgeShape(e)` BRANCHES ON THESE ORDINALS, 0..7 in this order. The old assert
-    // pinned one bool to one id; this pins the whole table, because an inserted row would silently re-point
-    // every stroke in every map at the wrong shape.
+    // …AND `shaders.zig`'s `edgeShape(e)` BRANCHES ON THESE ORDINALS, 0..7 in this order: an inserted row
+    // would silently re-point every stroke in every map at the wrong shape.
     std.debug.assert(Edge.N == 8);
     std.debug.assert(@intFromEnum(Edge.blend) == 0);
     std.debug.assert(@intFromEnum(Edge.natural) == 1);
@@ -585,10 +583,9 @@ comptime {
     std.debug.assert(@intFromEnum(Edge.speckle) == 7);
 }
 
-/// **IS EVERY CELL'S EDGE THE ONE ITS MATERIAL WOULD HAVE CHOSEN** — what decides whether the grid is worth a
-/// row in the file, and the exact inverse of `fillLegacyEdges`. Written as one predicate so the writer and
-/// the loader cannot disagree about what "default" means; as a `!= .natural` test on the writer's side, every
-/// map with stone in it grew a full grid row saying what stone already says.
+/// **IS EVERY CELL'S EDGE THE ONE ITS MATERIAL WOULD HAVE CHOSEN** — what decides whether the grid is worth
+/// a row in the file, and the exact inverse of `fillLegacyEdges`. One predicate, so the writer and the
+/// loader cannot disagree about "default"; as a `!= .natural` test every map with stone in it grew a row.
 fn edgesAllDefault(m: *const Map) bool {
     for (m.soil, m.soilEdge) |id, e| {
         const want: u8 = @intFromEnum(@as(Soil, @enumFromInt(@min(id, Soil.N - 1))).defaultEdge());
@@ -628,10 +625,9 @@ fn brushFalloff(d: f32, radius: f32) f32 {
     return u * u * (3.0 - 2.0 * u);
 }
 
-/// THE ONE PAINTED-GRID SAMPLER — world position → cell index over an `n`-a-side grid spanning `-half..+half`,
-/// or null outside it. The soil grid, the water mask and `env`'s own copy of the water field each carried
-/// these six lines, and they had already drifted: two clamped on the way in and the third after the cast, so
-/// "the same rule" was written two ways for grids that differ only in `n`.
+/// THE ONE PAINTED-GRID SAMPLER — world position → cell index over an `n`-a-side grid spanning
+/// `-half..+half`, or null outside it. The soil grid, the water mask and `env`'s water field all read it,
+/// so where the clamp happens relative to the cast cannot be written two ways.
 pub fn gridIndex(half: f32, n: usize, px: f32, pz: f32) ?usize {
     if (half <= 0) return null;
     const t = (px + half) / (2 * half);
@@ -650,7 +646,8 @@ pub fn gridIndex(half: f32, n: usize, px: f32, pz: f32) ?usize {
 pub const WATER_N: usize = @intCast(gfx.WATER_N);
 pub const WATER_CELLS: usize = WATER_N * WATER_N;
 
-// The third painted grid, and the only one with a datum: one QUANTISED HEIGHT per lattice point, `HEIGHT_STEP` metres a step, biased so byte `HEIGHT_ZERO` is the old flat ground.
+// The third painted grid, and the only one with a datum: one QUANTISED HEIGHT per lattice point,
+// `HEIGHT_STEP` metres a step, biased so byte `HEIGHT_ZERO` is the old flat ground.
 pub const HEIGHT_N: usize = @intCast(gfx.HEIGHT_N);
 pub const HEIGHT_CELLS: usize = HEIGHT_N * HEIGHT_N;
 /// Metres per quantisation step.
@@ -768,10 +765,8 @@ pub const Map = struct {
     soilEdge: [SOIL_CELLS]u8 = [_]u8{@intFromEnum(Edge.natural)} ** SOIL_CELLS,
     /// The painted WATER MASK, same layout, 1 = wet.
     water: [WATER_CELLS]u8 = [_]u8{0} ** WATER_CELLS,
-    /// …AND HOW ITS COAST RUNS, one `Edge` per cell, painted with the water brush exactly as the soil's is.
-    /// Baked into the field by `env.uploadWater` and never read at draw time — see the note there: the water
-    /// field is the ONE field the sheet, the wet sand and the wading all read, so a coast shaped in the
-    /// shader would be a coast you can see in one place and walk into in another.
+    /// …AND HOW ITS COAST RUNS, one `Edge` per cell, painted with the water brush as the soil's is. Baked
+    /// into the field by `env.uploadWater` and never read at draw time — see the note there.
     waterEdge: [WATER_CELLS]u8 = [_]u8{@intFromEnum(Edge.natural)} ** WATER_CELLS,
     /// THE SCULPTED GROUND: one quantised height per lattice POINT (see the HEIGHT block above).
     height: [HEIGHT_CELLS]u8 = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS,
@@ -801,9 +796,8 @@ pub const Map = struct {
         self.height = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS;
     }
 
-    /// THE CLIFF RIM OP AND THE COVER SCATTER, minus their seeds. `blank` gives every new map both, and the
-    /// editor's World panel adds a replacement rim — so the four rim numbers and the three cover numbers were
-    /// each written out twice over here and in `editor.freshRim`, plus a third time in `bake.zig`.
+    /// THE CLIFF RIM OP AND THE COVER SCATTER, minus their seeds — `blank` gives every new map both, and
+    /// the editor's World panel adds a replacement rim off these same numbers.
     pub fn defaultRim() Op {
         var rim = defaults(.edge);
         rim.kind = .cliff;
@@ -952,9 +946,8 @@ pub const Map = struct {
         return found(self.timerNames[0..self.ntimers], name);
     }
 
-    /// IS THIS THE FALLBACK — the one `zoneAt` hands back for ground no rect contains. The editor inserts a new
-    /// zone at the FRONT and refuses to erase this one off the same rule, and as bare index arithmetic at both
-    /// of those sites the rule was a comment here and two `nzones` expressions there.
+    /// IS THIS THE FALLBACK — the one `zoneAt` hands back for ground no rect contains. The editor inserts a
+    /// new zone at the FRONT and refuses to erase this one off the same rule.
     pub fn isFallbackZone(self: *const Map, i: usize) bool {
         return self.nzones > 0 and i + 1 == self.nzones;
     }
@@ -1002,7 +995,8 @@ pub const Map = struct {
             var cx: usize = 0;
             while (cx < SOIL_N) : (cx += 1) {
                 const wx = -self.half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
-                // The COLUMN reject the row above already had: a stroke runs every frame the mouse moves, and without it every cell of every in-range row paid the full distance, the incumbent-material contest and a `covByte` round-trip to be told it was 100 m away.
+                // The COLUMN reject the row above already had: a stroke runs every frame the mouse moves,
+                // and without it every cell of an in-range row paid the full distance and the contest.
                 if (@abs(wx - px) > radius + cell) continue;
                 const dx = wx - px;
                 const dz = wz - pz;
@@ -1068,10 +1062,9 @@ pub const Map = struct {
                     self.water[i] = v;
                     changed = true;
                 }
-                // THE SHAPE GOES DOWN WHOLE, like the soil's and for its reason: half an edge is not an
-                // edge. Laid on every cell the stroke touches, wet or not — the coast of a lake runs
-                // through the DRY cells just outside it too, and the warp has to agree on both sides of
-                // the line or it tears where the two policies meet.
+                // THE SHAPE GOES DOWN WHOLE, like the soil's: half an edge is not an edge. Laid on every
+                // cell the stroke touches, wet or not — a lake's coast runs through the DRY cells just
+                // outside it, and the warp has to agree on both sides or it tears.
                 if (ev) |want| {
                     if (self.waterEdge[i] != want) {
                         self.waterEdge[i] = want;
@@ -1233,9 +1226,8 @@ pub fn write(m: *const Map, w: anytype) !void {
                 break;
             }
         }
-        // …and its EDGES, only when a stroke asked for something other than its material's own default.
-        // A map every one of whose strokes took the default writes no row and reads back identically
-        // through `fillLegacyEdges`, so adding this grid did not touch a single existing world file.
+        // …and its EDGES, only when a stroke asked for something other than its material's own default, so
+        // a map whose strokes all took the default writes no row and reads back through `fillLegacyEdges`.
         if (!edgesAllDefault(m)) try writeGrid(w, "soiledge", &m.soilEdge);
     }
     // …and the water mask the same way.
@@ -2207,8 +2199,7 @@ fn trim(s: []const u8) []const u8 {
 
 
 /// THE SMALLEST MAP THAT LOADS — a version, a zone and the `cover` op `parse` insists on. Lives here rather
-/// than in each script test's own file: three byte-identical copies of it sat in worldfmt/trigger/dialog, so a
-/// change to what a minimal map must carry broke two of them and nobody knew which.
+/// than in each script test's own file, so a change to what a minimal map must carry breaks one place.
 pub const TEST_HEAD =
     \\version: 1
     \\zone: plain -4000 -4000 4000 4000 0.7 grasstall

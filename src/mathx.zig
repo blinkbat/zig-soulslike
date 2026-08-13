@@ -191,7 +191,9 @@ pub fn mul3(a: rl.Matrix, b: rl.Matrix, c: rl.Matrix) rl.Matrix {
     return mul(mul(a, b), c);
 }
 
-/// Place a part authored at its own joint origin: rotate/scale (`anim`) about that origin, shift to the joint's rest offset in the parent frame, then into the parent's world. The non-bone rigs' counterpart to `hero.setJoint` — the toad and the spider each carried a byte-identical copy of it.
+/// Place a part authored at its own joint origin: rotate/scale (`anim`) about that origin, shift to the
+/// joint's rest offset in the parent frame, then into the parent's world. The non-bone rigs' counterpart
+/// to `hero.setJoint`.
 pub fn placeAt(off: rl.Vector3, anim: rl.Matrix, parent: rl.Matrix) rl.Matrix {
     return mul3(anim, tr(off.x, off.y, off.z), parent);
 }

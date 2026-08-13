@@ -21,7 +21,7 @@ pub const DRAG_PX: f32 = 4.0;
 pub const INK = rgba(10, 9, 8, 232);
 pub const PANEL_FILL = rgba(16, 15, 13, 235);
 // …and the two the editor shares with the game's own chrome, taken from `uiart` like `HOT` below rather
-// than restated: both were byte-identical to it, which is the drift that file exists to stop.
+// than restated — the drift that file exists to stop.
 pub const TRIM = uiart.GILT_DIM;
 pub const LABEL = uiart.TEXT_DIM;
 pub const VALUE = rgba(228, 216, 194, 255);

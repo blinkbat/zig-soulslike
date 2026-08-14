@@ -31,8 +31,17 @@ const STALK_DK = rgba(52, 44, 32, 255); // the skirt fold under the cap
 const MOUTH = rgba(10, 8, 7, 255);
 /// The spores: dry ochre dust with a violet cast — chaos, the brood's own element, in one hue family with
 /// the wand and the pools so a third purple in the world does not become a third substance.
-const SPORE = rgba(142, 120, 88, 205);
-const SPORE_VIO = rgba(112, 84, 128, 190);
+///
+/// **AND THE VIOLET DOES THE WORK, BECAUSE THE OCHRE IS THE GROUND'S OWN COLOUR** (the albedo rule, applied to
+/// a hazard rather than to a mesh). A warm dust hanging over warm turf separates on nothing — the first pass
+/// was invisible from ten metres and read as a smudge from two. The dust is lifted well clear of the turf in
+/// VALUE and the violet share raised past a third, so the cloud is told by the one colour in it the world
+/// outdoors has none of.
+const SPORE = rgba(192, 172, 136, 215);
+const SPORE_VIO = rgba(134, 92, 172, 210);
+/// How much of the cloud is the violet. Past a third, which is what makes it the colour you notice rather
+/// than a fleck through the ochre.
+const SPORE_VIO_SHARE: f32 = 0.48;
 
 /// Its own stature, cap-top off the ground. SQUAT (owner's word) — knee height on the hero.
 pub const H: f32 = 0.92;
@@ -574,7 +583,7 @@ pub const Shroom = struct {
                 self.fxRng.range(0.45, 0.7),
                 self.fxRng.range(0.05, 0.09),
                 self.fxRng.range(0.11, 0.17),
-                if (self.fxRng.float() < 0.3) SPORE_VIO else SPORE,
+                if (self.fxRng.float() < SPORE_VIO_SHARE) SPORE_VIO else SPORE,
                 0.6,
             );
         }
@@ -640,9 +649,24 @@ pub const Shroom = struct {
 };
 
 
-/// The cloud's own ring: peak emission 24/s against lives up to 1.4 s ≈ 34 in flight — at 26 the ring
-/// was quietly eating its own spores mid-hang.
-const CLOUD_PARTS = 36;
+/// The cloud's own ring: peak emission `CLOUD_RATE + CLOUD_RATE_FRESH` against lives up to `CLOUD_PUFF_MAX`,
+/// rounded up — at anything under that the ring quietly eats its own spores mid-hang and the cloud thins in
+/// the middle of its life instead of at the end of it. Arithmetic, and asserted, never a round number.
+const CLOUD_RATE: f32 = 38.0;
+const CLOUD_RATE_FRESH: f32 = 26.0;
+const CLOUD_PUFF_MAX: f32 = 1.7;
+const CLOUD_PARTS = 112;
+// **WHAT THE CLOUDS COST, MEASURED** (`necro.drawSigil`'s note, one creature along). A live cloud is up to
+// `CLOUD_PARTS` spheres at 6x8 through `foe.drawParticles`, so the field's worst case is `CLOUD_CAP` of them
+// at once — about 900 spheres, ~86k CPU-transformed triangles. Tripled from the old 36 to buy a hazard you
+// can actually see, and bounded by two things: a slot draws nothing unless something emitted into it, and
+// eight concurrent clouds needs eight flings inside one `CLOUD_LIFE` against a `FLING_CD` of 4.6 s — which
+// is more sporelings than a cluster fields. Two or three clouds is the real number, and that is where it
+// was before. Left alone deliberately: the resolution is `drawParticles`' and shared with every effect in
+// the game, so trimming it here would be trimming it everywhere.
+comptime {
+    std.debug.assert(@as(f32, @floatFromInt(CLOUD_PARTS)) >= (CLOUD_RATE + CLOUD_RATE_FRESH) * CLOUD_PUFF_MAX);
+}
 
 pub const Cloud = struct {
     pos: rl.Vector3 = mathx.zero3,
@@ -651,6 +675,11 @@ pub const Cloud = struct {
     parts: [CLOUD_PARTS]foe.Particle = [_]foe.Particle{.{}} ** CLOUD_PARTS,
     fxHead: usize = 0,
     fxAccum: f32 = 0,
+    /// Which puff this is over the cloud's WHOLE LIFE, and it has to be that rather than an index within the
+    /// frame: the emitter lays about one puff a frame at 60, so a per-frame counter never reached the third
+    /// and the boundary was drawn only on a frame long enough to emit three at once — which is to say never,
+    /// and worse, never in a way that looked like a tuning problem.
+    rimTick: u32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(0x0C10),
 
     pub fn radius(self: *const Cloud) f32 {
@@ -671,20 +700,32 @@ pub const Cloud = struct {
         }
         // A slow ochre bloom — dense at the middle, violet flecks through it, barely any lift: spores
         // HANG, and the hang is what says "do not stand in this".
-        self.fxAccum += (14.0 + 10.0 * (1.0 - self.t / CLOUD_LIFE)) * dt;
+        //
+        // **IT HAS TO BE A VOLUME, AND IT HAS TO HAVE AN EDGE** (owner's call). Thirty-odd puffs over a 1.9 m
+        // disc was a handful of translucent blobs beside a mushroom — a hazard you walk into because there is
+        // nothing there to not walk into. Two things fix it and neither is "more of the same":
+        //   1. **HEIGHT.** Spores to a metre and a half, which is his own chest: a knee-high haze is something
+        //      you step over, and this is something you are IN.
+        //   2. **A RIM.** One puff in three is laid on the boundary rather than spread through the disc, so
+        //      the cloud says where it STOPS. A gradient has no line to be on the safe side of.
+        self.fxAccum += (CLOUD_RATE + CLOUD_RATE_FRESH * (1.0 - self.t / CLOUD_LIFE)) * dt;
         while (self.fxAccum >= 1.0) {
             self.fxAccum -= 1.0;
+            self.rimTick +%= 1;
             const a = self.fxRng.angle();
-            const rr = self.fxRng.float() * self.radius() * 0.9;
+            const rim = self.rimTick % 3 == 0;
+            // The rim rides the LIVE radius, so a cloud still growing has its edge in the right place every
+            // frame rather than laying a boundary where it is going to be.
+            const rr = if (rim) self.radius() * self.fxRng.range(0.88, 1.0) else self.fxRng.float() * self.radius() * 0.86;
             foe.emitParticle(
                 &self.parts,
                 &self.fxHead,
-                v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + self.fxRng.range(0.1, 0.9), self.pos.z + mathx.sinf(a) * rr),
+                v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + self.fxRng.range(0.08, 1.45), self.pos.z + mathx.sinf(a) * rr),
                 v3(self.fxRng.signed() * 0.15, self.fxRng.range(0.05, 0.3), self.fxRng.signed() * 0.15),
-                self.fxRng.range(0.8, 1.4),
-                self.fxRng.range(0.09, 0.15),
-                self.fxRng.range(0.16, 0.26),
-                if (self.fxRng.float() < 0.28) SPORE_VIO else SPORE,
+                self.fxRng.range(1.1, CLOUD_PUFF_MAX),
+                self.fxRng.range(0.13, 0.22),
+                self.fxRng.range(0.26, 0.40),
+                if (self.fxRng.float() < SPORE_VIO_SHARE) SPORE_VIO else SPORE,
                 0.25,
             );
         }

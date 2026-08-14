@@ -128,7 +128,6 @@ const RESISTS = combat.resists(.{ .fire = -35, .cold = 75, .chaos = 45 });
 
 const DEATH_DUR = archermod.DEATH_DUR;
 const DISS_DUR = archermod.DISS_DUR;
-const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 7.0;
 const A_BOB = heromod.A_BOB;
 const A_PROT = 2.6; // deg of pelvic rotation — narrow hips and a robe: it barely swings at all
@@ -249,14 +248,17 @@ comptime {
     std.debug.assert(WANT_MIN > FROST_R * SCALE);
 }
 
-/// Per necromancer. Sized off the raise's own bloom, which is the worst burst it has — the frost's ring
-/// lays fewer motes over a longer clock.
-const NPART = 72;
+/// Per necromancer. Sized off the FROST BURST, which is now the worst single frame it has — and with headroom
+/// over it for the rim's creep, which is still in flight when the ring goes off and would otherwise be the
+/// thing the burst overwrites on its way round.
+const NPART = 104;
 const RAISE_BLOOM: u32 = 40;
 const FROST_BLOOM: u32 = 30;
 /// The ring going off. NAMED and asserted like the other two: as a literal `34` inside `burst` it was the one
-/// emitter of the three that nothing checked against the pool.
-const FROST_SHARDS: u32 = 34;
+/// emitter of the three that nothing checked against the pool. It is now the biggest of the three and the
+/// pool is sized off IT rather than off the raise — the rim wall is most of the blow's read, and a burst that
+/// overwrote its own first shards would thin exactly the frame it is loudest.
+const FROST_SHARDS: u32 = 60;
 comptime {
     // **ONE BURST MUST BE SMALLER THAN THE POOL** — at exactly `parts.len` the head lands back where it
     // started and `floorBurst`'s walk reads as empty. Arithmetic over every emitter's worst frame, not a round
@@ -1131,22 +1133,28 @@ pub const Necro = struct {
         foe.drawParticles(&self.parts);
     }
 
-    /// **THE RING SAYS HOW LONG IS LEFT IN ITS OWN PICTURE.** One ring at the full radius, so what is drawn
-    /// is exactly the ground that is about to go — a ring that grew to its reach would promise safety at the
-    /// rim it had not got to yet — and a SECOND, filling one inside it that is the fuse. It brightens as it
-    /// closes: the last quarter of a second is the loudest thing on screen at the hero's feet.
+    /// **THE RING SAYS HOW LONG IS LEFT IN ITS OWN PICTURE.** The rim sits at the full radius from the first
+    /// frame, so what is drawn is exactly the ground that is about to go — a ring that grew to its reach would
+    /// promise safety at a rim it had not got to yet. Inside it a SECOND circle and the glyphs between the
+    /// two, which is the BAND (`RING_INNER`); the fuse is the runes taking one by one round it, and the inner
+    /// line and the eye brighten as it closes. The last quarter of a second is the loudest thing on screen at
+    /// the hero's feet — and the ground under it is lit besides (`sigilLight`), which is the half of this the
+    /// unlit grains cannot say.
     fn drawSigil(self: *const Necro) void {
         const r = FROST_R * self.scale;
         const at = self.sigil.at;
-        // Clear of the ground by more than the terrain's own quantisation can wobble under it: laid coplanar,
-        // every grain z-fights the turf it is sitting on.
-        const y = at.y + 0.06;
+        const y = at.y + MARK_LIFT;
         const grain = RUNE_GRAIN * self.scale;
         if (self.sigil.live()) {
             const f = self.sigil.fill();
             // THE RIM, at the full radius from the first frame: what is drawn is exactly the ground that is
             // about to go, and a ring that GREW to its reach would promise safety at a rim it had not got to.
-            ringOfGrains(v3(at.x, y, at.z), r, grain * 0.62, mathx.withAlpha(RIME, 150));
+            ringOfGrains(v3(at.x, y, at.z), r, grain * GRAIN_RIM, mathx.withAlpha(RIME, 215), RING_DOTS);
+            // …AND THE INNER LINE, which is what turns two dozen dots into a drawn band. It brightens with the
+            // fuse where the rim does not: the rim states the reach and never changes, the inside is the clock.
+            ringOfGrains(v3(at.x, y, at.z), r * RING_INNER, grain * GRAIN_IN, mathx.withAlpha(RIME, mathx.u8f(150.0 + 85.0 * f)), RING_DOTS_IN);
+            // …and the EYE at the middle, so the mark says which way out is from anywhere inside it.
+            ringOfGrains(v3(at.x, y, at.z), r * RING_EYE, grain * GRAIN_EYE, mathx.withAlpha(RIME_LT, mathx.u8f(140.0 + 100.0 * f)), RING_DOTS_EYE);
             // …AND THE RUNES TAKE ONE BY ONE ROUND IT. `lit` is how many have caught; the LEADING one comes up
             // over its own share of the fuse rather than snapping on, so the ring never looks like it is
             // counting in steps — and the last of them lighting IS the blow.
@@ -1160,8 +1168,8 @@ pub const Necro = struct {
                 // A dark rune is still a rune: it is drawn at its own low level, or the ring appears to grow
                 // round the circle instead of lighting up, and there is nothing left to count.
                 const col = if (heat > 0.02) RIME_LT else RIME;
-                const alpha: f32 = if (heat > 0.02) 130.0 + 125.0 * heat else 95.0;
-                runeAt(v3(at.x, y + 0.008, at.z), a, r * RUNE_R, grain * (1.0 + 0.5 * heat), mathx.withAlpha(col, mathx.u8f(alpha)));
+                const alpha: f32 = if (heat > 0.02) 170.0 + 85.0 * heat else 150.0;
+                runeAt(v3(at.x, y + RUNE_LIFT, at.z), a, r * RUNE_R, grain * (1.0 + 0.5 * heat), mathx.withAlpha(col, mathx.u8f(alpha)));
             }
             return;
         }
@@ -1172,13 +1180,43 @@ pub const Necro = struct {
         const u = age / FROST_BURST_RING;
         const fade = (1.0 - u) * (1.0 - u);
         // The whole ring thrown OUTWARD past its own rim and thinning — the runes go with it, so what comes
-        // apart is the thing that was standing there and not a new effect on top of it.
-        ringOfGrains(v3(at.x, y, at.z), r * (1.0 + 0.38 * u), grain * (0.62 + 0.5 * u), mathx.withAlpha(RIME_LT, mathx.u8f(235.0 * fade)));
+        // apart is the thing that was standing there and not a new effect on top of it. Both circles go, and
+        // the inner one runs AHEAD of the rim: a band that comes apart from the inside reads as pressure
+        // leaving the mark, where two hoops travelling together read as one hoop drawn twice.
+        ringOfGrains(v3(at.x, y, at.z), r * (1.0 + 0.52 * u), grain * (GRAIN_RIM + 0.6 * u), mathx.withAlpha(RIME_LT, mathx.u8f(255.0 * fade)), RING_DOTS);
+        ringOfGrains(v3(at.x, y, at.z), r * (RING_INNER + 0.78 * u), grain * (GRAIN_IN + 0.5 * u), mathx.withAlpha(RIME_LT, mathx.u8f(235.0 * fade)), RING_DOTS_IN);
         var i: i32 = 0;
         while (i < RUNE_N) : (i += 1) {
             const a = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(RUNE_N)) * std.math.tau;
-            runeAt(v3(at.x, y + 0.008, at.z), a, r * RUNE_R * (1.0 + 0.44 * u), grain * (1.5 - 0.6 * u), mathx.withAlpha(RIME_LT, mathx.u8f(255.0 * fade)));
+            runeAt(v3(at.x, y + RUNE_LIFT, at.z), a, r * RUNE_R * (1.0 + 0.44 * u), grain * (1.5 - 0.6 * u), mathx.withAlpha(RIME_LT, mathx.u8f(255.0 * fade)));
         }
+    }
+
+    /// **THE MARK'S OWN LIGHT** — see `SIGIL_LIT`. Null unless there is a mark to light, so a field of
+    /// necromancers standing about costs the light rack nothing.
+    ///
+    /// It reads `sigil` and NOTHING about the body, which is what lets it outlive the caster exactly as the
+    /// ring it lights does: kill the thing after the cast and the ground it claimed is still lit.
+    pub fn sigilLight(self: *const Necro) ?gfx.Light {
+        const r = FROST_R * self.scale;
+        const at = v3(self.sigil.at.x, self.sigil.at.y + SIGIL_LIT_Y, self.sigil.at.z);
+        if (self.sigil.live()) {
+            const f = self.sigil.fill();
+            return .{
+                .pos = at,
+                .col = mathx.scaleV(SIGIL_LIT, SIGIL_LIT_LOW + (SIGIL_LIT_HIGH - SIGIL_LIT_LOW) * f),
+                .radius = r * SIGIL_LIT_R,
+            };
+        }
+        const age = self.sigil.blew;
+        if (age >= SIGIL_LIT_BURST) return null;
+        // Squared, so the flash is a spike and not a dimmer being turned down.
+        const u = 1.0 - age / SIGIL_LIT_BURST;
+        return .{
+            .pos = at,
+            .col = mathx.scaleV(SIGIL_LIT, SIGIL_LIT_FLASH * u * u),
+            .radius = r * SIGIL_LIT_R * (1.0 + 0.45 * (1.0 - u)),
+        };
     }
 
     /// The light gathering in the free hand through a cast. Both moves get one and they are DIFFERENT
@@ -1285,19 +1323,25 @@ pub const Necro = struct {
 
     /// Rime creeping while the fuse burns. TEXTURE IS THINNED IN COUNT, not just in level (the audio law's
     /// sibling): a steady stream over a second and a third is a fog machine, so this is a trickle.
+    /// **AND IT CREEPS OFF THE RIM, WHICH IS THE ONLY PART OF A FLAT MARK THAT HAS A HEIGHT.** A circle drawn
+    /// on the ground is at its least legible from exactly where the player stands — low and nearly edge-on —
+    /// so the boundary is also said VERTICALLY, as frost lifting off the line you have to be outside of. Kept
+    /// to the outer third for that reason: motes over the whole disc are a fog, and a fog has no edge.
+    /// Still a trickle by the audio law's sibling — thinned in COUNT — but a trickle on the one line that
+    /// matters rather than a steady scatter over ground that is mostly not the point.
     fn creep(self: *Necro, dt: f32) void {
-        self.sigAccum += 9.0 * dt;
+        self.sigAccum += 22.0 * dt;
         while (self.sigAccum >= 1.0) {
             self.sigAccum -= 1.0;
             const a = self.fxRng.angle();
-            const rr = self.fxRng.range(0.25, 1.0) * FROST_R * self.scale;
+            const rr = self.fxRng.range(0.80, 1.04) * FROST_R * self.scale;
             const from = self.fxHead;
             self.emit(
                 v3(self.sigil.at.x + mathx.cosf(a) * rr, self.sigil.at.y + 0.04, self.sigil.at.z + mathx.sinf(a) * rr),
-                v3(0, self.fxRng.range(0.25, 0.7), 0),
-                self.fxRng.range(0.35, 0.70),
-                self.fxRng.range(0.018, 0.038) * self.scale,
-                0.006,
+                v3(0, self.fxRng.range(0.55, 1.30), 0),
+                self.fxRng.range(0.55, 1.00),
+                self.fxRng.range(0.028, 0.055) * self.scale,
+                0.010,
                 FROST_MOTE,
                 0.5,
             );
@@ -1306,6 +1350,11 @@ pub const Necro = struct {
     }
 
     /// The ring going off: shards thrown UP and OUT off the ground, over the rim it has been drawing.
+    ///
+    /// **A MASS IN MOTION, NOT A SPARKLE** (the reactions law). The first pass threw a third of these at half
+    /// the height and the blow read as the mark quietly switching off. Two in three shards now go up the RIM
+    /// as a wall — the shape the ring has been promising for two seconds, finally standing up — and the rest
+    /// come off the disc so the middle is not a hole.
     fn burst(self: *Necro) void {
         const from = self.fxHead;
         const at = self.sigil.at;
@@ -1314,14 +1363,16 @@ pub const Necro = struct {
         var i: u32 = 0;
         while (i < FROST_SHARDS) : (i += 1) {
             const a = self.fxRng.angle();
-            const rr = self.fxRng.range(0.2, 1.05) * r;
-            const s = self.fxRng.range(0.6, 1.0) * 4.4;
+            const wall = i % 3 != 0;
+            const rr = if (wall) self.fxRng.range(0.86, 1.06) * r else self.fxRng.range(0.0, 0.85) * r;
+            const s = self.fxRng.range(0.7, 1.0) * 6.2;
+            const out: f32 = if (wall) 0.30 else 0.62;
             self.emit(
-                v3(at.x + mathx.cosf(a) * rr, at.y + 0.06, at.z + mathx.sinf(a) * rr),
-                v3(mathx.cosf(a) * s * 0.45, self.fxRng.range(2.6, 5.4), mathx.sinf(a) * s * 0.45),
-                self.fxRng.range(0.34, 0.62),
-                self.fxRng.range(0.05, 0.11) * self.scale,
-                0.012,
+                v3(at.x + mathx.cosf(a) * rr, at.y + MARK_LIFT, at.z + mathx.sinf(a) * rr),
+                v3(mathx.cosf(a) * s * out, self.fxRng.range(4.2, 8.4), mathx.sinf(a) * s * out),
+                self.fxRng.range(0.46, 0.82),
+                self.fxRng.range(0.07, 0.15) * self.scale,
+                0.016,
                 FROST_SHARD,
                 5.4,
             );
@@ -1388,28 +1439,80 @@ fn approach(cur: f32, want: f32, e: f32) f32 {
 // have to be looking down at to read; runes LIGHTING ONE BY ONE round the rim is a countdown legible from any
 // bearing the camera happens to be on, and it says how long is left in a way a brightness ramp cannot — you
 // can COUNT the dark ones. When the last one takes, it goes off.
-// **WHAT THE MARK COSTS, MEASURED AND LEFT ALONE** (`foe.drawParticles`' own note, arrived at differently). One
-// live sigil is 46 grains plus 14 runes of 5 = 116 `drawSphereEx` calls at 4x6, about 5.6k CPU-transformed
-// triangles a frame. Where the particle pool gets away with this because a slot is dead unless something emitted
-// into it, this draws its full count for every frame a fuse is burning — so the bound is how many are actually
-// casting, not how many are posted, and an encounter with two or three of them pays ~17k. It early-outs to
-// nothing the moment no sigil is live or lately burst, which is the overwhelming majority of frames.
+// **WHAT THE MARK COSTS, MEASURED** (`foe.drawParticles`' own note, arrived at differently). One live sigil is
+// 46 rim grains + 35 inner + 6 at the eye + 14 runes of 5 = 157 `drawSphereEx` calls at 4x6, about 7.5k
+// CPU-transformed triangles a frame — the band cost 41 calls over the single hairline it replaced, which is
+// the price of the thing reading at all from a standing camera. Where the particle pool gets away with this
+// because a slot is dead unless something emitted into it, this draws its full count for every frame a fuse is
+// burning — so the bound is how many are actually casting, not how many are posted, and an encounter with two
+// or three of them pays ~23k. It early-outs to nothing the moment no sigil is live or lately burst, which is
+// the overwhelming majority of frames.
 //
 // Left as it is deliberately: the alternative is a real annulus MESH, which is exactly the geometry that came
 // back invisible twice, and trading a legible tell for a few thousand triangles is the wrong way round.
 const RUNE_N: i32 = 14;
-/// Where the runes stand, as a fraction of the reach. Inside the rim, because the rim is what the blow claims
+/// Where the runes stand, as a fraction of the reach — the MIDDLE of the band, which is what puts a glyph
+/// between two lines rather than adrift inside one. Inside the rim, because the rim is what the blow claims
 /// and a glyph drawn ON the boundary reads as safe ground.
-const RUNE_R: f32 = 0.90;
-/// The inscribed circle, as a dotted line of grains — the thing that makes the runes read as one ring rather
-/// than as a scatter of marks. Its count is the arithmetic that keeps the dots touching at this radius.
+const RUNE_R: f32 = 0.89;
+/// **AND IT IS A BAND, NOT A HOOP** (owner's call: a rune CIRCLE). One dotted line at the rim was a hairline
+/// that the eye read as scattered grit — a second circle inside it with the glyphs inscribed between the two
+/// is what makes the mark read as drawn ON the ground rather than lying on it, and it survives the
+/// foreshortening a standing camera puts on anything flat.
+const RING_INNER: f32 = 0.78;
+/// A small rosette at dead centre. It costs six grains and it answers the one question the rim cannot: which
+/// way is OUT. Stood on the mark you cannot see the whole rim at once, but you can always see the middle.
+const RING_EYE: f32 = 0.18;
+/// The counts that keep the dots touching at each radius — arithmetic off `RING_DOTS`, never three literals
+/// that drift apart the first time the reach is retuned.
 const RING_DOTS: i32 = 46;
+const RING_DOTS_IN: i32 = @intFromFloat(@as(f32, @floatFromInt(RING_DOTS)) * RING_INNER);
+const RING_DOTS_EYE: i32 = 6;
+/// Each circle's own thickness, as a multiple of the grain. NAMED because the LIVE mark and the BURSTING one
+/// both draw them: written out at both, the rim changes width on the frame it goes off and the burst reads as
+/// a different effect arriving rather than as this one coming apart.
+const GRAIN_RIM: f32 = 0.72;
+const GRAIN_IN: f32 = 0.58;
+const GRAIN_EYE: f32 = 0.55;
+/// Clear of the ground by more than the terrain's own quantisation can wobble under it: laid coplanar, every
+/// grain z-fights the turf it is sitting on. …and the runes a hair above the circles for the same reason one
+/// layer up, or the two fight each other where a glyph crosses a dot.
+const MARK_LIFT: f32 = 0.06;
+const RUNE_LIFT: f32 = 0.008;
 /// The size of one grain of the mark, in the creature's own scale — every dot and rune is a multiple of this,
 /// so the whole sigil is retuned from one number rather than from six literals scattered down `drawSigil`.
-const RUNE_GRAIN: f32 = 0.055;
+const RUNE_GRAIN: f32 = 0.078;
 /// How long the burst's own ring rings out for. Beside the constants it belongs to rather than adrift among
 /// the drawing helpers, where it read as part of the ring geometry.
-const FROST_BURST_RING: f32 = 0.34;
+const FROST_BURST_RING: f32 = 0.46;
+
+// **AND THE MARK LIGHTS THE GROUND IT HAS CLAIMED** (owner's call). Unlit grains say "these dots are bright";
+// only a LIGHT says "this ground is not the same as that ground", and it is the one part of the tell that
+// works at every hour — at night it is the whole picture, at noon it is a cold cast on warm turf, which is
+// the hue separation the render needs anyway.
+//
+// **IT POOLS** (the lights law: a radius matters more than a brightness). Reach is the ring's own plus a
+// little, never a wash over the field — the lit ground and the claimed ground have to be the same ground or
+// the light is telling a different story than the runes are.
+/// **AND IT IS NOT `RIME`, WHICH IS THE ROBE'S OWN LESSON ONE LAYER OUT.** A light MULTIPLIES through the
+/// surface it lands on, and every surface outdoors here is warm — so the grains' own pale blue came back off
+/// the turf as a neutral wash, exactly as a decently blue albedo sampled grey. The blue channel has to run
+/// several times the red in the LIGHT for any of it to survive the ground.
+const SIGIL_LIT = mathx.colVec(rgba(48, 138, 242, 255));
+/// It RAMPS with the fuse, so the glow is the countdown said a second way — laid down dim and at its loudest
+/// on the frame it goes off, which is where the runes are too.
+const SIGIL_LIT_LOW: f32 = 0.45;
+const SIGIL_LIT_HIGH: f32 = 1.55;
+/// …and the burst FLASHES, then drops. Its own decay off `blew` and never a clock beside it (the knight's
+/// landing ring, and the same clock the burst's own rings ride).
+const SIGIL_LIT_FLASH: f32 = 4.60;
+const SIGIL_LIT_BURST: f32 = 0.40;
+/// **HALF AGAIN THE RING**, because a light's falloff reaches zero AT its radius — sized to the rim exactly,
+/// the rim is where it has already faded out, and the lit ground stops well inside the ground being claimed.
+/// The pool has to cover what the runes are drawing or the two are telling different stories.
+const SIGIL_LIT_R: f32 = 1.60;
+/// Off the ground rather than on it — a light AT the turf lights a disc of it white and nothing else.
+const SIGIL_LIT_Y: f32 = 0.55;
 
 /// One rune: a short radial tick with a cross bar, both laid flat on the ground. Deliberately NOT a letter —
 /// it has to read at a glance from a standing camera, and detail at this size is noise.
@@ -1434,11 +1537,13 @@ fn runeAt(at: rl.Vector3, ang: f32, r: f32, size: f32, col: rl.Color) void {
     }
 }
 
-/// The inscribed circle the runes stand on, as grains of ice.
-fn ringOfGrains(at: rl.Vector3, r: f32, size: f32, col: rl.Color) void {
+/// One inscribed circle of the mark, as grains of ice. `n` is the caller's, because the dots have to stay
+/// TOUCHING at whatever radius it is drawn at — one count shared by the rim and a circle two thirds its size
+/// gives a solid rim over a dotted inner, which reads as two different kinds of thing.
+fn ringOfGrains(at: rl.Vector3, r: f32, size: f32, col: rl.Color, n: i32) void {
     var i: i32 = 0;
-    while (i < RING_DOTS) : (i += 1) {
-        const a = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(RING_DOTS)) * std.math.tau;
+    while (i < n) : (i += 1) {
+        const a = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n)) * std.math.tau;
         rl.drawSphereEx(v3(at.x + mathx.cosf(a) * r, at.y, at.z + mathx.sinf(a) * r), size, 4, 6, col);
     }
 }
@@ -1869,6 +1974,21 @@ pub const Rite = struct {
         return .{ .model = Model.init(shader) };
     }
     /// The posted necromancers — never iterate the whole array, the tail is `undefined`.
+    /// Every live mark's light, into the caller's buffer, returning how many were written. Walked over the
+    /// WHOLE band rather than the living, for the ring's own law: a sigil outlives its caster, so a corpse's
+    /// mark is still lighting the ground it claimed.
+    pub fn markLights(self: *const Rite, out: []gfx.Light) usize {
+        var n: usize = 0;
+        for (self.liveConst()) |*x| {
+            if (n >= out.len) break;
+            if (x.sigilLight()) |l| {
+                out[n] = l;
+                n += 1;
+            }
+        }
+        return n;
+    }
+
     pub fn live(self: *Rite) []Necro {
         return self.band[0..self.n];
     }

@@ -199,6 +199,9 @@ const HERO_REACH = foe.HERO_REACH;
 /// SOULS each is worth.
 pub const M_SOULS: u32 = 240;
 pub const B_SOULS: u32 = 25;
+/// …and a BURST SAC pays a little (owner's call). Well under the broodling it would have hatched: clearing a
+/// nest before it opens is worth something, and never worth farming a mother's clutch for.
+pub const SAC_SOULS: u32 = 8;
 
 // THE SAC.
 const SAC_HP = 18.0;
@@ -1860,6 +1863,9 @@ pub const Brood = struct {
     /// TWO EVENTS THE FRAME SHOULD FEEL, counted rather than flagged so game.zig edge-detects them the way it already does hits and kills — a bool would need somebody to remember to clear it.
     hatches: u32 = 0,
     bursts: u32 = 0,
+    /// …and how many of that frame's bursts were THIS frame's, which is what a payout may be billed off — a
+    /// sac carries no `justDied` of its own, so the group counts the edge for it (`bursts`' own arrangement).
+    burstsFrame: u32 = 0,
     hatchRng: mathx.Rng = mathx.Rng.init(6113),
 
     pub fn init(shader: rl.Shader) Brood {
@@ -1900,6 +1906,7 @@ pub const Brood = struct {
         self.nsacs = 0;
         self.hatches = 0;
         self.bursts = 0;
+        self.burstsFrame = 0;
         self.pools = [_]Pool{.{}} ** POOL_CAP;
         self.hatchRng = mathx.Rng.init(6113);
     }
@@ -2003,8 +2010,10 @@ pub const Brood = struct {
     pub fn aliveCount(self: *const Brood) u32 {
         return foe.aliveCount(self.liveConst());
     }
+    /// The members' own values, plus the sacs BURST this frame — a sac is not a member and has no `justDied`,
+    /// so its edge comes off `burstsFrame`. A sac that HATCHED pays nothing: only a blow that stops it counts.
     pub fn soulsDropped(self: *const Brood) u32 {
-        return foe.soulsEach(self.liveConst());
+        return foe.soulsEach(self.liveConst()) + self.burstsFrame * SAC_SOULS;
     }
 
     /// How many of `m`'s sacs are still going to hatch — what her cap counts.
@@ -2063,6 +2072,7 @@ pub const Brood = struct {
         comptime spit: fn (@TypeOf(ctx), rl.Vector3) void,
     ) ?foe.Blow {
         for (&self.pools) |*p| p.update(dt);
+        self.burstsFrame = 0; // the one-frame half of `bursts`, cleared at the TOP (`justDied`'s law)
         // THE SACS next, so a clutch that split this frame is already on the field when she decides whether to lay another.
         var s: usize = 0;
         while (s < self.nsacs) : (s += 1) {
@@ -2071,7 +2081,10 @@ pub const Brood = struct {
             const seed = sac.seed;
             const wasKilled = sac.killed;
             const split = sac.update(dt, blade);
-            if (sac.killed and !wasKilled) self.bursts += 1;
+            if (sac.killed and !wasKilled) {
+                self.bursts += 1;
+                self.burstsFrame += 1;
+            }
             if (!split) continue;
             self.hatches += 1;
             var k: usize = 0;
@@ -2375,6 +2388,47 @@ test "A FIRE ARROW IS FOR THE CLUTCH: silk burns where the mother mostly shrugs 
     try std.testing.expectApproxEqAbs(sac.vit.damageFrom(heromod.BOW_AIMED_HIT), mother.vit.damageFrom(heromod.BOW_AIMED_HIT), 1e-5);
     // She is proof against her OWN weapon, at the cap — a pool she laid cannot take her with it.
     try std.testing.expectApproxEqAbs(combat.RES_CAP, mother.vit.res.at(.chaos), 1e-5);
+}
+
+test "A BURST SAC PAYS, ONCE — and a sac that hatched pays nothing" {
+    const Nowt = struct {
+        fn spit(_: *@This(), _: rl.Vector3) void {}
+    };
+    var ctx = Nowt{};
+    var b = Brood{ .model = undefined };
+    b.clear();
+    b.sacs[0] = Sac.lay(mathx.ground(0, 0), 0.5, 1.0);
+    b.nsacs = 1;
+    const far = mathx.ground(400, 400); // her own business is not this test's
+
+    const cut = foe.Blade{
+        .active = true,
+        .r = 0.3,
+        .a = mathx.addV(b.sacs[0].centerWorld(), v3(0, 0, 1)),
+        .b = mathx.addV(b.sacs[0].centerWorld(), v3(0, 0, -0.1)),
+        .hit = .{ .dmg = SAC_HP + 1 },
+    };
+    _ = b.update(1.0 / 60.0, far, 400, cut, &ctx, Nowt.spit);
+    try std.testing.expect(b.sacs[0].killed);
+    try std.testing.expectEqual(SAC_SOULS, b.soulsDropped());
+
+    // ONE FRAME. The `bursts` tally keeps counting for the trigger layer; the PAYOUT does not.
+    _ = b.update(1.0 / 60.0, far, 400, .{}, &ctx, Nowt.spit);
+    try std.testing.expectEqual(@as(u32, 0), b.soulsDropped());
+    try std.testing.expectEqual(@as(u32, 1), b.bursts);
+
+    // …and one that RIPENS out is not a kill: nothing is owed for standing there.
+    b.clear();
+    b.sacs[0] = Sac.lay(mathx.ground(0, 0), 0.5, 1.0);
+    b.nsacs = 1;
+    var t: f32 = 0;
+    var paid: u32 = 0;
+    while (t < SAC_HATCH + 0.2) : (t += 1.0 / 60.0) {
+        _ = b.update(1.0 / 60.0, far, 400, .{}, &ctx, Nowt.spit);
+        paid += b.soulsDropped();
+    }
+    try std.testing.expect(b.hatches > 0);
+    try std.testing.expectEqual(@as(u32, 0), paid);
 }
 
 test "a pool spreads, DOSES while he stands in it, thins out and stops" {

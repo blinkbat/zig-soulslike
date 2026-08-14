@@ -2112,9 +2112,14 @@ const PLOUGH_TELL_AT: f32 = delvermod.PLOUGH_WIND * 0.88;
 // near the top of their hauls, which is where each one is a picture rather than a body standing still.
 const RAISE_TELL_AT: f32 = necromod.RAISE_WIND * 0.93;
 const FROST_TELL_AT: f32 = necromod.FROST_WIND * 0.90;
-/// …and the FUSE just over halfway down, which is the only frame that shows the ring as a ring AND the inner
-/// one as part-filled: at the cast they are coincident and at the burst the outer is gone.
+/// …and the FUSE just over halfway down, which is the frame that shows the BAND whole with the runes part
+/// way round it: at the cast none of them have caught and at the burst the whole mark is coming apart.
 const FUSE_AT: f32 = necromod.FROST_FUSE * 0.58;
+
+/// **THE HOUR ANYTHING THAT GLOWS HAS TO BE JUDGED AT.** Shared with `dayShots`' own night frame rather than
+/// written out at each: two strips disagreeing about what night is would put a light past on one and fail it
+/// on the other, and neither would be wrong about its own number.
+pub const NIGHT_HOUR: f32 = 1.5;
 
 fn necroShots(g: *Game) void {
     game.clearFoesForShot(g);
@@ -2195,7 +2200,7 @@ fn necroShots(g: *Game) void {
     run(k, FROST_TELL_AT, g.hero.pos);
     shootAt(g, "shots/123e_necro_frost_tell.png", v3(k.pos.x, k.pos.y + 1.4, k.pos.z), LIT_YAW, 0.10, 6.4);
 
-    // **THE SIGIL BURNING DOWN AT HIS FEET** — the ring, the filling one inside it, and the rime creeping. The
+    // **THE SIGIL BURNING DOWN AT HIS FEET** — the band, the runes taking round it, and the rime creeping. The
     // camera comes DOWN onto the ground, because this is the one thing in the game the player has to look at
     // his own boots to read, and a portrait pitch shows it as a smudge under him.
     spawn(k, sc, faceCam);
@@ -2210,6 +2215,22 @@ fn necroShots(g: *Game) void {
     // shards off the ground. The one moment the move actually costs him something.
     run(k, (necromod.FROST_FUSE - FUSE_AT) + 0.06, g.hero.pos);
     shootAt(g, "shots/123g_necro_burst.png", v3(g.hero.pos.x, g.hero.pos.y + 0.5, g.hero.pos.z), LIT_YAW, 0.50, 10.0);
+
+    // **AND THE SAME TWO AT NIGHT, WHICH IS WHERE THE MARK'S LIGHT IS THE WHOLE PICTURE** (`necro.SIGIL_LIT`).
+    // The anchor hour is golden and the sun washes a 3.8 m pool to nothing, so the glow is a thing the rest of
+    // this strip structurally cannot judge — under a night sky it is the difference between a ring of dots and
+    // a piece of ground that has been claimed. Pinned to `dayShots`' own night hour rather than a number
+    // beside it, so the two strips cannot disagree about what night is.
+    game.pinHourForShot(g, NIGHT_HOUR);
+    spawn(k, sc, faceCam);
+    stand(g, sc.x, sc.z - 9.0, 0);
+    k.debugLay(g.hero.pos);
+    run(k, FUSE_AT, g.hero.pos);
+    shootAt(g, "shots/123h_necro_sigil_night.png", v3(g.hero.pos.x, g.hero.pos.y + 0.35, g.hero.pos.z), LIT_YAW, 0.60, 10.5);
+    run(k, (necromod.FROST_FUSE - FUSE_AT) + 0.06, g.hero.pos);
+    shootAt(g, "shots/123i_necro_burst_night.png", v3(g.hero.pos.x, g.hero.pos.y + 0.5, g.hero.pos.z), LIT_YAW, 0.50, 10.0);
+    // BACK TO THE ANCHOR: everything after this is judged under it (`dayShots`' own rule).
+    game.pinHourForShot(g, game.daynight.SHOT_HOUR);
 
     game.clearFoesForShot(g);
 }
@@ -2250,13 +2271,22 @@ fn pickupShots(g: *Game) void {
     // branch, which `--shot` never runs. `bonfireShoot`'s arrangement exactly.
     // …and THREE of the one kind, because that is the case with a picture to get wrong: one card saying "x3"
     // and no toast under it, rather than a card plus an "x2" notice about the same handful.
+    // …and a KNOWN kind out of the SAME chest, which is the multi-item case that put a card and a toast on
+    // screen together (owner). The toast is made and held: this frame must show the card and NOTHING beside it.
     game.awardForShot(g, .grave_warbow, .first);
     game.awardForShot(g, .grave_warbow, .again);
     game.awardForShot(g, .grave_warbow, .again);
+    game.awardForShot(g, .mushroom_jerky, .again);
     drawScene(g);
     hud(g, SHOT_DT);
     game.drawAwardCardForShot(g);
     snap("shots/124b_pickup_card.png");
+
+    // …AND THE HELD TOAST ARRIVING once the card is read, which is the other half of the same rule: it was
+    // owed, so it was not dropped. Dismissed through the queue's own path, not by clearing it.
+    game.dismissAwardForShot(g);
+    game.tickAwardForShot(g, 0.5);
+    shoot(g, "shots/124b2_pickup_card_toast_after.png");
 
     // …AND THE TOASTS, stacked: three kinds already known, one of them twice, so the count reads too.
     game.awardForShot(g, .grave_warbow, .clear);
@@ -3102,7 +3132,7 @@ fn dayShots(g: *Game) void {
     game.clearFoesForShot(g);
     game.clearShaftsForShot(g);
     const hours = [_]struct { h: f32, name: [:0]const u8 }{
-        .{ .h = 1.5, .name = "shots/140_day_night.png" },
+        .{ .h = NIGHT_HOUR, .name = "shots/140_day_night.png" },
         .{ .h = 5.2, .name = "shots/141_day_firstlight.png" },
         .{ .h = 6.2, .name = "shots/142_day_sunrise.png" },
         .{ .h = 8.5, .name = "shots/143_day_morning.png" },

@@ -350,11 +350,10 @@ pub const Stamina = struct {
     sinceSpend: f32 = LONG_AGO, // gates the refill delay
     winded: bool = false,
     regenRate: f32 = 1.0,
-    /// THE TOADFLESH BROTH — the refill runs `brewMult`× while `brewLeft` runs. One clock, refreshed
+    /// THE TOADFLESH BROTH — the refill runs `brew.amount`× while its clock runs. One clock, refreshed
     /// never stacked (the status law); it speeds the trickle and touches nothing else, so the delay,
     /// the winded latch and the panic rule all mean what they always did.
-    brewMult: f32 = 1.0,
-    brewLeft: f32 = 0,
+    brew: Timed = .{},
 
     /// A guard that is NOT the hero's — its own pool, on the slow foe schedule (mirrors `Vitals.initFoe`).
     pub fn initFoe(max: f32) Stamina {
@@ -380,23 +379,21 @@ pub const Stamina = struct {
     }
 
     pub fn tick(self: *Stamina, dt: f32, sprinting: bool, committed: bool) void {
-        self.brewLeft = mathx.maxF(0, self.brewLeft - dt); // wall time — it runs out mid-sprint too
+        self.brew.tick(dt); // wall time — it runs out mid-sprint too
         if (sprinting) {
             self.cur = mathx.maxF(0, self.cur - STAM_SPRINT * dt);
             self.sinceSpend = 0;
         } else {
             self.sinceSpend += dt;
             if (!committed and self.sinceSpend >= STAM_DELAY) {
-                const brew: f32 = if (self.brewLeft > 0) self.brewMult else 1.0;
-                self.cur = mathx.minF(self.max, self.cur + STAM_REGEN * self.regenRate * brew * dt);
+                self.cur = mathx.minF(self.max, self.cur + STAM_REGEN * self.regenRate * self.brew.value(1.0) * dt);
             }
         }
         self.settleWind();
     }
 
     pub fn startBrew(self: *Stamina, mult: f32, secs: f32) void {
-        self.brewMult = mult;
-        self.brewLeft = secs;
+        self.brew.start(mult, secs);
     }
 
     pub fn windedTo(self: *const Stamina) f32 {
@@ -425,7 +422,7 @@ pub const Stamina = struct {
         self.cur = self.max;
         self.sinceSpend = LONG_AGO;
         self.winded = false;
-        self.brewLeft = 0; // a bonfire clears what is on him, the ward's rule
+        self.brew.reset(); // a bonfire clears what is on him, the ward's rule
     }
 };
 
@@ -940,6 +937,52 @@ pub const Status = struct {
 /// either: it ticks HP and nothing absorbs it) and NO POISE, because a status is not a stagger.
 pub fn poisonPulse(amt: f32) Hit {
     return .{ .dmg = amt };
+}
+
+/// **A TIMED EFFECT, AND EVERY ONE OF THEM IS THIS SHAPE** — a magnitude and a clock. The sporeling cap's
+/// ward, the tallow's fire share, the broth's stamina multiplier: each was its own pair of loose fields with
+/// its own start, its own decrement and its own line of "refreshed, never stacked" in a comment. Three copies
+/// of one rule, and the fourth thing to want a timer would have had three precedents and no authority.
+///
+/// **THE MAGNITUDE IS NOT CLEARED WHEN THE CLOCK RUNS OUT** — `left` is the whole gate, and `value` is the
+/// only way to read it, so nothing downstream can pick up a stale amount by forgetting to check the clock.
+pub const Timed = struct {
+    amount: f32 = 0,
+    left: f32 = 0,
+
+    pub fn on(self: *const Timed) bool {
+        return self.left > 0;
+    }
+    /// What it is worth this frame — `off` while nothing is running, so the caller never writes the gate.
+    pub fn value(self: *const Timed, off: f32) f32 {
+        return if (self.left > 0) self.amount else off;
+    }
+    /// REFRESHED, NEVER STACKED (the status law): a second dose sets the clock, it does not add to it.
+    pub fn start(self: *Timed, amount: f32, secs: f32) void {
+        self.amount = amount;
+        self.left = secs;
+    }
+    /// WALL TIME — it runs out through a stagger, a sprint and a menu alike.
+    pub fn tick(self: *Timed, dt: f32) void {
+        self.left = maxF(0, self.left - dt);
+    }
+    pub fn reset(self: *Timed) void {
+        self.* = .{};
+    }
+};
+
+test "a timed effect REFRESHES rather than stacking, and reads as `off` once its clock is out" {
+    var t = Timed{};
+    try std.testing.expect(!t.on());
+    try std.testing.expectEqual(@as(f32, 1.0), t.value(1.0)); // nothing running: the caller's own default
+    t.start(1.5, 2.0);
+    t.tick(1.0);
+    t.start(1.5, 2.0); // a second dose part way through
+    try std.testing.expectApproxEqAbs(@as(f32, 2.0), t.left, 1e-6); // …set, never 3.0
+    t.tick(2.5); // past the end, and it floors rather than going negative
+    try std.testing.expectEqual(@as(f32, 0), t.left);
+    try std.testing.expect(!t.on());
+    try std.testing.expectEqual(@as(f32, 1.0), t.value(1.0));
 }
 
 pub const Regen = struct {

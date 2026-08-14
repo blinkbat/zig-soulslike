@@ -12,7 +12,6 @@ pub fn build(b: *std.Build) void {
         .linux_display_backend = .X11,
     });
     const raylib = raylib_dep.module("raylib"); // Zig bindings
-    const raygui = raylib_dep.module("raygui"); // GUI bindings (may be unused)
     const raylib_artifact = raylib_dep.artifact("raylib"); // static C library
 
     const exe = b.addExecutable(.{
@@ -25,7 +24,6 @@ pub fn build(b: *std.Build) void {
     });
     exe.linkLibrary(raylib_artifact);
     exe.root_module.addImport("raylib", raylib);
-    exe.root_module.addImport("raygui", raygui);
     // The one recorded sound in the game, reachable from `@embedFile` — `assets/` is outside the root module's package path (src/), and Zig will not let a file cross that line without an import.
     exe.root_module.addAnonymousImport("campfire_wav", .{ .root_source_file = b.path("assets/campfire.wav") });
     b.installArtifact(exe);
@@ -45,7 +43,6 @@ pub fn build(b: *std.Build) void {
     });
     unit_tests.linkLibrary(raylib_artifact);
     unit_tests.root_module.addImport("raylib", raylib);
-    unit_tests.root_module.addImport("raygui", raygui);
     unit_tests.root_module.addAnonymousImport("campfire_wav", .{ .root_source_file = b.path("assets/campfire.wav") });
     const run_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");

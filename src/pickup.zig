@@ -25,10 +25,12 @@ const v3 = mathx.v3;
 /// scattering them is the cheap way to dress a ruin, where a chest is furniture you place deliberately.
 pub const CAP: usize = 96;
 
-/// How close you have to be for the prompt (metres, on XZ from the glow's own origin). **The most generous
-/// ring in the game bar the souls drop's** — `souls.REACH` is 2.6 because you come back for that one under
-/// pressure, and this is 2.4 for the other half of that reason: the thing is a wisp of light with no body to
-/// bump into, so a ring sized like a box's makes you hunt for the spot it answers on.
+/// How close you have to be for the prompt (metres, on XZ from the glow's own origin). **Wider than the box
+/// and narrower than the drop** — `souls.REACH` is 2.6 because you come back for that one under pressure, and
+/// this is 2.4 for the other half of that reason: the thing is a wisp of light with no body to bump into, so
+/// a ring sized like a box's makes you hunt for the spot it answers on. It is NOT the widest ring in the game
+/// and the asserts below do not claim it is — `rest.REACH` is 3.2, and a bonfire is a thing you walk at rather
+/// than a thing you have to find the spot of.
 pub const REACH: f32 = 2.4;
 
 /// How long the glow takes to go once it is taken — it does not vanish on the frame you press.

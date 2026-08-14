@@ -26,9 +26,12 @@ const rgba = mathx.rgba;
 /// over more than it holds — and the queue only ever holds the NEW kinds out of one award, so this is
 /// comfortably over the worst case and asserted against it in `worldfmt`'s own terms below.
 pub const CARD_CAP: usize = 12;
-/// …and how many toasts may stack before the oldest is pushed off the top. Six is more than a chest can make
-/// (a chest's repeats collapse — see `gain`) and enough that a run of pickups never silently drops one.
-pub const TOAST_CAP: usize = 6;
+/// …and how many toasts may stack before the oldest is pushed off the top. **A SCREEN LIMIT, NOT A BOUND ON
+/// WHAT CAN ARRIVE** (owner's call): one chest may hold `wf.MAX_LOOT` distinct known kinds, which is more than
+/// this, so the oldest DO get pushed off and that is the intended answer — five notices is as much as the
+/// right-hand edge should ever be saying at once. The card queue below is the opposite case and is sized off
+/// the loot bound instead, because a first-time card that never appears is a kind introduced twice.
+pub const TOAST_CAP: usize = 5;
 
 comptime {
     // ONE CONTAINER CAN NEVER FILL THE QUEUE. Past this the first-time card for something in the same chest
@@ -194,7 +197,16 @@ pub const Award = struct {
 
     // ── THE TOASTS ────────────────────────────────────────────────────────────────────────────────────
 
+    /// **NOT WHILE A CARD IS UP** (owner's call). One handful is one notice at a time: a chest holding a new
+    /// kind and a known one cards the first and toasts the second, and both were on screen together — a
+    /// full-screen card with a notice standing beside it, out of one press.
+    ///
+    /// **HELD, NOT DROPPED.** The toast is still owed — you did pick the thing up — so it waits and stands its
+    /// full life once the last card is dismissed. That costs nothing to arrange: the clock only runs where the
+    /// world runs (`update`), and behind a card the world is held, so a queued toast is exactly as fresh when
+    /// it finally appears.
     pub fn drawToasts(self: *const Award) void {
+        if (self.carding()) return;
         const sw = rl.getScreenWidth();
         var y = TOAST_TOP;
         for (self.toasts[0..self.ntoasts]) |*t| {
@@ -392,6 +404,23 @@ test "SEVERAL OF ONE NEW KIND IS ONE CARD SAYING x3, never a card and a toast un
     a.gain(.nameless_soul);
     try std.testing.expect(!a.carding());
     try std.testing.expectEqual(@as(usize, 1), a.ntoasts);
+}
+
+test "ONE HANDFUL IS ONE NOTICE AT A TIME — a mixed chest holds its toast back behind the card" {
+    // THE BUG this guards: a chest holding one NEW kind and one KNOWN one queued a card AND pushed a toast,
+    // and `hud` draws the toasts over the held world — so a single press put a full-screen card and a notice
+    // beside it on screen together. The toast is still owed and is not dropped: it waits.
+    var a = Award{};
+    a.seen[@intFromEnum(item.Kind.nameless_soul)] = true;
+    a.gain(.mushroom_jerky); // new: cards
+    a.gain(.nameless_soul); // known: toasts
+    try std.testing.expect(a.carding());
+    try std.testing.expectEqual(@as(usize, 1), a.ntoasts); // …made, and still standing
+    // Behind the card the world is held, so the held toast does not age out while it waits.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), a.toasts[0].t, 1e-6);
+    a.dismiss();
+    try std.testing.expect(!a.carding());
+    try std.testing.expectEqual(@as(usize, 1), a.ntoasts); // …and it is there to be read once the card is gone
 }
 
 test "a copy arriving while ANOTHER kind's card is in front of it still lands on its own card" {

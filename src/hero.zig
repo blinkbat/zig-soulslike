@@ -1007,14 +1007,12 @@ pub const Hero = struct {
     /// The resistances a bonfire does NOT refill (`makeWhole` carries them across). Nothing grants him any
     /// yet; this is the field the day something does.
     baseRes: combat.Resists = .{},
-    /// Timed chaos resistance, ONE clock — a timed status refreshes, it does not stack. It sits on top of
-    /// `baseRes`, and `settleResists` is the one place the two are composed into `vit.res`.
-    wardChaos: f32 = 0,
-    wardLeft: f32 = 0,
-    /// The swing hangs `greaseFire` of its own physical as fire while the clock runs. One clock, refreshed
-    /// never stacked, read where the blow is BUILT (`attackHit`) so there is no second copy of the Hit.
-    greaseFire: f32 = 0,
-    greaseLeft: f32 = 0,
+    /// Timed chaos resistance (`combat.Timed`, which is where "refreshes, never stacks" lives now). It sits
+    /// on top of `baseRes`, and `settleResists` is the one place the two are composed into `vit.res`.
+    ward: combat.Timed = .{},
+    /// The swing hangs `grease.amount` of its own physical as fire while its clock runs, read where the blow
+    /// is BUILT (`attackHit`) so there is no second copy of the Hit.
+    grease: combat.Timed = .{},
     /// ONE meter that fills, procs, then drains. His alone for now: nothing applies one to a foe.
     poison: combat.Status = .{},
     drinking: bool = false,
@@ -1171,8 +1169,8 @@ pub const Hero = struct {
         self.fp.reset();
         self.regen.reset();
         self.poison.reset();
-        self.wardLeft = 0;
-        self.greaseLeft = 0;
+        self.ward.reset();
+        self.grease.reset();
         // `freshVitals` cleared `vit.res` above, so the base has to be laid back down here.
         self.settleResists();
         self.flasks.refill();
@@ -2120,10 +2118,10 @@ pub const Hero = struct {
 
     pub fn attackHit(self: *const Hero) combat.Hit {
         const base = if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT;
-        if (self.greaseLeft <= 0) return base;
+        if (!self.grease.on()) return base;
         // Fire ON TOP, the physical untouched — the fire arrow's own construction (`fireTipped`).
         var out = base;
-        out.elem = combat.elems(.{ .fire = base.dmg * self.greaseFire });
+        out.elem = combat.elems(.{ .fire = base.dmg * self.grease.value(0) });
         return out;
     }
     pub fn setSpawn(self: *Hero, pos: rl.Vector3, facing: f32) void {
@@ -2207,27 +2205,29 @@ pub const Hero = struct {
     }
 
     pub fn startWard(self: *Hero, chaos: f32, secs: f32) void {
-        self.wardChaos = chaos;
-        self.wardLeft = secs; // refreshed, never stacked
+        self.ward.start(chaos, secs);
         // On the SWALLOW, not the next frame's tick: the blow already in the air is the one he drank it for.
-        self.settleResists();
-    }
-    pub fn tickWard(self: *Hero, dt: f32) void {
-        self.wardLeft = mathx.maxF(0, self.wardLeft - dt);
-        self.greaseLeft = mathx.maxF(0, self.greaseLeft - dt); // the tallow burns down on the same clock
         self.settleResists();
     }
 
     pub fn startGrease(self: *Hero, frac: f32, secs: f32) void {
-        self.greaseFire = frac;
-        self.greaseLeft = secs; // refreshed, never stacked
+        self.grease.start(frac, secs);
+    }
+
+    /// **EVERY TIMED THING HE IS CARRYING, ADVANCED IN ONE PLACE.** It was `tickWard`, which also ticked the
+    /// tallow — a name that described one of the two things it did, and the obvious place for the third to be
+    /// forgotten. The resistances are settled after, because the ward is one of the inputs to them.
+    pub fn tickTimed(self: *Hero, dt: f32) void {
+        self.ward.tick(dt);
+        self.grease.tick(dt);
+        self.settleResists();
     }
 
     /// The ONE place `vit.res` is written. As a bare `vit.res = ward or nothing` it was sole writer AND
     /// clobberer, so `makeWhole` carrying the resistances across a bonfire was undone by the next tick.
     fn settleResists(self: *Hero) void {
         var r = self.baseRes;
-        if (self.wardLeft > 0) r.v[@intFromEnum(combat.Elem.chaos)] += self.wardChaos;
+        r.v[@intFromEnum(combat.Elem.chaos)] += self.ward.value(0);
         self.vit.res = r;
     }
 

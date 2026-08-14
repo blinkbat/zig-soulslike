@@ -550,6 +550,16 @@ test "A BUTTON IS NAMED ONCE — the press the loop reads IS the letter the crib
     try std.testing.expectEqual(rl.KeyboardKey.y, INTERACT_KEY);
 }
 
+test "ONE BUTTON, ONE ORDER — and the enum's own order is what the press goes through" {
+    // Meaningful only because `reachable` walks the fields rather than repeating them: pinning the order here
+    // pins the PRESS, which it did not when the two were written out separately.
+    try std.testing.expectEqual(@as(u32, 0), @intFromEnum(Reach.souls)); // the walk back for souls outranks all
+    try std.testing.expect(@intFromEnum(Reach.pickup) < @intFromEnum(Reach.talk)); // TAKE BEATS TALK (owner's)
+    try std.testing.expect(@intFromEnum(Reach.pickup) < @intFromEnum(Reach.chest));
+    // …and every row answers `inReach`, so a new one cannot be added without saying what reaches it.
+    inline for (@typeInfo(Reach).@"enum".fields) |f| _ = @as(Reach, @enumFromInt(f.value)).prompt();
+}
+
 test "the ranges the fight is judged at are each GROUP'S OWN, never one figure for the field" {
     try std.testing.expect(frogmod.AGGRO_R < archermod.AGGRO_R);
     inline for (FOE_GROUPS) |gr| try std.testing.expect(gr.aggro > 0);
@@ -1232,6 +1242,12 @@ pub fn drawAwardCardForShot(g: *Game) void {
     g.award.drawCard();
 }
 
+/// Read the front card, through the queue's own path — `clearPending` throws the held toasts away with it,
+/// which is the one thing the shot after this is trying to photograph.
+pub fn dismissAwardForShot(g: *Game) void {
+    g.award.dismiss();
+}
+
 /// **THE TOASTS HAVE TO BE TICKED BEFORE THEY CAN BE PHOTOGRAPHED.** They slide in over `award.TOAST_IN`, so at
 /// `t = 0` every one of them is parked exactly one width off the right edge — the first pass shot them the frame
 /// they were made and came back with an empty screen and no error anywhere.
@@ -1400,33 +1416,52 @@ const SHOT_STEP: f32 = @import("shots.zig").SHOT_DT;
 /// rings overlap. The DROP is first because you can die at a bonfire, and on the frame you walk back in there
 /// is exactly one thing you came for; its ring is in fact the more generous of the two (`souls.REACH` 2.6 vs
 /// `chest.REACH` 2.1).
+///
+/// **THE DECLARATION ORDER IS THE PRIORITY, AND IT IS THE ONLY PLACE THE PRIORITY IS WRITTEN.** `reachable`
+/// walks these fields in order rather than repeating them as an if-chain: written twice, the list that reads
+/// like the rule and the list that IS the rule can disagree without either looking wrong — which is exactly
+/// what had happened, the comment here claiming the glow was last because its ring was the widest when the
+/// bonfire's is wider. Moving a row moves the press now.
 const Reach = enum {
     souls,
     rest,
+    /// **TAKE BEATS TALK** (owner's call). A glow and a wanderer answer at exactly the same 2.4 m
+    /// (`pickup.REACH`, `npc.REACH`), so standing between them the order is the whole of the answer — and
+    /// picking a thing up off the ground is over in one press, where a conversation you did not mean to start
+    /// has to be backed out of.
+    pickup,
     talk,
     chest,
-    /// LAST, and deliberately: its ring is the widest of the lot (`pickup.REACH` 2.4), so a glow lying beside a
-    /// bonfire or a box would otherwise swallow the press for the thing you actually walked over to.
-    pickup,
 
     /// Off `hud.BTN_INTERACT` rather than a letter, so a rebind moves the press and the glyph at once.
     fn prompt(self: Reach) hud_.Hint {
         return .{ .glyph = .{ .face = hud_.BTN_INTERACT }, .label = switch (self) {
             .souls => "Reclaim",
             .rest => "Rest",
+            .pickup => "Take",
             .talk => "Speak",
             .chest => "Open",
-            .pickup => "Take",
         } };
     }
 };
 
+/// Is THIS one in reach — one row, one answer, and the switch is exhaustive so a new kind of interaction
+/// cannot be added without saying what puts it in reach.
+fn inReach(g: *const Game, r: Reach) bool {
+    return switch (r) {
+        .souls => g.souls.near,
+        .rest => g.rest.near != null,
+        .pickup => g.pickups.near != null,
+        .talk => talkable(g),
+        .chest => g.chests.near != null,
+    };
+}
+
 fn reachable(g: *const Game) ?Reach {
-    if (g.souls.near) return .souls;
-    if (g.rest.near != null) return .rest;
-    if (talkable(g)) return .talk;
-    if (g.chests.near != null) return .chest;
-    if (g.pickups.near != null) return .pickup;
+    inline for (@typeInfo(Reach).@"enum".fields) |f| {
+        const r: Reach = @enumFromInt(f.value);
+        if (inReach(g, r)) return r;
+    }
     return null;
 }
 
@@ -1436,9 +1471,9 @@ fn interact(g: *Game) void {
     switch (reachable(g) orelse return) {
         .souls => reclaimSouls(g),
         .rest => _ = g.rest.begin(),
+        .pickup => takePickup(g),
         .talk => _ = startTalk(g),
         .chest => openChest(g),
-        .pickup => takePickup(g),
     }
 }
 
@@ -2461,6 +2496,27 @@ fn sunFocus(g: *const Game) rl.Vector3 {
     return v3(t.x, g.env.groundAt(t.x, t.z), t.z);
 }
 
+/// **THE LIGHTS THAT ARE NOT IN THE WORLD**, gathered in the order they matter — the wand in his hand first,
+/// then every rune ring standing on the ground. `env.uploadLights` gives these reserved slots so a brazier
+/// cannot evict them, and takes at most half the rack, so ORDER is what decides on a crowded field: what he
+/// is holding outranks what is being done to him.
+///
+/// **SIZED TO WHAT CAN BE USED, NOT TO WHAT CAN EXIST.** `uploadLights` keeps at most half the rack whatever
+/// it is handed, so a buffer holding one per possible necromancer (25) spent twenty-four `sigilLight` calls a
+/// frame building lights nobody could ever be shown. Filling exactly the half means the same eight win —
+/// order is what decides either way — for a third of the work and none of the stack.
+const RESERVED_LIGHTS = gfx.MAX_LIGHTS / 2;
+
+fn reservedLights(g: *const Game, out: *[RESERVED_LIGHTS]gfx.Light) []const gfx.Light {
+    var n: usize = 0;
+    if (g.hero.wandLight()) |w| {
+        out[n] = w;
+        n += 1;
+    }
+    n += g.rite.markLights(out[n..]);
+    return out[0..n];
+}
+
 pub fn drawScene(g: *Game) void {
     g.env.resetStats();
     applyStow(g); // before the depth pass: what is stowed is not a caster
@@ -2485,7 +2541,8 @@ pub fn drawScene(g: *Game) void {
 
     rl.beginMode3D(cam);
     g.scene.bind(cam.position);
-    g.env.uploadLights(&g.scene, &view, @floatCast(rl.getTime()), g.hero.wandLight());
+    var lightBuf: [RESERVED_LIGHTS]gfx.Light = undefined;
+    g.env.uploadLights(&g.scene, &view, @floatCast(rl.getTime()), reservedLights(g, &lightBuf));
     g.scene.setGround(true);
     g.env.drawGround(&view);
     g.scene.setGround(false);
@@ -3245,7 +3302,7 @@ pub fn run(mode: Mode) void {
         if (wade < 1.0) mv.speed = @min(mv.speed, WALK_SPEED * wade);
         g.hero.vit.tick(dt);
         g.hero.regen.tick(dt, &g.hero.vit);
-        g.hero.tickWard(dt);
+        g.hero.tickTimed(dt);
         g.hero.tickFlash(dt);
         // Once a frame rather than at each site that can empty the bag: a per-site list is one to forget from.
         g.hero.quick.dropEmpty(&g.bag);

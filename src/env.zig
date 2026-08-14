@@ -1501,13 +1501,18 @@ pub const Env = struct {
 
     /// This frame's torch/fire lights: the gfx.MAX_LIGHTS nearest the camera whose pool is actually ON SCREEN.
     ///
-    /// `carried` is a light that is not in the world (`hero.wandLight`). It gets a RESERVED slot rather than
-    /// joining the contest, so a brazier the player stands beside cannot evict the spell he just cast.
-    pub fn uploadLights(self: *const Env, scene: *gfx.Scene, view: *const View, t: f32, carried: ?gfx.Light) void {
-        comptime std.debug.assert(gfx.MAX_LIGHTS > 1); // the reserved slot has to leave the world at least one
+    /// `reserved` are lights that are NOT in the world — the wand in his hand (`hero.wandLight`), a
+    /// necromancer's rune ring (`necro.Rite.markLights`). They get RESERVED slots rather than joining the
+    /// contest, so a brazier the player stands beside cannot evict the spell he just cast or the mark he is
+    /// standing on. **NEVER MORE THAN HALF THE RACK, THOUGH**: a field with several casters on it would
+    /// otherwise put out every fire in the world to light their own marks. Past the half the caller's ORDER
+    /// decides, which is why it hands them over most-important first.
+    pub fn uploadLights(self: *const Env, scene: *gfx.Scene, view: *const View, t: f32, reserved: []const gfx.Light) void {
+        comptime std.debug.assert(gfx.MAX_LIGHTS > 1); // the reserved slots have to leave the world at least one
         var picked: [gfx.MAX_LIGHTS]gfx.Light = undefined;
         var dist: [gfx.MAX_LIGHTS]f32 = undefined;
-        const cap = picked.len - @as(usize, @intFromBool(carried != null));
+        const keep = @min(reserved.len, gfx.MAX_LIGHTS / 2);
+        const cap = picked.len - keep;
         var n: usize = 0;
         for (self.lights[0..self.nlights]) |wl| {
             if (!view.visible(wl.base.pos, wl.base.radius, LIGHT_REACH)) continue;
@@ -1533,7 +1538,7 @@ pub const Env = struct {
                 dist[worst] = d2;
             }
         }
-        if (carried) |c| {
+        for (reserved[0..keep]) |c| {
             picked[n] = c;
             n += 1;
         }

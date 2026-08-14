@@ -2,6 +2,8 @@ const std = @import("std");
 const rl = @import("raylib");
 
 const chestmod = @import("chest.zig");
+const pickupmod = @import("pickup.zig");
+const awardmod = @import("award.zig");
 const combat = @import("combat.zig");
 const daynight = @import("daynight.zig");
 const heromod = @import("hero.zig");
@@ -46,6 +48,11 @@ pub const Slot = struct {
     day: *daynight.Clock,
     trig: *trigmod.Runtime,
     chests: *chestmod.Chests,
+    pickups: *pickupmod.Pickups,
+    /// **THE DISCOVERY SET LIVES IN THE FILE**, or every reload turns the game back into a slideshow of items
+    /// it has already shown you. The pending cards and toasts deliberately do NOT: those are a moment, not a
+    /// character (`award.clearPending`).
+    award: *awardmod.Award,
     /// Which world this belongs to. A file naming another map is refused, not replayed against whatever
     /// happens to be loaded — the trigger indices, the chest indices and `near npc=` are all that map's.
     map: []const u8,
@@ -107,6 +114,19 @@ pub const Data = struct {
     elapsed: f32 = 0,
 
     chestOpen: [chestmod.CAP]bool = [_]bool{false} ** chestmod.CAP,
+    pickupTaken: [pickupmod.CAP]bool = [_]bool{false} ** pickupmod.CAP,
+    /// **AND WHAT HE HAS EVER SEEN** — one bit per item kind, through the same `bits` run the chests use, so it
+    /// is legible in a save you can read; a MISSING row leaves it all false, which is what an older save
+    /// honestly is (it will card each kind once more, and then never again).
+    ///
+    /// **IT IS POSITIONAL, WHICH MAKES `item.Kind`'S ORDER PART OF THE SAVE FORMAT.** `bits` writes one
+    /// character per kind in enum order and `readBits` reads them straight back by index — no tag names
+    /// anywhere. So a kind INSERTED or MOVED in that enum silently re-points every discovery bit in every
+    /// existing file: the player is re-introduced to things he has carried for hours and never shown the one
+    /// thing he has not. `item.Kind` is append-only for this reason and a test in `item.zig` pins its order.
+    /// (This comment said "written by TAG" and claimed a reordered enum could not re-point it. Neither was
+    /// ever true, and a false safety note is worse than none — it is the reason nobody added the guard.)
+    seen: [item.NK]bool = [_]bool{false} ** item.NK,
 
     pub fn mapName(self: *const Data) []const u8 {
         return self.map[0..self.mapLen];
@@ -132,7 +152,9 @@ const CAP: usize =
     wf.MAX_TRIGGERS * 5 + 12 + // actAt
     wf.MAX_TRIGGERS * 12 + 12 + // waitLeft
     NFOE * 12 + 10 +
-    chestmod.CAP + 10;
+    chestmod.CAP + 10 +
+    pickupmod.CAP + 10 + // the glows…
+    item.NK + 8; // …and the discovery set, one character each plus its key
 
 /// **WHAT A PICKER ROW SAYS** — read off the file itself, never kept in a second index beside it. Three
 /// small files re-read when the shelf is surveyed is nothing, and a manifest is a thing that can disagree
@@ -145,8 +167,9 @@ pub const Head = struct {
     playtime: f32,
 };
 
-/// EVERY SLOT AT ONCE, which is what the boot screen needs to answer three questions with: is Load live at
-/// all, does New Game have a free slot to take, and what does each row say.
+/// EVERY SLOT AT ONCE, which is what the boot screen needs to answer its two questions with: is Load live at
+/// all (`any`), and what does each row say (`head`). BOTH boot rows now open the picker (`menu.openSlots`), so
+/// nothing asks where a new character would go — the player says.
 pub const Shelf = struct {
     head: [SLOTS]?Head = [_]?Head{null} ** SLOTS,
 
@@ -157,8 +180,9 @@ pub const Shelf = struct {
         return false;
     }
 
-    /// ER'S OWN NEW GAME: the first empty slot, without asking. Null when all three are full, which is the
-    /// one case that has to ask which character you are prepared to lose.
+    /// The first empty slot, or null when all three are full. **NOTHING IN THE GAME CALLS THIS ANY MORE** — it
+    /// was ER's New Game taking the first free slot without asking, and the owner's call is that both boot rows
+    /// ask which slot. Kept against that decision being revisited; the test below is its only reader.
     pub fn firstFree(self: *const Shelf) ?usize {
         for (self.head, 0..) |h, i| {
             if (h == null) return i;
@@ -195,6 +219,24 @@ pub fn read(i: usize, s: Slot) bool {
     return readFrom(PATHS[i], s);
 }
 
+/// **A SLOT IS TWO FILES AND BOTH GO.** A picture left standing beside a save that is gone is precisely what
+/// the picker's own rule forbids — a row reading "Empty" over a photograph of somebody's game — and it is why
+/// the shot is deleted here rather than left for `writeShot` to overwrite one day.
+///
+/// A file that was never there is not a failure: what the caller asked for is that the slot END UP empty, and
+/// it is. Only a delete that was REFUSED (a read-only file, a handle still open) comes back false, so the one
+/// thing the menu can say — "that did not happen" — is the one thing this reports.
+pub fn erase(i: usize) bool {
+    var ok = true;
+    std.fs.cwd().deleteFile(PATHS[i]) catch |e| {
+        if (e != error.FileNotFound) ok = false;
+    };
+    // The picture is chrome. Losing the save but keeping the thumbnail is a broken slot; the other way round
+    // is a slot that simply draws an empty plate, which the picker already handles.
+    std.fs.cwd().deleteFile(SHOTS[i]) catch {};
+    return ok;
+}
+
 /// THE PICTURE THE PICKER SHOWS A SLOT BY — the frame as it stands, scaled down. Taken at the fire and NOT
 /// on the frame the file is written: `justEntered` fires at the bottom of the fade-in, where the screen is
 /// black, so the game asks for this once the fade is back up (`game.SHOT_CLEAR`) and before any chrome goes
@@ -228,7 +270,14 @@ pub fn writeTo(file: []const u8, s: Slot) bool {
     const d = gather(s);
     const f = std.fs.cwd().createFile(file, .{}) catch return false;
     defer f.close();
-    render(f.writer(), &d) catch return false;
+    // **A WRITE THAT DIED HALFWAY TAKES ITS FILE WITH IT.** A refused save is a false out of here and nothing
+    // else; a TRUNCATED one is worse than either, because a short run is LEGAL in this grammar (`readBits`'s
+    // own rule) — so the tail that never reached the disk parses as all-defaults and the slot lists and loads
+    // as a character whose triggers, boxes, tree and bag have quietly gone back to nothing.
+    render(f.writer(), &d) catch {
+        std.fs.cwd().deleteFile(file) catch {};
+        return false;
+    };
     return true;
 }
 
@@ -296,6 +345,8 @@ pub fn gather(s: Slot) Data {
     d.elapsed = t.elapsed;
 
     for (s.chests.liveConst(), 0..) |c, i| d.chestOpen[i] = c.opened;
+    for (s.pickups.liveConst(), 0..) |p, i| d.pickupTaken[i] = p.taken;
+    d.seen = s.award.seen;
     return d;
 }
 
@@ -339,6 +390,14 @@ pub fn scatter(d: *const Data, s: Slot) void {
         c.opened = d.chestOpen[i];
         c.swing = if (c.opened) 1 else 0; // a lid you opened last session is not one caught mid-swing
     }
+    for (s.pickups.live(), 0..) |*p, i| {
+        p.taken = d.pickupTaken[i];
+        p.fade = if (p.taken) 1 else 0; // …and a glow you took is gone, not one caught mid-shrink
+    }
+    s.award.seen = d.seen;
+    // The pending notices are NOT restored — a card is a moment. Cleared, or a load lands you staring at the
+    // item you were reading about when you last sat down.
+    s.award.clearPending();
 }
 
 pub fn render(w: anytype, d: *const Data) !void {
@@ -377,6 +436,8 @@ pub fn render(w: anytype, d: *const Data) !void {
     try nums(w, "deaths", &d.deaths);
     try w.print("elapsed: {d:.3}\n", .{d.elapsed});
     try bits(w, "chests", &d.chestOpen);
+    try bits(w, "pickups", &d.pickupTaken);
+    try bits(w, "seen", &d.seen);
 }
 
 pub fn parse(text: []const u8, d: *Data) !void {
@@ -462,6 +523,10 @@ pub fn parse(text: []const u8, d: *Data) !void {
             d.elapsed = try float(&it);
         } else if (std.mem.eql(u8, key, "chests:")) {
             try readBits(&it, &d.chestOpen);
+        } else if (std.mem.eql(u8, key, "pickups:")) {
+            try readBits(&it, &d.pickupTaken);
+        } else if (std.mem.eql(u8, key, "seen:")) {
+            try readBits(&it, &d.seen);
         } else {
             return Error.BadKey;
         }
@@ -578,6 +643,9 @@ fn sample() Data {
     d.deaths[0] = 6;
     d.elapsed = 421.5;
     d.chestOpen[1] = true;
+    d.pickupTaken[3] = true;
+    d.seen[@intFromEnum(item.Kind.mushroom_jerky)] = true;
+    d.seen[item.NK - 1] = true; // the LAST bit too: a run written one short round-trips as all-false at the end
     return d;
 }
 
@@ -612,6 +680,10 @@ test "a save round-trips through its own text" {
     try testing.expectEqual(d.deaths, back.deaths);
     try testing.expectApproxEqAbs(d.elapsed, back.elapsed, 1e-3);
     try testing.expectEqual(d.chestOpen, back.chestOpen);
+    try testing.expectEqual(d.pickupTaken, back.pickupTaken);
+    // **THE DISCOVERY SET SURVIVES THE FILE**, which is the whole reason it is in it: without this a reload
+    // shows you the first-time card for everything you already own.
+    try testing.expectEqual(d.seen, back.seen);
 }
 
 test "the buffer holds the biggest save this build can write" {
@@ -672,6 +744,8 @@ const Live = struct {
     day: daynight.Clock = .{},
     trig: trigmod.Runtime = .{},
     chests: chestmod.Chests = undefined,
+    pickups: pickupmod.Pickups = .{},
+    award: awardmod.Award = .{},
 
     fn blank(nChests: usize) Live {
         var l = Live{};
@@ -701,6 +775,8 @@ const Live = struct {
             .day = &self.day,
             .trig = &self.trig,
             .chests = &self.chests,
+            .pickups = &self.pickups,
+            .award = &self.award,
             .map = "worlds/01_fallen_plain.world",
         };
     }
@@ -780,7 +856,7 @@ test "the file itself round-trips, and one written for another map is refused" {
     try testing.expect(!readFrom("save.no_such_file.dat", b.slot()));
 }
 
-test "the shelf answers the three questions the boot screen asks it" {
+test "the shelf answers what the boot screen asks it" {
     var sh = Shelf{};
     try testing.expect(!sh.any());
     try testing.expectEqual(@as(?usize, 0), sh.firstFree());

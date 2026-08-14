@@ -23,6 +23,7 @@ const rootedmod = @import("rooted.zig");
 const shroommod = @import("shroom.zig");
 const knightmod = @import("knight.zig");
 const delvermod = @import("delver.zig");
+const necromod = @import("necro.zig");
 
 const v3 = mathx.v3;
 const Kind = props.Kind;
@@ -237,6 +238,7 @@ const CharSet = struct {
     grove: rootedmod.Grove,
     cluster: shroommod.Cluster,
     warrens: delvermod.Warrens,
+    rite: necromod.Rite,
     vigil: knightmod.Vigil,
 };
 var charSet: ?CharSet = null;
@@ -255,6 +257,7 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
             .grove = rootedmod.Grove.init(scene.shader),
             .cluster = shroommod.Cluster.init(scene.shader),
             .warrens = delvermod.Warrens.init(scene.shader),
+            .rite = necromod.Rite.init(scene.shader),
             .vigil = knightmod.Vigil.init(scene.shader),
         };
         var cs = &charSet.?;
@@ -291,6 +294,9 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .shroom => .{ .top = 1.2, .bound = 1.0 },
         .bone_knight => .{ .top = 5.4, .bound = 3.2 },
         .delver => .{ .top = 1.9, .bound = 2.0 },
+        // TALL AND NARROW, and the box says so: nothing else on this list is more than twice as high as it
+        // is wide. The bound has to hold the dragging hem, which is wider than the body above it.
+        .necromancer => .{ .top = 2.8, .bound = 1.3 },
     };
 }
 
@@ -368,6 +374,11 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.warrens.n = 1;
             cs.warrens.live()[0] = delvermod.Delver.spawn(mathx.zero3, 0, 1.0, seed);
             cs.warrens.draw(scene);
+        },
+        .necromancer => {
+            cs.rite.n = 1;
+            cs.rite.live()[0] = necromod.Necro.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.rite.draw(scene);
         },
     }
 }

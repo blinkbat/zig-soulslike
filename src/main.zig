@@ -69,7 +69,10 @@ test {
     _ = @import("shroom.zig"); // THE SPORELING — the trip's roll and the cloud's metronome
     _ = @import("knight.zig"); // THE BONE KNIGHT — the tower shield's arc and the fall's strip
     _ = @import("delver.zig"); // THE DELVER — the burrow's dwell, and that the depth is what refuses the sword
+    _ = @import("necro.zig"); // THE NECROMANCER — the committed sigil, and the hem that overshoots its rest
     _ = @import("wolf.zig"); // THE FIRST SPIRIT, and the first QUADRUPED — the tests are Hildebrand's two dials
+    _ = @import("pickup.zig"); // THE ITEM PICKUP — the reach ring, the one-shot latch and the fade
+    _ = @import("award.zig"); // …and WHAT IT SAYS you got: the first-time card's queue and the toast stack
     _ = @import("foe.zig");
     _ = @import("combat.zig");
     _ = @import("stats.zig");

@@ -269,8 +269,9 @@ pub const Session = struct {
                 var out: [LABEL_CAP]u8 = undefined;
                 const label = m.spanText(c.label);
                 const numbered = std.fmt.bufPrint(&out, "{d}. {s}", .{ row + 1, label }) catch label;
+                // The bar `rowHilite` lays down IS the cursor here as it is in every menu (`uiart.caret`);
+                // this row used to carry a gilt diamond on top of it, which is one cursor drawn twice.
                 hud.text(zterm(&lb, numbered), innerX + (if (on) @as(i32, 10) else 0), cy, hud.BODY, if (on) uiart.HOT else TEXT_OFF);
-                if (on) uiart.diamond(@floatFromInt(innerX + 1), @floatFromInt(cy + @divTrunc(bodyH, 2)), 3.2, uiart.GILT);
                 cy += rowStep;
             }
         }

@@ -234,13 +234,27 @@ pub fn slotCursor(x: i32, y: i32, w: i32, h: i32, press: f32, travel: f32) void 
     }
 }
 
+/// **THE CURSOR IS A LEADING BAR, AND IT IS THE ONLY THING THAT MARKS A ROW** (owner's call). Every list in
+/// the game used to set a `>` glyph in the row's left margin on TOP of the bar this same wash was already
+/// drawing — one cursor said twice, in two places that had to be kept in step, and a column of arrows down a
+/// menu besides. The bar is drawn HERE and nowhere else, so a list cannot grow a second kind of cursor.
+pub const CARET_W: i32 = 3;
+
+pub fn caret(x: i32, y: i32, h: i32, a: u8) void {
+    rl.drawRectangle(x, y, CARET_W, h, withAlpha(GILT_BRIGHT, a));
+}
+
 /// The row the cursor is on, wherever a list has one. The menu card, the book's picker and its attribute list
 /// each struck their own — three washes one repaint apart is how a menu ends up with two highlights.
 const ROW_WASH = rgba(255, 232, 170, 23);
+/// …and what the bar is worth on a row too dim to take a wash — an empty slot, a refused option. The cursor
+/// may never be INVISIBLE on the one row it is standing on, which is exactly the row whose reason you are
+/// trying to read.
+pub const CARET_DIM: u8 = 120;
 
 pub fn rowHilite(x: i32, y: i32, w: i32, h: i32) void {
     rl.drawRectangle(x, y, w, h, ROW_WASH);
-    rl.drawRectangle(x, y, 3, h, withAlpha(GILT_BRIGHT, flick(230, y)));
+    caret(x, y, h, flick(230, y));
     sheen(rect(x, y, w, h), 3.8, 24);
 }
 

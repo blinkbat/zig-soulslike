@@ -954,6 +954,15 @@ at: glow -60.975845 -89.69504 0 1
 at: glow -60.956543 -83.65967 0 1
 at: glow -57.475212 -86.07784 0 1
 at: glow -58.259018 -87.98888 0 1
+at: cliff -71.08909 -74.810555 0 0.5999999
+at: cliff -78.64811 -74.75725 -20 0.49999988
+at: chest -65.610016 -76.684105 200 1 loot=nameless_soul,quilted_gambeson,sporeling_cap
+at: pickup -20.090546 -4.690786 0 1 loot=fire_tallow,bloodgrass
+at: pickup 32.73991 -6.384436 0 1 loot=toadflesh_broth,nameless_soul
+at: pickup -31.69429 -64.822624 0 1.3499997 loot=tower_shield
+at: pickup 12.699394 -42.347057 0 1 loot=fang_dirk
+at: pickup -37.529385 -45.327354 0 1 loot=bloodgrass,bloodgrass,smithing_stone
+at: pickup -98.94065 -17.500525 0 1 loot=greatclub
 cover: 3.3 0.72 1.38 seed=1131
 
 soil: 0x1887 1x2 0x62 1x2 0x59 1x2 0x1 1x3 0x58 1x6 0x60 2x2 1x1 0x61 2x2 1x2
@@ -1168,6 +1177,12 @@ foe: bone_knight 43.06 -79.81 240.0 1.00 0.72
 foe: delver -54.56 -115.78 0.0 1.00 0.09
 foe: delver -54.90 -127.72 0.0 1.00 0.46
 foe: delver -61.65 -124.48 0.0 1.00 0.83
+foe: necromancer -59.27 -80.04 0.0 1.00 0.20
+foe: archer -58.74 -81.78 0.0 1.00 0.57
+foe: archer -58.16 -78.37 0.0 1.00 0.94
+foe: shieldman -60.96 -80.19 0.0 1.00 0.31
+foe: delver 29.30 -18.38 0.0 1.00 0.68
+foe: delver 31.30 -20.30 0.0 1.00 0.05
 
 flags: met_wanderer heard_of_gate
 

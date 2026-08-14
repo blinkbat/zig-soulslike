@@ -1421,6 +1421,12 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
     // WHAT IT DOES, in the game's own numbers — read off `item.use`, so a dose tuned there reads here.
     // ONE effect line per arm; the use-or-refuse hint below is shared, because the refusal is the quick
     // bar's rule and not any one effect's.
+    //
+    // **THE OTHER RENDERER OF THE SAME UNION IS `item.effect`**, and the split is deliberate rather than
+    // missed: this one RESOLVES the doses against the sheet in front of it ("Restores 42 HP"), which is what a
+    // player holding the thing wants and what the editor's loot row cannot have — there is no hero there. Both
+    // are exhaustive switches on `item.Use`, so a new arm cannot be added to one and forgotten in the other;
+    // what can drift is the WORDING, so keep the two saying the same thing about the same effect.
     switch (item.use(k)) {
         .none => hud.text("It does nothing you can do here.", inner.x, y, hud.HINT, uiart.TEXT_HINT),
         .regen => |r| hud.text(fmt("Restores {d:.0} HP over {d:.0} seconds.", .{ v.sheet.hp() * r.frac, r.secs }), inner.x, y, hud.SMALL, uiart.GOOD),

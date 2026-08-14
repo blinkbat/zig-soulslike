@@ -146,6 +146,12 @@ comptime {
     // lift), so at `UNDER_DEPTH` the top of it sits this far under the ground he is standing on — further
     // than any blade of his reaches below his own boots, and the swept test then refuses it on its own.
     // A creature that needed a special case here would need one at every future site that swings anything.
+    //
+    // **AND IT HOLDS AT EVERY SCALE THE MAP CAN POST, which is why this may be written in bare constants.**
+    // `depth` is in SCALE-1 METRES and `ride()` is what multiplies it (`-depth * scale`), so every term below
+    // is the same multiple of `scale` and the whole inequality is scale-invariant. Read the other way — depth
+    // as world metres — it looks like a check that only pins scale 1, and "fixing" that by scaling `depth`
+    // at its writers double-scales the burrow and surfaces a small delver. The test below is the pin.
     std.debug.assert(UNDER_DEPTH - CENTER_F * H - HURT_R > 0.8);
     // …and the whole of it is a state the hero is warned into: the surge outlasts the dive's own wind.
     std.debug.assert(SURGE_DUR > DIVE_WIND and DIVE_WIND >= foe.TELL_MIN and CLAW_WIND >= foe.TELL_MIN);
@@ -158,15 +164,86 @@ comptime {
     std.debug.assert(SURGE_DUR > 0.70 + 0.30); // ROLL_DUR, plus a beat to read the mound and press it
 }
 
+// THE PLOUGH — the burrow's OTHER way out, and the answer to a player who simply keeps walking.
+//
+// **THE BURST IS A SPOT AND THIS IS A LINE**, which is the whole of why there are two: stand still and it
+// comes up under your feet, RUN and it stops trying to get under you and drives the ridge straight down the
+// ground you are running over. Two pictures, two answers — get off the mark, or get off the line — and the
+// mound tells you which one is coming before either arrives.
+//
+// It is lighter than the burst on all three counts, because a furrow is easier to leave than a ring you are
+// standing in the middle of. The assert below pins that: `game.zig` splits the felt beat on "was it THE
+// BURST" by comparing stance, so the burst has to stay the heavier of the two or the shake lies.
+pub const PLOUGH_HIT = combat.Hit{ .dmg = 20, .poise = 30, .stance = 12 };
+/// How wide the furrow bites either side of the line it runs.
+pub const PLOUGH_R: f32 = 1.15;
+/// THE TELL, AND IT IS A DIFFERENT PICTURE FROM THE SURGE'S: the ridge STRAIGHTENS AND STRETCHES instead of
+/// stopping and doming. Shorter than `SURGE_DUR` on purpose — the ground it threatens is a line you step off
+/// rather than a circle you have to clear — and still well past `foe.TELL_MIN`.
+pub const PLOUGH_WIND: f32 = 0.55;
+const PLOUGH_DUR: f32 = 0.85; // …and the run itself
+const PLOUGH_SPEED: f32 = 9.2; // near twice its swim: this is the charge, and it is the fastest thing it does
+/// THE BAND IT COMMITS FROM. Outside the burst's own lock ring, so the two moves can never both be on the
+/// table, and inside what the run can actually cover — a charge that stops short is a charge you walk out of.
+const PLOUGH_R_MIN: f32 = 3.0;
+const PLOUGH_R_MAX: f32 = PLOUGH_SPEED * PLOUGH_DUR * 0.8;
+/// …and how far off its nose he may be when it commits. It is ploughing, not steering.
+const PLOUGH_ARC: f32 = 38.0;
+/// **THE RIDGE STRETCHES, IT DOES NOT SWELL — that IS the tell, and it is the whole reason the two exits can
+/// be told apart.** The mound's matrix scales X and Z together off `moundR`, so a plough that only raised
+/// that number drew the surge's own dome a little bigger: two moves, one picture, and no read at all. The
+/// stretch is a separate factor applied along the mesh's own +Z, which `ry(facing)` has already turned onto
+/// the heading — so the heap gets LONGER down the line it is about to run and barely wider.
+const MOUND_PLOUGH_R: f32 = MOUND_TRAVEL_R * 1.1;
+const MOUND_PLOUGH_H: f32 = MOUND_TRAVEL_H * 1.45;
+const MOUND_PLOUGH_LONG: f32 = 2.8;
+
+// THE RAKE — the backhand the claw comes back on.
+//
+// **THE SURFACED WINDOW WAS A FREE HIT.** It opened with one stroke on a two-second cooldown, so reading the
+// burrow correctly and punishing it was a trade you could not lose. The return is FASTER than the opener —
+// that is the whole of it — and still clears `foe.TELL_MIN`, so it is a thing you can see coming and not a
+// thing that simply happens to you.
+pub const RAKE_HIT = combat.Hit{ .dmg = 12, .poise = 16, .stance = 5 };
+/// **AND IT IS STILL LONG ENOUGH TO BE CAUGHT ON, WHICH IS WHAT SIZES IT FROM BELOW.** It carries a parry
+/// window like the opener does, and `foe.PARRY_LEAD` brackets every wind in the game from above (the toad's
+/// `LUNGE_COIL` and the brood's `BITE_WINDUP` were both pushed up for exactly this). At 0.33 the game's one
+/// difficulty dial covered 55% of this tell against under half of the claw's beside it — the same move twice
+/// at two difficulties, and nothing pinned it.
+pub const RAKE_WIND: f32 = 0.40;
+const RAKE_STRIKE: f32 = 0.18;
+/// …and it is a ROLL, not a guarantee. A creature whose combo always comes is one you answer by rote.
+const RAKE_CHANCE: f32 = 0.55;
+
+comptime {
+    // Every wind in the creature clears the no-attack-from-nowhere floor, the new pair included.
+    std.debug.assert(PLOUGH_WIND >= foe.TELL_MIN and RAKE_WIND >= foe.TELL_MIN);
+    // …and the RETURN is the quick one, or there is no reason to have thrown it.
+    std.debug.assert(RAKE_WIND < CLAW_WIND);
+    // …AND BOTH PARRYABLE STROKES ARE BRACKETED BY THE ONE DIAL, not just the opener: a window worth more than
+    // half the tell in front of it is the same move at a second difficulty.
+    std.debug.assert(foe.PARRY_LEAD < RAKE_WIND * 0.5 and foe.PARRY_LEAD < CLAW_WIND * 0.5);
+    // THE TWO BURROW EXITS ANSWER TWO RANGES AND MAY NOT OVERLAP: inside the lock ring it is the burst's, and
+    // the plough only exists out past it.
+    std.debug.assert(PLOUGH_R_MIN > SURGE_LOCK_R and PLOUGH_R_MAX > PLOUGH_R_MIN);
+    // …and THE BURST STAYS THE HEAVY ONE. `game.zig` sizes the shake and the pad off `hit.stance >=
+    // BURST_HIT.stance`, so a plough that matched it would be felt as the ground opening under him.
+    std.debug.assert(PLOUGH_HIT.stance < BURST_HIT.stance and RAKE_HIT.stance < BURST_HIT.stance);
+    // …and the return is the lighter half of the pair it belongs to.
+    std.debug.assert(RAKE_HIT.dmg < CLAW_HIT.dmg);
+}
+
 const DEATH_DUR: f32 = 1.15;
 const DISS_DUR: f32 = 1.05;
 const SHOVE_DECAY: f32 = 7.0;
 const DISSOLVE = foe.Dissolve{ .rate = 58.0, .spread = 0.9, .rise = 0.75, .flake = CLOD };
 
-/// Sized by ARITHMETIC over the worst frame (the ring law), which is the BURST: 26 clods and 14 dust go in on
-/// one frame, on top of whatever the surge under it left resident — up to 46/s against lives of 0.3-0.6 s, so
-/// about 28. Forty in a burst against a pool of 72 also keeps the one-burst-smaller-than-the-pool rule.
-const PARTS = 72;
+/// Sized by ARITHMETIC over the worst frame (the ring law), and the worst frame is the PLOUGH'S LAST one, not
+/// the burst's: the furrow can land its blow on the same frame the run ends, so the 12-clod hit burst and the
+/// 40 of `burstDirt` go in together — on top of what the run itself left resident, which is `emitWake` at 22/s
+/// and `emitSpray` at 24/s against lives of 0.3-0.7 s, about 22. That is 74 against the 72 this used to be,
+/// and a ring that overwrites its oldest does it SILENTLY. 96 clears it with room for the shove's dust.
+const PARTS = 96;
 
 // The rig — ten bones of digger. Not the humanoid scaffold: it has no waist to hinge at and its forelimbs
 // are the only thing on it that reaches.
@@ -201,7 +278,7 @@ const REST = [N]rl.Vector3{
 /// and what `parryable` hands over as its reach. MEASURED off the mesh, never argued (the ogre's club law).
 const CLAW_TIP = v3(0, -0.16, 0.78);
 
-const State = enum { idle, walk, claw, recover, dive, under, surge, burst, heave, stunlight, stunheavy, dead };
+const State = enum { idle, walk, claw, rake, recover, dive, under, surge, plough, burst, heave, stunlight, stunheavy, dead };
 
 /// PURE DECISION. `rooted` refuses the dive alone: the claw is a swing and a creature held by the ankles may
 /// still swing.
@@ -264,6 +341,8 @@ pub const Delver = struct {
     clawCd: f32 = 0,
     diveCd: f32 = 0,
     heroLatch: bool = false,
+    /// The return has already been thrown off THIS stroke — one backhand per gather, never a mill.
+    raked: bool = false,
     homing: bool = false,
     /// It went under this frame, and it broke the surface this frame — one-frame edges the GROUP reads, which
     /// is what lets the game put a shake and a low rumble under a tell arriving from off screen.
@@ -275,6 +354,9 @@ pub const Delver = struct {
     depth: f32 = 0,
     moundR: f32 = 0,
     moundH: f32 = 0,
+    /// …and how far the heap is drawn OUT ALONG ITS HEADING, as a multiple of its width. 1 is the round
+    /// travelling mound and the surge's dome; the plough is the only thing that moves it (`MOUND_PLOUGH_LONG`).
+    moundLong: f32 = 1,
     churn: f32 = 0,
 
     // pose channels
@@ -369,6 +451,19 @@ pub const Delver = struct {
     pub fn mounded(self: *const Delver) bool {
         return self.moundR > 1e-3;
     }
+    /// **YOU CANNOT FIX ON WHAT IS UNDER THE GROUND** (owner's call) — the Rooted's `hidden` predicate, which
+    /// `game.disguised` finds by `@hasDecl` and every targeting site already asks. A held lock DROPS the frame
+    /// it goes under, the flick skips it, a fresh press cannot take it, no bar hangs over the hole and the
+    /// wolf stops trying to bite two and a half metres of earth. Coming back up is a re-acquire, and that is
+    /// the point of the move: the camera is yours again and it is your problem where the mound went.
+    ///
+    /// **IT IS `deep()` AND NOT A CLOCK OF ITS OWN**, because that is the one predicate `Model.draw` already
+    /// hides the body behind: the lock lets go on exactly the frame there stops being anything to see, so a
+    /// reticle can never sit on air and can never leave a drilling body untargetable. The dive and the rise
+    /// keep it — the creature is right there, half out of the hole, and both are windows you may hit it in.
+    pub fn hidden(self: *const Delver) bool {
+        return self.deep();
+    }
     pub fn flashFrac(self: *const Delver) f32 {
         return foe.flashFrac(self.flash);
     }
@@ -424,6 +519,7 @@ pub const Delver = struct {
             .idle => self.updateIdle(dt, hero),
             .walk => self.updateWalk(dt, hero, bounds),
             .claw => self.updateClaw(dt, hero),
+            .rake => self.updateRake(dt, hero),
             .recover => {
                 self.swing = mathx.approach(self.swing, 0, dt * 3.2);
                 self.crouch = mathx.approach(self.crouch, 0.05, dt * 1.4);
@@ -433,6 +529,11 @@ pub const Delver = struct {
             // THE BURST'S OWN OPENING, and it is the longer of the two on purpose: what it pays for a move
             // with no window on it is the time you get afterwards. Half-buried, shaking soil off its back.
             .heave => {
+                // **THE ONE TAIL BOTH WAYS OUT OF THE GROUND SHARE.** The burst arrives here already at the
+                // surface (its own rise did that); the PLOUGH arrives here still buried at the end of its
+                // furrow, so the depth is eased out here rather than in a second rise of its own — one place
+                // that says "it is coming up", and `Model.draw` and the lock both key off the same number.
+                self.depth = mathx.approach(self.depth, 0, dt * 9.0);
                 const k = mathx.smoothstep(0, BURST_RECOVER, self.t);
                 self.rear = lerpF(0.58, 0, k);
                 self.swing = lerpF(0.45, 0, k) + 0.09 * mathx.sinf(self.t * 21.0) * (1.0 - k); // the shake-off
@@ -443,6 +544,7 @@ pub const Delver = struct {
             .dive => self.updateDive(dt, hero),
             .under => self.updateUnder(dt, hero, bounds),
             .surge => self.updateSurge(dt),
+            .plough => self.updatePlough(dt, hero, bounds),
             .burst => self.updateBurst(dt, hero),
             .stunlight, .stunheavy => {
                 // KNOCKED BACK ONTO ITS HAUNCHES, forelimbs up and useless. It cannot be flinched while it is
@@ -474,10 +576,17 @@ pub const Delver = struct {
         // only during `.claw`, the first strike frame would sweep from wherever the claw stood the LAST time
         // it clawed, and a segment metres long lands a phantom hit on anything between the two.
         const now = self.clawSeg();
-        if (self.state == .claw and self.t >= CLAW_WIND and self.t < CLAW_WIND + CLAW_STRIKE) {
+        // WHICH BLOW THE LIMB IS CARRYING THIS FRAME, if any — one window per stroke, and the RETURN goes
+        // through the same swept test off the same posed claw rather than a second copy of it.
+        const swung: ?combat.Hit = switch (self.state) {
+            .claw => if (self.t >= CLAW_WIND and self.t < CLAW_WIND + CLAW_STRIKE) CLAW_HIT else null,
+            .rake => if (self.t >= RAKE_WIND and self.t < RAKE_WIND + RAKE_STRIKE) RAKE_HIT else null,
+            else => null,
+        };
+        if (swung) |h| {
             if (!self.heroLatch and foe.weaponReaches(self.clawWas, now, hero, CLAW_SWEEP_R * self.scale)) {
                 self.heroLatch = true;
-                self.heroHit = CLAW_HIT;
+                self.heroHit = h;
                 self.leash.noteCombat();
             }
         }
@@ -535,9 +644,111 @@ pub const Delver = struct {
             self.swing = lerpF(-1.0, 1.0, foe.swingCurve(u)); // the one arc shape in the game
             self.rear = lerpF(0.72, 0.24, u); // …and comes DOWN through the stroke, which is where the weight is
             self.crouch = lerpF(-0.10, 0.16, u);
+        } else if (self.wantsRake(hero)) {
+            self.raked = true;
+            self.heroLatch = false; // the return is its OWN blow, and one hit per stroke means per STROKE
+            sfx.world(.delver_claw, self.pos);
+            self.enter(.rake);
         } else {
             self.enter(.recover);
         }
+    }
+
+    /// **DOES THE STROKE COME BACK.** Rolled once per gather, and only while he is still standing in it — a
+    /// backhand thrown at empty air is the creature announcing that the punish was free after all.
+    fn wantsRake(self: *Delver, hero: rl.Vector3) bool {
+        if (self.raked) return false;
+        if (mathx.distXZ(self.pos, hero) > CLAW_BAND) return false;
+        return self.aiRng.float() < RAKE_CHANCE;
+    }
+
+    /// THE RETURN. It carries on from where the first stroke FINISHED rather than resetting to a cocked
+    /// shoulder — that is what makes the pair read as one movement, and what makes the second half as quick
+    /// as it is.
+    fn updateRake(self: *Delver, dt: f32, hero: rl.Vector3) void {
+        if (self.t < RAKE_WIND) {
+            self.faceToward(hero, TURN_RATE * 0.9, dt);
+            const u = mathx.smoothstep(0, RAKE_WIND, self.t);
+            self.swing = lerpF(1.0, 0.88, u); // barely gathers: the arm is already out there
+            self.rear = lerpF(0.24, 0.54, u); // …and the weight goes back up over it
+            self.crouch = lerpF(0.16, -0.04, u);
+        } else if (self.t < RAKE_WIND + RAKE_STRIKE) {
+            const u = (self.t - RAKE_WIND) / RAKE_STRIKE;
+            self.swing = lerpF(0.88, -1.0, foe.swingCurve(u)); // back ACROSS the body, on the one arc shape
+            self.rear = lerpF(0.54, 0.18, u);
+            self.crouch = lerpF(-0.04, 0.14, u);
+        } else {
+            self.enter(.recover);
+        }
+    }
+
+    /// IS HE IN FRONT OF IT AT ALL — down its nose and not already on top of it. It is ploughing, not
+    /// steering: what it commits to is the heading it already has.
+    ///
+    /// **THE BAND IS SCALED, because the RUN is** — `updatePlough` steps `PLOUGH_SPEED * self.scale`, so a
+    /// band in flat metres promises a reach the body does not have: at the 2.0 the format allows it committed
+    /// from inside 6.3 m and then covered 13, ploughing straight past him.
+    fn aheadOf(self: *const Delver, to: rl.Vector3) bool {
+        if (mathx.distXZ(self.pos, to) < PLOUGH_R_MIN * self.scale) return false;
+        const dir = mathx.dirXZ(self.pos, to);
+        if (mathx.lenXZ(dir) < 1e-4) return false;
+        return combat.withinArc(mathx.headingXZ(dir), self.facing, PLOUGH_ARC);
+    }
+
+    /// …and IN RANGE OF A RUN as well, which is what it asks before its patience is up. Past `PLOUGH_R_MAX`
+    /// the furrow stops short of him, and a charge you walk out of the end of is not a charge.
+    fn linedUp(self: *const Delver, to: rl.Vector3) bool {
+        return self.aheadOf(to) and mathx.distXZ(self.pos, to) <= PLOUGH_R_MAX * self.scale;
+    }
+
+    /// **THE LINE IS COMMITTED THE FRAME THE RIDGE STRAIGHTENS**, which is the surge's law with the picture
+    /// swapped: what the earth is doing IS where the blow lands, so the read stays honest. It keeps crawling
+    /// through the wind — a mound that STOPPED would be saying the burst's sentence — but it stops TURNING,
+    /// and the heap stretches out along the heading it is about to run down.
+    fn updatePlough(self: *Delver, dt: f32, hero: rl.Vector3, bounds: f32) void {
+        self.depth = UNDER_DEPTH;
+        if (self.t < PLOUGH_WIND) {
+            const u = mathx.smoothstep(0, PLOUGH_WIND, self.t);
+            mathx.stepXZ(&self.pos, self.fdir(), UNDER_SPEED * 0.45 * self.scale * dt, bounds);
+            self.moundR = lerpF(MOUND_TRAVEL_R, MOUND_PLOUGH_R, u);
+            self.moundH = lerpF(MOUND_TRAVEL_H, MOUND_PLOUGH_H, u);
+            self.moundLong = lerpF(1.0, MOUND_PLOUGH_LONG, u); // …and it DRAWS OUT down the heading
+
+            self.shudder = u * 0.6; // it trembles less than the surge does: this one is about to MOVE
+            self.emitSpray(dt, 10.0 + 22.0 * u);
+            return;
+        }
+        const u = mathx.clampF((self.t - PLOUGH_WIND) / PLOUGH_DUR, 0, 1);
+        // IT WINDS UP INTO THE RUN AND COMES OFF THE THROTTLE AT THE END, which is what stops the furrow
+        // ending on a hard edge and gives the last metre of it a lip to come up out of.
+        const speed = PLOUGH_SPEED * lerpF(0.55, 1.0, mathx.smoothstep(0, 0.30, u)) *
+            (1.0 - 0.5 * mathx.smoothstep(0.75, 1.0, u));
+        const was = self.pos;
+        mathx.stepXZ(&self.pos, self.fdir(), speed * self.scale * dt, bounds);
+        self.gait += speed * dt / (STRIDE * self.scale);
+        self.emitWake(dt);
+        self.emitSpray(dt, 24.0);
+        // **THE FURROW IS A SWEPT SEGMENT.** At nine metres a second it covers fifteen centimetres a frame,
+        // and a point test against a body 0.36 m across steps straight over him about half the time.
+        if (!self.heroLatch and self.furrowed(was, hero)) {
+            self.heroLatch = true;
+            self.heroHit = PLOUGH_HIT;
+            self.leash.noteCombat();
+            self.dirtBurst(v3(hero.x, self.pos.y + 0.08, hero.z), 12, 3.0, 0.20);
+        }
+        if (u >= 1.0) {
+            sfx.world(.delver_burst, self.pos);
+            self.burstDirt();
+            self.armDive();
+            self.enter(.heave); // …and it comes up through the shared tail, still half buried
+        }
+    }
+
+    /// Did the furrow pass under him between two frames — the swept test at a tenth of `foe.weaponReaches`'
+    /// cost, because this is a circle travelling on the ground rather than a limb with a length.
+    fn furrowed(self: *const Delver, was: rl.Vector3, hero: rl.Vector3) bool {
+        const q = mathx.closestOnSegXZ(hero, was, self.pos);
+        return mathx.distXZ(hero, q) <= PLOUGH_R * self.scale + foe.HERO_R;
     }
 
     fn updateDive(self: *Delver, dt: f32, hero: rl.Vector3) void {
@@ -584,12 +795,36 @@ pub const Delver = struct {
         }
         // IT STAYS DOWN (`UNDER_MIN`) and then comes up when it is under him — or wherever it happens to be
         // once the patience runs out, so a player who simply walks does not fight a mound forever.
-        const beneath = mathx.distXZ(self.pos, to) <= SURGE_LOCK_R + self.bodyR();
-        if ((self.t >= UNDER_MIN and beneath) or self.t >= UNDER_MAX) {
-            sfx.world(.delver_surge, self.pos);
-            self.surged = true;
-            self.enter(.surge);
+        // **THE TWO EXITS SHARE ONE CLOCK.** It has to have been down `UNDER_MIN` either way, so the burrow
+        // is never a thing you rush it out of — only a thing you change the ENDING of.
+        if (self.t < UNDER_MIN) return;
+        // UNDER HIM: the ground opens where he is standing.
+        if (mathx.distXZ(self.pos, to) <= SURGE_LOCK_R + self.bodyR()) return self.enterSurge();
+        // OUT IN FRONT AND IN RANGE OF A RUN: it stops trying to get under him — that is a chase it will not
+        // win against a sprint — and drives the ridge down the ground he is running over instead.
+        if (self.linedUp(to)) return self.enterPlough();
+        // **AND ITS PATIENCE RUNS OUT DOWN THE LINE, NOT ON THE SPOT.** A surge at ground he left ten metres
+        // back is the move spent on nothing; the plough at least covers the gap and arrives near him, which
+        // is what this exit was always for. On the spot only if he is not in front of it at all.
+        if (self.t >= UNDER_MAX) {
+            if (self.aheadOf(to)) return self.enterPlough();
+            return self.enterSurge();
         }
+    }
+
+    fn enterSurge(self: *Delver) void {
+        sfx.world(.delver_surge, self.pos);
+        self.surged = true;
+        self.enter(.surge);
+    }
+
+    fn enterPlough(self: *Delver) void {
+        sfx.world(.delver_churn, self.pos);
+        // The GROUP reads this edge for the shake and the low rumble (`game.anySurged`), and a tell arriving
+        // from off screen is exactly what that exists for — this one as much as the burst's.
+        self.surged = true;
+        self.heroLatch = false;
+        self.enter(.plough);
     }
 
     /// **THE SPOT IS COMMITTED THE FRAME THE MOUND STOPS.** Nothing moves through the whole of the tell: what
@@ -638,14 +873,21 @@ pub const Delver = struct {
             self.depth = 0;
             self.moundR = 0;
             self.moundH = 0;
-            // **THE COOLDOWN IS SPENT ON THE SURFACE, NOT ON THE BURROW.** Stamped where it went DOWN it was
-            // being run off by the very thing it gates: the under, the surge, the rise and the opening come to
-            // about five seconds of it, so the window you actually get to hit the creature in was whatever was
-            // left over — and a burrow that ran to `UNDER_MAX` left none at all and re-dived on the frame it
-            // finished getting up. Armed here, the dial means the seconds it stands in front of you.
-            self.diveCd = DIVE_CD * self.aiRng.range(0.85, 1.25);
+            self.armDive();
             self.enter(.heave);
         }
+    }
+
+    /// **THE COOLDOWN IS SPENT ON THE SURFACE, NOT ON THE BURROW.** Stamped where it went DOWN it was being run
+    /// off by the very thing it gates: the under, the surge, the rise and the opening come to about five seconds
+    /// of it, so the window you actually get to hit the creature in was whatever was left over — and a burrow
+    /// that ran to `UNDER_MAX` left none at all and re-dived on the frame it finished getting up. Armed here,
+    /// the dial means the seconds it stands in front of you.
+    ///
+    /// **BOTH WAYS OUT OF THE GROUND ARM IT, so it is one line and not one per exit** — a jitter band written
+    /// out at each of them is two exits that can drift into two rhythms for one dial.
+    fn armDive(self: *Delver) void {
+        self.diveCd = DIVE_CD * self.aiRng.range(0.85, 1.25);
     }
 
     fn decide(self: *Delver, d: f32) void {
@@ -663,6 +905,7 @@ pub const Delver = struct {
             .claw => {
                 self.clawCd = CLAW_CD * self.aiRng.range(0.85, 1.3);
                 self.heroLatch = false;
+                self.raked = false; // a fresh gather is owed its own return
                 sfx.world(.delver_claw, self.pos);
                 self.enter(.claw);
             },
@@ -680,18 +923,23 @@ pub const Delver = struct {
         const wantR: f32 = switch (self.state) {
             .dive => MOUND_TRAVEL_R * mathx.clampF(self.depth / UNDER_DEPTH, 0, 1),
             .under => MOUND_TRAVEL_R,
-            .surge, .burst => self.moundR,
+            // The three that drive the heap themselves — the two tells and the rise — hand back their own.
+            .surge, .plough, .burst => self.moundR,
             else => 0,
         };
         const wantH: f32 = switch (self.state) {
             .dive => MOUND_TRAVEL_H * mathx.clampF(self.depth / UNDER_DEPTH, 0, 1),
             .under => MOUND_TRAVEL_H + 0.05 * mathx.sinf(self.gait * std.math.tau),
-            .surge, .burst => self.moundH,
+            .surge, .plough, .burst => self.moundH,
             else => 0,
         };
+        // Only the plough draws the heap out; everything else is round, and a furrow that has run its course
+        // pulls back in rather than snapping.
+        const wantLong: f32 = if (self.state == .plough) self.moundLong else 1.0;
         self.moundR = mathx.approach(self.moundR, wantR, dt * 5.0);
         self.moundH = mathx.approach(self.moundH, wantH, dt * 5.0);
-        if (self.state != .surge) self.shudder = mathx.approach(self.shudder, 0, dt * 4.0);
+        self.moundLong = mathx.approach(self.moundLong, wantLong, dt * 6.0);
+        if (self.state != .surge and self.state != .plough) self.shudder = mathx.approach(self.shudder, 0, dt * 4.0);
     }
 
     fn enter(self: *Delver, s: State) void {
@@ -726,7 +974,22 @@ pub const Delver = struct {
     }
     pub fn debugClaw(self: *Delver) void {
         self.heroLatch = false;
+        self.raked = false;
         self.enter(.claw);
+    }
+    pub fn debugRake(self: *Delver) void {
+        self.heroLatch = false;
+        self.raked = true;
+        self.enter(.rake);
+    }
+    /// Staged from UNDER, because that is the only place it can come from: the depth and the travelling ridge
+    /// are what the tell is drawn against.
+    pub fn debugPlough(self: *Delver) void {
+        self.heroLatch = false;
+        self.depth = UNDER_DEPTH;
+        self.moundR = MOUND_TRAVEL_R;
+        self.moundH = MOUND_TRAVEL_H;
+        self.enter(.plough);
     }
     pub fn debugKill(self: *Delver) void {
         self.enterDeath();
@@ -743,7 +1006,13 @@ pub const Delver = struct {
     fn toImpact(self: *const Delver) ?f32 {
         return switch (self.state) {
             .claw => CLAW_WIND - self.t,
-            .idle, .walk, .recover, .dive, .under, .surge, .burst, .heave, .stunlight, .stunheavy, .dead => null,
+            // …AND THE RETURN IS CATCHABLE TOO. It is quicker than the opener, so the window opens later in
+            // real time — which is the whole of what makes the pair a rhythm rather than two strokes.
+            .rake => RAKE_WIND - self.t,
+            // **THE PLOUGH IS OUT WITH THE BURST**, and for the same reason: there is nothing to catch in a
+            // furrow coming up under you. Its counter is the line and your feet, which is why its ridge
+            // straightens half a second before it runs.
+            .idle, .walk, .recover, .dive, .under, .surge, .plough, .burst, .heave, .stunlight, .stunheavy, .dead => null,
         };
     }
 
@@ -958,8 +1227,10 @@ pub const Delver = struct {
         const throb = 1.0 + 0.06 * sh * mathx.sinf(self.elapsed * 26.0);
         const mr = self.moundR * self.scale * throb;
         const mh = self.moundH * self.scale * throb;
+        // The mesh's own +Z is the heading once `ry(facing)` below has turned it, so the stretch goes on Z
+        // alone — a ridge drawn out down the line it is running, and a round heap at `moundLong` 1.
         self.xf[MOUND] = mul3(
-            mul(scaleM(mr, mh, mr), rz(2.6 * sh * mathx.sinf(self.elapsed * 31.0))),
+            mul(scaleM(mr, mh, mr * self.moundLong), rz(2.6 * sh * mathx.sinf(self.elapsed * 31.0))),
             ry(mathx.degrees(self.facing)),
             tr(self.pos.x, self.pos.y + 0.02, self.pos.z),
         );
@@ -1181,6 +1452,112 @@ test "IT STAYS DOWN, and it comes up under him" {
     try std.testing.expect(mathx.distXZ(d.pos, mathx.zero3) > 4.0);
 }
 
+test "TWO WAYS OUT OF THE BURROW: under him it BURSTS, out in front of him it PLOUGHS" {
+    // The whole of why there are two. STANDING STILL he is caught: it swims faster than he walks, gets
+    // beneath him, and the ground opens under his feet.
+    {
+        var d = Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
+        const hero = v3(0, 0, 6.0);
+        d.debugDive();
+        var fr: u32 = 0;
+        while (fr < 60 * 20 and d.state != .surge and d.state != .plough) : (fr += 1) {
+            _ = d.update(1.0 / 60.0, hero, 400, .{});
+        }
+        try std.testing.expectEqual(State.surge, d.state);
+    }
+    // …and SPRINTING he cannot be — `SPRINT_SPEED` is over `UNDER_SPEED`, so the chase is one it will never
+    // win. It stops trying to get under him and drives the ridge down the ground he is running over instead,
+    // which is the one answer this creature did not have to a player who simply keeps walking.
+    {
+        var d = Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
+        var hero = v3(0, 0, 4.5);
+        d.debugDive();
+        var fr: u32 = 0;
+        while (fr < 60 * 20 and d.state != .surge and d.state != .plough) : (fr += 1) {
+            hero.z += 5.1 * (1.0 / 60.0); // the hero's own sprint, written out — this file sits below `hero.zig`
+            _ = d.update(1.0 / 60.0, hero, 400, .{});
+        }
+        try std.testing.expectEqual(State.plough, d.state);
+        // …and it went under for its full patience first either way: the burrow is not a thing you rush it
+        // out of by running, only a thing you change the ENDING of.
+        try std.testing.expect(d.depth >= UNDER_DEPTH - 1e-3);
+    }
+}
+
+test "SUBMERGED IT IS UNDER THE GROUND AT EVERY SCALE THE MAP CAN POST, not just at 1" {
+    // The comptime block above is written in bare constants, which READS like a check that can only speak for
+    // scale 1 — and a map may post this creature anywhere in `wf.FOE_SCALE_LO..HI`. It is in fact
+    // scale-invariant, because `depth` is in scale-1 metres and `ride()` is the thing that scales it. This
+    // walks the band and measures the actual sphere, so the next reader who spots the same apparent gap and
+    // scales `depth` at its writers gets told: that double-scales the burrow, and a 0.5 delver surfaces.
+    for ([_]f32{ wf.FOE_SCALE_LO, 1.0, 1.4, wf.FOE_SCALE_HI }) |sc| {
+        var d = Delver.spawn(mathx.zero3, 0, sc, 0.3);
+        d.debugDive();
+        var fr: u32 = 0;
+        while (fr < 60 * 6 and !d.deep()) : (fr += 1) _ = d.update(1.0 / 60.0, v3(0, 0, 1.2), 400, .{});
+        try std.testing.expect(d.deep());
+        // The sphere the swept blade tests against, measured exactly as `foe.bodyPoint` builds it.
+        const c = d.centerWorld();
+        try std.testing.expect(c.y + d.hurtRadius() < d.pos.y);
+    }
+}
+
+test "THE PLOUGH IS A LINE, and stepping off it is the whole counter" {
+    const struck = struct {
+        /// Run one furrow straight down +Z with the hero standing `off` metres to the side of it.
+        fn at(off: f32) bool {
+            var d = Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
+            const hero = v3(off, 0, 6.0);
+            d.debugPlough();
+            var fr: u32 = 0;
+            while (fr < 60 * 4) : (fr += 1) {
+                if (d.update(1.0 / 60.0, hero, 400, .{})) |h| return h.dmg == PLOUGH_HIT.dmg;
+                if (d.state == .heave) return false; // the run finished and never reached him
+            }
+            return false;
+        }
+    }.at;
+    try std.testing.expect(struck(0)); // dead on the line…
+    try std.testing.expect(struck(PLOUGH_R * 0.5));
+    // …and A STRIDE TO THE SIDE IS OUT. A furrow is a line and it goes past you, where the burst is a ring
+    // you are standing in the middle of.
+    try std.testing.expect(!struck(PLOUGH_R + foe.HERO_R + 1.0));
+    // IT IS THE LIGHTER OF THE TWO, and `game.zig` splits the felt beat on exactly that.
+    try std.testing.expect(PLOUGH_HIT.stance < BURST_HIT.stance);
+}
+
+test "THE CLAW COMES BACK — the surfaced window is a trade now, not a free hit" {
+    // The RETURN is quicker than the opener, which is the whole of what makes the punish a decision.
+    try std.testing.expect(RAKE_WIND < CLAW_WIND);
+    // …and it is a ROLL, so the stream is walked until one comes rather than asserting it always does.
+    var seen = false;
+    var s: u32 = 0;
+    while (s < 24 and !seen) : (s += 1) {
+        var d = Delver.spawn(mathx.zero3, 0, 1.0, @as(f32, @floatFromInt(s)) / 24.0);
+        const hero = v3(0, 0, 1.4); // well inside `CLAW_BAND`, and still there when the stroke finishes
+        d.debugClaw();
+        var fr: u32 = 0;
+        while (fr < 60 * 3) : (fr += 1) {
+            _ = d.update(1.0 / 60.0, hero, 400, .{});
+            if (d.state == .rake) seen = true;
+            if (d.state == .rake or d.state == .recover) break;
+        }
+    }
+    try std.testing.expect(seen);
+
+    // …AND NEVER AT A MAN WHO HAS ALREADY LEFT. A backhand thrown at empty air is the creature announcing
+    // that the punish was free after all, which is the thing this move exists to stop.
+    var far = Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const gone = v3(0, 0, CLAW_BAND + 4.0);
+    far.debugClaw();
+    var fr: u32 = 0;
+    while (fr < 60 * 3) : (fr += 1) {
+        _ = far.update(1.0 / 60.0, gone, 400, .{});
+        try std.testing.expect(far.state != .rake);
+        if (far.state == .recover) break;
+    }
+}
+
 test "THE COOLDOWN IS SURFACE TIME — the burrow does not spend the dial that gates it" {
     // Armed where it went DOWN, the under, the surge, the rise and the opening ran most of `DIVE_CD` off
     // before the creature was ever standing in front of you — and a burrow that went to `UNDER_MAX` left
@@ -1284,26 +1661,37 @@ test "THE BURST IS A RING ROUND THE HOLE, and standing off it is the whole count
     try std.testing.expect(hit == null);
 }
 
-test "THE CLAW IS PARRYABLE AND THE BURST IS NOT, and the window is the game's own lead" {
+test "BOTH STROKES ARE PARRYABLE AND THE BURST IS NOT, and the window is the game's own lead" {
+    // ONE DIAL, BRACKETED ON BOTH OF THEM. The return went in at a wind the lead covered over half of, which
+    // is the same stroke offered twice at two difficulties — and the opener's own bracket did not see it.
     try std.testing.expect(foe.PARRY_LEAD < CLAW_WIND * 0.5); // an instant before the blow, not a slice of the tell
+    try std.testing.expect(foe.PARRY_LEAD < RAKE_WIND * 0.5);
     var d = Delver.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     const step = 1.0 / 600.0;
-    var open: f32 = -1;
-    var shut: f32 = -1;
-    var elapsed: f32 = 0;
-    d.state = .claw;
-    while (elapsed <= CLAW_WIND + CLAW_STRIKE) : (elapsed += step) {
-        d.t = elapsed;
-        if (d.parryable() != null) {
-            if (open < 0) open = elapsed;
-            shut = elapsed;
+    // Each parryable stroke walked frame by frame: its window opens once, shuts AT its own impact frame, and
+    // is exactly the game's own lead wide.
+    const Stroke = struct { state: State, wind: f32, strike: f32 };
+    for ([_]Stroke{
+        .{ .state = .claw, .wind = CLAW_WIND, .strike = CLAW_STRIKE },
+        .{ .state = .rake, .wind = RAKE_WIND, .strike = RAKE_STRIKE },
+    }) |a| {
+        var open: f32 = -1;
+        var shut: f32 = -1;
+        var elapsed: f32 = 0;
+        d.state = a.state;
+        while (elapsed <= a.wind + a.strike) : (elapsed += step) {
+            d.t = elapsed;
+            if (d.parryable() != null) {
+                if (open < 0) open = elapsed;
+                shut = elapsed;
+            }
         }
+        try std.testing.expect(open > 0);
+        try std.testing.expectApproxEqAbs(a.wind, shut, 3.0 * step); // shuts AT the impact frame, by construction
+        try std.testing.expectApproxEqAbs(foe.PARRY_LEAD, shut - open, 3.0 * step);
     }
-    try std.testing.expect(open > 0);
-    try std.testing.expectApproxEqAbs(CLAW_WIND, shut, 3.0 * step); // shuts AT the impact frame, by construction
-    try std.testing.expectApproxEqAbs(foe.PARRY_LEAD, shut - open, 3.0 * step);
     // NOTHING ELSE OF ITS CARRIES ONE — least of all the burst, which is the move it exists for.
-    for ([_]State{ .idle, .walk, .recover, .dive, .under, .surge, .burst, .heave, .stunlight, .stunheavy, .dead }) |s| {
+    for ([_]State{ .idle, .walk, .recover, .dive, .under, .surge, .plough, .burst, .heave, .stunlight, .stunheavy, .dead }) |s| {
         d.state = s;
         d.t = 0;
         try std.testing.expect(d.parryable() == null);

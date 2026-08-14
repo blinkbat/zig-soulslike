@@ -119,7 +119,27 @@ const layerTips = [Layer.N][:0]const u8{
     "Foe spawns",
 };
 
-const groundBrushes = [_][:0]const u8{ "Raise", "Lower", "Smooth", "Flat", "dirt", "turf", "stone", "silt", "ash", "moss", "Water", "Erase" };
+/// **TWO SECTIONS IN ONE LIST, and the split is `GROUND_SOIL_0`** — the sculpt tools first (pinned to
+/// `wf.Sculpt`), then one row per `wf.Soil` past the first, then Water and the eraser. The comptime block below
+/// pins every part of that, and the section headings are `brushSectionFor`'s. Laid out to SHOW the seam, since
+/// the index arithmetic either side of it is the whole reason this list cannot simply be appended to.
+const groundBrushes = [_][:0]const u8{
+    // the sculpt tools — `wf.Sculpt`'s own order
+    "Raise",
+    "Lower",
+    "Smooth",
+    "Flat",
+    // …then the SOILS, tag for tag off `wf.Soil` from index 1 (GROUND_SOIL_0 starts here)
+    "dirt",
+    "turf",
+    "stone",
+    "silt",
+    "ash",
+    "moss",
+    // …and the two that are neither
+    "Water",
+    "Erase",
+};
 const coverBrushes = [_][:0]const u8{ "Clearing", "Zone", "Erase" };
 const decorBrushes = [_][:0]const u8{ "Single", "Patch", "Scatter", "Erase" };
 const propBrushes = [_][:0]const u8{ "Stamp", "Row", "Ring", "Cluster", "Ivy", "Erase" };
@@ -201,6 +221,7 @@ const unitTips = [_][:0]const u8{
     "Post a sporeling - a squat mushroom that flings itself at you and bursts a chaos spore cloud. Sometimes it trips",
     "Post a Bone Knight - a giant behind a tower shield nothing can break. Work round the side; stand dead behind him and he falls on you",
     "Post a delver - it burrows and travels under the ground as a moving mound, then bursts up under your feet. Watch the floor",
+    "Post a necromancer - skeletons near it stop dissolving, and it puts them back up. Kill it first, or fight away from the bodies",
     "Hold and sweep to remove spawns ([ ] sets radius)",
 };
 
@@ -219,7 +240,30 @@ const coverIcons = [_]ui.Icon{ .clearing, .zone, .erase };
 const decorIcons = [_]ui.Icon{ .single, .patch, .scatter, .erase };
 const propIcons = [_]ui.Icon{ .stamp, .row, .ring, .cluster, .ivy, .erase };
 const interactIcons = [_]ui.Icon{ .stamp, .erase };
-const unitIcons = [_]ui.Icon{ .toad, .archer, .ogre, .berserker, .priest, .slinger, .brood_mother, .broodling, .brood_sac, .shieldman, .greatsword, .shade, .leechfly, .rooted, .shroom, .bone_knight, .delver, .erase };
+/// ONE PER LINE, in `UnitBrush`'s order — which is `wf.FoeKind`'s order plus the eraser. The three unit lists
+/// (`unitBrushes`, `unitTips`, this) are read ACROSS by anyone adding a creature, and the comptime block below
+/// pins all of them to the enum by NAME; on one line the row you were checking was unfindable.
+const unitIcons = [_]ui.Icon{
+    .toad,
+    .archer,
+    .ogre,
+    .berserker,
+    .priest,
+    .slinger,
+    .brood_mother,
+    .broodling,
+    .brood_sac,
+    .shieldman,
+    .greatsword,
+    .shade,
+    .leechfly,
+    .rooted,
+    .shroom,
+    .bone_knight,
+    .delver,
+    .necromancer,
+    .erase,
+};
 
 comptime {
     // …AND PINNED BY NAME, not just by length: every one of these lists is the brush enum's own tags in
@@ -306,7 +350,29 @@ const CoverBrush = enum { clearing, zone, erase };
 pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
 const InteractBrush = enum { stamp, erase };
-const UnitBrush = enum { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, erase };
+/// **`wf.FoeKind`'S OWN TAGS, IN ITS OWN ORDER, PLUS `erase`** — pinned name-for-name by the comptime block
+/// below, so a creature APPENDED to that enum is appended here and nowhere else has to be touched.
+const UnitBrush = enum {
+    toad,
+    archer,
+    ogre,
+    berserker,
+    priest,
+    slinger,
+    brood_mother,
+    broodling,
+    brood_sac,
+    shieldman,
+    greatsword,
+    shade,
+    leechfly,
+    rooted,
+    shroom,
+    bone_knight,
+    delver,
+    necromancer,
+    erase,
+};
 
 comptime {
     // Every brush enum pinned to the table it indexes, case-insensitively so "Erase"/"Zone" read the way a
@@ -2323,6 +2389,9 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .bone_knight => ui.col(228, 132, 62, 255),
         // Turned earth: the one thing on the map whose colour is the GROUND, because that is where it is.
         .delver => ui.col(150, 118, 78, 255),
+        // Its own frost — the one PALE BLUE on the map. It has to separate from the shade's cold violet as
+        // well as from the skeletons' greys, since all three of those stand in the same courtyards.
+        .necromancer => ui.col(126, 196, 224, 255),
     };
 }
 
@@ -3331,11 +3400,15 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
         },
         .loot => {
             const rows: i32 = @intCast(item.NK);
-            const box = ui.beginModal(ctx, 470, LOOT_TOP + rows * LOOT_ROW_H + 8 + DLG_FOOT, "Chest contents");
-            const s = lootOp(ed, m) orelse {
+            // The heading names WHAT IS BEING FILLED: two kinds hold loot now, and a panel that always said
+            // "Chest" would be lying on half the things it opens over.
+            const sPre = lootOp(ed, m) orelse {
                 ed.modal = .none; // the selection went away under it
                 return;
             };
+            const title: [:0]const u8 = if (m.ops[sPre].kind == .chest) "Chest contents" else "Item contents";
+            const box = ui.beginModal(ctx, 470, LOOT_TOP + rows * LOOT_ROW_H + 8 + DLG_FOOT, title);
+            const s = sPre;
             const o = &m.ops[s];
             var buf: [48]u8 = undefined;
             const total = std.fmt.bufPrintZ(&buf, "{d} / {d} items", .{ o.nloot, wf.MAX_LOOT }) catch "";
@@ -3345,6 +3418,18 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
                 const k: item.Kind = @enumFromInt(i);
                 const y = box.y + LOOT_TOP + @as(i32, @intCast(i)) * LOOT_ROW_H;
                 hud.mono(item.displayName(k), box.x + DLG_PAD, y + 5, hud.MONO, ui.VALUE);
+                // **WHAT THE THING ACTUALLY DOES, on the row that puts it in the world** (owner's ask, twice).
+                // `item.describe` is FLAVOUR — the first pass showed it here, and "a flask of clouded red glass,
+                // refilled at any bonfire" does not tell an author filling a box which of two flasks they just
+                // added, which is the one question this row asks. `item.effect` is the MECHANIC in one line, off
+                // `item.use`, so a dose retuned there reads here. The shelf goes in front of it because half
+                // these rows are inert and that is the fact worth knowing before the numbers.
+                //
+                // The strip stops SHORT of the -/+ buttons: over them the tip would fight the press.
+                var ebuf: [item.EFFECT_BUF]u8 = undefined;
+                var tbuf: [item.EFFECT_BUF + 32]u8 = undefined;
+                const tip = std.fmt.bufPrintZ(&tbuf, "{s}  -  {s}", .{ item.class(k).label(), item.effect(k, &ebuf) }) catch item.effect(k, &ebuf);
+                ui.tipFor(ctx, ui.rect(box.x + DLG_PAD, y, 360 - DLG_PAD, LOOT_ROW_H), tip);
                 const n = lootCount(o, k);
                 var nbuf: [8]u8 = undefined;
                 const ns = std.fmt.bufPrintZ(&nbuf, "{d}", .{n}) catch "0";
@@ -3600,10 +3685,12 @@ const MENU_EDGE: i32 = 4; // clear space kept between the menu and the screen ed
 /// THE ONE ANSWER TO "does the selection have contents to edit?" — only a LITERAL chest does. The menu row that
 /// opens the dialog and the dialog itself both ask this; asked twice they had already parted company, the menu
 /// insisting on `.at` and the dialog taking any op that placed a chest.
+/// **WHICH SELECTION HAS CONTENTS TO EDIT.** Off `props.holdsLoot` rather than a kind named here, so a third
+/// thing that holds items is one row in that predicate and no edit in the editor at all.
 fn lootOp(ed: *const Editor, m: *const wf.Map) ?usize {
     const s = ed.sel orelse return null;
     if (s >= m.nops) return null;
-    return if (m.ops[s].op == .at and m.ops[s].kind == .chest) s else null;
+    return if (m.ops[s].op == .at and props.holdsLoot(m.ops[s].kind)) s else null;
 }
 
 fn lootCount(o: *const wf.Op, k: item.Kind) u8 {

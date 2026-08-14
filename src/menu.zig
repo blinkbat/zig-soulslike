@@ -27,9 +27,13 @@ pub const Action = union(enum) {
     /// screen you came in through, and a running character is never more than a bonfire from being saved.
     toTitle,
     editor,
-    /// …both carrying WHICH SLOT, because with three of them the row pressed is only half the answer.
+    /// …all three carrying WHICH SLOT, because with three of them the row pressed is only half the answer.
     newGame: usize,
     loadGame: usize,
+    /// THROW A CHARACTER AWAY. Handed up like the other two rather than done here: the file is `save.zig`'s
+    /// and the shelf is `game.zig`'s, and a menu that deleted one would be the first place this file touched
+    /// the disk. It is already ARMED by the time it is returned — the picker asked, and this is the answer.
+    deleteSlot: usize,
     use: item.Kind,
     arm: bookmod.Action,
 };
@@ -136,11 +140,10 @@ const SLOT_THUMB_H: i32 = 90;
 const SLOT_H: i32 = SLOT_THUMB_H + 16;
 const SLOT_GAP: i32 = 8;
 const SLOT_TEXT_GAP: i32 = 18; // picture to its two lines
-/// WHERE THE `>` AND THE ROW'S CONTENT SIT, measured from the HILITE's left edge and shared by both kinds
-/// of card — so the picker's thumbnail starts exactly where an ordinary row's label starts. Written as its
-/// own pair rather than at each call site: the picker laid its picture out at the hilite inset instead and
-/// the caret came out underneath it.
-const ROW_CARET: i32 = 10;
+/// WHERE A ROW'S CONTENT SITS, measured from the HILITE's left edge and shared by both kinds of card — so the
+/// picker's thumbnail starts exactly where an ordinary row's label starts. Written once rather than at each
+/// call site: the picker laid its picture out at the hilite inset instead and it came out over the cursor bar
+/// (`uiart.caret`, which is what marks a row).
 const ROW_LABEL: i32 = 26;
 
 const VEIL = rgba(6, 6, 9, 150);
@@ -164,6 +167,9 @@ pub const Menu = struct {
     /// game that had not been started.
     home: Screen = .boot,
     slotIntent: SlotIntent = .load,
+    /// THE DELETE IS ARMED ON THE ROW THE CURSOR IS ON. Cleared by walking off it, by Back, and by opening
+    /// the picker — an armed question that outlives the row it was asked about is one you answer by accident.
+    askDelete: bool = false,
     cursor: usize = 0,
     // debug toggles the game loop reads
     stats: bool = false,
@@ -294,6 +300,7 @@ pub const Menu = struct {
         if (self.screen == .character) return self.updateBook(dt, v);
         const rows = self.rowCount();
         if (rows == 0) return .none; // a screen with no rows has no cursor to wrap (and no modulo to do)
+        const wasRow = self.cursor;
         if (navPressed(.up)) {
             self.cursor = (self.cursor + rows - 1) % rows;
             sfx.play(.menu_move);
@@ -301,6 +308,38 @@ pub const Menu = struct {
         if (navPressed(.down)) {
             self.cursor = (self.cursor + 1) % rows;
             sfx.play(.menu_move);
+        }
+        // WALKING OFF THE ROW TAKES THE QUESTION WITH IT. Left armed, the next Confirm anywhere on the picker
+        // would delete whatever the cursor had wandered onto.
+        if (self.cursor != wasRow) self.askDelete = false;
+
+        // **THE PICKER'S SECOND BUTTON, AND THE ONLY PRESS IN THE GAME THAT DESTROYS ANYTHING.** Armed on one
+        // press and done on a second — and the second is the ordinary Confirm, because by then the row itself
+        // has become the question and the button that answers a question is the one that answers this.
+        if (self.screen == .slots) {
+            if (self.askDelete) {
+                if (backPressed()) {
+                    self.askDelete = false;
+                    sfx.play(.menu_back);
+                    return .none;
+                }
+                if (confirmPressed()) {
+                    self.askDelete = false;
+                    // Re-asked at the press: the shelf is handed in fresh every frame, and a row that lost
+                    // its file between the two presses is not a row to act on.
+                    if (self.cursor < savemod.SLOTS and shelf.head[self.cursor] != null) {
+                        sfx.play(.menu_pick);
+                        return .{ .deleteSlot = self.cursor };
+                    }
+                    sfx.play(.menu_back);
+                }
+                return .none; // nothing else on this screen means anything while the question is up
+            }
+            if (deletePressed() and self.cursor < savemod.SLOTS and shelf.head[self.cursor] != null) {
+                self.askDelete = true;
+                sfx.play(.menu_pick);
+                return .none;
+            }
         }
 
         if (self.screen == .retro and self.cursor < gfx.RETRO_COUNT) {
@@ -338,7 +377,7 @@ pub const Menu = struct {
                 return .none;
             }
             sfx.play(.menu_pick);
-            return self.confirm(retro, day, shelf);
+            return self.confirm(retro, day);
         }
         if (backPressed()) {
             sfx.play(.menu_back);
@@ -387,7 +426,15 @@ pub const Menu = struct {
         self.slotIntent = why;
         self.screen = .slots;
         self.cursor = 0;
+        self.askDelete = false;
         loadShots();
+    }
+
+    /// A SLOT WAS DELETED UNDER THE PICKER and its picture went with it, so the three textures are re-read.
+    /// `game.zig`'s door: the shelf is its to re-survey and the pictures are this file's to hold.
+    pub fn slotsChanged(self: *Menu) void {
+        self.askDelete = false;
+        if (self.screen == .slots) loadShots();
     }
 
     /// The harness's own door onto the picker: `--shot` never presses a row, and staging `screen = .slots`
@@ -397,20 +444,27 @@ pub const Menu = struct {
         self.cursor = row;
     }
 
-    fn confirm(self: *Menu, retro: *gfx.Retro, day: *daynight.Clock, shelf: *const savemod.Shelf) Action {
+    /// …and onto the ARMED delete, for the same reason: the harness presses no buttons, and this is the one
+    /// state of this screen where a wrong press destroys something.
+    pub fn armDeleteForShot(self: *Menu) void {
+        self.askDelete = true;
+    }
+
+    /// The SHELF is not a parameter here any more: the only row that read it was New Game's first-free
+    /// shortcut, and both boot rows now ask which slot instead. `rowLive` is where the shelf still decides
+    /// anything, and that is asked before this is ever reached.
+    fn confirm(self: *Menu, retro: *gfx.Retro, day: *daynight.Clock) Action {
         switch (self.screen) {
             .closed => {},
             // THE BOOT ROWS HAND BACK AN ACTION AND CHANGE NOTHING. Starting a world is `game.zig`'s, and
             // the screen only closes once it has actually started one (`started`) — a Load that finds a
             // broken file leaves you on the boot screen rather than in an empty world.
             .boot => switch (self.cursor) {
-                // ER'S NEW GAME: straight into the first empty slot without asking. The picker only comes up
-                // when there is no empty one, which is the only time this press is a decision about an
-                // existing character rather than about a new one.
-                BOOT_NEW => {
-                    if (shelf.firstFree()) |i| return .{ .newGame = i };
-                    self.openSlots(.new);
-                },
+                // **BOTH ROWS ASK WHICH SLOT** (owner's call). New Game used to take the first empty one
+                // without asking (ER's own) and only showed the picker when all three were full — so the
+                // one press that decides where a character LIVES was the one press that never said where.
+                // Three slots is few enough that choosing is the point of having them.
+                BOOT_NEW => self.openSlots(.new),
                 BOOT_LOAD => self.openSlots(.load),
                 BOOT_OPTIONS => {
                     self.home = .boot;
@@ -585,11 +639,19 @@ pub const Menu = struct {
             .{ .glyph = .{ .dpad = .updown }, .label = "Move" },
             .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Select" },
         };
-        // …and the picker's, which HAS a way back where the title screen has none.
+        // …and the picker's, which HAS a way back where the title screen has none, and one button the rest of
+        // the game does not: the only press that can destroy a character.
         const slotHints = [_]hud.Hint{
             .{ .glyph = .{ .dpad = .updown }, .label = "Move" },
             .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Select" },
+            .{ .glyph = .{ .face = hud.BTN_QUICK }, .label = "Delete" },
             .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Back" },
+        };
+        // …and while the question is up the crib is only the two answers to it. Every other button on the
+        // screen is refused there, so naming one would be naming a button that does nothing.
+        const askHints = [_]hud.Hint{
+            .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Delete" },
+            .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Keep" },
         };
         const hints = [_]hud.Hint{
             .{ .glyph = .{ .dpad = .updown }, .label = "Move" },
@@ -601,7 +663,7 @@ pub const Menu = struct {
         };
         const row: []const hud.Hint = switch (self.screen) {
             .boot => &bootHints,
-            .slots => &slotHints,
+            .slots => if (self.askDelete) &askHints else &slotHints,
             else => &hints,
         };
         hud.hintRow(row, sh - @divTrunc(hud.lineH(hud.HINT), 2) - 14, hud.HINT, HINT_COL);
@@ -623,7 +685,7 @@ pub const Menu = struct {
         uiart.plate(cx, cy, cardW, cardH, CARD.a);
         uiart.frame(cx, cy, cardW, cardH, uiart.flick(200, cx));
         uiart.divider(cx + @divTrunc(cardW, 2), cy + hud.lineH(hud.TITLE) + 10, @divTrunc(cardW, 2) - 24, 180);
-        const title: [:0]const u8 = if (self.slotIntent == .new) "OVERWRITE WHICH?" else "LOAD GAME";
+        const title: [:0]const u8 = if (self.slotIntent == .new) "NEW GAME" else "LOAD GAME";
         const tw = hud.textW(title, hud.TITLE);
         hud.engraved(title, cx + @divTrunc(cardW - tw, 2), cy + 12, hud.TITLE, TITLE_COL);
 
@@ -635,7 +697,6 @@ pub const Menu = struct {
         const onBack = self.cursor == SLOT_BACK;
         if (onBack) uiart.rowHilite(cx + CARD_INSET, by - 3, cardW - CARD_INSET * 2, backH);
         hud.text("Back", cx + CARD_INSET + ROW_LABEL, by, hud.BODY, if (onBack) TEXT_HOT else TEXT_DIM);
-        if (onBack) hud.text(">", cx + CARD_INSET + ROW_CARET, by, hud.BODY, TEXT_HOT);
     }
 
     fn drawSlotRow(self: *const Menu, i: usize, head: ?savemod.Head, x: i32, y: i32, w: i32) void {
@@ -649,6 +710,10 @@ pub const Menu = struct {
             rl.drawRectangle(x, y + SLOT_H - 1, w, 1, mathx.withAlpha(uiart.GILT, 46));
             uiart.diamond(@floatFromInt(x + 2), @floatFromInt(y + 3), 2.6, uiart.GILT_BRIGHT);
             uiart.diamond(@floatFromInt(x + 2), @floatFromInt(y + SLOT_H - 3), 2.6, uiart.GILT_BRIGHT);
+        } else if (on) {
+            // AN EMPTY SLOT UNDER LOAD TAKES NO WASH, and it is the row you most want to see the cursor on:
+            // "there is nothing here" is only an answer if you can tell you are asking about THIS one.
+            uiart.caret(x, y, SLOT_H, uiart.CARET_DIM);
         }
         // THE PICTURE, in a sunk plate that is drawn WHETHER OR NOT there is one: an empty slot with no
         // frame around its gap makes the three rows read as two rows and a margin.
@@ -676,8 +741,14 @@ pub const Menu = struct {
         var nameBuf: [24]u8 = undefined;
         const name = std.fmt.bufPrintZ(&nameBuf, "Slot {d}", .{i + 1}) catch "Slot";
         hud.text(name, tx, py + 2, hud.BODY, col);
-        if (on) hud.text(">", x + ROW_CARET, py + 2, hud.BODY, if (dead) TEXT_OFF else TEXT_HOT);
 
+        // **ARE YOU SURE.** A save is the only thing in the game a press can destroy, so the row it is
+        // standing on says what is about to happen and takes a SECOND press to do it — and the second press
+        // is Confirm, on a row whose whole caption has become the question.
+        if (self.askDelete and on and head != null) {
+            hud.text("Delete this slot?", tx, py + hud.lineH(hud.BODY) + 6, hud.SMALL, uiart.BAD);
+            return;
+        }
         if (head) |h| {
             var timeBuf: [16]u8 = undefined;
             var lineBuf: [64]u8 = undefined;
@@ -728,8 +799,9 @@ pub const Menu = struct {
                 uiart.diamond(@floatFromInt(cx + CARD_INSET + 2), @floatFromInt(y), 2.6, uiart.GILT_BRIGHT);
                 uiart.diamond(@floatFromInt(cx + CARD_INSET + 2), @floatFromInt(y - 3 + rowH), 2.6, uiart.GILT_BRIGHT);
             }
+            // …and a row too dim to take the wash still shows where the cursor is (`drawSlotRow`'s reason).
+            if (selected and dead) uiart.caret(cx + CARD_INSET, y - 3, rowH, uiart.CARET_DIM);
             hud.text(label, cx + CARD_INSET + ROW_LABEL, y, fontSize, col);
-            if (selected) hud.text(">", cx + CARD_INSET + ROW_CARET, y, fontSize, if (dead) TEXT_OFF else TEXT_HOT);
             if (card.gauges) |g| {
                 if (i < g.len) drawGauge(cx + cardW - 40 - 130, y + @divTrunc(fontSize, 2) - 3, 130, 10, g[i], selected);
             }
@@ -784,7 +856,7 @@ fn bootLabels() [BOOT_COUNT][:0]const u8 {
     var out: [BOOT_COUNT][:0]const u8 = undefined;
     out[BOOT_NEW] = "New Game";
     out[BOOT_LOAD] = "Load Game";
-    out[BOOT_OPTIONS] = "Options >";
+    out[BOOT_OPTIONS] = "Options";
     out[BOOT_EDITOR] = "Editor";
     out[BOOT_QUIT] = "Quit";
     return out;
@@ -1107,6 +1179,12 @@ fn confirmHeld() bool {
     const altHeld = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
     if ((rl.isKeyDown(.enter) and !altHeld) or rl.isKeyDown(.space)) return true;
     return padDown(hud.padOf(hud.BTN_CONFIRM)); // the HELD half off the same name as the tap
+}
+
+/// THE PICKER'S THIRD BUTTON — named off the crib (`hud.BTN_QUICK`) like every other binding in the game, so
+/// the glyph the hint row draws IS the button that arms the delete. It is bound nowhere else on this screen.
+fn deletePressed() bool {
+    return rl.isKeyPressed(.delete) or padPressed(hud.padOf(hud.BTN_QUICK));
 }
 
 pub fn confirmPressed() bool {

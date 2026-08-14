@@ -39,6 +39,7 @@ pub const Icon = enum {
     shroom,
     bone_knight,
     delver,
+    necromancer,
     new,
     open,
     save,
@@ -367,6 +368,23 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             dot(cx - s * 0.20, cy + s * 0.18, w * 1.3, d); // …and the clods it threw
             dot(cx + s * 0.24, cy + s * 0.24, w * 1.1, d);
             dot(cx + s * 0.02, cy + s * 0.32, w * 1.2, d);
+        },
+
+        .necromancer => {
+            // A TALL NARROW COLUMN WITH A CROOKED STAFF BESIDE IT, and a ring drawn on the floor under it.
+            // The read is the PROPORTION: it is the only glyph in the set that is much taller than it is
+            // wide, which is the creature, and the staff is what separates it from the shade's own hood.
+            arc(cx - s * 0.08, cy - s * 0.34, s * 0.15, 180, 360, w * 1.4, col); // the helm
+            hline(cx - s * 0.08, cy - s * 0.32, s * 0.20, w, d); // …its brow
+            line(cx - s * 0.20, cy - s * 0.20, cx - s * 0.28, cy + s * 0.30, w * 1.3, col); // the robe, flaring
+            line(cx + s * 0.04, cy - s * 0.20, cx + s * 0.12, cy + s * 0.30, w * 1.3, col);
+            hline(cx - s * 0.08, cy + s * 0.30, s * 0.44, w * 1.1, col); // …and the hem on the ground
+            // The staff: two segments with a kink in them, which is the whole of "crooked" at this size.
+            line(cx + s * 0.28, cy - s * 0.44, cx + s * 0.22, cy - s * 0.04, w * 1.2, col);
+            line(cx + s * 0.22, cy - s * 0.04, cx + s * 0.30, cy + s * 0.34, w * 1.2, col);
+            dot(cx + s * 0.28, cy - s * 0.46, w * 1.6, col); // …the head on it
+            dot(cx - s * 0.30, cy + s * 0.42, w * 1.1, d); // the ring it laid
+            dot(cx + s * 0.02, cy + s * 0.44, w * 1.1, d);
         },
 
         .new => {

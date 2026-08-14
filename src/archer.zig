@@ -15,9 +15,13 @@ const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
 
-const BONE = rgba(126, 116, 92, 255); // weathered ivory, yellowed with the centuries
-const BONE_DK = rgba(78, 70, 55, 255); // shadowed recesses / old bone
-const BONE_LT = rgba(154, 144, 120, 255); // caught-light ridges
+/// WHAT OLD BONE LOOKS LIKE, AND THE ONLY COPY OF IT. Every skeleton in the game is this body — the warrior's
+/// is it with a shield, the BONE KNIGHT's is it at four times the mass inside a suit — so the three tones are
+/// `pub` and read rather than transcribed. Written out again in `knight.zig` two of them had already drifted a
+/// couple of points, which is the drift being one value in two files buys you.
+pub const BONE = rgba(126, 116, 92, 255); // weathered ivory, yellowed with the centuries
+pub const BONE_DK = rgba(78, 70, 55, 255); // shadowed recesses / old bone
+pub const BONE_LT = rgba(154, 144, 120, 255); // caught-light ridges
 const STAIN = rgba(96, 82, 60, 255); // grave-dirt staining (bones weather unevenly)
 const SOCKET = rgba(12, 10, 9, 255); // eye sockets, nasal cavity, rib hollow — void
 const TEETH = rgba(188, 178, 152, 255); // pale teeth, pop against the skull
@@ -540,6 +544,11 @@ pub const Archer = struct {
     threat: foe.Threat = .{},
     /// …AND THE WAY ROUND WHAT IS IN THE WAY (`foe.Nav`), stamped by the game like every creature's on the field.
     nav: foe.Nav = .{},
+    /// **SOMETHING IS STANDING OVER THIS CORPSE** (`game.markVigil`) — stamped from outside like the rest of
+    /// this list, read by `foe.dissipate` alone: while it is set the body lies there instead of going to gold.
+    heldOpen: bool = false,
+    /// …AND A BODY MAY BE RAISED ONCE — a latch nothing clears. See `warrior.reraise` for the whole rule.
+    wasRaised: bool = false,
     fade: f32 = 0,
     gone: bool = false,
 
@@ -805,6 +814,22 @@ pub const Archer = struct {
         self.t = 0;
         self.hop = 0;
         self.justDied = true;
+    }
+
+    /// **IS THIS BODY SOMETHING A NECROMANCER COULD USE** — `warrior.raisable`'s twin, and the same rule: it
+    /// has to have fallen and come to rest, it has to still be on the field, and once is once.
+    pub fn raisable(self: *const Archer) bool {
+        return self.state == .dead and !self.gone and !self.wasRaised and self.t >= DEATH_DUR;
+    }
+
+    /// **IT GETS BACK UP** — `warrior.reraise`, one body along. The QUIVER is deliberately not refilled: what
+    /// comes back is the man, not his arrows, and `nocked` is whatever it had left when it fell.
+    pub fn reraise(self: *Archer, frac: f32) void {
+        foe.rekindle(self, frac);
+        self.wasRaised = true;
+        self.enterStun(.stunlight);
+        self.leash.noteCombat();
+        self.pose();
     }
 
     pub fn debugKill(self: *Archer) void {
@@ -1206,7 +1231,10 @@ fn tibiaMesh(seed: u64) rl.Mesh {
     return b.toMesh();
 }
 
-fn footMesh(side: f32, seed: u64) rl.Mesh {
+/// PUBLIC for `solePatches`' own reason, written at it: the same dead man stands on the same feet, and this
+/// is the one thing a sole patch is measured off. The warriors get it through `boneMeshes`; the necromancer
+/// replaces every other bone with robe and needs this one on its own.
+pub fn footMesh(side: f32, seed: u64) rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
     var rng = mathx.Rng.init(seed);

@@ -100,6 +100,10 @@ pub const Kind = enum(u8) {
     birch, // pale slender trunk, light airy crown
     snag, // a tall dead trunk, stripped bare
     sapling,
+    /// **THE ITEM PICKUP** — ER's glowing thing on the ground, and the second prop that HOLDS anything (the
+    /// chest is the first). APPENDED, like every kind: `INFO` is index-pinned to this enum and the three
+    /// stock lists are derived off it, so a kind inserted anywhere above silently re-points every row.
+    pickup,
 };
 
 
@@ -226,15 +230,25 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .birch => "Birch",
         .snag => "Dead Snag",
         .sapling => "Sapling",
+        .pickup => "Item",
     };
 }
 
+/// **WHICH SHELF OF THE EDITOR'S PALETTE A KIND SITS ON.** One arm per shelf, and the arms are wrapped rather
+/// than run out to the margin: this is the table an author reads to find where a kind will appear, and a
+/// 250-column line is one you scroll past instead of reading.
 pub fn group(k: Kind) Group {
     return switch (k) {
-        .pillar, .broken, .block, .arch, .wall, .statue, .monolith, .paving, .stairs, .rubble, .banner, .sword, .graves, .sarcophagus, .bones, .gibbet, .cairn => .ruins,
+        .pillar, .broken, .block, .arch, .wall,
+        .statue, .monolith, .paving, .stairs, .rubble,
+        .banner, .sword, .graves, .sarcophagus, .bones,
+        .gibbet, .cairn,
+        => .ruins,
         .chapel, .watchtower, .cottage, .tower, .gate, .causeway => .buildings,
         .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart, .bonfire => .village,
-        .chest => .treasure,
+        // …AND THE GLOW SHELVES WITH THE BOX. Both hold loot and nothing else does, so the one shelf an author
+        // looks on for "a thing with items in it" has both of them on it.
+        .chest, .pickup => .treasure,
         .boulder, .rocks, .outcrop, .scree, .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6, .stump, .log => .rock,
         .tree, .bigtree, .bigtree2, .bigtree3, .willow, .conifer, .birch, .snag, .sapling => .trees,
         .torch, .brazier, .campfire, .campfire_lit => .fire,
@@ -253,6 +267,16 @@ pub const CLIFFS = [_]Kind{ .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
 
 pub const Stock = enum { decor, props, interact };
+
+/// **WHAT CAN HOLD ITEMS** — the chest and the glow, and the ONE place that is written down. The editor's
+/// contents panel, the map writer's `loot=` column and anything else that asks all read this, so a third
+/// container is one row here rather than a kind test in each of them.
+pub fn holdsLoot(k: Kind) bool {
+    return switch (k) {
+        .chest, .pickup => true,
+        else => false,
+    };
+}
 
 pub fn stock(k: Kind) Stock {
     const nfo = info(k);
@@ -426,7 +450,14 @@ pub const INFO = [NK]Info{
     .{ .kind = .campfire, .build = fx.deadCampfireMesh, .bound = 1.5, .top = 0.6, .view = 200, .parts = circleParts(0.45, 0.5), .surf = .stone },
     // …AND ONE YOU CAN SIT AT. `interact` shelves it under the editor's Interactables layer beside the
     // chests, which is where the things the player USES belong; `rest.isRestKind` is what makes it a bonfire.
-    .{ .kind = .campfire_lit, .build = fx.campfireMesh, .bound = 1.5, .top = 1.0, .view = 200, .interact = true, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
+    // `stow` for the bonfire's reason: EVERY fire you can sit at has the guitar against its rock, and it goes
+    // when he picks it up. `bound` is up from 1.5 to hold the rock and the instrument, which stand outside the
+    // ring of stones — left at the fire's own radius the pair is culled before the hearth is.
+    //
+    // …AND SOLID, which the assert below demands of anything with a second mesh: `drawStows` carries no fade, so
+    // a thinning hearth under an opaque guitar reads as a bug. It is the price of the instrument and it is the
+    // bonfire's own trade — a 1.1 m fire between lens and hero was never hiding much of him anyway.
+    .{ .kind = .campfire_lit, .build = fx.campfireMesh, .stow = fx.campfireGuitarMesh, .bound = 2.6, .top = 1.1, .view = 200, .interact = true, .solid = true, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
     .{ .kind = .water, .build = fx.waterMesh, .bound = 30.0, .top = 0.1, .view = FAR, .solid = true, .casts = false },
     .{ .kind = .tuft, .build = flora.tuftMesh, .bound = 0.9, .top = 0.8, .view = 85, .flora = true, .casts = false },
     .{ .kind = .patch, .build = flora.patchMesh, .bound = 2.2, .top = 0.8, .view = 95, .flora = true, .casts = false },
@@ -470,6 +501,22 @@ pub const INFO = [NK]Info{
     // A sapling CASTS (3 m of tree with no shadow reads as a decal) and so must not sway — the depth pass
     // has no wind term.
     .{ .kind = .sapling, .build = wood.saplingMesh, .bound = 3.8, .top = 3.4, .view = 220, .parts = circleParts(0.16, 2.2), .surf = .wood },
+    // **THE ITEM PICKUP.** `interact` shelves it under the editor's Interactables layer beside the chest, which
+    // is where the things the player USES belong — and `INTERACT_KINDS` is DERIVED off that flag, so the
+    // palette picks it up with no edit in `editor.zig` at all.
+    //
+    // NO `parts`: **a wisp of light is not something you walk into.** A collider here would let the player
+    // bump a pickup around the floor and would make it block arrows and sight lines.
+    // NO `casts` either — it is self-lit, and a glowing thing that throws a shadow reads as a solid object
+    // pretending to glow.
+    // It LIGHTS the ground it stands on, small and steady: it is the one prop whose whole job is to be seen,
+    // and a `flicker` would make it a candle.
+    // **THE `top` IS THE PILLAR'S, NOT THE WISP'S** — DERIVED as `fx.PICKUP_TOP` rather than written as a
+    // number, or the culler sizes the prop by the 0.62 m wisp and the shaft of light over it pops out at the
+    // screen edge. `bound` has to clear `top` (the assert below), which is why it is not the wisp's either.
+    // …and the LIGHT is bigger than a torch's puddle (owner: more glow): an item on the ground is meant to be
+    // found from across a field, so it lays down a wide, soft, near-still pool rather than a flickering one.
+    .{ .kind = .pickup, .build = fx.pickupMesh, .bound = 1.9, .top = fx.PICKUP_TOP, .view = 190, .interact = true, .casts = false, .light = .{ .y = 0.30, .col = v3(0.86, 0.82, 0.58), .radius = 5.4, .flicker = 0.03 } },
 };
 
 pub fn info(k: Kind) *const Info {

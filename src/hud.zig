@@ -25,7 +25,12 @@ pub const TINY: i32 = 16; // the caption UNDER a slot — a name, not a readout
 
 fn atlas(path: [:0]const u8, px: i32) ?rl.Font {
     var f = rl.loadFontEx(path, px, null) catch return null;
-    if (f.glyphCount == 0) return null;
+    // A face that loaded but carries nothing is still an atlas texture and a glyph array; dropped on the
+    // floor it leaks both. `unloadFont` refuses raylib's own default, which is what a FAILED load hands back.
+    if (f.glyphCount == 0) {
+        rl.unloadFont(f);
+        return null;
+    }
     rl.genTextureMipmaps(&f.texture);
     rl.setTextureFilter(f.texture, .trilinear);
     return f;
@@ -866,6 +871,12 @@ pub fn reticle(k: f32) void {
 /// A word wider than the whole column is taken anyway and overhangs; running out of either buffer stops cleanly.
 pub fn wrap(s: []const u8, size: i32, maxW: i32, buf: []u8, lines: [][:0]const u8) [][:0]const u8 {
     return wrapBy(textW, s, size, maxW, buf, lines);
+}
+
+/// …and the same wrap measured in the MONO face, for the editor's own chrome (`ui.drawTip`). Its own entry
+/// point rather than a flag, because which font a string will be DRAWN in is not something a wrap may guess.
+pub fn wrapMono(s: []const u8, size: i32, maxW: i32, buf: []u8, lines: [][:0]const u8) [][:0]const u8 {
+    return wrapBy(monoW, s, size, maxW, buf, lines);
 }
 
 /// …measured by whatever is passed in. A test binary opens no window and so loads no font, which makes

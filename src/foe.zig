@@ -492,14 +492,59 @@ pub fn dissolveMotes(self: anytype, dt: f32, d: Dissolve) void {
     }
 }
 
+/// **A CORPSE SOMETHING IS STANDING OVER DOES NOT GO** — the BODY's own `heldOpen` flag, stamped by
+/// `game.markVigil` and read here as an OPT-IN, so the eleven creatures nothing raises are untouched and pay a
+/// comptime-false branch. `markWays`' arrangement (`@hasField`) and `blocksOf`'s, for their reason: gaining a
+/// behaviour is a FIELD on the creature and never an edit to the shared pass.
+///
+/// Named for what it does to the BODY and not for the creature doing it: the necromancer keeps its own `vigil`
+/// (`necro.Vigil`, what it is standing over), and one name for both had this probe matching the CASTER too —
+/// which is a type error here and would have been a silent behaviour change if the field types had agreed.
+///
+/// **AND IT IS THE MECHANIC, NOT A COURTESY.** A skeleton is 2.05 s from the killing blow to its last mote,
+/// which is not long enough to hold a raise with a readable tell inside — so the hold is what MAKES the
+/// window the raise happens in, and a body lying there NOT going to gold is the first thing the player is
+/// shown about this creature.
+fn stayed(self: anytype) bool {
+    if (comptime @hasField(std.meta.Child(@TypeOf(self)), "heldOpen")) return self.heldOpen;
+    return false;
+}
+
 /// THE CORPSE GOING. Past `still` the fall is over and the body dissipates over `diss`: `fade` is that ramp,
 /// the dissolve comes off it the whole way, and the creature leaves the field at the end of it. The two
 /// DURATIONS stay per-creature — a giant topples slower than a toad — but the shape does not.
 pub fn dissipate(self: anytype, dt: f32, still: f32, diss: f32, d: Dissolve) void {
     if (self.t < still) return;
+    // The fall is OVER either way — what is held is the going, so the body has already come to rest and lies
+    // there. Held from part-way through, `fade` simply stops where it is rather than snapping back.
+    if (stayed(self)) return;
     self.fade = mathx.smoothstep(still, still + diss, self.t);
     dissolveMotes(self, dt, d);
     if (self.t >= still + diss) self.gone = true;
+}
+
+/// **THE BODY COMING BACK UP** — `dissipate` run backwards, and the one copy of it. It reads FIELDS ONLY for
+/// `dissolveMotes`' reason, which is what lets it live here at all: `vit`, `fade`, `gone`, `hits`, `hitLatch`,
+/// `flash`, `shove`, `justDied`, `t`. The STATE it comes up in is not here and cannot be — a state machine's
+/// enum is private to its own file — so a creature's own `reraise` calls this and then says what it is doing
+/// next, which is the whole of what each one has to write.
+///
+/// **THE `justDied` EDGE IS CLEARED** (its own law: a ONE-FRAME flag). A corpse raised on the same frame it
+/// died would otherwise still be carrying the flag, and `trigger.Runtime`'s `deaths` counter — billed off that
+/// edge — would count a death for a body standing up.
+///
+/// **AND THE VIGIL IS RELEASED HERE.** The hold exists to keep the body available; the frame it is used, it is
+/// not a corpse any more, and a body left flagged would be a live creature nothing could ever dissolve.
+pub fn rekindle(self: anytype, frac: f32) void {
+    self.vit.revive(frac);
+    self.fade = 0;
+    self.gone = false;
+    self.hitLatch = false;
+    self.flash = FLASH_DUR; // it POPS on the shared flash: something just happened to this body
+    self.shove = mathx.zero3;
+    self.justDied = false;
+    self.heldOpen = false;
+    self.t = 0;
 }
 
 /// `floor` is the pool owner's own ground; a particle that named its own (`floorBurst`) keeps that instead.

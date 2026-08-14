@@ -222,6 +222,25 @@ pub const Vitals = struct {
         return self.stunLeft > 0;
     }
 
+    /// **A BODY PUT BACK ON ITS FEET** (`necro.RAISE_HP_FRAC`) — the one thing in the game that undoes a
+    /// death, and the only place `dead` is cleared. `heal` deliberately refuses a corpse, which is right for
+    /// everything a priest can do and is exactly what this has to get past.
+    ///
+    /// It comes up on a FRACTION of its HP and on FULL poise and stance: what a raised body has lost is its
+    /// health, not its nature, and a skeleton that came back pre-staggered would die to the first swing and
+    /// make the whole move a gift. The stun clock is cleared with it — the flinch it was in when it died is
+    /// not a flinch it is still in — and both hit clocks are stamped LONG AGO so the regen gate and the
+    /// floating bar treat it as a body nobody has touched yet.
+    pub fn revive(self: *Vitals, frac: f32) void {
+        self.dead = false;
+        self.hp = mathx.maxF(1.0, self.hpMax * mathx.clampF(frac, 0, 1));
+        self.poise = self.poiseMax;
+        self.stance = self.stanceMax;
+        self.stunLeft = 0;
+        self.sinceHit = LONG_AGO;
+        self.sinceHurt = LONG_AGO;
+    }
+
     pub fn beginStun(self: *Vitals, kind: StunKind) void {
         self.stunLeft = switch (kind) {
             .none => 0,

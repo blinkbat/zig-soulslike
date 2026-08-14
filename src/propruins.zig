@@ -517,7 +517,7 @@ pub fn bonfireMesh(shader: rl.Shader) rl.Model {
     flameInto(&b, &rng, rng.signed() * 0.30, 0.13, rng.signed() * 0.30, 1.45);
     flameInto(&b, &rng, rng.signed() * 0.34, 0.12, rng.signed() * 0.34, 1.05);
     bedrollInto(&b, &rng, 1.28, -0.62, 2.42);
-    guitarRockInto(&b, &rng, GUITAR_CX, GUITAR_CZ);
+    art.guitarRockInto(&b, &rng, GUITAR_CX, GUITAR_CZ);
     b.setMat(.plant);
     tuftInto(&b, &rng, rng.signed() * 1.05, rng.signed() * 1.05, 0.55);
     lichenInto(&b, &rng, v3(rng.signed() * 0.6, 0.07, rng.signed() * 0.6), v3(0.24, 0.02, 0.22), 3);
@@ -606,40 +606,19 @@ fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) void {
     );
 }
 
-fn guitarRockInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32) void {
-    b.setMat(.stone);
-    b.addBlob(v3(cx, 0.22, cz), v3(0.52, 0.235, 0.46), 4, 9, if (rng.float() < 0.4) STONE_MOSS else STONE_DK);
-    b.addBlob(v3(cx + rng.signed() * 0.16, 0.30, cz + rng.signed() * 0.16), v3(0.34, 0.115, 0.31), 3, 8, ROCK_DEEP);
-    lichenInto(b, rng, v3(cx + rng.signed() * 0.2, 0.40, cz + rng.signed() * 0.2), v3(0.16, 0.015, 0.15), 3);
-}
-
 pub fn bonfireGuitarMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
-    guitarPropInto(&b, GUITAR_CX, GUITAR_CZ, GUITAR_YAW);
+    art.guitarLeaningInto(&b, GUITAR_CX, GUITAR_CZ, GUITAR_YAW, GUITAR_S);
     return b.toModel(shader);
 }
 
 /// Where the rock and its guitar sit in the camp's local frame — read by BOTH meshes, so the guitar cannot
-/// drift off the rock it leans on.
+/// drift off the rock it leans on. The placement itself is `propart`'s now: the campfire grew one too, and the
+/// lean is not a thing to keep in step in two files.
 const GUITAR_CX: f32 = -1.62;
 const GUITAR_CZ: f32 = 1.18;
 const GUITAR_YAW: f32 = -1.56;
-
-fn guitarPropInto(b: *Builder, cx: f32, cz: f32, yaw: f32) void {
-    const LEAN: f32 = 0.50;
-    const FOOT: f32 = 0.70;
-    const cy = mathx.cosf(yaw);
-    const sy = mathx.sinf(yaw);
-    const cl = mathx.cosf(LEAN);
-    const sl = mathx.sinf(LEAN);
-    art.guitarInto(b, .{
-        .o = v3(cx + cy * FOOT, 0.020, cz + sy * FOOT),
-        .w = v3(sy, 0, -cy), // across the strings, level
-        .a = v3(-cy * sl, cl, -sy * sl), // up the neck, leaning BACK over the rock
-        .n = v3(cy * cl, sl, sy * cl), // out through the soundboard, tipped UP by the lean
-        .s = 1.5,
-    });
-}
+const GUITAR_S: f32 = 1.5;
 
 pub fn towerMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();

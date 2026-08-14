@@ -1,5 +1,6 @@
 const std = @import("std");
 const rl = @import("raylib");
+const gfx = @import("gfx.zig");
 const mathx = @import("mathx.zig");
 const village = @import("propvillage.zig");
 const wf = @import("worldfmt.zig");
@@ -44,7 +45,24 @@ pub const Chest = struct {
             mathx.scaleM(s, s, s),
         ), mathx.mul(mathx.ry(self.yaw), mathx.tr(self.pos.x, self.pos.y, self.pos.z)));
     }
+
+    /// The BODY's own frame — the carcase's placement with no hinge in it. The prop grid builds this itself for
+    /// the coffer; the GLOW is drawn from here, and it is authored in the same frame the carcase is.
+    pub fn bodyXf(self: *const Chest) rl.Matrix {
+        const s = self.scale;
+        return mathx.mul(mathx.scaleM(s, s, s), mathx.mul(mathx.ry(self.yaw), mathx.tr(self.pos.x, self.pos.y, self.pos.z)));
+    }
+
+    /// **HOW LIT THE SEAM IS — 1 shut, 0 once the light is out.** It goes out over the FIRST part of the swing
+    /// rather than across the whole of it: what the player sees is the light escaping as the lid breaks its
+    /// seal, and a glow still hanging on under a lid stood wide open is a box lit from inside for no reason.
+    pub fn glowAmt(self: *const Chest) f32 {
+        return 1.0 - mathx.clampF(self.swing / GLOW_OUT, 0, 1);
+    }
 };
+
+/// What fraction of the swing the seam's light has to be gone by.
+const GLOW_OUT: f32 = 0.55;
 
 /// Ease-out on the swing: a lid is heavy, so it leaves fast and settles slow.
 fn ease(u: f32) f32 {
@@ -59,15 +77,17 @@ pub const Opened = struct {
 
 pub const Chests = struct {
     lid: rl.Model = undefined,
+    glow: rl.Model = undefined,
     list: [CAP]Chest = undefined,
     n: usize = 0,
     near: ?usize = null,
 
     pub fn init(shader: rl.Shader) Chests {
-        return .{ .lid = village.chestLidMesh(shader) };
+        return .{ .lid = village.chestLidMesh(shader), .glow = village.chestGlowMesh(shader) };
     }
     pub fn setShader(self: *Chests, sh: rl.Shader) void {
         self.lid.materials[0].shader = sh;
+        self.glow.materials[0].shader = sh;
     }
 
     pub fn live(self: *Chests) []Chest {
@@ -114,6 +134,41 @@ pub const Chests = struct {
         for (self.liveConst()) |*c| {
             rl.drawMesh(self.lid.meshes[0], self.lid.materials[0], c.lidXf());
         }
+    }
+
+    /// **THE SEAM GLOW, LIT PASS ONLY** — it is light, so it casts nothing, and `setFade` lives on the scene
+    /// shader alone: pushed during the sun pass it would set a uniform on a program nothing is drawing with.
+    /// Kept out of `draw` for exactly that reason rather than guarded inside it.
+    ///
+    /// The depth mask goes down for it (`Scene.setFade`'s own rule) and the fade is handed BACK to 1, or the
+    /// next thing through the shader inherits a chest's transparency.
+    /// **THE FADE IS PUSHED ONLY WHEN IT CHANGES, and on the ordinary frame it is never pushed at all.**
+    /// `setFade` is a `glUseProgram` plus a `glUniform` at the driver, and the first pass spent one per chest
+    /// per frame — up to `CAP` shader rebinds to say "1" over and over, since a SHUT box sits at exactly 1 and
+    /// 1 is what every other caller already hands the shader back. A lid mid-swing is the only thing here that
+    /// asks for a fractional value, and there is at most one of those at a time.
+    pub fn drawGlow(self: *const Chests, scene: *gfx.Scene) void {
+        var any = false;
+        for (self.liveConst()) |*c| {
+            if (c.glowAmt() > 0.001) {
+                any = true;
+                break;
+            }
+        }
+        if (!any) return; // every box on the field is open: no mask to drop and no mesh to draw
+        rl.gl.rlDisableDepthMask();
+        var pushed: f32 = 1.0; // the shader's resting value, which is also a shut chest's own
+        for (self.liveConst()) |*c| {
+            const a = c.glowAmt();
+            if (a <= 0.001) continue; // an opened box is a brown box again — nothing to draw, not a clear one
+            if (a != pushed) {
+                scene.setFade(a);
+                pushed = a;
+            }
+            rl.drawMesh(self.glow.meshes[0], self.glow.materials[0], c.bodyXf());
+        }
+        if (pushed != 1.0) scene.setFade(1); // …handed back only if it was ever taken
+        rl.gl.rlEnableDepthMask();
     }
 };
 

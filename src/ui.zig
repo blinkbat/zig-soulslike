@@ -91,20 +91,37 @@ pub fn tipFor(ctx: *Ctx, r: rl.Rectangle, text: [:0]const u8) void {
     if (rl.checkCollisionPointRec(ctx.mouse, r)) ctx.setTip(text);
 }
 
+/// **HOW WIDE A TOOLTIP MAY GET BEFORE IT WRAPS.** Sized so a full item description is three or four readable
+/// lines rather than one that runs off the screen.
+const TIP_MAX_W: i32 = 420;
+const TIP_LINES = 6;
+var tipWrapBuf: [MSG_CAP + TIP_LINES]u8 = undefined;
+var tipWrapLines: [TIP_LINES][:0]const u8 = undefined;
+
 /// Draw the pending tooltip at the cursor, clamped on-screen.
+///
+/// **IT WRAPS**, and it has to: the tips that most need reading are the longest ones — an item's `describe` runs
+/// past 230 characters and a unit brush's line past 130. Drawn as ONE line, those measured wider than the whole
+/// window, and the on-screen clamp then pushed the start off the LEFT edge, so the text you actually wanted was
+/// the half that got cut. The box is sized to the widest line it ended up with, not to `TIP_MAX_W`, so a short
+/// tip is still a small tip.
 pub fn drawTip(ctx: *Ctx) void {
     if (ctx.tipLen == 0) return;
-    ctx.tipBuf[ctx.tipLen] = 0;
-    const s: [:0]const u8 = ctx.tipBuf[0..ctx.tipLen :0];
-    const w = hud.monoW(s, hud.MONO);
-    const h = hud.monoLineH(hud.MONO);
+    const lines = hud.wrapMono(ctx.tipBuf[0..ctx.tipLen], hud.MONO, TIP_MAX_W, &tipWrapBuf, &tipWrapLines);
+    if (lines.len == 0) return;
+    const lh = hud.monoLineH(hud.MONO);
+    var w: i32 = 0;
+    for (lines) |ln| w = @max(w, hud.monoW(ln, hud.MONO));
+    const h = lh * @as(i32, @intCast(lines.len));
     var x: i32 = @as(i32, @intFromFloat(ctx.mouse.x)) + 16;
     var y: i32 = @as(i32, @intFromFloat(ctx.mouse.y)) + 22;
-    x = @min(x, rl.getScreenWidth() - w - 22);
-    y = @min(y, rl.getScreenHeight() - h - 14);
+    // Clamped to the screen and then to ZERO: on a window narrower than the box the `min` alone goes negative,
+    // which is the very failure the wrap is here to fix, one step further along.
+    x = @max(0, @min(x, rl.getScreenWidth() - w - 22));
+    y = @max(0, @min(y, rl.getScreenHeight() - h - 14));
     rl.drawRectangle(x - 8, y - 5, w + 16, h + 10, INK);
     rl.drawRectangleLines(x - 8, y - 5, w + 16, h + 10, alpha(TRIM, 110));
-    hud.mono(s, x, y, hud.MONO, VALUE);
+    for (lines, 0..) |ln, i| hud.mono(ln, x, y + lh * @as(i32, @intCast(i)), hud.MONO, VALUE);
 }
 
 /// A panel that also CLAIMS its rect as chrome.

@@ -584,6 +584,44 @@ pub fn chestMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
+// ── WHAT IS INSIDE A SHUT CHEST ───────────────────────────────────────────────────────────────────────
+//
+// **A CLOSED CHEST GLOWS OUT OF ITS OWN SEAM** (owner's call). A coffer with the lid down is a brown box among
+// brown boxes; the hairline of light round the lid is the whole difference between scenery and something worth
+// walking to, and it is the same promise the pickup's wisp makes at a distance.
+//
+// **IT IS GOLD WHERE THE PICKUP IS PALE.** The hue is the one dial the sun does not flatten, and the two are
+// answering different questions: the wisp says "an item is lying here", this says "there is something in this".
+// A shut box cannot show you what it holds, so it shows you that it holds.
+const CHEST_GLOW_EMISSIVE: u8 = 26;
+const CHEST_GLOW = mathx.rgba(226, 170, 78, CHEST_GLOW_EMISSIVE);
+const CHEST_GLOW_HOT = mathx.rgba(244, 216, 152, CHEST_GLOW_EMISSIVE);
+/// How far the seam plate stands PROUD of the carcase's outer face. The iron bands' own 0.010 — this has to
+/// clear the wood to be seen at all, and any more is a lit flange round a box rather than a leaking joint.
+const CHEST_SEAM_PROUD: f32 = 0.010;
+/// …and how thick the lit line is. It straddles the seam, so half of it is above the rim and half below.
+const CHEST_SEAM_H: f32 = 0.034;
+
+/// **THE GLOW IS ITS OWN MESH, because it is the one part of the chest that goes away.** The carcase is a prop
+/// on the grid and the lid is drawn by `chest.zig`; neither carries a per-draw alpha, and this needs one — the
+/// light dies as the lid comes up (`chest.Chests.drawGlow`). Authored in the BODY's frame, not the lid's.
+pub fn chestGlowMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    const hx = CHEST_HALF_X + CHEST_SEAM_PROUD;
+    const hz = CHEST_HALF_Z + CHEST_SEAM_PROUD;
+    b.setMat(.plain);
+    // THE SEAM ITSELF: a thin lit slab straddling the line the lid sits on, proud of the wood all round so the
+    // hairline reads from any bearing rather than only off the front.
+    b.addCube(v3(0, CHEST_HINGE_Y, 0), v3(hx * 2.0, CHEST_SEAM_H, hz * 2.0), CHEST_GLOW);
+    // …and the INSIDE lit under it, which is what the seam is a leak FROM. Visible for the moment the lid is
+    // rising and gone with the rest of it — without this the box opens on an unlit hole and the glow reads as
+    // paint on the joint rather than as something in there.
+    const inX = CHEST_HALF_X - 0.09;
+    const inZ = CHEST_HALF_Z - 0.09;
+    b.addBlob(v3(0, CHEST_HINGE_Y - 0.13, 0), v3(inX, 0.10, inZ), 3, 8, CHEST_GLOW_HOT);
+    return b.toModel(shader);
+}
+
 /// THE LID, authored about its HINGE — origin at the back edge of the rim, so `chest.zig` opens it with
 /// one `rx` and no offset arithmetic.
 pub fn chestLidMesh(shader: rl.Shader) rl.Model {

@@ -34,13 +34,13 @@ const IRON_DK = rgba(10, 12, 18, 255); // the shadowed inside of a plate
 /// land near 120 on screen: still visibly rust, no longer trim.
 const RUST = rgba(24, 16, 10, 255);
 const BRASS = rgba(66, 51, 22, 255); // fittings, gone dull
-const VERDI = rgba(40, 58, 48, 255); // …and where the brass has gone green
 const STRAP = rgba(34, 26, 19, 255);
 // THE BONE UNDERNEATH IS THE ARCHER'S, because it is the archer's body at four times the mass — and a second
-// copy of what old bone looks like is a second thing to retune.
-const BONE = rgba(126, 116, 92, 255);
-const BONE_DK = rgba(74, 67, 53, 255);
-const BONE_LT = rgba(152, 142, 118, 255);
+// copy of what old bone looks like is a second thing to retune. READ, not transcribed: written out here as
+// three literals two of them had already drifted a couple of points off the body they are supposed to be.
+const BONE = archermod.BONE;
+const BONE_DK = archermod.BONE_DK;
+const BONE_LT = archermod.BONE_LT;
 /// THE ONE THING ON HIM THAT IS ALIVE: a cold ember down the visor slit. Low alpha IS the emissive channel,
 /// so this is the only part of the creature that reads at night or in his own shadow.
 const EMBER = rgba(228, 118, 52, 54);

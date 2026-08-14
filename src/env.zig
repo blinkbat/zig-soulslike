@@ -6,6 +6,7 @@ const collision = @import("collision.zig");
 const props = @import("props.zig");
 const wf = @import("worldfmt.zig");
 const chestmod = @import("chest.zig"); // for `Site` alone — env finds the boxes, chest.zig runs them
+const pickupmod = @import("pickup.zig"); // …and the glows, on exactly the same terms
 const item = @import("item.zig"); // …and for what a box is carrying, which only its own test reads
 const restmod = @import("rest.zig");
 
@@ -292,7 +293,29 @@ fn sampleField(field: *const [wf.WATER_CELLS]u8, half: f32, cell: f32, wx: f32, 
 
 // `fade`/`fadeTo` are the only fields here the frame writes: how solid this instance IS and how solid the
 // sight line wants it to be, both 1 unless it is standing between the lens and the hero (see markOccluders).
-const Prop = struct { kind: Kind, pos: rl.Vector3, yaw: f32, scale: f32, lean: f32 = 0, leanDir: f32 = 0, op: u16 = 0, fade: f32 = 1, fadeTo: f32 = 1 };
+const Prop = struct {
+    kind: Kind,
+    pos: rl.Vector3,
+    yaw: f32,
+    scale: f32,
+    lean: f32 = 0,
+    leanDir: f32 = 0,
+    op: u16 = 0,
+    fade: f32 = 1,
+    fadeTo: f32 = 1,
+    /// **TAKEN OUT OF THE WORLD AT RUNTIME** — the item pickup alone today (`game.hidePickups`), and the ONE
+    /// way a prop can stop existing without the world being re-materialized under it. A flag rather than a
+    /// removal because every op index and every runtime site list is keyed to this array's ORDER.
+    ///
+    /// It sits beside `fade`, which the draw loop already tests per prop, so the cost is one bool compare where
+    /// there was already a float one.
+    gone: bool = false,
+    /// …and HOW MUCH OF ITS SIZE IS LEFT, for a prop that is going. **SEPARATE FROM `scale`, which is the
+    /// AUTHORED figure the op placed it at**: written into `scale` instead, the shrink was read straight back
+    /// out by `pickupSites` as the site's own scale, so a glow taken in play and then looked at in the editor
+    /// came home permanently shrunken — the fade compounding into the authoring.
+    shrink: f32 = 1,
+};
 
 // A prop can stand OFF PLUMB: `lean` degrees toward `leanDir`, measured like every yaw here — (cos d, −sin d).
 
@@ -409,6 +432,10 @@ pub const Env = struct {
     ndress: usize = 0,
     chestItems: [chestmod.CAP]u32 = undefined,
     nchests: usize = 0,
+    /// …and the ITEM PICKUPS, its own list for the chests' reason: a second thing that holds loot is a second
+    /// runtime list, and keying one off the other would make "is a pickup" mean "is a chest".
+    pickupItems: [pickupmod.CAP]u32 = undefined,
+    npickups: usize = 0,
     restItems: [restmod.CAP]u32 = undefined,
     nrests: usize = 0,
     // Kept so painted soil reaches its shader without threading a Scene pointer through every editor call.
@@ -1305,6 +1332,26 @@ pub const Env = struct {
         }
         return n;
     }
+    /// **HOW A TAKEN PICKUP LEAVES THE WORLD.** `i` indexes the pickup list, which is the same order
+    /// `pickupSites` handed out — both walk `pickupItems`, so the runtime glow and its prop are the same slot.
+    /// `scale` carries the shrink and `gone` ends it, so the picture is the fade and not a blink.
+    pub fn setPickupDraw(self: *Env, i: usize, left: f32, gone: bool) void {
+        if (i >= self.npickups) return;
+        const pr = &self.props[self.pickupItems[i]];
+        pr.shrink = mathx.clampF(left, 0, 1);
+        pr.gone = gone;
+    }
+    /// …AND EVERY ITEM PICKUP, on exactly the same terms.
+    pub fn pickupSites(self: *const Env, out: []pickupmod.Site) usize {
+        var n: usize = 0;
+        for (self.pickupItems[0..self.npickups]) |pi| {
+            if (n >= out.len) break;
+            const pr = &self.props[pi];
+            out[n] = .{ .pos = pr.pos, .yaw = pr.yaw, .scale = pr.scale, .op = pr.op };
+            n += 1;
+        }
+        return n;
+    }
     pub fn restSites(self: *const Env, out: []restmod.Site) usize {
         var n: usize = 0;
         for (self.restItems[0..self.nrests]) |pi| {
@@ -1363,6 +1410,7 @@ pub const Env = struct {
             var k = idx.start[c];
             while (k < idx.start[c + 1]) : (k += 1) {
                 const pr = &self.props[idx.items[k]];
+                if (pr.gone) continue; // taken out of the world — see `Prop.gone`
                 const nfo = props.info(pr.kind);
                 if (casters_only and !nfo.casts) continue;
                 const bound = nfo.bound * pr.scale;
@@ -1376,13 +1424,29 @@ pub const Env = struct {
                 }
                 if (!casters_only and pr.fade < FADE_SOLID) continue; // held back for `drawThinned`
                 self.stat_draws += 1;
-                self.drawProp(pr);
+                // **A PROP ON ITS WAY OUT THINS AS WELL AS SHRINKING** (owner: have items fade when you pick
+                // them up). The shrink on its own is a glow getting SMALLER at full brightness, which the eye
+                // reads as one moving away rather than one going out. `shrink` is 1 for everything else in the
+                // world, so this is the same branch `fade` above already costs, and `setFade` is the scene
+                // shader's alone — the sun pass must not push it (`drawCasters`' own note).
+                if (!casters_only and pr.shrink < 1.0) {
+                    if (self.scene) |s| s.setFade(pr.shrink);
+                    rl.gl.rlDisableDepthMask();
+                    self.drawProp(pr);
+                    rl.gl.rlEnableDepthMask();
+                    if (self.scene) |s| s.setFade(1);
+                } else {
+                    self.drawProp(pr);
+                }
             }
         }
     }
 
     fn drawProp(self: *const Env, pr: *const Prop) void {
-        const sc = v3(pr.scale, pr.scale, pr.scale);
+        // `shrink` is 1 for every prop that is not on its way out, so this is the authored scale everywhere
+        // except the handful of glows that have just been taken.
+        const s = pr.scale * pr.shrink;
+        const sc = v3(s, s, s);
         if (pr.lean == 0) {
             rl.drawModelEx(self.models[@intFromEnum(pr.kind)], pr.pos, v3(0, 1, 0), pr.yaw, sc, rl.Color.white);
             return;
@@ -2013,6 +2077,7 @@ fn indexProps(e: *Env) void {
     fillIndex(e, &e.flx, true);
     e.ndress = 0;
     e.nchests = 0;
+    e.npickups = 0;
     e.nrests = 0;
     for (e.props[0..e.nprops], 0..) |*pr, pi| {
         const i: u32 = @intCast(pi);
@@ -2027,6 +2092,11 @@ fn indexProps(e: *Env) void {
             if (e.nchests >= chestmod.CAP) @panic("env: chest cap exceeded — raise chest.CAP");
             e.chestItems[e.nchests] = i;
             e.nchests += 1;
+        }
+        if (pr.kind == .pickup) {
+            if (e.npickups >= pickupmod.CAP) @panic("env: pickup cap exceeded — raise pickup.CAP");
+            e.pickupItems[e.npickups] = i;
+            e.npickups += 1;
         }
         if (restmod.isRestKind(pr.kind)) {
             if (e.nrests >= restmod.CAP) @panic("env: rest cap exceeded — raise rest.CAP");
@@ -2758,15 +2828,23 @@ test "replaying the SHIPPED map produces a stable world" {
     // 17761 BEFORE THE COAST WAS FACETED (`facetWater`), then 17565. Scatter refuses to place in water, so
     // straightening the waterline moves it by up to half a facet and the props along every shore follow it —
     // 196 of them, about 1%. This number moving is the POINT of pinning it; it may only be re-pinned when the
-    // world was meant to change. 17594 is the BONE KNIGHT'S ground: the ruin east of the graves gained a
-    // torch line, a rock belt and its cliffs, and lost the watchtower and two cottages that stood in it.
-    try std.testing.expectEqual(@as(usize, 17594), props0);
-    try std.testing.expectEqual(@as(usize, 1854), solids0); // …and their colliders with them (was 1827, 1848)
+    // world was meant to change. The BONE KNIGHT'S ground was the last such change: the ruin east of the
+    // graves gained a torch line, a rock belt and its cliffs, and lost the watchtower and two cottages that
+    // stood in it. 17594/1854 was written for that edit but never matched the map saved beside it — these are
+    // the counts the shipped file actually replays to. `materialize` reads the OPS alone, so foe records
+    // (the delver's three) cannot move either figure.
+    // …and 17323 since the NECROMANCER'S ground was authored west of the graves: two cliffs, a chest and the
+    // encounter itself (a necromancer with two archers and a shieldman to raise), plus two more delvers east.
+    // …then 17329 for the six `pickup` glows scattered over the map — one prop each, and `props.INFO`'s row
+    // gives that kind `.casts = false` with no collider, so `solids0` does not move with it and `lights0` does.
+    try std.testing.expectEqual(@as(usize, 17329), props0);
+    try std.testing.expectEqual(@as(usize, 1754), solids0); // …and their colliders with them (was 1749, 1827, 1848)
     // The map's three `campfire`s are the EXTINGUISHED kind and carry no light. Swap one to
     // `campfire_lit` in the editor and this goes up by one — and gains a rest site with it.
     // 46 since the Bone Knight's ruin was lit: seven torches went in round it and one came out with the
-    // watchtower that used to stand there.
-    try std.testing.expectEqual(@as(usize, 46), lights0);
+    // watchtower that used to stand there. 52 with the six pickup glows: an item on the ground is a LIGHT
+    // (`props.INFO`'s `pickup` row), which is how you find one across a field.
+    try std.testing.expectEqual(@as(usize, 52), lights0);
 
     var jerky: usize = 0;
     var rings: usize = 0;

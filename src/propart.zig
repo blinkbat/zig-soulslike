@@ -442,6 +442,40 @@ const GUITAR_BODY = [_][3]f32{
     .{ 0.520, 0.070, 0.042 }, // the heel the neck goes into
 };
 
+/// **A GUITAR LEANED AGAINST A ROCK, and the rock it leans on** — the pair, here rather than in one fire's own
+/// family file, because BOTH fires you can sit at carry it now (owner: "they all should"). It lived private in
+/// `propruins.zig` when only the bonfire had one; a second copy in `propfx.zig` for the campfire is a second
+/// place for the lean, the foot offset and the scale to drift, on geometry whose whole point is that the
+/// instrument and its rock agree.
+///
+/// The two are SEPARATE calls on purpose: the rock belongs to the prop's own mesh and the guitar is its `stow`,
+/// which stops being drawn the moment the hero picks it up (`env.stowed`). They share the placement, which is
+/// what stops the guitar hanging in the air over a rock that moved.
+pub fn guitarRockInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32) void {
+    b.setMat(.stone);
+    b.addBlob(v3(cx, 0.22, cz), v3(0.52, 0.235, 0.46), 4, 9, if (rng.float() < 0.4) STONE_MOSS else STONE_DK);
+    b.addBlob(v3(cx + rng.signed() * 0.16, 0.30, cz + rng.signed() * 0.16), v3(0.34, 0.115, 0.31), 3, 8, ROCK_DEEP);
+    lichenInto(b, rng, v3(cx + rng.signed() * 0.2, 0.40, cz + rng.signed() * 0.2), v3(0.16, 0.015, 0.15), 3);
+}
+
+/// …and the instrument stood against it. `scale` is the one thing the two fires differ on: a bonfire camp is a
+/// bigger stage than a campfire's ring of stones.
+pub fn guitarLeaningInto(b: *Builder, cx: f32, cz: f32, yaw: f32, scale: f32) void {
+    const LEAN: f32 = 0.50;
+    const FOOT: f32 = 0.70;
+    const cy = mathx.cosf(yaw);
+    const sy = mathx.sinf(yaw);
+    const cl = mathx.cosf(LEAN);
+    const sl = mathx.sinf(LEAN);
+    guitarInto(b, .{
+        .o = v3(cx + cy * FOOT, 0.020, cz + sy * FOOT),
+        .w = v3(sy, 0, -cy), // across the strings, level
+        .a = v3(-cy * sl, cl, -sy * sl), // up the neck, leaning BACK over the rock
+        .n = v3(cy * cl, sl, sy * cl), // out through the soundboard, tipped UP by the lean
+        .s = scale,
+    });
+}
+
 pub fn guitarInto(b: *Builder, fr: Frame) void {
     b.setMat(.wood);
     plateInto(b, fr, &GUITAR_BODY, SPRUCE, TIMBER_DK);

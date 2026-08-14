@@ -541,6 +541,15 @@ pub const Warrior = struct {
     threat: foe.Threat = .{},
     /// …AND THE WAY ROUND WHAT IS IN FRONT OF IT (`foe.Nav`), stamped the same way and for the same reason.
     nav: foe.Nav = .{},
+    /// **SOMETHING IS STANDING OVER THIS CORPSE** (`game.markVigil`) — stamped from outside like everything
+    /// else on this list, and read by `foe.dissipate` alone: while it is set the body lies there instead of
+    /// going to gold, which is what makes a raise something the player can see coming. Named for what it does
+    /// to the BODY rather than for the creature doing it (`necro.Vigil` is that creature's own field, and one
+    /// name for both would have `dissipate`'s `@hasField` probe matching the caster too).
+    heldOpen: bool = false,
+    /// …AND A BODY MAY BE RAISED ONCE. A latch nothing clears, `shieldGone`'s arrangement: twice is a fight
+    /// that cannot be won by killing things, which is the only thing the player is holding.
+    wasRaised: bool = false,
     fade: f32 = 0,
     gone: bool = false,
 
@@ -1137,6 +1146,28 @@ pub const Warrior = struct {
         self.shieldGone = true;
         self.vit.beginStun(.heavy);
         self.enterStun(.guardbreak);
+    }
+
+    /// **IS THIS BODY SOMETHING A NECROMANCER COULD USE** — asked by `game.markVigil` and by nothing else.
+    /// It has to have FALLEN (`dying`, and past its own collapse, so what is raised is a body lying still and
+    /// not one in mid-topple), it has to still be on the field, and it may not have been raised before.
+    pub fn raisable(self: *const Warrior) bool {
+        return self.state == .dead and !self.gone and !self.wasRaised and self.t >= DEATH_DUR;
+    }
+
+    /// **IT GETS BACK UP.** The shared re-arm does the body (`foe.rekindle`) and this says what it does next:
+    /// the STUN, so there is a beat of it standing there before it swings — a corpse that came up already
+    /// deciding would land a blow out of the ground, which is the one thing no tell can cover.
+    ///
+    /// **THE SHIELD DOES NOT COME BACK** (`shieldGone` is a latch nothing clears): whatever was broken off
+    /// this body stays broken off it, and a raise that repaired a guard-break would undo work the player has
+    /// already paid stamina for.
+    pub fn reraise(self: *Warrior, frac: f32) void {
+        foe.rekindle(self, frac);
+        self.wasRaised = true;
+        self.enterStun(.stunlight);
+        self.leash.noteCombat(); // it comes up IN the fight, not waiting to notice one
+        self.pose();
     }
 
     // Debug hooks for the --shot harness (force a pose in isolation).

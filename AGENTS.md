@@ -123,7 +123,8 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `leechfly.zig` | THE FIRST FLYER + `Swarm`; 15 bones, never lands. Drinks his HP through a beak and heals off what it takes, and ZOOMS out of sword reach |
 | `rooted.zig` | THE TREE THAT ISN'T + `Grove`; a snag-mimic fixture — eyes open outside its reach, three limb strikes (slam/sweep/hook-drag), never moves |
 | `shroom.zig` | the sporeling + `Cluster`; a squat mushroom that FLINGS itself and bursts a lingering spore cloud that POISONS (buildup, never damage). Sometimes it TRIPS instead — same gather, longer opening |
-| `delver.zig` | THE DELVER + `Warrens` — the first thing that goes UNDER the world. It burrows, travels as a ridge of moving earth, and BURSTS UP through the ground under his feet with a small ring of a blow |
+| `delver.zig` | THE DELVER + `Warrens` — the first thing that goes UNDER the world. It burrows, travels as a ridge of moving earth, and comes out TWO ways: BURSTING up through the ground under his feet with a small ring of a blow, or PLOUGHING a furrow down the line he is running along. On the surface, a claw that RETURNS. You cannot lock on to it while it is down |
+| `necro.zig` | THE NECROMANCER + `Rite` — TALL, SKINNY, a dragging robe, a bone helm and a crooked staff. It never melees. A skeleton corpse inside its reach **STOPS DISSIPATING** (`heldOpen`) and it puts that body back up at part HP, once each; and it lays a **DELAYED ICE RUNE RING** on the ground where he is standing, which is the game's first and only source of COLD |
 | `wolf.zig` | THE FIRST SPIRIT + `Pack` — what the BELL calls, and the one thing that fights ON HIS SIDE. NOT a foe (no `Leash`, its own `takeHit`, not in `FOE_GROUPS`) and the first QUADRUPED: 27 bones, and the gait is Hildebrand's two dials. Out past `RECALL_R` for `LOST_DWELL` and the BOND MOVES IT (`reappear` + `game.rematerialize`, the bell's own spot) — running home is what it tries first, and this is for when running cannot work |
 | `combat.zig` | `Vitals` (HP + two-tier stagger + regen + death), `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`, `SpiritKind`/`SUMMON_MAX`. THE place to retune feel |
 | `stats.zig` | the character sheet — seven attributes and the curves that make the bars |
@@ -262,6 +263,10 @@ whose contents change together is fine. Splits go where concerns genuinely part 
   - **A FLYER IS NEVER STEERED** (`gateTerrain`'s own `airborne` skip): the probe is the rule for FEET. The
     leechfly's answer is ALTITUDE, and steering it would refuse it the bank it may fly straight over.
   - **It is asked about whoever the creature is actually FIGHTING** (`Threat.aim`), never about the hero.
+- **A BODY THE NECROMANCER CAN USE IS A `raisable`/`reraise` PAIR AND A `heldOpen` FIELD** — nothing else, and
+  no edit to `game.markVigil`/`applyRaises`, which key off `@hasDecl` (`markWays`' rule). The field is named for
+  what it does to the BODY rather than for the creature doing it: `necro.Vigil` is that creature's own field,
+  and one name for both had `foe.dissipate`'s `@hasField` probe matching the caster too.
 - **A multi-kind group answers for its own members** — `kind = null` in `FOE_GROUPS`, each member
   exposes `kind()`. A group with anything else on the field (sacs, acid) exposes `clear()`.
 - **Anything the map can post is a `wf.FoeKind`, APPENDED never inserted** (editor unit brushes are
@@ -423,6 +428,26 @@ at it; this one spends its time as a ridge of moving earth and arrives THROUGH T
   decision. That is the wand's whole argument against this creature.
 - **IT STAYS DOWN** (owner's call, `UNDER_MIN` 2.6 s) whatever it finds on the way, and never past `UNDER_MAX`
   — a player who simply keeps walking must not end up fighting nothing at all.
+- **THE BURROW HAS TWO WAYS OUT, AND THEY ANSWER TWO SITUATIONS.** Under him it BURSTS — a ring round the hole,
+  and the counter is your feet. Out in front of him it PLOUGHS: the ridge stops turning, STRETCHES down the
+  heading it already has (`moundLong`, not a bigger `moundR` — swelling is the surge's picture and drawing out
+  is this one's, and as one dome at two sizes there was no read at all) and drives a furrow along the line at
+  `PLOUGH_SPEED`, which is the only thing it owns that catches a sprint. Get off the MARK, or get off the LINE.
+  Its patience exit is the plough too wherever he is in front of it: a surge at ground he left ten metres back
+  is the move spent on nothing. Lighter than the burst on all three counts and a comptime assert pins that —
+  `game.zig` splits the felt beat on `hit.stance >= BURST_HIT.stance`, so a plough that matched it would be
+  felt as the ground opening under him.
+- **THE CLAW COMES BACK** (`rake`). The surfaced window was one stroke on a two-second cooldown, so reading the
+  burrow and punishing it was a trade you could not lose. The return is FASTER than the opener — that is the
+  whole of it — still clears `foe.TELL_MIN`, is parryable on its own window, and is ROLLED rather than
+  guaranteed and only thrown while he is still standing in it: a backhand at empty air announces that the
+  punish was free after all.
+- **YOU CANNOT LOCK ON TO IT WHILE IT IS UNDER** (owner's call). `hidden()` is the Rooted's own predicate, which
+  `game.disguised` finds by `@hasDecl` — so a held lock drops, the flick skips it, a fresh press cannot take
+  it, no floating bar hangs over the hole, the swing stops stooping at it and the wolf stops trying to bite two
+  and a half metres of earth. It is `deep()` and not a clock of its own, because that is what `Model.draw`
+  already hides the body behind: the lock lets go on exactly the frame there stops being anything to see, and
+  the dive and the rise both keep it since it is right there and hittable in both.
 - **THE SPOT IS COMMITTED THE FRAME THE MOUND STOPS.** Nothing moves for the whole tell: what the earth is doing
   IS where the blow lands, so the read is honest and the counter is your feet. A RUN or a ROLL clears the ring
   and a WALK deliberately does not — both bracketed by comptime asserts against the hero's own numbers.
@@ -450,6 +475,80 @@ at it; this one spends its time as a ridge of moving earth and arrives THROUGH T
 - **IT REARS TO STRIKE, and that is not a flourish.** Its shoulders sit at 0.40 m, so the rake only crosses a
   standing man at all because the rear is in the wind; held flat it topped out under his knee while
   `weaponReaches` still reported a hit.
+
+### The necromancer (`necro.zig`) — the first thing that takes your work back
+
+**IT NEVER TOUCHES YOU, AND IT IS THE PRIORITY TARGET ON ANY FIELD IT STANDS ON.** Every other creature here is
+answered by fighting it; this one is answered by fighting it FIRST. 78 HP and 12 poise — it flinches off almost
+anything — against 320 souls, which is dearer than a greatsword.
+
+- **THE CORPSE IS THE MECHANIC, AND THE WINDOW HAD TO BE MADE TO EXIST.** A skeleton is `DEATH_DUR + DISS_DUR`
+  = 2.05 s from the killing blow to its last mote, which will not hold a raise with a readable tell inside it —
+  as a race against the dissolve the move would essentially never fire. So a body inside `RAISE_R` of a living
+  necromancer **STOPS DISSIPATING** (`heldOpen`, stamped by `game.markVigil`, read by `foe.dissipate` through an
+  `@hasField` opt-in so the eleven creatures nothing raises are untouched). **The held corpse is therefore the
+  FIRST tell and it arrives before the cast**: every other body in the game goes to gold on its own clock, and
+  one lying there NOT going is something the player can see without knowing yet what a necromancer is.
+- **IT IS A PLACE, NOT A LIST.** Every flag is cleared and re-earned each frame off where the bodies actually
+  lie, so walking the fight out of its reach releases the corpses on the frame it happens and killing things
+  where it cannot reach never gives it anything. **And two of them cannot claim one body** — they are walked in
+  order and an already-stamped corpse is skipped, so a pair cannot spend two casts on one skeleton.
+- **A BODY MAY BE RAISED ONCE** (`wasRaised`, `shieldGone`'s arrangement) at `RAISE_HP_FRAC` of its HP, full
+  poise and stance, into a light stun so it cannot swing out of the ground. Twice is a fight that cannot be won
+  by killing things, which is the only thing the player is holding. **The shield does not come back**: whatever
+  the player already broke off that body stays broken.
+- **THE CREATURE ONLY REPORTS IT** (`raised`, a one-frame flag, and `raiseAt`) — `game.applyRaises` does the
+  raising, because the corpse is in another group, in another array, of another type. `justDied`'s arrangement
+  in the other direction. `foe.rekindle` is the shared re-arm and reads FIELDS ONLY, `dissipate`'s own reason;
+  the STATE it comes up in cannot be shared and is each creature's own two lines.
+- **THE RAISE IS THE LONGEST TELL IN THE GAME** (`RAISE_WIND` 1.90 s) and it is PLANTED for every frame of it,
+  which is the whole punish window. It **turns to the BODY, not to him** — the one move besides the knight's
+  fall that looks away from the hero, and that is what says WHERE as well as WHAT. **The spot is committed the
+  frame the gather starts**, so a nearer corpse falling mid-tell cannot swing 1.9 s of announcement elsewhere.
+- **AND THE ICE RUNE RING IS THE OTHER HALF** (owner's call), which is the delver's surge's law list over again:
+  committed to the ground where he was standing, and it **OUTLIVES THE CASTER** — killing the thing after the
+  cast does not un-cast it, because the ring is in the ground by then. Not parryable, and its blow carries the
+  RING as its origin (`hitFrom`) rather than the caster, so stood on the mark there is no bearing at all and the
+  boards cannot answer it. **`FROST_FUSE` is SOLVED, not chosen**: long enough that a WALK clears the rim from
+  dead centre, which is where it parts company with the burst a walk deliberately cannot clear.
+- **THE FUSE BURNS ROUND THE RING RATHER THAN FILLING IT.** Runes take one by one round the rim and the last one
+  lighting IS the blow — a countdown legible from any bearing, and one you can COUNT rather than infer off a
+  brightness ramp. **Built from `drawSphereEx` and nothing else**: `drawLine3D` is one pixel however close you
+  stand, and a `drawTriangleStrip3D` annulus came back invisible on the render beside particles landing on the
+  same spot on the same frame. Both drew NOTHING, twice, and neither failure was visible from the code.
+- **THE MARK TAKES THE GROUND AT THE MARK, WHICH IS THE TARGET'S OWN `pos.y`** — never the caster's. `pos.y` IS
+  the ground under an actor, so the target's is the height the ring has to be drawn at; the caster's is right
+  for a point on its own body and wrong for a mark twelve metres away, where the two grounds differ by more
+  than the ring's clearance and the whole thing is depth-culled under the turf.
+- **TALL AND SKINNY IS TWO DIALS AND THE RATIO IS THE CLAIM** — stature through `SCALE`, and `restHumanoid`'s
+  own `hx`/`sx` narrowed, which are the only numbers honestly per-creature on the shared scaffold. Either alone
+  is satisfiable by the wrong creature: scaled up at the scaffold's width it is a big archer, narrowed without
+  the height it is a child. A test measures stature over shoulder SPAN against the archer standing next to it.
+- **THE DRAGGING HEM IS NOT A BONE** — it rides the ROOT through a lag matrix, the shield's own arrangement. It
+  is a SPRING and not an ease: cloth on the ground is left behind and hauled after, so the lean opposes the
+  travel, OVERSHOOTS its rest and settles onto it, and a test pins the overshoot because an ease can never
+  produce one. **And the skirt panels are thin walls at the RIM**: `addBox` takes HALF-axes, so a radial extent
+  of `r/2` centred at `r/2` spans from the axis out to the rim and every panel comes out a solid pie slice —
+  the first pass was three stacked barrels and read as a chess pawn.
+- **THE STAFF ARM MUST BE THE RIGHT ONE.** `heromod.PARENT[HELD]` is `WRR`, so the held slot hangs off that
+  wrist and no other; authored on the left, the pole's matrix was built against a `wx[WRR]` nothing had written
+  yet — undefined memory, and the whole staff transformed to a point at the world origin. `poseUpper` therefore
+  poses that arm LAST, with the staff after its own wrist.
+- **AND `staffTilt` IS 180-IS-PLUMB, the warriors' `wpnTilt` convention** — read as "degrees OFF plumb" the
+  first pass authored 12 and drove 1.5 m of pole through the floor. **The fit bills the ARM but not the TRUNK**,
+  so a pose that arches the spine pays for it at its own constant: `RAISE_LEAN` takes the chest back 22 degrees
+  and the staff inherits every one, which laid it out diagonally across his front at the same number that
+  stands it up at the carry. All three poses are MEASURED and bracketed — carry 16 deg with the ferrule down,
+  raise 9 deg planted, frost 31 deg with the ferrule LIFTED, which is what keeps the two tells apart.
+- **THE FROST NEEDS TWO PALETTES FOR ONE SUBSTANCE** — the delver's `CLOD`-against-`SOIL` law and the knight's
+  `.steel`. `RIME_ALB` goes into meshes and runs through ×1.72 → gamma; `RIME` is drawn unlit and is a literal
+  screen value. One constant for both blows out the staff head to a white knuckle or makes the ring grey grit.
+- **AND THE ROBE'S HUE HAS TO BE LAID ON THICK, because the sun cancels it.** Authored at a value that looks
+  decently blue in a swatch it SAMPLED dead neutral grey on the render — the key here is warm and multiplies
+  through, so the blue channel has to run at better than twice the red in the ALBEDO to survive to the screen.
+- **IT HAS NO VOICE OF ITS OWN YET.** It borrows the shade's `shade_reach`/`shade_gather`/`shade_touch`, the
+  wand's `wand_charge`/`wand_cast` and the skeletons' `bone_hurt`/`bone_die` — placeholders for a `necro_*`
+  family, the Bone Knight's gap one creature along.
 
 ### The leechfly (`leechfly.zig`) — the first thing that flies
 
@@ -890,10 +989,12 @@ number, so a readout and a mechanic cannot disagree.
   rename is a compile error. An array literal in enum order silently shifts on a fifth element.
 - **POISE AND STANCE BELONG TO THE BLOW, NOT THE BODY.** `guardChip` is damage only for the same
   reason. **A shield is billed on the RAW blow** (`Hit.raw`).
-- **TWO AND A HALF OF THE FOUR ARE LIVE** — FIRE (hero's fire arrow, the tallowed sword, kobold sling
-  clump), LIGHTNING (the thundercrock's alone — nothing deals it AT the hero), and CHAOS, which is the
-  WAND'S ALONE (the bolt and the roots' grip). Cold has no source yet, and nothing in the world deals chaos
-  AT the hero since the brood's venom and the sporeling's spores became POISON.
+- **THREE AND A HALF OF THE FOUR ARE LIVE** — FIRE (hero's fire arrow, the tallowed sword, kobold sling
+  clump), LIGHTNING (the thundercrock's alone — nothing deals it AT the hero), CHAOS, which is the WAND'S
+  ALONE (the bolt and the roots' grip), and now **COLD, which is the NECROMANCER'S ALONE**: its rune ring is
+  the only thing in the world that deals it, and it deals nothing else (`necro.FROST_HIT` carries no
+  physical, which a comptime assert pins). Nothing in the world deals chaos AT the hero since the brood's
+  venom and the sporeling's spores became POISON, so cold is now the only element he actually meets.
 - Every foe carries its own table, authored where its HP is (`initFoe(..).withRes(..)`):
 
   | creature | fire | cold | lightning | chaos | why |
@@ -911,6 +1012,7 @@ number, so a readout and a mechanic cannot disagree.
   | sporeling | −50 | +15 | 0 | +75 | a damp little fungus stuffed with its own element |
   | Bone Knight | −35 | +60 | 0 | +45 | the archer's own table again — it is the archer's body in a suit |
   | Delver | +20 | −30 | −40 | 0 | packed earth over a damp hide; a bolt EARTHS through the one thing that is part of the ground |
+  | Necromancer | −35 | **+75** | 0 | +45 | the archer's table with COLD taken to the cap — it is the one thing in the world that deals cold, and a creature you could freeze with its own element is one whose identity the sheet argues against |
 
 - **NOTHING GRANTS THE HERO ANY YET, AND THE SHEET SAYS SO** — the book's STATS page shows all four at
   0%. `makeWhole` CARRIES RESISTANCES ACROSS a bonfire: they are what he is, not a meter to refill.
@@ -944,8 +1046,8 @@ hang off the hub, so all three are open from the first souls you spend.
   reaching for the counter (`souls.take`'s shape), so `game.bonfirePick` is the one line that can bill him, and
   it is the ONLY thing in the game that spends souls.
 - **SOULS, NEVER RUNES**, in the code as well as on the page. The currency is `combat.Souls`, the counter is
-  `hero.souls`, and the two ITEMS with "rune" in their names (`rune_arc`, `cracked_rune`) are physical
-  objects and not the currency.
+  `hero.souls`, and the one ITEM with "rune" in its name (`rune_arc`) is a physical object and not the
+  currency. `nameless_soul` is the item that IS worth souls, and it is named for what it pays out.
 - **THE PRICE IS MEASURED AGAINST A BODY.** A toad is 60, an archer 130, a mother 240 — so `costAt` is set
   where the first node is three archers and the whole one-and-twenty is a game's worth of killing (~80k). It
   is ONE price per level whichever node it lands on: what you buy is the level, and which node is the choice.
@@ -1559,8 +1661,16 @@ Options / Editor / Quit, over a live 3D backdrop the camera walks slowly round (
 - **THE BOOT CAMERA IS ASKED FOR AFTER `menu.update`, NEVER BEFORE.** `dist`/`pitch` are the PLAYER's zoom
   and tilt and nothing in play resets them, so stamping the title framing on the frame New Game was pressed
   handed the new character a camera seven metres back. (Reported as "you zoomed out the game when playing".)
-- **NEW GAME TAKES THE FIRST EMPTY SLOT WITHOUT ASKING** (ER's own). The picker only comes up when all three
-  are full, which is the one time that press is a decision about an existing character.
+- **BOTH ROWS ASK WHICH SLOT** (owner's call). New Game used to take the first empty one without asking (ER's
+  own) and only show the picker when all three were full — so the one press that decides where a character
+  LIVES was the one press that never said where. Three slots is few enough that choosing is the point of
+  having them.
+- **A SLOT CAN BE THROWN AWAY, AND IT IS THE ONLY PRESS IN THE GAME THAT DESTROYS ANYTHING** — so it is armed
+  on one button (`hud.BTN_QUICK`, named off the crib like every other binding) and done on a SECOND, and the
+  second is the ordinary Confirm, because by then the row has become the question. Walking off the row, Back,
+  or re-opening the picker all disarm it. **BOTH FILES GO** (`save.erase`): a picture left standing beside a
+  save that is gone is the one thing the picker's own rule forbids. The menu holds no game state, so it hands
+  `Action.deleteSlot` up and `game.zig` does the removing, the re-survey and the re-read of the pictures.
 - **A ROW THAT CANNOT BE PRESSED IS DRAWN SO** (`Menu.rowLive` + `Card.dim`, `TEXT_OFF`) — one predicate read
   by the PRESS and by the picture, so a row can never look available and do nothing. The cursor still lands
   on it: a row you cannot reach is a row whose reason you cannot read, and the reason is the footnote.
@@ -1691,6 +1801,14 @@ not the stick-speed `runB`.
   UI** — a mouse-and-keyboard authoring tool with no pad bindings at all, so its own crib names keys.
 - **A BUTTON IS NAMED ONCE** — `hud.BTN_INTERACT`/`BTN_CONFIRM`/`BTN_BACK`/`BTN_QUICK`. `game.zig` binds off
   them and every crib draws off them, so a rebind moves the caption and the press together.
+- **THE CURSOR IS A LEADING BAR, AND IT IS THE ONLY THING THAT MARKS A ROW** (owner's call). `uiart.caret` is
+  the one that draws it and `uiart.rowHilite` lays it under the wash, so a list cannot grow a second kind of
+  cursor. Every menu used to set a `>` glyph in the left margin ON TOP of the bar the wash was already
+  drawing — one cursor said twice, in two places that had to agree, and a column of arrows down the card
+  besides. A row too dim to take a wash (an empty slot, a refused option) draws the bar on its own at
+  `CARET_DIM`: the cursor may never be invisible on the one row it is standing on, which is exactly the row
+  whose reason you are trying to read. The `<` `>` PAIR ON A GAUGE stays — that is "this row adjusts", not
+  "you are here".
 - **All UI text goes through `hud.text/textW`**, in **Balthazar** (`assets/`, OFL; owner's pick). The
   atlas is ASCII-ONLY — a `·` or `—` renders as tofu. Exo and Tagesschrift are GONE; one face only.
 - **SIZES COME FROM `hud`'s TYPE SCALE** (`TITLE`/`BODY`/`SMALL`/`HINT`/`TINY`, plus `MONO` for the editor's
@@ -1773,6 +1891,11 @@ THE BONE KNIGHT IS A BOSS WITH NO BOSS FURNITURE: no arena, no fog gate, no heal
 step, slam, heave and roar and the skeletons' hurt and die. And a DOWNED knight's collider is still the circle at his feet, so the three
 metres of body lying behind them can be walked through — a capsule for a floored creature is the fix, and
 nothing else in the game needs one yet.
+
+THE NECROMANCER HAS NO `necro_*` VOICE FAMILY — it borrows the shade's, the wand's and the skeletons', the Bone
+Knight's own gap one creature along. Nothing RESISTS cold on the hero's side either: the sheet shows all four at
+0% and there is no cold-warding item, so the game's one cold source lands on him unmitigated by construction.
+And nothing raises a body but this creature, so `foe.rekindle` has exactly two callers.
 
 No criticals, guard counter, or AR × motion-value damage (flat constants
 today). THE JUMP EXISTS but nothing hangs off it yet: no jump ATTACK (the one thing ER bills stamina for), no

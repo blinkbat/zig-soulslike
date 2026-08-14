@@ -26,9 +26,12 @@ const warriormod = @import("warrior.zig");
 const rootedmod = @import("rooted.zig");
 const knightmod = @import("knight.zig");
 const delvermod = @import("delver.zig");
+const necromod = @import("necro.zig");
 const leechmod = @import("leechfly.zig");
 const shademod = @import("shade.zig");
 const chestmod = @import("chest.zig");
+const pickupmod = @import("pickup.zig");
+const awardmod = @import("award.zig");
 const restmod = @import("rest.zig");
 const soulsmod = @import("souls.zig");
 const ptree = @import("passivetree.zig");
@@ -92,6 +95,12 @@ const SHAKE_SAC_BURST = 0.34;
 /// The delver committing to a burst — a TELL and not a hit, so it sits under everything that has actually
 /// landed on him and over the beats that are only scenery.
 const SHAKE_SURGE = 0.26;
+/// A body getting back up. Sized against the surge deliberately: both are things happening to the WORLD
+/// rather than to him, and this one is the heavier of the two because it undoes work he has already done.
+const SHAKE_RAISE = 0.30;
+/// …and a ring going into the ground at his feet, which is a TELL: it sits under both of the above and over
+/// the beats that are only scenery, because nothing has touched him yet.
+const SHAKE_SIGIL = 0.16;
 const RESPAWN_HOLD = 0.55; // seconds of FULL black after the respawn…
 const RESPAWN_FADE = 0.9;
 /// Fractions of screen height; the caption's centre is derived off these.
@@ -196,10 +205,16 @@ pub const Game = struct {
     grove: rootedmod.Grove,
     cluster: shroommod.Cluster,
     warrens: delvermod.Warrens,
+    rite: necromod.Rite,
     vigil: knightmod.Vigil,
     swarm: leechmod.Swarm,
     haunt: shademod.Haunt,
     chests: chestmod.Chests,
+    /// THE GLOWS — the second thing on the field that holds loot. No `init`: it owns no mesh (the prop grid
+    /// draws the wisp), so unlike `chests` it is a plain defaulted field.
+    pickups: pickupmod.Pickups = .{},
+    /// …and HOW EITHER OF THEM SAYS WHAT YOU GOT — the first-time card and the toast stack.
+    award: awardmod.Award = .{},
     folk: npcmod.Folk,
     /// Deliberately NOT in `FOE_GROUPS`: everything folded over that list is about things trying to kill him.
     pack: wolfmod.Pack = .{},
@@ -214,6 +229,9 @@ pub const Game = struct {
     rest: restmod.Rest = .{},
     /// Survives a death AND a load — the hour is a fact about the world, not about the map file.
     day: daynight.Clock = .{},
+    /// THE HOUR THE TWO SHADERS WERE LAST SOLVED FOR. A NaN until one has been, so the first ask always lands
+    /// (NaN compares equal to nothing, itself included) — see `applyHour` for what it saves.
+    hourLit: f32 = std.math.nan(f32),
     souls: soulsmod.Souls,
     /// Survives a death: what a death takes is the souls on the counter, never what they were spent on.
     tree: ptree.Tree = .{},
@@ -279,6 +297,7 @@ pub const Game = struct {
         g.grove = rootedmod.Grove.init(g.scene.shader);
         g.cluster = shroommod.Cluster.init(g.scene.shader);
         g.warrens = delvermod.Warrens.init(g.scene.shader);
+        g.rite = necromod.Rite.init(g.scene.shader);
         g.vigil = knightmod.Vigil.init(g.scene.shader);
         g.swarm = leechmod.Swarm.init(g.scene.shader);
         g.haunt = shademod.Haunt.init(g.scene.shader);
@@ -288,7 +307,10 @@ pub const Game = struct {
         // default never runs and the field comes up as the fill byte. Silent, and it has bitten twice.
         g.pack = .{};
         g.pack.load(g.scene.shader);
+        g.pickups = .{};
+        g.award = .{};
         g.day = .{};
+        g.hourLit = std.math.nan(f32); // …and its guard, which as the fill byte would pin the light on frame one
         g.souls = soulsmod.Souls.init(g.scene.shader);
         phase(&initTimer, "foes");
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
@@ -341,7 +363,15 @@ fn beginGame(g: *Game) void {
     g.hero.flasks = .{};
     g.day = .{};
     g.bag = .{};
-    for (STARTING_KIT) |k| g.bag.add(k, 1);
+    // **THE STARTING KIT IS ALREADY KNOWN**, and it goes in as KNOWN rather than through `awardLoot`: he begins
+    // holding these, so the first one found in the world is the second he has owned. Without this, walking up to
+    // a chest with a flask in it stops the game to introduce him to the flask on his own belt — and the whole
+    // discovery set is a fact about the character, so it is set where the character is made.
+    g.award = .{};
+    for (STARTING_KIT) |k| {
+        g.bag.add(k, 1);
+        g.award.markKnown(k);
+    }
     g.tree = .{};
     applyTree(g); // the sheet and the perks FIRST: the respawn below sizes his bars off them
     // Through the hero's own respawn, not `pos = …`: from a running game he may be mid-swing, mid-roll, in
@@ -380,6 +410,8 @@ fn slotOf(g: *Game) savemod.Slot {
         .day = &g.day,
         .trig = &g.trig,
         .chests = &g.chests,
+        .pickups = &g.pickups,
+        .award = &g.award,
         .map = saveMap(g),
     };
 }
@@ -423,10 +455,59 @@ const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "grove", .kind = .rooted, .aggro = rootedmod.AGGRO_R, .vsHero = false },
     .{ .field = "cluster", .kind = .shroom, .aggro = shroommod.AGGRO_R },
     .{ .field = "warrens", .kind = .delver, .aggro = delvermod.AGGRO_R },
+    // It gives way to the bodies it is raising rather than the other way round: whatever it puts back up
+    // has to be able to stand where it fell, and the caster is the one thing here that can afford to move.
+    .{ .field = "rite", .kind = .necromancer, .aggro = necromod.AGGRO_R, .vs = &.{ "line", "muster" } },
     // The ogre's `vsHero`: far too much of him to be walked out of the way. The `vs` list is his own — the
     // skeletons keep the vigil with him, so they give way to him and he gives way to nothing.
     .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
 };
+
+/// **THE ONE PASS OVER `FOE_GROUPS` THAT IS NOT A FOLD, WRITTEN DOWN SO IT CANNOT BE FORGOTTEN.** Everything
+/// else a group needs — the re-home, the draw, the sight, the threat, the steering, the shield, the shove, the
+/// souls — is `inline for (FOE_GROUPS)` and comes free. The blow it deals HIM cannot be: several groups take a
+/// spawn callback on top of the blade, and each sizes its felt beat off its OWN "was that the heavy" figure
+/// (the ogre's slam stance, the berserker's chop poise, the delver's burst, the knight's fall). So the calls
+/// are hand-written one per row in `run`, and a NEW group added to the table above would pick up every other
+/// pass and simply never hurt the player — SILENTLY, which is the one failure this file keeps legislating
+/// against. This is `ROLE_GROUPS`' arrangement for `ROLE_GROUPS`' reason: a table that cannot be derived is
+/// cross-checked against the one it mirrors instead.
+///
+/// The counts are deliberately NOT written out here. They were ("four of the twelve", "the twelve calls") and
+/// the necromancer made every one of them wrong in the same commit that added its row — the comptime block
+/// below is the thing that actually holds the two tables level, so the prose says which rows are special and
+/// leaves the arithmetic to it.
+///
+/// **WHAT A ROW PROMISES IS THAT THE GROUP HAS A DAMAGE CHANNEL AT ALL, not that it has a `heroTakes` call.**
+/// Every row but one does. **`line` IS THE ONE THAT DOES NOT AND IT IS NOT AN OVERSIGHT**: an archer's
+/// `update` hands back "it loosed" rather than a `?foe.Blow`, and the blow lands where the ARROW does, off
+/// `g.arrows` in `run` — the one group whose reach is a projectile it no longer owns. Written down here because a
+/// reader who checks the invariant literally finds it false on that row and stops trusting the table, which
+/// costs more than the row saves.
+const BLOW_GROUPS = [_][]const u8{
+    "warren", "grief",  "line",    "band",    "muster", "haunt",
+    "swarm",  "grove",  "cluster", "warrens", "vigil",  "brood",
+    "rite",
+};
+
+comptime {
+    if (BLOW_GROUPS.len != FOE_GROUPS.len) @compileError("game: BLOW_GROUPS and FOE_GROUPS disagree on how many groups there are");
+    for (FOE_GROUPS) |gr| {
+        var seen = false;
+        for (BLOW_GROUPS) |b| {
+            if (std.mem.eql(u8, b, gr.field)) seen = true;
+        }
+        if (!seen) @compileError("game: `" ++ gr.field ++ "` is in FOE_GROUPS but not in BLOW_GROUPS — " ++
+            "give it its `update(...) |b| heroTakes(...)` call in `run` and name it here, or it will never land a blow");
+    }
+    for (BLOW_GROUPS) |b| {
+        var seen = false;
+        for (FOE_GROUPS) |gr| {
+            if (std.mem.eql(u8, b, gr.field)) seen = true;
+        }
+        if (!seen) @compileError("game: BLOW_GROUPS names `" ++ b ++ "`, which is not a FOE_GROUPS field");
+    }
+}
 
 /// Is a fight on — the one predicate, and the only thing allowed to answer it. Sight is deliberately NOT
 /// asked: it flickers as he rounds a corner, and a state that decides whether a menu works may not blink.
@@ -991,6 +1072,8 @@ fn heroFade(g: *const Game) f32 {
 fn drawCasters(g: *Game, cull: envmod.Cull) void {
     g.env.drawProps(cull);
     g.chests.draw();
+    // The seam light is not a caster and `setFade` is the scene shader's — lit pass only (`drawGlow`'s own note).
+    if (cull == .view) g.chests.drawGlow(&g.scene);
     // The roots are opaque WOOD, not FX — through here so they go through both passes and cast.
     g.hero.drawRoots();
     const fade = heroFade(g);
@@ -1110,12 +1193,50 @@ fn rehomeChests(g: *Game) void {
     var sites: [chestmod.CAP]chestmod.Site = undefined;
     const n = g.env.chestSites(&sites);
     g.chests.reset(sites[0..n]);
+    // …AND THE GLOWS, off the same index and on the same frames: both are props the editor can move, and a
+    // pickup left homed to a world that has been re-materialized under it stands where nothing is.
+    var glows: [pickupmod.CAP]pickupmod.Site = undefined;
+    g.pickups.reset(glows[0..g.env.pickupSites(&glows)]);
     var fires: [restmod.CAP]restmod.Site = undefined;
     g.rest.reset(fires[0..g.env.restSites(&fires)]);
 }
 
 pub fn rehomeChestsForShot(g: *Game) void {
     rehomeChests(g);
+}
+
+/// The harness's own hooks. `--shot` runs no loop, so the pickup's reach ring and the award's queue have to be
+/// driven by hand — and driven through the SAME calls the loop makes, or a portrait is of code nothing runs.
+pub fn stepPickupsForShot(g: *Game) void {
+    g.pickups.update(SHOT_STEP, g.hero.pos);
+    hidePickups(g);
+}
+
+/// `first` shows the card (an undiscovered kind), `again` toasts one (a known kind), `clear` takes it away.
+pub const AwardShot = enum { first, again, clear };
+pub fn awardForShot(g: *Game, k: item.Kind, how: AwardShot) void {
+    switch (how) {
+        .first => {
+            g.award.seen[@intFromEnum(k)] = false;
+            g.award.gain(k);
+        },
+        .again => {
+            g.award.seen[@intFromEnum(k)] = true;
+            g.award.gain(k);
+        },
+        .clear => g.award.clearPending(),
+    }
+}
+
+pub fn drawAwardCardForShot(g: *Game) void {
+    g.award.drawCard();
+}
+
+/// **THE TOASTS HAVE TO BE TICKED BEFORE THEY CAN BE PHOTOGRAPHED.** They slide in over `award.TOAST_IN`, so at
+/// `t = 0` every one of them is parked exactly one width off the right edge — the first pass shot them the frame
+/// they were made and came back with an empty screen and no error anywhere.
+pub fn tickAwardForShot(g: *Game, secs: f32) void {
+    g.award.update(secs);
 }
 
 /// Through each group's own `clear()` where it has one: zeroing `n` leaves everything a group owns besides
@@ -1284,6 +1405,9 @@ const Reach = enum {
     rest,
     talk,
     chest,
+    /// LAST, and deliberately: its ring is the widest of the lot (`pickup.REACH` 2.4), so a glow lying beside a
+    /// bonfire or a box would otherwise swallow the press for the thing you actually walked over to.
+    pickup,
 
     /// Off `hud.BTN_INTERACT` rather than a letter, so a rebind moves the press and the glyph at once.
     fn prompt(self: Reach) hud_.Hint {
@@ -1292,6 +1416,7 @@ const Reach = enum {
             .rest => "Rest",
             .talk => "Speak",
             .chest => "Open",
+            .pickup => "Take",
         } };
     }
 };
@@ -1301,6 +1426,7 @@ fn reachable(g: *const Game) ?Reach {
     if (g.rest.near != null) return .rest;
     if (talkable(g)) return .talk;
     if (g.chests.near != null) return .chest;
+    if (g.pickups.near != null) return .pickup;
     return null;
 }
 
@@ -1312,6 +1438,7 @@ fn interact(g: *Game) void {
         .rest => _ = g.rest.begin(),
         .talk => _ = startTalk(g),
         .chest => openChest(g),
+        .pickup => takePickup(g),
     }
 }
 
@@ -1477,10 +1604,37 @@ fn reclaimSouls(g: *Game) void {
 
 fn openChest(g: *Game) void {
     const got = g.chests.openNear(&g.map) orelse return;
-    for (got.loot) |it| g.bag.add(it, 1);
-    if (got.loot.len > 0) sfx.world(.item_get, got.at);
+    awardLoot(g, got.loot, got.at);
     g.rig.addShake(SHAKE_CHEST);
     g.rumble.play(rumblemod.hit_light);
+}
+
+/// …AND THE GLOW, which is the box's own body of code with no lid on it.
+fn takePickup(g: *Game) void {
+    const got = g.pickups.takeNear(&g.map) orelse return;
+    awardLoot(g, got.loot, got.at);
+    g.rig.addShake(SHAKE_CHEST);
+    g.rumble.play(rumblemod.hit_light);
+}
+
+/// **THE GLOW'S PICTURE, STAMPED ONTO ITS PROP.** The runtime pickup owns the state and the prop grid owns the
+/// drawing, and the two are the same slot (`env.setPickupDraw`) — so this is the `markSight` arrangement one
+/// more time: the thing that knows says, and the thing that draws is told.
+fn hidePickups(g: *Game) void {
+    for (g.pickups.live(), 0..) |*p, i| g.env.setPickupDraw(i, p.sizeLeft(), p.spent());
+}
+
+/// **EVERYTHING THAT HANDS THE PLAYER ITEMS COMES THROUGH HERE.** The bag and the NOTICE are one act: a chest
+/// that added to the bag without telling the award set would silently spend a kind's one first-time card, and
+/// the next copy found would card instead — which is the same fact said in the wrong order, months later.
+///
+/// The voice fires ONCE for the whole handful rather than per item: three runes out of one box is one sound.
+fn awardLoot(g: *Game, loot: []const item.Kind, at: rl.Vector3) void {
+    for (loot) |it| {
+        g.bag.add(it, 1);
+        g.award.gain(it);
+    }
+    if (loot.len > 0) sfx.world(.item_get, at);
 }
 
 /// What the conditions are allowed to see, gathered once and handed IN — the machine never reaches into the
@@ -1696,6 +1850,15 @@ fn applyStow(g: *Game) void {
 /// Taken BEFORE the depth pass every frame: `Scene.setHour` moves `gfx.sun` and the shadow box is built off
 /// that, so pushed after it a frame's shadows are cast by the previous frame's sun.
 fn applyHour(g: *Game) void {
+    // **AND ONLY WHEN THE HOUR HAS ACTUALLY MOVED.** The loop asks this every frame down every branch, and
+    // what it costs is not small: TWO full `paletteAt` walks (a table search plus a fourteen-field blend
+    // each), three `keyDir`-class solves for the caster, its reach and the two discs, and EIGHTEEN
+    // `setShaderValue` calls — each of which is a `glUseProgram` and a `glUniform` at the driver. Under a
+    // menu, at a bonfire, inside a conversation, in the editor and under a frozen clock (`--shot`) the
+    // answer cannot have changed, and the guard is the value itself rather than a flag anybody has to
+    // remember to raise. Nothing else writes these uniforms, so a skipped frame leaves them exactly right.
+    if (g.day.hour == g.hourLit) return;
+    g.hourLit = g.day.hour;
     g.scene.setHour(g.day.hour);
     g.sky.setHour(g.day.hour);
     // …AND THE AMBIENCE, which is the same fact reaching a third consumer: the crickets belong to the night
@@ -1936,6 +2099,13 @@ fn stepShafts(g: *Game, dt: f32) void {
 
 /// Past the widest notice ring in the game. Folded over `FOE_GROUPS` rather than hand-written, or a creature
 /// given a wider ring later quietly stops being asked and sees through walls again.
+///
+/// **AND IT IS ONE RING FOR EVERY CREATURE ON PURPOSE, WHICH IS WHAT IT COSTS.** At 25 m (the archer's 24 plus
+/// one) a dormant Rooted whose whole world is 6.8 m still pays a full `env.sees` — an AABB sweep of the solid
+/// grid from the eye to its skull — every frame, for a distance `foe.sensedDist` then throws away. Narrowing it
+/// to each group's own `aggro` is one line and is NOT free: `Leash.blind` is a MEMORY (`SIGHT_MEMORY`), so a
+/// creature that watched him walk past from out here would start going blind out here instead. The ring is the
+/// correctness half; this is the bill.
 const SIGHT_R: f32 = blk: {
     var widest: f32 = 0;
     for (FOE_GROUPS) |f| widest = @max(widest, f.aggro);
@@ -2084,6 +2254,134 @@ fn parryBeat(g: *Game) void {
     g.rumble.play(rumblemod.parry);
     g.rig.addShake(SHAKE_PARRY);
     sfx.play(.parry);
+}
+
+/// **WHICH CORPSES ARE BEING HELD OPEN, and by whom.** Stamped once a frame, before anything decides — the
+/// `markSight`/`markParry` arrangement and for their reason: a corpse is in another group's array, and a
+/// creature may never reach out for the world.
+///
+/// It is keyed off `@hasDecl(Member, "raisable")`, so a third raisable body is a `raisable`/`reraise` pair on
+/// that creature and NEVER an edit here — `markWays`' rule, and a test pins the two halves together because
+/// both fail silently.
+///
+/// **IT IS A PLACE AND NOT A RESERVATION.** Every flag is cleared first and re-earned from where the bodies
+/// actually lie, so walking the fight out of a necromancer's reach releases the corpses on the frame it
+/// happens, and killing things where it cannot reach never gives it anything at all.
+///
+/// **AND TWO NECROMANCERS CANNOT CLAIM ONE BODY.** They are walked in order and a corpse already stamped this
+/// frame is skipped, so the second one looks past it to the next — which costs nothing, needs no extra state
+/// (the flag IS the claim), and stops a pair spending two nine-second casts on one skeleton.
+fn markVigil(g: *Game) void {
+    // Nothing on the field is held until something earns it this frame.
+    eachRaisable(g, {}, struct {
+        fn v(_: void, f: anytype) void {
+            f.heldOpen = false;
+        }
+    }.v);
+    for (g.rite.live()) |*k| {
+        k.vigil.at = null;
+        if (!foemod.corporeal(k)) continue;
+        // **MID-CAST IT HOLDS THE BODY IT COMMITTED TO** rather than re-picking the nearest every frame. The
+        // spot was latched when the gather began (`necro.enter`), so the search is a tight one about THAT
+        // point: a 1.9 s tell that swung onto a fresher corpse would be a tell that lied about where.
+        const from = if (k.casting()) k.raiseAt else k.pos;
+        const reach = if (k.casting()) necromod.RAISE_MATCH_R else necromod.RAISE_R;
+        const ref = nearestRaisable(g, from, reach, .skip) orelse continue;
+        k.vigil.at = ref.at;
+        // …and THAT body is flagged, by SLOT: `heldOpen` is also the claim, so the next necromancer's own
+        // search skips it and a pair cannot spend two casts on one skeleton.
+        withRaisable(g, ref, {}, struct {
+            fn v(_: void, f: anytype) void {
+                f.heldOpen = true;
+            }
+        }.v);
+    }
+}
+
+/// **A BODY ON THE FIELD, BY SLOT** — which row of `FOE_GROUPS` and which member of it. An INDEX and not a
+/// pointer, because the member types differ per row and no one variable can hold two of them; and not a
+/// POSITION, because matching a corpse back by where it lies flags both of two that fell on the same spot.
+const BodyRef = struct { group: usize, idx: usize, at: rl.Vector3 };
+
+/// Every body a necromancer could use, visited once. Keyed off `@hasDecl(Member, "raisable")`, so a third
+/// raisable creature is a `raisable`/`reraise` pair on that creature and never an edit here (`markWays`' rule).
+fn eachRaisable(g: *Game, ctx: anytype, comptime visit: anytype) void {
+    inline for (FOE_GROUPS) |gr| {
+        for (@field(g, gr.field).live()) |*f| {
+            if (comptime !@hasDecl(@TypeOf(f.*), "raisable")) continue;
+            visit(ctx, f);
+        }
+    }
+}
+
+/// **THE NEAREST UNCLAIMED BODY TO A POINT, and the ONE definition of that search.** `markVigil` (hold it open)
+/// and `applyRaises` (stand it up) are the same question asked at two moments, and as two copies they had
+/// already drifted apart in both directions: one re-found its answer by comparing POSITIONS afterwards, and the
+/// other raised whichever corpse it happened to meet first while carefully tracking a distance it then ignored.
+/// `claimed` is the one thing the two callers disagree about, so it is an ARGUMENT rather than two functions:
+///   `.skip` — `markVigil` looking for a body to take, where a held one is somebody else's already
+///   `.take` — `applyRaises` reading back the body this necromancer is itself holding
+const Claimed = enum { skip, take };
+fn nearestRaisable(g: *Game, at: rl.Vector3, within: f32, claimed: Claimed) ?BodyRef {
+    var best: f32 = within;
+    var ref: ?BodyRef = null;
+    inline for (FOE_GROUPS, 0..) |gr, gi| {
+        for (@field(g, gr.field).live(), 0..) |*f, i| {
+            if (comptime !@hasDecl(@TypeOf(f.*), "raisable")) continue;
+            if (!f.raisable()) continue;
+            if (claimed == .skip and f.heldOpen) continue;
+            const d = mathx.distXZ(at, f.pos);
+            if (d > best) continue;
+            best = d;
+            ref = .{ .group = gi, .idx = i, .at = f.pos };
+        }
+    }
+    return ref;
+}
+
+/// …and the one body that ref names, handed to a visitor. The slot walk mirrors `nearestRaisable`'s exactly,
+/// which is what makes a ref mean the same thing to both.
+fn withRaisable(g: *Game, ref: BodyRef, ctx: anytype, comptime visit: anytype) void {
+    // The group test is a runtime `if` WRAPPING the body rather than a `continue` — `gi` is comptime and
+    // `ref.group` is not, so skipping an `inline for` iteration on it is comptime control flow inside a runtime
+    // block, which Zig refuses outright.
+    inline for (FOE_GROUPS, 0..) |gr, gi| {
+        if (gi == ref.group) {
+            for (@field(g, gr.field).live(), 0..) |*f, i| {
+                if (comptime !@hasDecl(@TypeOf(f.*), "raisable")) continue;
+                if (i == ref.idx) visit(ctx, f);
+            }
+        }
+    }
+}
+
+/// **THE RAISE ITSELF, and it happens HERE because it cannot happen anywhere else.** The necromancer reports
+/// a one-frame `raised` and the point it was standing over (`necro.raiseAt`); the body is in another group,
+/// in another array, of another type, and this is the only place that can see both.
+///
+/// It is `justDied`'s arrangement exactly, one direction along: the creature says what happened and the game
+/// does what that means.
+fn applyRaises(g: *Game) void {
+    for (g.rite.live()) |*k| {
+        if (!k.raised) continue;
+        // The body it was POINTING AT — the nearest to its own mark, which is the same search `markVigil` ran
+        // to claim it. `.take`, because the body this necromancer is holding is precisely the one that IS
+        // claimed: with `.skip` the raise would look straight past its own corpse at whatever lay behind it.
+        //
+        // **A CAST THAT FOUND NOTHING IS STILL SPENT** (the cooldown was stamped at the turn), and that is the
+        // reading the player is owed: the body it was reaching for was already gone, so the gather they watched
+        // bought nothing. Nothing to report and nothing to correct.
+        const ref = nearestRaisable(g, k.raiseAt, necromod.RAISE_MATCH_R, .take) orelse continue;
+        withRaisable(g, ref, {}, struct {
+            fn v(_: void, f: anytype) void {
+                f.reraise(necromod.RAISE_HP_FRAC);
+            }
+        }.v);
+        // A DEAD THING STANDING UP IS FELT. Under the beats a landed blow gets — nothing has hit him — and
+        // over the scenery, because what just happened is the last thirty seconds coming back.
+        g.rumble.play(rumblemod.hit_heavy);
+        g.rig.addShake(SHAKE_RAISE);
+    }
 }
 
 fn canSee(g: *const Game, r: FoeRef) bool {
@@ -2376,6 +2674,10 @@ pub fn hud(g: *Game, dt: f32) void {
     // something to say when it comes down.
     const line = g.trig.bannerText();
     if (line.len > 0) hud_.banner(line);
+    // **THE TOASTS ARE NOT CHROME EITHER**, and for the banner's own reason: what you just picked up is a thing
+    // the world is telling you, not part of the character's own readout, so it does not go out with the bars on
+    // the frame he dies. Drawn OVER the chrome block and outside its target for the same reason.
+    g.award.drawToasts();
     if (g.menu.stats) debugCorner(g);
 }
 
@@ -2667,6 +2969,15 @@ pub fn run(mode: Mode) void {
                         std.debug.print("LOAD FAILED: {s} is not a save this build can read\n", .{savemod.path(i)});
                     }
                 },
+                // The picker ASKED before this arrived (`menu.askDelete`), so there is nothing left to
+                // confirm here — only the two files to remove, the shelf to re-survey off the disk, and the
+                // pictures to re-read, which are the menu's own.
+                .deleteSlot => |i| {
+                    if (savemod.erase(i)) {
+                        g.shelf = savemod.survey(saveMap(g));
+                        g.menu.slotsChanged();
+                    } else std.debug.print("DELETE FAILED: could not remove {s}\n", .{savemod.path(i)});
+                },
                 .use => |k| useItem(g, k),
                 .arm => |a| bookAct(g, a),
                 .none => {},
@@ -2693,6 +3004,36 @@ pub fn run(mode: Mode) void {
             // No HUD behind the BOOT screen: there is no character yet whose bars those would be.
             if (!booting) hud(g, rawDt);
             g.menu.draw(&g.retro, &g.day, bookView(g), .{ .hero = &g.hero, .scene = &g.scene }, &g.shelf);
+            rl.endDrawing();
+            continue;
+        }
+
+        // **THE FIRST-TIME ITEM CARD HOLDS THE WORLD** (owner's call) — the menu's own branch, one screen along.
+        // It sits AFTER the menu (a pause card must be able to come up over it is not a thing we want; the menu
+        // is the outer shell) and BEFORE the fire, because you can open a chest and be handed something new
+        // without ever sitting down. Nothing in the world ticks: no foe, no clock, no toast.
+        if (g.award.carding()) {
+            g.hero.held = true;
+            // ANY KEY, and that is the whole of the input. `getKeyPressed` drains the queue and the pad's face
+            // buttons are asked beside it, so there is no wrong press and no button to name in the footer.
+            var pressed = rl.getKeyPressed() != .null;
+            if (rl.isMouseButtonPressed(.left) or rl.isMouseButtonPressed(.right)) pressed = true;
+            inline for (.{ .right_face_down, .right_face_right, .right_face_left, .right_face_up, .middle_right, .middle_left }) |b| {
+                if (rl.isGamepadButtonPressed(0, b)) pressed = true;
+            }
+            if (pressed) g.award.dismiss();
+            bWasDown = true; // poison the pad-B tap window, exactly as the menu and the fire branches do
+            bHeldT = ROLL_TAP_MAX;
+            wasInside = false;
+            g.hero.update(rawDt, 0, 0, null); // the breathing bob alone — the pause card's own rule
+            g.hero.pose();
+            g.rig.follow(g.hero.shoulderPoint());
+            g.rumble.update(rawDt, false);
+            sfx.ambience(rawDt);
+            sfx.tickStreams();
+            drawScene(g);
+            hud(g, rawDt);
+            g.award.drawCard();
             rl.endDrawing();
             continue;
         }
@@ -3011,11 +3352,14 @@ pub fn run(mode: Mode) void {
         if (g.hero.thrown) releaseSpell(g);
         if (g.hero.rang) summonSpirit(g);
         const hitsBefore = allHits(g);
-        // All four stamped before anything decides what to do about him, or moves, or swings.
+        // All five stamped before anything decides what to do about him, or moves, or swings. The VIGIL is
+        // last of them because it is the only one that reads a creature's own state back (`casting`), so it
+        // wants the field as the previous frame left it and not half-updated.
         markSight(g);
         markThreat(g, dt);
         markWays(g);
         markParry(g);
+        markVigil(g);
         // ONE snapshot of the blade for every group this frame — re-derived per group, the three disagree.
         const bladeNow = heroBlade(g);
         if (g.warren.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
@@ -3072,6 +3416,20 @@ pub fn run(mode: Mode) void {
             g.rumble.play(rumblemod.hit_heavy);
             g.rig.addShake(SHAKE_SURGE);
         }
+        // The necromancer. Its only blow is the SIGIL, so there is no "was that the heavy" split to make —
+        // one move, one weight, and `hit.heavy()` answers it because the ring is the only thing it throws.
+        if (g.rite.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        // …and the raise, which is the one beat here that is not a blow at all: the game does the raising
+        // because the body belongs to another group (`applyRaises`).
+        applyRaises(g);
+        // A FUSE LIT AT HIS FEET IS FELT AS WELL AS SEEN. It is drawn on the ground in a colour nothing else
+        // in the world is, but the ground is exactly where a player fighting two other things is not looking.
+        if (g.rite.anyLaid()) {
+            g.rumble.play(rumblemod.swing_light);
+            g.rig.addShake(SHAKE_SIGIL);
+        }
         // The Bone Knight. NOT `hit.heavy()`: all three of his blows carry stance, so that test would call a
         // shield bash a five-metre body landing on you. The split is "was it THE FALL", its own stance figure.
         if (g.vigil.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
@@ -3116,6 +3474,11 @@ pub fn run(mode: Mode) void {
         // frame rather than last one.
         tickPack(g, dt);
         g.chests.update(dt, g.hero.pos);
+        g.pickups.update(dt, g.hero.pos);
+        hidePickups(g); // …and a taken glow stops being drawn as it shrinks out
+        // THE TOASTS RUN ON THE WORLD'S OWN CLOCK, here and nowhere else: behind a first-time card everything
+        // is held, and a notice that expired while you were reading one would never have been seen.
+        g.award.update(dt);
         // The folk take the same terrain gate the foes do.
         var wasFolk: [npcmod.CAP]rl.Vector3 = undefined;
         const nFolk = g.folk.n;
@@ -3470,6 +3833,9 @@ const MarkCtx = struct {
     fn visit(self: *MarkCtx, foes: anytype, _: ?FoeKind) void {
         for (foes) |*f| {
             if (!f.alive() or f.dying()) continue;
+            // …and a swing does not stoop for what it cannot reach: the flat cut folded DOWN at a delver
+            // riding under his own boots, aiming the one stroke that could not have landed at the floor.
+            if (disguised(f)) continue;
             const d = mathx.distXZ(self.g.hero.pos, f.pos);
             if (d >= self.bestD) continue;
             const to = mathx.dirXZ(self.g.hero.pos, f.pos);
@@ -3751,11 +4117,44 @@ fn memberKind(f: anytype, group: ?FoeKind) FoeKind {
     return group.?;
 }
 
-/// A dormant Rooted is a dead tree until something wakes it, and a reticle offered on one gives the disguise
-/// away for nothing. Keyed off `@hasDecl`, so a creature with nothing to hide never declares it.
+/// **A THING YOU CANNOT SEE IS NOT A THING YOU CAN AIM AT.** A dormant Rooted is a dead tree until something
+/// wakes it, and a reticle offered on one gives the disguise away for nothing; a submerged DELVER is two and a
+/// half metres of earth. Keyed off `@hasDecl`, so a creature with nothing to hide never declares it — and read
+/// at every site that TAKES a target (`acquireLock`, `cycleLock`, `lockValid`), every site that DRAWS one
+/// (`BarCtx`), the swing's own stoop (`MarkCtx`) and the spirit's quarry (`huntFor`).
 fn disguised(f: anytype) bool {
     if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "hidden")) return f.hidden();
     return false;
+}
+
+test "THE BURROW TAKES THE LOCK OFF YOU, and gives it back when it surfaces" {
+    // Owner: the mole should lock you off when he is underground. What that costs him is the camera — and the
+    // whole of the move is that you have to find the mound yourself.
+    var d = delvermod.Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const hero = v3(0, 0, 1.2); // stood right over him, so the surge commits at `UNDER_MIN` rather than waiting out
+    try std.testing.expect(!disguised(&d)); // on the surface he is an ordinary target
+
+    d.debugDive();
+    var t: f32 = 0;
+    var wasHidden = false;
+    var sawMound = false;
+    // THE PREDICATE AND THE PICTURE ARE THE SAME ANSWER: `Model.draw` hides the body behind `deep()`, so a
+    // reticle may never sit on air and a drilling body may never be untargetable. Checked EVERY frame of the
+    // whole burrow rather than at its ends, which is where a clock of its own would drift.
+    while (t < 12.0) : (t += 1.0 / 60.0) {
+        _ = d.update(1.0 / 60.0, hero, PLAY_HALF, .{});
+        try std.testing.expectEqual(d.deep(), disguised(&d));
+        if (disguised(&d)) {
+            wasHidden = true;
+            // …and it is not a creature that has left the field: the ridge of earth is still there to read.
+            if (d.mounded()) sawMound = true;
+        }
+        if (wasHidden and !disguised(&d)) break;
+    }
+    try std.testing.expect(wasHidden); // it did go under…
+    try std.testing.expect(sawMound); // …and it was never invisible, only untargetable
+    try std.testing.expect(!disguised(&d)); // …and it came back up a target again
+    try std.testing.expect(t < 12.0); // it does not stay down forever (`UNDER_MAX`)
 }
 
 // A fresh acquire: nearest to screen-centre, across every target list.
@@ -3839,6 +4238,11 @@ const BarCtx = struct {
     fn visit(self: *const BarCtx, foes: anytype, kind: ?FoeKind) void {
         for (foes, 0..) |*f, i| {
             if (!f.alive() or f.dying()) continue; // no bar over a corpse dissolving out
+            // …NOR OVER A BODY THAT IS NOT THERE TO SEE. A bar is drawn in 2D off a projected world point with
+            // no depth test behind it, so a delver that took a blow and then went under left its bar hanging
+            // over open grass at the screen height of a crown two and a half metres inside the earth. Same
+            // predicate the lock and the reticle drop on, asked in the one other place a target is DRAWN.
+            if (disguised(f)) continue;
             const fixed = if (self.lock) |l| l.idx == i and l.kind == memberKind(f, kind) else false;
             // `sinceHurt`, not `sinceHit`: a spell that only takes HP — the bolt, and the roots' own grip —
             // counts as a hit for the bar's purposes, which is the whole question the bar is asking.

@@ -168,7 +168,7 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
         .soul_binding_ring => soulRing(cx, cy, px),
         .fire_tallow => fireTallow(cx, cy, px),
         .thundercrock => thundercrock(cx, cy, px),
-        .cracked_rune => crackedSoul(cx, cy, px),
+        .nameless_soul => crackedSoul(cx, cy, px),
         .toadflesh_broth => toadfleshBroth(cx, cy, px),
         .fang_dirk => fangDirk(cx, cy, px),
         .grave_warbow => graveWarbow(cx, cy, px),

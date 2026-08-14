@@ -1,6 +1,10 @@
 const std = @import("std");
 
 
+/// **APPEND-ONLY.** `save.Data.seen` is a POSITIONAL bit run over this enum — one character per kind, read
+/// back by index and never by tag — so a kind inserted or moved anywhere above the end silently re-points
+/// every discovery bit in every save on disk. `ORDER` below pins it; add new kinds at the BOTTOM and add the
+/// tag to the end of that list.
 pub const Kind = enum(u8) {
     crimson_flask, // the ones the HUD already draws
     cerulean_flask,
@@ -20,7 +24,7 @@ pub const Kind = enum(u8) {
     soul_binding_ring, // it breaks in place of you: a death spills no souls while one is on you
     fire_tallow, // wiped on the blade: the fire arrow's rule, moved to the swing
     thundercrock, // thrown lightning — the first of it anywhere in the world
-    cracked_rune, // souls, straight onto the counter
+    nameless_soul, // souls, straight onto the counter
     toadflesh_broth, // the stamina refill runs faster for a while
     fang_dirk, // more gear waiting on the equip system, the tower shield's shelf
     grave_warbow,
@@ -29,6 +33,30 @@ pub const Kind = enum(u8) {
 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
+
+/// **THE ORDER, WRITTEN DOWN, because a save file depends on it and nothing else could see that.** A reorder
+/// or an insert is a legal-looking edit that corrupts every `seen:` run on disk (`save.Data.seen`), and it
+/// fails SILENTLY — the file still parses, it just describes a different set of items. Pinning the tags is
+/// the only guard that catches it, and it costs one line per kind at the one moment it matters.
+const ORDER = [_][]const u8{
+    "crimson_flask",   "cerulean_flask", "rune_arc",     "golden_seed",
+    "smithing_stone",  "bloodgrass",     "kobold_fang",  "iron_key",
+    "mushroom_jerky",  "ember_candle",   "sporeling_cap", "second_wind",
+    "tower_shield",    "greatclub",      "leech_signet", "soul_binding_ring",
+    "fire_tallow",     "thundercrock",   "nameless_soul", "toadflesh_broth",
+    "fang_dirk",       "grave_warbow",   "quilted_gambeson", "spirit_scroll_wolf",
+};
+
+comptime {
+    if (ORDER.len != NK) @compileError("item: a kind was added or removed without updating ORDER — a save's " ++
+        "`seen:` run is positional over this enum, so the new kind must go at the END of both");
+    for (ORDER, 0..) |name, i| {
+        const tagName = @tagName(@as(Kind, @enumFromInt(i)));
+        if (!std.mem.eql(u8, name, tagName)) @compileError("item: kind " ++ tagName ++ " is at index " ++
+            std.fmt.comptimePrint("{d}", .{i}) ++ " where ORDER says " ++ name ++ " — a MOVED or INSERTED " ++
+            "kind silently re-points every discovery bit in every save on disk (`save.Data.seen`). Append instead.");
+    }
+}
 
 pub fn displayName(k: Kind) [:0]const u8 {
     return switch (k) {
@@ -50,7 +78,7 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .soul_binding_ring => "Soul Binding Ring",
         .fire_tallow => "Fire Tallow",
         .thundercrock => "Thundercrock",
-        .cracked_rune => "Cracked Rune",
+        .nameless_soul => "Nameless Soul",
         .toadflesh_broth => "Toadflesh Broth",
         .fang_dirk => "Fang Dirk",
         .grave_warbow => "Grave Warbow",
@@ -79,10 +107,30 @@ pub const Class = enum {
 
 pub fn class(k: Kind) Class {
     return switch (k) {
-        .crimson_flask, .cerulean_flask, .mushroom_jerky, .ember_candle, .sporeling_cap, .second_wind, .fire_tallow, .thundercrock, .cracked_rune, .toadflesh_broth => .tool,
+        // **ONE PER LINE.** This is the table you read to find out where a thing shelves, and both of the long
+        // arms ran past 200 columns — a row you cannot find is a row you re-add by mistake.
+        .crimson_flask,
+        .cerulean_flask,
+        .mushroom_jerky,
+        .ember_candle,
+        .sporeling_cap,
+        .second_wind,
+        .fire_tallow,
+        .thundercrock,
+        .nameless_soul,
+        .toadflesh_broth,
+        => .tool,
         // The pieces of GEAR shelve as treasure until there is an arm to take them up — the shelf
         // whose own definition is "something the game has not built yet".
-        .rune_arc, .golden_seed, .tower_shield, .greatclub, .leech_signet, .fang_dirk, .grave_warbow, .quilted_gambeson => .treasure,
+        .rune_arc,
+        .golden_seed,
+        .tower_shield,
+        .greatclub,
+        .leech_signet,
+        .fang_dirk,
+        .grave_warbow,
+        .quilted_gambeson,
+        => .treasure,
         // NOT a tool, though it is the one carried thing that DOES something: a tool is spent by pressing
         // Confirm on it, and this one is spent by dying. `usable` stays false and the shelf says so.
         .soul_binding_ring => .treasure,
@@ -118,7 +166,7 @@ pub fn describe(k: Kind) [:0]const u8 {
         .soul_binding_ring => "A thin gold band with a hairline already run through it. Die with one on you and the RING gives instead: it snaps, and what you were carrying stays carried.",
         .fire_tallow => "Rendered fire-fat, unlit, in a waxed twist of cloth. Wiped along an edge it clings and burns: for a minute the sword hangs fire on top of what it always did.",
         .thundercrock => "A squat clay jar that hums against the palm, thrown like the candle. It cracks on what it lands on and the sky's own spark gets out - the only lightning anywhere in these ruins.",
-        .cracked_rune => "A rune split clean through, its light already leaking. Crushed in the fist it is worth a middling foe's souls, and nobody walks back for these.",
+        .nameless_soul => "Someone's whole worth, gone cold and hard enough to carry. Crushed in the fist it is worth a middling foe's souls, and nobody walks back for these.",
         .toadflesh_broth => "Toad shanks boiled pale, drunk cold from the skin they cooked in. It sits heavy and warm, and for a minute your wind comes back the faster for it.",
         .fang_dirk => "A dirk ground out of the longest fang in a kobold's jaw, hafted in cord. Quick, and hungry for nothing; no hand here has learned to fight with it yet.",
         .grave_warbow => "A warbow of grave-oak, its draw twice the skeletons' hunting bows. It would loose a shaft worth stopping for; no arm here can bend it yet.",
@@ -164,7 +212,7 @@ pub fn use(k: Kind) Use {
         // `combat` decide which jar answers which creature.
         .thundercrock => .{ .lob = .{ .dmg = 8, .lightning = 22, .poise = 12 } },
         // A middling foe's worth (the Rooted's own figure) — found money, not a farm.
-        .cracked_rune => .{ .souls = .{ .n = 150 } },
+        .nameless_soul => .{ .souls = .{ .n = 150 } },
         .toadflesh_broth => .{ .brew = .{ .mult = 1.5, .secs = 60 } },
         .crimson_flask,
         .cerulean_flask,
@@ -192,6 +240,45 @@ pub fn use(k: Kind) Use {
 pub fn usable(k: Kind) bool {
     return std.meta.activeTag(use(k)) != .none;
 }
+
+/// **WHAT IT DOES, IN ONE LINE OF MECHANIC** — the answer to "which of these two flasks did I just put in the
+/// box", which the flavour prose (`describe`) deliberately does not give. Read off `use` wherever there is a
+/// `Use` to read, so a dose retuned there reads here and the two cannot drift.
+///
+/// The numbers are the ITEM'S OWN — a fraction stays a fraction, because nothing here knows a hero's max HP.
+/// `book.zig` prints the same doses resolved against the sheet, which is the right thing for a player holding
+/// one and the wrong thing on a row that exists before there is a hero at all.
+///
+/// The three things that DO something without a `Use` are named: they are spent by dying, by carrying, and by
+/// a lock, and "no effect" on any of those rows is a lie the author would place loot on.
+pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
+    if (isFlask(k)) return switch (k) {
+        .crimson_flask => "Heals. Charges refill at a bonfire, not from the bag.",
+        else => "Restores Focus. Charges refill at a bonfire, not from the bag.",
+    };
+    if (bindsSouls(k)) return "Carried: a death spills no souls. The ring breaks instead.";
+    if (k == .spirit_scroll_wolf) return "Carried: the bell can call Hildebrand.";
+    if (k == .iron_key) return "Opens the one lock it was cut for.";
+    return switch (use(k)) {
+        .none => "No effect yet.",
+        .regen => |r| std.fmt.bufPrintZ(buf, "Heals {d:.0}% of max HP over {d:.0}s.", .{ r.frac * 100, r.secs }) catch "Heals over time.",
+        .lob => |l| std.fmt.bufPrintZ(buf, "Thrown at the reticle: {d:.0} physical + {d:.0} {s}, {d:.0} poise.", .{
+            l.dmg,
+            l.fire + l.lightning,
+            if (l.lightning > 0) @as([]const u8, "lightning") else "fire",
+            l.poise,
+        }) catch "Thrown for damage.",
+        .ward => |w| std.fmt.bufPrintZ(buf, "+{d:.0} Chaos resistance for {d:.0}s. Refreshes, never stacks.", .{ w.chaos, w.secs }) catch "Wards off Chaos.",
+        .wind => |w| std.fmt.bufPrintZ(buf, "Gives back {d:.0}% of stamina at once, and lets the winded lockout go.", .{w.share * 100}) catch "Gives stamina back.",
+        .grease => |gr| std.fmt.bufPrintZ(buf, "Sword hangs +{d:.0}% of its blow as fire for {d:.0}s. Refreshes, never stacks.", .{ gr.frac * 100, gr.secs }) catch "Sets the blade alight.",
+        .souls => |s| std.fmt.bufPrintZ(buf, "Crushed for {d} souls, on the spot.", .{s.n}) catch "Worth souls.",
+        .brew => |b| std.fmt.bufPrintZ(buf, "Stamina comes back {d:.1}x as fast for {d:.0}s. Refreshes, never stacks.", .{ b.mult, b.secs }) catch "Stamina returns faster.",
+    };
+}
+
+/// How big a buffer `effect` needs. The longest line is the `lob`'s, and a `bufPrintZ` that does not fit falls
+/// back to a bare phrase — legible, but it drops the numbers, which are the whole point of the line.
+pub const EFFECT_BUF: usize = 128;
 
 /// THE TWO THE FLASK SYSTEM OWNS. They sit on the quick bar like anything else, but their charges live in
 /// `combat.Flasks` and come back at a bonfire, so spending one never touches the bag. Named here rather than
@@ -300,6 +387,25 @@ test "every kind is described and shelved, and no two share a description" {
     for (0..NK) |i| {
         const k: Kind = @enumFromInt(i);
         if (usable(k)) try std.testing.expectEqual(Class.tool, class(k));
+    }
+}
+
+test "EVERY KIND SAYS WHAT IT DOES, and a kind with a dose says it in NUMBERS" {
+    var buf: [EFFECT_BUF]u8 = undefined;
+    for (0..NK) |i| {
+        const k: Kind = @enumFromInt(i);
+        const s = effect(k, &buf);
+        try std.testing.expect(s.len > 10);
+        // A dose that fell back to the bare phrase has lost its numbers, which is the whole line.
+        if (usable(k)) {
+            var digit = false;
+            for (s) |c| digit = digit or std.ascii.isDigit(c);
+            try std.testing.expect(digit);
+        }
+        // …and the three that work without a `Use` may not read as inert.
+        if (isFlask(k) or bindsSouls(k) or k == .spirit_scroll_wolf or k == .iron_key) {
+            try std.testing.expect(!std.mem.eql(u8, s, "No effect yet."));
+        }
     }
 }
 

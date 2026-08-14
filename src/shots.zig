@@ -12,6 +12,7 @@ const ogremod = @import("ogre.zig");
 const shroommod = @import("shroom.zig");
 const knightmod = @import("knight.zig");
 const delvermod = @import("delver.zig");
+const necromod = @import("necro.zig");
 const soulsmod = @import("souls.zig");
 const koboldmod = @import("kobold.zig");
 const broodmod = @import("brood.zig");
@@ -151,6 +152,20 @@ fn standHero(g: *Game, x: f32, z: f32, faceYaw: f32) void {
     g.hero.pos = mathx.ground(x, z);
     g.hero.facing = faceYaw;
     g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pose();
+}
+
+/// **STANDING HIM ON SCULPTED GROUND TAKES MORE THAN ONE FRAME**, and the reason is written at `delverShots`'
+/// own copy of this: `hero.respawnNow` starts a pose CROSS-FADE against a world-space snapshot, `--shot` runs no
+/// loop to advance it, and one update leaves him blended toward that snapshot — drawn back at the map's spawn,
+/// out of frame. Settled out here, then planted on the ground that is actually there (`mathx.ground` is y = 0).
+///
+/// ONE copy, because it is subtle, it is silent when it is wrong, and it was already written twice.
+fn standSettled(g: *Game, x: f32, z: f32, faceYaw: f32) void {
+    standHero(g, x, z, faceYaw);
+    var k: i32 = 0;
+    while (k < 12) : (k += 1) g.hero.update(SHOT_DT, 0, 0, null);
+    g.hero.pos.y = game.envGroundAt(&g.env, x, z);
     g.hero.pose();
 }
 
@@ -1529,6 +1544,15 @@ pub fn runShots(g: *Game) void {
     g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &shelf);
     snap("shots/12d_menu_slots_new.png");
 
+    // …AND THE QUESTION IT ASKS BEFORE IT THROWS A CHARACTER AWAY. The only press in the game that destroys
+    // anything, so the row stops saying what the character IS and says what is about to happen to it — and
+    // the crib under it drops to the two answers, because every other button there is refused.
+    g.menu.showSlotsForShot(.load, 0);
+    g.menu.armDeleteForShot();
+    drawScene(g);
+    g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &shelf);
+    snap("shots/12e_menu_slot_delete.png");
+
     g.menu.onEscape(); // …and OUT through the picker's own door, which is what drops its three textures
     g.menu.home = .main;
     g.rig.yaw = mathx.radians(300);
@@ -1557,6 +1581,8 @@ pub fn runShots(g: *Game) void {
     rootedShots(g);
     shroomShots(g);
     delverShots(g);
+    necroShots(g);
+    pickupShots(g);
     knightShots(g);
     soulsShots(g);
     campfireShots(g);
@@ -1990,15 +2016,7 @@ fn delverShots(g: *Game) void {
     // advance it. One `standHero` update leaves him mostly blended toward that snapshot — drawn back at
     // the map's spawn, sixty metres out of frame. Settled out here, and planted on the ground that is
     // actually there (`mathx.ground` is y = 0 and this patch is sculpted).
-    const stand = struct {
-        fn it(gg: *Game, x: f32, z: f32, yaw: f32) void {
-            standHero(gg, x, z, yaw);
-            var k: i32 = 0;
-            while (k < 12) : (k += 1) gg.hero.update(SHOT_DT, 0, 0, null);
-            gg.hero.pos.y = game.envGroundAt(&gg.env, x, z);
-            gg.hero.pose();
-        }
-    }.it;
+    const stand = standSettled; // ONE copy now — see its own note for why a single update is not enough
 
     // THE STANDING PORTRAIT. A low body, so the lens comes down to it and in close, or it is a dark smudge
     // on grass — which is also the albedo question this frame exists to answer.
@@ -2045,6 +2063,36 @@ fn delverShots(g: *Game) void {
     run(d, CLAW_TELL_AT, g.hero.pos);
     shootAt(g, "shots/122f_delver_claw.png", mathx.lerpV(v3(sc.x, sc.y + 0.9, sc.z), g.hero.pos, 0.5), LIT_YAW + 30, 0.40, 6.4);
 
+    // …AND THE RETURN, at ITS crossing. The pair is the shot: the backhand has to read as the SAME limb
+    // coming back rather than a second stroke, so it is framed exactly as the opener is.
+    spawn(d, sc, faceCam);
+    stand(g, mark.x, mark.z, mathx.radians(LIT_YAW + 180));
+    d.debugRake();
+    run(d, RAKE_TELL_AT, g.hero.pos);
+    shootAt(g, "shots/122g_delver_rake.png", mathx.lerpV(v3(sc.x, sc.y + 0.9, sc.z), g.hero.pos, 0.5), LIT_YAW + 30, 0.40, 6.4);
+
+    // THE PLOUGH'S TELL, and it is the one frame that has to be told apart from the surge's: this ridge is
+    // STRETCHED down a heading where that one is a dome standing still. Shot down onto it from the same
+    // height the mound was, so the two frames can be laid side by side.
+    // A LINE ONLY READS AS A LINE FROM THE SIDE. Down its own axis the ridge is a dome again and the man at
+    // the end of it is the same silhouette, which is what the first pass of both these frames photographed.
+    spawn(d, sc, faceCam);
+    d.debugPlough();
+    run(d, PLOUGH_TELL_AT, far);
+    shootAt(g, "shots/122h_delver_plough_tell.png", v3(d.pos.x, d.pos.y + 0.4, d.pos.z), LIT_YAW + 70, 0.46, 8.5);
+
+    // …AND THE FURROW RUNNING AT A MAN STANDING ON THE LINE. That pairing is the shot, the surge's own
+    // reason: a ridge of earth beside an empty patch of ground says nothing about whether a player could
+    // have read it in time to step off.
+    spawn(d, sc, faceCam);
+    const onLine = along(sc, LIT_BACK, 9.0);
+    stand(g, onLine.x, onLine.z, mathx.headingXZ(mathx.dirXZ(onLine, sc))); // …facing what is coming at him
+    d.facing = mathx.headingXZ(mathx.dirXZ(d.pos, g.hero.pos)); // committed, as the wind leaves it
+    d.debugPlough();
+    run(d, delvermod.PLOUGH_WIND + 0.34, g.hero.pos);
+    const mid = mathx.lerpV(d.pos, g.hero.pos, 0.45);
+    shootAt(g, "shots/122i_delver_plough.png", v3(mid.x, mid.y + 1.0, mid.z), LIT_YAW + 70, 0.30, 11.0);
+
     game.clearFoesForShot(g);
 }
 
@@ -2055,6 +2103,176 @@ fn delverShots(g: *Game) void {
 const DIVE_TELL_AT: f32 = delvermod.DIVE_WIND * 0.84;
 const SURGE_TELL_AT: f32 = delvermod.SURGE_DUR * 0.91;
 const CLAW_TELL_AT: f32 = delvermod.CLAW_WIND + 0.08;
+const RAKE_TELL_AT: f32 = delvermod.RAKE_WIND + 0.06;
+/// Deep in the stretch, where the ridge has straightened and has not yet moved — the one frame that has to
+/// be told apart from the surge's dome.
+const PLOUGH_TELL_AT: f32 = delvermod.PLOUGH_WIND * 0.88;
+
+// THE NECROMANCER'S BEATS, as FRACTIONS of its own clocks (the delver's rule above). The two GATHERS are shot
+// near the top of their hauls, which is where each one is a picture rather than a body standing still.
+const RAISE_TELL_AT: f32 = necromod.RAISE_WIND * 0.93;
+const FROST_TELL_AT: f32 = necromod.FROST_WIND * 0.90;
+/// …and the FUSE just over halfway down, which is the only frame that shows the ring as a ring AND the inner
+/// one as part-filled: at the cast they are coincident and at the burst the outer is gone.
+const FUSE_AT: f32 = necromod.FROST_FUSE * 0.58;
+
+fn necroShots(g: *Game) void {
+    game.clearFoesForShot(g);
+    // The delver's own clearing, which is the one patch out here with room BEHIND the subject as well as in
+    // front: this creature backs away for its own hem shot and needs a corpse laid 2.6 m off it. The first
+    // pass staged it at (-46, 4) and put the camera inside a ruin wall — FRAMING IS PART OF THE TEST, and a
+    // spot is only open if the point `target + LIT_BACK * dist` is open too.
+    const sc = v3(-30.0, game.envGroundAt(&g.env, -30.0, 24.0), 24.0);
+    const far = along(sc, LIT_BACK, 100.0);
+    const faceCam = mathx.headingXZ(LIT_BACK);
+    g.rite.n = 1;
+    const k = &g.rite.band[0];
+    const spawn = struct {
+        fn it(kk: *necromod.Necro, at: rl.Vector3, yaw: f32) void {
+            kk.* = necromod.Necro.spawn(at, yaw, 1.0, 0.41);
+        }
+    }.it;
+    const run = struct {
+        fn secs(kk: *necromod.Necro, clock: f32, toward: rl.Vector3) void {
+            var c: f32 = 0;
+            while (c < clock) : (c += SHOT_DT) _ = kk.update(SHOT_DT, toward, game.PLAY_HALF, .{});
+        }
+    }.secs;
+    const stand = standSettled; // see its own note: settling the cross-fade is why this is not `standHero`
+
+    // **THE STANDING PORTRAIT**, and it is the one frame the whole brief is judged on: tall, skinny, the robe
+    // dragging, the bone helm, the crooked staff. Framed on the CHEST rather than the middle, because on a rig
+    // 2.4 m tall the middle puts the helm out of the top of the shot — and pulled back far enough that the
+    // HEIGHT is what reads, which is the whole point of the creature.
+    spawn(k, sc, faceCam);
+    stand(g, sc.x, sc.z - 6.0, 0);
+    stepFoe(k, 30, far);
+    shootAt(g, "shots/123_necro.png", v3(sc.x, sc.y + 1.5, sc.z), LIT_YAW, 0.06, 7.4);
+
+    // …AND ITS HEM, which needs its own frame: the drag is a lag on the CLOTH against the body above it, so it
+    // only exists while the thing is walking, and it is read from the SIDE. Close and low, on the hem itself.
+    spawn(k, sc, faceCam);
+    stand(g, sc.x, sc.z - 3.0, 0);
+    run(k, 1.6, v3(sc.x, sc.y, sc.z - 3.0)); // it backs away from him, which is when the hem trails
+    shootAt(g, "shots/123b_necro_hem.png", v3(k.pos.x, k.pos.y + 0.55, k.pos.z), LIT_YAW + 62, 0.10, 4.2);
+
+    // **THE RAISE'S GATHER** — the longest tell in the game, and the frame that has to carry it: the staff
+    // planted, the free arm hauled up and back over the shoulder, the trunk arched off the body, and the helm
+    // down on the corpse. Shot with a real skeleton lying at its feet, or the pose is a man pointing at grass.
+    spawn(k, sc, faceCam);
+    stand(g, sc.x, sc.z - 7.0, 0);
+    g.muster.n = 1;
+    const body = &g.muster.band[0];
+    body.* = warriormod.Warrior.spawnAs(.greatsword, along(sc, LIT_BACK, -2.6), faceCam, 1.0, 0.3);
+    body.pos.y = game.envGroundAt(&g.env, body.pos.x, body.pos.z);
+    body.debugKill();
+    // HELD BEFORE IT IS STEPPED, or the picture is of a corpse part-way to gold: `foe.dissipate` starts fading
+    // at `DEATH_DUR`, so stamping the hold afterwards froze it 14% dissolved and slightly shrunk. Set first, the
+    // body falls, comes to rest and stops there — which is what the mechanic actually does on the field.
+    body.heldOpen = true;
+    // Let it fall and COME TO REST: `raisable` refuses a body still toppling, so a corpse photographed
+    // mid-collapse is one the necromancer would not be reaching for. The archer's own figure, because the
+    // warriors share it (their `DEATH_DUR` is that constant, one file along).
+    stepFoe(body, @as(i32, @intFromFloat(archermod.DEATH_DUR / SHOT_DT)) + 8, far);
+    k.vigil.at = body.pos;
+    k.debugRaise(body.pos);
+    run(k, RAISE_TELL_AT, g.hero.pos);
+    shootAt(g, "shots/123c_necro_raise_tell.png", v3(k.pos.x, k.pos.y + 1.3, k.pos.z), LIT_YAW, 0.10, 6.6);
+
+    // …and the TURN, where the arm is thrown down over the corpse and the gold pours into it. Framed to hold
+    // BOTH bodies: what the move is about is the thing on the ground, not the thing casting.
+    run(k, (necromod.RAISE_WIND - RAISE_TELL_AT) + 0.10, g.hero.pos);
+    const between = mathx.lerpV(k.pos, body.pos, 0.5);
+    shootAt(g, "shots/123d_necro_raise.png", v3(between.x, between.y + 1.0, between.z), LIT_YAW, 0.16, 7.0);
+    g.muster.n = 0;
+
+    // **THE FROST'S CAST**, and the reason it has its own frame is that it must not be mistakable for the
+    // raise at a glance: the staff comes UP where the raise plants it, and the free hand goes out over the
+    // ground rather than up behind the shoulder.
+    spawn(k, sc, faceCam);
+    stand(g, sc.x, sc.z - 9.0, 0);
+    k.debugFrost();
+    run(k, FROST_TELL_AT, g.hero.pos);
+    shootAt(g, "shots/123e_necro_frost_tell.png", v3(k.pos.x, k.pos.y + 1.4, k.pos.z), LIT_YAW, 0.10, 6.4);
+
+    // **THE SIGIL BURNING DOWN AT HIS FEET** — the ring, the filling one inside it, and the rime creeping. The
+    // camera comes DOWN onto the ground, because this is the one thing in the game the player has to look at
+    // his own boots to read, and a portrait pitch shows it as a smudge under him.
+    spawn(k, sc, faceCam);
+    stand(g, sc.x, sc.z - 9.0, 0);
+    k.debugLay(g.hero.pos);
+    run(k, FUSE_AT, g.hero.pos);
+    // Back and UP far enough to hold the WHOLE ring: at 5.6 m the rim ran off three sides of the frame, and a
+    // countdown you have to infer from an arc of it is not the thing being tested.
+    shootAt(g, "shots/123f_necro_sigil.png", v3(g.hero.pos.x, g.hero.pos.y + 0.35, g.hero.pos.z), LIT_YAW, 0.60, 10.5);
+
+    // …and the BURST, one frame after the fuse runs out: the ring thrown outward past its own rim and the
+    // shards off the ground. The one moment the move actually costs him something.
+    run(k, (necromod.FROST_FUSE - FUSE_AT) + 0.06, g.hero.pos);
+    shootAt(g, "shots/123g_necro_burst.png", v3(g.hero.pos.x, g.hero.pos.y + 0.5, g.hero.pos.z), LIT_YAW, 0.50, 10.0);
+
+    game.clearFoesForShot(g);
+}
+
+/// THE ITEM PICKUP — the glow on the ground, the prompt over it, and the two ways it says what you got.
+fn pickupShots(g: *Game) void {
+    const saved = g.map.nops;
+    if (saved + 1 > worldfmt.MAX_OPS) return;
+    // The delver's clearing again: open, and open BEHIND the subject too (see `necroShots`).
+    const cx: f32 = -28.0;
+    const cz: f32 = 30.0;
+    var op = worldfmt.defaults(.at);
+    op.kind = .pickup;
+    op.x = cx;
+    op.z = cz;
+    op.scale = 1;
+    // 1+ ITEMS, which is the whole ask — and a REPEAT among them, so the toast's own count has something to say.
+    op.loot[0] = .mushroom_jerky;
+    op.loot[1] = .nameless_soul;
+    op.loot[2] = .nameless_soul;
+    op.nloot = 3;
+    g.map.ops[g.map.nops] = op;
+    g.map.nops += 1;
+    g.env.materialize(&g.map);
+    game.rehomeChestsForShot(g); // …which re-homes the pickups too, and that is what we came for
+
+    const gy = mathx.ground(cx, cz).y;
+    // **STOOD IN REACH**, so the prompt is in the frame: the glow's whole job is to be walked up to, and a
+    // portrait of it with no prompt is a picture of a prop rather than of an interactable.
+    standSettled(g, cx, cz - 1.6, 0);
+    game.stepPickupsForShot(g);
+    shootAt(g, "shots/124_pickup.png", v3(cx, gy + 0.45, cz), LIT_YAW, 0.10, 4.2);
+
+    // **THE FIRST-TIME CARD.** Fed by hand rather than by pressing the prompt: `--shot` runs no loop, so the
+    // interact would need the whole input path — and what this frame is testing is the CARD, which is a pure
+    // function of the queue.
+    // `shoot` alone photographs the world with no card on it — the card is drawn in the loop's own held
+    // branch, which `--shot` never runs. `bonfireShoot`'s arrangement exactly.
+    // …and THREE of the one kind, because that is the case with a picture to get wrong: one card saying "x3"
+    // and no toast under it, rather than a card plus an "x2" notice about the same handful.
+    game.awardForShot(g, .grave_warbow, .first);
+    game.awardForShot(g, .grave_warbow, .again);
+    game.awardForShot(g, .grave_warbow, .again);
+    drawScene(g);
+    hud(g, SHOT_DT);
+    game.drawAwardCardForShot(g);
+    snap("shots/124b_pickup_card.png");
+
+    // …AND THE TOASTS, stacked: three kinds already known, one of them twice, so the count reads too.
+    game.awardForShot(g, .grave_warbow, .clear);
+    game.awardForShot(g, .mushroom_jerky, .again);
+    game.awardForShot(g, .nameless_soul, .again);
+    game.awardForShot(g, .nameless_soul, .again);
+    game.awardForShot(g, .iron_key, .again);
+    // Past the slide-in and well short of the fade: the stack STANDING, which is the state worth a picture.
+    game.tickAwardForShot(g, 0.5);
+    shoot(g, "shots/124c_pickup_toasts.png");
+    game.awardForShot(g, .iron_key, .clear);
+
+    g.map.nops = saved;
+    g.env.materialize(&g.map);
+    game.rehomeChestsForShot(g);
+}
 
 fn knightShots(g: *Game) void {
     game.clearFoesForShot(g);
@@ -2537,7 +2755,7 @@ fn chestShots(g: *Game) void {
     // THE CHARACTER BOOK — a frame per page, and the pages are the whole reason it exists, so each one is
     // staged on the state that has something to show: a picker OPEN over its delta column, a bag with
     // enough in it to fill a grid, an attribute that owns a bar.
-    for ([_]item.Kind{ .mushroom_jerky, .bloodgrass, .kobold_fang, .rune_arc, .golden_seed, .smithing_stone, .iron_key, .fire_tallow, .thundercrock, .cracked_rune, .toadflesh_broth, .fang_dirk, .grave_warbow, .quilted_gambeson, .spirit_scroll_wolf }) |k| {
+    for ([_]item.Kind{ .mushroom_jerky, .bloodgrass, .kobold_fang, .rune_arc, .golden_seed, .smithing_stone, .iron_key, .fire_tallow, .thundercrock, .nameless_soul, .toadflesh_broth, .fang_dirk, .grave_warbow, .quilted_gambeson, .spirit_scroll_wolf }) |k| {
         if (g.bag.count(k) == 0) g.bag.add(k, if (k == .bloodgrass) 12 else 3);
     }
     g.menu.onStartButton();

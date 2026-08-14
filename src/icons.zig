@@ -38,6 +38,7 @@ pub const Icon = enum {
     rooted,
     shroom,
     bone_knight,
+    delver,
     new,
     open,
     save,
@@ -352,6 +353,20 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             hline(cx + s * 0.10, cy - s * 0.26, s * 0.24, w * 1.1, d); // the visor slit
             line(cx + s * 0.34, cy - s * 0.12, cx + s * 0.34, cy + s * 0.40, w, col); // the blade behind
             hline(cx + s * 0.34, cy + s * 0.02, s * 0.16, w * 0.8, d); // …and its crossguard
+        },
+
+        .delver => {
+            // A GROUND LINE WITH A MOUND UNDER IT AND CLAWS COMING THROUGH. The only glyph in the set that
+            // is drawn half BELOW its own floor — which is the creature, and is why the surface has to be in
+            // the picture at all.
+            hline(cx, cy - s * 0.06, s * 0.80, w * 1.1, d); // the ground it is under
+            arc(cx, cy - s * 0.06, s * 0.32, 180, 360, w * 1.6, col); // …heaving over it
+            line(cx - s * 0.16, cy - s * 0.14, cx - s * 0.30, cy - s * 0.42, w * 1.2, col); // the claws through
+            line(cx + s * 0.04, cy - s * 0.20, cx + s * 0.06, cy - s * 0.50, w * 1.2, col);
+            line(cx + s * 0.22, cy - s * 0.14, cx + s * 0.34, cy - s * 0.38, w * 1.2, col);
+            dot(cx - s * 0.20, cy + s * 0.18, w * 1.3, d); // …and the clods it threw
+            dot(cx + s * 0.24, cy + s * 0.24, w * 1.1, d);
+            dot(cx + s * 0.02, cy + s * 0.32, w * 1.2, d);
         },
 
         .new => {

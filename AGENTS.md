@@ -123,6 +123,7 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `leechfly.zig` | THE FIRST FLYER + `Swarm`; 15 bones, never lands. Drinks his HP through a beak and heals off what it takes, and ZOOMS out of sword reach |
 | `rooted.zig` | THE TREE THAT ISN'T + `Grove`; a snag-mimic fixture — eyes open outside its reach, three limb strikes (slam/sweep/hook-drag), never moves |
 | `shroom.zig` | the sporeling + `Cluster`; a squat mushroom that FLINGS itself and bursts a lingering spore cloud that POISONS (buildup, never damage). Sometimes it TRIPS instead — same gather, longer opening |
+| `delver.zig` | THE DELVER + `Warrens` — the first thing that goes UNDER the world. It burrows, travels as a ridge of moving earth, and BURSTS UP through the ground under his feet with a small ring of a blow |
 | `wolf.zig` | THE FIRST SPIRIT + `Pack` — what the BELL calls, and the one thing that fights ON HIS SIDE. NOT a foe (no `Leash`, its own `takeHit`, not in `FOE_GROUPS`) and the first QUADRUPED: 27 bones, and the gait is Hildebrand's two dials. Out past `RECALL_R` for `LOST_DWELL` and the BOND MOVES IT (`reappear` + `game.rematerialize`, the bell's own spot) — running home is what it tries first, and this is for when running cannot work |
 | `combat.zig` | `Vitals` (HP + two-tier stagger + regen + death), `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`, `SpiritKind`/`SUMMON_MAX`. THE place to retune feel |
 | `stats.zig` | the character sheet — seven attributes and the curves that make the bars |
@@ -401,6 +402,54 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 - **HE HAS NO VOICE OF HIS OWN YET.** He borrows `ogre_step`/`ogre_slam`/`ogre_heave`/`ogre_roar` and the
   skeletons' `bone_hurt`/`bone_die`. `ogre_slam` is the game's one "heavy thing meets earth" voice and is
   right for the body landing; the rest are placeholders for a `knight_*` family.
+
+### The delver (`delver.zig`) — the first thing that goes UNDER the world
+
+**MOST OF THE FIGHT HAPPENS WHERE THE SWORD CANNOT GO.** Everything else on this field is answered by looking
+at it; this one spends its time as a ridge of moving earth and arrives THROUGH THE GROUND under his boots.
+
+- **SUBMERGED IT CANNOT BE STRUCK, AND THAT IS GEOMETRY RATHER THAN A GUARD IN `tryHit`.** `depth` rides as a
+  NEGATIVE lift through `foe.bodyPoint`, so the hurt sphere, the bar and the reticle all sink with the body and
+  the swept test refuses it on its own. A comptime assert pins the clearance; a creature that needed a special
+  case here would need one at every future site that swings anything.
+- **`airborne()` IS TRUE WHILE IT IS DOWN** — it is UNDER the world's traffic rather than over it, and that is
+  the same answer to every question that predicate is actually asked in `game.zig`: no terrain riser rule, no
+  shoulder from the hero or another body, no steering (it goes under what the probe would bend it round), no
+  jaws from the wolf, no spirit handed to it. It is NOT exempt from `env.resolveActor` — burrow through a wall
+  and there is nowhere to come back up from, which is the leechfly's own trade.
+- **THE DIVE IS A LEAP AND THE ROOTS REFUSE IT** (`foe.canLeap`, the shade's blink and the leechfly's climb): it
+  does not travel, it LEAVES THE EARTH — downward, which is the same thing to a creature held by the ankles.
+  Gated at the choose AND re-asked at the launch, since a root closing during the wind arrives after the
+  decision. That is the wand's whole argument against this creature.
+- **IT STAYS DOWN** (owner's call, `UNDER_MIN` 2.6 s) whatever it finds on the way, and never past `UNDER_MAX`
+  — a player who simply keeps walking must not end up fighting nothing at all.
+- **THE SPOT IS COMMITTED THE FRAME THE MOUND STOPS.** Nothing moves for the whole tell: what the earth is doing
+  IS where the blow lands, so the read is honest and the counter is your feet. A RUN or a ROLL clears the ring
+  and a WALK deliberately does not — both bracketed by comptime asserts against the hero's own numbers.
+- **AND THE TELL IS THE LONGEST THING IT DOES** (`SURGE_DUR` 1.15 s), on top of a mound that has been visible the
+  whole way in: this is the final commit, not the whole warning. The Bone Knight's lesson one creature along —
+  the move the boards cannot answer may not be the one you get least time to read.
+- **THE BURST IS NOT PARRYABLE AND THE CLAW IS.** There is nothing to catch in the ground opening under you; its
+  counter is the mound and the roll.
+- **THE BLOW IS A RADIUS, NOT A SWEPT LIMB**, and its `from` is the hole itself — so stood dead on it there is
+  no bearing and the boards cannot answer it (the zero-`fromDir` rule); caught at the rim, they can.
+- **THE THIRD CHANNEL OF THE TELL IS THE PAD** (`Warrens.anySurged` -> `game.SHAKE_SURGE` + rumble). The mound and
+  the noise are no use to a player whose camera is pointed at the horizon, and this is the one move in the game
+  that arrives from a direction the lens cannot be turned toward.
+- **THE MOUND IS NOT PART OF THE BODY.** It hangs off no bone: its matrix is built in WORLD space at the surface,
+  because the body's own is metres under the ground by then. It is SIZED TO THE RING it announces — authored
+  wider it hid the man standing on it — and it comes apart across the rise rather than vanishing on one frame.
+- **PARTICLE COLOURS ARE LITERAL SCREEN VALUES WHERE MESH COLOURS ARE ALBEDOS** (`CLOD` against `SOIL`). Authored
+  off the mesh palette the clods came back as a scatter of black dots hanging in the air.
+- **A ROOT PITCH ROTATES ABOUT THE POINT ON THE GROUND**, so a body this long tipped for a drill drives one end
+  through the floor — the hero's no-root-pitch trap, on a creature with no waist to hinge at instead. The root
+  is lifted by exactly what the tip sinks, and the lift fades out with the depth.
+- **AND THE HIDE IS COOL WHERE THE SOIL IS WARM.** Everything outdoors here is warm, so a brown digger on brown
+  ground is a mass nobody can find. The numbers are SOLVED off a sampled render: the first pass at albedo 24 came
+  back at 150 against ground at 127, a pale grey boulder with claws.
+- **IT REARS TO STRIKE, and that is not a flourish.** Its shoulders sit at 0.40 m, so the rake only crosses a
+  standing man at all because the rear is in the wind; held flat it topped out under his knee while
+  `weaponReaches` still reported a hit.
 
 ### The leechfly (`leechfly.zig`) — the first thing that flies
 
@@ -861,6 +910,7 @@ number, so a readout and a mechanic cannot disagree.
   | the Rooted | −70 | +40 | −20 | +30 | dead dry wood; fire is the counter, lightning splits it |
   | sporeling | −50 | +15 | 0 | +75 | a damp little fungus stuffed with its own element |
   | Bone Knight | −35 | +60 | 0 | +45 | the archer's own table again — it is the archer's body in a suit |
+  | Delver | +20 | −30 | −40 | 0 | packed earth over a damp hide; a bolt EARTHS through the one thing that is part of the ground |
 
 - **NOTHING GRANTS THE HERO ANY YET, AND THE SHEET SAYS SO** — the book's STATS page shows all four at
   0%. `makeWhole` CARRIES RESISTANCES ACROSS a bonfire: they are what he is, not a meter to refill.

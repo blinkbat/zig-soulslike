@@ -461,6 +461,13 @@ pub const Id = enum {
     shroom_puff,
     shroom_hurt,
     shroom_die,
+    delver_churn,
+    delver_dig,
+    delver_claw,
+    delver_surge,
+    delver_burst,
+    delver_hurt,
+    delver_die,
     bow_draw,
     bow_loose,
     arrow_hit,
@@ -1027,6 +1034,68 @@ fn mkShroomDie(r: *Rack) void {
     r.air(0.30, 0.40, 0.22, 1800, 500, 0.4, 1.0);
     r.body(0.44, 0.20, 90, 40, 0.5, 2.6);
     r.master(1.8, 2600);
+}
+
+
+// THE DELVER — EARTH, and earth has no ring in it (the Rooted's rule for wood, one substance along). Every
+// voice here is grit over a body low enough to be felt rather than heard, and the pitch of the whole family
+// climbs exactly once: the surge. That climb IS the tell.
+
+/// Cut a hair LONGER than `delver.CHURN_EVERY` so consecutive takes overlap — the leechfly's whine rule, and
+/// gapped it chatters into a machine rather than a thing ploughing.
+fn mkDelverChurn(r: *Rack) void {
+    r.grit(0.0, 0.66, 0.30, 460, 0.60, 0.8);
+    r.body(0.0, 0.60, 52, 44, 0.55, 0.9);
+    r.ends(0.12, 0.16);
+    r.master(1.5, 1500);
+}
+
+fn mkDelverDig(r: *Rack) void {
+    r.grit(0.0, 0.50, 0.62, 820, 0.72, 1.4);
+    r.body(0.06, 0.34, 88, 40, 0.66, 2.2);
+    r.air(0.0, 0.40, 0.20, 600, 1900, 0.28, 1.2);
+    r.master(2.0, 2000);
+}
+
+fn mkDelverClaw(r: *Rack) void {
+    r.air(0.0, 0.28, 0.60, 1500, 260, 0.44, 2.0);
+    r.grit(0.04, 0.20, 0.40, 1400, 0.55, 3.0);
+    r.body(0.06, 0.18, 130, 56, 0.40, 3.0);
+    r.master(2.0, 2600);
+}
+
+/// THE ONE THING IN THIS FAMILY THAT RISES. Both bodies sweep UP through the whole of it, so the tell says
+/// something is coming rather than that something is happening.
+fn mkDelverSurge(r: *Rack) void {
+    r.body(0.0, 0.80, 34, 76, 1.1, 0.7);
+    r.grit(0.0, 0.82, 0.42, 340, 0.78, 0.5);
+    r.growl(0.10, 0.72, 44, 92, 0.42, 0.34, 0.5);
+    r.crackle(0.40, 34.0);
+    r.master(2.4, 1700);
+}
+
+fn mkDelverBurst(r: *Rack) void {
+    r.tick(0.0, 0.85, 2200);
+    r.body(0.0, 0.56, 84, 20, 1.4, 2.0);
+    r.grit(0.0, 0.44, 0.90, 1500, 0.86, 2.2);
+    r.grit(0.12, 0.36, 0.40, 2400, 0.90, 2.0);
+    r.air(0.0, 0.30, 0.34, 2000, 240, 0.40, 2.6);
+    r.crackle(0.30, 90.0);
+    r.master(3.0, 2200);
+}
+
+fn mkDelverHurt(r: *Rack) void {
+    r.growl(0.0, 0.24, 180, 88, 0.72, 0.42, 0.10);
+    r.grit(0.0, 0.12, 0.48, 1300, 0.60, 4.2);
+    r.body(0.0, 0.14, 140, 56, 0.50, 4.0);
+    r.master(2.2, 2600);
+}
+
+fn mkDelverDie(r: *Rack) void {
+    r.growl(0.0, 0.62, 160, 46, 0.82, 0.46, 0.08);
+    r.grit(0.10, 0.50, 0.40, 900, 0.66, 1.6);
+    r.body(0.52, 0.30, 78, 30, 0.70, 2.4);
+    r.master(2.2, 2100);
 }
 
 fn mkBowDraw(r: *Rack) void {
@@ -1912,6 +1981,16 @@ const BANK = [NV]Row{
     .{ .id = .shroom_puff, .make = mkShroomPuff, .gain = battle(0.56), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 30 },
     .{ .id = .shroom_hurt, .make = mkShroomHurt, .gain = battle(0.48), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 4, .poly = 3, .reach = 26 },
     .{ .id = .shroom_die, .make = mkShroomDie, .gain = battle(0.56), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 30 },
+    // THE DELVER. Its whole family is EARTH — grit and a low body, never a ring — and the CHURN is texture:
+    // under the floor, and thinned in count by `delver.CHURN_EVERY`, because it repeats through a hold.
+    // It still carries further than anything else it does: it is how you find a mound you cannot see.
+    .{ .id = .delver_churn, .make = mkDelverChurn, .gain = battle(0.30), .mix = .combat, .jit = 0.16, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 34 },
+    .{ .id = .delver_dig, .make = mkDelverDig, .gain = battle(0.54), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 30 },
+    .{ .id = .delver_claw, .make = mkDelverClaw, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 30 },
+    .{ .id = .delver_surge, .make = mkDelverSurge, .gain = battle(0.78), .mix = .combat, .jit = 0.08, .vjit = 0.12, .vars = 3, .poly = 2, .reach = 36 },
+    .{ .id = .delver_burst, .make = mkDelverBurst, .gain = battle(0.90), .mix = .combat, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 40 },
+    .{ .id = .delver_hurt, .make = mkDelverHurt, .gain = battle(0.52), .mix = .combat, .jit = 0.15, .vjit = 0.22, .vars = 4, .poly = 3, .reach = 28 },
+    .{ .id = .delver_die, .make = mkDelverDie, .gain = battle(0.62), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 32 },
     .{ .id = .bow_draw, .make = mkBowDraw, .gain = 0.17, .mix = .combat, .jit = 0.10, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 44 },
     .{ .id = .bow_loose, .make = mkBowLoose, .gain = battle(0.58), .mix = .combat, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 64 },
     .{ .id = .arrow_hit, .make = mkArrowHit, .gain = battle(0.72), .mix = .combat, .jit = 0.09, .vjit = 0.14, .vars = 3, .poly = 3 },
@@ -2066,6 +2145,10 @@ fn seconds(id: Id) f32 {
         .wood_die => 1.2, // the tear, THEN the ground taking it at 0.80
         .eat => 0.65,
         .shroom_die => 0.75,
+        // Cut past its own retrigger (`delver.CHURN_EVERY`) so consecutive takes OVERLAP.
+        .delver_churn => 0.9,
+        .delver_surge => 1.25, // the whole of the rise, or the tell stops before the blow does
+        .delver_die => 0.85,
         .leech_die => 0.65, // the run-down, then the body arriving at 0.44
         .souls_spill => 0.9,
         // The retrigger fires every HUM_EVERY (1.15 s); the take must outlast it or the hum chatters.
@@ -3068,6 +3151,8 @@ test "THE VOLUME IS RESERVED FOR WHAT IS ABOUT TO HIT YOU" {
     // A CREATURE'S COMMITTED ARRIVAL OUTRANKS ITS OWN MOVEMENT NOISE — in PAIRS, never across creatures.
     try std.testing.expect(g(.toad_lunge) > g(.toad_hop));
     try std.testing.expect(g(.shroom_fling) > g(.shroom_hop));
+    try std.testing.expect(g(.delver_burst) > g(.delver_churn));
+    try std.testing.expect(g(.delver_surge) > g(.delver_dig));
     try std.testing.expect(g(.ogre_slam) > g(.ogre_step));
     try std.testing.expect(g(.leech_stab) > g(.leech_wing));
     try std.testing.expect(g(.wood_swing) > g(.wood_creak));
@@ -3080,11 +3165,11 @@ test "THE VOLUME IS RESERVED FOR WHAT IS ABOUT TO HIT YOU" {
         if (row.mix == .combat) hi = mathx.maxF(hi, row.gain);
     }
     const mid = (BATTLE_FLOOR + hi) * 0.5;
-    for ([_]Id{ .ogre_slam, .ogre_roar, .skel_lunge, .toad_lunge, .shroom_fling, .wood_wake, .wood_swing, .kobold_heave, .guard_break }) |id| {
+    for ([_]Id{ .ogre_slam, .ogre_roar, .skel_lunge, .toad_lunge, .shroom_fling, .delver_surge, .delver_burst, .wood_wake, .wood_swing, .kobold_heave, .guard_break }) |id| {
         try std.testing.expect(g(id) > mid);
     }
     // …and the texture sits at or under the floor, which is what takes it out of the band entirely.
-    for ([_]Id{ .toad_hop, .shroom_hop, .wood_creak, .leech_wing, .kobold_whirl }) |id| {
+    for ([_]Id{ .toad_hop, .shroom_hop, .delver_churn, .wood_creak, .leech_wing, .kobold_whirl }) |id| {
         try std.testing.expect(g(id) <= BATTLE_FLOOR + 1e-6);
     }
 }

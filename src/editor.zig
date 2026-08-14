@@ -200,6 +200,7 @@ const unitTips = [_][:0]const u8{
     "Post a Rooted - a dead tree that is not one. Its eyes open before its reach does; walk in and it unfolds",
     "Post a sporeling - a squat mushroom that flings itself at you and bursts a chaos spore cloud. Sometimes it trips",
     "Post a Bone Knight - a giant behind a tower shield nothing can break. Work round the side; stand dead behind him and he falls on you",
+    "Post a delver - it burrows and travels under the ground as a moving mound, then bursts up under your feet. Watch the floor",
     "Hold and sweep to remove spawns ([ ] sets radius)",
 };
 
@@ -218,7 +219,7 @@ const coverIcons = [_]ui.Icon{ .clearing, .zone, .erase };
 const decorIcons = [_]ui.Icon{ .single, .patch, .scatter, .erase };
 const propIcons = [_]ui.Icon{ .stamp, .row, .ring, .cluster, .ivy, .erase };
 const interactIcons = [_]ui.Icon{ .stamp, .erase };
-const unitIcons = [_]ui.Icon{ .toad, .archer, .ogre, .berserker, .priest, .slinger, .brood_mother, .broodling, .brood_sac, .shieldman, .greatsword, .shade, .leechfly, .rooted, .shroom, .bone_knight, .erase };
+const unitIcons = [_]ui.Icon{ .toad, .archer, .ogre, .berserker, .priest, .slinger, .brood_mother, .broodling, .brood_sac, .shieldman, .greatsword, .shade, .leechfly, .rooted, .shroom, .bone_knight, .delver, .erase };
 
 comptime {
     // …AND PINNED BY NAME, not just by length: every one of these lists is the brush enum's own tags in
@@ -305,7 +306,7 @@ const CoverBrush = enum { clearing, zone, erase };
 pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
 const InteractBrush = enum { stamp, erase };
-const UnitBrush = enum { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, erase };
+const UnitBrush = enum { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, erase };
 
 comptime {
     // Every brush enum pinned to the table it indexes, case-insensitively so "Erase"/"Zone" read the way a
@@ -2320,6 +2321,8 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .shroom => ui.col(214, 130, 118, 255),
         // The visor's own ember over black iron — the one thing on the map that is orange.
         .bone_knight => ui.col(228, 132, 62, 255),
+        // Turned earth: the one thing on the map whose colour is the GROUND, because that is where it is.
+        .delver => ui.col(150, 118, 78, 255),
     };
 }
 

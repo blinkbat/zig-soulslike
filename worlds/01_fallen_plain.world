@@ -1165,6 +1165,9 @@ foe: shroom -114.30 -6.56 0.0 1.00 0.61
 foe: shroom -95.40 29.75 0.0 1.00 0.98
 foe: shroom -96.41 31.39 0.0 1.00 0.35
 foe: bone_knight 43.06 -79.81 240.0 1.00 0.72
+foe: delver -54.56 -115.78 0.0 1.00 0.09
+foe: delver -54.90 -127.72 0.0 1.00 0.46
+foe: delver -61.65 -124.48 0.0 1.00 0.83
 
 flags: met_wanderer heard_of_gate
 

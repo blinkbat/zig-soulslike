@@ -11,6 +11,7 @@ const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
 const shroommod = @import("shroom.zig");
 const knightmod = @import("knight.zig");
+const delvermod = @import("delver.zig");
 const soulsmod = @import("souls.zig");
 const koboldmod = @import("kobold.zig");
 const broodmod = @import("brood.zig");
@@ -1555,6 +1556,7 @@ pub fn runShots(g: *Game) void {
     leechShots(g);
     rootedShots(g);
     shroomShots(g);
+    delverShots(g);
     knightShots(g);
     soulsShots(g);
     campfireShots(g);
@@ -1956,6 +1958,104 @@ fn shroomShots(g: *Game) void {
 /// no one of them says what it is: the tell (his back coming round to you), the topple, the strip landing, the
 /// roll onto his front, and the rise. The two swings are shot from the LIT bearing with the hero on the sun's
 /// side, and the FALL is shot from ABOVE — a topple down the camera foreshortens to a man standing still.
+/// THE DELVER. Most of what it does is BELOW the frame, so every one of these is shot down onto the ground
+/// rather than level at a body: a mound photographed at eye height is a bump you cannot see, and the burst
+/// arrives from a direction the level camera has nothing to point at.
+fn delverShots(g: *Game) void {
+    game.clearFoesForShot(g);
+    // ON THE GROUND THAT IS ACTUALLY THERE. `mathx.ground` is y = 0 and this patch is sculpted, so a body
+    // staged with it stands BELOW the terrain — which is exactly how the hero went missing out of the frame
+    // he was the whole point of.
+    const sc = v3(-30.0, game.envGroundAt(&g.env, -30.0, 26.0), 26.0);
+    const far = along(sc, LIT_BACK, 100.0);
+    const faceCam = mathx.headingXZ(LIT_BACK);
+    g.warrens.n = 1;
+    const d = &g.warrens.delvers[0];
+    const spawn = struct {
+        fn it(dd: *delvermod.Delver, at: rl.Vector3, yaw: f32) void {
+            dd.* = delvermod.Delver.spawn(at, yaw, 1.0, 0.37);
+        }
+    }.it;
+    // Beats are named in SECONDS off the creature's own clocks, never in frame counts: a beat pinned to a
+    // literal frame silently photographs somewhere else the next time a timing moves.
+    const run = struct {
+        fn secs(dd: *delvermod.Delver, clock: f32, toward: rl.Vector3) void {
+            var c: f32 = 0;
+            while (c < clock) : (c += SHOT_DT) _ = dd.update(SHOT_DT, toward, game.PLAY_HALF, .{});
+        }
+    }.secs;
+    // **STANDING HIM TAKES MORE THAN ONE FRAME, and that is why he was missing from every frame here.**
+    // `poisonShots` ends on `hero.respawnNow()`, which starts a POSE CROSS-FADE (`hero.startXfade`); the
+    // blend runs against a world-space SNAPSHOT taken at the spawn point, and `--shot` runs no loop to
+    // advance it. One `standHero` update leaves him mostly blended toward that snapshot — drawn back at
+    // the map's spawn, sixty metres out of frame. Settled out here, and planted on the ground that is
+    // actually there (`mathx.ground` is y = 0 and this patch is sculpted).
+    const stand = struct {
+        fn it(gg: *Game, x: f32, z: f32, yaw: f32) void {
+            standHero(gg, x, z, yaw);
+            var k: i32 = 0;
+            while (k < 12) : (k += 1) gg.hero.update(SHOT_DT, 0, 0, null);
+            gg.hero.pos.y = game.envGroundAt(&gg.env, x, z);
+            gg.hero.pose();
+        }
+    }.it;
+
+    // THE STANDING PORTRAIT. A low body, so the lens comes down to it and in close, or it is a dark smudge
+    // on grass — which is also the albedo question this frame exists to answer.
+    spawn(d, sc, faceCam);
+    stand(g, sc.x, sc.z - 40.0, 0);
+    stepFoe(d, 30, far);
+    shootAt(g, "shots/122_delver.png", v3(sc.x, sc.y + 0.7, sc.z), LIT_YAW, 0.16, 4.6);
+
+    // THE DIVE'S TELL — up on its hind legs with both forelimbs overhead, the biggest silhouette it has and
+    // the only frame of it readable from across a field.
+    spawn(d, sc, faceCam);
+    d.debugDive();
+    run(d, DIVE_TELL_AT, far);
+    shootAt(g, "shots/122b_delver_dive.png", v3(sc.x, sc.y + 0.9, sc.z), LIT_YAW, 0.12, 4.8);
+
+    // THE MOUND, and it is the whole creature for most of the fight: nothing of the body is drawn, so what
+    // this has to prove is that the ridge of earth reads as a ridge of earth. Shot down onto it.
+    const mark = along(sc, LIT_BACK, 6.0);
+    spawn(d, sc, faceCam);
+    d.debugDive();
+    run(d, 2.4, mark); // past the wind, past the drill, and a second of travelling under
+    shootAt(g, "shots/122c_delver_mound.png", v3(d.pos.x, d.pos.y + 0.3, d.pos.z), LIT_YAW, 0.42, 5.0);
+
+    // THE SURGE — the tell, at full swell, WITH THE HERO STANDING ON IT. That pairing is the shot: a dome of
+    // earth beside an empty patch of ground says nothing about whether a player could read it.
+    spawn(d, sc, faceCam);
+    stand(g, sc.x, sc.z, mathx.radians(LIT_YAW + 180));
+    d.state = .surge;
+    d.t = 0;
+    d.depth = delvermod.UNDER_DEPTH;
+    run(d, SURGE_TELL_AT, g.hero.pos);
+    shootAt(g, "shots/122d_delver_surge.png", v3(sc.x, sc.y + 0.7, sc.z), LIT_YAW, 0.20, 7.2);
+
+    // …AND THE HOLE OPENING, three frames into the rise: the clods are up, the claws are through, and the
+    // body is coming out of the ground it was under.
+    run(d, (delvermod.SURGE_DUR - SURGE_TELL_AT) + delvermod.BURST_RISE * 0.9, g.hero.pos);
+    shootAt(g, "shots/122e_delver_burst.png", v3(sc.x, sc.y + 0.9, sc.z), LIT_YAW, 0.22, 5.4);
+
+    // THE CLAW at its crossing. Judged from ABOVE — a lateral arc off a low body foreshortens to nothing
+    // head-on, which is the ogre's parry lesson at a fifth the size.
+    spawn(d, sc, faceCam);
+    stand(g, mark.x, mark.z, mathx.radians(LIT_YAW + 180));
+    d.debugClaw();
+    run(d, CLAW_TELL_AT, g.hero.pos);
+    shootAt(g, "shots/122f_delver_claw.png", mathx.lerpV(v3(sc.x, sc.y + 0.9, sc.z), g.hero.pos, 0.5), LIT_YAW + 30, 0.40, 6.4);
+
+    game.clearFoesForShot(g);
+}
+
+// The beats above, as FRACTIONS of the creature's own clocks — deep in the wind for the dive, near the top of
+// the swell for the surge, and at the crossing for the claw. Written as seconds they were a second copy of
+// every timing in `delver.zig`, so a retune there left the harness photographing a different moment and
+// saying nothing about it.
+const DIVE_TELL_AT: f32 = delvermod.DIVE_WIND * 0.84;
+const SURGE_TELL_AT: f32 = delvermod.SURGE_DUR * 0.91;
+const CLAW_TELL_AT: f32 = delvermod.CLAW_WIND + 0.08;
+
 fn knightShots(g: *Game) void {
     game.clearFoesForShot(g);
     const sc = mathx.ground(3.0, -60.0); // the open avenue south, past the ogre — he needs room to lie down

@@ -25,6 +25,7 @@ const broodmod = @import("brood.zig");
 const warriormod = @import("warrior.zig");
 const rootedmod = @import("rooted.zig");
 const knightmod = @import("knight.zig");
+const delvermod = @import("delver.zig");
 const leechmod = @import("leechfly.zig");
 const shademod = @import("shade.zig");
 const chestmod = @import("chest.zig");
@@ -88,6 +89,9 @@ const STAT_WARN = mathx.rgba(206, 150, 110, 255);
 const SHAKE_SKEL_LEAP = 0.24;
 const SHAKE_HATCH = 0.30;
 const SHAKE_SAC_BURST = 0.34;
+/// The delver committing to a burst — a TELL and not a hit, so it sits under everything that has actually
+/// landed on him and over the beats that are only scenery.
+const SHAKE_SURGE = 0.26;
 const RESPAWN_HOLD = 0.55; // seconds of FULL black after the respawn…
 const RESPAWN_FADE = 0.9;
 /// Fractions of screen height; the caption's centre is derived off these.
@@ -191,6 +195,7 @@ pub const Game = struct {
     muster: warriormod.Muster,
     grove: rootedmod.Grove,
     cluster: shroommod.Cluster,
+    warrens: delvermod.Warrens,
     vigil: knightmod.Vigil,
     swarm: leechmod.Swarm,
     haunt: shademod.Haunt,
@@ -273,6 +278,7 @@ pub const Game = struct {
         g.muster = warriormod.Muster.init(g.scene.shader);
         g.grove = rootedmod.Grove.init(g.scene.shader);
         g.cluster = shroommod.Cluster.init(g.scene.shader);
+        g.warrens = delvermod.Warrens.init(g.scene.shader);
         g.vigil = knightmod.Vigil.init(g.scene.shader);
         g.swarm = leechmod.Swarm.init(g.scene.shader);
         g.haunt = shademod.Haunt.init(g.scene.shader);
@@ -416,6 +422,7 @@ const FOE_GROUPS = [_]FoeGroup{
     // A fixture: nothing shoulders it off its spot and it shoulders nothing, because it never moves.
     .{ .field = "grove", .kind = .rooted, .aggro = rootedmod.AGGRO_R, .vsHero = false },
     .{ .field = "cluster", .kind = .shroom, .aggro = shroommod.AGGRO_R },
+    .{ .field = "warrens", .kind = .delver, .aggro = delvermod.AGGRO_R },
     // The ogre's `vsHero`: far too much of him to be walked out of the way. The `vs` list is his own — the
     // skeletons keep the vigil with him, so they give way to him and he gives way to nothing.
     .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
@@ -3052,6 +3059,18 @@ pub fn run(mode: Mode) void {
         // The sporeling's bonk is a blow; its cloud is a HOLD, billed further down beside the mother's acid.
         if (g.cluster.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        // The delver. NOT `hit.heavy()`: the claw carries stance too, so that test would call a swipe the
+        // ground opening under you. The split is "was it THE BURST", its own stance figure.
+        if (g.warrens.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.stance >= delvermod.BURST_HIT.stance, true);
+        }
+        // …AND THE THIRD CHANNEL OF ITS TELL. The mound and the noise are no use to a player whose camera is
+        // pointed at the horizon, and this is the one move in the game that arrives from a direction the lens
+        // cannot be turned toward: the ground going under your own feet is a thing you should FEEL.
+        if (g.warrens.anySurged()) {
+            g.rumble.play(rumblemod.hit_heavy);
+            g.rig.addShake(SHAKE_SURGE);
         }
         // The Bone Knight. NOT `hit.heavy()`: all three of his blows carry stance, so that test would call a
         // shield bash a five-metre body landing on you. The split is "was it THE FALL", its own stance figure.

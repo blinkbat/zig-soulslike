@@ -234,6 +234,9 @@ pub const Rooted = struct {
     /// Stamped from outside like every creature's. Its FEET are the half that cannot matter here — the thing
     /// never travels — but the BITE is billed through the same `foe.grip`, so it is taken like everyone else's.
     root: combat.Root = .{},
+    /// THE RIME BREATH'S COLD (`combat.Chill`) — billed through the same `foe.grip` the roots are. Its travel
+    /// half is meaningless on a thing that never moves; the BITE is not.
+    chill: combat.Chill = .{},
     facing: f32 = 0,
     scale: f32 = 1.0,
     seed: f32 = 0,
@@ -350,7 +353,7 @@ pub const Rooted = struct {
         // THE ROOTS' OWN BITE (foe.grip). The FEET half is a no-op on a thing that never travels, but the
         // grip is also what BILLS the hold's chaos every frame — left out, a cast on this creature was
         // eighteen focus for no damage and a `combat.Root` clock that never ran down.
-        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.elapsed += dt;
@@ -469,7 +472,7 @@ pub const Rooted = struct {
         if (d > (a.maxR + foe.HERO_REACH) * self.scale) return false;
         const to = mathx.dirXZ(self.pos, hero);
         if (mathx.lenXZ(to) < 1e-4) return true;
-        return @abs(mathx.degrees(mathx.wrapPi(mathx.headingXZ(to) - self.facing))) <= a.arc;
+        return combat.withinArc(mathx.headingXZ(to), self.facing, a.arc);
     }
 
     fn faceToward(self: *Rooted, target: rl.Vector3, dt: f32) void {

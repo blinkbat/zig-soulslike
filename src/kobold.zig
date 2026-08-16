@@ -117,7 +117,6 @@ const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKR, .heel = 0.041 * H, .toe = 0.206 * H, .halfW = 0.052 * H, .drop = 0.042 * H },
 };
 
-const A_BOB = heromod.A_BOB; // the hero's own pelvis amplitude — a shared walk owes a shared bob
 const A_PROT = 4.6; // deg of pelvic transverse rotation: a scavenger's walk is loose in the hips
 
 pub const Role = enum { berserker, priest, slinger };
@@ -325,6 +324,9 @@ pub const Kobold = struct {
     leash: foe.Leash = .{},
     /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
     root: combat.Root = .{},
+    /// THE RIME BREATH'S COLD (`combat.Chill`) — stamped from outside like the roots, and billed through the
+    /// same `foe.grip`. The field is what opts a creature into the cone at all (`game.rimeBreathe`).
+    chill: combat.Chill = .{},
     facing: f32 = 0,
     scale: f32 = 1.0,
     seed: f32 = 0,
@@ -515,7 +517,7 @@ pub const Kobold = struct {
         self.justDied = false;
         // THE ROOTS HAVE THE FEET (foe.grip) — the flurry still plays out on the spot, which is what makes this
         // the answer to a warband. The DASH is a jump and is refused outright at the choose site (`foe.canLeap`).
-        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.elapsed += dt;
@@ -950,13 +952,11 @@ pub const Kobold = struct {
         const stunAmt = self.stunAmount();
 
         const m = self.moving * (1.0 - dk);
-        const twoPi = std.math.tau;
-        const bob = -0.5 * A_BOB * mathx.cosf(2.0 * twoPi * self.phase) * m;
-        const latW = @abs(self.latB) * m;
-        const sway = heromod.strafeSway(latW, 0) * mathx.sinf(twoPi * self.phase) * m;
-        const prot = A_PROT * mathx.sinf(twoPi * self.phase) * m * @abs(self.fwdB) +
-            heromod.strafeProt(self.phase, self.latB, m);
-        const dip = heromod.STRAFE_DIP * latW;
+        const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);
+        const bob = pel.bob;
+        const sway = pel.sway;
+        const prot = pel.prot;
+        const dip = pel.dip;
 
         var wx: [N]rl.Matrix = undefined;
         const collapse = mathx.lerpF(hipY, 0.16 * H, dk);

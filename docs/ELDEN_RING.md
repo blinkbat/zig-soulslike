@@ -210,3 +210,84 @@ Sources: [Status Effects](https://eldenring.wiki.fextralife.com/Status+Effects) 
 
 Sources: [Motion Values](https://eldenring.wiki.fextralife.com/Motion+Values) · [Flask of Crimson Tears](https://eldenring.wiki.fextralife.com/Flask+of+Crimson+Tears) · [Stance](https://eldenring.wiki.fextralife.com/Stance)
 
+---
+
+## 7. The KNIGHT enemy class (the shield bearers)
+
+One skeleton reskinned per faction (Godrick / Raya Lucaria–"Cuckoo" / Leyndell / Redmane / Mausoleum /
+Haligtree Knight, model c4351–56 "RoamKnight"), with fixed loadout slots: **Knight's Greatsword +
+greatshield**, **Partisan + greatshield**, greatbow (swaps to melee up close), mounted. HP runs 657
+(Limgrave) → ~4,300 (Elphael) for the same enemy — ~6.5× by region **[DM]**.
+
+### Moveset (greatshield variants)
+- **The guard is held while walking AND while attacking.** The approach is a slow guarded stalk; pokes and
+  chops are thrown around/over the shield edge with the guard still up. The partisan variant's signature is
+  **a multi-hit charging attack delivered with the guard raised** — you cannot trade into it frontally;
+  parry it or step off the line. **[wiki verbatim]**
+- **The greatsword variant adds a vertical slam with a DELAYED downswing** — "they are capable of delaying
+  the downswing"; two authored timings for one silhouette, chosen by AI dice, existing to bait early rolls.
+- **Shield bash** — the anti-crowding / anti-circling answer; "dodging to a shielded knight's side/rear
+  triggers predictable shield bash counterattacks."
+- **Thrust chains resist interruption** ("can't interrupt them while they're doing the triple stabby jab" —
+  hyperarmor on the string).
+- **ENEMY GUARD COUNTER:** "Those with a shield can perform a Guard Counter **if an attack lands on their
+  shield**" [wiki.gg, Leyndell] — hitting the raised shield triggers a riposte poke. The documented player
+  loop: "hitting their shield so they counter, then blocking their counter to land a counter yourself."
+- What beats them, per the wikis: guard counters and charged heavies (stance), circling for the back while
+  they swing, jump attacks over the board, thrust weapons past the shield edge, kicks/Square Off (guard
+  crush), status through the shield. "Light attacks won't break the Godrick Knight's poise; a heavy does."
+
+### The elite pair (calibration points)
+- **CRUCIBLE KNIGHT** (stance **80**, all melee parryable, backstab-immune, 35 % physical negation): the
+  patience duel. Sword slash strings run **1–4 hits, variable** — no memorizable punish count. The overhead
+  reads on WHICH SIDE the sword rises (one side is slower — same picture, two clocks). The **shield bash
+  fires only while he is blocking** — the shield is an attack trigger, not a wall; "when he raises its
+  shield, it will almost always shield charge you." Ground-drag rising slash (sparks off the turf ARE the
+  tell). Phase 2's tail sweep exists to punish YOUR punish window. Community verdict both ways: "fighting
+  this guy is all about patience" / "for almost every attack you get on them, they get one on you back."
+- **BANISHED KNIGHT** (stance 65–75, backstabbable): the frenetic mirror — longer strings, hyperarmor
+  mid-combo, but systemically soft (full crits, bounces off greatshields). Its stab tell is **the shield
+  rising above normal guard height** — the tell on the OFF arm, a silhouette change, not the weapon.
+- **TREE SENTINEL / DRACONIC TREE SENTINEL** (stance 80, crit-immune): the giant-scale grammar. Attack
+  choice is **positionally deterministic** (behind → backward swipe; shield side → slower, safer moves —
+  "stand on the shield side" is a learnable rule); phase turns are announced by one fixed signature move
+  (Shield Crush at exactly 60 % HP); the only fast no-windup hit is a close-range proximity tax; everything
+  huge pays with "extremely telegraphed, lengthy recovery."
+
+### The knight brain (datamined structure)
+ER enemy combat AI is per-enemy Lua over ~150 GOAL primitives — **distance bands + dice odds**, not
+utility AI **[DM]**: `NPCStepAttack(r1Range, r2Range, ifBothR1Odds)` picks light vs heavy by range with an
+odds split; `ContinueKeepDist(closeGuardOdds, farGuardOdds)` is the probability of walking with the shield
+up per range band; `SidewayMove` strafes; `StepSafety(front/back/left/right priorities)` picks the evasive
+step; `ComboAttack/ComboRepeat/ComboFinal` chain strings; `GuardBreakAttack` selects shield-crushing swings
+when the TARGET is blocking; **per-attack `turnTime`/`turnFaceAngle`** governs windup tracking (rotate
+during windup, freeze on release; some held attacks are given weak tracking on purpose so strafing is a
+rewarded answer). Enemy guard is parameterized: per-damage-type block cut rates, **enemy stamina as the
+guard bar** (`stamina`, `staminaRecoverBaseVel` — empty it and the guard smashes open), a **guard ARC**
+(`guardAngle`, up to 180°) outside which the block is ignored, and `guardLevel` vs attacker guard-crush
+rank deciding the recoil animation. Stance (`superArmorDurability`) regenerates at ~13/s after a
+`stance/13`-second delay — 80 stance ⇒ ~6 s of pressure window **[DM]**.
+
+### The animation contract (why their attacks read)
+FromSoft attacks are **five phases**: Opening Pose (telegraph silhouette) → Attack Signal (weapon starts
+its arc — hitbox still dead) → Attack (**2–4 active frames** on a Black Knight swing) → **held End Pose**
+→ Return (the punish window). Hard floors from the DS3 anatomy: **Signal + Attack ≥ 340 ms**; an End Pose
+used as a bait ≥ 240 ms **[DM]**. Measured ER shape: ~15 frames of anticipation pose, ~6 frames of travel,
+recovery 3–4 frames mid-combo but **23–24 frames at combo end** — the whole string is one commitment, the
+debt paid at the finisher. The delayed hold ("raise weapon, wait a full second, strike instantly") converts
+dodging from reflex to timing; **the release cue is the weapon starting to move**, plus micro-cues (the
+Crucible sword-tip flicks vertical just before the swing; a front-foot stomp before a leap). Weight is the
+RATIO — slow labored lift, near-instant strike, mass-scaled recovery, follow-through that carries the body,
+ground shockwave where the mass went. Rules of thumb: **one unique gross silhouette per attack** (shield up
+/ sword overhead / knee up / hunched behind shield) plus one weapon-local release cue; oversized hitboxes
+("several times the weapon model") are deliberate. Mocap lineage is kabuki: poses struck and HELD;
+locomotion captured **to a metronome**.
+
+Sources: agents' multi-source sweeps over [Fextralife knight pages](https://eldenring.wiki.fextralife.com/Godrick+Knight) ·
+[wiki.gg knight pages](https://eldenring.wiki.gg/wiki/Leyndell_Knight) · [Crucible Knight](https://eldenring.wiki.fextralife.com/Crucible+Knight) ·
+[Banished Knight](https://eldenring.wiki.fextralife.com/Banished+Knight) · [Tree Sentinel](https://eldenring.wiki.fextralife.com/Tree+Sentinel) ·
+[Draconic Tree Sentinel](https://eldenring.wiki.fextralife.com/Draconic+Tree+Sentinel) · [soulsmodding AI goals/params](http://soulsmodding.wikidot.com/elden-ring-ai-goals-params) ·
+[Paramdex NpcParam/NpcThinkParam defs](https://github.com/soulsmods/Paramdex) · [DS3 attack anatomy](https://www.gamedeveloper.com/game-platforms/anatomy-of-an-enemy-attack-in-dark-souls-3) ·
+[Demon's Souls mocap interview](https://blog.playstation.com/2021/03/26/what-demons-souls-can-teach-stunt-performers-about-human-movement/) ·
+[ER frame-by-frame comparison](https://medium.com/@nesterenkodmitry96/frame-by-frame-elden-ring-vs-ac-valhalla-dash-and-enemy-attacks-7ff7138b718e)
+

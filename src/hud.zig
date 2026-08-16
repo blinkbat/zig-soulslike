@@ -5,6 +5,7 @@ const uiart = @import("uiart.zig");
 const daynight = @import("daynight.zig"); // the clock dial reads the hour's own arithmetic, never its own
 const itemart = @import("itemart.zig"); // the pictures in the cross — shared with the character book
 const item = @import("item.zig"); // …and what the DOWN cell holds is a bag item, off the quick bar
+const gfx = @import("gfx.zig"); // …and a LIVE PORTRAIT is drawn through the world's own scene shader
 
 const rgba = mathx.rgba;
 
@@ -525,6 +526,177 @@ fn statusBar(x: i32, y: i32, s: Status) void {
     bar(x, y, PSN_W, PSN_H, s.frac, 0, PSN_HI, PSN_LO, PSN_TP);
 }
 
+// ── THE LIVE PORTRAIT ───────────────────────────────────────────────────────────────────────────────────
+//
+// The actual rig, rendered off-screen into a target and blitted into a UI box — `book.zig`'s paper-doll
+// trick, and it lives HERE because there are three callers now (the book's doll, the conversation panel's
+// speaker, the spirit toast) and three copies of a camera-and-target is three things to retune separately.
+// It is the real model in the real pose, so no picture in this game can go stale.
+//
+// ONE TARGET, sized to the LARGEST use and scaled down for the rest: a render target is video memory and
+// the two smaller callers are the same head with fewer pixels round it.
+
+const PORT_RT_W: i32 = 320;
+const PORT_RT_H: i32 = 360;
+var portRT: ?rl.RenderTexture2D = null;
+
+// HOW A FACE IS FRAMED, and it lives with the renderer rather than with any one SUBJECT. It was the
+// wanderer's (`npc.PORTRAIT_*`) while he was the only thing photographed; the spirit panel then read the
+// wanderer's constants to frame a WOLF, which is a creature's house style governing another creature.
+// The ANGLE is the house's and belongs here; the DISTANCE is the subject's and stays with the subject
+// (`npc.PORTRAIT_DIST`, `wolf.PORTRAIT_DIST`), because a wolf's muzzle and a man's face want different room.
+/// Degrees off the subject's own front. Three-quarters: enough to give the head a near side and a far side —
+/// dead on, a low-poly head with no shading break in it reads as a passport photo.
+pub const PORTRAIT_YAW: f32 = 34.0;
+/// A shade above the eye line, looking down — the one that reads as a portrait and not as a camera on the floor.
+pub const PORTRAIT_PITCH: f32 = 0.05;
+pub const PORTRAIT_FOV: f32 = 34.0;
+
+/// Called on the way out of the program, beside `book.unload` and `menu.unload`.
+pub fn unloadPortrait() void {
+    if (portRT) |t| rl.unloadRenderTexture(t);
+    portRT = null;
+}
+
+/// WHAT IT TAKES TO PHOTOGRAPH A BODY: the scene to draw it through, the point to frame on, where the camera
+/// stands relative to that point, and how to draw the thing. `drawFn` is a callback so this file never has to
+/// know what a wanderer or a wolf is — the same reason `dialog.zig` does not import one.
+pub const LivePortrait = struct {
+    scene: *gfx.Scene,
+    /// The FACE, off a posed bone — never a height above the feet, or the picture drifts the moment it moves.
+    focus: rl.Vector3,
+    /// WORLD yaw the camera stands at around `focus`, and it is the caller's because only the caller knows
+    /// which way the subject is pointing (`npc.PORTRAIT_YAW` is hung off the speaker's own facing).
+    yaw: f32,
+    pitch: f32,
+    dist: f32,
+    fov: f32 = 34.0,
+    ctx: *const anyopaque,
+    drawFn: *const fn (*const anyopaque) void,
+};
+
+/// **TAKING THE PICTURE AND MOUNTING IT ARE TWO CALLS, AND THE SPLIT IS LOAD-BEARING.** `endTextureMode`
+/// restores the DEFAULT framebuffer — not whatever target was bound before it — so a render nested inside
+/// another target silently redirects the whole rest of the frame at the backbuffer, which is then
+/// overwritten by the outer target's own blit. The chrome fade (`beginChrome`) is exactly such a target and
+/// the spirit toast is drawn inside it, so the toast RENDERS before the chrome opens and only BLITS within.
+/// `dialog.zig` draws outside any target and may use `livePortrait`, which is simply the two in order.
+///
+/// Returns false when the target could not be made, so a caller can leave the frame bare rather than mount
+/// a stale picture.
+///
+/// **IT IS RE-TAKEN EVERY FRAME AND THAT IS MEASURED, NOT ASSUMED.** One target switch, one shader bind and
+/// the subject's own meshes — 27 for the wolf, 18 for a wanderer — against a world frame that runs a full
+/// shadow pass over hundreds. Well under a percent, and only while a panel is actually up. A refresh clock
+/// was considered and REFUSED: the target is shared, so a throttle has to carry a subject tag to avoid
+/// mounting the wrong face, and the `--shot` harness steps the sim faster than any wall-clock gate, which
+/// would photograph a stale pose. Not worth either for 27 draw calls.
+pub fn renderPortrait(p: LivePortrait) bool {
+    if (portRT == null) portRT = rl.loadRenderTexture(PORT_RT_W, PORT_RT_H) catch null;
+    const rt = portRT orelse return false;
+    const cp = mathx.cosf(p.pitch);
+    const cam = rl.Camera3D{
+        .position = mathx.v3(
+            p.focus.x + mathx.sinf(p.yaw) * cp * p.dist,
+            p.focus.y + mathx.sinf(p.pitch) * p.dist,
+            p.focus.z + mathx.cosf(p.yaw) * cp * p.dist,
+        ),
+        .target = p.focus,
+        .up = mathx.v3(0, 1, 0),
+        .fovy = p.fov,
+        .projection = .perspective,
+    };
+    rl.beginTextureMode(rt);
+    rl.clearBackground(rgba(13, 12, 11, 255));
+    rl.beginMode3D(cam);
+    p.scene.bind(cam.position);
+    p.scene.shadowsOff();
+    p.scene.setLights(&.{});
+    p.scene.setGround(false);
+    p.drawFn(p.ctx);
+    rl.endMode3D();
+    rl.endTextureMode();
+    return true;
+}
+
+/// Mount what `renderPortrait` last took. Safe inside any target — it is one textured quad.
+pub fn blitPortrait(dst: rl.Rectangle, tint: rl.Color) void {
+    const rt = portRT orelse return;
+    // NEGATIVE HEIGHT: a render target is bottom-up, and blitted straight it is an upside-down head.
+    rl.drawTexturePro(
+        rt.texture,
+        .{ .x = 0, .y = 0, .width = @floatFromInt(PORT_RT_W), .height = -@as(f32, @floatFromInt(PORT_RT_H)) },
+        dst,
+        .{ .x = 0, .y = 0 },
+        0,
+        tint,
+    );
+}
+
+/// Both in order — for callers that are NOT inside a render target (the conversation panel).
+pub fn livePortrait(p: LivePortrait, dst: rl.Rectangle, tint: rl.Color) void {
+    if (renderPortrait(p)) blitPortrait(dst, tint);
+}
+
+// ── THE SPIRIT PANEL ────────────────────────────────────────────────────────────────────────────────────
+//
+// **WHAT IS STANDING WITH YOU, UNDER WHAT IS KEEPING YOU ALIVE** (owner: their portrait and HP below your
+// HP). It is not a slot and not part of the cross: the cross is the four things the pad's directions do,
+// and a companion is not something you press.
+//
+// **IT IS NOT A TOAST AND HAS NO TIMER** (owner, in as many words: it should stay on screen as long as they
+// are alive). It is shaped like one — a face, a name and a life, sliding in under his own bars — but what
+// takes it off is the BODY going, never a clock. `k` fades it at both ends and nothing else moves it.
+
+const SP_FACE: i32 = 52; // the portrait square…
+const SP_BAR_H: i32 = 9; // …and its life, the status meter's own height so the stack reads as one column
+const SP_GAP: i32 = 6;
+const SP_TOP: i32 = 12; // clear of the status meter above it
+const SP_SLIDE: f32 = 14.0; // px it rises through on the way in — it ARRIVES, it does not appear
+/// The spirit's own colour: the pale blue everything summoned is thinned to (`wolf.SPIRIT_FADE`), so the bar
+/// and the body it belongs to are obviously the same thing.
+const SP_LIFE_HI = rgba(150, 200, 226, 255);
+const SP_LIFE_LO = rgba(58, 92, 116, 255);
+const SP_LIFE_TP = rgba(206, 234, 248, 255);
+
+/// Where the bars finish, the status meter included — DERIVED, so retuning any bar's height carries the
+/// toast under it instead of leaving it overlapping or floating.
+const BARS_BOTTOM: i32 = BAR_TOP + BARS_H + BAR_GAP + 2 + PSN_H;
+
+/// `k` is the fade, 0..1 — held by the game because the spirit's body is gone before the toast has finished
+/// leaving, and a panel that reads its own subject cannot outlive it.
+///
+/// `hasFace` says whether `renderPortrait` was run for it THIS frame, before the chrome target opened. The
+/// picture is only blitted here, never taken (see `renderPortrait`).
+pub fn spiritPanel(hasFace: bool, name: [:0]const u8, hp: f32, k: f32) void {
+    if (k <= 0.004) return;
+    const kk = mathx.clampF(k, 0, 1);
+    const a: u8 = @intFromFloat(255.0 * kk);
+    const lift: i32 = @intFromFloat((1.0 - kk) * SP_SLIDE);
+    const x = BARS_X;
+    const y = BARS_BOTTOM + SP_TOP + lift;
+    const dst = rl.Rectangle{
+        .x = @floatFromInt(x),
+        .y = @floatFromInt(y),
+        .width = @floatFromInt(SP_FACE),
+        .height = @floatFromInt(SP_FACE),
+    };
+    // THE FRAME FOLLOWS THE FACE. On the way out the body is gone, so there is no picture to take and the
+    // shared target holds whoever was photographed last — an empty well, or worse a wanderer's head in the
+    // spirit's box. So the mount is drawn only while there is something to mount, and what fades is the
+    // NAME and the LIFE, which is the part that was ever about the animal rather than of it.
+    const tx = if (hasFace) x + SP_FACE + SP_GAP else x;
+    const tw = if (hasFace) HP_W - SP_FACE - SP_GAP else HP_W;
+    if (hasFace) {
+        uiart.well(x, y, SP_FACE, SP_FACE, a);
+        blitPortrait(dst, mathx.withAlpha(rl.Color.white, a));
+        rl.drawRectangleLinesEx(dst, 1, mathx.withAlpha(uiart.GILT_DIM, @min(a, 110)));
+    }
+    text(name, tx, y + 2, TINY, mathx.withAlpha(uiart.GILT, a));
+    const by = y + SP_FACE - SP_BAR_H;
+    bar(tx, by, tw, SP_BAR_H, mathx.clampF(hp, 0, 1), 0, SP_LIFE_HI, SP_LIFE_LO, SP_LIFE_TP);
+}
+
 pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, fpRefused: f32, windedTo: f32, psn: Status) void {
     if (hp > chip) {
         chip = hp; // healing (and a respawn) snaps it — never strand a trail across the bar
@@ -651,6 +823,7 @@ const FOE_H: i32 = 5;
 const FOE_LIFT: i32 = 16;
 const FOE_TRACK = rgba(38, 12, 10, 230);
 const STAGGER_RIM = rgba(232, 196, 90, 255); // ER's gold crit-opening cue on a stance break
+const CHILL_STRIP = rgba(148, 202, 232, 235); // the rime hold's own row — cold, against the bar's warm red
 /// A BAR MAY NOT CLIMB OUT OF THE FRAME. Over the head is right at every distance you can see the whole
 /// creature at, and wrong the moment you close on a TALL one: the ogre's crown is 4.4 m up, so through the
 /// whole fight you are near enough to need the bar it is drawn off the top of the screen, gold rim and all.
@@ -659,7 +832,7 @@ const STAGGER_RIM = rgba(232, 196, 90, 255); // ER's gold crit-opening cue on a 
 /// as before, and walking in it stops climbing and hangs against the body. ONE rule for every creature.
 const FOE_CEIL: f32 = 0.25; // …measured from the TOP, so 0.25 is three quarters up
 
-pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool) void {
+pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool, chill: f32) void {
     const wf: f32 = @floatFromInt(FOE_W);
     const x: i32 = @intFromFloat(sx - wf * 0.5);
     const ceiling = @as(f32, @floatFromInt(rl.getScreenHeight())) * FOE_CEIL;
@@ -670,8 +843,80 @@ pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool) void {
     const fw: i32 = @intFromFloat(wf * mathx.clampF(frac, 0, 1));
     // 5 px tall, so the shade band is 2 rather than the vitals bars' third and the tip is a single column.
     fillThree(x, y, fw, FOE_H, frac, HP_HI, HP_LO, mathx.withAlpha(HP_TP, 200), 2, 1, 120);
+    // THE COLD ON IT, under the health: a rime strip draining with the hold (`combat.Chill.frac`). Its own
+    // row rather than a tint on the fill — a tint on a red bar at 54 px is a hue nobody can name.
+    if (chill > 0.001) {
+        const cw: i32 = @intFromFloat(wf * mathx.clampF(chill, 0, 1));
+        rl.drawRectangle(x, y + FOE_H + 1, cw, 2, CHILL_STRIP);
+    }
     if (staggered) rl.drawRectangleLines(x - 1, y - 1, FOE_W + 2, FOE_H + 2, STAGGER_RIM);
 }
+// ── THE BOSS BAR — the one creature on a field big enough to own the bottom of the screen ────────────────
+const BOSS_H: i32 = 13;
+/// Clear of the prompt band (`PROMPT_LIFT`) and the corners' furniture — ER's own register: the boss's
+/// name and health lie across the bottom, under the fight and over the chrome.
+const BOSS_LIFT: i32 = 158;
+var bossChip: f32 = 0;
+var bossHold: f32 = 0;
+var bossLast: f32 = 0;
+
+/// THE BOSS'S OWN BAR: bottom-centre, NAMED, with the vitals bars' recent-damage trail and the same gold
+/// stagger rim the floating bars wear — the punish cue, finally somewhere the eye already is. `k` fades the
+/// whole plate in and out as the fight starts and ends; the caller owns that clock (and suppresses the
+/// floating bar over the same body, or one number is read twice).
+pub fn bossBar(dt: f32, name: [:0]const u8, frac: f32, staggered: bool, k: f32) void {
+    if (k <= 0.001) {
+        bossChip = frac; // parked: a fight that ended does not leave a trail armed for the next one
+        bossLast = frac;
+        return;
+    }
+    const w: i32 = @min(760, @divTrunc(rl.getScreenWidth() * 62, 100));
+    const x = @divTrunc(rl.getScreenWidth() - w, 2);
+    const y = rl.getScreenHeight() - BOSS_LIFT;
+    if (frac > bossChip) {
+        bossChip = frac;
+        bossHold = 0;
+    } else {
+        if (frac < bossLast - 1e-4) bossHold = CHIP_HOLD;
+        if (bossHold > 0) bossHold -= dt else bossChip = mathx.maxF(frac, bossChip - CHIP_RATE * dt);
+    }
+    bossLast = frac;
+    const a = mathx.clampF(k, 0, 1);
+    const au8 = struct {
+        fn of(base: u16, kk: f32) u8 {
+            return @intFromFloat(@as(f32, @floatFromInt(base)) * kk);
+        }
+    }.of;
+    // The seat, the frame and the track — the vitals bars' chrome at the boss's width.
+    rl.drawRectangle(x - 3, y - 3, w + 6, BOSS_H + 6, rgba(0, 0, 0, au8(60, a)));
+    rl.drawRectangle(x - 2, y - 2, w + 4, BOSS_H + 4, rgba(0, 0, 0, au8(165, a)));
+    rl.drawRectangle(x - 1, y - 1, w + 2, BOSS_H + 2, mathx.withAlpha(RIM, au8(210, a)));
+    rl.drawRectangle(x - 1, y - 1, w + 2, 1, mathx.withAlpha(uiart.GILT, au8(130, a)));
+    rl.drawRectangle(x - 1, y + BOSS_H, w + 2, 1, rgba(0, 0, 0, au8(140, a)));
+    rl.drawRectangle(x, y, w, BOSS_H, mathx.withAlpha(TRACK, au8(186, a)));
+    const wf: f32 = @floatFromInt(w);
+    const fw: i32 = @intFromFloat(wf * mathx.clampF(frac, 0, 1));
+    const cw: i32 = @intFromFloat(wf * mathx.clampF(bossChip, 0, 1));
+    if (cw > fw) rl.drawRectangle(x + fw, y, cw - fw, BOSS_H, mathx.withAlpha(CHIP, au8(226, a)));
+    if (fw > 0) {
+        const shadeH = @max(@divTrunc(BOSS_H, 3), 1);
+        rl.drawRectangle(x, y, fw, BOSS_H - shadeH, mathx.withAlpha(HP_HI, au8(255, a)));
+        rl.drawRectangleGradientV(x, y + BOSS_H - shadeH, fw, shadeH, mathx.withAlpha(HP_HI, au8(255, a)), mathx.withAlpha(HP_LO, au8(255, a)));
+        rl.drawRectangle(x, y, fw, 1, mathx.withAlpha(HP_TP, au8(255, a)));
+        if (fw > 2 and frac < 0.999) rl.drawRectangle(x + fw - 2, y, 2, BOSS_H, mathx.withAlpha(uiart.CATCH, au8(64, a)));
+    }
+    const hf: f32 = @floatFromInt(BOSS_H);
+    uiart.finial(@floatFromInt(x - 2), @as(f32, @floatFromInt(y)) + hf * 0.5, hf * 0.36 + 2.0, mathx.withAlpha(uiart.GILT_DIM, au8(255, a)));
+    uiart.finial(@floatFromInt(x + w + 2), @as(f32, @floatFromInt(y)) + hf * 0.5, hf * 0.36 + 2.0, mathx.withAlpha(uiart.GILT_DIM, au8(255, a)));
+    // THE STAGGER RIM IS THE PUNISH CUE (ER's gold), on the bar the eye is actually reading.
+    if (staggered) {
+        rl.drawRectangleLines(x - 1, y - 1, w + 2, BOSS_H + 2, mathx.withAlpha(STAGGER_RIM, au8(255, a)));
+        rl.drawRectangleLines(x - 2, y - 2, w + 4, BOSS_H + 4, mathx.withAlpha(STAGGER_RIM, au8(130, a)));
+    }
+    // …and the NAME, above the bar's left end: a boss is somebody.
+    engraved(name, x, y - lineH(SMALL) - 3, SMALL, rgba(230, 218, 190, au8(244, a)));
+}
+
 const SOUL_W: i32 = 122;
 const SOUL_H: i32 = 32;
 const SOUL_FILL_A: u8 = 170;
@@ -753,7 +998,7 @@ const BOTTOM: i32 = 26;
 
 /// WHAT A HAND OR THE SORCERY CELL IS SHOWING. The cross`s DOWN cell is NOT here: it holds an `item.Kind`
 /// off the quick bar (`quickSlot`), which is a wider thing than the handful his hands can be doing.
-pub const Slot = enum { empty, sword, bow, bell, shield, wand, spell, roots };
+pub const Slot = enum { empty, sword, bow, bell, shield, wand, spell, roots, rime };
 
 /// `left`/`right` are what is IN HIS HANDS this frame, not what he owns.
 /// `up` is the SORCERY slot, and `castable` is whether the pool would cover one — it stays `.empty` while
@@ -838,6 +1083,9 @@ fn slot(x: i32, y: i32, holds: Slot, charges: u8) void {
         .spell => itemart.spell(cx, cy, px, charges > 0),
         // …and the rod's other sorcery, greyed by the same rule: a thing you cannot afford has to LOOK it.
         .roots => itemart.roots(cx, cy, px, charges > 0),
+        // …and the third, on the same rule. The CONE is what the picture has to carry: it is the one spell
+        // that is a direction and a width rather than a mark thrown at somebody.
+        .rime => itemart.rime(cx, cy, px, charges > 0),
     }
 }
 

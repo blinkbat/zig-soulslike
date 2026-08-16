@@ -10,6 +10,8 @@ const v3 = mathx.v3;
 
 pub const FLASH_DUR: f32 = 0.20; // seconds a struck foe pops on the shared gfx `hitFlash` uniform
 pub const FLASH_GAIN: f32 = 0.85;
+/// How deep the rime coat goes at a full chill — under 1 so the body under it stays readable.
+pub const FROST_GAIN: f32 = 0.55;
 pub const HERO_R: f32 = 0.36;
 pub const HERO_REACH: f32 = 0.55;
 /// THE COLUMN A HERO STANDS IN, off his own feet. A swung weapon has to CROSS it, so a blow that went
@@ -260,6 +262,106 @@ test "AN UNSTAMPED WAY CHANGES NOTHING — steering is a bend on a refused headi
     try std.testing.expectApproxEqAbs(@as(f32, 1), n.along(straight).x, 1e-6);
 }
 
+/// How hard the bearing rate is smoothed — a creature answers a real orbit, never one frame of jitter.
+pub const SENSE_SMOOTH: f32 = 6.0;
+/// Seconds for "this spot is costing me" to fall by half. `Threat`'s own decay one purpose along, and much
+/// shorter: threat is who to fight, this is whether to stay, and the second question goes stale faster.
+pub const PRESSURE_HALFLIFE: f32 = 3.2;
+
+/// **WHAT A CREATURE KNOWS ABOUT HOW THE FIGHT IS GOING, and it is all WORLD STATE** — the bearing's own
+/// measured rate and the damage its own body has taken since it last stood somewhere else. Neither reads the
+/// hero's state machine, so the NO INPUT READING law is kept by construction: this is what any body standing
+/// there could feel.
+///
+/// It exists because the two questions it answers were being re-derived per creature. `circleRate` was the
+/// knight's alone, hand-rolled beside its state machine; `pressed` did not exist anywhere, which is why the
+/// only reason he ever left a spot was that you walked round him — never that standing there was costing him.
+///
+/// **PRESSURE IS PER SPOT, NOT PER FIGHT** (`stood`). Damage banked against a place it has since left is not
+/// a reason to leave again, so travelling further than `spanR` wipes the meter — otherwise a creature that
+/// repositions once arrives already convinced it should reposition again, and that reads as panic.
+pub const Sense = struct {
+    bearingWas: f32 = 0,
+    /// Radians a second the quarry's bearing is sweeping, smoothed. "It is walking round me."
+    circleRate: f32 = 0,
+    /// Damage taken since it last moved somewhere else, decaying.
+    hurtHere: f32 = 0,
+    stood: rl.Vector3 = mathx.zero3,
+
+    /// ONE FRAME, before the state machine decides anything (`Leash.tick`'s slot). `bearing` is the quarry's
+    /// bearing off the creature's own facing, in radians.
+    ///
+    /// `settled` is false while the creature's OWN movement is what is sweeping the bearing — a hop, a leap,
+    /// a charge. Measured through one of those it reads its own travel as the hero circling it and answers a
+    /// thing nobody did.
+    pub fn tick(self: *Sense, dt: f32, at: rl.Vector3, bearing: f32, spanR: f32, settled: bool) void {
+        const rate = @abs(mathx.wrapPi(bearing - self.bearingWas)) / mathx.maxF(dt, 1e-4);
+        self.bearingWas = bearing;
+        if (settled) self.circleRate = mathx.approach(self.circleRate, rate, dt * SENSE_SMOOTH);
+        if (mathx.distXZ(at, self.stood) > spanR) {
+            self.stood = at;
+            self.hurtHere = 0;
+            return;
+        }
+        self.hurtHere *= std.math.pow(f32, 0.5, dt / PRESSURE_HALFLIFE);
+    }
+
+    /// A BLOW LANDED ON IT — the raw damage, whoever threw it. `Threat.hurtBy`'s twin, and they are separate
+    /// because they answer different questions off the same event: that one is WHO, this one is WHERE.
+    pub fn hurt(self: *Sense, dmg: f32) void {
+        self.hurtHere += mathx.maxF(dmg, 0);
+    }
+
+    /// Is somebody walking round it fast enough that turning is a losing game.
+    pub fn circling(self: *const Sense, rate: f32) bool {
+        return self.circleRate > rate;
+    }
+
+    /// **IS THIS SPOT COSTING IT** — the one question that earns a reposition. `share` is of its own MAX HP,
+    /// so the same rule sizes itself on a toad and on a boss.
+    pub fn pressed(self: *const Sense, maxHp: f32, share: f32) bool {
+        return self.hurtHere >= mathx.maxF(maxHp, 1) * share;
+    }
+};
+
+test "PRESSURE IS PER SPOT: damage banked where it USED to stand is not a reason to leave where it is now" {
+    var s = Sense{};
+    const dt = 1.0 / 60.0;
+    const here = mathx.ground(0, 0);
+    s.tick(dt, here, 0, 0.5, true);
+    s.hurt(40);
+    try std.testing.expect(s.pressed(100, 0.3));
+    // Still standing in it: the meter decays but it does not wipe.
+    var k: i32 = 0;
+    while (k < 30) : (k += 1) s.tick(dt, here, 0, 0.5, true);
+    try std.testing.expect(s.hurtHere > 0);
+    // …and one step out of it is a different spot, so the ledger closes with it.
+    s.tick(dt, mathx.ground(0, 3.0), 0, 0.5, true);
+    try std.testing.expect(!s.pressed(100, 0.3));
+    try std.testing.expectApproxEqAbs(@as(f32, 0), s.hurtHere, 1e-6);
+}
+
+test "IT DOES NOT READ ITS OWN TRAVEL AS AN ORBIT" {
+    var s = Sense{};
+    const dt = 1.0 / 60.0;
+    const at = mathx.ground(0, 0);
+    // A bearing swinging hard while the creature is the thing moving: `settled` false, so nothing accrues.
+    var k: i32 = 0;
+    var b: f32 = 0;
+    while (k < 40) : (k += 1) {
+        b += 0.05;
+        s.tick(dt, at, b, 0.5, false);
+    }
+    try std.testing.expect(!s.circling(0.45));
+    // …and the same sweep with its feet on the ground is read for what it is.
+    k = 0;
+    while (k < 60) : (k += 1) {
+        b += 0.05;
+        s.tick(dt, at, b, 0.5, true);
+    }
+    try std.testing.expect(s.circling(0.45));
+}
+
 pub fn flashFrac(flash: f32) f32 {
     return mathx.clampF(flash / FLASH_DUR, 0, 1);
 }
@@ -361,7 +463,7 @@ pub const Grip = struct {
 /// ONE FRAME OF THE WAND'S GRIP, for every creature that can be caught in it. Taken at the TOP of `update`
 /// and held through a `defer` there, so the pin covers whatever the state machine goes on to do:
 ///
-///     const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+///     const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
 ///     defer if (!self.airborne()) grip.hold(&self.pos);
 ///     if (grip.killed) self.enterDeath();
 ///
@@ -376,10 +478,18 @@ pub fn canLeap(root: *const combat.Root) bool {
     return !root.held();
 }
 
-pub fn grip(root: *combat.Root, vit: *combat.Vitals, dt: f32, at: rl.Vector3) Grip {
+/// **AND THE COLD IS BILLED THROUGH THE SAME DOOR** (`combat.Chill`). The rime breath is tested from OUTSIDE
+/// the creature — only `game.zig` can see the cone and the field at once — but a bite that KILLS has to
+/// arrive here, because entering a death is the one thing nothing outside a creature knows how to do. So the
+/// breath stamps what it owes on the body and the body collects it on its own next frame, which is `Leash`'s
+/// arrangement and `justDied`'s in the other direction.
+///
+/// The two bites are ORed into ONE `killed`: whichever of them finished it, the creature dies once.
+pub fn grip(root: *combat.Root, chill: *combat.Chill, vit: *combat.Vitals, dt: f32, at: rl.Vector3) Grip {
     const on = root.held();
-    const killed = if (root.tick(dt)) |bite| vit.drip(bite) == .death else false;
-    return .{ .was = at, .on = on, .killed = killed };
+    const bitten = if (root.tick(dt)) |bite| vit.drip(bite) == .death else false;
+    const frozen = if (chill.tick(dt)) |bite| vit.drip(bite) == .death else false;
+    return .{ .was = at, .on = on, .killed = bitten or frozen };
 }
 
 /// THE HERO'S SHIELD AS THE THING SWINGING AT HIM SEES IT — `Leash`'s pattern exactly, stamped every frame
@@ -524,8 +634,10 @@ pub fn dissipate(self: anytype, dt: f32, still: f32, diss: f32, d: Dissolve) voi
 }
 
 /// **THE BODY COMING BACK UP** — `dissipate` run backwards, and the one copy of it. It reads FIELDS ONLY for
-/// `dissolveMotes`' reason, which is what lets it live here at all: `vit`, `fade`, `gone`, `hits`, `hitLatch`,
-/// `flash`, `shove`, `justDied`, `t`. The STATE it comes up in is not here and cannot be — a state machine's
+/// `dissolveMotes`' reason, which is what lets it live here at all: `vit`, `fade`, `gone`, `hitLatch`,
+/// `flash`, `shove`, `justDied`, `heldOpen`, `t`. `hits` is deliberately NOT among them — it is the running
+/// tally `game.allHits` diffs across a frame to hear the blade land, and a body that reset it mid-frame would
+/// take the total DOWN. The STATE it comes up in is not here and cannot be — a state machine's
 /// enum is private to its own file — so a creature's own `reraise` calls this and then says what it is doing
 /// next, which is the whole of what each one has to write.
 ///
@@ -657,6 +769,9 @@ pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
     // for the same 0. Uploaded only on CHANGE; `lit` starts outside 0..1 so nothing is assumed about the
     // uniform's state before this group.
     var lit: f32 = -1;
+    // …and the rime coat rides the same fold (`combat.Chill.frac`: "how heavily the body is drawn frosted").
+    // `@hasField` because a chillable body opted in by carrying the field — `markWays`' rule.
+    var iced: f32 = -1;
     for (foes) |*f| {
         if (!f.alive()) continue;
         if (scene) |sc| {
@@ -665,12 +780,20 @@ pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
                 sc.setFlash(want);
                 lit = want;
             }
+            if (@hasField(@TypeOf(f.*), "chill")) {
+                const cold = FROST_GAIN * f.chill.frac();
+                if (cold != iced) {
+                    sc.setFrost(cold);
+                    iced = cold;
+                }
+            }
         }
         f.draw(model);
     }
     // …and a group never leaves its flash on for whatever draws next.
     if (scene) |sc| {
         if (lit > 0) sc.setFlash(0);
+        if (iced > 0) sc.setFrost(0);
     }
 }
 

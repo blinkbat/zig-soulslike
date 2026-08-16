@@ -227,6 +227,14 @@ pub const Game = struct {
     npcPos: [npcmod.CAP]rl.Vector3 = [_]rl.Vector3{mathx.zero3} ** npcmod.CAP,
     nNpcPos: usize = 0,
     rest: restmod.Rest = .{},
+    /// THE BOSS BAR'S FADE AND LAST-KNOWN FILL. The fill is kept because the bar outlives the body — it
+    /// lingers, drains and fades over the corpse going to gold, when there is nothing left to read it off.
+    bossK: f32 = 0,
+    bossFrac: f32 = 0,
+    /// …and THE SPIRIT TOAST'S, on exactly the boss bar's rule and for its reason: the panel outlives the
+    /// body, so the life it shows has to be held here or the bar snaps to zero as the wolf goes.
+    spiritK: f32 = 0,
+    spiritHp: f32 = 0,
     /// Survives a death AND a load — the hour is a fact about the world, not about the map file.
     day: daynight.Clock = .{},
     /// THE HOUR THE TWO SHADERS WERE LAST SOLVED FOR. A NaN until one has been, so the first ask always lands
@@ -310,6 +318,10 @@ pub const Game = struct {
         g.pickups = .{};
         g.award = .{};
         g.day = .{};
+        g.bossK = 0;
+        g.bossFrac = 0;
+        g.spiritK = 0;
+        g.spiritHp = 0;
         g.hourLit = std.math.nan(f32); // …and its guard, which as the fill byte would pin the light on frame one
         g.souls = soulsmod.Souls.init(g.scene.shader);
         phase(&initTimer, "foes");
@@ -362,6 +374,10 @@ fn beginGame(g: *Game) void {
     g.hero.quiver = .{};
     g.hero.flasks = .{};
     g.day = .{};
+    g.bossK = 0;
+    g.bossFrac = 0;
+    g.spiritK = 0;
+    g.spiritHp = 0;
     g.bag = .{};
     // **THE STARTING KIT IS ALREADY KNOWN**, and it goes in as KNOWN rather than through `awardLoot`: he begins
     // holding these, so the first one found in the world is the second he has owned. Without this, walking up to
@@ -1403,8 +1419,57 @@ pub fn stepTalkForShot(g: *Game, in: dialogmod.Input) void {
     g.folk.update(SHOT_STEP, g.hero.pos, PLAY_HALF);
 }
 pub fn drawTalkForShot(g: *Game) void {
-    g.talk.draw(&g.map, &g.trig, triggerWorld(g));
+    g.talk.draw(&g.map, &g.trig, triggerWorld(g), talkPortrait(g));
 }
+
+/// THE FACE IN THE PANEL — built here rather than reached for by `dialog.zig`, which never learns what a
+/// wanderer is (the `Leash`/`Root` rule: cross-cutting state is stamped IN). Null when a TRIGGER opened the
+/// conversation rather than a body, because then there is nobody standing there to photograph.
+fn talkPortrait(g: *Game) ?dialogmod.Portrait {
+    const i = g.talk.npc orelse return null;
+    if (i >= g.folk.n) return null;
+    const p = &g.folk.list[i];
+    return .{
+        .scene = &g.scene,
+        .face = p.facePoint(),
+        .facing = p.facing,
+        .ctx = @ptrCast(g),
+        .drawFn = drawTalkingNpc,
+    };
+}
+/// THE SPIRIT'S FACE for the toast. Null once the body has gone, which is why the toast keeps its own fade
+/// and its own last life: the panel outlives its subject by design.
+fn spiritPortrait(g: *Game) ?hud_.LivePortrait {
+    const w = g.pack.firstConst() orelse return null;
+    return .{
+        .scene = &g.scene,
+        .focus = w.facePoint(),
+        // Off ITS OWN facing, the speaker's rule — three-quarters from the front wherever it is standing.
+        .yaw = w.facing + mathx.radians(hud_.PORTRAIT_YAW),
+        .pitch = hud_.PORTRAIT_PITCH,
+        .dist = wolfmod.PORTRAIT_DIST,
+        .fov = hud_.PORTRAIT_FOV,
+        .ctx = @ptrCast(g),
+        .drawFn = drawSpiritHead,
+    };
+}
+fn drawSpiritHead(ctx: *const anyopaque) void {
+    const g: *const Game = @ptrCast(@alignCast(ctx));
+    g.pack.drawFirst();
+}
+
+fn drawTalkingNpc(ctx: *const anyopaque) void {
+    const g: *const Game = @ptrCast(@alignCast(ctx));
+    const i = g.talk.npc orelse return;
+    g.folk.drawOne(i);
+}
+/// Wind the spirit toast to FULL for the harness. Its fade is a live-loop clock, and `--shot` draws one
+/// frame — waited out it photographs a panel halfway in, which says nothing about either end of it.
+pub fn showSpiritToastForShot(g: *Game) void {
+    g.spiritK = 1.0;
+    g.spiritHp = if (g.pack.firstConst()) |w| w.vit.hpFrac() else 1.0;
+}
+
 pub fn stepFolkForShot(g: *Game, dt: f32) void {
     g.folk.update(dt, g.hero.pos, PLAY_HALF);
     for (g.folk.live()) |*p| plantActor(g, &p.pos);
@@ -1973,6 +2038,9 @@ fn releaseSpell(g: *Game) void {
     switch (g.hero.spell) {
         .bolt => throwBolt(g),
         .roots => castRoots(g),
+        // …and the third does not RELEASE anything: the edge opens a window, and `rimeBreathe` bills it for
+        // as long as the cone is open.
+        .rime => openBreath(g),
     }
 }
 
@@ -2046,6 +2114,79 @@ fn castRoots(g: *Game) void {
     sfx.play(.wand_cast);
     g.rumble.play(if (bit) rumblemod.hit_heavy else rumblemod.cast_throw);
     g.rig.addShake(if (bit) SHAKE_ROOTS_BITE else SHAKE_CAST);
+}
+
+/// THE BREATH OPENS — and that is ALL this does. The other two spells throw something on this edge and are
+/// finished with; the rime's edge is the start of a WINDOW, and what the window does is billed a frame at a
+/// time in `rimeBreathe` for as long as `hero.breathLive()` says the cone is open.
+fn openBreath(g: *Game) void {
+    sfx.play(.wand_cast);
+    g.rumble.play(rumblemod.cast_throw);
+    g.rig.addShake(SHAKE_CAST);
+}
+
+/// **ONE FRAME OF THE CONE, ON EVERY BODY STANDING IN IT — AND IT IS THE FIRST THING IN THE GAME BAR A SWING
+/// THAT REACHES MORE THAN ONE** (owner's call; it overturns the standing law and AGENTS.md is written to
+/// match). What makes that fair is that it is not a blast at a mark: it is a direction he is holding, in
+/// front of him, for the better part of a second — so it is aimed, it is dodged by not being in front of
+/// him, and a body walks out of it exactly the way a body walks out of a swing.
+///
+/// **TESTED IN XZ, LIKE EVERY OTHER REACH IN THE GAME.** `hero.breathDir` is level for this reason: the
+/// picture may not promise an up or down the mechanic does not have.
+fn rimeBreathe(g: *Game, dt: f32) void {
+    const apex = g.hero.mouthWorld();
+    const facing = g.hero.facing;
+    inline for (FOE_GROUPS) |f| {
+        for (@field(g, f.field).live()) |*a| {
+            if (!foemod.corporeal(a)) continue;
+            // **THE BODY'S OWN WIDTH COUNTS**, at both ends of the test: a giant whose centre is a foot past
+            // the reach is still standing in the stream, and one whose centre is just outside the arc is
+            // still four feet of creature inside it. Measured off `bodyR` rather than a fudge, so a scaled
+            // creature is answered at the size it was actually posted at.
+            const d = mathx.distXZ(a.pos, apex);
+            const r = a.bodyR();
+            if (d - r > combat.RIME_REACH) continue;
+            const to = mathx.dirXZ(apex, a.pos);
+            if (mathx.lenXZ(to) > 1e-4) {
+                // How much of the arc this body subtends from where he is standing — degrees, `withinArc`'s
+                // unit. Stood inside him there is no bearing to be wrong about and the breath simply takes
+                // him, which is the delver's zero-bearing rule one mechanic along.
+                const spread = if (d > r) mathx.degrees(std.math.atan2(r, d)) else 180.0;
+                if (!combat.withinArc(mathx.headingXZ(to), facing, combat.RIME_ARC + spread)) continue;
+            }
+            // THE COLD AND THE COLD'S DAMAGE ARE ONE STAMP (`combat.Chill.breathe`), collected by the body
+            // itself through `foe.grip` — a bite that kills has to arrive down the creature's own path.
+            a.chill.breathe(dt);
+            a.leash.provoke(); // breathed on IS being fought, whatever it was doing before
+        }
+    }
+}
+
+/// **THE CHILL'S POST-STEP GATE — the roots' law, applied by fractions.** `foe.grip` takes the feet outright;
+/// this takes part of them, and it is the same gate in the same place for the same reason: a creature grows
+/// movements, and a per-site multiplier is a list of sites to forget one from.
+///
+/// **IT TAKES THE FEET AND NOTHING ELSE.** The state machine still runs, the kit still swings at its own
+/// speed and the blows land as hard — a chilled creature is not a slowed creature, it is one that cannot
+/// close. That is deliberately NOT time dilation: this game does not take time away from anybody.
+///
+/// Keyed off the creature's own `chill` field (`markWays`' rule), so a creature gains it by carrying the
+/// field and never by an edit here. **AND IT IS NOT SKIPPED FOR A FLYER**, which is the one place it parts
+/// company with the terrain gate beside it: cold does not care whether you are standing on anything, and
+/// that is exactly what makes it the answer to a leechfly the roots cannot touch.
+fn gateChill(foes: anytype, was: []const rl.Vector3) void {
+    const T = @typeInfo(@TypeOf(foes)).pointer.child;
+    if (comptime !@hasField(T, "chill")) return;
+    for (foes, 0..) |*f, i| {
+        // THE CLOCK IS NOT RUN HERE. `foe.grip` ticks it at the top of the creature's own update, where the
+        // bite it owes can be billed and can KILL — run again here it would decay at twice the rate and
+        // swallow a frame of cold on its way past.
+        if (i >= was.len or !f.chill.held()) continue;
+        // What it actually travelled this frame, scaled back to what a cold body manages. Y is left alone —
+        // `groundActor` owns it, and a chilled foe stands on its own ground like a held one.
+        f.pos.x = was[i].x + (f.pos.x - was[i].x) * combat.CHILL_TRAVEL;
+        f.pos.z = was[i].z + (f.pos.z - was[i].z) * combat.CHILL_TRAVEL;
+    }
 }
 
 /// `throwBoltForShot`'s twin: the pose is driven past the `thrown` edge without going through `releaseSpell`.
@@ -2678,6 +2819,11 @@ pub fn hud(g: *Game, dt: f32) void {
     // leaving a slot solid over a HUD that has gone.
     const chrome = chromeFade(g);
     const wantChrome = !g.menu.isOpen() and chrome > 0.001;
+    // **THE SPIRIT'S FACE IS TAKEN BEFORE THE CHROME TARGET OPENS.** `endTextureMode` restores the DEFAULT
+    // framebuffer rather than the target that was bound before it, so rendering a portrait inside the chrome
+    // scope would send every HUD draw after it at the backbuffer, to be overwritten by the chrome's own blit.
+    // Taken here, the toast below only has a quad to mount (`hud.renderPortrait`).
+    const spiritFace = wantChrome and if (spiritPortrait(g)) |lp| hud_.renderPortrait(lp) else false;
     // The target is only taken while a fade is actually running: at full chrome `beginChrome` refuses and
     // every draw below goes straight at the backbuffer exactly as it always did.
     //
@@ -2715,14 +2861,37 @@ pub fn hud(g: *Game, dt: f32) void {
                 if (wandUp) (switch (g.hero.spell) {
                     .bolt => hud_.Slot.spell,
                     .roots => hud_.Slot.roots,
+                    .rime => hud_.Slot.rime,
                 }) else .empty,
                 g.hero.fp.cur >= g.hero.castCost(),
                 g.hero.quick.selected(),
                 quickLeft(g),
                 if (bowUp) hud_.Ammo{ .n = g.hero.quiver.ready(), .fire = heromod.arrowBurns(g.hero.quiver.sel) } else null,
             );
+            // **WHAT IS STANDING WITH HIM**, under his own bars. The fade is held on `Game` and not read off
+            // the pack, because the body is gone before the toast has finished leaving — and the LAST life
+            // it had is held with it, so the bar drains to where it died instead of snapping to zero.
+            if (g.pack.firstConst()) |w| {
+                g.spiritK = mathx.approach(g.spiritK, 1.0, dt * 5.0);
+                g.spiritHp = w.vit.hpFrac();
+            } else {
+                g.spiritK = mathx.approach(g.spiritK, 0, dt * 2.2);
+            }
+            hud_.spiritPanel(spiritFace, combat.spiritName(g.hero.spirit), g.spiritHp, g.spiritK);
             hud_.reticle(g.hero.aimB);
             hud_.souls(g.hero.souls.display()); // the ROLLING value, not the banked total
+            // THE BOSS BAR (ER's): named, bottom-centre, faded in when a knight is fighting and held while
+            // the bar drains and the body goes to gold. The floating bar over the same body is suppressed
+            // (`drawFoeBars`) — one number may not be read in two places.
+            if (g.vigil.boss(g.hero.pos)) |bi| {
+                const b = &g.vigil.liveConst()[bi];
+                g.bossFrac = b.vit.hpFrac();
+                g.bossK = mathx.approach(g.bossK, 1.0, dt * 4.0);
+                hud_.bossBar(dt, worldfmt.foeName(.bone_knight), g.bossFrac, b.staggered(), g.bossK);
+            } else {
+                g.bossK = mathx.approach(g.bossK, 0, dt * 1.4);
+                hud_.bossBar(dt, worldfmt.foeName(.bone_knight), g.bossFrac, false, g.bossK);
+            }
             // The same `reachable` the PRESS goes through: a prompt naming a different thing is worse than none.
             if (reachable(g)) |r| hud_.prompt(r.prompt());
         }
@@ -2876,6 +3045,7 @@ pub fn run(mode: Mode) void {
     defer if (!shot) sfx.deinit();
     defer objviewmod.unload();
     defer bookmod.unload();
+    defer hud_.unloadPortrait(); // the one live-portrait target: the panel's speaker AND the spirit toast
     defer menumod.unload();
 
     const alloc = std.heap.c_allocator;
@@ -2916,7 +3086,11 @@ pub fn run(mode: Mode) void {
         g.drawDt = rawDt; // …including the occluder fade, which every branch below draws through
         PLAY_HALF = playHalfOf(g.map.half);
         // The clock runs on `dt`, not `rawDt`, so the debug time scale slows the sun with everything else.
-        if (!g.editor.on and !g.menu.isOpen() and !g.rest.active() and !g.talk.active()) g.day.tick(dt);
+        // **THE FIRST-TIME CARD IS ONE OF THE HOLDS.** `award.carding()` IS "the world is held" and its own
+        // branch says so — but the guard here listed the four screens and not the card, so the sun kept
+        // walking for as long as it took to read one, and at the debug day speeds that is a quarter of an
+        // hour a card. Every hold that stops the field has to stop the clock with it.
+        if (!g.editor.on and !g.menu.isOpen() and !g.rest.active() and !g.talk.active() and !g.award.carding()) g.day.tick(dt);
         applyHour(g);
         sfx.mute(g.editor.on and !g.editor.auditioning());
         // BEFORE every branch, because a moved sound-filter dial's settle has to run out under the menu that
@@ -3119,7 +3293,7 @@ pub fn run(mode: Mode) void {
             sfx.tickStreams();
             drawScene(g);
             hud(g, rawDt);
-            g.talk.draw(&g.map, &g.trig, triggerWorld(g));
+            g.talk.draw(&g.map, &g.trig, triggerWorld(g), talkPortrait(g));
             rl.endDrawing();
             continue;
         }
@@ -3487,10 +3661,27 @@ pub fn run(mode: Mode) void {
             g.rumble.play(rumblemod.swing_light);
             g.rig.addShake(SHAKE_SIGIL);
         }
-        // The Bone Knight. NOT `hit.heavy()`: all three of his blows carry stance, so that test would call a
-        // shield bash a five-metre body landing on you. The split is "was it THE FALL", its own stance figure.
+        // The Bone Knight. NOT `hit.heavy()`: every blow he owns carries stance, so that test would call a
+        // shield bash a five-metre body landing on you. The split is "was it the BODY or the WALL" — the
+        // fall and the charge, keyed off the lighter of their two stance figures.
         if (g.vigil.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.stance >= knightmod.FALL_HIT.stance, true);
+            _ = heroTakes(g, b, b.hit.stance >= knightmod.CHARGE_HIT.stance, true);
+        }
+        // …and PHASE TWO'S GAS, billed the same way the field's other floors are (`brood.burn`,
+        // `cluster.spores`) — a dose on its own clock, never a stroke, so it is always the light beat.
+        if (g.vigil.gasDose(dt, g.hero.pos)) |b| {
+            _ = heroTakes(g, b, false, false);
+            sfx.play(.acid_burn);
+        }
+        // …AND THE GROUND HE MOVES IS FELT ON THE MISS TOO: the fall landing, the stomp's ring and the
+        // charge's skid all shake the frame off the knight's own one-frame quake (the delver's surge rule —
+        // these arrive where the lens may not be pointed).
+        {
+            const q = g.vigil.quakeAmt();
+            if (q > 0) {
+                g.rumble.play(rumblemod.hit_heavy);
+                g.rig.addShake(q);
+            }
         }
         // …and the one moment of theirs the frame should feel BEFORE it is hit by it.
         if (g.muster.anyLeapt()) {
@@ -3543,6 +3734,12 @@ pub fn run(mode: Mode) void {
         g.folk.update(dt, g.hero.pos, PLAY_HALF);
         gateTerrain(g, g.folk.live(), wasFolk[0..nFolk]);
         inline for (FOE_GROUPS, 0..) |f, gi| gateTerrain(g, @field(g, f.field).live(), wasPos[gi][0..wasN[gi]]);
+        // …and the COLD's gate straight after the terrain's, off the same snapshot: both are post-step rules
+        // about the feet, and the chill's is the roots' law by fractions (`gateChill`).
+        inline for (FOE_GROUPS, 0..) |f, gi| gateChill(@field(g, f.field).live(), wasPos[gi][0..wasN[gi]]);
+        // THE CONE, tested AFTER everything has moved: what it takes is where the bodies actually ARE this
+        // frame, not where they were when he started breathing.
+        if (g.hero.breathLive()) rimeBreathe(g, dt);
         for (&g.arrows) |*ar| {
             if (!ar.live) continue;
             flyArrow(g, ar, dt);
@@ -4184,6 +4381,12 @@ fn disguised(f: anytype) bool {
     return false;
 }
 
+/// How chilled a target is, for its bar — a body opts into the cold by carrying the field (`markWays`' rule).
+fn chillOf(f: anytype) f32 {
+    if (comptime @hasField(std.meta.Child(@TypeOf(f)), "chill")) return f.chill.frac();
+    return 0;
+}
+
 test "THE BURROW TAKES THE LOCK OFF YOU, and gives it back when it surfaces" {
     // Owner: the mole should lock you off when he is underground. What that costs him is the camera — and the
     // whole of the move is that you have to find the mound yourself.
@@ -4291,10 +4494,16 @@ const BarCtx = struct {
     cam: rl.Camera3D,
     /// Goes with the RETICLE rather than with `g.lock`, so a suspended lock takes the bar down with the dot.
     lock: ?FoeRef,
+    /// THE BOSS'S NUMBER IS READ OFF THE BOTTOM OF THE SCREEN (`hud.bossBar`), so his floating bar is
+    /// suppressed — the same figure hanging in two places is one of them wrong the day they disagree.
+    boss: ?usize,
 
     fn visit(self: *const BarCtx, foes: anytype, kind: ?FoeKind) void {
         for (foes, 0..) |*f, i| {
             if (!f.alive() or f.dying()) continue; // no bar over a corpse dissolving out
+            if (self.boss) |bi| {
+                if (bi == i and memberKind(f, kind) == .bone_knight) continue;
+            }
             // …NOR OVER A BODY THAT IS NOT THERE TO SEE. A bar is drawn in 2D off a projected world point with
             // no depth test behind it, so a delver that took a blow and then went under left its bar hanging
             // over open grass at the screen height of a crown two and a half metres inside the earth. Same
@@ -4308,13 +4517,13 @@ const BarCtx = struct {
             // front of you, so the fallback projects that and the ceiling does the rest.
             const s = projectToScreen(self.cam, f.topWorld()) orelse
                 projectToScreen(self.cam, f.centerWorld()) orelse continue;
-            hud_.foeBar(s.x, s.y, f.vit.hpFrac(), f.staggered()); // size/colour/lift/CEILING all live in hud
+            hud_.foeBar(s.x, s.y, f.vit.hpFrac(), f.staggered(), chillOf(f)); // size/colour/lift/CEILING all live in hud
         }
     }
 };
 
 fn drawFoeBars(g: *const Game) void {
-    const ctx = BarCtx{ .cam = g.rig.cam, .lock = activeLock(g) };
+    const ctx = BarCtx{ .cam = g.rig.cam, .lock = activeLock(g), .boss = g.vigil.boss(g.hero.pos) };
     eachTarget(g, &ctx, BarCtx.visit);
 }
 

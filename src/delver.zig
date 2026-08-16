@@ -326,6 +326,10 @@ pub const Delver = struct {
     /// THE WAND'S ROOTS, stamped from outside like every creature's — and the one thing they take from this
     /// creature is the ground under it.
     root: combat.Root = .{},
+    /// THE RIME BREATH'S COLD (`combat.Chill`) — stamped from outside like the roots, and billed through the
+    /// same `foe.grip`. Submerged there is nothing to breathe on: the cone is tested against a body the
+    /// hurt sphere has already sunk out of reach of.
+    chill: combat.Chill = .{},
     /// …AND THE HERO'S SHIELD (`game.markParry`), read only inside the claw's own window.
     parry: foe.Parry = .{},
     /// The boards caught the claw this frame — a ONE-FRAME flag, `justDied`'s exactly.
@@ -502,7 +506,7 @@ pub const Delver = struct {
         self.justDied = false;
         self.parried = false;
         self.surged = false;
-        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.vit.tick(dt);

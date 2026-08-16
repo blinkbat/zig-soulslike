@@ -16,6 +16,11 @@ Don't commit, push, or create branches unless explicitly asked.
 
 - **NO HITSTOP. EVER.** No freeze-frames, no time-dilation on impact, no dt zeroing. Impact weight
   comes from shake + rumble + FX + huge reaction anims, never from stealing time from the player.
+- **NO INPUT READING. EVER** (owner: "nobody likes this"). No creature may branch on the player's INPUTS or
+  committed actions — not the flask, not a cast, not a roll, not an attack press. ER's own bosses lunge the
+  frame you drink and snap mid-hold to catch a roll they "read"; that is the single most-hated behavior in
+  the genre and it is banned here outright. A decision may read POSITION, BEARING, DISTANCE and ITS OWN
+  CLOCKS — the world as any body standing in it could see it — never the hero's state machine.
 - **ZERO INPUT LAG.** The stick maps straight to ground speed every frame. Posture/gait blends may
   smooth the VISUALS only, and only fast (~0.1 s max).
 - **REACTIONS ARE HUGE.** A flinch or stagger must be big and obvious, never a subtle lean. **A mass in
@@ -98,27 +103,30 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `main.zig` | entry; `--shot` headless harness |
 | `game.zig` | window/loop, input, camera-relative movement, render orchestration, combat-beat feedback, YOU DIED. **A DEFAULTED FIELD ON `Game` MUST BE ASSIGNED IN `init`** — it is built from `alloc.create`, so `= .{}` on the field never runs and the field comes up as the fill byte. Silent, and it has bitten twice: `pack.n` as garbage, and the WHOLE DAY/NIGHT CYCLE dead because `g.day` was never assigned (rate 0 is a held clock; a NaN hour renders as the anchor) |
 | `hero.zig` | THE HERO — FK skeleton, every animation, swept blade capsule, the guard, the bow, the wand. Start here |
+| `anim.zig` | THE KEYED-POSE KERNEL — `Ease`/`Key`/`keyAt`, `Spring`/`SpringBank`, and `anim.Pose(P)` whole-pose tracks; every rig's attacks run on it |
+| `behave.zig` | THE BEHAVIOUR LIBRARY — `Routine` (close/open/orbit/dwell/shift) + the named scripts (`DISENGAGE`/`FLANK`/`KITE`); the archer's kite and the warrior's circle run on it |
 | `camera.zig` | over-the-shoulder orbit rig, ground basis, trauma shake (live-loop only, so `--shot` stays deterministic) |
 | `gfx.zig` | mesh `Builder`, scene shader, shadow depth pass, `Sky`, `Vignette`, `Mat` surface materials |
 | `daynight.zig` | THE WORLD CLOCK — the sun/moon path, the hour's whole palette, and the anchor hour `--shot` pins |
 | `shaders.zig` | every line of GLSL and nothing else; the contract with `gfx.zig` is written at its top |
 | `worldfmt.zig` | THE MAP FORMAT — op vocabulary, zone/foe/**npc/trigger/dialog** tables, one comptime field table driving writer and parser |
 | `trigger.zig` | THE TRIGGER MACHINE — SC1's conditions + actions, and the switches / counters / timers they compose through |
-| `dialog.zig` | a conversation: the walk through one node tree, and the BG2-style panel it is read off |
+| `dialog.zig` | a conversation: the walk through one node tree, and the BG2-style panel it is read off — including the SPEAKER'S PORTRAIT, which is the actual rig rendered live (`hud.livePortrait`), zoomed to the head and three-quarters off HIS OWN facing. Dropped rather than allowed to starve the prose on a narrow window |
 | `npc.zig` | THE FOLK — the wanderer, on the hero's scaffold; idle set, gestures, roam, and the staff that plants with the far foot |
 | `env.zig` | THE WORLD — terrain, op replay, `coverField`, uniform grid, cullers, occluder fade, lights |
 | `editor.zig` | THE EDITOR (Menu > Editor), layered StarEdit-style; biggest file, next split candidate |
-| `objview.zig` | object viewer + the JUKEBOX (sound auditioning) |
+| `objview.zig` | object viewer + the JUKEBOX (sound auditioning) + the FX BENCH (`elemfx`'s twelve cells, playing on a loop with the numbers being tuned printed beside them — the jukebox's argument, one system along: `lifeHi 1.15` is not a thing anybody can picture) |
 | `props.zig` | prop VOCABULARY + the `INFO` table (one row per kind); `displayName`/`group`/`stock` are exhaustive switches |
 | `prop*.zig` | the meshes by family — `propart` (palette + weathering), `propruins`, `propbuild`, `propvillage`, `proprock`, `propwood`, `propflora`, `propfx` |
 | `foe.zig` | THE FOE STANDARD — shared contract, `Blade`/`strike`/`weaponReaches`/`Blow`, `Trail` ribbon, particles, `Leash`, group plumbing |
+| `elemfx.zig` | THE ELEMENTS' PARTICLE LANGUAGE — one signature per `combat.Elem` and three verbs (`gather`/`burst`/`pour`) to render it in. **THE SIGNATURE IS THE MOTION**: fire RISES and is the only one that leaves a residue, cold FALLS and lies about (the longest life by 2×), lightning DOES NOT TRAVEL (the shortest by 3×, and the only colourless one), chaos GOES THE WRONG WAY (inward, the only one). A test tells the four apart with the colour taken away, and a second one on hue alone — that one caught three of the four cores authored near-white, and a cold and a lightning nobody could have separated. TUNED IN THE EDITOR (`objview` > Effects) |
 | `frog.zig` | gaping toad + `Knot` |
 | `archer.zig` | skeletal archer + `Line`; kite-only, arrows that stick and fade |
 | `ogre.zig` | one-eyed ogre + `Grief`; 24 bones, high poise; slam (sometimes HELD at the top), side swipe (sometimes a RETURN chained off it), mid-range lunging DRIVE, jittered cooldowns; never strafes |
 | `kobold.zig` | kobold warband + `Warband` — three roles of one creature (berserker/priest/slinger); the priest is why they are one group |
 | `brood.zig` | brood mother, sacs, broodlings + `Brood`; guard not hunter, venom POOLS are the weapon — they POISON rather than burn |
 | `warrior.zig` | skeletal warriors + `Muster` — shieldman (blocks, guard-breaks to one knee) and greatsword (uninterruptible slam) |
-| `knight.zig` | THE BONE KNIGHT + `Vigil` — THE FIRST BOSS. Five metres of plate behind a TOWER SHIELD that does not break; you have to work round the side, and stood dead behind him HE FALLS OVER BACKWARD ON YOU, lies there, rolls onto his front and levers himself up |
+| `knight.zig` | THE BONE KNIGHT + `Vigil` — THE FIRST BOSS, with the game's first BOSS BAR: this world's ANOR LONDO SENTINEL (docs/GIANT_KNIGHTS.md) on the ER knight brain (docs/ELDEN_RING.md §7). A sealed statue behind a FULL-HEIGHT bowed wall that does not break and never leaves his front except for the SLAM; sweep + delayed second sweep, hanging overhead, lunging thrust (also his guard counter), bash, the backward FALL, a sideways HOP when orbited, and a committed CHARGE at whoever stays away |
 | `shade.zig` | shades + `Haunt`; legless, hovers, 17 bones of its own. The one thing that drains FOCUS, the one thing that TELEPORTS |
 | `leechfly.zig` | THE FIRST FLYER + `Swarm`; 15 bones, never lands. Drinks his HP through a beak and heals off what it takes, and ZOOMS out of sword reach |
 | `rooted.zig` | THE TREE THAT ISN'T + `Grove`; a snag-mimic fixture — eyes open outside its reach, three limb strikes (slam/sweep/hook-drag), never moves |
@@ -133,15 +141,16 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `chest.zig` | openable boxes; contents read off the placing op (`Op.loot`) |
 | `rest.zig` | bonfire + campfire bonfire — the phase machine, the seat, and THE FIRE'S OWN SCREEN (its list, and the wheel behind Level Up); `isRestKind` is the one predicate |
 | `souls.zig` | THE DROP — what a death leaves on the ground, the gold bloom it stands as, and the walk back for it |
-| `hud.zig` | ER HUD, the PAD-GLYPH kit every prompt and crib is drawn with, and the ONLY path to draw/measure text. The three bars start at `BARS_X`, not `MARGIN` — the WORLD CLOCK'S dial has the corner (`dayDial`, drawn off `daynight.spanU`/`isDay`, so it cannot tell a different time than the light) |
+| `hud.zig` | ER HUD, the PAD-GLYPH kit every prompt and crib is drawn with, and the ONLY path to draw/measure text. The three bars start at `BARS_X`, not `MARGIN` — the WORLD CLOCK'S dial has the corner (`dayDial`, drawn off `daynight.spanU`/`isDay`, so it cannot tell a different time than the light). The BOSS BAR (`bossBar`) is the named bar across the bottom: `game.zig` owns when it shows and suppresses the same body's floating bar |
 | `ui.zig` | editor widget kit; `Ctx.anyHot` gates world clicks next frame |
+| — | **THE LIVE PORTRAIT** (`hud.renderPortrait`/`blitPortrait`/`livePortrait`) is the one way a body is photographed into the UI — the book's doll, the conversation's speaker, the spirit panel. **TAKING IT AND MOUNTING IT ARE TWO CALLS AND THE SPLIT IS LOAD-BEARING**: `endTextureMode` restores the DEFAULT framebuffer, not the target bound before it, so a render nested inside `hud.beginChrome`'s target silently sends the whole rest of the frame at the backbuffer. Render BEFORE the chrome opens, blit inside. The ANGLE is the house's (`hud.PORTRAIT_*`), the DISTANCE the subject's (`npc.PORTRAIT_DIST`, `wolf.PORTRAIT_DIST`) |
 | `uiart.zig` | chrome DRESSING shared by hud/menu/book/ui |
 | `itemart.zig` | pictures of things — armaments and bag items as objects, sized by the caller |
 | `icons.zig` | editor glyph set, drawn from primitives (vector, not an atlas) |
 | `book.zig` | THE CHARACTER BOOK (pad START) — a Diablo paper doll + ten quick sockets, the bag, the sheet |
 | `menu.zig` | THE BOOT SCREEN, the pause/debug menu, sound LEVELS, and the retro filter rack. The SOUND filter rack is not here — it is the editor's (`editor.rackPanel`) |
 | `save.zig` | THE SLOTS — three files in the map's own `key: value` grammar, each with the picture the picker shows it by; written by sitting down at a fire and by nothing else |
-| `audio.zig` | ~80 synthesized voices through one tape-style `master`; three submixes; read it as recipes |
+| `audio.zig` | ~80 synthesized voices through one tape-style `master`; three submixes; read it as recipes. **A BLOW STOPPED ON A FOE'S SHIELD HAS ITS OWN VOICE** (`foe_guarded`, and `knight_repel` one size up for the wall) — `guard_block` is the HERO's shield eating a blow, the opposite event, and hearing one sound for both meant a swing that achieved nothing sounded exactly like a swing that saved you |
 | `rumble.zig` | XInput directly (raylib's GLFW backend stubs `SetGamepadVibration`); holds `PAD` |
 | `shots.zig` | the headless harness — never in context while working on the loop |
 | `collision.zig` | 2D XZ capsule/circle push-out, `blocksSight` |
@@ -177,6 +186,25 @@ whose contents change together is fine. Splits go where concerns genuinely part 
   corner against its `SolePatch` and rotates the ankle to clear. Whole-body corrections to a local
   problem read as a tremor. Also check the mesh: `addCube` takes a FULL size, `addCapsule`/`addBlob`
   take true RADII.
+- **AN ATTACK IS A SEQUENCE OF KEY POSES CHASED BY SPRINGS, NEVER TWO CONSTANTS AND A LERP**
+  (`anim.Key`/`keyAt`/`Spring`/`SpringBank`, and `anim.Pose(P)` for whole-pose tracks; Overgrowth's model — Rosen, GDC 2014, 13 keyframes for a whole
+  game). The LEGS have always been keyed — `sampleCurve`'s 8-key gait tables are why nobody has ever
+  complained about the walk — and every ATTACK on every creature bypassed that and wrote
+  `lerpF(WIND_CONST, HIT_CONST, k)` on scalar channels. A move defined as A→B has nowhere to put a gather
+  that loads, a hang that baits, a snap, a follow-through or a recoil, so it reads STIFF however the
+  constants are tuned. That is not a tuning problem and no dial fixes it.
+  - **THE POSE IS A TARGET, NOT THE OUTPUT.** A `Spring` output moves by velocity, so it cannot jump
+    however far its target does — which is what makes every interrupt (a stagger, a parry, a cut recovery,
+    a chain link) continuous for free, and retires hand-rolled cross-fades.
+  - **THE CHAIN LAG IS THE BANK'S, NOT THE MOVE'S.** `SpringBank` pulls each channel a little less hard
+    than the one before it, so the mass flows root→tip on its own. The channel array's ORDER is therefore
+    load-bearing. This replaces the sqrt/linear/squared triples `knight.setStrike` and `ogre.setSwipe` each
+    re-derived by hand — and it applies to the moves nobody thought to stagger: the stagger, the fall,
+    getting up.
+  - **SEAT THE SPRINGS AT SPAWN** (`SpringBank.seat`). A bank comes up at 0, and 0 is a real pose — arms
+    straight down. A knight drawn before it settled stood there with his shield round his knees.
+  - **`.hold` IS HOW A BAIT IS WRITTEN.** A delayed downswing whose pose creeps while it waits is a bait
+    the player reads as the swing already starting.
 - **THE CROSSING SIDESTEP IS GEOMETRY, NOT TUNED ANGLES.** One symmetric ±`STRAFE_ABD` sweep per leg,
   half a cycle apart. A planted foot is WORLD-FIXED (its offset sweeps back linear in distance —
   holding a joint angle is only still in joint space, and that skate is what slid). Ask for foot
@@ -275,28 +303,215 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 
 ### The Bone Knight (`knight.zig`) — the first BOSS, and the first thing you have to walk round
 
-**THE TOWER SHIELD IS THE CREATURE.** Everything else about him exists to make you get behind it.
+**HE IS THE ANOR LONDO SENTINEL OF THIS WORLD** (owner's reference — docs/GIANT_KNIGHTS.md is the pure-DS1
+record, docs/ELDEN_RING.md §7 the pure-ER one), run on the Elden Ring knight brain. The tower shield is the
+creature; the fight is MEMORIZATION AND ATTRITION: seven answers, each with its own tell and its own counter
+(the sword strokes → parry or feet; the slam → distance; the fall → the roll; the charge → the sidestep;
+the hop → nothing, it is HIS answer to you), against 640 HP that only comes off in the openings they pay with.
 
-- **IT DOES NOT BREAK** (owner's call). The shieldman's guard is a stamina pool you empty and then punish;
-  this one has no pool at all, because a shield that breaks turns "get behind him" into "hit the front until
-  it falls off". It covers `TOWER_ARC` (105 deg either side, against a man's `combat.GUARD_ARC` of 65) and eats
-  `TOWER_NEGATE` 0.93 — chipping him down from the front is possible, slow, and NEVER staggers him, because
-  `combat.guardChip` carries no poise and no stance. Round the side is the only door to a punish window.
+- **IT DOES NOT BREAK, BUT THE MAN BEHIND IT DOES** (owner's call, plus the reference's stance loop —
+  ELDEN_RING.md §7: 80 stance, ~13/s regen, "~6 s of pressure window"). The SHIELD has no stamina pool and
+  never breaks. But `combat.guardChip` alone — no damage worth the name, no poise, no stance — meant frontal
+  pressure could earn literally NOTHING, so the only openings in the fight were the ones he handed out. A
+  share of the stance comes through (`TOWER_STANCE_PASS`), so a sustained frontal offensive is a real,
+  expensive plan that ends in a stagger. No poise ever: the door may not flinch him.
+- **AND IT ONLY BLOCKS WHAT IT VISIBLY COVERS** (owner: it blocks attacks beyond its visual). `TOWER_ARC` is
+  DERIVED (`towerArc`) from the door's own widest chord against how far its face stands in front of his body
+  axis, plus a small named allowance for the swept kit. At a hand-picked 105 deg either side he ate blows
+  arriving from 210 deg of the compass off a plank that occludes about 35 — and a boundary the player cannot
+  see reads as the fight cheating. Coverage is now bought by building DOOR, which is the right way round.
+- **AND IT IS A FULL-HEIGHT BOWED WALL** (owner: since he is tall, his shield must be tall — the front may
+  not be a place to mash his legs from). Ankle to chin off the pavise grip at his wrist — foot at 0.24 m,
+  top at 4.75 m under a 5.11 m crown, both MEASURED and test-pinned — built as upright STAVES on a gentle
+  cylinder arc (`arcAt` is the ONE piece of arc arithmetic), the top ARCHED so the centre stave crowns.
+  Comptime asserts pin the chords past his own shoulders both sides, a real bow, and a wall's proportion
+  (height > 1.55× the chord). **THE RAM IS NOT THE WHOLE FACE** (`SH_RAM_HALF`): the bowed edges cannot be
+  driven into anybody, so the bash and the charge bill only the near-flat middle.
+- **THE SUIT IS SEALED AND THE MASSES ARE FEW** (owner: the model looked like clutter). A statue reads
+  through big smooth continuous forms: one-piece limb columns overlapped at every joint, boulder pauldrons
+  (a blob under a dome each), one ovoid helm, a bell-and-tassets skirt in SEVEN long plates rather than four
+  stacked lips. The old bone-in-the-gaps idea is GONE — old bone renders at 237 of 255 and read as litter on
+  a blue-black mass; the one bone note left is the JAW under the helm rim, and the rest of what says "Bone
+  Knight" is the archer's resist sheet and the name.
+- **PHASE TWO FOULS THE GROUND** (owner: some phase-two attacks leave a lasting cloud of chaos gas that
+  damages). Once he is lit, what showed the crusher's FIRE and STOPPED somewhere leaves a `knight.Gas` cloud
+  where it landed — the heavy/crushing sword strokes and the SLAM's crater, and the `Weight` rule decides, not
+  a list. It is laid at the IMPACT FRAME rather than in `tryReach`, so a stroke that MISSED still denies that
+  ground: the blast taxes where you were, the cloud taxes where you may stand. The FALL and the CHARGE are
+  excluded though both show fire — each is already a position-denial move whose counter is ground, and fouling
+  where it ends taxes the answer the move itself demands. The cloud is the GROUP's, not the knight's, because
+  it must keep burning after the body that laid it has fallen over. It doses on its own clock and carries NO
+  poise and NO stance: a hazard that staggers can kill you while you are not allowed to walk out of it.
+- **THE BOSS FURNITURE EXISTS NOW: THE BAR.** `hud.bossBar` is the named bar across the bottom (ER's own
+  register), with the vitals bars' recent-damage trail and the gold STAGGER RIM — the punish cue, finally
+  somewhere the eye already is. `game.zig` owns when it shows (`Vigil.boss`: a knight fighting and still on
+  the field — `alive()` holds through the collapse, so the bar drains and lingers over the body going to
+  gold) and SUPPRESSES the same body's floating bar: one number may not be read in two places. The fade
+  state lives on `Game` (`bossK`/`bossFrac`), assigned in `init` — the defaulted-field law.
 - **THE ONE COMPARISON IS SHARED** — `combat.withinArc(bearing, facing, arc)`, which `withinGuardArc` now
   calls. A second copy of how a bearing wraps is a second thing to get wrong.
 - **HE IS OUT-TURNED, AND THAT IS THE WHOLE DESIGN** (`TURN_RATE` 0.58 rad/s). It is sized against the
   ANGULAR rate a walking player achieves round a body this wide, which is small because the radius is:
   at his own closest approach the hero circles him at 0.80 rad/s. At anything near a normal creature's turn
-  (the ogre's 3.4) there is no back to get to, and a test brackets it from above.
+  (the ogre's 3.4) there is no back to get to, and a test brackets it from above. His WALK is a hair under
+  the hero's own (0.94 of it — owner: inevitable): backpedalling barely opens the gap, only a run does, and
+  the CHARGE is what a run buys.
 - **A SWING IS ONLY AS ACCURATE AS THE THING ON THE END OF IT IS WIDE**, and both dials are measured against
-  that (owner: the swings don't often hit). The door subtends 25 deg at the range it arrives, so: the DRIFT a
-  commit sheds may not by itself carry the kit off a squared-up man — it was 32 deg against that 25 deg door,
+  that (owner: the swings don't often hit). The RAM subtends 26 deg at the range it arrives, so: the DRIFT a
+  commit sheds may not by itself carry the kit off a squared-up man — it was 32 deg against a 25 deg door,
   which missed a player who did nothing but walk — and `SWING_BEARING` may never exceed the kit's own
   subtended half-angle, or he throws a stroke at a place the door was never going to reach. `SWING_TURN` is
   still under `TURN_RATE`, because commitment has to cost him tracking or there is no window at all.
-  **AND THE CLEAVE IS DELIBERATELY HELD TO NEITHER**: 1.18 s of commit on a blade's edge is the stroke you step
-  out of, and the BASH is the punish for standing in front. A test pins the pair so they cannot become one
-  move twice.
+  **AND THE SWEEP IS DELIBERATELY HELD TO NEITHER**: over a second of commit on a blade's edge is the stroke
+  you step out of, and the BASH is the punish for standing in front. A test pins the pair so they cannot
+  become one move twice.
+- **A COMMITTED SWORD STROKE TAKES THE DOOR OFF HIS FRONT** (`swipeOpen`, and the picture and the mechanic
+  are one channel). The reference's condition is the whole sentence — impossible from the front "IF THEY'RE
+  NOT IN AN ATTACK ANIMATION" (GIANT_KNIGHTS.md) — so the sweep, the second sweep and the overhead are the
+  player's frontal window, and it stays open through the head of the recovery. Held through every stroke
+  instead, reading a tell bought nothing but survival and the front had no answer at all. The THRUST (past
+  the door's edge) and the BASH (the door IS the blow) keep it.
+- **AND A FLANK BLOW HE SHRUGS OFF IS ANSWERED, NOT ABSORBED** (`counterFlank`; owner: react very strongly
+  to side attacks, more countering, less slow rotating). A hit that failed to stagger him used to mean
+  literally nothing happened — he carried on rotating at 33 deg/s while you hit him again, which was the
+  most passive thing this creature did. Now: on either shoulder he SNAPS his facing onto the blow and swats
+  back; on his spine, where a flick reaches nothing, he LEAPS. It reads a blow that already landed on his
+  own body and the bearing it came from — world state, the door's guard counter's own justification, and
+  never the player's buttons. Clocked, refused out of anything committed, and **refused outright if the blow
+  staggered him**: an earned punish window is never taken back.
+- **HE PROTECTS HIS SIDES WITH THREE THINGS, AND THEY ESCALATE** (owner: he needs to step aggressively and
+  turn fast; step-turn; his sides are too vulnerable). `.wait` used to be the answer to a flank — he rotated
+  at 33 deg/s while being hit, which is scenery, not a boss.
+  1. **The SWAT** (`SWAT`, `swatKeys`) — the quickest thing he owns, a third of a second of gather. ONE row,
+     TWO pictures picked by which shoulder you chose: the door backhanded on the shield side, the blade
+     flicked low on the sword side. It is **quick, not short** (the blade is three metres of rigid steel, so
+     even with the arm shut the tip covers 4.96 m — the flick is the CLOCK and the 14 damage, not the
+     radius), and it is the **only weapon move with no parry window**: the Tower Knight's boot, and boards
+     that caught it would make standing beside him safe again.
+  2. **The STEP-TURN** (`STEPTURN`) — a planted pivot, not a turn-rate buff. Between steps he is as
+     out-turned as ever, so the flank is still real; what has gone is holding it standing still. `TURN_RATE`
+     is 0.68, still under the ~0.80 rad/s a walking player carries round him, so circling still WINS ground.
+  2b. **The SWIPE-AND-LEAP** (owner: on his side it should be faster and more evil). A flank swat chains
+     STRAIGHT into the leap with no recovery between — one beat, not two — on a coil shortened to a third
+     (`LEAP_CHAIN_WIND`), because the flick already did the gathering. Only ever off a FLANK: from the front
+     it would just be him running away. A cold leap keeps its full tell; this is the fast one.
+  3. **The LEAP** (`LEAP`) — for when the ground answer is already too late. Caught with his back to you and
+     nothing gathered, he coils, bounds AWAY, turns in the air and lands squared. It costs him his own
+     reach, which is what stops a get-out-of-jail move being strictly good, and it is a leap in the roots'
+     sense (`foe.canLeap`). `air` rides the ROOT translate (the archer's `hop`) and `airborne` reads it.
+- **NEITHER SHOULDER IS A FREE LAP** (owner, twice: no defence on his right side; then no shield-side danger,
+  you can circle freely). The SHOVE (`shoving`, `shoveAcross`, `shoveDir`) hauls the door onto whichever flank
+  you are standing on — the reference's own "dodging to a shielded knight's side/rear triggers predictable
+  shield bash counterattacks" — on the bash's own row, window and clocks. It buys that flank with his FRONT:
+  the wall leaves his chest to get there, and `guardUp` says so.
+  - **AND A WALL IS NOT A THREAT.** It was the sword side's alone, on the reasoning that the door is already
+    over on the shield side so there is nothing to buy. That reasoning was about DEFENCE and the complaint was
+    about THREAT: a thing between you and him stops blows, it does not throw them, so the flank he was best
+    equipped to punish from was the one nothing came out of. Same row either way; only `shoveDir` differs.
+  - On the SWORD side it fires on presence alone; on the SHIELD side it is bought with DAMAGE (`pressed`),
+    because the sweep already owns the merely-standing case there and a door that pre-empted it would collapse
+    that whole flank onto one move.
+- **THE KIT IS THE SENTINEL'S FIVE** (the reference's rule: these knights walk AND attack from behind the
+  wall — the guard is held while WALKING and through the thrust and the bash).
+  The SWEEP is a falling right-to-left diagonal hauled well past his far shoulder (the near-360: behind him
+  is not safe from it), and may CHAIN the delayed SAME-DIRECTION second sweep — the reference's own
+  roll-catch, "slightly delayed and will chop you down if you roll too early". The OVERHEAD is the big one:
+  steel standing above the helm, the one wind that HANGS (`windHold` — the Godrick knights' delayed
+  downswing, rolled per swing), ZERO tracking once it drops, the blade ending in the earth and STAYING there
+  through the held recover. The THRUST is "longest range of them all, only used when no other attacks will
+  reach" — the posed point plus a real lunge (`thrustBandR`), on the SHORTEST clock he has (test-pinned),
+  which is what keeps a spacing fight from being a staring contest. The BASH is the proximity tax. All five
+  strokes carry ordinary parry windows; NOTHING else on him does (the Crucible contract, written at
+  `toImpact`).
+- **ANY ROTATION OF THE DOOR IS TAKEN ABOUT ITS OWN CENTRE, NEVER ITS GRIP** (`SH_CENTRE_Y`). It is gripped
+  high like a pavise, so a pitch about the hub sweeps four fifths of a four-metre plank through whatever is
+  standing behind it — always the knight. That one line is why the slam "cut through his model": the haul
+  laid the door flat through his chest and out of his back, and the drive buried it inside him.
+- **AND THE ARM CANNOT CARRY IT — THE MOVE HAS TO** (`slamCarry`). The fist travels about a metre and the
+  door is four, so the slam moves the door in his body frame ON TOP of the arm. Authored as if it had to do
+  the whole job it stacked on the arm's swing and threw the shield a body-length past its own crater.
+- **AND THE DISC IS DRAWN BEFORE IT IS BILLED** (`slamRingTell`, owner: bad indication of its AoE). Dust
+  after the fact is a report, not a warning: the blow's own circle is walked during the WIND off the same
+  `slamMark`/`SLAM.r` the mechanic uses, in EMBER rather than dust because tan on tan is unreadable.
+- **THE SLAM IS THE DOOR LEAVING** (owner's AoE, rebuilt as the Sentinel's: "long build up time, mega
+  damage, a small AoE… leaves a huge opening"). The door itself is hauled up — `guardUp` opens over the
+  HAUL, `slamLift`/`slamPitch` are the picture and may not disagree with it — and driven into the earth a
+  body-length ahead; the blow is the disc round the crater (`slamMark`, shared by blow, dust and tests),
+  reaching a little past his own boots (the Tower Knight's rear-reaching slam). No parry window; the counter
+  is DISTANCE. **A RUN CLEARS THE DISC FROM THE MARK ITSELF AND A WALK DELIBERATELY DOES NOT** — the
+  delver's law, measured with the hero's own speeds in a test.
+- **A BLOW CAUGHT ON THE DOOR MAY BE ANSWERED** (the reference's enemy guard counter, verbatim: "performs a
+  Guard Counter if an attack lands on their shield"). `caught` rolls an immediate thrust back down the line —
+  clocked (`riposteCd`) and only from idle/approach, never out of a committed stroke or a stagger, and a test
+  sweeps the seeds for both halves. It reads a blow that already struck HIS OWN body — world state — which is
+  the NO INPUT READING law observed, not skirted. The front now TRADES instead of being merely inefficient.
+- **THE HOP IS HIS ANSWER TO BEING ORBITED** (the Sentinel's own liveliness: "surprisingly quick to respond
+  to your movements, often jumping out of the way"). One discrete sideways bound — dip, shift, heavy settle,
+  banked a few degrees — with his turn allowed 3.4× ONLY across it: the hop IS the re-face, and between hops
+  he is as out-turned as ever, so the flank the whole creature is built round still exists. Triggered off
+  `circleRate` — the bearing's own measured rate, never the stick — gated by `foe.canLeap`, and clocked.
+- **THE CHARGE ANSWERS STAYING AWAY** (owner's ask). Keep out past `CHARGE.far` while the fight is on and
+  his patience fuse fills (`farT` — it drains double when you close, so ducking in and out banks nothing);
+  burnt, he lowers behind the door and comes THROUGH where you stood at twice a sprint. **THE LINE IS
+  COMMITTED AT THE LAUNCH** (the delver's plough): the wind aims — the one wind allowed 1.4× his turn,
+  because what you dodge is the TRAVEL — and the travel steers not at all, a test pinning the facing to the
+  launch heading frame by frame. It runs to where you STOOD plus an overrun a wall cannot help, then pays
+  with the skid (`brake`) and a recovery. Not parryable, not gated off the roots' law (`foe.canLeap` at the
+  CHOOSE — a rooted charge is a wall running on the spot). The door is UP the whole way: it IS the wall.
+- **HE IS LEARNED, NOT ROLLED** (owner: tough but fair, requiring MEMORIZATION, not luck). The brain was
+  distance bands with DICE inside each, and this file argued that as a virtue. It is the wrong target: a die
+  cannot be learned, only survived, so the fight was different every attempt and read as luck however fair
+  the numbers were. The reference's actual answer is the Tree Sentinel's — attack choice is POSITIONALLY
+  DETERMINISTIC, and "stand on the shield side" is a rule players write down.
+  - Each band-and-side has an ORDERED PATTERN (`BOOTS_*`/`RANGE_*`) and `cursor` walks it. Stand still and
+    you can recite what is coming; move and you get the other pattern, mid-rotation. **The variety comes
+    from the player's own feet**, which is the only place variety is worth having.
+  - A move on cooldown is SKIPPED, never waited for — and the player just watched him spend it.
+  - `classify` is pure and its only varying input is the cursor, so a test can pin that the same place
+    twice gives the same answer twice. That test IS the design.
+- **A COMBO IS A FIXED ROUTE HE WALKS** (`routeFor`; owner: longer combos). Rolled continuation meant one
+  opener ran two hits sometimes and four others, so the player could never learn where a string ENDS — and
+  the end is the punish window, which is the only thing a string is for. Each opener has one route, up to
+  four links; the thing you read is WHICH opener, which is a silhouette. It is cut short only by the player
+  LEAVING (out of the next link's reach, or round past its arc). Nothing follows the OVERHEAD, so a route
+  may only reach it as its LAST link — a test pins that, because a string that hit it mid-way would just
+  stop there silently.
+  - **THE MIX-UP IS WHICH ROUTE, NOT A COIN** (owner: mixups and surprises). Four openers lead four
+    genuinely different places (a test pins that they are pairwise distinct), and the cheapest one opens the
+    longest: the SWAT costs him almost nothing, so the player who learns to treat a flick as harmless is
+    exactly who its four-link route is written for.
+- **AND HE IS NOT MASHED OUT OF A STRING HE HAS STARTED** (`inString`; the reference verbatim: "can't
+  interrupt them while they're doing the triple stabby jab"). Mid-route the light flinch is refused. The
+  OPENER is interruptible like anything else, so reading a tell still pays, and a STANCE BREAK always stops
+  him — an earned punish is never taken away.
+- **LIGHT AND HEAVY ARE TELLABLE APART BEFORE THEY LAND** (`Weight`; owner: I can't tell the difference).
+  Every gather threw the same dust at the same rate, so the only way to know whether the thing coming cost
+  22 or 40 was to have already been hit by it. A move DECLARES its weight and the gather's FIRE says it:
+  none on a light, a rim on a heavy, a column on a crusher. One rule — *fire means get out* — covering the
+  whole kit, and a test forbids a move from tuning its damage up without its tell following it.
+  - The fire must be WIDER THAN THE DOOR and dense enough to be a column. Tight and thin it rose entirely
+    behind four metres of shield, visible only from the bearing the fight is never fought from.
+- **HE DOES NOT FLINCH AT A POKE** (owner: he stuns too easily). `POISE_MAX` is sized past what light spam
+  can reach, and `TOWER_STANCE_PASS` is small: chip through the door earns something, slowly, and flanking
+  stays strictly better. Three PARRIES still break the stance — that is a committed read and deserves to be
+  the fast way in.
+- **THE ANIMATION CONTRACT IS FIVE PHASES** (docs/ELDEN_RING.md §7): opening pose → signal → a strike of
+  almost no time → **held End Pose** → return. Every move is a KEY LIST per phase (`SWEEP_KEYS` &c, and the
+  hero rig's keyed-pose law above), and the End Pose is gained by writing no further key — the track clamps.
+  A test pins the seams (`wind[1.0] == strike[0.0]`), because three functions that lined up only because
+  somebody kept them in step by hand is how `setSweepWind` and `setSweep` drifted apart. A second test pins
+  that every stroke HAS a shape: over half its travel in the first third, and a channel that goes past its
+  own end pose before settling. The outward lag is the spring bank's, not three hand-derived curves.
+- **HE TURNS ON HIS FEET** (owner: he turns in place without leg movement like a weirdo). `legChain` is
+  driven by GROUND COVERED and a pivot covers none, so the slowest-turning creature in the game — the one
+  you spend the fight watching turn — yawed as one welded block with two boots painted on the floor. The
+  arc each foot sweeps about his own stance half-width is handed to the gait as lateral distance, and the
+  rig's crossing sidestep answers it. `planted` still holds them down through a committed stroke.
+- **AND A GIANT SWINGS BY PLANTING** (`planted`): a stroke thrown out of a walk used to keep its stride
+  running underneath it, so the upper body swung on top of a body still strolling.
+- **THE GROUND HE MOVES IS FELT ON THE MISS** (`quake`, a one-frame magnitude like `justDied`): the fall
+  landing, the slam's crater and the charge's skid all shake the frame and the pad through one wiring line
+  (`Vigil.quakeAmt` — the delver's surge rule: these arrive where the lens may not be pointed).
 - **STOOD DEAD BEHIND HIM HE FALLS ON YOU.** `fallwind` is the one move in the game that steers AWAY from the
   hero — he stops tracking and brings his SPINE round onto you, which IS the tell — then goes over rigid. The
   crush is a STRIP down the line behind him, his own length long and his own shoulders wide, both DERIVED off
@@ -346,9 +561,9 @@ whose contents change together is fine. Splits go where concerns genuinely part 
   `centerWorld` rides the pelvis, `lockPoint` the chest, `topWorld` the helm. A hurt sphere pinned to 2.9 m
   would hang in the air over a body lying on the ground.
 - **AND THE DOOR MUST BE SEEN TO LEAVE** (`stowAmt`, the picture of `guardUp`, and a test pins them together).
-  Both hands go onto the grip for a CLEAVE, so the shield turns edge-on and swings off his front — which is
-  the other way in. The first pass had `guardUp` false through the whole stroke while the shield still sat
-  square across his chest, which is a mechanic and a picture telling the player opposite things.
+  The shield arm swings out to pay for a SWIPE, so the door turns edge-on and off his front — which is the
+  other way in. The first pass of this law had `guardUp` false through a whole stroke while the shield still
+  sat square across his chest, which is a mechanic and a picture telling the player opposite things.
 - **THE PLATE IS MATTE** (`PLATE` = `.plain`, `BRIGHT` = `.steel`). `gfx.Mat.steel` carries a deliberately
   blinding specular lobe — right on a blade, catastrophic on a face the size of a door: the whole suit went in
   as `.steel` and every portrait came back a blank white sheet. `.steel` is for what is SMALL AND PROUD.
@@ -358,12 +573,12 @@ whose contents change together is fine. Splits go where concerns genuinely part 
   being BLUE-BLACK. The shield's bands are ONE substance with a few points of value on them — three tones
   alternated band by band came out as a barber's pole across the biggest flat in the game.
 - **THE DOOR IS SIZED BETWEEN TWO FAILURES**, and the numbers are MEASURED off the rig (a test pins them):
-  under, it is a buckler on a giant; over, it hides the creature it exists to define. Authored symmetric about
-  the grip its top edge landed at 5.58 m over his own 5.11 m crown. It is gripped HIGH like a pavise and hangs
-  shoulder-to-shin, and it is pulled onto his CENTRE LINE — left where the hand is, it covers one leg.
-  **ITS WIDTH IS `SHOULDER_HALF`, NOT A NUMBER** (owner: it does not cover enough). Chosen at 0.165·H it was
-  1.75 m across a body 2.29 m over the pauldrons — a door narrower than the man behind it, so his own shoulders
-  stood outside it and the front was never actually shut.
+  under, it is a buckler on a giant; over, it hides the creature it exists to define — the helm must ride
+  clear of its top. It is gripped HIGH like a pavise (the grip sits ~80 % up its own height) and pulled most
+  of the way onto his centre line (0.80 of the shoulder half). **ITS COVERAGE IS HIS OWN BODY, NOT A
+  NUMBER** (owner, twice: it does not cover enough; it must be tall): the chords are comptime-asserted past
+  the pauldrons both sides and the height past a wall's proportion, because chosen by eye the first door was
+  narrower than the man behind it and the front was never actually shut.
 - **AND IT IS HELD AGAINST HIM** (owner, twice: it has to keep the shield close to the body if it is going to
   block all frontal). MOST OF THAT IS THE ARM, NOT THE STANDOFF. `SH_STANDOFF` came 0.108·H → 0.062·H → 0.028·H
   and the door was still 1.6 m clear of his cuirass, because `GUARD_SH` 52 held the shield HAND 1.8 m out in
@@ -377,18 +592,21 @@ whose contents change together is fine. Splits go where concerns genuinely part 
   absolute wind target silently loses its whole gather when the guard moves under it), `FALL_SH`/`FALL_EL` were
   a fold inward at the old guard and an OPEN at the new one, and `BASH.reachOut` is re-MEASURED at 0.74 because
   the ram now starts 0.75 m nearer his body.
-- **AND THE SWORD RIDES ON HIS OWN SIDE, NOT ACROSS HIS BACK** (owner: the sword holding anim is bad). At
-  sh−20/el−16/abd24 the fist sat 1.68 m out — half a metre OUTSIDE his own shoulder — and the point crossed the
-  midline, so 2.9 m of blade lay diagonally over his spine with an end sticking out either flank. The arm comes
-  IN to the shoulder line and UP; the blade then stands behind his sword-side pauldron and leans back over it.
-  The old test allowed it: `@abs(tip.x) < bodyR` is his ground FOOTPRINT (1.77 m), so it passed on a point
-  already over onto his shield side. It now pins the point to his own side of the midline and inside his own
-  shoulders, and the FIST with it.
-- **A WAKE ON A 2.9 m BLADE IS NOT THE WARRIOR'S WAKE.** `TRAIL_ROOT`/`LIFE`/`PEAK` went in as his numbers on
-  a blade three times as long through a 110 deg sweep and came back an opaque pale SHEET wider and taller than
-  the knight — the feedback law's other failure, and it hid the swing completely for four frames of the stroke.
-  The AREA is not negotiable on an edge that long, so the dials that are: span the outer HALF of the blade,
-  live well INSIDE the strike so the whole arc is never resident at once, and carry half the alpha.
+- **THE SWORD RIDES LOW OFF HIS SIDE** (owner's ask: a large sword carried out to the side). The arm hangs
+  abducted off the shoulder and the blade continues it — the tip below his own knee, well out past his hip
+  line, just clear of the turf, never across the midline; a test pins all four off the POSED bone, because
+  "out to the side" is a picture and pictures drift. **THE TILT IS MEASURED, NEVER REASONED FROM THE
+  CONVENTION**: `wpnTilt` at 22 stood the blade straight out sideways (a four-metre wing at hip height) and
+  at 96 pointed it at the sky — three constants in this file were found by bisecting on the carry test's own
+  printout, which is the method. The blade itself is 0.019·H across — a greatsword's ~17:1, where the first
+  one was an 8:1 PLANK — and the grip below the fist is two hands, not the 1.27 m tail that read as a second
+  stick past his hip.
+- **A WAKE ON A BLADE THIS LONG IS NOT THE WARRIOR'S WAKE.** `TRAIL_ROOT`/`LIFE`/`PEAK` went in as his numbers
+  on a blade three times as long and came back an opaque pale SHEET wider and taller than the knight — the
+  feedback law's other failure, and it hid the swing completely for four frames of the stroke. The AREA is
+  not negotiable on an edge that long, so the dials that are: span the outer HALF of the blade, live well
+  INSIDE the strike so the whole arc is never resident at once (the 200 deg sweep runs the life shorter
+  still), and carry half the alpha.
 - **AND THE ACCENTS ARE SOLVED TOO, NOT JUST THE PLATE.** The albedo law was applied to the cuirass and not to
   what is bolted to it: `propart.RUST` is right on a prop's fleck and, on rim capsules 2.5 m long, sampled at
   178,129,83 — over the ground (129,117,100) AND his own plate (109,107,109). That inverts the hierarchy the
@@ -397,16 +615,33 @@ whose contents change together is fine. Splits go where concerns genuinely part 
   shoulder 22 deg and the lean 16 across its whole length — a frame-by-frame strip showed six frames in which
   nothing visibly happened, which is a committed action that shows nothing. Every channel now travels hard
   AWAY from where the strike takes it, and the wind is long enough to be read rather than just to be large.
-- **JUDGE A STROKE ON A STRIP, AND SPEND THE FRAMES WHERE THE MOTION IS** (`shots.knightStrokeStrips`). Two
-  frames per swing show none of this. And an EVEN walk over the move is a trap: the cleave is 1.18 s of wind to
-  0.26 s of strike, so evenly spaced frames put six in the wind and one in the stroke — which reads as a swing
-  that never travels when what it is actually showing is the held shiver at the top.
+- **JUDGE A STROKE ON A STRIP, AND SPEND THE FRAMES WHERE THE MOTION IS** (`shots.knightStrokeStrips`, all
+  three strokes). Two frames per swing show none of this. And an EVEN walk over the move is a trap: the sweep
+  is 1.10 s of wind to 0.38 s of strike, so evenly spaced frames put six in the wind and one in the stroke —
+  which reads as a swing that never travels when what it is actually showing is the held shiver at the top.
+- **PARTICLES ON THIS GROUND ARE TAN ON TAN** (the delver's colour lesson, the other way round). The slam's
+  crater ring and the charge's wake are DUST and the field is dust-coloured, so what makes them read is
+  COUNT, the billow (`r1` well over `r0`) and LOFT — the first wake settled onto the floor plane and read as
+  stains. Both emitters are pinned by particle-count probes in the state-machine soak test, because "the
+  ring fired" is not a thing a shot of tan-on-tan can prove.
 - **EVERY REACH IS MEASURED, NOT ARGUED.** A test walks each stroke frame by frame, reads the posed kit and
   brackets the declared `reachOut` against where it actually arrives — which is what caught a 0.84·H blade
   landing 6.9 m off his axis, out past the ogre's whole sweep.
-- **HE HAS NO VOICE OF HIS OWN YET.** He borrows `ogre_step`/`ogre_slam`/`ogre_heave`/`ogre_roar` and the
-  skeletons' `bone_hurt`/`bone_die`. `ogre_slam` is the game's one "heavy thing meets earth" voice and is
-  right for the body landing; the rest are placeholders for a `knight_*` family.
+- **THE GROUND HE MOVES IS FELT ON EVERY LANDING, NOT THREE OF THEM** (`QUAKE_*`, owner: needs more
+  shake/particle impact). Only the fall, the crater and the skid ever moved the lens, so the four moves that
+  actually arrive on the player did so in silence as far as the camera was concerned. Every impact is sized
+  to the mass that arrived — the overhead ends in the EARTH, so it is a landing and not a swing — and the
+  body going over stays the biggest thing that happens. Even the footfalls carry a little.
+- **EVERY COMMITTED MOVE SAYS SO OUT LOUD** (owner: give him audio cues). The pad and the lens can be
+  pointed anywhere; sound is the one channel that cannot miss, so a silent move is a deleted tell on a
+  creature whose whole design is "watch him and answer". Each cue is the voice that matches the MASS
+  involved rather than a generic whoosh — and the SWAT gets the light one, because a flick that grunts like
+  a committed stroke lies about its weight exactly the way its gather would.
+- **HE HAS ONE VOICE OF HIS OWN: `knight_repel`** (owner: it needs a better shield repel sound).
+  `guard_block` is a MAN's boards — a bright tick and a short high ring — and on four and a half metres of
+  plank it read as a coin dropped on a table. His is almost no tick, a deep body that takes its time, and
+  the ring dropped two octaves: what comes back is the mass, not the edge. The rest
+  (`ogre_step`/`ogre_slam`/`ogre_heave`/`ogre_roar`, `bone_hurt`/`bone_die`) are still borrowed.
 
 ### The delver (`delver.zig`) — the first thing that goes UNDER the world
 
@@ -626,10 +861,20 @@ CHEST height. Both tests print their measurements, because the number is the fin
 **A TIMED STATUS REFRESHES, IT DOES NOT STACK** (`Root.grab`, `Regen.start`). Two clocks running on one
 body is a state no bar and no animation can show.
 
-**ONLY A SWING REACHES MORE THAN ONE BODY.** There are no area spells. A sorcery thrown into a warband picks
-ONE victim — the locked foe, else the nearest to the mark (`game.rootVictim`) — so its own reach is a search,
-never a blast, and the FX that says what it took is sized to the BODY (`combat.ROOT_GRIP_R`), not to the reach.
-A ring drawn out to the search radius promises a hold on the neighbour the spell walked past.
+**A THROWN SORCERY REACHES ONE BODY; A HELD ONE REACHES WHAT IS IN FRONT OF HIM.** A sorcery thrown into a
+warband picks ONE victim — the locked foe, else the nearest to the mark (`game.rootVictim`) — so its own
+reach is a search, never a blast, and the FX that says what it took is sized to the BODY
+(`combat.ROOT_GRIP_R`), not to the reach. A ring drawn out to the search radius promises a hold on the
+neighbour the spell walked past.
+
+**AND THE RIME BREATH IS THE ONE EXCEPTION, WHICH IS WHY IT IS A CONE AND NOT A BLAST** (owner's call; this
+law used to read "there are no area spells" and it no longer does). What makes multi-target fair here is
+that it is not thrown AT anything: it is a direction he holds in front of himself for `RIME_DUR`, so it is
+aimed, it is answered by not standing in front of him, and a body walks out of it exactly the way a body
+walks out of a swing. Everything else about it is priced to stay off the single-target ladder — dearer than
+the roots (`RIME_FP` 22 against 18) and the worst of the three spells at killing anybody
+(`spellDamage(.rime)` is under the roots' whole grip), because what it sells is the number of bodies and it
+may not also be the better spell against one. A comptime assert pins both.
 
 **AN EFFECT'S CLOCK IS DERIVED FROM THE MECHANIC'S, NEVER PARALLEL TO IT** — what is standing on the
 ground IS how long the hold has left. Two constants that can disagree eventually will. And when the
@@ -991,10 +1236,21 @@ number, so a readout and a mechanic cannot disagree.
   reason. **A shield is billed on the RAW blow** (`Hit.raw`).
 - **THREE AND A HALF OF THE FOUR ARE LIVE** — FIRE (hero's fire arrow, the tallowed sword, kobold sling
   clump), LIGHTNING (the thundercrock's alone — nothing deals it AT the hero), CHAOS, which is the WAND'S
-  ALONE (the bolt and the roots' grip), and now **COLD, which is the NECROMANCER'S ALONE**: its rune ring is
-  the only thing in the world that deals it, and it deals nothing else (`necro.FROST_HIT` carries no
-  physical, which a comptime assert pins). Nothing in the world deals chaos AT the hero since the brood's
-  venom and the sporeling's spores became POISON, so cold is now the only element he actually meets.
+  ALONE (the bolt and the roots' grip), and **COLD, which is now the one element BOTH SIDES deal**: the
+  necromancer's rune ring throws it at him and the rod's rime breath throws it back. Both carry it neat, with
+  no physical at all (`necro.FROST_HIT`, `combat.Chill`'s bite; a comptime assert pins the necromancer's).
+  Nothing in the world deals chaos AT the hero since the brood's venom and the sporeling's spores became
+  POISON, so cold is still the only element he actually meets.
+- **AND COLD IS THE ONLY ONE THAT DOES SOMETHING BESIDES DAMAGE** (`combat.Chill`). It is a hold on the
+  FEET — travel multiplied by `CHILL_TRAVEL`, taken as a post-step gate (`game.gateChill`), which is the
+  roots' own law by fractions: the state machine still runs, the kit still swings at its own speed and the
+  blows land as hard. A chilled creature is not a slowed creature, it is one that cannot close. **It is
+  deliberately NOT time dilation** — this game does not take time away from anybody, the hitstop law's
+  reason. **AND IT IS NOT SKIPPED FOR A FLYER**, which is the one place it parts company with the terrain
+  gate beside it: cold does not care whether you are standing on anything, so it is the answer to a leechfly
+  the roots may not touch. **The struct is built to be worn by EITHER SIDE** — it knows nothing about a foe,
+  holds no position and bills no damage of its own, so the day something breathes cold at the HERO he
+  carries the same struct and `hero.zig` multiplies its own ground speed by the same `travel()`.
 - Every foe carries its own table, authored where its HP is (`initFoe(..).withRes(..)`):
 
   | creature | fire | cold | lightning | chaos | why |
@@ -1147,7 +1403,8 @@ hang off the hub, so all three are open from the first souls you spend.
 **R1/R2 (and L1/L2) BELONG TO THE ARM, NOT THE WEAPON.** The attack buttons are read as buttons and
 routed by which armament is in that hand, so neither weapon can swallow the other's press. L1 is the left
 hand's ACTION (block / cast) and L2 is its SKILL (aim / parry), each split by what that hand is holding. Swaps:
-D-pad Right / Q = sword ↔ bow; D-pad Left / F = shield ↔ wand; D-pad Up / G = bolt ↔ roots. The QUIVER keeps
+D-pad Right / Q = sword ↔ bow; D-pad Left / F = shield ↔ wand; D-pad Up / G cycles the three
+sorceries (bolt → roots → rime). The QUIVER keeps
 keyboard Y alone — the cross is four directions and the spell has taken Up, so on the pad the arrow is changed
 in the character book's ammo slot.
 
@@ -1878,19 +2135,11 @@ cannot be bolted on AFTER `legChain` — that is the hand that levels the ankle 
 override there un-levels the foot (FEET DO NOT SINK) — and a bespoke walk is forbidden outright. The stance
 has to go THROUGH `legChain`, which is the shared humanoid one, so it is every creature's change, not his.
 
-AND HIS SWORD ARM CARRIES A LONG TAIL OF GRIP. The blade now stands upright behind his own pauldron rather
-than lying diagonally across his back, but 0.24·H of leather hangs BELOW the fist — 1.27 m at scale — so from
-behind the pommel reads as a second stick past his hip. The mesh's grip length, not the carry angles.
-
-THE BLADE IS A PLANK BY PROPORTION: `SW_HALF_W` 0.032·H is 0.34 m across on a 2.86 m edge, about 8:1 where a
-greatsword is nearer 20:1. It is also the cleave's hurt radius, so narrowing it is a mechanical change as well
-as a mesh one.
-
-THE BONE KNIGHT IS A BOSS WITH NO BOSS FURNITURE: no arena, no fog gate, no health bar across the bottom, no
-`worldfmt` boss record (see `inCombat`'s note), and **no `knight_*` voice family** — he borrows the ogre's
-step, slam, heave and roar and the skeletons' hurt and die. And a DOWNED knight's collider is still the circle at his feet, so the three
-metres of body lying behind them can be walked through — a capsule for a floored creature is the fix, and
-nothing else in the game needs one yet.
+THE BONE KNIGHT HAS HIS BAR BUT NOT HIS ROOM: no arena, no fog gate, no `worldfmt` boss record (see
+`inCombat`'s note), and **no `knight_*` voice family** — he borrows the ogre's step, slam, heave and roar and
+the skeletons' hurt and die, and every new move (the stomp, the charge, the brake) borrows too. And a DOWNED
+knight's collider is still the circle at his feet, so the three metres of body lying behind them can be
+walked through — a capsule for a floored creature is the fix, and nothing else in the game needs one yet.
 
 THE NECROMANCER HAS NO `necro_*` VOICE FAMILY — it borrows the shade's, the wand's and the skeletons', the Bone
 Knight's own gap one creature along. Nothing RESISTS cold on the hero's side either: the sheet shows all four at

@@ -266,6 +266,10 @@ pub const Leechfly = struct {
     /// THE WAND'S ROOTS, when they have hold of it — stamped from outside, like the leash's eyes. On this
     /// creature they are the counter to the whole design: rooted, it cannot climb (`wantsClimb`).
     root: combat.Root = .{},
+    /// THE RIME BREATH'S COLD (`combat.Chill`) — and on THIS creature it is the answer the roots are not:
+    /// cold does not care whether you are standing on anything, so the chill's gate is the one thing in the
+    /// game that slows a flyer (`game.gateChill`).
+    chill: combat.Chill = .{},
     facing: f32 = 0,
     scale: f32 = 1.0,
     seed: f32 = 0,
@@ -390,7 +394,7 @@ pub const Leechfly = struct {
         self.justDied = false; // one-frame flag, reset at the TOP (the foe contract's own rule)
         // THE ROOTS HAVE IT. The flight is given back as a post-step gate and the beak still goes in; the
         // CLIMB is the one thing refused outright, at the choose site below — see `wantsClimb`.
-        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.elapsed += dt;
@@ -561,7 +565,7 @@ pub const Leechfly = struct {
         if (mathx.distXZ(self.pos, hero) > self.stabReach()) return false;
         const to = mathx.dirXZ(self.pos, hero);
         if (mathx.lenXZ(to) < 1e-4) return true; // right on top of him: no bearing to be wrong about
-        return @abs(mathx.degrees(mathx.wrapPi(mathx.headingXZ(to) - self.facing))) <= FEED_ARC;
+        return combat.withinArc(mathx.headingXZ(to), self.facing, FEED_ARC);
     }
 
     /// WALK THE HOVER toward what the state asked for. Up is faster than down, and the last of either is

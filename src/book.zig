@@ -1240,6 +1240,7 @@ fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
         .sorcery => if (slotHas(.sorcery, v)) switch (v.spell) {
             .bolt => itemart.spell(cx, cy, px, v.fp >= combat.spellFp(v.spell)),
             .roots => itemart.roots(cx, cy, px, v.fp >= combat.spellFp(v.spell)),
+            .rime => itemart.rime(cx, cy, px, v.fp >= combat.spellFp(v.spell)),
         },
         // A shaft is drawn 0.3 of the box it is handed where a blade is 1.4, so it is given a bigger one.
         .arrows => itemart.arrow(cx, cy, px * 1.5, v.quiver.count(v.quiver.sel) > 0, v.quiver.sel == .fire),

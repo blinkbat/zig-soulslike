@@ -41,6 +41,9 @@ const mul3 = mathx.mul3;
 /// hero's own hip. It scales the animal UNIFORMLY: stocky is the proportions under it (`SHOULDER_Y`,
 /// `BRISKET_Y`), so reaching for `W` when the answer is "chunkier" only makes a bigger animal of one build.
 pub const W: f32 = 1.12;
+/// HOW FAR THE SPIRIT PANEL STANDS OFF ITS FACE. The subject owns its own distance (`npc.PORTRAIT_DIST` is
+/// the man's) — a wolf's head is longer than a face and carried further forward, so it wants more room.
+pub const PORTRAIT_DIST: f32 = 1.05;
 
 // The forelimbs hang off the CHEST and the hindlimbs off the ROOT, which is the pelvis.
 pub const ROOT = 0; // pelvis — the body's anchor
@@ -676,6 +679,11 @@ pub const Wolf = struct {
     pub fn flashFrac(self: *const Wolf) f32 {
         return self.flash;
     }
+    /// ITS FACE, for the spirit panel — off the posed skull like `lockPoint`, and a little further down the
+    /// muzzle so the picture is a wolf's head and not the back of its braincase.
+    pub fn facePoint(self: *const Wolf) rl.Vector3 {
+        return foe.markOn(self.xf[HEAD], v3(0, 0.02 * W, 0.24 * W));
+    }
 
     pub fn spawn(at: rl.Vector3, facing: f32) Wolf {
         var w = Wolf{ .pos = at, .facing = facing, .rest = restPose() };
@@ -1170,6 +1178,13 @@ pub const Pack = struct {
     pub fn draw(self: *const Pack) void {
         if (!self.ready) return;
         for (self.liveConst()) |*w| w.draw(&self.mesh, self.mat);
+    }
+
+    /// JUST THE FIRST ONE, for the spirit toast's portrait — the real body in its real pose, so the face in
+    /// the panel is the animal that is actually standing there (`npc.Folk.drawOne`'s reason).
+    pub fn drawFirst(self: *const Pack) void {
+        if (!self.ready or self.n == 0) return;
+        self.wolves[0].draw(&self.mesh, self.mat);
     }
 
     /// …and its FX, which are NOT part of `draw`: they go over the whole opaque pass, once, with every other

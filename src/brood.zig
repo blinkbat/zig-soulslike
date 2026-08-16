@@ -961,6 +961,9 @@ pub const Spider = struct {
     leash: foe.Leash = .{},
     /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
     root: combat.Root = .{},
+    /// THE RIME BREATH'S COLD (`combat.Chill`) — stamped from outside like the roots, and billed through the
+    /// same `foe.grip`. The field is what opts a creature into the cone at all (`game.rimeBreathe`).
+    chill: combat.Chill = .{},
     /// …and THE HERO'S SHIELD, stamped the same way (`game.markParry`). Read only inside her own bite window.
     parry: foe.Parry = .{},
     /// THE SHIELD CAUGHT HER FANGS THIS FRAME — a ONE-FRAME flag, `justDied`'s exactly: reset at the top of
@@ -1153,7 +1156,7 @@ pub const Spider = struct {
         self.parried = false;
         // THE ROOTS HAVE THE FEET AND NOTHING ELSE (foe.grip) — she still spits, still lays, still bites what is in
         // reach, and chitin shrugs most of the grip off.
-        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.vit.tick(dt);

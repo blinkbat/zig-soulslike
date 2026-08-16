@@ -129,7 +129,6 @@ const RESISTS = combat.resists(.{ .fire = -35, .cold = 75, .chaos = 45 });
 const DEATH_DUR = archermod.DEATH_DUR;
 const DISS_DUR = archermod.DISS_DUR;
 const SHOVE_DECAY = 7.0;
-const A_BOB = heromod.A_BOB;
 const A_PROT = 2.6; // deg of pelvic rotation — narrow hips and a robe: it barely swings at all
 
 // ─── THE RAISE ────────────────────────────────────────────────────────────────────────────────────────
@@ -382,6 +381,9 @@ pub const Necro = struct {
     /// THE WAND'S ROOTS (`combat.Root`), stamped from outside like the leash's eyes. It never leaves the
     /// ground, so the grip holds it unconditionally — the ogre's and the Rooted's arrangement.
     root: combat.Root = .{},
+    /// THE RIME BREATH'S COLD (`combat.Chill`) — stamped from outside like the roots, and billed through the
+    /// same `foe.grip`. The one creature that deals this element and takes it like everything else.
+    chill: combat.Chill = .{},
     /// …and THE HERO'S SHIELD (`game.markParry`). Declared because the contract's fold keys off the field,
     /// and read by nothing: **neither of its moves is parryable and that is a decision** — see `parryable`.
     parry: foe.Parry = .{},
@@ -584,7 +586,7 @@ pub const Necro = struct {
         // THE ROOTS HAVE THE FEET (`foe.grip`) — it never leaves the ground, so the hold is unconditional.
         // The cast is untouched: a held necromancer raises the dead just fine, which is the trade for the
         // spell being the answer to everything that jumps.
-        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.elapsed += dt;
@@ -1007,13 +1009,11 @@ pub const Necro = struct {
         const stun = self.stunAmount();
 
         const m = self.moving * (1.0 - dk);
-        const twoPi = std.math.tau;
-        const bob = -0.5 * A_BOB * mathx.cosf(2.0 * twoPi * self.phase) * m;
-        const latW = @abs(self.latB) * m;
-        const sway = heromod.strafeSway(latW, 0) * mathx.sinf(twoPi * self.phase) * m;
-        const prot = A_PROT * mathx.sinf(twoPi * self.phase) * m * @abs(self.fwdB) +
-            heromod.strafeProt(self.phase, self.latB, m);
-        const dip = heromod.STRAFE_DIP * latW;
+        const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);
+        const bob = pel.bob;
+        const sway = pel.sway;
+        const prot = pel.prot;
+        const dip = pel.dip;
 
         var wx: [N]rl.Matrix = undefined;
         const collapse = lerpF(hipY, 0.20 * H, dk);
@@ -1081,14 +1081,7 @@ pub const Necro = struct {
             rz(wonk - 1.2 * swyLag - 0.8 * nod),
         ));
 
-        if (dead) {
-            setLocal(wx, HIPL, rest, mul(rx(-58.0 * dk), rz(-3.0)));
-            setLocal(wx, KNEEL, rest, rx(8.0 + 98.0 * dk));
-            setLocal(wx, ANKL, rest, ry(7.0));
-            setLocal(wx, HIPR, rest, mul(rx(-50.0 * dk), rz(3.0)));
-            setLocal(wx, KNEER, rest, rx(8.0 + 90.0 * dk));
-            setLocal(wx, ANKR, rest, ry(-7.0));
-        }
+        if (dead) heromod.deadLegs(wx, rest, dk);
 
         const armStun = -66.0 * stun;
         // THE STAFF ARM: the pole is driven down once a stride, contralateral to the leg that is planting.

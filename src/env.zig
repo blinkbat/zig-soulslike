@@ -216,7 +216,7 @@ fn coastBand(e: wf.Edge) f32 {
 /// inside a triangle is a STRAIGHT LINE — so the waterline comes out a polyline with corners.
 ///
 /// **BAKED INTO THE FIELD, NOT DONE IN THE SHADER.** One field feeds the sheet, the wet sand and
-/// `waterDepthAt`'s wading, so faceting in the fragment shader would be a coast you SEE in one place and
+/// `wadeDepth`'s wading, so faceting in the fragment shader would be a coast you SEE in one place and
 /// WALK INTO in another, up to half a facet apart.
 fn facetWater(field: *[wf.WATER_CELLS]u8, half: f32) void {
     const N = wf.WATER_N;

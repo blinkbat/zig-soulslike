@@ -7,6 +7,7 @@ const statsmod = @import("stats.zig");
 const art = @import("propart.zig");
 const archer = @import("archer.zig");
 const foemod = @import("foe.zig");
+const elemfx = @import("elemfx.zig"); // the elements' particle LANGUAGE — the breath pours COLD out of it
 const ptree = @import("passivetree.zig");
 
 const v3 = mathx.v3;
@@ -536,7 +537,30 @@ const RootSite = struct {
     seed: f32 = 0,
 };
 
-const FX_N = 256;
+// THE RIME BREATH — the rod's third sorcery, and the only one that is a DIRECTION rather than a mark. What
+// the numbers here own is the PICTURE; the mechanic's own (reach, arc, span, what it bills) are
+// `combat.RIME_*`, so the cone that is drawn cannot say something different from the cone that hits.
+
+/// Motes a second poured out of him — THE LANGUAGE'S OWN RATE (`elemfx.POUR_RATE`), not a second number
+/// here: what the editor's bench is tuned at has to be what arrives in the fight.
+const BREATH_RATE = elemfx.POUR_RATE;
+/// …and the ceiling on ONE frame of it, `CAST_MOTE_CAP`'s reason exactly: the accumulator is what makes the
+/// rate independent of the frame rate, and without a cap a single hitch empties the whole ring in one go.
+const BREATH_CAP = 18;
+/// WHERE IT LEAVES HIM. Off the HEAD bone's own origin (which sits at the skull's base) and out along his
+/// facing — a breath comes out of the face, and the wand is what pays for it, not what emits it.
+const BREATH_MOUTH_FWD = 0.062 * H;
+const BREATH_MOUTH_UP = 0.036 * H;
+/// The trunk folds over the pour and OVERSHOOTS its rest coming out of it (the reactions law) — through the
+/// WAIST, spine and chest, never the root. Degrees, total across the two.
+const BREATH_LEAN = 17.0;
+const BREATH_HEAD = 9.0;
+/// …and it SHIVERS while it pours, because a held pose for the better part of a second is a freeze frame.
+/// Small: this is a tremor on top of a fold, not a second animation.
+const BREATH_SHIVER = 1.5;
+const BREATH_SHIVER_HZ = 12.0;
+
+const FX_N = 448;
 
 comptime {
 // The ring overwrites its oldest silently, so FX_N is arithmetic over the constants above, not a taste.
@@ -546,7 +570,11 @@ comptime {
     const erupt = ROOT_DUST + ROOT_MOTES;
 // …and the shield's sparks: a parry cannot run WITH a cast, but its sparks outlive the swap.
     const caught = PARRY_SPARKS + 1 + PARRY_GLINT + 1; // a caught parry also glinted on its own whip frame
-    const worst = gather + @as(f32, release + erupt + caught + 2 * BOLT_BURST); // two bolts can land across chained casts
+    // …AND THE BREATH, which is the biggest single claim on the pool: a POUR is resident for its whole span
+    // where every other effect here is a burst that is already dying. The whole pour, because `elemfx`'s cold
+    // outlives `RIME_DUR` — a mote emitted on the last frame is still in the air.
+    const breath = combat.RIME_DUR * BREATH_RATE;
+    const worst = gather + breath + @as(f32, release + erupt + caught + 2 * BOLT_BURST); // two bolts can land across chained casts
     if (@as(f32, FX_N) < worst) @compileError(std.fmt.comptimePrint(
         "hero: FX_N = {d} but a cast can have {d} particles in the air — raise it",
         .{ FX_N, worst },
@@ -858,6 +886,35 @@ pub fn strafeSway(latW: f32, runB: f32) f32 {
     return mathx.lerpF(A_SWAY * (1.0 - 0.6 * runB), STRAFE_SWAY, latW);
 }
 
+/// **THE PELVIS'S FOUR CHANNELS ON THE SHARED SCAFFOLD** — the breathing bob, the lateral sway, the
+/// transverse rotation and the crossing-step dip. Every humanoid riding `legChain` needs all four and the
+/// three that did were each assembling the same five lines out of `A_BOB`/`strafeSway`/`strafeProt`/
+/// `STRAFE_DIP`; only `aprot` was ever honestly per-creature, so that is the only thing passed in.
+pub const Pelvis = struct { bob: f32, sway: f32, prot: f32, dip: f32 };
+
+pub fn pelvisChannels(phase: f32, m: f32, fwdB: f32, latB: f32, aprot: f32) Pelvis {
+    const twoPi = std.math.tau;
+    const latW = @abs(latB) * m;
+    return .{
+        .bob = -0.5 * A_BOB * mathx.cosf(2.0 * twoPi * phase) * m,
+        .sway = strafeSway(latW, 0) * mathx.sinf(twoPi * phase) * m,
+        .prot = aprot * mathx.sinf(twoPi * phase) * m * @abs(fwdB) + strafeProt(phase, latB, m),
+        .dip = STRAFE_DIP * latW,
+    };
+}
+
+/// **A COLLAPSED SKELETON'S LEGS**, `dk` being how far through the fall it is. The two bone creatures go
+/// over the same way; as a copy each, the six angles were six literals in two files with nothing holding
+/// them level.
+pub fn deadLegs(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, dk: f32) void {
+    setHumanoid(wx, HIPL, rest, mul(rx(-58.0 * dk), rz(-3.0)));
+    setHumanoid(wx, KNEEL, rest, rx(8.0 + 98.0 * dk));
+    setHumanoid(wx, ANKL, rest, ry(7.0));
+    setHumanoid(wx, HIPR, rest, mul(rx(-50.0 * dk), rz(3.0)));
+    setHumanoid(wx, KNEER, rest, rx(8.0 + 90.0 * dk));
+    setHumanoid(wx, ANKR, rest, ry(-7.0));
+}
+
 const rx = mathx.rx;
 const ry = mathx.ry;
 const rz = mathx.rz;
@@ -1057,8 +1114,12 @@ pub const Hero = struct {
     castAlt: bool = false,
     /// Counted like `swings`/`shots`: a chained cast clears `casting` and sets it again inside one frame.
     casts: u32 = 0,
-    /// ONE FRAME, the frame the bolt leaves — game.zig throws it from `wandTipWorld()`.
+    /// ONE FRAME, the frame the bolt leaves — game.zig throws it from `wandTipWorld()`. For the RIME it is the
+    /// frame the cone OPENS: a breath has no projectile, so what the edge hands over is the start of a window.
     thrown: bool = false,
+    /// The breath's own emitter arrears, `moteAcc`'s twin and kept apart from it on purpose: the gather and
+    /// the pour are two rates, and one accumulator carrying both would pour the raise's leftovers.
+    breathAcc: f32 = 0,
     /// `spell`'s twin on the other hand. Whether he HOLDS its scroll is a question about the BAG, asked in
     /// game.zig; the hero only ever knows which one is chosen.
     spirit: combat.SpiritKind = .wolf,
@@ -1644,7 +1705,8 @@ pub const Hero = struct {
         if (self.dead or self.casting) return false;
         self.spell = switch (self.spell) {
             .bolt => .roots,
-            .roots => .bolt,
+            .roots => .rime,
+            .rime => .bolt,
         };
         return true;
     }
@@ -1659,6 +1721,7 @@ pub const Hero = struct {
         self.castT = 0;
         self.thrown = false;
         self.moteAcc = 0;
+        self.breathAcc = 0;
         self.castAlt = !self.castAlt;
         self.casts +%= 1;
         self.startXfade();
@@ -1678,7 +1741,10 @@ pub const Hero = struct {
         self.pose();
         // AFTER the pose: the gather emits at the posed stone, so earlier draws this frame's motes onto last frame's wand.
         if (self.castT / CAST_DUR < CAST_AT) self.gatherMotes(dt);
-        if (self.castT >= CAST_DUR) {
+        // …and the same rule for the POUR, which comes off the posed HEAD: it has to be this frame's head or
+        // the stream hangs a frame behind the face it is leaving.
+        if (self.breathLive()) self.pourBreath(dt);
+        if (self.castT >= self.castSpan()) {
             self.casting = false;
             self.startXfade();
             self.fireQueued();
@@ -1746,9 +1812,75 @@ pub const Hero = struct {
         return mathx.clampF(self.ringT / RING_DUR, 0, 1);
     }
 
-    /// How far through the current cast, 0..1 (0 when there is none).
+    /// HOW LONG THIS CAST ACTUALLY RUNS. Two spells throw something at a moment and are over; the RIME pours
+    /// for `RIME_DUR` after that moment, and the animation may not end while the cone is still open — a spell
+    /// whose picture finishes before its mechanic does is a man standing in idle breathing frost.
+    pub fn castSpan(self: *const Hero) f32 {
+        return CAST_DUR + if (self.spell == .rime) combat.RIME_DUR else 0;
+    }
+
+    /// The instant the cone opens, in seconds into the cast: the THROW's own beat, so the two spells that
+    /// throw and the one that pours all commit at the same point of the same animation.
+    fn breathAt() f32 {
+        return CAST_DUR * CAST_AT;
+    }
+
+    /// IS THE CONE OPEN THIS FRAME — the one question game.zig asks to know whether anything is being breathed
+    /// on. Off the cast clock rather than a flag of its own: `AN EFFECT'S CLOCK IS DERIVED FROM THE
+    /// MECHANIC'S, NEVER PARALLEL TO IT`, and a second bool here could disagree with the pose.
+    pub fn breathLive(self: *const Hero) bool {
+        if (!self.casting or self.spell != .rime) return false;
+        return self.castT >= breathAt() and self.castT < breathAt() + combat.RIME_DUR;
+    }
+
+    /// 0..1 across the pour, and 0 either side of it.
+    pub fn breathU(self: *const Hero) f32 {
+        if (!self.casting or self.spell != .rime) return 0;
+        return mathx.clampF((self.castT - breathAt()) / combat.RIME_DUR, 0, 1);
+    }
+
+    /// WHERE THE BREATH LEAVES HIM — off the POSED head, so it rides the fold and the shiver rather than
+    /// hanging in front of a face that has moved. Built in WORLD space off the bone's ORIGIN and his facing,
+    /// not out of the bone's own axes: what the cone is aimed down is `facing` (`breathDir`), and a mouth that
+    /// came off the skull's local forward could point somewhere the cone does not reach.
+    pub fn mouthWorld(self: *const Hero) rl.Vector3 {
+        const skull = rl.math.vector3Transform(mathx.zero3, self.xf[HEAD]);
+        const d = mathx.headingDir(self.facing);
+        return v3(skull.x + d.x * BREATH_MOUTH_FWD, skull.y + BREATH_MOUTH_UP, skull.z + d.z * BREATH_MOUTH_FWD);
+    }
+
+    /// …and where it goes. LEVEL, and that is a decision: the cone is tested in XZ (`game.rimeBite`), so a
+    /// pitched picture would promise a reach up or down that the mechanic does not have.
+    pub fn breathDir(self: *const Hero) rl.Vector3 {
+        return mathx.headingDir(self.facing);
+    }
+
+    fn pourBreath(self: *Hero, dt: f32) void {
+        self.breathAcc += dt * BREATH_RATE;
+        var rng = foemod.fxStream(self.castT + @as(f32, @floatFromInt(self.casts)), 691.0, 0x51CE);
+        const at = self.mouthWorld();
+        const dir = self.breathDir();
+        var n: usize = 0;
+        while (self.breathAcc >= 1.0 and n < BREATH_CAP) : (n += 1) {
+            self.breathAcc -= 1.0;
+            // The mechanic's own arc, in RADIANS because that is what a cone's geometry wants — the constant
+            // is authored in degrees for `withinArc`'s sake and converted at the ONE place that needs the
+            // other unit, rather than kept as two constants that can part company.
+            elemfx.pour(&self.fx, &self.fxHead, &rng, at, dir, .cold, 1, mathx.radians(combat.RIME_ARC), combat.RIME_REACH, 1.0);
+        }
+        if (n == BREATH_CAP) self.breathAcc = 0; // the frame was long enough to be a hitch: drop the arrears
+    }
+
+    /// How far through the current cast, 0..1 (0 when there is none) — POSE TIME, which is not clock time.
+    /// THE POUR IS A HOLD INSERTED AT THE THROW: pose time runs to the throw beat, STOPS there for as long as
+    /// the cone is open, and then carries on into the recovery. One animation serves all three spells, and the
+    /// breath cannot drift out of step with the thing it is drawing, because it IS the same beat held.
     fn castU(self: *const Hero) f32 {
         if (!self.casting) return 0;
+        if (self.spell == .rime and self.castT > breathAt()) {
+            const held = mathx.minF(self.castT - breathAt(), combat.RIME_DUR);
+            return mathx.clampF((self.castT - held) / CAST_DUR, 0, 1);
+        }
         return mathx.clampF(self.castT / CAST_DUR, 0, 1);
     }
 
@@ -2797,6 +2929,15 @@ pub const Hero = struct {
         const kick = bump(u, CAST_AT + 0.06, CAST_RECOV_A) * rec; // the rod bounces off the throw
         const sw: f32 = if (self.castAlt) -1.0 else 1.0;
 
+        // THE BREATH RIDES ON TOP OF THE HELD THROW. Pose time stands still for the whole pour (`castU`), so
+        // without these channels the rime is a freeze frame with particles coming out of it. `bOn` folds him
+        // over the stream, `bOut` is the OVERSHOOT past his rest as it stops — a mass in motion settles onto
+        // its rest, it does not glide onto it — and the shiver is what says he is still pouring.
+        const bU = self.breathU();
+        const bOn = mathx.smoothstep(0, 0.14, bU) * (1.0 - mathx.smoothstep(0.82, 1.0, bU));
+        const bOut = bump(bU, 0.80, 1.0);
+        const shiver = bOn * BREATH_SHIVER * mathx.sinf(bU * combat.RIME_DUR * BREATH_SHIVER_HZ * std.math.tau);
+
         // `wind` lifts, `sSweep` twirls — separate channels, so the alternator only picks the twirl's side.
         // `wind` 0 must be the CARRY (`poseWandArm`) or the cast snaps out of it on frame one.
         const shRz = mathx.lerpF(ARM_ABD + WAND_CARRY_ABD, CAST_LIFT_ABD, wind);
@@ -2812,12 +2953,14 @@ pub const Hero = struct {
             mul(tr(0, hipY - dip, 0), mul(rx(2.0 * sThrow), ry(facingDeg))),
             rootAt(self.footPos()),
         );
-        // He ARCHES under the raised arm and folds back over the throw — the waist hinge, not a root lean.
-        const spineX = -CAST_LEAN * wind + 2.0 * CAST_LEAN * sThrow;
+        // He ARCHES under the raised arm and folds back over the throw — the waist hinge, not a root lean. The
+        // breath's own fold is the same hinge and goes in here for that reason, never at the ROOT: a lean
+        // routed through the root rotates his legs and reads as a lurch.
+        const spineX = -CAST_LEAN * wind + 2.0 * CAST_LEAN * sThrow + BREATH_LEAN * bOn - 0.45 * BREATH_LEAN * bOut;
         setLocal(&wx, SPINE, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), ry(0.35 * yaw)));
         setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), ry(0.65 * yaw)));
         setLocal(&wx, NECK, self.rest, rx(-0.35 * spineX));
-        setLocal(&wx, HEAD, self.rest, mul(rx(HEAD_WALK + CAST_HEAD * sThrow), ry(-0.4 * yaw)));
+        setLocal(&wx, HEAD, self.rest, mul(rx(HEAD_WALK + CAST_HEAD * sThrow + BREATH_HEAD * bOn + shiver), ry(-0.4 * yaw)));
         setLocal(&wx, HIPL, self.rest, mul(rx(-6.0 * wind - 4.0 * sThrow), rz(-HIP_ADDUCT)));
         setLocal(&wx, KNEEL, self.rest, rx(IDLE_KNEE + 12.0 * wind + 4.0 * sThrow));
         setLocal(&wx, ANKL, self.rest, ry(FOOT_TOEOUT));

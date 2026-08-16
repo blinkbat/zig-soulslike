@@ -5,6 +5,7 @@ const mathx = @import("mathx.zig");
 const combat = @import("combat.zig");
 const heromod = @import("hero.zig");
 const foe = @import("foe.zig");
+const behave = @import("behave.zig");
 const wf = @import("worldfmt.zig");
 const sfx = @import("audio.zig");
 const archermod = @import("archer.zig"); // THE SAME DEAD MAN — his bones, his scale, his feet
@@ -469,6 +470,9 @@ pub const Warrior = struct {
     leash: foe.Leash = .{},
     /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
     root: combat.Root = .{},
+    /// THE RIME BREATH'S COLD (`combat.Chill`) — stamped from outside like the roots, and billed through the
+    /// same `foe.grip`. The field is what opts a creature into the cone at all (`game.rimeBreathe`).
+    chill: combat.Chill = .{},
     /// …and THE HERO'S SHIELD, stamped the same way (`game.markParry`). Read only inside his own parry windows.
     parry: foe.Parry = .{},
     facing: f32 = 0,
@@ -486,7 +490,9 @@ pub const Warrior = struct {
     dealt: bool = false, // one blow per stroke, latched
     crashed: bool = false, // …and one crater per stroke
     heroHit: ?combat.Hit = null, // this frame's blow ON the hero, read by the Muster
-    moveDir: rl.Vector3 = mathx.zero3,
+    /// THE FLANK IS `behave`'s (`FLANK`: round to his side, then back in) — the orbit that holds its radius,
+    /// the arrival slop and the bail all live in the library rather than in this file's own tangent.
+    routine: behave.Routine = .{},
     homing: bool = false,
     /// The committed leap: ground already covered (so travel integrates once) and height off the earth.
     leapDone: f32 = 0,
@@ -664,11 +670,18 @@ pub const Warrior = struct {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt);
     }
 
-    /// WHERE HE IS TRYING TO WALK, or null when he is not walking anywhere (`game.markWay`). The APPROACH only —
-    /// the circle is a lateral orbit that re-decides on its own clock, and a stroke or a leap is committed.
+    /// WHERE HE IS TRYING TO WALK, or null when he is not walking anywhere (`game.markWay`). The approach,
+    /// and the flank's own current step — a stroke or a leap is committed and gets no bend.
     pub fn navWant(self: *const Warrior, hero: rl.Vector3) ?rl.Vector3 {
-        if (self.state != .approach) return null;
-        return if (self.homing) self.home else hero;
+        if (self.state == .approach) return if (self.homing) self.home else hero;
+        if (self.state != .circle) return null;
+        const s = self.routine.current() orelse return null;
+        return switch (s) {
+            .close, .orbit => hero,
+            .open => mathx.addV(self.pos, mathx.dirXZ(hero, self.pos)),
+            .shift => if (self.routine.marked) self.routine.mark else hero,
+            .dwell => null,
+        };
     }
     pub fn update(self: *Warrior, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         if (self.gone) {
@@ -679,7 +692,7 @@ pub const Warrior = struct {
         self.justDied = false; // one-frame flag: re-set below only if this frame's blade kills it
         // THE ROOTS HAVE THE FEET (foe.grip) — the slam still comes down on the spot, and dry bone shrugs most
         // of the grip off. The LUNGE is a jump and is off the table entirely while it holds (`foe.canLeap`).
-        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.leapt = false;
@@ -736,14 +749,22 @@ pub const Warrior = struct {
                 } else if (d <= self.longestTrigger() or d > AGGRO_R) self.decide(d);
             },
             .circle => {
-                self.faceToward(hero, dt);
-                moveSpeed = WALK_SPEED * sp.speed * 0.72;
-                const moved = moveSpeed * dt;
-                mathx.stepXZ(&self.pos, self.moveDir, moved, bounds);
-                movedDist = moved;
-                moveYaw = mathx.headingXZ(self.moveDir);
+                // `behave.FLANK` has the feet: round to his side behind the boards, then back in. The eyes
+                // stay on him the whole way (the Want's `look`), and the steering is passed in.
+                const w = self.routine.step(dt, .{ .at = self.pos, .facing = self.facing, .quarry = hero, .nav = self.nav });
+                self.faceToward(w.look orelse hero, dt);
+                if (w.go) |g| {
+                    const go = mathx.dirXZ(self.pos, g);
+                    if (mathx.lenXZ(go) > 1e-3) {
+                        moveSpeed = WALK_SPEED * sp.speed * 0.72;
+                        const moved = moveSpeed * dt;
+                        mathx.stepXZ(&self.pos, go, moved, bounds);
+                        movedDist = moved;
+                        moveYaw = mathx.headingXZ(go);
+                    }
+                }
                 self.setCarry(dt);
-                if (self.t >= CIRCLE_DUR) self.decide(d);
+                if (!self.routine.running) self.decide(d);
             },
             .wind => {
                 self.faceToward(hero, dt * 0.5);
@@ -967,8 +988,7 @@ pub const Warrior = struct {
             },
             .circle => {
                 // Which way he goes round is HIS, and it is seeded — a pair must not orbit as one body.
-                const side: f32 = if (self.seed < 0.5) 1.0 else -1.0;
-                self.moveDir = mathx.scaleV(mathx.perpXZ(self.fdir()), side);
+                self.routine.start(&behave.FLANK, self.seed - 0.5);
                 self.enter(.circle);
             },
             .approach => {
@@ -1122,6 +1142,9 @@ pub const Warrior = struct {
         self.stam.spend(combat.guardStamina(raw));
         self.shove = mathx.scaleV(self.fdir(), -0.6); // he gives ground, he does not flinch
         self.sparks(s.contact, s.dir, 14);
+        // THE REFUSAL HAS ITS OWN VOICE, and it is not the hero's `guard_block`: one is your swing achieving
+        // nothing, the other is your shield saving you, and they were the same sound.
+        sfx.world(.foe_guarded, self.pos);
         if (s.reaction == .death) {
             // Chipped to death behind his own shield — that is a death, not a block.
             self.hits += 1;
@@ -1534,12 +1557,7 @@ pub const Warrior = struct {
         ));
 
         if (dead) {
-            setLocal(wx, HIPL, rest, mul(rx(-58.0 * dk), rz(-3.0)));
-            setLocal(wx, KNEEL, rest, rx(8.0 + 98.0 * dk));
-            setLocal(wx, ANKL, rest, ry(7.0));
-            setLocal(wx, HIPR, rest, mul(rx(-50.0 * dk), rz(3.0)));
-            setLocal(wx, KNEER, rest, rx(8.0 + 90.0 * dk));
-            setLocal(wx, ANKR, rest, ry(-7.0));
+            heromod.deadLegs(wx, rest, dk);
         } else if (kn > 0.001) {
             // DOWN ON ONE KNEE: the LEAD leg braced out in front with the foot planted, the TRAIL leg
             // folded right under him so the shin lies on the ground. Symmetric legs would be a squat.

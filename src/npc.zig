@@ -55,6 +55,15 @@ const STAFF = heromod.HELD;
 
 /// A little under the hero and stooped on top of that — a life on the road, not a shorter species.
 pub const SCALE = (H - 0.065) / H;
+/// The middle of his FACE in the SKULL bone's own frame — what the conversation portrait is aimed at. Up off
+/// the joint (which sits at the base of the skull) and a little forward, onto the brow-to-chin span rather
+/// than the crown: framed on the joint the panel photographed a collar and a chin.
+const FACE_AT = mathx.v3(0, 0.045 * H, 0.02 * H);
+
+/// HOW FAR YOU STAND OFF HIS FACE. The ANGLE of a portrait is the house's (`hud.PORTRAIT_YAW`/`_PITCH`/
+/// `_FOV`) and shared by everything photographed; the DISTANCE is the subject's, because a man's face and a
+/// wolf's muzzle want different room. Metres, so the framing is a ZOOM and not a crop of a wide shot.
+pub const PORTRAIT_DIST: f32 = 0.86;
 const REST = heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF * 0.96, H);
 
 // THE PALETTE IS SOLVED AGAINST THE RENDER, NOT PICKED. Sampled off the first pass every material landed
@@ -255,6 +264,13 @@ pub const Wanderer = struct {
 
     xf: [N]rl.Matrix = undefined,
     rest: [N]rl.Vector3 = undefined,
+
+    /// WHERE HIS FACE IS, in world, off the POSED skull bone rather than a height above his feet — the
+    /// ogre's `clubLowWorld` law, and the reason the portrait tracks a head that nods, cranes and turns.
+    /// The joint sits at the base of the skull, so the offset carries it up onto the middle of the face.
+    pub fn facePoint(self: *const Wanderer) rl.Vector3 {
+        return rl.math.vector3Transform(FACE_AT, self.xf[SKULL]);
+    }
 
     pub fn spawn(rec: u16, home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32, roam: f32) Wanderer {
         var p = Wanderer{
@@ -564,6 +580,14 @@ pub const Folk = struct {
 
     pub fn draw(self: *const Folk) void {
         for (self.liveConst()) |*p| self.model.draw(p);
+    }
+
+    /// ONE of them, for the PORTRAIT: the conversation panel photographs the man you are talking to, and it
+    /// is the ACTUAL MODEL in his ACTUAL POSE (`book.drawPortrait`'s trick, one rig along) — so it cannot go
+    /// stale, and a head that turns to look at you turns in the panel too.
+    pub fn drawOne(self: *const Folk, i: usize) void {
+        if (i >= self.n) return;
+        self.model.draw(&self.list[i]);
     }
 
     /// Nobody is mid-conversation any more.

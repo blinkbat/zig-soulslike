@@ -1520,16 +1520,9 @@ pub const Editor = struct {
         if (self.layer == .units) {
             // A spawn has no mesh for a ray to hit, so it is found by PROXIMITY on the ground
             const g = self.groundAt() orelse return .none;
-            var best: ?usize = null;
-            var bestD2: f32 = FOE_PICK_R * FOE_PICK_R;
-            for (m.foes[0..m.nfoes], 0..) |f, i| {
-                const d2 = mathx.dist2XZ(v3(f.x, 0, f.z), g);
-                if (d2 < bestD2) {
-                    bestD2 = d2;
-                    best = i;
-                }
-            }
-            return if (best) |i| .{ .foe = i } else .none;
+            var near = mathx.Nearest.within(FOE_PICK_R);
+            for (m.foes[0..m.nfoes], 0..) |f, i| near.offer(i, v3(f.x, 0, f.z), g);
+            return if (near.best) |i| .{ .foe = i } else .none;
         }
         return .none;
     }

@@ -3,11 +3,14 @@ const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 const wf = @import("worldfmt.zig");
 const trigger = @import("trigger.zig");
+const gfx = @import("gfx.zig");
+const npcmod = @import("npc.zig"); // for the PORTRAIT FRAMING only — never for a body
 const hud = @import("hud.zig");
 const uiart = @import("uiart.zig");
 const sfx = @import("audio.zig");
 
 const rgba = mathx.rgba;
+const v3 = mathx.v3;
 
 // A CONVERSATION, and the panel it is read off.
 //
@@ -48,6 +51,46 @@ const TEXT_OFF = rgba(150, 142, 124, 230);
 const NAME = uiart.GILT;
 /// How black the world goes behind the panel. Dimmed, never hidden: you are still standing somewhere.
 const VEIL: u8 = 132;
+
+// THE PORTRAIT — the man you are talking to, photographed live.
+//
+// **IT IS THE ACTUAL 3D MODEL, ZOOMED TO THE HEAD, THREE-QUARTERS ON** (owner). Not drawn art: the rig is
+// rendered off-screen into a target and blitted into the panel, which is `book.drawPortrait`'s trick one rig
+// along and for its reason — it is the real model in the real pose, so it cannot go stale, and the head that
+// cranes round to look at you cranes round in the panel.
+//
+// **THE TURNTABLE HANGS OFF HIS FACING, NEVER THE WORLD.** He is photographed three-quarters from the front
+// wherever he happens to be standing, so the framing does not change because the conversation happened to
+// start on the other side of a rock.
+/// **SMALLER THAN A THIRD OF THE PLATE** (owner: the portraits are too big). At 320 the head was competing
+/// with the prose it is supposed to be attributing — a portrait names the speaker, it is not the subject of
+/// the panel.
+const PORT_W: i32 = 176;
+const PORT_H: i32 = 200;
+/// Degrees off his own front. Three-quarters: enough to give the head a near side and a far side — a dead-on
+/// face is a passport photo and reads flat on a low-poly head with no shading break in it.
+/// …and none of the four is authored here, because the shot that proves this picture has to frame it the
+/// same way or it is signing off a picture nobody sees. The ANGLE is the house's, the DISTANCE the speaker's.
+const PORT_YAW = hud.PORTRAIT_YAW;
+const PORT_PITCH = hud.PORTRAIT_PITCH;
+const PORT_DIST = npcmod.PORTRAIT_DIST;
+const PORT_FOV = hud.PORTRAIT_FOV;
+/// The plate is sized to what it holds, and from here that includes the picture.
+const PORT_GAP: i32 = 16;
+/// …and the fewest pixels of PROSE worth wrapping into. Under this the portrait is dropped instead: the
+/// words are the panel and the picture is an attribution on them.
+const PROSE_MIN_W: i32 = 240;
+
+/// WHAT THE PANEL NEEDS TO TAKE THE PICTURE, handed in by the game rather than reached for: the scene it
+/// draws through, where the face is, which way he is pointing, and how to draw him. `who` is an index into
+/// the folk, and `drawFn` is passed so this file never has to import the creature.
+pub const Portrait = struct {
+    scene: *gfx.Scene,
+    face: rl.Vector3,
+    facing: f32,
+    ctx: *const anyopaque,
+    drawFn: *const fn (*const anyopaque) void,
+};
 
 pub const Input = struct {
     up: bool = false,
@@ -191,7 +234,7 @@ pub const Session = struct {
     ///
     /// **IT IS SIZED TO WHAT IT HOLDS, and it grows UPWARD off a fixed bottom edge.** A panel pinned to a
     /// fraction of the screen is half empty on a two-line exchange and cramped on a long one.
-    pub fn draw(self: *const Session, m: *const wf.Map, rt: *const trigger.Runtime, w: trigger.World) void {
+    pub fn draw(self: *const Session, m: *const wf.Map, rt: *const trigger.Runtime, w: trigger.World, port: ?Portrait) void {
         if (!self.active()) return;
         const nd = self.nodeOf(m) orelse return;
         const k = self.raise();
@@ -201,8 +244,17 @@ pub const Session = struct {
 
         const x = SIDE_MARGIN;
         const wpx = sw - SIDE_MARGIN * 2;
-        const innerX = x + PAD;
-        const innerW = wpx - PAD * 2;
+        // THE PICTURE TAKES ITS COLUMN OUT OF THE PROSE'S, never off the end of the plate: the wrap below is
+        // measured against what is LEFT, so a portrait can never push a line out past the frame.
+        //
+        // …AND IT IS DROPPED ENTIRELY RATHER THAN STARVING THE WORDS. On a window too narrow to hold both,
+        // the portrait is the half that goes: it says who is speaking, and the panel already says that in
+        // text. Without this the wrap is handed a negative width and the plate a negative-sided rectangle.
+        const room = wpx - PAD * 2 - (PORT_W + PORT_GAP) >= PROSE_MIN_W;
+        const showPort = port != null and room;
+        const portCol: i32 = if (showPort) PORT_W + PORT_GAP else 0;
+        const innerX = x + PAD + portCol;
+        const innerW = wpx - PAD * 2 - portCol;
         const bodyH = hud.lineH(hud.BODY);
         const rowStep = bodyH + ROW_GAP;
 
@@ -221,6 +273,9 @@ pub const Session = struct {
         need += @as(i32, @intCast(lines.len)) * bodyH;
         if (shown.len > 0) need += RULE_GAP * 2 + @as(i32, @intCast(shown.len)) * rowStep;
         need += RULE_GAP + hud.lineH(hud.HINT);
+        // …and the picture is content too: a two-line exchange must still leave a plate tall enough to hold
+        // a face, or the portrait spills out of the frame it is supposed to be mounted in.
+        if (showPort) need = @max(need, PAD * 2 + PORT_H);
 
         const capH = @as(i32, @intFromFloat(@as(f32, @floatFromInt(sh)) * MAX_FRAC));
         const hpx = @min(need, capH);
@@ -231,6 +286,14 @@ pub const Session = struct {
         const a: u8 = @intFromFloat(PLATE_A * k);
         uiart.plate(x, y, wpx, hpx, a);
         uiart.frame(x, y, wpx, hpx, a);
+        if (showPort) {
+            // Fitted to whatever the plate ended up being, and KEEPING ITS ASPECT: `MAX_FRAC` may have
+            // refused the height `need` asked for, and a picture squashed to fill the hole is a different
+            // face. It shrinks in both axes and centres in the column instead.
+            const ph = @min(PORT_H, @max(0, hpx - PAD * 2));
+            const pw = @divTrunc(PORT_W * ph, PORT_H);
+            if (ph > 0) drawPortrait(port.?, x + PAD + @divTrunc(PORT_W - pw, 2), y + PAD, pw, ph);
+        }
 
         var cy = y + PAD;
         const midX = x + @divTrunc(wpx, 2);
@@ -288,6 +351,40 @@ pub const Session = struct {
         hud.hintRowAt(hints[0..n], innerX, footer + @divTrunc(hud.lineH(hud.HINT), 2), hud.HINT, uiart.TEXT_HINT);
     }
 };
+
+/// TAKE THE PICTURE AND MOUNT IT. The render target is lazy and lives as long as the process (`book`'s
+/// `portRT`), because a conversation opens and closes constantly and reallocating a target per panel is a
+/// stall you can feel.
+fn drawPortrait(p: Portrait, dx: i32, dy: i32, dw: i32, dh: i32) void {
+    const dst = rl.Rectangle{
+        .x = @floatFromInt(dx),
+        .y = @floatFromInt(dy),
+        .width = @floatFromInt(dw),
+        .height = @floatFromInt(dh),
+    };
+    // THE CAMERA AND THE TARGET ARE `hud.livePortrait`'s — three callers photograph a body now (the book's
+    // doll, this, the spirit toast) and three copies of one camera is three things to retune apart.
+    // THREE-QUARTERS OFF HIS OWN FRONT: the camera sits out along his facing and looks back, so this is his
+    // face however the world happens to be oriented.
+    hud.livePortrait(.{
+        .scene = p.scene,
+        .focus = p.face,
+        .yaw = p.facing + mathx.radians(PORT_YAW),
+        .pitch = PORT_PITCH,
+        .dist = PORT_DIST,
+        .fov = PORT_FOV,
+        .ctx = p.ctx,
+        .drawFn = p.drawFn,
+    }, dst, rl.Color.white);
+    // Dusk at the edges so he sits IN the plate rather than on top of it, and a gilt rebate to mount it.
+    const band = @divTrunc(dh, 5);
+    rl.drawRectangleGradientV(dx, dy, dw, band, rgba(0, 0, 0, 175), rgba(0, 0, 0, 0));
+    rl.drawRectangleGradientV(dx, dy + dh - band, dw, band, rgba(0, 0, 0, 0), rgba(0, 0, 0, 195));
+    const side = @divTrunc(dw, 6);
+    rl.drawRectangleGradientH(dx, dy, side, dh, rgba(0, 0, 0, 160), rgba(0, 0, 0, 0));
+    rl.drawRectangleGradientH(dx + dw - side, dy, side, dh, rgba(0, 0, 0, 0), rgba(0, 0, 0, 160));
+    rl.drawRectangleLinesEx(dst, 1, mathx.withAlpha(uiart.GILT_DIM, 95));
+}
 
 /// A NUL-terminated copy, because `hud.text` takes a sentinel slice and the arena's prose has none.
 fn zterm(buf: []u8, s: []const u8) [:0]const u8 {

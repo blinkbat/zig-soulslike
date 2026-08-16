@@ -24,6 +24,9 @@ const shroommod = @import("shroom.zig");
 const knightmod = @import("knight.zig");
 const delvermod = @import("delver.zig");
 const necromod = @import("necro.zig");
+const combat = @import("combat.zig");
+const foemod = @import("foe.zig");
+const elemfx = @import("elemfx.zig"); // the elements' particle LANGUAGE — the bench is where it is TUNED
 
 const v3 = mathx.v3;
 const Kind = props.Kind;
@@ -110,15 +113,56 @@ pub const Mode = enum {
     objects,
     icons,
     chars,
+    effects,
 
     fn label(m: Mode) [:0]const u8 {
         return switch (m) {
             .objects => "Objects",
             .icons => "Icons",
             .chars => "Characters",
+            .effects => "Effects",
         };
     }
 };
+
+/// **THE FX BENCH — `elemfx`'s twelve cells, PLAYING.** The jukebox's arrangement one gallery along: the
+/// sounds are auditioned there because a waveform on a page tells you nothing, and a particle signature is
+/// the same problem — `lifeHi 1.15` is not a thing anybody can picture. Four elements against three verbs,
+/// side by side and on a loop, with the numbers being tuned printed beside them.
+///
+/// It draws through the SAME `elemfx` calls the game does. A bench with its own emitter is a bench that
+/// agrees with nothing.
+const Verb = enum {
+    gather,
+    burst,
+    pour,
+
+    fn label(v: Verb) [:0]const u8 {
+        return switch (v) {
+            .gather => "Gather",
+            .burst => "Burst",
+            .pour => "Pour",
+        };
+    }
+    /// Seconds between re-fires. The POUR does not loop — it is a stream, so it runs for as long as you are
+    /// looking at it, which is also the only way to judge whether it holds together.
+    fn loop(v: Verb) f32 {
+        return switch (v) {
+            .gather => 0.9,
+            .burst => 1.1,
+            .pour => 0,
+        };
+    }
+};
+
+/// Enough for the worst cell — the POUR, which is resident for its whole span where the other two are
+/// bursts already dying. `elemfx`'s longest life against its own rate, and then some headroom, because a
+/// bench that silently drops motes is a bench that lies about the thing being tuned.
+const BENCH_FX_N = 256;
+/// Where it fires from and which way it goes: chest height on the world's own forward, so the pour lies
+/// along the same axis the hero breathes down.
+const BENCH_AT = v3(0, 1.05, 0);
+const BENCH_DIR = v3(0, 0, -1);
 
 /// Every character, minus the egg sac — one membrane on the ground is not a character (the mark test's
 /// own exemption, for the mark test's own reason).
@@ -154,6 +198,17 @@ pub const State = struct {
     charPose: [CHAR_N]Pose = [_]Pose{.{}} ** CHAR_N,
     grabbed: ?usize = null,
     travel: f32 = 0,
+    /// THE FX BENCH's own state — which cell of `elemfx`'s grid is playing, and the pool it plays into.
+    elem: combat.Elem = .cold,
+    verb: Verb = .pour,
+    fxPose: Pose = .{},
+    fx: [BENCH_FX_N]foemod.Particle = [_]foemod.Particle{.{}} ** BENCH_FX_N,
+    fxHead: usize = 0,
+    /// Seconds since this cell last fired — the loop's clock, and the emitter's seed.
+    fxT: f32 = 0,
+    /// …and the pour's emission arrears, `hero.breathAcc`'s twin: the rate has to be independent of the
+    /// frame rate here too, or the bench shows a different stream than the game does.
+    fxAcc: f32 = 0,
 
     pub fn poseOf(self: *State, k: Kind) *Pose {
         return &self.pose[@intFromEnum(k)];
@@ -880,8 +935,193 @@ fn bigIcon(st: *State, ctx: *ui.Ctx, at: usize) bool {
     return true;
 }
 
+/// Where the cell fires from. The POUR is started half its own reach UPWIND so the whole stream sits in
+/// frame — a bench framed on the nozzle photographs the first metre of a six-metre effect.
+fn benchAt(v: Verb) rl.Vector3 {
+    return if (v == .pour) v3(0, 1.05, combat.RIME_REACH * 0.5) else BENCH_AT;
+}
+
+/// A STREAM THAT VARIES: seeded off the ring's own head, which advances with every mote emitted. Seeded off
+/// the loop clock instead, every re-fire came out as the same burst replayed.
+fn benchRng(st: *const State) mathx.Rng {
+    return mathx.Rng.init(@as(u64, st.fxHead) *% 2654435761 +% 0x8BEF);
+}
+
+fn benchFire(st: *State) void {
+    var rng = benchRng(st);
+    switch (st.verb) {
+        .gather => elemfx.gather(&st.fx, &st.fxHead, &rng, benchAt(.gather), st.elem, 26, 0.55, 1.0),
+        .burst => elemfx.burst(&st.fx, &st.fxHead, &rng, benchAt(.burst), BENCH_DIR, st.elem, 24, 1.0),
+        .pour => {}, // a stream is not fired, it runs — see `benchStep`
+    }
+}
+
+fn benchClear(st: *State) void {
+    st.fx = [_]foemod.Particle{.{}} ** BENCH_FX_N;
+    st.fxHead = 0;
+    st.fxT = 0;
+    st.fxAcc = 0;
+}
+
+/// One frame of the bench. THROUGH `elemfx` AND `foe.tickParticles`, the same two calls the game makes —
+/// a bench with its own integrator would be tuning something the game does not draw.
+fn benchStep(st: *State, dt: f32) void {
+    st.fxT += dt;
+    if (st.verb == .pour) {
+        st.fxAcc += dt * elemfx.POUR_RATE;
+        var rng = benchRng(st);
+        var n: usize = 0;
+        while (st.fxAcc >= 1.0 and n < 8) : (n += 1) {
+            st.fxAcc -= 1.0;
+            elemfx.pour(&st.fx, &st.fxHead, &rng, benchAt(.pour), BENCH_DIR, st.elem, 1, mathx.radians(combat.RIME_ARC), combat.RIME_REACH, 1.0);
+        }
+        if (n == 8) st.fxAcc = 0;
+    } else if (st.fxT >= st.verb.loop()) {
+        st.fxT = 0;
+        benchFire(st);
+    }
+    // Floored at 0 — which is most of what says COLD, since it is the one that lies about on the ground.
+    foemod.tickParticles(&st.fx, dt, 0);
+}
+
+fn renderBench(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, st: *const State) void {
+    const aspect = @as(f32, @floatFromInt(rt.texture.width)) / @as(f32, @floatFromInt(rt.texture.height));
+    const wide = st.verb == .pour;
+    const cam = fitCam(if (wide) 2.4 else 1.7, if (wide) combat.RIME_REACH * 0.62 else 1.1, st.fxPose, aspect);
+    rl.beginTextureMode(rt);
+    rl.clearBackground(BACKDROP);
+    rl.beginMode3D(cam);
+    scene.bind(cam.position);
+    scene.shadowsOff();
+    scene.setLights(&.{});
+    scene.setGround(true);
+    const view = envmod.View.fromCamera(cam, aspect);
+    env.drawGround(&view);
+    scene.setGround(false);
+    // …and the particles LAST and unlit, which is where they come in the world's own frame too.
+    foemod.drawParticles(&st.fx);
+    rl.endMode3D();
+    rl.endTextureMode();
+}
+
+fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
+    const sw = rl.getScreenWidth();
+    const sh = rl.getScreenHeight();
+    const w = @min(sw - 60, BIG_W + INFO_W + 3 * BIG_PAD);
+    const h = @min(sh - 60, BIG_H + 130);
+    const box = ui.beginModal(ctx, w, h, "Effects bench");
+    if (modeTabs(st, ctx, box.x + 16, box.y + 44).changed) return true;
+
+    // THE GRID ITSELF, as two rows of chips: the element down one and the verb down the other, which is
+    // twelve cells reachable in two clicks rather than a page of thumbnails that cannot move.
+    var tx = box.x + 16;
+    const ey = box.y + 78;
+    inline for (@typeInfo(combat.Elem).@"enum".fields) |f| {
+        const e: combat.Elem = @enumFromInt(f.value);
+        var usedW: i32 = 0;
+        if (ui.chip(ctx, tx, ey, elemfx.elemName(e), st.elem == e, &usedW) and st.elem != e) {
+            st.elem = e;
+            benchClear(st); // the old element's motes must not hang in the new one's picture
+        }
+        tx += usedW;
+    }
+    tx = box.x + 16;
+    const vy = ey + ui.ROW_H + 8;
+    inline for (@typeInfo(Verb).@"enum".fields) |f| {
+        const v: Verb = @enumFromInt(f.value);
+        var usedW: i32 = 0;
+        if (ui.chip(ctx, tx, vy, v.label(), st.verb == v, &usedW) and st.verb != v) {
+            st.verb = v;
+            benchClear(st);
+        }
+        tx += usedW;
+    }
+
+    const viewR = ui.rect(box.x + BIG_PAD, vy + ui.ROW_H + 10, w - INFO_W - 3 * BIG_PAD, h - (vy - box.y) - ui.ROW_H - 56);
+    const overView = rl.checkCollisionPointRec(ctx.mouse, viewR);
+    const p = &st.fxPose;
+    if (overView and ctx.wheel != 0) p.zoom = mathx.clampF(p.zoom * (1.0 + ZOOM_RATE * ctx.wheel), MIN_ZOOM, MAX_ZOOM);
+    if (ctx.pressed and overView) st.grabbed = 0;
+    if (st.grabbed != null) {
+        if (rl.isMouseButtonDown(.left)) {
+            const d = rl.getMouseDelta();
+            p.yaw += d.x * ROT_RATE;
+            p.pitch = mathx.clampF(p.pitch - d.y * ROT_RATE, MIN_PITCH, MAX_PITCH);
+        } else st.grabbed = null;
+    }
+
+    // THE BENCH RUNS ON THE WALL CLOCK, which is the whole point of it: this is the editor, it is never in
+    // `--shot`, and an effect stepped by anything but real time is not the effect being judged.
+    benchStep(st, mathx.minF(rl.getFrameTime(), 0.05));
+    renderBench(target(&bigRT, BIG_W, BIG_H), env, scene, st);
+    blit(bigRT.?, viewR);
+    rl.drawRectangleLinesEx(viewR, 1, ui.alpha(ui.TRIM, 110));
+
+    // THE NUMBERS BEING TUNED, beside the thing they make. Every one of them is a field of `elemfx.Sig`.
+    const sig = elemfx.sig(st.elem);
+    const x = box.x + w - INFO_W - BIG_PAD;
+    var y = box.y + 52;
+    const line = lineH();
+    var buf: [72]u8 = undefined;
+    hud.mono("signature", x, y, hud.MONO, ui.alpha(ui.TRIM, 230));
+    y += line + 4;
+    inline for (.{
+        .{ "grav", sig.grav },
+        .{ "speed", sig.speedLo },
+        .{ "..hi", sig.speedHi },
+        .{ "life", sig.lifeLo },
+        .{ "..hi", sig.lifeHi },
+        .{ "r0", sig.r0 },
+        .{ "r1", sig.r1 },
+    }) |row| {
+        const s = std.fmt.bufPrintZ(&buf, "{s: <7}{d: >7.3}", .{ row[0], row[1] }) catch "";
+        hud.mono(s, x, y, hud.MONO, ui.VALUE);
+        y += line;
+    }
+    y += 4;
+    // The two swatches, drawn rather than printed: a colour is not a number anybody reads.
+    inline for (.{ .{ "core", sig.core }, .{ "edge", sig.edge } }) |row| {
+        hud.mono(row[0], x, y, hud.MONO, ui.alpha(ui.LABEL, 210));
+        rl.drawRectangleRec(ui.rect(x + 56, y + 2, 46, line - 6), row[1]);
+        y += line;
+    }
+    y += 4;
+    // …and the two facts that are a YES or a NO rather than a dial, which are half of what tells the four apart.
+    const marks = std.fmt.bufPrintZ(&buf, "inward {s}  ash {s}", .{
+        if (sig.inward) "yes" else "no",
+        if (sig.ash != null) "yes" else "no",
+    }) catch "";
+    hud.mono(marks, x, y, hud.MONO, ui.VALUE);
+    y += line + 6;
+    hud.mono("drag spins", x, y, hud.MONO, ui.alpha(ui.LABEL, 170));
+    y += line;
+    hud.mono("wheel zooms", x, y, hud.MONO, ui.alpha(ui.LABEL, 170));
+
+    const by = box.y + box.h - FOOT_DROP;
+    if (ui.button(ctx, ui.rect(box.x + BIG_PAD, by, 74, 24), "Play", hud.MONO, false)) {
+        st.fxT = 0;
+        benchFire(st);
+    }
+    if (ui.button(ctx, ui.rect(box.x + BIG_PAD + 78, by, 74, 24), "Clear", hud.MONO, false)) benchClear(st);
+    var cb: [96]u8 = undefined;
+    const count = std.fmt.bufPrintZ(&cb, "{s} {s}   {d} live", .{ elemfx.elemName(st.elem), Verb.label(st.verb), liveParts(st) }) catch "";
+    hud.mono(count, box.x + BIG_PAD + 164, by + 5, hud.MONO, ui.alpha(ui.LABEL, 210));
+    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Close", hud.MONO, false)) return false;
+    return true;
+}
+
+/// What is actually in the air — the one number that says whether the pool is big enough for this cell.
+fn liveParts(st: *const State) usize {
+    var n: usize = 0;
+    for (st.fx) |q| {
+        if (q.life > 0) n += 1;
+    }
+    return n;
+}
+
 pub fn draw(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
     switch (st.mode) {
+        .effects => return benchPanel(st, env, scene, ctx),
         .objects => {
             if (st.open) |k| {
                 if (big(st, env, scene, ctx, k)) return true;

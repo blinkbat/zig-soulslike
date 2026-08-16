@@ -113,6 +113,7 @@ pub const sceneFS =
     \\// highlight here is a mirror of the key, so left at full a blade blazed like noon under a half moon.
     \\uniform float keyAmt;
     \\uniform float hitFlash;   // 0..1 blood-red combat flash on the CURRENT draw (per-actor)
+    \\uniform float frost;      // 0..1 rime coating on the CURRENT draw (per-actor) — chilled bodies
     \\uniform float fade;       // 1 = solid, <1 = see THROUGH the current draw — see Scene.setFade
     \\uniform float uTime;      // seconds — water ripple phase (shared with the VS wind term)
     \\uniform mat4 lightVP;     // sun's ortho view-projection (captured in the depth pass)
@@ -540,7 +541,10 @@ pub const sceneFS =
     \\  }
     \\  float emis = 1.0 - fragColor.a;
     \\  lit = mix(lit, base*1.35, emis);
-    \\  // Combat flash: the struck actor pops blood-red for a beat (per-draw uniform).
+    \\  // Rime: a chilled body wears a pale blue coat while the hold lasts (per-draw, like the flash).
+    \\  lit = mix(lit, vec3(0.60, 0.74, 0.88), frost);
+    \\  // Combat flash: the struck actor pops blood-red for a beat (per-draw uniform). AFTER the frost,
+    \\  // so a hit still reads on a frosted body.
     \\  lit = mix(lit, vec3(0.55, 0.07, 0.05), hitFlash);
     \\  float haze = 1.0 - exp(-hazeDensity*dist);
     \\  // Haze banks golden looking into the sun's quarter (matches the sky shader's bank).

@@ -264,13 +264,27 @@ pub const Menu = struct {
     }
 
     /// **CAN THIS ROW BE PRESSED** — the one predicate, read by the PRESS and by the card that draws it, so
-    /// a row can never look available and do nothing. Two rows are ever refused and both for the same
-    /// reason: there is no file behind them. NEW over an occupied slot is allowed — that is what the picker
-    /// is being shown for.
+    /// a row can never look available and do nothing.
+    ///
+    /// **A NEW CHARACTER NEEDS AN EMPTY SLOT** (owner's call). New over an occupied slot used to be allowed
+    /// and this file argued it as the point of showing the picker; it is the one press in the game that
+    /// destroys a save without the delete row's second confirm, and the two intents were inverses of each
+    /// other everywhere else. So they are inverses here too: LOAD wants a file, NEW wants the absence of one.
+    /// The way to reuse an occupied slot is to DELETE it, which is the press that already asks twice.
+    ///
+    /// …and with all three written there is nowhere to put a new one, so the boot row itself goes dim rather
+    /// than opening a picker on which every row is refused.
     fn rowLive(self: *const Menu, i: usize, shelf: *const savemod.Shelf) bool {
         return switch (self.screen) {
-            .boot => i != BOOT_LOAD or shelf.any(),
-            .slots => i >= savemod.SLOTS or self.slotIntent == .new or shelf.head[i] != null,
+            .boot => switch (i) {
+                BOOT_LOAD => shelf.any(),
+                BOOT_NEW => !shelf.full(),
+                else => true,
+            },
+            .slots => i >= savemod.SLOTS or switch (self.slotIntent) {
+                .load => shelf.head[i] != null,
+                .new => shelf.head[i] == null,
+            },
             else => true,
         };
     }
@@ -620,8 +634,8 @@ pub const Menu = struct {
         switch (self.screen) {
             .closed, .character => {},
             .boot => self.drawCard("SOULSLIKE", &bootLabels(), .{
-                .dim = &bootDim(shelf),
-                .note = if (shelf.any()) BOOT_NOTE else BOOT_NOTE_EMPTY,
+                .dim = &bootDim(self, shelf),
+                .note = if (shelf.full()) BOOT_NOTE_FULL else if (shelf.any()) BOOT_NOTE else BOOT_NOTE_EMPTY,
             }),
             .slots => self.drawSlots(shelf),
             .main => self.drawCard("SOULSLIKE", &mainLabels(), .{}),
@@ -691,7 +705,7 @@ pub const Menu = struct {
 
         for (0..savemod.SLOTS) |i| {
             const y = cy + headerH + (SLOT_H + SLOT_GAP) * @as(i32, @intCast(i));
-            self.drawSlotRow(i, shelf.head[i], cx + CARD_INSET, y, cardW - CARD_INSET * 2);
+            self.drawSlotRow(i, shelf.head[i], !self.rowLive(i, shelf), cx + CARD_INSET, y, cardW - CARD_INSET * 2);
         }
         const by = cy + headerH + (SLOT_H + SLOT_GAP) * @as(i32, savemod.SLOTS) + 8;
         const onBack = self.cursor == SLOT_BACK;
@@ -699,11 +713,10 @@ pub const Menu = struct {
         hud.text("Back", cx + CARD_INSET + ROW_LABEL, by, hud.BODY, if (onBack) TEXT_HOT else TEXT_DIM);
     }
 
-    fn drawSlotRow(self: *const Menu, i: usize, head: ?savemod.Head, x: i32, y: i32, w: i32) void {
+    /// `dead` is the CALLER's, off `rowLive` — under Load an empty row is refused, under New an occupied one
+    /// is, and neither rule is re-derived here where it could drift from the press.
+    fn drawSlotRow(self: *const Menu, i: usize, head: ?savemod.Head, dead: bool, x: i32, y: i32, w: i32) void {
         const on = self.cursor == i;
-        // A row you may not press: empty, under Load. Under New EVERY row is pressable — that screen only
-        // comes up when all three are full, and picking one is the whole reason it is on the screen.
-        const dead = head == null and self.slotIntent == .load;
         if (on and !dead) {
             uiart.rowHilite(x, y, w, SLOT_H);
             rl.drawRectangle(x, y, w, 1, mathx.withAlpha(uiart.GILT, 70));
@@ -851,6 +864,9 @@ fn drawGauge(x: i32, y: i32, w: i32, h: i32, v: f32, selected: bool) void {
 /// ASCII ONLY, like every string in the game: the atlas has no em dash and one renders as tofu.
 const BOOT_NOTE: [:0]const u8 = "Three slots. A bonfire saves over the one you are playing.";
 const BOOT_NOTE_EMPTY: [:0]const u8 = "No save yet. Rest at a bonfire to write one.";
+/// …and the one that says WHY New Game is dim. A greyed row the player cannot read the reason for is the
+/// thing `Card.dim`'s own comment refuses, and "all three are written" is not visible from the boot screen.
+const BOOT_NOTE_FULL: [:0]const u8 = "All three slots are written. Delete one to start a new game.";
 
 fn bootLabels() [BOOT_COUNT][:0]const u8 {
     var out: [BOOT_COUNT][:0]const u8 = undefined;
@@ -862,9 +878,12 @@ fn bootLabels() [BOOT_COUNT][:0]const u8 {
     return out;
 }
 
-fn bootDim(shelf: *const savemod.Shelf) [BOOT_COUNT]bool {
+/// WHICH BOOT ROWS ARE DIM — walked off `rowLive` rather than re-deriving it, because a second copy of "may
+/// this be pressed" is how a row comes to look available and do nothing. It was already a second copy for
+/// Load, and New Game's own rule would have made it two.
+fn bootDim(self: *const Menu, shelf: *const savemod.Shelf) [BOOT_COUNT]bool {
     var out = [_]bool{false} ** BOOT_COUNT;
-    out[BOOT_LOAD] = !shelf.any();
+    for (0..BOOT_COUNT) |i| out[i] = !self.rowLive(i, shelf);
     return out;
 }
 
@@ -1198,4 +1217,47 @@ pub fn confirmPressed() bool {
 pub fn backPressed() bool {
     // Esc is routed by the game loop (onEscape); pad B backs out here — off `hud.BTN_BACK`, as above.
     return padPressed(hud.padOf(hud.BTN_BACK));
+}
+
+test "A NEW CHARACTER NEEDS AN EMPTY SLOT, and Load needs a written one — exact inverses" {
+    var m = Menu{};
+    var sh = savemod.Shelf{};
+    sh.head[0] = .{ .level = 7, .souls = 1240, .playtime = 8100 };
+
+    // UNDER LOAD: the written row is the press, the empty ones are refused.
+    m.screen = .slots;
+    m.slotIntent = .load;
+    try std.testing.expect(m.rowLive(0, &sh));
+    try std.testing.expect(!m.rowLive(1, &sh));
+
+    // UNDER NEW: the other way round, exactly. This is the owner's rule — new over an occupied slot is the
+    // one press that would destroy a save without the delete row's second confirm.
+    m.slotIntent = .new;
+    try std.testing.expect(!m.rowLive(0, &sh));
+    try std.testing.expect(m.rowLive(1, &sh));
+    // …and every slot answers the two intents oppositely, whatever is on the shelf.
+    for (0..savemod.SLOTS) |i| {
+        m.slotIntent = .load;
+        const onLoad = m.rowLive(i, &sh);
+        m.slotIntent = .new;
+        try std.testing.expect(onLoad != m.rowLive(i, &sh));
+    }
+    // BACK is always live, under either intent — it is not a slot.
+    try std.testing.expect(m.rowLive(SLOT_BACK, &sh));
+
+    // NOWHERE TO PUT ONE: the boot row goes dim rather than opening a picker with no live row on it.
+    m.screen = .boot;
+    try std.testing.expect(m.rowLive(BOOT_NEW, &sh)); // one hole left
+    sh.head[1] = .{ .level = 1, .souls = 0, .playtime = 1 };
+    sh.head[2] = .{ .level = 1, .souls = 0, .playtime = 1 };
+    try std.testing.expect(!m.rowLive(BOOT_NEW, &sh));
+    try std.testing.expect(m.rowLive(BOOT_LOAD, &sh)); // …and Load is at its most useful precisely then
+    // The card's greying is walked off the same predicate, so the two can never disagree.
+    const dim = bootDim(&m, &sh);
+    try std.testing.expect(dim[BOOT_NEW] and !dim[BOOT_LOAD]);
+
+    // A BARE SHELF is the mirror: nothing to load, and three places to start.
+    const bare = savemod.Shelf{};
+    try std.testing.expect(m.rowLive(BOOT_NEW, &bare));
+    try std.testing.expect(!m.rowLive(BOOT_LOAD, &bare));
 }

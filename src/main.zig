@@ -55,6 +55,7 @@ fn runBake(alloc: std.mem.Allocator) !void {
 // module that would have been pulled in anyway costs nothing; leaving one out costs the whole file.
 test {
     _ = @import("hero.zig");
+    _ = @import("anim.zig"); // THE KEYED-POSE KERNEL — keys, springs, the bank; every rig's attacks run on it
     _ = @import("camera.zig");
     _ = @import("mathx.zig");
     _ = @import("frog.zig");
@@ -74,6 +75,8 @@ test {
     _ = @import("pickup.zig"); // THE ITEM PICKUP — the reach ring, the one-shot latch and the fade
     _ = @import("award.zig"); // …and WHAT IT SAYS you got: the first-time card's queue and the toast stack
     _ = @import("foe.zig");
+    _ = @import("behave.zig"); // THE BEHAVIOUR LIBRARY — the routines are shared, so their tests are one set
+    _ = @import("elemfx.zig"); // THE ELEMENTS' PARTICLE LANGUAGE — the tests are that the four are told apart
     _ = @import("combat.zig");
     _ = @import("stats.zig");
     _ = @import("item.zig");

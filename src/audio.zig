@@ -444,6 +444,11 @@ pub const Id = enum {
     hurt_heavy,
     stagger,
     guard_block,
+    /// YOUR blow stopped on somebody else's boards. `guard_block` is the hero's own shield eating a blow —
+    /// the opposite event — and hearing the same voice for both is why a swing that achieved nothing sounded
+    /// exactly like a swing that saved you.
+    foe_guarded,
+    knight_repel,
     guard_break,
     parry,
     refused,
@@ -897,6 +902,35 @@ fn mkGuardBlock(r: *Rack) void {
     r.grit(0.0, 0.07, 0.30, 2400, 0.4, 6.0);
     r.ring(0.003, 0.09, 940, 0.16, 8.0, 2);
     r.master(1.6, 4200);
+}
+
+/// **THE TOWER SHIELD TURNING A BLOW** (owner: it needs a better shield repel sound). `guard_block` is a
+/// MAN's boards — a bright tick and a short high ring — and on four and a half metres of plank and iron it
+/// read as a coin dropped on a table. This is the same event on a wall: almost no tick, a deep body that
+/// takes its time, the dead THUD of a struck board under it, and the ring dropped two octaves so what comes
+/// back is the mass and not the edge. Longer and darker than anything else in the block family, because
+/// what the player has to hear is that this one did not care.
+fn mkKnightRepel(r: *Rack) void {
+    r.tick(0.0, 0.16, 1900);
+    r.body(0.0, 0.30, 104, 44, 1.15, 2.8); // the plank itself, struck
+    r.body(0.0, 0.13, 58, 30, 0.85, 2.0); // …and the mass behind it
+    r.grit(0.0, 0.12, 0.34, 1500, 0.55, 3.6);
+    r.ring(0.005, 0.22, 320, 0.13, 4.2, 3); // iron banding, low and short — not a bell
+    r.air(0.04, 0.20, 0.18, 900, 240, 0.22, 3.0);
+    r.master(2.2, 2600);
+}
+
+/// **YOUR BLOW STOPPED DEAD ON SOMEBODY'S BOARDS** (owner: we need a distinct sound any time your attack is
+/// blocked by a shield — any shield, or shield-like). It is a REFUSAL and it has to be unmistakable against
+/// the two things it is not: a hit that landed, and the hero's own guard eating a blow. So it is built
+/// backwards from a hit — the transient is DULL rather than bright, there is no meat under it, and it dies
+/// almost at once. What is left is the sound of a swing that achieved nothing, which is the information.
+fn mkFoeGuarded(r: *Rack) void {
+    r.tick(0.0, 0.30, 2100); // low and woody: wood and hide, not an edge finding bone
+    r.body(0.0, 0.11, 148, 66, 0.75, 4.4);
+    r.grit(0.0, 0.08, 0.38, 1800, 0.5, 5.2);
+    r.ring(0.004, 0.07, 620, 0.10, 7.0, 2); // a short iron slap off the rim, cut off fast
+    r.master(1.5, 3200);
 }
 
 fn mkGuardBreak(r: *Rack) void {
@@ -1961,6 +1995,12 @@ const BANK = [NV]Row{
     .{ .id = .hurt_heavy, .make = mkHurtHeavy, .gain = battle(0.86), .mix = .combat, .jit = 0.13, .vjit = 0.16, .vars = 4 },
     .{ .id = .stagger, .make = mkStagger, .gain = battle(0.55), .mix = .combat, .jit = 0.16, .vjit = 0.20, .vars = 4 },
     .{ .id = .guard_block, .make = mkGuardBlock, .gain = battle(0.62), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 4 },
+    // …and the REFUSAL, which is every foe's boards and not the hero's. Sits under a landed hit on purpose:
+    // it is the absence of one.
+    .{ .id = .foe_guarded, .make = mkFoeGuarded, .gain = battle(0.70), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 5, .poly = 4, .reach = 52 },
+    // …and the WALL's own. Louder and it carries further, because a boss turning a blow is a fight-wide
+    // event; barely jittered, since a wall struck twice is one object and not two.
+    .{ .id = .knight_repel, .make = mkKnightRepel, .gain = battle(0.90), .mix = .combat, .jit = 0.07, .vjit = 0.12, .vars = 4, .poly = 3, .reach = 95 },
     // The BREAK is once a fight at most, and it is the cue to get out.
     .{ .id = .guard_break, .make = mkGuardBreak, .gain = battle(0.92), .mix = .combat, .jit = 0.05, .vjit = 0.06, .vars = 2, .poly = 1 },
     // Barely jittered: a ring that wanders take to take reads as two pieces of metal, not one struck twice.

@@ -333,6 +333,10 @@ const State = enum { idle, approach, windup, slam, swipewind, swipe, backwind, b
 
 const Choice = enum { slam, swipe, drive, approach, wait, idle };
 const SWIPE_BEARING = 32.0; // deg off his facing past which the hero counts as "not in front of me"
+/// UP IN HIS FACE THE QUICK ONE WINS (owner's call). Fraction of the sweep band, out from its inner edge,
+/// inside which the swipe beats the slam even squared up with the slam ready — the 0.52 s cock-back rather
+/// than the 1.35 s rear. Outside it the old rule stands and he closes to crush.
+const SWIPE_NEAR_K = 0.5;
 /// `swipeInner` is where the sweep STARTS connecting (`Ogre.swipeInner`) — passed in rather than derived here
 /// because it scales with the body and this stays a pure function of the numbers.
 fn classify(dist: f32, bearingDeg: f32, slamReady: bool, swipeReady: bool, driveReady: bool, swipeInner: f32) Choice {
@@ -343,7 +347,8 @@ fn classify(dist: f32, bearingDeg: f32, slamReady: bool, swipeReady: bool, drive
     // it spent two thirds of a second on a guaranteed miss. The pocket at his feet is EARNED; he looms
     // instead (`.wait`), the same answer he gives to a slam he cannot afford yet.
     const inSweep = dist >= swipeInner and dist <= SWIPE_R;
-    if (inSweep and swipeReady and (offFront or !slamReady)) return .swipe;
+    const near = swipeInner + (SWIPE_R - swipeInner) * SWIPE_NEAR_K;
+    if (inSweep and swipeReady and (offFront or !slamReady or dist <= near)) return .swipe;
     if (dist <= SLAM_R) return if (slamReady) .slam else .wait; // squared up in reach: crush it
     // The drive owns its own band, past the swipe's — `driveReady` folds the roots in (a lunge is refused
     // where it is CHOSEN, `foe.canLeap`'s law), so a held ogre trudges through the band instead.
@@ -374,6 +379,9 @@ pub const Ogre = struct {
     leash: foe.Leash = .{},
     /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
     root: combat.Root = .{},
+    /// THE RIME BREATH'S COLD (`combat.Chill`) — stamped from outside like the roots, and billed through the
+    /// same `foe.grip`. The field is what opts a creature into the cone at all (`game.rimeBreathe`).
+    chill: combat.Chill = .{},
     /// …and THE HERO'S SHIELD, stamped the same way (`game.markParry`). Read only inside its own parry windows.
     parry: foe.Parry = .{},
     facing: f32 = 0,
@@ -534,7 +542,7 @@ pub const Ogre = struct {
         self.parried = false;
         // THE ROOTS HAVE THE FEET AND NOTHING ELSE (foe.grip) — the club still comes down, and on a body this heavy
         // that is the whole point of holding it.
-        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.vit.tick(dt);
@@ -2037,6 +2045,14 @@ test "attack choice: squared up crushes, flanked SWIPES, cooling looms, far clos
     try std.testing.expectEqual(Choice.swipe, classify(SWIPE_R - 0.2, -120, true, true, false, inner));
     try std.testing.expectEqual(Choice.swipe, classify(mid, 0, false, true, false, inner));
     try std.testing.expectEqual(Choice.wait, classify(SLAM_R - 0.5, 0, false, false, false, inner)); // all cooling → loom
+
+    // UP IN HIS FACE THE QUICK ONE WINS: squared up with the slam ready, the near half of the sweep band is
+    // the swipe's, and only the far half still walks him in to crush.
+    const near = inner + (SWIPE_R - inner) * SWIPE_NEAR_K;
+    try std.testing.expectEqual(Choice.swipe, classify(inner + 0.05, 0, true, true, true, inner));
+    try std.testing.expectEqual(Choice.swipe, classify(near - 0.05, 0, true, true, true, inner));
+    try std.testing.expectEqual(Choice.approach, classify(near + 0.05, 0, true, true, true, inner));
+    try std.testing.expect(near < SWIPE_R); // the far half is still the slam's to close on
     try std.testing.expectEqual(Choice.approach, classify(SWIPE_R + 1.0, 90, true, true, false, inner));
     try std.testing.expectEqual(Choice.approach, classify((SWIPE_R + AGGRO_R) * 0.5, 0, true, true, true, inner));
 

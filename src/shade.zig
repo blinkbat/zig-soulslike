@@ -249,6 +249,9 @@ pub const Shade = struct {
     leash: foe.Leash = .{},
     /// THE WAND'S ROOTS, when they have hold of it — stamped from outside, like the leash's eyes.
     root: combat.Root = .{},
+    /// THE RIME BREATH'S COLD (`combat.Chill`) — stamped from outside like the roots, and billed through the
+    /// same `foe.grip`. The field is what opts a creature into the cone at all (`game.rimeBreathe`).
+    chill: combat.Chill = .{},
     facing: f32 = 0,
     scale: f32 = 1.0,
     seed: f32 = 0,
@@ -369,7 +372,7 @@ pub const Shade = struct {
         self.justDied = false; // one-frame flag, reset at the TOP (the foe contract's own rule)
         // THE ROOTS HAVE ITS FEET — such as they are. The drift is given back as a post-step gate and the
         // grasp still closes; the BLINK is the one thing refused outright, at the choose site below.
-        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         // Airborne is half a blink: the arrival write must not be snapped back to the departure point,
         // leaving the rift flash five metres from the body (a leap in the air finishes its arc).
         defer if (!self.airborne()) grip.hold(&self.pos);
@@ -520,7 +523,7 @@ pub const Shade = struct {
         if (mathx.distXZ(self.pos, hero) > self.graspReach()) return false;
         const to = mathx.dirXZ(self.pos, hero);
         if (mathx.lenXZ(to) < 1e-4) return true; // standing inside it: no bearing to be wrong about
-        return @abs(mathx.degrees(mathx.wrapPi(mathx.headingXZ(to) - self.facing))) <= GRASP_ARC;
+        return combat.withinArc(mathx.headingXZ(to), self.facing, GRASP_ARC);
     }
 
     fn faceToward(self: *Shade, target: rl.Vector3, dt: f32) void {

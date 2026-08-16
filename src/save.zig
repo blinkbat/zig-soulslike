@@ -180,9 +180,16 @@ pub const Shelf = struct {
         return false;
     }
 
-    /// The first empty slot, or null when all three are full. **NOTHING IN THE GAME CALLS THIS ANY MORE** — it
-    /// was ER's New Game taking the first free slot without asking, and the owner's call is that both boot rows
-    /// ask which slot. Kept against that decision being revisited; the test below is its only reader.
+    /// NOWHERE LEFT TO PUT ONE. `any`'s opposite question, and the boot screen's New Game row hangs off it:
+    /// a new character needs an EMPTY slot (owner's call), so with all three written there is no such thing
+    /// as starting one until something is deleted.
+    pub fn full(self: *const Shelf) bool {
+        return self.firstFree() == null;
+    }
+
+    /// The first empty slot, or null when all three are full. It is no longer ER's "New Game takes the first
+    /// free slot without asking" — both boot rows ask WHICH slot — but `full` is written on top of it, so it
+    /// is what answers "is there anywhere left to start a character" for the boot screen's greyed New Game.
     pub fn firstFree(self: *const Shelf) ?usize {
         for (self.head, 0..) |h, i| {
             if (h == null) return i;
@@ -869,7 +876,17 @@ test "the shelf answers what the boot screen asks it" {
     try testing.expectEqual(@as(?usize, 1), sh.firstFree()); // …and it fills the hole rather than appending
 
     sh.head[1] = .{ .level = 9, .souls = 5, .playtime = 3 };
-    try testing.expectEqual(@as(?usize, null), sh.firstFree()); // full: New Game has to ASK
+    try testing.expectEqual(@as(?usize, null), sh.firstFree()); // full: there is nowhere to put a new one
+    try testing.expect(sh.full());
+
+    // `full` and `any` are the two the boot screen hangs its rows off, and they are NOT opposites: a shelf
+    // with one save on it answers true to both, which is the ordinary case and the one a naive `!any()`
+    // would have got wrong.
+    var one = Shelf{};
+    one.head[1] = .{ .level = 2, .souls = 1, .playtime = 1 };
+    try testing.expect(one.any() and !one.full());
+    const none = Shelf{};
+    try testing.expect(!none.any() and !none.full());
 }
 
 test "a slot's head is counted off the file, level included" {

@@ -57,6 +57,14 @@ pub const Elems = struct {
         for (&out.v) |*x| x.* *= k;
         return out;
     }
+    /// TWO ELEMENTAL LOADS ON ONE BLOW, summed per channel — what a stroke that has been CHARGED with
+    /// something carries (the Bone Knight's lit sword). Kept here beside `scaled` so nothing outside has to
+    /// know the spread is an array.
+    pub fn plus(self: Elems, other: Elems) Elems {
+        var out = self;
+        for (&out.v, other.v) |*x, y| x.* += y;
+        return out;
+    }
 };
 
 pub fn elems(s: Spread) Elems {
@@ -607,14 +615,111 @@ pub const Root = struct {
     }
 };
 
-/// WHICH SORCERY THE ROD IS SET TO. Exhaustive everywhere it is read, so a third spell is a compile error
-/// until it has said what it costs and what it does.
-pub const Spell = enum { bolt, roots };
+/// THE RIME BREATH — the rod's third sorcery, and **THE FIRST THING IN THE GAME THAT REACHES MORE THAN ONE
+/// BODY WITHOUT BEING A SWING** (owner's call, and it overturns the standing no-area-spells law: see
+/// AGENTS.md). It is a CONE poured out of him for `RIME_DUR`, not a blast at a mark — so its area is a thing
+/// he is aiming and holding, and a body walks out of it the way a body walks out of a swing.
+///
+/// **THE DAMAGE IS NOT THE POINT AND THE NUMBERS SAY SO.** Stood in the whole breath a body takes less than
+/// the roots' grip bills it and well under half a bolt; what it actually buys is `Chill`, on everything in
+/// front of him at once. It is the roots' trade — ground, not health — sold by the yard instead of by the
+/// body, and priced accordingly.
+pub const RIME_FP: f32 = 22.0; // dearer than the roots' 18: that one takes ONE pair of feet, this takes every pair in front of him
+pub const RIME_DUR: f32 = 0.85; // how long he pours, and a body may walk out of it while he does
+pub const RIME_REACH: f32 = 6.0; // …and how far it arrives. SHORTER than the roots are thrown: this is the close answer
+/// The cone's HALF-ANGLE, in DEGREES either side of his facing — `GUARD_ARC`'s and `knight.TOWER_ARC`'s unit,
+/// because it is compared by the same `withinArc` they are and two units for one kind of number is the bug
+/// that arrives the first time somebody moves it.
+pub const RIME_ARC: f32 = 30.0;
+pub const RIME_DPS: f32 = 12.0; // cold a second to a body standing in it (~10 over the full pour)
+
+/// HOW LONG THE COLD OUTLIVES THE BREATH, and this is the spell. It is billed from the LAST frame a body was
+/// touched, so a glancing pass is worth nearly as much as standing in the whole pour: what the cast buys is
+/// the four seconds after it, not the second of it.
+pub const CHILL_HOLD: f32 = 4.0;
+/// WHAT A CHILLED BODY'S TRAVEL IS MULTIPLIED BY. **The feet, and nothing else** — `Root`'s own law, which
+/// this is the partial case of: the state machine still runs, the kit still swings at its own speed and the
+/// blows land as hard. A chilled thing is not a slowed thing, it is a thing that cannot close.
+pub const CHILL_TRAVEL: f32 = 0.55;
+
+comptime {
+    // IT COSTS MORE THAN THE ROOTS AND DEALS LESS, which is the whole shape of it: reach across a field is
+    // what it sells, and it may not also be the better single-target spell.
+    std.debug.assert(RIME_FP > ROOT_FP);
+    std.debug.assert(RIME_DUR * RIME_DPS < ROOT_HOLD * ROOT_DPS);
+    // THE SLOW MUST OUTLIVE THE BREATH BY A CLEAR MARGIN or the spell is only its damage, which is the one
+    // thing it is deliberately bad at.
+    std.debug.assert(CHILL_HOLD > 3.0 * RIME_DUR);
+    // …and it must be a slow rather than a hold: at 0 it is the roots for less money.
+    std.debug.assert(CHILL_TRAVEL > 0 and CHILL_TRAVEL < 1);
+    // The cone is a MOUTHFUL. It must be WIDER than the shield covers — an area spell you have to aim more
+    // precisely than a block is not an area spell — and well under a quarter turn, or he is breathing on
+    // people standing beside him.
+    std.debug.assert(RIME_ARC > GUARD_ARC * 0.4 and RIME_ARC < 45.0);
+}
+
+/// **COLD ON A BODY — AND THE FIRST STATUS BUILT TO BE WORN BY EITHER SIDE.** Nothing in here knows what a
+/// foe is: no vitals, no position, no owner, and it bills no damage of its own (the breath drips that,
+/// `Root`'s arrangement). It is a clock and a multiplier, so the day something in the world breathes cold at
+/// the HERO, he carries this same struct and `hero.zig` multiplies its own ground speed by the same
+/// `travel()` — a field and one call, with no second spelling of what cold does to a body.
+///
+/// Shaped like `Root` and `Regen` deliberately: a clock that is refreshed rather than stacked, because two
+/// overlapping chills at different clocks is a state no bar and no animation can show.
+pub const Chill = struct {
+    left: f32 = 0,
+    /// COLD STAMPED THIS FRAME AND BILLED THE NEXT. The cone is tested from outside the creature (only the
+    /// game can see both him and the field), but a blow that KILLS has to arrive through the creature's own
+    /// `foe.grip`, because entering a death is the one thing nobody outside a creature knows how to do. So
+    /// the breath leaves what it owes here and the body collects it, `Leash`'s and `Parry`'s arrangement.
+    owed: f32 = 0,
+
+    pub fn held(self: *const Chill) bool {
+        return self.left > 0;
+    }
+    /// ONE FRAME OF THE BREATH ON THIS BODY — refreshes the hold to full rather than stacking (`Root.grab`'s
+    /// rule), so it runs from the LAST frame in the stream and not the first, and adds this frame's cold to
+    /// what is owed.
+    pub fn breathe(self: *Chill, dt: f32) void {
+        self.left = CHILL_HOLD;
+        self.owed += RIME_DPS * dt;
+    }
+    /// …and the cold WITHOUT the damage, for anything that wants to chill a body without breathing on it.
+    pub fn touch(self: *Chill) void {
+        self.left = CHILL_HOLD;
+    }
+    pub fn release(self: *Chill) void {
+        self.left = 0;
+        self.owed = 0;
+    }
+    /// The bite owed this frame, or null. A DRIP and never a blow — no poise and no stance, `Root.tick`'s
+    /// reason: a cone that flinched would flinch everything in front of him at once.
+    pub fn tick(self: *Chill, dt: f32) ?Hit {
+        self.left = maxF(0, self.left - dt);
+        if (self.owed <= 0) return null;
+        const bite = elems(.{ .cold = self.owed });
+        self.owed = 0;
+        return .{ .elem = bite };
+    }
+    /// THE ONE THING IT DOES: what this body's travel is multiplied by this frame.
+    pub fn travel(self: *const Chill) f32 {
+        return if (self.left > 0) CHILL_TRAVEL else 1.0;
+    }
+    /// How much is left of it, for the bar and for how heavily the body is drawn frosted.
+    pub fn frac(self: *const Chill) f32 {
+        return mathx.clampF(self.left / CHILL_HOLD, 0, 1);
+    }
+};
+
+/// WHICH SORCERY THE ROD IS SET TO. Exhaustive everywhere it is read, so a fourth spell is a compile error
+/// until it has said what it costs and what it does. APPENDED NEVER INSERTED — a save carries the ordinal.
+pub const Spell = enum { bolt, roots, rime };
 
 pub fn spellName(s: Spell) [:0]const u8 {
     return switch (s) {
         .bolt => "Chaos Bolt",
         .roots => "Roots",
+        .rime => "Rime Breath",
     };
 }
 
@@ -623,6 +728,7 @@ pub fn spellFp(s: Spell) f32 {
     return switch (s) {
         .bolt => BOLT_FP,
         .roots => ROOT_FP,
+        .rime => RIME_FP,
     };
 }
 
@@ -632,7 +738,64 @@ pub fn spellDamage(s: Spell) f32 {
     return switch (s) {
         .bolt => BOLT_HIT.raw(),
         .roots => ROOT_HOLD * ROOT_DPS,
+        // …to ONE body standing in the whole pour, which is the only comparison the sheet can honestly make:
+        // what the breath is actually worth is that number times however many were in front of him.
+        .rime => RIME_DUR * RIME_DPS,
     };
+}
+
+test "the chill outlives the breath, refreshes rather than stacks, and lets go on its own" {
+    var c = Chill{};
+    try std.testing.expect(!c.held());
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), c.travel(), 1e-4); // untouched, a body travels at its own speed
+
+    // ONE FRAME IN THE CONE, and what it buys is the four seconds after it rather than the frame itself.
+    c.breathe(1.0 / 60.0);
+    try std.testing.expect(c.held());
+    try std.testing.expectApproxEqAbs(CHILL_TRAVEL, c.travel(), 1e-4);
+
+    // The bite is billed ONCE and cleared: asked twice on one stamp it would bill the cold twice.
+    const bite = c.tick(0).?;
+    try std.testing.expect(bite.elem.at(.cold) > 0);
+    try std.testing.expect(bite.dmg == 0 and bite.poise == 0 and bite.stance == 0); // a DRIP, never a blow
+    try std.testing.expect(c.tick(0) == null);
+
+    // A SECOND BREATH REFRESHES RATHER THAN STACKING (`Root.grab`'s rule).
+    var t: f32 = 0;
+    while (t < CHILL_HOLD * 0.5) : (t += 0.05) _ = c.tick(0.05);
+    c.breathe(0.05);
+    _ = c.tick(0);
+    try std.testing.expectApproxEqAbs(CHILL_HOLD, c.left, 1e-3);
+
+    // …and it lets go on its own rather than latching on for the fight.
+    t = 0;
+    while (t < CHILL_HOLD + 0.2) : (t += 0.05) _ = c.tick(0.05);
+    try std.testing.expect(!c.held());
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), c.travel(), 1e-4);
+}
+
+test "the whole pour bills less than the roots' grip, and a body resists it as COLD" {
+    // What the breath is worth to ONE body — the sheet's own comparison, and it must stay the worst of the
+    // three, because what it actually sells is the number of bodies rather than the damage.
+    var billed: f32 = 0;
+    var c = Chill{};
+    var t: f32 = 0;
+    while (t < RIME_DUR) : (t += 1.0 / 60.0) {
+        c.breathe(1.0 / 60.0);
+        if (c.tick(1.0 / 60.0)) |bite| billed += bite.elem.at(.cold);
+    }
+    try std.testing.expectApproxEqAbs(RIME_DUR * RIME_DPS, billed, 0.3);
+    try std.testing.expect(billed < ROOT_HOLD * ROOT_DPS);
+
+    // …and it arrives as COLD and nothing else, `necro.FROST_HIT`'s law: one substance, one element. So a
+    // body that shrugs cold off shrugs the breath off, which is the trade the whole element makes.
+    var res = Resists{};
+    res.v[@intFromEnum(Elem.cold)] = 75;
+    var warm = Vitals.initFoe(100, 100, 100);
+    var cold = Vitals.initFoe(100, 100, 100).withRes(res);
+    _ = warm.drip(.{ .elem = elems(.{ .cold = 10 }) });
+    _ = cold.drip(.{ .elem = elems(.{ .cold = 10 }) });
+    try std.testing.expect(cold.hp > warm.hp);
 }
 
 pub const FlaskKind = enum { crimson, cerulean };
@@ -1183,6 +1346,8 @@ test "a re-cast REFRESHES the grip rather than stacking a second clock on it" {
 }
 
 test "THE ROOTS COST MORE THAN THE BOLT AND DEAL LESS — a control tool, not a second bolt" {
+    try std.testing.expect(spellFp(.rime) > spellFp(.roots)); // reach across a field is the dearest thing the rod sells
+    try std.testing.expect(spellDamage(.rime) < spellDamage(.roots)); // …and the worst of the three at killing one body
     try std.testing.expect(spellFp(.roots) > spellFp(.bolt));
     // …and what erupts stays inside the body it took, or a single-target spell is drawn as an area one.
     try std.testing.expect(ROOT_GRIP_R < ROOT_R);

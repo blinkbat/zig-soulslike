@@ -178,6 +178,9 @@ pub const Shroom = struct {
     /// THE WAND'S ROOTS, stamped from outside like every creature's — and everything this creature does is
     /// a leap, so held by the ankles it can only stand there and tremble.
     root: combat.Root = .{},
+    /// THE RIME BREATH'S COLD (`combat.Chill`) — stamped from outside like the roots, and billed through the
+    /// same `foe.grip`. The field is what opts a creature into the cone at all (`game.rimeBreathe`).
+    chill: combat.Chill = .{},
     facing: f32 = 0,
     scale: f32 = 1.0,
     seed: f32 = 0,
@@ -297,7 +300,7 @@ pub const Shroom = struct {
         self.heroHit = null;
         self.burstAt = null;
         self.justDied = false;
-        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.vit.tick(dt);

@@ -45,6 +45,8 @@ const STONE = rgba(132, 130, 126, 255);
 const STONE_LT = rgba(186, 184, 178, 255);
 const STONE_DK = rgba(74, 73, 70, 255);
 const SPARK = rgba(180, 214, 236, 255); // the cold blue-white a struck facet throws
+const RIME_ICE = rgba(150, 200, 226, 255); // the rime breath's crystal — `elemfx`'s COLD hue, on a card
+const RIME_LT = rgba(212, 238, 250, 255);
 const WEED = rgba(126, 30, 34, 255); // bloodgrass: dried arterial red, not a leaf green
 const WEED_LT = rgba(178, 62, 52, 255);
 const WEED_DK = rgba(74, 20, 24, 255);
@@ -986,6 +988,50 @@ pub fn roots(cx: f32, cy: f32, px: f32, on: bool) void {
     while (j < 4) : (j += 1) {
         const x = cx + rng.range(-0.32, 0.32) * s;
         rl.drawCircleV(v2(x, soil + rng.range(-0.4, 1.2) * k), rng.range(0.8, 1.7) * k, soilCol);
+    }
+}
+
+/// THE RIME BREATH, the rod's third sorcery: a CONE, because the cone is the whole mechanic — the one spell
+/// in the game that is a direction and a width rather than a mark. Crystals stream out of a narrow throat
+/// and open away from it, blunt-ended (NOTHING ENDS IN A POINT) and unevenly spaced, since an even fan of
+/// equal spikes is a garden rake — the roots' own lesson, in the other element.
+///
+/// Its palette is the icon set's and not `elemfx`'s: these are 2D chrome drawn on a card, and the FX
+/// colours are literal screen values solved against a lit world. Same HUE, so the picture and the thing it
+/// promises agree; not the same constants, because they are answering different questions.
+pub fn rime(cx: f32, cy: f32, px: f32, on: bool) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x21C3);
+    const a: u8 = if (on) 255 else 120;
+    const ice = rgba(RIME_ICE.r, RIME_ICE.g, RIME_ICE.b, a);
+    const lit = rgba(RIME_LT.r, RIME_LT.g, RIME_LT.b, a);
+    const halo = rgba(RIME_ICE.r, RIME_ICE.g, RIME_ICE.b, if (on) 60 else 26);
+    // The throat, off-centre to the left: the cone has to be seen to come FROM somewhere.
+    const throat = v2(cx - s * 0.34, cy + s * 0.04);
+    // The breath's own body — three overlapping washes opening away from the throat, widest at the far end.
+    var w: u32 = 0;
+    while (w < 3) : (w += 1) {
+        const t = (@as(f32, @floatFromInt(w)) + 1.0) / 3.0;
+        rl.drawCircleV(v2(throat.x + s * 0.62 * t, throat.y + rng.range(-0.03, 0.03) * s), s * (0.10 + 0.20 * t), halo);
+    }
+    // SEVEN crystals, at uneven bearings inside the cone and uneven lengths along it.
+    var i: u32 = 0;
+    while (i < 7) : (i += 1) {
+        const spread = ((@as(f32, @floatFromInt(i)) + rng.range(-0.3, 0.3)) / 6.0 - 0.5) * 0.86; // radians off the axis
+        const run = s * rng.range(0.30, 0.68);
+        const from = v2(throat.x + s * 0.06, throat.y + spread * s * 0.10);
+        const to = v2(from.x + run, from.y + spread * run);
+        const wid = rng.range(1.8, 3.0) * k;
+        rl.drawLineEx(from, to, wid, ice);
+        rl.drawCircleV(to, wid * 0.52, lit); // the blunt end
+        rl.drawCircleV(to, wid * 1.25, halo);
+    }
+    // …and the frost that has already fallen out of it, settling: COLD IS THE ONE THAT LIES ABOUT.
+    var j: u32 = 0;
+    while (j < 5) : (j += 1) {
+        const x = cx + rng.range(-0.10, 0.40) * s;
+        rl.drawCircleV(v2(x, cy + s * rng.range(0.24, 0.40)), rng.range(0.9, 1.8) * k, lit);
     }
 }
 

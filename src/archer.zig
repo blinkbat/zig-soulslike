@@ -5,6 +5,7 @@ const mathx = @import("mathx.zig");
 const combat = @import("combat.zig");
 const heromod = @import("hero.zig");
 const foe = @import("foe.zig");
+const behave = @import("behave.zig");
 const collision = @import("collision.zig");
 const wf = @import("worldfmt.zig");
 const sfx = @import("audio.zig");
@@ -137,8 +138,6 @@ const RANGE_MAX = 20.0; // out past here → step in to close to band
 const TURN_RATE = 6.0; // rad/s — tracks the hero (light aim tracking)
 const BODY_R = 0.34; // ground footprint (matches the hero's HERO_R feel)
 const HURT_R = 0.42; // hurt-sphere radius for the hero's blade
-// Pelvis walk oscillation — the hero's amplitude, so the shared gait reads as one humanoid.
-const A_BOB = heromod.A_BOB;
 // Where a skeletal foot meets the earth, MEASURED off `footMesh`: the metatarsal plate and heel, with the
 // toe bones fanning out to ~0.245·H ahead.
 /// A skeleton's body points as fractions of stature: hurt-sphere centre, lock-on mark, HP-bar top. Shared with
@@ -163,7 +162,13 @@ const HOLD_DUR = 0.45; // settle at full draw, aiming
 const LOOSE_DUR = 0.14; // the release snap
 const RECOVER_DUR = 0.55; // lower the bow, reset
 const RELOAD_CD = 1.1; // beat between shots (nock the next)
-const REPOSITION_DUR = 1.6; // how long a kite step lasts before re-deciding
+const REPOSITION_DUR = 1.6; // how long the trudge home walks before re-deciding
+
+/// Too far out: walk back INTO the band and stop just inside its far edge. The KITE itself is `behave.KITE`
+/// — the band, the arrival slop and the bail all live in the library now, not in this file's arithmetic.
+const STEP_IN = [_]behave.Step{
+    .{ .close = .{ .to = RANGE_MAX - 2.0 } },
+};
 
 const BACKSTEP_R = 3.9; // hero this close and it bails (well inside RANGE_MIN's walking kite)
 const BACKSTEP_CD = 7.0;
@@ -506,6 +511,9 @@ pub const Archer = struct {
     leash: foe.Leash = .{},
     /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
     root: combat.Root = .{},
+    /// THE RIME BREATH'S COLD (`combat.Chill`) — stamped from outside like the roots, and billed through the
+    /// same `foe.grip`. The field is what opts a creature into the cone at all (`game.rimeBreathe`).
+    chill: combat.Chill = .{},
     facing: f32 = 0,
     scale: f32 = 1.0,
     seed: f32 = 0,
@@ -518,7 +526,10 @@ pub const Archer = struct {
     armT: f32 = 0, // the draw arm's arc: 0 rest → reach over the shoulder (quiver) → 1 anchor
     kick: f32 = 0, // loose follow-through (hand flies back, bow bounces); decays after
     headScan: f32 = 0, // idle sentry sweep (deg yaw) — the skull scans the ruins
-    kiteDir: rl.Vector3 = mathx.zero3, // world XZ direction of the current reposition AND the leap
+    kiteDir: rl.Vector3 = mathx.zero3, // world XZ direction of the trudge home AND the leap
+    /// THE FIGHT'S WALKING (`behave.Routine`) — the kite and the step-in run off shared scripts; only the
+    /// trudge home and the committed backstep keep their own vectors.
+    routine: behave.Routine = .{},
     looseFired: bool = false, // one arrow per loose (latched)
     backstepCd: f32 = 0, // the panic leap's long cooldown
     leapDone: f32 = 0, // ground already covered by the current leap (so travel integrates once)
@@ -611,11 +622,18 @@ pub const Archer = struct {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt); // shared — see foe.zig
     }
 
-    /// WHERE IT IS TRYING TO WALK, or null when it is not walking anywhere (`game.markWay`) — off the kite's own
-    /// committed vector, which is the whole errand: closing in, backing off, or going home.
+    /// WHERE IT IS TRYING TO WALK, or null when it is not walking anywhere (`game.markWay`) — read off the
+    /// routine's own current step when the fight has it, and off the committed vector on the trudge home.
     pub fn navWant(self: *const Archer, hero: rl.Vector3) ?rl.Vector3 {
-        _ = hero;
         if (self.state != .reposition) return null;
+        if (self.routine.current()) |s| {
+            return switch (s) {
+                .close, .orbit => hero,
+                .open => mathx.addV(self.pos, mathx.dirXZ(hero, self.pos)),
+                .shift => if (self.routine.marked) self.routine.mark else hero,
+                .dwell => null,
+            };
+        }
         return mathx.addV(self.pos, self.kiteDir);
     }
 
@@ -633,7 +651,7 @@ pub const Archer = struct {
         self.justDied = false; // one-frame flag: re-set below only if a blade kills it this frame
         // THE ROOTS HAVE THE FEET (foe.grip) — it still draws and still looses, and only the travel is taken.
         // The PANIC LEAP is the exception the grip cannot answer on its own: see `foe.canLeap` below.
-        const grip = foe.grip(&self.root, &self.vit, dt, self.pos);
+        const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         self.elapsed += dt;
@@ -706,18 +724,33 @@ pub const Archer = struct {
             .reposition => {
                 self.armT = mathx.approach(self.armT, 0.15, dt * 3.0); // a wary half-ready carry
                 self.drawAmt = mathx.approach(self.drawAmt, 0, dt * 6.0);
-                if (self.leash.goingHome()) {
+                if (self.routine.running) {
+                    // THE KITE AND THE STEP-IN ARE `behave`'s: the library owns the band, the slop and the
+                    // bail; this creature only applies the Want. Its eyes stay on him the whole way, and the
+                    // steering (`foe.Nav`) is passed IN so the detour is the routine's own business. The
+                    // BACKSTEP below is not steered — it is a committed leap.
+                    const w = self.routine.step(dt, .{ .at = self.pos, .facing = self.facing, .quarry = hero, .nav = self.nav });
+                    self.faceToward(w.look orelse hero, dt);
+                    if (w.go) |g| {
+                        const go = mathx.dirXZ(self.pos, g);
+                        if (mathx.lenXZ(go) > 1e-3) {
+                            const moved = WALK_SPEED * dt;
+                            mathx.stepXZ(&self.pos, go, moved, bounds);
+                            movedDist = moved;
+                            moveYaw = mathx.headingXZ(go);
+                        }
+                    }
+                    if (!self.routine.running) self.decide(d);
+                } else {
+                    // Trudging home — the leash's own walk, on its committed vector.
                     foe.faceToward(self.pos, &self.facing, mathx.addV(self.pos, self.kiteDir), TURN_RATE, dt);
-                } else self.faceToward(hero, dt);
-                const moved = WALK_SPEED * dt;
-                // …ROUND WHAT IS IN THE WAY (`foe.Nav`), at the STEP: a kiting archer keeps its eyes and its bow
-                // on him and moves sideways to whatever it is looking at, so the detour is one more kite
-                // direction. The BACKSTEP below is not steered — it is a committed leap.
-                const go = self.nav.along(self.kiteDir);
-                mathx.stepXZ(&self.pos, go, moved, bounds);
-                movedDist = moved;
-                moveYaw = mathx.headingXZ(go);
-                if (self.t >= REPOSITION_DUR) self.decide(d);
+                    const go = self.nav.along(self.kiteDir);
+                    const moved = WALK_SPEED * dt;
+                    mathx.stepXZ(&self.pos, go, moved, bounds);
+                    movedDist = moved;
+                    moveYaw = mathx.headingXZ(go);
+                    if (self.t >= REPOSITION_DUR) self.decide(d);
+                }
             },
             .backstep => {
                 self.faceToward(hero, dt);
@@ -769,17 +802,18 @@ pub const Archer = struct {
 
     fn decide(self: *Archer, dist: f32) void {
         if (self.leash.goingHome()) {
+            self.routine.stop(); // the leash's walk is not a fight behaviour
             self.kiteDir = mathx.dirXZ(self.pos, self.home);
             return self.enter(.reposition);
         }
         switch (classify(dist, self.reloadCd <= 0)) {
             .shoot => self.enter(.draw),
             .back_off => {
-                self.kiteDir = self.awayDir();
+                self.routine.start(&behave.KITE, self.seed - 0.5);
                 self.enter(.reposition);
             },
             .close_in => {
-                self.kiteDir = mathx.scaleV(self.awayDir(), -1); // toward the hero
+                self.routine.start(&STEP_IN, self.seed - 0.5);
                 self.enter(.reposition);
             },
             .hold_ground => self.enter(.idle),
@@ -874,13 +908,11 @@ pub const Archer = struct {
         const stunAmt = self.stunAmount();
 
         const m = self.moving * (1.0 - dk);
-        const twoPi = std.math.tau;
-        const bob = -0.5 * A_BOB * mathx.cosf(2.0 * twoPi * self.phase) * m;
-        const latW = @abs(self.latB) * m;
-        const sway = heromod.strafeSway(latW, 0) * mathx.sinf(twoPi * self.phase) * m;
-        const prot = A_PROT * mathx.sinf(twoPi * self.phase) * m * @abs(self.fwdB) +
-            heromod.strafeProt(self.phase, self.latB, m);
-        const dip = heromod.STRAFE_DIP * latW;
+        const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);
+        const bob = pel.bob;
+        const sway = pel.sway;
+        const prot = pel.prot;
+        const dip = pel.dip;
 
         var wx: [N]rl.Matrix = undefined;
         const collapse = mathx.lerpF(hipY, 0.22 * H, dk); // pelvis drops on death

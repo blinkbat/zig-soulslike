@@ -413,6 +413,7 @@ pub const Scene = struct {
     loc_windAmt: i32,
     loc_time: i32,
     loc_flash: i32,
+    loc_frost: i32,
     loc_fade: i32,
     loc_lightPos: i32,
     loc_lightCol: i32,
@@ -465,6 +466,7 @@ pub const Scene = struct {
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "windAmt"), &windOff, .float);
         var flashOff: f32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "hitFlash"), &flashOff, .float);
+        rl.setShaderValue(shader, rl.getShaderLocation(shader, "frost"), &flashOff, .float);
         var fadeOff: f32 = 1;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "fade"), &fadeOff, .float);
         var noLights: i32 = 0;
@@ -493,6 +495,7 @@ pub const Scene = struct {
             .loc_windAmt = rl.getShaderLocation(shader, "windAmt"),
             .loc_time = rl.getShaderLocation(shader, "uTime"),
             .loc_flash = rl.getShaderLocation(shader, "hitFlash"),
+            .loc_frost = rl.getShaderLocation(shader, "frost"),
             .loc_fade = rl.getShaderLocation(shader, "fade"),
             .loc_lightPos = rl.getShaderLocation(shader, "lightPos"),
             .loc_lightCol = rl.getShaderLocation(shader, "lightCol"),
@@ -719,6 +722,12 @@ fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
     pub fn setFlash(self: *Scene, amt: f32) void {
         var a = mathx.clampF(amt, 0, 1);
         rl.setShaderValue(self.shader, self.loc_flash, &a, .float);
+    }
+
+    // …and the rime coat on whatever draws NEXT (0 = none) — a chilled body, drawn frosted.
+    pub fn setFrost(self: *Scene, amt: f32) void {
+        var a = mathx.clampF(amt, 0, 1);
+        rl.setShaderValue(self.shader, self.loc_frost, &a, .float);
     }
 
     /// HOW SOLID WHATEVER DRAWS NEXT IS — 1 opaque, 0 gone. Plain alpha, so a caller thinning

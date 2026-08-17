@@ -172,6 +172,17 @@ whose contents change together is fine. Splits go where concerns genuinely part 
   `HELD` weapon slot. Do not transcribe the joint layout into a new creature file. Only `hx`/`sx` and
   stature are honestly per-creature. The ogre stays off it on purpose (24 bones, three inserted ABOVE
   existing joints is a different layout, not a wider one).
+- **EITHER HAND MAY HOLD ANYTHING, AND THAT IS THREE THINGS PER ARMAMENT, NOT ONE** (`hero.Armament`). The
+  MESH (`drawHand`), the POSE of the arm that works it, and every WORLD POINT taken off it. All three ask one
+  question — `handsHold` / `swordLeft` / `wandLeft` / `shieldLeft` / `bellLeft` — and a pose picks its side
+  through `armSide(left, authoredLeft)`, whose `mirror` multiplies the LATERAL channels (`ry`, `rz`) and
+  leaves the sagittal `rx` alone. Written out as `SHL`/`WRL` at the call site the first two get done and the
+  third does not, which fails INVISIBLY on the hand it was authored for: a rod equipped right drew and
+  carried perfectly and threw every bolt, laid every rune ring and breathed the whole rime cone out of the
+  empty left fist, because `wandTipWorld` was still `xf[WRL]`. Same shape on the boards (`shieldFaceWorld`,
+  the guard and the parry) and on the bell, mirrored (its ring was welded to the RIGHT).
+  **AND A TWO-HANDER CLAIMS BOTH HANDS FROM EITHER SLOT** — asked as "is the RIGHT slot two-handed", a bow
+  set in the LEFT left a shield in the right blocking and parrying while nothing was drawn in either hand.
 - **HUMANOID ENEMIES REUSE THE HERO'S WALK/STRAFE** — `hero.advanceGait` + `hero.legChain`. Never
   author a bespoke walk; only the upper body is per-enemy. `legChain` is rig-size agnostic but a foe
   rig must keep the hero's leg indices (5..10) where they are.

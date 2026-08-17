@@ -2981,8 +2981,9 @@ pub fn hud(g: *Game, dt: f32) void {
             hud_.equipment(
                 // LEFT: what that hand actually has — boards, the rod, or nothing at all behind a bow.
                 if (!g.hero.offInHand()) .empty else armSlot(g.hero.off),
-                // RIGHT: off the ENUM rather than off `bowUp` — as nested ifs the bell drew a sword.
-                armSlot(g.hero.arm),
+                // RIGHT: off the ENUM rather than off `bowUp` — as nested ifs the bell drew a sword. And off
+                // `armInHand`, the input's own rule: a bow set in the LEFT slot is worked from this hand.
+                armSlot(g.hero.armInHand()),
                 // UP fills only while something in his hands could cast; behind a bow or a shield, empty.
                 if (wandUp) (switch (g.hero.spell) {
                     .bolt => hud_.Slot.spell,
@@ -3584,9 +3585,8 @@ pub fn run(mode: Mode) void {
         // **A TWO-HANDER CLAIMS THE PRIMARY PAIR WHICHEVER SLOT IT SITS IN.** The bow is worked with both
         // hands and the rig nocks it at the right wrist, so which slot it was equipped to is bookkeeping —
         // and the other hand has nothing in it while it is up.
-        const twoH = heromod.armTwoHanded(g.hero.arm) or heromod.armTwoHanded(g.hero.off);
-        const rightHeld: heromod.Armament = if (heromod.armTwoHanded(g.hero.off)) g.hero.off else g.hero.arm;
-        const leftHeld: ?heromod.Armament = if (twoH) null else g.hero.off;
+        const rightHeld: heromod.Armament = g.hero.armInHand();
+        const leftHeld: ?heromod.Armament = if (g.hero.offInHand()) g.hero.off else null;
 
         var acts = Acts{};
         handActs(rightHeld, .{ .press1 = r1, .press2 = r2, .held1 = r1Held, .held2 = r2Held }, &acts);

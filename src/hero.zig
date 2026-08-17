@@ -1046,6 +1046,19 @@ pub fn armTwoHanded(a: Armament) bool {
     return a == .bow;
 }
 
+/// **WHAT A PAIR OF HANDS IS ACTUALLY HOLDING** — `Hero.holds` off the two slots alone, so the character
+/// book can price a CANDIDATE loadout that is in nobody's hands yet and get the same answer the fight will.
+///
+/// **AND A TWO-HANDER CLAIMS BOTH HANDS FROM WHICHEVER SLOT IT SITS IN**, which is the whole reason this is
+/// one question about the PAIR rather than a test per side. Asked as "is the RIGHT hand two-handed", a bow
+/// in the LEFT slot left the right hand's own armament reading as held — so a shield there was blocked with,
+/// parried with and priced on the page while both hands were on the string and nothing was drawn in either.
+pub fn handsHold(arm: Armament, off: Armament, a: Armament) bool {
+    if (armTwoHanded(arm)) return a == arm;
+    if (armTwoHanded(off)) return a == off;
+    return arm == a or off == a;
+}
+
 // One buffered action, ER-style: an attack/roll pressed while mid-action QUEUES here
 pub const Queued = union(enum) { attack: Attack, roll: rl.Vector3 };
 
@@ -1487,13 +1500,44 @@ pub const Hero = struct {
     /// question the game used to ask of a SIDE — is the bow up, is the wand out, can he block — is really a
     /// question about what he is carrying, and asking it of one named hand is what pinned each thing to a side.
     pub fn holds(self: *const Hero, a: Armament) bool {
-        return self.arm == a or (self.off == a and self.offInHand());
+        return handsHold(self.arm, self.off, a);
     }
 
-    /// WHICH HAND THE BLADE IS IN. The RIGHT wins if somehow both, since that is the hand the rig's own
-    /// bone is parented to and the mirror is the exception rather than the rule.
+    /// **WHICH HAND SOMETHING IS IN.** The RIGHT wins if somehow both, since that is the hand the rig's own
+    /// held bone is parented to and the mirror is the exception rather than the rule. ONE COPY: every
+    /// armament that is POSED, MEASURED or EMITTED FROM asks this, and transcribed per weapon it was already
+    /// three different tests — which is how the rod's own tip kept answering for a hand that was not holding it.
+    fn heldLeft(self: *const Hero, a: Armament) bool {
+        return self.arm != a and self.off == a and self.offInHand();
+    }
+
+    /// …AND THE SAME QUESTION WITH THE OTHER FALLBACK, for anything whose animation was authored on the LEFT.
+    /// A pose keeps running for a beat after the thing has left the hand — a guard easing down, a cast in its
+    /// recovery — so the arm it falls back to must be the one that pose is written for, or letting go of the
+    /// boards throws the last frames of the block onto the empty arm.
+    fn heldRight(self: *const Hero, a: Armament) bool {
+        return self.arm == a;
+    }
+
+    /// WHICH HAND THE BLADE IS IN — right-authored: `PARENT[SWORD]` is `WRR`.
     pub fn swordLeft(self: *const Hero) bool {
-        return self.arm != .sword and self.off == .sword and self.offInHand();
+        return self.heldLeft(.sword);
+    }
+
+    /// …THE BELL, rung one-handed off the same wrist the blade hangs from.
+    pub fn bellLeft(self: *const Hero) bool {
+        return self.heldLeft(.bell);
+    }
+
+    /// …THE ROD. Left-authored (`wandMesh` is in that wrist's frame), and it is what `wandTipWorld` is taken
+    /// off: a bolt, a rune ring and the rime's mouth all leave the STONE.
+    pub fn wandLeft(self: *const Hero) bool {
+        return !self.heldRight(.wand);
+    }
+
+    /// …and THE BOARDS, which the guard, the parry and the sparks off their face are all measured from.
+    pub fn shieldLeft(self: *const Hero) bool {
+        return !self.heldRight(.shield);
     }
 
     pub fn bowOut(self: *const Hero) bool {
@@ -1507,8 +1551,18 @@ pub const Hero = struct {
     /// Not the same question as which one is EQUIPPED: a raised bow takes the OTHER hand to the string too, so
     /// whatever is in it is not in it while the bow is up. Everything else leaves it free — the bell included,
     /// which is rung one-handed. Asked here rather than cleared on the swap, so it cannot stale.
+    ///
+    /// **EITHER SLOT'S TWO-HANDER SHUTS THIS**, `handsHold`'s rule: a bow in the LEFT slot is still worked
+    /// from the right (`draw`), so that hand is on the stave and the left is on the string either way.
     pub fn offInHand(self: *const Hero) bool {
-        return !armTwoHanded(self.arm);
+        return !armTwoHanded(self.arm) and !armTwoHanded(self.off);
+    }
+
+    /// …AND WHAT THE RIGHT HAND IS ACTUALLY WORKING — normally the arm slot, but a two-hander is worked from
+    /// this hand out of EITHER slot (`draw`, and the rig nocks the bow at that wrist), so a bow set in the
+    /// left slot is what this hand has. The input layer and the HUD's right cell both ask it.
+    pub fn armInHand(self: *const Hero) Armament {
+        return if (armTwoHanded(self.off)) self.off else self.arm;
     }
 
     pub fn wandOut(self: *const Hero) bool {
@@ -1741,10 +1795,16 @@ pub const Hero = struct {
         self.parrySparks();
     }
 
-    /// MEASURED off the fit matrix's own constants, so re-hanging the shield keeps the sparks on its face.
+    /// MEASURED off the fit matrix's own constants, so re-hanging the shield keeps the sparks on its face —
+    /// AND MIRRORED WITH IT (`shieldFit`), since both the hub and the normal are lateral. Taken off a fixed
+    /// `WRL`, boards equipped RIGHT threw every parry shower and every block gout off the other hand.
     pub fn shieldFaceWorld(self: *const Hero) struct { at: rl.Vector3, n: rl.Vector3 } {
-        const at = rl.math.vector3Transform(SHIELD_HUB, self.xf[WRL]);
-        const out = rl.math.vector3Transform(mathx.addV(SHIELD_HUB, SHIELD_N), self.xf[WRL]);
+        const left = self.shieldLeft();
+        const sd: f32 = if (left) 1.0 else -1.0;
+        const wrist = self.xf[if (left) WRL else WRR];
+        const hub = v3(sd * SHIELD_HUB.x, SHIELD_HUB.y, SHIELD_HUB.z);
+        const at = rl.math.vector3Transform(hub, wrist);
+        const out = rl.math.vector3Transform(mathx.addV(hub, v3(sd * SHIELD_N.x, SHIELD_N.y, SHIELD_N.z)), wrist);
         return .{ .at = at, .n = mathx.normV(mathx.subV(out, at)) };
     }
 
@@ -2035,9 +2095,12 @@ pub const Hero = struct {
         return mathx.clampF(self.castT / (CAST_DUR * CAST_AT), 0, 1);
     }
 
-    /// Where the bolt leaves, off the posed left wrist. MEASURED from the mesh's own constants.
+    /// Where the bolt leaves, off the posed wrist THE ROD IS ACTUALLY IN. MEASURED from the mesh's own
+    /// constants, which are that wrist's frame either side (`wandMesh` takes no fit matrix), so this is one
+    /// index and no mirror. Welded to `WRL`, a rod equipped RIGHT drew and posed correctly and then threw
+    /// every bolt, laid every rune ring and breathed the whole rime cone out of his empty left hand.
     pub fn wandTipWorld(self: *const Hero) rl.Vector3 {
-        return rl.math.vector3Transform(wandAt(WAND_TIP_T), self.xf[WRL]);
+        return rl.math.vector3Transform(wandAt(WAND_TIP_T), self.xf[if (self.wandLeft()) WRL else WRR]);
     }
 
     /// SCALED WHOLE, not on the damage alone: what the tree bought is a stronger spell, and a bolt that hit
@@ -2709,17 +2772,13 @@ pub const Hero = struct {
     /// equipped RIGHT posed an empty hand into the carry while the rod itself hung off the other arm.
     /// `poseAttack`'s mirror on the same one sign: the lateral channels flip, the sagittal ones do not.
     fn poseWandArm(self: *const Hero, wx: *[N]rl.Matrix) void {
-        const left = self.arm != .wand; // the RIGHT wins if somehow both, `swordLeft`'s rule
-        const sd: f32 = if (left) 1.0 else -1.0;
-        const sh: usize = if (left) SHL else SHR;
-        const el: usize = if (left) ELL else ELR;
-        const wr: usize = if (left) WRL else WRR;
+        const a = armSide(self.wandLeft(), true);
         const swing = ARM_SWING * mathx.cosf(std.math.tau * self.phase) * self.moving * self.fwdB;
         var p = wx.*;
-        setLocal(&p, sh, self.rest, mul(rx(-WAND_CARRY_FLEX + WAND_CARRY_SWING * swing), rz(sd * (ARM_ABD + WAND_CARRY_ABD))));
-        setLocal(&p, el, self.rest, rx(-(WAND_CARRY_ELBOW + WAND_CARRY_ELBOW_SWING * swing)));
-        setLocal(&p, wr, self.rest, rz(sd * WAND_CARRY_WRIST));
-        for ([_]usize{ sh, el, wr }) |i| wx[i] = p[i];
+        setLocal(&p, a.sh, self.rest, mul(rx(-WAND_CARRY_FLEX + WAND_CARRY_SWING * swing), rz(a.mirror * (ARM_ABD + WAND_CARRY_ABD))));
+        setLocal(&p, a.el, self.rest, rx(-(WAND_CARRY_ELBOW + WAND_CARRY_ELBOW_SWING * swing)));
+        setLocal(&p, a.wr, self.rest, rz(a.mirror * WAND_CARRY_WRIST));
+        for ([_]usize{ a.sh, a.el, a.wr }) |i| wx[i] = p[i];
     }
 
     fn poseBowArms(self: *const Hero, wx: *[N]rl.Matrix, lean: f32, prot: f32, bank: f32) void {
@@ -2780,17 +2839,21 @@ pub const Hero = struct {
 
     fn poseGuard(self: *const Hero, wx: *[N]rl.Matrix, k: f32, rec: f32, lean: f32, prot: f32, bank: f32) void {
         var gp = wx.*;
-        const blade = -(GUARD_BLADE + BLOCK_TRUNK * rec);
+        // THE BOARDS ARM IS WHICHEVER ONE HOLDS THEM. The whole stance is lateral about it — the trunk turns
+        // the shield onto the blow — so the mirror carries the body too, not just the two arms.
+        const brd = armSide(self.shieldLeft(), true);
+        const free = armSide(!self.shieldLeft(), false);
+        const blade = brd.mirror * -(GUARD_BLADE + BLOCK_TRUNK * rec);
         setLocal(&gp, SPINE, self.rest, mul3(rx(lean * 0.5), ry(-0.3 * prot + blade), rz(0.5 * bank)));
         setLocal(&gp, CHEST, self.rest, mul3(rx(lean * 0.5 + 5.0 * rec), ry(-0.5 * prot + blade), rz(0.5 * bank)));
         setLocal(&gp, NECK, self.rest, ry(-blade));
         setLocal(&gp, HEAD, self.rest, mul(rx(GUARD_HEAD), ry(-blade)));
-        setLocal(&gp, SHL, self.rest, mul3(rx(-(GUARD_SH_FLEX - BLOCK_SHIELD_BACK * rec)), rz(GUARD_SH_ABD), ry(-GUARD_SH_CROSS)));
-        setLocal(&gp, ELL, self.rest, rx(-(GUARD_ELBOW + BLOCK_SHIELD_FOLD * rec)));
-        setLocal(&gp, WRL, self.rest, rl.math.matrixIdentity());
-        setLocal(&gp, SHR, self.rest, mul(rx(GUARD_SWORD_BACK), rz(-ARM_ABD)));
-        setLocal(&gp, ELR, self.rest, rx(-GUARD_SWORD_ELBOW));
-        setLocal(&gp, WRR, self.rest, rx(GUARD_SWORD_WRIST));
+        setLocal(&gp, brd.sh, self.rest, mul3(rx(-(GUARD_SH_FLEX - BLOCK_SHIELD_BACK * rec)), rz(brd.mirror * GUARD_SH_ABD), ry(brd.mirror * -GUARD_SH_CROSS)));
+        setLocal(&gp, brd.el, self.rest, rx(-(GUARD_ELBOW + BLOCK_SHIELD_FOLD * rec)));
+        setLocal(&gp, brd.wr, self.rest, rl.math.matrixIdentity());
+        setLocal(&gp, free.sh, self.rest, mul(rx(GUARD_SWORD_BACK), rz(free.mirror * -ARM_ABD)));
+        setLocal(&gp, free.el, self.rest, rx(-GUARD_SWORD_ELBOW));
+        setLocal(&gp, free.wr, self.rest, rx(GUARD_SWORD_WRIST));
         placeSword(&gp, self.rest, rl.math.matrixIdentity(), self.swordLeft());
         for ([_]usize{ SPINE, CHEST, NECK, HEAD, SHL, ELL, WRL, SHR, ELR, WRR, SWORD }) |i| {
             wx[i] = lerpM(wx[i], gp[i], k);
@@ -2835,8 +2898,11 @@ pub const Hero = struct {
         const rec = self.blockRecoil();
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
+        // `poseGuard`'s pair: the bat-away is thrown by whichever arm the boards are actually on.
+        const brd = armSide(self.shieldLeft(), true);
+        const free = armSide(!self.shieldLeft(), false);
         // Negative winds him onto that side, positive carries the arm across.
-        const blade = -(GUARD_BLADE + BLOCK_TRUNK * rec) + PARRY_TRUNK * s;
+        const blade = brd.mirror * (-(GUARD_BLADE + BLOCK_TRUNK * rec) + PARRY_TRUNK * s);
         const sink = GUARD_CROUCH + PARRY_SINK * k + BLOCK_SINK * rec;
 
         var wx: [N]rl.Matrix = undefined;
@@ -2858,17 +2924,17 @@ pub const Hero = struct {
         setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
         // THE BOARDS, driven at the blow and squaring onto it. The shoulder gains what the elbow gives back, so
         // the FOLD `shieldFit` inverts is untouched — see PARRY_PUNCH. Only the yaw and the fist roll turn them.
-        setLocal(&wx, SHL, self.rest, mul3(
+        setLocal(&wx, brd.sh, self.rest, mul3(
             rx(-(GUARD_SH_FLEX + PARRY_PUNCH * k - BLOCK_SHIELD_BACK * rec)),
-            rz(GUARD_SH_ABD),
-            ry(-(GUARD_SH_CROSS - PARRY_SWEEP * k) + PARRY_ARM_LEAD * s),
+            rz(brd.mirror * GUARD_SH_ABD),
+            ry(brd.mirror * (-(GUARD_SH_CROSS - PARRY_SWEEP * k) + PARRY_ARM_LEAD * s)),
         ));
-        setLocal(&wx, ELL, self.rest, rx(-(GUARD_ELBOW - PARRY_PUNCH * k + BLOCK_SHIELD_FOLD * rec)));
-        setLocal(&wx, WRL, self.rest, rz(PARRY_WRIST * k));
+        setLocal(&wx, brd.el, self.rest, rx(-(GUARD_ELBOW - PARRY_PUNCH * k + BLOCK_SHIELD_FOLD * rec)));
+        setLocal(&wx, brd.wr, self.rest, rz(brd.mirror * PARRY_WRIST * k));
         // …and the sword hand DRAWS BACK: the riposte, loading.
-        setLocal(&wx, SHR, self.rest, mul(rx(GUARD_SWORD_BACK + PARRY_SWORD_COCK * k), rz(-ARM_ABD)));
-        setLocal(&wx, ELR, self.rest, rx(-(GUARD_SWORD_ELBOW + 14.0 * k)));
-        setLocal(&wx, WRR, self.rest, rx(GUARD_SWORD_WRIST));
+        setLocal(&wx, free.sh, self.rest, mul(rx(GUARD_SWORD_BACK + PARRY_SWORD_COCK * k), rz(free.mirror * -ARM_ABD)));
+        setLocal(&wx, free.el, self.rest, rx(-(GUARD_SWORD_ELBOW + 14.0 * k)));
+        setLocal(&wx, free.wr, self.rest, rx(GUARD_SWORD_WRIST));
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
         self.applyXfade(&wx);
         self.xf = wx;
@@ -3108,11 +3174,17 @@ pub const Hero = struct {
         const bOut = bump(bU, 0.80, 1.0);
         const shiver = bOn * BREATH_SHIVER * mathx.sinf(bU * combat.RIME_DUR * BREATH_SHIVER_HZ * std.math.tau);
 
+        // THE ROD ARM IS WHICHEVER ONE IS HOLDING IT, and the free arm is the other. Written out as SHL/ELL/WRL
+        // it mimed the whole throw on the left while the rod itself hung off the right — `poseWandArm` picked
+        // its side and this, the move the spell actually is, did not.
+        const rod = armSide(self.wandLeft(), true);
+        const free = armSide(!self.wandLeft(), false);
+
         // `wind` lifts, `sSweep` twirls — separate channels, so the alternator only picks the twirl's side.
         // `wind` 0 must be the CARRY (`poseWandArm`) or the cast snaps out of it on frame one.
-        const shRz = mathx.lerpF(ARM_ABD + WAND_CARRY_ABD, CAST_LIFT_ABD, wind);
-        const shRy = sw * CAST_SWEEP * (1.0 - 2.0 * sSweep) * wind;
-        const yaw = sw * (-CAST_TRUNK * wind + 1.6 * CAST_TRUNK * sSweep);
+        const shRz = rod.mirror * mathx.lerpF(ARM_ABD + WAND_CARRY_ABD, CAST_LIFT_ABD, wind);
+        const shRy = rod.mirror * sw * CAST_SWEEP * (1.0 - 2.0 * sSweep) * wind;
+        const yaw = rod.mirror * sw * (-CAST_TRUNK * wind + 1.6 * CAST_TRUNK * sSweep);
         const dip = CAST_DIP * wind - 0.4 * CAST_DIP * sThrow;
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
@@ -3142,13 +3214,13 @@ pub const Hero = struct {
         // so the one thing the silhouette has to say is that he is holding it AT something.
         const elb = mathx.lerpF(WAND_CARRY_ELBOW, CAST_ELBOW, wind) - CAST_ELBOW_SNAP * sThrow + 6.0 * kick -
             BREATH_REACH * bOn + 0.5 * BREATH_REACH * bOut + shiver;
-        setLocal(&wx, SHL, self.rest, mul3(rx(-(mathx.lerpF(WAND_CARRY_FLEX, CAST_SH_FWD, wind) - BREATH_SH_LEVEL * bOn)), ry(shRy), rz(shRz)));
-        setLocal(&wx, ELL, self.rest, rx(-elb));
-        setLocal(&wx, WRL, self.rest, rz(mathx.lerpF(WAND_CARRY_WRIST, CAST_WRIST, wind) - 1.5 * CAST_WRIST * sThrow - 8.0 * kick + 1.6 * shiver));
+        setLocal(&wx, rod.sh, self.rest, mul3(rx(-(mathx.lerpF(WAND_CARRY_FLEX, CAST_SH_FWD, wind) - BREATH_SH_LEVEL * bOn)), ry(shRy), rz(shRz)));
+        setLocal(&wx, rod.el, self.rest, rx(-elb));
+        setLocal(&wx, rod.wr, self.rest, rz(rod.mirror * (mathx.lerpF(WAND_CARRY_WRIST, CAST_WRIST, wind) - 1.5 * CAST_WRIST * sThrow - 8.0 * kick + 1.6 * shiver)));
         // …and the sword arm keeps out of its way.
-        setLocal(&wx, SHR, self.rest, mul(rx(GUARD_SWORD_BACK * wind), rz(-ARM_ABD)));
-        setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + (GUARD_SWORD_ELBOW - IDLE_ELBOW) * wind)));
-        setLocal(&wx, WRR, self.rest, rx(GUARD_SWORD_WRIST * wind));
+        setLocal(&wx, free.sh, self.rest, mul(rx(GUARD_SWORD_BACK * wind), rz(free.mirror * -ARM_ABD)));
+        setLocal(&wx, free.el, self.rest, rx(-(IDLE_ELBOW + (GUARD_SWORD_ELBOW - IDLE_ELBOW) * wind)));
+        setLocal(&wx, free.wr, self.rest, rx(GUARD_SWORD_WRIST * wind));
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
         self.applyXfade(&wx);
         self.xf = wx;
@@ -3166,12 +3238,17 @@ pub const Hero = struct {
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
 
+        // THE ARM THAT RINGS IS THE ONE HOLDING THE BELL. Written out as SHR/ELR/WRR, a bell equipped LEFT was
+        // drawn in that hand and sounded by the empty one — `poseCast`'s bug on the other side of the body.
+        const bel = armSide(self.bellLeft(), false);
+        const free = armSide(!self.bellLeft(), true);
+
         var wx: [N]rl.Matrix = undefined;
         // The trunk gives back at the WAIST: a lean at the root rotates the legs and reads as a lurch.
         wx[ROOT] = mul(mul(tr(0, hipY - 0.012 * lift, 0), ry(facingDeg)), rootAt(self.footPos()));
         const spineX = -RING_LEAN * lift;
         setLocal(&wx, SPINE, self.rest, rx(0.5 * (spineX + self.aimLean)));
-        setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), ry(-5.0 * lift)));
+        setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), ry(bel.mirror * -5.0 * lift)));
         setLocal(&wx, NECK, self.rest, rx(-0.35 * spineX));
         setLocal(&wx, HEAD, self.rest, rx(HEAD_WALK + RING_HEAD * lift));
         setLocal(&wx, HIPL, self.rest, mul(rx(-3.0 * lift), rz(-HIP_ADDUCT)));
@@ -3181,14 +3258,14 @@ pub const Hero = struct {
         setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 7.0 * lift));
         setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
         // Everything that shakes is the WRIST: a whole arm swinging reads as throwing rather than sounding.
-        setLocal(&wx, SHR, self.rest, mul3(rx(-RING_SH_FWD * lift), ry(0), rz(-ARM_ABD - RING_SH_ABD * lift)));
-        setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + (RING_ELBOW - IDLE_ELBOW) * lift) + 5.0 * shake));
-        setLocal(&wx, WRR, self.rest, mul(rz(RING_FLICK * shake), rx(-14.0 * lift)));
+        setLocal(&wx, bel.sh, self.rest, mul3(rx(-RING_SH_FWD * lift), ry(0), rz(bel.mirror * (-ARM_ABD - RING_SH_ABD * lift))));
+        setLocal(&wx, bel.el, self.rest, rx(-(IDLE_ELBOW + (RING_ELBOW - IDLE_ELBOW) * lift) + 5.0 * shake));
+        setLocal(&wx, bel.wr, self.rest, mul(rz(bel.mirror * RING_FLICK * shake), rx(-14.0 * lift)));
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
         // …and the off arm stays where the carry left it, so the boards do not go anywhere while he rings.
-        setLocal(&wx, SHL, self.rest, mul(rx(-6.0 * lift), rz(ARM_ABD)));
-        setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 10.0 * lift)));
-        setLocal(&wx, WRL, self.rest, rl.math.matrixIdentity());
+        setLocal(&wx, free.sh, self.rest, mul(rx(-6.0 * lift), rz(free.mirror * ARM_ABD)));
+        setLocal(&wx, free.el, self.rest, rx(-(IDLE_ELBOW + 10.0 * lift)));
+        setLocal(&wx, free.wr, self.rest, rl.math.matrixIdentity());
         self.applyXfade(&wx);
         self.xf = wx;
     }
@@ -3411,6 +3488,27 @@ pub fn gripFrame(wrist: rl.Matrix, rest: [N]rl.Vector3, left: bool) rl.Matrix {
     const d = mathx.subV(rest[SWORD], rest[WRR]);
     const off = if (left) v3(-d.x, d.y, d.z) else d;
     return mul(tr(off.x, off.y, off.z), wrist);
+}
+
+/// **ONE ARM'S THREE JOINTS, PICKED BY SIDE.** A handed pose asks for a side instead of transcribing six
+/// indices, which is what let `poseCast`, `poseGuard` and `poseRing` each mime one named arm while the thing
+/// they were posing hung off the other one. `mirror` is the sign every LATERAL channel is multiplied by —
+/// `ry` and `rz` flip, `rx` is sagittal and reads the same on either side (`poseLight`'s rule).
+pub const ArmSide = struct {
+    sh: usize,
+    el: usize,
+    wr: usize,
+    mirror: f32,
+};
+
+/// `left` is which hand this arm IS; `authoredLeft` which hand its pose was written for.
+pub fn armSide(left: bool, authoredLeft: bool) ArmSide {
+    return .{
+        .sh = if (left) SHL else SHR,
+        .el = if (left) ELL else ELR,
+        .wr = if (left) WRL else WRR,
+        .mirror = if (left == authoredLeft) 1.0 else -1.0,
+    };
 }
 
 pub fn setJoint(wx: []rl.Matrix, rest: []const rl.Vector3, i: usize, p: usize, animRot: rl.Matrix) void {
@@ -5043,4 +5141,111 @@ test "THE BLADE IS IN WHICHEVER HAND HOLDS IT — bone, capsule and swing, all m
     h.arm = .bow;
     h.off = .sword;
     try std.testing.expect(!h.swordLeft() and !h.holds(.sword));
+}
+
+test "THE ROD LEAVES THE HAND IT IS IN — the tip is where every spell comes out of" {
+    // The blade's test, one armament along, and this half is the one nothing on screen showed: the mesh and
+    // the carry arm were both already handed, so a rod equipped RIGHT looked completely correct and then
+    // threw its bolt, laid its rune ring and breathed its whole cone out of the empty left fist.
+    var h = testHero();
+    h.arm = .sword;
+    h.off = .wand;
+    try std.testing.expect(h.wandLeft() and h.wandOut() and h.canCast());
+    h.pose();
+    const leftTip = h.wandTipWorld();
+    const leftWrist = h.xf[WRL];
+
+    h.arm = .wand;
+    h.off = .shield;
+    try std.testing.expect(!h.wandLeft() and h.wandOut() and h.canCast());
+    h.pose();
+    const rightTip = h.wandTipWorld();
+
+    // It crossed him rather than staying put, and it is on the wrist it is drawn at either way.
+    try std.testing.expect(mathx.distXZ(leftTip, rightTip) > 0.15);
+    try std.testing.expect(mathx.distXZ(leftTip, rl.math.vector3Transform(mathx.zero3, leftWrist)) < 0.5);
+    try std.testing.expect(mathx.distXZ(rightTip, rl.math.vector3Transform(mathx.zero3, h.xf[WRR])) < 0.5);
+
+    // …AND THROUGH THE CAST ITSELF, which is the move that was miming the left arm regardless.
+    h.casting = true;
+    h.castT = CAST_DUR * CAST_AT;
+    h.pose();
+    const castTip = h.wandTipWorld();
+    try std.testing.expect(mathx.distXZ(castTip, rl.math.vector3Transform(mathx.zero3, h.xf[WRR])) < 0.6);
+    // The throwing arm is the one that MOVED off its carry; the free arm stayed near where it was.
+    var carry = testHero();
+    carry.arm = .wand;
+    carry.off = .shield;
+    carry.pose();
+    try std.testing.expect(mathx.distXZ(wristAt(h.xf[WRR]), wristAt(carry.xf[WRR])) > 0.08);
+}
+
+test "THE BOARDS AND THE BELL GO WITH THEIR HAND TOO" {
+    // The shield: the sparks and the block's grit are thrown off the FACE, so a hub read off a fixed wrist
+    // puts every one of them beside the other arm.
+    var h = testHero();
+    h.arm = .sword;
+    h.off = .shield;
+    try std.testing.expect(h.shieldLeft() and h.canGuard());
+    h.guardB = 1.0;
+    h.guarding = true;
+    h.pose();
+    const leftFace = h.shieldFaceWorld();
+
+    h.arm = .shield;
+    h.off = .sword;
+    try std.testing.expect(!h.shieldLeft() and h.canGuard());
+    h.pose();
+    const rightFace = h.shieldFaceWorld();
+    try std.testing.expect(mathx.distXZ(leftFace.at, rightFace.at) > 0.15);
+    // The face still points AWAY from him on both sides — a mirror that missed the normal turns it inward.
+    for ([_]rl.Vector3{ leftFace.n, rightFace.n }) |n| try std.testing.expect(n.z > 0.2);
+
+    // The bell is the right-authored one, so its failure is the mirror image: rung left, drawn left.
+    var b = testHero();
+    b.arm = .bell;
+    b.off = .shield;
+    b.ringing = true;
+    b.ringT = RING_DUR * RING_AT;
+    b.pose();
+    const rungRight = b.xf[WRR];
+    b.arm = .shield;
+    b.off = .bell;
+    try std.testing.expect(b.bellLeft() and b.bellOut());
+    b.pose();
+    // The LEFT wrist is now the one doing the ringing, and it has left its idle carry to do it.
+    var idle = testHero();
+    idle.arm = .shield;
+    idle.off = .bell;
+    idle.pose();
+    try std.testing.expect(mathx.distXZ(wristAt(b.xf[WRL]), wristAt(idle.xf[WRL])) > 0.08);
+    try std.testing.expect(mathx.distXZ(wristAt(b.xf[WRR]), wristAt(rungRight)) > 0.08); // …and the right one is not
+}
+
+/// A bone matrix's own origin in world space — where that joint IS. Tests compare poses by it.
+fn wristAt(m: rl.Matrix) rl.Vector3 {
+    return rl.math.vector3Transform(mathx.zero3, m);
+}
+
+test "A TWO-HANDER CLAIMS BOTH HANDS FROM EITHER SLOT" {
+    // THE BUG: `offInHand` asked only whether the RIGHT slot was two-handed, so a bow set in the LEFT slot
+    // left a shield in the right reading as held — blocked with, parried with, and drawn nowhere.
+    var h = testHero();
+    h.arm = .shield;
+    h.off = .bow;
+    try std.testing.expect(h.bowOut());
+    try std.testing.expect(!h.holds(.shield));
+    try std.testing.expect(!h.canGuard() and !h.canParry());
+    try std.testing.expect(!h.offInHand());
+    // …and that hand is what the bow is worked from, whichever slot it sits in.
+    try std.testing.expectEqual(Armament.bow, h.armInHand());
+    h.arm = .bow;
+    h.off = .shield;
+    try std.testing.expect(!h.holds(.shield) and !h.canGuard());
+    try std.testing.expectEqual(Armament.bow, h.armInHand());
+    // With no two-hander anywhere, both hands carry their own.
+    h.arm = .sword;
+    h.off = .shield;
+    try std.testing.expect(h.offInHand() and h.holds(.sword) and h.holds(.shield));
+    try std.testing.expectEqual(Armament.sword, h.armInHand());
 }

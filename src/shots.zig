@@ -844,9 +844,73 @@ pub fn runShots(g: *Game) void {
             if (@mod(g.hero.phase - ph0 + 1.0, 1.0) >= 0.5) break;
         }
         shootPortrait(g, "shots/20zi_wand_walk_b.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 4.2);
-        // PUT IT AWAY and leave the field as the rest of the harness expects to find it.
+        // **THE SAME ROD IN THE OTHER HAND** — every armament may sit in either (`hero.Armament`), and this
+        // is the pass that says so about the one whose whole picture is a point in the world. Three things
+        // had to be handed and only the first two were: the MESH (`drawHand`), the CARRY ARM
+        // (`poseWandArm`), and the TIP everything actually comes out of (`wandTipWorld`) plus the throw that
+        // moves it (`poseCast`). So a rod equipped right looked entirely correct standing still and then
+        // gathered, threw and breathed out of the empty left fist — which no left-handed frame can show.
         g.hero.fp.reset();
         g.hero.fpRefused = 0;
+        offTo(g, .sword);
+        armTo(g, .wand);
+        must(g.hero.wandOut() and !g.hero.wandLeft(), "the rod would not go in the right hand");
+        standSettled(g, 0, 4, mathx.headingXZ(LIT_BACK));
+        // From the ROD's side, which is now the other one: at LIT_YAW − 78 the torso hid the left arm, so the
+        // right arm's mirror is read from LIT_YAW + 78.
+        shootPortrait(g, "shots/20zr_wand_right_carry.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.09, 3.0);
+        stagedCast(g);
+        castToCharged(g, dt);
+        // THE ONE FRAME THE BUG WAS: the gather is a shell of motes on the stone, so a tip read off the wrong
+        // wrist puts the whole charge in his other hand and this crop is empty.
+        shootPortrait(g, "shots/20zs_wand_right_gather.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.25);
+        castToThrow(g, dt);
+        shootPortrait(g, "shots/20zt_wand_right_throw.png", wandFrame(g), LIT_YAW - 30, 0.16, 3.4);
+        game.clearShaftsForShot(g);
+        game.throwBoltForShot(g, SHOT_DOWNRANGE);
+        shootPortrait(g, "shots/20zu_wand_right_release.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.6);
+        game.clearShaftsForShot(g);
+        while (g.hero.casting) g.hero.updateCast(dt, null);
+
+        // …AND THE BOARDS IN THE OTHER HAND, the same three-part failure one armament along: the guard and
+        // the parry both mimed the LEFT arm, and the sparks came off a hub welded to that wrist.
+        armTo(g, .shield);
+        offTo(g, .sword);
+        must(g.hero.canGuard() and !g.hero.shieldLeft(), "the boards would not go in the right hand");
+        standSettled(g, 0, 4, mathx.headingXZ(LIT_BACK));
+        g.hero.setGuard(true);
+        k = 0;
+        while (k < 24) : (k += 1) {
+            g.hero.update(dt, 0, 0, null);
+            g.hero.pose();
+        }
+        shootPortrait(g, "shots/20zv_guard_right.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 3.4);
+        g.hero.setGuard(false);
+        must(g.hero.requestParry(), "the parry was refused in the right hand");
+        while (!g.hero.parryLive()) g.hero.updateParry(dt, null);
+        g.hero.noteParry(); // the shower, off `shieldFaceWorld` — the half that was reading the other wrist
+        k = 0;
+        while (k < 3) : (k += 1) g.hero.updateParry(dt, null);
+        shootPortrait(g, "shots/20zw_parry_right.png", g.hero.shieldFaceWorld().at, LIT_YAW, 0.10, 2.4);
+        while (g.hero.parrying) g.hero.updateParry(dt, null);
+
+        // …and the BELL, which fails the other way round: its ring was welded to the RIGHT arm, so the one
+        // hand to photograph it in is the left.
+        armTo(g, .sword);
+        offTo(g, .bell);
+        must(g.hero.bellOut() and g.hero.bellLeft(), "the bell would not go in the left hand");
+        standSettled(g, 0, 4, mathx.headingXZ(LIT_BACK));
+        g.hero.fp.reset(); // a ringing is the biggest single bill in the game and the rod above spent the pool
+        must(g.hero.requestRing(), "the ring was refused in the left hand");
+        // Shot at the NOTE, which is where the flick is — `rang` is that one frame.
+        while (g.hero.ringing and !g.hero.rang) g.hero.updateRing(dt, null);
+        shootPortrait(g, "shots/20zx_bell_left.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 3.2);
+        while (g.hero.ringing) g.hero.updateRing(dt, null);
+
+        // PUT IT ALL AWAY and leave the field as the rest of the harness expects to find it.
+        g.hero.fp.reset();
+        g.hero.fpRefused = 0;
+        armTo(g, .sword);
         offTo(g, .shield);
         g.hero.stam.reset();
         k = 0;

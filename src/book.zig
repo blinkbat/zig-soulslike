@@ -76,6 +76,16 @@ pub const View = struct {
     /// The live FP pool, so the sorcery slot can say how many casts are actually in it.
     fp: f32,
     souls: u32,
+
+    /// **THE PAGE ASKS WHAT HE IS HOLDING THROUGH THE HERO'S OWN DOOR** (`hero.handsHold`). Written out per
+    /// socket as `off == .wand` / `arm != .bow`, the book answered for ONE named hand while the fight
+    /// answered for either — so a rod equipped right cast in play and read here as no wand at all.
+    pub fn holds(self: *const View, a: heromod.Armament) bool {
+        return heromod.handsHold(self.arm, self.off, a);
+    }
+    pub fn offInHand(self: *const View) bool {
+        return !heromod.armTwoHanded(self.arm) and !heromod.armTwoHanded(self.off);
+    }
 };
 
 /// The live hero and the scene to draw him in, for the stats page's turntable.
@@ -140,14 +150,23 @@ const DER = blk: {
 };
 
 fn derive(l: Loadout, v: View) [ND]f32 {
-    const bow = l.arm == .bow;
+    // **THROUGH `hero.handsHold`, THE SAME DOOR THE FIGHT ASKS THROUGH.** Every row below used to name ONE
+    // hand — the bow the right, the boards and the rod the left — so the page priced a loadout the game does
+    // not have: a rod equipped right cast in the fight and read as zero sorcery damage here, and a bow in the
+    // left slot was not a bow at all.
+    const bow = heromod.handsHold(l.arm, l.off, .bow);
     // …AND WHETHER THAT HAND HAS AN ATTACK AT ALL (`hero.armSwings`). `bow` alone was the whole question while
     // there were two armaments; the BELL has neither a light nor a heavy, so every row below came off the
     // SWORD and the page priced a swing he cannot take. Zero is the honest figure, and the arm's own tip
     // already says it in words.
     // EITHER HAND. A blade in the off hand swings now (`hero.placeSword`), so the page may not price the
     // right hand alone and call the character weaponless.
-    const attacks = heromod.armSwings(l.arm) or (!bow and heromod.armSwings(l.off)) or bow;
+    const attacks = bow or blk: {
+        for ([_]heromod.Armament{ l.arm, l.off }) |a| {
+            if (heromod.armSwings(a) and heromod.handsHold(l.arm, l.off, a)) break :blk true;
+        }
+        break :blk false;
+    };
     const light = if (bow) heromod.BOW_QUICK_HIT else heromod.ATK_LIGHT_HIT;
     const heavy = if (bow) heromod.arrowBlow(l.ammo, true) else heromod.ATK_HEAVY_HIT;
     var d: [ND]f32 = undefined;
@@ -160,12 +179,12 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     d[@intFromEnum(Der.stam_heavy)] = if (!attacks) 0 else if (bow) combat.STAM_AIMED else combat.STAM_HEAVY;
     // THE BOW COSTS HIM THE SHIELD, and so does the WAND — this is the row where that is a number rather
     // than lore, and it is the same number for both because it is the same left hand being spent.
-    const guards = !bow and l.off == .shield;
+    const guards = heromod.handsHold(l.arm, l.off, .shield);
     d[@intFromEnum(Der.guard)] = if (guards) combat.GUARD_NEGATE * 100.0 else 0;
     // …and what he bought with it. Zero on both rows unless a wand is actually in that hand, because a spell
     // he cannot cast is not worth a number — and it is the SORCERY THAT IS LOADED that is priced, through
     // `combat`'s own two answers: the rod carries two now, and they neither cost nor deal the same.
-    const casts = !bow and l.off == .wand;
+    const casts = heromod.handsHold(l.arm, l.off, .wand);
     d[@intFromEnum(Der.spell)] = if (casts) combat.spellDamage(l.spell) else 0;
     d[@intFromEnum(Der.spell_fp)] = if (casts) combat.spellFp(l.spell) else 0;
     d[@intFromEnum(Der.quick)] = quickWorth(l.quick, v);
@@ -289,13 +308,14 @@ fn locked(s: SlotId, v: View) ?[:0]const u8 {
     return switch (s) {
         .helm, .chest, .belt, .boots => "There is no armour in this world yet. The socket is here for the day there is.",
         .amulet, .ring1, .ring2 => "There is no jewellery in this world yet. The socket is here for the day there is.",
-        .left => if (heromod.armTwoHanded(v.arm)) "Both hands are on the bow. The other comes back when the bow goes away." else null,
+        .left => if (!v.offInHand()) "Both hands are on the bow. The other comes back when the bow goes away." else null,
         // AN ALTERNATE IS NEVER LOCKED: it is what he is NOT holding, so nothing he is holding can deny it.
         .left2, .right2 => null,
         // Which of the two reasons it is: "locked" with no reason is a slot the player calls broken.
-        .sorcery => if (v.arm == .bow)
+        // Asked of BOTH hands (`hero.handsHold`): a rod equipped right casts, and this said he had none.
+        .sorcery => if (v.holds(.bow))
             "Both hands are on the bow. Nothing is free to hold a wand."
-        else if (v.off != .wand)
+        else if (!v.holds(.wand))
             "No wand in his hand to cast a sorcery with."
         else
             // Filled and still unchangeable HERE — the rod is turned on the D-pad and the book does not own it.
@@ -313,8 +333,8 @@ fn quickAt(s: SlotId, v: View) ?item.Kind {
 fn slotHas(s: SlotId, v: View) bool {
     return switch (s) {
         .right, .left2, .right2 => true,
-        .left => !heromod.armTwoHanded(v.arm),
-        .sorcery => v.arm != .bow and v.off == .wand,
+        .left => v.offInHand(),
+        .sorcery => v.holds(.wand),
         .arrows => v.quiver.count(v.quiver.sel) > 0,
         .helm, .chest, .belt, .boots, .amulet, .ring1, .ring2 => false,
         else => quickAt(s, v) != null,
@@ -348,7 +368,7 @@ fn ammoName(k: combat.ArrowKind) [:0]const u8 {
 fn slotFilled(s: SlotId, v: View) [:0]const u8 {
     return switch (s) {
         .right => armName(v.arm),
-        .left => if (heromod.armTwoHanded(v.arm)) EMPTY else armName(v.off),
+        .left => if (!v.offInHand()) EMPTY else armName(v.off),
         .left2 => armName(v.offAlt),
         .right2 => armName(v.armAlt),
         .sorcery => if (slotHas(.sorcery, v)) combat.spellName(v.spell) else EMPTY,
@@ -1255,7 +1275,7 @@ fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
         // EXHAUSTIVE over the arm, like the HUD's own right-hand cell (`game.hud`): as a two-way `if` the
         // BELL drew a sword in his fist on the one page whose whole job is showing what he is carrying.
         .right => armArt(v.arm, cx, cy, px),
-        .left => if (!heromod.armTwoHanded(v.arm)) armArt(v.off, cx, cy, px),
+        .left => if (v.offInHand()) armArt(v.off, cx, cy, px),
         .right2 => armArt(v.armAlt, cx, cy, px),
         .left2 => armArt(v.offAlt, cx, cy, px),
         // THE PICTURE FOLLOWS THE ROD TOO, greyed by the pool the same way the cross's own slot is.

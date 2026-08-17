@@ -956,11 +956,11 @@ at: glow -57.475212 -86.07784 0 1
 at: glow -58.259018 -87.98888 0 1
 at: cliff -71.08909 -74.810555 0 0.5999999
 at: cliff -78.64811 -74.75725 -20 0.49999988
-at: chest -65.610016 -76.684105 200 1 loot=nameless_soul,quilted_gambeson,sporeling_cap
-at: pickup -20.090546 -4.690786 0 1 loot=fire_tallow,bloodgrass
-at: pickup 32.73991 -6.384436 0 1 loot=toadflesh_broth,nameless_soul
-at: pickup -31.69429 -64.822624 0 1.3499997 loot=tower_shield
-at: pickup 12.699394 -42.347057 0 1 loot=fang_dirk
+at: chest -65.610016 -76.684105 200 1 loot=nameless_soul,quilted_gambeson,sporeling_cap,ashen_amulet
+at: pickup -20.090546 -4.690786 0 1 loot=fire_tallow,bloodgrass,pitted_helm
+at: pickup 32.73991 -6.384436 0 1 loot=toadflesh_broth,nameless_soul,marchboots
+at: pickup -31.69429 -64.822624 0 1.3499997 loot=tower_shield,banded_warbelt
+at: pickup 12.699394 -42.347057 0 1 loot=fang_dirk,deft_signet
 at: pickup -37.529385 -45.327354 0 1 loot=bloodgrass,bloodgrass,smithing_stone
 at: pickup -98.94065 -17.500525 0 1 loot=greatclub
 cover: 3.3 0.72 1.38 seed=1131

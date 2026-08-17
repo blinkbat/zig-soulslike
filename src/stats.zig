@@ -32,18 +32,28 @@ pub fn displayName(a: Attr) [:0]const u8 {
     };
 }
 
-/// WHAT IT DOES — and for the four nothing reads yet, that nothing reads it yet. An inert attribute the
+/// WHAT IT DOES — and for the one nothing reads yet, that nothing reads it yet. An inert attribute the
 /// player cannot tell is inert is a lie on the character sheet.
 pub fn governs(a: Attr) [:0]const u8 {
     return switch (a) {
         .vitality => "Governs HP.",
         .mind => "Governs FP.",
         .endurance => "Governs stamina.",
-        .strength => "Skill with heavy weapons. None forged yet.",
-        .dexterity => "Skill with light weapons. Nothing scales off it yet.",
-        .intelligence => "Skill with magic. The wand's bolt is a flat number; nothing scales off this yet.",
+        // **NO EM DASHES IN A LINE THE PLAYER READS.** The bundled face has no glyph for one and `hud` draws it
+        // as a question mark, so the repo's own prose uses " - " (`item.describe`'s thundercrock and scroll).
+        .strength => "Skill with heavy arms - the club, and half of what the sword is worth.",
+        .dexterity => "Skill with light arms - the dirk, the bow, and the sword's other half.",
+        .intelligence => "Skill with sorcery - everything the rod throws.",
         .luck => "Drops, and rare finds. Nothing reads it yet.",
     };
+}
+
+/// **THE ONE ATTRIBUTE NOTHING READS.** `barFor(a) == null` used to be the whole test for "is this row dead",
+/// and the day three of the four dead attributes gained a damage curve that test went on calling them dead —
+/// a page greying out the attribute that now scales every swing he takes. Asked as its own question because
+/// feeding a BAR and being worth something are two different facts, and only one of them is about bars.
+pub fn inert(a: Attr) bool {
+    return a == .luck;
 }
 
 /// One leg of a curve: `per` a point, up to and including `upTo`.
@@ -78,6 +88,24 @@ const STAM_SEGS = [_]Seg{
     .{ .upTo = MAX, .per = 15.0 / 49.0 },
 };
 
+// **WHAT A POINT OF SKILL IS WORTH TO A BLOW** — ONE curve, shared by strength, dexterity and intelligence,
+// because three curves would be three things to retune and nothing about these three differs but which weapon
+// asks. It is 1.0 at `START` for the bar curves' own reason: putting damage behind an attribute may not move
+// the damage the game is already tuned around. Under-invested it BITES (0.72 at a single point) and a maxed
+// attribute is worth about 1.71x, which is a build's worth of levels for well under double. Caps are ER's
+// weapon-scaling ones (`docs/ELDEN_RING.md` §2), 20/55/80.
+const SCALE_BASE: f32 = 0.72;
+const SCALE_SEGS = [_]Seg{
+    .{ .upTo = 20, .per = 0.020 },
+    .{ .upTo = 55, .per = 0.012 },
+    .{ .upTo = 80, .per = 0.006 },
+    .{ .upTo = MAX, .per = 0.002 },
+};
+
+pub fn scaleFor(pts: u8) f32 {
+    return yield(pts, SCALE_BASE, &SCALE_SEGS);
+}
+
 pub fn hpFor(vitality: u8) f32 {
     return yield(vitality, HP_BASE, &HP_SEGS);
 }
@@ -101,6 +129,19 @@ pub const Sheet = struct {
         self.pts[@intFromEnum(a)] = std.math.clamp(v, 1, MAX);
     }
 
+    /// POINTS ON TOP OF WHAT IS ALREADY THERE — a tree node hands them over (`passivetree.Bonus.sheet`) and so
+    /// does a piece of gear (`item.Boon`), and neither has to know the other exists. Saturating before the
+    /// clamp: `set` takes a `u8`, so a raw `at + n` would wrap to a LOW attribute rather than cap at 99.
+    pub fn add(self: *Sheet, a: Attr, n: u8) void {
+        self.set(a, self.at(a) +| n);
+    }
+
+    /// WHAT THIS ATTRIBUTE'S SKILL MULTIPLIES A BLOW BY. Meaningless on the four that drive no damage, and
+    /// nothing asks it of them — the mapping from a weapon to its attribute is `hero.scaleOf`.
+    pub fn scale(self: *const Sheet, a: Attr) f32 {
+        return scaleFor(self.at(a));
+    }
+
     pub fn hp(self: *const Sheet) f32 {
         return hpFor(self.at(.vitality));
     }
@@ -121,7 +162,7 @@ pub const Sheet = struct {
         return n;
     }
 
-    /// WHAT THIS ATTRIBUTE IS BUYING RIGHT NOW, or null for the four nothing reads yet. THE one place the
+    /// WHAT THIS ATTRIBUTE IS BUYING RIGHT NOW, or null for the four that feed no bar. THE one place the
     /// attribute→bar binding is written: the character sheet asked the same question with a switch of its
     /// own, so a fourth curve meant editing two files and forgetting the second showed a bare row. It is
     /// EXHAUSTIVE, so a new attribute is a compile error until it has said whether it feeds a bar.
@@ -161,8 +202,33 @@ test "the stamina curve IS ER's table, softcaps and all" {
     }
 }
 
+test "THE SKILL CURVE IS 1.0 AT THE START, so wiring damage to an attribute moved no damage" {
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), scaleFor(START), 1e-4);
+    const s = Sheet{};
+    for ([_]Attr{ .strength, .dexterity, .intelligence }) |a| {
+        try std.testing.expectApproxEqAbs(@as(f32, 1.0), s.scale(a), 1e-4);
+    }
+    // Under-investment is a real penalty and a maxed skill is a real gain, but neither is a different game.
+    try std.testing.expect(scaleFor(1) > 0.6 and scaleFor(1) < 0.8);
+    try std.testing.expect(scaleFor(MAX) > 1.5 and scaleFor(MAX) < 2.0);
+}
+
+test "the four that feed no bar are not all inert — only LUCK is, and the page says so either way" {
+    var dead: usize = 0;
+    for (0..NA) |i| {
+        const a: Attr = @enumFromInt(i);
+        // **THE LINE AND THE MECHANIC MAY NOT DISAGREE**, which is the whole reason `governs` is prose and not a
+        // number: an attribute something reads may not plead nothing-yet, and one nothing reads has to admit it.
+        const pleads = std.mem.indexOf(u8, governs(a), " yet") != null;
+        try std.testing.expectEqual(inert(a), pleads);
+        if (inert(a)) dead += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), dead);
+    try std.testing.expect(inert(.luck));
+}
+
 test "every curve rises, and rises SLOWER past each softcap" {
-    for ([_]*const fn (u8) f32{ &hpFor, &fpFor, &staminaFor }) |curve| {
+    for ([_]*const fn (u8) f32{ &hpFor, &fpFor, &staminaFor, &scaleFor }) |curve| {
         var prev = curve(1);
         var lastGain: f32 = std.math.floatMax(f32);
         var pts: u8 = 2;

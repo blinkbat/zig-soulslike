@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 const uiart = @import("uiart.zig");
 const item = @import("item.zig");
+const combat = @import("combat.zig"); // …and WHICH SORCERY a picture is of (`spellArt`), the one enum here beside `item.Kind`
 
 // Every stroke scales off `k`: the set was tuned in a 34 px box (`TUNED_AT`) and multiplies up, so one picture
 // serves a 33 px bag cell and a 240 px detail plate. Every wabi-sabi offset comes out of a FIXED-SEED
@@ -47,6 +48,11 @@ const STONE_DK = rgba(74, 73, 70, 255);
 const SPARK = rgba(180, 214, 236, 255); // the cold blue-white a struck facet throws
 const RIME_ICE = rgba(150, 200, 226, 255); // the rime breath's crystal — `elemfx`'s COLD hue, on a card
 const RIME_LT = rgba(212, 238, 250, 255);
+/// THE LEVIN'S PAIR — `elemfx`'s LIGHTNING, which is **the only colourless signature in that table**, and the
+/// icon has to keep that: given any blue at all it becomes the rime's crystal at another brightness, which is
+/// the exact confusion the element was authored achromatic to avoid.
+const LEVIN_HOT = rgba(255, 255, 224, 255);
+const LEVIN_EDGE = rgba(226, 230, 232, 255);
 const WEED = rgba(126, 30, 34, 255); // bloodgrass: dried arterial red, not a leaf green
 const WEED_LT = rgba(178, 62, 52, 255);
 const WEED_DK = rgba(74, 20, 24, 255);
@@ -176,7 +182,150 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
         .grave_warbow => graveWarbow(cx, cy, px),
         .quilted_gambeson => quiltedGambeson(cx, cy, px),
         .spirit_scroll_wolf => spiritScroll(cx, cy, px, .wolf),
+        .pitted_helm => pittedHelm(cx, cy, px),
+        .ashen_amulet => ashenAmulet(cx, cy, px),
+        .banded_warbelt => bandedWarbelt(cx, cy, px),
+        .marchboots => marchboots(cx, cy, px),
+        .deft_signet => deftSignet(cx, cy, px),
     }
+}
+
+/// **WHICH PICTURE A SORCERY IS, AND THE ONE PLACE IT IS DECIDED** — `drawHeld`'s own shape one enum along.
+/// Written out at the HUD's cross AND at the character book's socket, it was one list of five in two files that
+/// differed only in how each spelled "can he afford it": a sixth spell is now one row here instead of a picture
+/// somebody has to remember twice. `lit` is that affordability — a thing you cannot cast has to LOOK it, the
+/// ammo box's own rule.
+pub fn spellArt(s: combat.Spell, cx: f32, cy: f32, px: f32, lit: bool) void {
+    switch (s) {
+        .bolt => spell(cx, cy, px, lit),
+        .roots => roots(cx, cy, px, lit),
+        // THE CONE is what this one's picture has to carry: it is the one spell that is a direction and a width
+        // rather than a mark thrown at somebody.
+        .rime => rime(cx, cy, px, lit),
+        // …and the two that arrive without crossing the ground: a STROKE and a DRAIN, which is the one thing
+        // each has to say, since neither is a thing sailing through the air like the bolt.
+        .levin => levin(cx, cy, px, lit),
+        .siphon => siphon(cx, cy, px, lit),
+    }
+}
+
+/// **AN OPEN-FACED HELM, AND WHAT SAYS HELM IS THE DOME PLUS THE NASAL.** Drawn as a dark dome with a wide black
+/// face gap split by a thick nose bar it read as a keyhole in a stone: the gap became a T and the iron sat at the
+/// cell's own value, so there was no dome to see. So — the iron is LIT well clear of the background, the gap is
+/// narrow and inset with cheek metal showing either side of it, and the nasal hangs only halfway down it.
+/// The PITTING is eaten out of one cheek only (the wabi-sabi law: uneven, one side, off a seeded `Rng`).
+fn pittedHelm(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x4E1);
+    const iron = rgba(132, 124, 112, 255);
+    const ironLo = rgba(88, 82, 74, 255);
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.02 + 1.4 * k), s * 0.26, rgba(0, 0, 0, 115));
+    // THE DOME, and it is the biggest thing in the cell: shaded half first, lit crown over it.
+    rl.drawCircleV(v2(cx, cy - s * 0.03), s * 0.245, ironLo);
+    rl.drawCircleV(v2(cx - s * 0.03, cy - s * 0.06), s * 0.205, iron);
+    arc(cx - s * 0.02, cy - s * 0.05, s * 0.20, std.math.pi * 1.06, std.math.pi * 1.62, 10, 2.0 * k, 1.0 * k, rgba(186, 178, 162, 255));
+    // …AND THE CHEEKS BELOW IT, so the dark gap is INSET in metal rather than cutting the dome in half.
+    quad(v2(cx - s * 0.235, cy + s * 0.02), v2(cx + s * 0.235, cy + s * 0.02), v2(cx + s * 0.185, cy + s * 0.24), v2(cx - s * 0.185, cy + s * 0.24), ironLo);
+    // THE OPENING — narrow, low, and stopping well short of both cheek edges.
+    quad(v2(cx - s * 0.125, cy + s * 0.05), v2(cx + s * 0.125, cy + s * 0.05), v2(cx + s * 0.10, cy + s * 0.20), v2(cx - s * 0.10, cy + s * 0.20), rgba(14, 12, 10, 240));
+    // The nasal hangs HALFWAY only: full-length it splits the gap into two eyes and the whole thing reads as a T.
+    rl.drawLineEx(v2(cx, cy + s * 0.04), v2(cx, cy + s * 0.13), 1.6 * k, iron);
+    // The brow band across the join, brighter than the dome so it reads as a separate hoop, and riveted.
+    quad(v2(cx - s * 0.24, cy - s * 0.03), v2(cx + s * 0.24, cy - s * 0.03), v2(cx + s * 0.235, cy + s * 0.04), v2(cx - s * 0.235, cy + s * 0.04), rgba(160, 152, 138, 255));
+    rl.drawCircleV(v2(cx - s * 0.17, cy + s * 0.005), 1.5 * k, rgba(70, 64, 56, 255));
+    rl.drawCircleV(v2(cx + s * 0.17, cy + s * 0.005), 1.5 * k, rgba(70, 64, 56, 255));
+    // …AND THE RUST EATING ONE CHEEK THROUGH. Three bites, none the same size, all on the left.
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) {
+        const fy = cy + s * 0.04 + @as(f32, @floatFromInt(i)) * s * 0.062;
+        rl.drawCircleV(v2(cx - s * 0.155 + rng.range(-1.5, 1.5) * k, fy), s * rng.range(0.020, 0.040), RUST);
+    }
+}
+
+/// A GREY BEAD ON A THONG — the read is the V of the cord, because a bead alone is the signet's own picture at a
+/// different size. Cord first, bead over its knot.
+fn ashenAmulet(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0xA5BE);
+    const cord = rgba(72, 60, 48, 255);
+    const top = cy - s * 0.28;
+    // The two runs of the thong, deliberately unequal — a knot nobody tied straight.
+    rl.drawLineEx(v2(cx - s * 0.16, top), v2(cx - s * 0.015, cy + s * 0.08), 1.8 * k, cord);
+    rl.drawLineEx(v2(cx + s * 0.15 + rng.range(-1, 1) * k, top - s * 0.01), v2(cx + s * 0.02, cy + s * 0.08), 1.8 * k, cord);
+    arc(cx, top + s * 0.01, s * 0.16, std.math.pi * 1.08, std.math.pi * 1.92, 8, 1.6 * k, 1.6 * k, cord); // the loop over the neck
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.15 + 1.2 * k), s * 0.115, rgba(0, 0, 0, 110));
+    // THE BEAD: ash grey, and the one warm note is the gloss, because the prose says it is warm.
+    rl.drawCircleV(v2(cx, cy + s * 0.13), s * 0.105, rgba(122, 118, 112, 255));
+    arc(cx, cy + s * 0.13, s * 0.075, std.math.pi * 0.85, std.math.pi * 1.55, 8, 1.5 * k, 0.8 * k, rgba(176, 170, 160, 255));
+    rl.drawCircleV(v2(cx - s * 0.03, cy + s * 0.09), 1.6 * k, rgba(236, 214, 176, 210));
+    rl.drawCircleV(v2(cx + s * 0.04, cy + s * 0.18), s * 0.022, rgba(74, 70, 66, 255)); // a chip out of it
+}
+
+/// **A BELT IS A BUCKLE AND A TONGUE, NOT A RING.** Drawn as a ring it is the signet again; drawn as the buckle
+/// end with the strap running out of it and the SPARE punched holes showing, it reads as a belt cut for somebody
+/// bigger — which is what the prose says it is.
+fn bandedWarbelt(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0xBE17);
+    const hide = rgba(88, 62, 42, 255);
+    const hideLt = rgba(126, 92, 62, 255);
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + 1.4 * k), s * 0.26, rgba(0, 0, 0, 105));
+    // The strap: one band across, leaning a little, with the far end curling under.
+    quad(v2(cx - s * 0.34, cy - s * 0.09), v2(cx + s * 0.30, cy - s * 0.12), v2(cx + s * 0.30, cy + s * 0.05), v2(cx - s * 0.34, cy + s * 0.08), hide);
+    quad(v2(cx - s * 0.34, cy - s * 0.09), v2(cx + s * 0.30, cy - s * 0.12), v2(cx + s * 0.30, cy - s * 0.07), v2(cx - s * 0.34, cy - s * 0.04), hideLt); // the lit top edge
+    // THE BANDING — iron straps across it, uneven spacing (between the instances, not along one).
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) {
+        const bx = cx - s * 0.20 + @as(f32, @floatFromInt(i)) * s * 0.155 + rng.range(-2, 2) * k;
+        quad(v2(bx, cy - s * 0.11), v2(bx + s * 0.035, cy - s * 0.11), v2(bx + s * 0.035, cy + s * 0.07), v2(bx, cy + s * 0.07), rgba(96, 88, 78, 255));
+    }
+    // The buckle at the near end: a frame, not a filled block, or it is a stone on a strap.
+    quad(v2(cx - s * 0.36, cy - s * 0.15), v2(cx - s * 0.20, cy - s * 0.15), v2(cx - s * 0.20, cy + s * 0.13), v2(cx - s * 0.36, cy + s * 0.13), rgba(140, 130, 116, 255));
+    quad(v2(cx - s * 0.32, cy - s * 0.09), v2(cx - s * 0.24, cy - s * 0.09), v2(cx - s * 0.24, cy + s * 0.07), v2(cx - s * 0.32, cy + s * 0.07), rgba(24, 20, 18, 225));
+    rl.drawLineEx(v2(cx - s * 0.28, cy - s * 0.13), v2(cx - s * 0.28, cy + s * 0.11), 1.8 * k, rgba(170, 160, 144, 255)); // the pin
+    // …AND THE PUNCHED HOLES, which are the whole story: the new one, and the old ones nobody uses.
+    rl.drawCircleV(v2(cx + s * 0.13, cy - s * 0.03), 1.7 * k, rgba(30, 22, 16, 235));
+    rl.drawCircleV(v2(cx + s * 0.22, cy - s * 0.04), 1.5 * k, rgba(30, 22, 16, 200));
+}
+
+/// BOOTS, AND THERE ARE TWO OF THEM — one alone reads as a sock. The near one over the far one, both leaning,
+/// and the SOLE is a separate darker slab because a boot worn through to the second layer of hide is the prose.
+fn marchboots(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    const hide = rgba(74, 56, 42, 255);
+    const hideDk = rgba(46, 34, 26, 255);
+    const sole = rgba(58, 50, 44, 255);
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.18 + 1.4 * k), s * 0.26, rgba(0, 0, 0, 110));
+    // THE FAR BOOT, offset up and back, darker — it is behind and it is in the near one's shade.
+    quad(v2(cx - s * 0.02, cy - s * 0.24), v2(cx + s * 0.15, cy - s * 0.24), v2(cx + s * 0.17, cy + s * 0.10), v2(cx - s * 0.01, cy + s * 0.10), hideDk);
+    quad(v2(cx - s * 0.01, cy + s * 0.05), v2(cx + s * 0.30, cy + s * 0.09), v2(cx + s * 0.30, cy + s * 0.17), v2(cx - s * 0.01, cy + s * 0.15), hideDk);
+    // …and the near one, the shaft slumped over on itself the way an unlaced boot stands.
+    quad(v2(cx - s * 0.26, cy - s * 0.20), v2(cx - s * 0.07, cy - s * 0.22), v2(cx - s * 0.05, cy + s * 0.14), v2(cx - s * 0.24, cy + s * 0.14), hide);
+    quad(v2(cx - s * 0.27, cy - s * 0.20), v2(cx - s * 0.17, cy - s * 0.21), v2(cx - s * 0.15, cy - s * 0.09), v2(cx - s * 0.26, cy - s * 0.08), rgba(104, 80, 58, 255)); // the flopped cuff
+    quad(v2(cx - s * 0.25, cy + s * 0.09), v2(cx + s * 0.08, cy + s * 0.13), v2(cx + s * 0.08, cy + s * 0.21), v2(cx - s * 0.25, cy + s * 0.19), hide);
+    // The soles, and the wear: the near one's toe is through.
+    quad(v2(cx - s * 0.26, cy + s * 0.19), v2(cx + s * 0.09, cy + s * 0.21), v2(cx + s * 0.09, cy + s * 0.26), v2(cx - s * 0.26, cy + s * 0.24), sole);
+    rl.drawCircleV(v2(cx + s * 0.03, cy + s * 0.17), s * 0.03, rgba(112, 92, 70, 220));
+    rl.drawLineEx(v2(cx - s * 0.20, cy - s * 0.10), v2(cx - s * 0.11, cy - s * 0.08), 1.2 * k, hideDk); // one lace hole run
+    rl.drawLineEx(v2(cx - s * 0.20, cy - s * 0.02), v2(cx - s * 0.10, cy), 1.2 * k, hideDk);
+}
+
+/// THE SECOND BAND, AND IT MUST NOT BE THE FIRST ONE. `leechSignet` is a horn ring with a red bead high on it;
+/// this is bare metal with NO stone at all and a bright worn INNER edge — the one thing the prose gives it.
+fn deftSignet(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.03 + 1.0 * k), s * 0.20, rgba(0, 0, 0, 110));
+    arc(cx, cy + s * 0.02, s * 0.175, 0, std.math.tau, 20, s * 0.062, s * 0.062, rgba(118, 112, 102, 255));
+    // THE WORN INSIDE — a bright arc drawn just inboard of the band, which is the knife-edge the thumb made.
+    arc(cx, cy + s * 0.02, s * 0.145, std.math.pi * 0.15, std.math.pi * 1.05, 12, 1.3 * k, 1.3 * k, rgba(206, 200, 186, 255));
+    arc(cx - s * 0.03, cy - s * 0.01, s * 0.17, std.math.pi * 0.95, std.math.pi * 1.5, 8, 1.7 * k, 0.9 * k, rgba(168, 160, 146, 255)); // the lit shoulder
+    // A flat facet where a stone would have been on a richer ring: this one has none, and that IS the read.
+    quad(v2(cx - s * 0.045, cy - s * 0.20), v2(cx + s * 0.045, cy - s * 0.20), v2(cx + s * 0.035, cy - s * 0.13), v2(cx - s * 0.035, cy - s * 0.13), rgba(142, 136, 124, 255));
 }
 
 /// THE SUMMONING BELL — a cross's picture, not a bag row: it is an ARMAMENT, drawn beside `sword` and `bow`
@@ -1020,6 +1169,92 @@ pub fn rime(cx: f32, cy: f32, px: f32, on: bool) void {
         const x = cx + rng.range(-0.10, 0.40) * s;
         rl.drawCircleV(v2(x, cy + s * rng.range(0.24, 0.40)), rng.range(0.9, 1.8) * k, lit);
     }
+}
+
+/// THE LEVIN STRIKE, the rod's fourth: a STROKE, because that is the whole mechanic — the one spell that does
+/// not cross the ground, so what the picture may not show is a thing sailing along like the bolt. It comes down
+/// the card and ENDS ON SOMETHING, and the flash at the foot is what says it landed on a body rather than
+/// carrying on. Uneven segments and uneven widths: a regular zigzag is a logo.
+pub fn levin(cx: f32, cy: f32, px: f32, on: bool) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x1E7A1);
+    const a: u8 = if (on) 255 else 120;
+    const hot = rgba(LEVIN_HOT.r, LEVIN_HOT.g, LEVIN_HOT.b, a);
+    const edge = rgba(LEVIN_EDGE.r, LEVIN_EDGE.g, LEVIN_EDGE.b, a);
+    const halo = rgba(LEVIN_EDGE.r, LEVIN_EDGE.g, LEVIN_EDGE.b, if (on) 66 else 28);
+    const foot = v2(cx + s * 0.06, cy + s * 0.30); // where it lands, low and a shade right of centre
+    const head = v2(cx - s * 0.20, cy - s * 0.34); // …and where it comes out of, high and left
+    // FOUR segments walked down between the two, each thrown off the straight line by its own amount, so the
+    // stroke reads as torn rather than drawn. The width falls as it goes: the ground end is the thin end.
+    var prev = head;
+    var i: u32 = 0;
+    while (i < 4) : (i += 1) {
+        const u = (@as(f32, @floatFromInt(i)) + 1.0) / 4.0;
+        const on_line = v2(head.x + (foot.x - head.x) * u, head.y + (foot.y - head.y) * u);
+        const kink = if (i == 3) 0.0 else rng.range(-0.16, 0.16) * s; // the last one MEETS the foot
+        const p = v2(on_line.x + kink, on_line.y + rng.range(-0.03, 0.03) * s);
+        const w = mathx.lerpF(3.4, 1.9, u) * k * rng.range(0.85, 1.15);
+        rl.drawLineEx(prev, p, w + 1.6 * k, halo);
+        rl.drawLineEx(prev, p, w, edge);
+        rl.drawLineEx(prev, p, w * 0.42, hot); // the white-hot filament inside the stroke
+        prev = p;
+    }
+    // THE FLASH IT ENDS IN, and a few sparks off it — the burst that says it hit something.
+    rl.drawCircleV(foot, s * 0.15, halo);
+    rl.drawCircleV(foot, s * 0.070, edge);
+    rl.drawCircleV(foot, s * 0.034, hot);
+    var j: u32 = 0;
+    while (j < 5) : (j += 1) {
+        const ang = rng.range(3.4, 6.0); // thrown up and out of the strike, never back down into the card
+        const run = s * rng.range(0.10, 0.22);
+        const from = v2(foot.x + mathx.cosf(ang) * s * 0.04, foot.y + mathx.sinf(ang) * s * 0.04);
+        rl.drawLineEx(from, v2(from.x + mathx.cosf(ang) * run, from.y + mathx.sinf(ang) * run), rng.range(1.0, 1.8) * k, edge);
+    }
+}
+
+/// THE SIPHON, the fifth: motes CONVERGING on a core, which is chaos's own `inward` signature (`elemfx`) and the
+/// one thing this card has to say — the bolt's tongues stream BACK off a head that is leaving, and these run the
+/// other way, into something that is taking. Uneven bearings and uneven runs, or it is a compass rose.
+pub fn siphon(cx: f32, cy: f32, px: f32, on: bool) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x51F0);
+    const a: u8 = if (on) 255 else 120;
+    const shell = rgba(CHAOS_DK.r, CHAOS_DK.g, CHAOS_DK.b, a);
+    const body = rgba(CHAOS.r, CHAOS.g, CHAOS.b, a);
+    const core = rgba(CHAOS_LT.r, CHAOS_LT.g, CHAOS_LT.b, a);
+    const halo = rgba(CHAOS.r, CHAOS.g, CHAOS.b, if (on) 80 else 34);
+    const at = v2(cx - s * 0.04, cy + s * 0.02); // the throat, off dead centre
+    // **SIX COMETS, HEAD INWARD** — and which end the head is on IS the whole picture. Drawn first with the ball
+    // at the OUTER end this read as a burr: a still frame takes its direction from the comet's shape, so balls on
+    // the outside are things that have just been thrown OUT, which is the exact opposite of a drain. The head
+    // therefore sits at the INNER end with the tail streaming back out behind it, and the tail is two segments
+    // because `drawLineEx` has one width and a taper is what says which end is leading.
+    var i: u32 = 0;
+    while (i < 6) : (i += 1) {
+        const ang = (@as(f32, @floatFromInt(i)) + rng.range(-0.34, 0.34)) / 6.0 * std.math.tau;
+        // WIDELY uneven runs: six of a length is a rosette however the bearings are jittered.
+        // **AND THE HEADS STOP WELL SHORT OF THE CORE.** Brought in to 0.13 they overlapped it and each other and
+        // the whole card read as one fuzzy lump with whiskers: the DARK GAP between the ring of heads and the
+        // throat is what says they are still travelling, so it is as load-bearing as the taper.
+        const far = s * rng.range(0.34, 0.52);
+        const nearR = s * rng.range(0.190, 0.250);
+        const mid = mathx.lerpF(far, nearR, 0.55);
+        const cs = mathx.cosf(ang);
+        const sn = mathx.sinf(ang);
+        const tail = v2(at.x + cs * far, at.y + sn * far);
+        const waist = v2(at.x + cs * mid, at.y + sn * mid);
+        const head = v2(at.x + cs * nearR, at.y + sn * nearR);
+        const w = rng.range(1.5, 2.2) * k;
+        rl.drawLineEx(tail, waist, w * 0.55, halo); // the thin, faint end it came from…
+        rl.drawLineEx(waist, head, w, body); // …thickening into the head
+        rl.drawCircleV(head, w * 1.05, if (i % 3 == 0) core else body);
+    }
+    rl.drawCircleV(at, s * 0.118, halo);
+    rl.drawCircleV(at, s * 0.076, shell);
+    rl.drawCircleV(v2(at.x - 0.7 * k, at.y - 0.9 * k), s * 0.046, body);
+    rl.drawCircleV(v2(at.x - 1.1 * k, at.y - 1.4 * k), s * 0.020, core);
 }
 
 /// `on` is a quiver that has something in it — a spent one draws the same shaft, greyed.

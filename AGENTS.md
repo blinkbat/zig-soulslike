@@ -135,9 +135,9 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `necro.zig` | THE NECROMANCER + `Rite` — TALL, SKINNY, a dragging robe, a bone helm and a crooked staff. It never melees. A skeleton corpse inside its reach **STOPS DISSIPATING** (`heldOpen`) and it puts that body back up at part HP, once each; and it lays a **DELAYED ICE RUNE RING** on the ground where he is standing, which is the game's first and only source of COLD |
 | `wolf.zig` | THE FIRST SPIRIT + `Pack` — what the BELL calls, and the one thing that fights ON HIS SIDE. NOT a foe (no `Leash`, its own `takeHit`, not in `FOE_GROUPS`) and the first QUADRUPED: 27 bones, and the gait is Hildebrand's two dials. Out past `RECALL_R` for `LOST_DWELL` and the BOND MOVES IT (`reappear` + `game.rematerialize`, the bell's own spot) — running home is what it tries first, and this is for when running cannot work |
 | `combat.zig` | `Vitals` (HP + two-tier stagger + regen + death), `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`, `SpiritKind`/`SUMMON_MAX`. THE place to retune feel |
-| `stats.zig` | the character sheet — seven attributes and the curves that make the bars |
+| `stats.zig` | the character sheet — seven attributes, the curves that make the bars, and the ONE skill curve (`scaleFor`) that three of the other four multiply a blow by. `inert` is the predicate for the row nothing reads, and it is LUCK alone |
 | `passivetree.zig` | THE PASSIVE TREE — PoE2's, radially: three arms out of one hub, the gates, the `Bonus`, and the wheel it is drawn as |
-| `item.zig` | item vocabulary, `Use`, the `Bag` |
+| `item.zig` | item vocabulary, `Use`, **`Equip`/`Wear` (the GEAR table — what a thing does when he puts it on)**, the `Bag` |
 | `chest.zig` | openable boxes; contents read off the placing op (`Op.loot`) |
 | `rest.zig` | bonfire + campfire bonfire — the phase machine, the seat, and THE FIRE'S OWN SCREEN (its list, and the wheel behind Level Up); `isRestKind` is the one predicate |
 | `souls.zig` | THE DROP — what a death leaves on the ground, the gold bloom it stands as, and the walk back for it |
@@ -1199,7 +1199,8 @@ respawn, so the spill plays under the YOU DIED card, which is the one moment not
 **AND THE SOUL BINDING RING REFUSES THE WHOLE THING** (`item.soul_binding_ring`, DS's Ring of Sacrifice).
 Carried, a death takes the RING instead of the souls: it snaps, he keeps the lot, and nothing is left standing.
 
-- **CARRYING IT IS ENOUGH.** There is no ring slot and there is no equip system, so the bag is the wearing.
+- **CARRYING IT IS ENOUGH, AND THAT IS NOW A CHOICE RATHER THAN A LIMIT.** There is a ring socket (the signet is
+  in it), and this one still works out of the BAG: what it does, it does by being carried, so it costs no socket.
 - **IT IS NOT A TOOL.** `usable` is false and it is off the quick bar: a Confirm on it would promise something
   the mechanic never does. It is the one thing in the bag spent by DYING.
 - **ASKED OF THE ITEM, NOT THE KIND** (`item.bindsSouls`, `isFlask`'s shape) — a second binding charm is one
@@ -1237,8 +1238,8 @@ number, so a readout and a mechanic cannot disagree.
 ### Resistances — PoE2's four
 
 - **PHYSICAL IS NOT ONE OF THE FOUR.** `Elem` is fire/cold/lightning/chaos. What mitigates physical is
-  ARMOUR, which does not exist yet. Do not add a "physical resistance" — the day armour lands it is
-  its own curve `A/(A + 5*dmg)`.
+  ARMOUR, and it landed as its own curve rather than as a fifth resistance — `combat.armourTaken`,
+  `A/(A + 5*dmg)`. Still do not add a "physical resistance": a percentage is the shape this deliberately is not.
 - **75 IS THE CAP, NEGATIVE AMPLIFIES** (`RES_CAP` 75, `RES_FLOOR` −100). Stored uncapped, capped on
   READ (`Resists.at` vs `.raw`).
 - **A SPREAD IS WRITTEN BY NAME** — `combat.resists(.{ .fire = -45 })`, matched at comptime so a
@@ -1414,8 +1415,8 @@ hang off the hub, so all three are open from the first souls you spend.
 **R1/R2 (and L1/L2) BELONG TO THE ARM, NOT THE WEAPON.** The attack buttons are read as buttons and
 routed by which armament is in that hand, so neither weapon can swallow the other's press. L1 is the left
 hand's ACTION (block / cast) and L2 is its SKILL (aim / parry), each split by what that hand is holding. Swaps:
-D-pad Right / Q = sword ↔ bow; D-pad Left / F = shield ↔ wand; D-pad Up / G cycles the three
-sorceries (bolt → roots → rime). The QUIVER keeps
+D-pad Right / Q = sword ↔ bow; D-pad Left / F = shield ↔ wand; D-pad Up / G cycles the five
+sorceries (bolt → roots → rime → levin → siphon). The QUIVER keeps
 keyboard Y alone — the cross is four directions and the spell has taken Up, so on the pad the arrow is changed
 in the character book's ammo slot.
 
@@ -1455,6 +1456,65 @@ it costs and what it does.
   and the fade is LIT-PASS ONLY with the depth mask off.
 - **HIS SHAFTS ARE A PIERCING BLADE** (`foe.Blade.pierce`), through each creature's own `tryHit`. It
   neither reads nor writes the swing latch — both halves matter.
+
+### What he is wearing and holding (`item.Equip`, `hero.Worn`) — the EQUIP SYSTEM
+
+**BARE IS THE GAME EXACTLY AS IT WAS, and that is why this landed without retuning one number.** Every dial on
+an `item.Arm` defaults to 1 and the armour curve of 0 armour is the blow itself, so an empty socket costs nothing
+and means nothing. A new game is bare-handed (`STARTING_KIT` is still the wolf scroll alone).
+
+- **ONE TABLE, ONE ROW PER THING** (`item.equip`) — eleven pieces, and the numbers are all any of them is. Gear
+  shelves as its own `Class.gear`, and the bag panel prints the row (`book.gearSays`) rather than `item.use`'s
+  "it does nothing you can do here", which was true of pressing Confirm and a flat lie about a coat worth 22.
+- **EVERY SOCKET ON THE DOLL IS REAL, AND A COMPTIME WALK KEEPS IT THAT WAY.** Head, throat, waist, feet and the
+  second finger were drawn, captioned and refused outright — five holes nothing could ever fill. `item.zig` now
+  fails to compile if a non-hand `Wear` has no kind that goes in it, and `book.wearOf` is the ONE place a doll
+  slot becomes an `item.Wear`: written out per socket instead, every question the page asks (locked, has, caption,
+  picker, cursor row, picture) carried its own two-case switch, which is why opening five sockets had meant
+  finding all five of them six times over. A faint socket is now a fact about his BAG, not about the world.
+- **A SOCKET MAY BUY A SKILL** (`item.Boon`) — `n` points of an attribute, folded onto the live sheet by
+  `hero.boonsOnto` through `hero.resheet`, which is THE place the sheet is built: the tree plus what he has on.
+  `applyPerks` assigning the sheet straight from the bonus is how a belt got wiped off it by buying a node. It is
+  a plain grant with no cost where `Charm` is a bargain, because with one piece per socket a downside is a reason
+  to leave the socket empty rather than a trade — and a boon of an INERT attribute is a compile error.
+- **A SKILL DRIVES A BLOW THROUGH THE DAMAGE DIAL AND NOTHING ELSE** (`stats.scaleFor`, `hero.scaleOf`,
+  `item.Scaling`). One curve for strength, dexterity and intelligence, ER's 20/55/80 caps, and **1.0 at
+  `stats.START` exactly as the bar curves are — which is the whole licence for wiring damage to an attribute
+  without retuning one tuned constant.** A weapon names ONE skill (the club strength, the dirk and the warbow
+  dexterity, the plain sword `quality`, the mean of the two); the rod is intelligence and takes it in `castBlow`,
+  since `wearFor` gives the wand no socket to hang a row off. Poise and stance stay the WEAPON's mass, so a
+  strong man does not gain a stagger he never bought. **An EMPTY socket gets `item.bareArm`, not `Arm{}`** — the
+  sword's `quality` default inherited by a bare bow paid a bowman for strength he never spent a point on.
+- **A WEAPON IS PRICED AS MULTIPLIERS ON THE ARMAMENT IT FILLS, NEVER AS FRESH ABSOLUTES.** `hero.ATK_*_HIT`,
+  `combat.STAM_*` and `combat.GUARD_*` stay the one place a swing, a block and their bills are written down; a
+  weapon says only how it DIFFERS. **AND THE DIALS ARE NOT ALL THE SAME WAY UP** — `dur` and `stam` are BILLS, so
+  under 1 is the gain there, which is the whole of what the dirk is.
+- **WHAT A ROW DOES TO A BLOW IS ONE FUNCTION** (`hero.weigh`), asked by the sword, the bow AND the character
+  book. The ELEMENTAL half rides the damage dial (a fire arrow's fire is a share of the shaft's own physical) and
+  the STANCE rides the poise dial: a row that moved one without the other is a weapon that hits harder without
+  hitting heavier. The tallow is applied AFTER the row, so a greased club burns hotter than a greased dirk.
+- **THE CLOCK MOVES WITH THE WEIGHT** (`hero.atkDur`), and the POSE reads the same clock: a club posed at the
+  sword's rate lands its blow a third of a second after the picture has finished swinging it.
+- **ARMOUR IS THE FIFTH COLUMN AND IT IS A CURVE** (`combat.armourTaken`, `A/(A + 5*dmg)` — PoE2's). Worth most
+  against the small blows and least against the one that was going to kill you, so it can never become immunity
+  and needs no cap of its own. PHYSICAL ONLY, and it touches NEITHER POISE NOR STANCE: those belong to the blow.
+- **A BOARD MAY NEVER STOP A BLOW OUTRIGHT** (`combat.GUARD_NEGATE_CAP`) — the row multiplies the base and a
+  tree node adds to it, and the two together could otherwise make blocking free.
+- **A CHARM RESIZES THE RED BAR, AND THE FRACTION IS KEPT ACROSS THE RESIZE** (`hero.refitHp`): taking a ring off
+  may not heal him and putting one on may not kill him. Done through `hero.wear` rather than at the next bonfire,
+  because a ring that does nothing until you rest is a ring the player decides is broken.
+- **A SOCKET REFUSES WHAT DOES NOT BELONG IN IT** — `hero.wear` and the save's parser both ask `item.wearSlot`.
+  Seated wrong, every dial reads as 1 and the piece silently does nothing, which is the one failure here that
+  leaves no trace.
+- **THE PICKER OFFERS BOTH AXES AS ONE LIST** (`book.Hand`): every armament, and under each the gear he is
+  CARRYING that fills it. "What is in this hand" is one question, and a second picker over the same socket is it
+  asked twice. So the row has to be COUNTED rather than taken as an ordinal (`book.handRowOf`) — the quick bar's
+  own lesson one socket along. The VARIANT is the ARMAMENT'S, not the hand's: whichever fist holds `.sword`
+  swings whatever sword he owns.
+- **THE VARIANT IS NOT REFUSED WHEN THE HAND IS** (`game.takeHand`) — `hero.equip` says no mid-swing, and a
+  socket left saying "club" over a fist still swinging a sword is the page lying about what he is carrying.
+- Saved as one `worn:` line in the map grammar, ABSENT from an older file, which loads as bare — honestly what
+  that character was wearing (`hands:`' own rule for its optional alternates).
 
 ### The wand (`hero.zig`) — the first thing that spends FP
 
@@ -1505,6 +1565,43 @@ it costs and what it does.
   through `game.throwBolt`, so `throwBoltForShot` throws the sparks too — otherwise every "the throw" still
   is a picture of the pose with none of the FX that fire on that exact frame in it. `castToCharged` stops one
   frame earlier, which is the only frame the gather's ramp and the light's swell can be judged on.
+  `releaseSpellForShot` is the same door for the two STRIKES, which land on the frame they are cast.
+
+### The two sorceries that DO NOT CROSS THE GROUND — the LEVIN and the SIPHON
+
+**A STRIKE IS AIMED AT A BODY, NOT THROWN AT A PLACE.** The bolt is a stone the arrow pool carries and the roots
+are a hold seeded at a mark; these two arrive on ONE body on the frame they are cast. There is therefore no flight
+to intercept, and SIGHT stands in for one (`env.sees`): a wall is still a wall.
+
+- **THE LADDER IS MONOTONE, AND THAT IS THE WHOLE PRICE LIST**: bolt 12→24, levin 16→16, roots 18→14, siphon
+  20→13, rime 22→10.2. Every step up in FP is a step DOWN in raw damage, because what the difference buys is never
+  damage — it is a stagger, a hold, a mouthful of HP back, or a second body in the cone. A comptime block asserts
+  it over every PAIR rather than against a written-out order, so a sixth spell is priced by the rule without
+  editing it, and the three hand-written comparisons it replaced cannot drift apart.
+- **THE LEVIN BUYS THE STAGGER AND NOTHING ELSE.** Poise 34 — past every creature's own `POISE_MAX` bar the Bone
+  Knight's 78 — so one cast flinches anything that is not a boss, where his own heavy swing at 22 leaves the
+  giants standing. Its STANCE stays under that swing's: a spell from across the room may not be the better
+  guard-breaker than a stroke committed inside reach. It is the first lightning anything but a thrown jar deals.
+- **AND IT DOES NOT TRAVEL BECAUSE THE ELEMENT DOES NOT** (`elemfx`'s lightning: the shortest life in the table by
+  a factor of three, the only one with no gravity). A bolt of it sailing six metres as a thrown stone would be the
+  one spell whose picture argues with its own element. The travel comes from WHERE THE SPARKS ARE PUT — laid along
+  the blow's own segment, all on the frame it lands.
+- **THE SHORT LIFE IS BOUGHT BACK WITH RADIUS, NEVER WITH MORE MOTES** (the cast gather's law, MEASURED off a
+  render here too): at its authored 2 cm the strike photographed as eight white specks over a skeleton's head —
+  plainly something had happened and nothing said where. And the landing burst is held UNDER the stroke's own
+  scale, because at 7 cm a mote is a soft ball and a shower of them reads as SMOKE.
+- **THE STROKE LEANS, AND THE LEAN IS MECHANICAL** (`game.strikeSegment`). `foe.strike` takes the shove and the
+  facing snap off the segment's XZ bearing, and a plumb line has none.
+- **THE SIPHON FEEDS OFF WHAT THE BODY ACTUALLY LOST**, never off what was thrown at it (`combat.SIPHON_SHARE`,
+  the leechfly's own figure read from the other side of the fight) — so resisted damage is resisted healing, a
+  skeleton is a bad meal, and the wand's honest chaos trade survives the one spell that could have voided it.
+- **IT IS A DRAIN, NOT A BLOW**: no poise and no stance (`Root.tick`'s law). One that healed him AND staggered
+  what he drank from would be strictly better than both rungs under it.
+- **ITS EFFECT IS THE ONE THING IN THE GAME THAT RUNS THE WRONG WAY UP THE LINE** — motes off the BODY, solved to
+  arrive at the stone inside their own life, which is `souls.zig`'s construction with the ends swapped. A burst at
+  the victim would read as a thing being GIVEN.
+- **ONE PLACE ANSWERS WHAT A SPELL LANDS** (`combat.spellBlow`), null for the two that bill over time: asked "what
+  is one hit of this worth", the roots and the cone have no answer, and a zeroed `Hit` would be one that lies.
 
 ## The world
 
@@ -2162,14 +2259,21 @@ today). THE JUMP EXISTS but nothing hangs off it yet: no jump ATTACK (the one th
 fall damage at any height, and no creature's move misses him for being over it — a sweep you jump is a sweep
 that still lands, because a per-move height is authored at each `toImpact` the way a parry window is. SOULS BUY LEVELS AND NOTHING ELSE — there is no merchant. The PASSIVE TREE is the basic version: 21
 nodes, three arms of seven, no respec, no jewel sockets, and no second grant on a node. Twelve of the
-twenty-one are attribute nodes — four an arm — and four of the seven attributes are still inert (the sheet
-says so). The BINDING RING is the only wearable
-that does anything and it is worn by being CARRIED — there is no ring slot, because there is no equip system
-under one. POISON is the only status effect, it is the HERO's alone (nothing applies one to a foe, and no foe
+twenty-one are attribute nodes — four an arm — and ONE of the seven attributes is still inert: LUCK, which no
+drop and no rare find reads (`stats.inert`, and the sheet says so). POISON is the only status effect, it is the HERO's alone (nothing applies one to a foe, and no foe
 reads one), and nothing RESISTS it yet — the sporeling cap's ward still grants CHAOS resistance, which since
-the venom became poison protects against nothing in the world. THE SEVEN NEWEST ITEMS (fire tallow,
-thundercrock, cracked rune, toadflesh broth, fang dirk, grave warbow, quilted gambeson) are registered and
-the four tools WORK, but nothing PLACES any of them — no chest holds one and no map op drops one. The crock
+the venom became poison protects against nothing in the world. THE EQUIP SYSTEM EXISTS AND EVERY REGISTERED PIECE
+IS LIVE, but **the HELD MESH is still the plain armament's**: the dirk, the club, the warbow and the door swing,
+block and photograph as the sword, the bow and the small shield, so the fight and the page know which one is in
+his fist and his hand does not. The club and the door have meshes to borrow (`ogre`'s club, `knight`'s bowed
+wall — hero→archer's bow is the precedent); the dirk and the warbow are the sword and the bow at another scale.
+**AND NOTHING WORN SHOWS ON HIS BODY AT ALL** — the helm, the coat, the belt, the boots and both rings are a
+number, a bag picture and a socket caption, and the hero rig draws exactly the same man wearing all of them as
+wearing none. The paper doll is the only place a suit is visible.
+The HUD's hand slots still draw the armament's glyph rather than the gear's, where the character book draws the
+gear. Four doll sockets (helm, amulet, belt, boots) have nothing in the world to put in them, and there is one
+ring socket for one ring. Nothing PLACES the thundercrock, the cracked rune, the warbow, the candle, the second
+wind, the fang, the key or the seed — no chest holds one and no map op drops one. The crock
 lands with no burst FX yet, and the tallowed blade shows nothing on the sword while it runs. The parry exists but has no RIPOSTE behind it — a caught blow buys a stagger and the ordinary punish,
 not a critical. Four creatures carry parry windows; the archers, the kobolds and the shades have none yet, and
 the broodlings are out on purpose. No foot IK — `rx(bodyPitch)` rotates about the WORLD ORIGIN, so a deep lean levers a

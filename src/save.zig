@@ -92,6 +92,9 @@ pub const Data = struct {
     flask: combat.FlaskKind = .crimson,
     quick: [combat.QUICK_SLOTS]?item.Kind = [_]?item.Kind{null} ** combat.QUICK_SLOTS,
     quickSel: usize = 0,
+    /// WHAT HE HAD ON. Absent from a file written before there was gear, which loads as BARE — honestly what
+    /// that character was wearing (`hands:`' own rule for its two optional alternates).
+    worn: heromod.Worn = .{},
 
     bag: [item.NK]u16 = [_]u16{0} ** item.NK,
     tree: [ptree.N]bool = [_]bool{false} ** ptree.N,
@@ -130,6 +133,7 @@ pub const Data = struct {
 };
 
 const NFOE = @typeInfo(wf.FoeKind).@"enum".fields.len;
+const NWEAR = @typeInfo(item.Wear).@"enum".fields.len;
 
 /// SIZED OFF THE TABLES, never a round number that looked big enough (the ring-buffer rule). Every run is
 /// its element count times the widest thing one element prints as, plus its key.
@@ -138,6 +142,8 @@ const CAP: usize =
     4 * 48 + // at, spawn, drop, hour
     5 * 32 + // souls, hands, sels, quickSel, elapsed
     combat.QUICK_SLOTS * 28 + 16 +
+    NWEAR * 28 + 8 + // worn: one tag per socket plus its key
+
     item.NK * 36 + 8 +
     ptree.N + 8 +
     wf.MAX_FLAGS + 8 +
@@ -324,6 +330,7 @@ pub fn gather(s: Slot) Data {
     d.flask = h.flasks.sel;
     d.quick = h.quick.slots;
     d.quickSel = h.quick.sel;
+    d.worn = h.worn;
 
     d.bag = s.bag.counts;
     d.tree = s.tree.taken;
@@ -367,6 +374,12 @@ pub fn scatter(d: *const Data, s: Slot) void {
     h.flasks.sel = d.flask;
     h.quick.slots = d.quick;
     h.quick.sel = @min(d.quickSel, combat.QUICK_SLOTS - 1);
+    // …AND THROUGH `wear`, NOT BY ASSIGNMENT, so the red bar is refitted for a charm on the way in: written
+    // straight onto the field, a character saved wearing the signet would load with the full bar it eats into.
+    inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
+        const w: item.Wear = @enumFromInt(f.value);
+        _ = h.wear(w, d.worn.at(w));
+    }
 
     s.bag.counts = d.bag;
     s.tree.taken = d.tree;
@@ -414,6 +427,14 @@ pub fn render(w: anytype, d: *const Data) !void {
     try w.writeAll("quick:");
     for (d.quick) |q| try w.print(" {s}", .{if (q) |k| item.tag(k) else "-"});
     try w.print("\nquicksel: {d}\n", .{d.quickSel});
+    // ONE LINE, IN THE ENUM'S OWN ORDER, `quick:`'s idiom — a `-` for an empty socket, so the line always has
+    // the same number of words however little he is wearing.
+    try w.writeAll("worn:");
+    inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
+        const k = d.worn.at(@enumFromInt(f.value));
+        try w.print(" {s}", .{if (k) |kind| item.tag(kind) else "-"});
+    }
+    try w.writeAll("\n");
 
     try w.writeAll("bag:");
     for (d.bag, 0..) |c, i| {
@@ -492,6 +513,23 @@ pub fn parse(text: []const u8, d: *Data) !void {
             }
         } else if (std.mem.eql(u8, key, "quicksel:")) {
             d.quickSel = try int(usize, &it);
+        } else if (std.mem.eql(u8, key, "worn:")) {
+            d.worn = .{};
+            inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
+                // **A SHORT LINE IS A LEGAL LINE**, `hands:`' own rule for its optional alternates: the day
+                // `item.Wear` gains a socket, every file already on disk has one fewer word here, and demanding
+                // the full count would refuse all three saves outright rather than load them with an empty
+                // socket — which is honestly what those characters had in it.
+                const tok = it.next() orelse break;
+                if (!std.mem.eql(u8, tok, "-")) {
+                    const k = item.fromTag(tok) orelse return Error.BadField;
+                    // **THE SOCKET IT IS WRITTEN IN HAS TO BE THE SOCKET IT BELONGS IN.** A hand-edited file (or
+                    // one from before a row moved) could otherwise seat a coat in a fist, where every dial reads
+                    // as 1 and the piece silently does nothing.
+                    if (item.wearSlot(k) != @as(item.Wear, @enumFromInt(f.value))) return Error.BadField;
+                    d.worn.put(@enumFromInt(f.value), k);
+                }
+            }
         } else if (std.mem.eql(u8, key, "bag:")) {
             d.bag = [_]u16{0} ** item.NK;
             while (it.next()) |tok| {
@@ -631,6 +669,11 @@ fn sample() Data {
     d.quick[0] = .crimson_flask;
     d.quick[3] = .mushroom_jerky;
     d.quickSel = 3;
+    // WHAT HE HAD ON, on both kinds of socket: a HAND's variant and a worn piece, since the line is one word per
+    // socket in the enum's own order and a hand is the half that is filled by swapping rather than by wearing.
+    d.worn.put(.hand_sword, .greatclub);
+    d.worn.put(.chest, .quilted_gambeson);
+    d.worn.put(.ring2, .deft_signet); // …and the LAST socket, so a short line is the only thing that truncates
     d.bag[@intFromEnum(item.Kind.kobold_fang)] = 7;
     d.bag[@intFromEnum(item.Kind.iron_key)] = 1;
     d.tree[2] = true;
@@ -740,6 +783,30 @@ test "a short run pads with the default and a long one is refused" {
 test "a bag tag this build does not know is a load error" {
     var d = Data{};
     try testing.expectError(Error.BadField, parse("version: 1\nbag: dragon_hoard 3\n", &d));
+}
+
+test "WHAT HE WAS WEARING SURVIVES THE FILE, a short line loads bare, and a wrong socket is refused" {
+    // The one thing on this line that CANNOT be checked by reading it: `worn:` is positional over `item.Wear`, so
+    // a socket added or a word mis-ordered is a coat loaded onto a fist, where every dial reads as 1 and the
+    // piece silently does nothing (`parse`'s own `wearSlot` guard).
+    const back = try roundTrip(&sample());
+    inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
+        const w: item.Wear = @enumFromInt(f.value);
+        try testing.expectEqual(sample().worn.at(w), back.worn.at(w));
+    }
+
+    // A SHORT LINE IS A LEGAL LINE (`hands:`' rule): a file from before a socket existed loads with it empty,
+    // which is honestly what that character had in it.
+    var short = Data{};
+    short.worn.put(.ring2, .deft_signet);
+    try parse("version: 1\nworn: greatclub -\n", &short);
+    try testing.expectEqual(item.Kind.greatclub, short.worn.at(.hand_sword).?);
+    try testing.expect(short.worn.at(.ring2) == null);
+
+    // …and the socket a word sits in has to be the socket that word belongs in.
+    var wrong = Data{};
+    try testing.expectError(Error.BadField, parse("version: 1\nworn: quilted_gambeson\n", &wrong));
+    try testing.expectError(Error.BadField, parse("version: 1\nworn: dragon_plate\n", &wrong));
 }
 
 /// The live objects a `Slot` points at, with only the fields `gather`/`scatter` touch made real. The three

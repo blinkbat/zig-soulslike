@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const gfx = @import("gfx.zig");
 const mathx = @import("mathx.zig");
 const combat = @import("combat.zig");
+const item = @import("item.zig"); // the GEAR table — what a thing does when he puts it on (`item.Equip`)
 const statsmod = @import("stats.zig");
 const art = @import("propart.zig");
 const archer = @import("archer.zig");
@@ -489,6 +490,38 @@ const CAST_FLASH_R = 0.095;
 const CAST_FLASH_LIFE = 0.085;
 const BOLT_BURST = 22; // …and the bigger one where it lands
 
+// THE TWO STRIKES' PICTURES — the mechanics' own numbers are `combat.LEVIN_*` / `combat.SIPHON_*`, and the
+// GEOMETRY of the stroke is the blow's (`game.strikeSegment`), handed in: a flash somewhere the blade was not
+// is a spell whose picture and mechanic disagree.
+
+/// **THE ELEMENT HAS NO TRAVEL IN ITS OWN MOTES** — `elemfx`'s lightning is the shortest life in the table by a
+/// factor of three and the only one with no gravity, which is the whole read: a spark is dead before it
+/// arrives. So the travel has to come from WHERE THE SPARKS ARE PUT, all on the one frame the blow lands.
+const LEVIN_STEPS = 9; // sites down the stroke…
+const LEVIN_SPARKS = 3; // …and the handful thrown off each
+const LEVIN_BURST = 26; // the shower where it lands — the bolt's own count, one size up
+/// How far off the line a site may sit. A straight run of equal dots is a laser, and NOTHING DEAD IS STRAIGHT.
+const LEVIN_JITTER = 0.11 * H;
+/// **THE SHORT LIFE IS BOUGHT BACK WITH RADIUS, NEVER WITH MORE MOTES** (the cast gather's own law, MEASURED off
+/// a render here too): a lightning mote is authored at 2 cm and lives four hundredths of a second, so the first
+/// pass photographed as eight white specks hanging over a skeleton's head — the strike had plainly happened and
+/// nothing said where. `elemfx`'s `scale` takes the grain AND the throw, so the stroke stays a stroke.
+const LEVIN_SPARK_SCALE = 2.2;
+/// …and the landing is the loudest thing in it, since it is what says WHERE. Held to 2.4 rather than 3.2 off the
+/// same render: at 7 cm a mote is a soft ball and the shower photographed as SMOKE over the body, which is the
+/// one thing a spark may not read as.
+const LEVIN_BURST_SCALE = 2.4;
+
+/// THE SIPHON is the SOULS' DROP one system along (`souls.zig`): motes solved to ARRIVE at the stone inside
+/// their own life, off the body they are being taken out of. Chaos's own grav is 0 (`elemfx`), so there is no
+/// ballistic term to solve against — only the tip's own motion, which is what makes the life SHORT (the
+/// gather's law: what is left over after riding the tip is ½·a·life², and it pays quadratically).
+const SIPHON_MOTES = 34;
+const SIPHON_LIFE_LO = 0.18;
+const SIPHON_LIFE_HI = 0.30;
+/// How wide off the body's own axis they are drawn out of it.
+const SIPHON_SPREAD = 0.30 * H;
+
 // ONE substance: the chaos violet stays the light ON the wood, never a second violet thing.
 const ROOT_SITES = 3;
 /// Tendrils one site throws — each differently sized, leaned and DELAYED, or it is a rosette of equal spikes.
@@ -571,7 +604,7 @@ const BREATH_SH_LEVEL = 40.0;
 const BREATH_SHIVER = 1.5;
 const BREATH_SHIVER_HZ = 12.0;
 
-const FX_N = 1216;
+const FX_N = 1280;
 
 comptime {
 // The ring overwrites its oldest silently, so FX_N is arithmetic over the constants above, not a taste.
@@ -586,7 +619,11 @@ comptime {
     // outlives `RIME_DUR` — a mote emitted on the last frame is still in the air.
     const ticks = @ceil(combat.RIME_DUR * BREATH_RATE);
     const breath = @as(f32, @floatFromInt(elemfx.pourCount(1))) * ticks;
-    const worst = gather + breath + @as(f32, release + erupt + caught + 2 * BOLT_BURST); // two bolts can land across chained casts
+    // …and the two STRIKES, which land on the frame they are cast rather than after a flight, so their whole
+    // claim is in the air at once. They cannot run WITH a pour — but the pour's motes outlive their cast, and
+    // the rod may be turned to another spell the moment it ends, so the pool has to hold both.
+    const struck = LEVIN_STEPS * LEVIN_SPARKS + LEVIN_BURST + SIPHON_MOTES;
+    const worst = gather + breath + @as(f32, release + erupt + caught + struck + 2 * BOLT_BURST); // two bolts can land across chained casts
     if (@as(f32, FX_N) < worst) @compileError(std.fmt.comptimePrint(
         "hero: FX_N = {d} but a cast can have {d} particles in the air — raise it",
         .{ FX_N, worst },
@@ -626,6 +663,123 @@ pub const ATK_HEAVY_HIT = combat.Hit{ .dmg = 27, .poise = 22, .stance = 14 };
 
 pub fn freshVitals(sheet: statsmod.Sheet) combat.Vitals {
     return combat.Vitals.init(sheet.hp(), POISE_MAX, STANCE_MAX);
+}
+
+// WHAT HE IS WEARING AND HOLDING (`item.Equip`)
+//
+// **BARE IS THE GAME EXACTLY AS IT WAS**, and that is the whole reason this could be added without retuning one
+// existing number: every dial on an `item.Arm` defaults to 1, and the armour curve of 0 armour is the blow
+// itself. A `null` socket therefore costs nothing and means nothing, which is what an empty socket should do.
+
+/// WHAT IS IN EACH SOCKET, or null for bare. The BAG still owns the item — this only says which of them is in
+/// use, so taking a thing off never loses it (`item.wearSlot` is the match between a kind and its socket).
+/// **ONE CELL PER SOCKET, INDEXED BY THE SOCKET ITSELF.** Written out as ten named fields it was three parallel
+/// lists — the `item.Wear` tags, the fields, and the two switches translating between them — whose names did not
+/// even agree (`hand_sword` against `sword`), so a new socket was four edits to say one thing. Off the enum there
+/// is nothing to keep in step: a tag gains its cell by existing, which is the same rule `save.render` and
+/// `hero.armourOf` already walk this by.
+pub const Worn = struct {
+    in: std.EnumArray(item.Wear, ?item.Kind) = std.EnumArray(item.Wear, ?item.Kind).initFill(null),
+
+    pub fn at(self: Worn, w: item.Wear) ?item.Kind {
+        return self.in.get(w);
+    }
+
+    pub fn put(self: *Worn, w: item.Wear, k: ?item.Kind) void {
+        self.in.set(w, k);
+    }
+};
+
+/// **WHAT THE WHOLE SUIT IS WORTH AGAINST PHYSICAL** — summed over every socket with a plate in it, because a
+/// helm and a coat and a pair of boots are three pieces of one answer. `combat.armourTaken` is a diminishing
+/// curve, so summing them cannot become immunity however many sockets gain a plate. A FREE function for
+/// `armourA`'s own reason: the character page prices a suit he is only considering (`book.armourOf`).
+pub fn armourOf(worn: Worn) f32 {
+    var a: f32 = 0;
+    inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
+        if (worn.at(@enumFromInt(f.value))) |k| {
+            switch (item.equip(k)) {
+                .plate => |p| a += p.a,
+                else => {},
+            }
+        }
+    }
+    return a;
+}
+
+/// …AND WHAT IT IS WORTH IN POINTS OF SKILL, folded onto a sheet that already carries the tree's (`item.Boon`).
+/// Walked over the SOCKETS rather than named per piece, so a boon in a socket nobody thought about still counts.
+pub fn boonsOnto(worn: Worn, sheet: *statsmod.Sheet) void {
+    inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
+        if (worn.at(@enumFromInt(f.value))) |k| {
+            switch (item.equip(k)) {
+                .boon => |b| sheet.add(b.attr, b.n),
+                else => {},
+            }
+        }
+    }
+}
+
+/// A POOL RESIZED WITH ITS FRACTION KEPT — `Hero.refitHp`'s rule, for the two bars that have no charm eating them.
+fn refitPool(cur: *f32, max: *f32, to: f32) void {
+    const frac = if (max.* > 1e-4) cur.* / max.* else 1.0;
+    max.* = to;
+    cur.* = mathx.minF(to, to * frac);
+}
+
+/// WHAT A ROW'S SCALING IS WORTH ON THIS SHEET — the ONE place `item.Scaling` and `stats.Attr` are matched up
+/// (`wearFor`'s own rule, one shelf along). A quality weapon takes the MEAN of the two curves, which is what
+/// makes the straight sword worth investing in either way and best under neither build.
+pub fn scaleOf(sheet: statsmod.Sheet, s: item.Scaling) f32 {
+    return switch (s) {
+        .strength => sheet.scale(.strength),
+        .dexterity => sheet.scale(.dexterity),
+        .quality => 0.5 * (sheet.scale(.strength) + sheet.scale(.dexterity)),
+    };
+}
+
+/// THE ROW FOR WHAT IS IN A SOCKET, off a `Worn` — a FREE function so the character book can price a loadout it
+/// is only considering (`book.derive`) through the same table the fight reads. All ones for an empty socket.
+pub fn armRow(worn: Worn, w: item.Wear) item.Arm {
+    if (worn.at(w)) |k| {
+        switch (item.equip(k)) {
+            .arm => |a| return a,
+            else => {},
+        }
+    }
+    return item.bareArm(w);
+}
+
+/// …and WHICH SOCKET AN ARMAMENT DRAWS ITS ROW FROM — the ONE place `hero.Armament` and `item.Wear` are matched
+/// up (`item.Wear`'s own note: the item file cannot name an armament). Null for the two that have no variants:
+/// there is one bell and one rod in this world.
+pub fn wearFor(a: Armament) ?item.Wear {
+    return switch (a) {
+        .sword => .hand_sword,
+        .bow => .hand_bow,
+        .shield => .hand_shield,
+        .bell, .wand => null,
+    };
+}
+
+/// **WHAT A WEAPON'S ROW DOES TO A BLOW, AND THE ONE PLACE IT IS DONE** — the sword's swing and the bow's shaft
+/// both come through here, so "heavier" cannot come to mean two different things one hand apart. The ELEMENTAL
+/// half rides the DAMAGE dial (a fire arrow's fire is a share of the shaft's own physical, `arrowBlow`) and the
+/// STANCE rides the POISE dial: both of those are the blow's WEIGHT, and a row that moved one without the other
+/// would be a weapon hitting harder without hitting heavier — `combat.Hit.scaled`'s own reason, per weapon.
+///
+/// **AND THE SKILL RIDES THE DAMAGE DIAL AND NOTHING ELSE** (`sheet`, through the row's own `scales`). Strength
+/// makes a club hit HARDER, not heavier: poise and stance belong to the WEAPON's mass, so a scrawny man swinging
+/// a greatclub still flinches what the sword bounces off, and a strong one does not gain a stagger he did not buy.
+pub fn weigh(h: combat.Hit, row: item.Arm, sheet: statsmod.Sheet) combat.Hit {
+    const skill = scaleOf(sheet, row.scales);
+    return .{
+        .dmg = h.dmg * row.dmg * skill,
+        .poise = h.poise * row.poise,
+        .stance = h.stance * row.poise,
+        .elem = h.elem.scaled(row.dmg * skill),
+        .fp = h.fp,
+    };
 }
 
 const HURT_LEAN = 40.0;
@@ -1109,6 +1263,9 @@ pub const Hero = struct {
     sheet: statsmod.Sheet = .{},
     /// Folded once and STAMPED on him: he reads fields off it and never walks the node list.
     perk: ptree.Bonus = .{},
+    /// …and WHAT HE HAS PUT ON, which is the same arrangement one system along: read as fields, never searched
+    /// for. Every socket empty is the game as it shipped (`Worn`).
+    worn: Worn = .{},
     vit: combat.Vitals = freshVitals(.{}),
     stam: combat.Stamina = .{}, // ER's third bar — the hero's alone; foes don't carry one
     fp: combat.Focus = .{},
@@ -1153,6 +1310,13 @@ pub const Hero = struct {
     /// LATCHED when it was drawn, not read at the loose: the shaft leaves a few frames later, and cycling the
     /// quiver in between must not change what is already on the string.
     shotArrow: combat.ArrowKind = .plain,
+    /// …AND THE ARMAMENT'S OWN ROW ON THE SAME RULE (`shotArrow`'s note, one axis along). What starts is what
+    /// lands: the character book takes a variant while a swing or a draw is already in flight (`game.takeHand`
+    /// deliberately lets the socket through where `equip` refuses), and read LIVE that swap re-priced and
+    /// re-CLOCKED an action already running — a longer `dur` pulls `atkT / dur` back inside the strike window
+    /// after it had closed, which re-arms `foe.strike`'s one-hit latch and lands one press on one body twice.
+    atkRow: item.Arm = item.bareArm(.hand_sword),
+    shotRow: item.Arm = item.bareArm(.hand_bow),
     /// ONE FRAME, the frame the shaft leaves — game.zig looses it from `nockWorld()`.
     loosed: bool = false,
     /// Counted like `swings`/`rolls`: a chained shot clears `shooting` and sets it again inside one frame.
@@ -1277,8 +1441,8 @@ pub const Hero = struct {
     /// moment this runs is the one moment a refill is already owed.
     pub fn applyPerks(self: *Hero, b: ptree.Bonus) void {
         self.perk = b;
-        self.sheet = b.sheet();
         self.baseRes = b.res;
+        self.resheet();
         self.makeWhole();
     }
 
@@ -1286,6 +1450,7 @@ pub const Hero = struct {
     /// nowhere else, so a raised attribute cannot leave one at its old length.
     fn makeWhole(self: *Hero) void {
         self.vit = freshVitals(self.sheet);
+        self.refitHp(); // …and what a charm is eating out of the red bar (`refitHp` keeps the fraction: it is full here)
         self.stam.max = self.sheet.stamina();
         self.fp.max = self.sheet.fp();
         self.stam.reset();
@@ -1627,7 +1792,8 @@ pub const Hero = struct {
             return;
         }
         self.shotArrow = self.quiver.sel;
-        self.stam.spend(if (aimed) combat.STAM_AIMED else combat.STAM_SHOT);
+        self.shotRow = self.armOf(.hand_bow);
+        self.stam.spend(@as(f32, if (aimed) combat.STAM_AIMED else combat.STAM_SHOT) * self.shotRow.stam);
         self.shooting = true;
         self.shotAimed = aimed;
         self.shotT = 0;
@@ -1642,8 +1808,8 @@ pub const Hero = struct {
         self.speed = 0;
         self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
         if (faceYaw) |ty| self.facing = mathx.approachAngle(self.facing, ty, TURN_TO_SHOT * dt);
-        const dur: f32 = if (self.shotAimed) BOW_SHOT_DUR else BOW_QUICK_DUR;
-        const at: f32 = if (self.shotAimed) BOW_SHOT_AT else BOW_QUICK_AT;
+        const dur: f32 = self.shotDur(self.shotAimed);
+        const at: f32 = self.shotAt();
         const was = self.shotT / dur;
         self.shotT += dt;
         // A one-frame EDGE: a long frame cannot fire twice, a short one cannot miss the knot.
@@ -1664,9 +1830,8 @@ pub const Hero = struct {
     fn bowLevels(self: *const Hero) struct { up: f32, pull: f32 } {
         if (!self.bowOut()) return .{ .up = 0, .pull = 0 };
         if (self.shooting) {
-            const dur: f32 = if (self.shotAimed) BOW_SHOT_DUR else BOW_QUICK_DUR;
-            const at: f32 = if (self.shotAimed) BOW_SHOT_AT else BOW_QUICK_AT;
-            const u = mathx.clampF(self.shotT / dur, 0, 1);
+            const at: f32 = self.shotAt();
+            const u = self.shotU();
             const up = if (self.shotAimed)
                 mathx.maxF(self.aimB, mathx.smoothstep(0, at, u))
             else
@@ -1872,7 +2037,9 @@ pub const Hero = struct {
         self.spell = switch (self.spell) {
             .bolt => .roots,
             .roots => .rime,
-            .rime => .bolt,
+            .rime => .levin,
+            .levin => .siphon,
+            .siphon => .bolt,
         };
         return true;
     }
@@ -2062,8 +2229,16 @@ pub const Hero = struct {
 
     /// SCALED WHOLE, not on the damage alone: what the tree bought is a stronger spell, and a bolt that hit
     /// harder without hitting heavier would leave the poise it staggers with pinned at its level-1 figure.
-    pub fn castBlow(self: *const Hero) combat.Hit {
-        return combat.BOLT_HIT.scaled(self.perk.spellDmg);
+    /// Null for the two that bill over time (`combat.spellBlow`), so a caller cannot spend a blow they have not
+    /// got — the STRIKES read it too, and the levin's whole point is the poise this scales.
+    ///
+    /// **AND INTELLIGENCE IS THE OTHER HALF OF THE SAME MULTIPLE** — the tree's node and the sheet's skill are
+    /// one product, because they are the same claim about the same cast. A rod is the only thing that reads
+    /// this attribute, which is why the scaling is here and not on an `item.Arm` row: `hero.wearFor` gives the
+    /// wand no socket, so there is no row to hang it off (`Armament`'s "one bell and one rod in this world").
+    pub fn castBlow(self: *const Hero) ?combat.Hit {
+        const base = combat.spellBlow(self.spell) orelse return null;
+        return base.scaled(self.perk.spellDmg * self.sheet.scale(.intelligence));
     }
 
     pub fn requestAttack(self: *Hero, kind: Attack) void {
@@ -2094,7 +2269,10 @@ pub const Hero = struct {
 
     pub fn startAttack(self: *Hero, kind: Attack) void {
         if (self.committed() or self.dead or self.staggered() or self.resting) return;
-        const cost: f32 = if (kind == .heavy) combat.STAM_HEAVY else combat.STAM_LIGHT;
+        // LATCHED HERE, and the bill is the first thing it prices: a club costs half again what the sword does
+        // per stroke, a dirk three quarters, and whatever is picked up mid-stroke prices the NEXT one.
+        self.atkRow = self.armOf(.hand_sword);
+        const cost: f32 = @as(f32, if (kind == .heavy) combat.STAM_HEAVY else combat.STAM_LIGHT) * self.atkRow.stam;
         if (!self.stam.canAct()) {
             self.refuse();
             return;
@@ -2110,7 +2288,7 @@ pub const Hero = struct {
 
     pub fn updateAttack(self: *Hero, dt: f32, bounds: f32, faceYaw: ?f32) void {
         self.tickClocks(dt);
-        const dur: f32 = if (self.atkHeavy) ATK_HEAVY_DUR else ATK_LIGHT_DUR;
+        const dur: f32 = self.atkDur(self.atkHeavy);
         const sa: f32 = if (self.atkHeavy) AH_STRIKE_A else AL_STRIKE_A;
         const sb: f32 = if (self.atkHeavy) AH_STRIKE_B else AL_STRIKE_B;
         const lunge: f32 = if (self.atkHeavy) AH_LUNGE else AL_LUNGE;
@@ -2179,7 +2357,7 @@ pub const Hero = struct {
     }
 
     pub fn shotBlow(self: *const Hero) combat.Hit {
-        return arrowBlow(self.shotArrow, self.shotAimed);
+        return weigh(arrowBlow(self.shotArrow, self.shotAimed), self.drawRow(), self.sheet);
     }
     pub fn shotShaft(self: *const Hero) archer.Shot {
         return arrowShot(self.shotArrow);
@@ -2222,6 +2400,13 @@ pub const Hero = struct {
         }
     }
 
+    /// **WHAT THE SIPHON HANDS BACK** — through `Vitals.heal`, the crimson flask's own door, which refuses a
+    /// corpse: a drain that lands on the frame something else killed him may not undo it. Reported so the caller
+    /// knows whether anything actually went in; a full bar is a cast that bought nothing but the damage.
+    pub fn drinkSiphon(self: *Hero, hp: f32) f32 {
+        return self.vit.heal(hp);
+    }
+
     /// HOW FAR THE FLASK IS UP AND HOW FAR IT IS TIPPED, 0 unless he is drinking — `bowLevels`' twin.
     fn drinkLevels(self: *const Hero) struct { lift: f32, tip: f32 } {
         if (!self.drinking) return .{ .lift = 0, .tip = 0 };
@@ -2233,8 +2418,7 @@ pub const Hero = struct {
     // TAE-events equivalent: the blade only HITS inside the strike's active window.
     pub fn hitActive(self: *const Hero) bool {
         if (!self.attacking) return false;
-        const dur: f32 = if (self.atkHeavy) ATK_HEAVY_DUR else ATK_LIGHT_DUR;
-        const u = self.atkT / dur;
+        const u = self.atkT / self.atkDur(self.atkHeavy);
         return if (self.atkHeavy) (u >= AH_HIT_A and u < AH_HIT_B) else (u >= AL_HIT_A and u < AL_HIT_B);
     }
 
@@ -2410,8 +2594,52 @@ pub const Hero = struct {
         }
     }
 
+    /// **THE LEVIN'S STROKE — the whole spell, on one frame.** `from`/`to` are the blow's OWN segment
+    /// (`game.strikeSegment`), never a line derived a second time here: the flash has to be where the blade was.
+    /// The sparks are laid ALONG it because the element has none of its own travel (`elemfx`'s lightning), and
+    /// the burst at the far end is what says it arrived on a BODY rather than passing through the air.
+    pub fn levinStroke(self: *Hero, from: rl.Vector3, to: rl.Vector3, groundY: f32, salt: u32) void {
+        // THE FLOOR IS THE EARTH UNDER THE STRIKE, NOT HIS OWN FEET AND NOT THE CONTACT — `boltBurst`'s law, and
+        // the contact is a body's CHEST here, so floored there a spark that ever fell would stop in mid-air a
+        // metre up. Lightning's grav is 0 today (`elemfx`), which is exactly what makes this the kind of wrong
+        // that leaves no trace until somebody retunes the element.
+        const was = self.fxHead;
+        defer foemod.floorBurst(&self.fx, was, self.fxHead, groundY);
+        var rng = foemod.fxStream(@floatFromInt(salt), 733.0, 0x8B06);
+        var i: u32 = 0;
+        while (i < LEVIN_STEPS) : (i += 1) {
+            const u = (@as(f32, @floatFromInt(i)) + rng.range(-0.35, 0.35)) / LEVIN_STEPS;
+            const p = mathx.lerpV(from, to, mathx.clampF(u, 0, 1));
+            const off = v3(rng.signed() * LEVIN_JITTER, rng.signed() * LEVIN_JITTER * 0.35, rng.signed() * LEVIN_JITTER);
+            elemfx.burst(&self.fx, &self.fxHead, &rng, mathx.addV(p, off), mathx.zero3, .lightning, LEVIN_SPARKS, LEVIN_SPARK_SCALE);
+        }
+        elemfx.burst(&self.fx, &self.fxHead, &rng, to, mathx.zero3, .lightning, LEVIN_BURST, LEVIN_BURST_SCALE);
+    }
+
+    /// **THE SIPHON'S DRAIN — the one effect in the game that runs the wrong way up the line.** Motes come off
+    /// the BODY and are solved to arrive at the stone, which is `souls.zig`'s own construction: what it has to
+    /// read as is a thing being taken, and a burst at the victim reads as a thing being given.
+    pub fn siphonDrain(self: *Hero, at: rl.Vector3, salt: u32) void {
+        const tip = self.wandTipWorld();
+        var rng = foemod.fxStream(@floatFromInt(salt), 787.0, 0x8B07);
+        var i: u32 = 0;
+        while (i < SIPHON_MOTES) : (i += 1) {
+            const a = rng.angle();
+            const rr = rng.range(0.0, SIPHON_SPREAD);
+            const from = v3(at.x + mathx.cosf(a) * rr, at.y + rng.range(-SIPHON_SPREAD, SIPHON_SPREAD), at.z + mathx.sinf(a) * rr);
+            const life = rng.range(SIPHON_LIFE_LO, SIPHON_LIFE_HI);
+            // Solved to ARRIVE: chaos's gravity is 0, so the whole velocity is the gap over the life and there
+            // is no ½·g·t² to subtract back out.
+            const v = mathx.scaleV(mathx.subV(tip, from), 1.0 / life);
+            foemod.emitParticle(&self.fx, &self.fxHead, from, v, life, rng.range(0.026, 0.048), 0.008, if (rng.float() < 0.45) CHAOS_HOT else CHAOS_MOTE, 0);
+        }
+    }
+
     pub fn attackHit(self: *const Hero) combat.Hit {
-        const base = if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT;
+        // THE WEAPON FIRST, THE TALLOW SECOND. The grease is a share of the blade's OWN physical, so a greased
+        // club burns hotter than a greased dirk — read off the bare constant it would be one flat number for
+        // every weapon in the game, which is the same bug as a fire arrow that ignores the bow.
+        const base = weigh(if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT, self.swingRow(), self.sheet);
         if (!self.grease.on()) return base;
         // Fire ON TOP, the physical untouched — the fire arrow's own construction (`fireTipped`).
         var out = base;
@@ -2435,10 +2663,130 @@ pub const Hero = struct {
         return self.rolling and self.rollT < ROLL_IFRAME_END + self.perk.iframe;
     }
 
+    /// THE ROW FOR WHAT IS IN THAT SOCKET — all ones when it is empty, so every call site is the same arithmetic
+    /// geared or bare and none of them has to ask whether he is wearing anything.
+    fn armOf(self: *const Hero, w: item.Wear) item.Arm {
+        return armRow(self.worn, w);
+    }
+
+    /// **THE ROW A COMMITTED ACTION IS RUNNING ON**, which is the one it STARTED on (`atkRow`) — the live socket
+    /// only once nothing is in flight, so a variant taken up mid-stroke prices the next stroke and not this one.
+    fn swingRow(self: *const Hero) item.Arm {
+        return if (self.attacking) self.atkRow else self.armOf(.hand_sword);
+    }
+    fn drawRow(self: *const Hero) item.Arm {
+        return if (self.shooting) self.shotRow else self.armOf(.hand_bow);
+    }
+
+    /// …and the two WORN rows, on the same rule: nothing on is a zero that changes nothing.
+    pub fn armourA(self: *const Hero) f32 {
+        return armourOf(self.worn);
+    }
+    /// EVERY CHARM HE HAS ON, ADDED UP — walked over the sockets because there are two fingers now, and a second
+    /// band read off the first socket's name would have been a piece of gear silently doing nothing.
+    pub fn charm(self: *const Hero) item.Charm {
+        var out = item.Charm{ .slot = .ring };
+        inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
+            if (self.worn.at(@enumFromInt(f.value))) |k| {
+                switch (item.equip(k)) {
+                    .charm => |c| {
+                        out.leech += c.leech;
+                        out.hpFrac += c.hpFrac;
+                    },
+                    else => {},
+                }
+            }
+        }
+        return out;
+    }
+
+    /// **THE LIVE SHEET IS THE TREE PLUS WHAT HE HAS ON**, and it is rebuilt here rather than at either of the two
+    /// places that can move it: a node bought at a fire and a belt cinched in the book are the same edit to the
+    /// same number, and two call sites each doing half of it is how one of them ends up doing none.
+    fn resheet(self: *Hero) void {
+        self.sheet = self.perk.sheet();
+        boonsOnto(self.worn, &self.sheet);
+    }
+
+    /// **PUTTING SOMETHING ON, AND THE ONE DOOR IT GOES THROUGH.** A charm resizes the red bar, so the bar is
+    /// refitted here rather than at the next bonfire: a ring you put on that does nothing until you rest is a
+    /// ring the player decides is broken. Refuses a kind that does not belong in that socket, since the one
+    /// thing worse than a socket that will not take a thing is one that takes it and does nothing.
+    pub fn wear(self: *Hero, w: item.Wear, k: ?item.Kind) bool {
+        if (k) |kind| {
+            if (item.wearSlot(kind) != w) return false;
+        }
+        self.worn.put(w, k);
+        self.resheet();
+        self.refitBars();
+        return true;
+    }
+
+    /// **EVERY BAR BACK ONTO THE SHEET WITHOUT MOVING WHAT IS IN IT.** A boon may name vitality, mind or endurance
+    /// (`item.Boon` names an attribute and not a bar), so all three LENGTHS are a socket's business now — not only
+    /// the red one a charm eats. Fractions are kept for `refitHp`'s reason and in both directions: cinching a belt
+    /// may not heal him and loosening one may not kill him.
+    fn refitBars(self: *Hero) void {
+        self.refitHp();
+        refitPool(&self.stam.cur, &self.stam.max, self.sheet.stamina());
+        refitPool(&self.fp.cur, &self.fp.max, self.sheet.fp());
+    }
+
+    /// THE RED BAR'S LENGTH — the sheet's own figure less whatever a charm is eating. **THE FRACTION IS KEPT
+    /// ACROSS THE RESIZE**: taking a ring off may not heal him and putting one on may not kill him, and a bar
+    /// that jumped either way would be the one number on screen the player cannot trust.
+    fn refitHp(self: *Hero) void {
+        const frac = if (self.vit.hpMax > 1e-4) self.vit.hp / self.vit.hpMax else 1.0;
+        self.vit.hpMax = self.sheet.hp() * (1.0 - mathx.clampF(self.charm().hpFrac, 0, 0.9));
+        self.vit.hp = mathx.minF(self.vit.hpMax, self.vit.hpMax * frac);
+    }
+
+    /// **WHAT THE SIGNET GIVES BACK, ON EVERY SWING OF HIS THAT LANDS** — `game.zig` calls it off the same edge
+    /// the hit's own beat comes off (a foe's hit count climbing) and gates it on his own swing, since that edge is
+    /// a SUM and a spirit's jaws move it too. A swing that achieved nothing feeds nothing.
+    pub fn drinkLeech(self: *Hero) f32 {
+        const back = self.charm().leech;
+        return if (back > 0) self.vit.heal(back) else 0;
+    }
+
+    /// HOW LONG THIS SWING TAKES — the armament's own duration through the row in that hand. The MECHANIC and
+    /// the POSE both read it: a club posed at the sword's rate would land its blow a third of a second after the
+    /// picture had finished swinging it.
+    pub fn atkDur(self: *const Hero, heavy: bool) f32 {
+        return @as(f32, if (heavy) ATK_HEAVY_DUR else ATK_LIGHT_DUR) * self.swingRow().dur;
+    }
+
+    /// …AND THE SAME CLOCK FOR THE BOW, which is the one armament whose `dur` reached nothing: the warbow's row
+    /// says 128% and the shot ran on the bare constant, so the page printed a number the draw did not honour.
+    /// ONE answer for the three places that were each spelling out the same pair (`updateShot`, `bowLevels`,
+    /// `shotU`) — the mechanic's knot and the pose's own `u` cannot be a shaft apart.
+    pub fn shotDur(self: *const Hero, aimed: bool) f32 {
+        return @as(f32, if (aimed) BOW_SHOT_DUR else BOW_QUICK_DUR) * self.drawRow().dur;
+    }
+
+    /// …AND WHERE IN IT THE SHAFT LEAVES, as a fraction. A pure constant, but it sat spelled out beside all
+    /// three copies of the clock above (`updateShot`, `bowLevels`, `loosedAlready`) — the mechanic's own knot and
+    /// the pose's release are the same instant, and two of them written by hand is two that can part company.
+    fn shotAt(self: *const Hero) f32 {
+        return if (self.shotAimed) BOW_SHOT_AT else BOW_QUICK_AT;
+    }
+
+    /// …and what he walks at behind the boards he actually has (`game.zig` applies `GUARD_SPEED`).
+    pub fn guardWalk(self: *const Hero) f32 {
+        return self.armOf(.hand_shield).walk;
+    }
+
+    /// HOW MUCH OF THE COMPASS THE BOARDS ACTUALLY COVER — the base arc through the row in that hand. A tower
+    /// shield covers half again what the small one does, and it is the same one comparison either way
+    /// (`combat.withinArc`), so a bearing cannot be wrapped two different ways a shield apart.
+    pub fn guardArc(self: *const Hero) f32 {
+        return combat.GUARD_ARC * self.armOf(.hand_shield).arc;
+    }
+
     pub fn guardCovers(self: *const Hero, fromDir: rl.Vector3) bool {
         // A ZERO DIRECTION IS NEVER BLOCKED, which is what lets `--shot` force reactions with synthetic hits.
         if (!self.guarding or mathx.lenXZ(fromDir) < 1e-4) return false;
-        return combat.withinGuardArc(mathx.headingXZ(fromDir), self.facing);
+        return combat.withinArc(mathx.headingXZ(fromDir), self.facing, self.guardArc());
     }
 
     pub fn takeHit(self: *Hero, h: combat.Hit, fromDir: rl.Vector3) combat.HitOutcome {
@@ -2446,7 +2794,9 @@ pub const Hero = struct {
         if (self.iFramed()) return .ignored;
         if (self.guardCovers(fromDir)) return self.blockHit(h);
         self.fp.drain(h.fp); // …and the ONE thing that reaches the blue bar (`combat.Hit.fp`)
-        const r = self.vit.hit(h);
+        // **ARMOUR IS THE LAST THING BETWEEN THE BLOW AND THE BAR** (`combat.armourTaken`) — physical only, and
+        // the poise and stance go through untouched: those belong to the blow, not to what he is wearing.
+        const r = self.vit.hit(h.throughArmour(self.armourA()));
         const flash: f32 = switch (r) {
             .death => 1.0,
             .heavy => 0.9,
@@ -2479,10 +2829,17 @@ pub const Hero = struct {
 
     fn blockHit(self: *Hero, h: combat.Hit) combat.HitOutcome {
         self.blockT = 0;
-        self.stam.spend(combat.guardStamina(h));
-        const chip = combat.guardChip(h, combat.GUARD_NEGATE + self.perk.guard);
+        const board = self.armOf(.hand_shield);
+        // A DOOR IS DEARER TO HOLD UP. The bill is the blow's (`guardStamina`) through the board's own dial: what
+        // a bigger shield buys is what gets through, and what it costs is the arm holding it there.
+        self.stam.spend(combat.guardStamina(h) * board.stam);
+        // CAPPED, because nothing the boards stop is stopped outright (`combat.GUARD_NEGATE_CAP`): the row
+        // multiplies and a tree node adds, and the two together could otherwise make blocking free.
+        const negate = mathx.minF(combat.GUARD_NEGATE_CAP, combat.GUARD_NEGATE * board.negate + self.perk.guard);
+        const chip = combat.guardChip(h, negate);
         self.fp.drain(chip.fp);
-        const r = self.vit.hit(chip);
+        // …and the coat still gets its say on what the boards let through.
+        const r = self.vit.hit(chip.throughArmour(self.armourA()));
         self.hurtFlash = mathx.maxF(self.hurtFlash, BLOCK_FLASH);
         if (r == .death) {
             self.enterDeath();
@@ -2777,12 +3134,12 @@ pub const Hero = struct {
     /// How far through the current loose, 0..1 (0 when there is none).
     fn shotU(self: *const Hero) f32 {
         if (!self.shooting) return 0;
-        return mathx.clampF(self.shotT / (if (self.shotAimed) BOW_SHOT_DUR else BOW_QUICK_DUR), 0, 1);
+        return mathx.clampF(self.shotT / self.shotDur(self.shotAimed), 0, 1);
     }
     /// Has THIS shot already let the shaft go? (`loosed` is the one FRAME it happened on.)
     fn loosedAlready(self: *const Hero) bool {
         if (!self.shooting) return false;
-        return self.shotU() >= (if (self.shotAimed) BOW_SHOT_AT else BOW_QUICK_AT);
+        return self.shotU() >= self.shotAt();
     }
 
     fn blockRecoil(self: *const Hero) f32 {
@@ -2981,7 +3338,9 @@ pub const Hero = struct {
     }
 
     fn poseLight(self: *Hero) void {
-        const u = mathx.clampF(self.atkT / ATK_LIGHT_DUR, 0, 1);
+        // THE POSE RUNS ON THE SWING'S OWN CLOCK (`atkDur`), never the bare sword's: a club posed at the sword's
+        // rate lands its blow a third of a second after the picture has finished swinging it.
+        const u = mathx.clampF(self.atkT / self.atkDur(false), 0, 1);
         const rec = 1.0 - mathx.smoothstep(AL_RECOV_A, 1.0, u); // 1 until recovery, draining to 0
         const wind = mathx.smoothstep(0, AL_WIND_B, u) * rec;
         const sPelv = mathx.smoothstep(AL_STRIKE_A, AL_STRIKE_B, u) * rec;
@@ -3048,7 +3407,7 @@ pub const Hero = struct {
     }
 
     fn poseHeavy(self: *Hero) void {
-        const u = mathx.clampF(self.atkT / ATK_HEAVY_DUR, 0, 1);
+        const u = mathx.clampF(self.atkT / self.atkDur(true), 0, 1);
         const rec = 1.0 - mathx.smoothstep(AH_RECOV_A, 1.0, u);
         const wind = mathx.smoothstep(0, AH_WIND_B, u) * rec;
         const sPelv = mathx.smoothstep(AH_STRIKE_A, AH_STRIKE_B, u) * rec;
@@ -5192,4 +5551,240 @@ test "A TWO-HANDER CLAIMS BOTH HANDS FROM EITHER SLOT" {
     h.off = .shield;
     try std.testing.expect(h.offInHand() and h.holds(.sword) and h.holds(.shield));
     try std.testing.expectEqual(Armament.sword, h.armInHand());
+}
+
+test "A SKILL REACHES THE BLOW IT GOVERNS AND NOTHING ELSE" {
+    // AT THE STARTING SHEET NOTHING MOVED. This is the whole licence for putting damage behind an attribute:
+    // `stats.scaleFor(START)` is exactly 1, so every tuned constant in the game means what it always meant.
+    var bare = testHero();
+    bare.atkHeavy = true;
+    try std.testing.expectApproxEqAbs(ATK_HEAVY_HIT.dmg, bare.attackHit().dmg, 1e-4);
+    bare.atkHeavy = false;
+    try std.testing.expectApproxEqAbs(ATK_LIGHT_HIT.dmg, bare.attackHit().dmg, 1e-4);
+    try std.testing.expectApproxEqAbs(combat.BOLT_HIT.raw(), bare.castBlow().?.raw(), 1e-3);
+
+    // STRENGTH DRIVES THE CLUB, DEXTERITY THE DIRK, and neither drives the other — a shared curve applied to
+    // whatever weapon happened to be in his hand would make the two rows on the page decoration.
+    var club = testHero();
+    _ = club.wear(.hand_sword, .greatclub);
+    var dirk = testHero();
+    _ = dirk.wear(.hand_sword, .fang_dirk);
+    club.atkHeavy = true;
+    dirk.atkHeavy = true;
+    const clubBase = club.attackHit().dmg;
+    const dirkBase = dirk.attackHit().dmg;
+    club.sheet.set(.strength, 60);
+    dirk.sheet.set(.strength, 60);
+    try std.testing.expect(club.attackHit().dmg > clubBase);
+    try std.testing.expectApproxEqAbs(dirkBase, dirk.attackHit().dmg, 1e-4); // the dirk cares nothing for it
+    dirk.sheet.set(.dexterity, 60);
+    try std.testing.expect(dirk.attackHit().dmg > dirkBase);
+
+    // …AND IT IS THE DAMAGE DIAL ONLY. A strong man swinging a club does not gain a stagger he never bought:
+    // poise and stance belong to the WEAPON's mass, which is `weigh`'s own split.
+    var strong = testHero();
+    _ = strong.wear(.hand_sword, .greatclub);
+    strong.atkHeavy = true;
+    const weakPoise = strong.attackHit().poise;
+    const weakStance = strong.attackHit().stance;
+    strong.sheet.set(.strength, 99);
+    try std.testing.expect(strong.attackHit().dmg > clubBase);
+    try std.testing.expectApproxEqAbs(weakPoise, strong.attackHit().poise, 1e-4);
+    try std.testing.expectApproxEqAbs(weakStance, strong.attackHit().stance, 1e-4);
+
+    // THE BOW IS DEXTERITY'S EVEN WITH AN EMPTY SOCKET (`item.bareArm`) — inheriting the sword's `quality`
+    // default, a bowman would have been paid for strength he never spent a point on.
+    var bow = testHero();
+    bow.arm = .bow;
+    const shotBase = bow.shotBlow().dmg;
+    bow.sheet.set(.strength, 99);
+    try std.testing.expectApproxEqAbs(shotBase, bow.shotBlow().dmg, 1e-4);
+    bow.sheet.set(.dexterity, 60);
+    try std.testing.expect(bow.shotBlow().dmg > shotBase);
+
+    // …AND INTELLIGENCE IS THE ROD'S, multiplying WHOLE so the levin keeps the poise it is bought for.
+    var rod = testHero();
+    const boltBase = rod.castBlow().?;
+    rod.sheet.set(.intelligence, 60);
+    const boltUp = rod.castBlow().?;
+    try std.testing.expect(boltUp.raw() > boltBase.raw());
+    try std.testing.expect(boltUp.poise > boltBase.poise);
+}
+
+test "WHAT HE PUTS ON CARRIES POINTS OF SKILL, and the sheet is the tree PLUS the gear" {
+    var h = testHero();
+    const base = h.sheet.at(.strength);
+    // The belt lands on the sheet the moment it is cinched — not at the next bonfire, `Hero.wear`'s own rule.
+    try std.testing.expect(h.wear(.belt, .banded_warbelt));
+    try std.testing.expectEqual(base + 3, h.sheet.at(.strength));
+    // …and it reaches the swing it is for.
+    var plain = testHero();
+    plain.atkHeavy = true;
+    h.atkHeavy = true;
+    try std.testing.expect(h.attackHit().dmg > plain.attackHit().dmg);
+    // Taking it off gives the points back, and nothing else moved with them.
+    try std.testing.expect(h.wear(.belt, null));
+    try std.testing.expectEqual(base, h.sheet.at(.strength));
+    try std.testing.expectEqual(base, h.sheet.at(.dexterity));
+
+    // **THE TREE AND THE GEAR ADD**, and a node applied afterwards may not wipe the belt off the sheet — which is
+    // exactly what `applyPerks` did while it assigned the sheet straight from the bonus.
+    try std.testing.expect(h.wear(.belt, .banded_warbelt));
+    var b = ptree.Bonus{};
+    b.attrs[@intFromEnum(statsmod.Attr.strength)] = 2;
+    h.applyPerks(b);
+    try std.testing.expectEqual(base + 5, h.sheet.at(.strength));
+
+    // A BOON MAY NOT MOVE A BAR WITHOUT KEEPING WHAT IS IN IT (`refitBars`). Vitality is the one that would show,
+    // so it is checked through a charm's resize on a half-full bar plus a re-seat of the sheet.
+    var v = testHero();
+    v.vit.hp = v.vit.hpMax * 0.5;
+    v.fp.cur = v.fp.max * 0.5;
+    v.stam.cur = v.stam.max * 0.5;
+    try std.testing.expect(v.wear(.neck, .ashen_amulet));
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), v.vit.hp / v.vit.hpMax, 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), v.fp.cur / v.fp.max, 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), v.stam.cur / v.stam.max, 1e-4);
+    // …and the amulet is the ROD's, so the cast moved and the sword did not.
+    var swordOnly = testHero();
+    try std.testing.expect(v.castBlow().?.raw() > swordOnly.castBlow().?.raw());
+    swordOnly.atkHeavy = true;
+    v.atkHeavy = true;
+    try std.testing.expectApproxEqAbs(swordOnly.attackHit().dmg, v.attackHit().dmg, 1e-4);
+}
+
+test "THE WHOLE SUIT ANSWERS PHYSICAL, and stacking it cannot become immunity" {
+    var one = testHero();
+    _ = one.wear(.chest, .quilted_gambeson);
+    var all = testHero();
+    _ = all.wear(.chest, .quilted_gambeson);
+    _ = all.wear(.helm, .pitted_helm);
+    _ = all.wear(.feet, .marchboots);
+    // THREE PIECES ARE ONE ANSWER: summed over the sockets (`armourOf`), not read off the coat alone — as one
+    // socket's lookup a helm and a pair of boots were worn, drawn, described and worth nothing.
+    try std.testing.expect(all.armourA() > one.armourA());
+    // …and it is still a CURVE: the full suit turns aside less of a killing blow than of a poke, and never all.
+    const a = all.armourA();
+    const smallOff = 1.0 - combat.armourTaken(a, 10) / 10.0;
+    const bigOff = 1.0 - combat.armourTaken(a, 60) / 60.0;
+    try std.testing.expect(smallOff > bigOff);
+    try std.testing.expect(smallOff < 1.0);
+    // A socket still refuses what does not belong in it, on the new sockets as much as the old.
+    try std.testing.expect(!all.wear(.helm, .marchboots));
+    try std.testing.expect(!all.wear(.ring2, .leech_signet)); // the first ring's band, in the second finger
+    try std.testing.expect(all.wear(.ring2, .deft_signet));
+}
+
+test "WHAT HE IS WEARING REACHES THE FIGHT — the swing, the clock, the bill, the boards and the bar" {
+    var bare = testHero();
+    var club = testHero();
+    _ = club.wear(.hand_sword, .greatclub);
+    var dirk = testHero();
+    _ = dirk.wear(.hand_sword, .fang_dirk);
+
+    // THE SWING: the club hits harder and heavier, the dirk lighter — and the STANCE follows the poise, or a
+    // weapon would hit harder without hitting heavier (`weigh`).
+    bare.atkHeavy = true;
+    club.atkHeavy = true;
+    dirk.atkHeavy = true;
+    try std.testing.expect(club.attackHit().dmg > bare.attackHit().dmg);
+    try std.testing.expect(club.attackHit().poise > bare.attackHit().poise);
+    try std.testing.expect(club.attackHit().stance > bare.attackHit().stance);
+    try std.testing.expect(dirk.attackHit().dmg < bare.attackHit().dmg);
+
+    // …AND THE CLOCK MOVES WITH IT, both tiers. A weapon that hit half again as hard in the same time would be
+    // a strictly better sword and there would be no decision on the page.
+    try std.testing.expect(club.atkDur(true) > bare.atkDur(true));
+    try std.testing.expect(club.atkDur(false) > bare.atkDur(false));
+    try std.testing.expect(dirk.atkDur(false) < bare.atkDur(false));
+
+    // …and the BILL. Measured on the pool, since that is where a swing is actually paid for.
+    club.startAttack(.heavy);
+    bare.startAttack(.heavy);
+    try std.testing.expect(club.stam.cur < bare.stam.cur);
+
+    // THE BOARDS: a door covers more of the compass and lets less through, and the negation is CAPPED so a row
+    // and a tree node together can never make a block free (`combat.GUARD_NEGATE_CAP`).
+    var door = testHero();
+    _ = door.wear(.hand_shield, .tower_shield);
+    try std.testing.expect(door.guardArc() > bare.guardArc());
+    door.guarding = true;
+    bare.guarding = true;
+    door.perk.guard = 0.5; // a node stacked on top of the biggest shield in the game
+    const blow = combat.Hit{ .dmg = 40, .poise = 30, .stance = 10 };
+    const hpBefore = door.vit.hp;
+    _ = door.takeHit(blow, mathx.headingDir(door.facing + std.math.pi));
+    try std.testing.expect(door.vit.hp < hpBefore); // it chipped him: nothing the boards stop is stopped outright
+
+    // THE COAT: physical only, and worth MORE against a small blow than a big one — the curve, not a percentage.
+    var coat = testHero();
+    _ = coat.wear(.chest, .quilted_gambeson);
+    const a = coat.armourA();
+    try std.testing.expect(a > 0);
+    const smallOff = 1.0 - combat.armourTaken(a, 10) / 10.0;
+    const bigOff = 1.0 - combat.armourTaken(a, 60) / 60.0;
+    try std.testing.expect(smallOff > bigOff);
+    // …and it never touches the poise or the stance: those belong to the blow.
+    const through = blow.throughArmour(a);
+    try std.testing.expectApproxEqAbs(blow.poise, through.poise, 1e-6);
+    try std.testing.expectApproxEqAbs(blow.stance, through.stance, 1e-6);
+
+    // THE CHARM: a shorter bar, and it gives back on a landed blow. The FRACTION is kept across the resize, so
+    // putting it on cannot kill him and taking it off cannot heal him.
+    var ring = testHero();
+    const fullBar = ring.vit.hpMax;
+    ring.vit.hp = ring.vit.hpMax * 0.5;
+    _ = ring.wear(.ring, .leech_signet);
+    try std.testing.expect(ring.vit.hpMax < fullBar);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), ring.vit.hp / ring.vit.hpMax, 1e-4);
+    const before = ring.vit.hp;
+    try std.testing.expect(ring.drinkLeech() > 0);
+    try std.testing.expect(ring.vit.hp > before);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), bare.drinkLeech(), 1e-6); // nothing on the finger gives nothing
+
+    // A SOCKET REFUSES WHAT DOES NOT BELONG IN IT — the one failure that would otherwise be silent: the piece
+    // sits there, every dial reads as 1, and it does nothing at all.
+    try std.testing.expect(!bare.wear(.chest, .greatclub));
+    try std.testing.expect(!bare.wear(.hand_sword, .quilted_gambeson));
+    try std.testing.expect(bare.worn.at(.chest) == null);
+}
+
+test "WHAT STARTS IS WHAT LANDS — a variant taken up mid-stroke cannot reach into the one in flight" {
+    var h = testHero();
+    h.startAttack(.light);
+    const dur = h.atkDur(false);
+    const dmg = h.attackHit().dmg;
+    // Mid-recovery, past the strike window: the book is open, the world is held, and he picks up the club.
+    h.atkT = dur * 0.70;
+    try std.testing.expect(!h.hitActive());
+    try std.testing.expect(h.wear(.hand_sword, .greatclub));
+
+    // THE SWING IN FLIGHT IS UNMOVED. Read live, `atkT / dur` fell back to 0.52 of a club's longer clock —
+    // inside `AL_HIT_A`..`AL_HIT_B`, which re-opens a window that had already closed and re-arms
+    // `foe.strike`'s one-hit latch, so one press landed on one body twice for the club's own damage.
+    try std.testing.expectApproxEqAbs(dur, h.atkDur(false), 1e-6);
+    try std.testing.expectApproxEqAbs(dmg, h.attackHit().dmg, 1e-4);
+    try std.testing.expect(!h.hitActive());
+
+    // …and the NEXT stroke is the club's, which is what makes it a latch and not a refusal.
+    h.attacking = false;
+    h.startAttack(.light);
+    try std.testing.expect(h.atkDur(false) > dur);
+    try std.testing.expect(h.attackHit().dmg > dmg);
+
+    // THE SAME RULE ON THE STRING (`shotArrow`'s own): the warbow's `dur` is a real clock now, so a swap
+    // between the draw and the loose may not re-time the shaft already on it.
+    var b = testHero();
+    b.arm = .bow;
+    b.quiver = .{};
+    b.startShot(false);
+    const shot = b.shotDur(false);
+    const shaft = b.shotBlow().dmg;
+    try std.testing.expect(b.wear(.hand_bow, .grave_warbow));
+    try std.testing.expectApproxEqAbs(shot, b.shotDur(false), 1e-6);
+    try std.testing.expectApproxEqAbs(shaft, b.shotBlow().dmg, 1e-4);
+    b.shooting = false;
+    // …and the warbow IS slower to get away, as its row says and as `item.effect` has been printing all along.
+    try std.testing.expect(b.shotDur(false) > shot);
+    try std.testing.expectApproxEqAbs(BOW_SHOT_DUR * item.equip(.grave_warbow).arm.dur, b.shotDur(true), 1e-6);
 }

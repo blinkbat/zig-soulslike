@@ -127,6 +127,13 @@ pub const Hit = struct {
         return self.stance > 0;
     }
 
+    /// WHAT IS LEFT OF IT AFTER ARMOUR (`armourTaken`) — the physical alone, every other channel untouched.
+    pub fn throughArmour(self: Hit, a: f32) Hit {
+        var out = self;
+        out.dmg = armourTaken(a, self.dmg);
+        return out;
+    }
+
     /// THE WHOLE BLOW, LOUDER OR QUIETER — every channel by the same factor. Scaling only the damage would
     /// leave a boosted sorcery staggering exactly as hard as it did at level one, which is a blow whose
     /// picture and whose effect disagree.
@@ -453,6 +460,24 @@ pub fn guardStamina(h: Hit) f32 {
     return GUARD_STAM_FLAT + GUARD_STAM_PER_DMG * h.raw();
 }
 /// WHAT GETS THROUGH — still a `Hit`, so the chip's elemental share meets the blocker's resistances instead of arriving as raw HP. DAMAGE ONLY: poise and stance are what the shield is FOR, and a chip that carried the blow's stagger through would flinch him behind his own guard.
+/// **ARMOUR — THE FIFTH COLUMN, AND IT IS A CURVE AND NOT A PERCENTAGE.** PoE2's own, and the shape AGENTS.md
+/// reserved for the day armour landed: `A/(A + 5*dmg)` of a blow is turned aside, so the same coat is worth a
+/// fifth of a middling blow and a tenth of the one that was going to kill you. That is why armour can never
+/// become immunity however much of it is stacked, and why it needs no cap of its own the way a resistance does.
+///
+/// **PHYSICAL ONLY.** The four elements have `Resists`; this is the thing they were always the other half of.
+/// **AND IT TOUCHES NEITHER POISE NOR STANCE** — those belong to the BLOW and not to the body it lands on, which
+/// is `guardChip`'s law and the reason a coat cannot make him harder to stagger.
+pub fn armourTaken(a: f32, dmg: f32) f32 {
+    if (a <= 0 or dmg <= 0) return dmg;
+    return dmg * (1.0 - a / (a + 5.0 * dmg));
+}
+
+/// **A BOARD MAY NEVER STOP A BLOW OUTRIGHT** — the chip is the entire reason a guard is not a wall, and with a
+/// shield ROW (`item.Arm.negate`) multiplying the base and a tree node adding to it, the two could sum past 1
+/// and make blocking free. `guardChip` clamps at 1; this stops it ever getting there.
+pub const GUARD_NEGATE_CAP: f32 = 0.95;
+
 pub fn guardChip(h: Hit, negate: f32) Hit {
     const k = 1.0 - mathx.clampF(negate, 0, 1);
     // The DRAIN is chipped by the same fraction, for the reason the chip exists at all: nothing the boards
@@ -686,15 +711,53 @@ pub const Chill = struct {
     }
 };
 
-/// WHICH SORCERY THE ROD IS SET TO. Exhaustive everywhere it is read, so a fourth spell is a compile error
+/// **THE TWO THAT DO NOT CROSS THE GROUND.** The bolt is a stone thrown through the arrow pool and the rime is
+/// a cone he holds; these two arrive on ONE named body on the frame they are cast, so what they need is not a
+/// speed but a REACH and an ARC to find that body inside.
+///
+/// **HOW FAR OFF HIS FACING ONE WILL TAKE A BODY WITH NOTHING LOCKED.** Narrower than the rime cone's 30 on
+/// purpose: that spell is a wash poured over whatever is in front of him, and these are aimed at somebody.
+pub const STRIKE_ARC: f32 = 22.0;
+
+/// **THE LEVIN STRIKE — the rod's fourth, and the one that does not travel.** Lightning's own signature in
+/// `elemfx` is the fastest and shortest-lived in the table — a spark is dead before it arrives — so a bolt of
+/// it sailing across six metres of field as a thrown stone would be the one spell whose picture argues with
+/// its element. What it sells is the INTERRUPT: the heaviest poise anything the hero owns carries, bought with
+/// damage that is deliberately middling.
+pub const LEVIN_FP: f32 = 16.0; // over the bolt's 12, under the roots' 18 — the middle rung of the rod's five
+/// POISE PAST EVERY CREATURE'S OWN `POISE_MAX` BAR THE BONE KNIGHT'S 78 (the ogre's 30 is the highest of the
+/// rest), so one cast flinches anything that is not a boss — where his own heavy swing at 22 flinches the
+/// toads and leaves the giants standing. The STANCE is deliberately UNDER that swing's 14: a spell thrown from
+/// across the room may not be the better guard-breaker than a stroke committed inside reach.
+pub const LEVIN_HIT = Hit{ .poise = 34, .stance = 10, .elem = elems(.{ .lightning = 16 }) };
+/// Well past the roots' 7 m throw, since nothing has to cross the ground to get there, and far short of the
+/// bolt's 55: an interrupt thrown from outside the fight is not an interrupt.
+pub const LEVIN_REACH: f32 = 16.0;
+
+/// **THE SIPHON — the fifth, and the only thing the rod does FOR him.** It takes a body's health and hands a
+/// share of it back, which is the leechfly's beak read off the other side of the fight. All chaos and NO POISE
+/// AND NO STANCE (`Root.tick`'s law): it is a drain, not a blow, and a spell that healed him AND staggered
+/// what it drank from would be strictly better than the two rungs under it.
+pub const SIPHON_FP: f32 = 20.0;
+pub const SIPHON_HIT = Hit{ .elem = elems(.{ .chaos = 13 }) };
+/// WHAT COMES BACK, as a share of the HP THE BODY ACTUALLY LOST — never of what was thrown at it. Resisted
+/// damage is therefore resisted healing, so a skeleton (which shrugs chaos off) is a bad meal and the wand's
+/// own honest trade survives the one spell that could have voided it. The leechfly's own figure.
+pub const SIPHON_SHARE: f32 = 0.55;
+/// SHORTER THAN THE LEVIN'S. You have to be in the fight to feed off it.
+pub const SIPHON_REACH: f32 = 12.0;
+
+/// WHICH SORCERY THE ROD IS SET TO. Exhaustive everywhere it is read, so a sixth spell is a compile error
 /// until it has said what it costs and what it does. APPENDED NEVER INSERTED — a save carries the ordinal.
-pub const Spell = enum { bolt, roots, rime };
+pub const Spell = enum { bolt, roots, rime, levin, siphon };
 
 pub fn spellName(s: Spell) [:0]const u8 {
     return switch (s) {
         .bolt => "Chaos Bolt",
         .roots => "Roots",
         .rime => "Rime Breath",
+        .levin => "Levin Strike",
+        .siphon => "Siphon",
     };
 }
 
@@ -704,6 +767,31 @@ pub fn spellFp(s: Spell) f32 {
         .bolt => BOLT_FP,
         .roots => ROOT_FP,
         .rime => RIME_FP,
+        .levin => LEVIN_FP,
+        .siphon => SIPHON_FP,
+    };
+}
+
+/// THE BLOW ONE LANDS AT ONCE, or null for the two that bill over time (`Root.tick`, `Chill.tick`) — asked "what
+/// is one hit of this worth", those two have no answer, and a zeroed `Hit` would be an answer that lies. The
+/// three that DO strike a body all read their numbers from here, so nothing outside this file picks them.
+pub fn spellBlow(s: Spell) ?Hit {
+    return switch (s) {
+        .bolt => BOLT_HIT,
+        .levin => LEVIN_HIT,
+        .siphon => SIPHON_HIT,
+        .roots, .rime => null,
+    };
+}
+
+/// …AND HOW FAR IT REACHES, for the two that arrive without crossing the ground. Null for the three that carry
+/// their own answer already: the bolt flies (`hero.BOLT_REACH`), the roots are thrown at a mark, the cone has a
+/// mouth and a length of its own.
+pub fn spellReach(s: Spell) ?f32 {
+    return switch (s) {
+        .levin => LEVIN_REACH,
+        .siphon => SIPHON_REACH,
+        .bolt, .roots, .rime => null,
     };
 }
 
@@ -716,7 +804,26 @@ pub fn spellDamage(s: Spell) f32 {
         // …to ONE body standing in the whole pour, which is the only comparison the sheet can honestly make:
         // what the breath is actually worth is that number times however many were in front of him.
         .rime => RIME_DUR * RIME_DPS,
+        .levin => LEVIN_HIT.raw(),
+        // What it TAKES. What it gives back is `SIPHON_SHARE` of what a particular body actually lost, which is
+        // that body's business and not a number the sheet can print.
+        .siphon => SIPHON_HIT.raw(),
     };
+}
+
+comptime {
+    // **THE LADDER IS MONOTONE, AND THAT IS THE WHOLE PRICE LIST**: 12→24, 16→16, 18→14, 20→13, 22→10.2. Every
+    // step up in FP is a step DOWN in raw damage, because what the difference buys is never damage — it is a
+    // stagger, a hold, a mouthful of HP back, or a second body in the cone. Asserted over every PAIR rather
+    // than against a written-out order, so a sixth spell is priced by this rule without editing it, and the
+    // three hand-written comparisons this replaces (rime > roots > bolt, both ways round) cannot drift apart.
+    for (std.enums.values(Spell)) |a| {
+        for (std.enums.values(Spell)) |b| {
+            if (spellFp(a) < spellFp(b)) std.debug.assert(spellDamage(a) > spellDamage(b));
+        }
+    }
+    // …and every one of them is castable off a full pool, or the sheet's Mind curve promises what it cannot pay.
+    for (std.enums.values(Spell)) |s| std.debug.assert(spellFp(s) > 0 and spellFp(s) <= FP_MAX);
 }
 
 test "the chill outlives the breath, refreshes rather than stacks, and lets go on its own" {
@@ -1316,6 +1423,45 @@ test "THE ROOTS COST MORE THAN THE BOLT AND DEAL LESS — a control tool, not a 
         try std.testing.expect(spellDamage(s) > 0);
     }
     try std.testing.expect(spellDamage(.roots) < spellDamage(.bolt));
+}
+
+test "THE LEVIN BUYS THE STAGGER AND NOTHING ELSE — the heaviest poise the hero owns, at middling damage" {
+    // The rod's own two neighbours on the ladder, so the interrupt is bought and not free.
+    try std.testing.expect(spellFp(.levin) > spellFp(.bolt) and spellFp(.levin) < spellFp(.roots));
+    try std.testing.expect(spellDamage(.levin) < spellDamage(.bolt));
+    // **AND THE POISE IS THE POINT.** Past the ogre's 30 — the highest `POISE_MAX` in the game bar the Bone
+    // Knight's 78 — so one cast flinches anything that is not a boss, where the hero's heavy swing (22) does not.
+    try std.testing.expect(LEVIN_HIT.poise > 30.0);
+    try std.testing.expect(LEVIN_HIT.poise < 78.0); // …and the boss still does not flinch at one
+    // …bought with STANCE, which stays under a committed melee stroke's: a spell from across the room may not be
+    // the better guard-breaker than a blade in reach.
+    try std.testing.expect(LEVIN_HIT.stance > 0 and LEVIN_HIT.stance < 14.0);
+    // ALL LIGHTNING AND NO PHYSICAL — one substance, one element (the brood mother's rule), and it is the first
+    // lightning anything but a thrown jar deals.
+    try std.testing.expectApproxEqAbs(LEVIN_HIT.raw(), LEVIN_HIT.elem.at(.lightning), 1e-4);
+    try std.testing.expect(LEVIN_HIT.dmg == 0);
+    // …and it reaches past the roots' throw and nowhere near the bolt's flight.
+    try std.testing.expect(LEVIN_REACH > ROOT_R and LEVIN_REACH < 55.0);
+}
+
+test "THE SIPHON FEEDS OFF WHAT IT ACTUALLY TOOK, so a body that resists chaos is a bad meal" {
+    // A DRAIN, NOT A BLOW (`Root.tick`'s law): healing him AND staggering what he drank from would make it
+    // strictly better than both rungs under it.
+    try std.testing.expect(SIPHON_HIT.poise == 0 and SIPHON_HIT.stance == 0);
+    try std.testing.expect(SIPHON_HIT.dmg == 0); // all chaos, one substance
+    try std.testing.expect(spellFp(.siphon) > spellFp(.levin) and spellFp(.siphon) < spellFp(.rime));
+    try std.testing.expect(SIPHON_REACH < LEVIN_REACH); // you have to be IN the fight to feed off it
+
+    // …and the whole of the mechanic: the share comes off the HP the body LOST, so resistance eats the healing
+    // too. A skeleton at the chaos cap gives back a quarter of what a bare body does.
+    var bare = Vitals.initFoe(100, 20, 40);
+    var boned = Vitals.initFoe(100, 20, 40).withRes(resists(.{ .chaos = RES_CAP }));
+    const off_bare = bare.damageFrom(SIPHON_HIT);
+    const off_boned = boned.damageFrom(SIPHON_HIT);
+    try std.testing.expect(off_bare > off_boned * 3.9); // 75% resisted is a quarter of the meal
+    try std.testing.expect(off_bare * SIPHON_SHARE < off_bare); // …and it never gives back more than it took
+    // The heal is what a body actually lost, so it cannot outrun the damage even at full share.
+    try std.testing.expect(SIPHON_SHARE > 0 and SIPHON_SHARE < 1);
 }
 
 test "a small hit chips poise without a stun" {

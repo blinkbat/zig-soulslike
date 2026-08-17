@@ -5,6 +5,7 @@ const uiart = @import("uiart.zig");
 const daynight = @import("daynight.zig"); // the clock dial reads the hour's own arithmetic, never its own
 const itemart = @import("itemart.zig"); // the pictures in the cross — shared with the character book
 const item = @import("item.zig"); // …and what the DOWN cell holds is a bag item, off the quick bar
+const combat = @import("combat.zig"); // …and what the UP cell holds is a `combat.Spell` (`Slot.sorcery`), for its reason
 const gfx = @import("gfx.zig"); // …and a LIVE PORTRAIT is drawn through the world's own scene shader
 
 const rgba = mathx.rgba;
@@ -962,7 +963,10 @@ const BOTTOM: i32 = 26;
 
 /// WHAT A HAND OR THE SORCERY CELL IS SHOWING. The cross`s DOWN cell is NOT here: it holds an `item.Kind`
 /// off the quick bar (`quickSlot`), which is a wider thing than the handful his hands can be doing.
-pub const Slot = enum { empty, sword, bow, bell, shield, wand, spell, roots, rime };
+/// **THE SORCERY CELL CARRIES WHICH SPELL RATHER THAN THE ENUM GROWING A TAG PER SPELL.** As five tags it was a
+/// list of the sorceries kept in lockstep with `combat.Spell` — one to name it here, one to map it in `game.hud`
+/// and one to draw it — so a sixth spell was three edits and two of them failed by drawing the wrong picture.
+pub const Slot = union(enum) { empty, sword, bow, bell, shield, wand, sorcery: combat.Spell };
 
 /// `left`/`right` are what is IN HIS HANDS this frame, not what he owns.
 pub fn equipment(left_hand: Slot, right_hand: Slot, up: Slot, castable: bool, quick: ?item.Kind, charges: u8, ammo: ?Ammo) void {
@@ -1038,14 +1042,10 @@ fn slot(x: i32, y: i32, holds: Slot, charges: u8) void {
         .bell => itemart.bell(cx, cy, px),
         .shield => itemart.shield(cx, cy, px),
         .wand => itemart.wand(cx, cy, px),
-        // The sorcery slot's picture greys out when the FP will not cover a cast, which is the ammo box's
-        // own rule: a thing you cannot use has to LOOK like a thing you cannot use.
-        .spell => itemart.spell(cx, cy, px, charges > 0),
-        // …and the rod's other sorcery, greyed by the same rule: a thing you cannot afford has to LOOK it.
-        .roots => itemart.roots(cx, cy, px, charges > 0),
-        // …and the third, on the same rule. The CONE is what the picture has to carry: it is the one spell
-        // that is a direction and a width rather than a mark thrown at somebody.
-        .rime => itemart.rime(cx, cy, px, charges > 0),
+        // The sorcery cell's picture greys out when the FP will not cover a cast, which is the ammo box's own
+        // rule: a thing you cannot use has to LOOK like a thing you cannot use. WHICH picture is `itemart`'s
+        // one answer, shared with the character book's own socket.
+        .sorcery => |sp| itemart.spellArt(sp, cx, cy, px, charges > 0),
     }
 }
 

@@ -38,16 +38,25 @@ const NPAGE = @typeInfo(Page).@"enum".fields.len;
 
 /// WHAT THE BOOK ASKS THE GAME TO DO. It changes nothing itself: the hero's arm, quiver and flasks are
 /// the game loop's to move, exactly as the old inventory `use` was.
+/// **WHAT GOES IN A HAND: THE ARMAMENT, AND WHICH ONE OF IT.** One picker offers both, because "what can go in
+/// this hand" is ONE question — a second picker over the same socket for "…and which sword" is the same question
+/// asked twice. `kind` null is the plain thing the armament has always been (`hero.Worn`: bare is the game as it
+/// was), and the variant is the ARMAMENT'S rather than the hand's: whichever fist holds `.sword` swings whatever
+/// sword he owns.
+pub const Hand = struct { a: heromod.Armament, kind: ?item.Kind = null };
+
 pub const Action = union(enum) {
     none,
-    arm: heromod.Armament,
-    off: heromod.Armament,
+    arm: Hand,
+    off: Hand,
     /// …and the OTHER slot of each hand (`hero.HAND_SLOTS`), which the two alt sockets set.
-    armAlt: heromod.Armament,
-    offAlt: heromod.Armament,
+    armAlt: Hand,
+    offAlt: Hand,
     ammo: combat.ArrowKind,
     /// Put `kind` (or nothing) in quick socket `slot`.
     quick: struct { slot: usize, kind: ?item.Kind },
+    /// PUT IT ON, or take it off with a null — the worn sockets (`item.Wear`, `hero.wear`).
+    wear: struct { slot: item.Wear, kind: ?item.Kind },
     use: item.Kind,
 };
 
@@ -76,6 +85,9 @@ pub const View = struct {
     /// The live FP pool, so the sorcery slot can say how many casts are actually in it.
     fp: f32,
     souls: u32,
+    /// **WHAT HE HAS ON** — which sword, which bow, which boards, the coat and the ring (`hero.Worn`). Read for
+    /// the worn sockets' pictures AND priced into every attack row below, since a dirk is a different swing.
+    worn: heromod.Worn = .{},
 
     /// **THE PAGE ASKS WHAT HE IS HOLDING THROUGH THE HERO'S OWN DOOR** (`hero.handsHold`). Written out per
     /// socket as `off == .wand` / `arm != .bow`, the book answered for ONE named hand while the fight
@@ -102,6 +114,9 @@ const Loadout = struct {
     /// What the quick slot is turned to, or nothing.
     quick: ?item.Kind,
     spell: combat.Spell,
+    /// …AND WHICH OF EACH THING HE OWNS (`hero.Worn`), because a candidate that changes the sword has to reprice
+    /// every attack row — the whole reason this struct is what `derive` takes.
+    worn: heromod.Worn = .{},
 };
 
 const Unit = enum { flat, pct, count };
@@ -118,6 +133,8 @@ const Der = enum {
     stam_light,
     stam_heavy,
     guard,
+    arc,
+    armour,
     spell,
     spell_fp,
     quick,
@@ -142,12 +159,31 @@ const DER = blk: {
     rows[@intFromEnum(Der.stam_light)] = .{ .name = "Stamina, light", .unit = .flat, .cost = true };
     rows[@intFromEnum(Der.stam_heavy)] = .{ .name = "Stamina, heavy", .unit = .flat, .cost = true };
     rows[@intFromEnum(Der.guard)] = .{ .name = "Guard negation", .unit = .pct };
+    rows[@intFromEnum(Der.arc)] = .{ .name = "Guard arc", .unit = .flat };
+    // A PERCENTAGE OF HIS OWN HEAVY, not the armour number: `A` alone is unreadable, and armour is a curve, so
+    // the honest way to print it is against a blow of a size the player has felt.
+    rows[@intFromEnum(Der.armour)] = .{ .name = "Armour, vs heavy", .unit = .pct };
     rows[@intFromEnum(Der.spell)] = .{ .name = "Sorcery damage", .unit = .flat };
     rows[@intFromEnum(Der.spell_fp)] = .{ .name = "Focus, per cast", .unit = .flat, .cost = true };
     rows[@intFromEnum(Der.quick)] = .{ .name = "Quick item restores", .unit = .flat };
     rows[@intFromEnum(Der.ammo)] = .{ .name = "Ammunition", .unit = .count };
     break :blk rows;
 };
+
+/// The suit's armour value off a loadout, 0 for a bare body — `hero.armourOf` asked of a set he is only
+/// considering, which is the whole reason `derive` takes a `Loadout` rather than reading the hero.
+const armourOf = heromod.armourOf;
+
+/// …and the SHEET THAT LOADOUT WOULD PUT HIM ON: what he is wearing carries points of skill (`item.Boon`) and
+/// every damage row below is scaled by them, so the page has to build the considered sheet rather than read the
+/// live one. **OFF THE TREE, NOT OFF `v.sheet`** — the hero's sheet already has his CURRENT gear folded into it
+/// (`hero.resheet`), so adding the loadout's boons to that would count the belt he is wearing twice and price
+/// every candidate belt as if it were a second one.
+fn sheetOf(l: Loadout, v: View) stats.Sheet {
+    var s = v.tree.bonus().sheet();
+    heromod.boonsOnto(l.worn, &s);
+    return s;
+}
 
 fn derive(l: Loadout, v: View) [ND]f32 {
     // **THROUGH `hero.handsHold`, THE SAME DOOR THE FIGHT ASKS THROUGH.** Every row below used to name ONE
@@ -160,25 +196,44 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     // SWORD and the page priced a swing he cannot take. Zero is the honest figure, and the arm's own tip
     // already says it in words.
     const attacks = bow or heromod.armSwings(l.arm) or heromod.armSwings(l.off);
-    const light = if (bow) heromod.BOW_QUICK_HIT else heromod.ATK_LIGHT_HIT;
-    const heavy = if (bow) heromod.arrowBlow(l.ammo, true) else heromod.ATK_HEAVY_HIT;
+    // **AND THROUGH THE WEAPON'S OWN ROW, THE SAME DOOR THE SWING GOES THROUGH** (`hero.weigh`) — priced off the
+    // bare constants these rows said "13 damage" while a greatclub in his fist swung for 19, and the page whose
+    // whole job is comparing two loadouts could not see the difference between them.
+    const row = heromod.armRow(l.worn, if (bow) .hand_bow else .hand_sword);
+    // …AND ON THE SHEET THAT LOADOUT WOULD PUT HIM ON, because the skill curve multiplies the damage dial
+    // (`hero.weigh`): a belt is worth strength and strength is worth damage, so a page that priced the swing off
+    // the live sheet could not see what the belt in the picker was for.
+    const sheet = sheetOf(l, v);
+    const light = heromod.weigh(if (bow) heromod.BOW_QUICK_HIT else heromod.ATK_LIGHT_HIT, row, sheet);
+    const heavy = heromod.weigh(if (bow) heromod.arrowBlow(l.ammo, true) else heromod.ATK_HEAVY_HIT, row, sheet);
     var d: [ND]f32 = undefined;
     d[@intFromEnum(Der.light)] = if (attacks) light.dmg else 0;
     d[@intFromEnum(Der.heavy)] = if (attacks) heavy.dmg else 0;
     d[@intFromEnum(Der.fire)] = if (attacks) heavy.elem.total() else 0;
     d[@intFromEnum(Der.poise)] = if (attacks) heavy.poise else 0;
     d[@intFromEnum(Der.stance)] = if (attacks) heavy.stance else 0;
-    d[@intFromEnum(Der.stam_light)] = if (!attacks) 0 else if (bow) combat.STAM_SHOT else combat.STAM_LIGHT;
-    d[@intFromEnum(Der.stam_heavy)] = if (!attacks) 0 else if (bow) combat.STAM_AIMED else combat.STAM_HEAVY;
+    // …and the BILL through the same row: half again the swing is half again the stamina, which is most of what
+    // choosing the club actually costs him.
+    d[@intFromEnum(Der.stam_light)] = if (!attacks) 0 else @as(f32, if (bow) combat.STAM_SHOT else combat.STAM_LIGHT) * row.stam;
+    d[@intFromEnum(Der.stam_heavy)] = if (!attacks) 0 else @as(f32, if (bow) combat.STAM_AIMED else combat.STAM_HEAVY) * row.stam;
     // THE BOW COSTS HIM THE SHIELD, and so does the WAND — this is the row where that is a number rather
     // than lore, and it is the same number for both because it is the same left hand being spent.
     const guards = heromod.handsHold(l.arm, l.off, .shield);
-    d[@intFromEnum(Der.guard)] = if (guards) combat.GUARD_NEGATE * 100.0 else 0;
+    const board = heromod.armRow(l.worn, .hand_shield);
+    // THE BOARD'S OWN NEGATION, capped where the fight caps it (`combat.GUARD_NEGATE_CAP`) — a page promising
+    // 97% behind a door the fight holds to 95 is a page lying about the one number it exists to compare.
+    d[@intFromEnum(Der.guard)] = if (guards) @min(combat.GUARD_NEGATE_CAP, combat.GUARD_NEGATE * board.negate) * 100.0 else 0;
+    d[@intFromEnum(Der.arc)] = if (guards) combat.GUARD_ARC * board.arc else 0;
+    // WHAT HE IS WEARING, and it is worth nothing against a blow of no size — so the row is priced against a
+    // BLOW, his own heavy, rather than printed as a bare armour number nobody can read a percentage off.
+    d[@intFromEnum(Der.armour)] = 100.0 * (1.0 - combat.armourTaken(armourOf(l.worn), heromod.ATK_HEAVY_HIT.dmg) / heromod.ATK_HEAVY_HIT.dmg);
     // …and what he bought with it. Zero on both rows unless a wand is actually in that hand, because a spell
     // he cannot cast is not worth a number — and it is the SORCERY THAT IS LOADED that is priced, through
-    // `combat`'s own two answers: the rod carries two now, and they neither cost nor deal the same.
+    // `combat`'s own two answers: the rod carries FIVE, and no two of them cost or deal the same.
     const casts = heromod.handsHold(l.arm, l.off, .wand);
-    d[@intFromEnum(Der.spell)] = if (casts) combat.spellDamage(l.spell) else 0;
+    // …through INTELLIGENCE, the same multiple the cast itself takes (`hero.castBlow`): the amulet's whole worth
+    // is this row, and priced off the bare figure the page would have said the bead does nothing.
+    d[@intFromEnum(Der.spell)] = if (casts) combat.spellDamage(l.spell) * sheet.scale(.intelligence) else 0;
     d[@intFromEnum(Der.spell_fp)] = if (casts) combat.spellFp(l.spell) else 0;
     d[@intFromEnum(Der.quick)] = quickWorth(l.quick, v);
     d[@intFromEnum(Der.ammo)] = @floatFromInt(v.quiver.count(l.ammo));
@@ -186,8 +241,9 @@ fn derive(l: Loadout, v: View) [ND]f32 {
 }
 
 
-/// A Diablo paper doll. Six of these hold nothing yet — there is no armour or jewellery in the game — and
-/// each says so in `locked`.
+/// A Diablo paper doll, and **EVERY WORN SOCKET ON IT IS REAL** — `wearOf` is the one place a slot here becomes an
+/// `item.Wear`, and each still refuses in words while he is carrying nothing that fits it (`locked`). Five of them
+/// held nothing at all until there was gear in the world for a head, a throat, a waist, feet and a second finger.
 pub const SlotId = enum {
     helm,
     amulet,
@@ -295,12 +351,56 @@ fn slotName(s: SlotId) [:0]const u8 {
     };
 }
 
+/// **IS HE CARRYING ANYTHING THAT GOES IN THAT SOCKET** — or has it on already, which still counts: the socket
+/// has to stay open to TAKE THE THING OFF. Walked over the kinds rather than kept as a list, `quickOffered`'s
+/// own arrangement, so a new piece of gear is offered the day its row exists.
+fn carriesFor(w: item.Wear, v: View) bool {
+    if (v.worn.at(w) != null) return true;
+    inline for (@typeInfo(item.Kind).@"enum".fields) |f| {
+        const k: item.Kind = @enumFromInt(f.value);
+        if (item.wearSlot(k) == w and v.bag.count(k) > 0) return true;
+    }
+    return false;
+}
+
+/// **WHICH WORN SOCKET A DOLL SLOT IS**, or null for the hands, the ammo and the quick bar — the ONE place the
+/// page's own grid and `item.Wear` are matched up. Written out per socket instead, every question the doll asks
+/// ("is it locked", "has it anything in it", "what goes in it", "which row is the cursor on") carried its own
+/// two-case switch, and five sockets stayed dead because opening them meant finding all five of them.
+fn wearOf(s: SlotId) ?item.Wear {
+    return switch (s) {
+        .chest => .chest,
+        .ring1 => .ring,
+        .ring2 => .ring2,
+        .helm => .helm,
+        .amulet => .neck,
+        .belt => .belt,
+        .boots => .feet,
+        else => null,
+    };
+}
+
+/// …and what to say when he has nothing for one. Per SOCKET because "nothing goes on a finger" and "nothing goes
+/// on the body" are the same refusal about different parts of him, and a shared line would name neither.
+fn emptyHanded(w: item.Wear) [:0]const u8 {
+    return switch (w) {
+        .chest => "Nothing you are carrying goes on the body.",
+        .ring, .ring2 => "Nothing you are carrying goes on a finger.",
+        .helm => "Nothing you are carrying goes on your head.",
+        .neck => "Nothing you are carrying hangs at the throat.",
+        .belt => "Nothing you are carrying goes round the waist.",
+        .feet => "Nothing you are carrying goes on your feet.",
+        .hand_sword, .hand_bow, .hand_shield => "Nothing you are carrying fills that hand.",
+    };
+}
+
 /// WHY A SLOT CANNOT BE CHANGED, or null when it can. Said in words on the panel, because a slot that
 /// only refuses the button is a slot the player decides is broken.
 fn locked(s: SlotId, v: View) ?[:0]const u8 {
+    // EVERY WORN SOCKET IS REAL NOW (`item.equip`), and each still refuses while he is carrying nothing that fits
+    // it: a socket that opens a picker with one "(nothing)" row in it reads as broken.
+    if (wearOf(s)) |w| return if (!carriesFor(w, v)) emptyHanded(w) else null;
     return switch (s) {
-        .helm, .chest, .belt, .boots => "There is no armour in this world yet. The socket is here for the day there is.",
-        .amulet, .ring1, .ring2 => "There is no jewellery in this world yet. The socket is here for the day there is.",
         .left => if (!v.offInHand()) "Both hands are on the bow. The other comes back when the bow goes away." else null,
         // AN ALTERNATE IS NEVER LOCKED: it is what he is NOT holding, so nothing he is holding can deny it.
         .left2, .right2 => null,
@@ -323,12 +423,12 @@ fn quickAt(s: SlotId, v: View) ?item.Kind {
 
 /// Is there anything in it? The socket lights off this, and an empty one stays cold.
 fn slotHas(s: SlotId, v: View) bool {
+    if (wearOf(s)) |w| return v.worn.at(w) != null;
     return switch (s) {
         .right, .left2, .right2 => true,
         .left => v.offInHand(),
         .sorcery => v.holds(.wand),
         .arrows => v.quiver.count(v.quiver.sel) > 0,
-        .helm, .chest, .belt, .boots, .amulet, .ring1, .ring2 => false,
         else => quickAt(s, v) != null,
     };
 }
@@ -357,24 +457,35 @@ fn ammoName(k: combat.ArrowKind) [:0]const u8 {
     };
 }
 
+/// WHAT IS ACTUALLY IN THAT HAND, BY NAME — the piece of gear if he owns one for that armament, else the plain
+/// thing's name. A socket that said "Straight Sword" while a greatclub was doing the swinging is the one lie the
+/// page whose whole job is showing what he carries may not tell.
+fn handName(a: heromod.Armament, worn: heromod.Worn) [:0]const u8 {
+    if (heromod.wearFor(a)) |w| {
+        if (worn.at(w)) |k| return item.displayName(k);
+    }
+    return armName(a);
+}
+
 fn slotFilled(s: SlotId, v: View) [:0]const u8 {
+    if (wearOf(s)) |w| return if (v.worn.at(w)) |k| item.displayName(k) else EMPTY;
     return switch (s) {
-        .right => armName(v.arm),
-        .left => if (!v.offInHand()) EMPTY else armName(v.off),
-        .left2 => armName(v.offAlt),
-        .right2 => armName(v.armAlt),
+        .right => handName(v.arm, v.worn),
+        .left => if (!v.offInHand()) EMPTY else handName(v.off, v.worn),
+        .left2 => handName(v.offAlt, v.worn),
+        .right2 => handName(v.armAlt, v.worn),
         .sorcery => if (slotHas(.sorcery, v)) combat.spellName(v.spell) else EMPTY,
         .arrows => ammoName(v.quiver.sel),
-        .helm, .chest, .belt, .boots, .amulet, .ring1, .ring2 => EMPTY,
         else => if (quickAt(s, v)) |k| item.displayName(k) else EMPTY,
     };
 }
 
 fn slotTally(s: SlotId, v: View) ?u8 {
+    if (wearOf(s) != null) return null; // one coat is one coat: a worn socket has nothing to count
     return switch (s) {
         .arrows => v.quiver.count(v.quiver.sel),
         .sorcery => if (slotHas(.sorcery, v)) castsLeft(v.fp, v.spell) else null,
-        .helm, .chest, .belt, .boots, .amulet, .ring1, .ring2, .left, .right, .left2, .right2 => null,
+        .left, .right, .left2, .right2 => null,
         else => if (quickAt(s, v)) |k| quickTally(k, v) else null,
     };
 }
@@ -427,8 +538,22 @@ const CAND_MAX = blk: {
     for ([_]type{ heromod.Arm, heromod.Off, combat.ArrowKind }) |T| {
         n = @max(n, @typeInfo(T).@"enum".fields.len);
     }
+    // …AND A HAND'S LIST IS NOW TWO AXES DEEP — every armament, plus every piece of gear that could fill one
+    // (`candidates`). Bounded at the worst case rather than at today's four weapons, which is the same lesson
+    // the "(empty)" row above taught: the day gear outnumbers the quick bar this is the long list.
+    n = @max(n, @typeInfo(heromod.Armament).@"enum".fields.len + item.NK);
     break :blk n;
 };
+
+/// WHICH HAND SOCKET A ROW BELONGS TO, once, so the four-way switch is not written per row.
+fn handAct(s: SlotId, h: Hand) Action {
+    return switch (s) {
+        .right => .{ .arm = h },
+        .left => .{ .off = h },
+        .right2 => .{ .armAlt = h },
+        else => .{ .offAlt = h },
+    };
+}
 
 fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
     // A LOCKED SLOT OFFERS NOTHING, asked ONCE here rather than re-tested inside each branch. The left hand
@@ -439,16 +564,44 @@ fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
         // Each list is walked off the ENUM it offers, so a third arrow or a third armament is a row here
         // the day it exists rather than a row somebody remembered to add.
         .right, .left, .right2, .left2 => {
-            inline for (@typeInfo(heromod.Armament).@"enum".fields, 0..) |f, i| {
+            // ONE LIST, TWO AXES: every armament, and under each one every piece of gear he is CARRYING that
+            // fills it (`hero.wearFor`). Two pickers over one socket would be asking "what is in this hand"
+            // twice — and the variant rows sit directly under the plain thing they replace, so the list reads
+            // as a rack rather than as a menu of settings.
+            var n: usize = 0;
+            inline for (@typeInfo(heromod.Armament).@"enum".fields) |f| {
                 const a: heromod.Armament = @enumFromInt(f.value);
-                out[i] = .{ .name = armName(a), .act = switch (s) {
-                    .right => Action{ .arm = a },
-                    .left => Action{ .off = a },
-                    .right2 => Action{ .armAlt = a },
-                    else => Action{ .offAlt = a },
-                } };
+                out[n] = .{ .name = armName(a), .act = handAct(s, .{ .a = a }) };
+                n += 1;
+                if (comptime heromod.wearFor(a)) |w| {
+                    inline for (@typeInfo(item.Kind).@"enum".fields) |kf| {
+                        const k: item.Kind = @enumFromInt(kf.value);
+                        if (comptime item.wearSlot(k) == w) {
+                            if (v.bag.count(k) > 0) {
+                                out[n] = .{ .name = item.displayName(k), .tally = @intCast(@min(9, v.bag.count(k))), .act = handAct(s, .{ .a = a, .kind = k }) };
+                                n += 1;
+                            }
+                        }
+                    }
+                }
             }
-            return out[0..@typeInfo(heromod.Armament).@"enum".fields.len];
+            return out[0..n];
+        },
+        // THE WORN SOCKETS: what he carries for it, plus an EMPTY row — a coat you cannot take off is a coat the
+        // player is stuck in (the quick bar's own first row, for its own reason). ONE branch for all seven,
+        // through `wearOf`, so a socket gaining its first piece of gear is a row in `item.equip` and nothing here.
+        .chest, .ring1, .ring2, .helm, .amulet, .belt, .boots => {
+            const w = wearOf(s).?;
+            var n: usize = 1;
+            out[0] = .{ .name = "(nothing)", .act = .{ .wear = .{ .slot = w, .kind = null } } };
+            inline for (@typeInfo(item.Kind).@"enum".fields) |f| {
+                const k: item.Kind = @enumFromInt(f.value);
+                if (item.wearSlot(k) == w and v.bag.count(k) > 0) {
+                    out[n] = .{ .name = item.displayName(k), .act = .{ .wear = .{ .slot = w, .kind = k } } };
+                    n += 1;
+                }
+            }
+            return out[0..n];
         },
         .arrows => {
             inline for (@typeInfo(combat.ArrowKind).@"enum".fields, 0..) |f, i| {
@@ -475,18 +628,49 @@ fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
     }
 }
 
+/// A HAND ROW'S VARIANT, laid into a loadout — nothing for the bell and the rod, which have no variants to take
+/// (`hero.wearFor`). Named because both the live sockets and the two alternates do exactly this.
+fn wearInto(worn: *heromod.Worn, h: Hand) void {
+    if (heromod.wearFor(h.a)) |w| worn.put(w, h.kind);
+}
+
+/// **THE SET ACTUALLY IN FORCE** — what the NOW column prices, and `withCand`'s starting point. Named because it
+/// is every axis of the loadout and leaving ONE of them out is silent: built inline with `worn` left at its
+/// default, the whole column priced a bare body, so a greatclub in his fist read the plain sword's damage, a door
+/// read the small shield's negation and arc, and "Armour, vs heavy" read 0% over a full suit.
+fn inForce(v: View) Loadout {
+    return .{
+        .arm = v.arm,
+        .off = v.off,
+        .ammo = v.quiver.sel,
+        .quick = v.quick.selected(),
+        .spell = v.spell,
+        .worn = v.worn,
+    };
+}
+
 /// The loadout that WOULD be in force if this candidate were taken — what the delta column prices.
 fn withCand(base: Loadout, c: Cand) Loadout {
     var l = base;
     switch (c.act) {
-        .arm => |a| l.arm = a,
-        .off => |o| l.off = o,
-        // AN ALTERNATE CHANGES NOTHING IN FORCE. It is the slot he is NOT holding, so the delta column has
-        // nothing to price — setting it is a decision about the next swap, not about this frame.
-        .armAlt, .offAlt => {},
+        // A HAND ROW MOVES BOTH AXES, and the variant is the ARMAMENT'S rather than the hand's — so a row naming
+        // the club prices the club whichever fist the row belongs to.
+        .arm => |h| {
+            l.arm = h.a;
+            wearInto(&l.worn, h);
+        },
+        .off => |h| {
+            l.off = h.a;
+            wearInto(&l.worn, h);
+        },
+        // AN ALTERNATE'S HAND CHANGES NOTHING IN FORCE — it is the slot he is NOT holding, so the delta column
+        // has nothing to price. **BUT ITS VARIANT DOES**: which sword he owns is not a fact about a hand, so
+        // picking the dirk in the alt socket really is repricing the swing he is going to take with it.
+        .armAlt, .offAlt => |h| wearInto(&l.worn, h),
         .ammo => |a| l.ammo = a,
         .quick => |q| l.quick = q.kind,
-        // EXHAUSTIVE, not `else` (`hero.steerQueuedRoll`'s rule): a seventh action has to be asked whether
+        .wear => |wr| l.worn.put(wr.slot, wr.kind),
+        // EXHAUSTIVE, not `else` (`hero.steerQueuedRoll`'s rule): an eighth action has to be asked whether
         // it changes the loadout, or its rows price themselves against the one already in force.
         .none, .use => {},
     }
@@ -495,38 +679,38 @@ fn withCand(base: Loadout, c: Cand) Loadout {
 
 fn equipped(c: Cand, v: View) bool {
     return switch (c.act) {
-        .arm => |a| a == v.arm,
-        .off => |o| o == v.off,
-        .armAlt => |a| a == v.armAlt,
-        .offAlt => |o| o == v.offAlt,
+        // BOTH AXES HAVE TO MATCH, or with the club in his fist the "Straight Sword" row would read as the one
+        // he is holding and the cursor would open on it (`pickIndexOf`).
+        .arm => |h| h.a == v.arm and heldSame(h, v),
+        .off => |h| h.a == v.off and heldSame(h, v),
+        .armAlt => |h| h.a == v.armAlt and heldSame(h, v),
+        .offAlt => |h| h.a == v.offAlt and heldSame(h, v),
         .ammo => |a| a == v.quiver.sel,
         .quick => |q| v.quick.slots[q.slot] == q.kind,
+        .wear => |wr| v.worn.at(wr.slot) == wr.kind,
         .none, .use => false,
     };
 }
 
-/// Where a picker opens: on what is ALREADY equipped, never on row 0 — landing the cursor somewhere other
-/// than the current choice is how a menu tricks you into swapping something you meant to look at. The rows
-/// are built in enum order, so the equipped thing's ORDINAL is its row.
-fn pickIndexOf(s: SlotId, v: View) usize {
-    return switch (s) {
-        .right => @intFromEnum(v.arm),
-        .left => @intFromEnum(v.off),
-        .right2 => @intFromEnum(v.armAlt),
-        .left2 => @intFromEnum(v.offAlt),
-        .arrows => @intFromEnum(v.quiver.sel),
-        // The quick list is FILTERED and carries an "(empty)" row, so a kind's ordinal is not its row.
-        else => quickRowOf(quickAt(s, v), v),
-    };
+/// Is the variant this row names the one he actually owns for that armament? True for the plain row only when he
+/// owns nothing for it — which is what makes "Straight Sword" and "Fang Dirk" two distinguishable rows.
+fn heldSame(h: Hand, v: View) bool {
+    const w = heromod.wearFor(h.a) orelse return true; // the bell and the rod have one form each
+    return v.worn.at(w) == h.kind;
 }
 
-fn quickRowOf(want: ?item.Kind, v: View) usize {
-    const k0 = want orelse return 0;
-    var n: usize = 1;
-    inline for (@typeInfo(item.Kind).@"enum".fields) |f| {
-        const k: item.Kind = @enumFromInt(f.value);
-        if (k == k0) return n;
-        if (quickOffered(k, v)) n += 1;
+/// Where a picker opens: on what is ALREADY equipped, never on row 0 — landing the cursor somewhere other
+/// than the current choice is how a menu tricks you into swapping something you meant to look at.
+///
+/// **ASKED OF THE LIST ITSELF, NEVER COUNTED A SECOND TIME.** Three of these were hand-walked copies of
+/// `candidates`' own ordering — a hand's two interleaved axes, a worn socket's "(nothing)" row, the quick bar's
+/// filtered one — parallel lists kept in lockstep by hand, and a cursor that opens on the wrong row is exactly
+/// the failure this function exists to prevent. `equipped` already answers "is THIS row the one in force" for
+/// every action there is, so the row is where that first says yes, and the two cannot drift apart.
+fn pickIndexOf(s: SlotId, v: View) usize {
+    var out: [CAND_MAX]Cand = undefined;
+    for (candidates(s, v, &out), 0..) |c, i| {
+        if (equipped(c, v)) return i;
     }
     return 0;
 }
@@ -754,7 +938,7 @@ pub const Book = struct {
                 if (self.picking) |s| {
                     var buf: [CAND_MAX]Cand = undefined;
                     const cs = candidates(s, v, &buf);
-                    return pickRow(pickBox(equipCols(body)[1], cs.len), self.pick);
+                    return pickRow(pickBox(equipCols(body)[1], cs.len), self.pick, cs.len);
                 }
                 return slotRect(body, self.cur[idx(.equipment)]);
             },
@@ -952,9 +1136,26 @@ fn pickBox(col: Box, n: usize) Box {
     return .{ .x = col.x, .y = col.y, .w = col.w, .h = @min(@divTrunc(col.h, 2), want) };
 }
 
-fn pickRow(box: Box, i: usize) rl.Rectangle {
+/// **THE ROWS ARE FITTED TO THE PANEL** — `drawDerived`'s own rule one panel along, and for the same reason: the
+/// box is CLAMPED to half the column (`pickBox`) while the rows stepped at their natural pitch regardless, so a
+/// list longer than the clamp allows drew straight out of the bottom of its own recess and over the numbers
+/// beside it. A hand's list is two axes deep now (every armament, plus every variant he carries), so eleven rows
+/// is the ordinary case rather than the worst one. THE HIT ROW AND THE DRAWN ROW READ THE SAME PITCH.
+fn pickStep(box: Box, n: usize) i32 {
+    return @min(pickRowH(), rowStep(panelInner(box, true).h, n));
+}
+
+/// …AND THE TEXT COMES OFF THE PITCH, never the other way round (`hud`'s type scale, and the rule that rows step
+/// by `lineH(size)`): squeezed to fit, a row too short to carry the BODY face has to take the next one down or
+/// the descenders of one line sit in the crown of the next.
+fn pickSize(step: i32) i32 {
+    return if (step >= hud.lineH(hud.BODY)) hud.BODY else hud.SMALL;
+}
+
+fn pickRow(box: Box, i: usize, n: usize) rl.Rectangle {
     const inner = panelInner(box, true);
-    return rect(inner.x - 8, inner.y + @as(i32, @intCast(i)) * pickRowH() - 6, inner.w + 16, pickRowH() - 2);
+    const step = pickStep(box, n);
+    return rect(inner.x - 8, inner.y + @as(i32, @intCast(i)) * step - 6, inner.w + 16, step - 2);
 }
 
 fn bagCols(body: Box) [2]Box {
@@ -1237,8 +1438,9 @@ fn drawSlot(self: *const Book, r: rl.Rectangle, s: SlotId, v: View, sel: bool) v
     const pop = if (sel) self.pop / POP_DUR else 0;
     const sy = y + sink - @as(i32, @intFromFloat(@round(pop * pop * 3.0)));
 
-    // A socket nothing can go in yet is drawn FAINT, not merely empty: half the doll is waiting on gear that
-    // does not exist, and at full strength it reads as a page that has lost its contents.
+    // A socket he has NOTHING FOR is drawn FAINT, not merely empty — and it is now a fact about his BAG rather
+    // than about the world: every socket has gear that fits it (`item.equip`), so a faint one means go and find
+    // some, where before it meant the game had not been written that far.
     const inert = locked(s, v) != null;
     const lab: u8 = if (sel) 235 else if (inert) 70 else 150;
     const nm = slotName(s);
@@ -1260,28 +1462,37 @@ fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
     switch (s) {
         // EXHAUSTIVE over the arm, like the HUD's own right-hand cell (`game.hud`): as a two-way `if` the
         // BELL drew a sword in his fist on the one page whose whole job is showing what he is carrying.
-        .right => armArt(v.arm, cx, cy, px),
-        .left => if (v.offInHand()) armArt(v.off, cx, cy, px),
-        .right2 => armArt(v.armAlt, cx, cy, px),
-        .left2 => armArt(v.offAlt, cx, cy, px),
-        // THE PICTURE FOLLOWS THE ROD TOO, greyed by the pool the same way the cross's own slot is.
-        .sorcery => if (slotHas(.sorcery, v)) switch (v.spell) {
-            .bolt => itemart.spell(cx, cy, px, v.fp >= combat.spellFp(v.spell)),
-            .roots => itemart.roots(cx, cy, px, v.fp >= combat.spellFp(v.spell)),
-            .rime => itemart.rime(cx, cy, px, v.fp >= combat.spellFp(v.spell)),
-        },
+        // THE PICTURE FOLLOWS THE GEAR TOO: with a variant on, `itemart` already has that thing's own portrait
+        // (it has been drawing them in the bag since the day they were registered), so a hand holding the club
+        // shows the club. Bare, it is the armament's own glyph exactly as before.
+        .right => handArt(v.arm, v.worn, cx, cy, px),
+        .left => if (v.offInHand()) handArt(v.off, v.worn, cx, cy, px),
+        .right2 => handArt(v.armAlt, v.worn, cx, cy, px),
+        .left2 => handArt(v.offAlt, v.worn, cx, cy, px),
+        .chest, .ring1, .ring2, .helm, .amulet, .belt, .boots => if (v.worn.at(wearOf(s).?)) |k| itemart.drawHeld(k, cx, cy, px, true),
+        // THE PICTURE FOLLOWS THE ROD TOO, greyed by the pool the same way the cross's own cell is — and through
+        // `itemart`'s own one answer, since which picture a spell is was the same list of five in both files.
+        .sorcery => if (slotHas(.sorcery, v)) itemart.spellArt(v.spell, cx, cy, px, v.fp >= combat.spellFp(v.spell)),
         // A shaft is drawn 0.3 of the box it is handed where a blade is 1.4, so it is given a bigger one.
         .arrows => itemart.arrow(cx, cy, px * 1.5, v.quiver.count(v.quiver.sel) > 0, v.quiver.sel == .fire),
-        .helm, .chest, .belt, .boots, .amulet, .ring1, .ring2 => {},
         else => if (quickAt(s, v)) |k| itemart.drawHeld(k, cx, cy, px, quickTally(k, v) > 0),
     }
+}
+
+/// `armArt`'s twin one system along: the GEAR's own picture when he owns one for that armament, else the
+/// armament's glyph. `handName`'s rule, in pictures.
+fn handArt(a: heromod.Armament, worn: heromod.Worn, cx: f32, cy: f32, px: f32) void {
+    if (heromod.wearFor(a)) |w| {
+        if (worn.at(w)) |k| return itemart.drawHeld(k, cx, cy, px, true);
+    }
+    armArt(a, cx, cy, px);
 }
 
 /// The right-hand column: what the set is worth. With a candidate, every row gains a second value and an
 /// arrow — which is the whole reason the equipment page shows numbers at all.
 fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     const inner = panel(box, "");
-    const base = Loadout{ .arm = v.arm, .off = v.off, .ammo = v.quiver.sel, .quick = v.quick.selected(), .spell = v.spell };
+    const base = inForce(v);
     const now = derive(base, v);
     const then = if (cand) |c| derive(withCand(base, c), v) else now;
 
@@ -1350,10 +1561,25 @@ fn armCandSays(a: heromod.Armament) []const u8 {
     };
 }
 
+/// ONE LINE FOR A PIECE OF GEAR — its own `item.effect`, which is the numbers, because the numbers are what a
+/// picker row is being read for. The prose (`item.describe`) belongs on the bag's detail plate, where there is
+/// room for a paragraph.
+/// SENTINEL-TERMINATED, because `hud.text` is the only path to draw text and it takes one: handed back bare, both
+/// call sites paid for a second trip through the ring to add the terminator this can simply keep.
+fn gearSays(k: item.Kind) [:0]const u8 {
+    // **THROUGH `fmt`, WHICH IS A RING AND NOT ONE BUFFER.** A single file-level scratch is fine right up to the
+    // frame that wants two of these strings alive at once, and then the first one silently becomes the second —
+    // which is the whole reason the scratch here rotates. The local is spent inside this call.
+    var tmp: [item.EFFECT_BUF]u8 = undefined;
+    return fmt("{s}", .{item.effect(k, &tmp)});
+}
+
 fn candSays(c: Cand, _: View) []const u8 {
     return switch (c.act) {
-        .arm => |a| armCandSays(a),
-        .off => |o| armCandSays(o),
+        // THE GEAR SPEAKS FOR ITSELF when the row names a piece of it (`item.describe` is the paragraph, and
+        // these rows have nowhere to put one) — else it is the armament's own line.
+        .arm, .off, .armAlt, .offAlt => |h| if (h.kind) |k| gearSays(k) else armCandSays(h.a),
+        .wear => |wr| if (wr.kind) |k| gearSays(k) else "Take it off. Whatever it was giving you goes with it.",
         .ammo => |a| switch (a) {
             .plain => "A plain shaft. Ten of them, and nothing in these ruins resists the hole one leaves.",
             .fire => "Fire rides on top of the shaft's own damage. Five of them, so pick the target.",
@@ -1372,19 +1598,22 @@ fn candSays(c: Cand, _: View) []const u8 {
 fn drawPicker(self: *const Book, col: Box, s: SlotId, v: View) void {
     var buf: [CAND_MAX]Cand = undefined;
     const cs = candidates(s, v, &buf);
-    const inner = panel(pickBox(col, cs.len), fmt("{s}  >", .{slotName(s)}));
+    const box = pickBox(col, cs.len);
+    const step = pickStep(box, cs.len);
+    const inner = panel(box, fmt("{s}  >", .{slotName(s)}));
     for (cs, 0..) |c, i| {
-        const y = inner.y + @as(i32, @intCast(i)) * pickRowH();
+        const y = inner.y + @as(i32, @intCast(i)) * step;
         const on = self.pick == i;
-        if (on) uiart.rowHilite(inner.x - 8, y - 6, inner.w + 16, pickRowH() - 2);
-        hud.text(c.name, inner.x + 10, y, hud.BODY, if (on) uiart.HOT else uiart.TEXT_DIM);
+        if (on) uiart.rowHilite(inner.x - 8, y - 6, inner.w + 16, step - 2);
+        const size = pickSize(step);
+        hud.text(c.name, inner.x + 10, y, size, if (on) uiart.HOT else uiart.TEXT_DIM);
         if (equipped(c, v)) {
             const tag = "EQUIPPED";
-            hud.text(tag, inner.right() - hud.textW(tag, hud.TINY) - 46, y + 5, hud.TINY, mathx.withAlpha(uiart.GILT, 200));
+            hud.text(tag, inner.right() - hud.textW(tag, hud.TINY) - 46, y + 3, hud.TINY, mathx.withAlpha(uiart.GILT, 200));
         }
         if (c.tally) |n| {
             const str = fmt("{d}", .{n});
-            hud.text(str, inner.right() - hud.textW(str, hud.BODY), y, hud.BODY, if (n > 0) uiart.TEXT_VALUE else uiart.BAD);
+            hud.text(str, inner.right() - hud.textW(str, size), y, size, if (n > 0) uiart.TEXT_VALUE else uiart.BAD);
         }
     }
 }
@@ -1460,6 +1689,15 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
     y = prose(item.describe(k), inner.x, inner.y + plateH + 16, inner.w, hud.SMALL, uiart.TEXT_VALUE) + 10;
     uiart.divider(inner.x + @divTrunc(inner.w, 2), y, @divTrunc(inner.w, 2) - 10, 120);
     y += 12;
+    // **A PIECE OF GEAR SAYS WHAT IT IS WORTH RIGHT HERE** (`gearSays`, off `item.equip`), and it has to: read off
+    // `item.use` alone, every wearable row in the bag printed "it does nothing you can do here" — which is true of
+    // pressing Confirm on it and a flat lie about a coat worth 22 armour or a ring worth three points of skill.
+    if (item.wearable(k)) {
+        hud.text(gearSays(k), inner.x, y, hud.SMALL, uiart.GOOD);
+        const hy = y + hud.lineH(hud.SMALL) + 6;
+        hud.text("Put it on from the Equipment page.", inner.x, hy, hud.HINT, uiart.TEXT_HINT);
+        return;
+    }
     // WHAT IT DOES, in the game's own numbers — read off `item.use`, so a dose tuned there reads here.
     switch (item.use(k)) {
         .none => hud.text("It does nothing you can do here.", inner.x, y, hud.HINT, uiart.TEXT_HINT),
@@ -1512,7 +1750,10 @@ fn drawAttributes(self: *const Book, col: Box, v: View) void {
     for (0..stats.NA) |i| {
         const a: stats.Attr = @enumFromInt(i);
         const on = self.cur[idx(.stats)] == i;
-        const inert = v.sheet.barFor(a) == null;
+        // **DEAD, NOT MERELY BARLESS** (`stats.inert`). Asked as "does it feed a bar", this greyed out the three
+        // that now scale every swing, shot and cast he takes — a page calling the strength his club runs on
+        // decoration.
+        const inert = stats.inert(a);
         if (on) uiart.rowHilite(inner.x - 10, y - 6, inner.w + 20, attrStep() - 4);
         const col2 = if (on) uiart.HOT else if (inert) mathx.withAlpha(uiart.TEXT_DIM, 170) else uiart.TEXT_VALUE;
         hud.text(stats.displayName(a), inner.x, y, hud.BODY, col2);
@@ -1531,7 +1772,15 @@ fn drawAttributes(self: *const Book, col: Box, v: View) void {
     y += 6;
     uiart.divider(inner.x + @divTrunc(inner.w, 2), y, @divTrunc(inner.w, 2) - 10, 120);
     const a: stats.Attr = @enumFromInt(@min(self.cur[idx(.stats)], stats.NA - 1));
-    const says = if (v.sheet.barFor(a)) |t| fmt("{s}  Yours: {d:.0}.", .{ stats.governs(a), t }) else stats.governs(a);
+    // WHAT IT IS WORTH TO HIM RIGHT NOW, and there are two kinds of answer: the three that feed a bar say the
+    // bar's length, and the three that drive damage say the MULTIPLE they are currently applying. A skill that
+    // scales every swing he takes and printed only a sentence is the same half-told story as an inert row.
+    const says = if (v.sheet.barFor(a)) |t|
+        fmt("{s}  Yours: {d:.0}.", .{ stats.governs(a), t })
+    else if (!stats.inert(a))
+        fmt("{s}  Yours: {d:.2}x damage.", .{ stats.governs(a), v.sheet.scale(a) })
+    else
+        stats.governs(a);
     _ = prose(says, inner.x, y + 12, inner.w, hud.HINT, uiart.TEXT_HINT);
 }
 
@@ -1697,6 +1946,110 @@ fn testView(bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.
 
 fn testViewOff(bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.Resists, flasks: *const combat.Flasks, quiver: *const combat.Quiver, arm: heromod.Arm, off: heromod.Off) View {
     return .{ .bag = bag, .sheet = sheet, .res = res, .flasks = flasks, .quick = &TEST_QUICK, .quiver = quiver, .tree = &TEST_TREE, .arm = arm, .off = off, .spell = .bolt, .fp = combat.FP_MAX, .souls = 0 };
+}
+
+test "EVERY WORN SOCKET ON THE DOLL OPENS ONCE HE IS CARRYING SOMETHING FOR IT" {
+    var bag = item.Bag{};
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+    var v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+    var out: [CAND_MAX]Cand = undefined;
+
+    // Every slot the grid draws has to answer `wearOf` the same way twice, and the WORN ones are exactly the
+    // ones that are not a hand, the ammo or a quick socket — the five that used to be refused outright included.
+    var worn: usize = 0;
+    inline for (@typeInfo(SlotId).@"enum".fields) |f| {
+        const s: SlotId = @enumFromInt(f.value);
+        if (wearOf(s)) |w| {
+            worn += 1;
+            // BARE-HANDED AND EMPTY-BAGGED IT REFUSES — and says why, rather than just eating the button.
+            try std.testing.expect(locked(s, v) != null);
+            try std.testing.expect(candidates(s, v, &out).len == 0);
+
+            // …and carrying the piece that fits it, it opens: a "(nothing)" row plus the thing itself.
+            var found: ?item.Kind = null;
+            for (0..item.NK) |i| {
+                const k: item.Kind = @enumFromInt(i);
+                if (item.wearSlot(k) == w) found = k;
+            }
+            const k = found.?; // the comptime table already guarantees one exists
+            bag.add(k, 1);
+            try std.testing.expect(locked(s, v) == null);
+            try std.testing.expectEqual(@as(usize, 2), candidates(s, v, &out).len);
+
+            // AND PUTTING IT ON IS VISIBLE IN ALL THREE PLACES THE SOCKET ANSWERS FROM. Written per socket, the
+            // caption and the cursor row were two switches that had to be edited in step with `locked`.
+            try std.testing.expect(!slotHas(s, v));
+            v.worn.put(w, k);
+            try std.testing.expect(slotHas(s, v));
+            try std.testing.expectEqualStrings(item.displayName(k), slotFilled(s, v));
+            try std.testing.expectEqual(@as(usize, 1), pickIndexOf(s, v)); // row 0 is "(nothing)"
+            try std.testing.expect(slotTally(s, v) == null);
+
+            v.worn.put(w, null);
+            _ = bag.take(k, 1);
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 7), worn); // body, two rings, head, throat, waist, feet
+}
+
+test "A BOON IS PRICED INTO THE PAGE'S OWN DAMAGE ROWS, and only counted once" {
+    var bag = item.Bag{};
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+    const v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+
+    const bare = Loadout{ .arm = .sword, .off = .shield, .ammo = .plain, .quick = null, .spell = .bolt };
+    var belted = bare;
+    belted.worn.put(.belt, .banded_warbelt);
+    // The belt is STRENGTH, and the plain sword is a quality weapon — so it moves, and by less than a pure
+    // strength weapon would. Both rows move, because a light and a heavy come off one dial.
+    try std.testing.expect(worth(derive(belted, v), .heavy) > worth(derive(bare, v), .heavy));
+    try std.testing.expect(worth(derive(belted, v), .light) > worth(derive(bare, v), .light));
+
+    // …AND IT IS NOT COUNTED TWICE. `sheetOf` builds off the TREE, so a belt already on him is in the loadout
+    // exactly once; read off the live sheet instead, every candidate priced as a second belt.
+    var live = v;
+    var worn = stats.Sheet{};
+    heromod.boonsOnto(belted.worn, &worn);
+    live.sheet = &worn; // the hero as he would be, wearing it
+    try std.testing.expectApproxEqAbs(worth(derive(belted, v), .heavy), worth(derive(belted, live), .heavy), 1e-4);
+
+    // A DEXTERITY boon may not move a strength weapon's damage, or the rows are decoration.
+    var club = bare;
+    club.worn.put(.hand_sword, .greatclub);
+    var clubRing = club;
+    clubRing.worn.put(.ring2, .deft_signet);
+    try std.testing.expectApproxEqAbs(worth(derive(club, v), .heavy), worth(derive(clubRing, v), .heavy), 1e-4);
+}
+
+test "THE NOW COLUMN PRICES WHAT HE HAS ON — every axis of the set in force, `worn` included" {
+    var bag = item.Bag{};
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+    var v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+    const bareRows = derive(inForce(v), v);
+
+    // A club in his fist, a door on his arm and a coat on his back: the page's own rows have to move with all
+    // three, because `inForce` left `worn` out and the whole column read as a bare body.
+    v.worn.put(.hand_sword, .greatclub);
+    v.worn.put(.hand_shield, .tower_shield);
+    v.worn.put(.chest, .quilted_gambeson);
+    const geared = derive(inForce(v), v);
+    try std.testing.expect(worth(geared, .heavy) > worth(bareRows, .heavy));
+    try std.testing.expect(worth(geared, .poise) > worth(bareRows, .poise));
+    try std.testing.expect(worth(geared, .stam_heavy) > worth(bareRows, .stam_heavy));
+    try std.testing.expect(worth(geared, .guard) > worth(bareRows, .guard));
+    try std.testing.expect(worth(geared, .arc) > worth(bareRows, .arc));
+    // …and the armour row, which off a bare loadout could only ever print 0.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), worth(bareRows, .armour), 1e-6);
+    try std.testing.expect(worth(geared, .armour) > 0);
 }
 
 test "the paper doll walks by geometry, and every step lands on a socket" {
@@ -1916,8 +2269,10 @@ test "THE QUICK PICKER OFFERS ONLY WHAT HE HAS — and the flasks, which are nev
         if (k == .mushroom_jerky) sawJerky = true;
     }
     try std.testing.expect(sawJerky);
-    // It opens on what THAT socket holds; the rows are filtered and carry an empty one, so it is counted out.
-    try std.testing.expectEqual(quickRowOf(fed.quick.slots[0], fed), pickIndexOf(.q0, fed));
+    // It opens on what THAT socket holds — the rows are filtered and carry an empty one, so the row is where
+    // `equipped` first says yes rather than any kind's ordinal (`pickIndexOf`).
+    const opens = pickIndexOf(.q0, fed);
+    try std.testing.expectEqual(fed.quick.slots[0], candidates(.q0, fed, &buf)[opens].act.quick.kind);
 }
 
 test "THE SCRATCH FITS THE LONGEST LIST ANY SOCKET CAN OFFER, empty row and all" {

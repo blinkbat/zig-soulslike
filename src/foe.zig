@@ -486,16 +486,21 @@ pub const Parry = struct {
     live: bool = false,
     at: rl.Vector3 = mathx.zero3,
     facing: f32 = 0,
+    /// **THE BOARDS HE IS ACTUALLY HOLDING** (`hero.guardArc`), stamped with the rest of them. It is the same
+    /// plank either way, so a door that covers half again the compass covers it for the CATCH as well as for
+    /// the block — read off the bare `combat.GUARD_ARC` here, a tower shield's own `arc` dial reached one of
+    /// the two things it is printed as doing.
+    arc: f32 = combat.GUARD_ARC,
 
     /// Would this move be batted aside? `reach` is the MOVE's own and not one number per creature: only the
-    /// move knows where its head is. THE BLOCK'S OWN ARC (`combat.GUARD_ARC`) — a shield is a DIRECTION, and a
-    /// parry that covered the back would be a better block than the block.
+    /// move knows where its head is. THE BLOCK'S OWN ARC — a shield is a DIRECTION, and a parry that covered
+    /// the back would be a better block than the block.
     pub fn catches(self: *const Parry, at: rl.Vector3, reach: f32) bool {
         if (!self.live) return false;
         if (mathx.distXZ(self.at, at) > reach) return false;
         const to = mathx.dirXZ(self.at, at);
         if (mathx.lenXZ(to) < 1e-4) return true; // standing inside him: there is no bearing to be wrong about
-        return combat.withinGuardArc(mathx.headingXZ(to), self.facing);
+        return combat.withinArc(mathx.headingXZ(to), self.facing, self.arc);
     }
 };
 

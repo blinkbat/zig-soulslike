@@ -365,6 +365,8 @@ fn beginGame(g: *Game) void {
     g.hero.spell = .bolt;
     g.hero.quick = .{};
     g.hero.quiver = .{};
+    g.hero.worn = .{}; // A NEW GAME IS BARE-HANDED — an assigned field, the defaulted-field law
+
     g.hero.flasks = .{};
     g.day = .{};
     g.bossK = 0;
@@ -1234,7 +1236,9 @@ pub fn shootShaftForShot(g: *Game, at: rl.Vector3, kind: combat.ArrowKind) void 
     putIn(&g.shafts, archermod.launchShaft(g.hero.nockWorld(), at, heromod.BOW_AIMED_SPEED, blow, false, heromod.arrowShot(kind)));
 }
 pub fn throwBoltForShot(g: *Game, at: rl.Vector3) void {
-    launchBolt(g, at, false);
+    // The BOLT'S blow, whatever the rod is currently turned to — the harness photographs this one spell and a
+    // `castBlow` read here would come back null the moment a shot set the rod to the roots.
+    launchBolt(g, at, false, combat.BOLT_HIT);
 }
 
 pub fn stepShaftsForShot(g: *Game, dt: f32) void {
@@ -1875,13 +1879,16 @@ fn releaseSpell(g: *Game) void {
         .bolt => throwBolt(g),
         .roots => castRoots(g),
         .rime => openBreath(g),
+        .levin => strikeLevin(g),
+        .siphon => drawSiphon(g),
     }
 }
 
 fn throwBolt(g: *Game) void {
+    const blow = g.hero.castBlow() orelse return;
     const locked: ?rl.Vector3 = if (activeLock(g)) |li| foeLockPoint(g, li) else null;
     // Loft only against a REAL point, `looseShaft`'s rule: it is solved against the distance to the target.
-    launchBolt(g, locked orelse forwardPoint(g, heromod.BOLT_REACH), locked != null);
+    launchBolt(g, locked orelse forwardPoint(g, heromod.BOLT_REACH), locked != null, blow);
     sfx.play(.wand_cast);
     g.rumble.play(rumblemod.cast_throw);
     g.rig.addShake(SHAKE_CAST);
@@ -1970,6 +1977,153 @@ fn rimeBreathe(g: *Game, dt: f32) void {
     }
 }
 
+// THE TWO SORCERIES THAT DO NOT CROSS THE GROUND (`combat.LEVIN_*`, `combat.SIPHON_*`)
+//
+// **A STRIKE IS AIMED AT A BODY, NOT THROWN AT A PLACE.** The bolt is a stone the arrow pool carries and the
+// roots are a hold seeded at a mark; these two land on ONE body on the frame they are cast. So there is no
+// flight to intercept, and SIGHT is what stands in for one: a wall is still a wall (`env.sees`), and the
+// picture is drawn down the blow's own segment so the flash cannot land where the blade did not.
+
+/// How far above the crown the stroke starts, and how far it LEANS back toward him across the drop. The lean is
+/// not decoration: `foe.strike` takes the shove and the facing snap off the segment's own XZ bearing, and a
+/// plumb line has none — the fallback would then push the body along contact-toward-centre, which is nothing.
+/// MEASURED, not picked: at 2.6 m above a skeleton's crown the stroke started at 4.5 m, which is off the top of
+/// the frame at every distance this fight is actually fought at — the picture was above the camera.
+const STRIKE_RISE: f32 = 1.7;
+const STRIKE_LEAN: f32 = 0.9;
+/// The swept capsule is only as fat as it has to be to be certain of a body already picked — it cannot miss and
+/// is not allowed to reach a neighbour instead.
+const STRIKE_R: f32 = 0.30;
+
+/// THE ONE PLACE THE STROKE'S GEOMETRY IS WORKED OUT: the blow's swept segment AND the flash down it are these
+/// same two points, handed to both.
+fn strikeSegment(g: *const Game, at: rl.Vector3, topY: f32) [2]rl.Vector3 {
+    var away = mathx.dirXZ(g.hero.pos, at);
+    if (mathx.lenXZ(away) < 1e-4) away = mathx.headingDir(g.hero.facing);
+    return .{ v3(at.x - away.x * STRIKE_LEAN, topY + STRIKE_RISE, at.z - away.z * STRIKE_LEAN), at };
+}
+
+/// **WHAT ONE IS AIMED AT** — the locked body, else the NEAREST inside the spell's own reach and a narrow arc of
+/// his facing (`combat.STRIKE_ARC`). Reach is measured off the target's HIDE and not its centre, the range-gate
+/// law, or the broad creatures are unstrikable at the distance the colliders hold you at. A lock is the aim, so
+/// it skips the arc — but never the reach and never the sight: a body across the map or behind a wall is not a
+/// target because the reticle is on it.
+fn strikeVictim(g: *const Game, reach: f32) ?RootPick {
+    const eye = heroEye(g);
+    const locked = activeLock(g);
+    var pick: ?RootPick = null;
+    var near: f32 = reach;
+    inline for (FOE_GROUPS, 0..) |f, gi| {
+        for (@field(g, f.field).liveConst(), 0..) |*a, i| {
+            if (!foemod.corporeal(a)) continue;
+            const d = mathx.distXZ(a.pos, g.hero.pos) - a.bodyR();
+            if (d > reach) continue;
+            if (!g.env.sees(eye, a.lockPoint())) continue;
+            if (locked) |l| {
+                if (l.idx == i and l.kind == memberKind(a, f.kind)) return .{ .group = gi, .idx = i };
+                continue; // …and with a lock UP, nothing else is a candidate: he is pointing at somebody
+            }
+            const to = mathx.dirXZ(g.hero.pos, a.pos);
+            if (mathx.lenXZ(to) > 1e-4) {
+                const spread = if (d > 0) combat.subtendedArc(a.bodyR(), d + a.bodyR()) else 180.0;
+                if (!combat.withinArc(mathx.headingXZ(to), g.hero.facing, combat.STRIKE_ARC + spread)) continue;
+            }
+            if (d < near) {
+                near = d;
+                pick = .{ .group = gi, .idx = i };
+            }
+        }
+    }
+    return pick;
+}
+
+/// What one landed: where it struck, the segment it struck down, and the HP THE BODY ACTUALLY LOST — which is
+/// the only figure the siphon may feed off, since it is what the creature's own resistances left of the blow.
+const Struck = struct { at: rl.Vector3, from: rl.Vector3, took: f32 };
+
+/// **DELIVERED THROUGH THE CREATURE'S OWN `tryHit`** (`seedRoots`' shape), so a strike earns every reaction a
+/// swing does — the flinch, the flash, the blood, the threat, the shield that might stop it, and a death only
+/// the creature knows how to enter. Nothing here reaches inside a body except to read what it had before.
+fn strikeOne(g: *Game, pick: RootPick, blow: combat.Hit) ?Struck {
+    var out: ?Struck = null;
+    inline for (FOE_GROUPS, 0..) |f, gi| {
+        if (gi == pick.group) {
+            const a = &@field(g, f.field).live()[pick.idx];
+            const seg = strikeSegment(g, a.centerWorld(), a.topWorld().y);
+            const before = a.vit.hp;
+            a.tryHit(.{
+                .active = true,
+                .pierce = true, // A PROJECTILE'S DOOR: no swing latch to set, and the facing snaps down the line
+                .r = STRIKE_R,
+                .a = seg[0],
+                .b = seg[1],
+                .a0 = seg[0],
+                .b0 = seg[1],
+                .hit = blow,
+            });
+            out = .{ .at = seg[1], .from = seg[0], .took = mathx.maxF(0, before - a.vit.hp) };
+        }
+    }
+    return out;
+}
+
+/// **WHERE A STRIKE THAT FOUND NOBODY IS DRAWN** — on the ground in front of him, half the spell's own reach out.
+/// Both strikes owe the player this (a cast that shows nothing reads as the button not having worked) and both
+/// were spelling the same three lines of arithmetic out at their own miss.
+fn strikeMissAt(g: *const Game, reach: f32) rl.Vector3 {
+    const d = mathx.headingDir(g.hero.facing);
+    const x = g.hero.pos.x + d.x * reach * 0.5;
+    const z = g.hero.pos.z + d.z * reach * 0.5;
+    return v3(x, g.env.groundAt(x, z), z);
+}
+
+fn strikeLevin(g: *Game) void {
+    const blow = g.hero.castBlow() orelse return;
+    // THE SPELL'S OWN REACH, off `combat.spellReach` rather than named here: with the constant written at the
+    // call site there are two places that decide how far a strike carries, and the second one to be retuned wins.
+    const reach = combat.spellReach(g.hero.spell) orelse return;
+    sfx.play(.wand_cast);
+    const pick = strikeVictim(g, reach) orelse {
+        // NOTHING THERE, AND HE STILL PAID FOR IT. The stroke is drawn on the air in front of him at the reach
+        // it would have had, because a cast that shows nothing at all reads as the button not having worked.
+        const on = strikeMissAt(g, reach);
+        const seg = strikeSegment(g, on, on.y);
+        g.hero.levinStroke(seg[0], seg[1], on.y, g.hero.casts);
+        g.rumble.play(rumblemod.cast_throw);
+        g.rig.addShake(SHAKE_CAST);
+        return;
+    };
+    const hit = strikeOne(g, pick, blow) orelse return;
+    g.hero.levinStroke(hit.from, hit.at, g.env.groundAt(hit.at.x, hit.at.z), g.hero.casts);
+    // The heaviest poise the rod throws lands as the heaviest beat it throws: `SHAKE_ROOTS_BITE` is what the
+    // grip closing already earns, and this arrives on a body rather than under one.
+    g.rumble.play(rumblemod.hit_heavy);
+    g.rig.addShake(SHAKE_ROOTS_BITE);
+}
+
+fn drawSiphon(g: *Game) void {
+    const blow = g.hero.castBlow() orelse return;
+    const reach = combat.spellReach(g.hero.spell) orelse return;
+    sfx.play(.wand_cast);
+    g.rumble.play(rumblemod.cast_throw);
+    g.rig.addShake(SHAKE_CAST);
+    const pick = strikeVictim(g, reach) orelse {
+        // DREW ON NOTHING, AND HE STILL PAID FOR IT — the levin's own courtesy, because a spell that shows
+        // literally nothing on a miss reads as the button not having worked. Off empty air at half the reach (the
+        // stroke's own mark, lifted to where a chest would have been): the motes still arrive at the stone, and
+        // what says it failed is that none of them came off a body.
+        const on = strikeMissAt(g, reach);
+        g.hero.siphonDrain(v3(on.x, on.y + heromod.H * 0.55, on.z), g.hero.casts);
+        return;
+    };
+    const hit = strikeOne(g, pick, blow) orelse return;
+    // **A SHARE OF WHAT THE BODY ACTUALLY LOST**, never of what was thrown at it: resisted damage is resisted
+    // healing, which is what keeps the wand's chaos trade honest on the one spell that could have voided it.
+    // Capped by what it took, so an overkill cannot be milked for a body's worth of HP it never had.
+    g.hero.siphonDrain(hit.at, g.hero.casts);
+    _ = g.hero.drinkSiphon(hit.took * combat.SIPHON_SHARE);
+}
+
 fn gateChill(foes: anytype, was: []const rl.Vector3) void {
     const T = @typeInfo(@TypeOf(foes)).pointer.child;
     if (comptime !@hasField(T, "chill")) return;
@@ -1989,9 +2143,16 @@ pub fn castRootsForShot(g: *Game) rl.Vector3 {
     return seedRoots(g, at) orelse at;
 }
 
-fn launchBolt(g: *Game, target: rl.Vector3, loft: bool) void {
+/// …AND THE SAME DOOR FOR THE TWO STRIKES (`throwBoltForShot`'s reason, written at `castToThrow`): the harness
+/// drives the POSE past the throw without going through `releaseSpell`, so the mechanic — and every spark that
+/// fires on that exact frame — has to be fired by hand or the picture is a pose with the spell missing from it.
+pub fn releaseSpellForShot(g: *Game) void {
+    releaseSpell(g);
+}
+
+fn launchBolt(g: *Game, target: rl.Vector3, loft: bool, blow: combat.Hit) void {
     const from = g.hero.wandTipWorld();
-    putIn(&g.shafts, archermod.launchShaft(from, target, heromod.BOLT_SPEED, g.hero.castBlow(), loft, .bolt));
+    putIn(&g.shafts, archermod.launchShaft(from, target, heromod.BOLT_SPEED, blow, loft, .bolt));
     var dir = mathx.subV(target, from);
     if (mathx.lenV(dir) > 1e-3) dir = mathx.normV(dir) else dir = mathx.headingDir(g.hero.facing);
     g.hero.castSparks(dir);
@@ -2172,7 +2333,7 @@ fn markThreat(g: *Game, dt: f32) void {
 }
 
 fn markParry(g: *Game) void {
-    const p = foemod.Parry{ .live = g.hero.parryLive(), .at = g.hero.pos, .facing = g.hero.facing };
+    const p = foemod.Parry{ .live = g.hero.parryLive(), .at = g.hero.pos, .facing = g.hero.facing, .arc = g.hero.guardArc() };
     inline for (FOE_GROUPS) |f| {
         if (comptime @hasDecl(@FieldType(Game, f.field), "setParry")) @field(g, f.field).setParry(p);
     }
@@ -2543,12 +2704,9 @@ pub fn hud(g: *Game, dt: f32) void {
                 // LEFT: what that hand actually has — boards, the rod, or nothing at all behind a bow.
                 if (!g.hero.offInHand()) .empty else armSlot(g.hero.off),
                 armSlot(g.hero.armInHand()),
-                // UP fills only while something in his hands could cast; behind a bow or a shield, empty.
-                if (wandUp) (switch (g.hero.spell) {
-                    .bolt => hud_.Slot.spell,
-                    .roots => hud_.Slot.roots,
-                    .rime => hud_.Slot.rime,
-                }) else .empty,
+                // UP fills only while something in his hands could cast; behind a bow or a shield, empty. The
+                // CELL CARRIES THE SPELL (`hud.Slot.sorcery`), so which picture it is stays `itemart`'s one answer.
+                if (wandUp) hud_.Slot{ .sorcery = g.hero.spell } else .empty,
                 g.hero.fp.cur >= g.hero.castCost(),
                 g.hero.quick.selected(),
                 quickLeft(g),
@@ -3132,7 +3290,8 @@ pub fn run(mode: Mode) void {
         g.hero.setGuard(guardHeld);
         g.hero.setAim(aimHeld);
         // Shield, bow and draught are each a SHUFFLE rather than a stop, denied at the SOURCE like the sprint.
-        if (g.hero.guarding) mv.speed = @min(mv.speed, WALK_SPEED * heromod.GUARD_SPEED);
+        // …and a DOOR is slower to walk behind than a small shield (`item.Arm.walk`).
+        if (g.hero.guarding) mv.speed = @min(mv.speed, WALK_SPEED * heromod.GUARD_SPEED * g.hero.guardWalk());
         if (g.hero.aiming) mv.speed = @min(mv.speed, WALK_SPEED * heromod.BOW_AIM_SPEED);
         if (g.hero.drinking) mv.speed = @min(mv.speed, WALK_SPEED * heromod.DRINK_SPEED);
 
@@ -3324,6 +3483,11 @@ pub fn run(mode: Mode) void {
             g.rumble.play(if (g.hero.atkHeavy) rumblemod.hit_heavy else rumblemod.hit_light);
             g.rig.addShake(if (g.hero.atkHeavy) SHAKE_HIT_HEAVY else SHAKE_HIT_LIGHT);
             sfx.play(if (g.hero.atkHeavy) .hit_heavy else .hit_light);
+            // **THE SIGNET FEEDS OFF A SWING OF HIS, AND `attacking` IS WHAT SAYS IT WAS HIS.** This edge is a
+            // SUM over every foe's hit count, and inside this window exactly two things can move it: his own
+            // blade and the WOLF'S JAWS (a shaft's hit lands after `stepShafts`, below, so it is never in here).
+            // Ungated, the signet healed him every time his spirit bit something while he stood still.
+            if (g.hero.attacking) _ = g.hero.drinkLeech();
         }
         stepShafts(g, dt);
         if (anyFoeDied(g)) {
@@ -3459,17 +3623,28 @@ pub fn bookView(g: *Game) bookmod.View {
         .spell = g.hero.spell,
         .fp = g.hero.fp.cur,
         .souls = g.hero.souls.display(),
+        .worn = g.hero.worn,
     };
+}
+
+/// **A HAND ROW IS TWO DECISIONS AND BOTH ARE TAKEN HERE** — what kind of thing is in that fist, and which one
+/// of it he owns (`book.Hand`). The armament may be REFUSED (`hero.equip` says no mid-swing); the variant is not
+/// a thing in his hands changing, so it goes through regardless — otherwise picking the club while committed
+/// would leave the socket saying club and the fist swinging a sword.
+fn takeHand(g: *Game, hand: usize, slot: usize, h: bookmod.Hand) void {
+    _ = g.hero.equip(hand, slot, h.a);
+    if (heromod.wearFor(h.a)) |w| _ = g.hero.wear(w, h.kind);
 }
 
 fn bookAct(g: *Game, a: bookmod.Action) void {
     switch (a) {
         .none => {},
         .use => |k| useItem(g, k),
-        .arm => |want| _ = g.hero.equip(heromod.RIGHT, 0, want),
-        .armAlt => |want| _ = g.hero.equip(heromod.RIGHT, 1, want),
-        .off => |want| _ = g.hero.equip(heromod.LEFT, 0, want),
-        .offAlt => |want| _ = g.hero.equip(heromod.LEFT, 1, want),
+        .arm => |h| takeHand(g, heromod.RIGHT, 0, h),
+        .armAlt => |h| takeHand(g, heromod.RIGHT, 1, h),
+        .off => |h| takeHand(g, heromod.LEFT, 0, h),
+        .offAlt => |h| takeHand(g, heromod.LEFT, 1, h),
+        .wear => |wr| _ = g.hero.wear(wr.slot, wr.kind),
         .ammo => |k| while (g.hero.quiver.sel != k) {
             if (!g.hero.cycleArrow()) break;
         },

@@ -824,6 +824,44 @@ pub fn runShots(g: *Game) void {
         chilled.vit.sinceHurt = 0;
         shootFoe(g, chilled, "shots/20zq_rime_chilled.png", LIT_YAW, 0.10, 4.6);
         g.muster.n = 0;
+        g.hero.fp.cur = g.hero.fp.max;
+
+        // THE LEVIN STRIKE — the rod's fourth, and the one that DOES NOT TRAVEL. There is no flight to
+        // photograph, so the whole spell is the frame it lands on: the stroke down its own segment and the burst
+        // where it ends. Shot SIDE-ON like the cone, because a stroke is a vertical fact and head-on it is a dot.
+        must(g.hero.cycleSpell(), "the rod would not change to the levin");
+        standSettled(g, rimeAt.x, rimeAt.z, mathx.headingXZ(LIT_BACK));
+        shootClear(g, "shots/20zr_levin_hud.png", LIT_YAW + 150, 0.18, 4.6);
+        // **A BODY TO STRIKE, or the picture has nothing to end on.** The segment is derived off the victim
+        // (`game.strikeSegment`), so with the field empty the stroke is drawn on open air at half the reach and
+        // the one thing this frame exists to show — that it lands on somebody — is exactly what is missing.
+        g.muster.n = 1;
+        const struck = &g.muster.band[0];
+        struck.* = warriormod.Warrior.spawnAs(.shieldman, along(rimeAt, LIT_BACK, 5.0), mathx.headingXZ(mathx.scaleV(LIT_BACK, -1)), 1.0, 0.3);
+        stagedCast(g);
+        castToThrow(g, dt);
+        game.releaseSpellForShot(g);
+        shootFoe(g, struck, "shots/20zs_levin_strike.png", LIT_YAW + 90, 0.10, 6.4);
+        // THIN GEOMETRY NEEDS A CROP: a spark is two centimetres and dead in a twentieth of a second, so whether
+        // the stroke is a TORN line or a straight run of dots cannot be judged from six metres out.
+        shootPortrait(g, "shots/20zt_levin_crop.png", struck.centerWorld(), LIT_YAW + 90, 0.06, 2.6);
+        while (g.hero.casting) g.hero.updateCast(dt, null);
+
+        // THE SIPHON — the fifth, and the only effect in the game that runs the wrong way up the line: motes off
+        // the BODY, solved to arrive at the stone. Hurt him first, or a full bar has nothing to give back into
+        // and the one thing the spell is for cannot be seen to have happened.
+        must(g.hero.cycleSpell(), "the rod would not change to the siphon");
+        g.hero.fp.cur = g.hero.fp.max;
+        g.hero.vit.hp = g.hero.vit.hpMax * 0.45;
+        stagedCast(g);
+        castToThrow(g, dt);
+        game.releaseSpellForShot(g);
+        // Framed on the GAP between the two, since the drain is the line and not either end of it.
+        shootPortrait(g, "shots/20zu_siphon_draw.png", mathx.lerpV(g.hero.shoulderPoint(), struck.centerWorld(), 0.5), LIT_YAW + 90, 0.10, 5.2);
+        shootClear(g, "shots/20zv_siphon_hud.png", LIT_YAW + 150, 0.18, 4.6);
+        while (g.hero.casting) g.hero.updateCast(dt, null);
+        g.muster.n = 0;
+        g.hero.vit.hp = g.hero.vit.hpMax;
         g.hero.fp.reset();
         must(g.hero.cycleSpell(), "the rod would not change back"); // …and the block below expects the bolt
         // Walking, at two points HALF A STRIDE apart: one frame cannot show that the carry damps the arm's swing
@@ -3048,8 +3086,14 @@ fn chestShots(g: *Game) void {
     // THE CHARACTER BOOK — a frame per page, and the pages are the whole reason it exists, so each one is
     // staged on the state that has something to show: a picker OPEN over its delta column, a bag with
     // enough in it to fill a grid, an attribute that owns a bar.
-    for ([_]item.Kind{ .mushroom_jerky, .bloodgrass, .kobold_fang, .rune_arc, .golden_seed, .smithing_stone, .iron_key, .fire_tallow, .thundercrock, .nameless_soul, .toadflesh_broth, .fang_dirk, .grave_warbow, .quilted_gambeson, .spirit_scroll_wolf }) |k| {
+    for ([_]item.Kind{ .mushroom_jerky, .bloodgrass, .kobold_fang, .rune_arc, .golden_seed, .smithing_stone, .iron_key, .fire_tallow, .thundercrock, .nameless_soul, .toadflesh_broth, .spirit_scroll_wolf }) |k| {
         if (g.bag.count(k) == 0) g.bag.add(k, if (k == .bloodgrass) 12 else 3);
+    }
+    // …AND EVERY PIECE OF GEAR, WALKED rather than listed: the doll's whole job is showing what fills its sockets,
+    // and a hand-written list is what left the five newest pieces out of the one frame that would have shown them.
+    for (0..item.NK) |i| {
+        const k: item.Kind = @enumFromInt(i);
+        if (item.wearable(k) and g.bag.count(k) == 0) g.bag.add(k, 1);
     }
     g.menu.onStartButton();
     bookShot(g, "shots/106e_book_equipment.png", .equipment, bookmod.slotOrdinal(.right), null, 0);
@@ -3061,9 +3105,32 @@ fn chestShots(g: *Game) void {
     // cursor sits on the jerky — the one row that is not a flask.
     bookShot(g, "shots/106f2_book_quickbar.png", .equipment, bookmod.slotOrdinal(.q2), bookmod.slotOrdinal(.q2), 3);
     bookShot(g, "shots/106g_book_inventory.png", .inventory, 0, null, 0);
+    // …AND THE PAGE THE NEWEST GEAR IS ON. A bag with every kind in it runs past one grid, so the frame staged at
+    // cursor 0 shows the oldest twenty rows and nothing else — which is exactly the page a new item is never on.
+    bookShot(g, "shots/106g2_book_inventory_p2.png", .inventory, item.NK - 1, null, 0);
     bookShot(g, "shots/106h_book_stats.png", .stats, @intFromEnum(stats.Attr.endurance), null, 0);
+    // …AND A SKILL, which answers in a MULTIPLE rather than a bar's length (`stats.scaleFor`). Both kinds of row
+    // need a frame: the one staged on endurance cannot show the line the other three print.
+    bookShot(g, "shots/106h2_book_stats_skill.png", .stats, @intFromEnum(stats.Attr.strength), null, 0);
     // THE PASSIVE TREE in the book, which is READ-ONLY — the fire's own copy (`71i`) is the one that spends.
     bookShot(g, "shots/106i_book_tree.png", .tree, ptree.armFirst(.wizard) + ptree.PER_ARM - 1, null, 0);
+
+    // **AND THE PAGE WITH THE SUIT ACTUALLY ON**, which is the one frame every socket and every row exists for:
+    // staged bare, the doll is seven empty holes and the NOW column reads the plain sword's figures whatever is
+    // in the bag, so nothing here could ever show a filled socket or a number that moved with it.
+    const wornWas = g.hero.worn;
+    for ([_]item.Kind{ .greatclub, .tower_shield, .quilted_gambeson, .pitted_helm, .marchboots, .banded_warbelt, .ashen_amulet, .leech_signet, .deft_signet }) |k| {
+        _ = g.hero.wear(item.wearSlot(k).?, k);
+    }
+    bookShot(g, "shots/106e2_book_geared.png", .equipment, bookmod.slotOrdinal(.chest), null, 0);
+    // …and the picker over a filled socket, where the delta column is priced against what he already has on.
+    bookShot(g, "shots/106e3_book_geared_pick.png", .equipment, bookmod.slotOrdinal(.right), bookmod.slotOrdinal(.right), 0);
+    // PUT BACK THROUGH THE SAME DOOR (`save.scatter`'s own idiom), never by assignment: `wear` is what carries
+    // the sheet and the three bar lengths back with it, and the signet was eating into the red one.
+    inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
+        const w: item.Wear = @enumFromInt(f.value);
+        _ = g.hero.wear(w, wornWas.at(w));
+    }
     g.menu.screen = .closed;
 
     g.map.nops = saved;

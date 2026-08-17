@@ -589,9 +589,6 @@ pub fn chestMesh(shader: rl.Shader) rl.Model {
 // **A CLOSED CHEST GLOWS OUT OF ITS OWN SEAM** (owner's call). A coffer with the lid down is a brown box among
 // brown boxes; the hairline of light round the lid is the whole difference between scenery and something worth
 // walking to, and it is the same promise the pickup's wisp makes at a distance.
-//
-// **IT IS GOLD WHERE THE PICKUP IS PALE.** Hue is the one dial the sun does not flatten, and the two answer
-// different questions: the wisp says "an item is lying here", this says "there is something in this".
 const CHEST_GLOW_EMISSIVE: u8 = 26;
 const CHEST_GLOW = mathx.rgba(226, 170, 78, CHEST_GLOW_EMISSIVE);
 const CHEST_GLOW_HOT = mathx.rgba(244, 216, 152, CHEST_GLOW_EMISSIVE);

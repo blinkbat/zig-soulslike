@@ -219,9 +219,6 @@ pub fn bell(cx: f32, cy: f32, px: f32) void {
 /// A HIDE SCROLL, HALF UNROLLED, with the spirit it carries inked on the face — one sheet standing out of one
 /// roll, and the drawing is the only thing that changes between scrolls (`SpiritGlyph`), so a second spirit is
 /// a glyph and not a second picture.
-///
-/// THE SHEET IS NOT A RECTANGLE. Hide dried flat cups and curls: the face is a quad with its top corners
-/// pulled apart and a lit lip along the near edge, which is what stops it reading as a playing card.
 fn spiritScroll(cx: f32, cy: f32, px: f32, glyph: SpiritGlyph) void {
     const s = px;
     const k = strokeK(px);
@@ -375,8 +372,6 @@ fn greatclub(cx: f32, cy: f32, px: f32) void {
 }
 
 /// A THIN GOLD BAND ALREADY CRACKED — the break is the picture, since breaking is the whole of what it does.
-/// Gold rather than the souls' own amber: this is the thing that KEEPS them, and two golds at one size in one
-/// grid read as one item drawn twice.
 fn soulRing(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -464,7 +459,6 @@ fn crackedSoul(cx: f32, cy: f32, px: f32) void {
     var rng = mathx.Rng.init(0xC4AC);
     // ONE STONE WITH A BREAK THROUGH IT, not two halves side by side: as a pair of upright slabs with a
     // lit gutter between them it read as an open BOOK, which is the shape any two equal panels make.
-    // A six-sided tablet, split down its own middle, the halves shifted a hair ACROSS the break.
     const hw = s * 0.19;
     const shy = s * 0.17; // where the sides turn — the tablet's shoulders
     const top = cy - s * 0.32;
@@ -992,9 +986,6 @@ pub fn roots(cx: f32, cy: f32, px: f32, on: bool) void {
 /// in the game that is a direction and a width rather than a mark. Crystals stream out of a narrow throat
 /// and open away from it, blunt-ended (NOTHING ENDS IN A POINT) and unevenly spaced, since an even fan of
 /// equal spikes is a garden rake — the roots' own lesson, in the other element.
-///
-/// Its palette is the icon set's and not `elemfx`'s: these are 2D chrome on a card, where the FX colours are
-/// literal screen values solved against a lit world. Same HUE, different constants.
 pub fn rime(cx: f32, cy: f32, px: f32, on: bool) void {
     const s = px;
     const k = strokeK(px);

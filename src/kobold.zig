@@ -182,7 +182,6 @@ const WALK_SPEED = heromod.WALK_SPEED;
 /// under the sprint (5.1) so the sprint still does. The escape stays real; the stroll does not.
 const RUN_SPEED = heromod.RUN_SPEED;
 /// Metres outside his own reach the charge drops back to a walk — one stride, against the warrior's three.
-/// A rusher that walks in from further out is a rusher you get a free step away from.
 const ZERK_WALK_IN = 0.9;
 const DEATH_DUR = 1.0; // yelp and fold
 const DISS_DUR = 0.85;
@@ -194,7 +193,6 @@ const ZERK_SWINGS_LO: u32 = 3;
 const ZERK_SWINGS_HI: u32 = 5;
 /// One chop. `CHOP_DUR * CHOP_HIT_A` is the raise you get to see, and it must clear `foe.TELL_MIN`: the
 /// flurry stays fast, so the read comes from the SWING rather than a tell in front of it.
-/// Pub for the SHOT HARNESS alone, which aims its two chop beats off these rather than literal frame counts.
 pub const CHOP_DUR = 0.58;
 pub const CHOP_HIT_A = 0.53;
 const ZERK_CHOP = CHOP_DUR;
@@ -640,9 +638,6 @@ pub const Kobold = struct {
     /// getting in your face was the slowest skeleton on the field and could be strolled away from. It is the
     /// warrior's own rule (`warrior.approachSpeed`), which is why it is that shape and not a new one: run at
     /// distance, walk the last stride in.
-    ///
-    /// The other two roles keep their walk on purpose — a priest and a slinger are kiters, and `wantMin`/
-    /// `wantMax` already say they are not trying to reach you.
     pub fn approachSpeed(self: *const Kobold, dist: f32) f32 {
         const base = spec(self.role).speed;
         // Out past his own world he is drifting HOME rather than charging, and `decide` branches on exactly
@@ -1674,7 +1669,6 @@ fn slingMesh() rl.Mesh {
 
 /// The sling's BURNING CLUMP, as a projectile mesh. The core is a charred lump and the fire is `propart`'s own
 /// (see `archer.fireArrowMesh`), because a second kind of fire in one world reads as a different substance.
-/// Unlike the arrow's, this flame has no flight axis to stream down — a slung lump tumbles.
 const CLUMP_TONGUES = 8;
 pub fn clumpMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();

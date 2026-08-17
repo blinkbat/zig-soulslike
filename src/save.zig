@@ -122,14 +122,6 @@ pub const Data = struct {
     /// **AND WHAT HE HAS EVER SEEN** — one bit per item kind, through the same `bits` run the chests use, so it
     /// is legible in a save you can read; a MISSING row leaves it all false, which is what an older save
     /// honestly is (it will card each kind once more, and then never again).
-    ///
-    /// **IT IS POSITIONAL, WHICH MAKES `item.Kind`'S ORDER PART OF THE SAVE FORMAT.** `bits` writes one
-    /// character per kind in enum order and `readBits` reads them straight back by index — no tag names
-    /// anywhere. So a kind INSERTED or MOVED in that enum silently re-points every discovery bit in every
-    /// existing file: the player is re-introduced to things he has carried for hours and never shown the one
-    /// thing he has not. `item.Kind` is append-only for this reason and a test in `item.zig` pins its order.
-    /// (This comment said "written by TAG" and claimed a reordered enum could not re-point it. Neither was
-    /// ever true, and a false safety note is worse than none — it is the reason nobody added the guard.)
     seen: [item.NK]bool = [_]bool{false} ** item.NK,
 
     pub fn mapName(self: *const Data) []const u8 {
@@ -233,10 +225,6 @@ pub fn read(i: usize, s: Slot) bool {
 /// **A SLOT IS TWO FILES AND BOTH GO.** A picture left standing beside a save that is gone is precisely what
 /// the picker's own rule forbids — a row reading "Empty" over a photograph of somebody's game — and it is why
 /// the shot is deleted here rather than left for `writeShot` to overwrite one day.
-///
-/// A file that was never there is not a failure: what the caller asked for is that the slot END UP empty, and
-/// it is. Only a delete that was REFUSED (a read-only file, a handle still open) comes back false, so the one
-/// thing the menu can say — "that did not happen" — is the one thing this reports.
 pub fn erase(i: usize) bool {
     var ok = true;
     std.fs.cwd().deleteFile(PATHS[i]) catch |e| {
@@ -804,8 +792,6 @@ const Live = struct {
 
 test "THE SLOT CARRIES EVERY FIELD IT NAMES — live game out, text, live game back in" {
     // The one test that can catch a field DROPPED from `gather`/`scatter` or written into the wrong one.
-    // Values are chosen to survive `{d:.3}` exactly, so the comparison can be equality rather than a
-    // tolerance per field — a tolerance is what would let a swapped pair through.
     const N_CHESTS = 4;
     var a = Live.blank(N_CHESTS);
     a.hero.pos = .{ .x = -4.5, .y = 0.25, .z = 7.125 };
@@ -847,7 +833,6 @@ test "THE SLOT CARRIES EVERY FIELD IT NAMES — live game out, text, live game b
     try testing.expectEqual(out, gather(b.slot()));
 
     // …and the two things `scatter` derives rather than copies, which a re-gather cannot see.
-    // The counter arrives SNAPPED, never rolling: a load is not a number you just earned.
     try testing.expectEqual(@as(f32, 4321), b.hero.souls.shown);
     try testing.expect(b.chests.list[2].swing == 1 and b.chests.list[0].swing == 0);
 }

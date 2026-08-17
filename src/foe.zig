@@ -210,19 +210,6 @@ pub fn faceToward(pos: rl.Vector3, facing: *f32, target: rl.Vector3, rate: f32, 
 }
 
 /// THE WAY ROUND WHAT IS IN THE WAY, and the whole of what a creature here knows about pathfinding.
-///
-/// **IT IS STAMPED FROM OUTSIDE** (`game.markWay`), the `Leash` arrangement and for its reason: a riser, a wall
-/// and deep water are all questions about `env`, and a creature that reached for the world would be an eleventh
-/// definition of what walkable means. What the creature owes in return is ONE method — `navWant`, the point it
-/// is trying to walk at this frame, or null when it is not walking anywhere.
-///
-/// **IT IS STEERING AND NOT A ROUTE.** No graph, no path, nothing remembered: the stamp is a heading TESTED
-/// for the next couple of metres. It answers one failure — a body pressed against a wall for the rest of the
-/// fight because the only direction it considered was the hero's — and nothing more.
-///
-/// A creature reads it in exactly one place, whichever of the two its own movement is:
-///   `aim`   — for one that walks where it is LOOKING (the ogre turns his whole body; he never strafes)
-///   `along` — for one that steps on a committed vector and faces the hero anyway (the kobold, the shade)
 pub const Nav = struct {
     /// The tested heading, unit XZ. NULL is the ordinary case and it means "the straight line is fine".
     dir: ?rl.Vector3 = null,
@@ -367,9 +354,6 @@ test "IT DOES NOT READ ITS OWN TRAVEL AS AN ORBIT" {
 /// spores, ichor, dirt — and what each one sheds and how much of it relative to the others is that creature's
 /// own business and stays in its own file. What is NOT per-creature is how heavy a landed blow reads overall,
 /// and as twenty literals scattered over twelve files that was a number nobody could turn.
-///
-/// Applied inside each emitter at the ONE point its authored count becomes a loop bound, so the numbers at
-/// the call sites still read as what they were tuned to and this scales all of them together.
 pub const HIT_PARTS: f32 = 1.5;
 
 pub fn hitParts(n: i32) i32 {
@@ -398,10 +382,6 @@ pub fn markOn(bone: rl.Matrix, at: rl.Vector3) rl.Vector3 {
 /// HOW FAR THROUGH ITS ARC A SWING IS, 0..1 of the strike window — ONE CURVE for every creature, and it
 /// exists because you must be able to parry off what you SEE (owner: "should be all 3" — visuals, sound and
 /// timing, not the last two alone).
-///
-/// A FRONT-LOADED ARC (`1 - (1-u)³`) put 58% of the travel in the first quarter, so the limb was there
-/// before the eye registered it; a SYMMETRIC one glides. This holds near the cock, then whips — 8% of the
-/// arc in the first quarter, and the last quarter carries two and a half times the first.
 pub fn swingCurve(u: f32) f32 {
     return std.math.pow(f32, mathx.smoothstep(0, 1, u), 1.35);
 }
@@ -424,7 +404,6 @@ pub const Push = struct { light: f32, heavy: f32 };
 pub const Clock = struct { wind: f32, strike: f32, recover: f32 };
 
 /// …off the creature's OWN attack row, so a retuned window still photographs the beat it is named after.
-/// The WARRIOR keeps its own `Clock`: its rows carry a fourth knot (`chainWind`), a different shape.
 pub fn moveClock(row: anytype) Clock {
     return .{ .wind = row.windDur, .strike = row.strikeDur, .recover = row.recoverDur };
 }
@@ -459,7 +438,6 @@ pub fn wounded(self: anytype, s: Strike, blade: Blade, push: Push) bool {
 /// ROOTED: THE FEET ARE HELD, AND NOTHING ELSE IS (owner's law) — the state machine runs, the kit swings, the
 /// blow lands, and the body simply does not travel. Taken as a GATE at the end of a creature's own `update`
 /// rather than a guard at each `stepXZ`, because a creature grows movements and a per-site list forgets one.
-/// Y is left alone: `game.groundActor` owns it, and a held foe still stands on its own ground.
 pub const Grip = struct {
     was: rl.Vector3,
     on: bool,
@@ -484,10 +462,6 @@ pub const Grip = struct {
 /// The airborne guard IS the finishes-its-arc half of the law below. Three creatures hold unconditionally:
 /// the LEECHFLY because it is ALWAYS airborne and being rootable is its designed weakness, the OGRE and the
 /// ROOTED because neither can leave the ground at all. The bite is billed as a DRIP, never as a blow.
-///
-/// A JUMP IS THE ONE THING THE GRIP REFUSES OUTRIGHT (owner's law): a jump does not travel, it LEAVES THE
-/// EARTH, so it is gated where the move is CHOSEN — by `Grip.hold` the leap is committed, and denying its
-/// distance leaves a creature hopping inside a fist of roots. One already IN THE AIR keeps its arc.
 pub fn canLeap(root: *const combat.Root) bool {
     return !root.held();
 }
@@ -497,8 +471,6 @@ pub fn canLeap(root: *const combat.Root) bool {
 /// arrive here, because entering a death is the one thing nothing outside a creature knows how to do. So the
 /// breath stamps what it owes on the body and the body collects it on its own next frame, which is `Leash`'s
 /// arrangement and `justDied`'s in the other direction.
-///
-/// The two bites are ORed into ONE `killed`: whichever of them finished it, the creature dies once.
 pub fn grip(root: *combat.Root, chill: *combat.Chill, vit: *combat.Vitals, dt: f32, at: rl.Vector3) Grip {
     const on = root.held();
     const bitten = if (root.tick(dt)) |bite| vit.drip(bite) == .death else false;
@@ -565,16 +537,6 @@ pub const Particle = struct {
 /// above it does nothing — and the accumulator needs a CEILING, because one long frame (a rebuild, an
 /// alt-tab, a shader compile) otherwise dumps the whole pool in a single go. Past the cap the arrears are
 /// DROPPED rather than banked: a frame that long is a hitch, not a debt.
-///
-/// One copy, because the part a fourth would get wrong is the `n == cap` test that decides whether to drop
-/// them — and the third copy already had its ceiling as a bare `8` written twice in the one function.
-///
-/// The per-creature emitters are still off it, and the exemption is about the POOL rather than the rate: each
-/// one writes into a ring that is that creature's alone and a hitch costs it nothing but its own oldest
-/// motes. (It used to claim they ran at "5–26 a second", which was never true — `knight`'s ember gather
-/// reaches 240, near half `elemfx.POUR_RATE`. A band nobody can check is not an exemption.) What may NOT be
-/// off it is anything writing into a pool something else is also filling, which is why the shared
-/// `dissolveMotes` below is on it and the private ones are not.
 pub fn emitTicks(acc: *f32, dt: f32, rate: f32, cap: usize) usize {
     acc.* += dt * rate;
     var n: usize = 0;
@@ -624,12 +586,6 @@ pub fn emitParticle(pool: []Particle, head: *usize, p: rl.Vector3, vel: rl.Vecto
 }
 
 /// EVERY SLOT A BURST JUST WROTE, floored on the ground THAT burst came off rather than the pool owner's.
-/// For an emitter that fires clear of its owner: the hero's roots erupt under the FOE and his bolt bursts
-/// wherever it landed, and on sculpted ground neither settles on the earth under his boots. Take `head`
-/// before the emit loop and hand both ends over after it — the ring wraps, so the walk does too.
-/// ONE BURST MUST BE SMALLER THAN THE POOL: at exactly `pool.len` the head lands back where it started
-/// and the walk reads as empty. The hero's and the drop's pools assert their worst frame at comptime
-/// (`hero.FX_N`, `souls.PARTS`); a creature's is argued for in prose at its own declaration.
 pub fn floorBurst(pool: []Particle, from: usize, to: usize, floor: f32) void {
     var i = from;
     while (i != to) : (i = (i + 1) % pool.len) pool[i].floor = floor;
@@ -637,7 +593,6 @@ pub fn floorBurst(pool: []Particle, from: usize, to: usize, floor: f32) void {
 
 /// WHAT ONE BODY BRINGS TO ITS OWN DISSOLVE, and all it brings: how thick the cloud is, how far out and how
 /// far up the body it comes off — both in the creature's own scale — and the colour of the flakes it SHEDS.
-/// The gold motes are not here: gold is the world's, the same off everything that dies.
 pub const Dissolve = struct {
     rate: f32 = 54.0,
     spread: f32 = 0.85,
@@ -651,9 +606,6 @@ const DISS_FLAKE_R: f32 = 0.129;
 
 /// THE BODY COMING APART — the one copy, for every creature on the field. Gold motes rising out of it and
 /// flakes of the body falling back, both thinning as the fade closes.
-///
-/// It reads FIELDS only (`fade`, `scale`, `pos`, `fxAccum`, `fxRng`, `parts`, `fxHead`), which is what lets a
-/// shared emitter exist at all: a creature's own is private to its file.
 pub fn dissolveMotes(self: anytype, dt: f32, d: Dissolve) void {
     const thinning = 1.0 - 0.6 * self.fade;
     // THROUGH `emitTicks`, unlike the private per-creature emitters: this pool is filled by the shared pass
@@ -680,15 +632,6 @@ pub fn dissolveMotes(self: anytype, dt: f32, d: Dissolve) void {
 /// `game.markVigil` and read here as an OPT-IN, so the eleven creatures nothing raises are untouched and pay a
 /// comptime-false branch. `markWays`' arrangement (`@hasField`) and `blocksOf`'s, for their reason: gaining a
 /// behaviour is a FIELD on the creature and never an edit to the shared pass.
-///
-/// Named for what it does to the BODY and not for the creature doing it: the necromancer keeps its own `vigil`
-/// (`necro.Vigil`, what it is standing over), and one name for both had this probe matching the CASTER too —
-/// which is a type error here and would have been a silent behaviour change if the field types had agreed.
-///
-/// **AND IT IS THE MECHANIC, NOT A COURTESY.** A skeleton is 2.05 s from the killing blow to its last mote,
-/// which is not long enough to hold a raise with a readable tell inside — so the hold is what MAKES the
-/// window the raise happens in, and a body lying there NOT going to gold is the first thing the player is
-/// shown about this creature.
 fn stayed(self: anytype) bool {
     if (comptime @hasField(std.meta.Child(@TypeOf(self)), "heldOpen")) return self.heldOpen;
     return false;
@@ -714,13 +657,6 @@ pub fn dissipate(self: anytype, dt: f32, still: f32, diss: f32, d: Dissolve) voi
 /// take the total DOWN. The STATE it comes up in is not here and cannot be — a state machine's
 /// enum is private to its own file — so a creature's own `reraise` calls this and then says what it is doing
 /// next, which is the whole of what each one has to write.
-///
-/// **THE `justDied` EDGE IS CLEARED** (its own law: a ONE-FRAME flag). A corpse raised on the same frame it
-/// died would otherwise still be carrying the flag, and `trigger.Runtime`'s `deaths` counter — billed off that
-/// edge — would count a death for a body standing up.
-///
-/// **AND THE VIGIL IS RELEASED HERE.** The hold exists to keep the body available; the frame it is used, it is
-/// not a corpse any more, and a body left flagged would be a live creature nothing could ever dissolve.
 pub fn rekindle(self: anytype, frac: f32) void {
     self.vit.revive(frac);
     self.fade = 0;
@@ -748,7 +684,6 @@ pub fn tickParticles(pool: []Particle, dt: f32, floor: f32) void {
 }
 
 /// A ring of the last N segments the edge occupied, drawn as a triangle strip between consecutive samples.
-/// The only thing that makes a stroke aimed down the camera read at all: a level thrust foreshortens to a dot.
 const TrailSample = struct { a: rl.Vector3 = mathx.zero3, b: rl.Vector3 = mathx.zero3, age: f32 = mathx.LONG_AGO };
 
 /// Metres the point must travel in a frame to be worth a sample. A DEGENERACY GUARD, not a per-weapon dial:
@@ -794,21 +729,6 @@ pub fn Trail(comptime N: usize) type {
 }
 
 /// **THE BALL IS SUBDIVIDED BY HOW BIG IT IS, and that is the whole of what keeps this affordable.**
-/// `drawSphereEx` is immediate-mode and CPU-transformed, so every ring and slice is real work on the main
-/// thread. **COUNT IT OFF RAYLIB'S OWN LOOP, `(rings + 1) * slices * 6` VERTICES** (rmodels.c) — 112
-/// triangles / 336 pushes at a flat 6x8, not the 96/288 that `rings * slices` gives, and every tier below is
-/// sized against the real figure. The POUR is what made it bite: a stream holds ~530 motes at the end of a
-/// breath (`elemfx.POUR_RATE` over `combat.RIME_DUR`), where every other emitter here is a burst already
-/// dying. At 6x8 that was 178k pushes in one frame; every pour mote is under four centimetres and therefore
-/// in the tier below, so it is 51k.
-///
-/// A sphere's silhouette is the only thing a mote has, and how many sides it takes to read as round is a
-/// function of the PIXELS it covers, not of it being a sphere. Radius is the proxy: there is no camera in
-/// this call and threading one through 29 emitters to save a facet is the wrong trade. The bands below are
-/// sized so the shape only ever loses sides it was not spending on anything — the smallest tier is under
-/// four centimetres, which is a handful of pixels at any range the player meets it.
-///
-/// A cached unit sphere is still the one thing this cannot become: it would come out LIT.
 const PART_FINE_R: f32 = 0.10; // over this, the full ball — dust gouts, smoke, the big soft puffs
 const PART_MID_R: f32 = 0.04; // …and under THIS is a grain: frost, sparks, chips
 pub fn drawParticles(pool: []const Particle) void {
@@ -861,7 +781,6 @@ pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
     // uniform's state before this group.
     var lit: f32 = -1;
     // …and the rime coat rides the same fold (`combat.Chill.frac`: "how heavily the body is drawn frosted").
-    // `@hasField` because a chillable body opted in by carrying the field — `markWays`' rule.
     var iced: f32 = -1;
     for (foes) |*f| {
         if (!f.alive()) continue;
@@ -871,7 +790,7 @@ pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
                 sc.setFlash(want);
                 lit = want;
             }
-            if (@hasField(@TypeOf(f.*), "chill")) {
+            if (comptime @hasField(@TypeOf(f.*), "chill")) {
                 const cold = FROST_GAIN * f.chill.frac();
                 if (cold != iced) {
                     sc.setFrost(cold);
@@ -968,17 +887,6 @@ pub const Blade = struct {
 //
 // **ONE TABLE PER CREATURE, and it is the creature's own field** (`Leash`'s law, and `Root`'s: cross-cutting
 // state is EMBEDDED by the creature and STAMPED by the game).
-//
-// Elden Ring's model — a threat table with a decay on it:
-//  - **HITTING SOMETHING TAKES ITS ATTENTION.** Damage is the loudest term by a distance.
-//  - **…BUT ONLY FOR A WHILE** (`THREAT_HALFLIFE`), which is what makes a summon work at all: stop hitting
-//    and your claim fades back to whatever is still in its face.
-//  - **STANDING CLOSE IS ITSELF A CLAIM** — a LIVE proximity term, so backing off hands it away at once.
-//    This is the half that makes the spirit useful while he is drinking.
-//  - **A SUMMON PULLS HARDER THAN ITS NUMBERS** (`SPIRIT_TAUNT`) — ER's target-priority boost.
-//  - **AND IT DOES NOT DITHER.** The challenger must beat the incumbent by a MARGIN, or a creature between
-//    two equal claims re-picks every frame and spins on the spot.
-// The whole of it is two floats and a latch, per creature, ticked once a frame.
 
 /// WHO a creature has its eye on. Two today; a second spirit does not add a case, it adds a body behind
 /// `spirit` — the pack is capped at one (`combat.SUMMON_MAX`) and this is the same decision one layer up.
@@ -1289,7 +1197,6 @@ test "IT NEVER TURNS ROUND WHILE HE IS STILL IN ITS PATCH, and walking back in e
     const aggro: f32 = 20.0;
     const far = leashR(aggro) + 8.0;
     // The hero standing deep in the ground it guards, neither side having landed a blow: it fights on.
-    // THE PATCH IS A PLACE, not a separation.
     var toe = Leash{};
     var t: f32 = 0;
     while (t < LEASH_CALM * 3.0) : (t += 1.0 / 60.0) toe.tick(1.0 / 60.0, far, 1.2, aggro);

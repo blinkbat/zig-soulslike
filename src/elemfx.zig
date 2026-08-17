@@ -9,28 +9,6 @@ const rgba = mathx.rgba;
 const v3 = mathx.v3;
 
 /// THE ELEMENTS' PARTICLE LANGUAGE — one signature per `combat.Elem`, and THE SIGNATURE IS THE MOTION.
-///
-/// Colour alone cannot carry this. Half of what is thrown at the player arrives in front of a sunset, a
-/// bonfire or a violet sky, and a palette that separates cleanly in a swatch collapses on the render — the
-/// robe's own lesson (`necro.zig`), one system along. So each element is authored to move in a way none of
-/// the others can, and the four verbs below render THAT motion:
-///
-///   - **FIRE RISES.** Negative gravity, and it is the only one that leaves anything behind it — the smoke a
-///     mote cools into. Grows as it dies.
-///   - **COLD FALLS AND LIES ABOUT.** The longest life in the set by a factor of two, drifting DOWN, shrinking
-///     to nothing as it sublimates. What says COLD is that it is still there a second later.
-///   - **LIGHTNING DOES NOT TRAVEL AT ALL.** It is somewhere, and then it is not: the shortest life in the set
-///     by a factor of three, thrown out hard enough that the speed is spent before the eye finds it.
-///   - **CHAOS GOES THE WRONG WAY.** It is the one thing here that moves INWARD, against its own source, and
-///     the one thing that ignores gravity outright.
-///
-/// Told apart with the colour taken away, which is the test at the bottom of this file — because that is the
-/// state the player actually meets them in, three of them at once over a fire.
-///
-/// **THESE ARE LITERAL SCREEN VALUES, NOT ALBEDOS** (`delver.CLOD` against `SOIL`, `necro.RIME` against
-/// `RIME_ALB`). Everything here is drawn UNLIT, so a colour authored off a mesh palette comes back as a
-/// scatter of black dots hanging in the air. Each one below is taken from the emitter that already proved it
-/// on a render rather than re-picked by eye.
 pub const Sig = struct {
     /// The hot centre, and what a `gather` is made of.
     core: rl.Color,
@@ -193,11 +171,6 @@ pub const POUR_CAP: usize = foe.emitCap(POUR_RATE);
 /// signatures' `r0` is sized for a couple of dozen motes lying about where each one has to read on its own
 /// (the necromancer's rune ring); a pour is the opposite case — hundreds at once — and at the table's size it
 /// comes out as a column of soap bubbles. Fine grains, and the DENSITY is what reads.
-///
-/// It lives HERE and not at the call site for this file's own reason — a caller picks the VERB and the
-/// ELEMENT, never a colour, a lifetime, a gravity or a size. As `hero.BREATH_GRAIN` passed in through
-/// `scale` it was the hero's alone, so the EDITOR'S BENCH drew the same stream 60% coarser than the fight
-/// did — and the bench is where this is tuned (`POUR_RATE`'s own claim, and AGENTS.md's).
 const POUR_GRAIN: f32 = 0.62;
 
 /// **AND EVERY MOTE IN ONE IS A DIFFERENT SIZE.** A pour whose motes are all `r0` is the house style's own
@@ -212,11 +185,6 @@ const POUR_SIZE_HI: f32 = 1.55;
 /// drift of dots that happens to start near the emitter; what says a jet is LEAVING something is the dense
 /// near-still knot it leaves FROM. It is here and not at the call site for the file's own reason: a caller
 /// picks the VERB and the ELEMENT, never a colour, a lifetime or a gravity.
-///
-/// **THE CADENCE IS PER CALL, NOT PER STREAM** — it counts `pour`'s own `i`, which starts again at 0 every
-/// call. Both callers today pour ONE mote per frame-tick (`hero.pourBreath`, `objview`'s bench), so every
-/// mote gets a knot and this divides nothing; that is what is on screen and what was tuned. Anyone sizing a
-/// pool asks `pourCount` for the CALL they actually make.
 const POUR_ROOT_EVERY: usize = 4;
 const POUR_ROOT_R: f32 = 1.6;
 const POUR_ROOT_LIFE_LO: f32 = 0.05;

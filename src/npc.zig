@@ -20,17 +20,6 @@ const lerpF = mathx.lerpF;
 const setLocal = heromod.setHumanoid;
 
 // THE WANDERER — the first person in this world who is not trying to kill you.
-//
-// A living human, so it is the HERO'S 18-BONE SCAFFOLD (`heromod.restHumanoid`) and the hero's own
-// `advanceGait`/`legChain`: never a bespoke walk. Its own is the upper body, the kit and the idle set. No
-// `Vitals`, no `Leash`, no blade — it must not grow the foe contract by accident.
-// **A MAN STANDING STILL IS THE HARDEST THING TO ANIMATE.** Three clocks run at rates that never line up:
-// the breath, a WEIGHT SHIFT from one leg to the other, and a slow head drift — so the loop never shows.
-// **THE STAFF IS THE OTHER HALF OF THE GAIT.** A walking staff plants with the OPPOSITE foot, so the right
-// arm is not free to swing: it drives the pole into the ground once a stride while the left arm swings at
-// full amplitude. Both arms swinging with the staff floating is what reads as a prop glued to a hand.
-// **VARIATION IS BETWEEN THE INSTANCES, NOT ALONG ONE**: the two HEAD variants — hood up, hood back — are
-// what makes two wanderers two people, and everything else varies through the POSE off `seed`.
 
 const H: f32 = heromod.H;
 const N = heromod.N;
@@ -123,10 +112,6 @@ const A_BREATH = 2.1; // deg of chest rise
 /// THE WEIGHT SHIFT IS A PELVIC LIST, NOT A SLIDE. Translating the pelvis sideways carries both hips with it
 /// and `legChain` solves each leg straight down from its own hip, so both feet travel too. Rolling the pelvis
 /// about its own joint raises one hip and drops the other, and leaves the mean where it was.
-///
-/// SMALL, AND ITS DROP PAID BACK (see `listLift`). At rest this rig's leg is EXACTLY straight — pelvis
-/// 0.530·H, ankle 0.039·H, thigh + shank 0.491·H — a pelvis a millimetre low puts the sole through the
-/// floor, and there is no foot IK to catch it.
 const A_LIST = 1.3; // deg
 const A_DRIFT_YAW = 7.5; // deg the head wanders
 const A_DRIFT_PITCH = 3.0;
@@ -267,7 +252,6 @@ pub const Wanderer = struct {
 
     /// WHERE HIS FACE IS, in world, off the POSED skull bone rather than a height above his feet — the
     /// ogre's `clubLowWorld` law, and the reason the portrait tracks a head that nods, cranes and turns.
-    /// The joint sits at the base of the skull, so the offset carries it up onto the middle of the face.
     pub fn facePoint(self: *const Wanderer) rl.Vector3 {
         return rl.math.vector3Transform(FACE_AT, self.xf[SKULL]);
     }

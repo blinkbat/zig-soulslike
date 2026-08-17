@@ -13,18 +13,6 @@ const rgba = mathx.rgba;
 const v3 = mathx.v3;
 
 // A CONVERSATION, and the panel it is read off.
-//
-// The tree is map data; this is the walk through it. One node is on screen at a time: what is said, and
-// either the lines you may answer with or a Continue. A node's `act:` fires when it is SHOWN and a choice's
-// `gets:` when it is PICKED, both straight through `trigger.Runtime.apply` — an action means the same thing
-// whether a trigger or an answer fired it.
-//
-// **A GATE HIDES A LINE, IT DOES NOT GREY IT.** bg2's editor carries a `disabledMessage` for a refused
-// choice; nothing here has one to show, and a greyed row with no reason is worse than a row that was never
-// offered. When there is a reason to give, that is the day the gate grows a message.
-//
-// **YOU MAY NOT WALK OUT MID-SENTENCE.** There is no cancel: a conversation is left through one of its own
-// endings, which is what lets `talked` mean "has heard this" rather than "has seen the first line of it".
 
 /// How long the panel takes to come up…
 const RAISE: f32 = 0.14;
@@ -53,23 +41,10 @@ const NAME = uiart.GILT;
 const VEIL: u8 = 132;
 
 // THE PORTRAIT — the man you are talking to, photographed live.
-//
-// **IT IS THE ACTUAL 3D MODEL, ZOOMED TO THE HEAD, THREE-QUARTERS ON** (owner). Not drawn art: the rig is
-// rendered off-screen into a target and blitted into the panel (`book.drawPortrait`'s trick), so it cannot
-// go stale and the head that cranes round to look at you cranes round in the panel.
-//
-// **THE TURNTABLE HANGS OFF HIS FACING, NEVER THE WORLD.** He is photographed three-quarters from the front
-// wherever he happens to be standing, so the framing does not change because the conversation happened to
-// start on the other side of a rock.
-/// **SMALLER THAN A THIRD OF THE PLATE** (owner: the portraits are too big). At 320 the head was competing
-/// with the prose it is supposed to be attributing — a portrait names the speaker, it is not the subject of
-/// the panel.
 const PORT_W: i32 = 176;
 const PORT_H: i32 = 200;
 /// Degrees off his own front. Three-quarters: enough to give the head a near side and a far side — a dead-on
 /// face is a passport photo and reads flat on a low-poly head with no shading break in it.
-/// …and none of the four is authored here, because the shot that proves this picture has to frame it the
-/// same way or it is signing off a picture nobody sees. The ANGLE is the house's, the DISTANCE the speaker's.
 const PORT_YAW = hud.PORTRAIT_YAW;
 const PORT_PITCH = hud.PORTRAIT_PITCH;
 const PORT_DIST = npcmod.PORTRAIT_DIST;
@@ -230,9 +205,6 @@ pub const Session = struct {
 
     /// THE PANEL. Drawn after the retro blit like the rest of the HUD, so these colours are literal screen
     /// values and the author-dark rule does not apply.
-    ///
-    /// **IT IS SIZED TO WHAT IT HOLDS, and it grows UPWARD off a fixed bottom edge.** A panel pinned to a
-    /// fraction of the screen is half empty on a two-line exchange and cramped on a long one.
     pub fn draw(self: *const Session, m: *const wf.Map, rt: *const trigger.Runtime, w: trigger.World, port: ?Portrait) void {
         if (!self.active()) return;
         const nd = self.nodeOf(m) orelse return;
@@ -363,8 +335,6 @@ fn drawPortrait(p: Portrait, dx: i32, dy: i32, dw: i32, dh: i32) void {
     };
     // THE CAMERA AND THE TARGET ARE `hud.livePortrait`'s — three callers photograph a body now (the book's
     // doll, this, the spirit toast) and three copies of one camera is three things to retune apart.
-    // THREE-QUARTERS OFF HIS OWN FRONT: the camera sits out along his facing and looks back, so this is his
-    // face however the world happens to be oriented.
     hud.livePortrait(.{
         .scene = p.scene,
         .focus = p.face,

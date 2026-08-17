@@ -49,15 +49,12 @@ const SHADOW_BOX: f32 = gfx.SHADOW_ORTHO * HALF_DIAG;
 const LIGHT_REACH: f32 = 90.0;
 
 // THE OCCLUDERS — the props the camera has to see the hero THROUGH, thinned by the shader's sieve.
-/// How many instances the fade can have IN FLIGHT — thinning plus easing back, so larger than any sight
-/// line needs. Full, and the THINNEST ASK TAKES A SLOT OFF SOMETHING STILL SOLID (`wantFade`).
 pub const OCCL_MAX = 64;
 /// Seconds to reach the thinness the geometry asks for, and to come back. OUT IS SLOWER on purpose: the eye
 /// forgives a lag in getting out of the way far more readily than a pop into it.
 const OCCL_IN: f32 = 0.16;
 const OCCL_OUT: f32 = 0.34;
 /// Where a fade is near enough to solid to go down the opaque path and write depth with everything else.
-/// Below it, `drawThinned` owns it.
 const FADE_SOLID: f32 = 0.999;
 // Raw GL factors for `drawThinned`'s depth-only pass; rlgl takes them unwrapped.
 const GL_ZERO: i32 = 0;
@@ -130,8 +127,6 @@ pub const WADE_MAX: f32 = 1.37;
 pub const HERO_R_PIN: f32 = 0.36;
 
 /// …AND THE COLOUR IS THE ONLY WARNING HE GETS, so it is DERIVED from that wall rather than set beside it.
-/// Dug depth in metres → 0..1 of the shallow→deep ramp, reaching the deep tone exactly at `WADE_MAX`, so the
-/// darkest water on the map is precisely the water he cannot walk into.
 fn digTone(metres: f32) f32 {
     return mathx.clampF(metres / WADE_MAX, 0, 1);
 }
@@ -148,9 +143,6 @@ var scratchOut: [wf.WATER_CELLS]f32 = undefined;
 pub const WATER_FACET: f32 = 3.6;
 
 /// **HOW FAR THIS SHAPE MOVES THE WATERLINE AT THIS POINT, in metres**, positive pushing the water outward.
-///
-/// **NOTHING UNDER ABOUT 0.7 m DOES ANYTHING.** The distance transform is quantised to whole cells, so no
-/// cell is nearer the line than half a cell (1.25 m here) and a smaller warp can never flip one.
 fn coastWarp(e: wf.Edge, x: f32, z: f32) f32 {
     return switch (e) {
         // A shore you cannot find the edge of. No warp — the width is `coastBand`'s say, not this one's.
@@ -204,10 +196,6 @@ fn coastBand(e: wf.Edge) f32 {
 
 /// **THE COAST IS FACETED, NOT SMOOTHED** (owner: more of a low poly look). Resampled onto a TRIANGULAR
 /// lattice the field is piecewise PLANAR, and a planar contour inside a triangle is a STRAIGHT LINE.
-///
-/// **BAKED INTO THE FIELD, NOT DONE IN THE SHADER.** One field feeds the sheet, the wet sand and
-/// `wadeDepth`, so faceting in the fragment shader is a coast you SEE in one place and WALK INTO in
-/// another, up to half a facet apart.
 fn facetWater(field: *[wf.WATER_CELLS]u8, half: f32) void {
     const N = wf.WATER_N;
     if (!(half > 0)) return;
@@ -758,8 +746,6 @@ pub const Env = struct {
                 const byShore = mathx.clampF(sd / gfx.WATER_DEEP_AT, 0, 1);
                 // How far inside the shore, against HOW FAR DOWN THE GROUND WAS DUG, whichever reads deeper:
                 // a hole cut hard against the bank is deep water at once.
-                // OFF THE **MAP**, NOT `self.heightField`: `uploadWater` runs BEFORE `uploadHeight` at both
-                // call sites, so env's own copy is still the last world's.
                 const dug = WATER_Y - (GROUND_Y + m.heightAt(edge(i % N, m.half, cell), edge(i / N, m.half, cell)));
                 break :blk shoreF + @max(byShore, digTone(dug)) * (255.0 - shoreF);
             } else blk: {
@@ -834,10 +820,6 @@ pub const Env = struct {
     /// Sets how solid each prop in the eye→hero line OUGHT to be (`pr.fadeTo`); `easeFades` walks what
     /// actually draws toward it. The target is a pure function of the sight line — only the CATCHING UP is
     /// remembered.
-    ///
-    /// WALKS `stx` ONLY, so flora never thins. ~270 props run `thinFor` and ~600 `coverFrac` a frame. A
-    /// distance-to-the-sight-line reject in front of it is DELIBERATELY absent: it would drift against
-    /// `coverFrac`'s own.
     pub fn markOccluders(self: *Env, eye: rl.Vector3, at: rl.Vector3, dt: f32) void {
         // Everything in flight is asked to come BACK; the scan below re-asks for whatever is still in the way.
         for (self.occl[0..self.noccl]) |pi| self.props[pi].fadeTo = 1;
@@ -868,9 +850,6 @@ pub const Env = struct {
 
     /// Ask one instance to be `to` solid, enlisting it if it is not in flight already. Two parts of the same
     /// prop can ask (an arch's piers are separate colliders), and the THINNER ask wins.
-    ///
-    /// FULL, AND THE SLOT COMES OFF SOMETHING STILL SOLID. An entry already off solid cannot be dropped —
-    /// nothing outside this list is ticked, so it would strand thin or JUMP.
     fn wantFade(self: *Env, pi: u32, to: f32) void {
         var worst: ?usize = null;
         for (self.occl[0..self.noccl], 0..) |q, i| {
@@ -1093,10 +1072,6 @@ pub const Env = struct {
     /// what replaces the riser rule is his own FEET (`footY`, a WORLD height): ground standing higher than
     /// they are is a wall. Without it a jump at a cliff lands inside its footprint and `game.groundActor`
     /// hands him the climb.
-    ///
-    /// PLUS THE WALK'S OWN ALLOWANCE: on the takeoff frame his feet are still at the ground he left, so a bare
-    /// comparison stalls a jump against the gentle rise that same jump exists to clear. A jump may never travel
-    /// WORSE than a step. Deep water is not asked here — `deepRefused` is that rule.
     pub fn flyStep(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32, footY: f32) rl.Vector3 {
         const to = v3(from.x + dir.x * dist, from.y, from.z + dir.z * dist);
         if (!self.heightAny or dist <= 0) return to;
@@ -1180,10 +1155,6 @@ pub const Env = struct {
     }
 
     /// DEEP WATER IS A WALL — ONE rule with two callers, `walkStep` and `game.gateHeroWater`.
-    ///
-    /// A refusal of its own rather than a clause in `stepOk`: you walk DOWN into a basin, and the rise rule
-    /// lets every downhill step through by design. GETTING OUT IS NEVER HELD — only a move coming out
-    /// DEEPER is refused, or anything that leapt in is trapped on a flat bottom.
     pub fn deepRefused(self: *const Env, fromX: f32, fromZ: f32, toX: f32, toZ: f32) bool {
         const deep = self.wadeDepth(toX, toZ);
         return deep > WADE_MAX and deep > self.wadeDepth(fromX, fromZ);
@@ -1305,7 +1276,6 @@ pub const Env = struct {
     }
     /// **HOW A TAKEN PICKUP LEAVES THE WORLD.** `i` indexes the pickup list, which is the same order
     /// `pickupSites` handed out — both walk `pickupItems`, so the runtime glow and its prop are the same slot.
-    /// `scale` carries the shrink and `gone` ends it, so the picture is the fade and not a blink.
     pub fn setPickupDraw(self: *Env, i: usize, left: f32, gone: bool) void {
         if (i >= self.npickups) return;
         const pr = &self.props[self.pickupItems[i]];
@@ -1427,8 +1397,6 @@ pub const Env = struct {
     /// AFTER EVERY OPAQUE THING AND BACK TO FRONT. A thinned prop draws with the depth MASK OFF, so in cell
     /// order the hero composites at FULL opacity straight over it — an instant reveal wearing a fade. Drawn
     /// last, the tree's alpha mattes HIM, so the reveal IS the ramp.
-    ///
-    /// LIT PASS ONLY — the depth shader has no alpha, and a see-through tree still blocks the sun.
     pub fn drawThinned(self: *Env, view: *const View) void {
         var order: [OCCL_MAX]u32 = undefined;
         var far: [OCCL_MAX]f32 = undefined;
@@ -1468,12 +1436,6 @@ pub const Env = struct {
     }
 
     /// This frame's torch/fire lights: the gfx.MAX_LIGHTS nearest the camera whose pool is actually ON SCREEN.
-    ///
-    /// `reserved` are lights that are NOT in the world — the wand in his hand (`hero.wandLight`), a
-    /// necromancer's rune ring (`necro.Rite.markLights`). They get RESERVED slots rather than joining the
-    /// contest, so a brazier cannot evict the spell he just cast. **NEVER MORE THAN HALF THE RACK**, or a
-    /// field of casters puts out every fire in the world; past the half the caller's ORDER decides, which
-    /// is why it hands them over most-important first.
     pub fn uploadLights(self: *const Env, scene: *gfx.Scene, view: *const View, t: f32, reserved: []const gfx.Light) void {
         comptime std.debug.assert(gfx.MAX_LIGHTS > 1); // the reserved slots have to leave the world at least one
         var picked: [gfx.MAX_LIGHTS]gfx.Light = undefined;
@@ -2823,7 +2785,6 @@ test "replaying the SHIPPED map produces a stable world" {
 
 test "EVERY SHIPPED MAP LOADS AND MATERIALIZES, not just the one the game starts on" {
     // An op renamed under `02`/`03` otherwise surfaces as a PANIC in the editor's Open dialog months later.
-    // WALKED OFF THE DIRECTORY, not off a list, which silently stops covering the map you add next.
     var dir = std.fs.cwd().openDir(wf.DIR, .{ .iterate = true }) catch return error.SkipZigTest;
     defer dir.close();
     const m = try std.testing.allocator.create(wf.Map);

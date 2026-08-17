@@ -163,8 +163,6 @@ fn standHero(g: *Game, x: f32, z: f32, faceYaw: f32) void {
 /// own copy of this: `hero.respawnNow` starts a pose CROSS-FADE against a world-space snapshot, `--shot` runs no
 /// loop to advance it, and one update leaves him blended toward that snapshot — drawn back at the map's spawn,
 /// out of frame. Settled out here, then planted on the ground that is actually there (`mathx.ground` is y = 0).
-///
-/// ONE copy, because it is subtle, it is silent when it is wrong, and it was already written twice.
 fn standSettled(g: *Game, x: f32, z: f32, faceYaw: f32) void {
     standHero(g, x, z, faceYaw);
     var k: i32 = 0;
@@ -1133,8 +1131,6 @@ pub fn runShots(g: *Game) void {
         // THE BODY GOING (`foe.dissipate`) — caught well past `DEATH_DUR` so the bone-dust and the bonfire
         // motes are up, which is the whole point of the frame: this is the one skeleton that used to fade
         // out into nothing while its twin shed bone.
-        // Off the column it spawns beside — a corpse is a low subject, and architecture is `solid` and never
-        // thins to let the lens past it. Open ground, the hero beside it for the shadow box, looking DOWN.
         const ac = mathx.ground(-26.0, 30.0);
         a.* = archermod.Archer.spawn(ac, 0, 1.0, 0.0);
         a.debugKill();
@@ -1253,8 +1249,6 @@ pub fn runShots(g: *Game) void {
 
         {
             // THE RETURN — judged from above like the swipe (a lateral arc foreshortens to nothing head-on).
-            // debugBackswipe enters .backwind at t=0: the re-cock ends / the return begins at f22, and its
-            // blow re-crosses his centre at f28.
             const ahead = v3(oc.x, 0, oc.z + 3.4); // dead ahead, mid-band — where a chained hero stands
             o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
             o.debugBackswipe();
@@ -1514,7 +1508,6 @@ pub fn runShots(g: *Game) void {
             bonfireShoot(g, name);
         }
         // Staged with the warrior arm two deep so ring 1 has opened, and carrying enough to afford the next.
-        // ZOOMED for the third: the zoom re-centres on the cursor, which a fitted shot cannot show.
         const treeSouls = g.hero.souls.total;
         _ = g.tree.take(ptree.armFirst(.warrior), 1_000_000);
         _ = g.tree.take(ptree.armFirst(.warrior) + 1, 1_000_000);
@@ -1593,8 +1586,6 @@ pub fn runShots(g: *Game) void {
         }
 
         // DEEP WATER: the wall (`env.WADE_MAX`) and the tone the DIG darkens the sheet to (`env.digTone`).
-        // A world change wants a steep overhead, which is the only framing a basin's SHAPE reads in; the bank
-        // shot is at the sun's own bearing (~53) so the shallow→deep ramp is lit rather than in its own shade.
         standHero(g, 46.0, -24.0, std.math.pi);
         shootAt(g, "shots/90a_map_deepwater.png", mathx.ground(46, -24), 180, 1.02, 55.0);
         standHero(g, 44.0, -22.0, mathx.radians(200));
@@ -1608,7 +1599,6 @@ pub fn runShots(g: *Game) void {
         g.menu.stats = false;
 
         // THE OCCLUDER FADE: him seen THROUGH a great tree, which is the only framing that shows it.
-        // Twice, since the retro pass is where most of the game is actually looked at.
         const trunk = g.env.nearestFading(v3(-118.0, 0, -14.0), 600.0);
         must(trunk != null, "no fadeable prop in the world to stand behind");
         const tp = trunk.?;
@@ -1664,7 +1654,6 @@ pub fn runShots(g: *Game) void {
     // THE BOOT SCREEN, framed the way the LOOP frames it (`game.BOOT_*`) — the card is only half of what is
     // being judged and the other half is what stands behind it. Sun over the shoulder at yaw 53, or the
     // world it is drawn over is its own shadow. NO HUD: nothing has been started, so there are no bars.
-    // Both states of the Load row, because the greyed one is a fresh install's first screen.
     g.rig.yaw = mathx.radians(53);
     g.rig.pitch = game.BOOT_PITCH;
     g.rig.dist = game.BOOT_DIST;
@@ -1757,8 +1746,6 @@ pub fn runShots(g: *Game) void {
 
 /// THE SOUND FILTER RACK, which now lives in the EDITOR beside the jukebox (it moved out of the game's
 /// debug menu — it is an authoring tool, and the one place a voice can be played on demand is that list).
-/// Photographed because the panel is the widest modal in the editor and a third column of eleven sliders
-/// is exactly the layout that can outgrow its box.
 fn soundFilterShots(g: *Game) void {
     const was = g.menu.screen;
     const wasCursor = g.menu.cursor;
@@ -1768,8 +1755,6 @@ fn soundFilterShots(g: *Game) void {
     editorJukeShot(g, "shots/115a_sound_rack.png");
 
     // …and put the bank back exactly as it was — the harness must not leave a filtered build behind.
-    // `resetFx`, NOT `allFxOff`: the house sound IS a rack (worn tape), so turning everything off would
-    // leave the build quieter and cleaner than it launched rather than restoring it.
     sfx.resetFx(.combat);
     g.menu.screen = was;
     g.menu.cursor = wasCursor;
@@ -1907,8 +1892,6 @@ fn warriorShots(g: *Game) void {
 
     // THE MACE, in FOUR beats. It was retuned from "too fast" to a real overarm blow, and a swing is a
     // shape over TIME — the gather is the part a single frame provably cannot show.
-    // AIMED OFF THE MOVE'S OWN CLOCK, never off literal seconds: retune the swing and these four still
-    // photograph the four beats they are named after.
     const mc = warriormod.moveClock(.shieldman, 0);
     const maceBeats = [_]struct { name: [:0]const u8, at: f32 }{
         .{ .name = "shots/113d_mace_gather.png", .at = mc.wind * 0.22 }, // the sink back: anticipation
@@ -2167,11 +2150,6 @@ fn delverShots(g: *Game) void {
         }
     }.secs;
     // **STANDING HIM TAKES MORE THAN ONE FRAME, and that is why he was missing from every frame here.**
-    // `poisonShots` ends on `hero.respawnNow()`, which starts a POSE CROSS-FADE (`hero.startXfade`); the
-    // blend runs against a world-space SNAPSHOT taken at the spawn point, and `--shot` runs no loop to
-    // advance it. One `standHero` update leaves him mostly blended toward that snapshot — drawn back at
-    // the map's spawn, sixty metres out of frame. Settled out here, and planted on the ground that is
-    // actually there (`mathx.ground` is y = 0 and this patch is sculpted).
     const stand = standSettled; // ONE copy now — see its own note for why a single update is not enough
 
     // THE STANDING PORTRAIT. A low body, so the lens comes down to it and in close, or it is a dark smudge
@@ -2230,8 +2208,6 @@ fn delverShots(g: *Game) void {
     // THE PLOUGH'S TELL, and it is the one frame that has to be told apart from the surge's: this ridge is
     // STRETCHED down a heading where that one is a dome standing still. Shot down onto it from the same
     // height the mound was, so the two frames can be laid side by side.
-    // A LINE ONLY READS AS A LINE FROM THE SIDE. Down its own axis the ridge is a dome again and the man at
-    // the end of it is the same silhouette, which is what the first pass of both these frames photographed.
     spawn(d, sc, faceCam);
     d.debugPlough();
     run(d, PLOUGH_TELL_AT, far);
@@ -2373,10 +2349,6 @@ fn necroShots(g: *Game) void {
     shootAt(g, "shots/123g_necro_burst.png", v3(g.hero.pos.x, g.hero.pos.y + 0.5, g.hero.pos.z), LIT_YAW, 0.50, 10.0);
 
     // **AND THE SAME TWO AT NIGHT, WHICH IS WHERE THE MARK'S LIGHT IS THE WHOLE PICTURE** (`necro.SIGIL_LIT`).
-    // The anchor hour is golden and the sun washes a 3.8 m pool to nothing, so the glow is a thing the rest of
-    // this strip structurally cannot judge — under a night sky it is the difference between a ring of dots and
-    // a piece of ground that has been claimed. Pinned to `dayShots`' own night hour rather than a number
-    // beside it, so the two strips cannot disagree about what night is.
     game.pinHourForShot(g, NIGHT_HOUR);
     spawn(k, sc, faceCam);
     stand(g, sc.x, sc.z - 9.0, 0);
@@ -2423,12 +2395,6 @@ fn pickupShots(g: *Game) void {
     // **THE FIRST-TIME CARD.** Fed by hand rather than by pressing the prompt: `--shot` runs no loop, so the
     // interact would need the whole input path — and what this frame is testing is the CARD, which is a pure
     // function of the queue.
-    // `shoot` alone photographs the world with no card on it — the card is drawn in the loop's own held
-    // branch, which `--shot` never runs. `bonfireShoot`'s arrangement exactly.
-    // …and THREE of the one kind, because that is the case with a picture to get wrong: one card saying "x3"
-    // and no toast under it, rather than a card plus an "x2" notice about the same handful.
-    // …and a KNOWN kind out of the SAME chest, which is the multi-item case that put a card and a toast on
-    // screen together (owner). The toast is made and held: this frame must show the card and NOTHING beside it.
     game.awardForShot(g, .grave_warbow, .first);
     game.awardForShot(g, .grave_warbow, .again);
     game.awardForShot(g, .grave_warbow, .again);
@@ -2827,7 +2793,6 @@ fn leechShots(g: *Game) void {
     shootAt(g, "shots/117d_leech_head.png", f.lockPoint(), LIT_YAW + 30, 0.02, 1.3);
 
     // WITH THE HERO IN FRAME: a drain photographed without the man it is taken from is an insect hovering.
-    // ACROSS the pair, not down the line of them, or the man stands in front of the insect.
     const beat = struct {
         fn at(gg: *Game, fly: *leechmod.Leechfly, home: rl.Vector3, face: f32, clock: f32, name: [:0]const u8, toward: rl.Vector3, dist: f32) void {
             fly.* = leechmod.Leechfly.spawn(home, face, 1.0, 0.18);
@@ -3261,9 +3226,6 @@ fn talkShot(g: *Game, name: [:0]const u8, at: rl.Vector3, frames: i32, in: dialo
 }
 
 // THE EDITOR — its whole job is legibility, and none of that can be judged from the game shots.
-/// ONE EDITOR FRAME: the world behind it, the chrome over it, shutter. Written out per site it is one more
-/// place to photograph a room without its overlay — a shot of the editor with no editor in it, which
-/// nothing refuses.
 fn editorSnap(g: *Game, name: [:0]const u8) void {
     drawScene(g);
     editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
@@ -3283,7 +3245,6 @@ fn editorJukeShot(g: *Game, name: [:0]const u8) void {
 }
 
 /// THE TWO PANELS THAT REACH WHAT NO BRUSH COULD — the map's own size/runway/rim, and what a zone grows.
-/// Both are modals with no gizmo behind them, so a shot is the only thing that says they lay out at all.
 fn editorGapShots(g: *Game) void {
     g.editor.enter(mathx.ground(0, -66));
     g.editor.applyCamForShot();
@@ -3429,11 +3390,6 @@ fn editorShots(g: *Game) void {
 }
 
 /// Eight frames of the SAME view under eight hours, so what is judged is the ARC and not any one sky.
-/// Anything that moves between two neighbours other than the light is a bug.
-///
-/// SHOT INTO THE SUN'S QUARTER, NOT WITH IT: here the SKY is the subject, and the bank, the aureole and the
-/// disc all live in the quarter the sun is in. The hero stands in it as the value reference — his albedo is
-/// the one that is known, so "is this hour too dark" is a question about him and not about the grass.
 fn dayShots(g: *Game) void {
     const at = mathx.ground(0, -14.0);
     standHero(g, at.x, at.z, mathx.radians(game.daynight.SHOT_HOUR * 0)); // facing +Z, square to the lens
@@ -3589,7 +3545,6 @@ fn wolfShots(g: *Game) void {
     shootAt(g, "shots/135_wolf_gallop.png", at, 90, 0.05, 3.8);
     // Judge the gather on the PAWS: it sinks the body and FOLDS the legs, so the feet stay where the animal
     // was standing. Read the other way round it reached past its own span and stood 20 cm into the earth.
-    // Staged BEFORE the hop's own lift begins (55% into the wind), or it has already left the ground.
     game.poseWolfGatherForShot(g, 0.5);
     shootAt(g, "shots/135b_wolf_gather.png", at, 90, 0.05, 3.4);
     game.poseWolfForShot(g, 0, 0);

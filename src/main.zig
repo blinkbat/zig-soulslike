@@ -50,9 +50,6 @@ fn runBake(alloc: std.mem.Allocator) !void {
 }
 
 // EVERY module in `src/` is named here, and `build.zig`'s `checkTestRoster` FAILS THE BUILD if one is not.
-// A module missing from this block compiles, ships, and reports "all tests passed" while every test it
-// carries goes unrun — `shade.zig` went in with seventeen of them and the suite total did not move. Naming a
-// module that would have been pulled in anyway costs nothing; leaving one out costs the whole file.
 test {
     _ = @import("hero.zig");
     _ = @import("anim.zig"); // THE KEYED-POSE KERNEL — keys, springs, the bank; every rig's attacks run on it

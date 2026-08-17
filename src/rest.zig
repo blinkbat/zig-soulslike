@@ -29,16 +29,9 @@ const SEAT_TURN: f32 = 0.20;
 // menu is a list down the LEFT — the shape every bonfire in the genre has. GETTING UP IS A ROW ON THAT LIST
 // **OR BACK** (owner's call), and never "any button": what the old any-button rule guaranteed was a press
 // that both chose a row and stood him up, and Back is the one button that can never also pick.
-//
-// THE FIRE DOES NOT TOUCH THE CLOCK ON ITS OWN (owner's call). Sitting down used to pull the whole world
-// into a local dusk whatever hour it was; the hour you walked in at is the hour you sit in, and the two
-// `Rest until…` rows are the only thing at a fire that moves the light.
 
 /// What the fire offers. Two rows for now, and Leave is deliberately the LAST of them: it is the one you
 /// arrive at by pushing down, which is where a hand that means to leave already is.
-///
-/// NO GLOSS UNDER THEM (owner's call). "Level Up" and "Leave Bonfire" are two verbs that say exactly what
-/// they do, and a sentence explaining a verb is a sentence nobody reads twice.
 pub const Row = enum {
     level,
     /// **WAIT OUT THE CLOCK.** A bonfire is where you stop, so it is the one place that may spend HOURS: the
@@ -185,8 +178,6 @@ pub const Rest = struct {
     }
 
     /// IS THE MENU TAKING INPUT — sat down, AND far enough through the fade for the list to be readable.
-    /// Live from the first frame of `.sit`, a press aimed at the world before the screen went black picks a
-    /// row nobody has seen yet; the chrome's own alpha is `1 - fade()`, so this is the same clock it draws on.
     pub fn listening(self: *const Rest) bool {
         return self.phase == .sit and self.fade() <= 0.35;
     }
@@ -404,8 +395,6 @@ fn drawList(self: *const Rest, a: f32) void {
 }
 
 /// THE WHEEL, and at a fire it is SPENDABLE — this is the one screen in the game that can charge him souls.
-/// It takes the whole card rather than the left strip: the tree is a picture, and a picture in a third of
-/// the screen is one you cannot find a node on.
 fn drawTree(self: *const Rest, t: *const Tree, souls: u32, a: f32) void {
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();

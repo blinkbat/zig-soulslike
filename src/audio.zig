@@ -2020,7 +2020,6 @@ const BANK = [NV]Row{
     .{ .id = .shroom_die, .make = mkShroomDie, .gain = battle(0.56), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 30 },
     // THE DELVER. Its whole family is EARTH — grit and a low body, never a ring — and the CHURN is texture:
     // under the floor, and thinned in count by `delver.CHURN_EVERY`, because it repeats through a hold.
-    // It still carries further than anything else it does: it is how you find a mound you cannot see.
     .{ .id = .delver_churn, .make = mkDelverChurn, .gain = battle(0.30), .mix = .combat, .jit = 0.16, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 34 },
     .{ .id = .delver_dig, .make = mkDelverDig, .gain = battle(0.54), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 3, .poly = 3, .reach = 30 },
     .{ .id = .delver_claw, .make = mkDelverClaw, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.18, .vars = 3, .poly = 3, .reach = 30 },
@@ -2336,7 +2335,6 @@ fn rebakeMix(m: Submix) void {
         if (BANK[idx].mix == m) {
             dropRow(idx);
             // TAKE 0 ONLY, and `pump` walks the variants back in — the same two-stage build `init` uses.
-            // Whole, this was 342 takes of synthesis inside one frame every time a combat dial settled.
             bakeTake(@enumFromInt(f.value), idx);
         }
     }
@@ -2359,7 +2357,6 @@ fn redressFire() void {
 }
 
 /// ENOUGH OF THE BANK TO PLAY, and no more: variant 0 of every row, ~112 takes of the 407 the bank wants.
-/// `pump` brings the rest in behind the menu. A row with one take still SOUNDS; what it lacks is variety.
 pub fn init() void {
     loadSettings(); // before the device: the dials are data, and they are what the first bed is mixed at
     rl.initAudioDevice();
@@ -3054,7 +3051,6 @@ test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience"
     for (BEDS) |b| try std.testing.expectEqual(Submix.ambience, BANK[@intFromEnum(b.id)].mix);
     for (CALLS) |c| try std.testing.expectEqual(Submix.ambience, BANK[@intFromEnum(c.id)].mix);
     // WHAT IS PINNED IS THE SIGNAL, NOT THE MIX POSITION.
-    // EVERY family is trimmed at the source now, not just this one — none of the three ships at unity.
     for ([_]Submix{ .sfx, .combat, .ambience }) |mx| {
         try std.testing.expect(submixTrim(mx) > 0 and submixTrim(mx) < 1.0);
     }

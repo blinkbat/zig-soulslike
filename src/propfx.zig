@@ -140,14 +140,6 @@ pub fn campfireGuitarMesh(shader: rl.Shader) rl.Model {
 // standing on the ground that you walk into and press. It carries 1+ items like a chest does (`Op.loot`) and
 // is deliberately NOT the items' own shapes — thirty item kinds would be thirty world meshes, and the glow
 // exists to read at a distance where a dropped dirk is four pixels.
-//
-// **AND IT MUST NOT BE MISTAKEN FOR THE SOULS DROP** (`souls.zig`), which is the other glowing thing you walk
-// up to and press. That one is a warm GOLD tree; this is a cool PALE wisp, and the separation is HUE — the one
-// dial the sun does not flatten. Same `EMISSIVE` alpha, so the two are the same substance at two temperatures.
-/// **LOWER THAN THE SOULS DROP'S 58, because this has to read as LIGHT rather than as a lit object.** At 58
-/// with mid albedos the first pass came back a pale stone bollard: the right value, the wrong SUBSTANCE.
-/// Then 22 (owner: more glow) — `emis` is `1 - alpha`, so DOWN is brighter, and 34 left the wisp taking
-/// enough of the sun's shading to read as a painted object at midday.
 const GLOW_EMISSIVE: u8 = 22;
 const GLOW_HOT = mathx.rgba(240, 236, 212, GLOW_EMISSIVE); // the core — blows out to near-white
 const GLOW = mathx.rgba(204, 200, 166, GLOW_EMISSIVE); // the wisp itself
@@ -163,21 +155,11 @@ const GLOW_R1: f32 = 0.007;
 /// **THE PILLAR: A SHAFT OF LIGHT STANDING IN THE AIR OVER IT** (owner's call). What the wisp cannot do is say
 /// "here" from behind a rock or across a rise, and a taller wisp would only be the bollard again — so the thing
 /// that carries the distance is a column you can see THROUGH.
-///
-/// **IT IS `.flame` AND NOT `.plain`, AND THAT IS THE WHOLE TRICK.** Every other material in the shader writes
-/// `outA = 1.0` — opaque — so a `.plain` column of any radius is a post, however bright it is. Material 11 is
-/// the one that carries a real alpha (`FLAME_A_TIP`/`FLAME_A_CORE`), and it also skips the surface grain, which
-/// is right for something with no surface. It gutters gently and it sways off `setAnimY`, clamped 0.6 m above
-/// the base — about 0.1 m at the top, which reads as light breathing rather than as fire.
-/// **AND IT DOES NOT END IN A POINT** — the dead-wood law, on light. 0.088 → 0.026 over 1.62 m came back a
-/// needle, which is a spire and not a shaft: the taper is gentle and the top is blunt.
 const PILLAR_H: f32 = 1.48;
 const PILLAR_R0: f32 = 0.105;
 const PILLAR_R1: f32 = 0.048;
 /// **THE ALPHA IS SOLVED AGAINST THE SHADER'S OWN STEP, NOT CHOSEN.** `outA` lerps TIP→CORE across
 /// `smoothstep(0.62, 0.90, emis)` and `emis = 1 - a/255`, so the translucent end wants `emis <= 0.62`, i.e.
-/// alpha at or above 97. At 104 it sits just inside `FLAME_A_TIP` (0.42) and still runs 59% emissive — any
-/// lower and the column solidifies into the post this is here to avoid.
 const PILLAR_A: u8 = 104;
 const PILLAR = mathx.rgba(212, 208, 176, PILLAR_A);
 const PILLAR_TOP = mathx.rgba(150, 148, 118, PILLAR_A); // it dies out upward rather than ending on a rim

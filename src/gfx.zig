@@ -395,7 +395,6 @@ fn dot3(a: rl.Vector3, b: rl.Vector3) f32 {
 /// AN ORTHONORMAL FRAME FOR WHATEVER IS CASTING — the shadow camera's own axes, and the two the texel snap is
 /// rounded along. The hint is world −Z because that is the `up` the box was always built with; it is only a
 /// HINT, and it is re-crossed rather than used directly so the frame stays orthonormal at any sun bearing.
-/// `daynight` floors the altitude, so `fwd` can never come out parallel to the hint and degenerate the cross.
 fn lightBasis() struct { fwd: rl.Vector3, right: rl.Vector3, up: rl.Vector3 } {
     const fwd = mathx.normV(mathx.scaleV(sun, -1)); // the light looks DOWN its own direction
     var right = mathx.crossV(v3(0, 0, -1), fwd);
@@ -645,10 +644,6 @@ pub const Scene = struct {
 /// **THE EDGE MAP, GROWN ONE CELL INTO THE BARE GROUND AROUND EACH PATCH.** A boundary is drawn from both
 /// sides — the pixel deciding it may be standing on the painted cell or on the empty one next to it — and the
 /// shader has to read the same policy either way, because the policy is what picks the lookup's own warp.
-/// Undilated, a tiled courtyard came out snapped looking outward and soft looking in, which is two edges.
-///
-/// It runs at UPLOAD, not per pixel: an edit is a mouse-move, a frame is sixty of them, and this is a fixed
-/// 112x112 sweep either way. File-scope buffer: one grid exists, rebuilt whole, read only by `setSoil`.
 var edgeDilated: [@as(usize, @intCast(SOIL_N)) * @as(usize, @intCast(SOIL_N))]u8 = undefined;
 
 fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
@@ -740,7 +735,6 @@ fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
 };
 
 // Per-fragment surface material for the scene shader's texturing pass (see matAlbedo).
-// New ids APPEND — the tail is pinned to the shader's own branches below.
 pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke, ember, bark };
 comptime {
     std.debug.assert(@intFromEnum(Mat.water) == 9);

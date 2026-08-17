@@ -331,9 +331,6 @@ pub const Frog = struct {
     /// SECONDS UNTIL THE SLAM LANDS, counted from the start of the leap so the coil and the arc are ONE
     /// continuous countdown — null when it is not throwing one. `tryImpact` fires the frame the toad touches
     /// down, so the window shuts there by construction: a caught leap is one that never arrived.
-    ///
-    /// THE LEAP AND NOTHING ELSE. The approach HOP carries no blow, and the CHOMP is deliberately out: the leap
-    /// is the committed thing — jaws you step out of. EXHAUSTIVE, so a state added later has to say.
     fn toImpact(self: *const Frog) ?f32 {
         return switch (self.state) {
             .lunge => (LUNGE_COIL + self.hopDur) - self.t,
@@ -343,9 +340,6 @@ pub const Frog = struct {
 
     /// THE INSTANT THE LEAP CAN BE CAUGHT IN, and how far out it reaches then — `tryImpact`'s OWN extent, and
     /// UNSCALED exactly as that test is (the ogre's `slamReach` law: the parry's reach is the blow's reach).
-    ///
-    /// It falls inside the FLIGHT, so what the boards meet is a toad in the air a few frames off the ground —
-    /// which is the point: this is the one move whose whole threat is that it has already committed.
     fn parryable(self: *const Frog) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
@@ -949,7 +943,6 @@ pub const Knot = struct {
         for (self.liveConst()) |*f| f.drawFx();
     }
     // The shared Group roll-ups (foe.zig) — identical for every foe, so they live there.
-    /// ONE OF THE HERO'S SHAFTS through the group — the first member it reaches takes it.
     pub fn pierce(self: *Knot, blade: foe.Blade) bool {
         return foe.pierceGroup(self.live(), blade);
     }

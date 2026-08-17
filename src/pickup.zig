@@ -12,10 +12,6 @@ const v3 = mathx.v3;
 
 // **A GLOW IN THE MAP → A PROMPT IN REACH → ITEMS IN THE BAG.** Elden Ring's item pickup: the thing standing
 // on the ground that says something is here, holding 1+ items exactly as a chest does (`Op.loot`).
-//
-// **IT IS NOT `chest.zig` WITH THE LID TAKEN OFF.** What the two share is the SHAPE of the contract — a site
-// list off the prop index, a reach ring, a one-shot latch, loot handed to the caller — which is 40 lines.
-// Folding them would thread a kind tag through the swing, the mesh and the save to save those 40.
 
 /// How many pickups one world may hold. Generously above the chest's cap: a glow is a handful of triangles and
 /// scattering them is the cheap way to dress a ruin, where a chest is furniture you place deliberately.
@@ -121,8 +117,6 @@ pub const Site = struct {
 
 comptime {
     // It has to out-reach the box, for the reason written at `REACH`: there is no body here to walk into.
-    // Against `chest.REACH` itself and not against a copy of its value — written out as `2.1` this assert
-    // stopped saying "wider than the box" the moment anybody retuned the box, and went on passing.
     std.debug.assert(REACH > chestmod.REACH);
     // …and it stays UNDER the souls drop's, which is the widest ring in the game and is meant to stay that way:
     // that one you come back for under pressure.

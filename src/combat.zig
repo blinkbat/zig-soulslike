@@ -123,8 +123,6 @@ pub const Hit = struct {
 
     /// IS THIS A HEAVY BLOW — i.e. does it carry STANCE. The question every felt beat is sized off
     /// (`foe.wounded` for the blood and the chips, `game.heroTakes` for the shake, the pad and the grunt).
-    /// One test of the BLOW, never of the reaction: a heavy a high-poise body shrugs off still hit it that
-    /// hard. The ogre's slam and the berserker's chop deviate ON PURPOSE and say so where they do it.
     pub fn heavy(self: Hit) bool {
         return self.stance > 0;
     }
@@ -180,8 +178,6 @@ pub const Vitals = struct {
     stanceMax: f32,
     sinceHit: f32 = LONG_AGO, // seconds since the last poise-damaging hit (gates regen)
     /// …and since anything last took HP off this body, A DRIP INCLUDED — what the floating HP bar is gated on.
-    /// Its OWN clock, because a hold has to be as visible as a blow while denying none of the refill `sinceHit`
-    /// gates: one field cannot answer "show the bar" and "hold the gate shut", and the roots need both.
     sinceHurt: f32 = LONG_AGO,
     dead: bool = false,
     regenDelay: f32 = REGEN_DELAY,
@@ -230,11 +226,6 @@ pub const Vitals = struct {
 
     /// **A BODY PUT BACK ON ITS FEET** (`necro.RAISE_HP_FRAC`) — the one thing in the game that undoes a
     /// death, and the only place `dead` is cleared. `heal` deliberately refuses a corpse.
-    ///
-    /// A FRACTION of its HP but FULL poise and stance: what a raised body has lost is its health, not its
-    /// nature, and one that came back pre-staggered would die to the first swing. The stun clock goes with
-    /// it, and both hit clocks are stamped LONG AGO so the regen gate and the floating bar treat it as a
-    /// body nobody has touched yet.
     pub fn revive(self: *Vitals, frac: f32) void {
         self.dead = false;
         self.hp = mathx.maxF(1.0, self.hpMax * mathx.clampF(frac, 0, 1));
@@ -453,10 +444,6 @@ pub fn withinArc(bearing: f32, facing: f32, arc: f32) bool {
 /// test can be widened by the width of the body it is testing rather than by a fudge. The knight's door
 /// against his own axis, the rime cone against a giant's flank and the ogre's sweep against the man's own
 /// radius are one triangle written three ways; this is the one way.
-///
-/// PURE TRIGONOMETRY AND NO POLICY — what a caller does when the thing is closer than it is wide stays its
-/// own call and is written at each of them, which is `withinGuardArc`'s rule one line up. The floor is a
-/// divide-by-zero guard and nothing more.
 pub fn subtendedArc(half: f32, dist: f32) f32 {
     return mathx.degrees(std.math.atan2(half, mathx.maxF(dist, 1e-4)));
 }
@@ -521,13 +508,6 @@ pub const Focus = struct {
 };
 
 // THE BELL — ER's spirit ashes, and the third thing in the game that spends FP.
-//
-// **WHAT HE CAN CALL IS WHAT HE IS CARRYING.** The SCROLL is in the bag or it is not, and the bell reads the
-// bag every time it is rung (`spiritOf`, the `flaskOf` shape one layer up) — so finding one unlocks it and
-// losing one takes it back, with no second piece of state to keep in step.
-//
-// **AND ONE STANDS AT A TIME** (`wolf.Pack`). The cap is a property of the BOND and not of the wolf, so the
-// second spirit is a row in these two switches and nothing else.
 
 /// Every spirit a scroll can carry. APPENDED never inserted, `FoeKind`'s rule — a saved bag is a list of
 /// ordinals, and inserting here would turn every scroll already in the world into a different animal.
@@ -578,8 +558,6 @@ pub const SUMMON_MAX: usize = 1;
 /// as "what a cast costs", and one constant per spell is what keeps `spellFp` the only thing that picks.
 pub const BOLT_FP: f32 = 12.0; // five casts of a 60-point pool
 /// THE BOLT, and it is ALL CHAOS — no physical at all, the brood mother's rule: one substance, one element.
-/// Its damage sits between a light slash's 13 and a heavy's 27 before anything resists it, which is the
-/// "decent" the owner asked for; the poise rocks a foe without being the stagger tool the greatsword is.
 pub const BOLT_HIT = Hit{ .poise = 14, .stance = 6, .elem = elems(.{ .chaos = 24 }) };
 
 /// THE ROOTS — the wand's second spell, and the first thing in the game that takes a foe's FEET rather than
@@ -625,10 +603,6 @@ pub const Root = struct {
 /// BODY WITHOUT BEING A SWING** (owner's call; it overturns the no-area-spells law — see AGENTS.md). A CONE
 /// poured out of him for `RIME_DUR`, not a blast at a mark, so its area is a thing he aims and holds and a
 /// body walks out of it the way a body walks out of a swing.
-///
-/// **THE DAMAGE IS NOT THE POINT AND THE NUMBERS SAY SO.** Stood in the whole breath a body takes less than
-/// the roots' grip bills it; what it buys is `Chill`, on everything in front of him at once. The roots'
-/// trade — ground, not health — sold by the yard instead of by the body.
 pub const RIME_FP: f32 = 22.0; // dearer than the roots' 18: that one takes ONE pair of feet, this takes every pair in front of him
 pub const RIME_DUR: f32 = 0.85; // how long he pours, and a body may walk out of it while he does
 pub const RIME_REACH: f32 = 6.0; // …and how far it arrives. SHORTER than the roots are thrown: this is the close answer
@@ -667,9 +641,6 @@ comptime {
 /// foe is: no vitals, no position, no owner, and it bills no damage of its own (the breath drips that,
 /// `Root`'s arrangement). A clock and a multiplier, so the day something breathes cold at the HERO he
 /// carries this same struct and `hero.zig` multiplies its ground speed by the same `travel()`.
-///
-/// Shaped like `Root` and `Regen`: refreshed rather than stacked, because two overlapping chills at
-/// different clocks is a state no bar and no animation can show.
 pub const Chill = struct {
     left: f32 = 0,
     /// COLD STAMPED THIS FRAME AND BILLED THE NEXT. The cone is tested from outside the creature (only the
@@ -940,9 +911,6 @@ pub const Quick = struct {
     }
     /// DROP WHAT HE HAS RUN OUT OF, called once a frame. A row pointing at nothing is a cycle step that does
     /// nothing and a HUD cell showing a thing he does not have.
-    ///
-    /// A FLASK AT ZERO STAYS ON. Its charges are not the bag's — they come back at a bonfire — so taking it off
-    /// the bar the moment he drank the last swallow would mean re-loading the bar at every bonfire.
     pub fn dropEmpty(self: *Quick, bag: *const item.Bag) void {
         for (&self.slots) |*s| {
             const k = s.* orelse continue;
@@ -1027,15 +995,6 @@ pub const Quiver = struct {
 
 
 // POISON — the first STATUS EFFECT, and the shape every one after it takes.
-//
-// **ONE METER DOES ALL THREE JOBS** (owner's call). Hits fill it; full, it PROCS; and the same meter then
-// becomes the CLOCK, draining over the effect's own life while it bills HP. **It cannot be topped up while
-// it drains** — poison is a state you are already in, where a BURST status (bleed) resets and re-procs at
-// once. No second clock: what the bar shows is always the same number a mechanic reads.
-//
-// **DECAY IS WHAT MAKES IT PRESSURE** (ER's, `docs/ELDEN_RING.md` §5): the meter falls once you STOP taking
-// doses, so spaced hits never proc and LINGERING is the whole cost. Step out of the cloud and you are fine;
-// stand in it and you are not.
 
 /// A full meter, in points — ER's own scale, so a source's rate reads as "seconds of this to proc" rather
 /// than as a fraction nobody can size anything against.
@@ -1107,9 +1066,6 @@ pub fn poisonPulse(amt: f32) Hit {
 
 /// **A TIMED EFFECT, AND EVERY ONE OF THEM IS THIS SHAPE** — a magnitude and a clock: the sporeling cap's
 /// ward, the tallow's fire share, the broth's stamina multiplier.
-///
-/// **THE MAGNITUDE IS NOT CLEARED WHEN THE CLOCK RUNS OUT** — `left` is the whole gate, and `value` is the
-/// only way to read it, so nothing downstream can pick up a stale amount by forgetting to check the clock.
 pub const Timed = struct {
     amount: f32 = 0,
     left: f32 = 0,
@@ -1186,8 +1142,6 @@ pub const Souls = struct {
     }
 
     /// EVERYTHING HE WAS CARRYING, OFF HIM AT ONCE — what a death spills onto the ground (`souls.Souls`).
-    /// The ROLLING display goes with it rather than draining down to zero over the next second: the number
-    /// did not tick away, it was taken, and the card that says so is already on the screen.
     pub fn dropAll(self: *Souls) u32 {
         const had = self.total;
         self.total = 0;

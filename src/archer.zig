@@ -548,10 +548,6 @@ pub const Archer = struct {
     shove: rl.Vector3 = mathx.zero3,
     justDied: bool = false,
     /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
-    /// **AND NOTHING HERE READS IT YET.** Every other creature is handed `threat.aim(hero)` by its group's own
-    /// fold; the archer is walked directly in `game.run` and its shot is spawned at `heroAimPoint`, so a spirit
-    /// can never take an archer's attention. Wiring it up is not a rename: `archer.Arrow` homes on the hero and
-    /// carries no victim (`foe.Blow.on` is melee's), so whether shafts chase a summon is the owner's call.
     threat: foe.Threat = .{},
     /// …AND THE WAY ROUND WHAT IS IN THE WAY (`foe.Nav`), stamped by the game like every creature's on the field.
     nav: foe.Nav = .{},
@@ -645,7 +641,6 @@ pub const Archer = struct {
         }
         self.justDied = false; // one-frame flag: re-set below only if a blade kills it this frame
         // THE ROOTS HAVE THE FEET (foe.grip) — it still draws and still looses, and only the travel is taken.
-        // The PANIC LEAP is the exception the grip cannot answer on its own: see `foe.canLeap` below.
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -961,7 +956,6 @@ pub const Archer = struct {
         const wonk = (self.seed - 0.5) * 6.0;
         // …and it does not stand STILL: a skeleton does not breathe, it BALANCES — a slow, uneasy sway
         // (two incommensurate rates, dealt off the seed) as if the bones were forever catching themselves.
-        // Zero on the move and through the crumple; the lagged copy is what keeps it from swaying as one bar.
         const idleAmt = (1.0 - mathx.clampF(self.moving * 2.0, 0, 1)) * (1.0 - dk);
         const swayArg = self.elapsed * (0.55 + 0.25 * (0.5 + 0.5 * mathx.sinf(self.seed * 31.7))) + self.seed * 6.28;
         const swy = mathx.sinf(swayArg) * idleAmt;
@@ -1305,7 +1299,6 @@ fn handMesh(seed: u64) rl.Mesh {
 }
 
 // The bow, authored in the RIGHT-WRIST frame about the fist — a TALL recurve, wrapped grip, horn nocks, limbs UNEVEN (lower a touch shorter).
-/// Pub because the HERO carries this same bow (see `poseBow`).
 pub fn bowMesh() rl.Mesh {
     var b = Builder.init();
     const fy = BOW_FY;

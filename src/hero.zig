@@ -419,7 +419,6 @@ const WAND_WOOD_LT = rgba(62, 47, 36, 255);
 const WAND_BIND = rgba(30, 25, 22, 255);
 /// Near-black or it CLIPS: small strongly-curved capsules take the sun over their whole visible face, and both
 /// 58/62/70 and `SHIELD_IRON` sampled at 255,255,255 here — a white cage round the stone, not a setting for it.
-/// Screen ∝ albedo^(1/2.2), so a 0.6× screen value is albedo × 0.6^2.2.
 const WAND_FERRULE = rgba(9, 10, 12, 255);
 /// The stone is EMISSIVE (vertex alpha is the emissive channel) so it reads as lit rather than painted.
 const WAND_STONE = rgba(96, 40, 122, 120);
@@ -474,7 +473,6 @@ const CAST_MOTE_R_HI = 0.055;
 const CAST_MOTE_CAP = 8;
 /// s. SHORT, because riding the tip's velocity (`gatherMotes`) cancels the tip's constant motion but not its
 /// ACCELERATION, and the leftover smear is ½·a·life² — so the life is what pays, and it pays quadratically.
-/// At 0.17 the gather was a violet contrail off the rod.
 const CAST_MOTE_LIFE_LO = 0.030;
 const CAST_MOTE_LIFE_HI = 0.055;
 /// …and the radius is what buys that short life back, not the count: `drawParticles` fades radius WITH alpha,
@@ -492,7 +490,6 @@ const CAST_FLASH_LIFE = 0.085;
 const BOLT_BURST = 22; // …and the bigger one where it lands
 
 // ONE substance: the chaos violet stays the light ON the wood, never a second violet thing.
-/// Sites the ground can be split at AT ONCE — a second cast before the first has sunk leaves two holes.
 const ROOT_SITES = 3;
 /// Tendrils one site throws — each differently sized, leaned and DELAYED, or it is a rosette of equal spikes.
 const ROOT_FANS = 9;
@@ -547,8 +544,6 @@ const RootSite = struct {
 const BREATH_RATE = elemfx.POUR_RATE;
 /// …and the ceiling on ONE frame of it, `CAST_MOTE_CAP`'s reason exactly: the accumulator is what makes the
 /// rate independent of the frame rate, and without a cap a single hitch empties the whole ring in one go.
-/// THE LANGUAGE'S, off the same rate — written out here it had to be re-derived by hand every time the rate
-/// moved, which is how it spent a release at 18.
 const BREATH_CAP = elemfx.POUR_CAP;
 // HOW BIG A FROST MOTE IS is NOT here: a jet's grain is finer than the signature table's, and that is a fact
 // about POURING rather than about him (`elemfx.POUR_GRAIN`). Held here as his own it was passed in through
@@ -560,14 +555,10 @@ const BREATH_CAP = elemfx.POUR_CAP;
 const BREATH_NOZZLE_FWD = 0.030 * H;
 /// The trunk braces BACK against what the rod is pushing out and OVERSHOOTS its rest coming off it (the
 /// reactions law) — through the WAIST, spine and chest, never the root. Degrees, total across the two.
-/// NEGATIVE where the old mouth-pour was positive: a man folding over a stream leaving his own hand is
-/// leaning into the one thing that has weight behind it.
 const BREATH_LEAN = -13.0;
 /// …and the head TRACKS the stream rather than pouring it: he is aiming the rod, so he looks down its line.
 const BREATH_HEAD = 6.0;
 /// How much FURTHER the rod arm straightens through the pour, past where the throw already snapped it.
-/// Degrees. The silhouette's whole job here is "he is holding that AT something", which a folded elbow
-/// cannot say.
 const BREATH_REACH = 12.0;
 /// **AND THE ROD COMES DOWN TO LEVEL FOR IT, which is a mechanic and not a flourish.** The throw beat leaves
 /// the shoulder at `CAST_SH_FWD` (118 deg — well past straight out), because a BOLT is thrown at a mark that
@@ -577,7 +568,6 @@ const BREATH_REACH = 12.0;
 /// to end up level: the wand is held at an angle in the fist, so a shoulder at a true 90 still points it up.
 const BREATH_SH_LEVEL = 40.0;
 /// …and it SHIVERS while it pours, because a held pose for the better part of a second is a freeze frame.
-/// Small: this is a tremor on top of a fold, not a second animation.
 const BREATH_SHIVER = 1.5;
 const BREATH_SHIVER_HZ = 12.0;
 
@@ -594,11 +584,6 @@ comptime {
     // …AND THE BREATH, which is the biggest single claim on the pool: a POUR is resident for its whole span
     // where every other effect here is a burst that is already dying. The whole pour, because `elemfx`'s cold
     // outlives `RIME_DUR` — a mote emitted on the last frame is still in the air.
-    // …the KNOT at the nozzle included, which `elemfx` owns the cadence of — asked rather than re-derived,
-    // so moving the root's cadence cannot leave this assert quietly stale. **PER CALL, WHICH IS PER MOTE
-    // HERE**: `pourBreath` pours one at a time, so `POUR_ROOT_EVERY` divides nothing and the knot rides
-    // every mote. Asked as `pourCount(1)` per tick rather than `pourCount(whole pour)`, which under-counted
-    // the pour by a third and let the ring wrap over its own far end mid-cast.
     const ticks = @ceil(combat.RIME_DUR * BREATH_RATE);
     const breath = @as(f32, @floatFromInt(elemfx.pourCount(1))) * ticks;
     const worst = gather + breath + @as(f32, release + erupt + caught + 2 * BOLT_BURST); // two bolts can land across chained casts
@@ -686,7 +671,6 @@ const PARRY_REBOUND = 0.75;
 /// opened at the elbow alone, a shove this size rotates the shield clean off its own arm (measured).
 const PARRY_PUNCH = 60.0;
 /// …and the boards SQUARE UP onto the threat, unwinding the guard's own cross rather than carrying on past it.
-/// Swung further across at the SHOULDER instead, they leave his chest bare and arrive edge-on.
 const PARRY_SWEEP = 26.0;
 const PARRY_WRIST = 20.0; // deg of cant in the fist, kept small: the fold does the work
 /// THE SWIPE, AND IT IS DRIVEN FROM THE WAIST — which is why the sweep is not at the shoulder: a shoulder yaw
@@ -748,7 +732,6 @@ const PARRY_GLINT_FLASH_R = 0.03;
 
 /// **A BLOCK IS NOT A SMALL PARRY** (owner). A catch REFUSES a blow — struck iron, hot, thrown wide, gone in
 /// a flash. A block ABSORBS one, so what comes off the boards is DULL and SHORT and hugs the shield.
-/// Separated on COLOUR, SPREAD and LIFE rather than on count, which is only "the same effect, fewer of them".
 const BLOCK_GRIT = rgba(196, 190, 178, 225); // pale stone-grey, nowhere near the spark's amber
 const BLOCK_GRIT_DARK = rgba(120, 112, 100, 210);
 /// COUNT IS THE BLOW'S, not the shield's: a kobold's bite and an ogre's slam may not scatter the same boards
@@ -990,9 +973,6 @@ fn bump(u: f32, a: f32, b: f32) f32 {
 
 /// The two axes a burst is fanned about, perpendicular to `axis` and to each other — a spray built on WORLD
 /// axes reads as a puddle round his hand the moment the shield or the cast turns.
-///
-/// NOT `gfx.axisFrame`, which seeds its perpendicular off world Y. `side` here is deliberately the
-/// HORIZONTAL one, because `PARRY_GLINT_SPAN` lays the streak along it.
 fn burstFrame(axis: rl.Vector3) struct { side: rl.Vector3, up: rl.Vector3 } {
     var side = mathx.perpXZ(axis);
     // An axis straight up or down has no horizontal perpendicular; any one will do, so long as it is stable.
@@ -1006,9 +986,6 @@ pub const Attack = enum { light, heavy };
 /// **EVERYTHING HE CAN HOLD, AND EITHER HAND MAY HOLD ANY OF IT** (owner's call). It was two enums — a right
 /// hand that could only ever be sword/bow/bell and a left that could only be shield/wand — so which hand a
 /// thing lived in was a fact about its TYPE rather than a choice the player made. One set, two hands.
-///
-/// APPENDED never inserted: the book's pickers walk this order and a saved slot is an ordinal.
-/// The BELL is not a weapon and that is its price — R1 rings it and R2 does nothing.
 pub const Armament = enum { sword, bow, bell, shield, wand };
 
 /// The two hands' old type names, now the same set. Kept so every `heromod.Arm` at a call site still reads as
@@ -1048,11 +1025,6 @@ pub fn armTwoHanded(a: Armament) bool {
 
 /// **WHAT A PAIR OF HANDS IS ACTUALLY HOLDING** — `Hero.holds` off the two slots alone, so the character
 /// book can price a CANDIDATE loadout that is in nobody's hands yet and get the same answer the fight will.
-///
-/// **AND A TWO-HANDER CLAIMS BOTH HANDS FROM WHICHEVER SLOT IT SITS IN**, which is the whole reason this is
-/// one question about the PAIR rather than a test per side. Asked as "is the RIGHT hand two-handed", a bow
-/// in the LEFT slot left the right hand's own armament reading as held — so a shield there was blocked with,
-/// parried with and priced on the page while both hands were on the string and nothing was drawn in either.
 pub fn handsHold(arm: Armament, off: Armament, a: Armament) bool {
     if (armTwoHanded(arm)) return a == arm;
     if (armTwoHanded(off)) return a == off;
@@ -1166,12 +1138,9 @@ pub const Hero = struct {
     sprinting: bool = false, // hold-B RUN, resolved by the caller — the only CONTINUOUS drain
     // Shaped like the GUARD, not like an attack: `aiming` is re-derived from the button every frame, and only
     // the LOOSE is committed.
-    /// Degrees folded onto what he is swinging at: + = down over a low mark, − = arched back under a high one.
     aimLean: f32 = 0,
     aimLeanWant: f32 = 0,
     /// **WHAT THE RIGHT HAND IS HOLDING RIGHT NOW**, and `armAlt` is the other of its two (`HAND_SLOTS`).
-    /// The LIVE one is the field rather than an index into a pair, so every `hero.arm == .bow` in the game
-    /// still asks the only question it ever wanted: what is in that hand this frame.
     arm: Armament = .sword,
     /// …and what the swap turns to. A hand is a PAIR and the button exchanges them, so the loadout is a
     /// decision made in the book and the swap is muscle memory — never a walk through five armaments.
@@ -1512,9 +1481,6 @@ pub const Hero = struct {
     }
 
     /// …AND THE SAME QUESTION WITH THE OTHER FALLBACK, for anything whose animation was authored on the LEFT.
-    /// A pose keeps running for a beat after the thing has left the hand — a guard easing down, a cast in its
-    /// recovery — so the arm it falls back to must be the one that pose is written for, or letting go of the
-    /// boards throws the last frames of the block onto the empty arm.
     fn heldRight(self: *const Hero, a: Armament) bool {
         return self.arm == a;
     }
@@ -1551,9 +1517,6 @@ pub const Hero = struct {
     /// Not the same question as which one is EQUIPPED: a raised bow takes the OTHER hand to the string too, so
     /// whatever is in it is not in it while the bow is up. Everything else leaves it free — the bell included,
     /// which is rung one-handed. Asked here rather than cleared on the swap, so it cannot stale.
-    ///
-    /// **EITHER SLOT'S TWO-HANDER SHUTS THIS**, `handsHold`'s rule: a bow in the LEFT slot is still worked
-    /// from the right (`draw`), so that hand is on the stave and the left is on the string either way.
     pub fn offInHand(self: *const Hero) bool {
         return !armTwoHanded(self.arm) and !armTwoHanded(self.off);
     }
@@ -1596,7 +1559,6 @@ pub const Hero = struct {
 
     /// **PUT SOMETHING IN A SLOT** — the character book's equip, and the only way anything reaches a hand that
     /// is not already in it. `hand` is `RIGHT`/`LEFT` and `slot` is 0 for the live one, 1 for its alternate.
-    /// Refused mid-action for `swapHand`'s reason: a menu may not put a bow in his hands mid-roll.
     pub fn equip(self: *Hero, hand: usize, slot: usize, a: Armament) bool {
         if (self.committed() or self.staggered() or self.dead or self.resting) return false;
         const live = if (hand == RIGHT) &self.arm else &self.off;
@@ -1728,13 +1690,13 @@ pub const Hero = struct {
     }
 
     /// Everything the guard asks BAR the stamina — the one clause the parry answers differently, since a
-    /// press has to say NO out loud where the guard just stays down. It asks `offInHand`, NOT `arm ==
-    /// .sword`: what takes the boards off his arm is a hand going to a STRING, not a hand being busy.
+    /// press has to say NO out loud where the guard just stays down. It asks `shieldOut`, which is EITHER
+    /// hand: what takes the boards off his arm is a hand going to a STRING, not a hand being busy.
     fn shieldArm(self: *const Hero) bool {
         return self.shieldOut() and !self.committed() and !self.staggered() and !self.dead and !self.sprinting and !self.resting;
     }
 
-    /// AN EMPTY BAR CANNOT HOLD A SHIELD UP — and neither can a hand with a wand in it. There is one left hand.
+    /// AN EMPTY BAR CANNOT HOLD A SHIELD UP, and neither can a hand already holding something else.
     pub fn canGuard(self: *const Hero) bool {
         return self.shieldArm() and self.stam.canAct();
     }
@@ -1835,8 +1797,6 @@ pub const Hero = struct {
 
     /// **THE BOARDS EATING A BLOW.** `parrySparks`' frame, deliberately none of its signature: grit rather
     /// than iron, a short close scatter rather than a shower, and a wide dim puff rather than a white bloom.
-    /// `weight` is the blow's own share of the heaviest thing in the game — the same 0..1 the shake and the
-    /// pad are sized off — so a slam knocks visibly more out of the shield than a bite does.
     pub fn blockSparks(self: *Hero, weight: f32) void {
         const f = self.shieldFaceWorld();
         const fr = burstFrame(f.n);
@@ -2077,9 +2037,6 @@ pub const Hero = struct {
     }
 
     /// How far through the current cast, 0..1 (0 when there is none) — POSE TIME, which is not clock time.
-    /// THE POUR IS A HOLD INSERTED AT THE THROW: pose time runs to the throw beat, STOPS there for as long as
-    /// the cone is open, and then carries on into the recovery. One animation serves all three spells, and the
-    /// breath cannot drift out of step with the thing it is drawing, because it IS the same beat held.
     fn castU(self: *const Hero) f32 {
         if (!self.casting) return 0;
         if (self.spell == .rime and self.castT > breathAt()) {
@@ -2575,8 +2532,6 @@ pub const Hero = struct {
     }
 
     /// Billed as a DRIP: it carries no poise, and stamped through `hit` it would deny him a whole poise bar.
-    /// NO hurt flash — the red edge belongs to a BLOW, and a status running fourteen seconds would re-arm it
-    /// every tick and never go out. Returns whether this tick took HP, so the caller can size its own beat.
     pub fn tickPoison(self: *Hero, dt: f32) bool {
         const due = self.poison.tick(dt, self.vit.hpMax);
         if (due <= 0 or self.dead) return false;
@@ -2585,7 +2540,6 @@ pub const Hero = struct {
     }
 
     /// For the two places that MOVE him rather than let him travel: a respawn and sitting down at a fire.
-    /// Deliberately NOT part of `dropActions` — a stagger and a death must leave a man in mid-air falling.
     fn clearAir(self: *Hero) void {
         self.jumping = false;
         self.lift = 0;
@@ -2954,7 +2908,6 @@ pub const Hero = struct {
 
     /// Off ONE number, the vertical velocity: DRIVE up, TUCK where it passes through zero — which IS the
     /// apex, so the pose cannot drift out of step with the arc the way a second clock would — REACH down.
-    /// NO ROOT PITCH: `rx` at the root rotates about the world origin and swings the legs.
     fn poseJump(self: *Hero) void {
         const k = mathx.clampF(self.vertVel / JUMP_V0, -1, 1);
         const drive = mathx.clampF(k, 0, 1);
@@ -3038,8 +2991,6 @@ pub const Hero = struct {
         const sw: f32 = if (self.atkAlt) -1.0 else 1.0; // swing side: +1 forehand, -1 backhand return
         const amp: f32 = if (self.atkAlt) 0.8 else 1.0; // the cross-body windup can't coil as deep
         // **THE MIRROR IS ONE SIGN.** Same keys, same clocks, same curves — thrown from the other shoulder.
-        // Only the LATERAL channels flip (the body yaw, the abductions, the sweep, the wrist lay and roll);
-        // every `rx` here is sagittal and reads the same on either side.
         const sd: f32 = if (self.swordLeft()) -1.0 else 1.0;
         const shS: usize = if (sd < 0) SHL else SHR; // the arm that swings…
         const elS: usize = if (sd < 0) ELL else ELR;
@@ -3181,7 +3132,6 @@ pub const Hero = struct {
         const free = armSide(!self.wandLeft(), false);
 
         // `wind` lifts, `sSweep` twirls — separate channels, so the alternator only picks the twirl's side.
-        // `wind` 0 must be the CARRY (`poseWandArm`) or the cast snaps out of it on frame one.
         const shRz = rod.mirror * mathx.lerpF(ARM_ABD + WAND_CARRY_ABD, CAST_LIFT_ABD, wind);
         const shRy = rod.mirror * sw * CAST_SWEEP * (1.0 - 2.0 * sSweep) * wind;
         const yaw = rod.mirror * sw * (-CAST_TRUNK * wind + 1.6 * CAST_TRUNK * sSweep);
@@ -3210,8 +3160,6 @@ pub const Hero = struct {
         setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 9.0 * wind + 3.0 * sThrow));
         setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
         // The arm goes LONG as the bolt leaves: an elbow still folded keeps the stone inside his own silhouette.
-        // …AND IT STAYS LONG THROUGH THE POUR, pushed a further `BREATH_REACH` out: the rod is the nozzle now,
-        // so the one thing the silhouette has to say is that he is holding it AT something.
         const elb = mathx.lerpF(WAND_CARRY_ELBOW, CAST_ELBOW, wind) - CAST_ELBOW_SNAP * sThrow + 6.0 * kick -
             BREATH_REACH * bOn + 0.5 * BREATH_REACH * bOut + shiver;
         setLocal(&wx, rod.sh, self.rest, mul3(rx(-(mathx.lerpF(WAND_CARRY_FLEX, CAST_SH_FWD, wind) - BREATH_SH_LEVEL * bOn)), ry(shRy), rz(shRz)));
@@ -3425,8 +3373,6 @@ pub const Hero = struct {
         }
         // ONE CALL PER HAND, and the hand is an ARGUMENT. As two switches keyed to two enums, which hand a
         // thing was drawn in was decided by its TYPE — so a sword equipped left drew on the right.
-        // A TWO-HANDER IS WORKED FROM THE RIGHT WHICHEVER SLOT HOLDS IT (the rig nocks the bow at that
-        // wrist), so it is asked for first and it takes the other hand with it.
         if (armTwoHanded(self.off)) {
             _ = self.drawHand(self.off, false);
             return;
@@ -3438,7 +3384,6 @@ pub const Hero = struct {
     /// One hand's armament, at that hand's wrist. Returns whether it claimed BOTH hands, which is the bow's
     /// alone (`armTwoHanded`) — a raised bow puts the other hand on the string, so there is nothing to draw
     /// in it whatever is equipped there.
-    ///
     fn drawHand(self: *const Hero, a: Armament, left: bool) bool {
         const wrist = self.xf[if (left) WRL else WRR];
         const grip = gripFrame(wrist, self.rest, left);
@@ -3463,7 +3408,6 @@ pub const Hero = struct {
 
     /// The base of the neck, deliberately over the GROUND under him rather than over his feet: the rig is
     /// bolted to this, so a jump taken 1:1 reads as the WORLD dropping a metre rather than as him rising.
-    /// How much of a jump the lens takes is the camera's decision (`camera.LIFT_SHARE`).
     pub fn shoulderPoint(self: *const Hero) rl.Vector3 {
         return v3(self.pos.x, self.pos.y + self.rest[CHEST].y, self.pos.z);
     }

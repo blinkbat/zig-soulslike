@@ -230,7 +230,6 @@ pub fn use(k: Kind) Use {
         .grave_warbow,
         .quilted_gambeson,
         // CARRIED, NOT USED — the `soul_binding_ring`'s shape: what it does, it does by being in the bag.
-        // The bell reads it (`combat.spiritOf`), so a Confirm on this row would be a press that did nothing.
         .spirit_scroll_wolf,
         => .none,
     };
@@ -244,13 +243,6 @@ pub fn usable(k: Kind) bool {
 /// **WHAT IT DOES, IN ONE LINE OF MECHANIC** — the answer to "which of these two flasks did I just put in the
 /// box", which the flavour prose (`describe`) deliberately does not give. Read off `use` wherever there is a
 /// `Use` to read, so a dose retuned there reads here and the two cannot drift.
-///
-/// The numbers are the ITEM'S OWN — a fraction stays a fraction, because nothing here knows a hero's max HP.
-/// `book.zig` prints the same doses resolved against the sheet, which is right for a player holding one and
-/// wrong on a row that exists before there is a hero at all.
-///
-/// The three things that DO something without a `Use` are named: they are spent by dying, by carrying, and by
-/// a lock, and "no effect" on any of those rows is a lie the author would place loot on.
 pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
     if (isFlask(k)) return switch (k) {
         .crimson_flask => "Heals. Charges refill at a bonfire, not from the bag.",

@@ -129,9 +129,6 @@ pub const Mode = enum {
 /// sounds are auditioned there because a waveform on a page tells you nothing, and a particle signature is
 /// the same problem — `lifeHi 1.15` is not a thing anybody can picture. Four elements against three verbs,
 /// side by side and on a loop, with the numbers being tuned printed beside them.
-///
-/// It draws through the SAME `elemfx` calls the game does. A bench with its own emitter is a bench that
-/// agrees with nothing.
 const Verb = enum {
     gather,
     burst,
@@ -158,11 +155,6 @@ const Verb = enum {
 /// Enough for the worst cell — the POUR, which is resident for its whole span where the other two are
 /// bursts already dying. `elemfx`'s longest life against its own rate, and then some headroom, because a
 /// bench that silently drops motes is a bench that lies about the thing being tuned.
-///
-/// **ARITHMETIC, NOT A ROUND NUMBER** (`hero.FX_N`'s law). At a flat 256 it was a fifth of what the pour puts
-/// in the air, so the one cell this pool exists for was wrapping its own ring five times over per mote
-/// lifetime — the bench dropping motes is exactly what the paragraph above forbids. The knot counts too, and
-/// `pourCount` is PER CALL: this bench pours one mote at a time, so every mote carries one.
 const BENCH_FX_N = blk: {
     var life: f32 = 0;
     for (std.meta.tags(combat.Elem)) |e| life = @max(life, elemfx.sig(e).lifeHi);

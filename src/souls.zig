@@ -14,12 +14,6 @@ const Builder = gfx.Builder;
 // WHAT YOU DROPPED WHEN YOU DIED — DS's bloodstain and ER's soul drop, which are the same mechanic under two
 // names: everything you were carrying stands on the spot it left you, you walk back for it, and dying again
 // on the way is what makes the walk mean something.
-//
-// **THERE IS EXACTLY ONE.** A second death overwrites the first, and the first is gone for good. That is not
-// a storage decision — it is THE mechanic, and a list of drops would quietly delete the whole risk.
-//
-// **NOTHING ELSE CAN TAKE IT.** No timer, no decay, no despawn on distance: the only thing that spends a drop
-// is picking it up or dying again. A bloodstain on a clock is a bloodstain you lose to the loading screen.
 
 /// How close you have to stand for the prompt, in metres on XZ. GENEROUS NEXT TO A CHEST'S: you are coming
 /// back for this under pressure, and fumbling the reach is not the tension the mechanic is for. Asserted
@@ -107,7 +101,6 @@ const BOLE_TOP: f32 = 0.68;
 const BOLE_SEGS = 5;
 /// WHERE THE LIMBS LEAVE, up the bole — three forks, not one. Every limb off a single point is a ROSETTE OF
 /// SPOKES, which is exactly what the dead-limb law is written against and exactly what the first pass was.
-/// SPREAD DOWN THE SHAFT, too: bunched into the top third they are one tangle rather than three tiers.
 const FORKS = [_]f32{ 0.42, 0.66, 0.88 }; // shares of the bole's own height
 const PER_FORK = [_]u32{ 3, 3, 2 };
 
@@ -296,7 +289,6 @@ pub const Souls = struct {
 /// on the outer half. It is a TREE and not a flame — so the limbs come through `propwood.deadLimbTinted`,
 /// the one builder both leafless trees call, rather than a transcription of it: equal limbs off ONE point,
 /// each a straight run ending in a ball bigger than itself, is the hub-of-spokes the law is written against.
-/// Seeded, so a build stays deterministic.
 fn boughMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x501D7EE);

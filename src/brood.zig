@@ -128,7 +128,6 @@ pub const PER_SAC: usize = 1;
 const RESISTS = combat.resists(.{ .fire = -25, .cold = 35, .chaos = 75 });
 /// THE SPIT IS POISON, AND NOW IT MEANS IT (`combat.Status`): the glob deals almost nothing on arrival —
 /// the poise is a caustic lump still rocking you — and what it really costs is `M_SPIT_BUILD` on the meter.
-/// Her POOLS carry the same venom (`ACID_BUILD`), because they are the same fluid.
 pub const M_SPIT_HIT = combat.Hit{ .dmg = 2, .poise = 5 };
 /// WHAT ONE GLOB PUTS ON THE METER — three of them proc, so a mother left to spit at range is a clock you
 /// are running down whether or not you feel the hits.
@@ -151,7 +150,6 @@ pub const ACID_LIFE: f32 = 7.5;
 const ACID_THIN: f32 = 2.0;
 /// THE FLOOR NO LONGER BURNS — IT POISONS. Buildup a second while he stands in it, continuous and scaled by
 /// `dt` rather than pulsed: the meter is drawn every frame and a dose delivered in lumps reads as a stutter.
-/// Sized so about two and a half seconds in a pool is a proc — a pool is a place you leave, not one you cross.
 pub const ACID_BUILD: f32 = 40.0;
 const POOL_CAP: usize = 12;
 
@@ -1437,15 +1435,6 @@ pub const Spider = struct {
 
     /// SECONDS UNTIL HER FANGS LAND, counted back from the frame `tryReach` fires — the FIRST frame of
     /// `.strike`, so the whole window lives in the windup and shuts at the snap by construction.
-    ///
-    /// Null for everything that is not her bite, and none of those is an oversight:
-    /// - THE SPIT IS NOT PARRYABLE. The boards refuse a BLOW; a glob of acid is a projectile and goes through
-    ///   the quiver like an arrow (`archer.launchShaft`), so there is no swing to catch.
-    /// - NOR IS THE LAY, which is not an attack at all — she is wide open for it already.
-    /// - AND NOR IS A BROODLING. A shield window on something that arrives out of a sac, four at a time, and
-    ///   dies to one slash is a mechanic nobody could read; its 0.34 s tell is the counter it was given.
-    ///
-    /// EXHAUSTIVE over the states, so one added later has to say whether it carries a blow.
     fn toImpact(self: *const Spider) ?f32 {
         if (self.role != .mother or self.throwing) return null;
         return switch (self.state) {
@@ -1935,8 +1924,6 @@ pub const Brood = struct {
     }
 
     /// THE VENOM DOSE: how much POISON BUILDUP standing in her floor is worth this frame, 0 out of it.
-    /// `combat.Status` owns the decay, so stepping out is answered one layer up and this side keeps no
-    /// clock of its own to fall out of step with it (the sporeling cloud's rule, and the same reason).
     pub fn burn(self: *const Brood, dt: f32, hero: rl.Vector3) f32 {
         return if (self.burning(hero)) ACID_BUILD * dt else 0;
     }

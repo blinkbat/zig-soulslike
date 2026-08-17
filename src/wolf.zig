@@ -19,20 +19,6 @@ const mul3 = mathx.mul3;
 
 // It has no `foe.Leash` — a leash is a creature's eyes on the HERO, and this one's eyes are on everything
 // else. What it shares with the foes it shares through `foe.zig`: the swept `Blade`, `stunCurve`, `dissipate`.
-//
-// ## The gait is Hildebrand's, and it is TWO NUMBERS
-//
-// Every symmetrical quadruped gait is fully specified by a DUTY FACTOR (the fraction of the stride a foot is
-// on the ground) and a LIMB PHASE (how far the forefoot's strike lags the hind foot on the same side) —
-// Hildebrand 1965/1968. So walk, trot and gallop are one footfall machine at three points on one line:
-//   gait     duty   lag    speed (m/s)
-//   walk     0.65   0.84   0.4 - 2.0     lateral sequence
-//   trot     0.55   0.50   0.8 - 5.3     diagonal couplets, and a wolf's travelling gait
-//   gallop   0.42   0.63   3.2 - 10.0    transverse, with a real aerial phase
-// Figures from steady-state dog locomotion (Bertram et al., J. Exp. Biol. 211:138) and working-dog trotting
-// (J. Exp. Biol. 228:jeb250523), which puts a 34 kg German Shepherd at 2.14 m/s, a 0.52 s cycle and a 1.21 m
-// stride. Fore and hind stride lengths there are identical to two decimals — a trotting dog tracking up — so
-// this rig uses ONE stride length for all four limbs, never one per pair.
 
 /// Height at the WITHERS, in metres — everything below is a fraction of it. A gray wolf runs 66-84 cm; this
 /// is a dire wolf and stands over the real range (owner: bigger, and chunkier), which puts its back above the
@@ -238,9 +224,6 @@ const SWING_LIFT: f32 = 0.115; // of W — how high a paw clears the ground at t
 
 /// Two-link IK in the sagittal plane: a limb of segments `a` and `b` hung from a joint at the origin, paw at
 /// (`dy` below, `dz` forward), reporting the two rotations about X.
-///
-/// `bend` is ANATOMY, not a preference: a wolf's elbow points BACK and its stifle points FORWARD, which is why
-/// front and back legs read as different machines. Get it the same on both and it is a horse's front legs.
 pub fn limbChain(a: f32, b: f32, dy: f32, dz: f32, bend: f32) struct { upper: f32, lower: f32 } {
     // Clamped inside the limb's own span: past `a + b` there is no solution, inside `|a - b|` it folds
     // through itself.
@@ -257,14 +240,6 @@ pub fn limbChain(a: f32, b: f32, dy: f32, dz: f32, bend: f32) struct { upper: f3
 
 // GREY, AND COUNTERSHADED — a dark saddle, pale throat, belly and inside the legs. That gradient is most of
 // what makes the shape read at distance; a flat grey animal is a dog-shaped smudge.
-// SOLVED OFF THE RENDER: the chain is albedo × 1.72 → linear → gamma 1/2.2, so screen ∝ albedo^(1/2.2).
-//  - VALUE: a lit 217 down to ~150 is 0.69 on screen, so albedo × 0.69^2.2 ≈ 0.44.
-//  - HUE: this sun is warm, so a NEUTRAL albedo cannot render neutral. The pelt is authored BLUE-SHIFTED and
-//    the sun brings it back to grey; author it grey and the sun takes it to sand.
-// **TWO DIFFERENT CHANNELS.** TRANSPARENCY is the scene's `fade` uniform (`SPIRIT_FADE`); vertex alpha
-// CANNOT do it, because in this renderer alpha is the EMISSIVE channel and a "transparent" colour authored
-// here comes back brighter and opaque. The SHEEN is that emissive channel — LOWER alpha is MORE emissive —
-// and it sits just under solid so the body holds its value in shadow, where the thinning would finish it.
 const SHEEN: u8 = 206;
 const SHEEN_LT: u8 = 188; // the raised parts glow a touch harder, which is what makes it look wet-cold
 const PELT = rgba(44, 47, 55, SHEEN);
@@ -302,10 +277,6 @@ fn peltAt(k: f32) rl.Color {
 /// **FUR IS BROKEN SILHOUETTE, NOT TEXTURE.** There is no fur shader here and there should not be one: what
 /// makes a coat read at forty metres is that the OUTLINE is ragged, so the fur is geometry — a ring of tapered
 /// tufts standing off the mass, sunk most of their length into it (the relief rule) so only the tips show.
-///
-/// The variation goes BETWEEN the tufts and never along one: each gets its own length, lean and angle off a
-/// seeded rng, because a ring of identical spikes is a cog and a ring of uneven ones is hair. `n` is kept low
-/// for the same reason the props are — a mass wants more SIDES before it wants more spines on top of it.
 fn furRing(b: *Builder, rng: *mathx.Rng, at: rl.Vector3, r: f32, len: f32, n: i32, col: rl.Color) void {
     var k: i32 = 0;
     while (k < n) : (k += 1) {
@@ -346,10 +317,6 @@ fn boneMesh(i: usize) rl.Mesh {
         // still drawn from its own bone, so the spine bends. The chest is DEEP — brisket 0.55 W to withers
         // 1.00 is near half the animal's height — and the barrel is WIDE, carried on the X radii, because
         // depth alone reads as a slab from the side and changes nothing head-on.
-        //
-        // **A COUNTERSHADING PATCH IS RELIEF, SO IT IS SUNK MOST OF THE WAY IN.** Two ellipsoids of similar Z
-        // extent nest at their centres and CROSS at their ends, so cut the patch's reach along the body hard
-        // (0.6-0.7 of its parent's) and pull it inward: inside the silhouette everywhere, only the colour shows.
         CHEST => {
             const dep = (SHOULDER_Y - BRISKET_Y) + 0.26; // brisket to withers, through the shoulder joint
             b.addBlob(v3(0, -0.015 * s, -0.10 * s), v3(0.205 * s, dep * 0.5 * s, 0.36 * s), 6, 11, peltAt(0.5));
@@ -378,8 +345,6 @@ fn boneMesh(i: usize) rl.Mesh {
         // THE NECK IS SHORT AND THICK, and it is mostly RUFF — the mane is wider than the neck inside it, and
         // that mass is what makes the shoulders read as heavy. Buried well back into the chest at one end and
         // into the skull at the other, so there is no seam at either joint.
-        // THE RUFF IS THE CHUNK. On a heavy canid the mane is the widest thing above the ribs and it is what
-        // makes the shoulders read as a mass rather than as the top of four legs.
         NECK => {
             b.addCapsule(v3(0, -0.03 * s, -0.10 * s), v3(0, 0.02 * s, 0.16 * s), 0.165 * s, 0.100 * s, 10, peltAt(0.6));
             b.addBlob(v3(0, 0.005 * s, -0.02 * s), v3(0.195 * s, 0.150 * s, 0.140 * s), 4, 10, SADDLE); // the ruff's mass…
@@ -410,8 +375,6 @@ fn boneMesh(i: usize) rl.Mesh {
         EARL, EARR => {
             // PRICKED, SET BACK, and BLUNT at the tip. Slightly different heights left and right: variation
             // between the parts, which is what stops a symmetrical head reading as a decal.
-            // BIGGER THAN THEY LOOK ON A PHOTOGRAPH. At the first pass's size they were two chips nobody could
-            // see, and the ears are the single cheapest thing that says "wolf" from forty metres.
             const lean: f32 = if (i == EARL) 1.0 else -1.0;
             const h = 0.105 * s * rng.range(0.94, 1.06);
             b.addCapsule(v3(0, 0, 0), v3(lean * 0.020 * s, h, -0.014 * s), 0.044 * s, 0.020 * s, 7, peltAt(0.8));
@@ -435,9 +398,6 @@ fn boneMesh(i: usize) rl.Mesh {
         },
         // THE LIMBS. Upper segments carry real muscle and taper hard into the lower ones, which are nearly
         // bone — that taper is a canid's leg and a set of even cylinders is a table's.
-        // THE LIMBS, and the upper segments are nearly as thick as they are long — that is where the muscle
-        // is, and the first pass drew four broom handles. The taper into the cannon bone is what sells it: a
-        // leg of even thickness reads as furniture whatever its radius.
         SHL, SHR => b.addCapsule(v3(0, 0.02 * s, 0), v3(0, -HUMERUS * s, 0), 0.105 * s, 0.062 * s, 8, peltAt(0.45)),
         HIPL, HIPR => b.addCapsule(v3(0, 0.02 * s, 0), v3(0, -FEMUR * s, 0), 0.125 * s, 0.068 * s, 8, peltAt(0.45)),
         ELL, ELR => b.addCapsule(v3(0, 0, 0), v3(0, -FORE_LOWER * 0.68 * s, 0), 0.062 * s, 0.036 * s, 7, peltAt(0.3)),
@@ -552,8 +512,6 @@ const GROWL_EVERY: f32 = 2.6;
 /// feeds it: `DISSOLVE.rate` 62 a second against a mean life of ~0.72 s (0.55-1.05 for a mote, 0.32-0.65 for
 /// a flake, three in four being motes) stands about 45 at the fade's start, and the rate only falls from
 /// there as `thinning` closes.
-/// The rift's two bursts share it and cannot crowd it out: `2 × RIFT_N` is 24, and the two emitters can never
-/// run at once (a spirit that is coming apart is not one the bond can move).
 const PARTS = 48;
 /// Motes at ONE end of a rematerialize — the shade's own count, on a ring half the size.
 const RIFT_N = 12;
@@ -563,12 +521,6 @@ const JAW_REACH: f32 = 0.10;
 
 /// HOW HARD A BLOW KNOCKS IT BACK, by whether the blow was heavy — `foe.Push`, the same PAIR every wounded
 /// creature is shoved by, because the two are only ever chosen against each other.
-///
-/// **IT IS A SPEED, in the unit every sibling's is** (`foe.applyShove`, which steps by `shove·dt` and bleeds
-/// the vector off at `SHOVE_DECAY`): the ground actually covered is that speed OVER the decay, so these two
-/// work out at the 4 cm and 9.4 cm of give-ground they were tuned to. Written as a hand-rolled step here the
-/// decay was multiplied INTO the travel as well, so the same pair the shared type names meant METRES on this
-/// one creature and m/s on the other nine — one struct, two units, and nothing to say which you were reading.
 pub const SHOVE = foe.Push{ .light = 1.44, .heavy = 3.30 };
 /// …and how fast that shove bleeds off, named like every sibling's.
 const SHOVE_DECAY: f32 = 6.0;
@@ -576,7 +528,6 @@ const SHOVE_DECAY: f32 = 6.0;
 const TURN_RATE: f32 = 5.6; // rad/s — a wolf turns on its own length
 const ACCEL: f32 = 9.0;
 /// How fast the SHOWN speed chases the real one — the gait's own smoothing, and the only thing `pose` reads.
-/// It is not `ACCEL`: that is the animal accelerating, this is the legs catching up with it.
 const GAIT_BLEND: f32 = 8.0;
 
 pub const State = enum { idle, move, bite, hurt, dead };
@@ -717,22 +668,6 @@ pub const Wolf = struct {
     }
 
     /// THE BLADE ITS JAWS ARE, live only through the strike window.
-    ///
-    /// **IT IS A `pierce`, AND THAT IS NOT A LIE ABOUT WHAT IT IS.** `pierce` is what tells `foe.strike` to
-    /// leave the victim's `hitLatch` ALONE — and that latch belongs to the HERO'S SWING. Shared, a bite landing
-    /// mid-swing latches the foe and eats the sword blow the player actually paid stamina for, and the wolf's
-    /// window closing then CLEARS the latch and lets one swing land twice. The latch for this blow is the
-    /// wolf's own (`hitLatch` here, taken at the call site), which is exactly the split `pierce` exists for.
-    ///
-    /// So the segment is the shaft's too: `a`→`b` is the ground the jaws crossed THIS FRAME, which is both the
-    /// swept test that stops a lunge tunnelling through a body and the direction the shove reads along.
-    ///
-    /// **AND BECAUSE THE BITE IS A HOP, IT REACHES MID-HEIGHT — the hero's own jump rule, on jaws** (owner's
-    /// call). Nothing here tests a height: the blade is the jaw's REAL WORLD POINT, and the jaw is a child of
-    /// a root the hop lifts, so at the top of the throw the teeth are about a metre up and a body whose middle
-    /// is up there is simply in the way. That is the whole mechanism — a creature standing tall enough that a
-    /// ground-level snap would pass under its belly can be caught by the leap, exactly as he clears a toad by
-    /// jumping. It does NOT reach a perched leechfly at 4.6 m, and it should not: that trade is the bow's.
     pub fn blade(self: *const Wolf) foe.Blade {
         const live = self.state == .bite and self.t >= BITE_WIND and self.t < BITE_WIND + BITE_STRIKE;
         return .{
@@ -1009,22 +944,6 @@ pub const Wolf = struct {
 
         // THE FOUR COLUMNS, each solved to where its paw has to be this frame — off the ONE table that carries
         // the bones, the lengths and the fold (`LIMBS`), whose index is the limb's own phase.
-        // …and the fold signs go WITH the solver's negation: in the rig's own sense the elbow has to end up
-        // behind the column and the stifle in front of it, which is the opposite pair to the one the solver's
-        // own +Z-forward convention names. Straight legs with a kink at the top was this.
-        // …AND THE FEET COME UP WITH IT. `hop` raises the body, so without this the paws stay nailed to the
-        // ground and the legs simply stretch — the body floats off four stilts instead of the animal leaving
-        // the earth. Folding the reach by the same lift is what makes it a jump.
-        // **ONE MECHANISM, NOT TWO.** The tuck is `tuck` and nothing else: the joint heights stay what they
-        // are. Written with the hop ALSO subtracted from `jointY` it was applied twice over — and the first
-        // application had the sign backwards on top of that, since a body rising by `hop` needs its planted
-        // foot to reach `+hop` FURTHER, not less. Between the two the legs folded to the chest on a 15 cm hop.
-        // …AND THE GATHER GOES THE OTHER WAY. `crouch` LOWERS the whole animal (the root's own `-crouch`), so
-        // the joint it hangs from is that much nearer the ground and the leg has that much LESS to span: the
-        // sink is what folds the limbs, which is the whole of what a gather looks like. Added instead, the
-        // reach ran past the ground by twice the crouch — and past the limb's own span, so `limbChain` clamped
-        // it dead straight and stood the animal 20 cm into the earth on four locked stilts for the whole of
-        // every wind-up. Level the LEG, never the body (the hero's ankle law) — this is that law at the hip.
         const tuck = hop / @max(HIP_Y, 0.001);
         inline for (LIMBS, 0..) |L, i| self.column(&wx, L, ph[i], g, stride, m, crouch, tuck);
         self.xf = wx;
@@ -1054,14 +973,6 @@ pub const Wolf = struct {
         const at = pawAt(phase, g, stride);
         // At a standstill the paw sits under its own joint; the gait fades in with `m` so an idle wolf is not
         // walking on the spot.
-        //
-        // **THE FORWARD AXIS IS NEGATED GOING INTO THE SOLVER, AND THAT ONE SIGN IS THE WHOLE MOONWALK.**
-        // `pawAt` works in the world's sense (+z is the way the animal is travelling) but `rx(+)` swings a
-        // bone hanging straight down toward −Z in this matrix convention, so a paw asked to reach FORWARD was
-        // rendered reaching BACK. Every limb then ran its cycle in reverse under a body moving the right way,
-        // which is exactly the "feet sliding the wrong way" a moonwalk is. Negated HERE, once, rather than
-        // inside `limbChain` — that function is pure sagittal geometry with +Z forward and its tests pin it
-        // that way; this is the rig's own handedness and it belongs at the rig.
         const dz = -at.z * m;
         // `tuck` folds the reach itself, so a hopping wolf draws its feet up under it instead of hanging them.
         const dy = ((L.jointY - crouch) * W - at.y * m) * (1.0 - mathx.clampF(tuck, 0, 0.6));
@@ -1137,11 +1048,6 @@ pub const Pack = struct {
     /// returns at its first line — a spirit that is called, walks, fights and is INVISIBLE. That is the
     /// mirror of `foe.zig`'s rule (a group is emptied through its own `clear`, never by zeroing `n`), and
     /// the reason is the same one: only the group knows what it owns.
-    ///
-    /// **AND IT IS THE ONLY NAME FOR IT.** A `reset` sat beside this doing the identical `self.n = 0` with
-    /// none of the note above, and both were live — `game.beginGame` took this door and the shot harness took
-    /// the other. Every OTHER group's `reset` means "re-home from the map", so the twin was the same word
-    /// promising a different contract, one keystroke from the `= .{}` this comment exists to forbid.
     pub fn clear(self: *Pack) void {
         self.n = 0;
     }
@@ -1371,7 +1277,6 @@ test "A GATHER FOLDS THE LEGS, IT DOES NOT SINK THE ANIMAL — the paws stay whe
 test "CLEARING THE PACK SENDS IT HOME, IT DOES NOT UNLOAD IT" {
     // The bug this pins was silent and total: `= .{}` in a new-game reset put `ready` back to false, and
     // `draw` returns at its first line — the bell called a spirit that walked, fought and could not be seen.
-    // Nothing about the wolf's behaviour changes when its meshes go, which is why only an eye caught it.
     var p = Pack{};
     p.ready = true; // stands in for `load`, which needs a GL context
     p.n = 1;

@@ -244,12 +244,6 @@ pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 
 // action list runs in order. What makes that shape compose is not the condition vocabulary but SC1's
 // general-purpose STATE — named switches (`flag`), named integer counters (what its death counts were
 // really for) and countdown timers. Without them every new bit of story state wants a new condition kind.
-//
-// A NAME IS INTERNED TO A SLOT AT LOAD (`flag`/`counter`/`timer`), so a condition costs two bytes rather
-// than a string, and the map carries the name tables so the file stays self-describing. A reference to
-// something declared LATER in the file (a dialog, a node an `ask:` points at) keeps the written name as a
-// span and is resolved by `link` after the whole file is read — order is meaning for OPS, and must not be
-// for these.
 
 pub const ID_CAP: usize = 24;
 pub const Id = [ID_CAP]u8;
@@ -531,9 +525,6 @@ pub const Soil = enum(u8) {
 /// **HOW A PAINTED PATCH ENDS.** One authored property per CELL, beside its material and its coverage —
 /// not a property of the material, since six materials cannot carry eight shapes and the point is to lay a
 /// tiled courtyard and a torn scree of the same stone in one world.
-///
-/// Three knobs make all of these: how far the lookup WANDERS off the authored line, at what WAVELENGTH,
-/// and whether the boundary CUTS or feathers. See `shaders.zig`.
 pub const Edge = enum(u8) {
     /// One material dissolves into the next over metres. The gentlest thing here: no line at all.
     blend,
@@ -1043,8 +1034,6 @@ pub const Map = struct {
     }
 
     /// Paint (or wipe) a disc of the WATER MASK.
-    /// `edge` null leaves each cell's coast shape alone, which is what an ERASE wants — wiping water is not
-    /// a statement about how the water that is left ends.
     pub fn paintWater(self: *Map, px: f32, pz: f32, radius: f32, wet: bool, edge: ?Edge) bool {
         const cell = self.cellSize(WATER_N);
         const r2 = radius * radius;

@@ -346,9 +346,6 @@ pub const Info = struct {
     interact: bool = false,
     /// NEVER THINS WHEN IT STANDS IN THE CAMERA'S WAY — architecture, cliffs, the water sheet. Losing
     /// sight of the hero behind a wall is the geometry doing its job, and ER keeps those solid too.
-    /// EVERYTHING ELSE THINS, and the default is that way round on purpose: as an opt-in `fades` flag
-    /// every kind added afterwards opted out by silence, which is how boulders, statues, lanterns and
-    /// saplings ended up blotting him out solid. Flora is exempt structurally — see `Env.markOccluders`.
     solid: bool = false,
     /// What the fade tests the sight line against when the colliders are the wrong shape for it (trees).
     occl: []const Blocker = &.{},
@@ -452,10 +449,6 @@ pub const INFO = [NK]Info{
     // is what makes it a bonfire. `stow` for the bonfire's reason: every fire you can sit at has the guitar
     // against its rock, and it goes when he picks it up. `bound` is up from 1.5 to hold the rock and the
     // instrument, which stand outside the ring of stones and would otherwise cull before the hearth does.
-    //
-    // …AND SOLID, which the assert below demands of anything with a second mesh: `drawStows` carries no fade,
-    // so a thinning hearth under an opaque guitar reads as a bug. A 1.1 m fire between lens and hero was never
-    // hiding much of him anyway.
     .{ .kind = .campfire_lit, .build = fx.campfireMesh, .stow = fx.campfireGuitarMesh, .bound = 2.6, .top = 1.1, .view = 200, .interact = true, .solid = true, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
     .{ .kind = .water, .build = fx.waterMesh, .bound = 30.0, .top = 0.1, .view = FAR, .solid = true, .casts = false },
     .{ .kind = .tuft, .build = flora.tuftMesh, .bound = 0.9, .top = 0.8, .view = 85, .flora = true, .casts = false },
@@ -503,14 +496,6 @@ pub const INFO = [NK]Info{
     // **THE ITEM PICKUP.** `interact` shelves it under the editor's Interactables layer beside the chest, which
     // is where the things the player USES belong — and `INTERACT_KINDS` is DERIVED off that flag, so the
     // palette picks it up with no edit in `editor.zig` at all.
-    //
-    // NO `parts`: **a wisp of light is not something you walk into** — a collider would let the player bump a
-    // pickup round the floor and block arrows and sight lines. NO `casts` either: a glowing thing that throws
-    // a shadow reads as a solid object pretending to glow. A `flicker` would make it a candle.
-    // **THE `top` IS THE PILLAR'S, NOT THE WISP'S** — DERIVED as `fx.PICKUP_TOP`, or the culler sizes the prop
-    // by the 0.62 m wisp and the shaft of light over it pops out at the screen edge. `bound` has to clear
-    // `top` (the assert below), which is why it is not the wisp's either. The LIGHT is bigger than a torch's
-    // puddle (owner: more glow): a wide, soft, near-still pool, findable from across a field.
     .{ .kind = .pickup, .build = fx.pickupMesh, .bound = 1.9, .top = fx.PICKUP_TOP, .view = 190, .interact = true, .casts = false, .light = .{ .y = 0.30, .col = v3(0.86, 0.82, 0.58), .radius = 5.4, .flicker = 0.03 } },
 };
 

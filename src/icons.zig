@@ -346,7 +346,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
 
         .bone_knight => {
             // A SLAB OF A SHIELD, filling most of the box, with a helm over its rim and a blade behind it.
-            // The shield is the read: nothing else in the set is mostly one closed shape.
             box(cx - s * 0.06, cy + s * 0.06, s * 0.50, s * 0.66, w * 1.6, col); // the door…
             hline(cx - s * 0.06, cy + s * 0.06, s * 0.44, w, d); // …its brace
             dot(cx - s * 0.06, cy - s * 0.10, w * 1.8, d); // …and the boss over the grip
@@ -372,8 +371,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
 
         .necromancer => {
             // A TALL NARROW COLUMN WITH A CROOKED STAFF BESIDE IT, and a ring drawn on the floor under it.
-            // The read is the PROPORTION: it is the only glyph in the set that is much taller than it is
-            // wide, which is the creature, and the staff is what separates it from the shade's own hood.
             arc(cx - s * 0.08, cy - s * 0.34, s * 0.15, 180, 360, w * 1.4, col); // the helm
             hline(cx - s * 0.08, cy - s * 0.32, s * 0.20, w, d); // …its brow
             line(cx - s * 0.20, cy - s * 0.20, cx - s * 0.28, cy + s * 0.30, w * 1.3, col); // the robe, flaring

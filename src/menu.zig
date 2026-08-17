@@ -255,7 +255,6 @@ pub const Menu = struct {
     }
 
     /// A WORLD IS RUNNING NOW — the boot screen's one way out, taken by both New Game and Load Game.
-    /// Options belongs to the pause card from here on, which is what `home` carries.
     pub fn started(self: *Menu) void {
         unloadShots(); // …and the picker's pictures go with it, whichever row started the world
         self.home = .main;
@@ -290,7 +289,6 @@ pub const Menu = struct {
     }
 
     /// HOW MANY ROWS THE LIVE SCREEN HAS — asked by the cursor wrap AND by "is the cursor on Back".
-    /// The book is not a row list and answers 0; it is driven whole, below.
     fn rowCount(self: *const Menu) usize {
         return switch (self.screen) {
             .closed, .character => 0,
@@ -304,11 +302,6 @@ pub const Menu = struct {
     }
 
     // dt is the REAL frame time (not time-scaled) so the glide speed never changes.
-    // `day` is handed in mutable for the retro dials' reason: the row adjusts a live thing, and the menu has no
-    // business holding a second copy of the world's hour that would have to be pushed back on the way out.
-    /// The `shelf` is handed in rather than surveyed off the disk here, for the reason nothing else in this
-    /// file holds game state either: the menu draws what it is told. `game.zig` knows what is on the shelf,
-    /// because writing a file is the only thing that puts anything on it.
     pub fn update(self: *Menu, retro: *gfx.Retro, day: *daynight.Clock, dt: f32, v: bookmod.View, shelf: *const savemod.Shelf) Action {
         if (self.screen == .closed) return .none;
         if (self.screen == .character) return self.updateBook(dt, v);
@@ -445,7 +438,6 @@ pub const Menu = struct {
     }
 
     /// A SLOT WAS DELETED UNDER THE PICKER and its picture went with it, so the three textures are re-read.
-    /// `game.zig`'s door: the shelf is its to re-survey and the pictures are this file's to hold.
     pub fn slotsChanged(self: *Menu) void {
         self.askDelete = false;
         if (self.screen == .slots) loadShots();
@@ -477,7 +469,6 @@ pub const Menu = struct {
                 // **BOTH ROWS ASK WHICH SLOT** (owner's call). New Game used to take the first empty one
                 // without asking (ER's own) and only showed the picker when all three were full — so the
                 // one press that decides where a character LIVES was the one press that never said where.
-                // Three slots is few enough that choosing is the point of having them.
                 BOOT_NEW => self.openSlots(.new),
                 BOOT_LOAD => self.openSlots(.load),
                 BOOT_OPTIONS => {
@@ -685,7 +676,6 @@ pub const Menu = struct {
 
     /// **THE PICKER IS NOT A ROW LIST**, which is why it is not `drawCard` with a fourth optional column: a
     /// row here is a PICTURE with two lines beside it, and the plate has to be tall enough to hold one.
-    /// Back is a plain row under the three, at the row height the rest of the game's lists use.
     fn drawSlots(self: *const Menu, shelf: *const savemod.Shelf) void {
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
@@ -861,7 +851,6 @@ fn drawGauge(x: i32, y: i32, w: i32, h: i32, v: f32, selected: bool) void {
 
 /// WHAT THE SAVE IS AND WHERE IT COMES FROM, said once on the one screen that can act on it. The empty case
 /// is not an apology: it names the one place a save is made, which is a thing a soulslike has to teach.
-/// ASCII ONLY, like every string in the game: the atlas has no em dash and one renders as tofu.
 const BOOT_NOTE: [:0]const u8 = "Three slots. A bonfire saves over the one you are playing.";
 const BOOT_NOTE_EMPTY: [:0]const u8 = "No save yet. Rest at a bonfire to write one.";
 /// …and the one that says WHY New Game is dim. A greyed row the player cannot read the reason for is the
@@ -897,8 +886,6 @@ fn loadShots() void {
     unloadShots();
     for (0..savemod.SLOTS) |i| {
         // A slot with no picture is not an error: the file predates the thumbnail, or the export failed.
-        // The row draws an empty plate and still says everything that matters, which is the point of the
-        // head being read off the SAVE rather than off the picture.
         slotTex[i] = rl.loadTexture(savemod.shotPath(i)) catch null;
     }
 }
@@ -1030,18 +1017,6 @@ pub fn navPressed(dir: NavDir) bool {
 //  1. A RADIAL magnitude, never per-axis. Testing the axes separately is the "snap to grid" mistake: the
 //     corner of the square passes at 0.62 on each axis while the true deflection is 0.88, so a lazy diagonal
 //     reads as a hard push.
-//  2. A SCHMITT TRIGGER, not one threshold. It arms at `STICK_FIRE` and does not re-arm until the stick has
-//     fallen back under `STICK_REARM`; one threshold chatters across itself on the way past.
-//  3. DAS then ARR (the falling-block idiom): a held push waits `STICK_DAS` before it repeats and then goes
-//     every `STICK_ARR`, so a nudge is exactly one step and a hold is a readable crawl.
-//  4. A DEAD CONE AT THE DIAGONALS — **ON A LIST OR A GRID, WHICH IS THE ONLY PLACE IT BELONGS.** Inside 32°
-//     of an axis is that direction and outside it is nothing, because on a layout with four directions in it
-//     a 46° push is a push the player has not finished making.
-// **AND A RADIAL LAYOUT TAKES THE THUMB'S OWN BEARING, NOT ONE OF FOUR** (owner). The wheel's arms run out at
-// 0, 120 and 240 degrees, so almost nothing on it is reachable along a screen axis — snapped to four and then
-// gated by the dead cone, the natural push lands IN the cone and does nothing on two arms out of three. So
-// `radial` hands `passivetree.step` the thumb's own unit heading and the wheel's wedge search picks what lies
-// along it. Nothing about the LIST path moves: a row list keeps its four directions and its dead cone.
 const STICK_FIRE: f32 = 0.72;
 const STICK_REARM: f32 = 0.42;
 const STICK_CONE: f32 = 0.848; // cos 32° — the half-angle a push must sit inside to count as an AXIS
@@ -1063,9 +1038,6 @@ var stickArmed: bool = true;
 
 /// WHAT THE LEFT STICK IS ASKING FOR THIS FRAME, as a unit heading in SCREEN space (+y down, which is the
 /// stick's own sense and `passivetree.unitPos`'s), or null. Call ONCE a frame — it owns its own clock.
-///
-/// `radial` is the whole decision and it is `navFor`'s shape: a WHEEL takes the bearing, a list or a grid takes
-/// one of four. See the note above for why a wheel cannot take one of four.
 pub fn stickPush(dt: f32, radial: bool) ?rl.Vector2 {
     if (!rl.isGamepadAvailable(0)) {
         stickDir = null;
@@ -1127,9 +1099,6 @@ pub fn stickPan() rl.Vector2 {
 /// THE CROSS'S UP AND DOWN AS A ZOOM, −1 (out) … +1 (in), read as a HELD level so it glides rather than
 /// notching (owner's call). NOT the bumpers: those are the book's page turn, and the passive tree is one of
 /// its pages — a zoom that took them would strand you on the wheel with no way to turn off it.
-///
-/// TWO DEVICES, AND NEITHER IS THE KEYBOARD'S ARROWS: the pad's cross, and the MOUSE WHEEL, which is why the
-/// arrows keep WALKING the wheel on both screens (`navFor`) instead of being spent on a zoom a desk already has.
 pub fn dpadZoom() f32 {
     var v: f32 = 0;
     if (padDown(.left_face_up)) v += 1;
@@ -1140,7 +1109,6 @@ pub fn dpadZoom() f32 {
 }
 
 /// …and the walk with the CROSS TAKEN OUT OF IT, for the two screens that have spent it on the zoom above.
-/// The keys are untouched: only the pad's own d-pad is withheld.
 pub fn navPressedNoPad(dir: NavDir) bool {
     const k = keyNav(dir);
     return rl.isKeyPressed(k.a) or rl.isKeyPressed(k.b) or rl.isKeyPressedRepeat(k.a) or rl.isKeyPressedRepeat(k.b);

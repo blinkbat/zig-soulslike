@@ -92,16 +92,9 @@ const SHOVE_DECAY: f32 = 8.0;
 // THE FEED — the one move it has, and the reason the creature exists.
 
 /// THE BEAK GOING IN. A real blow: it carries a direction, the boards can catch it and a roll beats it.
-/// Slight on purpose — this is not how it hurts you, it is how it gets HOLD of you.
 pub const STAB_HIT = combat.Hit{ .dmg = 6, .poise = 9 };
 /// …AND THE SWALLOW, billed EVERY FRAME while it is on you (`hero.burn` → `combat.Vitals.drip`). Written per
 /// SECOND and scaled by `dt` at the site, because that is the only honest way to read a hold's damage.
-///
-/// **HALVED, AND THE ARITHMETIC IS WHY** (owner: they do too much). This is a SWARM — the drip is per fly, and
-/// nothing stops three of them being on him at once. At 22 that was 66 a second against a 70 HP pool, so a
-/// swarm that caught him took him from full to dead in about a second whatever he did about it; a hold you
-/// cannot survive long enough to roll out of is not a hold, it is a timer. At 10 the same three cost him
-/// nearly half a bar over a second, which is a beating he can answer.
 pub const DRINK_DPS: f32 = 10.0;
 /// HOW MUCH OF WHAT IT TAKES COMES BACK TO IT (owner: "leeches some of your life back to him"). SOME, not
 /// all: a flyer that heals for everything it drinks is a stalemate against a player without a bow.
@@ -543,8 +536,6 @@ pub const Leechfly = struct {
 
     /// THIS FRAME'S SWALLOW, and the creature takes its share of it here. Billed per SECOND and scaled by
     /// `dt`, which is the only honest way to write a hold's damage.
-    /// IT HEALS OFF WHAT IT BILLS, not off what the hero actually lost — the same figure today, since nothing
-    /// grants the hero resistances yet, but this is the line that has to start asking the day one does.
     fn sip(self: *Leechfly, dt: f32) combat.Hit {
         const h = combat.Hit{ .dmg = DRINK_DPS * dt };
         _ = self.vit.heal(h.dmg * LEECH_SHARE);
@@ -559,7 +550,6 @@ pub const Leechfly = struct {
     }
 
     /// Is he under the beak — near enough, IN FRONT of it, and is the creature low enough to have got there?
-    /// The height is not a nicety: perched at four metres the XZ distance says it is on top of him.
     pub fn holds(self: *const Leechfly, hero: rl.Vector3) bool {
         if (self.hover > FEED_CEIL) return false;
         if (mathx.distXZ(self.pos, hero) > self.stabReach()) return false;
@@ -691,9 +681,6 @@ pub const Leechfly = struct {
 
     /// FORCE THE FEED for the shot harness, at ATTACK HEIGHT: a fresh one loiters at `HOVER_IDLE`, so a
     /// photograph of the beak going in would be one of it going in half a metre over his head.
-    /// `runFor` is how long the caller means to step it. The wind and the drink are entered DIRECTLY, because
-    /// the chain only fires with a hero under the beak and the harness's hero is a position, not a body.
-    ///
     pub fn debugFeedFrom(self: *Leechfly, runFor: f32) void {
         self.hover = HOVER_LOW;
         self.hoverTo = HOVER_LOW;
@@ -815,8 +802,6 @@ pub const Leechfly = struct {
 
         // THE ABDOMEN DROOPS AND SWINGS. It is the heaviest thing on the creature and hangs off a hinge: it
         // lags the pitch rather than following it, and lifts as the belly fills — a full one is carried.
-        // NEGATIVE IS DOWN here: at +26 it stood off the thorax like a wasp's gaster, which is a hornet's
-        // silhouette and not a mosquito's.
         const droop = -(15.0 - 11.0 * self.gorge) + self.pitch * 0.45;
         const swing = mathx.sinf((self.elapsed * 1.7 + self.seed) * std.math.tau) * 4.0;
         self.xf[ABDO] = mul(mul(rx(droop), place(REST[ABDO])), self.xf[ROOT]);

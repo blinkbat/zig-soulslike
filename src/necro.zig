@@ -22,10 +22,6 @@ const BONE_LT = archermod.BONE_LT;
 // THE ROBE IS COLD WHERE THE WORLD IS WARM — the ogre's hue lesson and the knight's, on a mass that is mostly
 // cloth. Everything outdoors here is warm, so a tall dark figure separates by being BLUE-BLACK rather than by
 // being darker: at the wanderer's own wool (50,42,33) this thing sampled as one more shadow under a tree.
-/// …**AND THE HUE HAS TO BE LAID ON THICK, because the sun cancels it.** Authored at 26,28,38 — a value that
-/// looks decently blue in a swatch — the hem SAMPLED at 83,79,81 on the render: dead neutral grey, because the
-/// key here is warm and multiplies through. The blue channel has to run at better than twice the red in the
-/// ALBEDO for any of it to survive to the screen.
 const ROBE = rgba(14, 19, 36, 255);
 const ROBE_LT = rgba(22, 28, 48, 255);
 const ROBE_DK = rgba(9, 12, 22, 255);
@@ -38,11 +34,6 @@ const CORD = rgba(74, 62, 44, 255); // the one warm note, at the waist — the w
 /// THE FROST IS ONE SUBSTANCE (the brood's rule, and the wand's one violet): the sigil on the ground, the
 /// gather at the staff head, the burst and the rime on the hem are all this pair. Two kinds of ice in one
 /// world reads as two different things happening.
-/// **AND IT NEEDS TWO PALETTES, BECAUSE THE TWO HALVES ARE ON DIFFERENT SCALES** — the delver's `CLOD`-against-
-/// `SOIL` law, and the knight's `.steel`. What goes into a MESH is an ALBEDO and runs through ×1.72 → gamma;
-/// what is drawn UNLIT after the opaque pass (the ring, the gather, every particle) is a LITERAL SCREEN VALUE.
-/// One constant serving both means one of them is wrong: at 150 the staff head's ice comes back a blown white
-/// knuckle, and at an albedo the ring on the ground would be invisible grey grit.
 const RIME_ALB = rgba(44, 58, 72, 255); // MESH — solved to read ~170 on screen: pale ice, not a white sheet
 const RIME_ALB_LT = rgba(62, 80, 96, 255);
 /// UNLIT — literal screen values, and the two the ELEMENT owns (`elemfx`'s COLD, which sits below every
@@ -141,11 +132,6 @@ const A_PROT = 2.6; // deg of pelvic rotation — narrow hips and a robe: it bar
 // killing blow to its last mote, and a readable tell does not fit inside that — so a body inside `RAISE_R`
 // of a living necromancer **STOPS DISSIPATING** (`vigil`, stamped by `game.markVigil`, read by
 // `foe.dissipate`). The held corpse IS the tell, and it lands before the cast does.
-//
-// A PLACE, not a list: the stamp is re-taken every frame, so walking the fight away from the corpses is an
-// answer. **AND A BODY MAY BE RAISED ONCE** (`wasRaised`) — twice is a fight killing cannot win.
-/// How far it reaches for a body — comfortably past its own frost band, so the ground it defends and the
-/// ground it fights on are the same ground.
 pub const RAISE_R: f32 = 11.0;
 /// **THE LONGEST TELL IN THE GAME** and it is meant to be (the Bone Knight's lesson): this is the move that
 /// undoes the last thirty seconds of the player's work, so it owes the most warning of anything on the
@@ -160,8 +146,6 @@ pub const RAISE_HP_FRAC: f32 = 0.55;
 /// **HOW NEAR THE MARK THE BODY HAS TO BE LYING to be the one that comes up.** Generous: it is the same point
 /// the hold was stamped at and nothing has moved it, so this only ever absorbs the shove a corpse took off the
 /// blow that finished it.
-///
-/// The SEARCH lives in `game.markVigil`/`applyRaises`; the number belongs here beside `RAISE_R`.
 pub const RAISE_MATCH_R: f32 = 1.2;
 
 // ─── THE FROST ────────────────────────────────────────────────────────────────────────────────────────
@@ -170,13 +154,6 @@ pub const RAISE_MATCH_R: f32 = 1.2;
 // surge's, one creature along:
 //   - **THE SPOT IS COMMITTED THE FRAME IT IS CAST** — what is drawn on the ground IS where the blow lands,
 //     so the counter is his own feet. A ring that tracked would tax standing anywhere.
-//   - **IT OUTLIVES THE CASTER'S OWN ANIMATION** (its own clock), so killing him after the cast does not
-//     un-cast it. That is what stops the move being free.
-//   - **NOT PARRYABLE, AND THE BOARDS CANNOT ANSWER IT.** Its blow carries the SIGIL as its origin rather
-//     than the caster (`hitFrom`), so stood on the mark there is no bearing — the delver's zero-`fromDir`.
-//   - **AND IT IS THE FIRST COLD IN THE GAME.** `combat.Elem` has carried four arms since it was written and
-//     thirteen creatures resist all four; nothing had ever dealt this one. All-cold, no physical, for the
-//     wand's own reason: an element with one source in the world should be unmistakable when it lands.
 pub const FROST_HIT = combat.Hit{ .poise = 18, .stance = 8, .elem = combat.elems(.{ .cold = 26 }) };
 /// HOW WIDE THE RING BITES. Bigger than the delver's burst because the DELAY is longer and the caster is
 /// nowhere near it: what makes it fair is the time on the ground, not the size of it.
@@ -192,10 +169,6 @@ const FROST_RECOVER: f32 = 0.70;
 /// is deliberately NOT enough for. That one arrives from under the floor with a mound as its only warning;
 /// this one is drawn on the ground in front of him in a colour nothing else in the world is, so what it asks
 /// for is that you look down and step off, not that you sprint.
-///
-/// The first pass authored 1.30 s beside a 2.4 m radius and the comptime assert caught it: the ring is
-/// `FROST_R * scale` — 3.2 m on this rig, not 2.4 — so a walk covered 2.2 m of the 3.6 m it had to, and the
-/// one thing the move promises was false. Move either dial and the assert below re-solves it.
 pub const FROST_FUSE: f32 = 2.20;
 const FROST_CD: f32 = 4.2;
 /// The band it is thrown in. It has no melee at all, so the near edge is only "not while he is on top of
@@ -289,11 +262,6 @@ const DRIFT_DUR: f32 = 0.9; // …and it re-decides on its own clock rather than
 /// A CORPSE THIS CREATURE IS HOLDING OPEN, stamped by the game (`game.markVigil`) — `Leash`'s law: the
 /// creature reads the field and never reaches out for the state. Null is the ordinary case and it means
 /// there is nothing on the ground worth standing over.
-///
-/// It is a POINT and an INDEX INTO NOTHING: what the necromancer needs to know is where to face and whether
-/// there is anything at all. WHICH body it is belongs to the game, which is the only thing that can see
-/// across two groups (the archers' `Line` and the warriors' `Muster` are different arrays of different
-/// types), and the game is also the only thing that can put one back on its feet.
 pub const Vigil = struct {
     at: ?rl.Vector3 = null,
 
@@ -573,8 +541,6 @@ pub const Necro = struct {
         self.raised = false;
         self.parried = false;
         // THE ROOTS HAVE THE FEET (`foe.grip`) — it never leaves the ground, so the hold is unconditional.
-        // The cast is untouched: a held necromancer raises the dead just fine, which is the trade for the
-        // spell being the answer to everything that jumps.
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -684,11 +650,6 @@ pub const Necro = struct {
 
     /// Which opening it is standing in depends on which move it just spent, and the raise's is the long one:
     /// the reward for reading the longest tell in the game has to be bigger than the reward for reading the ice.
-    ///
-    /// **LATCHED, NOT INFERRED FROM THE COOLDOWN.** The first pass asked `raiseCd >= RAISE_CD - 0.001`, which is
-    /// true on the frame the raise lands and FALSE on the very next one — the cooldown ticks down by `dt`. So
-    /// the punish window the whole creature is built around collapsed to the frost's 0.70 s after a single
-    /// frame, and nothing about the state machine looked wrong.
     fn recoverDur(self: *const Necro) f32 {
         return switch (self.spent) {
             .raise => RAISE_RECOVER,
@@ -732,13 +693,6 @@ pub const Necro = struct {
 
     /// THE SPOT IS COMMITTED HERE AND NOWHERE ELSE — and it takes **THE GROUND AT THE MARK, WHICH IS THE
     /// TARGET'S OWN `pos.y`**, never the caster's.
-    ///
-    /// `pos.y` IS the ground under an actor (`game.groundActor` is its only writer), so the target's is exactly
-    /// the height the ring has to be drawn at. The first pass used the CASTER's, on the argument that a foe's
-    /// own datum is the safe one — which is true of a point on the creature's own body and false of a mark laid
-    /// twelve metres away: on this sculpted patch the two grounds differ by more than the ring's 3 cm of
-    /// clearance, and the whole band was depth-culled UNDER the terrain. The one move the player is meant to
-    /// read off the floor drew nothing at all, twice.
     fn lay(self: *Necro, hero: rl.Vector3) void {
         self.sigil = .{ .at = v3(hero.x, hero.y, hero.z), .left = FROST_FUSE, .blew = mathx.LONG_AGO };
         self.laid = true;
@@ -965,11 +919,6 @@ pub const Necro = struct {
     /// The hem's matrix: the root's, with the drag laid on top. `rx` here is a lean BACKWARD in the rig's own
     /// frame, which is away from the facing — and it walks backward, so the cloth is hauled toward the hero, in
     /// front of it. That is the picture: a thing retreating inside a robe that will not keep up.
-    ///
-    /// **CHAINED IN `pose`, REPLAYED BY `draw`** — the rig's own law, and the hem is not exempt for being a
-    /// matrix rather than a bone. `draw` runs TWICE a frame (the depth pass and the lit one), so solving it
-    /// there did the work twice and, worse, left the shadow free to disagree with the silhouette the first time
-    /// anything moved between the passes.
     pub fn hemXf(self: *const Necro) rl.Matrix {
         return self.hemMat;
     }
@@ -1032,10 +981,6 @@ pub const Necro = struct {
     /// counter-rotating against the pelvis (`prot`), a trunk nod twice a stride and a head that counter-rolls
     /// the lot — **with the LAGS STAGGERED**, or every joint peaks on one frame and the whole thing reads as
     /// one welded block however big the numbers are.
-    ///
-    /// **AND THE STAFF ARM IS THE OTHER HALF OF THE GAIT** (the wanderer's staff law): a leaned-on staff
-    /// plants with the OPPOSITE foot, so that arm does not swing freely — it drives the pole down once a
-    /// stride while the free arm swings for both of them.
     fn poseUpper(self: *Necro, wx: *[N]rl.Matrix, dk: f32, stun: f32, dead: bool, prot: f32) void {
         const rest = self.rest;
         const twoPi = std.math.tau;
@@ -1074,8 +1019,6 @@ pub const Necro = struct {
 
         const armStun = -66.0 * stun;
         // THE STAFF ARM: the pole is driven down once a stride, contralateral to the leg that is planting.
-        // THE FREE ARM — the caster, and the LEFT one. Full contralateral amplitude, and the ELBOW FLEXES
-        // THROUGH THE FORWARD HALF ONLY, which is the half of an arm swing that is actually a swing.
         const swing = 11.0 * mathx.sinf(twoPi * self.phase) * m * @abs(self.fwdB);
         const fwdHalf = mathx.maxF(0, mathx.sinf(twoPi * self.phase));
         const castSh = self.castSh + swing + armStun - 30.0 * dk + 2.0 * swyLag;
@@ -1176,9 +1119,6 @@ pub const Necro = struct {
 
     /// **THE MARK'S OWN LIGHT** — see `SIGIL_LIT`. Null unless there is a mark to light, so a field of
     /// necromancers standing about costs the light rack nothing.
-    ///
-    /// It reads `sigil` and NOTHING about the body, which is what lets it outlive the caster exactly as the
-    /// ring it lights does: kill the thing after the cast and the ground it claimed is still lit.
     pub fn sigilLight(self: *const Necro) ?gfx.Light {
         const r = FROST_R * self.scale;
         const at = v3(self.sigil.at.x, self.sigil.at.y + SIGIL_LIT_Y, self.sigil.at.z);
@@ -1305,12 +1245,6 @@ pub const Necro = struct {
 
     /// Rime creeping while the fuse burns. TEXTURE IS THINNED IN COUNT, not just in level (the audio law's
     /// sibling): a steady stream over a second and a third is a fog machine, so this is a trickle.
-    /// **AND IT CREEPS OFF THE RIM, WHICH IS THE ONLY PART OF A FLAT MARK THAT HAS A HEIGHT.** A circle drawn
-    /// on the ground is at its least legible from exactly where the player stands — low and nearly edge-on —
-    /// so the boundary is also said VERTICALLY, as frost lifting off the line you have to be outside of. Kept
-    /// to the outer third for that reason: motes over the whole disc are a fog, and a fog has no edge.
-    /// Still a trickle by the audio law's sibling — thinned in COUNT — but a trickle on the one line that
-    /// matters rather than a steady scatter over ground that is mostly not the point.
     fn creep(self: *Necro, dt: f32) void {
         self.sigAccum += 22.0 * dt;
         while (self.sigAccum >= 1.0) {
@@ -1332,11 +1266,6 @@ pub const Necro = struct {
     }
 
     /// The ring going off: shards thrown UP and OUT off the ground, over the rim it has been drawing.
-    ///
-    /// **A MASS IN MOTION, NOT A SPARKLE** (the reactions law). The first pass threw a third of these at half
-    /// the height and the blow read as the mark quietly switching off. Two in three shards now go up the RIM
-    /// as a wall — the shape the ring has been promising for two seconds, finally standing up — and the rest
-    /// come off the disc so the middle is not a hole.
     fn burst(self: *Necro) void {
         const from = self.fxHead;
         const at = self.sigil.at;
@@ -1462,14 +1391,6 @@ const FROST_BURST_RING: f32 = 0.46;
 // only a LIGHT says "this ground is not the same as that ground", and it is the one part of the tell that
 // works at every hour — at night it is the whole picture, at noon it is a cold cast on warm turf, which is
 // the hue separation the render needs anyway.
-//
-// **IT POOLS** (the lights law: a radius matters more than a brightness). Reach is the ring's own plus a
-// little, never a wash over the field — the lit ground and the claimed ground have to be the same ground or
-// the light is telling a different story than the runes are.
-/// **AND IT IS NOT `RIME`, WHICH IS THE ROBE'S OWN LESSON ONE LAYER OUT.** A light MULTIPLIES through the
-/// surface it lands on, and every surface outdoors here is warm — so the grains' own pale blue came back off
-/// the turf as a neutral wash, exactly as a decently blue albedo sampled grey. The blue channel has to run
-/// several times the red in the LIGHT for any of it to survive the ground.
 const SIGIL_LIT = mathx.colVec(rgba(48, 138, 242, 255));
 /// It RAMPS with the fuse, so the glow is the countdown said a second way — laid down dim and at its loudest
 /// on the frame it goes off, which is where the runes are too.
@@ -1481,7 +1402,6 @@ const SIGIL_LIT_FLASH: f32 = 4.60;
 const SIGIL_LIT_BURST: f32 = 0.40;
 /// **HALF AGAIN THE RING**, because a light's falloff reaches zero AT its radius — sized to the rim exactly,
 /// the rim is where it has already faded out, and the lit ground stops well inside the ground being claimed.
-/// The pool has to cover what the runes are drawing or the two are telling different stories.
 const SIGIL_LIT_R: f32 = 1.60;
 /// Off the ground rather than on it — a light AT the turf lights a disc of it white and nothing else.
 const SIGIL_LIT_Y: f32 = 0.55;
@@ -1530,9 +1450,6 @@ const STAFF_CARRY_EL = -26.0;
 const STAFF_CARRY_ABD = 9.0;
 /// **180 IS PLUMB IN THE WORLD, and less than that rakes the head FORWARD** — the arm is billed for its own
 /// flexion at the fit (see `poseUpper`), which is what makes this a world angle rather than a wrist angle.
-/// The first pass read it as "degrees OFF plumb" and authored 12, which drove the whole 1.5 m of pole down
-/// through the floor where nothing in the picture could show it was wrong. A walking staff stands near
-/// upright, raked a little forward.
 const STAFF_CARRY_TILT = 172.0;
 
 const FREE_CARRY_SH = -6.0;
@@ -1716,13 +1633,6 @@ fn hemMesh() rl.Mesh {
     b.setMat(.cloth);
     // From the hip down past the feet. `-0.030·H` is BELOW the sole plane on purpose: that is the drag, and a
     // hem stopping at the ankle is a dress.
-    //
-    // **NARROW AT THE TOP AND THE FLARE KEPT LOW.** Authored at 0.185·H across the rim off a 0.100·H waist it
-    // came out a bell wider than the creature's own shoulders, which read as a chess pawn — the height went
-    // into the skirt instead of into the body. So the fall is nearly straight for its upper two thirds and
-    // only opens near the ground, which is what a heavy robe on a thin frame actually does.
-    // **THREE RINGS, EACH STARTING AT THE LAST ONE'S RADIUS**, so the fall is continuous: two rings a hand
-    // apart at mismatched radii left a visible SHELF halfway down, which reads as two garments.
     const top = 0.010 * H;
     const bot = -0.030 * H - REST[ROOT].y;
     const hip = -0.20 * REST[ROOT].y;
@@ -1740,7 +1650,6 @@ fn hemMesh() rl.Mesh {
         HEM,
     );
     // …and the rime the cloth has picked up off its own ground, caught in the folds at the very bottom.
-    // A FEW PERCENT of the mass, sunk most of the way in: RELIEF IS SUBTLE.
     b.setMat(.marble);
     var i: i32 = 0;
     while (i < 7) : (i += 1) {
@@ -1758,12 +1667,6 @@ fn hemMesh() rl.Mesh {
 }
 
 /// A cone of cloth that FLARES as it falls, uneven round its rim.
-///
-/// **EACH PANEL IS A THIN WALL AT THE RIM, NOT A WEDGE OFF THE AXIS**, and getting that wrong is what made the
-/// first pass a stack of barrels. `addBox` takes HALF-AXIS vectors, so a radial half-extent of `rBot/2` centred
-/// at `rBot/2` spans the whole way from the axis out to the rim: every panel came out a solid pie slice and the
-/// twelve of them a drum. The radial axis is the CLOTH'S THICKNESS and nothing else; what carries the panel
-/// from the bottom rim up to the top one is the SLANT (`ay`), and the tangential axis is its width.
 fn skirt(b: *Builder, c: rl.Vector3, rTop: f32, drop: f32, rBot: f32, sides: i32, col: rl.Color, rng: *mathx.Rng) void {
     const thick = 0.008 * H;
     var i: i32 = 0;
@@ -1946,9 +1849,6 @@ pub const Rite = struct {
         return .{ .model = Model.init(shader) };
     }
     /// The posted necromancers — never iterate the whole array, the tail is `undefined`.
-    /// Every live mark's light, into the caller's buffer, returning how many were written. Walked over the
-    /// WHOLE band rather than the living, for the ring's own law: a sigil outlives its caster, so a corpse's
-    /// mark is still lighting the ground it claimed.
     pub fn markLights(self: *const Rite, out: []gfx.Light) usize {
         var n: usize = 0;
         for (self.liveConst()) |*x| {

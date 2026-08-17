@@ -165,12 +165,6 @@ pub const Clock = struct {
 
     /// THE NEXT SPEED UP, wrapping. Setting the speed of a HELD clock sets the speed it will start at and leaves
     /// it held: one row says how fast and the other says whether, and neither reaches into the other's answer.
-    ///
-    /// **IT SNAPS TO THE NEAREST STEP AND THEN ADVANCES BY INDEX**, rather than looking for the first step ABOVE
-    /// the current speed. `speed()` reconstructs the multiplier by dividing, so a rate set from a step can come
-    /// back a hair under it (120 as 119.99999) — and a strict comparison then finds nothing above it, wraps to the
-    /// bottom, and the row cannot be walked past the top at all. Nearest-then-next cannot stall, and it also does
-    /// something sensible with a rate nobody picked off this list.
     pub fn cycleSpeed(self: *Clock) void {
         const cur = self.speed();
         var at: usize = 0;
@@ -262,8 +256,6 @@ pub fn keyDir(hour: f32) rl.Vector3 {
     const share = moonShare(hour);
     // **THE HANDOVER IS A SWEEP, NOT A PICK.** The moon is the anti-sun, so "which of the two is casting" is
     // exactly a HALF TURN of the bearing and a SIGN on the altitude — and both of those can be crossed gradually.
-    // At `share` 0 and 1 this is `sunDir` and `moonDir` to the last bit; in between it is neither, which is the
-    // point. Written as a choice between the two vectors there was nothing in between to write.
     const az = std.math.atan2(s.x, s.z) + std.math.pi * share * KEY_SWEEP;
     const alt = std.math.asin(mathx.clampF(s.y, -1, 1)) * (1.0 - 2.0 * share);
     // …AND THE FLOOR, which is what makes a caster under the horizon usable at all (see the note at the top): the
@@ -293,12 +285,6 @@ pub fn reachOf(d: rl.Vector3) f32 {
 
 /// EVERY COLOUR THE HOUR DECIDES, in one struct so the whole look of a time of day is ONE row of a table and
 /// never a set of numbers scattered over two shaders.
-///
-/// **THE TWO HALVES OF THIS STRUCT ARE ON DIFFERENT SCALES, AND IT IS NOT A MISTAKE.** The scene shader gammas
-/// its output (`pow 1/2.2`), so everything it reads — `key`, the two ambients, `haze`, `hazeBank` — is
-/// PRE-GAMMA and authored near-black (AGENTS.md's dark-albedo rule). The SKY shader gammas nothing, so every
-/// `sky*`/`cloud*` value here is a LITERAL SCREEN VALUE. Author the sky pre-gamma and it reads as a black
-/// hole over a blazing noon.
 pub const Palette = struct {
     /// The KEY, colour and strength in one: the shader multiplies it by the hot 1.72 and the wrap term, so
     /// dropping this toward black IS nightfall. The moon's is cold and about a tenth of noon's.
@@ -591,7 +577,6 @@ pub fn clockText(hour: f32, buf: []u8) []const u8 {
 }
 
 /// …and the same readout NUL-terminated, which is what every text path in this codebase takes (`hud.text`).
-/// The FORMAT lives here and `clockText` delegates, so the two shapes cannot print two different clocks.
 pub fn clockTextZ(hour: f32, buf: []u8) [:0]const u8 {
     const h = wrapHour(hour);
     const hh: u32 = @intFromFloat(@floor(h));

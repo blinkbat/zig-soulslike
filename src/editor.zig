@@ -3402,11 +3402,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
                 const y = box.y + LOOT_TOP + @as(i32, @intCast(i)) * LOOT_ROW_H;
                 hud.mono(item.displayName(k), box.x + DLG_PAD, y + 5, hud.MONO, ui.VALUE);
                 // **WHAT THE THING ACTUALLY DOES, on the row that puts it in the world** (owner's ask, twice).
-                // `item.effect` is the MECHANIC in one line, off `item.use`, so a dose retuned there reads
-                // here; `item.describe` is FLAVOUR and does not tell an author which of two flasks they just
-                // added. The shelf goes in front because half these rows are inert.
-                //
-                // The strip stops SHORT of the -/+ buttons: over them the tip would fight the press.
                 var ebuf: [item.EFFECT_BUF]u8 = undefined;
                 var tbuf: [item.EFFECT_BUF + 32]u8 = undefined;
                 const tip = std.fmt.bufPrintZ(&tbuf, "{s}  -  {s}", .{ item.class(k).label(), item.effect(k, &ebuf) }) catch item.effect(k, &ebuf);
@@ -3736,10 +3731,6 @@ fn freshRim(ed: *Editor, m: *const wf.Map) wf.Op {
 
 /// THE SOUND FILTER RACK, one family at a time. It lives here rather than in the game's options because it
 /// is an authoring tool, and the one place a voice can be played on demand is the list to its left.
-///
-/// **FILTERS ARE BAKED, NOT MIXED** — raylib can neither filter a playing voice nor a submix, so moving a
-/// dial re-renders that whole family (`sfx.tickFx`, coalesced by `FX_SETTLE`). That is why the panel SAYS
-/// a re-render is owed rather than looking like the dial did nothing.
 fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32) void {
     var y = y0;
     hud.mono("FILTER RACK", x, y, hud.MONO, ui.TITLE);

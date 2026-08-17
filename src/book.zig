@@ -159,14 +159,7 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     // there were two armaments; the BELL has neither a light nor a heavy, so every row below came off the
     // SWORD and the page priced a swing he cannot take. Zero is the honest figure, and the arm's own tip
     // already says it in words.
-    // EITHER HAND. A blade in the off hand swings now (`hero.placeSword`), so the page may not price the
-    // right hand alone and call the character weaponless.
-    const attacks = bow or blk: {
-        for ([_]heromod.Armament{ l.arm, l.off }) |a| {
-            if (heromod.armSwings(a) and heromod.handsHold(l.arm, l.off, a)) break :blk true;
-        }
-        break :blk false;
-    };
+    const attacks = bow or heromod.armSwings(l.arm) or heromod.armSwings(l.off);
     const light = if (bow) heromod.BOW_QUICK_HIT else heromod.ATK_LIGHT_HIT;
     const heavy = if (bow) heromod.arrowBlow(l.ammo, true) else heromod.ATK_HEAVY_HIT;
     var d: [ND]f32 = undefined;
@@ -312,7 +305,6 @@ fn locked(s: SlotId, v: View) ?[:0]const u8 {
         // AN ALTERNATE IS NEVER LOCKED: it is what he is NOT holding, so nothing he is holding can deny it.
         .left2, .right2 => null,
         // Which of the two reasons it is: "locked" with no reason is a slot the player calls broken.
-        // Asked of BOTH hands (`hero.handsHold`): a rod equipped right casts, and this said he had none.
         .sorcery => if (v.holds(.bow))
             "Both hands are on the bow. Nothing is free to hold a wand."
         else if (!v.holds(.wand))
@@ -446,8 +438,6 @@ fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
     switch (s) {
         // Each list is walked off the ENUM it offers, so a third arrow or a third armament is a row here
         // the day it exists rather than a row somebody remembered to add.
-        // ALL FOUR HAND SOCKETS OFFER THE SAME LIST, which is the whole of "any armament in either hand":
-        // as two lists keyed to two enums, which hand a thing could go in was a fact about its TYPE.
         .right, .left, .right2, .left2 => {
             inline for (@typeInfo(heromod.Armament).@"enum".fields, 0..) |f, i| {
                 const a: heromod.Armament = @enumFromInt(f.value);
@@ -690,7 +680,6 @@ pub const Book = struct {
     }
 
     /// IS THE CROSS SPENT ON THE ZOOM this frame — true on the wheel, where the walk is the left stick's.
-    /// A picker open over it is a row list again and takes the cross back.
     pub fn wheelUp(self: *const Book) bool {
         return self.page == .tree and self.picking == null;
     }
@@ -898,8 +887,6 @@ fn labelH() i32 {
 /// THE SOCKETS ARE FITTED TO THE PANEL, not a fixed pixel size — the card is a fraction of the window
 /// (`cardBox`), so a fixed socket is a different share of the page on every monitor. The gap and the break
 /// between the body and the quick rows are fractions of the socket, so the whole block scales as one thing.
-///
-/// TEXT DOES NOT SCALE — sizes come from `hud`'s type scale, which is why the label height is subtracted.
 const SlotFit = struct { px: i32, gap: i32, brk: i32, x: i32, y: i32 };
 
 fn slotFit(body: Box) SlotFit {
@@ -1116,7 +1103,6 @@ pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
 
     // THE CRIB IS BUTTONS, NOT KEYS (owner's call). One strip per state, drawn as the pad's own pictograms,
     // and the page-turn pair rides every one of them because it is the only way off a page.
-    // ONE hint for the pair: two pills labelled "Page" side by side read as two different page turns.
     const PAGE = hud.Hint{ .glyph = .{ .bumper = "LB/RB" }, .label = "Page" };
     const CLOSE = hud.Hint{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Close" };
     const CANCEL = hud.Hint{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Cancel" };
@@ -1329,8 +1315,6 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
         y += step;
     }
     // THE FOOT GOES UNDER THE LAST ROW THAT WAS ACTUALLY DRAWN, not at a fixed drop from the panel's bottom.
-    // `rowStep` FLOORS at one line height, so with a picker open the twelve rows can be taller than the space
-    // left for them — which drew the divider through "Ammunition" and printed the blurb over the row above.
     const footY = @max(inner.y + inner.h - foot + 22, y + 8);
     uiart.divider(inner.x + @divTrunc(inner.w, 2), @max(footY - 12, y + 2), @divTrunc(inner.w, 2) - 10, 120);
     _ = prose(says, inner.x, footY, inner.w, hud.HINT, uiart.TEXT_HINT);
@@ -1477,14 +1461,6 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
     uiart.divider(inner.x + @divTrunc(inner.w, 2), y, @divTrunc(inner.w, 2) - 10, 120);
     y += 12;
     // WHAT IT DOES, in the game's own numbers — read off `item.use`, so a dose tuned there reads here.
-    // ONE effect line per arm; the use-or-refuse hint below is shared, because the refusal is the quick
-    // bar's rule and not any one effect's.
-    //
-    // **THE OTHER RENDERER OF THE SAME UNION IS `item.effect`**, and the split is deliberate rather than
-    // missed: this one RESOLVES the doses against the sheet in front of it ("Restores 42 HP"), which is what a
-    // player holding the thing wants and what the editor's loot row cannot have — there is no hero there. Both
-    // are exhaustive switches on `item.Use`, so a new arm cannot be added to one and forgotten in the other;
-    // what can drift is the WORDING, so keep the two saying the same thing about the same effect.
     switch (item.use(k)) {
         .none => hud.text("It does nothing you can do here.", inner.x, y, hud.HINT, uiart.TEXT_HINT),
         .regen => |r| hud.text(fmt("Restores {d:.0} HP over {d:.0} seconds.", .{ v.sheet.hp() * r.frac, r.secs }), inner.x, y, hud.SMALL, uiart.GOOD),

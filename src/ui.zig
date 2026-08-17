@@ -99,11 +99,6 @@ var tipWrapBuf: [MSG_CAP + TIP_LINES]u8 = undefined;
 var tipWrapLines: [TIP_LINES][:0]const u8 = undefined;
 
 /// Draw the pending tooltip at the cursor, clamped on-screen.
-///
-/// **IT WRAPS**, and it has to: the tips that most need reading are the longest — an item's `describe` runs
-/// past 230 characters. On one line those measure wider than the window, and the on-screen clamp then pushes
-/// the start off the LEFT edge. The box is sized to the widest line it ended up with, not to `TIP_MAX_W`, so
-/// a short tip is still a small tip.
 pub fn drawTip(ctx: *Ctx) void {
     if (ctx.tipLen == 0) return;
     const lines = hud.wrapMono(ctx.tipBuf[0..ctx.tipLen], hud.MONO, TIP_MAX_W, &tipWrapBuf, &tipWrapLines);

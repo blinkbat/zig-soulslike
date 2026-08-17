@@ -137,11 +137,6 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
 
 // A hulking giant — ~4.1 m to the crown, a shade over twice the hero. The dial has been walked: 2.5 was
 // rejected as too big, 2.1 as too small, 2.4 read big again, and the owner has now asked for a bit off it.
-// So it sits between the two rejections and nearer the top. Judge it off `108_brood_scale`'s ogre framings.
-//
-// THE DECISION RADII BELOW ARE ABSOLUTE METRES AND THE REACHES ARE SCALED (`slamReach`, `swipeReach`,
-// `swipeInner`), so moving this moves what he can actually touch out from under what he chooses to swing at.
-// The tests at the foot of this file bracket the gap; they are what says how far this may travel.
 pub const SCALE = 2.3;
 const WALK_SPEED = heromod.WALK_SPEED * 0.72; // a slow, ground-eating lumber (long legs cover it)
 pub const AGGRO_R = 18.0; // it sees you coming from far off (it's huge)
@@ -202,7 +197,6 @@ const DRIVE_MAX = 7.0; // surge travel + the crush strip must cover this or the 
 const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 6.0;
 /// How fast a staggered body gives its posture back, in the CHANNELS' OWN UNITS — see `easeChannelsNeutral`.
-/// 260 deg/s puts a club raised to `OVER_SH` back at the carry in ~0.6 s, inside even a light stun.
 const STUN_EASE_DEG = 260.0;
 const STUN_EASE_FRAC = 4.0;
 
@@ -212,7 +206,6 @@ const POISE_MAX = 30.0; // 3 fast hero-lights (poise 10) to flinch once; a lone 
 const STANCE_MAX = 90.0; // keep the pressure on to reach the heavy stance-break
 /// A QUARTER TON OF HIDE AND FAT: too much mass for any one element to get through quickly, and the
 /// broadest resistances in the game — but it stands a giant in an open field, so lightning finds it.
-/// See `frog.RESISTS` on why only fire is exercised yet.
 const RESISTS = combat.resists(.{ .fire = 30, .cold = 30, .lightning = -15, .chaos = 20 });
 pub const SLAM_HIT = combat.Hit{ .dmg = 36, .poise = 44, .stance = 20 }; // a crushing body-blow (heavy).
 pub const SWIPE_HIT = combat.Hit{ .dmg = 23, .poise = 30, .stance = 11 }; // the swipe trades weight for
@@ -2093,7 +2086,6 @@ test "range bands are ordered and sit inside aggro" {
 
 test "THE DRIVE ALWAYS REACHES: surge travel + the crush strip covers its own band's far edge" {
     // The swipe's lesson (the cannot-land law): a move chosen at a range it cannot cover is a promised miss.
-    // A hero who stands dead still at DRIVE_MAX must be inside the strip when the club comes down.
     const travel = DRIVE_SPEED * DRIVE_DUR * DRIVE_IMPACT_K;
     const o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     try std.testing.expect(travel + o.slamReach() >= DRIVE_MAX);

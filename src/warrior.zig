@@ -257,7 +257,6 @@ const SWING_TURN = 3.0; // rad/s it keeps pivoting THROUGH the swing, so a strol
 const WALK_SPEED = heromod.WALK_SPEED;
 /// HE RUNS THE GAP DOWN AND WALKS THE LAST OF IT IN (owner's call): the run is for CLOSING only and drops
 /// back to a walk `WALK_IN` metres outside his own longest reach, so he is on foot for the whole exchange.
-/// The ARCHERS never run — their answer to distance is to shoot across it.
 const RUN_SPEED = heromod.RUN_SPEED;
 const WALK_IN = 3.2;
 const RUN_STALK = 1.2; // extra trunk lean at a full run vs a walk
@@ -1019,7 +1018,6 @@ pub const Warrior = struct {
 
     /// HOW FAR OUT THE KIT ACTUALLY ARRIVES at the impact frame, hero footprint included — the parry window's
     /// reach, and the MOVE's own rather than one number per warrior: a mace lands at 1.23 m, the slam at 2.18.
-    /// NOT `triggerR`, which adds the leap's whole run-up: that ground is behind him by the frame it arrives.
     fn parryReach(self: *const Warrior, a: Attack) f32 {
         return a.reachOut * self.scale + foe.HERO_REACH;
     }
@@ -1088,10 +1086,6 @@ pub const Warrior = struct {
     /// the shield is a DIRECTION, so what decides a block is where the blow CAME FROM, never where he is
     /// looking. Asked of the BLADE's segment, not of `update`'s target — with a spirit on the field he is
     /// squared up to the WOLF, and a sword in his spine lands inside a front arc pointed elsewhere.
-    ///
-    /// The MIDPOINT of the sweep: the grip alone swings a bow-length off the body mid-arc, and the contact
-    /// point is buried in his chest where there is no bearing left to read. A blade with no bearing counts
-    /// as caught (`foe.Parry.catches`'s rule), which is what lets the harness force a block.
     fn shielded(self: *const Warrior, blade: foe.Blade) bool {
         if (!self.covered) return false;
         const at = mathx.lerpV(blade.a, blade.b, 0.5);
@@ -1167,8 +1161,6 @@ pub const Warrior = struct {
     }
 
     /// **IS THIS BODY SOMETHING A NECROMANCER COULD USE** — asked by `game.markVigil` and by nothing else.
-    /// It has to have FALLEN (`dying`, and past its own collapse, so what is raised is a body lying still and
-    /// not one in mid-topple), it has to still be on the field, and it may not have been raised before.
     pub fn raisable(self: *const Warrior) bool {
         return self.state == .dead and !self.gone and !self.wasRaised and self.t >= DEATH_DUR;
     }
@@ -1176,10 +1168,6 @@ pub const Warrior = struct {
     /// **IT GETS BACK UP.** The shared re-arm does the body (`foe.rekindle`) and this says what it does next:
     /// the STUN, so there is a beat of it standing there before it swings — a corpse that came up already
     /// deciding would land a blow out of the ground, which is the one thing no tell can cover.
-    ///
-    /// **THE SHIELD DOES NOT COME BACK** (`shieldGone` is a latch nothing clears): whatever was broken off
-    /// this body stays broken off it, and a raise that repaired a guard-break would undo work the player has
-    /// already paid stamina for.
     pub fn reraise(self: *Warrior, frac: f32) void {
         foe.rekindle(self, frac);
         self.wasRaised = true;

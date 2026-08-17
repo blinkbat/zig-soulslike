@@ -8,21 +8,6 @@ const v3 = mathx.v3;
 
 // THE BEHAVIOUR LIBRARY — the multi-frame routines a creature's brain is written out of, in one place and
 // adoptable by any of them.
-//
-// **A BEHAVIOUR IS A COROUTINE WITHOUT THE LANGUAGE'S HELP.** Zig 0.14 has no async, so a routine that spans
-// frames is a struct that keeps its own stack: `script` is the code, `i` is the program counter, `t` is the
-// local clock and `mark` is the one local that has to survive a suspend. `step` is the resume. That is the
-// whole trick, and it is what makes these shareable — a routine written once runs identically on a kobold
-// and on a boss, because none of its state lives in either of them.
-//
-// **A BEHAVIOUR NEVER TOUCHES THE CREATURE.** It reads a `Ctx` and hands back a `Want` — a point to walk at
-// and a point to look at — and the creature applies it. A routine that wrote `pos` would have to know about
-// `foe.grip`, the nav stamp, `game.gateTerrain` and the ground pass, none of which are the same on two
-// creatures and all of which are the game's business. The Want is the whole contract.
-//
-// **AND IT DECIDES NOTHING.** Which routine to run, and when, is the creature's own `decide` — that is where
-// a fight's character lives and it is deliberately not generalised. What is generalised is the WALKING:
-// close, open, orbit, dwell, shift.
 
 /// What a routine is given each frame. Everything in it is world state a body standing there could read —
 /// the NO INPUT READING law is kept by there being nothing else on offer.
@@ -35,7 +20,6 @@ pub const Ctx = struct {
     /// same on a toad and on the knight instead of being re-tuned per quarry.
     quarryR: f32 = 0,
     /// The steering stamp (`game.markWay`), so a routine bends round a wall rather than pressing into it.
-    /// Unstamped it changes nothing, which is what lets a creature with no `nav` field adopt one anyway.
     nav: foe.Nav = .{},
 };
 
@@ -111,11 +95,6 @@ pub const Routine = struct {
     }
 
     /// **WHERE THE RUNNING STEP WANTS THE FEET** — `game.markWay`'s question, answered off the routine.
-    /// Null when nothing is running and null for a `dwell`, which asks for no feet at all.
-    ///
-    /// It lives here because it is the STEP's own meaning, not the creature's: the archer and the warrior
-    /// each carried a byte-identical copy of this switch, so a sixth `Step` was two edits in lockstep with
-    /// nothing holding them level — and a third creature adopting a script would have made it three.
     pub fn walkTo(self: *const Routine, at: rl.Vector3, quarry: rl.Vector3) ?rl.Vector3 {
         return switch (self.current() orelse return null) {
             .close, .orbit => quarry,
@@ -133,10 +112,6 @@ pub const Routine = struct {
     }
 
     /// ONE FRAME — the resume. Returns what the creature should do with its feet and its eyes.
-    ///
-    /// A step that finishes mid-frame falls straight through to the next one rather than costing a frame of
-    /// standing still, which is why this is a loop and not a switch. Bounded by the script's own length, so
-    /// a script of nothing but zero-length dwells terminates instead of spinning.
     pub fn step(self: *Routine, dt: f32, c: Ctx) Want {
         if (!self.running) return .{};
         self.t += dt;

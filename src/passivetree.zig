@@ -10,11 +10,6 @@ const uiart = @import("uiart.zig");
 // ROGUE, WIZARD. Any arm is open from the first point, so nothing here is a class; what gates you is
 // DEPTH: you CLIMB to the capstone you want, one node at a time, and a node opens as soon as something it
 // hangs off is yours (`feeders`). No counts and no tolls — only a path.
-//
-// **TAKING A NODE IS THE LEVEL.** There is no point pool: the souls come off the counter and the node goes
-// on the board in one press, at a bonfire, and nothing else in the game spends souls. Every attribute the hero
-// has past the starting sheet came off a node here (`Bonus.sheet`), which is what "each arm gives more stat
-// allocations" means.
 
 const rgba = mathx.rgba;
 
@@ -55,13 +50,6 @@ pub const N: usize = NARM * PER_ARM;
 /// hangs off the hub, which you are always standing on, so the three arms are open from the first souls you
 /// spend. THE CAPSTONE IS THE ONE NODE WITH TWO: both strands of an arm climb to it, and a tip only one of
 /// them could reach would make the other a dead end nobody would ever walk.
-///
-/// THE LINK IS THE RULE AND THE RULE IS THE LINK. What is drawn on the page and what `locked` asks are the
-/// same function, so a branch can never be gated by something the picture does not show.
-/// A SLICE, not a fixed pair of optionals: as `[2]?usize` a one-feeder node carried a trailing null, and
-/// every reader that treated null as "hangs off the hub" then read that node as hub-fed — which opened the
-/// whole tree at once and drew a second link from the middle to every node on it. An EMPTY slice is the hub
-/// and nothing else is.
 pub fn feeders(i: usize, out: *[2]usize) []const usize {
     const n = NODES[i];
     if (n.ring == 0) return out[0..0]; // the hub, and the hub is always yours
@@ -248,10 +236,6 @@ pub const Tree = struct {
     /// CAN YOU GET TO IT — is ANY one of the things it hangs off already yours. That is the whole rule: you
     /// climb a node at a time to the capstone you want, either strand of an arm reaches its own tip, and no
     /// count and no toll comes into it.
-    ///
-    /// Only the OUTWARD links are asked, and that is not a shortcut: every link runs back toward the hub and
-    /// the hub is always yours, so a node can only have been taken if the thing feeding IT was taken first.
-    /// "Any neighbour is yours" and "a feeder is yours" are therefore the same question on this graph.
     pub fn reached(self: *const Tree, i: usize) bool {
         var buf: [2]usize = undefined;
         const fs = feeders(i, &buf);
@@ -372,19 +356,6 @@ const STEP_BIAS: f32 = 1.0;
 
 /// MOVE BY GEOMETRY, not by ordinal (`book.slotStep`'s law) — on a wheel an ordinal walk steps between
 /// nodes that are nowhere near each other, and crossing from one arm to its neighbour has no arithmetic.
-///
-/// **A CANDIDATE MUST BE IN THE DIRECTION PUSHED, AND THEN THE NEAREST ONE WINS.** Scored as
-/// `along + cross*3` over the whole forward HALF-PLANE it was neither: any node with a scrap of forward
-/// component was eligible, and minimising `along` meant the CLOSEST won almost regardless of bearing — a
-/// node 75° off the push at 0.57 units scored 1.80 and beat one dead ahead at 2.0. Push up, travel sideways,
-/// which is the owner's "direction you travel vs direction you push don't align". The wedge is what makes
-/// the two agree; the distance is what makes it feel like a step rather than a jump.
-///
-/// **THE PUSH IS A HEADING AND NOT ONE OF FOUR** (`menu.stickPush`'s `radial`, and the long note at it). The
-/// d-pad and the keys still hand it a cardinal — those devices have four directions and that is all they have
-/// — but a STICK hands it the thumb's own bearing, which is the only thing that makes a layout whose arms run
-/// out at 120° apart navigable at all. Not required to arrive normalised: `cos` is a bearing test and a caller
-/// passing a raw delta (a node minus a node) would otherwise have its own length decide how wide the wedge is.
 pub fn step(cur: usize, dx: f32, dy: f32) usize {
     const push = std.math.hypot(dx, dy);
     if (push < 1e-6) return cur;
@@ -429,8 +400,6 @@ const PAN_SPAN: f32 = 6.0;
 const PAN_FLOOR: f32 = 1.6;
 
 /// WHERE THE WHEEL IS BEING LOOKED AT FROM — the cursor, how far in, and where the view has been slid to.
-/// The book's page and the bonfire's own screen each hold one, because they are two views of one tree and
-/// neither may move the other's.
 pub const Wheel = struct {
     /// It opens in the MIDDLE, which is where the player is standing before he has spent anything.
     cursor: usize = HUB,
@@ -482,24 +451,11 @@ const Lay = struct { cx: f32, cy: f32, unit: f32 };
 const HUB_R: f32 = 0.26;
 
 /// A KEYSTONE'S OWN DISC, in units, and the halo an OPEN node wears over it as a multiple of that disc.
-/// NAMED because the two are the outermost thing on the page and `VIEW_R` is solved off them — written out
-/// per site, retuning the keystone clips the top node on the frame the page opens and nothing says so.
 const KEY_R: f32 = 0.30;
 const HALO_K: f32 = 2.1;
 
 /// A SQUARE WINDOW ON THE HUB, and this is its half-extent in units (owner: "square with central node in
 /// center, so it starts pannable, not bottom heavy").
-///
-/// **IT IS FRAMED ON THE MIDDLE, NOT FITTED TO THE BOUNDING BOX.** Three arms at 120° have a bounding box that
-/// is not centred on the hub — the wizard's spoke runs four rings straight UP where the two lower ones reach
-/// only two rings down — so a box-fitted framing puts the one spot the whole page is described from a long way
-/// below the middle of the panel and piles the slack at the top. That is the "bottom heavy". A wheel's own
-/// symmetry is its RADIUS, so the framing is a square about the hub and the slack falls in the four corners and
-/// in the arcs between the arms, evenly, which is what a wheel is supposed to look like.
-///
-/// The value is the outer radius of what is DRAWN: the keystone's centre at `RINGS`, its own disc (`KEY_R`) and
-/// the breathing halo an OPEN one wears (`HALO_K`× that). Anything smaller clips the top node on the frame the
-/// page opens, which is why it is SOLVED off those two rather than written down beside them.
 const VIEW_R: f32 = @as(f32, @floatFromInt(RINGS)) + KEY_R * HALO_K;
 
 /// A SQUARE WINDOW CENTRED ON THE HUB — see `VIEW_R`. `unit` comes off the panel's SHORT axis so the square
@@ -565,10 +521,6 @@ pub fn draw(t: *const Tree, wh: Wheel, x: i32, y: i32, w: i32, h: i32, spendable
     // EXACTLY ONE LINE PER NODE, back to the single thing that feeds it — its own arm one ring in, or the
     // hub for the first ring. One parent each is the whole rule: the first pass gave the keystone TWO and
     // wired the hub to six separate nodes, and a web that dense is one the eye has to read past.
-    //
-    // AND THE LINE CARRIES THE GATE, which is what stops it being decoration: it lights when the ring it
-    // arrives at is OPEN, so the lit part of an arm is exactly how deep you may go — the one thing about
-    // depth there is to say, said by the only marks on the page that were not already saying something.
     for (0..N) |i| {
         const n = NODES[i];
         const to = place(l, i);
@@ -932,7 +884,6 @@ test "THE WALK IS GEOMETRIC: pressing a direction lands on something in that dir
 
 // THE MISSING PIN, and the reason the bug lived: the tests below check that the walk GOES somewhere and
 // that it reaches everything, and the old scoring satisfied both while sending you 75° off your own thumb.
-// What nobody asked was whether the direction you TRAVEL is the direction you PUSHED.
 test "IT OPENS PANNABLE, and the zoom only ever buys MORE slide" {
     var w = Wheel{};
     // ZOOMED ALL THE WAY OUT IT STILL SLIDES (owner: "so it starts pannable"). The framing is a square on the

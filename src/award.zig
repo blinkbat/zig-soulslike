@@ -14,11 +14,6 @@ const rgba = mathx.rgba;
 //     description, any key to close. More than one new kind in the same chest means one card after another, and
 //     the world starts again on the last dismissal. It is the one moment a new thing is worth reading about,
 //     and reading is not something you do while a kobold is behind you.
-//  2. **EVERY TIME AFTER**, a TOAST on the right and nothing else. No pause, no card, no reading: you know what
-//     a Mushroom Jerky is, so all you need is confirmation that one went in the bag. They STACK, because a
-//     chest hands over three at once and three notices that overwrote each other would say "one item".
-// **THE DISCOVERY SET IS THE WHOLE MECHANISM.** One bit per kind, and the ONLY thing that decides which of the
-// two you get. It goes in the SAVE (`save.Data.seen`), or every reload turns the game back into a slideshow.
 
 /// How many first-time cards may be queued at once. `wf.MAX_LOOT` is the real bound — one chest cannot hand
 /// over more than it holds — and the queue only ever holds the NEW kinds out of one award, so this is
@@ -76,9 +71,6 @@ pub const Award = struct {
     /// **THE DISCOVERY SET.** One bool per kind rather than a packed bitset: `item.NK` is two dozen, and a
     /// bitset would buy three bytes at the cost of the one thing this has to be — legible in a save file you
     /// can read (`save.Data.seen`, one character per kind).
-    ///
-    /// That run is POSITIONAL, so `item.Kind`'s order is part of the save format and the enum is append-only.
-    /// Read `save.Data.seen` before moving a row in it; `item.zig`'s own order test is the guard.
     seen: [item.NK]bool = [_]bool{false} ** item.NK,
 
     cards: [CARD_CAP]Card = undefined,
@@ -198,11 +190,6 @@ pub const Award = struct {
     /// **NOT WHILE A CARD IS UP** (owner's call). One handful is one notice at a time: a chest holding a new
     /// kind and a known one cards the first and toasts the second, and both were on screen together — a
     /// full-screen card with a notice standing beside it, out of one press.
-    ///
-    /// **HELD, NOT DROPPED.** The toast is still owed — you did pick the thing up — so it waits and stands its
-    /// full life once the last card is dismissed. That costs nothing to arrange: the clock only runs where the
-    /// world runs (`update`), and behind a card the world is held, so a queued toast is exactly as fresh when
-    /// it finally appears.
     pub fn drawToasts(self: *const Award) void {
         if (self.carding()) return;
         const sw = rl.getScreenWidth();

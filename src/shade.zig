@@ -819,7 +819,6 @@ pub const Shade = struct {
         // Furled: taken WIDE and back, which is the tell. Thrown: shoulders up and forward, elbows opening.
         const shX = lerpF(20.0, -74.0, out) + 16.0 * furl + 6.0 * self.gather;
         // POSITIVE `rz` ABDUCTS the +X arm — the sign that keeps the limbs OUTSIDE the shroud's silhouette.
-        // Negative here and both arms cross into the mass, where nothing about the reach can be read.
         const shZ = side * (lerpF(30.0, 11.0, out) + 34.0 * furl);
         const elX = lerpF(52.0, 9.0, out) + 30.0 * furl - 18.0 * self.gather;
         // 1 at rest, longer as it reaches: what makes a shade's arm read as smoke and not as a limb.
@@ -1117,8 +1116,6 @@ fn handMesh(side: f32, seed: u64) rl.Mesh {
 /// ONE HEM TATTER, and it is a PANEL OF CLOTH, not a rod. Eight rods hanging off a waist are eight legs
 /// however thin — what makes a hem is a curtain, so each is wide tangentially and millimetres through. At
 /// this width the eight OVERLAP at the top and part company toward the bottom, which reads as torn cloth.
-/// `addBox` rather than a capsule: cloth is one of the things the round-mass law exempts. ONE curl, drawn
-/// once and applied every segment, ending in a blunt fray rather than a point.
 fn tatterMesh(len: f32, ang: f32, seed: u64) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);

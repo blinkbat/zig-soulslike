@@ -1,16 +1,5 @@
 // KEYED POSE TRACKS — the general form of `hero.sampleCurve`, and the thing every ATTACK in this
 // game was missing.
-//
-// `sampleCurve` is an 8-key LOOPING table and it is why the walk has never been complained about:
-// the legs run on real keyed curves (Perry/Winter/Novacheck). Every attack on every creature,
-// meanwhile, is `lerpF(WIND_CONSTANT, HIT_CONSTANT, k)` — TWO poses and a curve between them. A
-// move defined as A→B cannot have a gather, a hang, a snap, a follow-through and a recoil, because
-// it has nowhere to put them; it can only travel from one pose to the other at varying speeds.
-// That is what "stiff", "bizarre" and "the tells aren't great" all are, and no constant fixes it.
-//
-// The model is Overgrowth's (Rosen, GDC 2014): a handful of key POSES per move, sampled as one-shot
-// tracks, then chased by SPRINGS rather than arrived at by a lerp. Thirteen keyframes ran that whole
-// game. The keys give a move its SHAPE; the springs give it WEIGHT.
 
 const std = @import("std");
 const mathx = @import("mathx.zig");
@@ -106,8 +95,6 @@ pub fn Pose(comptime P: type) type {
 /// the reason a two-pose lerp can never be fixed by tuning it. A spring chases the keyed value with
 /// its own velocity, so it arrives LATE, carries PAST, and settles back: the overshoot law this
 /// codebase already states for props, applied to the thing that needed it most.
-///
-/// Semi-implicit Euler, and `dt` is clamped — a frame hitch must not detonate a stiff spring.
 pub const Spring = struct {
     v: f32 = 0,
     vel: f32 = 0,
@@ -133,7 +120,6 @@ pub const Spring = struct {
         return self.v;
     }
     /// Put it AT a value with no motion — a spawn, a teleport, a body that has just been re-seated.
-    /// Never use it to "fix" a pose mid-move: that is the snap the whole type exists to remove.
     pub fn set(self: *Spring, value: f32) void {
         self.v = value;
         self.vel = 0;
@@ -141,13 +127,6 @@ pub const Spring = struct {
 };
 
 /// A BANK OF SPRINGS over a creature's posture channels, with the CHAIN LAG built in.
-///
-/// The stiffness falls off down the chain (`falloff` per index), so a joint further out arrives later
-/// than the one before it and the motion travels outward as a wave. That is what `knight.setStrike`
-/// and `ogre.setSwipe` are hand-approximating with their sqrt/linear/squared triples — three curves
-/// off one `k`, re-derived per creature, drifting per creature. Done here it is a property of the rig
-/// instead of a thing each file has to remember, and it applies to EVERY move, including the ones
-/// nobody thought to stagger: the stagger, the fall, the getting up.
 pub fn SpringBank(comptime CH: usize) type {
     return struct {
         const Self = @This();

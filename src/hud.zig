@@ -64,9 +64,6 @@ pub fn deinit() void {
 // value — including the item pictures `itemart` draws into the cross, which are not this file's colours at
 // all — so threading a factor through them is dozens of call sites, and ONE missed is a slot left solid over
 // a chrome that has gone. Drawn once into a target and composited at one alpha, nothing can be missed.
-//
-// It costs a screen-sized target and one blit, paid only WHILE a fade runs: at full chrome `begin` refuses
-// and the draws go straight at the backbuffer.
 var veil: ?rl.RenderTexture2D = null;
 
 fn veilFree() void {
@@ -87,7 +84,6 @@ fn veilFor(w: i32, h: i32) ?rl.RenderTexture2D {
 }
 
 /// Redirect the chrome into the target, or refuse. TRUE means the caller MUST call `endChrome(k)` after it.
-/// Refused at full — there is nothing to fade and the backbuffer is one blit cheaper.
 pub fn beginChrome(k: f32) bool {
     if (k >= 0.999) return false;
     const rt = veilFor(rl.getScreenWidth(), rl.getScreenHeight()) orelse return false;
@@ -217,9 +213,6 @@ pub fn bigCentered(s: [:0]const u8, cx: f32, cy: f32, size: f32, spacing: f32, c
 // BUTTON that does the thing — drawn, not spelled — and no keyboard key appears anywhere in it. Keys still
 // work; they simply are not what the chrome talks about. The editor is the one exception and is not this UI:
 // it is a mouse-and-keyboard authoring tool with no pad bindings at all.
-//
-// Xbox lettering and colours, because that is what a pad in a hand actually says. The glyphs live HERE rather
-// than in `uiart` for one reason: a face button is a letter, and this file is the ONLY path to draw text.
 
 pub const PadBtn = enum { a, b, x, y };
 /// Which way a D-pad prompt points; the paired ones light two arms for a "move" or "adjust" line.
@@ -245,8 +238,6 @@ pub const BTN_INTERACT: PadBtn = .y;
 pub const BTN_CONFIRM: PadBtn = .a;
 /// …and A AGAIN, in the WORLD (ER's own). Not a clash: every screen that takes Confirm — the menus, the book,
 /// a conversation, a bonfire — holds the world still while it is up, so the two can never be asked at once.
-/// Named apart from `BTN_CONFIRM` because they are two bindings that happen to agree, and a rebind of one is
-/// not a rebind of the other.
 pub const BTN_JUMP: PadBtn = .a;
 pub const BTN_BACK: PadBtn = .b;
 pub const BTN_QUICK: PadBtn = .x;
@@ -254,7 +245,6 @@ pub const BTN_QUICK: PadBtn = .x;
 /// …AND THE PRESS ITSELF COMES OFF THE SAME NAME, which is what makes "a button is named once" true rather
 /// than merely written down: a copy of the binding beside the letter drawn for it means a rebind moves the
 /// press and leaves every crib in the game drawing the old letter.
-/// raylib names a face button by its POSITION, which is where the Xbox letters this UI draws happen to sit.
 pub fn padOf(b: PadBtn) rl.GamepadButton {
     return switch (b) {
         .a => .right_face_down,
@@ -527,9 +517,6 @@ fn statusBar(x: i32, y: i32, s: Status) void {
 // The actual rig, rendered off-screen into a target and blitted into a UI box — `book.zig`'s paper-doll
 // trick, here because three callers share it (the book's doll, the conversation panel's speaker, the spirit
 // toast). It is the real model in the real pose, so no picture in this game can go stale.
-//
-// ONE TARGET, sized to the LARGEST use and scaled down for the rest: a render target is video memory and
-// the two smaller callers are the same head with fewer pixels round it.
 
 const PORT_RT_W: i32 = 320;
 const PORT_RT_H: i32 = 360;
@@ -538,8 +525,6 @@ var portRT: ?rl.RenderTexture2D = null;
 // HOW A FACE IS FRAMED, with the renderer rather than with any one SUBJECT. The ANGLE is the house's and
 // belongs here; the DISTANCE is the subject's and stays with it (`npc.PORTRAIT_DIST`, `wolf.PORTRAIT_DIST`),
 // because a wolf's muzzle and a man's face want different room.
-/// Degrees off the subject's own front. Three-quarters: enough to give the head a near side and a far side —
-/// dead on, a low-poly head with no shading break in it reads as a passport photo.
 pub const PORTRAIT_YAW: f32 = 34.0;
 /// A shade above the eye line, looking down — the one that reads as a portrait and not as a camera on the floor.
 pub const PORTRAIT_PITCH: f32 = 0.05;
@@ -635,10 +620,6 @@ pub fn livePortrait(p: LivePortrait, dst: rl.Rectangle, tint: rl.Color) void {
 // **WHAT IS STANDING WITH YOU, UNDER WHAT IS KEEPING YOU ALIVE** (owner: their portrait and HP below your
 // HP). It is not a slot and not part of the cross: the cross is the four things the pad's directions do,
 // and a companion is not something you press.
-//
-// **IT IS NOT A TOAST AND HAS NO TIMER** (owner: it should stay on screen as long as they are alive). It is
-// shaped like one — a face, a name and a life, sliding in under his own bars — but what takes it off is the
-// BODY going. `k` fades it at both ends and nothing else moves it.
 
 const SP_FACE: i32 = 52; // the portrait square…
 const SP_BAR_H: i32 = 9; // …and its life, the status meter's own height so the stack reads as one column
@@ -657,9 +638,6 @@ const BARS_BOTTOM: i32 = BAR_TOP + BARS_H + BAR_GAP + 2 + PSN_H;
 
 /// `k` is the fade, 0..1 — held by the game because the spirit's body is gone before the toast has finished
 /// leaving, and a panel that reads its own subject cannot outlive it.
-///
-/// `hasFace` says whether `renderPortrait` was run for it THIS frame, before the chrome target opened. The
-/// picture is only blitted here, never taken (see `renderPortrait`).
 pub fn spiritPanel(hasFace: bool, name: [:0]const u8, hp: f32, k: f32) void {
     if (k <= 0.004) return;
     const kk = mathx.clampF(k, 0, 1);
@@ -732,10 +710,6 @@ const MOON_COL = rgba(206, 216, 234, 255);
 /// THE WORLD CLOCK, drawn as the thing it actually is: a horizon, and the key light travelling across it left to
 /// right. The hour is the ONLY input and every shape here comes off `daynight`'s own arithmetic (`spanU`,
 /// `isDay`, `dayAmt`), so the dial cannot tell a different time than the sun the scene is lit by.
-///
-/// **THE MARKER IS WHATEVER IS CASTING** — the sun while it is up and the moon once it is not, which is
-/// `daynight.keyDir`'s own split. One body on the face rather than two, because at this size two would be two
-/// dots nobody could tell apart, and the one that matters is the one making the shadows.
 pub fn dayDial(hour: f32) void {
     const cx = MARGIN + DIAL_R;
     const cy = BAR_TOP + @divTrunc(BARS_H, 2);
@@ -991,10 +965,6 @@ const BOTTOM: i32 = 26;
 pub const Slot = enum { empty, sword, bow, bell, shield, wand, spell, roots, rime };
 
 /// `left`/`right` are what is IN HIS HANDS this frame, not what he owns.
-/// `up` is the SORCERY slot, and `castable` is whether the pool would cover one — it stays `.empty` while
-/// nothing he is holding could cast, because an empty ER slot is a real part of this HUD.
-/// DOWN is whatever the QUICK BAR is turned to (`combat.Quick`) and how many of it are left — the cross is
-/// where ER shows both, and a count you have to open a menu for is a count you play without.
 pub fn equipment(left_hand: Slot, right_hand: Slot, up: Slot, castable: bool, quick: ?item.Kind, charges: u8, ammo: ?Ammo) void {
     const stepX = SLOT_W + SLOT_GAP;
     const left = MARGIN;

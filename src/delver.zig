@@ -21,15 +21,6 @@ const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 
 // THE DELVER — the first thing that goes UNDER the world.
-//
-// Everything else on this field is answered by looking at it. This one spends most of the fight where the
-// sword cannot go, travelling as a ridge of moving earth, and arrives THROUGH THE GROUND under his boots.
-// The whole creature is one question: are you watching the floor?
-//
-// A dark thing out of warm earth — the hide is COOL, because everything outdoors here is warm and a brown
-// digger on brown ground is a mass nobody can find. The SOIL it throws is the warm half.
-// Screen goes as albedo^(1/2.2), so a factor you want on screen is that factor^2.2 on the albedo (0.57 of
-// the brightness is 0.29 of the number) — which is why these read as almost black in source.
 const HIDE = rgba(8, 8, 11, 255); // the big smooth back — the biggest face on it, so the darkest
 const HIDE_LO = rgba(12, 11, 15, 255); // belly and flanks
 const PLATE = rgba(17, 16, 21, 255); // the sunk dorsal plates
@@ -40,7 +31,6 @@ const SOIL = rgba(24, 19, 14, 255); // the mound MESH — an albedo, so it is au
 const SOIL_DK = rgba(15, 12, 9, 255);
 /// …AND THE CLODS IT THROWS, WHICH ARE NOT THE SAME NUMBERS. Particles go through `drawSphereEx` unlit, so a
 /// particle colour is a LITERAL SCREEN VALUE (`foe.DUST`'s own, 150,132,96) where a mesh colour is an albedo.
-/// Authored off the mesh's palette they came back as a scatter of black dots hanging in the air.
 const CLOD = rgba(148, 120, 84, 220);
 const CLOD_DK = rgba(106, 84, 58, 210);
 
@@ -92,11 +82,6 @@ const CLAW_RECOVER: f32 = 0.52;
 const CLAW_CD: f32 = 1.9;
 
 // THE DIVE, AND EVERYTHING UNDER IT.
-//
-// **THE DIVE IS A LEAP** (`foe.canLeap`, the shade's blink rule and the leechfly's climb): it does not
-// travel, it LEAVES THE EARTH — downward, which is the same thing as far as a creature held by the ankles is
-// concerned. Held by the wand's roots it cannot go under at all, and the sword finally answers it. That is
-// the whole argument for bringing a wand to this creature.
 pub const DIVE_WIND: f32 = 0.62; // reared right up on its hind legs, forelimbs overhead: its biggest silhouette
 const DIVE_DUR: f32 = 0.42; // …and it drills, nose first
 /// **IT STAYS DOWN** (owner's call). It may not surge until it has been under this long, whatever it finds
@@ -162,15 +147,6 @@ comptime {
 }
 
 // THE PLOUGH — the burrow's OTHER way out, and the answer to a player who simply keeps walking.
-//
-// **THE BURST IS A SPOT AND THIS IS A LINE**, which is the whole of why there are two: stand still and it
-// comes up under your feet, RUN and it stops trying to get under you and drives the ridge straight down the
-// ground you are running over. Two pictures, two answers — get off the mark, or get off the line — and the
-// mound tells you which one is coming before either arrives.
-//
-// It is lighter than the burst on all three counts, because a furrow is easier to leave than a ring you are
-// standing in the middle of. The assert below pins that: `game.zig` splits the felt beat on "was it THE
-// BURST" by comparing stance, so the burst has to stay the heavier of the two or the shake lies.
 pub const PLOUGH_HIT = combat.Hit{ .dmg = 20, .poise = 30, .stance = 12 };
 /// How wide the furrow bites either side of the line it runs.
 pub const PLOUGH_R: f32 = 1.15;
@@ -196,11 +172,6 @@ const MOUND_PLOUGH_H: f32 = MOUND_TRAVEL_H * 1.45;
 const MOUND_PLOUGH_LONG: f32 = 2.8;
 
 // THE RAKE — the backhand the claw comes back on.
-//
-// **THE SURFACED WINDOW WAS A FREE HIT.** It opened with one stroke on a two-second cooldown, so reading the
-// burrow correctly and punishing it was a trade you could not lose. The return is FASTER than the opener —
-// that is the whole of it — and still clears `foe.TELL_MIN`, so it is a thing you can see coming and not a
-// thing that simply happens to you.
 pub const RAKE_HIT = combat.Hit{ .dmg = 12, .poise = 16, .stance = 5 };
 /// **AND IT IS STILL LONG ENOUGH TO BE CAUGHT ON, WHICH IS WHAT SIZES IT FROM BELOW.** It carries a parry
 /// window like the opener does, and `foe.PARRY_LEAD` brackets every wind in the game from above (the toad's
@@ -457,11 +428,6 @@ pub const Delver = struct {
     /// it goes under, the flick skips it, a fresh press cannot take it, no bar hangs over the hole and the
     /// wolf stops trying to bite two and a half metres of earth. Coming back up is a re-acquire, and that is
     /// the point of the move: the camera is yours again and it is your problem where the mound went.
-    ///
-    /// **IT IS `deep()` AND NOT A CLOCK OF ITS OWN**, because that is the one predicate `Model.draw` already
-    /// hides the body behind: the lock lets go on exactly the frame there stops being anything to see, so a
-    /// reticle can never sit on air and can never leave a drilling body untargetable. The dive and the rise
-    /// keep it — the creature is right there, half out of the hole, and both are windows you may hit it in.
     pub fn hidden(self: *const Delver) bool {
         return self.deep();
     }
@@ -572,10 +538,6 @@ pub const Delver = struct {
         self.settleMound(dt);
         self.pose();
         // The stroke is tested off the POSED claw, so the reach is whatever the animation actually did.
-        // **AND THE PREVIOUS SEGMENT IS KEPT EVERY FRAME, not only while it is swinging** — two matrix
-        // transforms, which is the cheapest thing in this function and the one that must not be gated: taken
-        // only during `.claw`, the first strike frame would sweep from wherever the claw stood the LAST time
-        // it clawed, and a segment metres long lands a phantom hit on anything between the two.
         const now = self.clawSeg();
         // WHICH BLOW THE LIMB IS CARRYING THIS FRAME, if any — one window per stroke, and the RETURN goes
         // through the same swept test off the same posed claw rather than a second copy of it.
@@ -685,10 +647,6 @@ pub const Delver = struct {
 
     /// IS HE IN FRONT OF IT AT ALL — down its nose and not already on top of it. It is ploughing, not
     /// steering: what it commits to is the heading it already has.
-    ///
-    /// **THE BAND IS SCALED, because the RUN is** — `updatePlough` steps `PLOUGH_SPEED * self.scale`, so a
-    /// band in flat metres promises a reach the body does not have: at the 2.0 the format allows it committed
-    /// from inside 6.3 m and then covered 13, ploughing straight past him.
     fn aheadOf(self: *const Delver, to: rl.Vector3) bool {
         if (mathx.distXZ(self.pos, to) < PLOUGH_R_MIN * self.scale) return false;
         const dir = mathx.dirXZ(self.pos, to);
@@ -796,8 +754,6 @@ pub const Delver = struct {
         }
         // IT STAYS DOWN (`UNDER_MIN`) and then comes up when it is under him — or wherever it happens to be
         // once the patience runs out, so a player who simply walks does not fight a mound forever.
-        // **THE TWO EXITS SHARE ONE CLOCK.** It has to have been down `UNDER_MIN` either way, so the burrow
-        // is never a thing you rush it out of — only a thing you change the ENDING of.
         if (self.t < UNDER_MIN) return;
         // UNDER HIM: the ground opens where he is standing.
         if (mathx.distXZ(self.pos, to) <= SURGE_LOCK_R + self.bodyR()) return self.enterSurge();
@@ -884,9 +840,6 @@ pub const Delver = struct {
     /// of it, so the window you actually get to hit the creature in was whatever was left over — and a burrow
     /// that ran to `UNDER_MAX` left none at all and re-dived on the frame it finished getting up. Armed here,
     /// the dial means the seconds it stands in front of you.
-    ///
-    /// **BOTH WAYS OUT OF THE GROUND ARM IT, so it is one line and not one per exit** — a jitter band written
-    /// out at each of them is two exits that can drift into two rhythms for one dial.
     fn armDive(self: *Delver) void {
         self.diveCd = DIVE_CD * self.aiRng.range(0.85, 1.25);
     }
@@ -954,9 +907,6 @@ pub const Delver = struct {
     }
     /// A BLOW NEVER LANDS ON SOMETHING SUBMERGED, so a stun always finds it on the surface — but the depth is
     /// cleared here anyway, because a stagger arriving on the rise must not strand it half in the ground.
-    /// A stun always finds it at or near the surface — submerged it cannot be struck at all — so what this
-    /// has to be careful of is the RISE, which is the one window it can be caught in. The depth is left where
-    /// it is and eased out by the stun's own body; snapped to 0 here it popped.
     fn enterStun(self: *Delver, s: State) void {
         self.enter(s);
         self.moundR = 0;
@@ -1203,9 +1153,6 @@ pub const Delver = struct {
             self.xf[ai] = mul(mul3(rz(sgn * abd), rx(shoulder), tr(hip.x, hip.y, hip.z)), root);
             // THE ARM GOES LONG AT THE STRIKE (the warriors' law): a folded elbow keeps the claws inside its
             // own silhouette however far the numbers say they reach.
-            // FOLDED DOWN AND UNDER AT REST — claws to the earth, which is what the limb is for — and it
-            // goes LONG at the strike (the warriors' law). The first pass had the sign the other way and
-            // the forelimbs stood straight up beside its head like a crab's.
             const elbow = 40.0 - 46.0 * own - 26.0 * self.rear;
             self.xf[ci] = mul(mul(rx(elbow), tr(REST[ci].x, REST[ci].y, REST[ci].z)), self.xf[ai]);
         }
@@ -1404,9 +1351,6 @@ fn moundMesh() rl.Mesh {
     b.setMat(.stone);
     // A RIDGE ALONG THE WAY IT IS GOING, not a dome: what a burrower pushes up is a furrow, and a smooth
     // hemisphere came back reading as a beach ball dropped on the grass.
-    // **A UNIT RADIUS MEANS A METRE**, so `moundR` is the thing's real half-width and the surge's dome can be
-    // sized against the blow it is announcing. Authored at 1.34 across it came out 4.7 m long and HID THE MAN
-    // STANDING ON IT, which is the feedback law's other failure.
     b.addBlob(v3(0, -0.62, 0.08), v3(0.74, 1.30, 1.06), 6, 14, SOIL); // sunk deep — only the crest is proud
     b.addBlob(v3(0.10, -0.60, -0.32), v3(0.50, 1.12, 0.56), 5, 11, SOIL_DK); // a second lobe, off the line
     b.addBlob(v3(-0.08, -0.62, 0.48), v3(0.42, 1.16, 0.42), 5, 11, SOIL); // …and the nose of the furrow

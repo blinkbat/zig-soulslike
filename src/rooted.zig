@@ -68,7 +68,6 @@ const LOCK_AT = v3(0, 0.30 * H, 0.34);
 
 /// TOUGH, AND DELIBERATELY EXPENSIVE TO SHOOT. It cannot chase, so a bow at range is free damage and the only
 /// thing between that and a trivial kill is the size of the bill: at 130 it costs nine of ten plain shafts.
-/// FIRE is the honest answer — five fire arrows do it, which is exactly how many you carry.
 const HP_MAX: f32 = 130.0;
 const POISE_MAX: f32 = 28.0; // a tree does not flinch at a sword
 const STANCE_MAX: f32 = 40.0; // …but chained blows do break it, and that is the whole punish window

@@ -6,22 +6,6 @@ const wf = @import("worldfmt.zig");
 const v3 = mathx.v3;
 
 // THE TRIGGER MACHINE — StarEdit's, running on this world.
-//
-// A trigger is CONDITIONS and ACTIONS. Every condition must hold; then the action list runs in order. The
-// definitions are map data (`worldfmt.zig`); everything that CHANGES lives here, in one struct the game
-// embeds, because a switch that half the systems keep their own copy of is a switch nothing can reason about.
-//
-// Three departures from SC1, each on purpose:
-//
-// - **EVALUATED EVERY FRAME, NOT ON A CYCLE.** SC1 walked its trigger list on a slow tick, which is why
-//   "hyper triggers" existed at all. A conversation opening a beat after you crossed the line is a bug here,
-//   so the walk is per frame and a PRESERVED trigger is held off by `REPEAT_GUARD` instead — without it a
-//   `always` + `preserve` pair fires sixty times a second and never lets go of the screen.
-// - **A CONDITION IS LIVE, NEVER STICKY.** `region` is SC1's Bring exactly: true while he is standing in it.
-//   Two conditions that come true at different moments are what the SWITCHES are for, and that indirection
-//   is the SC1 idiom rather than a shortcoming of it.
-// - **A DIALOG BLOCKS ITS OWN TRIGGER AND NOTHING ELSE** (SC1's Transmission). The rest of that list waits
-//   for the conversation to close; every other trigger keeps being asked.
 
 /// How long a preserved trigger must wait before it may fire again.
 pub const REPEAT_GUARD: f32 = 0.5;
@@ -137,8 +121,6 @@ pub const Runtime = struct {
     }
 
     /// ONE PASS OVER THE LIST, in priority order, returning the dialog a `dialog` action asked for.
-    /// `busy` is whether a conversation is already up: no trigger may open a second one, and a trigger that
-    /// wanted to is simply not advanced this frame.
     pub fn tick(self: *Runtime, m: *const wf.Map, w: World, dt: f32, busy: bool) ?u16 {
         self.elapsed += dt;
         if (self.bannerLeft > 0) self.bannerLeft -= dt;

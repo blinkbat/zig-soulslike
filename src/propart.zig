@@ -446,10 +446,6 @@ const GUITAR_BODY = [_][3]f32{
 /// family file, because BOTH fires you can sit at carry it (owner: "they all should"). A copy per fire is a
 /// second place for the lean, the foot offset and the scale to drift, on geometry whose whole point is that
 /// the instrument and its rock agree.
-///
-/// The two are SEPARATE calls on purpose: the rock belongs to the prop's own mesh and the guitar is its `stow`,
-/// which stops being drawn the moment the hero picks it up (`env.stowed`). They share the placement, which is
-/// what stops the guitar hanging in the air over a rock that moved.
 pub fn guitarRockInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32) void {
     b.setMat(.stone);
     b.addBlob(v3(cx, 0.22, cz), v3(0.52, 0.235, 0.46), 4, 9, if (rng.float() < 0.4) STONE_MOSS else STONE_DK);

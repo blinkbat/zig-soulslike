@@ -21,8 +21,6 @@ const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 
 // CUTE IS A SHAPE LANGUAGE: one big dome, one squat pale body, one gaping mouth, and everything blunt.
-// The cap is a large smooth sunward mass, so its albedo starts near-black (AGENTS.md) — the read is the
-// muted brick it comes back as, not fire-engine red.
 const CAP_COL = rgba(52, 18, 14, 255);
 const CAP_DK = rgba(34, 12, 10, 255); // the chipped bite out of the rim, and the gills' shadow
 const WART = rgba(88, 78, 58, 255); // the cream flecks — small areas, so they may run pale
@@ -31,12 +29,6 @@ const STALK_DK = rgba(52, 44, 32, 255); // the skirt fold under the cap
 const MOUTH = rgba(10, 8, 7, 255);
 /// The spores: dry ochre dust with a violet cast — chaos, the brood's own element, in one hue family with
 /// the wand and the pools so a third purple in the world does not become a third substance.
-///
-/// **AND THE VIOLET DOES THE WORK, BECAUSE THE OCHRE IS THE GROUND'S OWN COLOUR** (the albedo rule, applied to
-/// a hazard rather than to a mesh). A warm dust hanging over warm turf separates on nothing — the first pass
-/// was invisible from ten metres and read as a smudge from two. The dust is lifted well clear of the turf in
-/// VALUE and the violet share raised past a third, so the cloud is told by the one colour in it the world
-/// outdoors has none of.
 const SPORE = rgba(192, 172, 136, 215);
 const SPORE_VIO = rgba(134, 92, 172, 210);
 /// How much of the cloud is the violet. Past a third, which is what makes it the colour you notice rather
@@ -66,11 +58,6 @@ pub const SOULS: u32 = 70;
 /// The BONK — its whole body arriving. Light: the cloud it leaves behind is the actual bill.
 pub const FLING_HIT = combat.Hit{ .dmg = 12, .poise = 20, .stance = 8 };
 /// WHAT STANDING IN THE CLOUD COSTS, AND IT IS NO LONGER DAMAGE: the spores POISON him (`combat.Status`).
-/// Billed as BUILDUP a second, continuously rather than on the acid's metronome — a meter that filled in
-/// half-second steps would tick up in visible jerks, and the bar is the whole read of this creature now.
-///
-/// Sized against the cloud itself: `CLOUD_LIFE` is 3.4 s, so standing in ONE for its whole life fills about
-/// four fifths of a bar. One cloud is a warning; a second one before the first has decayed is the proc.
 pub const SPORE_BUILD: f32 = 24.0;
 
 // The approach is HOPPING — a mushroom has no legs worth walking on, and the bounce is the character.
@@ -802,11 +789,6 @@ pub const Cluster = struct {
     }
 
     /// THE SPORE DOSE: how much POISON BUILDUP standing in the cloud is worth this frame, 0 outside it.
-    /// Continuous and scaled by `dt`, never a metronome — the meter it feeds is drawn every frame, and a
-    /// dose delivered in half-second lumps reads as a bar that stutters upward.
-    ///
-    /// NOTHING ACCUMULATES HERE. `combat.Status` owns the decay, so stepping out of the cloud is answered
-    /// one layer up and this side has no clock of its own to get out of step with it.
     pub fn spores(self: *const Cluster, dt: f32, hero: rl.Vector3) f32 {
         return if (self.fuming(hero)) SPORE_BUILD * dt else 0;
     }

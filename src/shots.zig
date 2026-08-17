@@ -803,9 +803,9 @@ pub fn runShots(g: *Game) void {
             must(g.hero.breathLive(), "the pour ended before the beat it was aimed at");
             shootPortrait(g, step.name, coneMid, LIT_YAW + 90, 0.10, 7.0);
         }
-        // THIN GEOMETRY NEEDS A CROP: a mote is a couple of centimetres, so whether the stream leaves his
-        // MOUTH — and not his chest or the rod — cannot be judged from seven metres out.
-        shootPortrait(g, "shots/20zn_rime_mouth.png", g.hero.mouthWorld(), LIT_YAW + 90, 0.06, 1.5);
+        // THIN GEOMETRY NEEDS A CROP: a mote is a couple of centimetres, so whether the stream leaves the
+        // ROD'S TIP — and not his hand, his chest or his face — cannot be judged from seven metres out.
+        shootPortrait(g, "shots/20zn_rime_nozzle.png", g.hero.breathMouth(), LIT_YAW + 90, 0.06, 1.5);
         // …and the FRONT, which is the one framing that shows the cone's WIDTH rather than its length.
         shootPortrait(g, "shots/20zo_rime_front.png", coneMid, LIT_YAW, 0.16, 6.0);
         while (g.hero.casting) g.hero.updateCast(dt, null);

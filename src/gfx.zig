@@ -33,8 +33,9 @@ pub const WATER_WET_OUT: f32 = 3.4;
 /// THE ANCHOR SUN — the light this whole game was authored, measured and photographed under, and the bearing
 /// every reference frame in `shots/` is framed off (`shots.LIT_YAW`). It is NOT what casts any more: the clock
 /// is (`daynight.keyDir`, and `sun` below). It stays because it is the thing the cycle is SOLVED THROUGH, and
-/// because `--shot` pins the hour that reproduces it — `daynight`'s own test is what says the two still agree.
-pub const SUN_DIR = norm3(v3(-0.60, 0.50, -0.46));
+/// because `--shot` pins the hour that reproduces it — which is `daynight`'s own test, and that test only
+/// pins THIS bearing because this IS its constant rather than a second triple that happens to match it.
+pub const SUN_DIR = daynight.ANCHOR_DIR;
 
 /// WHAT IS CASTING THIS FRAME, and it is STILL ONE SOURCE (AGENTS.md): the shader's `sunDir`, the shadow
 /// camera's position and `env`'s shadow-reach cull all read this and nothing else. Written once a frame by
@@ -44,7 +45,7 @@ pub var sun: rl.Vector3 = SUN_DIR;
 /// whatever is up. `env.castsInto` culls the depth pass on it, so it MOVES WITH THE SUN: pinned at the
 /// anchor's value a low evening sun's real shadows were culled away, and pinned at the worst case the pass
 /// accepted the whole world at noon. Bounded by `daynight`'s altitude floor, and a test there says so.
-pub var sunReach: f32 = @sqrt(SUN_DIR.x * SUN_DIR.x + SUN_DIR.z * SUN_DIR.z) / SUN_DIR.y;
+pub var sunReach: f32 = daynight.reachOf(SUN_DIR);
 
 pub const SHADOWMAP_RES = 8192;
 pub const SHADOW_ORTHO = 108.0;
@@ -85,11 +86,12 @@ pub const Sky = struct {
     loc_sun: i32,
     loc_moon: i32,
     loc_stars: i32,
-    loc_pal: [8]i32,
+    loc_pal: [PAL_FIELDS.len]i32,
 
-    /// The palette fields the eight sky colours come off, IN UNIFORM ORDER — the one place the two lists are
-    /// tied together, so a renamed palette field is a compile error instead of a colour that stops arriving.
-    const PAL_FIELDS = [8][:0]const u8{ "skyLow", "skyMid", "skyHigh", "skyBank", "skyGlow", "skyDisc", "cloudDark", "cloudLit" };
+    /// The palette fields the sky colours come off, IN UNIFORM ORDER — the one place the two lists are tied
+    /// together, so a renamed palette field is a compile error instead of a colour that stops arriving. **AND
+    /// THE COUNT IS THIS LIST'S**: written out as three literal `8`s, a ninth colour was three edits.
+    const PAL_FIELDS = [_][:0]const u8{ "skyLow", "skyMid", "skyHigh", "skyBank", "skyGlow", "skyDisc", "cloudDark", "cloudLit" };
     comptime {
         for (PAL_FIELDS) |name| {
             if (!@hasField(daynight.Palette, name)) @compileError("gfx.Sky: daynight.Palette has no `" ++ name ++ "`");
@@ -98,7 +100,7 @@ pub const Sky = struct {
 
     pub fn init() Sky {
         const sh = rl.loadShaderFromMemory(glsl.skyVS, glsl.skyFS) catch @panic("sky shader");
-        var pal: [8]i32 = undefined;
+        var pal: [PAL_FIELDS.len]i32 = undefined;
         for (PAL_FIELDS, 0..) |name, i| pal[i] = rl.getShaderLocation(sh, name);
         var out = Sky{
             .shader = sh,

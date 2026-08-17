@@ -95,6 +95,9 @@ test {
     _ = @import("book.zig");
     // …AND game.zig ITSELF, which this list said was unreachable and then never named.
     _ = @import("game.zig");
+    // …and bake.zig, which the top of THIS file already imports — which is exactly why it was missed: the
+    // roster check searched the whole file, so the one-way door satisfied it without its tests ever running.
+    _ = @import("bake.zig");
     _ = @import("chest.zig");
     _ = @import("rest.zig");
     _ = @import("souls.zig"); // THE DROP — one, and everything about it is that there is only one

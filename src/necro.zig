@@ -7,6 +7,7 @@ const heromod = @import("hero.zig");
 const foe = @import("foe.zig");
 const wf = @import("worldfmt.zig");
 const sfx = @import("audio.zig");
+const elemfx = @import("elemfx.zig"); // the elements' particle LANGUAGE — the cold's palette is its, not ours
 const archermod = @import("archer.zig"); // THE SAME DEAD MAN under the robe — his bones, his chips, his dissolve
 const propart = @import("propart.zig"); // the world's own dead wood — a crooked staff IS a dead limb
 
@@ -44,9 +45,12 @@ const CORD = rgba(74, 62, 44, 255); // the one warm note, at the waist — the w
 /// knuckle, and at an albedo the ring on the ground would be invisible grey grit.
 const RIME_ALB = rgba(44, 58, 72, 255); // MESH — solved to read ~170 on screen: pale ice, not a white sheet
 const RIME_ALB_LT = rgba(62, 80, 96, 255);
-const RIME = rgba(150, 200, 226, 255); // UNLIT — literal screen values
+/// UNLIT — literal screen values, and the two the ELEMENT owns (`elemfx`'s COLD, which sits below every
+/// creature and is therefore the only place the palette can be held). The ring's own alpha is opaque where
+/// the particle's is not, which is the one thing that is this creature's rather than the element's.
+const RIME = mathx.withAlpha(elemfx.sig(.cold).edge, 255);
 const RIME_LT = rgba(206, 234, 246, 255);
-const FROST_MOTE = rgba(212, 238, 250, 225);
+const FROST_MOTE = elemfx.sig(.cold).core;
 const FROST_SHARD = rgba(168, 208, 228, 240);
 /// The raise's own colour, and it is deliberately NOT the frost's: what the two moves do to you is
 /// different, so the two must never be one wash of light. Gold is the world's dying colour (`foe.MOTE`),
@@ -2055,7 +2059,7 @@ test "THE STAFF STANDS UP, ON ITS OWN SIDE, AND ITS FOOT IS ON THE GROUND — me
             head.y,
             mathx.lenXZ(mathx.subV(foot, k.pos)),
             mathx.lenXZ(mathx.subV(head, k.pos)),
-            mathx.degrees(std.math.atan2(mathx.lenXZ(mathx.subV(head, foot)), head.y - foot.y)),
+            mathx.tiltDeg(foot, head),
         },
     );
     // **IT STANDS UP.** The head is above the foot, which is the whole of "a staff and not a lance" — the
@@ -2072,7 +2076,7 @@ test "THE STAFF STANDS UP, ON ITS OWN SIDE, AND ITS FOOT IS ON THE GROUND — me
     try std.testing.expect(head.y < crown + 0.20);
     // NEAR PLUMB, and never laid out flat: past about 35 degrees off vertical it stops being carried and
     // starts being pointed.
-    const lean = mathx.degrees(std.math.atan2(mathx.lenXZ(mathx.subV(head, foot)), head.y - foot.y));
+    const lean = mathx.tiltDeg(foot, head);
     try std.testing.expect(lean < 35.0);
     // …and the whole pole stays on the STAFF ARM'S side of the midline, so it never crosses the body it is
     // beside (the Bone Knight's sword lesson, one creature along).
@@ -2087,7 +2091,7 @@ test "…AND IT STAYS A STAFF THROUGH BOTH CASTS — the trunk's own lean is bil
     const at = struct {
         fn lean(k: *Necro) f32 {
             const s = k.staffSeg();
-            return mathx.degrees(std.math.atan2(mathx.lenXZ(mathx.subV(s[1], s[0])), s[1].y - s[0].y));
+            return mathx.tiltDeg(s[0], s[1]);
         }
     }.lean;
     const dt = 1.0 / 60.0;

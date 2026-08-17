@@ -185,7 +185,7 @@ fn towerArc() f32 {
     // man at the edge of the door swinging two metres of steel puts that midpoint well inside it. This is
     // the one part that is not pure trigonometry, and it is small and named rather than baked into a
     // single hand-picked number the picture was never checked against.
-    return mathx.degrees(std.math.atan2(half, out)) + TOWER_SWEPT_ALLOW;
+    return combat.subtendedArc(half, out) + TOWER_SWEPT_ALLOW;
 }
 /// See `towerArc`. Deliberately modest: every degree here is a degree of blocking the player cannot see.
 const TOWER_SWEPT_ALLOW = 17.0;

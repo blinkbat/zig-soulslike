@@ -627,7 +627,7 @@ fn roundTrip(d: *const Data) !Data {
 
 fn sample() Data {
     var d = Data{};
-    const name = "worlds/01_fallen_plain.world";
+    const name = wf.START_MAP;
     d.mapLen = name.len;
     @memcpy(d.map[0..name.len], name);
     d.at = .{ .x = -4.5, .y = 0.31, .z = 7.25 };
@@ -797,7 +797,7 @@ const Live = struct {
             .chests = &self.chests,
             .pickups = &self.pickups,
             .award = &self.award,
-            .map = "worlds/01_fallen_plain.world",
+            .map = wf.START_MAP,
         };
     }
 };

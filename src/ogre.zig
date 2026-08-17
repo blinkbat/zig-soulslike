@@ -230,6 +230,10 @@ const HERO_REACH = foe.HERO_REACH; // hero footprint added to the strip on both 
 const SLAM_LEN = 1.05; // crush strip length ahead of the seat (pre-scale).
 const SLAM_HALF_W = 0.45; // crush strip HALF-width (pre-scale) — about the club head + shock
 const SWIPE_INNER = 1.18; // pre-scale: nearer than this and the club passes over you.
+/// The range the sweep's own bearing SLACK is floored at (`trySweep`). A guard on the triangle and nothing
+/// more: at `FOE_SCALE_LO` the sweep's inner ring reaches almost to his boots, and the half-angle a man's
+/// radius covers runs away as the range goes to nothing.
+const SWIPE_SLACK_MIN_D = 0.5;
 const SWIPE_OUTER = 1.95;
 // The sector is NOT centred on his facing: the club starts cocked behind his right shoulder and finishes
 // past his left, so the swept bearings run ~−119..+22 (MEASURED off the posed bone, height 2.37 → 1.07).
@@ -876,7 +880,10 @@ pub const Ogre = struct {
         if (self.heroLatch) return;
         const d = mathx.distXZ(self.pos, hero);
         if (d < self.swipeInner() or d > self.swipeReach()) return;
-        const slack = mathx.degrees(std.math.atan2(HERO_REACH, mathx.maxF(0.5, d)));
+        // Its own degenerate policy, and it is NOT the cone's: hugging a small ogre's legs is inside
+        // `SWIPE_INNER`, where the club passes over you — so the range is FLOORED rather than the slack
+        // being opened to the whole compass.
+        const slack = combat.subtendedArc(HERO_REACH, mathx.maxF(SWIPE_SLACK_MIN_D, d));
         if (@abs(mathx.wrapDeg(self.bearingTo(hero) - mid)) > arc * 0.5 + slack) return;
         self.heroHit = h;
         self.heroLatch = true;

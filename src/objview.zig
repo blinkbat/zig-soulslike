@@ -158,7 +158,22 @@ const Verb = enum {
 /// Enough for the worst cell — the POUR, which is resident for its whole span where the other two are
 /// bursts already dying. `elemfx`'s longest life against its own rate, and then some headroom, because a
 /// bench that silently drops motes is a bench that lies about the thing being tuned.
-const BENCH_FX_N = 256;
+///
+/// **ARITHMETIC, NOT A ROUND NUMBER** (`hero.FX_N`'s law). At a flat 256 it was a fifth of what the pour puts
+/// in the air, so the one cell this pool exists for was wrapping its own ring five times over per mote
+/// lifetime — the bench dropping motes is exactly what the paragraph above forbids. The knot counts too, and
+/// `pourCount` is PER CALL: this bench pours one mote at a time, so every mote carries one.
+const BENCH_FX_N = blk: {
+    var life: f32 = 0;
+    for (std.meta.tags(combat.Elem)) |e| life = @max(life, elemfx.sig(e).lifeHi);
+    const worst = @as(f32, @floatFromInt(elemfx.pourCount(1))) * elemfx.POUR_RATE * life;
+    break :blk @as(usize, @intFromFloat(@ceil(worst))) + 32;
+};
+/// …and the hitch ceiling on ONE frame of it — `elemfx.POUR_CAP`, the same number the fight runs at, because
+/// a bench throttled differently from the thing it is tuning is a bench that lies. As a bare `8` it was UNDER
+/// what a 60 fps frame owes at `POUR_RATE` (9.3), so it was in permanent hitch: dropping arrears every frame
+/// and drawing a stream at 480 motes a second against the fight's 560.
+const BENCH_POUR_CAP: usize = elemfx.POUR_CAP;
 /// Where it fires from and which way it goes: chest height on the world's own forward, so the pour lies
 /// along the same axis the hero breathes down.
 const BENCH_AT = v3(0, 1.05, 0);
@@ -967,14 +982,11 @@ fn benchClear(st: *State) void {
 fn benchStep(st: *State, dt: f32) void {
     st.fxT += dt;
     if (st.verb == .pour) {
-        st.fxAcc += dt * elemfx.POUR_RATE;
         var rng = benchRng(st);
-        var n: usize = 0;
-        while (st.fxAcc >= 1.0 and n < 8) : (n += 1) {
-            st.fxAcc -= 1.0;
+        var n = foemod.emitTicks(&st.fxAcc, dt, elemfx.POUR_RATE, BENCH_POUR_CAP);
+        while (n > 0) : (n -= 1) {
             elemfx.pour(&st.fx, &st.fxHead, &rng, benchAt(.pour), BENCH_DIR, st.elem, 1, mathx.radians(combat.RIME_ARC), combat.RIME_REACH, 1.0);
         }
-        if (n == 8) st.fxAcc = 0;
     } else if (st.fxT >= st.verb.loop()) {
         st.fxT = 0;
         benchFire(st);

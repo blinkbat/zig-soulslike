@@ -58,8 +58,15 @@ pub fn build(b: *std.Build) void {
 /// A comptime assert cannot see the filesystem, so the check lives HERE, where the build runs on the host
 /// and can simply read the directory. Every `src/*.zig` must be named in that block or the build fails with
 /// the name of the one that is not.
+///
+/// **AND IT IS SCOPED TO THE BLOCK, NOT TO THE FILE.** Searching the whole of `main.zig` counted the
+/// ORDINARY imports at the top of it, so `bake.zig` — imported there for `--bake` — passed this check while
+/// a top-level import pulls no tests in: a failing test planted in it ran nowhere and the suite said OK.
 fn checkTestRoster(b: *std.Build) void {
-    const root = b.build_root.handle.readFileAlloc(b.allocator, "src/main.zig", 1 << 20) catch return;
+    const file = b.build_root.handle.readFileAlloc(b.allocator, "src/main.zig", 1 << 20) catch return;
+    const at = std.mem.indexOf(u8, file, "\ntest {") orelse
+        std.debug.panic("src/main.zig has no `test {{` block — the whole suite hangs off it", .{});
+    const root = file[at..];
     var dir = b.build_root.handle.openDir("src", .{ .iterate = true }) catch return;
     defer dir.close();
     var it = dir.iterate();

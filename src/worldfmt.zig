@@ -474,7 +474,9 @@ pub const Dialog = struct {
     }
 };
 
-/// APPEND-ONLY, for `FoeKind`'s reason: the editor and `npc.roleOf` will pin to this order.
+/// APPEND-ONLY, for `FoeKind`'s reason: it is an `enum(u8)` and the editor's own picker indexes it by
+/// ordinal. The MAP FILE is safe either way — `parseScript` reads the kind back by TAG (`enumFromName`), so
+/// a reorder cannot re-point a `npc:` row the way it would a positional one.
 pub const NpcKind = enum(u8) { wanderer };
 
 pub fn npcName(k: NpcKind) [:0]const u8 {

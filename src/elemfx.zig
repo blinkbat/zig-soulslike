@@ -51,8 +51,7 @@ pub const Sig = struct {
     ash: ?rl.Color = null,
 };
 
-/// FIRE — the world's own, off `archer.TRAIL_FIRE` and the frog's ember, with `propart.SMOKE_MID` as the ash.
-/// The mesh flames (`propart.FLAME_*`) are albedos and are deliberately NOT reused here.
+/// FIRE. The mesh flames (`propart.FLAME_*`) are albedos and are deliberately NOT reused here.
 const FIRE = Sig{
     .core = rgba(255, 198, 104, 228),
     .edge = rgba(228, 116, 28, 200),
@@ -66,8 +65,9 @@ const FIRE = Sig{
     .ash = rgba(74, 68, 62, 120),
 };
 
-/// COLD — the necromancer's rune ring is the only cold in the world so far, so its two are the world's two
-/// (`necro.FROST_MOTE`, `necro.RIME`).
+/// COLD — the necromancer's rune ring is the only other cold in the world, and it reads its two off THESE
+/// (`necro.FROST_MOTE`, `necro.RIME`) rather than the other way round: this file sits below every creature
+/// in the import graph, so the language is the only place the palette CAN be owned from.
 const COLD = Sig{
     .core = rgba(212, 238, 250, 225),
     .edge = rgba(150, 200, 226, 235),
@@ -99,8 +99,8 @@ const LIGHTNING = Sig{
     .r1 = 0.003,
 };
 
-/// CHAOS — the wand's, and these are `hero.CHAOS_MOTE`/`CHAOS_HOT` themselves rather than two literals that
-/// look like them.
+/// CHAOS — the wand's, and `hero.CHAOS_HOT`/`CHAOS_MOTE` are these two rather than a second pair that looks
+/// like them (COLD's line: the language owns the palette, the creatures read it).
 const CHAOS = Sig{
     .core = rgba(224, 176, 250, 210),
     .edge = rgba(168, 84, 216, 190),
@@ -181,24 +181,98 @@ pub fn burst(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3
 /// ground — a rate that is fine for a jet a metre long is nothing at all spread over a cone. What has to be
 /// continuous is the FAR end, where the same motes are spread over the widest part of the cone, so the rate
 /// is solved there and the near end simply looks dense.
-pub const POUR_RATE: f32 = 240.0;
+pub const POUR_RATE: f32 = 560.0;
+
+/// …AND THE CEILING ON ONE FRAME OF IT (`foe.emitCap`, off this rate). Both pourers want the same number for
+/// the same reason, and as a hand-written literal on one side and the arithmetic on the other, moving
+/// `POUR_RATE` silently turned that one into a throttle. It already had: at 240 the hero's cap was 18, and
+/// the bench's own bare `8` was under what a single 60 fps frame owed.
+pub const POUR_CAP: usize = foe.emitCap(POUR_RATE);
+
+/// **A JET'S GRAIN IS FINER THAN THE TABLE'S, and that is the VERB's business rather than the caster's.** The
+/// signatures' `r0` is sized for a couple of dozen motes lying about where each one has to read on its own
+/// (the necromancer's rune ring); a pour is the opposite case — hundreds at once — and at the table's size it
+/// comes out as a column of soap bubbles. Fine grains, and the DENSITY is what reads.
+///
+/// It lives HERE and not at the call site for this file's own reason — a caller picks the VERB and the
+/// ELEMENT, never a colour, a lifetime, a gravity or a size. As `hero.BREATH_GRAIN` passed in through
+/// `scale` it was the hero's alone, so the EDITOR'S BENCH drew the same stream 60% coarser than the fight
+/// did — and the bench is where this is tuned (`POUR_RATE`'s own claim, and AGENTS.md's).
+const POUR_GRAIN: f32 = 0.62;
+
+/// **AND EVERY MOTE IN ONE IS A DIFFERENT SIZE.** A pour whose motes are all `r0` is the house style's own
+/// named failure — too REGULAR — and at a jet's density it is the one place it shows worst: identical rounds
+/// evenly spaced read as SOAP, not as frost. The spread is wide because the thing being drawn is a spray,
+/// where a burst's motes genuinely are one substance breaking up.
+const POUR_SIZE_LO: f32 = 0.45;
+const POUR_SIZE_HI: f32 = 1.55;
+
+/// **AND EVERY POUR HAS A KNOT AT ITS NOZZLE** — one root mote per this many stream motes, inside this much
+/// of `r0` of the source, barely moving and dead almost at once. A cone with nothing bright at its apex is a
+/// drift of dots that happens to start near the emitter; what says a jet is LEAVING something is the dense
+/// near-still knot it leaves FROM. It is here and not at the call site for the file's own reason: a caller
+/// picks the VERB and the ELEMENT, never a colour, a lifetime or a gravity.
+///
+/// **THE CADENCE IS PER CALL, NOT PER STREAM** — it counts `pour`'s own `i`, which starts again at 0 every
+/// call. Both callers today pour ONE mote per frame-tick (`hero.pourBreath`, `objview`'s bench), so every
+/// mote gets a knot and this divides nothing; that is what is on screen and what was tuned. Anyone sizing a
+/// pool asks `pourCount` for the CALL they actually make.
+const POUR_ROOT_EVERY: usize = 4;
+const POUR_ROOT_R: f32 = 1.6;
+const POUR_ROOT_LIFE_LO: f32 = 0.05;
+const POUR_ROOT_LIFE_HI: f32 = 0.13;
+
+/// How many motes ONE `pour` of `n` actually emits, root included — the pool arithmetic every caller sizes
+/// its ring off (`hero.FX_N`). Written here so a change to the root's cadence cannot leave a caller's
+/// comptime assert quietly stale. **It is the count for ONE CALL**: a caller making `k` calls owes
+/// `k * pourCount(n)`, and `pourCount(k * n)` is not the same number — the knot restarts every call.
+pub fn pourCount(n: usize) usize {
+    return n + (n + POUR_ROOT_EVERY - 1) / POUR_ROOT_EVERY;
+}
 
 /// A SUSTAINED STREAM — the breath, and whatever else pours later. `spread` is the cone's half-angle in
 /// RADIANS and `reach` how far it is meant to arrive, which is what sizes the speed: a pour whose motes die
 /// short of the mechanic's own reach is a spell that lies about where it hits.
-pub fn pour(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, from: rl.Vector3, dir: rl.Vector3, e: combat.Elem, n: usize, spread: f32, reach: f32, scale: f32) void {
+pub fn pour(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, from: rl.Vector3, dir: rl.Vector3, e: combat.Elem, n: usize, spread: f32, reach: f32, callerScale: f32) void {
     const s = sig(e);
     if (mathx.lenV(dir) < 1e-3) return;
+    // The caller's own scale times the VERB's grain — so every pour in the game, the bench included, draws
+    // the same size of mote for the same caller scale.
+    const scale = callerScale * POUR_GRAIN;
     const axis = mathx.normV(dir);
     var i: usize = 0;
     while (i < n) : (i += 1) {
-        const off = mathx.scaleV(randomUnit(rng), @tan(spread) * rng.float());
+        // THE CONE IS FULL, NOT A SHELL: `sqrt` of the roll, or the motes pile up on the outer surface and
+        // the stream draws as a hollow tube with a hole down the middle of it.
+        const off = mathx.scaleV(randomUnit(rng), @tan(spread) * @sqrt(rng.float()));
         const out = mathx.normV(mathx.addV(axis, off));
         // SPEED IS SOLVED OFF THE REACH, never chosen: the mote has to cover the cone in its own lifetime.
         const life = rng.range(s.lifeLo, s.lifeHi);
         const sp = (reach / mathx.maxF(life, 0.05)) * rng.range(0.55, 1.0);
+        // …AND EACH ONE IS ITS OWN SIZE (`POUR_SIZE_*`), authored off the seeded stream so builds stay
+        // deterministic. Applied to BOTH ends, so a big mote stays the big one for its whole life rather
+        // than every mote converging on one death radius.
+        const grain = rng.range(POUR_SIZE_LO, POUR_SIZE_HI);
         // The ELEMENT'S own taper: a stream widens because its motes DIVERGE, not because each one swells.
-        foe.emitParticle(pool, head, from, mathx.scaleV(out, sp), life, s.r0 * scale, s.r1 * scale * 1.5, if (i % 2 == 0) s.core else s.edge, s.grav * 0.5);
+        foe.emitParticle(pool, head, from, mathx.scaleV(out, sp), life, s.r0 * scale * grain, s.r1 * scale * 1.5 * grain, if (i % 2 == 0) s.core else s.edge, s.grav * 0.5);
+        // …AND THE KNOT AT THE NOZZLE. Always the CORE — this is the hot end of the stream, and an `edge`
+        // here would say the substance is coolest where it leaves.
+        if (i % POUR_ROOT_EVERY == 0) {
+            const rr = s.r0 * scale * POUR_ROOT_R;
+            const a = rng.angle();
+            const wide = rng.range(0, rr);
+            foe.emitParticle(
+                pool,
+                head,
+                v3(from.x + mathx.cosf(a) * wide, from.y + rng.signed() * rr, from.z + mathx.sinf(a) * wide),
+                mathx.scaleV(axis, rng.range(0.2, 0.9)),
+                rng.range(POUR_ROOT_LIFE_LO, POUR_ROOT_LIFE_HI),
+                rr * rng.range(0.5, 1.25),
+                rr * 0.25,
+                s.core,
+                0,
+            );
+        }
     }
 }
 

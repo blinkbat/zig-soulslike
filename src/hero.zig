@@ -460,9 +460,10 @@ fn offAxis(at: rl.Vector3, r: f32, a: f32) rl.Vector3 {
 }
 
 /// ONE pair of colours for the whole spell — the stone, the gather, both bursts and the flight streak. Two
-/// substances of one element is what the brood mother's spit-and-pool rule forbids.
-const CHAOS_MOTE = rgba(168, 84, 216, 190);
-const CHAOS_HOT = rgba(224, 176, 250, 210);
+/// substances of one element is what the brood mother's spit-and-pool rule forbids. **AND THE PAIR IS THE
+/// ELEMENT'S, NOT HIS** (`elemfx`'s own claim, which as two literals here was only ever a coincidence).
+const CHAOS_MOTE = elemfx.sig(.chaos).edge;
+const CHAOS_HOT = elemfx.sig(.chaos).core;
 const CAST_MOTE_RATE = 52.0; // motes a second drawn onto the stone as the raise STARTS…
 const CAST_MOTE_R = 0.17; // …from this far out
 /// Both dials ride the charge, so the tell tightens visibly as the throw comes on.
@@ -546,21 +547,41 @@ const RootSite = struct {
 const BREATH_RATE = elemfx.POUR_RATE;
 /// …and the ceiling on ONE frame of it, `CAST_MOTE_CAP`'s reason exactly: the accumulator is what makes the
 /// rate independent of the frame rate, and without a cap a single hitch empties the whole ring in one go.
-const BREATH_CAP = 18;
-/// WHERE IT LEAVES HIM. Off the HEAD bone's own origin (which sits at the skull's base) and out along his
-/// facing — a breath comes out of the face, and the wand is what pays for it, not what emits it.
-const BREATH_MOUTH_FWD = 0.062 * H;
-const BREATH_MOUTH_UP = 0.036 * H;
-/// The trunk folds over the pour and OVERSHOOTS its rest coming out of it (the reactions law) — through the
-/// WAIST, spine and chest, never the root. Degrees, total across the two.
-const BREATH_LEAN = 17.0;
-const BREATH_HEAD = 9.0;
+/// THE LANGUAGE'S, off the same rate — written out here it had to be re-derived by hand every time the rate
+/// moved, which is how it spent a release at 18.
+const BREATH_CAP = elemfx.POUR_CAP;
+// HOW BIG A FROST MOTE IS is NOT here: a jet's grain is finer than the signature table's, and that is a fact
+// about POURING rather than about him (`elemfx.POUR_GRAIN`). Held here as his own it was passed in through
+// `scale`, so the editor's bench — which is where this is tuned — drew the same stream 60% coarser.
+
+/// WHERE IT LEAVES HIM — **THE ROD'S TIP** (owner's call). The rod is what pays for every other sorcery and
+/// throws two of them; a third that came out of his face made the wand a prop for one spell in three. A hair
+/// further out than `wandTipWorld` so the first motes clear the stone instead of starting inside it.
+const BREATH_NOZZLE_FWD = 0.030 * H;
+/// The trunk braces BACK against what the rod is pushing out and OVERSHOOTS its rest coming off it (the
+/// reactions law) — through the WAIST, spine and chest, never the root. Degrees, total across the two.
+/// NEGATIVE where the old mouth-pour was positive: a man folding over a stream leaving his own hand is
+/// leaning into the one thing that has weight behind it.
+const BREATH_LEAN = -13.0;
+/// …and the head TRACKS the stream rather than pouring it: he is aiming the rod, so he looks down its line.
+const BREATH_HEAD = 6.0;
+/// How much FURTHER the rod arm straightens through the pour, past where the throw already snapped it.
+/// Degrees. The silhouette's whole job here is "he is holding that AT something", which a folded elbow
+/// cannot say.
+const BREATH_REACH = 12.0;
+/// **AND THE ROD COMES DOWN TO LEVEL FOR IT, which is a mechanic and not a flourish.** The throw beat leaves
+/// the shoulder at `CAST_SH_FWD` (118 deg — well past straight out), because a BOLT is thrown at a mark that
+/// may be above him. The cone is not: `breathDir` is level by construction and the bite is tested in XZ, so a
+/// rod still pointed at the sky is a picture promising a reach the mechanic does not have. Subtracted off the
+/// flexion to land near 78 deg — a shade UNDER straight out, which is where the arm has to sit for the STONE
+/// to end up level: the wand is held at an angle in the fist, so a shoulder at a true 90 still points it up.
+const BREATH_SH_LEVEL = 40.0;
 /// …and it SHIVERS while it pours, because a held pose for the better part of a second is a freeze frame.
 /// Small: this is a tremor on top of a fold, not a second animation.
 const BREATH_SHIVER = 1.5;
 const BREATH_SHIVER_HZ = 12.0;
 
-const FX_N = 448;
+const FX_N = 1216;
 
 comptime {
 // The ring overwrites its oldest silently, so FX_N is arithmetic over the constants above, not a taste.
@@ -573,7 +594,13 @@ comptime {
     // …AND THE BREATH, which is the biggest single claim on the pool: a POUR is resident for its whole span
     // where every other effect here is a burst that is already dying. The whole pour, because `elemfx`'s cold
     // outlives `RIME_DUR` — a mote emitted on the last frame is still in the air.
-    const breath = combat.RIME_DUR * BREATH_RATE;
+    // …the KNOT at the nozzle included, which `elemfx` owns the cadence of — asked rather than re-derived,
+    // so moving the root's cadence cannot leave this assert quietly stale. **PER CALL, WHICH IS PER MOTE
+    // HERE**: `pourBreath` pours one at a time, so `POUR_ROOT_EVERY` divides nothing and the knot rides
+    // every mote. Asked as `pourCount(1)` per tick rather than `pourCount(whole pour)`, which under-counted
+    // the pour by a third and let the ring wrap over its own far end mid-cast.
+    const ticks = @ceil(combat.RIME_DUR * BREATH_RATE);
+    const breath = @as(f32, @floatFromInt(elemfx.pourCount(1))) * ticks;
     const worst = gather + breath + @as(f32, release + erupt + caught + 2 * BOLT_BURST); // two bolts can land across chained casts
     if (@as(f32, FX_N) < worst) @compileError(std.fmt.comptimePrint(
         "hero: FX_N = {d} but a cast can have {d} particles in the air — raise it",
@@ -1958,36 +1985,35 @@ pub const Hero = struct {
         return mathx.clampF((self.castT - breathAt()) / combat.RIME_DUR, 0, 1);
     }
 
-    /// WHERE THE BREATH LEAVES HIM — off the POSED head, so it rides the fold and the shiver rather than
-    /// hanging in front of a face that has moved. Built in WORLD space off the bone's ORIGIN and his facing,
-    /// not out of the bone's own axes: what the cone is aimed down is `facing` (`breathDir`), and a mouth that
-    /// came off the skull's local forward could point somewhere the cone does not reach.
-    pub fn mouthWorld(self: *const Hero) rl.Vector3 {
-        const skull = rl.math.vector3Transform(mathx.zero3, self.xf[HEAD]);
+    /// WHERE THE BREATH LEAVES HIM — **off the POSED ROD**, so it rides the wrist and the kick rather than
+    /// hanging in front of a hand that has moved. `wandTipWorld` is the stone itself and the last centimetres
+    /// are stepped out along his FACING rather than along the rod's own axis: what the cone is aimed down is
+    /// `facing` (`breathDir`), and a nozzle taken off the wand's local forward would sit off the line the
+    /// mechanic actually tests. The ONE point both the picture and the cone are measured from.
+    pub fn breathMouth(self: *const Hero) rl.Vector3 {
+        const tip = self.wandTipWorld();
         const d = mathx.headingDir(self.facing);
-        return v3(skull.x + d.x * BREATH_MOUTH_FWD, skull.y + BREATH_MOUTH_UP, skull.z + d.z * BREATH_MOUTH_FWD);
+        return v3(tip.x + d.x * BREATH_NOZZLE_FWD, tip.y, tip.z + d.z * BREATH_NOZZLE_FWD);
     }
 
-    /// …and where it goes. LEVEL, and that is a decision: the cone is tested in XZ (`game.rimeBite`), so a
-    /// pitched picture would promise a reach up or down that the mechanic does not have.
+    /// …and where it goes. LEVEL, and that is a decision: the cone is tested in XZ (`game.rimeBreathe`), so a
+    /// pitched picture would promise a reach up or down that the mechanic does not have. `BREATH_SH_LEVEL` is
+    /// the other half of keeping that promise — it is what brings the ROD down onto this line.
     pub fn breathDir(self: *const Hero) rl.Vector3 {
         return mathx.headingDir(self.facing);
     }
 
     fn pourBreath(self: *Hero, dt: f32) void {
-        self.breathAcc += dt * BREATH_RATE;
         var rng = foemod.fxStream(self.castT + @as(f32, @floatFromInt(self.casts)), 691.0, 0x51CE);
-        const at = self.mouthWorld();
+        const at = self.breathMouth();
         const dir = self.breathDir();
-        var n: usize = 0;
-        while (self.breathAcc >= 1.0 and n < BREATH_CAP) : (n += 1) {
-            self.breathAcc -= 1.0;
+        var n = foemod.emitTicks(&self.breathAcc, dt, BREATH_RATE, BREATH_CAP);
+        while (n > 0) : (n -= 1) {
             // The mechanic's own arc, in RADIANS because that is what a cone's geometry wants — the constant
             // is authored in degrees for `withinArc`'s sake and converted at the ONE place that needs the
             // other unit, rather than kept as two constants that can part company.
             elemfx.pour(&self.fx, &self.fxHead, &rng, at, dir, .cold, 1, mathx.radians(combat.RIME_ARC), combat.RIME_REACH, 1.0);
         }
-        if (n == BREATH_CAP) self.breathAcc = 0; // the frame was long enough to be a hitch: drop the arrears
     }
 
     /// How far through the current cast, 0..1 (0 when there is none) — POSE TIME, which is not clock time.
@@ -2224,12 +2250,10 @@ pub const Hero = struct {
         self.tipPrev = at;
         // Squared on the rate: the ramp belongs at the END of the raise, or it reads as one steady stream.
         const fill = self.chargeFill();
-        self.moteAcc += dt * mathx.lerpF(CAST_MOTE_RATE, CAST_MOTE_RATE_HI, fill * fill);
         const shell = mathx.lerpF(CAST_MOTE_R, CAST_MOTE_R_HI, fill);
         var rng = foemod.fxStream(self.castT + @as(f32, @floatFromInt(self.casts)), 977.0, 0x8B01);
-        var n: u32 = 0;
-        while (self.moteAcc >= 1.0 and n < CAST_MOTE_CAP) : (n += 1) {
-            self.moteAcc -= 1.0;
+        var n = foemod.emitTicks(&self.moteAcc, dt, mathx.lerpF(CAST_MOTE_RATE, CAST_MOTE_RATE_HI, fill * fill), CAST_MOTE_CAP);
+        while (n > 0) : (n -= 1) {
             const a = rng.angle();
             const el = rng.range(-0.5, 1.0);
             const rr = rng.range(shell * 0.5, shell);
@@ -2239,7 +2263,6 @@ pub const Hero = struct {
             const v = mathx.addV(mathx.scaleV(mathx.subV(at, from), 1.0 / life), tipV);
             foemod.emitParticle(&self.fx, &self.fxHead, from, v, life, CAST_MOTE_R0, CAST_MOTE_R1, CHAOS_MOTE, 0);
         }
-        if (n == CAST_MOTE_CAP) self.moteAcc = 0; // the frame was long enough to be a hitch: drop the arrears
     }
 
     /// The release: a cone down the bolt line, a collar sideways out of it, one flash on the stone.
@@ -3075,9 +3098,11 @@ pub const Hero = struct {
         const sw: f32 = if (self.castAlt) -1.0 else 1.0;
 
         // THE BREATH RIDES ON TOP OF THE HELD THROW. Pose time stands still for the whole pour (`castU`), so
-        // without these channels the rime is a freeze frame with particles coming out of it. `bOn` folds him
-        // over the stream, `bOut` is the OVERSHOOT past his rest as it stops — a mass in motion settles onto
-        // its rest, it does not glide onto it — and the shiver is what says he is still pouring.
+        // without these channels the rime is a freeze frame with particles coming out of it. `bOn` braces him
+        // BACK against what the rod is putting out, `bOut` is the OVERSHOOT past his rest as it stops — a mass
+        // in motion settles onto its rest, it does not glide onto it — and the shiver is what says it is still
+        // pouring. **THE SHIVER IS ON THE ARM HOLDING IT**, not on the skull: the tremor belongs to whatever
+        // the stream is coming out of, and on the head it was a man shaking his face at a rod.
         const bU = self.breathU();
         const bOn = mathx.smoothstep(0, 0.14, bU) * (1.0 - mathx.smoothstep(0.82, 1.0, bU));
         const bOut = bump(bU, 0.80, 1.0);
@@ -3105,7 +3130,7 @@ pub const Hero = struct {
         setLocal(&wx, SPINE, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), ry(0.35 * yaw)));
         setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), ry(0.65 * yaw)));
         setLocal(&wx, NECK, self.rest, rx(-0.35 * spineX));
-        setLocal(&wx, HEAD, self.rest, mul(rx(HEAD_WALK + CAST_HEAD * sThrow + BREATH_HEAD * bOn + shiver), ry(-0.4 * yaw)));
+        setLocal(&wx, HEAD, self.rest, mul(rx(HEAD_WALK + CAST_HEAD * sThrow + BREATH_HEAD * bOn), ry(-0.4 * yaw)));
         setLocal(&wx, HIPL, self.rest, mul(rx(-6.0 * wind - 4.0 * sThrow), rz(-HIP_ADDUCT)));
         setLocal(&wx, KNEEL, self.rest, rx(IDLE_KNEE + 12.0 * wind + 4.0 * sThrow));
         setLocal(&wx, ANKL, self.rest, ry(FOOT_TOEOUT));
@@ -3113,10 +3138,13 @@ pub const Hero = struct {
         setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 9.0 * wind + 3.0 * sThrow));
         setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
         // The arm goes LONG as the bolt leaves: an elbow still folded keeps the stone inside his own silhouette.
-        const elb = mathx.lerpF(WAND_CARRY_ELBOW, CAST_ELBOW, wind) - CAST_ELBOW_SNAP * sThrow + 6.0 * kick;
-        setLocal(&wx, SHL, self.rest, mul3(rx(-mathx.lerpF(WAND_CARRY_FLEX, CAST_SH_FWD, wind)), ry(shRy), rz(shRz)));
+        // …AND IT STAYS LONG THROUGH THE POUR, pushed a further `BREATH_REACH` out: the rod is the nozzle now,
+        // so the one thing the silhouette has to say is that he is holding it AT something.
+        const elb = mathx.lerpF(WAND_CARRY_ELBOW, CAST_ELBOW, wind) - CAST_ELBOW_SNAP * sThrow + 6.0 * kick -
+            BREATH_REACH * bOn + 0.5 * BREATH_REACH * bOut + shiver;
+        setLocal(&wx, SHL, self.rest, mul3(rx(-(mathx.lerpF(WAND_CARRY_FLEX, CAST_SH_FWD, wind) - BREATH_SH_LEVEL * bOn)), ry(shRy), rz(shRz)));
         setLocal(&wx, ELL, self.rest, rx(-elb));
-        setLocal(&wx, WRL, self.rest, rz(mathx.lerpF(WAND_CARRY_WRIST, CAST_WRIST, wind) - 1.5 * CAST_WRIST * sThrow - 8.0 * kick));
+        setLocal(&wx, WRL, self.rest, rz(mathx.lerpF(WAND_CARRY_WRIST, CAST_WRIST, wind) - 1.5 * CAST_WRIST * sThrow - 8.0 * kick + 1.6 * shiver));
         // …and the sword arm keeps out of its way.
         setLocal(&wx, SHR, self.rest, mul(rx(GUARD_SWORD_BACK * wind), rz(-ARM_ABD)));
         setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + (GUARD_SWORD_ELBOW - IDLE_ELBOW) * wind)));
@@ -4439,8 +4467,7 @@ test "HE JUMPS, HE DOES NOT DIVE — the trunk stays near upright the whole way 
     var worst: f32 = 0;
     while (h.airborne()) {
         h.updateAir(1.0 / 60.0, null);
-        const spine = mathx.subV(foemod.markOn(h.xf[HEAD], mathx.zero3), foemod.markOn(h.xf[ROOT], mathx.zero3));
-        const tilt = mathx.degrees(std.math.atan2(mathx.lenXZ(spine), spine.y));
+        const tilt = mathx.tiltDeg(foemod.markOn(h.xf[ROOT], mathx.zero3), foemod.markOn(h.xf[HEAD], mathx.zero3));
         worst = @max(worst, tilt);
     }
     try std.testing.expect(worst < 20.0);

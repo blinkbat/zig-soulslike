@@ -269,6 +269,15 @@ pub fn approachAngle(cur: f32, target: f32, maxStep: f32) f32 {
     return cur + std.math.sign(d) * maxStep;
 }
 
+/// HOW FAR THE SEGMENT `a`→`b` LEANS OFF WORLD UP, in degrees — 0 is plumb, 90 is flat, past 90 is upside
+/// down. `headingXZ`'s companion: that one asks which way a thing points on the ground, this one how far off
+/// vertical it stands. The staff's plumb test, the trunk's tilt through a jump and the necromancer's three
+/// were one arctangent written four ways.
+pub fn tiltDeg(a: rl.Vector3, b: rl.Vector3) f32 {
+    const d = subV(b, a);
+    return degrees(std.math.atan2(lenXZ(d), d.y));
+}
+
 /// A copy of col with the given alpha (0..255).
 pub fn withAlpha(col: rl.Color, a: u8) rl.Color {
     var out = col;

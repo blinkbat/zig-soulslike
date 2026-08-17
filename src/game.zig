@@ -2269,7 +2269,7 @@ fn openBreath(g: *Game) void {
 /// **TESTED IN XZ, LIKE EVERY OTHER REACH IN THE GAME.** `hero.breathDir` is level for this reason: the
 /// picture may not promise an up or down the mechanic does not have.
 fn rimeBreathe(g: *Game, dt: f32) void {
-    const apex = g.hero.mouthWorld();
+    const apex = g.hero.breathMouth();
     const facing = g.hero.facing;
     inline for (FOE_GROUPS) |f| {
         for (@field(g, f.field).live()) |*a| {
@@ -2286,7 +2286,7 @@ fn rimeBreathe(g: *Game, dt: f32) void {
                 // How much of the arc this body subtends from where he is standing — degrees, `withinArc`'s
                 // unit. Stood inside him there is no bearing to be wrong about and the breath simply takes
                 // him, which is the delver's zero-bearing rule one mechanic along.
-                const spread = if (d > r) mathx.degrees(std.math.atan2(r, d)) else 180.0;
+                const spread = if (d > r) combat.subtendedArc(r, d) else 180.0;
                 if (!combat.withinArc(mathx.headingXZ(to), facing, combat.RIME_ARC + spread)) continue;
             }
             // THE COLD AND THE COLD'S DAMAGE ARE ONE STAMP (`combat.Chill.breathe`), collected by the body

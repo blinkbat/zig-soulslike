@@ -560,6 +560,64 @@ pub const Particle = struct {
     floor: ?f32 = null,
 };
 
+/// **HOW MANY MOTES THIS FRAME OWES, AND THE HITCH THAT MAY NOT EMPTY THE RING.** An emitter authored in
+/// motes a second needs an ACCUMULATOR — a per-frame probability test tops out at the frame rate, so a ramp
+/// above it does nothing — and the accumulator needs a CEILING, because one long frame (a rebuild, an
+/// alt-tab, a shader compile) otherwise dumps the whole pool in a single go. Past the cap the arrears are
+/// DROPPED rather than banked: a frame that long is a hitch, not a debt.
+///
+/// One copy, because the part a fourth would get wrong is the `n == cap` test that decides whether to drop
+/// them — and the third copy already had its ceiling as a bare `8` written twice in the one function.
+///
+/// The per-creature emitters are still off it, and the exemption is about the POOL rather than the rate: each
+/// one writes into a ring that is that creature's alone and a hitch costs it nothing but its own oldest
+/// motes. (It used to claim they ran at "5–26 a second", which was never true — `knight`'s ember gather
+/// reaches 240, near half `elemfx.POUR_RATE`. A band nobody can check is not an exemption.) What may NOT be
+/// off it is anything writing into a pool something else is also filling, which is why the shared
+/// `dissolveMotes` below is on it and the private ones are not.
+pub fn emitTicks(acc: *f32, dt: f32, rate: f32, cap: usize) usize {
+    acc.* += dt * rate;
+    var n: usize = 0;
+    while (acc.* >= 1.0 and n < cap) : (n += 1) acc.* -= 1.0;
+    if (n == cap) acc.* = 0;
+    return n;
+}
+
+/// …AND THE CEILING ITSELF, off the rate — the ONE place "a couple of frames' arrears at 60 fps" is written
+/// down. Below that a frame is a frame; above it, it is a hitch and the arrears are dropped. Every live
+/// emitter owes far less than this per real frame, so it only ever bites on the stall it exists for.
+/// Floored at ONE: `emitTicks` reads `n == cap` as "the frame was a hitch", so a cap of 0 would zero the
+/// accumulator every frame and the emitter would never fire at all.
+const EMIT_CAP_FRAMES: f32 = 2.5;
+pub fn emitCap(rate: f32) usize {
+    return @max(1, @as(usize, @intFromFloat(@ceil(mathx.maxF(rate, 0) / 60.0 * EMIT_CAP_FRAMES))));
+}
+
+test "THE CAP CLEARS A REAL FRAME AND NEVER LANDS ON ZERO" {
+    // It has to sit ABOVE what an ordinary frame owes, or the emitter is in permanent hitch and quietly runs
+    // slower than its own rate — which is what a bare `8` did to the bench at 560/s.
+    for ([_]f32{ 5, 26, 54, 82, 240, 560 }) |rate| {
+        try std.testing.expect(@as(f32, @floatFromInt(emitCap(rate))) > rate / 60.0);
+    }
+    // …and a rate of nothing still yields a usable cap: at 0 the `n == cap` test reads every frame as a hitch.
+    try std.testing.expectEqual(@as(usize, 1), emitCap(0));
+    var acc: f32 = 0;
+    try std.testing.expectEqual(@as(usize, 1), emitTicks(&acc, 1.0, 1.0, emitCap(1.0)));
+}
+
+test "the accumulator carries a fraction across frames and DROPS a hitch's arrears" {
+    var acc: f32 = 0;
+    // A tenth of a second at 100/s is ten, and the leftover carries rather than being lost.
+    try std.testing.expectEqual(@as(usize, 10), emitTicks(&acc, 0.1, 100.0, 64));
+    try std.testing.expectEqual(@as(usize, 0), emitTicks(&acc, 0.005, 100.0, 64)); // half a mote owed…
+    try std.testing.expectEqual(@as(usize, 1), emitTicks(&acc, 0.005, 100.0, 64)); // …and it arrives
+    // A two-second frame at 560/s owes 1120: the cap takes what it may and the rest does not come later.
+    acc = 0;
+    try std.testing.expectEqual(@as(usize, 24), emitTicks(&acc, 2.0, 560.0, 24));
+    try std.testing.expectEqual(@as(f32, 0), acc);
+    try std.testing.expectEqual(@as(usize, 0), emitTicks(&acc, 0, 560.0, 24));
+}
+
 pub fn emitParticle(pool: []Particle, head: *usize, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
     pool[head.*] = .{ .p = p, .v = vel, .life = life, .max = life, .r0 = r0, .r1 = r1, .col = col, .grav = grav };
     head.* = (head.* + 1) % pool.len;
@@ -598,9 +656,11 @@ const DISS_FLAKE_R: f32 = 0.129;
 /// shared emitter exist at all: a creature's own is private to its file.
 pub fn dissolveMotes(self: anytype, dt: f32, d: Dissolve) void {
     const thinning = 1.0 - 0.6 * self.fade;
-    self.fxAccum += d.rate * thinning * dt;
-    while (self.fxAccum >= 1.0) {
-        self.fxAccum -= 1.0;
+    // THROUGH `emitTicks`, unlike the private per-creature emitters: this pool is filled by the shared pass
+    // AND by whatever that creature is still throwing, so one long frame here empties a ring two writers
+    // depend on. At every real frame rate the owed count is far under the cap and nothing changes.
+    var n = emitTicks(&self.fxAccum, dt, d.rate * thinning, emitCap(d.rate));
+    while (n > 0) : (n -= 1) {
         const a = self.fxRng.angle();
         const rr = self.fxRng.range(0.1, 1.0) * d.spread * self.scale * thinning;
         const p = mathx.v3(
@@ -733,16 +793,33 @@ pub fn Trail(comptime N: usize) type {
     };
 }
 
-/// LEFT ALONE ON PURPOSE: `drawSphereEx` at 6x8 is 112 triangles — 336 immediate-mode vertex pushes,
-/// CPU-transformed — so a full muster would be a quarter-million unlit triangles. It never is: a slot is
-/// dead unless something emitted into it. The one cheaper shape (a cached unit sphere) would come out LIT.
+/// **THE BALL IS SUBDIVIDED BY HOW BIG IT IS, and that is the whole of what keeps this affordable.**
+/// `drawSphereEx` is immediate-mode and CPU-transformed, so every ring and slice is real work on the main
+/// thread. **COUNT IT OFF RAYLIB'S OWN LOOP, `(rings + 1) * slices * 6` VERTICES** (rmodels.c) — 112
+/// triangles / 336 pushes at a flat 6x8, not the 96/288 that `rings * slices` gives, and every tier below is
+/// sized against the real figure. The POUR is what made it bite: a stream holds ~530 motes at the end of a
+/// breath (`elemfx.POUR_RATE` over `combat.RIME_DUR`), where every other emitter here is a burst already
+/// dying. At 6x8 that was 178k pushes in one frame; every pour mote is under four centimetres and therefore
+/// in the tier below, so it is 51k.
+///
+/// A sphere's silhouette is the only thing a mote has, and how many sides it takes to read as round is a
+/// function of the PIXELS it covers, not of it being a sphere. Radius is the proxy: there is no camera in
+/// this call and threading one through 29 emitters to save a facet is the wrong trade. The bands below are
+/// sized so the shape only ever loses sides it was not spending on anything — the smallest tier is under
+/// four centimetres, which is a handful of pixels at any range the player meets it.
+///
+/// A cached unit sphere is still the one thing this cannot become: it would come out LIT.
+const PART_FINE_R: f32 = 0.10; // over this, the full ball — dust gouts, smoke, the big soft puffs
+const PART_MID_R: f32 = 0.04; // …and under THIS is a grain: frost, sparks, chips
 pub fn drawParticles(pool: []const Particle) void {
     for (pool) |*q| {
         if (q.life <= 0) continue;
         const frac = mathx.clampF(q.life / q.max, 0, 1);
         const rad = mathx.lerpF(q.r1, q.r0, frac); // r0 at spawn (frac 1) → r1 at death (frac 0)
         const a = mathx.u8f(@as(f32, @floatFromInt(q.col.a)) * frac);
-        rl.drawSphereEx(q.p, rad, 6, 8, mathx.withAlpha(q.col, a));
+        const rings: i32 = if (rad >= PART_FINE_R) 6 else if (rad >= PART_MID_R) 4 else 3;
+        const slices: i32 = if (rad >= PART_FINE_R) 8 else if (rad >= PART_MID_R) 6 else 4;
+        rl.drawSphereEx(q.p, rad, rings, slices, mathx.withAlpha(q.col, a));
     }
 }
 

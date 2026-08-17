@@ -449,6 +449,18 @@ pub fn withinArc(bearing: f32, facing: f32, arc: f32) bool {
     return @abs(mathx.degrees(mathx.wrapPi(bearing - facing))) <= arc;
 }
 
+/// **HOW WIDE A THING OF HALF-WIDTH `half` IS FROM `dist` AWAY** — degrees, `withinArc`'s own unit, so an arc
+/// test can be widened by the width of the body it is testing rather than by a fudge. The knight's door
+/// against his own axis, the rime cone against a giant's flank and the ogre's sweep against the man's own
+/// radius are one triangle written three ways; this is the one way.
+///
+/// PURE TRIGONOMETRY AND NO POLICY — what a caller does when the thing is closer than it is wide stays its
+/// own call and is written at each of them, which is `withinGuardArc`'s rule one line up. The floor is a
+/// divide-by-zero guard and nothing more.
+pub fn subtendedArc(half: f32, dist: f32) f32 {
+    return mathx.degrees(std.math.atan2(half, mathx.maxF(dist, 1e-4)));
+}
+
 /// Billed on the RAW weight of the blow: the arm behind a burning arrow does not know what you resist.
 pub fn guardStamina(h: Hit) f32 {
     return GUARD_STAM_FLAT + GUARD_STAM_PER_DMG * h.raw();

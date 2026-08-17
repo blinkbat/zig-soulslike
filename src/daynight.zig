@@ -275,11 +275,18 @@ pub fn keyDir(hour: f32) rl.Vector3 {
     return v3(mathx.sinf(az) * c, y, mathx.cosf(az) * c);
 }
 
-/// HOW FAR SIDEWAYS A CASTER THROWS ITS SHADOW, per metre of its own height (`env.SUN_REACH`'s job). It is
+/// HOW FAR SIDEWAYS A CASTER THROWS ITS SHADOW, per metre of its own height — this is what `gfx.sunReach`
+/// holds, written once a frame by `gfx.Scene.setHour` and read by `env`'s shadow box. It is
 /// cot(altitude) of whatever is casting, so it grows as the light drops — read off `keyDir`, which is what
 /// floors it, and therefore bounded by construction rather than by hope.
 pub fn shadowReach(hour: f32) f32 {
-    const d = keyDir(hour);
+    return reachOf(keyDir(hour));
+}
+
+/// …off a DIRECTION rather than an hour, for the one caller that has the vector and not the clock (`gfx`'s
+/// own starting `sunReach`, at the anchor). The arithmetic sits here and not there: inlined at that
+/// initializer it was a second copy of this line, and it had lost the altitude floor on the way over.
+pub fn reachOf(d: rl.Vector3) f32 {
     return mathx.lenXZ(d) / mathx.maxF(d.y, 1e-3);
 }
 
@@ -608,8 +615,11 @@ pub fn phaseName(hour: f32) [:0]const u8 {
 }
 
 
-/// The sun `gfx` used to carry as a constant, and the thing every frame in `shots/` was lit by.
-const ANCHOR_DIR = mathx.normV(v3(-0.60, 0.50, -0.46));
+/// THE ANCHOR SUN — the light this whole game was authored, measured and photographed under, and the thing
+/// every frame in `shots/` is lit by. **AND IT IS THE ONE COPY**: `gfx.SUN_DIR` is this, not a second triple
+/// beside it. Written out in both files, the test below compared the clock against `daynight`'s own copy —
+/// so moving the one the shots are framed off would have left it passing.
+pub const ANCHOR_DIR = mathx.normV(v3(-0.60, 0.50, -0.46));
 
 test "SHOT_HOUR REPRODUCES THE SUN THE GAME WAS PHOTOGRAPHED UNDER — 362 reference frames ride on it" {
     // A THOUSANDTH OF A UNIT VECTOR is the bar, and it is the right one: that is under a twentieth of a

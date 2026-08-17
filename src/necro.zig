@@ -133,22 +133,13 @@ const A_PROT = 2.6; // deg of pelvic rotation — narrow hips and a robe: it bar
 
 // ─── THE RAISE ────────────────────────────────────────────────────────────────────────────────────────
 //
-// **THE CORPSE IS THE MECHANIC, AND THE WINDOW HAD TO BE MADE TO EXIST.** A skeleton is `DEATH_DUR +
-// DISS_DUR` = 2.05 s from the blow that killed it to the last mote going up, and a raise with a tell you
-// can read does not fit inside that — so as a race against the dissolve the move would essentially never
-// fire, and when it did it would be unreadable.
+// **THE CORPSE IS THE MECHANIC, AND THE WINDOW HAD TO BE MADE TO EXIST.** A skeleton is 2.05 s from the
+// killing blow to its last mote, and a readable tell does not fit inside that — so a body inside `RAISE_R`
+// of a living necromancer **STOPS DISSIPATING** (`vigil`, stamped by `game.markVigil`, read by
+// `foe.dissipate`). The held corpse IS the tell, and it lands before the cast does.
 //
-// So a body inside `RAISE_R` of a living necromancer **STOPS DISSIPATING** (`vigil`, stamped by
-// `game.markVigil` and read by `foe.dissipate`). That is the whole design:
-//
-//   - **THE HELD CORPSE IS THE TELL, and it comes before the cast.** Every other body in the game goes to
-//     gold on its own clock; one lying there NOT going is a thing the player can see, from the frame it
-//     lands, without knowing what a necromancer is yet. The cast's own gather is the second warning.
-//   - **IT IS A PLACE, NOT A LIST.** Nothing is remembered and nothing is reserved: the stamp is re-taken
-//     every frame off where the bodies actually are, so walking the fight away from the corpses is an
-//     answer, and so is killing things where it cannot reach.
-//   - **AND A BODY MAY BE RAISED ONCE** (`wasRaised`, a latch on the corpse). Twice is a fight that cannot
-//     be won by killing things, which is the only thing the player is holding.
+// A PLACE, not a list: the stamp is re-taken every frame, so walking the fight away from the corpses is an
+// answer. **AND A BODY MAY BE RAISED ONCE** (`wasRaised`) — twice is a fight killing cannot win.
 /// How far it reaches for a body — comfortably past its own frost band, so the ground it defends and the
 /// ground it fights on are the same ground.
 pub const RAISE_R: f32 = 11.0;
@@ -166,25 +157,19 @@ pub const RAISE_HP_FRAC: f32 = 0.55;
 /// the hold was stamped at and nothing has moved it, so this only ever absorbs the shove a corpse took off the
 /// blow that finished it.
 ///
-/// Read by `game.markVigil` and `game.applyRaises`, which is where the SEARCH lives — but the number belongs
-/// here beside `RAISE_R` and `RAISE_HP_FRAC`, or somebody retuning this creature's raise has two files to find
-/// and will only think to open one.
+/// The SEARCH lives in `game.markVigil`/`applyRaises`; the number belongs here beside `RAISE_R`.
 pub const RAISE_MATCH_R: f32 = 1.2;
 
 // ─── THE FROST ────────────────────────────────────────────────────────────────────────────────────────
 //
 // **A DELAYED RING ON THE GROUND UNDER HIM** (owner's call), and every rule it keeps is the delver's
 // surge's, one creature along:
-//
-//   - **THE SPOT IS COMMITTED THE FRAME IT IS CAST.** It lands at his feet and then it does not follow him.
-//     What is drawn on the ground IS where the blow lands, so the read is honest and the counter is his own
-//     feet — and a ring that tracked would be a tax on standing anywhere rather than a thing you answer.
-//   - **IT OUTLIVES THE CASTER'S OWN ANIMATION.** The sigil keeps its own clock, so killing the necromancer
-//     after the cast does NOT un-cast it: the thing is in the ground by then. That is the honest reading of
-//     a laid trap and it is also what stops the move being free.
-//   - **IT IS NOT PARRYABLE AND THE BOARDS CANNOT ANSWER IT.** There is nothing to catch in the ground going
-//     hard, and its blow carries the SIGIL as its origin rather than the caster (`hitFrom`), so stood on the
-//     mark there is no bearing at all — the zero-`fromDir` rule, the delver's burst exactly.
+//   - **THE SPOT IS COMMITTED THE FRAME IT IS CAST** — what is drawn on the ground IS where the blow lands,
+//     so the counter is his own feet. A ring that tracked would tax standing anywhere.
+//   - **IT OUTLIVES THE CASTER'S OWN ANIMATION** (its own clock), so killing him after the cast does not
+//     un-cast it. That is what stops the move being free.
+//   - **NOT PARRYABLE, AND THE BOARDS CANNOT ANSWER IT.** Its blow carries the SIGIL as its origin rather
+//     than the caster (`hitFrom`), so stood on the mark there is no bearing — the delver's zero-`fromDir`.
 //   - **AND IT IS THE FIRST COLD IN THE GAME.** `combat.Elem` has carried four arms since it was written and
 //     thirteen creatures resist all four; nothing had ever dealt this one. All-cold, no physical, for the
 //     wand's own reason: an element with one source in the world should be unmistakable when it lands.
@@ -1374,8 +1359,9 @@ pub const Necro = struct {
     }
 
     fn chips(self: *Necro, at: rl.Vector3, dir: rl.Vector3, n: u32, spd: f32) void {
+        const parts: u32 = @intCast(@max(0, foe.hitParts(@intCast(n)))); // the field's one dial (`foe.HIT_PARTS`)
         var i: u32 = 0;
-        while (i < n) : (i += 1) {
+        while (i < parts) : (i += 1) {
             const a = self.fxRng.angle();
             const s = self.fxRng.range(0.4, 1.0) * spd;
             self.emit(
@@ -1422,27 +1408,16 @@ fn approach(cur: f32, want: f32, e: f32) f32 {
 
 // ── THE RUNE RING ─────────────────────────────────────────────────────────────────────────────────────
 //
-// **AN ICY RUNE RING, AND IT IS BUILT OUT OF THE ONE PRIMITIVE THIS PASS IS KNOWN TO DRAW** (owner's call).
-// Two earlier attempts drew nothing at all on the render: `rl.drawLine3D` is one pixel however close you stand,
-// and a `drawTriangleStrip3D` annulus came back invisible beside PARTICLES that were landing on the same spot
-// on the same frame — so the strip is not something to keep guessing at here. `drawSphereEx` is what
-// `foe.drawParticles` uses and what demonstrably arrives, so the whole mark is made of it.
+// **BUILT OUT OF `drawSphereEx` AND NOTHING ELSE.** Do not replace it with line or strip geometry:
+// `rl.drawLine3D` is one pixel however close you stand, and a `drawTriangleStrip3D` annulus came back
+// INVISIBLE beside particles landing on the same spot on the same frame. Spheres demonstrably arrive.
 //
-// **AND THE FUSE BURNS ROUND THE RING RATHER THAN FILLING IT.** A disc closing from the middle is a shape you
-// have to be looking down at to read; runes LIGHTING ONE BY ONE round the rim is a countdown legible from any
-// bearing the camera happens to be on, and it says how long is left in a way a brightness ramp cannot — you
-// can COUNT the dark ones. When the last one takes, it goes off.
-// **WHAT THE MARK COSTS, MEASURED** (`foe.drawParticles`' own note, arrived at differently). One live sigil is
-// 46 rim grains + 35 inner + 6 at the eye + 14 runes of 5 = 157 `drawSphereEx` calls at 4x6, about 7.5k
-// CPU-transformed triangles a frame — the band cost 41 calls over the single hairline it replaced, which is
-// the price of the thing reading at all from a standing camera. Where the particle pool gets away with this
-// because a slot is dead unless something emitted into it, this draws its full count for every frame a fuse is
-// burning — so the bound is how many are actually casting, not how many are posted, and an encounter with two
-// or three of them pays ~23k. It early-outs to nothing the moment no sigil is live or lately burst, which is
-// the overwhelming majority of frames.
+// **THE FUSE BURNS ROUND THE RING RATHER THAN FILLING IT** — runes lighting one by one are a countdown you
+// can COUNT from any bearing, where a disc closing from the middle has to be looked down at.
 //
-// Left as it is deliberately: the alternative is a real annulus MESH, which is exactly the geometry that came
-// back invisible twice, and trading a legible tell for a few thousand triangles is the wrong way round.
+// **MEASURED:** one live sigil is 157 `drawSphereEx` calls at 4x6, ~7.5k CPU-transformed triangles a frame,
+// and unlike the particle pool it draws its full count every frame a fuse burns — three casters pay ~23k. It
+// early-outs to nothing when no sigil is live, which is the overwhelming majority of frames.
 const RUNE_N: i32 = 14;
 /// Where the runes stand, as a fraction of the reach — the MIDDLE of the band, which is what puts a glyph
 /// between two lines rather than adrift inside one. Inside the rim, because the rim is what the blow claims

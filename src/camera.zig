@@ -210,11 +210,10 @@ test "AN UP-TILT IS NOT A ZOOM — flat ground costs no boom, a hill behind stil
             return 0;
         }
     };
-    // Locked up at a tall foe: full negative pitch on level ground. The eye wants to be under the
-    // clearance, and the OLD loop bought it back by eating half the boom.
+    // Locked up at a tall foe: full negative pitch on level ground.
     var rig = CamRig{ .cam = undefined, .yaw = 0, .pitch = PITCH_MIN, .dist = DEFAULT_DIST };
     rig.followClear(v3(0, 1.4, 0), {}, Flat.ground);
-    // The skim clamp lifts the eye a little, so measure against 0.9 — the OLD loop gave back half.
+    // The skim clamp lifts the eye a little, so measure against 0.9.
     const boomKept = mathx.lenV(mathx.subV(rig.cam.position, rig.cam.target));
     try std.testing.expect(boomKept > DEFAULT_DIST * 0.9); // the distance stays the player's…
     try std.testing.expect(rig.cam.position.y >= GROUND_CLEAR - 1e-4); // …and the skim clamp holds the eye up

@@ -104,6 +104,17 @@ const MOVES = [_]Attack{
     .{ .windDur = 0.46, .strikeDur = 0.30, .recoverDur = 0.55, .cd = 2.6, .minR = 0, .maxR = 2.05, .hit = GRASP_HIT, .hurl = false },
     .{ .windDur = 0.68, .strikeDur = 0.18, .recoverDur = 0.62, .cd = 4.6, .minR = 4.2, .maxR = 12.0, .hit = WISP_HIT, .hurl = true },
 };
+
+comptime {
+    // **THE INDICES ARE PINNED TO THE ROWS THEY NAME** (`knight.zig`'s own guard). `GRASP_REACH`, `classify`,
+    // the `cds` array and `audio.zig`'s own `MOVES[WISP].windDur` all resolve through these ordinals, so a
+    // third move inserted anywhere but the end re-points the kit silently and still compiles.
+    const named = .{ .{ GRASP, false }, .{ WISP, true } };
+    if (named.len != MOVES.len) @compileError("shade: MOVES and the named indices disagree on how many moves there are");
+    for (named) |row| {
+        if (MOVES[row[0]].hurl != row[1]) @compileError("shade: a named index no longer points at its own row of MOVES");
+    }
+}
 /// A MOVE'S CLOCK, for anything aiming at a beat inside it (`shots.zig`) — the shared shape, off this table.
 pub fn moveClock(which: usize) foe.Clock {
     return foe.moveClock(MOVES[@min(which, MOVES.len - 1)]);
@@ -713,8 +724,9 @@ pub const Shade = struct {
     }
 
     fn tornMotes(self: *Shade, at: rl.Vector3, dir: rl.Vector3) void {
+        const parts = foe.hitParts(10); // the field's one dial (`foe.HIT_PARTS`)
         var i: i32 = 0;
-        while (i < 10) : (i += 1) {
+        while (i < parts) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(0.5, 1.9);
             self.emit(

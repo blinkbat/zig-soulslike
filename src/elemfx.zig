@@ -123,16 +123,6 @@ pub fn sig(e: combat.Elem) Sig {
     };
 }
 
-/// For the object viewer's bench and the character book — never for a decision.
-pub fn elemName(e: combat.Elem) [:0]const u8 {
-    return switch (e) {
-        .fire => "Fire",
-        .cold => "Cold",
-        .lightning => "Lightning",
-        .chaos => "Chaos",
-    };
-}
-
 // ── THE THREE VERBS ────────────────────────────────────────────────────────────────────────────────────
 //
 // Every elemental effect in the game is one of these three things happening in one of four ways, and the
@@ -207,16 +197,14 @@ pub fn pour(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, from: rl.Vector
         // SPEED IS SOLVED OFF THE REACH, never chosen: the mote has to cover the cone in its own lifetime.
         const life = rng.range(s.lifeLo, s.lifeHi);
         const sp = (reach / mathx.maxF(life, 0.05)) * rng.range(0.55, 1.0);
-        // …and it keeps the ELEMENT'S OWN TAPER. The first pass fattened every stream's death radius
-        // threefold on the theory that a jet spreads as it goes, and the render answered it: cold motes that
-        // GREW as they died came back as a mouthful of soap bubbles, which is fire's signature drawn in blue.
-        // A stream widens because its motes DIVERGE, not because each one swells.
+        // The ELEMENT'S own taper: a stream widens because its motes DIVERGE, not because each one swells.
         foe.emitParticle(pool, head, from, mathx.scaleV(out, sp), life, s.r0 * scale, s.r1 * scale * 1.5, if (i % 2 == 0) s.core else s.edge, s.grav * 0.5);
     }
 }
 
-/// A UNIT VECTOR OFF THE STREAM, uniform on the sphere. Rejection-free (Marsaglia), because a `while` that
-/// resamples is a loop with no bound in a frame that has one.
+/// A UNIT VECTOR OFF THE STREAM, uniform on the sphere. REJECTION-FREE — Archimedes' hat-box, which draws a
+/// height and a bearing and is done, because a `while` that resamples is a loop with no bound in a frame that
+/// has one. (It said "Marsaglia", which is the polar method and is exactly the rejection sampler this avoids.)
 fn randomUnit(rng: *mathx.Rng) rl.Vector3 {
     const z = rng.signed();
     const a = rng.range(0, std.math.tau);

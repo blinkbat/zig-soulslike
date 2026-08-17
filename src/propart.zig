@@ -443,10 +443,9 @@ const GUITAR_BODY = [_][3]f32{
 };
 
 /// **A GUITAR LEANED AGAINST A ROCK, and the rock it leans on** — the pair, here rather than in one fire's own
-/// family file, because BOTH fires you can sit at carry it now (owner: "they all should"). It lived private in
-/// `propruins.zig` when only the bonfire had one; a second copy in `propfx.zig` for the campfire is a second
-/// place for the lean, the foot offset and the scale to drift, on geometry whose whole point is that the
-/// instrument and its rock agree.
+/// family file, because BOTH fires you can sit at carry it (owner: "they all should"). A copy per fire is a
+/// second place for the lean, the foot offset and the scale to drift, on geometry whose whole point is that
+/// the instrument and its rock agree.
 ///
 /// The two are SEPARATE calls on purpose: the rock belongs to the prop's own mesh and the guitar is its `stow`,
 /// which stops being drawn the moment the hero picks it up (`env.stowed`). They share the placement, which is

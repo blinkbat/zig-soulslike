@@ -128,14 +128,17 @@ fn must(ok: bool, what: []const u8) void {
     @panic("shot harness: a staged action was refused");
 }
 
-/// PUT A NAMED ARMAMENT IN HIS HAND, however many steps round that is. `swapArm` IS A CYCLE and there are
-/// three of them, so a single step no longer means "back to the sword" — and the step is never refused.
-fn armTo(g: *Game, want: heromod.Arm) void {
-    var guard: usize = 0;
-    while (g.hero.arm != want) : (guard += 1) {
-        must(guard < @typeInfo(heromod.Arm).@"enum".fields.len, "the armament never came round");
-        must(g.hero.swapArm(), "the armament would not swap");
-    }
+/// PUT A NAMED ARMAMENT IN A NAMED HAND. **STRAIGHT INTO THE SLOT, NEVER BY WALKING THE SWAP** — a hand is
+/// a PAIR now (`hero.HAND_SLOTS`), so a thing in neither of its two slots never comes round however many
+/// times you press it, and the walk this used to do could not terminate.
+fn armTo(g: *Game, want: heromod.Armament) void {
+    if (g.hero.arm == want) return;
+    must(g.hero.equip(heromod.RIGHT, 0, want), "the armament would not go in the right hand");
+}
+
+fn offTo(g: *Game, want: heromod.Armament) void {
+    if (g.hero.off == want) return;
+    must(g.hero.equip(heromod.LEFT, 0, want), "the armament would not go in the left hand");
 }
 
 /// THE CAMERA YAW WITH THE SUN BEHIND IT
@@ -424,6 +427,23 @@ pub fn runShots(g: *Game) void {
     advanceAttack(g, dt, 10); // ~u 0.42 into the return swipe
     shoot(g, "shots/15c_atk_light_return.png");
     advanceAttack(g, dt, 999); // run the combo out
+
+    // **THE SAME SWING FROM THE OTHER SHOULDER** (`hero.placeSword`). The blade is a rig BONE that used to be
+    // welded to the right wrist, so this is the shot that says the mirror is real: the sword has to be IN the
+    // left fist and the arc has to come across the other way, off the same keys and the same clocks. Shot from
+    // the mirrored bearing, or the swing hides behind the torso exactly as the right-hand one does at 270.
+    g.hero.arm = .shield;
+    g.hero.off = .sword;
+    g.rig.yaw = mathx.radians(-30);
+    stagedAttack(g, .light);
+    advanceAttack(g, dt, 10);
+    shoot(g, "shots/15L_atk_left_wind.png");
+    advanceAttack(g, dt, 7); // through the whip peak, where the blade is level and the capsule is live
+    shoot(g, "shots/15L_atk_left_peak.png");
+    advanceAttack(g, dt, 999);
+    g.hero.arm = .sword;
+    g.hero.off = .shield;
+
     g.rig.yaw = mathx.radians(0);
     g.rig.pitch = 1.48; // near-straight-down (follow() doesn't clamp pitch like the live paths)
     g.rig.dist = 6.5;
@@ -653,7 +673,7 @@ pub fn runShots(g: *Game) void {
         while (k < 30) : (k += 1) stepWorld(g, dt, 0);
         g.hero.pos = mathx.ground(0, 4);
         g.hero.facing = mathx.headingXZ(LIT_BACK); // down the lens, and lit from over the camera's shoulder
-        must(g.hero.swapOff(), "the wand would not come out");
+        offTo(g, .wand);
         k = 0;
         while (k < 20) : (k += 1) {
             g.hero.update(dt, 0, 0, null);
@@ -827,7 +847,7 @@ pub fn runShots(g: *Game) void {
         // PUT IT AWAY and leave the field as the rest of the harness expects to find it.
         g.hero.fp.reset();
         g.hero.fpRefused = 0;
-        must(g.hero.swapOff(), "the shield would not come back");
+        offTo(g, .shield);
         g.hero.stam.reset();
         k = 0;
         while (k < 30) : (k += 1) stepWorld(g, dt, 0);

@@ -120,9 +120,8 @@ const layerTips = [Layer.N][:0]const u8{
 };
 
 /// **TWO SECTIONS IN ONE LIST, and the split is `GROUND_SOIL_0`** — the sculpt tools first (pinned to
-/// `wf.Sculpt`), then one row per `wf.Soil` past the first, then Water and the eraser. The comptime block below
-/// pins every part of that, and the section headings are `brushSectionFor`'s. Laid out to SHOW the seam, since
-/// the index arithmetic either side of it is the whole reason this list cannot simply be appended to.
+/// `wf.Sculpt`), then one row per `wf.Soil` past the first, then Water and the eraser. Laid out to SHOW the
+/// seam: the index arithmetic either side of it is why this list cannot simply be appended to.
 const groundBrushes = [_][:0]const u8{
     // the sculpt tools — `wf.Sculpt`'s own order
     "Raise",
@@ -240,9 +239,9 @@ const coverIcons = [_]ui.Icon{ .clearing, .zone, .erase };
 const decorIcons = [_]ui.Icon{ .single, .patch, .scatter, .erase };
 const propIcons = [_]ui.Icon{ .stamp, .row, .ring, .cluster, .ivy, .erase };
 const interactIcons = [_]ui.Icon{ .stamp, .erase };
-/// ONE PER LINE, in `UnitBrush`'s order — which is `wf.FoeKind`'s order plus the eraser. The three unit lists
-/// (`unitBrushes`, `unitTips`, this) are read ACROSS by anyone adding a creature, and the comptime block below
-/// pins all of them to the enum by NAME; on one line the row you were checking was unfindable.
+/// ONE PER LINE, in `UnitBrush`'s order — `wf.FoeKind`'s order plus the eraser. The three unit lists
+/// (`unitBrushes`, `unitTips`, this) are read ACROSS by anyone adding a creature; on one line the row you
+/// were checking is unfindable.
 const unitIcons = [_]ui.Icon{
     .toad,
     .archer,
@@ -266,9 +265,8 @@ const unitIcons = [_]ui.Icon{
 };
 
 comptime {
-    // …AND PINNED BY NAME, not just by length: every one of these lists is the brush enum's own tags in
-    // the enum's own order, so a length check passes two entries swapped and the toolbar draws an ogre
-    // on the toad brush.
+    // BY NAME, not just by length: a length check passes two entries swapped, and the toolbar then draws an
+    // ogre on the toad brush.
     pinIcons(CoverBrush, &coverIcons);
     pinIcons(DecorBrush, &decorIcons);
     pinIcons(PropBrush, &propIcons);
@@ -477,9 +475,7 @@ const VOICE_NAMES = blk: {
     break :blk out;
 };
 
-/// Wide enough for a THIRD column: the voice list, what that voice IS, and the family's FILTER RACK. The
-/// rack lives here and not in the game's debug menu because it is an authoring tool — you turn a dial to
-/// hear what a voice becomes, and this is the one place a voice can be played on demand.
+/// Wide enough for a THIRD column: the voice list, what that voice IS, and the family's FILTER RACK.
 const JUKE_W: i32 = 1010;
 const JUKE_H: i32 = 560;
 const JUKE_LIST_W: i32 = 300;
@@ -622,8 +618,7 @@ pub const Editor = struct {
     /// What the cursor is over THIS FRAME while Select is armed (see `Hover`).
     hover: Hover = .none,
     /// …and whether `hover` was actually RESOLVED this frame, as opposed to left at `.none` because nothing
-    /// asked. A pick reuses a live one: the op-layer sweep is a ray against every prop in the world, and a
-    /// click would otherwise pay for three of them.
+    /// asked. A pick reuses a live one: the op-layer sweep is a ray against every prop in the world.
     hoverLive: bool = false,
     moving: bool = false, // dragging the marked set bodily
     moveFrom: rl.Vector3 = mathx.zero3,
@@ -792,7 +787,6 @@ pub const Editor = struct {
     /// THE ONE WAY TO CHANGE LAYER, and IT REFUSES MID-GESTURE (the armament law): a shape drag reads the
     /// layer at its RELEASE (`commitDrag`), so Tab between press and release commits a Props drag as a
     /// Decor op, or drops it silently. What starts is what lands.
-    ///
     pub fn setLayer(self: *Editor, l: Layer) void {
         if (self.dragging or self.painting or self.wipe.on) return;
         // THE MARKED SET DOES NOT CROSS LAYERS.
@@ -874,7 +868,7 @@ pub const Editor = struct {
 
     /// Where the cursor meets the ground, as resolved for THIS frame. `env.rayGround` is a MARCH over the
     /// height lattice — a ray that never lands walks some 1600 bilinear samples — and five sites ask it a
-    /// frame. The pointer cannot move inside a frame.
+    /// frame; the pointer cannot move inside one.
     pub fn groundAt(self: *const Editor) ?rl.Vector3 {
         return self.cursor;
     }
@@ -1055,7 +1049,6 @@ pub const Editor = struct {
 
 
     pub fn update(self: *Editor, m: *wf.Map, env: *envmod.Env, day: *daynight.Clock, dt: f32) Action {
-        // THE WORLD, for the terrain questions the cursor and camera ask — see `Editor.world`.
         self.world = env;
         self.statusT = @max(0, self.statusT - dt);
         self.wipe.t += dt; // the held eraser's rate gate
@@ -1192,9 +1185,9 @@ pub const Editor = struct {
             }
             if (rl.isKeyPressed(.left_bracket)) self.radius = mathx.clampF(self.radius - 1, 1, 60);
             if (rl.isKeyPressed(.right_bracket)) self.radius = mathx.clampF(self.radius + 1, 1, 60);
-            // THE WORLD CLOCK, on `,` and `.`, held with Shift for whole hours: a belt of trees that reads
-            // at the golden hour can be a black wall at dusk. REPEATING (`isKeyDown`), because sweeping the
-            // day is the gesture. The clock is HELD in the editor, so this is the only thing that moves it.
+            // THE WORLD CLOCK, on `,` and `.`, Shift for whole hours: a belt of trees that reads at the
+            // golden hour can be a black wall at dusk. REPEATING (`isKeyDown`) — sweeping the day is the
+            // gesture. The clock is HELD in the editor, so this is the only thing that moves it.
             {
                 const fast = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
                 const rate: f32 = if (fast) EDIT_HOUR_FAST else EDIT_HOUR_RATE;
@@ -1245,18 +1238,15 @@ pub const Editor = struct {
         self.editing = false;
     }
 
-    /// For the paths about to READ the materialized world (leaving, a playtest) rather than draw one more
-    /// frame of it. NOT a save: the MAP is written the moment a widget moves, and only `env` lags behind.
-    /// A LIVE STROKE COUNTS — Esc and F5 are read before the mouse, so a sculpt still under the button has
-    /// had only its MESH rebuilt, and leaving unsettled plays a world whose props stand at the old heights.
+    /// For the paths about to READ the materialized world (leaving, a playtest). NOT a save: the MAP is
+    /// written the moment a widget moves, and only `env` lags behind. A LIVE STROKE COUNTS — Esc and F5 are
+    /// read before the mouse, so a sculpt still under the button has had only its MESH rebuilt, and leaving
+    /// unsettled plays a world whose props stand at the old heights.
     pub fn flushRebuild(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
         if (self.painting) self.endPaint(m, env);
         if (self.rebuildDue) self.rebuild(m, env);
     }
 
-    /// The World panel edits two UNRELATED fields of the map itself, so it cannot use `bankGesture`'s
-    /// single-target trick: it puts both back, banks, and restores the live pair. Same contract otherwise —
-    /// one undo step per gesture, closed by `endGesture` when the mouse lets go.
     /// Point the name field and the mix modal at one zone, loading its CURRENT name into the buffer — a
     /// field that opened empty would rename the zone to nothing on the first frame.
     fn selectZone(self: *Editor, m: *const wf.Map, i: usize) void {
@@ -1269,6 +1259,9 @@ pub const Editor = struct {
         @memcpy(self.zoneNameBuf[0..self.zoneNameLen], lab[0..self.zoneNameLen]);
     }
 
+    /// The World panel edits two UNRELATED fields of the map itself, so it cannot use `bankGesture`'s
+    /// single-target trick: it puts both back, banks, and restores the live pair. Same contract otherwise —
+    /// one undo step per gesture, closed by `endGesture` when the mouse lets go.
     fn bankWorld(self: *Editor, m: *wf.Map, half: f32, runway: wf.Runway) void {
         if (self.editing) return;
         const liveHalf = m.half;
@@ -1300,7 +1293,6 @@ pub const Editor = struct {
 
         if (self.wipe.on and !rl.isMouseButtonDown(.left)) self.wipeEnd();
         if (self.painting and !rl.isMouseButtonDown(.left)) self.endPaint(m, env);
-        // …and a SHAPE DRAG commits the same way.
         if (self.dragging and !rl.isMouseButtonDown(.left)) {
             if (ground) |g| self.dragTo = g;
             self.dragging = false;
@@ -2382,8 +2374,8 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .bone_knight => ui.col(228, 132, 62, 255),
         // Turned earth: the one thing on the map whose colour is the GROUND, because that is where it is.
         .delver => ui.col(150, 118, 78, 255),
-        // Its own frost — the one PALE BLUE on the map. It has to separate from the shade's cold violet as
-        // well as from the skeletons' greys, since all three of those stand in the same courtyards.
+        // Its own frost — the one PALE BLUE, and it separates from the shade's cold violet as well as from
+        // the skeletons' greys, since all three stand in the same courtyards.
         .necromancer => ui.col(126, 196, 224, 255),
     };
 }
@@ -2459,12 +2451,11 @@ const RING_N_MAX: i32 = 64;
 /// How far off plumb a prop may be tipped.
 const LEAN_LIM: f32 = 40;
 
-/// ONE row pitch for every stacked row in the chrome.
 /// WHAT EACH EDGE SHAPE IS FOR, said in the thing you hover. The names alone do not separate `frayed` from
 /// `natural` or `blend` from either, and a picker of eight words nobody can tell apart is one button.
 fn edgeTip(e: wf.Edge, wet: bool) [:0]const u8 {
-    // THE SAME EIGHT NAMES ANSWER TWO DIFFERENT QUESTIONS. A tooltip about masonry on the water brush is
-    // worse than none: the shape is real either way, but what it is FOR is not the same thing at all.
+    // THE SAME EIGHT NAMES ANSWER TWO DIFFERENT QUESTIONS: the shape is real either way, but what it is FOR
+    // is not the same thing at all.
     if (wet) return switch (e) {
         .blend => "A margin you cannot find the edge of. Metres of ground that is neither",
         .natural => "What a lake does on its own. A slow wander either side of the line",
@@ -2493,8 +2484,8 @@ const SLIDER_DROP: i32 = 20;
 
 pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, t: f32) void {
     ed.world = env;
-    // Once for the chrome, against the camera as it ended up — a pan or a minimap fly this frame moved it after
-    // `update` traced. The panel, the status readout and a paste then share this one answer.
+    // Once for the chrome, against the camera as it ended up — a pan or a minimap fly moved it after
+    // `update` traced. The panel, the status readout and a paste share this one answer.
     ed.resolveCursor();
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
@@ -2722,8 +2713,7 @@ fn spanRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
 
 /// THE DENSITY GRADIENT a scatter can carry (`Op.gAxis`/`gA`/`gB`/`gFloor`) — acceptance ramps from
 /// `gFloor` to 1 as the chosen axis runs `gA` → `gB`. The axis chips come FIRST and the rest appear only
-/// once one is picked: three numbers that do nothing are worse than no rows, and `.none` is the format's
-/// own off switch.
+/// once one is picked: three numbers that do nothing are worse than no rows.
 fn gradientRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
     var ch = false;
     hud.mono("density gradient", x, y.*, hud.MONO, ui.alpha(ui.TRIM, 220));
@@ -2787,8 +2777,8 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             y += ROW_H + SLIDER_DROP;
         }
         // **HOW THE STROKE ENDS** — a brush setting, so one material lays a tiled courtyard and a torn
-        // scree. Two rows of four rather than a cycling row, since eight shapes pressed through one at a
-        // time is eight presses to compare two. SHARED BY BOTH BRUSHES; `env.coastWarp` is the shore's half.
+        // scree. Two rows of four, since eight shapes pressed through one at a time is eight presses to
+        // compare two. SHARED BY BOTH BRUSHES; `env.coastWarp` is the shore's half.
         if (!sculpting) {
             hud.mono(if (wet) "coast" else "edge", x, y, hud.MONO, ui.LABEL);
             y += ROW_H;
@@ -3320,9 +3310,9 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
         var msg: [ui.MSG_CAP]u8 = undefined;
         var len = @min(ed.statusLen, msg.len - 1);
         @memcpy(msg[0..len], ed.status[0..len]);
-        // THE FACE IS MONOSPACE, so the fit is one divide. Shrinking a character at a time and re-measuring
-        // the whole string each pass is O(n²) glyph work on a line that can be 120 characters long; the `4`
-        // floor is the old loop's, kept so a very narrow window still shows something.
+        // THE FACE IS MONOSPACE, so the fit is one divide — shrinking a character at a time and re-measuring
+        // is O(n²) glyph work on a line that can be 120 characters long. The `4` floor keeps a very narrow
+        // window showing something.
         const adv = hud.monoW("M", hud.MONO);
         if (adv > 0) {
             const fits: usize = @intCast(@max(0, @divTrunc(room - CHROME_PAD, adv)));
@@ -3412,11 +3402,9 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
                 const y = box.y + LOOT_TOP + @as(i32, @intCast(i)) * LOOT_ROW_H;
                 hud.mono(item.displayName(k), box.x + DLG_PAD, y + 5, hud.MONO, ui.VALUE);
                 // **WHAT THE THING ACTUALLY DOES, on the row that puts it in the world** (owner's ask, twice).
-                // `item.describe` is FLAVOUR — the first pass showed it here, and "a flask of clouded red glass,
-                // refilled at any bonfire" does not tell an author filling a box which of two flasks they just
-                // added, which is the one question this row asks. `item.effect` is the MECHANIC in one line, off
-                // `item.use`, so a dose retuned there reads here. The shelf goes in front of it because half
-                // these rows are inert and that is the fact worth knowing before the numbers.
+                // `item.effect` is the MECHANIC in one line, off `item.use`, so a dose retuned there reads
+                // here; `item.describe` is FLAVOUR and does not tell an author which of two flasks they just
+                // added. The shelf goes in front because half these rows are inert.
                 //
                 // The strip stops SHORT of the -/+ buttons: over them the tip would fight the press.
                 var ebuf: [item.EFFECT_BUF]u8 = undefined;
@@ -3557,11 +3545,9 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
             }
 
             if (changed) {
-                // ONE gesture for the whole panel, banked on the first nudge and closed when the mouse lets
-                // go — the foe inspector's own rule, so a held stepper is one undo step and not forty.
                 ed.bankWorld(m, halfBefore, before);
-                // …and a size change moves the painted grids as well as the props, so it is the FULL rebuild
-                // and not just a re-materialize: `half` is what every one of those uploads is measured in.
+                // A size change moves the painted grids as well as the props, so it is the FULL rebuild and
+                // not just a re-materialize: `half` is what every one of those uploads is measured in.
                 ed.rebuild(m, env);
             } else if (!ctx.down) ed.endGesture(m, env);
 
@@ -3675,9 +3661,6 @@ const MENU_W: i32 = 150; // the FLOOR; the menu grows to fit its widest row (see
 const MENU_EDGE: i32 = 4; // clear space kept between the menu and the screen edge
 
 
-/// THE ONE ANSWER TO "does the selection have contents to edit?" — only a LITERAL chest does. The menu row that
-/// opens the dialog and the dialog itself both ask this; asked twice they had already parted company, the menu
-/// insisting on `.at` and the dialog taking any op that placed a chest.
 /// **WHICH SELECTION HAS CONTENTS TO EDIT.** Off `props.holdsLoot` rather than a kind named here, so a third
 /// thing that holds items is one row in that predicate and no edit in the editor at all.
 fn lootOp(ed: *const Editor, m: *const wf.Map) ?usize {
@@ -3694,9 +3677,8 @@ fn lootCount(o: *const wf.Op, k: item.Kind) u8 {
     return n;
 }
 
-/// A ZONE'S MIX, counted / added / removed — `lootCount`/`lootAdd`/`lootRemove` for a different list. Kept
-/// as three small bodies beside those rather than folded into a generic: the loot list is an `item.Kind` cap
-/// of 8 and this a `props.Kind` cap of 24, and the one thing they share is the swap-the-last-one-down trick.
+/// A ZONE'S MIX, counted / added / removed — `lootCount`/`lootAdd`/`lootRemove` for a different list, and
+/// kept beside them rather than folded into a generic: the only thing the two share is the swap-down trick.
 fn mixCount(z: *const wf.Zone, k: Kind) u8 {
     var n: u8 = 0;
     for (z.mix[0..z.nmix]) |it| {
@@ -3744,17 +3726,16 @@ const WORLD_W: i32 = 420;
 const WORLD_H: i32 = 470;
 
 /// A CLIFF RIM — the ONE op no brush can make, because it is world-wide: nowhere to stamp it, no gizmo to
-/// drag it by. Deleting the rim a new map is given used to be irreversible short of editing the file.
-/// The numbers are `wf.Map.defaultRim`'s and are not restated here — this only adds the editor's own seed
-/// counter, which is the one thing `blank` has no access to.
+/// drag it by. The numbers are `wf.Map.defaultRim`'s; this only adds the editor's own seed counter, which
+/// is the one thing `blank` has no access to.
 fn freshRim(ed: *Editor, m: *const wf.Map) wf.Op {
-    var rim = wf.Map.defaultRim(); // the rim `blank` gives a new map, with a seed of its own
+    var rim = wf.Map.defaultRim();
     rim.seed = ed.freshSeed(m);
     return rim;
 }
 
-/// THE SOUND FILTER RACK, one family at a time. Moved here out of the game's debug menu: it is an
-/// authoring tool, not a setting, and the one place a voice can be played on demand is the list to its left.
+/// THE SOUND FILTER RACK, one family at a time. It lives here rather than in the game's options because it
+/// is an authoring tool, and the one place a voice can be played on demand is the list to its left.
 ///
 /// **FILTERS ARE BAKED, NOT MIXED** — raylib can neither filter a playing voice nor a submix, so moving a
 /// dial re-renders that whole family (`sfx.tickFx`, coalesced by `FX_SETTLE`). That is why the panel SAYS
@@ -3951,7 +3932,7 @@ test "the rate gate paces a sweep, and an empty sweep costs no undo step" {
     ed.wipeStep(m, env, v3(6, 0, 0));
     try std.testing.expectEqual(@as(usize, 0), m.nfoes);
 
-    // A stroke over empty ground banks nothing and leaves the map clean — the editor must not ask you to save a sweep that removed nothing.
+    // A stroke over empty ground banks nothing and leaves the map clean.
     undoReset();
     var idle = Editor{};
     idle.layer = .units;

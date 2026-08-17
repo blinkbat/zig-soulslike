@@ -61,14 +61,12 @@ pub fn deinit() void {
 
 // **THE HUD GOES OUT AS A WHOLE PICTURE, NOT AS A LIST OF THINGS THAT EACH KNOW AN ALPHA** (owner: gradually
 // fade the HUD away when you die instead of removing it immediately). Every colour here is a LITERAL screen
-// value — the bars, the dial's sky, the gilt rules, the pad glyphs, and the item pictures `itemart` draws into
-// the cross, which are not this file's colours at all. Threading a factor through all of them is dozens of
-// call sites and ONE of them missed is a slot left solid over a chrome that has gone, which reads worse than
-// the hard cut it replaced. So the block is drawn once into a target and composited at one alpha: nothing can
-// be missed, because nothing is asked.
+// value — including the item pictures `itemart` draws into the cross, which are not this file's colours at
+// all — so threading a factor through them is dozens of call sites, and ONE missed is a slot left solid over
+// a chrome that has gone. Drawn once into a target and composited at one alpha, nothing can be missed.
 //
-// It costs a screen-sized target and one blit, and it is only paid WHILE a fade is running — at full chrome
-// `begin` refuses and the draws go straight at the backbuffer exactly as they always did.
+// It costs a screen-sized target and one blit, paid only WHILE a fade runs: at full chrome `begin` refuses
+// and the draws go straight at the backbuffer.
 var veil: ?rl.RenderTexture2D = null;
 
 fn veilFree() void {
@@ -253,10 +251,9 @@ pub const BTN_JUMP: PadBtn = .a;
 pub const BTN_BACK: PadBtn = .b;
 pub const BTN_QUICK: PadBtn = .x;
 
-/// …AND THE PRESS ITSELF COMES OFF THE SAME NAME, which is what makes "a button is named once" true rather than
-/// merely written down. Every site held its own copy of a binding beside the letter drawn for it — the interact
-/// press, both halves of Confirm, Back, and the roll/sprint B in `game.gatherMove` and the input queue — so a
-/// rebind moved the press and left every crib in the game drawing the old letter.
+/// …AND THE PRESS ITSELF COMES OFF THE SAME NAME, which is what makes "a button is named once" true rather
+/// than merely written down: a copy of the binding beside the letter drawn for it means a rebind moves the
+/// press and leaves every crib in the game drawing the old letter.
 /// raylib names a face button by its POSITION, which is where the Xbox letters this UI draws happen to sit.
 pub fn padOf(b: PadBtn) rl.GamepadButton {
     return switch (b) {
@@ -475,14 +472,13 @@ const FP_TP = rgba(88, 148, 188, 255);
 const ST_HI = rgba(112, 136, 58, 255);
 const ST_LO = rgba(60, 78, 28, 255);
 const ST_TP = rgba(154, 178, 88, 255);
-/// THE STATUS METER, and it has TWO faces off ONE number: a sickly violet while it FILLS (a threat), and a
-/// hot toxic YELLOW once it has GONE OFF (a thing happening to you). Filling and poisoned must not read as
-/// the same bar at different lengths — that is the one thing this meter cannot afford, since the number
-/// itself means opposite things either side of the proc.
+/// THE STATUS METER, TWO faces off ONE number: a sickly violet while it FILLS (a threat), a hot toxic YELLOW
+/// once it has GONE OFF (a thing happening to you). The number means opposite things either side of the proc,
+/// so filling and poisoned may not read as the same bar at different lengths.
 ///
 /// AND THE ACTIVE FACE IS NOT GREEN, though poison green is the genre's own: it sits DIRECTLY UNDER the
-/// stamina bar, and measured off the first pass (108,150,44 against stamina's 112,136,58) the two were the
-/// same bar. Separated on HUE *and* VALUE — yellow, and much lighter than the olive above it.
+/// stamina bar, and measured (108,150,44 against stamina's 112,136,58) the two were the same bar. Separated
+/// on HUE *and* VALUE — yellow, and much lighter than the olive above it.
 const PSN_HI = rgba(96, 62, 118, 255);
 const PSN_LO = rgba(52, 32, 66, 255);
 const PSN_TP = rgba(146, 106, 172, 255);
@@ -529,9 +525,8 @@ fn statusBar(x: i32, y: i32, s: Status) void {
 // ── THE LIVE PORTRAIT ───────────────────────────────────────────────────────────────────────────────────
 //
 // The actual rig, rendered off-screen into a target and blitted into a UI box — `book.zig`'s paper-doll
-// trick, and it lives HERE because there are three callers now (the book's doll, the conversation panel's
-// speaker, the spirit toast) and three copies of a camera-and-target is three things to retune separately.
-// It is the real model in the real pose, so no picture in this game can go stale.
+// trick, here because three callers share it (the book's doll, the conversation panel's speaker, the spirit
+// toast). It is the real model in the real pose, so no picture in this game can go stale.
 //
 // ONE TARGET, sized to the LARGEST use and scaled down for the rest: a render target is video memory and
 // the two smaller callers are the same head with fewer pixels round it.
@@ -540,11 +535,9 @@ const PORT_RT_W: i32 = 320;
 const PORT_RT_H: i32 = 360;
 var portRT: ?rl.RenderTexture2D = null;
 
-// HOW A FACE IS FRAMED, and it lives with the renderer rather than with any one SUBJECT. It was the
-// wanderer's (`npc.PORTRAIT_*`) while he was the only thing photographed; the spirit panel then read the
-// wanderer's constants to frame a WOLF, which is a creature's house style governing another creature.
-// The ANGLE is the house's and belongs here; the DISTANCE is the subject's and stays with the subject
-// (`npc.PORTRAIT_DIST`, `wolf.PORTRAIT_DIST`), because a wolf's muzzle and a man's face want different room.
+// HOW A FACE IS FRAMED, with the renderer rather than with any one SUBJECT. The ANGLE is the house's and
+// belongs here; the DISTANCE is the subject's and stays with it (`npc.PORTRAIT_DIST`, `wolf.PORTRAIT_DIST`),
+// because a wolf's muzzle and a man's face want different room.
 /// Degrees off the subject's own front. Three-quarters: enough to give the head a near side and a far side —
 /// dead on, a low-poly head with no shading break in it reads as a passport photo.
 pub const PORTRAIT_YAW: f32 = 34.0;
@@ -587,10 +580,9 @@ pub const LivePortrait = struct {
 ///
 /// **IT IS RE-TAKEN EVERY FRAME AND THAT IS MEASURED, NOT ASSUMED.** One target switch, one shader bind and
 /// the subject's own meshes — 27 for the wolf, 18 for a wanderer — against a world frame that runs a full
-/// shadow pass over hundreds. Well under a percent, and only while a panel is actually up. A refresh clock
-/// was considered and REFUSED: the target is shared, so a throttle has to carry a subject tag to avoid
-/// mounting the wrong face, and the `--shot` harness steps the sim faster than any wall-clock gate, which
-/// would photograph a stale pose. Not worth either for 27 draw calls.
+/// shadow pass over hundreds: well under a percent, and only while a panel is up. A refresh clock is REFUSED
+/// — the target is shared, so a throttle needs a subject tag to avoid mounting the wrong face, and `--shot`
+/// steps the sim faster than any wall-clock gate would photograph.
 pub fn renderPortrait(p: LivePortrait) bool {
     if (portRT == null) portRT = rl.loadRenderTexture(PORT_RT_W, PORT_RT_H) catch null;
     const rt = portRT orelse return false;
@@ -644,9 +636,9 @@ pub fn livePortrait(p: LivePortrait, dst: rl.Rectangle, tint: rl.Color) void {
 // HP). It is not a slot and not part of the cross: the cross is the four things the pad's directions do,
 // and a companion is not something you press.
 //
-// **IT IS NOT A TOAST AND HAS NO TIMER** (owner, in as many words: it should stay on screen as long as they
-// are alive). It is shaped like one — a face, a name and a life, sliding in under his own bars — but what
-// takes it off is the BODY going, never a clock. `k` fades it at both ends and nothing else moves it.
+// **IT IS NOT A TOAST AND HAS NO TIMER** (owner: it should stay on screen as long as they are alive). It is
+// shaped like one — a face, a name and a life, sliding in under his own bars — but what takes it off is the
+// BODY going. `k` fades it at both ends and nothing else moves it.
 
 const SP_FACE: i32 = 52; // the portrait square…
 const SP_BAR_H: i32 = 9; // …and its life, the status meter's own height so the stack reads as one column
@@ -826,10 +818,8 @@ const STAGGER_RIM = rgba(232, 196, 90, 255); // ER's gold crit-opening cue on a 
 const CHILL_STRIP = rgba(148, 202, 232, 235); // the rime hold's own row — cold, against the bar's warm red
 /// A BAR MAY NOT CLIMB OUT OF THE FRAME. Over the head is right at every distance you can see the whole
 /// creature at, and wrong the moment you close on a TALL one: the ogre's crown is 4.4 m up, so through the
-/// whole fight you are near enough to need the bar it is drawn off the top of the screen, gold rim and all.
-///
-/// So the bar has a CEILING in screen space, three quarters of the way up: far off it rides the head exactly
-/// as before, and walking in it stops climbing and hangs against the body. ONE rule for every creature.
+/// whole fight it is drawn off the top of the screen, gold rim and all. So the bar has a CEILING in screen
+/// space — far off it rides the head, walking in it stops climbing and hangs against the body.
 const FOE_CEIL: f32 = 0.25; // …measured from the TOP, so 0.25 is three quarters up
 
 pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool, chill: f32) void {

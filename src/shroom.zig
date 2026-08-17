@@ -576,8 +576,9 @@ pub const Shroom = struct {
     }
     /// Spore dust — the puffs are ITS blood and its exhaust both, in the cloud's own two tones.
     fn emitPuff(self: *Shroom, at: rl.Vector3, n: i32) void {
+        const parts = foe.hitParts(n); // the field's one dial (`foe.HIT_PARTS`)
         var i: i32 = 0;
-        while (i < n) : (i += 1) {
+        while (i < parts) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(0.3, 1.1);
             self.emit(
@@ -657,6 +658,7 @@ pub const Shroom = struct {
 /// the middle of its life instead of at the end of it. Arithmetic, and asserted, never a round number.
 const CLOUD_RATE: f32 = 38.0;
 const CLOUD_RATE_FRESH: f32 = 26.0;
+const CLOUD_PUFF_MIN: f32 = 1.1;
 const CLOUD_PUFF_MAX: f32 = 1.7;
 const CLOUD_PARTS = 112;
 // **WHAT THE CLOUDS COST, MEASURED** (`necro.drawSigil`'s note, one creature along). A live cloud is up to
@@ -694,9 +696,12 @@ pub const Cloud = struct {
         return self.live and self.t < CLOUD_LIFE and mathx.distXZ(self.pos, p) <= self.radius();
     }
     pub fn update(self: *Cloud, dt: f32) void {
+        // BEFORE the live gate (`brood.Pool.update`'s rule): a puff laid on the cloud's last frame still has
+        // up to `CLOUD_PUFF_MAX` to run, and a pool nobody ticks again is one frozen in the air until the
+        // slot is reused.
+        foe.tickParticles(&self.parts, dt, self.pos.y);
         if (!self.live) return;
         self.t += dt;
-        foe.tickParticles(&self.parts, dt, self.pos.y);
         if (self.t >= CLOUD_LIFE) {
             self.live = false;
             return;
@@ -725,7 +730,7 @@ pub const Cloud = struct {
                 &self.fxHead,
                 v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + self.fxRng.range(0.08, 1.45), self.pos.z + mathx.sinf(a) * rr),
                 v3(self.fxRng.signed() * 0.15, self.fxRng.range(0.05, 0.3), self.fxRng.signed() * 0.15),
-                self.fxRng.range(1.1, CLOUD_PUFF_MAX),
+                self.fxRng.range(CLOUD_PUFF_MIN, CLOUD_PUFF_MAX),
                 self.fxRng.range(0.13, 0.22),
                 self.fxRng.range(0.26, 0.40),
                 if (self.fxRng.float() < SPORE_VIO_SHARE) SPORE_VIO else SPORE,
@@ -1014,6 +1019,25 @@ test "CLEAR EMPTIES THE FIELD — the members as well as the clouds" {
     c.clear();
     try std.testing.expectEqual(@as(usize, 0), c.n);
     try std.testing.expect(!c.fuming(mathx.zero3));
+}
+
+test "A DEAD CLOUD'S LAST PUFFS STILL GO OUT — `drawFx` does not ask whether the cloud is live" {
+    var c = Cluster{ .model = undefined };
+    c.spawnCloud(mathx.zero3);
+    var t: f32 = 0;
+    while (t < CLOUD_LIFE + 0.05) : (t += 1.0 / 60.0) {
+        for (&c.clouds) |*cl| cl.update(1.0 / 60.0);
+    }
+    try std.testing.expect(!c.fuming(mathx.zero3)); // the hazard is over…
+    // …and the motes laid on its last frame carry up to `CLOUD_PUFF_MAX` more. Gated behind `live` the pool
+    // stopped being ticked here and hung in the air until something flung a cloud into the same slot.
+    t = 0;
+    while (t < CLOUD_PUFF_MAX + 0.05) : (t += 1.0 / 60.0) {
+        for (&c.clouds) |*cl| cl.update(1.0 / 60.0);
+    }
+    for (&c.clouds) |*cl| {
+        for (cl.parts) |p| try std.testing.expect(p.life <= 0);
+    }
 }
 
 test "a wandered sporeling hops HOME, not at a hero forty metres off" {

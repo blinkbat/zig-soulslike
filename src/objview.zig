@@ -277,7 +277,6 @@ fn render(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, kind: Kin
     rl.endTextureMode();
 }
 
-//
 // ONE GROUP OF EACH, exactly as the game holds them — the group is every creature's own draw contract
 // (model, flash, scale), so the viewer cannot drift from what the field shows. Members are respawned into
 // slot 0 per render; a spawn poses before it returns, so the cell is the creature's own first frame.
@@ -1019,7 +1018,7 @@ fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) boo
     inline for (@typeInfo(combat.Elem).@"enum".fields) |f| {
         const e: combat.Elem = @enumFromInt(f.value);
         var usedW: i32 = 0;
-        if (ui.chip(ctx, tx, ey, elemfx.elemName(e), st.elem == e, &usedW) and st.elem != e) {
+        if (ui.chip(ctx, tx, ey, combat.elemName(e), st.elem == e, &usedW) and st.elem != e) {
             st.elem = e;
             benchClear(st); // the old element's motes must not hang in the new one's picture
         }
@@ -1104,7 +1103,7 @@ fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) boo
     }
     if (ui.button(ctx, ui.rect(box.x + BIG_PAD + 78, by, 74, 24), "Clear", hud.MONO, false)) benchClear(st);
     var cb: [96]u8 = undefined;
-    const count = std.fmt.bufPrintZ(&cb, "{s} {s}   {d} live", .{ elemfx.elemName(st.elem), Verb.label(st.verb), liveParts(st) }) catch "";
+    const count = std.fmt.bufPrintZ(&cb, "{s} {s}   {d} live", .{ combat.elemName(st.elem), Verb.label(st.verb), liveParts(st) }) catch "";
     hud.mono(count, box.x + BIG_PAD + 164, by + 5, hud.MONO, ui.alpha(ui.LABEL, 210));
     if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Close", hud.MONO, false)) return false;
     return true;

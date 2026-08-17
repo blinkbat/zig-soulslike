@@ -40,8 +40,11 @@ const NPAGE = @typeInfo(Page).@"enum".fields.len;
 /// the game loop's to move, exactly as the old inventory `use` was.
 pub const Action = union(enum) {
     none,
-    arm: heromod.Arm,
-    off: heromod.Off,
+    arm: heromod.Armament,
+    off: heromod.Armament,
+    /// …and the OTHER slot of each hand (`hero.HAND_SLOTS`), which the two alt sockets set.
+    armAlt: heromod.Armament,
+    offAlt: heromod.Armament,
     ammo: combat.ArrowKind,
     /// Put `kind` (or nothing) in quick socket `slot`.
     quick: struct { slot: usize, kind: ?item.Kind },
@@ -62,8 +65,11 @@ pub const View = struct {
     /// IS A FIGHT ON (`game.inCombat`). The page reads it for one rule: in combat a consumable may only be
     /// spent off the bar, so the inventory's own Use is refused and says so.
     inCombat: bool = false,
-    arm: heromod.Arm,
-    off: heromod.Off,
+    arm: heromod.Armament,
+    off: heromod.Armament,
+    /// What the swap turns to in each hand — read only by the two alt sockets.
+    armAlt: heromod.Armament = .bow,
+    offAlt: heromod.Armament = .wand,
     /// WHICH SORCERY THE ROD IS SET TO. Read, never chosen here — the rod is changed on the D-pad in play,
     /// and the page has to name and price the one that is actually loaded.
     spell: combat.Spell,
@@ -139,7 +145,9 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     // there were two armaments; the BELL has neither a light nor a heavy, so every row below came off the
     // SWORD and the page priced a swing he cannot take. Zero is the honest figure, and the arm's own tip
     // already says it in words.
-    const attacks = heromod.armSwings(l.arm) or bow;
+    // EITHER HAND. A blade in the off hand swings now (`hero.placeSword`), so the page may not price the
+    // right hand alone and call the character weaponless.
+    const attacks = heromod.armSwings(l.arm) or (!bow and heromod.armSwings(l.off)) or bow;
     const light = if (bow) heromod.BOW_QUICK_HIT else heromod.ATK_LIGHT_HIT;
     const heavy = if (bow) heromod.arrowBlow(l.ammo, true) else heromod.ATK_HEAVY_HIT;
     var d: [ND]f32 = undefined;
@@ -180,6 +188,11 @@ pub const SlotId = enum {
     arrows,
     boots,
     sorcery,
+    /// **THE OTHER THING IN EACH HAND** (`hero.HAND_SLOTS`). A hand is a PAIR and the swap button walks
+    /// between them, so both slots have to be settable or half the loadout is unreachable from the one
+    /// screen whose whole job is showing what he is carrying.
+    left2,
+    right2,
     q0,
     q1,
     q2,
@@ -229,6 +242,9 @@ const SLOT_CELL = blk: {
     c[@intFromEnum(SlotId.arrows)] = .{ .col = 1, .row = 3 };
     c[@intFromEnum(SlotId.boots)] = .{ .col = 2, .row = 3 };
     c[@intFromEnum(SlotId.sorcery)] = .{ .col = 3, .row = 3 };
+    // OUTBOARD OF EACH HAND, so a pair reads as a pair.
+    c[@intFromEnum(SlotId.left2)] = .{ .col = 0, .row = 1 };
+    c[@intFromEnum(SlotId.right2)] = .{ .col = 4, .row = 1 };
     for (0..combat.QUICK_SLOTS) |i| {
         c[Q0 + i] = .{ .col = @intCast(i % 5), .row = 4 + @as(i32, @intCast(i / 5)) };
     }
@@ -242,8 +258,10 @@ fn slotName(s: SlotId) [:0]const u8 {
         .helm => "Head",
         .amulet => "Neck",
         .left => "L Hand",
+        .left2 => "L Alt",
         .chest => "Body",
         .right => "R Hand",
+        .right2 => "R Alt",
         .ring1 => "Ring",
         .belt => "Belt",
         .ring2 => "Ring",
@@ -271,7 +289,9 @@ fn locked(s: SlotId, v: View) ?[:0]const u8 {
     return switch (s) {
         .helm, .chest, .belt, .boots => "There is no armour in this world yet. The socket is here for the day there is.",
         .amulet, .ring1, .ring2 => "There is no jewellery in this world yet. The socket is here for the day there is.",
-        .left => if (v.arm == .bow) "Both hands are on the bow. The left one comes back when the sword does." else null,
+        .left => if (heromod.armTwoHanded(v.arm)) "Both hands are on the bow. The other comes back when the bow goes away." else null,
+        // AN ALTERNATE IS NEVER LOCKED: it is what he is NOT holding, so nothing he is holding can deny it.
+        .left2, .right2 => null,
         // Which of the two reasons it is: "locked" with no reason is a slot the player calls broken.
         .sorcery => if (v.arm == .bow)
             "Both hands are on the bow. Nothing is free to hold a wand."
@@ -292,8 +312,8 @@ fn quickAt(s: SlotId, v: View) ?item.Kind {
 /// Is there anything in it? The socket lights off this, and an empty one stays cold.
 fn slotHas(s: SlotId, v: View) bool {
     return switch (s) {
-        .right => true,
-        .left => v.arm != .bow,
+        .right, .left2, .right2 => true,
+        .left => !heromod.armTwoHanded(v.arm),
         .sorcery => v.arm != .bow and v.off == .wand,
         .arrows => v.quiver.count(v.quiver.sel) > 0,
         .helm, .chest, .belt, .boots, .amulet, .ring1, .ring2 => false,
@@ -305,20 +325,18 @@ fn slotHas(s: SlotId, v: View) bool {
 // and two copies of a name are two names the day one of them is edited.
 const EMPTY = "-";
 
-fn armName(a: heromod.Arm) [:0]const u8 {
+/// ONE NAME PER ARMAMENT, and one list — the two hands stopped having their own sets when either hand
+/// gained the right to hold anything (`hero.Armament`).
+fn armName(a: heromod.Armament) [:0]const u8 {
     return switch (a) {
         .sword => "Straight Sword",
         .bow => "Short Bow",
         .bell => "Summoning Bell",
-    };
-}
-
-fn offName(o: heromod.Off) [:0]const u8 {
-    return switch (o) {
         .shield => "Small Shield",
         .wand => "Knotted Wand",
     };
 }
+const offName = armName;
 
 fn ammoName(k: combat.ArrowKind) [:0]const u8 {
     return switch (k) {
@@ -330,7 +348,9 @@ fn ammoName(k: combat.ArrowKind) [:0]const u8 {
 fn slotFilled(s: SlotId, v: View) [:0]const u8 {
     return switch (s) {
         .right => armName(v.arm),
-        .left => if (v.arm == .bow) EMPTY else offName(v.off),
+        .left => if (heromod.armTwoHanded(v.arm)) EMPTY else armName(v.off),
+        .left2 => armName(v.offAlt),
+        .right2 => armName(v.armAlt),
         .sorcery => if (slotHas(.sorcery, v)) combat.spellName(v.spell) else EMPTY,
         .arrows => ammoName(v.quiver.sel),
         .helm, .chest, .belt, .boots, .amulet, .ring1, .ring2 => EMPTY,
@@ -342,7 +362,7 @@ fn slotTally(s: SlotId, v: View) ?u8 {
     return switch (s) {
         .arrows => v.quiver.count(v.quiver.sel),
         .sorcery => if (slotHas(.sorcery, v)) castsLeft(v.fp, v.spell) else null,
-        .helm, .chest, .belt, .boots, .amulet, .ring1, .ring2, .left, .right => null,
+        .helm, .chest, .belt, .boots, .amulet, .ring1, .ring2, .left, .right, .left2, .right2 => null,
         else => if (quickAt(s, v)) |k| quickTally(k, v) else null,
     };
 }
@@ -406,19 +426,19 @@ fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
     switch (s) {
         // Each list is walked off the ENUM it offers, so a third arrow or a third armament is a row here
         // the day it exists rather than a row somebody remembered to add.
-        .right => {
-            inline for (@typeInfo(heromod.Arm).@"enum".fields, 0..) |f, i| {
-                const a: heromod.Arm = @enumFromInt(f.value);
-                out[i] = .{ .name = armName(a), .act = .{ .arm = a } };
+        // ALL FOUR HAND SOCKETS OFFER THE SAME LIST, which is the whole of "any armament in either hand":
+        // as two lists keyed to two enums, which hand a thing could go in was a fact about its TYPE.
+        .right, .left, .right2, .left2 => {
+            inline for (@typeInfo(heromod.Armament).@"enum".fields, 0..) |f, i| {
+                const a: heromod.Armament = @enumFromInt(f.value);
+                out[i] = .{ .name = armName(a), .act = switch (s) {
+                    .right => Action{ .arm = a },
+                    .left => Action{ .off = a },
+                    .right2 => Action{ .armAlt = a },
+                    else => Action{ .offAlt = a },
+                } };
             }
-            return out[0..@typeInfo(heromod.Arm).@"enum".fields.len];
-        },
-        .left => {
-            inline for (@typeInfo(heromod.Off).@"enum".fields, 0..) |f, i| {
-                const o: heromod.Off = @enumFromInt(f.value);
-                out[i] = .{ .name = offName(o), .act = .{ .off = o } };
-            }
-            return out[0..@typeInfo(heromod.Off).@"enum".fields.len];
+            return out[0..@typeInfo(heromod.Armament).@"enum".fields.len];
         },
         .arrows => {
             inline for (@typeInfo(combat.ArrowKind).@"enum".fields, 0..) |f, i| {
@@ -451,6 +471,9 @@ fn withCand(base: Loadout, c: Cand) Loadout {
     switch (c.act) {
         .arm => |a| l.arm = a,
         .off => |o| l.off = o,
+        // AN ALTERNATE CHANGES NOTHING IN FORCE. It is the slot he is NOT holding, so the delta column has
+        // nothing to price — setting it is a decision about the next swap, not about this frame.
+        .armAlt, .offAlt => {},
         .ammo => |a| l.ammo = a,
         .quick => |q| l.quick = q.kind,
         // EXHAUSTIVE, not `else` (`hero.steerQueuedRoll`'s rule): a seventh action has to be asked whether
@@ -464,6 +487,8 @@ fn equipped(c: Cand, v: View) bool {
     return switch (c.act) {
         .arm => |a| a == v.arm,
         .off => |o| o == v.off,
+        .armAlt => |a| a == v.armAlt,
+        .offAlt => |o| o == v.offAlt,
         .ammo => |a| a == v.quiver.sel,
         .quick => |q| v.quick.slots[q.slot] == q.kind,
         .none, .use => false,
@@ -477,6 +502,8 @@ fn pickIndexOf(s: SlotId, v: View) usize {
     return switch (s) {
         .right => @intFromEnum(v.arm),
         .left => @intFromEnum(v.off),
+        .right2 => @intFromEnum(v.armAlt),
+        .left2 => @intFromEnum(v.offAlt),
         .arrows => @intFromEnum(v.quiver.sel),
         // The quick list is FILTERED and carries an "(empty)" row, so a kind's ordinal is not its row.
         else => quickRowOf(quickAt(s, v), v),
@@ -1227,15 +1254,10 @@ fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
     switch (s) {
         // EXHAUSTIVE over the arm, like the HUD's own right-hand cell (`game.hud`): as a two-way `if` the
         // BELL drew a sword in his fist on the one page whose whole job is showing what he is carrying.
-        .right => switch (v.arm) {
-            .sword => itemart.sword(cx, cy, px),
-            .bow => itemart.bow(cx, cy, px),
-            .bell => itemart.bell(cx, cy, px),
-        },
-        .left => if (v.arm != .bow) switch (v.off) {
-            .shield => itemart.shield(cx, cy, px),
-            .wand => itemart.wand(cx, cy, px),
-        },
+        .right => armArt(v.arm, cx, cy, px),
+        .left => if (!heromod.armTwoHanded(v.arm)) armArt(v.off, cx, cy, px),
+        .right2 => armArt(v.armAlt, cx, cy, px),
+        .left2 => armArt(v.offAlt, cx, cy, px),
         // THE PICTURE FOLLOWS THE ROD TOO, greyed by the pool the same way the cross's own slot is.
         .sorcery => if (slotHas(.sorcery, v)) switch (v.spell) {
             .bolt => itemart.spell(cx, cy, px, v.fp >= combat.spellFp(v.spell)),
@@ -1294,25 +1316,40 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     _ = prose(says, inner.x, footY, inner.w, hud.HINT, uiart.TEXT_HINT);
 }
 
-fn armSays(a: heromod.Arm, o: heromod.Off) []const u8 {
-    if (a == .bow) return "The bow takes both hands, so nothing is on his left arm and nothing can be blocked.";
-    return switch (o) {
-        .shield => "Sword and shield: he can guard, and a guard is worth more than any number on this page.",
-        .wand => "Sword and wand. He casts with the hand that used to block, and pays in Focus instead of stamina.",
+/// ONE PICTURE PER ARMAMENT, and either hand may be handed any of them.
+fn armArt(a: heromod.Armament, cx: f32, cy: f32, px: f32) void {
+    switch (a) {
+        .sword => itemart.sword(cx, cy, px),
+        .bow => itemart.bow(cx, cy, px),
+        .bell => itemart.bell(cx, cy, px),
+        .shield => itemart.shield(cx, cy, px),
+        .wand => itemart.wand(cx, cy, px),
+    }
+}
+
+fn armSays(a: heromod.Armament, o: heromod.Armament) []const u8 {
+    if (heromod.armTwoHanded(a)) return "The bow takes both hands, so nothing is on his other arm and nothing can be blocked.";
+    if (o == .shield or a == .shield) return "He can guard, and a guard is worth more than any number on this page.";
+    if (o == .wand or a == .wand) return "He casts with a hand that could have blocked, and pays in Focus instead of stamina.";
+    return "Two hands, and neither of them is going to stop anything.";
+}
+
+/// WHAT PUTTING THIS IN A HAND BUYS — said of the ARMAMENT, not of the side, because either hand may take
+/// any of them now and the same thing bought the same thing in both.
+fn armCandSays(a: heromod.Armament) []const u8 {
+    return switch (a) {
+        .sword => "A blade. It is the only thing he carries that swings.",
+        .bow => "Both hands go to the bow, and whatever was in the other one goes with them.",
+        .bell => "Ring it and what the scroll names comes. Nothing else: a bell has no attack in it.",
+        .shield => "Boards on the arm. He can guard, which is worth more than any number on this page.",
+        .wand => "The wand takes a hand that could have blocked - and L1 casts instead.",
     };
 }
 
 fn candSays(c: Cand, _: View) []const u8 {
     return switch (c.act) {
-        .arm => |a| switch (a) {
-            .sword => "Back to sword and shield, and back to being able to guard.",
-            .bow => "Both hands go to the bow, and the shield goes with them.",
-            .bell => "Ring it and what the scroll names comes. Nothing else: with the bell in his hand he has no attack at all.",
-        },
-        .off => |o| switch (o) {
-            .shield => "Boards back on the arm. He can guard again, and the wand goes away with the sorcery.",
-            .wand => "The wand takes the shield's hand, so there is no guarding - and L1 casts instead of blocks.",
-        },
+        .arm => |a| armCandSays(a),
+        .off => |o| armCandSays(o),
         .ammo => |a| switch (a) {
             .plain => "A plain shaft. Ten of them, and nothing in these ruins resists the hole one leaves.",
             .fire => "Fire rides on top of the shaft's own damage. Five of them, so pick the target.",

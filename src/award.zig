@@ -10,7 +10,6 @@ const item = @import("item.zig");
 const rgba = mathx.rgba;
 
 // **WHAT YOU JUST GOT, AND THE TWO WAYS IT IS SAID** (owner's call):
-//
 //  1. **THE FIRST TIME** a kind reaches your hands, the game STOPS and shows it to you — name, picture,
 //     description, any key to close. More than one new kind in the same chest means one card after another, and
 //     the world starts again on the last dismissal. It is the one moment a new thing is worth reading about,
@@ -18,7 +17,6 @@ const rgba = mathx.rgba;
 //  2. **EVERY TIME AFTER**, a TOAST on the right and nothing else. No pause, no card, no reading: you know what
 //     a Mushroom Jerky is, so all you need is confirmation that one went in the bag. They STACK, because a
 //     chest hands over three at once and three notices that overwrote each other would say "one item".
-//
 // **THE DISCOVERY SET IS THE WHOLE MECHANISM.** One bit per kind, and the ONLY thing that decides which of the
 // two you get. It goes in the SAVE (`save.Data.seen`), or every reload turns the game back into a slideshow.
 

@@ -1017,7 +1017,6 @@ test "POINT AT A NODE AND YOU GO TO THAT NODE — the stick's bearing IS the ste
     // every outward step along the two lower arms runs down a bearing near 96 or 216. Snapped to four screen
     // axes and gated by a 32-degree dead cone (`menu.STICK_CONE`), the push aimed AT a node landed in the cone
     // and did nothing on two arms out of three. `stickPush`'s `radial` hands the bearing over instead, so:
-    //
     //   1. from the MIDDLE, a push aimed at any ring-0 node reaches THAT node and not its neighbour…
     for (0..N) |i| {
         if (NODES[i].ring != 0) continue;

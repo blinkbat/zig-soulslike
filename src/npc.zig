@@ -22,8 +22,8 @@ const setLocal = heromod.setHumanoid;
 // THE WANDERER — the first person in this world who is not trying to kill you.
 //
 // A living human, so it is the HERO'S 18-BONE SCAFFOLD (`heromod.restHumanoid`) and the hero's own
-// `advanceGait`/`legChain`: never a bespoke walk. Its own is the upper body, the kit and the idle set. It
-// carries no `Vitals`, no `Leash` and no blade — it must not grow the foe contract by accident.
+// `advanceGait`/`legChain`: never a bespoke walk. Its own is the upper body, the kit and the idle set. No
+// `Vitals`, no `Leash`, no blade — it must not grow the foe contract by accident.
 // **A MAN STANDING STILL IS THE HARDEST THING TO ANIMATE.** Three clocks run at rates that never line up:
 // the breath, a WEIGHT SHIFT from one leg to the other, and a slow head drift — so the loop never shows.
 // **THE STAFF IS THE OTHER HALF OF THE GAIT.** A walking staff plants with the OPPOSITE foot, so the right
@@ -66,12 +66,12 @@ const FACE_AT = mathx.v3(0, 0.045 * H, 0.02 * H);
 pub const PORTRAIT_DIST: f32 = 0.86;
 const REST = heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF * 0.96, H);
 
-// THE PALETTE IS SOLVED AGAINST THE RENDER, NOT PICKED. Sampled off the first pass every material landed
-// inside 30-36 on screen — a lit figure at the value of ground in SHADOW — while the hero beside him spanned
-// 29-50 plus skin near 90. What separates a body is RANGE, not overall lightness.
-// The chain is albedo × 1.72 → linear → gamma 1/2.2, so albedo 40 comes back at 142 and albedo 58 at 168:
-// on THIS sun, value contrast between two LARGE areas cannot survive full daylight. So the layering is done
-// on HUE — warm wool under a COLD cloak — with the value contrast spent only on `LINEN`.
+// THE PALETTE IS SOLVED AGAINST THE RENDER, NOT PICKED. Sampled, every material landed inside 30-36 on
+// screen — a lit figure at the value of ground in SHADOW — where the hero spans 29-50 plus skin near 90:
+// what separates a body is RANGE, not overall lightness. The chain is albedo × 1.72 → linear → gamma 1/2.2,
+// so albedo 40 comes back at 142 and 58 at 168 — on THIS sun, value contrast between two LARGE areas cannot
+// survive full daylight. So the layering is on HUE, warm wool under a COLD cloak, and the value contrast is
+// spent only on `LINEN`.
 const ROBE = rgba(50, 42, 33, 255);
 const ROBE_LT = rgba(68, 58, 45, 255);
 const ROBE_DK = rgba(30, 25, 20, 255);

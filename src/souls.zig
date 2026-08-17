@@ -77,16 +77,14 @@ const HUM_EVERY: f32 = 1.15;
 /// = self-lit), so ONE alpha across all three tones: at a single emissive level the tones separate on hue and
 /// value alone, and the shaft cannot band where a level changes.
 ///
-/// MEASURED, NOT GUESSED (AGENTS.md). At alpha 58 the chain comes back as screen = 255·(albedo/255 · 1.236)^(1/2.2)
-/// — sampled off the first pass, where albedo 150 rendered 221 and anything over ~205 clipped to 255. The
-/// tips were authored at 246,220,150 and came back 255,255,221: a white knuckle, which is why it read as bone.
-/// Solved back from the screen values actually wanted, none of the four clips.
+/// MEASURED, NOT GUESSED (AGENTS.md). At alpha 58 the chain is screen = 255·(albedo/255 · 1.236)^(1/2.2),
+/// and anything over albedo ~205 clips to 255 — which is how tips authored at 246,220,150 came back a white
+/// knuckle and read as bone. Solved back from the screen values wanted, none of the four clips.
 ///
-/// FOUR TONES, AND THE LADDER IS THE POINT. The first pass ran two of them ~18 screen values apart, which is
-/// no separation at all, and nothing anywhere near dark — so a mass lit uniformly by its own emissive had no
-/// form in it and read as one plastic orange. The reds now step 150 → 214 → 246 → 254 while the blues step
-/// 24 → 60 → 100 → 170, so it DESATURATES as it brightens, which is what hot metal does and what a flat
-/// value ramp cannot fake.
+/// FOUR TONES, AND THE LADDER IS THE POINT. Two of them ~18 screen values apart is no separation at all, and
+/// a mass lit uniformly by its own emissive with nothing dark in it has no form. The reds step
+/// 150 → 214 → 246 → 254 while the blues step 24 → 60 → 100 → 170, so it DESATURATES as it brightens, which
+/// is what hot metal does and what a flat value ramp cannot fake.
 const EMISSIVE: u8 = 58;
 const GOLD_DEEP = rgba(64, 20, 1, EMISSIVE); // → ~150,88,24 on screen: the earth end of the bole
 const GOLD = rgba(141, 73, 8, EMISSIVE); // → ~214,158,60
@@ -296,9 +294,8 @@ pub const Souls = struct {
 /// THE BLOOM: a crooked bole out of the earth, forking at THREE heights into limbs that leave on their own
 /// axis, rise to an elbow, droop off the line and stop in a blunt snap of pale heartwood, with twigs rooted
 /// on the outer half. It is a TREE and not a flame — so the limbs come through `propwood.deadLimbTinted`,
-/// the one builder both leafless trees call, rather than a transcription of it. The first pass WAS that
-/// transcription: seven equal limbs off ONE point, each a straight run ending in a ball bigger than itself,
-/// which is a hub of spokes wearing a rosette of knuckles — the two shapes the law is written against.
+/// the one builder both leafless trees call, rather than a transcription of it: equal limbs off ONE point,
+/// each a straight run ending in a ball bigger than itself, is the hub-of-spokes the law is written against.
 /// Seeded, so a build stays deterministic.
 fn boughMesh() rl.Mesh {
     var b = Builder.init();

@@ -261,7 +261,8 @@ const WALK_SPEED = heromod.WALK_SPEED;
 const RUN_SPEED = heromod.RUN_SPEED;
 const WALK_IN = 3.2;
 const RUN_STALK = 1.2; // extra trunk lean at a full run vs a walk
-const CIRCLE_DUR = 1.1; // how long one sidestep behind the shield lasts before he re-decides
+// How long a sidestep lasts is `behave.FLANK`'s own `orbit` leg now, not a constant here — a dead `CIRCLE_DUR`
+// sat beside `shade.CIRCLE_DUR`, which IS live, so the name read as shared when nothing shared it.
 const CRASH_LOW = 0.30; // m above his own feet the point must get down to before the earth answers
 /// Grit a tell drags up, by what kind of move is loading — the leap digs in hardest.
 const GATHER_HEAVY = 1.4;
@@ -675,13 +676,7 @@ pub const Warrior = struct {
     pub fn navWant(self: *const Warrior, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state == .approach) return if (self.homing) self.home else hero;
         if (self.state != .circle) return null;
-        const s = self.routine.current() orelse return null;
-        return switch (s) {
-            .close, .orbit => hero,
-            .open => mathx.addV(self.pos, mathx.dirXZ(hero, self.pos)),
-            .shift => if (self.routine.marked) self.routine.mark else hero,
-            .dwell => null,
-        };
+        return self.routine.walkTo(self.pos, hero);
     }
     pub fn update(self: *Warrior, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         if (self.gone) {
@@ -1631,8 +1626,9 @@ pub const Warrior = struct {
         }
     }
     fn chips(self: *Warrior, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
+        const parts = foe.hitParts(n); // the field's one dial (`foe.HIT_PARTS`)
         var i: i32 = 0;
-        while (i < n) : (i += 1) {
+        while (i < parts) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(0.4, 1.0) * spd;
             self.emit(

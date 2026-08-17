@@ -112,8 +112,7 @@ pub const Hit = struct {
     stance: f32 = 0,
     elem: Elems = .{},
     /// FOCUS TORN OUT OF HIM ON TOP OF THE DAMAGE — the shade's touch, and the only thing in the game that
-    /// takes the blue bar off anybody. Deliberately NOT part of `raw()`: what a shield's stamina bill and
-    /// "which of two blows was worse" measure is the WEIGHT of the thing that hit you, and a drain has none.
+    /// takes the blue bar off anybody. Deliberately NOT part of `raw()`: a drain has no weight.
     fp: f32 = 0,
 
     /// THE WHOLE BLOW BEFORE ANYBODY'S RESISTANCES — what a shield's stamina bill and "which of two blows
@@ -122,11 +121,10 @@ pub const Hit = struct {
         return self.dmg + self.elem.total();
     }
 
-    /// IS THIS A HEAVY BLOW — i.e. does it carry STANCE. The question every felt beat is sized off (`foe.wounded`
-    /// for the blood and the chips, `game.heroTakes` for the shake, the pad and the grunt), and it was written
-    /// out as `hit.stance > 0` at nine sites. One test of the BLOW, never of the reaction: a heavy a high-poise
-    /// body shrugs off still hit it that hard. The ogre's slam and the berserker's chop deviate ON PURPOSE and
-    /// say so where they do it.
+    /// IS THIS A HEAVY BLOW — i.e. does it carry STANCE. The question every felt beat is sized off
+    /// (`foe.wounded` for the blood and the chips, `game.heroTakes` for the shake, the pad and the grunt).
+    /// One test of the BLOW, never of the reaction: a heavy a high-poise body shrugs off still hit it that
+    /// hard. The ogre's slam and the berserker's chop deviate ON PURPOSE and say so where they do it.
     pub fn heavy(self: Hit) bool {
         return self.stance > 0;
     }
@@ -231,14 +229,12 @@ pub const Vitals = struct {
     }
 
     /// **A BODY PUT BACK ON ITS FEET** (`necro.RAISE_HP_FRAC`) — the one thing in the game that undoes a
-    /// death, and the only place `dead` is cleared. `heal` deliberately refuses a corpse, which is right for
-    /// everything a priest can do and is exactly what this has to get past.
+    /// death, and the only place `dead` is cleared. `heal` deliberately refuses a corpse.
     ///
-    /// It comes up on a FRACTION of its HP and on FULL poise and stance: what a raised body has lost is its
-    /// health, not its nature, and a skeleton that came back pre-staggered would die to the first swing and
-    /// make the whole move a gift. The stun clock is cleared with it — the flinch it was in when it died is
-    /// not a flinch it is still in — and both hit clocks are stamped LONG AGO so the regen gate and the
-    /// floating bar treat it as a body nobody has touched yet.
+    /// A FRACTION of its HP but FULL poise and stance: what a raised body has lost is its health, not its
+    /// nature, and one that came back pre-staggered would die to the first swing. The stun clock goes with
+    /// it, and both hit clocks are stamped LONG AGO so the regen gate and the floating bar treat it as a
+    /// body nobody has touched yet.
     pub fn revive(self: *Vitals, frac: f32) void {
         self.dead = false;
         self.hp = mathx.maxF(1.0, self.hpMax * mathx.clampF(frac, 0, 1));
@@ -288,10 +284,10 @@ pub const Vitals = struct {
         self.stance = mathx.minF(self.stanceMax, self.stance + self.stanceMax / STANCE_REFILL * self.regenRate * dt);
     }
 
-    /// A DRIP — damage billed EVERY FRAME by something that holds (`Root`), as opposed to a blow. `hit` in every
-    /// respect but the REGEN CLOCK: `hit` stamps `sinceHit` at 0, which gates the poise/stance refill, and
-    /// stamped afresh every frame for a whole `ROOT_HOLD` that gate never opens — so a grip carrying no poise
-    /// would deny most of a poise bar anyway. `sinceHurt` IS stamped, so the bar shows it. Poise-free drips only.
+    /// A DRIP — damage billed EVERY FRAME by something that holds (`Root`), as opposed to a blow. `hit` in
+    /// every respect but the REGEN CLOCK: stamped afresh every frame for a whole `ROOT_HOLD`, `sinceHit`
+    /// never opens the poise/stance refill, so a grip carrying no poise would deny most of a poise bar
+    /// anyway. `sinceHurt` IS stamped, so the bar shows it. Poise-free drips only.
     pub fn drip(self: *Vitals, h: Hit) HitResult {
         const clock = self.sinceHit;
         const r = self.hit(h);
@@ -514,10 +510,9 @@ pub const Focus = struct {
 
 // THE BELL — ER's spirit ashes, and the third thing in the game that spends FP.
 //
-// **WHAT HE CAN CALL IS WHAT HE IS CARRYING.** A spirit is not learned and not equipped: the SCROLL is in the
-// bag or it is not, and the bell reads the bag every time it is rung (`spiritOf`, the `flaskOf` shape one layer
-// up). So finding one is the whole of unlocking it, and losing one takes it back with no second piece of state
-// to keep in step.
+// **WHAT HE CAN CALL IS WHAT HE IS CARRYING.** The SCROLL is in the bag or it is not, and the bell reads the
+// bag every time it is rung (`spiritOf`, the `flaskOf` shape one layer up) — so finding one unlocks it and
+// losing one takes it back, with no second piece of state to keep in step.
 //
 // **AND ONE STANDS AT A TIME** (`wolf.Pack`). The cap is a property of the BOND and not of the wolf, so the
 // second spirit is a row in these two switches and nothing else.
@@ -567,9 +562,8 @@ pub const SUMMON_MAX: usize = 1;
 // The wand's one spell, and the first thing in the game that spends FP.
 
 /// WHAT THE BOLT COSTS, and the pool is the only thing rationing it — a cast bills NO stamina (owner's call),
-/// so the wand competes with the flask rather than with the roll. NAMED FOR ITS SPELL, like `ROOT_FP` beside
-/// it: as a bare `CAST_FP` it read as "what a cast costs", and the character book duly priced the roots at
-/// twelve. One constant per spell, and `spellFp` is the only thing that picks between them.
+/// so the wand competes with the flask rather than with the roll. NAMED FOR ITS SPELL: a bare `CAST_FP` reads
+/// as "what a cast costs", and one constant per spell is what keeps `spellFp` the only thing that picks.
 pub const BOLT_FP: f32 = 12.0; // five casts of a 60-point pool
 /// THE BOLT, and it is ALL CHAOS — no physical at all, the brood mother's rule: one substance, one element.
 /// Its damage sits between a light slash's 13 and a heavy's 27 before anything resists it, which is the
@@ -616,14 +610,13 @@ pub const Root = struct {
 };
 
 /// THE RIME BREATH — the rod's third sorcery, and **THE FIRST THING IN THE GAME THAT REACHES MORE THAN ONE
-/// BODY WITHOUT BEING A SWING** (owner's call, and it overturns the standing no-area-spells law: see
-/// AGENTS.md). It is a CONE poured out of him for `RIME_DUR`, not a blast at a mark — so its area is a thing
-/// he is aiming and holding, and a body walks out of it the way a body walks out of a swing.
+/// BODY WITHOUT BEING A SWING** (owner's call; it overturns the no-area-spells law — see AGENTS.md). A CONE
+/// poured out of him for `RIME_DUR`, not a blast at a mark, so its area is a thing he aims and holds and a
+/// body walks out of it the way a body walks out of a swing.
 ///
 /// **THE DAMAGE IS NOT THE POINT AND THE NUMBERS SAY SO.** Stood in the whole breath a body takes less than
-/// the roots' grip bills it and well under half a bolt; what it actually buys is `Chill`, on everything in
-/// front of him at once. It is the roots' trade — ground, not health — sold by the yard instead of by the
-/// body, and priced accordingly.
+/// the roots' grip bills it; what it buys is `Chill`, on everything in front of him at once. The roots'
+/// trade — ground, not health — sold by the yard instead of by the body.
 pub const RIME_FP: f32 = 22.0; // dearer than the roots' 18: that one takes ONE pair of feet, this takes every pair in front of him
 pub const RIME_DUR: f32 = 0.85; // how long he pours, and a body may walk out of it while he does
 pub const RIME_REACH: f32 = 6.0; // …and how far it arrives. SHORTER than the roots are thrown: this is the close answer
@@ -660,12 +653,11 @@ comptime {
 
 /// **COLD ON A BODY — AND THE FIRST STATUS BUILT TO BE WORN BY EITHER SIDE.** Nothing in here knows what a
 /// foe is: no vitals, no position, no owner, and it bills no damage of its own (the breath drips that,
-/// `Root`'s arrangement). It is a clock and a multiplier, so the day something in the world breathes cold at
-/// the HERO, he carries this same struct and `hero.zig` multiplies its own ground speed by the same
-/// `travel()` — a field and one call, with no second spelling of what cold does to a body.
+/// `Root`'s arrangement). A clock and a multiplier, so the day something breathes cold at the HERO he
+/// carries this same struct and `hero.zig` multiplies its ground speed by the same `travel()`.
 ///
-/// Shaped like `Root` and `Regen` deliberately: a clock that is refreshed rather than stacked, because two
-/// overlapping chills at different clocks is a state no bar and no animation can show.
+/// Shaped like `Root` and `Regen`: refreshed rather than stacked, because two overlapping chills at
+/// different clocks is a state no bar and no animation can show.
 pub const Chill = struct {
     left: f32 = 0,
     /// COLD STAMPED THIS FRAME AND BILLED THE NEXT. The cone is tested from outside the creature (only the
@@ -1026,9 +1018,8 @@ pub const Quiver = struct {
 //
 // **ONE METER DOES ALL THREE JOBS** (owner's call). Hits fill it; full, it PROCS; and the same meter then
 // becomes the CLOCK, draining over the effect's own life while it bills HP. **It cannot be topped up while
-// it drains** — poison is a state you are already in, where a BURST status (bleed) resets to nothing and
-// re-procs at once. That is the souls rule for a status with a DURATION, and it is why there is no second
-// clock here: what the bar shows is always the same number, so a readout and a mechanic cannot disagree.
+// it drains** — poison is a state you are already in, where a BURST status (bleed) resets and re-procs at
+// once. No second clock: what the bar shows is always the same number a mechanic reads.
 //
 // **DECAY IS WHAT MAKES IT PRESSURE** (ER's, `docs/ELDEN_RING.md` §5): the meter falls once you STOP taking
 // doses, so spaced hits never proc and LINGERING is the whole cost. Step out of the cloud and you are fine;
@@ -1102,10 +1093,8 @@ pub fn poisonPulse(amt: f32) Hit {
     return .{ .dmg = amt };
 }
 
-/// **A TIMED EFFECT, AND EVERY ONE OF THEM IS THIS SHAPE** — a magnitude and a clock. The sporeling cap's
-/// ward, the tallow's fire share, the broth's stamina multiplier: each was its own pair of loose fields with
-/// its own start, its own decrement and its own line of "refreshed, never stacked" in a comment. Three copies
-/// of one rule, and the fourth thing to want a timer would have had three precedents and no authority.
+/// **A TIMED EFFECT, AND EVERY ONE OF THEM IS THIS SHAPE** — a magnitude and a clock: the sporeling cap's
+/// ward, the tallow's fire share, the broth's stamina multiplier.
 ///
 /// **THE MAGNITUDE IS NOT CLEARED WHEN THE CLOCK RUNS OUT** — `left` is the whole gate, and `value` is the
 /// only way to read it, so nothing downstream can pick up a stale amount by forgetting to check the clock.

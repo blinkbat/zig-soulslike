@@ -646,8 +646,7 @@ pub const Scene = struct {
 /// Undilated, a tiled courtyard came out snapped looking outward and soft looking in, which is two edges.
 ///
 /// It runs at UPLOAD, not per pixel: an edit is a mouse-move, a frame is sixty of them, and this is a fixed
-/// 112x112 sweep either way. The buffer is file-scope for the reason every prototype mesh here is — one grid
-/// exists, it is rebuilt whole each time, and `setSoil` is the only thing that ever reads it.
+/// 112x112 sweep either way. File-scope buffer: one grid exists, rebuilt whole, read only by `setSoil`.
 var edgeDilated: [@as(usize, @intCast(SOIL_N)) * @as(usize, @intCast(SOIL_N))]u8 = undefined;
 
 fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {

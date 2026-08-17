@@ -240,7 +240,6 @@ pub const MAX_PER_KIND: usize = 24;
 pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 = 30 };
 
 
-//
 // StarEdit's own shape: a trigger is CONDITIONS and ACTIONS, every condition must hold, and then the
 // action list runs in order. What makes that shape compose is not the condition vocabulary but SC1's
 // general-purpose STATE — named switches (`flag`), named integer counters (what its death counts were

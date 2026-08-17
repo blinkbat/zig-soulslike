@@ -362,6 +362,20 @@ test "IT DOES NOT READ ITS OWN TRAVEL AS AN ORBIT" {
     try std.testing.expect(s.circling(0.45));
 }
 
+/// **HOW MANY MOTES A WOUND ACTUALLY THROWS** (owner: hits should have more particles, ~1.5x). ONE DIAL FOR
+/// THE WHOLE FIELD. Every creature sheds something different when it is cut — blood, bone chips, splinters,
+/// spores, ichor, dirt — and what each one sheds and how much of it relative to the others is that creature's
+/// own business and stays in its own file. What is NOT per-creature is how heavy a landed blow reads overall,
+/// and as twenty literals scattered over twelve files that was a number nobody could turn.
+///
+/// Applied inside each emitter at the ONE point its authored count becomes a loop bound, so the numbers at
+/// the call sites still read as what they were tuned to and this scales all of them together.
+pub const HIT_PARTS: f32 = 1.5;
+
+pub fn hitParts(n: i32) i32 {
+    return @intFromFloat(@round(@as(f32, @floatFromInt(n)) * HIT_PARTS));
+}
+
 pub fn flashFrac(flash: f32) f32 {
     return mathx.clampF(flash / FLASH_DUR, 0, 1);
 }
@@ -580,8 +594,8 @@ const DISS_FLAKE_R: f32 = 0.129;
 /// THE BODY COMING APART — the one copy, for every creature on the field. Gold motes rising out of it and
 /// flakes of the body falling back, both thinning as the fade closes.
 ///
-/// It reads FIELDS only (`fade`, `scale`, `pos`, `fxAccum`, `fxRng`, `parts`, `fxHead`), which is what lets it
-/// live here: a creature's own `emitDissolve` is private, and as five copies the ARCHER's had gone missing.
+/// It reads FIELDS only (`fade`, `scale`, `pos`, `fxAccum`, `fxRng`, `parts`, `fxHead`), which is what lets a
+/// shared emitter exist at all: a creature's own is private to its file.
 pub fn dissolveMotes(self: anytype, dt: f32, d: Dissolve) void {
     const thinning = 1.0 - 0.6 * self.fade;
     self.fxAccum += d.rate * thinning * dt;
@@ -878,23 +892,15 @@ pub const Blade = struct {
 // **ONE TABLE PER CREATURE, and it is the creature's own field** (`Leash`'s law, and `Root`'s: cross-cutting
 // state is EMBEDDED by the creature and STAMPED by the game).
 //
-// The model is Elden Ring's, which is a threat table with a decay on it:
-//
-//  - **HITTING SOMETHING TAKES ITS ATTENTION.** Damage is the loudest term by a distance, so a creature
-//    chewing on the spirit turns on you the moment you commit to it. This is the rule ER players describe as
-//    "bosses aggro whoever attacks them".
-//  - **…BUT ONLY FOR A WHILE.** Threat from damage DECAYS (`THREAT_HALFLIFE`), which is the mechanic that
-//    makes a summon work at all: stop hitting and your claim fades, and the creature drifts back to whatever
-//    is still in its face. ER's own note is that a spirit which stops generating aggro loses it.
-//  - **STANDING CLOSE IS ITSELF A CLAIM.** A live proximity term, so walking into something's reach takes its
-//    eye whether or not you have touched it — and backing off hands it away again. This is the half that
-//    makes the spirit useful when the player is trying to drink.
-//  - **A SUMMON PULLS HARDER THAN ITS NUMBERS** (`SPIRIT_TAUNT`) — ER gives spirits a target-priority boost,
-//    and the fragile ones get less of it. Ours is a wolf that is meant to be bitten, so it gets a real one.
-//  - **AND IT DOES NOT DITHER.** The switch needs the challenger to beat the incumbent by a MARGIN, not to
-//    tie with it. Without that a creature between two roughly equal claims re-picks every frame and spins on
-//    the spot, which is the single thing that makes an aggro system read as broken rather than as alive.
-//
+// Elden Ring's model — a threat table with a decay on it:
+//  - **HITTING SOMETHING TAKES ITS ATTENTION.** Damage is the loudest term by a distance.
+//  - **…BUT ONLY FOR A WHILE** (`THREAT_HALFLIFE`), which is what makes a summon work at all: stop hitting
+//    and your claim fades back to whatever is still in its face.
+//  - **STANDING CLOSE IS ITSELF A CLAIM** — a LIVE proximity term, so backing off hands it away at once.
+//    This is the half that makes the spirit useful while he is drinking.
+//  - **A SUMMON PULLS HARDER THAN ITS NUMBERS** (`SPIRIT_TAUNT`) — ER's target-priority boost.
+//  - **AND IT DOES NOT DITHER.** The challenger must beat the incumbent by a MARGIN, or a creature between
+//    two equal claims re-picks every frame and spins on the spot.
 // The whole of it is two floats and a latch, per creature, ticked once a frame.
 
 /// WHO a creature has its eye on. Two today; a second spirit does not add a case, it adds a body behind
@@ -973,9 +979,11 @@ pub const Threat = struct {
             self.dmgSpirit = 0;
             return;
         }
+        if (self.since < THREAT_DWELL) return; // it has only just changed its mind — let it commit
+        // …and the scores are solved BELOW the dwell, not above it: they are pure, so every creature on the
+        // field was computing a pair it then threw away for the whole 0.65 s after any change of mind.
         const h = score(self.dmgHero, distHero, 1.0);
         const s = score(self.dmgSpirit, distSpirit, SPIRIT_TAUNT);
-        if (self.since < THREAT_DWELL) return; // it has only just changed its mind — let it commit
         const want: Victim = switch (self.on) {
             .hero => if (s > h * THREAT_SWITCH) .spirit else .hero,
             .spirit => if (h > s * THREAT_SWITCH) .hero else .spirit,

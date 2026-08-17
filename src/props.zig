@@ -448,15 +448,14 @@ pub const INFO = [NK]Info{
     .{ .kind = .brazier, .build = fx.brazierMesh, .bound = 1.9, .top = 1.55, .view = 210, .parts = circleParts(0.50, 1.2), .light = .{ .y = 1.14, .col = v3(1.55, 0.84, 0.29), .radius = 16.0, .flicker = 0.13 }, .surf = .metal },
     // BURNT OUT: no `light`, and that absence is the whole difference between these two rows.
     .{ .kind = .campfire, .build = fx.deadCampfireMesh, .bound = 1.5, .top = 0.6, .view = 200, .parts = circleParts(0.45, 0.5), .surf = .stone },
-    // …AND ONE YOU CAN SIT AT. `interact` shelves it under the editor's Interactables layer beside the
-    // chests, which is where the things the player USES belong; `rest.isRestKind` is what makes it a bonfire.
-    // `stow` for the bonfire's reason: EVERY fire you can sit at has the guitar against its rock, and it goes
-    // when he picks it up. `bound` is up from 1.5 to hold the rock and the instrument, which stand outside the
-    // ring of stones — left at the fire's own radius the pair is culled before the hearth is.
+    // …AND ONE YOU CAN SIT AT. `interact` shelves it under the editor's Interactables layer; `rest.isRestKind`
+    // is what makes it a bonfire. `stow` for the bonfire's reason: every fire you can sit at has the guitar
+    // against its rock, and it goes when he picks it up. `bound` is up from 1.5 to hold the rock and the
+    // instrument, which stand outside the ring of stones and would otherwise cull before the hearth does.
     //
-    // …AND SOLID, which the assert below demands of anything with a second mesh: `drawStows` carries no fade, so
-    // a thinning hearth under an opaque guitar reads as a bug. It is the price of the instrument and it is the
-    // bonfire's own trade — a 1.1 m fire between lens and hero was never hiding much of him anyway.
+    // …AND SOLID, which the assert below demands of anything with a second mesh: `drawStows` carries no fade,
+    // so a thinning hearth under an opaque guitar reads as a bug. A 1.1 m fire between lens and hero was never
+    // hiding much of him anyway.
     .{ .kind = .campfire_lit, .build = fx.campfireMesh, .stow = fx.campfireGuitarMesh, .bound = 2.6, .top = 1.1, .view = 200, .interact = true, .solid = true, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
     .{ .kind = .water, .build = fx.waterMesh, .bound = 30.0, .top = 0.1, .view = FAR, .solid = true, .casts = false },
     .{ .kind = .tuft, .build = flora.tuftMesh, .bound = 0.9, .top = 0.8, .view = 85, .flora = true, .casts = false },
@@ -505,17 +504,13 @@ pub const INFO = [NK]Info{
     // is where the things the player USES belong — and `INTERACT_KINDS` is DERIVED off that flag, so the
     // palette picks it up with no edit in `editor.zig` at all.
     //
-    // NO `parts`: **a wisp of light is not something you walk into.** A collider here would let the player
-    // bump a pickup around the floor and would make it block arrows and sight lines.
-    // NO `casts` either — it is self-lit, and a glowing thing that throws a shadow reads as a solid object
-    // pretending to glow.
-    // It LIGHTS the ground it stands on, small and steady: it is the one prop whose whole job is to be seen,
-    // and a `flicker` would make it a candle.
-    // **THE `top` IS THE PILLAR'S, NOT THE WISP'S** — DERIVED as `fx.PICKUP_TOP` rather than written as a
-    // number, or the culler sizes the prop by the 0.62 m wisp and the shaft of light over it pops out at the
-    // screen edge. `bound` has to clear `top` (the assert below), which is why it is not the wisp's either.
-    // …and the LIGHT is bigger than a torch's puddle (owner: more glow): an item on the ground is meant to be
-    // found from across a field, so it lays down a wide, soft, near-still pool rather than a flickering one.
+    // NO `parts`: **a wisp of light is not something you walk into** — a collider would let the player bump a
+    // pickup round the floor and block arrows and sight lines. NO `casts` either: a glowing thing that throws
+    // a shadow reads as a solid object pretending to glow. A `flicker` would make it a candle.
+    // **THE `top` IS THE PILLAR'S, NOT THE WISP'S** — DERIVED as `fx.PICKUP_TOP`, or the culler sizes the prop
+    // by the 0.62 m wisp and the shaft of light over it pops out at the screen edge. `bound` has to clear
+    // `top` (the assert below), which is why it is not the wisp's either. The LIGHT is bigger than a torch's
+    // puddle (owner: more glow): a wide, soft, near-still pool, findable from across a field.
     .{ .kind = .pickup, .build = fx.pickupMesh, .bound = 1.9, .top = fx.PICKUP_TOP, .view = 190, .interact = true, .casts = false, .light = .{ .y = 0.30, .col = v3(0.86, 0.82, 0.58), .radius = 5.4, .flicker = 0.03 } },
 };
 

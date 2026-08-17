@@ -4,7 +4,6 @@ const mathx = @import("mathx.zig");
 const fx = @import("propfx.zig");
 const wf = @import("worldfmt.zig");
 const item = @import("item.zig");
-const sfx = @import("audio.zig");
 // For their `REACH` alone — the two other rings this one is sized against (see the comptime block).
 const chestmod = @import("chest.zig");
 const soulsmod = @import("souls.zig");
@@ -14,12 +13,9 @@ const v3 = mathx.v3;
 // **A GLOW IN THE MAP → A PROMPT IN REACH → ITEMS IN THE BAG.** Elden Ring's item pickup: the thing standing
 // on the ground that says something is here, holding 1+ items exactly as a chest does (`Op.loot`).
 //
-// **IT IS NOT `chest.zig` WITH THE LID TAKEN OFF, and that is why it is its own file.** A chest's whole body is
-// its lid — the hinge, the swing, the ease, `village.CHEST_*`, a second mesh drawn on its own path — and none
-// of that survives here. What the two genuinely share is the SHAPE of the contract (a site list off the prop
-// index, a reach ring, a one-shot latch, loot handed to the caller), which is 40 lines and reads the same in
-// both. Folding them into one openable would mean a kind tag threaded through the swing, the mesh and the
-// save, to save those 40.
+// **IT IS NOT `chest.zig` WITH THE LID TAKEN OFF.** What the two share is the SHAPE of the contract — a site
+// list off the prop index, a reach ring, a one-shot latch, loot handed to the caller — which is 40 lines.
+// Folding them would thread a kind tag through the swing, the mesh and the save to save those 40.
 
 /// How many pickups one world may hold. Generously above the chest's cap: a glow is a handful of triangles and
 /// scattering them is the cheap way to dress a ruin, where a chest is furniture you place deliberately.

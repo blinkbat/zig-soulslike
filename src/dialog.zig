@@ -17,7 +17,7 @@ const v3 = mathx.v3;
 // The tree is map data; this is the walk through it. One node is on screen at a time: what is said, and
 // either the lines you may answer with or a Continue. A node's `act:` fires when it is SHOWN and a choice's
 // `gets:` when it is PICKED, both straight through `trigger.Runtime.apply` — an action means the same thing
-// whether a trigger or an answer fired it, and two copies of that switch would eventually disagree.
+// whether a trigger or an answer fired it.
 //
 // **A GATE HIDES A LINE, IT DOES NOT GREY IT.** bg2's editor carries a `disabledMessage` for a refused
 // choice; nothing here has one to show, and a greyed row with no reason is worse than a row that was never
@@ -55,9 +55,8 @@ const VEIL: u8 = 132;
 // THE PORTRAIT — the man you are talking to, photographed live.
 //
 // **IT IS THE ACTUAL 3D MODEL, ZOOMED TO THE HEAD, THREE-QUARTERS ON** (owner). Not drawn art: the rig is
-// rendered off-screen into a target and blitted into the panel, which is `book.drawPortrait`'s trick one rig
-// along and for its reason — it is the real model in the real pose, so it cannot go stale, and the head that
-// cranes round to look at you cranes round in the panel.
+// rendered off-screen into a target and blitted into the panel (`book.drawPortrait`'s trick), so it cannot
+// go stale and the head that cranes round to look at you cranes round in the panel.
 //
 // **THE TURNTABLE HANGS OFF HIS FACING, NEVER THE WORLD.** He is photographed three-quarters from the front
 // wherever he happens to be standing, so the framing does not change because the conversation happened to

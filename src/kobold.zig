@@ -865,8 +865,9 @@ pub const Kobold = struct {
 
 
     fn emitBlood(self: *Kobold, at: rl.Vector3, dir: rl.Vector3) void {
+        const parts: u32 = @intCast(@max(0, foe.hitParts(7))); // the field's one dial (`foe.HIT_PARTS`)
         var i: u32 = 0;
-        while (i < 7) : (i += 1) {
+        while (i < parts) : (i += 1) {
             foe.emitParticle(&self.parts, &self.fxHead, at, v3(dir.x * self.fxRng.range(1.0, 2.6) + self.fxRng.signed() * 0.7, self.fxRng.range(0.7, 2.1), dir.z * self.fxRng.range(1.0, 2.6) + self.fxRng.signed() * 0.7), self.fxRng.range(0.28, 0.5), 0.036, 0.012, BLOOD, 7.0);
         }
     }

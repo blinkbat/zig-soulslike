@@ -7,16 +7,14 @@ const v3 = mathx.v3;
 // THE WORLD CLOCK — one number, `hour`, and everything the light does is a function of it.
 //
 // **ONE DIRECTION CASTS, AND IT IS THE SAME ONE THE SHADER KEYS OFF** (AGENTS.md: "Sun + shadows are ONE
-// source"). That law does not change here; what changes is that the source is now solved from the hour
-// instead of written down. `keyDir` is the whole of it: the SUN while the sun is up, the MOON once it is
-// down, and nothing else in the game gets a say.
+// source"), solved from the hour rather than written down. `keyDir` is the whole of it: the SUN while the
+// sun is up, the MOON once it is down, and nothing else gets a say.
 //
 // **THE SKY DRAWS THE TRUE PATH; THE SHADOWS DO NOT.** A sun at two degrees of altitude throws a shadow
-// three hundred metres long, which the 108 m ortho box cannot hold and the depth pass cannot cull for — the
-// last minutes of the day would be a world of clipped, crawling shadows. So `keyDir` FLOORS the altitude
-// (`KEY_ALT_MIN`) while `sunDir`/`moonDir` keep the honest angle for the disc in the sky. The eye reads the
-// disc's height off the horizon and the shadow's DIRECTION off the ground; it does not solve one from the
-// other, and this is the one place they are allowed to disagree.
+// three hundred metres long, which the 108 m ortho box cannot hold and the depth pass cannot cull for. So
+// `keyDir` FLOORS the altitude (`KEY_ALT_MIN`) while `sunDir`/`moonDir` keep the honest angle for the disc.
+// The eye reads the disc's height off the horizon and the shadow's DIRECTION off the ground; this is the one
+// place the two are allowed to disagree.
 //
 // **THE ANCHOR IS NOT A KEYFRAME.** Every reference shot in `shots/` is framed off the bearing of the sun
 // this game was authored under (`shots.LIT_YAW` = 53 puts it over the camera's shoulder), and the whole
@@ -63,15 +61,12 @@ const KEY_ALT_MIN: f32 = 15.0;
 
 /// **WHEN THE CASTER CHANGES HANDS, AND IT IS NOT SUNRISE AND SUNSET.**
 ///
-/// There is ONE shadow-casting light and the moon is the ANTI-sun, so when the key changes hands its bearing
-/// turns most of the way round the compass. Swapped on `isDay` that happened at 06:00 and 20:00, and 20:00
-/// is 0.6 h into the ramp down from sunset: measured, 179.9 degrees in a hundredth of an hour with the key
-/// still at half the anchor's brightness.
-///
-/// So the swap sits at the DIMMEST hours of each ramp (first light, and dusk), where the key is about a
-/// tenth of the anchor and a bearing change reads as the light going cold. Through the hour on each side
-/// the caster is the SUN with its altitude on the floor and its true bearing, so dusk throws long shadows
-/// away from where the sun actually went down.
+/// The moon is the ANTI-sun, so the handover turns the key's bearing most of the way round the compass.
+/// Swapped on `isDay` that lands at 20:00, 0.6 h into the ramp down from sunset: measured, 179.9 degrees in
+/// a hundredth of an hour with the key still at half the anchor's brightness. So the swap sits at the
+/// DIMMEST hours of each ramp instead, where the key is about a tenth of the anchor. Through the hour on
+/// each side the caster is the SUN with its altitude on the floor and its true bearing, so dusk throws long
+/// shadows away from where the sun actually went down.
 ///
 /// **`isDay` IS NOT TOUCHED** — that is the day's own definition. This is the CASTER's question.
 const KEY_SWAP_DAWN: f32 = 5.0;
@@ -294,10 +289,9 @@ pub fn shadowReach(hour: f32) f32 {
 ///
 /// **THE TWO HALVES OF THIS STRUCT ARE ON DIFFERENT SCALES, AND IT IS NOT A MISTAKE.** The scene shader gammas
 /// its output (`pow 1/2.2`), so everything it reads — `key`, the two ambients, `haze`, `hazeBank` — is
-/// PRE-GAMMA and authored near-black (AGENTS.md's dark-albedo rule). The SKY shader does not gamma anything:
-/// it writes what it computes, so every `sky*`/`cloud*` value here is a LITERAL SCREEN VALUE. Authoring the
-/// sky pre-gamma is the mistake that reads as a black hole over a blazing noon — the ground came out of one
-/// pipeline and the zenith out of the other, and only one of them had been lifted.
+/// PRE-GAMMA and authored near-black (AGENTS.md's dark-albedo rule). The SKY shader gammas nothing, so every
+/// `sky*`/`cloud*` value here is a LITERAL SCREEN VALUE. Author the sky pre-gamma and it reads as a black
+/// hole over a blazing noon.
 pub const Palette = struct {
     /// The KEY, colour and strength in one: the shader multiplies it by the hot 1.72 and the wrap term, so
     /// dropping this toward black IS nightfall. The moon's is cold and about a tenth of noon's.
@@ -759,17 +753,13 @@ test "THE DAY SPEED AND THE HOLD ARE TWO QUESTIONS — neither row reaches into 
 }
 
 test "THE CASTER MAY ONLY CHANGE HANDS IN THE DARK — the moonrise light switch" {
-    // ONE shadow-casting light and a moon that is the ANTI-sun: the swap turns the key most of the way round the
-    // compass on one frame, and no arrangement of two opposite bearings avoids that. What CAN be arranged is WHEN
-    // it happens, so this measures the swing WEIGHTED BY HOW BRIGHT THE KEY IS while it swings — a 180 degree
-    // flip of a light that is nearly out is the light going cold, and the same flip at half the anchor's
-    // brightness is every shadow in the world reversing while you watch.
-    //
-    // Swapped on `isDay` this measured 67.8 (179.9 degrees at 19.99 h, key at 0.471 of the anchor) — the abrupt
-    // change the owner reported. Two things fixed it and the bound below is tight enough to hold both: the swap
-    // moved to the dim ends of the ramps (`KEY_SWAP_DAWN`/`KEY_SWAP_DUSK`), and the handover became a SWEEP across
-    // `KEY_SWAP_FADE` rather than a pick — so the half turn is spread over most of an hour instead of one frame.
-    // The STEP is part of the measurement: a coarser walk would smear the flip across two samples and flatter it.
+    // No arrangement of two opposite bearings avoids the half turn; what CAN be arranged is WHEN. So this
+    // measures the swing WEIGHTED BY HOW BRIGHT THE KEY IS while it swings — that flip on a light nearly out
+    // is the light going cold, and the same flip at half the anchor's brightness is every shadow in the world
+    // reversing while you watch. Swapped on `isDay` it measured 67.8 (179.9 deg at 19.99 h, key at 0.471).
+    // The bound below holds both fixes: the swap at the dim ends of the ramps, and the handover a SWEEP
+    // across `KEY_SWAP_FADE` rather than a pick. The STEP is part of the measurement — a coarser walk smears
+    // the flip across two samples and flatters it.
     const STEP: f32 = 0.01;
     var h: f32 = 0;
     var worst: f32 = 0;

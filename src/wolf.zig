@@ -25,12 +25,10 @@ const mul3 = mathx.mul3;
 // Every symmetrical quadruped gait is fully specified by a DUTY FACTOR (the fraction of the stride a foot is
 // on the ground) and a LIMB PHASE (how far the forefoot's strike lags the hind foot on the same side) —
 // Hildebrand 1965/1968. So walk, trot and gallop are one footfall machine at three points on one line:
-//
 //   gait     duty   lag    speed (m/s)
 //   walk     0.65   0.84   0.4 - 2.0     lateral sequence
 //   trot     0.55   0.50   0.8 - 5.3     diagonal couplets, and a wolf's travelling gait
 //   gallop   0.42   0.63   3.2 - 10.0    transverse, with a real aerial phase
-//
 // Figures from steady-state dog locomotion (Bertram et al., J. Exp. Biol. 211:138) and working-dog trotting
 // (J. Exp. Biol. 228:jeb250523), which puts a 34 kg German Shepherd at 2.14 m/s, a 0.52 s cycle and a 1.21 m
 // stride. Fore and hind stride lengths there are identical to two decimals — a trotting dog tracking up — so
@@ -257,28 +255,16 @@ pub fn limbChain(a: f32, b: f32, dy: f32, dz: f32, bend: f32) struct { upper: f3
     };
 }
 
-// GREY, AND COUNTERSHADED. A wolf is not one colour: a dark saddle over the back, pale down the throat, belly
-// and inside the legs. That gradient is most of what makes the shape read at distance — a flat grey animal is
-// a dog-shaped smudge. Solved against the render the way `npc.zig`'s palette was: the chain is albedo × 1.72 →
-// linear → gamma 1/2.2, so these sit where a lit flank lands near the ground's own value and the THROAT is
-// the one high note.
-// SOLVED AGAINST THE RENDER, NOT PICKED. The first pass authored a neutral grey (96, 92, 88) and sampled back
-// at 217/193/161 on the lit flank against ground at 107/99/65 — a CREAM animal, which is a husky and not a
-// wolf. Two corrections, both off the chain (albedo × 1.72 → linear → gamma 1/2.2, so screen ∝ albedo^(1/2.2)):
-//
-//  - VALUE: to bring a lit 217 down to about 150 is a factor 0.69 on screen, so albedo × 0.69^2.2 ≈ 0.44.
-//  - HUE: this sun is warm and everything outdoors here comes back warm, so a NEUTRAL albedo cannot render
-//    neutral. The pelt is authored BLUE-SHIFTED and the sun brings it back to grey; author it grey and the
-//    sun takes it to sand.
-// **AND IT IS NOT ALL THE WAY HERE.** Two channels do that and they are different things:
-//
-//  - TRANSPARENCY is the scene's `fade` uniform (`SPIRIT_FADE`), applied by the draw. Vertex alpha CANNOT do
-//    it — in this renderer alpha is the emissive channel, so a "transparent" colour authored here would come
-//    back as a brighter opaque one.
-//  - THE SHEEN is that emissive channel, and it is what makes a spirit read as lit from the inside rather
-//    than as a grey animal somebody turned the opacity down on. LOWER alpha is MORE emissive (the leechfly's
-//    eyes are 110), so these sit just under solid — enough that it holds its own value in shadow, where a
-//    purely lit body would go to nothing and the thinning would finish it off.
+// GREY, AND COUNTERSHADED — a dark saddle, pale throat, belly and inside the legs. That gradient is most of
+// what makes the shape read at distance; a flat grey animal is a dog-shaped smudge.
+// SOLVED OFF THE RENDER: the chain is albedo × 1.72 → linear → gamma 1/2.2, so screen ∝ albedo^(1/2.2).
+//  - VALUE: a lit 217 down to ~150 is 0.69 on screen, so albedo × 0.69^2.2 ≈ 0.44.
+//  - HUE: this sun is warm, so a NEUTRAL albedo cannot render neutral. The pelt is authored BLUE-SHIFTED and
+//    the sun brings it back to grey; author it grey and the sun takes it to sand.
+// **TWO DIFFERENT CHANNELS.** TRANSPARENCY is the scene's `fade` uniform (`SPIRIT_FADE`); vertex alpha
+// CANNOT do it, because in this renderer alpha is the EMISSIVE channel and a "transparent" colour authored
+// here comes back brighter and opaque. The SHEEN is that emissive channel — LOWER alpha is MORE emissive —
+// and it sits just under solid so the body holds its value in shadow, where the thinning would finish it.
 const SHEEN: u8 = 206;
 const SHEEN_LT: u8 = 188; // the raised parts glow a touch harder, which is what makes it look wet-cold
 const PELT = rgba(44, 47, 55, SHEEN);
@@ -354,24 +340,16 @@ fn boneMesh(i: usize) rl.Mesh {
     b.setMat(.hide);
     const s = W;
     switch (i) {
-        // THE TRUNK, and it is ROUND: a wolf is flesh, so blobs and capsules and never a box. Two masses, the
-        // deep chest and the tucked loin, because one even barrel is what reads as a sausage.
-        // **THE TRUNK IS ONE MASS, NOT THREE.** Three blobs at three joints came out as a caterpillar of
-        // separate balls with a waist between each: the fix is that every section OVERLAPS its neighbour well
-        // past the joint (the packed-stone rule — a facing without a substrate leaks) and the radii GRADE, so
-        // what reads is one barrel deepening toward the chest. Each is drawn from its own bone so the spine
-        // still bends; what changed is that they intersect instead of abutting.
+        // THE TRUNK, ROUND and ONE MASS: blobs and capsules, never a box. Each section OVERLAPS its neighbour
+        // well past the joint (the packed-stone rule) and the radii GRADE, so what reads is one barrel
+        // deepening toward the chest rather than a caterpillar of balls with a waist between each. Each is
+        // still drawn from its own bone, so the spine bends. The chest is DEEP — brisket 0.55 W to withers
+        // 1.00 is near half the animal's height — and the barrel is WIDE, carried on the X radii, because
+        // depth alone reads as a slab from the side and changes nothing head-on.
         //
-        // …and the chest is DEEP: from the brisket at 0.55 W up to the withers at 1.00 it is nearly half the
-        // animal's height, which is what a wolf's silhouette actually is.
-        // **A COUNTERSHADING PATCH IS RELIEF, SO IT IS SUNK MOST OF THE WAY IN.** Sized close to the mass it
-        // sits on it does not read as a darker back — it reads as a separate flat slab poking through the
-        // flank, because two ellipsoids of similar Z extent only nest at their centres and cross at their
-        // ends. The rule is the house one: cut the patch's REACH along the body hard (0.6-0.7 of its parent's)
-        // and pull it toward the centre, so it is inside the silhouette everywhere and only the colour shows.
-        // **CHUNK** (owner's word). The barrel is WIDE — a wolf in winter coat is far broader than the skeleton
-        // under it, and the first pass authored the skeleton. The X radii carry most of it: depth alone reads
-        // as a slab from the side and changes nothing head-on, where a heavy animal is heavy.
+        // **A COUNTERSHADING PATCH IS RELIEF, SO IT IS SUNK MOST OF THE WAY IN.** Two ellipsoids of similar Z
+        // extent nest at their centres and CROSS at their ends, so cut the patch's reach along the body hard
+        // (0.6-0.7 of its parent's) and pull it inward: inside the silhouette everywhere, only the colour shows.
         CHEST => {
             const dep = (SHOULDER_Y - BRISKET_Y) + 0.26; // brisket to withers, through the shoulder joint
             b.addBlob(v3(0, -0.015 * s, -0.10 * s), v3(0.205 * s, dep * 0.5 * s, 0.36 * s), 6, 11, peltAt(0.5));
@@ -535,8 +513,14 @@ const BITE_HOP: f32 = 0.62; // metres of forward travel across the wind and the 
 /// second copy at the call site is a number nothing can measure against.
 const BITE_TRIGGER_R: f32 = BITE_R + BITE_HOP * 0.8;
 
-/// WHAT IT IS SET ON: a point AND HOW BROAD IT IS. The radius is the whole reason this is not just a point.
-pub const Quarry = struct { at: rl.Vector3, r: f32 = 0 };
+/// **A SPIRIT DOES NOT RE-PICK ITS FIGHT EVERY FRAME.** The ratio its rings widen by while it is COMMITTED,
+/// so a body it is already on is held until dead or out of the fight. `foe.THREAT_SWITCH`'s idea, other side.
+pub const HUNT_KEEP: f32 = 1.7;
+
+/// WHAT IT IS SET ON: a point, HOW BROAD IT IS (the bite gate is measured off the radius), and WHICH BODY.
+/// The key is OPAQUE here — only `game.zig` mints one and reads it back (`foe.Leash`'s arrangement).
+pub const Quarry = struct { at: rl.Vector3, r: f32 = 0, key: u32 = NO_QUARRY };
+pub const NO_QUARRY: u32 = std.math.maxInt(u32);
 
 /// **THE GATE IS MEASURED FROM THE QUARRY'S HIDE, NOT ITS CENTRE** — the knight's `triggerR` idiom, and for
 /// the same reason. Asked centre-to-centre, a flat 1.85 m is unsatisfiable on anything broad: `env.resolveActor`
@@ -858,7 +842,11 @@ pub const Wolf = struct {
         } else {
             self.speed = mathx.approach(self.speed, 0, ACCEL * 2.0 * dt);
             self.state = .idle;
-            if (self.quarry == null) self.faceToward(heel, dt);
+            // **IT KEEPS ITS EYES ON WHAT IT CAME FOR.** Arrived with the jaws still cooling, it used to hold
+            // whatever facing it happened to stop on — so a spirit stood at a foe's shoulder spent the whole
+            // `BITE_COOL` pointed somewhere else, and the next hop went with it. `wants` is the same answer
+            // the feet were using a line ago, so with nothing to fight this is still "turn to him".
+            self.faceToward(self.wants(heel), dt);
         }
         self.settle(dt, bounds);
         self.pose();
@@ -875,6 +863,12 @@ pub const Wolf = struct {
     /// answer to stamp the way through and two copies of a choice this small still drift.
     pub fn wants(self: *const Wolf, heel: rl.Vector3) rl.Vector3 {
         return if (self.quarry) |q| q.at else heel;
+    }
+
+    /// WHICH BODY IT IS ALREADY COMMITTED TO, or `NO_QUARRY`. Read by whoever picks the fight (`game.huntFor`),
+    /// so the pick can PREFER what it is already on instead of starting the search from nothing every frame.
+    pub fn quarryKey(self: *const Wolf) u32 {
+        return if (self.quarry) |q| q.key else NO_QUARRY;
     }
 
     /// …and the same thing as the steering asks it (`foe.Nav`): null while it is not walking anywhere, so a

@@ -22,8 +22,7 @@ const v3 = mathx.v3;
 //
 // **AND IT DECIDES NOTHING.** Which routine to run, and when, is the creature's own `decide` — that is where
 // a fight's character lives and it is deliberately not generalised. What is generalised is the WALKING:
-// close, open, orbit, dwell, shift. Those five were being hand-rolled per creature with their own arrival
-// slop, their own bail clocks and their own tangent arithmetic, and they had already drifted.
+// close, open, orbit, dwell, shift.
 
 /// What a routine is given each frame. Everything in it is world state a body standing there could read —
 /// the NO INPUT READING law is kept by there being nothing else on offer.
@@ -109,6 +108,21 @@ pub const Routine = struct {
     pub fn current(self: *const Routine) ?Step {
         if (!self.running or self.i >= self.script.len) return null;
         return self.script[self.i];
+    }
+
+    /// **WHERE THE RUNNING STEP WANTS THE FEET** — `game.markWay`'s question, answered off the routine.
+    /// Null when nothing is running and null for a `dwell`, which asks for no feet at all.
+    ///
+    /// It lives here because it is the STEP's own meaning, not the creature's: the archer and the warrior
+    /// each carried a byte-identical copy of this switch, so a sixth `Step` was two edits in lockstep with
+    /// nothing holding them level — and a third creature adopting a script would have made it three.
+    pub fn walkTo(self: *const Routine, at: rl.Vector3, quarry: rl.Vector3) ?rl.Vector3 {
+        return switch (self.current() orelse return null) {
+            .close, .orbit => quarry,
+            .open => mathx.addV(at, mathx.dirXZ(quarry, at)),
+            .shift => if (self.marked) self.mark else quarry,
+            .dwell => null,
+        };
     }
 
     fn advance(self: *Routine) void {
@@ -200,9 +214,10 @@ pub const Routine = struct {
     fn ring(self: *const Routine, c: Ctx, r: f32) rl.Vector3 {
         const out = mathx.dirXZ(c.quarry, c.at);
         const o = if (mathx.lenXZ(out) < 1e-3) mathx.headingDir(c.facing) else out;
-        // Tangent, and the small inward lean is what CLOSES a drifting orbit back onto its own radius
-        // instead of spiralling out of the fight.
         const tan = v3(o.z * self.side, 0, -o.x * self.side);
+        // The goal is re-projected ONTO the ring every frame and only THEN stepped sideways, which is what
+        // pulls a drifting orbit back to its own radius instead of letting it spiral out of the fight. The
+        // metre of tangent puts the equilibrium a hair outside `r` (sqrt(r²+1)) — the test says so.
         const want = v3(c.quarry.x + o.x * r, c.at.y, c.quarry.z + o.z * r);
         return mathx.addV(want, c.nav.along(tan));
     }
@@ -346,6 +361,38 @@ test "AN ORBIT HOLDS ITS RADIUS rather than spiralling out of the fight" {
     try std.testing.expectApproxEqAbs(@as(f32, 3.0), mathx.distXZ(at, quarry), 0.35);
     // …and it actually went ROUND: a body that held its radius without travelling is a body standing still.
     try std.testing.expect(swept > 2.0);
+}
+
+test "THE STEP SAYS WHERE THE FEET GO, and a dwell asks for none" {
+    // One answer for every creature running a script: as a copy in the archer and another in the warrior, a
+    // sixth `Step` was two edits nothing held level.
+    const at = mathx.ground(0, 0);
+    const q = mathx.ground(0, 6);
+    var idle = Routine{};
+    try std.testing.expect(idle.walkTo(at, q) == null); // nothing running asks for nothing
+
+    // CLOSE walks AT it…
+    var c = Routine{};
+    c.start(&[_]Step{.{ .close = .{ .to = 1.0 } }}, 1);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.distXZ(q, c.walkTo(at, q).?), 1e-5);
+
+    // …OPEN straight back down the line it came in on, and it is a POINT one step out, not the quarry.
+    var o = Routine{};
+    o.start(&[_]Step{.{ .open = .{ .to = 9.0 } }}, 1);
+    const away = o.walkTo(at, mathx.ground(0, 2)).?;
+    try std.testing.expect(away.z < at.z);
+
+    // …and a DWELL is running and asks for no feet at all, which is not the same as no routine.
+    var d = Routine{};
+    d.start(&[_]Step{.{ .dwell = .{ .secs = 1.0 } }}, 1);
+    try std.testing.expect(d.current() != null and d.walkTo(at, q) == null);
+
+    // A `shift` hands back its COMMITTED mark once it has taken one, never the quarry it is watching.
+    var s = Routine{};
+    s.start(&[_]Step{.{ .shift = .{ .d = 6.0, .turn = 1.0 } }}, 1);
+    _ = s.step(1.0 / 60.0, .{ .at = at, .facing = 0, .quarry = q });
+    try std.testing.expect(s.marked);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.distXZ(s.mark, s.walkTo(at, q).?), 1e-6);
 }
 
 test "THE UNSTAMPED WAY CHANGES NOTHING HERE EITHER — steering is a bend, never a layer" {

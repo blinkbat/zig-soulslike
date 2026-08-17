@@ -137,9 +137,9 @@ pub fn campfireGuitarMesh(shader: rl.Shader) rl.Model {
 // ── THE ITEM PICKUP — ER's glowing thing on the ground ────────────────────────────────────────────────
 //
 // **IT SAYS "SOMETHING IS HERE" FROM ACROSS A FIELD AND NOTHING ELSE.** Elden Ring's own: a wisp of light
-// standing on the ground that you walk into and press. It carries 1+ items like a chest does (`Op.loot`), and
-// it is deliberately NOT the items' own shapes — thirty item kinds would be thirty world meshes, and the whole
-// point of the glow is that it reads at a distance where a dropped dirk is four pixels.
+// standing on the ground that you walk into and press. It carries 1+ items like a chest does (`Op.loot`) and
+// is deliberately NOT the items' own shapes — thirty item kinds would be thirty world meshes, and the glow
+// exists to read at a distance where a dropped dirk is four pixels.
 //
 // **AND IT MUST NOT BE MISTAKEN FOR THE SOULS DROP** (`souls.zig`), which is the other glowing thing you walk
 // up to and press. That one is a warm GOLD tree; this is a cool PALE wisp, and the separation is HUE — the one
@@ -218,13 +218,10 @@ pub fn pickupMesh(shader: rl.Shader) rl.Model {
     }
     // …and it ENDS BLUNT, not in a needle: the dead-wood law, on light.
     b.addBlob(v3(prev.x, prev.y + 0.008, prev.z), v3(0.016, 0.020, 0.016), 3, 7, GLOW_HOT);
-    // MOTES HANGING ROUND IT at their own heights and their own sizes — this is the other half of "a glow" and
-    // the reason it does not read as a stick. Asymmetric, or the whole thing is a lamp on a post.
-    //
-    // **THEY GO ALL THE WAY UP THE PILLAR, not just round the wisp** (owner: maybe some motes). Four of them
-    // inside the bottom two-fifths was a cluster at the foot with a bare shaft over it; the drift is what says
-    // the column is made of the same stuff. Authored off a SEEDED rng rather than a table so the count is one
-    // number: a hand-written row per mote is what held it at four.
+    // MOTES HANGING ROUND IT at their own heights and sizes — the other half of "a glow", and asymmetric, or
+    // the whole thing is a lamp on a post. **THEY GO ALL THE WAY UP THE PILLAR, not just round the wisp**
+    // (owner: maybe some motes): the drift is what says the column is made of the same stuff. Off a SEEDED
+    // rng rather than a table, so the count is one number and not a hand-written row per mote.
     var m: i32 = 0;
     while (m < 14) : (m += 1) {
         const f = @as(f32, @floatFromInt(m)) / 14.0;

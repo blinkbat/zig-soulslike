@@ -81,8 +81,12 @@ pub const Data = struct {
     spawnFacing: f32 = 0,
     souls: u32 = 0,
 
-    arm: heromod.Arm = .sword,
-    off: heromod.Off = .shield,
+    arm: heromod.Armament = .sword,
+    off: heromod.Armament = .shield,
+    /// …and the OTHER slot of each hand. A save that carried only the live one came back with a default
+    /// alternate, so half of every loadout was silently reset at the fire it was written from.
+    armAlt: heromod.Armament = .bow,
+    offAlt: heromod.Armament = .wand,
     spell: combat.Spell = .bolt,
     arrow: combat.ArrowKind = .plain,
     flask: combat.FlaskKind = .crimson,
@@ -325,6 +329,8 @@ pub fn gather(s: Slot) Data {
     d.souls = h.souls.total;
     d.arm = h.arm;
     d.off = h.off;
+    d.armAlt = h.armAlt;
+    d.offAlt = h.offAlt;
     d.spell = h.spell;
     d.arrow = h.quiver.sel;
     d.flask = h.flasks.sel;
@@ -366,6 +372,8 @@ pub fn scatter(d: *const Data, s: Slot) void {
     h.souls.shown = @floatFromInt(d.souls);
     h.arm = d.arm;
     h.off = d.off;
+    h.armAlt = d.armAlt;
+    h.offAlt = d.offAlt;
     h.spell = d.spell;
     h.quiver.sel = d.arrow;
     h.flasks.sel = d.flask;
@@ -413,7 +421,7 @@ pub fn render(w: anytype, d: *const Data) !void {
     try w.print("at: {d:.3} {d:.3} {d:.3} {d:.4}\n", .{ d.at.x, d.at.y, d.at.z, d.facing });
     try w.print("spawn: {d:.3} {d:.3} {d:.3} {d:.4}\n", .{ d.spawnAt.x, d.spawnAt.y, d.spawnAt.z, d.spawnFacing });
     try w.print("souls: {d}\n", .{d.souls});
-    try w.print("hands: {s} {s} {s}\n", .{ @tagName(d.arm), @tagName(d.off), @tagName(d.spell) });
+    try w.print("hands: {s} {s} {s} {s} {s}\n", .{ @tagName(d.arm), @tagName(d.off), @tagName(d.spell), @tagName(d.armAlt), @tagName(d.offAlt) });
     try w.print("ready: {s} {s}\n", .{ @tagName(d.arrow), @tagName(d.flask) });
     try w.writeAll("quick:");
     for (d.quick) |q| try w.print(" {s}", .{if (q) |k| item.tag(k) else "-"});
@@ -475,9 +483,14 @@ pub fn parse(text: []const u8, d: *Data) !void {
         } else if (std.mem.eql(u8, key, "souls:")) {
             d.souls = try int(u32, &it);
         } else if (std.mem.eql(u8, key, "hands:")) {
-            d.arm = try tagged(heromod.Arm, &it);
-            d.off = try tagged(heromod.Off, &it);
+            d.arm = try tagged(heromod.Armament, &it);
+            d.off = try tagged(heromod.Armament, &it);
             d.spell = try tagged(combat.Spell, &it);
+            // THE TWO ALTERNATES ARE OPTIONAL ON THE LINE, which is what lets a file written before a hand
+            // was a pair still load: it keeps the live pair it named, and the alternates come up at their
+            // defaults — honestly what that character was carrying.
+            d.armAlt = tagged(heromod.Armament, &it) catch d.armAlt;
+            d.offAlt = tagged(heromod.Armament, &it) catch d.offAlt;
         } else if (std.mem.eql(u8, key, "ready:")) {
             d.arrow = try tagged(combat.ArrowKind, &it);
             d.flask = try tagged(combat.FlaskKind, &it);

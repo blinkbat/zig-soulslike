@@ -120,6 +120,18 @@ const MOVES = [_]Attack{
     .{ .windDur = 0.66, .strikeDur = 0.30, .recoverDur = 1.15, .cd = 5.0, .minR = 2.8, .maxR = 4.6, .arc = 58.0, .hit = HOOK_HIT, .limb = LIMB_R },
 };
 
+comptime {
+    // **THE INDICES ARE PINNED TO THE ROWS THEY NAME** (`knight.zig`'s own guard, one creature along). They
+    // are hand-written ordinals mirroring `MOVES`' ORDER, and `classify`, `cds`, `move()` and every test
+    // resolve through them — so inserting a fourth limb strike anywhere but the end, or reordering the
+    // table, silently re-points the whole kit and still compiles.
+    const named = .{ .{ SLAM, SLAM_HIT }, .{ SWEEP, SWEEP_HIT }, .{ HOOK, HOOK_HIT } };
+    if (named.len != MOVES.len) @compileError("rooted: MOVES and the named indices disagree on how many strikes there are");
+    for (named) |row| {
+        if (!std.meta.eql(MOVES[row[0]].hit, row[1])) @compileError("rooted: a named index no longer points at its own row of MOVES");
+    }
+}
+
 /// A move's clock, for anything aiming at a beat inside it (`shots.zig`) — the shared shape, off this table.
 pub fn moveClock(which: usize) foe.Clock {
     return foe.moveClock(MOVES[@min(which, MOVES.len - 1)]);
@@ -577,8 +589,9 @@ pub const Rooted = struct {
     }
 
     fn splinters(self: *Rooted, at: rl.Vector3, n: i32) void {
+        const parts = foe.hitParts(n); // the field's one dial (`foe.HIT_PARTS`)
         var i: i32 = 0;
-        while (i < n) : (i += 1) {
+        while (i < parts) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(0.6, 1.0) * 3.2;
             self.emit(

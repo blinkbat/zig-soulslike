@@ -186,6 +186,23 @@ const LookProbe = struct {
 /// A hook that landed this frame and has not been paid out yet (`noteYank` → `applyYank`).
 const Hook = struct { from: rl.Vector3, pull: f32 };
 
+/// WHICH WORLD THE BLACK FRAME IS ABOUT TO BUILD. **EVERY WAY INTO ONE GOES THROUGH THIS UNION** — a fresh
+/// character, a slot off the disk, and walking from one map into the next (an indoor one, a cellar, a hall).
+/// As three separate transitions they would be three places to forget the fade from; as one variant each,
+/// gaining a way in is a row here and a case in `enterNow`.
+const Enter = union(enum) {
+    fresh: usize,
+    load: usize,
+    /// The map file to walk into, and where he stands when he arrives. The path is BORROWED from the map
+    /// table's own storage, which outlives the transition.
+    map: struct { path: []const u8, at: rl.Vector3, facing: f32 },
+};
+/// How long the screen takes to go down over the menu…
+const ENTER_OUT: f32 = 0.40;
+/// …and to come back up on the finished world. LONGER than the way out: arriving somewhere is worth more
+/// time than leaving a menu is.
+const ENTER_IN: f32 = 0.85;
+
 pub const Game = struct {
     scene: gfx.Scene,
     sky: gfx.Sky,
@@ -268,6 +285,12 @@ pub const Game = struct {
     slot: usize = 0,
     /// `rest.justEntered` fires where the screen is still black, so the grab waits for a frame with a picture.
     shotOwed: bool = false,
+    /// **THE CUT INTO A WORLD.** The screen goes black FIRST, the whole build happens on a frame nothing can be
+    /// seen on, and only then does the picture come back. Two clocks and one act: fading OUT over the menu,
+    /// the black frame the work happens on, and fading IN on a world that is already finished.
+    enterOut: f32 = 0,
+    enterIn: f32 = 0,
+    enterAct: ?Enter = null,
     /// The UNSCALED frame time the drawing layer needs — the occluder fade would crawl on a time-scaled dt.
     /// `--shot` parks it at `shots.SETTLE_DT`: a still frame cannot show a fade, so a capture wants its END state.
     drawDt: f32 = 1.0 / 60.0,
@@ -348,6 +371,9 @@ pub const Game = struct {
         g.shelf = savemod.survey(saveMap(g));
         g.slot = 0;
         g.shotOwed = false;
+        g.enterOut = 0;
+        g.enterIn = 0;
+        g.enterAct = null;
         beginGame(g);
     }
 };
@@ -368,7 +394,9 @@ fn beginGame(g: *Game) void {
     g.hero.setSpawn(start, std.math.pi); // …and where a death returns him
     g.hero.souls = .{};
     g.hero.arm = .sword;
+    g.hero.armAlt = .bell; // the BELL, not the bow: it is what the starting scroll is for
     g.hero.off = .shield;
+    g.hero.offAlt = .wand;
     g.hero.spell = .bolt;
     g.hero.quick = .{};
     g.hero.quiver = .{};
@@ -408,6 +436,98 @@ fn beginGame(g: *Game) void {
     g.hero.pose();
     g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
     applyHour(g);
+}
+
+/// **ARM THE CUT.** Nothing happens on the frame the button is pressed except the screen starting to go
+/// down; the world is built once it is fully black (`enterNow`). Refused while one is already running, so a
+/// second press during the fade cannot queue a second world behind the first.
+fn beginEnter(g: *Game, act: Enter) void {
+    if (g.enterAct != null) return;
+    g.enterAct = act;
+    g.enterOut = ENTER_OUT;
+    g.enterIn = 0;
+}
+
+/// **THE BLACK FRAME.** Everything a world costs happens here, where nothing can be seen: the map read, the
+/// ground and water uploaded, the props materialized, the spawns re-homed, the hero planted, the camera
+/// placed and the hour pushed into both shaders. Only then does `enterIn` start lifting the black — so the
+/// first frame the player sees is a world that is already finished, which is the whole of the rule.
+fn enterNow(g: *Game, act: Enter) void {
+    switch (act) {
+        .fresh => |i| {
+            beginGame(g);
+            g.slot = i;
+            g.menu.started();
+        },
+        .load => |i| {
+            if (loadGame(g, i)) {
+                g.slot = i;
+                g.menu.started();
+            } else {
+                // A load that fails leaves you on the boot screen: dropping into the world anyway would be a
+                // fresh character wearing a loaded game's name. The black lifts back onto the menu.
+                g.shelf.head[i] = null; // …and the row goes dead, so it cannot be pressed again
+                std.debug.print("LOAD FAILED: {s} is not a save this build can read\n", .{savemod.path(i)});
+            }
+        },
+        .map => |m| enterMap(g, m.path, m.at, m.facing),
+    }
+    g.enterIn = ENTER_IN;
+}
+
+/// **WALKING FROM ONE MAP INTO THE NEXT.** The world is replaced and the CHARACTER is not: his bag, his
+/// sheet, his souls, his flasks and his hour all come with him — what changes is the ground under him and
+/// everything standing on it. `armScript` is what makes it a different world's script rather than the last
+/// one's switches replayed against new indices.
+///
+/// It is deliberately NOT `loadGame`: that restores a character FROM a file, and this carries the one that is
+/// already standing here into a different room.
+fn enterMap(g: *Game, path: []const u8, at: rl.Vector3, facing: f32) void {
+    worldfmt.loadOrPanic(path, &g.map);
+    PLAY_HALF = playHalfOf(g.map.half); // before anything is placed against it
+    g.env.uploadSoil(&g.map);
+    g.env.uploadWater(&g.map);
+    g.env.uploadHeight(&g.map);
+    g.env.materialize(&g.map);
+    g.hero.pos = inBounds(mathx.ground(at.x, at.z));
+    g.hero.facing = facing;
+    plantActor(g, &g.hero.pos); // …on the ground the NEW map sculpts under him, not the old one's
+    g.hero.pos = g.env.resolveActor(g.hero.pos, HERO_R, g.hero.pos.y);
+    g.hero.setSpawn(g.hero.pos, facing);
+    rehomeFoes(g, .blind);
+    rehomeChests(g);
+    armScript(g);
+    clearQuivers(g);
+    g.pack.clear(); // a spirit does not follow him through a door — it is called again on the other side
+    g.lock = null;
+    g.lockBlind = 0;
+    g.hook = null;
+    g.hero.pose();
+    g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
+    applyHour(g);
+}
+
+/// **THE BLACK ITSELF, AND IT IS DRAWN OVER EVERYTHING.** Last in every branch that draws, chrome and menu
+/// included: a fade with the HUD floating on top of it is a cut you can see through.
+fn drawEnterFade(g: *const Game) void {
+    const k = if (g.enterAct != null)
+        1.0 - mathx.clampF(g.enterOut / ENTER_OUT, 0, 1) // going down…
+    else
+        mathx.clampF(g.enterIn / ENTER_IN, 0, 1); // …and coming back up
+    if (k <= 0.002) return;
+    rl.drawRectangle(0, 0, rl.getScreenWidth(), rl.getScreenHeight(), rgba(0, 0, 0, mathx.u8f(255.0 * k)));
+}
+
+/// One frame of the cut, wherever the loop happens to be. Returns whether the world is still held behind it.
+fn tickEnter(g: *Game, dt: f32) void {
+    if (g.enterAct) |act| {
+        g.enterOut = mathx.maxF(0, g.enterOut - dt);
+        if (g.enterOut > 0) return;
+        g.enterAct = null;
+        enterNow(g, act);
+        return;
+    }
+    g.enterIn = mathx.maxF(0, g.enterIn - dt);
 }
 
 /// Which world a save belongs to, named ONCE — the shelf and the load have to agree or a slot lists as
@@ -479,27 +599,15 @@ const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
 };
 
-/// **THE ONE PASS OVER `FOE_GROUPS` THAT IS NOT A FOLD, WRITTEN DOWN SO IT CANNOT BE FORGOTTEN.** Everything
-/// else a group needs — the re-home, the draw, the sight, the threat, the steering, the shield, the shove, the
-/// souls — is `inline for (FOE_GROUPS)` and comes free. The blow it deals HIM cannot be: several groups take a
-/// spawn callback on top of the blade, and each sizes its felt beat off its OWN "was that the heavy" figure
-/// (the ogre's slam stance, the berserker's chop poise, the delver's burst, the knight's fall). So the calls
-/// are hand-written one per row in `run`, and a NEW group added to the table above would pick up every other
-/// pass and simply never hurt the player — SILENTLY, which is the one failure this file keeps legislating
-/// against. This is `ROLE_GROUPS`' arrangement for `ROLE_GROUPS`' reason: a table that cannot be derived is
-/// cross-checked against the one it mirrors instead.
+/// **THE ONE PASS OVER `FOE_GROUPS` THAT IS NOT A FOLD.** Everything else a group needs comes free from
+/// `inline for (FOE_GROUPS)`; the blow it deals HIM cannot, because several groups take a spawn callback on
+/// top of the blade and each sizes its felt beat off its own "was that the heavy" figure. So the calls are
+/// hand-written one per row in `run` — and a NEW group would pick up every other pass and simply never hurt
+/// the player, SILENTLY. The comptime block below is what holds the two tables level.
 ///
-/// The counts are deliberately NOT written out here. They were ("four of the twelve", "the twelve calls") and
-/// the necromancer made every one of them wrong in the same commit that added its row — the comptime block
-/// below is the thing that actually holds the two tables level, so the prose says which rows are special and
-/// leaves the arithmetic to it.
-///
-/// **WHAT A ROW PROMISES IS THAT THE GROUP HAS A DAMAGE CHANNEL AT ALL, not that it has a `heroTakes` call.**
-/// Every row but one does. **`line` IS THE ONE THAT DOES NOT AND IT IS NOT AN OVERSIGHT**: an archer's
-/// `update` hands back "it loosed" rather than a `?foe.Blow`, and the blow lands where the ARROW does, off
-/// `g.arrows` in `run` — the one group whose reach is a projectile it no longer owns. Written down here because a
-/// reader who checks the invariant literally finds it false on that row and stops trusting the table, which
-/// costs more than the row saves.
+/// **A ROW PROMISES THE GROUP HAS A DAMAGE CHANNEL, not that it has a `heroTakes` call.** `line` is the one
+/// that does not, and it is not an oversight: an archer's `update` hands back "it loosed", and the blow lands
+/// where the ARROW does, off `g.arrows` in `run`.
 const BLOW_GROUPS = [_][]const u8{
     "warren", "grief",  "line",    "band",    "muster", "haunt",
     "swarm",  "grove",  "cluster", "warrens", "vigil",  "brood",
@@ -1605,7 +1713,7 @@ fn tickPack(g: *Game, dt: f32) void {
     }
     for (g.pack.live()) |*w| if (w.lost()) rematerialize(g, w);
     for (g.pack.live()) |*w| {
-        w.quarry = huntFor(g, w.pos);
+        w.quarry = huntFor(g, w);
         // Stamped here rather than in `markWays`: the spirit is not in `FOE_GROUPS` and its errand is not the
         // hero's position — but it is the same prober, and a second would be a second answer to "walkable".
         if (w.navWant(g.hero.pos)) |want| markWay(g, &w.nav, w.pos, w.bodyR(), want) else w.nav.dir = null;
@@ -1630,19 +1738,36 @@ fn tickPack(g: *Game, dt: f32) void {
     }
 }
 
-/// The nearest thing worth killing, or null to heel.
-fn huntFor(g: *const Game, from: rl.Vector3) ?wolfmod.Quarry {
+/// **A BODY'S IDENTITY AS ONE NUMBER** — the same `(kind, index)` pair a `FoeRef` is, packed so a spirit can
+/// carry it without learning what a `FoeKind` is. `game.zig` mints it and `game.zig` reads it back; the
+/// creature only holds it (`wolf.Quarry.key`, the `foe.Leash` arrangement).
+fn quarryKey(kind: FoeKind, idx: usize) u32 {
+    return (@as(u32, @intFromEnum(kind)) << 16) | @as(u32, @intCast(@min(idx, 0xFFFF)));
+}
+
+/// The thing worth killing, or null to heel — **AND IT PREFERS THE FIGHT IT IS ALREADY IN.** What it is on is
+/// re-found by KEY and kept at `wolf.HUNT_KEEP` × the rings; only when that body is gone does the
+/// nearest-search run. `foe.Threat`'s hysteresis on the other side of the field — without it two bodies at
+/// similar range trade the target every frame, and a quarry dropped to null means HEEL, which is the animal
+/// turning to look at the player mid-chase.
+///
+/// Written against the SPIRIT and not the wolf, so a second one inherits it by carrying a `quarry` field.
+fn huntFor(g: *const Game, w: *const wolfmod.Wolf) ?wolfmod.Quarry {
+    const from = w.pos;
     // HE COMES FIRST: past the recall ring there is no quarry at all. Asked before the walk rather than as
     // another rejection inside it — this is "I am too far from him", not "is that body worth it".
     if (mathx.distXZ(from, g.hero.pos) > wolfmod.RECALL_R) return null;
     const Ctx = struct {
         from: rl.Vector3,
         hero: rl.Vector3,
+        /// What it walked in already committed to, and the answer if that body is still worth holding.
+        held: u32,
+        keep: ?wolfmod.Quarry = null,
         best: f32 = wolfmod.HUNT_R,
         at: ?wolfmod.Quarry = null,
-        fn visit(self: *@This(), foes: anytype, _: ?FoeKind) void {
+        fn visit(self: *@This(), foes: anytype, kind: ?FoeKind) void {
             const T = @typeInfo(@TypeOf(foes)).pointer.child;
-            for (foes) |*f| {
+            for (foes, 0..) |*f, i| {
                 if (!foemod.corporeal(f)) continue;
                 // Never a tree that is still a tree: biting a dormant Rooted gives the disguise away for
                 // nothing, and `foe.reached` rouses it on the way.
@@ -1652,19 +1777,29 @@ fn huntFor(g: *const Game, from: rl.Vector3) ?wolfmod.Quarry {
                 if (comptime @hasDecl(T, "airborne")) {
                     if (f.airborne()) continue;
                 }
-                // …and a body the HERO has walked away from is not this spirit's problem either.
-                if (mathx.distXZ(self.hero, f.pos) > wolfmod.TETHER_R) continue;
+                const key = quarryKey(memberKind(f, kind), i);
                 const d = mathx.distXZ(self.from, f.pos);
+                const out = mathx.distXZ(self.hero, f.pos);
+                // THE BODY IT IS ALREADY ON, held to the WIDER rings. It is still standing, it is still
+                // reachable, and it is still in the player's fight — so it stays its fight.
+                if (key == self.held and d <= wolfmod.HUNT_R * wolfmod.HUNT_KEEP and out <= wolfmod.TETHER_R * wolfmod.HUNT_KEEP) {
+                    self.keep = .{ .at = f.pos, .r = f.bodyR(), .key = key };
+                    continue;
+                }
+                // …and a body the HERO has walked away from is not this spirit's problem either.
+                if (out > wolfmod.TETHER_R) continue;
                 if (d >= self.best) continue;
                 self.best = d;
                 // …AND HOW BROAD IT IS, which is what the bite gate is measured off.
-                self.at = .{ .at = f.pos, .r = f.bodyR() };
+                self.at = .{ .at = f.pos, .r = f.bodyR(), .key = key };
             }
         }
     };
-    var ctx = Ctx{ .from = from, .hero = g.hero.pos };
+    var ctx = Ctx{ .from = from, .hero = g.hero.pos, .held = w.quarryKey() };
     eachTarget(g, &ctx, Ctx.visit);
-    return ctx.at;
+    // THE COMMITMENT WINS. Only when the body it was on has died, dissolved, gone under or left the fight
+    // does the search below it get to say anything.
+    return ctx.keep orelse ctx.at;
 }
 
 /// The RING GIVES FIRST (DS's Ring of Sacrifice): one snaps and he keeps the lot. Otherwise everything comes
@@ -2436,17 +2571,12 @@ fn parryBeat(g: *Game) void {
 /// `markSight`/`markParry` arrangement and for their reason: a corpse is in another group's array, and a
 /// creature may never reach out for the world.
 ///
-/// It is keyed off `@hasDecl(Member, "raisable")`, so a third raisable body is a `raisable`/`reraise` pair on
-/// that creature and NEVER an edit here — `markWays`' rule, and a test pins the two halves together because
-/// both fail silently.
+/// Keyed off `@hasDecl(Member, "raisable")`, so a third raisable body is a `raisable`/`reraise` pair on that
+/// creature and never an edit here (`markWays`' rule); a test pins both halves, which fail silently.
 ///
-/// **IT IS A PLACE AND NOT A RESERVATION.** Every flag is cleared first and re-earned from where the bodies
-/// actually lie, so walking the fight out of a necromancer's reach releases the corpses on the frame it
-/// happens, and killing things where it cannot reach never gives it anything at all.
-///
-/// **AND TWO NECROMANCERS CANNOT CLAIM ONE BODY.** They are walked in order and a corpse already stamped this
-/// frame is skipped, so the second one looks past it to the next — which costs nothing, needs no extra state
-/// (the flag IS the claim), and stops a pair spending two nine-second casts on one skeleton.
+/// **A PLACE, NOT A RESERVATION.** Every flag is cleared first and re-earned from where the bodies lie, so
+/// walking the fight out of a necromancer's reach releases the corpses on the frame it happens. **AND TWO
+/// CANNOT CLAIM ONE BODY** — a corpse already stamped this frame is skipped, so the flag IS the claim.
 fn markVigil(g: *Game) void {
     // Nothing on the field is held until something earns it this frame.
     eachRaisable(g, {}, struct {
@@ -2850,13 +2980,9 @@ pub fn hud(g: *Game, dt: f32) void {
             const wandUp = g.hero.wandOut();
             hud_.equipment(
                 // LEFT: what that hand actually has — boards, the rod, or nothing at all behind a bow.
-                if (bowUp) .empty else if (wandUp) .wand else .shield,
+                if (!g.hero.offInHand()) .empty else armSlot(g.hero.off),
                 // RIGHT: off the ENUM rather than off `bowUp` — as nested ifs the bell drew a sword.
-                switch (g.hero.arm) {
-                    .sword => hud_.Slot.sword,
-                    .bow => hud_.Slot.bow,
-                    .bell => hud_.Slot.bell,
-                },
+                armSlot(g.hero.arm),
                 // UP fills only while something in his hands could cast; behind a bow or a shield, empty.
                 if (wandUp) (switch (g.hero.spell) {
                     .bolt => hud_.Slot.spell,
@@ -3184,22 +3310,10 @@ pub fn run(mode: Mode) void {
                 },
                 // Nothing torn down and nothing written: the character is saved as of the last fire.
                 .toTitle => g.menu.toTitle(),
-                .newGame => |i| {
-                    beginGame(g);
-                    g.slot = i;
-                    g.menu.started();
-                },
-                // A load that fails leaves you on the boot screen: dropping into the world anyway would be a
-                // fresh character wearing a loaded game's name.
-                .loadGame => |i| {
-                    if (loadGame(g, i)) {
-                        g.slot = i;
-                        g.menu.started();
-                    } else {
-                        g.shelf.head[i] = null; // …and the row goes dead, so it cannot be pressed again
-                        std.debug.print("LOAD FAILED: {s} is not a save this build can read\n", .{savemod.path(i)});
-                    }
-                },
+                // NEITHER HAPPENS ON THE PRESS. Both arm the cut and the world is built once the screen is
+                // black (`beginEnter` → `enterNow`), so nothing is ever swapped under the player's eyes.
+                .newGame => |i| beginEnter(g, .{ .fresh = i }),
+                .loadGame => |i| beginEnter(g, .{ .load = i }),
                 // The picker ASKED before this arrived (`menu.askDelete`), so there is nothing left to
                 // confirm here — only the two files to remove, the shelf to re-survey off the disk, and the
                 // pictures to re-read, which are the menu's own.
@@ -3235,6 +3349,9 @@ pub fn run(mode: Mode) void {
             // No HUD behind the BOOT screen: there is no character yet whose bars those would be.
             if (!booting) hud(g, rawDt);
             g.menu.draw(&g.retro, &g.day, bookView(g), .{ .hero = &g.hero, .scene = &g.scene }, &g.shelf);
+            // LAST, over the menu itself: the cut has to cover the card the press came off.
+            tickEnter(g, rawDt);
+            drawEnterFade(g);
             rl.endDrawing();
             continue;
         }
@@ -3265,6 +3382,28 @@ pub fn run(mode: Mode) void {
             drawScene(g);
             hud(g, rawDt);
             g.award.drawCard();
+            rl.endDrawing();
+            continue;
+        }
+
+        // **THE CUT HOLDS THE WORLD WHILE IT GOES DOWN.** A map change fades out from inside the world, and a
+        // man still walking through it arrives on the other side somewhere he did not choose. Nothing but the
+        // fade's own clock runs — the menu's branch, one screen along.
+        if (g.enterAct != null) {
+            g.hero.held = true;
+            bWasDown = true;
+            bHeldT = ROLL_TAP_MAX;
+            wasInside = false;
+            g.hero.update(rawDt, 0, 0, null);
+            g.hero.pose();
+            g.rig.follow(g.hero.shoulderPoint());
+            g.rumble.update(rawDt, false);
+            sfx.ambience(rawDt);
+            sfx.tickStreams();
+            drawScene(g);
+            hud(g, rawDt);
+            tickEnter(g, rawDt);
+            drawEnterFade(g);
             rl.endDrawing();
             continue;
         }
@@ -3425,49 +3564,42 @@ pub fn run(mode: Mode) void {
 
         // L1/RMB belongs to the HAND, not the shield (the R1/R2 rule from the other side): boards block on a
         // held LEVEL, a wand casts on a pressed EDGE, so both are read here and neither swallows the other.
+        // **A BUTTON PAIR BELONGS TO A HAND; WHAT IT DOES BELONGS TO THE ARMAMENT** (ER's routing, and the
+        // whole point of letting either hand hold anything). R1/R2 work the RIGHT hand, L1/L2 the LEFT, and
+        // each armament says what its own two buttons mean.
         const l1Held = rl.isMouseButtonDown(.right) or padDown(.left_trigger_1);
         const l1Press = rl.isMouseButtonPressed(.right) or padPressed(.left_trigger_1);
-        const bow = g.hero.bowOut();
-        const wandUp = g.hero.wandOut();
-        const guardHeld = l1Held and !wandUp;
-        const castReq = l1Press and wandUp;
-
-        // L2 is that hand's SKILL slot, routed the same way: a raised bow AIMS on a held level, boards PARRY
-        // on a pressed edge. On the mouse the halves part company — RMB is already the guard's level, and
-        // Shift+RMB would fire a parry on every sprinting block.
+        // On the mouse the L2 halves part company — RMB is already the L1 level, and Shift+RMB would fire a
+        // parry on every sprinting block, so the pressed edge takes a key of its own.
         const l2Held = rl.isMouseButtonDown(.right) or padDown(.left_trigger_2);
         const l2Press = rl.isKeyPressed(PARRY_KEY) or padPressed(.left_trigger_2);
-        const aimHeld = l2Held;
-        const parryReq = l2Press and !bow;
+        const shiftDown = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
+        const lmbPress = rl.isMouseButtonPressed(.left);
+        const lmbDown = rl.isMouseButtonDown(.left);
+        const r1 = padPressed(.right_trigger_1) or (lmbPress and !shiftDown);
+        const r2 = padPressed(.right_trigger_2) or (lmbPress and shiftDown);
+        const r1Held = padDown(.right_trigger_1) or (lmbDown and !shiftDown);
+        const r2Held = padDown(.right_trigger_2) or (lmbDown and shiftDown);
 
-        // R1/RB or LMB, and R2/RT or Shift+LMB.
-        var r1 = false;
-        var r2 = false;
-        if (rl.isMouseButtonPressed(.left)) {
-            if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift)) r2 = true else r1 = true;
-        }
-        if (padPressed(.right_trigger_1)) r1 = true;
-        if (padPressed(.right_trigger_2)) r2 = true;
-        // A SWITCH on the armament, not a test of one: as `r1 and !bow` the bell inherited the sword's swing
-        // the moment it existed. Exhaustive, so a fourth armament has to say what its two buttons do.
-        var lightReq = false;
-        var heavyReq = false;
-        var quickReq = false;
-        var aimedReq = false;
-        var ringReq = false;
-        switch (g.hero.arm) {
-            .sword => {
-                lightReq = r1;
-                heavyReq = r2;
-            },
-            .bow => {
-                quickReq = r1;
-                aimedReq = r2;
-            },
-            // R2 IS DELIBERATELY DEAD ON THE BELL (owner's call): not having an attack IS what it costs to
-            // carry, so the heavy has nothing to fall through to.
-            .bell => ringReq = r1,
-        }
+        // **A TWO-HANDER CLAIMS THE PRIMARY PAIR WHICHEVER SLOT IT SITS IN.** The bow is worked with both
+        // hands and the rig nocks it at the right wrist, so which slot it was equipped to is bookkeeping —
+        // and the other hand has nothing in it while it is up.
+        const twoH = heromod.armTwoHanded(g.hero.arm) or heromod.armTwoHanded(g.hero.off);
+        const rightHeld: heromod.Armament = if (heromod.armTwoHanded(g.hero.off)) g.hero.off else g.hero.arm;
+        const leftHeld: ?heromod.Armament = if (twoH) null else g.hero.off;
+
+        var acts = Acts{};
+        handActs(rightHeld, .{ .press1 = r1, .press2 = r2, .held1 = r1Held, .held2 = r2Held }, &acts);
+        if (leftHeld) |la| handActs(la, .{ .press1 = l1Press, .press2 = l2Press, .held1 = l1Held, .held2 = l2Held }, &acts);
+        const lightReq = acts.light;
+        const heavyReq = acts.heavy;
+        const quickReq = acts.quick;
+        const aimedReq = acts.aimed;
+        const ringReq = acts.ring;
+        const castReq = acts.cast;
+        const guardHeld = acts.guard;
+        const aimHeld = acts.aim;
+        const parryReq = acts.parry;
 
         // Stamina gates the sprint at the SOURCE, so `sprintingMove` stays the one definition of a sprint.
         var mv = gatherMove();
@@ -3835,6 +3967,10 @@ pub fn run(mode: Mode) void {
 
         drawScene(g);
         hud(g, rawDt);
+        // …and the same cut in the world's own branch: the fade IN after a load runs here, and a map change
+        // (`Enter.map`) fades out from here too.
+        tickEnter(g, rawDt);
+        drawEnterFade(g);
         rl.endDrawing();
     }
 }
@@ -3891,6 +4027,8 @@ pub fn bookView(g: *Game) bookmod.View {
         .inCombat = inCombat(g),
         .arm = g.hero.arm,
         .off = g.hero.off,
+        .armAlt = g.hero.armAlt,
+        .offAlt = g.hero.offAlt,
         .spell = g.hero.spell,
         .fp = g.hero.fp.cur,
         .souls = g.hero.souls.display(),
@@ -3903,14 +4041,13 @@ fn bookAct(g: *Game, a: bookmod.Action) void {
     switch (a) {
         .none => {},
         .use => |k| useItem(g, k),
-        // WALKED ROUND until it is the one he picked, not one step of it: `swapArm` is a CYCLE over three
-        // armaments. The break keeps a refusal (mid-roll, dead, at a fire) a no-op.
-        .arm => |want| while (g.hero.arm != want) {
-            if (!g.hero.swapArm()) break;
-        },
-        .off => |want| while (g.hero.off != want) {
-            if (!g.hero.swapOff()) break;
-        },
+        // STRAIGHT INTO THE SLOT. It used to WALK the swap round until the hand held what was picked, which
+        // was only ever safe while a hand cycled its whole enum — against a two-slot hand a thing in neither
+        // slot is a swap that never arrives, and the loop would not have ended.
+        .arm => |want| _ = g.hero.equip(heromod.RIGHT, 0, want),
+        .armAlt => |want| _ = g.hero.equip(heromod.RIGHT, 1, want),
+        .off => |want| _ = g.hero.equip(heromod.LEFT, 0, want),
+        .offAlt => |want| _ = g.hero.equip(heromod.LEFT, 1, want),
         .ammo => |k| while (g.hero.quiver.sel != k) {
             if (!g.hero.cycleArrow()) break;
         },
@@ -3927,6 +4064,60 @@ fn bookAct(g: *Game, a: bookmod.Action) void {
 /// bars can never be sized off a stale sheet.
 pub fn applyTree(g: *Game) void {
     g.hero.applyPerks(g.tree.bonus());
+}
+
+/// ONE HAND'S ARMAMENT AS THE HUD'S OWN CELL. Exhaustive, so a sixth armament is a row here — and it is
+/// asked of a HAND rather than of a side, since either may hold any of them.
+/// ONE HAND'S TWO BUTTONS, as levels and edges — the pair is the same shape whichever hand it is.
+const HandIn = struct { press1: bool, press2: bool, held1: bool, held2: bool };
+
+/// EVERYTHING EITHER HAND CAN ASK FOR THIS FRAME. Gathered rather than assigned, because two hands may ask
+/// for different things and the branch below has to see both — a sword left and a bow right is a frame with
+/// a swing and a shot in it, and whichever the state machine takes, neither may be silently dropped.
+const Acts = struct {
+    light: bool = false,
+    heavy: bool = false,
+    quick: bool = false,
+    aimed: bool = false,
+    ring: bool = false,
+    cast: bool = false,
+    guard: bool = false,
+    parry: bool = false,
+    aim: bool = false,
+};
+
+/// **WHAT ONE ARMAMENT'S OWN TWO BUTTONS MEAN.** Exhaustive, so a sixth armament has to say what it does
+/// with a hand before it can be equipped to one. `press1`/`press2` are the edges and `held1`/`held2` the
+/// levels — a guard and an aim are LEVELS, everything else is an edge.
+fn handActs(a: heromod.Armament, in: HandIn, out: *Acts) void {
+    switch (a) {
+        .sword => {
+            out.light = out.light or in.press1;
+            out.heavy = out.heavy or in.press2;
+        },
+        .bow => {
+            out.quick = out.quick or in.press1;
+            out.aimed = out.aimed or in.press2;
+            out.aim = out.aim or in.held2;
+        },
+        // R2 IS DELIBERATELY DEAD ON THE BELL (owner's call): not having an attack IS what it costs to carry.
+        .bell => out.ring = out.ring or in.press1,
+        .shield => {
+            out.guard = out.guard or in.held1;
+            out.parry = out.parry or in.press2;
+        },
+        .wand => out.cast = out.cast or in.press1,
+    }
+}
+
+fn armSlot(a: heromod.Armament) hud_.Slot {
+    return switch (a) {
+        .sword => .sword,
+        .bow => .bow,
+        .bell => .bell,
+        .shield => .shield,
+        .wand => .wand,
+    };
 }
 
 fn quickLeft(g: *const Game) u8 {
@@ -4010,6 +4201,9 @@ fn heroTakes(g: *Game, b: foemod.Blow, heavy: bool, voice: bool) combat.HitOutco
         .taken => heroHurtBeat(g, heavy, voice),
         .blocked => heroBlockBeat(g, b.hit),
         .guardBroken => {
+            // The boards ate it on the way to failing, so they still throw what a block throws — at full
+            // weight, because whatever did this was the heaviest thing they saw.
+            g.hero.blockSparks(1.0);
             g.rumble.play(rumblemod.guard_break);
             g.rig.addShake(SHAKE_GUARD_BREAK);
             sfx.play(.guard_break);
@@ -4044,8 +4238,16 @@ fn heroBlockBeat(g: *Game, h: combat.Hit) void {
     const w = mathx.clampF(h.raw() / BLOW_HEAVIEST, BLOCK_FELT_MIN, 1.0);
     g.rumble.play(if (w >= BLOCK_FELT_HEAVY) rumblemod.guard_block_heavy else rumblemod.guard_block);
     g.rig.addShake(SHAKE_BLOCK * w);
-    sfx.play(.guard_block);
+    // GRIT OFF THE BOARDS, not the catch's struck iron (`hero.blockSparks`) — off the SAME `w` the shake and
+    // the pad are, so all three channels say the same thing about how hard the thing that arrived was.
+    g.hero.blockSparks(w);
+    // …AND THE VOICE IS THE BLOW'S TOO. One flat `guard_block` meant a bite and a slam stopped on the same
+    // boards sounded identical, which is most of why a block read as "meh" — the parry has always had a
+    // voice of its own, and this is the other half of telling the two apart.
+    sfx.playAt(.guard_block, mathx.lerpF(BLOCK_VOICE_MIN, 1.0, w));
 }
+/// How quiet the lightest thing the boards ever stop is, against the heaviest.
+const BLOCK_VOICE_MIN: f32 = 0.55;
 
 fn allHits(g: *const Game) u32 {
     var n: u32 = 0;

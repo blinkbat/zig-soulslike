@@ -1027,7 +1027,6 @@ pub fn navPressed(dir: NavDir) bool {
 // THE LEFT STICK AS A WALK, and getting this wrong is a known genre of bug — a stick is a LEVEL where a walk
 // wants EDGES, so the naive reading fires a step every frame the stick is anywhere but centre. Four standard
 // pieces, all of them here:
-//
 //  1. A RADIAL magnitude, never per-axis. Testing the axes separately is the "snap to grid" mistake: the
 //     corner of the square passes at 0.62 on each axis while the true deflection is 0.88, so a lazy diagonal
 //     reads as a hard push.
@@ -1038,18 +1037,11 @@ pub fn navPressed(dir: NavDir) bool {
 //  4. A DEAD CONE AT THE DIAGONALS — **ON A LIST OR A GRID, WHICH IS THE ONLY PLACE IT BELONGS.** Inside 32°
 //     of an axis is that direction and outside it is nothing, because on a layout with four directions in it
 //     a 46° push is a push the player has not finished making.
-//
-// **AND A RADIAL LAYOUT TAKES THE THUMB'S OWN BEARING, NOT ONE OF FOUR** (owner: walking the passive tree with
-// the stick "feels horrible", and this is why). The wheel's three arms run out at 0, 120 and 240 degrees, so
-// almost nothing on it is reachable along a screen axis: from the middle the ring-0 nodes sit at ∓15°, 105°,
-// 135°, 225° and 255°, and every outward step along the two lower arms runs down a bearing near 216° or 96°.
-// Snapped to four directions and then gated by a 32° dead cone, the natural push — the thumb pointed AT the
-// node — landed in the cone and did NOTHING, twice out of three arms; what did work was pushing LEFT to reach
-// the arm drawn down-and-right. The direction you travel and the direction you push had no relation.
-//
-// So `radial` hands `passivetree.step` the thumb's own unit heading and lets the wheel's own wedge search
-// pick what lies along it (`STEP_CONE`, `STEP_BIAS` — the part that was already right). Point at a node, go to
-// that node. Nothing about the LIST path moves: a row list still gets its four directions and its dead cone.
+// **AND A RADIAL LAYOUT TAKES THE THUMB'S OWN BEARING, NOT ONE OF FOUR** (owner). The wheel's arms run out at
+// 0, 120 and 240 degrees, so almost nothing on it is reachable along a screen axis — snapped to four and then
+// gated by the dead cone, the natural push lands IN the cone and does nothing on two arms out of three. So
+// `radial` hands `passivetree.step` the thumb's own unit heading and the wheel's wedge search picks what lies
+// along it. Nothing about the LIST path moves: a row list keeps its four directions and its dead cone.
 const STICK_FIRE: f32 = 0.72;
 const STICK_REARM: f32 = 0.42;
 const STICK_CONE: f32 = 0.848; // cos 32° — the half-angle a push must sit inside to count as an AXIS

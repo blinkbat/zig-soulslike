@@ -17,43 +17,23 @@ const v3 = mathx.v3;
 const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
-// THE PLATE IS NEAR-BLACK, and that is the big-mass law rather than a taste call: a cuirass is the largest
-// sunward face on the creature, and anything mid-dark comes back off it pale (`albedo^(1/2.2)`). What breaks
-// it up is FORM — fluting, rivets, a shoulder line — never a lighter tone.
-// **THE IRON IS COLD, AND THE SEPARATION IS ALL HUE** — the ogre's own lesson, one creature along. Authored
-// at the world's neutral ironwork (`propart.IRON`, 30/28/26) the door SAMPLED at 144,126,102 against ground
-// at 117,107,91: barely a value apart and the same warm hue, so five metres of armour read as one more slab
-// of the cliffs behind it. Everything outdoors here is warm, so the one thing that separates a mass this
-// large is to be BLUE-BLACK. The value stays near-black; the rust is what keeps it from being a silhouette.
-// **AND THE SECOND PASS SOLVED IT AGAINST THE ASSEMBLED THING, WHICH IS WHERE IT WAS STILL WRONG** (owner: he
-// looks like a lego man). At 18/21/30 the cuirass SAMPLED at 84,83,87 and the door at 112,107,107 — a
-// twenty-eight point spread over the entire creature, every mass inside it, and the door reading WARMER
-// (R>B) than its own albedo because the sun here is. A body with no tonal range is a body with no form,
-// whatever the mesh underneath is doing, and a flat mass with rounded corners is a toy. Re-solved off those
-// samples through the chain's own measured constant (screen ~ 22.7 x albedo^(1/2.2) on his chest, ~30.3 on
-// the door, which faces the sun square): the field goes near-black and genuinely blue, and the range from
-// shadowed plate to caught rim now runs 43 -> 58 -> 80 -> 112 instead of 82 -> 108.
-// **AND THE THIRD PASS IS DARK GUNMETAL** (owner). At 8/11/24 the field was indigo — a B−R of sixteen
-// points reads as BLUE ARMOUR, which is a heraldic colour and a costume. Gunmetal is nearly neutral and
-// only just cool: it keeps everything the hue law was solved for (it separates hard from a warm world and
-// it stays under the ground) while reading as WORKED METAL rather than as paint. The value range is
-// untouched, because that part was right.
+// NEAR-BLACK AND ONLY JUST COOL. A cuirass is the largest sunward face on the creature, so anything mid-dark
+// comes back off it pale; what breaks it up is FORM, never a lighter tone. Everything outdoors here is warm,
+// so the hue is what separates a mass this large — but past a B−R of about sixteen points it reads as BLUE
+// ARMOUR, which is a costume. Gunmetal keeps the separation and still reads as worked metal.
+// Solved through the chain's measured constant: screen ~ 22.7 x albedo^(1/2.2) on the chest, ~30.3 on the
+// door, which faces the sun square. Shadowed plate to caught rim runs 43 -> 58 -> 80 -> 112.
 const IRON = rgba(13, 15, 20, 255);
 const IRON_LT = rgba(42, 46, 54, 255); // caught-light edges and rolled rims
 const IRON_MD = rgba(22, 25, 31, 255); // the mid tone bands and courses read against the field in
 const IRON_DK = rgba(6, 7, 10, 255); // the shadowed inside of a plate, and the seam between two
-/// HIS OWN RUST, SOLVED, not the world's. `propart.RUST` (58,38,24) is right on a prop's fleck and wrong on
-/// this creature: the door's rim capsules are 2.5 m long, and sampled off the render they came back at
-/// 178,129,83 — brighter and far warmer than the ground behind him (129,117,100) and than his own plate
-/// (109,107,109). That inverts the whole value hierarchy the plate was solved for, and it competes with the
-/// visor's ember, which nothing on him may do. Solved back down the chain (albedo x 1.72 -> gamma 1/2.2) to
-/// land near 120 on screen: still visibly rust, no longer trim.
+/// HIS OWN RUST, not the world's: the door's rim capsules are 2.5 m long, so `propart.RUST` lands at 178 on
+/// screen — over the ground behind him and over his own plate, which inverts the value hierarchy and competes
+/// with the visor's ember. Solved back down the chain to land near 120: still rust, no longer trim.
 const RUST = rgba(24, 16, 10, 255);
 const BRASS = rgba(66, 51, 22, 255); // fittings, gone dull
 const STRAP = rgba(34, 26, 19, 255);
-// THE BONE UNDERNEATH IS THE ARCHER'S, because it is the archer's body at four times the mass — and a second
-// copy of what old bone looks like is a second thing to retune. READ, not transcribed: written out here as
-// three literals two of them had already drifted a couple of points off the body they are supposed to be.
+// THE BONE UNDERNEATH IS THE ARCHER'S — the same body at four times the mass, READ rather than transcribed.
 const BONE = archermod.BONE;
 const BONE_DK = archermod.BONE_DK;
 const BONE_LT = archermod.BONE_LT;
@@ -188,16 +168,12 @@ const TOP_AT = v3(0, 0.088 * H, 0);
 
 // THE TOWER SHIELD. The creature IS this thing: everything else about him exists to make you walk round it.
 //
-// **IT IS WIDER THAN A MAN'S BOARDS AND IT DOES NOT BREAK** (owner's call). The shieldman's guard is a
-// stamina pool you empty and then punish; this one has no pool at all, because a shield that breaks turns
-// "get behind him" into "hit the front until it falls off", which is the fight this creature is not.
-/// **DERIVED OFF THE DOOR, NOT CHOSEN** (owner: the shield blocks attacks beyond its visual). At a flat 105
-/// deg either side he stopped blows arriving from 210 deg of the compass — three fifths of a circle — off a
-/// plank whose far edge, measured, subtends about 68. Blows that visibly sailed past the outside of the
-/// board were being eaten by it, which is the one thing a wall this important may never do: the player
-/// cannot learn a boundary he cannot see. It is now the half-angle the door's own widest chord subtends
-/// from his body axis, rounded down a hair so the picture is always at least as wide as the mechanic —
-/// if a bearing is in doubt the door does NOT get it. Widening the board widens the block, by construction.
+// **IT IS WIDER THAN A MAN'S BOARDS AND IT DOES NOT BREAK** (owner). No stamina pool at all: a shield that
+// breaks turns "get behind him" into "hit the front until it falls off", which is not this fight.
+/// **DERIVED OFF THE DOOR, NOT CHOSEN** (owner: it blocks attacks beyond its visual). The half-angle the
+/// door's widest chord subtends from his body axis, rounded DOWN so the picture is always at least as wide as
+/// the mechanic — a bearing in doubt does not get blocked. A boundary the player cannot see reads as cheating,
+/// and widening the board now widens the block by construction.
 const TOWER_ARC = towerArc();
 fn towerArc() f32 {
     // The wider chord against how far the door's FACE actually stands in front of his body axis — a real
@@ -259,14 +235,12 @@ const FALL_SECTOR = 44.0;
 /// so he squares up properly first and turning is what he does instead.
 const SWING_BEARING = 24.0;
 
-// ============================================================================================
 // HIS POSES, AND THE MOVES AS SEQUENCES OF THEM.
 //
 // Everything below replaces pairs of `WIND_*`/`HIT_*` constants lerped by one `k`. A move is now a
 // list of KEY POSES on a 0..1 clock that runs across the WHOLE move — wind, strike and recover as one
 // track — which also retires the three-functions-that-must-agree-at-the-seams problem: `setSweepWind`
 // ended where `setSweep` began only because someone kept them in step by hand.
-// ============================================================================================
 
 const Chan = [Knight.CHAN_N]f32;
 
@@ -384,18 +358,11 @@ const Attack = struct {
     /// What the gather TELLS the player it is worth. A test pins it against the row's own damage, so a move
     /// can never quietly advertise itself as something it is not — which is the whole failure this fixes.
     weight: Weight,
-    /// **HOW FAR OFF SQUARE THIS MOVE MAY BE THROWN** (owner: make his front-facing attacks cover more of
-    /// his front, it is too easy to just be in front of his shield).
-    ///
-    /// It used to be ONE number for the whole kit (`SWING_BEARING`, 24 deg) plus a special case for the
-    /// sweep — so standing thirty or forty degrees off his nose, still squarely in front of the door and
-    /// well inside the arc it blocks, was answered by nothing at all. That is the safest place on the board
-    /// being the one directly in front of the boss.
-    ///
-    /// It is per-move now, because the honest limit is per-move: what a stroke may be aimed at is what its
-    /// own kit actually sweeps. The BASH keeps the tight door (`SH_RAM_HALF` subtends 26 deg at the range it
-    /// arrives, and a ram thrown wider is a ram thrown at nothing), while the SWORD moves get the front they
-    /// can genuinely reach across.
+    /// **HOW FAR OFF SQUARE THIS MOVE MAY BE THROWN** (owner: his front-facing attacks must cover his front).
+    /// PER MOVE, because the honest limit is what that stroke's own kit sweeps: the BASH keeps the tight door
+    /// (`SH_RAM_HALF` subtends 26 deg at the range it arrives, and a ram thrown wider is thrown at nothing),
+    /// while the SWORD moves get the front they can genuinely reach across. One number for the whole kit left
+    /// the safest square on the board directly in front of the boss.
     bearing: f32,
 };
 
@@ -613,30 +580,19 @@ const CHAOS_BLAST = struct {
     .hit = .{ .dmg = 9, .poise = 18, .stance = 5, .elem = combat.elems(.{ .chaos = 11 }) },
 };
 
-// **AND THE HEAVY ONES LEAVE SOMETHING STANDING** (owner: some phase-two attacks leave a lasting cloud of
-// chaos gas that damages). The blast is instantaneous and answers "where you are when it lands"; this
-// answers "where you may STAND afterwards", which is the half of the phase the blast could not reach. A
-// stroke that misses still fouls the ground it hit, so the second half of the fight is fought on a floor
-// that keeps shrinking.
+// **THE HEAVY ONES LEAVE SOMETHING STANDING** (owner's phase two). The blast taxes where you ARE; this taxes
+// where you may STAND, so a stroke that missed still fouls the ground it hit.
 //
-// **WHICH ATTACKS IS THE `Weight` RULE, NOT A LIST.** The gather's FIRE already tells the player heavy from
-// light before the blow arrives ("fire means get out"), so what leaves gas is what showed fire: the heavy
-// and crushing SWORD strokes, and the SLAM's crater. A list would be a second thing to learn; this is the
-// thing they already learned, one consequence further on. The SWAT, the THRUST and the BASH are `.light` and
-// leave nothing, which is what keeps stepping in to punish them a real option.
-//
-// **THE FALL AND THE CHARGE ARE EXCLUDED ON PURPOSE** even though both show the crusher's fire: each is
-// already a position-denial move whose entire counter is ground — the roll out of the strip, the sidestep
-// off the line — and fouling the ground they end on taxes the answer the move itself demands. The rule is
-// "what showed fire and STOPPED somewhere", which is why the slam is in and the two travelling ones are not.
+// **WHICH ATTACKS IS THE `Weight` RULE, NOT A LIST** — what leaves gas is what showed FIRE on the gather,
+// which is the tell the player has already learned. The FALL and the CHARGE are excluded though both show it:
+// each is a position-denial move whose counter IS ground, so fouling where it ends taxes its own answer. The
+// rule is "what showed fire and STOPPED somewhere".
 pub const GAS_LIFE: f32 = 4.2;
 /// The fraction of that life it HANGS at full before it starts going out. Past this it thins on every
 /// channel at once (`fade`).
 const GAS_HANG: f32 = 0.42;
-/// Pre-scale, and DELIBERATELY under the blast's own reach — it arrives late: the disc is the tax for being
-/// there, this is the tax for staying. **AND SMALLER THAN THE FIRST PASS** (owner: a bit big and hard to
-/// read): at 1.35 two clouds covered the ground you fight him on, and a hazard you cannot walk out of is not
-/// a hazard, it is a smaller arena nobody was told about.
+/// Pre-scale, and DELIBERATELY under the blast's own reach: the disc is the tax for being there, this is the
+/// tax for staying. A hazard you cannot walk out of is not a hazard, it is a smaller arena.
 pub const GAS_R: f32 = 1.00;
 const GAS_GROW: f32 = 0.40;
 /// **THREE, NOT FIVE.** The cap is what the ground looks like at worst, not a pool size: five overlapping
@@ -650,15 +606,9 @@ const GAS_DOSE_EVERY: f32 = 0.55;
 const GAS_HIT = combat.Hit{ .dmg = 6, .poise = 0, .stance = 0, .elem = combat.elems(.{ .chaos = 8 }) };
 /// No poise and no stance ON PURPOSE: a hazard that staggers is a hazard that can kill you while you are not
 /// allowed to move, and the counter to standing in gas has to be walking out of it.
-/// **IT HAS TO BE A VOLUME, NOT A SPARKLE** (the sporeling's lesson, one creature along). Routed through
-/// `elemfx.gather` the first pass drew chaos's own mote — life 0.2 s, radius 0.02 — which is a SPARK, the
-/// right thing for a charge collecting on a blade and useless as weather: about sixteen specks alive at once
-/// over a metre and a third of ground, which is a hazard with nothing there to not walk into. The motion and
-/// the colour stay chaos's; the SIZE and the DWELL are the cloud's, because that is what a volume is made of.
-/// …AND A VOLUME IS NOT A WALL OF BEACH BALLS EITHER. Chaos's own mote is authored at alpha 210 because a
-/// spark is meant to be a bright hard point; at cloud SIZE that same alpha is an opaque sphere, and sixty of
-/// them buried the boss the player is supposed to be reading. So the hue is still chaos's and only the
-/// DENSITY is the cloud's — which is the same distinction `GAS_PUFF_*` draws for the dwell.
+/// **A VOLUME, NOT A SPARKLE — AND NOT A WALL OF BEACH BALLS.** The motion and the hue stay chaos's; the
+/// SIZE, the DWELL and the DENSITY are the cloud's. Chaos's own mote is alpha 210 because a spark is a bright
+/// hard point, and at cloud size that same alpha is an opaque sphere that buries the boss behind it.
 const GAS_ALPHA: u8 = 104;
 const GAS_RATE: f32 = 68.0;
 const GAS_PUFF_LO: f32 = 1.15;
@@ -710,9 +660,12 @@ pub const Gas = struct {
         return self.live and self.t < GAS_LIFE and mathx.distXZ(self.pos, p) <= self.radius();
     }
     pub fn update(self: *Gas, dt: f32) void {
+        // BEFORE the live gate (`brood.Pool.update`'s rule): a puff laid on the cloud's last frame still has
+        // up to `GAS_PUFF_HI` to run, and a pool nobody ticks again is one frozen in the air until the slot
+        // is reused — three heavy strokes away, or never.
+        foe.tickParticles(&self.parts, dt, self.pos.y);
         if (!self.live) return;
         self.t += dt;
-        foe.tickParticles(&self.parts, dt, self.pos.y);
         if (self.t >= GAS_LIFE) {
             self.live = false;
             return;
@@ -756,18 +709,13 @@ pub const Gas = struct {
     }
 };
 
-// **THE LEAP — HE LEAVES THE GROUND TO GET HIS FRONT BACK** (owner: give him a leap he can use to quickly
-// turn and face you; he jumps up and away facing you).
+// **THE LEAP — HE LEAVES THE GROUND TO GET HIS FRONT BACK** (owner's). The pivot step answers a flank on the
+// ground; this answers having ALREADY lost the argument — caught with his back to you and nothing gathered,
+// he coils, bounds away, turns in the air and lands squared. It re-faces and re-spaces in one beat.
 //
-// The pivot step is how he answers a flank on the ground, and it is deliberately slow enough to be beaten by
-// somebody who keeps moving. This is the answer to having ALREADY lost the argument: caught with his back to
-// you and nothing gathered, he coils and BOUNDS AWAY, turning in the air, and lands squared up with a body's
-// length of new ground between you. It re-faces and it re-spaces in one beat.
-//
-// **AND IT COSTS HIM THE THING HE WANTS MOST, WHICH IS BEING NEAR YOU.** He gives up his own reach to use
-// it, so a player who reads the coil gets a free approach instead of a punish — that is the trade, and it is
-// what stops a get-out-of-jail move from being strictly good. It is also a LEAP in the roots' sense
-// (`foe.canLeap`): a creature held by the ankles cannot leave the earth, which is the wand's whole argument.
+// **AND IT COSTS HIM HIS OWN REACH**, so reading the coil buys a free approach rather than a punish — which is
+// what stops a get-out-of-jail move being strictly good. A LEAP in the roots' sense (`foe.canLeap`): a
+// creature held by the ankles cannot leave the earth.
 const LEAP = struct {
     windDur: f32, // the coil — deep, and the one frame that says it is coming
     flightDur: f32,
@@ -794,16 +742,12 @@ const LEAP = struct {
 // **THE STEP-TURN — HE PROTECTS HIS SIDES, AGGRESSIVELY** (owner: he needs to step aggressively and turn
 // fast; step-turn; he needs to protect his sides more aggressively).
 //
-// A continuous yaw at 33 deg/s was the only thing he had to say about somebody standing off his shoulder,
-// so the flank band spent most of its returns on `.wait` — he rotated like a lamp post while you hit him,
-// which is not a boss defending itself, it is scenery. This is how a man carrying five metres of armour
-// ACTUALLY changes which way he is pointing: he plants the near foot, drives off the far one and swings his
-// whole mass round in one committed beat.
+// How a man carrying five metres of armour ACTUALLY changes which way he is pointing: plant the near foot,
+// drive off the far one, swing the whole mass round in one committed beat.
 //
-// **IT IS NOT A TURN-RATE BUFF.** Between step-turns he is as out-turned as he ever was, so the flank is
-// still real and still the way in — what has gone is being able to hold it standing still. And it costs
-// him: it is a commitment with a plant you can hear, a cooldown, and no blow on the end of it, so a player
-// who keeps MOVING makes him spend it and then owns the side he steps away from.
+// **IT IS NOT A TURN-RATE BUFF.** Between step-turns he is as out-turned as ever, so the flank is still real
+// — what has gone is holding it standing still. It costs him a plant you can hear, a cooldown and no blow on
+// the end, so a player who keeps MOVING makes him spend it and then owns the side he stepped away from.
 const STEPTURN = struct {
     windDur: f32, // the load onto the plant foot — short, but it is a tell
     turnDur: f32, // …and the drive round
@@ -1094,7 +1038,6 @@ const OVR_HIT_EL = -8.0; // own boots mid-swing (y -0.75 at z 1.2) and then ENDE
 const OVR_HIT_LEAN = 32.0; // the waist pays the last of it
 const OVR_HIT_TWIST = 10.0;
 
-// ============================================================================================
 // THE STROKES, AS SEQUENCES OF POSES.
 //
 // Each was two constants and a curve. Read the key lists as an animator's track: the gather LOADS (and
@@ -1103,7 +1046,6 @@ const OVR_HIT_TWIST = 10.0;
 // stroke does not stop where it lands. The `.snap` ease is the two-to-four active frames the reference
 // measures; the `.hold` is a bait; the extra key just past the strike is the FOLLOW-THROUGH, which is
 // the single thing whose absence made all of this read as a mannequin being posed.
-// ============================================================================================
 
 const SWEEP_KEYS = MoveKeys{
     .wind = &.{
@@ -1618,6 +1560,21 @@ pub const THRUST_I = 2;
 pub const BASH_I = 3;
 pub const SWEEP2_I = 4;
 pub const SWAT_I = 5;
+
+comptime {
+    // **THE INDICES ARE PINNED TO THE ROWS THEY NAME.** They are hand-written ordinals mirroring `MOVES`'
+    // ORDER, and every one of `keysFor`, `routeFor`, `windState`, `cdSlot`, `blowOf`, the `cds` array and
+    // `takeParry`'s SWEEP2→SWEEP chain resolves through them — so inserting a seventh stroke anywhere but the
+    // end, or reordering the table, silently re-points the whole kit and still compiles. `FOE_GROUPS`'
+    // arrangement in `game.zig`: a table that cannot be derived is cross-checked against the one it mirrors.
+    const named = .{ .{ SWEEP_I, SWEEP }, .{ OVER_I, OVERHEAD }, .{ THRUST_I, THRUST }, .{ BASH_I, BASH }, .{ SWEEP2_I, SWEEP2 }, .{ SWAT_I, SWAT } };
+    if (named.len != MOVES.len) @compileError("knight: MOVES and the *_I indices disagree on how many strokes there are");
+    for (named) |row| {
+        if (!std.meta.eql(MOVES[row[0]], row[1])) @compileError("knight: a *_I index no longer names its own row of MOVES");
+    }
+    // …and `classify` only ever picks out of the FIRST `CHOOSE_N`, so the chain-only strokes must sit past it.
+    std.debug.assert(CHOOSE_N <= MOVES.len and SWEEP2_I >= CHOOSE_N and SWAT_I >= CHOOSE_N);
+}
 /// …and only the first four are `classify`'s to pick: the second sweep exists as a chain — off a finished
 /// sweep (the Sentinel's delayed double) or off a thrust (its documented quick-swing follow-up).
 const CHOOSE_N = 4;
@@ -1703,7 +1660,9 @@ const PLANT_IN: f32 = 0.30;
 /// that arrived: the body going over is still the biggest thing that happens, and nothing may outrank it.
 const QUAKE_FALL: f32 = 0.46;
 const QUAKE_CRATER: f32 = 0.40;
-const QUAKE_CHARGE: f32 = 0.34;
+/// The charge has no landing of its own on this ladder: what it hits arrives through `heroTakes` as a blow,
+/// and what it MISSES is the skid below. A `QUAKE_CHARGE` sat here unused, which read as a row nobody had
+/// wired rather than as a move the ladder deliberately does not cover.
 const QUAKE_BRAKE: f32 = 0.24;
 const QUAKE_SWEEP: f32 = 0.20;
 const QUAKE_OVER: f32 = 0.30; // the blade ENDS in the earth — this one is a landing, not a swing
@@ -1829,21 +1788,12 @@ fn classify(dist: f32, bearingDeg: f32, scale: f32, fallReady: bool, slamReady: 
         if (circling and ready[SWAT_I] and dist <= triggerR(MOVES[SWAT_I], scale) * SWAT_ORBIT_BAND) {
             return .{ .what = .strike, .mv = SWAT_I };
         }
-        // **AND THE SHIELD SIDE IS NOT A FREE LAP EITHER** (owner: no shield-side danger, you can circle
-        // freely; he needs to fuck with you on that side). The shove used to be the SWORD side's alone, on
-        // the reasoning that the door is already over here so there is nothing to buy. That reasoning was
-        // about DEFENCE and the player is asking about THREAT: a wall between you and him is a thing that
-        // stops blows, not a thing that throws them, so the one flank he was best equipped to punish was the
-        // one flank nothing came out of. It is the same row and the same window either way; what differs is
-        // where the door goes — ACROSS his front onto the sword side, or OUT along the shield side.
-        // **AND IT FIRES ON PRESENCE ON BOTH SIDES** (owner, after playing it: still too easy to hug the
-        // shield side). Buying it with DAMAGE over there was too quiet a rule — a player who parks on that
-        // flank and takes his openings patiently never trips it, which is exactly the lap being complained
-        // about. Standing there is enough now, and on that side the haul is SHORT (`SHOVE_SHIELD_WIND`).
-        // …AND IT ANSWERS FOR ITS OWN FRONT LIKE EVERYTHING ELSE (`FLANK_BEARING`, the widest thing he
-        // throws). The shove never carried a bearing cap: sword-side-only hid it, because the test bearings
-        // that would have exposed it were all on the shield side. Firing it on both shoulders surfaced a
-        // door thrown at 110 deg off his nose, which is a promised miss — the ogre's law, one creature over.
+        // **NEITHER SHOULDER IS A FREE LAP** (owner). A wall between you and him stops blows, it does not
+        // throw them, so the flank he was best equipped to punish from was the one nothing came out of. Same
+        // row and window either way; what differs is where the door goes — ACROSS his front onto the sword
+        // side, or OUT along the shield side, where the haul is SHORT (`SHOVE_SHIELD_WIND`). It fires on
+        // PRESENCE on both, and it answers for its own front like everything else (`FLANK_BEARING`): a door
+        // thrown past that is a promised miss.
         if (b <= FLANK_BEARING and ready[BASH_I] and dist <= triggerR(MOVES[BASH_I], scale) * SHOVE_BAND) {
             return .{ .what = .strike, .mv = BASH_I, .shove = true, .shoveShield = shieldSide };
         }
@@ -3446,7 +3396,7 @@ pub const Knight = struct {
         // The move goes on its own cooldown though it never finished: the kit has to be gathered again, or he
         // walks out of the stumble straight into the stroke he was just denied. A caught SECOND sweep bills
         // the first's clock — the chain is one move as far as the rest of the fight is concerned.
-        self.cds[if (self.atk == SWEEP2_I) SWEEP_I else self.atk] = self.move().cd;
+        self.cds[self.cdSlot()] = self.move().cd;
         // THE SWING VISIBLY STARTS (the ogre's rule): caught in the last instant of a WIND, a plain stun ate
         // the whole stroke and he reeled off a blade that never moved — a parry on empty air.
         switch (self.state) {
@@ -3527,18 +3477,12 @@ pub const Knight = struct {
     /// **HE ANSWERS A FLANK BLOW HE SHRUGGED OFF** (owner: react very strongly to side attacks; more
     /// countering, less slow rotating).
     ///
-    /// It reads a blow that has ALREADY LANDED ON HIS OWN BODY and the bearing it came from — world state
-    /// that any body standing there could feel — so it is the NO INPUT READING law observed, exactly as the
-    /// door's guard counter is. It never reads a swing, a roll, a flask or a press.
+    /// It reads a blow that ALREADY LANDED ON HIS OWN BODY and the bearing it came from — world state, so the
+    /// NO INPUT READING law is observed. It never reads a swing, a roll, a flask or a press.
     ///
-    /// Which answer he picks is WHERE you hit him, and both are things he already owns:
-    ///   - on either shoulder, the SWAT — his fastest move, and it comes back down the line the blow came
-    ///     from with the picture that side calls for.
-    ///   - on his SPINE, where a flick reaches nothing, the LEAP — he buys ground and lands facing you.
-    ///
-    /// Clocked (`counterCd`), refused out of anything committed, and refused outright if the blow staggered
-    /// him — an earned stagger is never taken back. That is what keeps it a punish for being careless on his
-    /// flank rather than a creature that cannot be hit.
+    /// WHERE you hit him picks the answer: either shoulder gets the SWAT back down the line, his SPINE gets
+    /// the LEAP. Clocked, refused out of anything committed, and refused outright if the blow STAGGERED him —
+    /// an earned stagger is never taken back.
     fn counterFlank(self: *Knight, s: foe.Strike) void {
         if (self.counterCd > 0 or self.floored()) return;
         switch (self.state) {
@@ -3546,7 +3490,10 @@ pub const Knight = struct {
             else => return, // never out of a committed stroke, a gather, a charge or a stun
         }
         const from = mathx.headingXZ(mathx.scaleV(s.dir, -1));
-        const b = @abs(mathx.degrees(mathx.wrapPi(from - self.facing)));
+        // Taken ONCE and signed: WHICH side is the sign and HOW FAR ROUND is the magnitude, and the two were
+        // being derived from the same expression written out twice.
+        const off = mathx.degrees(mathx.wrapPi(from - self.facing));
+        const b = @abs(off);
         if (b <= TOWER_ARC) return; // it landed on his FRONT — that is the door's business, not this
         self.counterCd = COUNTER_CD * self.aiRng.range(0.85, 1.2);
         if (b >= 180.0 - FALL_SECTOR and self.leapCd <= 0 and foe.canLeap(&self.root)) {
@@ -3560,7 +3507,7 @@ pub const Knight = struct {
         // PIVOT STEP everything else uses, and the swat is CHAINED off its end (`stepThen`) — so the answer
         // is a real two-beat move you can see coming and step out of, and the ground he covers to make it
         // is ground you can use.
-        self.swatShield = mathx.degrees(mathx.wrapPi(from - self.facing)) > 0;
+        self.swatShield = off > 0;
         self.stepThen = SWAT_I;
         self.stepCd = STEPTURN.cd * self.aiRng.range(0.85, 1.25);
         self.enter(.stepturn);
@@ -4194,8 +4141,9 @@ pub const Knight = struct {
         }
     }
     fn chips(self: *Knight, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
+        const parts = foe.hitParts(n); // the field's one dial (`foe.HIT_PARTS`)
         var i: i32 = 0;
-        while (i < n) : (i += 1) {
+        while (i < parts) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(0.4, 1.0) * spd;
             self.emit(
@@ -5956,6 +5904,13 @@ test "the gas DOSES on its own clock, re-arms when he steps out, and thins to no
     while (t < GAS_LIFE + 0.5) : (t += 1.0 / 60.0) v.gas[0].update(1.0 / 60.0);
     try std.testing.expect(!v.gas[0].covers(at));
     try std.testing.expect(v.gasDose(1.0 / 60.0, at) == null);
+
+    // …AND ITS LAST PUFFS GO OUT WITH IT. `drawFx` draws the pool whether or not the cloud is live, and a
+    // mote laid on the last frame carries up to `GAS_PUFF_HI` — gated behind `live` the pool stopped being
+    // ticked here and hung in the air until a third heavy stroke recycled the slot.
+    t = 0;
+    while (t < GAS_PUFF_HI + 0.05) : (t += 1.0 / 60.0) v.gas[0].update(1.0 / 60.0);
+    for (v.gas[0].parts) |p| try std.testing.expect(p.life <= 0);
 }
 
 test "THE SWIPE-AND-LEAP — one beat, not two, and only ever off a flank" {

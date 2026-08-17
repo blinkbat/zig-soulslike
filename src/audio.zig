@@ -445,8 +445,8 @@ pub const Id = enum {
     stagger,
     guard_block,
     /// YOUR blow stopped on somebody else's boards. `guard_block` is the hero's own shield eating a blow —
-    /// the opposite event — and hearing the same voice for both is why a swing that achieved nothing sounded
-    /// exactly like a swing that saved you.
+    /// the opposite event — and one voice for both makes a swing that achieved nothing sound like one that
+    /// saved you.
     foe_guarded,
     knight_repel,
     guard_break,
@@ -904,12 +904,10 @@ fn mkGuardBlock(r: *Rack) void {
     r.master(1.6, 4200);
 }
 
-/// **THE TOWER SHIELD TURNING A BLOW** (owner: it needs a better shield repel sound). `guard_block` is a
-/// MAN's boards — a bright tick and a short high ring — and on four and a half metres of plank and iron it
-/// read as a coin dropped on a table. This is the same event on a wall: almost no tick, a deep body that
-/// takes its time, the dead THUD of a struck board under it, and the ring dropped two octaves so what comes
-/// back is the mass and not the edge. Longer and darker than anything else in the block family, because
-/// what the player has to hear is that this one did not care.
+/// **THE TOWER SHIELD TURNING A BLOW** (owner: it needs a better shield repel sound). The same event as
+/// `guard_block` on a WALL rather than a man's boards: almost no tick, a deep body that takes its time, and
+/// the ring dropped two octaves, so what comes back is the mass and not the edge. Longer and darker than
+/// anything else in the block family — what the player has to hear is that this one did not care.
 fn mkKnightRepel(r: *Rack) void {
     r.tick(0.0, 0.16, 1900);
     r.body(0.0, 0.30, 104, 44, 1.15, 2.8); // the plank itself, struck
@@ -920,11 +918,10 @@ fn mkKnightRepel(r: *Rack) void {
     r.master(2.2, 2600);
 }
 
-/// **YOUR BLOW STOPPED DEAD ON SOMEBODY'S BOARDS** (owner: we need a distinct sound any time your attack is
-/// blocked by a shield — any shield, or shield-like). It is a REFUSAL and it has to be unmistakable against
-/// the two things it is not: a hit that landed, and the hero's own guard eating a blow. So it is built
-/// backwards from a hit — the transient is DULL rather than bright, there is no meat under it, and it dies
-/// almost at once. What is left is the sound of a swing that achieved nothing, which is the information.
+/// **YOUR BLOW STOPPED DEAD ON SOMEBODY'S BOARDS** (owner: a distinct sound any time your attack is blocked
+/// by a shield). It has to be unmistakable against the two things it is not — a hit that landed, and the
+/// hero's own guard eating a blow — so it is built backwards from a hit: the transient DULL rather than
+/// bright, no meat under it, and dead almost at once.
 fn mkFoeGuarded(r: *Rack) void {
     r.tick(0.0, 0.30, 2100); // low and woody: wood and hide, not an edge finding bone
     r.body(0.0, 0.11, 148, 66, 0.75, 4.4);
@@ -2748,9 +2745,8 @@ const Call = struct {
 };
 
 // WHERE A CALL COMES FROM IS WHAT SETS HOW LOUD IT IS: `world` fades over `reach` as `k²`, so the distance
-// band IS the volume band, and a wood you hear one flat level of birdsong in is a wood with a speaker in it.
-// The hour is the other half — the bird rows are left far under at night but never silenced, since a bird
-// that stops dead at sunset is a switch. The OWL is left alone; it already reads as a night voice.
+// band IS the volume band. The hour is the other half — the bird rows are left far under at night but never
+// silenced, since a bird that stops dead at sunset is a switch. The OWL already reads as a night voice.
 const CALLS = [_]Call{
     .{ .id = .birds, .gapLo = 6, .gapHi = 17, .distLo = 12, .distHi = 150, .first = 4, .hour = .{ .atNoon = 1.0, .atNight = 0.22 } },
     .{ .id = .birdsong, .gapLo = 7, .gapHi = 20, .distLo = 14, .distHi = 155, .first = 9, .hour = .{ .atNoon = 1.0, .atNight = 0.22 } },

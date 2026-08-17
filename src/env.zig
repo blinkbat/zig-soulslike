@@ -21,7 +21,6 @@ pub const PLAY_INSET: f32 = 2.0;
 pub const MAX_HALF: f32 = GRID_HALF + CELL - RIM_OUT - CLIFF_BOUND;
 
 comptime {
-    // …AND THE LOADER REFUSES ANYTHING BIGGER.
     std.debug.assert(MAX_HALF >= wf.MAX_DECLARED_HALF);
 }
 /// The cliff mesh's own bounding radius, which sticks out past the rim it is placed on.
@@ -50,24 +49,22 @@ const SHADOW_BOX: f32 = gfx.SHADOW_ORTHO * HALF_DIAG;
 const LIGHT_REACH: f32 = 90.0;
 
 // THE OCCLUDERS — the props the camera has to see the hero THROUGH, thinned by the shader's sieve.
-/// How many instances the fade can have IN FLIGHT — the ones thinning plus the ones easing back, which is
-/// why it is larger than any sight line needs. Full, and the THINNEST ASK TAKES A SLOT OFF SOMETHING STILL
-/// SOLID (`wantFade`): first-come at 16 meant the trunk squarely over his head lost to the cell walk.
+/// How many instances the fade can have IN FLIGHT — thinning plus easing back, so larger than any sight
+/// line needs. Full, and the THINNEST ASK TAKES A SLOT OFF SOMETHING STILL SOLID (`wantFade`).
 pub const OCCL_MAX = 64;
-/// Seconds to reach the thinness the geometry is asking for, and to come back from it. OUT IS SLOWER on
-/// purpose: a trunk hardening back to solid over the hero is the uglier half of the transition, and the
-/// eye forgives a lag in getting out of the way far more readily than a pop into it.
+/// Seconds to reach the thinness the geometry asks for, and to come back. OUT IS SLOWER on purpose: the eye
+/// forgives a lag in getting out of the way far more readily than a pop into it.
 const OCCL_IN: f32 = 0.16;
 const OCCL_OUT: f32 = 0.34;
-/// Where a fade is near enough to solid to go down the opaque path: the blend is indistinguishable there and
-/// the prop is better off writing depth like everything else. Below it, `drawThinned` owns it.
+/// Where a fade is near enough to solid to go down the opaque path and write depth with everything else.
+/// Below it, `drawThinned` owns it.
 const FADE_SOLID: f32 = 0.999;
 // Raw GL factors for `drawThinned`'s depth-only pass; rlgl takes them unwrapped.
 const GL_ZERO: i32 = 0;
 const GL_ONE: i32 = 1;
 const GL_FUNC_ADD: i32 = 0x8006;
-/// How fast the ramp runs where the value already sits: full speed across the middle of the travel, down to
-/// this share of it at solid and at the floor. Never 0, or a fade would never leave either end.
+/// How fast the ramp runs where the value already sits: full speed across the middle, down to this share at
+/// solid and at the floor. Never 0, or a fade would never leave either end.
 const EASE_ENDS = 0.3;
 fn easeAt(u: f64) f64 {
     return EASE_ENDS + (1.0 - EASE_ENDS) * 4.0 * u * (1.0 - u);
@@ -86,21 +83,20 @@ const EASE_NORM: f32 = blk: {
 /// A thinned occluder NEVER disappears: you must still be able to tell a tree is there.
 const OCCL_FLOOR: f32 = 0.28;
 /// HOW MUCH OF HIM IT HAS TO HIDE BEFORE IT THINS AT ALL (owner's rule). A COVERAGE FIGURE AND NOTHING
-/// ELSE: with the depth ramp multiplied in first, a mass right in front of him was discounted under the
-/// threshold and stayed solid at the one moment it was in the way.
+/// ELSE: with the depth ramp multiplied in first, a mass right in front of him is discounted under the
+/// threshold and stays solid at the one moment it is in the way.
 const OCCL_MIN: f32 = 0.15;
-/// …and where it is as thin as it gets. Between the two it eases on its own as the camera swings,
-/// which is what leaves the whole thing stateless.
+/// …and where it is as thin as it gets. Between the two it eases as the camera swings, which is what
+/// leaves the whole thing stateless.
 const OCCL_FULL: f32 = 0.55;
 /// The hero's own screen box, in metres — what "a share of him" is measured against.
 const HERO_HALF_W: f32 = 0.42;
 const HERO_HALF_H: f32 = 0.90;
-/// How far past its own collider a standing mass still blocks the view — the bark it does not collide
-/// with and the slack that keeps the fade from snapping on at the edge. ONLY FOR KINDS WITH NO `occl`
-/// LIST: a fixed skirt cannot describe a canopy, which is why the trees carry their own volumes now.
+/// How far past its own collider a standing mass still blocks the view. ONLY FOR KINDS WITH NO `occl`
+/// LIST: a fixed skirt cannot describe a canopy, which is why the trees carry their own volumes.
 const OCCL_SKIRT: f32 = 0.9;
 /// …and the fallback for a fadeable kind with NO colliders: a share of its bound, since the bound is a
-/// canopy's whole spread and a leaf nine metres off the sight line is not in the way of anything.
+/// canopy's whole spread and a leaf nine metres off the sight line is in nobody's way.
 const OCCL_GIRTH: f32 = 0.55;
 /// How far outside the sight line's own box an occluder's centre can sit — one cell covers the widest
 /// canopy in the table at any scale the editor is likely to stamp.
@@ -126,8 +122,8 @@ pub const STEP_UP: f32 = 0.55;
 pub const STEP_PROBE: f32 = 0.5;
 
 /// HOW DEEP ANYTHING ON FOOT MAY WADE, in metres — CHEST HEIGHT (owner's call), the thorax at 0.760·H on
-/// the 1.8 m rig. Past it the water is a WALL: there is no swimming and no drowning yet. Written out rather
-/// than read off `hero.H` because env sits BELOW hero in the import graph and stays there.
+/// the 1.8 m rig. Past it the water is a WALL. Written out rather than read off `hero.H` because env sits
+/// BELOW hero in the import graph and stays there.
 pub const WADE_MAX: f32 = 1.37;
 
 /// `foe.HERO_R`, written out for `WADE_MAX`'s reason and PINNED in `game.zig`, which can see both ends.
@@ -152,12 +148,9 @@ var scratchOut: [wf.WATER_CELLS]f32 = undefined;
 pub const WATER_FACET: f32 = 3.6;
 
 /// **HOW FAR THIS SHAPE MOVES THE WATERLINE AT THIS POINT, in metres**, positive pushing the water outward.
-/// The coast's own share of `wf.Edge`, and it is the same eight names the soil uses because they are the
-/// same eight questions — but the answers are a coastline's, not a floor's.
 ///
 /// **NOTHING UNDER ABOUT 0.7 m DOES ANYTHING.** The distance transform is quantised to whole cells, so no
-/// cell is nearer the line than half a cell (1.25 m here) and a warp smaller than that can never flip one.
-/// That is why these are metres and not the soil's sub-metre wobbles.
+/// cell is nearer the line than half a cell (1.25 m here) and a smaller warp can never flip one.
 fn coastWarp(e: wf.Edge, x: f32, z: f32) f32 {
     return switch (e) {
         // A shore you cannot find the edge of. No warp — the width is `coastBand`'s say, not this one's.
@@ -175,9 +168,8 @@ fn coastWarp(e: wf.Edge, x: f32, z: f32) f32 {
         .tiled => tiledCoast(x, z),
         // Regular bays, the one shape here that is deliberate rather than noisy.
         .scallop => (mathx.sinf(x * 0.34) + mathx.sinf(z * 0.34)) * 2.3,
-        // A boggy fringe that breaks into separate pools — the tarn's own look, made authorable. The
-        // high-frequency term is what detaches them, and it is why this is the one shape that may
-        // legitimately disconnect water where every other one must not.
+        // A boggy fringe that breaks into separate pools. The high-frequency term is what detaches them,
+        // and this is the one shape that may legitimately disconnect water where every other must not.
         .speckle => (vnoise2(x / 3.0 + 21.0, z / 3.0 - 17.0) - 0.5) * 8.0 - 1.4,
     };
 }
@@ -188,8 +180,7 @@ fn tiledCoast(x: f32, z: f32) f32 {
     const g = WATER_FACET;
     const sx = x / g - @floor(x / g);
     const sz = z / g - @floor(z / g);
-    // Distance to the nearer lattice line on each axis, pushed to whichever is closer — the line lands ON
-    // the lattice instead of wherever the painted disc happened to stop.
+    // Distance to the nearer lattice line on each axis, pushed to whichever is closer.
     const dx = (0.5 - @abs(sx - 0.5)) * g;
     const dz = (0.5 - @abs(sz - 0.5)) * g;
     return -@min(dx, dz);
@@ -211,13 +202,12 @@ fn coastBand(e: wf.Edge) f32 {
     };
 }
 
-/// **THE COAST IS FACETED, NOT SMOOTHED** (owner: more of a low poly look). A bilinear field's iso-contour
-/// is a CURVE; resampled onto a TRIANGULAR lattice the field is piecewise PLANAR, and a planar contour
-/// inside a triangle is a STRAIGHT LINE — so the waterline comes out a polyline with corners.
+/// **THE COAST IS FACETED, NOT SMOOTHED** (owner: more of a low poly look). Resampled onto a TRIANGULAR
+/// lattice the field is piecewise PLANAR, and a planar contour inside a triangle is a STRAIGHT LINE.
 ///
 /// **BAKED INTO THE FIELD, NOT DONE IN THE SHADER.** One field feeds the sheet, the wet sand and
-/// `wadeDepth`'s wading, so faceting in the fragment shader would be a coast you SEE in one place and
-/// WALK INTO in another, up to half a facet apart.
+/// `wadeDepth`, so faceting in the fragment shader is a coast you SEE in one place and WALK INTO in
+/// another, up to half a facet apart.
 fn facetWater(field: *[wf.WATER_CELLS]u8, half: f32) void {
     const N = wf.WATER_N;
     if (!(half > 0)) return;
@@ -226,8 +216,7 @@ fn facetWater(field: *[wf.WATER_CELLS]u8, half: f32) void {
     const facet = @max(WATER_FACET, cell * 1.2);
 
     // The ORIGINAL field has to survive the whole pass — every cell reads three lattice corners, and a
-    // corner may sit in a cell this loop has already rewritten. `scratchIn` is free by now: the distance
-    // transform it carried was spent in the encode loop above.
+    // corner may sit in a cell this loop has already rewritten. `scratchIn` is free by now.
     const out = &scratchIn;
     for (0..N) |cz| {
         for (0..N) |cx| {
@@ -306,14 +295,10 @@ const Prop = struct {
     /// **TAKEN OUT OF THE WORLD AT RUNTIME** — the item pickup alone today (`game.hidePickups`), and the ONE
     /// way a prop can stop existing without the world being re-materialized under it. A flag rather than a
     /// removal because every op index and every runtime site list is keyed to this array's ORDER.
-    ///
-    /// It sits beside `fade`, which the draw loop already tests per prop, so the cost is one bool compare where
-    /// there was already a float one.
     gone: bool = false,
     /// …and HOW MUCH OF ITS SIZE IS LEFT, for a prop that is going. **SEPARATE FROM `scale`, which is the
-    /// AUTHORED figure the op placed it at**: written into `scale` instead, the shrink was read straight back
-    /// out by `pickupSites` as the site's own scale, so a glow taken in play and then looked at in the editor
-    /// came home permanently shrunken — the fade compounding into the authoring.
+    /// AUTHORED figure the op placed it at**: written into `scale`, the shrink is read back out by
+    /// `pickupSites` as the site's own scale and the fade compounds into the authoring.
     shrink: f32 = 1,
 };
 
@@ -432,8 +417,7 @@ pub const Env = struct {
     ndress: usize = 0,
     chestItems: [chestmod.CAP]u32 = undefined,
     nchests: usize = 0,
-    /// …and the ITEM PICKUPS, its own list for the chests' reason: a second thing that holds loot is a second
-    /// runtime list, and keying one off the other would make "is a pickup" mean "is a chest".
+    /// …and the ITEM PICKUPS, its own list: keying one off the other makes "is a pickup" mean "is a chest".
     pickupItems: [pickupmod.CAP]u32 = undefined,
     npickups: usize = 0,
     restItems: [restmod.CAP]u32 = undefined,
@@ -500,8 +484,7 @@ pub const Env = struct {
         self.stat_draws = 0;
         self.stat_cells = 0;
         self.stowed = false;
-        // …and the water flags, which are BOOLS: raw heap bytes are illegal behaviour to read, not merely a
-        // wrong answer, and `uploadWater` is the only other thing that ever writes them.
+        // …and the water flags, which are BOOLS: raw heap bytes are illegal to read, not merely a wrong answer.
         self.waterAny = false;
         self.waterHalf = 0;
         @memset(&self.sgrid_start, 0);
@@ -542,7 +525,6 @@ pub const Env = struct {
             var tx = lo;
             while (tx <= hi) : (tx += 1) self.buildTile(tz * TILES + tx);
         }
-        // …AND THE SKIRT ONLY IF THE STROKE REACHED THE RIM.
         if (span[0] == 0 or span[1] == 0 or span[2] >= wf.HEIGHT_N - 1 or span[3] >= wf.HEIGHT_N - 1) self.buildSkirt();
     }
 
@@ -702,7 +684,6 @@ pub const Env = struct {
             lo[1] = @min(lo[1], cz);
             hi[1] = @max(hi[1], cz);
         }
-        // ONE cell width for the whole function.
         const cell = m.cellSize(N);
         const edge = struct {
             fn at(c: usize, half: f32, cw: f32) f32 {
@@ -774,17 +755,15 @@ pub const Env = struct {
             else
                 -@max(0.0, (dOut[i] - 0.5) * cell);
             const enc: f32 = if (sd >= 0) blk: {
-                // HOW FAR INSIDE THE SHORE it is…
                 const byShore = mathx.clampF(sd / gfx.WATER_DEEP_AT, 0, 1);
-                // …AND HOW FAR DOWN THE GROUND WAS DUG, whichever reads deeper: a hole cut hard against the
-                // bank is deep water at once, where the distance ramp alone painted it a pale shallow.
+                // How far inside the shore, against HOW FAR DOWN THE GROUND WAS DUG, whichever reads deeper:
+                // a hole cut hard against the bank is deep water at once.
                 // OFF THE **MAP**, NOT `self.heightField`: `uploadWater` runs BEFORE `uploadHeight` at both
                 // call sites, so env's own copy is still the last world's.
                 const dug = WATER_Y - (GROUND_Y + m.heightAt(edge(i % N, m.half, cell), edge(i / N, m.half, cell)));
                 break :blk shoreF + @max(byShore, digTone(dug)) * (255.0 - shoreF);
             } else blk: {
-                // …AND THE WET SAND OUTSIDE IT, whose WIDTH is the shape's second say. A blended margin is
-                // a marsh you cannot find the edge of; a built embankment has none at all.
+                // …and the WET SAND outside it, whose width is the shape's second say.
                 break :blk shoreF * (1.0 - mathx.clampF(-sd / (gfx.WATER_WET_OUT * coastBand(shape)), 0, 1));
             };
             self.waterField[i] = mathx.u8f(enc);
@@ -809,8 +788,7 @@ pub const Env = struct {
         self.nlights = 0;
         self.npools = 0;
         self.noccl = 0; // …and the in-flight fades, whose indices mean nothing in the world about to replace them
-        // …AND THE SOLID GRID, EMPTIED, before anything queries it.
-        @memset(&self.sgrid_start, 0);
+        @memset(&self.sgrid_start, 0); // …and the solid grid, before anything queries it
 
         var p = Placer{ .e = self, .m = m, .flat = !m.anyHeight() };
         for (m.slice(), 0..) |*o, i| {
@@ -841,7 +819,7 @@ pub const Env = struct {
         self.nsolids = 0;
         self.nlights = 0;
         self.npools = 0;
-        self.noccl = 0; // …and the in-flight fades, for `materialize`'s reason: these are indices into the world being replaced
+        self.noccl = 0; // …and the in-flight fades, for `materialize`'s reason
         self.props[0] = .{ .kind = kind, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1.0, .op = 0 };
         self.nprops = 1;
         if (props.info(kind).light) |ls| {
@@ -855,7 +833,7 @@ pub const Env = struct {
 
     /// Sets how solid each prop in the eye→hero line OUGHT to be (`pr.fadeTo`); `easeFades` walks what
     /// actually draws toward it. The target is a pure function of the sight line — only the CATCHING UP is
-    /// remembered, which is the difference between a fade and a switch.
+    /// remembered.
     ///
     /// WALKS `stx` ONLY, so flora never thins. ~270 props run `thinFor` and ~600 `coverFrac` a frame. A
     /// distance-to-the-sight-line reject in front of it is DELIBERATELY absent: it would drift against
@@ -891,9 +869,8 @@ pub const Env = struct {
     /// Ask one instance to be `to` solid, enlisting it if it is not in flight already. Two parts of the same
     /// prop can ask (an arch's piers are separate colliders), and the THINNER ask wins.
     ///
-    /// FULL, AND THE SLOT COMES OFF SOMETHING STILL SOLID: first-come left the trunk over his head solid.
-    /// An entry already off solid cannot be dropped — nothing outside this list is ticked, so it would
-    /// strand thin or JUMP.
+    /// FULL, AND THE SLOT COMES OFF SOMETHING STILL SOLID. An entry already off solid cannot be dropped —
+    /// nothing outside this list is ticked, so it would strand thin or JUMP.
     fn wantFade(self: *Env, pi: u32, to: f32) void {
         var worst: ?usize = null;
         for (self.occl[0..self.noccl], 0..) |q, i| {
@@ -939,9 +916,9 @@ pub const Env = struct {
         }
     }
 
-    /// The nearest instance to `p` CARRYING AN OCCLUDER VOLUME OF ITS OWN — the trees, and the shot harness
-    /// wants one because they are the only masses big enough to photograph the fade against. "Anything that
-    /// may thin" is now most of the table and would hand it a cairn.
+    /// The nearest instance to `p` CARRYING AN OCCLUDER VOLUME OF ITS OWN — the trees, the only masses big
+    /// enough for the shot harness to photograph the fade against. "Anything that may thin" is most of the
+    /// table and would hand it a cairn.
     pub fn nearestFading(self: *const Env, p: rl.Vector3, within: f32) ?rl.Vector3 {
         var best = within * within;
         var out: ?rl.Vector3 = null;
@@ -1035,13 +1012,12 @@ pub const Env = struct {
     }
 
     /// PUSH AN ACTOR OUT OF THE WORLD'S SOLIDS. The grid is WALKED, not copied: this runs for the hero,
-    /// every live foe and every wanderer EVERY FRAME, and `nearSolids` paid a ~6 KB stack frame per body
+    /// every live foe and every wanderer EVERY FRAME, and `nearSolids` costs a ~6 KB stack frame per body
     /// AND truncates at `MAX_NEAR`, where a dropped capsule is a walk-through wall.
     ///
     /// `footY` IS THE WORLD HEIGHT OF ITS FEET, because a solid only blocks up to its own top (`Solid.h`).
-    /// A WALL IS STILL A WALL AT ANY ALTITUDE — the jump's apex is `hero.JUMP_APEX` and a wall's `h` is
-    /// metres above it; what changes is that a knee-high collider stops being one. NO `STEP_UP` ALLOWANCE
-    /// unlike `flyStep`, or a man standing still walks through low rubble.
+    /// A WALL IS STILL A WALL AT ANY ALTITUDE; what changes is that a knee-high collider stops being one.
+    /// NO `STEP_UP` ALLOWANCE unlike `flyStep`, or a man standing still walks through low rubble.
     pub fn resolveActor(self: *const Env, p: rl.Vector3, r: f32, footY: f32) rl.Vector3 {
         const Push = struct {
             at: rl.Vector3,
@@ -1112,18 +1088,15 @@ pub const Env = struct {
         return v3(from.x, from.y, from.z);
     }
 
-    /// THE SAME RULE FOR SOMETHING WITH ITS FEET OFF THE GROUND, and it lives here rather than at the jump for
-    /// `walkStep`'s reason: traversal is decided in one file. A man in the air asks a different question of the
-    /// terrain — not "may I climb this" but "am I over it" — so what replaces the riser rule is his own FEET
-    /// (`footY`, a WORLD height). Ground standing higher than they are is a wall.
-    ///
-    /// Without it a jump at a cliff carries him into the cliff's own footprint, `game.groundActor` lifts him up
-    /// three metres of it, and the ledge nobody could walk up has been climbed by pressing A at it.
+    /// THE SAME RULE FOR SOMETHING WITH ITS FEET OFF THE GROUND, here rather than at the jump because
+    /// traversal is decided in one file. A man in the air asks not "may I climb this" but "am I over it", so
+    /// what replaces the riser rule is his own FEET (`footY`, a WORLD height): ground standing higher than
+    /// they are is a wall. Without it a jump at a cliff lands inside its footprint and `game.groundActor`
+    /// hands him the climb.
     ///
     /// PLUS THE WALK'S OWN ALLOWANCE: on the takeoff frame his feet are still at the ground he left, so a bare
     /// comparison stalls a jump against the gentle rise that same jump exists to clear. A jump may never travel
-    /// WORSE than a step. Deep water is not asked here — `deepRefused` is that rule and `game.gateHeroWater`
-    /// asks it after every branch including this one.
+    /// WORSE than a step. Deep water is not asked here — `deepRefused` is that rule.
     pub fn flyStep(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32, footY: f32) rl.Vector3 {
         const to = v3(from.x + dir.x * dist, from.y, from.z + dir.z * dist);
         if (!self.heightAny or dist <= 0) return to;
@@ -1206,9 +1179,7 @@ pub const Env = struct {
         return mathx.maxF(0, WATER_Y - self.groundAt(x, z));
     }
 
-    /// DEEP WATER IS A WALL — ONE rule with two callers, `walkStep` and `game.gateHeroWater` (the post-step
-    /// gate over committed moves that travel by `mathx.stepXZ`). As a copy at each they had drifted at the
-    /// boundary.
+    /// DEEP WATER IS A WALL — ONE rule with two callers, `walkStep` and `game.gateHeroWater`.
     ///
     /// A refusal of its own rather than a clause in `stepOk`: you walk DOWN into a basin, and the rise rule
     /// lets every downhill step through by design. GETTING OUT IS NEVER HELD — only a move coming out
@@ -1425,10 +1396,9 @@ pub const Env = struct {
                 if (!casters_only and pr.fade < FADE_SOLID) continue; // held back for `drawThinned`
                 self.stat_draws += 1;
                 // **A PROP ON ITS WAY OUT THINS AS WELL AS SHRINKING** (owner: have items fade when you pick
-                // them up). The shrink on its own is a glow getting SMALLER at full brightness, which the eye
-                // reads as one moving away rather than one going out. `shrink` is 1 for everything else in the
-                // world, so this is the same branch `fade` above already costs, and `setFade` is the scene
-                // shader's alone — the sun pass must not push it (`drawCasters`' own note).
+                // them up). The shrink alone is a glow getting SMALLER at full brightness, which reads as one
+                // moving away rather than going out. `setFade` is the scene shader's alone — the sun pass
+                // must not push it.
                 if (!casters_only and pr.shrink < 1.0) {
                     if (self.scene) |s| s.setFade(pr.shrink);
                     rl.gl.rlDisableDepthMask();
@@ -1443,8 +1413,6 @@ pub const Env = struct {
     }
 
     fn drawProp(self: *const Env, pr: *const Prop) void {
-        // `shrink` is 1 for every prop that is not on its way out, so this is the authored scale everywhere
-        // except the handful of glows that have just been taken.
         const s = pr.scale * pr.shrink;
         const sc = v3(s, s, s);
         if (pr.lean == 0) {
@@ -1456,9 +1424,9 @@ pub const Env = struct {
         rl.drawModelEx(mdl, pr.pos, leanAxis(pr.leanDir), pr.lean, sc, rl.Color.white);
     }
 
-    /// AFTER EVERY OPAQUE THING AND BACK TO FRONT. A thinned prop draws with the depth MASK OFF, so drawn
-    /// in cell order the hero composited at FULL opacity straight over it — an instant reveal wearing a
-    /// fade. Drawn last, the tree's alpha mattes HIM, so the reveal IS the ramp.
+    /// AFTER EVERY OPAQUE THING AND BACK TO FRONT. A thinned prop draws with the depth MASK OFF, so in cell
+    /// order the hero composites at FULL opacity straight over it — an instant reveal wearing a fade. Drawn
+    /// last, the tree's alpha mattes HIM, so the reveal IS the ramp.
     ///
     /// LIT PASS ONLY — the depth shader has no alpha, and a see-through tree still blocks the sun.
     pub fn drawThinned(self: *Env, view: *const View) void {
@@ -1503,10 +1471,9 @@ pub const Env = struct {
     ///
     /// `reserved` are lights that are NOT in the world — the wand in his hand (`hero.wandLight`), a
     /// necromancer's rune ring (`necro.Rite.markLights`). They get RESERVED slots rather than joining the
-    /// contest, so a brazier the player stands beside cannot evict the spell he just cast or the mark he is
-    /// standing on. **NEVER MORE THAN HALF THE RACK, THOUGH**: a field with several casters on it would
-    /// otherwise put out every fire in the world to light their own marks. Past the half the caller's ORDER
-    /// decides, which is why it hands them over most-important first.
+    /// contest, so a brazier cannot evict the spell he just cast. **NEVER MORE THAN HALF THE RACK**, or a
+    /// field of casters puts out every fire in the world; past the half the caller's ORDER decides, which
+    /// is why it hands them over most-important first.
     pub fn uploadLights(self: *const Env, scene: *gfx.Scene, view: *const View, t: f32, reserved: []const gfx.Light) void {
         comptime std.debug.assert(gfx.MAX_LIGHTS > 1); // the reserved slots have to leave the world at least one
         var picked: [gfx.MAX_LIGHTS]gfx.Light = undefined;
@@ -1551,10 +1518,9 @@ fn gutter(t: f32, phase: f32) f32 {
     return 0.30 * mathx.sinf(t * 4.3 + phase) + 0.14 * mathx.sinf(t * 8.9 + phase * 2.3) + 0.56 * mathx.sinf(t * 1.7 + phase * 0.6);
 }
 
-/// …AND THE REACH MOVES WITH THE SUN NOW (`gfx.sunReach`, written once a frame by `gfx.Scene.setHour`). It was
-/// a comptime constant off the one authored sun; with a sun that climbs and sets, a fixed reach either culls a
-/// low evening caster whose shadow genuinely crosses the box, or accepts the whole world at noon to avoid it.
-/// `daynight` floors the casting altitude, which is what keeps this bounded rather than cot(0).
+/// …AND THE REACH MOVES WITH THE SUN (`gfx.sunReach`, written once a frame by `gfx.Scene.setHour`). A fixed
+/// reach either culls a low evening caster whose shadow genuinely crosses the box, or accepts the whole
+/// world at noon to avoid it. `daynight` floors the casting altitude, which keeps this bounded, not cot(0).
 fn castsInto(focus: rl.Vector3, pos: rl.Vector3, bound: f32, top: f32) bool {
     const reach = SHADOW_BOX + bound + top * gfx.sunReach;
     return mathx.dist2XZ(focus, pos) <= reach * reach;
@@ -1625,7 +1591,7 @@ const PropFrame = struct {
 /// 1.48 m cylinder against boughs that block the view at 3.8 m.
 fn thinFor(pr: *const Prop, nfo: *const props.Info, eye: rl.Vector3, at: rl.Vector3) f32 {
     var thin: f32 = 0;
-    const fr = PropFrame.of(pr); // the yaw's trig ONCE per prop, not once per mass
+    const fr = PropFrame.of(pr);
     if (nfo.occl.len > 0) {
         for (nfo.occl) |bl| {
             thin = mathx.maxF(thin, thinOf(eye, at, fr.blockerFoot(bl), (bl.y1 - bl.y0) * pr.scale, bl.r * pr.scale));
@@ -1644,8 +1610,8 @@ fn thinFor(pr: *const Prop, nfo: *const props.Info, eye: rl.Vector3, at: rl.Vect
 }
 
 /// THE TWO QUESTIONS STAY APART. How much of him it hides decides WHETHER it thins; how far in front of him
-/// it stands scales HOW FAR. Multiplied together before the threshold — which is what `coverFrac` used to
-/// return — a mass a metre in front of him had its coverage discounted below `OCCL_MIN` and never thinned.
+/// it stands scales HOW FAR. Multiplied together before the threshold, a mass a metre in front of him has
+/// its coverage discounted below `OCCL_MIN` and never thins.
 fn thinOf(eye: rl.Vector3, at: rl.Vector3, foot: rl.Vector3, h: f32, r: f32) f32 {
     const c = coverFrac(eye, at, foot, h, r);
     if (c.cover <= OCCL_MIN) return 0;
@@ -1951,7 +1917,6 @@ const Placer = struct {
                 if (self.m.inClearing(x, z)) continue;
                 if (self.e.inWater(x, z, 0.97)) continue;
                 if (self.m.onRunway(x, z)) continue;
-                // The grid, walked IN PLACE — see `blockedNear`.
                 if (self.blockedHere(x, z)) continue;
                 const kind = zone.pick(rng) orelse continue;
                 self.at(kind, x, z, rng.range(0, 360), rng.range(o.sLo, o.sHi), rng);
@@ -2189,8 +2154,8 @@ test "the culler accepts the full width of the screen, not just the axis" {
 }
 
 test "A CANOPY HIDES HIM AND THE TRUNK IT HANGS OFF DOES NOT — the occluder volume is not the collider" {
-    // The whole of the original complaint: a conifer's collider is a 0.58 m pole, its boughs reach 3.4 m,
-    // and a camera looking through the branches scored nothing against the pole and left the tree solid.
+    // A conifer's collider is a 0.58 m pole and its boughs reach 3.4 m, so a camera looking through the
+    // branches scores nothing against the pole.
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -2201,7 +2166,7 @@ test "A CANOPY HIDES HIM AND THE TRUNK IT HANGS OFF DOES NOT — the occluder vo
     const eye = v3(0, 2.2, -5);
     const hero = v3(0, 1.0, 3);
 
-    // The colliders alone — what the fade used to be handed — cannot see it at all.
+    // The colliders alone cannot see it at all.
     var collider: f32 = 0;
     const fr = PropFrame.of(&e.props[0]);
     for (nfo.parts) |part| {
@@ -2215,8 +2180,8 @@ test "A CANOPY HIDES HIM AND THE TRUNK IT HANGS OFF DOES NOT — the occluder vo
 }
 
 test "architecture never thins, and a kind added to the table cannot opt out by silence" {
-    // The flag reads `solid`, so the DEFAULT is the fade. As an opt-in `fades` every row written afterwards
-    // stayed solid without anyone deciding it should — boulders, statues, lanterns, saplings.
+    // The flag reads `solid`, so the DEFAULT is the fade: as an opt-in, every row written afterwards stays
+    // solid without anyone deciding it should.
     for ([_]props.Kind{ .wall, .tower, .gate, .chapel, .cottage, .watchtower, .cliff, .cliff4 }) |k| {
         try std.testing.expect(props.info(k).solid);
     }
@@ -2304,8 +2269,8 @@ test "the sight line thins the tree standing in it, and only that tree" {
     e.nprops = 3;
     fillIndex(e, &e.stx, false);
 
-    // A camera at a real boom height, the hero 4 m the far side of the trunk. SETTLED, since what the
-    // geometry asks for and what the picture has got to are two different questions (see easeFades).
+    // A camera at a real boom height, the hero 4 m the far side of the trunk. SETTLED: what the geometry
+    // asks for and what the picture has got to are two questions (`easeFades`).
     const eyeY: f32 = 2.2;
     e.markOccluders(v3(0, eyeY, -4), v3(0, 1.0, 4), 10.0);
     try std.testing.expectApproxEqAbs(OCCL_FLOOR, e.props[0].fade, 0.001); // squarely in front of him
@@ -2353,8 +2318,6 @@ test "THE FADE TAKES TIME, both ways, and never overshoots either end" {
 }
 
 test "an occluder passing HIS depth eases out instead of snapping" {
-    // The old rule cut at the plane through him: level with him it was fully thinned and a centimetre
-    // past it fully solid, in one frame, right over the hero.
     const eye = v3(0, 2.2, -6);
     const hero = v3(0, 1.0, 0);
     const wide = 1.85;
@@ -2385,8 +2348,7 @@ test "what covers him thins, what merely stands near the sight line does not" {
 }
 
 test "COVERAGE ALONE OPENS THE GATE — the depth ramp scales the answer, it does not veto it" {
-    // Fused into one number, a mass close in front of him had its coverage discounted under OCCL_MIN and
-    // stayed solid at the one moment it was most in the way. It must thin, just not all the way.
+    // A mass close in front of him must thin, just not all the way.
     const eye = v3(0, 2.2, -6);
     const hero = v3(0, 1.0, 0);
     const near = v3(0, 0, -0.7); // inside OCCL_DEPTH_BAND of him, dead on the line
@@ -2535,9 +2497,8 @@ test "flyStep: a jump crosses what it is OVER, and a cliff is a wall at any alti
 }
 
 test "A JUMP CLEARS A LOW COLLIDER AND A WALL IS STILL A WALL — the push-out reads `Solid.h`" {
-    // The owner's report: jumping did not get him over low obstacles. `buildSolids` has always stamped each
-    // collider's blocking height and `blocksPoint`/`blocksSight` have always honoured it — the PUSH-OUT was
-    // the one consumer that did not, so a man at the top of his arc was shouldered off a fallen log.
+    // `buildSolids` stamps each collider's blocking height and `blocksPoint`/`blocksSight` honour it; the
+    // PUSH-OUT is the consumer that can silently not, and then a man at his apex is shouldered off a log.
     const HR = HERO_R_PIN; // the hero's own footprint, pinned to `foe.HERO_R` in game.zig
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
@@ -2569,7 +2530,6 @@ test "A JUMP CLEARS A LOW COLLIDER AND A WALL IS STILL A WALL — the push-out r
 }
 
 test "a SLIGHT STEP is always taken, however steep the face carrying it" {
-    // The owner's ask, and the other half of the anti-jank story: a low ledge is a step, not a wall.
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -2806,7 +2766,6 @@ test "THE BROOD ARENA LOADS — a scratch map is only useful if it is known to s
 }
 
 test "replaying the SHIPPED map produces a stable world" {
-    // That `materialize` expands the real map, and expands it the SAME way every time.
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     var line: usize = 0;
@@ -2830,25 +2789,14 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(solids0, e.solidCount());
     try std.testing.expectEqual(lights0, e.lightCount());
 
-    // 17761 BEFORE THE COAST WAS FACETED (`facetWater`), then 17565. Scatter refuses to place in water, so
-    // straightening the waterline moves it by up to half a facet and the props along every shore follow it —
-    // 196 of them, about 1%. This number moving is the POINT of pinning it; it may only be re-pinned when the
-    // world was meant to change. The BONE KNIGHT'S ground was the last such change: the ruin east of the
-    // graves gained a torch line, a rock belt and its cliffs, and lost the watchtower and two cottages that
-    // stood in it. 17594/1854 was written for that edit but never matched the map saved beside it — these are
-    // the counts the shipped file actually replays to. `materialize` reads the OPS alone, so foe records
-    // (the delver's three) cannot move either figure.
-    // …and 17323 since the NECROMANCER'S ground was authored west of the graves: two cliffs, a chest and the
-    // encounter itself (a necromancer with two archers and a shieldman to raise), plus two more delvers east.
-    // …then 17329 for the six `pickup` glows scattered over the map — one prop each, and `props.INFO`'s row
-    // gives that kind `.casts = false` with no collider, so `solids0` does not move with it and `lights0` does.
+    // THESE MOVING IS THE POINT OF PINNING THEM: re-pin only when the world was MEANT to change. Anything
+    // touching the waterline shifts the shore scatter by up to half a facet (`facetWater` moved 196 props),
+    // and `materialize` reads the OPS alone, so foe records cannot move any of the three.
     try std.testing.expectEqual(@as(usize, 17329), props0);
-    try std.testing.expectEqual(@as(usize, 1754), solids0); // …and their colliders with them (was 1749, 1827, 1848)
-    // The map's three `campfire`s are the EXTINGUISHED kind and carry no light. Swap one to
-    // `campfire_lit` in the editor and this goes up by one — and gains a rest site with it.
-    // 46 since the Bone Knight's ruin was lit: seven torches went in round it and one came out with the
-    // watchtower that used to stand there. 52 with the six pickup glows: an item on the ground is a LIGHT
-    // (`props.INFO`'s `pickup` row), which is how you find one across a field.
+    try std.testing.expectEqual(@as(usize, 1754), solids0);
+    // An item pickup is a LIGHT with no collider (`props.INFO`), so it moves this and `props0` but never
+    // `solids0`. The map's three `campfire`s are the EXTINGUISHED kind; swapping one to `campfire_lit` in
+    // the editor adds a light here and a rest site with it.
     try std.testing.expectEqual(@as(usize, 52), lights0);
 
     var jerky: usize = 0;
@@ -2874,9 +2822,8 @@ test "replaying the SHIPPED map produces a stable world" {
 }
 
 test "EVERY SHIPPED MAP LOADS AND MATERIALIZES, not just the one the game starts on" {
-    // A test arena nobody boots into is a file that rots: the shipped plain is the only map with a build-time
-    // guard, so an op renamed under `02`/`03` would surface as a PANIC in the editor's Open dialog months
-    // later. WALKED OFF THE DIRECTORY, not off a list, which silently stops covering the map you add next.
+    // An op renamed under `02`/`03` otherwise surfaces as a PANIC in the editor's Open dialog months later.
+    // WALKED OFF THE DIRECTORY, not off a list, which silently stops covering the map you add next.
     var dir = std.fs.cwd().openDir(wf.DIR, .{ .iterate = true }) catch return error.SkipZigTest;
     defer dir.close();
     const m = try std.testing.allocator.create(wf.Map);

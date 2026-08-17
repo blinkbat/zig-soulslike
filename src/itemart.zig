@@ -179,12 +179,10 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
     }
 }
 
-/// THE SUMMONING BELL — a cross's picture, not a bag row: it is an ARMAMENT (`hero.Arm.bell`), so it is drawn
-/// beside `sword` and `bow` and takes no `item.Kind`.
-///
-/// The flare and the OPEN MOUTH are the whole read. Drawn as a quad whose foot is wider than its head, an
-/// elliptical rim under it, and the bore as a darker ellipse INSIDE that rim — at 34 px a bell with a filled
-/// bottom is a thimble.
+/// THE SUMMONING BELL — a cross's picture, not a bag row: it is an ARMAMENT, drawn beside `sword` and `bow`
+/// and taking no `item.Kind`. The flare and the OPEN MOUTH are the whole read — a quad whose foot is wider
+/// than its head, an elliptical rim under it, and the bore as a darker ellipse INSIDE that rim, since at
+/// 34 px a bell with a filled bottom is a thimble.
 pub fn bell(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -437,11 +435,10 @@ fn thundercrock(cx: f32, cy: f32, px: f32) void {
     rl.drawCircleV(v2(cx - s * 0.07, cy + s * 0.02), s * 0.15, rgba(142, 96, 64, 255)); // thrown-pot sheen
     quad(v2(cx - s * 0.09 + lean, cy - s * 0.21), v2(cx + s * 0.09 + lean, cy - s * 0.21), v2(cx + s * 0.07, cy - s * 0.07), v2(cx - s * 0.07, cy - s * 0.07), clayDk); // the neck, off plumb
     rl.drawCircleV(v2(cx + lean, cy - s * 0.22), s * 0.07, CORK);
-    // THE CRACK, AND THE SKY'S OWN SPARK IN IT — the read of the whole item, so it is drawn HOT (a pale
-    // blue jag on brown clay was a hairline) and it BREAKS THE RIM: the bolt gets out past the belly at
-    // both ends, which is what says a thing is escaping rather than a pot is chipped.
-    // SIZED BETWEEN TWO FAILURES: at the width that first read, it hid the jar it exists to point at. It
-    // sits INSIDE the belly and clears the rim only at its two ends.
+    // THE CRACK, AND THE SKY'S OWN SPARK IN IT — the read of the whole item, so it is drawn HOT (a pale blue
+    // jag on brown clay is a hairline) and it BREAKS THE RIM at both ends, which says a thing is escaping
+    // rather than a pot is chipped. SIZED BETWEEN TWO FAILURES: wide enough to read, but inside the belly,
+    // or it hides the jar it exists to point at.
     const jag = [_]rl.Vector2{
         v2(cx - s * 0.27, cy + s * 0.01),
         v2(cx - s * 0.11, cy + s * 0.09),
@@ -996,9 +993,8 @@ pub fn roots(cx: f32, cy: f32, px: f32, on: bool) void {
 /// and open away from it, blunt-ended (NOTHING ENDS IN A POINT) and unevenly spaced, since an even fan of
 /// equal spikes is a garden rake — the roots' own lesson, in the other element.
 ///
-/// Its palette is the icon set's and not `elemfx`'s: these are 2D chrome drawn on a card, and the FX
-/// colours are literal screen values solved against a lit world. Same HUE, so the picture and the thing it
-/// promises agree; not the same constants, because they are answering different questions.
+/// Its palette is the icon set's and not `elemfx`'s: these are 2D chrome on a card, where the FX colours are
+/// literal screen values solved against a lit world. Same HUE, different constants.
 pub fn rime(cx: f32, cy: f32, px: f32, on: bool) void {
     const s = px;
     const k = strokeK(px);
@@ -1302,8 +1298,6 @@ fn ironKey(cx: f32, cy: f32, px: f32) void {
     rl.drawCircleV(tipP, 1.3 * k, rgba(RUST.r, RUST.g, RUST.b, 200)); // rust gathers at the end
 }
 
-/// A STRIP OF DRIED CAP, curling as it dries, torn at both ends and dusted with the salt it was kept in.
-/// The read is LEATHERY: a wavy band, dark outside and pale where the flesh was torn open.
 /// A DRIED MUSHROOM, and the silhouette is what says so: a domed CAP over a STEM with the gills showing under
 /// the rim. As a wavy horizontal strip it read as neither jerky nor forage — a lump. Dried, not fresh: the
 /// cap is shrunken onto a stem too thin for it and the rim has curled UP off the gills.

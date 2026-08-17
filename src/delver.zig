@@ -26,13 +26,10 @@ const lerpF = mathx.lerpF;
 // sword cannot go, travelling as a ridge of moving earth, and arrives THROUGH THE GROUND under his boots.
 // The whole creature is one question: are you watching the floor?
 //
-// A dark thing out of warm earth — the hide is COOL (the Bone Knight's lesson, one creature along): everything
-// outdoors here is warm, and a brown digger on brown ground is a mass nobody can find. The SOIL it throws is
-// the warm half, and that separation is what makes the mound read as ground and the body read as a body.
-// **AND THE NUMBERS ARE SOLVED OFF A SAMPLED RENDER, NOT PICKED.** The first pass authored the hide at 24
-// and it came back at 150 against ground at 127 — a pale grey boulder with claws. Screen goes as
-// albedo^(1/2.2), so a factor you want on screen is that factor^2.2 on the albedo: 0.57 of the brightness
-// is 0.29 of the number, and that is the whole of why these read as almost black in source.
+// A dark thing out of warm earth — the hide is COOL, because everything outdoors here is warm and a brown
+// digger on brown ground is a mass nobody can find. The SOIL it throws is the warm half.
+// Screen goes as albedo^(1/2.2), so a factor you want on screen is that factor^2.2 on the albedo (0.57 of
+// the brightness is 0.29 of the number) — which is why these read as almost black in source.
 const HIDE = rgba(8, 8, 11, 255); // the big smooth back — the biggest face on it, so the darkest
 const HIDE_LO = rgba(12, 11, 15, 255); // belly and flanks
 const PLATE = rgba(17, 16, 21, 255); // the sunk dorsal plates
@@ -1063,8 +1060,9 @@ pub const Delver = struct {
         foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
     }
     fn dirtBurst(self: *Delver, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
+        const parts = foe.hitParts(n); // the field's one dial (`foe.HIT_PARTS`)
         var i: i32 = 0;
-        while (i < n) : (i += 1) {
+        while (i < parts) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(0.4, 1.0) * spd;
             self.emit(c, v3(mathx.cosf(a) * sp, self.fxRng.range(0.6, 2.0), mathx.sinf(a) * sp), self.fxRng.range(0.3, 0.6), self.fxRng.range(0.05, 0.10), big, foe.DUST, 5.0);

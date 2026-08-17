@@ -1,4 +1,3 @@
-// ============================================================================================
 // KEYED POSE TRACKS — the general form of `hero.sampleCurve`, and the thing every ATTACK in this
 // game was missing.
 //
@@ -12,7 +11,6 @@
 // The model is Overgrowth's (Rosen, GDC 2014): a handful of key POSES per move, sampled as one-shot
 // tracks, then chased by SPRINGS rather than arrived at by a lerp. Thirteen keyframes ran that whole
 // game. The keys give a move its SHAPE; the springs give it WEIGHT.
-// ============================================================================================
 
 const std = @import("std");
 const mathx = @import("mathx.zig");

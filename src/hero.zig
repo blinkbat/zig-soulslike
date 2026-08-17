@@ -719,6 +719,25 @@ const PARRY_GLINT_TRAIL = 0.55; // …and they carry that much of the fan along 
 /// sitting beside the boards (measured), which is the balloon the cast flash's own note warns about.
 const PARRY_GLINT_FLASH_R = 0.03;
 
+/// **A BLOCK IS NOT A SMALL PARRY** (owner). A catch REFUSES a blow — struck iron, hot, thrown wide, gone in
+/// a flash. A block ABSORBS one, so what comes off the boards is DULL and SHORT and hugs the shield.
+/// Separated on COLOUR, SPREAD and LIFE rather than on count, which is only "the same effect, fewer of them".
+const BLOCK_GRIT = rgba(196, 190, 178, 225); // pale stone-grey, nowhere near the spark's amber
+const BLOCK_GRIT_DARK = rgba(120, 112, 100, 210);
+/// COUNT IS THE BLOW'S, not the shield's: a kobold's bite and an ogre's slam may not scatter the same boards
+/// the same way. Scaled between these off the same `weight` the shake and the pad are (`game.heroBlockBeat`).
+const BLOCK_GRIT_MIN = 10;
+const BLOCK_GRIT_MAX = 26;
+/// SHORT and CLOSE — the opposite of the spark's wide fan and long tail.
+const BLOCK_GRIT_OUT_LO = 0.5;
+const BLOCK_GRIT_OUT_HI = 1.7;
+const BLOCK_GRIT_FAN = 3.4;
+const BLOCK_GRIT_GRAV = 13.0; // heavier than a spark: it is grit, and it drops
+const BLOCK_GRIT_LIFE_LO = 0.10;
+const BLOCK_GRIT_LIFE_HI = 0.30;
+const BLOCK_PUFF_R = 0.11; // …and the bloom is WIDE and DIM where the catch's is small and white-hot
+const BLOCK_PUFF_LIFE = 0.16;
+
 const SHIELD_R = 0.115 * H;
 const SHIELD_THICK = 0.020 * H;
 const SHIELD_WOOD = rgba(56, 41, 29, 255);
@@ -742,8 +761,11 @@ const SHIELD_HUB = v3(
     FIST_Z + SHIELD_STANDOFF * SHIELD_N.z,
 );
 /// Measured and left: every input is a compile-time constant, so this rebuilds the same matrix twice a frame.
-fn shieldFit() rl.Matrix {
-    return mul3(ry(GUARD_SH_CROSS), rx(GUARD_ARM_FOLD), tr(SHIELD_HUB.x, SHIELD_HUB.y, SHIELD_HUB.z));
+/// The boards' turn onto the forearm. MIRRORED for the right hand: the cross and the hub are both lateral,
+/// and unmirrored a shield equipped right folded the wrong way and hung off the outside of the arm.
+fn shieldFit(left: bool) rl.Matrix {
+    const sd: f32 = if (left) 1.0 else -1.0;
+    return mul3(ry(sd * GUARD_SH_CROSS), rx(GUARD_ARM_FOLD), tr(sd * SHIELD_HUB.x, SHIELD_HUB.y, SHIELD_HUB.z));
 }
 
 const GRIP_PITCH = 34.0; // deg the blade leads forward of the forearm line
@@ -954,24 +976,48 @@ fn burstFrame(axis: rl.Vector3) struct { side: rl.Vector3, up: rl.Vector3 } {
 
 pub const Attack = enum { light, heavy };
 
-/// APPENDED never inserted: the book's picker is walked off this enum's order and a saved slot is an ordinal.
+/// **EVERYTHING HE CAN HOLD, AND EITHER HAND MAY HOLD ANY OF IT** (owner's call). It was two enums — a right
+/// hand that could only ever be sword/bow/bell and a left that could only be shield/wand — so which hand a
+/// thing lived in was a fact about its TYPE rather than a choice the player made. One set, two hands.
+///
+/// APPENDED never inserted: the book's pickers walk this order and a saved slot is an ordinal.
 /// The BELL is not a weapon and that is its price — R1 rings it and R2 does nothing.
-pub const Arm = enum { sword, bow, bell };
+pub const Armament = enum { sword, bow, bell, shield, wand };
 
-/// EXHAUSTIVE, so a fourth armament that also does not swing is a row here and no edit elsewhere. A FREE
-/// function rather than a `Hero` method, because the character book prices a CANDIDATE arm.
-pub fn armSwings(a: Arm) bool {
+/// The two hands' old type names, now the same set. Kept so every `heromod.Arm` at a call site still reads as
+/// "what is in that hand" rather than becoming a rename sweep across six files.
+pub const Arm = Armament;
+pub const Off = Armament;
+
+/// HOW MANY THINGS ONE HAND CARRIES (owner: two options per hand). The swap button walks between them and no
+/// further — a hand is a pair, which is what makes the choice one you make at the fire rather than in a menu
+/// mid-fight.
+pub const HAND_SLOTS: usize = 2;
+
+/// WHICH HAND. Indices into `Hero.hands`, named because `[0]`/`[1]` at thirty call sites is a coin flip.
+pub const RIGHT: usize = 0;
+pub const LEFT: usize = 1;
+pub const HANDS: usize = 2;
+
+/// EXHAUSTIVE, so a sixth armament that also does not swing is a row here and no edit elsewhere. A FREE
+/// function rather than a `Hero` method, because the character book prices a CANDIDATE armament.
+pub fn armSwings(a: Armament) bool {
     return switch (a) {
         .sword => true,
         // The bow's R1/R2 are the quick and the aimed shot — they are not SWINGS, and the loose is routed on
         // `bowOut` at the input. What this answers is whether the blade capsule can ever go live.
         .bow => false,
         .bell => false,
+        .shield => false,
+        .wand => false,
     };
 }
 
-/// THE LEFT HAND'S ARMAMENT — the wand is the shield's ALTERNATIVE, not a third thing he carries.
-pub const Off = enum { shield, wand };
+/// **A RAISED BOW TAKES BOTH HANDS.** The one armament that denies the other hand its own, which is why it is
+/// asked about by name rather than by a flag on the row.
+pub fn armTwoHanded(a: Armament) bool {
+    return a == .bow;
+}
 
 // One buffered action, ER-style: an attack/roll pressed while mid-action QUEUES here
 pub const Queued = union(enum) { attack: Attack, roll: rl.Vector3 };
@@ -1083,7 +1129,13 @@ pub const Hero = struct {
     /// Degrees folded onto what he is swinging at: + = down over a low mark, − = arched back under a high one.
     aimLean: f32 = 0,
     aimLeanWant: f32 = 0,
-    arm: Arm = .sword,
+    /// **WHAT THE RIGHT HAND IS HOLDING RIGHT NOW**, and `armAlt` is the other of its two (`HAND_SLOTS`).
+    /// The LIVE one is the field rather than an index into a pair, so every `hero.arm == .bow` in the game
+    /// still asks the only question it ever wanted: what is in that hand this frame.
+    arm: Armament = .sword,
+    /// …and what the swap turns to. A hand is a PAIR and the button exchanges them, so the loadout is a
+    /// decision made in the book and the swap is muscle memory — never a walk through five armaments.
+    armAlt: Armament = .bow,
     aiming: bool = false,
     aimB: f32 = 0,
     shooting: bool = false,
@@ -1102,7 +1154,8 @@ pub const Hero = struct {
     nockXf: rl.Matrix = undefined,
     nockVis: bool = false,
     lastNock: rl.Vector3 = mathx.zero3,
-    off: Off = .shield,
+    off: Armament = .shield,
+    offAlt: Armament = .wand,
     /// WHICH SORCERY THE ROD IS SET TO. NOT latched at `startCast` the way `shotArrow` is, and it does not
     /// need to be: `cycleSpell` refuses while a cast is running, so what starts is what throws.
     spell: combat.Spell = .bolt,
@@ -1403,45 +1456,85 @@ pub const Hero = struct {
         return self.jumping or self.rolling or self.attacking or self.drinking or self.shooting or self.casting or self.parrying or self.ringing;
     }
 
+    /// **IS HE HOLDING ONE, IN EITHER HAND.** The whole of what "any armament in either hand" costs: every
+    /// question the game used to ask of a SIDE — is the bow up, is the wand out, can he block — is really a
+    /// question about what he is carrying, and asking it of one named hand is what pinned each thing to a side.
+    pub fn holds(self: *const Hero, a: Armament) bool {
+        return self.arm == a or (self.off == a and self.offInHand());
+    }
+
+    /// WHICH HAND THE BLADE IS IN. The RIGHT wins if somehow both, since that is the hand the rig's own
+    /// bone is parented to and the mirror is the exception rather than the rule.
+    pub fn swordLeft(self: *const Hero) bool {
+        return self.arm != .sword and self.off == .sword and self.offInHand();
+    }
+
     pub fn bowOut(self: *const Hero) bool {
-        return self.arm == .bow;
+        return self.holds(.bow);
     }
 
     pub fn bellOut(self: *const Hero) bool {
-        return self.arm == .bell;
+        return self.holds(.bell);
     }
 
-
-    /// Not the same question as which one is EQUIPPED: a raised bow takes that hand to the string. The BELL
-    /// leaves it free — it is rung one-handed. Asked here rather than cleared on the swap, so it cannot stale.
+    /// Not the same question as which one is EQUIPPED: a raised bow takes the OTHER hand to the string too, so
+    /// whatever is in it is not in it while the bow is up. Everything else leaves it free — the bell included,
+    /// which is rung one-handed. Asked here rather than cleared on the swap, so it cannot stale.
     pub fn offInHand(self: *const Hero) bool {
-        return self.arm != .bow;
+        return !armTwoHanded(self.arm);
     }
 
     pub fn wandOut(self: *const Hero) bool {
-        return self.off == .wand and self.offInHand();
+        return self.holds(.wand);
     }
 
-    /// D-pad LEFT. Nothing is cleared: `canGuard` and `canCast` both ASK what is in the hand every frame.
+    /// …and the BOARDS, which used to be the left hand's alone by construction.
+    pub fn shieldOut(self: *const Hero) bool {
+        return self.holds(.shield);
+    }
+
+    /// D-pad LEFT / RIGHT — **A HAND IS A PAIR AND THE BUTTON EXCHANGES IT.** It was a walk through a whole
+    /// enum, which is a list that grows every time an armament is added and a thumb that has to count. Nothing
+    /// is cleared: `canGuard` and `canCast` both ASK what is in the hand every frame.
+    fn swapHand(self: *Hero, live: *Armament, alt: *Armament) bool {
+        if (self.committed() or self.staggered() or self.dead or self.resting) return false;
+        if (live.* == alt.*) return false; // both slots the same thing: the press achieves nothing, and says so
+        std.mem.swap(Armament, live, alt);
+        self.drawAmt = 0; // a bow put away mid-draw does not keep its draw
+        self.startXfade();
+        return true;
+    }
+
     pub fn swapOff(self: *Hero) bool {
+        return self.swapHand(&self.off, &self.offAlt);
+    }
+
+    pub fn swapArm(self: *Hero) bool {
+        return self.swapHand(&self.arm, &self.armAlt);
+    }
+
+    /// **PUT SOMETHING IN A SLOT** — the character book's equip, and the only way anything reaches a hand that
+    /// is not already in it. `hand` is `RIGHT`/`LEFT` and `slot` is 0 for the live one, 1 for its alternate.
+    /// Refused mid-action for `swapHand`'s reason: a menu may not put a bow in his hands mid-roll.
+    pub fn equip(self: *Hero, hand: usize, slot: usize, a: Armament) bool {
         if (self.committed() or self.staggered() or self.dead or self.resting) return false;
-        self.off = if (self.off == .wand) .shield else .wand;
-        self.startXfade();
+        const live = if (hand == RIGHT) &self.arm else &self.off;
+        const alt = if (hand == RIGHT) &self.armAlt else &self.offAlt;
+        const into = if (slot == 0) live else alt;
+        if (into.* == a) return false;
+        into.* = a;
+        if (into == live) {
+            self.drawAmt = 0;
+            self.startXfade();
+        }
         return true;
     }
 
-    /// An exhaustive switch rather than `+ 1 % N`, so a fourth armament is a row here rather than arithmetic
-    /// that silently keeps working while meaning something else.
-    pub fn swapArm(self: *Hero) bool {
-        if (self.committed() or self.staggered() or self.dead or self.resting) return false;
-        self.arm = switch (self.arm) {
-            .sword => .bow,
-            .bow => .bell,
-            .bell => .sword,
-        };
-        self.drawAmt = 0;
-        self.startXfade();
-        return true;
+    /// What is in one slot, for the screen that draws them.
+    pub fn slotAt(self: *const Hero, hand: usize, slot: usize) Armament {
+        const live = if (hand == RIGHT) self.arm else self.off;
+        const alt = if (hand == RIGHT) self.armAlt else self.offAlt;
+        return if (slot == 0) live else alt;
     }
 
     /// L2, HELD — called EVERY frame with the button's level, re-deriving the stance from scratch.
@@ -1557,7 +1650,7 @@ pub const Hero = struct {
     /// press has to say NO out loud where the guard just stays down. It asks `offInHand`, NOT `arm ==
     /// .sword`: what takes the boards off his arm is a hand going to a STRING, not a hand being busy.
     fn shieldArm(self: *const Hero) bool {
-        return self.offInHand() and self.off == .shield and !self.committed() and !self.staggered() and !self.dead and !self.sprinting and !self.resting;
+        return self.shieldOut() and !self.committed() and !self.staggered() and !self.dead and !self.sprinting and !self.resting;
     }
 
     /// AN EMPTY BAR CANNOT HOLD A SHIELD UP — and neither can a hand with a wand in it. There is one left hand.
@@ -1651,6 +1744,32 @@ pub const Hero = struct {
         }
         // The bloom DRIFTS off the boards rather than sitting on them, or it reads as a sphere switched on.
         foemod.emitParticle(&self.fx, &self.fxHead, at, mathx.scaleV(f.n, 0.8), PARRY_FLASH_LIFE, PARRY_FLASH_R, PARRY_FLASH_R * 0.25, PARRY_SPARK_HOT, 0);
+    }
+
+    /// **THE BOARDS EATING A BLOW.** `parrySparks`' frame, deliberately none of its signature: grit rather
+    /// than iron, a short close scatter rather than a shower, and a wide dim puff rather than a white bloom.
+    /// `weight` is the blow's own share of the heaviest thing in the game — the same 0..1 the shake and the
+    /// pad are sized off — so a slam knocks visibly more out of the shield than a bite does.
+    pub fn blockSparks(self: *Hero, weight: f32) void {
+        const f = self.shieldFaceWorld();
+        const fr = burstFrame(f.n);
+        const at = mathx.addV(f.at, mathx.scaleV(f.n, SPARK_PROUD));
+        const w = mathx.clampF(weight, 0, 1);
+        const n: u32 = @intFromFloat(mathx.lerpF(BLOCK_GRIT_MIN, BLOCK_GRIT_MAX, w));
+        var rng = foemod.fxStream(self.elapsed, 911.0, 0x8B08);
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            const a = rng.angle();
+            const fan = rng.range(0.30, 1.0) * BLOCK_GRIT_FAN;
+            const v = mathx.addV(
+                mathx.scaleV(f.n, rng.range(BLOCK_GRIT_OUT_LO, BLOCK_GRIT_OUT_HI)),
+                mathx.addV(mathx.scaleV(fr.side, mathx.cosf(a) * fan), mathx.scaleV(fr.up, mathx.sinf(a) * fan)),
+            );
+            foemod.emitParticle(&self.fx, &self.fxHead, at, v, rng.range(BLOCK_GRIT_LIFE_LO, BLOCK_GRIT_LIFE_HI), rng.range(0.010, 0.022), 0.004, if (rng.float() < 0.5) BLOCK_GRIT else BLOCK_GRIT_DARK, BLOCK_GRIT_GRAV);
+        }
+        // The dust the impact drove out of the facing — it SITS on the boards and thins, where the catch's
+        // bloom leaves them.
+        foemod.emitParticle(&self.fx, &self.fxHead, at, mathx.scaleV(f.n, 0.25), BLOCK_PUFF_LIFE, BLOCK_PUFF_R * (0.6 + 0.4 * w), BLOCK_PUFF_R * 1.6, BLOCK_GRIT_DARK, 1.5);
     }
 
     /// The swipe's own light — `parrySparks`' construction at a fraction of its size, all of it HOT: what
@@ -2548,7 +2667,7 @@ pub const Hero = struct {
         const armR = armAmp * mathx.cosf(twoPi * ph) * m * fw;
         armChain(&wx, self.rest, armL, m, runB, sprintB, 1.0, 0.0, SHL, ELL, WRL);
         armChain(&wx, self.rest, armR, m, runB, sprintB, -1.0, 1.0, SHR, ELR, WRR); // right hand carries the sword
-        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
 
         // …and the shield goes up OVER all of it (see poseGuard) — the gait keeps running underneath.
         if (gB > 0.001) self.poseGuard(&wx, gB, rec, lean, prot, bank);
@@ -2563,13 +2682,21 @@ pub const Hero = struct {
 
     /// The off arm only, laid over whatever gait just ran. The head leads AWAY from the fist (`WAND_AX`), so an
     /// arm hanging at the side aims the lit end at the dirt — the elbow lifts it. KEEPS the gait swing, damped.
+    /// THE ARM THAT CARRIES THE ROD, and it is whichever one is holding it. Welded to the LEFT, a wand
+    /// equipped RIGHT posed an empty hand into the carry while the rod itself hung off the other arm.
+    /// `poseAttack`'s mirror on the same one sign: the lateral channels flip, the sagittal ones do not.
     fn poseWandArm(self: *const Hero, wx: *[N]rl.Matrix) void {
+        const left = self.arm != .wand; // the RIGHT wins if somehow both, `swordLeft`'s rule
+        const sd: f32 = if (left) 1.0 else -1.0;
+        const sh: usize = if (left) SHL else SHR;
+        const el: usize = if (left) ELL else ELR;
+        const wr: usize = if (left) WRL else WRR;
         const swing = ARM_SWING * mathx.cosf(std.math.tau * self.phase) * self.moving * self.fwdB;
         var p = wx.*;
-        setLocal(&p, SHL, self.rest, mul(rx(-WAND_CARRY_FLEX + WAND_CARRY_SWING * swing), rz(ARM_ABD + WAND_CARRY_ABD)));
-        setLocal(&p, ELL, self.rest, rx(-(WAND_CARRY_ELBOW + WAND_CARRY_ELBOW_SWING * swing)));
-        setLocal(&p, WRL, self.rest, rz(WAND_CARRY_WRIST));
-        for ([_]usize{ SHL, ELL, WRL }) |i| wx[i] = p[i];
+        setLocal(&p, sh, self.rest, mul(rx(-WAND_CARRY_FLEX + WAND_CARRY_SWING * swing), rz(sd * (ARM_ABD + WAND_CARRY_ABD))));
+        setLocal(&p, el, self.rest, rx(-(WAND_CARRY_ELBOW + WAND_CARRY_ELBOW_SWING * swing)));
+        setLocal(&p, wr, self.rest, rz(sd * WAND_CARRY_WRIST));
+        for ([_]usize{ sh, el, wr }) |i| wx[i] = p[i];
     }
 
     fn poseBowArms(self: *const Hero, wx: *[N]rl.Matrix, lean: f32, prot: f32, bank: f32) void {
@@ -2641,7 +2768,7 @@ pub const Hero = struct {
         setLocal(&gp, SHR, self.rest, mul(rx(GUARD_SWORD_BACK), rz(-ARM_ABD)));
         setLocal(&gp, ELR, self.rest, rx(-GUARD_SWORD_ELBOW));
         setLocal(&gp, WRR, self.rest, rx(GUARD_SWORD_WRIST));
-        setLocal(&gp, SWORD, self.rest, rl.math.matrixIdentity());
+        placeSword(&gp, self.rest, rl.math.matrixIdentity(), self.swordLeft());
         for ([_]usize{ SPINE, CHEST, NECK, HEAD, SHL, ELL, WRL, SHR, ELR, WRR, SWORD }) |i| {
             wx[i] = lerpM(wx[i], gp[i], k);
         }
@@ -2719,7 +2846,7 @@ pub const Hero = struct {
         setLocal(&wx, SHR, self.rest, mul(rx(GUARD_SWORD_BACK + PARRY_SWORD_COCK * k), rz(-ARM_ABD)));
         setLocal(&wx, ELR, self.rest, rx(-(GUARD_SWORD_ELBOW + 14.0 * k)));
         setLocal(&wx, WRR, self.rest, rx(GUARD_SWORD_WRIST));
-        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
         self.applyXfade(&wx);
         self.xf = wx;
     }
@@ -2759,7 +2886,7 @@ pub const Hero = struct {
         jumpLeg(&wx, self.rest, drive, reach, tuck, 1.0 - JUMP_LEG_SPLIT / JUMP_TUCK_HIP, -1.0, HIPR, KNEER, ANKR);
         jumpArm(&wx, self.rest, drive, reach, tuck, 1.0, SHL, ELL, WRL);
         jumpArm(&wx, self.rest, drive, reach, tuck, -1.0, SHR, ELR, WRR);
-        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
         // The boards stay up if they were up: one hand is holding a shield, not helping him fly.
         if (self.guardB > 0.001) self.poseGuard(&wx, mathx.clampF(self.guardB, 0, 1), 0, fold * 0.5, 0, 0);
         if (self.wandOut()) self.poseWandArm(&wx);
@@ -2801,7 +2928,7 @@ pub const Hero = struct {
         rollLeg(&wx, self.rest, tuck, if (overL) trailF else leadF, -1.0, HIPR, KNEER, ANKR);
         rollArm(&wx, self.rest, tuck, if (overL) guideF else pushF, 1.0, SHL, ELL, WRL);
         rollArm(&wx, self.rest, tuck, if (overL) pushF else guideF, -1.0, SHR, ELR, WRR);
-        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
         self.applyXfade(&wx);
         self.xf = wx;
     }
@@ -2821,10 +2948,20 @@ pub const Hero = struct {
         const sWr = mathx.smoothstep(AL_STRIKE_A + 2 * AL_LAG, AL_STRIKE_B + 2 * AL_LAG, u) * rec;
         const sw: f32 = if (self.atkAlt) -1.0 else 1.0; // swing side: +1 forehand, -1 backhand return
         const amp: f32 = if (self.atkAlt) 0.8 else 1.0; // the cross-body windup can't coil as deep
+        // **THE MIRROR IS ONE SIGN.** Same keys, same clocks, same curves — thrown from the other shoulder.
+        // Only the LATERAL channels flip (the body yaw, the abductions, the sweep, the wrist lay and roll);
+        // every `rx` here is sagittal and reads the same on either side.
+        const sd: f32 = if (self.swordLeft()) -1.0 else 1.0;
+        const shS: usize = if (sd < 0) SHL else SHR; // the arm that swings…
+        const elS: usize = if (sd < 0) ELL else ELR;
+        const wrS: usize = if (sd < 0) WRL else WRR;
+        const shF: usize = if (sd < 0) SHR else SHL; // …and the one that counterbalances
+        const elF: usize = if (sd < 0) ELR else ELL;
+        const wrF: usize = if (sd < 0) WRR else WRL;
 
         const os = AL_OVER * bump(u, AL_STRIKE_B + 2 * AL_LAG, AL_RECOV_A + 0.15);
-        const yawP = sw * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sPelv);
-        const yawC = sw * (1.35 * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sChest) + os);
+        const yawP = sd * sw * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sPelv);
+        const yawC = sd * sw * (1.35 * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sChest) + os);
         const crunch = AL_SPINE_CRUNCH * sChest;
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
@@ -2849,9 +2986,9 @@ pub const Hero = struct {
         setLocal(&wx, HIPR, self.rest, mul(rx(braceR * sPelv), rz(HIP_ADDUCT)));
         setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + kneeR * sPelv + 6.0 * wind));
         setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
-        setLocal(&wx, SHL, self.rest, mul(rx(-10.0 * wind + 24.0 * sChest), rz(ARM_ABD)));
-        setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 12.0 * wind)));
-        setLocal(&wx, WRL, self.rest, rl.math.matrixIdentity());
+        setLocal(&wx, shF, self.rest, mul(rx(-10.0 * wind + 24.0 * sChest), rz(sd * ARM_ABD)));
+        setLocal(&wx, elF, self.rest, rx(-(IDLE_ELBOW + 12.0 * wind)));
+        setLocal(&wx, wrF, self.rest, rl.math.matrixIdentity());
         const windAmp: f32 = if (self.atkAlt) AL_ALT_WIND else 1.0;
         const sRaise = mathx.smoothstep(AL_WIND_B - 0.06, AL_HIT_A - 0.02, u) * rec;
         const elev = AL_SH_ELEV_WIND * wind + (AL_SH_ELEV - AL_SH_ELEV_WIND) * sRaise;
@@ -2859,13 +2996,13 @@ pub const Hero = struct {
         // every active frame: no pre-window hang, no dead beat at the tail.
         const sSweep = mathx.smoothstep(AL_STRIKE_A + AL_LAG, AL_HIT_B - 0.01, u) * rec;
         const sweep = sw * (-AL_SWEEP_WIND * windAmp * wind + (AL_SWEEP_WIND * windAmp + AL_SWEEP_END) * sSweep + 0.9 * os);
-        setLocal(&wx, SHR, self.rest, mul3(rx(-elev), ry(sweep), rz(-ARM_ABD - 10.0 * amp * wind)));
+        setLocal(&wx, shS, self.rest, mul3(rx(-elev), ry(sd * sweep), rz(sd * (-ARM_ABD - 10.0 * amp * wind))));
         const elb = IDLE_ELBOW + (AL_ELBOW_WIND - IDLE_ELBOW) * wind - (AL_ELBOW_WIND - AL_ELBOW_STRIKE) * sElb;
-        setLocal(&wx, ELR, self.rest, rx(-elb));
+        setLocal(&wx, elS, self.rest, rx(-elb));
         const lvl = mathx.smoothstep(0.05, AL_STRIKE_A, u) * rec;
         const lay = sw * (AL_WRIST_LAY * wind - (AL_WRIST_LAY + AL_WRIST_WHIP) * sWr);
-        setLocal(&wx, WRR, self.rest, mul3(ry(sw * AL_EDGE_ROLL * lvl), rx(-AL_TIP_UP * lvl), rz(lay)));
-        setLocal(&wx, SWORD, self.rest, rx(GRIP_PITCH * lvl));
+        setLocal(&wx, wrS, self.rest, mul3(ry(sd * sw * AL_EDGE_ROLL * lvl), rx(-AL_TIP_UP * lvl), rz(sd * lay)));
+        placeSword(&wx, self.rest, rx(GRIP_PITCH * lvl), sd < 0);
         self.applyXfade(&wx);
         self.xf = wx;
     }
@@ -2882,8 +3019,16 @@ pub const Hero = struct {
 
         const gather = mathx.smoothstep(AH_WIND_B - 0.05, AH_STRIKE_A + 2 * AH_LAG, u) * (1.0 - sSh) * rec;
         const rcl = bump(u, AH_STRIKE_B + 2 * AH_LAG, AH_RECOV_A) * rec;
+        // `poseLight`'s mirror, on the same one sign and for its reason.
+        const sd: f32 = if (self.swordLeft()) -1.0 else 1.0;
+        const shS: usize = if (sd < 0) SHL else SHR;
+        const elS: usize = if (sd < 0) ELL else ELR;
+        const wrS: usize = if (sd < 0) WRL else WRR;
+        const shF: usize = if (sd < 0) SHR else SHL;
+        const elF: usize = if (sd < 0) ELR else ELL;
+        const wrF: usize = if (sd < 0) WRR else WRL;
 
-        const yaw = -AH_BODY_YAW * wind + 2.0 * AH_BODY_YAW * sPelv;
+        const yaw = sd * (-AH_BODY_YAW * wind + 2.0 * AH_BODY_YAW * sPelv);
         const spineX = -AH_LEAN_BACK * wind + (AH_LEAN_BACK + AH_SPINE_CRUNCH) * sChest;
         const tilt = -AH_SPINE_TILT * wind + 1.5 * AH_SPINE_TILT * sChest;
         const dip = AH_LOAD * wind + (AH_DIP - AH_LOAD) * sPelv - 0.008 * H * rcl;
@@ -2896,8 +3041,8 @@ pub const Hero = struct {
             mul(tr(0, hipY - dip, 0), mul(rx(AH_PITCH * sPelv), ry(facingDeg))),
             rootAt(self.footPos()),
         );
-        setLocal(&wx, SPINE, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), rz(0.5 * tilt)));
-        setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), rz(0.5 * tilt)));
+        setLocal(&wx, SPINE, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), rz(sd * 0.5 * tilt)));
+        setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), rz(sd * 0.5 * tilt)));
         setLocal(&wx, NECK, self.rest, rx(-0.3 * spineX));
         setLocal(&wx, HEAD, self.rest, mul(rx(HEAD_WALK + 4.0 * sChest), ry(-0.4 * yaw)));
         setLocal(&wx, HIPL, self.rest, mul(rx(-14.0 * wind - 8.0 * sPelv), rz(-HIP_ADDUCT)));
@@ -2906,15 +3051,15 @@ pub const Hero = struct {
         setLocal(&wx, HIPR, self.rest, mul(rx(2.0 * wind + 5.0 * sPelv), rz(HIP_ADDUCT)));
         setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 17.0 * wind + 4.0 * sPelv));
         setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
-        setLocal(&wx, SHL, self.rest, mul(rx(-22.0 * wind + 30.0 * sChest), rz(ARM_ABD + 6.0 * wind)));
-        setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 16.0 * wind)));
-        setLocal(&wx, WRL, self.rest, rl.math.matrixIdentity());
+        setLocal(&wx, shF, self.rest, mul(rx(-22.0 * wind + 30.0 * sChest), rz(sd * (ARM_ABD + 6.0 * wind))));
+        setLocal(&wx, elF, self.rest, rx(-(IDLE_ELBOW + 16.0 * wind)));
+        setLocal(&wx, wrF, self.rest, rl.math.matrixIdentity());
         const shX = -AH_SH_UP * wind - AH_GATHER * gather + (AH_SH_UP - AH_SH_DOWN) * sSh + AH_RECOIL * rcl;
-        setLocal(&wx, SHR, self.rest, mul(rx(shX), rz(-ARM_ABD - 8.0 * wind)));
+        setLocal(&wx, shS, self.rest, mul(rx(shX), rz(sd * (-ARM_ABD - 8.0 * wind))));
         const elb = IDLE_ELBOW + (AH_ELBOW_WIND - IDLE_ELBOW) * wind + 5.0 * gather - (AH_ELBOW_WIND - AH_ELBOW_STRIKE) * sElb;
-        setLocal(&wx, ELR, self.rest, rx(-elb));
-        setLocal(&wx, WRR, self.rest, rx(AH_WRIST_COCK * wind - (AH_WRIST_COCK + AH_WRIST_SNAP) * sWr + 8.0 * rcl));
-        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        setLocal(&wx, elS, self.rest, rx(-elb));
+        setLocal(&wx, wrS, self.rest, rx(AH_WRIST_COCK * wind - (AH_WRIST_COCK + AH_WRIST_SNAP) * sWr + 8.0 * rcl));
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), sd < 0);
         self.applyXfade(&wx);
         self.xf = wx;
     }
@@ -2976,7 +3121,7 @@ pub const Hero = struct {
         setLocal(&wx, SHR, self.rest, mul(rx(GUARD_SWORD_BACK * wind), rz(-ARM_ABD)));
         setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + (GUARD_SWORD_ELBOW - IDLE_ELBOW) * wind)));
         setLocal(&wx, WRR, self.rest, rx(GUARD_SWORD_WRIST * wind));
-        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
         self.applyXfade(&wx);
         self.xf = wx;
     }
@@ -3011,7 +3156,7 @@ pub const Hero = struct {
         setLocal(&wx, SHR, self.rest, mul3(rx(-RING_SH_FWD * lift), ry(0), rz(-ARM_ABD - RING_SH_ABD * lift)));
         setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + (RING_ELBOW - IDLE_ELBOW) * lift) + 5.0 * shake));
         setLocal(&wx, WRR, self.rest, mul(rz(RING_FLICK * shake), rx(-14.0 * lift)));
-        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
         // …and the off arm stays where the carry left it, so the boards do not go anywhere while he rings.
         setLocal(&wx, SHL, self.rest, mul(rx(-6.0 * lift), rz(ARM_ABD)));
         setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 10.0 * lift)));
@@ -3063,7 +3208,7 @@ pub const Hero = struct {
         setLocal(&wx, SHR, self.rest, mul(rx(-48.0 + 1.2 * strum), rz(-ARM_ABD - 34.0)));
         setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + 88.0 + 3.5 * strum)));
         setLocal(&wx, WRR, self.rest, rz(9.0 * strum));
-        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
         // NO cross-fade: no rest path ticks `blendT`, so `applyXfade` would lerp at k = 0 and draw the stale
         // standing pose.
         self.xf = wx;
@@ -3119,7 +3264,7 @@ pub const Hero = struct {
         setLocal(&wx, SHR, self.rest, mul(rx(-0.8 * armUp), rz(-ARM_ABD - 0.4 * armUp)));
         setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + 16.0 * amt)));
         setLocal(&wx, WRR, self.rest, rl.math.matrixIdentity());
-        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
         self.applyXfade(&wx);
         self.xf = wx;
     }
@@ -3156,15 +3301,15 @@ pub const Hero = struct {
         setLocal(&wx, SHR, self.rest, mul(rx(-10.0 * k), rz(-ARM_ABD - 10.0 * k)));
         setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + 24.0 * k)));
         setLocal(&wx, WRR, self.rest, rl.math.matrixIdentity());
-        setLocal(&wx, SWORD, self.rest, rl.math.matrixIdentity());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
         self.applyXfade(&wx);
         self.xf = wx;
     }
 
     pub fn draw(self: *const Hero) void {
         // The SWORD is bone `SWORD` itself, so it is stowed by not drawing that bone — and it is stowed
-        // whenever the sword is not what he is holding, which is now two arms and not just the bow.
-        const stowSword = self.resting or self.arm != .sword;
+        // whenever the RIGHT hand is not the one holding it, since that bone hangs off the right wrist.
+        const stowSword = self.resting or !self.holds(.sword);
         for (0..N) |i| {
             if (stowSword and i == SWORD) continue;
             rl.drawMesh(self.mesh[i], self.mat, self.xf[i]);
@@ -3173,23 +3318,42 @@ pub const Hero = struct {
             rl.drawMesh(self.guitar, self.mat, self.xf[ROOT]);
             return;
         }
-        // WHAT IS IN THE RIGHT HAND, exhaustively: the sword IS a bone and was drawn in the loop, the other
-        // two hang off `HELD`. A fourth armament is a row here.
-        switch (self.arm) {
+        // ONE CALL PER HAND, and the hand is an ARGUMENT. As two switches keyed to two enums, which hand a
+        // thing was drawn in was decided by its TYPE — so a sword equipped left drew on the right.
+        // A TWO-HANDER IS WORKED FROM THE RIGHT WHICHEVER SLOT HOLDS IT (the rig nocks the bow at that
+        // wrist), so it is asked for first and it takes the other hand with it.
+        if (armTwoHanded(self.off)) {
+            _ = self.drawHand(self.off, false);
+            return;
+        }
+        if (self.drawHand(self.arm, false)) return;
+        if (self.offInHand()) _ = self.drawHand(self.off, true);
+    }
+
+    /// One hand's armament, at that hand's wrist. Returns whether it claimed BOTH hands, which is the bow's
+    /// alone (`armTwoHanded`) — a raised bow puts the other hand on the string, so there is nothing to draw
+    /// in it whatever is equipped there.
+    ///
+    fn drawHand(self: *const Hero, a: Armament, left: bool) bool {
+        const wrist = self.xf[if (left) WRL else WRR];
+        const grip = gripFrame(wrist, self.rest, left);
+        switch (a) {
+            // The sword is a rig BONE and `placeSword` has already hung it off whichever wrist holds it,
+            // so the loop above drew it wherever it actually is. Nothing to do here in either hand.
             .sword => {},
             .bow => {
-                rl.drawMesh(self.bow, self.mat, self.xf[HELD]);
+                rl.drawMesh(self.bow, self.mat, grip);
                 for (self.stringXf) |sm| rl.drawMesh(self.bowString, self.mat, sm);
                 if (self.nockVis) rl.drawMesh(self.bowNock, self.mat, self.nockXf);
-                return; // a raised bow takes the left hand to the string — nothing to draw in it
+                return true;
             },
-            .bell => rl.drawMesh(self.bell, self.mat, self.xf[HELD]),
+            .bell => rl.drawMesh(self.bell, self.mat, grip),
+            // The boards turn onto the ARM rather than sitting in the fist, so they take the wrist and their
+            // own fit; the wand rides the wrist as it is. Both mirror with the hand.
+            .shield => rl.drawMesh(self.shield, self.mat, mul(shieldFit(left), wrist)),
+            .wand => rl.drawMesh(self.wand, self.mat, wrist),
         }
-        // Both ride that wrist rather than a bone of their own, and only the shield needs turning onto the arm.
-        switch (self.off) {
-            .shield => rl.drawMesh(self.shield, self.mat, mul(shieldFit(), self.xf[WRL])),
-            .wand => rl.drawMesh(self.wand, self.mat, self.xf[WRL]),
-        }
+        return false;
     }
 
     /// The base of the neck, deliberately over the GROUND under him rather than over his feet: the rig is
@@ -3204,6 +3368,22 @@ pub fn setHumanoid(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl
     setJoint(wx, &rest, i, @intCast(PARENT[i]), animRot);
 }
 const setLocal = setHumanoid;
+
+/// **THE SWORD HANGS OFF WHICHEVER WRIST HOLDS IT.** `PARENT[SWORD]` is `WRR`, so placing it through here
+/// rather than through the rig's own parent is what makes the hand a choice — and `xf[SWORD]` being right in
+/// both hands is what makes the draw, `updateBlade`'s capsule and the trail right for free.
+pub fn placeSword(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, animRot: rl.Matrix, left: bool) void {
+    wx[SWORD] = mul(animRot, gripFrame(wx[if (left) WRL else WRR], rest, left));
+}
+
+/// **ONE HAND'S GRIP SLOT** — the sword bone's rest offset off that wrist, mirrored for the left, and it
+/// exists whether or not a sword is in the hand. Every held thing rides it, so no caller passes a bare wrist
+/// where a grip is meant: `HELD` IS the sword bone, and that bone moves with the blade.
+pub fn gripFrame(wrist: rl.Matrix, rest: [N]rl.Vector3, left: bool) rl.Matrix {
+    const d = mathx.subV(rest[SWORD], rest[WRR]);
+    const off = if (left) v3(-d.x, d.y, d.z) else d;
+    return mul(tr(off.x, off.y, off.z), wrist);
+}
 
 pub fn setJoint(wx: []rl.Matrix, rest: []const rl.Vector3, i: usize, p: usize, animRot: rl.Matrix) void {
     const off = mathx.subV(rest[i], rest[p]);
@@ -4794,4 +4974,46 @@ test "gait curves wrap continuously across the stride seam" {
         const start = sampleCurve(tbl, 0.0);
         try std.testing.expect(@abs(nearEnd - start) < 1.0);
     }
+}
+
+test "THE BLADE IS IN WHICHEVER HAND HOLDS IT — bone, capsule and swing, all mirrored off one sign" {
+    // Both halves fail SILENTLY: a sword equipped left used to draw and swing on the right, and the hitbox
+    // stayed welded to the right wrist whatever the equipment page said.
+    var h = testHero();
+    h.arm = .sword;
+    h.off = .shield;
+    try std.testing.expect(!h.swordLeft());
+    try std.testing.expect(h.holds(.sword));
+    h.pose();
+    const right = h.xf[SWORD];
+
+    // The SAME loadout with the hands exchanged: the equip screen's whole promise.
+    h.arm = .shield;
+    h.off = .sword;
+    try std.testing.expect(h.swordLeft());
+    try std.testing.expect(h.holds(.sword)); // …so the swing is still allowed
+    h.pose();
+    const left = h.xf[SWORD];
+
+    // The bone actually MOVED, and it moved ACROSS him rather than drifting: the lateral component flips
+    // sign and the height does not.
+    try std.testing.expect(right.m12 * left.m12 < 0 or @abs(right.m12 - left.m12) > 0.05);
+    try std.testing.expectApproxEqAbs(right.m13, left.m13, 0.35);
+
+    // …and the hitbox rides it, which is the half nothing on screen would have shown.
+    h.arm = .sword;
+    h.off = .shield;
+    h.pose();
+    h.updateBlade();
+    const rTip = h.bladeB;
+    h.arm = .shield;
+    h.off = .sword;
+    h.pose();
+    h.updateBlade();
+    try std.testing.expect(mathx.distXZ(rTip, h.bladeB) > 0.1);
+
+    // A BOW IN THE OTHER HAND TAKES BOTH, so a sword behind one is not held at all.
+    h.arm = .bow;
+    h.off = .sword;
+    try std.testing.expect(!h.swordLeft() and !h.holds(.sword));
 }

@@ -626,14 +626,9 @@ pub const Archer = struct {
     /// routine's own current step when the fight has it, and off the committed vector on the trudge home.
     pub fn navWant(self: *const Archer, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .reposition) return null;
-        if (self.routine.current()) |s| {
-            return switch (s) {
-                .close, .orbit => hero,
-                .open => mathx.addV(self.pos, mathx.dirXZ(hero, self.pos)),
-                .shift => if (self.routine.marked) self.routine.mark else hero,
-                .dwell => null,
-            };
-        }
+        // The ROUTINE answers whenever one is running — a `dwell` inside it asks for no feet, which is not
+        // the same thing as having no routine at all, and only that second case falls through to the kite.
+        if (self.routine.current() != null) return self.routine.walkTo(self.pos, hero);
         return mathx.addV(self.pos, self.kiteDir);
     }
 

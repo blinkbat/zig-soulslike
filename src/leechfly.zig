@@ -739,8 +739,9 @@ pub const Leechfly = struct {
     /// WHAT COMES OUT OF A STRUCK ONE — blood it has already taken, and chips of its own shell. A fed one
     /// bleeds redder, which is the same `gorge` the belly is drawn off: what it is full of is what spills.
     fn splatter(self: *Leechfly, at: rl.Vector3, dir: rl.Vector3, n: i32) void {
+        const parts = foe.hitParts(n); // the field's one dial (`foe.HIT_PARTS`)
         var i: i32 = 0;
-        while (i < n) : (i += 1) {
+        while (i < parts) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(0.5, 1.0) * 2.4;
             const wet = self.fxRng.float() < 0.35 + 0.5 * self.gorge;
@@ -999,7 +1000,6 @@ fn wingMesh(side: f32) rl.Mesh {
     // THE MEMBRANE IS ONE STRIP, and it has to be: built as a row of `addBox` slabs it was a STAIRCASE, each
     // block's end walls standing proud of its neighbour's. Drawn BOTH WAYS ROUND, since Builder winding is
     // unchecked, face-down geometry is culled, and a wing presents its underside half of every beat.
-    //
     var prevF = v3(0, 0, 0); // leading edge
     var prevB = v3(0, 0, 0); // …and trailing
     var i: u32 = 0;

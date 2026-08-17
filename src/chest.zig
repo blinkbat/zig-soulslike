@@ -142,11 +142,8 @@ pub const Chests = struct {
     ///
     /// The depth mask goes down for it (`Scene.setFade`'s own rule) and the fade is handed BACK to 1, or the
     /// next thing through the shader inherits a chest's transparency.
-    /// **THE FADE IS PUSHED ONLY WHEN IT CHANGES, and on the ordinary frame it is never pushed at all.**
-    /// `setFade` is a `glUseProgram` plus a `glUniform` at the driver, and the first pass spent one per chest
-    /// per frame — up to `CAP` shader rebinds to say "1" over and over, since a SHUT box sits at exactly 1 and
-    /// 1 is what every other caller already hands the shader back. A lid mid-swing is the only thing here that
-    /// asks for a fractional value, and there is at most one of those at a time.
+    /// **THE FADE IS PUSHED ONLY WHEN IT CHANGES.** `setFade` is a `glUseProgram` plus a `glUniform` at the
+    /// driver, and a shut box sits at exactly 1 — which is what every other caller hands the shader back.
     pub fn drawGlow(self: *const Chests, scene: *gfx.Scene) void {
         var any = false;
         for (self.liveConst()) |*c| {

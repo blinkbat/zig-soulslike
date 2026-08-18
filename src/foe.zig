@@ -524,7 +524,9 @@ pub const Parry = struct {
 pub const Wade = struct {
     /// Metres of water over the creature's own post…
     here: f32 = 0,
-    /// …and over its quarry's feet.
+    /// …and over the HERO's feet. Named for the quarry because that is what it answers today: `groupBlow`
+    /// hands a creature its own target (`Threat.aim`), and a lurker pulled onto a SPIRIT is still reading the
+    /// hero's depth. It would take a per-body probe to say otherwise, and nothing yet needs one.
     quarry: f32 = 0,
 };
 

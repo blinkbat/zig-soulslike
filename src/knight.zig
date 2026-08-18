@@ -199,10 +199,12 @@ const SWIPE_YAW: f32 = 46.0;
 /// nothing like the whole sector his shield cannot face. A MOVE THAT CANNOT LAND IS NOT A DECISION.
 const FALL_SECTOR = 44.0;
 
-/// …AND HOW FAR OFF HIS FACING A STROKE CAN LAND, for the same law one move up. Both his swings are aimed
-/// down his own front — the bash goes straight forward and the swipes come across it — and neither is a
-/// sector test, it is the SWEPT kit. At a bearing past this the kit simply travels past you, so a swing
-/// chosen there is a second and a half spent on a guaranteed miss. He turns instead.
+/// …AND HOW FAR OFF HIS FACING A STROKE CAN LAND, for the same law one move up: at a bearing past this the
+/// swept kit simply travels past you, so a swing chosen there is a second and a half spent on a guaranteed
+/// miss. **IT NO LONGER GATES ANYTHING BY ITSELF** — one global door at 24 deg refused the sweep the flank
+/// its arc actually reaches, so each move now answers for its own front (`Attack.bearing`, `pick`). What is
+/// left here is the REFERENCE the tight-door moves are authored against and the figure the law is pinned on
+/// (`mathx.radians(SWING_BEARING) <= kitHalf`, at the foot of this file).
 const SWING_BEARING = 24.0;
 
 // HIS POSES, AND THE MOVES AS SEQUENCES OF THEM.
@@ -1681,8 +1683,7 @@ fn wpnFit(tilt: f32) rl.Matrix {
 /// For the shot harness to aim its beats with — a portrait pinned to a literal 0.6 s silently photographs a
 /// different beat the next time the timing moves.
 pub fn moveClock(mv: usize) foe.Clock {
-    const a = MOVES[@min(mv, MOVES.len - 1)];
-    return .{ .wind = a.windDur, .strike = a.strikeDur, .recover = a.recoverDur };
+    return foe.moveClock(MOVES[@min(mv, MOVES.len - 1)]);
 }
 /// …and the FALL's, whose recovery is three states rather than one.
 pub const FallClock = struct { wind: f32, drop: f32, down: f32, roll: f32, rise: f32 };

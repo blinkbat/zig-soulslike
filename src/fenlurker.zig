@@ -92,7 +92,8 @@ const PARTS = 72;
 
 /// **THE SURGE IS THE TELL AND IT IS LONG.** What is being read is not the lash — a head coming down out of
 /// two metres is legible by itself — it is that the water broke at all. Well over `foe.TELL_MIN`, and the
-/// wake starts before the body does (`WAKE_LEAD`).
+/// wake (`ripple`) has been running the whole time it was down, so the warning is already on the surface
+/// before the gather starts.
 const SURGE_DUR: f32 = 0.72;
 const LASH_DUR: f32 = 0.20;
 const RECOVER_DUR: f32 = 0.62;
@@ -101,10 +102,6 @@ const RECOVER_DUR: f32 = 0.62;
 const SINK_DUR: f32 = 0.85;
 /// …and how long it waits down there before it can come up again.
 const REST_DUR: f32 = 1.10;
-
-/// **THE WAKE LEADS THE BODY.** Seconds of surface disturbance before anything breaks it — the one warning
-/// that arrives while he can still be somewhere else, and the reason this creature is not a gotcha.
-const WAKE_LEAD: f32 = 0.45;
 
 /// WHAT THE HEAD DOES. Heavy on poise and it carries stance: it is a mass falling out of the air, and the
 /// thing it is meant to punish is being caught mid-swing in water you cannot roll in.
@@ -442,19 +439,25 @@ pub const Lurker = struct {
             // NOTHING BUT A WAKE. It does not turn, it does not rise, and it is not a creature until he is
             // standing in its water — or until a blade finds it, which cannot happen while it is down.
             .sunk => {
-                self.up = mathx.approach(self.up, 0, dt / SINK_DUR);
                 if (!self.pooled()) {
-                    // NOWHERE TO HIDE: a lurker posted on dry ground simply stands up and fights.
+                    // NOWHERE TO HIDE: a lurker posted on dry ground simply stands up and fights. It RISES
+                    // here rather than sinking — driven to 0 it went `hidden`, which is invisible, un-hittable
+                    // and walked through, i.e. exactly the vanishing-into-a-field this state refuses.
+                    self.up = mathx.approach(self.up, 1.0, dt / SINK_DUR);
                     if (self.feelsDry(hero)) self.begin(hero);
                     return self.settleAndPose(dt);
                 }
+                self.up = mathx.approach(self.up, 0, dt / SINK_DUR);
                 if (self.restT <= 0 and self.feels(hero)) self.begin(hero);
             },
             // **THE SURGE, AND IT IS THE TELL.** It aims through the whole of it and not after: what he is
             // reading is which way the head is pointed when it stops rising.
             .surge => {
                 self.faceToward(hero, dt);
-                self.up = mathx.smoothstep(0, SURGE_DUR, self.t);
+                // **A SURGE ONLY EVER RISES.** The clock is resumed part-way through on a chained stroke
+                // (`.recover`) and on a resurface (`.sink`), and read straight off it a body already up
+                // teleported back DOWN 1.7 m the frame the second stroke was chosen.
+                self.up = mathx.maxF(self.up, mathx.smoothstep(0, SURGE_DUR, self.t));
                 // COCKED BACK across the rise, so the head goes the wrong way first — the one thing that
                 // says a stroke is coming rather than a body merely arriving.
                 self.swing = -mathx.smoothstep(SURGE_DUR * 0.35, SURGE_DUR, self.t);
@@ -482,7 +485,9 @@ pub const Lurker = struct {
                     if (self.canReach(hero)) {
                         self.enter(.surge);
                         self.t = SURGE_DUR * 0.45; // …already up, so the second stroke is a shorter gather
-                    } else self.beginSink();
+                    } else if (self.pooled()) {
+                        self.beginSink();
+                    } else self.enter(.sunk); // nothing to sink into: it stands there and waits him out
                 }
             },
             .sink => {
@@ -1067,8 +1072,9 @@ test "THE SURGE IS A REAL TELL, and the wake leads the body out of the water" {
     // Over the floor every creature owes, and by a clear margin: what is being read is that the surface moved.
     try std.testing.expect(SURGE_DUR >= foe.TELL_MIN);
     try std.testing.expect(SURGE_DUR > LASH_DUR * 3.0);
-    // …and the warning starts before anything breaks the surface at all.
-    try std.testing.expect(WAKE_LEAD > 0 and WAKE_LEAD < SURGE_DUR);
+    // …and the warning is on the surface before anything breaks it: the wake is a RATE that runs the whole
+    // time it is down, so a ring is already spreading when the gather starts.
+    try std.testing.expect(WAKE_RATE > 0);
 
     // THE BODY COMES UP ACROSS THE GATHER AND IS ALL THE WAY UP BEFORE THE STROKE — a creature still rising
     // as its head arrives is a tell you read at the same moment as the blow.
@@ -1226,6 +1232,41 @@ test "A LURKER WITH NO POOL STANDS UP AND FIGHTS rather than sinking into a fiel
     while (t < 2.0) : (t += dt) _ = l.update(dt, mathx.ground(0, 3.0), 200.0, .{});
     // It answers to plain distance instead — the honest failure, and one a player can make sense of.
     try std.testing.expect(!l.hidden());
+}
+
+test "A LURKER WITH NO POOL IS STILL THERE WHEN NOBODY IS LOOKING" {
+    // …the other half of the dry-ground failure, and the half that is INVISIBLE when it is wrong: sunk means
+    // not drawn, not hittable and not solid, so a dry one that idled down to `up = 0` was a creature standing
+    // in a field that nothing in the game could see or touch.
+    const dt: f32 = 1.0 / 60.0;
+    var l = Lurker.spawn(mathx.zero3, 0, 1.0, 0.3);
+    l.wade = .{ .here = 0, .quarry = 0 };
+    const far = mathx.ground(0, AGGRO_R + 6.0); // well outside its ring: it has no reason to come up
+    var t: f32 = 0;
+    while (t < 6.0) : (t += dt) _ = l.update(dt, far, 200.0, .{});
+    try std.testing.expectEqual(State.sunk, l.state);
+    try std.testing.expect(!l.hidden() and !l.phased());
+}
+
+test "A CHAINED SECOND STROKE DOES NOT DROP THE BODY BACK IN THE WATER" {
+    // The surge's clock is RESUMED part-way through for a second stroke, and `up` is read off that clock —
+    // so read straight it took a creature standing at full height and put it back down 1.7 m for one frame.
+    const dt: f32 = 1.0 / 60.0;
+    var l = Lurker.spawn(mathx.zero3, 0, 1.0, 0.3);
+    l.wade = .{ .here = 1.0, .quarry = 1.0 };
+    l.restT = 0;
+    const hero = mathx.ground(0, 1.4); // in its water and in its reach, so it never stops
+    var lowest: f32 = 1.0;
+    var reachedTop = false;
+    var t: f32 = 0;
+    while (t < 6.0) : (t += dt) {
+        _ = l.update(dt, hero, 200.0, .{});
+        if (l.up >= 0.999) reachedTop = true;
+        if (reachedTop) lowest = @min(lowest, l.up);
+    }
+    std.debug.print("\n  fen lurker: chained strokes hold the body at {d:.3} of full surge\n", .{lowest});
+    try std.testing.expect(reachedTop);
+    try std.testing.expect(lowest > 0.99); // it never goes back down while he is standing in it
 }
 
 test "THE NECK IS A WHIP, NOT A HINGE — the tip carries more of the stroke than the root does" {

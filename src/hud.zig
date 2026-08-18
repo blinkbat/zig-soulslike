@@ -545,7 +545,7 @@ pub const LivePortrait = struct {
     /// The FACE, off a posed bone — never a height above the feet, or the picture drifts the moment it moves.
     focus: rl.Vector3,
     /// WORLD yaw the camera stands at around `focus`, and it is the caller's because only the caller knows
-    /// which way the subject is pointing (`npc.PORTRAIT_YAW` is hung off the speaker's own facing).
+    /// which way the subject is pointing (`hud.PORTRAIT_YAW` is hung off the speaker's own facing).
     yaw: f32,
     pitch: f32,
     dist: f32,

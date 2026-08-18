@@ -2810,7 +2810,7 @@ test "A FEN LURKER IS POSTED IN WATER IT CAN ACTUALLY HIDE IN" {
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     var line: usize = 0;
-    wf.load("worlds/test_fenlurker.world", m, &line) catch return error.SkipZigTest;
+    wf.load(wf.DIR ++ "/test_fenlurker" ++ wf.EXT, m, &line) catch return error.SkipZigTest;
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };

@@ -788,8 +788,10 @@ pub const SUNDER_HIT = Hit{ .dmg = 8, .poise = 12, .stance = 40 };
 /// avoid being in the fight.
 pub const SUNDER_REACH: f32 = 4.0;
 
-/// WHICH SORCERY THE ROD IS SET TO. Exhaustive everywhere it is read, so a sixth spell is a compile error
-/// until it has said what it costs and what it does. APPENDED NEVER INSERTED — a save carries the ordinal.
+/// WHICH SORCERY THE ROD IS SET TO. Exhaustive everywhere it is read, so an eighth spell is a compile error
+/// until it has said what it costs and what it does. **A SAVE CARRIES THE NAME, NOT THE ORDINAL**
+/// (`save.render` writes `@tagName`, `save.parse` takes it back through `tagged`), so the ORDER here is free
+/// to change and a RENAME is what breaks an old file. `wf.FoeKind` is the enum that is pinned by ordinal.
 pub const Spell = enum { bolt, roots, rime, levin, siphon, lance, sunder };
 
 pub fn spellName(s: Spell) [:0]const u8 {

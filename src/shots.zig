@@ -291,15 +291,20 @@ pub fn runMapShots(g: *Game) void {
     game.pinHourForShot(g, game.daynight.SHOT_HOUR);
 
     var n: usize = 0;
+    // ONE of each KIND — a pack is four photographs of the same animal. Latched per kind rather than on the
+    // member index: a multi-kind group is three creatures in one array (the warband's berserker, priest and
+    // slinger), and skipping every member past the first photographed one of the three.
+    var shot = [_]bool{false} ** @typeInfo(worldfmt.FoeKind).@"enum".fields.len;
     inline for (game.FOE_GROUPS) |gr| {
-        for (@field(g, gr.field).live(), 0..) |*f, idx| {
-            if (idx > 0) continue; // ONE of each kind: a pack is four photographs of the same animal
+        for (@field(g, gr.field).live()) |*f| {
             // THE HERO STANDS ON THE SUN'S BEARING so the creature turns its FRONT into the light, and far
             // enough out that it is not already mid-leap when the shutter opens.
             // A MULTI-KIND GROUP ANSWERS FOR ITS OWN MEMBERS and a single-kind one is named on the row —
             // `FOE_GROUPS`' own rule, asked here rather than assuming every creature has a `kind()`.
             const T = @TypeOf(f.*);
             const kindOf: worldfmt.FoeKind = if (comptime gr.kind) |k| k else f.kind();
+            if (shot[@intFromEnum(kindOf)]) continue;
+            shot[@intFromEnum(kindOf)] = true;
             const top = f.topWorld().y - f.pos.y;
             const r = mathx.maxF(f.bodyR(), 0.6);
             standHero(g, f.pos.x + 4.5, f.pos.z + 3.4, mathx.radians(215));

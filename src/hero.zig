@@ -721,32 +721,26 @@ pub const Worn = struct {
 /// curve, so summing them cannot become immunity however many sockets gain a plate. A FREE function for
 /// `armourA`'s own reason: the character page prices a suit he is only considering (`book.armourOf`).
 pub fn armourOf(worn: Worn) f32 {
-    var a: f32 = 0;
-    inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
-        if (worn.at(@enumFromInt(f.value))) |k| {
-            switch (item.equip(k)) {
-                .plate => |p| a += p.a,
-                else => {},
-            }
-        }
-    }
-    return a;
+    return plateOf(worn).a;
 }
 
-/// **…AND THE SAME SUM DOWN THE FOUR ELEMENTAL COLUMNS** (`item.Res`). **THIS IS THE ONE PLACE `item.Res`'s
-/// four floats BECOME `combat.Elem`**, which is why item.zig may name neither: `wearFor` matches a `Wear` to an
-/// `Armament` here for exactly the same reason, and a second site that did this mapping could put the cold
-/// column on fire and compile.
-pub fn resistOf(worn: Worn) item.Res {
-    var out = item.Res{};
+/// **THE WHOLE DEFENSIVE ROW OF THE SUIT, IN ONE WALK** — `charmOf`'s shape: one fold over the sockets
+/// returning one aggregate. As three separate folds (physical, the elements, the status rate) it was the same
+/// loop over the same `.plate` arm written out three times, and three places to forget a socket from.
+/// **PHYSICAL AND THE FOUR COLUMNS ADD; THE STATUS RATE MULTIPLIES** — two pieces that each halve it leave a
+/// quarter, where two that each took 0.5 off would leave nothing and make a second one free immunity.
+pub fn plateOf(worn: Worn) item.Plate {
+    var out = item.Plate{ .slot = .chest }; // an aggregate wears no socket; `charmOf`'s own dummy
     inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
         if (worn.at(@enumFromInt(f.value))) |k| {
             switch (item.equip(k)) {
                 .plate => |p| {
-                    out.fire += p.res.fire;
-                    out.cold += p.res.cold;
-                    out.lightning += p.res.lightning;
-                    out.chaos += p.res.chaos;
+                    out.a += p.a;
+                    out.res.fire += p.res.fire;
+                    out.res.cold += p.res.cold;
+                    out.res.lightning += p.res.lightning;
+                    out.res.chaos += p.res.chaos;
+                    out.poison *= p.poison;
                 },
                 else => {},
             }
@@ -755,19 +749,17 @@ pub fn resistOf(worn: Worn) item.Res {
     return out;
 }
 
-/// …AND HOW FAST A STATUS FILLS THROUGH THE SUIT. **MULTIPLIED, NEVER SUMMED**: two pieces that each halve it
-/// leave a quarter, where two that each took 0.5 off would leave nothing and make a second one free immunity.
+/// **…AND THE SAME SUM DOWN THE FOUR ELEMENTAL COLUMNS** (`item.Res`). **THIS IS THE ONE PLACE `item.Res`'s
+/// four floats BECOME `combat.Elem`** (`settleResists`), which is why item.zig may name neither: `wearFor`
+/// matches a `Wear` to an `Armament` here for exactly the same reason, and a second site that did this
+/// mapping could put the cold column on fire and compile.
+pub fn resistOf(worn: Worn) item.Res {
+    return plateOf(worn).res;
+}
+
+/// …AND HOW FAST A STATUS FILLS THROUGH THE SUIT.
 pub fn poisonRateOf(worn: Worn) f32 {
-    var k: f32 = 1;
-    inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
-        if (worn.at(@enumFromInt(f.value))) |kind| {
-            switch (item.equip(kind)) {
-                .plate => |p| k *= p.poison,
-                else => {},
-            }
-        }
-    }
-    return k;
+    return plateOf(worn).poison;
 }
 
 /// …AND EVERY CHARM ON IT, ADDED UP. A FREE function for `armourOf`'s own reason: the character page prices a

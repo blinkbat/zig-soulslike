@@ -816,7 +816,7 @@ pub const Delver = struct {
 
     fn enterPlough(self: *Delver) void {
         sfx.world(.delver_churn, self.pos);
-        // The GROUP reads this edge for the shake and the low rumble (`game.anySurged`), and a tell arriving
+        // The GROUP reads this edge for the shake and the low rumble (`Warrens.anySurged`), and a tell arriving
         // from off screen is exactly what that exists for — this one as much as the burst's.
         self.surged = true;
         self.heroLatch = false;

@@ -518,7 +518,10 @@ fn quickWorth(kind: ?item.Kind, worn: heromod.Worn, sheet: stats.Sheet) f32 {
     const hpMax = heromod.hpMaxOf(sheet, worn);
     if (combat.flaskOf(k)) |f| return switch (f) {
         .crimson => hpMax * combat.FLASK_HP_FRAC,
-        .cerulean => sheet.fp() * combat.FLASK_FP_FRAC,
+        // …AND THE BLUE ONE OFF THE BLUE BAR, for the red one's exact reason: `hero.tickDrink` pours
+        // `fp.max * FLASK_FP_FRAC`, and `fp.max` is `fpMaxOf`. Priced off `sheet.fp()` the row promised a
+        // man wearing the gravebell a bigger swallow than the amulet leaves room for.
+        .cerulean => heromod.fpMaxOf(sheet, worn) * combat.FLASK_FP_FRAC,
     };
     return switch (item.use(k)) {
         .none => 0,
@@ -1864,9 +1867,11 @@ fn drawAttributes(self: *const Book, col: Box, v: View) void {
 /// buys, and the only place the whole schedule can be read at once), and what he shrugs off.
 fn drawBody(col: Box, v: View) void {
     const inner = panel(col, "BODY");
+    // THE POOLS AS THE SUIT LEAVES THEM, not as the sheet alone would have them: a charm eats into both bars
+    // (`hero.hpMaxOf`/`fpMaxOf`) and read off `sheet` this panel contradicted the bars on screen behind it.
     const pools = [_]struct { [:0]const u8, f32 }{
-        .{ "HP", v.sheet.hp() },
-        .{ "FP", v.sheet.fp() },
+        .{ "HP", heromod.hpMaxOf(v.sheet.*, v.worn) },
+        .{ "FP", heromod.fpMaxOf(v.sheet.*, v.worn) },
         .{ "Stamina", v.sheet.stamina() },
         .{ "Poise", heromod.POISE_MAX },
         .{ "Stance", heromod.STANCE_MAX },

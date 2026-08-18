@@ -2236,6 +2236,10 @@ fn strikeVictim(g: *const Game, reach: f32) ?RootPick {
     inline for (FOE_GROUPS, 0..) |f, gi| {
         for (@field(g, f.field).liveConst(), 0..) |*a, i| {
             if (!foemod.corporeal(a)) continue;
+            // …AND NOT AT SOMETHING THAT IS NOT THERE (`disguised`, the reticle's and the melee aim's own
+            // question). A sunk lurker or a burrowed delver inside the reach took the pick off a real target
+            // and then refused the blow in its own `tryHit`, so the cast was spent on water.
+            if (disguised(a)) continue;
             const d = mathx.distXZ(a.pos, g.hero.pos) - a.bodyR();
             if (d > reach) continue;
             if (!g.env.sees(eye, a.lockPoint())) continue;
@@ -3706,7 +3710,7 @@ pub fn run(mode: Mode) void {
         if (g.marsh.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
         }
-        // …and its four one-frame edges. The creature says WHEN; `game.zig` owns the speaker.
+        // …and its FIVE one-frame edges. The creature says WHEN; `game.zig` owns the speaker.
         for (g.marsh.live()) |*l| {
             if (l.broke) sfx.world(.lurker_break, l.pos);
             if (l.lashed) sfx.world(.lurker_lash, l.pos);

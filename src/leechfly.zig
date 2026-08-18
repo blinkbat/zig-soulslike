@@ -393,7 +393,7 @@ pub const Leechfly = struct {
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
-        self.flash = mathx.maxF(0, self.flash - dt);
+        foe.fadeFlash(&self.flash, dt);
         self.feedCd = mathx.maxF(0, self.feedCd - dt);
         self.climbCd = mathx.maxF(0, self.climbCd - dt);
         self.spookLeft = mathx.maxF(0, self.spookLeft - dt);

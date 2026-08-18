@@ -127,6 +127,23 @@ fn v2(x: f32, y: f32) rl.Vector2 {
     return .{ .x = x, .y = y };
 }
 
+/// **CAN HE AFFORD IT** — the one dimming a sorcery's picture takes when the pool is short, in one place.
+/// Every spell icon was opening with its own `const a: u8 = if (on) 255 else 120` and then rebuilding each of
+/// its colours around that number, which meant the dim was a literal repeated per icon AND that a colour
+/// authored translucent on purpose (`FIRE_DIM` at 150) came back at full alpha the moment it was tinted.
+/// SCALES the alpha the colour already had rather than replacing it.
+const UNLIT_SHARE: f32 = 120.0 / 255.0;
+fn dimmed(c: rl.Color, lit: bool) rl.Color {
+    return if (lit) c else mathx.withAlpha(c, mathx.u8f(@as(f32, @floatFromInt(c.a)) * UNLIT_SHARE));
+}
+
+/// A filled ellipse at a FLOAT centre. raylib's own takes `i32` there, so every caller was doing the same
+/// `@intFromFloat` pair by hand — and every one of them was quietly snapping the picture to a whole pixel,
+/// which at a 33 px bag cell is a tenth of the cell.
+fn ellipseV(cx: f32, cy: f32, rx: f32, ry: f32, col: rl.Color) void {
+    rl.drawEllipse(@intFromFloat(@round(cx)), @intFromFloat(@round(cy)), rx, ry, col);
+}
+
 /// An arc struck in segments, tapering from `w0` to `w1`. Raylib's ring primitive is a filled annulus with
 /// square ends; every curved thing in this set wants a tapered one, so it is drawn as a run of strokes.
 fn arc(cx: f32, cy: f32, r: f32, from: f32, to: f32, segs: u32, w0: f32, w1: f32, col: rl.Color) void {
@@ -187,7 +204,191 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
         .banded_warbelt => bandedWarbelt(cx, cy, px),
         .marchboots => marchboots(cx, cy, px),
         .deft_signet => deftSignet(cx, cy, px),
+        .purgeleaf => purgeleaf(cx, cy, px),
+        .pilgrims_salt => pilgrimsSalt(cx, cy, px),
+        .ironwort_tea => ironwortTea(cx, cy, px),
+        .rimeward_mantle => rimewardMantle(cx, cy, px),
+        .sporecrown => sporecrown(cx, cy, px),
+        .gravebell_amulet => gravebellAmulet(cx, cy, px),
     }
+}
+
+/// A FELTED LEAF, and it is drawn as a leaf and NOT as a herb sprig: the bag already carries bloodgrass, and
+/// two green tufts in a grid of thirty cells is two rows the player has to read the caption of. One broad
+/// blade, one heavy midrib, and the puckered edge that says felt rather than salad.
+fn purgeleaf(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x9EAF);
+    const leaf = rgba(96, 118, 84, 255);
+    const leafLo = rgba(58, 74, 52, 255);
+    const rib = rgba(178, 190, 150, 255);
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.04 + 1.4 * k), s * 0.25, rgba(0, 0, 0, 105));
+    // THE BLADE, as two overlapping ellipses off a tilted axis — a leaf is not symmetric about its own rib.
+    const tip = v2(cx + s * 0.20, cy - s * 0.26);
+    const base = v2(cx - s * 0.14, cy + s * 0.25);
+    quad(v2(base.x, base.y), v2(cx - s * 0.20, cy - s * 0.02), tip, v2(cx + s * 0.04, cy + s * 0.10), leafLo);
+    quad(v2(base.x, base.y), v2(cx + s * 0.02, cy + s * 0.02), tip, v2(cx + s * 0.19, cy + s * 0.04), leaf);
+    // THE MIDRIB, pale and running the whole way to a BLUNT tip — nothing here ends in a point.
+    rl.drawLineEx(base, tip, 2.0 * k, rib);
+    rl.drawCircleV(tip, 1.7 * k, rib);
+    // …and the veins off it, none of them paired and none of them reaching the edge.
+    var i: u32 = 0;
+    while (i < 4) : (i += 1) {
+        const t = 0.22 + @as(f32, @floatFromInt(i)) * 0.19;
+        const on = v2(base.x + (tip.x - base.x) * t, base.y + (tip.y - base.y) * t);
+        const side: f32 = if (i % 2 == 0) 1.0 else -1.0;
+        rl.drawLineEx(on, v2(on.x + side * s * rng.range(0.08, 0.15), on.y - s * rng.range(0.02, 0.07)), 1.2 * k, rgba(140, 154, 118, 210));
+    }
+    // THE STALK, cut short and pale where it was pulled.
+    rl.drawLineEx(base, v2(cx - s * 0.24, cy + s * 0.31), 2.4 * k, leafLo);
+    rl.drawCircleV(v2(cx - s * 0.24, cy + s * 0.31), 1.6 * k, CAP_LT);
+}
+
+/// A PRESSED BRICK of salt — a BLOCK, because the bag's other soul (`crackedSoul`) is a shard of light and
+/// these two may not read as the same thing at a glance. Moulded corners, a thumbed hollow, one broken edge.
+fn pilgrimsSalt(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x5A17);
+    const grey = rgba(198, 194, 184, 255);
+    const greyLo = rgba(142, 138, 130, 255);
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.06 + 1.4 * k), s * 0.26, rgba(0, 0, 0, 110));
+    // The brick, seen a little from above so the TOP face is what carries the light.
+    quad(v2(cx - s * 0.26, cy - s * 0.02), v2(cx + s * 0.26, cy - s * 0.06), v2(cx + s * 0.24, cy + s * 0.24), v2(cx - s * 0.25, cy + s * 0.26), greyLo);
+    quad(v2(cx - s * 0.26, cy - s * 0.02), v2(cx - s * 0.06, cy - s * 0.22), v2(cx + s * 0.28, cy - s * 0.25), v2(cx + s * 0.26, cy - s * 0.06), grey);
+    // THE THUMBED HOLLOW in the top face — one dish, off centre, which is the whole "carried a long way" note.
+    rl.drawCircleV(v2(cx + s * 0.06, cy - s * 0.13), s * 0.075, rgba(172, 168, 158, 255));
+    rl.drawCircleV(v2(cx + s * 0.05, cy - s * 0.145), s * 0.050, SALT);
+    // The mould's seam down the face, and the corner somebody knocked off.
+    rl.drawLineEx(v2(cx - s * 0.01, cy - s * 0.05), v2(cx - s * 0.02, cy + s * 0.25), 1.3 * k, rgba(118, 114, 108, 200));
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) {
+        rl.drawCircleV(v2(cx - s * 0.24 + rng.range(-1.5, 1.5) * k, cy + s * 0.02 + @as(f32, @floatFromInt(i)) * s * 0.070), s * rng.range(0.018, 0.034), rgba(216, 212, 202, 255));
+    }
+}
+
+/// A BOWL, not a flask — the bag already has three vessels with stoppers (two flasks and the broth's skin),
+/// and a fourth would be a fourth glass silhouette. Steeped tea is a wide shallow dish with the root in it.
+fn ironwortTea(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    const clay = rgba(104, 78, 58, 255);
+    const clayLo = rgba(68, 50, 38, 255);
+    const brew = rgba(126, 66, 34, 255);
+    const brewLt = rgba(172, 100, 52, 255);
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.14 + 1.4 * k), s * 0.26, rgba(0, 0, 0, 110));
+    // THE BOWL, and it sits a little crooked: nothing here is turned on a lathe.
+    quad(v2(cx - s * 0.27, cy - s * 0.02), v2(cx + s * 0.28, cy - s * 0.04), v2(cx + s * 0.18, cy + s * 0.26), v2(cx - s * 0.16, cy + s * 0.27), clay);
+    arc(cx + s * 0.005, cy + s * 0.26, s * 0.17, std.math.pi * 0.06, std.math.pi * 0.94, 10, 2.6 * k, 2.2 * k, clayLo);
+    // THE SURFACE — rust-coloured and it is the brightest thing in the cell, because the prose is about colour.
+    ellipseV(cx + s * 0.005, cy - s * 0.03, s * 0.275, s * 0.075, brew);
+    ellipseV(cx - s * 0.03, cy - s * 0.045, s * 0.185, s * 0.042, brewLt);
+    // THE ROOT still in it, breaking the surface — one crooked piece, blunt at the break.
+    rl.drawLineEx(v2(cx + s * 0.10, cy - s * 0.055), v2(cx + s * 0.20, cy - s * 0.19), 2.4 * k, ROOT_BARK);
+    rl.drawLineEx(v2(cx + s * 0.20, cy - s * 0.19), v2(cx + s * 0.16, cy - s * 0.27), 2.0 * k, ROOT_BARK);
+    rl.drawCircleV(v2(cx + s * 0.16, cy - s * 0.27), 1.8 * k, ROOT_HEART);
+    // …and the steam, the second wind's own two streaks, because this one is drunk warm.
+    arc(cx - s * 0.12, cy - s * 0.19, s * 0.10, std.math.pi * 1.2, std.math.pi * 1.9, 8, 1.7 * k, 0.7 * k, rgba(238, 232, 220, 130));
+    arc(cx - s * 0.03, cy - s * 0.27, s * 0.08, std.math.pi * 1.25, std.math.pi * 1.95, 8, 1.4 * k, 0.6 * k, rgba(238, 232, 220, 95));
+}
+
+/// A MANTLE over the shoulders — deliberately NOT the gambeson's silhouette (that one is a body with sleeves).
+/// This is a collar and a fall of fleece, and the rime blue on it is the only thing in the cell that is cold.
+fn rimewardMantle(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x21CE);
+    const hide = rgba(84, 74, 62, 255);
+    const hideLo = rgba(54, 48, 40, 255);
+    const fleece = rgba(196, 190, 176, 255);
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.06 + 1.4 * k), s * 0.27, rgba(0, 0, 0, 110));
+    // THE FALL of it, wider at the hem than at the throat — a cape, read in one shape.
+    quad(v2(cx - s * 0.15, cy - s * 0.14), v2(cx + s * 0.15, cy - s * 0.14), v2(cx + s * 0.29, cy + s * 0.28), v2(cx - s * 0.29, cy + s * 0.28), hide);
+    quad(v2(cx - s * 0.15, cy - s * 0.14), v2(cx + s * 0.01, cy - s * 0.14), v2(cx + s * 0.06, cy + s * 0.28), v2(cx - s * 0.29, cy + s * 0.28), hideLo);
+    // THE FLEECE COLLAR, which is the read: a heavy roll of it round the throat, uneven all the way.
+    var i: u32 = 0;
+    while (i < 6) : (i += 1) {
+        const t = @as(f32, @floatFromInt(i)) / 5.0;
+        const x = cx - s * 0.24 + t * s * 0.48;
+        rl.drawCircleV(v2(x, cy - s * 0.19 + rng.range(-1.6, 1.6) * k), s * rng.range(0.055, 0.082), fleece);
+    }
+    // …and the hem's own fringe, thinner, so the two runs of wool are not the same wool.
+    i = 0;
+    while (i < 5) : (i += 1) {
+        const x = cx - s * 0.24 + @as(f32, @floatFromInt(i)) * s * 0.12;
+        rl.drawLineEx(v2(x, cy + s * 0.24), v2(x + rng.range(-1.5, 1.5) * k, cy + s * 0.31), 1.8 * k, rgba(150, 144, 132, 235));
+    }
+    // THE COLD ON IT — frost along the shoulder, the rime breath's own crystal, and nothing else in the cell
+    // is blue: what this coat is FOR has to be readable in a 33 px bag cell.
+    arc(cx, cy - s * 0.12, s * 0.21, std.math.pi * 1.10, std.math.pi * 1.90, 10, 2.2 * k, 1.0 * k, RIME_ICE);
+    rl.drawCircleV(v2(cx - s * 0.13, cy - s * 0.06), 1.7 * k, RIME_LT);
+    rl.drawCircleV(v2(cx + s * 0.15, cy - s * 0.02), 1.4 * k, RIME_LT);
+}
+
+/// A WOVEN CAP — the sporeling's dome is the CREATURE's shape and this is not that: it is a fibre skullcap,
+/// so the rim is a braided band and the crown is a weave, with the sporeling's own rust as the fibre colour.
+fn sporecrown(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x5C40);
+    const fibre = rgba(146, 96, 66, 255);
+    const fibreLo = rgba(96, 60, 42, 255);
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.06 + 1.4 * k), s * 0.25, rgba(0, 0, 0, 110));
+    // The crown — a dome, but a SHALLOW one: a deep one is the mushroom again.
+    arc(cx, cy + s * 0.10, s * 0.255, std.math.pi, std.math.tau, 14, s * 0.26, s * 0.14, fibreLo);
+    arc(cx - s * 0.02, cy + s * 0.09, s * 0.215, std.math.pi * 1.06, std.math.pi * 1.88, 12, s * 0.18, s * 0.09, fibre);
+    // THE WEAVE — three courses running round it, which is the whole of why this is cloth and not a cap.
+    var c: u32 = 0;
+    while (c < 3) : (c += 1) {
+        const rr = s * (0.10 + @as(f32, @floatFromInt(c)) * 0.058);
+        arc(cx, cy + s * 0.10, rr, std.math.pi * 1.04, std.math.pi * 1.96, 10, 1.5 * k, 1.0 * k, rgba(178, 126, 90, 200));
+    }
+    // THE BRAIDED BAND at the rim, and it is the darkest thing here so the crown sits IN it.
+    rl.drawLineEx(v2(cx - s * 0.27, cy + s * 0.11), v2(cx + s * 0.27, cy + s * 0.10), 4.2 * k, fibreLo);
+    var i: u32 = 0;
+    while (i < 7) : (i += 1) {
+        const x = cx - s * 0.24 + @as(f32, @floatFromInt(i)) * s * 0.080;
+        rl.drawLineEx(v2(x, cy + s * 0.075), v2(x + s * 0.045, cy + s * 0.145), 1.5 * k, rgba(186, 134, 96, 220));
+    }
+    // …AND THE FUR INSIDE IT, the thing that actually eats the spores: pale, and only at the front lip.
+    i = 0;
+    while (i < 5) : (i += 1) {
+        const x = cx - s * 0.19 + @as(f32, @floatFromInt(i)) * s * 0.095;
+        rl.drawCircleV(v2(x + rng.range(-1.2, 1.2) * k, cy + s * 0.165), s * rng.range(0.024, 0.042), SHROOM_CREAM);
+    }
+}
+
+/// A CRACKED BELL on a thong. The ashen amulet next to it is a BEAD, so this one has to be a shape with a
+/// mouth and a shoulder — and the crack is not decoration: it is the whole reason the thing is still ringing.
+fn gravebellAmulet(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    // THE BELL ARMAMENT'S OWN BRONZE, not a second one: two bells in the same UI drawn in two golds is
+    // two objects the player has no reason to connect.
+    const bronze = BRONZE;
+    const bronzeLo = BRONZE_DK;
+    const bronzeLt = BRONZE_LT;
+    const cord = rgba(72, 60, 48, 255);
+    const top = cy - s * 0.29;
+    // The thong, two unequal runs into a loop — the amulet's own idiom, so the pair read as one shelf.
+    rl.drawLineEx(v2(cx - s * 0.16, top), v2(cx - s * 0.02, cy - s * 0.10), 1.8 * k, cord);
+    rl.drawLineEx(v2(cx + s * 0.15, top - s * 0.01), v2(cx + s * 0.03, cy - s * 0.10), 1.8 * k, cord);
+    arc(cx, top + s * 0.01, s * 0.15, std.math.pi * 1.08, std.math.pi * 1.92, 8, 1.6 * k, 1.6 * k, cord);
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.10 + 1.4 * k), s * 0.24, rgba(0, 0, 0, 115));
+    // THE BELL — a shoulder that curves out to a flared MOUTH, drawn shaded first then lit down one side.
+    quad(v2(cx - s * 0.10, cy - s * 0.11), v2(cx + s * 0.10, cy - s * 0.11), v2(cx + s * 0.23, cy + s * 0.19), v2(cx - s * 0.23, cy + s * 0.19), bronzeLo);
+    quad(v2(cx - s * 0.10, cy - s * 0.11), v2(cx + s * 0.01, cy - s * 0.11), v2(cx + s * 0.08, cy + s * 0.19), v2(cx - s * 0.23, cy + s * 0.19), bronze);
+    arc(cx, cy - s * 0.10, s * 0.105, std.math.pi, std.math.tau, 8, s * 0.10, s * 0.05, bronze);
+    // THE LIP, flared and brighter — a bell's mouth is a ring, not a straight cut.
+    ellipseV(cx, cy + s * 0.20, s * 0.235, s * 0.058, bronzeLo);
+    ellipseV(cx, cy + s * 0.185, s * 0.215, s * 0.045, bronzeLt);
+    ellipseV(cx, cy + s * 0.195, s * 0.155, s * 0.030, BRONZE_BORE); // …and the dark up inside it
+    // THE CRACK, all the way from the lip into the shoulder, wandering — a split follows the metal, not a rule.
+    rl.drawLineEx(v2(cx + s * 0.12, cy + s * 0.18), v2(cx + s * 0.07, cy + s * 0.02), 1.6 * k, rgba(30, 24, 14, 235));
+    rl.drawLineEx(v2(cx + s * 0.07, cy + s * 0.02), v2(cx + s * 0.10, cy - s * 0.09), 1.4 * k, rgba(30, 24, 14, 235));
+    // …and the note still coming off it, one faint arc: the prose says it has not stopped.
+    arc(cx + s * 0.22, cy + s * 0.02, s * 0.11, std.math.pi * 1.25, std.math.pi * 1.92, 8, 1.6 * k, 0.6 * k, rgba(238, 226, 190, 120));
 }
 
 /// **WHICH PICTURE A SORCERY IS, AND THE ONE PLACE IT IS DECIDED** — `drawHeld`'s own shape one enum along.
@@ -206,7 +407,66 @@ pub fn spellArt(s: combat.Spell, cx: f32, cy: f32, px: f32, lit: bool) void {
         // each has to say, since neither is a thing sailing through the air like the bolt.
         .levin => levin(cx, cy, px, lit),
         .siphon => siphon(cx, cy, px, lit),
+        // …and the two newest, whose whole read is a SHAPE rather than a substance: one is a line that goes
+        // through, the other is a mass coming down on a guard.
+        .lance => lance(cx, cy, px, lit),
+        .sunder => sunder(cx, cy, px, lit),
     }
+}
+
+/// **A LANCE IS A LINE THAT DOES NOT STOP**, and that is the only thing this picture has to say: a shaft of
+/// fire running corner to corner with two bodies' worth of it PAST the first mark. Drawn as a burst it would be
+/// the bolt again in another colour, and the one thing the player has to learn about this spell is that it
+/// keeps going.
+fn lance(cx: f32, cy: f32, px: f32, lit: bool) void {
+    const s = px;
+    const k = strokeK(px);
+    const hot = dimmed(FIRE, lit);
+    const edge = dimmed(FIRE_DIM, lit);
+    const from = v2(cx - s * 0.30, cy + s * 0.24);
+    const to = v2(cx + s * 0.32, cy - s * 0.26);
+    // The shaft: a wide dim body with a narrow hot core down it, so it reads as fire and not as a rod.
+    rl.drawLineEx(from, to, 5.4 * k, edge);
+    rl.drawLineEx(from, to, 2.2 * k, hot);
+    // THE HEAD, blunt — nothing in this world ends in a point, the lance included.
+    rl.drawCircleV(to, 3.0 * k, hot);
+    rl.drawCircleV(v2(to.x - s * 0.05, to.y + s * 0.04), 2.0 * k, dimmed(rgba(255, 226, 170, 255), lit));
+    // **THE TWO IT ALREADY WENT THROUGH.** Struck ON the line and behind the head, which is what says the
+    // shaft did not stop at the first of them.
+    rl.drawCircleV(onAxis(from, to, 0.42, 0), 3.4 * k, dimmed(rgba(58, 44, 36, 255), lit));
+    rl.drawCircleV(onAxis(from, to, 0.68, 0), 3.0 * k, dimmed(rgba(58, 44, 36, 255), lit));
+    // …and the sparks coming off each of those, thrown ACROSS the line so the crossings read as impacts.
+    rl.drawLineEx(onAxis(from, to, 0.42, -s * 0.055), onAxis(from, to, 0.42, s * 0.075), 1.5 * k, edge);
+    rl.drawLineEx(onAxis(from, to, 0.68, -s * 0.065), onAxis(from, to, 0.68, s * 0.055), 1.4 * k, edge);
+    // The tail, fading back toward where it was thrown from.
+    rl.drawLineEx(from, onAxis(from, to, 0.14, 0), 2.6 * k, dimmed(rgba(196, 88, 30, 130), lit));
+}
+
+/// **SUNDER IS A GUARD COMING APART**, so the picture is a SHIELD with the crack running through it — not a
+/// blow, and not an element: this is the one sorcery in the rack with no colour of its own, and what says so
+/// is that the only bright thing in the cell is the split.
+fn sunder(cx: f32, cy: f32, px: f32, lit: bool) void {
+    const s = px;
+    const k = strokeK(px);
+    const board = dimmed(rgba(96, 72, 50, 255), lit);
+    const boardLo = dimmed(rgba(62, 46, 32, 255), lit);
+    const iron = dimmed(rgba(148, 142, 132, 255), lit);
+    const split = dimmed(rgba(246, 240, 226, 255), lit);
+    // THE BOARD — a heater shape, shaded half first so it is a surface rather than an outline.
+    quad(v2(cx - s * 0.24, cy - s * 0.24), v2(cx + s * 0.24, cy - s * 0.24), v2(cx + s * 0.20, cy + s * 0.10), v2(cx - s * 0.20, cy + s * 0.10), boardLo);
+    quad(v2(cx - s * 0.24, cy - s * 0.24), v2(cx + s * 0.02, cy - s * 0.24), v2(cx + s * 0.01, cy + s * 0.10), v2(cx - s * 0.20, cy + s * 0.10), board);
+    // …and its point, which is what makes it a shield and not a plank.
+    quad(v2(cx - s * 0.20, cy + s * 0.10), v2(cx + s * 0.20, cy + s * 0.10), v2(cx, cy + s * 0.31), v2(cx, cy + s * 0.31), boardLo);
+    rl.drawLineEx(v2(cx - s * 0.24, cy - s * 0.21), v2(cx + s * 0.24, cy - s * 0.21), 2.4 * k, iron); // the rim band
+    // **THE SPLIT, corner to corner and WANDERING** — a crack follows the grain, and a ruled line reads as a
+    // seam somebody built in. The two halves are pushed a little apart, which is the whole of the spell.
+    rl.drawLineEx(v2(cx - s * 0.16, cy - s * 0.26), v2(cx - s * 0.02, cy - s * 0.04), 2.6 * k, split);
+    rl.drawLineEx(v2(cx - s * 0.02, cy - s * 0.04), v2(cx + s * 0.09, cy + s * 0.09), 2.2 * k, split);
+    rl.drawLineEx(v2(cx + s * 0.09, cy + s * 0.09), v2(cx + s * 0.05, cy + s * 0.29), 1.8 * k, split);
+    // The chips leaving it, thrown OUT of the crack — three, none the same, all on the struck side.
+    rl.drawCircleV(v2(cx + s * 0.17, cy - s * 0.14), 2.0 * k, boardLo);
+    rl.drawCircleV(v2(cx + s * 0.25, cy - s * 0.02), 1.6 * k, boardLo);
+    rl.drawCircleV(v2(cx + s * 0.21, cy + s * 0.15), 1.3 * k, boardLo);
 }
 
 /// **AN OPEN-FACED HELM, AND WHAT SAYS HELM IS THE DOME PLUS THE NASAL.** Drawn as a dark dome with a wide black

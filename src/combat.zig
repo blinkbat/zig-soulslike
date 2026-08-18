@@ -189,6 +189,11 @@ pub const Vitals = struct {
     dead: bool = false,
     regenDelay: f32 = REGEN_DELAY,
     regenRate: f32 = 1.0,
+    /// A MULTIPLIER ON THE POISE REFILL ALONE, and it is a TIMED EFFECT'S rather than a body's — `regenRate`
+    /// says what kind of thing this is (a foe refills slower than he does) and this says what it drank. 1 for
+    /// every body in the game except a hero with `ironwort_tea` in him, and written in exactly one place
+    /// (`hero.tickTimed`), so a clock running out puts it back without anybody asking.
+    poiseRate: f32 = 1.0,
     stunLeft: f32 = 0,
     lightStun: f32 = LIGHT_STUN_DUR,
     heavyStun: f32 = HEAVY_STUN_DUR,
@@ -278,7 +283,10 @@ pub const Vitals = struct {
             }
         }
         if (self.dead or self.sinceHit < self.regenDelay) return;
-        self.poise = mathx.minF(self.poiseMax, self.poise + self.poiseMax / POISE_REFILL * self.regenRate * dt);
+        // **`poiseRate` IS A TIMED EFFECT'S, NOT A BODY'S** — `regenRate` is what this body's own kind refills
+        // at (a foe's is slower than his), and this is a multiplier on top that something drank. Stamped by
+        // `hero.tickTimed` and 1 for every other body in the game, so nothing else changes.
+        self.poise = mathx.minF(self.poiseMax, self.poise + self.poiseMax / POISE_REFILL * self.regenRate * self.poiseRate * dt);
         self.stance = mathx.minF(self.stanceMax, self.stance + self.stanceMax / STANCE_REFILL * self.regenRate * dt);
     }
 
@@ -747,9 +755,42 @@ pub const SIPHON_SHARE: f32 = 0.55;
 /// SHORTER THAN THE LEVIN'S. You have to be in the fight to feed off it.
 pub const SIPHON_REACH: f32 = 12.0;
 
+/// **THE EMBER LANCE — the rod's sixth, and the first FIRE anywhere on his side of the fight.** Every other
+/// element he owns has a spell (chaos twice, cold, lightning) and fire had none: it arrived only as an arrow
+/// he had to have fletched or a candle he had to have found, while the newest creature in the wood throws it
+/// at him. And it is the only one that does not stop at the first body — a LANCE goes THROUGH, so what it is
+/// for is a line of them: the muster shoulder to shoulder, a warband, a ring of mages.
+pub const LANCE_FP: f32 = 21.0;
+/// PER BODY, and deliberately small — it is priced where the rime is, because it is the rime's kind of spell:
+/// what the focus buys is the SECOND body and the third, never the number on the first. Poise under the
+/// levin's 34 (that spell's whole sale is the interrupt) and over a hero light's, so a line of small things
+/// is a line of small things that all flinch at once.
+pub const LANCE_HIT = Hit{ .poise = 18, .stance = 6, .elem = elems(.{ .fire = 11.5 }) };
+/// How far the shaft of it carries. Past the levin's 16 — nothing has to cross the ground and the whole point
+/// is depth down a line — and well short of the bolt's flight.
+pub const LANCE_REACH: f32 = 20.0;
+/// …AND HOW FAT IT IS. A lance is not a cone: it takes what is standing ON the line, so this is sized to be
+/// certain of a body the line passes through and never to sweep up a neighbour standing beside it.
+pub const LANCE_R: f32 = 0.55;
+
+/// **SUNDER — the seventh, and the rod's answer to a SHIELD.** Stance is the bar that decides whether a guard
+/// holds, and until now the only thing that moved it in any quantity was a committed stroke inside reach: the
+/// shieldman, the greatsword and the knight are all fights a caster simply had no tool for.
+///
+/// **AND IT IS CAST IN MELEE RANGE ON PURPOSE** (`SUNDER_REACH`, inside a sword's own). `LEVIN_HIT`'s note is
+/// the law it keeps: a spell thrown from across the room may not be the better guard-breaker than a stroke
+/// committed inside reach. So it carries a parry's worth of stance and you have to be standing there to spend it.
+pub const SUNDER_FP: f32 = 24.0;
+/// PHYSICAL, and NO ELEMENT — a sundering blow is a mass arriving, and every element in the table already has
+/// a spell. The damage is the lowest of the seven, which is the ladder's own rule paying for the stance.
+pub const SUNDER_HIT = Hit{ .dmg = 8, .poise = 12, .stance = 40 };
+/// INSIDE THE SWORD'S OWN REACH (`game.MELEE_AIM_R` is 3.6). This is the one sorcery that is not a way to
+/// avoid being in the fight.
+pub const SUNDER_REACH: f32 = 4.0;
+
 /// WHICH SORCERY THE ROD IS SET TO. Exhaustive everywhere it is read, so a sixth spell is a compile error
 /// until it has said what it costs and what it does. APPENDED NEVER INSERTED — a save carries the ordinal.
-pub const Spell = enum { bolt, roots, rime, levin, siphon };
+pub const Spell = enum { bolt, roots, rime, levin, siphon, lance, sunder };
 
 pub fn spellName(s: Spell) [:0]const u8 {
     return switch (s) {
@@ -758,6 +799,8 @@ pub fn spellName(s: Spell) [:0]const u8 {
         .rime => "Rime Breath",
         .levin => "Levin Strike",
         .siphon => "Siphon",
+        .lance => "Ember Lance",
+        .sunder => "Sunder",
     };
 }
 
@@ -769,6 +812,8 @@ pub fn spellFp(s: Spell) f32 {
         .rime => RIME_FP,
         .levin => LEVIN_FP,
         .siphon => SIPHON_FP,
+        .lance => LANCE_FP,
+        .sunder => SUNDER_FP,
     };
 }
 
@@ -780,6 +825,8 @@ pub fn spellBlow(s: Spell) ?Hit {
         .bolt => BOLT_HIT,
         .levin => LEVIN_HIT,
         .siphon => SIPHON_HIT,
+        .lance => LANCE_HIT,
+        .sunder => SUNDER_HIT,
         .roots, .rime => null,
     };
 }
@@ -791,6 +838,10 @@ pub fn spellReach(s: Spell) ?f32 {
     return switch (s) {
         .levin => LEVIN_REACH,
         .siphon => SIPHON_REACH,
+        // …AND THE TWO NEWEST, for their own reasons: the lance is a LINE with a length, and Sunder is cast
+        // inside a sword's own reach — so both are a distance rather than a flight.
+        .lance => LANCE_REACH,
+        .sunder => SUNDER_REACH,
         .bolt, .roots, .rime => null,
     };
 }
@@ -808,6 +859,10 @@ pub fn spellDamage(s: Spell) f32 {
         // What it TAKES. What it gives back is `SIPHON_SHARE` of what a particular body actually lost, which is
         // that body's business and not a number the sheet can print.
         .siphon => SIPHON_HIT.raw(),
+        // PER BODY for the lance — what it is actually worth is this times however many stood on the line,
+        // which is the rime's own honest limit and the same one the sheet has.
+        .lance => LANCE_HIT.raw(),
+        .sunder => SUNDER_HIT.raw(),
     };
 }
 

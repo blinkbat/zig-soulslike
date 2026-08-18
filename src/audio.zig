@@ -477,6 +477,11 @@ pub const Id = enum {
     mage_die,
     ember_bounce,
     ember_burst,
+    lurker_break,
+    lurker_lash,
+    lurker_sink,
+    lurker_hurt,
+    lurker_die,
     delver_churn,
     delver_dig,
     delver_claw,
@@ -2111,6 +2116,59 @@ fn mkEmberBurst(r: *Rack) void {
     r.master(1.9, 3000);
 }
 
+// THE FEN LURKER — **A WHOLE FAMILY BUILT ON WATER MOVING**, which nothing else in the bank is made of. The
+// creatures near it are dry: bone, chitin, fibre, fire. What separates this one at the range it is fought
+// from is not its pitch, it is that every voice it owns has a body of liquid under it.
+
+/// **THE SURFACE BREAKING, AND IT IS THE TELL.** The one warning that arrives while he can still be somewhere
+/// else, so it is the loudest thing this creature owns and the one that carries furthest. A heave of water
+/// first, THEN the mass coming through it — that order is the sound: a splash with nothing under it is a
+/// stone, and what is wanted is something the size of a man arriving.
+fn mkLurkerBreak(r: *Rack) void {
+    r.air(0.0, 0.46, 0.40, 300, 2600, 0.62, 1.7); // the heave: wet at the bottom, opening upward
+    r.body(0.06, 0.28, 96, 38, 0.72, 3.4); // …and the MASS under it, low and slow
+    r.grit(0.04, 0.30, 0.26, 1200, 0.48, 2.2); // water tearing off a back
+    r.ring(0.10, 0.34, 128, 0.14, 5.0, 3); // a hollow going up as the neck clears
+    r.wow(0.005, 0.7); // …and it does not sit still: the surface is moving under it
+    r.master(1.6, 2800);
+}
+
+/// THE LASH — a heavy wet arrival, and the WATER IS THE END OF IT rather than the start: the head comes
+/// through the air and puts the pool down on top of him.
+fn mkLurkerLash(r: *Rack) void {
+    r.body(0.0, 0.09, 260, 84, 0.88, 6.2); // the skull landing
+    r.air(0.01, 0.30, 0.46, 2600, 380, 0.60, 2.6); // …and the sheet of it thrown after
+    r.grit(0.0, 0.14, 0.28, 2200, 0.50, 3.2);
+    r.master(2.0, 3100);
+}
+
+/// GOING BACK UNDER — **TEXTURE, AND UNDER THE FLOOR** (`BATTLE_FLOOR`): a thing leaving is not a thing about
+/// to hit you, and the volume in this game is reserved for what is. A long swallow with no attack on it.
+fn mkLurkerSink(r: *Rack) void {
+    r.air(0.0, 0.62, 0.30, 1400, 190, 0.44, 1.4); // bright falling away to nothing — the close over it
+    r.body(0.05, 0.30, 72, 30, 0.34, 2.4);
+    r.master(1.3, 2200);
+}
+
+/// HURT — **A CRY WITH WATER IN IT.** Everything else in the bank shrieks or growls through open air; this
+/// one is a throat half full, so the growl is choked and the air over it is wet rather than bright.
+fn mkLurkerHurt(r: *Rack) void {
+    r.growl(0.0, 0.28, 240, 130, 0.58, 0.50, 0.11); // low, and it FALLS — an animal's cry does
+    r.air(0.02, 0.34, 0.30, 900, 260, 0.52, 1.9); // …drowned rather than opening out
+    r.grit(0.0, 0.20, 0.22, 1500, 0.46, 2.4);
+    r.master(2.0, 3000);
+}
+
+/// AND THE DEATH: the cry going out and the body going down, in that order and overlapping. Longest of the
+/// five — a creature has to be audibly finished, or a ford of them is a wall of gurgles with no ending.
+fn mkLurkerDie(r: *Rack) void {
+    r.growl(0.0, 0.34, 300, 96, 0.56, 0.54, 0.12);
+    r.air(0.12, 0.78, 0.34, 1100, 160, 0.50, 1.5); // …the long swallow under it, the sink's own shape
+    r.body(0.20, 0.42, 66, 26, 0.40, 2.6);
+    r.grit(0.02, 0.26, 0.20, 1300, 0.42, 2.2);
+    r.master(1.7, 2600);
+}
+
 fn battle(old: f32) f32 {
     return @sqrt(BATTLE_FLOOR * old);
 }
@@ -2174,6 +2232,14 @@ const BANK = [NV]Row{
     // is a dozen bounces overlapping, and one voice repeated exactly is a machine gun.
     .{ .id = .ember_bounce, .make = mkEmberBounce, .gain = battle(0.48), .mix = .combat, .jit = 0.18, .vjit = 0.30, .vars = 4, .poly = 6, .reach = 30 },
     .{ .id = .ember_burst, .make = mkEmberBurst, .gain = battle(0.60), .mix = .combat, .jit = 0.12, .vjit = 0.22, .vars = 4, .poly = 5, .reach = 32 },
+    // THE FEN LURKER. **THE BREAK CARRIES FURTHEST OF THE FIVE** — it is the tell, and this creature's tell
+    // is the only warning you get that the water you are standing in is occupied. The SINK is under the
+    // floor (`BATTLE_FLOOR`): it is texture, and a thing leaving is not a thing about to hit you.
+    .{ .id = .lurker_break, .make = mkLurkerBreak, .gain = battle(0.74), .mix = .combat, .jit = 0.08, .vjit = 0.14, .vars = 4, .poly = 4, .reach = 36 },
+    .{ .id = .lurker_lash, .make = mkLurkerLash, .gain = battle(0.84), .mix = .combat, .jit = 0.08, .vjit = 0.14, .vars = 4, .poly = 4, .reach = 30 },
+    .{ .id = .lurker_sink, .make = mkLurkerSink, .gain = 0.30, .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 3, .poly = 3, .reach = 24 },
+    .{ .id = .lurker_hurt, .make = mkLurkerHurt, .gain = battle(0.50), .mix = .combat, .jit = 0.16, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 26 },
+    .{ .id = .lurker_die, .make = mkLurkerDie, .gain = battle(0.58), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 32 },
     // THE DELVER. Its whole family is EARTH — grit and a low body, never a ring — and the CHURN is texture:
     // under the floor, and thinned in count by `delver.CHURN_EVERY`, because it repeats through a hold.
     .{ .id = .delver_churn, .make = mkDelverChurn, .gain = battle(0.30), .mix = .combat, .jit = 0.16, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 34 },

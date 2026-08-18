@@ -2199,7 +2199,7 @@ pub const Knight = struct {
         self.leapCd = mathx.maxF(0, self.leapCd - dt);
         self.counterCd = mathx.maxF(0, self.counterCd - dt);
         self.riposteCd = mathx.maxF(0, self.riposteCd - dt);
-        self.flash = mathx.maxF(0, self.flash - dt);
+        foe.fadeFlash(&self.flash, dt);
         self.thud = mathx.maxF(0, self.thud - dt * 2.8);
         foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);

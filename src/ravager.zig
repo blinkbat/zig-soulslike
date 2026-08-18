@@ -468,6 +468,16 @@ pub const Ravager = struct {
     /// state has to be hittable, and the state machine below has an exit per state. Discarded in the signature
     /// the creature was simply invulnerable: `tryHit` never ran, and nothing anywhere else calls it.
     pub fn update(self: *Ravager, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
+        // **CLEARED BEFORE THE `gone` BRANCH, NOT AFTER IT** (the necromancer's law, and the mushroom mage's).
+        // Reset inside `stateStep` these are reset only on the LIVE path, so a body that leaves the field
+        // holding one holds it for good — and `game.zig` reads all five off `thicket.live()`, which still
+        // carries the gone members, so a latched `snapped` is that voice every frame forever.
+        self.justDied = false;
+        self.heroHit = null;
+        self.opened = false;
+        self.leapt = false;
+        self.snapped = false;
+        self.yelped = false;
         if (self.gone) {
             foe.tickParticles(&self.parts, dt, self.pos.y);
             return null;
@@ -480,14 +490,6 @@ pub const Ravager = struct {
     }
 
     fn stateStep(self: *Ravager, dt: f32, hero: rl.Vector3, bounds: f32) void {
-        // THE ONE-FRAME FLAGS, RESET AT THE TOP — the foe contract's own rule. Applied externally without the
-        // reset they latch a nonstop rumble.
-        self.justDied = false;
-        self.heroHit = null;
-        self.opened = false;
-        self.leapt = false;
-        self.snapped = false;
-        self.yelped = false;
         // **DENYING MOVEMENT IS A POST-STEP GATE, NOT A GUARD AT EACH MOVER**, and a jump is the one thing it
         // refuses outright — gated at the CHOOSE below (`foe.canLeap`), because a leap does not travel.
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
@@ -496,7 +498,7 @@ pub const Ravager = struct {
 
         self.t += dt;
         self.vit.tick(dt);
-        self.flash = mathx.maxF(0, self.flash - dt * 4.0);
+        foe.fadeFlash(&self.flash, dt);
         self.biteCool = mathx.maxF(0, self.biteCool - dt);
         foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
@@ -574,7 +576,7 @@ pub const Ravager = struct {
             self.speed = mathx.approach(self.speed, wantSpeed, ACCEL * dt);
             const step = self.speed * dt * self.chill.travel();
             mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), step, bounds);
-            self.phase = wrap01(self.phase + step / wolf.strideFor(self.speed));
+            self.phase = wolf.wrap01(self.phase + step / wolf.strideFor(self.speed));
             self.state = .move;
         } else {
             self.faceToward(want, dt);
@@ -777,11 +779,6 @@ const PETAL_SPLAY: f32 = 62.0;
 /// **NOT A MOUTH**: a jaw hinges at one point and a flower opens all round, so the outer pair have to leave on
 /// both axes or the head reads as a beak.
 const PETAL_BACK_ANG: f32 = -58.0;
-
-fn wrap01(x: f32) f32 {
-    const f = x - @floor(x);
-    return if (f < 0) f + 1.0 else f;
-}
 
 const CAP_N = wf.MAX_PER_KIND;
 

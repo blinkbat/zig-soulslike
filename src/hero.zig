@@ -522,6 +522,32 @@ const SIPHON_LIFE_HI = 0.30;
 /// How wide off the body's own axis they are drawn out of it.
 const SIPHON_SPREAD = 0.30 * H;
 
+/// **THE LANCE IS THE LEVIN'S CONSTRUCTION WITH ONE THING CHANGED: IT DOES NOT END.** Sites walked down a
+/// line, sparks thrown off each — but the count THINS toward the far end rather than finishing in a shower,
+/// because a terminal burst is what says "it arrived", and the whole read on this spell is that it did not
+/// stop. More sites than the stroke's nine: the line is twenty metres where that one is a body's height.
+const LANCE_STEPS = 22;
+/// The near end's throw. Thinned to one by the tip (`lanceBeam`), so this is the THICK end of a taper.
+const LANCE_SPARKS = 4;
+/// How far off the line a site may sit — under the levin's, because a lance is a straighter thing than a
+/// lightning stroke and this one may not read as torn.
+const LANCE_JITTER = 0.06 * H;
+/// **THE SHORT LIFE IS BOUGHT BACK WITH RADIUS** — the stroke's own law. Fire lives longer than lightning in
+/// `elemfx`, so this sits under the levin's 2.2: at the same throw the shaft photographed as a hedge.
+const LANCE_SPARK_SCALE = 1.7;
+/// The shaft is cast level out of the rod, so its own y is a metre up — floored THERE a mote that fell would
+/// stop in mid-air, which is `levinStroke`'s own trap. Dropped to about the ground under him.
+const LANCE_FLOOR_DROP = 1.05 * H;
+
+/// **SUNDER THROWS A RING, NOT A PUFF** — every other burst here is a scatter, and a scatter is what "an
+/// impact" already looks like. What this spell is about is something LETTING GO, so the motes leave low and
+/// outward on a walked angle, and they are dust and chips rather than any element's mote.
+const SUNDER_MOTES = 28;
+const SUNDER_SPEED_LO = 2.2;
+const SUNDER_SPEED_HI = 5.0;
+const SUNDER_DUST = mathx.rgba(126, 116, 100, 190);
+const SUNDER_CHIP = mathx.rgba(78, 68, 56, 215);
+
 // ONE substance: the chaos violet stays the light ON the wood, never a second violet thing.
 const ROOT_SITES = 3;
 /// Tendrils one site throws — each differently sized, leaned and DELAYED, or it is a rosette of equal spikes.
@@ -707,6 +733,43 @@ pub fn armourOf(worn: Worn) f32 {
     return a;
 }
 
+/// **…AND THE SAME SUM DOWN THE FOUR ELEMENTAL COLUMNS** (`item.Res`). **THIS IS THE ONE PLACE `item.Res`'s
+/// four floats BECOME `combat.Elem`**, which is why item.zig may name neither: `wearFor` matches a `Wear` to an
+/// `Armament` here for exactly the same reason, and a second site that did this mapping could put the cold
+/// column on fire and compile.
+pub fn resistOf(worn: Worn) item.Res {
+    var out = item.Res{};
+    inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
+        if (worn.at(@enumFromInt(f.value))) |k| {
+            switch (item.equip(k)) {
+                .plate => |p| {
+                    out.fire += p.res.fire;
+                    out.cold += p.res.cold;
+                    out.lightning += p.res.lightning;
+                    out.chaos += p.res.chaos;
+                },
+                else => {},
+            }
+        }
+    }
+    return out;
+}
+
+/// …AND HOW FAST A STATUS FILLS THROUGH THE SUIT. **MULTIPLIED, NEVER SUMMED**: two pieces that each halve it
+/// leave a quarter, where two that each took 0.5 off would leave nothing and make a second one free immunity.
+pub fn poisonRateOf(worn: Worn) f32 {
+    var k: f32 = 1;
+    inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
+        if (worn.at(@enumFromInt(f.value))) |kind| {
+            switch (item.equip(kind)) {
+                .plate => |p| k *= p.poison,
+                else => {},
+            }
+        }
+    }
+    return k;
+}
+
 /// …AND EVERY CHARM ON IT, ADDED UP. A FREE function for `armourOf`'s own reason: the character page prices a
 /// set he is only considering (`book.derive`), and the red bar's length is one of the numbers that moves.
 pub fn charmOf(worn: Worn) item.Charm {
@@ -717,6 +780,10 @@ pub fn charmOf(worn: Worn) item.Charm {
                 .charm => |c| {
                     out.leech += c.leech;
                     out.hpFrac += c.hpFrac;
+                    out.fpFrac += c.fpFrac;
+                    // **MULTIPLIED, like `poisonRateOf`** — the two are the same kind of dial, and summed a
+                    // second discount would be a free call rather than a better one.
+                    out.spiritFp *= c.spiritFp;
                 },
                 else => {},
             }
@@ -729,6 +796,13 @@ pub fn charmOf(worn: Worn) item.Charm {
 /// `Hero.refitHp` is this same expression on the live man; the page needs it off a loadout.
 pub fn hpMaxOf(sheet: statsmod.Sheet, worn: Worn) f32 {
     return sheet.hp() * (1.0 - mathx.clampF(charmOf(worn).hpFrac, 0, 0.9));
+}
+
+/// …AND THE BLUE BAR'S, on exactly the same terms. Its own function rather than a flag on the red one's:
+/// `refitBars` writes three pools and the page prices all three, so the two bars a charm can eat into have to
+/// answer the same shape of question.
+pub fn fpMaxOf(sheet: statsmod.Sheet, worn: Worn) f32 {
+    return sheet.fp() * (1.0 - mathx.clampF(charmOf(worn).fpFrac, 0, 0.9));
 }
 
 /// …AND WHAT IT IS WORTH IN POINTS OF SKILL, folded onto a sheet that already carries the tree's (`item.Boon`).
@@ -1310,6 +1384,10 @@ pub const Hero = struct {
     /// The swing hangs `grease.amount` of its own physical as fire while its clock runs, read where the blow
     /// is BUILT (`attackHit`) so there is no second copy of the Hit.
     grease: combat.Timed = .{},
+    /// …and the POISE bar refills at `steady.amount` times its rate while this one does — the broth's shape
+    /// (`stam.startBrew`) on the bar that decides whether the next blow flinches him. Composed onto `vit` by
+    /// `tickTimed` and nowhere else.
+    steady: combat.Timed = .{},
     /// ONE meter that fills, procs, then drains. His alone for now: nothing applies one to a foe.
     poison: combat.Status = .{},
     drinking: bool = false,
@@ -1477,13 +1555,15 @@ pub const Hero = struct {
         self.vit = freshVitals(self.sheet);
         self.refitHp(); // …and what a charm is eating out of the red bar (`refitHp` keeps the fraction: it is full here)
         self.stam.max = self.sheet.stamina();
-        self.fp.max = self.sheet.fp();
+        self.fp.max = fpMaxOf(self.sheet, self.worn);
         self.stam.reset();
         self.fp.reset();
         self.regen.reset();
         self.poison.reset();
         self.ward.reset();
         self.grease.reset();
+        self.steady.reset();
+        self.vit.poiseRate = 1;
         // `freshVitals` cleared `vit.res` above, so the base has to be laid back down here.
         self.settleResists();
         self.flasks.refill();
@@ -2064,7 +2144,9 @@ pub const Hero = struct {
             .roots => .rime,
             .rime => .levin,
             .levin => .siphon,
-            .siphon => .bolt,
+            .siphon => .lance,
+            .lance => .sunder,
+            .sunder => .bolt,
         };
         return true;
     }
@@ -2115,9 +2197,11 @@ pub const Hero = struct {
             !self.resting and !self.sprinting;
     }
 
-    /// Through the same perk as `castCost`, so a Focus build pays less for both.
+    /// Through the same perk as `castCost`, so a Focus build pays less for both — **and through the AMULET on
+    /// top of it**, which is the one dial in the game that is the bell's alone. Two independent discounts, so
+    /// they multiply: the tree makes every spell cheaper and the gravebell makes only this one cheaper.
     pub fn ringCost(self: *const Hero) f32 {
-        return combat.spiritFp(self.spirit) * self.perk.spellCost;
+        return combat.spiritFp(self.spirit) * self.perk.spellCost * charmOf(self.worn).spiritFp;
     }
 
     /// R1 with the bell out, PRESSED — committed, so an edge. Reports whether one STARTED, since the caller's
@@ -2641,6 +2725,49 @@ pub const Hero = struct {
         elemfx.burst(&self.fx, &self.fxHead, &rng, to, mathx.zero3, .lightning, LEVIN_BURST, LEVIN_BURST_SCALE);
     }
 
+    /// **THE LANCE'S SHAFT — the levin's construction, but the motes are laid ALONG A LINE THAT CARRIES ON.**
+    /// The stroke stops at the body it struck; this one does not, and the whole thing the player has to learn
+    /// about the spell is that the fire kept going. So there is no terminal burst: what marks the far end is
+    /// the shaft simply thinning out, which is what a thing running out of reach looks like.
+    ///
+    /// FIRE RISES AND LEAVES A RESIDUE (`elemfx`'s own signature), so the floor is the earth under the SHAFT
+    /// rather than under the caster — `boltBurst`'s law, and here it is a line rather than a point, so the
+    /// floor is taken at the tip where the last of them fall.
+    pub fn lanceBeam(self: *Hero, from: rl.Vector3, to: rl.Vector3, salt: u32) void {
+        const was = self.fxHead;
+        defer foemod.floorBurst(&self.fx, was, self.fxHead, mathx.minF(from.y, to.y) - LANCE_FLOOR_DROP);
+        var rng = foemod.fxStream(@floatFromInt(salt), 811.0, 0x8B08);
+        var i: u32 = 0;
+        while (i < LANCE_STEPS) : (i += 1) {
+            const u = (@as(f32, @floatFromInt(i)) + rng.range(-0.30, 0.30)) / LANCE_STEPS;
+            const p = mathx.lerpV(from, to, mathx.clampF(u, 0, 1));
+            const off = v3(rng.signed() * LANCE_JITTER, rng.signed() * LANCE_JITTER * 0.5, rng.signed() * LANCE_JITTER);
+            // THINNING WITH DISTANCE — the near end is the thick end, so the shaft reads as thrown FROM him.
+            const n = @max(1, @as(usize, @intFromFloat(@round(mathx.lerpF(@as(f32, LANCE_SPARKS), 1.0, u)))));
+            elemfx.burst(&self.fx, &self.fxHead, &rng, mathx.addV(p, off), mathx.zero3, .fire, n, LANCE_SPARK_SCALE);
+        }
+    }
+
+    /// **SUNDER'S BEAT — a RING on the ground and nothing in the air.** Every other sorcery is a thing that
+    /// arrived; this one is a thing that came apart, so what it throws is low, outward and short-lived. `bit`
+    /// is whether it found a body: a cast that hit nothing still shows, at half the count, because a spell
+    /// that draws nothing on a miss reads as the button not having worked (`strikeMissAt`'s own reason).
+    pub fn sunderBurst(self: *Hero, at: rl.Vector3, bit: bool, salt: u32) void {
+        const was = self.fxHead;
+        defer foemod.floorBurst(&self.fx, was, self.fxHead, at.y);
+        var rng = foemod.fxStream(@floatFromInt(salt), 877.0, 0x8B09);
+        const n: u32 = if (bit) SUNDER_MOTES else SUNDER_MOTES / 2;
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            // A RING, so the angle is walked rather than drawn — a random scatter is a puff, and a puff is
+            // what every other burst in this file already is.
+            const a = (@as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n))) * std.math.tau + rng.range(-0.25, 0.25);
+            const sp = rng.range(SUNDER_SPEED_LO, SUNDER_SPEED_HI);
+            const v = v3(mathx.cosf(a) * sp, rng.range(0.3, 1.4), mathx.sinf(a) * sp);
+            foemod.emitParticle(&self.fx, &self.fxHead, at, v, rng.range(0.22, 0.46), rng.range(0.030, 0.062), 0.008, if (rng.float() < 0.5) SUNDER_DUST else SUNDER_CHIP, 6.0);
+        }
+    }
+
     /// **THE SIPHON'S DRAIN — the one effect in the game that runs the wrong way up the line.** Motes come off
     /// the BODY and are solved to arrive at the stone, which is `souls.zig`'s own construction: what it has to
     /// read as is a thing being taken, and a burst at the victim reads as a thing being given.
@@ -2742,7 +2869,10 @@ pub const Hero = struct {
     fn refitBars(self: *Hero) void {
         self.refitHp();
         refitPool(&self.stam.cur, &self.stam.max, self.sheet.stamina());
-        refitPool(&self.fp.cur, &self.fp.max, self.sheet.fp());
+        // …AND THE BLUE ONE THROUGH `fpMaxOf`, not off the bare sheet: the gravebell eats into it exactly the
+        // way the leech signet eats into the red one, and read straight off `sheet.fp()` the charm would be a
+        // discount that cost nothing.
+        refitPool(&self.fp.cur, &self.fp.max, fpMaxOf(self.sheet, self.worn));
     }
 
     /// THE RED BAR'S LENGTH — the sheet's own figure less whatever a charm is eating. **THE FRACTION IS KEPT
@@ -2878,12 +3008,29 @@ pub const Hero = struct {
         self.grease.start(frac, secs);
     }
 
+    /// **THE POISE BAR REFILLS FASTER WHILE THIS RUNS.** Stamped onto `vit` on the SWALLOW rather than left to
+    /// the next tick, `startWard`'s reason exactly: the blow already in the air is the one he drank it for.
+    pub fn startSteady(self: *Hero, mult: f32, secs: f32) void {
+        self.steady.start(mult, secs);
+        self.vit.poiseRate = self.steady.value(1);
+    }
+
+    /// **THE FIRST CURE IN THE WORLD.** Wiped whether it is filling or already running — `Status.reset` is one
+    /// door for both, which is the whole reason that type keeps the meter and the clock in one number.
+    pub fn purgePoison(self: *Hero) void {
+        self.poison.reset();
+    }
+
     /// **EVERY TIMED THING HE IS CARRYING, ADVANCED IN ONE PLACE.** It was `tickWard`, which also ticked the
     /// tallow — a name that described one of the two things it did, and the obvious place for the third to be
     /// forgotten. The resistances are settled after, because the ward is one of the inputs to them.
     pub fn tickTimed(self: *Hero, dt: f32) void {
         self.ward.tick(dt);
         self.grease.tick(dt);
+        self.steady.tick(dt);
+        // The poise multiple lives on `vit` because that is where the refill is done; this is the one place it
+        // is written, so a clock running out puts the bar back to its own rate without anybody asking.
+        self.vit.poiseRate = self.steady.value(1);
         self.settleResists();
     }
 
@@ -2892,13 +3039,23 @@ pub const Hero = struct {
     fn settleResists(self: *Hero) void {
         var r = self.baseRes;
         r.v[@intFromEnum(combat.Elem.chaos)] += self.ward.value(0);
+        // …AND WHATEVER HE HAS ON. The mantle is the first thing in the world that answers an element, and it
+        // composes here rather than at `wear` for the tree's own reason: this is the ONE place `vit.res` is
+        // written, so a coat taken off cannot leave its column behind.
+        const worn = resistOf(self.worn);
+        r.v[@intFromEnum(combat.Elem.fire)] += worn.fire;
+        r.v[@intFromEnum(combat.Elem.cold)] += worn.cold;
+        r.v[@intFromEnum(combat.Elem.lightning)] += worn.lightning;
+        r.v[@intFromEnum(combat.Elem.chaos)] += worn.chaos;
         self.vit.res = r;
     }
 
     /// Sources hand it BUILDUP and never HP: what the poison takes is the proc's business, not the cloud's.
+    /// **THE TREE'S DIAL AND THE HELM'S, MULTIPLIED** — two independent things that each slow the meter, so
+    /// they compose the way two multipliers do rather than one of them winning.
     pub fn poisonBy(self: *Hero, amt: f32) void {
         if (self.dead) return;
-        self.poison.add(amt * self.perk.poison);
+        self.poison.add(amt * self.perk.poison * poisonRateOf(self.worn));
     }
 
     /// Billed as a DRIP: it carries no poise, and stamped through `hit` it would deny him a whole poise bar.

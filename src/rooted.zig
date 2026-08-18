@@ -370,7 +370,7 @@ pub const Rooted = struct {
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
-        self.flash = mathx.maxF(0, self.flash - dt);
+        foe.fadeFlash(&self.flash, dt);
         for (&self.cds) |*c| c.* = mathx.maxF(0, c.* - dt);
         self.leash.tick(dt, 0, mathx.distXZ(self.home, hero), AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);

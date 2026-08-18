@@ -1,0 +1,107 @@
+version: 1
+name: Fen Lurker Test
+half: 60.0
+runway: -6.00 -26.00 6.00 -14.00
+
+zone: marsh -400.0 -400.0 400.0 400.0 0.560 reeds,reeds,cattails,cattails,grasstall,patch,tuft,clover,moss,nettles,wildflowers
+clear: 0.0 0.0 26.0
+cover: 3.1 0.70 1.35 seed=9
+
+# **A FORD ACROSS THE MIDDLE, AND DRY GROUND EITHER SIDE OF IT.** The whole creature is a question about
+# whether you are in a hurry, so the map has to offer both answers: the channel is the short way and the ends
+# of it are open, so walking round is always available and always slower. Dug to about 0.79 m — well over
+# `fenlurker.WADE_MIN` (0.30) so it feels him, and well under `env.WADE_MAX` (1.37) so he is not refused.
+water: 0x21728
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 1x224
+water: 0x21728
+hgt: 64x20832
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 61x224
+hgt: 64x20832
+
+# THREE IN THE CHANNEL, spread down it so crossing anywhere meets one — and seeds well apart, because a line
+# of them surfacing in lockstep is one creature with three bodies.
+foe: fen_lurker -14.00 0.00 0.0 1.00 0.17
+foe: fen_lurker 0.00 3.00 180.0 1.05 0.53
+foe: fen_lurker 15.00 -2.50 270.0 0.94 0.81
+
+# …AND ONE ON DRY LAND, on purpose: a lurker with no pool to hide in STANDS UP AND FIGHTS (`pooled`), and
+# that failure is only worth anything if you can see it happen.
+foe: fen_lurker -26.00 20.00 200.0 1.00 0.36
+
+# SOMETHING THAT IS NOT IN THE WATER, so the fight has a shore to be driven onto — and something that IS a
+# reason to cross rather than walk round.
+foe: shroom 8.00 -20.00 0.0 1.00 0.44
+at: chest 0.00 24.00 180 1 loot=purgeleaf,ironwort_tea,rimeward_mantle
+at: chest -4.20 24.60 160 1 loot=sporecrown,gravebell_amulet,pilgrims_salt
+at: bonfire -2.00 -22.00 0 1
+
+# The bank itself — reeds and a couple of boulders, so the waterline reads as a place rather than as a seam.
+at: boulder -9.00 -12.00 20 1.3
+at: boulder 11.00 12.50 70 1.1
+at: snag 18.00 -14.00 0 1

@@ -549,7 +549,7 @@ pub const Necro = struct {
         self.vit.tick(dt);
         self.raiseCd = mathx.maxF(0, self.raiseCd - dt);
         self.frostCd = mathx.maxF(0, self.frostCd - dt);
-        self.flash = mathx.maxF(0, self.flash - dt);
+        foe.fadeFlash(&self.flash, dt);
         foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);

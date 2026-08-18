@@ -391,7 +391,7 @@ pub const Shade = struct {
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
-        self.flash = mathx.maxF(0, self.flash - dt);
+        foe.fadeFlash(&self.flash, dt);
         for (&self.cds) |*c| c.* = mathx.maxF(0, c.* - dt);
         self.blinkCd = mathx.maxF(0, self.blinkCd - dt);
         self.spookLeft = mathx.maxF(0, self.spookLeft - dt);

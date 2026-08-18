@@ -42,6 +42,7 @@ pub const Icon = enum {
     necromancer,
     florid_ravager,
     mushroom_mage,
+    fen_lurker,
     new,
     open,
     save,
@@ -426,6 +427,24 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             dot(cx + s * 0.26, cy + s * 0.02, w * 1.1, col);
             dot(cx + s * 0.38, cy - s * 0.16, w * 1.3, col);
             dot(cx + s * 0.46, cy + s * 0.06, w * 1.6, col);
+        },
+
+        .fen_lurker => {
+            // **A WATERLINE WITH A NECK COMING OUT OF IT.** The read at this size is the LINE: nothing else
+            // in the set is drawn against a horizontal, and a body cut off by one is the whole creature.
+            hline(cx - s * 0.40, cy + s * 0.10, s * 0.80, w * 1.5, col); // the surface
+            // …and the ripples either side of where it broke, which is what says the line is water.
+            hline(cx - s * 0.36, cy + s * 0.22, s * 0.18, w * 1.0, d);
+            hline(cx + s * 0.14, cy + s * 0.22, s * 0.22, w * 1.0, d);
+            // THE NECK — an S, because a straight one is a post. Three strokes, each shorter than the last.
+            line(cx - s * 0.10, cy + s * 0.10, cx + s * 0.04, cy - s * 0.10, w * 1.4, col);
+            line(cx + s * 0.04, cy - s * 0.10, cx - s * 0.04, cy - s * 0.26, w * 1.3, col);
+            line(cx - s * 0.04, cy - s * 0.26, cx + s * 0.10, cy - s * 0.36, w * 1.2, col);
+            // THE HEAD, and it is BROAD AND FLAT — a bar rather than a dot, which is the one thing that
+            // separates this silhouette from every other neck in the set.
+            hline(cx + s * 0.04, cy - s * 0.38, s * 0.30, w * 1.8, col);
+            dot(cx + s * 0.30, cy - s * 0.34, w * 1.2, col); // the blunt snout
+            dot(cx + s * 0.12, cy - s * 0.42, w * 1.0, d); // …and the one eye high on the skull
         },
 
         .new => {

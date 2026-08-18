@@ -29,6 +29,7 @@ const delvermod = @import("delver.zig");
 const necromod = @import("necro.zig");
 const ravagermod = @import("ravager.zig");
 const magemod = @import("shroommage.zig");
+const fenmod = @import("fenlurker.zig");
 const leechmod = @import("leechfly.zig");
 const shademod = @import("shade.zig");
 const chestmod = @import("chest.zig");
@@ -210,6 +211,7 @@ pub const Game = struct {
     rite: necromod.Rite,
     thicket: ravagermod.Thicket,
     ring: magemod.Ring,
+    marsh: fenmod.Marsh,
     vigil: knightmod.Vigil,
     swarm: leechmod.Swarm,
     haunt: shademod.Haunt,
@@ -306,6 +308,7 @@ pub const Game = struct {
         g.rite = necromod.Rite.init(g.scene.shader);
         g.thicket = ravagermod.Thicket.init(g.scene.shader);
         g.ring = magemod.Ring.init(g.scene.shader);
+        g.marsh = fenmod.Marsh.init(g.scene.shader);
         g.vigil = knightmod.Vigil.init(g.scene.shader);
         g.swarm = leechmod.Swarm.init(g.scene.shader);
         g.haunt = shademod.Haunt.init(g.scene.shader);
@@ -584,7 +587,7 @@ const FoeGroup = struct {
     vs: []const []const u8 = &.{},
 };
 pub const FOE_GROUPS = [_]FoeGroup{
-    .{ .field = "warren", .kind = .toad, .aggro = frogmod.AGGRO_R },
+    .{ .field = "warren", .kind = .toad, .aggro = frogmod.AGGRO_R, .vs = &.{"thicket"} },
     .{ .field = "line", .kind = .archer, .aggro = archermod.AGGRO_R, .vs = &.{"warren"} },
     .{ .field = "grief", .kind = .ogre, .aggro = ogremod.AGGRO_R, .vsHero = false },
     .{ .field = "band", .kind = null, .aggro = koboldmod.AGGRO_R },
@@ -594,23 +597,31 @@ pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "swarm", .kind = .leechfly, .aggro = leechmod.AGGRO_R },
     // A fixture: nothing shoulders it off its spot and it shoulders nothing, because it never moves.
     .{ .field = "grove", .kind = .rooted, .aggro = rootedmod.AGGRO_R, .vsHero = false },
-    .{ .field = "cluster", .kind = .shroom, .aggro = shroommod.AGGRO_R },
+    .{ .field = "cluster", .kind = .shroom, .aggro = shroommod.AGGRO_R, .vs = &.{"thicket"} },
     .{ .field = "warrens", .kind = .delver, .aggro = delvermod.AGGRO_R },
     .{ .field = "rite", .kind = .necromancer, .aggro = necromod.AGGRO_R, .vs = &.{ "line", "muster" } },
-    // A PACK, and it shoulders the small things aside: a hound this size walks through a sporeling.
-    .{ .field = "thicket", .kind = .florid_ravager, .aggro = ravagermod.AGGRO_R, .vs = &.{ "cluster", "warren" } },
+    // A PACK, and it shoulders the small things aside: a hound this size walks through a sporeling. **THE
+    // ROW THAT YIELDS IS THE ROW THAT NAMES THE OTHER** — `vs` is who shoulders ME, so listed here the
+    // 1.34 m hound was the one being shoved off its line by a knee-high mushroom.
+    .{ .field = "thicket", .kind = .florid_ravager, .aggro = ravagermod.AGGRO_R },
     // It is small and it is squishy: everything on this list walks through it, and it walks through nothing.
     .{ .field = "ring", .kind = .mushroom_mage, .aggro = magemod.AGGRO_R },
+    // A FIXTURE IN ITS POOL, and it is anchored the way the rooted is: nothing shoulders it off its bed and
+    // it shoulders nothing, because it never travels.
+    .{ .field = "marsh", .kind = .fen_lurker, .aggro = fenmod.AGGRO_R, .vsHero = false },
     .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
 };
 
 const BLOW_GROUPS = [_][]const u8{
     "warren", "grief",  "line",    "band",    "muster", "haunt",
     "swarm",  "grove",  "cluster", "warrens", "vigil",  "brood",
-    "rite",   "thicket", "ring",
+    "rite",   "thicket", "ring",    "marsh",
 };
 
 comptime {
+    // All three cross-checks below are O(groups^2) or worse over string compares — with sixteen groups the
+    // default thousand branches is not enough to finish them.
+    @setEvalBranchQuota(30000);
     if (BLOW_GROUPS.len != FOE_GROUPS.len) @compileError("game: BLOW_GROUPS and FOE_GROUPS disagree on how many groups there are");
     for (FOE_GROUPS) |gr| {
         var seen = false;
@@ -626,6 +637,25 @@ comptime {
             if (std.mem.eql(u8, b, gr.field)) seen = true;
         }
         if (!seen) @compileError("game: BLOW_GROUPS names `" ++ b ++ "`, which is not a FOE_GROUPS field");
+    }
+    // **`vs` IS WHO SHOULDERS ME, AND IT IS ONE-WAY** — `settleGroup` pushes MY members out of THEIRS, so the
+    // row that yields is the row that names the other. Written down in `FoeGroup.vs` and checked by nothing:
+    // a pair that names each other is the jitter the field doc forbids, and getting the direction backwards
+    // (the ravager listing the sporelings it was supposed to walk through) compiles and simply reads wrong.
+    for (FOE_GROUPS) |gr| {
+        for (gr.vs) |other| {
+            if (std.mem.eql(u8, other, gr.field)) @compileError("game: `" ++ gr.field ++ "` shoulders itself");
+            var known = false;
+            for (FOE_GROUPS) |o| {
+                if (!std.mem.eql(u8, o.field, other)) continue;
+                known = true;
+                for (o.vs) |back| {
+                    if (std.mem.eql(u8, back, gr.field)) @compileError("game: `" ++ gr.field ++ "` and `" ++
+                        other ++ "` each shoulder the other — `vs` is one-way, or both bodies half-correct and jitter");
+                }
+            }
+            if (!known) @compileError("game: `" ++ gr.field ++ "` names `" ++ other ++ "` in `vs`, which is not a FOE_GROUPS field");
+        }
     }
 }
 
@@ -2014,7 +2044,64 @@ fn releaseSpell(g: *Game) void {
         .rime => openBreath(g),
         .levin => strikeLevin(g),
         .siphon => drawSiphon(g),
+        .lance => throwLance(g),
+        .sunder => strikeSunder(g),
     }
+}
+
+/// **THE LANCE GOES THROUGH.** One segment out of the rod along his facing (or at the lock), handed to every
+/// group ONCE as a `pierce` blade — the same door an arrow already comes through (`pierceFoes`), so every body
+/// standing on the line earns its own flinch, flash, blood, threat and death without this knowing what any of
+/// them is. A `pierce` blade sets no swing latch (`foe.strike`), so one cast is one blow per body by
+/// construction rather than by a list of who has been hit.
+fn throwLance(g: *Game) void {
+    const blow = g.hero.castBlow() orelse return;
+    const reach = combat.spellReach(g.hero.spell) orelse return;
+    const from = g.hero.wandTipWorld();
+    // AIMED AT THE LOCK IF THERE IS ONE, and the line runs THROUGH that mark rather than stopping on it — a
+    // lance that ended at its target would be the levin with a longer arm.
+    var dir = mathx.headingDir(g.hero.facing);
+    if (activeLock(g)) |li| {
+        const to_lock = mathx.dirXZ(from, foeLockPoint(g, li));
+        if (mathx.lenXZ(to_lock) > 1e-4) dir = to_lock;
+    }
+    const to = v3(from.x + dir.x * reach, from.y, from.z + dir.z * reach);
+    sfx.play(.wand_cast);
+    g.rumble.play(rumblemod.cast_throw);
+    g.rig.addShake(SHAKE_CAST);
+    _ = pierceFoes(g, .{
+        .active = true,
+        .pierce = true,
+        .r = combat.LANCE_R,
+        .a = from,
+        .b = to,
+        .a0 = from,
+        .b0 = to,
+        .hit = blow,
+    });
+    g.hero.lanceBeam(from, to, g.hero.casts);
+}
+
+/// **SUNDER — the levin's exact plumbing at a quarter of its reach.** One named body, delivered through that
+/// creature's own `tryHit` (`strikeOne`), so a shield that would stop it stops it: a guard-breaker the guard
+/// cannot answer is not a guard-breaker, it is a rule.
+fn strikeSunder(g: *Game) void {
+    const blow = g.hero.castBlow() orelse return;
+    const reach = combat.spellReach(g.hero.spell) orelse return;
+    sfx.play(.wand_cast);
+    const pick = strikeVictim(g, reach) orelse {
+        // NOTHING THERE, AND HE STILL PAID FOR IT — the levin's own courtesy, on the same mark in front of him.
+        g.hero.sunderBurst(strikeMissAt(g, reach), false, g.hero.casts);
+        g.rumble.play(rumblemod.cast_throw);
+        g.rig.addShake(SHAKE_CAST);
+        return;
+    };
+    const hit = strikeOne(g, pick, blow) orelse return;
+    g.hero.sunderBurst(v3(hit.at.x, g.env.groundAt(hit.at.x, hit.at.z), hit.at.z), true, g.hero.casts);
+    // THE HEAVIEST STANCE THE ROD THROWS lands as the heaviest beat it throws — the levin's own pairing, and
+    // this one arrives INSIDE reach rather than from across the room.
+    g.rumble.play(rumblemod.hit_heavy);
+    g.rig.addShake(SHAKE_ROOTS_BITE);
 }
 
 fn throwBolt(g: *Game) void {
@@ -2461,6 +2548,27 @@ fn markThreat(g: *Game, dt: f32) void {
                 if (mine) |s| mathx.distXZ(f.pos, s) else mathx.LONG_AGO,
                 mine != null,
             );
+        }
+    }
+}
+
+/// **HOW DEEP THE WATER IS, STAMPED ONTO WHATEVER LIVES IN IT** (`foe.Wade`) — `markParry`'s arrangement, and
+/// the reason it is a pass rather than a lookup inside the creature: `env`'s water field belongs to `env`, and
+/// a creature that reached for it would be a creature that knows what an `Env` is.
+///
+/// **THE FIELD IS THE OPT-IN** (`markWays`' `@hasField` rule), so the fifteen groups that never touch water
+/// compile to nothing here and pay nothing for a creature they have no relationship with.
+fn markWade(g: *Game) void {
+    const quarry = g.env.wadeDepth(g.hero.pos.x, g.hero.pos.z);
+    const Depth = struct {
+        fn at(e: *const envmod.Env, p: rl.Vector3) f32 {
+            return e.wadeDepth(p.x, p.z);
+        }
+    };
+    inline for (FOE_GROUPS) |gr| {
+        const M = std.meta.Child(@TypeOf(@field(g, gr.field).live()));
+        if (comptime @hasField(M, "wade")) {
+            foemod.setWade(@field(g, gr.field).live(), &g.env, quarry, Depth.at);
         }
     }
 }
@@ -3518,6 +3626,7 @@ pub fn run(mode: Mode) void {
         markSight(g);
         markThreat(g, dt);
         markWays(g);
+        markWade(g);
         markParry(g);
         markVigil(g);
         // ONE snapshot of the blade for every group this frame — re-derived per group, the three disagree.
@@ -3593,6 +3702,17 @@ pub fn run(mode: Mode) void {
                 sfx.world(.mage_throw, k.lobFrom);
                 spawnEmber(g, k.lobFrom);
             }
+        }
+        if (g.marsh.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        // …and its four one-frame edges. The creature says WHEN; `game.zig` owns the speaker.
+        for (g.marsh.live()) |*l| {
+            if (l.broke) sfx.world(.lurker_break, l.pos);
+            if (l.lashed) sfx.world(.lurker_lash, l.pos);
+            if (l.sank) sfx.world(.lurker_sink, l.pos);
+            if (l.yelped) sfx.world(.lurker_hurt, l.pos);
+            if (l.justDied) sfx.world(.lurker_die, l.pos);
         }
         applyRaises(g);
         if (g.rite.anyLaid()) {
@@ -3963,6 +4083,19 @@ fn useItem(g: *Game, k: item.Kind) void {
             g.hero.stam.startBrew(b.mult, b.secs);
             sfx.play(.flask_drink);
         },
+        // **SPENT EVEN ON A CLEAN MAN**, which is the flask's own rule and not an oversight: a leaf that
+        // refused unless you were already poisoned would be a leaf you can only ever use too late, since the
+        // meter you want to answer is the one that is still filling.
+        .purge => {
+            if (g.bag.take(k, 1) == 0) return;
+            g.hero.purgePoison();
+            sfx.play(.eat);
+        },
+        .steady => |s| {
+            if (g.bag.take(k, 1) == 0) return;
+            g.hero.startSteady(s.mult, s.secs);
+            sfx.play(.flask_drink);
+        },
     }
 }
 
@@ -4096,7 +4229,7 @@ fn collideActors(g: *Game, dt: f32) void {
     var hp = g.env.resolveActor(g.hero.pos, HERO_R, g.hero.footY());
     inline for (FOE_GROUPS) |gr| {
         for (@field(g, gr.field).live()) |*a| {
-            if (foemod.corporeal(a) and !a.airborne() and g.hero.footY() < a.topWorld().y) {
+            if (foemod.corporeal(a) and !a.airborne() and !phased(a) and g.hero.footY() < a.topWorld().y) {
                 hp = collision.pushOutCircle(hp, HERO_R, a.pos, a.bodyR());
             }
         }
@@ -4129,7 +4262,8 @@ fn collideActors(g: *Game, dt: f32) void {
 fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
     const foes = @field(g, gr.field).live();
     for (foes, 0..) |*a, i| {
-        if (!foemod.corporeal(a)) continue;
+        // …AND A BODY UNDER THE WATER IS NOT ONE EITHER (`phased`): it is not pushed and it pushes nothing.
+        if (!foemod.corporeal(a) or phased(a)) continue;
         const r = a.bodyR();
         if (a.airborne()) {
             a.pos = inBounds(g.env.resolveActor(a.pos, r, a.pos.y));
@@ -4138,12 +4272,12 @@ fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
         var p = g.env.resolveActor(a.pos, r, a.pos.y);
         if (gr.vsHero) p = collision.pushOutCircle(p, r, g.hero.pos, HERO_R);
         for (foes, 0..) |*o, j| {
-            if (i == j or !foemod.corporeal(o) or o.airborne()) continue;
+            if (i == j or !foemod.corporeal(o) or o.airborne() or phased(o)) continue;
             p = collision.pushOutCircle(p, r, o.pos, o.bodyR());
         }
         inline for (gr.vs) |other| {
             for (@field(g, other).live()) |*o| {
-                if (foemod.corporeal(o) and !o.airborne()) p = collision.pushOutCircle(p, r, o.pos, o.bodyR());
+                if (foemod.corporeal(o) and !o.airborne() and !phased(o)) p = collision.pushOutCircle(p, r, o.pos, o.bodyR());
             }
         }
         a.pos = mathx.approachV(a.pos, inBounds(p), step);
@@ -4312,6 +4446,15 @@ fn memberKind(f: anytype, group: ?FoeKind) FoeKind {
 
 fn disguised(f: anytype) bool {
     if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "hidden")) return f.hidden();
+    return false;
+}
+
+/// **IS THIS BODY OUT OF THE WAY** — `disguised`'s twin, and DELIBERATELY NOT THE SAME QUESTION. That one is
+/// about being seen (the reticle, the bar); this one is about being solid, and the rooted is exactly why they
+/// cannot share a predicate: a dormant snag is not a creature to look at and is still a tree you walk into.
+/// An opt-in decl (`markWays`' rule), so the seventeen groups that are always solid pay a comptime-false.
+fn phased(f: anytype) bool {
+    if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "phased")) return f.phased();
     return false;
 }
 

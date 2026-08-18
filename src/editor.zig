@@ -223,6 +223,7 @@ const unitTips = [_][:0]const u8{
     "Post a necromancer - skeletons near it stop dissolving, and it puts them back up. Kill it first, or fight away from the bodies",
     "Post a Florid Ravager - a big hound with a flower for a head. The bloom OPENS before it leaps; that is your cue to move",
     "Post a Mushroom Mage - a cloaked caster that lobs SLOW, BOUNCING fireballs. Do not back away, that is down the bounce line - go sideways, or straight at it",
+    "Post a Fen Lurker - it lies under the water and comes up when you WADE. It cannot follow you onto dry land, and it cannot be hit while it is down. Put it in water",
     "Hold and sweep to remove spawns ([ ] sets radius)",
 };
 
@@ -265,6 +266,7 @@ const unitIcons = [_]ui.Icon{
     .necromancer,
     .florid_ravager,
     .mushroom_mage,
+    .fen_lurker,
     .erase,
 };
 
@@ -375,6 +377,7 @@ const UnitBrush = enum {
     necromancer,
     florid_ravager,
     mushroom_mage,
+    fen_lurker,
     erase,
 };
 
@@ -2389,6 +2392,9 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         // The fire it throws — the one ORANGE on the map, and nothing near it: the sporeling it shares a
         // wood with is a dusty rose and the ravager's bloom is pink, so the fungal three separate by hue.
         .mushroom_mage => ui.col(238, 152, 66, 255),
+        // The water it lives in — the one TEAL on the map, and the only cool green: the necromancer's frost
+        // is pale blue and the ravager's bloom is pink, so nothing this sits beside reads near it.
+        .fen_lurker => ui.col(78, 200, 186, 255),
     };
 }
 

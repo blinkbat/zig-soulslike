@@ -40,6 +40,12 @@ pub const Kind = enum(u8) {
     banded_warbelt,
     marchboots,
     deft_signet, // …and the second finger, which needed a second ring to exist before it could open
+    purgeleaf, // THE FIRST CURE: poison was the one status and nothing in the world answered it
+    pilgrims_salt, // the nameless soul's own shelf, one tier up
+    ironwort_tea, // the broth's shape pointed at the POISE bar instead of the stamina one
+    rimeward_mantle, // …and the first COLD resistance anywhere on his side of the fight
+    sporecrown, // …and the first thing that slows a status filling
+    gravebell_amulet, // the bell's own bargain: a cheaper call, a shorter blue bar
 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
@@ -56,7 +62,8 @@ const ORDER = [_][]const u8{
     "fire_tallow",     "thundercrock",   "nameless_soul", "toadflesh_broth",
     "fang_dirk",       "grave_warbow",   "quilted_gambeson", "spirit_scroll_wolf",
     "pitted_helm",     "ashen_amulet",   "banded_warbelt", "marchboots",
-    "deft_signet",
+    "deft_signet",     "purgeleaf",      "pilgrims_salt", "ironwort_tea",
+    "rimeward_mantle", "sporecrown",     "gravebell_amulet",
 };
 
 comptime {
@@ -101,6 +108,12 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .banded_warbelt => "Banded Warbelt",
         .marchboots => "Sodden Marchboots",
         .deft_signet => "Signet of the Deft",
+        .purgeleaf => "Purgeleaf",
+        .pilgrims_salt => "Pilgrim's Salt",
+        .ironwort_tea => "Ironwort Tea",
+        .rimeward_mantle => "Rimeward Mantle",
+        .sporecrown => "Sporecrown",
+        .gravebell_amulet => "Gravebell Amulet",
     };
 }
 
@@ -140,6 +153,9 @@ pub fn class(k: Kind) Class {
         .thundercrock,
         .nameless_soul,
         .toadflesh_broth,
+        .purgeleaf,
+        .pilgrims_salt,
+        .ironwort_tea,
         => .tool,
         .rune_arc,
         .golden_seed,
@@ -157,6 +173,9 @@ pub fn class(k: Kind) Class {
         .banded_warbelt,
         .marchboots,
         .deft_signet,
+        .rimeward_mantle,
+        .sporecrown,
+        .gravebell_amulet,
         => .gear,
         // NOT a tool, though it is the one carried thing that DOES something: a tool is spent by pressing
         // Confirm on it, and this one is spent by dying. `usable` stays false and the shelf says so.
@@ -204,6 +223,12 @@ pub fn describe(k: Kind) [:0]const u8 {
         .banded_warbelt => "A wide belt of banded leather, cut for a bigger man and punched with a new hole. Cinched hard it braces the back, and a heavy thing swung out of braced hips is a heavier thing.",
         .marchboots => "Boots that have not been dry in years, soles worn through to the second layer of hide. They stop what comes at your feet, which is less than you would think and more than nothing.",
         .deft_signet => "A plain band with the inside worn to a knife-edge by somebody's restless thumb. It steadies the wrist, and a steadied wrist puts a point where it was aimed.",
+        .purgeleaf => "A grey-green leaf that grows only downwind of the spore beds, thick as felt and bitter enough to make your eyes run. Chewed, it takes whatever is in you back out the way it came in.",
+        .pilgrims_salt => "A grey brick of salt, pressed in a mould and thumbed smooth by whoever carried it last. There is more of somebody in this than in a nameless soul, and it went just as cold.",
+        .ironwort_tea => "Bitter root steeped until the water goes the colour of rust, drunk lukewarm. It settles the wind out of you: what a blow knocks loose comes back the quicker for a while.",
+        .rimeward_mantle => "A mantle of layered fleece and oiled hide, cut for a winter these ruins do not have. The cold slides off it, and off you - which is worth knowing where anything at all deals cold.",
+        .sporecrown => "A cap of woven stalk-fibre, still faintly warm, the inside furred with something that eats spores for a living. What gets past it gets past slowly.",
+        .gravebell_amulet => "A finger of bell-bronze on a thong, cracked through and still ringing on if you hold it to the ear. A call made near it costs less to make; what it takes for the loan is depth out of the pool the call comes from.",
     };
 }
 
@@ -228,6 +253,14 @@ pub const Use = union(enum) {
     souls: struct { n: u32 },
     /// The stamina refill runs `mult` times its rate for `secs` seconds. Refreshes, never stacks.
     brew: struct { mult: f32, secs: f32 },
+    /// **THE FIRST CURE.** The status meter wiped outright, filling or running — poison was the only status
+    /// in the world and nothing anywhere answered it, so the one thing you could do about a spore cloud was
+    /// spend a crimson on the damage after the fact. NO PAYLOAD: it does not half-clear, and a leaf that took
+    /// a fraction would be a second dial nobody could size the first one against.
+    purge,
+    /// The POISE refill runs `mult` times its rate for `secs` seconds — the broth's shape (`brew`) pointed at
+    /// the bar that decides whether a blow flinches him. Refreshes, never stacks.
+    steady: struct { mult: f32, secs: f32 },
 };
 
 /// **WHICH SOCKET A PIECE OF GEAR GOES IN.** `book.SlotId`'s own subset — the sockets gear can actually fill —
@@ -288,14 +321,25 @@ pub const Arm = struct {
 
 /// **WHAT PUTTING IT ON DOES** — named here, applied elsewhere (`hero.armOf`, `hero.armourA`, `hero.charm`), which
 /// is `Use`'s own split: plain numbers only, assembled where the types live.
-/// WORN, and the answer to PHYSICAL — the fifth column the four elemental resistances never had. `a` is the
-/// armour value in `A/(A + 5*dmg)` (`combat.armourTaken`), so it is a diminishing return by construction and a
-/// coat cannot become immunity however many are stacked.
-pub const Plate = struct { slot: Wear, a: f32 };
+/// **THE FOUR ELEMENTS AS PLAIN FLOATS** — `combat.Spread`'s own fields, spelled out again here because this
+/// file may import nothing but `std` and `stats` (naming `combat.Elem` is the cycle the header refuses). The
+/// two are matched up at the ONE place they meet, `hero.resistOf`, exactly as `Wear` is matched to
+/// `hero.Armament` by `hero.wearFor` and a `Kind` is made a flask by `combat.flaskOf`.
+pub const Res = struct { fire: f32 = 0, cold: f32 = 0, lightning: f32 = 0, chaos: f32 = 0 };
+
+/// **WORN, AND IT IS THE DEFENSIVE ROW — all of it.** `a` is the armour value in `A/(A + 5*dmg)`
+/// (`combat.armourTaken`), so physical is a diminishing return by construction and a coat cannot become
+/// immunity however many are stacked. `res` is the four elemental columns beside it, and `poison` is a
+/// MULTIPLIER on how fast a status meter fills — the three things a piece of armour can honestly turn aside,
+/// on one row rather than three verbs that would each have to be stacked and printed separately.
+pub const Plate = struct { slot: Wear, a: f32 = 0, res: Res = .{}, poison: f32 = 1 };
 
 /// WORN, and a BARGAIN — what it gives and what it costs, because a ring in this genre is always both. `leech`
 /// is HP back on every blow of his that lands; `hpFrac` is the share of his max HP it eats to do it.
-pub const Charm = struct { slot: Wear, leech: f32 = 0, hpFrac: f32 = 0 };
+/// **AND THE SAME TRADE ON THE BLUE BAR**: `spiritFp` is a multiplier on what a call costs (`combat.spiritFp`)
+/// and `fpFrac` the share of his max focus that buys it — the red pair's exact shape one bar along, so the two
+/// charms in the world are the same kind of decision rather than two unrelated mechanics.
+pub const Charm = struct { slot: Wear, leech: f32 = 0, hpFrac: f32 = 0, spiritFp: f32 = 1, fpFrac: f32 = 0 };
 
 /// **WORN, AND WHAT IT BUYS IS A SKILL** — `n` points of `attr`, laid onto the live sheet exactly the way a tree
 /// node's are (`stats.Sheet.add`), so gear and the wheel are the same kind of gain and neither knows the other
@@ -359,6 +403,20 @@ pub fn equip(k: Kind) Equip {
         .banded_warbelt => .{ .boon = .{ .slot = .belt, .attr = .strength, .n = 3 } },
         .deft_signet => .{ .boon = .{ .slot = .ring2, .attr = .dexterity, .n = 3 } },
         .ashen_amulet => .{ .boon = .{ .slot = .neck, .attr = .intelligence, .n = 3 } },
+        // **THE FIRST COLD RESISTANCE ANYWHERE ON HIS SIDE.** The necromancer's rune ring is the game's one
+        // source of cold and the sheet showed 0% with nothing in the world able to move it, so this coat is a
+        // real answer to a real creature rather than a number. Its PHYSICAL is under the gambeson's on purpose:
+        // fleece and hide turn a chill, not an edge, and a chest socket that was strictly better than the coat
+        // already in it would retire that coat instead of competing with it.
+        .rimeward_mantle => .{ .plate = .{ .slot = .chest, .a = 13.0, .res = .{ .cold = 35 } } },
+        // …AND THE FIRST THING THAT SLOWS A METER FILLING. Poison is the only status, it is his alone, and
+        // nothing resisted it: the sporeling's cloud filled the bar at one rate whatever he had on. Just over
+        // half, so a cloud is still something you walk out of and not something you stand in.
+        .sporecrown => .{ .plate = .{ .slot = .helm, .a = 8.0, .poison = 0.55 } },
+        // THE BELL'S OWN BARGAIN, and the leech signet's shape on the blue bar: a call is the single biggest
+        // bill in the game (30 of a 60 pool), so two fifths off it is most of a second ringing — bought with a
+        // tenth of the pool the ringing comes out of, which is what stops it being free depth.
+        .gravebell_amulet => .{ .charm = .{ .slot = .neck, .spiritFp = 0.60, .fpFrac = 0.10 } },
         else => .none,
     };
 }
@@ -426,6 +484,17 @@ comptime {
     }
 }
 
+/// **WHICH ELEMENT A DEFENSIVE ROW ACTUALLY ANSWERS**, for the one line the panel prints — null when it
+/// answers none. One column at a time is not a limitation of the type (`Res` carries all four): it is what a
+/// single line of prose can honestly say, and no piece in the world wards two.
+fn plateElem(r: Res) ?struct { name: []const u8, amount: f32 } {
+    if (r.fire != 0) return .{ .name = "fire", .amount = r.fire };
+    if (r.cold != 0) return .{ .name = "cold", .amount = r.cold };
+    if (r.lightning != 0) return .{ .name = "lightning", .amount = r.lightning };
+    if (r.chaos != 0) return .{ .name = "chaos", .amount = r.chaos };
+    return null;
+}
+
 pub fn use(k: Kind) Use {
     return switch (k) {
         .mushroom_jerky => .{ .regen = .{ .frac = 0.60, .secs = 20.0 } },
@@ -442,6 +511,13 @@ pub fn use(k: Kind) Use {
         // A middling foe's worth (the Rooted's own figure) — found money, not a farm.
         .nameless_soul => .{ .souls = .{ .n = 150 } },
         .toadflesh_broth => .{ .brew = .{ .mult = 1.5, .secs = 60 } },
+        .purgeleaf => .purge,
+        // FOUR TIMES the nameless soul's 150 — that one is "found money" off a middling body, and this is the
+        // thing at the bottom of a chest. Still nowhere near a level (`passivetree.costAt(0)` is 280).
+        .pilgrims_salt => .{ .souls = .{ .n = 600 } },
+        // The broth's own multiple and a shorter clock: poise is what decides whether the next blow flinches
+        // him, so a minute of it would be a minute of not being staggered.
+        .ironwort_tea => .{ .steady = .{ .mult = 2.2, .secs = 40 } },
         .crimson_flask,
         .cerulean_flask,
         .rune_arc,
@@ -464,6 +540,9 @@ pub fn use(k: Kind) Use {
         .banded_warbelt,
         .marchboots,
         .deft_signet,
+        .rimeward_mantle,
+        .sporecrown,
+        .gravebell_amulet,
         => .none,
     };
 }
@@ -471,6 +550,15 @@ pub fn use(k: Kind) Use {
 /// Is this row worth pressing Confirm on?
 pub fn usable(k: Kind) bool {
     return std.meta.activeTag(use(k)) != .none;
+}
+
+/// **DOES ITS EFFECT CARRY NUMBERS AT ALL** — which is NOT the same question as `usable`. Asked off the
+/// union's own payload rather than by listing the verbs that have one, so a second payload-free effect is
+/// covered here the day it is written instead of the day somebody notices the test.
+pub fn dosed(k: Kind) bool {
+    return switch (use(k)) {
+        inline else => |payload| @TypeOf(payload) != void,
+    };
 }
 
 /// **WHAT IT DOES, IN ONE LINE OF MECHANIC** — the answer to "which of these two flasks did I just put in the
@@ -500,11 +588,30 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
                 a.dur * 100,
             }) catch "Held: its own weight and speed.",
         },
-        .plate => |p| return std.fmt.bufPrintZ(buf, "Worn: {d:.0} armour against physical damage.", .{p.a}) catch "Worn: armour.",
-        .charm => |c| return std.fmt.bufPrintZ(buf, "Worn: {d:.0} HP back per swing landed, -{d:.0}% max HP.", .{
-            c.leech,
-            c.hpFrac * 100,
-        }) catch "Worn: a bargain.",
+        // **THE ROW PRINTS WHAT IT ACTUALLY CARRIES, NOT ALL FOUR COLUMNS.** A coat that turns no cold has no
+        // business saying "0% cold" on the one panel a player compares two coats on, and a helm whose whole
+        // point is the spore meter cannot have that hidden behind an armour figure it barely has.
+        .plate => |p| {
+            const el = plateElem(p.res);
+            if (el != null and p.poison != 1) return std.fmt.bufPrintZ(buf, "Worn: {d:.0} armour, {d:.0}% {s}, poison fills at {d:.0}%.", .{
+                p.a, el.?.amount, el.?.name, p.poison * 100,
+            }) catch "Worn: armour and a ward.";
+            if (el) |e| return std.fmt.bufPrintZ(buf, "Worn: {d:.0} armour, {d:.0}% {s} resistance.", .{ p.a, e.amount, e.name }) catch "Worn: armour and a ward.";
+            if (p.poison != 1) return std.fmt.bufPrintZ(buf, "Worn: {d:.0} armour, poison fills at {d:.0}%.", .{ p.a, p.poison * 100 }) catch "Worn: armour.";
+            return std.fmt.bufPrintZ(buf, "Worn: {d:.0} armour against physical damage.", .{p.a}) catch "Worn: armour.";
+        },
+        // …AND THE CHARM SAYS WHICHEVER BARGAIN IT IS. Both halves on one line would price the gravebell's
+        // leech at zero and the signet's call at 100%, which is two numbers that mean "this row does nothing".
+        .charm => |c| {
+            if (c.spiritFp != 1 or c.fpFrac > 0) return std.fmt.bufPrintZ(buf, "Worn: a spirit costs {d:.0}% focus, -{d:.0}% max focus.", .{
+                c.spiritFp * 100,
+                c.fpFrac * 100,
+            }) catch "Worn: a bargain.";
+            return std.fmt.bufPrintZ(buf, "Worn: {d:.0} HP back per swing landed, -{d:.0}% max HP.", .{
+                c.leech,
+                c.hpFrac * 100,
+            }) catch "Worn: a bargain.";
+        },
         .boon => |b| return std.fmt.bufPrintZ(buf, "Worn: +{d} {s}.", .{
             b.n,
             stats.displayName(b.attr),
@@ -524,6 +631,8 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
         .grease => |gr| std.fmt.bufPrintZ(buf, "Sword hangs +{d:.0}% of its blow as fire for {d:.0}s. Refreshes, never stacks.", .{ gr.frac * 100, gr.secs }) catch "Sets the blade alight.",
         .souls => |s| std.fmt.bufPrintZ(buf, "Crushed for {d} souls, on the spot.", .{s.n}) catch "Worth souls.",
         .brew => |b| std.fmt.bufPrintZ(buf, "Stamina comes back {d:.1}x as fast for {d:.0}s. Refreshes, never stacks.", .{ b.mult, b.secs }) catch "Stamina returns faster.",
+        .purge => "Clears poison outright, filling or already running.",
+        .steady => |s| std.fmt.bufPrintZ(buf, "Poise comes back {d:.1}x as fast for {d:.0}s. Refreshes, never stacks.", .{ s.mult, s.secs }) catch "Poise returns faster.",
     };
 }
 
@@ -647,8 +756,10 @@ test "EVERY KIND SAYS WHAT IT DOES, and a kind with a dose says it in NUMBERS" {
         const k: Kind = @enumFromInt(i);
         const s = effect(k, &buf);
         try std.testing.expect(s.len > 10);
-        // A dose that fell back to the bare phrase has lost its numbers, which is the whole line.
-        if (usable(k)) {
+        // A dose that fell back to the bare phrase has lost its numbers, which is the whole line — asked of
+        // the kinds that HAVE numbers, which is not the same as the kinds you can press Confirm on: `purge`
+        // carries no payload on purpose, and there is nothing there for a digit to come out of.
+        if (dosed(k)) {
             var digit = false;
             for (s) |c| digit = digit or std.ascii.isDigit(c);
             try std.testing.expect(digit);
@@ -712,6 +823,18 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
                 try std.testing.expect(usable(k));
                 try std.testing.expect(b.mult > 1.0);
                 try std.testing.expect(b.secs > 0);
+            },
+            // NO PAYLOAD TO CHECK, and that IS the check: a cure that carried a fraction would be a second
+            // dial nobody could size the first one against (`Use.purge`'s own note).
+            .purge => {
+                found += 1;
+                try std.testing.expect(usable(k));
+            },
+            .steady => |s| {
+                found += 1;
+                try std.testing.expect(usable(k));
+                try std.testing.expect(s.mult > 1.0);
+                try std.testing.expect(s.secs > 0);
             },
         }
     }
@@ -788,7 +911,8 @@ test "EVERY PIECE OF GEAR GOES IN A SOCKET, SAYS WHAT IT DOES IN NUMBERS, AND SH
         // "no hand here knows it yet", which was honest then and is a lie now.
         try std.testing.expect(std.mem.indexOf(u8, describe(k), " yet.") == null);
     }
-    try std.testing.expectEqual(@as(usize, 11), worn); // the original six, plus one per socket that was dead
+    // A CENSUS, NOT A RULE — it says "somebody added a piece of gear" loudly enough to be noticed in review.
+    try std.testing.expectEqual(@as(usize, 14), worn);
 }
 
 test "EVERY SOCKET HAS SOMETHING THAT GOES IN IT, and no worn socket is a hand" {
@@ -856,8 +980,15 @@ test "A WEAPON ROW TRADES: nothing is better than the plain thing on every dial 
                 try std.testing.expect(gains and costs); // it buys something AND it costs something
             },
             .plate => |p| try std.testing.expect(p.a > 0),
-            // A charm that gave without taking would be a straight upgrade for carrying it, which is not a bargain.
-            .charm => |c| try std.testing.expect(c.leech > 0 and c.hpFrac > 0),
+            // A charm that gave without taking would be a straight upgrade for carrying it, which is not a
+            // bargain. **ASKED AS "GIVES SOMETHING AND TAKES SOMETHING", NOT AS TWO NAMED FIELDS** — the
+            // gravebell's bargain is on the BLUE bar, and pinned to `leech`/`hpFrac` this test said a charm is
+            // only a charm if it is the leech signet.
+            .charm => |c| {
+                const gives = c.leech > 0 or c.spiritFp < 1;
+                const takes = c.hpFrac > 0 or c.fpFrac > 0;
+                try std.testing.expect(gives and takes);
+            },
             // A BOON IS DELIBERATELY NOT A BARGAIN (`Boon`'s own note): with one piece per socket a cost would
             // only make the socket worse than empty. What it owes instead is a grant worth having.
             .boon => |b| try std.testing.expect(b.n > 0),

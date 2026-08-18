@@ -26,6 +26,7 @@ const delvermod = @import("delver.zig");
 const necromod = @import("necro.zig");
 const ravagermod = @import("ravager.zig");
 const magemod = @import("shroommage.zig");
+const fenmod = @import("fenlurker.zig");
 const combat = @import("combat.zig");
 const foemod = @import("foe.zig");
 const elemfx = @import("elemfx.zig"); // the elements' particle LANGUAGE — the bench is where it is TUNED
@@ -305,6 +306,7 @@ const CharSet = struct {
     vigil: knightmod.Vigil,
     thicket: ravagermod.Thicket,
     ring: magemod.Ring,
+    marsh: fenmod.Marsh,
 };
 var charSet: ?CharSet = null;
 
@@ -326,6 +328,7 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
             .vigil = knightmod.Vigil.init(scene.shader),
             .thicket = ravagermod.Thicket.init(scene.shader),
             .ring = magemod.Ring.init(scene.shader),
+            .marsh = fenmod.Marsh.init(scene.shader),
         };
         var cs = &charSet.?;
         cs.warren.n = 0;
@@ -372,6 +375,9 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         // SHORT AND WIDE AT THE TOP — the cap is the broadest thing on it and the whole reason to look, so
         // the bound is the CAP's span and not the body's, or the brim runs out of both sides of the plate.
         .mushroom_mage => .{ .top = 1.6, .bound = 1.4 },
+        // TALL AND VERY NARROW — a neck and a head, with no body above the waterline at all. The bound is
+        // the HEAD's span, which is the widest thing on it and about a third of its height.
+        .fen_lurker => .{ .top = 2.9, .bound = 1.1 },
     };
 }
 
@@ -470,6 +476,15 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.ring.live()[0] = magemod.Mage.spawn(mathx.zero3, 0, 1.0, seed);
             cs.ring.live()[0].stageGather(1.0);
             cs.ring.draw(scene);
+        },
+        // POSED AT THE TOP OF THE SURGE — the rooted's rule taken to its limit: sunk, this creature is not
+        // drawn AT ALL (`Lurker.draw` refuses while `hidden`), so an unstaged portrait would be an empty
+        // plate. Up and reared is the only frame there is anything to photograph.
+        .fen_lurker => {
+            cs.marsh.n = 1;
+            cs.marsh.live()[0] = fenmod.Lurker.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.marsh.live()[0].stageGather(1.0);
+            cs.marsh.draw(scene);
         },
     }
 }

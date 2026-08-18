@@ -301,7 +301,7 @@ pub const Shroom = struct {
         self.elapsed += dt;
         self.t += dt;
         self.flingCd = mathx.maxF(0, self.flingCd - dt);
-        self.flash = mathx.maxF(0, self.flash - dt);
+        foe.fadeFlash(&self.flash, dt);
         foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);

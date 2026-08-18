@@ -423,7 +423,7 @@ pub const Frog = struct {
         self.elapsed += dt;
         self.lungeCd = mathx.maxF(0, self.lungeCd - dt);
         self.chompCd = mathx.maxF(0, self.chompCd - dt);
-        self.flash = mathx.maxF(0, self.flash - dt);
+        foe.fadeFlash(&self.flash, dt);
         self.t += dt;
         // THE TETHER: drawn a long way from its lily patch and left alone, it goes back (foe.Leash).
         foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);

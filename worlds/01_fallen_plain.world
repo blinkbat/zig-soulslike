@@ -1325,6 +1325,15 @@ foe: delver 31.30 -20.30 0.0 1.00 0.05
 foe: florid_ravager -47.97 11.96 0.0 1.00 0.42
 foe: florid_ravager -49.41 15.98 210.0 1.00 0.79
 foe: florid_ravager -60.63 46.32 150.0 1.00 0.16
+foe: mushroom_mage -106.09 -71.00 0.0 1.00 0.53
+foe: mushroom_mage -96.87 33.23 0.0 1.00 0.90
+foe: mushroom_mage 65.11 -65.34 0.0 1.00 0.27
+foe: shade 63.80 -65.35 0.0 1.00 0.64
+foe: shade 66.97 -64.37 0.0 1.00 0.01
+foe: toad 66.56 -40.11 0.0 1.00 0.38
+foe: toad 66.17 -37.83 0.0 1.00 0.75
+foe: toad 67.23 -18.19 0.0 1.00 0.12
+foe: toad 51.93 -19.78 0.0 1.00 0.49
 
 flags: met_wanderer heard_of_gate
 

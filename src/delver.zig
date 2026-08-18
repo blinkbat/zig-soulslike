@@ -513,7 +513,7 @@ pub const Delver = struct {
         self.t += dt;
         self.clawCd = mathx.maxF(0, self.clawCd - dt);
         self.diveCd = mathx.maxF(0, self.diveCd - dt);
-        self.flash = mathx.maxF(0, self.flash - dt);
+        foe.fadeFlash(&self.flash, dt);
         foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);

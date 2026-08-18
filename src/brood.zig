@@ -868,7 +868,7 @@ pub const Sac = struct {
             foe.tickParticles(&self.parts, dt, self.pos.y);
             return false;
         }
-        self.flash = mathx.maxF(0, self.flash - dt);
+        foe.fadeFlash(&self.flash, dt);
         // A SAC IS A TARGET, so its vitals run like every other target's: `sinceHurt` gates the floating
         // HP bar, and left frozen at 0 the bar never goes away again.
         self.vit.tick(dt);
@@ -1160,7 +1160,7 @@ pub const Spider = struct {
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
-        self.flash = mathx.maxF(0, self.flash - dt);
+        foe.fadeFlash(&self.flash, dt);
         self.spitCd = mathx.maxF(0, self.spitCd - dt);
         self.biteCd = mathx.maxF(0, self.biteCd - dt);
         self.layCd = mathx.maxF(0, self.layCd - dt);

@@ -524,7 +524,7 @@ fn quickWorth(kind: ?item.Kind, worn: heromod.Worn, sheet: stats.Sheet) f32 {
         .none => 0,
         .regen => |r| hpMax * r.frac,
         .lob => |b| b.dmg + b.fire + b.lightning, // what one press throws, in the only number a throw has
-        .ward, .wind, .grease, .souls, .brew => 0, // none of these restores a bar the row could price
+        .ward, .wind, .grease, .souls, .brew, .purge, .steady => 0, // none of these restores a bar the row could price
     };
 }
 
@@ -1782,6 +1782,8 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
         .grease => |gr| hud.text(fmt("The sword hangs {d:.0}% of its blow as fire for {d:.0} seconds.", .{ gr.frac * 100, gr.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
         .souls => |so| hud.text(fmt("Crushed for {d} souls, on the spot.", .{so.n}), inner.x, y, hud.SMALL, uiart.GOOD),
         .brew => |b| hud.text(fmt("Your wind returns {d:.1}x as fast for {d:.0} seconds.", .{ b.mult, b.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .purge => hud.text("Takes the poison back out of you, filling or already running.", inner.x, y, hud.SMALL, uiart.GOOD),
+        .steady => |s| hud.text(fmt("Your footing returns {d:.1}x as fast for {d:.0} seconds.", .{ s.mult, s.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
     }
     if (item.usable(k)) {
         const hy = y + hud.lineH(hud.SMALL) + 6;

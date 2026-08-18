@@ -198,7 +198,10 @@ pub fn limbPhases(p: f32, g: Gait) [4]f32 {
     };
 }
 
-fn wrap01(x: f32) f32 {
+/// A GAIT PHASE BACK INTO 0..1. Public because the quadruped rig is shared: the second creature on it
+/// (`ravager.zig`) advances the same `phase` by the same `strideFor`, and transcribed there it was a second
+/// copy of the wrap the whole rig's foot placement is read off.
+pub fn wrap01(x: f32) f32 {
     const f = x - @floor(x);
     return if (f < 0) f + 1.0 else f;
 }
@@ -795,7 +798,7 @@ pub const Wolf = struct {
         self.growlCool = mathx.maxF(0, self.growlCool - dt);
         self.t += dt;
         self.vit.tick(dt);
-        self.flash = mathx.maxF(0, self.flash - dt * 4.0);
+        foe.fadeFlash(&self.flash, dt);
         self.biteCool = mathx.maxF(0, self.biteCool - dt);
         // HOW LONG IT HAS BEEN OUT OF HIS REACH. Up here with the other clocks and BEFORE the early returns,
         // because a spirit stuck 20 m off worrying at something is exactly as lost as one stuck against a bank.

@@ -364,6 +364,15 @@ pub fn flashFrac(flash: f32) f32 {
     return mathx.clampF(flash / FLASH_DUR, 0, 1);
 }
 
+/// …AND THE DRAIN THAT GOES WITH IT, because `FLASH_DUR` is a DURATION and only a decay of 1.0/s makes it
+/// one. `wounded` stamps the meter at `FLASH_DUR` and `flashFrac` divides by it, so the pop is that long iff
+/// the body counts down in real seconds. Written out per creature, fourteen did and THREE — the wolf and the
+/// two hounds that copied it — subtracted `dt * 4.0` and popped for 0.05 s: hitting those three read as a
+/// quarter of a flash against everything else on the same field, off a bare literal named nowhere.
+pub fn fadeFlash(flash: *f32, dt: f32) void {
+    flash.* = mathx.maxF(0, flash.* - dt);
+}
+
 /// A POINT ON A CREATURE'S OWN AXIS: `h` metres of ITS OWN SCALE above the ground under it, plus whatever it
 /// is holding off that ground this frame (`lift` — a hop, a leap, a hover). EVERY WORLD POINT ON AN ACTOR IS
 /// MEASURED FROM `pos.y` is the law it keeps: off the datum, a foe on a bank keeps its bar down in the field.
@@ -503,6 +512,27 @@ pub const Parry = struct {
         return combat.withinArc(mathx.headingXZ(to), self.facing, self.arc);
     }
 };
+
+/// **HOW DEEP THE WATER IS, AS A CREATURE STANDING IN IT SEES IT** — `Leash`'s and `Parry`'s arrangement
+/// exactly, and for their reason: only `game.zig` can see the creature and `env`'s water field at once, and a
+/// creature that reached out for the world would be a creature that knows about `Env`. Stamped every frame
+/// (`game.markWade`) onto any body carrying the field, and read by the one creature that lives in it.
+///
+/// **AND IT IS A PLACE, NOT A STATE OF HIS.** `quarry` is how deep the water is where the HERO IS STANDING,
+/// which is a fact about the ground — never about what he pressed. The NO INPUT READING law is kept by
+/// construction: a thing under the surface can feel someone wading and could feel a wolf wading just as well.
+pub const Wade = struct {
+    /// Metres of water over the creature's own post…
+    here: f32 = 0,
+    /// …and over its quarry's feet.
+    quarry: f32 = 0,
+};
+
+/// Stamped on every member of a group that carries the field — `setParry`'s twin, and the opt-in is the
+/// FIELD (`markWays`' `@hasField` rule), so the fourteen creatures that never touch water pay nothing.
+pub fn setWade(foes: anytype, at: anytype, quarry: f32, comptime depthAt: anytype) void {
+    for (foes) |*f| f.wade = .{ .here = depthAt(at, f.pos), .quarry = quarry };
+}
 
 // Carry a landed blow's KNOCKBACK for one frame and bleed it off — a jolt off the blade, not a slide.
 pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32, dt: f32) void {

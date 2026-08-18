@@ -2727,6 +2727,14 @@ test "THE BROOD ARENA LOADS — a scratch map is only useful if it is known to s
     try std.testing.expect(mothers > 0);
 }
 
+/// WHAT THE SHIPPED WORLD CURRENTLY REPLAYS TO. THREE FACTS, NOT SIX LITERALS: written out at the re-pin
+/// print AND at the assertions, a re-pin that moved one pair and forgot the other left the print silent on
+/// the very run the assertion failed.
+const PIN_PROPS: usize = 17521;
+const PIN_SOLIDS: usize = 1787;
+const PIN_LIGHTS: usize = 57;
+const PIN_JERKY: usize = 2;
+
 test "replaying the SHIPPED map produces a stable world" {
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
@@ -2754,18 +2762,18 @@ test "replaying the SHIPPED map produces a stable world" {
     // …AND WHEN THEY HAVE MOVED, THIS SAYS WHAT TO RE-PIN TO. It is meant to fail while somebody is authoring
     // the map — but failing with three numbers you then have to go and dig out is a minute per edit session,
     // and printing them costs nothing on the runs that pass.
-    if (props0 != 17329 or solids0 != 1754 or lights0 != 52) {
+    if (props0 != PIN_PROPS or solids0 != PIN_SOLIDS or lights0 != PIN_LIGHTS) {
         std.debug.print("\n  SHIPPED MAP MOVED - re-pin: props {d}, solids {d}, lights {d}\n", .{ props0, solids0, lights0 });
     }
     // THESE MOVING IS THE POINT OF PINNING THEM: re-pin only when the world was MEANT to change. Anything
     // touching the waterline shifts the shore scatter by up to half a facet (`facetWater` moved 196 props),
     // and `materialize` reads the OPS alone, so foe records cannot move any of the three.
-    try std.testing.expectEqual(@as(usize, 17329), props0);
-    try std.testing.expectEqual(@as(usize, 1754), solids0);
+    try std.testing.expectEqual(PIN_PROPS, props0);
+    try std.testing.expectEqual(PIN_SOLIDS, solids0);
     // An item pickup is a LIGHT with no collider (`props.INFO`), so it moves this and `props0` but never
     // `solids0`. The map's three `campfire`s are the EXTINGUISHED kind; swapping one to `campfire_lit` in
     // the editor adds a light here and a rest site with it.
-    try std.testing.expectEqual(@as(usize, 52), lights0);
+    try std.testing.expectEqual(PIN_LIGHTS, lights0);
 
     var jerky: usize = 0;
     var rings: usize = 0;
@@ -2778,15 +2786,63 @@ test "replaying the SHIPPED map produces a stable world" {
             if (item.bindsSouls(it)) rings += 1;
         }
     }
-    try std.testing.expectEqual(@as(usize, 1), jerky);
+    // A CENSUS AND NOT A RULE — jerky is an ordinary draught and the map may hold as many as it likes; this
+    // only says a chest still carries one, so an edit that emptied the boxes is caught. Re-pin freely.
+    try std.testing.expectEqual(PIN_JERKY, jerky);
     // …AND ONE BINDING RING IN THE WORLD, which is the whole of what makes it worth anything: it is the one
     // death you get to refuse, and a box that refilled with them would be a death you never have to take.
+    // THIS one is a RULE, so it is written as a literal rather than joining the pins above.
     try std.testing.expectEqual(@as(usize, 1), rings);
 
     var boxes: [chestmod.CAP]chestmod.Site = undefined;
     try std.testing.expectEqual(chestOps, e.chestSites(&boxes));
     var fires: [restmod.CAP]restmod.Site = undefined;
     try std.testing.expect(e.restSites(&fires) > 0);
+}
+
+test "A FEN LURKER IS POSTED IN WATER IT CAN ACTUALLY HIDE IN" {
+    // **THE ONE CREATURE WHOSE POST IS PART OF ITS MECHANIC.** Everything else in the game works wherever the
+    // map puts it; this one's whole defence is the sheet over its head, and a lurker dropped on dry ground is
+    // a lurker standing in a field with no way to leave (`fenlurker.pooled` — it fights instead, which is the
+    // honest failure, not the intended one). Nothing but this could catch a map that placed one badly, since
+    // it needs the WATER FIELD and the DIG together and neither is legible in the file.
+    const fen = @import("fenlurker.zig");
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    var line: usize = 0;
+    wf.load("worlds/test_fenlurker.world", m, &line) catch return error.SkipZigTest;
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    // **THE TWO GRIDS ARE UPLOADED SEPARATELY FROM THE OPS** — `materialize` replays the ops alone, and the
+    // water field and the dig are their own passes (`game.enterMap` does all three). Asked after
+    // `materialize` on its own, `wadeDepth` answers 0 everywhere and this test would pass a map with no
+    // water in it at all.
+    //
+    // The dig is laid down by hand rather than through `uploadHeight`, which ends on `rebuildTerrain` and so
+    // wants a GL context this test does not have. Everything `wadeDepth` reads is these three fields.
+    e.heightField = m.height;
+    e.heightHalf = m.half;
+    e.heightAny = m.anyHeight();
+    e.uploadWater(m);
+    e.materialize(m);
+
+    var wet: usize = 0;
+    var dry: usize = 0;
+    for (m.foes[0..m.nfoes]) |f| {
+        if (f.kind != .fen_lurker) continue;
+        const d = e.wadeDepth(f.x, f.z);
+        if (d >= fen.POOL_MIN) {
+            wet += 1;
+            // …AND SHALLOW ENOUGH THAT HE CAN FOLLOW IT IN. Past `WADE_MAX` the water is a wall
+            // (`deepRefused`), so a lurker out in the deep is one he can never reach to kill.
+            try std.testing.expect(d <= WADE_MAX);
+        } else dry += 1;
+    }
+    std.debug.print("\n  fen lurker test map: {d} posted in water, {d} on dry land\n", .{ wet, dry });
+    try std.testing.expect(wet >= 3);
+    // ONE ON DRY LAND ON PURPOSE — the map says so, and it is the only way to see that failure behave.
+    try std.testing.expectEqual(@as(usize, 1), dry);
 }
 
 test "EVERY SHIPPED MAP LOADS AND MATERIALIZES, not just the one the game starts on" {

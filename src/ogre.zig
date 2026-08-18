@@ -547,7 +547,7 @@ pub const Ogre = struct {
         self.slamCd = mathx.maxF(0, self.slamCd - dt);
         self.swipeCd = mathx.maxF(0, self.swipeCd - dt);
         self.driveCd = mathx.maxF(0, self.driveCd - dt);
-        self.flash = mathx.maxF(0, self.flash - dt);
+        foe.fadeFlash(&self.flash, dt);
         foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         self.t += dt;
         self.updateFx(dt);

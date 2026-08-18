@@ -152,8 +152,9 @@ const unitBrushes = blk: {
     break :blk out;
 };
 
-/// Where the SOIL ids start in `groundBrushes`, since the sculpt tools now come first.
-const GROUND_SOIL_0: usize = 4;
+/// Where the SOIL ids start in `groundBrushes`, since the sculpt tools now come first — DERIVED off the
+/// table it is the length of, not a literal an assertion has to keep honest.
+const GROUND_SOIL_0: usize = @typeInfo(wf.Sculpt).@"enum".fields.len;
 
 /// SMOOTH and FLATTEN take a 0..1 blend where raise/lower take metres, so they need their own scale off the one `sculptRate` dial.
 const SCULPT_EVEN: f32 = 0.5;
@@ -339,8 +340,9 @@ comptime {
     for (0..wf.Soil.N - 1) |i| {
         std.debug.assert(std.mem.eql(u8, groundBrushes[GROUND_SOIL_0 + i], @tagName(@as(wf.Soil, @enumFromInt(i + 1)))));
     }
-    const sculptN = @typeInfo(wf.Sculpt).@"enum".fields.len;
-    std.debug.assert(GROUND_SOIL_0 == sculptN);
+    // …and the sculpt half needs no count assert of its own now: `GROUND_SOIL_0` IS `wf.Sculpt`'s length.
+    // The NAMES are not tag-for-tag there (`Flat` is `wf.Sculpt.flatten`), which is why only the soils are
+    // pinned by tag above.
     // …and the unit brushes ARE the foe kinds in order, plus the eraser.
     std.debug.assert(unitBrushes.len == @typeInfo(wf.FoeKind).@"enum".fields.len + 1);
     for (0..@typeInfo(wf.FoeKind).@"enum".fields.len) |i| {

@@ -226,8 +226,7 @@ pub const Model = struct {
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
-        var mat = rl.loadMaterialDefault() catch @panic("rooted material");
-        mat.shader = shader;
+        const mat = gfx.material(shader, "rooted");
         return .{ .mesh = buildMeshes(), .mat = mat };
     }
     pub fn setShader(self: *Model, sh: rl.Shader) void {
@@ -372,7 +371,7 @@ pub const Rooted = struct {
         self.vit.tick(dt);
         foe.fadeFlash(&self.flash, dt);
         for (&self.cds) |*c| c.* = mathx.maxF(0, c.* - dt);
-        self.leash.tick(dt, 0, mathx.distXZ(self.home, hero), AGGRO_R);
+        foe.tickFixedLeash(&self.leash, dt, self.home, hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
 
         var act: Act = .none;

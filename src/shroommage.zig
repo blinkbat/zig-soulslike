@@ -329,8 +329,7 @@ pub const Model = struct {
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
-        var mat = rl.loadMaterialDefault() catch @panic("mushroom mage material");
-        mat.shader = shader;
+        const mat = gfx.material(shader, "mushroom mage");
         return .{ .bone = buildBones(), .cloak = cloakMesh(), .mat = mat };
     }
     pub fn setShader(self: *Model, sh: rl.Shader) void {

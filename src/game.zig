@@ -1132,10 +1132,75 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3) void {
     }
 }
 
-fn gateHeroWater(g: *Game, was: rl.Vector3) void {
-    if (!g.env.deepRefused(was.x, was.z, g.hero.pos.x, g.hero.pos.z)) return;
-    g.hero.pos.x = was.x;
-    g.hero.pos.z = was.z;
+/// **THE TRAVERSAL RULE ON THE HERO, AS ONE POST-STEP GATE** — `gateTerrain`'s arrangement one actor along,
+/// and for its reason: eight branches move him and only `moveHero` ever asked the ground anything. The ROLL
+/// and the attack LUNGE step through `mathx.stepXZ`, which is a clamp to the play square and NOTHING ELSE, so
+/// 3.5 m of roll crossed ground a walk refuses outright and `groundActor` then hauled him up it at
+/// `GROUND_RISE_RATE` — 9 m/s over a 0.70 s roll is a 61 degree climb against the 40 the walk caps at, and a
+/// riser past `GROUND_SNAP` is a plant, i.e. a teleport up a cliff. Foes have been held to this since
+/// `gateTerrain`; he was the one body in the world that was not.
+///
+/// **AIRBORNE KEEPS ONLY THE WATER HALF.** A jump has its own rule (`env.flyStep`) and clearing ground the
+/// walk refuses is what it is FOR — but no arc of it may end in the deep, which is what this gate was
+/// originally hoisted out of the eight branches to say.
+fn gateHeroTerrain(g: *Game, was: rl.Vector3) void {
+    const out = gatedXZ(&g.env, was, g.hero.pos, g.hero.airborne());
+    g.hero.pos.x = out.x;
+    g.hero.pos.z = out.z;
+}
+
+/// …and the rule itself, off the `Env` alone so it can be asked of a cliff without a window.
+fn gatedXZ(e: *const envmod.Env, was: rl.Vector3, to: rl.Vector3, airborne: bool) rl.Vector3 {
+    const dx = to.x - was.x;
+    const dz = to.z - was.z;
+    const d = @sqrt(dx * dx + dz * dz);
+    if (d < 1e-5) return to;
+    if (airborne) {
+        if (e.deepRefused(was.x, was.z, to.x, to.z)) return v3(was.x, to.y, was.z);
+        return to;
+    }
+    const stepped = e.walkStep(was, v3(dx / d, 0, dz / d), d);
+    return v3(stepped.x, to.y, stepped.z);
+}
+
+test "THE ROLL OBEYS THE GROUND — a committed move may not take him up what a walk refuses" {
+    // THE BUG: only `moveHero` ever asked the ground anything. The ROLL and the attack LUNGE step through
+    // `mathx.stepXZ`, which is a clamp to the play square and nothing else, so 3.5 m of roll walked up a
+    // cliff face and `groundActor` hauled him after it. Foes have been held to this by `gateTerrain` all
+    // along; he was the one body in the world that was not.
+    const e = try std.testing.allocator.create(envmod.Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.heightAny = true;
+    e.heightHalf = 100.0;
+    // A WALL ACROSS +X: flat to x = 0, then straight up. One lattice pitch is 2*half/(N-1) ≈ 0.90 m, so the
+    // riser is far past `STEP_UP` (0.55) and its slope far past `MAX_SLOPE` (tan 40).
+    const pitch = 2 * e.heightHalf / @as(f32, @floatFromInt(worldfmt.HEIGHT_N - 1));
+    for (0..worldfmt.HEIGHT_N) |zi| {
+        for (0..worldfmt.HEIGHT_N) |xi| {
+            const x = @as(f32, @floatFromInt(xi)) * pitch - e.heightHalf;
+            e.heightField[zi * worldfmt.HEIGHT_N + xi] = if (x < 0) worldfmt.HEIGHT_ZERO else worldfmt.HEIGHT_ZERO + 24;
+        }
+    }
+    const rise = e.groundAt(2.0, 0) - e.groundAt(-2.0, 0);
+    try std.testing.expect(rise > 4.0); // the wall is real
+
+    // ONE FRAME OF A ROLL at its peak — `hero.ROLL_DIST` over its own duration, braked, is about 7 m/s.
+    const was = v3(-0.30, 0, 0);
+    const step = heromod.ROLL_DIST / (0.70 * 0.5 * 1.42) / 60.0;
+    const raw = v3(was.x + step, 0, was.z);
+    // Ungated, the roll simply arrives on the far side of the riser…
+    try std.testing.expect(raw.x > was.x);
+    // …and gated it is held, exactly as a walk into the same wall is.
+    const walked = gatedXZ(e, was, raw, false);
+    try std.testing.expectApproxEqAbs(was.x, walked.x, 1e-4);
+    // A JUMP IS EXEMT-BY-DESIGN: clearing ground the walk refuses is what it is for (`env.flyStep`).
+    const flown = gatedXZ(e, was, raw, true);
+    try std.testing.expectApproxEqAbs(raw.x, flown.x, 1e-4);
+    std.debug.print(
+        "\n  hero gate: wall rises {d:.2} m over {d:.2} m; a {d:.3} m roll step is held at x {d:.3}\n",
+        .{ rise, pitch, step, walked.x },
+    );
 }
 
 fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
@@ -1783,7 +1848,7 @@ fn triggerWorld(g: *const Game) trigmod.World {
         alive: *[@typeInfo(FoeKind).@"enum".fields.len]u32,
         fn visit(self: *const @This(), foes: anytype, kind: ?FoeKind) void {
             for (foes) |*f| {
-                if (!f.alive() or f.dying()) continue;
+                if (!foemod.corporeal(f)) continue;
                 self.alive[@intFromEnum(memberKind(f, kind))] += 1;
             }
         }
@@ -2072,6 +2137,8 @@ fn throwLance(g: *Game) void {
     _ = pierceFoes(g, .{
         .active = true,
         .pierce = true,
+        // …AND IT IS THE ONE BLADE IN THE GAME THAT IS NOT SPENT ON WHAT IT FIRST REACHES (`foe.Blade.through`).
+        .through = true,
         .r = combat.LANCE_R,
         .a = from,
         .b = to,
@@ -2405,7 +2472,7 @@ const RayCtx = struct {
 
     fn visit(self: *RayCtx, foes: anytype, _: ?FoeKind) void {
         for (foes) |*f| {
-            if (!f.alive() or f.dying()) continue;
+            if (!foemod.corporeal(f)) continue;
             const oc = mathx.subV(f.centerWorld(), self.origin);
             const along = oc.x * self.dir.x + oc.y * self.dir.y + oc.z * self.dir.z;
             if (along <= 0) continue; // behind the eye
@@ -2466,7 +2533,7 @@ fn markSight(g: *Game) void {
     const eye = heroEye(g);
     inline for (FOE_GROUPS) |gr| {
         for (@field(g, gr.field).live()) |*f| {
-            if (!f.alive() or f.dying()) continue;
+            if (!foemod.corporeal(f)) continue;
             if (mathx.distXZ(g.hero.pos, f.pos) > SIGHT_R) continue;
             if (g.env.sees(f.lockPoint(), eye)) f.leash.noteSeen();
         }
@@ -2688,7 +2755,13 @@ fn canSee(g: *const Game, r: FoeRef) bool {
 fn pierceFoes(g: *Game, blade: foemod.Blade) bool {
     var hit = false;
     inline for (FOE_GROUPS) |f| {
-        if (!hit and @field(g, f.field).pierce(blade)) hit = true;
+        // `through` is what carries the blade past a body it already found (`foe.Blade.through`); without it
+        // the first group to report a hit is where it is spent, which is what a shaft and a bite are. Written
+        // as a WRAPPING `if` rather than a `continue`, for `withRaisable`'s reason: this is a runtime test and
+        // skipping an `inline for` iteration on one is comptime control flow inside a runtime block.
+        if (!hit or blade.through) {
+            if (@field(g, f.field).pierce(blade)) hit = true;
+        }
     }
     return hit;
 }
@@ -3310,42 +3383,20 @@ pub fn run(mode: Mode) void {
         }
 
         if (g.award.carding()) {
-            g.hero.held = true;
             var pressed = rl.getKeyPressed() != .null;
             if (rl.isMouseButtonPressed(.left) or rl.isMouseButtonPressed(.right)) pressed = true;
             inline for (.{ .right_face_down, .right_face_right, .right_face_left, .right_face_up, .middle_right, .middle_left }) |b| {
                 if (rl.isGamepadButtonPressed(0, b)) pressed = true;
             }
             if (pressed) g.award.dismiss();
-            bWasDown = true; // poison the pad-B tap window, exactly as the menu and the fire branches do
-            bHeldT = ROLL_TAP_MAX;
-            wasInside = false;
-            g.hero.update(rawDt, 0, 0, null); // the breathing bob alone — the pause card's own rule
-            g.hero.pose();
-            g.rig.follow(g.hero.shoulderPoint());
-            g.rumble.update(rawDt, false);
-            sfx.ambience(rawDt);
-            sfx.tickStreams();
-            drawScene(g);
-            hud(g, rawDt);
+            heldFrame(g, rawDt, &bWasDown, &bHeldT, &wasInside);
             g.award.drawCard();
             rl.endDrawing();
             continue;
         }
 
         if (g.enterAct != null) {
-            g.hero.held = true;
-            bWasDown = true;
-            bHeldT = ROLL_TAP_MAX;
-            wasInside = false;
-            g.hero.update(rawDt, 0, 0, null);
-            g.hero.pose();
-            g.rig.follow(g.hero.shoulderPoint());
-            g.rumble.update(rawDt, false);
-            sfx.ambience(rawDt);
-            sfx.tickStreams();
-            drawScene(g);
-            hud(g, rawDt);
+            heldFrame(g, rawDt, &bWasDown, &bHeldT, &wasInside);
             tickEnter(g, rawDt);
             drawEnterFade(g);
             rl.endDrawing();
@@ -3613,8 +3664,8 @@ pub fn run(mode: Mode) void {
         } else {
             moveHero(g, dt, mv, faceYaw);
         }
-        // Deep water is a wall, taken ONCE here rather than at each of the eight branches above.
-        if (heroAfoot) gateHeroWater(g, heroWas);
+        // The traversal rule, taken ONCE here rather than at each of the eight branches above.
+        if (heroAfoot) gateHeroTerrain(g, heroWas);
         var wasPos: [FOE_GROUPS.len][FOE_CAP]rl.Vector3 = undefined;
         var wasN: [FOE_GROUPS.len]usize = undefined;
         inline for (FOE_GROUPS, 0..) |f, gi| {
@@ -3890,6 +3941,28 @@ pub fn run(mode: Mode) void {
         drawEnterFade(g);
         rl.endDrawing();
     }
+}
+
+/// **ONE FRAME WITH THE WORLD HELD** — the award card's and the map cut's, which were eleven identical lines
+/// each: he breathes and nothing else (`hero.update` at zero speed), the eye stays on his shoulder, the motors
+/// decay, and the scene and the chrome are drawn. The three loop-locals go by pointer because they belong to
+/// `run`'s own frame and not to the game: `bWasDown`/`bHeldT` POISON the pad-B tap window, so releasing B on
+/// the frame the card closes cannot come out of it as a roll, and `wasInside` swallows the mouse delta the
+/// held frame accumulated. Whatever the branch draws ON TOP of this stays at the branch — that is the half
+/// that differs.
+fn heldFrame(g: *Game, rawDt: f32, bWasDown: *bool, bHeldT: *f32, wasInside: *bool) void {
+    g.hero.held = true;
+    bWasDown.* = true;
+    bHeldT.* = ROLL_TAP_MAX;
+    wasInside.* = false;
+    g.hero.update(rawDt, 0, 0, null);
+    g.hero.pose();
+    g.rig.follow(g.hero.shoulderPoint());
+    g.rumble.update(rawDt, false);
+    sfx.ambience(rawDt);
+    sfx.tickStreams();
+    drawScene(g);
+    hud(g, rawDt);
 }
 
 fn footsteps(g: *Game, last: *f32) void {
@@ -4184,7 +4257,7 @@ const MarkCtx = struct {
 
     fn visit(self: *MarkCtx, foes: anytype, _: ?FoeKind) void {
         for (foes) |*f| {
-            if (!f.alive() or f.dying()) continue;
+            if (!foemod.corporeal(f)) continue;
             if (disguised(f)) continue;
             const d = mathx.distXZ(self.g.hero.pos, f.pos);
             if (d >= self.bestD) continue;
@@ -4385,11 +4458,12 @@ fn foeTopWorld(g: *const Game, r: FoeRef) rl.Vector3 {
         }
     }.ask);
 }
-// A live, non-dissipating foe (both a fresh acquire and a held lock require this).
+// A live, non-dissipating foe (both a fresh acquire and a held lock require this) — `foe.corporeal`'s own
+// question, asked of one named body rather than of a list.
 fn foeLockable(g: *const Game, r: FoeRef) bool {
     return askFoe(bool, g, r, struct {
         fn ask(f: anytype) bool {
-            return f.alive() and !f.dying();
+            return foemod.corporeal(f);
         }
     }.ask);
 }
@@ -4502,7 +4576,7 @@ const LockCtx = struct {
 
     fn visit(self: *LockCtx, foes: anytype, kind: ?FoeKind) void {
         for (foes, 0..) |*f, i| {
-            if (!f.alive() or f.dying() or mathx.distXZ(self.g.hero.pos, f.pos) > MAX_LOCK_R) continue;
+            if (!foemod.corporeal(f) or mathx.distXZ(self.g.hero.pos, f.pos) > MAX_LOCK_R) continue;
             if (disguised(f)) continue; // a tree is not a target until it stops being a tree
             const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
             if (!canSee(self.g, r)) continue; // no fixing on a shape behind a wall
@@ -4528,7 +4602,7 @@ const CycleCtx = struct {
     fn visit(self: *CycleCtx, foes: anytype, kind: ?FoeKind) void {
         for (foes, 0..) |*f, i| {
             const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
-            if ((self.cur.kind == r.kind and self.cur.idx == i) or !f.alive() or f.dying()) continue;
+            if ((self.cur.kind == r.kind and self.cur.idx == i) or !foemod.corporeal(f)) continue;
             if (disguised(f)) continue; // the flick skips what the acquire would not have taken
             if (mathx.distXZ(self.g.hero.pos, f.pos) > MAX_LOCK_R) continue;
             if (!canSee(self.g, r)) continue;
@@ -4572,7 +4646,7 @@ const BarCtx = struct {
 
     fn visit(self: *const BarCtx, foes: anytype, kind: ?FoeKind) void {
         for (foes, 0..) |*f, i| {
-            if (!f.alive() or f.dying()) continue; // no bar over a corpse dissolving out
+            if (!foemod.corporeal(f)) continue; // no bar over a corpse dissolving out
             if (self.boss) |bi| {
                 if (bi == i and memberKind(f, kind) == .bone_knight) continue;
             }

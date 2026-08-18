@@ -263,8 +263,7 @@ pub const Model = struct {
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
-        var mat = rl.loadMaterialDefault() catch @panic("ravager material");
-        mat.shader = shader;
+        const mat = gfx.material(shader, "ravager");
         return .{ .mesh = buildMeshes(), .mat = mat };
     }
     pub fn setShader(self: *Model, sh: rl.Shader) void {

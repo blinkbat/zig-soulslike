@@ -970,10 +970,6 @@ pub const Map = struct {
         return 2 * self.half / @as(f32, @floatFromInt(n));
     }
 
-    pub fn waterIndex(self: *const Map, px: f32, pz: f32) ?usize {
-        return gridIndex(self.half, WATER_N, px, pz);
-    }
-
     /// World position → soil cell index, or null when it falls outside the grid.
     pub fn soilIndex(self: *const Map, px: f32, pz: f32) ?usize {
         return gridIndex(self.half, SOIL_N, px, pz);

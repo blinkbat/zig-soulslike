@@ -58,6 +58,15 @@ const EMBER_MARK = rgba(232, 122, 46, 235);
 
 const DUST = foe.DUST;
 const CHIP = archermod.BONE_CHIP;
+/// DRY BONE, NOT WET FLESH: it leaves the body faster and higher than any of the blood sprays and falls
+/// harder — a flake is thrown, a droplet is thrown OFF.
+const CHIP_SPRAY = foe.Spray{
+    .fanLo = 0.2,   .fanHi = 1.2,
+    .upLo = 0.9,    .upHi = 3.2,
+    .lifeLo = 0.34, .lifeHi = 0.64,
+    .rLo = 0.024,   .rHi = 0.055,
+    .r1 = 0.008,    .col = CHIP, .grav = 8.0,
+};
 const SPARK = rgba(255, 206, 126, 240);
 
 /// **THE PLATE IS MATTE, AND THAT IS NOT A TASTE CALL.** `gfx.Mat.steel` carries a deliberately blinding
@@ -1207,13 +1216,17 @@ const SWAT_SHIELD_KEYS = MoveKeys{
     },
 };
 
-/// Which track a move runs on. Exhaustive, so a move added later has to say what it looks like.
+/// Which track a move runs on — every row of `MOVES` named, since `mv` is an index and not an enum and so
+/// carries no exhaustiveness of its own. The bash and the swat share one, each picking a second picture at
+/// the call (`bashKeys`/`swatKeys`); the `else` is only reachable through an index `MOVES` does not have,
+/// which the comptime pin above already refuses.
 fn keysFor(mv: usize) MoveKeys {
     return switch (mv) {
         SWEEP_I => SWEEP_KEYS,
         SWEEP2_I => SWEEP2_KEYS,
         OVER_I => OVER_KEYS,
         THRUST_I => THRUST_KEYS,
+        BASH_I, SWAT_I => BASH_KEYS,
         else => BASH_KEYS,
     };
 }
@@ -1717,8 +1730,7 @@ pub const Model = struct {
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
-        var mat = rl.loadMaterialDefault() catch @panic("knight material");
-        mat.shader = shader;
+        const mat = gfx.material(shader, "knight");
         return .{ .bone = buildMeshes(), .shield = shieldMesh(), .mat = mat };
     }
     pub fn setShader(self: *Model, sh: rl.Shader) void {
@@ -3863,21 +3875,7 @@ pub const Knight = struct {
         }
     }
     fn chips(self: *Knight, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        const parts = foe.hitParts(n); // the field's one dial (`foe.HIT_PARTS`)
-        var i: i32 = 0;
-        while (i < parts) : (i += 1) {
-            const a = self.fxRng.angle();
-            const sp = self.fxRng.range(0.4, 1.0) * spd;
-            self.emit(
-                at,
-                v3(dir.x * sp + mathx.cosf(a) * self.fxRng.range(0.2, 1.2), self.fxRng.range(0.9, 3.2), dir.z * sp + mathx.sinf(a) * self.fxRng.range(0.2, 1.2)),
-                self.fxRng.range(0.34, 0.64),
-                self.fxRng.range(0.024, 0.055) * self.scale,
-                0.008,
-                CHIP,
-                8.0,
-            );
-        }
+        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, CHIP_SPRAY);
     }
     fn sparks(self: *Knight, at: rl.Vector3, dir: rl.Vector3, n: i32) void {
         var i: i32 = 0;

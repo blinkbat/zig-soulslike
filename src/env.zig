@@ -2730,9 +2730,9 @@ test "THE BROOD ARENA LOADS — a scratch map is only useful if it is known to s
 /// WHAT THE SHIPPED WORLD CURRENTLY REPLAYS TO. THREE FACTS, NOT SIX LITERALS: written out at the re-pin
 /// print AND at the assertions, a re-pin that moved one pair and forgot the other left the print silent on
 /// the very run the assertion failed.
-const PIN_PROPS: usize = 17521;
+const PIN_PROPS: usize = 17524;
 const PIN_SOLIDS: usize = 1787;
-const PIN_LIGHTS: usize = 57;
+const PIN_LIGHTS: usize = 60;
 const PIN_JERKY: usize = 2;
 
 test "replaying the SHIPPED map produces a stable world" {

@@ -1486,8 +1486,7 @@ pub const Hero = struct {
     restT: f32 = 0,
 
     pub fn init(shader: rl.Shader) Hero {
-        var mat = rl.loadMaterialDefault() catch @panic("hero material");
-        mat.shader = shader;
+        const mat = gfx.material(shader, "hero");
         return .{
             .mesh = buildMeshes(),
             .bow = archer.bowMesh(),

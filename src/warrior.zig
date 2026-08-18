@@ -33,6 +33,14 @@ const BLAZON = rgba(74, 32, 30, 255);
 // FX palette. DUST is the WORLD's, not this creature's (see foe.zig); the gold motes are foe.zig's own.
 const DUST = foe.DUST;
 const CHIP = archermod.BONE_CHIP; // bone, knocked off in flakes — the archer's, because it is his body
+/// The knight's spray at a man's size: a shade tighter, shorter-lived and finer, on the same dry-bone shape.
+const CHIP_SPRAY = foe.Spray{
+    .fanLo = 0.2,   .fanHi = 1.1,
+    .upLo = 0.9,    .upHi = 3.0,
+    .lifeLo = 0.32, .lifeHi = 0.60,
+    .rLo = 0.022,   .rHi = 0.050,
+    .r1 = 0.008,    .col = CHIP, .grav = 8.0,
+};
 const SPARK = rgba(255, 208, 128, 240);
 const SPLINTER = rgba(86, 64, 44, 240);
 
@@ -440,8 +448,7 @@ pub const Model = struct {
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
-        var mat = rl.loadMaterialDefault() catch @panic("warrior material");
-        mat.shader = shader;
+        const mat = gfx.material(shader, "warrior");
         const kit = [_]rl.Mesh{ maceMesh(), greatswordMesh() };
         var bone = archermod.boneMeshes();
         // `boneMeshes` leaves HELD undefined and the draw loop skips it, but this struct is COPIED out of
@@ -1614,21 +1621,7 @@ pub const Warrior = struct {
         }
     }
     fn chips(self: *Warrior, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        const parts = foe.hitParts(n); // the field's one dial (`foe.HIT_PARTS`)
-        var i: i32 = 0;
-        while (i < parts) : (i += 1) {
-            const a = self.fxRng.angle();
-            const sp = self.fxRng.range(0.4, 1.0) * spd;
-            self.emit(
-                at,
-                v3(dir.x * sp + mathx.cosf(a) * self.fxRng.range(0.2, 1.1), self.fxRng.range(0.9, 3.0), dir.z * sp + mathx.sinf(a) * self.fxRng.range(0.2, 1.1)),
-                self.fxRng.range(0.32, 0.60),
-                self.fxRng.range(0.022, 0.050) * self.scale,
-                0.008,
-                CHIP,
-                8.0,
-            );
-        }
+        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, CHIP_SPRAY);
     }
     fn sparks(self: *Warrior, at: rl.Vector3, dir: rl.Vector3, n: i32) void {
         var i: i32 = 0;

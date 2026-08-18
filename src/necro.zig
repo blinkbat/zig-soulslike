@@ -297,8 +297,7 @@ pub const Model = struct {
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
-        var mat = rl.loadMaterialDefault() catch @panic("necro material");
-        mat.shader = shader;
+        const mat = gfx.material(shader, "necro");
         var bone: [N]rl.Mesh = undefined;
         bone[ROOT] = pelvisMesh();
         bone[SPINE] = abdomenMesh();
@@ -496,16 +495,6 @@ pub const Necro = struct {
     /// else. A stagger drops the cast with the whole gather spent, which IS the interrupt.
     pub fn casting(self: *const Necro) bool {
         return self.state == .raise_wind or self.state == .raise_up;
-    }
-
-    /// HOW FAR THROUGH THE GATHER IT IS, 0..1 — the picture of the tell, and the only thing the HUD or the
-    /// harness may know about how close the raise is to landing.
-    pub fn raiseFill(self: *const Necro) f32 {
-        return switch (self.state) {
-            .raise_wind => mathx.clampF(self.t / RAISE_WIND, 0, 1),
-            .raise_up => 1.0,
-            else => 0,
-        };
     }
 
     fn fdir(self: *const Necro) rl.Vector3 {
@@ -1171,10 +1160,6 @@ pub const Necro = struct {
             foe.markOn(self.xf[STAFF], v3(0, FIST_Y + STAFF_UP, FIST_Z)),
         };
     }
-    pub fn staffTopWorld(self: *const Necro) rl.Vector3 {
-        return self.staffSeg()[1];
-    }
-
     // ── FX ────────────────────────────────────────────────────────────────────────────────────────────
 
     fn emit(self: *Necro, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {

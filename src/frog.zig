@@ -109,6 +109,14 @@ const DUST = foe.DUST; // kicked-up bog dust — the SHARED one (see foe.zig: it
 const EMBER = rgba(252, 196, 84, 150); // amber charge glow — the lamp-eye colour, gathering (kept sheer so glints layer, not blob)
 const SPIT = rgba(176, 190, 150, 140); // pale sickly drool / spit fling
 const BLOOD = rgba(112, 22, 16, 235); // hit spray — dark oxblood, kin to the maw (unlit droplets).
+/// Wet flesh: a wider fan and more lift than the brood's, and it hangs a touch longer.
+const BLOOD_SPRAY = foe.Spray{
+    .fanLo = 0.15, .fanHi = 0.8,
+    .upLo = 0.7,   .upHi = 2.4,
+    .lifeLo = 0.28, .lifeHi = 0.5,
+    .rLo = 0.028,  .rHi = 0.055,
+    .r1 = 0.008,   .col = BLOOD, .grav = 7.5,
+};
 
 const HP_MAX = 46.0;
 const POISE_MAX = 8.0; // BELOW the hero's light poise damage (10): every landed light
@@ -157,8 +165,7 @@ pub const Model = struct {
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
-        var mat = rl.loadMaterialDefault() catch @panic("frog material");
-        mat.shader = shader;
+        const mat = gfx.material(shader, "frog");
         return .{ .mesh = buildMeshes(), .eyes = [2]rl.Mesh{ eyeMesh(EYE), eyeMesh(EYE_HOT) }, .mat = mat };
     }
     pub fn setShader(self: *Model, sh: rl.Shader) void {
@@ -767,18 +774,7 @@ pub const Frog = struct {
     }
 
     fn bloodBurst(self: *Frog, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        const parts = foe.hitParts(n); // the field's one dial (`foe.HIT_PARTS`)
-        var i: i32 = 0;
-        while (i < parts) : (i += 1) {
-            const a = self.fxRng.angle();
-            const sp = self.fxRng.range(0.4, 1.0) * spd;
-            const vel = v3(
-                dir.x * sp + mathx.cosf(a) * self.fxRng.range(0.15, 0.8),
-                self.fxRng.range(0.7, 2.4),
-                dir.z * sp + mathx.sinf(a) * self.fxRng.range(0.15, 0.8),
-            );
-            self.emit(at, vel, self.fxRng.range(0.28, 0.5), self.fxRng.range(0.028, 0.055) * self.scale, 0.008, BLOOD, 7.5);
-        }
+        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, BLOOD_SPRAY);
     }
 
     // Unit facing vector on the ground (matches startHop's atan2(x, z) convention).

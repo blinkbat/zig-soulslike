@@ -198,6 +198,14 @@ pub fn tickLeash(l: *Leash, dt: f32, at: rl.Vector3, home: rl.Vector3, hero: rl.
     l.tick(dt, mathx.distXZ(at, home), mathx.distXZ(home, hero), aggroR);
 }
 
+/// …AND A FIXTURE'S, which is the same tether with the first distance known: a creature that never travels
+/// is always at its post, so `out` is 0 by construction and the only thing the tether can still answer is
+/// whether HE has left its patch. The rooted and the fen lurker each wrote this line out with the literal 0
+/// in it, which is a hand-derived argument sitting where `tickLeash` exists to stop one.
+pub fn tickFixedLeash(l: *Leash, dt: f32, home: rl.Vector3, hero: rl.Vector3, aggroR: f32) void {
+    l.tick(dt, 0, mathx.distXZ(home, hero), aggroR);
+}
+
 /// …and HOW FAR IT READS THE HERO AS BEING, from where it is standing.
 pub fn senseHero(l: *const Leash, at: rl.Vector3, hero: rl.Vector3, aggroR: f32) f32 {
     return sensedDist(l, mathx.distXZ(at, hero), aggroR);
@@ -622,6 +630,94 @@ pub fn emitParticle(pool: []Particle, head: *usize, p: rl.Vector3, vel: rl.Vecto
     head.* = (head.* + 1) % pool.len;
 }
 
+/// **WHAT A WOUND THROWS OFF A BODY** — blood, gore, bone chips: the cone of stuff a landed blow sprays back
+/// along its own line. Five creatures wrote this loop out (`frog`/`ogre`/`brood`'s `bloodBurst`,
+/// `knight`/`warrior`'s `chips`) with nothing differing but these dials, and the dials ARE the creature —
+/// a skeleton sheds chips where a toad sheds blood. So the numbers stay each creature's and the LOOP stops
+/// being five loops.
+pub const Spray = struct {
+    /// How far off the blow's own line a mote is thrown, either side of it.
+    fanLo: f32,
+    fanHi: f32,
+    /// …and how hard it goes UP, which is most of what says a body was STRUCK rather than brushed past.
+    upLo: f32,
+    upHi: f32,
+    lifeLo: f32,
+    lifeHi: f32,
+    /// Its radius at birth, in the creature's own scale…
+    rLo: f32,
+    rHi: f32,
+    /// …what it shrinks to, what colour it is, and how hard it falls.
+    r1: f32,
+    col: rl.Color,
+    grav: f32,
+};
+
+/// **THE DRAW ORDER IS LOAD-BEARING** — angle, speed, the fan on X, the lift, the fan on Z, the life, the
+/// radius. It is the order all five wrote by hand, and a helper that pulled the same numbers in another
+/// order would give every one of them a different-looking wound off the very same seed.
+pub fn spray(pool: []Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32, scale: f32, s: Spray) void {
+    const parts = hitParts(n); // the field's one dial (`HIT_PARTS`)
+    var i: i32 = 0;
+    while (i < parts) : (i += 1) {
+        const a = rng.angle();
+        const sp = rng.range(0.4, 1.0) * spd;
+        const vel = v3(
+            dir.x * sp + mathx.cosf(a) * rng.range(s.fanLo, s.fanHi),
+            rng.range(s.upLo, s.upHi),
+            dir.z * sp + mathx.sinf(a) * rng.range(s.fanLo, s.fanHi),
+        );
+        emitParticle(pool, head, at, vel, rng.range(s.lifeLo, s.lifeHi), rng.range(s.rLo, s.rHi) * scale, s.r1, s.col, s.grav);
+    }
+}
+
+test "THE SPRAY IS THE FIVE HAND-WRITTEN LOOPS, MOTE FOR MOTE — the draw order is the thing being pinned" {
+    // The five creatures each drew: angle, speed, fan-X, lift, fan-Z, life, radius. Pull the same numbers in
+    // any other order and every wound in the game changes shape off the same seed, silently and only on
+    // screen. This is the frog's row, run both ways against one seed.
+    const S = Spray{
+        .fanLo = 0.15, .fanHi = 0.8,
+        .upLo = 0.7,   .upHi = 2.4,
+        .lifeLo = 0.28, .lifeHi = 0.5,
+        .rLo = 0.028,  .rHi = 0.055,
+        .r1 = 0.008,   .col = DUST, .grav = 7.5,
+    };
+    const at = v3(1, 2, 3);
+    const dir = v3(0.6, 0, -0.8);
+    const scale: f32 = 1.3;
+
+    var wantPool = [_]Particle{.{}} ** 64;
+    var wantHead: usize = 0;
+    var r = mathx.Rng.init(0xB10D);
+    var i: i32 = 0;
+    while (i < hitParts(9)) : (i += 1) {
+        const a = r.angle();
+        const sp = r.range(0.4, 1.0) * 2.5;
+        const vel = v3(
+            dir.x * sp + mathx.cosf(a) * r.range(S.fanLo, S.fanHi),
+            r.range(S.upLo, S.upHi),
+            dir.z * sp + mathx.sinf(a) * r.range(S.fanLo, S.fanHi),
+        );
+        emitParticle(&wantPool, &wantHead, at, vel, r.range(S.lifeLo, S.lifeHi), r.range(S.rLo, S.rHi) * scale, S.r1, S.col, S.grav);
+    }
+
+    var gotPool = [_]Particle{.{}} ** 64;
+    var gotHead: usize = 0;
+    var r2 = mathx.Rng.init(0xB10D);
+    spray(&gotPool, &gotHead, &r2, at, dir, 9, 2.5, scale, S);
+
+    try std.testing.expectEqual(wantHead, gotHead);
+    try std.testing.expect(gotHead > 0); // it emitted at all
+    for (wantPool, gotPool) |w, g| {
+        try std.testing.expectEqual(w.v.x, g.v.x);
+        try std.testing.expectEqual(w.v.y, g.v.y);
+        try std.testing.expectEqual(w.v.z, g.v.z);
+        try std.testing.expectEqual(w.life, g.life);
+        try std.testing.expectEqual(w.r0, g.r0);
+    }
+    std.debug.print("\n  spray: {d} motes, identical to the hand-written loop mote for mote\n", .{gotHead});
+}
+
 /// EVERY SLOT A BURST JUST WROTE, floored on the ground THAT burst came off rather than the pool owner's.
 pub fn floorBurst(pool: []Particle, from: usize, to: usize, floor: f32) void {
     var i = from;
@@ -914,6 +1010,11 @@ pub const Blade = struct {
     /// A PROJECTILE, NOT A SWING: presented as the segment it crossed this frame so it goes through the
     /// same `strike` and gets each creature's own reactions.
     pierce: bool = false,
+    /// **IT DOES NOT STOP AT THE FIRST BODY.** Every other `pierce` in the game is SPENT on whoever it reaches
+    /// first — a shaft, a bolt, a spirit's jaws — and stopping there is what those are, so the default keeps
+    /// `pierceGroup`'s and `game.pierceFoes`' early exits exactly as they were. Set, the same blade is offered
+    /// to every body it crosses, which is `combat.LANCE_HIT`'s "PER BODY" actually happening.
+    through: bool = false,
     /// WHOSE BLADE THIS IS. Defaults to the hero, so every existing site — his sword, his shafts, his bolts —
     /// says what it always said by saying nothing. A spirit's jaws set it (`wolf.blade`), and that is the
     /// whole of how a summon earns aggro.
@@ -1121,14 +1222,17 @@ fn blocksOf(f: anytype) u32 {
 }
 
 pub fn pierceGroup(foes: anytype, blade: Blade) bool {
+    var hit = false;
     for (foes) |*f| {
-        if (!f.alive() or f.dying()) continue;
+        if (!corporeal(f)) continue;
         const before = f.hits;
         const caught = blocksOf(f);
         f.tryHit(blade);
-        if (f.hits != before or blocksOf(f) != caught) return true;
+        if (f.hits == before and blocksOf(f) == caught) continue;
+        hit = true;
+        if (!blade.through) return true; // spent on the first body, which is what a shaft is
     }
-    return false;
+    return hit;
 }
 
 pub const Strike = struct {
@@ -1165,6 +1269,50 @@ pub fn strike(vit: *combat.Vitals, hitLatch: *bool, center: rl.Vector3, hurtR: f
     sweep.y = 0;
     const dir = if (mathx.lenXZ(sweep) > 0.03) mathx.normV(sweep) else mathx.dirXZ(contact, center);
     return .{ .contact = contact, .dir = dir, .reaction = vit.hit(blade.hit) };
+}
+
+test "A SHAFT IS SPENT ON THE FIRST BODY AND A LANCE GOES THROUGH THE LINE" {
+    // THE BUG: `pierceGroup` returned on the first member it wounded and `game.pierceFoes` short-circuited on
+    // the first group that reported one, so the Ember Lance — priced at 21 FP for the SECOND body and the third
+    // (`combat.LANCE_HIT`) — landed on exactly one, and bought strictly less than the 12 FP bolt.
+    const Dummy = struct {
+        pos: rl.Vector3,
+        hits: u32 = 0,
+        vit: combat.Vitals = combat.Vitals.initFoe(100, 999, 999),
+        fn alive(_: *const @This()) bool {
+            return true;
+        }
+        fn dying(_: *const @This()) bool {
+            return false;
+        }
+        fn tryHit(self: *@This(), b: Blade) void {
+            // Standing ON the segment, so the only thing under test is who is offered the blade.
+            if (!b.active or mathx.lenV(mathx.subV(self.pos, mathx.closestOnSegV(self.pos, b.a, b.b))) > b.r) return;
+            self.hits += 1;
+            _ = self.vit.hit(b.hit);
+        }
+    };
+    // Three bodies shoulder to shoulder down +X, which is the muster this spell exists for.
+    const line = [3]rl.Vector3{ v3(1, 1, 0), v3(2, 1, 0), v3(3, 1, 0) };
+    const shaft = Blade{ .active = true, .pierce = true, .r = 0.5, .a = v3(0, 1, 0), .b = v3(9, 1, 0), .a0 = v3(0, 1, 0), .b0 = v3(9, 1, 0), .hit = .{ .dmg = 5 } };
+
+    var spent = [3]Dummy{ .{ .pos = line[0] }, .{ .pos = line[1] }, .{ .pos = line[2] } };
+    try std.testing.expect(pierceGroup(&spent, shaft));
+    try std.testing.expectEqual(@as(u32, 1), spent[0].hits); // the shaft stops in the first man…
+    try std.testing.expectEqual(@as(u32, 0), spent[1].hits);
+    try std.testing.expectEqual(@as(u32, 0), spent[2].hits);
+
+    var run = [3]Dummy{ .{ .pos = line[0] }, .{ .pos = line[1] }, .{ .pos = line[2] } };
+    var lance = shaft;
+    lance.through = true;
+    try std.testing.expect(pierceGroup(&run, lance));
+    for (&run) |*d| { // …and the lance takes every one of them, once each
+        try std.testing.expectEqual(@as(u32, 1), d.hits);
+        try std.testing.expect(d.vit.hp < d.vit.hpMax);
+    }
+    // …and it still reports a MISS when the line is empty, or `throwLance` cannot tell one from a hit.
+    var wide = [1]Dummy{.{ .pos = v3(0, 1, 40) }};
+    try std.testing.expect(!pierceGroup(&wide, lance));
 }
 
 test "a CORPSE is not a body in the way, from the frame it starts to fall" {

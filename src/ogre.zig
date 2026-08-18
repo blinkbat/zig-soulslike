@@ -321,6 +321,14 @@ const BRACE_SINK = 0.011 * H;
 
 const FX_MAX = 56;
 const DUST = foe.DUST; // kicked-up dust — the SHARED one (see foe.zig: it was two copies)
+/// A GIANT'S OWN WOUND: the widest fan and the heaviest droplets of the five, because there is more of him.
+const BLOOD_SPRAY = foe.Spray{
+    .fanLo = 0.2,  .fanHi = 1.0,
+    .upLo = 0.8,   .upHi = 2.8,
+    .lifeLo = 0.3, .lifeHi = 0.55,
+    .rLo = 0.04,   .rHi = 0.08,
+    .r1 = 0.01,    .col = BLOOD, .grav = 7.5,
+};
 const BLOOD = rgba(84, 20, 16, 235); // dark ichor spray on a landed blow — his OWN (the toad's is
 
 // The SHARED particle shape + integrator + draw (foe.zig); only the bursts below are the ogre's.
@@ -358,8 +366,7 @@ pub const Model = struct {
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
-        var mat = rl.loadMaterialDefault() catch @panic("ogre material");
-        mat.shader = shader;
+        const mat = gfx.material(shader, "ogre");
         return .{ .mesh = buildMeshes(), .mat = mat };
     }
     pub fn setShader(self: *Model, sh: rl.Shader) void {
@@ -1490,18 +1497,7 @@ pub const Ogre = struct {
         self.prevPhase = self.phase;
     }
     fn bloodBurst(self: *Ogre, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        const parts = foe.hitParts(n); // the field's one dial (`foe.HIT_PARTS`)
-        var i: i32 = 0;
-        while (i < parts) : (i += 1) {
-            const a = self.fxRng.angle();
-            const sp = self.fxRng.range(0.4, 1.0) * spd;
-            const vel = v3(
-                dir.x * sp + mathx.cosf(a) * self.fxRng.range(0.2, 1.0),
-                self.fxRng.range(0.8, 2.8),
-                dir.z * sp + mathx.sinf(a) * self.fxRng.range(0.2, 1.0),
-            );
-            self.emit(at, vel, self.fxRng.range(0.3, 0.55), self.fxRng.range(0.04, 0.08) * self.scale, 0.01, BLOOD, 7.5);
-        }
+        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, BLOOD_SPRAY);
     }
     pub fn drawFx(self: *const Ogre) void {
         foe.drawParticles(&self.parts);

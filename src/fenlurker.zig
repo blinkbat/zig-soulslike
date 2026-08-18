@@ -203,8 +203,7 @@ pub const Model = struct {
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
-        var mat = rl.loadMaterialDefault() catch @panic("fen lurker material");
-        mat.shader = shader;
+        const mat = gfx.material(shader, "fen lurker");
         return .{ .mesh = buildMeshes(), .mat = mat };
     }
     pub fn setShader(self: *Model, sh: rl.Shader) void {
@@ -417,7 +416,7 @@ pub const Lurker = struct {
         foe.fadeFlash(&self.flash, dt);
         self.restT = mathx.maxF(0, self.restT - dt);
         // Measured from its POST, like every tether: the question is whether he has left its patch.
-        self.leash.tick(dt, 0, mathx.distXZ(self.home, hero), AGGRO_R);
+        foe.tickFixedLeash(&self.leash, dt, self.home, hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         // **THE PLAY AREA'S OWN BOUND, not a sentinel.** It never travels under its own power, but a blow
         // still rocks it — and `applyShove` steps through the shared bounded step, so handed `LONG_AGO` the
@@ -695,7 +694,7 @@ pub const Lurker = struct {
         );
 
         // THE NECK — five segments, each taking a SHARE of the stroke and each later than the one below it.
-        // The share rises toward the head (`SEG_BEND`), so the curve is a whip and not an arc struck about
+        // The share rises toward the head (`SEG_BEND_LO`→`SEG_BEND_HI`), so the curve is a whip and not an arc struck about
         // one hinge, and the LAG is the bank's rather than each segment's own hand-rolled fraction.
         for (NECK, 0..) |b, i| {
             const u = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(NECK.len - 1));
@@ -813,7 +812,7 @@ pub const Marsh = struct {
         // **THE WAKE IS TICKED FOR EVERY MEMBER, INCLUDING THE ONES DOING NOTHING** — it is the whole of what
         // a sunk lurker is, so it cannot live inside a state arm that only runs while something is happening.
         for (self.live()) |*l| {
-            if (l.alive() and !l.dying() and l.hidden() and l.pooled()) l.ripple(dt);
+            if (foe.corporeal(l) and l.hidden() and l.pooled()) l.ripple(dt);
         }
         return foe.groupBlow(self.live(), dt, hero, bounds, blade);
     }

@@ -1731,8 +1731,7 @@ pub const Model = struct {
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
-        var mat = rl.loadMaterialDefault() catch @panic("kobold material");
-        mat.shader = shader;
+        const mat = gfx.material(shader, "kobold");
         var tail: [TAIL_N]rl.Mesh = undefined;
         for (0..TAIL_N) |i| tail[i] = tailMesh(i);
         return .{
@@ -1882,7 +1881,7 @@ pub const Warband = struct {
         var best: ?usize = null;
         var worst: f32 = 1.0;
         for (self.liveConst(), 0..) |*k, i| {
-            if (!k.alive() or k.dying()) continue;
+            if (!foe.corporeal(k)) continue;
             if (!k.vit.needsHeal(HEAL_SLACK)) continue;
             if (mathx.distXZ(from, k.pos) > HEAL_RANGE) continue;
             const f = k.vit.hpFrac();

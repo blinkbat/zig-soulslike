@@ -467,8 +467,6 @@ fn armName(a: heromod.Armament) [:0]const u8 {
         .wand => "Knotted Wand",
     };
 }
-const offName = armName;
-
 fn ammoName(k: combat.ArrowKind) [:0]const u8 {
     return switch (k) {
         .plain => "Arrow",

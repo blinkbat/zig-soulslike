@@ -141,8 +141,7 @@ pub const Souls = struct {
     fxFloor: f32 = 0,
 
     pub fn init(shader: rl.Shader) Souls {
-        var mat = rl.loadMaterialDefault() catch @panic("souls material");
-        mat.shader = shader;
+        const mat = gfx.material(shader, "souls");
         return .{ .mesh = boughMesh(), .mat = mat };
     }
 

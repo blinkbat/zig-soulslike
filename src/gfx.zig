@@ -749,6 +749,15 @@ pub fn smokeAnim(originY: f32, phase01: f32) f32 {
     return @floor(originY) + std.math.clamp(phase01, 0, 0.999);
 }
 
+/// ONE BODY'S MATERIAL — raylib's default pointed at the scene shader. Twenty `Model.init`s wrote these two
+/// lines out with nothing differing but the word in the panic, which is a thing to forget the day a material
+/// needs a second setting.
+pub fn material(shader: rl.Shader, comptime what: []const u8) rl.Material {
+    var mat = rl.loadMaterialDefault() catch @panic(what ++ " material");
+    mat.shader = shader;
+    return mat;
+}
+
 pub const Builder = struct {
     pos: std.ArrayList(f32),
     nrm: std.ArrayList(f32),

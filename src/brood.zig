@@ -39,6 +39,15 @@ const SAC_MEM = rgba(67, 93, 62, 220);
 const SAC_EGG = rgba(48, 70, 38, 255);
 const SAC_VEIN = rgba(26, 22, 16, 255);
 const GORE = rgba(46, 9, 7, 235);
+/// WHAT A CUT SPIDER THROWS — the tightest fan and the least lift of the five, because what comes out of a
+/// chitin shell is thick and it does not carry.
+const GORE_SPRAY = foe.Spray{
+    .fanLo = 0.15, .fanHi = 0.7,
+    .upLo = 0.6,   .upHi = 2.2,
+    .lifeLo = 0.26, .lifeHi = 0.48,
+    .rLo = 0.025,  .rHi = 0.05,
+    .r1 = 0.008,   .col = GORE, .grav = 7.5,
+};
 
 const B_CHITIN = rgba(42, 52, 54, 255);
 const B_CHITIN_DK = rgba(24, 30, 32, 255);
@@ -373,8 +382,7 @@ pub const Model = struct {
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
-        var mat = rl.loadMaterialDefault() catch @panic("brood material");
-        mat.shader = shader;
+        const mat = gfx.material(shader, "brood");
         var m = Model{
             .mesh = undefined,
             .eyes = undefined,
@@ -1526,21 +1534,7 @@ pub const Spider = struct {
         foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
     }
     fn bloodBurst(self: *Spider, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        const parts = foe.hitParts(n); // the field's one dial (`foe.HIT_PARTS`)
-        var i: i32 = 0;
-        while (i < parts) : (i += 1) {
-            const a = self.fxRng.angle();
-            const sp = self.fxRng.range(0.4, 1.0) * spd;
-            self.emit(
-                at,
-                v3(dir.x * sp + mathx.cosf(a) * self.fxRng.range(0.15, 0.7), self.fxRng.range(0.6, 2.2), dir.z * sp + mathx.sinf(a) * self.fxRng.range(0.15, 0.7)),
-                self.fxRng.range(0.26, 0.48),
-                self.fxRng.range(0.025, 0.05) * self.scale,
-                0.008,
-                GORE,
-                7.5,
-            );
-        }
+        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, GORE_SPRAY);
     }
     fn emitDrag(self: *Spider, dt: f32) void {
         if (self.role != .mother) return;
@@ -1981,13 +1975,16 @@ pub const Brood = struct {
     }
 
     pub fn pierce(self: *Brood, blade: foe.Blade) bool {
+        var hit = false;
         for (self.liveSacs()) |*s| {
             if (!s.standing()) continue;
             const before = s.hits;
             s.tryHit(blade);
-            if (s.hits != before) return true;
+            if (s.hits == before) continue;
+            hit = true;
+            if (!blade.through) return true; // spent on the sac, `foe.pierceGroup`'s rule one list along
         }
-        return foe.pierceGroup(self.live(), blade);
+        return foe.pierceGroup(self.live(), blade) or hit;
     }
     pub fn anyDied(self: *const Brood) bool {
         return foe.anyDied(self.liveConst());

@@ -1098,10 +1098,8 @@ pub const Pack = struct {
 
     /// The meshes are built ONCE and shared by every wolf — a per-instance mesh is a per-instance upload.
     pub fn load(self: *Pack, shader: rl.Shader) void {
-        var mat = rl.loadMaterialDefault() catch @panic("wolf material");
-        mat.shader = shader;
         for (0..N) |i| self.mesh[i] = boneMesh(i);
-        self.mat = mat;
+        self.mat = gfx.material(shader, "wolf");
         self.ready = true;
     }
     /// The depth pass swaps every caster onto the shadow shader and back (`game.setCasterShaders`).

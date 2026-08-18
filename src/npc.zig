@@ -166,8 +166,7 @@ pub const Model = struct {
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
-        var mat = rl.loadMaterialDefault() catch @panic("npc material");
-        mat.shader = shader;
+        const mat = gfx.material(shader, "npc");
         const heads = [_]rl.Mesh{ hoodedHeadMesh(), bareHeadMesh() };
         var bone: [N]rl.Mesh = undefined;
         bone[ROOT] = pelvisMesh();

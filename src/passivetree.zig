@@ -193,8 +193,7 @@ pub const Bonus = struct {
     pub fn sheet(self: Bonus) stats.Sheet {
         var s = stats.Sheet{};
         for (self.attrs, 0..) |n, i| {
-            const a: stats.Attr = @enumFromInt(i);
-            s.set(a, s.at(a) + n);
+            s.add(@enumFromInt(i), n);
         }
         return s;
     }
